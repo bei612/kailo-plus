@@ -21,7 +21,7 @@ import type { CustomEmoji } from "../custom-emoji/emoji";
 import type { MessageActionBarSurface } from "./MessageActionBarSurface";
 import { MessageAgentOwner } from "./system/MessageAgentOwner";
 import { useMessageAgentAddressPrefix, type AgentAddressHost } from "./MessageAgentAddressPrefix";
-import { useAgentAuthorScope, withAgentAuthorFacts } from "./agentAuthorFacts";
+import { useAgentAuthorScope, withAgentAuthorFacts, type AgentOwnerRenderer } from "./agentAuthorFacts";
 const DiffMessage = React.lazy(() => import("./diff/DiffMessage"));
 const DiffMessageExpanded = React.lazy(() => import("./diff/DiffMessageExpanded"));
 type ReactionActionProps = Pick<React.ComponentProps<typeof MessageActionBarSurface>,
@@ -54,7 +54,7 @@ export function MessageRowSurface({
     playEntrance = false,
     showDepthGuides = true,
     renderBody, renderIdentity, renderActions, reference, resolveMediaUrl, searchQuery,
-    onToggleReaction, customEmoji = [], reactionScope, agentMentionStatus, agentAddress,
+    onToggleReaction, customEmoji = [], reactionScope, agentMentionStatus, agentAddress, renderAgentOwner,
   }: {
     collapseDepthGuideActions?: ReadonlyArray<ThreadDepthGuideAction>;
     connectDescendants?: boolean;
@@ -95,6 +95,8 @@ export function MessageRowSurface({
     agentMentionStatus?: React.ReactNode;
     /** DD-148: the channel's admitted Agents for the original address-tray prefix; absent → none. */
     agentAddress?: AgentAddressHost;
+    /** DD-147(1): opens the owner's member profile card; else the provider's, else plain text. */
+    renderAgentOwner?: AgentOwnerRenderer;
   }) {
     const translateUi = useUiT();
     // DD-147/148: a host may provide the admitted Agent directory once instead of per row.
@@ -348,7 +350,8 @@ export function MessageRowSurface({
         <UserNameIndicators className="-ml-0.5 self-center" pubkey={message.pubkey} />
         {/* Fixed Buzz MessageRow agentOwnerNode (DD-147(1)): only where the host resolved owner facts. */}
         {message.isAgent && message.ownerLabel !== undefined
-          ? <MessageAgentOwner ownerLabel={message.ownerLabel} ownerPubkey={message.ownerPubkey} /> : null}
+          ? <MessageAgentOwner ownerLabel={message.ownerLabel} ownerPubkey={message.ownerPubkey}
+              ownerPrincipalId={message.ownerPrincipalId} renderOwner={renderAgentOwner ?? agentScope?.renderOwner} /> : null}
         {inlineMetadataNode}
       </MessageHeaderRow>
     );

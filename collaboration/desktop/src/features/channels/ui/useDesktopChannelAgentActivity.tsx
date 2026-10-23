@@ -116,8 +116,8 @@ export function useDesktopChannelAgentActivity({ activeChannel, enabled, typingE
     client: bff, channelId: workspaceId, agents: readableAgents, typingEntries, enabled: live,
   });
   const composerAgentList = composerAgents.data?.agents;
-  // DD-147: owner line and owner-only respondTo badge from the same admitted directory.
-  const authorFacts = useAgentAuthorFacts(bff, live ? composerAgents.data : undefined);
+  // DD-147: owner line from the member-readable author directory; the badge stays owner-only.
+  const authorFacts = useAgentAuthorFacts(bff, live && workspaceId ? { workspaceId } : null);
   const workingAgents = React.useMemo<BotActivityAgent[]>(() => (readableAgents ?? []).flatMap((row) =>
     row.agentPubkey ? [{
       pubkey: row.agentPubkey,

@@ -486,6 +486,10 @@ pub fn router(state: BffState) -> Router {
             get(crate::web_transport::member_profile),
         )
         .exposed_route(
+            "/api/v1/workspaces/{workspace_id}/agent-authors",
+            get(crate::agent_author_directory::list),
+        )
+        .exposed_route(
             "/api/v1/role-members",
             get(crate::platform_views::list_role_members),
         )

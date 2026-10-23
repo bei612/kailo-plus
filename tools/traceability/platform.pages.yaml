@@ -29,7 +29,7 @@ implementation:
   migrations: [core/migrations/20261020141000_tenant_membership_activated_at.up.sql, core/migrations/20261020141000_tenant_membership_activated_at.down.sql]
 
 runtime:
-  routes: ["/app/", "/api/v1/workspaces", "/api/v1/discoverable-workspaces", "/api/v1/workspaces/{workspace_id}/members", "/api/v1/workspaces/{workspace_id}/members/{principal_id}/profiles/{pubkey}", "/api/v1/audit", "/api/v1/profile", "/api/v1/profile/media", "/api/v1/profile/media/{sha256}", "/api/v1/custom-emoji", "/api/v1/tenant-member-joins"]
+  routes: ["/app/", "/api/v1/workspaces", "/api/v1/discoverable-workspaces", "/api/v1/workspaces/{workspace_id}/members", "/api/v1/workspaces/{workspace_id}/members/{principal_id}/profiles/{pubkey}", "/api/v1/workspaces/{workspace_id}/agent-authors", "/api/v1/audit", "/api/v1/profile", "/api/v1/profile/media", "/api/v1/profile/media/{sha256}", "/api/v1/custom-emoji", "/api/v1/tenant-member-joins"]
   actions: [identity.profile.publish, identity.custom_emoji.publish]
 
 release:

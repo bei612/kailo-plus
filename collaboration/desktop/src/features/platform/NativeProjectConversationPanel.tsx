@@ -21,6 +21,7 @@ import { getThreadReference } from "@/features/messages/lib/threading";
 import { useIndependentThreadPanel } from "@/features/messages/useIndependentThreadPanel";
 import { useThreadReplies } from "@/features/messages/useThreadReplies";
 import { MessageThreadPanel } from "@/features/messages/ui/MessageThreadPanel";
+import { DesktopAgentAuthorFacts } from "@/features/messages/ui/DesktopAgentAuthorFacts";
 import { MessageThreadPanelSkeleton } from "@/features/messages/ui/MessageThreadPanelSkeleton";
 import type { TimelineMessage } from "@/features/messages/types";
 import { useProfileQuery, useUsersBatchQuery } from "@/features/profile/hooks";
@@ -248,7 +249,9 @@ export function NativeProjectConversationPanel({
   }, []);
 
   if (canShowThread && activeChannel && panelData.threadHead) {
+    // DD-147(1): the independent thread window carries the same owner line as the channel.
     return wrapProjectConversationPane(
+      <DesktopAgentAuthorFacts channelId={activeChannel.channelType === "dm" ? null : activeChannel.id}>
       <MessageThreadPanel
         {...layoutProps}
         channelType={activeChannel.channelType}
@@ -286,7 +289,8 @@ export function NativeProjectConversationPanel({
         }}
         threadTypingPubkeys={[]}
         widthPx={widthPx}
-      />,
+      />
+      </DesktopAgentAuthorFacts>,
       {
         canResetWidth,
         isOverlay,

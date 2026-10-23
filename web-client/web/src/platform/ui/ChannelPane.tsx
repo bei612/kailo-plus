@@ -103,7 +103,7 @@ import { AnimatePresence } from "motion/react";
 import { useIsThreadPanelOverlay } from "@client-kit/platform/react/thread";
 import { MessageAuthorAvatar, MessageAuthorIdentity, useMessageAuthorLabels, MessageAuthorProfile } from "./MessageAuthorProfile";
 import { resolveConversationHeaderParticipants, formatDmParticipantDisplayName } from "@client-kit/platform/react/conversations/dm-participant-display";
-import { UserAvatar, agentAddressHost, useAgentAuthorFacts, withAgentAuthorFacts, type AgentAuthorFacts } from "@client-kit/platform/react/messages";
+import { UserAvatar, agentAddressHost, useAgentAuthorFacts, withAgentAuthorFacts, type AgentAuthorFacts, type AgentOwnerRenderer } from "@client-kit/platform/react/messages";
 import type { MessageTimelineProps } from "@client-kit/platform/react/messages/timeline/types";
 import { useSearchHighlightProps } from "@client-kit/platform/react/search/useSearchHighlightProps";
 import { useUiT } from "@client-kit/platform/react/context";
@@ -404,7 +404,9 @@ export function ChannelPane({
   const typingAgents = useComposerAgentDirectory(bff, {workspaceId, principalId: myPrincipalId}, !conversation && live && !denied && !metadataPending);
   const agentTypingPubkeys = useMemo(() => new Set(typingAgents.data?.agents.map(agent => agent.pubkey.toLowerCase())), [typingAgents.data]);
   // DD-147/148: owner line, owner-only respondTo badge and address prefix from the same directory.
-  const agentFacts: AgentAuthorFacts = useAgentAuthorFacts(bff, typingAgents.data);
+  // DD-147(1): the member-readable author directory, not the read-filtered Installation list.
+  const agentFacts: AgentAuthorFacts = useAgentAuthorFacts(bff,
+    !conversation && live && !denied && !metadataPending ? {workspaceId, principalId: myPrincipalId} : null);
   const agentAddress = useMemo(() => agentAddressHost(agentFacts), [agentFacts]);
   // Original canManageMessageForCurrentUser "own Agent": Installations this person owns here.
   const ownedAgentPubkeys = useMemo(() => new Set(typingAgents.data?.agents
@@ -608,6 +610,9 @@ export function ChannelPane({
       onOpenProfile={() => {if (!requireThreadEditResolution()) return;setProfileTarget(null);setSystemProfileTarget(target);}}
       renderBody={props=><MemberHover {...props} target={target}/>}>{children}</UserProfilePopoverSurface>;
   }, [byPubkey, conversation, live, denied, workspaceId, requireThreadEditResolution]);
+  // DD-147(1): the Agent owner's name opens that member's profile card (MemberHover → panel).
+  const renderAgentOwner = useCallback<AgentOwnerRenderer>((owner, name) => <SystemProfilePopover pubkey={owner.pubkey}
+    triggerAriaLabel={owner.label}>{name}</SystemProfilePopover>, [SystemProfilePopover]);
   const selectedSystemMember = systemProfileTarget ? byPubkey.get(systemProfileTarget.pubkey) : undefined;
   const mentions: MessageMention[] = useMemo(() => (members.data ?? []).flatMap(member => member.pubkeys.map(pubkey => {
     let renderProfile: MessageMention["renderProfile"];
@@ -910,7 +915,7 @@ export function ChannelPane({
             return <div key={message.id} data-event-id={message.id} className={`flex flex-col gap-1 ${followedByContinuation ? "pb-0" : "pb-2.5"}`}>
               <MessageRowSurface message={message} isContinuation={isContinuation} showDepthGuides={false} highlighted={highlightedMessageId === message.id}
                 searchQuery={props.searchMatchingMessageIds?.has(message.id) ? props.searchQuery : undefined}
-                agentMentionStatus={renderAgentMentionStatus(message)} agentAddress={agentAddress}
+                agentMentionStatus={renderAgentMentionStatus(message)} agentAddress={agentAddress} renderAgentOwner={renderAgentOwner}
                 reference={<SentFromThreadLine channelId={channelId} tags={message.tags}
                   renderLink={(link, threadExcerpt) => <SentFromThreadLink link={link}
                     channelLabel={channelName || link.channelId.slice(0, 8)} threadExcerpt={threadExcerpt}
@@ -1027,7 +1032,7 @@ export function ChannelPane({
     </Suspense> : null}
     {threadAdmissionAvailable ? <AnimatePresence mode="wait" onExitComplete={markExitComplete}>
     {replaceThreadWithIdleAuxiliary && !profileTarget && !systemProfileTarget && !participantProfileTarget ? idleAuxiliarySurface : replyTarget ? <div ref={threadSurface.ref} inert={threadSurface.covered || undefined} aria-hidden={threadSurface.covered || undefined} key={`${myPrincipalId}:${workspaceId}:${getThreadReference(replyTarget.tags ?? []).rootId ?? replyTarget.id}`} className={profileTarget || systemProfileTarget || participantProfileTarget ? "hidden" : "contents"}><FocusThreadDrawer escapeEnabled={!threadSurface.covered} hasActiveEdit={threadEditTarget!==null} active={focusThread && !profileTarget && !systemProfileTarget && !participantProfileTarget} channelName={channelName} onClose={handleCloseThread}><ChannelThreadPane key={`${myPrincipalId}:${workspaceId}:${getThreadReference(replyTarget.tags ?? []).rootId ?? replyTarget.id}`}
-      channelName={channelName} agentPubkeys={agentTypingPubkeys} agentFacts={agentFacts} ownedAgentPubkeys={ownedAgentPubkeys}
+      channelName={channelName} agentPubkeys={agentTypingPubkeys} agentFacts={agentFacts} renderAgentOwner={renderAgentOwner} ownedAgentPubkeys={ownedAgentPubkeys}
       restoreDraftKey={restoreDraftKey} autoSendDraftKey={autoSendDraftKey} onAutoSendConsumed={onAutoSendConsumed}
       channelId={conversation?.channelId ?? channelId}
       conversation={conversation}

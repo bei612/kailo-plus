@@ -508,6 +508,7 @@ capabilities:
   - /api/v1/discoverable-workspaces
   - /api/v1/workspaces/{workspace_id}/members
   - /api/v1/workspaces/{workspace_id}/members/{principal_id}/profiles/{pubkey}
+  - /api/v1/workspaces/{workspace_id}/agent-authors
   - /api/v1/audit
   - /api/v1/profile
   - /api/v1/profile/media

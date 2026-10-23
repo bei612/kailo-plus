@@ -2,13 +2,14 @@
 // desktop/src/features/messages/lib/formatTimelineMessages.ts (ownerPubkey/ownerLabel for agent
 // authors), MessageAgentOwner.tsx and ChannelScreen.tsx respondToLookup → MessageRow
 // showRespondToIndicator.
-// DD-147: (1) every channel member who reads the admitted Agent directory sees "managed by <owner>",
-// from the directory's ownerDisplayName (Core: the owner's ACTIVE Tenant name) and the owner's
-// Workspace key for the profile popover; (2) only the Installation owner sees the respondTo badge,
-// from its own readable use grants; `anyone` is not offered (DD-125(6)), so only allowlist exists.
+// DD-147: (1) every Workspace member sees "managed by <owner>": the facts come from the member-readable
+// Agent author directory (Core `/agent-authors`, same admission as the member list, grants nothing),
+// not the SpiceDB-read-filtered Installation list; the owner's Workspace key comes from the member
+// list so the name opens that member's profile card; (2) only the Installation owner sees the respondTo
+// badge, from its own readable use grants; `anyone` is not offered (DD-125(6)), so only allowlist exists.
 import * as React from "react";
-import { useQueries } from "@tanstack/react-query";
-import { AgentRespondToMode, WorkspaceMembershipState, type AgentInstallationView, type WorkspaceMemberView } from "@client-kit/contracts";
+import { useQueries, useQuery } from "@tanstack/react-query";
+import { AgentRespondToMode, WorkspaceMembershipState, type AgentAuthorDirectory, type WorkspaceMemberView } from "@client-kit/contracts";
 import type { BffClient } from "../../client";
 import { respondToModeOf } from "../agent-activity/respondTo";
 import { normalizePubkey } from "../conversations/pubkey";
@@ -18,40 +19,63 @@ import type { AgentAddressHost } from "./MessageAgentAddressPrefix";
 export type AgentAuthorFact = {
   ownerLabel: string | null;
   ownerPubkey: string | null;
-  displayName: string;
+  ownerPrincipalId: string | null;
+  displayName: string | null;
   respondTo?: "allowlist";
 };
 export type AgentAuthorFacts = ReadonlyMap<string, AgentAuthorFact>;
 
-type Directory = {
-  principalId: string;
-  agents: readonly { installation: AgentInstallationView; pubkey: string; displayName: string }[];
+/** The member-readable directory, the Workspace members and the viewer (null until known). */
+export type AgentAuthorDirectoryScope = {
+  principalId: string | null;
+  agents: AgentAuthorDirectory["agents"];
   members: readonly WorkspaceMemberView[];
 };
 
-/** Pure projection of the admitted directory (plus the owner's respondTo modes). */
-export function agentAuthorFacts(directory: Directory | undefined,
+/** Pure projection of the member-readable directory (plus the owner's respondTo modes). */
+export function agentAuthorFacts(directory: AgentAuthorDirectoryScope | undefined,
   allowlisted: ReadonlySet<string> = new Set()): AgentAuthorFacts {
   const facts = new Map<string, AgentAuthorFact>();
   if (!directory) return facts;
   for (const agent of directory.agents) {
-    const owner = directory.members.find((member) => member.principalId === agent.installation.ownerPrincipalId
+    const owner = directory.members.find((member) => member.principalId === agent.ownerPrincipalId
       && member.state === WorkspaceMembershipState.Active);
-    const ownerLabel = agent.installation.ownerDisplayName?.trim() || null;
-    facts.set(normalizePubkey(agent.pubkey), {
+    const ownerLabel = agent.ownerDisplayName?.trim() || null;
+    const ownerPubkey = ownerLabel ? owner?.pubkeys[0] ?? null : null;
+    facts.set(normalizePubkey(agent.agentPubkey), {
       ownerLabel,
-      ownerPubkey: ownerLabel ? owner?.pubkeys[0] ?? null : null,
-      displayName: agent.displayName,
-      ...(allowlisted.has(agent.installation.resourceId) ? { respondTo: "allowlist" as const } : {}),
+      ownerPubkey,
+      ownerPrincipalId: ownerPubkey ? agent.ownerPrincipalId : null,
+      displayName: agent.agentDisplayName?.trim() || null,
+      ...(allowlisted.has(agent.installationResourceId) ? { respondTo: "allowlist" as const } : {}),
     });
   }
   return facts;
 }
 
-/** The directory plus the viewer's own Installations' use pages (owner-only badge). */
-export function useAgentAuthorFacts(client: Pick<BffClient, "agentInstallationUsers">, directory: Directory | undefined): AgentAuthorFacts {
-  const owned = (directory?.agents ?? []).filter((agent) => agent.installation.ownerPrincipalId === directory?.principalId)
-    .map((agent) => agent.installation.resourceId);
+/**
+ * The member-readable directory of one Workspace, plus the viewer's own Installations' use pages
+ * (owner-only badge). `principalId` is the viewer's Tenant Principal; a host that does not hold it
+ * omits it and the platform session supplies it. Null scope reads nothing.
+ */
+export function useAgentAuthorFacts(
+  client: Pick<BffClient, "agentAuthors" | "members" | "agentInstallationUsers" | "session">,
+  scope: { workspaceId: string; principalId?: string } | null | undefined,
+): AgentAuthorFacts {
+  const enabled = Boolean(scope);
+  const workspaceId = scope?.workspaceId ?? "";
+  const session = useQuery({ queryKey: ["platform", "session"], queryFn: () => client.session(),
+    enabled: enabled && !scope?.principalId, retry: false });
+  const viewer = scope?.principalId ?? session.data?.tenantPrincipalId ?? null;
+  const authors = useQuery({ queryKey: ["platform", "agent-authors", workspaceId],
+    queryFn: () => client.agentAuthors(workspaceId), enabled, retry: false });
+  const members = useQuery({ queryKey: ["platform", "members", workspaceId],
+    queryFn: () => client.members(workspaceId), enabled, retry: false });
+  const directory = React.useMemo<AgentAuthorDirectoryScope | undefined>(() => enabled && authors.data
+    ? { principalId: viewer, agents: authors.data.agents, members: members.data ?? [] } : undefined,
+  [enabled, viewer, authors.data, members.data]);
+  const owned = (directory?.agents ?? []).filter((agent) => directory?.principalId
+    && agent.ownerPrincipalId === directory.principalId).map((agent) => agent.installationResourceId);
   const pages = useQueries({ queries: owned.map((resourceId) => ({
     queryKey: ["platform", "agent-installation-users", resourceId],
     queryFn: () => client.agentInstallationUsers(resourceId),
@@ -68,6 +92,7 @@ export function withAgentAuthorFacts(message: TimelineMessage, facts: AgentAutho
   const fact = message.pubkey ? facts.get(normalizePubkey(message.pubkey)) : undefined;
   if (!fact) return message;
   return { ...message, isAgent: true, ownerLabel: fact.ownerLabel, ownerPubkey: fact.ownerPubkey,
+    ownerPrincipalId: fact.ownerPrincipalId,
     ...(fact.respondTo ? { respondTo: fact.respondTo } : {}) };
 }
 
@@ -79,12 +104,21 @@ export function agentAddressHost(facts: AgentAuthorFacts): AgentAddressHost {
   };
 }
 
-type AgentAuthorScope = { facts: AgentAuthorFacts; host: AgentAddressHost };
+/** The owner whose name opens the host's member profile card (DD-147(1)). */
+export type AgentOwnerTarget = { principalId: string; pubkey: string; label: string };
+export type AgentOwnerRenderer = (owner: AgentOwnerTarget, name: React.ReactNode) => React.ReactNode;
+
+type AgentAuthorScope = { facts: AgentAuthorFacts; host: AgentAddressHost; renderOwner?: AgentOwnerRenderer };
 const AgentAuthorFactsContext = React.createContext<AgentAuthorScope | null>(null);
 
-/** Hosts whose rows are rendered deep in shared timelines provide the facts once (Desktop). */
-export function AgentAuthorFactsProvider({ facts, children }: { facts: AgentAuthorFacts; children: React.ReactNode }) {
-  const scope = React.useMemo(() => ({ facts, host: agentAddressHost(facts) }), [facts]);
+/**
+ * Hosts provide the facts once for rows rendered deep in shared timelines, and how the owner's
+ * name opens that member's profile card on this host.
+ */
+export function AgentAuthorFactsProvider({ facts, renderOwner, children }: {
+  facts: AgentAuthorFacts; renderOwner?: AgentOwnerRenderer; children: React.ReactNode;
+}) {
+  const scope = React.useMemo(() => ({ facts, host: agentAddressHost(facts), renderOwner }), [facts, renderOwner]);
   return <AgentAuthorFactsContext.Provider value={scope}>{children}</AgentAuthorFactsContext.Provider>;
 }
 

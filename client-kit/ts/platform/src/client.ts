@@ -22,6 +22,7 @@ import type {
   AgentDefinitionView,
   AgentInstallationPage,
   AgentInstallationUsePage,
+  AgentAuthorDirectory,
   AgentInstallationCandidatePage,
   AgentDelegationPage,
   AgentDelegationTargetPage,
@@ -485,6 +486,10 @@ export function createBffClient(transport: BffTransport) {
     /** 成员按人聚合：`pubkeys` 是此人全部 ACTIVE 的 Buzz 公钥（DD-77）。 */
     members: (workspaceId: string) =>
       get<WorkspaceMemberView[]>(`/api/v1/workspaces/${encodeURIComponent(workspaceId)}/members`),
+
+    /** DD-147(1)：成员可读的 Agent 作者目录（owner 行），与成员名单同一准入，不授予任何权限。 */
+    agentAuthors: (workspaceId: string) =>
+      get<AgentAuthorDirectory>(`/api/v1/workspaces/${encodeURIComponent(workspaceId)}/agent-authors`),
 
     /** DD-82：管理候选人来自 Tenant 成员事实，角色来自 SpiceDB；游标按 Principal ID。 */
     roleMembers: (workspaceId?: string, cursor?: string) => {
