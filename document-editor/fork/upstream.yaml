@@ -1,5 +1,5 @@
 # Complete native DocumentServer aggregate and each gitlink fixed by that tree.
-# This is source delivery, not a built image or an active editor binding.
+# The recorded image is a CI build, not a deployed instance or an active editor binding.
 project: document-editor
 reference_tree: DocumentServer
 upstream_url: https://github.com/ONLYOFFICE/DocumentServer
@@ -18,9 +18,9 @@ artifacts:
     inputs: [document-editor/fork/packaging/, document-editor/server/, document-editor/web-apps/, document-editor/sdkjs/, client-kit/embed/kailo-theme-tokens.css, web-client/web/public/app-icon.png, web-client/web/package-lock.json]
     build_args: [PLATFORM_DISPLAY_NAME]
     build_facts: {KAILO_SOURCE_COMMIT: source_commit, KAILO_BUILD_TIME: build_time_utc}
-    source_digest: none
-    artifact_digest: none
-    blocked: Built only as CI-node trials (latest 8bdf0b0d, not pushed, no digest recorded); the registered CI build, the DD-132(3) deployment receipt and V-SCN-186..190 acceptance on a deployed instance are still open.
+    source_digest: sha256:18097d4aeb67383386a5cd888bd776fa3c51ec9274c63c50fa905efaff72f4b9
+    artifact_digest: sha256:ccd6d81222478f042472a84c1483839266b8f96eaeb42976689c65f3f6551143
+    blocked: Registered CI build 73e3ee72 (source a854ab98, inputs unchanged on main a06b5913) is recorded above but not deployed; the DD-132(3) deployment receipt and V-SCN-186..190 acceptance on a deployed instance are still open.
 source_components:
   core: 3250a848ee4ef20c2fb8c38dc86350ec579124b8
   core-fonts: 7030c6681fb5bbed560675cb42422f91df15d5c9
