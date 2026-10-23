@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { InboxDetailChannelMembers } from "@client-kit/platform/react/inbox/InboxDetailChannelMembers";
 import { channelsQueryKey, nativeApplicationWorkspace, useWorkspaceChannelDirectory, workspaceVisibilityQueryKey } from "@/features/channels/hooks";
 import { useTheme } from "@/shared/theme/ThemeProvider";
+import { useNavigate } from "@tanstack/react-router";
 import { writeTextToClipboard } from "@/shared/lib/clipboard";
 import { Markdown } from "@/shared/ui/markdown";
 import type { Channel } from "@/shared/api/types";
@@ -525,6 +526,7 @@ function NativeInboxMessageDetail({
   // management sheet, resolved exactly as the channel header does (ChannelScreenHeader).
   const queryClient = useQueryClient();
   const { isDark } = useTheme();
+  const navigate = useNavigate();
   const membersDirectory = useWorkspaceChannelDirectory({ enabled: Boolean(selectedChannel) && selectedChannel?.channelType !== "dm" });
   const membersWorkspace = selectedChannel && selectedChannel.channelType !== "dm"
     ? nativeApplicationWorkspace(membersDirectory.data, { channelId: selectedChannel.id }) : undefined;
@@ -541,6 +543,11 @@ function NativeInboxMessageDetail({
           void queryClient.invalidateQueries({ queryKey: channelsQueryKey });
           void queryClient.invalidateQueries({ queryKey: workspaceVisibilityQueryKey });
         }, renderCanvas: (content) => <Markdown content={content} /> }}
+        // Original management sheet Workflows ingress, routed as the channel header does.
+        workflows={{
+          onOpenWorkflow: (workflowId) => { void navigate({ to: "/platform/workflows/$workflowId", params: { workflowId }, search: { workspaceId: membersWorkspace.id } }); },
+          onCreateWorkflow: () => { void navigate({ to: "/platform/$section", params: { section: "workflows" }, search: { workspaceId: membersWorkspace.id } }); },
+        }}
         onCopy={writeTextToClipboard} />
     : membersConversation ? <InboxDetailChannelMembers key={`conversation:${membersConversation.id}`} roster={{ kind: "conversation", conversation: membersConversation }}
         isDark={isDark} currentPubkey={currentPubkey}

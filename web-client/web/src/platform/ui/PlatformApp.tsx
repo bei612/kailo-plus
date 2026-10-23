@@ -566,6 +566,11 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
       <InboxPane
         key={searchScopeKey}
         isDark={isDark}
+        // Original management sheet Workflows ingress from the Inbox detail, as on the channel page.
+        workflowsFor={(workspaceId) => ({
+          onOpenWorkflow: (workflowId) => { void navigation.openWorkflow({ workflowId, workspaceId }, workspaceId); },
+          onCreateWorkflow: () => { void navigation.openWorkflowCreate(true, workspaceId); },
+        })}
         principalId={session.tenantPrincipalId}
         selectedItemId={navigation.inboxItemId}
         onSelectedItemIdChange={navigation.setInboxItemId}

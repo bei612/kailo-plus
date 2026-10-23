@@ -774,3 +774,13 @@ it("uses the original HTTP clipboard fallback and keeps a refused copy separate 
     success.mockRestore(); error.mockRestore();
   }
 });
+
+it("restores the original Inbox detail ChannelMembersBar for a DM context, with dialogs mounted only on open",async()=>{
+  await mountDm();
+  // Buzz InboxDetailPane L668-681: the members bar sits in the detail header.
+  expect(host.querySelector('[data-testid="channel-members-trigger"]')).not.toBeNull();
+  expect(host.querySelector('[data-testid="channel-management-trigger"]')).not.toBeNull();
+  // Neither the members dialog nor the management sheet is mounted (no reads) until opened.
+  expect(document.querySelector('[data-testid="channel-management-actions"]')).toBeNull();
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
+});

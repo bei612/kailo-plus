@@ -1,6 +1,7 @@
 // Host adapter for the original shared Inbox detail surface, not a message store.
 import { ReasonCode, WebMessageType, WorkspaceMembershipState, type WorkspaceMemberView, type ConversationView, type ConversationParticipant, type WorkspaceVisibility } from "@client-kit/contracts";
 import { InboxDetailChannelMembers } from "@client-kit/platform/react/inbox/InboxDetailChannelMembers";
+import type { ChannelWorkflowNavigation } from "@client-kit/platform/react/channel-management-sheet";
 import { useLocale, useT } from "@client-kit/platform/react/context";
 import { InboxMessageRowSurface } from "@client-kit/platform/react/inbox-surface";
 import { InboxDetailFrame } from "@client-kit/platform/react/inbox/InboxDetailFrame";
@@ -24,7 +25,7 @@ import { MessageAuthorAvatar, MessageAuthorIdentity, useMessageAuthorLabels, typ
 import { useMessageReactions } from "./useMessageReactions";
 import { BffVideoReviewProvider } from "@/features/chat/ui/BffVideoReview";
 
-export function InboxThreadPane({ principalId, workspaceId, channelId, conversation, forum = false, canInteract = true, rootId, selectedEventId, selectionItemId, channelName, senderLabel, members, onBack, onOpen, autoSendDraftKey, restoreDraftKey, replyTargetEventId, onOpenAuthor, onAuthorScopeUnavailable, onPublicationPendingChange, unreadBoundaryEventId, reopen, workspaceVisibility, isDark = false }: {
+export function InboxThreadPane({ principalId, workspaceId, channelId, conversation, forum = false, canInteract = true, rootId, selectedEventId, selectionItemId, channelName, senderLabel, members, onBack, onOpen, autoSendDraftKey, restoreDraftKey, replyTargetEventId, onOpenAuthor, onAuthorScopeUnavailable, onPublicationPendingChange, unreadBoundaryEventId, reopen, workspaceVisibility, isDark = false, workflows }: {
   principalId: string; workspaceId: string; rootId: string; selectedEventId: string; channelName: string; senderLabel?: string;
   members: (WorkspaceMemberView | ConversationParticipant)[]; onBack?: () => void; onOpen?: () => void;
   conversation?: ConversationView;
@@ -46,6 +47,8 @@ export function InboxThreadPane({ principalId, workspaceId, channelId, conversat
   workspaceVisibility?: WorkspaceVisibility;
   /** Host theme state for the original channel management overlay. */
   isDark?: boolean;
+  /** Host Workflows routes for the context Workspace (original management sheet ingress). */
+  workflows?: ChannelWorkflowNavigation;
 }) {
   const t = useT(); const locale = useLocale();
   const [selection, setSelection] = useState({ anchor: selectedEventId, root: rootId });
@@ -81,6 +84,7 @@ export function InboxThreadPane({ principalId, workspaceId, channelId, conversat
           publishTopic: async (id, request, idempotencyKey) => { await publishChannelTopic(id, request, idempotencyKey); },
           renderCanvas: (content) => <MessageContent content={content} workspaceId={workspaceId} />,
         }}
+        workflows={workflows}
         onCopy={writeTextToClipboard} /> : undefined;
   const currentHeaderDelete = useRef<(() => void) | undefined>(undefined);
   const { thread, messages, contextIds, reactionEvents, denied, interrupted, refresh } = useWorkspaceThread(principalId, workspaceId, anchorRoot, conversation?.id, conversation ? anchor : undefined, true, conversation?.channelId ?? channelId, forum);
