@@ -334,11 +334,13 @@ pub(crate) async fn avatar(
     }
 }
 
-/// DD-133(3): the IdP `picture` claim of every user is this per-subject route,
-/// so a component page shows the Kailo avatar without the IdP ever holding it.
-/// It answers only an authenticated requester and only inside the requester's
-/// own Tenant: the subject's ACTIVE member there, its SERVER HUMAN identity,
-/// and that identity's community avatar media. Anything else is 404.
+/// DD-133(3), 07 §4.7.3: the IdP `picture` claim of every user is this
+/// per-subject route, so a component page shows the Kailo avatar without the
+/// IdP ever holding it. It answers only an authenticated requester and only
+/// inside the requester's own Tenant: the subject's ACTIVE member there, its
+/// SERVER HUMAN identity, and that identity's community avatar media. Anything
+/// else, including a request without a Kailo session, is 404: the route must
+/// not tell an outsider whether a person or a session exists.
 pub(crate) async fn identity_avatar(
     State(state): State<BffState>,
     axum::extract::Path(subject): axum::extract::Path<String>,
@@ -346,26 +348,78 @@ pub(crate) async fn identity_avatar(
 ) -> Response {
     let ctx = match resolve_execution_context(&state, &headers).await {
         Ok(v) => v,
-        Err(r) => return r,
-    };
-    let not_found = || {
-        (
-            StatusCode::NOT_FOUND,
-            [(axum::http::header::CACHE_CONTROL, "no-store")],
-        )
-            .into_response()
+        Err(r) => return avatar_refusal(r),
     };
     // Same IdP as the requester: the gateway's verified issuer projection.
     let Some(issuer) = headers
         .get(crate::bff::HEADER_ISSUER)
         .and_then(|v| v.to_str().ok())
     else {
-        return not_found();
+        return avatar_not_found();
     };
     if subject.is_empty() || subject.len() > 255 {
-        return not_found();
+        return avatar_not_found();
     }
-    let pubkey: Option<String> = match sqlx::query_scalar(
+    let pubkey = match avatar_pubkey(&state.pool, issuer, &subject, ctx.tenant_id).await {
+        Ok(v) => v,
+        Err(_) => return unavailable(),
+    };
+    let Some(pubkey) = pubkey else {
+        return avatar_not_found();
+    };
+    let (client, host) = match client(&state, &ctx).await {
+        Ok(v) => v,
+        Err(r) => return r,
+    };
+    let event = match read_author(&state, &client, &pubkey).await {
+        Ok(v) => v,
+        Err(r) => return r,
+    };
+    match avatar_location(event.as_ref(), &host) {
+        Some(path) => (
+            StatusCode::FOUND,
+            [
+                (axum::http::header::LOCATION, path),
+                (axum::http::header::CACHE_CONTROL, "no-store".to_owned()),
+            ],
+        )
+            .into_response(),
+        None => avatar_not_found(),
+    }
+}
+
+fn avatar_not_found() -> Response {
+    (
+        StatusCode::NOT_FOUND,
+        [(axum::http::header::CACHE_CONTROL, "no-store")],
+    )
+        .into_response()
+}
+
+/// No session, an ended session or a requester without an ACTIVE membership
+/// is the same 404 as an unknown subject. Only a dependency failure keeps its
+/// own status, so an outage is never shown as "no avatar".
+fn avatar_refusal(response: Response) -> Response {
+    if matches!(
+        response.status(),
+        StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN | StatusCode::NOT_FOUND
+    ) {
+        avatar_not_found()
+    } else {
+        response
+    }
+}
+
+/// The subject's SERVER HUMAN Buzz pubkey in the requester's Tenant: the same
+/// IdP subject, an ACTIVE HumanIdentity with an ACTIVE membership in that
+/// Tenant, and the membership principal's single non-revoked SERVER binding.
+pub(crate) async fn avatar_pubkey<'e>(
+    executor: impl sqlx::PgExecutor<'e>,
+    issuer: &str,
+    subject: &str,
+    tenant: Uuid,
+) -> Result<Option<String>, sqlx::Error> {
+    sqlx::query_scalar(
         "select b.pubkey from identity.external_identity ei
          join identity.human_identity hi on hi.id = ei.human_identity_id and hi.status = 'ACTIVE'
          join identity.tenant_membership tm on tm.human_identity_id = hi.id
@@ -376,25 +430,16 @@ pub(crate) async fn identity_avatar(
          where ei.issuer = $1 and ei.subject = $2 and ei.status = 'ACTIVE'",
     )
     .bind(issuer)
-    .bind(&subject)
-    .bind(ctx.tenant_id)
-    .fetch_optional(&state.pool)
+    .bind(subject)
+    .bind(tenant)
+    .fetch_optional(executor)
     .await
-    {
-        Ok(v) => v,
-        Err(_) => return unavailable(),
-    };
-    let Some(pubkey) = pubkey else {
-        return not_found();
-    };
-    let (client, host) = match client(&state, &ctx).await {
-        Ok(v) => v,
-        Err(r) => return r,
-    };
-    let event = match read_author(&state, &client, &pubkey).await {
-        Ok(v) => v,
-        Err(r) => return r,
-    };
+}
+
+/// The kind:0 `picture` of that identity, only when it is this community's
+/// media; its poster frame for an animated avatar. External and inline
+/// pictures are never proxied.
+pub(crate) fn avatar_location(event: Option<&nostr::Event>, host: &str) -> Option<String> {
     let picture = event
         .and_then(|e| serde_json::from_str::<Value>(&e.content).ok())
         .and_then(|content| {
@@ -402,24 +447,13 @@ pub(crate) async fn identity_avatar(
                 .get("picture")
                 .and_then(Value::as_str)
                 .map(str::to_owned)
-        });
-    let Some(picture) = picture else {
-        return not_found();
-    };
+        })?;
     let poster = picture
         .split_once("#buzz-anim=")
         .map_or(picture.as_str(), |(poster, _)| poster);
-    match avatar_media_paths(Some(picture.as_str()), &host).get(poster) {
-        Some(path) => (
-            StatusCode::FOUND,
-            [
-                (axum::http::header::LOCATION, path.clone()),
-                (axum::http::header::CACHE_CONTROL, "no-store".to_owned()),
-            ],
-        )
-            .into_response(),
-        None => not_found(),
-    }
+    avatar_media_paths(Some(picture.as_str()), host)
+        .get(poster)
+        .cloned()
 }
 
 fn merged_content(

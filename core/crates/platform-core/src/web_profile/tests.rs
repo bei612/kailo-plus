@@ -288,3 +288,216 @@ async fn original_publish_intent_is_atomic_and_unknown_profile_does_not_starve_l
     );
     tx.rollback().await.unwrap();
 }
+
+// 07 §4.7.3: the per-subject avatar route. Only this community's media is
+// redirected; inline, external or missing pictures are the same 404.
+#[test]
+fn identity_avatar_redirects_only_this_community_media() {
+    let keys = nostr::Keys::generate();
+    let hash = "ab".repeat(32);
+    let host = "relay.kailo.test:8090";
+    let profile = |content: String| event(&keys, nostr::Kind::Metadata, &content);
+    let media = profile(json!({"picture": format!("http://{host}/media/{hash}.png")}).to_string());
+    assert_eq!(
+        avatar_location(Some(&media), host).as_deref(),
+        Some(format!("/api/v1/profile/media/{hash}").as_str())
+    );
+    let animated = profile(
+        json!({"picture": format!("http://{host}/media/{hash}.png#buzz-anim=http%3A%2F%2F{host}%2Fmedia%2F{}.webm", "cd".repeat(32))})
+            .to_string(),
+    );
+    assert_eq!(
+        avatar_location(Some(&animated), host).as_deref(),
+        Some(format!("/api/v1/profile/media/{hash}").as_str())
+    );
+    for content in [
+        json!({"name": "no picture"}).to_string(),
+        json!({"picture": "data:image/svg+xml,%3Csvg%3E"}).to_string(),
+        json!({"picture": format!("http://elsewhere.test/media/{hash}.png")}).to_string(),
+        json!({"picture": format!("http://user:pw@{host}/media/{hash}.png")}).to_string(),
+        json!({"picture": format!("http://{host}/other/{hash}.png")}).to_string(),
+        "not json".to_owned(),
+    ] {
+        assert_eq!(
+            avatar_location(Some(&profile(content.clone())), host),
+            None,
+            "{content}"
+        );
+    }
+    assert_eq!(avatar_location(None, host), None);
+}
+
+#[test]
+fn identity_avatar_answers_404_without_a_session_but_keeps_outages() {
+    for status in [
+        StatusCode::UNAUTHORIZED,
+        StatusCode::FORBIDDEN,
+        StatusCode::NOT_FOUND,
+    ] {
+        let response = avatar_refusal(status.into_response());
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        assert_eq!(
+            response.headers()[axum::http::header::CACHE_CONTROL],
+            "no-store"
+        );
+    }
+    for status in [
+        StatusCode::SERVICE_UNAVAILABLE,
+        StatusCode::INTERNAL_SERVER_ERROR,
+    ] {
+        assert_eq!(avatar_refusal(status.into_response()).status(), status);
+    }
+}
+
+#[tokio::test]
+#[ignore = "requires PROFILE_TEST_DATABASE_URL pointing at an isolated migrated database"]
+async fn identity_avatar_resolves_the_subjects_server_identity_inside_the_requesters_tenant() {
+    let pool = sqlx::PgPool::connect(&std::env::var("PROFILE_TEST_DATABASE_URL").unwrap())
+        .await
+        .unwrap();
+    let mut tx = pool.begin().await.unwrap();
+    let provider = Uuid::new_v4();
+    let issuer = format!("urn:fixture:{provider}");
+    sqlx::query("insert into identity.identity_provider(id,issuer,client_id,claim_mapping_version,status) values($1,$2,'fixture-avatar',1,'ACTIVE')")
+        .bind(provider).bind(&issuer).execute(&mut *tx).await.unwrap();
+    let (tenant, foreign) = (Uuid::new_v4(), Uuid::new_v4());
+    for id in [tenant, foreign] {
+        sqlx::query("insert into identity.tenant(id,slug,name,state) values($1,$2,'Avatar fixture','ACTIVE')")
+            .bind(id).bind(id.to_string()).execute(&mut *tx).await.unwrap();
+    }
+    // One person per row: (Tenant, membership, human, identity, binding custody/state).
+    let people = [
+        (
+            tenant,
+            "ACTIVE",
+            "ACTIVE",
+            "ACTIVE",
+            Some(("SERVER", "ACTIVE")),
+        ), // resolves
+        (
+            tenant,
+            "REVOKED",
+            "ACTIVE",
+            "ACTIVE",
+            Some(("SERVER", "ACTIVE")),
+        ), // left the Tenant
+        (
+            tenant,
+            "ACTIVE",
+            "DISABLED",
+            "ACTIVE",
+            Some(("SERVER", "ACTIVE")),
+        ), // disabled person
+        (
+            tenant,
+            "ACTIVE",
+            "ACTIVE",
+            "DISABLED",
+            Some(("SERVER", "ACTIVE")),
+        ), // disabled identity
+        (
+            tenant,
+            "ACTIVE",
+            "ACTIVE",
+            "ACTIVE",
+            Some(("SERVER", "REVOKED")),
+        ), // key revoked
+        (
+            tenant,
+            "ACTIVE",
+            "ACTIVE",
+            "ACTIVE",
+            Some(("CLIENT", "ACTIVE")),
+        ), // device key only
+        (tenant, "ACTIVE", "ACTIVE", "ACTIVE", None), // no Buzz identity
+        (
+            foreign,
+            "ACTIVE",
+            "ACTIVE",
+            "ACTIVE",
+            Some(("SERVER", "ACTIVE")),
+        ), // other Tenant
+    ];
+    let mut subjects = Vec::new();
+    for (owner, membership, human_status, identity_status, binding) in people {
+        let (human, principal, subject) =
+            (Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4().to_string());
+        sqlx::query("insert into identity.human_identity(id,display_name,status) values($1,'Avatar Person',$2)")
+            .bind(human).bind(human_status).execute(&mut *tx).await.unwrap();
+        sqlx::query("insert into identity.external_identity(id,provider_id,issuer,subject,human_identity_id,status) values($1,$2,$3,$4,$5,$6)")
+            .bind(Uuid::new_v4()).bind(provider).bind(&issuer).bind(&subject).bind(human).bind(identity_status)
+            .execute(&mut *tx).await.unwrap();
+        sqlx::query("insert into identity.principal(id,tenant_id,kind,status) values($1,$2,'HUMAN','ACTIVE')")
+            .bind(principal).bind(owner).execute(&mut *tx).await.unwrap();
+        sqlx::query("insert into identity.tenant_membership(id,tenant_id,human_identity_id,tenant_principal_id,state) values($1,$2,$3,$4,$5)")
+            .bind(Uuid::new_v4()).bind(owner).bind(human).bind(principal).bind(membership)
+            .execute(&mut *tx).await.unwrap();
+        let mut pubkey = None;
+        if let Some((custody, state)) = binding {
+            let key = nostr::Keys::generate().public_key().to_hex();
+            let server = custody == "SERVER";
+            sqlx::query("insert into identity.buzz_identity_binding
+                 (tenant_id,principal_id,pubkey,custody,private_key_secret_ref,private_key_secret_version,
+                  private_key_secret_audience,private_key_secret_status,kind,state)
+                 values($1,$2,$3,$4,$5,$6,$7,$8,'HUMAN',$9)")
+                .bind(owner).bind(principal).bind(&key).bind(custody)
+                .bind(server.then_some("fixture/avatar")).bind(server.then_some(1))
+                .bind(server.then_some("fixture"))
+                .bind(server.then_some(if state == "REVOKED" { "SUPERSEDED" } else { "ACTIVE" }))
+                .bind(state).execute(&mut *tx).await.unwrap();
+            pubkey = Some(key);
+        }
+        subjects.push((subject, pubkey));
+    }
+    // A device key next to the SERVER identity does not change the answer.
+    let device = nostr::Keys::generate().public_key().to_hex();
+    let first: Uuid = sqlx::query_scalar("select tm.tenant_principal_id from identity.tenant_membership tm
+        join identity.external_identity ei on ei.human_identity_id=tm.human_identity_id where ei.subject=$1")
+        .bind(&subjects[0].0).fetch_one(&mut *tx).await.unwrap();
+    sqlx::query("insert into identity.buzz_identity_binding(tenant_id,principal_id,pubkey,custody,kind,state)
+         values($1,$2,$3,'CLIENT','HUMAN','ACTIVE')")
+        .bind(tenant).bind(first).bind(&device).execute(&mut *tx).await.unwrap();
+
+    assert_eq!(
+        avatar_pubkey(&mut *tx, &issuer, &subjects[0].0, tenant)
+            .await
+            .unwrap(),
+        subjects[0].1
+    );
+    for (index, (subject, _)) in subjects.iter().enumerate().skip(1) {
+        assert_eq!(
+            avatar_pubkey(&mut *tx, &issuer, subject, tenant)
+                .await
+                .unwrap(),
+            None,
+            "row {index} must not resolve in the requester's Tenant"
+        );
+    }
+    // The other Tenant's person resolves only for requesters of that Tenant.
+    assert_eq!(
+        avatar_pubkey(&mut *tx, &issuer, &subjects[7].0, foreign)
+            .await
+            .unwrap(),
+        subjects[7].1
+    );
+    assert_eq!(
+        avatar_pubkey(&mut *tx, &issuer, &subjects[0].0, foreign)
+            .await
+            .unwrap(),
+        None
+    );
+    // The requester's IdP is part of the subject's identity.
+    assert_eq!(
+        avatar_pubkey(&mut *tx, "urn:fixture:another-idp", &subjects[0].0, tenant)
+            .await
+            .unwrap(),
+        None
+    );
+    assert_eq!(
+        avatar_pubkey(&mut *tx, &issuer, "unknown-subject", tenant)
+            .await
+            .unwrap(),
+        None
+    );
+    tx.rollback().await.unwrap();
+}
