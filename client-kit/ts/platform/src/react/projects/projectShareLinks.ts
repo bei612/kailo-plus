@@ -1,12 +1,13 @@
 // Buzz 779af8886caae1317b4de962082429867ab61503
 // desktop/src/features/projects/lib/projectShareLinks.ts: original project,
-// repository, Issue and PR builders.
-import { buildIssueLink, buildProjectLink, buildPullRequestLink, buildRepoLink, isLinkableCoordinate } from "./entityLink";
+// repository, commit, Issue and PR builders.
+import { buildCommitLink, buildIssueLink, buildProjectLink, buildPullRequestLink, buildRepoLink, isLinkableCoordinate } from "./entityLink";
 import type { Project, Repository } from "./projectModels";
 import type { ProjectIssue } from "./projectIssues.mjs";
 import type { ProjectPullRequest } from "./projectPullRequests.mjs";
 
 const HEX64_RE = /^[a-fA-F0-9]{64}$/;
+const GIT_OBJECT_ID_RE = /^(?:[a-fA-F0-9]{40}|[a-fA-F0-9]{64})$/;
 
 function repositoryCoordinate(address: string | null | undefined) {
   if (!address) return null;
@@ -54,4 +55,10 @@ export function repositoryShareLink(repository: Repository): string | null {
   const coordinate = repositoryCoordinate(repository.repoAddress);
   return coordinate && isLinkableCoordinate(coordinate.owner, coordinate.dtag)
     ? buildRepoLink(coordinate) : null;
+}
+
+export function commitShareLink(repository: Repository, commitHash: string): string | null {
+  const coordinate = repositoryCoordinate(repository.repoAddress);
+  return coordinate && GIT_OBJECT_ID_RE.test(commitHash) && isLinkableCoordinate(coordinate.owner, coordinate.dtag)
+    ? buildCommitLink({ ...coordinate, commitHash }) : null;
 }

@@ -1,7 +1,7 @@
 // Buzz 779af8886caae1317b4de962082429867ab61503 desktop/src/features/projects/ui/
 // ProjectDetailFeedPanels.tsx::ActivityPanel and ProjectHomeCommitsPanel.tsx. Same rows, author
-// matching, repository/branch metadata and partial-failure notice. Row selection-to-Agent is a
-// missing consumer of the restored ProjectWorkItemRow and is not rendered.
+// matching, repository/branch metadata and partial-failure notice, and the original
+// commitSelectionItem row selection (shift range over the listed commits) inside a selection provider.
 import { AlertTriangle, FolderGit2, GitBranch, GitCommitHorizontal } from "lucide-react";
 import { useUiT } from "../context";
 import { resolveUserLabel, type UserProfileLookup } from "../messages/system/identity";
@@ -18,6 +18,14 @@ import type { ProjectPullRequest } from "./projectPullRequests.mjs";
 import { commitAuthorPubkeysFromPullRequests, profileForCommit, type ViewerGitIdentity } from "./lib/projectContributorMatching";
 import { projectRepoUnavailablePresentation, projectRepoUnavailableReason } from "./lib/projectRepoAvailability";
 import { relativeTime } from "./lib/projectsViewHelpers";
+import { selectionItemFromCommit } from "./lib/projectSelection";
+import { commitShareLink } from "./projectShareLinks";
+
+/** Original ProjectDetailFeedPanels.tsx::commitSelectionItem. */
+function commitSelectionItem(commit: ProjectRepoCommit, repository: Repository, projectId: string, author?: string | null) {
+  return selectionItemFromCommit({ author, channelId: repository.channelId, commitHash: commit.hash, projectId,
+    shareLink: commitShareLink(repository, commit.hash), title: commit.subject });
+}
 
 type CommitItem = {
   branch?: string;
@@ -59,6 +67,9 @@ export function ActivityPanel({
       />
     );
   }
+
+  const rangeItems = items.map((item) => commitSelectionItem(item.commit, item.project, item.projectId,
+    profileForCommit(item.commit, profiles, commitAuthorPubkeysFromPullRequests(item.pullRequests ?? []), viewerGitIdentity)?.pubkey));
 
   return (
     <section className={PROJECT_DETAIL_PANEL_CLASS} data-project-detail-panel data-testid="project-commits">
@@ -103,6 +114,7 @@ export function ActivityPanel({
                 ) : undefined
               }
               onOpen={onSelectCommit ? () => onSelectCommit(item.commit, item.project) : undefined}
+              selection={{ item: commitSelectionItem(item.commit, item.project, item.projectId, matchedProfile?.pubkey), rangeItems }}
               statusIcon={<GitCommitHorizontal className="h-3.5 w-3.5 text-muted-foreground/70" />}
               testId="project-activity-feed-item"
               title={item.commit.subject}

@@ -1,7 +1,8 @@
 // Buzz 779af8886caae1317b4de962082429867ab61503 desktop/src/features/projects/ui/DiscussionChannels.tsx::DiscussedInChannels.
 // Inside project detail a hit opens the original ProjectConversationPanel beside the detail when
 // the host renders governed channel threads; elsewhere existing host navigation is the original
-// fallback. DiscussionChannelsPanel is the original repository Channels tab over the same read.
+// fallback. DiscussionChannelsPanel is the original repository Channels tab over the same read,
+// with the original channel-row selection (shift range over the listed channels).
 import * as React from "react";
 import { toast } from "sonner";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -16,6 +17,7 @@ import { useUiT } from "../context";
 import { Hash } from "lucide-react";
 import { BuzzLoadingState } from "./BuzzLoadingState";
 import { ProjectEntityListRow } from "./ProjectEntityListRow";
+import { selectionItemFromChannel } from "./lib/projectSelection";
 import { ProjectPanelState } from "./ProjectPanelState";
 import { openDiscussionHit, useProjectConversationPanel } from "./ProjectConversationPanelContext";
 
@@ -412,6 +414,11 @@ export function DiscussionChannelsPanel({
     );
   }
 
+  // Original DiscussionChannelsPanel selection: each channel row is a selectable item whose range
+  // runs over the listed channels (shift-select) in the repository Channels tab.
+  const rangeItems = channels.map((channel) => selectionItemFromChannel({
+    channelId: channel.id, people: channel.participants, title: `#${channelName(channel.id, channel.name)}` }));
+
   return (
     <div className="px-4" data-testid="project-discussion-channels-panel">
       <ul data-testid="discussion-channels">
@@ -434,6 +441,7 @@ export function DiscussionChannelsPanel({
                 onClick={() => open(channel.id, latestHit)}
                 peopleSlot={<ProjectEntityFacepile participants={channel.participants} profiles={profiles} />}
                 peopleTestId="project-channel-participants"
+                selection={{ item: selectionItemFromChannel({ channelId: channel.id, people: channel.participants, title: `#${name}` }), rangeItems }}
                 testId="project-channel-row"
                 title={`#${name}`}
                 titleAttr={latestHit ? t("projects.discussion.openLatest", { name }) : t("projects.discussion.openNamed", { name })}
