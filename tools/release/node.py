@@ -819,6 +819,14 @@ def scratch_entries(roots):
     return found
 
 
+def current_pin(releases):
+    """journal 中最近一次 SUCCEEDED 的 deploy 的 commit。"""
+    succeeded = [r for r in releases if r.get("state") == "SUCCEEDED"]
+    if not succeeded:
+        return None
+    return max(succeeded, key=lambda r: (r.get("finished_at") or r.get("started_at") or 0))["commit"]
+
+
 def retention_decision(trees, *, now, policy, references=None, releases=(), active=(), main=None, keep=(),
                        scratch=None):
     """纯推导。trees: {commit: 最新活动时间}；references: {commit: [原因]}（容器挂载与链接）；
@@ -834,10 +842,9 @@ def retention_decision(trees, *, now, policy, references=None, releases=(), acti
     for commit, reasons in (references or {}).items():
         for reason in reasons:
             hold(commit, reason)
-    succeeded = [r for r in releases if r.get("state") == "SUCCEEDED"]
-    if succeeded:
-        pin = max(succeeded, key=lambda r: (r.get("finished_at") or r.get("started_at") or 0))
-        hold(pin["commit"], "当前 pin（最近一次成功发布）")
+    pin = current_pin(releases)
+    if pin:
+        hold(pin, "当前 pin（最近一次成功发布）")
     ordered = sorted(releases, key=lambda r: r.get("started_at") or 0, reverse=True)
     for rank, r in enumerate(ordered[:policy["keep_releases"]], 1):
         hold(r["commit"], f"最近 {policy['keep_releases']} 次发布之一（第 {rank} 新）")
@@ -945,20 +952,79 @@ def origin_main(cfg):
     return value if r.returncode == 0 and TREE_NAME.fullmatch(value) else None
 
 
-def docker_prune(dry_run):
-    """未被任何容器使用、且早于 72h 的镜像与构建缓存。dry-run 只回报 docker system df 的可回收上界。"""
+CHECK_IMAGE = "local/kailo-check:"
+CHECK_RECIPE = "tools/check.Dockerfile"
+HOLD_LABEL = "io.kailo.retention.hold"
+
+
+def git_show(repo):
+    """(commit, 仓库内路径) → 文件内容 bytes；对象不存在时 None。"""
+    def show(commit, path):
+        r = run(["git", "-C", str(repo), "show", f"{commit}:{path}"], check=False)
+        return r.stdout if r.returncode == 0 else None
+    return show
+
+
+def protected_check_images(commits, show):
+    """检查镜像按配方 SHA-256 命名（local/kailo-check:<sha256(tools/check.Dockerfile)>）。commits: [(commit, 原因)]
+    → {镜像引用: [原因]}：这些 commit 的配方对应的检查镜像不得被 prune（重建一次很贵）。"""
+    found = {}
+    for commit, reason in commits:
+        if not commit:
+            continue
+        recipe = show(commit, CHECK_RECIPE)
+        if recipe is None:
+            raise NodeError(f"读不到 {commit[:12]} 的 {CHECK_RECIPE}，无法确定要保护的检查镜像，不执行 docker prune")
+        ref = CHECK_IMAGE + hashlib.sha256(recipe).hexdigest()
+        if reason not in found.setdefault(ref, []):
+            found[ref].append(reason)
+    return found
+
+
+def docker_prune(dry_run, protect=None, docker=None):
+    """未被任何容器使用、且早于 72h 的镜像与构建缓存。protect 中的镜像（{引用: [原因]}）在 image prune 期间各由一个
+    从不启动的 created 容器（带 HOLD_LABEL）占用，prune 之后删除；上次异常遗留的占位容器先清掉。
+    dry-run 只回报 docker system df 的可回收上界与受保护镜像。"""
+    docker = docker or (lambda argv: out(DOCKER + argv))
+    protect = protect or {}
     commands = [["image", "prune", "-a", "-f", "--filter", f"until={DOCKER_PRUNE_UNTIL}"],
                 ["builder", "prune", "-f", "--filter", f"until={DOCKER_PRUNE_UNTIL}"]]
+
+    def image_id(ref):
+        try:
+            return docker(["image", "inspect", "--format", "{{.Id}}", ref]) or None
+        except NodeError:
+            return None
+
+    present = {ref: image_id(ref) for ref in sorted(protect)}
+    report = dict(protected={ref: dict(image=present[ref], reasons=protect[ref]) for ref in sorted(protect)})
     if dry_run:
-        rows = [json.loads(line) for line in out(DOCKER + ["system", "df", "--format", "{{json .}}"]).splitlines() if line]
-        return dict(commands=[" ".join(["docker"] + c) for c in commands],
-                    reclaimable_upper_bound={r.get("Type"): r.get("Reclaimable") for r in rows})
-    reclaimed = {}
-    for argv in commands:
-        text = out(DOCKER + argv)
-        m = re.search(r"Total(?: reclaimed space)?:\s*(.+)$", text, re.M)
-        reclaimed[argv[0]] = m.group(1).strip() if m else "0B"
-    return dict(reclaimed=reclaimed)
+        rows = [json.loads(line) for line in docker(["system", "df", "--format", "{{json .}}"]).splitlines() if line]
+        report.update(commands=[" ".join(["docker"] + c) for c in commands],
+                      reclaimable_upper_bound={r.get("Type"): r.get("Reclaimable") for r in rows})
+        return report
+
+    def release_holds():
+        stale = docker(["ps", "-a", "-q", "--no-trunc", "--filter", f"label={HOLD_LABEL}"]).split()
+        if stale:
+            docker(["rm", "-f", *stale])
+
+    release_holds()
+    reclaimed, holds = {}, []
+    try:
+        for ref, image in present.items():
+            if image:
+                holds.append(docker(["create", "--pull=never", "--network", "none", "--label", f"{HOLD_LABEL}={ref}",
+                                     image, "/kailo-retention-hold"]))
+        for argv in commands:
+            text = docker(argv)
+            m = re.search(r"Total(?: reclaimed space)?:\s*(.+)$", text, re.M)
+            reclaimed[argv[0]] = m.group(1).strip() if m else "0B"
+    finally:
+        if holds:
+            docker(["rm", "-f", *holds])
+    report["reclaimed"] = reclaimed
+    return report
 
 
 @contextlib.contextmanager
@@ -983,11 +1049,16 @@ def run_retention(cfg, *, dry_run, keep=(), prune=False, now=None):
         report["unscanned"] = unreadable
         for commit, reasons in links.items():
             refs.setdefault(commit, []).extend(reasons)
+        releases, main = release_history(policy["journal"]), origin_main(cfg)
         decision = retention_decision(trees, now=time.time() if now is None else now, policy=policy,
-                                      references=refs, releases=release_history(policy["journal"]),
-                                      active=active_job_commits(cfg["queue"]), main=origin_main(cfg), keep=keep,
+                                      references=refs, releases=releases,
+                                      active=active_job_commits(cfg["queue"]), main=main, keep=keep,
                                       scratch=scratch_entries(policy["scratch"]))
+        anchors.extend([(main, "origin/main 的检查配方"), (current_pin(releases), "当前 pin 的检查配方")]
+                       + [(c, "本次指定 commit 的检查配方") for c in keep])
         return trees, other, decision
+
+    anchors = []
 
     stamp = time.time() if now is None else now
     before = free_bytes(workspace)
@@ -1015,7 +1086,12 @@ def run_retention(cfg, *, dry_run, keep=(), prune=False, now=None):
     report.update(trees=removed, scratch=scratch, tree_bytes=sum(t["bytes"] for t in removed),
                   scratch_bytes=sum(s["bytes"] for s in scratch), estimated_bytes=freed)
     if prune:
-        report["docker"] = docker_prune(dry_run)
+        try:
+            if not cfg.get("source_repository"):
+                raise NodeError("CI 配置缺少 source_repository，无法确定要保护的检查镜像，不执行 docker prune")
+            report["docker"] = docker_prune(dry_run, protected_check_images(anchors, git_show(cfg["source_repository"])))
+        except NodeError as error:  # 发布树与暂存的保留已完成；prune 不在无保护时执行
+            report["docker"] = dict(error=str(error))
     report["free_after"] = free_bytes(workspace)
     return report
 

@@ -1555,5 +1555,81 @@ class RetentionRun(unittest.TestCase):
         self.assertEqual(report["kept"][C["a"]], ["CI 队列中未结束的任务"])
 
 
+class FakeDocker:
+    """记录 docker 子命令；image inspect 只认 present 中的引用；prune 时记下当时存在的占位容器。"""
+
+    def __init__(self, present, stale=(), fail_prune=False):
+        self.present, self.stale, self.fail_prune = present, list(stale), fail_prune
+        self.calls, self.holds, self.held_during_prune = [], [], None
+
+    def __call__(self, argv):
+        self.calls.append(argv[:2])
+        if argv[:2] == ["image", "inspect"]:
+            if argv[-1] not in self.present:
+                raise node.NodeError("No such image")
+            return self.present[argv[-1]]
+        if argv[0] == "ps":
+            return "\n".join(self.stale)
+        if argv[0] == "create":
+            self.holds.append(argv[-2])
+            return "hold-%d" % len(self.holds)
+        if argv[0] == "rm":
+            self.stale = [c for c in self.stale if c not in argv]
+            self.holds = [h for i, h in enumerate(self.holds) if "hold-%d" % (i + 1) not in argv] \
+                if any(a.startswith("hold-") for a in argv) else self.holds
+            return ""
+        if argv[:2] == ["image", "prune"]:
+            self.held_during_prune = list(self.holds)
+            if self.fail_prune:
+                raise node.NodeError("prune 失败")
+            return "Total reclaimed space: 1.5GB"
+        if argv[:2] == ["builder", "prune"]:
+            return "Total:\t0B"
+        if argv[:2] == ["system", "df"]:
+            return json.dumps(dict(Type="Images", Reclaimable="9GB"))
+        raise AssertionError(argv)
+
+
+class CheckImageProtection(unittest.TestCase):
+    MAIN, PIN = b"FROM main", b"FROM pin"
+
+    def show(self, commit, path):
+        self.assertEqual(path, "tools/check.Dockerfile")
+        return {C["a"]: self.MAIN, C["b"]: self.PIN, C["c"]: self.MAIN}.get(commit)
+
+    def ref(self, recipe):
+        return "local/kailo-check:" + node.hashlib.sha256(recipe).hexdigest()
+
+    def test_recipes_of_main_and_pin_name_the_protected_images(self):
+        got = node.protected_check_images([(C["a"], "origin/main"), (C["b"], "pin"), (C["c"], "keep"), (None, "x")],
+                                          self.show)
+        self.assertEqual(got, {self.ref(self.MAIN): ["origin/main", "keep"], self.ref(self.PIN): ["pin"]})
+        with self.assertRaises(node.NodeError):
+            node.protected_check_images([(C["d"], "pin")], self.show)
+
+    def test_protected_images_are_held_by_created_containers_during_image_prune(self):
+        protect = node.protected_check_images([(C["a"], "origin/main"), (C["b"], "pin")], self.show)
+        fake = FakeDocker({self.ref(self.MAIN): "sha256:main"}, stale=["old-hold"])  # pin 的镜像本机不存在
+        got = node.docker_prune(False, protect, docker=fake)
+        self.assertEqual(fake.held_during_prune, ["sha256:main"])
+        self.assertEqual(fake.holds, [])
+        self.assertEqual(fake.stale, [])  # 上次遗留的占位容器先被清理
+        self.assertLess(fake.calls.index(["create", "--pull=never"]), fake.calls.index(["image", "prune"]))
+        self.assertEqual(got["reclaimed"], {"image": "1.5GB", "builder": "0B"})
+        self.assertEqual(got["protected"][self.ref(self.PIN)]["image"], None)
+
+    def test_holds_are_removed_when_prune_fails_and_dry_run_creates_nothing(self):
+        protect = node.protected_check_images([(C["a"], "origin/main")], self.show)
+        fake = FakeDocker({self.ref(self.MAIN): "sha256:main"}, fail_prune=True)
+        with self.assertRaises(node.NodeError):
+            node.docker_prune(False, protect, docker=fake)
+        self.assertEqual(fake.holds, [])
+        dry = FakeDocker({self.ref(self.MAIN): "sha256:main"})
+        got = node.docker_prune(True, protect, docker=dry)
+        self.assertNotIn(["create", "--pull=never"], dry.calls)
+        self.assertNotIn(["image", "prune"], dry.calls)
+        self.assertEqual(got["protected"][self.ref(self.MAIN)], dict(image="sha256:main", reasons=["origin/main"]))
+
+
 if __name__ == "__main__":
     unittest.main()

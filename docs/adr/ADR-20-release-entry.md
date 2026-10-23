@@ -323,9 +323,14 @@ CI worker 每次 fetch、检查、构建与发布都在 `<sources>/<commit>` 留
 - **CI worker 准入自愈**：构建类阶段可用空间低于准入值时，worker 取本次 checkout 刚 fetch 的 main（`FETCH_HEAD`）上的
   `tools/release/node.py`，执行 `retention --prune-docker --keep <本任务 commit>`——即上述保留，再 `docker image prune -a --filter until=72h`
   （只删未被任何容器使用的镜像）与 `docker builder prune --filter until=72h`——然后重新检查空间，仍不足才失败。规则在仓库内随 main
-  演进，worker 只有调用与重检两步；main 尚无该步骤或执行失败时只记录日志，行为与此前相同。被清理的检查镜像由下次检查按配方重建。
+  演进，worker 只有调用与重检两步；main 尚无该步骤或执行失败时只记录日志，行为与此前相同。
+- **检查镜像保护**：检查镜像按配方命名（`local/kailo-check:<sha256(tools/check.Dockerfile)>`），重建一次很贵。origin/main、当前 pin
+  与 `--keep` commit 的配方（经 `git show <commit>:tools/check.Dockerfile` 从 CI 源仓库读取）对应的镜像在 `image prune` 期间各由一个
+  从不启动的 created 容器（`--network none`，标签 `io.kailo.retention.hold`）占用，prune 结束（含失败）即删除；上次异常遗留的占位容器
+  在下次 prune 前清理。读不到任一配方或缺少 `source_repository` 时不执行 prune（保留树与暂存照常），不在无保护时删除镜像。其他配方的
+  检查镜像不受保护，由下次检查按配方重建。
 - **只读核对**：`node.py retention --dry-run [--prune-docker]` 不删除、不建目录，列出将删除的树与暂存及大小；`--prune-docker` 时只回报
-  `docker system df` 的可回收上界。
+  `docker system df` 的可回收上界与受保护的检查镜像。
 
 ## 后果
 
