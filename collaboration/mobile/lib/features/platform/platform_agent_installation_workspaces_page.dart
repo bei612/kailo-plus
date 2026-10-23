@@ -113,9 +113,10 @@ class PlatformAgentInstallationWorkspacesPage extends ConsumerWidget {
                       subtitle: '${workspace.name} · ${workspace.slug}',
                       onTap: () => Navigator.of(context).push(
                         MaterialPageRoute<void>(
-                          builder: (_) => PlatformAgentInstallationCandidatesPage(
-                            workspaceId: workspace.id,
-                          ),
+                          builder: (_) =>
+                              PlatformAgentInstallationCandidatesPage(
+                                workspaceId: workspace.id,
+                              ),
                         ),
                       ),
                     ),

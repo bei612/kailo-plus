@@ -173,7 +173,9 @@ class PlatformAgentInstallationDetailPage extends ConsumerWidget {
                     AppListRow(
                       key: const ValueKey('platform-installation-delegations'),
                       title: text(PlatformMessageKey.agentsDelegationTitle),
-                      subtitle: text(PlatformMessageKey.agentsDelegationReadOnly),
+                      subtitle: text(
+                        PlatformMessageKey.agentsDelegationReadOnly,
+                      ),
                       onTap: () => Navigator.of(context).push(
                         MaterialPageRoute<void>(
                           builder: (_) => PlatformAgentDelegationsPage(

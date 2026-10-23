@@ -60,17 +60,23 @@ class PlatformAgentDelegationsPage extends HookConsumerWidget {
             else
               for (final scope in page.scopes)
                 AppListCard(
-                  key: ValueKey('platform-delegation-target-${jsonEncode(scope.toJson())}'),
+                  key: ValueKey(
+                    'platform-delegation-target-${jsonEncode(scope.toJson())}',
+                  ),
                   children: _scopeRows(
-                    DelegationScopeParameters.fromJson(scope.toJson()), locale,
+                    DelegationScopeParameters.fromJson(scope.toJson()),
+                    locale,
                   ),
                 ),
             _pagination(
-              pageIndex.value, page.nextOffset, locale,
+              pageIndex.value,
+              page.nextOffset,
+              locale,
               () => pageIndex.value--,
               () {
                 offsets.value = [
-                  ...offsets.value.take(pageIndex.value + 1), page.nextOffset!,
+                  ...offsets.value.take(pageIndex.value + 1),
+                  page.nextOffset!,
                 ];
                 pageIndex.value++;
               },
@@ -128,21 +134,28 @@ class PlatformAgentDelegationsPage extends HookConsumerWidget {
                     ),
                     AppListRow(
                       title: text(PlatformMessageKey.agentsDelegationMaxUses),
-                      subtitle: grant.parameters.maxUses?.toString() ??
-                          text(PlatformMessageKey.agentsDelegationNoMaximumUses),
+                      subtitle:
+                          grant.parameters.maxUses?.toString() ??
+                          text(
+                            PlatformMessageKey.agentsDelegationNoMaximumUses,
+                          ),
                     ),
                     for (final scope in grant.parameters.scopes)
                       ..._scopeRows(
-                        DelegationScopeParameters.fromJson(scope.toJson()), locale,
+                        DelegationScopeParameters.fromJson(scope.toJson()),
+                        locale,
                       ),
                   ],
                 ),
             _pagination(
-              pageIndex.value, page.nextOffset, locale,
+              pageIndex.value,
+              page.nextOffset,
+              locale,
               () => pageIndex.value--,
               () {
                 offsets.value = [
-                  ...offsets.value.take(pageIndex.value + 1), page.nextOffset!,
+                  ...offsets.value.take(pageIndex.value + 1),
+                  page.nextOffset!,
                 ];
                 pageIndex.value++;
               },
@@ -153,11 +166,13 @@ class PlatformAgentDelegationsPage extends HookConsumerWidget {
     }
     return Scaffold(
       appBar: AppBar(
-        title: Text(text(
-          showTargets.value
-              ? PlatformMessageKey.agentsDelegationTargetsReadOnly
-              : PlatformMessageKey.agentsDelegationTitle,
-        )),
+        title: Text(
+          text(
+            showTargets.value
+                ? PlatformMessageKey.agentsDelegationTargetsReadOnly
+                : PlatformMessageKey.agentsDelegationTitle,
+          ),
+        ),
         actions: [
           IconButton(
             tooltip: text(PlatformMessageKey.platformRefresh),
@@ -185,11 +200,13 @@ class PlatformAgentDelegationsPage extends HookConsumerWidget {
               pageIndex.value = 0;
               showTargets.value = !showTargets.value;
             },
-            child: Text(text(
-              showTargets.value
-                  ? PlatformMessageKey.agentsDelegationTitle
-                  : PlatformMessageKey.agentsDelegationTargetsReadOnly,
-            )),
+            child: Text(
+              text(
+                showTargets.value
+                    ? PlatformMessageKey.agentsDelegationTitle
+                    : PlatformMessageKey.agentsDelegationTargetsReadOnly,
+              ),
+            ),
           ),
           Expanded(child: directory),
         ],
@@ -199,8 +216,11 @@ class PlatformAgentDelegationsPage extends HookConsumerWidget {
 }
 
 Widget _pagination(
-  int pageIndex, int? nextOffset, String locale,
-  VoidCallback previous, VoidCallback next,
+  int pageIndex,
+  int? nextOffset,
+  String locale,
+  VoidCallback previous,
+  VoidCallback next,
 ) => Padding(
   padding: const EdgeInsets.all(Grid.gutter),
   child: Wrap(
@@ -210,13 +230,17 @@ Widget _pagination(
         OutlinedButton(
           key: const ValueKey('platform-delegations-previous'),
           onPressed: previous,
-          child: Text(platformText(PlatformMessageKey.rolesPrevious, locale: locale)),
+          child: Text(
+            platformText(PlatformMessageKey.rolesPrevious, locale: locale),
+          ),
         ),
       if (nextOffset != null)
         OutlinedButton(
           key: const ValueKey('platform-delegations-next'),
           onPressed: next,
-          child: Text(platformText(PlatformMessageKey.rolesNext, locale: locale)),
+          child: Text(
+            platformText(PlatformMessageKey.rolesNext, locale: locale),
+          ),
         ),
     ],
   ),
@@ -237,7 +261,8 @@ List<Widget> _scopeRows(DelegationScopeParameters scope, String locale) {
     ),
     AppListRow(
       title: text(PlatformMessageKey.agentsDelegationTarget),
-      subtitle: '${scope.targetType} · ${scope.targetId ?? scope.createWorkspaceId}',
+      subtitle:
+          '${scope.targetType} · ${scope.targetId ?? scope.createWorkspaceId}',
     ),
     if (scope.toolResourceId != null)
       AppListRow(
