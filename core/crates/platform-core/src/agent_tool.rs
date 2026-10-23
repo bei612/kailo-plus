@@ -539,8 +539,10 @@ async fn registered(
           and r.state='ACTIVE' and r.projection_action_execution_id is null
           and r.home_workspace_id is null and r.application_binding_id is null
           and r.component_type_key='core' and r.native_type=r.type_key and r.native_id=r.id::text
-          and t.status='ACTIVE' and t.name in ('agent.memory.entry.list','agent.memory.entry.read')
-          and t.source='PLATFORM_NATIVE' and t.action_key=t.name
+          and t.status='ACTIVE'
+          and (t.name,t.action_key) in (('agent.memory.entry.list','agent.memory.entry.list'),
+            ('agent.memory.entry.read','agent.memory.entry.read'),('project_channel_request','workspace.create'))
+          and t.source='PLATFORM_NATIVE'
           and t.capability_contract_key is null and t.backend_ref='CORE_STREAMABLE_MCP'
           and t.input_schema_hash=$3 and t.output_schema_hash=$4 for update of r,t",
     )
@@ -1128,7 +1130,9 @@ async fn directory(
         };
         tools.push(serde_json::json!({"resourceId": row.resource_id,
             "resourceVersion": row.resource_version, "resourceState": row.resource_state,
-            "ownerPrincipalId": row.owner_principal_id, "name": row.name, "actionKey": row.name,
+            "ownerPrincipalId": row.owner_principal_id, "name": row.name,
+            // DD-140 (1): the closed name → action-key map, not the name itself.
+            "actionKey": native_action_key(&row.name),
             "source": "PLATFORM_NATIVE", "status": row.status,
             "inputSchemaHash": row.input_schema_hash, "outputSchemaHash": row.output_schema_hash,
             "canConsume": can_consume}));

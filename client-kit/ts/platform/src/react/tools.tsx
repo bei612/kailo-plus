@@ -5,8 +5,14 @@ import { useBffClient, useT } from "./context";
 import { Badge, Button, Cell, Notice, Table, ReadFailure } from "./ui";
 import { useLoad } from "./use-load";
 
+// DD-140 (1): the closed platform native tool name → action key map.
+const NATIVE_TOOL_ACTIONS: Readonly<Record<string, string>> = {
+  "agent.memory.entry.list": "agent.memory.entry.list",
+  "agent.memory.entry.read": "agent.memory.entry.read",
+  project_channel_request: "workspace.create",
+};
 function validToolName(name: unknown): boolean {
-  return name === "agent.memory.entry.list" || name === "agent.memory.entry.read";
+  return typeof name === "string" && Object.hasOwn(NATIVE_TOOL_ACTIONS, name);
 }
 
 export function validPlatformToolPage(page: PlatformToolPage, offset: number): boolean {
@@ -16,7 +22,7 @@ export function validPlatformToolPage(page: PlatformToolPage, offset: number): b
     && page.tools.every((tool) => !!tool
       && [tool.resourceId, tool.ownerPrincipalId].every((value) => typeof value === "string" && !!value)
       && Number.isSafeInteger(tool.resourceVersion) && tool.resourceVersion > 0
-      && validToolName(tool.name) && tool.actionKey === tool.name && tool.source === "PLATFORM_NATIVE"
+      && validToolName(tool.name) && tool.actionKey === NATIVE_TOOL_ACTIONS[tool.name] && tool.source === "PLATFORM_NATIVE"
       && (tool.status === "PROVISIONING" || tool.status === "ACTIVE")
       && (tool.resourceState === "PROVISIONING" || tool.resourceState === "ACTIVE")
       && [tool.inputSchemaHash, tool.outputSchemaHash].every((value) => typeof value === "string" && /^[0-9a-f]{64}$/.test(value))
