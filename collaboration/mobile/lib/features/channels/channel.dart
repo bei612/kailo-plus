@@ -44,6 +44,7 @@ class Channel {
 
   bool get isPrivate => visibility == 'private';
   bool get isDm => channelType == 'dm';
+  bool get isForum => channelType == 'forum';
 
   String displayLabel({String? currentPubkey}) {
     if (!isDm || participants.length != participantPubkeys.length) return name;

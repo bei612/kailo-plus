@@ -2,8 +2,9 @@
 // and its parts (reaction popover, quick reaction row, reaction tray, action popover), restored.
 // Kailo: reactions, edits and deletions are this device's own CLIENT-signed events published
 // directly to the Relay through MessageMutations (DD-75), resent unchanged after an unknown
-// outcome. "Remind me" is not offered on Mobile (no Mobile reminder host yet), and
-// canManageMessage covers only the viewer's own messages: an owner edit of their Agent's message
+// outcome. "Remind me" publishes this device's own NIP-44 reminder (kind 30300, the same
+// author-private event the Desktop host writes) and resends it unchanged after an unknown
+// outcome. canManageMessage covers only the viewer's own messages: an owner edit of their Agent's message
 // is the Core-signed path of DD-142, which Mobile does not host yet.
 import 'dart:async';
 import 'dart:io';
@@ -26,6 +27,8 @@ import 'package:share_plus/share_plus.dart';
 import '../../shared/clipboard_utils.dart';
 import '../../shared/deeplink/deep_link.dart';
 import '../../shared/relay/relay.dart';
+import '../../shared/reminders/remind_me_later_sheet.dart';
+import '../../shared/reminders/reminder_service.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/custom_emoji/custom_emoji.dart';
 import '../../shared/custom_emoji/custom_emoji_provider.dart';
@@ -52,6 +55,7 @@ part 'message_actions/message_action_popover_widgets.dart';
 part 'message_actions/message_reaction_tray.dart';
 
 const _messageActionBackdropBlurSigma = 20.0;
+const _reminderPreviewLength = 100;
 const _messageActionBackdropTintOpacity = 0.10;
 final _messageActionBackdropFilter = ImageFilter.blur(
   sigmaX: _messageActionBackdropBlurSigma,
@@ -608,6 +612,7 @@ class _FastActionsRow extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final messages = allMessages;
+    final canRemind = ref.watch(reminderServiceProvider) != null;
 
     final tiles = <Widget>[
       if (messages != null)
@@ -642,6 +647,30 @@ class _FastActionsRow extends ConsumerWidget {
           );
         },
       ),
+      if (canRemind)
+        _FastActionTile(
+          icon: LucideIcons.clock,
+          label: _mt(context, PlatformMessageKey.remindersRemindLater),
+          onTap: () {
+            final rootContext = Navigator.of(
+              context,
+              rootNavigator: true,
+            ).context;
+            Navigator.of(context).pop();
+            showRemindMeLaterSheet(
+              context: rootContext,
+              ref: ref,
+              target: ReminderTarget(
+                eventId: message.id,
+                channelId: channelId,
+                preview: message.content.characters
+                    .take(_reminderPreviewLength)
+                    .toString(),
+                authorPubkey: message.pubkey,
+              ),
+            );
+          },
+        ),
     ];
 
     return Row(

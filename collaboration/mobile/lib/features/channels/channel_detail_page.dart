@@ -8,6 +8,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 
+import '../forum/forum_posts_view.dart';
 import '../../shared/mentions/agent_identity_provider.dart';
 import '../../shared/relay/relay.dart';
 import '../../shared/theme/theme.dart';
@@ -212,7 +213,9 @@ class ChannelDetailPage extends HookConsumerWidget {
     final resolvedChannel =
         detailsAsync.whenData(baseChannel.mergeDetails).value ?? baseChannel;
     final showsComposer =
-        resolvedChannel.isMember && !resolvedChannel.isArchived;
+        !resolvedChannel.isForum &&
+        resolvedChannel.isMember &&
+        !resolvedChannel.isArchived;
     final messagesNotifier = ref.read(
       channelMessagesProvider(channel.id).notifier,
     );
@@ -343,83 +346,95 @@ class ChannelDetailPage extends HookConsumerWidget {
           Column(
             children: [
               Expanded(
-                child: SkeletonReveal(
-                  loading:
-                      showInitialConnectionSkeleton ||
-                      showConnectionSkeleton.value ||
-                      messagesState.isLoading,
-                  shimmerEnabled: sessionStatus != SessionStatus.disconnected,
-                  skeleton: _MessageTimelineSkeleton(
-                    appBarTitleContentHeight: appBarTitleContentHeight,
-                    status: sessionStatus,
-                  ),
-                  content: messagesState.when(
-                    loading: SizedBox.shrink,
-                    error: (e, _) => Padding(
-                      padding: EdgeInsets.only(
-                        top: frostedAppBarHeight(
-                          context,
-                          titleContentHeight: appBarTitleContentHeight,
+                child: resolvedChannel.isForum
+                    ? ForumPostsView(
+                        channel: resolvedChannel,
+                        currentPubkey: currentPubkey,
+                      )
+                    : SkeletonReveal(
+                        loading:
+                            showInitialConnectionSkeleton ||
+                            showConnectionSkeleton.value ||
+                            messagesState.isLoading,
+                        shimmerEnabled:
+                            sessionStatus != SessionStatus.disconnected,
+                        skeleton: _MessageTimelineSkeleton(
+                          appBarTitleContentHeight: appBarTitleContentHeight,
+                          status: sessionStatus,
                         ),
-                      ),
-                      child: Center(
-                        child: Text(
-                          'Failed to load messages',
-                          style: context.textTheme.bodyMedium?.copyWith(
-                            color: context.colors.error,
+                        content: messagesState.when(
+                          loading: SizedBox.shrink,
+                          error: (e, _) => Padding(
+                            padding: EdgeInsets.only(
+                              top: frostedAppBarHeight(
+                                context,
+                                titleContentHeight: appBarTitleContentHeight,
+                              ),
+                            ),
+                            child: Center(
+                              child: Text(
+                                'Failed to load messages',
+                                style: context.textTheme.bodyMedium?.copyWith(
+                                  color: context.colors.error,
+                                ),
+                              ),
+                            ),
                           ),
+                          data: (events) {
+                            final messages = formatTimeline(
+                              events,
+                              currentPubkey: currentPubkey,
+                            );
+                            final summaries = ref
+                                .read(
+                                  channelMessagesProvider(channel.id).notifier,
+                                )
+                                .threadSummaries;
+                            final entries = buildMainTimelineEntries(
+                              messages,
+                              relaySummaries: summaries,
+                            );
+                            return _MessageList(
+                              entries: entries,
+                              allMessages: messages,
+                              initialMessageId: initialMessageId,
+                              initialThreadRootId: initialThreadRootId,
+                              initialThreadRouteBehavior:
+                                  initialThreadRouteBehavior,
+                              initialOrdinaryUnreadMessageIds:
+                                  initialOrdinaryUnreadMessageIds,
+                              initialOldestOrdinaryUnreadMessageId:
+                                  initialOldestOrdinaryUnreadMessageId,
+                              initialForcedUnreadMessageIds:
+                                  initialForcedUnreadMessageIds,
+                              hasInitialUnread:
+                                  readState.isReady &&
+                                  (readState.isForcedUnread(channel.id) ||
+                                      initialForcedUnreadMessageIds
+                                          .isNotEmpty ||
+                                      initialOldestOrdinaryUnreadMessageId !=
+                                          null),
+                              channelId: channel.id,
+                              currentPubkey: currentPubkey,
+                              isMember: resolvedChannel.isMember,
+                              isArchived: resolvedChannel.isArchived,
+                              appBarTitleContentHeight:
+                                  appBarTitleContentHeight,
+                              composerBottomInset: showsComposer
+                                  ? composerDockHeight.value
+                                  : 0,
+                              composerFocusNode: showsComposer
+                                  ? composerFocusNode
+                                  : null,
+                              restoreComposerFocus: showsComposer
+                                  ? () => restoreComposerFocus.value?.call()
+                                  : null,
+                            );
+                          },
                         ),
                       ),
-                    ),
-                    data: (events) {
-                      final messages = formatTimeline(
-                        events,
-                        currentPubkey: currentPubkey,
-                      );
-                      final summaries = ref
-                          .read(channelMessagesProvider(channel.id).notifier)
-                          .threadSummaries;
-                      final entries = buildMainTimelineEntries(
-                        messages,
-                        relaySummaries: summaries,
-                      );
-                      return _MessageList(
-                        entries: entries,
-                        allMessages: messages,
-                        initialMessageId: initialMessageId,
-                        initialThreadRootId: initialThreadRootId,
-                        initialThreadRouteBehavior: initialThreadRouteBehavior,
-                        initialOrdinaryUnreadMessageIds:
-                            initialOrdinaryUnreadMessageIds,
-                        initialOldestOrdinaryUnreadMessageId:
-                            initialOldestOrdinaryUnreadMessageId,
-                        initialForcedUnreadMessageIds:
-                            initialForcedUnreadMessageIds,
-                        hasInitialUnread:
-                            readState.isReady &&
-                            (readState.isForcedUnread(channel.id) ||
-                                initialForcedUnreadMessageIds.isNotEmpty ||
-                                initialOldestOrdinaryUnreadMessageId != null),
-                        channelId: channel.id,
-                        currentPubkey: currentPubkey,
-                        isMember: resolvedChannel.isMember,
-                        isArchived: resolvedChannel.isArchived,
-                        appBarTitleContentHeight: appBarTitleContentHeight,
-                        composerBottomInset: showsComposer
-                            ? composerDockHeight.value
-                            : 0,
-                        composerFocusNode: showsComposer
-                            ? composerFocusNode
-                            : null,
-                        restoreComposerFocus: showsComposer
-                            ? () => restoreComposerFocus.value?.call()
-                            : null,
-                      );
-                    },
-                  ),
-                ),
               ),
-              if (!showsComposer) ...[
+              if (!resolvedChannel.isForum && !showsComposer) ...[
                 const RelaySyncBanner(),
                 AnimatedSize(
                   duration: MediaQuery.disableAnimationsOf(context)

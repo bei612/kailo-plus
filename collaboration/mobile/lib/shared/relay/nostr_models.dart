@@ -27,6 +27,13 @@ abstract final class EventKind {
   static const streamMessageDiff = 40008;
   static const systemMessage = 40099;
 
+  /// Forum channel posts and replies (original kinds 45001/45003).
+  static const forumPost = 45001;
+  static const forumComment = 45003;
+
+  /// Author-private reminder (NIP-44 to self, parameterized replaceable).
+  static const eventReminder = 30300;
+
   /// Event kinds that represent user-visible channel messages.
   static const channelMessageEventKinds = [
     streamMessage, // 9
