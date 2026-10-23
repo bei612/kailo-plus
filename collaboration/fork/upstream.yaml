@@ -969,7 +969,7 @@ remove_paths:
   - mobile/android/app/src/test/kotlin/xyz/block/buzz/mobile/AgeSignalPayloadTest.kt
   - mobile/android/app/src/test/kotlin/xyz/block/buzz/mobile/AgeSignalRequestTest.kt
   - mobile/android/app/src/test/kotlin/xyz/block/buzz/mobile/HuddleActiveTalkerSelectorTest.kt
-  - mobile/lib/features/activity
+  - mobile/lib/features/activity/compose_drafts_provider.dart
   - mobile/lib/features/age_gate
   - mobile/lib/features/channels/agent_activity/observer_models.dart
   - mobile/lib/features/channels/agent_activity/observer_subscription.dart
@@ -995,7 +995,6 @@ remove_paths:
   - mobile/lib/features/channels/channel_stars
   - mobile/lib/features/channels/channels_page/badges.dart
   - mobile/lib/features/channels/channels_page/browse_channels_sheet.dart
-  - mobile/lib/features/channels/dm_channel_labels.dart
   - mobile/lib/features/channels/ephemeral_channel_display.dart
   - mobile/lib/features/channels/huddle_channel_filter.dart
   - mobile/lib/features/channels/message_mention_pubkeys.dart
@@ -1015,7 +1014,7 @@ remove_paths:
   - mobile/lib/shared/widgets/bouncing_dots_indicator.dart
   - mobile/lib/shared/widgets/editor_option_button.dart
   - mobile/lib/shared/widgets/tappable_flapping_bee.dart
-  - mobile/test/features/activity
+  - mobile/test/features/activity/compose_drafts_provider_test.dart
   - mobile/test/features/age_gate
   - mobile/test/features/channels/agent_activity
   - mobile/test/features/channels/channel_actions_sheet_test.dart
