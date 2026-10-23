@@ -37,6 +37,8 @@ Codex `Feature::MemoryTool` 一期固定关闭；其 rollout 抽取与 `$CODEX_H
 
 工具来源固定两类（DD-92）：`PLATFORM_NATIVE`（记忆、Buzz 消息、任务、审批等平台核心工具，不依赖任何 ApplicationBinding）与 `APPLICATION`（业务能力实现按能力契约键暴露的工具）。两类工具都经 MCP 与 AgentGateway ExtMcp PEP，传输不同只在 MCP target 的来源。
 
+用户自助连接器（DD-149）的工具是第三档 `USER_REGISTERED_EXTERNAL`：与 `PLATFORM_NATIVE` 同样经 `declared_tool_resource_ids[]`、Installation 平台工具 route、ExtMcp PEP 与 Delegation 进入 Agent，MCP target 是 Core 的外部 MCP 中继；它们不是能力需求，结果一律按不可信外部内容标注后才进入 Codex context，写入与破坏性工具默认逐次确认或审批，判定见 DD-149(7)(9)。
+
 ```text
 AgentVersion requested tools
   ├─ PLATFORM_NATIVE: declared_tool_resource_ids[]
@@ -52,7 +54,7 @@ AgentVersion requested tools
 → Codex enabled_tools
 ```
 
-起点与 `03` §7 一致：AgentVersion 的 `declared_tool_resource_ids[]` 只引用 `PLATFORM_NATIVE` 工具；`APPLICATION` 工具只经 `capability_requirements[]` 由 ToolBinding 解析，不引用具体实现的 Tool Resource。`APPLICATION` 需求在 Workspace 内（Workspace 级与 Tenant 级 binding 均）没有 active 实现时，该工具 effective 为 `NO_PROVIDER`，不进入投影，Installation 仍可 `ACTIVE`；`PLATFORM_NATIVE` 工具的可用性不受任何业务能力 binding 影响。
+起点与 `03` §7 一致：AgentVersion 的 `declared_tool_resource_ids[]` 只引用 `PLATFORM_NATIVE` 工具与 DD-149 的 `USER_REGISTERED_EXTERNAL` 工具；`APPLICATION` 工具只经 `capability_requirements[]` 由 ToolBinding 解析，不引用具体实现的 Tool Resource。`APPLICATION` 需求在 Workspace 内（Workspace 级与 Tenant 级 binding 均）没有 active 实现时，该工具 effective 为 `NO_PROVIDER`，不进入投影，Installation 仍可 `ACTIVE`；`PLATFORM_NATIVE` 工具的可用性不受任何业务能力 binding 影响。
 
 Tool 出现只证明可请求，不证明某个参数/目标可执行。真正调用前仍做 parameter normalization、SpiceDB、Delegation、Approval、Capacity、Quota 和 exposure 准入。Codex `enabled_tools/disabled_tools` 只是前置收窄层（SF-COD-02）。
 

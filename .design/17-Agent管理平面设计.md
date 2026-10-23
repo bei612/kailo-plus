@@ -212,6 +212,7 @@ Agent 与 Skill 的 accountable owner 始终是 active HUMAN。AgentPrincipal �
 | Skills | Agents 页内与 Agent 定义、团队并列的 Skills 区：本人可发现的 Skill 卡片、新建定义、详情（版本历史、上传版本并预览名称/说明/digest/违规、发布、退役、内容查看、分享到目录、停用）；AgentVersion 编辑器按 DD-135(4) 选择 Skill 版本（DD-135） | 列表 `discover`；详情与已发布内容 `read`；`DRAFT` 版本 Asset `read`；上传版本 `create`；发布、退役 Asset `manage`；停用 `manage`；分享 `share` |
 | 团队 | Tenant 级 `agent_team`：名称、说明、有序成员定义；新建、编辑、删除、分享到目录，部署到频道为逐个 `agent.installation.create`，@ 团队展开为成员普通提及（DD-131(1)） | Team `read/update/manage/share`；成员只显示本人可 `discover` 者 |
 | 目录、快照与分享 | 本人可发现的定义与团队目录（安装或复制为本人 DRAFT）；Agent/团队快照导出为 ExportPackage、导入为新 Definition 与 DRAFT Version，发送导出包即分享；不提供卡片铸造、锁定卡与记忆导出（DD-131(2)–(7)） | 目录 `discover/read`；分享 `share`；导出 `export` 并经 owner 审批；导入 Tenant `create` |
+| 工具与连接器 | Agents 页工具目录列出平台原生工具与本人可发现的连接器工具（按连接器分组、标注“外部”、风险等级与调用策略），顶部“添加连接器”打开设置「连接器」同一面板；AgentVersion 编辑器按 DD-149 选用连接器工具（`declared_tool_resource_ids[]`），Installation 详情显示其 effective 状态，连接器停用为 `DISABLED`（DD-149(1)(3)） | 工具 `discover/consume`；连接器管理需连接器 Resource `manage` |
 | Delegation & Approval | 谁可委托什么、有效期/次数、同意是否仍现行（只有真实可用的显示为有效，需要续签、次数用尽、已到期与已被替换分别显示，续签替换原 Grant，DD-126）、等待中的审批 | `delegate/approve` |
 | Operations & Usage | Invocation/Workflow、tool/model/native refs、token/cost、Quota/Capacity | `read/audit` 与 ResultExposurePolicy |
 | Memory | core、cold-memory slug、Session 固定 core event、读写/冲突/usage；不默认暴露正文 | Installation Resource `read/update/audit` |
