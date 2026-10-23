@@ -4108,6 +4108,7 @@ enum PlatformMessageKey {
   gatewayRoutesNoSources,
   gatewayRoutesSource,
   gatewayRoutesChooseSource,
+  gatewayRoutesSourceIds,
   gatewayRoutesHome,
   gatewayRoutesSecretRef,
   gatewayRoutesLocator,
@@ -14372,6 +14373,10 @@ const _messages = <PlatformMessageKey, (String, String)>{
   ),
   PlatformMessageKey.gatewayRoutesSource: ('Gateway model', '网关模型'),
   PlatformMessageKey.gatewayRoutesChooseSource: ('Choose a model', '选择模型'),
+  PlatformMessageKey.gatewayRoutesSourceIds: (
+    'Gateway provider {provider} (revision {providerRevision}) · model {model} (revision {modelRevision})',
+    '网关提供方 {provider}（版本 {providerRevision}）· 模型 {model}（版本 {modelRevision}）',
+  ),
   PlatformMessageKey.gatewayRoutesHome: ('Belongs to', '归属'),
   PlatformMessageKey.gatewayRoutesSecretRef: (
     'Provider credential reference (no secret value)',
