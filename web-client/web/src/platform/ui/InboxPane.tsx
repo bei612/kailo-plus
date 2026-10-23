@@ -288,6 +288,7 @@ export function InboxPane({
           workspaceId={channelId} rootId={inboxThread(chosen.item.tags).rootId ?? chosen.item.id} selectedEventId={chosen.item.id}
           selectionItemId={effectiveSelectedItemId}
           unreadBoundaryEventId={unreadBoundaryEventId}
+          workspaceVisibility={snapshot.workspaces.find((workspace) => workspace.id === channelId)?.visibility}
           reopen={{pending: hiddenDm.isReopenPending(channelId), error: hiddenDm.isReopenErrored(channelId),
             unknown: hiddenDm.isReopenUnknown(channelId), onRetry: () => openItem(chosen.item)}}
           onPublicationPendingChange={pending => setPublicationSelection(pending ? {principalId, event:chosen.item} : null)}

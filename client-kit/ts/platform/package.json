@@ -196,6 +196,7 @@
     "./react/inbox-list-pane": "./src/react/inbox-list-pane.tsx",
     "./react/inbox-view": "./src/react/inbox-view.tsx",
     "./react/inbox/InboxDetailFrame": "./src/react/inbox/InboxDetailFrame.tsx",
+    "./react/inbox/InboxDetailChannelMembers": "./src/react/inbox/InboxDetailChannelMembers.tsx",
     "./react/inbox-detail-messages": "./src/react/inbox-detail-messages.tsx",
     "./react/VirtualizedList": "./src/react/forum/VirtualizedList.tsx",
     "./react/use-inbox-state": "./src/react/use-inbox-state.ts",

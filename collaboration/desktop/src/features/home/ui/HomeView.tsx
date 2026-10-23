@@ -1,10 +1,16 @@
 import { InboxView, useInboxViewState, type InboxViewStatus } from "@client-kit/platform/react/inbox-view";
 import * as React from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { InboxDetailChannelMembers } from "@client-kit/platform/react/inbox/InboxDetailChannelMembers";
+import { channelsQueryKey, nativeApplicationWorkspace, useWorkspaceChannelDirectory, workspaceVisibilityQueryKey } from "@/features/channels/hooks";
+import { useTheme } from "@/shared/theme/ThemeProvider";
+import { writeTextToClipboard } from "@/shared/lib/clipboard";
+import { Markdown } from "@/shared/ui/markdown";
+import type { Channel } from "@/shared/api/types";
 
 import { inboxReadContext } from "@client-kit/platform/inbox";
 import { useLocale, useT } from "@client-kit/platform/react/context";
-import { useHiddenDmInboxNavigation } from "@client-kit/platform/react/new-message";
+import { useConversations, useHiddenDmInboxNavigation } from "@client-kit/platform/react/new-message";
 import { toast } from "sonner";
 import { useChannelsQuery } from "@/features/channels/hooks";
 import { RightAuxiliaryPane } from "@/features/channels/ui/RightAuxiliaryPane";
@@ -496,7 +502,7 @@ function NativeInboxMessageDetail({
   feedProfiles: Parameters<typeof useHomeInboxContextMessages>[0]["profiles"];
   threadContext: NativeThreadContext;
   latchedDefaultParentId: string | null;
-  selectedChannel: { name: string; isMember: boolean; archivedAt: string | null } | null;
+  selectedChannel: Channel | null;
   directChannel?: { state: string };
   channelsQuery: { isFetching: boolean; isError: boolean };
   availableChannelIds: ReadonlySet<string>;
@@ -515,6 +521,31 @@ function NativeInboxMessageDetail({
   const t = useT();
   const locale = useLocale();
   const [isSendingReply, setIsSendingReply] = React.useState(false);
+  // Original InboxDetailPane ChannelMembersBar: the context channel's governed roster and
+  // management sheet, resolved exactly as the channel header does (ChannelScreenHeader).
+  const queryClient = useQueryClient();
+  const { isDark } = useTheme();
+  const membersDirectory = useWorkspaceChannelDirectory({ enabled: Boolean(selectedChannel) && selectedChannel?.channelType !== "dm" });
+  const membersWorkspace = selectedChannel && selectedChannel.channelType !== "dm"
+    ? nativeApplicationWorkspace(membersDirectory.data, { channelId: selectedChannel.id }) : undefined;
+  const membersConversations = useConversations();
+  const membersConversation = selectedChannel?.channelType === "dm"
+    ? membersConversations.items.find((item) => item.channelId === selectedChannel.id && item.state === "ACTIVE") : undefined;
+  const headerActions = !selectedChannel ? undefined
+    : membersWorkspace ? <InboxDetailChannelMembers key={`workspace:${membersWorkspace.id}`} roster={{ kind: "workspace", workspaceId: membersWorkspace.id }}
+        isDark={isDark} currentPubkey={currentPubkey} fallbackMemberCount={selectedChannel.memberCount}
+        channel={{ channelId: selectedChannel.id, name: selectedChannel.name, description: selectedChannel.description,
+          channelType: selectedChannel.channelType, visibility: selectedChannel.visibility, ttlSeconds: selectedChannel.ttlSeconds,
+          topic: selectedChannel.topic ?? undefined, archived: Boolean(selectedChannel.archivedAt) }}
+        management={{ refresh: () => {
+          void queryClient.invalidateQueries({ queryKey: channelsQueryKey });
+          void queryClient.invalidateQueries({ queryKey: workspaceVisibilityQueryKey });
+        }, renderCanvas: (content) => <Markdown content={content} /> }}
+        onCopy={writeTextToClipboard} />
+    : membersConversation ? <InboxDetailChannelMembers key={`conversation:${membersConversation.id}`} roster={{ kind: "conversation", conversation: membersConversation }}
+        isDark={isDark} currentPubkey={currentPubkey}
+        channel={{ channelId: selectedChannel.id, name: selectedChannel.name, description: "", channelType: "dm", ttlSeconds: null }}
+        onCopy={writeTextToClipboard} /> : undefined;
   // A filter change may only retain detail for a conversation that remains
   // visible. The filter handler selects the next valid row in the same update,
   // so the detail pane never renders a stale conversation between states.
@@ -582,6 +613,7 @@ function NativeInboxMessageDetail({
       onEditSave={(message,content,mentions,media)=>mutateMessage(selectedItem,message,canManageMessages,{content,mentions,media})}
       onDeleteMessage={message=>mutateMessage(selectedItem,message,canManageMessages)}
       canOpenContext={!selectedItem?.item.channelId || !hiddenDm.isReopenPending(selectedItem.item.channelId)}
+      headerActions={headerActions}
       reopenStatus={selectedItem?.item.channelId ? { pending: hiddenDm.isReopenPending(selectedItem.item.channelId),
         error: hiddenDm.isReopenErrored(selectedItem.item.channelId), unknown: hiddenDm.isReopenUnknown(selectedItem.item.channelId) } : undefined}
       currentPubkey={currentPubkey}

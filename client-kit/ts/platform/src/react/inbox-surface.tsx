@@ -142,12 +142,14 @@ export function InboxEmptyDetail() {
   </div></section>;
 }
 
-export function InboxDetailHeader({ title, onBack, onOpen, openLabel, fallbackTitle, onDelete, deletePending = false, reopen }: {
+export function InboxDetailHeader({ title, onBack, onOpen, openLabel, fallbackTitle, onDelete, deletePending = false, reopen, actions }: {
   title: string; onBack?: () => void; onOpen?: () => void; openLabel: string; fallbackTitle?: string;
   /** The host supplies only its current admitted original message target. */
   onDelete?: () => void; deletePending?: boolean;
   /** Original InboxDetailPane home-inbox-reopen-status chip for the hidden-DM reopen of this context. */
   reopen?: { pending: boolean; error: boolean; unknown?: boolean; onRetry?: () => void };
+  /** Original header ChannelMembersBar slot (between Open and the more menu). */
+  actions?: React.ReactNode;
 }) {
   const t = useUiT();
   const reopenChip = reopen && (reopen.pending || reopen.error) ? <div aria-live="polite"
@@ -166,6 +168,7 @@ export function InboxDetailHeader({ title, onBack, onOpen, openLabel, fallbackTi
         {onOpen ? <button className="block min-w-0 max-w-full text-left text-sm font-semibold leading-5 tracking-tight text-foreground hover:underline focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2" data-testid="home-inbox-context-title" onClick={onOpen} title={openLabel} type="button"><span className="block min-w-0 translate-y-px truncate">{title}</span></button> : <span className="block min-w-0 translate-y-px truncate">{title}</span>}
       </h2></div>
     </div><div className="flex shrink-0 items-center gap-1">{reopenChip}{onOpen ? <InboxRowActionButton label={openLabel} onClick={onOpen}><ExternalLink /></InboxRowActionButton> : null}
+      {actions}
       {onDelete ? <DropdownMenu modal={false}>
         <Tooltip><TooltipTrigger asChild><DropdownMenuTrigger asChild>
           <button aria-label={t("buzz.moreActions")} data-testid="home-inbox-detail-more" type="button" className={cn(iconButton, "rounded-full text-muted-foreground")}><Ellipsis /></button>

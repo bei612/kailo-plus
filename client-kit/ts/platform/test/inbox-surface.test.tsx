@@ -29,6 +29,14 @@ describe("original shared Inbox presentation", () => {
     expect(idle.querySelector('[data-testid="home-inbox-reopen-status"]')).toBeNull();
   });
 
+  it("renders the original ChannelMembersBar slot between Open and the more menu", async () => {
+    const host = await render(<TooltipProvider><InboxDetailHeader title="ch" openLabel="open" onOpen={vi.fn()} onDelete={vi.fn()}
+      actions={<span data-testid="members-slot">members</span>} /></TooltipProvider>);
+    const order = [...host.querySelectorAll('[aria-label="open"], [data-testid="members-slot"], [data-testid="home-inbox-detail-more"]')]
+      .map(node => node.getAttribute("data-testid") ?? "open");
+    expect(order).toEqual(["open", "members-slot", "home-inbox-detail-more"]);
+  });
+
   it.each(["en", "zh-CN"] as const)("restores the original header more menu and pending delete guard (%s)", async locale => {
     setLocale(locale);
     const remove = vi.fn(), open = vi.fn();
