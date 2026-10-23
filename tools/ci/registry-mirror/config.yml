@@ -17,7 +17,8 @@ storage:
       interval: 24h
       dryrun: false
 http:
-  addr: 0.0.0.0:5000
+  # 实际监听由 compose 的 REGISTRY_HTTP_ADDR 覆盖为 127.0.0.1:<MIRROR_PORT>（host 网络）。
+  addr: 127.0.0.1:55001
   headers:
     X-Content-Type-Options: [nosniff]
 health:
