@@ -3914,10 +3914,13 @@ scripts/webpack 告警保留；SBOM 成功不是漏洞门禁通过。
   `ScopeNativeOIDCPeopleQuery`，原查询整体嵌套、分页与资源策略不变），结果再逐条按组路径复核
   （`NativeOIDCPeopleVisible`）；原生管理员不受影响，未配置组织的实例行为不变。
 
-验证（CI 节点 golang 容器 `golang@sha256:8ac98ca5…`，ubuntu 身份、不加 sudo，源码取自 GitHub 分支
-`feat/component-directory-sync`）：
-`gofmt -l common/auth frontend/web`；`go vet ./common/auth ./frontend/web ./frontend/web/service`；
-`go test -count=1 ./common/auth ./frontend/web ./frontend/web/service`。
+验证（2026-10-23，CI 节点 NVMe 暂存 `~/scratch/dirsync-cells`，golang 容器 `golang@sha256:a688600c…`（go1.26.8），
+ubuntu 身份、不加 sudo，源码以 `git archive` 取自 GitHub 分支 `feat/component-directory-sync` 的 `afe2408d`）：
+`gofmt -l common/auth frontend/web idm/user/rest` 无输出；`go vet ./common/auth ./frontend/web ./frontend/web/service ./idm/user/rest`
+只报 `idm/user/rest/handler.go` 上游原有的 `zap.Any("q", userReq)` 复制锁值（本次未改该行）；
+`go test -count=1 ./common/auth ./frontend/web ./frontend/web/service ./idm/user/rest`：common/auth ok（26.0s）、frontend/web ok、
+frontend/web/service ok、idm/user/rest 无测试文件；`-v` 下 TestNativeOIDCMemberDirectory 8 个子场景、TestNativeOIDCPeopleScope 4 个子场景、
+TestNativeOIDCDirectoryConfigFromEnv、TestParseNativeOIDCDirectory 全部 PASS。
 `common/auth/native-oidc-directory_test.go` 以 idmtest sqlite 原生 user/role/ACL/workspace 服务、httptest 假 IdP/Core
 与按路径给出稳定节点 UUID 的假根目录覆盖：
 交付前登录行为不变；首个快照预开户 + admin/standard + Workspace 角色 + 原生工作区（slug、标签、ADMIN scope、

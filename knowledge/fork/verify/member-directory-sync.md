@@ -72,7 +72,7 @@ Raw results at `db11af23a757e282d820325e87ad1b832f8273c5`:
 - gofmt: no diff. `go vet`: exit 0.
 - `go test`:
   - `internal/config`, `internal/types`, `internal/database` (SQLite migration version 29 with the new table) and `internal/container`: `ok`.
-  - `internal/application/service`: one failure, `TestQueryEmbeddingConsumesManagedKBScope` (`knowledgebase_search_fanout_test.go:888`, the model-delivery embedding call). This change does not touch its code path. The test container exports `HTTP(S)_PROXY` for module downloads, which is a likely cause. The same test at base `0e9c076c` was queued, but the CI node was overloaded (load average about 3200, containers stuck in D state), so that run did not finish and the failure is recorded as unverified pre-existing.
+  - `internal/application/service`: one failure, `TestQueryEmbeddingConsumesManagedKBScope` (`knowledgebase_search_fanout_test.go:888`, the model-delivery embedding call). Baseline (2026-10-23, CI node NVMe `~/scratch/dirsync-knowledge`, same golang image, ubuntu, no sudo): run alone it passes on main `04e4665e` and on this branch `afe2408d`; in the full-package run it fails identically on both (main: 2710 PASS + this one FAIL; branch: 2716 PASS + this one FAIL). It is a pre-existing order-dependent failure of main, not introduced by this branch.
   - Every Kailo test passes: the new `kailo_directory_test.go` and the existing `kailo_org_test.go`.
 - Python: `Ran 40 tests … OK`. This includes the new directory-group entrypoint test and the `start.sh` overlay test.
 
