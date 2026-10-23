@@ -502,6 +502,17 @@ if [ "${1:-}" = '--verify-service-scopes' ] && [ "$#" -eq 1 ]; then
   idp_declarations service-scopes --verify
   exit $?
 fi
+# DD-133(4)、07 §4.7.4：组件部署单元的成员目录 client（COMPONENT_DIRECTORY_CLIENTS）。不存在即创建只有
+# service account 的机密 client 与唯一的 Core service audience mapper；同名而不一致拒绝、不覆写；凭据以 IdP 为准，
+# 只写入运行目录 secrets/component-directory/<组件>/client_secret（0600），由组件部署以只读文件挂载。不输出值。
+if [ "${1:-}" = '--declare-directory-clients' ] && [ "$#" -eq 1 ]; then
+  idp_declarations directory-clients
+  exit $?
+fi
+if [ "${1:-}" = '--verify-directory-clients' ] && [ "$#" -eq 1 ]; then
+  idp_declarations directory-clients --verify
+  exit $?
+fi
 # 持久化 realm 同样不会因导入文件新增平台管理员。只按用户名补齐这一个用户：
 # 恰好 0 个则按 realm 模板中的同一条定义创建，恰好 1 个不改动，多于 1 个拒绝；
 # 其他用户、client、角色与 mapper 不读不写。口令只从文件读入进程内存并放进请求体。

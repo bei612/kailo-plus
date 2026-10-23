@@ -16,7 +16,12 @@
                             其唯一的 audience mapper，以及它作为可选 scope 只挂在 Core service client 上；挂接取自
                             realm 模板中该 client 的 optionalClientScopes，scope 定义只在本文件。
   service-scopes --verify   同一期望值的只读回读。
+  directory-clients         DD-133(4)：各组件部署单元的成员目录 client（07 §4.7.4）——不存在时创建只有 service account 的
+                            机密 client 与唯一的 Core service audience mapper；凭据以 IdP 为准，只写入运行目录
+                            secrets/component-directory/<组件>/client_secret（0600，原子替换），回读文件与 IdP 一致。
+  directory-clients --verify  同一期望值的只读回读（含 secret 文件与 IdP 一致，不输出值）。
 
+COMPONENT_DIRECTORY_CLIENTS 为空时目录 client 未声明，同样输出 UNDECLARED 并以 0 退出。
 NATIVE_OIDC_CLIENTS 为空时组件专属客户端未声明：声明与回读都如实输出 UNDECLARED 并以 0 退出，不写入任何东西；
 值存在但无效时拒绝。已有同名而不一致的 mapper 或资料属性一律拒绝，不覆写。只读取 INPUT_ENV 中的键；
 管理口令只从运行目录的 secrets/keycloak_admin_password 读入内存。标准输出只有一行 JSON（状态与计数），
@@ -40,6 +45,7 @@ INPUT_ENV = (
     "OIDC_SERVICE_CLIENT_ID", "OIDC_WORKER_CLIENT_ID", "OIDC_BROWSER_CLIENT_ID", "OIDC_NATIVE_CLIENT_ID",
     "OIDC_NATIVE_AUDIENCE", "OIDC_NATIVE_MOBILE_REDIRECT_URI", "AGENTGATEWAY_ADMIN_AUDIENCE", "CORE_MCP_AUDIENCE",
     "TEMPORAL_NAMESPACE", "VERIFY_USER", "BOOTSTRAP_USER", "PLATFORM_ADMIN_USER",
+    "COMPONENT_DIRECTORY_CLIENTS",
 )
 # 摘要另覆盖的仓库文件（相对 deploy/local）。
 INPUT_FILES = ("idp-declarations.py", "identity-provider/realm.json")
@@ -237,6 +243,199 @@ def core_mcp_scope(template, values):
               "config": {"included.custom.audience": audience, "access.token.claim": "true",
                          "id.token.claim": "false"}}
     return scope, mapper
+
+
+# ---- DD-133(4)：成员目录 client（07 §4.7.4） ------------------------------------------------
+
+# 组件部署单元（deploy/components/component-deploy.sh 的组件名）→ 运行目录中的 secret 子目录。
+DIRECTORY_COMPONENTS = ("file-storage", "knowledge", "data-query")
+DIRECTORY_SECRET_DIR = ("secrets", "component-directory")
+DIRECTORY_SECRET_NAME = "client_secret"
+DIRECTORY_MAPPER = "kailo-directory-core-audience"
+CLIENT_ID_SEGMENT = re.compile(r"[A-Za-z0-9_-]{1,255}")
+# 声明决定、已有 client 必须一致的属性：只有 service account，不开任何浏览器或口令流程。
+DIRECTORY_CLIENT_SHAPE = {"enabled": True, "protocol": "openid-connect", "publicClient": False, "bearerOnly": False,
+                          "clientAuthenticatorType": "client-secret", "serviceAccountsEnabled": True,
+                          "standardFlowEnabled": False, "implicitFlowEnabled": False,
+                          "directAccessGrantsEnabled": False}
+DIRECTORY_DISABLED_GRANTS = {"oauth2.device.authorization.grant.enabled": "false", "oidc.ciba.grant.enabled": "false"}
+
+
+def declared_directory_clients(values):
+    """COMPONENT_DIRECTORY_CLIENTS 的已校验声明 [(组件, clientId)]；空值返回 []（未声明），无效即拒绝。
+    格式与 NATIVE_OIDC_CLIENTS 同一约束（.env 由 Compose 与 bash 读取）：逗号分隔，每项 <组件>=<clientId>。"""
+    raw = (values.get("COMPONENT_DIRECTORY_CLIENTS") or "").strip()
+    if not raw:
+        return []
+    taken = {values.get(k) for k in ("OIDC_SERVICE_CLIENT_ID", "OIDC_WORKER_CLIENT_ID", "OIDC_BROWSER_CLIENT_ID",
+                                     "OIDC_NATIVE_CLIENT_ID", "OIDC_NATIVE_AUDIENCE", "AGENTGATEWAY_ADMIN_AUDIENCE",
+                                     "CORE_MCP_AUDIENCE")} - {None}
+    # 组件专属 browser client 不得兼作目录 client（07 §4.7.4）；这里只取 client id，不校验其地址。
+    taken |= {item.partition("=")[0] for item in (values.get("NATIVE_OIDC_CLIENTS") or "").split(",") if item}
+    declared, components, clients = [], set(), set()
+    for item in raw.split(","):
+        component, sep, client_id = item.partition("=")
+        if (not sep or component not in DIRECTORY_COMPONENTS or component in components
+                or not CLIENT_ID_SEGMENT.fullmatch(client_id) or client_id in clients or client_id in taken):
+            raise Refused("COMPONENT_DIRECTORY_CLIENTS 每项必须是 <组件>=<clientId>：组件为 "
+                          + "/".join(DIRECTORY_COMPONENTS) + " 之一且不重复，clientId 唯一且不是平台或组件 browser client")
+        components.add(component)
+        clients.add(client_id)
+        declared.append((component, client_id))
+    return declared
+
+
+def directory_mapper(audience):
+    return {"name": DIRECTORY_MAPPER, "protocol": "openid-connect", "protocolMapper": "oidc-audience-mapper",
+            "consentRequired": False,
+            "config": {"included.custom.audience": audience, "access.token.claim": "true",
+                       "id.token.claim": "false", "introspection.token.claim": "true"}}
+
+
+def directory_client(client_id, component, audience, secret):
+    return dict(DIRECTORY_CLIENT_SHAPE, clientId=client_id, name=f"Kailo member directory ({component})",
+                secret=secret, redirectUris=[], webOrigins=[], fullScopeAllowed=False,
+                attributes=dict(DIRECTORY_DISABLED_GRANTS), protocolMappers=[directory_mapper(audience)])
+
+
+def directory_shape_problem(client):
+    """已有 client 与声明不一致的第一项（只写类别，不写值）；一致返回 None。"""
+    if any(client.get(k) != v for k, v in DIRECTORY_CLIENT_SHAPE.items()):
+        return "流程或认证属性"
+    if client.get("redirectUris") or client.get("webOrigins"):
+        return "回调或来源"
+    attrs = client.get("attributes") or {}
+    if any(attrs.get(k) not in (None, v) for k, v in DIRECTORY_DISABLED_GRANTS.items()):
+        return "设备或 CIBA 授权"
+    return None
+
+
+def secret_path(runtime, component):
+    return pathlib.Path(runtime, *DIRECTORY_SECRET_DIR, component, DIRECTORY_SECRET_NAME)
+
+
+def read_secret_file(path):
+    """(值或 None)。文件必须是 0600 普通文件、非软链接；不存在返回 None；其他形态拒绝。"""
+    try:
+        descriptor = os.open(str(path), os.O_RDONLY | os.O_NOFOLLOW)
+    except FileNotFoundError:
+        return None
+    except OSError:
+        raise Refused("目录 client secret 文件不是普通文件") from None
+    with os.fdopen(descriptor, encoding="utf-8") as stream:
+        info = os.fstat(stream.fileno())
+        if not stat.S_ISREG(info.st_mode) or info.st_mode & 0o077:
+            raise Refused("目录 client secret 文件必须是 0600 普通文件")
+        return stream.read().strip()
+
+
+def write_secret_file(path, value):
+    """在同一目录写临时文件（0600）、fsync、原子替换；目录 0700，不跟随软链接。"""
+    for directory in (path.parent.parent, path.parent):
+        if directory.is_symlink():
+            raise Refused("目录 client secret 目录不得是软链接")
+        directory.mkdir(mode=0o700, exist_ok=True)
+        os.chmod(directory, 0o700)
+    temporary = path.with_name("." + path.name + ".tmp")
+    descriptor = os.open(str(temporary), os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+        stream.write(value + "\n")
+        stream.flush()
+        os.fsync(stream.fileno())
+    os.replace(temporary, path)
+
+
+def new_secret():
+    import secrets
+    return secrets.token_urlsafe(32)
+
+
+def converge_directory_client(api, runtime, realm, component, client_id, audience, label, verify):
+    """返回 (problems, changed)。不存在即创建（凭据先写文件再登记，丢失回应以回读判定）；已有 client 形态或 mapper
+    不一致即拒绝；secret 以 IdP 为准写入文件。verify 只读：任何差异记为问题。"""
+    path = secret_path(runtime, component)
+
+    def find():
+        found = api("/clients?" + urllib.parse.urlencode({"clientId": client_id}))
+        found = [c for c in found or [] if c.get("clientId") == client_id]
+        if len(found) > 1:
+            raise Refused(f"{label}不唯一")
+        return found[0] if found else None
+
+    changed = 0
+    current = find()
+    if current is None:
+        if verify:
+            return [f"{label}不存在"], 0
+        secret = read_secret_file(path)
+        if not secret:
+            secret = new_secret()
+            write_secret_file(path, secret)
+        try:
+            api("/clients", directory_client(client_id, component, audience, secret))
+        except (urllib.error.URLError, OSError):
+            pass  # 创建回应丢失只由回读判定，不重复 POST
+        current = find()
+        if current is None:
+            raise Refused(f"{label}回读不存在")
+        changed += 1
+    problem = directory_shape_problem(current)
+    if problem:
+        raise Refused(f"{label}已存在而{problem}与声明不一致（不覆写）")
+    client_path = "/clients/" + urllib.parse.quote(current["id"], safe="")
+    wanted = directory_mapper(audience)
+    mappers = api(client_path + "/protocol-mappers/models") or []
+    if any(m.get("name") != DIRECTORY_MAPPER for m in mappers):
+        raise Refused(f"{label}含本步骤未定义的 mapper（不覆写）")
+    if mappers and not mapper_matches(mappers, wanted):
+        raise Refused(f"{label}的 audience mapper 与声明不一致（不覆写）")
+    problems = []
+    if not mappers:
+        if verify:
+            problems.append(f"{label}缺少 audience mapper")
+        else:
+            try:
+                api(client_path + "/protocol-mappers/models", wanted)
+            except (urllib.error.URLError, OSError):
+                pass
+            if not mapper_matches(api(client_path + "/protocol-mappers/models") or [], wanted):
+                raise Refused(f"{label}的 audience mapper 回读不一致")
+            changed += 1
+    # 不授予任何 realm 或 client 角色：service account 只允许 IdP 自动给出的 realm 默认角色组合。
+    account = api(client_path + "/service-account-user") or {}
+    if not account.get("id"):
+        raise Refused(f"{label}没有 service account")
+    mapped = api("/users/" + urllib.parse.quote(account["id"], safe="") + "/role-mappings") or {}
+    allowed_roles = {"default-roles-" + realm.lower()}
+    if ({r.get("name") for r in mapped.get("realmMappings") or []} - allowed_roles) or mapped.get("clientMappings"):
+        raise Refused(f"{label}的 service account 被授予了角色（不覆写）")
+    idp_secret = (api(client_path + "/client-secret") or {}).get("value")
+    if not idp_secret:
+        raise Refused(f"{label}在 IdP 中没有 client secret")
+    if read_secret_file(path) != idp_secret:
+        if verify:
+            problems.append(f"{label}的 secret 文件缺失或与 IdP 不一致")
+        else:
+            write_secret_file(path, idp_secret)
+            if read_secret_file(path) != idp_secret:
+                raise Refused(f"{label}的 secret 文件回读不一致")
+            changed += 1
+    return problems, changed
+
+
+def directory_clients(api, values, runtime, verify):
+    declared = declared_directory_clients(values)
+    if not declared:
+        return dict(directoryClients="UNDECLARED", clients=0, changed=0, problems=[])
+    audience = values["OIDC_SERVICE_CLIENT_ID"]
+    problems, changed = [], 0
+    for component, client_id in declared:
+        found, count = converge_directory_client(api, runtime, values["OIDC_REALM"], component, client_id, audience,
+                                                 f"{component} 目录 client", verify)
+        problems += found
+        changed += count
+    return dict(directoryClients="DECLARED" if not problems else "DRIFTED", clients=len(declared),
+                changed=changed, problems=problems)
 
 
 # ---- Keycloak 管理 API ---------------------------------------------------------------
@@ -505,11 +704,12 @@ def service_scopes(api, values, scope_def, mapper, verify):
 
 
 def main(argv):
-    if len(argv) < 1 or argv[0] not in ("sync-redirects", "native-profiles", "service-scopes"):
-        raise Refused("用法：idp-declarations.py sync-redirects|native-profiles|service-scopes [--verify|--users-only]")
+    modes = ("sync-redirects", "native-profiles", "service-scopes", "directory-clients")
+    if len(argv) < 1 or argv[0] not in modes:
+        raise Refused("用法：idp-declarations.py " + "|".join(modes) + " [--verify|--users-only]")
     flags = set(argv[1:])
     allowed = {"sync-redirects": {"--verify"}, "native-profiles": {"--verify", "--users-only"},
-               "service-scopes": {"--verify"}}[argv[0]]
+               "service-scopes": {"--verify"}, "directory-clients": {"--verify"}}[argv[0]]
     if not flags <= allowed or len(flags) > 1:
         raise Refused("参数无效")
     runtime = os.environ.get("KAILO_RUNTIME_DIR")
@@ -523,6 +723,8 @@ def main(argv):
     # 无效声明先于任何网络动作拒绝；空声明不联系 IdP
     if argv[0] == "native-profiles" and not declared_clients(values):
         return dict(nativeClientProfiles="UNDECLARED", clients=0, problems=[])
+    if argv[0] == "directory-clients" and not declared_directory_clients(values):
+        return dict(directoryClients="UNDECLARED", clients=0, changed=0, problems=[])
     here = pathlib.Path(__file__).resolve().parent
     with open(here / "identity-provider" / "realm.json", encoding="utf-8") as stream:
         template = json.load(stream)
@@ -535,6 +737,8 @@ def main(argv):
         return sync_redirects(api, desired_redirects(template, values), verify)
     if argv[0] == "service-scopes":
         return service_scopes(api, values, scope_def, mapper, verify)
+    if argv[0] == "directory-clients":
+        return directory_clients(api, values, runtime, verify)
     return native_profiles(api, values, "verify" if verify else "users-only" if "--users-only" in flags
                            else "declare")
 

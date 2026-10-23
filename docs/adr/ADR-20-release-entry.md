@@ -185,7 +185,16 @@ DD-133(3)、`.design/07` §4.7.3/§4.7.5）只能经管理 API 收敛。此前�
   已有组件 client 的四项退出属性（`frontchannelLogout=false`、`backchannel.logout.url`、`backchannel.logout.session.required=true`、
   `backchannel.logout.revoke.offline.tokens=false`）完全由声明决定，不一致即以声明值收敛并回读确认（§4.7.5）。任一命令非零退出即
   deploy 失败，不记录摘要。
-- **回读**：verify 执行两条只读回读（包装层拒绝任何写请求），并核对记录的摘要等于本次输入；回调字段、默认 scope、mapper、
+- **成员目录 client（2026-10-23 增补，DD-133(4)、`.design/07` §4.7.4）**：`COMPONENT_DIRECTORY_CLIENTS`（`<组件>=<clientId>`，组件为
+  `file-storage`、`knowledge`、`data-query`，由 `release.yaml` 的 `env.set` 声明）列出每个组件部署单元的目录 client。
+  `--declare-directory-clients` 对不存在者创建只有 service account 的机密 client（不开授权码、隐式、口令、设备与 CIBA 流程，
+  无回调与来源，`fullScopeAllowed=false`），唯一 mapper `kailo-directory-core-audience` 把 Core service audience
+  （`OIDC_SERVICE_CLIENT_ID`）写入访问令牌 `aud`；已有同名 client 的流程属性、回调、mapper 或 service account 角色与声明不一致即拒绝，
+  不覆写。凭据以 IdP 为准，写入运行目录 `secrets/component-directory/<组件>/client_secret`（目录 0700、文件 0600、同目录临时文件
+  fsync 后原子替换），由组件部署以只读文件挂载；文件缺失或与 IdP 不一致时以 IdP 值替换。`--verify-directory-clients` 只读核对
+  client、mapper、角色与文件（不一致计为问题，不写）。clientId 不得是平台 client、受众或组件 browser client；空值即未声明
+  （`UNDECLARED`，不联系 IdP）。Core 只以 binding `directoryClientId` 核对 `azp`，不接触该凭据。
+- **回读**：verify 执行各条只读回读（包装层拒绝任何写请求），并核对记录的摘要等于本次输入；回调字段、默认 scope、mapper、
   退出属性、资料属性或任一用户 `picture` 不一致，或摘要不符，verify 失败。在两次 deploy 之间新加入的用户在下一次 deploy
   才补 `picture`，期间的 verify 如实失败。
 - **凭据与输出**：命令以 `KAILO_RUNTIME_DIR=<运行目录>` 在发布树 `deploy/local` 下执行，管理口令只从运行目录

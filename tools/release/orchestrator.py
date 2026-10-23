@@ -380,7 +380,9 @@ def idp_line(idp):
     action = {"never": "从未记录摘要，将执行声明", "changed": "配置摘要已变化，将执行声明",
               "unchanged": "配置摘要未变，跳过声明"}[idp["state"]]
     return (f"IdP 声明式配置（配置漂移的基础服务重建后、keycloak 就绪后、替换服务前）：{action}；每次补齐新用户 picture；"
-            + ("组件专属客户端已声明" if idp["native_clients_declared"] else "组件专属客户端未声明（NATIVE_OIDC_CLIENTS 为空）"))
+            + ("组件专属客户端已声明" if idp["native_clients_declared"] else "组件专属客户端未声明（NATIVE_OIDC_CLIENTS 为空）")
+            + ("；成员目录 client 已声明" if idp.get("directory_clients_declared")
+               else "；成员目录 client 未声明（COMPONENT_DIRECTORY_CLIENTS 为空）"))
 
 
 def render_plan(plan, note=None):
@@ -765,7 +767,8 @@ class Release:
         value = self.node_stage("verify")
         idp = value.get("idp") or {}
         say(f"  回读 {len(value.get('services', []))} 个受管服务与 pin 一致；IdP 声明回读一致"
-            f"（组件专属客户端 {idp.get('native_client_profiles') or '未知'}）；{value.get('business_acceptance')}")
+            f"（组件专属客户端 {idp.get('native_client_profiles') or '未知'}，成员目录 client "
+            f"{idp.get('directory_clients') or '未知'}）；{value.get('business_acceptance')}")
 
     def run(self):
         self.state.lock()
