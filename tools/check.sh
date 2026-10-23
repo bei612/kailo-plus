@@ -164,6 +164,97 @@ prepare_check_dependencies() {
   (cd client-kit/dart && dart pub get) || return 2
 }
 
+# 组件前端依赖按「安装输入内容 + Node 版本 + 安装命令」寻址，缓存在 /cache/component-lint；
+# 命中时只把 node_modules 链接进本次检查快照，不重装。安装在同目录临时副本内完成后原子改名，
+# 并发或中断不会留下半成品。不运行依赖的安装脚本（--mode=skip-build/--ignore-scripts）：
+# 格式与类型检查不需要原生模块，也不在检查容器里编译它们。
+# 用法：component_lint_deps <组件目录> <安装输入（相对路径）…> -- <node_modules 目录…> -- <安装命令…>
+component_lint_deps() {
+  local dir=$1; shift
+  local inputs=() links=() key root entry staging path
+  while [ "$1" != -- ]; do inputs+=("$1"); shift; done; shift
+  while [ "$1" != -- ]; do links+=("$1"); shift; done; shift
+  key=$( { node --version; printf '%s\0' "$@"
+           (cd "$dir" && find "${inputs[@]}" -type f -print0 | LC_ALL=C sort -z \
+              | xargs -0 sha256sum); } | sha256sum | cut -c1-32) || return 2
+  root=/cache/component-lint/$(printf '%s' "$dir" | tr / _)
+  entry="$root/$key"
+  mkdir -p "$root" || return 2
+  if [ ! -f "$entry/.complete" ]; then
+    staging=$(mktemp -d "$root/.staging.XXXXXX") || return 2
+    (cd "$dir" && find "${inputs[@]}" -type f -print0 | tar --null -T - -cf -) \
+      | tar -xf - -C "$staging" || { rm -rf -- "$staging"; return 2; }
+    (cd "$staging" && diag "$@") || { rm -rf -- "$staging"; return 2; }
+    touch "$staging/.complete"
+    mv -T -- "$staging" "$entry" 2>/dev/null || rm -rf -- "$staging"
+    [ -f "$entry/.complete" ] || return 2
+    printf '  组件依赖已安装并缓存：%s\n' "$entry"
+  else
+    printf '  组件依赖命中缓存：%s\n' "$entry"
+  fi
+  touch "$entry"
+  # 只保留近 14 天用过的条目，锁文件变更后旧条目自然淘汰。
+  find "$root" -mindepth 1 -maxdepth 1 -type d -mtime +14 -exec rm -rf -- {} + 2>/dev/null
+  for path in "${links[@]}"; do
+    [ -d "$entry/$path" ] || { echo "拒绝检查：安装结果缺少 $path" >&2; return 2; }
+    rm -rf -- "${dir:?}/$path" && ln -s "$entry/$path" "$dir/$path" || return 2
+  done
+}
+
+# 组件镜像构建里会跑的格式/静态门禁，在合并检查阶段提前暴露，判定与构建一致：
+# - data-query/wren-ui：`next build` 内置 next lint（.eslintrc.json，prettier/prettier 为 error）
+#   与 tsc 类型检查；另以锁定的 prettier（yarn.lock）显式 --check 源码。
+# - collaboration/web、admin-web：镜像构建为 `tsc && vite build`。
+# knowledge/frontend（vite build）、file-storage 前端（build.sh 的 webpack）与 document-editor
+# （grunt 打包，jshint 未注册）的镜像构建不含 lint 或类型门禁，此处不另立判定。
+lint_component_frontends() {
+  local ui=data-query/wren-ui
+  if populated "$ui/src"; then
+    ran=1
+    if component_lint_deps "$ui" package.json yarn.lock .yarnrc.yml .yarn/releases -- node_modules -- \
+         env YARN_ENABLE_TELEMETRY=0 node .yarn/releases/yarn-4.5.3.cjs install --immutable --mode=skip-build; then
+      # next build 在类型检查前生成 next-env.d.ts（未入库）；检查快照内按同一内容补齐。
+      [ -f "$ui/next-env.d.ts" ] || printf '%s\n' '/// <reference types="next" />' \
+        '/// <reference types="next/image-types/global" />' > "$ui/next-env.d.ts"
+      (cd "$ui" && diag node_modules/.bin/prettier --check src) \
+        && pass "wren-ui prettier --check" || fail "wren-ui prettier --check（修复：在 $ui 用锁定的 prettier --write）"
+      (cd "$ui" && NEXT_TELEMETRY_DISABLED=1 diag node_modules/.bin/next lint) \
+        && pass "wren-ui next lint（eslint + prettier）" || fail "wren-ui next lint（eslint + prettier）"
+      (cd "$ui" && diag node_modules/.bin/tsc --noEmit) \
+        && pass "wren-ui tsc --noEmit" || fail "wren-ui tsc --noEmit"
+    else
+      fail "wren-ui 依赖安装失败，组件 lint 无法执行"
+    fi
+  fi
+  local buzz=collaboration manager tooling
+  if populated "$buzz/web/src" || populated "$buzz/admin-web/src"; then
+    ran=1
+    manager=$(node -p "require('./$buzz/package.json').packageManager") || return 0
+    if [[ ! "$manager" =~ ^pnpm@[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+      fail "$buzz/package.json 的 packageManager 不是固定 pnpm 版本"; return 0
+    fi
+    tooling="$HOME/tooling/$manager"
+    [ -x "$tooling/node_modules/.bin/pnpm" ] \
+      || diag npm install --prefix "$tooling" --no-audit --no-fund "$manager" \
+      || { fail "安装 $manager 失败"; return 0; }
+    # 与 collaboration/Dockerfile web-builder 阶段同一安装输入与过滤范围。
+    if component_lint_deps "$buzz" package.json pnpm-lock.yaml pnpm-workspace.yaml patches \
+         web/package.json admin-web/package.json -- node_modules web/node_modules admin-web/node_modules -- \
+         "$tooling/node_modules/.bin/pnpm" install --frozen-lockfile --ignore-scripts \
+           --filter buzz-web --filter buzz-admin-web; then
+      local app
+      for app in web admin-web; do
+        populated "$buzz/$app/src" || continue
+        (cd "$buzz/$app" && diag node_modules/.bin/tsc) \
+          && pass "buzz $app tsc（镜像构建同一命令）" || fail "buzz $app tsc（镜像构建同一命令）"
+      done
+    else
+      fail "collaboration web 依赖安装失败，组件类型检查无法执行"
+    fi
+  fi
+  return 0
+}
+
 step_lint() {
   hdr "1/10 格式与静态检查"
   local ran=0
@@ -197,6 +288,7 @@ step_lint() {
       fail "client-kit/dart 有 Dart 源码但本机无 dart 工具链，该侧无法校验"
     fi
   fi
+  have node && lint_component_frontends
   [ "$ran" -eq 0 ] && skip "尚无源码"
   return 0
 }
