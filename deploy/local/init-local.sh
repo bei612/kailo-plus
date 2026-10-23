@@ -233,6 +233,7 @@ compose up -d --wait --no-build openmeter openmeter-sink-worker
 ./bootstrap.sh --sync-realm-locales
 ./bootstrap.sh --ensure-platform-admin
 ./bootstrap.sh --ensure-service-audience
+./bootstrap.sh --declare-service-scopes
 export VERIFY_KEYCLOAK_ADMIN_PASSWORD_FILE="$KAILO_RUNTIME_DIR/secrets/keycloak_admin_password"
 subject=$(../../core/verify/idp-subject.sh "$BOOTSTRAP_USER") || {
   echo '找不到首位管理员 IdP 用户；已有旧 realm 的本地环境须显式 --fresh 重建' >&2; exit 2;

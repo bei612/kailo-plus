@@ -101,14 +101,14 @@ impl Policy {
     }
 
     async fn request(&self, request: &wire::McpRequest) -> Result<wire::McpRequestResult, Refusal> {
-        let authorization = session_header(&request.headers)?;
         // DD-134(5)②：网关管理区的受控探测只走发现类方法，由探测记录判定。
         if let Some(probe) = optional_header(&request.headers, crate::gateway_admin::probe::HEADER)?
         {
+            let caller = management_caller(request)?;
             let probe = Uuid::parse_str(probe).map_err(|_| invalid())?;
             crate::gateway_admin::probe::authorize(
                 &self.state,
-                authorization,
+                &caller,
                 probe,
                 &request.service_names,
                 &request.method,
@@ -117,29 +117,24 @@ impl Policy {
             if request.method == "tools/list" && !empty_params(request.mcp_request.as_deref())? {
                 return Err(invalid());
             }
-            return management_pass(
-                None,
-                json!({"gatewayProbe":probe,"gatewayProbeBearer":authorization}),
-            );
+            return management_pass(None, json!({"gatewayProbe":probe}));
         }
         // DD-134(6)：HUMAN 测试调用只放行该执行冻结的工具名与参数。
         if let Some(action) =
             optional_header(&request.headers, crate::application_tool_human::HEADER)?
         {
+            let caller = management_caller(request)?;
             let action = Uuid::parse_str(action).map_err(|_| invalid())?;
             let narrowed = crate::application_tool_human::authorize_request(
                 &self.state,
-                authorization,
+                &caller,
                 action,
                 &request.service_names,
                 &request.method,
                 request.mcp_request.as_deref(),
             )
             .await?;
-            return management_pass(
-                narrowed,
-                json!({"toolTestAction":action,"toolTestBearer":authorization}),
-            );
+            return management_pass(narrowed, json!({"toolTestAction":action}));
         }
         let validation: Vec<_> = request
             .headers
@@ -154,6 +149,7 @@ impl Policy {
             let [header] = validation.as_slice() else {
                 return Err(denied());
             };
+            let caller = management_caller(request)?;
             let action =
                 Uuid::parse_str(std::str::from_utf8(&header.value).map_err(|_| invalid())?)
                     .map_err(|_| invalid())?;
@@ -168,7 +164,7 @@ impl Policy {
             if let Some(index) = probe {
                 crate::component_release::peer::authorize(
                     &self.state,
-                    authorization,
+                    &caller,
                     crate::component_release::peer::Probe {
                         action,
                         index: index.parse().map_err(|_| invalid())?,
@@ -186,7 +182,7 @@ impl Policy {
                 }
                 crate::application_binding::peer::authorize(
                     &self.state,
-                    authorization,
+                    &caller,
                     action,
                     &request.service_names,
                     &request.method,
@@ -224,14 +220,13 @@ impl Policy {
                     ],
                 }),
                 metadata: Some(
-                    serde_json::from_value(
-                        json!({"managementAction":action,"managementBearer":authorization,
-                    "probeIndex":probe.unwrap_or(""),"probeRun":run.unwrap_or("")}),
-                    )
+                    serde_json::from_value(json!({"managementAction":action,
+                    "probeIndex":probe.unwrap_or(""),"probeRun":run.unwrap_or("")}))
                     .map_err(|_| invalid())?,
                 ),
             });
         }
+        let authorization = session_header(&request.headers)?;
         let calling = request.method == "tools/call";
         let (invocation, application) = self
             .invocation(authorization, &request.service_names, calling)
@@ -386,10 +381,9 @@ impl Policy {
             .as_str()
             .filter(|value| !value.is_empty())
         {
-            let bearer = metadata["gatewayProbeBearer"].as_str().ok_or_else(denied)?;
             crate::gateway_admin::probe::authorize(
                 &self.state,
-                bearer,
+                &metadata[crate::service_auth::CORE_MCP_METADATA.0],
                 Uuid::parse_str(probe).map_err(|_| denied())?,
                 &response.service_names,
                 &response.method,
@@ -407,10 +401,9 @@ impl Policy {
             .as_str()
             .filter(|value| !value.is_empty())
         {
-            let bearer = metadata["toolTestBearer"].as_str().ok_or_else(denied)?;
             let rebuilt = crate::application_tool_human::authorize_response(
                 &self.state,
-                bearer,
+                &metadata[crate::service_auth::CORE_MCP_METADATA.0],
                 Uuid::parse_str(action).map_err(|_| denied())?,
                 &response.service_names,
                 &response.method,
@@ -428,14 +421,14 @@ impl Policy {
             .as_str()
             .is_some_and(|value| !value.is_empty())
         {
-            let bearer = metadata["managementBearer"].as_str().ok_or_else(denied)?;
+            let caller = &metadata[crate::service_auth::CORE_MCP_METADATA.0];
             if let Some(index) = metadata["probeIndex"]
                 .as_str()
                 .filter(|index| !index.is_empty())
             {
                 crate::component_release::peer::authorize(
                     &self.state,
-                    bearer,
+                    caller,
                     crate::component_release::peer::Probe {
                         action: uuid(&metadata, "managementAction")?,
                         index: index.parse().map_err(|_| invalid())?,
@@ -450,7 +443,7 @@ impl Policy {
             } else {
                 crate::application_binding::peer::authorize(
                     &self.state,
-                    bearer,
+                    caller,
                     uuid(&metadata, "managementAction")?,
                     &response.service_names,
                     &response.method,
@@ -654,6 +647,27 @@ fn reference_headers(set: Vec<wire::McpHeader>, calling: bool) -> wire::HeaderMu
             ]
         },
     }
+}
+
+/// DD-137(4)：管理 route 的 Core 身份只取 Gateway 从已验证令牌求得的 claims 元数据。
+/// 管理 route 的 `jwtAuth` 以 `preserveToken: false` 移除 bearer；请求仍带
+/// `authorization` 说明该 route 未剥离令牌（它会经通知与会话清理到达 target），拒绝。
+fn management_caller(request: &wire::McpRequest) -> Result<Value, Refusal> {
+    if request
+        .headers
+        .iter()
+        .any(|header| header.key.eq_ignore_ascii_case("authorization"))
+    {
+        return Err(denied());
+    }
+    let metadata = request
+        .metadata_context
+        .clone()
+        .map(serde_json::to_value)
+        .transpose()
+        .map_err(|_| invalid())?
+        .ok_or_else(denied)?;
+    Ok(metadata[crate::service_auth::CORE_MCP_METADATA.0].clone())
 }
 
 fn session_header(headers: &[wire::McpHeader]) -> Result<&str, Refusal> {
@@ -967,6 +981,45 @@ mod tool_pep_tests {
             assert_eq!(headers.remove.len(), if calling { 0 } else { 2 });
             assert_eq!(headers.set.len(), if calling { 3 } else { 1 });
         }
+    }
+
+    #[test]
+    fn management_caller_is_gateway_metadata_and_a_forwarded_bearer_is_refused() {
+        let key = crate::service_auth::CORE_MCP_METADATA.0;
+        let claims = json!({"iss":"iss","azp":"core","aud":"core-mcp"});
+        let request = |headers: Vec<wire::McpHeader>, metadata: Option<Value>| wire::McpRequest {
+            service_names: vec!["gateway-probe-x".into()],
+            method: "initialize".into(),
+            metadata_context: metadata.map(|value| serde_json::from_value(value).unwrap()),
+            mcp_request: None,
+            headers,
+        };
+        let probe = wire::McpHeader {
+            key: crate::gateway_admin::probe::HEADER.into(),
+            value: b"probe".to_vec(),
+        };
+        assert_eq!(
+            management_caller(&request(
+                vec![probe.clone()],
+                Some(json!({key: claims.clone()}))
+            ))
+            .unwrap(),
+            claims
+        );
+        let forwarded = wire::McpHeader {
+            key: "Authorization".into(),
+            value: b"Bearer core".to_vec(),
+        };
+        assert!(management_caller(&request(
+            vec![probe.clone(), forwarded],
+            Some(json!({key: claims}))
+        ))
+        .is_err());
+        assert!(management_caller(&request(vec![probe.clone()], None)).is_err());
+        assert_eq!(
+            management_caller(&request(vec![probe], Some(json!({})))).unwrap(),
+            Value::Null
+        );
     }
 
     #[test]

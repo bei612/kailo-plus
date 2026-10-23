@@ -396,6 +396,13 @@ done
   echo 'OPENBAO_AUDIT_LOG_BOUND_BYTES 必须小于 OPENBAO_AUDIT_LOG_MAX_BYTES，OPENBAO_AUDIT_READER_GID 不得为 OpenBao 进程组 1000' >&2
   exit 2
 }
+# DD-137：专用 Core MCP 受众同时是 OAuth 2.0 scope 名，只能用 RFC 6749 §3.3 的字符；与平台
+# client 或其他受众相同会让该令牌也被那一面接受，专用受众失去意义。
+[[ "${CORE_MCP_AUDIENCE:-}" =~ ^[]!#-[^-~]+$ ]] || { echo 'CORE_MCP_AUDIENCE 必须是非空的 RFC 6749 scope 名' >&2; exit 2; }
+for other in OIDC_SERVICE_CLIENT_ID OIDC_WORKER_CLIENT_ID OIDC_BROWSER_CLIENT_ID OIDC_NATIVE_CLIENT_ID \
+  OIDC_NATIVE_AUDIENCE AGENTGATEWAY_ADMIN_AUDIENCE; do
+  [ "$CORE_MCP_AUDIENCE" != "${!other:-}" ] || { echo "CORE_MCP_AUDIENCE 不得等于 $other" >&2; exit 2; }
+done
 if [ "${1:-}" = '--validate-config' ] && [ "$#" -eq 1 ]; then
   exit 0
 fi
@@ -482,6 +489,17 @@ if [ "${1:-}" = '--sync-client-redirects' ] && [ "$#" -eq 1 ]; then
 fi
 if [ "${1:-}" = '--verify-client-redirects' ] && [ "$#" -eq 1 ]; then
   idp_declarations sync-redirects --verify
+  exit $?
+fi
+# DD-137：Core service client 的专用 MCP 受众可选 scope（scope、其 audience mapper 与对 Core client
+# 的可选挂接）。持久化 realm 不会重新导入模板，只经此收敛；同名而定义不同的 scope 或 mapper 拒绝，
+# 不覆写；scope 不得挂在其他平台 client 或 realm 默认 scope 上。
+if [ "${1:-}" = '--declare-service-scopes' ] && [ "$#" -eq 1 ]; then
+  idp_declarations service-scopes
+  exit $?
+fi
+if [ "${1:-}" = '--verify-service-scopes' ] && [ "$#" -eq 1 ]; then
+  idp_declarations service-scopes --verify
   exit $?
 fi
 # 持久化 realm 同样不会因导入文件新增平台管理员。只按用户名补齐这一个用户：
@@ -1020,6 +1038,8 @@ mkdir -p "$KAILO_RUNTIME_DIR/secrets/idp-import"
 : "${OIDC_NATIVE_MOBILE_REDIRECT_URI:?bootstrap 需要 .env 中的 OIDC_NATIVE_MOBILE_REDIRECT_URI}"
 # Core 的 service client 令牌带此 audience 才被 AgentGateway 管理面接受（SS-AGW-ADMIN）。
 : "${AGENTGATEWAY_ADMIN_AUDIENCE:?bootstrap 需要 .env 中的 AGENTGATEWAY_ADMIN_AUDIENCE}"
+# Core 管理 MCP 调用的专用受众即其可选 scope 名（DD-137）；模板只登记挂接，scope 由声明创建。
+: "${CORE_MCP_AUDIENCE:?bootstrap 需要 .env 中的 CORE_MCP_AUDIENCE}"
 TEMPORAL_NAMESPACE="$TEMPORAL_NAMESPACE" VERIFY_USER="$VERIFY_USER" \
 BOOTSTRAP_USER="$BOOTSTRAP_USER" PLATFORM_ADMIN_USER="$PLATFORM_ADMIN_USER" \
 OIDC_REALM="$OIDC_REALM" OIDC_SERVICE_CLIENT_ID="$OIDC_SERVICE_CLIENT_ID" \
@@ -1027,6 +1047,7 @@ OIDC_WORKER_CLIENT_ID="$OIDC_WORKER_CLIENT_ID" OIDC_BROWSER_CLIENT_ID="$OIDC_BRO
 OIDC_REDIRECT_URI="$OIDC_REDIRECT_URI" OIDC_POST_LOGOUT_REDIRECT_URI="$OIDC_POST_LOGOUT_REDIRECT_URI" \
 OIDC_NATIVE_CLIENT_ID="$OIDC_NATIVE_CLIENT_ID" \
 OIDC_NATIVE_AUDIENCE="$OIDC_NATIVE_AUDIENCE" AGENTGATEWAY_ADMIN_AUDIENCE="$AGENTGATEWAY_ADMIN_AUDIENCE" \
+CORE_MCP_AUDIENCE="$CORE_MCP_AUDIENCE" \
 OIDC_NATIVE_MOBILE_REDIRECT_URI="$OIDC_NATIVE_MOBILE_REDIRECT_URI" python3 - <<'RENDER'
 import json
 import os
@@ -1043,7 +1064,7 @@ from_env = ["TEMPORAL_NAMESPACE", "VERIFY_USER", "BOOTSTRAP_USER", "PLATFORM_ADM
             "OIDC_SERVICE_CLIENT_ID", "OIDC_WORKER_CLIENT_ID", "OIDC_BROWSER_CLIENT_ID", "OIDC_REDIRECT_URI",
             "OIDC_POST_LOGOUT_REDIRECT_URI",
             "OIDC_NATIVE_CLIENT_ID", "OIDC_NATIVE_AUDIENCE", "OIDC_NATIVE_MOBILE_REDIRECT_URI",
-            "AGENTGATEWAY_ADMIN_AUDIENCE"]
+            "AGENTGATEWAY_ADMIN_AUDIENCE", "CORE_MCP_AUDIENCE"]
 with open("identity-provider/realm.json", encoding="utf-8") as fh:
     document = json.load(fh)
 substitutions = {}

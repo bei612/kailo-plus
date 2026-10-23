@@ -12,6 +12,10 @@
                             back-channel 退出属性，realm 用户资料的 picture 属性，以及全部用户的 picture。
   native-profiles --users-only   只收敛用户 picture（新用户），客户端与用户资料只读核对。
   native-profiles --verify  同一期望值的只读回读。
+  service-scopes            DD-137：Core service client 的专用 MCP 受众可选 scope——scope（名即 CORE_MCP_AUDIENCE）、
+                            其唯一的 audience mapper，以及它作为可选 scope 只挂在 Core service client 上；挂接取自
+                            realm 模板中该 client 的 optionalClientScopes，scope 定义只在本文件。
+  service-scopes --verify   同一期望值的只读回读。
 
 NATIVE_OIDC_CLIENTS 为空时组件专属客户端未声明：声明与回读都如实输出 UNDECLARED 并以 0 退出，不写入任何东西；
 值存在但无效时拒绝。已有同名而不一致的 mapper 或资料属性一律拒绝，不覆写。只读取 INPUT_ENV 中的键；
@@ -34,7 +38,7 @@ INPUT_ENV = (
     "PUBLIC_ORIGIN", "OIDC_ISSUER", "OIDC_REALM", "KEYCLOAK_ADMIN_USER", "VERIFY_BOOTSTRAP_WAIT_SECONDS",
     "NATIVE_OIDC_CLIENTS", "NATIVE_PAGE_ORIGINS",
     "OIDC_SERVICE_CLIENT_ID", "OIDC_WORKER_CLIENT_ID", "OIDC_BROWSER_CLIENT_ID", "OIDC_NATIVE_CLIENT_ID",
-    "OIDC_NATIVE_AUDIENCE", "OIDC_NATIVE_MOBILE_REDIRECT_URI", "AGENTGATEWAY_ADMIN_AUDIENCE",
+    "OIDC_NATIVE_AUDIENCE", "OIDC_NATIVE_MOBILE_REDIRECT_URI", "AGENTGATEWAY_ADMIN_AUDIENCE", "CORE_MCP_AUDIENCE",
     "TEMPORAL_NAMESPACE", "VERIFY_USER", "BOOTSTRAP_USER", "PLATFORM_ADMIN_USER",
 )
 # 摘要另覆盖的仓库文件（相对 deploy/local）。
@@ -202,6 +206,37 @@ def same_logout(client, wanted):
 
 def picture_url(values, user_id):
     return values["PUBLIC_ORIGIN"] + "/api/v1/identity/avatars/" + urllib.parse.quote(user_id, safe="")
+
+
+# DD-137：Core 管理 MCP 调用的专用受众。scope 名即受众；只在 Core 申请该 scope 时签入访问令牌。
+CORE_MCP_PLACEHOLDER = "__CORE_MCP_AUDIENCE__"
+CORE_MCP_MAPPER = "core-mcp-audience"
+# RFC 6749 §3.3 scope-token：%x21 / %x23-5B / %x5D-7E
+SCOPE_TOKEN = re.compile(r"[\x21\x23-\x5B\x5D-\x7E]+")
+# 其他平台 client：专用 scope 不得挂在它们上面，否则它们也能取得该受众。
+OTHER_PLATFORM_CLIENTS = (("OIDC_WORKER_CLIENT_ID", "平台 Worker 客户端"), ("OIDC_BROWSER_CLIENT_ID", "平台浏览器客户端"),
+                          ("OIDC_NATIVE_CLIENT_ID", "平台原生客户端"))
+
+
+def core_mcp_scope(template, values):
+    """(scope 定义, mapper 定义)。模板中 Core service client 的 optionalClientScopes 必须恰为该占位符：
+    挂接只在模板登记一处，与这里的定义不一致即拒绝，而不是猜一个。"""
+    entries = [c for c in template.get("clients", []) if c.get("clientId") == "__OIDC_SERVICE_CLIENT_ID__"]
+    if len(entries) != 1 or entries[0].get("optionalClientScopes") != [CORE_MCP_PLACEHOLDER]:
+        raise Refused("realm 模板中 Core service client 的可选 scope 与本步骤定义不一致")
+    audience = (values.get("CORE_MCP_AUDIENCE") or "").strip()
+    others = {values.get(k) for k in ("OIDC_SERVICE_CLIENT_ID", "OIDC_WORKER_CLIENT_ID", "OIDC_BROWSER_CLIENT_ID",
+                                      "OIDC_NATIVE_CLIENT_ID", "OIDC_NATIVE_AUDIENCE", "AGENTGATEWAY_ADMIN_AUDIENCE")}
+    if not SCOPE_TOKEN.fullmatch(audience) or audience in others:
+        raise Refused("CORE_MCP_AUDIENCE 必须是 RFC 6749 scope 名，且不同于平台 client 与其他受众")
+    scope = {"name": audience, "protocol": "openid-connect",
+             "description": "Kailo Core management MCP calls (DD-137)",
+             "attributes": {"include.in.token.scope": "true", "display.on.consent.screen": "false"}}
+    mapper = {"name": CORE_MCP_MAPPER, "protocol": "openid-connect", "protocolMapper": "oidc-audience-mapper",
+              "consentRequired": False,
+              "config": {"included.custom.audience": audience, "access.token.claim": "true",
+                         "id.token.claim": "false"}}
+    return scope, mapper
 
 
 # ---- Keycloak 管理 API ---------------------------------------------------------------
@@ -391,11 +426,90 @@ def native_profiles(api, values, mode):
                 problems=problems, **users)
 
 
+def service_scopes(api, values, scope_def, mapper, verify):
+    """DD-137：scope、mapper 与挂接逐项先读后写、回读确认。返回 {serviceScopes, changed, problems}（不含值）。"""
+    name = scope_def["name"]
+    changed, problems = 0, []
+
+    def find():
+        found = [s for s in api("/client-scopes") if s.get("name") == name]
+        if len(found) > 1:
+            raise Refused("同名 client scope 不唯一")
+        return found[0] if found else None
+
+    scope = find()
+    if scope is None and verify:
+        return dict(serviceScopes="DRIFTED", changed=0, problems=["缺少 Core MCP 受众 scope"])
+    if scope is None:
+        try:
+            api("/client-scopes", scope_def)
+        except (urllib.error.URLError, OSError):
+            pass  # 创建回应丢失只由回读判定，不重复 POST
+        scope = find()
+        if scope is None:
+            raise Refused("Core MCP 受众 scope 回读不存在")
+        changed += 1
+    if scope.get("protocol") != "openid-connect":
+        raise Refused("同名 client scope 的协议不一致")
+    attrs = scope.get("attributes") or {}
+    if attrs.get("include.in.token.scope") not in (None, "true"):
+        raise Refused("同名 client scope 的属性不一致")
+    scope_path = "/client-scopes/" + urllib.parse.quote(scope["id"], safe="")
+
+    def mappers():
+        return api(scope_path + "/protocol-mappers/models") or []
+
+    current = mappers()
+    if any(m.get("name") != CORE_MCP_MAPPER for m in current):
+        raise Refused("Core MCP 受众 scope 含本步骤未定义的 mapper")
+    if current and not mapper_matches(current, mapper):
+        raise Refused("Core MCP 受众 scope 的 audience mapper 与定义不一致")
+    if not current:
+        if verify:
+            problems.append("Core MCP 受众 scope 缺少 audience mapper")
+        else:
+            try:
+                api(scope_path + "/protocol-mappers/models", mapper)
+            except (urllib.error.URLError, OSError):
+                pass
+            if not mapper_matches(mappers(), mapper):
+                raise Refused("Core MCP 受众 scope 的 audience mapper 回读不一致")
+            changed += 1
+
+    realm_defaults = {s.get("name") for kind in ("default-default-client-scopes", "default-optional-client-scopes")
+                      for s in api("/" + kind)}
+    if name in realm_defaults:
+        raise Refused("Core MCP 受众 scope 不得是 realm 默认 scope")
+    for key, label in OTHER_PLATFORM_CLIENTS:
+        path = one_client(api, values[key], label)
+        attached = {s.get("name") for kind in ("default-client-scopes", "optional-client-scopes")
+                    for s in api(path + "/" + kind)}
+        if name in attached:
+            raise Refused(f"Core MCP 受众 scope 挂在{label}上")
+    core = one_client(api, values["OIDC_SERVICE_CLIENT_ID"], "Core service 客户端")
+    if name in {s.get("name") for s in api(core + "/default-client-scopes")}:
+        raise Refused("Core MCP 受众 scope 不得是 Core service 客户端的默认 scope")
+
+    def optional():
+        return {s.get("name") for s in api(core + "/optional-client-scopes")}
+
+    if name not in optional():
+        if verify:
+            problems.append("Core service 客户端未以可选 scope 挂接 Core MCP 受众")
+        else:
+            api(core + "/optional-client-scopes/" + urllib.parse.quote(scope["id"], safe=""), {}, "PUT")
+            if name not in optional():
+                raise Refused("Core MCP 受众 scope 挂接回读不一致")
+            changed += 1
+    return dict(serviceScopes="DECLARED" if not problems else "DRIFTED", changed=changed, problems=problems)
+
+
 def main(argv):
-    if len(argv) < 1 or argv[0] not in ("sync-redirects", "native-profiles"):
-        raise Refused("用法：idp-declarations.py sync-redirects|native-profiles [--verify|--users-only]")
+    if len(argv) < 1 or argv[0] not in ("sync-redirects", "native-profiles", "service-scopes"):
+        raise Refused("用法：idp-declarations.py sync-redirects|native-profiles|service-scopes [--verify|--users-only]")
     flags = set(argv[1:])
-    allowed = {"sync-redirects": {"--verify"}, "native-profiles": {"--verify", "--users-only"}}[argv[0]]
+    allowed = {"sync-redirects": {"--verify"}, "native-profiles": {"--verify", "--users-only"},
+               "service-scopes": {"--verify"}}[argv[0]]
     if not flags <= allowed or len(flags) > 1:
         raise Refused("参数无效")
     runtime = os.environ.get("KAILO_RUNTIME_DIR")
@@ -409,14 +523,18 @@ def main(argv):
     # 无效声明先于任何网络动作拒绝；空声明不联系 IdP
     if argv[0] == "native-profiles" and not declared_clients(values):
         return dict(nativeClientProfiles="UNDECLARED", clients=0, problems=[])
+    here = pathlib.Path(__file__).resolve().parent
+    with open(here / "identity-provider" / "realm.json", encoding="utf-8") as stream:
+        template = json.load(stream)
+    if argv[0] == "service-scopes":
+        scope_def, mapper = core_mcp_scope(template, values)
     api = Admin(values, runtime)
     if verify:
         api = ReadOnly(api)
     if argv[0] == "sync-redirects":
-        here = pathlib.Path(__file__).resolve().parent
-        with open(here / "identity-provider" / "realm.json", encoding="utf-8") as stream:
-            template = json.load(stream)
         return sync_redirects(api, desired_redirects(template, values), verify)
+    if argv[0] == "service-scopes":
+        return service_scopes(api, values, scope_def, mapper, verify)
     return native_profiles(api, values, "verify" if verify else "users-only" if "--users-only" in flags
                            else "declare")
 

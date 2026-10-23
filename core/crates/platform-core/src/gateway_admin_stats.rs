@@ -7,7 +7,9 @@
 //!   Tenant 归属只按 gateway user 映射 Core 已登记的 Installation gateway 身份或
 //!   binding ServicePrincipal（SF-AGW-08、DD-128）；映射不到的为 `UNATTRIBUTED`。
 //!   用量状态取 Core durable usage（SS-AGW-USAGE）：没有 UsageEvent 即
-//!   `BILLING_UNAVAILABLE`，不显示零用量（`14` §8）。
+//!   `BILLING_UNAVAILABLE`，不显示零用量（`14` §8）。只计模型入口 listener 上解析出
+//!   模型请求的记录（DD-134(3)①、SF-AGW-31）：模型列表查询、解析前被拒的请求与其他
+//!   listener 上的 MCP、工具与探测流量都不是模型调用。
 //! - 工具调用：request log 只持久 LLM 请求（SF-AGW-27），因此取 Core 的 Agent 工具子
 //!   ActionExecution 与其审计；时延是 Core 观测的 INTENT 到终态审计的间隔，与模型
 //!   调用的 Gateway 时延分列，不混算分位数。
@@ -378,15 +380,22 @@ pub(crate) async fn gateway_users(
 // request log
 // ---------------------------------------------------------------------------
 
-/// 一页检索请求体：只取元数据与属性（gateway user），不取 payload。
+/// 模型入口 listener（上游 LLM 本地 listener 的固定名称，SF-AGW-31）。
+const MODEL_LISTENER: &str = "llm";
+/// 只在 Gateway 解析出模型请求时才有的属性及其全部取值（SF-AGW-31）。
+const MODEL_OPERATION: (&str, [&str; 2]) = ("gen_ai.operation.name", ["chat", "embeddings"]);
+
+/// 一页检索请求体：只取元数据与属性（gateway user），不取 payload。检索条件恒含
+/// 模型调用判定（DD-134(3)①）：平台范围同样不把其他流量计为模型调用。
 pub(crate) fn search_body(
     window: &Window,
     users: Option<&[String]>,
     cursor: Option<&str>,
 ) -> Value {
-    let mut filters = json!({});
+    let mut filters = json!({"attributes":{"listener":[MODEL_LISTENER],
+        MODEL_OPERATION.0: MODEL_OPERATION.1}});
     if let Some(users) = users {
-        filters["attributes"] = json!({"agentgateway.user": users});
+        filters["attributes"]["agentgateway.user"] = json!(users);
     }
     let mut body = json!({"limit":LOG_PAGE,"timeRange":{"from":rfc3339(window.from),"to":rfc3339(window.to)},
         "filters":filters,"includeAttributes":true});
@@ -1421,7 +1430,8 @@ async fn model_detail(
         .get("log")
         .filter(|log| !log.is_null())
         .ok_or_else(not_found)?;
-    // get 不带属性：以同一 trace 与时间段的检索补出 gateway user 归属。
+    // get 不带属性：以同一 trace 与时间段的检索补出 gateway user 归属；该检索带模型调用
+    // 判定，检索不到即不是模型调用（DD-134(3)①），不下钻。
     let mut entry = parse_log(log).ok_or_else(|| unavailable("request log shape"))?;
     let around = Window {
         from: entry.started - Duration::seconds(1),
@@ -1442,7 +1452,8 @@ async fn model_detail(
         .flatten()
         .filter_map(parse_log)
         .find(|candidate| candidate.id == entry.id)
-        .and_then(|candidate| candidate.user);
+        .ok_or_else(not_found)?
+        .user;
     let scoped = (!caller.platform).then_some(tenant);
     let users = gateway_users(&state.pool, scoped).await?;
     let attribution = entry.user.as_ref().and_then(|user| users.get(user));
@@ -1792,6 +1803,30 @@ mod tests {
         assert_eq!(by_tool.len(), 1);
         assert_eq!(by_tool[0]["counters"]["toolP50Ms"], 5000);
         assert!(by_tool[0]["counters"].get("modelP50Ms").is_none());
+    }
+
+    /// 生产验收：模型统计只取模型入口 listener 上解析出模型请求的记录；平台范围（无
+    /// gateway user 过滤）与 Tenant 范围同样带该判定，用户过滤叠加而不覆盖它。
+    #[test]
+    fn log_search_only_counts_model_calls_on_the_model_listener() {
+        let window = Window {
+            from: Utc::now() - Duration::hours(1),
+            to: Utc::now(),
+            bucket_seconds: 60,
+        };
+        let platform = search_body(&window, None, None);
+        assert_eq!(
+            platform["filters"]["attributes"],
+            json!({"listener":["llm"],"gen_ai.operation.name":["chat","embeddings"]})
+        );
+        let users = vec!["p1".to_string()];
+        let tenant = search_body(&window, Some(&users), Some("c"));
+        assert_eq!(
+            tenant["filters"]["attributes"],
+            json!({"listener":["llm"],"gen_ai.operation.name":["chat","embeddings"],
+                "agentgateway.user":["p1"]})
+        );
+        assert_eq!(tenant["cursor"], "c");
     }
 
     #[test]

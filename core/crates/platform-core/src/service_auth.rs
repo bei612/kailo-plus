@@ -317,6 +317,34 @@ impl GatewayServiceAuth {
     }
 }
 
+/// DD-137(4)：管理 route 的 mcpGuardrails 元数据键与表达式。Gateway 在两相都以该请求
+/// 已验证的 jwt claims 求值（SF-AGW-30）；bearer 已被 `preserveToken: false` 移除。
+pub(crate) const CORE_MCP_METADATA: (&str, &str) = (
+    "coreMcpCaller",
+    "{'iss': jwt.iss, 'azp': jwt.azp, 'aud': jwt.aud}",
+);
+
+fn core_mcp_claims_match(
+    claims: &serde_json::Value,
+    issuer: &str,
+    client: &str,
+    worker: &str,
+    audience: &str,
+) -> bool {
+    let aud = match claims.get("aud") {
+        Some(serde_json::Value::String(value)) => value == audience,
+        Some(serde_json::Value::Array(values)) => {
+            values.iter().any(|value| value.as_str() == Some(audience))
+        }
+        _ => false,
+    };
+    !client.is_empty()
+        && client != worker
+        && claims.get("iss").and_then(serde_json::Value::as_str) == Some(issuer)
+        && claims.get("azp").and_then(serde_json::Value::as_str) == Some(client)
+        && aud
+}
+
 /// 令牌里被本模块判定用到的声明。其余声明一概不读——读了就会有人想拿它
 /// 做业务授权，而 service identity 只认证服务，不表达 HUMAN/AGENT 权限
 /// （`DD-37`、`.design/03` §9）。
@@ -339,26 +367,46 @@ pub struct ServiceAuth {
 }
 
 impl ServiceAuth {
-    /// Existing Core OIDC client, restricted by the MCP lifecycle consumer to
-    /// one already admitted binding ActionExecution. This is not a Worker or
-    /// user permission and cannot authorize business tools/call.
+    /// DD-137：Core 管理 MCP route（受控探测、binding 激活验证、release 一致性、测试
+    /// 调用）的 `jwtAuth`。只接受专用 Core MCP 受众（Core 以 scope 单独申请，Core service
+    /// API 与 Gateway 管理面都不接受它），校验后由 Gateway 移除 bearer：保留的 bearer 会经
+    /// 不走 ExtMcp 的通知与 stateless 会话清理 DELETE 到达第三方 target（SF-AGW-29）。
+    /// ExtMcp 改以 [`CORE_MCP_METADATA`] 取得 Gateway 已验证的 claims（SF-AGW-30）。
     pub(crate) fn core_mcp_authentication(&self) -> Result<serde_json::Value, ServiceAuthError> {
         let client =
             std::env::var("OIDC_SERVICE_CLIENT_ID").map_err(|_| ServiceAuthError::TokenInvalid)?;
-        if client.is_empty() || client == self.caller_client_id {
+        let audience =
+            crate::oidc::core_mcp_audience().map_err(|_| ServiceAuthError::TokenInvalid)?;
+        if client.is_empty() || client == self.caller_client_id || audience == self.audience {
             return Err(ServiceAuthError::TokenInvalid);
         }
         Ok(
-            serde_json::json!({"mode":"strict","issuer":self.issuer,"audiences":[self.audience],
-            "preserveToken":true,"jwks":{"url":self.jwks_uri},
+            serde_json::json!({"mode":"strict","issuer":self.issuer,"audiences":[audience],
+            "preserveToken":false,"jwks":{"url":self.jwks_uri},
             "jwtValidationOptions":{"requiredClaims":["exp","iss","aud","sub"]}}),
         )
     }
 
-    pub(crate) async fn verify_core_mcp(&self, value: &str) -> Result<(), ServiceAuthError> {
+    /// ExtMcp 两相对管理 route 的 Core 身份判定（DD-137(4)）：`claims` 是 route 元数据
+    /// [`CORE_MCP_METADATA`] 由 Gateway 从已验证令牌求得的 `iss`/`azp`/`aud`。`iss` 必须是
+    /// 部署 issuer，`azp` 必须是 Core service client（不是 Worker），`aud` 必须含专用受众。
+    pub(crate) fn verify_core_mcp_claims(
+        &self,
+        claims: &serde_json::Value,
+    ) -> Result<(), ServiceAuthError> {
         let client =
             std::env::var("OIDC_SERVICE_CLIENT_ID").map_err(|_| ServiceAuthError::TokenInvalid)?;
-        self.verify_binding_client(Some(value), &client).await
+        let audience =
+            crate::oidc::core_mcp_audience().map_err(|_| ServiceAuthError::TokenInvalid)?;
+        core_mcp_claims_match(
+            claims,
+            &self.issuer,
+            &client,
+            &self.caller_client_id,
+            &audience,
+        )
+        .then_some(())
+        .ok_or(ServiceAuthError::TokenInvalid)
     }
 
     pub(crate) fn shares_identity(&self, issuer: &str, audience: &str) -> bool {
@@ -604,5 +652,40 @@ mod gateway_tests {
         assert!(auth
             .verify_with_keys(&token, &serde_json::to_vec(&rotated).unwrap(), now)
             .is_err());
+    }
+}
+
+#[cfg(test)]
+mod core_mcp_tests {
+    use super::core_mcp_claims_match;
+    use serde_json::json;
+
+    #[test]
+    fn core_mcp_caller_requires_issuer_core_client_and_dedicated_audience() {
+        let ok = |claims| core_mcp_claims_match(&claims, "iss", "core", "worker", "core-mcp");
+        assert!(ok(json!({"iss":"iss","azp":"core","aud":"core-mcp"})));
+        assert!(ok(
+            json!({"iss":"iss","azp":"core","aud":["admin","core-mcp"]})
+        ));
+        for bad in [
+            json!({"iss":"other","azp":"core","aud":"core-mcp"}),
+            json!({"iss":"iss","azp":"worker","aud":"core-mcp"}),
+            json!({"iss":"iss","azp":"core","aud":"core"}),
+            json!({"iss":"iss","azp":"core","aud":["admin"]}),
+            json!({"iss":"iss","azp":"core"}),
+            json!({}),
+            json!(null),
+            json!("Bearer token"),
+        ] {
+            assert!(!ok(bad.clone()), "{bad}");
+        }
+        // Core 与 Worker 同为一个 client 是配置错误，不能当作 Core 身份。
+        assert!(!core_mcp_claims_match(
+            &json!({"iss":"iss","azp":"core","aud":"core-mcp"}),
+            "iss",
+            "core",
+            "core",
+            "core-mcp"
+        ));
     }
 }

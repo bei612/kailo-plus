@@ -7,17 +7,18 @@ exposure: tenant_admin
 design:
   requirements: [V-REQ-03, V-REQ-10, V-REQ-13, V-REQ-15]
   # DD-136：外部 MCP 服务器的运维域参考运行体与声明式投递（交付目录、一致性环境），随发布入口部署。
-  decisions: [DD-134, DD-136]
+  # DD-137：Core 管理 MCP 调用的专用受众（scope 申请）与管理 route 的 bearer 剥离。
+  decisions: [DD-134, DD-136, DD-137]
   # DD-134 编排的 EXT-BASE 动作（契约、release、binding）沿其既有能力记录
   # component.capability_contracts、component.release_registration 与
   # component.application_binding 的准入与证据，本记录不把它们当作前提。
-  facts: [SF-AGW-06, SF-AGW-08, SF-AGW-09, SF-AGW-27, SF-AGW-28]
+  facts: [SF-AGW-06, SF-AGW-08, SF-AGW-09, SF-AGW-24, SF-AGW-27, SF-AGW-28, SF-AGW-29, SF-AGW-30, SF-AGW-31]
   seams: [SS-AGW-ADMIN]
   blockers: []
   entities: [ActionExecution, AuditEvent, UsageEvent, ToolDefinition, Resource]
 
 validation:
-  scenarios: [V-SCN-191, V-SCN-192, V-SCN-193, V-SCN-194, V-SCN-195, V-SCN-196, V-SCN-197, V-SCN-220]
+  scenarios: [V-SCN-191, V-SCN-192, V-SCN-193, V-SCN-194, V-SCN-195, V-SCN-196, V-SCN-197, V-SCN-220, V-SCN-221]
   evidence:
     - dimension: 上游接缝
       ref: model-gateway/fork/verify/admin-authentication.md
@@ -69,6 +70,13 @@ implementation:
     - web-client/web/src/platform/ui/PlatformApp.tsx
     - collaboration/desktop/src/app/routes/platform.$section.tsx
     - core/crates/platform-core/src/component_release_peer.rs
+    - core/crates/platform-core/src/service_auth.rs
+    - core/crates/platform-core/src/oidc.rs
+    - core/crates/platform-core/src/application_binding_peer.rs
+    - core/crates/platform-core/src/application_binding_gateway.rs
+    - deploy/local/idp-declarations.py
+    - deploy/local/identity-provider/realm.json
+    - deploy/local/bootstrap.sh
     - deploy/local/compose.yaml
     - deploy/local/protocol-peers/directory.json
     - deploy/local/protocol-peers/conformance/protocol-peer-reference.json

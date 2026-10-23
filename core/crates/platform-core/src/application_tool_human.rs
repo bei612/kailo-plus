@@ -8,7 +8,7 @@
 //! INTENT 与 DECISION 审计。
 //!
 //! 工具参数只在本请求内存中，ActionExecution 只冻结其 canonical 摘要；派发前先落
-//! DISPATCH 审计作为单次派发栅栏，随后发布执行专属 route（Core 专用 bearer，
+//! DISPATCH 审计作为单次派发栅栏，随后发布执行专属 route（Core 专用受众的 bearer，Gateway 校验后移除，DD-137；
 //! `mcpAuthorization` 只放行该工具名的 `tools/call`），ExtMcp 再按该执行冻结的工具名
 //! 与参数摘要放行，并在响应相位按输出 schema 与冻结 exposure 重建结果。结果只在本次
 //! 回应中返回给发起人，Core 不保存；结果不明保持 `UNKNOWN`，不重放。
@@ -685,8 +685,7 @@ async fn invoke(
                 ),
             ],
             methods: json!({"*":"request","initialize":"full","ping":"full","tools/call":"full"}),
-            metadata: json!({"toolTestAction":"has(mcpGuardrails.toolTestAction) ? mcpGuardrails.toolTestAction : ''",
-                "toolTestBearer":"has(mcpGuardrails.toolTestBearer) ? mcpGuardrails.toolTestBearer : ''"}),
+            metadata: json!({"toolTestAction":"has(mcpGuardrails.toolTestAction) ? mcpGuardrails.toolTestAction : ''"}),
             native_target: call.native_target,
         },
     )
@@ -718,18 +717,17 @@ async fn invoke(
         .map_err(|_| unavailable())
 }
 
-/// ExtMcp 两相共用：Core 专用 bearer、该执行仍 ALLOWED 且未派发、已落派发栅栏、
+/// ExtMcp 两相共用：Gateway 已验证的 Core 身份（DD-137(4)）、该执行仍 ALLOWED 且未派发、已落派发栅栏、
 /// 发起与执行者是同一 active HUMAN、目标只是该执行的 route。
 async fn live_execution(
     state: &ServiceState,
-    bearer: &str,
+    caller: &Value,
     action: Uuid,
     services: &[String],
 ) -> Result<Execution, Refusal> {
     state
         .auth
-        .verify_core_mcp(bearer)
-        .await
+        .verify_core_mcp_claims(caller)
         .map_err(|_| denied())?;
     let ae = crate::governance::load_execution(&state.pool, action)
         .await?
@@ -765,13 +763,13 @@ async fn live_execution(
 /// 请求相位：只放行该执行冻结的工具名与参数摘要，并把参数收窄为原生 `input`。
 pub(crate) async fn authorize_request(
     state: &ServiceState,
-    bearer: &str,
+    caller: &Value,
     action: Uuid,
     services: &[String],
     method: &str,
     params: Option<&[u8]>,
 ) -> Result<Option<Vec<u8>>, Refusal> {
-    let ae = live_execution(state, bearer, action, services).await?;
+    let ae = live_execution(state, caller, action, services).await?;
     match method {
         "initialize" | "notifications/initialized" | "ping" => Ok(None),
         "tools/call" => {
@@ -825,13 +823,13 @@ fn frozen_call(raw: &Value, parameters: &Value) -> Result<Value, Refusal> {
 /// 元数据不透传。原生错误结果只回一个不含正文的错误。
 pub(crate) async fn authorize_response(
     state: &ServiceState,
-    bearer: &str,
+    caller: &Value,
     action: Uuid,
     services: &[String],
     method: &str,
     response: &[u8],
 ) -> Result<Option<Vec<u8>>, Refusal> {
-    let ae = live_execution(state, bearer, action, services).await?;
+    let ae = live_execution(state, caller, action, services).await?;
     match method {
         "initialize" | "ping" => Ok(None),
         "tools/call" => {

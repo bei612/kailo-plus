@@ -162,7 +162,7 @@ pub(crate) struct Probe<'a> {
 
 pub(crate) async fn authorize(
     state: &ServiceState,
-    bearer: &str,
+    caller: &Value,
     probe: Probe<'_>,
     services: &[String],
     method: &str,
@@ -172,8 +172,7 @@ pub(crate) async fn authorize(
     let Probe { action, index, run } = probe;
     state
         .auth
-        .verify_core_mcp(bearer)
-        .await
+        .verify_core_mcp_claims(caller)
         .map_err(|_| Refusal::Denied(ReasonCode::PermissionDenied))?;
     if services != [target(action)] {
         return Err(bad());
@@ -258,10 +257,10 @@ async fn route(
             "policies":{"backendAuth":service.backend_auth()},"failureMode":"failClosed",
             "methods":{"*":"request","initialize":"full","ping":"full","tools/list":"full","tools/call":"full"},
             "requestHeaders":{"allowed":["authorization",transport::HEADER,transport::PROBE_HEADER,transport::RUN_HEADER]},
-            "metadata":{"managementAction":"has(mcpGuardrails.managementAction) ? mcpGuardrails.managementAction : ''",
-                "managementBearer":"has(mcpGuardrails.managementBearer) ? mcpGuardrails.managementBearer : ''",
+            "metadata":crate::gateway_admin::probe::core_mcp_metadata(json!({
+                "managementAction":"has(mcpGuardrails.managementAction) ? mcpGuardrails.managementAction : ''",
                 "probeIndex":"has(mcpGuardrails.probeIndex) ? mcpGuardrails.probeIndex : ''",
-                "probeRun":"has(mcpGuardrails.probeRun) ? mcpGuardrails.probeRun : ''"}}]}},
+                "probeRun":"has(mcpGuardrails.probeRun) ? mcpGuardrails.probeRun : ''"})).map_err(|_|bad())?}]}},
         "backends":[{"mcp":{"statefulMode":"stateless","prefixMode":"conditional","failureMode":"failClosed",
             "targets":[native_target]}}]});
     let gateway = crate::model_route::Gateway::from_env()?;

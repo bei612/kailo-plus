@@ -194,8 +194,8 @@ pub(super) async fn publish_validation(
                 "policies":{"backendAuth":service.backend_auth()},"failureMode":"failClosed",
                 "methods":{"*":"request","initialize":"full","ping":"full","tools/list":"full"},
                 "requestHeaders":{"allowed":["authorization",peer::HEADER]},
-                "metadata":{"managementAction":"has(mcpGuardrails.managementAction) ? mcpGuardrails.managementAction : ''",
-                    "managementBearer":"has(mcpGuardrails.managementBearer) ? mcpGuardrails.managementBearer : ''"}}]}},
+                "metadata":crate::gateway_admin::probe::core_mcp_metadata(json!({
+                    "managementAction":"has(mcpGuardrails.managementAction) ? mcpGuardrails.managementAction : ''"}))?}]}},
         "backends":[{"mcp":{"statefulMode":"stateless","prefixMode":"conditional","failureMode":"failClosed",
             "targets":[native_target]}}]});
     let gateway = crate::model_route::Gateway::from_env()?;
