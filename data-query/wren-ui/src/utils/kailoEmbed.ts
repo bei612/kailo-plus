@@ -83,12 +83,19 @@ export function renewNativeSession(timeoutMs = 15000): Promise<boolean> {
   return renewal;
 }
 
+// Set once `auth-required` reached Kailo: from then on the expired session is
+// Kailo's prompt alone (V-SCN-226), so the page shows no message of its own for
+// the 401s that follow. The host reloads the frame after signing in, which
+// starts this module afresh; a later non-401 answer also clears it.
+let hostSignInRequested = false;
+
 // The IdP needs interaction: inside Kailo ask the host (`auth-required`); the
 // host shows its re-login state and signs in at top level on the user's click.
 // At top level the IdP sign-in is the Kailo sign-in.
 export function requireSignIn() {
   if (presentation().embedded) {
-    kailoRuntime()?.requestTopLevelSignIn();
+    if (kailoRuntime()?.requestTopLevelSignIn() === true)
+      hostSignInRequested = true;
     return;
   }
   const returnTo = `${window.location.pathname}${window.location.search}`;
@@ -103,8 +110,20 @@ export async function kailoFetch(
   init?: RequestInit,
 ): Promise<Response> {
   const response = await fetch(input, init);
-  if (response.status !== 401 || typeof window === 'undefined') return response;
+  if (response.status !== 401 || typeof window === 'undefined') {
+    if (response.status !== 401) hostSignInRequested = false;
+    return response;
+  }
   if (await renewNativeSession()) return fetch(input, init);
   requireSignIn();
   return response;
+}
+
+// V-SCN-226: an Apollo network error that is the expired session Kailo is
+// already prompting for. The page stays silent instead of adding its own
+// (second) notice inside the frame; any other failure is reported as before.
+export function signInOwnedByHost(networkError: unknown): boolean {
+  const status = (networkError as { statusCode?: unknown } | null | undefined)
+    ?.statusCode;
+  return hostSignInRequested && status === 401;
 }

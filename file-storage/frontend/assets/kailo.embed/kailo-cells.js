@@ -198,10 +198,13 @@
             attempts = {first: now, count: 0};
         }
         if (attempts.count >= MAX_ATTEMPTS) {
-            if (embed && embedState().embedded) {
-                embed.requestTopLevelSignIn();
+            // V-SCN-226: once Kailo received auth-required it alone prompts for
+            // the new sign-in; the frame adds no second notice. Without Kailo
+            // (top level, or no Kailo origin) the page explains itself.
+            var handedToKailo = !!embed && embedState().embedded && embed.requestTopLevelSignIn() === true;
+            if (!handedToKailo) {
+                showAuthProblem();
             }
-            showAuthProblem();
             return false;
         }
         attempts.count += 1;

@@ -4,7 +4,8 @@ actions (design 18, 08 §4, 07 §2.6, DD-124). Run by start.sh after the
 independent Cells service is healthy; every step is idempotent, read back and
 fails closed. Only original native admin entries are used:
 
-  REST /a/config/versioning, /a/config/datasource/{Name} (read only),
+  REST /a/config/versioning, /a/config/datasource/{Name} (binding: read
+       only; declared content datasources: versioning policy only),
        /a/user-meta/namespace, /a/config/frontend/plugin/{meta.user,
        core.pydio, gui.ajax, core.auth, editor.onlyoffice, editor.libreoffice},
        /a/tree/admin/stat, /a/workspace, /a/acl, /a/user/{Login}
@@ -48,6 +49,17 @@ Why each item is required (verified in this fork):
                datasource; an existing datasource with another policy is
                refused there (the Cells console changes it and versions the
                existing files).
+  content      the personal-files datasources personal, pydiods1 and
+  versioning   cellsdata keep revisions "30 days max" (default-policy,
+               data/versions/grpc/service/service.go InitDefaults), first set
+               in production through the Cells console (2026-10). Declared in
+               DATASOURCE_VERSIONING and read back. The native console path is
+               used: GET /a/config/datasource/{Name}, then POST the same object
+               with only VersioningPolicyName changed (PutDataSource on an
+               existing datasource is an UPDATE: the vault reference passed back
+               is kept, initialVersioningEmpty queues the full versioning job).
+               Written only when it differs; a missing datasource or policy
+               fails closed, the datasource is never created here.
   editors      DD-132(2)(3): the native ONLYOFFICE plugin editor.onlyoffice is
                enabled with the DocumentServer origin, the Cells origin it may
                request (wopisrc) and the extension list, and only after that
@@ -112,6 +124,13 @@ NAMESPACE = re.compile(r"usermeta-[a-z0-9][a-z0-9-]{0,62}")
 DATASOURCE = re.compile(r"[a-z0-9]{1,33}")
 # Native datasources whose role is fixed by the installation.
 RESERVED_DATASOURCES = {"personal", "cellsdata", "versions", "thumbnails"}
+# Versioning policy of the content datasources (personal files and the stock
+# common files), declared here and read back on every run.
+DATASOURCE_VERSIONING = (
+    ("personal", "default-policy"),
+    ("pydiods1", "default-policy"),
+    ("cellsdata", "default-policy"),
+)
 POLICY = re.compile(r"[A-Za-z0-9_-]{1,128}")
 FOLDER = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
 SLUG = re.compile(r"[a-z0-9][a-z0-9-]{0,62}")
@@ -312,6 +331,23 @@ def ensure_datasource(native, s):
             "binding datasource must be an enabled LOCAL flat datasource")
     require(observed.get("VersioningPolicyName") == s["policy"],
             "binding datasource has another versioning policy; change it in the Cells console (it also versions the existing files)")
+
+
+def ensure_datasource_versioning(native, s, changes):
+    """Declared versioning policy of the content datasources, written the way
+    the Cells console does it and read back."""
+    policies = {p.get("Uuid") for p in native.call("GET", "config/versioning").get("Policies") or []}
+    for name, policy in DATASOURCE_VERSIONING:
+        require(name != s["datasource"], "the binding datasource cannot be a declared content datasource")
+        require(policy in policies, f"versioning policy {policy} declared for {name} is not defined in this instance")
+        observed = native.call("GET", "config/datasource/" + name, missing=True)
+        require(isinstance(observed, dict) and observed.get("Name") == name,
+                f"content datasource {name} does not exist; it is never created here")
+        if observed.get("VersioningPolicyName") != policy:
+            native.call("POST", "config/datasource/" + name, dict(observed, VersioningPolicyName=policy))
+            changes.append(f"{name} versioning policy set")
+            observed = native.call("GET", "config/datasource/" + name, missing=True) or {}
+        require(observed.get("VersioningPolicyName") == policy, f"{name} versioning policy read-back differs")
 
 
 def namespace_ok(ns):
@@ -555,6 +591,7 @@ def reconcile(s, native, cli, deadline):
     wait_ready(native, deadline)
     refuse_shared_datasource(native, s)
     ensure_datasource(native, s)
+    ensure_datasource_versioning(native, s, changes)
     ensure_brand(native, s, changes)
     ensure_draft_mode(native, s, changes)
     editors = ensure_editors(native, s, changes)

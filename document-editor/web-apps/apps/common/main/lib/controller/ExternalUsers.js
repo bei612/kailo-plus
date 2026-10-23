@@ -53,7 +53,35 @@ Common.UI.ExternalUsers = new( function() {
         stackUsersInfoResponse = [],
         requestedUsersInfo = [],
         api,
-        userColors = [];
+        userColors = [],
+        imageStates = {};
+
+    // Kailo (07 §4.7.3): the picture address of a person without an avatar
+    // answers 404. Each address is loaded once per editor; one that cannot load
+    // is kept as "no image" (null), so the header, comments, review and history
+    // show the initials instead of an empty circle.
+    var _imageOf = function(image) {
+        return (image && imageStates[image] === 'failed') ? null : image;
+    };
+
+    var _probeImage = function(image) {
+        if (!image || imageStates[image] || typeof Image === 'undefined') return;
+        imageStates[image] = 'loading';
+        var probe = new Image();
+        probe.onload = function() { imageStates[image] = 'loaded'; };
+        probe.onerror = function() {
+            imageStates[image] = 'failed';
+            var users = [];
+            _.each(externalUsersInfo, function(user) {
+                if (user.image === image) {
+                    user.image = null;
+                    users.push({id: user.id, image: null, name: user.name, email: user.email});
+                }
+            });
+            users.length && Common.NotificationCenter.trigger('mentions:setusers', 'info', users);
+        };
+        probe.src = image;
+    };
 
     var _get = function(type, ids, from, count, search) {
         if (type==='info') {
@@ -90,7 +118,9 @@ Common.UI.ExternalUsers = new( function() {
 
     var _setImage = function(id, image) {
         var user = _.findWhere(externalUsersInfo, {id: id})
+        image = _imageOf(image);
         user ? (user.image = image) : externalUsersInfo.push({id: id, image: image});
+        _probeImage(image);
     };
 
     var _onUsersInfo = function(data) {
@@ -105,6 +135,8 @@ Common.UI.ExternalUsers = new( function() {
 
         var append = [];
         data.users && _.each(data.users, function(item) {
+            item.image = _imageOf(item.image);
+            _probeImage(item.image);
             var user = _.findWhere(externalUsersInfo, {id: item.id});
             if (user) {
                 user.image = item.image;

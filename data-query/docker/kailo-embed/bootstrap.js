@@ -37,8 +37,9 @@
     return typeof value === 'string' && value.charAt(0) === '/' && value.charAt(1) !== '/' && !/[\\\u0000- \u007f]/.test(value) ? value : '/';
   };
   var post = function (type) {
-    if (!embedded) return;
+    if (!embedded) return false;
     for (var i = 0; i < origins.length; i++) window.parent.postMessage({ source: 'kailo-embed', version: 1, type: type }, origins[i]);
+    return origins.length > 0;
   };
   var show = function (message, href) {
     document.getElementById('t').textContent = message;
@@ -85,8 +86,9 @@
         location.replace(target);
         return;
       }
-      post('auth-required');
-      show(text.expired, null);
+      // V-SCN-226: once Kailo has the request it alone prompts; the frame stays
+      // blank. Only when no Kailo origin is configured does the page explain itself.
+      if (!post('auth-required')) show(text.expired, null);
     });
   } else if (page === '/kailo-embed/signed-out') {
     var logout = meta('kailo-logout-url');

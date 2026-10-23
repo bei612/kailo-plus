@@ -32,7 +32,7 @@ import Callbacks from './Callbacks'
 import Pydio from 'pydio'
 import PathUtils from 'pydio/util/path'
 const {JobsStore} = Pydio.requireLib('boot');
-const {DNDTreeView, SimpleList} = Pydio.requireLib('components')
+const {DNDTreeView, SimpleList, UserAvatar} = Pydio.requireLib('components')
 import {loadEditorClass} from "../editor/util/ClassLoader";
 
 const profileToLabel = (profile, messageFunc) => {
@@ -142,6 +142,13 @@ let Dashboard = createReactClass({
         }
         const idmUser = node.getMetadata().get('IdmUser');
         const {pydio} = this.props;
+        // Accounts synchronised from Kailo carry the Kailo picture address, not a
+        // native binary id: the shared avatar shows it once it loads and keeps
+        // the initials when the person has no Kailo avatar (07 §4.7.3).
+        if(idmUser.Attributes && /^https?:\/\/[^\s]+$/.test(idmUser.Attributes['avatar'])){
+            return <UserAvatar pydio={pydio} userId={idmUser.Login} idmUser={idmUser} avatarOnly={true}
+                               avatarSize={33} style={{margin: 16}}/>;
+        }
         if(idmUser.Attributes && idmUser.Attributes['avatar']){
             const imgSrc = pydio.Parameters.get('ENDPOINT_REST_API') + '/frontend/binaries/USER/' + idmUser.Login + '?' + idmUser.Attributes['avatar'] + '&dim=33';
             return <div style={{

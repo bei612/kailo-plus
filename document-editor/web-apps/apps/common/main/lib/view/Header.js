@@ -1366,6 +1366,8 @@ define([
                     });
                     $btnUserName.text('');
                 } else {
+                    // An avatar that failed to load (ExternalUsers) leaves no image behind the initials.
+                    $btnUserName.css({'background-image': '', 'background-color': ''});
                     $btnUserName.text(Common.Utils.getUserInitials(this.options.userName));
                 }
             },

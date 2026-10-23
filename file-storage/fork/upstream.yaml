@@ -7,6 +7,16 @@ upstream_url: https://github.com/pydio/cells
 evidence_commit: c57f02f4962835447df694c63bd0fd8c22bd7baf
 implementation_base_commit: c57f02f4962835447df694c63bd0fd8c22bd7baf
 base_divergence: none
+remove_paths:
+  # DD-133(1), DD-138, .design/07 §4.8.1: the admin console has no upstream
+  # support/maintenance or upgrade entry (dashboard promo cards, software
+  # update card, updater/upgrade wizard and their strings and images).
+  - frontend/assets/access.settings/res/i18n/updater
+  - frontend/assets/access.settings/res/images/graph-connections.png
+  - frontend/assets/access.settings/res/images/graph-files.png
+  - frontend/assets/access.settings/res/js/AdminComponents/cards/FakeGraph.js
+  - frontend/assets/access.settings/res/js/AdminComponents/cards/SoftwareUpdate.js
+  - frontend/assets/access.settings/res/js/AdminPlugins/updater
 
 artifacts:
   - name: file-storage-adapter

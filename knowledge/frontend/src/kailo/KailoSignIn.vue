@@ -8,6 +8,8 @@
         <t-loading size="small" />
         <p class="kailo-signin__hint">{{ text('entering') }}</p>
       </template>
+      <!-- host: Kailo alone prompts for the new sign-in (V-SCN-226); no notice here. -->
+      <template v-else-if="state === 'host'" />
       <template v-else-if="state === 'reauth'">
         <p class="kailo-signin__title">{{ text('reauth') }}</p>
         <p class="kailo-signin__hint">{{ text('reauthHint') }}</p>
@@ -34,7 +36,7 @@ import { kailoText } from './strings'
 import {
   buildOIDCStartURL,
   claimSilentAttempt,
-  requestHostReauth,
+  handOverReauth,
   sanitizeReturnTo,
   type KailoSignInState,
 } from './sso'
@@ -45,7 +47,7 @@ const cfg = kailoConfig()
 
 const queryState = route.query.kailo_state
 const state = ref<KailoSignInState>(
-  queryState === 'reauth' ? 'reauth' : queryState === 'error' ? 'error' : 'loading',
+  queryState === 'host' || queryState === 'reauth' || queryState === 'error' ? queryState : 'loading',
 )
 const detail = ref('')
 const returnTo = sanitizeReturnTo(typeof route.query.redirect === 'string' ? route.query.redirect : '')
@@ -65,8 +67,7 @@ onMounted(async () => {
   if (isKailoEmbedded()) {
     // Inside the Kailo frame: silent attempt only, at most once per guard window.
     if (!claimSilentAttempt(window.sessionStorage, Date.now())) {
-      requestHostReauth(kailoEmbed())
-      state.value = 'reauth'
+      state.value = handOverReauth(kailoEmbed())
       return
     }
     window.location.replace(buildOIDCStartURL(returnTo, true, apiBase))

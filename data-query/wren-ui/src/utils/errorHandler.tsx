@@ -4,6 +4,7 @@ import { ApolloError } from '@apollo/client';
 import { message } from 'antd';
 import { getUserConfig } from './env';
 import { getNativeWriteText } from './language';
+import { signInOwnedByHost } from './kailoEmbed';
 import type { NativeWriteReference } from '@/apollo/server/utils/error';
 
 export const nativeWriteEvidence = (error: any) => {
@@ -663,6 +664,8 @@ errorHandlers.set('UpdateInstruction', new UpdateInstructionErrorHandler());
 errorHandlers.set('DeleteInstruction', new DeleteInstructionErrorHandler());
 
 const errorHandler = (error: ErrorResponse) => {
+  // V-SCN-226: Kailo alone prompts for the expired session (auth-required sent).
+  if (signInOwnedByHost(error?.networkError)) return;
   const operationName = error?.operation?.operationName || '';
   const nativeUnknown = nativeWriteEvidence(error);
   // This original Apollo context flag changes only error presentation. It is

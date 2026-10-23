@@ -29,42 +29,6 @@
   "cont.topic.translate": {
     "other": "如何创建或完善语言翻译？"
   },
-  "ent.advanced": {
-    "other": "高级管理员面板"
-  },
-  "ent.advanced.legend": {
-    "other": "用于实时监测平台使用情况的独特管理员面板。"
-  },
-  "ent.btn.contact": {
-    "other": "联系销售人员"
-  },
-  "ent.btn.more": {
-    "other": "了解更多"
-  },
-  "ent.features": {
-    "other": "面向企业的功能"
-  },
-  "ent.features.legend": {
-    "other": "面向企业的功能：AD/LDAP连接器，可审计日志以确保合规性，简易传输器..."
-  },
-  "ent.subtitle": {
-    "other": "更多功能 - GDPR 合规性 - 扩展品牌"
-  },
-  "ent.support": {
-    "other": "支助和维护"
-  },
-  "ent.support.legend": {
-    "other": "直接从核心团队获得安装帮助"
-  },
-  "ent.title": {
-    "other": "探索 文件服务"
-  },
-  "ent.upgrade": {
-    "other": "立即升级！"
-  },
-  "ent.upgrade.legend": {
-    "other": "在应用内升级文件服务(需要许可文件)"
-  },
   "welc.btn.advanced": {
     "other": "先进的"
   },
@@ -104,15 +68,6 @@
   "card.quick-access.add": {
     "other": "添加快捷键..."
   },
-  "card.update.current": {
-    "other": "软件版本"
-  },
-  "card.update.no-updates": {
-    "other": "软件已更新到最新"
-  },
-  "card.update.new-version": {
-    "other": "有新版本可升级"
-  },
   "recentLogs.title": {
     "other": "最近活动"
   },
@@ -124,11 +79,5 @@
   },
   "recentLogs.more": {
     "other": "所有活动"
-  },
-  "graph.files": {
-    "other": "文件活动"
-  },
-  "graph.connections": {
-    "other": "网络连接"
   }
 }

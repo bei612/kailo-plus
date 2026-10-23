@@ -29,42 +29,6 @@
   "cont.topic.translate": {
     "other": "Kā izveidot vai iztulkot papildu valodu?"
   },
-  "ent.advanced": {
-    "other": "Paplašināts administrācijas panelis"
-  },
-  "ent.advanced.legend": {
-    "other": "Unikāls administrācija spenelis ar iespēju monitorēt platformu reālā laikā."
-  },
-  "ent.btn.contact": {
-    "other": "Sazināties ar pārdošanas daļu"
-  },
-  "ent.btn.more": {
-    "other": "Uzziniet vairāk"
-  },
-  "ent.features": {
-    "other": "Iespējas lieliem uzņēmumiem"
-  },
-  "ent.features.legend": {
-    "other": "Iespējas lieliem uzņēmumiem: AD/LDAP pieslēgumi, Auditējami log faili atbilstībām, Easy Transfer..."
-  },
-  "ent.subtitle": {
-    "other": "VAIRĀK IESPĒJAS - GDPR ATBILSTĪBA - PAPLAŠINĀTA ZĪMOLOŠANA"
-  },
-  "ent.support": {
-    "other": "Atbalsts un Uzturēšana"
-  },
-  "ent.support.legend": {
-    "other": "Saņemiet palīdzību no izstrādātāju komandas"
-  },
-  "ent.title": {
-    "other": "Uzziniet par Pydio Cells Enterprise"
-  },
-  "ent.upgrade": {
-    "other": "Upgrade now!"
-  },
-  "ent.upgrade.legend": {
-    "other": "In-app upgrade Cells Enterprise (license required)"
-  },
   "welc.btn.advanced": {
     "other": "Papildu"
   },
@@ -104,15 +68,6 @@
   "card.quick-access.add": {
     "other": "Add a shortcut ..."
   },
-  "card.update.current": {
-    "other": "Software Version"
-  },
-  "card.update.no-updates": {
-    "other": "Software is up-to-date"
-  },
-  "card.update.new-version": {
-    "other": "A new version is available"
-  },
   "recentLogs.title": {
     "other": "Last Events"
   },
@@ -124,11 +79,5 @@
   },
   "recentLogs.more": {
     "other": "All Activities"
-  },
-  "graph.files": {
-    "other": "Files Activity"
-  },
-  "graph.connections": {
-    "other": "Web Connections"
   }
 }

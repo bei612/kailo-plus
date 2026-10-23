@@ -29,42 +29,6 @@
   "cont.topic.translate": {
     "other": "言語翻訳を作成または完了するにはどうすればよいですか?"
   },
-  "ent.advanced": {
-    "other": "管理画面の詳細ダッシュボード"
-  },
-  "ent.advanced.legend": {
-    "other": "プラットフォームの使用状況をリアルタイムで監視するためのユニークな管理ダッシュボードです。"
-  },
-  "ent.btn.contact": {
-    "other": "営業担当に連絡"
-  },
-  "ent.btn.more": {
-    "other": "もっと詳しく"
-  },
-  "ent.features": {
-    "other": "エンタープライズ版の機能"
-  },
-  "ent.features.legend": {
-    "other": "エンタープライズ版の機能 : AD/LDAPコネクタ、コンプライアンスのための監査ログ、EasyTransfer..."
-  },
-  "ent.subtitle": {
-    "other": "その他の機能 - GDPRコンプライアンス - 拡張されたブランディング"
-  },
-  "ent.support": {
-    "other": "サポートとメンテナンス"
-  },
-  "ent.support.legend": {
-    "other": "コアチームから直接インストールのヘルプを受けます。"
-  },
-  "ent.title": {
-    "other": "Pydio Cells Enterpriseを発見する"
-  },
-  "ent.upgrade": {
-    "other": "今すぐアップグレード！"
-  },
-  "ent.upgrade.legend": {
-    "other": "アプリ内アップグレード Cells Enterprise（ライセンスが必要）"
-  },
   "welc.btn.advanced": {
     "other": "高度な設定"
   },
@@ -104,15 +68,6 @@
   "card.quick-access.add": {
     "other": "ショートカットを追加..."
   },
-  "card.update.current": {
-    "other": "ソフトウェアバージョン"
-  },
-  "card.update.no-updates": {
-    "other": "ソフトフェアは最新です."
-  },
-  "card.update.new-version": {
-    "other": "新しいバージョンが利用可能です。"
-  },
   "recentLogs.title": {
     "other": "最後のイベント"
   },
@@ -124,11 +79,5 @@
   },
   "recentLogs.more": {
     "other": "すべてのアクティビティ"
-  },
-  "graph.files": {
-    "other": "ファイルのアクティビティ"
-  },
-  "graph.connections": {
-    "other": "ウェブコネクション"
   }
 }

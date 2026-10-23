@@ -6,7 +6,7 @@ import { isEmbedded, kailoEmbed } from './bridge'
 import {
   DEFAULT_RETURN_PATH,
   decideOIDCErrorAction,
-  requestHostReauth,
+  handOverReauth,
   sanitizeReturnTo,
   signInRoute,
 } from './sso'
@@ -49,8 +49,7 @@ export function resolveOIDCErrorRoute(
   const returnTo = sanitizeReturnTo(returnPath)
   const action = decideOIDCErrorAction({ code, prompt, embedded, returnTo }, env.apiBase ?? '')
   if (action.kind === 'request-host-reauth') {
-    requestHostReauth(kailoEmbed(env.win))
-    return signInRoute('reauth', returnTo)
+    return signInRoute(handOverReauth(kailoEmbed(env.win)), returnTo)
   }
   if (action.kind === 'interactive') {
     env.win.location.replace?.(action.url)

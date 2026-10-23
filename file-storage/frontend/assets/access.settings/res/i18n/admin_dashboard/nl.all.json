@@ -29,42 +29,6 @@
   "cont.topic.translate": {
     "other": "Hoe maak of voltooi je een vertaling?"
   },
-  "ent.advanced": {
-    "other": "Dashboard Beheerder"
-  },
-  "ent.advanced.legend": {
-    "other": "Unieke admin dashboard voor real-time monitoring van het platformgebruik."
-  },
-  "ent.btn.contact": {
-    "other": "Contact met Verkoop"
-  },
-  "ent.btn.more": {
-    "other": "Meer informatie"
-  },
-  "ent.features": {
-    "other": "Enterprise-georiënteerde functies"
-  },
-  "ent.features.legend": {
-    "other": "Enterprise-ready features : AD/LDAP Connectors, Auditable Logs for compliance, EasyTransfer..."
-  },
-  "ent.subtitle": {
-    "other": "MORE FEATURES - GDPR COMPLIANCE - EXTENDED BRANDING"
-  },
-  "ent.support": {
-    "other": "Support and Maintenance"
-  },
-  "ent.support.legend": {
-    "other": "Get help with your installation directly from the core team"
-  },
-  "ent.title": {
-    "other": "Discover Pydio Cells Enterprise"
-  },
-  "ent.upgrade": {
-    "other": "Upgrade now!"
-  },
-  "ent.upgrade.legend": {
-    "other": "In-app upgrade Cells Enterprise (license required)"
-  },
   "welc.btn.advanced": {
     "other": "Advanced"
   },
@@ -104,15 +68,6 @@
   "card.quick-access.add": {
     "other": "Add a shortcut ..."
   },
-  "card.update.current": {
-    "other": "Software Version"
-  },
-  "card.update.no-updates": {
-    "other": "Software is up-to-date"
-  },
-  "card.update.new-version": {
-    "other": "A new version is available"
-  },
   "recentLogs.title": {
     "other": "Last Events"
   },
@@ -124,11 +79,5 @@
   },
   "recentLogs.more": {
     "other": "All Activities"
-  },
-  "graph.files": {
-    "other": "Files Activity"
-  },
-  "graph.connections": {
-    "other": "Web Connections"
   }
 }
