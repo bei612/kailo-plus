@@ -127,7 +127,8 @@ class _ChannelAppBarTitle extends ConsumerWidget {
 
 // Original Buzz _DmAppBarTitle's avatar/name subtree. HUMAN labels are projected
 // from Conversation participants, never fetched through a fabricated Workspace.
-// Native presence has no current consumer; do not invent Online/Offline state.
+// The counterpart's kind:20001 presence dot and line appear once a live fact has
+// arrived (DD-120 (5)); a missing fact is not shown as Offline.
 class _DmAppBarTitle extends ConsumerWidget {
   const _DmAppBarTitle({required this.channel, required this.currentPubkey});
   final Channel channel;
@@ -141,31 +142,94 @@ class _DmAppBarTitle extends ConsumerWidget {
     final profile = ref.watch(
       userCacheProvider.select((profiles) => profiles[other]),
     );
+    final presence = ref.watch(
+      presenceCacheProvider.select(
+        (presenceMap) => other == null ? null : presenceMap[other],
+      ),
+    );
+    if (other != null) {
+      ref.read(presenceCacheProvider.notifier).track([other]);
+    }
+    final locale = Localizations.localeOf(context).toLanguageTag();
     final label = channel.displayLabel(currentPubkey: currentPubkey);
+    final avatar = AvatarImage(
+      key: const ValueKey('dm-header-avatar'),
+      imageUrl: profile?.avatarUrl,
+      radius: 16,
+      backgroundColor: context.colors.primaryContainer,
+      fallback: Text(
+        profile?.initial ?? label.characters.first.toUpperCase(),
+        style: context.textTheme.labelSmall?.copyWith(
+          color: context.colors.onPrimaryContainer,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+    final name = Text(
+      label,
+      key: const ValueKey('dm-header-name'),
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: context.textTheme.titleSmall,
+    );
     return Row(
       children: [
-        AvatarImage(
-          key: const ValueKey('dm-header-avatar'),
-          imageUrl: profile?.avatarUrl,
-          radius: 16,
-          backgroundColor: context.colors.primaryContainer,
-          fallback: Text(
-            profile?.initial ?? label.characters.first.toUpperCase(),
-            style: context.textTheme.labelSmall?.copyWith(
-              color: context.colors.onPrimaryContainer,
-              fontWeight: FontWeight.w600,
+        if (presence == null)
+          avatar
+        else
+          SizedBox(
+            width: 32,
+            height: 32,
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                avatar,
+                Positioned(
+                  right: -1,
+                  bottom: -1,
+                  child: Container(
+                    key: const ValueKey('dm-header-presence-dot'),
+                    width: 10,
+                    height: 10,
+                    decoration: BoxDecoration(
+                      color: switch (presence) {
+                        'online' => context.appColors.success,
+                        'away' => context.appColors.warning,
+                        _ => context.colors.outline,
+                      },
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: context.theme.scaffoldBackgroundColor,
+                        width: 1.5,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
-        ),
         const SizedBox(width: Grid.xxs),
         Expanded(
-          child: Text(
-            label,
-            key: const ValueKey('dm-header-name'),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: context.textTheme.titleSmall,
-          ),
+          child: presence == null
+              ? name
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    name,
+                    Text(
+                      platformText(switch (presence) {
+                        'online' => PlatformMessageKey.presenceOnline,
+                        'away' => PlatformMessageKey.presenceAway,
+                        _ => PlatformMessageKey.presenceOffline,
+                      }, locale: locale),
+                      key: const ValueKey('dm-header-presence'),
+                      style: context.textTheme.bodyMedium?.copyWith(
+                        color: context.colors.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
         ),
       ],
     );

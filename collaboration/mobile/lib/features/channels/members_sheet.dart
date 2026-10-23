@@ -5,7 +5,9 @@
 // (DD-41/82), offered per person only where the role projection admits it, and Core re-admits
 // every submission. Channel roles are the platform admin relation only (no owner or guest).
 // Status lines come from the restored NIP-38 cache, newest visible status over the person's keys.
-// The Agents section (governed agent installations) is not restored on Mobile yet.
+// The original Agents section lists the Workspace's governed Agent installations from the
+// member-readable DD-147 author directory (ACTIVE ChannelAgentBinding only); it grants nothing
+// and offers no management, which stays with the governed installation actions.
 import 'package:client_kit/shared/contracts/contracts.dart';
 import 'package:client_kit/shared/platform/platform_text.dart';
 import 'package:flutter/material.dart';
@@ -13,10 +15,12 @@ import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import '../../shared/platform/agent_author_directory.dart';
 import '../../shared/platform/platform_views.dart';
 import '../../shared/profile/user_cache_provider.dart';
 import '../../shared/profile/user_profile.dart';
 import '../../shared/theme/theme.dart';
+import '../../shared/utils/string_utils.dart';
 import '../../shared/widgets/avatar_image.dart';
 import '../../shared/widgets/buzz_loading_indicator.dart';
 import '../../shared/widgets/modal_presentation.dart';
@@ -51,7 +55,13 @@ class MembersSheet extends HookConsumerWidget {
     final userCache = ref.watch(userCacheProvider);
     final statusCache = ref.watch(userStatusCacheProvider);
     final bottomClearance = Grid.md + MediaQuery.viewPaddingOf(context).bottom;
-    final allPubkeys = [for (final member in people) ...member.pubkeys];
+    final agentsAsync = ref.watch(platformAgentAuthorsProvider(channel.id));
+    final agents = agentsAsync.asData?.value ?? const <AgentAuthorView>[];
+    final allPubkeys = [
+      for (final member in people) ...member.pubkeys,
+      for (final agent in agents) agent.agentPubkey,
+    ];
+    final peoplePubkeys = [for (final member in people) ...member.pubkeys];
 
     bool isSelf(WorkspaceMemberView member) =>
         member.principalId == actorPrincipalId ||
@@ -64,7 +74,9 @@ class MembersSheet extends HookConsumerWidget {
     useEffect(() {
       if (allPubkeys.isNotEmpty) {
         ref.read(userCacheProvider.notifier).preload(allPubkeys);
-        ref.read(userStatusCacheProvider.notifier).track(allPubkeys);
+        if (peoplePubkeys.isNotEmpty) {
+          ref.read(userStatusCacheProvider.notifier).track(peoplePubkeys);
+        }
       }
       return null;
     }, [allPubkeys.join('|')]);
@@ -101,7 +113,49 @@ class MembersSheet extends HookConsumerWidget {
                     userStatus: _newestStatus(statusCache, member.pubkeys),
                   ),
               ],
-              if (people.isEmpty)
+              if (agents.isNotEmpty) ...[
+                const SizedBox(height: Grid.xxs),
+                _SectionLabel(
+                  label: platformText(
+                    PlatformMessageKey.channelMembersAgentsCount,
+                    locale: locale,
+                    variables: {'count': agents.length},
+                  ),
+                ),
+                for (final agent in agents)
+                  _AgentTile(
+                    agent: agent,
+                    profile: userCache[agent.agentPubkey.toLowerCase()],
+                  ),
+              ] else if (agentsAsync.isLoading)
+                Padding(
+                  padding: const EdgeInsets.only(top: Grid.xxs),
+                  child: Text(
+                    platformText(
+                      PlatformMessageKey.channelMembersAgentsLoading,
+                      locale: locale,
+                    ),
+                    key: const ValueKey('channel-agents-loading'),
+                    style: context.textTheme.bodySmall?.copyWith(
+                      color: context.colors.onSurfaceVariant,
+                    ),
+                  ),
+                )
+              else if (agentsAsync.hasError)
+                Padding(
+                  padding: const EdgeInsets.only(top: Grid.xxs),
+                  child: Text(
+                    platformText(
+                      PlatformMessageKey.channelMembersAgentsUnavailable,
+                      locale: locale,
+                    ),
+                    key: const ValueKey('channel-agents-error'),
+                    style: context.textTheme.bodySmall?.copyWith(
+                      color: context.colors.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+              if (people.isEmpty && agents.isEmpty)
                 Center(
                   child: Text(
                     platformText(
@@ -167,6 +221,58 @@ class _SectionLabel extends StatelessWidget {
           color: context.colors.onSurfaceVariant,
           fontWeight: FontWeight.w600,
         ),
+      ),
+    );
+  }
+}
+
+/// One governed Agent installation. The name is the pinned version's persona name, then the
+/// Agent's kind:0 name, then its short key; the owner line is the directory's owner name.
+class _AgentTile extends StatelessWidget {
+  final AgentAuthorView agent;
+  final UserProfile? profile;
+
+  const _AgentTile({required this.agent, required this.profile});
+
+  @override
+  Widget build(BuildContext context) {
+    final locale = Localizations.localeOf(context).toLanguageTag();
+    final personaName = agent.agentDisplayName?.trim();
+    final profileName = profile?.displayName?.trim();
+    final label = personaName != null && personaName.isNotEmpty
+        ? personaName
+        : profileName != null && profileName.isNotEmpty
+        ? profileName
+        : shortPubkey(agent.agentPubkey);
+    final initial = label.isEmpty ? '?' : label.characters.first.toUpperCase();
+    final owner = agent.ownerDisplayName?.trim();
+
+    return ListTile(
+      key: ValueKey('channel-agent-${agent.installationResourceId}'),
+      contentPadding: EdgeInsets.zero,
+      leading: AvatarImage(
+        imageUrl: profile?.avatarUrl,
+        radius: 20,
+        fallback: Text(initial),
+        isAgent: true,
+      ),
+      title: Text(label),
+      subtitle: Text(
+        owner != null && owner.isNotEmpty
+            ? platformText(
+                PlatformMessageKey.channelMembersAgentAddedBy,
+                locale: locale,
+                variables: {'name': owner},
+              )
+            : platformText(
+                PlatformMessageKey.messagesSystemAgentOwnerUnavailable,
+                locale: locale,
+              ),
+        style: context.textTheme.bodySmall?.copyWith(
+          color: context.colors.onSurfaceVariant,
+        ),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
       ),
     );
   }

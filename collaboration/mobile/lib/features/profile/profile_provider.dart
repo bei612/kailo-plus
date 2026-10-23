@@ -4,16 +4,23 @@
 // `update_profile`: merge onto the newest own kind:0, created_at strictly after it, publish once
 // and confirm by reading the exact event back. A save whose OK never arrived keeps its signed
 // event; saving the same field value again resends that event unchanged (apps/06 §4).
-// The animated-avatar handoff and kind:20001 PresenceNotifier are not restored here.
+// The animated-avatar handoff is restored as in the original. PresenceNotifier publishes the
+// original kind:20001 heartbeat with this device's CLIENT key straight to the Relay (DD-75,
+// DD-120 (1)/(5)/(6)): it is transient, so an unanswered heartbeat is neither reported as
+// success nor re-signed; the next heartbeat or lifecycle change supersedes it. The manual
+// Online/Away/Offline choice is a device preference.
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 
+import 'package:flutter/widgets.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import '../../shared/crypto/nip_oa.dart';
 import '../../shared/profile/user_cache_provider.dart';
 import '../../shared/profile/user_profile.dart';
 import '../../shared/relay/relay.dart';
+import '../../shared/theme/theme.dart';
 
 /// Signals that a profile write no longer belongs to the active community.
 class ProfileCommunityChangedException extends StateError {
@@ -21,6 +28,53 @@ class ProfileCommunityChangedException extends StateError {
   ProfileCommunityChangedException()
     : super('Profile update cancelled because the active community changed.');
 }
+
+/// Keeps a freshly saved animated avatar local until its remote first frame is
+/// ready, preserving the editor-to-profile visual handoff.
+@immutable
+class ProfileAvatarHandoff {
+  /// Creates a local handoff for [avatarUrl].
+  const ProfileAvatarHandoff({
+    required this.avatarUrl,
+    required this.animation,
+    required this.poster,
+  });
+
+  /// The persisted animated-avatar descriptor this handoff belongs to.
+  final String avatarUrl;
+
+  /// The locally encoded animation shown while remote media warms up.
+  final Uint8List animation;
+
+  /// The locally encoded poster used when motion is disabled.
+  final Uint8List poster;
+}
+
+/// Owns the temporary local avatar shown across the save route transition.
+class ProfileAvatarHandoffNotifier extends Notifier<ProfileAvatarHandoff?> {
+  @override
+  ProfileAvatarHandoff? build() {
+    ref.watch(relayConfigProvider);
+    return null;
+  }
+
+  /// Starts a handoff for a freshly published animated avatar.
+  void show(ProfileAvatarHandoff handoff) => state = handoff;
+
+  /// Clears the handoff once the matching remote animation is ready.
+  void clear(String avatarUrl) {
+    if (state?.avatarUrl == avatarUrl) state = null;
+  }
+
+  /// Clears a handoff superseded by a non-animated avatar save.
+  void clearAny() => state = null;
+}
+
+/// The freshly saved local animated avatar, while its remote copy warms up.
+final profileAvatarHandoffProvider =
+    NotifierProvider<ProfileAvatarHandoffNotifier, ProfileAvatarHandoff?>(
+      ProfileAvatarHandoffNotifier.new,
+    );
 
 /// The current user's profile (kind:0 metadata) loaded over the relay
 /// WebSocket. Returns null when no nsec is configured or when the user has
@@ -264,4 +318,128 @@ Map<String, dynamic> _decodeProfileMetadata(NostrEvent event) {
 
 final profileProvider = AsyncNotifierProvider<ProfileNotifier, UserProfile?>(
   ProfileNotifier.new,
+);
+
+/// Presence status for the current user.
+///
+/// Sends a heartbeat every 60s while the app is active by publishing a
+/// kind:20001 presence event over the relay WebSocket. Watches
+/// [appLifecycleProvider] to send "away" when backgrounded.
+class PresenceNotifier extends AsyncNotifier<String> {
+  static const _heartbeatInterval = Duration(seconds: 60);
+  static const _preferenceKeyPrefix = 'buzz_presence_preference_';
+
+  Timer? _heartbeatTimer;
+  String? _preferencePubkey;
+  String? _manualPresence;
+
+  @override
+  Future<String> build() {
+    ref.watch(relaySessionProvider);
+    final pubkey = ref.watch(myPubkeyProvider)?.toLowerCase();
+
+    if (_preferencePubkey != pubkey) {
+      _preferencePubkey = pubkey;
+      final stored = pubkey == null
+          ? null
+          : ref
+                .read(savedPrefsProvider)
+                .getString('$_preferenceKeyPrefix$pubkey');
+      _manualPresence = stored == 'away' || stored == 'offline' ? stored : null;
+    }
+
+    final lifecycle = ref.watch(appLifecycleProvider);
+
+    ref.onDispose(() {
+      _heartbeatTimer?.cancel();
+      _heartbeatTimer = null;
+    });
+
+    final manualPresence = _manualPresence;
+    if (manualPresence != null) {
+      _heartbeatTimer?.cancel();
+      _heartbeatTimer = null;
+      return _setPresence(manualPresence);
+    }
+
+    if (lifecycle == AppLifecycleState.resumed) {
+      _startHeartbeat();
+      return _setPresence('online');
+    } else if (lifecycle == AppLifecycleState.paused ||
+        lifecycle == AppLifecycleState.detached) {
+      _heartbeatTimer?.cancel();
+      _heartbeatTimer = null;
+      return _setPresence('away');
+    }
+
+    // Default: we don't know. Reflect the most recent state we set, or
+    // 'offline' if never set.
+    return Future.value('offline');
+  }
+
+  void _startHeartbeat() {
+    _heartbeatTimer?.cancel();
+    _heartbeatTimer = Timer.periodic(_heartbeatInterval, (_) {
+      _setPresence('online');
+    });
+  }
+
+  /// Updates the current user's presence preference and publishes it.
+  ///
+  /// Online restores automatic lifecycle-driven presence. Away and Offline
+  /// remain selected until the user chooses another value.
+  Future<void> setPresence(String status) async {
+    if (status != 'online' && status != 'away' && status != 'offline') return;
+
+    _manualPresence = status == 'online' ? null : status;
+    final pubkey = ref.read(myPubkeyProvider)?.toLowerCase();
+    if (pubkey != null) {
+      await ref
+          .read(savedPrefsProvider)
+          .setString('$_preferenceKeyPrefix$pubkey', _manualPresence ?? 'auto');
+    }
+
+    if (_manualPresence == null &&
+        ref.read(appLifecycleProvider) == AppLifecycleState.resumed) {
+      _startHeartbeat();
+    } else {
+      _heartbeatTimer?.cancel();
+      _heartbeatTimer = null;
+    }
+
+    state = AsyncData(status);
+    await _setPresence(status);
+  }
+
+  /// Publish a kind:20001 presence event. Returns the requested status — the
+  /// device preference, not a delivery claim. A rejection or an unanswered
+  /// publish is absorbed: 20001 is transient (DD-120 (1)), so it is never
+  /// re-signed and the next heartbeat supersedes it.
+  Future<String> _setPresence(String status) async {
+    final sessionState = ref.read(relaySessionProvider);
+    if (sessionState.status != SessionStatus.connected) return status;
+    final config = ref.read(relayConfigProvider);
+    final relay = SignedEventRelay(
+      session: ref.read(relaySessionProvider.notifier),
+      nsec: config.nsec,
+    );
+    try {
+      await relay.submit(
+        kind: EventKind.presenceUpdate,
+        content: status,
+        tags: const [],
+      );
+    } catch (_) {
+      // Heartbeat will retry.
+    }
+    return status;
+  }
+
+  Future<void> refresh() async {
+    // No-op: presence is driven by heartbeats and lifecycle, not pulled.
+  }
+}
+
+final presenceProvider = AsyncNotifierProvider<PresenceNotifier, String>(
+  PresenceNotifier.new,
 );

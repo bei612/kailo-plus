@@ -12,6 +12,9 @@ abstract final class EventKind {
   static const reaction = 7;
   static const streamMessage = 9;
   static const nip29DeleteEvent = 9005;
+
+  /// Kind:20001 transient presence (online/away/offline), DD-120.
+  static const presenceUpdate = 20001;
   static const typingIndicator = 20002;
 
   /// NIP-38 user status (parameterized replaceable, d=general).

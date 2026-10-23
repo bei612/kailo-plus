@@ -55,6 +55,7 @@ import '../../shared/read_state/read_state_provider.dart';
 import '../../shared/read_state/read_state_time.dart';
 import '../../shared/platform/platform_views.dart';
 import 'send_message_provider.dart';
+import '../profile/presence_cache_provider.dart';
 import '../profile/user_profile_sheet.dart';
 import 'small_avatar.dart';
 import 'sticky_date_header.dart';

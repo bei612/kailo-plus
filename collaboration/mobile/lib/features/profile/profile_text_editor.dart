@@ -1,18 +1,22 @@
 // Buzz 779af8886caae1317b4de962082429867ab61503
 // mobile/lib/features/profile/profile_text_editor.dart. Kailo keeps the Flutter editor sheet
-// and the opening-context fence; the iOS native editor channel (ios_profile_text_editor.dart)
-// is not restored, which the original already treats as a fallback case. Copy comes from the
-// platform message table (DD-53); an unconfirmed save says so and keeps the draft.
+// and the opening-context fence, and on iOS presents the original native editor
+// (ios_profile_text_editor.dart) first, falling back to the Flutter sheet when the channel is
+// unavailable. Copy comes from the platform message table (DD-53); an unconfirmed save says
+// so and keeps the draft.
 import 'dart:async';
 
 import 'package:client_kit/shared/platform/platform_text.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import '../../shared/relay/relay.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/widgets/modal_presentation.dart';
+import 'ios_profile_text_editor.dart';
 import 'profile_provider.dart';
 
 String _t(BuildContext context, PlatformMessageKey key) =>
@@ -102,6 +106,46 @@ Future<void> _showProfileTextEditor({
   required Future<void> Function(String value) onSave,
   bool multiline = false,
 }) async {
+  if (!context.mounted) return;
+  if (defaultTargetPlatform == TargetPlatform.iOS) {
+    final sheetTheme = utilitySurfaceThemeData(Theme.of(context));
+    try {
+      await IosProfileTextEditor.presentUntilSaved(
+        title: title,
+        initialValue: initialValue,
+        placeholder: hintText,
+        multiline: multiline,
+        brightness: sheetTheme.brightness,
+        pageBackgroundColor: sheetTheme.colorScheme.surface,
+        containerBackgroundColor:
+            sheetTheme.colorScheme.surfaceContainerHighest,
+        onSave: onSave,
+        shouldRetryOnError: (error) =>
+            error is! ProfileCommunityChangedException,
+        canPresent: () =>
+            context.mounted && (ModalRoute.of(context)?.isCurrent ?? true),
+        onSaveError: () {
+          if (context.mounted && (ModalRoute.of(context)?.isCurrent ?? true)) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  _t(
+                    context,
+                    PlatformMessageKey.platformProfileFieldSaveFailed,
+                  ),
+                ),
+              ),
+            );
+          }
+        },
+      );
+      return;
+    } on MissingPluginException {
+      // Previews and older builds retain the complete Flutter fallback.
+    } on PlatformException {
+      // A temporary native presentation failure should not block editing.
+    }
+  }
   if (!context.mounted) return;
   await showBuzzModalBottomSheet<void>(
     context: context,

@@ -19,6 +19,7 @@ import '../../shared/widgets/app_list.dart';
 import '../../shared/widgets/app_list_card.dart';
 import '../../shared/widgets/frosted_app_bar.dart';
 import '../../shared/widgets/frosted_scaffold.dart';
+import '../../shared/widgets/immediate_page_route.dart';
 import '../../shared/widgets/ios_glass_navigation_action.dart';
 import '../../shared/widgets/ios_glass_navigation_button.dart';
 import '../../shared/widgets/modal_presentation.dart';
@@ -34,21 +35,27 @@ part 'settings_page/notifications_section.dart';
 
 // Buzz 779af8886caae1317b4de962082429867ab61503 mobile/lib/features/settings/settings_page.dart:
 // the Edit action and its Edit profile sheet open the original display-name and description
-// editors (kind:0 signed by this device's CLIENT key, DD-75). The Photo row needs the avatar
-// editor (profile_edit_page.dart), which is not restored yet.
-enum _ProfileEditAction { displayName, description }
+// editors and the Photo row opens the original profile editor in its photo mode (kind:0
+// signed by this device's CLIENT key, DD-75; avatar bytes through the media upload).
+Widget _emptyProfileEditPage(BuildContext context) => const SizedBox.shrink();
+
+enum _ProfileEditAction { displayName, description, photo }
 
 class SettingsPage extends HookConsumerWidget {
   /// Creates the settings page.
   const SettingsPage({
     super.key,
     required this.profileHeader,
+    this.profileEditPageBuilder = _emptyProfileEditPage,
     this.onEditDisplayName,
     this.onEditProfileDescription,
   });
 
   /// Header widget displayed at the top of settings.
   final Widget profileHeader;
+
+  /// Builds the profile editor opened by the Edit Profile sheet's Photo row.
+  final WidgetBuilder profileEditPageBuilder;
 
   /// Opens the display-name editor after the Edit Profile sheet closes.
   final Future<void> Function(BuildContext context)? onEditDisplayName;
@@ -119,6 +126,16 @@ class SettingsPage extends HookConsumerWidget {
                         _ProfileEditAction.description,
                       ),
                     ),
+                    AppListRow(
+                      key: const ValueKey('edit-profile-photo'),
+                      title: platformText(
+                        PlatformMessageKey.platformProfilePhoto,
+                        locale: locale,
+                      ),
+                      trailing: const _RowChevron(),
+                      onTap: () =>
+                          Navigator.pop(sheetContext, _ProfileEditAction.photo),
+                    ),
                   ],
                 ),
               ],
@@ -133,6 +150,10 @@ class SettingsPage extends HookConsumerWidget {
           await onEditDisplayName?.call(context);
         case _ProfileEditAction.description:
           await onEditProfileDescription?.call(context);
+        case _ProfileEditAction.photo:
+          await Navigator.of(
+            context,
+          ).push(immediatePageRoute<void>(builder: profileEditPageBuilder));
       }
     }
 

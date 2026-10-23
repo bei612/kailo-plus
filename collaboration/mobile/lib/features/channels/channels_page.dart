@@ -28,6 +28,7 @@ import '../../shared/widgets/frosted_scaffold.dart';
 import '../../shared/widgets/skeleton.dart';
 import '../../shared/widgets/modal_presentation.dart';
 import '../profile/profile_avatar.dart';
+import '../profile/presence_cache_provider.dart';
 import 'channel.dart';
 import 'channel_actions_sheet.dart';
 import 'channel_management_actions.dart';

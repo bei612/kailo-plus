@@ -12,6 +12,7 @@ import 'features/channels/unread_badge/unread_badge_provider.dart';
 import 'features/channels/voice_note_recording.dart';
 import 'features/home/home_page.dart';
 import 'features/platform/platform_sign_in_page.dart';
+import 'features/profile/profile_edit_page.dart';
 import 'features/profile/profile_text_editor.dart';
 import 'features/profile/settings_profile_header.dart';
 import 'features/profile/user_status_cache_provider.dart';
@@ -140,8 +141,10 @@ class App extends HookConsumerWidget {
   }
 }
 
-Widget _buildSettingsPage(BuildContext context) => const SettingsPage(
-  profileHeader: SettingsProfileHeader(),
+Widget _buildSettingsPage(BuildContext context) => SettingsPage(
+  profileHeader: const SettingsProfileHeader(),
+  profileEditPageBuilder: (_) =>
+      const ProfileEditPage(startInPhotoEditor: true),
   onEditDisplayName: showProfileDisplayNameEditor,
   onEditProfileDescription: showProfileDescriptionEditor,
 );

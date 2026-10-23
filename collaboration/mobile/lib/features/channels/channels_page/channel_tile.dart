@@ -87,7 +87,8 @@ class _ChannelTile extends ConsumerWidget {
 }
 
 // Original Buzz _DmAvatar, with people counted by the authorized Principal set.
-// Presence has no Mobile consumer yet; no synthetic online/offline badge.
+// The counterpart's kind:20001 presence dot is drawn only once a live fact has
+// arrived (DD-120 (5)): a missing fact is not painted as Offline.
 class _DmAvatar extends ConsumerWidget {
   const _DmAvatar({required this.channel, required this.currentPubkey});
   final Channel channel;
@@ -119,11 +120,20 @@ class _DmAvatar extends ConsumerWidget {
         ),
       );
     }
+    final otherPubkey = other.firstOrNull;
     final profile = ref.watch(
-      userCacheProvider.select((profiles) => profiles[other.firstOrNull]),
+      userCacheProvider.select((profiles) => profiles[otherPubkey]),
     );
+    final presence = ref.watch(
+      presenceCacheProvider.select(
+        (presenceMap) => otherPubkey == null ? null : presenceMap[otherPubkey],
+      ),
+    );
+    if (otherPubkey != null) {
+      ref.read(presenceCacheProvider.notifier).track([otherPubkey]);
+    }
     final label = channel.displayLabel(currentPubkey: currentPubkey);
-    return AvatarImage(
+    final avatar = AvatarImage(
       imageUrl: profile?.avatarUrl,
       radius: _kChannelIconSize / 2,
       backgroundColor: context.colors.primaryContainer,
@@ -134,6 +144,38 @@ class _DmAvatar extends ConsumerWidget {
           color: context.colors.onPrimaryContainer,
           fontWeight: FontWeight.w600,
         ),
+      ),
+    );
+    if (presence == null) return avatar;
+    return SizedBox(
+      width: _kChannelIconSize,
+      height: _kChannelIconSize,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          avatar,
+          Positioned(
+            right: -1,
+            bottom: -1,
+            child: Container(
+              key: const ValueKey('dm-avatar-presence-dot'),
+              width: 8,
+              height: 8,
+              decoration: BoxDecoration(
+                color: switch (presence) {
+                  'online' => context.appColors.success,
+                  'away' => context.appColors.warning,
+                  _ => context.colors.outline,
+                },
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: context.theme.scaffoldBackgroundColor,
+                  width: 1.5,
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
