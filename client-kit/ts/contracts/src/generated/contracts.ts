@@ -1876,6 +1876,10 @@ export enum AgentTeamSnapshotImportPreviewFormatKey {
 
 export interface AgentTeamSnapshotImportPreviewMembersItem {
     /**
+     * 仅与 avatarUrl 同时出现：包内该成员头像的原字节（data URL），只供预览显示，不写入任何对象。
+     */
+    avatarDataUrl?: string;
+    /**
      * 该成员内联头像在本 Tenant 媒体中的对象地址（/media/<sha256>），即其 DRAFT 的 personaIdentity.avatarUrl。
      */
     avatarUrl?:   string;
@@ -2636,6 +2640,7 @@ export enum EvidenceKind {
     AdmitActionExecutionId = "ADMIT_ACTION_EXECUTION_ID",
     AgentVersionAssetId = "AGENT_VERSION_ASSET_ID",
     AgentgatewayUsageId = "AGENTGATEWAY_USAGE_ID",
+    ApplicationBindingId = "APPLICATION_BINDING_ID",
     ApprovalPolicy = "APPROVAL_POLICY",
     ApprovalWorkflowId = "APPROVAL_WORKFLOW_ID",
     BuzzDeletionInventoryDigest = "BUZZ_DELETION_INVENTORY_DIGEST",
@@ -2666,6 +2671,7 @@ export enum EvidenceKind {
     TransferFormat = "TRANSFER_FORMAT",
     TransferPackageDigest = "TRANSFER_PACKAGE_DIGEST",
     UsageEventId = "USAGE_EVENT_ID",
+    WorkspaceLifecycleSnapshotId = "WORKSPACE_LIFECYCLE_SNAPSHOT_ID",
 }
 
 /**
@@ -7490,8 +7496,8 @@ export interface RoleMemberView {
 
 /**
  * GET /api/v1/role-workspaces 的有界回应：当前 Principal 对哪些 Workspace 持有 fresh manage
- * permission（ACTIVE、暂停中、已暂停、恢复中，以及已有协作面 binding 的 ERROR，各带当前状态），并附当前可用的 Workspace
- * 创建、暂停与恢复动作提示。动作提交仍由 Core 重新准入，不等于可进入频道。
+ * permission（ACTIVE、暂停中、已暂停、恢复中、删除中，以及已有协作面 binding 的 ERROR，各带当前状态），并附当前可用的 Workspace
+ * 创建、暂停、恢复与删除动作提示。动作提交仍由 Core 重新准入，不等于可进入频道。
  */
 export interface RoleWorkspacePage {
     /**
@@ -7510,7 +7516,13 @@ export enum RoleWorkspacePageCreateActionKey {
 }
 
 export interface RoleWorkspaceView {
-    id: string;
+    /**
+     * DD-150：当前 Principal 经 fresh Workspace manage 检查、目录已开放、Workspace 为 ACTIVE 或 SUSPENDED
+     * 且没有未终结的生命周期动作（编辑、暂停、恢复、删除）时给出；省略即不显示删除入口，提交仍由 Core 重新准入。删除进行中的 Workspace 以 state=DELETING
+     * 出现，直到删除链全部回读确认后从本页消失
+     */
+    deleteActionKey?: RoleWorkspaceViewDeleteActionKey;
+    id:               string;
     /**
      * 当前 Principal 经 fresh Tenant manage 检查、按该 Workspace 当前状态可发起的暂停（ACTIVE 或
      * ERROR）或恢复（SUSPENDED）动作 key；目录未开放、无权、处于收敛中或本页提示判定失败时省略
@@ -7520,12 +7532,16 @@ export interface RoleWorkspaceView {
     state:               WorkspaceState;
 }
 
+export enum RoleWorkspaceViewDeleteActionKey {
+    WorkspaceDelete = "workspace.delete",
+}
+
 /**
  * 当前 Principal 经 fresh Tenant manage 检查、按该 Workspace 当前状态可发起的暂停（ACTIVE 或
  * ERROR）或恢复（SUSPENDED）动作 key；目录未开放、无权、处于收敛中或本页提示判定失败时省略
  *
- * Workspace 暂停与恢复的 ActionDefinition key（.design/06 §7.3）。两者都从 Tenant scope 发起；当前不登记
- * Workspace delete（DD-46）。
+ * Workspace 暂停与恢复的 ActionDefinition key（.design/06 §7.3）。两者都从 Tenant scope
+ * 发起。删除（DD-150）不在本枚举：它不是可逆生命周期，经 RoleWorkspaceView.deleteActionKey 单独提示。
  */
 export enum WorkspaceLifecycleActionKey {
     WorkspaceRestore = "workspace.restore",
@@ -7533,10 +7549,12 @@ export enum WorkspaceLifecycleActionKey {
 }
 
 /**
- * Workspace 状态机。权威定义见 .design/03-领域模型与权限模型.md。
+ * Workspace 状态机中对外可见的状态。权威定义见 .design/03-领域模型与权限模型.md。DD-150 的 DELETED 是 Core
+ * 内的墓碑，不出现在任何对外视图中（列表与提示都不返回已删除的 Workspace），因此不在本枚举。
  */
 export enum WorkspaceState {
     Active = "ACTIVE",
+    Deleting = "DELETING",
     Error = "ERROR",
     Provisioning = "PROVISIONING",
     Restoring = "RESTORING",
