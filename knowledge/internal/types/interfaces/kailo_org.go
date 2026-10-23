@@ -15,4 +15,17 @@ type KailoOrgService interface {
 	// Tenant space, which becomes the user's home space. Memberships of
 	// spaces that are not Kailo-mapped are never touched.
 	SyncLogin(ctx context.Context, user *types.User, membership *types.KailoMembership) (*types.Tenant, error)
+
+	// ApplyDirectory converges every mapped space, membership and role with
+	// one complete member directory snapshot (DD-133(4), 07 §4.7.4):
+	// pre-provisions accounts for identities of this instance's issuer,
+	// removes everyone no longer in the snapshot (revoking their sessions)
+	// and records the snapshot only after all of it succeeded. It returns
+	// applied=false when the snapshot's version is the one already recorded.
+	ApplyDirectory(ctx context.Context, issuer, fallbackTenantName string,
+		directory *types.KailoMemberDirectory) (applied bool, err error)
+
+	// DirectorySnapshot returns the last completely applied snapshot for the
+	// binding, or nil when no directory has been delivered for it yet.
+	DirectorySnapshot(ctx context.Context, bindingID string) (*types.KailoMemberDirectory, error)
 }

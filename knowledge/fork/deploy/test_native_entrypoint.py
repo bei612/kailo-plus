@@ -102,6 +102,93 @@ class NativeEntrypointTests(unittest.TestCase):
                 self.assert_refused(env)
         self.assertEqual(entrypoint.prepare_environment(self.env)["KAILO_TENANT_ID"], "6179e160-tenant")
 
+    def directory_env(self):
+        secret = Path(self.directory.name) / "directory_client_secret"
+        secret.write_bytes(b"D" * 24)
+        secret.chmod(0o600)
+        return {
+            **self.env,
+            "KAILO_DIRECTORY_BINDING_ID": "0b3c1f9e-0000-4000-8000-0000000000aa",
+            "KAILO_DIRECTORY_CLIENT_ID": "kailo-knowledge-directory",
+            "KAILO_DIRECTORY_CLIENT_SECRET_FILE": str(secret),
+            "KAILO_DIRECTORY_TOKEN_URL": "http://idp.example.test:8080/realms/kailo/protocol/openid-connect/token",
+            "KAILO_DIRECTORY_CORE_URL": "http://core-bff:8081",
+            "KAILO_DIRECTORY_INTERVAL_SECONDS": "60",
+        }
+
+    def test_member_directory_is_one_group_and_the_credential_stays_a_file(self):
+        # DD-133(4): absent group = directory not delivered; complete group is
+        # passed to the native process with the credential still a file path.
+        delivered = entrypoint.prepare_environment(self.env)
+        self.assertFalse(any(name.startswith("KAILO_DIRECTORY_") for name in delivered))
+        env = self.directory_env()
+        delivered = entrypoint.prepare_environment(env)
+        self.assertEqual(delivered["KAILO_DIRECTORY_CLIENT_SECRET_FILE"], env["KAILO_DIRECTORY_CLIENT_SECRET_FILE"])
+        self.assertNotIn("KAILO_DIRECTORY_CLIENT_SECRET", delivered)
+        self.assertNotIn("D" * 24, json.dumps(delivered))
+        for name, value in (
+            ("KAILO_DIRECTORY_CORE_URL", None),
+            ("KAILO_DIRECTORY_BINDING_ID", "not-a-binding"),
+            ("KAILO_DIRECTORY_CLIENT_ID", "native-fixture-client"),
+            ("KAILO_DIRECTORY_CLIENT_ID", "two words"),
+            ("KAILO_DIRECTORY_TOKEN_URL", "ftp://idp.example.test/token"),
+            ("KAILO_DIRECTORY_CORE_URL", "http://core-bff:8081/service/v1"),
+            ("KAILO_DIRECTORY_INTERVAL_SECONDS", "5"),
+            ("KAILO_DIRECTORY_INTERVAL_SECONDS", "3601"),
+            ("KAILO_DIRECTORY_CLIENT_SECRET_FILE", "relative/secret"),
+            ("KAILO_DIRECTORY_CLIENT_SECRET_FILE", str(Path(self.directory.name) / "absent")),
+        ):
+            with self.subTest(name=name, value=value):
+                broken = self.directory_env()
+                if value is None:
+                    del broken[name]
+                else:
+                    broken[name] = value
+                with self.assertRaises(entrypoint.ConfigurationError) as error:
+                    entrypoint.prepare_environment(broken)
+                self.assertNotIn("D" * 24, str(error.exception))
+        world = self.directory_env()
+        Path(world["KAILO_DIRECTORY_CLIENT_SECRET_FILE"]).chmod(0o604)
+        with self.assertRaises(entrypoint.ConfigurationError):
+            entrypoint.prepare_environment(world)
+        lonely = {**self.env, "KAILO_DIRECTORY_INTERVAL_SECONDS": "60"}
+        with self.assertRaises(entrypoint.ConfigurationError):
+            entrypoint.prepare_environment(lonely)
+
+    def test_member_directory_start_overlay_follows_the_native_env(self):
+        root = Path(self.directory.name)
+        (root / "start.sh").write_bytes(Path(__file__).with_name("start.sh").read_bytes())
+        group = (
+            "KNOWLEDGE_DIRECTORY_BINDING_ID=0b3c1f9e-0000-4000-8000-0000000000aa\n"
+            "KNOWLEDGE_DIRECTORY_CLIENT_ID=kailo-knowledge-directory\n"
+            "KNOWLEDGE_DIRECTORY_CLIENT_SECRET_FILE=/runtime/secrets/component-directory/knowledge/client_secret\n"
+            "KNOWLEDGE_DIRECTORY_TOKEN_URL=http://idp.example.test/token\n"
+            "KNOWLEDGE_DIRECTORY_CORE_URL=http://core-bff:8081\n"
+        )
+        recorder = root / "docker"
+        recorder.write_text("#!/usr/bin/env python3\nimport json,os,sys\nwith open(os.environ['CALLS'], 'a') as f: f.write(json.dumps(sys.argv[1:])+'\\n')\n")
+        recorder.chmod(0o700)
+        calls = root / "calls"
+        env = {**os.environ, "PATH": str(root) + os.pathsep + os.environ["PATH"], "CALLS": str(calls)}
+        overlay = str(root / "compose.member-directory.yaml")
+        for text, code, overlaid in (
+            ("KNOWLEDGE_NATIVE_ORIGIN=https://native.example.test\n", 0, False),
+            (group + "KNOWLEDGE_ADAPTER_PLATFORM_NETWORK=platform-local_app\n", 0, True),
+            (group, 78, False),
+            ("KNOWLEDGE_DIRECTORY_BINDING_ID=0b3c1f9e-0000-4000-8000-0000000000aa\n", 78, False),
+            ("KNOWLEDGE_DIRECTORY_INTERVAL_SECONDS=60\n", 78, False),
+        ):
+            with self.subTest(text=text):
+                (root / ".env").write_text(text)
+                result = subprocess.run(["bash", str(root / "start.sh"), "--validate"], env=env, capture_output=True)
+                self.assertEqual(result.returncode, code, result.stderr)
+                if code == 0:
+                    operations = [json.loads(line) for line in calls.read_text().splitlines()]
+                    self.assertEqual(overlay in operations[0], overlaid)
+                    calls.unlink()
+                else:
+                    self.assertFalse(calls.exists())
+
     def test_aes_is_exactly_32_bytes_not_trimmed_or_hex_decoded(self):
         file = Path(self.env["SYSTEM_AES_KEY_FILE"])
         for raw in (b"A" * 31, b"A" * 33, b"ab" * 32, b"A" * 32 + b"\n"):

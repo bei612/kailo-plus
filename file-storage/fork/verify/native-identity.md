@@ -3875,3 +3875,65 @@ scripts/webpack 告警保留；SBOM 成功不是漏洞门禁通过。
 - Kailo 模式下不渲染：用户菜单“我的账户” `open_user_dashboard`、关于 `splash`、管理控制台切换 `switch_to_settings`（action manifest `activeCondition`）；资料面板的改密码 `PasswordPopover`；左侧栏主题切换、通知铃铛与顶部用户头像菜单（`RailPanel.js`）。地址簿（`directory`/`open_address_book`）作为分享的业务目录保留。非 Kailo 模式的上游路径不变。
 - 仅前端不渲染，不构成授权边界；服务端关闭仍以 `reconcile.py` 的 ROOT_GROUP 角色参数为准。
 - `kailo-cells.test.js` 新增 Kailo 模式（嵌入与顶层）隐藏、非 Kailo 模式保留的用例。2026-10-23 CI 节点对 `c8ef6d4a8` 运行 `vitest run kailo.embed editor.onlyoffice`：2 个文件 21 项通过。左侧铃铛在 Kailo 模式下只在后台文件任务运行时出现、不含活动通知（`5642ad8f6`）。webpack 产物、部署与截图验收未执行。
+
+## 2026-10-23 成员目录同步（DD-133(4)，07 §4.7.4，源码阶段）
+
+依据：design-authority `2eb6714068adf280a0772e6dbdbb16084f38acf9`（含 `e83b5aee` 目录 client 声明与读取语义、
+`6e9532e8` 云盘映射表登记）07 §4.7.4 与 02 DD-133(4)；Core 读取实现
+`core/crates/platform-core/src/component_directory.rs`，合同 `contracts/api/component_member_directory.schema.json`。
+实现按已登记的云盘映射表（摘要如下，权威以设计为准）。
+
+| Kailo 概念 | 组件原生对象 | 自动建立 | 成员加入/移出 | 角色派生 | 成员目录未交付时 |
+|---|---|---|---|---|---|
+| Tenant | 原生用户组 `/kailo-<Tenant id>`（组节点与同 UUID 的组角色，显示名为 Tenant 名）；组内账号只对本组角色、本人与原生管理员可读；人员选择器、@ 与分享对象只列同 Tenant 成员（见下“人员范围”） | connector `organization.tenant` 声明所服务 Tenant；目录交付后以快照 `tenant.tenantId` 核对、按 `tenant.name` 刷新组显示名，不一致即拒绝同步；快照中 issuer 等于 connector issuer 的身份若无账号即按首次登录同一形态预开户（目录无 `preferred_username` 与 email，登录名取显示名规范化，不合法时 `oidc-<摘要>`） | 不在快照中的已开户身份加原生 `logout` 锁（以 `pydio:kailo_directory_locked` 标记）、结束其已记录的原生会话，撤回管理员与 Workspace 角色；再次出现时只解除带标记的锁；账号与文件不删除；不在快照中的身份登录被拒（403），不开户 | `tenantRole=ADMIN` → profile `admin`，`MEMBER` → `standard`；控制台手工改动在下次同步或登录时恢复 | 首次登录即时开户为 `standard`，不授予管理员，不预建、不撤员 |
+| Workspace | 原生工作区 slug `kailo-ws-<Workspace id>`（ADMIN scope，标签 = Workspace 名，UUID 由 slug 确定性派生，根为 binding 数据源下 `<Tenant 根>/<Workspace id>`，即 `KAILO_DIRECTORY_WORKSPACE_ROOT=<CELLS_BINDING_DATASOURCE>/<CELLS_BINDING_ROOT_FOLDER>` 之下）与同名原生角色（本 Tenant 组可读，持有该根的 read、write ACL） | 快照 `workspaces[]` 首次出现时经原生 admin router 建根目录（与 `cells admin file mkdir` 同一做法，已有目录不动、同路径是文件即拒绝）、建工作区（`workspace-path` 与 `recycle_root` 根 ACL）与角色并回读；同 slug 而 UUID 不同的工作区、根不是该目录、或该目录已被他工作区作根，一律拒绝不接管、不改根；快照中消失时删除该角色在根上的 read/write ACL、工作区策略收回为仅原生管理员（离开成员视图），工作区、根目录与文件保留，再次出现时恢复 | 按快照中此人的 `workspaces[]` 挂到/撤出该角色 | Workspace `ADMIN` → 工作区资源策略 `WRITE`（`subject:<账号 UUID>`）加读写；`MEMBER` → 读写（角色 ACL）；不提升 Cells profile | 不建立；成员只有个人文件与 reconcile 声明的 binding 工作区 |
+
+规则（三组件共用约定）：
+
+- 投递：容器内 `KAILO_DIRECTORY_BINDING_ID`、`_CLIENT_ID`、`_CLIENT_SECRET_FILE`、`_TOKEN_URL`、`_CORE_URL`、
+  `_WORKSPACE_ROOT`（overlay 由 `CELLS_BINDING_DATASOURCE/CELLS_BINDING_ROOT_FOLDER` 给出）全给或全空
+  （部分给出即 AfterServe 报错、`start.sh` 拒绝），`_INTERVAL_SECONDS` 10–3600（缺省 60）。全空不启动读取，行为与此前一致。
+- 读取（`common/auth/native-oidc-directory.go`）：每周期读 secret 文件（≤4 KiB）→ client-credentials（Basic，
+  不跟随跳转，10s）→ `GET <core>/service/v1/component-directory/bindings/<binding>/members`（Bearer，30s，≤16 MiB）。
+  非 200、传输错误、未知/缺失字段、角色值不符、引用未知 Workspace、同一身份属于两人、`bindingId` 不等于配置、
+  `tenant.tenantId` 不等于 connector Tenant：一律不改任何东西，日志只记阶段与 HTTP 状态
+  （`NativeOIDCDirectoryUnavailable`），下一周期重试；绝不当作空目录。
+- `directoryVersion` 等于上次完整应用的版本（同一 binding）即不动；否则持 `nativeOIDCProvisioning` 互斥整体收敛，
+  全部成功后才把快照（版本、Tenant 名、成员身份→角色/Workspace、显示名、头像）原子写入
+  `<工作目录>/kailo/member-directory.json`（0600）；中途失败不记录，下一周期整体重做（各写入幂等，结束会话按
+  `kailo-directory:<版本>:<uuid>` 去重）。
+- 登录与解析（`ResolveOrProvisionNativeOIDCUser`）：已应用过快照时，派生账号路径（浏览器、PAT、WOPI、原生动作）
+  只接受快照中的身份（`ErrNativeOIDCNotMember`），浏览器登录按快照写 profile、Workspace 角色、显示名与头像
+  （email、语言仍取 ID token），Tenant 组标签取目录名。存储不可读即拒绝（fail closed）。显式链接账号不受目录管理。
+- 顺带修正：原登录刷新以 `CreateUser` 写回时未带 Roles，会清掉原生管理员在控制台给账号挂的角色；现在保留
+  账号自身的显式角色（排除 user/group/自动应用角色与 `kailo-ws-*`），只改目录管理的那部分。
+- 人员范围（07 §4.7.4 Tenant 行，验收发现的缺陷）：原生用户 REST 的搜索（`SearchUsers`，人员选择器、@ 与分享对象
+  都经它）与按登录名查找（`GetUser`）原先只靠资源策略过滤；安装管理员、binding 服务账号、他 Tenant 或早于 Tenant 组
+  的账号带原生缺省策略 `profile:standard READ`，因此普通成员能搜到它们（包括 Catalog Tenant 的 `kailo-platform-admin`）。
+  现在 Kailo Tenant 组织模式下，非原生管理员调用者的查询被收窄为 Tenant 组下的账号（`auth.NativeOIDCPeopleScope` +
+  `ScopeNativeOIDCPeopleQuery`，原查询整体嵌套、分页与资源策略不变），结果再逐条按组路径复核
+  （`NativeOIDCPeopleVisible`）；原生管理员不受影响，未配置组织的实例行为不变。
+
+验证（2026-10-23，CI 节点 NVMe 暂存 `~/scratch/dirsync-cells`，golang 容器 `golang@sha256:a688600c…`（go1.26.8），
+ubuntu 身份、不加 sudo，源码以 `git archive` 取自 GitHub 分支 `feat/component-directory-sync` 的 `afe2408d`）：
+`gofmt -l common/auth frontend/web idm/user/rest` 无输出；`go vet ./common/auth ./frontend/web ./frontend/web/service ./idm/user/rest`
+只报 `idm/user/rest/handler.go` 上游原有的 `zap.Any("q", userReq)` 复制锁值（本次未改该行）；
+`go test -count=1 ./common/auth ./frontend/web ./frontend/web/service ./idm/user/rest`：common/auth ok（26.0s）、frontend/web ok、
+frontend/web/service ok、idm/user/rest 无测试文件；`-v` 下 TestNativeOIDCMemberDirectory 8 个子场景、TestNativeOIDCPeopleScope 4 个子场景、
+TestNativeOIDCDirectoryConfigFromEnv、TestParseNativeOIDCDirectory 全部 PASS。
+`common/auth/native-oidc-directory_test.go` 以 idmtest sqlite 原生 user/role/ACL/workspace 服务、httptest 假 IdP/Core
+与按路径给出稳定节点 UUID 的假根目录覆盖：
+交付前登录行为不变；首个快照预开户 + admin/standard + Workspace 角色 + 原生工作区（slug、标签、ADMIN scope、
+根 ACL 指向 `<root>/<id>`、角色 read/write ACL、Workspace ADMIN 的 WRITE 策略、无 ADMIN 的工作区无账号 WRITE）
++ 其他 issuer 不开户 + Tenant 组改名 + 存储 0600
++ 交付前开户而不在快照中的账号被锁；同版本不写；Core 503/403、令牌 401、坏 JSON、未知字段、角色值不符、
+他 Tenant、他 binding 均不改状态且 503 报告为 Unavailable；降级、撤员加锁结束会话、Workspace 消失后角色 ACL 撤销、
+策略收回为仅管理员而工作区与根保留（再次出现时恢复授权与 WRITE 策略）、
+撤员登录与无令牌解析被拒；登录按快照取显示名/角色且非成员不开户；再加入解锁；“重启”（新路径读同一文件）后
+Core 不可用时仍按已应用快照拒绝非成员并保留管理员。另有配置（全空/部分/非法值，含 Workspace 根）与合同解析
+（Workspace ADMIN/MEMBER）的反例测试。`common/auth/native-oidc-people_test.go`：未配置组织不收窄、原生管理员不收窄、
+无 claims 收窄；普通成员的空查询、通配（登录名或显示名）与 OR 查询只返回本 Tenant 账号，精确查找 Tenant 外账号为空；
+组路径可见性正反例（本组、子组、组节点本身可见；根、同前缀他组、他 Tenant 不可见）。
+
+完成边界：只有源码、单元测试与部署文件；镜像、部署、binding 以 `--directory-client-id` 重新登记与 qa 真人验收未执行。
+工作区根目录经原生 admin router 建立的路径只在单元测试中以假实现替代，真实数据源上的建目录与回读在部署验收时确认。

@@ -77,6 +77,23 @@ fi
 if [[ "$file_storage_sync" == true ]]; then
   args+=(-f "$deployment_dir/compose.file-storage-sync.yaml")
 fi
+# DD-133(4): the member directory read follows the native env on every start,
+# so later integration starts never drop it. The group is all-or-nothing.
+directory_keys=0
+for field in KNOWLEDGE_DIRECTORY_BINDING_ID KNOWLEDGE_DIRECTORY_CLIENT_ID KNOWLEDGE_DIRECTORY_CLIENT_SECRET_FILE \
+  KNOWLEDGE_DIRECTORY_TOKEN_URL KNOWLEDGE_DIRECTORY_CORE_URL; do
+  if grep -Eq "^${field}=.+$" "$native_env"; then directory_keys=$((directory_keys + 1)); fi
+done
+if [[ "$directory_keys" == 5 ]]; then
+  grep -Eq '^KNOWLEDGE_ADAPTER_PLATFORM_NETWORK=.+$' "$native_env" || {
+    echo 'the member directory read needs KNOWLEDGE_ADAPTER_PLATFORM_NETWORK (Core service network)' >&2
+    exit 78
+  }
+  args+=(-f "$deployment_dir/compose.member-directory.yaml")
+elif [[ "$directory_keys" != 0 ]] || grep -Eq '^KNOWLEDGE_DIRECTORY_INTERVAL_SECONDS=.+$' "$native_env"; then
+  echo 'KNOWLEDGE_DIRECTORY_{BINDING_ID,CLIENT_ID,CLIENT_SECRET_FILE,TOKEN_URL,CORE_URL} are named together or not at all' >&2
+  exit 78
+fi
 docker "${args[@]}" config --quiet
 if [[ "$validate" == false ]]; then
   if [[ "$platform_adapter" == true ]]; then

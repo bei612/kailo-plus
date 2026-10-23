@@ -73,6 +73,20 @@ for line in open(sys.argv[1], encoding="utf-8"):
         break
 PY
 }
+# DD-133(4)、07 §4.7.4：组件 env 给出 <前缀>_DIRECTORY_BINDING_ID 时目录同步开启；目录 client 凭据由平台发布的
+# IdP 声明（bootstrap.sh --declare-directory-clients）写入运行目录 secrets/component-directory/<组件>/client_secret。
+# 这里只核对它是该位置的 0600 普通文件（不读取内容），缺失即说明平台发布尚未声明该 client，拒绝启动。
+directory_secret() {  # <env 文件> <键前缀> <组件>
+  local file=$1 prefix=$2 name=$3 binding secret
+  binding=$(env_value "$file" "${prefix}_DIRECTORY_BINDING_ID")
+  [ -n "$binding" ] || { echo "成员目录同步未开启（${prefix}_DIRECTORY_BINDING_ID 为空）"; return 0; }
+  secret=$(env_value "$file" "${prefix}_DIRECTORY_CLIENT_SECRET_FILE")
+  [ "$secret" = "$R/secrets/component-directory/$name/client_secret" ] \
+    || { echo "${prefix}_DIRECTORY_CLIENT_SECRET_FILE 必须是运行目录 secrets/component-directory/$name/client_secret" >&2; exit 2; }
+  [ -f "$secret" ] && [ ! -L "$secret" ] && [ "$(stat -c '%a' -- "$secret")" = 600 ] \
+    || { echo "目录 client 凭据缺失或不是 0600 普通文件；先由平台发布声明 COMPONENT_DIRECTORY_CLIENTS（ADR-20 §8）" >&2; exit 2; }
+  echo "成员目录同步开启（目录 client 凭据文件就绪，未读取内容）"
+}
 # 镜像必须 digest 固定；本地缺失时从本机 registry 按 digest 拉取（不按 tag）。
 ensure_image() {
   local ref=$1
@@ -106,6 +120,7 @@ case "$component" in
     here=$S/file-storage/deploy
     project=$(env_value "$ENV" CELLS_COMPOSE_PROJECT)
     ensure_image "$(env_value "$ENV" CELLS_IMAGE)"
+    directory_secret "$ENV" CELLS file-storage
     if "$check"; then
       bash "$here/start.sh" --check "$ENV"
       if "$adapter"; then ensure_image "$(env_value "$ENV" CELLS_ADAPTER_IMAGE)"; bash "$here/start.sh" --check --platform-adapter "$ENV"; fi
@@ -152,6 +167,7 @@ case "$component" in
     for kind in APP UI DOCREADER; do
       ensure_image "$(env_value "$ENV" "KNOWLEDGE_${kind}_REPOSITORY")@sha256:$(env_value "$ENV" "KNOWLEDGE_${kind}_DIGEST")"
     done
+    directory_secret "$ENV" KNOWLEDGE knowledge
     if "$adapter"; then
       ensure_image "$(env_value "$ENV" KNOWLEDGE_ADAPTER_REPOSITORY)@sha256:$(env_value "$ENV" KNOWLEDGE_ADAPTER_DIGEST)"
       ensure_image "$(env_value "$ENV" KNOWLEDGE_ADAPTER_AGENT_REPOSITORY)@sha256:$(env_value "$ENV" KNOWLEDGE_ADAPTER_AGENT_DIGEST)"
@@ -204,6 +220,9 @@ case "$component" in
     [ -z "$(wren_value WREN_MODEL_DELIVERY_DIR)" ] || compose+=(-f "$S/data-query/docker/model-delivery.yaml")
     # DD-129：组件 env 给出示例库镜像时叠加问数验收用的专用示例业务库（只在 wren 私网，
     # 无宿主端口）；两角色口令只在组件专属 0600 secret env。
+    # DD-133(4)：成员目录同步只在组件 env 给出 binding 时叠加（wren-ui 加入平台 app 网络读取 Core 服务面）。
+    directory_secret "$ENV" WREN data-query
+    [ -z "$(wren_value WREN_DIRECTORY_BINDING_ID)" ] || compose+=(-f "$S/data-query/docker/member-directory.yaml")
     if [ -n "$(wren_value WREN_SAMPLE_DB_IMAGE)" ]; then
       private_env "$(wren_value WREN_SAMPLE_DB_SECRET_ENV_FILE)"
       compose+=(-f "$S/data-query/docker/sample-datasource.yaml")

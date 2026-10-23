@@ -4,9 +4,21 @@ import { isGovernedQueryMode } from './apollo/server/services/nativeQueryMode';
 import {
   encodeKailoUser,
   kailoUserFromClaims,
+  KailoUserProfile,
   KAILO_SERVICE_HEADER,
   KAILO_USER_HEADER,
 } from './utils/kailoUser';
+
+// DD-133(4): the Node consumer that answers the caller's own member directory
+// entry (`src/pages/api/kailo/directory-access.ts`). It is reached only
+// through this middleware, which sets the verified user from the token.
+export const KAILO_DIRECTORY_ACCESS_PATH = '/api/kailo/directory-access';
+
+// The member directory is configured for this deployment (Edge only reads the
+// env; the Node side refuses to start on a partial configuration).
+function directoryConfigured(): boolean {
+  return Boolean(process.env.KAILO_DIRECTORY_BINDING_ID?.trim());
+}
 
 // SS-WRN-IDENTITY: login is owned by the OIDC gateway. The native backend
 // verifies its own audience, including direct access. Bound HUMAN business
@@ -99,6 +111,29 @@ function nativeIdentity() {
   return identity;
 }
 
+// The private Node origin of this same instance (never the public origin).
+function nodeOrigin(publicOrigin: string): URL | null {
+  const endpoint = process.env.WREN_UI_ENDPOINT;
+  if (!endpoint || endpoint !== endpoint.trim()) return null;
+  let origin: URL;
+  try {
+    origin = new URL(endpoint);
+  } catch {
+    return null;
+  }
+  if (
+    !['http:', 'https:'].includes(origin.protocol) ||
+    origin.username ||
+    origin.password ||
+    origin.hash ||
+    origin.search ||
+    origin.pathname !== '/' ||
+    origin.origin === publicOrigin
+  )
+    return null;
+  return origin;
+}
+
 function denied(status: number, code: string) {
   return NextResponse.json(
     { error: code },
@@ -180,7 +215,7 @@ export async function middleware(request: NextRequest) {
 
   let identityScope: string;
   let service: boolean;
-  let profile: string | undefined;
+  let user: KailoUserProfile | undefined;
   try {
     const { payload } = await jwtVerify(token, configured.keys, {
       issuer: configured.issuer,
@@ -215,12 +250,10 @@ export async function middleware(request: NextRequest) {
     // permission; STANDALONE users are members until the platform member
     // directory (`07` §4.7.4) is delivered, never an IdP-derived admin.
     if (!service)
-      profile = encodeKailoUser(
-        await kailoUserFromClaims(
-          configured.issuer,
-          payload,
-          bound ? null : false,
-        ),
+      user = await kailoUserFromClaims(
+        configured.issuer,
+        payload,
+        bound ? null : false,
       );
     // A non-authorizing browser storage partition, derived only after signature
     // verification. This partition is not business authorization. Never expose
@@ -269,26 +302,18 @@ export async function middleware(request: NextRequest) {
   // Node /api/config consumer owns the same-binding SERVICE transport and the
   // independently verified HUMAN fresh discover check. Its exact GET handles
   // this check itself; no other page/API/stream/Next data/asset skips it.
+  const directoryLookup =
+    request.method === 'GET' &&
+    request.nextUrl.pathname === KAILO_DIRECTORY_ACCESS_PATH;
   if (
     bound &&
     !service &&
+    !directoryLookup &&
     !(request.method === 'GET' && request.nextUrl.pathname === '/api/config')
   ) {
     try {
-      const endpoint = process.env.WREN_UI_ENDPOINT;
-      if (!endpoint || endpoint !== endpoint.trim())
-        return denied(503, 'NATIVE_INSTANCE_UNAVAILABLE');
-      const origin = new URL(endpoint);
-      if (
-        !['http:', 'https:'].includes(origin.protocol) ||
-        origin.username ||
-        origin.password ||
-        origin.hash ||
-        origin.search ||
-        origin.pathname !== '/' ||
-        origin.origin === configured.publicOrigin
-      )
-        return denied(503, 'NATIVE_INSTANCE_UNAVAILABLE');
+      const origin = nodeOrigin(configured.publicOrigin);
+      if (!origin) return denied(503, 'NATIVE_INSTANCE_UNAVAILABLE');
       const access = await fetch(new URL('/api/config', origin), {
         method: 'GET',
         headers: { authorization: `Bearer ${token}` },
@@ -320,6 +345,44 @@ export async function middleware(request: NextRequest) {
     }
   }
 
+  // DD-133(4), `07` §4.7.4: once the Core member directory has been applied,
+  // a person absent from it is refused here for every page, GraphQL and REST
+  // request, and a STANDALONE role is the directory Tenant role. Edge has no
+  // database: the Node consumer of this same instance answers for the user
+  // this middleware verified (the lookup itself passes through here). Before
+  // the first applied snapshot the answer keeps everyone a member, no admin.
+  // A GOVERNED instance keeps Core `manage`/`discover` as the role authority.
+  if (user && directoryConfigured() && !directoryLookup) {
+    try {
+      const origin = nodeOrigin(configured.publicOrigin);
+      if (!origin) return denied(503, 'NATIVE_INSTANCE_UNAVAILABLE');
+      const access = await fetch(new URL(KAILO_DIRECTORY_ACCESS_PATH, origin), {
+        method: 'GET',
+        headers: { authorization: `Bearer ${token}` },
+        cache: 'no-store',
+        redirect: 'error',
+        signal: request.signal,
+      });
+      if (!access.ok) return denied(503, 'NATIVE_INSTANCE_UNAVAILABLE');
+      const entry = await access.json();
+      if (
+        !entry ||
+        typeof entry !== 'object' ||
+        Array.isArray(entry) ||
+        entry.userKey !== user.key ||
+        typeof entry.delivered !== 'boolean' ||
+        typeof entry.member !== 'boolean' ||
+        typeof entry.admin !== 'boolean'
+      )
+        return denied(503, 'NATIVE_INSTANCE_UNAVAILABLE');
+      if (!entry.member) return denied(403, 'KAILO_NOT_MEMBER');
+      if (!bound) user = { ...user, admin: entry.delivered && entry.admin };
+    } catch {
+      return denied(503, 'NATIVE_INSTANCE_UNAVAILABLE');
+    }
+  }
+
+  const profile = user ? encodeKailoUser(user) : undefined;
   const headers = new Headers(request.headers);
   headers.delete('authorization');
   headers.delete('cookie');

@@ -37,6 +37,7 @@ import (
 	acldao "github.com/pydio/cells/v5/idm/acl/dao/sql"
 	roledao "github.com/pydio/cells/v5/idm/role/dao/sql"
 	usrdao "github.com/pydio/cells/v5/idm/user/dao/sql"
+	wsdao "github.com/pydio/cells/v5/idm/workspace/dao/sql"
 )
 
 const (
@@ -52,9 +53,10 @@ func provisionTestCases() []test.ServicesStorageTestCase {
 		DSN:       map[string]string{"sql": sql.SqliteDriver + "://" + sql.SharedMemDSN + "&hookNames=cleanTables&prefix=" + unique + "&policies=" + unique + "{{ .Meta.policies }}"},
 		Condition: os.Getenv("CELLS_TEST_SKIP_SQLITE") != "true",
 		Services: map[string]map[string]map[string]any{
-			common.ServiceUserGRPC: {"sql": {"func": usrdao.NewDAO}},
-			common.ServiceRoleGRPC: {"sql": {"func": roledao.NewDAO}},
-			common.ServiceAclGRPC:  {"sql": {"func": acldao.NewDAO}},
+			common.ServiceUserGRPC:      {"sql": {"func": usrdao.NewDAO}},
+			common.ServiceRoleGRPC:      {"sql": {"func": roledao.NewDAO}},
+			common.ServiceAclGRPC:       {"sql": {"func": acldao.NewDAO}},
+			common.ServiceWorkspaceGRPC: {"sql": {"func": wsdao.NewDAO}},
 		},
 		Label: "Sqlite",
 	}}

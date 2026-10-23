@@ -1,0 +1,30 @@
+# Kailo DD-133(4) (07 §4.7.4): the member directory read. Overlaid by start.sh
+# whenever the native env names KNOWLEDGE_DIRECTORY_BINDING_ID; the five keys
+# are one group. The app reaches Core's service listener on the existing
+# platform app network (the same network key as compose.adapter.yaml and
+# compose.file-storage-sync.yaml) and the IdP token endpoint as for OIDC. The
+# directory client credential is the file written by the platform release's
+# IdP declaration (bootstrap.sh --declare-directory-clients), mounted
+# read-only and read per request; it is never an environment value.
+services:
+  app:
+    environment:
+      KAILO_DIRECTORY_BINDING_ID: ${KNOWLEDGE_DIRECTORY_BINDING_ID:?native page entry binding id required}
+      KAILO_DIRECTORY_CLIENT_ID: ${KNOWLEDGE_DIRECTORY_CLIENT_ID:?component directory client id required}
+      KAILO_DIRECTORY_CLIENT_SECRET_FILE: /run/secrets/kailo_directory_client_secret
+      KAILO_DIRECTORY_TOKEN_URL: ${KNOWLEDGE_DIRECTORY_TOKEN_URL:?IdP token endpoint required}
+      KAILO_DIRECTORY_CORE_URL: ${KNOWLEDGE_DIRECTORY_CORE_URL:?Core service listener origin required}
+      KAILO_DIRECTORY_INTERVAL_SECONDS: ${KNOWLEDGE_DIRECTORY_INTERVAL_SECONDS:-60}
+    secrets:
+      - kailo_directory_client_secret
+    networks:
+      adapter_platform: {}
+
+secrets:
+  kailo_directory_client_secret:
+    file: ${KNOWLEDGE_DIRECTORY_CLIENT_SECRET_FILE:?release-declared directory client secret file required}
+
+networks:
+  adapter_platform:
+    external: true
+    name: ${KNOWLEDGE_ADAPTER_PLATFORM_NETWORK:?existing Core service network required}

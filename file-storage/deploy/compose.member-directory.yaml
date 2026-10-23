@@ -1,0 +1,29 @@
+# Kailo member directory read (DD-133(4), .design/07 §4.7.4). Added by start.sh
+# only when CELLS_DIRECTORY_BINDING_ID is set: the native Cells process reads
+# GET /service/v1/component-directory/bindings/<binding>/members on the Core
+# service listener (platform network, the same one the native action overlay
+# uses) with its own directory client (client-credentials). The client secret
+# is the platform release's IdP declaration output, mounted read-only as a
+# Compose secret; it never appears in the environment.
+services:
+  cells:
+    networks: [cells-data, cells-ui, cells-platform]
+    environment:
+      KAILO_DIRECTORY_BINDING_ID: ${CELLS_DIRECTORY_BINDING_ID:?native page entry binding required}
+      KAILO_DIRECTORY_CLIENT_ID: ${CELLS_DIRECTORY_CLIENT_ID:?component directory client required}
+      KAILO_DIRECTORY_CLIENT_SECRET_FILE: /run/secrets/cells_directory_client_secret
+      KAILO_DIRECTORY_TOKEN_URL: ${CELLS_DIRECTORY_TOKEN_URL:?IdP token endpoint required}
+      KAILO_DIRECTORY_CORE_URL: ${CELLS_DIRECTORY_CORE_URL:?Core service listener required}
+      KAILO_DIRECTORY_INTERVAL_SECONDS: ${CELLS_DIRECTORY_INTERVAL_SECONDS:-60}
+      # 07 §4.7.4: Kailo Workspaces are rooted on <binding datasource>/<Tenant root>/<Workspace id>.
+      KAILO_DIRECTORY_WORKSPACE_ROOT: ${CELLS_BINDING_DATASOURCE:?binding datasource required}/${CELLS_BINDING_ROOT_FOLDER:?binding root folder required}
+    secrets: [cells_install, cells_oidc_client_secret, cells_oauth_secret, cells_datasource_key, cells_datasource_secret, cells_directory_client_secret]
+
+secrets:
+  cells_directory_client_secret:
+    file: ${CELLS_DIRECTORY_CLIENT_SECRET_FILE:?existing directory client secret delivered by the platform release required}
+
+networks:
+  cells-platform:
+    external: true
+    name: ${CELLS_ADAPTER_PLATFORM_NETWORK:?existing private platform protocol network required}

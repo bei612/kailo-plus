@@ -106,6 +106,11 @@ func (s *UserHandler) GetUser(req *restful.Request, rsp *restful.Response) error
 		SubQueries: []*anypb.Any{qLogin},
 	}
 	query.ResourcePolicyQuery, _ = s.RestToServiceResourcePolicy(ctx, nil)
+	// DD-133(4), 07 §4.7.4: a Kailo member only finds the accounts of its Tenant.
+	scope, scoped := auth.NativeOIDCPeopleScope(ctx)
+	if scoped {
+		query = auth.ScopeNativeOIDCPeopleQuery(query, scope)
+	}
 	var result *idm.User
 
 	streamer, err := idmc.UserServiceClient(ctx).SearchUser(ctx, &idm.SearchUserRequest{
@@ -124,6 +129,9 @@ func (s *UserHandler) GetUser(req *restful.Request, rsp *restful.Response) error
 			continue
 		}
 		u := resp.User
+		if scoped && !auth.NativeOIDCPeopleVisible(u, scope) {
+			continue
+		}
 		if u.Roles, e = permissions.GetRolesForUser(ctx, u, false); e != nil {
 			return e
 		}
@@ -177,6 +185,12 @@ func (s *UserHandler) SearchUsers(req *restful.Request, rsp *restful.Response) e
 			query.SubQueries = append(query.SubQueries, anyfied)
 		}
 	}
+	// DD-133(4), 07 §4.7.4: the people picker, @ and share targets of a Kailo
+	// member list the accounts of its Tenant only (native admins unchanged).
+	scope, scoped := auth.NativeOIDCPeopleScope(ctx)
+	if scoped {
+		query = auth.ScopeNativeOIDCPeopleQuery(query, scope)
+	}
 	cli := idmc.UserServiceClient(ctx)
 	resp, err := cli.CountUser(ctx, &idm.SearchUserRequest{
 		Query: query,
@@ -196,6 +210,9 @@ func (s *UserHandler) SearchUsers(req *restful.Request, rsp *restful.Response) e
 		})
 		if fer := commons.ForEach(streamer, e, func(resp *idm.SearchUserResponse) error {
 			u := resp.User
+			if scoped && !auth.NativeOIDCPeopleVisible(u, scope) {
+				return nil
+			}
 			if resp.User.IsGroup {
 				u.Roles = append(u.Roles, &idm.Role{Uuid: u.Uuid, GroupRole: true})
 				if u.Roles, e = permissions.GetRolesForUser(ctx, u, true); e != nil {

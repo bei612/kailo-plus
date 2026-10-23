@@ -511,6 +511,10 @@ func (s *userService) GetOIDCAuthorizationURLWithOptions(
 	}, nil
 }
 
+// kailoNotMemberMessage is the deterministic refusal for an identity that
+// the applied Kailo member directory does not list.
+const kailoNotMemberMessage = "This account is not a member of the Kailo organisation served here"
+
 // LoginWithOIDC exchanges code for tokens, loads user info, provisions user if
 // needed, and returns local login tokens. provisioning is the default tenant
 // mode applied only when a brand-new local user is auto-created; it is resolved
@@ -547,11 +551,29 @@ func (s *userService) LoginWithOIDC(
 
 	// Kailo DD-133 (07 §4.7.4): this instance serves one Kailo Tenant; every
 	// Kailo login joins its space, so no personal space is ever created.
+	var directoryMembership *types.KailoMembership
 	if s.config.KailoEnabled() {
 		if s.kailoOrg == nil {
 			return nil, errors.New("kailo organisation sync is not configured")
 		}
 		provisioning = types.TenantProvisioningTenantless
+		// DD-133(4): once a member directory snapshot has been applied, it
+		// alone says who belongs and with which role; a person outside it is
+		// refused before any account is created.
+		if directory := s.config.KailoDirectory(); directory != nil {
+			snapshot, err := s.kailoOrg.DirectorySnapshot(ctx, directory.BindingID)
+			if err != nil {
+				return nil, err
+			}
+			if snapshot != nil {
+				member := snapshot.MemberFor(userInfo.Issuer, userInfo.Subject)
+				if member == nil {
+					logger.Infof(ctx, "OIDC login refused: identity is not in the Kailo member directory")
+					return &types.OIDCCallbackResponse{Success: false, Message: kailoNotMemberMessage}, nil
+				}
+				directoryMembership = snapshot.Membership(member, s.config.Kailo.TenantName)
+			}
+		}
 	}
 
 	user, err := s.userRepo.GetUserByOIDCIdentity(ctx, userInfo.Issuer, userInfo.Subject)
@@ -583,7 +605,10 @@ func (s *userService) LoginWithOIDC(
 	}
 	session := nativeSession{}
 	if s.config.KailoEnabled() {
-		membership := types.DeploymentKailoMembership(s.config.Kailo.TenantID, s.config.Kailo.TenantName)
+		membership := directoryMembership
+		if membership == nil {
+			membership = types.DeploymentKailoMembership(s.config.Kailo.TenantID, s.config.Kailo.TenantName)
+		}
 		if _, err := s.kailoOrg.SyncLogin(ctx, user, membership); err != nil {
 			return nil, err
 		}

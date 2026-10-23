@@ -561,6 +561,8 @@ class FakeRunner:
         if "native" in argv[1]:
             body = {"nativeClientProfiles": self.native, "clients": 1, "users": 3, "written": 0, "missing": 0,
                     "problems": ["x"] * code}
+        if "directory" in argv[1]:
+            body = {"directoryClients": "DECLARED", "clients": 3, "changed": 0, "problems": ["x"] * code}
         # A misbehaving script must not leak values through the step either.
         body["unexpected"] = SENTINELS[1]
         return code, "progress line\n" + json.dumps(body) + "\n"
@@ -682,7 +684,7 @@ class IdpStepTest(unittest.TestCase):
         runner = FakeRunner()
         before = sorted(os.listdir(self.tmp.name))
         plan = self.step(runner).plan()
-        self.assertEqual(plan, dict(state="never", native_clients_declared=True))
+        self.assertEqual(plan, dict(state="never", native_clients_declared=True, directory_clients_declared=False))
         self.assertEqual(runner.calls, [])
         self.assertEqual(sorted(os.listdir(self.tmp.name)), before)
 
@@ -978,6 +980,254 @@ class ServiceScopeDeclaration(unittest.TestCase):
         self.assertEqual(scope["name"], "kailo-core-mcp")
         self.assertEqual(mapper["protocolMapper"], "oidc-audience-mapper")
         self.assertIn("CORE_MCP_AUDIENCE", idp.INPUT_ENV)
+
+
+DIRECTORY_VALUES = dict(VALUES, OIDC_REALM="Kailo", OIDC_NATIVE_AUDIENCE="native-aud",
+                        COMPONENT_DIRECTORY_CLIENTS="file-storage=cells-dir,knowledge=knowledge-dir,data-query=wren-dir")
+
+
+class FakeDirectoryRealm:
+    """In-memory realm admin API for the DD-133(4) directory-client declaration."""
+
+    def __init__(self):
+        self.clients, self.mappers, self.secrets, self.accounts, self.roles = {}, {}, {}, {}, {}
+        self.writes, self.lose_next_create = [], False
+
+    def add(self, body, generated="idp-generated-secret"):
+        import copy
+        cid = "id-%d" % len(self.clients)
+        client = {k: copy.deepcopy(v) for k, v in body.items() if k not in ("secret", "protocolMappers")}
+        client["id"] = cid
+        self.clients[cid] = client
+        self.mappers[cid] = copy.deepcopy(body.get("protocolMappers") or [])
+        self.secrets[cid] = body.get("secret") or generated
+        self.accounts[cid] = "sa-" + cid
+        self.roles["sa-" + cid] = {"realmMappings": [{"name": "default-roles-kailo"}]}
+        return cid
+
+    def __call__(self, path, body=None, method=None):
+        import copy
+        import urllib.error
+        import urllib.parse as up
+        method = method or ("POST" if body is not None else "GET")
+        if method != "GET":
+            self.writes.append((method, path))
+        parts = up.urlsplit(path)
+        seg = parts.path.strip("/").split("/")
+        if seg == ["clients"]:
+            if method == "POST":
+                self.add(body)
+                if self.lose_next_create:
+                    self.lose_next_create = False
+                    raise urllib.error.URLError("response lost")
+                return None
+            wanted = up.parse_qs(parts.query)["clientId"][0]
+            return [copy.deepcopy(c) for c in self.clients.values() if c["clientId"] == wanted]
+        if seg[0] == "users":
+            return copy.deepcopy(self.roles[seg[1]])
+        cid = seg[1]
+        if len(seg) == 2:
+            return copy.deepcopy(self.clients[cid])
+        if seg[2] == "protocol-mappers":
+            if method == "POST":
+                self.mappers[cid].append(copy.deepcopy(body))
+                return None
+            return copy.deepcopy(self.mappers[cid])
+        if seg[2] == "service-account-user":
+            return {"id": self.accounts[cid]}
+        if seg[2] == "client-secret":
+            return {"type": "secret", "value": self.secrets[cid]}
+        raise AssertionError(path)
+
+
+class DirectoryClientDeclaration(unittest.TestCase):
+    """DD-133(4), .design/07 §4.7.4: the release declares each component's member-directory client."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.runtime = self.tmp.name
+        os.mkdir(os.path.join(self.runtime, "secrets"), 0o755)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def run_step(self, kc, verify=False, values=DIRECTORY_VALUES):
+        return idp.directory_clients(idp.ReadOnly(kc) if verify else kc, values, self.runtime, verify)
+
+    def secret_file(self, component):
+        return os.path.join(self.runtime, "secrets", "component-directory", component, "client_secret")
+
+    def by_client(self, kc, client_id):
+        return next(c for c in kc.clients.values() if c["clientId"] == client_id)
+
+    def assert_no_values(self, kc, report):
+        text = json.dumps(report, ensure_ascii=False)
+        for value in list(kc.secrets.values()) + ["cells-dir", "knowledge-dir", "wren-dir", "core"]:
+            self.assertNotIn(value, text)
+
+    def test_declarations_are_validated_before_any_network(self):
+        self.assertEqual(idp.declared_directory_clients(dict(DIRECTORY_VALUES, COMPONENT_DIRECTORY_CLIENTS="")), [])
+        self.assertEqual(idp.declared_directory_clients(DIRECTORY_VALUES),
+                         [("file-storage", "cells-dir"), ("knowledge", "knowledge-dir"), ("data-query", "wren-dir")])
+        for raw in ("cells-dir", "files=cells-dir", "knowledge=a,knowledge=b", "knowledge=x,data-query=x",
+                    "knowledge=core", "knowledge=worker", "knowledge=browser", "knowledge=native",
+                    "knowledge=cells",  # a component browser client (NATIVE_OIDC_CLIENTS) is not a directory client
+                    "knowledge=two words", "knowledge=a/b", "knowledge="):
+            with self.assertRaises(idp.Refused, msg=raw):
+                idp.declared_directory_clients(dict(DIRECTORY_VALUES, COMPONENT_DIRECTORY_CLIENTS=raw))
+        saved = dict(os.environ)
+        original = idp.Admin
+        try:
+            os.environ.update({k: v for k, v in DIRECTORY_VALUES.items() if k != "COMPONENT_DIRECTORY_CLIENTS"},
+                              COMPONENT_DIRECTORY_CLIENTS="", OIDC_ISSUER="http://k.example:3/realms/r",
+                              KEYCLOAK_ADMIN_USER="admin", KAILO_RUNTIME_DIR=self.runtime)
+            idp.Admin = lambda *a: self.fail("an undeclared run must not contact the IdP")
+            for argv in (["directory-clients"], ["directory-clients", "--verify"]):
+                self.assertEqual(idp.main(argv)["directoryClients"], "UNDECLARED")
+            os.environ["COMPONENT_DIRECTORY_CLIENTS"] = "unknown=x"
+            with self.assertRaises(idp.Refused):
+                idp.main(["directory-clients"])
+            with self.assertRaises(idp.Refused):
+                idp.main(["directory-clients", "--users-only"])
+        finally:
+            idp.Admin = original
+            os.environ.clear()
+            os.environ.update(saved)
+        self.assertFalse(os.path.exists(os.path.join(self.runtime, "secrets", "component-directory")))
+
+    def test_verify_reports_missing_clients_without_writing(self):
+        kc = FakeDirectoryRealm()
+        report = self.run_step(kc, verify=True)
+        self.assertEqual((report["directoryClients"], len(report["problems"])), ("DRIFTED", 3))
+        self.assertEqual(kc.writes, [])
+        self.assertFalse(os.path.exists(os.path.join(self.runtime, "secrets", "component-directory")))
+        self.assert_no_values(kc, report)
+
+    def test_declare_creates_service_account_only_clients_and_delivers_the_idp_secret(self):
+        kc = FakeDirectoryRealm()
+        report = self.run_step(kc)
+        self.assertEqual((report["directoryClients"], report["clients"], report["problems"]), ("DECLARED", 3, []))
+        for component, client_id in (("file-storage", "cells-dir"), ("knowledge", "knowledge-dir"),
+                                     ("data-query", "wren-dir")):
+            client = self.by_client(kc, client_id)
+            self.assertIs(client["serviceAccountsEnabled"], True)
+            self.assertIs(client["publicClient"], False)
+            for flow in ("standardFlowEnabled", "implicitFlowEnabled", "directAccessGrantsEnabled"):
+                self.assertIs(client[flow], False, flow)
+            self.assertEqual((client["redirectUris"], client["webOrigins"]), ([], []))
+            self.assertIs(client["fullScopeAllowed"], False)
+            [mapper] = kc.mappers[client["id"]]
+            self.assertEqual(mapper["protocolMapper"], "oidc-audience-mapper")
+            self.assertEqual(mapper["config"]["included.custom.audience"], "core")
+            self.assertEqual(mapper["config"]["access.token.claim"], "true")
+            path = self.secret_file(component)
+            self.assertEqual(os.stat(path).st_mode & 0o777, 0o600)
+            self.assertEqual(os.stat(os.path.dirname(path)).st_mode & 0o777, 0o700)
+            with open(path, encoding="utf-8") as stream:
+                self.assertEqual(stream.read().strip(), kc.secrets[client["id"]])
+        self.assertEqual(len(set(kc.secrets.values())), 3, "every client has its own credential")
+        self.assert_no_values(kc, report)
+        kc.writes.clear()
+        again = self.run_step(kc)
+        self.assertEqual((again["changed"], kc.writes), (0, []), "a converged realm is only read")
+        self.assertEqual(self.run_step(kc, verify=True), dict(directoryClients="DECLARED", clients=3, changed=0,
+                                                              problems=[]))
+
+    def test_lost_create_response_is_settled_by_readback_not_a_second_post(self):
+        kc = FakeDirectoryRealm()
+        kc.lose_next_create = True
+        self.assertEqual(self.run_step(kc)["directoryClients"], "DECLARED")
+        self.assertEqual(sum(1 for m, p in kc.writes if m == "POST" and p == "/clients"), 3)
+
+    def test_secret_file_follows_the_idp_and_drift_is_reported(self):
+        kc = FakeDirectoryRealm()
+        # A client created out of band (say by an operator) keeps its IdP credential; the file is written from it.
+        kc.add(idp.directory_client("knowledge-dir", "knowledge", "core", None), generated="operator-made")
+        self.run_step(kc)
+        path = self.secret_file("knowledge")
+        with open(path, encoding="utf-8") as stream:
+            self.assertEqual(stream.read().strip(), "operator-made")
+        os.unlink(path)
+        report = self.run_step(kc, verify=True)
+        self.assertEqual((report["directoryClients"], len(report["problems"])), ("DRIFTED", 1))
+        self.assertFalse(os.path.exists(path))
+        self.assert_no_values(kc, report)
+        self.run_step(kc)
+        with open(path, "w", encoding="utf-8") as stream:
+            stream.write("stale\n")
+        self.assertEqual(len(self.run_step(kc, verify=True)["problems"]), 1)
+        self.run_step(kc)
+        with open(path, encoding="utf-8") as stream:
+            self.assertEqual(stream.read().strip(), "operator-made", "the IdP credential is authoritative")
+        os.chmod(path, 0o644)
+        with self.assertRaises(idp.Refused):
+            self.run_step(kc, verify=True)
+
+    def test_divergent_existing_client_is_refused_not_overwritten(self):
+        cases = (("standardFlowEnabled", True), ("publicClient", True), ("directAccessGrantsEnabled", True),
+                 ("serviceAccountsEnabled", False), ("redirectUris", ["http://evil.example/*"]))
+        for key, value in cases:
+            kc = FakeDirectoryRealm()
+            body = idp.directory_client("cells-dir", "file-storage", "core", "s")
+            body[key] = value
+            kc.add(body)
+            with self.assertRaises(idp.Refused, msg=key):
+                self.run_step(kc)
+            self.assertEqual(kc.writes, [], key)
+        for mutate in (lambda m: m[0]["config"].update({"included.custom.audience": "worker"}),
+                       lambda m: m.append({"name": "extra", "protocol": "openid-connect",
+                                           "protocolMapper": "oidc-hardcoded-claim-mapper", "config": {}})):
+            kc = FakeDirectoryRealm()
+            cid = kc.add(idp.directory_client("cells-dir", "file-storage", "core", "s"))
+            mutate(kc.mappers[cid])
+            with self.assertRaises(idp.Refused):
+                self.run_step(kc)
+        kc = FakeDirectoryRealm()
+        cid = kc.add(idp.directory_client("cells-dir", "file-storage", "core", "s"))
+        kc.roles["sa-" + cid]["realmMappings"].append({"name": "admin"})
+        with self.assertRaises(idp.Refused):
+            self.run_step(kc)
+
+    def test_release_declares_and_verifies_the_three_directory_clients(self):
+        _mspec = importlib.util.spec_from_file_location("release_model_dir", os.path.join(os.path.dirname(__file__),
+                                                                                           "model.py"))
+        model = importlib.util.module_from_spec(_mspec)
+        _mspec.loader.exec_module(model)
+        spec = model.idp_declaration()
+        self.assertIn(["./bootstrap.sh", "--declare-directory-clients"], spec["apply"])
+        self.assertIn(["./bootstrap.sh", "--verify-directory-clients"], spec["verify"])
+        self.assertIn("COMPONENT_DIRECTORY_CLIENTS", idp.INPUT_ENV)
+        to_set, _ = model.env_declaration()
+        production = dict(DIRECTORY_VALUES, COMPONENT_DIRECTORY_CLIENTS=to_set["COMPONENT_DIRECTORY_CLIENTS"],
+                          NATIVE_OIDC_CLIENTS=to_set["NATIVE_OIDC_CLIENTS"])
+        self.assertEqual([c for c, _ in idp.declared_directory_clients(production)],
+                         ["file-storage", "knowledge", "data-query"])
+        with open(os.path.join(os.path.dirname(__file__), "..", "..", "deploy", "local", "bootstrap.sh"),
+                  encoding="utf-8") as stream:
+            text = stream.read()
+        for flag in ("--declare-directory-clients", "--verify-directory-clients"):
+            self.assertIn(f"'{flag}'", text)
+
+    def test_step_reports_directory_status_without_values(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            state = os.path.join(tmp, node.IDP_STATE)
+            spec = dict(SPEC, apply=SPEC["apply"] + [["./bootstrap.sh", "--declare-directory-clients"]],
+                        verify=SPEC["verify"] + [["./bootstrap.sh", "--verify-directory-clients"]])
+            env = dict(ENV, COMPONENT_DIRECTORY_CLIENTS=["knowledge=sentinel-directory"])
+            keys = KEYS + ["COMPONENT_DIRECTORY_CLIENTS"]
+            step = node.IdpStep(spec, node.idp_digest(FILES, env, keys), env, state, FakeRunner())
+            self.assertTrue(step.plan()["directory_clients_declared"])
+            applied = step.apply("c" * 40)
+            self.assertIn("--declare-directory-clients", [c["command"] for c in applied["commands"]])
+            self.assertIs(node.read_json(state)["directory_clients_declared"], True)
+            verified = step.verify()
+            self.assertEqual((verified["directory_clients"], verified["problems"]), ("DECLARED", []))
+            self.assertNotIn("sentinel-directory", json.dumps([applied, verified, node.read_json(state)]))
+            failing = node.IdpStep(spec, node.idp_digest(FILES, env, keys), env, state,
+                                   FakeRunner(fail={"--verify-directory-clients": 1}))
+            self.assertEqual(len(failing.verify()["problems"]), 1)
+            changed = node.idp_digest(FILES, dict(env, COMPONENT_DIRECTORY_CLIENTS=["knowledge=other"]), keys)
+            self.assertNotEqual(changed, step.digest, "the declaration is part of the configuration digest")
 
 
 class DeclaredEnvPreview(unittest.TestCase):

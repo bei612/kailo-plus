@@ -86,3 +86,85 @@ The display name inside Wren comes from the IdP `name` claim (`1 QA`), not the
 Kailo display name (`kailo-qa-1`); the avatar URL answers 404 for every
 same-Tenant requester, so the picture is broken (V-SCN-200, Core, see the Cells
 record).
+
+## Member directory sync (DD-133(4), 2026-10-23, source stage)
+
+Authority: design-authority `.design/07` §4.7.4 (read contract and the Wren
+mapping table) and `.design/02` DD-133(4); Core read
+`core/crates/platform-core/src/component_directory.rs`, contract
+`contracts/api/component_member_directory.schema.json`.
+
+- **Read** (`wren-ui/src/apollo/server/services/kailoMemberDirectory.ts`):
+  `KAILO_DIRECTORY_*` (from `WREN_DIRECTORY_*` through
+  `docker/member-directory.yaml`); none = off, a partial or invalid set refuses
+  start. At start and every interval (default 60 s, 10..3600): client
+  credentials with HTTP Basic from the secret file (≤4 KiB, re-read every
+  time), then `GET /service/v1/component-directory/bindings/<binding>/members`;
+  no redirects, 10 s / 30 s timeouts, ≤16 MiB body, closed-object contract
+  check, `bindingId` must be the configured binding, `directoryVersion` a
+  lowercase SHA-256. Only identities whose issuer is this instance's verified
+  issuer (`WREN_NATIVE_IDENTITY_JSON.issuer`) count. Reads never overlap.
+- **Apply**: unchanged `directoryVersion` writes nothing. A new one replaces
+  `kailo_directory_member` (issuer+subject digest = `kailo_user` key, principal,
+  admin) and upserts `kailo_user` name/picture with the Kailo display name and
+  avatar in one transaction, then records the version in
+  `kailo_directory_state` (migration `20261023000000_kailo_member_directory`,
+  reversible). `kailo_user` rows are never deleted. 503, 401/403/404, token
+  refusal, transport error, unreadable secret, malformed or foreign snapshot:
+  no change, the applied snapshot keeps deciding, retried next interval; logs
+  carry the outcome and HTTP status only.
+- **Admission**: the Edge middleware asks this same instance's Node consumer
+  `GET /api/kailo/directory-access` (the hop passes the middleware itself, so
+  the user is the one verified from the token; the answer is only that user's
+  own entry, checked against the user key) for every human page, GraphQL and
+  REST request. After the first applied snapshot a person absent from it gets
+  `403 {"error":"KAILO_NOT_MEMBER"}` in both modes; STANDALONE `admin` is the
+  directory `tenantRole=ADMIN`, so the existing `KAILO_ADMIN_REQUIRED` checks
+  follow it; GOVERNED keeps `admin=null` and Core `manage`/`discover`. Lookup
+  failure or a mismatched answer is 503. Before the first snapshot: every
+  signed-in user is a member, nobody an admin (unchanged). The persisted
+  snapshot is loaded before any decision, so a restart never reopens or
+  demotes. After login, a delivered member's `kailo_user` name/picture stay the
+  directory values; login name, verified e-mail and locale still come from the
+  token.
+- **Mapping**: as the Wren table in `07` §4.7.4; `workspaces[]` create
+  nothing and raise no role.
+- **Deployment**: `deploy/components/data-query.env.template` `WREN_DIRECTORY_*`;
+  `docker/README.md` "Member directory (DD-133(4))". wren-ui joins
+  `WREN_QUERY_PLATFORM_NETWORK` (Core service listener) only with the overlay;
+  the secret is the platform runtime file written by the release IdP
+  declaration, mounted as a Compose secret.
+
+Tests (`wren-ui/src/kailoMemberDirectory.test.ts`, real better-sqlite3 knex with
+the real migrations, local HTTP fake IdP/Core, real middleware with a local
+JWKS and a stand-in Node consumer): configuration all-or-none and limits;
+closed contract and binding match; pre-delivery behaviour; first snapshot
+(Basic credential, bearer, roles, foreign issuer ignored, profile refresh
+keeping login name/e-mail); unchanged version writes nothing; 503, 401, token
+401, bad JSON, foreign binding and missing secret change nothing; removal,
+demotion, promotion with `kailo_user` kept; restart keeps the persisted
+snapshot; login naming before/after delivery; migration down/up; middleware
+refuses non-members on page/GraphQL/REST, sets the STANDALONE role, fails
+closed on lookup error or a foreign answer, skips the lookup path and the
+unconfigured case.
+
+Results (CI node, `node:18-bookworm-slim`, `--network none`, 4 CPU / 6 GiB,
+UID 1000, wren-ui locked dependencies installed with the repository's yarn
+4.5.3 `install --immutable`; tree from `git archive` of the pushed commit
+`5c8821975e787f2e5266b26ee9040b94e7cf463f`):
+
+- `jest --runInBand src/kailoMemberDirectory.test.ts src/kailoDirectoryAccess.test.ts
+  src/kailoIntegration.test.ts src/kailoUserMiddleware.test.ts`: 4 suites pass
+  (the two new suites 17 tests).
+- `src/middleware.test.ts`: 85 failed / 75 passed, identical to `main`
+  `0e9c076c8` with the same runner (pre-existing, not touched here).
+- Whole `jest --runInBand`: the same 11 failing suites as `main` `0e9c076c8`
+  (pre-existing; the run does not exit by itself on either commit and was
+  stopped after the last suite reported).
+- `tsc --noEmit`: only the pre-existing `src/nativeQueryDelivery.test.ts(38,9)`
+  error, same as `main`. `prettier --check` and `eslint` on every changed
+  source: exit 0.
+
+Not done here: image build, deployment, the platform IdP client and binding
+registration, and acceptance with real Tenant members.
+

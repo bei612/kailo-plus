@@ -2,9 +2,10 @@
 // issuer + subject of the verified component token (SS-WRN-IDENTITY, the same
 // rule as DD-127(9)); display name, avatar, e-mail and locale are the standard
 // claims of that token and are refreshed on every login. Nothing here is an
-// authorization grant: the middleware derives `admin` only from the signed
-// entitlement configured for this instance, and a GOVERNED instance keeps the
-// Core binding permission as the sole authority.
+// authorization grant: on a STANDALONE instance the middleware sets `admin`
+// only from the applied Core member directory (DD-133(4); false until it is
+// delivered), and a GOVERNED instance keeps the Core binding permission as the
+// sole authority.
 //
 // Edge-safe: used by the Next middleware (Web Crypto, no Buffer) and by the
 // Node consumers that read the forwarded header.
@@ -22,7 +23,8 @@ export interface KailoUserProfile {
   email: string | null;
   picture: string | null;
   locale: string | null;
-  // STANDALONE: signed admin entitlement present. GOVERNED: null (Core decides).
+  // STANDALONE: Tenant ADMIN in the applied member directory. GOVERNED: null
+  // (Core decides).
   admin: boolean | null;
 }
 

@@ -1,5 +1,37 @@
 # Cells 独立原生部署接缝
 
+## 2026-10-23 Kailo 成员目录读取（DD-133(4)，07 §4.7.4）
+
+部署单元在 `CELLS_DIRECTORY_BINDING_ID` 非空时由 `start.sh` 叠加 `compose.member-directory.yaml`：
+cells 服务加入 `CELLS_ADAPTER_PLATFORM_NETWORK`（与原生动作 overlay 同一 network key `cells-platform`），
+得到 `KAILO_DIRECTORY_*` 环境（其中 `KAILO_DIRECTORY_WORKSPACE_ROOT` 由既有的 `CELLS_BINDING_DATASOURCE`/`CELLS_BINDING_ROOT_FOLDER`
+组成，Kailo Workspace 的原生工作区 `kailo-ws-<id>` 以其下 `<Workspace id>` 目录为根）与只读 Compose secret `cells_directory_client_secret`。原生进程（前端 web 服务的
+AfterServe）启动后立即并按间隔读取 Core 服务监听面
+`GET /service/v1/component-directory/bindings/<binding>/members`，规则与映射见
+`fork/verify/native-identity.md`「成员目录同步」。
+
+组件 env 新键（`deploy/components/file-storage.env.template`，五项全给或全空，`start.sh` 与进程各自拒绝部分投递）：
+
+| 键 | 值 |
+|---|---|
+| `CELLS_DIRECTORY_BINDING_ID` | 原生页面入口 binding UUID（以 `component-bind.mjs --directory-client-id kailo-cells-directory` 登记） |
+| `CELLS_DIRECTORY_CLIENT_ID` | `kailo-cells-directory`（平台 `.env` `COMPONENT_DIRECTORY_CLIENTS` 的 file-storage 项） |
+| `CELLS_DIRECTORY_CLIENT_SECRET_FILE` | `<平台运行目录>/secrets/component-directory/file-storage/client_secret`（发布 deploy 的 IdP 声明写入，0600） |
+| `CELLS_DIRECTORY_TOKEN_URL` | `<OIDC issuer>/protocol/openid-connect/token` |
+| `CELLS_DIRECTORY_CORE_URL` | `http://<平台 BFF_SERVICE_NAME>:<平台 SERVICE_CONTAINER_PORT>` |
+| `CELLS_DIRECTORY_INTERVAL_SECONDS` | 可选，10–3600，缺省 60 |
+
+`start.sh` 另要求：kailo-oidc connector `provisionUsers=true` 且 `organization.tenant.id` 是 Kailo Tenant UUID；
+目录 client 不等于浏览器 client，secret 非空、0600 且与浏览器 client secret 不同；token 地址以
+`/protocol/openid-connect/token` 结尾、Core 地址只有 origin；`CELLS_ADAPTER_PLATFORM_NETWORK` 非空；
+`CELLS_BINDING_DATASOURCE`、`CELLS_BINDING_ROOT_FOLDER` 合法（Workspace 根在其下）。
+
+操作顺序：平台发布 deploy 已声明目录 client 并写出 secret（`verify` 回读 DECLARED）→ binding 以
+`--directory-client-id` 重新登记并 ACTIVE → 组件 env 填上述键 → `component-deploy.sh file-storage <commit> --check`
+→ `component-deploy.sh file-storage <commit>`。读取失败（Core 503、令牌、合同、binding/Tenant 不符）不改变组织，
+日志只有阶段与 HTTP 状态；撤掉五个键并重新部署即停止读取，已应用的快照留在
+`/var/cells/kailo/member-directory.json`（工作目录，0600），登录继续按它判定。
+
 ## 2026-10-20 Datasource index tables and roots after the per-service move
 
 ### Symptom and findings (production, read-only)

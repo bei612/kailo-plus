@@ -400,6 +400,11 @@ func NativeKailoOIDC(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "OIDC identity is not linked", http.StatusForbidden)
 		return
 	}
+	// DD-133(4): the applied Kailo member directory does not list this person.
+	if errors.Is(err, auth.ErrNativeOIDCNotMember) {
+		http.Error(w, "OIDC identity is not a member of this organisation", http.StatusForbidden)
+		return
+	}
 	if err != nil {
 		http.Error(w, "Native user is unavailable", http.StatusForbidden)
 		return

@@ -422,6 +422,11 @@ def native_clients_declared(values):
     return bool(((values.get("NATIVE_OIDC_CLIENTS") or [""])[-1]).strip())
 
 
+def directory_clients_declared(values):
+    """DD-133(4)：COMPONENT_DIRECTORY_CLIENTS 非空即声明了组件成员目录 client（只报告是否声明，不输出值）。"""
+    return bool(((values.get("COMPONENT_DIRECTORY_CLIENTS") or [""])[-1]).strip())
+
+
 def read_json(path):
     if not os.path.isfile(path):
         return {}
@@ -439,10 +444,11 @@ def write_json_atomic(path, value):
 
 
 def idp_plan(state_path, digest, values):
-    """只读：本次 deploy 是否执行 apply（never/changed 执行，unchanged 跳过），组件专属客户端是否声明。"""
+    """只读：本次 deploy 是否执行 apply（never/changed 执行，unchanged 跳过），组件专属客户端与目录 client 是否声明。"""
     recorded = read_json(state_path).get("digest")
     return dict(state="never" if not recorded else "unchanged" if recorded == digest else "changed",
-                native_clients_declared=native_clients_declared(values))
+                native_clients_declared=native_clients_declared(values),
+                directory_clients_declared=directory_clients_declared(values))
 
 
 class IdpStep:
@@ -450,7 +456,7 @@ class IdpStep:
     (退出码, 标准输出)。命令的标准输出是一行状态 JSON（bootstrap 与 idp-declarations.py 保证不含值），
     这里只保留其中的状态与计数字段。"""
 
-    KEEP = ("nativeClientProfiles", "clients", "changed", "users", "written", "missing")
+    KEEP = ("nativeClientProfiles", "directoryClients", "clients", "changed", "users", "written", "missing")
 
     def __init__(self, spec, digest, values, state_path, run):
         self.spec, self.digest, self.values, self.state_path, self.run = spec, digest, values, state_path, run
@@ -495,7 +501,8 @@ class IdpStep:
                 raise NodeError(f"IdP 声明式配置 {result['command']} 退出 {result['exit_code']}")
         if plan["state"] != "unchanged":
             write_json_atomic(self.state_path, dict(digest=self.digest, commit=commit, at=time.time(),
-                                                    native_clients_declared=plan["native_clients_declared"]))
+                                                    native_clients_declared=plan["native_clients_declared"],
+                                                    directory_clients_declared=plan["directory_clients_declared"]))
         return dict(plan, applied=plan["state"] != "unchanged", commands=ran)
 
     def verify(self):
@@ -506,7 +513,8 @@ class IdpStep:
         if recorded != self.digest:
             problems.append("IdP 声明式配置摘要与本次输入不一致（deploy 未完成该步骤）")
         native = next((r.get("nativeClientProfiles") for r in results if "nativeClientProfiles" in r), None)
-        return dict(commands=results, native_client_profiles=native, problems=problems)
+        directory = next((r.get("directoryClients") for r in results if "directoryClients" in r), None)
+        return dict(commands=results, native_client_profiles=native, directory_clients=directory, problems=problems)
 
 
 # ---- inspect：只读探针 ---------------------------------------------------------
@@ -1304,7 +1312,8 @@ class Release:
         self.wait_ready(idp_spec["wait"])
         journal["idp"] = self.idp_step().apply(self.commit)
         say("   " + ("摘要变化，已声明并回读" if journal["idp"]["applied"] else "摘要未变，跳过声明")
-            + ("" if journal["idp"]["native_clients_declared"] else "；组件专属客户端未声明（NATIVE_OIDC_CLIENTS 为空）"))
+            + ("" if journal["idp"]["native_clients_declared"] else "；组件专属客户端未声明（NATIVE_OIDC_CLIENTS 为空）")
+            + ("" if journal["idp"].get("directory_clients_declared") else "；成员目录 client 未声明（COMPONENT_DIRECTORY_CLIENTS 为空）"))
         self.write_journal("deploy.json", journal)
         extra = self.ci_env
         for svc in targets:

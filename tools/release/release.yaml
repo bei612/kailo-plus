@@ -83,12 +83,14 @@ idp:
     - [./bootstrap.sh, --sync-client-redirects]
     - [./bootstrap.sh, --declare-service-scopes]
     - [./bootstrap.sh, --declare-native-client-profiles]
+    - [./bootstrap.sh, --declare-directory-clients]
   always:
     - [./bootstrap.sh, --declare-native-user-pictures]
   verify:
     - [./bootstrap.sh, --verify-client-redirects]
     - [./bootstrap.sh, --verify-service-scopes]
     - [./bootstrap.sh, --verify-native-client-profiles]
+    - [./bootstrap.sh, --verify-directory-clients]
 
 # 运行目录中由 start-core.sh 持久派生的 Compose 叠加文件；存在即参与每一次 Compose 调用，
 # 否则重建 agentgateway 会丢掉其派生配置。
@@ -101,6 +103,9 @@ env:
   set:
     # DD-133(3)(6)：组件专属 client 与其 07 §4.7.5 back-channel 接收端（云盘、知识库、问数）
     NATIVE_OIDC_CLIENTS: kailo-cells-native-browser=http://192.168.0.193:58092/auth/kailo/backchannel-logout,kailo-knowledge-native=http://192.168.0.193:58094/api/v1/auth/oidc/backchannel-logout,platform-local-wren-native-browser=http://192.168.0.193:58095/oauth/backchannel-logout
+    # DD-133(4)、07 §4.7.4：三个组件部署单元的成员目录 client（由上方 idp 段声明、凭据写入运行目录
+    # secrets/component-directory/<组件>/client_secret）；binding 以 component-bind.mjs --directory-client-id 登记同一值
+    COMPONENT_DIRECTORY_CLIENTS: file-storage=kailo-cells-directory,knowledge=kailo-knowledge-directory,data-query=kailo-wren-directory
     # ADR-20 §10：运维域投递的唯一位置，由下方 delivery.protocol_peers 渲染；start-core.sh 原路径只读挂载给 Core/Worker
     APPLICATION_ADAPTER_DIRECTORY_FILE: ${KAILO_RUNTIME_DIR}/data/protocol-peers/adapter-directory.json
     COMPONENT_CONFORMANCE_ENVIRONMENT_FILE: ${KAILO_RUNTIME_DIR}/data/protocol-peers/conformance-environment.json
