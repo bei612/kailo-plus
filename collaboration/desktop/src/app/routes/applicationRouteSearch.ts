@@ -10,9 +10,14 @@ export type ApplicationRouteSearch = {
   path?: string;
 };
 
-export function applicationRouteSearch(search: Record<string, unknown>): ApplicationRouteSearch {
+export function applicationRouteSearch(
+  search: Record<string, unknown>,
+): ApplicationRouteSearch {
   return {
-    workspaceId: typeof search.workspaceId === "string" && search.workspaceId.trim() ? search.workspaceId : undefined,
+    workspaceId:
+      typeof search.workspaceId === "string" && search.workspaceId.trim()
+        ? search.workspaceId
+        : undefined,
     path: validComponentPath(search.path) ? search.path : undefined,
   };
 }
