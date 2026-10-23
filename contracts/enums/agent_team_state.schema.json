@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/agent_team_state.schema.json",
+  "title": "AgentTeamState",
+  "description": "Tenant 级 AgentTeam 的生命周期状态（DD-131(3)）。",
+  "type": "string",
+  "enum": [
+    "ACTIVE",
+    "DELETED"
+  ]
+}
