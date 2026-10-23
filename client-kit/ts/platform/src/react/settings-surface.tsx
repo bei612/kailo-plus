@@ -2,7 +2,7 @@
 // desktop/src/features/settings/ui/{SettingsView,SettingsSectionHeader}.tsx
 // desktop/src/shared/ui/{PageHeader,sidebar-menu-label}.tsx
 import { useEffect, useState, type ReactNode } from "react";
-import { ArrowLeft, BellRing, Bot, Keyboard, MonitorCog, UserRound, Ticket, LoaderCircle, Smile, FlaskConical, LayoutTemplate, ShieldAlert, FileText, MessageCircleQuestion } from "lucide-react";
+import { ArrowLeft, BellRing, Bot, Keyboard, MonitorCog, UserRound, Ticket, LoaderCircle, Smile, FlaskConical, LayoutTemplate, ShieldAlert, FileText, MessageCircleQuestion, Plug } from "lucide-react";
 import { translate, type PlatformLocale } from "../i18n";
 import { BffError } from "../transport";
 import type { Loaded } from "./use-load";
@@ -24,9 +24,10 @@ export const settingsSectionKeys = {
   "custom-emoji": "customEmoji.title",
   "channel-templates": "channelTemplates.title",
   agents: "platform.settings.agents",
+  connectors: "platform.settings.connectors",
   experimental: "platform.settings.experimental",
 } as const;
-const icons = { profile: UserRound, appearance: MonitorCog, notifications: BellRing, documents: FileText, answers: MessageCircleQuestion, shortcuts: Keyboard, "community-members": Ticket, moderation: ShieldAlert, "custom-emoji": Smile, "channel-templates": LayoutTemplate, agents: Bot, experimental: FlaskConical };
+const icons = { profile: UserRound, appearance: MonitorCog, notifications: BellRing, documents: FileText, answers: MessageCircleQuestion, shortcuts: Keyboard, "community-members": Ticket, moderation: ShieldAlert, "custom-emoji": Smile, "channel-templates": LayoutTemplate, agents: Bot, connectors: Plug, experimental: FlaskConical };
 const personalSettingsSections: SettingsSection[] = ["profile", "appearance", "notifications", "shortcuts", "custom-emoji"];
 
 export function SettingsBackButton({ locale, onClose, sidebarState = "expanded", isMobile = false }: {
@@ -64,7 +65,8 @@ export function SettingsNavigation({ locale, section, onSelect, icons: suppliedI
   const communities:SettingsSection[]=[...(invitationAccess?.status==="ok"?["community-members" as const]:[]),...(moderation?["moderation" as const]:[])];
   if(communities.length>0)groups.push({label:translate(locale,"platform.settings.communities"),sections:communities});
   // Original App group order (agents, compute, experimental, …); hosts render the sections they have.
-  groups.push({label:translate(locale,"platform.settings.app"),sections:["agents","experimental"]});
+  // DD-149 (1): Kailo's Connectors category sits next to Agents.
+  groups.push({label:translate(locale,"platform.settings.app"),sections:["agents","connectors","experimental"]});
   return <>
     {invitationAccess?.status==="pending"?<div className="mx-3 flex items-center gap-2 rounded-md border border-sidebar-border px-3 py-2 text-xs text-sidebar-foreground/70" data-testid="community-access-loading"><LoaderCircle className="h-3.5 w-3.5 animate-spin"/>{translate(locale,"platform.loading")}</div>:null}
     {invitationAccess?.status==="error"&&onRetryInvitations&&!(invitationAccess.error instanceof BffError&&invitationAccess.error.status===403)?<div className="mx-3" data-testid="community-access-error"><ReadFailure error={invitationAccess.error} onRetry={onRetryInvitations}/></div>:null}

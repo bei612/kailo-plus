@@ -94,6 +94,7 @@ export function NativeBootstrap({
   connect,
   locale,
   copyText,
+  openExternalUrl,
   children,
 }: {
   invoke: Invoke;
@@ -101,6 +102,8 @@ export function NativeBootstrap({
   connect: (facts: NativeCommunityFacts, signal: AbortSignal) => Promise<void>;
   locale?: PlatformLocale;
   copyText?: (text: string) => Promise<void>;
+  /** DD-149(6): Desktop opens third-party authorization pages in the system browser. */
+  openExternalUrl?: (url: string) => void;
   children: (session: NativeSession) => ReactNode;
 }) {
   const [step, setStep] = useState<Step>({ kind: "loading" });
@@ -397,7 +400,7 @@ export function NativeBootstrap({
   );
 
   return (
-    <PlatformProvider client={client} locale={locale} authenticateNativePage={host.authenticateNativePage} currentPrincipalId={session ? currentPrincipalId : undefined} copyText={copyText}>
+    <PlatformProvider client={client} locale={locale} authenticateNativePage={host.authenticateNativePage} currentPrincipalId={session ? currentPrincipalId : undefined} copyText={copyText} openExternalUrl={openExternalUrl}>
       {step.kind === "restricted" ? (
         <LifecycleRestrictedView displayName={displayName} onSignOut={() => void signOut()} />
       ) : session ? (
