@@ -242,6 +242,7 @@ Orchid 保留为品牌渐变的第二色标（§2.5），让 Iris 在品牌时�
 - 令牌唯一来源：`apps/client-kit/ts/platform/src/theme/kailo-tokens.ts`；`src/styles/kailo-tokens.css` 与 `client-kit/embed/kailo-theme-tokens.css` 均由它生成并有漂移测试；`tailwind.config.js` 与 `typography.css` 只引用令牌变量。Web 与 Desktop 共用，不各自定义。
 - 视觉样张：`apps/web-client/web/design.html`（仅开发服务器提供，不进入生产构建），渲染三个紫色方向的明暗色阶、语义角色、字体层级、核心组件全部状态与外壳样例，是本文的可运行对照。
 - 截图证据：CI/CD 节点 `~/kailo-acceptance/visual/` 下 `before/`（改造前生产页面，兼作 Buzz 反例）、`spec/`（样张：`00-directions-light-dark.png` 为三方向明暗对比，`10/20/30-<方向>-<明暗>-full.png` 为各方向完整样张，`11-iris-<明暗>-<分区>.png` 为选用方向的分区样张，`kailo-icon-*.png` 为品牌标识栅格），`after-<批次>/`（各批改造后），逐张打开复核。
+- Desktop 显示名：Tauri `productName` 为 Kailo（开发构建 Kailo Dev），只改应用名、安装包与安装目录名、系统通知中的应用名。数据目录由 `identifier` 决定、钥匙串 service 是常量，二者都不改，已安装用户的本机身份、缓存与密钥不受影响（Tauri 2 的 `app_data_dir` 取自 `identifier`）。
 - 品牌标识：品牌渐变圆角方块内的白色 “K”，两臂末端各一节点（人与 Agent 在同一处汇合）；SVG 源在共享外壳组件，应用图标、favicon 与 Desktop 图标集均由它栅格化，不含文字。
 
 ## 13. 验收口径（V-SCN-238）
