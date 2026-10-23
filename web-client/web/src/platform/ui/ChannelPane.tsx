@@ -1657,7 +1657,7 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
     if (files.length) void attach(files);
   }, [richText.setContent, attachmentActions.setSpoileredAttachmentUrls, knownAgentKeys, draftKey, attach]);
   const composerIsEmpty = useCallback(() => !richText.getMarkdown().trim() && pendingRef.current.length === 0 &&
-    pendingGifsRef.current.length === 0 && activeBatches.current.size === 0, [richText.getMarkdown]);
+    pendingGifsRef.current.length === 0 && [...activeBatches.current].every(batch => batch.canceled), [richText.getMarkdown]);
   /** Returns whether the message is back in the composer (otherwise it waits as a recovery). */
   const restoreSnapshot = useCallback((snapshot: SendSnapshot, stage: "failed" | "unknown"): boolean => {
     if (!snapshot.cleared) return true;
