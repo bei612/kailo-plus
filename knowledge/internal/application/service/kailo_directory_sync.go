@@ -39,7 +39,9 @@ const (
 // category only, never with a token, credential or response body.
 type kailoDirectoryReadError struct{ category string }
 
-func (e *kailoDirectoryReadError) Error() string { return "member directory unavailable: " + e.category }
+func (e *kailoDirectoryReadError) Error() string {
+	return "member directory unavailable: " + e.category
+}
 
 func directoryReadError(format string, args ...interface{}) error {
 	return &kailoDirectoryReadError{category: fmt.Sprintf(format, args...)}

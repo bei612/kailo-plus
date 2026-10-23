@@ -230,12 +230,14 @@ func TestKailoDirectoryFailuresKeepTheAppliedState(t *testing.T) {
 
 	empty := directoryJSON(t, "v2", dirBinding, dirTenant, map[string]string{})
 	cases := map[string]func(){
-		"503":            func() { core.answer(http.StatusServiceUnavailable, []byte(`{"error":"unavailable"}`)) },
-		"401":            func() { core.answer(http.StatusUnauthorized, nil) },
-		"bad json":       func() { core.answer(http.StatusOK, []byte(`{"bindingId":`)) },
-		"unknown field":  func() { core.answer(http.StatusOK, append(empty[:len(empty)-1], []byte(`,"extra":1}`)...)) },
-		"other binding":  func() { core.answer(http.StatusOK, directoryJSON(t, "v2", dirTenant, dirTenant, map[string]string{})) },
-		"other tenant":   func() { core.answer(http.StatusOK, directoryJSON(t, "v2", dirBinding, dirBinding, map[string]string{})) },
+		"503":           func() { core.answer(http.StatusServiceUnavailable, []byte(`{"error":"unavailable"}`)) },
+		"401":           func() { core.answer(http.StatusUnauthorized, nil) },
+		"bad json":      func() { core.answer(http.StatusOK, []byte(`{"bindingId":`)) },
+		"unknown field": func() { core.answer(http.StatusOK, append(empty[:len(empty)-1], []byte(`,"extra":1}`)...)) },
+		"other binding": func() { core.answer(http.StatusOK, directoryJSON(t, "v2", dirTenant, dirTenant, map[string]string{})) },
+		"other tenant": func() {
+			core.answer(http.StatusOK, directoryJSON(t, "v2", dirBinding, dirBinding, map[string]string{}))
+		},
 		"missing member": func() { core.answer(http.StatusOK, []byte(`{"bindingId":"`+dirBinding+`"}`)) },
 	}
 	for name, setup := range cases {
@@ -381,7 +383,9 @@ func TestParseKailoMemberDirectoryIsStrict(t *testing.T) {
 	bad := map[string][]byte{
 		"version":   mutate(func(v map[string]interface{}) { v["directoryVersion"] = "abc" }),
 		"no tenant": mutate(func(v map[string]interface{}) { delete(v, "tenant") }),
-		"role":      mutate(func(v map[string]interface{}) { v["members"].([]interface{})[0].(map[string]interface{})["tenantRole"] = "OWNER" }),
+		"role": mutate(func(v map[string]interface{}) {
+			v["members"].([]interface{})[0].(map[string]interface{})["tenantRole"] = "OWNER"
+		}),
 		"ws scope": mutate(func(v map[string]interface{}) {
 			v["members"].([]interface{})[0].(map[string]interface{})["workspaces"] =
 				[]map[string]string{{"workspaceId": "cccccccc-0000-4000-8000-00000000000c", "role": "MEMBER"}}

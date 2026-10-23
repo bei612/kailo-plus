@@ -18,8 +18,8 @@ import (
 type KailoDirectoryRole string
 
 const (
-	KailoDirectoryAdmin  KailoDirectoryRole = "ADMIN"
-	KailoDirectoryMember KailoDirectoryRole = "MEMBER"
+	KailoDirectoryRoleAdmin  KailoDirectoryRole = "ADMIN"
+	KailoDirectoryRoleMember KailoDirectoryRole = "MEMBER"
 )
 
 var (
@@ -74,11 +74,11 @@ type KailoMemberDirectory struct {
 // is told apart from an empty one; unknown fields are refused (the schema is
 // additionalProperties=false everywhere).
 type wireDirectory struct {
-	BindingID        *string                  `json:"bindingId"`
-	DirectoryVersion *string                  `json:"directoryVersion"`
-	Tenant           *wireDirectoryTenant     `json:"tenant"`
+	BindingID        *string                   `json:"bindingId"`
+	DirectoryVersion *string                   `json:"directoryVersion"`
+	Tenant           *wireDirectoryTenant      `json:"tenant"`
 	Workspaces       *[]wireDirectoryWorkspace `json:"workspaces"`
-	Members          *[]wireDirectoryMember   `json:"members"`
+	Members          *[]wireDirectoryMember    `json:"members"`
 }
 
 type wireDirectoryTenant struct {
@@ -122,7 +122,7 @@ func directoryRole(value *string) (KailoDirectoryRole, bool) {
 		return "", false
 	}
 	switch KailoDirectoryRole(*value) {
-	case KailoDirectoryAdmin, KailoDirectoryMember:
+	case KailoDirectoryRoleAdmin, KailoDirectoryRoleMember:
 		return KailoDirectoryRole(*value), true
 	}
 	return "", false
@@ -265,7 +265,7 @@ func (d *KailoMemberDirectory) Membership(m *KailoDirectoryMember, fallbackTenan
 		Name: d.TenantName(fallbackTenantName),
 		Role: KailoRoleMember,
 	}}
-	if m.TenantRole == KailoDirectoryAdmin {
+	if m.TenantRole == KailoDirectoryRoleAdmin {
 		membership.Tenant.Role = KailoRoleAdmin
 		for _, ws := range d.Workspaces {
 			membership.Workspaces = append(membership.Workspaces,
