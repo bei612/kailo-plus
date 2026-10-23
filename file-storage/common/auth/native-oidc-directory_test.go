@@ -53,9 +53,9 @@ func useDirectoryStore(t *testing.T) string {
 
 type dirMember struct {
 	principal, name, role string
-	subjects            []string
-	foreign             bool
-	workspaces          map[string]string // id → role
+	subjects              []string
+	foreign               bool
+	workspaces            map[string]string // id → role
 }
 
 func dirSnapshot(version, tenant string, workspaces map[string]string, members ...dirMember) map[string]any {
@@ -268,12 +268,15 @@ func TestNativeOIDCMemberDirectory(t *testing.T) {
 			before, _ := os.ReadFile(store)
 			changed := dirSnapshot("2", dirTenant, map[string]string{}, pre)
 			for name, prepare := range map[string]func(){
-				"core-503":     func() { core.set(http.StatusServiceUnavailable, changed) },
-				"core-403":     func() { core.set(http.StatusForbidden, changed) },
-				"token-401":    func() { core.set(http.StatusOK, changed); core.tokenStatus = http.StatusUnauthorized },
-				"bad-json":     func() { core.set(http.StatusOK, []byte(`{"bindingId":`)) },
-				"unknown-key":  func() { c := dirSnapshot("2", dirTenant, nil, pre); c["extra"] = 1; core.set(http.StatusOK, c) },
-				"bad-role":     func() { c := dirSnapshot("2", dirTenant, nil, dirMember{principal: pre.principal, name: "x", role: "OWNER"}); core.set(http.StatusOK, c) },
+				"core-503":    func() { core.set(http.StatusServiceUnavailable, changed) },
+				"core-403":    func() { core.set(http.StatusForbidden, changed) },
+				"token-401":   func() { core.set(http.StatusOK, changed); core.tokenStatus = http.StatusUnauthorized },
+				"bad-json":    func() { core.set(http.StatusOK, []byte(`{"bindingId":`)) },
+				"unknown-key": func() { c := dirSnapshot("2", dirTenant, nil, pre); c["extra"] = 1; core.set(http.StatusOK, c) },
+				"bad-role": func() {
+					c := dirSnapshot("2", dirTenant, nil, dirMember{principal: pre.principal, name: "x", role: "OWNER"})
+					core.set(http.StatusOK, c)
+				},
 				"other-tenant": func() { core.set(http.StatusOK, dirSnapshot("2", "6f0c2a1e-8b9d-4e4f-a1b2-c3d4e5f60799", nil, pre)) },
 				"other-binding": func() {
 					c := dirSnapshot("2", dirTenant, nil, pre)

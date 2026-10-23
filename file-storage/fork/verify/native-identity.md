@@ -3815,3 +3815,49 @@ scripts/webpack 告警保留；SBOM 成功不是漏洞门禁通过。
   `backchannelLogout.sessionMaxAgeSeconds`。
 
 验证与未验收边界见本分支提交说明；镜像、部署与 qa-1/2/3 截图验收未执行。
+
+## 2026-10-23 成员目录同步（DD-133(4)，07 §4.7.4，源码阶段）
+
+依据：design-authority `1bd1d4771326b64b79ecb2e99a8cf53738264fb0` 07 §4.7.4（读取合同）与 02 DD-133(4)；
+Core 读取实现 `core/crates/platform-core/src/component_directory.rs`，合同
+`contracts/api/component_member_directory.schema.json`。**Cells 映射表在 design-authority 中仍为“未登记”**：
+下表是本次实现所依据的拟定映射（主会话拟定，等待用户决定是否登记），登记前 Cells release 仍不得声明
+`KAILO_EMBED`。
+
+| Kailo 概念 | 组件原生对象 | 自动建立 | 成员加入/移出 | 角色派生 | 成员目录未交付时 |
+|---|---|---|---|---|---|
+| Tenant | 原生组 `/kailo-<Tenant id>`（组标签 = 目录 `tenant.name`，组角色供成员互见）；账号为派生 UUID（`uuid.NewSHA1(ns, iss\0sub)`）上带 `pydio:kailo_oidc_issuer/subject` 的原生用户 | connector `organization.tenant` 声明所服务 Tenant；目录快照中 issuer 等于 connector issuer 的每个身份若无账号即按首次登录同一形态预开户（user role、链接属性、显示名、`picture` 作为头像；目录无 `preferred_username` 与 email，登录名取显示名规范化，不合法时 `oidc-<摘要>`），之后首次登录只刷新资料 | 目录交付后以快照为准：不在快照中的已开户身份撤回管理员与团队角色、加原生 `logout` 锁（并以 `pydio:kailo_directory_locked` 标记）、结束其已记录的原生会话；再次出现时只解除带标记的锁；账号与文件不删除。不在快照中的身份登录被拒（403），不开户 | `tenantRole=ADMIN` → profile `admin`（原生 `ADMINS` 角色随 profile 自动生效），`MEMBER` → `standard`；登录时按已应用快照取，不再回退 | 首次登录即时开户为 `standard`，不授予管理员，控制台提升在下次登录恢复（与此前一致） |
+| Workspace | 原生团队角色 `kailo-workspace-<Workspace id>`（`IsTeam=true`，标签 = Workspace 名，本 Tenant 组可读、原生管理员可写），供分享对话框按团队选人；ACL 由原生管理员对该角色授予 | 按快照 `workspaces[]` 建立并随名称改名；快照中消失的 Workspace 只撤成员关系，角色保留（不丢已授予的 ACL）；不自动建原生存储工作区 | 按 `members[].workspaces[]` 挂到/撤出用户 Roles | `workspaces[].role` 不提升 Cells 角色 | 不建立 |
+
+规则（三组件共用约定）：
+
+- 投递：容器内 `KAILO_DIRECTORY_BINDING_ID`、`_CLIENT_ID`、`_CLIENT_SECRET_FILE`、`_TOKEN_URL`、`_CORE_URL` 全给或全空
+  （部分给出即 AfterServe 报错、`start.sh` 拒绝），`_INTERVAL_SECONDS` 10–3600（缺省 60）。全空不启动读取，行为与此前一致。
+- 读取（`common/auth/native-oidc-directory.go`）：每周期读 secret 文件（≤4 KiB）→ client-credentials（Basic，
+  不跟随跳转，10s）→ `GET <core>/service/v1/component-directory/bindings/<binding>/members`（Bearer，30s，≤16 MiB）。
+  非 200、传输错误、未知/缺失字段、角色值不符、引用未知 Workspace、同一身份属于两人、`bindingId` 不等于配置、
+  `tenant.tenantId` 不等于 connector Tenant：一律不改任何东西，日志只记阶段与 HTTP 状态
+  （`NativeOIDCDirectoryUnavailable`），下一周期重试；绝不当作空目录。
+- `directoryVersion` 等于上次完整应用的版本（同一 binding）即不动；否则持 `nativeOIDCProvisioning` 互斥整体收敛，
+  全部成功后才把快照（版本、Tenant 名、成员身份→角色/Workspace、显示名、头像）原子写入
+  `<工作目录>/kailo/member-directory.json`（0600）；中途失败不记录，下一周期整体重做（各写入幂等，结束会话按
+  `kailo-directory:<版本>:<uuid>` 去重）。
+- 登录与解析（`ResolveOrProvisionNativeOIDCUser`）：已应用过快照时，派生账号路径（浏览器、PAT、WOPI、原生动作）
+  只接受快照中的身份（`ErrNativeOIDCNotMember`），浏览器登录按快照写 profile、团队角色、显示名与头像
+  （email、语言仍取 ID token），Tenant 组标签取目录名。存储不可读即拒绝（fail closed）。显式链接账号不受目录管理。
+- 顺带修正：原登录刷新以 `CreateUser` 写回时未带 Roles，会清掉原生管理员在控制台给账号挂的角色；现在保留
+  账号自身的显式角色（排除 user/group/自动应用角色与 `kailo-workspace-*`），只改目录管理的那部分。
+
+验证（CI 节点 golang 容器 `golang@sha256:8ac98ca5…`，ubuntu 身份、不加 sudo，源码取自 GitHub 分支
+`feat/component-directory-sync`）：
+`gofmt -l common/auth frontend/web`；`go vet ./common/auth ./frontend/web ./frontend/web/service`；
+`go test -count=1 ./common/auth ./frontend/web ./frontend/web/service`。
+`common/auth/native-oidc-directory_test.go` 以 idmtest sqlite 原生 user/role/ACL 服务与 httptest 假 IdP/Core 覆盖：
+交付前登录行为不变；首个快照预开户 + admin/standard + 团队角色 + 其他 issuer 不开户 + Tenant 组改名 + 存储 0600
++ 交付前开户而不在快照中的账号被锁；同版本不写；Core 503/403、令牌 401、坏 JSON、未知字段、角色值不符、
+他 Tenant、他 binding 均不改状态且 503 报告为 Unavailable；降级、撤员加锁结束会话、Workspace 消失撤角色而角色保留、
+撤员登录与无令牌解析被拒；登录按快照取显示名/角色且非成员不开户；再加入解锁；“重启”（新路径读同一文件）后
+Core 不可用时仍按已应用快照拒绝非成员并保留管理员。另有配置（全空/部分/非法值）与合同解析的反例测试。
+
+完成边界：只有源码、单元测试与部署文件；镜像、部署、binding 以 `--directory-client-id` 重新登记与 qa 真人验收未执行；
+Cells 映射表未在 design-authority 登记。
