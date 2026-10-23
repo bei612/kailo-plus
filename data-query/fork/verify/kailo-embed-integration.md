@@ -125,6 +125,23 @@ refuses non-members on page/GraphQL/REST, sets the STANDALONE role, fails
 closed on lookup error or a foreign answer, skips the lookup path and the
 unconfigured case.
 
+Results (CI node, `node:18-bookworm-slim`, `--network none`, 4 CPU / 6 GiB,
+UID 1000, wren-ui locked dependencies installed with the repository's yarn
+4.5.3 `install --immutable`; tree from `git archive` of the pushed commit
+`5c8821975e787f2e5266b26ee9040b94e7cf463f`):
+
+- `jest --runInBand src/kailoMemberDirectory.test.ts src/kailoDirectoryAccess.test.ts
+  src/kailoIntegration.test.ts src/kailoUserMiddleware.test.ts`: 4 suites pass
+  (the two new suites 17 tests).
+- `src/middleware.test.ts`: 85 failed / 75 passed, identical to `main`
+  `0e9c076c8` with the same runner (pre-existing, not touched here).
+- Whole `jest --runInBand`: the same 11 failing suites as `main` `0e9c076c8`
+  (pre-existing; the run does not exit by itself on either commit and was
+  stopped after the last suite reported).
+- `tsc --noEmit`: only the pre-existing `src/nativeQueryDelivery.test.ts(38,9)`
+  error, same as `main`. `prettier --check` and `eslint` on every changed
+  source: exit 0.
+
 Not done here: image build, deployment, the platform IdP client and binding
 registration, and acceptance with real Tenant members.
 
