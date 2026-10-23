@@ -265,6 +265,11 @@ fn metadata_endpoint(
     };
     let raw = raw.as_str().ok_or(OAuthError::Discovery("endpoint"))?;
     let url = mcp_egress::parse_endpoint(raw).map_err(OAuthError::Egress)?;
+    // The authorization endpoint is opened by the browser, never resolved by Core, so the
+    // scheme rule is applied here: `http` only where the deployment lists dev CIDRs.
+    if url.scheme() != "https" && scope.platform.dev_cidrs.is_empty() {
+        return Err(OAuthError::Egress(EgressError::SchemeNotAllowed));
+    }
     let host = url.host_str().ok_or(OAuthError::Discovery("endpoint"))?;
     if !mcp_egress::host_permitted(scope, host) {
         return Err(OAuthError::Egress(EgressError::NotInAllowlist));
@@ -1205,6 +1210,50 @@ mod tests {
         assert!(!format!("{client:?}").contains("s@cret"));
         let tokens = refresh(&scope, &server, &client, "rt-1").await.unwrap();
         assert_eq!(tokens.access_token, "at-2");
+    }
+
+    #[test]
+    fn mcp_oauth_metadata_endpoint_rules() {
+        let production = PlatformEgress {
+            any_public_host: true,
+            ..PlatformEgress::default()
+        };
+        let scope = EgressScope {
+            platform: &production,
+            tenant_suffixes: &[],
+        };
+        let document = json!({
+            "a": "http://as.example.com/authorize",
+            "b": "https://as.example.com/authorize",
+            "c": "https://as.example.com/authorize?x=1",
+            "d": "https://localhost/authorize",
+        });
+        assert_eq!(
+            metadata_endpoint(&scope, &document, "a").unwrap_err(),
+            OAuthError::Egress(EgressError::SchemeNotAllowed)
+        );
+        assert!(metadata_endpoint(&scope, &document, "b").unwrap().is_some());
+        assert_eq!(
+            metadata_endpoint(&scope, &document, "c").unwrap_err(),
+            OAuthError::Egress(EgressError::InvalidUrl)
+        );
+        assert_eq!(
+            metadata_endpoint(&scope, &document, "d").unwrap_err(),
+            OAuthError::Egress(EgressError::HostNotAllowed)
+        );
+        assert_eq!(
+            metadata_endpoint(&scope, &document, "missing").unwrap(),
+            None
+        );
+        let tenant = vec!["vendor.io".to_owned()];
+        let narrowed = EgressScope {
+            platform: &production,
+            tenant_suffixes: &tenant,
+        };
+        assert_eq!(
+            metadata_endpoint(&narrowed, &document, "b").unwrap_err(),
+            OAuthError::Egress(EgressError::NotInAllowlist)
+        );
     }
 
     #[test]
