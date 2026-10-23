@@ -44,6 +44,8 @@
 //     final adapterReadGrantResponse = adapterReadGrantResponseFromJson(jsonString);
 //     final adapterReadReceipt = adapterReadReceiptFromJson(jsonString);
 //     final adapterScopeObservation = adapterScopeObservationFromJson(jsonString);
+//     final adapterSearchRequest = adapterSearchRequestFromJson(jsonString);
+//     final adapterSearchResponse = adapterSearchResponseFromJson(jsonString);
 //     final adapterSourceResource = adapterSourceResourceFromJson(jsonString);
 //     final actionCommand = actionCommandFromJson(jsonString);
 //     final actionSubmission = actionSubmissionFromJson(jsonString);
@@ -109,9 +111,16 @@
 //     final componentConformanceWireDigests = componentConformanceWireDigestsFromJson(jsonString);
 //     final componentConformanceWireObservation = componentConformanceWireObservationFromJson(jsonString);
 //     final componentMemberDirectory = componentMemberDirectoryFromJson(jsonString);
+//     final componentNotificationDelivery = componentNotificationDeliveryFromJson(jsonString);
+//     final componentNotificationPage = componentNotificationPageFromJson(jsonString);
+//     final componentNotificationReadRequest = componentNotificationReadRequestFromJson(jsonString);
+//     final componentNotificationReceipt = componentNotificationReceiptFromJson(jsonString);
+//     final componentNotificationView = componentNotificationViewFromJson(jsonString);
 //     final componentReleaseApprovalReport = componentReleaseApprovalReportFromJson(jsonString);
 //     final componentReleasePage = componentReleasePageFromJson(jsonString);
 //     final componentReleaseReceipt = componentReleaseReceiptFromJson(jsonString);
+//     final componentSearchPage = componentSearchPageFromJson(jsonString);
+//     final componentSearchQuery = componentSearchQueryFromJson(jsonString);
 //     final conversationOpenRequest = conversationOpenRequestFromJson(jsonString);
 //     final conversationPage = conversationPageFromJson(jsonString);
 //     final conversationParticipant = conversationParticipantFromJson(jsonString);
@@ -272,10 +281,12 @@
 //     final componentConformanceReceiverEnvironment = componentConformanceReceiverEnvironmentFromJson(jsonString);
 //     final componentNativeReceiverObservation = componentNativeReceiverObservationFromJson(jsonString);
 //     final componentNativeReceiverRequest = componentNativeReceiverRequestFromJson(jsonString);
+//     final componentPersonRef = componentPersonRefFromJson(jsonString);
 //     final componentPreferenceDeclaration = componentPreferenceDeclarationFromJson(jsonString);
 //     final componentProtocolPeerEnvironment = componentProtocolPeerEnvironmentFromJson(jsonString);
 //     final componentReleaseApprovalTarget = componentReleaseApprovalTargetFromJson(jsonString);
 //     final componentReleaseRegistration = componentReleaseRegistrationFromJson(jsonString);
+//     final componentText = componentTextFromJson(jsonString);
 //     final contentReference = contentReferenceFromJson(jsonString);
 //     final delegationGrantParameters = delegationGrantParametersFromJson(jsonString);
 //     final delegationScopeParameters = delegationScopeParametersFromJson(jsonString);
@@ -627,6 +638,18 @@ AdapterScopeObservation adapterScopeObservationFromJson(String str) =>
     AdapterScopeObservation.fromJson(json.decode(str));
 
 String adapterScopeObservationToJson(AdapterScopeObservation data) =>
+    json.encode(data.toJson());
+
+AdapterSearchRequest adapterSearchRequestFromJson(String str) =>
+    AdapterSearchRequest.fromJson(json.decode(str));
+
+String adapterSearchRequestToJson(AdapterSearchRequest data) =>
+    json.encode(data.toJson());
+
+AdapterSearchResponse adapterSearchResponseFromJson(String str) =>
+    AdapterSearchResponse.fromJson(json.decode(str));
+
+String adapterSearchResponseToJson(AdapterSearchResponse data) =>
     json.encode(data.toJson());
 
 AdapterSourceResource adapterSourceResourceFromJson(String str) =>
@@ -1027,6 +1050,40 @@ ComponentMemberDirectory componentMemberDirectoryFromJson(String str) =>
 String componentMemberDirectoryToJson(ComponentMemberDirectory data) =>
     json.encode(data.toJson());
 
+ComponentNotificationDelivery componentNotificationDeliveryFromJson(
+  String str,
+) => ComponentNotificationDelivery.fromJson(json.decode(str));
+
+String componentNotificationDeliveryToJson(
+  ComponentNotificationDelivery data,
+) => json.encode(data.toJson());
+
+ComponentNotificationPage componentNotificationPageFromJson(String str) =>
+    ComponentNotificationPage.fromJson(json.decode(str));
+
+String componentNotificationPageToJson(ComponentNotificationPage data) =>
+    json.encode(data.toJson());
+
+ComponentNotificationReadRequest componentNotificationReadRequestFromJson(
+  String str,
+) => ComponentNotificationReadRequest.fromJson(json.decode(str));
+
+String componentNotificationReadRequestToJson(
+  ComponentNotificationReadRequest data,
+) => json.encode(data.toJson());
+
+ComponentNotificationReceipt componentNotificationReceiptFromJson(String str) =>
+    ComponentNotificationReceipt.fromJson(json.decode(str));
+
+String componentNotificationReceiptToJson(ComponentNotificationReceipt data) =>
+    json.encode(data.toJson());
+
+ComponentNotificationView componentNotificationViewFromJson(String str) =>
+    ComponentNotificationView.fromJson(json.decode(str));
+
+String componentNotificationViewToJson(ComponentNotificationView data) =>
+    json.encode(data.toJson());
+
 ComponentReleaseApprovalReport componentReleaseApprovalReportFromJson(
   String str,
 ) => ComponentReleaseApprovalReport.fromJson(json.decode(str));
@@ -1045,6 +1102,18 @@ ComponentReleaseReceipt componentReleaseReceiptFromJson(String str) =>
     ComponentReleaseReceipt.fromJson(json.decode(str));
 
 String componentReleaseReceiptToJson(ComponentReleaseReceipt data) =>
+    json.encode(data.toJson());
+
+ComponentSearchPage componentSearchPageFromJson(String str) =>
+    ComponentSearchPage.fromJson(json.decode(str));
+
+String componentSearchPageToJson(ComponentSearchPage data) =>
+    json.encode(data.toJson());
+
+ComponentSearchQuery componentSearchQueryFromJson(String str) =>
+    ComponentSearchQuery.fromJson(json.decode(str));
+
+String componentSearchQueryToJson(ComponentSearchQuery data) =>
     json.encode(data.toJson());
 
 ConversationOpenRequest conversationOpenRequestFromJson(String str) =>
@@ -2009,6 +2078,12 @@ String componentNativeReceiverRequestToJson(
   ComponentNativeReceiverRequest data,
 ) => json.encode(data.toJson());
 
+ComponentPersonRef componentPersonRefFromJson(String str) =>
+    ComponentPersonRef.fromJson(json.decode(str));
+
+String componentPersonRefToJson(ComponentPersonRef data) =>
+    json.encode(data.toJson());
+
 ComponentPreferenceDeclaration componentPreferenceDeclarationFromJson(
   String str,
 ) => ComponentPreferenceDeclaration.fromJson(json.decode(str));
@@ -2038,6 +2113,11 @@ ComponentReleaseRegistration componentReleaseRegistrationFromJson(String str) =>
 
 String componentReleaseRegistrationToJson(ComponentReleaseRegistration data) =>
     json.encode(data.toJson());
+
+ComponentText componentTextFromJson(String str) =>
+    ComponentText.fromJson(json.decode(str));
+
+String componentTextToJson(ComponentText data) => json.encode(data.toJson());
 
 ContentReference contentReferenceFromJson(String str) =>
     ContentReference.fromJson(json.decode(str));
@@ -4585,6 +4665,148 @@ class AdapterReadGrantResponseReceiverWrite {
     "expiresAt": expiresAt,
   });
 }
+
+///DD-138(5)、07 §4.8.4/§5.2：Core → adapter POST /platform-adapter/v1/search 的请求体（规范 JSON，其
+///SHA-256 即 Search Token 的 normalized_parameter_hash）。resources 只含当前 HUMAN 已 fresh read 的该
+///binding Resource，adapter 只在这些 native 对象内检索。
+class AdapterSearchRequest {
+  final String idempotencyKey;
+
+  ///1–20。
+  final int limit;
+
+  ///ZH_CN 或 EN。
+  final String locale;
+
+  ///去首尾空白后 1–200 字符。
+  final String query;
+
+  ///1–50 项。
+  final List<AdapterSearchResource> resources;
+
+  AdapterSearchRequest({
+    required this.idempotencyKey,
+    required this.limit,
+    required this.locale,
+    required this.query,
+    required this.resources,
+  });
+
+  factory AdapterSearchRequest.fromJson(Map<String, dynamic> json) =>
+      AdapterSearchRequest(
+        idempotencyKey: json["idempotencyKey"],
+        limit: json["limit"],
+        locale: json["locale"],
+        query: json["query"],
+        resources: List<AdapterSearchResource>.from(
+          json["resources"].map((x) => AdapterSearchResource.fromJson(x)),
+        ),
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "idempotencyKey": idempotencyKey,
+    "limit": limit,
+    "locale": locale,
+    "query": query,
+    "resources": List<dynamic>.from(resources.map((x) => x.toJson())),
+  });
+}
+
+class AdapterSearchResource {
+  final String nativeId;
+  final String nativeType;
+  final String resourceId;
+
+  AdapterSearchResource({
+    required this.nativeId,
+    required this.nativeType,
+    required this.resourceId,
+  });
+
+  factory AdapterSearchResource.fromJson(Map<String, dynamic> json) =>
+      AdapterSearchResource(
+        nativeId: json["nativeId"],
+        nativeType: json["nativeType"],
+        resourceId: json["resourceId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "nativeId": nativeId,
+    "nativeType": nativeType,
+    "resourceId": resourceId,
+  });
+}
+
+///DD-138(5)、07 §4.8.4：adapter search 回应。至多 limit 项；title 1–200 字符、summary 至多 400 字符、path
+///为该组件原生页面 origin 内相对路径。任一项不合则 Core 丢弃该来源的全部结果。不含正文、ContentReference 或凭据。
+class AdapterSearchResponse {
+  final List<AdapterSearchResult> results;
+
+  AdapterSearchResponse({required this.results});
+
+  factory AdapterSearchResponse.fromJson(Map<String, dynamic> json) =>
+      AdapterSearchResponse(
+        results: List<AdapterSearchResult>.from(
+          json["results"].map((x) => AdapterSearchResult.fromJson(x)),
+        ),
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "results": List<dynamic>.from(results.map((x) => x.toJson())),
+  });
+}
+
+class AdapterSearchResult {
+  final ComponentSearchResultKind kind;
+  final String path;
+  final String? summary;
+  final String title;
+  final String? updatedAt;
+
+  AdapterSearchResult({
+    required this.kind,
+    required this.path,
+    this.summary,
+    required this.title,
+    this.updatedAt,
+  });
+
+  factory AdapterSearchResult.fromJson(Map<String, dynamic> json) =>
+      AdapterSearchResult(
+        kind: componentSearchResultKindValues.map[json["kind"]]!,
+        path: json["path"],
+        summary: json["summary"],
+        title: json["title"],
+        updatedAt: json["updatedAt"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "kind": componentSearchResultKindValues.reverse[kind],
+    "path": path,
+    "summary": summary,
+    "title": title,
+    "updatedAt": updatedAt,
+  });
+}
+
+///DD-138(5)、07 §4.8.4：组件搜索结果的类别（封闭枚举）。
+enum ComponentSearchResultKind {
+  DASHBOARD,
+  DOCUMENT,
+  FILE,
+  FOLDER,
+  KNOWLEDGE_BASE,
+  QUESTION,
+}
+
+final componentSearchResultKindValues = EnumValues({
+  "DASHBOARD": ComponentSearchResultKind.DASHBOARD,
+  "DOCUMENT": ComponentSearchResultKind.DOCUMENT,
+  "FILE": ComponentSearchResultKind.FILE,
+  "FOLDER": ComponentSearchResultKind.FOLDER,
+  "KNOWLEDGE_BASE": ComponentSearchResultKind.KNOWLEDGE_BASE,
+  "QUESTION": ComponentSearchResultKind.QUESTION,
+});
 
 ///GET /api/v1/workspaces/{workspaceId}/agent-turns（DD-125(6)）：已准入 Workspace 内本人持有
 ///Installation audit 的运行中回合；没有 audit 的 Installation 不出现（成员只见 20002）。每次读取写 ACCESS 审计。
@@ -10927,6 +11149,270 @@ class ComponentDirectoryWorkspace {
       _stripNulls({"name": name, "workspaceId": workspaceId});
 }
 
+///DD-138(4)、07 §4.8.3：组件以其成员目录 client 的 client-credentials 令牌向 Core 服务监听面 POST
+////service/v1/component-notifications/bindings/{bindingId}/notifications 投递的一条通知。不建立
+///ActionExecution、不授予权限；未知字段整体拒绝。
+class ComponentNotificationDelivery {
+  ///触发者；须在同一目录范围内且不是接收人。
+  final ComponentPersonRef? actor;
+  final ComponentNotificationCategory category;
+
+  ///1–128 个字母、数字、. _ : -，在该 binding 内唯一；同键同内容返回首次结果，同键异内容 409。
+  final String idempotencyKey;
+
+  ///事件发生时刻（RFC3339），不晚于 Core 当前时刻 5 分钟；缺省取接收时刻。
+  final String? occurredAt;
+
+  ///组件页面 origin 内的相对路径：1–1024 字符，以单个 / 开头，无反斜杠、空白与控制字符，无凭据类查询参数。
+  final String path;
+  final ComponentPersonRef recipient;
+
+  ///每种语言 1–280 字符，不含控制字符。
+  final ComponentText? summary;
+
+  ///每种语言 1–120 字符，不含控制字符。
+  final ComponentText title;
+
+  ComponentNotificationDelivery({
+    this.actor,
+    required this.category,
+    required this.idempotencyKey,
+    this.occurredAt,
+    required this.path,
+    required this.recipient,
+    this.summary,
+    required this.title,
+  });
+
+  factory ComponentNotificationDelivery.fromJson(Map<String, dynamic> json) =>
+      ComponentNotificationDelivery(
+        actor: json["actor"] == null
+            ? null
+            : ComponentPersonRef.fromJson(json["actor"]),
+        category: componentNotificationCategoryValues.map[json["category"]]!,
+        idempotencyKey: json["idempotencyKey"],
+        occurredAt: json["occurredAt"],
+        path: json["path"],
+        recipient: ComponentPersonRef.fromJson(json["recipient"]),
+        summary: json["summary"] == null
+            ? null
+            : ComponentText.fromJson(json["summary"]),
+        title: ComponentText.fromJson(json["title"]),
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "actor": actor?.toJson(),
+    "category": componentNotificationCategoryValues.reverse[category],
+    "idempotencyKey": idempotencyKey,
+    "occurredAt": occurredAt,
+    "path": path,
+    "recipient": recipient.toJson(),
+    "summary": summary?.toJson(),
+    "title": title.toJson(),
+  });
+}
+
+///触发者；须在同一目录范围内且不是接收人。
+///
+///组件以 OIDC issuer + subject 指称 Kailo 成员（与 07 §4.7.4 成员目录 identities[] 同值）；Core 只在该 binding
+///当前目录范围内解析。
+class ComponentPersonRef {
+  final String issuer;
+  final String subject;
+
+  ComponentPersonRef({required this.issuer, required this.subject});
+
+  factory ComponentPersonRef.fromJson(Map<String, dynamic> json) =>
+      ComponentPersonRef(issuer: json["issuer"], subject: json["subject"]);
+
+  Map<String, dynamic> toJson() =>
+      _stripNulls({"issuer": issuer, "subject": subject});
+}
+
+///DD-138(4)、07 §4.8.3：组件投递到 Kailo 收件箱的通知类别（封闭枚举）。SHARED 分享给你；MENTIONED 提及你；COMMENTED
+///评论了你的对象；ACCESS_REQUESTED 访问申请（进入「需要处理」）；TASK_COMPLETED 任务完成；CONTENT_UPDATED 你关注的内容有更新。
+enum ComponentNotificationCategory {
+  ACCESS_REQUESTED,
+  COMMENTED,
+  CONTENT_UPDATED,
+  MENTIONED,
+  SHARED,
+  TASK_COMPLETED,
+}
+
+final componentNotificationCategoryValues = EnumValues({
+  "ACCESS_REQUESTED": ComponentNotificationCategory.ACCESS_REQUESTED,
+  "COMMENTED": ComponentNotificationCategory.COMMENTED,
+  "CONTENT_UPDATED": ComponentNotificationCategory.CONTENT_UPDATED,
+  "MENTIONED": ComponentNotificationCategory.MENTIONED,
+  "SHARED": ComponentNotificationCategory.SHARED,
+  "TASK_COMPLETED": ComponentNotificationCategory.TASK_COMPLETED,
+});
+
+///每种语言 1–280 字符，不含控制字符。
+///
+///组件向 Kailo 提供的中英文文案（键恰为 ZH_CN、EN）。长度与字符规则由 Core 按使用处校验。
+///
+///每种语言 1–120 字符，不含控制字符。
+class ComponentText {
+  final String en;
+  final String zhCn;
+
+  ComponentText({required this.en, required this.zhCn});
+
+  factory ComponentText.fromJson(Map<String, dynamic> json) =>
+      ComponentText(en: json["EN"], zhCn: json["ZH_CN"]);
+
+  Map<String, dynamic> toJson() => _stripNulls({"EN": en, "ZH_CN": zhCn});
+}
+
+///DD-138(4)：GET /api/v1/inbox/component-notifications 的一页，按 receivedAt 倒序；nextCursor
+///缺省表示没有更多。
+class ComponentNotificationPage {
+  final List<ComponentNotificationView> items;
+  final String? nextCursor;
+
+  ///当前可见范围内本人未读条目总数（不受分页影响）。
+  final int unreadCount;
+
+  ComponentNotificationPage({
+    required this.items,
+    this.nextCursor,
+    required this.unreadCount,
+  });
+
+  factory ComponentNotificationPage.fromJson(Map<String, dynamic> json) =>
+      ComponentNotificationPage(
+        items: List<ComponentNotificationView>.from(
+          json["items"].map((x) => ComponentNotificationView.fromJson(x)),
+        ),
+        nextCursor: json["nextCursor"],
+        unreadCount: json["unreadCount"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "items": List<dynamic>.from(items.map((x) => x.toJson())),
+    "nextCursor": nextCursor,
+    "unreadCount": unreadCount,
+  });
+}
+
+///DD-138(4)、03 ComponentNotification：当前会话 Principal
+///收件箱中的一条组件通知。只含呈现类别，不含组件名、component_type_key 或 binding 配置；bindingId 只用于在 Kailo
+///内容区打开该原生页面入口。
+class ComponentNotificationView {
+  final String? actorDisplayName;
+
+  ///07 §4.7.3 Tenant 头像地址；缺省时客户端显示首字母。
+  final String? actorPicture;
+  final String? actorPrincipalId;
+  final String bindingId;
+  final ComponentNotificationCategory category;
+  final NativePageCategory? nativePageCategory;
+  final String notificationId;
+  final String occurredAt;
+  final String path;
+  final String? readAt;
+  final String receivedAt;
+  final ComponentText? summary;
+  final ComponentText title;
+  final String? workspaceId;
+
+  ComponentNotificationView({
+    this.actorDisplayName,
+    this.actorPicture,
+    this.actorPrincipalId,
+    required this.bindingId,
+    required this.category,
+    this.nativePageCategory,
+    required this.notificationId,
+    required this.occurredAt,
+    required this.path,
+    this.readAt,
+    required this.receivedAt,
+    this.summary,
+    required this.title,
+    this.workspaceId,
+  });
+
+  factory ComponentNotificationView.fromJson(Map<String, dynamic> json) =>
+      ComponentNotificationView(
+        actorDisplayName: json["actorDisplayName"],
+        actorPicture: json["actorPicture"],
+        actorPrincipalId: json["actorPrincipalId"],
+        bindingId: json["bindingId"],
+        category: componentNotificationCategoryValues.map[json["category"]]!,
+        nativePageCategory: json["nativePageCategory"] == null
+            ? null
+            : nativePageCategoryValues.map[json["nativePageCategory"]]!,
+        notificationId: json["notificationId"],
+        occurredAt: json["occurredAt"],
+        path: json["path"],
+        readAt: json["readAt"],
+        receivedAt: json["receivedAt"],
+        summary: json["summary"] == null
+            ? null
+            : ComponentText.fromJson(json["summary"]),
+        title: ComponentText.fromJson(json["title"]),
+        workspaceId: json["workspaceId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "actorDisplayName": actorDisplayName,
+    "actorPicture": actorPicture,
+    "actorPrincipalId": actorPrincipalId,
+    "bindingId": bindingId,
+    "category": componentNotificationCategoryValues.reverse[category],
+    "nativePageCategory": nativePageCategoryValues.reverse[nativePageCategory],
+    "notificationId": notificationId,
+    "occurredAt": occurredAt,
+    "path": path,
+    "readAt": readAt,
+    "receivedAt": receivedAt,
+    "summary": summary?.toJson(),
+    "title": title.toJson(),
+    "workspaceId": workspaceId,
+  });
+}
+
+///DD-138(4)：POST /api/v1/inbox/component-notifications/read。接收人把本人的条目标记为已读（个人状态，不建立
+///ActionExecution）；1–100 个 ID，非本人或不可见的 ID 被忽略。
+class ComponentNotificationReadRequest {
+  final List<String> notificationIds;
+
+  ComponentNotificationReadRequest({required this.notificationIds});
+
+  factory ComponentNotificationReadRequest.fromJson(
+    Map<String, dynamic> json,
+  ) => ComponentNotificationReadRequest(
+    notificationIds: List<String>.from(json["notificationIds"].map((x) => x)),
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "notificationIds": List<dynamic>.from(notificationIds.map((x) => x)),
+  });
+}
+
+///DD-138(4)：投递回执。新建 201、同键同内容重复 200（duplicate=true）。
+class ComponentNotificationReceipt {
+  final bool duplicate;
+  final String notificationId;
+
+  ComponentNotificationReceipt({
+    required this.duplicate,
+    required this.notificationId,
+  });
+
+  factory ComponentNotificationReceipt.fromJson(Map<String, dynamic> json) =>
+      ComponentNotificationReceipt(
+        duplicate: json["duplicate"],
+        notificationId: json["notificationId"],
+      );
+
+  Map<String, dynamic> toJson() =>
+      _stripNulls({"duplicate": duplicate, "notificationId": notificationId});
+}
+
 ///原受信Worker在原审批后的COMPONENT_RELEASE Activity报告实际自身能力。Core自行读取自身与当前Web事实，并重新核验原release套件和审批。
 class ComponentReleaseApprovalReport {
   final String runId;
@@ -11208,6 +11694,123 @@ class ComponentReleaseReceipt {
     "planDigest": planDigest,
     "status": componentReleaseStatusValues.reverse[status],
   });
+}
+
+///DD-138(5)、07 §4.8.4：组件内容搜索结果。每项已解析到可在 Kailo 内容区打开的原生页面入口（bindingId 为该呈现类别生效的入口，不是 adapter
+///binding）；sources 列出每个呈现类别来源的状态。
+class ComponentSearchPage {
+  final List<ComponentSearchResult> results;
+  final List<ComponentSearchSource> sources;
+
+  ComponentSearchPage({required this.results, required this.sources});
+
+  factory ComponentSearchPage.fromJson(Map<String, dynamic> json) =>
+      ComponentSearchPage(
+        results: List<ComponentSearchResult>.from(
+          json["results"].map((x) => ComponentSearchResult.fromJson(x)),
+        ),
+        sources: List<ComponentSearchSource>.from(
+          json["sources"].map((x) => ComponentSearchSource.fromJson(x)),
+        ),
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "results": List<dynamic>.from(results.map((x) => x.toJson())),
+    "sources": List<dynamic>.from(sources.map((x) => x.toJson())),
+  });
+}
+
+class ComponentSearchResult {
+  final String bindingId;
+  final ComponentSearchResultKind kind;
+  final NativePageCategory nativePageCategory;
+  final String path;
+  final String? summary;
+  final String title;
+  final String? updatedAt;
+
+  ComponentSearchResult({
+    required this.bindingId,
+    required this.kind,
+    required this.nativePageCategory,
+    required this.path,
+    this.summary,
+    required this.title,
+    this.updatedAt,
+  });
+
+  factory ComponentSearchResult.fromJson(Map<String, dynamic> json) =>
+      ComponentSearchResult(
+        bindingId: json["bindingId"],
+        kind: componentSearchResultKindValues.map[json["kind"]]!,
+        nativePageCategory:
+            nativePageCategoryValues.map[json["nativePageCategory"]]!,
+        path: json["path"],
+        summary: json["summary"],
+        title: json["title"],
+        updatedAt: json["updatedAt"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "bindingId": bindingId,
+    "kind": componentSearchResultKindValues.reverse[kind],
+    "nativePageCategory": nativePageCategoryValues.reverse[nativePageCategory],
+    "path": path,
+    "summary": summary,
+    "title": title,
+    "updatedAt": updatedAt,
+  });
+}
+
+class ComponentSearchSource {
+  final NativePageCategory nativePageCategory;
+  final ComponentSearchSourceState state;
+
+  ComponentSearchSource({
+    required this.nativePageCategory,
+    required this.state,
+  });
+
+  factory ComponentSearchSource.fromJson(Map<String, dynamic> json) =>
+      ComponentSearchSource(
+        nativePageCategory:
+            nativePageCategoryValues.map[json["nativePageCategory"]]!,
+        state: componentSearchSourceStateValues.map[json["state"]]!,
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "nativePageCategory": nativePageCategoryValues.reverse[nativePageCategory],
+    "state": componentSearchSourceStateValues.reverse[state],
+  });
+}
+
+///DD-138(5)：一次「搜索全部」中某个组件来源的结果状态。ANSWERED 表示该来源已按合同回应（可为零条）；UNAVAILABLE
+///表示该来源超时、不可达或回应不合合同，其结果整体未采信。
+enum ComponentSearchSourceState { ANSWERED, UNAVAILABLE }
+
+final componentSearchSourceStateValues = EnumValues({
+  "ANSWERED": ComponentSearchSourceState.ANSWERED,
+  "UNAVAILABLE": ComponentSearchSourceState.UNAVAILABLE,
+});
+
+///DD-138(5)、07 §4.8.4：POST /api/v1/search/components。q 去首尾空白后 1–200 字符；limit 为每个来源的上限
+///1–20（缺省 8）；locale 为 ZH_CN 或 EN（缺省 ZH_CN）。
+class ComponentSearchQuery {
+  final int? limit;
+  final String? locale;
+  final String q;
+
+  ComponentSearchQuery({this.limit, this.locale, required this.q});
+
+  factory ComponentSearchQuery.fromJson(Map<String, dynamic> json) =>
+      ComponentSearchQuery(
+        limit: json["limit"],
+        locale: json["locale"],
+        q: json["q"],
+      );
+
+  Map<String, dynamic> toJson() =>
+      _stripNulls({"limit": limit, "locale": locale, "q": q});
 }
 
 class ConversationPage {
