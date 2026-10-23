@@ -432,6 +432,7 @@ function MarkdownInner({
   linkPreviewTags,
   mentionNames,
   mentionPubkeysByName,
+  onRemoveLinkPreviewsForEveryone,
   searchQuery,
   videoReviewContext,
 }: MarkdownProps) {
@@ -523,6 +524,7 @@ function MarkdownInner({
           <LinkPreviewList
             ImageLightbox={LinkPreviewImageLightbox}
             key={messageId}
+            onRemoveForEveryone={onRemoveLinkPreviewsForEveryone}
             previews={resolvedLinkPreviews}
           />
         </VideoReviewMarkdownContext.Provider>
