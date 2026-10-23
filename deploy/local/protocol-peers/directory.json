@@ -7,7 +7,16 @@
       "artifactDigest": "eae11f4ba430af78b6a274818d5c8952bf7eeb65098913f904946e452777ecb1",
       "timeoutSeconds": 10,
       "maxResponseBytes": 262144,
-      "bindings": []
+      "bindings": [
+        {
+          "bindingId": "5217405f-28b4-4414-b9c1-b093afd5901c",
+          "configDigest": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+          "isolationMode": "DEDICATED_INSTANCE",
+          "nativeScopeRef": "protocol-peer-reference",
+          "servicePrincipalId": "b6606b3a-21e2-4b01-91c0-9b4e214fcaf6",
+          "tenantId": "6179e160-6055-4e9a-ae63-1793509c230c"
+        }
+      ]
     }
   ]
 }
