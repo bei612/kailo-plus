@@ -251,6 +251,7 @@ async fn route(
     if let Some(auth) = crate::application_binding::credentials::backend_auth(&credentials)? {
         native_target["policies"] = json!({"backendAuth":auth});
     }
+    transport::strip_platform_headers(&mut native_target)?;
     let value = json!({"name":id,"gateways":[signer.gateway_name()],"matches":[{"path":{"exact":url.path()}}],
         "policies":{"jwtAuth":state.auth.core_mcp_authentication().map_err(|_|bad())?,
         "mcpGuardrails":{"processors":[{"kind":"remote","host":service.ext_mcp_url().as_str(),

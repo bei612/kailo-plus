@@ -181,6 +181,10 @@ pub(crate) async fn publish_route(
 ) -> Result<reqwest::Url, Refusal> {
     let signer = state.agent_tool_sessions.as_ref().ok_or_else(blocked)?;
     let service = state.gateway_service_auth.as_ref().ok_or_else(blocked)?;
+    // 临时 route 只指向交付目录中的第三方 peer：判定 header 只给 ExtMcp，
+    // 上游段统一剥离（DD-137(3)、SF-AGW-29）。
+    let mut native_target = spec.native_target;
+    crate::application_binding::peer::strip_platform_headers(&mut native_target)?;
     let mut url = signer.gateway_url().clone();
     url.path_segments_mut()
         .map_err(|_| invalid())?
@@ -194,7 +198,7 @@ pub(crate) async fn publish_route(
                 "methods":spec.methods,"requestHeaders":{"allowed":["authorization",spec.header]},
                 "metadata":core_mcp_metadata(spec.metadata)?}]}},
         "backends":[{"mcp":{"statefulMode":"stateless","prefixMode":"conditional","failureMode":"failClosed",
-            "targets":[spec.native_target]}}]});
+            "targets":[native_target]}}]});
     let gateway = crate::model_route::Gateway::from_env()?;
     gateway
         .admin(

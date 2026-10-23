@@ -8336,6 +8336,133 @@ async fn mcp_guardrails_request_metadata_usable_in_backend_transformation() {
 	);
 }
 
+// Kailo DD-137(3) / SF-AGW-29: platform-internal routing headers are read by the
+// mcpGuardrails processor but must not reach a third-party target. The stateless
+// relay copies inbound headers onto synthesized notifications and the cleanup
+// DELETE, which the processor's header_mutation never sees; a target-leg
+// requestHeaderModifier runs on every upstream request.
+const PLATFORM_HEADERS: [&str; 2] = ["x-platform-component-probe", "x-platform-gateway-probe"];
+
+type SeenByPolicy = Arc<std::sync::Mutex<Vec<String>>>;
+
+fn platform_header_run(
+	target_policies: Vec<BackendTrafficPolicy>,
+) -> (Vec<::http::HeaderMap>, Vec<String>) {
+	let runtime = tokio::runtime::Builder::new_multi_thread()
+		.enable_all()
+		.thread_stack_size(4 * 1024 * 1024)
+		.build()
+		.unwrap();
+	let out = runtime.block_on(async move {
+		use std::collections::HashMap;
+
+		use ::http::{HeaderName, HeaderValue};
+		use rmcp::ServiceExt;
+		use rmcp::model::{ClientCapabilities, ClientInfo, Implementation};
+		use rmcp::transport::StreamableHttpClientTransport;
+		use rmcp::transport::streamable_http_client::StreamableHttpClientTransportConfig;
+
+		use crate::test_helpers::extmcpmock::{closure_mock, pass_request_with, pass_response};
+
+		let seen: SeenByPolicy = Arc::new(std::sync::Mutex::new(Vec::new()));
+		let extmcp_mock = {
+			let seen = seen.clone();
+			closure_mock(
+				move |req| {
+					if req.method == "tools/list" {
+						seen
+							.lock()
+							.unwrap()
+							.extend(req.headers.iter().map(|h| h.key.to_ascii_lowercase()));
+					}
+					// The processor's own removal only covers request-phase methods.
+					pass_request_with(Vec::<(&str, &str)>::new(), PLATFORM_HEADERS.to_vec(), None)
+				},
+				|_| pass_response(),
+			)
+			.spawn()
+			.await
+		};
+		let (mock, captured) = mock_streamable_http_server_with_capture(true).await;
+		let (_bind, io) = setup_proxy_policies_with_target(
+			&mock,
+			false,
+			false,
+			vec![guardrails_test_support::policy(extmcp_mock.address)],
+			target_policies,
+		)
+		.await;
+
+		let mut headers = HashMap::new();
+		for name in PLATFORM_HEADERS {
+			headers.insert(HeaderName::from_static(name), HeaderValue::from_static("7"));
+		}
+		headers.insert(
+			HeaderName::from_static("x-test-control"),
+			HeaderValue::from_static("kept"),
+		);
+		let config = StreamableHttpClientTransportConfig::with_uri(format!("http://{io}/mcp"))
+			.custom_headers(headers);
+		let client = ClientInfo::new(
+			ClientCapabilities::default(),
+			Implementation::new("platform-header-client", "0.0.1"),
+		)
+		.serve(StreamableHttpClientTransport::from_config(config))
+		.await
+		.expect("client should connect");
+		client.list_tools(None).await.expect("tools/list");
+		let _ = client.cancel().await;
+		tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+		let upstream = captured.lock().unwrap().clone();
+		let seen = seen.lock().unwrap().clone();
+		(upstream, seen)
+	});
+	runtime.shutdown_timeout(std::time::Duration::from_secs(1));
+	out
+}
+
+#[test]
+fn platform_headers_leak_past_guardrails_header_mutation_without_target_strip() {
+	let (upstream, _) = platform_header_run(Vec::new());
+	assert!(
+		upstream
+			.iter()
+			.any(|h| PLATFORM_HEADERS.iter().any(|name| h.contains_key(*name))),
+		"SF-AGW-29: expected an upstream request outside the processor's request phase to carry the inbound platform header; saw {upstream:?}"
+	);
+}
+
+#[test]
+fn target_request_header_modifier_strips_platform_headers_on_every_upstream_request() {
+	let strip: crate::http::filters::HeaderModifier =
+		serde_json::from_value(serde_json::json!({ "remove": PLATFORM_HEADERS })).unwrap();
+	let (upstream, seen) =
+		platform_header_run(vec![BackendTrafficPolicy::RequestHeaderModifier(strip)]);
+	assert!(
+		upstream.len() >= 2,
+		"expected initialize and follow-up upstream requests; saw {upstream:?}"
+	);
+	for h in &upstream {
+		assert_eq!(
+			h.get("x-test-control").map(|v| v.as_bytes()),
+			Some(&b"kept"[..]),
+			"other inbound headers still propagate; saw {h:?}"
+		);
+		for name in PLATFORM_HEADERS {
+			assert!(
+				!h.contains_key(name),
+				"{name} reached the target; saw {h:?}"
+			);
+		}
+	}
+	for name in PLATFORM_HEADERS {
+		assert!(
+			seen.iter().any(|k| k == name),
+			"the guardrails processor must still read {name}; saw {seen:?}"
+		);
+	}
+}
+
 #[tokio::test]
 async fn mcp_guardrails_mutated_prompt_request_reaches_upstream() {
 	use crate::test_helpers::extmcpmock::{
