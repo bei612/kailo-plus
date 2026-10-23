@@ -29,6 +29,7 @@ func registerActivities(w activityRegistrar, spicedb *activities.SpiceDB, core *
 	w.RegisterActivity(core.ConvergeTenantCommunityArchive)
 	w.RegisterActivity(core.ReconcileTenantRestore)
 	w.RegisterActivity(core.AdvanceTenantDelete)
+	w.RegisterActivity(core.AdvanceWorkspaceDelete)
 	w.RegisterActivity(core.TransitionScope)
 	w.RegisterActivity(core.ProjectApprovalState)
 	w.RegisterActivity(core.FreshApprovalAdmission)
