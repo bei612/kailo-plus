@@ -531,14 +531,34 @@ void main() {
       expect(find.text('Delete message'), findsNothing);
     });
 
-    testWidgets('system rows carry no actions', (tester) async {
+    testWidgets('system rows offer reactions only', (tester) async {
       await _pumpSheet(
         tester,
         message: _message(isSystem: true),
         prefs: await _mockPrefs(),
       );
 
-      expect(find.byType(BottomSheet), findsNothing);
+      for (final absent in [
+        'Copy text',
+        'Copy link',
+        'Mark unread',
+        'Reply',
+        'Edit message',
+        'Delete message',
+        'Remind me',
+      ]) {
+        expect(find.text(absent), findsNothing);
+      }
+      expect(
+        find.byWidgetPredicate(
+          (widget) =>
+              widget.key is ValueKey<String> &&
+              (widget.key! as ValueKey<String>).value.startsWith(
+                'quick-reaction-',
+              ),
+        ),
+        findsWidgets,
+      );
     });
   });
 

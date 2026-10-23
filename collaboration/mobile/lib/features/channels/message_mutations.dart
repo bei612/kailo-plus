@@ -58,14 +58,13 @@ class MessageMutations {
     );
   }
 
-  Future<void> removeReaction(String reactionEventId, String emoji) =>
-      _publish(
-        kind: EventKind.deletion,
-        content: '',
-        tags: [
-          ['e', reactionEventId],
-        ],
-      );
+  Future<void> removeReaction(String reactionEventId, String emoji) => _publish(
+    kind: EventKind.deletion,
+    content: '',
+    tags: [
+      ['e', reactionEventId],
+    ],
+  );
 
   Future<void> editMessage({
     required String channelId,

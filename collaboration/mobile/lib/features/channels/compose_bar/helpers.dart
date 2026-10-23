@@ -229,23 +229,24 @@ void _sendTypingIndicator(
 }) {
   try {
     final session = ref.read(relaySessionProvider.notifier);
-    final event = SignedEventRelay(
-      session: session,
-      nsec: ref.read(relayConfigProvider).nsec,
-    ).prepare(
-      kind: EventKind.typingIndicator,
-      content: '',
-      tags: [
-        ['h', channelId],
-        if (threadHeadId != null &&
-            rootId != null &&
-            rootId != threadHeadId) ...[
-          ['e', rootId, '', 'root'],
-          ['e', threadHeadId, '', 'reply'],
-        ] else if (threadHeadId != null)
-          ['e', threadHeadId, '', 'reply'],
-      ],
-    );
+    final event =
+        SignedEventRelay(
+          session: session,
+          nsec: ref.read(relayConfigProvider).nsec,
+        ).prepare(
+          kind: EventKind.typingIndicator,
+          content: '',
+          tags: [
+            ['h', channelId],
+            if (threadHeadId != null &&
+                rootId != null &&
+                rootId != threadHeadId) ...[
+              ['e', rootId, '', 'root'],
+              ['e', threadHeadId, '', 'reply'],
+            ] else if (threadHeadId != null)
+              ['e', threadHeadId, '', 'reply'],
+          ],
+        );
     unawaited(session.publish(event).then<void>((_) {}, onError: (_) {}));
   } catch (_) {
     // Typing is best-effort: without a signing key there is nothing to send.
