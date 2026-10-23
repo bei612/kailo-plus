@@ -3478,7 +3478,7 @@ describe("platform pages render only through the host theme", () => {
   });
   const semanticColors = [
     "accent", "accent-foreground", "background", "border", "card", "destructive", "destructive-foreground",
-    "foreground", "input", "muted", "muted-foreground", "primary", "primary-foreground", "ring", "secondary", "secondary-foreground", "popover-foreground",
+    "foreground", "input", "muted", "muted-foreground", "primary", "primary-foreground", "ring", "secondary", "secondary-foreground", "popover", "popover-foreground",
     "sidebar-foreground", "sidebar-border",
     "sidebar-ring", "sidebar-accent", "sidebar-accent-foreground", "sidebar-active", "sidebar-active-foreground",
     "warning", "warning-bg",

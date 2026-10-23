@@ -53,6 +53,19 @@ svg.lucide[stroke-width="2"] {
   box-shadow: 0 1px 2px rgb(var(--k-brand-rgb) / 0.35), inset 0 0 0 1px rgb(255 255 255 / 0.14);
 }
 
+/* Brand mark gradient stops (DD-141 §2.5); token-driven, so both modes follow. */
+.kailo-mark-stop-from {
+  stop-color: var(--k-gradient-from);
+}
+
+.kailo-mark-stop-via {
+  stop-color: var(--k-gradient-via);
+}
+
+.kailo-mark-stop-to {
+  stop-color: var(--k-gradient-to);
+}
+
 /* ── Sidebar ──────────────────────────────────────────────────────────── */
 [data-testid="app-sidebar"],
 [data-testid="settings-sidebar"] {

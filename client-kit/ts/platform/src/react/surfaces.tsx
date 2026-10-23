@@ -49,19 +49,19 @@ export function KailoMark({ size = 22, className }: { size?: number; className?:
       viewBox="0 0 24 24" width={size} xmlns="http://www.w3.org/2000/svg">
       <defs>
         <linearGradient gradientUnits="userSpaceOnUse" id={`${id}-fill`} x1="2" x2="22" y1="2" y2="22">
-          <stop offset="0" style={{ stopColor: "var(--k-gradient-from, #8371fe)" }} />
-          <stop offset="0.5" style={{ stopColor: "var(--k-gradient-via, #6d4fed)" }} />
-          <stop offset="1" style={{ stopColor: "var(--k-gradient-to, #bf55de)" }} />
+          <stop offset="0" className="kailo-mark-stop-from" />
+          <stop offset="0.5" className="kailo-mark-stop-via" />
+          <stop offset="1" className="kailo-mark-stop-to" />
         </linearGradient>
       </defs>
       <rect fill={`url(#${id}-fill)`} height="24" rx="7" width="24" />
-      <g fill="none" stroke="#fff" strokeLinecap="round" strokeWidth="2.1">
+      <g fill="none" stroke="white" strokeLinecap="round" strokeWidth="2.1">
         <path d="M8.6 6.6v10.8" />
         <path d="M9.4 12.6l5.5-5.2" />
         <path d="M11.5 10.9l4.3 6.1" />
       </g>
-      <circle cx="16.1" cy="6.3" fill="#fff" r="1.55" />
-      <circle cx="16.6" cy="17.9" fill="#fff" fillOpacity="0.82" r="1.25" />
+      <circle cx="16.1" cy="6.3" fill="white" r="1.55" />
+      <circle cx="16.6" cy="17.9" fill="white" fillOpacity="0.82" r="1.25" />
     </svg>
   );
 }
