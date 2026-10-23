@@ -14,12 +14,17 @@ import { TooltipProvider } from "../src/react/sidebar/tooltip";
 import { render, settle } from "./render";
 import { createBffClient } from "../src/client";
 import { PlatformProvider } from "../src/react/context";
+import { PulseHostProvider, type PulseHost } from "../src/react/pulse/host";
 
-const platform = (children: React.ReactNode) => <PlatformProvider client={createBffClient({ send: async () => ({ status: 404, body: {} }) })} locale="en">{children}</PlatformProvider>;
 
 beforeEach(() => { setLocale("en"); });
 
 const owner = "a".repeat(64);
+// The commit rows' copy buttons read the platform and Pulse hosts, as inside the Projects page.
+const pulseHost: PulseHost = { scopeKey: "s", pubkey: owner, query: async () => [], publish: async () => ({ eventId: "e" }),
+  copy: async () => {}, startDm: async () => {}, mediaUrl: url => url, renderContent: content => <p>{content}</p>, renderComposer: () => null };
+const platform = (children: React.ReactNode) => <PlatformProvider client={createBffClient({ send: async () => ({ status: 404, body: {} }) })} locale="en">
+  <PulseHostProvider host={pulseHost}>{children}</PulseHostProvider></PlatformProvider>;
 const repository = { id: "r", name: "repo", description: "", cloneUrls: [], webUrl: null, owner, contributors: [], createdAt: 1,
   status: "open", defaultBranch: "main", repoAddress: `30617:${owner}:repo`, channelId: "11111111-1111-4111-8111-111111111111" } as unknown as Repository;
 const commit = (hash: string, subject: string) => ({ hash, shortHash: hash.slice(0, 7), authorName: "Ada", authorEmail: "ada@example.org", timestamp: 1, subject });
