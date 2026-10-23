@@ -914,6 +914,7 @@ enum PlatformMessageKey {
   dmAddPerson,
   dmAddedPerson,
   dmRemovePerson,
+  dmVerifyPublicKey,
   dmViewInactive,
   dmSynchronizing,
   dmAttachmentUnavailable,
@@ -1690,6 +1691,9 @@ enum PlatformMessageKey {
   channelManagementEditTopic,
   channelManagementSave,
   channelManagementTopicUnknown,
+  channelManagementJoin,
+  channelManagementJoining,
+  channelManagementJoinDescription,
   channelManagementLeave,
   channelManagementLeaving,
   channelManagementArchive,
@@ -2257,6 +2261,9 @@ enum PlatformMessageKey {
   workflowsSaveName,
   workflowsNoRuns,
   workflowsProgress,
+  workflowsRunStep,
+  workflowsRunSteps,
+  workflowsRunCurrentStep,
   workflowsUsage,
   workflowsStepApproval,
   workflowsCardDaily,
@@ -3417,6 +3424,8 @@ enum PlatformMessageKey {
   platformShortcutsZoomOutDescription,
   platformShortcutsZoomResetLabel,
   platformShortcutsZoomResetDescription,
+  platformShortcutsPublishNoteLabel,
+  platformShortcutsPublishNoteDescription,
   platformShortcutsSendMessageLabel,
   platformShortcutsSendMessageDescription,
   platformShortcutsNewLineLabel,
@@ -6405,6 +6414,10 @@ const _messages = <PlatformMessageKey, (String, String)>{
   PlatformMessageKey.dmAddPerson: ('Add {name}', '添加{name}'),
   PlatformMessageKey.dmAddedPerson: ('Already added {name}', '已添加{name}'),
   PlatformMessageKey.dmRemovePerson: ('Remove {name}', '移除{name}'),
+  PlatformMessageKey.dmVerifyPublicKey: (
+    'Verify {name} public key',
+    '核验{name}的公钥',
+  ),
   PlatformMessageKey.dmViewInactive: (
     'Conversation view is no longer active.',
     '当前会话页面已不再有效。',
@@ -8087,6 +8100,15 @@ const _messages = <PlatformMessageKey, (String, String)>{
     'The topic change is not confirmed yet. Retry checks the same publication.',
     '主题修改尚未确认。重试将核验同一次发布。',
   ),
+  PlatformMessageKey.channelManagementJoin: ('Join channel', '加入频道'),
+  PlatformMessageKey.channelManagementJoining: (
+    'Joining channel...',
+    '正在加入频道…',
+  ),
+  PlatformMessageKey.channelManagementJoinDescription: (
+    'Add this channel to your sidebar',
+    '将此频道添加到侧栏',
+  ),
   PlatformMessageKey.channelManagementLeave: ('Leave channel', '退出频道'),
   PlatformMessageKey.channelManagementLeaving: (
     'Leaving channel...',
@@ -9584,6 +9606,12 @@ const _messages = <PlatformMessageKey, (String, String)>{
     '本页没有可见运行。',
   ),
   PlatformMessageKey.workflowsProgress: ('Progress', '进度'),
+  PlatformMessageKey.workflowsRunStep: ('{count} step', '{count} 个步骤'),
+  PlatformMessageKey.workflowsRunSteps: ('{count} steps', '{count} 个步骤'),
+  PlatformMessageKey.workflowsRunCurrentStep: (
+    'Current step {step}',
+    '当前第 {step} 步',
+  ),
   PlatformMessageKey.workflowsUsage: ('Usage references', '用量引用'),
   PlatformMessageKey.workflowsStepApproval: ('Step approval', '步骤审批'),
   PlatformMessageKey.workflowsCardDaily: (
@@ -12663,6 +12691,14 @@ const _messages = <PlatformMessageKey, (String, String)>{
   PlatformMessageKey.platformShortcutsZoomResetDescription: (
     'Reset zoom to default level',
     '恢复默认缩放比例',
+  ),
+  PlatformMessageKey.platformShortcutsPublishNoteLabel: (
+    'Publish note',
+    '发布动态',
+  ),
+  PlatformMessageKey.platformShortcutsPublishNoteDescription: (
+    'Publish a Pulse note',
+    '发布一条动态',
   ),
   PlatformMessageKey.platformShortcutsSendMessageLabel: (
     'Send message',
