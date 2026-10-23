@@ -3,6 +3,9 @@
 FROM rust:1.90-slim-bookworm@sha256:64232e656c058f4468e8d024e990acff04f0fd5a5c0a88a574dc37773d7325c9 AS rust
 FROM golang:1.25-bookworm@sha256:3b4a11519ad929d1e1d261a12cff056f0c85b735253d7d861346b9c6f8b36437 AS go
 FROM node:24-bookworm-slim@sha256:0e0ff40c39bc087845bfb27465a0df4ea419520094bc35842ff83dd8cbe6f9b6 AS node
+# Same digest as data-query/wren-ui/Dockerfile: its locked yarn 4.5.3 and next lint run
+# on the Node the image build uses (yarn 4.5.3 aborts on fetch timeouts under Node 24).
+FROM node:18-bookworm-slim@sha256:f9ab18e354e6855ae56ef2b290dd225c1e51a564f87584b9bd21dd651838830e AS node18
 FROM dart:3.9.4@sha256:9db24325a8df958f4aa64e0880d8254ba304602c1d85ecee326b2c576883cc3a
 
 COPY --from=rust /usr/local/cargo /usr/local/cargo
@@ -10,6 +13,7 @@ COPY --from=rust /usr/local/rustup /usr/local/rustup
 COPY --from=go /usr/local/go /usr/local/go
 COPY --from=node /usr/local/bin/node /usr/local/bin/node
 COPY --from=node /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/npm
+COPY --from=node18 /usr/local/bin/node /opt/node18/bin/node
 
 ENV CARGO_HOME=/usr/local/cargo \
     RUSTUP_HOME=/usr/local/rustup \
@@ -26,7 +30,7 @@ RUN apt-get update \
 
 RUN rustup component add rustfmt clippy \
     && cargo --version && rustfmt --version && cargo clippy --version \
-    && go version && node --version && dart --version
+    && go version && node --version && /opt/node18/bin/node --version && dart --version
 
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \

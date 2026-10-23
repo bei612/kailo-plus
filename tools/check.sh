@@ -203,29 +203,34 @@ component_lint_deps() {
 
 # 组件镜像构建里会跑的格式/静态门禁，在合并检查阶段提前暴露，判定与构建一致：
 # - data-query/wren-ui：`next build` 内置 next lint（.eslintrc.json，prettier/prettier 为 error）
-#   与 tsc 类型检查；另以锁定的 prettier（yarn.lock）显式 --check 源码。
+#   与 tsc 类型检查；另以锁定的 prettier（yarn.lock）显式 --check 源码。用构建镜像同一
+#   Node 18（检查镜像 /opt/node18）运行锁定的 yarn 4.5.3，它在 Node 24 下遇下载超时会崩溃。
 # - collaboration/web、admin-web：镜像构建为 `tsc && vite build`。
 # knowledge/frontend（vite build）、file-storage 前端（build.sh 的 webpack）与 document-editor
 # （grunt 打包，jshint 未注册）的镜像构建不含 lint 或类型门禁，此处不另立判定。
-lint_component_frontends() {
+lint_wren_ui() {
   local ui=data-query/wren-ui
-  if populated "$ui/src"; then
-    ran=1
-    if component_lint_deps "$ui" package.json yarn.lock .yarnrc.yml .yarn/releases -- node_modules -- \
-         env YARN_ENABLE_TELEMETRY=0 node .yarn/releases/yarn-4.5.3.cjs install --immutable --mode=skip-build; then
-      # next build 在类型检查前生成 next-env.d.ts（未入库）；检查快照内按同一内容补齐。
-      [ -f "$ui/next-env.d.ts" ] || printf '%s\n' '/// <reference types="next" />' \
-        '/// <reference types="next/image-types/global" />' > "$ui/next-env.d.ts"
-      (cd "$ui" && diag node_modules/.bin/prettier --check src) \
-        && pass "wren-ui prettier --check" || fail "wren-ui prettier --check（修复：在 $ui 用锁定的 prettier --write）"
-      (cd "$ui" && NEXT_TELEMETRY_DISABLED=1 diag node_modules/.bin/next lint) \
-        && pass "wren-ui next lint（eslint + prettier）" || fail "wren-ui next lint（eslint + prettier）"
-      (cd "$ui" && diag node_modules/.bin/tsc --noEmit) \
-        && pass "wren-ui tsc --noEmit" || fail "wren-ui tsc --noEmit"
-    else
-      fail "wren-ui 依赖安装失败，组件 lint 无法执行"
-    fi
+  populated "$ui/src" || return 0
+  ran=1
+  [ -x /opt/node18/bin/node ] || { fail "检查镜像缺少 wren-ui 构建所用 Node 18（/opt/node18）"; return 0; }
+  local -x PATH="/opt/node18/bin:$PATH" NEXT_TELEMETRY_DISABLED=1 YARN_ENABLE_TELEMETRY=0
+  if ! component_lint_deps "$ui" package.json yarn.lock .yarnrc.yml .yarn/releases -- node_modules -- \
+       node .yarn/releases/yarn-4.5.3.cjs install --immutable --mode=skip-build; then
+    fail "wren-ui 依赖安装失败，组件 lint 无法执行"; return 0
   fi
+  # next build 在类型检查前生成 next-env.d.ts（未入库）；检查快照内按同一内容补齐。
+  [ -f "$ui/next-env.d.ts" ] || printf '%s\n' '/// <reference types="next" />' \
+    '/// <reference types="next/image-types/global" />' > "$ui/next-env.d.ts"
+  (cd "$ui" && diag node_modules/.bin/prettier --check src) \
+    && pass "wren-ui prettier --check" || fail "wren-ui prettier --check（修复：在 $ui 用锁定的 prettier --write）"
+  (cd "$ui" && diag node_modules/.bin/next lint) \
+    && pass "wren-ui next lint（eslint + prettier）" || fail "wren-ui next lint（eslint + prettier）"
+  (cd "$ui" && diag node_modules/.bin/tsc --noEmit) \
+    && pass "wren-ui tsc --noEmit" || fail "wren-ui tsc --noEmit"
+}
+
+lint_component_frontends() {
+  lint_wren_ui
   local buzz=collaboration manager tooling
   if populated "$buzz/web/src" || populated "$buzz/admin-web/src"; then
     ran=1
