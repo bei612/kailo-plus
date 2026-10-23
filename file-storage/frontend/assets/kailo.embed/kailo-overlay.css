@@ -111,11 +111,13 @@ body.react-mui-context,
 
 /* DD-141: no upstream wallpaper. The home header sits on a quiet Kailo brand
  * aura that fades into the page; the native translucent app bar stays. */
+#orbit_content,
 #background-imager,
 .user-dashboard-template {
     background-image: none !important;
 }
 
+#orbit_content,
 #background-imager {
     background-color: var(--kailo-color-background) !important;
     background-image:
