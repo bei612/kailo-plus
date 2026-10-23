@@ -526,6 +526,71 @@ export function persistDraftEntry(
   }
 }
 
+// ── Pending sends (DD-146) ────────────────────────────────────────────────────
+// Original send-then-upload clears the composer at Send and keeps the frozen
+// message until it is published. Its in-memory recovery (useMentionSendFlow
+// restoreComposerAfterFailure / saveQueuedAttachmentsForDraft) is persisted here
+// beside the draft, in the same identity/relay scope, so a reload can still
+// offer it. Local File bytes never survive a reload: only their names are kept.
+
+export type PendingSendStage = "uploading" | "publishing" | "failed" | "unknown";
+
+export type PendingSendState = {
+  /** The frozen message: content, confirmed media, mentions and, once frozen, its send intent. */
+  draft: DraftState;
+  stage: PendingSendStage;
+  /** Local files that were still uploading; their bytes are not persisted. */
+  missingFileNames: string[];
+  /** Surface-specific frozen extras (for example chosen GIFs); opaque to the store. */
+  extras?: unknown;
+};
+
+const PENDING_SEND_STAGES: readonly PendingSendStage[] = ["uploading", "publishing", "failed", "unknown"];
+
+function pendingSendStorageKey(): string {
+  return `${storageKey()}:pending-send`;
+}
+
+function readPendingSends(): Record<string, PendingSendState> {
+  if (!currentPubkey) return {};
+  try {
+    const parsed: unknown = JSON.parse(localStorage.getItem(pendingSendStorageKey()) ?? "{}");
+    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    const valid: Record<string, PendingSendState> = {};
+    for (const [key, value] of Object.entries(parsed as Record<string, Partial<PendingSendState>>)) {
+      if (value && isValidDraftState(value.draft) && PENDING_SEND_STAGES.includes(value.stage as PendingSendStage) &&
+          Array.isArray(value.missingFileNames) && value.missingFileNames.every(name => typeof name === "string")) {
+        valid[key] = value as PendingSendState;
+      }
+    }
+    return valid;
+  } catch {
+    return {};
+  }
+}
+
+function writePendingSends(sends: Record<string, PendingSendState>): void {
+  if (!currentPubkey) return;
+  if (Object.keys(sends).length === 0) localStorage.removeItem(pendingSendStorageKey());
+  else setLocalStorageItemWithRecovery(pendingSendStorageKey(), JSON.stringify(sends));
+  notifySubscribers();
+}
+
+export function savePendingSend(draftKey: string, state: PendingSendState): void {
+  writePendingSends({ ...readPendingSends(), [draftKey]: state });
+}
+
+export function loadPendingSend(draftKey: string): PendingSendState | undefined {
+  return readPendingSends()[draftKey];
+}
+
+export function clearPendingSend(draftKey: string): void {
+  const sends = readPendingSends();
+  if (!(draftKey in sends)) return;
+  delete sends[draftKey];
+  writePendingSends(sends);
+}
+
 /**
  * Returns all drafts sorted most-recently-updated first.
  * Used by the Drafts inbox panel (Phase 2).

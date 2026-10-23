@@ -1149,7 +1149,7 @@ describe("DD-125(8) mentioning people outside the Workspace channel", () => {
   });
 });
 
-describe("DD-146 original send-then-upload over a frozen intent", () => {
+describe("DD-146 original send-then-upload: clear at Send, restore on failure", () => {
   type Descriptor = {sha256:string;size:number;type:string;url:string};
   async function attachPending(host: HTMLElement) {
     const fileInput = host.querySelector<HTMLInputElement>('[data-testid="attach-input"]')!;
@@ -1160,76 +1160,171 @@ describe("DD-146 original send-then-upload over a frozen intent", () => {
     await settle();
   }
   function uploader() {
-    const uploads: {options?: MediaUploadOptions; resolve: (d: Descriptor) => void; reject: (e: unknown) => void}[] = [];
-    const upload = vi.fn((_file: File, options?: MediaUploadOptions) => new Promise<Descriptor>((resolve, reject) => { uploads.push({options, resolve, reject}); }));
+    const uploads: {file: File; options?: MediaUploadOptions; resolve: (d: Descriptor) => void; reject: (e: unknown) => void}[] = [];
+    const upload = vi.fn((file: File, options?: MediaUploadOptions) => new Promise<Descriptor>((resolve, reject) => { uploads.push({file, options, resolve, reject}); }));
     return {upload, uploads};
   }
   const input = (host: HTMLElement) => host.querySelector<HTMLElement>('[data-testid="message-input"]')!;
+  const pill = (host: HTMLElement) => host.querySelector<HTMLElement>('[data-testid="composer-queued-send"]');
+  const recovery = (host: HTMLElement) => host.querySelector<HTMLElement>('[data-testid="composer-pending-send"]');
   const descriptor = { sha256: "a".repeat(64), size: 3, type: "text/plain", url: "media:one" };
+  const composer = (draftKey: string, upload: ReturnType<typeof uploader>["upload"]) =>
+    <Composer workspaceId="workspace-a" draftIdentity="alice" draftKey={draftKey} onUpload={upload} />;
 
-  it("holds the send while uploading and publishes once, only with the confirmed attachment", async () => {
+  it("clears the composer at Send and publishes once, only with the confirmed attachment", async () => {
     const {upload, uploads} = uploader();
-    const host = await render(<Composer workspaceId="workspace-a" draftIdentity="alice" draftKey="queued-ok" onUpload={upload} />);
+    const host = await render(composer("queued-ok", upload));
     await type(input(host), "with a file");
     await attachPending(host);
     await click(button(host, "platform.send"));
     await settle();
     expect(state.publish).not.toHaveBeenCalled();
-    expect(host.querySelector('[data-testid="composer-queued-send"]')).not.toBeNull();
+    expect(input(host).textContent).toBe("");
+    expect(loadDraftEntry("queued-ok")).toBeUndefined();
+    expect(pill(host)).not.toBeNull();
+    // The composer is free for the next message while the frozen one waits for its upload.
+    expect(input(host).getAttribute("contenteditable")).toBe("true");
     await act(async () => uploads[0]!.options!.onProgress!(50));
-    expect(host.querySelector('[data-testid="composer-queued-send"]')!.textContent).toContain("platform.sendAfterUpload");
+    expect(pill(host)!.textContent).toContain("platform.sendAfterUpload");
     await act(async () => uploads[0]!.resolve(descriptor));
     await vi.waitFor(() => expect(state.publish).toHaveBeenCalledTimes(1));
     expect(state.publish.mock.calls[0][1]).toBe("with a file");
     expect(state.publish.mock.calls[0][2]).toEqual([expect.objectContaining({ sha256: descriptor.sha256, url: descriptor.url })]);
-    expect(host.querySelector('[data-testid="composer-queued-send"]')).toBeNull();
+    await settle();
+    expect(pill(host)).toBeNull();
+    expect(recovery(host)).toBeNull();
+    expect(input(host).textContent).toBe("");
   });
 
-  it("never publishes when a held upload fails, and keeps the draft for the user", async () => {
+  it("restores the draft when a queued upload fails, never publishing", async () => {
     const {upload, uploads} = uploader();
-    const host = await render(<Composer workspaceId="workspace-a" draftIdentity="alice" draftKey="queued-fail" onUpload={upload} />);
+    const host = await render(composer("queued-fail", upload));
     await type(input(host), "keep me");
     await attachPending(host);
     await click(button(host, "platform.send"));
+    expect(input(host).textContent).toBe("");
     await act(async () => uploads[0]!.reject(new BffError(413, "too large")));
     await settle(); await settle();
     expect(state.publish).not.toHaveBeenCalled();
     expect(input(host).textContent).toBe("keep me");
     expect(host.textContent).toContain("platform.uploadTooLarge");
-    expect(host.querySelector('[data-testid="composer-queued-send"]')).toBeNull();
+    expect(pill(host)).toBeNull();
+    expect(recovery(host)).toBeNull();
   });
 
-  it("cancels the held send from the progress pill without publishing", async () => {
+  it("Cancel restores the draft and its canceled file without publishing", async () => {
     const {upload, uploads} = uploader();
-    const host = await render(<Composer workspaceId="workspace-a" draftIdentity="alice" draftKey="queued-cancel" onUpload={upload} />);
+    const host = await render(composer("queued-cancel", upload));
     await type(input(host), "maybe later");
     await attachPending(host);
     await click(button(host, "platform.send"));
     await click(host.querySelector<HTMLElement>('[data-testid="composer-queued-send-cancel"]')!);
-    await settle();
+    await settle(); await settle();
     expect(uploads[0]!.options!.signal!.aborted).toBe(true);
+    expect(input(host).textContent).toBe("maybe later");
+    // Original restoreQueuedAttachments: the canceled local file is back in the composer.
+    expect(upload).toHaveBeenCalledTimes(2);
+    expect(uploads[1]!.file.name).toBe("one.txt");
     await act(async () => uploads[0]!.resolve(descriptor));
     await settle();
     expect(state.publish).not.toHaveBeenCalled();
-    expect(input(host).textContent).toBe("maybe later");
   });
 
-  it("keeps the same key after an UNKNOWN publication of a held send and does not auto-resend on remount", async () => {
+  it("keeps a failed send as a recovery when the composer has moved on", async () => {
+    const {upload, uploads} = uploader();
+    const host = await render(composer("queued-moved-on", upload));
+    await type(input(host), "first");
+    await attachPending(host);
+    await click(button(host, "platform.send"));
+    await type(input(host), "second");
+    await act(async () => uploads[0]!.reject(new BffError(413, "too large")));
+    await settle(); await settle();
+    expect(input(host).textContent).toBe("second");
+    expect(recovery(host)!.dataset.stage).toBe("failed");
+    expect(recovery(host)!.querySelector<HTMLButtonElement>('[data-testid="composer-pending-send-restore"]')!.disabled).toBe(true);
+    await type(input(host), "");
+    await settle();
+    await click(recovery(host)!.querySelector<HTMLElement>('[data-testid="composer-pending-send-restore"]')!);
+    await settle();
+    expect(input(host).textContent).toBe("first");
+    expect(recovery(host)).toBeNull();
+    expect(state.publish).not.toHaveBeenCalled();
+  });
+
+  it("restores an UNKNOWN publication with its key: the retry is the same send", async () => {
     state.publish.mockRejectedValue(new TransportError("lost response"));
     const {upload, uploads} = uploader();
-    const host = await render(<Composer workspaceId="workspace-a" draftIdentity="alice" draftKey="queued-unknown" onUpload={upload} />);
+    const host = await render(composer("queued-unknown", upload));
     await type(input(host), "uncertain");
     await attachPending(host);
     await click(button(host, "platform.send"));
     await act(async () => uploads[0]!.resolve(descriptor));
     await vi.waitFor(() => expect(state.publish).toHaveBeenCalledTimes(1));
+    await settle();
     const key = state.publish.mock.calls[0][3];
+    expect(input(host).textContent).toBe("uncertain");
+    expect(loadDraftEntry("queued-unknown")?.sendIntent?.key).toBe(key);
     await click(button(host, "platform.send"));
     await vi.waitFor(() => expect(state.publish).toHaveBeenCalledTimes(2));
     expect(state.publish.mock.calls[1][3]).toBe(key);
-    await rerender(<Composer workspaceId="workspace-a" draftIdentity="alice" draftKey="queued-unknown" onUpload={upload} />);
+    expect(state.publish.mock.calls[1][2]).toEqual(state.publish.mock.calls[0][2]);
+    await rerender(composer("queued-unknown", upload));
     await settle();
     expect(state.publish).toHaveBeenCalledTimes(2);
+  });
+
+  it("offers a send left pending by a reload, never resending it by itself", async () => {
+    const {upload} = uploader();
+    const first = await render(composer("queued-reload", upload));
+    await type(input(first), "before reload");
+    await attachPending(first);
+    await click(button(first, "platform.send"));
+    expect(input(first).textContent).toBe("");
+    // The page goes away mid-upload: the local file bytes cannot come back, the message can.
+    act(() => mounted!.root.unmount());
+    mounted!.host.remove();
+    mounted = undefined;
+    const host = await render(composer("queued-reload", upload));
+    await settle();
+    expect(state.publish).not.toHaveBeenCalled();
+    expect(input(host).textContent).toBe("");
+    expect(recovery(host)!.dataset.stage).toBe("failed");
+    expect(recovery(host)!.textContent).toContain("platform.pendingSendMissingFiles");
+    await click(recovery(host)!.querySelector<HTMLElement>('[data-testid="composer-pending-send-restore"]')!);
+    await settle();
+    expect(input(host).textContent).toBe("before reload");
+    expect(state.publish).not.toHaveBeenCalled();
+  });
+
+  it("an UNKNOWN pending send restored after a reload keeps its DD-81 key", async () => {
+    state.publish.mockRejectedValue(new TransportError("lost response"));
+    const {upload, uploads} = uploader();
+    const first = await render(composer("queued-reload-unknown", upload));
+    await type(input(first), "maybe delivered");
+    await attachPending(first);
+    await click(button(first, "platform.send"));
+    // The composer moved on before the answer: the UNKNOWN send waits as a recovery.
+    await type(input(first), "next thought");
+    await act(async () => uploads[0]!.resolve(descriptor));
+    await vi.waitFor(() => expect(state.publish).toHaveBeenCalledTimes(1));
+    await settle();
+    const key = state.publish.mock.calls[0][3];
+    act(() => mounted!.root.unmount());
+    mounted!.host.remove();
+    mounted = undefined;
+    const host = await render(composer("queued-reload-unknown", upload));
+    await settle();
+    expect(state.publish).toHaveBeenCalledTimes(1);
+    expect(recovery(host)!.dataset.stage).toBe("unknown");
+    expect(input(host).textContent).toBe("next thought");
+    await type(input(host), "");
+    await settle();
+    await click(recovery(host)!.querySelector<HTMLElement>('[data-testid="composer-pending-send-restore"]')!);
+    await settle();
+    expect(input(host).textContent).toBe("maybe delivered");
+    expect(loadDraftEntry("queued-reload-unknown")?.sendIntent?.key).toBe(key);
+    expect(host.textContent).toContain("platform.sendUnknown");
+    expect(state.publish).toHaveBeenCalledTimes(1);
   });
 });
 

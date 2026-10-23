@@ -22,14 +22,29 @@ export function findDmAgentMention(text: string, agentNames: readonly string[]):
   return null;
 }
 
-/** Display names of the Tenant Agents the viewer can discover (first directory page), only in DMs. */
+/** Bounded directory read: a cursor that never ends is a failure, not "no Agents". */
+export const DM_AGENT_DIRECTORY_MAX_PAGES = 50;
+
+/** Display names of every Agent definition the viewer can discover, across all directory pages. */
+export async function loadDmAgentMentionNames(client: Pick<BffClient, "agentDefinitions">): Promise<string[]> {
+  const names: string[] = [];
+  let offset = 0;
+  for (let page = 0; page < DM_AGENT_DIRECTORY_MAX_PAGES; page += 1) {
+    const read = await client.agentDefinitions(offset);
+    if (!read || !Array.isArray(read.definitions)) throw new Error("Invalid Agent definition directory");
+    for (const definition of read.definitions) if (typeof definition.displayName === "string") names.push(definition.displayName);
+    if (read.nextOffset === undefined || read.nextOffset === null) return names;
+    if (!Number.isSafeInteger(read.nextOffset) || read.nextOffset <= offset) throw new Error("Invalid Agent definition cursor");
+    offset = read.nextOffset;
+  }
+  throw new Error("Agent definition directory exceeds the page bound");
+}
+
+/** Display names of the Tenant Agents the viewer can discover (all directory pages), only in DMs. */
 export function useDmAgentMentionNames(client: Pick<BffClient, "agentDefinitions">, enabled: boolean): readonly string[] {
   const query = useQuery({
     queryKey: ["platform", "dm-agent-mention-names"], enabled, retry: false, staleTime: 60_000,
-    queryFn: async () => {
-      const page = await client.agentDefinitions();
-      return Array.isArray(page?.definitions) ? page.definitions.map(definition => definition.displayName).filter((name): name is string => typeof name === "string") : [];
-    },
+    queryFn: () => loadDmAgentMentionNames(client),
   });
   return enabled && query.isSuccess ? query.data : [];
 }
