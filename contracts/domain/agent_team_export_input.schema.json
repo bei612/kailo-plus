@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "domain/agent_team_export_input.schema.json",
+  "title": "AgentTeamExportInput",
+  "description": "仅 agent.team.export（DD-131(3)、05 §2.12）：命令的 Resource 目标是 agent_team，这里只冻结包媒体类型。各成员取审批开始时冻结的当前已发布版本；包是团队信息加各成员的 DD-131(2) 清单，不含团队 instructions、owner、公钥、Installation、绑定、llm_route、RuntimeProfile、记忆或任何 SecretRef。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["mediaType"],
+  "properties": {
+    "mediaType": {"$ref": "../enums/agent_snapshot_media_type.schema.json"}
+  }
+}

@@ -283,6 +283,7 @@ export function AgentDefinitionsPage(navigation: WorkspaceNavigation & {
       </AgentManagementDialog>
       {/* DD-131(1)(6)：原版 Agents 页的团队区（新建、编辑、删除、部署到频道、分享到目录）。 */}
       <AgentTeamsLibrary refreshRevision={refreshRevision + versionRevision} locked={blocked || versionEdit !== null}
+        snapshotExportHost={navigation.snapshotExportHost}
         onDiscover={() => setCatalog("teams")} />
       <AgentCatalogDialog open={catalog !== null} preferSection={catalog ?? "agents"} onOpenChange={(next) => { if (!next) setCatalog(null); }}
         onCreateAgent={() => { if (createAvailable.current) setCreateOpen(true); }}

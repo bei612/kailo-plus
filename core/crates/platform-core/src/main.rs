@@ -116,6 +116,8 @@ mod spicedb;
 mod stream;
 mod task_projection;
 mod task_rerun;
+mod team_snapshot;
+mod team_transfer;
 mod telemetry;
 mod temporal;
 mod tenant_bootstrap;

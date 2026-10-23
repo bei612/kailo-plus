@@ -181,12 +181,12 @@ describe("agent snapshot import", () => {
     expect(document.querySelector("[data-testid=agent-snapshot-import-preview]")).toBeNull();
   });
 
-  it("does not offer Add for team cards or without a platform session", async () => {
+  it("offers Add for team cards too (DD-131(3)) but never without a platform session", async () => {
     const team = await render(<PlatformProvider client={createBffClient(await routes("a".repeat(64)))} locale="en">
       <SnapshotCard displayName="Crew" href="/media/t" filename="crew.team.json" sha256={"a".repeat(64)} snapshotKind="team"
         onDownload={async () => {}} readBytes={async () => manifest} />
     </PlatformProvider>);
-    expect(team.querySelector("[data-testid=agent-snapshot-card-add]")).toBeNull();
+    expect(team.querySelector("[data-testid=agent-snapshot-card-add]")).not.toBeNull();
     const bare = await render(<SnapshotCard displayName="Writer" href="/media/x" filename="writer.agent.json"
       sha256={"a".repeat(64)} snapshotKind="agent" onDownload={async () => {}} readBytes={async () => manifest} />);
     expect(bare.querySelector("[data-testid=agent-snapshot-card-add]")).toBeNull();

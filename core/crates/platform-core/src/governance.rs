@@ -642,8 +642,10 @@ impl Semantic {
             "automation.rotate_webhook_secret" => Self::AutomationRotateWebhookSecret,
             "resource.transfer_owner" => Self::ResourceTransferOwner,
             "resource.create" => Self::ResourceCreate,
-            "agent.definition.import" => Self::AgentDefinitionImport,
-            "agent.definition.export" => Self::AgentDefinitionExport,
+            // DD-131(3)：团队快照与 Agent 快照是同一 RESOURCE_IMPORT/RESOURCE_EXPORT 语义，
+            // 模块内按动作键分派到各自的 TransferFormat。
+            "agent.definition.import" | "agent.team.import" => Self::AgentDefinitionImport,
+            "agent.definition.export" | "agent.team.export" => Self::AgentDefinitionExport,
             "skill.definition.create" => Self::SkillDefinitionCreate,
             "skill.version.create" => Self::SkillVersionCreate,
             "skill.version.publish" => Self::SkillVersionPublish,
@@ -904,6 +906,10 @@ pub struct Params {
     pub agent_definition_import: Option<Value>,
     /// DD-131(2)：agent.definition.export 冻结的 PUBLISHED 版本与包媒体类型
     pub agent_definition_export: Option<Value>,
+    /// DD-131(3)：agent.team.import 的本会话团队包上传引用与包 digest
+    pub agent_team_import: Option<Value>,
+    /// DD-131(3)：agent.team.export 的包媒体类型
+    pub agent_team_export: Option<Value>,
     /// DD-131(1)：agent.team.create/update 的规范化团队输入
     pub agent_team: Option<Value>,
 }
@@ -937,6 +943,12 @@ impl Params {
         }
         if let Some(input) = &self.agent_definition_export {
             m.insert("agentDefinitionExport".into(), input.clone());
+        }
+        if let Some(input) = &self.agent_team_import {
+            m.insert("agentTeamImport".into(), input.clone());
+        }
+        if let Some(input) = &self.agent_team_export {
+            m.insert("agentTeamExport".into(), input.clone());
         }
         if let Some(team) = &self.agent_team {
             m.insert("agentTeam".into(), team.clone());
@@ -1095,6 +1107,8 @@ impl Params {
             skill_version_upload: v.get("skillVersionUpload").cloned(),
             agent_definition_import: v.get("agentDefinitionImport").cloned(),
             agent_definition_export: v.get("agentDefinitionExport").cloned(),
+            agent_team_import: v.get("agentTeamImport").cloned(),
+            agent_team_export: v.get("agentTeamExport").cloned(),
             agent_team: v.get("agentTeam").cloned(),
             application_binding_id: uuid("applicationBindingId"),
             application_binding_version: v
@@ -1491,6 +1505,16 @@ fn parse_command(sem: Semantic, cmd: &contracts::ActionCommand) -> Result<Params
             .as_ref()
             .map(crate::resource_export::normalize)
             .transpose()?,
+        agent_team_import: cmd
+            .agent_team_import
+            .as_ref()
+            .map(crate::team_transfer::normalize_import)
+            .transpose()?,
+        agent_team_export: cmd
+            .agent_team_export
+            .as_ref()
+            .map(crate::team_transfer::normalize_export)
+            .transpose()?,
         agent_team: cmd
             .agent_team
             .as_ref()
@@ -1539,14 +1563,14 @@ fn parse_command(sem: Semantic, cmd: &contracts::ActionCommand) -> Result<Params
         crate::resource_transfer::validate_params(&p)?;
         return Ok(p);
     }
-    if p.agent_definition_import.is_some() {
+    if p.agent_definition_import.is_some() || p.agent_team_import.is_some() {
         return Err(bad());
     }
     if sem == Semantic::AgentDefinitionExport {
         crate::resource_export::validate_params(&p)?;
         return Ok(p);
     }
-    if p.agent_definition_export.is_some() {
+    if p.agent_definition_export.is_some() || p.agent_team_export.is_some() {
         return Err(bad());
     }
     if sem.is_application_binding() {
@@ -3904,6 +3928,8 @@ impl Governance {
             resource_create: None,
             agent_definition_import: None,
             agent_definition_export: None,
+            agent_team_import: None,
+            agent_team_export: None,
             agent_team: None,
             tenant_quota_setting: None,
             skill_version_upload: None,
@@ -4014,6 +4040,8 @@ impl Governance {
             resource_create: None,
             agent_definition_import: None,
             agent_definition_export: None,
+            agent_team_import: None,
+            agent_team_export: None,
             agent_team: None,
             tenant_quota_setting: None,
             skill_version_upload: None,
@@ -6724,7 +6752,7 @@ impl Governance {
             return crate::resource_transfer::gate(self, conn, tenant, initiator, p).await;
         }
         if sem == Semantic::AgentDefinitionExport {
-            return crate::resource_export::gate(conn, tenant, p).await;
+            return crate::resource_export::gate(self, conn, tenant, initiator, p).await;
         }
         if sem.is_installation_permission() {
             return installation_permission::gate(
@@ -8289,7 +8317,8 @@ impl Governance {
                 // DD-149: "ask every time" is decided by the Installation owner.
                 crate::mcp_connection::tool::owners(ae)?
             } else if crate::resource_export::owner_policy(&ae.action_key, &policy) {
-                vec![crate::resource_export::frozen_owner(ae)?]
+                // DD-131(2)(3)：Agent 导出的 TARGET_OWNER，或团队导出冻结的全部受影响 owner。
+                crate::resource_export::frozen_owners(ae)?
             } else if crate::automation::step_approval::is_child(ae) {
                 crate::automation::step_approval::owners(ae)?
                     .into_iter()
@@ -9188,6 +9217,9 @@ impl Governance {
                 crate::project_channel_request::owners(&ae)?
             } else if crate::automation::step_approval::is_child(&ae) {
                 crate::automation::step_approval::owners(&ae)?
+            } else if export_owner {
+                // 团队导出的 ALL_AFFECTED_OWNERS 冻结在本执行参数中，不是 Tenant 删除快照。
+                crate::resource_export::frozen_owners(&ae)?
             } else if policy.owner_requirement == "ALL_AFFECTED_OWNERS" {
                 let refs: Value = sqlx::query_scalar(
                         "select resource_owner_versions || asset_owner_versions from admission.tenant_lifecycle_snapshot
@@ -9200,8 +9232,6 @@ impl Governance {
                 serde_json::from_value(refs).map_err(|e| Refusal::Unavailable(e.to_string()))?
             } else if installation_owner {
                 vec![installation_permission::frozen_owner(&ae)?]
-            } else if export_owner {
-                vec![crate::resource_export::frozen_owner(&ae)?]
             } else {
                 Vec::new()
             };

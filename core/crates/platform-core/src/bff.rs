@@ -560,6 +560,15 @@ pub fn router(state: BffState) -> Router {
             "/api/v1/agent-snapshots/configuration",
             get(crate::resource_transfer::configuration),
         )
+        // DD-131(3)：团队快照包的一次性上传暂存与导入预览（成员头像逐个存为本 Tenant 媒体对象）
+        .exposed_route(
+            "/api/v1/agent-team-snapshots/uploads",
+            axum::routing::post(crate::team_transfer::upload).layer(
+                axum::extract::DefaultBodyLimit::max(
+                    crate::team_transfer::MAX_UPLOAD_REQUEST_BYTES,
+                ),
+            ),
+        )
         // DD-135(2)(3)(4)、17 §8：Skill 目录、版本、正文、一次性上传暂存与 AgentVersion 引用目录
         // DD-149: user self-service MCP connectors (reads, probes and OAuth attempts;
         // writes are the governed mcp_connection.* actions on /api/v1/actions).

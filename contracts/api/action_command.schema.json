@@ -154,6 +154,14 @@
       "$ref": "../domain/agent_definition_export_input.schema.json",
       "description": "仅 agent.definition.export（DD-131(2)、05 §2.12）：目标 Definition 的一个 PUBLISHED AgentVersion 与包媒体类型；其他动作携带即拒绝。"
     },
+    "agentTeamImport": {
+      "$ref": "../domain/agent_team_import_input.schema.json",
+      "description": "仅 agent.team.import（DD-131(3)、05 §2.12）：本会话上传的团队快照包引用与包 digest；其他动作携带即拒绝。"
+    },
+    "agentTeamExport": {
+      "$ref": "../domain/agent_team_export_input.schema.json",
+      "description": "仅 agent.team.export（DD-131(3)、05 §2.12）：团队快照包媒体类型；其他动作携带即拒绝。"
+    },
     "skillVersionUpload": {
       "$ref": "../domain/skill_version_upload_input.schema.json",
       "description": "仅 skill.version.create（DD-135(3)）：本会话一次性上传引用与能力需求；其他动作携带即拒绝。"

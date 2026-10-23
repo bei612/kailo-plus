@@ -34,6 +34,7 @@ capabilities:
   - /api/v1/workspaces/{workspace_id}/agent-turns
   - /api/v1/agent-snapshots/uploads
   - /api/v1/agent-snapshots/configuration
+  - /api/v1/agent-team-snapshots/uploads
   - /api/v1/export-packages/by-action/{action_execution_id}
   - /api/v1/export-packages/{asset_id}
   - /api/v1/export-packages/{asset_id}/content
@@ -83,6 +84,8 @@ capabilities:
   - resource.revoke_read
   - agent.definition.import
   - agent.definition.export
+  - agent.team.import
+  - agent.team.export
   tools: []
   workflow_kinds:
   - AGENT_INSTALLATION

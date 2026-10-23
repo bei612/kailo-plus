@@ -54,8 +54,12 @@ fn version_asset_id(action: Uuid) -> Uuid {
 
 // ── 参数 ────────────────────────────────────────────────────────────────────
 
-/// 参数闭集：导入输入、slug 与显式确认。显示名取自包，不由命令改写。
+/// 参数闭集：导入输入、slug 与显式确认。显示名取自包，不由命令改写。团队包导入
+/// （DD-131(3)）是同一 RESOURCE_IMPORT 语义，按其输入分派到 `team_transfer`。
 pub(crate) fn validate_params(p: &Params) -> Result<(), Refusal> {
+    if p.agent_team_import.is_some() {
+        return crate::team_transfer::validate_import_params(p);
+    }
     let value = p.to_json();
     if value.as_object().is_none_or(|map| {
         map.keys().any(|k| {
@@ -130,10 +134,10 @@ struct Staged {
 /// DD-131(2)、(7)：上传时把包内联头像存为本 Tenant 内容寻址媒体对象的结果。`source_digest`
 /// 是包内头像字节的 SHA-256，Workflow 重读包时据此确认仍是同一份头像。
 #[derive(Debug, Clone, PartialEq)]
-struct StagedAvatar {
-    url: String,
-    media_sha256: String,
-    source_digest: String,
+pub(crate) struct StagedAvatar {
+    pub url: String,
+    pub media_sha256: String,
+    pub source_digest: String,
 }
 
 /// media_type, package, package_digest, expired, consumed_by, avatar_url, avatar_media_sha256,
@@ -214,7 +218,7 @@ fn staged_avatar<'a>(staged: &'a Staged, snapshot: &Snapshot) -> Result<Option<&
 }
 
 /// `https://<community>/media/<sha256>[.ext]` 的内容摘要；其他地址不是本 Tenant 媒体对象。
-fn media_url_hash(url: &str) -> Option<&str> {
+pub(crate) fn media_url_hash(url: &str) -> Option<&str> {
     let (_, rest) = url.split_once("://")?;
     let (_, path) = rest.split_once('/')?;
     let file = path.strip_prefix("media/")?;
@@ -291,7 +295,7 @@ async fn offered(state: &BffState) -> Result<bool, Response> {
     Ok(def.is_some_and(|d| definition_matches(&d)))
 }
 
-fn definition_matches(def: &Definition) -> bool {
+pub(crate) fn definition_matches(def: &Definition) -> bool {
     def.component_type_key == "core"
         && def.target_type == "RESOURCE"
         && def.tenant_rule == "SESSION_TENANT"
@@ -307,7 +311,7 @@ fn definition_matches(def: &Definition) -> bool {
         && def.result_exposure == "NONE"
 }
 
-async fn may_create(state: &BffState, ctx: &ExecutionContext) -> Result<bool, Response> {
+pub(crate) async fn may_create(state: &BffState, ctx: &ExecutionContext) -> Result<bool, Response> {
     let proof = state
         .governance
         .spicedb
@@ -329,7 +333,7 @@ async fn may_create(state: &BffState, ctx: &ExecutionContext) -> Result<bool, Re
 }
 
 #[allow(clippy::result_large_err)]
-fn decode_view<T: serde::de::DeserializeOwned>(value: Value) -> Result<T, Response> {
+pub(crate) fn decode_view<T: serde::de::DeserializeOwned>(value: Value) -> Result<T, Response> {
     serde_json::from_value(value).map_err(|_| {
         tracing::error!("快照导入视图不符合共享契约");
         StatusCode::SERVICE_UNAVAILABLE.into_response()
@@ -455,7 +459,7 @@ pub async fn upload(
 /// 以导入人身份把内联头像上传为本 Tenant Community 的媒体对象（与资料头像同一 BFF 媒体链，
 /// DD-39）。回执必须是图片、地址落在本 Community 的 `/media/<sha256>`，且摘要与回执一致；
 /// 失败不暂存任何东西，由导入人重试。
-async fn stage_avatar(
+pub(crate) async fn stage_avatar(
     state: &BffState,
     ctx: &ExecutionContext,
     avatar: &agent_snapshot::InlineAvatar,
@@ -548,8 +552,12 @@ pub(crate) async fn target(
     frozen: Option<Uuid>,
     lock: bool,
 ) -> Result<Target, Refusal> {
+    if def.action_key == crate::team_transfer::IMPORT {
+        return crate::team_transfer::import_target(conn, tenant, initiator, def, p, frozen, lock)
+            .await;
+    }
     validate_params(p)?;
-    if !definition_matches(def) {
+    if p.agent_team_import.is_some() || !definition_matches(def) {
         return Err(blocked());
     }
     let taken: Option<Uuid> = sqlx::query_scalar(
@@ -582,6 +590,9 @@ pub(crate) async fn gate(
     initiator: Uuid,
     p: &Params,
 ) -> Result<(), Refusal> {
+    if p.agent_team_import.is_some() {
+        return crate::team_transfer::import_gate(gov, conn, tenant, initiator, p).await;
+    }
     let input = input(p)?;
     let staged = staged(conn, tenant, initiator, input.upload_id, false)
         .await?
@@ -602,6 +613,9 @@ pub(crate) async fn prewrite(
     def: &Definition,
     p: &Params,
 ) -> Result<i32, Refusal> {
+    if ae.action_key == crate::team_transfer::IMPORT {
+        return crate::team_transfer::import_prewrite(tx, ae, def, p).await;
+    }
     if !crate::agent_definition::active_owner(tx, ae.tenant_id, ae.initiator_principal_id).await? {
         return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
     }
@@ -682,12 +696,20 @@ pub(crate) async fn start(
         .map_err(|_| StatusCode::SERVICE_UNAVAILABLE.into_response())?
         .filter(|ae| {
             ae.tenant_id == tenant
-                && ae.action_key == IMPORT
+                && matches!(
+                    ae.action_key.as_str(),
+                    IMPORT | crate::team_transfer::IMPORT
+                )
                 && ae.gate_state == "ALLOWED"
                 && ae.temporal_workflow_id.as_deref() == Some(workflow)
         })
         .ok_or_else(|| StatusCode::CONFLICT.into_response())?;
-    let target = workflow_target(&ae, workflow).map_err(|e| e.respond(None))?;
+    let target = if ae.action_key == crate::team_transfer::IMPORT {
+        crate::team_transfer::import_workflow_target(&ae, workflow)
+    } else {
+        workflow_target(&ae, workflow)
+    }
+    .map_err(|e| e.respond(None))?;
     let run_id = crate::component_task::start(
         pool,
         temporal,
@@ -726,31 +748,14 @@ pub(crate) async fn advance(
     }
 }
 
-fn status(id: Uuid, status: &str) -> Value {
-    json!({"resourceId": id, "status": status, "waitingReason": "NONE"})
-}
-
-async fn advance_inner(
+/// 推进只在该 ActionExecution 登记的 RESOURCE_IMPORT Workflow 仍 OPEN、且请求来自其当前 run
+/// 时进行（Agent 与团队导入同用）。
+pub(crate) async fn observe_open_run(
     state: &crate::service_api::ServiceState,
-    request: contracts::ResourceImportAdvanceRequest,
-) -> Result<Value, Refusal> {
-    let value = serde_json::to_value(request).map_err(|_| invalid())?;
-    let target = &value["target"];
-    let action = Uuid::parse_str(text(target, "actionExecutionId")?).map_err(|_| invalid())?;
-    let id = Uuid::parse_str(text(target, "resourceId")?).map_err(|_| invalid())?;
-    let workflow = text(target, "workflowId")?;
-    let ae = crate::governance::load_execution(&state.pool, action)
-        .await?
-        .ok_or_else(conflict)?;
-    if ae.action_key != IMPORT
-        || ae.target_id != id
-        || ae.gate_state != "ALLOWED"
-        || ae.dispatch_state != "DISPATCHED"
-        || ae.temporal_workflow_id.as_deref() != Some(workflow)
-        || *target != workflow_target(&ae, workflow)?
-    {
-        return Err(conflict());
-    }
+    ae: &Execution,
+    workflow: &str,
+    run_id: &str,
+) -> Result<(), Refusal> {
     let observed = state
         .temporal
         .describe(workflow)
@@ -771,7 +776,7 @@ async fn advance_inner(
     .await?
     .flatten();
     if !matches!(observed.state, crate::temporal::ObservedState::Open)
-        || observed.run_id != text(&value, "runId")?
+        || observed.run_id != run_id
         || observed.first_run_id.is_empty()
         || first
             .as_deref()
@@ -779,6 +784,38 @@ async fn advance_inner(
     {
         return Err(conflict());
     }
+    Ok(())
+}
+
+pub(crate) fn status(id: Uuid, status: &str) -> Value {
+    json!({"resourceId": id, "status": status, "waitingReason": "NONE"})
+}
+
+async fn advance_inner(
+    state: &crate::service_api::ServiceState,
+    request: contracts::ResourceImportAdvanceRequest,
+) -> Result<Value, Refusal> {
+    let value = serde_json::to_value(request).map_err(|_| invalid())?;
+    let target = &value["target"];
+    let action = Uuid::parse_str(text(target, "actionExecutionId")?).map_err(|_| invalid())?;
+    let id = Uuid::parse_str(text(target, "resourceId")?).map_err(|_| invalid())?;
+    let workflow = text(target, "workflowId")?;
+    let ae = crate::governance::load_execution(&state.pool, action)
+        .await?
+        .ok_or_else(conflict)?;
+    if ae.action_key == crate::team_transfer::IMPORT {
+        return crate::team_transfer::advance_import(state, ae, &value).await;
+    }
+    if ae.action_key != IMPORT
+        || ae.target_id != id
+        || ae.gate_state != "ALLOWED"
+        || ae.dispatch_state != "DISPATCHED"
+        || ae.temporal_workflow_id.as_deref() != Some(workflow)
+        || *target != workflow_target(&ae, workflow)?
+    {
+        return Err(conflict());
+    }
+    observe_open_run(state, &ae, workflow, text(&value, "runId")?).await?;
     if let Some(code) = terminal_code(&state.pool, &ae).await? {
         return Ok(status(
             id,
@@ -968,7 +1005,7 @@ async fn advance_inner(
 }
 
 /// Definition 与 DRAFT 版本的 SpiceDB 投影：写后以 AtLeastAsFresh 查证，返回两条写入 revision。
-async fn project(
+pub(crate) async fn project(
     state: &crate::service_api::ServiceState,
     ae: &Execution,
     id: Uuid,
@@ -1114,7 +1151,7 @@ fn input_digest(ae: &Execution) -> Result<String, Refusal> {
     Ok(input(&p)?.package_digest)
 }
 
-async fn clear_package(
+pub(crate) async fn clear_package(
     tx: &mut Transaction<'_, Postgres>,
     action: Uuid,
 ) -> Result<(), sqlx::Error> {

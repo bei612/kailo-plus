@@ -1,0 +1,75 @@
+{
+  "importCommand": {
+    "actionKey": "agent.team.import",
+    "idempotencyKey": "6b7c8d9e-0f1a-4b2c-8d3e-4f5a6b7c8d9e",
+    "explicitConfirmation": true,
+    "agentTeamImport": {
+      "uploadId": "7c8d9e0f-1a2b-4c3d-9e4f-5a6b7c8d9e0f",
+      "packageDigest": "8f434346648f6b96df89dda901c5176b10a6d83961dd3c1ac88b59b2dc327aa4"
+    }
+  },
+  "exportCommand": {
+    "actionKey": "agent.team.export",
+    "idempotencyKey": "8d9e0f1a-2b3c-4d4e-8f5a-6b7c8d9e0f1a",
+    "resourceId": "9e0f1a2b-3c4d-4e5f-9a6b-7c8d9e0f1a2b",
+    "resourceVersion": 2,
+    "agentTeamExport": {"mediaType": "application/json"}
+  },
+  "uploadRequest": {"mediaType": "image/png", "contentBase64": "iVBORw0KGgo="},
+  "preview": {
+    "uploadId": "7c8d9e0f-1a2b-4c3d-9e4f-5a6b7c8d9e0f",
+    "packageDigest": "8f434346648f6b96df89dda901c5176b10a6d83961dd3c1ac88b59b2dc327aa4",
+    "packageByteSize": 4096,
+    "mediaType": "image/png",
+    "formatKey": "buzz-team-snapshot@1",
+    "expiresAt": "2026-10-28T10:30:00Z",
+    "name": "Release crew",
+    "description": "Writes and reviews release notes.",
+    "teamInstructionsOmitted": true,
+    "members": [
+      {
+        "displayName": "Release writer",
+        "description": "Drafts the notes.",
+        "avatarUrl": "https://buzz.example.test/media/b5bb9d8014a0f9b1d61e21e796d78dccdf1352f23cd32812f4850b878ae4944c.png",
+        "instructions": "Draft release notes from merged changes.",
+        "omitted": ["RUNTIME", "MODEL"]
+      },
+      {"displayName": "Reviewer", "instructions": "", "omitted": []}
+    ]
+  },
+  "minimalPreview": {
+    "uploadId": "7c8d9e0f-1a2b-4c3d-9e4f-5a6b7c8d9e0f",
+    "packageDigest": "8f434346648f6b96df89dda901c5176b10a6d83961dd3c1ac88b59b2dc327aa4",
+    "packageByteSize": 512,
+    "mediaType": "application/json",
+    "formatKey": "buzz-team-snapshot@1",
+    "expiresAt": "2026-10-28T10:30:00Z",
+    "name": "Solo",
+    "teamInstructionsOmitted": false,
+    "members": [{"displayName": "Helper", "instructions": "Help.", "omitted": []}]
+  },
+  "readyPackage": {
+    "packageAssetId": "0f1a2b3c-4d5e-4f6a-8b7c-8d9e0f1a2b3c",
+    "actionExecutionId": "1a2b3c4d-5e6f-4a7b-9c8d-9e0f1a2b3c4d",
+    "sourceResourceId": "9e0f1a2b-3c4d-4e5f-9a6b-7c8d9e0f1a2b",
+    "formatKey": "buzz-team-snapshot@1",
+    "mediaType": "application/json",
+    "state": "READY",
+    "contentDigest": "8f434346648f6b96df89dda901c5176b10a6d83961dd3c1ac88b59b2dc327aa4",
+    "byteSize": 8192,
+    "fileName": "Release crew.team.json",
+    "downloadPath": "/api/v1/export-packages/0f1a2b3c-4d5e-4f6a-8b7c-8d9e0f1a2b3c/content"
+  },
+  "importAdvanceRequest": {
+    "target": {
+      "actionExecutionId": "2b3c4d5e-6f7a-4b8c-8d9e-0f1a2b3c4d5e",
+      "resourceId": "3c4d5e6f-7a8b-4c9d-9e0f-1a2b3c4d5e6f",
+      "versionAssetId": "4d5e6f7a-8b9c-4d0e-8f1a-2b3c4d5e6f7a",
+      "workflowId": "import-2b3c4d5e-6f7a-4b8c-8d9e-0f1a2b3c4d5e",
+      "formatKey": "buzz-team-snapshot@1",
+      "packageDigest": "8f434346648f6b96df89dda901c5176b10a6d83961dd3c1ac88b59b2dc327aa4"
+    },
+    "runId": "5e6f7a8b-9c0d-4e1f-8a2b-3c4d5e6f7a8b",
+    "cancelRequested": false
+  }
+}

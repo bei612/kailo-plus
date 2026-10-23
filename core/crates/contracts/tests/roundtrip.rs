@@ -1296,3 +1296,29 @@ fn dd131_agent_snapshot_export_preserves_fields_and_absence() {
     unknown["state"] = serde_json::json!("PUBLISHED");
     assert!(serde_json::from_value::<contracts::ExportPackageView>(unknown).is_err());
 }
+
+#[test]
+fn dd131_team_snapshot_transfer_preserves_fields_and_absence() {
+    // DD-131(3): the team import/export commands, the upload request, both team
+    // preview shapes, a READY team package and the team RESOURCE_IMPORT advance
+    // request keep every field and keep absent optionals absent.
+    let value: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(sample_path().with_file_name("agent-team-snapshot.sample.json"))
+            .unwrap(),
+    )
+    .unwrap();
+    fn roundtrip<T: serde::de::DeserializeOwned + serde::Serialize>(value: &serde_json::Value) {
+        let typed: T = serde_json::from_value(value.clone()).unwrap();
+        assert_eq!(&serde_json::to_value(typed).unwrap(), value);
+    }
+    roundtrip::<contracts::ActionCommand>(&value["importCommand"]);
+    roundtrip::<contracts::ActionCommand>(&value["exportCommand"]);
+    roundtrip::<contracts::AgentTeamSnapshotUploadRequest>(&value["uploadRequest"]);
+    roundtrip::<contracts::AgentTeamSnapshotImportPreview>(&value["preview"]);
+    roundtrip::<contracts::AgentTeamSnapshotImportPreview>(&value["minimalPreview"]);
+    roundtrip::<contracts::ExportPackageView>(&value["readyPackage"]);
+    roundtrip::<contracts::ResourceImportAdvanceRequest>(&value["importAdvanceRequest"]);
+    let mut unknown = value["preview"].clone();
+    unknown["members"][0]["omitted"][0] = serde_json::json!("SECRET");
+    assert!(serde_json::from_value::<contracts::AgentTeamSnapshotImportPreview>(unknown).is_err());
+}

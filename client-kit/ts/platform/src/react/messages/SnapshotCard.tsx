@@ -1,9 +1,8 @@
 // Buzz 779af8886caae1317b4de962082429867ab61503 desktop/src/shared/ui/markdown/AgentSnapshotCard.tsx
 // (DD-143): the snapshot attachment card for `.agent.*`/`.team.*` attachments. Download goes
-// through the host's authorized media transport. The original "Add agent" action first verifies
-// the bytes against the message's imeta `x`/`size`, then opens the DD-131(2) import preview
-// (`agent.definition.import`). Team import (`agent.team.import`) is not available yet, so team
-// cards keep download only rather than offering a dead button.
+// through the host's authorized media transport. The original "Add" action first verifies the bytes
+// against the message's imeta `x`/`size`, then opens the import preview: DD-131(2)
+// `agent.definition.import` for `.agent.*`, DD-131(3) `agent.team.import` for `.team.*`.
 import * as React from "react";
 import { Bot, Download, Plus, Users } from "lucide-react";
 import { toast } from "sonner";
@@ -14,6 +13,8 @@ import { AgentSnapshotImportDialog, agentSnapshotSource, sha256Hex, type AgentSn
 import {
   Attachment, AttachmentAction, AttachmentActions, AttachmentContent, AttachmentDescription, AttachmentMedia, AttachmentTitle,
 } from "../composer/shared/ui/attachment";
+import { TeamSnapshotImportDialog, teamSnapshotSource, type TeamSnapshotSource }
+  from "../agent-library/TeamSnapshotImportDialog";
 import type { ResolvedSnapshotCard } from "./resolveFileCard";
 
 function formatSize(size: number): string {
@@ -35,7 +36,9 @@ export function SnapshotCard({ displayName, href, filename, size, sha256, snapsh
   const [thumbError, setThumbError] = React.useState(false);
   const [adding, setAdding] = React.useState(false);
   const [source, setSource] = React.useState<AgentSnapshotSource | null>(null);
-  const canAdd = snapshotKind === "agent" && platform && !!readBytes && !!sha256 && /^[0-9a-f]{64}$/.test(sha256);
+  const [teamSource, setTeamSource] = React.useState<TeamSnapshotSource | null>(null);
+  const canAdd = (snapshotKind === "agent" || snapshotKind === "team") && platform && !!readBytes && !!sha256
+    && /^[0-9a-f]{64}$/.test(sha256);
   const add = async () => {
     if (!readBytes || !sha256 || adding) return;
     setAdding(true);
@@ -43,6 +46,13 @@ export function SnapshotCard({ displayName, href, filename, size, sha256, snapsh
       const bytes = await readBytes();
       if ((size != null && bytes.length !== size) || await sha256Hex(bytes) !== sha256) {
         toast.error(t("messages.snapshot.mismatch"));
+        return;
+      }
+      if (snapshotKind === "team") {
+        const next = teamSnapshotSource(filename, bytes);
+        if (next === "unsupported") toast.error(t("teamSnapshot.unsupportedFile"));
+        else if (next === "tooLarge") toast.error(t("teamSnapshot.fileTooLarge"));
+        else setTeamSource(next);
         return;
       }
       const next = agentSnapshotSource(filename, bytes);
@@ -89,7 +99,8 @@ export function SnapshotCard({ displayName, href, filename, size, sha256, snapsh
           <Download />
         </AttachmentAction>
       </AttachmentActions>
-      {canAdd ? <AgentSnapshotImportDialog source={source} onClose={() => setSource(null)} /> : null}
+      {canAdd && snapshotKind === "agent" ? <AgentSnapshotImportDialog source={source} onClose={() => setSource(null)} /> : null}
+      {canAdd && snapshotKind === "team" ? <TeamSnapshotImportDialog source={teamSource} onClose={() => setTeamSource(null)} /> : null}
     </Attachment>
   );
 }

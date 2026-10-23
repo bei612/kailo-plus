@@ -2,9 +2,9 @@
 // DD-131(6): "Share to catalog" is the governed `agent.team.share/unshare`, offered to the Team owner
 // only (Core re-checks Team `share`); it writes the Team's discoverer/reader tenant#member grants and
 // grants no Installation use. The original built-in team has no counterpart. Sending the team as a
-// snapshot to people is DD-131(3)(7) `agent.team.export` and appears here once exports exist; the
-// original memory level choice is excluded (DD-131(4)).
-import { BookUser } from "lucide-react";
+// snapshot to people is the original "Export" entry here: DD-131(3)(7) `agent.team.export`, approved by
+// the team owner and every member's owner; the original memory level choice is excluded (DD-131(4)).
+import { BookUser, Download } from "lucide-react";
 
 import type { AgentTeamView } from "@client-kit/contracts";
 import { Button } from "../profile/buzz/shared/ui/button";
@@ -23,9 +23,11 @@ type TeamShareDialogProps = {
   onCatalogShareChange: (shared: boolean) => void;
   onOpenChange: (open: boolean) => void;
   open: boolean;
+  /** DD-131(3): the original "Export" entry; opens the governed `agent.team.export` dialog. */
+  onExport?: () => void;
 };
 
-export function TeamShareDialog({ team, canShare, isPending, unknown, problem, onCatalogShareChange, onOpenChange, open }: TeamShareDialogProps) {
+export function TeamShareDialog({ team, canShare, isPending, unknown, problem, onCatalogShareChange, onOpenChange, open, onExport }: TeamShareDialogProps) {
   const t = useUiT();
   const locked = isPending || unknown;
   return (
@@ -57,6 +59,17 @@ export function TeamShareDialog({ team, canShare, isPending, unknown, problem, o
           {unknown ? <Button className="w-fit" data-testid="team-share-recheck" disabled={isPending} onClick={() => onCatalogShareChange(!team.catalogShared)}
             size="sm" type="button" variant="outline">{t("agents.retry")}</Button> : null}
         </section>
+        {onExport ? (
+          <section className="relative flex min-h-16 w-full items-center gap-3 rounded-xl border border-border bg-card px-5 py-4" data-testid="team-share-export">
+            <Download className="h-4 w-4 shrink-0 text-muted-foreground" />
+            <div className="min-w-0 flex-1">
+              <h3 className="text-control font-medium">{t("agentTeams.export")}</h3>
+              <p className="text-xs text-muted-foreground">{t("agentTeams.exportDescription")}</p>
+            </div>
+            <Button data-testid="team-share-export-open" disabled={locked} onClick={onExport} size="sm" type="button" variant="outline">
+              {t("agentTeams.export")}</Button>
+          </section>
+        ) : null}
       </DialogContent>
     </Dialog>
   );

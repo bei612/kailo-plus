@@ -103,7 +103,7 @@ pub(crate) fn decode(bytes: &[u8], media: MediaType) -> Result<Snapshot, Refusal
             }
             bytes.to_vec()
         }
-        MediaType::Png => png_manifest(bytes)?,
+        MediaType::Png => png_text(bytes, PNG_CHUNK_KEYWORD)?,
     };
     if manifest.len() > MAX_JSON_BYTES {
         return Err(too_large());
@@ -112,9 +112,10 @@ pub(crate) fn decode(bytes: &[u8], media: MediaType) -> Result<Snapshot, Refusal
     map(&value)
 }
 
-/// PNG 结构逐块核对（签名、长度、CRC、IHDR 在首、IEND 在尾），只读 IDAT 之前的
-/// `buzz_agent_snapshot` tEXt，与原版 `png` 解码器 `read_info` 可见的文本块一致。
-fn png_manifest(bytes: &[u8]) -> Result<Vec<u8>, Refusal> {
+/// PNG 结构逐块核对（签名、长度、CRC、IHDR 在首、IEND 在尾），只读 IDAT 之前名为 `keyword`
+/// 的 tEXt（Agent 为 `buzz_agent_snapshot`、团队为 `buzz_team_snapshot`），与原版 `png` 解码器
+/// `read_info` 可见的文本块一致。
+pub(crate) fn png_text(bytes: &[u8], keyword: &[u8]) -> Result<Vec<u8>, Refusal> {
     let mut rest = bytes.strip_prefix(PNG_SIGNATURE).ok_or_else(invalid)?;
     let mut first = true;
     let mut before_image = true;
@@ -143,7 +144,7 @@ fn png_manifest(bytes: &[u8]) -> Result<Vec<u8>, Refusal> {
             b"IDAT" => before_image = false,
             b"tEXt" if before_image => {
                 let split = data.iter().position(|b| *b == 0).ok_or_else(invalid)?;
-                if &data[..split] == PNG_CHUNK_KEYWORD {
+                if &data[..split] == keyword {
                     if found.is_some() {
                         return Err(invalid());
                     }
@@ -181,7 +182,7 @@ fn crc32(bytes: &[u8]) -> u32 {
 }
 
 /// 原版 `validate_visible_text`：拒绝而不是剥除会让审阅者看不到的字符。
-fn visible(value: &str, layout: bool) -> bool {
+pub(crate) fn visible(value: &str, layout: bool) -> bool {
     value.chars().all(|c| {
         if layout && matches!(c, '\n' | '\t') {
             return true;
@@ -215,7 +216,8 @@ fn optional_positive(value: &Value, key: &str) -> Result<Option<i64>, Refusal> {
     }
 }
 
-fn map(value: &Value) -> Result<Snapshot, Refusal> {
+/// 一个 `buzz-agent-snapshot` v1 清单的 DD-131(2) 映射；团队快照的每个成员即此清单（DD-131(3)）。
+pub(crate) fn map(value: &Value) -> Result<Snapshot, Refusal> {
     // 锁定卡的外层信封是另一个 format 判别值，在此即被拒绝（DD-131(5)）。
     if value.get("format").and_then(Value::as_str) != Some(FORMAT_DISCRIMINATOR)
         || value.get("version").and_then(Value::as_u64) != Some(1)

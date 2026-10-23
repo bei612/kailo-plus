@@ -42,6 +42,8 @@ import type {
   AgentImportConfigurationPage,
   AgentSnapshotImportPreview,
   AgentSnapshotUploadRequest,
+  AgentTeamSnapshotImportPreview,
+  AgentTeamSnapshotUploadRequest,
   ExportPackageView,
   AutomationPage,
   AutomationDetailView,
@@ -427,6 +429,12 @@ export function createBffClient(transport: BffTransport) {
      */
     uploadAgentSnapshot: (body: AgentSnapshotUploadRequest) =>
       call<AgentSnapshotImportPreview>({ method: "POST", path: "/api/v1/agent-snapshots/uploads", body }),
+    /**
+     * DD-131(3)：校验一个团队快照包并为本会话一次性暂存，返回导入预览；不创建对象。新 agent_team 与
+     * 各成员的 Definition/DRAFT 只经 agent.team.import 产生，任一成员失败整包不提交。
+     */
+    uploadTeamSnapshot: (body: AgentTeamSnapshotUploadRequest) =>
+      call<AgentTeamSnapshotImportPreview>({ method: "POST", path: "/api/v1/agent-team-snapshots/uploads", body }),
     /** DD-26：导入人可重选的 RuntimeProfile 与 Route（与版本配置目录同一来源）。 */
     agentImportConfiguration: (offset?: number) =>
       get<AgentImportConfigurationPage>(`/api/v1/agent-snapshots/configuration${offset !== undefined ? `?offset=${offset}` : ""}`),

@@ -37,7 +37,7 @@ const PANEL_CLASS = "rounded-xl border border-border bg-card p-3";
 
 export type AgentSnapshotSource = { bytes: Uint8Array; mediaType: AgentSnapshotMediaType; filename: string };
 
-const omissionLabels: Record<string, PlatformMessageKey> = {
+export const omissionLabels: Record<string, PlatformMessageKey> = {
   RUNTIME: "agents.snapshot.omitted.runtime",
   MODEL: "agents.snapshot.omitted.model",
   PROVIDER: "agents.snapshot.omitted.provider",
@@ -111,13 +111,13 @@ function validConfiguration(page: AgentImportConfigurationPage): boolean {
     && (page.nextOffset === null || page.nextOffset === undefined || (Number.isSafeInteger(page.nextOffset) && page.nextOffset >= 0));
 }
 
-type ImportAction = {
+export type ImportAction = {
   intent: ActionCommand | null; busy: boolean; submission: ActionSubmission | null; failure: WriteFailure | null; unknown: boolean;
   prepare: (command: Omit<ActionCommand, "idempotencyKey">) => void; cancel: () => void; submit: () => Promise<void>;
 };
 
 /** The frozen request keeps its idempotency key through an unknown outcome; only that same request may be re-checked. */
-function useImportAction(onSettled: (submission: ActionSubmission) => void): ImportAction {
+export function useImportAction(onSettled: (submission: ActionSubmission) => void): ImportAction {
   const client = useBffClient();
   const t = useT();
   const inFlight = useRef(false);

@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "domain/agent_team_import_input.schema.json",
+  "title": "AgentTeamImportInput",
+  "description": "仅 agent.team.import（DD-131(3)、05 §2.12）：本会话、本人上传的 buzz-team-snapshot@1 包引用与包 digest。agent_team 没有 slug；各成员 Definition 的 slug 由 Core 按成员显示名规范化生成并在本 Tenant 内加序号去重。成员 DRAFT 不带运行配置，由 owner 发布前补齐。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["uploadId", "packageDigest"],
+  "properties": {
+    "uploadId": {"type": "string", "format": "uuid"},
+    "packageDigest": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  }
+}

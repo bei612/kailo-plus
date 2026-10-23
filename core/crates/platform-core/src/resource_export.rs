@@ -46,9 +46,18 @@ pub(crate) fn package_asset_id(action: Uuid) -> Uuid {
     Uuid::new_v5(&action, b"resource.export/export.package")
 }
 
-/// 本模块实现的导出动作（导出端的 TransferFormat 绑定）。
+/// 本模块实现的导出动作（导出端的 TransferFormat 绑定）：Agent 快照与团队快照（DD-131(3)）。
 pub(crate) fn is_action(key: &str) -> bool {
-    key == EXPORT
+    key == EXPORT || key == crate::team_transfer::EXPORT
+}
+
+/// 该导出动作登记的 TransferFormat。
+pub(crate) fn format_key(action: &str) -> &'static str {
+    if action == crate::team_transfer::EXPORT {
+        crate::team_snapshot::FORMAT_KEY
+    } else {
+        FORMAT_KEY
+    }
 }
 
 // ── 参数 ────────────────────────────────────────────────────────────────────
@@ -64,6 +73,9 @@ pub(crate) fn normalize(input: &contracts::AgentDefinitionExportInput) -> Result
 
 /// 参数闭集：目标 Definition 与其版本号、冻结的已发布版本与媒体类型。没有确认位：确认即 owner 审批。
 pub(crate) fn validate_params(p: &Params) -> Result<(), Refusal> {
+    if p.agent_team_export.is_some() {
+        return crate::team_transfer::validate_export_params(p);
+    }
     let value = p.to_json();
     if value.as_object().is_none_or(|map| {
         map.keys().any(|k| {
@@ -97,7 +109,7 @@ pub(crate) fn input(p: &Params) -> Result<ExportInput, Refusal> {
     })
 }
 
-fn execution_params(ae: &Execution) -> Result<Params, Refusal> {
+pub(crate) fn execution_params(ae: &Execution) -> Result<Params, Refusal> {
     ae.parameters
         .as_ref()
         .and_then(|v| v.get("params"))
@@ -109,7 +121,7 @@ fn execution_params(ae: &Execution) -> Result<Params, Refusal> {
 
 /// 05 §2.12 的唯一策略：Definition `export`、TENANT_ONLY、TEMPORAL、owner 审批、RESOURCE_EXPORT、
 /// ResultExposure EXPORT、无 quota/meter。
-fn definition_matches(def: &Definition) -> bool {
+pub(crate) fn definition_matches(def: &Definition) -> bool {
     def.component_type_key == "core"
         && def.target_type == "RESOURCE"
         && def.tenant_rule == "SESSION_TENANT"
@@ -159,8 +171,11 @@ pub(crate) async fn target(
     frozen: Option<Uuid>,
     lock: bool,
 ) -> Result<Target, Refusal> {
+    if def.action_key == crate::team_transfer::EXPORT {
+        return crate::team_transfer::export_target(conn, tenant, def, p, frozen, lock).await;
+    }
     validate_params(p)?;
-    if !definition_matches(def) {
+    if p.agent_team_export.is_some() || !definition_matches(def) {
         return Err(blocked());
     }
     let id = p.resource_id.ok_or_else(invalid)?;
@@ -181,8 +196,18 @@ pub(crate) async fn target(
     })
 }
 
-/// 准入门：冻结的版本属于该 Definition 且已发布，格式两端已登记。
-pub(crate) async fn gate(conn: &mut PgConnection, tenant: Uuid, p: &Params) -> Result<(), Refusal> {
+/// 准入门：冻结的版本属于该 Definition 且已发布，格式两端已登记。团队导出另核对每个成员
+/// （DD-131(3)）。
+pub(crate) async fn gate(
+    gov: &crate::governance::Governance,
+    conn: &mut PgConnection,
+    tenant: Uuid,
+    initiator: Uuid,
+    p: &Params,
+) -> Result<(), Refusal> {
+    if p.agent_team_export.is_some() {
+        return crate::team_transfer::export_gate(gov, conn, tenant, initiator, p).await;
+    }
     let input = input(p)?;
     let definition = p.resource_id.ok_or_else(invalid)?;
     let v = crate::agent_version::version(conn, tenant, input.version_asset_id, false)
@@ -199,9 +224,15 @@ pub(crate) async fn gate(conn: &mut PgConnection, tenant: Uuid, p: &Params) -> R
 
 // ── owner 审批（TARGET_OWNER、可自批）────────────────────────────────────────
 
+/// Agent 导出是 TARGET_OWNER；团队导出是 Team 与各成员 Definition owner 的去重集合
+/// （ALL_AFFECTED_OWNERS，DD-131(3)）。两者都可自批、无角色要求。
 pub(crate) fn owner_policy(action: &str, policy: &crate::governance::Policy) -> bool {
-    is_action(action)
-        && policy.owner_requirement == "TARGET_OWNER"
+    let owner = match action {
+        EXPORT => "TARGET_OWNER",
+        crate::team_transfer::EXPORT => "ALL_AFFECTED_OWNERS",
+        _ => return false,
+    };
+    policy.owner_requirement == owner
         && policy.self_approval == "ALLOW"
         && policy.role_requirements.is_empty()
 }
@@ -211,6 +242,9 @@ pub(crate) async fn freeze_owner(
     tx: &mut Transaction<'_, Postgres>,
     ae: &Execution,
 ) -> Result<(), Refusal> {
+    if ae.action_key == crate::team_transfer::EXPORT {
+        return crate::team_transfer::freeze_export(tx, ae).await;
+    }
     let r = crate::agent_definition::resource(tx, ae.tenant_id, ae.target_id, true)
         .await?
         .ok_or_else(conflict)?;
@@ -243,6 +277,15 @@ pub(crate) async fn freeze_owner(
     Ok(())
 }
 
+/// 审批冻结的 owner 名单：Agent 导出是唯一的 TARGET_OWNER，团队导出是去重的全部受影响 owner。
+pub(crate) fn frozen_owners(ae: &Execution) -> Result<Vec<contracts::AffectedOwnerRef>, Refusal> {
+    if ae.action_key == crate::team_transfer::EXPORT {
+        crate::team_transfer::frozen_owners(ae)
+    } else {
+        Ok(vec![frozen_owner(ae)?])
+    }
+}
+
 pub(crate) fn frozen_owner(ae: &Execution) -> Result<contracts::AffectedOwnerRef, Refusal> {
     let unavailable = || Refusal::Unavailable("export approval owner unavailable".into());
     let parameters = ae.parameters.as_ref().ok_or_else(unavailable)?;
@@ -267,6 +310,9 @@ pub(crate) async fn target_current(
     conn: &mut PgConnection,
     ae: &Execution,
 ) -> Result<bool, Refusal> {
+    if ae.action_key == crate::team_transfer::EXPORT {
+        return crate::team_transfer::export_target_current(g, conn, ae).await;
+    }
     let owner = match frozen_owner(ae) {
         Ok(owner) => owner,
         Err(Refusal::Conflict(_)) => return Ok(false),
@@ -307,7 +353,13 @@ pub(crate) async fn prewrite(
     ae: &Execution,
     p: &Params,
 ) -> Result<i32, Refusal> {
-    let input = input(p)?;
+    // 团队包没有单一来源版本：成员版本在审批开始时冻结于参数（DD-131(3)）。
+    let (source_asset, media) = if ae.action_key == crate::team_transfer::EXPORT {
+        (None, crate::team_transfer::export_input(p)?)
+    } else {
+        let input = input(p)?;
+        (Some(input.version_asset_id), input.media)
+    };
     let version = ae.frozen_target_version().ok_or_else(conflict)?;
     let asset = package_asset_id(ae.id);
     sqlx::query(
@@ -332,10 +384,10 @@ pub(crate) async fn prewrite(
     .bind(asset)
     .bind(ae.tenant_id)
     .bind(ae.target_id)
-    .bind(input.version_asset_id)
+    .bind(source_asset)
     .bind(version)
-    .bind(FORMAT_KEY)
-    .bind(input.media.wire())
+    .bind(format_key(&ae.action_key))
+    .bind(media.wire())
     .bind(ae.id)
     .bind(ae.operation_id)
     .execute(&mut **tx)
@@ -347,7 +399,7 @@ fn workflow_target(ae: &Execution, workflow: &str) -> Value {
     json!({
         "actionExecutionId": ae.id, "sourceResourceId": ae.target_id,
         "packageAssetId": package_asset_id(ae.id), "workflowId": workflow,
-        "formatKey": FORMAT_KEY,
+        "formatKey": format_key(&ae.action_key),
     })
 }
 
@@ -438,18 +490,19 @@ async fn avatar_bytes(
     }
 }
 
-/// `buzz-agent-snapshot@1`：读冻结的已发布版本（content 完整性以 config_hash 复核），按 DD-131(2)
-/// 只取可移植字段编码。确定的不成立返回拒绝；外部读取不明返回 Unavailable。
-async fn build_agent(
+/// 一个已发布版本的 DD-131(2) 清单与可作 PNG 图像体的内联头像字节：读冻结版本（content 完整性
+/// 以 config_hash 复核），只取可移植字段。Agent 包与团队包的每个成员同用（DD-131(3)）。
+pub(crate) async fn version_manifest(
     state: &crate::service_api::ServiceState,
-    ae: &Execution,
-    input: &ExportInput,
-) -> Result<Built, Refusal> {
+    tenant: Uuid,
+    version_asset_id: Uuid,
+    definition: Uuid,
+) -> Result<(Value, Option<Vec<u8>>, Uuid), Refusal> {
     let mut conn = state.pool.acquire().await?;
-    let v = crate::agent_version::version(&mut conn, ae.tenant_id, input.version_asset_id, false)
+    let v = crate::agent_version::version(&mut conn, tenant, version_asset_id, false)
         .await?
         .ok_or_else(conflict)?;
-    if v.agent_resource_id != ae.target_id || !matches!(v.state.as_str(), "PUBLISHED" | "RETIRED") {
+    if v.agent_resource_id != definition || !matches!(v.state.as_str(), "PUBLISHED" | "RETIRED") {
         return Err(conflict());
     }
     let skill_ids: Vec<Uuid> = v.content["skillVersionAssetIds"]
@@ -470,7 +523,7 @@ async fn build_agent(
              join catalog.skill_definition d on d.resource_id=v.skill_resource_id
              order by i.n",
         )
-        .bind(ae.tenant_id)
+        .bind(tenant)
         .bind(&skill_ids)
         .fetch_all(&mut *conn)
         .await?
@@ -480,7 +533,7 @@ async fn build_agent(
         .as_str()
         .filter(|s| !s.trim().is_empty())
     {
-        Some(url) => avatar_bytes(state, ae.tenant_id, url).await?,
+        Some(url) => avatar_bytes(state, tenant, url).await?,
         None => None,
     };
     let data_url = avatar
@@ -498,14 +551,27 @@ async fn build_agent(
     let manifest =
         crate::snapshot_package::agent_manifest(&v.content, data_url.as_deref(), &skills)
             .ok_or_else(conflict)?;
+    // 只有内联的头像才可作图像体，避免超出包上限。
+    Ok((manifest, data_url.and(avatar), v.asset_id))
+}
+
+/// `buzz-agent-snapshot@1`：按 DD-131(2) 只取冻结已发布版本的可移植字段编码。确定的不成立返回
+/// 拒绝；外部读取不明返回 Unavailable。
+async fn build_agent(
+    state: &crate::service_api::ServiceState,
+    ae: &Execution,
+    input: &ExportInput,
+) -> Result<Built, Refusal> {
+    let (manifest, image, source) =
+        version_manifest(state, ae.tenant_id, input.version_asset_id, ae.target_id).await?;
     let json_bytes = serde_json::to_vec_pretty(&manifest).map_err(|_| conflict())?;
     let bytes = match input.media {
         MediaType::Json => json_bytes,
         MediaType::Png => crate::snapshot_package::png_with_manifest(
             crate::snapshot_package::AGENT_PNG_KEYWORD,
             &json_bytes,
-            // 原版图像体就是头像；只有内联的头像才作为图像体，避免超出包上限。
-            data_url.as_ref().and(avatar.as_deref()),
+            // 原版图像体就是头像。
+            image.as_deref(),
         ),
     };
     if bytes.len() > input.media.limit() {
@@ -522,13 +588,14 @@ async fn build_agent(
         ),
         bytes,
         media: input.media,
-        source_asset: Some(v.asset_id),
+        source_asset: Some(source),
     })
 }
 
 async fn build(state: &crate::service_api::ServiceState, ae: &Execution) -> Result<Built, Refusal> {
     match ae.action_key.as_str() {
         EXPORT => build_agent(state, ae, &input(&execution_params(ae)?)?).await,
+        crate::team_transfer::EXPORT => crate::team_transfer::build_team(state, ae).await,
         _ => Err(conflict()),
     }
 }
@@ -652,11 +719,16 @@ async fn advance_inner(
         return Err(conflict());
     }
     // 生成期间失去 export 许可（撤权、转移 owner、删除）即确定拒绝。
-    let current = crate::agent_definition::resource(&mut tx, ae.tenant_id, ae.target_id, false)
-        .await?
-        .filter(|r| r.state == "ACTIVE");
+    let current = if ae.action_key == crate::team_transfer::EXPORT {
+        crate::team_transfer::export_source(&mut tx, &ae).await?
+    } else {
+        crate::agent_definition::resource(&mut tx, ae.tenant_id, ae.target_id, false)
+            .await?
+            .filter(|r| r.state == "ACTIVE")
+            .map(|r| (r.id, r.version, r.home_workspace_id))
+    };
     let fresh = match current {
-        Some(r) => {
+        Some((id, version, workspace_id)) => {
             state
                 .governance
                 .evaluate(
@@ -667,9 +739,9 @@ async fn advance_inner(
                     },
                     &def,
                     &Target {
-                        id: r.id,
-                        version: r.version,
-                        workspace_id: r.home_workspace_id,
+                        id,
+                        version,
+                        workspace_id,
                     },
                 )
                 .await
@@ -822,7 +894,10 @@ async fn fail(
 fn transfer_evidence(ae: &Execution, digest: Option<&str>) -> Vec<crate::audit::Evidence> {
     let mut evidence = vec![
         crate::audit::Evidence::new(contracts::EvidenceKind::ActionExecutionId, ae.id),
-        crate::audit::Evidence::new(contracts::EvidenceKind::TransferFormat, FORMAT_KEY),
+        crate::audit::Evidence::new(
+            contracts::EvidenceKind::TransferFormat,
+            format_key(&ae.action_key),
+        ),
         crate::audit::Evidence::new(
             contracts::EvidenceKind::ExportPackageAssetId,
             package_asset_id(ae.id),
