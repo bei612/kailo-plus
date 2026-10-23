@@ -5171,6 +5171,10 @@ class AgentInstallationView {
   final bool? canUpgrade;
   final AgentInstallationViewChannelBinding? channelBinding;
   final AgentInstallationViewExecutionPermission? executionPermission;
+
+  ///DD-147(1)：该 Installation owner 在本 Tenant 的显示名，只在其 TenantMembership 与 HumanIdentity 仍为
+  ///ACTIVE 时给出；可读条件与本视图相同。缺省时客户端显示原版 owner unavailable，不以 Installation 目录合成作者名（DD-117(6)）。
+  final String? ownerDisplayName;
   final String ownerPrincipalId;
   final String pinnedVersionAssetId;
   final AgentInstallationProjectionView? projection;
@@ -5196,6 +5200,7 @@ class AgentInstallationView {
     this.canUpgrade,
     this.channelBinding,
     this.executionPermission,
+    this.ownerDisplayName,
     required this.ownerPrincipalId,
     required this.pinnedVersionAssetId,
     this.projection,
@@ -5237,6 +5242,7 @@ class AgentInstallationView {
         : AgentInstallationViewExecutionPermission.fromJson(
             json["executionPermission"],
           ),
+    ownerDisplayName: json["ownerDisplayName"],
     ownerPrincipalId: json["ownerPrincipalId"],
     pinnedVersionAssetId: json["pinnedVersionAssetId"],
     projection: json["projection"] == null
@@ -5274,6 +5280,7 @@ class AgentInstallationView {
     "canUpgrade": canUpgrade,
     "channelBinding": channelBinding?.toJson(),
     "executionPermission": executionPermission?.toJson(),
+    "ownerDisplayName": ownerDisplayName,
     "ownerPrincipalId": ownerPrincipalId,
     "pinnedVersionAssetId": pinnedVersionAssetId,
     "projection": projection?.toJson(),
@@ -20008,6 +20015,11 @@ class WebProfileUpdateRequest {
 ///Web HUMAN 的原 Buzz 消息语义输入；身份、Channel、回复祖先与 mention 公钥均由 BFF 在原 scope 中解析，不接受 raw tags 或
 ///signed event。
 class WebPublishMessageRequest {
+  ///DD-148 原 Agent 收件人栏：须为同一请求 mentionInstallationIds 的子集（否则 SCOPE_GUARD_FAILED 前的 400）；BFF
+  ///排序去重并冻结于同一发布意图（幂等重放逐项比较），对其中经准入并实际投递的 Installation 的 AGENT 公钥签原版 ["mention", <pubkey>,
+  ///"agent-address"] 标签，与 p 并存，只作呈现元数据，不改变通知或 agent.invoke 准入；与
+  ///editEventId、deleteEventId、sendToChannelSourceEventId 互斥，私聊目标拒绝。缺省为空。
+  final List<String>? addressedInstallationIds;
   final List<WebMessageAttachment>? attachments;
   final String content;
 
@@ -20056,6 +20068,7 @@ class WebPublishMessageRequest {
   final bool? suppressLinkPreviews;
 
   WebPublishMessageRequest({
+    this.addressedInstallationIds,
     this.attachments,
     required this.content,
     this.deleteEventId,
@@ -20070,39 +20083,44 @@ class WebPublishMessageRequest {
     this.suppressLinkPreviews,
   });
 
-  factory WebPublishMessageRequest.fromJson(Map<String, dynamic> json) =>
-      WebPublishMessageRequest(
-        attachments: json["attachments"] == null
-            ? null
-            : List<WebMessageAttachment>.from(
-                json["attachments"]!.map(
-                  (x) => WebMessageAttachment.fromJson(x),
-                ),
-              ),
-        content: json["content"],
-        deleteEventId: json["deleteEventId"],
-        editEventId: json["editEventId"],
-        linkPreviewSnapshotIds: json["linkPreviewSnapshotIds"] == null
-            ? null
-            : List<String>.from(json["linkPreviewSnapshotIds"]!.map((x) => x)),
-        mentionInstallationIds: json["mentionInstallationIds"] == null
-            ? null
-            : List<String>.from(json["mentionInstallationIds"]!.map((x) => x)),
-        mentionPubkeys: json["mentionPubkeys"] == null
-            ? null
-            : List<String>.from(json["mentionPubkeys"]!.map((x) => x)),
-        messageType: json["messageType"] == null
-            ? null
-            : webMessageTypeValues.map[json["messageType"]]!,
-        parentEventId: json["parentEventId"],
-        referenceMentionPubkeys: json["referenceMentionPubkeys"] == null
-            ? null
-            : List<String>.from(json["referenceMentionPubkeys"]!.map((x) => x)),
-        sendToChannelSourceEventId: json["sendToChannelSourceEventId"],
-        suppressLinkPreviews: json["suppressLinkPreviews"],
-      );
+  factory WebPublishMessageRequest.fromJson(
+    Map<String, dynamic> json,
+  ) => WebPublishMessageRequest(
+    addressedInstallationIds: json["addressedInstallationIds"] == null
+        ? null
+        : List<String>.from(json["addressedInstallationIds"]!.map((x) => x)),
+    attachments: json["attachments"] == null
+        ? null
+        : List<WebMessageAttachment>.from(
+            json["attachments"]!.map((x) => WebMessageAttachment.fromJson(x)),
+          ),
+    content: json["content"],
+    deleteEventId: json["deleteEventId"],
+    editEventId: json["editEventId"],
+    linkPreviewSnapshotIds: json["linkPreviewSnapshotIds"] == null
+        ? null
+        : List<String>.from(json["linkPreviewSnapshotIds"]!.map((x) => x)),
+    mentionInstallationIds: json["mentionInstallationIds"] == null
+        ? null
+        : List<String>.from(json["mentionInstallationIds"]!.map((x) => x)),
+    mentionPubkeys: json["mentionPubkeys"] == null
+        ? null
+        : List<String>.from(json["mentionPubkeys"]!.map((x) => x)),
+    messageType: json["messageType"] == null
+        ? null
+        : webMessageTypeValues.map[json["messageType"]]!,
+    parentEventId: json["parentEventId"],
+    referenceMentionPubkeys: json["referenceMentionPubkeys"] == null
+        ? null
+        : List<String>.from(json["referenceMentionPubkeys"]!.map((x) => x)),
+    sendToChannelSourceEventId: json["sendToChannelSourceEventId"],
+    suppressLinkPreviews: json["suppressLinkPreviews"],
+  );
 
   Map<String, dynamic> toJson() => _stripNulls({
+    "addressedInstallationIds": addressedInstallationIds == null
+        ? null
+        : List<dynamic>.from(addressedInstallationIds!.map((x) => x)),
     "attachments": attachments == null
         ? null
         : List<dynamic>.from(attachments!.map((x) => x.toJson())),
