@@ -196,8 +196,8 @@ one (`model_call_mode=NONE`, no key) has no facts to render and is refused.
   vendor default is configured in Wren.
 - The listener enforces strict keys, and its keys come only from Core
   projections (an Agent Installation, or a binding that selects
-  `PLATFORM_LLM_ROUTE`, DD-92). The `1.1.0-native-page` entry release allows
-  `PLATFORM_LLM_ROUTE`, and a binding that selects it gets its own
+  `PLATFORM_LLM_ROUTE`, DD-92). The native page entry releases (`1.1.0-native-page`
+  and later) allow `PLATFORM_LLM_ROUTE`, and a binding that selects it gets its own
   Core-projected key (DD-128, "Native page entry model key" below), named by
   `WREN_MODEL_API_KEY_NAME` and put only in `WREN_AI_SECRET_ENV_FILE`; the
   original loader refuses startup if the named key is missing. Never reuse an
@@ -207,7 +207,8 @@ one (`model_call_mode=NONE`, no key) has no facts to render and is refused.
 
 ### Native page entry model key (DD-128)
 
-The native page entry release `1.1.0-native-page` declares
+The native page entry release (`1.1.0-native-page`; `1.2.0-native-page` adds the
+DD-133 `KAILO_EMBED` presentation) declares
 `allowedModelCallModes=[NONE, PLATFORM_LLM_ROUTE]`. A Tenant admin binds it with
 `tools/component-release/flow/component-bind.mjs --model-route-ids <chat>,<embedding>
 --meter-keys component_model_tokens`; the routes must be Tenant-scoped for a
