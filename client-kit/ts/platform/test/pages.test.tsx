@@ -3287,7 +3287,7 @@ describe("AuditPage 范围审计", () => {
     expect((select.querySelector("option[value='']") as HTMLOptionElement).disabled).toBe(true);
     await choose("w-2");
     expect(section.textContent).toContain("tenant.admin.grant");
-    await click(button(section, "Buzz event"));
+    await click(button(section, "Relay event"));
     expect(section.textContent).toContain("You do not have audit permission for this scope.");
     expect(section.textContent).not.toContain("leak-me");
     expect(section.querySelector("[data-testid=evidence-available]")).toBeNull();
@@ -3348,7 +3348,7 @@ describe("AuditPage 范围审计", () => {
     expect(section.textContent).toContain("wf-123");
     expect(section.textContent).toContain("version 4");
     expect(section.textContent).toContain("Workflow engine");
-    await click(button(section, "Buzz event"));
+    await click(button(section, "Relay event"));
     expect(section.textContent).toContain("Unavailable: restricted evidence you are not authorized to view");
     await click(button(section, "Unrecognized evidence"));
     expect(section.textContent).toContain("Unavailable: the evidence kind is not recognized");
