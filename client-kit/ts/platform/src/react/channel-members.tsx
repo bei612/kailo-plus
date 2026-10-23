@@ -123,8 +123,10 @@ export function useRosterMembers(roster: MemberRoster, enabled = true) {
   });
 }
 
-export function ChannelMembersBar({ roster, onToggleMembers, onManageChannel, variant = "inline", huddle }: {
+export function ChannelMembersBar({ roster, onToggleMembers, onManageChannel, variant = "inline", huddle, fallbackMemberCount }: {
   roster: MemberRoster;
+  /** Original `membersQuery.data?.length ?? channel.memberCount`: the admitted directory count until the roster reads. */
+  fallbackMemberCount?: number;
   onToggleMembers: () => void;
   onManageChannel: () => void;
   /** Original ChannelScreen compacts the actions while an auxiliary panel leaves < 760px. */
@@ -136,7 +138,7 @@ export function ChannelMembersBar({ roster, onToggleMembers, onManageChannel, va
   const members = useRosterMembers(roster);
   const memberCount = members.isSuccess
     ? members.data.filter((member) => member.state === WorkspaceMembershipState.Active).length
-    : null;
+    : fallbackMemberCount ?? null;
   const hasHuddleHost = useHasHuddleHost();
   const huddleIndicator = huddle && hasHuddleHost ? (
     <HuddleIndicator channelName={huddle.channelName} parent={huddle.parent}

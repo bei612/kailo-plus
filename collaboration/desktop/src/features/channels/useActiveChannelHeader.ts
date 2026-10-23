@@ -42,7 +42,7 @@ export function useActiveChannelHeader(activeChannel: Channel, currentPubkey?: s
     const profilePubkey = person.pubkeys.length === 1 && profileKeys.includes(person.pubkeys[0]!) ? person.pubkeys[0] : undefined;
     const profile = profilePubkey ? profiles?.[profilePubkey] : undefined;
     return { id: person.principalId, displayName: person.displayName, avatarUrl: profile?.avatarUrl ?? null,
-      ...(profilePubkey ? { profilePubkey } : {}) };
+      presencePubkeys: person.pubkeys, ...(profilePubkey ? { profilePubkey } : {}) };
   });
   return {
     activeChannelTitle: people && isGenericDmChannelName(activeChannel.name)

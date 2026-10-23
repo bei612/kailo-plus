@@ -49,6 +49,8 @@ import {
 } from "@client-kit/platform/react/pages";
 import { ContentSurface, GradientLayer } from "@client-kit/platform/react/surfaces";
 import { ChannelMembersBar, ChannelMembersDialog, type MemberProfileRequest } from "@client-kit/platform/react/channel-members";
+import { MemberHover, useOptionalMemberProfile, type MemberTarget } from "@client-kit/platform/react/members";
+import { UserProfilePopoverSurface } from "@client-kit/platform/react/pulse";
 import { ChannelManagementSheet } from "@client-kit/platform/react/channel-management-sheet";
 import { ChannelEphemeralBadge } from "@client-kit/platform/react/ephemeral-channel";
 import { getChannelDescription } from "@client-kit/platform/react/channel-description";
@@ -288,7 +290,16 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
   const dmHeaderPeople = searchDirectory.isSuccess && !searchDirectory.isFetching
     ? resolveConversationHeaderParticipants(chosenConversation, session.tenantPrincipalId, searchDirectory.data.people) : null;
   const dmHeaderTitle = dmHeaderPeople ? formatDmParticipantDisplayName(dmHeaderPeople) : null;
-  const dmHeaderParticipants = dmHeaderPeople?.map(person => ({id:person.principalId,displayName:person.displayName,avatarUrl:null,presencePubkeys:person.pubkeys})) ?? [];
+  // Original ChannelScreenHeader 1:1 DM identity: the other person's profile avatar inside
+  // UserProfilePopover, read with this conversation as the profile proof.
+  const dmHeaderPerson = dmHeaderPeople?.length === 1 ? dmHeaderPeople[0] : undefined;
+  const dmHeaderTarget: MemberTarget | undefined = chosenConversation && dmHeaderPerson?.pubkeys[0]
+    ? {conversationId: chosenConversation.id, principalId: dmHeaderPerson.principalId, pubkey: dmHeaderPerson.pubkeys[0],
+      alternatePubkeys: dmHeaderPerson.pubkeys, displayName: dmHeaderPerson.displayName} : undefined;
+  const dmHeaderProfileQuery = useOptionalMemberProfile(dmHeaderTarget);
+  const dmHeaderProfile = dmHeaderProfileQuery.isSuccess && !dmHeaderProfileQuery.isFetching ? dmHeaderProfileQuery.data : undefined;
+  const dmHeaderParticipants = dmHeaderPeople?.map(person => ({id:person.principalId,displayName:person.displayName,
+    avatarUrl:person === dmHeaderPerson ? dmHeaderProfile?.avatarUrl ?? null : null,presencePubkeys:person.pubkeys})) ?? [];
   const [channelActivity, setChannelActivity] = useState<ReadonlyMap<string, string | null>>(() => new Map());
   const sidebarScrollRef = useRef<HTMLDivElement>(null);
   const [sidebarUnread, setSidebarUnread] = useState<ReadonlySet<string>>(() => new Set());
@@ -750,15 +761,22 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
               leadingContent={<ChannelGlyph channel={activeRow} className="h-4 w-4 translate-y-px text-muted-foreground" />}
               actions={<ChannelMembersBar roster={{kind: "workspace", workspaceId: active}} onToggleMembers={() => setMembersOpenFor(membersOpenFor === active ? null : active)}
                 onManageChannel={() => setManageOpenFor(active)} variant={headerActionsCompact ? "compact" : "inline"}
+                fallbackMemberCount={activeRow.memberCount}
                 huddle={{parent: {kind: "workspace", workspaceId: active, channelId: channel.data.channelId},
                   channelName: buildHuddleChannelName({kind: "channel", channelName: channel.data.name}),
                   startDisabled: channel.data.archived === true}} />}
               onCopyTitle={async (title) => {
                 try { await writeTextToClipboard(title); toast.success(translate(getLocale(), "platform.profile.copied")); }
                 catch { toast.error(translate(getLocale(), "platform.profile.copyFailed")); }
-              }} /> : tab === "conversation" && dmHeaderTitle !== null ? <AvatarHostProvider value={{locale:getLocale(),rewriteMediaUrl:url=>url}}>
+              }} /> : tab === "conversation" && dmHeaderTitle !== null ? <AvatarHostProvider value={{locale:getLocale(),rewriteMediaUrl:url=>dmHeaderProfile?.avatarMediaPaths[url]??url}}>
               <ChatHeader title={dmHeaderTitle} channelType="dm" visibility="private"
-                leadingContent={<DmHeaderParticipants participants={dmHeaderParticipants} title={dmHeaderTitle} />}
+                leadingContent={<DmHeaderParticipants participants={dmHeaderParticipants} title={dmHeaderTitle}
+                  renderIdentity={(participant, avatar) => dmHeaderTarget && chosenConversation && participant.id === dmHeaderTarget.principalId
+                    ? <UserProfilePopoverSurface pubkey={dmHeaderTarget.pubkey} triggerElement="span"
+                        triggerAriaLabel={translate(getLocale(), "members.openProfile", {name: participant.displayName})}
+                        onOpenProfile={() => setMemberProfileRequest({...dmHeaderTarget, conversationId: chosenConversation.id, nonce: Date.now()})}
+                        renderBody={(props) => <MemberHover {...props} target={dmHeaderTarget} presencePubkeys={dmHeaderTarget.alternatePubkeys} />}>{avatar}</UserProfilePopoverSurface>
+                    : avatar} />}
                 titleAdornment={dmHeaderPeople?.length === 1 ? <UserNameIndicators className="ml-1"
                   pubkey={dmHeaderPeople[0]?.pubkeys[0]} pubkeys={dmHeaderPeople[0]?.pubkeys} size="dm" /> : null}
                 actions={chosenConversation ? <ChannelMembersBar roster={{kind: "conversation", conversation: chosenConversation}}

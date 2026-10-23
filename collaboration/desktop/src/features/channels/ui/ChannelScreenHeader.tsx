@@ -23,10 +23,14 @@ import type { Channel } from "@/shared/api/types";
 import { writeTextToClipboard } from "@/shared/lib/clipboard";
 import { AvatarHostProvider } from "@client-kit/platform/react/profile/avatar-host";
 import { rewriteRelayUrl } from "@/shared/lib/mediaUrl";
+import { Markdown } from "@/shared/ui/markdown";
+import { UserNameIndicators } from "@client-kit/platform/react/user-status";
 
 type ChannelScreenHeaderProps = {
   activeChannel: Channel;
   activeChannelEphemeralDisplay: EphemeralChannelDisplay | null;
+  /** Original ChannelScreen shouldCompactHeaderActions: the members bar collapses into one menu. */
+  actionsVariant?: "inline" | "compact";
   chromeWrapperRef?: React.Ref<HTMLDivElement>;
   currentPubkey?: string;
 };
@@ -34,6 +38,7 @@ type ChannelScreenHeaderProps = {
 export function ChannelScreenHeader({
   activeChannel,
   activeChannelEphemeralDisplay,
+  actionsVariant = "inline",
   chromeWrapperRef,
   currentPubkey,
 }: ChannelScreenHeaderProps) {
@@ -80,10 +85,15 @@ export function ChannelScreenHeader({
                 role={participant.isAgent ? "bot" : undefined} triggerElement="span"
                 triggerAriaLabel={translate(locale, "platform.settings.profile")}>{avatar}</UserProfilePopover> : avatar} />
           : activeChannel.channelType !== "dm" ? <ChannelGlyph channel={activeChannel} className="h-4 w-4 translate-y-px text-muted-foreground" /> : undefined}
+        // Original titleAdornment: a 1:1 DM shows the other person's status next to the title.
+        titleAdornment={activeChannel.channelType === "dm" && activeDmHeaderParticipants.length === 1
+          ? <UserNameIndicators className="ml-1" pubkey={activeDmHeaderParticipants[0]?.profilePubkey}
+              pubkeys={activeDmHeaderParticipants[0]?.presencePubkeys} size="dm" /> : null}
         statusBadge={activeChannelEphemeralDisplay ? <ChannelHeaderStatusBadge ephemeralDisplay={activeChannelEphemeralDisplay} /> : undefined}
         actions={roster && rosterId ? <ChannelMembersBar roster={roster}
           onToggleMembers={() => setMembersOpenFor(membersOpenFor === rosterId ? null : rosterId)}
-          onManageChannel={() => setManageOpenFor(rosterId)} /> : undefined} />
+          onManageChannel={() => setManageOpenFor(rosterId)} variant={actionsVariant}
+          fallbackMemberCount={activeChannel.memberCount} /> : undefined} />
       {roster && rosterId ? <ChannelManagementSheet key={`manage:${rosterId}`} roster={roster}
         open={manageOpenFor === rosterId} onOpenChange={(open) => setManageOpenFor(open ? rosterId : null)} isDark={isDark}
         channel={activeChannel.channelType === "dm"
@@ -97,7 +107,9 @@ export function ChannelScreenHeader({
         management={workspace ? { refresh: () => {
           void queryClient.invalidateQueries({ queryKey: channelsQueryKey });
           void queryClient.invalidateQueries({ queryKey: workspaceVisibilityQueryKey });
-        } } : undefined}
+        },
+        // DD-125(4) original Canvas view: the adopted CONTROL-authored body in the Desktop Markdown renderer.
+        renderCanvas: (content) => <Markdown content={content} /> } : undefined}
         onOpenMembers={() => { window.requestAnimationFrame(() => setMembersOpenFor(rosterId)); }}
         workflows={workspace ? {
           onOpenWorkflow: (workflowId) => { setManageOpenFor(null); void navigate({ to: "/platform/workflows/$workflowId", params: { workflowId }, search: { workspaceId: workspace.id } }); },

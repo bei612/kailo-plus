@@ -10,6 +10,7 @@ import { PlatformProvider } from "../src/react/context";
 import {
   ChannelManagementSheet, type ChannelManagementChannel, type ChannelManagementHost,
 } from "../src/react/channel-management-sheet";
+import { ChannelMembersBar } from "../src/react/channel-members";
 import { TransportError, type BffReply, type BffRequest } from "../src/transport";
 import { click, render, settle, type } from "./render";
 
@@ -23,7 +24,7 @@ beforeEach(() => {
 });
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
-type Hints = { updateActionKey?: string; canReopen?: boolean; leaveActionKey?: string; lifecycleActionKey?: string };
+type Hints = { updateActionKey?: string; canReopen?: boolean; leaveActionKey?: string; joinActionKey?: string; lifecycleActionKey?: string };
 
 const baseChannel: ChannelManagementChannel = {
   channelId: "c", name: "general", description: "About", channelType: "stream", visibility: "open", ttlSeconds: null, topic: "Old topic",
@@ -35,13 +36,14 @@ const recorded = (command: ActionCommand, operationId = "operation"): BffReply =
 } });
 
 function mount(hints: Hints, options: { channel?: Partial<ChannelManagementChannel>; action?: (command: ActionCommand) => BffReply;
-  publishTopic?: ChannelManagementHost["publishTopic"] } = {}) {
+  publishTopic?: ChannelManagementHost["publishTopic"]; member?: boolean } = {}) {
   const { lifecycleActionKey, ...directoryHints } = hints;
   const send = vi.fn(async (request: BffRequest): Promise<BffReply> => {
     if (request.path === "/api/v1/workspaces/w/members")
       return { status: 200, body: [{ principalId: "me", displayName: "Ada", state: "ACTIVE", pubkeys: ["e".repeat(64)] }] };
     if (request.path === "/api/v1/discoverable-workspaces?channelId=c") return { status: 200, body: { items: [{
-      id: "w", visibility: "open", isMember: true, memberCount: 1, membershipState: "ACTIVE", createdAt: "2026-10-16T00:00:00Z",
+      id: "w", visibility: "open", isMember: options.member ?? true, memberCount: 1,
+      ...(options.member === false ? {} : { membershipState: "ACTIVE" }), createdAt: "2026-10-16T00:00:00Z",
       channel: { channelId: "c", channelType: "stream", name: "general", archived: options.channel?.archived === true },
       ...directoryHints,
     }] } };
@@ -190,6 +192,37 @@ describe("original moderation rows over governed hints", () => {
     expect(m.host.refresh).toHaveBeenCalled();
   });
 
+  it("restores the original Join channel row for a non-member and submits workspace.join", async () => {
+    const m = mount({ joinActionKey: "workspace.join" }, { member: false });
+    await m.render();
+    await vi.waitFor(() => expect(q("[data-testid=channel-management-join]")).not.toBeNull());
+    const row = q("[data-testid=channel-management-join]")!;
+    expect(row.textContent).toContain("Join channel");
+    expect(row.textContent).toContain("Add this channel to your sidebar");
+    expect(q("[data-testid=channel-management-leave]")).toBeNull();
+    await click(row);
+    await settle();
+    const commands = m.actions();
+    expect(commands).toHaveLength(1);
+    expect(commands[0]).toMatchObject({ actionKey: "workspace.join", workspaceId: "w" });
+    expect(m.host.refresh).toHaveBeenCalled();
+    expect(m.opened).not.toHaveBeenCalledWith(false);
+    expect(q("[data-testid=channel-management-join-outcome]")?.textContent).toContain("Operation: operation");
+  });
+
+  it("offers no Join row to a member even with a join hint", async () => {
+    const member = mount({ joinActionKey: "workspace.join" });
+    await member.render();
+    expect(q("[data-testid=channel-management-join]")).toBeNull();
+  });
+
+  it("offers no Join row on an archived channel even with a join hint", async () => {
+    const archived = mount({ joinActionKey: "workspace.join" }, { member: false, channel: { archived: true } });
+    await archived.render();
+    expect(q("[data-testid=channel-management-join]")).toBeNull();
+    expect(archived.actions()).toHaveLength(0);
+  });
+
   it("confirms Archive before submitting the existing workspace.suspend", async () => {
     const m = mount({ lifecycleActionKey: "workspace.suspend" });
     await m.render();
@@ -256,5 +289,18 @@ describe("member topic publication", () => {
     expect(q("[data-testid=channel-management-topic-dialog]")).toBeNull();
     expect(m.host.refresh).toHaveBeenCalled();
     expect(m.actions()).toHaveLength(0);
+  });
+});
+
+describe("original ChannelMembersBar count", () => {
+  it("shows the directory memberCount until the roster read settles (original channel.memberCount)", async () => {
+    const send = vi.fn((request: BffRequest): Promise<BffReply> => request.path === "/api/v1/workspaces/w/members"
+      ? new Promise<BffReply>(() => {}) : Promise.resolve({ status: 404, body: {} }));
+    const cache = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+    await render(<QueryClientProvider client={cache}><PlatformProvider client={createBffClient({ send })} locale="en">
+      <ChannelMembersBar fallbackMemberCount={7} onManageChannel={() => {}} onToggleMembers={() => {}} roster={{ kind: "workspace", workspaceId: "w" }} />
+    </PlatformProvider></QueryClientProvider>);
+    await settle();
+    expect(q("[data-testid=channel-members-trigger]")?.getAttribute("aria-label")).toContain("7");
   });
 });
