@@ -84,6 +84,10 @@ const shortcutMessages = {
     "platform.shortcuts.always-address-agent.label",
     "platform.shortcuts.always-address-agent.description",
   ],
+  "publish-note": [
+    "platform.shortcuts.publish-note.label",
+    "platform.shortcuts.publish-note.description",
+  ],
   "close-dialog": [
     "platform.shortcuts.close-dialog.label",
     "platform.shortcuts.close-dialog.description",

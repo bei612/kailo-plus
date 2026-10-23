@@ -73,6 +73,8 @@ type InboxDetailPaneProps = {
   latchedDefaultParentId?: string | null;
   onBack?: () => void;
   canOpenContext?: boolean;
+  /** Original header reopen chip (home-inbox-reopen-status) for this context's hidden-DM reopen. */
+  reopenStatus?: { pending: boolean; error: boolean; unknown?: boolean };
   onOpenContext: (
     channelId: string,
     messageId: string,
@@ -113,6 +115,7 @@ function InboxMessageDetailPane({
   latchedDefaultParentId = null,
   onBack,
   canOpenContext = true,
+  reopenStatus,
   onOpenContext,
   onSendReply,
 }: InboxDetailPaneProps) {
@@ -401,7 +404,9 @@ function InboxMessageDetailPane({
       headerKey={JSON.stringify([editScopeKey, currentPubkey, sourceEventId])}
       header={{ title: contextLabel, onBack, openLabel: openContextLabel,
         fallbackTitle: item.fullTimestampLabel, deletePending: headerDeletePending, onDelete: requestHeaderDelete,
-        onOpen: contextChannelId && canOpenContext ? () => onOpenContext(contextChannelId, sourceEventId, contextThreadRootId) : undefined }}
+        onOpen: contextChannelId && canOpenContext ? () => onOpenContext(contextChannelId, sourceEventId, contextThreadRootId) : undefined,
+        reopen: reopenStatus ? { ...reopenStatus,
+          onRetry: contextChannelId ? () => onOpenContext(contextChannelId, sourceEventId, contextThreadRootId) : undefined } : undefined }}
       renderMessages={(composerOverlayRef) => <InboxDetailMessages
           conversationId={conversationId} selectedEventId={selectedEventId}
           messages={videoReviewMessages} unreadBoundaryEventId={unreadBoundaryEventId}

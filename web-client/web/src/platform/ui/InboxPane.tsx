@@ -213,6 +213,12 @@ export function InboxPane({
     ? { kind: "unavailable", message: t(reads.unknown ? "inbox.readUnknown" : "platform.loadFailed"), onRetry: refresh }
     : ready ? { kind: "ready" } : { kind: "loading" };
   const chosen = anchor ? {scopeKey: inboxScopeKey(anchor), item: anchor} : undefined;
+  // Original InboxDetailPane unreadBoundaryEventId: the boundary captured when an unread row was
+  // selected, else the selected item while its row is still unread.
+  const chosenRow = chosen ? viewRows.find(row => row.id === chosen.item.id) : undefined;
+  const unreadBoundaryEventId = !chosen ? null
+    : view.unreadBoundary?.conversationId === chosen.scopeKey ? view.unreadBoundary.eventId
+    : chosenRow && !isRead(chosenRow) ? chosen.item.id : null;
   const chosenProject=snapshot&&chosen&&chosen.item.channelId===null?resolveProjectInboxWorkItem(snapshot.projectItems,chosen.item):undefined;
   const authorTarget = snapshot && profileTarget?.principalId === principalId && reads.visibleChannels.has(profileTarget.workspaceId) &&
     (snapshot.workspaces.some((workspace) => workspace.id === profileTarget.workspaceId) || snapshot.conversations.some(item => item.channelId === profileTarget.workspaceId && item.id === profileTarget.conversationId)) ? profileTarget : null;
@@ -281,6 +287,9 @@ export function InboxPane({
         return <div className={visible ? "contents" : "hidden"}><InboxThreadPane key={`${principalId}:${chosen.scopeKey}`} principalId={principalId}
           workspaceId={channelId} rootId={inboxThread(chosen.item.tags).rootId ?? chosen.item.id} selectedEventId={chosen.item.id}
           selectionItemId={effectiveSelectedItemId}
+          unreadBoundaryEventId={unreadBoundaryEventId}
+          reopen={{pending: hiddenDm.isReopenPending(channelId), error: hiddenDm.isReopenErrored(channelId),
+            unknown: hiddenDm.isReopenUnknown(channelId), onRetry: () => openItem(chosen.item)}}
           onPublicationPendingChange={pending => setPublicationSelection(pending ? {principalId, event:chosen.item} : null)}
           channelId={snapshot.channelIds.get(channelId)}
           forum={chosen.item.channelType === "forum"}

@@ -12,6 +12,23 @@ beforeEach(() => { previousLocale = getLocale(); setLocale("en"); });
 afterEach(() => act(() => setLocale(previousLocale)));
 
 describe("original shared Inbox presentation", () => {
+  it.each(["en", "zh-CN"] as const)("restores the original detail-header reopen chip with Retry (%s)", async locale => {
+    setLocale(locale);
+    const retry = vi.fn();
+    const pending = await render(<TooltipProvider><InboxDetailHeader title="dm" openLabel="open" reopen={{pending: true, error: false}} /></TooltipProvider>);
+    expect(pending.querySelector('[data-testid="home-inbox-reopen-status"]')?.textContent).toBe(locale === "en" ? "Reopening…" : "正在重新打开…");
+    expect(pending.querySelector('[data-testid="home-inbox-reopen-retry"]')).toBeNull();
+    const failed = await render(<TooltipProvider><InboxDetailHeader title="dm" openLabel="open" reopen={{pending: false, error: true, onRetry: retry}} /></TooltipProvider>);
+    const chip = failed.querySelector<HTMLElement>('[data-testid="home-inbox-reopen-status"]')!;
+    expect(chip.className).toContain("text-destructive");
+    await click(failed.querySelector<HTMLElement>('[data-testid="home-inbox-reopen-retry"]')!);
+    expect(retry).toHaveBeenCalledTimes(1);
+    const unknown = await render(<TooltipProvider><InboxDetailHeader title="dm" openLabel="open" reopen={{pending: false, error: true, unknown: true}} /></TooltipProvider>);
+    expect(unknown.querySelector<HTMLElement>('[data-testid="home-inbox-reopen-status"]')!.className).not.toContain("text-destructive");
+    const idle = await render(<TooltipProvider><InboxDetailHeader title="dm" openLabel="open" reopen={{pending: false, error: false}} /></TooltipProvider>);
+    expect(idle.querySelector('[data-testid="home-inbox-reopen-status"]')).toBeNull();
+  });
+
   it.each(["en", "zh-CN"] as const)("restores the original header more menu and pending delete guard (%s)", async locale => {
     setLocale(locale);
     const remove = vi.fn(), open = vi.fn();

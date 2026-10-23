@@ -582,6 +582,8 @@ function NativeInboxMessageDetail({
       onEditSave={(message,content,mentions,media)=>mutateMessage(selectedItem,message,canManageMessages,{content,mentions,media})}
       onDeleteMessage={message=>mutateMessage(selectedItem,message,canManageMessages)}
       canOpenContext={!selectedItem?.item.channelId || !hiddenDm.isReopenPending(selectedItem.item.channelId)}
+      reopenStatus={selectedItem?.item.channelId ? { pending: hiddenDm.isReopenPending(selectedItem.item.channelId),
+        error: hiddenDm.isReopenErrored(selectedItem.item.channelId), unknown: hiddenDm.isReopenUnknown(selectedItem.item.channelId) } : undefined}
       currentPubkey={currentPubkey}
       onToggleReaction={selectedItem?.item.channelId && admittedChannelIds.has(selectedItem.item.channelId) && !channelsQuery.isFetching && !channelsQuery.isError && !threadContext.hasLoadError && !threadContext.isLoading && selectedChannel?.isMember && selectedChannel.archivedAt === null ? onToggleReaction : undefined}
       contextChannelName={selectedChannel?.name ?? null}

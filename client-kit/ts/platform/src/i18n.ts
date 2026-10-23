@@ -3750,6 +3750,8 @@ export const platformMessages = {
   "platform.shortcuts.zoom-out.description": { en: "Decrease the zoom level", "zh-CN": "降低缩放比例" },
   "platform.shortcuts.zoom-reset.label": { en: "Reset zoom", "zh-CN": "重置缩放" },
   "platform.shortcuts.zoom-reset.description": { en: "Reset zoom to default level", "zh-CN": "恢复默认缩放比例" },
+  "platform.shortcuts.publish-note.label": { en: "Publish note", "zh-CN": "发布动态" },
+  "platform.shortcuts.publish-note.description": { en: "Publish a Pulse note", "zh-CN": "发布一条动态" },
   "platform.shortcuts.send-message.label": { en: "Send message", "zh-CN": "发送消息" },
   "platform.shortcuts.send-message.description": { en: "Send the current message", "zh-CN": "发送当前消息" },
   "platform.shortcuts.new-line.label": { en: "New line", "zh-CN": "换行" },
