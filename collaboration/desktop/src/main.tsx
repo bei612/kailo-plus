@@ -14,6 +14,9 @@ import { EmojiBurstProvider } from "@/shared/ui/EmojiBurstProvider";
 import { PoofBurstProvider } from "@/shared/ui/PoofBurstProvider";
 import { Toaster } from "@/shared/ui/sonner";
 import { TooltipProvider } from "@/shared/ui/tooltip";
+// DD-125(5): the original update lifecycle and the macOS tray menu labels.
+import { UpdaterProvider } from "@/features/settings/hooks/UpdaterProvider";
+import { TrayMenuLabels } from "@/app/useTrayMenu";
 import { recoverLocalStorageQuotaOnStartup } from "@/shared/lib/localStorageQuota";
 import { startLocalStorageSweep } from "@/shared/lib/localStorageSweep";
 import { initializeConversationDensityPreference } from "@client-kit/platform/conversationDensityPreference";
@@ -72,7 +75,10 @@ function renderApp() {
           <TooltipProvider>
             <EmojiBurstProvider>
               <PoofBurstProvider>
-                <App />
+                <UpdaterProvider>
+                  <App />
+                  <TrayMenuLabels />
+                </UpdaterProvider>
                 <Toaster />
               </PoofBurstProvider>
             </EmojiBurstProvider>

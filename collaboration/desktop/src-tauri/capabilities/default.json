@@ -20,6 +20,9 @@
     "websocket:default",
     "window-state:default",
     "dialog:default",
+    "updater:allow-check",
+    "updater:allow-download",
+    "updater:allow-install",
     "process:allow-restart"
   ]
 }

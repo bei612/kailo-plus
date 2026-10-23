@@ -268,6 +268,39 @@ describe("presence surfaces", () => {
     await settle();
     expect(host.updates.filter((status) => status === "online")).toHaveLength(2);
   });
+
+  it("treats a native host's OS idle as authoritative and falls back to in-app activity without it", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
+    let idleSeconds: number | null = 0;
+    const host = { ...presenceHost({}), osIdleSeconds: vi.fn(async () => idleSeconds) };
+    const cache = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+    function Probe() { return <output>{useSelfPresence()?.currentStatus}</output>; }
+    const view = await render(<QueryClientProvider client={cache}>
+      <PresenceHostProvider host={host} selfPubkey={WILL}><Probe /></PresenceHostProvider>
+    </QueryClientProvider>);
+    await settle();
+    expect(view.textContent).toBe("online");
+    expect(host.osIdleSeconds).toHaveBeenCalled();
+    // Ten idle minutes anywhere on the machine: away, even though the in-app clock is fresh.
+    idleSeconds = PRESENCE_IDLE_TIMEOUT_MS / 1000;
+    await act(async () => { vi.advanceTimersByTime(30_000); });
+    await settle();
+    expect(view.textContent).toBe("away");
+    expect(host.updates.at(-1)).toBe("away");
+    // Input elsewhere on the machine brings it back without any in-app event.
+    idleSeconds = 5;
+    await act(async () => { vi.advanceTimersByTime(30_000); });
+    await settle();
+    expect(view.textContent).toBe("online");
+    // No idle API (Wayland): the in-app clock decides, and the earlier OS reading keeps it fresh.
+    idleSeconds = null;
+    await act(async () => { vi.advanceTimersByTime(30_000); });
+    await settle();
+    expect(view.textContent).toBe("online");
+    await act(async () => { vi.advanceTimersByTime(PRESENCE_IDLE_TIMEOUT_MS); });
+    await settle();
+    expect(view.textContent).toBe("away");
+  });
 });
 
 describe("original profile panel hero presence and status (DD-120)", () => {

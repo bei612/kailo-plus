@@ -255,7 +255,7 @@ mod forum_tests {
     fn forum_events_preserve_channel_thread_and_signer_evidence() {
         let keys = nostr::Keys::generate();
         let channel = Uuid::new_v4();
-        let root = EventId::from_hex("11".repeat(32)).unwrap();
+        let root = EventId::from_hex(&"11".repeat(32)).unwrap();
         let reference = ThreadRef {
             root_event_id: root,
             parent_event_id: root,
@@ -339,7 +339,7 @@ mod link_preview_removal_tests {
     fn removal_edit_carries_the_original_suppression_marker() {
         let keys = nostr::Keys::generate();
         let channel = Uuid::new_v4();
-        let target = EventId::from_hex("22".repeat(32)).unwrap();
+        let target = EventId::from_hex(&"22".repeat(32)).unwrap();
         let tags = MessageEditTags {
             media: &[],
             custom_emoji: &[],

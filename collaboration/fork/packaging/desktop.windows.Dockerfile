@@ -41,11 +41,25 @@ RUN COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm install --frozen-lockfile
 # 源码里的 tauri.conf.json 保持上游原样。去掉首尾空白后为空、或含 Tauri productName
 # 不允许的字符时拒绝构建，不回退任何默认名。
 ARG PLATFORM_DISPLAY_NAME
+# 自更新源与验签公钥同样只由 Desktop 发布配置注入（DD-125(5)、ADR-06），可选：两者都给出才写入
+# Tauri 发布配置并让 build.rs 注册更新插件；缺任一则构建出“此版本不提供自动更新”的安装包，
+# 不回退任何默认源。手动下载页 PLATFORM_DESKTOP_RELEASE_URL 同理，只接受 https。
+ARG PLATFORM_UPDATER_PUBLIC_KEY=
+ARG PLATFORM_UPDATER_ENDPOINT=
+ARG PLATFORM_DESKTOP_RELEASE_URL=
 RUN node -e ' \
       const name = (process.env.PLATFORM_DISPLAY_NAME || "").trim(); \
       if (!name || /[\/\\:*?"<>|\u0000-\u001f]/.test(name)) { \
         console.error("PLATFORM_DISPLAY_NAME 缺失、为空或含不允许的字符"); process.exit(1); } \
-      require("fs").writeFileSync("/tmp/release-config.json", JSON.stringify({ productName: name }));'
+      const config = { productName: name }; \
+      const pubkey = (process.env.PLATFORM_UPDATER_PUBLIC_KEY || "").trim(); \
+      const endpoint = (process.env.PLATFORM_UPDATER_ENDPOINT || "").trim(); \
+      if (pubkey && endpoint) { \
+        if (!/^https:\/\//.test(endpoint)) { console.error("PLATFORM_UPDATER_ENDPOINT 必须是 https"); process.exit(1); } \
+        config.plugins = { updater: { pubkey, endpoints: [endpoint] } }; } \
+      const release = (process.env.PLATFORM_DESKTOP_RELEASE_URL || "").trim(); \
+      if (release && !/^https:\/\//.test(release)) { console.error("PLATFORM_DESKTOP_RELEASE_URL 必须是 https"); process.exit(1); } \
+      require("fs").writeFileSync("/tmp/release-config.json", JSON.stringify(config));'
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/src/collaboration/desktop/src-tauri/target,sharing=locked \
     --mount=type=cache,target=/usr/local/xwin,sharing=locked \

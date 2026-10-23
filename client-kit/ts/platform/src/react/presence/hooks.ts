@@ -3,7 +3,8 @@
 // heartbeat/idle session. Transport is injected (./context.ts): the BFF answers the
 // Relay-signed snapshot and signs the person's own 20001, so the original Relay live
 // subscription/reconciler is replaced by the host feeding admitted stream frames into
-// applyLivePresenceEvent. Browsers expose no OS idle, so in-app activity is the only signal.
+// applyLivePresenceEvent. Browsers expose no OS idle, so in-app activity is their only signal;
+// a native host that injects osIdleSeconds makes OS-wide idle authoritative, as the original.
 import * as React from "react";
 import {
   type QueryClient,
@@ -226,6 +227,7 @@ export function usePresenceSession(pubkey?: string): PresenceSession {
     { enabled: normalizedPubkey.length > 0 },
   );
   const setPresenceMutation = useSetPresenceMutation(normalizedPubkey);
+  const osIdleSeconds = usePresenceHost()?.osIdleSeconds;
   const [presencePreference, setPresencePreference] =
     React.useState<PresencePreference>(() =>
       readStoredPresencePreference(normalizedPubkey),
@@ -252,6 +254,27 @@ export function usePresenceSession(pubkey?: string): PresenceSession {
     applyAutomaticStatus(
       resolveAutomaticPresenceStatusSync(lastActivityAtRef.current, Date.now()),
     );
+  });
+
+  // OS-wide idle is authoritative when the host provides it; async, so tick-driven only.
+  const reevaluateFromOsIdle = React.useEffectEvent(async () => {
+    if (!osIdleSeconds) {
+      reevaluateAutomaticStatus();
+      return;
+    }
+    const seconds = await osIdleSeconds().catch(() => null);
+    if (typeof seconds === "number" && Number.isFinite(seconds) && seconds >= 0) {
+      // Keep the fallback clock consistent so a later null reading can't flap.
+      lastActivityAtRef.current = Math.max(
+        lastActivityAtRef.current,
+        Date.now() - seconds * 1000,
+      );
+      applyAutomaticStatus(
+        resolveAutomaticPresenceStatus(seconds, lastActivityAtRef.current, Date.now()),
+      );
+      return;
+    }
+    reevaluateAutomaticStatus();
   });
 
   React.useEffect(() => {
@@ -312,9 +335,9 @@ export function usePresenceSession(pubkey?: string): PresenceSession {
       return;
     }
 
-    reevaluateAutomaticStatus();
+    void reevaluateFromOsIdle();
     const intervalId = window.setInterval(() => {
-      reevaluateAutomaticStatus();
+      void reevaluateFromOsIdle();
     }, PRESENCE_STATUS_TICK_INTERVAL_MS);
 
     return () => {

@@ -62,8 +62,8 @@ pub(crate) fn load(app: &tauri::AppHandle) -> Result<Option<PlatformConfig>, Str
     let path = path(app)?;
     match std::fs::read_to_string(&path) {
         Ok(raw) => {
-            let cfg: PlatformConfig =
-                serde_json::from_str(&raw).map_err(|e| format!("{} 无法解析：{e}", path.display()))?;
+            let cfg: PlatformConfig = serde_json::from_str(&raw)
+                .map_err(|e| format!("{} 无法解析：{e}", path.display()))?;
             cfg.validate()?;
             Ok(Some(cfg))
         }
@@ -96,12 +96,24 @@ mod tests {
 
     #[test]
     fn rejects_non_http_and_empty_client() {
-        assert!(cfg("https://k.example", "https://idp.example/realms/k", "native")
+        assert!(cfg(
+            "https://k.example",
+            "https://idp.example/realms/k",
+            "native"
+        )
+        .validate()
+        .is_ok());
+        assert!(cfg("ftp://k.example", "https://idp.example", "native")
             .validate()
-            .is_ok());
-        assert!(cfg("ftp://k.example", "https://idp.example", "native").validate().is_err());
-        assert!(cfg("https://k.example?x=1", "https://idp.example", "native").validate().is_err());
-        assert!(cfg("https://k.example", "https://idp.example", "  ").validate().is_err());
+            .is_err());
+        assert!(
+            cfg("https://k.example?x=1", "https://idp.example", "native")
+                .validate()
+                .is_err()
+        );
+        assert!(cfg("https://k.example", "https://idp.example", "  ")
+            .validate()
+            .is_err());
     }
 
     #[test]

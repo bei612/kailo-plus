@@ -34,6 +34,7 @@ import { relayClient } from "@/shared/api/relayClient";
 import { classifyRelayPublishFailure } from "@/shared/api/relayPublishOutcome";
 import { signRelayEvent } from "@/shared/api/tauri";
 import { getPresence } from "@/shared/api/tauriProfiles";
+import { getOsIdleSeconds } from "@/shared/api/osIdle";
 import type { RelayEvent } from "@/shared/api/types";
 
 export const KIND_PRESENCE = 20001;
@@ -248,7 +249,9 @@ export function NativePresenceHost({ children }: { children: React.ReactNode }) 
   const queryClient = useQueryClient();
   const customEmoji = useCustomEmojiPalette();
   const transport = React.useMemo(() => createNativePresenceTransport(), [session.devicePubkey, session.facts.relayUrl]);
-  const host = React.useMemo<PresenceHost>(() => ({ ...transport, customEmoji }), [transport, customEmoji]);
+  // DD-125(5): OS-wide idle is the authoritative automatic-away signal, as in the original.
+  const host = React.useMemo<PresenceHost>(() => ({ ...transport, customEmoji, osIdleSeconds: getOsIdleSeconds }),
+    [transport, customEmoji]);
   useNativePresenceLiveFrames(queryClient);
   // The heartbeat/idle session runs for this device's own key (DD-77: one key per device).
   return <PresenceHostProvider host={host} selfPubkey={session.devicePubkey.toLowerCase()}>{children}</PresenceHostProvider>;
