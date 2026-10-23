@@ -486,7 +486,7 @@ for line in out.stdout.strip().split("\n"):
         continue
     name, definition = line.split("\t", 1)
     if name.endswith("_enum"):
-        in_db[name[: -len("_enum")]] = set(re.findall(r"'([A-Z_]+)'::text", definition))
+        in_db[name[: -len("_enum")]] = {v.replace("''", "'") for v in re.findall(r"'((?:[^']|'')*)'::text", definition)}
 
 bad, checked = [], 0
 for enum_name, dbvals in sorted(in_db.items()):
