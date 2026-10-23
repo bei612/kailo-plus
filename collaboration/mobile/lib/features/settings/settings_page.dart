@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
@@ -18,6 +19,7 @@ import '../../shared/widgets/app_list.dart';
 import '../../shared/widgets/app_list_card.dart';
 import '../../shared/widgets/frosted_app_bar.dart';
 import '../../shared/widgets/frosted_scaffold.dart';
+import '../../shared/widgets/ios_glass_navigation_action.dart';
 import '../../shared/widgets/ios_glass_navigation_button.dart';
 import '../../shared/widgets/modal_presentation.dart';
 import '../platform/platform_audit_page.dart';
@@ -28,12 +30,31 @@ import '../platform/platform_status_text.dart';
 import '../platform/platform_tasks_page.dart';
 import 'theme_picker_page.dart';
 
+part 'settings_page/notifications_section.dart';
+
+// Buzz 779af8886caae1317b4de962082429867ab61503 mobile/lib/features/settings/settings_page.dart:
+// the Edit action and its Edit profile sheet open the original display-name and description
+// editors (kind:0 signed by this device's CLIENT key, DD-75). The Photo row needs the avatar
+// editor (profile_edit_page.dart), which is not restored yet.
+enum _ProfileEditAction { displayName, description }
+
 class SettingsPage extends HookConsumerWidget {
   /// Creates the settings page.
-  const SettingsPage({super.key, required this.profileHeader});
+  const SettingsPage({
+    super.key,
+    required this.profileHeader,
+    this.onEditDisplayName,
+    this.onEditProfileDescription,
+  });
 
   /// Header widget displayed at the top of settings.
   final Widget profileHeader;
+
+  /// Opens the display-name editor after the Edit Profile sheet closes.
+  final Future<void> Function(BuildContext context)? onEditDisplayName;
+
+  /// Opens the profile-description editor after the Edit Profile sheet closes.
+  final Future<void> Function(BuildContext context)? onEditProfileDescription;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -44,6 +65,76 @@ class SettingsPage extends HookConsumerWidget {
       context,
       bottomHeight: Grid.xxs,
     );
+    final canEditProfile =
+        onEditDisplayName != null || onEditProfileDescription != null;
+    final editLabel = platformText(
+      PlatformMessageKey.platformProfileEdit,
+      locale: locale,
+    );
+
+    Future<void> showEditProfileSheet() async {
+      final action = await showBuzzModalBottomSheet<_ProfileEditAction>(
+        context: context,
+        title: platformText(
+          PlatformMessageKey.platformSettingsEditProfile,
+          locale: locale,
+        ),
+        builder: (sheetContext) => SafeArea(
+          top: false,
+          child: Padding(
+            key: const ValueKey('edit-profile-sheet-content'),
+            padding: const EdgeInsets.only(bottom: Grid.xs),
+            // AppListCard normally fills the height offered by a page section.
+            // Give it unbounded vertical space here so this compact action sheet
+            // hugs its rows instead of filling the modal height cap.
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                AppListCard(
+                  key: const ValueKey('edit-profile-options'),
+                  dividerIndent: Grid.xs,
+                  verticalPadding: 0,
+                  children: [
+                    AppListRow(
+                      key: const ValueKey('edit-profile-display-name'),
+                      title: platformText(
+                        PlatformMessageKey.platformProfileDisplayName,
+                        locale: locale,
+                      ),
+                      trailing: const _RowChevron(),
+                      onTap: () => Navigator.pop(
+                        sheetContext,
+                        _ProfileEditAction.displayName,
+                      ),
+                    ),
+                    AppListRow(
+                      key: const ValueKey('edit-profile-description'),
+                      title: platformText(
+                        PlatformMessageKey.platformProfileAbout,
+                        locale: locale,
+                      ),
+                      trailing: const _RowChevron(),
+                      onTap: () => Navigator.pop(
+                        sheetContext,
+                        _ProfileEditAction.description,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      if (!context.mounted || action == null) return;
+      unawaited(HapticFeedback.selectionClick());
+      switch (action) {
+        case _ProfileEditAction.displayName:
+          await onEditDisplayName?.call(context);
+        case _ProfileEditAction.description:
+          await onEditProfileDescription?.call(context);
+      }
+    }
 
     return FrostedScaffold(
       useUtilitySurfaceTheme: true,
@@ -81,6 +172,40 @@ class SettingsPage extends HookConsumerWidget {
                   icon: const Icon(LucideIcons.x),
                 ),
               ),
+        actions: [
+          if (!canEditProfile)
+            const SizedBox.shrink()
+          else if (Theme.of(context).platform == TargetPlatform.iOS)
+            IosGlassNavigationAction(
+              key: const ValueKey('settings-edit-profile'),
+              label: editLabel,
+              foregroundColor: navigationPrimaryForeground(context),
+              onPressed: () => unawaited(showEditProfileSheet()),
+            )
+          else
+            Material(
+              key: const ValueKey('settings-edit-profile'),
+              color: context.colors.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(Radii.full),
+              clipBehavior: Clip.antiAlias,
+              child: InkWell(
+                onTap: () => unawaited(showEditProfileSheet()),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: Grid.xs,
+                    vertical: Grid.xxs,
+                  ),
+                  child: Text(
+                    editLabel,
+                    style: context.textTheme.labelLarge?.copyWith(
+                      color: context.colors.onSurface,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
         bottomHeight: Grid.xxs,
         bottom: const SizedBox.expand(),
       ),
@@ -93,6 +218,7 @@ class SettingsPage extends HookConsumerWidget {
                 profileHeader,
                 const _OrganizationSection(),
                 const _AppearanceSection(),
+                const _NotificationsSection(),
                 const _LanguageSection(),
                 const _DeviceSection(),
                 const _SignOutSection(),

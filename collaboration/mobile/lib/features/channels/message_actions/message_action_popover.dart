@@ -166,7 +166,7 @@ Future<bool> _showMessageActionsPopover({
     String? selectedActionId;
     final dialogRoute = RawDialogRoute<String>(
       barrierDismissible: true,
-      barrierLabel: 'Dismiss message actions',
+      barrierLabel: _mt(context, PlatformMessageKey.messagesActionsDismiss),
       barrierColor: Colors.transparent,
       transitionDuration: reduceMotion
           ? Duration.zero
@@ -238,7 +238,7 @@ List<_PopoverMessageAction> _buildPopoverMessageActions({
       actions.add(
         _PopoverMessageAction(
           id: 'reply',
-          title: 'Reply',
+          title: _mt(context, PlatformMessageKey.buzzReply),
           icon: LucideIcons.messageSquareReply,
           group: _PopoverMessageActionGroup.primary,
           onSelected: () {
@@ -262,7 +262,7 @@ List<_PopoverMessageAction> _buildPopoverMessageActions({
     actions.add(
       _PopoverMessageAction(
         id: 'copyLink',
-        title: 'Copy link',
+        title: _mt(context, PlatformMessageKey.buzzCopyLink),
         icon: LucideIcons.link2,
         group: _PopoverMessageActionGroup.utility,
         onSelected: () {
@@ -270,7 +270,7 @@ List<_PopoverMessageAction> _buildPopoverMessageActions({
           copyToClipboard(
             context,
             messageLinkFor(message: message, channelId: channelId),
-            message: 'Message link copied',
+            message: _mt(context, PlatformMessageKey.messagesActionsLinkCopied),
           );
         },
       ),
@@ -287,7 +287,12 @@ List<_PopoverMessageAction> _buildPopoverMessageActions({
       actions.add(
         _PopoverMessageAction(
           id: unread ? 'markRead' : 'markUnread',
-          title: unread ? 'Mark read' : 'Mark unread',
+          title: _mt(
+            context,
+            unread
+                ? PlatformMessageKey.buzzMarkRead
+                : PlatformMessageKey.buzzMarkUnread,
+          ),
           icon: unread ? LucideIcons.mailCheck : LucideIcons.mailOpen,
           group: _PopoverMessageActionGroup.primary,
           onSelected: () {
@@ -313,7 +318,12 @@ List<_PopoverMessageAction> _buildPopoverMessageActions({
     actions.add(
       _PopoverMessageAction(
         id: following ? 'unfollowThread' : 'followThread',
-        title: following ? 'Unfollow thread' : 'Follow thread',
+        title: _mt(
+          context,
+          following
+              ? PlatformMessageKey.buzzUnfollowThread
+              : PlatformMessageKey.buzzFollowThread,
+        ),
         icon: following ? LucideIcons.bellOff : LucideIcons.bellRing,
         group: _PopoverMessageActionGroup.utility,
         onSelected: () {
@@ -329,7 +339,7 @@ List<_PopoverMessageAction> _buildPopoverMessageActions({
     actions.add(
       _PopoverMessageAction(
         id: 'copyText',
-        title: 'Copy text',
+        title: _mt(context, PlatformMessageKey.messagesActionsCopyText),
         icon: LucideIcons.copy,
         group: _PopoverMessageActionGroup.utility,
         onSelected: () =>
@@ -342,7 +352,7 @@ List<_PopoverMessageAction> _buildPopoverMessageActions({
     actions.add(
       _PopoverMessageAction(
         id: 'edit',
-        title: 'Edit message',
+        title: _mt(context, PlatformMessageKey.buzzEditMessage),
         icon: LucideIcons.pencil,
         group: _PopoverMessageActionGroup.primary,
         onSelected: () {
@@ -359,7 +369,7 @@ List<_PopoverMessageAction> _buildPopoverMessageActions({
     actions.add(
       _PopoverMessageAction(
         id: 'delete',
-        title: 'Delete message',
+        title: _mt(context, PlatformMessageKey.buzzDeleteMessage),
         icon: LucideIcons.trash2,
         group: _PopoverMessageActionGroup.destructive,
         destructive: true,

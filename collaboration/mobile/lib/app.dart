@@ -12,7 +12,9 @@ import 'features/channels/unread_badge/unread_badge_provider.dart';
 import 'features/channels/voice_note_recording.dart';
 import 'features/home/home_page.dart';
 import 'features/platform/platform_sign_in_page.dart';
+import 'features/profile/profile_text_editor.dart';
 import 'features/profile/settings_profile_header.dart';
+import 'features/profile/user_status_cache_provider.dart';
 import 'features/settings/settings_page.dart';
 import 'shared/auth/auth.dart';
 import 'shared/deeplink/pending_deep_link_provider.dart';
@@ -70,6 +72,7 @@ class App extends HookConsumerWidget {
     if (authenticated) {
       ref.watch(relaySessionProvider);
       ref.watch(appLifecycleProvider);
+      ref.watch(userStatusCacheProvider);
     }
 
     // Start listening for buzz:// links immediately (even pre-auth) so a
@@ -137,8 +140,11 @@ class App extends HookConsumerWidget {
   }
 }
 
-Widget _buildSettingsPage(BuildContext context) =>
-    const SettingsPage(profileHeader: SettingsProfileHeader());
+Widget _buildSettingsPage(BuildContext context) => const SettingsPage(
+  profileHeader: SettingsProfileHeader(),
+  onEditDisplayName: showProfileDisplayNameEditor,
+  onEditProfileDescription: showProfileDescriptionEditor,
+);
 
 class _SplashScreen extends StatelessWidget {
   const _SplashScreen();

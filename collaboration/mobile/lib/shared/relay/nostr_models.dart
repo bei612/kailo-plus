@@ -13,6 +13,9 @@ abstract final class EventKind {
   static const streamMessage = 9;
   static const nip29DeleteEvent = 9005;
   static const typingIndicator = 20002;
+
+  /// NIP-38 user status (parameterized replaceable, d=general).
+  static const userStatus = 30315;
   static const auth = 22242;
   static const streamMessageV2 = 40002;
   static const channelThreadSummary = 39005;

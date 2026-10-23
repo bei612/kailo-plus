@@ -1027,16 +1027,10 @@ remove_paths:
   - mobile/lib/features/profile/profile_avatar_editor
   - mobile/lib/features/profile/profile_avatar_editor.dart
   - mobile/lib/features/profile/profile_edit_page.dart
-  - mobile/lib/features/profile/profile_provider.dart
   - mobile/lib/features/profile/profile_text_edit_sheet.dart
-  - mobile/lib/features/profile/profile_text_editor.dart
-  - mobile/lib/features/profile/set_status_sheet.dart
-  - mobile/lib/features/profile/user_status.dart
-  - mobile/lib/features/profile/user_status_cache_provider.dart
-  - mobile/lib/features/profile/user_status_provider.dart
   - mobile/lib/features/pulse
-  - mobile/lib/features/settings/accent_picker_page.dart
-  - mobile/lib/features/settings/settings_page
+  - mobile/lib/features/settings/settings_page/community_section.dart
+  - mobile/lib/features/settings/settings_page/connection_section.dart
   - mobile/lib/shared/community/community_membership_provider.dart
   - mobile/lib/shared/crypto/ecdh.dart
   - mobile/lib/shared/crypto/hkdf.dart
@@ -1054,7 +1048,6 @@ remove_paths:
   - mobile/lib/shared/widgets/ios_native_segmented_control.dart
   - mobile/lib/shared/widgets/ios_native_skin_tone_control.dart
   - mobile/lib/shared/widgets/lucide_star_icon.dart
-  - mobile/lib/shared/widgets/masked_avatar_badge.dart
   - mobile/lib/shared/widgets/playing_avatar_image.dart
   - mobile/lib/shared/widgets/tappable_flapping_bee.dart
   - mobile/test/features/activity
@@ -1083,7 +1076,6 @@ remove_paths:
   - mobile/test/shared/reminders
   - mobile/test/shared/security
   - mobile/test/shared/theme/community_theme_sync_test.dart
-  - mobile/test/shared/widgets/masked_avatar_badge_test.dart
   - preview-features.json
   - scripts/bundle-sidecars.sh
   - scripts/buzz-adopt-prod-agents.sh
