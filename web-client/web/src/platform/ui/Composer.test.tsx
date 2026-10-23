@@ -23,7 +23,7 @@ import {
 import { Composer } from "./ChannelPane";
 import type { MediaUploadOptions } from "@/platform/bff-client";
 import { draftMessageTarget } from "./InboxDrafts";
-import { clearAllDrafts, loadDraftEntry } from "@client-kit/platform/react/composer/features/messages/lib/useDrafts";
+import { clearAllDrafts, loadDraftEntry, loadPendingSend } from "@client-kit/platform/react/composer/features/messages/lib/useDrafts";
 import { buildMentionClipboardHtml } from "@client-kit/platform/react/composer/features/messages/lib/mentionClipboard";
 import {resetPersistentAgentAudienceStore} from "@client-kit/platform/react/composer/features/messages/lib/persistentAgentAudience";
 import {setKeepMentionedAgentsPinned} from "@client-kit/platform/react/composer/features/messages/lib/autoPinMentionedAgentsPreference";
@@ -774,10 +774,15 @@ it("does not let an old scope receipt unlock a new scope send", async () => {
   await rerender(<Composer workspaceId="workspace-b" draftIdentity="alice" draftKey="workspace-b" />);
   await type(host.querySelector<HTMLElement>('[data-testid="message-input"]')!, "new send");
   await click(button(host, "platform.send"));
+  // Original useMentionSendFlow: each Send cleared its own composer; only its own receipt settles it.
+  expect(host.querySelector('[data-testid="message-input"]')?.textContent).toBe("");
   await act(async () => oldReceipt());
-  expect(button(host, "platform.send").disabled).toBe(true);
-  expect(host.querySelector('[data-testid="message-input"]')?.textContent).toBe("new send");
+  expect(host.querySelector('[data-testid="composer-pending-send"]')?.textContent).toContain("platform.pendingSendPublishing");
+  expect(loadPendingSend("workspace-b")?.draft.content).toBe("new send");
   await act(async () => newReceipt());
+  await settle();
+  expect(host.querySelector('[data-testid="composer-pending-send"]')).toBeNull();
+  expect(loadPendingSend("workspace-b")).toBeUndefined();
   expect(host.querySelector('[data-testid="message-input"]')?.textContent).toBe("");
 });
 
@@ -1149,7 +1154,7 @@ describe("DD-125(8) mentioning people outside the Workspace channel", () => {
   });
 });
 
-describe("DD-146 original send-then-upload: clear at Send, restore on failure", () => {
+describe("DD-146 original send flow: clear at Send, restore on failure", () => {
   type Descriptor = {sha256:string;size:number;type:string;url:string};
   async function attachPending(host: HTMLElement) {
     const fileInput = host.querySelector<HTMLInputElement>('[data-testid="attach-input"]')!;
@@ -1325,6 +1330,45 @@ describe("DD-146 original send-then-upload: clear at Send, restore on failure", 
     expect(loadDraftEntry("queued-reload-unknown")?.sendIntent?.key).toBe(key);
     expect(host.textContent).toContain("platform.sendUnknown");
     expect(state.publish).toHaveBeenCalledTimes(1);
+  });
+
+  it("clears an ordinary send at Send and restores it on a definite rejection with a fresh key next time", async () => {
+    let reject!: (error: unknown) => void;
+    state.publish.mockImplementationOnce(() => new Promise((_resolve, fail) => { reject = fail; }));
+    const host = await render(<Composer workspaceId="workspace-a" draftIdentity="alice" draftKey="plain-reject" />);
+    await type(input(host), "plain message");
+    await click(button(host, "platform.send"));
+    await vi.waitFor(() => expect(state.publish).toHaveBeenCalledTimes(1));
+    expect(input(host).textContent).toBe("");
+    expect(recovery(host)!.textContent).toContain("platform.pendingSendPublishing");
+    expect(loadPendingSend("plain-reject")?.draft.sendIntent?.key).toBe(state.publish.mock.calls[0][3]);
+    await act(async () => reject(new BffError(403, "rejected", { class: ErrorClass.Denied, reason: ReasonCode.PublishRejected })));
+    await settle();
+    expect(input(host).textContent).toBe("plain message");
+    expect(host.textContent).toContain("platform.sendRejected");
+    expect(loadPendingSend("plain-reject")).toBeUndefined();
+    await click(button(host, "platform.send"));
+    await vi.waitFor(() => expect(state.publish).toHaveBeenCalledTimes(2));
+    expect(state.publish.mock.calls[1][3]).not.toBe(state.publish.mock.calls[0][3]);
+  });
+
+  it("keeps a failed ordinary send as a recovery when the next message is already being written", async () => {
+    let reject!: (error: unknown) => void;
+    state.publish.mockImplementationOnce(() => new Promise((_resolve, fail) => { reject = fail; }));
+    const host = await render(<Composer workspaceId="workspace-a" draftIdentity="alice" draftKey="plain-moved-on" />);
+    await type(input(host), "first plain");
+    await click(button(host, "platform.send"));
+    await vi.waitFor(() => expect(state.publish).toHaveBeenCalledTimes(1));
+    await type(input(host), "second plain");
+    await act(async () => reject(new BffError(403, "rejected", { class: ErrorClass.Denied, reason: ReasonCode.PublishRejected })));
+    await settle();
+    expect(input(host).textContent).toBe("second plain");
+    expect(recovery(host)!.dataset.stage).toBe("failed");
+    expect(loadPendingSend("plain-moved-on")?.draft.content).toBe("first plain");
+    await click(recovery(host)!.querySelector<HTMLElement>('[data-testid="composer-pending-send-discard"]')!);
+    expect(recovery(host)).toBeNull();
+    expect(loadPendingSend("plain-moved-on")).toBeUndefined();
+    expect(input(host).textContent).toBe("second plain");
   });
 });
 
