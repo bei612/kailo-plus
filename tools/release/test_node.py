@@ -1023,5 +1023,60 @@ class DeclaredEnvPreview(unittest.TestCase):
             self.assertEqual(sorted(os.listdir(runtime)), [".env"])
 
 
+def _orchestrator():
+    spec = importlib.util.spec_from_file_location("release_orchestrator", os.path.join(os.path.dirname(__file__), "orchestrator.py"))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+class FirstBuild(unittest.TestCase):
+    """An upstream artifact recorded as none is a rebuild unit once CI registers its build target
+    (document-editor stayed "blocked" and was never built by the release entry)."""
+
+    def setUp(self):
+        self.orch = _orchestrator()
+        self.current = "sha256:" + "1" * 64
+
+    def unit(self, name, artifact="none", blocked=None):
+        art = dict(name=name, kind="image", source_digest=artifact if artifact == "none" else self.current,
+                   artifact_digest=artifact)
+        if blocked:
+            art["blocked"] = blocked
+        return self.orch.model.Unit(name, "upstream", [name], record=f"{name}/fork/upstream.yaml", artifact=art)
+
+    def test_unrecorded_artifact_with_a_ci_target_is_a_first_build(self):
+        for state, blocked in (("unbuilt", None), ("blocked", "deployment receipt still open")):
+            with self.subTest(state=state):
+                entry = self.orch.upstream_entry(self.unit("document-editor", blocked=blocked), state, "none",
+                                                 self.current, {"document-editor", "web-client"})
+                self.assertEqual((entry["state"], entry["first_build"], entry["key"]), ("stale", True, self.current))
+                self.assertEqual(entry["blocked"], bool(blocked))
+
+    def test_unrecorded_artifact_without_a_ci_target_is_kept(self):
+        for state in ("unbuilt", "blocked"):
+            entry = self.orch.upstream_entry(self.unit("mobile-client", blocked="no build entry"), state, "none",
+                                             self.current, {"document-editor"})
+            self.assertEqual((entry["state"], entry["first_build"]), (state, False))
+
+    def test_recorded_states_are_unchanged(self):
+        unit = self.unit("document-editor", artifact="sha256:" + "2" * 64)
+        for state in ("current", "stale"):
+            entry = self.orch.upstream_entry(unit, state, self.current, self.current, {"document-editor"})
+            self.assertEqual((entry["state"], entry["first_build"]), (state, False))
+
+    def test_first_build_has_no_old_digest_to_trace(self):
+        self.assertIsNone(self.orch.recorded_artifact(self.unit("document-editor")))
+        digest = "sha256:" + "2" * 64
+        self.assertEqual(self.orch.recorded_artifact(self.unit("document-editor", artifact=digest)), digest)
+
+    def test_node_reports_registered_build_targets(self):
+        self.assertEqual(node.build_targets({"build_targets": {"web-client": {}, "document-editor": {}}}),
+                         ["document-editor", "web-client"])
+        self.assertEqual(node.build_targets({}), [])
+        with self.assertRaises(node.NodeError):
+            node.build_targets({"build_targets": "document-editor"})
+
+
 if __name__ == "__main__":
     unittest.main()

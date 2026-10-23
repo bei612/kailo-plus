@@ -24,6 +24,10 @@ another form are ``derived`` from declared facts, never read separately.
 
 Usage (component-deploy.sh, KAILO_RUNTIME_DIR exported by runtime-dir.sh):
   native-config.py check|apply data-query|knowledge|document-editor --env <component env> [--source <commit>] [--backup-dir <dir>]
+  native-config.py stage document-editor --env <component env> --scratch-dir <owner-only empty dir> [--source <commit>]
+
+``stage`` serves ``--check`` before a first deployment: it renders into the scratch
+directory with an env copy pointing there, so the consumer's check needs no deployed file.
 """
 
 import argparse
@@ -98,6 +102,7 @@ def named_file(file_key):
         require(path.is_absolute() and str(path) == raw and path.name not in ("", ".", "..")
                 and path.parent.is_dir(), file_key + " must be an absolute file path in an existing directory")
         return delivery.private_path(str(path.parent), directory=True) / path.name
+    destination.key = file_key
     return destination
 
 
@@ -356,18 +361,47 @@ def run(operation, component, env_path, source, backup, environ):
             "keys": [sign + " " + key for sign, key in diff]}
 
 
+def stage(component, env_path, source, scratch, environ):
+    """``--check`` of a first deployment: the deployed file is rendered only by a real
+    deployment, so it cannot be the thing a check reads. Render into an owner-only
+    scratch directory instead, together with a copy of the component env whose
+    destination key names the staged file, so the consumer's own check runs on exactly
+    what ``apply`` would publish. The controlled env and the deployed file are not
+    touched; the caller removes the scratch directory."""
+    require(component in SPECS, "no rendered native configuration for " + component)
+    spec = SPECS[component]
+    key = getattr(spec["destination"], "key", None)
+    require(key, component + " has no single named file to stage")
+    directory = delivery.private_path(scratch, directory=True)
+    controlled = delivery.private_path(env_path)
+    deployed = spec["destination"](env_file(controlled))
+    staged_env, staged_file = directory / controlled.name, directory / deployed.name
+    require(staged_env != staged_file and not os.path.lexists(staged_env) and not os.path.lexists(staged_file),
+            "scratch directory must be empty")
+    # Same line rule as env_file: the one destination line is replaced, nothing else changes.
+    lines = [line for line in delivery.read(controlled).splitlines()
+             if not re.fullmatch(re.escape(key) + r"=.*", line.strip())]
+    delivery.write(staged_env, "\n".join(lines + [f"{key}={staged_file}"]) + "\n")
+    result = run("apply", component, str(staged_env), source, "", environ)
+    return {**result, "operation": "stage", "env": str(staged_env)}
+
+
 def main(argv, environ):
     parser = argparse.ArgumentParser(add_help=False)
-    parser.add_argument("operation", choices=("check", "apply"))
+    parser.add_argument("operation", choices=("check", "apply", "stage"))
     parser.add_argument("component")
     parser.add_argument("--env", required=True)
     parser.add_argument("--source", default="")
     parser.add_argument("--backup-dir", default="")
+    parser.add_argument("--scratch-dir", default="")
     try:
         args = parser.parse_args(argv)
     except SystemExit:
-        raise Refused("usage: native-config.py check|apply <component> --env <file> [--source <commit>] [--backup-dir <dir>]")
+        raise Refused("usage: native-config.py check|apply|stage <component> --env <file> [--source <commit>] [--backup-dir <dir>] [--scratch-dir <dir>]")
     require(not args.source or re.fullmatch(r"[0-9a-f]{40}", args.source), "--source must be a full commit")
+    require((args.operation == "stage") == bool(args.scratch_dir), "--scratch-dir is required by stage and only by stage")
+    if args.operation == "stage":
+        return stage(args.component, args.env, args.source, args.scratch_dir, environ)
     return run(args.operation, args.component, args.env, args.source, args.backup_dir, environ)
 
 

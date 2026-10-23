@@ -511,11 +511,19 @@ class IdpStep:
 
 # ---- inspect：只读探针 ---------------------------------------------------------
 
+def build_targets(cfg):
+    """CI 登记的构建目标名（ci/config.json build_targets 的键）：规划据此区分"从未构建但可构建"的二开产物。"""
+    targets = cfg.get("build_targets") or {}
+    if not isinstance(targets, (dict, list)):
+        raise NodeError("CI 配置 build_targets 不是映射")
+    return sorted(str(t) for t in targets)
+
+
 def inspect(request):
     cfg = ci_config(request["ci_config"])
     project = cfg["compose_project"]
     result = dict(sources=cfg["sources"], compose_project=project, runtime_present=os.path.isfile(
-        os.path.join(cfg["runtime"], ".env")))
+        os.path.join(cfg["runtime"], ".env")), build_targets=build_targets(cfg))
     commit = request.get("commit")
     if commit:
         root = os.path.join(cfg["sources"], commit)
