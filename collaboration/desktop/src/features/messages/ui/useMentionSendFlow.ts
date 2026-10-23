@@ -1,6 +1,7 @@
 import * as React from "react";
 import { ConversationPreparationPending } from "@client-kit/platform/react/new-message";
 import { isOutcomeUnknown } from "@client-kit/platform/transport";
+import { buildAgentAddressMentionTags } from "@client-kit/platform/react/messages";
 import { toast } from "sonner";
 import { claimDraftSend } from "@/features/messages/lib/useDrafts";
 import {
@@ -399,7 +400,11 @@ export function useMentionSendFlow({
           trimmed,
           mentionPubkeys,
           verifyMentionRecipients,
-          outgoingTags: linkPreviewTags,
+          // DD-148: tray-addressed Agents that this message notifies carry the original marker.
+          outgoingTags: [
+            ...linkPreviewTags,
+            ...buildAgentAddressMentionTags(addressedAgentPubkeys, mentionPubkeys),
+          ],
           preparedLinkPreviews,
           savedContent: trimmed,
           savedImeta: [...pendingImeta],

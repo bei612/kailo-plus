@@ -34,3 +34,6 @@ export * from "./useMeasuredCssVariable";
 export * from "./threading";
 export { applyMessageEdits } from "./messageEdits";
 export { imetaMediaFromTags, restoreImetaMediaDisplayLabels, stripImetaMediaLines, findSpoileredImetaMediaUrls } from "./editAttachments";
+export * from "./agentAddress";
+export * from "./agentAuthorFacts";
+export { MessageAgentAddressPrefix, useMessageAgentAddressPrefix, type AgentAddressHost } from "./MessageAgentAddressPrefix";

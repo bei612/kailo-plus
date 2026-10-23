@@ -558,6 +558,34 @@ impl IdentityClient {
         message_type: &contracts::WebMessageType,
         ancestry: Option<(&str, &str)>,
     ) -> Result<Event, OperatorError> {
+        self.sign_channel_message_addressed(
+            channel_id,
+            content,
+            media_tags,
+            mention_pubkeys,
+            reference_pubkeys,
+            &[],
+            message_type,
+            ancestry,
+        )
+    }
+
+    /// DD-148, Buzz 779af8886caae1317b4de962082429867ab61503
+    /// desktop/src/features/messages/lib/agentAddressMention.mjs::buildAgentAddressMentionTags:
+    /// the addressed Agents that this message actually notifies are annotated with
+    /// `["mention", <pubkey>, "agent-address"]` beside their `p`; display metadata only.
+    #[allow(clippy::too_many_arguments)]
+    pub fn sign_channel_message_addressed(
+        &self,
+        channel_id: &str,
+        content: &str,
+        media_tags: &[Vec<String>],
+        mention_pubkeys: &[String],
+        reference_pubkeys: &[String],
+        address_pubkeys: &[String],
+        message_type: &contracts::WebMessageType,
+        ancestry: Option<(&str, &str)>,
+    ) -> Result<Event, OperatorError> {
         if matches!(message_type, contracts::WebMessageType::ForumPost) && ancestry.is_some()
             || matches!(message_type, contracts::WebMessageType::ForumComment) && ancestry.is_none()
         {
@@ -597,6 +625,23 @@ impl IdentityClient {
                 ));
             }
             tags.push(vec!["mention".to_owned(), key]);
+        }
+        let mut addressed = std::collections::BTreeSet::new();
+        for pubkey in address_pubkeys {
+            let key = nostr::PublicKey::from_hex(pubkey)
+                .map_err(|_| OperatorError::Sign("Agent address public key is invalid".into()))?
+                .to_hex();
+            if !tags
+                .iter()
+                .any(|tag| matches!(tag.as_slice(), [name, value] if name == "p" && *value == key))
+            {
+                return Err(OperatorError::Sign(
+                    "Agent address does not name a notified mention".into(),
+                ));
+            }
+            if addressed.insert(key.clone()) {
+                tags.push(vec!["mention".to_owned(), key, "agent-address".to_owned()]);
+            }
         }
         self.sign(message_kind(message_type), content, &tags)
     }
@@ -2761,6 +2806,62 @@ mod mention_tests {
                 )
                 .is_err());
         }
+    }
+
+    #[test]
+    fn agent_address_annotates_only_notified_agents() {
+        let keys = Keys::generate();
+        let client = IdentityClient::new(
+            Custody::Server,
+            &keys.secret_key().to_secret_hex(),
+            "http://relay.example",
+            "relay.example",
+        )
+        .unwrap();
+        let agent = Keys::generate().public_key().to_hex();
+        let other = Keys::generate().public_key().to_hex();
+        let event = client
+            .sign_channel_message_addressed(
+                "channel",
+                "hello",
+                &[],
+                &[agent.clone(), other.clone()],
+                &[],
+                &[agent.clone(), agent.clone()],
+                &contracts::WebMessageType::Stream,
+                None,
+            )
+            .unwrap();
+        event.verify().unwrap();
+        let tags: Vec<_> = event
+            .tags
+            .iter()
+            .map(|tag| tag.as_slice().to_vec())
+            .collect();
+        assert_eq!(
+            tags.iter()
+                .filter(|tag| tag.len() == 3 && tag[2] == "agent-address")
+                .collect::<Vec<_>>(),
+            vec![&vec![
+                "mention".to_owned(),
+                agent.clone(),
+                "agent-address".into()
+            ]]
+        );
+        // An addressed key must also be a notified mention.
+        let outside = Keys::generate().public_key().to_hex();
+        assert!(client
+            .sign_channel_message_addressed(
+                "channel",
+                "hello",
+                &[],
+                std::slice::from_ref(&agent),
+                &[],
+                std::slice::from_ref(&outside),
+                &contracts::WebMessageType::Stream,
+                None,
+            )
+            .is_err());
     }
 
     #[test]

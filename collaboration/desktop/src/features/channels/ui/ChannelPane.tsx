@@ -2,6 +2,7 @@ import * as React from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useConversations } from "@client-kit/platform/react/new-message";
 import { NativeReportPublisherProvider } from "@client-kit/platform/react/moderation";
+import { AgentAuthorFactsProvider } from "@client-kit/platform/react/messages";
 import type { MessageModerationContext } from "@client-kit/platform/react/messages";
 import { nativeApplicationWorkspace, useWorkspaceChannelDirectory } from "@/features/channels/hooks";
 import { useNativeReportPublisher } from "@/features/platform/nativeReport";
@@ -483,6 +484,7 @@ export const ChannelPane = React.memo(function ChannelPane({
   return (
     <MessageModerationScopeProvider value={moderation}>
     <NativeReportPublisherProvider value={nativeReport}>
+    <AgentAuthorFactsProvider facts={agentActivity.authorFacts}>
     <AgentActivityOpenerProvider value={agentActivity.opener}>
     <div className="relative flex min-h-0 min-w-0 flex-1 flex-row overflow-hidden">
       {!isSinglePanelView ? (
@@ -729,6 +731,7 @@ export const ChannelPane = React.memo(function ChannelPane({
       {deleteMessageDialog.dialog}
     </div>
     </AgentActivityOpenerProvider>
+    </AgentAuthorFactsProvider>
     </NativeReportPublisherProvider>
     </MessageModerationScopeProvider>
   );

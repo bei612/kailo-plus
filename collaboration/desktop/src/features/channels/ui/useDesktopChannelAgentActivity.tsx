@@ -28,6 +28,7 @@ import { useComposerAgentDirectory } from "@client-kit/platform/react/composer/f
 import type { ComposerAgent } from "@client-kit/platform/react/composer/features/messages/lib/composerAgentDirectory";
 import { truncateNpub } from "@client-kit/platform/react/conversations/pubkey";
 import type { TypingIndicatorEntry } from "@client-kit/platform/react/messages/typingState";
+import { useAgentAuthorFacts } from "@client-kit/platform/react/messages";
 import { useAppNavigation } from "@/app/navigation/useAppNavigation";
 import { nativeApplicationWorkspace, useWorkspaceChannelDirectory } from "@/features/channels/hooks";
 import { useNativeSession } from "@/features/platform/activeCommunity";
@@ -115,6 +116,8 @@ export function useDesktopChannelAgentActivity({ activeChannel, enabled, typingE
     client: bff, channelId: workspaceId, agents: readableAgents, typingEntries, enabled: live,
   });
   const composerAgentList = composerAgents.data?.agents;
+  // DD-147: owner line and owner-only respondTo badge from the same admitted directory.
+  const authorFacts = useAgentAuthorFacts(bff, live ? composerAgents.data : undefined);
   const workingAgents = React.useMemo<BotActivityAgent[]>(() => (readableAgents ?? []).flatMap((row) =>
     row.agentPubkey ? [{
       pubkey: row.agentPubkey,
@@ -131,6 +134,8 @@ export function useDesktopChannelAgentActivity({ activeChannel, enabled, typingE
     /** The Workspace scope the working signal and "View activity" use, if admitted. */
     scopeId: workspaceId,
     agentPubkeys: activity.agentPubkeys,
+    /** DD-147/148 row facts for the shared timeline (owner line, badge, address prefix). */
+    authorFacts,
     workingBotPubkeys: live ? activity.workingBotPubkeys : [],
     workingAgents,
     opener: panel.opener,

@@ -101,7 +101,7 @@ import { AnimatePresence } from "motion/react";
 import { useIsThreadPanelOverlay } from "@client-kit/platform/react/thread";
 import { MessageAuthorAvatar, MessageAuthorIdentity, useMessageAuthorLabels, MessageAuthorProfile } from "./MessageAuthorProfile";
 import { resolveConversationHeaderParticipants, formatDmParticipantDisplayName } from "@client-kit/platform/react/conversations/dm-participant-display";
-import { UserAvatar } from "@client-kit/platform/react/messages";
+import { UserAvatar, agentAddressHost, useAgentAuthorFacts, withAgentAuthorFacts, type AgentAuthorFacts } from "@client-kit/platform/react/messages";
 import type { MessageTimelineProps } from "@client-kit/platform/react/messages/timeline/types";
 import { useSearchHighlightProps } from "@client-kit/platform/react/search/useSearchHighlightProps";
 import { useUiT } from "@client-kit/platform/react/context";
@@ -401,6 +401,9 @@ export function ChannelPane({
   );
   const typingAgents = useComposerAgentDirectory(bff, {workspaceId, principalId: myPrincipalId}, !conversation && live && !denied && !metadataPending);
   const agentTypingPubkeys = useMemo(() => new Set(typingAgents.data?.agents.map(agent => agent.pubkey.toLowerCase())), [typingAgents.data]);
+  // DD-147/148: owner line, owner-only respondTo badge and address prefix from the same directory.
+  const agentFacts: AgentAuthorFacts = useAgentAuthorFacts(bff, typingAgents.data);
+  const agentAddress = useMemo(() => agentAddressHost(agentFacts), [agentFacts]);
   // Original canManageMessageForCurrentUser "own Agent": Installations this person owns here.
   const ownedAgentPubkeys = useMemo(() => new Set(typingAgents.data?.agents
     .filter(agent => agent.installation.ownerPrincipalId === myPrincipalId).map(agent => agent.pubkey.toLowerCase())),
@@ -436,12 +439,12 @@ export function ChannelPane({
     .map(entry => entry.pubkey);
   const authorLabel = useMessageAuthorLabels({principalId: myPrincipalId, workspaceId, conversationId: conversation?.id},
     events, live && !denied && !metadataPending);
-  const timelineMessages = useMemo<TimelineMessage[]>(() => events.map((event) => ({
+  const timelineMessages = useMemo<TimelineMessage[]>(() => events.map((event) => withAgentAuthorFacts({
     id: event.id, createdAt: event.created_at, pubkey: event.pubkey,
     signerPubkey: event.pubkey, author: authorLabel(event, byPubkey.get(event.pubkey)?.displayName),
     body: event.content, tags: event.tags, kind: event.kind, time: "", depth: 0, reactions:messageReactions.reactions.get(event.id),
     edited: event.edited, isAgent: agentTypingPubkeys.has(event.pubkey.toLowerCase()), ...getThreadReference(event.tags),
-  })), [events, byPubkey, messageReactions.reactions, authorLabel, agentTypingPubkeys]);
+  }, agentFacts)), [events, byPubkey, messageReactions.reactions, authorLabel, agentTypingPubkeys, agentFacts]);
   // Original ChannelScreen merges freshly read route context with its channel
   // window. Search results and URL ids are not permission to reuse stale bodies.
   const routeReadId = targetMessageId ?? effectiveThreadHeadId;
@@ -457,12 +460,12 @@ export function ChannelPane({
   const routeContextAvailable = Boolean(routeReadId && live && !denied && !routeContext.denied && !routeContext.interrupted && routeContext.thread.isSuccess && !routeContext.thread.isError);
   const routeAuthorLabel = useMessageAuthorLabels({principalId: myPrincipalId, workspaceId, conversationId: conversation?.id},
     routeContext.messages, routeContextAvailable);
-  const routeMessages = useMemo<TimelineMessage[]>(() => routeContextAvailable ? routeContext.messages.map(event => ({
+  const routeMessages = useMemo<TimelineMessage[]>(() => routeContextAvailable ? routeContext.messages.map(event => withAgentAuthorFacts({
     id: event.id, createdAt: event.createdAt, pubkey: event.pubkey, signerPubkey: event.pubkey,
     author: routeAuthorLabel(event, byPubkey.get(event.pubkey)?.displayName),
     body: event.content, tags: event.tags, kind: event.kind, time: "", depth: 0,
     edited: event.edited, isAgent: agentTypingPubkeys.has(event.pubkey.toLowerCase()), ...getThreadReference(event.tags),
-  })) : [], [routeContextAvailable, routeContext.messages, byPubkey, routeAuthorLabel, agentTypingPubkeys]);
+  }, agentFacts)) : [], [routeContextAvailable, routeContext.messages, byPubkey, routeAuthorLabel, agentTypingPubkeys, agentFacts]);
   const routeMessageById = useMemo(() => new Map([...timelineMessages, ...routeMessages].map(message => [message.id, message])), [timelineMessages, routeMessages]);
   // DD-121: own top-level and open-thread messages that @mention a channel Agent (Workspace channels only).
   const mentionAgents = useMemo<MentionableAgent[]>(() => (typingAgents.data?.agents ?? []).map(agent =>
@@ -905,7 +908,7 @@ export function ChannelPane({
             return <div key={message.id} data-event-id={message.id} className={`flex flex-col gap-1 ${followedByContinuation ? "pb-0" : "pb-2.5"}`}>
               <MessageRowSurface message={message} isContinuation={isContinuation} showDepthGuides={false} highlighted={highlightedMessageId === message.id}
                 searchQuery={props.searchMatchingMessageIds?.has(message.id) ? props.searchQuery : undefined}
-                agentMentionStatus={renderAgentMentionStatus(message)}
+                agentMentionStatus={renderAgentMentionStatus(message)} agentAddress={agentAddress}
                 reference={<SentFromThreadLine channelId={channelId} tags={message.tags}
                   renderLink={(link, threadExcerpt) => <SentFromThreadLink link={link}
                     channelLabel={channelName || link.channelId.slice(0, 8)} threadExcerpt={threadExcerpt}
@@ -1022,7 +1025,7 @@ export function ChannelPane({
     </Suspense> : null}
     {threadAdmissionAvailable ? <AnimatePresence mode="wait" onExitComplete={markExitComplete}>
     {replaceThreadWithIdleAuxiliary && !profileTarget && !systemProfileTarget && !participantProfileTarget ? idleAuxiliarySurface : replyTarget ? <div ref={threadSurface.ref} inert={threadSurface.covered || undefined} aria-hidden={threadSurface.covered || undefined} key={`${myPrincipalId}:${workspaceId}:${getThreadReference(replyTarget.tags ?? []).rootId ?? replyTarget.id}`} className={profileTarget || systemProfileTarget || participantProfileTarget ? "hidden" : "contents"}><FocusThreadDrawer escapeEnabled={!threadSurface.covered} hasActiveEdit={threadEditTarget!==null} active={focusThread && !profileTarget && !systemProfileTarget && !participantProfileTarget} channelName={channelName} onClose={handleCloseThread}><ChannelThreadPane key={`${myPrincipalId}:${workspaceId}:${getThreadReference(replyTarget.tags ?? []).rootId ?? replyTarget.id}`}
-      channelName={channelName} agentPubkeys={agentTypingPubkeys} ownedAgentPubkeys={ownedAgentPubkeys}
+      channelName={channelName} agentPubkeys={agentTypingPubkeys} agentFacts={agentFacts} ownedAgentPubkeys={ownedAgentPubkeys}
       restoreDraftKey={restoreDraftKey} autoSendDraftKey={autoSendDraftKey} onAutoSendConsumed={onAutoSendConsumed}
       channelId={conversation?.channelId ?? channelId}
       conversation={conversation}
@@ -1101,7 +1104,9 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
    * forwards the preview intent pass it; the built-in Workspace publication needs none. */
   linkPreviewTarget?: { workspaceId: string } | { conversationId: string };
   /** `referenceMentionPubkeys` (DD-125(8)) is passed only when the person chose to send without inviting. */
-  onPublish?: (content: string, attachments: readonly MediaDescriptor[], idempotencyKey: string, mentionInstallationIds: string[], humanMentionPubkeys?: string[], linkPreviews?: LinkPreviewPublication, referenceMentionPubkeys?: string[]) => Promise<unknown>;
+  onPublish?: (content: string, attachments: readonly MediaDescriptor[], idempotencyKey: string, mentionInstallationIds: string[], humanMentionPubkeys?: string[], linkPreviews?: LinkPreviewPublication, referenceMentionPubkeys?: string[],
+    /** DD-148: the address-tray subset of mentionInstallationIds (original agent-address tags). */
+    addressedInstallationIds?: string[]) => Promise<unknown>;
   onCancel?: () => void;
   containerClassName?: string;
   layoutMode?: "standalone" | "dock";
@@ -1607,6 +1612,8 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
     let humanMentionPubkeys:string[]=[];
     let nonMemberPubkeys: string[] = [];
     let selectedInstallationIds: string[] = [];
+    // DD-148 original buildAgentAddressMentionTags input: the tray-addressed Agents that are delivered.
+    let addressedInstallationIds: string[] = [];
     try {
       // A typed label binds only channel members; people outside are mentioned by explicit selection.
       const memberCandidates=mentionCandidates.map(person=>({...person,isMember:person.notInChannel!==true}));
@@ -1618,6 +1625,10 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
         if (agentRecipients.some(pubkey => !fresh.agents.some(agent => agent.pubkey === pubkey)) ||
             mentionInstallationIds.some(id => !fresh.agents.some(agent => agent.installation.resourceId === id))) throw new MentionAgentNotAllowedError();
         selectedInstallationIds = [...new Set([...mentionInstallationIds, ...agentRecipients.map(pubkey => fresh.agents.find(agent => agent.pubkey === pubkey)!.installation.resourceId)])].sort();
+        addressedInstallationIds = [...new Set(audience.pubkeys.flatMap(pubkey => {
+          const agent = fresh.agents.find(candidate => candidate.pubkey === pubkey);
+          return agent && selectedInstallationIds.includes(agent.installation.resourceId) ? [agent.installation.resourceId] : [];
+        }))].sort();
       }
       humanMentionPubkeys=recipients.filter(pubkey => !agentRecipients.includes(pubkey));
       // DD-125(8): people who are not ACTIVE members of this channel's Workspace. Outside the
@@ -1644,6 +1655,7 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
         return [a.sha256, a.filename, a.spoiler, ...(Object.values(metadata).some((value) => value !== undefined) ? [metadata] : [])];
       }),
       selectedInstallationIds,
+      ...(addressedInstallationIds.length ? [addressedInstallationIds] : []),
     ];
     // DD-125(5): an unresolved intent for this same message keeps the previews it first named
     // (same key, same publication); otherwise wait for this draft's previews (original 10 s
@@ -1709,14 +1721,17 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
     setMentionInstallationIds(selectedInstallationIds);
     persistDraft(content, pending, selectedInstallationIds);
     const publish = onPublish
-      ? referenceMentionPubkeys.length
+      ? addressedInstallationIds.length
+        ? onPublish(published, attachments, key, selectedInstallationIds, humanMentionPubkeys, linkPreviewIntent, referenceMentionPubkeys, addressedInstallationIds)
+      : referenceMentionPubkeys.length
         ? onPublish(published, attachments, key, selectedInstallationIds, humanMentionPubkeys, linkPreviewIntent, referenceMentionPubkeys)
         : linkPreviewIntent
           ? onPublish(published, attachments, key, selectedInstallationIds, humanMentionPubkeys, linkPreviewIntent)
           : onPublish(published, attachments, key, selectedInstallationIds, humanMentionPubkeys)
       : workspaceId
         ? publishMessage(workspaceId, published, attachments, key, selectedInstallationIds, {mentionPubkeys: humanMentionPubkeys,
-            ...(referenceMentionPubkeys.length ? {referenceMentionPubkeys} : {}), ...linkPreviewIntent}).then((receipt) => {
+            ...(referenceMentionPubkeys.length ? {referenceMentionPubkeys} : {}),
+            ...(addressedInstallationIds.length ? {addressedInstallationIds} : {}), ...linkPreviewIntent}).then((receipt) => {
             if (!receipt?.eventId || !receipt.operationId) throw new TransportError("Message has no confirmed receipt.");
             return receipt;
           })

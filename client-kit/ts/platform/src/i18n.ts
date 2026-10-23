@@ -449,6 +449,7 @@ export const platformMessages = {
   "messages.system.agentOwnerUnavailable": {en:"Agent; owner unavailable","zh-CN":"Agent；管理者信息不可用"},
   "messages.system.managedBy": {en:"managed by","zh-CN":"管理者为"},
   "messages.system.ownerUnavailable": {en:"owner unavailable","zh-CN":"管理者信息不可用"},
+  "messages.agentRespondToAllowlist": { en: "Selected people can send instructions to this agent", "zh-CN": "仅选定的人可以向此 Agent 下达指令" },
   "messages.system.addedBySelf": {en:"were added by","zh-CN":"被添加，操作者为"},
   "messages.system.addedBy": {en:"added by","zh-CN":"被添加，操作者为"},
   "messages.system.addedSelf": {en:"were added","zh-CN":"被添加"},
