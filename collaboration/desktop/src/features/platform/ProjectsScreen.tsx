@@ -109,7 +109,7 @@ const conversationEvent=(event:RelayEvent):ProjectAgentConversationEvent=>
  * and channel send (`p` names the Agent; agent.invoke admits it), every Relay call bound to the
  * relay and signer captured with this session. No Agent DM, start, enable or install path exists.
  */
-function useDesktopProjectAgentChat():ProjectAgentChatHost|undefined{
+export function useDesktopProjectAgentChat():ProjectAgentChatHost|undefined{
   const session=useNativeSession();const community=useActiveCommunity();
   const scope=useMemo(()=>({active:true}),[session,community.relayUrl]);
   useEffect(()=>{scope.active=true;return()=>{scope.active=false;};},[scope]);

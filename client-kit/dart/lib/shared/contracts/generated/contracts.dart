@@ -16606,10 +16606,11 @@ class PlatformToolPage {
 }
 
 class PlatformToolView {
+  ///DD-140 (1)：平台原生工具名到动作键的封闭映射；记忆工具即其自身，project_channel_request 为 workspace.create。
   final PlatformToolViewActionKey actionKey;
   final bool canConsume;
   final String inputSchemaHash;
-  final PlatformToolViewActionKey name;
+  final PlatformToolViewName name;
   final String outputSchemaHash;
   final String ownerPrincipalId;
   final String resourceId;
@@ -16637,7 +16638,7 @@ class PlatformToolView {
         actionKey: platformToolViewActionKeyValues.map[json["actionKey"]]!,
         canConsume: json["canConsume"],
         inputSchemaHash: json["inputSchemaHash"],
-        name: platformToolViewActionKeyValues.map[json["name"]]!,
+        name: platformToolViewNameValues.map[json["name"]]!,
         outputSchemaHash: json["outputSchemaHash"],
         ownerPrincipalId: json["ownerPrincipalId"],
         resourceId: json["resourceId"],
@@ -16651,7 +16652,7 @@ class PlatformToolView {
     "actionKey": platformToolViewActionKeyValues.reverse[actionKey],
     "canConsume": canConsume,
     "inputSchemaHash": inputSchemaHash,
-    "name": platformToolViewActionKeyValues.reverse[name],
+    "name": platformToolViewNameValues.reverse[name],
     "outputSchemaHash": outputSchemaHash,
     "ownerPrincipalId": ownerPrincipalId,
     "resourceId": resourceId,
@@ -16662,14 +16663,29 @@ class PlatformToolView {
   });
 }
 
+///DD-140 (1)：平台原生工具名到动作键的封闭映射；记忆工具即其自身，project_channel_request 为 workspace.create。
 enum PlatformToolViewActionKey {
   AGENT_MEMORY_ENTRY_LIST,
   AGENT_MEMORY_ENTRY_READ,
+  WORKSPACE_CREATE,
 }
 
 final platformToolViewActionKeyValues = EnumValues({
   "agent.memory.entry.list": PlatformToolViewActionKey.AGENT_MEMORY_ENTRY_LIST,
   "agent.memory.entry.read": PlatformToolViewActionKey.AGENT_MEMORY_ENTRY_READ,
+  "workspace.create": PlatformToolViewActionKey.WORKSPACE_CREATE,
+});
+
+enum PlatformToolViewName {
+  AGENT_MEMORY_ENTRY_LIST,
+  AGENT_MEMORY_ENTRY_READ,
+  PROJECT_CHANNEL_REQUEST,
+}
+
+final platformToolViewNameValues = EnumValues({
+  "agent.memory.entry.list": PlatformToolViewName.AGENT_MEMORY_ENTRY_LIST,
+  "agent.memory.entry.read": PlatformToolViewName.AGENT_MEMORY_ENTRY_READ,
+  "project_channel_request": PlatformToolViewName.PROJECT_CHANNEL_REQUEST,
 });
 
 enum PlatformToolViewSource { PLATFORM_NATIVE }

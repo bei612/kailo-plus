@@ -9,11 +9,11 @@
     "resourceId": {"type": "string", "format": "uuid"},
     "resourceVersion": {"type": "integer", "minimum": 1},
     "ownerPrincipalId": {"type": "string", "format": "uuid"},
-    "name": {"type": "string", "enum": ["agent.memory.entry.list", "agent.memory.entry.read"]},
+    "name": {"type": "string", "enum": ["agent.memory.entry.list", "agent.memory.entry.read", "project_channel_request"]},
     "source": {"type": "string", "enum": ["PLATFORM_NATIVE"]},
     "status": {"type": "string", "enum": ["PROVISIONING", "ACTIVE"]},
     "resourceState": {"$ref": "../enums/resource_state.schema.json"},
-    "actionKey": {"type": "string", "enum": ["agent.memory.entry.list", "agent.memory.entry.read"]},
+    "actionKey": {"type": "string", "description": "DD-140 (1)：平台原生工具名到动作键的封闭映射；记忆工具即其自身，project_channel_request 为 workspace.create。", "enum": ["agent.memory.entry.list", "agent.memory.entry.read", "workspace.create"]},
     "inputSchemaHash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
     "outputSchemaHash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
     "canConsume": {"type": "boolean"}

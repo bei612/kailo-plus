@@ -7976,10 +7976,11 @@ type PlatformToolPage struct {
 }
 
 type PlatformToolView struct {
+	// DD-140 (1)：平台原生工具名到动作键的封闭映射；记忆工具即其自身，project_channel_request 为 workspace.create。
 	ActionKey        PlatformToolViewActionKey `json:"actionKey"`
 	CanConsume       bool                      `json:"canConsume"`
 	InputSchemaHash  string                    `json:"inputSchemaHash"`
-	Name             PlatformToolViewActionKey `json:"name"`
+	Name             PlatformToolViewName      `json:"name"`
 	OutputSchemaHash string                    `json:"outputSchemaHash"`
 	OwnerPrincipalID string                    `json:"ownerPrincipalId"`
 	ResourceID       string                    `json:"resourceId"`
@@ -11192,11 +11193,21 @@ const (
 	TenantStateSUSPENDING   TenantState = "SUSPENDING"
 )
 
+// DD-140 (1)：平台原生工具名到动作键的封闭映射；记忆工具即其自身，project_channel_request 为 workspace.create。
 type PlatformToolViewActionKey string
 
 const (
-	AgentMemoryEntryList PlatformToolViewActionKey = "agent.memory.entry.list"
-	AgentMemoryEntryRead PlatformToolViewActionKey = "agent.memory.entry.read"
+	PlatformToolViewActionKeyAgentMemoryEntryList PlatformToolViewActionKey = "agent.memory.entry.list"
+	PlatformToolViewActionKeyAgentMemoryEntryRead PlatformToolViewActionKey = "agent.memory.entry.read"
+	PlatformToolViewActionKeyWorkspaceCreate      PlatformToolViewActionKey = "workspace.create"
+)
+
+type PlatformToolViewName string
+
+const (
+	PlatformToolViewNameAgentMemoryEntryList  PlatformToolViewName = "agent.memory.entry.list"
+	PlatformToolViewNameAgentMemoryEntryRead  PlatformToolViewName = "agent.memory.entry.read"
+	PlatformToolViewNameProjectChannelRequest PlatformToolViewName = "project_channel_request"
 )
 
 type PlatformToolViewSource string
@@ -11359,7 +11370,7 @@ const (
 type RoleWorkspacePageCreateActionKey string
 
 const (
-	WorkspaceCreate RoleWorkspacePageCreateActionKey = "workspace.create"
+	RoleWorkspacePageCreateActionKeyWorkspaceCreate RoleWorkspacePageCreateActionKey = "workspace.create"
 )
 
 // 当前 Principal 经 fresh Tenant manage 检查、按该 Workspace 当前状态可发起的暂停（ACTIVE 或

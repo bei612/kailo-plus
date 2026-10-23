@@ -1905,6 +1905,10 @@ enum PlatformMessageKey {
   projectsDiscussionOpenConversation,
   projectsConversationOpenChannel,
   projectsChannelRequestTitle,
+  projectsChannelRequestTheAgent,
+  projectsChannelRequestReceiptApproved,
+  projectsChannelRequestReceiptDenied,
+  projectsChannelRequestReceiptFailed,
   projectsChannelRequestDescriptionText,
   projectsChannelRequestThisProject,
   projectsChannelRequestName,
@@ -8630,6 +8634,19 @@ const _messages = <PlatformMessageKey, (String, String)>{
   PlatformMessageKey.projectsChannelRequestTitle: (
     'Create project channel?',
     '创建项目频道？',
+  ),
+  PlatformMessageKey.projectsChannelRequestTheAgent: ('Agent', 'Agent'),
+  PlatformMessageKey.projectsChannelRequestReceiptApproved: (
+    '@{agent} I approved your request: #{name} has been created in this project.',
+    '@{agent} 我已批准你的申请：#{name} 已在此项目中创建。',
+  ),
+  PlatformMessageKey.projectsChannelRequestReceiptDenied: (
+    '@{agent} I declined your request to create #{name}.',
+    '@{agent} 我拒绝了创建 #{name} 的申请。',
+  ),
+  PlatformMessageKey.projectsChannelRequestReceiptFailed: (
+    'Couldn’t tell the agent about this decision.',
+    '未能把这次决定告知 Agent。',
   ),
   PlatformMessageKey.projectsChannelRequestDescriptionText: (
     'Your agent requested a new channel in {project}. Review the details before creating it.',
