@@ -331,7 +331,7 @@ function objectFields(value: unknown, keys: string[]): value is Record<string, u
 
 function validAutomationContent(value: unknown): value is AutomationVersionContent {
   if (!objectFields(value, ["name", "description", "trigger", "action", "resultTarget", "approvalPolicy", "formatVersion", "steps"])
-    || !objectFields(value.trigger, ["kind", "textPrefix", "filter", "mentionPrincipalId", "scheduleSpec"])) return false;
+    || !objectFields(value.trigger, ["kind", "textPrefix", "filter", "mentionPrincipalId", "scheduleSpec", "emoji"])) return false;
   if (value.formatVersion === 2 || value.formatVersion === 3 ? value.action !== undefined || !supportedSteps(value.steps, value.formatVersion)
     : value.formatVersion !== undefined || value.steps !== undefined || !objectFields(value.action, ["kind", "template"])
       || (value.action.kind !== AutomationVersionContentActionKind.AgentTurn && value.action.kind !== AutomationVersionContentActionKind.PostMessage)

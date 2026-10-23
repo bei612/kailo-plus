@@ -1,5 +1,5 @@
 import { act } from "react";
-import { AutomationStepStatus, type AutomationStepTrace } from "@client-kit/contracts";
+import { AutomationStepStatus, type AutomationRunView, type AutomationStepTrace } from "@client-kit/contracts";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createBffClient } from "../src/client";
@@ -24,6 +24,7 @@ const receipt = { actionKey: "automation.run", actionExecutionId: "execution", o
 const task = { ...receipt, actionVersion: 1, targetId: "workflow", workspaceId: "workspace",
   createdAt: "2026-10-07T01:00:00Z", taskStatus: "RUNNING" };
 const run = { task, usageEventIds: [] };
+const runView = run as unknown as AutomationRunView;
 const page = { automationResourceId: "workflow", runs: [run] };
 
 async function setup(override: (request: BffRequest) => BffReply | undefined | Promise<BffReply | undefined> = () => undefined,
@@ -243,17 +244,17 @@ describe("original WorkflowDetailPanel run-card facts", () => {
     ({ stepId, status, output: {}, ...(startedAt ? { startedAt } : {}), ...(completedAt ? { completedAt } : {}) });
 
   it("derives step count, duration and current step only from native trace facts", () => {
-    expect(automationRunSummary({ ...run, executionTrace: [step("a", AutomationStepStatus.Completed, "2026-10-07T01:00:00Z", "2026-10-07T01:00:01Z"),
+    expect(automationRunSummary({ ...runView, executionTrace: [step("a", AutomationStepStatus.Completed, "2026-10-07T01:00:00Z", "2026-10-07T01:00:01Z"),
       step("b", AutomationStepStatus.Completed, "2026-10-07T01:00:01Z", "2026-10-07T01:00:03.5Z")] }))
       .toEqual({ steps: 2, duration: "3.5s", currentStep: null });
-    expect(automationRunSummary({ ...run, executionTrace: [step("a", AutomationStepStatus.Completed, "2026-10-07T01:00:00Z", "2026-10-07T01:00:00.25Z")] }).duration).toBe("250ms");
+    expect(automationRunSummary({ ...runView, executionTrace: [step("a", AutomationStepStatus.Completed, "2026-10-07T01:00:00Z", "2026-10-07T01:00:00.25Z")] }).duration).toBe("250ms");
     // An open step: no duration, its 1-based position is the current step.
-    expect(automationRunSummary({ ...run, executionTrace: [step("a", AutomationStepStatus.Completed, "2026-10-07T01:00:00Z", "2026-10-07T01:00:01Z"),
+    expect(automationRunSummary({ ...runView, executionTrace: [step("a", AutomationStepStatus.Completed, "2026-10-07T01:00:00Z", "2026-10-07T01:00:01Z"),
       step("b", AutomationStepStatus.WaitingApproval, "2026-10-07T01:00:01Z")] })).toEqual({ steps: 2, duration: null, currentStep: 2 });
     // A missing native completion time or an unknown step is never inferred into a duration.
-    expect(automationRunSummary({ ...run, executionTrace: [step("a", AutomationStepStatus.Completed, "2026-10-07T01:00:00Z")] }).duration).toBeNull();
-    expect(automationRunSummary({ ...run, executionTrace: [step("a", AutomationStepStatus.Unknown, "2026-10-07T01:00:00Z", "2026-10-07T01:00:01Z")] }).duration).toBeNull();
-    expect(automationRunSummary(run)).toEqual({ steps: 0, duration: null, currentStep: null });
+    expect(automationRunSummary({ ...runView, executionTrace: [step("a", AutomationStepStatus.Completed, "2026-10-07T01:00:00Z")] }).duration).toBeNull();
+    expect(automationRunSummary({ ...runView, executionTrace: [step("a", AutomationStepStatus.Unknown, "2026-10-07T01:00:00Z", "2026-10-07T01:00:01Z")] }).duration).toBeNull();
+    expect(automationRunSummary(runView)).toEqual({ steps: 0, duration: null, currentStep: null });
   });
 
   it.each([["en", "2 steps", "Current step 2"], ["zh-CN", "2 个步骤", "当前第 2 步"]] as const)("renders the run card facts in %s", async (locale, steps, current) => {
