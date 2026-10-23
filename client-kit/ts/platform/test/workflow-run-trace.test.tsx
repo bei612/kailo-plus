@@ -2,6 +2,10 @@ import { describe, expect, it, vi } from "vitest";
 import { ActionDispatchState, ActionGateState, ApprovalStatus, AutomationStepStatus, ReasonCode, TaskStatus,
   type AutomationRunView, type TaskView } from "@client-kit/contracts";
 import { createBffClient } from "../src/client";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { BffReply, BffRequest } from "../src/transport";
+import { ApprovalSelector } from "@client-kit/contracts";
+import { settle } from "./render";
 import { PlatformProvider } from "../src/react/context";
 import { WorkflowRunTrace } from "../src/react/workflow-run-trace";
 import { button, click, render } from "./render";
@@ -17,12 +21,14 @@ const child: TaskView = {
   dispatchState: ActionDispatchState.NotDispatched, workflowId: undefined, taskStatus: undefined,
   approvalWorkflowId: "approval-workflow", approvalStatus: ApprovalStatus.Waiting,
 };
-async function setup(run: AutomationRunView, locale: "en" | "zh-CN" = "en") {
+async function setup(run: AutomationRunView, locale: "en" | "zh-CN" = "en", approval?: unknown) {
   const onOpen = vi.fn();
-  const send = vi.fn(async () => ({ status: 503, body: undefined }));
-  const host = await render(<PlatformProvider client={createBffClient({ send })} locale={locale}>
+  const send = vi.fn(async (request: BffRequest): Promise<BffReply> => approval && request.path === "/api/v1/approvals/approval-workflow"
+    ? { status: 200, body: approval } : { status: 503, body: undefined });
+  const cache = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+  const host = await render(<QueryClientProvider client={cache}><PlatformProvider client={createBffClient({ send })} locale={locale}>
     <WorkflowRunTrace run={run} onOpen={onOpen} />
-  </PlatformProvider>);
+  </PlatformProvider></QueryClientProvider>);
   return { host, onOpen, send };
 }
 
@@ -82,5 +88,27 @@ describe("original workflow trace presentation over existing task references", (
     expect(host.querySelector("pre")?.textContent).toContain('"historyEventId": 19');
     expect(host.querySelector('[data-testid="workflow-approval-trace"]')).toBeNull();
     expect(host.textContent).not.toContain("0ms");
+  });
+});
+
+describe("original WorkflowApprovalCard over the admitted approval read", () => {
+  const run = (): AutomationRunView => ({ task, stepApprovalTask: child, usageEventIds: [], executionTrace: [
+    { stepId: "approve", status: AutomationStepStatus.WaitingApproval, output: { actionExecutionId: child.actionExecutionId } }] });
+  const approval = (status: ApprovalStatus, expiresAt: string) => ({ actionExecutionId: "approval-child", actionKey: "automation.step.approve",
+    decisions: [], expiresAt, initiatorPrincipalId: "human", roleRequirements: [{ minDistinct: 1, selector: ApprovalSelector.WorkspaceAdmin }],
+    status, targetId: "workflow", targetType: "automation", workflowId: "approval-workflow" });
+  it.each(["en", "zh-CN"] as const)("shows approver and expiry for a pending approval (%s)", async (locale) => {
+    const { host } = await setup(run(), locale, approval(ApprovalStatus.Waiting, "2999-01-01T00:00:00Z"));
+    await vi.waitFor(() => expect(host.querySelector('[data-testid="workflow-approval-card"]')).not.toBeNull());
+    expect(host.textContent).toContain(locale === "en" ? "Approval Required" : "需要审批");
+    expect(host.textContent).toContain(locale === "en" ? "Approver: Workspace admin" : "审批人：工作区管理员");
+  });
+  it("hides the card when the read is not admitted, expired or no longer pending", async () => {
+    for (const body of [undefined, approval(ApprovalStatus.Waiting, "2000-01-01T00:00:00Z"), approval(ApprovalStatus.Approved, "2999-01-01T00:00:00Z")]) {
+      const { host } = await setup(run(), "en", body);
+      await settle();
+      expect(host.querySelector('[data-testid="workflow-approval-card"]')).toBeNull();
+      expect(host.querySelector('[data-testid="workflow-approval-trace"]')).not.toBeNull();
+    }
   });
 });

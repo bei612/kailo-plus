@@ -251,7 +251,7 @@ export function NativeProjectConversationPanel({
     return wrapProjectConversationPane(
       <MessageThreadPanel
         {...layoutProps}
-        channel={activeChannel}
+        channelType={activeChannel.channelType}
         channelId={activeChannel.id}
         channelName={activeChannel.name}
         currentPubkey={identityQuery.data?.pubkey}
