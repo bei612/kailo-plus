@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/component_search_source_state.schema.json",
+  "title": "ComponentSearchSourceState",
+  "description": "DD-138(5)：一次「搜索全部」中某个组件来源的结果状态。UNAVAILABLE 表示该来源超时、不可达或回应不合合同，其结果整体未采信。",
+  "type": "string",
+  "enum": ["AVAILABLE", "UNAVAILABLE"]
+}

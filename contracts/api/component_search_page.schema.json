@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/component_search_page.schema.json",
+  "title": "ComponentSearchPage",
+  "description": "DD-138(5)、07 §4.8.4：组件内容搜索结果。每项已解析到可在 Kailo 内容区打开的原生页面入口（bindingId 为该呈现类别生效的入口，不是 adapter binding）；sources 列出每个呈现类别来源的状态。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["results", "sources"],
+  "properties": {
+    "results": {
+      "type": "array",
+      "items": {
+        "title": "ComponentSearchResult",
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["bindingId", "nativePageCategory", "kind", "title", "path"],
+        "properties": {
+          "bindingId": {"type": "string", "format": "uuid"},
+          "nativePageCategory": {"$ref": "../enums/native_page_category.schema.json"},
+          "kind": {"$ref": "../enums/component_search_result_kind.schema.json"},
+          "title": {"type": "string"},
+          "summary": {"type": "string"},
+          "path": {"type": "string"},
+          "updatedAt": {"type": "string", "format": "date-time"}
+        }
+      }
+    },
+    "sources": {
+      "type": "array",
+      "items": {
+        "title": "ComponentSearchSource",
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["nativePageCategory", "state"],
+        "properties": {
+          "nativePageCategory": {"$ref": "../enums/native_page_category.schema.json"},
+          "state": {"$ref": "../enums/component_search_source_state.schema.json"}
+        }
+      }
+    }
+  }
+}

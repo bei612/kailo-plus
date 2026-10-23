@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/component_notification_page.schema.json",
+  "title": "ComponentNotificationPage",
+  "description": "DD-138(4)：GET /api/v1/inbox/component-notifications 的一页，按 receivedAt 倒序；nextCursor 缺省表示没有更多。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["items", "unreadCount"],
+  "properties": {
+    "items": {"type": "array", "items": {"$ref": "component_notification_view.schema.json"}},
+    "unreadCount": {"type": "integer", "description": "当前可见范围内本人未读条目总数（不受分页影响）。"},
+    "nextCursor": {"type": "string"}
+  }
+}

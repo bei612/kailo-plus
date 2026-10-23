@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/component_notification_read_request.schema.json",
+  "title": "ComponentNotificationReadRequest",
+  "description": "DD-138(4)：POST /api/v1/inbox/component-notifications/read。接收人把本人的条目标记为已读（个人状态，不建立 ActionExecution）；1–100 个 ID，非本人或不可见的 ID 被忽略。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["notificationIds"],
+  "properties": {
+    "notificationIds": {"type": "array", "items": {"type": "string", "format": "uuid"}}
+  }
+}
