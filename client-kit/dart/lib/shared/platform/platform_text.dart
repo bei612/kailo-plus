@@ -4691,8 +4691,8 @@ const _messages = <PlatformMessageKey, (String, String)>{
     '运行了 {count} 条命令',
   ),
   PlatformMessageKey.agentTranscriptGroupRelayOps: (
-    'Ran {count} Buzz relay ops',
-    '执行了 {count} 次 Buzz 中继操作',
+    'Ran {count} relay ops',
+    '执行了 {count} 次中继操作',
   ),
   PlatformMessageKey.agentTranscriptGroupRepeated: (
     '{label} ×{count}',
@@ -4700,42 +4700,45 @@ const _messages = <PlatformMessageKey, (String, String)>{
   ),
   PlatformMessageKey.agentTranscriptGroupItems: ('{count} items', '{count} 项'),
   PlatformMessageKey.agentTranscriptBuzzWorkflowRead: (
-    'Reads workflow state from Buzz.',
-    '从 Buzz 读取工作流状态。',
+    'Reads workflow state from the relay.',
+    '从中继读取工作流状态。',
   ),
   PlatformMessageKey.agentTranscriptBuzzWorkflowWrite: (
-    'Updates workflow state in Buzz.',
-    '更新 Buzz 中的工作流状态。',
+    'Updates workflow state in the relay.',
+    '更新中继中的工作流状态。',
   ),
   PlatformMessageKey.agentTranscriptBuzzChannelRead: (
-    'Reads channel context from the Buzz relay.',
-    '从 Buzz 中继读取频道上下文。',
+    'Reads channel context from the relay.',
+    '从中继读取频道上下文。',
   ),
   PlatformMessageKey.agentTranscriptBuzzChannelWrite: (
-    'Changes channel state in the Buzz relay.',
-    '更改 Buzz 中继中的频道状态。',
+    'Changes channel state in the relay.',
+    '更改中继中的频道状态。',
   ),
   PlatformMessageKey.agentTranscriptBuzzIdentityRead: (
-    'Reads Buzz identity or presence data.',
-    '读取 Buzz 身份或在线数据。',
+    'Reads identity or presence data.',
+    '读取身份或在线数据。',
   ),
   PlatformMessageKey.agentTranscriptBuzzIdentityWrite: (
-    'Updates Buzz identity or membership data.',
-    '更新 Buzz 身份或成员数据。',
+    'Updates identity or membership data.',
+    '更新身份或成员数据。',
   ),
   PlatformMessageKey.agentTranscriptBuzzSearch: (
-    'Searches relay-visible Buzz history.',
-    '搜索中继可见的 Buzz 历史。',
+    'Searches relay-visible history.',
+    '搜索中继可见的历史。',
   ),
   PlatformMessageKey.agentTranscriptBuzzPublish: (
-    'Publishes relay-visible Buzz activity.',
-    '发布中继可见的 Buzz 活动。',
+    'Publishes relay-visible activity.',
+    '发布中继可见的活动。',
   ),
   PlatformMessageKey.agentTranscriptBuzzRead: (
-    'Reads from Buzz.',
-    '从 Buzz 读取。',
+    'Reads from the relay.',
+    '从中继读取。',
   ),
-  PlatformMessageKey.agentTranscriptBuzzWrite: ('Writes to Buzz.', '写入 Buzz。'),
+  PlatformMessageKey.agentTranscriptBuzzWrite: (
+    'Writes to the relay.',
+    '写入中继。',
+  ),
   PlatformMessageKey.agentsSessionsStatePending: ('Pending', '等待中'),
   PlatformMessageKey.agentsSessionsStateStarting: ('Starting', '启动中'),
   PlatformMessageKey.agentsSessionsStateActive: ('Active', '活跃'),
@@ -4913,8 +4916,8 @@ const _messages = <PlatformMessageKey, (String, String)>{
     '创建私钥备份',
   ),
   PlatformMessageKey.platformBackupCreateDescription: (
-    'You can close this window while Buzz finishes the backup in the background.',
-    'Buzz 会在后台完成备份，你可以关闭此窗口。',
+    'You can close this window while the backup finishes in the background.',
+    '备份会在后台完成，你可以关闭此窗口。',
   ),
   PlatformMessageKey.platformBackupEncryptionPassword: (
     'Encryption password',
@@ -4927,8 +4930,8 @@ const _messages = <PlatformMessageKey, (String, String)>{
     '密码（至少 {count} 个字符）',
   ),
   PlatformMessageKey.platformBackupPrivacy: (
-    'Keep the file private and save its password somewhere safe — Buzz cannot reset it. Once ready, the backup remains available to download for 5 minutes.',
-    '请妥善保管文件及密码，Buzz 无法重置密码。备份完成后，可在 5 分钟内下载。',
+    'Keep the file private and save its password somewhere safe — it cannot be reset. Once ready, the backup remains available to download for 5 minutes.',
+    '请妥善保管文件及密码，密码无法重置。备份完成后，可在 5 分钟内下载。',
   ),
   PlatformMessageKey.platformBackupBackupKey: ('Backup key', '备份私钥'),
   PlatformMessageKey.platformBackupReadFailed: (
@@ -4945,8 +4948,8 @@ const _messages = <PlatformMessageKey, (String, String)>{
   ),
   PlatformMessageKey.platformBackupWorks: ('This backup works', '此备份有效'),
   PlatformMessageKey.platformBackupCurrentIdentity: (
-    'It restores your current Buzz identity.',
-    '它可以恢复当前 Buzz 身份。',
+    'It restores your current collaboration identity.',
+    '它可以恢复当前的协作身份。',
   ),
   PlatformMessageKey.platformBackupDifferentIdentity: (
     'It restores a different identity than the one signed in here.',
@@ -4982,8 +4985,8 @@ const _messages = <PlatformMessageKey, (String, String)>{
   ),
   PlatformMessageKey.platformBackupPreparing: ('Preparing backup…', '正在准备备份…'),
   PlatformMessageKey.platformBackupBackground: (
-    'You can close this window while Buzz finishes.',
-    'Buzz 会在后台完成，你可以关闭此窗口。',
+    'You can close this window while it finishes.',
+    '会在后台继续完成，你可以关闭此窗口。',
   ),
   PlatformMessageKey.platformBackupCreateFailed: (
     'Couldn’t create backup',
@@ -5343,8 +5346,8 @@ const _messages = <PlatformMessageKey, (String, String)>{
     '仅可使用字母、数字、连字符或下划线。',
   ),
   PlatformMessageKey.customEmojiChooseFirst: (
-    'Choose an image first; Buzz will suggest a name from the filename.',
-    '请先选择图片；Buzz 会根据文件名建议名称。',
+    'Choose an image first; a name will be suggested from the filename.',
+    '请先选择图片；将根据文件名建议名称。',
   ),
   PlatformMessageKey.customEmojiReplaceHint: (
     'You already have :{name}: — saving will replace its image.',
@@ -6339,8 +6342,8 @@ const _messages = <PlatformMessageKey, (String, String)>{
   ),
   PlatformMessageKey.platformNotificationsMentionTitle: ('@Mention', '@提及'),
   PlatformMessageKey.platformNotificationsMentionFallback: (
-    'Something in Buzz needs your attention.',
-    'Buzz 中有事项需要你关注。',
+    'Something needs your attention.',
+    '有事项需要你关注。',
   ),
   PlatformMessageKey.platformNotificationsReplyFallback: ('New reply', '新回复'),
   PlatformMessageKey.platformNotificationsThreadReply: (
@@ -6624,20 +6627,20 @@ const _messages = <PlatformMessageKey, (String, String)>{
     '当前环境不支持录音。',
   ),
   PlatformMessageKey.buzzVoicePreparationFailed: (
-    'Buzz could not prepare this voice note for upload.',
-    'Buzz 无法准备这段语音以供上传。',
+    'Couldn’t prepare this voice note for upload.',
+    '无法准备这段语音以供上传。',
   ),
   PlatformMessageKey.buzzVoiceInterrupted: (
     'The voice recording was interrupted.',
     '录音已中断。',
   ),
   PlatformMessageKey.buzzAllowMicrophone: (
-    'Allow Buzz to access your microphone to record a voice note.',
-    '请允许 Buzz 使用麦克风来录制语音。',
+    'Allow microphone access to record a voice note.',
+    '请允许使用麦克风来录制语音。',
   ),
   PlatformMessageKey.buzzVoiceStartFailed: (
-    'Buzz could not start the voice recorder.',
-    'Buzz 无法启动录音。',
+    'Couldn’t start the voice recorder.',
+    '无法启动录音。',
   ),
   PlatformMessageKey.buzzVoiceOnlyAttachment: (
     'A voice note must be the only attachment.',
@@ -7812,12 +7815,12 @@ const _messages = <PlatformMessageKey, (String, String)>{
   PlatformMessageKey.capabilitiesRetired: ('Retired', '已退役'),
   PlatformMessageKey.platformTitle: ('Platform', '平台'),
   PlatformMessageKey.platformRootErrorTitle: (
-    'Buzz failed to start',
-    'Buzz 启动失败',
+    'The app failed to start',
+    '应用启动失败',
   ),
   PlatformMessageKey.platformRootErrorDescription: (
-    'Reload Buzz to try again. If this keeps happening, check that Buzz can access website data, then contact support.',
-    '请重新载入 Buzz 再试。如果问题持续出现，请确认 Buzz 可以访问网站数据，然后联系支持人员。',
+    'Reload to try again. If this keeps happening, check that the site can access website data, then contact support.',
+    '请重新载入后再试。如果问题持续出现，请确认网站可以访问网站数据，然后联系支持人员。',
   ),
   PlatformMessageKey.platformRootErrorReload: ('Reload', '重新载入'),
   PlatformMessageKey.platformWorkspace: ('Workspace', '工作区'),
@@ -8961,7 +8964,10 @@ const _messages = <PlatformMessageKey, (String, String)>{
     'Unknown contributor',
     '未知贡献者',
   ),
-  PlatformMessageKey.projectsContributorsBuzz: ('Buzz contributor', '协作贡献者'),
+  PlatformMessageKey.projectsContributorsBuzz: (
+    'Collaboration contributor',
+    '协作贡献者',
+  ),
   PlatformMessageKey.projectsContributorsGit: ('Git contributor', 'Git 贡献者'),
   PlatformMessageKey.projectsContributorsAgent: (
     'Agent contributor',
@@ -9284,7 +9290,7 @@ const _messages = <PlatformMessageKey, (String, String)>{
     '仓库访问失败',
   ),
   PlatformMessageKey.projectsGitUnavailableAuthentication: (
-    'Buzz could not authenticate with this repository. Check your access and try again.',
+    'Could not authenticate with this repository. Check your access and try again.',
     '无法通过此仓库的身份验证。请检查你的访问权限后重试。',
   ),
   PlatformMessageKey.projectsGitUnavailableMissingTitle: (
@@ -9292,7 +9298,7 @@ const _messages = <PlatformMessageKey, (String, String)>{
     '仓库尚未初始化',
   ),
   PlatformMessageKey.projectsGitUnavailableMissing: (
-    'The project announcement exists, but its git repository was not found on the Buzz relay.',
+    'The project announcement exists, but its git repository was not found on the relay.',
     '项目公告存在，但在 Relay 上找不到它的 Git 仓库。',
   ),
   PlatformMessageKey.projectsGitUnavailableAccessTitle: (
@@ -9316,7 +9322,7 @@ const _messages = <PlatformMessageKey, (String, String)>{
     '无法连接仓库',
   ),
   PlatformMessageKey.projectsGitUnavailableNetwork: (
-    'The Buzz git service could not be reached. Check your connection and try again.',
+    'The Git service could not be reached. Check your connection and try again.',
     '无法连接 Git 服务。请检查网络连接后重试。',
   ),
   PlatformMessageKey.projectsGitUnavailableRefTitle: (
@@ -9332,7 +9338,7 @@ const _messages = <PlatformMessageKey, (String, String)>{
     '仓库不可用',
   ),
   PlatformMessageKey.projectsGitUnavailableUnknown: (
-    'Buzz could not load this repository. Try again or contact the project owner.',
+    'Could not load this repository. Try again or contact the project owner.',
     '无法加载此仓库。请重试或联系项目所有者。',
   ),
   PlatformMessageKey.projectsBranchBranches: ('Branches', '分支'),
@@ -13130,8 +13136,8 @@ const _messages = <PlatformMessageKey, (String, String)>{
     '主题样式，{name}',
   ),
   PlatformMessageKey.platformThemeAccentDescription: (
-    'Choose the highlight color used throughout Buzz.',
-    '选择 Buzz 各处使用的强调色。',
+    'Choose the highlight color used throughout the app.',
+    '选择应用各处使用的强调色。',
   ),
   PlatformMessageKey.platformThemeAccentColor: ('Accent color', '强调色'),
   PlatformMessageKey.platformThemeAccentNeutral: (
@@ -14276,8 +14282,8 @@ const _messages = <PlatformMessageKey, (String, String)>{
     '我们该怎么称呼你？',
   ),
   PlatformMessageKey.onboardingProfileBody: (
-    'Pick the name people and agents will see in Buzz. You can change it anytime.',
-    '设置成员和 Agent 在 Buzz 中看到的名字，之后随时可以修改。',
+    'Pick the name people and agents will see. You can change it anytime.',
+    '设置成员和 Agent 看到的名字，之后随时可以修改。',
   ),
   PlatformMessageKey.onboardingProfileNameLabel: ('Name', '名字'),
   PlatformMessageKey.onboardingProfileNamePlaceholder: (
