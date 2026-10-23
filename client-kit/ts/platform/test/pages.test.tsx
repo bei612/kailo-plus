@@ -775,7 +775,9 @@ describe("shared Automation schedule consumer", () => {
     expect(writes[1]).toEqual(writes[0]);
     expect(writes[0]).toEqual({ actionKey: "automation.create", idempotencyKey: expect.any(String), explicitConfirmation: true,
       workspaceId: installation.workspaceId, executorInstallationResourceId: installation.resourceId,
-      automationVersionContent: { trigger: { kind: "SCHEDULE", scheduleSpec: { everySeconds: 900, offsetSeconds: 0, catchupWindowSeconds: 60 } },
+      // Original WorkflowDialog names a fresh create draft with three EFF short wordlist words.
+      automationVersionContent: { name: expect.stringMatching(/^[a-z]+(-[a-z]+){2,}$/),
+        trigger: { kind: "SCHEDULE", scheduleSpec: { everySeconds: 900, offsetSeconds: 0, catchupWindowSeconds: 60 } },
         action: { kind: "AGENT_TURN", template: "Report workspace progress" }, resultTarget: "CHANNEL" } });
   });
 
@@ -3860,7 +3862,7 @@ describe("platform pages render only through the host theme", () => {
           expect(text.split(accent)).toHaveLength(2);
           text = text.replace(accent, "");
         }
-        expect(source.text).toContain('import { WorkflowActionTileStack, WorkflowStatusToggle } from "./workflow-card-actions"');
+        expect(source.text).toContain('import { ActionEmoji, WorkflowActionTileStack, WorkflowStatusToggle } from "./workflow-card-actions"');
         expect(card!.getText(parsed)).toContain("<WorkflowActionTileStack content={content}");
       }
       if (source.name === "inbox-row.tsx") {
