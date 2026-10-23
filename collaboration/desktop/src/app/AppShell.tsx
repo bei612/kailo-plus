@@ -40,7 +40,6 @@ import {
   useNativeSession,
 } from "@/features/platform/activeCommunity";
 import { requestFocusedThreadClose } from "@/features/channels/focusedThreadCloseRequest";
-import { useChannelStars } from "@/features/sidebar/lib/useChannelStars";
 import { useIdentityQuery } from "@/shared/api/hooks";
 import { useRelayAutoHeal } from "@/shared/api/useRelayAutoHeal";
 import { useWebviewScrollBoundaryLock } from "@/shared/hooks/useWebviewScrollBoundaryLock";
@@ -112,9 +111,6 @@ export function AppShell() {
     ? locationSearchSection
     : DEFAULT_SETTINGS_SECTION;
   const identityQuery = useIdentityQuery();
-  const { starredChannelIds, starChannel, unstarChannel } = useChannelStars(
-    identityQuery.data?.pubkey,
-  );
   const profileQuery = useProfileQuery();
   useRelayAutoHeal();
   useMembershipNotifications(identityQuery.data?.pubkey);
@@ -159,6 +155,22 @@ export function AppShell() {
     const workspaceId = workspaceIdOf(id);
     if (workspaceId) void collaborationPreferences.setWorkspaceMuted(workspaceId, muted);
   };
+  // A Workspace channel's Star is Core `workspace_preferences.starred`, the authority Web and
+  // Mobile already use; the old per-device localStorage stars are not migrated.
+  const starredChannelIds = React.useMemo(() => new Set(channels
+    .filter((channel) => channel.channelType !== "dm")
+    .filter((channel) => {
+      const workspaceId = workspaceIdOf(channel.id);
+      return workspaceId !== undefined && collaborationPreferences.isWorkspaceStarred(workspaceId) === true;
+    })
+    .map((channel) => channel.id)), [channels, workspaceIdOf, collaborationPreferences]);
+  const setChannelStarred = (id: string, starred: boolean) => {
+    if (!collaborationPreferences.writable || !channels.some((channel) => channel.id === id && channel.channelType !== "dm")) return;
+    const workspaceId = workspaceIdOf(id);
+    if (workspaceId) void collaborationPreferences.setWorkspaceStarred(workspaceId, starred);
+  };
+  const starChannel = (id: string) => setChannelStarred(id, true);
+  const unstarChannel = (id: string) => setChannelStarred(id, false);
   const muteChannel = (id: string) => setChannelMuted(id, true);
   const unmuteChannel = (id: string) => setChannelMuted(id, false);
   const refetchHomeFeedFromLiveSignal = React.useEffectEvent(() => {

@@ -99,6 +99,8 @@ class _SliverChannelsList extends HookConsumerWidget {
     final preferences = ref.watch(collaborationPreferencesProvider);
     // DD-150(3): custom sections are the Core `sidebar_sections` readback.
     final sectionsState = ref.watch(channelSectionsProvider);
+    // DD-150(3): original per-group sort, the Core `sidebar_sort` readback.
+    final sortState = ref.watch(channelSortProvider);
     final collapsedSections = useState<Set<String>>(const {});
     final visibleChannels = channels
         .where((channel) => channel.isMember && !channel.isArchived)
@@ -108,31 +110,31 @@ class _SliverChannelsList extends HookConsumerWidget {
     final channelsExpanded = useState(true);
     final dmsExpanded = useState(true);
     final pubkey = ref.watch(myPubkeyProvider);
-    final dmChannels = visibleChannels.where((channel) => channel.isDm).toList()
-      ..sort(
-        (left, right) => left
-            .displayLabel(currentPubkey: pubkey)
-            .toLowerCase()
-            .compareTo(right.displayLabel(currentPubkey: pubkey).toLowerCase()),
-      );
+    int dmByLabel(Channel left, Channel right) => left
+        .displayLabel(currentPubkey: pubkey)
+        .toLowerCase()
+        .compareTo(right.displayLabel(currentPubkey: pubkey).toLowerCase());
+    // DMs default to the display-label alphabetical order (labels can differ
+    // from channel names); Recent reorders by last message time.
+    final dmChannels = sortChannelsForList(
+      visibleChannels.where((channel) => channel.isDm).toList(),
+      sortState.sortModeFor(kSortGroupDms),
+      byName: dmByLabel,
+    );
     final streamChannels = visibleChannels
         .where((channel) => !channel.isDm)
         .toList();
     // Original Starred is exclusive and stream-only. A DM never moves here.
-    final starredStreamChannels =
-        streamChannels
-            .where(
-              (channel) =>
-                  channel.channelType == 'stream' &&
-                  preferences.starred(channel.id) == true,
-            )
-            .toList()
-          ..sort((left, right) {
-            final name = left.name.toLowerCase().compareTo(
-              right.name.toLowerCase(),
-            );
-            return name != 0 ? name : left.id.compareTo(right.id);
-          });
+    final starredStreamChannels = sortChannelsForList(
+      streamChannels
+          .where(
+            (channel) =>
+                channel.channelType == 'stream' &&
+                preferences.starred(channel.id) == true,
+          )
+          .toList(),
+      sortState.sortModeFor(kSortGroupStarred),
+    );
     final unstarredStreamChannels = streamChannels
         .where(
           (channel) =>
@@ -143,21 +145,28 @@ class _SliverChannelsList extends HookConsumerWidget {
     // Original grouping: Starred wins, then the assigned custom section, then
     // the default Channels group.
     final userSections = sectionsState.sections;
-    List<Channel> sectionChannels(String sectionId) =>
-        unstarredStreamChannels
-            .where(
-              (channel) => sectionsState.sectionOf(channel.id) == sectionId,
-            )
-            .toList()
-          ..sort((left, right) {
-            final name = left.name.toLowerCase().compareTo(
-              right.name.toLowerCase(),
-            );
-            return name != 0 ? name : left.id.compareTo(right.id);
-          });
-    final ungroupedStreamChannels = unstarredStreamChannels
-        .where((channel) => sectionsState.sectionOf(channel.id) == null)
-        .toList();
+    final liveSectionIds = [for (final section in userSections) section.id];
+    List<Channel> sectionChannels(String sectionId) => sortChannelsForList(
+      unstarredStreamChannels
+          .where((channel) => sectionsState.sectionOf(channel.id) == sectionId)
+          .toList(),
+      sortState.sortModeFor(sectionSortGroupKey(sectionId)),
+    );
+    final ungroupedStreamChannels = sortChannelsForList(
+      unstarredStreamChannels
+          .where((channel) => sectionsState.sectionOf(channel.id) == null)
+          .toList(),
+      sortState.sortModeFor(kSortGroupChannels),
+    );
+    final starredLabel = _channelText(
+      context,
+      PlatformMessageKey.sidebarStarred,
+    );
+    final channelsLabel = _channelText(
+      context,
+      PlatformMessageKey.sidebarChannels,
+    );
+    final dmLabel = _channelText(context, PlatformMessageKey.nativeDmSection);
     final initialSeedComplete = useState(false);
     final seededPubkey = useRef<String?>(null);
     final seedCompleteForPubkey =
@@ -217,8 +226,15 @@ class _SliverChannelsList extends HookConsumerWidget {
           else ...[
             if (starredStreamChannels.isNotEmpty)
               _ChannelSection(
-                title: _channelText(context, PlatformMessageKey.sidebarStarred),
+                title: starredLabel,
                 icon: LucideIcons.star,
+                menu: sortState.writable
+                    ? _SortMenu(
+                        groupKey: kSortGroupStarred,
+                        label: starredLabel,
+                        mode: sortState.sortModeFor(kSortGroupStarred),
+                      )
+                    : null,
                 showTopDivider: false,
                 expanded: starredExpanded.value,
                 onToggle: () => starredExpanded.value = !starredExpanded.value,
@@ -252,12 +268,23 @@ class _SliverChannelsList extends HookConsumerWidget {
                         channelCount: sectionChannels(section.id).length,
                         isFirst: userSections.first.id == section.id,
                         isLast: userSections.last.id == section.id,
+                        sortMode: sortState.sortModeFor(
+                          sectionSortGroupKey(section.id),
+                        ),
+                        liveSectionIds: liveSectionIds,
                       )
                     : null,
               ),
             _ChannelSection(
-              title: 'Channels',
+              title: channelsLabel,
               icon: LucideIcons.hash,
+              menu: sortState.writable
+                  ? _SortMenu(
+                      groupKey: kSortGroupChannels,
+                      label: channelsLabel,
+                      mode: sortState.sortModeFor(kSortGroupChannels),
+                    )
+                  : null,
               showTopDivider:
                   starredStreamChannels.isNotEmpty || userSections.isNotEmpty,
               expanded: channelsExpanded.value,
@@ -270,8 +297,15 @@ class _SliverChannelsList extends HookConsumerWidget {
           ],
           if (dmChannels.isNotEmpty)
             _ChannelSection(
-              title: _channelText(context, PlatformMessageKey.nativeDmSection),
+              title: dmLabel,
               icon: LucideIcons.messagesSquare,
+              menu: sortState.writable
+                  ? _SortMenu(
+                      groupKey: kSortGroupDms,
+                      label: dmLabel,
+                      mode: sortState.sortModeFor(kSortGroupDms),
+                    )
+                  : null,
               expanded: dmsExpanded.value,
               showTopDivider: true,
               onToggle: () => dmsExpanded.value = !dmsExpanded.value,

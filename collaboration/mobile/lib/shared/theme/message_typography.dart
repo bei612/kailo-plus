@@ -10,9 +10,6 @@ const messageAvatarSize = 42.0;
 /// Avatar size for compact message-result rows.
 const compactMessageAvatarSize = messageAvatarSize;
 
-/// Avatar size for conversation-oriented Activity rows.
-const activityAvatarSize = messageAvatarSize;
-
 /// Horizontal space between a message avatar and its content.
 const messageAvatarContentGap = Grid.twelve;
 
@@ -120,12 +117,6 @@ const systemMessageBodyTextStyle = TextStyle(
   height: 20 / 15,
   letterSpacing: 0,
 );
-
-/// Activity sender names share the primary author style.
-const activityUsernameTextStyle = messageUsernameTextStyle;
-
-/// Activity timestamps share the compact message timestamp treatment.
-const activityTimestampTextStyle = messageTimestampTextStyle;
 
 /// Activity context labels: 13.1sp medium on a 17sp line height.
 const activityContextTextStyle = TextStyle(

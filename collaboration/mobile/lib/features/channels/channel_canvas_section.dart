@@ -14,6 +14,7 @@ import 'package:client_kit/shared/contracts/contracts.dart';
 import 'package:client_kit/shared/platform/platform_text.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
+import 'package:gpt_markdown/gpt_markdown.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import '../../shared/platform/platform_api.dart';
@@ -213,10 +214,24 @@ class ChannelCanvasSection extends HookConsumerWidget {
                     ),
                   )
                 else
-                  SelectableText(
-                    content,
-                    key: const ValueKey('channel-canvas-content'),
-                    style: context.textTheme.bodyMedium,
+                  // The Canvas is Markdown (SF-BUZ-54); rendered with the renderer
+                  // the original Mobile uses for messages. Links stay text and
+                  // images show their address: nothing is fetched or opened from
+                  // the Canvas body.
+                  SelectionArea(
+                    child: GptMarkdown(
+                      content,
+                      key: const ValueKey('channel-canvas-content'),
+                      style: context.textTheme.bodyMedium,
+                      followLinkColor: false,
+                      autolink: false,
+                      imageBuilder: (context, imageUrl, _, _) => Text(
+                        imageUrl,
+                        style: context.textTheme.bodySmall?.copyWith(
+                          color: context.colors.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
                   ),
                 if (canEdit)
                   Align(

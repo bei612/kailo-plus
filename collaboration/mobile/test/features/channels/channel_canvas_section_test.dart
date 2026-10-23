@@ -80,10 +80,28 @@ void main() {
         tester,
         view: WebChannelCanvasView(workspaceId: _workspace, content: '# Plan'),
       );
-      expect(find.text('# Plan'), findsOneWidget);
+      // Markdown is rendered: the heading text shows, its marker does not.
+      expect(find.textContaining('Plan', findRichText: true), findsWidgets);
+      expect(find.textContaining('# Plan', findRichText: true), findsNothing);
       expect(find.byKey(const ValueKey('channel-canvas-edit')), findsNothing);
     },
   );
+
+  testWidgets('the Canvas renders Markdown without fetching images', (
+    tester,
+  ) async {
+    await _pump(
+      tester,
+      view: WebChannelCanvasView(
+        workspaceId: _workspace,
+        content: 'Ship **today**\n\n![chart](https://example.test/c.png)',
+      ),
+    );
+    expect(find.textContaining('**', findRichText: true), findsNothing);
+    expect(find.textContaining('today', findRichText: true), findsWidgets);
+    expect(find.byType(Image), findsNothing);
+    expect(find.text('https://example.test/c.png'), findsOneWidget);
+  });
 
   testWidgets('an empty Canvas says so', (tester) async {
     await _pump(tester, view: WebChannelCanvasView(workspaceId: _workspace));
@@ -115,7 +133,11 @@ void main() {
       expect(command.explicitConfirmation, true);
       expect(command.workspaceCanvas?.content, 'new plan');
       expect(find.byKey(const ValueKey('channel-canvas-editor')), findsNothing);
-      expect(find.text('adopted'), findsOneWidget, reason: 'Core readback');
+      expect(
+        find.textContaining('adopted', findRichText: true),
+        findsWidgets,
+        reason: 'Core readback',
+      );
       expect(
         find.byKey(const ValueKey('channel-canvas-outcome')),
         findsOneWidget,
