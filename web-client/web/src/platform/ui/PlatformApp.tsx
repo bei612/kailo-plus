@@ -565,6 +565,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
     ) : tab === "inbox" ? (
       <InboxPane
         key={searchScopeKey}
+        isDark={isDark}
         principalId={session.tenantPrincipalId}
         selectedItemId={navigation.inboxItemId}
         onSelectedItemIdChange={navigation.setInboxItemId}
