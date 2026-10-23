@@ -167,14 +167,15 @@ prepare_check_dependencies() {
 # 组件前端依赖按「安装输入内容 + Node 版本 + 安装命令」寻址，缓存在 /cache/component-lint；
 # 命中时直接复用，不重装。安装在同目录临时副本内完成后原子改名，并发或中断不会留下半成品。
 # 不运行依赖的安装脚本（--mode=skip-build/--ignore-scripts）：格式与类型检查不需要原生模块，
-# 也不在检查容器里编译它们。结果目录写入 COMPONENT_DEPS；给出的 node_modules 目录链接进快照。
+# 也不在检查容器里编译它们。条目内按仓库路径布局（<条目>/<组件目录>），安装目录写入
+# COMPONENT_DEPS；给出的 node_modules 目录链接进快照。
 # 用法：component_lint_deps <组件目录> <安装输入（相对路径）…> -- [链接的 node_modules 目录…] -- <安装命令…>
 component_lint_deps() {
   local dir=$1; shift
   local inputs=() links=() key root entry staging path
   while [ "$1" != -- ]; do inputs+=("$1"); shift; done; shift
   while [ "$1" != -- ]; do links+=("$1"); shift; done; shift
-  key=$( { node --version; printf '%s\0' "$@"
+  key=$( { echo layout=repo-path; node --version; printf '%s\0' "$@"
            (cd "$dir" && find "${inputs[@]}" -type f -print0 | LC_ALL=C sort -z \
               | xargs -0 sha256sum); } | sha256sum | cut -c1-32) || return 2
   root=/cache/component-lint/$(printf '%s' "$dir" | tr / _)
@@ -182,9 +183,9 @@ component_lint_deps() {
   mkdir -p "$root" || return 2
   if [ ! -f "$entry/.complete" ]; then
     staging=$(mktemp -d "$root/.staging.XXXXXX") || return 2
-    (cd "$dir" && find "${inputs[@]}" -type f -print0 | tar --null -T - -cf -) \
-      | tar -xf - -C "$staging" || { rm -rf -- "$staging"; return 2; }
-    (cd "$staging" && diag "$@") || { rm -rf -- "$staging"; return 2; }
+    mkdir -p "$staging/$dir" && (cd "$dir" && find "${inputs[@]}" -type f -print0 | tar --null -T - -cf -) \
+      | tar -xf - -C "$staging/$dir" || { rm -rf -- "$staging"; return 2; }
+    (cd "$staging/$dir" && diag "$@") || { rm -rf -- "$staging"; return 2; }
     touch "$staging/.complete"
     mv -T -- "$staging" "$entry" 2>/dev/null || rm -rf -- "$staging"
     [ -f "$entry/.complete" ] || return 2
@@ -196,10 +197,10 @@ component_lint_deps() {
   # 只保留近 14 天用过的条目，锁文件变更后旧条目自然淘汰。
   find "$root" -mindepth 1 -maxdepth 1 -type d -mtime +14 -exec rm -rf -- {} + 2>/dev/null
   for path in "${links[@]}"; do
-    [ -d "$entry/$path" ] || { echo "拒绝检查：安装结果缺少 $path" >&2; return 2; }
-    rm -rf -- "${dir:?}/$path" && ln -s "$entry/$path" "$dir/$path" || return 2
+    [ -d "$entry/$dir/$path" ] || { echo "拒绝检查：安装结果缺少 $path" >&2; return 2; }
+    rm -rf -- "${dir:?}/$path" && ln -s "$entry/$dir/$path" "$dir/$path" || return 2
   done
-  COMPONENT_DEPS=$entry
+  COMPONENT_DEPS=$entry/$dir
 }
 
 # 读 `tsc --pretty false` 的输出，按 next build 类型检查（next/dist/lib/typescript/runTypeCheck.js）
@@ -223,10 +224,10 @@ sys.exit(1 if kept or (sys.argv[1] != "0" and total == 0) else 0)' "$1"
 
 # 组件镜像构建里会跑的格式/静态门禁，在合并检查阶段提前暴露，判定与构建一致：
 # - data-query/wren-ui：`next build` 内置 next lint（.eslintrc.json，prettier/prettier 为 error）
-#   与 tsc 类型检查。按其 Dockerfile builder 阶段的源码输入在依赖目录下暂存一份再检查：
-#   node_modules 是真实上级目录，ESLint 的插件与共享配置解析与构建一致（经符号链接接入时
-#   plugin:@typescript-eslint/recommended 会解析到 eslint-config-next 内嵌的 v8 而崩溃），
-#   tsc 也只看到构建所见的 src。另以锁定的 prettier（yarn.lock）显式 --check eslint 实际门禁的
+#   与 tsc 类型检查。把其 Dockerfile builder 阶段的源码输入放进依赖安装目录再检查，与构建
+#   镜像一样 node_modules 是项目目录的真实子目录：ESLint 的插件与共享配置解析才与构建一致
+#   （node_modules 经符号链接接入或位于上级目录时，plugin:@typescript-eslint/recommended 会
+#   解析到 eslint-config-next 内嵌的 v8 而崩溃），tsc 也只看到构建所见的 src。另以锁定的 prettier（yarn.lock）显式 --check eslint 实际门禁的
 #   js/jsx/ts/tsx（沿用 .eslintrc.json 的忽略项；.less 与生成的 GraphQL 类型不在构建门禁内）。
 #   用构建镜像同一 Node 18（检查镜像 /opt/node18）运行，锁定的 yarn 4.5.3 在 Node 24 下遇下载超时会崩溃。
 # - collaboration/web、admin-web：镜像构建为 `tsc && vite build`。
@@ -242,17 +243,20 @@ lint_wren_ui() {
        node .yarn/releases/yarn-4.5.3.cjs install --immutable --mode=skip-build; then
     fail "wren-ui 依赖安装失败，组件 lint 无法执行"; return 0
   fi
-  local bin="$COMPONENT_DEPS/node_modules/.bin" runs="$COMPONENT_DEPS/runs" run app out rc
-  mkdir -p "$runs" && find "$runs" -mindepth 1 -maxdepth 1 -mmin +720 -exec rm -rf -- {} + 2>/dev/null
-  run=$(mktemp -d "$runs/XXXXXX") || { fail "wren-ui 检查暂存目录创建失败"; return 0; }
-  app="$run/$ui"
+  local app=$COMPONENT_DEPS bin="$COMPONENT_DEPS/node_modules/.bin" top lock out rc
+  top=${app%/"$ui"}
+  local staged=(package.json src .eslintrc.json .eslintignore .prettierrc next.config.js tsconfig.json)
+  local scratch=(src .eslintrc.json .eslintignore .prettierrc next.config.js tsconfig.json next-env.d.ts
+                 .next tsconfig.tsbuildinfo .lint-prettierignore)
+  # 同一安装目录同时只给一个检查用；结束即清掉暂存的源码。
+  exec {lock}>"$top/.lint.lock" && flock "$lock" || { fail "wren-ui 检查目录加锁失败"; return 0; }
   # 与 data-query/wren-ui/Dockerfile builder 阶段同一源码输入（public 与 Kailo 静态资源不参与检查）。
-  mkdir -p "$app" "$run/client-kit/adapter" "$run/client-kit/embed" \
-    && (cd "$ui" && tar -cf - package.json src .eslintrc.json .eslintignore .prettierrc \
-          next.config.js tsconfig.json) | tar -xf - -C "$app" \
-    && cp client-kit/adapter/protocol.mjs "$run/client-kit/adapter/" \
-    && cp client-kit/embed/kailo-embed.d.ts "$run/client-kit/embed/" \
-    || { fail "wren-ui 构建输入暂存失败"; rm -rf -- "$run"; return 0; }
+  (cd "$app" && rm -rf -- "${scratch[@]}") && rm -rf -- "$top/client-kit" \
+    && mkdir -p "$top/client-kit/adapter" "$top/client-kit/embed" \
+    && (cd "$ui" && tar -cf - "${staged[@]}") | tar -xf - -C "$app" \
+    && cp client-kit/adapter/protocol.mjs "$top/client-kit/adapter/" \
+    && cp client-kit/embed/kailo-embed.d.ts "$top/client-kit/embed/" \
+    || { fail "wren-ui 构建输入暂存失败"; exec {lock}>&-; return 0; }
   # next build 在类型检查前生成 next-env.d.ts（未入库），这里写入同一内容。
   printf '%s\n' '/// <reference types="next" />' \
     '/// <reference types="next/image-types/global" />' > "$app/next-env.d.ts"
@@ -265,7 +269,8 @@ lint_wren_ui() {
   rc=0; out=$(cd "$app" && "$bin/tsc" --noEmit --pretty false 2>&1) || rc=$?
   printf '%s\n' "$out" | tsc_as_next_build "$rc" \
     && pass "wren-ui tsc（next build 类型检查范围）" || fail "wren-ui tsc（next build 类型检查范围）"
-  rm -rf -- "$run"
+  (cd "$app" && rm -rf -- "${scratch[@]}"); rm -rf -- "$top/client-kit"
+  exec {lock}>&-
 }
 
 lint_component_frontends() {
