@@ -168,6 +168,8 @@
 //     final platformTenantPage = platformTenantPageFromJson(jsonString);
 //     final platformToolPage = platformToolPageFromJson(jsonString);
 //     final platformToolView = platformToolViewFromJson(jsonString);
+//     final projectChannelRequest = projectChannelRequestFromJson(jsonString);
+//     final projectChannelRequestApprovalView = projectChannelRequestApprovalViewFromJson(jsonString);
 //     final projectPreferenceRequest = projectPreferenceRequestFromJson(jsonString);
 //     final projectsGitMergeRequest = projectsGitMergeRequestFromJson(jsonString);
 //     final projectsGitMergeResponse = projectsGitMergeResponseFromJson(jsonString);
@@ -1377,6 +1379,20 @@ PlatformToolView platformToolViewFromJson(String str) =>
 
 String platformToolViewToJson(PlatformToolView data) =>
     json.encode(data.toJson());
+
+ProjectChannelRequest projectChannelRequestFromJson(String str) =>
+    ProjectChannelRequest.fromJson(json.decode(str));
+
+String projectChannelRequestToJson(ProjectChannelRequest data) =>
+    json.encode(data.toJson());
+
+ProjectChannelRequestApprovalView projectChannelRequestApprovalViewFromJson(
+  String str,
+) => ProjectChannelRequestApprovalView.fromJson(json.decode(str));
+
+String projectChannelRequestApprovalViewToJson(
+  ProjectChannelRequestApprovalView data,
+) => json.encode(data.toJson());
 
 ProjectPreferenceRequest projectPreferenceRequestFromJson(String str) =>
     ProjectPreferenceRequest.fromJson(json.decode(str));
@@ -7749,6 +7765,7 @@ class ApprovalView {
   final String expiresAt;
   final String initiatorPrincipalId;
   final ReasonCode? observation;
+  final ProjectChannelRequestApprovalView? projectChannelRequest;
   final ReasonCode? reason;
   final List<ApprovalRoleRequirement> roleRequirements;
   final ApprovalStatus status;
@@ -7766,6 +7783,7 @@ class ApprovalView {
     required this.expiresAt,
     required this.initiatorPrincipalId,
     this.observation,
+    this.projectChannelRequest,
     this.reason,
     required this.roleRequirements,
     required this.status,
@@ -7790,6 +7808,11 @@ class ApprovalView {
     observation: json["observation"] == null
         ? null
         : reasonCodeValues.map[json["observation"]]!,
+    projectChannelRequest: json["projectChannelRequest"] == null
+        ? null
+        : ProjectChannelRequestApprovalView.fromJson(
+            json["projectChannelRequest"],
+          ),
     reason: json["reason"] == null
         ? null
         : reasonCodeValues.map[json["reason"]]!,
@@ -7812,6 +7835,7 @@ class ApprovalView {
     "expiresAt": expiresAt,
     "initiatorPrincipalId": initiatorPrincipalId,
     "observation": reasonCodeValues.reverse[observation],
+    "projectChannelRequest": projectChannelRequest?.toJson(),
     "reason": reasonCodeValues.reverse[reason],
     "roleRequirements": List<dynamic>.from(
       roleRequirements.map((x) => x.toJson()),
@@ -7901,6 +7925,85 @@ final approvalSelectorValues = EnumValues({
   "RESOURCE_APPROVER": ApprovalSelector.RESOURCE_APPROVER,
   "TENANT_ADMIN": ApprovalSelector.TENANT_ADMIN,
   "WORKSPACE_ADMIN": ApprovalSelector.WORKSPACE_ADMIN,
+});
+
+///DD-140：有权读取的审批所冻结的项目频道申请与提议的 Installation，供 owner 端以原版对话框呈现；不是另一审批或内容权威。
+class ProjectChannelRequestApprovalView {
+  final String installationResourceId;
+  final ProjectChannelRequest request;
+
+  ProjectChannelRequestApprovalView({
+    required this.installationResourceId,
+    required this.request,
+  });
+
+  factory ProjectChannelRequestApprovalView.fromJson(
+    Map<String, dynamic> json,
+  ) => ProjectChannelRequestApprovalView(
+    installationResourceId: json["installationResourceId"],
+    request: ProjectChannelRequest.fromJson(json["request"]),
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "installationResourceId": installationResourceId,
+    "request": request.toJson(),
+  });
+}
+
+///DD-140：托管 Agent 平台原生工具 project_channel_request 的输入，与固定 Buzz
+///projectChannelRequest.ts::parseProjectChannelRequest 同形同界；只是提议，绑定 workspace.create 且必须由
+///Installation owner 批准。
+class ProjectChannelRequest {
+  final String? description;
+
+  ///该 Installation 的 ACTIVE ChannelAgentBinding 所在 Workspace（即其频道 ID）。
+  final String homeChannelId;
+  final String name;
+  final String? templateName;
+  final int? ttlSeconds;
+  final WorkspaceVisibility visibility;
+
+  ProjectChannelRequest({
+    this.description,
+    required this.homeChannelId,
+    required this.name,
+    this.templateName,
+    this.ttlSeconds,
+    required this.visibility,
+  });
+
+  factory ProjectChannelRequest.fromJson(Map<String, dynamic> json) =>
+      ProjectChannelRequest(
+        description: json["description"],
+        homeChannelId: json["homeChannelId"],
+        name: json["name"],
+        templateName: json["templateName"],
+        ttlSeconds: json["ttlSeconds"],
+        visibility: workspaceVisibilityValues.map[json["visibility"]]!,
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "description": description,
+    "homeChannelId": homeChannelId,
+    "name": name,
+    "templateName": templateName,
+    "ttlSeconds": ttlSeconds,
+    "visibility": workspaceVisibilityValues.reverse[visibility],
+  });
+}
+
+///只在准入事务内改写 Core 的 Workspace 可见性；已有成员不变，不写 SpiceDB，Relay 投影保持 private、不发送 visibility 标签。
+///
+///DD-80 的产品可见性：open 仅指同 Tenant 成员可发现并经 Core 加入；Relay 投影始终 private。
+///
+///仅 workspace.create 使用；省略保持旧命令的 private 可见性。
+///
+///Core 产品可见性，不从 Relay private 投影推断；旧回应可能省略。
+enum WorkspaceVisibility { OPEN, PRIVATE }
+
+final workspaceVisibilityValues = EnumValues({
+  "open": WorkspaceVisibility.OPEN,
+  "private": WorkspaceVisibility.PRIVATE,
 });
 
 ///ApprovalPolicy.role_requirements 的一项：该选择器要求至少 minDistinct 个不同 active HUMAN 批准（.design/03
@@ -9739,20 +9842,6 @@ enum WorkspaceChannelCreateChannelType { FORUM, STREAM }
 final workspaceChannelCreateChannelTypeValues = EnumValues({
   "forum": WorkspaceChannelCreateChannelType.FORUM,
   "stream": WorkspaceChannelCreateChannelType.STREAM,
-});
-
-///只在准入事务内改写 Core 的 Workspace 可见性；已有成员不变，不写 SpiceDB，Relay 投影保持 private、不发送 visibility 标签。
-///
-///DD-80 的产品可见性：open 仅指同 Tenant 成员可发现并经 Core 加入；Relay 投影始终 private。
-///
-///仅 workspace.create 使用；省略保持旧命令的 private 可见性。
-///
-///Core 产品可见性，不从 Relay private 投影推断；旧回应可能省略。
-enum WorkspaceVisibility { OPEN, PRIVATE }
-
-final workspaceVisibilityValues = EnumValues({
-  "open": WorkspaceVisibility.OPEN,
-  "private": WorkspaceVisibility.PRIVATE,
 });
 
 ///GET /api/v1/identity/client-keys 回应数组的元素：本人登记且未撤销的原生设备公钥（DD-77/79）。

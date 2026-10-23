@@ -2161,16 +2161,17 @@ export interface ApprovalView {
     /**
      * RFC3339，UTC
      */
-    expiresAt:            string;
-    initiatorPrincipalId: string;
-    observation?:         ReasonCode;
-    reason?:              ReasonCode;
-    roleRequirements:     ApprovalRoleRequirement[];
-    status:               ApprovalStatus;
-    targetId:             string;
-    targetType:           string;
-    workflowId:           string;
-    workspaceId?:         string;
+    expiresAt:              string;
+    initiatorPrincipalId:   string;
+    observation?:           ReasonCode;
+    projectChannelRequest?: ProjectChannelRequestApprovalView;
+    reason?:                ReasonCode;
+    roleRequirements:       ApprovalRoleRequirement[];
+    status:                 ApprovalStatus;
+    targetId:               string;
+    targetType:             string;
+    workflowId:             string;
+    workspaceId?:           string;
 }
 
 /**
@@ -2208,6 +2209,45 @@ export enum ApprovalSelector {
     ResourceApprover = "RESOURCE_APPROVER",
     TenantAdmin = "TENANT_ADMIN",
     WorkspaceAdmin = "WORKSPACE_ADMIN",
+}
+
+/**
+ * DD-140：有权读取的审批所冻结的项目频道申请与提议的 Installation，供 owner 端以原版对话框呈现；不是另一审批或内容权威。
+ */
+export interface ProjectChannelRequestApprovalView {
+    installationResourceId: string;
+    request:                ProjectChannelRequest;
+}
+
+/**
+ * DD-140：托管 Agent 平台原生工具 project_channel_request 的输入，与固定 Buzz
+ * projectChannelRequest.ts::parseProjectChannelRequest 同形同界；只是提议，绑定 workspace.create 且必须由
+ * Installation owner 批准。
+ */
+export interface ProjectChannelRequest {
+    description?: string;
+    /**
+     * 该 Installation 的 ACTIVE ChannelAgentBinding 所在 Workspace（即其频道 ID）。
+     */
+    homeChannelId: string;
+    name:          string;
+    templateName?: string;
+    ttlSeconds?:   number;
+    visibility:    WorkspaceVisibility;
+}
+
+/**
+ * 只在准入事务内改写 Core 的 Workspace 可见性；已有成员不变，不写 SpiceDB，Relay 投影保持 private、不发送 visibility 标签。
+ *
+ * DD-80 的产品可见性：open 仅指同 Tenant 成员可发现并经 Core 加入；Relay 投影始终 private。
+ *
+ * 仅 workspace.create 使用；省略保持旧命令的 private 可见性。
+ *
+ * Core 产品可见性，不从 Relay private 投影推断；旧回应可能省略。
+ */
+export enum WorkspaceVisibility {
+    Open = "open",
+    Private = "private",
 }
 
 /**
@@ -3033,20 +3073,6 @@ export interface ChannelTemplateRequest {
 export enum WorkspaceChannelCreateChannelType {
     Forum = "forum",
     Stream = "stream",
-}
-
-/**
- * 只在准入事务内改写 Core 的 Workspace 可见性；已有成员不变，不写 SpiceDB，Relay 投影保持 private、不发送 visibility 标签。
- *
- * DD-80 的产品可见性：open 仅指同 Tenant 成员可发现并经 Core 加入；Relay 投影始终 private。
- *
- * 仅 workspace.create 使用；省略保持旧命令的 private 可见性。
- *
- * Core 产品可见性，不从 Relay private 投影推断；旧回应可能省略。
- */
-export enum WorkspaceVisibility {
-    Open = "open",
-    Private = "private",
 }
 
 /**

@@ -3103,6 +3103,9 @@ pub struct ApprovalView {
     pub observation: Option<ReasonCode>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub project_channel_request: Option<ProjectChannelRequestApprovalView>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub reason: Option<ReasonCode>,
 
     pub role_requirements: Vec<ApprovalRoleRequirement>,
@@ -3162,6 +3165,53 @@ pub enum ApprovalSelector {
 
     #[serde(rename = "WORKSPACE_ADMIN")]
     WorkspaceAdmin,
+}
+
+/// DD-140：有权读取的审批所冻结的项目频道申请与提议的 Installation，供 owner 端以原版对话框呈现；不是另一审批或内容权威。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectChannelRequestApprovalView {
+    pub installation_resource_id: String,
+
+    pub request: ProjectChannelRequest,
+}
+
+/// DD-140：托管 Agent 平台原生工具 project_channel_request 的输入，与固定 Buzz
+/// projectChannelRequest.ts::parseProjectChannelRequest 同形同界；只是提议，绑定 workspace.create 且必须由
+/// Installation owner 批准。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectChannelRequest {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+
+    /// 该 Installation 的 ACTIVE ChannelAgentBinding 所在 Workspace（即其频道 ID）。
+    pub home_channel_id: String,
+
+    pub name: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub template_name: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ttl_seconds: Option<i64>,
+
+    pub visibility: WorkspaceVisibility,
+}
+
+/// 只在准入事务内改写 Core 的 Workspace 可见性；已有成员不变，不写 SpiceDB，Relay 投影保持 private、不发送 visibility 标签。
+///
+/// DD-80 的产品可见性：open 仅指同 Tenant 成员可发现并经 Core 加入；Relay 投影始终 private。
+///
+/// 仅 workspace.create 使用；省略保持旧命令的 private 可见性。
+///
+/// Core 产品可见性，不从 Relay private 投影推断；旧回应可能省略。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WorkspaceVisibility {
+    Open,
+
+    Private,
 }
 
 /// ApprovalPolicy.role_requirements 的一项：该选择器要求至少 minDistinct 个不同 active HUMAN 批准（.design/03
@@ -4405,21 +4455,6 @@ pub enum WorkspaceChannelCreateChannelType {
     Forum,
 
     Stream,
-}
-
-/// 只在准入事务内改写 Core 的 Workspace 可见性；已有成员不变，不写 SpiceDB，Relay 投影保持 private、不发送 visibility 标签。
-///
-/// DD-80 的产品可见性：open 仅指同 Tenant 成员可发现并经 Core 加入；Relay 投影始终 private。
-///
-/// 仅 workspace.create 使用；省略保持旧命令的 private 可见性。
-///
-/// Core 产品可见性，不从 Relay private 投影推断；旧回应可能省略。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum WorkspaceVisibility {
-    Open,
-
-    Private,
 }
 
 /// GET /api/v1/identity/client-keys 回应数组的元素：本人登记且未撤销的原生设备公钥（DD-77/79）。

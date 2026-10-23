@@ -505,6 +505,12 @@
 //    platformToolView, err := UnmarshalPlatformToolView(bytes)
 //    bytes, err = platformToolView.Marshal()
 //
+//    projectChannelRequest, err := UnmarshalProjectChannelRequest(bytes)
+//    bytes, err = projectChannelRequest.Marshal()
+//
+//    projectChannelRequestApprovalView, err := UnmarshalProjectChannelRequestApprovalView(bytes)
+//    bytes, err = projectChannelRequestApprovalView.Marshal()
+//
 //    projectPreferenceRequest, err := UnmarshalProjectPreferenceRequest(bytes)
 //    bytes, err = projectPreferenceRequest.Marshal()
 //
@@ -2702,6 +2708,26 @@ func UnmarshalPlatformToolView(data []byte) (PlatformToolView, error) {
 }
 
 func (r *PlatformToolView) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalProjectChannelRequest(data []byte) (ProjectChannelRequest, error) {
+	var r ProjectChannelRequest
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ProjectChannelRequest) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalProjectChannelRequestApprovalView(data []byte) (ProjectChannelRequestApprovalView, error) {
+	var r ProjectChannelRequestApprovalView
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ProjectChannelRequestApprovalView) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -5714,16 +5740,17 @@ type ApprovalView struct {
 	ConsumeDeadline *string                  `json:"consumeDeadline,omitempty"`
 	Decisions       []ApprovalDecisionRecord `json:"decisions"`
 	// RFC3339，UTC
-	ExpiresAt            string                    `json:"expiresAt"`
-	InitiatorPrincipalID string                    `json:"initiatorPrincipalId"`
-	Observation          *ReasonCode               `json:"observation,omitempty"`
-	Reason               *ReasonCode               `json:"reason,omitempty"`
-	RoleRequirements     []ApprovalRoleRequirement `json:"roleRequirements"`
-	Status               ApprovalStatus            `json:"status"`
-	TargetID             string                    `json:"targetId"`
-	TargetType           string                    `json:"targetType"`
-	WorkflowID           string                    `json:"workflowId"`
-	WorkspaceID          *string                   `json:"workspaceId,omitempty"`
+	ExpiresAt             string                             `json:"expiresAt"`
+	InitiatorPrincipalID  string                             `json:"initiatorPrincipalId"`
+	Observation           *ReasonCode                        `json:"observation,omitempty"`
+	ProjectChannelRequest *ProjectChannelRequestApprovalView `json:"projectChannelRequest,omitempty"`
+	Reason                *ReasonCode                        `json:"reason,omitempty"`
+	RoleRequirements      []ApprovalRoleRequirement          `json:"roleRequirements"`
+	Status                ApprovalStatus                     `json:"status"`
+	TargetID              string                             `json:"targetId"`
+	TargetType            string                             `json:"targetType"`
+	WorkflowID            string                             `json:"workflowId"`
+	WorkspaceID           *string                            `json:"workspaceId,omitempty"`
 }
 
 // 有权读取的审批所绑定不可变 AutomationVersion 中的步骤展示，不是另一审批或内容权威。
@@ -5742,6 +5769,25 @@ type ApprovalDecisionRecord struct {
 	Decision  ApprovalDecision `json:"decision"`
 	// 该 approver 在决定时经 fresh Check 满足的选择器；同一人可在多个要求中计数，但只产生一个决定
 	SatisfiedSelectors []ApprovalSelector `json:"satisfiedSelectors"`
+}
+
+// DD-140：有权读取的审批所冻结的项目频道申请与提议的 Installation，供 owner 端以原版对话框呈现；不是另一审批或内容权威。
+type ProjectChannelRequestApprovalView struct {
+	InstallationResourceID string                `json:"installationResourceId"`
+	Request                ProjectChannelRequest `json:"request"`
+}
+
+// DD-140：托管 Agent 平台原生工具 project_channel_request 的输入，与固定 Buzz
+// projectChannelRequest.ts::parseProjectChannelRequest 同形同界；只是提议，绑定 workspace.create 且必须由
+// Installation owner 批准。
+type ProjectChannelRequest struct {
+	Description *string `json:"description,omitempty"`
+	// 该 Installation 的 ACTIVE ChannelAgentBinding 所在 Workspace（即其频道 ID）。
+	HomeChannelID string              `json:"homeChannelId"`
+	Name          string              `json:"name"`
+	TemplateName  *string             `json:"templateName,omitempty"`
+	TTLSeconds    *int64              `json:"ttlSeconds,omitempty"`
+	Visibility    WorkspaceVisibility `json:"visibility"`
 }
 
 // ApprovalPolicy.role_requirements 的一项：该选择器要求至少 minDistinct 个不同 active HUMAN 批准（.design/03
@@ -10382,6 +10428,20 @@ const (
 	WorkspaceAdmin   ApprovalSelector = "WORKSPACE_ADMIN"
 )
 
+// 只在准入事务内改写 Core 的 Workspace 可见性；已有成员不变，不写 SpiceDB，Relay 投影保持 private、不发送 visibility 标签。
+//
+// DD-80 的产品可见性：open 仅指同 Tenant 成员可发现并经 Core 加入；Relay 投影始终 private。
+//
+// 仅 workspace.create 使用；省略保持旧命令的 private 可见性。
+//
+// Core 产品可见性，不从 Relay private 投影推断；旧回应可能省略。
+type WorkspaceVisibility string
+
+const (
+	Private                 WorkspaceVisibility = "private"
+	WorkspaceVisibilityOpen WorkspaceVisibility = "open"
+)
+
 // ApprovalWorkflow 的状态（.design/06 §4）：REQUESTED → WAITING → APPROVED | DENIED | EXPIRED |
 // CANCELLED；APPROVED → CONSUMED | INVALIDATED。只由 Temporal history 投影。
 type ApprovalStatus string
@@ -10677,20 +10737,6 @@ type WorkspaceChannelCreateChannelType string
 const (
 	Forum  WorkspaceChannelCreateChannelType = "forum"
 	Stream WorkspaceChannelCreateChannelType = "stream"
-)
-
-// 只在准入事务内改写 Core 的 Workspace 可见性；已有成员不变，不写 SpiceDB，Relay 投影保持 private、不发送 visibility 标签。
-//
-// DD-80 的产品可见性：open 仅指同 Tenant 成员可发现并经 Core 加入；Relay 投影始终 private。
-//
-// 仅 workspace.create 使用；省略保持旧命令的 private 可见性。
-//
-// Core 产品可见性，不从 Relay private 投影推断；旧回应可能省略。
-type WorkspaceVisibility string
-
-const (
-	Private                 WorkspaceVisibility = "private"
-	WorkspaceVisibilityOpen WorkspaceVisibility = "open"
 )
 
 // BuzzIdentityBinding 状态机。custody=CLIENT 时跳过 PENDING_SECRET，自 RECONCILING 起始。
