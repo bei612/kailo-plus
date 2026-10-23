@@ -4,7 +4,8 @@
 
 部署单元在 `CELLS_DIRECTORY_BINDING_ID` 非空时由 `start.sh` 叠加 `compose.member-directory.yaml`：
 cells 服务加入 `CELLS_ADAPTER_PLATFORM_NETWORK`（与原生动作 overlay 同一 network key `cells-platform`），
-得到 `KAILO_DIRECTORY_*` 环境与只读 Compose secret `cells_directory_client_secret`。原生进程（前端 web 服务的
+得到 `KAILO_DIRECTORY_*` 环境（其中 `KAILO_DIRECTORY_WORKSPACE_ROOT` 由既有的 `CELLS_BINDING_DATASOURCE`/`CELLS_BINDING_ROOT_FOLDER`
+组成，Kailo Workspace 的原生工作区 `kailo-ws-<id>` 以其下 `<Workspace id>` 目录为根）与只读 Compose secret `cells_directory_client_secret`。原生进程（前端 web 服务的
 AfterServe）启动后立即并按间隔读取 Core 服务监听面
 `GET /service/v1/component-directory/bindings/<binding>/members`，规则与映射见
 `fork/verify/native-identity.md`「成员目录同步」。
@@ -22,7 +23,8 @@ AfterServe）启动后立即并按间隔读取 Core 服务监听面
 
 `start.sh` 另要求：kailo-oidc connector `provisionUsers=true` 且 `organization.tenant.id` 是 Kailo Tenant UUID；
 目录 client 不等于浏览器 client，secret 非空、0600 且与浏览器 client secret 不同；token 地址以
-`/protocol/openid-connect/token` 结尾、Core 地址只有 origin；`CELLS_ADAPTER_PLATFORM_NETWORK` 非空。
+`/protocol/openid-connect/token` 结尾、Core 地址只有 origin；`CELLS_ADAPTER_PLATFORM_NETWORK` 非空；
+`CELLS_BINDING_DATASOURCE`、`CELLS_BINDING_ROOT_FOLDER` 合法（Workspace 根在其下）。
 
 操作顺序：平台发布 deploy 已声明目录 client 并写出 secret（`verify` 回读 DECLARED）→ binding 以
 `--directory-client-id` 重新登记并 ACTIVE → 组件 env 填上述键 → `component-deploy.sh file-storage <commit> --check`

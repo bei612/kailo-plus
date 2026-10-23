@@ -40,6 +40,7 @@ const (
 	dirWsDesign = "11111111-2222-4333-8444-555555555501"
 	dirWsOps    = "11111111-2222-4333-8444-555555555502"
 	dirClient   = "kailo-cells-directory"
+	dirRoot     = "kailobinding/kailo-binding"
 )
 
 func useDirectoryStore(t *testing.T) string {
@@ -163,6 +164,87 @@ func workspaceRole(t *testing.T, ctx context.Context, workspaceID string) *idm.R
 	}
 }
 
+func nativeWorkspace(t *testing.T, ctx context.Context, workspaceID string) *idm.Workspace {
+	t.Helper()
+	q, _ := anypb.New(&idm.WorkspaceSingleQuery{Slug: auth.NativeOIDCWorkspaceRoleID(workspaceID)})
+	stream, err := idmc.WorkspaceServiceClient(ctx).SearchWorkspace(ctx, &idm.SearchWorkspaceRequest{Query: &service.Query{SubQueries: []*anypb.Any{q}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found []*idm.Workspace
+	for {
+		r, err := stream.Recv()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		found = append(found, r.GetWorkspace())
+	}
+	if len(found) > 1 {
+		t.Fatalf("%d native workspaces for one Kailo Workspace", len(found))
+	}
+	if len(found) == 0 {
+		return nil
+	}
+	return found[0]
+}
+
+// workspaceACLs lists the ACL action names on one workspace: "<role>:<action>"
+// for role grants, "root:<path>" for the workspace root.
+func workspaceACLs(t *testing.T, ctx context.Context, ws *idm.Workspace) []string {
+	t.Helper()
+	q, _ := anypb.New(&idm.ACLSingleQuery{WorkspaceIDs: []string{ws.GetUUID()}})
+	stream, err := idmc.ACLServiceClient(ctx).SearchACL(ctx, &idm.SearchACLRequest{Query: &service.Query{SubQueries: []*anypb.Any{q}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out []string
+	for {
+		r, err := stream.Recv()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		a := r.GetACL()
+		switch {
+		case a.GetAction().GetName() == permissions.AclWsrootActionName:
+			out = append(out, "root:"+a.GetNodeID()+":"+a.GetAction().GetValue())
+		case a.GetRoleID() != "":
+			out = append(out, a.GetRoleID()+":"+a.GetAction().GetName()+":"+a.GetNodeID())
+		}
+	}
+	slices.Sort(out)
+	return out
+}
+
+func hasPolicy(ws *idm.Workspace, action service.ResourcePolicyAction, subject string) bool {
+	return slices.ContainsFunc(ws.GetPolicies(), func(p *service.ResourcePolicy) bool {
+		return p.GetAction() == action && p.GetSubject() == subject && p.GetEffect() == service.ResourcePolicy_allow
+	})
+}
+
+// fakeFolders stands in for the admin router: one stable node UUID per path.
+type fakeFolders struct {
+	sync.Mutex
+	nodes map[string]string
+}
+
+func (f *fakeFolders) ensure(_ context.Context, p string) (string, error) {
+	f.Lock()
+	defer f.Unlock()
+	if f.nodes == nil {
+		f.nodes = map[string]string{}
+	}
+	if _, ok := f.nodes[p]; !ok {
+		f.nodes[p] = uuid.NewSHA1(uuid.NameSpaceURL, []byte(p)).String()
+	}
+	return f.nodes[p], nil
+}
+
 // DD-133(4), 07 §4.7.4: the member directory pre-provisions, derives roles
 // and Workspace teams, revokes and readmits; failures change nothing; logins
 // follow the applied snapshot, also after a restart.
@@ -198,7 +280,15 @@ func TestNativeOIDCMemberDirectory(t *testing.T) {
 			t.Fatal(err)
 		}
 		cfg := &auth.NativeOIDCDirectoryConfig{BindingID: dirBinding, ClientID: dirClient, ClientSecretFile: secretFile,
-			TokenURL: server.URL + "/token", CoreURL: server.URL, Interval: time.Minute}
+			TokenURL: server.URL + "/token", CoreURL: server.URL, WorkspaceRoot: dirRoot, Interval: time.Minute}
+		folders := &fakeFolders{}
+		previousFolder := auth.NativeOIDCWorkspaceFolder
+		auth.NativeOIDCWorkspaceFolder = folders.ensure
+		defer func() { auth.NativeOIDCWorkspaceFolder = previousFolder }()
+		folderOf := func(workspaceID string) string {
+			id, _ := folders.ensure(ctx, dirRoot+"/"+workspaceID)
+			return id
+		}
 		login := func(subject string, claims map[string]any) (*idm.User, error) {
 			return auth.ResolveOrProvisionNativeOIDCUser(ctx, provisionIssuer, subject, idp.token(provisionIssuer, subject, provisionClient, claims))
 		}
@@ -236,8 +326,33 @@ func TestNativeOIDCMemberDirectory(t *testing.T) {
 				hasRole(b, auth.NativeOIDCWorkspaceRoleID(dirWsOps)) {
 				t.Fatalf("member teams: %v", b.GetRoles())
 			}
-			if r := workspaceRole(t, ctx, dirWsDesign); r == nil || !r.GetIsTeam() || r.GetLabel() != "Design" {
-				t.Fatalf("Workspace team: %v", r)
+			if r := workspaceRole(t, ctx, dirWsDesign); r == nil || r.GetIsTeam() || r.GetLabel() != "Design" {
+				t.Fatalf("Workspace role: %v", r)
+			}
+			// 07 §4.7.4: native workspace slug kailo-ws-<id>, ADMIN scope, rooted on
+			// <binding datasource>/<Tenant root>/<id>, the same-named role holding
+			// read and write ACLs on that root; Workspace ADMIN gets WRITE.
+			slug := "kailo-ws-" + dirWsDesign
+			ws := nativeWorkspace(t, ctx, dirWsDesign)
+			if ws == nil || ws.GetSlug() != slug || ws.GetLabel() != "Design" || ws.GetScope() != idm.WorkspaceScope_ADMIN {
+				t.Fatalf("native workspace: %v", ws)
+			}
+			folder := folderOf(dirWsDesign)
+			want := []string{"root:" + folder + ":" + dirRoot + "/" + dirWsDesign, slug + ":read:" + folder, slug + ":write:" + folder}
+			slices.Sort(want)
+			if got := workspaceACLs(t, ctx, ws); !slices.Equal(got, want) {
+				t.Fatalf("workspace ACLs: %v, want %v", got, want)
+			}
+			if !hasPolicy(ws, service.ResourcePolicyAction_WRITE, permissions.PolicySubjectUuidPrefix+derived("dir-bob")) ||
+				hasPolicy(ws, service.ResourcePolicyAction_WRITE, permissions.PolicySubjectUuidPrefix+derived("dir-admin")) ||
+				!hasPolicy(ws, service.ResourcePolicyAction_READ, permissions.PolicySubjectRolePrefix+slug) {
+				t.Fatalf("workspace policies: %v", ws.GetPolicies())
+			}
+			ops := nativeWorkspace(t, ctx, dirWsOps)
+			if ops == nil || slices.ContainsFunc(ops.GetPolicies(), func(p *service.ResourcePolicy) bool {
+				return p.GetAction() == service.ResourcePolicyAction_WRITE && strings.HasPrefix(p.GetSubject(), permissions.PolicySubjectUuidPrefix)
+			}) {
+				t.Fatalf("Workspace without ADMIN members has account WRITE policies: %v", ops)
 			}
 			if len(linkedTo(t, ctx, "foreign-a000")) != 0 {
 				t.Fatal("identity of another issuer provisioned")
@@ -328,8 +443,19 @@ func TestNativeOIDCMemberDirectory(t *testing.T) {
 			if !hasRole(userByUUID(t, ctx, derived("dir-pre")), auth.NativeOIDCWorkspaceRoleID(dirWsOps)) {
 				t.Fatal("Workspace team not attached")
 			}
-			if workspaceRole(t, ctx, dirWsDesign) == nil {
-				t.Fatal("team of a vanished Workspace deleted (native ACLs would be lost)")
+			// The Design Workspace left the snapshot: grants revoked, out of the
+			// members' view, workspace and root (files) kept.
+			gone := nativeWorkspace(t, ctx, dirWsDesign)
+			folder := folderOf(dirWsDesign)
+			if gone == nil || workspaceRole(t, ctx, dirWsDesign) == nil {
+				t.Fatal("vanished Workspace deleted")
+			}
+			if got := workspaceACLs(t, ctx, gone); !slices.Equal(got, []string{"root:" + folder + ":" + dirRoot + "/" + dirWsDesign}) {
+				t.Fatalf("vanished Workspace grants: %v", got)
+			}
+			if hasPolicy(gone, service.ResourcePolicyAction_READ, permissions.PolicySubjectRolePrefix+"kailo-ws-"+dirWsDesign) ||
+				hasPolicy(gone, service.ResourcePolicyAction_WRITE, permissions.PolicySubjectUuidPrefix+derived("dir-bob")) {
+				t.Fatalf("vanished Workspace still in the members' view: %v", gone.GetPolicies())
 			}
 			if _, err := login("dir-bob", map[string]any{"preferred_username": "bob"}); !errors.Is(err, auth.ErrNativeOIDCNotMember) {
 				t.Fatalf("removed member logged in: %v", err)
@@ -372,6 +498,10 @@ func TestNativeOIDCMemberDirectory(t *testing.T) {
 			if _, err := login("dir-bob", map[string]any{"preferred_username": "bob"}); err != nil {
 				t.Fatalf("readmitted member cannot log in: %v", err)
 			}
+			back := nativeWorkspace(t, ctx, dirWsDesign)
+			if len(workspaceACLs(t, ctx, back)) != 3 || !hasPolicy(back, service.ResourcePolicyAction_WRITE, permissions.PolicySubjectUuidPrefix+derived("dir-bob")) {
+				t.Fatalf("Workspace back in the snapshot not restored: %v", back.GetPolicies())
+			}
 		})
 
 		t.Run("restart-keeps-the-applied-snapshot", func(t *testing.T) {
@@ -400,7 +530,8 @@ func TestNativeOIDCDirectoryConfigFromEnv(t *testing.T) {
 	keys := map[string]string{"KAILO_DIRECTORY_BINDING_ID": dirBinding, "KAILO_DIRECTORY_CLIENT_ID": dirClient,
 		"KAILO_DIRECTORY_CLIENT_SECRET_FILE": "/run/secrets/cells_directory_client_secret",
 		"KAILO_DIRECTORY_TOKEN_URL":          "http://idp.example.invalid/realms/kailo/protocol/openid-connect/token",
-		"KAILO_DIRECTORY_CORE_URL":           "http://core-bff:8081"}
+		"KAILO_DIRECTORY_CORE_URL":           "http://core-bff:8081",
+		"KAILO_DIRECTORY_WORKSPACE_ROOT":     "kailobinding/kailo-binding"}
 	for k := range keys {
 		t.Setenv(k, "")
 	}
@@ -421,7 +552,8 @@ func TestNativeOIDCDirectoryConfigFromEnv(t *testing.T) {
 	}
 	for k, bad := range map[string]string{"KAILO_DIRECTORY_INTERVAL_SECONDS": "5", "KAILO_DIRECTORY_BINDING_ID": "not-a-uuid",
 		"KAILO_DIRECTORY_CLIENT_ID": "a b", "KAILO_DIRECTORY_CORE_URL": "http://core-bff:8081/service?x=1",
-		"KAILO_DIRECTORY_TOKEN_URL": "ftp://idp", "KAILO_DIRECTORY_CLIENT_SECRET_FILE": "relative"} {
+		"KAILO_DIRECTORY_TOKEN_URL": "ftp://idp", "KAILO_DIRECTORY_CLIENT_SECRET_FILE": "relative",
+		"KAILO_DIRECTORY_WORKSPACE_ROOT": "kailobinding/../x"} {
 		t.Setenv(k, bad)
 		if _, err := auth.NativeOIDCDirectoryConfigFromEnv(); err == nil {
 			t.Errorf("%s=%q accepted", k, bad)
@@ -442,6 +574,14 @@ func TestParseNativeOIDCDirectory(t *testing.T) {
 	s, err := auth.ParseNativeOIDCDirectory(raw)
 	if err != nil || len(s.Members) != 1 || !s.Members[0].Admin || s.Members[0].Workspaces[0] != dirWsOps {
 		t.Fatalf("valid snapshot: %v", err)
+	}
+	if len(s.Members[0].WorkspaceAdmins) != 0 {
+		t.Fatalf("Workspace MEMBER parsed as ADMIN: %v", s.Members[0].WorkspaceAdmins)
+	}
+	member.workspaces = map[string]string{dirWsOps: "ADMIN"}
+	raw, _ = json.Marshal(dirSnapshot("a", dirTenant, map[string]string{dirWsOps: "Ops"}, member))
+	if s, err = auth.ParseNativeOIDCDirectory(raw); err != nil || !slices.Equal(s.Members[0].WorkspaceAdmins, []string{dirWsOps}) {
+		t.Fatalf("Workspace ADMIN: %v", err)
 	}
 	mutate := map[string]func(map[string]any){
 		"missing-members":   func(m map[string]any) { delete(m, "members") },

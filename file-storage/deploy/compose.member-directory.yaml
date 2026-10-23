@@ -15,6 +15,8 @@ services:
       KAILO_DIRECTORY_TOKEN_URL: ${CELLS_DIRECTORY_TOKEN_URL:?IdP token endpoint required}
       KAILO_DIRECTORY_CORE_URL: ${CELLS_DIRECTORY_CORE_URL:?Core service listener required}
       KAILO_DIRECTORY_INTERVAL_SECONDS: ${CELLS_DIRECTORY_INTERVAL_SECONDS:-60}
+      # 07 §4.7.4: Kailo Workspaces are rooted on <binding datasource>/<Tenant root>/<Workspace id>.
+      KAILO_DIRECTORY_WORKSPACE_ROOT: ${CELLS_BINDING_DATASOURCE:?binding datasource required}/${CELLS_BINDING_ROOT_FOLDER:?binding root folder required}
     secrets: [cells_install, cells_oidc_client_secret, cells_oauth_secret, cells_datasource_key, cells_datasource_secret, cells_directory_client_secret]
 
 secrets:

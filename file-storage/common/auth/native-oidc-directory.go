@@ -12,11 +12,18 @@ package auth
 //     the same shape as a first browser login when it has none yet).
 //   - tenantRole ADMIN → native profile admin (the native ADMINS role
 //     auto-applies), MEMBER → standard.
-//   - Workspace → native team role kailo-workspace-<id> (label = Workspace
-//     name), attached to the accounts of its members; no storage workspace
-//     is created and workspaces[].role does not raise the native profile.
+//   - Workspace → native workspace slug kailo-ws-<id> (ADMIN scope, label =
+//     Workspace name) rooted on the folder <binding datasource>/<Tenant
+//     root>/<id> (KAILO_DIRECTORY_WORKSPACE_ROOT is <datasource>/<Tenant
+//     root>), and the native role of the same id holding read and write ACLs
+//     on that root. Members of the Workspace carry that role; a Workspace
+//     ADMIN is also granted the workspace resource WRITE policy (MEMBER: the
+//     read/write ACLs only). Created and read back when the Workspace first
+//     appears; when it leaves the snapshot the role's ACLs are revoked and
+//     the workspace leaves the members' view, its folder and files stay.
+//     workspaces[].role does not raise the native profile.
 //   - A provisioned account of this issuer absent from the snapshot loses
-//     its admin profile and team roles, is locked (native "logout" lock) and
+//     its admin profile and Workspace roles, is locked (native "logout" lock) and
 //     its recorded native sessions are ended; it is unlocked when it appears
 //     again. Accounts and files are never deleted.
 //
@@ -25,7 +32,7 @@ package auth
 // snapshot converged; any failure (Core 503, token, transport, contract,
 // another binding or Tenant) changes nothing and is retried next period.
 // Once a snapshot was applied, browser logins follow it: identities not in it
-// are refused and the profile/team roles come from it, also after a restart
+// are refused and the profile/Workspace roles come from it, also after a restart
 // (the snapshot is kept in the native working directory). Explicitly linked
 // connector accounts are outside the directory and keep their own profile.
 
@@ -48,19 +55,22 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/google/uuid"
 	"go.uber.org/zap"
 	"google.golang.org/protobuf/types/known/anypb"
 
 	"github.com/pydio/cells/v5/common"
 	"github.com/pydio/cells/v5/common/client/commons/idmc"
+	"github.com/pydio/cells/v5/common/permissions"
 	"github.com/pydio/cells/v5/common/proto/idm"
 	"github.com/pydio/cells/v5/common/proto/service"
 	"github.com/pydio/cells/v5/common/runtime"
 	"github.com/pydio/cells/v5/common/telemetry/log"
 )
 
-// NativeOIDCWorkspaceRolePrefix starts the native team role of a Kailo Workspace.
-const NativeOIDCWorkspaceRolePrefix = "kailo-workspace-"
+// NativeOIDCWorkspaceRolePrefix starts the slug of the native workspace of a
+// Kailo Workspace and the id of its native role (07 §4.7.4: kailo-ws-<id>).
+const NativeOIDCWorkspaceRolePrefix = "kailo-ws-"
 
 // NativeOIDCDirectoryLockAttribute marks an account locked by the directory
 // (only those are unlocked again by it; a lock set in the console stays).
@@ -85,6 +95,9 @@ var (
 	directoryUUID     = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 	directoryVersion  = regexp.MustCompile(`^[0-9a-f]{64}$`)
 	directoryClientID = regexp.MustCompile(`^[A-Za-z0-9_-]{1,255}$`)
+	// <binding datasource>/<Tenant root folder>, the same names reconcile.py
+	// accepts for CELLS_BINDING_DATASOURCE and CELLS_BINDING_ROOT_FOLDER.
+	directoryWorkspaceRoot = regexp.MustCompile(`^[a-z0-9]{1,33}/[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`)
 )
 
 // NativeOIDCDirectoryStorePath locates the applied snapshot (replaced by tests).
@@ -101,13 +114,16 @@ type NativeOIDCDirectoryConfig struct {
 	ClientSecretFile string
 	TokenURL         string
 	CoreURL          string
-	Interval         time.Duration
+	// WorkspaceRoot is <binding datasource>/<Tenant root>: Kailo Workspaces
+	// are rooted on <WorkspaceRoot>/<Workspace id>.
+	WorkspaceRoot string
+	Interval      time.Duration
 	// HTTP is the transport (tests); redirects are never followed.
 	HTTP *http.Client
 }
 
 var directoryEnv = []string{"KAILO_DIRECTORY_BINDING_ID", "KAILO_DIRECTORY_CLIENT_ID", "KAILO_DIRECTORY_CLIENT_SECRET_FILE",
-	"KAILO_DIRECTORY_TOKEN_URL", "KAILO_DIRECTORY_CORE_URL"}
+	"KAILO_DIRECTORY_TOKEN_URL", "KAILO_DIRECTORY_CORE_URL", "KAILO_DIRECTORY_WORKSPACE_ROOT"}
 
 // NativeOIDCDirectoryConfigFromEnv returns nil when the directory read is not
 // delivered (all keys empty) and refuses a partial or invalid delivery.
@@ -134,7 +150,8 @@ func NativeOIDCDirectoryConfigFromEnv() (*NativeOIDCDirectoryConfig, error) {
 	}
 	c := &NativeOIDCDirectoryConfig{BindingID: values["KAILO_DIRECTORY_BINDING_ID"], ClientID: values["KAILO_DIRECTORY_CLIENT_ID"],
 		ClientSecretFile: values["KAILO_DIRECTORY_CLIENT_SECRET_FILE"], TokenURL: values["KAILO_DIRECTORY_TOKEN_URL"],
-		CoreURL: values["KAILO_DIRECTORY_CORE_URL"], Interval: time.Duration(interval) * time.Second}
+		CoreURL: values["KAILO_DIRECTORY_CORE_URL"], WorkspaceRoot: values["KAILO_DIRECTORY_WORKSPACE_ROOT"],
+		Interval: time.Duration(interval) * time.Second}
 	return c, c.Validate()
 }
 
@@ -155,6 +172,8 @@ func (c *NativeOIDCDirectoryConfig) Validate() error {
 		return errors.New("member directory client secret must be an absolute file")
 	case !plain(c.TokenURL, false) || !plain(c.CoreURL, true):
 		return errors.New("member directory token and Core addresses must be plain HTTP(S) URLs")
+	case !directoryWorkspaceRoot.MatchString(c.WorkspaceRoot):
+		return errors.New("member directory Workspace root must be <binding datasource>/<Tenant root folder>")
 	case c.Interval < 10*time.Second || c.Interval > time.Hour:
 		return errors.New("member directory interval must be 10..3600 seconds")
 	}
@@ -283,6 +302,8 @@ type NativeOIDCDirectoryMember struct {
 	Admin       bool
 	Identities  []NativeOIDCDirectoryIdentity
 	Workspaces  []string
+	// WorkspaceAdmins lists the Workspaces where the member is ADMIN.
+	WorkspaceAdmins []string
 }
 
 // NativeOIDCDirectoryIdentity is one external identity of a member.
@@ -389,7 +410,8 @@ func ParseNativeOIDCDirectory(body []byte) (*NativeOIDCDirectorySnapshot, error)
 			if w.WorkspaceID == nil || !directoryUUID.MatchString(*w.WorkspaceID) {
 				return nil, invalid
 			}
-			if _, ok := directoryRole(w.Role); !ok {
+			wsAdmin, ok := directoryRole(w.Role)
+			if !ok {
 				return nil, invalid
 			}
 			id := strings.ToLower(*w.WorkspaceID)
@@ -398,8 +420,12 @@ func ParseNativeOIDCDirectory(body []byte) (*NativeOIDCDirectorySnapshot, error)
 			}
 			seen[id] = true
 			member.Workspaces = append(member.Workspaces, id)
+			if wsAdmin {
+				member.WorkspaceAdmins = append(member.WorkspaceAdmins, id)
+			}
 		}
 		slices.Sort(member.Workspaces)
+		slices.Sort(member.WorkspaceAdmins)
 		s.Members = append(s.Members, member)
 	}
 	return s, nil
@@ -415,6 +441,8 @@ type nativeOIDCDirectoryEntry struct {
 	Picture     string   `json:"picture,omitempty"`
 	Admin       bool     `json:"admin,omitempty"`
 	Workspaces  []string `json:"workspaces,omitempty"`
+	// WorkspaceAdmins: Workspaces where this member is ADMIN.
+	WorkspaceAdmins []string `json:"workspaceAdmins,omitempty"`
 }
 
 type nativeOIDCDirectoryState struct {
@@ -513,7 +541,7 @@ func saveNativeOIDCDirectoryState(state *nativeOIDCDirectoryState) error {
 // nativeOIDCMembership is what the applied directory says about one account.
 type nativeOIDCMembership struct {
 	admin      bool
-	workspaces []string // native team role ids
+	workspaces []string // native Workspace role ids
 	tenantName string
 	member     bool // listed (false = revoke)
 }
@@ -526,7 +554,8 @@ func (e *nativeOIDCDirectoryEntry) membership(state *nativeOIDCDirectoryState) *
 	return m
 }
 
-// NativeOIDCWorkspaceRoleID is the native team role of a Kailo Workspace.
+// NativeOIDCWorkspaceRoleID is the slug of the native workspace of a Kailo
+// Workspace and the id of the native role holding its root ACLs.
 func NativeOIDCWorkspaceRoleID(workspaceID string) string {
 	return NativeOIDCWorkspaceRolePrefix + strings.ToLower(workspaceID)
 }
@@ -539,17 +568,79 @@ func validTenantName(name string) bool {
 
 // ---- convergence ----------------------------------------------------------------
 
-func nativeOIDCWorkspaceRolePolicies(groupUUID string) []*service.ResourcePolicy {
-	return nativeOIDCTenantGroupPolicies(groupUUID)
+// NativeOIDCWorkspaceFolder ensures the folder <datasource>/<...> exists in
+// the admin tree and returns its node UUID. It is installed by the frontend
+// service (the node router cannot be imported here); a directory with
+// Workspaces is not applied while it is missing.
+var NativeOIDCWorkspaceFolder func(ctx context.Context, path string) (string, error)
+
+var nativeOIDCWorkspaceNamespace = uuid.MustParse("5c1d7b0e-0f39-4f61-9a6f-2b8f0c7d4e21")
+
+// nativeOIDCWorkspaceUUID is the stable UUID of the native workspace of a slug.
+func nativeOIDCWorkspaceUUID(slug string) string {
+	return uuid.NewSHA1(nativeOIDCWorkspaceNamespace, []byte(slug)).String()
 }
 
-func ensureNativeOIDCWorkspaceRole(ctx context.Context, workspaceID, name, groupUUID string) error {
-	id := NativeOIDCWorkspaceRoleID(workspaceID)
-	label := strings.TrimSpace(name)
-	if label == "" {
-		label = id
+func nativeOIDCWorkspaceAdminOnly() []*service.ResourcePolicy {
+	return permissions.NewResourcePoliciesBuilder().WithProfileRead(common.PydioProfileAdmin).WithProfileWrite(common.PydioProfileAdmin).Policies()
+}
+
+// nativeOIDCWorkspacePolicies: the workspace is visible to its role; native
+// admins and the Workspace ADMINs (by account UUID) may edit it.
+func nativeOIDCWorkspacePolicies(roleID string, admins []string) []*service.ResourcePolicy {
+	b := permissions.NewResourcePoliciesBuilder().
+		WithResourcePolicy(&service.ResourcePolicy{Action: service.ResourcePolicyAction_READ, Effect: service.ResourcePolicy_allow,
+			Subject: permissions.PolicySubjectRolePrefix + roleID}).
+		WithProfileRead(common.PydioProfileAdmin).
+		WithProfileWrite(common.PydioProfileAdmin)
+	for _, id := range admins {
+		b = b.WithSubjectWrite(id)
 	}
-	wanted := nativeOIDCWorkspaceRolePolicies(groupUUID)
+	return b.Policies()
+}
+
+func searchNativeWorkspaces(ctx context.Context, q *idm.WorkspaceSingleQuery) ([]*idm.Workspace, error) {
+	query, _ := anypb.New(q)
+	stream, err := idmc.WorkspaceServiceClient(ctx).SearchWorkspace(ctx, &idm.SearchWorkspaceRequest{Query: &service.Query{SubQueries: []*anypb.Any{query}}})
+	if err != nil {
+		return nil, err
+	}
+	var out []*idm.Workspace
+	for {
+		r, err := stream.Recv()
+		if errors.Is(err, io.EOF) {
+			return out, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, r.GetWorkspace())
+	}
+}
+
+func searchNativeACLs(ctx context.Context, q *idm.ACLSingleQuery) ([]*idm.ACL, error) {
+	query, _ := anypb.New(q)
+	stream, err := idmc.ACLServiceClient(ctx).SearchACL(ctx, &idm.SearchACLRequest{Query: &service.Query{SubQueries: []*anypb.Any{query}}})
+	if err != nil {
+		return nil, err
+	}
+	var out []*idm.ACL
+	for {
+		r, err := stream.Recv()
+		if errors.Is(err, io.EOF) {
+			return out, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, r.GetACL())
+	}
+}
+
+// ensureNativeOIDCWorkspaceRole creates or refreshes the role holding the
+// root ACLs of one Kailo Workspace (readable by the Tenant group).
+func ensureNativeOIDCWorkspaceRole(ctx context.Context, id, label, groupUUID string) error {
+	wanted := nativeOIDCTenantGroupPolicies(groupUUID)
 	query, _ := anypb.New(&idm.RoleSingleQuery{Uuid: []string{id}})
 	stream, err := idmc.RoleServiceClient(ctx).SearchRole(ctx, &idm.SearchRoleRequest{Query: &service.Query{SubQueries: []*anypb.Any{query}}})
 	if err != nil {
@@ -568,21 +659,163 @@ func ensureNativeOIDCWorkspaceRole(ctx context.Context, workspaceID, name, group
 			current = response.GetRole()
 		}
 	}
-	if current != nil && current.GetLabel() == label && current.GetIsTeam() && !current.GetUserRole() && !current.GetGroupRole() &&
+	if current != nil && current.GetLabel() == label && !current.GetIsTeam() && !current.GetUserRole() && !current.GetGroupRole() &&
 		len(current.GetAutoApplies()) == 0 && samePolicies(current.GetPolicies(), wanted) {
 		return nil
 	}
-	_, err = idmc.RoleServiceClient(ctx).CreateRole(ctx, &idm.CreateRoleRequest{Role: &idm.Role{
-		Uuid: id, Label: label, IsTeam: true, Policies: wanted}})
+	_, err = idmc.RoleServiceClient(ctx).CreateRole(ctx, &idm.CreateRoleRequest{Role: &idm.Role{Uuid: id, Label: label, Policies: wanted}})
 	if err == nil && current == nil {
-		log.Auditer(ctx).Info(fmt.Sprintf("Created team [%s] for a Kailo Workspace", label), log.GetAuditId(common.AuditRoleCreate))
+		log.Auditer(ctx).Info(fmt.Sprintf("Created role [%s] for a Kailo Workspace", id), log.GetAuditId(common.AuditRoleCreate))
 	}
 	return err
 }
 
+// ensureNativeOIDCWorkspace converges one Kailo Workspace present in the
+// snapshot: role, root folder, native workspace (never re-rooted), root and
+// role read/write ACLs, and the WRITE policy of its ADMINs; then reads it back.
+func ensureNativeOIDCWorkspace(ctx context.Context, root, workspaceID, name, groupUUID string, admins []string) error {
+	id := NativeOIDCWorkspaceRoleID(workspaceID)
+	label := strings.TrimSpace(name)
+	if label == "" {
+		label = id
+	}
+	if err := ensureNativeOIDCWorkspaceRole(ctx, id, label, groupUUID); err != nil {
+		return err
+	}
+	if NativeOIDCWorkspaceFolder == nil {
+		return errors.New("member directory Workspace folders are unavailable in this process")
+	}
+	folderPath := root + "/" + strings.ToLower(workspaceID)
+	folder, err := NativeOIDCWorkspaceFolder(ctx, folderPath)
+	if err != nil {
+		return err
+	}
+	if folder == "" {
+		return errors.New("member directory Workspace folder has no node UUID")
+	}
+	wsUUID := nativeOIDCWorkspaceUUID(id)
+	wanted := nativeOIDCWorkspacePolicies(id, admins)
+	found, err := searchNativeWorkspaces(ctx, &idm.WorkspaceSingleQuery{Slug: id})
+	if err != nil {
+		return err
+	}
+	var current *idm.Workspace
+	for _, w := range found {
+		if w.GetSlug() == id {
+			current = w
+		}
+	}
+	if current != nil && current.GetUUID() != wsUUID {
+		return errors.New("a native workspace holds a Kailo Workspace slug; it is never taken over")
+	}
+	// Roots: exactly this folder, and no other workspace rooted on it.
+	rooted, err := searchNativeACLs(ctx, &idm.ACLSingleQuery{NodeIDs: []string{folder}, Actions: []*idm.ACLAction{{Name: permissions.AclWsrootActionName}}})
+	if err != nil {
+		return err
+	}
+	for _, a := range rooted {
+		if a.GetWorkspaceID() != wsUUID {
+			return errors.New("another native workspace is rooted on a Kailo Workspace folder")
+		}
+	}
+	if current == nil || current.GetLabel() != label || current.GetScope() != idm.WorkspaceScope_ADMIN || !samePolicies(current.GetPolicies(), wanted) {
+		ws := &idm.Workspace{UUID: wsUUID, Slug: id, Label: label, Description: "Kailo Workspace", Scope: idm.WorkspaceScope_ADMIN,
+			Attributes: `{"DEFAULT_RIGHTS":"","QUOTA":"0"}`, Policies: wanted}
+		if current != nil {
+			ws.Attributes, ws.Description = current.GetAttributes(), current.GetDescription()
+		}
+		if _, err := idmc.WorkspaceServiceClient(ctx).CreateWorkspace(ctx, &idm.CreateWorkspaceRequest{Workspace: ws}); err != nil {
+			return err
+		}
+	}
+	roots, err := searchNativeACLs(ctx, &idm.ACLSingleQuery{WorkspaceIDs: []string{wsUUID}, Actions: []*idm.ACLAction{{Name: permissions.AclWsrootActionName}}})
+	if err != nil {
+		return err
+	}
+	for _, a := range roots {
+		if a.GetNodeID() != folder {
+			return errors.New("Kailo Workspace exists with another root; it is never re-rooted automatically")
+		}
+	}
+	grants := []*idm.ACL{}
+	if len(roots) == 0 {
+		grants = append(grants,
+			&idm.ACL{NodeID: folder, WorkspaceID: wsUUID, Action: &idm.ACLAction{Name: permissions.AclWsrootActionName, Value: folderPath}},
+			&idm.ACL{NodeID: folder, WorkspaceID: wsUUID, Action: permissions.AclRecycleRoot})
+	}
+	held, err := searchNativeACLs(ctx, &idm.ACLSingleQuery{WorkspaceIDs: []string{wsUUID}, NodeIDs: []string{folder}, RoleIDs: []string{id},
+		Actions: []*idm.ACLAction{{Name: permissions.AclRead.Name}, {Name: permissions.AclWrite.Name}}})
+	if err != nil {
+		return err
+	}
+	for _, action := range []*idm.ACLAction{permissions.AclRead, permissions.AclWrite} {
+		if !slices.ContainsFunc(held, func(a *idm.ACL) bool { return a.GetAction().GetName() == action.Name }) {
+			grants = append(grants, &idm.ACL{NodeID: folder, WorkspaceID: wsUUID, RoleID: id, Action: &idm.ACLAction{Name: action.Name, Value: action.Value}})
+		}
+	}
+	for _, acl := range grants {
+		if _, err := idmc.ACLServiceClient(ctx).CreateACL(ctx, &idm.CreateACLRequest{ACL: acl}); err != nil {
+			return err
+		}
+	}
+	// Read back.
+	found, err = searchNativeWorkspaces(ctx, &idm.WorkspaceSingleQuery{Slug: id})
+	if err != nil {
+		return err
+	}
+	if len(found) != 1 || found[0].GetUUID() != wsUUID || found[0].GetLabel() != label {
+		return errors.New("Kailo Workspace could not be read back")
+	}
+	held, err = searchNativeACLs(ctx, &idm.ACLSingleQuery{WorkspaceIDs: []string{wsUUID}, NodeIDs: []string{folder}, RoleIDs: []string{id},
+		Actions: []*idm.ACLAction{{Name: permissions.AclRead.Name}, {Name: permissions.AclWrite.Name}}})
+	if err != nil {
+		return err
+	}
+	if len(held) < 2 {
+		return errors.New("Kailo Workspace root grants could not be read back")
+	}
+	if len(grants) > 0 || current == nil {
+		log.Auditer(ctx).Info(fmt.Sprintf("Kailo Workspace [%s] converged", id), log.GetAuditId(common.AuditWsUpdate))
+	}
+	return nil
+}
+
+// retireNativeOIDCWorkspaces handles Kailo Workspaces absent from the
+// snapshot: their role loses its ACLs and the workspace leaves the members'
+// view (admin-only policies). The workspace, its root and files remain.
+func retireNativeOIDCWorkspaces(ctx context.Context, active map[string]string) error {
+	all, err := searchNativeWorkspaces(ctx, &idm.WorkspaceSingleQuery{Scope: idm.WorkspaceScope_ADMIN})
+	if err != nil {
+		return err
+	}
+	for _, ws := range all {
+		slug := ws.GetSlug()
+		if !strings.HasPrefix(slug, NativeOIDCWorkspaceRolePrefix) || ws.GetUUID() != nativeOIDCWorkspaceUUID(slug) {
+			continue
+		}
+		if _, ok := active[strings.TrimPrefix(slug, NativeOIDCWorkspaceRolePrefix)]; ok {
+			continue
+		}
+		q, _ := anypb.New(&idm.ACLSingleQuery{WorkspaceIDs: []string{ws.GetUUID()}, RoleIDs: []string{slug},
+			Actions: []*idm.ACLAction{{Name: permissions.AclRead.Name}, {Name: permissions.AclWrite.Name}}})
+		if _, err := idmc.ACLServiceClient(ctx).DeleteACL(ctx, &idm.DeleteACLRequest{Query: &service.Query{SubQueries: []*anypb.Any{q}}}); err != nil {
+			return err
+		}
+		if !samePolicies(ws.GetPolicies(), nativeOIDCWorkspaceAdminOnly()) {
+			ws.Policies = nativeOIDCWorkspaceAdminOnly()
+			if _, err := idmc.WorkspaceServiceClient(ctx).CreateWorkspace(ctx, &idm.CreateWorkspaceRequest{Workspace: ws}); err != nil {
+				return err
+			}
+			log.Auditer(ctx).Info(fmt.Sprintf("Kailo Workspace [%s] left the directory; grants revoked, files kept", slug),
+				log.GetAuditId(common.AuditWsUpdate))
+		}
+	}
+	return nil
+}
+
 // explicitRoles keeps the roles stored on the account itself: not its user
 // role, not inherited group roles, not profile auto-applied roles, and not the
-// Kailo Workspace teams (those follow the directory).
+// Kailo Workspace roles (those follow the directory).
 func explicitRoles(roles []*idm.Role, keepWorkspaces bool) []string {
 	var out []string
 	for _, r := range roles {
@@ -613,9 +846,9 @@ func writeLocks(attributes map[string]string, locks []string) {
 }
 
 // convergeNativeOIDCAccount writes the Kailo profile data, Tenant group,
-// profile, Workspace teams and directory lock of one account when any of them
+// profile, Workspace roles and directory lock of one account when any of them
 // differs. member is nil before a directory was applied (standard profile, no
-// teams) and for explicitly linked accounts (profile data only).
+// Workspace roles) and for explicitly linked accounts (profile data only).
 func convergeNativeOIDCAccount(ctx context.Context, c NativeOIDCConnector, user *idm.User, profile nativeOIDCProfile, provisioned bool, member *nativeOIDCMembership) error {
 	attributes := map[string]string{}
 	for k, v := range user.GetAttributes() {
@@ -714,7 +947,7 @@ func directoryPicture(raw string) string {
 
 // ApplyNativeOIDCDirectory converges the native organisation to one checked
 // snapshot and records it. It holds the provisioning lock for the whole run.
-func ApplyNativeOIDCDirectory(ctx context.Context, snapshot *NativeOIDCDirectorySnapshot) error {
+func ApplyNativeOIDCDirectory(ctx context.Context, snapshot *NativeOIDCDirectorySnapshot, workspaceRoot string) error {
 	nativeOIDCProvisioning.Lock()
 	defer nativeOIDCProvisioning.Unlock()
 	c, err := loadNativeOIDCConnector(ctx)
@@ -736,15 +969,8 @@ func ApplyNativeOIDCDirectory(ctx context.Context, snapshot *NativeOIDCDirectory
 	if err != nil {
 		return err
 	}
-	workspaceIDs := make([]string, 0, len(snapshot.Workspaces))
-	for id := range snapshot.Workspaces {
-		workspaceIDs = append(workspaceIDs, id)
-	}
-	slices.Sort(workspaceIDs)
-	for _, id := range workspaceIDs {
-		if err := ensureNativeOIDCWorkspaceRole(ctx, id, snapshot.Workspaces[id], group.GetUuid()); err != nil {
-			return err
-		}
+	if len(snapshot.Workspaces) > 0 && !directoryWorkspaceRoot.MatchString(workspaceRoot) {
+		return errors.New("member directory Workspace root is not configured")
 	}
 	linked := map[string]bool{}
 	for _, l := range c.Users {
@@ -757,7 +983,26 @@ func ApplyNativeOIDCDirectory(ctx context.Context, snapshot *NativeOIDCDirectory
 				continue
 			}
 			state.Members = append(state.Members, nativeOIDCDirectoryEntry{Issuer: id.Issuer, Subject: id.Subject, Principal: m.PrincipalID,
-				DisplayName: m.DisplayName, Picture: directoryPicture(id.Picture), Admin: m.Admin, Workspaces: m.Workspaces})
+				DisplayName: m.DisplayName, Picture: directoryPicture(id.Picture), Admin: m.Admin, Workspaces: m.Workspaces,
+				WorkspaceAdmins: m.WorkspaceAdmins})
+		}
+	}
+	// Workspaces first (roles must exist before accounts carry them); their
+	// ADMINs are the derived accounts of the members marked ADMIN there.
+	workspaceIDs := make([]string, 0, len(snapshot.Workspaces))
+	for id := range snapshot.Workspaces {
+		workspaceIDs = append(workspaceIDs, id)
+	}
+	slices.Sort(workspaceIDs)
+	for _, id := range workspaceIDs {
+		var admins []string
+		for _, e := range state.Members {
+			if slices.Contains(e.WorkspaceAdmins, id) {
+				admins = append(admins, nativeOIDCUserUUID(e.Issuer, e.Subject))
+			}
+		}
+		if err := ensureNativeOIDCWorkspace(ctx, workspaceRoot, id, snapshot.Workspaces[id], group.GetUuid(), admins); err != nil {
+			return err
 		}
 	}
 	for i := range state.Members {
@@ -811,6 +1056,9 @@ func ApplyNativeOIDCDirectory(ctx context.Context, snapshot *NativeOIDCDirectory
 			return err
 		}
 	}
+	if err := retireNativeOIDCWorkspaces(ctx, snapshot.Workspaces); err != nil {
+		return err
+	}
 	state.Applied = time.Now().Unix()
 	return saveNativeOIDCDirectoryState(state)
 }
@@ -830,7 +1078,7 @@ func SyncNativeOIDCDirectory(ctx context.Context, cfg *NativeOIDCDirectoryConfig
 	if applied != nil && applied.Version == snapshot.Version && applied.BindingID == strings.ToLower(snapshot.BindingID) {
 		return false, nil
 	}
-	if err := ApplyNativeOIDCDirectory(ctx, snapshot); err != nil {
+	if err := ApplyNativeOIDCDirectory(ctx, snapshot, cfg.WorkspaceRoot); err != nil {
 		return false, err
 	}
 	return true, nil

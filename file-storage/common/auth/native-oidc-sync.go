@@ -33,7 +33,7 @@ import (
 // group and are visible only to its members. Roles are never derived from
 // the IdP: until the platform member directory is delivered, accounts are
 // standard members and no native admin is granted; afterwards profile and
-// Workspace teams follow the directory (native-oidc-directory.go). Explicitly
+// Workspace roles follow the directory (native-oidc-directory.go). Explicitly
 // linked legacy accounts only receive the profile data refresh.
 
 // NativeOIDCTenantGroupPrefix starts the native group path of a Kailo Tenant.
@@ -237,7 +237,7 @@ func samePolicies(a, b []*service.ResourcePolicy) bool {
 }
 
 // syncNativeOIDCUser applies the Kailo profile (and, for a provisioned
-// account, its Tenant group, profile and Workspace teams) from the verified
+// account, its Tenant group, profile and Workspace roles) from the verified
 // ID token and, once delivered, the member directory, then reads the account
 // back through ResolveNativeUser. With a directory the Kailo display name and
 // picture are the directory ones (07 §4.7.4), email and locale stay from the

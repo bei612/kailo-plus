@@ -114,6 +114,11 @@ try:
         interval = env.get('CELLS_DIRECTORY_INTERVAL_SECONDS', '').strip() or '60'
         require(re.fullmatch(r'[0-9]{2,4}', interval) and 10 <= int(interval) <= 3600, 'CELLS_DIRECTORY_INTERVAL_SECONDS must be 10..3600')
         require(env.get('CELLS_ADAPTER_PLATFORM_NETWORK', '').strip(), 'member directory reaches Core over CELLS_ADAPTER_PLATFORM_NETWORK')
+        # 07 §4.7.4: Workspace roots are <CELLS_BINDING_DATASOURCE>/<CELLS_BINDING_ROOT_FOLDER>/<Workspace id>
+        # (the same names reconcile.py accepts for the binding root).
+        require(re.fullmatch(r'[a-z0-9]{1,33}', env.get('CELLS_BINDING_DATASOURCE', '')) and
+                re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]{0,127}', env.get('CELLS_BINDING_ROOT_FOLDER', '')),
+                'member directory roots Kailo Workspaces under CELLS_BINDING_DATASOURCE/CELLS_BINDING_ROOT_FOLDER')
     display = env['PLATFORM_DISPLAY_NAME']
     require(display.strip() == display != '' and len(display) <= 64 and display.isprintable(), 'PLATFORM_DISPLAY_NAME: printable Kailo display name required')
     require(secret_file('CELLS_OIDC_CLIENT_SECRET_FILE').strip(), 'nonempty native OIDC client secret required')
