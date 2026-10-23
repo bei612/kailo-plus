@@ -1105,6 +1105,11 @@ export interface AgentInstallationView {
     canUpgrade?:          boolean;
     channelBinding?:      AgentInstallationViewChannelBinding;
     executionPermission?: AgentInstallationViewExecutionPermission;
+    /**
+     * DD-147(1)：该 Installation owner 在本 Tenant 的显示名，只在其 TenantMembership 与 HumanIdentity 仍为
+     * ACTIVE 时给出；可读条件与本视图相同。缺省时客户端显示原版 owner unavailable，不以 Installation 目录合成作者名（DD-117(6)）。
+     */
+    ownerDisplayName?:    string;
     ownerPrincipalId:     string;
     pinnedVersionAssetId: string;
     projection?:          AgentInstallationProjectionView;
@@ -7349,8 +7354,15 @@ export interface WebProfileUpdateRequest {
  * signed event。
  */
 export interface WebPublishMessageRequest {
-    attachments?: WebMessageAttachment[];
-    content:      string;
+    /**
+     * DD-148 原 Agent 收件人栏：须为同一请求 mentionInstallationIds 的子集（否则 SCOPE_GUARD_FAILED 前的 400）；BFF
+     * 排序去重并冻结于同一发布意图（幂等重放逐项比较），对其中经准入并实际投递的 Installation 的 AGENT 公钥签原版 ["mention", <pubkey>,
+     * "agent-address"] 标签，与 p 并存，只作呈现元数据，不改变通知或 agent.invoke 准入；与
+     * editEventId、deleteEventId、sendToChannelSourceEventId 互斥，私聊目标拒绝。缺省为空。
+     */
+    addressedInstallationIds?: string[];
+    attachments?:              WebMessageAttachment[];
+    content:                   string;
     /**
      * 删除本人原 Buzz 消息；BFF 回读当前 Channel 原事件核对本人签名身份，发原 kind 5。与
      * editEventId、parentEventId、非空正文、附件及提及互斥；不授予 kind 9005 管理员删除权限。

@@ -19,9 +19,11 @@ export async function deleteMessage(channelId: string, eventId: string,
 }
 
 export async function editMessage(channelId: string, eventId: string, content: string, mediaTags: string[][],
-  mentionPubkeys: string[], expectedRelayUrl: string, expectedSignerPubkey: string): Promise<RelayEvent> {
+  mentionPubkeys: string[], expectedRelayUrl: string, expectedSignerPubkey: string,
+  /** DD-125(5): the original "Remove previews for everyone" re-edit (`["link-preview","none"]`). */
+  suppressLinkPreviews = false): Promise<RelayEvent> {
   return invokeTauri<RelayEvent>("edit_message", {channelId, eventId, content, mediaTags, mentionPubkeys,
-    expectedRelayUrl, expectedSignerPubkey});
+    expectedRelayUrl, expectedSignerPubkey, suppressLinkPreviews});
 }
 
 export async function sendChannelMessage(

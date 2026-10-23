@@ -213,6 +213,46 @@ Widget _composerAttachmentPanel({
   onChooseAllPhotos: onChooseAllPhotos,
 );
 
+const _typingThrottleMs = 3000;
+
+/// Buzz 779af8886caae1317b4de962082429867ab61503 `_sendTypingIndicator`, restored.
+/// Kailo: the kind:20002 event is this device's own CLIENT-signed event sent
+/// straight to the Relay over its WebSocket (DD-75). It is ephemeral and latest
+/// wins: a rejection or unknown outcome is not re-signed or resent; the next
+/// keystroke replaces it. A thread composer carries the same thread reference
+/// as its replies: the thread head as `reply`, and the root only when it differs.
+void _sendTypingIndicator(
+  WidgetRef ref, {
+  required String channelId,
+  String? threadHeadId,
+  String? rootId,
+}) {
+  try {
+    final session = ref.read(relaySessionProvider.notifier);
+    final event =
+        SignedEventRelay(
+          session: session,
+          nsec: ref.read(relayConfigProvider).nsec,
+        ).prepare(
+          kind: EventKind.typingIndicator,
+          content: '',
+          tags: [
+            ['h', channelId],
+            if (threadHeadId != null &&
+                rootId != null &&
+                rootId != threadHeadId) ...[
+              ['e', rootId, '', 'root'],
+              ['e', threadHeadId, '', 'reply'],
+            ] else if (threadHeadId != null)
+              ['e', threadHeadId, '', 'reply'],
+          ],
+        );
+    unawaited(session.publish(event).then<void>((_) {}, onError: (_) {}));
+  } catch (_) {
+    // Typing is best-effort: without a signing key there is nothing to send.
+  }
+}
+
 const _pastedImageMimeTypes = <String>[
   'image/jpeg',
   'image/jpg',

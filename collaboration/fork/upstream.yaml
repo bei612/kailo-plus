@@ -504,7 +504,6 @@ remove_paths:
   - desktop/src/features/messages/ui/useReactionHandler.ts
   - desktop/src/features/messages/ui/useThreadAgentAudience.ts
   - desktop/src/features/messages/useLoadMissingAncestors.ts
-  - desktop/src/features/messages/useTypingBroadcast.ts
   - desktop/src/features/moderation
   - desktop/src/features/notifications/lib/sound.test.mjs
   - desktop/src/features/onboarding/assets
@@ -1000,8 +999,6 @@ remove_paths:
   - mobile/lib/features/channels/channel_sections
   - mobile/lib/features/channels/channel_sort
   - mobile/lib/features/channels/channel_stars
-  - mobile/lib/features/channels/channel_typing_indicator.dart
-  - mobile/lib/features/channels/channel_typing_provider.dart
   - mobile/lib/features/channels/channels_page/badges.dart
   - mobile/lib/features/channels/channels_page/browse_channels_sheet.dart
   - mobile/lib/features/channels/dm_channel_labels.dart
@@ -1009,12 +1006,8 @@ remove_paths:
   - mobile/lib/features/channels/huddle_channel_filter.dart
   - mobile/lib/features/channels/manage_channel_sheet.dart
   - mobile/lib/features/channels/members_sheet.dart
-  - mobile/lib/features/channels/message_actions/message_reaction_tray.dart
-  - mobile/lib/features/channels/message_actions/quick_reaction_row.dart
-  - mobile/lib/features/channels/message_actions/reaction_popover.dart
   - mobile/lib/features/channels/message_mention_pubkeys.dart
   - mobile/lib/features/channels/mobile_huddle_controller.dart
-  - mobile/lib/features/channels/reaction_row.dart
   - mobile/lib/features/forum
   - mobile/lib/features/invites
   - mobile/lib/features/pairing
@@ -1048,9 +1041,6 @@ remove_paths:
   - mobile/lib/shared/crypto/ecdh.dart
   - mobile/lib/shared/crypto/hkdf.dart
   - mobile/lib/shared/crypto/nip44.dart
-  - mobile/lib/shared/custom_emoji
-  - mobile/lib/shared/emoji/emoji_burst.dart
-  - mobile/lib/shared/emoji/positive_emoji.dart
   - mobile/lib/shared/huddle
   - mobile/lib/shared/push
   - mobile/lib/shared/relay/identity_scoped_prefs.dart
@@ -1077,7 +1067,6 @@ remove_paths:
   - mobile/test/features/channels/channel_stars
   - mobile/test/features/channels/message_content_custom_emoji_test.dart
   - mobile/test/features/channels/message_mention_pubkeys_test.dart
-  - mobile/test/features/channels/reaction_row_test.dart
   - mobile/test/features/forum
   - mobile/test/features/invites
   - mobile/test/features/pairing
@@ -1087,9 +1076,6 @@ remove_paths:
   - mobile/test/features/settings/settings_page_loading_test.dart
   - mobile/test/shared/community/community_membership_provider_test.dart
   - mobile/test/shared/crypto/nip44_interop_test.dart
-  - mobile/test/shared/custom_emoji
-  - mobile/test/shared/emoji/emoji_burst_test.dart
-  - mobile/test/shared/emoji/positive_emoji_test.dart
   - mobile/test/shared/huddle
   - mobile/test/shared/push
   - mobile/test/shared/relay/identity_scoped_prefs_test.dart

@@ -71,6 +71,9 @@ export type MessageComposerProps = {
     id: string;
   } | null;
   showTopBorder?: boolean;
+  /** Original typing thread references: the thread head and its root (kind:20002 `e` tags). */
+  typingParentEventId?: string | null;
+  typingRootEventId?: string | null;
   /** Render the app-wide upload queue above this composer dock. */
   showBackgroundUploadProgress?: boolean;
   toolbarExtraActions?: ReactNode;

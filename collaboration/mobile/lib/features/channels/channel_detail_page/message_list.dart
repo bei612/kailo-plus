@@ -849,6 +849,10 @@ class _MessageList extends HookConsumerWidget {
                                       .map((entry) => entry.message)
                                       .toList()
                                 : null,
+                            channelId: channelId,
+                            currentPubkey: currentPubkey,
+                            isMember: isMember,
+                            isArchived: isArchived,
                           )
                         else ...[
                           _MessageBubble(

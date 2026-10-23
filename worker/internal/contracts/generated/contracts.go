@@ -5161,18 +5161,21 @@ type AgentInstallationView struct {
 	// PUBLISHED 时为 true；仍沿升级审批与排空。
 	CanRestart *bool `json:"canRestart,omitempty"`
 	// 当前 ACTIVE 安装可按原 manage 权限申请已发布目标版本；仍须原治理审批，不代表升级已经准入。旧服务缺省不显示入口。
-	CanUpgrade           *bool                                     `json:"canUpgrade,omitempty"`
-	ChannelBinding       *AgentInstallationViewChannelBinding      `json:"channelBinding,omitempty"`
-	ExecutionPermission  *AgentInstallationViewExecutionPermission `json:"executionPermission,omitempty"`
-	OwnerPrincipalID     string                                    `json:"ownerPrincipalId"`
-	PinnedVersionAssetID string                                    `json:"pinnedVersionAssetId"`
-	Projection           *AgentInstallationProjectionView          `json:"projection,omitempty"`
-	ReadPermission       *AgentInstallationViewReadPermission      `json:"readPermission,omitempty"`
-	ResourceID           string                                    `json:"resourceId"`
-	ResourceState        ResourceState                             `json:"resourceState"`
-	ResourceVersion      int64                                     `json:"resourceVersion"`
-	State                AgentInstallationState                    `json:"state"`
-	WorkspaceID          string                                    `json:"workspaceId"`
+	CanUpgrade          *bool                                     `json:"canUpgrade,omitempty"`
+	ChannelBinding      *AgentInstallationViewChannelBinding      `json:"channelBinding,omitempty"`
+	ExecutionPermission *AgentInstallationViewExecutionPermission `json:"executionPermission,omitempty"`
+	// DD-147(1)：该 Installation owner 在本 Tenant 的显示名，只在其 TenantMembership 与 HumanIdentity 仍为
+	// ACTIVE 时给出；可读条件与本视图相同。缺省时客户端显示原版 owner unavailable，不以 Installation 目录合成作者名（DD-117(6)）。
+	OwnerDisplayName     *string                              `json:"ownerDisplayName,omitempty"`
+	OwnerPrincipalID     string                               `json:"ownerPrincipalId"`
+	PinnedVersionAssetID string                               `json:"pinnedVersionAssetId"`
+	Projection           *AgentInstallationProjectionView     `json:"projection,omitempty"`
+	ReadPermission       *AgentInstallationViewReadPermission `json:"readPermission,omitempty"`
+	ResourceID           string                               `json:"resourceId"`
+	ResourceState        ResourceState                        `json:"resourceState"`
+	ResourceVersion      int64                                `json:"resourceVersion"`
+	State                AgentInstallationState               `json:"state"`
+	WorkspaceID          string                               `json:"workspaceId"`
 }
 
 type AgentInstallationViewChannelBinding struct {
@@ -8893,8 +8896,13 @@ type WebProfileUpdateRequest struct {
 // Web HUMAN 的原 Buzz 消息语义输入；身份、Channel、回复祖先与 mention 公钥均由 BFF 在原 scope 中解析，不接受 raw tags 或
 // signed event。
 type WebPublishMessageRequest struct {
-	Attachments []WebMessageAttachment `json:"attachments,omitempty"`
-	Content     string                 `json:"content"`
+	// DD-148 原 Agent 收件人栏：须为同一请求 mentionInstallationIds 的子集（否则 SCOPE_GUARD_FAILED 前的 400）；BFF
+	// 排序去重并冻结于同一发布意图（幂等重放逐项比较），对其中经准入并实际投递的 Installation 的 AGENT 公钥签原版 ["mention", <pubkey>,
+	// "agent-address"] 标签，与 p 并存，只作呈现元数据，不改变通知或 agent.invoke 准入；与
+	// editEventId、deleteEventId、sendToChannelSourceEventId 互斥，私聊目标拒绝。缺省为空。
+	AddressedInstallationIDS []string               `json:"addressedInstallationIds,omitempty"`
+	Attachments              []WebMessageAttachment `json:"attachments,omitempty"`
+	Content                  string                 `json:"content"`
 	// 删除本人原 Buzz 消息；BFF 回读当前 Channel 原事件核对本人签名身份，发原 kind 5。与
 	// editEventId、parentEventId、非空正文、附件及提及互斥；不授予 kind 9005 管理员删除权限。
 	DeleteEventID *string `json:"deleteEventId,omitempty"`

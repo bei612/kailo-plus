@@ -8,7 +8,8 @@ const _messageActionMenuMaxWidth = 288.0;
 const _messageActionPreviewMaxWidth = 358.0;
 const _messageActionPreviewInset = Grid.xxs;
 const _messageActionGap = Grid.twelve;
-const _messageActionTransitionDuration = Duration(milliseconds: 320);
+const _messageActionReactionSelection = '__reaction__';
+const _messageActionTransitionDuration = _reactionPopoverDuration;
 const _iosMessageActionTransitionDuration = Duration(milliseconds: 220);
 const _iosNativeMessageActionSurfaceChannel = MethodChannel(
   'buzz/native_message_action_surface',
@@ -44,6 +45,7 @@ bool _tryShowMessageActionsPopover({
   required WidgetRef ref,
   required TimelineMessage message,
   required String channelId,
+  required bool canManageMessage,
   required List<TimelineMessage>? allMessages,
   required String? currentPubkey,
   required bool isMember,
@@ -63,6 +65,7 @@ bool _tryShowMessageActionsPopover({
       ref: ref,
       message: message,
       channelId: channelId,
+      canManageMessage: canManageMessage,
       allMessages: allMessages,
       currentPubkey: currentPubkey,
       isMember: isMember,
@@ -81,6 +84,7 @@ bool _tryShowMessageActionsPopover({
         ref: ref,
         message: message,
         channelId: channelId,
+        canManageMessage: canManageMessage,
         allMessages: allMessages,
         currentPubkey: currentPubkey,
         isMember: isMember,
@@ -96,6 +100,7 @@ Future<bool> _showMessageActionsPopover({
   required WidgetRef ref,
   required TimelineMessage message,
   required String channelId,
+  required bool canManageMessage,
   required List<TimelineMessage>? allMessages,
   required String? currentPubkey,
   required bool isMember,
@@ -117,6 +122,7 @@ Future<bool> _showMessageActionsPopover({
       ref: ref,
       message: message,
       channelId: channelId,
+      canManageMessage: canManageMessage,
       allMessages: allMessages,
       currentPubkey: currentPubkey,
       isMember: isMember,
@@ -174,6 +180,9 @@ Future<bool> _showMessageActionsPopover({
             anchorRect: anchorRect,
             anchorSnapshot: snapshot,
             animation: animation,
+            message: message,
+            pageContext: context,
+            pageRef: ref,
             actions: actions,
             useIosNativeActionSurface: useIosNativeActionSurface,
             onPreviewVisibilityChanged: onPopoverPreviewVisibilityChanged,
@@ -215,6 +224,7 @@ List<_PopoverMessageAction> _buildPopoverMessageActions({
   required WidgetRef ref,
   required TimelineMessage message,
   required String channelId,
+  required bool canManageMessage,
   required List<TimelineMessage>? allMessages,
   required String? currentPubkey,
   required bool isMember,
@@ -328,14 +338,54 @@ List<_PopoverMessageAction> _buildPopoverMessageActions({
     );
   }
 
+  if (canManageMessage) {
+    actions.add(
+      _PopoverMessageAction(
+        id: 'edit',
+        title: 'Edit message',
+        icon: LucideIcons.pencil,
+        group: _PopoverMessageActionGroup.primary,
+        onSelected: () {
+          if (!context.mounted) return;
+          _showEditSheet(
+            context: context,
+            ref: ref,
+            message: message,
+            channelId: channelId,
+          );
+        },
+      ),
+    );
+    actions.add(
+      _PopoverMessageAction(
+        id: 'delete',
+        title: 'Delete message',
+        icon: LucideIcons.trash2,
+        group: _PopoverMessageActionGroup.destructive,
+        destructive: true,
+        onSelected: () {
+          if (!context.mounted) return;
+          _confirmDelete(
+            context: context,
+            ref: ref,
+            channelId: channelId,
+            messageId: message.id,
+          );
+        },
+      ),
+    );
+  }
+
   const actionOrder = {
     'reply': 0,
     'markRead': 1,
     'markUnread': 1,
-    'copyText': 2,
-    'copyLink': 3,
-    'followThread': 4,
-    'unfollowThread': 4,
+    'edit': 2,
+    'copyText': 3,
+    'copyLink': 4,
+    'followThread': 6,
+    'unfollowThread': 6,
+    'delete': 7,
   };
   actions.sort(
     (left, right) => actionOrder[left.id]!.compareTo(actionOrder[right.id]!),
@@ -343,13 +393,14 @@ List<_PopoverMessageAction> _buildPopoverMessageActions({
   return actions;
 }
 
-enum _PopoverMessageActionGroup { primary, utility }
+enum _PopoverMessageActionGroup { primary, utility, destructive }
 
 class _PopoverMessageAction {
   final String id;
   final String title;
   final IconData icon;
   final _PopoverMessageActionGroup group;
+  final bool destructive;
   final FutureOr<void> Function() onSelected;
 
   const _PopoverMessageAction({
@@ -358,16 +409,19 @@ class _PopoverMessageAction {
     required this.icon,
     required this.group,
     required this.onSelected,
+    this.destructive = false,
   });
 
   String get iosSymbol => switch (id) {
     'reply' => 'arrowshape.turn.up.left',
     'markRead' => 'envelope.open',
     'markUnread' => 'envelope.badge',
+    'edit' => 'pencil',
     'copyText' => 'doc.on.doc',
     'copyLink' => 'link',
     'followThread' => 'bell',
     'unfollowThread' => 'bell.slash',
+    'delete' => 'trash',
     _ => 'ellipsis',
   };
 
@@ -376,6 +430,7 @@ class _PopoverMessageAction {
     'title': title,
     'symbol': iosSymbol,
     'group': group.name,
+    'destructive': destructive,
   };
 }
 
@@ -427,6 +482,9 @@ class _MessageActionsPopover extends HookWidget {
   final Rect anchorRect;
   final ui.Image anchorSnapshot;
   final Animation<double> animation;
+  final TimelineMessage message;
+  final BuildContext pageContext;
+  final WidgetRef pageRef;
   final List<_PopoverMessageAction> actions;
   final bool useIosNativeActionSurface;
   final ValueChanged<bool>? onPreviewVisibilityChanged;
@@ -435,6 +493,9 @@ class _MessageActionsPopover extends HookWidget {
     required this.anchorRect,
     required this.anchorSnapshot,
     required this.animation,
+    required this.message,
+    required this.pageContext,
+    required this.pageRef,
     required this.actions,
     required this.useIosNativeActionSurface,
     required this.onPreviewVisibilityChanged,
@@ -445,10 +506,11 @@ class _MessageActionsPopover extends HookWidget {
     final mediaQuery = MediaQuery.of(context);
     final selectionStarted = useRef(false);
 
-    void select(Object? result) {
+    void select(Object? result, [VoidCallback? effect]) {
       if (selectionStarted.value) return;
       selectionStarted.value = true;
       Navigator.of(context).pop(result);
+      effect?.call();
     }
 
     void selectAction(String actionId) => select(actionId);
@@ -465,6 +527,7 @@ class _MessageActionsPopover extends HookWidget {
             Grid.xxs;
         final availableWidth = math.max(1.0, safeRight - safeLeft);
         final availableHeight = math.max(1.0, safeBottom - safeTop);
+        final trayWidth = math.min(_reactionTrayMaxWidth, availableWidth);
         final menuWidth = math.min(_messageActionMenuMaxWidth, availableWidth);
         final menuLayout = _MessageActionSurfaceLayout.from(context, actions);
         final preferredMenuHeight = menuLayout.preferredHeight;
@@ -472,19 +535,34 @@ class _MessageActionsPopover extends HookWidget {
           menuLayout.rowHeight,
           availableHeight,
         );
+        final showReactionTray =
+            availableHeight >=
+            _reactionTrayMaxHeight + _messageActionGap + minimumMenuHeight;
+        final trayHeight = showReactionTray ? _reactionTrayMaxHeight : 0.0;
+        final trayGap = showReactionTray ? _messageActionGap : 0.0;
+        final heightAfterTray = availableHeight - trayHeight - trayGap;
         final showPreview =
-            availableHeight >= minimumMenuHeight + _messageActionGap + 48.0;
+            showReactionTray &&
+            heightAfterTray >= minimumMenuHeight + _messageActionGap + 48.0;
         final previewMinimumHeight = showPreview ? 48.0 : 0.0;
         final previewGap = showPreview ? _messageActionGap : 0.0;
         final menuBudget = math.max(
           minimumMenuHeight,
-          availableHeight - previewMinimumHeight - previewGap,
+          availableHeight -
+              trayHeight -
+              trayGap -
+              previewMinimumHeight -
+              previewGap,
         );
         final menuHeight = math.min(preferredMenuHeight, menuBudget);
         final previewMaximumHeight = showPreview
             ? math.max(
                 previewMinimumHeight,
-                availableHeight - menuHeight - previewGap,
+                availableHeight -
+                    trayHeight -
+                    trayGap -
+                    menuHeight -
+                    previewGap,
               )
             : 0.0;
         final previewInsetExtent = _messageActionPreviewInset * 2;
@@ -510,12 +588,24 @@ class _MessageActionsPopover extends HookWidget {
                 );
               }()
             : Size.zero;
-        final totalHeight = previewSize.height + previewGap + menuHeight;
+        final totalHeight =
+            trayHeight + trayGap + previewSize.height + previewGap + menuHeight;
         final contentTop = math.max(safeTop, safeBottom - totalHeight);
-        final surfaceLeft = safeLeft + ((availableWidth - menuWidth) / 2);
-        final previewRect = Rect.fromLTWH(
+        final surfaceLeft =
+            safeLeft + ((availableWidth - math.max(trayWidth, menuWidth)) / 2);
+        final trayRect = Rect.fromLTWH(
           surfaceLeft,
           contentTop,
+          trayWidth,
+          trayHeight,
+        );
+        final trayHostWidth = math.min(
+          trayWidth + _reactionTraySpringAllowance,
+          safeRight - surfaceLeft,
+        );
+        final previewRect = Rect.fromLTWH(
+          surfaceLeft,
+          trayRect.bottom + trayGap,
           previewSize.width,
           previewSize.height,
         );
@@ -607,6 +697,22 @@ class _MessageActionsPopover extends HookWidget {
                         ),
                       );
                     },
+                  ),
+                ),
+              if (showReactionTray)
+                Positioned(
+                  left: trayRect.left,
+                  top: trayRect.top,
+                  width: trayHostWidth,
+                  height: trayRect.height,
+                  child: _MessageReactionTray(
+                    animation: animation,
+                    trayWidth: trayWidth,
+                    message: message,
+                    pageContext: pageContext,
+                    pageRef: pageRef,
+                    popResult: _messageActionReactionSelection,
+                    onSelected: (result, effect) => select(result, effect),
                   ),
                 ),
               Positioned.fromRect(

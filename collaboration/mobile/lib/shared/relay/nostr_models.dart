@@ -9,8 +9,10 @@ abstract final class EventKind {
   /// Kind:0 user profile metadata.
   static const profile = 0;
   static const deletion = 5;
+  static const reaction = 7;
   static const streamMessage = 9;
   static const nip29DeleteEvent = 9005;
+  static const typingIndicator = 20002;
   static const auth = 22242;
   static const streamMessageV2 = 40002;
   static const channelThreadSummary = 39005;
@@ -25,10 +27,11 @@ abstract final class EventKind {
     streamMessageV2, // 40002
   ];
 
-  /// Event kinds that represent channel activity (messages, edits,
-  /// deletions, system events). 一期只读取消息与其修订、删除和系统事件：
-  /// 表情回应、huddle、forum 与 agent job 不在移动端交付。
+  /// Event kinds that represent channel activity (messages, edits, reactions,
+  /// deletions, system events). Matches the desktop's `CHANNEL_EVENT_KINDS`;
+  /// huddle、forum 与 agent job 不在移动端交付。
   static const channelEventKinds = [
+    reaction, // 7
     deletion, // 5
     nip29DeleteEvent, // 9005 — Buzz-native deletion
     ...channelMessageEventKinds,
@@ -40,6 +43,7 @@ abstract final class EventKind {
 
   /// Auxiliary timeline kinds that overlay or hide existing rows.
   static const channelAuxEventKinds = [
+    reaction,
     deletion,
     nip29DeleteEvent,
     streamMessageEdit,

@@ -1529,6 +1529,11 @@ pub struct AgentInstallationView {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub execution_permission: Option<AgentInstallationViewExecutionPermission>,
 
+    /// DD-147(1)：该 Installation owner 在本 Tenant 的显示名，只在其 TenantMembership 与 HumanIdentity 仍为
+    /// ACTIVE 时给出；可读条件与本视图相同。缺省时客户端显示原版 owner unavailable，不以 Installation 目录合成作者名（DD-117(6)）。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub owner_display_name: Option<String>,
+
     pub owner_principal_id: String,
 
     pub pinned_version_asset_id: String,
@@ -10194,6 +10199,13 @@ pub struct WebProfileUpdateRequest {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WebPublishMessageRequest {
+    /// DD-148 原 Agent 收件人栏：须为同一请求 mentionInstallationIds 的子集（否则 SCOPE_GUARD_FAILED 前的 400）；BFF
+    /// 排序去重并冻结于同一发布意图（幂等重放逐项比较），对其中经准入并实际投递的 Installation 的 AGENT 公钥签原版 ["mention", <pubkey>,
+    /// "agent-address"] 标签，与 p 并存，只作呈现元数据，不改变通知或 agent.invoke 准入；与
+    /// editEventId、deleteEventId、sendToChannelSourceEventId 互斥，私聊目标拒绝。缺省为空。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub addressed_installation_ids: Option<Vec<String>>,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub attachments: Option<Vec<WebMessageAttachment>>,
 
