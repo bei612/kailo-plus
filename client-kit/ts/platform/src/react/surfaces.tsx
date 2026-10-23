@@ -61,7 +61,7 @@ export function KailoMark({ size = 22, className }: { size?: number; className?:
         <path d="M11.5 10.9l4.3 6.1" />
       </g>
       <circle cx="16.1" cy="6.3" fill="white" r="1.55" />
-      <circle cx="16.6" cy="17.9" fill="white" fillOpacity="0.82" r="1.25" />
+      <circle cx="16.3" cy="17.6" fill="white" r="1.55" />
     </svg>
   );
 }
