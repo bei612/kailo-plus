@@ -102,3 +102,35 @@ None of the following has been done:
 - three-person business acceptance (admin → native admin, removal → sessions gone).
 
 Postgres migration 000110 has not been run against a real database in this batch.
+
+## DD-138 第二阶段：通知投递、⌘K 收口与统一搜索（2026-10-23，源码阶段）
+
+依据：DD-138(4)/(5)，07 §4.8.1、§4.8.3、§4.8.4、§5.2；契约 `contracts/api/component_notification_delivery.schema.json`、`contracts/adapter/protocol.v1/search_*.schema.json`。
+
+### 改了什么
+
+- 通知投递（组件 → Core）：`POST {core_url}/service/v1/component-notifications/bindings/{binding}/notifications`，令牌复用成员目录 client（client-credentials、同一 token URL 与密钥文件）。启用条件与目录同一组配置（Kailo 模式 + 五项目录配置齐全），否则全部 no-op。
+  - `internal/application/service/kailo_service_token.go`：目录读取的取令牌代码抽出为共享函数（目录读取仍每次新取，行为不变）；通知侧缓存到 `expires_in` 前 30 s，401/403 时作废并重取一次。
+  - `kailo_notify.go`：有界内存队列（4096，满则丢最旧并按计数告警）+ 后台 worker（4 并发）；201/200 完成，400/404/409 及重取令牌后的 403 不重试，429/5xx/网络错误同键同体退避重试（共 5 次，约 3.7 分钟）。日志只含 binding、category、HTTP 状态。投递前按契约自检（键字母表与长度、标题/摘要长度与控制字符、路径规则、actor≠recipient）。
+  - 事件 SHARED：新建知识库共享（`kailo_notify_share.go` 以 dig `Decorate` 包装 KBShareService，上游代码不改）；接收人 = 目标组织各成员空间的 active 成员，排除共享人与来源空间成员（他们原本就能用），最多 2000 人；只对 users 表中有 OIDC iss/sub 且 active 的人投递。键 `weknora.kbshare.<sha256(shareId,iss,sub) 前 40 位>`；路径 `/platform/knowledge-bases/<kbId>`。已存在共享的权限变更不重复通知。智能体共享同理（`weknora.agentshare.*`，路径 `/platform/agents`）。
+  - 事件 TASK_COMPLETED：`completeAssistantMessage`（普通与 Agent 模式唯一完成出口）调用 `internal/handler/session/kailo_notify.go`；仅当回答耗时 ≥ 阈值（默认 30 s，`kailo.long_answer_notify_after` / `KAILO_LONG_ANSWER_NOTIFY_SECONDS`）、非用户停止（停止处理器空 query；Agent 取消分支加 stopped 标记）、渠道为 Web 时通知提问人。标题「知识库问答已完成」，摘要含问题摘录（≤60 字）；键 `weknora.answer.<sha256(messageId,iss,sub)>`；路径 `/platform/chat/<sessionId>`。
+  - 邮件：代码中无 SMTP/邮件发送实现，无需关闭。
+- 原生提醒面：Kailo 模式下 `stores/auth.ts` 的 `fetchPendingInvitationCount` 直接置 0 返回（App 轮询与 WorkspaceOnboarding 均不再请求）；`components/menu.vue` 隐藏组织“待审批加入申请”角标并不再为它拉取组织列表。邀请铃铛此前已 `v-if="!kailoMode"`。
+- ⌘K：`kailo/surface.ts` 改为 Kailo 模式白名单 `KAILO_PALETTE_COMMANDS = new-chat / open-kb-list / open-agents`；移除组织、设置、产品引导以及今后上游新增的跨产品命令。知识/会话/智能体搜索分组不变；检索设置抽屉仍仅管理员可见（DD-138(6) 第三阶段迁移）。
+- 统一搜索（Core → adapter）：`adapter/src/search.mjs` + `query-revision.mjs` 路由 `POST /platform-adapter/v1/search`；Origin/Cookie → 403；`searchArguments` 400、`verifySearchToken` 401；只在 resources[] 指向本 binding 知识库（nativeId = nativeKnowledgeBaseId 且 nativeType ∈ {knowledge_base, knowledge.base}）时检索，其余忽略。用原生 `list_knowledge_bases`（名称命中 → KNOWLEDGE_BASE）、`search_knowledge`（限本库）与 `read_document metadata_only`（标题）；每文档一条 DOCUMENT，摘要 ≤200 字，路径 `/platform/knowledge-bases/<kb>?knowledge_id=<doc>`。无 PEP、无 ActionExecution。
+  - 原生 MCP 端点对绑定端点的每次调用都要求 Core PEP 证明；搜索没有 ActionToken，故新增 `internal/mcpserver/platform_search.go`：proof 的 operation 为 `search` 时，原生端用 adapter 交付的 JWKS 独立校验 Search Token（ES256、iss/aud、≤60 s、token_use、tenant、binding、请求体哈希、无 Agent/委托/目标类声明），且只放行本库的 `search_knowledge`（query 与请求一致）、`read_document metadata_only`、`list_knowledge_bases`。
+  - `fork/release/manifest.json` 的 `executionConnector` 增加 `"searchSource": "SUPPORTED"`，其余字段未动。
+
+### 测试（已编写，未在本机运行）
+
+- Go `internal/application/service/kailo_notify_test.go`：httptest Core 桩覆盖 201/200/409/400、403 重取令牌一次后终止、401 重取后成功、429 同键同体重试、503 五次后放弃；令牌缓存；契约字段；接收人（排除共享人、来源空间、停用、无 OIDC 身份、暂停成员）与 actor；长回答阈值与未知用户；非 Kailo 模式 no-op；队列满丢最旧；路径/文本/键校验；共享装饰器只通知新共享。
+- Go `internal/mcpserver/platform_search_test.go`：Search Token 只放行只读工具与本库，且不调 PEP；binding/tenant/token_use/哈希/时长/过期/aud/iss/action 声明/resources/签名错误均拒绝。
+- Go `internal/config/kailo_test.go`：`TestKailoLongAnswerNotifyAfter`。
+- Node `adapter/test/search.test.mjs`：有效请求结果与路径、limit、resources 不属本 binding 时不触达原生、401 各类令牌、400 请求体、Origin/Cookie 403、路径与摘要清洗。
+- 前端 `kailo/surface.test.ts`：⌘K 白名单（含未来上游命令被排除）。
+
+### 尚未验证
+
+- 以上测试均未运行（本机不编译不测试），待 CI 节点 `go test ./internal/...`、`node --test`、前端 `tsx --test`。
+- 无镜像构建、部署、真实 Core 通知接口与 Search Token 联调；Core 为知识库 Resource 下发的 nativeType 实际取值未核实（已兼容 `knowledge_base` 与 `knowledge.base`）。
+- 无三人业务验收（共享通知送达、长回答通知、⌘K 与提醒面在嵌入页中的表现）。

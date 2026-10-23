@@ -12,6 +12,7 @@ import { useChatResourcesStore } from '@/stores/chatResources'
 import { useEditorResourcesStore } from '@/stores/editorResources'
 import { useOrganizationStore } from '@/stores/organization'
 import { invalidateAuthRequestContext } from '@/utils/authRefresh'
+import { kailoConfig } from '@/kailo/runtime'
 
 /** 登出时丢弃 Pinia 内的空间级资源缓存，避免 SPA 重登复用上一账号数据。 */
 function clearSessionResourceCaches() {
@@ -320,6 +321,12 @@ export const useAuthStore = defineStore('auth', () => {
   // of nagging the user with a toast. The caller can choose to fire
   // and forget (login flow) or await (manual refresh button).
   const fetchPendingInvitationCount = async () => {
+    // DD-138(4), 07 §4.8.3: Kailo mode has no native invitations and no
+    // invitation reminders; every caller (App poll, onboarding) stops here.
+    if (kailoConfig().mode) {
+      setPendingInvitationCount(0)
+      return
+    }
     // Import lazily to avoid circular module ordering between auth
     // store, axios interceptor, and i18n bootstrapping. The store is
     // imported by very early modules in main.ts; a top-level api

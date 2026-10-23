@@ -9,6 +9,7 @@ import { Refused, PepDenied, object, nonempty, exactKeys, canonical, fixedUrl, b
 import { sourceReference, sourceFile } from './service-read.mjs';
 import { bindingValidationConfiguration, bindingArguments, bindingObservation } from './binding-validation.mjs';
 import { mcpConfiguration, handleMcp } from './mcp.mjs';
+import { SEARCH_PATH, SEARCH_OPERATION, nativeSearch } from './search.mjs';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const QUERY_PATH = '/platform-adapter/v1/query_revision';
@@ -505,6 +506,25 @@ export function createAdapter(rawConfig) {
       return;
     }
     try {
+      if (request.url === SEARCH_PATH) {
+        // DD-138(5), 07 §4.8.4: search is a Core machine route; a browser
+        // context (Origin or Cookie) is never admitted (search.mjs).
+        if (request.method !== 'POST') throw new Refused(404);
+        if (request.headers.origin !== undefined || request.headers.cookie !== undefined) throw new Refused(403);
+        if (request.headers['content-type'] !== 'application/json'
+          || typeof request.headers.authorization !== 'string'
+          || !request.headers.authorization.startsWith('Bearer ')) throw new Refused(401);
+        const deadline = Date.now() + config.timeoutMs;
+        const raw = await boundedBody(request, config.maxBodyBytes);
+        const token = request.headers.authorization.slice('Bearer '.length);
+        // The bound native endpoint re-verifies this Search Token and body.
+        nativeAdmission.getStore().proof = Buffer.from(canonical({ actionToken: token, argumentsJson: raw,
+          operation: SEARCH_OPERATION })).toString('base64url');
+        const value = await nativeSearch(config, deadline, raw, request.headers['idempotency-key'], token, nativeTool);
+        response.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
+        response.end(JSON.stringify(value));
+        return;
+      }
       const operation = request.url === QUERY_PATH ? 'query_revision'
         : request.url === '/component-conformance/v1/receiver_start' ? 'receiver_start'
         : request.url === '/component-conformance/v1/receiver_observe' ? 'receiver_observe'

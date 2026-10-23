@@ -2,14 +2,11 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -54,74 +51,14 @@ type kailoDirectoryClient struct {
 }
 
 func newKailoDirectoryClient(cfg config.KailoDirectoryConfig) *kailoDirectoryClient {
-	transport := &http.Transport{
-		// Deployment-declared private endpoints: no proxy, no redirects.
-		Proxy:                 nil,
-		DialContext:           (&net.Dialer{Timeout: 5 * time.Second}).DialContext,
-		TLSHandshakeTimeout:   5 * time.Second,
-		ResponseHeaderTimeout: kailoDirectoryReadTimeout,
-		MaxIdleConns:          2,
-		IdleConnTimeout:       90 * time.Second,
-	}
-	return &kailoDirectoryClient{cfg: cfg, http: &http.Client{
-		Transport: transport,
-		CheckRedirect: func(*http.Request, []*http.Request) error {
-			return http.ErrUseLastResponse
-		},
-	}}
+	return &kailoDirectoryClient{cfg: cfg, http: newKailoServiceHTTPClient(kailoDirectoryReadTimeout)}
 }
 
-func (c *kailoDirectoryClient) secret() (string, error) {
-	file, err := os.Open(c.cfg.ClientSecretFile)
-	if err != nil {
-		return "", directoryReadError("directory client credential is unavailable")
-	}
-	defer file.Close()
-	raw, err := io.ReadAll(io.LimitReader(file, kailoDirectorySecretMaxBytes+1))
-	if err != nil || len(raw) > kailoDirectorySecretMaxBytes {
-		return "", directoryReadError("directory client credential is unreadable")
-	}
-	value := strings.TrimRight(string(raw), "\r\n")
-	if value == "" || strings.ContainsAny(value, "\r\n") {
-		return "", directoryReadError("directory client credential is invalid")
-	}
-	return value, nil
-}
-
+// token fetches a fresh token on every read, as before the shared token
+// source existed (DD-138(4) reuses the same request, see kailo_service_token.go).
 func (c *kailoDirectoryClient) token(ctx context.Context) (string, error) {
-	secret, err := c.secret()
-	if err != nil {
-		return "", err
-	}
-	ctx, cancel := context.WithTimeout(ctx, kailoDirectoryTokenTimeout)
-	defer cancel()
-	form := url.Values{"grant_type": {"client_credentials"}}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.cfg.TokenURL, strings.NewReader(form.Encode()))
-	if err != nil {
-		return "", directoryReadError("token request")
-	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.Header.Set("Accept", "application/json")
-	// RFC 6749 §2.3.1: form-encode both parts of the Basic credential.
-	req.SetBasicAuth(url.QueryEscape(c.cfg.ClientID), url.QueryEscape(secret))
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return "", directoryReadError("token endpoint unreachable")
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return "", directoryReadError("token endpoint status %d", resp.StatusCode)
-	}
-	var body struct {
-		AccessToken string `json:"access_token"`
-		TokenType   string `json:"token_type"`
-	}
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, kailoDirectoryTokenMaxBytes+1))
-	if err != nil || len(raw) > kailoDirectoryTokenMaxBytes || json.Unmarshal(raw, &body) != nil ||
-		!strings.EqualFold(body.TokenType, "Bearer") || strings.TrimSpace(body.AccessToken) == "" {
-		return "", directoryReadError("token response")
-	}
-	return body.AccessToken, nil
+	token, _, err := requestKailoServiceToken(ctx, c.http, c.cfg)
+	return token, err
 }
 
 // Read returns the validated snapshot of the configured binding.
