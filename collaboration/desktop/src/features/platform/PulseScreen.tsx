@@ -1,4 +1,5 @@
 import { useEffect, useMemo, type ReactNode } from "react";
+import { NativeProjectConversationPanel } from "./NativeProjectConversationPanel";
 import { useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useDirectMessageOpen } from "@client-kit/platform/react/new-message";
@@ -60,6 +61,8 @@ export function PulseScreen({children}:{children?:ReactNode}={}) {
         openChannel:id=>{if(!scope.active)throw new Error(t("platform.loadFailed"));return goChannel(id);},
         openHit:hit=>{if(!scope.active)throw new Error(t("platform.loadFailed"));return openSearchHit(hit);},
         renderPreview:content=><Markdown content={content} className="inbox-preview-markdown mt-0.5 text-inherit leading-6" interactive={false}/>,
+        // Original ProjectConversationPanel beside project detail, over the native channel thread.
+        renderConversation:(props)=><NativeProjectConversationPanel key={props.hit.eventId} {...props}/>,
       },
       startDm:async(pubkey)=>{
         const check=()=>{if(!scope.active)throw new Error(t("dm.viewInactive"));};

@@ -235,7 +235,7 @@ function RepositoryWorkspace({host,snapshot,project,repository,panel,renderWorkI
   return <>
     {host.git&&git.branchActions.available?<ProjectBranchActionDialogs actions={git.branchActions} activeBranch={git.activeBranch}
       activeBranchCommit={git.activeBranchCommit} existingBranches={git.branchOptions}/>:null}
-    <ProjectDetailPanelLayout state={panel} chatPanel={chatPanel} panel={<ProjectRepositoryContextPanel activeTab={tab} fetch={host.git?git.fetch:undefined} host={host}
+    <ProjectDetailPanelLayout state={panel} chatPanel={chatPanel} resetKey={`${repository.id}:${tab}`} panel={<ProjectRepositoryContextPanel activeTab={tab} fetch={host.git?git.fetch:undefined} host={host}
       identityPubkey={snapshot.viewerPubkey} issues={issues} onCreatePullRequest={onCreatePullRequest} onCreateTask={onCreateTask}
       onRepositoryChange={onRepositoryChange} project={project} projects={snapshot.projects} pullRequests={pullRequests} repository={repository}
       snapshot={host.git?git.snapshot:undefined} sourceControls={host.git?git.sourceControls:undefined}

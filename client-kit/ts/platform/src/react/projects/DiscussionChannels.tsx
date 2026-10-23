@@ -1,7 +1,7 @@
 // Buzz 779af8886caae1317b4de962082429867ab61503 desktop/src/features/projects/ui/DiscussionChannels.tsx::DiscussedInChannels.
-// The original optional conversation panel is not mounted here: existing host
-// search navigation is the original fallback. DiscussionChannelsPanel is the original repository
-// Channels tab over the same host search read.
+// Inside project detail a hit opens the original ProjectConversationPanel beside the detail when
+// the host renders governed channel threads; elsewhere existing host navigation is the original
+// fallback. DiscussionChannelsPanel is the original repository Channels tab over the same read.
 import * as React from "react";
 import { toast } from "sonner";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -17,6 +17,16 @@ import { Hash } from "lucide-react";
 import { BuzzLoadingState } from "./BuzzLoadingState";
 import { ProjectEntityListRow } from "./ProjectEntityListRow";
 import { ProjectPanelState } from "./ProjectPanelState";
+import { openDiscussionHit, useProjectConversationPanel } from "./ProjectConversationPanelContext";
+
+export type ProjectConversationRenderProps = {
+  hit: SearchHit;
+  onClose: () => void;
+  widthPx: number;
+  canResetWidth: boolean;
+  onResetWidth: () => void;
+  onResizeStart: (event: React.PointerEvent<HTMLButtonElement>) => void;
+};
 
 export type ProjectDiscussionHost = {
   read: (
@@ -25,6 +35,8 @@ export type ProjectDiscussionHost = {
     signal: AbortSignal,
   ) => Promise<SearchMessagesResponse & { channels: readonly SearchChannel[] }>;
   openHit: (hit: SearchHit) => void | Promise<unknown>;
+  /** Original ProjectConversationPanel body: the host's governed channel thread for this hit. */
+  renderConversation?: (props: ProjectConversationRenderProps) => React.ReactNode;
   openChannel: (channelId: string) => void | Promise<unknown>;
   renderPreview: (content: string) => React.ReactNode;
 };
@@ -107,6 +119,7 @@ export function DiscussedInChannels({
     [discussed, origin],
   );
   const t = useUiT();
+  const conversationPanel = useProjectConversationPanel();
   const open = (channelId: string, hit?: SearchHit) => {
     void (async () => {
       // Reauthorize the existing reference at click time; a displayed origin
@@ -117,7 +130,8 @@ export function DiscussedInChannels({
       if (hit) {
         const current = fresh.data.hits.find(item => item.eventId === hit.eventId && item.channelId === channelId);
         if (!current) throw new Error("Discussion unavailable");
-        await host.discussions!.openHit(current);
+        await openDiscussionHit({ channelId, latestHit: current, panel: host.discussions!.renderConversation ? conversationPanel : null,
+          openChannel: host.discussions!.openChannel, openHit: host.discussions!.openHit });
       } else {
         const channel = fresh.data.channels.find(item => item.id === channelId);
         if (!channel || !(channel.isMember || channel.visibility === "open")) throw new Error("Discussion unavailable");
@@ -359,6 +373,7 @@ export function DiscussionChannelsPanel({
     if (hit.channelId && !latestHitByChannel.has(hit.channelId)) latestHitByChannel.set(hit.channelId, hit);
   }
   const channelName = (id: string, name: string | null) => name ?? snapshot?.channels.find(channel => channel.id === id)?.name ?? id.slice(0, 8);
+  const conversationPanel = useProjectConversationPanel();
   const open = (channelId: string, hit?: SearchHit) => {
     void (async () => {
       // Reauthorize at click time; a listed row is not permission to read the channel.
@@ -368,7 +383,8 @@ export function DiscussionChannelsPanel({
       if (hit) {
         const current = fresh.data.hits.find(item => item.eventId === hit.eventId && item.channelId === channelId);
         if (!current) throw new Error("Discussion unavailable");
-        await host.discussions!.openHit(current);
+        await openDiscussionHit({ channelId, latestHit: current, panel: host.discussions!.renderConversation ? conversationPanel : null,
+          openChannel: host.discussions!.openChannel, openHit: host.discussions!.openHit });
       } else {
         const channel = fresh.data.channels.find(item => item.id === channelId);
         if (!channel || !(channel.isMember || channel.visibility === "open")) throw new Error("Discussion unavailable");

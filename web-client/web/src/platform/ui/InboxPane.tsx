@@ -284,7 +284,7 @@ export function InboxPane({
     }}
     renderMessageDetail={({ visible, auxiliarySinglePanel, onBack }) => {
       if (!snapshot) return null;
-      if (chosenProject && visible && onStartDm) return <PulsePane scopeKey={principalId} onStartDm={onStartDm}><ProjectInboxDetail host={projectsHost} key={chosen?.scopeKey} workItem={chosenProject} onBack={onBack} onOpenProject={onOpenProject?()=>onOpenProject(chosenProject.project.id,projectWorkItemTarget(chosenProject)):undefined}/></PulsePane>;
+      if (chosenProject && visible && onStartDm) return <PulsePane scopeKey={principalId} principalId={principalId} onStartDm={onStartDm}><ProjectInboxDetail host={projectsHost} key={chosen?.scopeKey} workItem={chosenProject} onBack={onBack} onOpenProject={onOpenProject?()=>onOpenProject(chosenProject.project.id,projectWorkItemTarget(chosenProject)):undefined}/></PulsePane>;
       // The unsent publication owner stays mounted while the single-panel author
       // profile covers the detail column.
       if (chosen && chosen.item.channelId !== null && (visible || auxiliarySinglePanel)) {

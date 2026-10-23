@@ -29,3 +29,4 @@ export { createProjectsGitHost, type ProjectsGitHost, type ProjectRepoSnapshot, 
 export { SidebarProjectsSection, type SidebarProjectChannel, type SidebarProjectMembership } from "../sidebar/SidebarProjectsSection";
 export type { ProjectAgentChatHost } from "./projectAgentChatHost";
 export type { ProjectAgentConversationEvent, ProjectAgentSendRequest } from "./lib/projectAgentConversation";
+export type { ProjectConversationRenderProps, ProjectDiscussionHost } from "./DiscussionChannels";
