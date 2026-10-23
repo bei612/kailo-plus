@@ -860,6 +860,126 @@ class IdpDeclarations(unittest.TestCase):
             idp.ReadOnly(FakeKeycloak())("/users/profile", {}, "PUT")
 
 
+SCOPE_TEMPLATE = {"clients": [{"clientId": "__OIDC_SERVICE_CLIENT_ID__", "optionalClientScopes": ["__CORE_MCP_AUDIENCE__"]}]}
+SCOPE_VALUES = dict(VALUES, CORE_MCP_AUDIENCE="kailo-core-mcp", AGENTGATEWAY_ADMIN_AUDIENCE="gateway-admin",
+                    OIDC_NATIVE_AUDIENCE="native-aud")
+
+
+class FakeScopeRealm:
+    """In-memory realm admin API for the DD-137 service-scope declaration."""
+
+    def __init__(self):
+        self.scopes = {"sp": {"id": "sp", "name": "profile", "protocol": "openid-connect"}}
+        self.scope_mappers = {"sp": []}
+        self.clients = {cid: {"id": cid, "clientId": name} for cid, name in
+                        (("c", "core"), ("w", "worker"), ("b", "browser"), ("n", "native"))}
+        self.attached = {cid: {"default-client-scopes": [], "optional-client-scopes": []} for cid in self.clients}
+        self.realm_defaults = {"default-default-client-scopes": [{"name": "profile"}], "default-optional-client-scopes": []}
+        self.writes = []
+        self.lose_next_create = False
+
+    def __call__(self, path, body=None, method=None):
+        import copy
+        import urllib.error
+        import urllib.parse as up
+        method = method or ("POST" if body is not None else "GET")
+        if method != "GET":
+            self.writes.append((method, path))
+        parts = up.urlsplit(path)
+        seg = parts.path.strip("/").split("/")
+        if seg[0] in self.realm_defaults:
+            return copy.deepcopy(self.realm_defaults[seg[0]])
+        if seg == ["client-scopes"]:
+            if method == "POST":
+                sid = "s%d" % len(self.scopes)
+                self.scopes[sid] = dict(copy.deepcopy(body), id=sid)
+                self.scope_mappers[sid] = []
+                if self.lose_next_create:
+                    self.lose_next_create = False
+                    raise urllib.error.URLError("response lost")
+                return None
+            return copy.deepcopy(list(self.scopes.values()))
+        if seg[0] == "client-scopes":
+            if method == "POST":
+                self.scope_mappers[seg[1]].append(copy.deepcopy(body))
+                return None
+            return copy.deepcopy(self.scope_mappers[seg[1]])
+        if seg == ["clients"]:
+            cid = up.parse_qs(parts.query)["clientId"][0]
+            return [copy.deepcopy(c) for c in self.clients.values() if c["clientId"] == cid]
+        kind = seg[2]
+        if method == "PUT":
+            self.attached[seg[1]][kind].append({"name": self.scopes[seg[3]]["name"]})
+            return None
+        return copy.deepcopy(self.attached[seg[1]][kind])
+
+
+class ServiceScopeDeclaration(unittest.TestCase):
+    def declare(self, kc, verify=False, values=SCOPE_VALUES):
+        scope, mapper = idp.core_mcp_scope(SCOPE_TEMPLATE, values)
+        return idp.service_scopes(idp.ReadOnly(kc) if verify else kc, values, scope, mapper, verify)
+
+    def test_verify_reports_drift_without_writing_then_declare_converges_idempotently(self):
+        kc = FakeScopeRealm()
+        before = self.declare(kc, verify=True)
+        self.assertEqual(before["serviceScopes"], "DRIFTED")
+        self.assertEqual(kc.writes, [])
+        self.assertNotIn("kailo-core-mcp", json.dumps(before, ensure_ascii=False))
+        declared = self.declare(kc)
+        self.assertEqual((declared["serviceScopes"], declared["changed"]), ("DECLARED", 3))
+        scope = [s for s in kc.scopes.values() if s["name"] == "kailo-core-mcp"]
+        self.assertEqual(len(scope), 1)
+        self.assertEqual(kc.scope_mappers[scope[0]["id"]][0]["config"]["included.custom.audience"], "kailo-core-mcp")
+        self.assertEqual(kc.attached["c"]["optional-client-scopes"], [{"name": "kailo-core-mcp"}])
+        self.assertEqual(kc.attached["c"]["default-client-scopes"], [])
+        writes = len(kc.writes)
+        self.assertEqual(self.declare(kc)["changed"], 0)
+        self.assertEqual(len(kc.writes), writes, "a converged realm is read only")
+        self.assertEqual(self.declare(kc, verify=True), dict(serviceScopes="DECLARED", changed=0, problems=[]))
+
+    def test_lost_create_response_is_settled_by_readback_not_a_second_post(self):
+        kc = FakeScopeRealm()
+        kc.lose_next_create = True
+        self.assertEqual(self.declare(kc)["serviceScopes"], "DECLARED")
+        self.assertEqual(sum(1 for m, p in kc.writes if m == "POST" and p == "/client-scopes"), 1)
+
+    def test_divergent_or_misattached_scope_is_refused_not_overwritten(self):
+        kc = FakeScopeRealm()
+        self.declare(kc)
+        sid = next(s["id"] for s in kc.scopes.values() if s["name"] == "kailo-core-mcp")
+        kc.scope_mappers[sid][0]["config"]["included.custom.audience"] = "gateway-admin"
+        writes = len(kc.writes)
+        with self.assertRaises(idp.Refused):
+            self.declare(kc)
+        self.assertEqual(len(kc.writes), writes)
+        kc.scope_mappers[sid][0]["config"]["included.custom.audience"] = "kailo-core-mcp"
+        kc.scope_mappers[sid].append({"name": "extra", "protocol": "openid-connect", "protocolMapper": "x", "config": {}})
+        with self.assertRaises(idp.Refused):
+            self.declare(kc)
+        kc.scope_mappers[sid].pop()
+        for holder in (kc.attached["w"]["optional-client-scopes"], kc.attached["c"]["default-client-scopes"],
+                       kc.realm_defaults["default-optional-client-scopes"]):
+            holder.append({"name": "kailo-core-mcp"})
+            with self.assertRaises(idp.Refused):
+                self.declare(kc)
+            holder.pop()
+        self.assertEqual(self.declare(kc, verify=True)["problems"], [])
+
+    def test_scope_definition_comes_from_the_template_link_and_a_distinct_audience(self):
+        with self.assertRaises(idp.Refused):
+            idp.core_mcp_scope({"clients": [{"clientId": "__OIDC_SERVICE_CLIENT_ID__"}]}, SCOPE_VALUES)
+        for audience in ("", "two words", "back\\slash", "gateway-admin", "core", "worker", "native-aud"):
+            with self.assertRaises(idp.Refused):
+                idp.core_mcp_scope(SCOPE_TEMPLATE, dict(SCOPE_VALUES, CORE_MCP_AUDIENCE=audience))
+        with open(os.path.join(os.path.dirname(__file__), "..", "..", "deploy", "local", "identity-provider",
+                               "realm.json"), encoding="utf-8") as stream:
+            template = json.load(stream)
+        scope, mapper = idp.core_mcp_scope(template, SCOPE_VALUES)
+        self.assertEqual(scope["name"], "kailo-core-mcp")
+        self.assertEqual(mapper["protocolMapper"], "oidc-audience-mapper")
+        self.assertIn("CORE_MCP_AUDIENCE", idp.INPUT_ENV)
+
+
 class DeclaredEnvPreview(unittest.TestCase):
     """backup 先于 deploy：compose 必须按声明后的 .env 渲染（新的 ${NAME:?} 键尚未落盘）。"""
 

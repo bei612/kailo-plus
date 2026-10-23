@@ -681,6 +681,57 @@ pub async fn test_apply_optional_valid_token_respects_preserve_token() {
 	}
 }
 
+// Kailo DD-137: Core's management MCP routes validate Core's bearer with `preserveToken: false`.
+// The bearer must be gone before MCP handling, because notifications and the stateless cleanup
+// DELETE copy every inbound header to the target without passing mcpGuardrails (SF-AGW-29), while
+// the verified claims stay readable by the mcpGuardrails metadata CEL that ExtMcp uses to identify
+// the caller (SF-AGW-30).
+#[tokio::test]
+pub async fn test_strict_without_preserve_strips_bearer_and_keeps_claims_for_guardrail_metadata() {
+	use std::time::{SystemTime, UNIX_EPOCH};
+	let (jwt, kid, issuer, allowed_aud) = setup_test_jwt();
+	assert!(!jwt.preserve_token);
+	let now = SystemTime::now()
+		.duration_since(UNIX_EPOCH)
+		.unwrap()
+		.as_secs();
+	let token = build_signed_token_with_payload(
+		kid,
+		json!({"iss": issuer, "aud": [allowed_aud, "gateway-admin"], "azp": "core", "sub": "service-account-core", "exp": now + 600}),
+	);
+	let mut req = crate::http::Request::new(crate::http::Body::empty());
+	req.headers_mut().insert(
+		crate::http::header::AUTHORIZATION,
+		crate::http::HeaderValue::from_str(&format!("Bearer {token}")).unwrap(),
+	);
+	let mut log = make_min_req_log();
+	jwt.apply(Some(&mut log), &mut req).await.unwrap();
+	assert!(
+		req
+			.headers()
+			.get(crate::http::header::AUTHORIZATION)
+			.is_none()
+	);
+	let expr =
+		crate::cel::Expression::new_strict("{'iss': jwt.iss, 'azp': jwt.azp, 'aud': jwt.aud}").unwrap();
+	assert_eq!(
+		crate::cel::Executor::new_request(&req)
+			.eval(&expr)
+			.unwrap()
+			.json()
+			.unwrap(),
+		json!({"iss": issuer, "azp": "core", "aud": [allowed_aud, "gateway-admin"]})
+	);
+	// A token for another audience never reaches that point.
+	let other = build_signed_token(kid, issuer, "core-service-api", now + 600);
+	let mut req = crate::http::Request::new(crate::http::Body::empty());
+	req.headers_mut().insert(
+		crate::http::header::AUTHORIZATION,
+		crate::http::HeaderValue::from_str(&format!("Bearer {other}")).unwrap(),
+	);
+	assert!(jwt.apply(Some(&mut make_min_req_log()), &mut req).await.is_err());
+}
+
 #[tokio::test]
 pub async fn test_apply_query_parameter_token_inserts_claims_and_removes_query_param() {
 	use std::time::{SystemTime, UNIX_EPOCH};

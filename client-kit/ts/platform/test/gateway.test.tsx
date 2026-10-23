@@ -220,6 +220,37 @@ describe("gateway writes only submit existing actions", () => {
     expect(host.querySelector("[data-testid=gateway-tool-test-output]")?.textContent).toContain('"target": "13:00"');
   });
 
+  it("tells apart same-named model sources by their native IDs and submits the chosen one", async () => {
+    const source = (provider: string, model: string) => ({ provider: { id: provider, revision: 3, sha256: "a".repeat(64) },
+      model: { id: model, revision: 5, sha256: "b".repeat(64) }, providerType: "custom", modelName: "qwen" });
+    const sources = [source("qwen-vllm-a", "qwen-chat-a"), source("qwen-vllm-b", "qwen-chat-b")];
+    const { host, send } = await mount(routes(tenantAccess, (request) => {
+      const path = request.path.split("?")[0] ?? "";
+      if (path === "/api/v1/gateway/model-routes") return { status: 200, body: { from: "x", to: "y", canCreate: true, routes: [] } };
+      if (path === "/api/v1/gateway/model-sources") return { status: 200, body: { sources } };
+      if (path === "/api/v1/gateway/stats") return { status: 200, body: stats("MODEL_ROUTE") };
+      if (path === "/api/v1/actions") return { status: 200, body: { actionKey: "llm_route.create", actionExecutionId: "a4",
+        operationId: "o4", gateState: "ALLOWED", dispatchState: "DISPATCHED" } };
+      return { status: 503, body: undefined };
+    }));
+    await click(tab(host, "routes"));
+    await click(button(host, "New model route"));
+    const select = host.querySelector<HTMLSelectElement>("[data-testid=gateway-route-create] select")!;
+    const labels = [...select.options].slice(1).map((option) => option.textContent);
+    expect(labels).toEqual(["qwen · custom · qwen-vllm-a / qwen-chat-a", "qwen · custom · qwen-vllm-b / qwen-chat-b"]);
+    expect(new Set(labels).size).toBe(2);
+    await act(async () => {
+      select.value = "1";
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await settle();
+    expect(host.querySelector("[data-testid=gateway-route-source-ids]")?.textContent).toContain("qwen-vllm-b");
+    await click(button(host, "Review new route"));
+    await click(button(host, "Submit governed request"));
+    expect(posts(send)[0]).toMatchObject({ body: { actionKey: "llm_route.create",
+      llmRouteCreate: { provider: { id: "qwen-vllm-b", revision: 3 }, model: { id: "qwen-chat-b", revision: 5 } } } });
+  });
+
   it("disables a model route through llm_route.disable with its exact version", async () => {
     const route = { resourceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", resourceVersion: 7, nativeId: "chat-route", resourceState: "ACTIVE",
       ownerPrincipalId: tenantId, provider: "openai", model: "qwen", installationCount: 2, bindingCount: 1, requests: 9, canDisable: true };

@@ -4661,6 +4661,7 @@ export const platformMessages = {
   "gateway.routes.noSources": { en: "No unused gateway model configuration is available.", "zh-CN": "网关中没有可用的未引用模型配置。" },
   "gateway.routes.source": { en: "Gateway model", "zh-CN": "网关模型" },
   "gateway.routes.chooseSource": { en: "Choose a model", "zh-CN": "选择模型" },
+  "gateway.routes.sourceIds": { en: "Gateway provider {provider} (revision {providerRevision}) · model {model} (revision {modelRevision})", "zh-CN": "网关提供方 {provider}（版本 {providerRevision}）· 模型 {model}（版本 {modelRevision}）" },
   "gateway.routes.home": { en: "Belongs to", "zh-CN": "归属" },
   "gateway.routes.secretRef": { en: "Provider credential reference (no secret value)", "zh-CN": "提供方凭据引用（不含密钥值）" },
   "gateway.routes.locator": { en: "Locator", "zh-CN": "Locator" },

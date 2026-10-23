@@ -81,11 +81,13 @@ idp:
   inputs: deploy/local/idp-declarations.py
   apply:
     - [./bootstrap.sh, --sync-client-redirects]
+    - [./bootstrap.sh, --declare-service-scopes]
     - [./bootstrap.sh, --declare-native-client-profiles]
   always:
     - [./bootstrap.sh, --declare-native-user-pictures]
   verify:
     - [./bootstrap.sh, --verify-client-redirects]
+    - [./bootstrap.sh, --verify-service-scopes]
     - [./bootstrap.sh, --verify-native-client-profiles]
 
 # 运行目录中由 start-core.sh 持久派生的 Compose 叠加文件；存在即参与每一次 Compose 调用，
@@ -103,6 +105,8 @@ env:
     APPLICATION_ADAPTER_DIRECTORY_FILE: ${KAILO_RUNTIME_DIR}/data/protocol-peers/adapter-directory.json
     COMPONENT_CONFORMANCE_ENVIRONMENT_FILE: ${KAILO_RUNTIME_DIR}/data/protocol-peers/conformance-environment.json
     PROTOCOL_PEER_REFERENCE_CPUS: "0.5"
+    # DD-137：Core 管理 MCP 调用的专用受众（亦即 IdP 可选 scope 名，由上方 idp 段声明收敛）
+    CORE_MCP_AUDIENCE: kailo-core-mcp
     PROTOCOL_PEER_REFERENCE_MEMORY: 256m
   # 一致性套件同一时间只有一个候选（07 §8A）：原生 MCP peer 只投递 environment，HTTP adapter 的另两项须缺省
   unset: [COMPONENT_CONFORMANCE_FIXTURE_FILE, COMPONENT_CONFORMANCE_IDENTITY_FILE]

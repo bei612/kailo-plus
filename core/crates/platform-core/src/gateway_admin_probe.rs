@@ -4,7 +4,8 @@
 //! 探测是只读查询，不是 Governed Action（`01` §4）：不创建 release、Tool 或
 //! Resource，不改任何 Catalog 状态。它只接受交付目录（DD-94(2)(5) 的运维域事实）
 //! 中的条目引用，不接受 URL，因此 Gateway 不会连接目录以外的端点。临时 route 与
-//! binding 验证 route 同形：Core 专用 bearer、ExtMcp failClosed、只放行
+//! binding 验证 route 同形：Core 专用受众的 bearer（DD-137，Gateway 校验后即移除，
+//! 不到达 peer）、ExtMcp failClosed、只放行
 //! `initialize`、`ping`、`notifications/initialized` 与不翻页的 `tools/list`；探测结束
 //! 即删除并回读不存在。每次探测持久一行 `projection.gateway_mcp_probe`（ExtMcp
 //! 以它判定请求）并写两条 `ACCESS` 审计，不保存 initialize/tools/list 正文。
@@ -123,7 +124,8 @@ pub(crate) fn peer_delivery(reference: &str) -> Result<PeerDelivery, Refusal> {
     peer_entry(&directory, reference)
 }
 
-/// Core 以自身 service 凭据经 Gateway 建立 MCP 会话；`header` 决定 ExtMcp 的判定分支。
+/// Core 以专用 Core MCP 受众的 service 令牌（DD-137）经 Gateway 建立 MCP 会话；
+/// `header` 决定 ExtMcp 的判定分支。
 pub(crate) async fn core_client(
     url: &str,
     header: (&str, String),
@@ -131,7 +133,7 @@ pub(crate) async fn core_client(
     limit: usize,
 ) -> Result<rmcp::service::RunningService<rmcp::RoleClient, ()>, Refusal> {
     use rmcp::ServiceExt;
-    let bearer = crate::oidc::TokenSource::from_env()
+    let bearer = crate::oidc::TokenSource::core_mcp()
         .map_err(|_| blocked())?
         .token()
         .await
@@ -190,7 +192,7 @@ pub(crate) async fn publish_route(
             "mcpGuardrails":{"processors":[{"kind":"remote","host":service.ext_mcp_url().as_str(),
                 "policies":{"backendAuth":service.backend_auth()},"failureMode":"failClosed",
                 "methods":spec.methods,"requestHeaders":{"allowed":["authorization",spec.header]},
-                "metadata":spec.metadata}]}},
+                "metadata":core_mcp_metadata(spec.metadata)?}]}},
         "backends":[{"mcp":{"statefulMode":"stateless","prefixMode":"conditional","failureMode":"failClosed",
             "targets":[spec.native_target]}}]});
     let gateway = crate::model_route::Gateway::from_env()?;
@@ -202,6 +204,18 @@ pub(crate) async fn publish_route(
         .await?;
     crate::agent_tool_runtime::require_route(&gateway, spec.id, Some(&route)).await?;
     Ok(url)
+}
+
+/// 管理 route 的 ExtMcp 元数据：调用方各自的判定键，加上 Gateway 已验证的 Core 身份
+/// claims（DD-137(4)）。bearer 已由 `preserveToken: false` 移除；`authorization` 仍在
+/// requestHeaders 中只为让 ExtMcp 发现未剥离令牌的 route 并拒绝。
+pub(crate) fn core_mcp_metadata(mut metadata: Value) -> Result<Value, Refusal> {
+    let (key, expression) = crate::service_auth::CORE_MCP_METADATA;
+    let object = metadata.as_object_mut().ok_or_else(invalid)?;
+    if object.insert(key.into(), json!(expression)).is_some() {
+        return Err(invalid());
+    }
+    Ok(metadata)
 }
 
 /// 删除临时 route 并回读不存在；删除已不存在的 route 也成功。
@@ -475,8 +489,7 @@ async fn observe(
                     .into(),
             ],
             methods: json!({"*":"request","initialize":"full","ping":"full","tools/list":"full"}),
-            metadata: json!({"gatewayProbe":"has(mcpGuardrails.gatewayProbe) ? mcpGuardrails.gatewayProbe : ''",
-                "gatewayProbeBearer":"has(mcpGuardrails.gatewayProbeBearer) ? mcpGuardrails.gatewayProbeBearer : ''"}),
+            metadata: json!({"gatewayProbe":"has(mcpGuardrails.gatewayProbe) ? mcpGuardrails.gatewayProbe : ''"}),
             native_target: json!({"name":route_id,"mcp":{"host":delivery.mcp_url.as_str()}}),
         },
     )
@@ -554,11 +567,11 @@ async fn probed_tool(conn: &mut sqlx::PgConnection, tool: &Value) -> Result<Valu
     Ok(value)
 }
 
-/// ExtMcp 两相共用的探测判定：Core 专用 bearer、未结束且未过期的探测记录、
-/// 目标只是该探测的 route、方法只限发现类。
+/// ExtMcp 两相共用的探测判定：Gateway 已验证的 Core 身份（DD-137(4)）、未结束且未
+/// 过期的探测记录、目标只是该探测的 route、方法只限发现类。
 pub(crate) async fn authorize(
     state: &ServiceState,
-    bearer: &str,
+    caller: &Value,
     probe: Uuid,
     services: &[String],
     method: &str,
@@ -568,8 +581,7 @@ pub(crate) async fn authorize(
     }
     state
         .auth
-        .verify_core_mcp(bearer)
-        .await
+        .verify_core_mcp_claims(caller)
         .map_err(|_| denied())?;
     let route: Option<String> = sqlx::query_scalar(
         "select route_id from projection.gateway_mcp_probe
@@ -633,6 +645,24 @@ mod tests {
             probe,
             std::slice::from_ref(&other)
         ));
+    }
+
+    #[test]
+    fn management_metadata_carries_verified_claims_not_a_bearer() {
+        let metadata =
+            core_mcp_metadata(json!({"gatewayProbe":"has(mcpGuardrails.gatewayProbe) ? mcpGuardrails.gatewayProbe : ''"}))
+                .unwrap();
+        let (key, expression) = crate::service_auth::CORE_MCP_METADATA;
+        assert_eq!(metadata[key], json!(expression));
+        for value in metadata.as_object().unwrap().values() {
+            let value = value.as_str().unwrap();
+            assert!(
+                !value.contains("authorization") && !value.contains("Bearer"),
+                "{value}"
+            );
+        }
+        assert!(core_mcp_metadata(json!({key: "forged"})).is_err());
+        assert!(core_mcp_metadata(json!([])).is_err());
     }
 
     #[test]

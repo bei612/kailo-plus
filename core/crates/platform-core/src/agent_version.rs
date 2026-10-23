@@ -613,16 +613,23 @@ pub(crate) async fn dispatch(gov: &Governance, id: Uuid, def: &Definition) -> Re
     if created {
         evidence.extend(skill_reference_evidence(&mut tx, ae.tenant_id, &v.content).await?);
     }
-    crate::governance::record_dispatch(
+    // FULL_LIFECYCLE（`14` §4）：派发结果已确定（回读确认创建或确定中止）时，同一事务在
+    // DISPATCH 之后追加 OUTCOME；结果不明经 `unknown` 只记 DISPATCH，对账确定后由本路径补写。
+    crate::model_route::record_settled(
         &mut tx,
-        ae.id,
-        def.audit_class(),
+        &ae,
+        def,
         if created {
             Ok(())
         } else {
             Err(StatusCode::FORBIDDEN)
         },
         evidence,
+        if created {
+            "AGENT_VERSION_CREATED"
+        } else {
+            "AGENT_VERSION_CREATION_ABORTED"
+        },
     )
     .await?;
     tx.commit().await?;

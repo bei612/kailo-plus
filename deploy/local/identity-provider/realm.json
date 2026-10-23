@@ -47,6 +47,7 @@
           }
         }
       ],
+      "optionalClientScopes": ["__CORE_MCP_AUDIENCE__"],
       "secret": "__CORE_CLIENT_SECRET__"
     },
     {

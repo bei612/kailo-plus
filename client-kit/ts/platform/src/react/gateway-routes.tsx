@@ -1,6 +1,9 @@
 // DD-134(7) 模型路由（Tenant 范围）：列表按 route Resource discover 过滤并附时间窗用量；新建沿
 // 既有 llm_route.create（选择 Gateway 中已有的原生 provider 与 model 配置，Core 回读 revision
 // 与摘要）；停用沿 llm_route.disable（不可逆，引用它的 Agent 与组件随即被拒绝，历史用量保留）。
+// 多个来源可能同名同类型（例如都是“qwen · custom”），因此选项与已选来源都显示原生
+// provider 与 model 的 ID——它们是 llm_route.create 实际提交的引用。llm_route.create 的契约
+// 没有名称或用途字段，表单不收集它们。
 
 import {
   LlmProviderCredentialMode,
@@ -15,6 +18,13 @@ import { GatewayActionPanel, useGatewayAction } from "./gateway-action";
 import { GatewayLoad, GatewaySection, useDuration, useNumber } from "./gateway-shared";
 import { Badge, Button, Cell, Notice, Table } from "./ui";
 import { useLoad } from "./use-load";
+
+type ModelSource = GatewayModelSourcePage["sources"][number];
+
+/** 来源选项：模型名与类型之外附原生 ID，同名同类型的来源也能区分。 */
+export function sourceLabel(source: ModelSource): string {
+  return `${source.modelName} · ${source.providerType} · ${source.provider.id} / ${source.model.id}`;
+}
 
 function CreateRoute({ action, workspaces }: { action: ReturnType<typeof useGatewayAction>; workspaces: WorkspaceView[] }) {
   const client = useBffClient();
@@ -54,9 +64,12 @@ function CreateRoute({ action, workspaces }: { action: ReturnType<typeof useGate
             value={source} disabled={action.frozen} onChange={(event) => { setSource(event.target.value); setInvalid(false); }}>
             <option value="">{t("gateway.routes.chooseSource")}</option>
             {page.sources.map((item, position) => <option key={`${item.provider.id}:${item.model.id}`} value={String(position)}>
-              {`${item.modelName} · ${item.providerType}`}</option>)}
+              {sourceLabel(item)}</option>)}
           </select>
         </label>
+        {chosen ? <p className="text-xs text-muted-foreground" data-testid="gateway-route-source-ids">
+          {t("gateway.routes.sourceIds", { provider: chosen.provider.id, providerRevision: chosen.provider.revision,
+            model: chosen.model.id, modelRevision: chosen.model.revision })}</p> : null}
         <label className="text-sm">{t("gateway.routes.home")}
           <select aria-label={t("gateway.routes.home")} className="ml-2 h-8 rounded-md border border-input bg-transparent px-2 text-sm"
             value={workspaceId} disabled={action.frozen} onChange={(event) => setWorkspaceId(event.target.value)}>

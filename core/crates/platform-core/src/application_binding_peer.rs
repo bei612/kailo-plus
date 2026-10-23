@@ -37,7 +37,8 @@ pub(crate) async fn connect(
     limit: usize,
     headers: &[(&str, String)],
 ) -> Result<rmcp::service::RunningService<rmcp::RoleClient, ()>, Refusal> {
-    let bearer = crate::oidc::TokenSource::from_env()
+    // DD-137：专用 Core MCP 受众的令牌；Gateway 校验后即移除，不到达 peer。
+    let bearer = crate::oidc::TokenSource::core_mcp()
         .map_err(|_| blocked())?
         .token()
         .await
@@ -76,7 +77,7 @@ pub(crate) async fn connect(
 /// This service-only path grants discovery, never tools/call or a user result.
 pub(crate) async fn authorize(
     state: &ServiceState,
-    bearer: &str,
+    caller: &Value,
     action: Uuid,
     services: &[String],
     method: &str,
@@ -89,8 +90,7 @@ pub(crate) async fn authorize(
     }
     state
         .auth
-        .verify_core_mcp(bearer)
-        .await
+        .verify_core_mcp_claims(caller)
         .map_err(|_| Refusal::Denied(ReasonCode::PermissionDenied))?;
     let ae = crate::governance::load_execution(&state.pool, action)
         .await?
