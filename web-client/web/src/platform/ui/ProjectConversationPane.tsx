@@ -38,7 +38,7 @@ export function ProjectConversationPane({ hit, onClose, widthPx, canResetWidth, 
     onResizeStart={onResizeStart} testId="project-conversation-panel" widthPx={widthPx}>
     <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden">{body}</div>
   </RightAuxiliaryPane>;
-  if (loading) return pane(<MessageThreadPanelSkeleton onClose={onClose} widthPx={widthPx} />);
+  if (loading) return pane(<MessageThreadPanelSkeleton isFocusMode={false} onClose={onClose} widthPx={widthPx} />);
   if (!row || !root || thread.denied || thread.thread.isError || members.isError || !members.data) return pane(
     <div className="flex h-full flex-col items-center justify-center gap-3 bg-background p-6 text-center">
       <p className="text-sm text-muted-foreground">{t("projects.conversation.loadFailed")}</p>

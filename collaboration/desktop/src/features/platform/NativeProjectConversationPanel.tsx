@@ -27,13 +27,11 @@ import { useProfileQuery, useUsersBatchQuery } from "@/features/profile/hooks";
 import { useIdentityQuery } from "@/shared/api/hooks";
 import type { SearchHit } from "@/shared/api/searchTypes";
 import { getEventById } from "@/shared/api/tauri";
-import type { RelayEvent, RespondToMode } from "@/shared/api/types";
+import type { RelayEvent } from "@/shared/api/types";
 import { useIsThreadPanelOverlay } from "@/shared/hooks/use-mobile";
 import { Button } from "@/shared/ui/button";
 import { useT } from "@client-kit/platform/react/context";
 
-const EMPTY_PERSONA_LOOKUP = new Map<string, string>();
-const EMPTY_RESPOND_TO_LOOKUP = new Map<string, RespondToMode>();
 
 async function loadConversationEvent(eventId: string) {
   return getEventById(eventId);
@@ -149,7 +147,6 @@ export function NativeProjectConversationPanel({
   }
 
   const panelData = useIndependentThreadPanel({
-    activeChannel,
     channelEvents: rootEvents,
     threadReplyEvents,
     rootId,
@@ -158,17 +155,14 @@ export function NativeProjectConversationPanel({
     currentPubkey: identityQuery.data?.pubkey,
     currentAvatarUrl: profileQuery.data?.avatarUrl ?? null,
     profiles,
-    ownerProfiles: profiles,
     members: membersQuery.data,
-    personaLookup: EMPTY_PERSONA_LOOKUP,
-    respondToLookup: EMPTY_RESPOND_TO_LOOKUP,
     relaySelfPubkey: null,
   });
   const sendMessageMutation = useSendMessageMutation(
     activeChannel,
     identityQuery.data,
   );
-  const toggleReactionMutation = useToggleReactionMutation();
+  const toggleReactionMutation = useToggleReactionMutation(activeChannel, identityQuery.data?.pubkey);
   const isOverlay = useIsThreadPanelOverlay();
   const isComposerDisabled =
     !activeChannel?.isMember ||
@@ -257,7 +251,6 @@ export function NativeProjectConversationPanel({
     return wrapProjectConversationPane(
       <MessageThreadPanel
         {...layoutProps}
-        activityAccessoryVisible={false}
         channel={activeChannel}
         channelId={activeChannel.id}
         channelName={activeChannel.name}
