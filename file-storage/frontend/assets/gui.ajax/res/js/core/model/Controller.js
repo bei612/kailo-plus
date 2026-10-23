@@ -161,6 +161,16 @@ export default class Controller extends Observable{
 	setUser(oUser)
 	{
 		this.oUser = oUser;
+		// DD-133 (07 §4.7.2): while the Kailo bridge drives the language, the
+		// stored account preference must not switch the page back.
+		const kailo = typeof window !== 'undefined' && window.KailoCells && window.KailoCells.language
+			? window.KailoCells.language() : '';
+		if(kailo){
+			if(oUser != null && oUser.id !== 'guest' && kailo !== this._pydioObject.currentLanguage){
+				this._pydioObject.loadI18NMessages(kailo, false);
+			}
+			return;
+		}
 		if(oUser != null && oUser.id !== 'guest' && oUser.getPreference('lang') != null
 			&& oUser.getPreference('lang') !== ""
 			&& oUser.getPreference('lang') !== this._pydioObject.currentLanguage

@@ -89,6 +89,21 @@ describe('Cells bridge over the Kailo embed runtime', () => {
         expect(kailo.loadI18NMessages).toHaveBeenCalledWith('zh-cn')
     })
 
+    it('imposes the Kailo language inside a frame over the account preference (DD-133)', () => {
+        // Before the native application exists, inside Kailo the launch locale already decides,
+        // so Controller.setUser cannot switch back to the stored account language.
+        const { api, host } = load({ search: '?kailo_theme=dark&kailo_locale=en', pydio: undefined })
+        expect(api.language()).toBe('en-us')
+        host({ theme: 'light', locale: 'zh-CN' })
+        expect(api.language()).toBe('zh-cn')
+    })
+
+    it('leaves the account preference in charge at top level until the bridge seeded the locale', () => {
+        expect(load({ embedded: false, pydio: undefined }).api.language()).toBe('')
+        expect(load({ embedded: false, pydio: fakePydio('en-us') }).api.language()).toBe('en-us')
+        expect(load({ embedded: false, search: '?kailo_locale=zh-CN', pydio: fakePydio('en-us') }).api.language()).toBe('zh-cn')
+    })
+
     it('starts a silent OIDC login inside a Kailo frame and remembers the page', () => {
         const { api, win, storage } = load({ search: '?x=1', pathname: '/ws-files/folder' })
         expect(api.startLogin('/auth/kailo/login')).toBe(true)

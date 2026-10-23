@@ -139,8 +139,10 @@ func TestKailoEmbedParameters(t *testing.T) {
 	}
 	t.Setenv("KAILO_FRAME_ANCESTORS", "http://kailo.example.invalid:58090 tauri://localhost")
 	head := string(kailoHead("v1&x"))
-	order := []string{`<meta name="kailo-web-origin" content="http://kailo.example.invalid:58090">`, "plug/kailo.embed/kailo-theme-tokens.css?v=v1%26x",
-		"plug/kailo.embed/kailo-overlay.css?v=v1%26x", "plug/kailo.embed/kailo-embed.js?v=v1%26x", "plug/kailo.embed/kailo-cells.js?v=v1%26x"}
+	// Root-absolute: the head precedes <base> and the page is also served at
+	// nested paths such as /login/callback.
+	order := []string{`<meta name="kailo-web-origin" content="http://kailo.example.invalid:58090">`, `"/plug/kailo.embed/kailo-theme-tokens.css?v=v1%26x"`,
+		`"/plug/kailo.embed/kailo-overlay.css?v=v1%26x"`, `"/plug/kailo.embed/kailo-embed.js?v=v1%26x"`, `"/plug/kailo.embed/kailo-cells.js?v=v1%26x"`}
 	last := -1
 	for _, want := range order {
 		at := strings.Index(head, want)
