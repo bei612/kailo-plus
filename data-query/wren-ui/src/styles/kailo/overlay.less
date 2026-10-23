@@ -9,19 +9,19 @@
 //    --kailo-shadow-*; dark is :root[data-kailo-theme='dark'].
 
 // 2. antd variable-build palette (the antd 4 equivalent of ConfigProvider
-//    theme tokens). Kailo's accent is its neutral primary.
+//    theme tokens). DD-141: the Kailo brand ramp and status roles.
 :root {
   --ant-primary-color: var(--kailo-color-primary);
-  --ant-primary-color-hover: color-mix(in srgb, var(--kailo-color-primary) 82%, var(--kailo-color-background));
-  --ant-primary-color-active: color-mix(in srgb, var(--kailo-color-primary) 92%, var(--kailo-color-foreground));
+  --ant-primary-color-hover: var(--kailo-color-brand-hover);
+  --ant-primary-color-active: var(--kailo-color-brand-pressed);
   --ant-primary-color-outline: color-mix(in srgb, var(--kailo-color-ring) 20%, transparent);
-  --ant-primary-1: color-mix(in srgb, var(--kailo-color-primary) 6%, var(--kailo-color-background));
-  --ant-primary-2: color-mix(in srgb, var(--kailo-color-primary) 12%, var(--kailo-color-background));
-  --ant-primary-3: color-mix(in srgb, var(--kailo-color-primary) 24%, var(--kailo-color-background));
-  --ant-primary-4: color-mix(in srgb, var(--kailo-color-primary) 40%, var(--kailo-color-background));
-  --ant-primary-5: color-mix(in srgb, var(--kailo-color-primary) 70%, var(--kailo-color-background));
+  --ant-primary-1: var(--kailo-color-selected);
+  --ant-primary-2: var(--kailo-color-selected-hover);
+  --ant-primary-3: var(--kailo-color-brand-line);
+  --ant-primary-4: var(--kailo-color-brand-300);
+  --ant-primary-5: var(--kailo-color-brand-400);
   --ant-primary-6: var(--kailo-color-primary);
-  --ant-primary-7: color-mix(in srgb, var(--kailo-color-primary) 90%, var(--kailo-color-foreground));
+  --ant-primary-7: var(--kailo-color-brand-pressed);
   --ant-primary-color-deprecated-l-35: var(--ant-primary-2);
   --ant-primary-color-deprecated-l-20: var(--ant-primary-3);
   --ant-primary-color-deprecated-t-20: var(--ant-primary-5);
@@ -29,7 +29,9 @@
   --ant-primary-color-deprecated-f-12: color-mix(in srgb, var(--kailo-color-primary) 12%, transparent);
   --ant-primary-color-active-deprecated-f-30: color-mix(in srgb, var(--kailo-color-primary) 10%, transparent);
   --ant-primary-color-active-deprecated-d-02: var(--ant-primary-2);
-  --ant-info-color: var(--kailo-color-primary);
+  --ant-info-color: var(--kailo-color-info);
+  --ant-success-color: var(--kailo-color-success);
+  --ant-warning-color: var(--kailo-color-warning-text);
   --ant-info-color-deprecated-bg: var(--ant-primary-1);
   --ant-info-color-deprecated-border: var(--ant-primary-3);
   --ant-error-color: var(--kailo-color-destructive);

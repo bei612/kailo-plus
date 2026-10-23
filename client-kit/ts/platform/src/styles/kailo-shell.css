@@ -263,6 +263,11 @@ svg.lucide[stroke-width="2"] {
 }
 
 /* ── Timeline ─────────────────────────────────────────────────────────── */
+/* Day divider hairline follows its label through the pinned-chip handoff. */
+[data-testid="message-timeline-day-divider"]:has(> p[style*="visibility: hidden"]) > span {
+  visibility: hidden;
+}
+
 /* Message rows: Kailo row radius and a quiet hover surface. */
 [data-testid="message-row"] {
   border-radius: 10px;
