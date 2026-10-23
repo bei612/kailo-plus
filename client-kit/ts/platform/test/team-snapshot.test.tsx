@@ -17,8 +17,7 @@ import {
 import { TeamShareDialog } from "../src/react/agent-library/TeamShareDialog";
 import { SnapshotCard } from "../src/react/messages/SnapshotCard";
 import type { BffReply, BffRequest, BffTransport } from "../src/transport";
-import { act } from "react";
-import { click, render, settle } from "./render";
+import { click, render, settle, until } from "./render";
 
 const uploadId = "7c8d9e0f-1a2b-4c3d-9e4f-5a6b7c8d9e0f";
 const manifest = new TextEncoder().encode(JSON.stringify({ format: "buzz-team-snapshot", version: 1,
@@ -80,7 +79,7 @@ describe("team snapshot import", () => {
     await render(<PlatformProvider client={createBffClient(t)} locale="en">
       <TeamSnapshotImportDialog source={source} onClose={() => {}} onImported={imported} />
     </PlatformProvider>);
-    await settle();
+    await until(() => !!document.querySelector("[data-testid=team-snapshot-import-preview]"), "team import preview");
     const body = document.querySelector("[data-testid=team-snapshot-import-preview]")!;
     expect(body.textContent).toContain("Release crew");
     expect(body.textContent).toContain("Members (2)");
@@ -112,7 +111,7 @@ describe("team snapshot import", () => {
     await render(<PlatformProvider client={createBffClient(importRoutes(digest, extra))} locale="en">
       <TeamSnapshotImportDialog source={source} onClose={() => {}} />
     </PlatformProvider>);
-    await settle();
+    await until(() => !!document.querySelector("[data-testid=team-snapshot-import-rejected]"), "team preview rejection");
     expect(document.querySelector("[data-testid=team-snapshot-import-preview]")).toBeNull();
     expect(document.querySelector("[data-testid=team-snapshot-import-rejected]")).not.toBeNull();
   });
@@ -127,9 +126,7 @@ describe("team snapshot import", () => {
     await settle();
     await click(host.querySelector<HTMLButtonElement>("[data-testid=agent-snapshot-card-add]")!);
     // The card hashes the bytes (WebCrypto) before opening the preview, then the preview uploads them.
-    for (let round = 0; round < 50 && !document.querySelector("[data-testid=team-snapshot-import-preview]"); round++) {
-      await act(async () => { await new Promise((resolve) => setTimeout(resolve, 10)); });
-    }
+    await until(() => !!document.querySelector("[data-testid=team-snapshot-import-preview]"), "team import preview from card");
     expect(document.querySelector("[data-testid=team-snapshot-import-preview]")).not.toBeNull();
     expect(t.send.mock.calls.map(([request]) => (request as BffRequest).path)).toContain("/api/v1/agent-team-snapshots/uploads");
     host.remove();
@@ -141,8 +138,9 @@ describe("team snapshot import", () => {
       <SnapshotCard displayName="Release crew" href="/media/t" filename="crew.team.json" size={manifest.length}
         sha256={"0".repeat(64)} snapshotKind="team" onDownload={async () => {}} readBytes={async () => manifest} />
     </PlatformProvider>);
-    await settle();
-    await click(host.querySelector<HTMLButtonElement>("[data-testid=agent-snapshot-card-add]")!);
+    const add = host.querySelector<HTMLButtonElement>("[data-testid=agent-snapshot-card-add]")!;
+    await click(add);
+    await until(() => !add.disabled, "imeta verification");
     expect(t.send).not.toHaveBeenCalled();
     expect(document.querySelector("[data-testid=team-snapshot-import-preview]")).toBeNull();
     host.remove();
@@ -181,7 +179,7 @@ describe("team snapshot export", () => {
     </PlatformProvider>);
     expect(document.querySelector('[data-testid="team-snapshot-export-memory"]')?.textContent).toBe("Team only");
     await click(document.querySelector<HTMLButtonElement>('[data-testid="team-snapshot-export-confirm"]')!);
-    await settle();
+    await until(() => !!document.querySelector('[data-testid="team-snapshot-export-waiting"]'), "owner approval wait");
     expect(actions(t)).toEqual([expect.objectContaining({
       actionKey: "agent.team.export", resourceId: target.resourceId, resourceVersion: 2,
       agentTeamExport: { mediaType: "image/png" },
@@ -201,7 +199,7 @@ describe("team snapshot export", () => {
       <TeamSnapshotExportDialog target={target} host={{ save }} onClose={() => {}} />
     </PlatformProvider>);
     await click(document.querySelector<HTMLButtonElement>('[data-testid="team-snapshot-export-confirm"]')!);
-    await settle(); await settle();
+    await until(() => !!document.querySelector('[data-testid="team-snapshot-export-ready"]'), "READY team package");
     expect(document.querySelector('[data-testid="team-snapshot-export-ready"]')?.textContent).toContain("Release crew.team.png 已就绪");
     await click(document.querySelector<HTMLButtonElement>('[data-testid="team-snapshot-export-save"]')!);
     expect(save).toHaveBeenCalledWith(expect.objectContaining({ packageAssetId: packageId, fileName: "Release crew.team.png" }));

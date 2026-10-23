@@ -11,7 +11,7 @@ import {
 } from "../src/react/agent-library/AgentSnapshotExportDialog";
 import type { BffReply, BffRequest, BffTransport } from "../src/transport";
 import { act } from "react";
-import { click, render, settle } from "./render";
+import { click, render, settle, until } from "./render";
 
 const target: SnapshotExportTarget = {
   resourceId: "1c2d3e4f-5a6b-4c7d-8e9f-0a1b2c3d4e5f", resourceVersion: 3, displayName: "Writer",
@@ -70,7 +70,7 @@ describe("agent snapshot export", () => {
     expect(document.querySelector('[data-testid="agent-snapshot-export-memory"]')?.textContent).toBe("Agent only");
     await choose('[data-testid="agent-snapshot-export-format"]', "application/json");
     await click(document.querySelector<HTMLButtonElement>('[data-testid="agent-snapshot-export-confirm"]')!);
-    await settle();
+    await until(() => !!document.querySelector('[data-testid="agent-snapshot-export-waiting"]'), "owner approval wait");
     expect(actions(t)).toEqual([expect.objectContaining({
       actionKey: "agent.definition.export", resourceId: target.resourceId, resourceVersion: 3,
       agentDefinitionExport: { versionAssetId: target.versionAssetId, mediaType: "application/json" },
@@ -91,7 +91,7 @@ describe("agent snapshot export", () => {
       <AgentSnapshotExportDialog target={target} host={exportHost} onClose={() => {}} />
     </PlatformProvider>);
     await click(document.querySelector<HTMLButtonElement>('[data-testid="agent-snapshot-export-confirm"]')!);
-    await settle(); await settle();
+    await until(() => !!document.querySelector('[data-testid="agent-snapshot-export-ready"]'), "READY package");
     expect(document.querySelector('[data-testid="agent-snapshot-export-ready"]')?.textContent).toContain("Writer.agent.png 已就绪");
     await click(document.querySelector<HTMLButtonElement>('[data-testid="agent-snapshot-export-save"]')!);
     expect(save).toHaveBeenCalledWith(expect.objectContaining({ packageAssetId: packageId, fileName: "Writer.agent.png",
@@ -115,9 +115,10 @@ describe("agent snapshot export", () => {
       <AgentSnapshotExportDialog target={target} host={{ save: vi.fn(), readBytes: async () => pkg }} onClose={() => {}} />
     </PlatformProvider>);
     await click(document.querySelector<HTMLButtonElement>('[data-testid="agent-snapshot-export-confirm"]')!);
-    await settle(); await settle();
+    await until(() => !!document.querySelector('[data-testid="agent-snapshot-export-copy"]'), "copy action");
     await click(document.querySelector<HTMLButtonElement>('[data-testid="agent-snapshot-export-copy"]')!);
-    await settle();
+    // 复制先读包字节并以 WebCrypto 复核摘要，再写剪贴板：等写入与“已复制”状态，而不是数微任务。
+    await until(() => written.length > 0 && (document.body.textContent ?? "").includes("Copied."), "clipboard write");
     expect(written).toHaveLength(1);
     const item = written[0]![0] as unknown as FakeItem;
     expect(Object.keys(item.items).sort()).toEqual(["image/png", "text/html"]);
@@ -142,9 +143,9 @@ describe("agent snapshot export", () => {
       <AgentSnapshotExportDialog target={target} onClose={() => {}} />
     </PlatformProvider>);
     await click(document.querySelector<HTMLButtonElement>('[data-testid="agent-snapshot-export-confirm"]')!);
-    await settle();
+    await until(() => actions(t).length === 1 && !document.querySelector<HTMLButtonElement>('[data-testid="agent-snapshot-export-confirm"]')?.disabled, "first unknown outcome");
     await click(document.querySelector<HTMLButtonElement>('[data-testid="agent-snapshot-export-confirm"]')!);
-    await settle();
+    await until(() => actions(t).length === 2, "retry with the same key");
     const sent = actions(t);
     expect(sent).toHaveLength(2);
     expect(sent[1]!.idempotencyKey).toBe(sent[0]!.idempotencyKey);
