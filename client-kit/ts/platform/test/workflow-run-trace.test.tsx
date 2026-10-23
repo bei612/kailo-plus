@@ -44,7 +44,8 @@ describe("original workflow trace presentation over existing task references", (
     expect(host.textContent).not.toMatch(/completed/i);
     await click(button(host, "Step approval"));
     expect(onOpen.mock.calls).toEqual([["approval-child"]]);
-    expect(send).not.toHaveBeenCalled();
+    // Only the original approval card's admitted read; nothing is written.
+    expect(send.mock.calls.map(([request]) => `${request.method} ${request.path}`)).toEqual(["GET /api/v1/approvals/approval-workflow"]);
   });
 
   it("does not invent steps from the parent terminal status when old projections lack trace", async () => {

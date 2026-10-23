@@ -23,7 +23,7 @@ function WorkflowApprovalCard({ task }: { task: TaskView }) {
   if (!view || (view.status !== ApprovalStatus.Requested && view.status !== ApprovalStatus.Waiting)
     || new Date(view.expiresAt) < new Date()) return null;
   const approver = view.roleRequirements.map(requirement => enumLabel(locale, approvalSelectorMessages, requirement.selector)).join(", ");
-  return <div className="mb-3 rounded-lg border border-amber-500/30 bg-amber-500/5 p-3" data-testid="workflow-approval-card">
+  return <div className="mb-3 rounded-lg border border-warning/30 bg-warning-bg p-3" data-testid="workflow-approval-card">
     <p className="mb-2 text-sm font-medium">{t("workflows.approval.required")}</p>
     <p className="mb-2 text-xs text-muted-foreground">{t("workflows.approval.approver", { approver })}</p>
     <p className="text-xs text-muted-foreground">{t("workflows.approval.expires", { time: new Date(view.expiresAt).toLocaleString(locale) })}</p>
