@@ -70,8 +70,9 @@
 
 1. 迁移 `20261026010000_mcp_connection` 随 Core 发布执行；回滚条件：迁移失败即停止
    发布（down 脚本在存在任何连接器事实时拒绝执行）。
-2. Core 环境：`KAILO_EXTERNAL_MCP_EGRESS_HOSTS`（生产按平台管理员决定，未设置即任意
-   公网主机）；验收环境另设 `KAILO_EXTERNAL_MCP_DEV_CIDRS` 为测试 peer 所在网段；
+2. Core 环境经 `deploy/local/compose.yaml` 投递：`KAILO_EXTERNAL_MCP_EGRESS_HOSTS`
+   （默认 `*` 即任意公网主机，生产按平台管理员决定）、`KAILO_EXTERNAL_MCP_DENY_CIDRS`；
+   验收环境另设 `KAILO_EXTERNAL_MCP_DEV_CIDRS` 为测试 peer 所在网段，生产保持为空；
    `PUBLIC_ORIGIN` 必须是 Kailo 对外 origin（OAuth 回调）。
 3. 在 CI 节点以 `server.py`（`MCP_TEST_AUTH=apikey` 与 `oauth`）各起一个 peer 接入
    平台应用网络，按 V-SCN-240–246 逐项操作：设置「连接器」添加、错 Key、定级与策略、

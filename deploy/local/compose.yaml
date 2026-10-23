@@ -574,6 +574,12 @@ services:
       BFF_LINK_PREVIEW_BUDGET: ${BFF_LINK_PREVIEW_BUDGET:?必须显式提供，禁止硬编码}
       BFF_LINK_PREVIEW_BUDGET_WINDOW_SECONDS: ${BFF_LINK_PREVIEW_BUDGET_WINDOW_SECONDS:?必须显式提供，禁止硬编码}
       BFF_LINK_PREVIEW_SNAPSHOT_TTL_SECONDS: ${BFF_LINK_PREVIEW_SNAPSHOT_TTL_SECONDS:?必须显式提供，禁止硬编码}
+      # DD-149(5)：用户自助连接器的出站上限（平台管理员域）。`*` 为任意公网主机，否则为逗号分隔的
+      # 主机后缀，Tenant 白名单只能更窄。DEV_CIDRS 只用于开发与验收部署（放行 http 与所列私网），
+      # 生产必须为空；DENY_CIDRS 在内置拒绝段之外追加部署内部网段。
+      KAILO_EXTERNAL_MCP_EGRESS_HOSTS: ${KAILO_EXTERNAL_MCP_EGRESS_HOSTS:-*}
+      KAILO_EXTERNAL_MCP_DEV_CIDRS: ${KAILO_EXTERNAL_MCP_DEV_CIDRS:-}
+      KAILO_EXTERNAL_MCP_DENY_CIDRS: ${KAILO_EXTERNAL_MCP_DENY_CIDRS:-}
       # DD-125(5)：部署登记的 GIF 图片来源；与 Web CSP img-src 追加项同一份。空即不提供 GIF
       # 选择器（Relay 另需在 secrets/buzz-relay.env 配 BUZZ_KLIPY_API_KEY 并由 NIP-11 广告 gif）。
       BFF_GIF_IMAGE_ORIGINS: ${GIF_IMAGE_ORIGINS:-}
