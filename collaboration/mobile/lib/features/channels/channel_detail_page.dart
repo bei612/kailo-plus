@@ -26,6 +26,8 @@ import 'channel.dart';
 import 'channel_actions_sheet.dart';
 import 'channel_link_navigation.dart';
 import 'channel_management_provider.dart';
+import 'channel_typing_indicator.dart';
+import 'channel_typing_provider.dart';
 import 'relay_sync_banner.dart';
 import 'channel_messages_provider.dart';
 import 'channels_provider.dart';
@@ -184,6 +186,16 @@ class ChannelDetailPage extends HookConsumerWidget {
     final initialForcedUnreadMessageIds =
         initialForcedUnreadMessageIdsRef.value;
     final currentPubkey = ref.watch(currentPubkeyProvider);
+    // Only show channel-level typing (exclude thread-scoped entries and self).
+    final typingEntries = ref
+        .watch(channelTypingProvider(channel.id))
+        .where((e) => e.threadHeadId == null)
+        .where(
+          (e) =>
+              currentPubkey == null ||
+              e.pubkey.toLowerCase() != currentPubkey.toLowerCase(),
+        )
+        .toList();
     // 作者名取自平台成员名单：原生设备的公钥没有 kind:0 资料（DD-77）
     if (!channel.isDm) ref.watch(platformAuthorNamesProvider(channel.id));
     final baseChannel =
@@ -403,8 +415,20 @@ class ChannelDetailPage extends HookConsumerWidget {
                   ),
                 ),
               ),
-              if (!showsComposer) const RelaySyncBanner(),
-              if (!showsComposer) _ReadOnlyNotice(channel: resolvedChannel),
+              if (!showsComposer) ...[
+                const RelaySyncBanner(),
+                AnimatedSize(
+                  duration: MediaQuery.disableAnimationsOf(context)
+                      ? Duration.zero
+                      : const Duration(milliseconds: 180),
+                  curve: Curves.easeOutCubic,
+                  alignment: Alignment.bottomCenter,
+                  child: typingEntries.isEmpty
+                      ? const SizedBox.shrink()
+                      : ChannelTypingIndicator(entries: typingEntries),
+                ),
+                _ReadOnlyNotice(channel: resolvedChannel),
+              ],
             ],
           ),
           if (showsComposer)
@@ -422,6 +446,16 @@ class ChannelDetailPage extends HookConsumerWidget {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       const RelaySyncBanner(),
+                      AnimatedSize(
+                        duration: MediaQuery.disableAnimationsOf(context)
+                            ? Duration.zero
+                            : const Duration(milliseconds: 180),
+                        curve: Curves.easeOutCubic,
+                        alignment: Alignment.bottomCenter,
+                        child: typingEntries.isEmpty
+                            ? const SizedBox.shrink()
+                            : ChannelTypingIndicator(entries: typingEntries),
+                      ),
                       ComposeBar(
                         channelId: channel.id,
                         focusNode: composerFocusNode,

@@ -12,6 +12,7 @@ abstract final class EventKind {
   static const reaction = 7;
   static const streamMessage = 9;
   static const nip29DeleteEvent = 9005;
+  static const typingIndicator = 20002;
   static const auth = 22242;
   static const streamMessageV2 = 40002;
   static const channelThreadSummary = 39005;
