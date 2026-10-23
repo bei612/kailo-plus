@@ -44,6 +44,30 @@ pub(crate) async fn tool_definition(
         None => Err(Refusal::Blocked(ReasonCode::CapabilityBlocked)),
     }
 }
+/// The admitted definition behind one bound tool: native tools by their closed map,
+/// DD-149 connector tools by their frozen call-policy action key.
+pub(crate) async fn bound_definition(
+    pool: &sqlx::PgPool,
+    tool: &BoundTool,
+) -> Result<Definition, Refusal> {
+    if crate::mcp_connection::is_tool_action(&tool.action_key) {
+        let definition = crate::governance::active_definition(pool, &tool.action_key)
+            .await?
+            .ok_or(Refusal::Blocked(ReasonCode::CapabilityBlocked))?;
+        return Ok(definition);
+    }
+    tool_definition(pool, &tool.name).await
+}
+
+/// The action key a bound tool must be admitted under.
+fn expected_action(tool: &BoundTool) -> Option<&str> {
+    if crate::mcp_connection::is_tool_action(&tool.action_key) {
+        Some(tool.action_key.as_str())
+    } else {
+        native_action_key(&tool.name)
+    }
+}
+
 /// DD-122 (3): the Agent relationships written on each granted Tool.
 const TOOL_RELATIONS: [(&str, &str); 2] = [("discoverer", "discover"), ("consumer", "consume")];
 /// Upper bound of relationship updates in one native write request.
@@ -172,6 +196,19 @@ pub(crate) async fn install_bindings(
     for id in
         installation_references(gov, tx, ae.tenant_id, ae.initiator_principal_id, tools).await?
     {
+        // DD-149(4): a Workspace-scoped connector tool binds only in its own Workspace.
+        let home: Option<Option<Uuid>> = sqlx::query_scalar(
+            "select home_workspace_id from catalog.resource where id=$1 and tenant_id=$2",
+        )
+        .bind(id)
+        .bind(ae.tenant_id)
+        .fetch_optional(&mut **tx)
+        .await?;
+        if let Some(Some(workspace)) = home {
+            if Some(workspace) != ae.workspace_id {
+                return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
+            }
+        }
         sqlx::query(
             "insert into catalog.tool_binding(installation_resource_id,projection_generation,
             workspace_id,agent_version_asset_id,tool_resource_id,action_execution_id,status)
@@ -208,6 +245,8 @@ pub(crate) async fn bound_tools(
     generation: i64,
     agent: Uuid,
 ) -> Result<Vec<BoundTool>, Refusal> {
+    // DD-149: connector tools join the same per-Installation route while their
+    // connector is ACTIVE and the tool is visible in the Installation's Workspace.
     let rows: Vec<BoundTool> = sqlx::query_as("select t.resource_id,t.name,t.action_key,
         t.input_schema_hash,t.output_schema_hash from catalog.tool_binding b
         join catalog.tool_definition t on t.resource_id=b.tool_resource_id and t.status='ACTIVE'
@@ -217,18 +256,30 @@ pub(crate) async fn bound_tools(
         join catalog.agent_runtime_projection p on p.installation_resource_id=i.resource_id
           and p.generation=b.projection_generation and p.agent_version_asset_id=b.agent_version_asset_id
         join catalog.agent_version v on v.asset_id=b.agent_version_asset_id
+        left join catalog.mcp_connection c on c.resource_id=t.mcp_connection_id and c.tenant_id=r.tenant_id
         where b.installation_resource_id=$2 and b.projection_generation=$3
           and i.agent_principal_id=$4 and i.workspace_id=b.workspace_id
           and p.state='ACTIVE'
           and v.content->'declaredToolResourceIds' @> jsonb_build_array(t.resource_id::text)
-          and b.status in ('NO_PERMISSION','ACTIVE') and t.source='PLATFORM_NATIVE'
-          and t.backend_ref='CORE_STREAMABLE_MCP' order by t.resource_id")
+          and b.status in ('NO_PERMISSION','ACTIVE')
+          and ((t.source='PLATFORM_NATIVE' and t.backend_ref='CORE_STREAMABLE_MCP')
+            or (t.source='USER_REGISTERED_EXTERNAL' and t.backend_ref='CORE_EXTERNAL_MCP_RELAY'
+              and c.state='ACTIVE' and (r.home_workspace_id is null or r.home_workspace_id=i.workspace_id)))
+          order by t.resource_id")
         .bind(tenant).bind(installation).bind(generation).bind(agent).fetch_all(&mut *conn).await?;
     let mut names = std::collections::HashSet::new();
     let mut allowed = Vec::new();
     for row in rows {
-        let hashes = schema_hashes(&row.name)?;
-        if native_action_key(&row.name) != Some(row.action_key.as_str())
+        let hashes = if crate::mcp_connection::is_tool_action(&row.action_key) {
+            // DD-149: frozen per tool at confirmation; the output contract is fixed.
+            (
+                row.input_schema_hash.clone(),
+                crate::mcp_connection::output_schema_hash(),
+            )
+        } else {
+            schema_hashes(&row.name)?
+        };
+        if expected_action(&row) != Some(row.action_key.as_str())
             || hashes
                 != (
                     row.input_schema_hash.clone(),
@@ -324,7 +375,7 @@ pub(crate) async fn invocation_tools(
     .await?;
     let mut names = Vec::new();
     for tool in rows {
-        let def = tool_definition(&state.pool, &tool.name).await?;
+        let def = bound_definition(&state.pool, &tool).await?;
         match tool_admission(state, &mut tx, &context, &parent, &tool, &def).await {
             Ok(_) => names.push(tool.name),
             Err(Refusal::Denied(_) | Refusal::Blocked(_) | Refusal::Conflict(_)) => {}
@@ -373,7 +424,7 @@ pub(crate) async fn tool_admission(
     tool: &BoundTool,
     def: &Definition,
 ) -> Result<String, Refusal> {
-    if native_action_key(&tool.name) != Some(def.action_key.as_str())
+    if expected_action(tool) != Some(def.action_key.as_str())
         || parent.id != context.parent_action_execution_id
         || parent.tenant_id != context.tenant_id
         || parent.workspace_id != Some(context.workspace_id)
@@ -521,8 +572,8 @@ async fn registered(
     tenant: Uuid,
     tool: Uuid,
 ) -> Result<Uuid, Refusal> {
-    let name: String = sqlx::query_scalar(
-        "select t.name from catalog.tool_definition t
+    let (name, source): (String, String) = sqlx::query_as(
+        "select t.name,t.source from catalog.tool_definition t
         join catalog.resource r on r.id=t.resource_id where r.id=$1 and r.tenant_id=$2",
     )
     .bind(tool)
@@ -530,6 +581,9 @@ async fn registered(
     .fetch_optional(&mut *conn)
     .await?
     .ok_or(Refusal::Blocked(ReasonCode::CapabilityBlocked))?;
+    if source == crate::mcp_connection::SOURCE {
+        return registered_connector(gov, conn, tenant, tool).await;
+    }
     let (input, output) = schema_hashes(&name)?;
     let owner: Option<Uuid> = sqlx::query_scalar(
         "select r.owner_principal_id
@@ -554,6 +608,53 @@ async fn registered(
     .await?;
     let owner = owner.ok_or(Refusal::Blocked(ReasonCode::CapabilityBlocked))?;
     if !crate::agent_definition::projection_matches(gov, tool, tenant, owner).await? {
+        return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
+    }
+    Ok(owner)
+}
+
+/// DD-149: an ACTIVE connector tool of an ACTIVE connector with its exact frozen
+/// contract and closed tenant/owner/home projection. Returns the Tool owner.
+async fn registered_connector(
+    gov: &Governance,
+    conn: &mut PgConnection,
+    tenant: Uuid,
+    tool: Uuid,
+) -> Result<Uuid, Refusal> {
+    let row: Option<(Uuid, Option<Uuid>)> = sqlx::query_as(
+        "select r.owner_principal_id,r.home_workspace_id
+        from catalog.resource r join catalog.tool_definition t on t.resource_id=r.id
+        join catalog.resource_type_definition d on d.type_key=r.type_key and d.status='ACTIVE'
+        join catalog.mcp_connection c on c.resource_id=t.mcp_connection_id and c.tenant_id=r.tenant_id
+          and c.state='ACTIVE'
+        where r.id=$1 and r.tenant_id=$2 and r.type_key='tool.definition'
+          and r.state='ACTIVE' and r.projection_action_execution_id is null
+          and r.application_binding_id is null and r.component_type_key='core'
+          and r.native_type=r.type_key and r.native_id=r.id::text and t.status='ACTIVE'
+          and t.source='USER_REGISTERED_EXTERNAL' and t.backend_ref='CORE_EXTERNAL_MCP_RELAY'
+          and t.capability_contract_key is null and t.output_schema_hash=$3
+          and t.action_key in ('mcp_connection.tool.invoke','mcp_connection.tool.invoke_confirmed',
+            'mcp_connection.tool.invoke_approved')
+          for update of r,t",
+    )
+    .bind(tool)
+    .bind(tenant)
+    .bind(crate::mcp_connection::output_schema_hash())
+    .fetch_optional(&mut *conn)
+    .await?;
+    let (owner, workspace) = row.ok_or(Refusal::Blocked(ReasonCode::CapabilityBlocked))?;
+    let closed = gov
+        .spicedb
+        .resource_projection_matches_in_workspace(
+            &tool.to_string(),
+            &tenant.to_string(),
+            &owner.to_string(),
+            workspace.map(|w| w.to_string()).as_deref(),
+            gov.cfg.relationship_page,
+        )
+        .await
+        .map_err(|e| Refusal::Unavailable(e.to_string()))?;
+    if !closed {
         return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
     }
     Ok(owner)
@@ -754,9 +855,11 @@ pub(crate) async fn provision(
     }
     // A Version declaring native memory tools also needs the Agent to read its
     // own Installation, the target of those tools' contract permission.
-    let memory = tools
-        .iter()
-        .any(|tool| tool.source == "PLATFORM_NATIVE" && NATIVE_TOOLS.contains(&tool.name.as_str()));
+    // DD-149: connector tools are admitted like native tools (Installation `read`).
+    let memory = tools.iter().any(|tool| {
+        (tool.source == "PLATFORM_NATIVE" && NATIVE_TOOLS.contains(&tool.name.as_str()))
+            || tool.source == crate::mcp_connection::SOURCE
+    });
     step.enter("agent_tool.agent_grant");
     let mut writes = Vec::new();
     for tool in &granted {
@@ -1013,10 +1116,21 @@ struct ToolRow {
     resource_version: i32,
     resource_state: String,
     projection_action_execution_id: Option<Uuid>,
+    home_workspace_id: Option<Uuid>,
     name: String,
+    source: String,
+    action_key: String,
     status: String,
     input_schema_hash: String,
     output_schema_hash: String,
+    mcp_connection_id: Option<Uuid>,
+    connection_name: Option<String>,
+    connection_state: Option<String>,
+    connection_visibility: Option<String>,
+    upstream_name: Option<String>,
+    title: Option<String>,
+    description: Option<String>,
+    risk: Option<String>,
 }
 
 /// Read-only directory metadata. Every visible Tool requires its existing
@@ -1057,18 +1171,34 @@ async fn directory(
     {
         return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
     }
+    // DD-149: connector tools are listed with their connector; a DISABLED connector's
+    // tools stay visible (not selectable) so the Version editor can explain why.
     let rows: Vec<ToolRow> = sqlx::query_as("select r.id resource_id,r.owner_principal_id,
-        r.version resource_version,r.state resource_state,r.projection_action_execution_id,
-        t.name,t.status,t.input_schema_hash,t.output_schema_hash
+        r.version resource_version,r.state resource_state,r.projection_action_execution_id,r.home_workspace_id,
+        t.name,t.source,t.action_key,t.status,t.input_schema_hash,t.output_schema_hash,t.mcp_connection_id,
+        c.display_name connection_name,c.state connection_state,c.visibility connection_visibility,
+        t.upstream_name,t.title,t.description,t.risk
         from catalog.resource r join catalog.tool_definition t on t.resource_id=r.id
+        left join catalog.mcp_connection c on c.resource_id=t.mcp_connection_id and c.tenant_id=r.tenant_id
         where r.tenant_id=$1 and r.type_key='tool.definition' and r.state in ('PROVISIONING','ACTIVE')
-          and t.source='PLATFORM_NATIVE' and t.status in ('PROVISIONING','ACTIVE') order by r.id offset $2 limit $3")
+          and t.status in ('PROVISIONING','ACTIVE')
+          and (t.source='PLATFORM_NATIVE'
+            or (t.source='USER_REGISTERED_EXTERNAL' and c.state in ('ACTIVE','DISABLED')))
+          order by r.id offset $2 limit $3")
         .bind(context.tenant_id).bind(offset).bind(limit).fetch_all(&mut *tx).await?;
     let next =
         (rows.len() == usize::try_from(limit).unwrap_or(usize::MAX)).then_some(offset + limit);
     let mut tools = Vec::new();
     for row in rows {
-        let (input, output) = schema_hashes(&row.name)?;
+        let connector = row.source == crate::mcp_connection::SOURCE;
+        let (input, output) = if connector {
+            (
+                row.input_schema_hash.clone(),
+                crate::mcp_connection::output_schema_hash(),
+            )
+        } else {
+            schema_hashes(&row.name)?
+        };
         if input != row.input_schema_hash || output != row.output_schema_hash {
             return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
         }
@@ -1076,13 +1206,18 @@ async fn directory(
             && row.status == "ACTIVE"
             && row.projection_action_execution_id.is_none();
         let visible = if active {
-            if !crate::agent_definition::projection_matches(
-                &state.governance,
-                row.resource_id,
-                context.tenant_id,
-                row.owner_principal_id,
-            )
-            .await?
+            if !state
+                .governance
+                .spicedb
+                .resource_projection_matches_in_workspace(
+                    &row.resource_id.to_string(),
+                    &context.tenant_id.to_string(),
+                    &row.owner_principal_id.to_string(),
+                    row.home_workspace_id.map(|w| w.to_string()).as_deref(),
+                    state.governance.cfg.relationship_page,
+                )
+                .await
+                .map_err(|e| Refusal::Unavailable(e.to_string()))?
             {
                 return Err(Refusal::Unavailable("Tool Resource 投影未闭合".into()));
             }
@@ -1128,14 +1263,29 @@ async fn directory(
         } else {
             false
         };
-        tools.push(serde_json::json!({"resourceId": row.resource_id,
+        let can_consume = can_consume
+            && row
+                .connection_state
+                .as_deref()
+                .is_none_or(|s| s == "ACTIVE");
+        let mut tool = serde_json::json!({"resourceId": row.resource_id,
             "resourceVersion": row.resource_version, "resourceState": row.resource_state,
             "ownerPrincipalId": row.owner_principal_id, "name": row.name,
             // DD-140 (1): the closed name → action-key map, not the name itself.
-            "actionKey": native_action_key(&row.name),
-            "source": "PLATFORM_NATIVE", "status": row.status,
+            "actionKey": if connector { Some(row.action_key.as_str()) } else { native_action_key(&row.name) },
+            "source": row.source, "status": row.status,
             "inputSchemaHash": row.input_schema_hash, "outputSchemaHash": row.output_schema_hash,
-            "canConsume": can_consume}));
+            "canConsume": can_consume});
+        if connector {
+            let policy = crate::mcp_connection::Policy::of_action(&row.action_key)
+                .ok_or(Refusal::Blocked(ReasonCode::CapabilityBlocked))?;
+            tool["connector"] = serde_json::json!({"connectionId": row.mcp_connection_id,
+                "connectionName": row.connection_name, "connectionState": row.connection_state,
+                "upstreamName": row.upstream_name, "title": row.title, "description": row.description,
+                "risk": row.risk, "callPolicy": policy.wire(), "visibility": row.connection_visibility,
+                "workspaceId": row.home_workspace_id});
+        }
+        tools.push(tool);
     }
     let page = serde_json::from_value(serde_json::json!({"tools": tools, "nextOffset": next}))
         .map_err(|_| Refusal::Unavailable("Tool 目录与共享合同不一致".into()))?;

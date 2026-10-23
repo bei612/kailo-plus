@@ -29,42 +29,6 @@
   "cont.topic.translate": {
     "other": "Как создать или завершить языковой перевод?"
   },
-  "ent.advanced": {
-    "other": "Расширенная панель администратора"
-  },
-  "ent.advanced.legend": {
-    "other": "Уникальная панель администратора для мониторинга использования платформы в реальном времени."
-  },
-  "ent.btn.contact": {
-    "other": "Связаться с отделом продаж"
-  },
-  "ent.btn.more": {
-    "other": "Узнать больше"
-  },
-  "ent.features": {
-    "other": "Возможности, ориентированные на развитие"
-  },
-  "ent.features.legend": {
-    "other": "Современные возможности : AD/LDAP Connectors, Auditable Logs for compliance, EasyTransfer..."
-  },
-  "ent.subtitle": {
-    "other": "БОЛЬШЕ ФУНКЦИЙ - GDPR COMPLIANCE - EXTENDED BRANDING"
-  },
-  "ent.support": {
-    "other": "Поддержка и обслуживание"
-  },
-  "ent.support.legend": {
-    "other": "Получите помощь в установке непосредственно от команды разработчиков"
-  },
-  "ent.title": {
-    "other": "Откройте для себя Pydio Cells Enterprise"
-  },
-  "ent.upgrade": {
-    "other": "Сделай апгрейд сейчас!"
-  },
-  "ent.upgrade.legend": {
-    "other": "Обновление в приложении Cells Enterprise (требуется лицензия)"
-  },
   "welc.btn.advanced": {
     "other": "Дополнительные параметры"
   },
@@ -104,15 +68,6 @@
   "card.quick-access.add": {
     "other": "Добавить ярлык..."
   },
-  "card.update.current": {
-    "other": "Версия ПО"
-  },
-  "card.update.no-updates": {
-    "other": "Установлена последняя версия"
-  },
-  "card.update.new-version": {
-    "other": "Доступна новая версия"
-  },
   "recentLogs.title": {
     "other": "Последние события"
   },
@@ -124,11 +79,5 @@
   },
   "recentLogs.more": {
     "other": "Все активности"
-  },
-  "graph.files": {
-    "other": "Активность файла"
-  },
-  "graph.connections": {
-    "other": "Веб-соединения"
   }
 }

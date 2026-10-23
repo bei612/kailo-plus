@@ -1412,6 +1412,7 @@ export enum ReasonCode {
 export enum AgentInstallationToolSource {
     Application = "APPLICATION",
     PlatformNative = "PLATFORM_NATIVE",
+    UserRegisteredExternal = "USER_REGISTERED_EXTERNAL",
 }
 
 /**
@@ -4500,15 +4501,23 @@ export interface GatewayToolView {
     contractPermission?:    CapabilityPermission;
     denied:                 number;
     failed:                 number;
-    name:                   string;
-    releaseVersion?:        string;
-    requests:               number;
-    resourceId:             string;
-    resourceState:          ResourceState;
-    resourceVersion:        number;
-    source:                 AgentInstallationToolSource;
-    testCall?:              GatewayToolTestCall;
-    toolP95Ms?:             number;
+    /**
+     * 仅 USER_REGISTERED_EXTERNAL（DD-149）：所属连接器
+     */
+    mcpConnectionId?: string;
+    /**
+     * 仅 USER_REGISTERED_EXTERNAL：连接器显示名
+     */
+    mcpConnectionName?: string;
+    name:               string;
+    releaseVersion?:    string;
+    requests:           number;
+    resourceId:         string;
+    resourceState:      ResourceState;
+    resourceVersion:    number;
+    source:             AgentInstallationToolSource;
+    testCall?:          GatewayToolTestCall;
+    toolP95Ms?:         number;
 }
 
 export interface GatewayToolTestCall {
@@ -4790,6 +4799,271 @@ export interface LegacySecretRefBinding {
 export enum LegacySecretRefBindingKind {
     Control = "CONTROL",
     Human = "HUMAN",
+}
+
+/**
+ * DD-149(10)：本人可发现的连接器与登记能力。
+ */
+export interface McpConnectionPage {
+    canRegisterPersonal:     boolean;
+    canRegisterTenant:       boolean;
+    connections:             McpConnectionView[];
+    policy:                  McpConnectionPolicyView;
+    registrableWorkspaceIds: string[];
+}
+
+/**
+ * DD-149(10)：连接器详情；凭据只以 credentialSet 表示，从不回显。
+ */
+export interface McpConnectionView {
+    apiKeyHeader?:        string;
+    authMode:             McpConnectionAuthMode;
+    canManage:            boolean;
+    createdAt?:           string;
+    credentialSet:        boolean;
+    credentialUpdatedAt?: string;
+    displayName:          string;
+    /**
+     * 最近一次探测的清单摘要与已确认的不同
+     */
+    drift:                boolean;
+    endpointHost:         string;
+    endpointUrl:          string;
+    generation:           number;
+    health:               McpConnectionHealth;
+    healthCheckedAt?:     string;
+    id:                   string;
+    observedToolsDigest?: string;
+    ownerDisplayName?:    string;
+    ownerPrincipalId:     string;
+    serverName?:          string;
+    serverVersion?:       string;
+    slug:                 string;
+    state:                McpConnectionState;
+    tools:                McpConnectionToolView[];
+    toolsDigest:          string;
+    transport:            McpConnectionTransport;
+    version:              number;
+    visibility:           McpConnectionVisibility;
+    workspaceId?:         string;
+}
+
+/**
+ * DD-149(5)(6)：连接器认证方式。
+ */
+export enum McpConnectionAuthMode {
+    ApiKey = "API_KEY",
+    Bearer = "BEARER",
+    None = "NONE",
+    Oauth = "OAUTH",
+}
+
+/**
+ * DD-149(10)：最近一次探测观测；不是授权或状态权威。
+ */
+export enum McpConnectionHealth {
+    AuthFailed = "AUTH_FAILED",
+    EgressDenied = "EGRESS_DENIED",
+    Ok = "OK",
+    ProtocolError = "PROTOCOL_ERROR",
+    ReauthorizationRequired = "REAUTHORIZATION_REQUIRED",
+    Unchecked = "UNCHECKED",
+    Unreachable = "UNREACHABLE",
+}
+
+/**
+ * DD-149(3)：连接器状态；DELETED 是墓碑。
+ */
+export enum McpConnectionState {
+    Active = "ACTIVE",
+    Deleted = "DELETED",
+    Disabled = "DISABLED",
+}
+
+export interface McpConnectionToolView {
+    callPolicy:       McpToolCallPolicy;
+    description?:     string;
+    destructiveHint?: boolean;
+    inputSchemaJson:  string;
+    /**
+     * Agent 看到的工具名 <slug>__<上游名>
+     */
+    name:           string;
+    readOnlyHint?:  boolean;
+    risk:           McpToolRisk;
+    riskDeclared:   boolean;
+    title?:         string;
+    toolResourceId: string;
+    upstreamName:   string;
+}
+
+/**
+ * DD-149(7)：工具调用策略。AUTO 只允许 READ_ONLY；CONFIRM 由 Agent 负责人逐次确认；APPROVAL 由 Tenant 管理员逐次批准。
+ */
+export enum McpToolCallPolicy {
+    Approval = "APPROVAL",
+    Auto = "AUTO",
+    Confirm = "CONFIRM",
+}
+
+/**
+ * DD-149(7)：工具风险等级（annotations 只是提示，最终为管理员确认值）。
+ */
+export enum McpToolRisk {
+    Destructive = "DESTRUCTIVE",
+    ReadOnly = "READ_ONLY",
+    Write = "WRITE",
+}
+
+/**
+ * DD-149(7)：连接器端点的 MCP 传输。STREAMABLE_HTTP 为现行 Streamable HTTP；SSE 为旧版 HTTP+SSE。
+ */
+export enum McpConnectionTransport {
+    Sse = "SSE",
+    StreamableHttp = "STREAMABLE_HTTP",
+}
+
+/**
+ * DD-149(4)：连接器与其工具的可见范围。
+ */
+export enum McpConnectionVisibility {
+    Personal = "PERSONAL",
+    Tenant = "TENANT",
+    Workspace = "WORKSPACE",
+}
+
+/**
+ * DD-149(4)(5)：Tenant 连接器策略与部署出站上限。
+ */
+export interface McpConnectionPolicyView {
+    canManage:             boolean;
+    egressHostSuffixes:    string[];
+    memberRegistration:    McpMemberRegistration;
+    platformAnyPublicHost: boolean;
+    platformHostSuffixes:  string[];
+    version:               number;
+}
+
+/**
+ * DD-149(4)：Tenant 连接器策略中普通成员的登记权限。
+ */
+export enum McpMemberRegistration {
+    Disabled = "DISABLED",
+    PersonalOnly = "PERSONAL_ONLY",
+}
+
+/**
+ * DD-149(7)：添加连接器前的只读探测。
+ */
+export interface McpConnectionProbeRequest {
+    apiKeyHeader?:   string;
+    authMode:        McpConnectionAuthMode;
+    credential?:     McpConnectionCredentialInput;
+    endpointUrl:     string;
+    oauthAttemptId?: string;
+    transport:       McpConnectionTransport;
+}
+
+/**
+ * DD-149(5)：仅 mcp_connection.create 与 mcp_connection.rotate_credential 的瞬态凭据（API_KEY 或
+ * BEARER）；Core 写入该 Tenant 的 OpenBao 后只保存 SecretRef，值不进入
+ * parameters、ActionExecution、日志、审计或回应。其他命令禁止携带。
+ *
+ * DD-149(5)：API Key 或 Bearer 的一次性输入，只随
+ * mcp_connection.create、mcp_connection.rotate_credential 与探测请求；Core 写入 OpenBao 后只保存
+ * SecretRef，从不回显、记录或进入 parameters。
+ */
+export interface McpConnectionCredentialInput {
+    value: string;
+}
+
+/**
+ * DD-149(10)：以已保存凭据重新探测；变化需经 mcp_connection.update 重新确认。
+ */
+export interface McpConnectionRefreshResult {
+    addedTools:   string[];
+    changedTools: string[];
+    checkedAt:    string;
+    drift:        boolean;
+    health:       McpConnectionHealth;
+    probe?:       McpConnectionProbeResult;
+    removedTools: string[];
+}
+
+/**
+ * DD-149(7)：探测结果。toolsDigest 是规范化清单摘要，登记与更新以它比对 fresh 探测。
+ */
+export interface McpConnectionProbeResult {
+    endpointHost: string;
+    /**
+     * 上游 instructions（不可信内容，截断至 2000 字符）
+     */
+    instructions?:   string;
+    protocolVersion: string;
+    serverName?:     string;
+    serverVersion?:  string;
+    tools:           McpProbedTool[];
+    toolsDigest:     string;
+}
+
+export interface McpProbedTool {
+    /**
+     * 上游描述（不可信内容，界面以纯文本显示）
+     */
+    description?:        string;
+    destructiveHint?:    boolean;
+    idempotentHint?:     boolean;
+    inputSchemaJson:     string;
+    openWorldHint?:      boolean;
+    outputSchemaJson?:   string;
+    readOnlyHint?:       boolean;
+    suggestedCallPolicy: McpToolCallPolicy;
+    suggestedRisk:       McpToolRisk;
+    title?:              string;
+    upstreamName:        string;
+}
+
+/**
+ * DD-149(6)：OAuth 授权尝试的状态；从不包含令牌。
+ */
+export interface McpOauthAttemptView {
+    attemptId:            string;
+    authorizationServer?: string;
+    authorizationUrl?:    string;
+    expiresAt:            string;
+    /**
+     * 固定原因码
+     */
+    failure?: string;
+    state:    McpOauthAttemptState;
+}
+
+/**
+ * DD-149(6)：一次 OAuth 授权尝试的状态。
+ */
+export enum McpOauthAttemptState {
+    Completed = "COMPLETED",
+    Consumed = "CONSUMED",
+    Expired = "EXPIRED",
+    Failed = "FAILED",
+    Pending = "PENDING",
+}
+
+/**
+ * DD-149(6)：发起一次 OAuth 授权尝试。forConnectionId 只用于轮换已存在连接器的授权。
+ */
+export interface McpOauthStartRequest {
+    /**
+     * 未提供注册端点时的预注册 client ID
+     */
+    clientId?: string;
+    /**
+     * 可选预注册 client 密钥，一次性输入，写入 OpenBao
+     */
+    clientSecret?:    string;
+    endpointUrl:      string;
+    forConnectionId?: string;
+    transport:        McpConnectionTransport;
 }
 
 /**
@@ -5116,6 +5390,28 @@ export interface ActionCommand {
      * 仅 llm_route.create：确切原生 Provider/Model 与受控 provider SecretRef；不接收 URL 或 key 正文。
      */
     llmRouteCreate?: LlmRouteCreateInput;
+    /**
+     * 仅 mcp_connection.create（DD-149、05 §2.15）且必带；其他动作携带即拒绝。
+     */
+    mcpConnectionCreate?: McpConnectionCreate;
+    /**
+     * DD-149(5)：仅 mcp_connection.create 与 mcp_connection.rotate_credential 的瞬态凭据（API_KEY 或
+     * BEARER）；Core 写入该 Tenant 的 OpenBao 后只保存 SecretRef，值不进入
+     * parameters、ActionExecution、日志、审计或回应。其他命令禁止携带。
+     */
+    mcpConnectionCredential?: McpConnectionCredentialInput;
+    /**
+     * 仅 mcp_connection.policy.update 且必带。
+     */
+    mcpConnectionPolicyUpdate?: McpConnectionPolicyUpdate;
+    /**
+     * 仅 mcp_connection.update 且必带；目标连接器由 resourceId 与 resourceVersion 给出。
+     */
+    mcpConnectionUpdate?: McpConnectionUpdate;
+    /**
+     * DD-149(6)：仅 OAUTH 连接器的 mcp_connection.rotate_credential：本人本会话已完成且未使用的授权尝试。
+     */
+    mcpOauthAttemptId?: string;
     /**
      * 仅 HUMAN agent.memory.core.replace / entry.set / entry.patch / entry.remove 的瞬态 native
      * 输入；其他命令禁止携带。
@@ -5474,6 +5770,93 @@ export interface LlmRouteCreateInputProviderSecretRef {
     audience: string;
     locator:  string;
     version:  number;
+}
+
+/**
+ * 仅 mcp_connection.create（DD-149、05 §2.15）且必带；其他动作携带即拒绝。
+ *
+ * 仅 mcp_connection.create（DD-149、05 §2.15）：端点、认证方式、可见范围与确认的工具清单。凭据值只经
+ * ActionCommand.mcpConnectionCredential 一次性提交；OAuth 只引用本人本会话已完成的授权尝试。
+ */
+export interface McpConnectionCreate {
+    /**
+     * 仅 API_KEY：小写 header 名
+     */
+    apiKeyHeader?: string;
+    authMode:      McpConnectionAuthMode;
+    /**
+     * 连接器显示名，1–80 字符
+     */
+    displayName: string;
+    /**
+     * https 端点；不含 userinfo、query 与 fragment
+     */
+    endpointUrl: string;
+    /**
+     * 仅 OAUTH：本人本会话已完成且未使用的授权尝试
+     */
+    oauthAttemptId?: string;
+    /**
+     * OAUTH 且可见范围不是 PERSONAL 时必须为 true：同意其他人的 Agent 以本人授权调用
+     */
+    sharedAuthorizationConsent?: boolean;
+    tools:                       McpToolSelection[];
+    /**
+     * 确认时探测结果的清单摘要；提交时 Core 重新探测比对
+     */
+    toolsDigest: string;
+    transport:   McpConnectionTransport;
+    visibility:  McpConnectionVisibility;
+    /**
+     * 仅 WORKSPACE 可见范围：所属 Workspace
+     */
+    workspaceId?: string;
+}
+
+/**
+ * DD-149(7)：确认清单中的一个上游工具。未列出的上游工具即不启用。
+ */
+export interface McpToolSelection {
+    callPolicy: McpToolCallPolicy;
+    enabled:    boolean;
+    risk:       McpToolRisk;
+    /**
+     * 风险等级低于 annotations 建议时必须为 true，作为管理员声明冻结进审计
+     */
+    riskDeclared?: boolean;
+    /**
+     * 上游 tools/list 中的工具名，原样
+     */
+    upstreamName: string;
+}
+
+/**
+ * 仅 mcp_connection.policy.update 且必带。
+ *
+ * 仅 mcp_connection.policy.update：Tenant 连接器策略；白名单条目须落在部署声明的出站上限内。
+ */
+export interface McpConnectionPolicyUpdate {
+    /**
+     * 小写主机名后缀；空表示只受部署上限约束
+     */
+    egressHostSuffixes: string[];
+    memberRegistration: McpMemberRegistration;
+}
+
+/**
+ * 仅 mcp_connection.update 且必带；目标连接器由 resourceId 与 resourceVersion 给出。
+ *
+ * 仅 mcp_connection.update：以新探测结果重新确认工具清单、风险、策略与可见范围，形成新 generation。
+ */
+export interface McpConnectionUpdate {
+    sharedAuthorizationConsent?: boolean;
+    tools:                       McpToolSelection[];
+    toolsDigest:                 string;
+    visibility:                  McpConnectionVisibility;
+    /**
+     * 仅 WORKSPACE 可见范围
+     */
+    workspaceId?: string;
 }
 
 /**
@@ -5970,12 +6353,22 @@ export interface PlatformToolPage {
 
 export interface PlatformToolView {
     /**
-     * DD-140 (1)：平台原生工具名到动作键的封闭映射；记忆工具即其自身，project_channel_request 为 workspace.create。
+     * DD-140 (1)：平台原生工具名到动作键的封闭映射；记忆工具即其自身，project_channel_request 为
+     * workspace.create。DD-149：连接器工具为其调用策略对应的子动作键。
      */
-    actionKey:        PlatformToolViewActionKey;
-    canConsume:       boolean;
-    inputSchemaHash:  string;
-    name:             PlatformToolViewName;
+    actionKey:  PlatformToolViewActionKey;
+    canConsume: boolean;
+    /**
+     * 仅 USER_REGISTERED_EXTERNAL（DD-149）：所属连接器与冻结的工具元数据。描述是上游提供的不可信文本。
+     */
+    connector?:      PlatformToolConnector;
+    inputSchemaHash: string;
+    /**
+     * PLATFORM_NATIVE
+     * 为固定原生工具名（agent.memory.entry.list、agent.memory.entry.read、project_channel_request）；USER_REGISTERED_EXTERNAL
+     * 为 <连接器标识>__<上游工具名>（DD-149(3)）。
+     */
+    name:             string;
     outputSchemaHash: string;
     ownerPrincipalId: string;
     resourceId:       string;
@@ -5986,22 +6379,37 @@ export interface PlatformToolView {
 }
 
 /**
- * DD-140 (1)：平台原生工具名到动作键的封闭映射；记忆工具即其自身，project_channel_request 为 workspace.create。
+ * DD-140 (1)：平台原生工具名到动作键的封闭映射；记忆工具即其自身，project_channel_request 为
+ * workspace.create。DD-149：连接器工具为其调用策略对应的子动作键。
  */
 export enum PlatformToolViewActionKey {
     AgentMemoryEntryList = "agent.memory.entry.list",
     AgentMemoryEntryRead = "agent.memory.entry.read",
+    McpConnectionToolInvoke = "mcp_connection.tool.invoke",
+    McpConnectionToolInvokeApproved = "mcp_connection.tool.invoke_approved",
+    McpConnectionToolInvokeConfirmed = "mcp_connection.tool.invoke_confirmed",
     WorkspaceCreate = "workspace.create",
 }
 
-export enum PlatformToolViewName {
-    AgentMemoryEntryList = "agent.memory.entry.list",
-    AgentMemoryEntryRead = "agent.memory.entry.read",
-    ProjectChannelRequest = "project_channel_request",
+/**
+ * 仅 USER_REGISTERED_EXTERNAL（DD-149）：所属连接器与冻结的工具元数据。描述是上游提供的不可信文本。
+ */
+export interface PlatformToolConnector {
+    callPolicy:      McpToolCallPolicy;
+    connectionId:    string;
+    connectionName:  string;
+    connectionState: McpConnectionState;
+    description?:    string;
+    risk:            McpToolRisk;
+    title?:          string;
+    upstreamName:    string;
+    visibility:      McpConnectionVisibility;
+    workspaceId?:    string;
 }
 
 export enum PlatformToolViewSource {
     PlatformNative = "PLATFORM_NATIVE",
+    UserRegisteredExternal = "USER_REGISTERED_EXTERNAL",
 }
 
 export enum PlatformToolViewStatus {

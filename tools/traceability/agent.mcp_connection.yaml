@@ -1,0 +1,44 @@
+capability_id: agent.mcp_connection
+title: 用户自助连接器——Tenant 管理员与按策略允许的成员登记第三方 MCP 服务器，探测、逐工具定级与调用策略、出站校验、OpenBao 凭据与 OAuth 2.1，经 Installation 平台工具 route 与 Core 外部 MCP 中继供 Agent 调用
+stage: S5
+status: in_progress
+exposure: end_user
+
+design:
+  requirements: [V-REQ-03, V-REQ-05, V-REQ-06, V-REQ-09, V-REQ-11, V-REQ-15, V-REQ-24]
+  decisions: [DD-92, DD-105, DD-122, DD-137, DD-149]
+  # DD-134/136 的平台认证通道由 gateway.admin 归属；本记录只登记自助连接器。
+  facts: []
+  seams: [SS-AGW-PEP, SS-AGW-ADMIN]
+  blockers: []
+  entities: [McpConnection, McpConnectionGeneration, McpConnectionPolicy, ToolDefinition, ToolBinding, AgentVersion, AgentInstallation, DelegationScope, Resource, ResourceTypeDefinition, ActionExecution]
+
+validation:
+  # 新增场景只关联实现，未记为业务验收通过。
+  scenarios: [V-SCN-240, V-SCN-241, V-SCN-242, V-SCN-243, V-SCN-244, V-SCN-245, V-SCN-246]
+  evidence:
+    - dimension: 领域规则
+      ref: core/verify/mcp-connection.md
+    - dimension: 安全边界
+      ref: core/verify/mcp-connection.md
+    - dimension: 呈现
+      ref: core/verify/mcp-connection.md
+
+implementation:
+  owners: [team-platform]
+  paths: [core/crates/platform-core/src/mcp_connection/mod.rs, core/crates/platform-core/src/mcp_connection/command.rs, core/crates/platform-core/src/mcp_connection/query.rs, core/crates/platform-core/src/mcp_connection/oauth.rs, core/crates/platform-core/src/mcp_connection/credential.rs, core/crates/platform-core/src/mcp_connection/projection.rs, core/crates/platform-core/src/mcp_connection/tool.rs, core/crates/platform-core/src/mcp_egress.rs, core/crates/platform-core/src/mcp_client.rs, core/crates/platform-core/src/mcp_oauth.rs, core/crates/platform-core/src/agent_tool.rs, core/crates/platform-core/src/agent_tool_mcp.rs, core/crates/platform-core/src/agent_tool_pep.rs, core/crates/platform-core/src/agent_tool_runtime.rs, core/crates/platform-core/src/delegation.rs, core/crates/platform-core/src/delegation_query.rs, core/crates/platform-core/src/governance.rs, core/crates/platform-core/src/governance_api.rs, core/crates/platform-core/src/tenant_delete.rs, core/crates/platform-core/src/bff.rs, core/crates/secret-store/src/lib.rs, client-kit/ts/platform/src/client.ts, client-kit/ts/platform/src/react/connectors.tsx, client-kit/ts/platform/src/react/tools.tsx, client-kit/ts/platform/src/react/agents.tsx, client-kit/ts/platform/src/i18n.ts]
+  surfaces: [web, desktop]
+  schemas: [contracts/api/action_command.schema.json, contracts/api/platform_tool_view.schema.json, contracts/api/mcp_connection_page.schema.json, contracts/api/mcp_connection_view.schema.json, contracts/api/mcp_connection_tool_view.schema.json, contracts/api/mcp_connection_policy_view.schema.json, contracts/api/mcp_connection_probe_request.schema.json, contracts/api/mcp_connection_probe_result.schema.json, contracts/api/mcp_probed_tool.schema.json, contracts/api/mcp_connection_refresh_result.schema.json, contracts/api/mcp_oauth_start_request.schema.json, contracts/api/mcp_oauth_attempt_view.schema.json, contracts/domain/mcp_connection_create.schema.json, contracts/domain/mcp_connection_update.schema.json, contracts/domain/mcp_connection_policy_update.schema.json, contracts/domain/mcp_connection_credential_input.schema.json, contracts/domain/mcp_tool_selection.schema.json, contracts/enums/mcp_connection_transport.schema.json, contracts/enums/mcp_connection_auth_mode.schema.json, contracts/enums/mcp_connection_visibility.schema.json, contracts/enums/mcp_connection_state.schema.json, contracts/enums/mcp_tool_risk.schema.json, contracts/enums/mcp_tool_call_policy.schema.json, contracts/enums/mcp_connection_health.schema.json, contracts/enums/mcp_member_registration.schema.json, contracts/enums/mcp_oauth_attempt_state.schema.json]
+  migrations: [core/migrations/20261026020000_mcp_connection.up.sql, core/migrations/20261026020000_mcp_connection.down.sql]
+
+runtime:
+  # 七个管理动作 SYNC、HUMAN-only、无审批与计量；三个工具调用子动作只经 ExtMcp PEP 建立。
+  routes: ["/api/v1/mcp-connections", "/api/v1/mcp-connections/probes", "/api/v1/mcp-connections/oauth/attempts", "/api/v1/mcp-connections/oauth/attempts/{attempt_id}", "/api/v1/mcp-connections/oauth/callback", "/api/v1/mcp-connections/{resource_id}", "/api/v1/mcp-connections/{resource_id}/refresh"]
+  actions: [mcp_connection.create, mcp_connection.update, mcp_connection.rotate_credential, mcp_connection.disable, mcp_connection.enable, mcp_connection.delete, mcp_connection.policy.update, mcp_connection.tool.invoke, mcp_connection.tool.invoke_confirmed, mcp_connection.tool.invoke_approved]
+  tools: []
+  workflow_kinds: []
+
+release:
+  # 本批未构建或部署；Core/Web 产物由合并后的发布流程统一回填。
+  artifacts: []
+  gate: blocked_until_seams_closed

@@ -3876,6 +3876,22 @@ scripts/webpack 告警保留；SBOM 成功不是漏洞门禁通过。
 - 仅前端不渲染，不构成授权边界；服务端关闭仍以 `reconcile.py` 的 ROOT_GROUP 角色参数为准。
 - `kailo-cells.test.js` 新增 Kailo 模式（嵌入与顶层）隐藏、非 Kailo 模式保留的用例。2026-10-23 CI 节点对 `c8ef6d4a8` 运行 `vitest run kailo.embed editor.onlyoffice`：2 个文件 21 项通过。左侧铃铛在 Kailo 模式下只在后台文件任务运行时出现、不含活动通知（`5642ad8f6`）。webpack 产物、部署与截图验收未执行。
 
+## 2026-10-23 管理控制台无上游支持与升级入口（DD-133(1)、DD-138(7)，07 §4.8.1，源码阶段）
+
+- 验收发现：原生管理员打开管理控制台首页（`AdminComponents.GridDashboard`）仍见上游版本推销卡片（`FakeGraph`）：
+  悬停出现「支助和维护」「在应用内升级文件服务(需要许可文件)」，点击打开上游站点。生产 `plug/access.settings/res/dist/AdminComponents.min.js`
+  只读核对含 `ent.support`、`ent.upgrade.legend` 与上游 overview 链接；左侧菜单的“软件更新”条目此前已由 `frontend/rest/settings.go` 去掉。
+- 依据：07 §4.8.1「帮助、关于」行禁止组件的升级与上游链接，DD-133(1) 白标禁止升级入口；「管理后台」行在管理面（§4.8.5）交付前
+  允许原生控制台只对组件管理员可见，因此控制台保留，只去掉上游入口。
+- 前端：首页默认卡片只剩快捷入口与最近事件；删除 `cards/FakeGraph.js`、`cards/SoftwareUpdate.js`（检查更新卡片）、
+  `AdminPlugins/updater/`（更新页与升级向导）及其导出、`res/i18n/updater` 与 manifest 中该命名空间、两张推销图；各语言
+  `admin_dashboard` 中 `ent.*`、`card.update.*`、`graph.*` 文案一并删除。已保存的旧卡片偏好引用不存在的类时由 DynamicGrid 跳过。
+- 服务端（仅前端不渲染不构成边界）：更新服务 gRPC `UpdateRequired`、`ApplyUpdate` 一律返回 403，不再访问上游更新服务器、
+  不下载或替换二进制；REST `/a/update` 经该 gRPC，同样拒绝。制品只经 Kailo 发布入口（ADR-20）构建与部署。运维 CLI `cells update` 未改。
+- 测试：`frontend/rest/settings-kailo_test.go`（菜单无更新/升级/支持条目）、`discovery/update/grpc/handler_test.go`（两方法 403）、
+  `access.settings/res/js/AdminComponents/board/kailo-admin-dashboard.test.js`（默认卡片、组件与文案均不存在）。
+  CI 运行、镜像重建、部署与原生管理员实拍待执行。
+
 ## 2026-10-23 成员目录同步（DD-133(4)，07 §4.7.4，源码阶段）
 
 依据：design-authority `2eb6714068adf280a0772e6dbdbb16084f38acf9`（含 `e83b5aee` 目录 client 声明与读取语义、

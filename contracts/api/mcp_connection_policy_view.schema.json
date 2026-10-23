@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/mcp_connection_policy_view.schema.json",
+  "title": "McpConnectionPolicyView",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "memberRegistration",
+    "egressHostSuffixes",
+    "platformAnyPublicHost",
+    "platformHostSuffixes",
+    "version",
+    "canManage"
+  ],
+  "properties": {
+    "memberRegistration": {
+      "$ref": "../enums/mcp_member_registration.schema.json"
+    },
+    "egressHostSuffixes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "platformAnyPublicHost": {
+      "type": "boolean"
+    },
+    "platformHostSuffixes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "version": {
+      "type": "integer"
+    },
+    "canManage": {
+      "type": "boolean"
+    }
+  },
+  "description": "DD-149(4)(5)：Tenant 连接器策略与部署出站上限。"
+}

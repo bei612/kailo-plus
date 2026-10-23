@@ -16,7 +16,7 @@ import {
   translate,
 } from "../i18n";
 
-type Platform = { client: BffClient; locale: PlatformLocale; authenticateNativePage?: (bindingId: string) => Promise<void>; reauthenticateTopLevel?: () => void; documentTheme?: "LIGHT" | "DARK"; currentPrincipalId?: string; copyText?: (text: string) => Promise<void> };
+type Platform = { client: BffClient; locale: PlatformLocale; authenticateNativePage?: (bindingId: string) => Promise<void>; reauthenticateTopLevel?: () => void; documentTheme?: "LIGHT" | "DARK"; currentPrincipalId?: string; copyText?: (text: string) => Promise<void>; openExternalUrl?: (url: string) => void };
 
 const PlatformContext = createContext<Platform | null>(null);
 
@@ -29,6 +29,7 @@ export function PlatformProvider({
   documentTheme,
   currentPrincipalId,
   copyText,
+  openExternalUrl,
 }: {
   client: BffClient;
   /** Device preference; absent preference defaults to Chinese. */
@@ -46,6 +47,11 @@ export function PlatformProvider({
   currentPrincipalId?: string;
   /** Native uses its original system clipboard; Web retains browser policy. */
   copyText?: (text: string) => Promise<void>;
+  /**
+   * DD-149(6): opens a third-party authorization page. Desktop hands it to the system browser;
+   * absent, the Web default opens a popup without an opener reference.
+   */
+  openExternalUrl?: (url: string) => void;
 }) {
   const deviceLocale = useDeviceLocale();
   // A replacement client is a new authenticated transport scope. Reset its
@@ -55,7 +61,7 @@ export function PlatformProvider({
   if (scope.client !== client || scope.currentPrincipalId !== currentPrincipalId)
     setScope({ client, currentPrincipalId, generation: scope.generation + 1 });
   return (
-    <PlatformContext.Provider value={{ client, locale: locale ?? deviceLocale, authenticateNativePage, reauthenticateTopLevel, documentTheme, currentPrincipalId, copyText }}>
+    <PlatformContext.Provider value={{ client, locale: locale ?? deviceLocale, authenticateNativePage, reauthenticateTopLevel, documentTheme, currentPrincipalId, copyText, openExternalUrl }}>
       <Fragment key={scope.generation}>{children}</Fragment>
     </PlatformContext.Provider>
   );
@@ -96,6 +102,15 @@ export function useCurrentPrincipalId() { return usePlatform().currentPrincipalI
 export function useClipboardWrite() {
   const { copyText } = usePlatform();
   return useCallback((text: string) => copyText ? copyText(text) : navigator.clipboard.writeText(text), [copyText]);
+}
+
+/** DD-149(6): the host's external-page opener (Web popup by default). */
+export function useOpenExternalUrl() {
+  const { openExternalUrl } = usePlatform();
+  return useCallback((url: string) => {
+    if (openExternalUrl) openExternalUrl(url);
+    else window.open(url, "_blank", "popup,noopener,noreferrer");
+  }, [openExternalUrl]);
 }
 
 export function useLocale(): PlatformLocale {

@@ -1,0 +1,10 @@
+# kailo-core-data BuildKit 配置，由 setup.sh builder 在创建 builder 时写入容器。
+# docker.io 先走本机拉取缓存；缓存不可达或未命中失败时 BuildKit 依序回退到
+# registry-1.docker.io 原站（与未配置 mirror 时相同的直连路径）。
+# 未设置 GC 项：沿用 BuildKit 按状态盘容量计算的默认策略。
+
+[registry."docker.io"]
+  mirrors = ["127.0.0.1:55001"]
+
+[registry."127.0.0.1:55001"]
+  http = true

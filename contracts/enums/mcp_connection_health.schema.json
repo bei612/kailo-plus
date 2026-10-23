@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/mcp_connection_health.schema.json",
+  "title": "McpConnectionHealth",
+  "description": "DD-149(10)：最近一次探测观测；不是授权或状态权威。",
+  "type": "string",
+  "enum": [
+    "UNCHECKED",
+    "OK",
+    "UNREACHABLE",
+    "AUTH_FAILED",
+    "REAUTHORIZATION_REQUIRED",
+    "PROTOCOL_ERROR",
+    "EGRESS_DENIED"
+  ]
+}

@@ -296,7 +296,8 @@ def compute_plan(root, node, decl, source):
                               env_set={k: model.env_value_digest(v) for k, v in env_set.items()},
                               env_unset=env_unset, required_env=model.required_env(text), migrations=migrations,
                               idp=dict(files=idp_files, env=idp_env, journal=str(decl["node"]["journal"])),
-                              config_drift=dict(commit=source, overlays=[str(x) for x in decl.get("overlays") or []])))
+                              config_drift=dict(commit=source, overlays=[str(x) for x in decl.get("overlays") or []]),
+                              retention=dict(keep=[source])))
 
     plan = dict(source=source, head=model.head(), compose_project=model.project_name(text), units={},
                 sources=facts["sources"])
@@ -385,7 +386,29 @@ def compute_plan(root, node, decl, source):
     plan["idp"] = facts.get("idp")
     plan["receipt"] = facts.get("receipt")
     plan["active_ci_deploys"] = facts.get("active_ci_deploys", [])
+    plan["retention"] = facts.get("retention")
     return plan
+
+
+def gib(value):
+    return f"{(value or 0) / 2**30:.1f} GiB"
+
+
+def retention_lines(r):
+    """发布树保留（ADR-20 §11）：按 plan 时的现场推算；deploy 成功后以届时现场（新 pin 已运行）重算后执行。"""
+    if not r:
+        return ["发布树保留：节点未回报（入口早于 ADR-20 §11）"]
+    if r.get("error"):
+        return [f"发布树保留：判定失败（{r['error']}）；deploy 结束时重算，仍失败则不删除"]
+    lines = [f"deploy 成功后执行发布树保留（以届时现场重算）：按现场将删除发布树 {len(r['trees'])} 棵、"
+             f"~/scratch 超时条目 {len(r['scratch'])} 项，约释放 {gib(r['estimated_bytes'])}；保留 {len(r['kept'])} 棵"]
+    for t in r["trees"]:
+        lines.append(f"  删除 {t['commit'][:12]}：独占 {gib(t['bytes'])}，{t['idle_hours']} 小时未活动")
+    for commit, reasons in r["kept"].items():
+        lines.append(f"  保留 {commit[:12]}：{'；'.join(reasons)}")
+    for s in r["scratch"]:
+        lines.append(f"  删除暂存 {s['path']}：{gib(s['bytes'])}")
+    return lines
 
 
 def idp_line(idp):
@@ -483,6 +506,8 @@ def render_plan(plan, note=None):
             + (f"尚未生效，经 {dl['restart']} 的启动入口生效" if dl["pending"] else "已生效"))
     if p["active_ci_deploys"]:
         say(f"  ！CI 队列有进行中的 deploy：{p['active_ci_deploys']}；节点 deploy 会拒绝并发")
+    for line in retention_lines(p.get("retention")):
+        say("  " + line)
     say("\n[6] verify（CI 节点）：受管服务镜像 digest/镜像 ID/健康、buzz-web build-info、无关容器、IdP 声明只读回读；"
         "长期运行服务配置哈希与 configs 内容一致且健康（drift: report 的服务只报告）、运维域运行体与投递；业务验收不在此判定")
 
@@ -516,7 +541,8 @@ def rehearse(plan):
     steps = ([f"up {s}（运维域运行体）" for s in operated] + [f"up --force-recreate {s}" for s in c["before"]]
              + [f"IdP（{idp_action}--declare-native-user-pictures）"] + plan["deploy"]["order"]
              + [f"up --force-recreate {s}" for s in c["after"]])
-    say(f"  deploy: ssh 节点 … deploy：权限规范 → 声明式 .env → 运维域投递 → 迁移 → 配置一次性服务 → {' → '.join(steps)}")
+    say(f"  deploy: ssh 节点 … deploy：权限规范 → 声明式 .env → 运维域投递 → 迁移 → 配置一次性服务 → {' → '.join(steps)}"
+        " → 回读 → 发布树保留（归档回执后删除未被引用的旧发布树与超时暂存）")
     say("  verify: ssh 节点 … verify（含 bootstrap.sh --verify-client-redirects / --verify-native-client-profiles 只读回读）")
 
 
@@ -778,6 +804,12 @@ class Release:
                 f"命令 {', '.join(c['command'] for c in idp.get('commands', []))}")
         if value.get("unrelated_recreated"):
             say(f"  同名重建（非本次目标，如 start-core.sh 按投递重建）：{value['unrelated_recreated']}")
+        kept = value.get("retention") or {}
+        if kept.get("error"):
+            say(f"  发布树保留未执行：{kept['error']}")
+        elif kept:
+            say(f"  发布树保留：删除 {len(kept.get('deleted', []))} 棵、暂存 {len(kept.get('scratch', []))} 项，"
+                f"约释放 {gib(kept.get('estimated_bytes'))}")
 
     def verify(self, plan):
         value = self.node_stage("verify")

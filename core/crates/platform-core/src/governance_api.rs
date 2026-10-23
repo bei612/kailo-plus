@@ -94,13 +94,33 @@ pub async fn submit_action(
     {
         return Refusal::Precondition(ReasonCode::InvalidParameters).respond(None);
     }
+    // DD-149: connector inputs belong only to their actions; the transient credential
+    // and OAuth attempt never reach another consumer. Tool-call children are opened
+    // only by the ExtMcp PEP, never submitted through the BFF.
+    if crate::mcp_connection::is_tool_action(&cmd.action_key)
+        || (cmd.mcp_connection_create.is_some() && cmd.action_key != crate::mcp_connection::CREATE)
+        || (cmd.mcp_connection_update.is_some() && cmd.action_key != crate::mcp_connection::UPDATE)
+        || (cmd.mcp_connection_policy_update.is_some()
+            && cmd.action_key != crate::mcp_connection::POLICY)
+        || (cmd.mcp_connection_credential.is_some()
+            && !matches!(
+                cmd.action_key.as_str(),
+                crate::mcp_connection::CREATE | crate::mcp_connection::ROTATE
+            ))
+        || (cmd.mcp_oauth_attempt_id.is_some() && cmd.action_key != crate::mcp_connection::ROTATE)
+    {
+        return Refusal::Precondition(ReasonCode::InvalidParameters).respond(None);
+    }
     // DD-125(3): Huddle inputs belong only to the huddle.* actions.
     if (cmd.huddle_start.is_some() || cmd.huddle_agent.is_some() || cmd.huddle_id.is_some())
         && !crate::huddle::is_action(&cmd.action_key)
     {
         return Refusal::Precondition(ReasonCode::InvalidParameters).respond(None);
     }
-    let result = if crate::protocol_session::command::is_action(&cmd.action_key) {
+    let result = if crate::mcp_connection::is_action(&cmd.action_key) {
+        // DD-149（05 §2.15）：连接器管理动作有自己的探测、凭据与投影收尾路径
+        crate::mcp_connection::command::submit(&state, &ctx, &cmd).await
+    } else if crate::protocol_session::command::is_action(&cmd.action_key) {
         crate::protocol_session::command::submit(&state, &ctx, &headers, &cmd).await
     } else if cmd.component_action.is_some() {
         crate::application_action::submit(&state, &ctx, &cmd).await

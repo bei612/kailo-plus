@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/mcp_connection_probe_result.schema.json",
+  "title": "McpConnectionProbeResult",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "endpointHost",
+    "protocolVersion",
+    "toolsDigest",
+    "tools"
+  ],
+  "properties": {
+    "endpointHost": {
+      "type": "string"
+    },
+    "serverName": {
+      "type": "string"
+    },
+    "serverVersion": {
+      "type": "string"
+    },
+    "protocolVersion": {
+      "type": "string"
+    },
+    "instructions": {
+      "type": "string",
+      "description": "上游 instructions（不可信内容，截断至 2000 字符）"
+    },
+    "toolsDigest": {
+      "type": "string"
+    },
+    "tools": {
+      "type": "array",
+      "items": {
+        "$ref": "mcp_probed_tool.schema.json"
+      }
+    }
+  },
+  "description": "DD-149(7)：探测结果。toolsDigest 是规范化清单摘要，登记与更新以它比对 fresh 探测。"
+}

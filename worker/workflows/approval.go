@@ -309,7 +309,7 @@ func (a *approval) withdraw(workflow.Context) (generated.ApprovalControlOutcome,
 
 // validateConsume：只在 APPROVED 时接受；已 CONSUMED 是同一 Update ID 的重发。
 func (a *approval) validateConsume(workflow.Context) error {
-	if a.status == generated.ApprovalStatusAPPROVED || a.status == generated.Consumed {
+	if a.status == generated.ApprovalStatusAPPROVED || a.status == generated.ApprovalStatusCONSUMED {
 		return nil
 	}
 	return refuse(generated.ApprovalNotOpen, "批准不在可消费状态")
@@ -376,7 +376,7 @@ func (a *approval) consume(ctx workflow.Context) (generated.ApprovalControlOutco
 	}
 	if a.status == generated.ApprovalStatusAPPROVED {
 		a.consumedAt = workflow.Now(ctx)
-		a.set(generated.Consumed, nil)
+		a.set(generated.ApprovalStatusCONSUMED, nil)
 	}
 	return generated.ApprovalControlOutcome{Status: a.status}, nil
 }
@@ -398,7 +398,7 @@ func (a *approval) invalidate(_ workflow.Context, u generated.ApprovalInvalidate
 func terminal(s generated.ApprovalStatus) bool {
 	switch s {
 	case generated.ApprovalStatusDENIED, generated.ApprovalStatusEXPIRED, generated.ApprovalStatusCANCELLED,
-		generated.Consumed, generated.Invalidated:
+		generated.ApprovalStatusCONSUMED, generated.Invalidated:
 		return true
 	}
 	return false

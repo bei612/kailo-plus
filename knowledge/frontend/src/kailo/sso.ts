@@ -24,8 +24,13 @@ export const SILENT_ERROR_CODES: ReadonlySet<string> = new Set([
 export const SILENT_GUARD_KEY = 'kailo_silent_sso_at'
 export const SILENT_GUARD_MS = 30_000
 
-/** Login view states rendered by the Kailo sign-in page. */
-export type KailoSignInState = 'loading' | 'reauth' | 'error'
+/**
+ * Login view states rendered by the Kailo sign-in page. `host`: Kailo received
+ * `auth-required` and alone prompts for the new sign-in (V-SCN-226), so the
+ * frame shows no notice of its own; `reauth` is the page's own explanation for
+ * when Kailo could not be asked (top level, or no Kailo origin configured).
+ */
+export type KailoSignInState = 'loading' | 'host' | 'reauth' | 'error'
 
 const AUTH_ENTRY_PATHS = ['/login', '/register']
 
@@ -93,6 +98,15 @@ export function decideOIDCErrorAction(ctx: OIDCErrorContext, apiBase = ''): OIDC
 /** Asks Kailo to sign the user in again at top level (runtime `auth-required`). */
 export function requestHostReauth(runtime: KailoEmbedRuntime | null): boolean {
   return requestTopLevelSignIn(runtime)
+}
+
+/**
+ * Asks Kailo for the top-level sign-in and returns the view the frame shows:
+ * nothing of its own once Kailo has the request (V-SCN-226), otherwise the
+ * page's own re-login explanation.
+ */
+export function handOverReauth(runtime: KailoEmbedRuntime | null): KailoSignInState {
+  return requestHostReauth(runtime) ? 'host' : 'reauth'
 }
 
 export function signInRoute(state: KailoSignInState, returnTo?: string): string {

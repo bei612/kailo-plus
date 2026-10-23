@@ -365,7 +365,7 @@ pub(crate) async fn identity_avatar(
         Err(_) => return unavailable(),
     };
     let Some(pubkey) = pubkey else {
-        return avatar_not_found();
+        return avatar_resolved(None);
     };
     let (client, host) = match client(&state, &ctx).await {
         Ok(v) => v,
@@ -375,16 +375,35 @@ pub(crate) async fn identity_avatar(
         Ok(v) => v,
         Err(r) => return r,
     };
-    match avatar_location(event.as_ref(), &host) {
+    avatar_resolved(avatar_location(event.as_ref(), &host))
+}
+
+/// Browser cache of a resolved answer (07 §4.7.3: components use the route as
+/// a plain image address, so a member list asks once per person per render).
+/// Each resolution costs one Relay query against the requester's shared
+/// per-minute budget (`BFF_RELAY_API_BUDGET`); without a cache a page that
+/// lists people spends that budget on avatars and the requester's own
+/// browsing is refused with 429. Only the requester's browser keeps it
+/// (`private`, never a shared cache or a local copy of the image), and it is
+/// keyed on the requester's cookies, so a new session or logout asks again.
+/// Answers without a resolved session stay `no-store`.
+pub(crate) const RESOLVED_AVATAR_CACHE: &str = "private, max-age=300";
+
+/// The answer for a requester resolved inside its Tenant: the redirect to this
+/// community's media, or the same 404 for a person without a Kailo avatar.
+pub(crate) fn avatar_resolved(location: Option<String>) -> Response {
+    let cache = [
+        (axum::http::header::CACHE_CONTROL, RESOLVED_AVATAR_CACHE),
+        (axum::http::header::VARY, "Cookie"),
+    ];
+    match location {
         Some(path) => (
             StatusCode::FOUND,
-            [
-                (axum::http::header::LOCATION, path),
-                (axum::http::header::CACHE_CONTROL, "no-store".to_owned()),
-            ],
+            cache,
+            [(axum::http::header::LOCATION, path)],
         )
             .into_response(),
-        None => avatar_not_found(),
+        None => (StatusCode::NOT_FOUND, cache).into_response(),
     }
 }
 

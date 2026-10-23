@@ -49,6 +49,11 @@ volumes:
   openmeter-clickhouse-logs:
   openmeter-dedupe-data:
 
+# 长期运行服务一律 restart: unless-stopped（2026-10-23 验收：openmeter-kafka 被 OOM 杀后因 restart 缺省 no
+# 不再恢复，此后 OpenMeter 写入全部失败并卡住 binding）。例外：一次性服务显式 restart: "no"；core-bff 每次启动
+# 都要 start-core.sh 现取的一次性投递（DD-70），Docker 自动重启只会重用已消费的投递，仍由启动入口负责；
+# openbao 无 auto-unseal，重启即封存，且 release.yaml 对它 drift: report，由运维窗口处理。
+# 改动经发布入口的配置漂移收敛（ADR-20 §9）重建相应服务。
 services:
   core-db:
     # 按 digest 引用，不使用可变 tag（ADR-06）。tag 16-alpine 只作人类可读别名。
@@ -56,6 +61,7 @@ services:
     # 只在 core-data：只有 Core 自身可达；Worker 不直写 Core 数据库（01 §4），
     # 迁移从宿主经下方回环端口进行。
     networks: [core-data]
+    restart: unless-stopped
     environment:
       POSTGRES_DB: ${CORE_DB_NAME:?必须显式提供，禁止硬编码}
       POSTGRES_USER: ${CORE_DB_USER:?必须显式提供，禁止硬编码}
@@ -78,6 +84,7 @@ services:
     # 应用侧只依赖 OTLP（ADR-05）。Stage 0/1 只跑 Collector 并导出到
     # 控制台与本地文件；Prometheus/Loki/Tempo 在 Stage 2 出现跨服务链路时接入。
     networks: [app, mgmt]
+    restart: unless-stopped
     command: ["--config=/etc/otelcol/config.yaml"]
     configs:
       - source: otel_config
@@ -87,6 +94,7 @@ services:
   temporal-db:
     image: postgres@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea
     networks: [temporal-data]
+    restart: unless-stopped
     environment:
       POSTGRES_DB: ${TEMPORAL_DB_NAME:?必须显式提供，禁止硬编码}
       POSTGRES_USER: ${TEMPORAL_DB_USER:?必须显式提供，禁止硬编码}
@@ -134,6 +142,7 @@ services:
     # component 网络：Core 与 Worker 经 app<->component 的显式连接到达它；
     # 它不接入 edge，Browser 永远无法直达（01 §8）。
     networks: [component, app, temporal-data]
+    restart: unless-stopped
     depends_on:
       temporal-schema: { condition: service_completed_successfully }
       keycloak: { condition: service_healthy }
@@ -180,6 +189,7 @@ services:
   registry:
     image: registry@sha256:325b4b29b041e82803abeb703e201655e4e23ab83264ec1a7c9ddb0a5b14a6e0
     networks: [mgmt]
+    restart: unless-stopped
     volumes:
       - ${KAILO_RUNTIME_DIR:-.}/data/registry:/var/lib/registry
     ports:
@@ -189,6 +199,7 @@ services:
   buzz-db:
     image: postgres@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea
     networks: [buzz-data]
+    restart: unless-stopped
     environment:
       POSTGRES_DB: ${BUZZ_DB_NAME:?必须显式提供，禁止硬编码}
       POSTGRES_USER: ${BUZZ_DB_USER:?必须显式提供，禁止硬编码}
@@ -207,6 +218,7 @@ services:
   buzz-replay:
     image: redis@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
     networks: [buzz-data]
+    restart: unless-stopped
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -218,6 +230,7 @@ services:
   buzz-objects:
     image: quay.io/minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
     networks: [buzz-data]
+    restart: unless-stopped
     env_file:
       - ${KAILO_RUNTIME_DIR:-.}/secrets/buzz-objects.env
     command: ["server", "/data"]
@@ -275,6 +288,7 @@ services:
       app:
         aliases: ["${BUZZ_RELAY_HOST:?必须显式提供，禁止硬编码}"]
       buzz-data: {}
+    restart: unless-stopped
     depends_on:
       buzz-schema: { condition: service_completed_successfully }
       buzz-objects-init: { condition: service_completed_successfully }
@@ -316,6 +330,7 @@ services:
   openmeter-postgres:
     image: postgres@sha256:14f02666642586a64d6fae8ef42d479fd76456a77c73ae8a626b8fe323b76d22
     networks: [openmeter-data]
+    restart: unless-stopped
     cpus: ${OPENMETER_POSTGRES_CPUS:?必须显式提供本机运行预算}
     mem_limit: ${OPENMETER_POSTGRES_MEMORY:?必须显式提供本机运行预算}
     memswap_limit: ${OPENMETER_POSTGRES_MEMORY:?必须显式提供本机运行预算}
@@ -358,16 +373,31 @@ services:
     volumes:
       - openmeter-kafka-data:/var/lib/kafka/data
       - openmeter-kafka-secrets:/etc/kafka/secrets
+    # 2026-10-23 05:51 CI 节点 OOM（内核 oom-kill 记录，memcg 上限 4194304kB）：被杀时容器内 137 个 java、
+    # 135 个 sh，java 合计 anon 3801 MiB，其中 broker 只有 1054 MiB（-Xmx1G），其余全是健康检查起的
+    # kafka-topics 客户端 JVM。空闲时一次检查实测 2.87s，旧 timeout 3s；宿主忙时超时，Docker 放弃该探针却
+    # 不杀 exec 进程，每 5s 再起一个，客户端 JVM（原生缺省 -Xmx256M）越积越多直到触顶。broker 自身实测：
+    # GC 后存活 heap 约 205 MiB / 1024 MiB，Metaspace 约 50 MiB，常驻 615 MiB；重启后 memory.peak 1.75 GiB
+    # （含健康检查）。所以上限不缺，缺的是探针有界与自动恢复：
+    # - init：tini 作 PID 1 回收孤儿进程（broker 作 PID 1 时现场已积 14 个 defunct java）。
+    # - 健康检查用 timeout 在 Docker 超时之前 KILL 客户端 JVM，并显式给客户端 32–128 MiB heap，
+    #   任一时刻至多一个探针 JVM；间隔放宽到 15s，避免与慢探针叠加。
+    # - restart: unless-stopped：被杀后由 Docker 拉起，原卷不变（旧值 no 使 05:51 之后全部 OpenMeter 写入失败）。
+    # 预算由 tools/release/release.yaml env.set 声明 OPENMETER_KAFKA_MEMORY=4g：heap 1 GiB + 堆外约 0.6 GiB
+    # + 一个探针 JVM ≤ 约 0.3 GiB，合计不到上限的一半。
+    init: true
+    restart: unless-stopped
     healthcheck:
-      # 健康 CLI 复用原生客户端 heap，不能继承 broker 的整份 JVM heap。
-      test: [CMD-SHELL, "env -u KAFKA_HEAP_OPTS kafka-topics --bootstrap-server openmeter-kafka:9092 --list >/dev/null"]
-      interval: 5s
-      timeout: 3s
-      retries: 30
+      # 健康 CLI 不继承 broker 的整份 JVM heap；timeout 先于 Docker 的探针超时杀掉客户端 JVM。
+      test: [CMD-SHELL, "KAFKA_HEAP_OPTS='-Xms32m -Xmx128m' timeout -s KILL 20 kafka-topics --bootstrap-server openmeter-kafka:9092 --list >/dev/null"]
+      interval: 15s
+      timeout: 25s
+      retries: 20
 
   openmeter-clickhouse:
     image: clickhouse/clickhouse-server@sha256:74da41cd61db84f652c6364fd30d59e19b7276d34f7c82515f5f0e70d6f325da
     networks: [openmeter-data]
+    restart: unless-stopped
     cpus: ${OPENMETER_CLICKHOUSE_CPUS:?必须显式提供本机运行预算}
     mem_limit: ${OPENMETER_CLICKHOUSE_MEMORY:?必须显式提供本机运行预算}
     memswap_limit: ${OPENMETER_CLICKHOUSE_MEMORY:?必须显式提供本机运行预算}
@@ -398,6 +428,7 @@ services:
       app:
         aliases: ["${OPENMETER_HOST:?必须显式提供，禁止硬编码}"]
       openmeter-data: {}
+    restart: unless-stopped
     cpus: ${OPENMETER_API_CPUS:?必须显式提供本机运行预算}
     mem_limit: ${OPENMETER_API_MEMORY:?必须显式提供本机运行预算}
     memswap_limit: ${OPENMETER_API_MEMORY:?必须显式提供本机运行预算}
@@ -454,6 +485,7 @@ services:
   openmeter-dedupe:
     image: redis@sha256:c6e4a82ce60b829a72a21cc4ad4c1c274fa6962eb0d6ac698e8157cbc3fe16a4
     networks: [openmeter-data]
+    restart: unless-stopped
     cpus: ${OPENMETER_REDIS_CPUS:?必须显式提供本机运行预算}
     mem_limit: ${OPENMETER_REDIS_MEMORY:?必须显式提供本机运行预算}
     memswap_limit: ${OPENMETER_REDIS_MEMORY:?必须显式提供本机运行预算}
@@ -483,6 +515,7 @@ services:
   openmeter-sink-worker:
     image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/metering@sha256:ed8f821f2a1ee510751a68fcb41d9a09cbeff66c693fdd7ad9fffea1b1ec6907
     networks: [openmeter-data]
+    restart: unless-stopped
     cpus: ${OPENMETER_SINK_CPUS:?必须显式提供本机运行预算}
     mem_limit: ${OPENMETER_SINK_MEMORY:?必须显式提供本机运行预算}
     memswap_limit: ${OPENMETER_SINK_MEMORY:?必须显式提供本机运行预算}
@@ -530,7 +563,7 @@ services:
   # 它只接受 AgentGateway 投影的内网身份 header，缺任一条即拒绝（.design/09）。
   # 只在 app 网络：Browser 永远到不了它，必须经 edge 上的网关。
   core-bff:
-    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/core@sha256:32153d328acb2859b5e330be70b656a813a275030170b21c3c4a9ba35a4f5b52
+    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/core@sha256:ae9d0878274d42f1095aca4ac4394d9f87e1ff78e469708f8c835d5283ddc0c7
     build:
       context: ../..
       dockerfile: core/Dockerfile
@@ -574,6 +607,12 @@ services:
       BFF_LINK_PREVIEW_BUDGET: ${BFF_LINK_PREVIEW_BUDGET:?必须显式提供，禁止硬编码}
       BFF_LINK_PREVIEW_BUDGET_WINDOW_SECONDS: ${BFF_LINK_PREVIEW_BUDGET_WINDOW_SECONDS:?必须显式提供，禁止硬编码}
       BFF_LINK_PREVIEW_SNAPSHOT_TTL_SECONDS: ${BFF_LINK_PREVIEW_SNAPSHOT_TTL_SECONDS:?必须显式提供，禁止硬编码}
+      # DD-149(5)：用户自助连接器的出站上限（平台管理员域）。`*` 为任意公网主机，否则为逗号分隔的
+      # 主机后缀，Tenant 白名单只能更窄。DEV_CIDRS 只用于开发与验收部署（放行 http 与所列私网），
+      # 生产必须为空；DENY_CIDRS 在内置拒绝段之外追加部署内部网段。
+      KAILO_EXTERNAL_MCP_EGRESS_HOSTS: ${KAILO_EXTERNAL_MCP_EGRESS_HOSTS:-*}
+      KAILO_EXTERNAL_MCP_DEV_CIDRS: ${KAILO_EXTERNAL_MCP_DEV_CIDRS:-}
+      KAILO_EXTERNAL_MCP_DENY_CIDRS: ${KAILO_EXTERNAL_MCP_DENY_CIDRS:-}
       # DD-125(5)：部署登记的 GIF 图片来源；与 Web CSP img-src 追加项同一份。空即不提供 GIF
       # 选择器（Relay 另需在 secrets/buzz-relay.env 配 BUZZ_KLIPY_API_KEY 并由 NIP-11 广告 gif）。
       BFF_GIF_IMAGE_ORIGINS: ${GIF_IMAGE_ORIGINS:-}
@@ -769,13 +808,14 @@ services:
   # API（状态投影与 Buzz roster 投影）——Buzz 的签名留在 Core，CONTROL 私钥在
   # 那里（DD-72）。
   worker:
-    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/worker@sha256:46eb680ae60266a118bcec48ddb5e7bfc68c578733b65a2ef7654294a84113b7
+    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/worker@sha256:6cc1df666c8e65f82336ff818d4c46f0799519eacdbb6df31dffefe895481f27
     build:
       context: ../..
       dockerfile: worker/Dockerfile
     # app 到 Core 与 Temporal，component 到 SpiceDB 与 Keycloak。
     # 不接 edge：它不对外提供任何入口。
     networks: [app, component]
+    restart: unless-stopped
     depends_on:
       temporal: { condition: service_healthy }
       spicedb: { condition: service_healthy }
@@ -820,8 +860,9 @@ services:
   buzz-web:
     # digest 与 web-client/fork/upstream.yaml 的 artifact_digest
     # 必须一致，由 check.sh 校验。
-    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/web-client@sha256:925d2d3867678bafaf677945eb944d4f67ab36d69ad39bf700adcf12fe1bf0b9
+    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/web-client@sha256:949905cbf14ec49dd42df76873b3ceb11b83f994235dd79c56c11a30d6de2d66
     networks: [app]
+    restart: unless-stopped
     environment:
       PLATFORM_DISPLAY_NAME: ${PLATFORM_DISPLAY_NAME:?必须显式提供，禁止硬编码}
       WEB_EDITOR_ORIGINS: ${WEB_EDITOR_ORIGINS:-}
@@ -855,6 +896,7 @@ services:
       app:
         aliases: ["${PUBLIC_HOST:?必须显式提供，禁止硬编码}"]
       agentgateway-data: {}
+    restart: unless-stopped
     depends_on:
       keycloak: { condition: service_healthy }
       # 配了日志库时网关启动即迁移并连接，库不可用则拒绝启动
@@ -912,6 +954,7 @@ services:
     networks:
       automation-egress:
         ipv4_address: ${AUTOMATION_EGRESS_GATEWAY_IP:?必须显式提供出站网关地址}
+    restart: unless-stopped
     environment:
       OIDC_ISSUER: ${OIDC_ISSUER:?必须显式提供，禁止硬编码}
       OIDC_JWKS_URI: ${OIDC_ISSUER:?必须显式提供，禁止硬编码}/protocol/openid-connect/certs
@@ -951,7 +994,9 @@ services:
     command: ["streamableHttp"]
     healthcheck:
       # 无会话的 GET /mcp 由原版传输以 400 拒绝：能这样应答即说明监听就绪。
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/mcp').then(r=>process.exit(r.status===400?0:1),()=>process.exit(1))"]
+      # 探针自带 4s 中止：05:50 本服务在 256 MiB 上限内被 OOM 杀掉时，容器内有 119 个 node 进程（服务本身 1 个，其余是未退出的探针）
+      # （Docker 探针超时不杀 exec 进程）；有界后常驻实测约 70 MiB，256 MiB 足够。
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/mcp',{signal:AbortSignal.timeout(4000)}).then(r=>process.exit(r.status===400?0:1),()=>process.exit(1))"]
       interval: 10s
       timeout: 5s
       retries: 6
@@ -960,6 +1005,7 @@ services:
   agentgateway-db:
     image: postgres@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea
     networks: [agentgateway-data]
+    restart: unless-stopped
     environment:
       POSTGRES_DB: ${AGENTGATEWAY_DB_NAME:?必须显式提供，禁止硬编码}
       POSTGRES_USER: ${AGENTGATEWAY_DB_USER:?必须显式提供，禁止硬编码}
@@ -1017,6 +1063,7 @@ services:
   openbao-audit-bound:
     image: openbao/openbao@sha256:7d26314820a535ef346f1e63911809e4d356b48068fef00a9dcb3400bb9e11b6
     network_mode: none
+    restart: unless-stopped
     depends_on:
       openbao: { condition: service_started }
     user: "100:1000"
@@ -1125,6 +1172,7 @@ services:
         aliases: ["${OIDC_HOST:?必须显式提供，禁止硬编码}"]
       component:
         aliases: ["${OIDC_HOST:?必须显式提供，禁止硬编码}"]
+    restart: unless-stopped
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USER:?必须显式提供，禁止硬编码}
       KC_HTTP_ENABLED: "true"
@@ -1161,6 +1209,7 @@ services:
   spicedb-db:
     image: postgres@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea
     networks: [spicedb-data]
+    restart: unless-stopped
     environment:
       POSTGRES_DB: ${SPICEDB_DB_NAME:?必须显式提供，禁止硬编码}
       POSTGRES_USER: ${SPICEDB_DB_USER:?必须显式提供，禁止硬编码}
@@ -1189,6 +1238,7 @@ services:
   spicedb:
     image: authzed/spicedb@sha256:aa96009a0477f8a759149823407d47ad16d1a74390bae3102b3b0b7143502764
     networks: [component, app, spicedb-data]
+    restart: unless-stopped
     depends_on:
       spicedb-migrate: { condition: service_completed_successfully }
     environment:

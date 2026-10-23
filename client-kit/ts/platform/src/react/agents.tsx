@@ -41,6 +41,7 @@ import {
   type TaskView,
   type WorkspaceView,
   type PlatformToolPage,
+  type PlatformToolView,
 } from "@client-kit/contracts";
 import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { consumePendingOpenCreateAgent, subscribeOpenCreateAgent } from "./open-create-agent-event";
@@ -58,7 +59,7 @@ import { AgentInstallationUse } from "./agent-installation-use";
 import { installationLabels, validInstallation } from "./agent-installation-view";
 import { InstallationSessions } from "./agent-activity/InstallationSessions";
 import { AgentLifecycleSection } from "./agent-activity/AgentLifecycleControls";
-import { ToolManagement, selectableTool, validPlatformToolPage } from "./tools";
+import { ConnectorGroupHeading, ToolManagement, groupTools, selectableTool, validPlatformToolPage } from "./tools";
 import { InstallationSkills, SkillsSection, validSkillVersion } from "./skills";
 import { WorkflowYamlEditor } from "./workflow-yaml-editor";
 import { WorkflowsListSkeleton } from "./workflow-list-skeleton";
@@ -2394,6 +2395,7 @@ const toolStatusLabels = {
 const toolSourceLabels = {
   [AgentInstallationToolSource.PlatformNative]: "agents.installation.tools.source.platform",
   [AgentInstallationToolSource.Application]: "agents.installation.tools.source.application",
+  [AgentInstallationToolSource.UserRegisteredExternal]: "agents.installation.tools.source.connector",
 } as const satisfies Record<AgentInstallationToolSource, PlatformMessageKey>;
 
 type InstallationTool = AgentInstallationToolPage["tools"][number];
@@ -2461,6 +2463,7 @@ function InstallationTools({ installation, locked, onRegrant }: {
                 <Cell>{t(toolSourceLabels[tool.source])}</Cell>
                 <Cell>{tool.capabilityRequirement ?? "—"}</Cell>
                 <Cell>{tool.source === AgentInstallationToolSource.PlatformNative ? t("agents.installation.tools.platformProvider")
+                  : tool.source === AgentInstallationToolSource.UserRegisteredExternal ? t("agents.installation.tools.connectorProvider")
                   : tool.applicationBindingId ? <span className="break-all font-mono text-xs">{tool.applicationBindingId}</span>
                   : t("agents.installation.tools.noProvider")}</Cell>
                 <Cell><Badge tone={tool.bindingStatus === AgentToolBindingStatus.Active ? "positive" : "neutral"}>{t(toolStatusLabels[tool.bindingStatus])}</Badge>
@@ -3056,11 +3059,22 @@ function VersionAction({ edit, avatarHost, onReset, onLocked, onRecorded }: {
               {tools.status === "pending" ? <p role="status">{t("platform.loading")}</p>
                 : !toolPage ? <p role="status">{t("platform.loadFailed")}</p>
                 : <>
-                  {toolPage.tools.length === 0 ? <p>{t("agents.tools.none")}</p> : toolPage.tools.map((tool) =>
-                    <label className="flex gap-2" key={tool.resourceId}><input type="checkbox" disabled={!selectableTool(tool)}
-                      checked={toolIds.includes(tool.resourceId)} onChange={(event) => setToolIds((values) => event.target.checked
-                        ? [...new Set([...values, tool.resourceId])] : values.filter((id) => id !== tool.resourceId))} />
-                      <span className="break-all">{tool.name} · {tool.resourceId}</span></label>)}
+                  {toolPage.tools.length === 0 ? <p>{t("agents.tools.none")}</p> : (() => {
+                    // DD-149 (1)③: connector tools are grouped under their connector and marked external.
+                    const toolOption = (tool: PlatformToolView) =>
+                      <label className="flex gap-2" key={tool.resourceId}><input type="checkbox" disabled={!selectableTool(tool)}
+                        checked={toolIds.includes(tool.resourceId)} onChange={(event) => setToolIds((values) => event.target.checked
+                          ? [...new Set([...values, tool.resourceId])] : values.filter((id) => id !== tool.resourceId))} />
+                        <span className="break-all">{tool.connector ? `${tool.connector.title ?? tool.connector.upstreamName} · ${tool.name}` : tool.name} · {tool.resourceId}</span></label>;
+                    const grouped = groupTools(toolPage.tools);
+                    return <>
+                      {grouped.native.map(toolOption)}
+                      {grouped.connectors.map((group) => <div key={group.connectionId} className="flex flex-col gap-1" data-testid="version-tools-connector">
+                        <ConnectorGroupHeading group={group} />
+                        {group.tools.map(toolOption)}
+                      </div>)}
+                    </>;
+                  })()}
                   <div className="flex flex-wrap gap-2">
                     {toolIndex > 0 ? <Button onClick={() => setToolIndex(toolIndex - 1)}>{t("roles.previous")}</Button> : null}
                     {toolPage.nextOffset != null ? <Button onClick={() => {

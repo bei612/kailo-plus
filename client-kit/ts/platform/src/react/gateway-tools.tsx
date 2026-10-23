@@ -16,7 +16,7 @@ import { canonicalJson } from "../gateway-drafts";
 import { TransportError } from "../transport";
 import { useBffClient, useT } from "./context";
 import { GatewayActionPanel, useGatewayAction } from "./gateway-action";
-import { GatewayLoad, GatewaySection, useDuration, useNumber } from "./gateway-shared";
+import { GatewayLoad, GatewaySection, toolSourceLabel, useDuration, useNumber } from "./gateway-shared";
 import { Badge, Button, Cell, Notice, Table } from "./ui";
 import { useLoad } from "./use-load";
 
@@ -136,13 +136,14 @@ export function ToolsSection({ from, to }: { from: string; to: string }) {
           t("gateway.tools.contract"), t("gateway.stats.requests"), t("gateway.tools.failedDenied"), t("gateway.tools.p95"), t("platform.action")]}>
           {page.tools.map((tool) => <tr key={tool.resourceId} data-testid="gateway-tool-row">
             <Cell title={tool.resourceId}>{tool.name}</Cell>
-            <Cell>{t(tool.source === AgentInstallationToolSource.PlatformNative ? "gateway.tools.native" : "gateway.tools.application")}</Cell>
+            <Cell>{Object.hasOwn(toolSourceLabel, tool.source) ? t(toolSourceLabel[tool.source]) : tool.source}</Cell>
             <Cell><span className="flex flex-wrap gap-1">
               <Badge tone="neutral">{tool.resourceState}</Badge>
               {tool.bindingState ? <Badge tone={tool.bindingState === ApplicationBindingState.Active ? "positive" : "neutral"}>{tool.bindingState}</Badge> : null}
             </span></Cell>
-            <Cell title={tool.applicationBindingId}>{tool.componentTypeKey
-              ? `${tool.componentTypeKey}${tool.releaseVersion ? ` · ${tool.releaseVersion}` : ""}` : "—"}</Cell>
+            <Cell title={tool.applicationBindingId ?? tool.mcpConnectionId}>{tool.source === AgentInstallationToolSource.UserRegisteredExternal
+              ? tool.mcpConnectionName ?? tool.mcpConnectionId ?? "—"
+              : tool.componentTypeKey ? `${tool.componentTypeKey}${tool.releaseVersion ? ` · ${tool.releaseVersion}` : ""}` : "—"}</Cell>
             <Cell mono>{tool.capabilityContractKey ?? tool.actionKey}</Cell>
             <Cell mono>{number(tool.requests)}</Cell>
             <Cell mono>{`${number(tool.failed)} / ${number(tool.denied)}`}</Cell>

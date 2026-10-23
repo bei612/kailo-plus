@@ -131,6 +131,17 @@ describe('Cells bridge over the Kailo embed runtime', () => {
         expect(api.startLogin('/auth/kailo/login')).toBe(false)
         expect(win.location.replace).toHaveBeenCalledTimes(3)
         expect(parent.postMessage).toHaveBeenCalledWith({ source: 'kailo-embed', version: 1, type: 'auth-required' }, KAILO)
+        // V-SCN-226: Kailo alone prompts; no second notice inside the frame.
+        expect(document.getElementById('kailo-auth-problem')).toBeNull()
+    })
+
+    it('explains a stopped sign-in loop itself when Kailo cannot be asked', () => {
+        const { api, parent } = load({ embedded: false })
+        for (let i = 0; i < 3; i += 1) {
+            api.startLogin('/auth/kailo/login')
+        }
+        expect(api.startLogin('/auth/kailo/login')).toBe(false)
+        expect(parent.postMessage).not.toHaveBeenCalled()
         expect(document.getElementById('kailo-auth-problem')).not.toBeNull()
     })
 
