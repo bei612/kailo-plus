@@ -68,7 +68,7 @@
 
 ## 合并部署后的验收步骤
 
-1. 迁移 `20261026010000_mcp_connection` 随 Core 发布执行；回滚条件：迁移失败即停止
+1. 迁移 `20261026020000_mcp_connection` 随 Core 发布执行；回滚条件：迁移失败即停止
    发布（down 脚本在存在任何连接器事实时拒绝执行）。
 2. Core 环境经 `deploy/local/compose.yaml` 投递：`KAILO_EXTERNAL_MCP_EGRESS_HOSTS`
    （默认 `*` 即任意公网主机，生产按平台管理员决定）、`KAILO_EXTERNAL_MCP_DENY_CIDRS`；
