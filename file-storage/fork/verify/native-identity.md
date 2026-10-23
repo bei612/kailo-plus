@@ -3815,3 +3815,56 @@ scripts/webpack 告警保留；SBOM 成功不是漏洞门禁通过。
   `backchannelLogout.sessionMaxAgeSeconds`。
 
 验证与未验收边界见本分支提交说明；镜像、部署与 qa-1/2/3 截图验收未执行。
+
+## 2026-10-23 DD-133 上线与生产验收（云盘）
+
+### 部署与登记
+
+- 备份：`/volumes/data/kailo/backups/components/file-storage/20261023-dd133-onlyoffice-pre/`
+  （`pg_dump -Fc` 48 个表数据项可列出；数据目录 141 个文件，tar 回读同数；`deploy.env` 字节一致）。
+- `deploy.env` 原子更新（备份 `deploy.env.bak-20261023T040120Z-dd133`）：`CELLS_IMAGE` 换成 main
+  `a06b5913` pin 的 `file-storage-service@sha256:b3cedac7…`（image revision `0e9c076c`），新增
+  `CELLS_ONLYOFFICE_PUBLIC_ORIGIN`、`CELLS_ONLYOFFICE_EXTENSIONS`（取值同 deploy 模板），其余行不变。
+- `component-deploy.sh file-storage a06b5913… --check` 与正式部署均 exit 0；容器 healthy，镜像回读
+  `b3cedac7`；reconcile：`editor.libreoffice disabled`、`editor.onlyoffice configured`；
+  `frame-ancestors 'self' http://192.168.0.193:58090`。
+- Release：`render.mjs --material native-page` → `cells@1.1.0-native-page`
+  `df9a903f-6b11-5001-9fbb-62a50b098bc6`（manifestDigest `c525ee09…`，`KAILO_EMBED`，
+  adapterBuildRef `b3cedac7…`）；register `02bdadc0…` REGISTERED，approve `732966ee…` APPROVED
+  （kailo-platform-approver）。平台回读的 manifestDigest 与渲染结果一致。
+- Binding：`2dfc7e41-9b32-56c6-9d88-1388b781c846` ACTIVE（create `22b704fc…`，nativeInstanceRef
+  `kailo-cells-native`，`nativePageUrl` 58092）；旧 binding `1aaebe72…` disable `37e7d94e…` → DISABLED。
+  旧 binding 为 `modelCallMode=NONE`，没有模型 reader（无 `model-delivery-1aaebe72`），retire 不适用。
+  未设 `directoryClientId`（成员目录 client 未交付）。
+
+### 验收（qa-1/2/3 各一遍）
+
+脚本与原始输出在 CI 节点 `~/kailo-acceptance/dd133/`：`scripts/acc2.mjs`、`logout2.mjs`、`reauth.mjs`、
+`cells-200-205.mjs`、`pic-probe.mjs`；输出 `out-20261023-r2/`。
+
+| 场景 | 结论 | 证据与说明 |
+|---|---|---|
+| V-SCN-198 白标 | 通过 | 嵌入与顶层标题 `Kailo 云盘`，favicon/令牌/运行时 sha256 等于仓库字节，无上游品牌命中。另见缺陷 3（Pydio 崩溃页的上游壁纸） |
+| V-SCN-199 静默 SSO / 重新登录 | 通过 | 首次进入即已登录、无密码框；IdP 会话与原生会话清除后宿主显示“登录已失效…重新登录”，框内为双语提示无表单，点击后顶层登录并回到 `/app/applications/2dfc7e41…`（`reauth/kailo-qa-*-cells.jsonl`） |
+| V-SCN-200 资料与头像 | 失败 | 组件显示名取 IdP `name`（`1 QA`），与 Kailo 显示名 `kailo-qa-1` 不一致；`/api/v1/identity/avatars/<sub>` 对同 Tenant 请求者一律 404（未登录 401，设计要求 404），组件内头像为破图（`cells-200-205/picture.jsonl`）。Cells 内无资料编辑入口（通过） |
+| V-SCN-201 主题 | 通过 | dark 启动 `data-kailo-theme=dark`，在线切换不重载（marker 保留） |
+| V-SCN-201 语言 | 失败 | 见缺陷 1、2；修复 `fix/cells-locale` `dd511513`（未部署） |
+| V-SCN-202 KAILO_EMBED 登记 | 通过 | `df9a903f` 以完整 FrontendPresentationContract 登记批准，digest 回读一致；负例沿用 `out-20261023/register-negative.jsonl` |
+| V-SCN-203 构建输入 | 通过 | 三份平台文件在 `file-storage-service` `inputs` 中，运行时字节与仓库一致 |
+| V-SCN-204 back-channel 退出 | 通过 | 原生令牌退出前 `/a/user` 200，Kailo 退出后 401；三标签页随 Kailo 回到 IdP |
+| V-SCN-205 组织映射 | 部分失败 | qa-1/2/3 均在 `/kailo-6179e160-…` 组、standard；成员目录未交付（移出未验）。成员的用户搜索 `/a/user` 列出根组账号（含 Catalog Tenant 的 `kailo-platform-admin`、服务账号），不满足“只列同 Tenant 用户” |
+
+### 缺陷与定位
+
+1. **SSO 后 Kailo 运行时缺失**：`kailoHead` 以相对路径 `plug/kailo.embed/*` 放在 `<base href="/">` 之前；
+   框内首次 SSO 落在 `/login/callback`，浏览器请求 `/login/plug/kailo.embed/*` 得到 index HTML，
+   `SyntaxError: Unexpected token '<'`，回调随后用 `history.replace` 回到 `/`，整个会话没有
+   `KailoEmbed`/`KailoCells`：`lang` 为空、无 `data-kailo-embedded`/主题属性、无法 `auth-required`、
+   返回路径不被消费、编辑器拿不到 Kailo 主题语言。
+2. **账号语言覆盖 Kailo 语言**：原生会话已存在时，桥接切到 `en-us` 后 `loadI18NMessages` 重载 registry，
+   `Controller.setUser` 又按账号偏好（首次框内登录写入 `zh-cn`）切回中文（`lang=en` 但界面中文）。
+   修复：`KailoCells.language()` + `setUser` 保持桥接语言；`kailo-embed_test.go` 与 vitest 9/9 通过。
+3. 打开 docx 时整页崩溃（ONLYOFFICE 插件 render），崩溃页显示上游壁纸；见
+   `onlyoffice-native-editing.md` 生产验收一节与 `fix/onlyoffice-cells-messages`。
+4. 单文件作为共享空间根时路径为空间 slug、无扩展名，`EditorProvider` 按路径扩展名判断，编辑器入口缺失
+   （以文件夹共享时正常）。

@@ -56,3 +56,31 @@ Go 测试在 `golang:1.26.8-alpine@sha256:8ac98ca5…` 中运行，设置 `CGO_E
 - 插件的名称与设置标签不含上游名称：中文为“文档编辑器”，英文为 “Document editor”。
 - 编辑器页把 CheckFileInfo `UserFriendlyName` 作为显示名，把 `UserExtraInfo.avatar` 作为头像。合并 main（2b054bbf）后，Cells 的 FileInfo 按 DD-133 §4.7.3 填入二者（`gateway/wopi/fileinfo-builder.go`）：显示名取 Kailo 资料的 `name`，`UserExtraInfo.avatar` 取 OIDC `picture` 地址（只接受原生 OIDC 头像地址，不传二进制）；没有资料时显示名退回 Cells 账号显示名，编辑器显示首字母头像。`TestFileInfoKailoIdentity` 覆盖这一行为。
 - vitest 8 项通过，新增 4 项：宿主值决定主题和语言、`thm` 映射、宿主消息格式、法律声明链接。
+
+## 5. 生产验收（2026-10-23，Web 侧栏云盘原生页）
+
+部署：Cells `file-storage-service@sha256:b3cedac7…`（binding `2dfc7e41…`），DocumentServer
+`document-editor@sha256:ccd6d812…`（`http://192.168.0.193:58096`，回执
+`/volumes/data/kailo/components/document-editor/receipts/deploy-20261023T0312Z-a854ab98.json`）。
+脚本与原始输出在 CI 节点 `~/kailo-acceptance/dd132-oo/`：`scripts/oo-acc.mjs`、`oo-187.mjs`、
+`listener.py`；输出 `out/r1/{qa1-light-zh,qa2-dark-en,qa3-light-zh,v187b}/`，崩溃证据
+`out/prod-crash/`。PAT 只在内存中使用，输出只有是否存在、状态码与日志命中数。
+
+**生产原样**：在 Cells 中打开 docx 时整页崩溃（“Oops, something went wrong”），控制台
+`getInstance(...).getMessages is not a function`（`PydioOnlyOffice.min.js` render）。因此 V-SCN-186
+在生产上**失败**。修复见 `fix/onlyoffice-cells-messages` `aa13105b`（`Pydio.getMessages()`，
+`editor.libreoffice` 同样问题）。其后各项在浏览器内替换两处已推送修复（插件 render、Kailo 头部根路径）
+后执行，生产字节未改动，结论记为“模拟修复下通过”，不等同于生产通过。
+
+| 场景 | 结论 | 证据 |
+|---|---|---|
+| V-SCN-186 编辑保存 | 生产失败；模拟修复下通过（版本项失败） | 服务端 action `/hosting/wopi/word/edit`，URL 不含令牌；form 只含 `access_token`、`access_token_ttl=0`、`docs_api_config={"editorConfig":{"customization":{"macros":false,"plugins":false}}}`；编辑、Ctrl+S、关闭后节点 2089 → 25612 字节、Modified 更新，再次打开 GetFile 内容含新段落（qa-1/2/3）；Cells/DocumentServer 容器日志 PAT 命中 0；Kailo 审计无新事件。`/v2/n/node/{uuid}/versions` 返回空：personal-files 数据源未出现 VersionId，设计要求的新 VersionId **未满足** |
+| V-SCN-187 只读/无权/跨节点 | 模拟修复下通过 | qa-2（共享空间只读）：action `view`、`UserCanWrite=false`、编辑器 `isEdit=false`，PutFile 403；把 action 改成 `edit` 并用同一 r PAT 提交仍为只读，PutFile 403；qa-3：`/v2/n/node` 403、文档令牌 404 未签发；节点 A 的 PAT 用于节点 B：CheckFileInfo 403、GetFile 403 |
+| V-SCN-188 出站拒绝 | 通过 | 同主机其他端口监听器先由 DocumentServer 容器网络正向连通（对照命中 1）；随后 `wopisrc` 指向其他主机（“Access forbidden”）、Cells 主机其他端口、Cells 其他路径时编辑器均拒绝加载，外链图片文档已打开；监听器业务请求命中 0。回执登记 `directIfIn.allowList=[…58092/wopi/files/]`、`action.allow=false`、ipfilter、镜像 digest |
+| V-SCN-189 三层嵌入 | Web 通过；Desktop 未验 | Kailo→Cells→DocumentServer 正常加载；编辑页 CSP `frame-ancestors 'self' http://192.168.0.193:58092 http://192.168.0.193:58090`；未登记 origin（58198）嵌入被浏览器拒绝；CheckFileInfo `PostMessageOrigin=http://192.168.0.193:58092`。Desktop 仍为 `BLOCKED: GAP-DSK-EDITOR-01` |
+| V-SCN-190 产物与呈现 | 部分通过 | 运行中：插件页签、chat、about、support 不可见，`macros/plugins=false`，`/plugins.json` 空，`/`、`/ai-proxy/`、`/sdkjs-plugins/`、`/welcome/`、`/example/` 均 404，编辑器可见文本无上游品牌，标题 `… - Kailo`，主题 `theme-kailo-light/dark` 且随 Kailo 在线切换，外壳字体 `"Inter Variable", Inter, …`，头像取 Kailo 头像路由；`/kailo-legal/` 200，AGPL 与源码地址 `tree/a854ab98…/document-editor`。未完成：`document-editor/fork/upstream.yaml` 的 `artifact_digest` 仍为 `none`（未回填 `ccd6d812`），镜像内文件清单因 CI 节点磁盘写回阻塞未能 `docker exec` 复核 |
+
+同屏对照截图：`out/r1/qa1-light-zh/oo-kailo-qa-1-light-0{1..5}-*.png`（浅色中文）、
+`out/r1/qa2-dark-en/oo-kailo-qa-2-dark-0{1..5}-*.png`（深色英文）、`*-legal.png`、`*-unregistered-host.png`。
+编辑器显示名为 CheckFileInfo `UserFriendlyName`（IdP `name`），与 Kailo 显示名不一致；头像路由 404（见
+`native-identity.md` 2026-10-23 一节）。
