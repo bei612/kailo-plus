@@ -62,6 +62,7 @@ mod identity_projection;
 mod invitation;
 mod link_preview;
 mod mcp_client;
+mod mcp_connection;
 mod mcp_egress;
 mod mcp_oauth;
 mod membership_lifecycle;

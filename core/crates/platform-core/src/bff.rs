@@ -503,6 +503,36 @@ pub fn router(state: BffState) -> Router {
             get(crate::agent_definition::list),
         )
         // DD-135(2)(3)(4)、17 §8：Skill 目录、版本、正文、一次性上传暂存与 AgentVersion 引用目录
+        // DD-149: user self-service MCP connectors (reads, probes and OAuth attempts;
+        // writes are the governed mcp_connection.* actions on /api/v1/actions).
+        .exposed_route(
+            "/api/v1/mcp-connections",
+            get(crate::mcp_connection::query::list),
+        )
+        .exposed_route(
+            "/api/v1/mcp-connections/probes",
+            axum::routing::post(crate::mcp_connection::query::probe),
+        )
+        .exposed_route(
+            "/api/v1/mcp-connections/oauth/attempts",
+            axum::routing::post(crate::mcp_connection::oauth::start),
+        )
+        .exposed_route(
+            "/api/v1/mcp-connections/oauth/attempts/{attempt_id}",
+            get(crate::mcp_connection::oauth::status),
+        )
+        .exposed_route(
+            "/api/v1/mcp-connections/oauth/callback",
+            get(crate::mcp_connection::oauth::callback),
+        )
+        .exposed_route(
+            "/api/v1/mcp-connections/{resource_id}",
+            get(crate::mcp_connection::query::detail),
+        )
+        .exposed_route(
+            "/api/v1/mcp-connections/{resource_id}/refresh",
+            axum::routing::post(crate::mcp_connection::query::refresh),
+        )
         .exposed_route("/api/v1/skill-definitions", get(crate::skill_query::list))
         .exposed_route(
             "/api/v1/skill-definitions/{resource_id}",

@@ -59,7 +59,7 @@ pub(crate) async fn configuration(
     .await?;
     let mut names = Vec::new();
     for tool in bindings {
-        let def = crate::agent_tool::tool_definition(&state.pool, &tool.name).await?;
+        let def = crate::agent_tool::bound_definition(&state.pool, &tool).await?;
         match crate::agent_tool::tool_admission(state, &mut tx, &context, &parent, &tool, &def)
             .await
         {
@@ -203,7 +203,18 @@ fn route(
         scope.tenant_id,scope.workspace_id,scope.installation_resource_id,scope.agent_principal_id,scope.agent_version_asset_id,scope.projection_generation);
     let mut rules = vec![format!("({required}) && mcp.methodName == 'tools/list'")];
     for name in names {
-        crate::agent_tool::schema_hashes(name)?;
+        // DD-149: connector names are `<slug>__<tool>` from a closed character set
+        // (DB constraint); native names keep their fixed contract check.
+        if crate::mcp_connection::tool::is_connector_name(name) {
+            if !name
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'.' | b'-'))
+            {
+                return Err(unavailable());
+            }
+        } else {
+            crate::agent_tool::schema_hashes(name)?;
+        }
         rules.push(format!(
             "({required}) && mcp.methodName == 'tools/call' && mcp.tool.name == '{name}'"
         ));

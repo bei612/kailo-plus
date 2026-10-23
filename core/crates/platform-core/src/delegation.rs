@@ -14,7 +14,7 @@ pub(crate) struct Installation {
     pub(crate) id: Uuid,
     tenant_id: Uuid,
     pub(crate) workspace_id: Uuid,
-    owner_principal_id: Uuid,
+    pub(crate) owner_principal_id: Uuid,
     pub(crate) agent_principal_id: Uuid,
     pub(crate) version: i32,
 }
@@ -554,6 +554,14 @@ pub(crate) async fn validate_scope(
         && scope.tool_resource_id.is_some()
     {
         return validate_memory_scope(g, conn, tenant, initiator, row, scope, target).await;
+    }
+    // DD-149: connector tools are delegated on the Installation like native tools.
+    if crate::mcp_connection::is_tool_action(&scope.action_key) && scope.tool_resource_id.is_some()
+    {
+        return crate::mcp_connection::tool::validate_scope(
+            g, conn, tenant, initiator, row, scope, target,
+        )
+        .await;
     }
     if scope.tool_resource_id.is_some() {
         return validate_application_scope(g, conn, tenant, initiator, row, scope, target).await;

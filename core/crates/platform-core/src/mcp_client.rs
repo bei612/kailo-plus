@@ -13,7 +13,6 @@
 //! response is `OutcomeUnknown` and must never be replayed.
 
 // The connector actions and the relay wire these helpers in; until then only tests use parts.
-#![allow(dead_code)]
 
 use std::collections::{HashSet, VecDeque};
 use std::fmt;

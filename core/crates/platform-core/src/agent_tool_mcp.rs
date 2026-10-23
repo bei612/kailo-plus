@@ -323,10 +323,19 @@ impl ServerHandler for MemoryTools {
         let names = crate::agent_tool::invocation_tools(&self.state, invocation)
             .await
             .map_err(refusal)?;
-        let tools = names
-            .iter()
-            .map(|name| schema_tool(name))
-            .collect::<Result<Vec<_>, _>>()?;
+        let mut tools = Vec::with_capacity(names.len());
+        for name in &names {
+            if crate::mcp_connection::tool::is_connector_name(name) {
+                // DD-149: the frozen, labelled schema of the confirmed generation.
+                tools.push(
+                    crate::mcp_connection::tool::schema(&self.state, invocation, name)
+                        .await
+                        .map_err(refusal)?,
+                );
+            } else {
+                tools.push(schema_tool(name)?);
+            }
+        }
         Ok(ListToolsResult::with_all_items(tools))
     }
 
@@ -341,6 +350,20 @@ impl ServerHandler for MemoryTools {
         let parts = context.extensions.get::<Parts>().ok_or_else(denied)?;
         let action = reference(&parts.headers, ACTION_HEADER)?;
         let operation = reference(&parts.headers, OPERATION_HEADER)?;
+        if crate::mcp_connection::tool::is_connector_name(request.name.as_ref()) {
+            // DD-149: relay the PEP-admitted child to the third party; the result is
+            // labelled untrusted content and its digest is what the PEP discloses.
+            let result = crate::mcp_connection::tool::relay(
+                &self.state,
+                action,
+                operation,
+                request.name.as_ref(),
+                request.arguments.unwrap_or_default(),
+            )
+            .await
+            .map_err(refusal)?;
+            return Ok(result.into());
+        }
         if request.name.as_ref() == crate::project_channel_request::TOOL {
             // DD-140: the PEP already opened the owner-approved child; the result
             // is only that child's own submission, never an execution here.

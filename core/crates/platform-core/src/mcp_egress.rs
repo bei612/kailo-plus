@@ -17,7 +17,6 @@
 //! addresses are accepted; production leaves it unset.
 
 // The connector actions and the relay wire these helpers in; until then only tests use parts.
-#![allow(dead_code)]
 
 use std::net::{IpAddr, SocketAddr};
 use std::time::Duration;

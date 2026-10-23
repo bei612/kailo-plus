@@ -864,7 +864,9 @@ pub(crate) fn tool_record(row: ToolRow) -> Record {
         "toolSource",
         row.tool_source
             .clone()
-            .filter(|s| s == "PLATFORM_NATIVE" || s == "APPLICATION")
+            .filter(|s| {
+                s == "PLATFORM_NATIVE" || s == "APPLICATION" || s == crate::mcp_connection::SOURCE
+            })
             .map(Value::from),
     );
     put(

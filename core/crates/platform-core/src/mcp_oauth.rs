@@ -13,7 +13,6 @@
 
 // The connector actions and the BFF callback wire these helpers in; until then only tests use
 // parts.
-#![allow(dead_code)]
 
 use std::fmt;
 use std::time::Duration;
