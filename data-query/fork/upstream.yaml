@@ -22,8 +22,8 @@ artifacts:
     build_context: .
     build_dockerfile: data-query/wren-ui/Dockerfile
     inputs: [data-query/wren-ui/, client-kit/adapter/protocol.mjs, client-kit/embed/kailo-theme-tokens.css, client-kit/embed/kailo-embed.js, client-kit/embed/kailo-embed.d.ts, web-client/web/public/app-icon.png]
-    source_digest: sha256:ede7e44a9f563b1f1bc34ca0c1f9cefbcee7fdf1186f4fb5cb5633b6ddabdb2a
-    artifact_digest: sha256:11de34279842762031fb92b5697da0fd8e0c3e9eff136de7d7251e47f5c4bc63
+    source_digest: sha256:e5ae488441161d131e4a68561de678ee6f9be92c0b441fe028766607bf7d89b4
+    artifact_digest: sha256:77fae14683cc4c74e7f435efc5345318f54bce0049f220df14edb7f83e14f1a0
   - name: data-query-ai-service
     kind: image
     build_context: data-query/wren-ai-service

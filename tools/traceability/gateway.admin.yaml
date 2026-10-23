@@ -147,7 +147,7 @@ release:
   # 不证明本能力已构建、部署或通过 full 与业务验收（以 core/verify/gateway-admin.md 为准）。
   artifacts:
     - name: core
-      digest: sha256:ae9d0878274d42f1095aca4ac4394d9f87e1ff78e469708f8c835d5283ddc0c7
+      digest: sha256:848a654708a5c08e5492aa43aa4689de34e1a908101200b1b7d2c9c366ecd253
     - name: web-client
-      digest: sha256:949905cbf14ec49dd42df76873b3ceb11b83f994235dd79c56c11a30d6de2d66
+      digest: sha256:93f38189428207bb5bf051a893ab15dff1c8106978ac950f8f81979b5bcf91f3
   gate: blocked_until_seams_closed

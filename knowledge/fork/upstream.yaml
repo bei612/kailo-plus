@@ -13,8 +13,8 @@ artifacts:
     build_context: .
     build_dockerfile: knowledge/adapter/Dockerfile
     inputs: [knowledge/adapter/Dockerfile, knowledge/adapter/Dockerfile.dockerignore, knowledge/adapter/package.json, knowledge/adapter/package-lock.json, knowledge/adapter/src/, client-kit/adapter/]
-    source_digest: sha256:3ab082878e27cc5d683fb88d20c7b8572224b4f08ebdedacbc64fd8dddc4fb4c
-    artifact_digest: sha256:bf4a191d9cf7e98a459b9320edf933b01f909ac9261c4babc62705d9c2c6c070
+    source_digest: sha256:b15bfa4dc692d69011921d01e2bd24e0f954c5e6fc307fc48d10bc20cd0b454b
+    artifact_digest: sha256:2789a81750ac3ddccb5659113c4b57e80f7eca76393c3131bb77f1340b5db9ac
     blocked: The frozen adapter candidate built, pushed and passed immutable registry digest readback; it is not deployed. Live Agent activation audit, approved release/binding and full component conformance remain unverified. See fork/verify/release-20261009-272693.md.
   - name: knowledge-service
     kind: image
@@ -23,8 +23,8 @@ artifacts:
     inputs: [knowledge/]
     exclude: [knowledge/frontend/]
     build_args: [GOPROXY_ARG, VERSION_ARG, COMMIT_ID_ARG, BUILD_TIME_ARG, GO_VERSION_ARG]
-    source_digest: sha256:3e838552b956ce72c4e4630c88c16dd1087b80205540b053b9eb27ab2ba3cc2c
-    artifact_digest: sha256:037d5b24145e763b4e6a4cdd7a50e7c13648a765d713e4a416c6ad7008055c52
+    source_digest: sha256:3e94a526b1aa97e0c3dc44389f4bfcff51c4d0f462a51ed28f2825cbe1fccc41
+    artifact_digest: sha256:cae897053b9d1a26c7488c02527145f74b38440b3e06e8d3bd649f3d536287d7
     blocked: The frozen pending-sync recovery candidate built and reached the local registry with immutable digest readback; this candidate is not deployed. Frozen model credential delivery, approved release/binding and governed tools/resources acceptance remain unverified. The earlier deployed backend remains historical; see fork/verify/release-20261009-272693.md.
   - name: knowledge-native-ui
     kind: image
@@ -34,8 +34,8 @@ artifacts:
     build_context: .
     build_dockerfile: knowledge/frontend/Dockerfile
     inputs: [knowledge/frontend/, client-kit/embed/kailo-theme-tokens.css, client-kit/embed/kailo-embed.js, web-client/web/public/app-icon.png]
-    source_digest: sha256:cf7b6d81b57640c63322894c82406b753fd8aee8df176ab02c0cff0b3368ac0e
-    artifact_digest: sha256:52d8232bd4c9d6b3f52ac5b1bc8b36ab8fffe1b494292327c8c8f6fd57dcde62
+    source_digest: sha256:91d2a9ecf3a8858a93893eca8ab12713a28fae7359dcd79839c0b051f89124f1
+    artifact_digest: sha256:d274e73c649540e38d83a9140c6230759017bffc72a883adc5c63a56e4bd23fd
     blocked: The full native UI from Kailo commit 8a47534c96c9bf09048ee282ca4e62d5d9d73079 is deployed with digest readback and fresh ordinary-user OIDC login/reload screenshots. The existing account has one workspace only and native chat readiness rejects its unconfigured conversation model, so cross-scope and live SSE acceptance remain unverified. Complete business/governance acceptance, unresolved dependency vulnerabilities and approved component activation remain unverified. See fork/verify/release-20261011-oidc.md.
   - name: knowledge-document-reader
     kind: image
