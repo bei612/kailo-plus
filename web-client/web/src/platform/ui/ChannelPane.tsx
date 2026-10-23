@@ -10,6 +10,8 @@ import { useComposerSpoilerParticles } from "@client-kit/platform/react/composer
 import { useEmojiAutocomplete, type EmojiSuggestion } from "@client-kit/platform/react/composer/features/messages/lib/useEmojiAutocomplete";
 import { writeTextToClipboard } from "@/shared/lib/clipboard";
 import { useComposerAgentDirectory } from "@client-kit/platform/react/composer/features/messages/ui/useComposerAgentDirectory";
+import { useTeamMentionCandidates } from "@client-kit/platform/react/composer/features/messages/ui/useTeamMentionCandidates";
+import { formatTeamMention, isTeamMentionSuggestion } from "@client-kit/platform/react/composer/features/messages/lib/teamMentionCandidates";
 import { findDmAgentMention, useDmAgentMentionNames } from "@client-kit/platform/react/composer/dmAgentMention";
 import { ComposerPendingSendRecovery, ComposerQueuedSendPill } from "./ComposerQueuedSendPill";
 import { getPersistentAgentAudienceScope } from "@client-kit/platform/react/composer/features/messages/lib/persistentAgentAudience";
@@ -1162,6 +1164,11 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
   }).filter(person => !agentPeople.some(agent => agent.pubkey === person.pubkey))
     .map(person => ({pubkey: person.pubkey, displayName: person.displayName, notInChannel: true})), [nonMemberFlow, tenantDirectory.data, mentionPeople, agentPeople]);
   const mentionCandidates = useMemo<MentionSuggestion[]>(() => [...(mentionPeople ?? []).filter(person => !agentPeople.some(agent => agent.pubkey === person.pubkey)), ...agentPeople, ...outsidePeople], [mentionPeople, agentPeople, outsidePeople]);
+  // DD-131(1) original buildTeamMentionCandidates: "@team" rows are autocomplete-only; selecting one
+  // inserts ordinary mentions of the members' Installations in this channel (never a team identity).
+  const teamMentions = useTeamMentionCandidates(bff, {principal: draftIdentity, workspaceId}, agentDirectory.data?.agents,
+    workspaceId !== undefined && channelType !== "dm" && !editTarget);
+  const autocompleteCandidates = useMemo<MentionSuggestion[]>(() => [...mentionCandidates, ...teamMentions], [mentionCandidates, teamMentions]);
   const knownAgentKeys = useMemo(() => new Set<string>(), [workspaceId, draftIdentity, draftKey]);
   const knownAgentInstallations = useMemo(() => new Map<string,string>(), [workspaceId, draftIdentity, draftKey]);
   for (const agent of agentPeople) knownAgentKeys.add(agent.pubkey);
@@ -1172,8 +1179,8 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
   const implicitAgentMentionProvenance = useImplicitAgentMentionProvenance(audienceScope);
   const {audience, keepMentionedAgentsPinned} = useThreadAgentAudience({isAgentPubkey, rootTags: audienceContext?.rootTags ?? [], scope: audienceScope});
   // Original useMentions ranking (exact > prefix > word > pubkey) and suggestion limit.
-  const humanSuggestions = useMemo(()=>humanQuery===null ? [] : rankMentionCandidates(mentionCandidates, humanQuery.query)
-    .slice(0, MENTION_SUGGESTION_LIMIT).map(({candidate})=>candidate),[mentionCandidates,humanQuery]);
+  const humanSuggestions = useMemo(()=>humanQuery===null ? [] : rankMentionCandidates(autocompleteCandidates, humanQuery.query)
+    .slice(0, MENTION_SUGGESTION_LIMIT).map(({candidate})=>candidate),[autocompleteCandidates,humanQuery]);
   const {mentionSelectedIndex:humanIndex,setMentionSelectedIndex:setHumanIndex}=useMentionSelection(humanSuggestions);
   useEffect(() => { if (nonMemberFlow && humanQuery !== null) setOutsideDirectoryWanted(true); }, [nonMemberFlow, humanQuery]);
   // Original MessageComposer `#channel` and `:shortcode` autocompletes (shared with Desktop).
@@ -1430,7 +1437,7 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
       setDraft(text); setDraftRevision((value) => value + 1); setPreviewContent(linkPreviewContent);
       if (!editTarget && text.trim().length > 0) onTypingRef.current?.();
       if (!sending && !editTarget) syncAddressedAgentsFromTextRef.current(text);
-      const query=detectPrefixQuery("@",text,cursor,mentionCandidates.map(person=>person.displayName.toLowerCase()));
+      const query=detectPrefixQuery("@",text,cursor,autocompleteCandidates.map(person=>person.displayName.toLowerCase()));
       if (query) mentionPickerOriginRef.current = "inline";
       else if (mentionPickerOriginRef.current === "inline") mentionPickerOriginRef.current = null;
       setHumanQuery(query?{...query,cursor}:null);
@@ -1516,7 +1523,21 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
   const handleAlwaysAddressShortcut = useAlwaysAddressShortcut({enabled: Boolean(audienceScope && !editTarget), lockedAgent:addressLock.lockedAgents[0],
     mentions:{getDefaultAgentSuggestion, isMentionOpen:humanQuery !== null && humanSuggestions.length > 0, mentionSelectedIndex:humanIndex, suggestions:humanSuggestions},
     onOpenPicker:openPeople, onToggle:addressLock.toggleAlwaysAddressAgent});
+  // Original useMentions.insertMention team branch: each member label is bound to its exact
+  // Installation key, then `Team(@A @B) ` is inserted; publication derives the agent mentions.
+  const insertTeamMention = (team: MentionSuggestion) => {
+    const members = team.teamMembers ?? [];
+    if (members.length === 0 || members.some(member => !member.pubkey || !knownAgentKeys.has(member.pubkey))) return;
+    const labels = members.map(member => ({displayName: registerMentionPubkey(member.displayName, member.pubkey!)}));
+    const {cursor} = richText.getPlainTextAndCursor();
+    applyAutocompleteEdit({replaceFromOffset: humanQuery?.startIndex ?? cursor, replaceToOffset: cursor, insertText: formatTeamMention(team.displayName, labels)});
+    setHumanQuery(null); setHumanIndex(0);
+  };
   const selectHuman = (person: MentionSuggestion) => {
+    if (isTeamMentionSuggestion(person)) {
+      if (!disabled && !sending && teamMentions.some(team => team.teamId === person.teamId)) insertTeamMention(person);
+      return;
+    }
     if (disabled || sending || !mentionCandidates.some(candidate => candidate.pubkey === person.pubkey && candidate.isAgent === person.isAgent)) return;
     addressLock.selectMentionSuggestion(person);
   };

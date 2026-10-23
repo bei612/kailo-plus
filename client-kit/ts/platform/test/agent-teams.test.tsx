@@ -16,6 +16,7 @@ import { PlatformProvider } from "../src/react/context";
 import { AgentTeamsLibrary } from "../src/react/agent-library/AgentTeamsLibrary";
 import { deployTeamToChannel } from "../src/react/agent-library/teamDeploy";
 import { loadAgentTeams, resolveTeamMembers, validAgentTeam } from "../src/react/agent-library/teamPersonas";
+import { buildTeamMentionCandidates, formatTeamMention } from "../src/react/composer/features/messages/lib/teamMentionCandidates";
 import { TransportError, type BffReply, type BffRequest } from "../src/transport";
 import { click, render, settle, type } from "./render";
 
@@ -244,5 +245,20 @@ describe("DD-131(1) deploy to channel", () => {
     expect(results.map((result) => result.outcome)).toEqual(["failed", "submitted"]);
     expect(fake.actions().map((command) => command.resourceId)).toEqual([A, B]);
     expect(new Set(fake.actions().map((command) => command.idempotencyKey)).size).toBe(2);
+  });
+});
+
+describe("DD-131(1) @team in a channel composer", () => {
+  it("expands @team only to members installed in this channel and omits teams with none", () => {
+    const agents = [
+      { pubkey: "a".repeat(64), displayName: "Scribe", installation: { agentResourceId: A } },
+      { pubkey: "b".repeat(64), displayName: "Scribe", installation: { agentResourceId: B } },
+    ] as unknown as Parameters<typeof buildTeamMentionCandidates>[1];
+    const rows = buildTeamMentionCandidates([team({ memberAgentResourceIds: [B, C, A] }), team({ resourceId: OTHER, name: "Empty", memberAgentResourceIds: [C] })], agents);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ kind: "team", teamId: TEAM, displayName: "Engineering Squad", isAgent: false });
+    expect(rows[0]!.teamMembers!.map((member) => member.pubkey)).toEqual(["b".repeat(64), "a".repeat(64)]);
+    expect(rows[0]!.pubkey).not.toMatch(/^[0-9a-f]{64}$/);
+    expect(formatTeamMention("Engineering Squad", [{ displayName: "Scribe" }, { displayName: "Scribe (2)" }])).toBe("Engineering Squad(@Scribe @Scribe (2)) ");
   });
 });
