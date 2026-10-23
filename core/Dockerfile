@@ -17,18 +17,9 @@ COPY collaboration/Cargo.toml /build/apps/collaboration/Cargo.toml
 COPY collaboration/crates/buzz-core /build/apps/collaboration/crates/buzz-core
 COPY collaboration/crates/buzz-sdk /build/apps/collaboration/crates/buzz-sdk
 COPY collaboration/crates/buzz-project-git /build/apps/collaboration/crates/buzz-project-git
-COPY contracts/domain/automation_step.schema.json /build/apps/contracts/domain/automation_step.schema.json
+# Core 以 include_str! 读取契约 schema、样例与兼容向量：整目录拷入，契约是唯一来源，不逐文件维护第二份清单
+COPY contracts /build/apps/contracts
 COPY tools/registry/capabilities.yaml /build/apps/tools/registry/capabilities.yaml
-COPY contracts/api/action_submission.schema.json /build/apps/contracts/api/action_submission.schema.json
-COPY contracts/api/projects_publish_request.schema.json /build/apps/contracts/api/projects_publish_request.schema.json
-COPY contracts/api/delegated_action_metadata_v1.schema.json /build/apps/contracts/api/delegated_action_metadata_v1.schema.json
-COPY contracts/compatibility/action-submission-v1.json contracts/compatibility/action-submission-v2.json /build/apps/contracts/compatibility/
-COPY contracts/api/conversation_open_request.schema.json /build/apps/contracts/api/conversation_open_request.schema.json
-COPY contracts/adapter/knowledge.v1/registration.json /build/apps/contracts/adapter/knowledge.v1/registration.json
-COPY contracts/adapter/data_query.v1/registration.json /build/apps/contracts/adapter/data_query.v1/registration.json
-COPY contracts/adapter/file_storage.v1/registration.json /build/apps/contracts/adapter/file_storage.v1/registration.json
-COPY contracts/api/agent_memory_entry_page.schema.json contracts/api/agent_memory_entry_view.schema.json contracts/api/agent_memory_read_view.schema.json /build/apps/contracts/api/
-COPY contracts/domain/agent_memory_entry_list_input.schema.json contracts/domain/agent_memory_entry_read_input.schema.json contracts/domain/application_model_gateway_config.schema.json /build/apps/contracts/domain/
 # 离线编译：镜像构建时没有数据库，用入库的 sqlx 查询快照做编译期 SQL 校验
 ENV SQLX_OFFLINE=true
 ARG PLATFORM_BUILD_ID
