@@ -153,6 +153,9 @@ describe('DD-138(5) adapter search', () => {
     endpoint = `http://127.0.0.1:${(server.address() as AddressInfo).port}/platform-adapter/v1/search`;
   });
   afterEach(async () => {
+    // A refused request (e.g. browser Origin) can leave a keep-alive socket
+    // open; close it so server.close() does not wait for the idle timeout.
+    server.closeAllConnections();
     await new Promise<void>((resolve, reject) =>
       server.close((error) => (error ? reject(error) : resolve())),
     );
