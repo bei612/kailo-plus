@@ -108,7 +108,8 @@ export async function kailoUserFromClaims(
     // DD-138(4): kept only when it is stored verbatim (no trimming/limits
     // change), so it always hashes back to `key`.
     issuer: text(issuer, limits.issuer) === issuer ? issuer : null,
-    subject: text(claims.sub, limits.subject) === claims.sub ? claims.sub : null,
+    subject:
+      text(claims.sub, limits.subject) === claims.sub ? claims.sub : null,
   };
 }
 

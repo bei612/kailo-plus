@@ -66,11 +66,13 @@ export class KailoShareService {
     const addressable = await this.users.findIdentities(
       others.map((member) => member.userKey),
     );
-    return others
-      .filter((member) => addressable.has(member.userKey))
-      .map(({ userKey, name, picture }) => ({ userKey, name, picture }))
-      // Members without a display name last.
-      .sort((a, b) => (a.name || '\uffff').localeCompare(b.name || '\uffff'));
+    return (
+      others
+        .filter((member) => addressable.has(member.userKey))
+        .map(({ userKey, name, picture }) => ({ userKey, name, picture }))
+        // Members without a display name last.
+        .sort((a, b) => (a.name || '\uffff').localeCompare(b.name || '\uffff'))
+    );
   }
 
   // Validates everything before queuing anything; returns the number of

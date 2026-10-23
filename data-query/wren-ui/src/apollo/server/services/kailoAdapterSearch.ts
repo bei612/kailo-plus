@@ -110,10 +110,7 @@ export async function kailoAdapterSearch(
     .andWhere((query) =>
       query
         .whereRaw("lower(thread.summary) like ? escape '\\'", [pattern])
-        .orWhereRaw(
-          `lower((${firstQuestion})) like ? escape '\\'`,
-          [pattern],
-        ),
+        .orWhereRaw(`lower((${firstQuestion})) like ? escape '\\'`, [pattern]),
     )
     .select(
       'thread.id as id',

@@ -85,7 +85,9 @@ function KailoShareModal(props: {
       onOk={onOk}
       onCancel={onClose}
     >
-      <Typography.Paragraph type="secondary">{t('shareHint')}</Typography.Paragraph>
+      <Typography.Paragraph type="secondary">
+        {t('shareHint')}
+      </Typography.Paragraph>
       <Select
         mode="multiple"
         style={{ width: '100%' }}

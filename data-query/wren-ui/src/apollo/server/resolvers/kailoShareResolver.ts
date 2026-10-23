@@ -16,7 +16,10 @@ export class KailoShareResolver {
     // Injected in tests; the running server uses the singleton components.
     private readonly service?: () => Promise<{
       share: KailoShareService;
-      threadName: (projectId: number, threadId: number) => Promise<string | null>;
+      threadName: (
+        projectId: number,
+        threadId: number,
+      ) => Promise<string | null>;
     }>,
   ) {
     this.available = this.available.bind(this);
