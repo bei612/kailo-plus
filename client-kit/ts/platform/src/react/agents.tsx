@@ -93,6 +93,7 @@ import { AgentTeamsLibrary } from "./agent-library/AgentTeamsLibrary";
 import { CreateIdentityCard } from "./agent-library/CreateIdentityCard";
 import { AgentManagementDialog } from "./agent-library/AgentManagementDialog";
 import { AgentSnapshotImportDialog, agentSnapshotSource, type AgentSnapshotSource } from "./agent-library/AgentSnapshotImportDialog";
+import { AgentSnapshotExportDialog, type SnapshotExportHost, type SnapshotExportTarget } from "./agent-library/AgentSnapshotExportDialog";
 import { PersonaDropdownField } from "./agent-library/PersonaDropdownField";
 import { PERSONA_FIELD_CONTROL_CLASS, PERSONA_FIELD_SHELL_CLASS } from "./agent-library/agentConfigOptions";
 import { Textarea as AgentTextarea } from "./profile/buzz/shared/ui/textarea";
@@ -161,7 +162,11 @@ export type WorkflowRouteNavigation = {
 
 type AgentAvatarHost = (version?: AgentVersionView) => AvatarHost;
 
-export function AgentDefinitionsPage(navigation: WorkspaceNavigation & { avatarHost?: AgentAvatarHost } = {}) {
+export function AgentDefinitionsPage(navigation: WorkspaceNavigation & {
+  avatarHost?: AgentAvatarHost;
+  /** DD-131(2)：READY 导出包的保存方式；缺省为同源受授权下载。 */
+  snapshotExportHost?: SnapshotExportHost;
+} = {}) {
   const client = useBffClient();
   const t = useT();
   const [offsets, setOffsets] = useState<number[]>([0]);
@@ -181,6 +186,7 @@ export function AgentDefinitionsPage(navigation: WorkspaceNavigation & { avatarH
   // DD-131(2): original "Import agent snapshot" from a local .agent.json/.agent.png file.
   const importInput = useRef<HTMLInputElement>(null);
   const [importSource, setImportSource] = useState<AgentSnapshotSource | null>(null);
+  const [exportTarget, setExportTarget] = useState<SnapshotExportTarget | null>(null);
   const [importError, setImportError] = useState<"agents.snapshot.unsupportedFile" | "agents.snapshot.fileTooLarge" | null>(null);
   const blocked = locked || versionLocked;
   // Original requestOpenCreateAgent (search Actions "Create a new agent"): open the same governed
@@ -226,6 +232,7 @@ export function AgentDefinitionsPage(navigation: WorkspaceNavigation & { avatarH
       {importError ? <Notice role="alert">{t(importError)}</Notice> : null}
       <AgentSnapshotImportDialog source={importSource} onClose={() => setImportSource(null)}
         onImported={() => { reload(); setRefreshRevision((value) => value + 1); }} />
+      <AgentSnapshotExportDialog target={exportTarget} host={navigation.snapshotExportHost} onClose={() => setExportTarget(null)} />
       {/* 写意图不随列表/详情刷新或翻页卸载；未知结果保留冻结版本与原幂等键。 */}
       <VersionAction edit={versionEdit} avatarHost={navigation.avatarHost} onReset={() => setVersionEdit(null)} onLocked={setVersionLocked}
         onRecorded={() => { setVersionRevision((value) => value + 1); reload(); }} />
@@ -264,7 +271,8 @@ export function AgentDefinitionsPage(navigation: WorkspaceNavigation & { avatarH
         title={t("agents.open")} locked={blocked} onClose={() => setSelected(null)}>
         {selected ? <DefinitionDetail key={`${selected}:${versionRevision}`} resourceId={selected} locked={blocked || versionEdit !== null}
           onEdit={(target, owner) => { setSelected(null); setEdit({ target, owner }); }}
-          onVersionEdit={(next) => { setSelected(null); setVersionEdit(next); }} /> : null}
+          onVersionEdit={(next) => { setSelected(null); setVersionEdit(next); }}
+          onExport={(next) => { setSelected(null); setExportTarget(next); }} /> : null}
       </AgentManagementDialog>
       {/* DD-131(1)(6)：原版 Agents 页的团队区（新建、编辑、删除、部署到频道、分享到目录）。 */}
       <AgentTeamsLibrary refreshRevision={refreshRevision + versionRevision} locked={blocked || versionEdit !== null} />
@@ -2584,9 +2592,11 @@ function InstallationPermission({ kind, installation, locked, onLocked, onRecord
   </section>;
 }
 
-function DefinitionDetail({ resourceId, locked, onEdit, onVersionEdit }: {
+function DefinitionDetail({ resourceId, locked, onEdit, onVersionEdit, onExport }: {
   resourceId: string; locked: boolean; onEdit: (target: AgentDefinitionView, owner: boolean) => void;
   onVersionEdit: (edit: VersionEdit) => void;
+  /** DD-131(2)：导出当前已发布版本（agent.definition.export，owner 批准）。 */
+  onExport?: (target: SnapshotExportTarget) => void;
 }) {
   const client = useBffClient();
   const t = useT();
@@ -2604,6 +2614,10 @@ function DefinitionDetail({ resourceId, locked, onEdit, onVersionEdit }: {
         <Button onClick={reload}>{t("platform.refresh")}</Button>
         <Button disabled={locked} onClick={() => onEdit(row, false)}>{t("agents.update")}</Button>
         <Button disabled={locked} onClick={() => onEdit(row, true)}>{t("agents.transfer")}</Button>
+        {onExport ? <Button disabled={locked || !row.currentPublishedVersionAssetId} data-testid="agent-definition-export"
+          title={row.currentPublishedVersionAssetId ? undefined : t("agents.export.needsPublished")}
+          onClick={() => row.currentPublishedVersionAssetId && onExport({ resourceId: row.resourceId, resourceVersion: row.resourceVersion,
+            displayName: row.displayName, versionAssetId: row.currentPublishedVersionAssetId })}>{t("agents.export.export")}</Button> : null}
       </div>
       {row.currentPublishedVersionAssetId ? <PublishedVersion resourceId={resourceId} assetId={row.currentPublishedVersionAssetId} />
         : <p className="text-sm text-muted-foreground">{t("agents.noPublishedVersion")}</p>}

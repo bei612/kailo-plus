@@ -33,6 +33,9 @@ capabilities:
   - /api/v1/workspaces/{workspace_id}/agent-turns
   - /api/v1/agent-snapshots/uploads
   - /api/v1/agent-snapshots/configuration
+  - /api/v1/export-packages/by-action/{action_execution_id}
+  - /api/v1/export-packages/{asset_id}
+  - /api/v1/export-packages/{asset_id}/content
   actions:
   - agent.definition.create
   - agent.definition.update
@@ -78,10 +81,12 @@ capabilities:
   - resource.grant_read
   - resource.revoke_read
   - agent.definition.import
+  - agent.definition.export
   tools: []
   workflow_kinds:
   - AGENT_INSTALLATION
   - RESOURCE_IMPORT
+  - RESOURCE_EXPORT
 - id: agent.mcp_connection
   exposure: end_user
   routes:

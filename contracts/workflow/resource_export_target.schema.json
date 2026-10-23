@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "workflow/resource_export_target.schema.json",
+  "title": "ResourceExportTarget",
+  "description": "06 §7.1、DD-42：源 Tenant 的 RESOURCE_EXPORT 冻结目标。只引用本 Tenant 的 ActionExecution、来源 Resource、准入时预写的 ExportPackage Asset 与 TransferFormat；不携带包字节或任何来源内容。",
+  "type": "object", "additionalProperties": false,
+  "required": ["actionExecutionId", "sourceResourceId", "packageAssetId", "workflowId", "formatKey"],
+  "properties": {
+    "actionExecutionId": {"type": "string", "format": "uuid"},
+    "sourceResourceId": {"type": "string", "format": "uuid"},
+    "packageAssetId": {"type": "string", "format": "uuid"},
+    "workflowId": {"type": "string"},
+    "formatKey": {"type": "string"}
+  }
+}

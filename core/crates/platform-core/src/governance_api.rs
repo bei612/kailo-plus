@@ -94,6 +94,10 @@ pub async fn submit_action(
     {
         return Refusal::Precondition(ReasonCode::InvalidParameters).respond(None);
     }
+    // DD-131(2): the frozen version and media type belong only to agent.definition.export.
+    if cmd.agent_definition_export.is_some() != (cmd.action_key == crate::resource_export::EXPORT) {
+        return Refusal::Precondition(ReasonCode::InvalidParameters).respond(None);
+    }
     // DD-149: connector inputs belong only to their actions; the transient credential
     // and OAuth attempt never reach another consumer. Tool-call children are opened
     // only by the ExtMcp PEP, never submitted through the BFF.

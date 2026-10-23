@@ -113,6 +113,7 @@ pub fn describe(kind: &EvidenceKind) -> (EvidenceAuthority, EvidenceSensitivity)
         | K::TransferFormat
         | K::TransferPackageDigest
         | K::AgentVersionAssetId
+        | K::ExportPackageAssetId
         | K::DeploymentBootstrap => (A::Core, S::Summary),
     }
 }

@@ -123,6 +123,10 @@ pub fn router(state: ServiceState) -> Router {
             post(crate::resource_transfer::advance),
         )
         .route(
+            "/service/v1/resource-exports/advance",
+            post(crate::resource_export::advance),
+        )
+        .route(
             "/service/v1/membership-projections/buzz",
             post(crate::membership_projection::project_buzz_roster),
         )

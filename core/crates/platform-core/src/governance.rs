@@ -559,6 +559,8 @@ pub enum Semantic {
     ResourceCreate,
     /// DD-131(2)、05 §2.12：快照包导入为新 Definition 与 DRAFT Version（RESOURCE_IMPORT）。
     AgentDefinitionImport,
+    /// DD-131(2)、05 §2.12：已发布版本导出为源 Tenant 的 ExportPackage（RESOURCE_EXPORT）。
+    AgentDefinitionExport,
     /// DD-135、05 §2.14：Tenant 级 skill.definition 与不可变 skill.version 的管理。
     SkillDefinitionCreate,
     SkillVersionCreate,
@@ -641,6 +643,7 @@ impl Semantic {
             "resource.transfer_owner" => Self::ResourceTransferOwner,
             "resource.create" => Self::ResourceCreate,
             "agent.definition.import" => Self::AgentDefinitionImport,
+            "agent.definition.export" => Self::AgentDefinitionExport,
             "skill.definition.create" => Self::SkillDefinitionCreate,
             "skill.version.create" => Self::SkillVersionCreate,
             "skill.version.publish" => Self::SkillVersionPublish,
@@ -774,6 +777,7 @@ impl Semantic {
                     | Self::ResourceTransferOwner
                     | Self::ResourceCreate
                     | Self::AgentDefinitionImport
+                    | Self::AgentDefinitionExport
             )
     }
 
@@ -898,6 +902,8 @@ pub struct Params {
     pub skill_version_upload: Option<Value>,
     /// DD-131(2)：agent.definition.import 的本会话上传引用、包 digest 与重选的运行配置
     pub agent_definition_import: Option<Value>,
+    /// DD-131(2)：agent.definition.export 冻结的 PUBLISHED 版本与包媒体类型
+    pub agent_definition_export: Option<Value>,
     /// DD-131(1)：agent.team.create/update 的规范化团队输入
     pub agent_team: Option<Value>,
 }
@@ -928,6 +934,9 @@ impl Params {
         }
         if let Some(input) = &self.agent_definition_import {
             m.insert("agentDefinitionImport".into(), input.clone());
+        }
+        if let Some(input) = &self.agent_definition_export {
+            m.insert("agentDefinitionExport".into(), input.clone());
         }
         if let Some(team) = &self.agent_team {
             m.insert("agentTeam".into(), team.clone());
@@ -1085,6 +1094,7 @@ impl Params {
             tenant_quota_setting: v.get("tenantQuotaSetting").cloned(),
             skill_version_upload: v.get("skillVersionUpload").cloned(),
             agent_definition_import: v.get("agentDefinitionImport").cloned(),
+            agent_definition_export: v.get("agentDefinitionExport").cloned(),
             agent_team: v.get("agentTeam").cloned(),
             application_binding_id: uuid("applicationBindingId"),
             application_binding_version: v
@@ -1476,6 +1486,11 @@ fn parse_command(sem: Semantic, cmd: &contracts::ActionCommand) -> Result<Params
             .as_ref()
             .map(crate::resource_transfer::normalize)
             .transpose()?,
+        agent_definition_export: cmd
+            .agent_definition_export
+            .as_ref()
+            .map(crate::resource_export::normalize)
+            .transpose()?,
         agent_team: cmd
             .agent_team
             .as_ref()
@@ -1525,6 +1540,13 @@ fn parse_command(sem: Semantic, cmd: &contracts::ActionCommand) -> Result<Params
         return Ok(p);
     }
     if p.agent_definition_import.is_some() {
+        return Err(bad());
+    }
+    if sem == Semantic::AgentDefinitionExport {
+        crate::resource_export::validate_params(&p)?;
+        return Ok(p);
+    }
+    if p.agent_definition_export.is_some() {
         return Err(bad());
     }
     if sem.is_application_binding() {
@@ -1930,6 +1952,7 @@ fn parse_command(sem: Semantic, cmd: &contracts::ActionCommand) -> Result<Params
         | Semantic::ApplicationBindingDisable
         | Semantic::ResourceCreate
         | Semantic::AgentDefinitionImport
+        | Semantic::AgentDefinitionExport
         // DD-135：已在上方按各自闭集校验并返回
         | Semantic::SkillDefinitionCreate | Semantic::SkillVersionCreate | Semantic::SkillVersionPublish
         | Semantic::SkillVersionRetire | Semantic::SkillDefinitionDisable
@@ -2070,6 +2093,9 @@ async fn resolve_target(
         }
         Semantic::AgentDefinitionImport => {
             crate::resource_transfer::target(conn, tenant, initiator, def, p, frozen, lock).await
+        }
+        Semantic::AgentDefinitionExport => {
+            crate::resource_export::target(conn, tenant, def, p, frozen, lock).await
         }
         Semantic::ApplicationBindingCreate | Semantic::ApplicationBindingDisable => {
             crate::application_binding::target(conn, tenant, def, p, frozen, lock).await
@@ -3877,6 +3903,7 @@ impl Governance {
             application_binding_version: None,
             resource_create: None,
             agent_definition_import: None,
+            agent_definition_export: None,
             agent_team: None,
             tenant_quota_setting: None,
             skill_version_upload: None,
@@ -3986,6 +4013,7 @@ impl Governance {
             application_binding_version: None,
             resource_create: None,
             agent_definition_import: None,
+            agent_definition_export: None,
             agent_team: None,
             tenant_quota_setting: None,
             skill_version_upload: None,
@@ -5559,6 +5587,7 @@ impl Governance {
             Semantic::ComponentReleaseRegister | Semantic::ComponentReleaseApprove
         ) || sem == Semantic::ResourceCreate
             || sem == Semantic::AgentDefinitionImport
+            || sem == Semantic::AgentDefinitionExport
             || sem == Semantic::WorkspaceJoin
             || sem.is_application_binding()
             || sem.is_installation_permission()
@@ -5594,6 +5623,7 @@ impl Governance {
             Semantic::ComponentReleaseRegister | Semantic::ComponentReleaseApprove
         ) || sem == Semantic::ResourceCreate
             || sem == Semantic::AgentDefinitionImport
+            || sem == Semantic::AgentDefinitionExport
             || sem == Semantic::WorkspaceJoin
             || sem == Semantic::WorkspaceUpdate
             || sem.is_application_binding()
@@ -5657,6 +5687,11 @@ impl Governance {
             Semantic::AgentInstallationExecuteGrant | Semantic::ResourceGrantRead
         ) {
             installation_permission::validate_approval_owner(self, tx, ae, false).await?;
+        }
+        if sem == Semantic::AgentDefinitionExport {
+            // The approving owner frozen at approval start must still own the exact
+            // Definition version; a transfer or edit invalidates the approval.
+            crate::resource_export::validate_frozen_owner(self, tx, ae).await?;
         }
         if matches!(sem, Semantic::TaskCancel | Semantic::TaskRerun) {
             // 控制动作先独立完成准入；取消向原 Workflow 发请求，重跑仅在
@@ -5951,6 +5986,9 @@ impl Governance {
             Semantic::AgentDefinitionImport => {
                 crate::resource_transfer::prewrite(tx, ae, def, params).await?
             }
+            Semantic::AgentDefinitionExport => {
+                crate::resource_export::prewrite(tx, ae, params).await?
+            }
             Semantic::TenantDelete => {
                 let snapshot: Option<(Uuid, i32, serde_json::Value)> = sqlx::query_as(
                     "select id, tenant_version, frozen_inventory from admission.tenant_lifecycle_snapshot
@@ -6175,6 +6213,7 @@ impl Governance {
                 | Semantic::ComponentReleaseApprove
                 | Semantic::ResourceCreate
                 | Semantic::AgentDefinitionImport
+                | Semantic::AgentDefinitionExport
                 | Semantic::WorkspaceUpdate
         ) {
             ae.id
@@ -6683,6 +6722,9 @@ impl Governance {
         }
         if sem == Semantic::AgentDefinitionImport {
             return crate::resource_transfer::gate(self, conn, tenant, initiator, p).await;
+        }
+        if sem == Semantic::AgentDefinitionExport {
+            return crate::resource_export::gate(conn, tenant, p).await;
         }
         if sem.is_installation_permission() {
             return installation_permission::gate(
@@ -7708,6 +7750,9 @@ impl Governance {
                 Semantic::AgentDefinitionImport => {
                     crate::resource_transfer::start(&self.pool, &self.temporal, ae.id, ae.tenant_id, &workflow_id).await
                 }
+                Semantic::AgentDefinitionExport => {
+                    crate::resource_export::start(&self.pool, &self.temporal, ae.id, ae.tenant_id, &workflow_id).await
+                }
                 Semantic::ApplicationBindingCreate | Semantic::ApplicationBindingDisable => {
                     crate::application_binding::start(&self.pool, &self.temporal, ae.id, ae.tenant_id, &workflow_id).await
                 }
@@ -7910,6 +7955,7 @@ impl Governance {
                 || project_channel.is_some()
                 || (crate::mcp_connection::tool::is_child(ae)
                     && policy.owner_requirement == "TARGET_OWNER")
+                || crate::resource_export::owner_policy(&ae.action_key, &policy)
                 || (deletion && policy.owner_requirement == "ALL_AFFECTED_OWNERS"))
                 && policy.role_requirements.iter().all(|r| match r.selector {
                     ApprovalSelector::TenantAdmin => true,
@@ -8035,6 +8081,18 @@ impl Governance {
             if installation_permission::frozen_owner(&frozen).map_err(|e| (e, op))? != owner {
                 return Err((Refusal::Conflict(ReasonCode::TargetStateConflict), op));
             }
+        }
+        if crate::resource_export::owner_policy(&ae.action_key, &policy) {
+            // DD-131(2)、05 §2.12：TARGET_OWNER 是该 Definition 在冻结版本上的 HUMAN owner。
+            if !crate::roles::lock_tenant(&mut tx, ae.tenant_id)
+                .await
+                .map_err(|e| (e.into(), op))?
+            {
+                return Err((Refusal::Conflict(ReasonCode::TargetStateConflict), op));
+            }
+            crate::resource_export::freeze_owner(&mut tx, &locked)
+                .await
+                .map_err(|e| (e, op))?;
         }
         if deletion {
             if policy.owner_requirement != "ALL_AFFECTED_OWNERS"
@@ -8230,6 +8288,8 @@ impl Governance {
             {
                 // DD-149: "ask every time" is decided by the Installation owner.
                 crate::mcp_connection::tool::owners(ae)?
+            } else if crate::resource_export::owner_policy(&ae.action_key, &policy) {
+                vec![crate::resource_export::frozen_owner(ae)?]
             } else if crate::automation::step_approval::is_child(ae) {
                 crate::automation::step_approval::owners(ae)?
                     .into_iter()
@@ -9048,10 +9108,12 @@ impl Governance {
         let step_owner = crate::automation::step_approval::is_child(&ae)
             && policy.owner_requirement == "TARGET_OWNER";
         let project_channel = crate::project_channel_request::is_child(&ae);
+        let export_owner = crate::resource_export::owner_policy(&ae.action_key, &policy);
         if !matches!(
             policy.owner_requirement.as_str(),
             "NONE" | "ALL_AFFECTED_OWNERS"
         ) && !installation_owner
+            && !export_owner
             && !step_owner
             && !project_channel
             && !application
@@ -9138,6 +9200,8 @@ impl Governance {
                 serde_json::from_value(refs).map_err(|e| Refusal::Unavailable(e.to_string()))?
             } else if installation_owner {
                 vec![installation_permission::frozen_owner(&ae)?]
+            } else if export_owner {
+                vec![crate::resource_export::frozen_owner(&ae)?]
             } else {
                 Vec::new()
             };
@@ -9156,6 +9220,8 @@ impl Governance {
                     Err(Refusal::Conflict(_)) | Err(Refusal::Denied(_)) => false,
                     Err(e) => return Err(e),
                 }
+            } else if export_owner {
+                crate::resource_export::target_current(self, &mut tx, &ae).await?
             } else if def.action_key == "agent.installation.upgrade" {
                 // The target is the Installation Resource, not its Agent definition:
                 // re-resolve it through the admission validator against the frozen facts.

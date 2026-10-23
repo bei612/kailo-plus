@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/export_package_view.schema.json",
+  "title": "ExportPackageView",
+  "description": "DD-42、06 §7.1：源 Tenant 的 ExportPackage Asset。只给当前对该 Asset 有 read 的 HUMAN；READY 后才有 digest、大小与下载路径。字节只经下载路由返回，不进入本视图、审计或 Workflow 历史。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["packageAssetId", "actionExecutionId", "sourceResourceId", "formatKey", "mediaType", "state"],
+  "properties": {
+    "packageAssetId": {"type": "string", "format": "uuid"},
+    "actionExecutionId": {"type": "string", "format": "uuid"},
+    "sourceResourceId": {"type": "string", "format": "uuid"},
+    "sourceAssetId": {"type": "string", "format": "uuid"},
+    "formatKey": {"type": "string"},
+    "mediaType": {"type": "string"},
+    "state": {"$ref": "../enums/export_package_state.schema.json"},
+    "contentDigest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "byteSize": {"type": "integer"},
+    "fileName": {"type": "string", "description": "原版文件名：`<显示名>.agent.json` 或 `.agent.png`；团队为 `.team.*`。"},
+    "downloadPath": {"type": "string"}
+  }
+}

@@ -515,6 +515,19 @@ pub fn router(state: BffState) -> Router {
             "/api/v1/agent-teams/{resource_id}",
             get(crate::governance::agent_team::get),
         )
+        // DD-42、DD-131(2)：源 Tenant 的 ExportPackage（按发起的导出动作或包 Asset 读取，READY 后下载）
+        .exposed_route(
+            "/api/v1/export-packages/by-action/{action_execution_id}",
+            get(crate::resource_export::by_action),
+        )
+        .exposed_route(
+            "/api/v1/export-packages/{asset_id}",
+            get(crate::resource_export::package),
+        )
+        .exposed_route(
+            "/api/v1/export-packages/{asset_id}/content",
+            get(crate::resource_export::content),
+        )
         // DD-131(2)、DD-143：Agent 快照包的一次性上传暂存与导入预览，以及导入人可重选的运行配置
         .exposed_route(
             "/api/v1/agent-snapshots/uploads",

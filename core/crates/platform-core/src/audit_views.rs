@@ -528,10 +528,26 @@ async fn evidence_existence(
             return Ok(present(e.value == crate::agent_snapshot::FORMAT_KEY));
         }
         K::TransferPackageDigest => {
+            // 导入的上传暂存或导出的 ExportPackage（DD-42）；两者都在同 Tenant 保留摘要。
             let found = sqlx::query_scalar::<_, i32>(
-                "select 1 from admission.transfer_upload where package_digest=$1 and tenant_id=$2 limit 1",
+                "select 1 from admission.transfer_upload where package_digest=$1 and tenant_id=$2
+                 union all select 1 from catalog.export_package where content_digest=$1 and tenant_id=$2
+                 limit 1",
             )
             .bind(&e.value)
+            .bind(tenant_id)
+            .fetch_optional(&state.pool)
+            .await?;
+            return Ok(present(found.is_some()));
+        }
+        K::ExportPackageAssetId => {
+            let Ok(id) = Uuid::parse_str(&e.value) else {
+                return Ok(Existence::Absent);
+            };
+            let found = sqlx::query_scalar::<_, i32>(
+                "select 1 from catalog.export_package where asset_id=$1 and tenant_id=$2",
+            )
+            .bind(id)
             .bind(tenant_id)
             .fetch_optional(&state.pool)
             .await?;

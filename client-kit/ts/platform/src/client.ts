@@ -41,6 +41,7 @@ import type {
   AgentImportConfigurationPage,
   AgentSnapshotImportPreview,
   AgentSnapshotUploadRequest,
+  ExportPackageView,
   AutomationPage,
   AutomationDetailView,
   AutomationRunPage,
@@ -418,6 +419,14 @@ export function createBffClient(transport: BffTransport) {
     /** DD-26：导入人可重选的 RuntimeProfile 与 Route（与版本配置目录同一来源）。 */
     agentImportConfiguration: (offset?: number) =>
       get<AgentImportConfigurationPage>(`/api/v1/agent-snapshots/configuration${offset !== undefined ? `?offset=${offset}` : ""}`),
+    /**
+     * DD-42、DD-131(2)：发起人按导出 ActionExecution 读取其 ExportPackage；包尚未预写（等待 owner 批准）时为 404。
+     * 字节只在 READY 后经 `downloadPath` 下载，由宿主的受授权传输取得。
+     */
+    exportPackageByAction: (actionExecutionId: string) =>
+      get<ExportPackageView>(`/api/v1/export-packages/by-action/${encodeURIComponent(actionExecutionId)}`, true),
+    exportPackage: (assetId: string) =>
+      get<ExportPackageView>(`/api/v1/export-packages/${encodeURIComponent(assetId)}`, true),
     /** DD-135(7)：Installation 的 Skill 投影状态；读取不触发投影或重试。 */
     agentInstallationSkills: (resourceId: string) =>
       get<AgentInstallationSkillPage>(`/api/v1/agent-installations/${encodeURIComponent(resourceId)}/skills`),

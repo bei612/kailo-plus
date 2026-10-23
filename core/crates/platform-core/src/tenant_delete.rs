@@ -2071,6 +2071,8 @@ async fn finish(state: &ServiceState, deletion: &Delete) -> Result<(), sqlx::Err
         "update catalog.agent_team set state='DELETED' where resource_id in (select id from catalog.resource where tenant_id=$1 and type_key='agent.team') and state<>'DELETED'",
         // DD-131(2)：快照包暂存不是历史；导入审计只引用其摘要。
         "delete from admission.transfer_upload where tenant_id = $1",
+        // DD-42、DD-131(2)：ExportPackage 转墓碑并清空包字节；digest、格式与来源作为历史保留。
+        "update catalog.export_package set state='DELETED',package=null where tenant_id=$1 and state<>'DELETED'",
         // DD-149(11)：连接器转墓碑（其 Resource 与工具已随上方语句 DELETED，凭据随 Tenant
         // namespace 销毁）；未完成的 OAuth 尝试作废并清掉 verifier。
         "update catalog.mcp_connection set state='DELETED',version=version+1,updated_at=now() where tenant_id=$1 and state<>'DELETED'",

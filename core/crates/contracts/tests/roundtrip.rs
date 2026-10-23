@@ -1268,3 +1268,26 @@ fn dd131_agent_teams_preserve_fields_and_absence() {
     missing.as_object_mut().unwrap().remove("catalogShared");
     assert!(serde_json::from_value::<contracts::AgentTeamView>(missing).is_err());
 }
+
+#[test]
+fn dd131_agent_snapshot_export_preserves_fields_and_absence() {
+    // DD-131(2)/DD-42: the export command, both ExportPackage view shapes and the
+    // RESOURCE_EXPORT advance pair keep every field and keep absent optionals absent.
+    let value: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(sample_path().with_file_name("agent-snapshot-export.sample.json"))
+            .unwrap(),
+    )
+    .unwrap();
+    fn roundtrip<T: serde::de::DeserializeOwned + serde::Serialize>(value: &serde_json::Value) {
+        let typed: T = serde_json::from_value(value.clone()).unwrap();
+        assert_eq!(&serde_json::to_value(typed).unwrap(), value);
+    }
+    roundtrip::<contracts::ActionCommand>(&value["exportCommand"]);
+    roundtrip::<contracts::ExportPackageView>(&value["creating"]);
+    roundtrip::<contracts::ExportPackageView>(&value["ready"]);
+    roundtrip::<contracts::ResourceExportAdvanceRequest>(&value["advanceRequest"]);
+    roundtrip::<contracts::ResourceExportAdvanceResult>(&value["advanceResult"]);
+    let mut unknown = value["ready"].clone();
+    unknown["state"] = serde_json::json!("PUBLISHED");
+    assert!(serde_json::from_value::<contracts::ExportPackageView>(unknown).is_err());
+}
