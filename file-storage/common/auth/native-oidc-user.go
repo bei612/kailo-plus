@@ -138,6 +138,17 @@ func ResolveOrProvisionNativeOIDCUser(ctx context.Context, issuer, subject strin
 			return refreshNativeOIDCUser(ctx, c, user, login, false)
 		}
 	}
+	// DD-133(4): once a member directory was applied, only its identities
+	// resolve or provision; the directory read itself locks the others.
+	directory, err := loadNativeOIDCDirectoryState()
+	if err != nil {
+		return nil, err
+	}
+	if directory != nil {
+		if _, member := directory.member(issuer, subject); !member {
+			return nil, ErrNativeOIDCNotMember
+		}
+	}
 	id := nativeOIDCUserUUID(issuer, subject)
 	user, err := provisionedNativeOIDCUser(ctx, id, issuer, subject)
 	if err != nil {
@@ -158,10 +169,28 @@ func ResolveOrProvisionNativeOIDCUser(ctx context.Context, issuer, subject strin
 }
 
 // refreshNativeOIDCUser serializes the refresh with first-login provisioning.
+// A provisioned account follows the applied member directory (read again
+// under the lock, so a concurrent directory run is either fully before or
+// fully after this login).
 func refreshNativeOIDCUser(ctx context.Context, c NativeOIDCConnector, user *idm.User, login *oidc.IDToken, provisioned bool) (*idm.User, error) {
 	nativeOIDCProvisioning.Lock()
 	defer nativeOIDCProvisioning.Unlock()
-	return syncNativeOIDCUser(ctx, c, user, login, provisioned)
+	var member *nativeOIDCMembership
+	var listed *nativeOIDCDirectoryEntry
+	if provisioned {
+		directory, err := loadNativeOIDCDirectoryState()
+		if err != nil {
+			return nil, err
+		}
+		if directory != nil {
+			entry, ok := directory.member(login.Issuer, login.Subject)
+			if !ok {
+				return nil, ErrNativeOIDCNotMember
+			}
+			member, listed = entry.membership(directory), entry
+		}
+	}
+	return syncNativeOIDCUser(ctx, c, user, login, provisioned, member, listed)
 }
 
 func nativeOIDCUserUUID(issuer, subject string) string {
@@ -195,22 +224,38 @@ func provisionNativeOIDCUser(ctx context.Context, c NativeOIDCConnector, id stri
 	if err := login.Claims(&claims); err != nil {
 		return nil, err
 	}
-	text := func(key string) string {
-		value, _ := claims[key].(string)
-		return strings.TrimSpace(value)
+	preferred, _ := claims["preferred_username"].(string)
+	if err := createNativeOIDCAccount(ctx, c, id, login.Issuer, login.Subject, strings.TrimSpace(preferred),
+		nativeOIDCProfileFromClaims(claims), "on first native OIDC login"); err != nil {
+		return nil, err
 	}
-	name, err := availableNativeOIDCLogin(ctx, text("preferred_username"), login.Issuer, login.Subject)
+	// Read back: only the derived account carrying this identity is accepted.
+	user, err := provisionedNativeOIDCUser(ctx, id, login.Issuer, login.Subject)
 	if err != nil {
 		return nil, err
+	}
+	if user == nil {
+		return nil, errors.New("provisioned native OIDC account is unavailable")
+	}
+	return user, nil
+}
+
+// createNativeOIDCAccount writes the one account shape shared by the first
+// browser login (DD-127(9)) and the member directory pre-provisioning
+// (DD-133(4)): personal user role, root group, standard profile, the
+// issuer+subject link and the Kailo profile data. The caller holds
+// nativeOIDCProvisioning and has checked that the derived UUID is free.
+func createNativeOIDCAccount(ctx context.Context, c NativeOIDCConnector, id, issuer, subject, preferred string, profile nativeOIDCProfile, why string) error {
+	name, err := availableNativeOIDCLogin(ctx, preferred, issuer, subject)
+	if err != nil {
+		return err
 	}
 	// Profile data only; never used to link (refreshed on every browser login).
 	attributes := map[string]string{
 		idm.UserAttrProfile:        c.ProvisionProfile,
-		NativeOIDCIssuerAttribute:  login.Issuer,
-		NativeOIDCSubjectAttribute: login.Subject,
+		NativeOIDCIssuerAttribute:  issuer,
+		NativeOIDCSubjectAttribute: subject,
 	}
-	// The same Kailo profile rules as the refresh of every later login.
-	profile := nativeOIDCProfileFromClaims(claims)
 	if profile.displayName != "" {
 		attributes[idm.UserAttrDisplayName] = profile.displayName
 	}
@@ -221,30 +266,22 @@ func provisionNativeOIDCUser(ctx context.Context, c NativeOIDCConnector, id stri
 		attributes[idm.UserAttrAvatar] = profile.picture
 	}
 	// The role first: a failed user write leaves no account without its role,
-	// and the next login repeats both idempotent writes.
+	// and the next attempt repeats both idempotent writes.
 	if _, err = idmc.RoleServiceClient(ctx).CreateRole(ctx, &idm.CreateRoleRequest{Role: &idm.Role{
 		Uuid: id, UserRole: true, Label: "User " + name, Policies: nativeOIDCUserPolicies(id)}}); err != nil {
-		return nil, err
+		return err
 	}
 	created, err := idmc.UserServiceClient(ctx).CreateUser(ctx, &idm.CreateUserRequest{User: &idm.User{
 		Uuid: id, Login: name, GroupPath: "/", Attributes: attributes, Policies: nativeOIDCUserPolicies(id)}})
 	if err != nil {
-		return nil, err
+		return err
 	}
 	if created.GetUser().GetUuid() != id || created.GetUser().GetLogin() != name {
-		return nil, errors.New("native OIDC provisioning did not create the derived account")
+		return errors.New("native OIDC provisioning did not create the derived account")
 	}
-	log.Auditer(ctx).Info(fmt.Sprintf("Created user [/%s] on first native OIDC login", name),
+	log.Auditer(ctx).Info(fmt.Sprintf("Created user [/%s] %s", name, why),
 		log.GetAuditId(common.AuditUserCreate), zap.String(common.KeyUserUuid, id))
-	// Read back: only the derived account carrying this identity is accepted.
-	user, err := provisionedNativeOIDCUser(ctx, id, login.Issuer, login.Subject)
-	if err != nil {
-		return nil, err
-	}
-	if user == nil || user.GetLogin() != name {
-		return nil, errors.New("provisioned native OIDC account is unavailable")
-	}
-	return user, nil
+	return nil
 }
 
 // The resource policies of the native admin creation (idm/user/rest PutUser)

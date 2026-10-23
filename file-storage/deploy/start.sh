@@ -91,6 +91,29 @@ try:
     if logout is not None:
         parsed = urlsplit(logout)
         require(parsed.scheme in ('http', 'https') and parsed.hostname and not parsed.username and not parsed.password, 'platformLogoutUrl must be an absolute HTTP(S) Kailo address')
+    # DD-133(4), 07 §4.7.4: the member directory read is one complete delivery
+    # or none; it needs the provisioning connector of the bound Tenant.
+    directory_keys = ('CELLS_DIRECTORY_BINDING_ID', 'CELLS_DIRECTORY_CLIENT_ID', 'CELLS_DIRECTORY_CLIENT_SECRET_FILE',
+                      'CELLS_DIRECTORY_TOKEN_URL', 'CELLS_DIRECTORY_CORE_URL')
+    directory = [k for k in directory_keys if env.get(k, '').strip()]
+    require(not directory or len(directory) == len(directory_keys), 'member directory: set every CELLS_DIRECTORY_* key or none')
+    require(not env.get('CELLS_DIRECTORY_INTERVAL_SECONDS', '').strip() or directory, 'CELLS_DIRECTORY_INTERVAL_SECONDS without a member directory delivery')
+    if directory:
+        require(provision and organization is not None, 'member directory requires provisionUsers and organization.tenant')
+        require(re.fullmatch(r'[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}', env['CELLS_DIRECTORY_BINDING_ID'])
+                and re.fullmatch(r'[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}', organization['tenant']['id']),
+                'member directory needs the binding UUID and the Kailo Tenant UUID as organization.tenant.id')
+        require(re.fullmatch(r'[A-Za-z0-9_-]{1,255}', env['CELLS_DIRECTORY_CLIENT_ID']) and env['CELLS_DIRECTORY_CLIENT_ID'] != oidc[0]['config'].get('clientId'),
+                'member directory client must be its own IdP client, not the browser client')
+        directory_secret = secret_file('CELLS_DIRECTORY_CLIENT_SECRET_FILE').strip()
+        require(directory_secret and directory_secret != secret_file('CELLS_OIDC_CLIENT_SECRET_FILE').strip(), 'independent nonempty directory client secret required')
+        token, core = urlsplit(env['CELLS_DIRECTORY_TOKEN_URL']), urlsplit(env['CELLS_DIRECTORY_CORE_URL'])
+        require(all(u.scheme in ('http', 'https') and u.hostname and not u.username and not u.password and not u.query and not u.fragment for u in (token, core))
+                and core.path in ('', '/') and token.path.endswith('/protocol/openid-connect/token'),
+                'member directory needs the IdP token endpoint and the Core service listener origin')
+        interval = env.get('CELLS_DIRECTORY_INTERVAL_SECONDS', '').strip() or '60'
+        require(re.fullmatch(r'[0-9]{2,4}', interval) and 10 <= int(interval) <= 3600, 'CELLS_DIRECTORY_INTERVAL_SECONDS must be 10..3600')
+        require(env.get('CELLS_ADAPTER_PLATFORM_NETWORK', '').strip(), 'member directory reaches Core over CELLS_ADAPTER_PLATFORM_NETWORK')
     display = env['PLATFORM_DISPLAY_NAME']
     require(display.strip() == display != '' and len(display) <= 64 and display.isprintable(), 'PLATFORM_DISPLAY_NAME: printable Kailo display name required')
     require(secret_file('CELLS_OIDC_CLIENT_SECRET_FILE').strip(), 'nonempty native OIDC client secret required')
@@ -260,6 +283,10 @@ container_safety_init
 compose=("${CONTAINER_DOCKER[@]}" compose --project-name "$CELLS_COMPOSE_PROJECT" --env-file "$config" -f "$here/compose.yaml")
 if [[ -n ${CELLS_NATIVE_ACTION_CONFIG_FILE:-} ]]; then
   compose+=(-f "$here/compose.native-actions.yaml")
+fi
+# DD-133(4): periodic Kailo member directory read (validated above).
+if [[ -n ${CELLS_DIRECTORY_BINDING_ID:-} ]]; then
+  compose+=(-f "$here/compose.member-directory.yaml")
 fi
 if "$platform_adapter"; then
   # Validate actual mounted paths/ownership, not a second binding schema. The

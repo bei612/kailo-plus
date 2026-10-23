@@ -34,6 +34,7 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/pydio/cells/v5/common"
+	"github.com/pydio/cells/v5/common/auth"
 	"github.com/pydio/cells/v5/common/broker"
 	"github.com/pydio/cells/v5/common/config"
 	"github.com/pydio/cells/v5/common/config/routing"
@@ -92,6 +93,9 @@ func init() {
 			service.Context(ctx),
 			service.Tag(common.ServiceTagFrontend),
 			service.Description("WEB service for serving statics"),
+			// DD-133(4): periodic Kailo member directory read in this (single)
+			// native process; absent delivery starts nothing, a partial one fails.
+			service.AfterServe(auth.StartNativeOIDCDirectorySync),
 			service.Migrations([]*service.Migration{
 				{
 					TargetVersion: service.FirstRun(),

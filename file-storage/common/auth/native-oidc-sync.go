@@ -30,10 +30,11 @@ import (
 // every browser login refreshes the provisioned account from the verified ID
 // token of the connector client. The instance serves one Kailo Tenant
 // (DEDICATED_INSTANCE); its provisioned accounts live in that Tenant's native
-// group and are visible only to its members. Roles are not derived from the
-// IdP: until the platform member directory is delivered, accounts are
-// standard members and no native admin is granted. Explicitly linked legacy
-// accounts only receive the profile data refresh.
+// group and are visible only to its members. Roles are never derived from
+// the IdP: until the platform member directory is delivered, accounts are
+// standard members and no native admin is granted; afterwards profile and
+// Workspace teams follow the directory (native-oidc-directory.go). Explicitly
+// linked legacy accounts only receive the profile data refresh.
 
 // NativeOIDCTenantGroupPrefix starts the native group path of a Kailo Tenant.
 const NativeOIDCTenantGroupPrefix = "kailo-"
@@ -236,59 +237,26 @@ func samePolicies(a, b []*service.ResourcePolicy) bool {
 }
 
 // syncNativeOIDCUser applies the Kailo profile (and, for a provisioned
-// account, its Tenant group and profile) from the verified ID token, then
-// reads the account back through ResolveNativeUser.
-func syncNativeOIDCUser(ctx context.Context, c NativeOIDCConnector, user *idm.User, login *oidc.IDToken, provisioned bool) (*idm.User, error) {
+// account, its Tenant group, profile and Workspace teams) from the verified
+// ID token and, once delivered, the member directory, then reads the account
+// back through ResolveNativeUser. With a directory the Kailo display name and
+// picture are the directory ones (07 §4.7.4), email and locale stay from the
+// token.
+func syncNativeOIDCUser(ctx context.Context, c NativeOIDCConnector, user *idm.User, login *oidc.IDToken, provisioned bool,
+	member *nativeOIDCMembership, listed *nativeOIDCDirectoryEntry) (*idm.User, error) {
 	var claims map[string]any
 	if err := login.Claims(&claims); err != nil {
 		return nil, err
 	}
 	profile := nativeOIDCProfileFromClaims(claims)
-	attributes := map[string]string{}
-	for k, v := range user.GetAttributes() {
-		attributes[k] = v
-	}
-	if profile.displayName != "" {
-		attributes[idm.UserAttrDisplayName] = profile.displayName
-	}
-	if profile.email != "" {
-		attributes[idm.UserAttrEmail] = profile.email
-	}
-	if profile.picture != "" {
-		attributes[idm.UserAttrAvatar] = profile.picture
-	} else if IsNativeOIDCPicture(attributes[idm.UserAttrAvatar]) {
-		// Kailo no longer publishes a picture: drop the stale copy only.
-		delete(attributes, idm.UserAttrAvatar)
-	}
-	groupPath, policies := user.GetGroupPath(), user.GetPolicies()
-	if provisioned && c.Organization != nil {
-		group, err := ensureNativeOIDCTenantGroup(ctx, c.Organization.Tenant)
-		if err != nil {
-			return nil, err
+	if listed != nil {
+		if listed.DisplayName != "" {
+			profile.displayName = listed.DisplayName
 		}
-		groupPath = NativeOIDCTenantGroupPath(c.Organization.Tenant.ID)
-		policies = nativeOIDCTenantUserPolicies(user.GetUuid(), group.GetUuid())
-		// Roles come from Kailo only (07 §4.7.4): until the member directory
-		// is delivered a provisioned account is a standard member, also when
-		// a native administrator raised it in the console.
-		attributes[idm.UserAttrProfile] = common.PydioProfileStandard
+		profile.picture = listed.Picture
 	}
-	changed := strings.TrimSuffix(groupPath, "/") != strings.TrimSuffix(user.GetGroupPath(), "/") || !samePolicies(policies, user.GetPolicies()) ||
-		len(attributes) != len(user.GetAttributes())
-	for k, v := range attributes {
-		if user.GetAttributes()[k] != v {
-			changed = true
-		}
-	}
-	if changed {
-		update := &idm.User{Uuid: user.GetUuid(), Login: user.GetLogin(), GroupPath: groupPath, Attributes: attributes, Policies: policies}
-		updated, err := idmc.UserServiceClient(ctx).CreateUser(ctx, &idm.CreateUserRequest{User: update})
-		if err != nil {
-			return nil, err
-		}
-		if updated.GetUser().GetUuid() != user.GetUuid() || updated.GetUser().GetLogin() != user.GetLogin() {
-			return nil, errors.New("native OIDC profile refresh changed the account identity")
-		}
+	if err := convergeNativeOIDCAccount(ctx, c, user, profile, provisioned, member); err != nil {
+		return nil, err
 	}
 	if profile.language != "" {
 		if err := setNativeUserLanguage(ctx, user.GetUuid(), profile.language); err != nil {
