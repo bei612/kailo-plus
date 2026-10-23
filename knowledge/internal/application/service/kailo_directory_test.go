@@ -203,7 +203,7 @@ func TestKailoDirectoryPreProvisionsMembersRolesAndWorkspaces(t *testing.T) {
 		t.Fatal("the directory never grants ownership or system administration")
 	}
 	var org types.Organization
-	if err := f.db.Where("kailo_tenant_ref = ?", dirTenant).First(&org).Error; err != nil {
+	if err := f.db.Select("id").Where("kailo_tenant_ref = ?", dirTenant).First(&org).Error; err != nil {
 		t.Fatal(err)
 	}
 	var linked []types.OrganizationTenantMember
