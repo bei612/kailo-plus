@@ -1,6 +1,6 @@
 // Fixed Buzz 779af8886caae1317b4de962082429867ab61503 desktop/src/features/projects/ui/ProjectIssuesPanel.tsx.
 // Original repository Tasks grouping/rows; read detail is the existing shared component.
-// Write/selection consumers remain unavailable, not replaced with fake controls.
+// Rows and status groups carry the original selection items (repository detail selection).
 import {MessageSquare,User} from "lucide-react";
 import {useUiT} from "../context";
 import {normalizePubkey} from "../conversations/pubkey";
@@ -16,6 +16,11 @@ import {ProjectStatusProgressIcon} from "./ProjectStatusProgressIcon";
 import {ProjectWorkItemRow} from "./ProjectWorkItemRow";
 import {ProjectWorkItemGroup} from "./ProjectWorkItemGroup";
 import {ProjectPanelState} from "./ProjectPanelState";
+import {selectionItemFromTask,type ProjectSelectionItem} from "./lib/projectSelection";
+import {issueShareLink} from "./projectShareLinks";
+function issueSelectionItem(repository:Repository,issue:ProjectIssue){
+  return selectionItemFromTask({author:issue.author,channelId:issue.channelId??repository.channelId,id:issue.id,shareLink:issueShareLink(issue),title:issue.title});
+}
 const statusKey={"Triage":"projects.status.triage","Backlog":"projects.status.backlog","In Progress":"projects.status.inProgress","In Review":"projects.status.inReview","Done":"projects.status.done","Closed":"projects.status.closed"} as const;
 const categoryKey={"issue":"projects.category.issue","change-request":"projects.category.changeRequest","improvement":"projects.category.improvement"} as const;
 const ISSUE_STATUS_ORDER:readonly ProjectIssue["status"][]=["In Review","In Progress","Triage","Backlog","Done","Closed"];
@@ -24,10 +29,12 @@ function IssueRow({
   issue,
   onOpen,
   profiles,
+  selection,
 }: {
   issue: ProjectIssue;
   onOpen: () => void;
   profiles?: UserProfileLookup;
+  selection?: { item: ProjectSelectionItem; rangeItems: ProjectSelectionItem[] };
 }) {
   const t = useUiT();
   const authorProfile = profiles?.[normalizePubkey(issue.author)];
@@ -40,6 +47,7 @@ function IssueRow({
       identifier={`#${issue.id.slice(0, 8)}`}
       identifierTitle={t("projects.list.viewTask")}
       onOpen={onOpen}
+      selection={selection}
       statusIcon={
         <ProjectStatusProgressIcon
           aria-label={t(statusKey[issue.status])}
@@ -136,8 +144,11 @@ export function ProjectIssuesPanel({issueItems,onSelectedIssueIdChange,profiles,
  if(selectedItem)return <ProjectIssueDetail issue={selectedItem.issue} profiles={profiles} publication={host&&projectId?{host,projectId,repository:selectedItem.project}:undefined}/>;
  if(issueItems.length===0)return <ProjectPanelState title={t("projects.sheet.noTasks")} description={t("projects.sheet.tasksHint")}/>;
  const groups=ISSUE_STATUS_ORDER.map(status=>({items:issueItems.filter(({issue})=>issue.status===status),status})).filter(group=>group.items.length>0);
+ const rangeItems=groups.flatMap(group=>group.items.map(({issue,project})=>issueSelectionItem(project,issue)));
  return <div>{groups.map(({items,status})=>{const visual=issueStatusVisual(status);return <ProjectWorkItemGroup key={status} count={items.length}
+  items={items.map(({issue,project})=>issueSelectionItem(project,issue))}
   icon={<ProjectStatusProgressIcon className={`h-4 w-4 ${visual.className}`} state={visual.progress} aria-label={t(statusKey[status])}/>} label={t(statusKey[status])}>
-  {items.map(({issue})=><IssueRow key={issue.id} issue={issue} profiles={profiles} onOpen={()=>onSelectedIssueIdChange(issue.id)}/>)}
+  {items.map(({issue,project})=><IssueRow key={issue.id} issue={issue} profiles={profiles} onOpen={()=>onSelectedIssueIdChange(issue.id)}
+    selection={{item:issueSelectionItem(project,issue),rangeItems}}/>)}
  </ProjectWorkItemGroup>;})}</div>;
 }

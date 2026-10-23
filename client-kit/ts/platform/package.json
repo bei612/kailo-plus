@@ -164,6 +164,7 @@
     "./react/open-create-agent-event": "./src/react/open-create-agent-event.ts",
     "./react/profile-settings": "./src/react/profile-settings.tsx",
     "./react/profile/avatar-host": "./src/react/profile/avatar-host.tsx",
+    "./react/profile/candidate-picture": "./src/react/profile/candidate-picture.tsx",
     "./keyboard-platform": "./src/keyboard-platform.ts",
     "./keyboard-shortcuts": "./src/keyboard-shortcuts.ts",
     "./react/use-mark-as-read-shortcuts": "./src/react/use-mark-as-read-shortcuts.ts",

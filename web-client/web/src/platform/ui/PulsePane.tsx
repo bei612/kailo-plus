@@ -2,6 +2,8 @@ import { useEffect, useMemo, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { PulseHostProvider, PulseView, usePeopleDirectory, PeopleDirectoryStatus, useComposerSubmitMode, type PulseHost } from "@client-kit/platform/react/pulse";
 import { useT } from "@client-kit/platform/react/context";
+import type { ProjectConversationRenderProps } from "@client-kit/platform/react/projects";
+import { ProjectConversationPane } from "./ProjectConversationPane";
 import { bff, publishPulse, queryPulse, uploadPulseMedia, pulseMediaUrl, searchMessages } from "../bff-client";
 import { MessageContent } from "@/features/chat/ui/MessageContent";
 import { Composer } from "./ChannelPane";
@@ -32,7 +34,9 @@ function BffProjectOriginReference(props:ProjectOriginReferenceProps) {
 }
 
 /** The original Pulse surface; only transport/signing/media belong to Web. */
-export function PulsePane({scopeKey,onStartDm,children,viewerPubkey}:{scopeKey:string;onStartDm:(pubkey:string)=>void|Promise<void>;children?:ReactNode;viewerPubkey?:string}) {
+export function PulsePane({scopeKey,onStartDm,children,viewerPubkey,principalId}:{scopeKey:string;onStartDm:(pubkey:string)=>void|Promise<void>;children?:ReactNode;viewerPubkey?:string;
+  /** The signed-in Principal; with it, project detail opens "Discussed in" threads beside the detail. */
+  principalId?:string}) {
   const t=useT();
   const channelRuntime=useBffChannelLinkRuntime();
   const profile=useQuery({queryKey:["platform",scopeKey,"own-profile"],queryFn:()=>bff.profile(),retry:false,enabled:viewerPubkey===undefined});
@@ -62,13 +66,15 @@ export function PulsePane({scopeKey,onStartDm,children,viewerPubkey}:{scopeKey:s
         openHit:hit=>{check();if(!hit.channelId)throw new Error(t("platform.loadFailed"));
           return channelRuntime.onOpenMessageLink({channelId:hit.channelId,messageId:hit.eventId,threadRootId:hit.threadRootId??null});},
         renderPreview:content=><MessageContent content={content} className="inbox-preview-markdown mt-0.5 text-inherit leading-6" interactive={false}/>,
+        // Original ProjectConversationPanel beside project detail, over the governed channel thread.
+        ...(principalId?{renderConversation:(props:ProjectConversationRenderProps)=><ProjectConversationPane key={props.hit.eventId} {...props} principalId={principalId}/>}:{}),
       },
       startDm:async(pubkey)=>{check();await onStartDm(pubkey);check();},
       mediaUrl:(url)=>scope.media.get(url)??url,
       renderContent:(content,tags,className)=><MessageContent content={content} className={className} mediaTags={tags} onMediaUrl={pulseMediaUrl}/>,
       renderComposer:(props)=><BffPulseComposer props={props} scopeKey={scopeKey} check={check}/>,
     };
-  },[scopeKey,scope,pubkey,onStartDm,t,channelRuntime]);
+  },[scopeKey,scope,pubkey,onStartDm,t,channelRuntime,principalId]);
   if(!pubkey||viewerPubkey===undefined&&profile.isError)return <p role={profile.isError?"alert":"status"}>{t(profile.isError?"platform.loadFailed":"platform.loading")}</p>;
   return <PulseHostProvider host={host}>{children??<PulseView currentPubkey={pubkey}/>}</PulseHostProvider>;
 }

@@ -176,6 +176,9 @@ pub(crate) async fn list(
     }
 }
 
+/// One new-DM recipient: principal, display name, ACTIVE keys and first ACTIVE external subject (DD-139).
+type RecipientRow = (Uuid, String, Vec<String>, Option<String>);
+
 /// Same-Tenant active HUMAN directory, not the cross-Tenant identity directory.
 pub(crate) async fn participants(
     State(state): State<BffState>,
@@ -195,8 +198,11 @@ pub(crate) async fn participants(
     {
         return e;
     }
-    let rows:Result<Vec<(Uuid,String,Vec<String>)>,_>=sqlx::query_as(
-        "select p.id,h.display_name,keys.pubkeys from identity.principal p
+    let rows:Result<Vec<RecipientRow>,_>=sqlx::query_as(
+        "select p.id,h.display_name,keys.pubkeys,
+           (select min(ei.subject) from identity.external_identity ei
+             where ei.human_identity_id=h.id and ei.status='ACTIVE') as subject
+         from identity.principal p
          join identity.tenant_membership tm on tm.tenant_principal_id=p.id and tm.tenant_id=p.tenant_id
          join identity.human_identity h on h.id=tm.human_identity_id
          join lateral (select array_agg(i.pubkey order by i.pubkey) pubkeys from identity.buzz_identity_binding i
@@ -220,7 +226,11 @@ pub(crate) async fn participants(
             else {
                 return StatusCode::SERVICE_UNAVAILABLE.into_response();
             };
-            let mut result = json!({"items":rows.into_iter().map(|(id,name,keys)|json!({"principalId":id,"displayName":name,"pubkeys":keys})).collect::<Vec<_>>(),"maxParticipants":max});
+            // DD-139: the 07 §4.7.3 Tenant avatar address, only for members with an ACTIVE subject.
+            let mut result = json!({"items":rows.into_iter().map(|(id,name,keys,subject)|{
+                let mut item=json!({"principalId":id,"displayName":name,"pubkeys":keys});
+                if let Some(picture)=crate::component_directory::member_picture(subject.as_deref()){item["picture"]=json!(picture);}
+                item}).collect::<Vec<_>>(),"maxParticipants":max});
             if let Some(cursor) = cursor {
                 result["nextCursor"] = json!(cursor)
             }

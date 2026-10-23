@@ -548,6 +548,13 @@ pub(crate) async fn validate_scope(
     ) {
         return validate_memory_scope(g, conn, tenant, initiator, row, scope, target).await;
     }
+    // DD-140: the one native tool bound to another action key; its scope targets
+    // the Installation like the memory tools, never a Workspace to create.
+    if scope.action_key == crate::project_channel_request::ACTION
+        && scope.tool_resource_id.is_some()
+    {
+        return validate_memory_scope(g, conn, tenant, initiator, row, scope, target).await;
+    }
     if scope.tool_resource_id.is_some() {
         return validate_application_scope(g, conn, tenant, initiator, row, scope, target).await;
     }
@@ -652,6 +659,14 @@ pub(crate) async fn validate_scope(
     Ok(())
 }
 
+/// The native tool that carries a scope's action key (inverse of the closed DD-140 map).
+fn native_tool_name(action: &str) -> Result<&'static str, Refusal> {
+    crate::agent_tool::NATIVE_TOOLS
+        .into_iter()
+        .find(|name| crate::agent_tool::native_action_key(name) == Some(action))
+        .ok_or(Refusal::Blocked(ReasonCode::CapabilityBlocked))
+}
+
 // 19 §5 / DD-105: only the installed Agent's own Memory, an actual immutable
 // ToolBinding, and both HUMAN/AGENT fresh rights can become a Tool scope.
 // Binding never grants discover/consume/read, and this path never starts approval.
@@ -670,8 +685,9 @@ async fn validate_memory_scope(
         .and_then(|id| Uuid::parse_str(id).ok())
         .filter(|id| !id.is_nil())
         .ok_or(Refusal::Precondition(ReasonCode::InvalidParameters))?;
-    let definition = crate::agent_memory::read_definition(&g.pool, &scope.action_key).await?;
-    let hashes = crate::agent_tool::schema_hashes(&scope.action_key)?;
+    let name = native_tool_name(&scope.action_key)?;
+    let definition = crate::agent_tool::tool_definition(&g.pool, name).await?;
+    let hashes = crate::agent_tool::schema_hashes(name)?;
     if target != Some(row.id)
         || scope.create_workspace_id.is_some()
         || scope.target_type != "RESOURCE"
@@ -694,11 +710,11 @@ async fn validate_memory_scope(
         join catalog.resource r on r.id=t.resource_id and r.tenant_id=$1 and r.state='ACTIVE'
           and r.type_key='tool.definition' and r.projection_action_execution_id is null
         where b.installation_resource_id=$2 and b.tool_resource_id=$3 and b.workspace_id=$4
-          and b.status in ('NO_PERMISSION','ACTIVE') and t.action_key=$5 and t.name=$5
+          and b.status in ('NO_PERMISSION','ACTIVE') and t.action_key=$5 and t.name=$8
           and t.input_schema_hash=$6 and t.output_schema_hash=$7
           and v.content->'declaredToolResourceIds' @> jsonb_build_array(t.resource_id::text))")
         .bind(tenant).bind(row.id).bind(tool).bind(row.workspace_id).bind(&scope.action_key)
-        .bind(&hashes.0).bind(&hashes.1).fetch_one(&mut *conn).await?;
+        .bind(&hashes.0).bind(&hashes.1).bind(name).fetch_one(&mut *conn).await?;
     if !valid {
         return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
     }

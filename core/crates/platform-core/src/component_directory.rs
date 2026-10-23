@@ -347,9 +347,23 @@ fn display_name(profile: Option<&nostr::Event>, fallback: &str) -> String {
         .to_owned()
 }
 
+/// The deployment's public origin, the host of the 07 §4.7.3 Tenant avatar route.
+pub(crate) fn public_origin() -> Option<String> {
+    std::env::var("PUBLIC_ORIGIN")
+        .ok()
+        .and_then(|value| crate::application_page::origin(&value).ok())
+}
+
+/// DD-139: the Tenant avatar address for a member's first ACTIVE external subject, when the
+/// deployment declares its public origin; otherwise no address (the client keeps initials).
+pub(crate) fn member_picture(subject: Option<&str>) -> Option<String> {
+    let subject = subject?;
+    Some(avatar_url(&public_origin()?, subject))
+}
+
 /// Same encoding as the bootstrap's `urllib.parse.quote(subject, safe="")`,
 /// so the directory `picture` equals the IdP `picture` claim byte for byte.
-fn avatar_url(public_origin: &str, subject: &str) -> String {
+pub(crate) fn avatar_url(public_origin: &str, subject: &str) -> String {
     let mut path = String::with_capacity(subject.len());
     for byte in subject.bytes() {
         if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b'~') {
@@ -437,10 +451,7 @@ async fn directory(
     binding: Uuid,
 ) -> Result<Value, Refusal> {
     let header = bearer(headers)?;
-    let public_origin = std::env::var("PUBLIC_ORIGIN")
-        .ok()
-        .and_then(|value| crate::application_page::origin(&value).ok())
-        .ok_or_else(|| unavailable("PUBLIC_ORIGIN"))?;
+    let public_origin = public_origin().ok_or_else(|| unavailable("PUBLIC_ORIGIN"))?;
     let core_client = std::env::var("OIDC_SERVICE_CLIENT_ID").ok();
 
     // One read-only snapshot for every database fact; no row locks are held

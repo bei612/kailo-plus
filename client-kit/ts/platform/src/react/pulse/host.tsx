@@ -48,6 +48,8 @@ function PulseScope({host,children}:{host:PulseHost;children:React.ReactNode}) {
   </div></Context.Provider>;
 }
 export function usePulseHost() { const host=React.useContext(Context); if(!host)throw new Error("Pulse host unavailable");return host; }
+/** The same host where a surface may also render outside Pulse/Projects (no host, no host features). */
+export function useOptionalPulseHost() { return React.useContext(Context); }
 export function truncateNpub(key:string) { const value=npubEncode(key);return `${value.slice(0,12)}…${value.slice(-6)}`; }
 export function ForumComposer(props:PulseComposerProps){return usePulseHost().renderComposer(props);}
 export function Markdown({content,tags}:{content:string;tags?:string[][]}){return usePulseHost().renderContent(content,tags);}

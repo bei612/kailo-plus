@@ -160,8 +160,9 @@ export function ProjectsPane({scopeKey,selectedProjectId,onSelectedProjectChange
   onOpenChannel?:(workspace:DiscoverableWorkspace)=>void|Promise<void>;lastMessageAtByChannelId?:ReadonlyMap<string,string|null>}){
   const discuss=useProjectDiscussInChannel(scopeKey,onOpenChannel);
   const agentChat=useWebProjectAgentChat(scopeKey);
+  const principalId=useCurrentPrincipalId();
   const view=<ProjectsView host={useProjectsHost(scopeKey)} selectedProjectId={selectedProjectId} onSelectedProjectChange={onSelectedProjectChange} workItemTarget={workItemTarget}
-    renderWorkItems={(children,viewerPubkey)=><PulsePane scopeKey={scopeKey} onStartDm={onStartDm} viewerPubkey={viewerPubkey}>{children}</PulsePane>}
+    renderWorkItems={(children,viewerPubkey)=><PulsePane scopeKey={scopeKey} principalId={principalId} onStartDm={onStartDm} viewerPubkey={viewerPubkey}>{children}</PulsePane>}
     renderChannel={(workspace,auxiliary)=><ProjectHomeChannel key={`${scopeKey}:${workspace.id}`} scopeKey={scopeKey} workspace={workspace} renderChannel={renderChannel} auxiliary={auxiliary}/>}
     onOpenChannel={onOpenChannel} onDiscussInChannel={onOpenChannel?discuss:undefined} lastMessageAtByChannelId={lastMessageAtByChannelId}
     agentChat={agentChat}/>;

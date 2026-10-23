@@ -19,6 +19,7 @@ import { getInboxVideoReviewCommentRootId } from "@client-kit/platform/react/vid
 import { HomeLoadingState, InboxEmptyDetail, useInboxDraftSelection, type InboxFilter } from "@client-kit/platform/react/inbox-surface";
 import { AUXILIARY_PANEL_DEFAULT_WIDTH_PX } from "@client-kit/platform/react/thread";
 import { InboxThreadPane } from "./InboxThreadPane";
+import type { ChannelWorkflowNavigation } from "@client-kit/platform/react/channel-management-sheet";
 import { InboxDrafts, useInboxDrafts } from "./InboxDrafts";
 import type { PlatformDraftNavigation } from "@/app/platform-navigation";
 import { inboxReadContexts, useInboxState } from "@client-kit/platform/react/use-inbox-state";
@@ -43,6 +44,8 @@ export function InboxPane({
   onOpenProject,
   selectedItemId,
   onSelectedItemIdChange,
+  isDark = false,
+  workflowsFor,
 }: {
   principalId: string;
   onOpen: (channelId: string, target?: InboxNavigationTarget, draft?: PlatformDraftNavigation & {conversation?: import("@client-kit/contracts").ConversationView}) => void | Promise<void>;
@@ -51,6 +54,10 @@ export function InboxPane({
   onOpenProject?: (projectId:string,target:ProjectWorkItemTarget)=>void;
   selectedItemId?: string | null;
   onSelectedItemIdChange?: (id: string | null) => void;
+  /** Host theme state for the original channel management overlay (useTheme().isDark). */
+  isDark?: boolean;
+  /** Host Workflows routes for a Workspace (original channel management Workflows ingress). */
+  workflowsFor?: (workspaceId: string) => ChannelWorkflowNavigation;
 }) {
   const client = useBffClient();
   const selectionScope = useMemo(() => ({}), [client, principalId]);
@@ -277,7 +284,7 @@ export function InboxPane({
     }}
     renderMessageDetail={({ visible, auxiliarySinglePanel, onBack }) => {
       if (!snapshot) return null;
-      if (chosenProject && visible && onStartDm) return <PulsePane scopeKey={principalId} onStartDm={onStartDm}><ProjectInboxDetail host={projectsHost} key={chosen?.scopeKey} workItem={chosenProject} onBack={onBack} onOpenProject={onOpenProject?()=>onOpenProject(chosenProject.project.id,projectWorkItemTarget(chosenProject)):undefined}/></PulsePane>;
+      if (chosenProject && visible && onStartDm) return <PulsePane scopeKey={principalId} principalId={principalId} onStartDm={onStartDm}><ProjectInboxDetail host={projectsHost} key={chosen?.scopeKey} workItem={chosenProject} onBack={onBack} onOpenProject={onOpenProject?()=>onOpenProject(chosenProject.project.id,projectWorkItemTarget(chosenProject)):undefined}/></PulsePane>;
       // The unsent publication owner stays mounted while the single-panel author
       // profile covers the detail column.
       if (chosen && chosen.item.channelId !== null && (visible || auxiliarySinglePanel)) {
@@ -288,6 +295,9 @@ export function InboxPane({
           workspaceId={channelId} rootId={inboxThread(chosen.item.tags).rootId ?? chosen.item.id} selectedEventId={chosen.item.id}
           selectionItemId={effectiveSelectedItemId}
           unreadBoundaryEventId={unreadBoundaryEventId}
+          isDark={isDark}
+          workflows={conversation ? undefined : workflowsFor?.(channelId)}
+          workspaceVisibility={snapshot.workspaces.find((workspace) => workspace.id === channelId)?.visibility}
           reopen={{pending: hiddenDm.isReopenPending(channelId), error: hiddenDm.isReopenErrored(channelId),
             unknown: hiddenDm.isReopenUnknown(channelId), onRetry: () => openItem(chosen.item)}}
           onPublicationPendingChange={pending => setPublicationSelection(pending ? {principalId, event:chosen.item} : null)}

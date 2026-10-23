@@ -317,6 +317,40 @@ impl NativeSession {
         path: &str,
         body: Option<&serde_json::Value>,
     ) -> Result<ApiResponse, String> {
+        let (resp, generation) = self.send(http, cfg, method, path, body).await?;
+        let status = resp.status();
+        let body = if status == reqwest::StatusCode::NO_CONTENT {
+            serde_json::Value::Null
+        } else {
+            resp.json().await.unwrap_or(serde_json::Value::Null)
+        };
+        Self::check_generation(&*self.state()?, generation)?;
+        Ok(ApiResponse {
+            status: status.as_u16(),
+            body,
+        })
+    }
+
+    /// The same authenticated request, handing back the raw response (DD-139 avatar bytes).
+    /// `http` decides redirect handling; a non-JSON body never passes through `call`.
+    pub(crate) async fn call_raw(
+        &self,
+        http: &reqwest::Client,
+        cfg: &PlatformConfig,
+        path: &str,
+    ) -> Result<(reqwest::Response, u64), String> {
+        self.send(http, cfg, Method::GET, path, None).await
+    }
+
+    /// Bearer request with one refresh-and-retry on 401; returns the response and its generation.
+    async fn send(
+        &self,
+        http: &reqwest::Client,
+        cfg: &PlatformConfig,
+        method: Method,
+        path: &str,
+        body: Option<&serde_json::Value>,
+    ) -> Result<(reqwest::Response, u64), String> {
         if !path.starts_with(API_PREFIX) || path.contains("..") {
             return Err(format!("不代发 {API_PREFIX} 之外的路径"));
         }
@@ -359,16 +393,7 @@ impl NativeSession {
                 self.refresh.delete()?;
                 return Err(NOT_SIGNED_IN.to_owned());
             }
-            let body = if status == reqwest::StatusCode::NO_CONTENT {
-                serde_json::Value::Null
-            } else {
-                resp.json().await.unwrap_or(serde_json::Value::Null)
-            };
-            Self::check_generation(&*self.state()?, generation)?;
-            return Ok(ApiResponse {
-                status: status.as_u16(),
-                body,
-            });
+            return Ok((resp, generation));
         }
         Err(NOT_SIGNED_IN.to_owned())
     }

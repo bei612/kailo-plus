@@ -4167,6 +4167,63 @@ pub(crate) async fn open_memory_child(
     .await?)
 }
 
+/// DD-140: an Agent's project channel proposal is a `workspace.create` child of
+/// its admitted root turn. The initiator is the Installation owner and the actor
+/// the AGENT; the command is the ordinary BFF shape so the same parse, target and
+/// parameter hash apply, plus the frozen proposal under `frozen_key`.
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn open_project_channel_child(
+    tx: &mut Transaction<'_, Postgres>,
+    parent: &Execution,
+    owner: Uuid,
+    def: &Definition,
+    command: &contracts::ActionCommand,
+    frozen_key: &str,
+    frozen: Value,
+    idempotency_key: Uuid,
+) -> Result<Execution, Refusal> {
+    let root: bool = sqlx::query_scalar(
+        "select parent_action_execution_id is null
+        from admission.action_execution where id=$1 for update",
+    )
+    .bind(parent.id)
+    .fetch_one(&mut **tx)
+    .await?;
+    if !root
+        || parent.gate_state != "ALLOWED"
+        || parent.dispatch_state != "DISPATCHED"
+        || parent.action_key != "agent.invoke"
+        || parent.workspace_id.is_none()
+        || def.action_key != crate::project_channel_request::ACTION
+    {
+        return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
+    }
+    let sem = Semantic::WorkspaceCreate;
+    let params = parse_command(sem, command)?;
+    let target = resolve_target(tx, parent.tenant_id, owner, def, sem, &params, None, true).await?;
+    let mut parameters = json!({ "params": params.to_json(), "targetVersion": target.version });
+    parameters[frozen_key] = frozen;
+    let hash = parameter_hash(def, target.id, &params);
+    Ok(open_execution_in_operation(
+        tx,
+        Actor {
+            tenant_id: parent.tenant_id,
+            principal_id: owner,
+            human_identity_id: None,
+        },
+        parent.actor_principal_id,
+        def,
+        &target,
+        parameters,
+        hash,
+        idempotency_key,
+        Some(parent.correlation_id),
+        Some((parent.id, parent.operation_id)),
+        None,
+    )
+    .await?)
+}
+
 /// The same root factory freezes an APPLICATION protocol's exact declaration
 /// on its first INSERT. It does not backfill identity after admission.
 pub(crate) async fn open_protocol_execution(
@@ -5092,7 +5149,8 @@ impl Governance {
             Err(r) => return Err((r, op)),
         }
 
-        if def.confirmation_mode == "APPROVAL" {
+        // DD-140: an Agent's project channel proposal always waits for its owner.
+        if def.confirmation_mode == "APPROVAL" || crate::project_channel_request::is_child(&ae) {
             return self.request_approval(actor, &ae, def, &eval).await;
         }
         // 确认位是本次 ActionExecution 的冻结参数；未持久记录确认的动作不能
@@ -7633,12 +7691,21 @@ impl Governance {
         eval: &Evaluation,
     ) -> Result<(StatusCode, ActionSubmission), (Refusal, Option<Uuid>)> {
         let op = Some(ae.operation_id);
-        let (Some(pid), Some(pver)) = (def.approval_policy_id, def.approval_policy_version) else {
-            return Err((Refusal::Unavailable("APPROVAL 定义缺策略".into()), op));
-        };
-        let policy = exact_policy(&self.pool, pid, pver)
+        let project_channel = crate::project_channel_request::child_policy(&self.pool, ae)
             .await
             .map_err(|r| (r, op))?;
+        let policy = match project_channel.clone() {
+            Some(policy) => policy,
+            None => {
+                let (Some(pid), Some(pver)) = (def.approval_policy_id, def.approval_policy_version)
+                else {
+                    return Err((Refusal::Unavailable("APPROVAL 定义缺策略".into()), op));
+                };
+                exact_policy(&self.pool, pid, pver)
+                    .await
+                    .map_err(|r| (r, op))?
+            }
+        };
         // 选择器与 owner 要求必须在本 target 上可解析，否则请求不启动（.design/03 §6、
         // .design/10 §2）：RESOURCE_APPROVER 需要 Resource 目标，WORKSPACE_ADMIN 需要
         // 冻结 Workspace；APPLICATION 读取实际 target owner。不换用更宽的角色。
@@ -7652,6 +7719,7 @@ impl Governance {
         } else {
             (policy.owner_requirement == "NONE"
                 || installation_owner
+                || project_channel.is_some()
                 || (deletion && policy.owner_requirement == "ALL_AFFECTED_OWNERS"))
                 && policy.role_requirements.iter().all(|r| match r.selector {
                     ApprovalSelector::TenantAdmin => true,
@@ -7965,7 +8033,9 @@ impl Governance {
             .approval_expires_at
             .ok_or_else(|| Refusal::Unavailable("WAITING 缺冻结的过期时刻".into()))?;
         let affected_owner_refs: Vec<contracts::AffectedOwnerRef> =
-            if crate::automation::step_approval::is_child(ae) {
+            if crate::project_channel_request::is_child(ae) {
+                crate::project_channel_request::owners(ae)?
+            } else if crate::automation::step_approval::is_child(ae) {
                 crate::automation::step_approval::owners(ae)?
                     .into_iter()
                     .map(|owner| contracts::AffectedOwnerRef {
@@ -8143,6 +8213,37 @@ impl Governance {
             principal_id: ae.initiator_principal_id,
             human_identity_id: None,
         };
+        // DD-140: an approved proposal still needs its Installation, owner and
+        // home binding as frozen; otherwise the approval is invalidated.
+        if crate::project_channel_request::is_child(&ae) {
+            let mut conn = self.pool.acquire().await?;
+            if !crate::project_channel_request::current(&mut conn, &ae).await? {
+                drop(conn);
+                let eval = self
+                    .evaluate(
+                        actor,
+                        &def,
+                        &Target {
+                            id: ae.target_id,
+                            version: ae.frozen_target_version().unwrap_or(0),
+                            workspace_id: ae.workspace_id,
+                        },
+                    )
+                    .await?;
+                self.close_gate(
+                    &ae,
+                    &def,
+                    "RECHECK",
+                    "REVOKED",
+                    &eval,
+                    &ReasonCode::ApprovalInvalidated,
+                    None,
+                )
+                .await?;
+                self.invalidate(ae.id).await;
+                return Ok(());
+            }
+        }
         let target = Target {
             id: ae.target_id,
             version: ae.frozen_target_version().unwrap_or(0),
@@ -8648,6 +8749,9 @@ impl Governance {
         if let Some(policy) = crate::automation::step_approval::child_policy(self, ae).await? {
             return Ok(policy);
         }
+        if let Some(policy) = crate::project_channel_request::child_policy(&self.pool, ae).await? {
+            return Ok(policy);
+        }
         let (Some(pid), Some(pver)) = (def.approval_policy_id, def.approval_policy_version) else {
             return Err(Refusal::Unavailable("审批动作的定义缺策略".into()));
         };
@@ -8676,11 +8780,13 @@ impl Governance {
         let installation_owner = installation_permission::owner_policy(&ae.action_key, &policy);
         let step_owner = crate::automation::step_approval::is_child(&ae)
             && policy.owner_requirement == "TARGET_OWNER";
+        let project_channel = crate::project_channel_request::is_child(&ae);
         if !matches!(
             policy.owner_requirement.as_str(),
             "NONE" | "ALL_AFFECTED_OWNERS"
         ) && !installation_owner
             && !step_owner
+            && !project_channel
             && !application
         {
             return Ok(Some(FreshApprovalAdmissionResult {
@@ -8749,11 +8855,12 @@ impl Governance {
             zed = revision;
             result
         } else {
-            let refs: Vec<contracts::AffectedOwnerRef> =
-                if crate::automation::step_approval::is_child(&ae) {
-                    crate::automation::step_approval::owners(&ae)?
-                } else if policy.owner_requirement == "ALL_AFFECTED_OWNERS" {
-                    let refs: Value = sqlx::query_scalar(
+            let refs: Vec<contracts::AffectedOwnerRef> = if project_channel {
+                crate::project_channel_request::owners(&ae)?
+            } else if crate::automation::step_approval::is_child(&ae) {
+                crate::automation::step_approval::owners(&ae)?
+            } else if policy.owner_requirement == "ALL_AFFECTED_OWNERS" {
+                let refs: Value = sqlx::query_scalar(
                         "select resource_owner_versions || asset_owner_versions from admission.tenant_lifecycle_snapshot
                     where action_execution_id=$1 and tenant_id=$2",
                     )
@@ -8761,16 +8868,18 @@ impl Governance {
                     .bind(ae.tenant_id)
                     .fetch_one(&mut *tx)
                     .await?;
-                    serde_json::from_value(refs).map_err(|e| Refusal::Unavailable(e.to_string()))?
-                } else if installation_owner {
-                    vec![installation_permission::frozen_owner(&ae)?]
-                } else {
-                    Vec::new()
-                };
+                serde_json::from_value(refs).map_err(|e| Refusal::Unavailable(e.to_string()))?
+            } else if installation_owner {
+                vec![installation_permission::frozen_owner(&ae)?]
+            } else {
+                Vec::new()
+            };
             let owners_current =
                 crate::agent_definition::validate_frozen_owners(self, &mut tx, ae.tenant_id, &refs)
                     .await?;
-            let target_current = if crate::automation::step_approval::is_child(&ae) {
+            let target_current = if project_channel {
+                crate::project_channel_request::current(&mut tx, &ae).await?
+            } else if crate::automation::step_approval::is_child(&ae) {
                 crate::automation::step_approval::target_current(self, &mut tx, &ae).await?
             } else if installation_owner {
                 match installation_permission::validate_approval_owner(self, &mut tx, &ae, false)

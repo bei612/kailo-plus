@@ -728,6 +728,8 @@ struct RoleMemberRow {
     addable_workspace_member: bool,
     created_at: chrono::DateTime<chrono::Utc>,
     pubkeys: Vec<String>,
+    /// DD-139: first ACTIVE external subject, the key of the 07 §4.7.3 Tenant avatar route.
+    avatar_subject: Option<String>,
 }
 
 /// 角色管理候选人是本 Tenant 的全部 ACTIVE HUMAN 成员，不限于 WorkspaceMembership：
@@ -818,7 +820,9 @@ pub async fn list_role_members(
            tm.created_at,
            array(select bib.pubkey from identity.buzz_identity_binding bib
              where bib.tenant_id=tm.tenant_id and bib.principal_id=p.id
-               and bib.kind='HUMAN' and bib.state='ACTIVE' order by bib.pubkey) as pubkeys
+               and bib.kind='HUMAN' and bib.state='ACTIVE' order by bib.pubkey) as pubkeys,
+           (select min(ei.subject) from identity.external_identity ei
+             where ei.human_identity_id=hi.id and ei.status='ACTIVE') as avatar_subject
          from identity.principal p
          join identity.tenant_membership tm on tm.tenant_principal_id = p.id
          join identity.human_identity hi on hi.id = tm.human_identity_id
@@ -966,6 +970,7 @@ pub async fn list_role_members(
                  addable_workspace_member,
                  created_at,
                  pubkeys,
+                 avatar_subject,
              }| {
                 let tenant_admin = tenant_admins.contains(&principal_id);
                 let workspace_admin = workspace_admins.contains(&principal_id);
@@ -977,6 +982,7 @@ pub async fn list_role_members(
                     display_name,
                     created_at: tenant_manage.then(|| created_at.to_rfc3339()),
                     pubkeys: (tenant_manage && !pubkeys.is_empty()).then_some(pubkeys),
+                    picture: crate::component_directory::member_picture(avatar_subject.as_deref()),
                     tenant_admin,
                     workspace_admin,
                     can_grant_tenant_admin: tenant_manage

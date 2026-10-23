@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/project_channel_request_approval_view.schema.json",
+  "title": "ProjectChannelRequestApprovalView",
+  "description": "DD-140：有权读取的审批所冻结的项目频道申请与提议的 Installation，供 owner 端以原版对话框呈现；不是另一审批或内容权威。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["installationResourceId", "request"],
+  "properties": {
+    "installationResourceId": {"type": "string", "format": "uuid"},
+    "request": {"$ref": "project_channel_request.schema.json"}
+  }
+}

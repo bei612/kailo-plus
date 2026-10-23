@@ -1,6 +1,7 @@
 // Fixed Buzz 779af8886caae1317b4de962082429867ab61503:
 // desktop/src/features/projects/ui/ProjectChannelHome.tsx.
-// The original channel host, overview rail, toggle and chrome are shared.
+// The original channel host, overview rail, toggle and chrome are shared, inside the original
+// ProjectSelectionProvider (selection in the workspace sheet rows).
 // Commits/Files sheets use the host's DD-118 Git reads. The owner's home-repository healing
 // (useHealProjectHomeRepositories) and the overview's repository/channel management publish the
 // owner's own announcements through the Projects publication host (REQ-24, DD-80, DD-118).
@@ -27,6 +28,7 @@ import { canHealProjectHomeRepositories, healProjectHomeRepositories } from "./p
 import type { IdleAuxiliaryProps } from "../messages/thread/IdleAuxiliarySurface";
 import type { ProjectsHost } from "./projectEnumeration";
 import type { ProjectWorkItemTarget } from "./projectWorkItems";
+import { ProjectSelectionProvider } from "./lib/useProjectSelection";
 import { ProjectHomeWorkspaceSheet, type ProjectHomeWorkspaceCreateAction, type ProjectHomeWorkspaceDetail, type ProjectHomeWorkspaceSheetTab, type ProjectWorkItemsRenderer } from "./ProjectHomeWorkspaceSheet";
 
 const PROJECT_HOME_SUMMARY_WIDTH_SESSION_KEY = "buzz.desktop.project-home-summary-width";
@@ -139,7 +141,10 @@ export function ProjectChannelHome({ project, projects, scopeKey, viewerPubkey, 
         host={host} project={project} repositoryId={repository.id} tab={workspaceTab}
         renderWorkItems={renderWorkItems} onDetailChange={setWorkspaceDetail} onCreateActionChange={setWorkspaceCreateAction}
         onOpenCommit={onOpenProject ? openCommit : undefined} onSelectRepository={selectWorkspaceRepository}/> : undefined;
-  return <div className={cn("relative flex min-h-0 min-w-0 flex-1 overflow-hidden",
+  // Original ProjectChannelHome L250: the home and its workspace sheet are one selection context,
+  // reset per project and sheet tab (Tasks/Reviews/Commits rows select inside it).
+  return <ProjectSelectionProvider resetKey={`${project.id}:${workspaceTab ?? "home"}`}>
+  <div className={cn("relative flex min-h-0 min-w-0 flex-1 overflow-hidden",
     summaryVisible && "bg-sidebar", summaryVisible && sidebar?.open === false && "pl-2")}
     data-project-context-detached={summaryVisible ? "true" : undefined}
     data-project-detail-screen data-repository-healing-enabled={healingEnabled} data-testid="project-channel-home">
@@ -198,5 +203,6 @@ export function ProjectChannelHome({ project, projects, scopeKey, viewerPubkey, 
           onRepositoryChange={refreshProjectHome}/>
       </ProjectHomeColumn> : null}
     </ProjectContextRail>
-  </div>;
+  </div>
+  </ProjectSelectionProvider>;
 }

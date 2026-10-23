@@ -7,7 +7,7 @@ mod export_util;
 mod ffmpeg_locator;
 mod gifs;
 mod identity;
-mod link_preview;
+pub(crate) mod link_preview;
 pub(crate) mod media;
 mod media_download;
 mod media_fetch_cancellation;

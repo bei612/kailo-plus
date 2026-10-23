@@ -50,6 +50,7 @@ import {
 import { ContentSurface, GradientLayer } from "@client-kit/platform/react/surfaces";
 import { ChannelMembersBar, ChannelMembersDialog, type MemberProfileRequest } from "@client-kit/platform/react/channel-members";
 import { MemberHover, useOptionalMemberProfile, type MemberTarget } from "@client-kit/platform/react/members";
+import { CandidatePictureProvider, sameOriginAvatarPicture } from "@client-kit/platform/react/profile/candidate-picture";
 import { UserProfilePopoverSurface } from "@client-kit/platform/react/pulse";
 import { ChannelManagementSheet } from "@client-kit/platform/react/channel-management-sheet";
 import { ChannelEphemeralBadge } from "@client-kit/platform/react/ephemeral-channel";
@@ -92,7 +93,8 @@ import { SettingsPane } from "@/platform/ui/SettingsPane";
 import { AgentDefinitionsPane } from "./AgentDefinitionsPane";
 import { NewMessagePage } from "./NewMessagePage";
 import { PulsePane } from "./PulsePane";
-import { ProjectsPane } from "./ProjectsPane";
+import { ProjectsPane, useProjectsHost } from "./ProjectsPane";
+import { ProjectChannelRequestDialog } from "@client-kit/platform/react/projects";
 import { SidebarProjects } from "./SidebarProjects";
 import { WorkspaceChannelCreateChannelType } from "@client-kit/contracts";
 import { usePreviewFeatureWarning } from "@client-kit/platform/react/features";
@@ -128,6 +130,7 @@ const reauthenticateTopLevel = () => { void signInAgainHere(); };
 export function PlatformApp() {
   const locale = useDeviceLocale();
   const { isDark } = useTheme();
+  const avatarPicture = useMemo(() => sameOriginAvatarPicture(window.location.origin), []);
   const documentBinding = new URLSearchParams(window.location.search).get("protocolBinding");
   const [session, setSession] = useState<PlatformSessionView | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -173,6 +176,8 @@ export function PlatformApp() {
   return (
     <PlatformProvider client={bff} locale={locale} documentTheme={isDark ? "DARK" : "LIGHT"} currentPrincipalId={session.tenantPrincipalId}
       reauthenticateTopLevel={reauthenticateTopLevel}>
+      {/* DD-139: candidate and DM-row avatars load only the Tenant avatar route on this origin. */}
+      <CandidatePictureProvider resolve={avatarPicture}>
       {session.accessMode === PlatformSessionAccessMode.LifecycleRestricted ? (
         <LifecycleRestrictedView
           displayName={t("platform.title")}
@@ -192,6 +197,7 @@ export function PlatformApp() {
         <BrowserNotificationsProvider key={session.tenantPrincipalId} principalId={session.tenantPrincipalId}><ConversationVisibilityProvider value={conversationVisibility}><WebPresenceHost session={session}><WebAgentTranscriptHost session={session}><SignedIn session={session} /></WebAgentTranscriptHost></WebPresenceHost></ConversationVisibilityProvider></BrowserNotificationsProvider>
         </WebOnboardingGate>
       )}
+      </CandidatePictureProvider>
     </PlatformProvider>
   );
 }
@@ -257,6 +263,8 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
     return () => { directMessageOwner.active = false; };
   }, [directMessageOwner]);
   const searchScopeKey = `${session.tenantId}:${session.tenantPrincipalId}:${session.platformSessionId}`;
+  // DD-140: the original global owner-review dialog for Agent project channel requests.
+  const projectRequestHost = useProjectsHost(searchScopeKey);
   const navigation = usePlatformNavigation(searchScopeKey);
   // DD-125(6): a working Agent row outside the channel view opens that channel, then its activity.
   const openAgentActivityChannel = useCallback((workspaceId: string) => { void navigation.openChannel(workspaceId); }, [navigation]);
@@ -565,6 +573,12 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
     ) : tab === "inbox" ? (
       <InboxPane
         key={searchScopeKey}
+        isDark={isDark}
+        // Original management sheet Workflows ingress from the Inbox detail, as on the channel page.
+        workflowsFor={(workspaceId) => ({
+          onOpenWorkflow: (workflowId) => { void navigation.openWorkflow({ workflowId, workspaceId }, workspaceId); },
+          onCreateWorkflow: () => { void navigation.openWorkflowCreate(true, workspaceId); },
+        })}
         principalId={session.tenantPrincipalId}
         selectedItemId={navigation.inboxItemId}
         onSelectedItemIdChange={navigation.setInboxItemId}
@@ -644,6 +658,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
     <CollaborationPreferencesProvider value={preferences}>
     <AgentActivityOpenerHost navigate={openAgentActivityChannel}>
     <ProfileDirectMessageProvider value={profileDirectMessage}>
+    <ProjectChannelRequestDialog host={projectRequestHost} />
     {/* Original `#channel` composer suggestions: the admitted directory's channel names. */}
     <ComposerChannelLinksProvider channels={searchDirectory.isError ? undefined : searchDirectory.data?.channels}>
     <BffReminderHost scopeKey={searchScopeKey} principalId={session.tenantPrincipalId} onOpen={openSearchChannel}>

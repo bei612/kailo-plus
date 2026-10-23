@@ -24,7 +24,7 @@ use rate_limit::{
 };
 
 const MAX_PREVIEW_FETCH_BYTES: usize = 256 * 1024;
-const MAX_IMAGE_FETCH_BYTES: usize = 2 * 1024 * 1024;
+pub(crate) const MAX_IMAGE_FETCH_BYTES: usize = 2 * 1024 * 1024;
 const MAX_IMAGE_DIMENSION: u32 = 4096;
 const MAX_IMAGE_PIXELS: u64 = 16_000_000;
 const MAX_SANITIZED_DIMENSION: u32 = 1200;
@@ -299,7 +299,10 @@ async fn read_bytes_prefix(response: reqwest::Response, limit: usize) -> Result<
     Ok(bytes)
 }
 
-async fn read_limited_bytes(response: reqwest::Response, limit: usize) -> Result<Vec<u8>, String> {
+pub(crate) async fn read_limited_bytes(
+    response: reqwest::Response,
+    limit: usize,
+) -> Result<Vec<u8>, String> {
     let mut stream = response.bytes_stream();
     let mut bytes = Vec::new();
 

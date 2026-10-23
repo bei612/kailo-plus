@@ -1,8 +1,13 @@
 // Original Buzz 779af8886caae1317b4de962082429867ab61503 desktop/src/features/projects/ui/ProjectSelectableGroup.tsx.
-// Original read presentation; selection-to-Agent context remains a separate missing consumer, not a fake control.
+// Original group header select-all: with `items` inside a ProjectSelectionProvider the leading icon
+// becomes the all/partial checkbox on hover (or while any of the group is selected).
 import * as React from "react";
 
 import { twMerge as cn } from "tailwind-merge";
+import { useUiT } from "../context";
+import type { ProjectSelectionItem } from "./lib/projectSelection";
+import { useProjectSelection } from "./lib/useProjectSelection";
+import { ProjectEntitySelectControl } from "./ProjectEntityListRow";
 
 export function ProjectSelectableGroup({
   children,
@@ -12,6 +17,7 @@ export function ProjectSelectableGroup({
   headerClassName,
   headerTestId,
   icon,
+  items,
   label,
   labelClassName,
   labelTestId,
@@ -24,12 +30,21 @@ export function ProjectSelectableGroup({
   headerClassName?: string;
   headerTestId: string;
   icon: React.ReactNode;
+  items?: ProjectSelectionItem[];
   label: string;
   labelClassName?: string;
   labelTestId?: string;
   testId: string;
 }) {
   const [expanded, setExpanded] = React.useState(true);
+  const t = useUiT();
+  const selection = useProjectSelection();
+  const selectable = selection && items && items.length > 0 ? items : null;
+  const selectedCount = selectable
+    ? selection!.items.filter(selected => selectable.some(item => item.id === selected.id)).length : 0;
+  const allSelected = selectable !== null && selectedCount === selectable.length;
+  const partiallySelected = selectedCount > 0 && !allSelected;
+  const showSelectControl = allSelected || partiallySelected;
 
   return (
     <section
@@ -52,11 +67,29 @@ export function ProjectSelectableGroup({
           <span
             className={cn(
               "flex items-center justify-center transition-opacity",
+              selectable && "group-focus-within/header:opacity-0 group-hover/header:opacity-0",
+              showSelectControl && "opacity-0",
             )}
             data-testid="project-group-icon"
           >
             {icon}
           </span>
+          {selectable ? (
+            <span
+              className={cn(
+                "absolute inset-0 flex items-center justify-center opacity-0 transition-opacity group-focus-within/header:opacity-100 group-hover/header:opacity-100",
+                showSelectControl && "opacity-100",
+              )}
+            >
+              <ProjectEntitySelectControl
+                checked={allSelected}
+                indeterminate={partiallySelected}
+                label={t(allSelected ? "projects.selection.clearAll" : "projects.selection.selectAll", { name: label })}
+                onToggle={() => selection!.toggleGroup(selectable)}
+                testId="projects-group-select"
+              />
+            </span>
+          ) : null}
         </span>
         <button
           aria-expanded={expanded}

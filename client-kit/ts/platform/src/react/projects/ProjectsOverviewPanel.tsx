@@ -1,9 +1,8 @@
 // Buzz 779af8886caae1317b4de962082429867ab61503
 // desktop/src/features/projects/ui/ProjectsOverviewPanel.tsx; wording comes from
-// the shared catalog. The multi-item selection branch (ProjectsSelectionCountMenu
-// with Agent chat / review creation) has no shared consumer, so only the
-// original unselected context pod is rendered. Its Create review action (DD-118)
-// exists only while the caller passes the review writer.
+// the shared catalog. While a Projects selection is active the pod is the original
+// ProjectsSelectionCountMenu (Agent chat DD-130, discuss, create review, copy links); its
+// actions exist only while the caller passes their existing consumer (Create review: DD-118).
 import {
   CheckCircle2,
   CircleDot,
@@ -25,6 +24,11 @@ import type { ProjectIssue } from "./projectIssues.mjs";
 import type { Project } from "./projectModels";
 import type { ProjectPullRequest } from "./projectPullRequests.mjs";
 import { ProjectsOverviewPeople } from "./ProjectsOverviewRail";
+import { cn } from "../profile/buzz/shared/lib/cn";
+import { projectSelectionPresentation, type ProjectSelectionItem } from "./lib/projectSelection";
+import { useProjectSelection } from "./lib/useProjectSelection";
+import { ProjectsSelectionCountMenu } from "./ProjectsSelectionCountMenu";
+import type { ProjectDiscussInChannel } from "./useProjectDiscussInChannel";
 import {
   type OverviewContextAction,
   type OverviewContextStatIcon,
@@ -120,6 +124,10 @@ type ProjectsOverviewContextPanelProps = {
   pullRequests: ProjectPullRequest[];
   repositorySummaries?: Record<string, ProjectActivitySummary>;
   summaries?: Record<string, ProjectActivitySummary>;
+  /** Original selection actions: DD-130 chat with the selection as context, governed discuss draft. */
+  onChatWithAgent?: (items: ProjectSelectionItem[]) => void;
+  onDiscussInChannel?: ProjectDiscussInChannel;
+  scopeKey?: string;
 };
 
 function OverviewCreateButton({
@@ -207,8 +215,14 @@ export function ProjectsOverviewContextPanel({
   pullRequests,
   repositorySummaries,
   summaries,
+  onChatWithAgent,
+  onDiscussInChannel,
+  scopeKey = "",
 }: ProjectsOverviewContextPanelProps) {
   const t = useUiT();
+  const selection = useProjectSelection();
+  const selectionItems = selection?.items;
+  const selectionPresentation = React.useMemo(() => projectSelectionPresentation(selectionItems ?? []), [selectionItems]);
   // Memoized: the rail re-renders with every Projects-view state change, and
   // the context stats walk every issue and pull request in the community.
   const context = React.useMemo(
@@ -226,10 +240,15 @@ export function ProjectsOverviewContextPanel({
   );
   return (
     <div
-      className="min-w-0 overflow-hidden"
+      className={cn("min-w-0 overflow-hidden", selectionPresentation && "rounded-xl bg-background/90")}
       data-testid="projects-overview-context-panel"
     >
       <div className="px-4 pb-3 pt-3">
+        {selectionPresentation && selection ? (
+          <ProjectsSelectionCountMenu onChatWithAgent={onChatWithAgent} onCreatePullRequest={onCreatePullRequest}
+            onDiscussInChannel={onDiscussInChannel} presentation={selectionPresentation} scopeKey={scopeKey}
+            selectionItems={selection.items} />
+        ) : (
         <div className="flex min-w-0 items-center justify-between gap-2">
           <h2
             className="min-w-0 truncate text-sm font-normal text-muted-foreground/70"
@@ -249,6 +268,8 @@ export function ProjectsOverviewContextPanel({
             />
           ) : null}
         </div>
+        )}
+        {selectionPresentation ? null : (
         <div className="space-y-2.5 pt-2">
           <section
             className="space-y-2.5 text-sm"
@@ -273,6 +294,7 @@ export function ProjectsOverviewContextPanel({
             </div>
           ) : null}
         </div>
+        )}
       </div>
     </div>
   );

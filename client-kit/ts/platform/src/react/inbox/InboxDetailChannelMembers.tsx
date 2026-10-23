@@ -5,16 +5,18 @@
 // roster, the admitted channel view and the governed management seam come from the host, and every
 // change is still re-admitted by Core (DD-41/DD-119).
 import * as React from "react";
-import { ChannelManagementSheet, type ChannelManagementChannel } from "../channel-management-sheet";
+import { ChannelManagementSheet, type ChannelManagementChannel, type ChannelWorkflowNavigation } from "../channel-management-sheet";
 import type { ChannelManagementHost } from "../channel-management-actions";
 import { ChannelMembersBar, ChannelMembersDialog, type MemberRoster } from "../channel-members";
 
-export function InboxDetailChannelMembers({ roster, channel, isDark, management, onCopy, currentPrincipalId, currentPubkey, fallbackMemberCount }: {
+export function InboxDetailChannelMembers({ roster, channel, isDark, management, workflows, onCopy, currentPrincipalId, currentPubkey, fallbackMemberCount }: {
   roster: MemberRoster;
   channel: ChannelManagementChannel;
   isDark: boolean;
   /** DD-119 governed management of a Workspace channel; omitted keeps the read-only summary. */
   management?: ChannelManagementHost;
+  /** Original ChannelWorkflowsSection ingress: the host routes into its shared Workflows page. */
+  workflows?: ChannelWorkflowNavigation;
   onCopy: (value: string) => Promise<void>;
   currentPrincipalId?: string;
   currentPubkey?: string;
@@ -35,7 +37,7 @@ export function InboxDetailChannelMembers({ roster, channel, isDark, management,
       currentPrincipalId={currentPrincipalId} currentPubkey={currentPubkey}
       workspaceName={roster.kind === "workspace" ? channel.name : undefined} /> : null}
     {manageMounted ? <ChannelManagementSheet roster={roster} channel={channel} open={manageOpen} onOpenChange={setManageOpen} isDark={isDark}
-      management={management} onCopy={onCopy}
+      management={management} workflows={workflows} onCopy={onCopy}
       onOpenMembers={() => { window.requestAnimationFrame(() => openMembers(true)); }} /> : null}
   </>;
 }

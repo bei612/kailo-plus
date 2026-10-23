@@ -10,6 +10,13 @@ import {useUiT} from "../context";
 import type {PlatformMessageKey} from "../../i18n";
 import type {Project} from "./projectModels";
 import {Button} from "../profile/buzz/shared/ui/button";
+import {selectionItemFromProject,type ProjectSelectionItem} from "./lib/projectSelection";
+import {projectShareLink} from "./projectShareLinks";
+
+/** Original ProjectsOverviewItems project selection item. */
+export function projectSelectionItem(project:Project):ProjectSelectionItem {
+  return selectionItemFromProject({channelId:project.projectChannelId,id:project.id,owner:project.owner,shareLink:projectShareLink(project),title:project.name});
+}
 import {normalizePubkey} from "../conversations/pubkey";
 import {resolveUserLabel,type UserProfileLookup} from "../messages/system/identity";
 import {UserAvatar} from "../messages/UserAvatar";
@@ -238,6 +245,8 @@ export function EmptyFilteredState() {
 }
 
 type ProjectItemProps={project:Project;onOpen:(project:Project)=>void;actions?:React.ReactNode;
+  /** Original selectionRangeItems: the visible projects in order (list rows only). */
+  selectionRangeItems?:ProjectSelectionItem[];
   /** Present only after the governed work-item read; absent while loading or failed. */
   activity?:{people:string[];profiles?:UserProfileLookup;summary:ProjectActivitySummary|undefined}};
 
@@ -314,8 +323,9 @@ export const ProjectGridCard = React.memo(function ProjectGridCard({
 // Original ProjectListRow consumes the same shared row as project channels.
 // Without a completed work-item read the original getProjectUpdatedAt fallback
 // (project.createdAt) is used, not fabricated activity.
-export const ProjectListRow = React.memo(function ProjectListRow({project,onOpen,actions,activity}:ProjectItemProps) {
+export const ProjectListRow = React.memo(function ProjectListRow({project,onOpen,actions,activity,selectionRangeItems}:ProjectItemProps) {
   const t=useUiT();
+  const selectionItem=projectSelectionItem(project);
   return <ProjectEntityListRow
     affiliation={
       <span className="flex items-center justify-end gap-1"><FolderGit2 className="h-3.5 w-3.5"/><span>{project.repositoryAddresses.length}</span></span>
@@ -329,6 +339,7 @@ export const ProjectListRow = React.memo(function ProjectListRow({project,onOpen
     onClick={()=>onOpen(project)}
     peopleSlot={activity&&activity.people.length>0?<ProjectEntityFacepile interactive participants={activity.people} profiles={activity.profiles}/>:undefined}
     peopleTestId="projects-row-people"
+    selection={selectionRangeItems?{item:selectionItem,rangeItems:selectionRangeItems}:undefined}
     testId={`project-row-${project.dtag}`}
     title={<span className="flex min-w-0 items-center gap-2">
       <span className="truncate">{project.name}</span>

@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/project_channel_request.schema.json",
+  "title": "ProjectChannelRequest",
+  "description": "DD-140：托管 Agent 平台原生工具 project_channel_request 的输入，与固定 Buzz projectChannelRequest.ts::parseProjectChannelRequest 同形同界；只是提议，绑定 workspace.create 且必须由 Installation owner 批准。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["homeChannelId", "name", "visibility"],
+  "properties": {
+    "homeChannelId": {"type": "string", "format": "uuid", "description": "该 Installation 的 ACTIVE ChannelAgentBinding 所在 Workspace（即其频道 ID）。"},
+    "name": {"type": "string", "minLength": 1, "maxLength": 120},
+    "description": {"type": "string", "minLength": 1, "maxLength": 2048},
+    "visibility": {"$ref": "../domain/workspace_visibility.schema.json"},
+    "ttlSeconds": {"type": "integer", "minimum": 1},
+    "templateName": {"type": "string", "minLength": 1, "maxLength": 300}
+  }
+}

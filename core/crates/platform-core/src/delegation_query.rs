@@ -311,7 +311,8 @@ pub async fn targets(
               and r.state='ACTIVE' and r.projection_action_execution_id is null and r.application_binding_id is null
               and i.workspace_id=$2 and i.state='ACTIVE'
             union all
-            select i.resource_id,a.action_key,a.version action_version,a.target_type,a.obs_redaction_policy redaction_policy,
+            select i.resource_id,a.action_key,a.version action_version,'RESOURCE'::text target_type,
+            'PLATFORM_METADATA_ONLY'::text redaction_policy,
             t.resource_id tool_resource_id,t.output_schema_hash,null::text result_exposure_mode
             from catalog.tool_binding b join catalog.agent_installation i on i.resource_id=b.installation_resource_id
             join catalog.resource r on r.id=i.resource_id and r.tenant_id=$1 and r.home_workspace_id=$2
@@ -320,7 +321,9 @@ pub async fn targets(
             join catalog.action_definition a on a.action_key=t.action_key and a.status='ACTIVE' and a.component_release_id is null
             where i.resource_id=$4 and i.state='ACTIVE' and i.workspace_id=$2 and b.workspace_id=$2
               and b.projection_generation=i.active_projection_generation and b.agent_version_asset_id=i.pinned_version_asset_id
-              and b.status in ('NO_PERMISSION','ACTIVE') and t.action_key in ('agent.memory.entry.list','agent.memory.entry.read')
+              and b.status in ('NO_PERMISSION','ACTIVE')
+              and (t.name,t.action_key) in (('agent.memory.entry.list','agent.memory.entry.list'),
+                ('agent.memory.entry.read','agent.memory.entry.read'),('project_channel_request','workspace.create'))
             union all
             select target.id resource_id,a.action_key,a.version action_version,a.target_type,a.obs_redaction_policy redaction_policy,
               t.resource_id tool_resource_id,t.output_schema_hash,a.result_exposure result_exposure_mode

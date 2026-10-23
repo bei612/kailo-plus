@@ -643,7 +643,8 @@ describe("original Projects announcements",()=>{
     const ui=await render(<PlatformProvider client={bff}><QueryClientProvider client={cache}><ProjectsView host={h}/></QueryClientProvider></PlatformProvider>);
     await vi.waitFor(()=>expect(ui.textContent).toContain("Real project"));
     await click(ui.querySelector<HTMLButtonElement>('button[aria-label="List layout"]')!);expect(ui.querySelectorAll("[data-projects-grid-card]")).toHaveLength(0);
-    await click(ui.querySelector<HTMLButtonElement>('[data-testid="project-row-p"]')!);
+    // Original overlay row inside the overview selection: the open target is the row's full-size button.
+    await click(ui.querySelector<HTMLButtonElement>('[data-testid="project-row-p"] > button')!);
     expect(ui.querySelector("aside")).toBeNull();expect(ui.textContent).toContain("This project does not have any available repositories yet.");
     h.query=async()=>{throw new Error("revoked");};await act(async()=>{await cache.invalidateQueries({queryKey:["projects",h.scopeKey]});});
     // Original ProjectDetailUnavailableState load-error with Retry and Back to Projects.

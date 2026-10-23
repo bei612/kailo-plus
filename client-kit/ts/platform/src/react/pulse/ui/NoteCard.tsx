@@ -227,6 +227,7 @@ export function NoteCard({
                 <button
                   aria-label={t(isUpvoted ? "pulse.unlike" : "pulse.like")}
                   aria-pressed={isUpvoted}
+                  aria-busy={isUpvotePending || undefined}
                   className={`${actionButtonClass} ${isUpvoted ? activeActionClass : ""} disabled:opacity-45`}
                   disabled={isUpvotePending}
                   onClick={() => {

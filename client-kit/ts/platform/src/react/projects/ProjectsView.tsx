@@ -13,7 +13,9 @@ import { FolderGit2, Folders, Trash2 } from "lucide-react";
 import { useBffClient, useUiT } from "../context";
 import { Button } from "../profile/buzz/shared/ui/button";
 import { DropdownMenuItem } from "../sidebar/dropdown-menu";
-import { EmptyFilteredState, EmptyState, ProjectGridCard, ProjectListRow } from "./ProjectCards";
+import { EmptyFilteredState, EmptyState, ProjectGridCard, ProjectListRow, projectSelectionItem } from "./ProjectCards";
+import type {ProjectSelectionItem} from "./lib/projectSelection";
+import {ProjectSelectionProvider} from "./lib/useProjectSelection";
 import { CreateProjectDialog } from "./CreateProjectDialog";
 import { ProjectDeleteAction } from "./ProjectDeleteAction";
 import { ProjectListRowMenu } from "./ProjectListRowMenu";
@@ -52,14 +54,14 @@ import {toast} from "sonner";
 import {ProjectsActivityFeed,buildProjectsActivityAgentContextItems,projectsActivityPubkeys} from "./ProjectsActivityFeed";
 import {ProjectAgentChatPanel} from "./ProjectAgentChatPanel";
 import {ProjectAgentChatHostProvider,useProjectAgentChatHost,type ProjectAgentChatHost} from "./projectAgentChatHost";
-import {buildProjectDetailAgentContext,type ProjectDetailAgentContext} from "./lib/projectDetailAgentContext";
+import {buildProjectDetailAgentContext,buildProjectSelectionAgentContext,type ProjectDetailAgentContext} from "./lib/projectDetailAgentContext";
 import {useProjectsOverviewAgentContext} from "./useProjectsOverviewAgentContext";
 import {useThreadPanelWidth} from "../messages/thread/useThreadPanelWidth";
 import {ProjectsActivityIntro,ProjectsOverviewPanel} from "./ProjectsOverviewPanel";
 import {ProjectsWorkItemsLoadNotice} from "./ProjectsWorkItemsLoadNotice";
 import {buildProjectsActivityDigest} from "./lib/projectsActivityDigest";
 import {projectActivitySummaries,repositoryActivitySummaries,type ProjectActivitySummary} from "./lib/projectActivitySummaries";
-import {RepositoryGridCard,RepositoryListRow} from "./RepositoryCards";
+import {RepositoryGridCard,RepositoryListRow,repositorySelectionItem} from "./RepositoryCards";
 import {CopyShareLinkMenuItem} from "./CopyShareLinkMenuItem";
 import {projectShareLink} from "./projectShareLinks";
 import {normalizePubkey} from "../conversations/pubkey";
@@ -188,7 +190,7 @@ function ProjectRepositoryPage(props:ProjectsViewProps) {
         commitHash={commitHash} filePath={tab==="files"?target.filePath:undefined}
         onSelectCommit={hash=>navigate(project.id,{repositoryId:repository.id,tab:"commits",...(hash?{commitHash:hash}:{})})}
         onRepositoryChange={repositoryId=>navigate(project.id,{repositoryId,tab:urlTab(tab)})}
-        onOpen={next=>onOpen?.(project.id,{repositoryId:repository.id,tab:urlTab(tab),...next})}/>}
+        onOpen={next=>onOpen?.(project.id,{repositoryId:repository.id,tab:urlTab(tab),...next})} onDiscussInChannel={props.onDiscussInChannel}/>}
   </>;
 }
 
@@ -199,11 +201,12 @@ type WorkItemsSnapshot=Awaited<ReturnType<typeof loadProjectWorkItems>>;
  * and the WorkspaceTabs content. Profiles and discussion reads come from the work-item host, so the
  * tab content renders inside `renderWorkItems`; the rail and its management actions do not need it.
  */
-function RepositoryWorkspace({host,snapshot,project,repository,panel,renderWorkItems,tab,onBack,onTabChange,onOpen,commitHash,filePath,onSelectCommit,onRepositoryChange}:{
+function RepositoryWorkspace({host,snapshot,project,repository,panel,renderWorkItems,tab,onBack,onTabChange,onOpen,commitHash,filePath,onSelectCommit,onRepositoryChange,onDiscussInChannel}:{
   host:ProjectsHost;snapshot:WorkItemsSnapshot;project:Project;repository:Project["repositories"][number];panel:ProjectRepositoryPanelState;
   renderWorkItems:ProjectsViewProps["renderWorkItems"];tab:ProjectWorkspaceTab;
   onBack:()=>void;onTabChange:(tab:ProjectWorkspaceTab)=>void;onOpen:(target:ProjectWorkItemTarget)=>void|Promise<void>;
   commitHash:string|null;filePath?:string;onSelectCommit:(hash:string|null)=>void;onRepositoryChange:(repositoryId:string)=>void;
+  onDiscussInChannel?:ProjectDiscussInChannel;
 }) {
   const t=useUiT();const cache=useQueryClient();const [createOpen,setCreateOpen]=useState(false);const [creating,setCreating]=useState(false);
   const [createReviewOpen,setCreateReviewOpen]=useState(false);
@@ -232,13 +235,16 @@ function RepositoryWorkspace({host,snapshot,project,repository,panel,renderWorkI
   const tabs=<RepositoryWorkspaceTabs host={host} project={project} repository={repository} items={items} issues={issues} pullRequests={pullRequests}
     tab={tab} git={git} commitHash={commitHash} filePath={filePath} onBack={onBack} onTabChange={onTabChange} open={open} onSelectCommit={onSelectCommit}
     onCreateTask={onCreateTask} onCreatePullRequest={onCreatePullRequest}/>;
-  return <>
+  // Original ProjectDetailScreen ProjectSelectionProvider (L796): a selection opens the repository
+  // context card; switching repository or tab resets it.
+  return <ProjectSelectionProvider onSelect={()=>{panel.setMode("repository");panel.expand();}} resetKey={`${repository.id}:${tab}`}>
     {host.git&&git.branchActions.available?<ProjectBranchActionDialogs actions={git.branchActions} activeBranch={git.activeBranch}
       activeBranchCommit={git.activeBranchCommit} existingBranches={git.branchOptions}/>:null}
-    <ProjectDetailPanelLayout state={panel} chatPanel={chatPanel} panel={<ProjectRepositoryContextPanel activeTab={tab} fetch={host.git?git.fetch:undefined} host={host}
+    <ProjectDetailPanelLayout state={panel} chatPanel={chatPanel} resetKey={`${repository.id}:${tab}`} panel={<ProjectRepositoryContextPanel activeTab={tab} fetch={host.git?git.fetch:undefined} host={host}
       identityPubkey={snapshot.viewerPubkey} issues={issues} onCreatePullRequest={onCreatePullRequest} onCreateTask={onCreateTask}
       onRepositoryChange={onRepositoryChange} project={project} projects={snapshot.projects} pullRequests={pullRequests} repository={repository}
       snapshot={host.git?git.snapshot:undefined} sourceControls={host.git?git.sourceControls:undefined}
+      selectionActions={{onChatWithAgent:chatPanel?items=>panel.openSelectionChat(agentPageContext,items):undefined,onDiscussInChannel,scopeKey:host.scopeKey}}
       widthPx={panel.width.widthPx} onResizeStart={panel.width.onResizeStart} canResetWidth={panel.width.canReset} onResetWidth={panel.width.onResetWidth}/>}>
       {navigationFailed?<p role="alert">{t("platform.loadFailed")}</p>:null}
       {renderWorkItems?renderWorkItems(tabs,snapshot.viewerPubkey):tabs}
@@ -260,7 +266,7 @@ function RepositoryWorkspace({host,snapshot,project,repository,panel,renderWorkI
         }catch(error){throw new Error(t(isOutcomeUnknown(error)?"projects.issue.unknown":"projects.issue.createFailed"));}
         finally{sending.current=false;if(!lifetime.controller.signal.aborted)setCreating(false);}
       }}/>
-  </>;
+  </ProjectSelectionProvider>;
 }
 
 /** The original WorkspaceTabs bodies over the work-item read and the shared git state. */
@@ -451,9 +457,12 @@ function ProjectsActivityBody({snapshot,search,onOpenProject,onOpen}:{snapshot:P
 // projects collection groups over the responsive card grid or list rows.
 const RESPONSIVE_CARD_GRID_CLASS="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(min(100%,16rem),1fr))]";
 type ProjectItemActivity={people:string[];profiles?:UserProfileLookup;summary:ProjectActivitySummary|undefined};
+type ProjectRowRenderer=(project:Project,activity:ProjectItemActivity|undefined,rangeItems?:ProjectSelectionItem[])=>ReactNode;
 function ProjectsOverviewProjectItems({visible,viewerPubkey,view,activityFor,renderRow}:{visible:Project[];viewerPubkey:string;view:ProjectsViewMode;
-  activityFor:(project:Project)=>ProjectItemActivity|undefined;renderRow:(project:Project,activity:ProjectItemActivity|undefined)=>ReactNode}) {
+  activityFor:(project:Project)=>ProjectItemActivity|undefined;renderRow:ProjectRowRenderer}) {
   const t=useUiT();
+  // Original: one selection array shared by every row, the visible projects in order.
+  const rangeItems=useMemo(()=>visible.map(projectSelectionItem),[visible]);
   if(visible.length===0)return <EmptyFilteredState/>;
   const groups=[
     {items:visible.filter(project=>isProjectMine(project,viewerPubkey)),key:"mine",title:t("projects.group.mine")},
@@ -462,11 +471,12 @@ function ProjectsOverviewProjectItems({visible,viewerPubkey,view,activityFor,ren
   return <div className="space-y-0" data-testid={view==="list"?"projects-list-container":undefined}>
     {groups.map(group=><ProjectSelectableGroup contentClassName="mt-2 space-y-0" count={group.items.length} groupKey={group.key}
       headerClassName="mx-0 gap-3 px-3" headerTestId="projects-collection-group-header" icon={<Folders className="h-4 w-4"/>} key={group.key}
+      items={group.items.map(projectSelectionItem)}
       label={group.title} labelClassName="text-sm font-normal text-foreground/80" labelTestId="projects-collection-group-label" testId="projects-collection-group">
       {view==="grid"?<div className={RESPONSIVE_CARD_GRID_CLASS}>
         {group.items.map(project=><div className="[contain-intrinsic-size:auto_11rem] [content-visibility:auto]" key={project.id}>{renderRow(project,activityFor(project))}</div>)}
       </div>:<div>
-        {group.items.map(project=><div className="[contain-intrinsic-size:auto_3.5rem] [content-visibility:auto]" key={project.id}>{renderRow(project,activityFor(project))}</div>)}
+        {group.items.map(project=><div className="[contain-intrinsic-size:auto_3.5rem] [content-visibility:auto]" key={project.id}>{renderRow(project,activityFor(project),rangeItems)}</div>)}
       </div>}
     </ProjectSelectableGroup>)}
   </div>;
@@ -474,7 +484,7 @@ function ProjectsOverviewProjectItems({visible,viewerPubkey,view,activityFor,ren
 
 // Profiles for the original people stacks come from the work-item host.
 function ProjectsOverviewProjectItemsWithActivity({visible,viewerPubkey,view,summaries,renderRow}:{visible:Project[];viewerPubkey:string;view:ProjectsViewMode;
-  summaries:Record<string,ProjectActivitySummary>;renderRow:(project:Project,activity:ProjectItemActivity|undefined)=>ReactNode}) {
+  summaries:Record<string,ProjectActivitySummary>;renderRow:ProjectRowRenderer}) {
   // Identity-stable people arrays keep memoized cards from re-rendering.
   const peopleByProject=useMemo(()=>new Map(visible.map(project=>[project.id,projectPeople(project,summaries[project.id])])),[summaries,visible]);
   const pubkeys=useMemo(()=>[...new Set([...peopleByProject.values()].flat())],[peopleByProject]);
@@ -505,6 +515,7 @@ function repositoryIsMine(repository:Project["repositories"][number],currentPubk
 function ProjectsOverviewRepositoryItems({visible,viewerPubkey,view,summaries,profiles,canCopyLink,onOpen}:{visible:RepositoryRow[];viewerPubkey:string;view:ProjectsViewMode;
   summaries?:Record<string,ProjectActivitySummary>;profiles?:UserProfileLookup;canCopyLink:boolean;onOpen:(project:Project,repository:Project["repositories"][number])=>void}) {
   const t=useUiT();
+  const rangeItems=useMemo(()=>visible.map(row=>repositorySelectionItem(row.project,row.repository)),[visible]);
   if(visible.length===0)return <EmptyFilteredState/>;
   const groups=[
     {items:visible.filter(row=>repositoryIsMine(row.repository,viewerPubkey)),key:"mine",title:t("projects.group.mine")},
@@ -513,13 +524,14 @@ function ProjectsOverviewRepositoryItems({visible,viewerPubkey,view,summaries,pr
   return <div className="min-w-0 flex-1 space-y-0" data-testid={view==="list"?"projects-list-container":undefined}>
     {groups.map(group=><ProjectSelectableGroup contentClassName="mt-2 space-y-0" count={group.items.length} groupKey={group.key}
       headerClassName="mx-0 gap-3 px-3" headerTestId="projects-collection-group-header" icon={<FolderGit2 className="h-4 w-4"/>} key={group.key}
+      items={group.items.map(row=>repositorySelectionItem(row.project,row.repository))}
       label={group.title} labelClassName="text-sm font-normal text-foreground/80" labelTestId="projects-collection-group-label" testId="projects-collection-group">
       {view==="grid"?<div className={RESPONSIVE_CARD_GRID_CLASS}>
         {group.items.map(({project,repository})=><div className="[contain-intrinsic-size:auto_11rem] [content-visibility:auto]" key={repository.repoAddress}>
           <RepositoryGridCard project={project} repository={repository} summary={summaries?.[repository.repoAddress]} profiles={profiles} onOpen={onOpen} canCopyLink={canCopyLink}/></div>)}
       </div>:<div>
         {group.items.map(({project,repository})=><div className="[contain-intrinsic-size:auto_3.5rem] [content-visibility:auto]" key={repository.repoAddress}>
-          <RepositoryListRow project={project} repository={repository} summary={summaries?.[repository.repoAddress]} profiles={profiles} onOpen={onOpen} canCopyLink={canCopyLink}/></div>)}
+          <RepositoryListRow project={project} repository={repository} summary={summaries?.[repository.repoAddress]} profiles={profiles} onOpen={onOpen} canCopyLink={canCopyLink} selectionRangeItems={rangeItems}/></div>)}
       </div>}
     </ProjectSelectableGroup>)}
   </div>;
@@ -534,9 +546,11 @@ function ProjectsOverviewRepositoryItemsWithActivity(props:Omit<ComponentProps<t
 
 // Original ProjectsView context rail: the section-following ProjectsOverviewContextPanel
 // over the same directory and work-item reads; profiles come from the work-item host.
-function ProjectsOverviewContextRailContent({snapshot,projectReadModels,filter,onSelectSection,onCreateIssue,onCreatePullRequest,onCreateProject,onAddChannel,onAddRepository,canCreateTarget}:{snapshot:ProjectWorkItemsSnapshot;
+function ProjectsOverviewContextRailContent({snapshot,projectReadModels,filter,onSelectSection,onCreateIssue,onCreatePullRequest,onCreateProject,onAddChannel,onAddRepository,canCreateTarget,
+  onChatWithAgent,onDiscussInChannel,scopeKey}:{snapshot:ProjectWorkItemsSnapshot;
   projectReadModels:Project[];filter:ProjectsFilter;onSelectSection:(section:ProjectsOverviewSection)=>void;onCreateIssue?:()=>void;onCreatePullRequest?:()=>void;onCreateProject?:()=>void;
-  onAddChannel?:()=>void;onAddRepository?:()=>void;canCreateTarget:boolean}) {
+  onAddChannel?:()=>void;onAddRepository?:()=>void;canCreateTarget:boolean;
+  onChatWithAgent?:(items:ProjectSelectionItem[])=>void;onDiscussInChannel?:ProjectDiscussInChannel;scopeKey:string}) {
   const projects=useMemo(()=>snapshot.projects.filter(project=>!project.legacy),[snapshot]);
   const issues=useMemo(()=>snapshot.items.flatMap(item=>item.type==="issue"?[item.issue]:[]),[snapshot]);
   const pullRequests=useMemo(()=>snapshot.items.flatMap(item=>item.type==="pull-request"?[item.pullRequest]:[]),[snapshot]);
@@ -546,7 +560,8 @@ function ProjectsOverviewContextRailContent({snapshot,projectReadModels,filter,o
   const profiles=useUsersBatchQuery(people,{enabled:people.length>0}).data?.profiles;
   return <div className="min-w-0 flex-1"><ProjectsOverviewContextPanel filter={filter} issues={issues} projectReadModels={projectReadModels} projects={projects} pullRequests={pullRequests}
     repositorySummaries={repositorySummaries} summaries={summaries} profiles={profiles} onSelectSection={onSelectSection} onCreateIssue={onCreateIssue} onCreatePullRequest={onCreatePullRequest} onCreateProject={onCreateProject}
-    onAddChannel={onAddChannel} onAddRepository={onAddRepository} canCreateTarget={canCreateTarget}/></div>;
+    onAddChannel={onAddChannel} onAddRepository={onAddRepository} canCreateTarget={canCreateTarget}
+    onChatWithAgent={onChatWithAgent} onDiscussInChannel={onDiscussInChannel} scopeKey={scopeKey}/></div>;
 }
 
 /** Original ProjectsView agent rail: the overview chat at the thread panel width (useProjectPanelWidths("chat")). */
@@ -559,7 +574,7 @@ function ProjectsOverviewAgentRail({context,open,onClose,render}:{context:Projec
   </ProjectContextRail>;
 }
 
-function ProjectDirectory({host,selectedProjectId,onSelectedProjectChange,onOpenChannel,lastMessageAtByChannelId,renderMember,renderWorkItems,renderChannel}:ProjectsViewProps) {
+function ProjectDirectory({host,selectedProjectId,onSelectedProjectChange,onOpenChannel,lastMessageAtByChannelId,renderMember,renderWorkItems,renderChannel,onDiscussInChannel}:ProjectsViewProps) {
   const t=useUiT(); const cache=useQueryClient();const client=useBffClient();
   const [search,setSearch]=useState("");
   const [filter,setFilter]=useState<ProjectsFilter>(()=>{
@@ -580,6 +595,7 @@ function ProjectDirectory({host,selectedProjectId,onSelectedProjectChange,onOpen
   const [overviewPanelOpen,setOverviewPanelOpen]=useState(true);
   const [narrowContextOpen,setNarrowContextOpen]=useState(false);
   const contextToggleRef=useRef<HTMLButtonElement|null>(null);
+  const selectionDrawerState=useRef<{narrow:boolean;open:boolean}|null>(null);
   const isNarrowProjectsLayout=useMediaBreakpoint(PROJECTS_CONTEXT_POD_MIN_VIEWPORT_PX);
   const lifetime=useMemo(()=>({active:true}),[host]);
   useEffect(()=>{lifetime.active=true;return()=>{lifetime.active=false;};},[lifetime]);
@@ -635,9 +651,9 @@ function ProjectDirectory({host,selectedProjectId,onSelectedProjectChange,onOpen
     cache.invalidateQueries({queryKey:["projects",host.scopeKey]}),
     cache.invalidateQueries({queryKey:["sidebar-projects",host.scopeKey]}),
   ]);
-  const projectRow=(project:Project,activity?:ProjectItemActivity)=>{
+  const projectRow=(project:Project,activity?:ProjectItemActivity,rangeItems?:ProjectSelectionItem[])=>{
     const row=(actions?:ReactNode)=>view==="grid"?<ProjectGridCard project={project} onOpen={onOpen} actions={actions} activity={activity}/>
-      :<ProjectListRow project={project} onOpen={onOpen} actions={actions} activity={activity}/>;
+      :<ProjectListRow project={project} onOpen={onOpen} actions={actions} activity={activity} selectionRangeItems={rangeItems}/>;
     // Use the same winning replaceable event as projectModels (timestamp, then
     // lowest event ID). A stale earlier revision must not be deletion's target.
     const head=[...query.data!.projectEvents,...query.data!.repositoryEvents]
@@ -738,7 +754,9 @@ function ProjectDirectory({host,selectedProjectId,onSelectedProjectChange,onOpen
     onCreateProject={canCreate?()=>setCreateOpen(true):undefined}
     onAddChannel={categoryCreateAvailable?()=>setCreateChannelOpen(true):undefined}
     onAddRepository={categoryCreateAvailable?()=>setCreateRepositoryOpen(true):undefined}
-    canCreateTarget={editableProjects.length>0}/>:null;
+    canCreateTarget={editableProjects.length>0}
+    onChatWithAgent={overviewChatAvailable?items=>overviewAgent.setAgentContext(buildProjectSelectionAgentContext(items)):undefined}
+    onDiscussInChannel={onDiscussInChannel} scopeKey={host.scopeKey}/>:null;
   const rail=railContent&&workSnapshot?renderWorkItems?renderWorkItems(railContent,workSnapshot.viewerPubkey):railContent:null;
   const overviewContextOpen=contextAvailable&&overviewPanelOpen&&!isNarrowProjectsLayout;
   const overviewChatOpen=overviewChatAvailable&&overviewAgent.agentContext!==null&&!isNarrowProjectsLayout;
@@ -748,7 +766,20 @@ function ProjectDirectory({host,selectedProjectId,onSelectedProjectChange,onOpen
     <ProjectsOverviewChromeActions contextOpen={overviewPanelOpen} onToggleContext={()=>setOverviewPanelOpen(open=>!open)}
       chatOpen={overviewChatOpen} sectionTitle={t(projectsSectionTitleKey(filter))}
       onToggleChat={overviewChatAvailable?()=>overviewAgent.setAgentContext(context=>context?null:overviewAgent.overviewContext):undefined}/>;
-  return <div className={cn("relative flex min-h-0 min-w-0 flex-1 flex-row overflow-hidden",!isNarrowProjectsLayout&&"bg-sidebar pb-2 pr-2 pt-px",
+  // Original ProjectsView ProjectSelectionProvider: a new selection opens the context pod (narrow
+  // sheet or wide rail) and clearing restores the previous drawer state; a section change resets it.
+  const openSelectionDrawer=()=>{
+    if(selectionDrawerState.current)return;
+    selectionDrawerState.current={narrow:isNarrowProjectsLayout,open:isNarrowProjectsLayout?narrowContextOpen:overviewPanelOpen};
+    if(isNarrowProjectsLayout)setNarrowContextOpen(true);else setOverviewPanelOpen(true);
+  };
+  const restoreSelectionDrawer=()=>{
+    const previous=selectionDrawerState.current;selectionDrawerState.current=null;
+    if(!previous)return;
+    if(previous.narrow)setNarrowContextOpen(previous.open);else setOverviewPanelOpen(previous.open);
+  };
+  return <ProjectSelectionProvider onClear={restoreSelectionDrawer} onSelect={openSelectionDrawer} resetKey={filter}>
+  <div className={cn("relative flex min-h-0 min-w-0 flex-1 flex-row overflow-hidden",!isNarrowProjectsLayout&&"bg-sidebar pb-2 pr-2 pt-px",
       !isNarrowProjectsLayout&&sidebar?.open===false&&"pl-2")}
     data-project-context-detached={isNarrowProjectsLayout?undefined:"true"} data-testid="projects-overview-layout">
     <ProjectsWorkspaceChrome actions={chromeActions} onActivity={filter==="all"} onGoActivity={contextAvailable?()=>changeFilter("all"):undefined}
@@ -823,5 +854,6 @@ function ProjectDirectory({host,selectedProjectId,onSelectedProjectChange,onOpen
         event.preventDefault();
         contextToggleRef.current?.focus();
       }}>{rail}</ProjectsOverviewContextSheet>:null}
-  </div>;
+  </div>
+  </ProjectSelectionProvider>;
 }

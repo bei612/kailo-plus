@@ -8,6 +8,7 @@
 // BFF: approvals waiting on my decision and approvals I initiated that reached a
 // result. Deciding uses the existing approval decision; "done" stays local, as in
 // the original. This module holds no approval state of its own.
+import { ProjectChannelRequestDetails } from "../projects/ProjectChannelRequestDialog";
 import * as React from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { MailOpen, ShieldCheck } from "lucide-react";
@@ -168,6 +169,8 @@ export function NeedsActionDetailPane({ item, onBack, onChanged }: {
   return <section className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-background/60" data-testid="home-inbox-needs-action-detail">
     <InboxDetailHeader key={item.key} title={actionLabel(item.approval.actionKey)} onBack={onBack} openLabel={t("inbox.open")} />
     <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6 pt-2">
+      {/* DD-140: the frozen project channel request this approval decides (original dialog details). */}
+      {item.approval.projectChannelRequest ? <div className="mb-4"><ProjectChannelRequestDetails request={item.approval.projectChannelRequest.request} /></div> : null}
       <ApprovalPanel key={item.key} workflowId={item.workflowId} role={item.role} onChanged={onChanged} />
     </div>
   </section>;

@@ -1,12 +1,34 @@
 // Buzz 779af8886caae1317b4de962082429867ab61503
 // desktop/src/features/workflows/ui/WorkflowRunTrace.tsx::WorkflowRunTrace.
 // Original cards, timing and output/error layout over governed step evidence.
+// desktop/src/features/workflows/ui/WorkflowApprovalCard.tsx: the pending approval's approver and
+// expiry come from the existing approval read (ApprovalView roleRequirements/expiresAt), shown only
+// when Core admits that read for this viewer; the card hides once the approval is no longer
+// pending or has expired. Kailo keeps its step-approval entry (approval actions exist here).
 import { Check, Clock, SkipForward, X } from "lucide-react";
-import type { AutomationRunView, AutomationStepTrace } from "@client-kit/contracts";
-import { useReasonText, useT } from "./context";
+import { useQuery } from "@tanstack/react-query";
+import { ApprovalStatus, type AutomationRunView, type AutomationStepTrace, type TaskView } from "@client-kit/contracts";
+import { approvalSelectorMessages, enumLabel } from "../i18n";
+import { useBffClient, useLocale, useReasonText, useT } from "./context";
 import { TaskStatusBadge, WaitingReason } from "./governance";
 import { Badge, type BadgeProps } from "./channel-browser/badge";
 import { Button } from "./ui";
+
+function WorkflowApprovalCard({ task }: { task: TaskView }) {
+  const client = useBffClient(); const t = useT(); const locale = useLocale();
+  const workflowId = task.approvalWorkflowId;
+  const approval = useQuery({ queryKey: ["platform", "approval", workflowId ?? ""], enabled: Boolean(workflowId),
+    queryFn: () => client.approval(workflowId!), retry: false });
+  const view = approval.isSuccess ? approval.data : undefined;
+  if (!view || (view.status !== ApprovalStatus.Requested && view.status !== ApprovalStatus.Waiting)
+    || new Date(view.expiresAt) < new Date()) return null;
+  const approver = view.roleRequirements.map(requirement => enumLabel(locale, approvalSelectorMessages, requirement.selector)).join(", ");
+  return <div className="mb-3 rounded-lg border border-warning/30 bg-warning-bg p-3" data-testid="workflow-approval-card">
+    <p className="mb-2 text-sm font-medium">{t("workflows.approval.required")}</p>
+    <p className="mb-2 text-xs text-muted-foreground">{t("workflows.approval.approver", { approver })}</p>
+    <p className="text-xs text-muted-foreground">{t("workflows.approval.expires", { time: new Date(view.expiresAt).toLocaleString(locale) })}</p>
+  </div>;
+}
 
 function StepStatusBadge({ status }: { status: AutomationStepTrace["status"] }) {
   const t = useT();
@@ -75,6 +97,7 @@ export function WorkflowRunTrace({ run, onOpen }: {
         {pendingApproval ? <div className="mt-3">
           <p className="mb-2 text-2xs font-medium uppercase tracking-[0.16em] text-amber-600">{t("workflows.trace.approval")}</p>
           <div className="rounded-xl border border-border/60 bg-background/80 p-3 shadow-xs" data-testid="workflow-approval-trace">
+            <WorkflowApprovalCard task={pendingApproval} />
             <TaskStatusBadge task={pendingApproval} />
             {pendingApproval.waitingReason ? <WaitingReason code={pendingApproval.waitingReason} /> : null}
             <div className="mt-3"><Button onClick={() => onOpen(pendingApproval.actionExecutionId)}>{t("workflows.stepApproval")}</Button></div>

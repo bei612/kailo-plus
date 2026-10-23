@@ -1,5 +1,6 @@
 // Buzz 779af8886caae1317b4de962082429867ab61503 desktop/src/features/sidebar/ui/SidebarSection.tsx.
 // Reuses the original row/group/context menu; only Core's admitted references are listed.
+import { useCandidatePictureResolver } from "../profile/candidate-picture";
 import { useEffect, useMemo, useState } from "react";
 import { X } from "lucide-react";
 import { toast } from "sonner";
@@ -65,14 +66,16 @@ export function ConversationList({ currentPrincipalId, items, loading, error, se
   const names = new Map(directory.items.map((person) => [person.principalId, person.displayName]));
   const presenceHost = usePresenceHost();
   const locale = useLocale();
-  // DM row avatars carry no media URL (as the DM header); initials never reach the network.
-  const avatarView = useMemo(() => ({ locale, rewriteMediaUrl: () => null }), [locale]);
+  // DD-139: DM rows show the other person's Tenant avatar address when the host can load it;
+  // any other URL never reaches the network and the original initials remain.
+  const resolvePicture = useCandidatePictureResolver();
+  const avatarView = useMemo(() => ({ locale, rewriteMediaUrl: (url: string) => resolvePicture(url) }), [locale, resolvePicture]);
   // Original dmParticipantsByChannelId: every other participant, resolved from the admitted directory.
   const participantsFor = (conversation: ConversationView): SidebarDmParticipant[] | undefined => {
     const others = conversation.participantPrincipalIds.filter((id) => id !== currentPrincipalId);
     const people = others.map((id) => directory.items.find((person) => person.principalId === id));
     if (people.every((person) => person === undefined)) return undefined;
-    return others.map((id, index) => ({ avatarUrl: null, label: people[index]?.displayName ?? id, pubkeys: people[index]?.pubkeys ?? [] }));
+    return others.map((id, index) => ({ avatarUrl: resolvePicture(people[index]?.picture), label: people[index]?.displayName ?? id, pubkeys: people[index]?.pubkeys ?? [] }));
   };
   const rows = items.filter((conversation) => admitted.has(conversation.channelId) && userState.hidden !== null && !userState.hidden.has(conversation.channelId)).map((conversation) => ({
     ...conversation,

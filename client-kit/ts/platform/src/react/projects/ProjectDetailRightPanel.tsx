@@ -13,6 +13,9 @@ import { useOptionalSidebar } from "../sidebar/sidebar";
 import { cn } from "../profile/buzz/shared/lib/cn";
 import { useThreadPanelWidth } from "../messages/thread/useThreadPanelWidth";
 import { AppTopChromePortal } from "./AppTopChromePortal";
+import { ProjectConversationPanelProvider } from "./ProjectConversationPanelContext";
+import { useOptionalPulseHost } from "../pulse/host";
+import type { SearchHit } from "../search/types";
 import { ProjectAgentChatPanel } from "./ProjectAgentChatPanel";
 import { ProjectContextRail } from "./ProjectContextRail";
 import { ProjectRepositoryActionsPanel, type ProjectRepositoryActionsPanelProps } from "./ProjectRepositoryActionsPanel";
@@ -176,15 +179,28 @@ function ProjectDetailChatAwareRail({ panel, chatPanel, state }: {
 }
 
 /** Original detached repository layout: the content pod beside the context rail. */
-export function ProjectDetailPanelLayout({ panel, chatPanel, state, children }: {
+export function ProjectDetailPanelLayout({ panel, chatPanel, state, children, resetKey = "" }: {
   panel: React.ReactNode;
+  /** Original controller resetKey: a different detail context closes the conversation. */
+  resetKey?: string;
   /** The chat mode content; absent when the host has no governed chat transport. */
   chatPanel?: (width: ProjectChatPanelWidth) => React.ReactNode;
   state: ProjectRepositoryPanelState;
   children: React.ReactNode;
 }) {
   const sidebar = useOptionalSidebar();
+  // Original ProjectConversationPanelController: a "Discussed in" hit replaces the context rail
+  // with the channel conversation until closed (only when the host renders governed threads).
+  const renderConversation = useOptionalPulseHost()?.discussions?.renderConversation;
+  const [hit, setHit] = React.useState<SearchHit | null>(null);
+  const conversationWidth = useThreadPanelWidth();
+  const openConversation = React.useCallback((next: SearchHit) => setHit(next), []);
+  React.useEffect(() => { setHit(null); }, [resetKey]);
+  const conversation = hit && renderConversation ? renderConversation({ hit, onClose: () => setHit(null),
+    widthPx: conversationWidth.widthPx, canResetWidth: conversationWidth.canReset,
+    onResetWidth: conversationWidth.onResetWidth, onResizeStart: conversationWidth.onResizeStart }) : null;
   return (
+    <ProjectConversationPanelProvider onOpenConversation={openConversation}>
     <div className={cn("relative flex min-h-0 min-w-0 flex-1 flex-row overflow-hidden bg-sidebar pb-2 pr-2 pt-px", sidebar?.open === false && "pl-2")}
       data-detached="true" data-project-context-detached="true" data-project-detail-screen data-testid="project-panel-layout">
       <div className="relative ml-px flex min-h-0 min-w-0 flex-1 overflow-hidden rounded-2xl bg-background" data-testid="project-content-pod">
@@ -194,9 +210,10 @@ export function ProjectDetailPanelLayout({ panel, chatPanel, state, children }: 
           </div>
         </div>
       </div>
-      {chatPanel ? <ProjectDetailChatAwareRail chatPanel={chatPanel} panel={panel} state={state} />
-        : <ProjectContextRail open={!state.collapsed} panelWidthPx={state.width.widthPx} resizing={state.width.isResizing}>{panel}</ProjectContextRail>}
+      {conversation ?? (chatPanel ? <ProjectDetailChatAwareRail chatPanel={chatPanel} panel={panel} state={state} />
+        : <ProjectContextRail open={!state.collapsed} panelWidthPx={state.width.widthPx} resizing={state.width.isResizing}>{panel}</ProjectContextRail>)}
     </div>
+    </ProjectConversationPanelProvider>
   );
 }
 
@@ -227,7 +244,7 @@ export function ProjectDetailRightPanel({ children, agentContext, ...panel }: Pr
         onCollapse={state.collapse} onExpand={state.expand} onModeChange={state.setMode}/>
     </div></AppTopChromePortal>
     <RightPanelChatContext.Provider value={chat}>
-      <ProjectDetailPanelLayout state={state}
+      <ProjectDetailPanelLayout state={state} resetKey={panel.issue ? `issue:${panel.issue.id}` : `review:${panel.pullRequest.id}`}
         chatPanel={chatContext ? width => <ProjectAgentChatPanel canResetWidth={width.canReset} constrainToAvailableSpace={false}
           context={state.agentContext(chatContext)} onClose={state.collapse} onResetWidth={width.onResetWidth}
           onResizeStart={width.onResizeStart} widthPx={width.widthPx}/> : undefined}

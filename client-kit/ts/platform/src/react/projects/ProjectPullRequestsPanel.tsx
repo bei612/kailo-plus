@@ -13,6 +13,13 @@ import {ProjectWorkItemRow} from "./ProjectWorkItemRow";
 import {ProjectWorkItemGroup} from "./ProjectWorkItemGroup";
 import {ProjectPanelState} from "./ProjectPanelState";
 import type {ProjectsHost} from "./projectEnumeration";
+import {selectionItemFromReview,type ProjectSelectionItem} from "./lib/projectSelection";
+import {pullRequestShareLink} from "./projectShareLinks";
+// Original reviewSelectionItem: rows and status groups carry the repository detail selection.
+function reviewSelectionItem(repository:Repository,pullRequest:ProjectPullRequest){
+  return selectionItemFromReview({author:pullRequest.author,channelId:pullRequest.channelId??repository.channelId,id:pullRequest.id,
+    shareLink:pullRequestShareLink(pullRequest),title:pullRequest.title});
+}
 const statusKey={"Open":"projects.status.open","Draft":"projects.status.draft","Merged":"projects.status.merged","Closed":"projects.status.closed"} as const;
 function pullRequestStatusClassName(status: ProjectPullRequest["status"]) {
   if (status === "Closed") return "text-destructive";
@@ -41,10 +48,12 @@ function PullRequestRow({
   onOpen,
   profiles,
   pullRequest,
+  selection,
 }: {
   onOpen: () => void;
   profiles?: UserProfileLookup;
   pullRequest: ProjectPullRequest;
+  selection?: { item: ProjectSelectionItem; rangeItems: ProjectSelectionItem[] };
 }) {
   const t=useUiT();
   const authorProfile = profiles?.[normalizePubkey(pullRequest.author)];
@@ -56,6 +65,7 @@ function PullRequestRow({
       eventId={pullRequest.id}
       identifier={`#${pullRequest.id.slice(0, 8)}`}
       identifierTitle={t("projects.sheet.viewReview")}
+      selection={selection}
       metadata={
         pullRequest.branchName ? (
           <span className="inline-flex min-w-0 items-center gap-1">
@@ -127,8 +137,11 @@ export function PullRequestsPanel({project,pullRequests,selectedPullRequest,onSe
  if(selectedPullRequest)return <ProjectPullRequestDetail project={project} pullRequest={selectedPullRequest} profiles={profiles} publication={host&&projectId?{host,projectId}:undefined}/>;
  if(pullRequests.length===0)return <ProjectPanelState testId="project-pull-requests-empty" title={t("projects.list.reviewsEmpty")} description={t("projects.sheet.reviewsHint")}/>;
  const groups=PULL_REQUEST_STATUS_ORDER.map(status=>({items:pullRequests.filter(value=>value.status===status),status})).filter(group=>group.items.length>0);
+ const rangeItems=groups.flatMap(group=>group.items.map(pullRequest=>reviewSelectionItem(project,pullRequest)));
  return <div>{groups.map(({items,status})=><ProjectWorkItemGroup key={status} count={items.length} label={t(statusKey[status])}
+  items={items.map(pullRequest=>reviewSelectionItem(project,pullRequest))}
   icon={<ProjectStatusProgressIcon className={`h-4 w-4 ${pullRequestStatusClassName(status)}`} state={pullRequestProgressState(status)} aria-label={t(statusKey[status])}/>}>
-  {items.map(pullRequest=><PullRequestRow key={pullRequest.id} pullRequest={pullRequest} profiles={profiles} onOpen={()=>onSelectedPullRequestIdChange(pullRequest.id)}/>)}
+  {items.map(pullRequest=><PullRequestRow key={pullRequest.id} pullRequest={pullRequest} profiles={profiles} onOpen={()=>onSelectedPullRequestIdChange(pullRequest.id)}
+    selection={{item:reviewSelectionItem(project,pullRequest),rangeItems}}/>)}
  </ProjectWorkItemGroup>)}</div>;
 }
