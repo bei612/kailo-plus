@@ -114,13 +114,13 @@ yesterday yiddish yield yo-yo yodel yogurt yuppie zealot zebra zeppelin zestfull
 zirconium zodiac zombie zookeeper zucchini`.split(/\s+/).filter(Boolean);
 
 /** Original generate_passphrase(3, "-"): returns null when entropy is unavailable. */
-export function generateWorkflowName(random: (buffer: Uint16Array) => Uint16Array = (buffer) => crypto.getRandomValues(buffer)): string | null {
+export function generateWorkflowName(random: (buffer: Uint16Array<ArrayBuffer>) => ArrayLike<number> = (buffer) => crypto.getRandomValues(buffer)): string | null {
   if (WORDLIST.length !== 1296) return null;
   try {
     for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
       const chosen: string[] = [];
       while (chosen.length < NAME_WORDS) {
-        const [value] = random(new Uint16Array(1));
+        const value = random(new Uint16Array(1))[0];
         // 65536 - 65536 % 1296 = 64800: accept only unbiased draws.
         if (value !== undefined && value < 64800) chosen.push(WORDLIST[value % 1296]!);
       }
