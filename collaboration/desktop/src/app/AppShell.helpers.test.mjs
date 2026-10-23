@@ -243,3 +243,20 @@ test("markAllReadSources skips the active marker without projected activity", ()
 
   assert.deepEqual(calls, ["channels"]);
 });
+
+// DD-138(4), 07 §4.8.3: a component notification click opens its native page, never Home.
+test("component notification activation opens the application target", async () => {
+  const calls = [];
+  const application = { notificationId: "n-1", bindingId: "b-1", workspaceId: "ws-1", path: "/files/a" };
+  await activateDesktopNotificationTarget(
+    { channelId: null, eventId: null, kind: null, application },
+    {
+      goChannel: async () => calls.push("channel"),
+      goHome: async () => calls.push("home"),
+      openSearchHit: async () => calls.push("message"),
+      revealWindow: async () => {},
+      openComponentNotification: async (target) => calls.push(["application", target]),
+    },
+  );
+  assert.deepEqual(calls, [["application", application]]);
+});

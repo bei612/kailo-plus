@@ -12,6 +12,7 @@ import type {
   NotificationSettings,
 } from "@/features/notifications/hooks";
 import type { SoundName, SoundSlot } from "@/features/notifications/lib/sound";
+import type { ComponentNotificationCategory } from "@client-kit/contracts";
 import { useTheme } from "@/shared/theme/ThemeProvider";
 import { isLinuxPlatform } from "@/shared/lib/platform";
 import { performDefaultHaptic } from "@/shared/lib/haptics";
@@ -64,6 +65,8 @@ export type SettingsPanelProps = {
   onSetNotifyWhileViewing: (enabled: boolean) => void;
   onSetAllSlotAlertsEnabled: (enabled: boolean) => void;
   onSetSoundForSlot: (slot: SoundSlot, name: SoundName) => void;
+  /** DD-138(4), 07 §4.8.3: per-category switches for component notifications (Kailo Inbox). */
+  onSetComponentAlertEnabled?: (category: ComponentNotificationCategory, enabled: boolean) => void;
 };
 
 function ThemeSettingsCard() {
@@ -105,6 +108,7 @@ export function renderSettingsSection(
           onSetNotifyWhileViewing={props.onSetNotifyWhileViewing}
           onSetAllSlotAlertsEnabled={props.onSetAllSlotAlertsEnabled}
           onSetSoundForSlot={props.onSetSoundForSlot}
+          onSetComponentAlertEnabled={props.onSetComponentAlertEnabled}
         />
       );
     case "appearance":

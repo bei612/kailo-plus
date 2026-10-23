@@ -256,6 +256,15 @@ func (s *Server) authorizeNativePlatformTool(ctx context.Context, ep *types.MCPE
 	if delivery.values == nil {
 		return context.WithValue(ctx, types.MCPEndpointContextKey, delivery.ep), nil
 	}
+	// DD-138(5), 07 §4.8.4: Kailo search carries Core's Search Token instead of
+	// an ActionToken and is verified here without a PEP call (platform_search.go).
+	if token, arguments, operation, ok := nativeProof(req.Header.Get(nativeActionProofHeader),
+		nativeNumber(delivery.values, "maxBodyBytes")); ok && operation == nativeSearchOperation {
+		if err := delivery.authorizeSearch(req, token, arguments); err != nil {
+			return ctx, err
+		}
+		return context.WithValue(ctx, types.MCPEndpointContextKey, delivery.ep), nil
+	}
 	claims, admitted, operation, err := delivery.authorize(ctx, req.Header.Get(nativeActionProofHeader))
 	if err != nil {
 		return ctx, err

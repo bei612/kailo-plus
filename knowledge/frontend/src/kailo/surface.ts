@@ -85,11 +85,17 @@ export function resolveSettingsSection(requested: string, visible: readonly stri
   return kailoHiddenSettingsSection(requested, kailoMode) ? fallbackSettingsSection(visible, kailoMode) : requested
 }
 
-/** Command palette commands that duplicate Kailo surfaces (settings, onboarding). */
-export const KAILO_HIDDEN_COMMANDS: ReadonlySet<string> = new Set(['open-settings', 'open-product-tour'])
+// DD-138(5), 07 §4.8.4: in Kailo mode the ⌘K palette is this component's own
+// business search only. Cross-product entries (organizations and members are
+// managed in Kailo, settings, guide/tour, help, account) are Kailo surfaces.
+// An allowlist keeps commands added upstream later out until reviewed; the
+// palette's knowledge/chat/agent search groups are not commands and stay.
+
+/** Command palette commands kept in Kailo mode: knowledge Q&A business only. */
+export const KAILO_PALETTE_COMMANDS: ReadonlySet<string> = new Set(['new-chat', 'open-kb-list', 'open-agents'])
 
 export function kailoVisibleCommands<T extends { id: string }>(commands: readonly T[], kailoMode: boolean): T[] {
-  return kailoMode ? commands.filter((command) => !KAILO_HIDDEN_COMMANDS.has(command.id)) : [...commands]
+  return kailoMode ? commands.filter((command) => KAILO_PALETTE_COMMANDS.has(command.id)) : [...commands]
 }
 
 export interface UserMenuInput {

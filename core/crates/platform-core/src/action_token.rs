@@ -543,6 +543,45 @@ pub(crate) async fn issue_service_read(
     sign_claims_frozen_before(state, audience, claims, None, parameters.get("readToken")).await
 }
 
+/// DD-138(5), `.design/07` §4.8.4: the Search Token for the read-only adapter
+/// `search` operation. It is signed with the ActionToken key for the release's
+/// `actionTokenAudience`, lives at most 60 s, and names only the HUMAN actor,
+/// Tenant/Workspace, binding, projection generation, the fresh ZedToken and the
+/// digest of the exact request body. No ActionExecution, target Resource,
+/// Delegation, Agent or result exposure authority is ever part of it.
+pub(crate) const SEARCH_TOKEN_SECONDS: i64 = 60;
+
+pub(crate) async fn issue_search(
+    state: &ServiceState,
+    audience: &str,
+    claims: Value,
+) -> Result<String, Refusal> {
+    let allowed = [
+        "token_use",
+        "tenant_id",
+        "workspace_id",
+        "binding_id",
+        "projection_generation",
+        "actor_principal_id",
+        "authorization_min_zed_token",
+        "normalized_parameter_hash",
+    ];
+    let object = claims.as_object().ok_or_else(invalid)?;
+    if claims["token_use"] != crate::component_search::TOKEN_USE
+        || object.keys().any(|key| !allowed.contains(&key.as_str()))
+        || claims["authorization_min_zed_token"]
+            .as_str()
+            .is_none_or(str::is_empty)
+    {
+        return Err(invalid());
+    }
+    let deadline = chrono::Utc::now()
+        .timestamp()
+        .checked_add(SEARCH_TOKEN_SECONDS)
+        .ok_or_else(invalid)?;
+    sign_claims_before(state, audience, claims, Some(deadline)).await
+}
+
 /// Business claims are issued only for the frozen original child and envelope.
 /// The transport strips target from the capability input; the Adapter rebuilds
 /// that same typed envelope from these signed target claims for PEP comparison.

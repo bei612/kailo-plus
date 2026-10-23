@@ -184,6 +184,76 @@ export async function verifyBindingManagementToken(token, config, args, operatio
   return claims;
 }
 
+// DD-138(5), .design/07 §4.8.4 / §5.2: Core's 60 s Search Token for the
+// read-only `search` operation. It names the HUMAN actor and this exact binding
+// and request body; it carries no Resource target, Delegation, Agent or result
+// exposure authority, and is not an ActionExecution. Core has already done the
+// per-Resource fresh `read` check: the adapter searches only `resources[]`.
+export const SEARCH_TOKEN_USE = 'COMPONENT_SEARCH';
+export const SEARCH_RESULT_KINDS = Object.freeze(['FILE', 'FOLDER', 'DOCUMENT', 'KNOWLEDGE_BASE', 'QUESTION', 'DASHBOARD']);
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+export function searchArguments(raw, key) {
+  let value;
+  try { value = JSON.parse(raw); } catch { throw new Refused(400); }
+  if (!exactKeys(value, ['idempotencyKey', 'query', 'limit', 'locale', 'resources'])
+    || raw !== canonical(value) || value.idempotencyKey !== key || !UUID.test(value.idempotencyKey)
+    || typeof value.query !== 'string' || value.query !== value.query.trim()
+    || [...value.query].length < 1 || [...value.query].length > 200 || /\p{Cc}/u.test(value.query)
+    || !Number.isSafeInteger(value.limit) || value.limit < 1 || value.limit > 20
+    || !['ZH_CN', 'EN'].includes(value.locale)
+    || !Array.isArray(value.resources) || value.resources.length < 1 || value.resources.length > 50
+    || value.resources.some((item) => !exactKeys(item, ['resourceId', 'nativeType', 'nativeId'])
+      || !UUID.test(item.resourceId) || !nonempty(item.nativeType) || !nonempty(item.nativeId))
+    || new Set(value.resources.map((item) => item.resourceId)).size !== value.resources.length) throw new Refused(400);
+  return value;
+}
+
+export async function verifySearchToken(token, config, args) {
+  const claims = await verifiedClaims(token, config);
+  for (const key of ['jti', 'tenant_id', 'binding_id', 'actor_principal_id']) {
+    if (!UUID.test(claims[key])) throw new Refused(401);
+  }
+  const workspace = config.workspaceId ?? undefined;
+  if (claims.token_use !== SEARCH_TOKEN_USE || claims.tenant_id !== config.tenantId
+    || claims.workspace_id !== workspace || claims.binding_id !== config.bindingId
+    || !Number.isSafeInteger(claims.projection_generation) || claims.projection_generation <= 0
+    || !nonempty(claims.authorization_min_zed_token) || claims.exp - claims.iat > 60
+    || ['agent_principal_id', 'delegation_id', 'delegation_version', 'result_exposure_policy_id',
+      'result_exposure_policy_version', 'action_execution_id', 'target_id', 'action_key']
+      .some((key) => Object.hasOwn(claims, key))
+    || claims.normalized_parameter_hash !== createHash('sha256').update(canonical(args)).digest('hex')) throw new Refused(401);
+  return claims;
+}
+
+// The same relative-path rule Core applies (07 §4.8.3): one leading slash, no
+// backslash, whitespace or control character, no credential-like query name.
+const CREDENTIAL_QUERY = new Set(['token', 'access_token', 'id_token', 'refresh_token', 'code', 'secret',
+  'password', 'api_key', 'key', 'signature', 'sig']);
+export function componentPath(path) {
+  if (typeof path !== 'string' || path.length < 1 || path.length > 1024 || !path.startsWith('/')
+    || path.startsWith('//') || /[\\\s\p{Cc}]/u.test(path)) return false;
+  let url;
+  try { url = new URL(path, 'https://component.invalid'); } catch { return false; }
+  if (url.origin !== 'https://component.invalid') return false;
+  for (const name of url.searchParams.keys()) if (CREDENTIAL_QUERY.has(name.toLowerCase())) return false;
+  return true;
+}
+
+// Adapters sanitize their own answer to the AdapterSearchResponse shape; Core
+// still rejects the whole source if anything it receives is out of contract.
+export function searchResponse(results, limit) {
+  if (!Array.isArray(results)) throw new Refused(503);
+  const valid = results.map((item) => {
+    const out = { kind: item?.kind, path: item?.path, title: String(item?.title ?? '').replace(/\p{Cc}+/gu, ' ').trim().slice(0, 200) };
+    const summary = typeof item?.summary === 'string' ? item.summary.replace(/\p{Cc}+/gu, ' ').trim().slice(0, 400) : '';
+    if (summary) out.summary = summary;
+    if (typeof item?.updatedAt === 'string' && Number.isFinite(Date.parse(item.updatedAt))) out.updatedAt = new Date(item.updatedAt).toISOString();
+    return out;
+  }).filter((item) => SEARCH_RESULT_KINDS.includes(item.kind) && item.title && componentPath(item.path));
+  return { results: valid.slice(0, limit) };
+}
+
 export async function secret(path) {
   try {
     const value = (await readFile(path, 'utf8')).trim();

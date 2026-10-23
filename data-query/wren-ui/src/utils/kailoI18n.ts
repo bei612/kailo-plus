@@ -41,6 +41,17 @@ const messages = {
     notFoundTitle: '页面不存在',
     notFoundDescription: '该链接可能已失效，或页面已被移动。',
     backToHome: '返回问答',
+    // DD-138(4), `07` §4.8.3: share with Kailo members (Kailo inbox).
+    shareWithMember: '分享给成员',
+    shareThreadTitle: '把对话分享给成员',
+    shareDashboardTitle: '把团队看板分享给成员',
+    shareHint: '所选成员会在 Kailo 收件箱收到通知，并可从通知直接打开。',
+    shareMembersPlaceholder: '选择成员',
+    shareNoMembers: '没有可以分享的其他成员',
+    shareSubmit: '分享',
+    shareCancel: '取消',
+    shareDone: '已通知所选成员。',
+    shareFailed: '分享未完成，请稍后重试。',
   },
   en: {
     componentName: 'Data Q&A',
@@ -81,6 +92,18 @@ const messages = {
     notFoundTitle: 'Page not found',
     notFoundDescription: 'The link may be outdated, or the page has moved.',
     backToHome: 'Back to Ask',
+    // DD-138(4), `07` §4.8.3: share with Kailo members (Kailo inbox).
+    shareWithMember: 'Share with member',
+    shareThreadTitle: 'Share this thread with members',
+    shareDashboardTitle: 'Share the team dashboard with members',
+    shareHint:
+      'The selected members are notified in their Kailo inbox and can open it from there.',
+    shareMembersPlaceholder: 'Select members',
+    shareNoMembers: 'There are no other members to share with',
+    shareSubmit: 'Share',
+    shareCancel: 'Cancel',
+    shareDone: 'The selected members have been notified.',
+    shareFailed: 'Sharing did not complete. Please try again later.',
   },
 } as const;
 

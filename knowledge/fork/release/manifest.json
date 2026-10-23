@@ -22,7 +22,8 @@
   "executionConnector": {
     "mode": "REMOTE_ADAPTER",
     "adapterProtocolRange": "1",
-    "actionTokenAudience": "kailo-adapter-knowledge"
+    "actionTokenAudience": "kailo-adapter-knowledge",
+    "searchSource": "SUPPORTED"
   },
   "adapterBuildRef": "{{adapterBuildRef}}",
   "implements": [

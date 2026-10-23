@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/component_search_result_kind.schema.json",
+  "title": "ComponentSearchResultKind",
+  "description": "DD-138(5)、07 §4.8.4：组件搜索结果的类别（封闭枚举）。",
+  "type": "string",
+  "enum": ["FILE", "FOLDER", "DOCUMENT", "KNOWLEDGE_BASE", "QUESTION", "DASHBOARD"]
+}

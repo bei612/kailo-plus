@@ -10,12 +10,21 @@ import { VirtualizedList } from "./forum/VirtualizedList";
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from "./sidebar/context-menu";
 import { RemindersPanel, useReminderHost, useRemindLater, useRemindersQuery, useReminderSources, buildInboxListRows, isDue, ReminderInboxRow } from "./reminders";
 import { NeedsActionInboxRow, needsActionSortAt, type NeedsActionItem } from "./inbox/needs-action";
+import { ComponentNotificationInboxRow, componentNotificationSortAt, type ComponentNotificationItem } from "./inbox/component-notifications";
 
 /** DD-125(5) approval items shown with the feed rows (the host's InboxView owns selection). */
 export type InboxListNeedsAction = {
   items: readonly NeedsActionItem[]; available: boolean; selectedKey: string | null;
   isDone: (item: NeedsActionItem) => boolean; setDone: (item: NeedsActionItem, done: boolean) => void;
   onSelect: (item: NeedsActionItem) => void;
+};
+
+/** DD-138(4), 07 §4.8.3: component notifications of the current filter (the host owns read and open). */
+export type InboxListComponentNotifications = {
+  items: readonly ComponentNotificationItem[];
+  isRead: (item: ComponentNotificationItem) => boolean;
+  onOpen: (item: ComponentNotificationItem) => void;
+  onMarkRead: (items: readonly ComponentNotificationItem[]) => void;
 };
 
 type ListItem = {
@@ -33,7 +42,7 @@ export function InboxListPane<T extends ListItem>({
   items, filter, onFilterChange, unreadOnly, onUnreadOnlyChange, activeDraftCount,
   selectedConversationId, selectedReminderId, onSelectReminder, onSelect,
   isRead, onMarkRead, onMarkUnread, onMarkAllRead, readPending = false,
-  onOpen, reopenState, sourceChannelId, presentation, draftList, showRightDivider = false, needsAction,
+  onOpen, reopenState, sourceChannelId, presentation, draftList, showRightDivider = false, needsAction, componentNotifications,
 }: {
   items: readonly T[]; filter: InboxFilter; onFilterChange: (filter: InboxFilter) => void;
   unreadOnly: boolean; onUnreadOnlyChange: (value: boolean) => void; activeDraftCount: number;
@@ -49,6 +58,7 @@ export function InboxListPane<T extends ListItem>({
   presentation: (item: T) => InboxListPresentation;
   draftList: React.ReactNode; showRightDivider?: boolean;
   needsAction?: InboxListNeedsAction;
+  componentNotifications?: InboxListComponentNotifications;
 }) {
   const t = useT();
   const scrollRef = React.useRef<HTMLDivElement>(null);
@@ -58,25 +68,32 @@ export function InboxListPane<T extends ListItem>({
   const reminderSources = useReminderSources(reminders.data ?? []);
   const feedRows = buildInboxListRows({ items, reminders: filter === "all" && !unreadOnly
     ? (reminders.data ?? []).filter(reminder => isDue(reminder, Math.floor(Date.now() / 1000))) : [] });
-  type Row = (typeof feedRows)[number] | { key: string; kind: "needs_action"; needsAction: NeedsActionItem; sortAt: number };
+  type Row = (typeof feedRows)[number] | { key: string; kind: "needs_action"; needsAction: NeedsActionItem; sortAt: number }
+    | { key: string; kind: "component"; component: ComponentNotificationItem; sortAt: number };
   const approvals = needsAction?.items ?? [];
-  const rows: Row[] = approvals.length === 0 ? feedRows : [...feedRows, ...approvals.map((item): Row => (
-    { key: `needs-action:${item.key}`, kind: "needs_action", needsAction: item, sortAt: needsActionSortAt(item) }))]
+  const components = componentNotifications?.items ?? [];
+  const rows: Row[] = approvals.length === 0 && components.length === 0 ? feedRows : [...feedRows, ...approvals.map((item): Row => (
+    { key: `needs-action:${item.key}`, kind: "needs_action", needsAction: item, sortAt: needsActionSortAt(item) })),
+  ...components.map((item): Row => (
+    { key: `component:${item.notificationId}`, kind: "component", component: item, sortAt: componentNotificationSortAt(item) }))]
     .sort((left, right) => right.sortAt - left.sortAt);
   const unreadItems = items.filter(item => !isRead(item));
   const undoneApprovals = approvals.filter(item => !needsAction?.isDone(item));
+  const unreadComponents = components.filter(item => !componentNotifications?.isRead(item));
   const markAll = () => {
     if (readPending) return;
     // Original done marks for approval items are local only.
     for (const item of undoneApprovals) needsAction?.setDone(item, true);
+    // DD-138(4): component items are read in Core (personal state), optimistically here.
+    if (unreadComponents.length > 0) componentNotifications?.onMarkRead(unreadComponents);
     if (unreadItems.length === 0) return;
     if (onMarkAllRead) onMarkAllRead(unreadItems);
     else unreadItems.forEach(onMarkRead);
   };
   return <section aria-label={t("inbox.title")} className={`relative flex min-h-0 min-w-0 flex-col overflow-hidden bg-background/60 ${showRightDivider ? "after:pointer-events-none after:absolute after:inset-y-0 after:right-0 after:z-40 after:w-px after:bg-border/35 after:content-['']" : ""}`}>
     <InboxListHeader filter={filter} onFilterChange={onFilterChange} activeDraftCount={activeDraftCount}
-      needsActionAvailable={needsAction?.available === true}
-      unreadOnly={unreadOnly} onUnreadOnlyChange={onUnreadOnlyChange} unreadCount={unreadItems.length + undoneApprovals.length}
+      needsActionAvailable={needsAction?.available === true || componentNotifications !== undefined}
+      unreadOnly={unreadOnly} onUnreadOnlyChange={onUnreadOnlyChange} unreadCount={unreadItems.length + undoneApprovals.length + unreadComponents.length}
       pending={readPending} onMarkAllRead={markAll} />
     {filter === "reminders" ? <div className="-mt-13 flex min-h-0 flex-1 flex-col overflow-hidden pt-13" data-testid="home-inbox-reminders">
       <RemindersPanel pubkey={reminderHost.pubkey} onSelectReminder={onSelectReminder} selectedReminderId={selectedReminderId} presentation="inbox-list" />
@@ -84,6 +101,12 @@ export function InboxListPane<T extends ListItem>({
       : <div className="-mt-13 min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain pt-13" data-testid="home-inbox-list" ref={scrollRef}>
         {rows.length ? <VirtualizedList estimateSize={96} getItemKey={row => row.key} items={rows} scrollRef={scrollRef} renderItem={entry => {
           if (entry.kind === "reminder") return <ReminderInboxRow reminder={entry.reminder} source={reminderSources.get(entry.reminder.id)} selected={selectedReminderId === entry.reminder.id} onSelect={() => onSelectReminder(entry.reminder.id)} />;
+          if (entry.kind === "component") {
+            const item = entry.component;
+            const read = componentNotifications?.isRead(item) === true;
+            return <ComponentNotificationInboxRow item={item} read={read}
+              onOpen={() => componentNotifications?.onOpen(item)} onMarkRead={() => componentNotifications?.onMarkRead([item])} />;
+          }
           if (entry.kind === "needs_action") {
             const approval = entry.needsAction;
             const done = needsAction?.isDone(approval) === true;

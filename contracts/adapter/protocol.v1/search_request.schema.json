@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "adapter/protocol.v1/search_request.schema.json",
+  "title": "AdapterSearchRequest",
+  "description": "DD-138(5)、07 §4.8.4/§5.2：Core → adapter POST /platform-adapter/v1/search 的请求体（规范 JSON，其 SHA-256 即 Search Token 的 normalized_parameter_hash）。resources 只含当前 HUMAN 已 fresh read 的该 binding Resource，adapter 只在这些 native 对象内检索。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["idempotencyKey", "query", "limit", "locale", "resources"],
+  "properties": {
+    "idempotencyKey": {"type": "string", "format": "uuid"},
+    "query": {"type": "string", "description": "去首尾空白后 1–200 字符。"},
+    "limit": {"type": "integer", "description": "1–20。"},
+    "locale": {"type": "string", "description": "ZH_CN 或 EN。"},
+    "resources": {
+      "type": "array",
+      "description": "1–50 项。",
+      "items": {
+        "title": "AdapterSearchResource",
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["resourceId", "nativeType", "nativeId"],
+        "properties": {
+          "resourceId": {"type": "string", "format": "uuid"},
+          "nativeType": {"type": "string"},
+          "nativeId": {"type": "string"}
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/component_notification_category.schema.json",
+  "title": "ComponentNotificationCategory",
+  "description": "DD-138(4)、07 §4.8.3：组件投递到 Kailo 收件箱的通知类别（封闭枚举）。SHARED 分享给你；MENTIONED 提及你；COMMENTED 评论了你的对象；ACCESS_REQUESTED 访问申请（进入「需要处理」）；TASK_COMPLETED 任务完成；CONTENT_UPDATED 你关注的内容有更新。",
+  "type": "string",
+  "enum": ["SHARED", "MENTIONED", "COMMENTED", "ACCESS_REQUESTED", "TASK_COMPLETED", "CONTENT_UPDATED"]
+}

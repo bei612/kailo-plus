@@ -25,6 +25,8 @@ import {
 } from "../settings-option-group";
 import { SettingsSectionHeader } from "../settings-surface";
 import { SoundPicker } from "./SoundPicker";
+import type { ComponentNotificationCategory } from "@client-kit/contracts";
+import { ComponentAlertsGroup } from "./ComponentAlertsGroup";
 
 const comingSoonLabelKeys = {
   job_accepted: "platform.notifications.jobAccepted",
@@ -51,7 +53,10 @@ export function NotificationSettingsCard({
   onSetNotifyWhileViewing,
   onSetSoundForSlot,
   notificationEnvironment = "native",
+  onSetComponentAlertEnabled,
 }: {
+  /** DD-138(4), 07 §4.8.3: hosts with the Kailo Inbox render the per-category component switches. */
+  onSetComponentAlertEnabled?: (category: ComponentNotificationCategory, enabled: boolean) => void;
   notificationEnvironment?: "browser" | "native";
   isUpdatingDesktopNotifications: boolean;
   notificationErrorMessage: string | null;
@@ -262,6 +267,10 @@ export function NotificationSettingsCard({
               </div>
             ) : null}
           </>
+        ) : null}
+
+        {onSetComponentAlertEnabled ? (
+          <ComponentAlertsGroup enabled={notificationSettings.componentAlertsEnabled} onChange={onSetComponentAlertEnabled} />
         ) : null}
 
         <SettingsOptionGroup title={translate(locale, "platform.notifications.badges")}>

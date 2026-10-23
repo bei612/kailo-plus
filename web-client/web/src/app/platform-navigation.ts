@@ -6,6 +6,7 @@ import type { ParsedMessageLink } from "@client-kit/platform/react/composer/feat
 import { createSearchHighlightNavigation } from "@client-kit/platform/react/search/searchHighlightNavigation";
 import { selectSearchHighlightRouteState } from "@client-kit/platform/react/search/searchHighlightRouteState";
 import { isSettingsSection, type SettingsSection } from "@client-kit/platform/react/settings-sections";
+import { validComponentPath } from "@client-kit/platform/react/native-deep-link";
 
 export type PlatformSection = PlatformNavigationSection | "inbox" | "settings";
 export type PlatformTab = PlatformSection | "channel" | "conversation" | "new-message" | "application";
@@ -27,6 +28,8 @@ export function platformLocationSearch(search: Record<string, unknown>): {
   workspaceId?: string; protocolBinding?: string; messageId?: string; threadRootId?: string; projectId?: string; repositoryId?:string;issueId?:string;pullRequestId?:string;tab?:string;commitHash?:string;filePath?:string;thread?: string; item?: string;
   post?: string; replyId?: string; section?: SettingsSection;
   view?: "edit" | "duplicate" | "create";
+  /** DD-138(4)(5), 07 §4.8.3/§4.8.4: relative location inside a native page (applications route only). */
+  path?: string;
 } {
   const reference = (key: string) => typeof search[key] === "string" && search[key].trim() ? search[key] : undefined;
   return {
@@ -49,6 +52,8 @@ export function platformLocationSearch(search: Record<string, unknown>): {
     // Original /workflows/$workflowId ?view=edit|duplicate and /workflows?view=create editor targets;
     // any other value is dropped.
     view: search.view === "edit" || search.view === "duplicate" || search.view === "create" ? search.view : undefined,
+    // A malformed path is dropped; the page then opens at its entry (origin re-checked at launch).
+    path: validComponentPath(search.path) ? search.path : undefined,
   };
 }
 
@@ -185,6 +190,7 @@ export function usePlatformNavigation(scopeKey?: string) {
     workspaceId: params.channelId ?? search.workspaceId ?? null,
     conversationId: params.conversationId ?? null,
     applicationBindingId: params.bindingId ?? null,
+    applicationPath: params.bindingId ? search.path ?? null : null,
     projectId: tab === "projects" ? search.projectId ?? null : null,
     projectWorkItemTarget: tab === "projects" ? {repositoryId:search.repositoryId,issueId:search.issueId,pullRequestId:search.pullRequestId,tab:search.tab,commitHash:search.commitHash,filePath:search.filePath} : undefined,
     workflowRoute: params.workflowId ? { workflowId: params.workflowId,
@@ -208,7 +214,8 @@ export function usePlatformNavigation(scopeKey?: string) {
       state: navigationState(target?.messageId, query, draft),
     }),
     openConversation: (conversationId: string, target?: {messageId:string;threadRootId?:string|null}, query?: string, draft?: PlatformDraftNavigation) => navigate({ to: "/conversations/$conversationId", params: { conversationId }, search: target ? {messageId:target.messageId,threadRootId:target.threadRootId ?? undefined} : {}, state: navigationState(target?.messageId, query, draft) }),
-    openApplication: (bindingId: string, workspaceId?: string) => navigate({ to: "/applications/$bindingId", params: { bindingId }, search: { workspaceId }, state:navigationState() }),
+    openApplication: (bindingId: string, workspaceId?: string, path?: string) => navigate({ to: "/applications/$bindingId", params: { bindingId },
+      search: { workspaceId, path: validComponentPath(path) ? path : undefined }, state:navigationState() }),
     openTab: (next: Exclude<PlatformTab, "conversation" | "application">, workspaceId?: string | null) => {
       if (next === "channel") return workspaceId
         ? navigate({ to: "/channels/$channelId", params: { channelId: workspaceId }, search: {}, state:navigationState() })

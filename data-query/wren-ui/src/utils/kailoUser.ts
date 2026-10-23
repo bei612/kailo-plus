@@ -16,7 +16,8 @@ export const KAILO_USER_HEADER = 'x-kailo-native-user';
 export const KAILO_SERVICE_HEADER = 'x-kailo-native-service';
 
 export interface KailoUserProfile {
-  // sha256 hex of JSON [issuer, subject]; the raw subject is never stored.
+  // sha256 hex of JSON [issuer, subject]. The raw pair is stored only to
+  // address Kailo notifications (DD-138(4)), never displayed.
   key: string;
   name: string | null;
   username: string | null;
@@ -26,9 +27,22 @@ export interface KailoUserProfile {
   // STANDALONE: Tenant ADMIN in the applied member directory. GOVERNED: null
   // (Core decides).
   admin: boolean | null;
+  // DD-138(4), `07` §4.8.3: the verified OIDC issuer and subject behind `key`,
+  // forwarded only on the private Next hop so the instance can address Kailo
+  // notifications (Core identifies people by iss+sub). Never shown in the UI;
+  // the Node side re-derives `key` from them before storing.
+  issuer?: string | null;
+  subject?: string | null;
 }
 
-const limits = { name: 200, username: 200, email: 320, picture: 2048 };
+const limits = {
+  name: 200,
+  username: 200,
+  email: 320,
+  picture: 2048,
+  issuer: 2048,
+  subject: 255,
+};
 
 function text(value: unknown, limit: number): string | null {
   if (typeof value !== 'string') return null;
@@ -91,6 +105,10 @@ export async function kailoUserFromClaims(
     picture: profilePicture(claims.picture),
     locale: profileLocale(claims.locale),
     admin,
+    // DD-138(4): kept only when it is stored verbatim (no trimming/limits
+    // change), so it always hashes back to `key`.
+    issuer: text(issuer, limits.issuer) === issuer ? issuer : null,
+    subject: text(claims.sub, limits.subject) === claims.sub ? claims.sub : null,
   };
 }
 
@@ -144,6 +162,9 @@ export function decodeKailoUser(
       picture: profilePicture(value.picture),
       locale: profileLocale(value.locale),
       admin: value.admin,
+      // DD-138(4): absent or malformed -> undefined (no notification address).
+      issuer: text(value.issuer, limits.issuer) ?? undefined,
+      subject: text(value.subject, limits.subject) ?? undefined,
     };
   } catch {
     return null;

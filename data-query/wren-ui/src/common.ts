@@ -52,6 +52,11 @@ import {
   KailoMemberDirectoryStore,
   KailoMemberDirectorySync,
 } from './apollo/server/services/kailoMemberDirectory';
+import {
+  KailoNotifier,
+  KailoNotifications,
+} from './apollo/server/services/kailoNotifications';
+import { KailoShareService } from './apollo/server/services/kailoShare';
 
 export const serverConfig = getConfig();
 
@@ -111,6 +116,18 @@ export const initComponents = () => {
       )
     : null;
   kailoMemberDirectorySync?.start();
+  // DD-138(4), `07` §4.8.3: Kailo inbox delivery with the same directory
+  // client; a no-op without the directory configuration.
+  const kailoNotifications = new KailoNotifications(
+    new KailoNotifier(kailoDirectoryConfiguration),
+    kailoUserRepository,
+    kailoMemberDirectory,
+  );
+  const kailoShareService = new KailoShareService(
+    kailoNotifications,
+    kailoMemberDirectory,
+    kailoUserRepository,
+  );
 
   // adaptors
   const wrenEngineAdaptor = new WrenEngineAdaptor({
@@ -208,6 +225,9 @@ export const initComponents = () => {
     projectService,
     deployService,
     queryService,
+    // DD-138(4): a scheduled run with failed items -> Kailo Tenant admins.
+    onScheduledRefreshFinished: (run) =>
+      void kailoNotifications.dashboardRefreshFinished(run),
   });
 
   return {
@@ -237,6 +257,8 @@ export const initComponents = () => {
     kailoUserDirectory,
     kailoMemberDirectory,
     kailoMemberDirectorySync,
+    kailoNotifications,
+    kailoShareService,
 
     // adaptors
     wrenEngineAdaptor,

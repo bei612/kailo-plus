@@ -1,6 +1,7 @@
 import type { DesktopNotificationPermissionState } from "@/features/notifications/hooks";
 import type { NotificationSettings } from "@/features/notifications/hooks";
 import type { SoundName, SoundSlot } from "@/features/notifications/lib/sound";
+import type { ComponentNotificationCategory } from "@client-kit/contracts";
 import type { SettingsSection } from "@/features/settings/ui/SettingsPanels";
 import { SettingsView } from "@/features/settings/ui/SettingsView";
 
@@ -18,6 +19,8 @@ type SettingsScreenProps = {
   onSetNotifyWhileViewing: (enabled: boolean) => void;
   onSetAllSlotAlertsEnabled: (enabled: boolean) => void;
   onSetSoundForSlot: (slot: SoundSlot, name: SoundName) => void;
+  /** DD-138(4), 07 §4.8.3: component notification category switches in 「通知」. */
+  onSetComponentAlertEnabled?: (category: ComponentNotificationCategory, enabled: boolean) => void;
   section: SettingsSection;
 };
 
@@ -35,6 +38,7 @@ export function SettingsScreen({
   onSetNotifyWhileViewing,
   onSetAllSlotAlertsEnabled,
   onSetSoundForSlot,
+  onSetComponentAlertEnabled,
   section,
 }: SettingsScreenProps) {
   return (
@@ -52,6 +56,7 @@ export function SettingsScreen({
       onSetNotifyWhileViewing={onSetNotifyWhileViewing}
       onSetAllSlotAlertsEnabled={onSetAllSlotAlertsEnabled}
       onSetSoundForSlot={onSetSoundForSlot}
+      onSetComponentAlertEnabled={onSetComponentAlertEnabled}
       section={section}
     />
   );

@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "domain/component_person_ref.schema.json",
+  "title": "ComponentPersonRef",
+  "description": "组件以 OIDC issuer + subject 指称 Kailo 成员（与 07 §4.7.4 成员目录 identities[] 同值）；Core 只在该 binding 当前目录范围内解析。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["issuer", "subject"],
+  "properties": {
+    "issuer": {"type": "string"},
+    "subject": {"type": "string"}
+  }
+}

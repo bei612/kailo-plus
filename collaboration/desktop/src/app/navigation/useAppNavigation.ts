@@ -10,6 +10,7 @@ import type { SearchHighlightNavigation } from "@/app/navigation/searchHighlight
 import { openSearchHitWithNavigation } from "@/app/navigation/searchHitNavigation";
 import type { SearchHit } from "@/shared/api/types";
 import type { PlatformSection } from "@/features/platform/platformSections";
+import { validComponentPath } from "@client-kit/platform/react/native-deep-link";
 
 type NavigationBehavior = {
   force?: boolean;
@@ -165,9 +166,12 @@ export function useAppNavigation() {
     [commitNavigation],
   );
 
+  // DD-138(4)(5), 07 §4.8.3/§4.8.4: optional `path` opens a location inside the native page
+  // (Inbox component notification, search result); a malformed path opens the entry page.
   const goApplication = React.useCallback(
-    (bindingId: string, workspaceId?: string) => commitNavigation({
-      to: "/applications/$bindingId", params: { bindingId }, search: { workspaceId },
+    (bindingId: string, workspaceId?: string, path?: string) => commitNavigation({
+      to: "/applications/$bindingId", params: { bindingId },
+      search: { workspaceId, path: validComponentPath(path) ? path : undefined },
     }),
     [commitNavigation],
   );

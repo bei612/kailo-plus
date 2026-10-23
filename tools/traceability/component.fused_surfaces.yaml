@@ -2,8 +2,8 @@ capability_id: component.fused_surfaces
 title: 产品一体化呈现：组件对用户的每个表面只有 Kailo 一个入口；组件偏好并入 Kailo 设置（第一阶段）
 stage: EXT-BASE
 status: in_progress
-# 本批源码尚未构建进任何产物，也未部署；第一阶段只覆盖用户设置、导航与内容区外壳，
-# 通知、搜索、管理面与个人数据的贡献合同按 07 §4.8.3–4.8.6 分阶段交付。
+# 本批源码尚未构建进任何产物，也未部署；第一阶段只覆盖用户设置、导航与内容区外壳；
+# 通知与搜索在第二阶段 component.fused_inbox_search 交付，管理面与个人数据按 07 §4.8.5–4.8.6 后续交付。
 exposure: none
 
 design:

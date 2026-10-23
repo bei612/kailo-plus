@@ -24,7 +24,19 @@ export type AppBadgeState =
   | { kind: "dot" }
   | { kind: "count"; count: number };
 
+/**
+ * DD-138(4), 07 §4.8.3 打开: a component notification opens its binding's native page at `path`
+ * (and is marked read). Carried through the native round trip like the channel anchor.
+ */
+export type DesktopNotificationApplicationTarget = {
+  notificationId: string;
+  bindingId: string;
+  workspaceId?: string;
+  path: string;
+};
+
 export type DesktopNotificationTarget = {
+  application?: DesktopNotificationApplicationTarget | null;
   channelId: string | null;
   channelName?: string | null;
   content?: string;
@@ -68,7 +80,20 @@ function notificationExtra(
   };
 }
 
-function parseNotificationTarget(
+function parseApplicationTarget(value: unknown): DesktopNotificationApplicationTarget | null {
+  if (!value || typeof value !== "object") return null;
+  const candidate = value as Partial<Record<keyof DesktopNotificationApplicationTarget, unknown>>;
+  if (typeof candidate.notificationId !== "string" || typeof candidate.bindingId !== "string"
+    || typeof candidate.path !== "string") return null;
+  return {
+    notificationId: candidate.notificationId,
+    bindingId: candidate.bindingId,
+    workspaceId: typeof candidate.workspaceId === "string" ? candidate.workspaceId : undefined,
+    path: candidate.path,
+  };
+}
+
+export function parseNotificationTarget(
   value: unknown,
 ): DesktopNotificationTarget | null {
   if (!value || typeof value !== "object") {
@@ -92,11 +117,14 @@ function parseNotificationTarget(
   const threadRootId =
     typeof candidate.threadRootId === "string" ? candidate.threadRootId : null;
 
-  if (!channelId && !eventId) {
+  const application = parseApplicationTarget(candidate.application);
+
+  if (!channelId && !eventId && !application) {
     return null;
   }
 
   return {
+    ...(application ? { application } : {}),
     channelId,
     channelName,
     content,

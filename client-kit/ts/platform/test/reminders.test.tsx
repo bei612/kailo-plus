@@ -12,6 +12,7 @@ import { remindersQueryKey } from "../src/react/reminders/hooks";
 import { AppSidebarPrimaryMenu } from "../src/react/sidebar/app-sidebar-primary-menu";
 import { SidebarProvider } from "../src/react/sidebar/sidebar";
 import { DEFAULT_SLOT_ALERTS_ENABLED, DEFAULT_SLOT_SOUNDS } from "../src/react/notifications/sound";
+import { DEFAULT_COMPONENT_ALERTS_ENABLED } from "../src/react/notifications/component-alerts";
 import { InboxListPane } from "../src/react/inbox-list-pane";
 import { TooltipProvider } from "../src/react/sidebar/tooltip";
 import { PlatformProvider } from "../src/react/context";
@@ -91,7 +92,8 @@ it.each(["en", "zh-CN"] as const)("shares the original Inbox list actions, UNKNO
 function notifyingHost():ReminderHost {
   return {...host(),notifications:{
     settings:{desktopEnabled:true,homeBadgeEnabled:true,notifyWhileViewing:false,sounds:{...DEFAULT_SLOT_SOUNDS},
-      slotAlertsEnabled:{...DEFAULT_SLOT_ALERTS_ENABLED},slotAlertsSnapshot:null},
+      slotAlertsEnabled:{...DEFAULT_SLOT_ALERTS_ENABLED},slotAlertsSnapshot:null,
+      componentAlertsEnabled:{...DEFAULT_COMPONENT_ALERTS_ENABLED}},
     send:vi.fn().mockResolvedValue(true),requestAttention:vi.fn().mockResolvedValue(undefined),
   }};
 }

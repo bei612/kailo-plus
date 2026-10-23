@@ -357,6 +357,21 @@ impl Adapter {
         .await
     }
 
+    /// DD-138(5), 07 §4.8.4 / §5.2: the read-only `search` operation with its
+    /// Search Token. The body is sent as the exact canonical bytes whose digest
+    /// the token carries; no Action, ExternalExecution or retry identity.
+    pub(crate) async fn search(
+        &self,
+        key: Uuid,
+        body: &Value,
+        token: &str,
+    ) -> Result<Value, Refusal> {
+        if body["idempotencyKey"] != json!(key) {
+            return Err(invalid());
+        }
+        self.send("search", key, body, token, true, None).await
+    }
+
     /// The caller has committed the original EE's UNKNOWN dispatch fence.
     /// This does not mint another identity or retry the native execution.
     pub(crate) async fn execute_prepared(

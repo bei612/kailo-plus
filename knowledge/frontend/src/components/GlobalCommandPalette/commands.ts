@@ -25,7 +25,11 @@ export interface CommandContext {
   t: Composer['t']
   /** Closes the palette; typically wires to commandPaletteStore.closePalette. */
   close: () => void
-  /** Kailo mode: settings and onboarding are Kailo surfaces (DD-138 §2), not palette commands. */
+  /**
+   * Kailo mode: only knowledge business commands remain; organizations,
+   * settings, onboarding and other cross-product entries are Kailo surfaces
+   * (DD-138 §2, DD-138(5), 07 §4.8.4; see kailoVisibleCommands).
+   */
   kailoMode?: boolean
 }
 

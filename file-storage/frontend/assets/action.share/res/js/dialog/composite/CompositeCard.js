@@ -190,7 +190,7 @@ class CompositeCard extends React.Component {
                 Value:"cells",
                 Icon:'mdi mdi-account-multiple',
                 Component:(
-                    <NewCellsList pydio={pydio} compositeModel={model} usersInvitations={this.usersInvitations.bind(this)}/>
+                    <NewCellsList pydio={pydio} compositeModel={model} usersInvitations={ShareHelper.kailoMode() ? null : this.usersInvitations.bind(this)}/>
                 )
             });
 

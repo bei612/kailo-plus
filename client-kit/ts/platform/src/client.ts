@@ -133,6 +133,10 @@ import type {
   GatewayStatsDimension,
   GatewayToolPage,
   GatewayToolTestCallResult,
+  ComponentNotificationPage,
+  ComponentNotificationReadRequest,
+  ComponentSearchPage,
+  ComponentSearchQuery,
   McpConnectionPage,
   McpConnectionProbeRequest,
   McpConnectionProbeResult,
@@ -662,6 +666,23 @@ export function createBffClient(transport: BffTransport) {
     pendingApprovals: () => get<ApprovalView[]>("/api/v1/approvals"),
     /** DD-125(5): approvals I initiated that reached a result (Inbox Needs action). */
     initiatedApprovals: () => get<ApprovalView[]>("/api/v1/approvals/initiated"),
+
+    // DD-138(4), 07 §4.8.3: component notifications in the Kailo Inbox. Personal read state
+    // only (no ActionExecution); Core lists items of ACTIVE bindings the caller may discover.
+    /** One page, newest received first; `nextCursor` absent means no more. */
+    componentNotifications: (options: { limit?: number; cursor?: string } = {}) => {
+      const query = new URLSearchParams({ limit: String(options.limit ?? 50) });
+      if (options.cursor !== undefined) query.set("cursor", options.cursor);
+      return get<ComponentNotificationPage>(`/api/v1/inbox/component-notifications?${query}`, true);
+    },
+    /** Marks 1–100 of my own items read (204); foreign or invisible IDs are ignored by Core. */
+    markComponentNotificationsRead: (notificationIds: readonly string[]) =>
+      call<unknown>({ method: "POST", path: "/api/v1/inbox/component-notifications/read",
+        body: { notificationIds: [...notificationIds] } satisfies ComponentNotificationReadRequest }),
+    // DD-138(5), 07 §4.8.4: component content as a 「搜索全部」 source. Read-only query, no
+    // ActionExecution and no Quota; each result is already resolved to an openable native page.
+    searchComponents: (body: ComponentSearchQuery) =>
+      call<ComponentSearchPage>({ method: "POST", path: "/api/v1/search/components", body }),
 
     /** 一项审批：发起者、已决定者或此刻合格的审批者可见。 */
     approval: (workflowId: string) =>

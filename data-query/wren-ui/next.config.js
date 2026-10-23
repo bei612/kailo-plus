@@ -73,6 +73,11 @@ const nextConfig = withLess({
         source: '/platform-adapter/v1/execute',
         destination: '/api/platform-adapter/execute',
       },
+      // DD-138(5), `07` §4.8.4: Core's Search Token call (searchSource).
+      {
+        source: '/platform-adapter/v1/search',
+        destination: '/api/platform-adapter/search',
+      },
     ];
   },
   async redirects() {

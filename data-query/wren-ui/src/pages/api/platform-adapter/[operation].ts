@@ -24,7 +24,10 @@ import {
   nativeStatusErrorArguments,
   mapNativeStatusError,
   Refused,
+  searchArguments,
+  verifySearchToken,
 } from '../../../../../../client-kit/adapter/protocol.mjs';
+import { kailoAdapterSearch } from '@server/services/kailoAdapterSearch';
 
 // Only these machine endpoints have their own authentication instead of the
 // independent native browser OIDC middleware. They do not accept cookies,
@@ -70,6 +73,7 @@ export default async function handler(
         'validate_binding',
         'reconcile',
         'map_native_status_error',
+        'search',
       ].includes(String(request.query.operation))
     ) {
       response.status(405).end();
@@ -79,6 +83,20 @@ export default async function handler(
       throw new NativeQueryRefusal(403, 'QUERY_MACHINE_CHANNEL_REQUIRED');
     }
     const delivered = await loadQueryDelivery();
+    if (request.query.operation === 'search') {
+      // DD-138(5), `07` §4.8.4 / §5.2: shared body and Search Token checks
+      // (400 body, 401 token); no Core PEP call and no ActionExecution.
+      const args = searchArguments(
+        await boundedBody(request, delivered.requestMaxBytes),
+        request.headers['idempotency-key'],
+      );
+      await verifySearchToken(bearer(request), delivered, args);
+      const { components } = await import('../../../common');
+      response
+        .status(200)
+        .json(await kailoAdapterSearch(components.knex, delivered, args));
+      return;
+    }
     if (request.query.operation === 'map_native_status_error') {
       const operation = 'map_native_status_error';
       const args = nativeStatusErrorArguments(

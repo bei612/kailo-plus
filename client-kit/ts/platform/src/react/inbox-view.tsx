@@ -14,6 +14,7 @@ import { HomeLoadingState } from "./home-loading-state";
 import { InboxListPane, type InboxListPresentation } from "./inbox-list-pane";
 import { InboxLayout, type InboxFilter } from "./inbox-surface";
 import { NeedsActionDetailPane, type NeedsActionItem, type NeedsActionSource } from "./inbox/needs-action";
+import { componentNotificationInFilter, type ComponentNotificationItem, type ComponentNotificationSource } from "./inbox/component-notifications";
 import { AUXILIARY_PANEL_SINGLE_COLUMN_BREAKPOINT_PX } from "./messages/thread/auxiliaryPanelLayout";
 import { Button } from "./profile/buzz/shared/ui/button";
 import { ReminderDetailPane, useReminderHost, useRemindersQuery } from "./reminders";
@@ -212,6 +213,7 @@ export function InboxView<T extends InboxViewRow>({
   onRowSelected,
   onFilterChanged,
   needsAction = null,
+  componentNotifications = null,
 }: {
   state: InboxViewState;
   status: InboxViewStatus;
@@ -241,6 +243,11 @@ export function InboxView<T extends InboxViewRow>({
   onFilterChanged?: (filter: InboxFilter) => void;
   /** DD-125(5): approvals waiting on me and my requests' results; absent hides the filter. */
   needsAction?: NeedsActionSource | null;
+  /**
+   * DD-138(4), 07 §4.8.3: component notifications (all; MENTIONED in mention; ACCESS_REQUESTED in
+   * needs_action). Opening one is host navigation to the native page, so it has no detail here.
+   */
+  componentNotifications?: { source: ComponentNotificationSource; onOpen: (item: ComponentNotificationItem) => void } | null;
 }) {
   const t = useT();
   const reminderHost = useReminderHost();
@@ -264,6 +271,10 @@ export function InboxView<T extends InboxViewRow>({
       ? needsAction.items.filter((item) => !unreadOnly || !needsAction.isDone(item) || item.key === selectedNeedsActionKey)
       : [], [needsAction, unreadOnly, selectedNeedsActionKey]);
   const visibleNeedsAction = React.useMemo(() => needsActionIn(filter), [filter, needsActionIn]);
+  const componentSource = componentNotifications?.source ?? null;
+  const visibleComponentNotifications = React.useMemo(() => componentSource?.status === "ready"
+    ? componentSource.items.filter((item) => componentNotificationInFilter(item, filter) && (!unreadOnly || !componentSource.isRead(item)))
+    : [], [componentSource, filter, unreadOnly]);
   // A decision moves the item out of its list; keep its detail open until another choice.
   const latchedNeedsAction = React.useRef<NeedsActionItem | null>(null);
   const listedNeedsAction = needsAction?.items.find((item) => item.key === selectedNeedsActionKey) ?? null;
@@ -399,6 +410,12 @@ export function InboxView<T extends InboxViewRow>({
                 state.setSelectedReminderId(null);
                 setSelectedNeedsActionKey(item.key);
               },
+            } : undefined}
+            componentNotifications={componentNotifications ? {
+              items: visibleComponentNotifications,
+              isRead: componentNotifications.source.isRead,
+              onOpen: componentNotifications.onOpen,
+              onMarkRead: (items) => { void componentNotifications.source.markRead(items).catch(() => {}); },
             } : undefined}
             onSelect={(row) => {
               setSelectedNeedsActionKey(null);

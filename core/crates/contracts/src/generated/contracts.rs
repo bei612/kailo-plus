@@ -1160,6 +1160,78 @@ pub struct AdapterReadGrantResponseReceiverWrite {
     pub expires_at: i64,
 }
 
+/// DD-138(5)、07 §4.8.4/§5.2：Core → adapter POST /platform-adapter/v1/search 的请求体（规范 JSON，其
+/// SHA-256 即 Search Token 的 normalized_parameter_hash）。resources 只含当前 HUMAN 已 fresh read 的该
+/// binding Resource，adapter 只在这些 native 对象内检索。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdapterSearchRequest {
+    pub idempotency_key: String,
+
+    /// 1–20。
+    pub limit: i64,
+
+    /// ZH_CN 或 EN。
+    pub locale: String,
+
+    /// 去首尾空白后 1–200 字符。
+    pub query: String,
+
+    /// 1–50 项。
+    pub resources: Vec<AdapterSearchResource>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdapterSearchResource {
+    pub native_id: String,
+
+    pub native_type: String,
+
+    pub resource_id: String,
+}
+
+/// DD-138(5)、07 §4.8.4：adapter search 回应。至多 limit 项；title 1–200 字符、summary 至多 400 字符、path
+/// 为该组件原生页面 origin 内相对路径。任一项不合则 Core 丢弃该来源的全部结果。不含正文、ContentReference 或凭据。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AdapterSearchResponse {
+    pub results: Vec<AdapterSearchResult>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdapterSearchResult {
+    pub kind: ComponentSearchResultKind,
+
+    pub path: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub summary: Option<String>,
+
+    pub title: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub updated_at: Option<String>,
+}
+
+/// DD-138(5)、07 §4.8.4：组件搜索结果的类别（封闭枚举）。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum ComponentSearchResultKind {
+    Dashboard,
+
+    Document,
+
+    File,
+
+    Folder,
+
+    #[serde(rename = "KNOWLEDGE_BASE")]
+    KnowledgeBase,
+
+    Question,
+}
+
 /// GET /api/v1/workspaces/{workspaceId}/agent-turns（DD-125(6)）：已准入 Workspace 内本人持有
 /// Installation audit 的运行中回合；没有 audit 的 Installation 不出现（成员只见 20002）。每次读取写 ACCESS 审计。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -5069,6 +5141,157 @@ pub struct ComponentDirectoryWorkspace {
     pub workspace_id: String,
 }
 
+/// DD-138(4)、07 §4.8.3：组件以其成员目录 client 的 client-credentials 令牌向 Core 服务监听面 POST
+/// /service/v1/component-notifications/bindings/{bindingId}/notifications 投递的一条通知。不建立
+/// ActionExecution、不授予权限；未知字段整体拒绝。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ComponentNotificationDelivery {
+    /// 触发者；须在同一目录范围内且不是接收人。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub actor: Option<ComponentPersonRef>,
+
+    pub category: ComponentNotificationCategory,
+
+    /// 1–128 个字母、数字、. _ : -，在该 binding 内唯一；同键同内容返回首次结果，同键异内容 409。
+    pub idempotency_key: String,
+
+    /// 事件发生时刻（RFC3339），不晚于 Core 当前时刻 5 分钟；缺省取接收时刻。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub occurred_at: Option<String>,
+
+    /// 组件页面 origin 内的相对路径：1–1024 字符，以单个 / 开头，无反斜杠、空白与控制字符，无凭据类查询参数。
+    pub path: String,
+
+    pub recipient: ComponentPersonRef,
+
+    /// 每种语言 1–280 字符，不含控制字符。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub summary: Option<ComponentText>,
+
+    /// 每种语言 1–120 字符，不含控制字符。
+    pub title: ComponentText,
+}
+
+/// 触发者；须在同一目录范围内且不是接收人。
+///
+/// 组件以 OIDC issuer + subject 指称 Kailo 成员（与 07 §4.7.4 成员目录 identities[] 同值）；Core 只在该 binding
+/// 当前目录范围内解析。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ComponentPersonRef {
+    pub issuer: String,
+
+    pub subject: String,
+}
+
+/// DD-138(4)、07 §4.8.3：组件投递到 Kailo 收件箱的通知类别（封闭枚举）。SHARED 分享给你；MENTIONED 提及你；COMMENTED
+/// 评论了你的对象；ACCESS_REQUESTED 访问申请（进入「需要处理」）；TASK_COMPLETED 任务完成；CONTENT_UPDATED 你关注的内容有更新。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum ComponentNotificationCategory {
+    #[serde(rename = "ACCESS_REQUESTED")]
+    AccessRequested,
+
+    Commented,
+
+    #[serde(rename = "CONTENT_UPDATED")]
+    ContentUpdated,
+
+    Mentioned,
+
+    Shared,
+
+    #[serde(rename = "TASK_COMPLETED")]
+    TaskCompleted,
+}
+
+/// 每种语言 1–280 字符，不含控制字符。
+///
+/// 组件向 Kailo 提供的中英文文案（键恰为 ZH_CN、EN）。长度与字符规则由 Core 按使用处校验。
+///
+/// 每种语言 1–120 字符，不含控制字符。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub struct ComponentText {
+    pub en: String,
+
+    pub zh_cn: String,
+}
+
+/// DD-138(4)：GET /api/v1/inbox/component-notifications 的一页，按 receivedAt 倒序；nextCursor
+/// 缺省表示没有更多。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ComponentNotificationPage {
+    pub items: Vec<ComponentNotificationView>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
+
+    /// 当前可见范围内本人未读条目总数（不受分页影响）。
+    pub unread_count: i64,
+}
+
+/// DD-138(4)、03 ComponentNotification：当前会话 Principal
+/// 收件箱中的一条组件通知。只含呈现类别，不含组件名、component_type_key 或 binding 配置；bindingId 只用于在 Kailo
+/// 内容区打开该原生页面入口。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ComponentNotificationView {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub actor_display_name: Option<String>,
+
+    /// 07 §4.7.3 Tenant 头像地址；缺省时客户端显示首字母。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub actor_picture: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub actor_principal_id: Option<String>,
+
+    pub binding_id: String,
+
+    pub category: ComponentNotificationCategory,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub native_page_category: Option<NativePageCategory>,
+
+    pub notification_id: String,
+
+    pub occurred_at: String,
+
+    pub path: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub read_at: Option<String>,
+
+    pub received_at: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub summary: Option<ComponentText>,
+
+    pub title: ComponentText,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
+}
+
+/// DD-138(4)：POST /api/v1/inbox/component-notifications/read。接收人把本人的条目标记为已读（个人状态，不建立
+/// ActionExecution）；1–100 个 ID，非本人或不可见的 ID 被忽略。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ComponentNotificationReadRequest {
+    pub notification_ids: Vec<String>,
+}
+
+/// DD-138(4)：投递回执。新建 201、同键同内容重复 200（duplicate=true）。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ComponentNotificationReceipt {
+    pub duplicate: bool,
+
+    pub notification_id: String,
+}
+
 /// 原受信Worker在原审批后的COMPONENT_RELEASE Activity报告实际自身能力。Core自行读取自身与当前Web事实，并重新核验原release套件和审批。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -5222,6 +5445,67 @@ pub struct ComponentReleaseReceipt {
     pub plan_digest: String,
 
     pub status: ComponentReleaseStatus,
+}
+
+/// DD-138(5)、07 §4.8.4：组件内容搜索结果。每项已解析到可在 Kailo 内容区打开的原生页面入口（bindingId 为该呈现类别生效的入口，不是 adapter
+/// binding）；sources 列出每个呈现类别来源的状态。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ComponentSearchPage {
+    pub results: Vec<ComponentSearchResult>,
+
+    pub sources: Vec<ComponentSearchSource>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ComponentSearchResult {
+    pub binding_id: String,
+
+    pub kind: ComponentSearchResultKind,
+
+    pub native_page_category: NativePageCategory,
+
+    pub path: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub summary: Option<String>,
+
+    pub title: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub updated_at: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ComponentSearchSource {
+    pub native_page_category: NativePageCategory,
+
+    pub state: ComponentSearchSourceState,
+}
+
+/// DD-138(5)：一次「搜索全部」中某个组件来源的结果状态。ANSWERED 表示该来源已按合同回应（可为零条）；UNAVAILABLE
+/// 表示该来源超时、不可达或回应不合合同，其结果整体未采信。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum ComponentSearchSourceState {
+    #[serde(rename = "ANSWERED")]
+    Answered,
+
+    #[serde(rename = "UNAVAILABLE")]
+    Unavailable,
+}
+
+/// DD-138(5)、07 §4.8.4：POST /api/v1/search/components。q 去首尾空白后 1–200 字符；limit 为每个来源的上限
+/// 1–20（缺省 8）；locale 为 ZH_CN 或 EN（缺省 ZH_CN）。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ComponentSearchQuery {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub limit: Option<i64>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub locale: Option<String>,
+
+    pub q: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

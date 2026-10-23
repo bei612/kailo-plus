@@ -66,6 +66,11 @@ export enum GeneralErrorCodes {
   KAILO_ADMIN_REQUIRED = 'KAILO_ADMIN_REQUIRED',
   // DD-133(4): the Kailo user is not in the applied member directory.
   KAILO_NOT_MEMBER = 'KAILO_NOT_MEMBER',
+  // DD-138(4), `07` §4.8.3: sharing needs Kailo notification delivery and an
+  // applied member directory; the request names a missing target or a
+  // recipient outside the current directory.
+  KAILO_SHARE_UNAVAILABLE = 'KAILO_SHARE_UNAVAILABLE',
+  KAILO_SHARE_INVALID = 'KAILO_SHARE_INVALID',
 }
 
 export const errorMessages = {
@@ -138,6 +143,10 @@ export const errorMessages = {
     'Only a Kailo Tenant administrator can change this.',
   [GeneralErrorCodes.KAILO_NOT_MEMBER]:
     'You are not a member of the Kailo Tenant of this instance.',
+  [GeneralErrorCodes.KAILO_SHARE_UNAVAILABLE]:
+    'Sharing with Kailo members is not available on this instance.',
+  [GeneralErrorCodes.KAILO_SHARE_INVALID]:
+    'The shared object or a recipient is not valid.',
 };
 
 export const shortMessages = {
@@ -173,6 +182,8 @@ export const shortMessages = {
   [GeneralErrorCodes.SQL_EXECUTION_ERROR]: 'SQL execution error',
   [GeneralErrorCodes.KAILO_ADMIN_REQUIRED]: 'Administrator required',
   [GeneralErrorCodes.KAILO_NOT_MEMBER]: 'Not a member',
+  [GeneralErrorCodes.KAILO_SHARE_UNAVAILABLE]: 'Sharing unavailable',
+  [GeneralErrorCodes.KAILO_SHARE_INVALID]: 'Invalid share',
 };
 
 export const create = (

@@ -189,3 +189,68 @@ UID 1000, wren-ui locked dependencies installed with the repository's yarn
 Not done here: image build, deployment, the platform IdP client and binding
 registration, and acceptance with real Tenant members.
 
+
+## 通知、分享与搜索来源（DD-138(4)/(5)，2026-10-23，源码阶段）
+
+依据 `.design/07` §4.8.3（组件通知并入 Kailo 收件箱）与 §4.8.4/§5.2（组件内容作为
+搜索来源）。本节只记录源码与单元测试；未构建、未部署、未做运行验收。
+
+改动：
+
+- **收件人身份**：迁移 `migrations/20261024000000_kailo_user_identity.js`（可逆）为
+  `kailo_user` 加 `issuer`、`subject`。来源只有两处已验证事实：中间件转发的已验签令牌
+  （`utils/kailoUser.ts` 把 `iss`/`sub` 放进私有转发头；`KailoUserDirectory.remember`
+  先用二者重算 `user_key`，一致才写入，缺失时不清除已存值）与已应用的成员目录快照
+  `members[].identities[]`（`kailoMemberDirectory.ts` `apply()`）。
+- **通知投递**：`services/kailoNotifications.ts`。复用目录 client 的
+  client-credentials（`kailoMemberDirectory.ts` 导出 `kailoServiceToken`，增加
+  `expires_in`），令牌缓存到过期前 30 s，缓存令牌遇 401/403 换新一次。目录配置
+  不完整即不启用（no-op）。有界内存队列（默认 500，满则丢最旧并计数日志），单个后台
+  worker；201/200 成功，400/401/403/409 终止，429/5xx/网络错误以同一幂等键退避重试
+  （共 5 次，约 5 分钟）。幂等键 `data-query.<category>.<sha256 前 40 位>`，按
+  （事件, 接收人）确定。日志只含 binding、类别、HTTP 状态。路径用共享
+  `componentPath` 校验。不发送通知者本人，不发给不在当前目录或身份未知的人。
+- **分享给成员**：GraphQL `kailoShareMembers`、`shareWithMembers(data:{target:{threadId|dashboard},
+  recipients,requestId})`、`KailoSession.shareAvailable`（`schema.ts`、`resolvers.ts`、
+  `resolvers/kailoShareResolver.ts`、`services/kailoShare.ts`、错误码
+  `KAILO_SHARE_UNAVAILABLE`/`KAILO_SHARE_INVALID`）。校验：投递已启用且目录已交付、
+  恰好一个目标且存在于当前项目、接收人 1–50 个、互不重复、不含本人、均为当前目录成员；
+  任一不符整体拒绝且不发送。不改访问控制：单项目实例的全部成员本来就能读全部对话与
+  唯一看板（§4.7.4 问数映射表）。前端 `components/kailo/KailoShare.tsx`（antd Modal
+  + Select，套 Kailo 主题，无自定颜色），放在对话页右上与看板头部；文案在
+  `utils/kailoI18n.ts`（中/英）。`requestId` 每次打开弹窗一个，重复提交不重复通知。
+- **看板通知**：(a) `dashboardResolver.createDashboardItem` 成功后后台通知对话创建者
+  （非操作者本人），类别 `CONTENT_UPDATED`（“你的问题已加入团队看板”）；(b)
+  `DashboardCacheBackgroundTracker` 定时刷新一轮结束后上报 `{dashboardId, runId, total,
+  failed}`，有失败项时给目录中每位 Tenant 管理员各发一条 `TASK_COMPLETED`（同一轮同一
+  幂等键）。路径均为 `/home/dashboard`；分享对话为 `/home/<threadId>`。类别依 §4.8.3：
+  分享=SHARED，自己的对象被他人改动=CONTENT_UPDATED，后台任务结束=TASK_COMPLETED。
+- **搜索来源**：`platform-adapter/[operation].ts` 新增 `search`（`next.config.js` 改写
+  `/platform-adapter/v1/search`，`middleware.ts` 机器路由放行，Origin/Cookie 仍 403）。
+  直接复用本路由已引用的 `client-kit/adapter/protocol.mjs` 的 `searchArguments`、
+  `verifySearchToken`、`searchResponse`（与 Node adapter 同一份代码，而非 TS 重写；
+  配置取 `WREN_PLATFORM_QUERY_CONFIG_FILE` 的 ActionToken issuer/audience/JWKS 与
+  tenant/workspace/binding）。`services/kailoAdapterSearch.ts`：`resources[]` 中只有
+  `nativeType` 为 `model`/`view` 且 `nativeId` 为所交付项目内模型/视图 id 的条目属于本
+  binding；至少一条属于时，以该项目为 native scope 检索对话（摘要或首个问题）与看板项
+  （显示名），`LIKE` 小写匹配并转义 `% _ \`；否则返回空。结果种类 QUESTION/DASHBOARD，
+  路径为原生页面路由。`fork/release/manifest.json` 的 `executionConnector` 加
+  `"searchSource": "SUPPORTED"`（其余字节不变；native-page manifest 未动）。
+
+测试（jest，未在本机运行）：
+
+- `src/kailoNotifications.test.ts`：无配置 no-op；201 投递、请求体形状、令牌缓存；
+  200/409/403 不重试；429/503/网络错误同键重试；5 次后放弃；缓存令牌 401/403 换新一次；
+  临期令牌不复用；队列满丢最旧；路径/自通知/超长标题/幂等键/类别校验；分享事件只发给
+  当前成员且不含本人、重放同键；看板加入通知；刷新失败按管理员聚合；定时刷新上报。
+  分享校验：候选人、合法对话/看板分享、不可用三种情形、十种非法输入整体拒绝。
+- `src/kailoAdapterSearch.test.ts`（真实路由 + 真实 ES256 Search Token + sqlite）：合法
+  请求返回本项目对话与看板项；通配符按字面；不属于本 binding 的 resources 被忽略；
+  binding/tenant/workspace/摘要/token_use/target/有效期/audience/zed token 不符 401；
+  缺 bearer 401、非规范体与幂等键不符 400；Cookie/Origin 403；结果清洗。
+- `src/kailoMemberDirectory.test.ts`：快照写入 issuer/subject；登录只在哈希一致时存储、
+  不被缺省清除；身份迁移 down/up。`src/kailoUserMiddleware.test.ts` 转发头含 issuer/subject。
+
+未验证：全部测试尚未在 CI 执行，`tsc`/`eslint`/`prettier` 未跑；`__types__.ts`、
+`kailo.generated.ts` 为手工补写，需 codegen 核对；Core 端通知入口与搜索调用的联调、
+真实收件箱呈现、镜像构建与部署、真实成员的端到端验收均未做。

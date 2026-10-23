@@ -222,6 +222,11 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(service.NewOrganizationService))
 	must(container.Provide(service.NewKBShareService)) // KBShareService must be registered before KnowledgeService and KnowledgeTagService
 	must(container.Provide(service.NewAgentShareService))
+	// DD-138(4), 07 §4.8.3: Kailo notifications for new shares (no-op outside
+	// Kailo mode or without the member directory configuration).
+	must(container.Provide(service.NewKailoNotifier))
+	must(container.Decorate(service.DecorateKBShareServiceForKailo))
+	must(container.Decorate(service.DecorateAgentShareServiceForKailo))
 	must(container.Provide(service.NewKnowledgeService))
 	must(container.Provide(service.NewSpanTracker))
 	must(container.Provide(service.NewChunkService))
@@ -1930,14 +1935,21 @@ func startTemporaryDocumentCleanup(svc interfaces.TemporaryDocumentService, clea
 	})
 }
 
-// startKailoDirectorySync starts the Kailo member directory read (DD-133(4));
-// it is a no-op unless Kailo mode and the directory are configured.
+// startKailoDirectorySync starts the Kailo member directory read (DD-133(4))
+// and, with the same configuration, the Kailo notification delivery
+// (DD-138(4), 07 §4.8.3); both are no-ops unless Kailo mode and the directory
+// are configured.
 func startKailoDirectorySync(
-	runner *service.KailoDirectorySyncRunner, cleaner interfaces.ResourceCleaner,
+	runner *service.KailoDirectorySyncRunner, notifier *service.KailoNotifier, cleaner interfaces.ResourceCleaner,
 ) {
 	runner.Start(context.Background())
+	notifier.Start(context.Background())
 	cleaner.RegisterWithName("KailoDirectorySyncRunner", func() error {
 		runner.Stop()
+		return nil
+	})
+	cleaner.RegisterWithName("KailoNotifier", func() error {
+		notifier.Stop()
 		return nil
 	})
 }

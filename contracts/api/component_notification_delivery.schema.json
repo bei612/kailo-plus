@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/component_notification_delivery.schema.json",
+  "title": "ComponentNotificationDelivery",
+  "description": "DD-138(4)、07 §4.8.3：组件以其成员目录 client 的 client-credentials 令牌向 Core 服务监听面 POST /service/v1/component-notifications/bindings/{bindingId}/notifications 投递的一条通知。不建立 ActionExecution、不授予权限；未知字段整体拒绝。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["idempotencyKey", "recipient", "category", "title", "path"],
+  "properties": {
+    "idempotencyKey": {"type": "string", "description": "1–128 个字母、数字、. _ : -，在该 binding 内唯一；同键同内容返回首次结果，同键异内容 409。"},
+    "recipient": {"$ref": "../domain/component_person_ref.schema.json"},
+    "actor": {"$ref": "../domain/component_person_ref.schema.json", "description": "触发者；须在同一目录范围内且不是接收人。"},
+    "category": {"$ref": "../enums/component_notification_category.schema.json"},
+    "title": {"$ref": "../domain/component_text.schema.json", "description": "每种语言 1–120 字符，不含控制字符。"},
+    "summary": {"$ref": "../domain/component_text.schema.json", "description": "每种语言 1–280 字符，不含控制字符。"},
+    "path": {"type": "string", "description": "组件页面 origin 内的相对路径：1–1024 字符，以单个 / 开头，无反斜杠、空白与控制字符，无凭据类查询参数。"},
+    "occurredAt": {"type": "string", "format": "date-time", "description": "事件发生时刻（RFC3339），不晚于 Core 当前时刻 5 分钟；缺省取接收时刻。"}
+  }
+}

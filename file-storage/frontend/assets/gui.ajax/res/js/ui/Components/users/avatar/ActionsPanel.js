@@ -115,7 +115,9 @@ class ActionsPanel extends React.Component{
         let usermails = {};
         let actions = [];
         let resourceType, resourceId;
-        if(user && user.IdmUser && user.IdmUser.Attributes && (user.IdmUser.Attributes['hasEmail'] || user.IdmUser.Attributes['email'] )){
+        // DD-138(4) (07 §4.8.3): no component e-mail to users in Kailo mode.
+        const kailoMode = !!(typeof window !== 'undefined' && window.KailoCells && window.KailoCells.kailoMode && window.KailoCells.kailoMode());
+        if(!kailoMode && user && user.IdmUser && user.IdmUser.Attributes && (user.IdmUser.Attributes['hasEmail'] || user.IdmUser.Attributes['email'] )){
             actions.push({key:'message', label:getMessage(598), icon:'email', callback: this.openMailer.bind(this)});
             usermails[user.IdmUser.Login] = user.IdmUser;
         }

@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/component_notification_receipt.schema.json",
+  "title": "ComponentNotificationReceipt",
+  "description": "DD-138(4)：投递回执。新建 201、同键同内容重复 200（duplicate=true）。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["notificationId", "duplicate"],
+  "properties": {
+    "notificationId": {"type": "string", "format": "uuid"},
+    "duplicate": {"type": "boolean"}
+  }
+}

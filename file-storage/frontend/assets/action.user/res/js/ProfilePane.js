@@ -28,6 +28,13 @@ import {UserServiceApi} from 'cells-sdk';
 
 const {Manager, FormPanel} = Pydio.requireLib('form');
 
+// DD-138(4) (07 §4.8.3): in Kailo mode notification preferences belong to the
+// Kailo settings; the native e-mail notification parameters are not exposed.
+const kailoParameters = (definitions) => {
+    const kailoMode = !!(typeof window !== 'undefined' && window.KailoCells && window.KailoCells.kailoMode && window.KailoCells.kailoMode());
+    return kailoMode ? definitions.filter(d => !/^NOTIFICATIONS_EMAIL/.test(d.name)) : definitions;
+};
+
 const FORM_CSS = ` 
 .react-mui-context .current-user-edit.pydio-form-panel > .pydio-form-group:first-of-type {
   margin-top: 210px;
@@ -81,7 +88,7 @@ class ProfilePane extends React.Component {
                 objValues[k] = v;
             });
         }
-        let definitions = Manager.parseParameters(pydio.getXmlRegistry(), "user/preferences/pref[@exposed='true']|//param[contains(@scope,'user') and @expose='true']")
+        let definitions = kailoParameters(Manager.parseParameters(pydio.getXmlRegistry(), "user/preferences/pref[@exposed='true']|//param[contains(@scope,'user') and @expose='true']"))
 
         this.state = {
             definitions,
@@ -174,7 +181,7 @@ class ProfilePane extends React.Component {
                     // Reload form after registry reload
                     pydio.observeOnce('registry_loaded', () => {
                         this.setState({
-                            definitions: Manager.parseParameters(pydio.getXmlRegistry(), "user/preferences/pref[@exposed='true']|//param[contains(@scope,'user') and @expose='true']")
+                            definitions: kailoParameters(Manager.parseParameters(pydio.getXmlRegistry(), "user/preferences/pref[@exposed='true']|//param[contains(@scope,'user') and @expose='true']"))
                         });
                     });
                 }

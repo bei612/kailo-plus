@@ -35,6 +35,22 @@ type KailoIntegrationConfig struct {
 	// Directory is the Kailo member directory read (DD-133(4), 07 §4.7.4);
 	// nil or empty means the directory is not delivered to this instance.
 	Directory *KailoDirectoryConfig `yaml:"directory" json:"directory"`
+	// LongAnswerNotifyAfter: a chat answer that took at least this long is
+	// announced to the person who asked through Kailo notifications
+	// (DD-138(4), 07 §4.8.3); 0 means DefaultKailoLongAnswerNotifyAfter.
+	LongAnswerNotifyAfter time.Duration `yaml:"long_answer_notify_after" json:"long_answer_notify_after"`
+}
+
+// DefaultKailoLongAnswerNotifyAfter is the answer duration from which the
+// asker is notified that the answer is ready (DD-138(4)).
+const DefaultKailoLongAnswerNotifyAfter = 30 * time.Second
+
+// KailoLongAnswerNotifyAfter returns the effective long-answer threshold.
+func (c *Config) KailoLongAnswerNotifyAfter() time.Duration {
+	if !c.KailoEnabled() || c.Kailo.LongAnswerNotifyAfter <= 0 {
+		return DefaultKailoLongAnswerNotifyAfter
+	}
+	return c.Kailo.LongAnswerNotifyAfter
 }
 
 // Directory poll interval bounds (deployment contract, seconds).
@@ -122,6 +138,13 @@ func applyKailoEnvOverrides(cfg *Config) {
 			cfg.Kailo.SessionMaxLifetime = -1
 		}
 	}
+	if value := strings.TrimSpace(os.Getenv("KAILO_LONG_ANSWER_NOTIFY_SECONDS")); value != "" {
+		if seconds, err := strconv.Atoi(value); err == nil && seconds > 0 {
+			cfg.Kailo.LongAnswerNotifyAfter = time.Duration(seconds) * time.Second
+		} else {
+			cfg.Kailo.LongAnswerNotifyAfter = -1
+		}
+	}
 	directory := map[string]*string{}
 	if cfg.Kailo.Directory == nil {
 		cfg.Kailo.Directory = &KailoDirectoryConfig{}
@@ -206,6 +229,9 @@ func validateKailoConfig(cfg *Config) []string {
 	}
 	if cfg.Kailo.SessionMaxLifetime < 0 {
 		errs = append(errs, fmt.Sprintf("kailo.session_max_lifetime must be a positive duration, got %v", cfg.Kailo.SessionMaxLifetime))
+	}
+	if cfg.Kailo.LongAnswerNotifyAfter < 0 {
+		errs = append(errs, "kailo.long_answer_notify_after must be a positive duration")
 	}
 	errs = append(errs, validateKailoDirectory(cfg)...)
 	return errs

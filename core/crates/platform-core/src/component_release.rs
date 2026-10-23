@@ -36,6 +36,24 @@ fn exact_fields(value: &Value, required: &[&str], optional: &[&str]) -> Result<(
     Ok(())
 }
 
+/// DD-138(5), `.design/03` ExecutionConnector.search_source, 07 §4.8.4:
+/// `searchSource` is optional (absent = NONE); `SUPPORTED` is accepted only
+/// for a `REMOTE_ADAPTER`, whose adapter then implements `search`.
+fn search_source(
+    connector: &Value,
+    kind: Option<crate::application_binding::native::Connector>,
+) -> Result<(), Refusal> {
+    match connector.get("searchSource").map(Value::as_str) {
+        None | Some(Some("NONE")) => Ok(()),
+        Some(Some("SUPPORTED"))
+            if kind == Some(crate::application_binding::native::Connector::RemoteAdapter) =>
+        {
+            Ok(())
+        }
+        _ => Err(bad()),
+    }
+}
+
 fn text<'a>(value: &'a Value, key: &str) -> Result<&'a str, Refusal> {
     value[key]
         .as_str()
@@ -463,7 +481,7 @@ pub(crate) fn registration(raw: &Value) -> Result<Registration, Refusal> {
     exact_fields(
         connector,
         &["mode", "adapterProtocolRange", "actionTokenAudience"],
-        &[],
+        &["searchSource"],
     )?;
     // DD-127: a native page entry has no connector (None); see native_page().
     let connector_kind = if crate::application_binding::native::native_page_only(&manifest) {
@@ -472,6 +490,7 @@ pub(crate) fn registration(raw: &Value) -> Result<Registration, Refusal> {
     } else {
         Some(crate::application_binding::native::Connector::from_manifest(&manifest)?)
     };
+    search_source(connector, connector_kind)?;
     if manifest["adapterProtocolRange"] != connector["adapterProtocolRange"] {
         return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
     }
@@ -3230,6 +3249,25 @@ mod draft_sample;
 
 #[cfg(test)]
 mod report_tests {
+    #[test]
+    fn search_source_is_only_a_remote_adapter_declaration() {
+        use super::search_source;
+        use crate::application_binding::native::Connector;
+        use serde_json::json;
+        let remote = Some(Connector::RemoteAdapter);
+        assert!(search_source(&json!({"mode": "REMOTE_ADAPTER"}), remote).is_ok());
+        assert!(search_source(&json!({"searchSource": "NONE"}), None).is_ok());
+        assert!(search_source(&json!({"searchSource": "SUPPORTED"}), remote).is_ok());
+        assert!(search_source(&json!({"searchSource": "SUPPORTED"}), None).is_err());
+        assert!(search_source(
+            &json!({"searchSource": "SUPPORTED"}),
+            Some(Connector::ProtocolPeer)
+        )
+        .is_err());
+        assert!(search_source(&json!({"searchSource": "YES"}), remote).is_err());
+        assert!(search_source(&json!({"searchSource": true}), remote).is_err());
+    }
+
     use super::*;
 
     /// The original call shape: a frozen step without DD-124 captures.

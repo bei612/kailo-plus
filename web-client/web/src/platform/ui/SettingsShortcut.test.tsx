@@ -111,6 +111,8 @@ vi.mock("@/platform/ui/SettingsPane", () => ({
 }));
 vi.mock("@/shared/i18n", () => ({ getLocale: () => "en", t: (key: string) => key }));
 vi.mock("@/shared/theme/ThemeProvider", () => ({ useTheme: () => ({ isDark: true }) }));
+// DD-138(4): the component notification source is exercised by its own tests.
+vi.mock("./ComponentNotificationAlerts", () => ({ useComponentNotifications: () => ({ source: null, open: () => {}, unreadCount: 0 }) }));
 vi.mock("@/platform/bff-client", () => ({
   // The real PlatformProvider receives this client. Reads this test does not exercise stay
   // pending (loading UI) instead of each shell dependency needing its own stub.

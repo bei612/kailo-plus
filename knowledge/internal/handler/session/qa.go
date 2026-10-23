@@ -1244,8 +1244,9 @@ func (h *Handler) executeQA(reqCtx *qaRequestContext, mode qaMode, generateTitle
 						injected = streamCtx.steerSink.InjectedIDs()
 					}
 					h.discardSteerBacklog(updateCtx, sessionID, streamCtx.assistantMessage.ID, injected)
+					// DD-138(4): a stopped turn is not announced as completed.
 					h.completeAssistantMessage(
-						updateCtx, streamCtx.assistantMessage, reqCtx.query, reqCtx.userMessageID,
+						withKailoTurnStopped(updateCtx), streamCtx.assistantMessage, reqCtx.query, reqCtx.userMessageID,
 					)
 				} else {
 					kicked := h.kickNextRunFromSteerBacklog(updateCtx, reqCtx, streamCtx)
@@ -1722,6 +1723,8 @@ func (h *Handler) completeAssistantMessage(
 	if userQuery != "" {
 		go h.recordTurnMemory(bgCtx, assistantMessage, userQuery, userMessageID)
 	}
+	// DD-138(4), 07 §4.8.3: long answers are announced through Kailo.
+	h.notifyKailoAnswerCompleted(bgCtx, assistantMessage, userQuery)
 }
 
 // recordTurnMemory runs the long-term memory write path for a finished turn.
