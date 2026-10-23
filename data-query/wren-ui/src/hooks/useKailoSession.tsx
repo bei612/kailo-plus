@@ -9,6 +9,7 @@ import {
   kailoRuntime,
   KailoLocale,
   KailoTheme,
+  pendingLocale,
   presentation,
 } from '@/utils/kailoEmbed';
 import { kailoProductTitle } from '@/utils/kailoI18n';
@@ -67,7 +68,6 @@ export function KailoSessionProvider({ children, displayName }: Props) {
     const state = presentation();
     setEmbedded(state.embedded);
     setTheme(state.theme);
-    followLocale(state.locale);
     const runtime = kailoRuntime();
     if (!runtime) return;
     const stopTheme = runtime.onThemeChange(setTheme);
@@ -77,6 +77,12 @@ export function KailoSessionProvider({ children, displayName }: Props) {
       stopLocale();
     };
   }, []);
+
+  // Next's locale is re-checked after every navigation (see pendingLocale).
+  useEffect(() => {
+    const locale = pendingLocale(router.locale, router.isReady);
+    if (locale) followLocale(locale);
+  }, [router.isReady, router.locale, router.asPath]);
 
   // Top-level visits only: the OIDC `locale` claim seeds the language when
   // Kailo has not supplied one (the runtime ignores it otherwise).

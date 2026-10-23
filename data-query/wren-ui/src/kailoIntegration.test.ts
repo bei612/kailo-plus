@@ -16,6 +16,7 @@ import {
   KAILO_USER_HEADER,
 } from './utils/kailoUser';
 import {
+  pendingLocale,
   presentation,
   renewNativeSession,
   requireSignIn,
@@ -285,6 +286,18 @@ describe('Kailo presentation bridge', () => {
     afterEach(() => {
       delete globals.window;
       delete globals.document;
+    });
+
+    test('the Next locale follows Kailo after every navigation', () => {
+      // Launched with kailo_locale=en, the page redirect left Next on zh-CN.
+      expect(pendingLocale('zh-CN', true)).toBe('en');
+      expect(pendingLocale('en', true)).toBeNull();
+      expect(pendingLocale('zh-CN', false)).toBeNull();
+      globals.window.KailoEmbed = {
+        ...runtime,
+        getState: () => ({ ...runtime.getState(), locale: 'zh-CN' }),
+      };
+      expect(pendingLocale('en', true)).toBe('zh-CN');
     });
 
     test('presentation is the kailo-embed.js state', () => {
