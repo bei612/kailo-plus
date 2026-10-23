@@ -88,6 +88,7 @@ import { WebAgentTranscriptHost } from "./WebAgentTranscriptHost";
 import { AgentActivityOpenerHost } from "@client-kit/platform/react/agent-transcript";
 import { ForumPane } from "@/platform/ui/ForumPane";
 import { InboxPane } from "@/platform/ui/InboxPane";
+import { appBadgeState, useAppBadgeTitle } from "./useAppBadgeTitle";
 import { BffReminderHost } from "@/platform/ui/ReminderHost";
 import { SettingsPane } from "@/platform/ui/SettingsPane";
 import { AgentDefinitionsPane } from "./AgentDefinitionsPane";
@@ -419,6 +420,8 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
     onOpen: (channelId, target) => openSearchChannel(channelId, target) });
   // While Inbox is open its own list is what the person sees; elsewhere the shell feed keeps it.
   const homeBadgeCount = tab === "inbox" && inboxUnreadCount !== null ? inboxUnreadCount : homeFeed.unreadCount;
+  // Original app badge (count, or a dot for channel-only unreads) in the tab title.
+  useAppBadgeTitle(notificationSettings?.settings.homeBadgeEnabled !== false, appBadgeState(homeBadgeCount, sidebarUnread.size));
   const setTab = (next: Exclude<PlatformTab, "conversation" | "application">) => { void navigation.openTab(next, active); };
   const settingsReturn = useRef<() => void>(() => { void navigation.openTab("channel"); });
   useEffect(() => {

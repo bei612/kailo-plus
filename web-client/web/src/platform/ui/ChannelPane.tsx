@@ -850,16 +850,6 @@ export function ChannelPane({
     }
   };
 
-  // 页面在后台时，未读数进标签页标题；静音的 Workspace 不提示
-  useEffect(() => {
-    const title = t("app.title");
-    document.title =
-      !visible && !muted && notifications?.settings.homeBadgeEnabled !== false && unreadFromOthers > 0 ? `(${unreadFromOthers}) ${title}` : title;
-    return () => {
-      document.title = title;
-    };
-  }, [visible, muted, unreadFromOthers, notifications?.settings.homeBadgeEnabled]);
-
   return (
     <BffVideoReviewProvider Composer={Composer} mentionPeople={mentionPeople} principalId={myPrincipalId} workspaceId={workspaceId} conversationId={conversation?.id}
       channelName={channelName} channelType={conversation ? "dm" : "stream"}
