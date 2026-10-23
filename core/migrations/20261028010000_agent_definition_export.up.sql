@@ -18,8 +18,11 @@ ALTER TABLE projection.workflow_ref ADD CONSTRAINT workflow_kind_enum CHECK (kin
 
 -- 05 §2.12：导出动作的 ResultExposure 为 EXPORT（结果只是 ExportPackage 的 Asset 引用与 digest）。
 -- 只对 Core 自己的 RESOURCE_EXPORT 开放，不放宽任何组件动作。
+-- 取值闭集（与 contracts/enums/result_exposure 逐值相等）与作用域规则分成两条约束。
 ALTER TABLE catalog.action_definition DROP CONSTRAINT result_exposure_enum;
 ALTER TABLE catalog.action_definition ADD CONSTRAINT result_exposure_enum CHECK (
+    result_exposure IN ('NONE','READ','CONSUME_ONLY','EXPORT'));
+ALTER TABLE catalog.action_definition ADD CONSTRAINT result_exposure_scope CHECK (
     result_exposure IN ('NONE','READ')
     OR (component_release_id IS NOT NULL AND result_exposure IN ('CONSUME_ONLY','EXPORT'))
     OR (component_release_id IS NULL AND component_type_key = 'core'

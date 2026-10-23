@@ -164,6 +164,146 @@ prepare_check_dependencies() {
   (cd client-kit/dart && dart pub get) || return 2
 }
 
+# 组件前端依赖按「安装输入内容 + Node 版本 + 安装命令」寻址，缓存在 /cache/component-lint；
+# 命中时直接复用，不重装。安装在同目录临时副本内完成后原子改名，并发或中断不会留下半成品。
+# 不运行依赖的安装脚本（--mode=skip-build/--ignore-scripts）：格式与类型检查不需要原生模块，
+# 也不在检查容器里编译它们。条目内按仓库路径布局（<条目>/<组件目录>），安装目录写入
+# COMPONENT_DEPS；给出的 node_modules 目录链接进快照。
+# 用法：component_lint_deps <组件目录> <安装输入（相对路径）…> -- [链接的 node_modules 目录…] -- <安装命令…>
+component_lint_deps() {
+  local dir=$1; shift
+  local inputs=() links=() key root entry staging path
+  while [ "$1" != -- ]; do inputs+=("$1"); shift; done; shift
+  while [ "$1" != -- ]; do links+=("$1"); shift; done; shift
+  key=$( { echo layout=repo-path; node --version; printf '%s\0' "$@"
+           (cd "$dir" && find "${inputs[@]}" -type f -print0 | LC_ALL=C sort -z \
+              | xargs -0 sha256sum); } | sha256sum | cut -c1-32) || return 2
+  root=/cache/component-lint/$(printf '%s' "$dir" | tr / _)
+  entry="$root/$key"
+  mkdir -p "$root" || return 2
+  if [ ! -f "$entry/.complete" ]; then
+    staging=$(mktemp -d "$root/.staging.XXXXXX") || return 2
+    mkdir -p "$staging/$dir" && (cd "$dir" && find "${inputs[@]}" -type f -print0 | tar --null -T - -cf -) \
+      | tar -xf - -C "$staging/$dir" || { rm -rf -- "$staging"; return 2; }
+    (cd "$staging/$dir" && diag "$@") || { rm -rf -- "$staging"; return 2; }
+    touch "$staging/.complete"
+    mv -T -- "$staging" "$entry" 2>/dev/null || rm -rf -- "$staging"
+    [ -f "$entry/.complete" ] || return 2
+    printf '  组件依赖已安装并缓存：%s\n' "$entry"
+  else
+    printf '  组件依赖命中缓存：%s\n' "$entry"
+  fi
+  touch "$entry"
+  # 只保留近 14 天用过的条目，锁文件变更后旧条目自然淘汰。
+  find "$root" -mindepth 1 -maxdepth 1 -type d -mtime +14 -exec rm -rf -- {} + 2>/dev/null
+  for path in "${links[@]}"; do
+    [ -d "$entry/$dir/$path" ] || { echo "拒绝检查：安装结果缺少 $path" >&2; return 2; }
+    rm -rf -- "${dir:?}/$path" && ln -s "$entry/$dir/$path" "$dir/$path" || return 2
+  done
+  COMPONENT_DEPS=$entry/$dir
+}
+
+# 读 `tsc --pretty false` 的输出，按 next build 类型检查（next/dist/lib/typescript/runTypeCheck.js）
+# 的同一规则去掉测试文件（*.test.*、*.spec.*、__tests__/、__mocks__/）的诊断；其余错误或 tsc
+# 异常退出而无诊断时失败。
+tsc_as_next_build() {
+  python3 -c '
+import re, sys
+ignored = re.compile(r"[\\/]__(?:tests|mocks)__[\\/]|(?<=[\\/.])(?:spec|test)\.[^\\/]+$")
+keep, kept, total = True, 0, 0
+for line in sys.stdin:
+    m = re.match(r"^(\S.*?)\(\d+,\d+\): (error|warning) ", line)
+    if m or line.startswith("error TS"):
+        total += 1
+        keep = not (m and ignored.search(m.group(1)))
+        kept += keep
+    if keep:
+        sys.stdout.write(line)
+sys.exit(1 if kept or (sys.argv[1] != "0" and total == 0) else 0)' "$1"
+}
+
+# 组件镜像构建里会跑的格式/静态门禁，在合并检查阶段提前暴露，判定与构建一致：
+# - data-query/wren-ui：`next build` 内置 next lint（.eslintrc.json，prettier/prettier 为 error）
+#   与 tsc 类型检查。把其 Dockerfile builder 阶段的源码输入放进依赖安装目录再检查，与构建
+#   镜像一样 node_modules 是项目目录的真实子目录：ESLint 的插件与共享配置解析才与构建一致
+#   （node_modules 经符号链接接入或位于上级目录时，plugin:@typescript-eslint/recommended 会
+#   解析到 eslint-config-next 内嵌的 v8 而崩溃），tsc 也只看到构建所见的 src。另以锁定的 prettier（yarn.lock）显式 --check eslint 实际门禁的
+#   js/jsx/ts/tsx（沿用 .eslintrc.json 的忽略项；.less 与生成的 GraphQL 类型不在构建门禁内）。
+#   用构建镜像同一 Node 18（检查镜像 /opt/node18）运行，锁定的 yarn 4.5.3 在 Node 24 下遇下载超时会崩溃。
+# - collaboration/web、admin-web：镜像构建为 `tsc && vite build`。
+# knowledge/frontend（vite build）、file-storage 前端（build.sh 的 webpack）与 document-editor
+# （grunt 打包，jshint 未注册）的镜像构建不含 lint 或类型门禁，此处不另立判定。
+lint_wren_ui() {
+  local ui=data-query/wren-ui
+  populated "$ui/src" || return 0
+  ran=1
+  [ -x /opt/node18/bin/node ] || { fail "检查镜像缺少 wren-ui 构建所用 Node 18（/opt/node18）"; return 0; }
+  local -x PATH="/opt/node18/bin:$PATH" NEXT_TELEMETRY_DISABLED=1 YARN_ENABLE_TELEMETRY=0
+  if ! component_lint_deps "$ui" package.json yarn.lock .yarnrc.yml .yarn/releases -- -- \
+       node .yarn/releases/yarn-4.5.3.cjs install --immutable --mode=skip-build; then
+    fail "wren-ui 依赖安装失败，组件 lint 无法执行"; return 0
+  fi
+  local app=$COMPONENT_DEPS bin="$COMPONENT_DEPS/node_modules/.bin" top lock out rc
+  top=${app%/"$ui"}
+  local staged=(package.json src .eslintrc.json .eslintignore .prettierrc next.config.js tsconfig.json)
+  local scratch=(src .eslintrc.json .eslintignore .prettierrc next.config.js tsconfig.json next-env.d.ts
+                 .next tsconfig.tsbuildinfo .lint-prettierignore)
+  # 同一安装目录同时只给一个检查用；结束即清掉暂存的源码。
+  exec {lock}>"$top/.lint.lock" && flock "$lock" || { fail "wren-ui 检查目录加锁失败"; return 0; }
+  # 与 data-query/wren-ui/Dockerfile builder 阶段同一源码输入（public 与 Kailo 静态资源不参与检查）。
+  (cd "$app" && rm -rf -- "${scratch[@]}") && rm -rf -- "$top/client-kit" \
+    && mkdir -p "$top/client-kit/adapter" "$top/client-kit/embed" \
+    && (cd "$ui" && tar -cf - "${staged[@]}") | tar -xf - -C "$app" \
+    && cp client-kit/adapter/protocol.mjs "$top/client-kit/adapter/" \
+    && cp client-kit/embed/kailo-embed.d.ts "$top/client-kit/embed/" \
+    || { fail "wren-ui 构建输入暂存失败"; exec {lock}>&-; return 0; }
+  # next build 在类型检查前生成 next-env.d.ts（未入库），这里写入同一内容。
+  printf '%s\n' '/// <reference types="next" />' \
+    '/// <reference types="next/image-types/global" />' > "$app/next-env.d.ts"
+  (cd "$app" && node -p 'require("./.eslintrc.json").ignorePatterns.filter(p => !p.startsWith("!")).join("\n")' \
+     && cat .eslintignore) > "$app/.lint-prettierignore"
+  (cd "$app" && diag "$bin/prettier" --check --ignore-path .lint-prettierignore 'src/**/*.{js,jsx,ts,tsx}') \
+    && pass "wren-ui prettier --check" || fail "wren-ui prettier --check（修复：在 $ui 用锁定的 prettier 3.2.5 --write）"
+  (cd "$app" && diag "$bin/next" lint) \
+    && pass "wren-ui next lint（eslint + prettier，next build 同一配置）" || fail "wren-ui next lint（eslint + prettier）"
+  rc=0; out=$(cd "$app" && "$bin/tsc" --noEmit --pretty false 2>&1) || rc=$?
+  printf '%s\n' "$out" | tsc_as_next_build "$rc" \
+    && pass "wren-ui tsc（next build 类型检查范围）" || fail "wren-ui tsc（next build 类型检查范围）"
+  (cd "$app" && rm -rf -- "${scratch[@]}"); rm -rf -- "$top/client-kit"
+  exec {lock}>&-
+}
+
+lint_component_frontends() {
+  lint_wren_ui
+  local buzz=collaboration manager tooling
+  if populated "$buzz/web/src" || populated "$buzz/admin-web/src"; then
+    ran=1
+    manager=$(node -p "require('./$buzz/package.json').packageManager") || return 0
+    if [[ ! "$manager" =~ ^pnpm@[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+      fail "$buzz/package.json 的 packageManager 不是固定 pnpm 版本"; return 0
+    fi
+    tooling="$HOME/tooling/$manager"
+    [ -x "$tooling/node_modules/.bin/pnpm" ] \
+      || diag npm install --prefix "$tooling" --no-audit --no-fund "$manager" \
+      || { fail "安装 $manager 失败"; return 0; }
+    # 与 collaboration/Dockerfile web-builder 阶段同一安装输入与过滤范围。
+    if component_lint_deps "$buzz" package.json pnpm-lock.yaml pnpm-workspace.yaml patches \
+         web/package.json admin-web/package.json -- node_modules web/node_modules admin-web/node_modules -- \
+         "$tooling/node_modules/.bin/pnpm" install --frozen-lockfile --ignore-scripts \
+           --filter buzz-web --filter buzz-admin-web; then
+      local app
+      for app in web admin-web; do
+        populated "$buzz/$app/src" || continue
+        (cd "$buzz/$app" && diag node_modules/.bin/tsc) \
+          && pass "buzz $app tsc（镜像构建同一命令）" || fail "buzz $app tsc（镜像构建同一命令）"
+      done
+    else
+      fail "collaboration web 依赖安装失败，组件类型检查无法执行"
+    fi
+  fi
+  return 0
+}
+
 step_lint() {
   hdr "1/10 格式与静态检查"
   local ran=0
@@ -197,6 +337,7 @@ step_lint() {
       fail "client-kit/dart 有 Dart 源码但本机无 dart 工具链，该侧无法校验"
     fi
   fi
+  have node && lint_component_frontends
   [ "$ran" -eq 0 ] && skip "尚无源码"
   return 0
 }
@@ -345,7 +486,7 @@ for line in out.stdout.strip().split("\n"):
         continue
     name, definition = line.split("\t", 1)
     if name.endswith("_enum"):
-        in_db[name[: -len("_enum")]] = set(re.findall(r"'([A-Z_]+)'::text", definition))
+        in_db[name[: -len("_enum")]] = {v.replace("''", "'") for v in re.findall(r"'((?:[^']|'')*)'::text", definition)}
 
 bad, checked = [], 0
 for enum_name, dbvals in sorted(in_db.items()):

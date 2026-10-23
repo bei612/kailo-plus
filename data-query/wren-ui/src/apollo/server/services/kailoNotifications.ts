@@ -423,7 +423,11 @@ export class KailoNotifications {
           actor.subject === recipient.subject;
         if (same) continue;
         const delivery: KailoNotificationDelivery = {
-          idempotencyKey: notificationKey(event.category, event.event, recipient),
+          idempotencyKey: notificationKey(
+            event.category,
+            event.event,
+            recipient,
+          ),
           recipient: { issuer: recipient.issuer, subject: recipient.subject },
           ...(actor
             ? { actor: { issuer: actor.issuer, subject: actor.subject } }

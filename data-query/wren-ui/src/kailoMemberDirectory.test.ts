@@ -453,8 +453,11 @@ describe('DD-133(4) periodic member directory sync', () => {
       { userKey: key(ISSUER, 'dana'), issuer: ISSUER, subject: 'dana' },
     ]);
     expect(
-      (await db('kailo_user').where({ user_key: key(ISSUER, 'dana') }).first())
-        .name,
+      (
+        await db('kailo_user')
+          .where({ user_key: key(ISSUER, 'dana') })
+          .first()
+      ).name,
     ).toBe('Dana 2');
   });
 

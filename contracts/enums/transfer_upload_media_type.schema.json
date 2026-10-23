@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/transfer_upload_media_type.schema.json",
+  "title": "TransferUploadMediaType",
+  "description": "RESOURCE_IMPORT 暂存上传的媒体类型（JSON 或带嵌入快照的 PNG）。",
+  "type": "string",
+  "enum": [
+    "application/json",
+    "image/png"
+  ]
+}

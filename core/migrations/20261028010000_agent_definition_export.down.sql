@@ -17,6 +17,7 @@ DELETE FROM catalog.approval_policy WHERE action_key = 'agent.definition.export'
 ALTER TABLE catalog.asset DROP CONSTRAINT asset_type_key_check;
 ALTER TABLE catalog.asset ADD CONSTRAINT asset_type_key_check
     CHECK (type_key IN ('agent.version','automation.version','skill.version'));
+ALTER TABLE catalog.action_definition DROP CONSTRAINT result_exposure_scope;
 ALTER TABLE catalog.action_definition DROP CONSTRAINT result_exposure_enum;
 ALTER TABLE catalog.action_definition ADD CONSTRAINT result_exposure_enum CHECK (
     result_exposure IN ('NONE','READ')

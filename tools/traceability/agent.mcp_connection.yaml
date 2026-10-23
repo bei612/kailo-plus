@@ -17,6 +17,8 @@ validation:
   # 新增场景只关联实现，未记为业务验收通过。
   scenarios: [V-SCN-240, V-SCN-241, V-SCN-242, V-SCN-243, V-SCN-244, V-SCN-245, V-SCN-246]
   evidence:
+    - dimension: 上游接缝
+      ref: model-gateway/fork/verify/admin-authentication.md
     - dimension: 领域规则
       ref: core/verify/mcp-connection.md
     - dimension: 安全边界
@@ -39,6 +41,10 @@ runtime:
   workflow_kinds: []
 
 release:
-  # 本批未构建或部署；Core/Web 产物由合并后的发布流程统一回填。
-  artifacts: []
+  # 已随发布 a6dac5fa（源 ad9752bd）构建并固定；业务验收见 core/verify/mcp-connection.md。
+  artifacts:
+    - name: core
+      digest: sha256:848a654708a5c08e5492aa43aa4689de34e1a908101200b1b7d2c9c366ecd253
+    - name: web-client
+      digest: sha256:93f38189428207bb5bf051a893ab15dff1c8106978ac950f8f81979b5bcf91f3
   gate: blocked_until_seams_closed

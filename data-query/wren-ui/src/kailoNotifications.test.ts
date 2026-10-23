@@ -86,7 +86,10 @@ class Platform {
     const answer = this.answers.length ? this.answers.shift() : 201;
     if (answer === 'network') throw new TypeError('fetch failed');
     return new Response(
-      JSON.stringify({ notificationId: randomUUID(), duplicate: answer === 200 }),
+      JSON.stringify({
+        notificationId: randomUUID(),
+        duplicate: answer === 200,
+      }),
       { status: answer },
     );
   });
@@ -149,9 +152,14 @@ describe('DD-138(4) notification delivery client', () => {
     expect(platform.posts).toHaveLength(2);
     expect(platform.posts[0].authorization).toBe('Bearer token-1');
     expect(platform.posts[0].body).toEqual(delivery());
-    expect(Object.keys(platform.posts[0].body).sort()).toEqual(
-      ['actor', 'category', 'idempotencyKey', 'path', 'recipient', 'title'],
-    );
+    expect(Object.keys(platform.posts[0].body).sort()).toEqual([
+      'actor',
+      'category',
+      'idempotencyKey',
+      'path',
+      'recipient',
+      'title',
+    ]);
   });
 
   test('200 (duplicate) is delivered, 409 and 403 are final', async () => {
@@ -254,9 +262,9 @@ describe('DD-138(4) notification delivery client', () => {
     expect(
       validNotification(delivery({ idempotencyKey: 'bad key with spaces' })),
     ).toBe(false);
-    expect(
-      validNotification(delivery({ category: 'INVITED' as any })),
-    ).toBe(false);
+    expect(validNotification(delivery({ category: 'INVITED' as any }))).toBe(
+      false,
+    );
     expect(
       notificationKey('SHARED', 'event-1', { issuer: ISSUER, subject: 'bob' }),
     ).toMatch(/^data-query\.shared\.[a-f0-9]{40}$/);
@@ -268,7 +276,12 @@ describe('DD-138(4) notification events', () => {
   let platform: Platform;
   let queue: KailoNotifier;
   let events: KailoNotifications;
-  let listed: { userKey: string; admin: boolean; name: string; picture: null }[];
+  let listed: {
+    userKey: string;
+    admin: boolean;
+    name: string;
+    picture: null;
+  }[];
 
   beforeEach(async () => {
     db = knex({
@@ -367,14 +380,14 @@ describe('DD-138(4) notification events', () => {
 
   test('a refresh run with failures notifies each admin once, without actor', async () => {
     const run = { dashboardId: 1, runId: randomUUID(), total: 4, failed: 2 };
-    expect(
-      await events.dashboardRefreshFinished({ ...run, failed: 0 }),
-    ).toBe(0);
+    expect(await events.dashboardRefreshFinished({ ...run, failed: 0 })).toBe(
+      0,
+    );
     expect(await events.dashboardRefreshFinished(run)).toBe(2);
     await queue.whenIdle();
-    expect(platform.posts.map((post) => post.body.recipient.subject).sort()).toEqual(
-      ['alice', 'bob'],
-    );
+    expect(
+      platform.posts.map((post) => post.body.recipient.subject).sort(),
+    ).toEqual(['alice', 'bob']);
     for (const post of platform.posts) {
       expect(post.body.category).toBe('TASK_COMPLETED');
       expect(post.body.actor).toBeUndefined();
@@ -396,7 +409,10 @@ describe('DD-138(4) notification events', () => {
           ]),
         } as any,
         dashboardItemRefreshJobRepository: {
-          createOne: jest.fn(async (row) => ({ ...row, id: row.dashboardItemId })),
+          createOne: jest.fn(async (row) => ({
+            ...row,
+            id: row.dashboardItemId,
+          })),
           updateOne: jest.fn(),
         } as any,
         projectService: {

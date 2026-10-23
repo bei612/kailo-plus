@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/transfer_upload_format.schema.json",
+  "title": "TransferUploadFormat",
+  "description": "RESOURCE_IMPORT 暂存上传的转移格式（DD-131(2)(3)、06 §17）。",
+  "type": "string",
+  "enum": [
+    "buzz-agent-snapshot@1",
+    "buzz-team-snapshot@1"
+  ]
+}

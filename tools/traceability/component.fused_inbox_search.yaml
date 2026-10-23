@@ -91,7 +91,7 @@ release:
   # 执行迁移 20261026030000，并部署声明 searchSource 的 REMOTE_ADAPTER binding 后才有搜索结果。
   artifacts:
     - name: core
-      digest: sha256:32153d328acb2859b5e330be70b656a813a275030170b21c3c4a9ba35a4f5b52
+      digest: sha256:848a654708a5c08e5492aa43aa4689de34e1a908101200b1b7d2c9c366ecd253
     - name: web-client
-      digest: sha256:925d2d3867678bafaf677945eb944d4f67ab36d69ad39bf700adcf12fe1bf0b9
+      digest: sha256:93f38189428207bb5bf051a893ab15dff1c8106978ac950f8f81979b5bcf91f3
   gate: blocked_until_seams_closed

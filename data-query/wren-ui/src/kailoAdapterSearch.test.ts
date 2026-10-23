@@ -130,9 +130,7 @@ describe('DD-138(5) adapter search', () => {
 
   beforeEach(async () => {
     mockDb = await database();
-    jest
-      .spyOn(queryAdmission, 'loadQueryDelivery')
-      .mockResolvedValue(delivery);
+    jest.spyOn(queryAdmission, 'loadQueryDelivery').mockResolvedValue(delivery);
     server = createServer((request, response) => {
       void apiResolver(
         request,
@@ -251,7 +249,11 @@ describe('DD-138(5) adapter search', () => {
     expect(containsPattern('100%_a\\')).toBe('%100\\%\\_a\\\\%');
     const all = await kailoAdapterSearch(mockDb, delivery, request('%') as any);
     expect(all.results.map((r) => r.path)).toEqual(['/home/8']);
-    const none = await kailoAdapterSearch(mockDb, delivery, request('_') as any);
+    const none = await kailoAdapterSearch(
+      mockDb,
+      delivery,
+      request('_') as any,
+    );
     expect(none.results).toEqual([]);
   });
 
@@ -274,7 +276,9 @@ describe('DD-138(5) adapter search', () => {
       { resourceId: randomUUID(), nativeType: 'model', nativeId: '2' },
       { resourceId: randomUUID(), nativeType: 'view', nativeId: '3' },
     ]);
-    expect((await (await call(args, await token(args))).json()).results).toHaveLength(3);
+    expect(
+      (await (await call(args, await token(args))).json()).results,
+    ).toHaveLength(3);
   });
 
   test.each([
