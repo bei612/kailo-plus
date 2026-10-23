@@ -100,6 +100,36 @@ describe("agent snapshot export", () => {
     host.remove();
   });
 
+  it("copies the verified PNG package so it can be pasted into a DM or channel", async () => {
+    const pkg = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 7]);
+    const { sha256Hex } = await import("../src/react/agent-library/AgentSnapshotImportDialog");
+    const view = { ...ready, byteSize: pkg.length, contentDigest: await sha256Hex(pkg) };
+    const t = transport((request) => request.path === `/api/v1/export-packages/by-action/${executionId}`
+      ? { status: 200, body: view } : submitted("ALLOWED", "DISPATCHED")(request));
+    const written: ClipboardItem[][] = [];
+    class FakeItem { constructor(readonly items: Record<string, Blob>) {} }
+    vi.stubGlobal("ClipboardItem", FakeItem);
+    Object.defineProperty(navigator, "clipboard", { configurable: true,
+      value: { write: vi.fn(async (items: ClipboardItem[]) => { written.push(items); }) } });
+    const host = await render(<PlatformProvider client={createBffClient(t)} locale="en">
+      <AgentSnapshotExportDialog target={target} host={{ save: vi.fn(), readBytes: async () => pkg }} onClose={() => {}} />
+    </PlatformProvider>);
+    await click(document.querySelector<HTMLButtonElement>('[data-testid="agent-snapshot-export-confirm"]')!);
+    await settle(); await settle();
+    await click(document.querySelector<HTMLButtonElement>('[data-testid="agent-snapshot-export-copy"]')!);
+    await settle();
+    expect(written).toHaveLength(1);
+    const item = written[0]![0] as unknown as FakeItem;
+    expect(Object.keys(item.items).sort()).toEqual(["image/png", "text/html"]);
+    const html = await new Promise<string>((resolve) => {
+      const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.readAsText(item.items["text/html"]!);
+    });
+    expect(html).toContain("data-buzz-agent-snapshot");
+    expect(document.body.textContent).toContain("Copied.");
+    vi.unstubAllGlobals();
+    host.remove();
+  });
+
   it("keeps the same idempotency key when the outcome is unknown", async () => {
     let calls = 0;
     const t = transport((request) => {

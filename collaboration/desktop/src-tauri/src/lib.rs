@@ -200,6 +200,7 @@ pub fn run() {
             platform::commands::platform_api,
             platform::commands::platform_avatar,
             platform::commands::platform_export_package_save,
+            platform::commands::platform_export_package_read,
             platform::commands::platform_register_device,
             acknowledge_pending_navigation_deep_link,
             acknowledge_pending_entity_deep_link,

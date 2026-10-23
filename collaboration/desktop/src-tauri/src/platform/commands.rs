@@ -201,18 +201,16 @@ pub(crate) async fn platform_avatar(
 /// 原版快照包上限：Agent PNG 10 MiB、团队 PNG 50 MiB（DD-131(2)(3)）。
 const MAX_EXPORT_PACKAGE_BYTES: usize = 50 * 1024 * 1024;
 
-/// DD-42、DD-131(2)：经原生保存对话框保存一个 READY 的 ExportPackage。只代发本部署的导出包下载路由；
-/// 是否可读由 BFF 对该 Asset 的 `read` 判定，不接受任意路径。
-#[tauri::command]
-pub(crate) async fn platform_export_package_save(
-    app: AppHandle,
-    state: State<'_, AppState>,
-    session: State<'_, NativeSession>,
-    asset_id: String,
-    file_name: String,
-) -> Result<bool, String> {
-    let path = export_package_path(&asset_id).ok_or("导出包 ID 无效")?;
-    let cfg = require_config(&app)?;
+/// DD-42、DD-131(2)：取一个 READY 的 ExportPackage。只代发本部署的导出包下载路由；是否可读由
+/// BFF 对该 Asset 的 `read` 判定，不接受任意路径。返回字节与是否为 PNG。
+async fn export_package_bytes(
+    app: &AppHandle,
+    state: &AppState,
+    session: &NativeSession,
+    asset_id: &str,
+) -> Result<(Vec<u8>, bool), String> {
+    let path = export_package_path(asset_id).ok_or("导出包 ID 无效")?;
+    let cfg = require_config(app)?;
     let (response, _) = session
         .call_raw(&state.media_fetch_client, &cfg, &path)
         .await?;
@@ -231,6 +229,19 @@ pub(crate) async fn platform_export_package_save(
     let bytes =
         crate::commands::link_preview::read_limited_bytes(response, MAX_EXPORT_PACKAGE_BYTES)
             .await?;
+    Ok((bytes, png))
+}
+
+/// 经原生保存对话框保存一个 READY 的 ExportPackage。
+#[tauri::command]
+pub(crate) async fn platform_export_package_save(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    session: State<'_, NativeSession>,
+    asset_id: String,
+    file_name: String,
+) -> Result<bool, String> {
+    let (bytes, png) = export_package_bytes(&app, &state, &session, &asset_id).await?;
     let name = crate::commands::media_filename::sanitize_filename(&file_name);
     let extension = if png { "png" } else { "json" };
     crate::commands::export_util::save_bytes_with_dialog(
@@ -241,6 +252,18 @@ pub(crate) async fn platform_export_package_save(
         &bytes,
     )
     .await
+}
+
+/// DD-131(7)：原版“复制”所需的包字节（以原始 ArrayBuffer 回到前端，由其写入剪贴板）。
+#[tauri::command]
+pub(crate) async fn platform_export_package_read(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    session: State<'_, NativeSession>,
+    asset_id: String,
+) -> Result<tauri::ipc::Response, String> {
+    let (bytes, _) = export_package_bytes(&app, &state, &session, &asset_id).await?;
+    Ok(tauri::ipc::Response::new(bytes))
 }
 
 fn export_package_path(asset_id: &str) -> Option<String> {

@@ -18,6 +18,8 @@ type Props = Pick<AgentProps, "workspaceId" | "onWorkspaceChange">;
 // fetches only the package's own BFF download route.
 const snapshotExportHost: NonNullable<AgentProps["snapshotExportHost"]> = {
   save: (view) => invokeTauri<boolean>("platform_export_package_save", { assetId: view.packageAssetId, fileName: view.fileName }),
+  readBytes: async (view) =>
+    new Uint8Array(await invokeTauri<ArrayBuffer>("platform_export_package_read", { assetId: view.packageAssetId })),
 };
 
 export function AgentDefinitionsPane(props: Props) {

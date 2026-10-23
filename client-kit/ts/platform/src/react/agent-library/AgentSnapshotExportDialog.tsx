@@ -14,16 +14,30 @@ import {
   type ActionSubmission,
   type ExportPackageView,
 } from "@client-kit/contracts";
+import { Brain, Copy, Download, FileType2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { newIdempotencyKey } from "../../governance";
 import { TransportError, type WriteFailure, writeFailure } from "../../transport";
 import { useBffClient, useFailureText, useReasonText, useT } from "../context";
 import { Button } from "../ui";
+import { writeSnapshotToClipboard } from "../messages/agentSnapshotClipboard";
 import { AgentManagementDialog } from "./AgentManagementDialog";
+import { sha256Hex } from "./AgentSnapshotImportDialog";
 
-/** How a host saves a READY package: Web downloads the authorized same-origin route, Desktop uses its native save dialog. */
+/** DD-141 §6 primary action on the shared Button: brand fill, theme tokens only. */
+const PRIMARY = "border-transparent bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground";
+
+type ReadyView = ExportPackageView & { downloadPath: string; fileName: string };
+
+/**
+ * How a host handles a READY package: Web downloads the authorized same-origin route, Desktop uses
+ * its native save dialog. `readBytes` returns the package through the same authorized route; it
+ * backs the original "copy" (DD-131(7)): the copied `.agent.png` is pasted into any DM or channel
+ * composer and sent as an ordinary attachment.
+ */
 export type SnapshotExportHost = {
-  save: (view: ExportPackageView & { downloadPath: string; fileName: string }) => Promise<unknown>;
+  save: (view: ReadyView) => Promise<unknown>;
+  readBytes?: (view: ReadyView) => Promise<Uint8Array>;
 };
 
 /** Default host: the BFF route is same-origin and session-authorized, so a plain download link is enough. */
@@ -34,6 +48,11 @@ export const browserSnapshotExportHost: SnapshotExportHost = {
     anchor.download = view.fileName;
     anchor.rel = "noopener";
     anchor.click();
+  },
+  readBytes: async (view) => {
+    const response = await fetch(view.downloadPath, { credentials: "same-origin" });
+    if (!response.ok) throw new Error(String(response.status));
+    return new Uint8Array(await response.arrayBuffer());
   },
 };
 
@@ -67,7 +86,7 @@ function validSubmission(result: ActionSubmission | undefined, intent: ActionCom
 type Phase =
   | { kind: "choose" }
   | { kind: "submitted"; submission: ActionSubmission }
-  | { kind: "ready"; submission: ActionSubmission; view: ExportPackageView & { downloadPath: string; fileName: string } }
+  | { kind: "ready"; submission: ActionSubmission; view: ReadyView }
   | { kind: "failed"; submission: ActionSubmission };
 
 export function AgentSnapshotExportDialog({ target, onClose, host = browserSnapshotExportHost }: {
@@ -96,6 +115,7 @@ function ExportBody({ target, host, onClose, onLockedChange }: {
   const [phase, setPhase] = useState<Phase>({ kind: "choose" });
   const [saving, setSaving] = useState(false);
   const [saveFailed, setSaveFailed] = useState(false);
+  const [copy, setCopy] = useState<"idle" | "copying" | "copied" | "failed">("idle");
   const inFlight = useRef(false);
   const submission = phase.kind === "choose" ? null : phase.submission;
   const unknown = failure?.kind === "unknown" || submission?.dispatchState === ActionDispatchState.Unknown
@@ -160,17 +180,29 @@ function ExportBody({ target, host, onClose, onLockedChange }: {
     try { await host.save(phase.view); } catch { setSaveFailed(true); } finally { setSaving(false); }
   };
 
+  const copyPackage = async () => {
+    if (phase.kind !== "ready" || !host.readBytes || copy === "copying") return;
+    setCopy("copying");
+    try {
+      const bytes = await host.readBytes(phase.view);
+      if (bytes.length !== phase.view.byteSize || await sha256Hex(bytes) !== phase.view.contentDigest) throw new Error("digest");
+      await writeSnapshotToClipboard(bytes, target.displayName, phase.view.fileName);
+      setCopy("copied");
+    } catch { setCopy("failed"); }
+  };
+
   return <div className="flex flex-col gap-4 py-1 text-sm" data-testid="agent-snapshot-export-body">
     <dl className="flex flex-col gap-2">
       <div className="flex min-h-8 items-center justify-between gap-4">
-        <dt className="font-medium">{t("agents.export.memories")}</dt>
+        <dt className="flex items-center gap-2 font-medium"><Brain aria-hidden className="h-4 w-4 text-muted-foreground" />{t("agents.export.memories")}</dt>
         <dd className="text-muted-foreground" data-testid="agent-snapshot-export-memory">{t("agents.export.agentOnly")}</dd>
       </div>
       <div className="flex min-h-8 items-center justify-between gap-4">
-        <dt className="font-medium"><label htmlFor="agent-snapshot-export-format">{t("agents.export.format")}</label></dt>
+        <dt className="flex items-center gap-2 font-medium"><FileType2 aria-hidden className="h-4 w-4 text-muted-foreground" />
+          <label htmlFor="agent-snapshot-export-format">{t("agents.export.format")}</label></dt>
         <dd><select id="agent-snapshot-export-format" value={format} disabled={phase.kind !== "choose" || busy || intent !== null}
           onChange={(event) => setFormat(event.target.value as AgentSnapshotMediaType)}
-          className="h-8 rounded-md border border-input bg-transparent px-2 text-sm" data-testid="agent-snapshot-export-format">
+          className="h-8 rounded-md border border-input bg-background px-2 text-sm shadow-xs" data-testid="agent-snapshot-export-format">
           <option value={AgentSnapshotMediaType.ImagePng}>PNG</option>
           <option value={AgentSnapshotMediaType.ApplicationJson}>JSON</option>
         </select></dd>
@@ -179,7 +211,8 @@ function ExportBody({ target, host, onClose, onLockedChange }: {
     <p className="text-xs text-muted-foreground">{t("agents.export.boundary")}</p>
     {phase.kind === "choose" ? <div className="flex flex-wrap justify-end gap-2" data-testid="agent-snapshot-export-footer">
       {!busy && !unknown ? <Button onClick={onClose}>{t("agents.cancel")}</Button> : null}
-      <Button disabled={busy} onClick={() => void submit()} data-testid="agent-snapshot-export-confirm">
+      <Button className={PRIMARY} disabled={busy} onClick={() => void submit()} data-testid="agent-snapshot-export-confirm">
+        <Download aria-hidden className="h-4 w-4" />
         {busy ? t("platform.loading") : unknown ? t("agents.retry") : t("agents.export.export")}</Button>
     </div> : null}
     {failure ? <p role={failure.kind === "unknown" ? "status" : "alert"}>{failure.kind === "unknown"
@@ -193,17 +226,24 @@ function ExportBody({ target, host, onClose, onLockedChange }: {
       {phase.submission.gateState === ActionGateState.Waiting
         ? t("agents.export.awaitingApproval", { operation: phase.submission.operationId })
         : t("agents.export.preparing", { operation: phase.submission.operationId })}</p> : null}
-    {phase.kind === "failed" ? <p role="alert" data-testid="agent-snapshot-export-failed">
+    {phase.kind === "failed" ? <p role="alert" className="text-danger-text" data-testid="agent-snapshot-export-failed">
       {phase.submission.reason ? t("agents.rejected", { reason: reasonText(phase.submission.reason) })
         : t("agents.export.failed", { operation: phase.submission.operationId })}</p> : null}
     {phase.kind === "ready" ? <div className="flex flex-col gap-2" data-testid="agent-snapshot-export-ready">
       <p className="break-words">{t("agents.export.ready", { file: phase.view.fileName })}</p>
       <p className="break-all font-mono text-xs text-muted-foreground">SHA-256 {phase.view.contentDigest}</p>
-      {saveFailed ? <p role="alert">{t("agents.export.saveFailed")}</p> : null}
+      {saveFailed ? <p role="alert" className="text-danger-text">{t("agents.export.saveFailed")}</p> : null}
+      {copy === "copied" ? <p role="status" className="text-success-text">{t("agents.export.copied")}</p>
+        : copy === "failed" ? <p role="alert" className="text-danger-text">{t("agents.export.copyFailed")}</p> : null}
+      {host.readBytes && phase.view.mediaType === "image/png"
+        ? <p className="text-xs text-muted-foreground">{t("agents.export.shareHint")}</p> : null}
       <div className="flex flex-wrap justify-end gap-2">
         <Button onClick={onClose}>{t("agents.snapshot.close")}</Button>
-        <Button disabled={saving} onClick={() => void save()} data-testid="agent-snapshot-export-save">
-          {saving ? t("platform.loading") : t("agents.export.save")}</Button>
+        {host.readBytes && phase.view.mediaType === "image/png"
+          ? <Button disabled={copy === "copying"} onClick={() => void copyPackage()} data-testid="agent-snapshot-export-copy">
+            <Copy aria-hidden className="h-4 w-4" />{copy === "copying" ? t("platform.loading") : t("agents.export.copy")}</Button> : null}
+        <Button className={PRIMARY} disabled={saving} onClick={() => void save()} data-testid="agent-snapshot-export-save">
+          <Download aria-hidden className="h-4 w-4" />{saving ? t("platform.loading") : t("agents.export.save")}</Button>
       </div>
     </div> : null}
     {phase.kind !== "choose" && phase.kind !== "ready" && !unknown && !busy
