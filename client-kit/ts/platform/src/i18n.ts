@@ -4125,7 +4125,6 @@ export const platformMessages = {
     "zh-CN": "控制 Agent 在对话中的行为以及在本机上的运行方式。",
   },
   "platform.settings.connectors": { en: "Connectors", "zh-CN": "连接器" },
-  // DD-125(5): the original Desktop Updates section, sidebar card and header indicator.
   "platform.settings.updates": { en: "Updates", "zh-CN": "更新" },
   "updates.title": { en: "Software Updates", "zh-CN": "软件更新" },
   "updates.description": { en: "Keep the app up to date with the latest features and fixes.", "zh-CN": "保持应用为最新版本，获取最新功能与修复。" },
@@ -4163,7 +4162,6 @@ export const platformMessages = {
   "updates.indicator.installing": { en: "Installing update…", "zh-CN": "正在安装更新…" },
   "updates.indicator.manual": { en: "Update available — download from the release page (use AppImage for auto-updates)", "zh-CN": "有可用更新，请从发布页下载（AppImage 版本可自动更新）" },
   "updates.indicator.ready": { en: "Update now", "zh-CN": "立即更新" },
-  // DD-125(5): the original macOS tray menu; the product name is the deployment's (DD-111).
   "tray.running": { en: "Running", "zh-CN": "运行中" },
   "tray.noAgents": { en: "No agents are running", "zh-CN": "没有正在运行的 Agent" },
   "tray.recent": { en: "Recent", "zh-CN": "最近" },
