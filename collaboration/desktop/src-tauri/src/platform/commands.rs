@@ -138,6 +138,82 @@ pub(crate) async fn platform_api(
         .await
 }
 
+/// DD-139: a candidate's 07 §4.7.3 Tenant avatar, read under this device's platform session.
+///
+/// Only the avatar route path is accepted; its single redirect is followed only to this
+/// deployment's `/api/v1/profile/media/<sha256>` (no-redirect client, so the bearer never leaves
+/// the native API origin). The image is returned as a `data:` URL for in-memory display and is
+/// never written to disk. A 404 (other Tenant, revoked, no avatar) is `None`: initials remain.
+#[tauri::command]
+pub(crate) async fn platform_avatar(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    session: State<'_, NativeSession>,
+    path: String,
+) -> Result<Option<String>, String> {
+    if !is_avatar_path(&path) {
+        return Err("不代发头像路由之外的路径".to_owned());
+    }
+    let cfg = require_config(&app)?;
+    let http = &state.media_fetch_client;
+    let (first, _) = session.call_raw(http, &cfg, &path).await?;
+    if first.status() == reqwest::StatusCode::NOT_FOUND {
+        return Ok(None);
+    }
+    if first.status() != reqwest::StatusCode::FOUND {
+        return Err(format!("头像路由返回 {}", first.status().as_u16()));
+    }
+    let Some(location) = first
+        .headers()
+        .get(reqwest::header::LOCATION)
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_owned)
+        .filter(|location| is_profile_media_path(location))
+    else {
+        return Err("头像路由的跳转目标不是本部署的资料媒体".to_owned());
+    };
+    let (media, _) = session.call_raw(http, &cfg, &location).await?;
+    if media.status() == reqwest::StatusCode::NOT_FOUND {
+        return Ok(None);
+    }
+    if !media.status().is_success() {
+        return Err(format!("资料媒体返回 {}", media.status().as_u16()));
+    }
+    let content_type = media
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_owned)
+        .filter(|value| value.starts_with("image/"))
+        .ok_or("资料媒体不是图片")?;
+    let bytes = crate::commands::link_preview::read_limited_bytes(
+        media,
+        crate::commands::link_preview::MAX_IMAGE_FETCH_BYTES,
+    )
+    .await?;
+    use base64::Engine as _;
+    Ok(Some(format!(
+        "data:{content_type};base64,{}",
+        base64::engine::general_purpose::STANDARD.encode(bytes)
+    )))
+}
+
+fn is_avatar_path(path: &str) -> bool {
+    path.strip_prefix("/api/v1/identity/avatars/")
+        .is_some_and(|subject| {
+            !subject.is_empty()
+                && subject.bytes().all(|b| {
+                    b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.' | b'~' | b'%')
+                })
+                && !subject.contains("..")
+        })
+}
+
+fn is_profile_media_path(path: &str) -> bool {
+    path.strip_prefix("/api/v1/profile/media/")
+        .is_some_and(|sha| sha.len() == 64 && sha.bytes().all(|b| b.is_ascii_hexdigit()))
+}
+
 /// 以本机设备身份登记公钥（`DD-79`）。
 ///
 /// 持钥证明绑定当前 PlatformSession：截获的证明不能在别人的会话里重放。设备私钥
@@ -187,4 +263,29 @@ pub(crate) async fn register_device(
     session
         .call(http, cfg, Method::POST, REGISTER_PATH, Some(&body))
         .await
+}
+
+#[cfg(test)]
+mod avatar_path_tests {
+    use super::{is_avatar_path, is_profile_media_path};
+
+    #[test]
+    fn only_the_avatar_route_and_its_media_target_are_accepted() {
+        assert!(is_avatar_path("/api/v1/identity/avatars/abc-123%40idp"));
+        assert!(!is_avatar_path("/api/v1/identity/avatars/"));
+        assert!(!is_avatar_path("/api/v1/identity/avatars/a/../../session"));
+        assert!(!is_avatar_path("/api/v1/session"));
+        assert!(!is_avatar_path("/api/v1/identity/avatars/a?x=1"));
+        assert!(is_profile_media_path(&format!(
+            "/api/v1/profile/media/{}",
+            "a".repeat(64)
+        )));
+        assert!(!is_profile_media_path(
+            "https://evil.example/api/v1/profile/media/aa"
+        ));
+        assert!(!is_profile_media_path(&format!(
+            "/api/v1/profile/media/{}",
+            "g".repeat(64)
+        )));
+    }
 }

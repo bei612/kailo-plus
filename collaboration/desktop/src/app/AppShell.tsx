@@ -58,6 +58,7 @@ import { useInboxState } from "@client-kit/platform/react/use-inbox-state";
 import { CollaborationPreferencesProvider, useCollaborationPreferenceActions } from "@client-kit/platform/react/collaboration-preferences";
 import { DesktopAgentActivityOpenerHost } from "@/features/channels/ui/useDesktopChannelAgentActivity";
 import { NativePresenceHost } from "@/features/platform/NativePresenceHost";
+import { NativeCandidatePictureProvider } from "@/features/platform/NativeCandidatePictureProvider";
 import { EncryptedBackupProvider } from "@/features/settings/EncryptedBackupProvider";
 import { NativeReminderHost } from "@/features/platform/ReminderHost";
 
@@ -399,6 +400,7 @@ export function AppShell() {
     <ChannelNavigationProvider channels={channels}>
     <CollaborationPreferencesProvider value={collaborationPreferences}>
     <NativePresenceHost>
+    <NativeCandidatePictureProvider>
     <DesktopAgentActivityOpenerHost>
       <AppShellProvider
         value={{
@@ -559,6 +561,7 @@ export function AppShell() {
         </div>
       </AppShellProvider>
     </DesktopAgentActivityOpenerHost>
+    </NativeCandidatePictureProvider>
     </NativePresenceHost>
     </CollaborationPreferencesProvider>
     </ChannelNavigationProvider>
