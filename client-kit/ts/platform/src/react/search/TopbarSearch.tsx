@@ -33,6 +33,8 @@ import {
 } from "../composer/shared/ui/mentionChip";
 import { Skeleton } from "../sidebar/skeleton";
 import { UserAvatar } from "../messages/UserAvatar";
+import { nativePageCategoryTitle } from "../native-page-category";
+import { groupComponentSearchResults, type ComponentSearchHit } from "./componentSearch";
 export type TopbarSearchProps = {
   useResults: SearchResultsReader;
   resolveMediaUrl?: (url: string) => string;
@@ -44,6 +46,8 @@ export type TopbarSearchProps = {
   focusRequest?: number;
   onOpenChannel: (channelId: string) => void;
   onOpenResult: (hit: SearchHit, query: string) => void;
+  /** DD-138(5), 07 §4.8.4: open a component result in its category's native page at `path`. */
+  onOpenComponent?: (result: ComponentSearchHit) => void;
   onOpenUser?: (user: UserSearchResult) => void | Promise<void>;
   onBrowseChannels?: () => void | Promise<void>;
   onCreateAgent?: () => void | Promise<void>;
@@ -66,7 +70,7 @@ const SEARCH_RESULT_SECTION_ORDER = [
 ] as const;
 type SearchResultSectionKey = (typeof SEARCH_RESULT_SECTION_ORDER)[number];
 type SearchResultSection = {
-  key: SearchResultSectionKey;
+  key: SearchResultSectionKey | `component-${string}`;
   results: SearchResult[];
   title: string;
 };
@@ -246,13 +250,15 @@ function groupSearchResults(results: SearchResult[]): SearchResultSection[] {
   const resultsBySection = new Map<SearchResultSectionKey, SearchResult[]>();
 
   for (const result of results) {
+    // Component results are sectioned by presentation category below.
+    if (result.kind === "component") continue;
     const sectionKey = getResultSectionKey(result);
     const sectionResults = resultsBySection.get(sectionKey) ?? [];
     sectionResults.push(result);
     resultsBySection.set(sectionKey, sectionResults);
   }
 
-  return SEARCH_RESULT_SECTION_ORDER.flatMap((sectionKey) => {
+  const sections: SearchResultSection[] = SEARCH_RESULT_SECTION_ORDER.flatMap((sectionKey) => {
     const sectionResults = resultsBySection.get(sectionKey);
 
     if (!sectionResults || sectionResults.length === 0) {
@@ -266,6 +272,22 @@ function groupSearchResults(results: SearchResult[]): SearchResultSection[] {
         title: getSectionTitle(sectionKey),
       },
     ];
+  });
+  // DD-138(5), 07 §4.8.4: component results grouped under their presentation category
+  // (云盘/知识库/问数), after messages and before actions; a category Kailo cannot label
+  // has no openable entry and contributes nothing.
+  const componentSections = componentSearchSections(results);
+  const actionsAt = sections.findIndex((section) => section.key === "actions");
+  if (actionsAt === -1) return [...sections, ...componentSections];
+  return [...sections.slice(0, actionsAt), ...componentSections, ...sections.slice(actionsAt)];
+}
+
+export function componentSearchSections(results: readonly SearchResult[]): SearchResultSection[] {
+  const components = results.flatMap((result) => result.kind === "component" ? [result.component] : []);
+  return groupComponentSearchResults(components).flatMap((group) => {
+    const title = nativePageCategoryTitle(group.category, translateUi);
+    return title ? [{ key: `component-${group.category}` as const, title,
+      results: group.results.map((component) => ({ kind: "component" as const, component })) }] : [];
   });
 }
 
@@ -370,6 +392,7 @@ export function TopbarSearch({
   focusRequest = 0,
   onOpenChannel,
   onOpenResult,
+  onOpenComponent,
   onOpenUser,
   onBrowseChannels,
   onCreateAgent,
@@ -390,6 +413,8 @@ export function TopbarSearch({
     useDeferredModalOpen();
   const {
     channelLookup,
+    componentSearchQuery,
+    componentUnavailable,
     debouncedQuery,
     fuzzyUserCandidatesQuery,
     isWaitingOnFromResolution,
@@ -500,7 +525,23 @@ export function TopbarSearch({
     isWaitingOnFromResolution ||
     searchQuery.isLoading ||
     fuzzyUserCandidatesQuery.isLoading ||
-    userSearchQuery.isLoading;
+    userSearchQuery.isLoading ||
+    componentSearchQuery?.isLoading === true;
+  const unavailableSourceNotes = !isShowingSuggestions && resultsAreCurrent && !scopeChannel
+    ? (componentUnavailable ?? []).flatMap((category) => {
+      const source = nativePageCategoryTitle(category, translateUi);
+      return source ? [source] : [];
+    })
+    : [];
+  const componentSourceNotes = unavailableSourceNotes.length > 0 ? (
+    <div className="px-2.5 pb-2 pt-1" data-testid="search-component-unavailable">
+      {unavailableSourceNotes.map((source) => (
+        <p className="text-xs text-muted-foreground/70" key={source}>
+          {translateUi("search.componentUnavailable", { source })}
+        </p>
+      ))}
+    </div>
+  ) : null;
 
   const openSearchDialog = React.useCallback(
     (nextScopeChannelId: string | null = null) => {
@@ -542,6 +583,11 @@ export function TopbarSearch({
         return;
       }
 
+      if (result.kind === "component") {
+        onOpenComponent?.(result.component);
+        return;
+      }
+
       if (result.kind === "action") {
         setSelectedMenuIndex(0);
         if (result.action.id === "browse-channels") {
@@ -567,6 +613,7 @@ export function TopbarSearch({
       onCreateAgent,
       onCreateChannel,
       onOpenChannel,
+      onOpenComponent,
       onOpenResult,
       onOpenUser,
       openAfterExit,
@@ -669,7 +716,9 @@ export function TopbarSearch({
           ? result.action.title
           : result.kind === "user"
             ? userDisplayName
-            : messageAuthorLabel;
+            : result.kind === "component"
+              ? result.component.title
+              : messageAuthorLabel;
     const preview =
       result.kind === "channel"
         ? getChannelPreview(result.channel)
@@ -677,13 +726,21 @@ export function TopbarSearch({
           ? result.action.description
           : result.kind === "user"
             ? getUserSecondaryLabel(result.user)
-            : buildSearchResultPreview(result.hit.content, resultQuery);
+            : result.kind === "component"
+              ? result.component.summary
+              : buildSearchResultPreview(result.hit.content, resultQuery);
+    const componentUpdatedAt =
+      result.kind === "component" && result.component.updatedAt
+        ? Date.parse(result.component.updatedAt)
+        : Number.NaN;
     const trailingLabel =
       result.kind === "channel"
         ? getChannelSuggestionMeta(result.channel)
         : result.kind === "message"
           ? formatRelativeTime(result.hit.createdAt)
-          : null;
+          : Number.isFinite(componentUpdatedAt)
+            ? formatRelativeTime(Math.floor(componentUpdatedAt / 1_000))
+            : null;
 
     return (
       <button
@@ -899,6 +956,7 @@ export function TopbarSearch({
         ) : null}
         .
       </p>
+      {componentSourceNotes}
     </div>
   ) : (
     <div
@@ -909,6 +967,7 @@ export function TopbarSearch({
       {currentChannelSearchAction}
       <div className="p-1.5">
         {renderSearchResultSections(searchResultSections)}
+        {componentSourceNotes}
       </div>
     </div>
   );

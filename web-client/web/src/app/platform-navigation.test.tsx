@@ -462,3 +462,10 @@ it("keeps the original /settings?section= target and rewrites it in place when s
   await mount("/app/inbox?section=appearance");
   expect(tab().getAttribute("data-settings-section")).toBeNull();
 });
+
+// DD-138(4)(5), 07 §4.8.3/§4.8.4: a native page deep link keeps only a well-formed relative path.
+it("keeps only a well-formed native page path in the application route search", () => {
+  expect(platformLocationSearch({path: "/files/a?view=1#top"}).path).toBe("/files/a?view=1#top");
+  for (const path of ["//evil.test/x", "files/a", "/a\\b", "/a b", "/a\u0000", `/${"a".repeat(1024)}`, 7, {}])
+    expect(platformLocationSearch({path}).path).toBeUndefined();
+});

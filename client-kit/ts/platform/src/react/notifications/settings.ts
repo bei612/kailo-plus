@@ -3,6 +3,8 @@ import * as React from "react";
 import { translate } from "../../i18n";
 import { useUiLocale } from "../context";
 import { scheduleAfterForegroundReady } from "./foregroundReady";
+import { DEFAULT_COMPONENT_ALERTS_ENABLED, sanitizeComponentAlertsEnabled, type ComponentAlertsEnabled } from "./component-alerts";
+import type { ComponentNotificationCategory } from "@client-kit/contracts";
 import { DEFAULT_SLOT_ALERTS_ENABLED, DEFAULT_SLOT_SOUNDS, SOUND_NAMES, SOUND_SLOTS, type SlotSounds, type SoundName, type SoundSlot } from "./sound";
 export type DesktopNotificationPermissionState = NotificationPermission | "unsupported";
 export type NotificationHost = { kind?: "browser" | "native"; getPermission: () => Promise<DesktopNotificationPermissionState>; requestPermission: () => Promise<DesktopNotificationPermissionState> };
@@ -22,6 +24,8 @@ export type NotificationSettings = {
    * Cleared by any individual row toggle.
    */
   slotAlertsSnapshot: Record<SoundSlot, boolean> | null;
+  /** DD-138(4), 07 §4.8.3: per component notification category, default on (alert, sound and badge count). */
+  componentAlertsEnabled: ComponentAlertsEnabled;
 };
 
 const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
@@ -31,6 +35,7 @@ const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
   sounds: { ...DEFAULT_SLOT_SOUNDS },
   slotAlertsEnabled: { ...DEFAULT_SLOT_ALERTS_ENABLED },
   slotAlertsSnapshot: null,
+  componentAlertsEnabled: { ...DEFAULT_COMPONENT_ALERTS_ENABLED },
 };
 
 const SOUND_NAME_SET = new Set<SoundName>(SOUND_NAMES);
@@ -91,6 +96,8 @@ function sanitizeNotificationSettings(value: unknown): NotificationSettings {
       typeof candidate.slotAlertsSnapshot === "object"
         ? sanitizeSlotAlertsEnabled(candidate.slotAlertsSnapshot)
         : null,
+    // Absent in values stored before DD-138: every category stays on.
+    componentAlertsEnabled: sanitizeComponentAlertsEnabled(candidate.componentAlertsEnabled),
   };
 }
 
@@ -316,6 +323,16 @@ export function useNotificationSettings(pubkey: string | undefined, host: Notifi
     [setSettings],
   );
 
+  const setComponentAlertEnabled = React.useCallback(
+    (category: ComponentNotificationCategory, enabled: boolean) => {
+      setSettings((current) => ({
+        ...current,
+        componentAlertsEnabled: { ...current.componentAlertsEnabled, [category]: enabled },
+      }));
+    },
+    [setSettings],
+  );
+
   const setSoundForSlot = React.useCallback(
     (slot: SoundSlot, name: SoundName) => {
       setSettings((current) => ({
@@ -333,6 +350,7 @@ export function useNotificationSettings(pubkey: string | undefined, host: Notifi
     setDesktopEnabled,
     setHomeBadgeEnabled,
     setAllSlotAlertsEnabled,
+    setComponentAlertEnabled,
     setNotifyWhileViewing,
     setSlotAlertsEnabled,
     setSoundForSlot,

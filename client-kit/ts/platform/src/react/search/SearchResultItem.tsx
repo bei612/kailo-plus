@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 
 import { HashSearch } from "./icons";
+import { componentSearchIcon, type ComponentSearchHit } from "./componentSearch";
 import type { SearchChannel as Channel, SearchHit, UserSearchResult } from "./types";
 
 export type SearchResult =
@@ -22,7 +23,13 @@ export type SearchResult =
     }
   | { kind: "channel"; channel: Channel }
   | { kind: "user"; user: UserSearchResult }
-  | { kind: "message"; hit: SearchHit };
+  | { kind: "message"; hit: SearchHit }
+  // DD-138(5), 07 §4.8.4: component content, grouped by presentation category.
+  | { kind: "component"; component: ComponentSearchHit };
+
+function componentResultId(component: ComponentSearchHit) {
+  return `${component.bindingId}:${component.path}`;
+}
 
 export function resultKey(result: SearchResult) {
   if (result.kind === "action") {
@@ -35,6 +42,10 @@ export function resultKey(result: SearchResult) {
 
   if (result.kind === "user") {
     return `user-${result.user.pubkey}`;
+  }
+
+  if (result.kind === "component") {
+    return `component-${componentResultId(result.component)}`;
   }
 
   return `message-${result.hit.eventId}`;
@@ -53,6 +64,10 @@ export function resultTestId(result: SearchResult) {
     return `search-result-user-${result.user.pubkey}`;
   }
 
+  if (result.kind === "component") {
+    return `search-result-component-${componentResultId(result.component)}`;
+  }
+
   return `search-result-${result.hit.eventId}`;
 }
 
@@ -69,6 +84,10 @@ export function resultIcon(
 
   if (result.kind === "user") {
     return result.user.isAgent ? Bot : User;
+  }
+
+  if (result.kind === "component") {
+    return componentSearchIcon(String(result.component.kind));
   }
 
   const channelType =

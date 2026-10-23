@@ -204,6 +204,8 @@ vi.mock("@/platform/ui/InboxPane", async () => {
   }};
 });
 vi.mock("@/platform/ui/SettingsPane", () => ({ SettingsPane: ({ active }: { active: boolean }) => <div data-testid="settings-host" data-active={active} /> }));
+// DD-138(4): the component notification source is exercised by its own tests.
+vi.mock("./ComponentNotificationAlerts", () => ({ useComponentNotifications: () => ({ source: null, open: () => {}, unreadCount: 0 }) }));
 vi.mock("./BrowserNotifications", () => ({
   BrowserNotificationsProvider: ({ children }: { children: React.ReactNode }) => children,
   useBrowserNotifications: () => null,

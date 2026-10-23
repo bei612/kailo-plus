@@ -111,6 +111,7 @@ import { AvatarHostProvider } from "@client-kit/platform/react/profile/avatar-ho
 import { formatDmParticipantDisplayName, resolveConversationHeaderParticipants } from "@client-kit/platform/react/conversations/dm-participant-display";
 import { toast } from "sonner";
 import { BrowserNotificationsProvider, useBrowserNotifications } from "./BrowserNotifications";
+import { useComponentNotifications } from "./ComponentNotificationAlerts";
 import { useTenantJoinAlerts } from "@client-kit/platform/react/tenant-join-alerts";
 import { BffMessageLinkHost } from "@/features/chat/ui/BffMessageLinkHost";
 import { TopbarSearch } from "./TopbarSearch";
@@ -420,8 +421,14 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
     reads: userState, activeWorkspaceId: tab === "channel" ? active : null,
     activeConversationChannelId: tab === "conversation" ? chosenConversation?.channelId ?? null : null,
     onOpen: (channelId, target) => openSearchChannel(channelId, target) });
+  // DD-138(4), 07 §4.8.3: component notifications (Inbox rows, alerts, badge) on every view.
+  const componentNotifications = useComponentNotifications({ principalId: session.tenantPrincipalId,
+    openApplication: (bindingId, workspaceId, path) => navigation.openApplication(bindingId, workspaceId, path) });
   // While Inbox is open its own list is what the person sees; elsewhere the shell feed keeps it.
-  const homeBadgeCount = tab === "inbox" && inboxUnreadCount !== null ? inboxUnreadCount : homeFeed.unreadCount;
+  const messageBadgeCount = tab === "inbox" && inboxUnreadCount !== null ? inboxUnreadCount : homeFeed.unreadCount;
+  // Plus unread component items whose category alert is on (a disabled category is still listed).
+  const homeBadgeCount = messageBadgeCount === null && componentNotifications.unreadCount === 0 ? null
+    : (messageBadgeCount ?? 0) + componentNotifications.unreadCount;
   // Original app badge (count, or a dot for channel-only unreads) in the tab title.
   useAppBadgeTitle(notificationSettings?.settings.homeBadgeEnabled !== false, appBadgeState(homeBadgeCount, sidebarUnread.size));
   const setTab = (next: Exclude<PlatformTab, "conversation" | "application">) => { void navigation.openTab(next, active); };
@@ -552,7 +559,8 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
   );
   const body =
     tab === "application" && navigation.applicationBindingId ? (
-      <NativeApplicationPage key={`${session.tenantPrincipalId}:${navigation.applicationBindingId}`} bindingId={navigation.applicationBindingId} title={applicationTitle ?? undefined} />
+      <NativeApplicationPage key={`${session.tenantPrincipalId}:${navigation.applicationBindingId}`} bindingId={navigation.applicationBindingId} title={applicationTitle ?? undefined}
+        path={navigation.applicationPath ?? undefined} />
     ) : tab === "new-message" ? (
       <NewMessagePage currentPrincipalId={session.tenantPrincipalId} onConversationOpened={async (conversation) => {
         await conversations.reload();
@@ -590,6 +598,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
         onOpenProject={(id,target)=>{void navigation.openProject(id,target);}}
         onStartDm={openDirectMessage}
         onUnreadCount={setInboxUnreadCount}
+        componentNotifications={componentNotifications}
         onOpen={async (channelId, target, draft) => {
           const conversation = target?.conversation ?? draft?.conversation;
           const draftReference = draft ? {key:draft.key,send:draft.send,editEventId:draft.editEventId} : undefined;
@@ -697,6 +706,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
                 currentChannelId={nativeCurrentChannelId} focusRequest={searchFocusRequest} scopeFocusRequest={scopeSearchFocusRequest}
                 onOpenChannel={channelId=>{void openSearchChannel(channelId).catch(()=>toast.error(t("platform.loadFailed")));}}
                 onOpenResult={(hit,query)=>{if(hit.channelId)void openSearchChannel(hit.channelId,hit,query).catch(()=>toast.error(t("platform.loadFailed")));}}
+                onOpenComponent={result=>{void navigation.openApplication(result.bindingId,undefined,result.path);}}
                 onOpenUser={user=>openDirectMessage(user.pubkey)}
                 onBrowseChannels={()=>setCreateChannelOpen(true)} onCreateChannel={()=>setNewChannelOpen(true)}
                 onCreateAgent={()=>{requestOpenCreateAgent();setTab("agents");}} />

@@ -202,6 +202,8 @@
     "./react/VirtualizedList": "./src/react/forum/VirtualizedList.tsx",
     "./react/use-inbox-state": "./src/react/use-inbox-state.ts",
     "./react/inbox/needs-action": "./src/react/inbox/needs-action.tsx",
+    "./react/inbox/component-notifications": "./src/react/inbox/component-notifications.tsx",
+    "./react/native-deep-link": "./src/react/native-deep-link.ts",
     "./react/collaboration-preferences": "./src/react/collaboration-preferences.tsx",
     "./react/channel-templates": "./src/react/channel-templates/index.ts",
     "./moderation": "./src/moderation.ts",

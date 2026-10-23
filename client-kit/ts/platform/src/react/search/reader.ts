@@ -12,6 +12,10 @@ export type SearchResultsReader = (options: {
   scopeChannelId?: string | null;
 }) => {
   channelLookup: ReadonlyMap<string, Channel>;
+  /** DD-138(5): component source still loading (absent: the host has no component source). */
+  componentSearchQuery?: { isLoading: boolean };
+  /** DD-138(5): presentation categories whose source answered UNAVAILABLE. */
+  componentUnavailable?: readonly string[];
   debouncedQuery: string;
   fuzzyUserCandidatesQuery: { isLoading: boolean };
   isWaitingOnFromResolution: boolean;

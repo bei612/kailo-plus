@@ -8,12 +8,22 @@ import type { SearchResult } from "./SearchResultItem";
 import type { SearchChannel as Channel, SearchHit, SearchMessagesResponse, UserSearchResult } from "./types";
 import type { UserProfileLookup } from "../messages/system/identity";
 import { normalizePubkey } from "../conversations/pubkey";
+import { unavailableComponentSources, type ComponentSearchHit } from "./componentSearch";
+import type { ComponentSearchPage } from "@client-kit/contracts";
 
 export type SearchDataHooks = {
   useUserSearchQuery: (query: string, options?: {allowEmpty?:boolean;enabled?:boolean;limit?:number}) => {data?:UserSearchResult[];isLoading:boolean;error?:unknown};
   useUsersBatchQuery: (pubkeys:string[], options?:{enabled?:boolean}) => {data?:{profiles:UserProfileLookup};error?:unknown};
   useSearchMessagesQuery: (query:string, options?:{channelId?:string;authors?:string[];since?:number|null;until?:number|null;enabled?:boolean;limit?:number;unresolvedOperator?:boolean;minimumQueryLength?:number}) => {data?:SearchMessagesResponse;isLoading:boolean;error:unknown};
+  /**
+   * DD-138(5), 07 §4.8.4: component content source of 「搜索全部」 (POST /api/v1/search/components).
+   * Optional so hosts without the BFF source keep their original search; its failure never
+   * fails the message search.
+   */
+  useComponentSearchQuery?: (query:string, options:{enabled:boolean}) => {data?:ComponentSearchPage;isLoading:boolean;error?:unknown};
 };
+
+const noComponentSearch: NonNullable<SearchDataHooks["useComponentSearchQuery"]> = () => ({ isLoading: false });
 
 function formatUserResultName(user: UserSearchResult) {
   return user.displayName?.trim() || user.nip05Handle?.trim() || user.pubkey;
@@ -80,7 +90,7 @@ function resolveAuthorFromOperator(
     : { status: "unresolved" };
 }
 
-export function createSearchResultsReader({useUserSearchQuery,useUsersBatchQuery,useSearchMessagesQuery}:SearchDataHooks) {
+export function createSearchResultsReader({useUserSearchQuery,useUsersBatchQuery,useSearchMessagesQuery,useComponentSearchQuery=noComponentSearch}:SearchDataHooks) {
 return function useSearchResults({
   channelLabels,
   channels,
@@ -204,6 +214,16 @@ return function useSearchResults({
     minimumQueryLength,
   });
 
+  // DD-138(5): 「搜索全部」 only (no channel scope), at least two characters, debounced like messages.
+  const componentActive = !scopeChannelId && !hasUnresolvedOperator && ftsQuery.trim().length >= MIN_SEARCH_QUERY_LENGTH;
+  const componentQuery = useComponentSearchQuery(ftsQuery, { enabled: enabled && componentActive });
+  const componentResults = React.useMemo<ComponentSearchHit[]>(
+    () => componentActive && !componentQuery.error ? componentQuery.data?.results ?? [] : [],
+    [componentActive, componentQuery.data, componentQuery.error]);
+  const componentUnavailable = React.useMemo(
+    () => componentActive && !componentQuery.error ? unavailableComponentSources(componentQuery.data?.sources) : [],
+    [componentActive, componentQuery.data, componentQuery.error]);
+
   const messageResults = React.useMemo(() => {
     if (hasUnresolvedOperator) {
       return [];
@@ -300,8 +320,12 @@ return function useSearchResults({
         kind: "message" as const,
         hit,
       })),
+      ...componentResults.map((component) => ({
+        kind: "component" as const,
+        component,
+      })),
     ],
-    [channelResults, messageResults, userResults],
+    [channelResults, componentResults, messageResults, userResults],
   );
 
   const resultProfilesQuery = useUsersBatchQuery(
@@ -348,6 +372,8 @@ return function useSearchResults({
   return {
     channelLookup,
     channelResults,
+    componentSearchQuery: { isLoading: componentActive && componentQuery.isLoading },
+    componentUnavailable,
     debouncedQuery,
     isWaitingOnFromResolution: waitingOnFromResolution,
     messageResults,

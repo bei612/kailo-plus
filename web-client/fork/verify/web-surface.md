@@ -6873,3 +6873,36 @@ V-SCN-105/106（DD-39/81/117/120）。本批只做 TypeScript/UI 与 Web 宿主�
   `trace` 只因手工检出未挂接 CI 的发布证明目录而报 dist digest 缺失，设计 ID 与追溯本身通过；`contract` 只报
   `client-kit/dart/lib/shared/platform/platform_text.dart` 待 `tools/gen.sh` 重新生成（新增 40 个词条）。
 - 未做：Desktop `tsc` 与构建、部署、浏览器或 Windows 实测；V-SCN-177–179 尚无业务验收，不据此声称可用。
+
+## 组件通知并入收件箱、组件内容进入「搜索全部」、原生页深链（DD-138(4)(5)，07 §4.8.3 / §4.8.4 呈现，2026-10-23）
+
+客户端一侧，配合 Core 并行交付的 BFF `GET /api/v1/inbox/component-notifications`、`POST …/read`、`POST /api/v1/search/components`。
+
+- 深链：`/applications/$bindingId` 接受可选 `path` 查询参数（单个 `/` 开头、≤1024、无反斜杠/空白/控制字符，否则丢弃）；
+  `NativeApplicationPage` 新增 `path`，iframe 地址为 `new URL(path, origin)`，解析后 origin 不等于 descriptor origin 时忽略
+  path 打开入口页，再附 `kailo_theme`/`kailo_locale`（`client-kit/ts/platform/src/react/native-deep-link.ts`）。
+  `openApplication(bindingId, workspaceId?, path?)`。
+- 收件箱：`useComponentNotificationSource`（react-query，30 s 轮询 + 窗口聚焦刷新，页面形状校验，乐观已读、失败回滚，
+  每批 ≤100 个 ID）；`InboxView`/`InboxListPane` 新增组件通知行：头像（actorPicture 或首字母）、触发者显示名、按 Kailo 语言取
+  ZH_CN/EN 的标题与摘要、来源只标呈现类别名（云盘/知识库/问数，与侧栏同一词条）、相对时间、未读点；「全部」含全部条目，
+  MENTIONED 另进「提及」，ACCESS_REQUESTED 另进「需要处理」（行标签用待处理色调）。打开即标记已读并进入
+  `openApplication(bindingId, workspaceId, path)`；全部标为已读同时标记组件条目。消息与审批行不变。
+- 提醒：`NotificationSettings.componentAlertsEnabled` 六类开关（默认开，旧存储值缺省即开），设置「通知」中新增「内容动态」
+  分组（`ComponentAlertsGroup`），文案中英双语、不含组件名。Web 外壳级 `useComponentNotifications`：首屏只建立已见集合，
+  之后新到未读条目在该类开启且桌面开关/浏览器权限/“查看时也提醒”允许时发浏览器通知，并播放既有「需要处理」
+  （ACCESS_REQUESTED）或「@提及」槽位提示音；Home 角标与标签页角标加上组件未读数，减去已加载的关闭类别未读条目。
+- 搜索：`SearchDataHooks.useComponentSearchQuery`（可选，其他宿主不变）；仅「搜索全部」、去操作符后 ≥2 字符、与消息同一
+  300 ms 防抖时调用；新结果类别 `component` 按呈现类别分组（侧栏顺序），图标按 kind，显示标题、摘要与更新时间；每个
+  UNAVAILABLE 来源一行灰色“{类别}暂不可用”；打开 → `openApplication(result.bindingId, undefined, result.path)`；
+  键盘上下/回车沿用同一扁平结果序列。组件搜索失败不影响消息搜索。
+- 词条：20 个（`inbox.component.*`、`platform.notifications.component*`、`search.componentUnavailable`），只加在
+  `client-kit/ts/platform/src/i18n.ts` 的 `platformMessages`；Dart `platform_text.dart` 需由 `tools/gen-platform-i18n.py`
+  重新投影（本机未运行）。契约类型按 schema title 从 `@client-kit/contracts` 引用，需先运行 `tools/gen.sh` 生成。
+- 测试（新增，待 CI）：`client-kit/ts/platform/test/component-notifications.test.tsx`（path 校验与深链地址、iframe 深链、
+  过滤归属、行映射与语言、页面校验、类别开关缺省、提醒门控与槽位、首屏不提醒只提醒新到未读、角标排除关闭类别、
+  搜索分组与类别标签、不可用来源、InboxView 渲染与打开即 POST 已读）；`web-client/web/src/app/platform-navigation.test.tsx`
+  追加 `path` 查询参数校验；`PlatformApp.test.tsx`、`SettingsShortcut.test.tsx` 增加组件通知 hook 的 mock。
+- 未验证：本机按约束未运行 tsc、vitest、构建或浏览器；契约生成物尚未更新（ComponentNotification*/ComponentSearch* 类型
+  引用待生成）；BFF 路由、部署与业务验收均未进行。只读取首页 50 条（未做“加载更多”），关闭类别的角标扣减只覆盖已加载
+  条目。Desktop（`collaboration/desktop`）复用同一共享组件，新增属性均为可选，未接入组件通知源、组件搜索源与
+  `/applications/$bindingId` 的 `path` 参数。

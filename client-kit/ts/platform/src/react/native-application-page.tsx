@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ApplicationNativePage } from "@client-kit/contracts";
 import { useBffClient, useNativeAuthenticationHost, useT, useTopLevelReauthentication } from "./context";
-import { embedRequest, nativeEmbedUrl, preferencesMessage, presentationMessage, useEmbedPresentation } from "./native-embed-host";
+import { embedRequest, preferencesMessage, presentationMessage, useEmbedPresentation } from "./native-embed-host";
+import { nativeDeepLinkUrl } from "./native-deep-link";
 import { preferenceValues } from "../component-preferences";
 import { useStoredComponentPreferences } from "./component-preferences";
 import { Button, Notice, ReadFailure } from "./ui";
@@ -33,8 +34,10 @@ export function validNativePage(page: ApplicationNativePage, bindingId: string):
  * sign-in button and boundary note. `onBack` renders a Back button only where
  * the page is opened from a list (the binding management panel), not from the
  * sidebar entry.
+ * DD-138(4)(5), 07 §4.8.3/§4.8.4: `path` (an Inbox item or search result) opens that
+ * location inside the descriptor origin; a path leaving it is ignored.
  */
-export function NativeApplicationPage({ bindingId, onBack, title }: { bindingId: string; onBack?: () => void; title?: string }) {
+export function NativeApplicationPage({ bindingId, onBack, title, path }: { bindingId: string; onBack?: () => void; title?: string; path?: string }) {
   const client = useBffClient();
   const authenticateNative = useNativeAuthenticationHost();
   const reauthenticate = useTopLevelReauthentication();
@@ -87,12 +90,12 @@ export function NativeApplicationPage({ bindingId, onBack, title }: { bindingId:
     return () => { ++scope.current; ++epoch.current; window.removeEventListener("focus", recheck); };
   }, [reload]);
   const page = approved && validNativePage(approved, bindingId) ? approved : null;
-  const frameKey = page ? `${page.bindingId}:${page.projectionGeneration}:${page.url}:${frameRevision}` : null;
+  const frameKey = page ? `${page.bindingId}:${page.projectionGeneration}:${page.url}:${path ?? ""}:${frameRevision}` : null;
   // DD-133: theme/locale ride on the launch URL once per document; later
   // changes are posted, never reloaded, so unsaved native work survives.
   const launch = useRef<{ key: string; src: string } | null>(null);
   if (page && frameKey && launch.current?.key !== frameKey)
-    launch.current = { key: frameKey, src: nativeEmbedUrl(page.url, presentation) };
+    launch.current = { key: frameKey, src: nativeDeepLinkUrl(page, path, presentation) };
   const frame = useRef<HTMLIFrameElement>(null);
   const latest = useRef(presentation);
   latest.current = presentation;
