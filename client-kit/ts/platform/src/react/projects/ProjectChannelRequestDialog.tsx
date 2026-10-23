@@ -7,9 +7,13 @@
 // existing DENY decision, Create channel the existing APPROVE decision; once the approved
 // workspace.create completes, the new channel joins the project through the existing owner project
 // publication (useProjectChannelLinking, the original useAddProjectChannelMutation order).
+// DD-140 (5): the Agent learns the outcome only through the owner's ordinary message in the home
+// channel mentioning the Installation (existing @mention → agent.invoke), sent after a definite
+// DENY, or after an APPROVE once the channel exists and is linked; UNKNOWN outcomes send nothing.
 import * as React from "react";
 import * as AlertDialog from "@radix-ui/react-alert-dialog";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import {
   ActionDispatchState, ActionGateState, ApprovalDecision, ApprovalStatus,
   type ActionSubmission, type ApprovalView, type ProjectChannelRequest,
@@ -24,6 +28,8 @@ import { MODAL_CONTENT_MOTION_CLASS, MODAL_OVERLAY_MOTION_CLASS } from "../compo
 import { loadProjectDirectory, type ProjectsHost } from "./projectEnumeration";
 import type { Project } from "./projectModels";
 import { useProjectChannelLinking } from "./ProjectChannelManagement";
+import type { ProjectAgentChatHost } from "./projectAgentChatHost";
+import { newIdempotencyKey } from "../../governance";
 
 /** Details an owner reviews before approving an agent-requested project channel. */
 export function ProjectChannelRequestDetails({ request }: { request: ProjectChannelRequest }) {
@@ -69,16 +75,49 @@ export function useProjectChannelRequests(host: ProjectsHost) {
 }
 
 /** Global owner-review surface for project-channel requests from managed agents. */
-export function ProjectChannelRequestDialog({ host }: { host: ProjectsHost }) {
+export function ProjectChannelRequestDialog({ host, useAgentChat }: { host: ProjectsHost;
+  /**
+   * The host's governed project Agent send (DD-130) as a hook, called only once a request is
+   * shown so idle shells mount none of its reads; without it no receipt is sent.
+   */
+  useAgentChat?: () => ProjectAgentChatHost | undefined }) {
   const requests = useProjectChannelRequests(host);
   const pending = Array.isArray(requests.data) ? requests.data : [];
   const [mounted, setMounted] = React.useState(false);
   React.useEffect(() => { if (pending.length > 0) setMounted(true); }, [pending.length]);
   // The review surface (and any approved link runner) mounts on the first request and stays.
-  return mounted ? <ProjectChannelRequestSurface host={host} pending={pending} /> : null;
+  return mounted ? <ProjectChannelRequestSurface host={host} pending={pending} useAgentChat={useAgentChat ?? noAgentChat} /> : null;
 }
 
-function ProjectChannelRequestSurface({ host, pending }: { host: ProjectsHost; pending: readonly PendingRequest[] }) {
+function noAgentChat(): ProjectAgentChatHost | undefined {
+  return undefined;
+}
+
+/** DD-140 (5) receipt: one owner message in the home channel mentioning the Installation. */
+export function useProjectChannelRequestReceipt(agentChat?: ProjectAgentChatHost) {
+  const client = useBffClient();
+  const t = useUiT();
+  return React.useCallback(async (approval: ApprovalView, outcome: { approved: true; channelName: string } | { approved: false }) => {
+    const frozen = approval.projectChannelRequest;
+    if (!agentChat || !frozen) return;
+    try {
+      const installation = await client.agentInstallation(frozen.installationResourceId);
+      if (installation.resourceId !== frozen.installationResourceId || !installation.agentPubkey) return;
+      const agent = installation.agentDisplayName?.trim() || t("projects.channelRequest.theAgent");
+      const content = outcome.approved
+        ? t("projects.channelRequest.receiptApproved", { agent, name: outcome.channelName })
+        : t("projects.channelRequest.receiptDenied", { agent, name: frozen.request.name });
+      await agentChat.send({ workspaceId: installation.workspaceId, channelId: frozen.request.homeChannelId,
+        installationId: frozen.installationResourceId, agentPubkey: installation.agentPubkey, content, mentionPubkeys: [] }, newIdempotencyKey());
+    } catch {
+      toast.error(t("projects.channelRequest.receiptFailed"));
+    }
+  }, [agentChat, client, t]);
+}
+
+function ProjectChannelRequestSurface({ host, pending, useAgentChat }: { host: ProjectsHost; pending: readonly PendingRequest[];
+  useAgentChat: () => ProjectAgentChatHost | undefined }) {
+  const agentChat = useAgentChat();
   const t = useUiT();
   const client = useBffClient();
   const failureText = useFailureText();
@@ -88,7 +127,8 @@ function ProjectChannelRequestSurface({ host, pending }: { host: ProjectsHost; p
   const [error, setError] = React.useState<string | null>(null);
   // Approved requests keep their link runner mounted until this host unmounts; an interrupted link
   // resumes from the same retained creation slot when the project's channel management mounts.
-  const [approved, setApproved] = React.useState<readonly { project: Project; submission: ActionSubmission; name: string }[]>([]);
+  const [approved, setApproved] = React.useState<readonly { project: Project; submission: ActionSubmission; name: string; approval: ApprovalView }[]>([]);
+  const sendReceipt = useProjectChannelRequestReceipt(agentChat);
   const current = pending.find(item => !dismissed.has(item.approval.workflowId)) ?? null;
   const settle = (workflowId: string) => {
     setDismissed(previous => new Set(previous).add(workflowId));
@@ -103,11 +143,12 @@ function ProjectChannelRequestSurface({ host, pending }: { host: ProjectsHost; p
       await client.decide(current.approval.workflowId, decision);
       if (decision === ApprovalDecision.Approve) {
         const task = await client.task(current.approval.actionExecutionId);
-        setApproved(previous => [...previous, { project: current.project, name: current.request.name, submission: {
+        setApproved(previous => [...previous, { project: current.project, name: current.request.name, approval: current.approval, submission: {
           actionExecutionId: task.actionExecutionId, actionKey: task.actionKey, operationId: task.operationId,
           gateState: ActionGateState.Allowed, dispatchState: task.dispatchState ?? ActionDispatchState.NotDispatched,
           approvalWorkflowId: current.approval.workflowId } }]);
       }
+      else void sendReceipt(current.approval, { approved: false });
       settle(current.approval.workflowId);
     } catch (cause) {
       // An unknown decision outcome keeps the request open: the same decision is resent as is.
@@ -116,7 +157,9 @@ function ProjectChannelRequestSurface({ host, pending }: { host: ProjectsHost; p
     } finally { setBusy(false); }
   };
   return <>
-    {approved.map(item => <ApprovedProjectChannelLink key={item.submission.actionExecutionId} host={host} {...item} />)}
+    {approved.map(item => <ApprovedProjectChannelLink key={item.submission.actionExecutionId} host={host} project={item.project}
+      submission={item.submission} name={item.name}
+      onLinked={channelName => { void sendReceipt(item.approval, { approved: true, channelName }); }} />)}
     <AlertDialog.Root open={current !== null} onOpenChange={open => { if (!open && !busy) void decide(ApprovalDecision.Deny); }}>
       <AlertDialog.Portal>
         <AlertDialog.Overlay className={cn("fixed inset-0 z-50 bg-black/60", MODAL_OVERLAY_MOTION_CLASS, MODAL_BACKDROP_BLUR_CLASS)} />
@@ -148,10 +191,15 @@ function ProjectChannelRequestSurface({ host, pending }: { host: ProjectsHost; p
 }
 
 /** After APPROVE: the existing create→link runner (waits for the governed workspace.create task). */
-function ApprovedProjectChannelLink({ host, project, submission, name }: {
-  host: ProjectsHost; project: Project; submission: ActionSubmission; name: string;
+function ApprovedProjectChannelLink({ host, project, submission, name, onLinked }: {
+  host: ProjectsHost; project: Project; submission: ActionSubmission; name: string; onLinked: (channelName: string) => void;
 }) {
-  const linking = useProjectChannelLinking(host, project);
+  const linked = React.useRef(false);
+  const linking = useProjectChannelLinking(host, project, () => {
+    if (linked.current) return;
+    linked.current = true;
+    onLinked(name);
+  });
   const recorded = React.useRef(false);
   React.useEffect(() => {
     if (recorded.current) return;

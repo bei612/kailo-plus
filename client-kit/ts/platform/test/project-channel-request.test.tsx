@@ -29,10 +29,14 @@ const approval = (homeChannelId: string): ApprovalView => ({ workflowId: "wf-1",
   projectChannelRequest: { installationResourceId: "55555555-5555-4555-8555-555555555555",
     request: { homeChannelId, name: "launch", description: "Launch prep", visibility: WorkspaceVisibility.Private, ttlSeconds: 86400 } } } as ApprovalView);
 
+const agentSend = vi.fn(async (_request: unknown, _key: string) => ({ eventId: "e".repeat(64) }));
+const useAgentChat = () => ({ identityScope: "s", readConversation: async () => [], send: agentSend });
 function mount(approvals: ApprovalView[]) {
   const send = vi.fn(async (request: BffRequest): Promise<BffReply> => {
     if (request.path === "/api/v1/approvals") return { status: 200, body: approvals };
     if (request.path.endsWith("/decision")) return { status: 200, body: { status: "APPROVED" } };
+    if (request.path === "/api/v1/agent-installations/55555555-5555-4555-8555-555555555555") return { status: 200, body: {
+      resourceId: "55555555-5555-4555-8555-555555555555", agentDisplayName: "Scout", agentPubkey: "c".repeat(64), workspaceId: home } };
     if (request.path.startsWith("/api/v1/tasks/")) return { status: 200, body: { actionExecutionId: approvals[0]!.actionExecutionId,
       actionKey: "workspace.create", actionVersion: 1, operationId: "op", targetId: "t", gateState: "ALLOWED", dispatchState: "DISPATCHED", createdAt: "2026-10-23T00:00:00Z" } };
     return { status: 404, body: {} };
@@ -40,7 +44,7 @@ function mount(approvals: ApprovalView[]) {
   const cache = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
   const host = { scopeKey: "s", query: vi.fn(), publish: vi.fn() } as never;
   return { send, ui: <QueryClientProvider client={cache}><PlatformProvider client={createBffClient({ send })} locale="en">
-    <ProjectChannelRequestDialog host={host} /></PlatformProvider></QueryClientProvider> };
+    <ProjectChannelRequestDialog host={host} useAgentChat={useAgentChat} /></PlatformProvider></QueryClientProvider> };
 }
 const decisions = (send: ReturnType<typeof mount>["send"]) => send.mock.calls.map(([r]) => r).filter(r => r.path.endsWith("/decision")).map(r => (r.body as { decision: string }).decision);
 
@@ -69,5 +73,18 @@ describe("original project channel request dialog (DD-140)", () => {
       <ProjectChannelRequestDetails request={{ homeChannelId: home, name: "launch", visibility: WorkspaceVisibility.Open }} /></PlatformProvider>);
     expect(host.textContent).toContain("名称");
     expect(host.textContent).toContain("公开");
+  });
+  it("tells the Agent about a definite denial through the owner's mention in the home channel (DD-140 (5))", async () => {
+    agentSend.mockClear();
+    const m = mount([approval(home)]);
+    await render(m.ui);
+    await vi.waitFor(() => expect(document.querySelector('[data-testid="project-channel-request-dialog"]')).not.toBeNull());
+    const cancel = [...document.querySelectorAll<HTMLButtonElement>("button")].find(button => button.textContent === "Cancel")!;
+    await click(cancel);
+    await settle();
+    expect(decisions(m.send)).toEqual(["DENY"]);
+    await vi.waitFor(() => expect(agentSend).toHaveBeenCalledTimes(1));
+    expect(agentSend.mock.calls[0]![0]).toMatchObject({ installationId: "55555555-5555-4555-8555-555555555555", agentPubkey: "c".repeat(64),
+      channelId: home, workspaceId: home, content: "@Scout I declined your request to create #launch." });
   });
 });
