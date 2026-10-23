@@ -491,7 +491,7 @@ pub async fn list_role_workspaces(
     let mut rows: Vec<(Uuid, String, String)> = match sqlx::query_as(
         "select w.id, w.name, w.state from identity.workspace w
          where w.tenant_id = $1
-           and (w.state in ('ACTIVE', 'SUSPENDING', 'SUSPENDED', 'RESTORING')
+           and (w.state in ('ACTIVE', 'SUSPENDING', 'SUSPENDED', 'RESTORING', 'DELETING')
                 or (w.state = 'ERROR' and exists (
                       select 1 from projection.workspace_buzz_binding b where b.workspace_id = w.id)))
          order by w.id limit $2 offset $3",
@@ -552,22 +552,56 @@ pub async fn list_role_workspaces(
             WorkspaceLifecycleOffer::default()
         }
     };
+    // DD-150：删除入口要目录开放、fresh Workspace manage（上面的批量 Check）、可删除状态且
+    // 没有未终结的生命周期动作；只是提示，提交时由 Core 重新准入。判定失败只去掉删除键。
+    let delete_offered = offered(
+        &state,
+        crate::workspace_delete::ACTION,
+        crate::workspace_delete::shape,
+    )
+    .await
+    .unwrap_or(false);
+    let open_lifecycle = if delete_offered {
+        let page_ids: Vec<Uuid> = rows.iter().map(|(id, _, _)| *id).collect();
+        match state.pool.acquire().await {
+            Ok(mut conn) => {
+                crate::workspace_delete::open_lifecycle(&mut conn, ctx.tenant_id, &page_ids, true)
+                    .await
+                    .ok()
+            }
+            Err(_) => None,
+        }
+    } else {
+        None
+    };
     let mut workspaces = Vec::with_capacity(rows.len());
     for (id, name, ws_state) in rows {
         if !allowed.contains(&id.to_string()) {
             continue;
         }
         let lifecycle_action_key = lifecycle.for_state(&ws_state);
-        let ws_state = match db_enum("workspace.state", &ws_state) {
+        let delete_action_key = open_lifecycle.as_ref().is_some_and(|open| {
+            crate::workspace_delete::deletable_state(&ws_state) && !open.contains(&id)
+        });
+        let ws_state = match db_enum::<contracts::WorkspaceState>("workspace.state", &ws_state) {
             Ok(s) => s,
             Err(r) => return r,
         };
-        workspaces.push(RoleWorkspaceView {
-            id: id.to_string(),
-            name,
-            state: ws_state,
-            lifecycle_action_key,
+        let mut view = serde_json::json!({
+            "id": id.to_string(),
+            "name": name,
+            "state": ws_state,
         });
+        if let Some(key) = lifecycle_action_key {
+            view["lifecycleActionKey"] = serde_json::json!(key);
+        }
+        if delete_action_key {
+            view["deleteActionKey"] = crate::workspace_delete::ACTION.into();
+        }
+        match serde_json::from_value::<RoleWorkspaceView>(view) {
+            Ok(view) => workspaces.push(view),
+            Err(_) => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
+        }
     }
     let create_action_key = match state
         .governance

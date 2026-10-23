@@ -87,8 +87,9 @@ pub(crate) async fn converge_scope_schedules(
                 .fetch_one(&mut *tx)
                 .await?;
         let scope_valid: bool = if let Some(workspace) = workspace {
-            tenant_state=="ACTIVE" && sqlx::query_scalar("select version=$2 and state=$3 from identity.workspace where id=$1 and tenant_id=$4 for update")
-                .bind(workspace).bind(version).bind(if paused{"SUSPENDING"}else{"RESTORING"}).bind(tenant)
+            // DD-150(2)：受治理删除与暂停一样先暂停该 Workspace 的 Schedule
+            tenant_state=="ACTIVE" && sqlx::query_scalar("select version=$2 and (state=$3 or ($5 and state='DELETING')) from identity.workspace where id=$1 and tenant_id=$4 for update")
+                .bind(workspace).bind(version).bind(if paused{"SUSPENDING"}else{"RESTORING"}).bind(tenant).bind(paused)
                 .fetch_optional(&mut *tx).await?.unwrap_or(false)
         } else {
             sqlx::query_scalar("select version=$2 and (state=$3 or ($4 and state='RESTORING')) from identity.tenant where id=$1")

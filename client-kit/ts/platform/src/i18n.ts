@@ -1971,6 +1971,21 @@ export const platformMessages = {
     en: "Unarchive {name}? It reopens only after reconciliation completes. The final result is shown in Tasks.",
     "zh-CN": "取消归档 {name}？对账完成后才重新开放。最终结果请到任务页查看。",
   },
+  "channelManagement.delete": { en: "Delete channel", "zh-CN": "删除频道" },
+  "channelManagement.deleting": { en: "Deleting...", "zh-CN": "正在删除…" },
+  "channelManagement.deleteTitle": { en: "Delete channel?", "zh-CN": "删除频道？" },
+  "channelManagement.deleteDescription": {
+    en: "Delete {name} from the community list. This action cannot be undone.",
+    "zh-CN": "将 {name} 从社区频道列表中删除。此操作无法撤销。",
+  },
+  "channelManagement.deleteDetail": {
+    en: "Agents in this channel are stopped, its workflows and resources are removed, and component files are kept as each component declares. The channel stays listed as deleting until every step is confirmed; the result is shown in Tasks.",
+    "zh-CN": "频道中的 Agent 将被停用，工作流与资源将被移除，组件文件按各组件的声明保留。全部步骤确认之前频道会显示为“删除中”，最终结果请到任务页查看。",
+  },
+  "channelManagement.deleteInProgress": {
+    en: "This channel is being deleted. It disappears once every step is confirmed.",
+    "zh-CN": "该频道正在删除，全部步骤确认后才会从列表中消失。",
+  },
   "channelManagement.actionRecorded": {
     en: "Request recorded; the channel shows the change once it is confirmed. Operation: {operation}.",
     "zh-CN": "请求已登记，确认后频道才会显示该变更。操作：{operation}。",
@@ -5405,6 +5420,7 @@ export const workspaceStateMessages = {
   [WorkspaceState.Suspending]: { en: "Being suspended", "zh-CN": "正在暂停" },
   [WorkspaceState.Suspended]: { en: "Suspended", "zh-CN": "已暂停" },
   [WorkspaceState.Restoring]: { en: "Being restored", "zh-CN": "正在恢复" },
+  [WorkspaceState.Deleting]: { en: "Being deleted", "zh-CN": "正在删除" },
   [WorkspaceState.Error]: { en: "Needs attention", "zh-CN": "需要处理" },
 } as const satisfies Record<WorkspaceState, Message>;
 
@@ -5494,6 +5510,8 @@ export const evidenceKindMessages = {
   [EvidenceKind.TransferPackageDigest]: { en: "Package SHA-256", "zh-CN": "包 SHA-256" },
   [EvidenceKind.AgentVersionAssetId]: { en: "Agent version", "zh-CN": "Agent 版本" },
   [EvidenceKind.ExportPackageAssetId]: { en: "Export package", "zh-CN": "导出包" },
+  [EvidenceKind.WorkspaceLifecycleSnapshotId]: { en: "Channel deletion snapshot", "zh-CN": "频道删除快照" },
+  [EvidenceKind.ApplicationBindingId]: { en: "Component binding", "zh-CN": "组件绑定" },
   [EvidenceKind.ExternalSubjectSha256]: { en: "External account fingerprint", "zh-CN": "外部账号指纹" },
   [EvidenceKind.OriginalActionExecutionId]: { en: "Original action execution", "zh-CN": "原动作执行" },
   [EvidenceKind.PlatformSessionId]: { en: "Platform session", "zh-CN": "平台会话" },

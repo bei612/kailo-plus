@@ -124,6 +124,10 @@ class ChannelDetailsPage extends HookConsumerWidget {
     final canUnarchive =
         resolvedChannel.isArchived &&
         lifecycle == WorkspaceLifecycleActionKey.WORKSPACE_RESTORE;
+    // DD-150: the original deleteChannel over the governed workspace.delete; a converging delete
+    // keeps the channel listed as deleting instead of offering it again.
+    final deleting = hints?.deleting ?? false;
+    final canDelete = hints?.deleteActionKey != null && !deleting;
     final canJoin = hints?.joinActionKey != null;
     final canLeave = hints?.leaveActionKey != null;
     final memberCount = membersAsync.hasValue
@@ -550,7 +554,9 @@ class ChannelDetailsPage extends HookConsumerWidget {
               hintsAsync.isLoading ||
               hintsAsync.hasError ||
               canArchive ||
-              canUnarchive)
+              canUnarchive ||
+              canDelete ||
+              deleting)
             AppListCard(
               key: const ValueKey('channel-details-lifecycle-card'),
               verticalPadding: _channelDetailsSectionPadding,
@@ -673,6 +679,41 @@ class ChannelDetailsPage extends HookConsumerWidget {
                                   resolvedChannel.id,
                                   WorkspaceLifecycleActionKey.WORKSPACE_RESTORE,
                                 ),
+                              ),
+                            ),
+                    ),
+                  if (deleting)
+                    AppListRow(
+                      key: const ValueKey('channel-details-deleting'),
+                      icon: LucideIcons.loaderCircle,
+                      title: t(PlatformMessageKey.channelManagementDeleting),
+                      subtitle: t(
+                        PlatformMessageKey.channelManagementDeleteInProgress,
+                      ),
+                    ),
+                  if (canDelete)
+                    AppListRow(
+                      key: const ValueKey('channel-details-delete'),
+                      icon: LucideIcons.trash2,
+                      title: t(PlatformMessageKey.channelManagementDelete),
+                      titleColor: context.colors.error,
+                      onTap: lifecycleBusy.value
+                          ? null
+                          : () => _confirmAndRun(
+                              context,
+                              title: t(
+                                PlatformMessageKey.channelManagementDeleteTitle,
+                              ),
+                              body:
+                                  '${t(PlatformMessageKey.channelManagementDeleteDescription, {'name': resolvedChannel.name})}\n\n${t(PlatformMessageKey.channelManagementDeleteDetail)}',
+                              confirmLabel: t(
+                                PlatformMessageKey.channelManagementDelete,
+                              ),
+                              cancelLabel: t(PlatformMessageKey.buzzCancel),
+                              action: () => runLifecycle(
+                                () =>
+                                    actions().deleteChannel(resolvedChannel.id),
+                                closeWhenRecorded: true,
                               ),
                             ),
                     ),

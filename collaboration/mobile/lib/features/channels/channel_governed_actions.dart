@@ -7,7 +7,8 @@
 // channel-management-actions.ts and roles.tsx useMemberAction:
 //
 // - entries appear only for the BFF's action hints (discoverable-workspaces update/join/leave,
-//   role-workspaces lifecycle, role-members add/remove/admin); Core re-admits every submission;
+//   role-workspaces lifecycle and delete (DD-150), role-members add/remove/admin); Core re-admits
+//   every submission;
 // - a new intent is frozen with its idempotency key before it is sent; an unknown outcome keeps
 //   it and only that same command can be resent; a definite answer settles it (DD-81);
 // - recorded or approval-pending is not done: the sheet says so and the views are reread.
@@ -293,6 +294,18 @@ class ChannelGovernedActions {
     ),
   );
 
+  /// The original deleteChannel is the governed `workspace.delete` (DD-150) with explicit
+  /// confirmation; a recorded delete is not done until Core confirms every step.
+  Future<ChannelActionOutcome?> deleteChannel(String workspaceId) => submit(
+    'delete:$workspaceId',
+    (key) => ActionCommand(
+      actionKey: workspaceDeleteAction,
+      idempotencyKey: key,
+      workspaceId: workspaceId,
+      explicitConfirmation: true,
+    ),
+  );
+
   /// `workspace.member.add`, `workspace.member.revoke`, `workspace.admin.grant` or
   /// `workspace.admin.revoke` for one person.
   Future<ChannelActionOutcome?> changeMember({
@@ -313,6 +326,7 @@ class ChannelGovernedActions {
       .reverse[DiscoverableWorkspaceUpdateActionKey.WORKSPACE_UPDATE]!;
 }
 
+const workspaceDeleteAction = 'workspace.delete';
 const workspaceMemberAddAction = 'workspace.member.add';
 const workspaceMemberRevokeAction = 'workspace.member.revoke';
 const workspaceAdminGrantAction = 'workspace.admin.grant';
@@ -344,6 +358,8 @@ class ChannelManagementHints {
     this.leaveActionKey,
     this.joinActionKey,
     this.lifecycleActionKey,
+    this.deleteActionKey,
+    this.deleting = false,
   });
 
   final DiscoverableWorkspaceUpdateActionKey? updateActionKey;
@@ -355,6 +371,12 @@ class ChannelManagementHints {
   /// Original canJoin: a non-member of an open, unarchived channel.
   final DiscoverableWorkspaceJoinActionKey? joinActionKey;
   final WorkspaceLifecycleActionKey? lifecycleActionKey;
+
+  /// DD-150: the role projection offers `workspace.delete`.
+  final String? deleteActionKey;
+
+  /// DD-150: an admitted delete is still converging (role row state DELETING).
+  final bool deleting;
 }
 
 const _maxHintPages = 50;
@@ -387,6 +409,8 @@ final channelManagementHintsProvider = FutureProvider.autoDispose
         cursor = result.nextCursor;
       }
       WorkspaceLifecycleActionKey? lifecycle;
+      String? delete;
+      var deleting = false;
       try {
         int? offset;
         for (var page = 0; page < _maxHintPages; page++) {
@@ -400,6 +424,11 @@ final channelManagementHintsProvider = FutureProvider.autoDispose
               .firstOrNull;
           if (match != null) {
             lifecycle = match.lifecycleActionKey;
+            final offered = match.toJson()['deleteActionKey'];
+            delete = offered == workspaceDeleteAction
+                ? workspaceDeleteAction
+                : null;
+            deleting = match.state == WorkspaceState.DELETING;
             break;
           }
           final next = result.nextOffset;
@@ -407,11 +436,15 @@ final channelManagementHintsProvider = FutureProvider.autoDispose
           offset = next;
         }
       } on PlatformApiError catch (error) {
-        // No Tenant manage permission only removes the archive entry.
+        // No Tenant manage permission only removes the archive and delete entries.
         if (error.response.status != 403) rethrow;
       }
       if (row == null) {
-        return ChannelManagementHints(lifecycleActionKey: lifecycle);
+        return ChannelManagementHints(
+          lifecycleActionKey: lifecycle,
+          deleteActionKey: delete,
+          deleting: deleting,
+        );
       }
       return ChannelManagementHints(
         updateActionKey: row.updateActionKey,
@@ -421,6 +454,8 @@ final channelManagementHintsProvider = FutureProvider.autoDispose
             ? null
             : row.joinActionKey,
         lifecycleActionKey: lifecycle,
+        deleteActionKey: delete,
+        deleting: deleting,
       );
     }, retry: (count, error) => null);
 

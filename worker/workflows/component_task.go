@@ -747,6 +747,8 @@ func workspaceLifecycle(ctx workflow.Context, in ComponentTaskInput) error {
 		return workspaceRestore(ctx, in)
 	case scopeOperationMetadata:
 		return workspaceMetadata(ctx, in)
+	case scopeOperationDelete:
+		return workspaceDelete(ctx, in)
 	default:
 		return temporal.NewNonRetryableApplicationError(
 			"WORKSPACE_LIFECYCLE 的 operation 未实现", activities.ErrTypeRejected, nil)
@@ -871,6 +873,61 @@ func workspaceRestore(ctx workflow.Context, in ComponentTaskInput) error {
 		return failScope(ctx, t, scopeWorkspace, s, err)
 	}
 	return transitionScope(ctx, t, scopeWorkspace, s, "ACTIVE")
+}
+
+// workspaceDelete 把一个已在 Core 置为 DELETING 的 Workspace 按准入冻结的
+// WorkspaceLifecycleSnapshot 收尾到 DELETED（DD-150(2)、V-SCN-247）。
+//
+// 删除链的每一段（停用 Installation、Schedule/Huddle/roster 收尾与 CONTROL 9008、SpiceDB
+// relationship 删除、Core 墓碑）都由 Core 在同一推进入口里按回读事实判定，Workflow 只携带冻结
+// 引用并按轮推进：PENDING 等下一轮，DELETED 才完成。删除不可逆，没有 ERROR 回退：任何一段
+// 未确认都保持 DELETING，以同一冻结意图重试；Core 的确定拒绝（快照或版本不符）才失败。
+func workspaceDelete(ctx workflow.Context, in ComponentTaskInput) error {
+	s := in.Scope
+	if s.SnapshotID == "" {
+		return temporal.NewNonRetryableApplicationError(
+			"WORKSPACE_LIFECYCLE DELETE 缺少冻结的 snapshot", activities.ErrTypeRejected, nil)
+	}
+	t := newTask(ctx, in)
+	if err := t.begin(); err != nil {
+		return t.fail(err)
+	}
+	ao := workflow.WithActivityOptions(ctx, activityOptions())
+	for {
+		if temporal.IsCanceledError(ctx.Err()) {
+			return t.fail(temporal.NewCanceledError())
+		}
+		var out activities.WorkspaceDeleteAdvanceResult
+		err := workflow.ExecuteActivity(ao, (*activities.CoreAPI).AdvanceWorkspaceDelete,
+			activities.WorkspaceDeleteAdvanceInput{
+				WorkspaceID:      s.ID,
+				WorkspaceVersion: s.Version,
+				SnapshotID:       s.SnapshotID,
+			}).Get(ctx, &out)
+		switch {
+		case err == nil && out.State == activities.WorkspaceDeleted && out.SnapshotID == s.SnapshotID:
+			workflow.GetLogger(ctx).Info("Workspace 已删除", "workspace", s.ID)
+			return t.complete()
+		case err == nil && out.State != activities.WorkspaceDeletePending:
+			return t.fail(temporal.NewNonRetryableApplicationError(
+				"Workspace 删除推进回传未知状态", activities.ErrTypeRejected, nil))
+		case err != nil && (activities.IsDeterministicFailure(err) || temporal.IsCanceledError(err)):
+			return t.fail(err)
+		}
+		workflow.GetLogger(ctx).Warn("Workspace 删除尚未全部确认，等待下一轮",
+			"stage", out.Stage, "error", err)
+		reason := "PENDING_EXTERNAL"
+		// 等待原因写不进去不阻塞收尾本身：下一轮会再写
+		_ = t.project(ctx, generated.TaskStatusRUNNING, &reason).Get(ctx, nil)
+		if err := workflow.Sleep(ctx, retry.RoundInterval); err != nil {
+			return t.fail(err)
+		}
+		if workflow.GetInfo(ctx).GetContinueAsNewSuggested() {
+			next := in
+			next.EventBase = eventID(ctx, in)
+			return workflow.NewContinueAsNewError(ctx, ComponentTask, next)
+		}
+	}
 }
 
 // metadataRounds 是 METADATA 段签发轮数的上界（DD-119(3)）：回读未达目标时以

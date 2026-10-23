@@ -13,13 +13,15 @@
 // (name, description, TTL as the "Channel type" row, visibility) as one workspace.update with
 // only the changed fields, or reopen alone when canReopen; leaveActionKey → Leave
 // (workspace.leave); joinActionKey → Join (workspace.join, original canJoin row); lifecycleActionKey → Archive/Unarchive (workspace.suspend/restore, DD-46);
-// the member topic is the host's own-identity publication. Delete has no governed path (DD-46),
-// and stream/forum type is fixed at creation, so neither is rendered.
+// the member topic is the host's own-identity publication. Delete is the original
+// ChannelDeleteConfirmationDialog over the governed workspace.delete (DD-150), shown only for the
+// role projection's deleteActionKey; a recorded delete keeps the channel listed as deleting until
+// Core confirms every step. Stream/forum type is fixed at creation and is not rendered.
 import * as React from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import {
   Archive, ArchiveRestore, BookOpenText, Check, ChevronRight, Copy, DoorClosed, DoorOpen, Info, MessageSquare, Pencil, Plus,
-  Workflow as WorkflowIcon, type LucideIcon,
+  Trash2, Workflow as WorkflowIcon, type LucideIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -52,9 +54,10 @@ import { ChannelCanvas, canEditChannelCanvas, getMarkdownPreviewText, useChannel
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./sidebar/tooltip";
 import { CHANNEL_FORM_FIELD_CONTROL_CLASS, CHANNEL_FORM_FIELD_SHELL_CLASS } from "./roles";
 import {
-  CHANNEL_CONVERGENCE_REREAD_MS, channelActionOutcomeText, channelManagementQueryKey, useChannelManagementHints,
+  CHANNEL_CONVERGENCE_REREAD_MS, WORKSPACE_DELETE_ACTION, channelActionOutcomeText, channelManagementQueryKey, useChannelManagementHints,
   useGovernedChannelAction, useTopicPublication, type ChannelActionOutcome, type ChannelManagementHost,
 } from "./channel-management-actions";
+import { ChannelDeleteDialog } from "./channel-delete-dialog";
 
 export type { ChannelManagementHost } from "./channel-management-actions";
 
@@ -199,6 +202,9 @@ export function ChannelManagementSheet({ open, onOpenChange, roster, channel, is
   const update = useGovernedChannelAction(readBack);
   const reopen = useGovernedChannelAction(readBack);
   const lifecycle = useGovernedChannelAction(readBack);
+  // DD-150: the delete row follows the role projection's hint; a recorded delete is not done.
+  const remove = useGovernedChannelAction(readBack);
+  const [confirmDelete, setConfirmDelete] = React.useState(false);
   const leave = useGovernedChannelAction(() => {
     readBack();
     void queryClient.invalidateQueries({ queryKey: rosterQueryKey(roster) });
@@ -319,6 +325,15 @@ export function ChannelManagementSheet({ open, onOpenChange, roster, channel, is
     const result = await lifecycle.submit({ actionKey: lifecycleAction, workspaceId });
     if (result && result.kind !== "unknown") setConfirmLifecycle(false);
   }
+  const deleting = hints?.deleting === true || remove.outcome?.kind === "recorded" || remove.outcome?.kind === "waiting";
+  const showDelete = !deleting && (hints?.deleteActionKey !== undefined || remove.intent !== null);
+  async function handleDelete() {
+    if (workspaceId === undefined) return;
+    const result = await remove.submit({ actionKey: WORKSPACE_DELETE_ACTION, workspaceId, explicitConfirmation: true });
+    if (result && result.kind !== "unknown" && result.kind !== "rejected") setConfirmDelete(false);
+  }
+  const deleteProblem = remove.outcome?.kind === "unknown" || remove.outcome?.kind === "rejected" || remove.outcome?.kind === "aborted"
+    ? channelActionOutcomeText(t, remove.outcome) : null;
   const showJoin = !archived && (hints?.joinActionKey !== undefined || join.intent !== null);
   const showLeave = canLeave || leave.intent !== null;
   const showReopen = canReopen || reopen.intent !== null;
@@ -426,7 +441,13 @@ export function ChannelManagementSheet({ open, onOpenChange, roster, channel, is
                     />
                   ) : null}
 
-                  {showJoin || showLeave || showReopen || showLifecycle ? (
+                  {deleting ? (
+                    <p className="rounded-lg bg-warning-soft px-3 py-2 text-sm text-warning-text" data-testid="channel-management-deleting" role="status">
+                      {t("channelManagement.deleteInProgress")}
+                    </p>
+                  ) : null}
+
+                  {showJoin || showLeave || showReopen || showLifecycle || showDelete ? (
                     <PanelSectionGroup testId="channel-management-actions">
                       {showJoin ? (
                         <ActionFieldRow description={t("channelManagement.joinDescription")} disabled={join.busy} icon={DoorOpen}
@@ -452,6 +473,12 @@ export function ChannelManagementSheet({ open, onOpenChange, roster, channel, is
                           }}
                           testId={suspending ? "channel-management-archive" : "channel-management-unarchive"} />
                       ) : null}
+                      {showDelete ? (
+                        <ActionFieldRow destructive disabled={remove.busy} icon={Trash2}
+                          label={t(remove.busy ? "channelManagement.deleting" : remove.unknown ? "workspace.lifecycle.retry" : "channelManagement.delete")}
+                          onClick={() => { if (!remove.unknown) remove.dismiss(); setConfirmDelete(true); }}
+                          testId="channel-management-delete" />
+                      ) : null}
                     </PanelSectionGroup>
                   ) : null}
 
@@ -476,6 +503,8 @@ export function ChannelManagementSheet({ open, onOpenChange, roster, channel, is
                   <ActionOutcome outcome={join.outcome} testId="channel-management-join-outcome" />
                   <ActionOutcome outcome={leave.outcome} testId="channel-management-leave-outcome" />
                   <ActionOutcome outcome={lifecycle.outcome} testId="channel-management-lifecycle-outcome" />
+                  {remove.outcome?.kind === "recorded" || remove.outcome?.kind === "waiting"
+                    ? <ActionOutcome outcome={remove.outcome} testId="channel-management-delete-outcome" /> : null}
                 </div>}
               </AuxiliaryPanelBody>
             </AuxiliaryPanelContext.Provider>
@@ -581,6 +610,18 @@ export function ChannelManagementSheet({ open, onOpenChange, roster, channel, is
             </div>
           </DialogContent>
         </Dialog>
+      ) : null}
+
+      {showDelete || remove.intent !== null ? (
+        <ChannelDeleteDialog
+          channelName={channel.name}
+          onConfirm={() => { void handleDelete(); }}
+          onOpenChange={setConfirmDelete}
+          open={confirmDelete}
+          pending={remove.busy}
+          problem={deleteProblem}
+          unknown={remove.unknown}
+        />
       ) : null}
 
       {canEditTopic || topic.intent ? (

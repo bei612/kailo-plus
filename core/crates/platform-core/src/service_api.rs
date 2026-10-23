@@ -155,6 +155,11 @@ pub fn router(state: ServiceState) -> Router {
             "/service/v1/workspaces/channel-archive",
             post(crate::tenant_lifecycle::converge_workspace_channel_archive),
         )
+        // DD-150：workspace.delete 的 DELETE 段，按冻结快照逐项收尾并回读确认
+        .route(
+            "/service/v1/workspaces/delete-advance",
+            post(crate::workspace_delete::advance),
+        )
         // DD-119：workspace.update 的 METADATA 段，CONTROL 9002 回读收敛名称/描述/TTL
         .route(
             "/service/v1/workspaces/channel-metadata",

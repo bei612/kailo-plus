@@ -420,7 +420,25 @@ pub(crate) async fn launch_scope(
         tracing::warn!(state = %scope_state, operation = ?req.operation, "scope 不在该段的收敛中状态，不启动");
         return Err(StatusCode::CONFLICT.into_response());
     }
-    let snapshot_id = if req.operation == ScopeOperation::Delete {
+    let snapshot_id = if req.operation == ScopeOperation::Delete
+        && matches!(req.kind, crate::scope_state::ScopeKind::Workspace)
+    {
+        // DD-150：Workspace 的 DELETE 段只携带准入冻结的 WorkspaceLifecycleSnapshot
+        let frozen = crate::workspace_delete::frozen_snapshot(
+            pool,
+            req.action_execution_id,
+            tenant_id,
+            req.id,
+            version,
+        )
+        .await
+        .map_err(unavailable)?;
+        Some(
+            frozen
+                .ok_or_else(|| StatusCode::FORBIDDEN.into_response())?
+                .to_string(),
+        )
+    } else if req.operation == ScopeOperation::Delete {
         if !matches!(req.kind, crate::scope_state::ScopeKind::Tenant) {
             return Err(StatusCode::FORBIDDEN.into_response());
         }

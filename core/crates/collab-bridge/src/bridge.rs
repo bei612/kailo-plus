@@ -40,6 +40,7 @@ const KIND_CHANNEL_MEMBERS: u16 = 39002;
 const KIND_CHANNEL_MESSAGE: u16 = 9;
 const KIND_CHANNEL_CREATE: u16 = 9007;
 const KIND_CHANNEL_EDIT_METADATA: u16 = 9002;
+const KIND_CHANNEL_DELETE: u16 = 9008;
 const KIND_CHANNEL_METADATA: u16 = 39000;
 
 /// Contract mirrors the pinned SDK's character bound; no client-specific limit.
@@ -1431,6 +1432,15 @@ impl IdentityClient {
         self.publish(http, KIND_CHANNEL_EDIT_METADATA, "", &tags)
             .await?;
         Ok(self.channel_archived(http, channel_id).await? == Some(archived))
+    }
+
+    /// 签一条删除 Channel 的 kind 9008（DD-150(2)：只含 `h`，只限 Channel owner，CONTROL 是
+    /// 创建者）。只签名不发送：调用方先落 DISPATCH 审计，再经 [`IdentityClient::deliver`] 投递，
+    /// 判据是回读的 kind 39000 discovery 已不存在（Relay 软删除 Channel 并清理其 discovery）。
+    /// 已归档的 Channel 拒绝除解档外的变更，调用方须先解档。
+    pub fn sign_channel_delete(&self, channel_id: &str) -> Result<Event, OperatorError> {
+        let tags = [vec!["h".to_owned(), channel_id.to_owned()]];
+        self.sign(KIND_CHANNEL_DELETE, "", &tags)
     }
 
     /// 从 kind 39000 discovery 读 Channel 是否已归档。读不到该 Channel 的 discovery

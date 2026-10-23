@@ -1,19 +1,19 @@
 capability_id: collab.channel.management
-title: 原版频道管理入口经 Core：workspace.update 以 Tenant CONTROL 9002 回读收敛名称/描述/TTL 与 TTL 到期解档并在回读一致后提交 Core 名称，可见性只改 Core 事实；workspace.leave 复用撤员链；成员主题以本人 SERVER 身份发布；频道 Canvas 经 workspace.canvas.set 由 CONTROL 签 40100（正文不进 Core、按事件 ID 对账），读取只采纳 CONTROL 作者的最新一条（DD-125(4)）
+title: 原版频道管理入口经 Core：workspace.update 以 Tenant CONTROL 9002 回读收敛名称/描述/TTL 与 TTL 到期解档并在回读一致后提交 Core 名称，可见性只改 Core 事实；workspace.leave 复用撤员链；成员主题以本人 SERVER 身份发布；频道 Canvas 经 workspace.canvas.set 由 CONTROL 签 40100（正文不进 Core、按事件 ID 对账），读取只采纳 CONTROL 作者的最新一条（DD-125(4)）；频道删除经 workspace.delete 按冻结快照逐项收尾（停用 Installation、CONTROL 9008 回读、SpiceDB 关系删除、Core 墓碑，组件数据按声明保留并审计），未全部确认前保持 DELETING（DD-150）
 stage: S1
 status: in_progress
 exposure: end_user
 
 design:
   requirements: [V-REQ-24]
-  decisions: [DD-119, DD-46, DD-80, DD-81, DD-125]
+  decisions: [DD-119, DD-46, DD-80, DD-81, DD-125, DD-150]
   facts: [SF-BUZ-50, SF-BUZ-15, SF-BUZ-54]
   seams: []
   blockers: []
   entities: [Workspace, WorkspaceMembership, WorkspaceBuzzBinding, ActionDefinition, ActionExecution, WorkflowRef, TaskProjection, AuditEvent, BuzzIdentityBinding]
 
 validation:
-  scenarios: [V-SCN-94, V-SCN-95, V-SCN-96, V-SCN-97, V-SCN-98, V-SCN-99, V-SCN-135, V-SCN-136]
+  scenarios: [V-SCN-94, V-SCN-95, V-SCN-96, V-SCN-97, V-SCN-98, V-SCN-99, V-SCN-135, V-SCN-136, V-SCN-247, V-SCN-248]
   evidence:
     - dimension: 领域规则
       ref: core/crates/platform-core/src/workspace_update.rs
@@ -27,18 +27,24 @@ validation:
       ref: core/crates/platform-core/src/workspace_canvas.rs
     - dimension: 端到端场景
       ref: client-kit/ts/platform/test/channel-canvas.test.tsx
+    - dimension: 领域规则
+      ref: core/crates/platform-core/src/workspace_delete.rs
+    - dimension: 故障与恢复
+      ref: worker/workflows/workspace_delete_test.go
+    - dimension: 端到端场景
+      ref: client-kit/ts/platform/test/channel-delete.test.tsx
 
 implementation:
   owners: [team-platform]
-  paths: [core/crates/platform-core/src/workspace_update.rs, core/crates/platform-core/src/governance.rs, core/crates/platform-core/src/platform_views.rs, core/crates/platform-core/src/web_transport.rs, core/crates/platform-core/src/publish_reconcile.rs, core/crates/platform-core/src/task_rerun.rs, core/crates/collab-bridge/src/bridge.rs, worker/workflows/component_task.go, worker/workflows/workspace_metadata_test.go, worker/activities/core_api.go, core/crates/platform-core/src/workspace_canvas.rs, core/crates/platform-core/src/governance_api.rs, client-kit/ts/platform/src/react/channel-canvas.tsx, client-kit/ts/platform/src/react/channel-management-sheet.tsx, client-kit/ts/platform/src/react/channel-templates/applyChannelTemplate.ts, collaboration/desktop/src/features/sidebar/ui/AppSidebar.tsx]
+  paths: [core/crates/platform-core/src/workspace_update.rs, core/crates/platform-core/src/workspace_delete.rs, core/crates/platform-core/src/agent_installation/lifecycle.rs, core/crates/platform-core/src/automation/schedule.rs, worker/workflows/workspace_delete_test.go, collaboration/mobile/lib/features/channels/channel_details_page.dart, collaboration/mobile/lib/features/channels/channel_governed_actions.dart, core/crates/platform-core/src/governance.rs, core/crates/platform-core/src/platform_views.rs, core/crates/platform-core/src/web_transport.rs, core/crates/platform-core/src/publish_reconcile.rs, core/crates/platform-core/src/task_rerun.rs, core/crates/collab-bridge/src/bridge.rs, worker/workflows/component_task.go, worker/workflows/workspace_metadata_test.go, worker/activities/core_api.go, core/crates/platform-core/src/workspace_canvas.rs, core/crates/platform-core/src/governance_api.rs, client-kit/ts/platform/src/react/channel-canvas.tsx, client-kit/ts/platform/src/react/channel-management-sheet.tsx, client-kit/ts/platform/src/react/channel-templates/applyChannelTemplate.ts, collaboration/desktop/src/features/sidebar/ui/AppSidebar.tsx]
   # 本批只交付后端；Web/Desktop 共用的设置入口随客户端批次接入
-  surfaces: [web, desktop]
-  schemas: [contracts/domain/workspace_update.schema.json, contracts/api/action_command.schema.json, contracts/api/discoverable_workspace.schema.json, contracts/api/web_channel_view.schema.json, contracts/api/web_publish_topic_request.schema.json, contracts/domain/workspace_canvas_set_input.schema.json, contracts/api/web_channel_canvas_view.schema.json]
-  migrations: [core/migrations/20261016130000_workspace_channel_management.up.sql, core/migrations/20261016130000_workspace_channel_management.down.sql, core/migrations/20261016131000_publish_channel_topic_kind.up.sql, core/migrations/20261016131000_publish_channel_topic_kind.down.sql, core/migrations/20261019210000_workspace_canvas.up.sql, core/migrations/20261019210000_workspace_canvas.down.sql]
+  surfaces: [web, desktop, mobile]
+  schemas: [contracts/domain/workspace_update.schema.json, contracts/api/action_command.schema.json, contracts/api/discoverable_workspace.schema.json, contracts/api/web_channel_view.schema.json, contracts/api/web_publish_topic_request.schema.json, contracts/domain/workspace_canvas_set_input.schema.json, contracts/api/web_channel_canvas_view.schema.json, contracts/api/role_workspace_page.schema.json, contracts/enums/workspace_state.schema.json, contracts/enums/evidence_kind.schema.json]
+  migrations: [core/migrations/20261016130000_workspace_channel_management.up.sql, core/migrations/20261016130000_workspace_channel_management.down.sql, core/migrations/20261016131000_publish_channel_topic_kind.up.sql, core/migrations/20261016131000_publish_channel_topic_kind.down.sql, core/migrations/20261019210000_workspace_canvas.up.sql, core/migrations/20261019210000_workspace_canvas.down.sql, core/migrations/20261029010000_workspace_delete.up.sql, core/migrations/20261029010000_workspace_delete.down.sql]
 
 runtime:
-  routes: ["/api/v1/actions", "/api/v1/discoverable-workspaces", "/api/v1/workspaces/{workspace_id}/channel", "/api/v1/workspaces/{workspace_id}/channel/topic", "/api/v1/workspaces/{workspace_id}/canvas", "/service/v1/workspaces/channel-metadata"]
-  actions: [workspace.update, workspace.leave, workspace.channel.topic.publish, workspace.canvas.set]
+  routes: ["/api/v1/actions", "/api/v1/discoverable-workspaces", "/api/v1/workspaces/{workspace_id}/channel", "/api/v1/workspaces/{workspace_id}/channel/topic", "/api/v1/workspaces/{workspace_id}/canvas", "/service/v1/workspaces/channel-metadata", "/service/v1/workspaces/delete-advance", "/api/v1/role-workspaces"]
+  actions: [workspace.update, workspace.leave, workspace.channel.topic.publish, workspace.canvas.set, workspace.delete]
   workflow_kinds: [WORKSPACE_LIFECYCLE, MEMBERSHIP_REVOCATION]
 
 release:

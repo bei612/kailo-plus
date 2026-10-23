@@ -132,6 +132,7 @@ mod web_profile;
 mod web_transport;
 mod workflow_reconcile;
 mod workspace_canvas;
+mod workspace_delete;
 mod workspace_update;
 
 use std::net::SocketAddr;

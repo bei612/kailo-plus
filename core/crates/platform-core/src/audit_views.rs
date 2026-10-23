@@ -553,6 +553,38 @@ async fn evidence_existence(
             .await?;
             return Ok(present(found.is_some()));
         }
+        // DD-150：删除快照由同 Tenant、同 operation 的 workspace.delete 持有；保留的组件 binding
+        // 按同 Tenant 的 binding 行判定（binding 行作为历史引用保留）。
+        K::WorkspaceLifecycleSnapshotId => {
+            let Ok(id) = Uuid::parse_str(&e.value) else {
+                return Ok(Existence::Absent);
+            };
+            let found = sqlx::query_scalar::<_, i32>(
+                "select 1 from admission.workspace_lifecycle_snapshot s
+                 join admission.action_execution ae on ae.id = s.action_execution_id
+                 where s.id = $1 and s.tenant_id = $2 and ae.tenant_id = $2
+                   and ae.operation_id = $3",
+            )
+            .bind(id)
+            .bind(tenant_id)
+            .bind(operation_id)
+            .fetch_optional(&state.pool)
+            .await?;
+            return Ok(present(found.is_some()));
+        }
+        K::ApplicationBindingId => {
+            let Ok(id) = Uuid::parse_str(&e.value) else {
+                return Ok(Existence::Absent);
+            };
+            let found = sqlx::query_scalar::<_, i32>(
+                "select 1 from catalog.application_binding where id = $1 and tenant_id = $2",
+            )
+            .bind(id)
+            .bind(tenant_id)
+            .fetch_optional(&state.pool)
+            .await?;
+            return Ok(present(found.is_some()));
+        }
         K::AgentVersionAssetId => {
             let Ok(id) = Uuid::parse_str(&e.value) else {
                 return Ok(Existence::Absent);

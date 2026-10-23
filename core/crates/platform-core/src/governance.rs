@@ -484,6 +484,10 @@ pub enum Semantic {
     /// Workspace，准入落定即置 SUSPENDING/RESTORING，由 WORKSPACE_LIFECYCLE 收敛。
     WorkspaceSuspend,
     WorkspaceRestore,
+    /// 受治理的频道删除（DD-150）：从 Tenant scope 指向 Workspace、在其上检查 manage，准入
+    /// 落定即置 DELETING 并冻结 WorkspaceLifecycleSnapshot，由 WORKSPACE_LIFECYCLE 的 DELETE
+    /// 段逐项收尾到 DELETED。
+    WorkspaceDelete,
     /// 受治理的频道编辑（DD-119）：执行 Workspace 即目标，manage@workspace；可见性在
     /// 准入事务内改写，名称/描述/TTL/reopen 由 WORKSPACE_LIFECYCLE 的 METADATA 段收敛。
     WorkspaceUpdate,
@@ -587,6 +591,7 @@ impl Semantic {
             "workspace.join" => Self::WorkspaceJoin,
             "workspace.suspend" => Self::WorkspaceSuspend,
             "workspace.restore" => Self::WorkspaceRestore,
+            "workspace.delete" => Self::WorkspaceDelete,
             "workspace.update" => Self::WorkspaceUpdate,
             "workspace.leave" => Self::WorkspaceLeave,
             "tenant.suspend" => Self::TenantSuspend,
@@ -758,6 +763,7 @@ impl Semantic {
                 self,
                 Self::TenantMemberRevoke
                     | Self::WorkspaceJoin
+                    | Self::WorkspaceDelete
                     | Self::ConversationOpen
                     | Self::TenantDelete
                     | Self::TenantQuotaSet
@@ -820,6 +826,7 @@ impl Semantic {
             || matches!(
                 self,
                 Self::SecretRefRehome
+                    | Self::WorkspaceDelete
                     | Self::LlmRouteCreate
                     | Self::LlmRouteDisable
                     | Self::TenantSuspend
@@ -1898,6 +1905,8 @@ fn parse_command(sem: Semantic, cmd: &contracts::ActionCommand) -> Result<Params
                 && p.slug.is_none()
                 && p.name.is_none()
         }
+        // 删除只指向一个 Workspace 并带显式确认（DD-150(1)）
+        Semantic::WorkspaceDelete => crate::workspace_delete::params_valid(&p),
         // 暂停与恢复只指向一个 Workspace；它不是执行 Workspace（TENANT_ONLY）
         Semantic::WorkspaceSuspend | Semantic::WorkspaceRestore => {
             p.workspace_id.is_some()
@@ -2576,6 +2585,9 @@ async fn resolve_target(
         Semantic::WorkspaceUpdate => {
             crate::workspace_update::target(conn, tenant, def, p, frozen, lock).await
         }
+        Semantic::WorkspaceDelete => {
+            crate::workspace_delete::target(conn, tenant, def, p, frozen, lock).await
+        }
         Semantic::WorkspaceJoin
         | Semantic::WorkspaceLeave
         | Semantic::WorkspaceMemberAdd
@@ -3047,12 +3059,17 @@ impl Governance {
                 "agent.delegation.grant" | "agent.delegation.revoke"
             )
         {
-            let ws_active: Option<i32> = sqlx::query_scalar(
-                "select 1 from identity.workspace
-                 where id = $1 and tenant_id = $2 and state = 'ACTIVE'",
-            )
+            // DD-150(2)：受治理删除中的 Workspace 只接受其 Installation 的停用（删除链第 1 段
+            // 沿既有停用链）；其余 Workspace scope 的新动作照常拒绝
+            let ws_active: Option<i32> = sqlx::query_scalar(&format!(
+                "select 1 from identity.workspace w
+                 where w.id = $1 and w.tenant_id = $2
+                   and (w.state = 'ACTIVE' or ($3 and {}))",
+                crate::workspace_delete::DELETING_WITH_SNAPSHOT
+            ))
             .bind(target.workspace_id)
             .bind(actor.tenant_id)
+            .bind(def.action_key == crate::agent_installation::lifecycle::DISABLE_ACTION)
             .fetch_optional(&self.pool)
             .await?;
             if ws_active.is_none() {
@@ -5654,6 +5671,7 @@ impl Governance {
             || sem == Semantic::AgentDefinitionExport
             || sem == Semantic::WorkspaceJoin
             || sem == Semantic::WorkspaceUpdate
+            || sem == Semantic::WorkspaceDelete
             || sem.is_application_binding()
             || sem.is_installation_permission()
             || sem.is_capability_contract()
@@ -6094,6 +6112,8 @@ impl Governance {
                 .await?;
                 version
             }
+            // DD-150(1)：先关门再收尾，同一事务置 DELETING 并冻结 WorkspaceLifecycleSnapshot
+            Semantic::WorkspaceDelete => crate::workspace_delete::prewrite(tx, ae, &target).await?,
             // 先关门再收敛：SUSPENDING 即使该 Workspace scope fail closed，Workflow
             // 随后才 archive Channel（.design/06 §7.3）。条件更新只在状态与版本都未
             // 变时成立，不成立即按目标事实已变拒绝
@@ -7803,6 +7823,11 @@ impl Governance {
                     &ScopeLifecycleRequest { kind: ScopeKind::Tenant, id: ae.target_id,
                         action_execution_id: ae.id, operation: ScopeOperation::Delete },
                 ).await,
+                Semantic::WorkspaceDelete => launch_scope(
+                    &self.pool, &self.temporal,
+                    &ScopeLifecycleRequest { kind: ScopeKind::Workspace, id: ae.target_id,
+                        action_execution_id: ae.id, operation: ScopeOperation::Delete },
+                ).await,
                 Semantic::WorkspaceCreate
                 | Semantic::WorkspaceSuspend
                 | Semantic::WorkspaceRestore => {
@@ -7918,6 +7943,12 @@ impl Governance {
             record_dispatch(&mut tx, ae.id, def.audit_class(), outcome, Vec::new()).await?;
         // Workspace 生命周期段不会再有 Workflow 把它带出 SUSPENDING/RESTORING：与
         // 中止同事务置 ERROR（version+1），留下确定状态，管理员可从 ERROR 重新暂停
+        if recorded.settled
+            && recorded.outcome == Dispatch::Aborted
+            && sem == Semantic::WorkspaceDelete
+        {
+            crate::workspace_delete::abort(&mut tx, &ae).await?;
+        }
         if recorded.settled && recorded.outcome == Dispatch::Aborted {
             if let Some((_, converging, _)) = sem.workspace_segment() {
                 sqlx::query(

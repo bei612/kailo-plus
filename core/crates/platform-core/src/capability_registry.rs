@@ -101,7 +101,9 @@ mod tests {
         assert!(route_exposed(
             "/api/v1/workspaces/{workspace_id}/channel/topic"
         ));
-        assert!(!action_exposed("workspace.delete"));
+        // DD-150：频道删除经受治理的 workspace.delete 开放（修订 DD-46 的排除）
+        assert!(action_exposed("workspace.delete"));
+        assert!(route_exposed("/service/v1/workspaces/delete-advance"));
         assert!(action_exposed("tenant.suspend"));
         assert!(action_exposed("tenant.restore"));
         assert!(route_exposed("/api/v1/platform/tenants"));
