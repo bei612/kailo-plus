@@ -1,0 +1,53 @@
+capability_id: files.native_editing
+title: Cells 原生页内以 ONLYOFFICE DocumentServer 编辑（服务原生页内容，授权以 Cells ACL 为准）
+stage: EXT-FILE
+status: in_progress
+exposure: none
+
+design:
+  requirements: [V-REQ-16]
+  decisions: [DD-132, DD-35]
+  # DD-132 扩展的 DD-30/33/103（EXT-FILE 能力契约段）与 DD-127（EXT-BASE 原生页面入口）
+  # 由其各自记录关联；A 期不产生 ProtocolSession、平台 Action、Audit 或 usage。
+  facts: [SF-CEL-04, SF-CEL-05, SF-CEL-07, SF-CEL-11, SF-OFF-03, SF-OFF-07, SF-OFF-08, SF-OFF-10, SF-OFF-11]
+  seams: [SS-CEL-EDITOR, SS-OFF-WOPI]
+  blockers: []
+  entities: []
+
+validation:
+  # 场景只关联实现；V-SCN-186..190 尚未在部署实例上验收。
+  scenarios: [V-SCN-186, V-SCN-187, V-SCN-188, V-SCN-189, V-SCN-190]
+  evidence:
+    - dimension: 上游接缝
+      ref: document-editor/fork/verify/wopi-permissions.md
+    - dimension: 上游接缝
+      ref: document-editor/fork/verify/hybrid-build.md
+    - dimension: 安全边界
+      ref: file-storage/fork/verify/onlyoffice-native-editing.md
+
+implementation:
+  owners: [team-capabilities]
+  paths:
+    - document-editor/fork/packaging/Dockerfile
+    - document-editor/fork/packaging/runtime-config.py
+    - document-editor/fork/packaging/nginx/includes/ds-docservice.conf
+    - document-editor/fork/packaging/legal-render.py
+    - document-editor/fork/packaging/kailo-themes.py
+    - document-editor/fork/packaging/kailo-fonts.py
+    - document-editor/fork/packaging/brand-scan.py
+    - document-editor/deploy/compose.yaml
+    - document-editor/deploy/start.sh
+    - document-editor/deploy/local.template.json
+    - deploy/components/native-config.py
+    - deploy/components/component-deploy.sh
+    - deploy/components/document-editor.env.template
+    - file-storage/gateway/restv2/editor-onlyoffice.go
+    - file-storage/gateway/wopi/native-editor.go
+    - file-storage/frontend/assets/editor.onlyoffice/res/js/editor.js
+    - file-storage/frontend/assets/editor.onlyoffice/res/js/launch.js
+    - file-storage/deploy/reconcile.py
+  surfaces: [web, desktop]
+
+release:
+  artifacts: []
+  gate: blocked_until_seams_closed

@@ -327,6 +327,13 @@ define([
                     if ( obj != 'error' ) {
                         parse_themes_object(obj);
                         check_launched_custom_theme();
+                        // Kailo DD-132(7)③: a Kailo theme named in the URL is a custom
+                        // theme the editor has never stored; apply its colours now.
+                        const launched = window.uitheme.id;
+                        if ( me.locked && /^theme-kailo-(light|dark)$/.test(launched) && themes_map[launched] ) {
+                            apply_theme.call(me, launched);
+                            Common.NotificationCenter.trigger('uitheme:changed', launched);
+                        }
                     } else {
                         console.warn('failed to load/parse themes.json');
                     }
@@ -472,9 +479,20 @@ define([
 
 
                 Common.Gateway.on('opendocument', on_document_open.bind(this));
+                // Kailo DD-132(7)③: a host-chosen Kailo theme (uitheme=theme-kailo-*) is
+                // switched only by the host; the editor offers no theme choice then.
+                const kailo_theme = /^theme-kailo-(light|dark)$/;
+                if ( /[?&]uitheme=theme-kailo-(light|dark)(&|$)/.test(window.location.search) )
+                    this.locked = true;
                 $(window).on('storage', function (e) {
                     if ( e.key == 'ui-theme-id' && !Common.Controllers.Desktop.isActive() ) {
-                        if ( !!e.originalEvent.newValue ) {
+                        const value = e.originalEvent.newValue;
+                        if ( this.locked && kailo_theme.test(value || '') && themes_map[value] ) {
+                            // Written by the WOPI page on a Kailo_Presentation host message.
+                            apply_theme.call(this, value);
+                            Common.NotificationCenter.trigger('uitheme:changed', value);
+                        } else
+                        if ( !!value ) {
                             refresh_theme.call(this);
                         }
                     } else
@@ -637,7 +655,8 @@ define([
                     if (!theme_props[prop]) {
                         theme_props[prop] = {
                             size: document.documentElement.style.getPropertyValue("--font-size-base-app-custom") || window.getComputedStyle(document.body).getPropertyValue("--font-size-base") || '11px',
-                            name: document.documentElement.style.getPropertyValue("--font-family-base-custom") || 'Arial, Helvetica, "Helvetica Neue", sans-serif'
+                            name: document.documentElement.style.getPropertyValue("--font-family-base-custom") ||
+                                    window.getComputedStyle(document.body).getPropertyValue("--font-family-base").trim() || 'Arial, Helvetica, "Helvetica Neue", sans-serif'
                         };
                     }
                 } else if (prop==='tab-style') {

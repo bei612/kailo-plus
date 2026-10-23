@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<!--
+  Kailo document-editor legal notices (DD-132(7)②): AGPLv3 §5(d) Appropriate
+  Legal Notices, §13 source offer and the Additional Terms 1-5 of the pinned
+  LICENSE. Every build placeholder is written when the image is built
+  (legal-render.py). Not a product or About page.
+-->
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>开源许可与法律声明 · Open-source licenses and legal notices</title>
+<style>
+  body { font-family: "Inter Variable", Inter, "Segoe UI", sans-serif; max-width: 46rem; margin: 2rem auto; padding: 0 1rem; line-height: 1.6; color: #24292e; }
+  h1 { font-size: 1.4rem; } h2 { font-size: 1.1rem; margin-top: 1.6rem; }
+  code { background: #f0f0f0; padding: 0 .3rem; border-radius: 4px; }
+</style>
+</head>
+<body>
+<h1>开源许可与法律声明</h1>
+<p>@BUILD_DISPLAY_NAME@ 的文档编辑器基于 Ascensio System SIA 开发的原始 ONLYOFFICE 软件（ONLYOFFICE Docs @BUILD_VERSION@）。本版本是经过修改的版本：由 @BUILD_DISPLAY_NAME@ 修改，构建于 @BUILD_TIME@（UTC），源码标识 <code>@BUILD_SOURCE@</code>。</p>
+<p>Copyright (C) 2009-2026 Ascensio System SIA。本程序以 GNU Affero General Public License 第 3 版（AGPLv3）及其附加条款授权；插图、图标等非代码元素以 CC BY-SA 4.0 授权。</p>
+<p>本程序<strong>不提供任何担保</strong>，包括对适销性或特定用途适用性的默示担保。详见许可证全文。</p>
+<h2>许可证</h2>
+<ul>
+  <li><a href="LICENSE.txt">GNU AGPLv3 全文及附加条款（Additional Terms）</a></li>
+  <li><a href="3rd-Party.txt">第三方组件许可</a></li>
+  <li><a href="Inter-OFL.txt">界面字体 Inter（SIL Open Font License 1.1）</a></li>
+  <li><a href="https://creativecommons.org/licenses/by-sa/4.0/legalcode" rel="noopener noreferrer">CC BY-SA 4.0（非代码元素）</a></li>
+</ul>
+<h2>对应源码</h2>
+<p>按 AGPLv3 第 13 条，经网络使用本程序的用户可以获取本版本的对应源码：<a href="@BUILD_SOURCE_OFFER_URL@" rel="noopener noreferrer">@BUILD_SOURCE_OFFER_URL@</a></p>
+<hr>
+<h1>Open-source licenses and legal notices</h1>
+<p>The document editor of @BUILD_DISPLAY_NAME@ is based on the original ONLYOFFICE software (ONLYOFFICE Docs @BUILD_VERSION@) developed by Ascensio System SIA. This is a modified version: modified by @BUILD_DISPLAY_NAME@, built on @BUILD_TIME@ (UTC) from source <code>@BUILD_SOURCE@</code>.</p>
+<p>Copyright (C) 2009-2026 Ascensio System SIA. Licensed under the GNU Affero General Public License version 3 (AGPLv3) with its Additional Terms; non-code elements such as illustrations and icons are licensed under CC BY-SA 4.0.</p>
+<p>This program comes <strong>WITHOUT ANY WARRANTY</strong>, without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the license for details: <a href="LICENSE.txt">AGPLv3 and Additional Terms</a>, <a href="3rd-Party.txt">third-party notices</a>. The interface font Inter is licensed under the <a href="Inter-OFL.txt">SIL Open Font License 1.1</a>.</p>
+<p>Corresponding Source (AGPLv3 §13): <a href="@BUILD_SOURCE_OFFER_URL@" rel="noopener noreferrer">@BUILD_SOURCE_OFFER_URL@</a></p>
+</body>
+</html>

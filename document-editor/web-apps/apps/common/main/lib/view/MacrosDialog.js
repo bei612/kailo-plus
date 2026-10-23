@@ -781,8 +781,8 @@ define([], function () {
             if(item.value == 'create') {
                 title = this.textCreateMacrosFromDesc;
                 instruction = '' + 
-                    'Create a macro for OnlyOffice. ' + 
-                    'The macro should be written specifically for the OnlyOffice ' + editorName + '. ' +
+                    'Create a macro for this document editor (Api macro interface). ' + 
+                    'The macro should be written specifically for the ' + editorName + '. ' +
                     'Return only code with comments, as plain text without markdown. ' + 
                     'The format of the code is JavaScript. ' + 
                     'Write comments in the same language as the user prompt. ' + 
@@ -790,8 +790,8 @@ define([], function () {
             } else if(item.value == 'convert') {
                 title = this.textConvertMacrosFromVBA;
                 instruction = '' + 
-                    'Convert macro for OnlyOffice from VBA. ' +
-                    'The macro should be written specifically for the OnlyOffice ' + editorName + '. ' +
+                    'Convert macro for this document editor (Api macro interface) from VBA. ' +
+                    'The macro should be written specifically for the ' + editorName + '. ' +
                     'Return only code with comments, as plain text without markdown. ' +
                     'The code format is JavaScript. ' +
                     'Write comments in ' + langCode + (langName ? '(' + langName + ')' : '') + ' language. ' + 
@@ -883,7 +883,7 @@ define([], function () {
         },
         
         onHelp: function() {
-            window.open('https://api.onlyoffice.com/docs/plugin-and-macros/macros/getting-started/', '_blank')
+            window.open('{{HELP_URL}}', '_blank') // Kailo DD-132(7): no upstream site; macros are off (DD-35)
         },
         onBtnClick: function(event) {
             this._handleInput(event.currentTarget.attributes['result'].value);

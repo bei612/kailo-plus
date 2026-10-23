@@ -34,6 +34,8 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/pydio/cells/v5/common"
+	"github.com/pydio/cells/v5/common/auth/claim"
+	"github.com/pydio/cells/v5/common/config/routing"
 	"github.com/pydio/cells/v5/common/errors"
 	"github.com/pydio/cells/v5/common/nodes/models"
 	"github.com/pydio/cells/v5/common/proto/tree"
@@ -210,6 +212,10 @@ func getNodeInfos(w http.ResponseWriter, r *http.Request) {
 		f.PostMessageOrigin = facts.PostMessageOrigin
 		f.EditNotificationPostMessage = true
 		f.ClosePostMessage = true
+	} else if claims, ok := claim.FromContext(ctx); !ok || applyNativeEditorFacts(f, claims, routing.GetDefaultSiteURL(ctx)) != nil {
+		log.Logger(ctx).Error("native editor facts unavailable, refusing CheckFileInfo")
+		w.WriteHeader(http.StatusForbidden)
+		return
 	}
 
 	data, _ := json.Marshal(f)

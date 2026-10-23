@@ -6,7 +6,21 @@ upstream_url: https://github.com/ONLYOFFICE/DocumentServer
 evidence_commit: f580eb58439432310943ece02c9730c6a21365e7
 implementation_base_commit: f580eb58439432310943ece02c9730c6a21365e7
 base_divergence: none
-artifacts: []
+artifacts:
+  # Hybrid build (DD-132(1)): server, web-apps and sdkjs from this tree, the
+  # official layer below for the core binaries and the four data components.
+  - name: document-editor
+    kind: image
+    build_context: .
+    build_dockerfile: document-editor/fork/packaging/Dockerfile
+    # DD-133 §4.7.1 / DD-132(7): the Kailo token package, icon and the web client's
+    # locked UI font package (package-lock.json @fontsource-variable/inter) are build inputs.
+    inputs: [document-editor/fork/packaging/, document-editor/server/, document-editor/web-apps/, document-editor/sdkjs/, client-kit/embed/kailo-theme-tokens.css, web-client/web/public/app-icon.png, web-client/web/package-lock.json]
+    build_args: [PLATFORM_DISPLAY_NAME]
+    build_facts: {KAILO_SOURCE_COMMIT: source_commit, KAILO_BUILD_TIME: build_time_utc}
+    source_digest: none
+    artifact_digest: none
+    blocked: Built only as CI-node trials (latest 8bdf0b0d, not pushed, no digest recorded); the registered CI build, the DD-132(3) deployment receipt and V-SCN-186..190 acceptance on a deployed instance are still open.
 source_components:
   core: 3250a848ee4ef20c2fb8c38dc86350ec579124b8
   core-fonts: 7030c6681fb5bbed560675cb42422f91df15d5c9
@@ -21,3 +35,41 @@ source_seams: [SS-OFF-WOPI]
 compatibility_evidence: [document-editor/fork/verify/wopi-permissions.md]
 owner: team-capabilities
 last_reverified: 2026-10-05
+# Official layer of the hybrid build (DD-132(1)), verified 2026-10-21 against
+# Docker Hub, the image itself and the GitHub component tags.
+official_layer:
+  image: docker.io/onlyoffice/documentserver@sha256:e231bc62da8c1f0c1f78188f8c7e17e67716f38955d0ad1d703cf911ad6db84b
+  image_tag: 9.4.0.1
+  image_index_digest: sha256:3ab6ebc7c605e5a32b7ae3ff19daed4925090245acc8100ce2230bd766c88212
+  platform: linux/amd64
+  package: onlyoffice-documentserver 9.4.0-129
+  build_tag: v9.4.0.129
+  build_evidence: dpkg-query reports 9.4.0-129, sdkjs/cell/sdk-all-min.js reads "Version 9.4.0 (build:129)"; 9.4.0.1 is the 9.4.0 package (digest sha256:8c114db7648a1654828d33e1f9f3b18e97c4caae6707d34bf04d793d260f7e67) plus an apt upgrade layer.
+  carried:
+    core-fonts: {official: 7030c6681fb5bbed560675cb42422f91df15d5c9, equal_to_pin: commit}
+    dictionaries: {official: d3223bbb777883db66ac3cd249f71c6ebdc992c7, equal_to_pin: commit}
+    document-formats: {official: 7d7576a3fe2337c30f4c9b40fae70a69dc68ba08, equal_to_pin: commit}
+    document-templates: {official: 71430c9f183489e8912f54f9dc859e369cf0dfb4, equal_to_pin: commit}
+    core:
+      official: a016fc2868b9f99f59dd30aa2088e68bbe5104af
+      pin: 3250a848ee4ef20c2fb8c38dc86350ec579124b8
+      equal_to_pin: shipped tree
+      difference: 55e5f973b036661ec8cae377f0744772cb64232a "Fix UTF-8 BOM position" and the merge 3250a848 (no file change); 63 files, all C# sources under Test/Applications
+      not_shipped: Test/Applications holds standalone Windows test programs (.cs/.csproj/.sln); no core .pro/.pri/CMake/Makefile project references it, and build_tools v9.4.0.129 scripts/deploy_server.py ships only the built libraries and executables (kernel, graphics, doctrenderer, x2t, docbuilder, allfontsgen, allthemesgen, ...) plus ICU and V8 data.
+      shipped_paths: [server/FileConverter/bin (except cmap.bin and the generated caches), server/tools/allfontsgen, server/tools/allthemesgen]
+  rebuilt_from_pin:
+    server: {official: 13142e41dfc9e1c337bbe76f0222d4b2ce7efbc8, pin: d6df308acb9877a9365c741b30741de96202816e, tree: equal plus the Kailo SS-OFF-WOPI line}
+    web-apps: {official: 1993a6d89731af0fcb5129ebf0ee380076fea5a9, pin: 9c0ca538c3b211052347df09d2a4d6781f023403, tree: equal plus the Kailo SS-OFF-WOPI line}
+    sdkjs: {official: 75b53d504bfd81bfa35d59bb57dd9e56f7c9235d, pin: 72b0421c0bbf9d01eed9cf14834ae47eb2df1b50, tree: pin adds the cell/apiBuilder.js ApiWorkbook export and drops 262 test files}
+  version_stamp: {PRODUCT_VERSION: 9.4.0, BUILD_NUMBER: 131, reason: every pinned component tree equals its v9.4.0.131 tag}
+  removed: [sdkjs-plugins, server/tools/pluginsmanager, documentserver-example, admin panel, /usr/bin/documentserver-*.sh, run-document-server.sh, supervisor and nginx packaging configuration, AI proxy route, web-apps built-in help, mobile and embed front ends, upstream header and about logos]
+# Fixed upstream recipe references; fetched by commit from GitHub, never a branch.
+recipe_references:
+  - url: https://github.com/ONLYOFFICE/build_tools
+    tag: v9.4.0.129
+    commit: cf4cac0846d03e2e00a6fec5d1ecd4e9463086d5
+    used: scripts/build_server.py, scripts/build_js.py and scripts/deploy_server.py are the recipe; scripts/base.py is executed by sdkjs/common/embed/make.py during the build
+  - url: https://github.com/ONLYOFFICE/Docker-DocumentServer
+    tag: v9.4.0.129
+    commit: 8da03c96b1eaa13be94bdbe46c530b3109aea99e
+    used: run-document-server.sh, supervisor and nginx layout, replaced by fork/packaging (entrypoint.sh, runtime-config.py, supervisord.conf, nginx/)

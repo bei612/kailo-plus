@@ -41,7 +41,7 @@
 	const DOCUMENT_SPELLING_MAX_ERRORS     = 2000; // максимальное количество ошибок, которые отрисовываются
 
 	const DOCUMENT_SPELLING_EXCEPTIONAL_WORDS = {
-		"Teamlab" : true, "teamlab" : true, "OnlyOffice" : true, "ONLYOFFICE" : true, "API" : true
+		"Teamlab" : true, "teamlab" : true, "API" : true // Kailo DD-132(7): no upstream product names
 	};
 
 

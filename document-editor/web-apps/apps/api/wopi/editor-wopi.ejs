@@ -23,7 +23,9 @@
     * limitations under the License.
     *
     -->
-    <title>ONLYOFFICE</title>
+    <title></title>
+    <!-- Kailo DD-132(7): the deployment's Kailo icon, copied in at build time. -->
+    <link rel="icon" href="../../../web-apps/apps/common/main/resources/img/header/kailo-logo.png" />
 <style type="text/css">
 html {
     height: 100%;
@@ -131,8 +133,19 @@ div {
             },
             'Host_PostmessageReady': function (data) {
                 innerAlert('Host_PostmessageReady');
+            },
+            // Kailo DD-132(7)③: the host relays Kailo's light/dark switch. Only the
+            // PostMessageOrigin host reaches this map (_onMessage). The editor frame
+            // shares this origin and follows the stored theme choice through its own
+            // cross-window sync (common/main/lib/controller/Themes.js 'storage').
+            'Kailo_Presentation': function (data) {
+                var theme = data && data.Values && kailoThemes[data.Values.theme];
+                if (theme && window.localStorage) {
+                    window.localStorage.setItem('ui-theme-id', theme);
+                }
             }
         };
+        var kailoThemes = {"light": "theme-kailo-light", "dark": "theme-kailo-dark"};
 
         var _postMessage = function(msgId, msgData) {
             if (window.parent && window.JSON) {
@@ -370,7 +383,9 @@ div {
 					"callbackUrl": JSON.stringify(userAuth),
 					"user": {
 						"id": fileInfo.UserId,
-						"name": fileInfo.IsAnonymousUser ? "" : fileInfo.UserFriendlyName
+						"name": fileInfo.IsAnonymousUser ? "" : fileInfo.UserFriendlyName,
+						// Kailo DD-132(7)④: the WOPI UserExtraInfo.avatar convention.
+						"image": (!fileInfo.IsAnonymousUser && fileInfo.UserExtraInfo && typeof fileInfo.UserExtraInfo.avatar === "string") ? fileInfo.UserExtraInfo.avatar : undefined
 					},
 					"customization": {
 						"close": {
@@ -384,7 +399,15 @@ div {
                             "www": fileInfo.BreadcrumbBrandUrl
                         },
                         "submitForm": customizationFormSubmit && customizationSaveAs,
-                        "uiTheme": queryParams.thm==="1" ? "default-light" : (queryParams.thm==="2" ? "default-dark" : undefined)
+                        // Kailo DD-132(7)③: thm maps to the themes generated from the Kailo tokens.
+                        "uiTheme": queryParams.thm==="1" ? kailoThemes.light : (queryParams.thm==="2" ? kailoThemes.dark : undefined),
+                        // Kailo DD-132(7)①: merged after docs_api_config, so a host cannot
+                        // reopen About, help, feedback, macros or plugins.
+                        "about": false,
+                        "help": false,
+                        "feedback": false,
+                        "macros": false,
+                        "plugins": false
 					},
                     "coEditing": {
                         "mode": userAuth.mode !== "view" ? "fast" : "strict"
@@ -410,10 +433,19 @@ div {
                 }
 			});
 
+            // Kailo DD-132(7)①: the page title is the document name.
+            document.title = fileInfo.BreadcrumbDocName || fileInfo.BaseFileName;
             postMessageOrigin = fileInfo.PostMessageOrigin || "*";
             if (postMessageOrigin && (typeof postMessageOrigin === 'string') && postMessageOrigin.charAt(postMessageOrigin.length-1)=='/')
                 postMessageOrigin = postMessageOrigin.substring(0, postMessageOrigin.length - 1);
             lang = config.editorConfig.lang;
+
+            // Kailo DD-132(7)③: the editor frame reads a stored theme choice before the
+            // URL one (common/main/lib/util/themeinit.js), so the launch theme is stored first.
+            var kailoLaunchTheme = queryParams.thm==="1" ? kailoThemes.light : (queryParams.thm==="2" ? kailoThemes.dark : undefined);
+            if (kailoLaunchTheme) {
+                try { window.localStorage.setItem('ui-theme-id', kailoLaunchTheme); } catch (e) {}
+            }
 
             startTime = Date.now();
             docEditor = new DocsAPI.DocEditor("iframeEditor", config);

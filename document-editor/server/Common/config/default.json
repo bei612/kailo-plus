@@ -14,7 +14,7 @@
     "providers": {},
     "version": 3,
     "timeout": "5m",
-    "allowedCorsOrigins": ["https://onlyoffice.github.io", "https://onlyoffice-plugins.github.io"],
+    "allowedCorsOrigins": [],
     "proxy": ""
   },
   "log": {
@@ -72,7 +72,7 @@
         "transportType": ["email"],
         "template": {
           "title": "%s Docs license expiration warning",
-          "body": "Attention! Your license expired on %s.\nYou are no longer entitled to receive personal technical support and install new Docs versions released after this date.\nPlease contact sales@onlyoffice.com to discuss license renewal."
+          "body": "Attention! Your license expired on %s.\nYou are no longer entitled to receive personal technical support and install new Docs versions released after this date.\nPlease contact your administrator."
         },
         "policies": {
           "repeatInterval": "1d"

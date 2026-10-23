@@ -6,7 +6,7 @@
 #
 # 用法（CI 节点，ubuntu）：
 #   kailo-ci submit <commit> fetch            # 先准备 /volumes/kailo/ci/sources/<commit>/apps
-#   component-deploy.sh <file-storage|knowledge|data-query> <commit> [--check] [--adapter]
+#   component-deploy.sh <file-storage|knowledge|data-query|document-editor> <commit> [--check] [--adapter]
 #     --check    只做配置与镜像校验（各组件原 --check/--validate/config --quiet），不启动
 #     --adapter  另起 adapter（Cells: 组件专属 OpenBao Agent + start.sh --platform-adapter；
 #                WeKnora: start.sh --platform-adapter；Wren: tenants/<tenantId> 组件专属
@@ -15,7 +15,8 @@
 #                需要 binding 计划、adapter 配置（Wren: config --kind data-query）与
 #                adapter-delivery.py reader 已完成。
 # 受控 env 默认：Cells cells/deploy.env、WeKnora knowledge/native.env、Wren
-# data-query/native.env（均在 /volumes/data/kailo/components 下，0600）；平台 .env 只读取
+# data-query/native.env、DocumentServer document-editor/native.env（均在
+# /volumes/data/kailo/components 下，0600）；平台 .env 只读取
 # 各组件声明的公共键（Wren：OIDC_ISSUER、PLATFORM_EDGE_NETWORK、PLATFORM_DISPLAY_NAME，--adapter 另取两份公钥路径）。
 # Wren 原生 config.yaml 每次由 native-config.py 以 data-query/docker/config.template.yaml + 部署事实
 # （组件 env 的 WREN_MODEL_*、平台 .env 的 AGENTGATEWAY_MODEL_BASE_URL）渲染，缺事实即拒绝。
@@ -356,6 +357,33 @@ PYWREN
       "${D[@]}" inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$ui" | grep -E '^WREN_PLATFORM_(QUERY|BINDING)_CONFIG_FILE=' \
         || { echo 'wren-ui 缺少治理投递环境' >&2; exit 1; }
     fi
+    ;;
+  document-editor)
+    # DD-132：Cells 所在文件存储组件的 DocumentServer，自己的部署单元；secret 只在组件专属
+    # owner-only 文件（不走 OpenBao，DD-127(7)），没有 adapter。local.json 由发布树模板
+    # document-editor/deploy/local.template.json + 部署事实渲染，先只读核对：缺事实或不满足
+    # DD-132(3) 不变式即拒绝，此时尚未备份、启动或改写任何文件。
+    "$adapter" && { echo "document-editor 没有 adapter（DD-132(2)）" >&2; exit 2; }
+    ENV=${COMPONENT_ENV_FILE:-/volumes/data/kailo/components/document-editor/native.env}
+    private_env "$ENV"
+    here=$S/document-editor/deploy
+    render=(python3 -I -B "$S/deploy/components/native-config.py")
+    echo "== 0. local.json 渲染核对（只列键名）"
+    "${render[@]}" check document-editor --env "$ENV" --source "$commit" >/dev/null
+    ensure_image "$(env_value "$ENV" DOCUMENT_EDITOR_IMAGE)"
+    if "$check"; then bash "$here/start.sh" --check "$ENV"; exit 0; fi
+    echo "== 1. 渲染 local.json（原子替换、0644 无 secret；旧文件备份到本次备份目录）"
+    dir="$backup_root/$component/$stamp"; mkdir -p "$dir" && chmod 700 "$backup_root" "$backup_root/$component" "$dir"
+    rendered=$("${render[@]}" apply document-editor --env "$ENV" --source "$commit" --backup-dir "$dir")
+    echo "== 2. DocumentServer（同一 Compose 项目原地替换，--no-build，按 digest；回读不变式）"
+    # 单文件 bind mount 在容器启动时绑定：local.json 有语义变化时重建容器才会读到。
+    if python3 -I -c 'import json, sys; sys.exit(0 if json.loads(sys.argv[1])["changed"] else 1)' "$rendered"; then
+      bash "$here/start.sh" --force-recreate "$ENV"
+    else
+      bash "$here/start.sh" "$ENV"
+    fi
+    readback_project=$(env_value "$ENV" DOCUMENT_EDITOR_COMPOSE_PROJECT)
+    frame_headers "$(env_value "$ENV" DOCUMENT_EDITOR_PUBLIC_ORIGIN)/hosting/discovery"
     ;;
   *) echo "未知组件 $component" >&2; exit 2 ;;
 esac

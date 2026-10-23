@@ -1699,8 +1699,8 @@ define([
                     if (this.appOptions.customization) {
                         if (this.appOptions.isDesktopApp)
                             this.appOptions.customization.about = false;
-                        else if (!this.appOptions.canBrandingExt)
-                            this.appOptions.customization.about = true;
+                        // Kailo DD-132(7)②: the legal notices are served at /kailo-legal/ and linked
+                        // permanently beside the editor, so About keeps the configured value here.
                     }
                     Common.Utils.applyCustomization(this.appOptions.customization, mapCustomizationElements);
                     if (this.appOptions.canBrandingExt) {

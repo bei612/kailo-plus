@@ -6,8 +6,8 @@ fails closed. Only original native admin entries are used:
 
   REST /a/config/versioning, /a/config/datasource/{Name} (read only),
        /a/user-meta/namespace, /a/config/frontend/plugin/{meta.user,
-       core.pydio, gui.ajax, core.auth}, /a/tree/admin/stat, /a/workspace,
-       /a/acl, /a/user/{Login}
+       core.pydio, gui.ajax, core.auth, editor.onlyoffice, editor.libreoffice},
+       /a/tree/admin/stat, /a/workspace, /a/acl, /a/user/{Login}
   CLI  cells admin user token (short-lived admin PAT, never printed)
        cells admin file mkdir (binding root folder in the admin tree)
 
@@ -48,6 +48,14 @@ Why each item is required (verified in this fork):
                datasource; an existing datasource with another policy is
                refused there (the Cells console changes it and versions the
                existing files).
+  editors      DD-132(2)(3): the native ONLYOFFICE plugin editor.onlyoffice is
+               enabled with the DocumentServer origin, the Cells origin it may
+               request (wopisrc) and the extension list, and only after that
+               DocumentServer's discovery is read back (every action on its
+               origin, every extension served); without an editor origin it is
+               declared disabled. The Collabora plugin editor.libreoffice stays
+               disabled either way. KAILO_DOCUMENT_BINDING (governed editing,
+               DD-132(4)) is never written here.
   workspace    the binding's nativeScopeRef/nativeRootRef. A datasource root
                (DATASOURCE:<ds>) is not a node UUID (common/nodes/uuid
                handler-uuid-workspace.go resolves node UUIDs only against real
@@ -81,6 +89,10 @@ Environment (controlled deploy env; deploy/components/file-storage.env.template)
                                     nativeRootRef and the principals' UUIDs
   CELLS_NATIVE_ACTION_CONFIG_FILE   optional: delivered native action config is
                                     cross-checked against the facts
+  CELLS_ONLYOFFICE_PUBLIC_ORIGIN    optional: DocumentServer public origin
+                                    (document-editor DOCUMENT_EDITOR_PUBLIC_ORIGIN);
+                                    empty keeps editor.onlyoffice disabled
+  CELLS_ONLYOFFICE_EXTENSIONS       with the origin: comma separated extensions
 """
 import json
 import os
@@ -94,6 +106,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
+import xml.etree.ElementTree as ElementTree
 
 NAMESPACE = re.compile(r"usermeta-[a-z0-9][a-z0-9-]{0,62}")
 DATASOURCE = re.compile(r"[a-z0-9]{1,33}")
@@ -105,6 +118,8 @@ SLUG = re.compile(r"[a-z0-9][a-z0-9-]{0,62}")
 LOGIN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._@-]{0,127}")
 TOKEN = re.compile(r"[A-Za-z0-9._~+/=-]{20,2048}")
 WORKSPACE_ROOT_ACTION = "workspace-path"
+EXTENSION = re.compile(r"[a-z0-9]{1,10}")
+PLUGIN_ENABLED = "PYDIO_PLUGIN_ENABLED"
 SCOPE_ALL = "PYDIO_REPO_SCOPE_ALL"
 ROOT_GROUP = "ROOT_GROUP"
 # Native entries owned by Kailo (DD-133 §2/§3), disabled on the root group role.
@@ -155,6 +170,21 @@ def settings(env):
     require(origin.scheme in ("http", "https") and origin.hostname and not origin.username and not origin.password
             and origin.path in ("", "/") and not origin.query and not origin.fragment, "CELLS_EXTERNAL: native origin required")
     s["rest"] = f"{origin.scheme}://{origin.netloc}/a/"
+    s["origin"] = f"{origin.scheme}://{origin.netloc}"
+    editor = env.get("CELLS_ONLYOFFICE_PUBLIC_ORIGIN", "")
+    extensions = env.get("CELLS_ONLYOFFICE_EXTENSIONS", "")
+    s["onlyoffice"] = None
+    if editor:
+        parts = urllib.parse.urlsplit(editor)
+        require(parts.scheme in ("http", "https") and parts.hostname and not parts.username and not parts.password
+                and editor == f"{parts.scheme}://{parts.netloc}" and editor != s["origin"],
+                "CELLS_ONLYOFFICE_PUBLIC_ORIGIN: explicit DocumentServer origin other than Cells required")
+        listed = [e.strip() for e in extensions.split(",")]
+        require(all(EXTENSION.fullmatch(e) for e in listed) and len(set(listed)) == len(listed),
+                "CELLS_ONLYOFFICE_EXTENSIONS: comma separated lowercase extensions required")
+        s["onlyoffice"] = {"origin": editor, "extensions": listed}
+    else:
+        require(not extensions, "CELLS_ONLYOFFICE_EXTENSIONS needs CELLS_ONLYOFFICE_PUBLIC_ORIGIN")
     install = json.loads(owner_only(env["CELLS_INSTALL_FILE"], "CELLS_INSTALL_FILE"))
     require(isinstance(install, dict) and isinstance(install.get("frontendLogin"), str) and LOGIN.fullmatch(install["frontendLogin"]),
             "CELLS_INSTALL_FILE: native admin login required")
@@ -360,6 +390,52 @@ def ensure_brand(native, s, changes):
                 f"{name} read-back differs")
 
 
+def ensure_plugin(native, plugin, wanted, changes, label):
+    if ensure_plugin_params(native, plugin, wanted):
+        changes.append(label)
+
+
+def discovery_actions(editor, timeout):
+    """The DocumentServer discovery as Cells will read it: ext -> actions, every
+    urlsrc on the editor origin (DD-132(3) wopi.host)."""
+    opener = urllib.request.build_opener(NoRedirect)
+    try:
+        with opener.open(editor + "/hosting/discovery", timeout=timeout) as response:
+            raw = response.read(2 << 20)
+    except (urllib.error.URLError, OSError):
+        raise Refused("document editor discovery unreachable; deploy document-editor first") from None
+    require(b"<!DOCTYPE" not in raw and b"<!ENTITY" not in raw, "document editor discovery is not plain XML")
+    try:
+        root = ElementTree.fromstring(raw)
+    except ElementTree.ParseError:
+        raise Refused("document editor discovery is not XML") from None
+    actions = {}
+    for action in root.iter("action"):
+        source = action.get("urlsrc", "").replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&")
+        require(source.startswith(editor + "/hosting/"), "document editor discovery lists an action outside its origin")
+        if action.get("name") in ("view", "edit"):
+            actions.setdefault(action.get("ext", ""), set()).add(action.get("name"))
+    return actions
+
+
+def ensure_editors(native, s, changes):
+    ensure_plugin(native, "editor.libreoffice", {PLUGIN_ENABLED: False}, changes, "editor.libreoffice disabled")
+    editor = s["onlyoffice"]
+    if editor is None:
+        ensure_plugin(native, "editor.onlyoffice", {PLUGIN_ENABLED: False}, changes, "editor.onlyoffice disabled")
+        return {"enabled": False}
+    served = discovery_actions(editor["origin"], min(30, s["timeout"]))
+    missing = [e for e in editor["extensions"] if e not in served]
+    require(not missing, "document editor does not serve " + ",".join(missing))
+    ensure_plugin(native, "editor.onlyoffice", {
+        PLUGIN_ENABLED: True,
+        "ONLYOFFICE_PUBLIC_ORIGIN": editor["origin"],
+        "ONLYOFFICE_WOPI_SOURCE_ORIGIN": s["origin"],
+        "ONLYOFFICE_EXTENSIONS": ",".join(editor["extensions"]),
+    }, changes, "editor.onlyoffice configured")
+    return {"enabled": True, "origin": editor["origin"], "wopiSourceOrigin": s["origin"], "extensions": editor["extensions"]}
+
+
 def admin_stat(native, path):
     try:
         found = native.call("POST", "tree/admin/stat", {"Node": {"Path": path}}, missing=True)
@@ -481,12 +557,14 @@ def reconcile(s, native, cli, deadline):
     ensure_datasource(native, s)
     ensure_brand(native, s, changes)
     ensure_draft_mode(native, s, changes)
+    editors = ensure_editors(native, s, changes)
     path, root = ensure_root(native, cli, s, deadline, changes)
     workspace = ensure_workspace(native, s, path, root, changes)
     users = ensure_principals(native, s, workspace, root, changes)
     facts = {"component": "file-storage", "nativeScopeRef": workspace, "nativeRootRef": root,
              "workspaceSlug": s["slug"], "rootPath": path, "datasource": s["datasource"],
-             "versioningPolicy": s["policy"], "draftNamespace": s["namespace"], "principals": users}
+             "versioningPolicy": s["policy"], "draftNamespace": s["namespace"], "principals": users,
+             "documentEditor": editors}
     if s["service"]:
         facts["instanceServiceUuid"] = next(u["userUuid"] for u in users if u["login"] == s["service"])
     cross_check_native(native, s, facts, path)

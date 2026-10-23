@@ -173,18 +173,16 @@
         }
 
         i {
-            cursor: pointer;
-            width: 86px;
+            // Kailo DD-132(7)①: the deployment's Kailo icon (web-client app-icon.png,
+            // copied in at build time) for every theme; it is not a link.
+            width: 20px;
             height: 20px;
             display: inline-block;
             vertical-align: middle;
 
-            background-image: ~"url('@{common-image-const-path}/header/header-logo_s.svg')";
+            background-image: ~"url('@{common-image-const-path}/header/kailo-logo.png')";
             background-repeat: no-repeat;
-        }
-
-        &.logo-light i { // logo from light theme
-            background-image: ~"url('@{common-image-const-path}/header/dark-logo_s.svg')";
+            background-size: contain;
         }
 
         &.link img {
