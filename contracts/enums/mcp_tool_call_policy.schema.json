@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/mcp_tool_call_policy.schema.json",
+  "title": "McpToolCallPolicy",
+  "description": "DD-149(7)：工具调用策略。AUTO 只允许 READ_ONLY；CONFIRM 由 Agent 负责人逐次确认；APPROVAL 由 Tenant 管理员逐次批准。",
+  "type": "string",
+  "enum": [
+    "AUTO",
+    "CONFIRM",
+    "APPROVAL"
+  ]
+}

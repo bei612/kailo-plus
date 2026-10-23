@@ -121,6 +121,27 @@
       "type": "integer",
       "description": "调用方实际读取的 Asset 版本；旧版本不能改写新的草稿或发布事实。"
     },
+    "mcpConnectionCreate": {
+      "$ref": "../domain/mcp_connection_create.schema.json",
+      "description": "仅 mcp_connection.create（DD-149、05 §2.15）且必带；其他动作携带即拒绝。"
+    },
+    "mcpConnectionUpdate": {
+      "$ref": "../domain/mcp_connection_update.schema.json",
+      "description": "仅 mcp_connection.update 且必带；目标连接器由 resourceId 与 resourceVersion 给出。"
+    },
+    "mcpConnectionPolicyUpdate": {
+      "$ref": "../domain/mcp_connection_policy_update.schema.json",
+      "description": "仅 mcp_connection.policy.update 且必带。"
+    },
+    "mcpConnectionCredential": {
+      "$ref": "../domain/mcp_connection_credential_input.schema.json",
+      "description": "DD-149(5)：仅 mcp_connection.create 与 mcp_connection.rotate_credential 的瞬态凭据（API_KEY 或 BEARER）；Core 写入该 Tenant 的 OpenBao 后只保存 SecretRef，值不进入 parameters、ActionExecution、日志、审计或回应。其他命令禁止携带。"
+    },
+    "mcpOauthAttemptId": {
+      "type": "string",
+      "format": "uuid",
+      "description": "DD-149(6)：仅 OAUTH 连接器的 mcp_connection.rotate_credential：本人本会话已完成且未使用的授权尝试。"
+    },
     "skillVersionUpload": {
       "$ref": "../domain/skill_version_upload_input.schema.json",
       "description": "仅 skill.version.create（DD-135(3)）：本会话一次性上传引用与能力需求；其他动作携带即拒绝。"

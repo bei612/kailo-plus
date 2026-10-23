@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/mcp_oauth_start_request.schema.json",
+  "title": "McpOauthStartRequest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "endpointUrl",
+    "transport"
+  ],
+  "properties": {
+    "endpointUrl": {
+      "type": "string"
+    },
+    "transport": {
+      "$ref": "../enums/mcp_connection_transport.schema.json"
+    },
+    "clientId": {
+      "type": "string",
+      "description": "未提供注册端点时的预注册 client ID"
+    },
+    "clientSecret": {
+      "type": "string",
+      "description": "可选预注册 client 密钥，一次性输入，写入 OpenBao"
+    },
+    "forConnectionId": {
+      "type": "string",
+      "format": "uuid"
+    }
+  },
+  "description": "DD-149(6)：发起一次 OAuth 授权尝试。forConnectionId 只用于轮换已存在连接器的授权。"
+}

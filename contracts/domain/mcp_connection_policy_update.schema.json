@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "domain/mcp_connection_policy_update.schema.json",
+  "title": "McpConnectionPolicyUpdate",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "memberRegistration",
+    "egressHostSuffixes"
+  ],
+  "properties": {
+    "memberRegistration": {
+      "$ref": "../enums/mcp_member_registration.schema.json"
+    },
+    "egressHostSuffixes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "小写主机名后缀；空表示只受部署上限约束"
+    }
+  },
+  "description": "仅 mcp_connection.policy.update：Tenant 连接器策略；白名单条目须落在部署声明的出站上限内。"
+}

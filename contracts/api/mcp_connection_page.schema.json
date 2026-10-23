@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/mcp_connection_page.schema.json",
+  "title": "McpConnectionPage",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "connections",
+    "policy",
+    "canRegisterTenant",
+    "canRegisterPersonal",
+    "registrableWorkspaceIds"
+  ],
+  "properties": {
+    "connections": {
+      "type": "array",
+      "items": {
+        "$ref": "mcp_connection_view.schema.json"
+      }
+    },
+    "policy": {
+      "$ref": "mcp_connection_policy_view.schema.json"
+    },
+    "canRegisterTenant": {
+      "type": "boolean"
+    },
+    "canRegisterPersonal": {
+      "type": "boolean"
+    },
+    "registrableWorkspaceIds": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "format": "uuid"
+      }
+    }
+  },
+  "description": "DD-149(10)：本人可发现的连接器与登记能力。"
+}
