@@ -66,8 +66,8 @@ install_runtime() {
     [ -f "$MIRROR_RUNTIME/$file" ] && cp -a "$MIRROR_RUNTIME/$file" "$MIRROR_RUNTIME/$file.bak-$stamp"
   done
   install -m 0644 "$here/compose.yaml" "$here/config.yml" "$MIRROR_RUNTIME/"
-  printf 'MIRROR_PORT=%s\nMIRROR_DATA=%s\nMIRROR_UPSTREAM_PROXY=%s\n' \
-    "$MIRROR_PORT" "$MIRROR_DATA" "$(upstream_proxy)" > "$MIRROR_RUNTIME/.env.tmp"
+  printf 'MIRROR_PORT=%s\nMIRROR_DATA=%s\nMIRROR_USER=%s\nMIRROR_UPSTREAM_PROXY=%s\n' \
+    "$MIRROR_PORT" "$MIRROR_DATA" "$(stat -c %u:%g "$MIRROR_DATA")" "$(upstream_proxy)" > "$MIRROR_RUNTIME/.env.tmp"
   mv "$MIRROR_RUNTIME/.env.tmp" "$MIRROR_RUNTIME/.env"
 }
 
