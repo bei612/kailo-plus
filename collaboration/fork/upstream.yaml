@@ -504,7 +504,6 @@ remove_paths:
   - desktop/src/features/messages/ui/useReactionHandler.ts
   - desktop/src/features/messages/ui/useThreadAgentAudience.ts
   - desktop/src/features/messages/useLoadMissingAncestors.ts
-  - desktop/src/features/messages/useTypingBroadcast.ts
   - desktop/src/features/moderation
   - desktop/src/features/notifications/lib/sound.test.mjs
   - desktop/src/features/onboarding/assets
