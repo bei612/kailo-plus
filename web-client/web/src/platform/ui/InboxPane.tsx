@@ -43,6 +43,7 @@ export function InboxPane({
   onOpenProject,
   selectedItemId,
   onSelectedItemIdChange,
+  isDark = false,
 }: {
   principalId: string;
   onOpen: (channelId: string, target?: InboxNavigationTarget, draft?: PlatformDraftNavigation & {conversation?: import("@client-kit/contracts").ConversationView}) => void | Promise<void>;
@@ -51,6 +52,8 @@ export function InboxPane({
   onOpenProject?: (projectId:string,target:ProjectWorkItemTarget)=>void;
   selectedItemId?: string | null;
   onSelectedItemIdChange?: (id: string | null) => void;
+  /** Host theme state for the original channel management overlay (useTheme().isDark). */
+  isDark?: boolean;
 }) {
   const client = useBffClient();
   const selectionScope = useMemo(() => ({}), [client, principalId]);
@@ -288,6 +291,7 @@ export function InboxPane({
           workspaceId={channelId} rootId={inboxThread(chosen.item.tags).rootId ?? chosen.item.id} selectedEventId={chosen.item.id}
           selectionItemId={effectiveSelectedItemId}
           unreadBoundaryEventId={unreadBoundaryEventId}
+          isDark={isDark}
           workspaceVisibility={snapshot.workspaces.find((workspace) => workspace.id === channelId)?.visibility}
           reopen={{pending: hiddenDm.isReopenPending(channelId), error: hiddenDm.isReopenErrored(channelId),
             unknown: hiddenDm.isReopenUnknown(channelId), onRetry: () => openItem(chosen.item)}}

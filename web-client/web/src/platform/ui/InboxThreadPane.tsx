@@ -8,7 +8,6 @@ import { InboxDetailMessages } from "@client-kit/platform/react/inbox-detail-mes
 import { MessageActionBarSurface, getThreadReference, useMessageDeleteDialog, type TimelineMessage } from "@client-kit/platform/react/messages";
 import { useChannelMessageEdit } from "@client-kit/platform/react/thread";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useTheme } from "@/shared/theme/ThemeProvider";
 import { buildMentionClipboardHtml } from "@client-kit/platform/react/composer/features/messages/lib/mentionClipboard";
 import { buildMessageLink } from "@client-kit/platform/react/composer/features/messages/lib/messageLink";
 import { relativeTime } from "@client-kit/platform/format";
@@ -25,7 +24,7 @@ import { MessageAuthorAvatar, MessageAuthorIdentity, useMessageAuthorLabels, typ
 import { useMessageReactions } from "./useMessageReactions";
 import { BffVideoReviewProvider } from "@/features/chat/ui/BffVideoReview";
 
-export function InboxThreadPane({ principalId, workspaceId, channelId, conversation, forum = false, canInteract = true, rootId, selectedEventId, selectionItemId, channelName, senderLabel, members, onBack, onOpen, autoSendDraftKey, restoreDraftKey, replyTargetEventId, onOpenAuthor, onAuthorScopeUnavailable, onPublicationPendingChange, unreadBoundaryEventId, reopen, workspaceVisibility }: {
+export function InboxThreadPane({ principalId, workspaceId, channelId, conversation, forum = false, canInteract = true, rootId, selectedEventId, selectionItemId, channelName, senderLabel, members, onBack, onOpen, autoSendDraftKey, restoreDraftKey, replyTargetEventId, onOpenAuthor, onAuthorScopeUnavailable, onPublicationPendingChange, unreadBoundaryEventId, reopen, workspaceVisibility, isDark = false }: {
   principalId: string; workspaceId: string; rootId: string; selectedEventId: string; channelName: string; senderLabel?: string;
   members: (WorkspaceMemberView | ConversationParticipant)[]; onBack?: () => void; onOpen?: () => void;
   conversation?: ConversationView;
@@ -45,6 +44,8 @@ export function InboxThreadPane({ principalId, workspaceId, channelId, conversat
   reopen?: { pending: boolean; error: boolean; unknown?: boolean; onRetry?: () => void };
   /** Directory visibility of the context Workspace channel (original channel.visibility). */
   workspaceVisibility?: WorkspaceVisibility;
+  /** Host theme state for the original channel management overlay. */
+  isDark?: boolean;
 }) {
   const t = useT(); const locale = useLocale();
   const [selection, setSelection] = useState({ anchor: selectedEventId, root: rootId });
@@ -63,7 +64,6 @@ export function InboxThreadPane({ principalId, workspaceId, channelId, conversat
   // Original InboxDetailPane ChannelMembersBar: the context channel's roster and management sheet,
   // over the same admitted channel descriptor read (and cache key) as the channel page.
   const queryClient = useQueryClient();
-  const { isDark } = useTheme();
   const descriptorKey = ["platform", "channel-descriptor", principalId, workspaceId] as const;
   const descriptor = useQuery({ queryKey: descriptorKey, enabled: !conversation && canInteract,
     queryFn: () => bff.workspaceChannel(workspaceId), retry: false });
