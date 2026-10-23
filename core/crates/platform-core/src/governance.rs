@@ -9482,6 +9482,36 @@ mod audit_event_type_tests {
             .await
             .unwrap();
         }
+        // Readers and the drain guard look a dispatched tool call's result up
+        // under its child key; record that OUTCOME exactly as the child path
+        // writes it (this fixture execution is a root, so audit_as above used
+        // the root key).
+        append(
+            &mut tx,
+            AuditEntry {
+                event_key: format!("{}:child:{}:protocol-result", ae.operation_id, ae.id),
+                tenant_id: Some(ae.tenant_id),
+                workspace_id: ae.workspace_id,
+                operation_id: ae.operation_id,
+                event_type: "OUTCOME",
+                human_identity_id: None,
+                initiator_principal_id: Some(ae.initiator_principal_id),
+                actor_principal_id: Some(ae.actor_principal_id),
+                action_key: &ae.action_key,
+                action_version: ae.action_version,
+                component_type_key: class.component_type_key,
+                target_type: Some(class.target_type),
+                target_id: Some(ae.target_id),
+                parameter_hash: &ae.parameter_hash,
+                decision: "ALLOW",
+                result_code: "SUCCEEDED",
+                result_exposure: class.result_exposure,
+                evidence_refs: Vec::new(),
+                correlation_id: ae.correlation_id,
+            },
+        )
+        .await
+        .unwrap();
         assert!(!sqlx::query_scalar::<_, bool>(unresolved)
             .bind(child)
             .fetch_one(&mut *tx)
