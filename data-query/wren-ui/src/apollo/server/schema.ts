@@ -856,6 +856,33 @@ export const typeDefs = gql`
     productName: String!
     # OIDC locale claim; seeds the language of top-level visits only.
     identityLocale: String
+    # DD-138(4): Kailo inbox delivery is configured (share with member).
+    shareAvailable: Boolean!
+  }
+
+  # DD-138(4), 07 §4.8.3: a current Kailo Tenant member who can be notified.
+  type KailoShareMember {
+    userKey: String!
+    name: String
+    picture: String
+  }
+
+  # Exactly one of threadId or dashboard: true.
+  input KailoShareTargetInput {
+    threadId: Int
+    dashboard: Boolean
+  }
+
+  input KailoShareInput {
+    target: KailoShareTargetInput!
+    recipients: [String!]!
+    # Client-chosen UUID per submission; a retried submission does not
+    # notify twice.
+    requestId: String!
+  }
+
+  type KailoShareResult {
+    notified: Int!
   }
 
   # Detailed thread consists of thread and thread responses
@@ -1159,6 +1186,8 @@ export const typeDefs = gql`
   type Query {
     # DD-133: current Kailo user, derived role and deployment product name
     kailoSession: KailoSession!
+    # DD-138(4): share picker candidates (current members except the caller)
+    kailoShareMembers: [KailoShareMember!]!
 
     # On Boarding Steps
     listDataSourceTables: [CompactTable!]!
@@ -1370,5 +1399,9 @@ export const typeDefs = gql`
       data: UpdateInstructionInput!
     ): Instruction!
     deleteInstruction(where: InstructionWhereInput!): Boolean!
+
+    # DD-138(4), 07 §4.8.3: notify Kailo members about a thread or the
+    # dashboard (no access change; all members can already read both)
+    shareWithMembers(data: KailoShareInput!): KailoShareResult!
   }
 `;

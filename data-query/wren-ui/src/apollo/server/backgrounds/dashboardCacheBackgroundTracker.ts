@@ -15,6 +15,15 @@ import { v4 as uuidv4 } from 'uuid';
 import { NativeQueryRefusal } from '../services/nativeQueryAdmission';
 import { isGovernedQueryMode } from '../services/nativeQueryMode';
 
+// DD-138(4), `07` §4.8.3: outcome of one scheduled refresh run, reported so
+// Kailo Tenant admins get a TASK_COMPLETED notification when items failed.
+export interface DashboardRefreshRun {
+  dashboardId: number;
+  runId: string;
+  total: number;
+  failed: number;
+}
+
 const logger = getLogger('DashboardCacheBackgroundTracker');
 logger.level = 'debug';
 
@@ -27,6 +36,7 @@ export class DashboardCacheBackgroundTracker {
   private deployService: IDeployService;
   private queryService: IQueryService;
   private runningJobs = new Set<number>();
+  private onScheduledRefreshFinished?: (run: DashboardRefreshRun) => void;
 
   constructor({
     dashboardRepository,
@@ -35,6 +45,7 @@ export class DashboardCacheBackgroundTracker {
     projectService,
     deployService,
     queryService,
+    onScheduledRefreshFinished,
   }: {
     dashboardRepository: IDashboardRepository;
     dashboardItemRepository: IDashboardItemRepository;
@@ -42,7 +53,9 @@ export class DashboardCacheBackgroundTracker {
     projectService: IProjectService;
     deployService: IDeployService;
     queryService: IQueryService;
+    onScheduledRefreshFinished?: (run: DashboardRefreshRun) => void;
   }) {
+    this.onScheduledRefreshFinished = onScheduledRefreshFinished;
     this.dashboardRepository = dashboardRepository;
     this.dashboardItemRepository = dashboardItemRepository;
     this.dashboardItemRefreshJobRepository = dashboardItemRefreshJobRepository;
@@ -113,6 +126,7 @@ export class DashboardCacheBackgroundTracker {
       const deployment = await this.deployService.getLastDeployment(project.id);
       const mdl = deployment.manifest;
       const hash = uuidv4();
+      let failed = 0;
 
       // Refresh cache for each item
       await Promise.all(
@@ -152,6 +166,7 @@ export class DashboardCacheBackgroundTracker {
                 },
               );
             } catch (error) {
+              failed += 1;
               // Update the record with failure
               await this.dashboardItemRefreshJobRepository.updateOne(
                 refreshJob.id,
@@ -188,6 +203,17 @@ export class DashboardCacheBackgroundTracker {
       );
 
       logger.info(`Successfully refreshed cache for dashboard ${dashboard.id}`);
+      // DD-138(4): never lets reporting affect the schedule itself.
+      try {
+        this.onScheduledRefreshFinished?.({
+          dashboardId: dashboard.id,
+          runId: hash,
+          total: items.length,
+          failed,
+        });
+      } catch {
+        logger.debug(`Refresh report for dashboard ${dashboard.id} failed`);
+      }
       return true;
     } catch (error) {
       logger.error(

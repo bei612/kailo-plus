@@ -8,6 +8,7 @@ import { DashboardResolver } from './resolvers/dashboardResolver';
 import { SqlPairResolver } from './resolvers/sqlPairResolver';
 import { InstructionResolver } from './resolvers/instructionResolver';
 import { ApiHistoryResolver } from './resolvers/apiHistoryResolver';
+import { KailoShareResolver } from './resolvers/kailoShareResolver';
 import { convertColumnType } from '@server/utils';
 import { DialectSQLScalar } from './scalars';
 import { IContext } from './types';
@@ -202,6 +203,7 @@ const dashboardResolver = new DashboardResolver();
 const sqlPairResolver = new SqlPairResolver();
 const instructionResolver = new InstructionResolver();
 const apiHistoryResolver = new ApiHistoryResolver();
+const kailoShareResolver = new KailoShareResolver();
 const resolvers = {
   JSON: GraphQLJSON,
   DialectSQL: DialectSQLScalar,
@@ -212,6 +214,7 @@ const resolvers = {
       productName: kailoProductName(),
       identityLocale: ctx.kailoUser?.locale ?? null,
     }),
+    kailoShareMembers: kailoShareResolver.members,
     listDataSourceTables: projectResolver.listDataSourceTables,
     autoGenerateRelation: projectResolver.autoGenerateRelation,
     listModels: modelResolver.listModels,
@@ -516,11 +519,15 @@ const resolvers = {
       instructionResolver.updateInstruction,
       'manage',
     ),
+    // DD-138(4): notification only, no native write; the service validates
+    // the target in the current project and the recipients in the directory.
+    shareWithMembers: kailoShareResolver.share,
     deleteInstruction: nativeProjectResolver(
       instructionResolver.deleteInstruction,
       'manage',
     ),
   },
+  KailoSession: { shareAvailable: kailoShareResolver.available },
   Thread: { owner: kailoOwner },
   Instruction: { owner: kailoOwner },
   ThreadResponse: askingResolver.getThreadResponseNestedResolver(),

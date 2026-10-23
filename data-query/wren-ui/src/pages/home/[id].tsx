@@ -29,6 +29,7 @@ import SaveAsViewModal from '@/components/modals/SaveAsViewModal';
 import QuestionSQLPairModal from '@/components/modals/QuestionSQLPairModal';
 import AdjustReasoningStepsModal from '@/components/modals/AdjustReasoningStepsModal';
 import AdjustSQLModal from '@/components/modals/AdjustSQLModal';
+import { KailoShareButton } from '@/components/kailo/KailoShare';
 import { getAnswerIsFinished } from '@/components/pages/home/promptThread/TextBasedAnswer';
 import { getIsChartFinished } from '@/components/pages/home/promptThread/ChartAnswer';
 import { PromptThreadProvider } from '@/components/pages/home/promptThread/store';
@@ -454,6 +455,12 @@ export default function HomeThread() {
 
   return (
     <SiderLayout loading={false} sidebar={homeSidebar}>
+      {/* DD-138(4), 07 §4.8.3: notify Kailo members about this thread. */}
+      {threadId !== null && (
+        <div className="d-flex justify-end px-4 pt-3">
+          <KailoShareButton target={{ threadId }} />
+        </div>
+      )}
       <PromptThreadProvider value={providerValue}>
         <PromptThread />
       </PromptThreadProvider>

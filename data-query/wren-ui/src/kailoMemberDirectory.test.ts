@@ -23,6 +23,7 @@ import { decodeKailoUser, KAILO_USER_HEADER } from './utils/kailoUser';
 /* eslint-disable @typescript-eslint/no-var-requires */
 const ownership = require('../migrations/20261021000000_kailo_user_ownership');
 const directoryMigration = require('../migrations/20261023000000_kailo_member_directory');
+const identityMigration = require('../migrations/20261024000000_kailo_user_identity');
 /* eslint-enable @typescript-eslint/no-var-requires */
 
 if (!(globalThis as any).crypto?.subtle) (globalThis as any).crypto = webcrypto;
@@ -80,6 +81,7 @@ async function database(): Promise<Knex> {
     await db.schema.createTable(name, (table) => table.increments('id'));
   await ownership.up(db);
   await directoryMigration.up(db);
+  await identityMigration.up(db);
   return db;
 }
 
@@ -293,6 +295,9 @@ describe('DD-133(4) periodic member directory sync', () => {
       picture: 'https://kailo.example.test/api/v1/identity/avatars/alice',
       username: 'alice',
       email: 'a@example.test',
+      // DD-138(4): the snapshot identity addresses Kailo notifications.
+      issuer: ISSUER,
+      subject: 'alice',
     });
     expect(await counts()).toEqual({ members: 2, states: 1 });
   });
@@ -412,6 +417,56 @@ describe('DD-133(4) periodic member directory sync', () => {
       name: 'Kailo Alice',
       locale: 'en',
     });
+  });
+
+  test('DD-138(4): a login stores issuer+subject only when they hash to the key', async () => {
+    const repository = new KailoUserRepository(db);
+    const users = new KailoUserDirectory(repository);
+    const base = {
+      name: 'Dana',
+      username: 'dana',
+      email: null,
+      picture: null,
+      locale: null,
+      admin: false,
+    };
+    await users.remember({
+      ...base,
+      key: key(ISSUER, 'dana'),
+      issuer: ISSUER,
+      subject: 'dana',
+    });
+    // A pair that does not derive the key is never stored.
+    await users.remember({
+      ...base,
+      key: key(ISSUER, 'erin'),
+      issuer: ISSUER,
+      subject: 'mallory',
+    });
+    // A later profile without the pair keeps the stored one.
+    await users.remember({ ...base, name: 'Dana 2', key: key(ISSUER, 'dana') });
+    const identities = await repository.findIdentities([
+      key(ISSUER, 'dana'),
+      key(ISSUER, 'erin'),
+    ]);
+    expect([...identities.values()]).toEqual([
+      { userKey: key(ISSUER, 'dana'), issuer: ISSUER, subject: 'dana' },
+    ]);
+    expect(
+      (await db('kailo_user').where({ user_key: key(ISSUER, 'dana') }).first())
+        .name,
+    ).toBe('Dana 2');
+  });
+
+  test('DD-138(4): the identity migration adds and removes issuer/subject', async () => {
+    expect(await db.schema.hasColumn('kailo_user', 'issuer')).toBe(true);
+    expect(await db.schema.hasColumn('kailo_user', 'subject')).toBe(true);
+    await identityMigration.down(db);
+    expect(await db.schema.hasColumn('kailo_user', 'issuer')).toBe(false);
+    expect(await db.schema.hasColumn('kailo_user', 'subject')).toBe(false);
+    expect(await db.schema.hasColumn('kailo_user', 'name')).toBe(true);
+    await identityMigration.up(db);
+    expect(await db.schema.hasColumn('kailo_user', 'issuer')).toBe(true);
   });
 
   test('the migration is reversible', async () => {

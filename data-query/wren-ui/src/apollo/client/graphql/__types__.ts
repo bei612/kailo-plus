@@ -649,7 +649,31 @@ export type KailoSession = {
   identityLocale?: Maybe<Scalars['String']>;
   isAdmin: Scalars['Boolean'];
   productName: Scalars['String'];
+  shareAvailable: Scalars['Boolean'];
   user?: Maybe<KailoUser>;
+};
+
+export type KailoShareInput = {
+  recipients: Array<Scalars['String']>;
+  requestId: Scalars['String'];
+  target: KailoShareTargetInput;
+};
+
+export type KailoShareMember = {
+  __typename?: 'KailoShareMember';
+  name?: Maybe<Scalars['String']>;
+  picture?: Maybe<Scalars['String']>;
+  userKey: Scalars['String'];
+};
+
+export type KailoShareResult = {
+  __typename?: 'KailoShareResult';
+  notified: Scalars['Int'];
+};
+
+export type KailoShareTargetInput = {
+  dashboard?: InputMaybe<Scalars['Boolean']>;
+  threadId?: InputMaybe<Scalars['Int']>;
 };
 
 export type KailoUser = {
@@ -748,6 +772,7 @@ export type Mutation = {
   saveRelations: Scalars['JSON'];
   saveTables: Scalars['JSON'];
   setDashboardSchedule: Dashboard;
+  shareWithMembers: KailoShareResult;
   startSampleDataset: Scalars['JSON'];
   triggerDataSourceDetection: Scalars['Boolean'];
   updateCalculatedField: Scalars['JSON'];
@@ -997,6 +1022,11 @@ export type MutationSetDashboardScheduleArgs = {
 };
 
 
+export type MutationShareWithMembersArgs = {
+  data: KailoShareInput;
+};
+
+
 export type MutationStartSampleDatasetArgs = {
   data: SampleDatasetInput;
 };
@@ -1195,6 +1225,7 @@ export type Query = {
   instantRecommendedQuestions: RecommendedQuestionsTask;
   instructions: Array<Maybe<Instruction>>;
   kailoSession: KailoSession;
+  kailoShareMembers: Array<KailoShareMember>;
   learningRecord: LearningRecord;
   listDataSourceTables: Array<CompactTable>;
   listModels: Array<ModelInfo>;

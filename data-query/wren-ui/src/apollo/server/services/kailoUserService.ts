@@ -1,5 +1,6 @@
 import {
   decodeKailoUser,
+  kailoUserKey,
   KailoUserProfile,
   KAILO_SERVICE_HEADER,
   KAILO_USER_HEADER,
@@ -37,6 +38,16 @@ export function requestIsNativeService(headers: RequestHeaders): boolean {
   return headers[KAILO_SERVICE_HEADER] === '1';
 }
 
+async function verifiedIdentity(
+  profile: KailoUserProfile,
+): Promise<{ issuer?: string; subject?: string }> {
+  const { issuer, subject } = profile;
+  if (!issuer || !subject) return {};
+  return (await kailoUserKey(issuer, subject)) === profile.key
+    ? { issuer, subject }
+    : {};
+}
+
 export interface KailoUserLoader {
   load(key: string | null | undefined): Promise<KailoUser | null>;
 }
@@ -68,6 +79,9 @@ export class KailoUserDirectory {
       email: profile.email,
       picture: listed ? listed.picture : profile.picture,
       locale: profile.locale,
+      // DD-138(4), `07` §4.8.3: the issuer+subject that address Kailo
+      // notifications, stored only when they hash back to the verified key.
+      ...(await verifiedIdentity(profile)),
     };
     const fingerprint = JSON.stringify(user);
     if (this.seen.get(profile.key) === fingerprint) return;
