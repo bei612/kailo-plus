@@ -64,43 +64,48 @@ class ChannelActionRejected extends ChannelActionOutcome {
 }
 
 /// The original sheet's status line for [outcome] (client-kit channelActionOutcomeText).
-String channelActionOutcomeText(ChannelActionOutcome outcome, {String? locale}) =>
-    switch (outcome) {
-      ChannelActionRecorded(:final operation) => platformText(
-        PlatformMessageKey.channelManagementActionRecorded,
-        locale: locale,
-        variables: {'operation': operation},
-      ),
-      ChannelActionWaiting(:final operation) => platformText(
-        PlatformMessageKey.channelManagementActionWaiting,
-        locale: locale,
-        variables: {'operation': operation},
-      ),
-      ChannelActionUnknown(:final operation) => platformText(
-        PlatformMessageKey.workspaceLifecycleUnknown,
-        locale: locale,
-        variables: {'operation': operation ?? '—'},
-      ),
-      ChannelActionAborted(:final operation, :final reason) => platformText(
-        PlatformMessageKey.workspaceLifecycleAborted,
-        locale: locale,
-        variables: {
-          'operation': operation,
-          'reason': reason == null
-              ? actionDispatchStateValues.reverse[ActionDispatchState.ABORTED]!
-              : platformReasonText(reason, locale: locale),
-        },
-      ),
-      ChannelActionRejected(:final reason, :final error) => platformText(
-        PlatformMessageKey.workspaceLifecycleRejected,
-        locale: locale,
-        variables: {
-          'reason': reason != null
-              ? platformReasonText(reason, locale: locale)
-              : platformErrorText(error ?? const PlatformUnavailable(''), locale: locale),
-        },
-      ),
-    };
+String channelActionOutcomeText(
+  ChannelActionOutcome outcome, {
+  String? locale,
+}) => switch (outcome) {
+  ChannelActionRecorded(:final operation) => platformText(
+    PlatformMessageKey.channelManagementActionRecorded,
+    locale: locale,
+    variables: {'operation': operation},
+  ),
+  ChannelActionWaiting(:final operation) => platformText(
+    PlatformMessageKey.channelManagementActionWaiting,
+    locale: locale,
+    variables: {'operation': operation},
+  ),
+  ChannelActionUnknown(:final operation) => platformText(
+    PlatformMessageKey.workspaceLifecycleUnknown,
+    locale: locale,
+    variables: {'operation': operation ?? '—'},
+  ),
+  ChannelActionAborted(:final operation, :final reason) => platformText(
+    PlatformMessageKey.workspaceLifecycleAborted,
+    locale: locale,
+    variables: {
+      'operation': operation,
+      'reason': reason == null
+          ? actionDispatchStateValues.reverse[ActionDispatchState.ABORTED]!
+          : platformReasonText(reason, locale: locale),
+    },
+  ),
+  ChannelActionRejected(:final reason, :final error) => platformText(
+    PlatformMessageKey.workspaceLifecycleRejected,
+    locale: locale,
+    variables: {
+      'reason': reason != null
+          ? platformReasonText(reason, locale: locale)
+          : platformErrorText(
+              error ?? const PlatformUnavailable(''),
+              locale: locale,
+            ),
+    },
+  ),
+};
 
 /// Frozen governed intents for the current platform session, one per slot (an action on one
 /// channel or member). Reopening a sheet finds the same unknown intent; a new session drops them.
@@ -130,7 +135,11 @@ class ChannelGovernedActions {
     final priorOperation = retained == null ? null : _retainedOperation[slot];
     _retained[slot] = command;
     try {
-      final outcome = await _send(command, priorOperation, retried: retained != null);
+      final outcome = await _send(
+        command,
+        priorOperation,
+        retried: retained != null,
+      );
       if (outcome is ChannelActionUnknown) {
         final operation = outcome.operation;
         if (operation != null) _retainedOperation[slot] = operation;
@@ -170,7 +179,9 @@ class ChannelGovernedActions {
     }
     if (!response.isSuccess) {
       final error = response.error;
-      if (error == null || error.errorBodyClass == ErrorClass.UNKNOWN || retried) {
+      if (error == null ||
+          error.errorBodyClass == ErrorClass.UNKNOWN ||
+          retried) {
         return ChannelActionUnknown(priorOperation);
       }
       return ChannelActionRejected(error: PlatformApiError(response));
@@ -365,10 +376,7 @@ final channelManagementHintsProvider = FutureProvider.autoDispose
       DiscoverableWorkspace? row;
       String? cursor;
       for (var page = 0; page < _maxHintPages && row == null; page++) {
-        final query = {
-          'channelId': workspaceId,
-          'cursor': ?cursor,
-        };
+        final query = {'channelId': workspaceId, 'cursor': ?cursor};
         final body = await _readPage(
           ref,
           '/api/v1/discoverable-workspaces?${Uri(queryParameters: query).query}',
@@ -425,10 +433,7 @@ final channelRoleMembersProvider = FutureProvider.autoDispose
       String? cursor;
       try {
         for (var page = 0; page < _maxHintPages; page++) {
-          final query = {
-            'workspaceId': workspaceId,
-            'cursor': ?cursor,
-          };
+          final query = {'workspaceId': workspaceId, 'cursor': ?cursor};
           final body = await _readPage(
             ref,
             '/api/v1/role-members?${Uri(queryParameters: query).query}',

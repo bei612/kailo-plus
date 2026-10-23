@@ -190,8 +190,10 @@ class AddChannelMembersSheet extends HookConsumerWidget {
                           child: Text(
                             t(
                               normalizedQuery.isEmpty
-                                  ? PlatformMessageKey.channelMembersNoneAvailable
-                                  : PlatformMessageKey.channelMembersNoMatchPeople,
+                                  ? PlatformMessageKey
+                                        .channelMembersNoneAvailable
+                                  : PlatformMessageKey
+                                        .channelMembersNoMatchPeople,
                             ),
                             textAlign: TextAlign.center,
                           ),
@@ -246,7 +248,9 @@ class AddChannelMembersSheet extends HookConsumerWidget {
                   loading: () => Center(
                     child: BuzzLoadingIndicator(
                       size: 44,
-                      semanticLabel: t(PlatformMessageKey.channelMembersLoading),
+                      semanticLabel: t(
+                        PlatformMessageKey.channelMembersLoading,
+                      ),
                     ),
                   ),
                   error: (error, _) => Center(

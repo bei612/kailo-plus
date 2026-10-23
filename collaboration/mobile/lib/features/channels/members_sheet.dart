@@ -39,7 +39,9 @@ class MembersSheet extends HookConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final locale = Localizations.localeOf(context).toLanguageTag();
-    final membersAsync = ref.watch(platformWorkspaceMembersProvider(channel.id));
+    final membersAsync = ref.watch(
+      platformWorkspaceMembersProvider(channel.id),
+    );
     final roles = ref.watch(channelRoleMembersProvider(channel.id)).value;
     final actorPrincipalId = ref
         .watch(platformSessionViewProvider)
@@ -200,7 +202,10 @@ class _MemberTile extends ConsumerWidget {
         role?.canGrantWorkspaceAdmin == true ||
         role?.canRevokeWorkspaceAdmin == true;
     final showManagementActions =
-        active && !isSelf && !channel.isArchived && (canRemove || canChangeRole);
+        active &&
+        !isSelf &&
+        !channel.isArchived &&
+        (canRemove || canChangeRole);
     final roleLabel = !active
         ? platformWorkspaceMembershipStateText(member.state, locale: locale)
         : platformText(
@@ -268,7 +273,9 @@ class _MemberTile extends ConsumerWidget {
         );
     if (outcome == null) return;
     messenger?.showSnackBar(
-      SnackBar(content: Text(channelActionOutcomeText(outcome, locale: locale))),
+      SnackBar(
+        content: Text(channelActionOutcomeText(outcome, locale: locale)),
+      ),
     );
   }
 
@@ -303,7 +310,9 @@ class _MemberTile extends ConsumerWidget {
                   await _submit(
                     context,
                     ref,
-                    admin ? workspaceAdminGrantAction : workspaceAdminRevokeAction,
+                    admin
+                        ? workspaceAdminGrantAction
+                        : workspaceAdminRevokeAction,
                   );
                 },
               ),
@@ -326,7 +335,9 @@ class _MemberTile extends ConsumerWidget {
                   final confirmed = await showBuzzDialog<bool>(
                     context: context,
                     builder: (dialogContext) => AlertDialog(
-                      title: Text(t(PlatformMessageKey.channelMembersRemoveTitle)),
+                      title: Text(
+                        t(PlatformMessageKey.channelMembersRemoveTitle),
+                      ),
                       content: Text(
                         t(PlatformMessageKey.channelMembersRemoveConfirm, {
                           'name': label,
@@ -339,7 +350,8 @@ class _MemberTile extends ConsumerWidget {
                           child: Text(t(PlatformMessageKey.buzzCancel)),
                         ),
                         TextButton(
-                          onPressed: () => Navigator.of(dialogContext).pop(true),
+                          onPressed: () =>
+                              Navigator.of(dialogContext).pop(true),
                           child: Text(
                             t(PlatformMessageKey.channelMembersRemoveAction),
                             style: TextStyle(color: context.colors.error),

@@ -186,7 +186,9 @@ class ChannelDetailsPage extends HookConsumerWidget {
 
     void showOutcome(ChannelActionOutcome outcome) {
       ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-        SnackBar(content: Text(channelActionOutcomeText(outcome, locale: locale))),
+        SnackBar(
+          content: Text(channelActionOutcomeText(outcome, locale: locale)),
+        ),
       );
     }
 
@@ -195,10 +197,8 @@ class ChannelDetailsPage extends HookConsumerWidget {
       title: t(PlatformMessageKey.channelMembersMembers),
       isScrollControlled: true,
       showDragHandle: true,
-      builder: (_) => MembersSheet(
-        channel: resolvedChannel,
-        currentPubkey: currentPubkey,
-      ),
+      builder: (_) =>
+          MembersSheet(channel: resolvedChannel, currentPubkey: currentPubkey),
     );
 
     Future<void> openAddMembers() async {
@@ -216,8 +216,8 @@ class ChannelDetailsPage extends HookConsumerWidget {
         builder: (_) => AddChannelMembersSheet(
           channelId: resolvedChannel.id,
           existingPrincipalIds: {
-            for (final member in membersAsync.asData?.value ??
-                const <WorkspaceMemberView>[])
+            for (final member
+                in membersAsync.asData?.value ?? const <WorkspaceMemberView>[])
               member.principalId,
           },
         ),
@@ -275,7 +275,8 @@ class ChannelDetailsPage extends HookConsumerWidget {
     }
 
     // Read when used: the provider needs a signed-in platform session.
-    ChannelGovernedActions actions() => ref.read(channelGovernedActionsProvider);
+    ChannelGovernedActions actions() =>
+        ref.read(channelGovernedActionsProvider);
     final reducedMotion = MediaQuery.disableAnimationsOf(context);
     final usesNativeIosGlassBackButton =
         Navigator.canPop(context) &&
@@ -442,7 +443,9 @@ class ChannelDetailsPage extends HookConsumerWidget {
                               currentPubkey?.toLowerCase(),
                         ),
                     isAdmin:
-                        roles.asData?.value?[member.principalId]
+                        roles
+                            .asData
+                            ?.value?[member.principalId]
                             ?.workspaceAdmin ==
                         true,
                     onMemberTap: onMemberTap,
@@ -547,16 +550,20 @@ class ChannelDetailsPage extends HookConsumerWidget {
                           ? null
                           : () => _confirmAndRun(
                               context,
-                              title: t(PlatformMessageKey.channelDetailsLeaveTitle, {
-                                'name': resolvedChannel.name,
-                              }),
-                              body: t(PlatformMessageKey.channelDetailsLeaveBody),
+                              title: t(
+                                PlatformMessageKey.channelDetailsLeaveTitle,
+                                {'name': resolvedChannel.name},
+                              ),
+                              body: t(
+                                PlatformMessageKey.channelDetailsLeaveBody,
+                              ),
                               confirmLabel: t(
                                 PlatformMessageKey.channelDetailsLeaveConfirm,
                               ),
                               cancelLabel: t(PlatformMessageKey.buzzCancel),
                               action: () => runLifecycle(
-                                () => actions().leaveChannel(resolvedChannel.id),
+                                () =>
+                                    actions().leaveChannel(resolvedChannel.id),
                                 closeWhenRecorded: true,
                               ),
                             ),
@@ -570,9 +577,12 @@ class ChannelDetailsPage extends HookConsumerWidget {
                           ? null
                           : () => _confirmAndRun(
                               context,
-                              title: t(PlatformMessageKey.channelManagementArchive),
+                              title: t(
+                                PlatformMessageKey.channelManagementArchive,
+                              ),
                               body: t(
-                                PlatformMessageKey.channelManagementConfirmArchive,
+                                PlatformMessageKey
+                                    .channelManagementConfirmArchive,
                                 {'name': resolvedChannel.name},
                               ),
                               confirmLabel: t(
@@ -605,7 +615,8 @@ class ChannelDetailsPage extends HookConsumerWidget {
                                 {'name': resolvedChannel.name},
                               ),
                               confirmLabel: t(
-                                PlatformMessageKey.channelDetailsUnarchiveConfirm,
+                                PlatformMessageKey
+                                    .channelDetailsUnarchiveConfirm,
                               ),
                               cancelLabel: t(PlatformMessageKey.buzzCancel),
                               action: () => runLifecycle(
