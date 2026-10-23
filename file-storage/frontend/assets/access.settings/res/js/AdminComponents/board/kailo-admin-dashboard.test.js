@@ -15,7 +15,9 @@ describe('Kailo admin dashboard', () => {
         const source = read('res/js/AdminComponents/board/GridDashboard.js')
         const classes = [...source.matchAll(/componentClass:\s*'([^']+)'/g)].map((m) => m[1])
         expect(classes).toEqual(['AdminComponents.QuickLinks', 'AdminComponents.RecentLogs'])
-        expect(source).not.toMatch(/pydio\.com|FakeGraph|SoftwareUpdate/)
+        // The AGPL licence header keeps its upstream address; only code counts.
+        const code = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+        expect(code).not.toMatch(/pydio\.com|FakeGraph|SoftwareUpdate/)
     })
 
     it('teaser, software-update and updater components are not shipped', () => {
