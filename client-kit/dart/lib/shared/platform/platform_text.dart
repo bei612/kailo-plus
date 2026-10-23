@@ -938,6 +938,7 @@ enum PlatformMessageKey {
   dmAddPerson,
   dmAddedPerson,
   dmRemovePerson,
+  dmAgentMentionRefused,
   dmVerifyPublicKey,
   dmViewInactive,
   dmSynchronizing,
@@ -6683,6 +6684,10 @@ const _messages = <PlatformMessageKey, (String, String)>{
   PlatformMessageKey.dmAddPerson: ('Add {name}', '添加{name}'),
   PlatformMessageKey.dmAddedPerson: ('Already added {name}', '已添加{name}'),
   PlatformMessageKey.dmRemovePerson: ('Remove {name}', '移除{name}'),
+  PlatformMessageKey.dmAgentMentionRefused: (
+    'Agents can\'t join direct messages; mention them in a channel they\'re in.',
+    'Agent 不能加入私聊，请在其所在的频道中提及。',
+  ),
   PlatformMessageKey.dmVerifyPublicKey: (
     'Verify {name} public key',
     '核验{name}的公钥',
