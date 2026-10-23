@@ -148,6 +148,9 @@
 //    agentActiveTurnView, err := UnmarshalAgentActiveTurnView(bytes)
 //    bytes, err = agentActiveTurnView.Marshal()
 //
+//    agentAuthorDirectory, err := UnmarshalAgentAuthorDirectory(bytes)
+//    bytes, err = agentAuthorDirectory.Marshal()
+//
 //    agentDefinitionPage, err := UnmarshalAgentDefinitionPage(bytes)
 //    bytes, err = agentDefinitionPage.Marshal()
 //
@@ -162,6 +165,9 @@
 //
 //    agentDelegationView, err := UnmarshalAgentDelegationView(bytes)
 //    bytes, err = agentDelegationView.Marshal()
+//
+//    agentImportConfigurationPage, err := UnmarshalAgentImportConfigurationPage(bytes)
+//    bytes, err = agentImportConfigurationPage.Marshal()
 //
 //    agentInstallationCandidate, err := UnmarshalAgentInstallationCandidate(bytes)
 //    bytes, err = agentInstallationCandidate.Marshal()
@@ -222,6 +228,12 @@
 //
 //    agentSessionView, err := UnmarshalAgentSessionView(bytes)
 //    bytes, err = agentSessionView.Marshal()
+//
+//    agentSnapshotImportPreview, err := UnmarshalAgentSnapshotImportPreview(bytes)
+//    bytes, err = agentSnapshotImportPreview.Marshal()
+//
+//    agentSnapshotUploadRequest, err := UnmarshalAgentSnapshotUploadRequest(bytes)
+//    bytes, err = agentSnapshotUploadRequest.Marshal()
 //
 //    agentTranscriptEvent, err := UnmarshalAgentTranscriptEvent(bytes)
 //    bytes, err = agentTranscriptEvent.Marshal()
@@ -739,6 +751,9 @@
 //    actionTokenSigningDelivery, err := UnmarshalActionTokenSigningDelivery(bytes)
 //    bytes, err = actionTokenSigningDelivery.Marshal()
 //
+//    agentDefinitionImportInput, err := UnmarshalAgentDefinitionImportInput(bytes)
+//    bytes, err = agentDefinitionImportInput.Marshal()
+//
 //    agentMemoryEntryListInput, err := UnmarshalAgentMemoryEntryListInput(bytes)
 //    bytes, err = agentMemoryEntryListInput.Marshal()
 //
@@ -1011,6 +1026,15 @@
 //
 //    protocolSessionReconcileTarget, err := UnmarshalProtocolSessionReconcileTarget(bytes)
 //    bytes, err = protocolSessionReconcileTarget.Marshal()
+//
+//    resourceImportAdvanceRequest, err := UnmarshalResourceImportAdvanceRequest(bytes)
+//    bytes, err = resourceImportAdvanceRequest.Marshal()
+//
+//    resourceImportAdvanceResult, err := UnmarshalResourceImportAdvanceResult(bytes)
+//    bytes, err = resourceImportAdvanceResult.Marshal()
+//
+//    resourceImportTarget, err := UnmarshalResourceImportTarget(bytes)
+//    bytes, err = resourceImportTarget.Marshal()
 //
 //    resourceProvisionAdvanceRequest, err := UnmarshalResourceProvisionAdvanceRequest(bytes)
 //    bytes, err = resourceProvisionAdvanceRequest.Marshal()
@@ -1521,6 +1545,16 @@ func (r *AgentActiveTurnView) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
+func UnmarshalAgentAuthorDirectory(data []byte) (AgentAuthorDirectory, error) {
+	var r AgentAuthorDirectory
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AgentAuthorDirectory) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
 func UnmarshalAgentDefinitionPage(data []byte) (AgentDefinitionPage, error) {
 	var r AgentDefinitionPage
 	err := json.Unmarshal(data, &r)
@@ -1568,6 +1602,16 @@ func UnmarshalAgentDelegationView(data []byte) (AgentDelegationView, error) {
 }
 
 func (r *AgentDelegationView) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalAgentImportConfigurationPage(data []byte) (AgentImportConfigurationPage, error) {
+	var r AgentImportConfigurationPage
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AgentImportConfigurationPage) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -1768,6 +1812,26 @@ func UnmarshalAgentSessionView(data []byte) (AgentSessionView, error) {
 }
 
 func (r *AgentSessionView) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalAgentSnapshotImportPreview(data []byte) (AgentSnapshotImportPreview, error) {
+	var r AgentSnapshotImportPreview
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AgentSnapshotImportPreview) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalAgentSnapshotUploadRequest(data []byte) (AgentSnapshotUploadRequest, error) {
+	var r AgentSnapshotUploadRequest
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AgentSnapshotUploadRequest) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -3491,6 +3555,16 @@ func (r *ActionTokenSigningDelivery) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
+func UnmarshalAgentDefinitionImportInput(data []byte) (AgentDefinitionImportInput, error) {
+	var r AgentDefinitionImportInput
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AgentDefinitionImportInput) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
 func UnmarshalAgentMemoryEntryListInput(data []byte) (AgentMemoryEntryListInput, error) {
 	var r AgentMemoryEntryListInput
 	err := json.Unmarshal(data, &r)
@@ -4401,6 +4475,36 @@ func (r *ProtocolSessionReconcileTarget) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
+func UnmarshalResourceImportAdvanceRequest(data []byte) (ResourceImportAdvanceRequest, error) {
+	var r ResourceImportAdvanceRequest
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ResourceImportAdvanceRequest) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalResourceImportAdvanceResult(data []byte) (ResourceImportAdvanceResult, error) {
+	var r ResourceImportAdvanceResult
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ResourceImportAdvanceResult) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalResourceImportTarget(data []byte) (ResourceImportTarget, error) {
+	var r ResourceImportTarget
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ResourceImportTarget) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
 func UnmarshalResourceProvisionAdvanceRequest(data []byte) (ResourceProvisionAdvanceRequest, error) {
 	var r ResourceProvisionAdvanceRequest
 	err := json.Unmarshal(data, &r)
@@ -5026,6 +5130,24 @@ type AgentActiveTurnView struct {
 	TurnID *string `json:"turnId,omitempty"`
 }
 
+// DD-147(1)：GET /api/v1/workspaces/{workspaceId}/agent-authors。Workspace 成员（与成员名单同一准入）可读的
+// Agent 作者目录：本 Workspace 中有 ACTIVE ChannelAgentBinding 的未删除 Installation（排空或故障中的也保留，其历史消息仍需
+// owner 行）的 Agent 公钥、persona 显示名与 owner。只供消息行显示“managed by <owner>”，不含 Installation
+// 其余字段，不授予任何使用、读取或管理权限；作者名仍只读 Relay kind:0（DD-117(6)）。
+type AgentAuthorDirectory struct {
+	Agents []AgentAuthorView `json:"agents"`
+}
+
+type AgentAuthorView struct {
+	// 固定版本 personaIdentity 的显示名；缺省时客户端用公钥简写，不以 Installation 目录合成作者名。
+	AgentDisplayName       *string `json:"agentDisplayName,omitempty"`
+	AgentPubkey            string  `json:"agentPubkey"`
+	InstallationResourceID string  `json:"installationResourceId"`
+	// owner 在本 Tenant 的显示名；owner 已不是 ACTIVE 成员时省略，客户端显示原版 owner unavailable。
+	OwnerDisplayName *string `json:"ownerDisplayName,omitempty"`
+	OwnerPrincipalID string  `json:"ownerPrincipalId"`
+}
+
 // 同 Tenant 且当前 discover 权限允许的 AgentDefinition 页；nextOffset 续读同一排序，不代表总量上限。
 type AgentDefinitionPage struct {
 	Definitions []AgentDefinitionView `json:"definitions"`
@@ -5103,6 +5225,51 @@ type AgentDelegationTargetPage struct {
 	ResourceVersion        int64                       `json:"resourceVersion"`
 	Scopes                 []DelegationScopeParameters `json:"scopes"`
 	WorkspaceID            string                      `json:"workspaceId"`
+}
+
+// DD-131(2)、DD-26：导入人在本 Tenant 可选的 RuntimeProfile 与已治理 Route（与版本配置目录同一来源与过滤）。缺真实来源时两目录为空且
+// canImport=false；目录不授予发布、安装或运行权限。
+type AgentImportConfigurationPage struct {
+	CanImport  bool                                  `json:"canImport"`
+	NextOffset *int64                                `json:"nextOffset"`
+	Profiles   []RuntimeProfileDirectoryProfilesItem `json:"profiles"`
+	Routes     []AgentVersionRouteOption             `json:"routes"`
+}
+
+type RuntimeProfileDirectoryProfilesItem struct {
+	CapabilityContract RuntimeProfileDirectoryProfilesItemCapabilityContract `json:"capabilityContract"`
+	Key                string                                                `json:"key"`
+	Kind               RuntimeProfileKind                                    `json:"kind"`
+	Status             string                                                `json:"status"`
+	WebAvailability    string                                                `json:"webAvailability"`
+}
+
+type RuntimeProfileDirectoryProfilesItemCapabilityContract struct {
+	CapabilityRequirements []string `json:"capabilityRequirements"`
+	MaxIdleTimeoutSeconds  int64    `json:"maxIdleTimeoutSeconds"`
+	MaxParallelism         int64    `json:"maxParallelism"`
+	MaxTurnDurationSeconds int64    `json:"maxTurnDurationSeconds"`
+	ReplyPolicies          []string `json:"replyPolicies"`
+	// 同一发布合同中回复策略键到 Buzz ResolvedPersona 原生布尔字段的显式映射；缺映射不表示支持。
+	ReplyPolicyMappings []RuntimeReplyPolicyMapping `json:"replyPolicyMappings,omitempty"`
+}
+
+type RuntimeReplyPolicyMapping struct {
+	BroadcastReplies bool   `json:"broadcastReplies"`
+	Key              string `json:"key"`
+	ThreadReplies    bool   `json:"threadReplies"`
+}
+
+// 03 §7、17 §3：同 Tenant、fresh read 与 Workspace scope 查证后的既有治理 Route 元数据。原生 revision/hash
+// 已回读；不包含 provider 配置、正文、凭据或模型 endpoint，不证明某次执行已获准。
+type AgentVersionRouteOption struct {
+	HomeWorkspaceID        *string `json:"homeWorkspaceId"`
+	NativeConfigHash       string  `json:"nativeConfigHash"`
+	NativeConfigResourceID string  `json:"nativeConfigResourceId"`
+	NativeRevision         int64   `json:"nativeRevision"`
+	OwnerPrincipalID       string  `json:"ownerPrincipalId"`
+	ResourceID             string  `json:"resourceId"`
+	ResourceVersion        int64   `json:"resourceVersion"`
 }
 
 type AgentInstallationCandidatePage struct {
@@ -5403,6 +5570,34 @@ type AgentSessionView struct {
 	WorkspaceID     string                 `json:"workspaceId"`
 }
 
+// DD-131(2)：校验通过的快照包的导入预览与一次性暂存引用。只含映射后将进入新 DRAFT 的可移植字段与被丢弃的原版字段类别；不回显包正文、名单公钥或记忆。确认导入经
+// agent.definition.import。
+type AgentSnapshotImportPreview struct {
+	// 包内联的头像（≤2 MiB 的 data URL），只供预览识别，不写入 DRAFT。
+	AvatarDataURL          *string                             `json:"avatarDataUrl,omitempty"`
+	Description            *string                             `json:"description,omitempty"`
+	DisplayName            string                              `json:"displayName"`
+	ExpiresAt              string                              `json:"expiresAt"`
+	FormatKey              AgentSnapshotImportPreviewFormatKey `json:"formatKey"`
+	IdleTimeoutSeconds     *int64                              `json:"idleTimeoutSeconds,omitempty"`
+	Instructions           string                              `json:"instructions"`
+	MaxTurnDurationSeconds *int64                              `json:"maxTurnDurationSeconds,omitempty"`
+	MediaType              AgentSnapshotMediaType              `json:"mediaType"`
+	Omitted                []AgentSnapshotOmission             `json:"omitted"`
+	PackageByteSize        int64                               `json:"packageByteSize"`
+	PackageDigest          string                              `json:"packageDigest"`
+	Parallelism            *int64                              `json:"parallelism,omitempty"`
+	SourceIsBuiltIn        *bool                               `json:"sourceIsBuiltIn,omitempty"`
+	UploadID               string                              `json:"uploadId"`
+}
+
+// DD-131(2)、DD-143：一次 Agent 快照包的原始字节（标准 base64，Web 与 Desktop 同一 JSON 传输）。解码后 JSON 不超过 5
+// MiB、PNG 不超过 10 MiB；格式与版本由 Core 判定。
+type AgentSnapshotUploadRequest struct {
+	ContentBase64 string                 `json:"contentBase64"`
+	MediaType     AgentSnapshotMediaType `json:"mediaType"`
+}
+
 // GET /api/v1/agent-installations/{id}/transcript/stream 的 SSE 数据帧（DD-125(6)）：Core 从同一
 // Installation 原生进程读到的 item/started、item/completed、turn/started、turn/completed 通知，按 thread
 // 解析到 AgentSession 后转发；只在建立时与周期性再准入下 Installation audit 成立期间发送，建立时写 ACCESS
@@ -5504,42 +5699,6 @@ type AgentVersionConfigurationPage struct {
 	Profiles        []RuntimeProfileDirectoryProfilesItem `json:"profiles"`
 	ResourceVersion int64                                 `json:"resourceVersion"`
 	Routes          []AgentVersionRouteOption             `json:"routes"`
-}
-
-type RuntimeProfileDirectoryProfilesItem struct {
-	CapabilityContract RuntimeProfileDirectoryProfilesItemCapabilityContract `json:"capabilityContract"`
-	Key                string                                                `json:"key"`
-	Kind               RuntimeProfileKind                                    `json:"kind"`
-	Status             string                                                `json:"status"`
-	WebAvailability    string                                                `json:"webAvailability"`
-}
-
-type RuntimeProfileDirectoryProfilesItemCapabilityContract struct {
-	CapabilityRequirements []string `json:"capabilityRequirements"`
-	MaxIdleTimeoutSeconds  int64    `json:"maxIdleTimeoutSeconds"`
-	MaxParallelism         int64    `json:"maxParallelism"`
-	MaxTurnDurationSeconds int64    `json:"maxTurnDurationSeconds"`
-	ReplyPolicies          []string `json:"replyPolicies"`
-	// 同一发布合同中回复策略键到 Buzz ResolvedPersona 原生布尔字段的显式映射；缺映射不表示支持。
-	ReplyPolicyMappings []RuntimeReplyPolicyMapping `json:"replyPolicyMappings,omitempty"`
-}
-
-type RuntimeReplyPolicyMapping struct {
-	BroadcastReplies bool   `json:"broadcastReplies"`
-	Key              string `json:"key"`
-	ThreadReplies    bool   `json:"threadReplies"`
-}
-
-// 03 §7、17 §3：同 Tenant、fresh read 与 Workspace scope 查证后的既有治理 Route 元数据。原生 revision/hash
-// 已回读；不包含 provider 配置、正文、凭据或模型 endpoint，不证明某次执行已获准。
-type AgentVersionRouteOption struct {
-	HomeWorkspaceID        *string `json:"homeWorkspaceId"`
-	NativeConfigHash       string  `json:"nativeConfigHash"`
-	NativeConfigResourceID string  `json:"nativeConfigResourceId"`
-	NativeRevision         int64   `json:"nativeRevision"`
-	OwnerPrincipalID       string  `json:"ownerPrincipalId"`
-	ResourceID             string  `json:"resourceId"`
-	ResourceVersion        int64   `json:"resourceVersion"`
 }
 
 // DD-24/25、17 §3/8：同 Definition 下逐项 fresh Asset read 后的版本目录；DRAFT 可发现，PUBLISHED/RETIRED
@@ -7391,6 +7550,9 @@ type NativeHumanScopeQuery struct {
 // actionKey 解释，多出或缺少的参数以 INVALID_PARAMETERS 拒绝。
 type ActionCommand struct {
 	ActionKey string `json:"actionKey"`
+	// 仅 agent.definition.import（DD-131(2)、05 §2.12）：本会话上传的快照包引用、包 digest 与本 Tenant
+	// 重选的运行配置；其他动作携带即拒绝。
+	AgentDefinitionImport *AgentDefinitionImportInput `json:"agentDefinitionImport,omitempty"`
 	// 仅 AgentVersion 草稿创建/编辑可携带；publish 只选择已有版本，不替换内容。
 	AgentVersionContent       *AgentVersionContent      `json:"agentVersionContent,omitempty"`
 	ApplicationBindingCreate  *ApplicationBindingCreate `json:"applicationBindingCreate,omitempty"`
@@ -7504,6 +7666,19 @@ type ActionCommand struct {
 	WorkspaceUpdate *WorkspaceUpdate `json:"workspaceUpdate,omitempty"`
 	// 仅 workspace.create 使用；省略保持旧命令的 private 可见性。
 	WorkspaceVisibility *WorkspaceVisibility `json:"workspaceVisibility,omitempty"`
+}
+
+// 仅 agent.definition.import（DD-131(2)、05 §2.12）：本会话上传的快照包引用、包 digest 与本 Tenant
+// 重选的运行配置；其他动作携带即拒绝。
+//
+// 仅 agent.definition.import（DD-131(2)、05 §2.12）：引用本 PlatformSession、本人的一次性快照上传与其包字节
+// SHA-256；包不携带运行时与模型路由（DD-26），由导入人按本 Tenant 目录重选，准入与 Workflow 内各自重验。
+type AgentDefinitionImportInput struct {
+	ModelRouteResourceID string `json:"modelRouteResourceId"`
+	// 上传返回的包字节 SHA-256；准入与 Workflow 读取包时重算比对。
+	PackageDigest     string `json:"packageDigest"`
+	RuntimeProfileKey string `json:"runtimeProfileKey"`
+	UploadID          string `json:"uploadId"`
 }
 
 // DD-88/94：pin 已批准 release 的业务绑定选择。不接受密钥正文、调用方自选 SecretRef 或运行端点 URL；secret 值只经同一
@@ -9825,6 +10000,29 @@ type ProtocolSessionReconcileResult struct {
 	WaitingReason     string                        `json:"waitingReason"`
 }
 
+type ResourceImportAdvanceRequest struct {
+	CancelRequested bool                 `json:"cancelRequested"`
+	RunID           string               `json:"runId"`
+	Target          ResourceImportTarget `json:"target"`
+}
+
+// 06 §7.1、DD-42：目标 Tenant 的 RESOURCE_IMPORT 冻结目标。只引用本 Tenant 的 ActionExecution、新建
+// Resource/Asset 与包 format/digest；不携带包字节、来源 Tenant 或来源 ID。
+type ResourceImportTarget struct {
+	ActionExecutionID string `json:"actionExecutionId"`
+	FormatKey         string `json:"formatKey"`
+	PackageDigest     string `json:"packageDigest"`
+	ResourceID        string `json:"resourceId"`
+	VersionAssetID    string `json:"versionAssetId"`
+	WorkflowID        string `json:"workflowId"`
+}
+
+type ResourceImportAdvanceResult struct {
+	ResourceID    string     `json:"resourceId"`
+	Status        TaskStatus `json:"status"`
+	WaitingReason string     `json:"waitingReason"`
+}
+
 type ResourceProvisionAdvanceRequest struct {
 	CancelRequested bool                    `json:"cancelRequested"`
 	RunID           string                  `json:"runId"`
@@ -10086,6 +10284,14 @@ const (
 	AgentDelegationViewStateSUPERSEDED AgentDelegationViewState = "SUPERSEDED"
 )
 
+type RuntimeProfileKind string
+
+const (
+	LocalACP       RuntimeProfileKind = "LOCAL_ACP"
+	RemoteProvider RuntimeProfileKind = "REMOTE_PROVIDER"
+	ServerCodex    RuntimeProfileKind = "SERVER_CODEX"
+)
+
 type AgentInstallationViewAgentPrincipalState string
 
 const (
@@ -10285,6 +10491,40 @@ const (
 	Starting                      AgentSessionViewStatus = "STARTING"
 )
 
+type AgentSnapshotImportPreviewFormatKey string
+
+const (
+	BuzzAgentSnapshot1 AgentSnapshotImportPreviewFormatKey = "buzz-agent-snapshot@1"
+)
+
+// 05 §2.12 TransferFormat 的 package_media_type：`.agent.json` 清单本身，或 tEXt
+// `buzz_agent_snapshot` 承载同一清单的 `.agent.png`。
+type AgentSnapshotMediaType string
+
+const (
+	ApplicationJSON AgentSnapshotMediaType = "application/json"
+	ImagePNG        AgentSnapshotMediaType = "image/png"
+)
+
+// DD-131(2)：快照中存在、导入不带入新 DRAFT 的原版字段。RUNTIME/MODEL/PROVIDER/NAME_POOL
+// 属本机运行时（DD-26）；RESPOND_TO_ALLOWLIST 的名单公钥属来源身份；RESPOND_TO_ANYONE
+// 不提供（DD-125(6)）；SESSION_POLICY 由运行时合同决定；MEMORY 见 DD-131(4)；AVATAR 内联头像不写入版本正文，由 owner
+// 在版本编辑器重新上传；SKILLS 由 owner 按本 Tenant 目录重选。
+type AgentSnapshotOmission string
+
+const (
+	AgentSnapshotOmissionMODEL AgentSnapshotOmission = "MODEL"
+	Avatar                     AgentSnapshotOmission = "AVATAR"
+	Memory                     AgentSnapshotOmission = "MEMORY"
+	NamePool                   AgentSnapshotOmission = "NAME_POOL"
+	Provider                   AgentSnapshotOmission = "PROVIDER"
+	RespondToAllowlist         AgentSnapshotOmission = "RESPOND_TO_ALLOWLIST"
+	RespondToAnyone            AgentSnapshotOmission = "RESPOND_TO_ANYONE"
+	Runtime                    AgentSnapshotOmission = "RUNTIME"
+	SessionPolicy              AgentSnapshotOmission = "SESSION_POLICY"
+	Skills                     AgentSnapshotOmission = "SKILLS"
+)
+
 // Codex FileUpdateChange.kind 的标签（add/delete/update）；update 的改名目标另以 movePath 给出。
 type AgentTranscriptFileChangeKind string
 
@@ -10342,14 +10582,6 @@ const (
 	ItemStarted   AgentTranscriptEventPhase = "ITEM_STARTED"
 	TurnCompleted AgentTranscriptEventPhase = "TURN_COMPLETED"
 	TurnStarted   AgentTranscriptEventPhase = "TURN_STARTED"
-)
-
-type RuntimeProfileKind string
-
-const (
-	LocalACP       RuntimeProfileKind = "LOCAL_ACP"
-	RemoteProvider RuntimeProfileKind = "REMOTE_PROVIDER"
-	ServerCodex    RuntimeProfileKind = "SERVER_CODEX"
 )
 
 type AgentMemoryColdWrite string
@@ -10507,6 +10739,7 @@ type EvidenceKind string
 
 const (
 	AdmitActionExecutionID        EvidenceKind = "ADMIT_ACTION_EXECUTION_ID"
+	AgentVersionAssetID           EvidenceKind = "AGENT_VERSION_ASSET_ID"
 	AgentgatewayUsageID           EvidenceKind = "AGENTGATEWAY_USAGE_ID"
 	ApprovalPolicy                EvidenceKind = "APPROVAL_POLICY"
 	ApprovalWorkflowID            EvidenceKind = "APPROVAL_WORKFLOW_ID"
@@ -10535,6 +10768,8 @@ const (
 	TenantLifecycleSnapshotID     EvidenceKind = "TENANT_LIFECYCLE_SNAPSHOT_ID"
 	TenantMembershipID            EvidenceKind = "TENANT_MEMBERSHIP_ID"
 	TraceID                       EvidenceKind = "TRACE_ID"
+	TransferFormat                EvidenceKind = "TRANSFER_FORMAT"
+	TransferPackageDigest         EvidenceKind = "TRANSFER_PACKAGE_DIGEST"
 	UsageEventID                  EvidenceKind = "USAGE_EVENT_ID"
 )
 
@@ -10672,6 +10907,7 @@ const (
 	MembershipProjection     WorkflowKind = "MEMBERSHIP_PROJECTION"
 	MembershipRevocation     WorkflowKind = "MEMBERSHIP_REVOCATION"
 	ProtocolSessionReconcile WorkflowKind = "PROTOCOL_SESSION_RECONCILE"
+	ResourceImport           WorkflowKind = "RESOURCE_IMPORT"
 	ResourceProvision        WorkflowKind = "RESOURCE_PROVISION"
 	SecretRefRehome          WorkflowKind = "SECRET_REF_REHOME"
 	TenantLifecycle          WorkflowKind = "TENANT_LIFECYCLE"
@@ -10928,8 +11164,8 @@ const (
 type GatewayCallKind string
 
 const (
-	GatewayCallKindTOOL GatewayCallKind = "TOOL"
-	Model               GatewayCallKind = "MODEL"
+	GatewayCallKindMODEL GatewayCallKind = "MODEL"
+	GatewayCallKindTOOL  GatewayCallKind = "TOOL"
 )
 
 // DD-134(3)：一次调用的呈现状态。DENIED 是准入拒绝（含 PEP 拒绝）；UNKNOWN 是结果不明、待原 operation 对账；RUNNING 是已准入未终结。
