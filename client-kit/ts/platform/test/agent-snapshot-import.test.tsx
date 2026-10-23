@@ -12,6 +12,7 @@ import {
 } from "../src/react/agent-library/AgentSnapshotImportDialog";
 import { SnapshotCard } from "../src/react/messages/SnapshotCard";
 import type { BffReply, BffRequest, BffTransport } from "../src/transport";
+import { act } from "react";
 import { click, render, settle } from "./render";
 
 const uploadId = "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d";
@@ -20,10 +21,20 @@ const manifest = new TextEncoder().encode(JSON.stringify({ format: "buzz-agent-s
   definition: { name: "Writer", systemPrompt: "Write release notes." }, profile: { displayName: "Writer" },
   memory: { level: "none" } }));
 
-function preview(bytes: Uint8Array, digest: string) {
+function preview(bytes: Uint8Array, digest: string, extra: Record<string, unknown> = {}) {
   return { uploadId, packageDigest: digest, packageByteSize: bytes.length, mediaType: "application/json",
     formatKey: "buzz-agent-snapshot@1", expiresAt: "2026-10-23T10:30:00Z", displayName: "Writer",
-    instructions: "Write release notes.", omitted: ["RUNTIME", "RESPOND_TO_ALLOWLIST"] };
+    instructions: "Write release notes.", omitted: ["RUNTIME", "RESPOND_TO_ALLOWLIST"], ...extra };
+}
+
+async function choose(selector: string, value: string): Promise<void> {
+  const field = document.querySelector<HTMLSelectElement>(selector)!;
+  const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")?.set;
+  await act(async () => {
+    setter?.call(field, value);
+    field.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  await settle();
 }
 
 const configuration = {
@@ -45,10 +56,10 @@ function actions(t: { send: ReturnType<typeof vi.fn> }): ActionCommand[] {
     .filter((request) => request.path === "/api/v1/actions").map((request) => request.body as ActionCommand);
 }
 
-async function routes(digest: string) {
+async function routes(digest: string, extra: Record<string, unknown> = {}, config: Record<string, unknown> = configuration) {
   return transport((request) => {
-    if (request.path === "/api/v1/agent-snapshots/uploads") return { status: 200, body: preview(manifest, digest) };
-    if (request.path.startsWith("/api/v1/agent-snapshots/configuration")) return { status: 200, body: configuration };
+    if (request.path === "/api/v1/agent-snapshots/uploads") return { status: 200, body: preview(manifest, digest, extra) };
+    if (request.path.startsWith("/api/v1/agent-snapshots/configuration")) return { status: 200, body: config };
     if (request.path === "/api/v1/actions") {
       const command = request.body as ActionCommand;
       return { status: 202, body: { actionKey: command.actionKey, actionExecutionId: "1f2e3d4c-5b6a-4978-8a6b-5c4d3e2f1a0b",
@@ -89,6 +100,11 @@ describe("agent snapshot import", () => {
     expect(dialog.textContent).toContain("Write release notes.");
     expect(dialog.textContent).toContain("Respond-to allowlist");
     expect(document.querySelector<HTMLInputElement>("[data-testid=agent-snapshot-import-slug]")!.value).toMatch(/^writer-[0-9a-f]{6}$/);
+    // Nothing is preselected: the importer opts in to a runtime and route.
+    expect(document.querySelector<HTMLSelectElement>("select[id$=-profile]")!.value).toBe("");
+    expect(document.querySelector<HTMLSelectElement>("select[id$=-route]")!.value).toBe("");
+    await choose("select[id$=-profile]", "server-codex");
+    await choose("select[id$=-route]", routeId);
     await click(document.querySelector<HTMLButtonElement>("[data-testid=agent-snapshot-import-review]")!);
     await click(document.querySelector<HTMLButtonElement>("[data-testid=agent-snapshot-import-submit]")!);
     const [command] = actions(t);
@@ -96,6 +112,60 @@ describe("agent snapshot import", () => {
       agentDefinitionImport: { uploadId, packageDigest: digest, runtimeProfileKey: "server-codex", modelRouteResourceId: routeId } });
     expect(command).not.toHaveProperty("name");
     expect(imported).toHaveBeenCalledTimes(1);
+  });
+
+  it("imports without forcing a runtime choice, even when the directory is empty (DD-131(2) ruling)", async () => {
+    const digest = await sha256Hex(manifest);
+    const t = await routes(digest, {}, { profiles: [], routes: [], nextOffset: null, canImport: true });
+    const source = agentSnapshotSource("w.agent.json", manifest) as AgentSnapshotSource;
+    await render(<PlatformProvider client={createBffClient(t)} locale="en">
+      <AgentSnapshotImportDialog source={source} onClose={() => {}} />
+    </PlatformProvider>);
+    await settle();
+    expect(document.body.textContent).toContain("choose them in the version editor before publishing");
+    await click(document.querySelector<HTMLButtonElement>("[data-testid=agent-snapshot-import-review]")!);
+    await click(document.querySelector<HTMLButtonElement>("[data-testid=agent-snapshot-import-submit]")!);
+    const [command] = actions(t);
+    expect(command!.agentDefinitionImport).toEqual({ uploadId, packageDigest: digest });
+  });
+
+  it("accepts a package without instructions and says they must be added before publishing", async () => {
+    const digest = await sha256Hex(manifest);
+    const t = await routes(digest, { instructions: "" });
+    const source = agentSnapshotSource("w.agent.json", manifest) as AgentSnapshotSource;
+    await render(<PlatformProvider client={createBffClient(t)} locale="zh-CN">
+      <AgentSnapshotImportDialog source={source} onClose={() => {}} />
+    </PlatformProvider>);
+    await settle();
+    expect(document.querySelector("[data-testid=agent-snapshot-import-instructions]")).toBeNull();
+    expect(document.querySelector("[data-testid=agent-snapshot-import-no-instructions]")!.textContent).toContain("补充指令后才能发布");
+    expect(document.querySelector<HTMLButtonElement>("[data-testid=agent-snapshot-import-review]")!.disabled).toBe(false);
+  });
+
+  it("shows the inline avatar as imported by reference", async () => {
+    const digest = await sha256Hex(manifest);
+    const avatar = { avatarDataUrl: "data:image/png;base64,iVBORw0KGgo=",
+      avatarUrl: `https://buzz.example.test/media/${"a".repeat(64)}.png` };
+    const t = await routes(digest, avatar);
+    const source = agentSnapshotSource("w.agent.json", manifest) as AgentSnapshotSource;
+    await render(<PlatformProvider client={createBffClient(t)} locale="en">
+      <AgentSnapshotImportDialog source={source} onClose={() => {}} />
+    </PlatformProvider>);
+    await settle();
+    expect(document.querySelector("[data-testid=agent-snapshot-import-avatar]")).not.toBeNull();
+    expect(document.querySelector("[data-testid=agent-snapshot-import-avatar-imported]")).not.toBeNull();
+  });
+
+  it("rejects a preview whose inline avatar was not staged as a media object", async () => {
+    const digest = await sha256Hex(manifest);
+    const source = agentSnapshotSource("w.agent.json", manifest) as AgentSnapshotSource;
+    const unstaged = await routes(digest, { avatarDataUrl: "data:image/png;base64,iVBORw0KGgo=" });
+    await render(<PlatformProvider client={createBffClient(unstaged)} locale="en">
+      <AgentSnapshotImportDialog source={source} onClose={() => {}} />
+    </PlatformProvider>);
+    await settle();
+    expect(document.querySelector("[data-testid=agent-snapshot-import-preview]")).toBeNull();
+    expect(document.querySelector("[data-testid=agent-snapshot-import-rejected]")).not.toBeNull();
   });
 
   it("verifies the attachment bytes against imeta before offering the import preview", async () => {

@@ -11,6 +11,16 @@
     },
     "explicitConfirmation": true
   },
+  "minimalImportCommand": {
+    "actionKey": "agent.definition.import",
+    "idempotencyKey": "6b7e3d2c-9b8f-4a6e-8d4c-3b2f1a0e9d8c",
+    "slug": "release-writer-2",
+    "agentDefinitionImport": {
+      "uploadId": "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d",
+      "packageDigest": "8f434346648f6b96df89dda901c5176b10a6d83961dd3c1ac88b59b2dc327aa4"
+    },
+    "explicitConfirmation": true
+  },
   "uploadRequest": {
     "mediaType": "image/png",
     "contentBase64": "iVBORw0KGgo="
@@ -25,12 +35,13 @@
     "displayName": "Release writer",
     "description": "Drafts release notes",
     "avatarDataUrl": "data:image/png;base64,iVBORw0KGgo=",
+    "avatarUrl": "https://buzz.example.test/media/4ae6f1b0a0c4c2b1e8f7d6c5b4a39281706f5e4d3c2b1a09f8e7d6c5b4a39281.png",
     "instructions": "Write concise release notes.",
     "parallelism": 2,
     "idleTimeoutSeconds": 300,
     "maxTurnDurationSeconds": 1800,
     "sourceIsBuiltIn": false,
-    "omitted": ["RUNTIME", "MODEL", "RESPOND_TO_ALLOWLIST", "AVATAR"]
+    "omitted": ["RUNTIME", "MODEL", "RESPOND_TO_ALLOWLIST"]
   },
   "minimalPreview": {
     "uploadId": "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d",
@@ -40,8 +51,22 @@
     "formatKey": "buzz-agent-snapshot@1",
     "expiresAt": "2026-10-23T10:30:00Z",
     "displayName": "Release writer",
-    "instructions": "Write concise release notes.",
+    "instructions": "",
     "omitted": []
+  },
+  "draftContent": {
+    "personaIdentity": {
+      "displayName": "Release writer",
+      "avatarUrl": "https://buzz.example.test/media/4ae6f1b0a0c4c2b1e8f7d6c5b4a39281706f5e4d3c2b1a09f8e7d6c5b4a39281.png"
+    },
+    "instructions": "",
+    "skillVersionAssetIds": [],
+    "declaredToolResourceIds": [],
+    "capabilityRequirements": [],
+    "triggerDefaults": ["MENTION"],
+    "parallelism": 1,
+    "turnLimits": {"idleTimeoutSeconds": 1500, "maxTurnDurationSeconds": 7200},
+    "memoryPolicy": {"coreWrite": "HUMAN_ONLY", "coldWrite": "DISABLED"}
   },
   "configuration": {
     "profiles": [],

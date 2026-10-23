@@ -1235,6 +1235,10 @@ fn dd131_agent_snapshot_import_preserves_fields_and_absence() {
         assert_eq!(&serde_json::to_value(typed).unwrap(), value);
     }
     roundtrip::<contracts::ActionCommand>(&value["importCommand"]);
+    roundtrip::<contracts::ActionCommand>(&value["minimalImportCommand"]);
+    // DD-131(2): an imported DRAFT may lack runtime, route and reply policy and
+    // carry empty instructions; absent stays absent through the typed side.
+    roundtrip::<contracts::AgentVersionContent>(&value["draftContent"]);
     roundtrip::<contracts::AgentSnapshotUploadRequest>(&value["uploadRequest"]);
     roundtrip::<contracts::AgentSnapshotImportPreview>(&value["preview"]);
     roundtrip::<contracts::AgentSnapshotImportPreview>(&value["minimalPreview"]);

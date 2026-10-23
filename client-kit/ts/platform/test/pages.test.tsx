@@ -2250,6 +2250,32 @@ describe("AgentDefinitionsPage governed Version Installation Grant", () => {
     expect(t.send).toHaveBeenCalledWith({ method: "GET", path: "/api/v1/agent-definitions/agent-1/version-configuration?offset=9" });
   });
 
+  it("shows what an imported DRAFT still needs and keeps Publish disabled until it is complete (DD-131(2))", async () => {
+    const rest = Object.fromEntries(Object.entries(version.content)
+      .filter(([key]) => !["runtimeProfileKey", "modelRouteResourceId", "replyPolicy"].includes(key)));
+    const incomplete = { ...version, content: { ...rest, instructions: "" } };
+    const t = routes((r) => r.path.includes("/versions?") ? { status: 200, body: {
+      agentResourceId: definition.resourceId, resourceVersion: definition.resourceVersion,
+      versions: [incomplete], nextOffset: null } } : undefined);
+    const host = await open(t);
+    const directory = section(host, "agent-version-directory");
+    expect(directory.querySelector("[data-testid=agent-version-missing-instructions]")!.textContent).toBe("Add instructions before publishing.");
+    expect(directory.querySelector("[data-testid=agent-version-missing-runtime]")).not.toBeNull();
+    expect(button(directory, "Publish exact draft").disabled).toBe(true);
+    expect(button(directory, "Edit draft").disabled).toBe(false);
+    expect(posts(t)).toHaveLength(0);
+  });
+
+  it("keeps a PUBLISHED version that lacks runtime facts unknown", async () => {
+    const rest = Object.fromEntries(Object.entries(version.content).filter(([key]) => key !== "runtimeProfileKey"));
+    const t = routes((r) => r.path.includes("/versions?") ? { status: 200, body: {
+      agentResourceId: definition.resourceId, resourceVersion: definition.resourceVersion,
+      versions: [{ ...version, state: "PUBLISHED", canUpdate: false, canPublish: false, content: rest }], nextOffset: null } } : undefined);
+    const host = await open(t);
+    const directory = section(host, "agent-version-directory");
+    expect(directory.textContent).not.toContain(version.configHash);
+  });
+
   it.each(["PUBLISHED", "RETIRED"])("reads %s history without generating draft write controls", async (state) => {
     const t = routes((r) => r.path.includes("/versions?") ? { status: 200, body: {
       agentResourceId: definition.resourceId, resourceVersion: definition.resourceVersion,

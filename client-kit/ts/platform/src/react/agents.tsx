@@ -2676,10 +2676,12 @@ function validVersion(row: AgentVersionView, resourceId: string): boolean {
     && (row.canRetire === undefined || typeof row.canRetire === "boolean")
     && (row.state === AgentVersionState.Draft || (!row.canUpdate && !row.canPublish))
     && (row.state === AgentVersionState.Published || !row.canRetire)
-    && !!content && typeof content.instructions === "string" && !!content.instructions.trim()
+    && !!content && typeof content.instructions === "string"
     && !!content.personaIdentity && typeof content.personaIdentity.displayName === "string" && !!content.personaIdentity.displayName.trim()
     && [content.personaIdentity.description, content.personaIdentity.avatarUrl].every((value) => value === undefined || typeof value === "string")
-    && [content.runtimeProfileKey, content.modelRouteResourceId, content.replyPolicy].every((value) => typeof value === "string" && !!value.trim())
+    // DD-131(2): only a DRAFT may lack runtime, route, reply policy or instructions; published content is complete.
+    && [content.runtimeProfileKey, content.modelRouteResourceId, content.replyPolicy].every((value) => value === undefined || (typeof value === "string" && !!value.trim()))
+    && (row.state === AgentVersionState.Draft || versionMissing(content).length === 0)
     && [content.skillVersionAssetIds, content.declaredToolResourceIds, content.capabilityRequirements].every((values) => Array.isArray(values)
       && values.every((value) => typeof value === "string" && !!value.trim()) && new Set(values).size === values.length)
     && content.capabilityRequirements.every((key) => /^[^@]+@[^@\s]+$/.test(key))
@@ -2691,6 +2693,19 @@ function validVersion(row: AgentVersionView, resourceId: string): boolean {
     && !!content.memoryPolicy && Object.values(AgentMemoryCoreWrite).includes(content.memoryPolicy.coreWrite)
     && Object.values(AgentMemoryColdWrite).includes(content.memoryPolicy.coldWrite);
 }
+
+/** What a DRAFT still needs before `agent.version.publish` admits it (DD-131(2)); empty when complete. */
+export function versionMissing(content: AgentVersionView["content"]): ("instructions" | "runtime")[] {
+  const missing: ("instructions" | "runtime")[] = [];
+  if (!content.instructions.trim()) missing.push("instructions");
+  if (![content.runtimeProfileKey, content.modelRouteResourceId, content.replyPolicy].every((value) => typeof value === "string" && !!value.trim())) missing.push("runtime");
+  return missing;
+}
+
+const missingLabels = {
+  instructions: "agents.version.instructionsRequired",
+  runtime: "agents.version.runtimeRequired",
+} as const satisfies Record<ReturnType<typeof versionMissing>[number], PlatformMessageKey>;
 
 function validVersionConfiguration(page: AgentVersionConfigurationPage, definition: AgentDefinitionView, offset: number): boolean {
   return !!page && page.agentResourceId === definition.resourceId && page.resourceVersion === definition.resourceVersion
@@ -2761,16 +2776,19 @@ function VersionDirectory({ definition, locked, onEdit }: {
             <h4 className="text-sm font-medium">{version.content.personaIdentity.displayName} · {version.ordinal} · <Badge tone="neutral">{t(versionLabels[version.state])}</Badge></h4>
             <p className="break-words text-sm">{version.assetId} · {t("agents.version.assetVersion")}: {version.assetVersion}</p>
             <p className="break-words text-sm">{t("agents.owner")}: {version.ownerPrincipalId}</p>
-            <p className="break-words text-sm">{t("agents.version.runtimeProfile")}: {version.content.runtimeProfileKey} · {t("agents.version.modelRoute")}: {version.content.modelRouteResourceId}</p>
+            <p className="break-words text-sm">{t("agents.version.runtimeProfile")}: {version.content.runtimeProfileKey ?? "—"} · {t("agents.version.modelRoute")}: {version.content.modelRouteResourceId ?? "—"}</p>
             <p className="break-all font-mono text-xs">{t("agents.version.hash")}: {version.configHash}</p>
             <p className="break-words text-sm">{t("agents.version.skillReferences")}: {version.content.skillVersionAssetIds.join(", ") || "—"}</p>
             <p className="break-words text-sm">{t("agents.tools.selected")}: {version.content.declaredToolResourceIds.join(", ") || "—"}</p>
             <p className="break-words text-sm">{t("agents.version.capabilities")}: {version.content.capabilityRequirements.join(", ") || "—"}</p>
             <details><summary className="cursor-pointer text-sm">{t("agents.version.instructions")}</summary>
               <pre className="whitespace-pre-wrap break-words text-sm">{version.content.instructions}</pre></details>
+            {version.state === AgentVersionState.Draft ? versionMissing(version.content).map((item) =>
+              <p key={item} className="text-sm text-muted-foreground" data-testid={`agent-version-missing-${item}`}>{t(missingLabels[item])}</p>) : null}
             {version.state === AgentVersionState.Draft && source && source.routes.length > 0 ? <div className="flex flex-wrap gap-2">
               {version.canUpdate === true ? <Button disabled={locked} onClick={() => onEdit({ definition, version, mode: "edit", configurationOffsets })}>{t("agents.version.edit")}</Button> : null}
-              {version.canPublish === true ? <Button disabled={locked} onClick={() => onEdit({ definition, version, mode: "publish", configurationOffsets })}>{t("agents.version.publish")}</Button> : null}
+              {version.canPublish === true ? <Button disabled={locked || versionMissing(version.content).length > 0}
+                onClick={() => onEdit({ definition, version, mode: "publish", configurationOffsets })}>{t("agents.version.publish")}</Button> : null}
             </div> : null}
             {version.state === AgentVersionState.Published && version.canRetire === true ? <Button className="w-fit" disabled={locked}
               onClick={() => onEdit({ definition, version, mode: "retire", configurationOffsets })}>{t("agents.version.retire")}</Button> : null}
@@ -2998,6 +3016,7 @@ function VersionAction({ edit, avatarHost, onReset, onLocked, onRecorded }: {
               <div className={PERSONA_FIELD_SHELL_CLASS}>
                 <AgentTextarea required id={`${formId}-instructions`} value={instructions} onChange={(event) => setInstructions(event.target.value)} placeholder={t("agents.identity.instructionsPlaceholder")} className={`min-h-40 resize-y px-3 py-3 leading-5 ${PERSONA_FIELD_CONTROL_CLASS}`} />
               </div>
+              {!instructions.trim() ? <p className="text-xs text-muted-foreground">{t("agents.version.instructionsRequired")}</p> : null}
             </div>
             <div className="space-y-1.5">
               <label className="text-sm font-medium text-foreground" htmlFor={`${formId}-runtime`}>{t("agents.version.runtimeProfile")}</label>

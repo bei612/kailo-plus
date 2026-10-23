@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "api/agent_import_configuration_page.schema.json",
   "title": "AgentImportConfigurationPage",
-  "description": "DD-131(2)、DD-26：导入人在本 Tenant 可选的 RuntimeProfile 与已治理 Route（与版本配置目录同一来源与过滤）。缺真实来源时两目录为空且 canImport=false；目录不授予发布、安装或运行权限。",
+  "description": "DD-131(2)、DD-26：导入人在本 Tenant 可选的 RuntimeProfile 与已治理 Route（与版本配置目录同一来源与过滤）。目录为空不阻止导入（导入时不强制选择，DD-131(2)）；canImport 只反映动作开放与 Tenant create。目录不授予发布、安装或运行权限。",
   "type": "object",
   "additionalProperties": false,
   "required": ["profiles", "routes", "nextOffset", "canImport"],

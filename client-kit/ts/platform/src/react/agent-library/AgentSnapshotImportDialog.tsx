@@ -4,7 +4,9 @@
 // 包字节只经 BFF 为本会话暂存并由 Core 解码；本地不信任包内任何字段。确认后提交
 // agent.definition.import：Core 建新 Definition 与一个 DRAFT 版本，不发布、不安装。
 // 原版的“保留名单”选项不提供（名单公钥属来源身份，DD-131(2)），记忆不导入（DD-131(4)）；
-// 运行时与模型路由由导入人按本 Tenant 目录重选（DD-26）。视觉只用 client-kit 主题 token。
+// 运行时与模型路由由导入人按本 Tenant 目录重选（DD-26），导入时不强制选择：草稿可缺省，发布前在
+// 版本编辑器补齐；没有提示词的包得到空指令草稿；内联头像由 Core 存为本 Tenant 媒体对象，草稿引用之
+// （DD-131(2) 2026-10-23 裁定）。视觉只用 client-kit 主题 token。
 import {
   ActionDispatchState,
   ActionGateState,
@@ -92,9 +94,12 @@ function validPreview(view: AgentSnapshotImportPreview, source: AgentSnapshotSou
   return !!view && typeof view.uploadId === "string" && !!view.uploadId
     && /^[a-f0-9]{64}$/.test(view.packageDigest) && view.packageByteSize === source.bytes.length
     && view.mediaType === source.mediaType && typeof view.displayName === "string" && !!view.displayName.trim()
-    && typeof view.instructions === "string" && !!view.instructions.trim()
+    && typeof view.instructions === "string"
     && Array.isArray(view.omitted) && view.omitted.every((code) => omissions.includes(code))
-    && (view.avatarDataUrl === undefined || /^data:image\/(png|jpeg|gif|webp);base64,/.test(view.avatarDataUrl));
+    && (view.avatarDataUrl === undefined || /^data:image\/(png|jpeg|gif|webp);base64,/.test(view.avatarDataUrl))
+    // An inline avatar is always staged as a content-addressed object; nothing else carries one.
+    && (view.avatarUrl === undefined ? view.avatarDataUrl === undefined
+      : view.avatarDataUrl !== undefined && /^https?:\/\/[^/]+\/media\/[0-9a-f]{64}(\.[A-Za-z0-9]+)?$/.test(view.avatarUrl));
 }
 
 function validConfiguration(page: AgentImportConfigurationPage): boolean {
@@ -187,20 +192,21 @@ function ImportBody({ source, action, onClose }: { source: AgentSnapshotSource; 
   const [routeId, setRouteId] = useState("");
   const [slug, setSlug] = useState("");
   useEffect(() => { if (preview && !slug) setSlug(defaultImportSlug(preview.displayName, suffix)); }, [preview, slug, suffix]);
+  // DD-131(2): no forced choice. A selection that is no longer on the current page is cleared, never replaced.
   useEffect(() => {
     if (!configuration) return;
-    if (!configuration.profiles.some((profile) => profile.key === profileKey)) setProfileKey(configuration.profiles[0]?.key ?? "");
-    if (!configuration.routes.some((route) => route.resourceId === routeId)) setRouteId(configuration.routes[0]?.resourceId ?? "");
+    if (profileKey && !configuration.profiles.some((profile) => profile.key === profileKey)) setProfileKey("");
+    if (routeId && !configuration.routes.some((route) => route.resourceId === routeId)) setRouteId("");
   }, [configuration, profileKey, routeId]);
   const done = action.submission !== null && !action.unknown;
   const slugValid = SLUG.test(slug) && !slug.endsWith("-");
-  const ready = !!preview && !!configuration && configuration.canImport && !!profileKey && !!routeId && slugValid;
+  const ready = !!preview && !!configuration && configuration.canImport && slugValid;
   const review = () => {
     if (!preview || !ready) return;
     action.prepare({
       actionKey: "agent.definition.import", slug, explicitConfirmation: true,
       agentDefinitionImport: { uploadId: preview.uploadId, packageDigest: preview.packageDigest,
-        runtimeProfileKey: profileKey, modelRouteResourceId: routeId },
+        ...(profileKey ? { runtimeProfileKey: profileKey } : {}), ...(routeId ? { modelRouteResourceId: routeId } : {}) },
     });
   };
 
@@ -220,6 +226,7 @@ function ImportBody({ source, action, onClose }: { source: AgentSnapshotSource; 
       <div className="min-w-0">
         <p className="break-words text-base font-medium">{preview.displayName}</p>
         {preview.description ? <p className="break-words text-muted-foreground">{preview.description}</p> : null}
+        {preview.avatarUrl ? <p className="text-xs text-muted-foreground" data-testid="agent-snapshot-import-avatar-imported">{t("agents.snapshot.avatarImported")}</p> : null}
       </div>
     </div>
     <section className="flex flex-col gap-2 rounded-md border p-3" data-testid="agent-snapshot-import-behavior">
@@ -227,8 +234,9 @@ function ImportBody({ source, action, onClose }: { source: AgentSnapshotSource; 
         <p className="font-medium">{t("agents.snapshot.instructions")}</p>
         <p className="text-xs text-muted-foreground">{t("agents.snapshot.instructionsHint")}</p>
       </div>
-      <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words rounded bg-muted/60 p-3 text-xs"
+      {preview.instructions.trim() ? <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words rounded bg-muted/60 p-3 text-xs"
         data-testid="agent-snapshot-import-instructions">{preview.instructions}</pre>
+        : <p role="status" className="rounded bg-muted/60 p-3 text-xs" data-testid="agent-snapshot-import-no-instructions">{t("agents.snapshot.noInstructions")}</p>}
       <p className="text-xs text-muted-foreground">
         {[preview.parallelism !== undefined ? t("agents.snapshot.parallelism", { count: String(preview.parallelism) }) : null,
           preview.idleTimeoutSeconds !== undefined ? t("agents.snapshot.idle", { seconds: String(preview.idleTimeoutSeconds) }) : null,
@@ -246,15 +254,18 @@ function ImportBody({ source, action, onClose }: { source: AgentSnapshotSource; 
     {!action.intent && !done ? <section className="flex flex-col gap-3 rounded-md border p-3">
       {configured.status === "pending" ? <Notice role="status">{t("platform.loading")}</Notice>
         : !configuration ? <ReadFailure error={configured.status === "error" ? configured.error : undefined} onRetry={reconfigure} />
-        : !configuration.canImport || configuration.routes.length === 0 || configuration.profiles.length === 0
+        : !configuration.canImport
           ? <Notice role="alert">{t("agents.snapshot.unavailable")}</Notice>
           : <>
+            <p className="text-xs text-muted-foreground">{t("agents.snapshot.runtimeOptional")}</p>
             <label className="flex flex-col gap-1" htmlFor={`${id}-profile`}>{t("agents.version.runtimeProfile")}
               <select id={`${id}-profile`} value={profileKey} onChange={(event) => setProfileKey(event.target.value)} className={INPUT_CLASS}>
+                <option value="">{t("agents.snapshot.runtimeLater")}</option>
                 {configuration.profiles.map((profile) => <option key={profile.key} value={profile.key}>{profile.key}</option>)}
               </select></label>
             <label className="flex flex-col gap-1" htmlFor={`${id}-route`}>{t("agents.version.modelRoute")}
               <select id={`${id}-route`} value={routeId} onChange={(event) => setRouteId(event.target.value)} className={`${INPUT_CLASS} font-mono`}>
+                <option value="">{t("agents.snapshot.runtimeLater")}</option>
                 {configuration.routes.map((route) => <option key={route.resourceId} value={route.resourceId}>{route.resourceId}</option>)}
               </select></label>
             {pageIndex > 0 || configuration.nextOffset != null ? <div className="flex gap-2">

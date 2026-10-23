@@ -2,10 +2,10 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "domain/agent_definition_import_input.schema.json",
   "title": "AgentDefinitionImportInput",
-  "description": "仅 agent.definition.import（DD-131(2)、05 §2.12）：引用本 PlatformSession、本人的一次性快照上传与其包字节 SHA-256；包不携带运行时与模型路由（DD-26），由导入人按本 Tenant 目录重选，准入与 Workflow 内各自重验。",
+  "description": "仅 agent.definition.import（DD-131(2)、05 §2.12）：引用本 PlatformSession、本人的一次性快照上传与其包字节 SHA-256；包不携带运行时与模型路由（DD-26）。导入时不强制选择：所给的 Profile 与 Route 在准入与 Workflow 内各自重验，缺省的由 owner 发布前在版本编辑器补齐（DD-131(2)）。",
   "type": "object",
   "additionalProperties": false,
-  "required": ["uploadId", "packageDigest", "runtimeProfileKey", "modelRouteResourceId"],
+  "required": ["uploadId", "packageDigest"],
   "properties": {
     "uploadId": {"type": "string", "format": "uuid"},
     "packageDigest": {"type": "string", "pattern": "^[0-9a-f]{64}$", "description": "上传返回的包字节 SHA-256；准入与 Workflow 读取包时重算比对。"},

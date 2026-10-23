@@ -797,7 +797,7 @@ pub async fn candidates(
             Err(Refusal::Denied(_) | Refusal::Blocked(_) | Refusal::Conflict(_)) => continue,
             Err(error) => return error.respond(None),
         }
-        let route_id = match Uuid::parse_str(&content.model_route_resource_id) {
+        let route_id = match crate::agent_version::route_id(&content) {
             Ok(id) => id,
             Err(_) => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
         };

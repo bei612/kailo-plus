@@ -23,6 +23,10 @@ const MAX_AVATAR_INLINE_BYTES: usize = 2 * 1024 * 1024;
 const MAX_DISPLAY_NAME_CHARS: usize = 128;
 const MAX_SYSTEM_PROMPT_BYTES: usize = 64 * 1024;
 const MAX_DESCRIPTION_CHARS: usize = 280;
+/// 不选 RuntimeProfile 时的单轮时限缺省，即原版 `buzz-acp/src/config.rs`
+/// `DEFAULT_IDLE_TIMEOUT_SECS` / `DEFAULT_MAX_TURN_DURATION_SECS`；发布时按所选 Profile 上限校验。
+const DEFAULT_IDLE_TIMEOUT_SECONDS: i64 = 1_500;
+const DEFAULT_MAX_TURN_DURATION_SECONDS: i64 = 7_200;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum MediaType {
@@ -236,10 +240,9 @@ fn map(value: &Value) -> Result<Snapshot, Refusal> {
         return Err(invalid());
     }
     let instructions = optional_text(definition, "systemPrompt")?.unwrap_or_default();
-    // AgentVersion 的 instructions 必填：没有提示词的包不能成为合法 DRAFT。
-    if instructions.trim().is_empty()
-        || instructions.len() > MAX_SYSTEM_PROMPT_BYTES
-        || !visible(instructions, true)
+    // DD-131(2)：没有提示词的包与原版一样可以导入，得到空指令的 DRAFT，补充后才能发布。
+    if instructions.len() > MAX_SYSTEM_PROMPT_BYTES
+        || (!instructions.is_empty() && !visible(instructions, true))
     {
         return Err(invalid());
     }
@@ -297,15 +300,16 @@ fn map(value: &Value) -> Result<Snapshot, Refusal> {
     }
     let avatar_data_url = match optional_text(profile, "avatarDataUrl")? {
         Some(url) => {
-            let bytes = inline_image(url).ok_or_else(invalid)?;
-            if bytes > MAX_AVATAR_INLINE_BYTES {
+            let (_, bytes) = inline_image(url).ok_or_else(invalid)?;
+            if bytes.len() > MAX_AVATAR_INLINE_BYTES {
                 return Err(too_large());
             }
             Some(url.to_owned())
         }
         None => None,
     };
-    if avatar_data_url.is_some() || optional_text(profile, "avatarUrl")?.is_some() {
+    // 内联头像按 (7) 附件规则导入；只引用外部地址的头像不跟随（来源 Community 的媒体不可读）。
+    if avatar_data_url.is_none() && optional_text(profile, "avatarUrl")?.is_some() {
         omitted.push("AVATAR");
     }
     let kailo = definition.get("kailo").filter(|v| !v.is_null());
@@ -350,8 +354,8 @@ fn map(value: &Value) -> Result<Snapshot, Refusal> {
     })
 }
 
-/// `data:image/<png|jpeg|gif|webp>;base64,...` 的解码字节数；其他 URL 不是内联头像。
-fn inline_image(url: &str) -> Option<usize> {
+/// `data:image/<png|jpeg|gif|webp>;base64,...` 的 MIME 与解码字节；其他 URL 不是内联头像。
+fn inline_image(url: &str) -> Option<(&str, Vec<u8>)> {
     let rest = url.strip_prefix("data:")?;
     let (header, data) = rest.split_once(',')?;
     let mime = header.strip_suffix(";base64")?;
@@ -361,10 +365,27 @@ fn inline_image(url: &str) -> Option<usize> {
     ) {
         return None;
     }
-    base64::engine::general_purpose::STANDARD
+    let bytes = base64::engine::general_purpose::STANDARD
         .decode(data.trim())
-        .ok()
-        .map(|bytes| bytes.len())
+        .ok()?;
+    (!bytes.is_empty()).then_some((mime, bytes))
+}
+
+/// 包内联头像的 MIME、字节与字节 SHA-256（DD-131(2)、(7)）：上传为本 Tenant 媒体对象前与
+/// Workflow 推进时各取一次，以摘要确认两次是同一份头像。
+pub(crate) struct InlineAvatar {
+    pub mime: String,
+    pub bytes: Vec<u8>,
+    pub digest: String,
+}
+
+pub(crate) fn inline_avatar(snapshot: &Snapshot) -> Option<InlineAvatar> {
+    let (mime, bytes) = inline_image(snapshot.avatar_data_url.as_deref()?)?;
+    Some(InlineAvatar {
+        mime: mime.to_owned(),
+        digest: sha256_hex(&bytes),
+        bytes,
+    })
 }
 
 /// 导入预览（`AgentSnapshotImportPreview` 的映射字段部分）。
@@ -398,64 +419,97 @@ pub(crate) fn preview_fields(snapshot: &Snapshot) -> Value {
     view
 }
 
-/// DD-131(2) 原版映射到新 DRAFT 内容。运行时与路由由导入人重选（DD-26）；回复策略取包的
-/// Kailo 扩展（须在所选 Profile 登记），否则取 Profile 首个线程回复策略，即原版 owner-only 默认；
-/// 时限与并发按 Profile 上限收敛；Skill 与工具不带入，由 owner 发布前按本 Tenant 目录重选。
+/// DD-131(2) 原版映射到新 DRAFT 内容。导入时不强制选择运行配置（DD-26，与原版一致）：
+/// 选了 Profile 时，回复策略取包的 Kailo 扩展（须在该 Profile 登记），否则取 Profile 首个线程
+/// 回复策略，即原版 owner-only 默认，时限与并发按 Profile 上限收敛，能力需求只保留其合同声明的；
+/// 未选 Profile 时回复策略缺省，时限取包值或原版缺省，能力需求原样保留，发布时再按所选 Profile
+/// 校验。Route 缺省同理。`avatar_url` 是内联头像已存入本 Tenant 的媒体对象地址。
+/// Skill 与工具不带入，由 owner 发布前按本 Tenant 目录重选。
 pub(crate) fn content(
     snapshot: &Snapshot,
-    profile: &contracts::RuntimeProfileDirectoryProfilesItem,
-    route: &str,
+    profile: Option<&contracts::RuntimeProfileDirectoryProfilesItem>,
+    route: Option<&str>,
+    avatar_url: Option<&str>,
 ) -> Result<contracts::AgentVersionContent, Refusal> {
-    let c = &profile.capability_contract;
-    let mappings = c.reply_policy_mappings.as_deref().unwrap_or_default();
-    let registered = |key: &str| {
-        c.reply_policies.iter().any(|p| p == key) && mappings.iter().any(|m| m.key == key)
-    };
-    let reply = snapshot
-        .reply_policy
-        .clone()
-        .filter(|key| registered(key))
-        .or_else(|| {
-            c.reply_policies
-                .iter()
-                .find(|key| {
-                    mappings
-                        .iter()
-                        .any(|m| &m.key == *key && m.thread_replies && !m.broadcast_replies)
-                })
-                .cloned()
-        })
-        .ok_or(Refusal::Blocked(ReasonCode::CapabilityBlocked))?;
-    let clamp = |requested: Option<i64>, max: i64| requested.unwrap_or(max).clamp(1, max.max(1));
-    let max_turn = clamp(
-        snapshot.max_turn_duration_seconds,
-        c.max_turn_duration_seconds,
-    );
-    let idle = clamp(snapshot.idle_timeout_seconds, c.max_idle_timeout_seconds).min(max_turn);
     let mut persona = json!({"displayName": snapshot.display_name});
     if let Some(description) = &snapshot.description {
         persona["description"] = json!(description);
     }
-    let requirements: Vec<&String> = snapshot
-        .capability_requirements
-        .iter()
-        .filter(|key| c.capability_requirements.contains(key))
-        .collect();
-    let value = json!({
+    if let Some(url) = avatar_url {
+        persona["avatarUrl"] = json!(url);
+    }
+    let mut value = json!({
         "personaIdentity": persona,
         "instructions": snapshot.instructions,
-        "runtimeProfileKey": profile.key,
-        "modelRouteResourceId": route,
         "skillVersionAssetIds": [],
         "declaredToolResourceIds": [],
-        "capabilityRequirements": requirements,
         "triggerDefaults": snapshot.trigger_defaults.clone().unwrap_or_else(|| json!(["MENTION"])),
-        "replyPolicy": reply,
-        "parallelism": snapshot.parallelism.unwrap_or(1).clamp(1, c.max_parallelism.max(1)),
-        "turnLimits": {"idleTimeoutSeconds": idle, "maxTurnDurationSeconds": max_turn},
         "memoryPolicy": snapshot.memory_policy.clone()
             .unwrap_or_else(|| json!({"coreWrite": "HUMAN_ONLY", "coldWrite": "DISABLED"})),
     });
+    if let Some(route) = route {
+        value["modelRouteResourceId"] = json!(route);
+    }
+    match profile {
+        Some(profile) => {
+            let c = &profile.capability_contract;
+            let mappings = c.reply_policy_mappings.as_deref().unwrap_or_default();
+            let registered = |key: &str| {
+                c.reply_policies.iter().any(|p| p == key) && mappings.iter().any(|m| m.key == key)
+            };
+            let reply = snapshot
+                .reply_policy
+                .clone()
+                .filter(|key| registered(key))
+                .or_else(|| {
+                    c.reply_policies
+                        .iter()
+                        .find(|key| {
+                            mappings
+                                .iter()
+                                .any(|m| &m.key == *key && m.thread_replies && !m.broadcast_replies)
+                        })
+                        .cloned()
+                })
+                .ok_or(Refusal::Blocked(ReasonCode::CapabilityBlocked))?;
+            let clamp =
+                |requested: Option<i64>, max: i64| requested.unwrap_or(max).clamp(1, max.max(1));
+            let max_turn = clamp(
+                snapshot.max_turn_duration_seconds,
+                c.max_turn_duration_seconds,
+            );
+            let idle =
+                clamp(snapshot.idle_timeout_seconds, c.max_idle_timeout_seconds).min(max_turn);
+            let requirements: Vec<&String> = snapshot
+                .capability_requirements
+                .iter()
+                .filter(|key| c.capability_requirements.contains(key))
+                .collect();
+            value["runtimeProfileKey"] = json!(profile.key);
+            value["replyPolicy"] = json!(reply);
+            value["capabilityRequirements"] = json!(requirements);
+            value["parallelism"] = json!(snapshot
+                .parallelism
+                .unwrap_or(1)
+                .clamp(1, c.max_parallelism.max(1)));
+            value["turnLimits"] =
+                json!({"idleTimeoutSeconds": idle, "maxTurnDurationSeconds": max_turn});
+        }
+        None => {
+            let max_turn = snapshot
+                .max_turn_duration_seconds
+                .unwrap_or(DEFAULT_MAX_TURN_DURATION_SECONDS)
+                .max(1);
+            let idle = snapshot
+                .idle_timeout_seconds
+                .unwrap_or(DEFAULT_IDLE_TIMEOUT_SECONDS)
+                .clamp(1, max_turn);
+            value["capabilityRequirements"] = json!(snapshot.capability_requirements);
+            value["parallelism"] = json!(snapshot.parallelism.unwrap_or(1).max(1));
+            value["turnLimits"] =
+                json!({"idleTimeoutSeconds": idle, "maxTurnDurationSeconds": max_turn});
+        }
+    }
     serde_json::from_value(value).map_err(|_| invalid())
 }
 
@@ -566,13 +620,103 @@ mod tests {
         }))
         .unwrap();
         let route = uuid::Uuid::new_v4().to_string();
-        let content = content(&snapshot, &profile, &route).unwrap();
-        assert_eq!(content.reply_policy, "thread");
+        let content = content(&snapshot, Some(&profile), Some(&route), None).unwrap();
+        assert_eq!(content.reply_policy.as_deref(), Some("thread"));
         assert_eq!(content.parallelism, 1);
         assert_eq!(content.turn_limits.idle_timeout_seconds, 120);
         assert_eq!(content.turn_limits.max_turn_duration_seconds, 600);
         assert!(content.skill_version_asset_ids.is_empty());
         assert!(content.persona_identity.avatar_url.is_none());
         assert!(crate::agent_version::content(&content).is_ok());
+        assert!(crate::agent_version::complete(&content).is_ok());
+    }
+
+    #[test]
+    fn draft_without_runtime_route_or_prompt_is_valid_but_not_publishable() {
+        // DD-131(2) ruling: no forced choice at import; publish requires them.
+        let mut manifest = manifest();
+        manifest["definition"]
+            .as_object_mut()
+            .unwrap()
+            .remove("systemPrompt");
+        let snapshot = decode(&serde_json::to_vec(&manifest).unwrap(), MediaType::Json).unwrap();
+        assert_eq!(snapshot.instructions, "");
+        let draft = content(&snapshot, None, None, None).unwrap();
+        assert!(draft.runtime_profile_key.is_none());
+        assert!(draft.model_route_resource_id.is_none());
+        assert!(draft.reply_policy.is_none());
+        // Package limits survive unclamped until a Profile is chosen.
+        assert_eq!(draft.parallelism, 2);
+        assert_eq!(draft.turn_limits.idle_timeout_seconds, 300);
+        assert_eq!(draft.turn_limits.max_turn_duration_seconds, 1200);
+        let (normalized, _) = crate::agent_version::content(&draft).unwrap();
+        assert!(normalized.get("runtimeProfileKey").is_none());
+        assert!(normalized.get("modelRouteResourceId").is_none());
+        assert!(normalized.get("replyPolicy").is_none());
+        assert!(crate::agent_version::complete(&draft).is_err());
+        // Even with runtime chosen, empty instructions stay unpublishable.
+        let mut filled = draft.clone();
+        filled.runtime_profile_key = Some("server-codex".into());
+        filled.model_route_resource_id = Some(uuid::Uuid::new_v4().to_string());
+        filled.reply_policy = Some("thread".into());
+        assert!(crate::agent_version::complete(&filled).is_err());
+        filled.instructions = "Write.".into();
+        assert!(crate::agent_version::complete(&filled).is_ok());
+        // Without limits in the package the original defaults apply.
+        let mut bare = super::tests::manifest();
+        for key in [
+            "idleTimeoutSeconds",
+            "maxTurnDurationSeconds",
+            "parallelism",
+        ] {
+            bare["definition"].as_object_mut().unwrap().remove(key);
+        }
+        let snapshot = decode(&serde_json::to_vec(&bare).unwrap(), MediaType::Json).unwrap();
+        let draft = content(&snapshot, None, None, None).unwrap();
+        assert_eq!(draft.turn_limits.idle_timeout_seconds, 1_500);
+        assert_eq!(draft.turn_limits.max_turn_duration_seconds, 7_200);
+        assert_eq!(draft.parallelism, 1);
+    }
+
+    #[test]
+    fn present_optional_fields_must_still_be_well_formed() {
+        let snapshot = decode(&serde_json::to_vec(&manifest()).unwrap(), MediaType::Json).unwrap();
+        let mut draft = content(&snapshot, None, None, None).unwrap();
+        draft.model_route_resource_id = Some("not-a-uuid".into());
+        assert!(crate::agent_version::content(&draft).is_err());
+        draft.model_route_resource_id = None;
+        draft.runtime_profile_key = Some("  ".into());
+        assert!(crate::agent_version::content(&draft).is_err());
+        draft.runtime_profile_key = None;
+        draft.reply_policy = Some(String::new());
+        assert!(crate::agent_version::content(&draft).is_err());
+    }
+
+    #[test]
+    fn inline_avatar_is_imported_by_reference_not_omitted() {
+        let png = base64::engine::general_purpose::STANDARD.encode(b"\x89PNG avatar bytes");
+        let mut with_avatar = manifest();
+        with_avatar["profile"]["avatarDataUrl"] = json!(format!("data:image/png;base64,{png}"));
+        let snapshot = decode(&serde_json::to_vec(&with_avatar).unwrap(), MediaType::Json).unwrap();
+        assert!(!snapshot.omitted.contains(&"AVATAR"));
+        let avatar = inline_avatar(&snapshot).unwrap();
+        assert_eq!(avatar.mime, "image/png");
+        assert_eq!(avatar.bytes, b"\x89PNG avatar bytes");
+        assert_eq!(avatar.digest, sha256_hex(b"\x89PNG avatar bytes"));
+        let url = format!("https://buzz.example.test/media/{}.png", "a".repeat(64));
+        let draft = content(&snapshot, None, None, Some(&url)).unwrap();
+        assert_eq!(
+            draft.persona_identity.avatar_url.as_deref(),
+            Some(url.as_str())
+        );
+        // The version body references the object; the inline bytes never enter it.
+        let (normalized, _) = crate::agent_version::content(&draft).unwrap();
+        assert!(!normalized.to_string().contains("base64"));
+        // An external-only avatar address cannot follow the package.
+        let mut external = manifest();
+        external["profile"]["avatarUrl"] = json!("https://elsewhere.test/media/x.png");
+        let snapshot = decode(&serde_json::to_vec(&external).unwrap(), MediaType::Json).unwrap();
+        assert!(snapshot.omitted.contains(&"AVATAR"));
+        assert!(inline_avatar(&snapshot).is_none());
     }
 }

@@ -75,8 +75,9 @@ pub(crate) fn validate_params(p: &Params) -> Result<(), Refusal> {
 pub(crate) struct ImportInput {
     pub upload_id: Uuid,
     pub package_digest: String,
-    pub runtime_profile_key: String,
-    pub model_route_resource_id: Uuid,
+    /// DD-131(2)：导入时不强制选择；缺省由 owner 发布前在版本编辑器补齐。
+    pub runtime_profile_key: Option<String>,
+    pub model_route_resource_id: Option<Uuid>,
 }
 
 pub(crate) fn input(p: &Params) -> Result<ImportInput, Refusal> {
@@ -97,9 +98,16 @@ pub(crate) fn input(p: &Params) -> Result<ImportInput, Refusal> {
     Ok(ImportInput {
         upload_id: Uuid::parse_str(text(value, "uploadId")?).map_err(|_| invalid())?,
         package_digest: digest.to_owned(),
-        runtime_profile_key: text(value, "runtimeProfileKey")?.to_owned(),
-        model_route_resource_id: Uuid::parse_str(text(value, "modelRouteResourceId")?)
-            .map_err(|_| invalid())?,
+        runtime_profile_key: match value.get("runtimeProfileKey") {
+            None => None,
+            Some(_) => Some(text(value, "runtimeProfileKey")?.to_owned()),
+        },
+        model_route_resource_id: match value.get("modelRouteResourceId") {
+            None => None,
+            Some(_) => {
+                Some(Uuid::parse_str(text(value, "modelRouteResourceId")?).map_err(|_| invalid())?)
+            }
+        },
     })
 }
 
@@ -116,10 +124,30 @@ struct Staged {
     package_digest: String,
     expired: bool,
     consumed_by: Option<Uuid>,
+    avatar: Option<StagedAvatar>,
 }
 
-/// media_type, package, package_digest, expired, consumed_by
-type StagedRow = (String, Option<Vec<u8>>, String, bool, Option<Uuid>);
+/// DD-131(2)、(7)：上传时把包内联头像存为本 Tenant 内容寻址媒体对象的结果。`source_digest`
+/// 是包内头像字节的 SHA-256，Workflow 重读包时据此确认仍是同一份头像。
+#[derive(Debug, Clone, PartialEq)]
+struct StagedAvatar {
+    url: String,
+    media_sha256: String,
+    source_digest: String,
+}
+
+/// media_type, package, package_digest, expired, consumed_by, avatar_url, avatar_media_sha256,
+/// avatar_source_digest
+type StagedRow = (
+    String,
+    Option<Vec<u8>>,
+    String,
+    bool,
+    Option<Uuid>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+);
 
 async fn staged(
     conn: &mut PgConnection,
@@ -129,7 +157,8 @@ async fn staged(
     lock: bool,
 ) -> Result<Option<Staged>, sqlx::Error> {
     let row: Option<StagedRow> = sqlx::query_as(&format!(
-        "select media_type,package,package_digest,expires_at<=now(),consumed_by_action_execution_id
+        "select media_type,package,package_digest,expires_at<=now(),consumed_by_action_execution_id,
+                avatar_url,avatar_media_sha256,avatar_source_digest
              from admission.transfer_upload where id=$1 and tenant_id=$2 and principal_id=$3
                and format_key=$4{}",
         if lock { " for update" } else { "" }
@@ -141,12 +170,20 @@ async fn staged(
     .fetch_optional(conn)
     .await?;
     Ok(row.map(
-        |(media_type, package, package_digest, expired, consumed_by)| Staged {
+        |(media_type, package, package_digest, expired, consumed_by, url, media, source)| Staged {
             media_type,
             package,
             package_digest,
             expired,
             consumed_by,
+            avatar: match (url, media, source) {
+                (Some(url), Some(media_sha256), Some(source_digest)) => Some(StagedAvatar {
+                    url,
+                    media_sha256,
+                    source_digest,
+                }),
+                _ => None,
+            },
         },
     ))
 }
@@ -161,8 +198,36 @@ fn reread(staged: &Staged, digest: &str) -> Result<Snapshot, Refusal> {
     agent_snapshot::decode(bytes, media)
 }
 
-/// 在本 Tenant 当前投递的 RuntimeProfile 合同下生成 DRAFT 内容，并按发布与安装同一链重验
-/// Profile 与 Route（作者 fresh read）。Skill 与工具不带入，无需在此重验。
+/// 暂存的头像必须正好对应重读包内的内联头像：包有头像而暂存没有（或反之）、或包内头像字节
+/// 摘要与上传时不同，都是确定的参数拒绝。返回写入 DRAFT personaIdentity 的对象地址。
+fn staged_avatar<'a>(staged: &'a Staged, snapshot: &Snapshot) -> Result<Option<&'a str>, Refusal> {
+    match (agent_snapshot::inline_avatar(snapshot), &staged.avatar) {
+        (None, None) => Ok(None),
+        (Some(avatar), Some(stored))
+            if avatar.digest == stored.source_digest
+                && media_url_hash(&stored.url) == Some(stored.media_sha256.as_str()) =>
+        {
+            Ok(Some(stored.url.as_str()))
+        }
+        _ => Err(invalid()),
+    }
+}
+
+/// `https://<community>/media/<sha256>[.ext]` 的内容摘要；其他地址不是本 Tenant 媒体对象。
+fn media_url_hash(url: &str) -> Option<&str> {
+    let (_, rest) = url.split_once("://")?;
+    let (_, path) = rest.split_once('/')?;
+    let file = path.strip_prefix("media/")?;
+    let hash = file.split('.').next()?;
+    (hash.len() == 64
+        && hash
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)))
+    .then_some(hash)
+}
+
+/// 生成 DRAFT 内容。DD-131(2)：导入不强制选择运行配置；所给的 Profile 按本 Tenant 当前投递的
+/// 合同、所给的 Route 按作者 fresh read 重验，缺省项由发布准入完整校验。Skill 与工具不带入。
 async fn draft_content(
     gov: &crate::governance::Governance,
     conn: &mut PgConnection,
@@ -170,20 +235,23 @@ async fn draft_content(
     human: Uuid,
     snapshot: &Snapshot,
     input: &ImportInput,
+    avatar_url: Option<&str>,
 ) -> Result<contracts::AgentVersionContent, Refusal> {
     let directory = crate::agent_version::runtime_profile_directory()?;
-    let profile = directory
-        .profiles
-        .iter()
-        .find(|p| p.key == input.runtime_profile_key)
-        .ok_or_else(blocked)?;
-    let content = agent_snapshot::content(
-        snapshot,
-        profile,
-        &input.model_route_resource_id.to_string(),
-    )?;
+    let profile = match &input.runtime_profile_key {
+        Some(key) => Some(
+            directory
+                .profiles
+                .iter()
+                .find(|p| &p.key == key)
+                .ok_or_else(blocked)?,
+        ),
+        None => None,
+    };
+    let route = input.model_route_resource_id.map(|id| id.to_string());
+    let content = agent_snapshot::content(snapshot, profile, route.as_deref(), avatar_url)?;
     crate::agent_version::content(&content)?;
-    crate::agent_version::validate_runtime_references(gov, conn, tenant, human, &content).await?;
+    crate::agent_version::validate_draft_references(gov, conn, tenant, human, &content).await?;
     Ok(content)
 }
 
@@ -316,6 +384,15 @@ pub async fn upload(
         Err(refusal) => return refusal.respond(None),
     };
     let digest = agent_snapshot::sha256_hex(&bytes);
+    // DD-131(2)、(7)：内联头像按附件规则存为本 Tenant 内容寻址媒体对象（本人身份上传，
+    // 复核 MIME、大小与回执摘要）；DRAFT 只引用该对象，字节不进入版本正文。
+    let avatar = match agent_snapshot::inline_avatar(&snapshot) {
+        Some(avatar) => match stage_avatar(&state, &ctx, &avatar).await {
+            Ok(stored) => Some(stored),
+            Err(response) => return response,
+        },
+        None => None,
+    };
     let mut tx = match state.pool.begin().await {
         Ok(tx) => tx,
         Err(e) => return crate::service_api::unavailable(e),
@@ -333,8 +410,9 @@ pub async fn upload(
     let upload_id = Uuid::new_v4();
     let expires: Result<chrono::DateTime<chrono::Utc>, _> = sqlx::query_scalar(
         "insert into admission.transfer_upload(id,tenant_id,session_id,principal_id,format_key,media_type,
-         package,package_digest,package_byte_size,expires_at)
-         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,now()+make_interval(secs=>$10::bigint)) returning expires_at",
+         package,package_digest,package_byte_size,expires_at,avatar_url,avatar_media_sha256,avatar_source_digest)
+         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,now()+make_interval(secs=>$10::bigint),$11,$12,$13)
+         returning expires_at",
     )
     .bind(upload_id)
     .bind(ctx.tenant_id)
@@ -346,6 +424,9 @@ pub async fn upload(
     .bind(&digest)
     .bind(i32::try_from(bytes.len()).unwrap_or(i32::MAX))
     .bind(UPLOAD_TTL_SECONDS)
+    .bind(avatar.as_ref().map(|a| a.url.clone()))
+    .bind(avatar.as_ref().map(|a| a.media_sha256.clone()))
+    .bind(avatar.as_ref().map(|a| a.source_digest.clone()))
     .fetch_one(&mut *tx)
     .await;
     let expires = match expires {
@@ -362,10 +443,49 @@ pub async fn upload(
     view["mediaType"] = json!(media.wire());
     view["formatKey"] = json!(agent_snapshot::FORMAT_KEY);
     view["expiresAt"] = json!(expires.to_rfc3339_opts(chrono::SecondsFormat::Secs, true));
+    if let Some(avatar) = &avatar {
+        view["avatarUrl"] = json!(avatar.url);
+    }
     match decode_view::<contracts::AgentSnapshotImportPreview>(view) {
         Ok(view) => Json(view).into_response(),
         Err(r) => r,
     }
+}
+
+/// 以导入人身份把内联头像上传为本 Tenant Community 的媒体对象（与资料头像同一 BFF 媒体链，
+/// DD-39）。回执必须是图片、地址落在本 Community 的 `/media/<sha256>`，且摘要与回执一致；
+/// 失败不暂存任何东西，由导入人重试。
+async fn stage_avatar(
+    state: &BffState,
+    ctx: &ExecutionContext,
+    avatar: &agent_snapshot::InlineAvatar,
+) -> Result<StagedAvatar, Response> {
+    let (client, host) = crate::web_profile::client(state, ctx).await?;
+    let descriptor = client
+        .upload_media(
+            &state.http,
+            avatar.bytes.clone(),
+            &avatar.mime,
+            state.media_max_bytes,
+        )
+        .await
+        .map_err(|error| crate::web_transport::media_upload_error_response(&error))?;
+    let local = crate::web_profile::avatar_media_paths(Some(&descriptor.url), &host);
+    if !descriptor
+        .mime_type
+        .as_deref()
+        .is_some_and(|mime| mime.starts_with("image/"))
+        || media_url_hash(&descriptor.url) != Some(descriptor.sha256.as_str())
+        || local.get(&descriptor.url).map(String::as_str)
+            != Some(format!("/api/v1/profile/media/{}", descriptor.sha256).as_str())
+    {
+        return Err(StatusCode::UNSUPPORTED_MEDIA_TYPE.into_response());
+    }
+    Ok(StagedAvatar {
+        url: descriptor.url,
+        media_sha256: descriptor.sha256,
+        source_digest: avatar.digest.clone(),
+    })
 }
 
 #[derive(Deserialize)]
@@ -399,15 +519,15 @@ pub async fn configuration(
             Ok(v) => v,
             Err(r) => return r,
         };
-    let can_import = !routes.is_empty()
-        && match offered(&state).await {
-            Ok(true) => match may_create(&state, &ctx).await {
-                Ok(allowed) => allowed,
-                Err(r) => return r,
-            },
-            Ok(false) => false,
+    // DD-131(2)：目录为空不阻止导入，运行配置可在发布前补齐。
+    let can_import = match offered(&state).await {
+        Ok(true) => match may_create(&state, &ctx).await {
+            Ok(allowed) => allowed,
             Err(r) => return r,
-        };
+        },
+        Ok(false) => false,
+        Err(r) => return r,
+    };
     match decode_view::<contracts::AgentImportConfigurationPage>(json!({
         "profiles": profiles, "routes": routes, "nextOffset": next, "canImport": can_import,
     })) {
@@ -470,7 +590,8 @@ pub(crate) async fn gate(
         return Err(conflict());
     }
     let snapshot = reread(&staged, &input.package_digest)?;
-    draft_content(gov, conn, tenant, initiator, &snapshot, &input).await?;
+    let avatar = staged_avatar(&staged, &snapshot)?;
+    draft_content(gov, conn, tenant, initiator, &snapshot, &input, avatar).await?;
     Ok(())
 }
 
@@ -713,6 +834,7 @@ async fn advance_inner(
         }
         let staged = staged.as_ref().ok_or_else(conflict)?;
         let snapshot = reread(staged, &import.package_digest)?;
+        let avatar = staged_avatar(staged, &snapshot)?;
         let content = draft_content(
             &state.governance,
             &mut tx,
@@ -720,6 +842,7 @@ async fn advance_inner(
             ae.initiator_principal_id,
             &snapshot,
             &import,
+            avatar,
         )
         .await?;
         let fresh = state
@@ -1091,6 +1214,104 @@ mod tests {
         let mut slug = valid();
         slug["slug"] = json!("Bad Slug");
         assert!(validate_params(&params(slug)).is_err());
+    }
+
+    #[test]
+    fn runtime_and_route_are_optional_but_well_formed_when_given() {
+        // DD-131(2) ruling: the import no longer forces a runtime choice.
+        let mut bare = valid();
+        let input_value = bare["agentDefinitionImport"].as_object_mut().unwrap();
+        input_value.remove("runtimeProfileKey");
+        input_value.remove("modelRouteResourceId");
+        let parsed = input(&params(bare.clone())).unwrap();
+        assert!(parsed.runtime_profile_key.is_none() && parsed.model_route_resource_id.is_none());
+        assert!(validate_params(&params(bare.clone())).is_ok());
+        let mut route_only = bare.clone();
+        route_only["agentDefinitionImport"]["modelRouteResourceId"] = json!(Uuid::new_v4());
+        assert!(input(&params(route_only))
+            .unwrap()
+            .model_route_resource_id
+            .is_some());
+        let mut bad_route = bare.clone();
+        bad_route["agentDefinitionImport"]["modelRouteResourceId"] = json!("not-a-uuid");
+        assert!(validate_params(&params(bad_route)).is_err());
+        let mut blank = bare;
+        blank["agentDefinitionImport"]["runtimeProfileKey"] = json!(" ");
+        assert!(validate_params(&params(blank)).is_err());
+    }
+
+    fn staged_with(avatar: Option<StagedAvatar>) -> Staged {
+        Staged {
+            media_type: "application/json".into(),
+            package: None,
+            package_digest: "a".repeat(64),
+            expired: false,
+            consumed_by: None,
+            avatar,
+        }
+    }
+
+    fn snapshot_with_avatar(bytes: Option<&[u8]>) -> Snapshot {
+        let mut manifest = json!({"format": "buzz-agent-snapshot", "version": 1,
+            "definition": {"name": "Writer", "systemPrompt": "Write."},
+            "profile": {"displayName": "Writer"}});
+        if let Some(bytes) = bytes {
+            manifest["profile"]["avatarDataUrl"] = json!(format!(
+                "data:image/png;base64,{}",
+                base64::engine::general_purpose::STANDARD.encode(bytes)
+            ));
+        }
+        agent_snapshot::decode(&serde_json::to_vec(&manifest).unwrap(), MediaType::Json).unwrap()
+    }
+
+    #[test]
+    fn staged_avatar_must_be_the_same_inline_avatar_by_digest() {
+        let hash = "b".repeat(64);
+        let stored = StagedAvatar {
+            url: format!("https://buzz.example.test/media/{hash}.png"),
+            media_sha256: hash.clone(),
+            source_digest: agent_snapshot::sha256_hex(b"avatar"),
+        };
+        let with = snapshot_with_avatar(Some(b"avatar"));
+        let without = snapshot_with_avatar(None);
+        assert_eq!(
+            staged_avatar(&staged_with(Some(stored.clone())), &with).unwrap(),
+            Some(stored.url.as_str())
+        );
+        assert_eq!(staged_avatar(&staged_with(None), &without).unwrap(), None);
+        // Package and staging disagree, or the bytes changed: deterministic refusal.
+        assert!(staged_avatar(&staged_with(None), &with).is_err());
+        assert!(staged_avatar(&staged_with(Some(stored.clone())), &without).is_err());
+        assert!(staged_avatar(
+            &staged_with(Some(stored.clone())),
+            &snapshot_with_avatar(Some(b"other"))
+        )
+        .is_err());
+        let mut foreign = stored;
+        foreign.media_sha256 = "c".repeat(64);
+        assert!(staged_avatar(&staged_with(Some(foreign)), &with).is_err());
+    }
+
+    #[test]
+    fn media_url_hash_only_accepts_content_addressed_objects() {
+        let hash = "d".repeat(64);
+        assert_eq!(
+            media_url_hash(&format!("https://h.test/media/{hash}.webp")),
+            Some(hash.as_str())
+        );
+        assert_eq!(
+            media_url_hash(&format!("https://h.test/media/{hash}")),
+            Some(hash.as_str())
+        );
+        assert_eq!(
+            media_url_hash(&format!("https://h.test/other/{hash}.png")),
+            None
+        );
+        assert_eq!(media_url_hash("https://h.test/media/short.png"), None);
+        assert_eq!(
+            media_url_hash(&format!("https://h.test/media/{}.png", "D".repeat(64))),
+            None
+        );
     }
 
     #[test]

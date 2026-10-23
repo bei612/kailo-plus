@@ -384,7 +384,9 @@ async fn version_content(
     if version.config_hash != content_hash {
         return Err(Refusal::Conflict(ReasonCode::TargetStateConflict));
     }
-    let route = Uuid::parse_str(&content.model_route_resource_id).map_err(|_| invalid())?;
+    // 只有齐备的已发布内容可以安装或升级（DD-131(2)：DRAFT 的缺省项在发布时补齐）。
+    crate::agent_version::complete(&content)?;
+    let route = crate::agent_version::route_id(&content)?;
     let route_scope: bool = sqlx::query_scalar(
         "select exists(select 1 from catalog.resource
         where id=$1 and tenant_id=$2 and type_key='llm_route'
@@ -413,7 +415,8 @@ async fn insert_pending_generation(
     version_id: Uuid,
     generation: i64,
 ) -> Result<(), Refusal> {
-    let route = Uuid::parse_str(&content.model_route_resource_id).map_err(|_| invalid())?;
+    let route = crate::agent_version::route_id(content)?;
+    let profile = crate::agent_version::profile_key(content)?;
     let mut fields = Vec::new();
     for key in effective_keys(content) {
         let value = requested.get(key).ok_or_else(invalid)?;
@@ -427,7 +430,7 @@ async fn insert_pending_generation(
     // memory must still be proven by the existing readiness consumer.
     let projection = crate::agent_version::canonical(serde_json::json!({
         "installationResourceId":ae.target_id,"generation":generation,"agentVersionAssetId":version_id,
-        "runtimeProfileKey":content.runtime_profile_key,"modelRouteResourceId":route,
+        "runtimeProfileKey":profile,"modelRouteResourceId":route,
         "gatewayResourceIds":[route],"skillRootRef":skill_root_ref(content, generation),"effectiveFields":fields}));
     let hash = hex::encode(Sha256::digest(
         serde_json::to_vec(&projection).map_err(|_| invalid())?,
@@ -439,7 +442,7 @@ async fn insert_pending_generation(
     )
     .bind(ae.target_id)
     .bind(version_id)
-    .bind(&content.runtime_profile_key)
+    .bind(profile)
     .bind(route)
     .bind(vec![route])
     .bind(serde_json::Value::Array(fields))
@@ -1510,8 +1513,9 @@ fn verify_projection(
         || Refusal::Unavailable("Agent runtime effective 投影与固定版本不一致".into());
     let (requested, hash) = crate::agent_version::content(content)?;
     if hash != row.version_config_hash
-        || row.runtime_profile_key != content.runtime_profile_key
-        || row.model_route_resource_id.to_string() != content.model_route_resource_id
+        || content.runtime_profile_key.as_deref() != Some(row.runtime_profile_key.as_str())
+        || content.model_route_resource_id.as_deref()
+            != Some(row.model_route_resource_id.to_string().as_str())
         || row.gateway_resource_ids.is_empty()
         || row.skill_root_ref != skill_root_ref(content, generation)
     {
@@ -2399,15 +2403,15 @@ mod effective_field_tests {
                 core_write: contracts::AgentMemoryCoreWrite::HumanOnly,
                 cold_write: contracts::AgentMemoryColdWrite::Disabled,
             },
-            model_route_resource_id: Uuid::nil().to_string(),
+            model_route_resource_id: Some(Uuid::nil().to_string()),
             parallelism: 1,
             persona_identity: contracts::AgentVersionContentPersonaIdentity {
                 display_name: EFFECTIVE_FIELDS[0].into(),
                 avatar_url: None,
                 description: None,
             },
-            reply_policy: EFFECTIVE_FIELDS[6].into(),
-            runtime_profile_key: EFFECTIVE_FIELDS[1].into(),
+            reply_policy: Some(EFFECTIVE_FIELDS[6].into()),
+            runtime_profile_key: Some(EFFECTIVE_FIELDS[1].into()),
             skill_version_asset_ids: Vec::new(),
             trigger_defaults: Vec::new(),
             turn_limits: contracts::AgentVersionContentTurnLimits {
@@ -2465,7 +2469,7 @@ mod effective_field_tests {
             projection_action_execution_id: None,
             config_hash: String::new(),
             version_config_hash,
-            runtime_profile_key: content.runtime_profile_key.clone(),
+            runtime_profile_key: content.runtime_profile_key.clone().unwrap(),
             model_route_resource_id: Uuid::nil(),
             gateway_resource_ids: vec![Uuid::nil()],
             skill_root_ref: None,
