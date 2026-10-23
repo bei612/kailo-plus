@@ -241,6 +241,12 @@ pub fn router(state: ServiceState) -> Router {
             "/service/v1/component-directory/bindings/{binding}/members",
             axum::routing::get(crate::component_directory::members),
         )
+        // DD-138(4), 07 §4.8.3: notification delivery into the Kailo inbox
+        // with the same directory-client service identity.
+        .route(
+            "/service/v1/component-notifications/bindings/{binding}/notifications",
+            post(crate::component_notification::deliver),
+        )
         .with_state(state.clone());
     match (
         state.gateway_service_auth.clone(),

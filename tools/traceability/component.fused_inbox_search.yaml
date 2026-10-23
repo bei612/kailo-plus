@@ -1,0 +1,90 @@
+capability_id: component.fused_inbox_search
+title: 产品一体化呈现第二阶段：组件通知并入 Kailo 收件箱、组件内容作为「搜索全部」来源
+stage: EXT-BASE
+status: in_progress
+# 源码批次：Core 投递/收件箱/搜索扇出、迁移、client-kit 收件箱与搜索、三组件投递与 adapter search。
+# 尚未构建进任何产物、未部署；生产只有原生页入口 binding（ExecutionConnector=NONE），
+# 搜索来源要等声明 searchSource=SUPPORTED 的 REMOTE_ADAPTER binding 部署后才有结果。
+exposure: end_user
+
+design:
+  requirements: [V-REQ-17]
+  decisions: [DD-138]
+  facts: []
+  seams: []
+  blockers: []
+  entities: [ComponentNotification, ExecutionConnector, ApplicationBinding, ComponentRelease, ExternalIdentity, TenantMembership, Resource]
+
+validation:
+  scenarios: [V-SCN-227, V-SCN-228]
+  evidence:
+    - dimension: 合同一致
+      ref: contracts/api/component_notification_delivery.schema.json
+    - dimension: 合同一致
+      ref: contracts/adapter/protocol.v1/search_request.schema.json
+    - dimension: 单元测试
+      ref: core/crates/platform-core/src/component_notification.rs
+    - dimension: 单元测试
+      ref: core/crates/platform-core/src/component_search.rs
+    - dimension: 迁移演练
+      ref: core/migrations/20261026010000_component_notification.down.sql
+    - dimension: 验证记录
+      ref: core/verify/fused-inbox-search.md
+
+implementation:
+  owners: [team-platform, team-capabilities]
+  paths:
+    - contracts/api/component_notification_delivery.schema.json
+    - contracts/api/component_notification_receipt.schema.json
+    - contracts/api/component_notification_view.schema.json
+    - contracts/api/component_notification_page.schema.json
+    - contracts/api/component_notification_read_request.schema.json
+    - contracts/api/component_search_query.schema.json
+    - contracts/api/component_search_page.schema.json
+    - contracts/adapter/protocol.v1/search_request.schema.json
+    - contracts/adapter/protocol.v1/search_response.schema.json
+    - contracts/domain/component_text.schema.json
+    - contracts/domain/component_person_ref.schema.json
+    - contracts/enums/component_notification_category.schema.json
+    - contracts/enums/component_search_result_kind.schema.json
+    - contracts/enums/component_search_source_state.schema.json
+    - client-kit/adapter/protocol.mjs
+    - core/migrations/20261026010000_component_notification.up.sql
+    - core/crates/platform-core/src/component_notification.rs
+    - core/crates/platform-core/src/component_search.rs
+    - core/crates/platform-core/src/component_directory.rs
+    - core/crates/platform-core/src/component_release.rs
+    - core/crates/platform-core/src/action_token.rs
+    - core/crates/platform-core/src/application_binding_native.rs
+    - core/crates/platform-core/src/service_api.rs
+    - core/crates/platform-core/src/bff.rs
+    - core/crates/platform-core/src/tenant_delete.rs
+    - core/crates/platform-core/src/publish_reconcile.rs
+    - client-kit/ts/platform/src/client.ts
+    - web-client/web/src/platform/ui/PlatformApp.tsx
+    - file-storage/adapter/src
+    - file-storage/fork/release/manifest.json
+    - knowledge/adapter/src
+    - knowledge/fork/release/manifest.json
+    - data-query/fork/release/manifest.json
+  surfaces: [web, desktop]
+  schemas:
+    - contracts/api/component_notification_delivery.schema.json
+    - contracts/api/component_notification_receipt.schema.json
+    - contracts/api/component_notification_view.schema.json
+    - contracts/api/component_notification_page.schema.json
+    - contracts/api/component_notification_read_request.schema.json
+    - contracts/api/component_search_query.schema.json
+    - contracts/api/component_search_page.schema.json
+    - contracts/adapter/protocol.v1/search_request.schema.json
+    - contracts/adapter/protocol.v1/search_response.schema.json
+  migrations: [core/migrations/20261026010000_component_notification.up.sql]
+
+runtime:
+  routes: ["/api/v1/inbox/component-notifications", "/api/v1/inbox/component-notifications/read", "/api/v1/search/components"]
+  actions: []
+  workflow_kinds: []
+
+release:
+  artifacts: []
+  gate: blocked_until_seams_closed

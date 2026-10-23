@@ -324,6 +324,20 @@ pub fn router(state: BffState) -> Router {
             "/api/v1/inbox/mentions",
             axum::routing::post(crate::web_transport::query_inbox_mentions),
         )
+        // DD-138(4)(5), 07 §4.8.3/§4.8.4: component notifications in the Kailo
+        // inbox and component content as a「搜索全部」source.
+        .exposed_route(
+            "/api/v1/inbox/component-notifications",
+            get(crate::component_notification::list),
+        )
+        .exposed_route(
+            "/api/v1/inbox/component-notifications/read",
+            axum::routing::post(crate::component_notification::mark_read),
+        )
+        .exposed_route(
+            "/api/v1/search/components",
+            axum::routing::post(crate::component_search::search),
+        )
         .exposed_route(
             "/api/v1/pulse/query",
             axum::routing::post(crate::pulse::query),

@@ -67,13 +67,13 @@ pub(crate) async fn members(
 }
 
 #[derive(sqlx::FromRow)]
-struct Entry {
-    tenant_id: Uuid,
-    workspace_id: Option<Uuid>,
+pub(crate) struct Entry {
+    pub(crate) tenant_id: Uuid,
+    pub(crate) workspace_id: Option<Uuid>,
     tenant_name: String,
     client: Option<String>,
     adapter_client: Option<String>,
-    manifest: Value,
+    pub(crate) manifest: Value,
 }
 
 /// The binding facts the read depends on, re-read inside the snapshot.
@@ -115,7 +115,7 @@ fn directory_client<'a>(entry: &'a Entry, core_client: Option<&str>) -> Result<&
     Ok(client)
 }
 
-fn bearer(headers: &HeaderMap) -> Result<&str, Refusal> {
+pub(crate) fn bearer(headers: &HeaderMap) -> Result<&str, Refusal> {
     let mut authorization = headers.get_all(axum::http::header::AUTHORIZATION).iter();
     let header = authorization
         .next()
@@ -125,6 +125,42 @@ fn bearer(headers: &HeaderMap) -> Result<&str, Refusal> {
         return Err(denied());
     }
     Ok(header)
+}
+
+/// The binding's own directory client, proven by its token: the binding
+/// preconditions of 07 §4.7.4, a directory client id that is nobody else's,
+/// and a verified client-credentials token whose `azp` is that client. Shared
+/// by the member directory and the DD-138(4) notification delivery (07 §4.8.3),
+/// which use the same service identity. Every failure is the same refusal.
+pub(crate) async fn authorize(
+    state: &ServiceState,
+    conn: &mut PgConnection,
+    header: &str,
+    binding: Uuid,
+    core_client: Option<&str>,
+) -> Result<Entry, Refusal> {
+    let entry = entry(conn, binding).await?.ok_or_else(denied)?;
+    let client = directory_client(&entry, core_client)?.to_owned();
+    let holders: i64 = sqlx::query_scalar(
+        "select count(*) from catalog.application_binding
+         where state<>'DISABLED' and (normalized_config->>'directoryClientId'=$1
+           or normalized_config->>'client_id'=$1)",
+    )
+    .bind(&client)
+    .fetch_one(&mut *conn)
+    .await?;
+    if holders != 1 {
+        return Err(denied());
+    }
+    state
+        .auth
+        .verify_binding_client(Some(header), &client)
+        .await
+        .map_err(|error| match error {
+            crate::service_auth::ServiceAuthError::KeysUnavailable => unavailable("identity keys"),
+            _ => denied(),
+        })?;
+    Ok(entry)
 }
 
 #[derive(sqlx::FromRow)]
@@ -460,27 +496,7 @@ async fn directory(
     sqlx::query("set transaction isolation level repeatable read, read only")
         .execute(&mut *tx)
         .await?;
-    let entry = entry(&mut tx, binding).await?.ok_or_else(denied)?;
-    let client = directory_client(&entry, core_client.as_deref())?.to_owned();
-    let holders: i64 = sqlx::query_scalar(
-        "select count(*) from catalog.application_binding
-         where state<>'DISABLED' and (normalized_config->>'directoryClientId'=$1
-           or normalized_config->>'client_id'=$1)",
-    )
-    .bind(&client)
-    .fetch_one(&mut *tx)
-    .await?;
-    if holders != 1 {
-        return Err(denied());
-    }
-    state
-        .auth
-        .verify_binding_client(Some(header), &client)
-        .await
-        .map_err(|error| match error {
-            crate::service_auth::ServiceAuthError::KeysUnavailable => unavailable("identity keys"),
-            _ => denied(),
-        })?;
+    let entry = authorize(state, &mut tx, header, binding, core_client.as_deref()).await?;
     let facts = facts(&mut tx, &entry).await?;
     tx.commit().await?;
 

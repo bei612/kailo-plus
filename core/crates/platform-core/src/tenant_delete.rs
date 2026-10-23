@@ -2068,6 +2068,8 @@ async fn finish(state: &ServiceState, deletion: &Delete) -> Result<(), sqlx::Err
         "update catalog.skill_version set artifact=null where tenant_id=$1 and artifact is not null",
         "delete from admission.skill_artifact_upload where tenant_id = $1",
         "delete from identity.collaboration_user_state where tenant_principal_id in (select id from identity.principal where tenant_id = $1)",
+        // DD-138(4): inbox notifications from components leave with the Tenant (03 ComponentNotification).
+        "delete from identity.component_notification where tenant_id = $1",
         "delete from admission.publish_attempt where tenant_principal_id in (select id from identity.principal where tenant_id = $1)",
         // DD-125(5): short-term link-preview snapshots are not history; nothing references them.
         "delete from admission.link_preview_snapshot where tenant_id = $1",
