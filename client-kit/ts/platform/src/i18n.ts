@@ -3136,6 +3136,7 @@ export const platformMessages = {
   "agentActivity.composer.srWorking": { en: "working", "zh-CN": "工作中" },
   "agentActivity.composer.popoverTitle": { en: "Agents working", "zh-CN": "正在工作的 Agent" },
   "agentActivity.viewActivity": { en: "View activity", "zh-CN": "查看活动" },
+  "agentActivity.auditOnly": { en: "Only people who can audit this agent can read its activity.", "zh-CN": "只有可以审计此 Agent 的人才能查看其活动。" },
   "agentLifecycle.status.running": { en: "Running", "zh-CN": "运行中" },
   "agentLifecycle.status.stopped": { en: "Stopped", "zh-CN": "已停止" },
   "agentLifecycle.stop": { en: "Stop", "zh-CN": "停止" },

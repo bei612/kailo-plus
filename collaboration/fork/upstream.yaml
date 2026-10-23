@@ -980,7 +980,11 @@ remove_paths:
   - mobile/android/app/src/test/kotlin/xyz/block/buzz/mobile/HuddleActiveTalkerSelectorTest.kt
   - mobile/lib/features/activity
   - mobile/lib/features/age_gate
-  - mobile/lib/features/channels/agent_activity
+  - mobile/lib/features/channels/agent_activity/observer_models.dart
+  - mobile/lib/features/channels/agent_activity/observer_subscription.dart
+  - mobile/lib/features/channels/agent_activity/transcript_builder.dart
+  - mobile/lib/features/channels/agent_activity/transcript_item_widget.dart
+  - mobile/lib/features/channels/agent_activity/working_bots_provider.dart
   - mobile/lib/features/channels/channel_detail_page/huddle_call_avatar.dart
   - mobile/lib/features/channels/channel_detail_page/huddle_call_controls.dart
   - mobile/lib/features/channels/channel_detail_page/huddle_call_participants.dart
@@ -1037,8 +1041,6 @@ remove_paths:
   - mobile/test/features/forum
   - mobile/test/features/invites
   - mobile/test/features/pairing
-  - mobile/test/features/profile/set_status_sheet_test.dart
-  - mobile/test/features/profile/user_status_provider_test.dart
   - mobile/test/features/pulse
   - mobile/test/features/settings/connection_section_test.dart
   - mobile/test/features/settings/settings_page_loading_test.dart
