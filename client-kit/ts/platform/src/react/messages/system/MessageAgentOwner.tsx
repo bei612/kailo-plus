@@ -2,16 +2,17 @@ import { useUiT } from "../../context";
 // Upstream Buzz 779af8886caae1317b4de962082429867ab61503: desktop/src/features/messages/ui/MessageAgentOwner.tsx
 import { Bot } from "lucide-react";
 
-import { UserProfilePopover } from "./host";
+import { UserProfilePopover, useHasSystemMessageHost } from "./host";
 
 export function MessageAgentOwner({
   ownerLabel,
-  ownerPubkey,
+  ownerPubkey: ownerKey,
 }: {
   ownerLabel?: string | null;
   ownerPubkey?: string | null;
 }) {
   const t = useUiT();
+  const ownerPubkey = useHasSystemMessageHost() ? ownerKey : null;
   return (
     <span
       className="inline-flex min-w-0 max-w-56 items-baseline gap-1 text-xs leading-4 text-muted-foreground/65"
@@ -38,7 +39,13 @@ export function MessageAgentOwner({
         aria-hidden="true"
         className="h-3.5 w-3.5 shrink-0 translate-y-[0.125em] self-center"
       />
-      {ownerPubkey && ownerLabel ? (
+      {ownerLabel && !ownerPubkey ? (
+        // DD-147(1): the owner's Tenant name without a Workspace key to open a profile for.
+        <>
+          <span aria-hidden="true" className="shrink-0">{t("messages.system.managedBy")}</span>
+          <span className="min-w-0 truncate font-semibold text-foreground/85">{ownerLabel}</span>
+        </>
+      ) : ownerPubkey && ownerLabel ? (
         <>
           <span aria-hidden="true" className="shrink-0">
             {t("messages.system.managedBy")}

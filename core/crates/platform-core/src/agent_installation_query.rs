@@ -33,6 +33,8 @@ struct InstallationRow {
     agent_pubkey: Option<String>,
     agent_principal_state: String,
     owner_principal_id: Uuid,
+    /// DD-147(1): the owner's ACTIVE Tenant display name (the original "managed by").
+    owner_display_name: Option<String>,
     resource_version: i32,
     resource_state: String,
     projection_action_execution_id: Option<Uuid>,
@@ -54,6 +56,11 @@ struct InstallationRow {
 // CODEX_HOME、Memory 正文及内部 native endpoint 均不进入查询结果。
 const ROW: &str = "select i.resource_id,i.workspace_id,i.agent_resource_id,i.pinned_version_asset_id,
     i.agent_principal_id,agent_identity.pubkey as agent_pubkey,a.status as agent_principal_state,r.owner_principal_id,
+    (select owner_identity.display_name from identity.tenant_membership owner_membership
+      join identity.human_identity owner_identity on owner_identity.id=owner_membership.human_identity_id
+        and owner_identity.status='ACTIVE'
+      where owner_membership.tenant_principal_id=r.owner_principal_id and owner_membership.tenant_id=r.tenant_id
+        and owner_membership.state='ACTIVE' and btrim(owner_identity.display_name)<>'') as owner_display_name,
     r.version as resource_version,r.state as resource_state,r.projection_action_execution_id,i.state,i.active_projection_generation,
     cb.status as channel_status,cb.triggers as channel_triggers,wb.channel_id,
     p.generation as projection_generation,p.agent_version_asset_id as projection_version,
@@ -198,6 +205,7 @@ async fn view(
         "agentPrincipalState": row.agent_principal_state,
         "agentDisplayName": display_name,
         "ownerPrincipalId": row.owner_principal_id.to_string(),
+        "ownerDisplayName": row.owner_display_name,
         "resourceVersion": row.resource_version, "resourceState": row.resource_state,
         "state": row.state, "activeProjectionGeneration": row.active_projection_generation,
         "channelBinding": channel, "projection": projection, "executionPermission": permission,
@@ -423,10 +431,16 @@ async fn tool_page(
         return Err(StatusCode::NOT_FOUND.into_response());
     };
     let rows: Vec<ToolBindingRow> = sqlx::query_as(
+        // DD-149: a connector tool whose connector is not ACTIVE (or whose tool was
+        // superseded) is effective BINDING_NOT_ACTIVE, shown as REVOKED.
         "select b.tool_resource_id,t.name,t.source,t.capability_contract_key,
-        r.application_binding_id,b.status from catalog.tool_binding b
+        r.application_binding_id,
+        case when t.source='USER_REGISTERED_EXTERNAL' and b.status in ('ACTIVE','NO_PERMISSION')
+          and (t.status<>'ACTIVE' or coalesce(c.state,'DELETED')<>'ACTIVE') then 'REVOKED' else b.status end status
+        from catalog.tool_binding b
         join catalog.tool_definition t on t.resource_id=b.tool_resource_id
         join catalog.resource r on r.id=t.resource_id and r.tenant_id=$3
+        left join catalog.mcp_connection c on c.resource_id=t.mcp_connection_id and c.tenant_id=r.tenant_id
         where b.installation_resource_id=$1 and b.projection_generation=$2
         order by t.source desc,t.name,b.tool_resource_id",
     )

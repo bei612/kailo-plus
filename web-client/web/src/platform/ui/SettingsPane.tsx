@@ -27,6 +27,7 @@ import { useUiLocale } from "@client-kit/platform/react/context";
 import { BrowserNotificationSettings } from "./BrowserNotifications";
 import { CustomEmojiSettingsCard, pickEmojiImage } from "@client-kit/platform/react/custom-emoji";
 import { AgentsSettingsPanel } from "@client-kit/platform/react/agents-settings";
+import { ConnectorsSettingsPanel } from "@client-kit/platform/react/connectors";
 import { ChannelTemplatesSettingsCard } from "@client-kit/platform/react/channel-templates";
 import { ModerationQueueCard } from "@client-kit/platform/react/moderation";
 
@@ -70,6 +71,7 @@ export function SettingsPane({ active = true, fallbackDisplayName, onClose, sect
       ) : section === "channel-templates" ? <ChannelTemplatesSettingsCard />
       : section === "moderation" ? <ModerationQueueCard />
       : section === "agents" ? <AgentsSettingsPanel />
+      : section === "connectors" ? <ConnectorsSettingsPanel />
       : section === "experimental" ? <ExperimentalFeaturesCard /> : null}
     </SettingsPage>
   );

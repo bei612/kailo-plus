@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "domain/mcp_connection_update.schema.json",
+  "title": "McpConnectionUpdate",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "visibility",
+    "toolsDigest",
+    "tools"
+  ],
+  "properties": {
+    "visibility": {
+      "$ref": "../enums/mcp_connection_visibility.schema.json"
+    },
+    "workspaceId": {
+      "type": "string",
+      "format": "uuid",
+      "description": "仅 WORKSPACE 可见范围"
+    },
+    "toolsDigest": {
+      "type": "string"
+    },
+    "tools": {
+      "type": "array",
+      "items": {
+        "$ref": "mcp_tool_selection.schema.json"
+      }
+    },
+    "sharedAuthorizationConsent": {
+      "type": "boolean"
+    }
+  },
+  "description": "仅 mcp_connection.update：以新探测结果重新确认工具清单、风险、策略与可见范围，形成新 generation。"
+}

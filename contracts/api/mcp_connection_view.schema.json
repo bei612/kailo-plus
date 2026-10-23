@@ -1,0 +1,121 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/mcp_connection_view.schema.json",
+  "title": "McpConnectionView",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "version",
+    "slug",
+    "displayName",
+    "endpointUrl",
+    "endpointHost",
+    "transport",
+    "authMode",
+    "credentialSet",
+    "visibility",
+    "ownerPrincipalId",
+    "state",
+    "generation",
+    "health",
+    "toolsDigest",
+    "drift",
+    "tools",
+    "canManage"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "version": {
+      "type": "integer"
+    },
+    "slug": {
+      "type": "string"
+    },
+    "displayName": {
+      "type": "string"
+    },
+    "endpointUrl": {
+      "type": "string"
+    },
+    "endpointHost": {
+      "type": "string"
+    },
+    "transport": {
+      "$ref": "../enums/mcp_connection_transport.schema.json"
+    },
+    "authMode": {
+      "$ref": "../enums/mcp_connection_auth_mode.schema.json"
+    },
+    "apiKeyHeader": {
+      "type": "string"
+    },
+    "credentialSet": {
+      "type": "boolean"
+    },
+    "credentialUpdatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "visibility": {
+      "$ref": "../enums/mcp_connection_visibility.schema.json"
+    },
+    "workspaceId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "ownerPrincipalId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "ownerDisplayName": {
+      "type": "string"
+    },
+    "state": {
+      "$ref": "../enums/mcp_connection_state.schema.json"
+    },
+    "generation": {
+      "type": "integer"
+    },
+    "health": {
+      "$ref": "../enums/mcp_connection_health.schema.json"
+    },
+    "healthCheckedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "serverName": {
+      "type": "string"
+    },
+    "serverVersion": {
+      "type": "string"
+    },
+    "toolsDigest": {
+      "type": "string"
+    },
+    "observedToolsDigest": {
+      "type": "string"
+    },
+    "drift": {
+      "type": "boolean",
+      "description": "最近一次探测的清单摘要与已确认的不同"
+    },
+    "tools": {
+      "type": "array",
+      "items": {
+        "$ref": "mcp_connection_tool_view.schema.json"
+      }
+    },
+    "canManage": {
+      "type": "boolean"
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "description": "DD-149(10)：连接器详情；凭据只以 credentialSet 表示，从不回显。"
+}

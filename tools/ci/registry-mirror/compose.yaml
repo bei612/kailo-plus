@@ -1,0 +1,41 @@
+# Kailo CI Docker Hub 拉取缓存。用途、数据位置与回退方式见 07-运行与运维基线.md §2.1。
+# 由 tools/ci/registry-mirror/setup.sh mirror 安装到运行副本目录并启动；改配置先改本仓库。
+name: kailo-registry-mirror
+services:
+  mirror:
+    # 与 deploy/local 私有 registry 同一 registry:3（distribution 3.1.1）digest。
+    image: registry@sha256:325b4b29b041e82803abeb703e201655e4e23ab83264ec1a7c9ddb0a5b14a6e0
+    restart: unless-stopped
+    # 以数据目录属主运行，无需任何 capability 写入缓存目录。
+    user: "${MIRROR_USER:-1000:1000}"
+    # host 网络：bridge 出口经 wg-game（MTU 1380）转发到下载代理时没有 MSS clamping，
+    # 实测 bridge 内拉取约 0.1 MB/s，host 网络约 0.9-2 MB/s。只监听回环地址。
+    network_mode: host
+    environment:
+      REGISTRY_HTTP_ADDR: 127.0.0.1:${MIRROR_PORT:-55001}
+      # 上游出口：CI 依赖下载代理；为空时直连 Docker Hub。
+      HTTP_PROXY: ${MIRROR_UPSTREAM_PROXY:-}
+      HTTPS_PROXY: ${MIRROR_UPSTREAM_PROXY:-}
+      NO_PROXY: localhost,127.0.0.1,::1
+    volumes:
+      - ./config.yml:/etc/distribution/config.yml:ro
+      - ${MIRROR_DATA:-/volumes/data/kailo/registry-mirror}:/var/lib/registry
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 512m
+    memswap_limit: 512m
+    cpus: 1.0
+    pids_limit: 256
+    logging:
+      driver: json-file
+      options:
+        max-size: 20m
+        max-file: "5"
+    healthcheck:
+      # busybox wget 不认 NO_PROXY，-Y off 关闭代理直接探测本容器。
+      test: ["CMD", "wget", "-Y", "off", "-q", "-O", "/dev/null", "http://127.0.0.1:${MIRROR_PORT:-55001}/v2/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s

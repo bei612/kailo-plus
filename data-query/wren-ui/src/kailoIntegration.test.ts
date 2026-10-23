@@ -16,10 +16,12 @@ import {
   KAILO_USER_HEADER,
 } from './utils/kailoUser';
 import {
+  kailoFetch,
   pendingLocale,
   presentation,
   renewNativeSession,
   requireSignIn,
+  signInOwnedByHost,
 } from './utils/kailoEmbed';
 import { kailoProductTitle, kailoText } from './utils/kailoI18n';
 
@@ -150,6 +152,29 @@ describe('DD-133 role mapping on a STANDALONE instance', () => {
       if (previous === undefined) delete process.env.PLATFORM_DISPLAY_NAME;
       else process.env.PLATFORM_DISPLAY_NAME = previous;
     }
+  });
+});
+
+test('kailoSession shows the stored Kailo name and avatar of the signed-in member', async () => {
+  const user = profile({ name: 'IdP Name' });
+  const load = jest.fn(async () => ({
+    userKey: user.key,
+    name: 'Kailo Display',
+    username: 'member',
+    email: null,
+    picture: 'https://kailo.example/api/v1/identity/avatars/member',
+    locale: null,
+  }));
+  const session = await (originalResolvers.Query as any).kailoSession(
+    undefined,
+    {},
+    { kailoUser: user, kailoUsers: { load } },
+  );
+  expect(load).toHaveBeenCalledWith(user.key);
+  expect(session.user).toMatchObject({
+    name: 'Kailo Display',
+    picture: 'https://kailo.example/api/v1/identity/avatars/member',
+    isCurrentUser: true,
   });
 });
 
@@ -340,6 +365,33 @@ describe('Kailo presentation bridge', () => {
       expect(globals.window.location.assign).toHaveBeenCalledWith(
         '/auth/login?returnTo=%2Fhome%3Fx%3D1',
       );
+    });
+
+    test('after auth-required the expired session is Kailo\'s prompt alone (V-SCN-226)', async () => {
+      path = '/oauth/callback';
+      const realFetch = globals.fetch;
+      const statuses = [200, 401, 401, 200];
+      globals.fetch = jest.fn(async () => ({ status: statuses.shift() }));
+      try {
+        await kailoFetch('/api/graphql');
+        expect(signInOwnedByHost({ statusCode: 401 })).toBe(false);
+        await kailoFetch('/api/graphql');
+        expect(runtime.requestTopLevelSignIn).toHaveBeenCalledTimes(1);
+        expect(signInOwnedByHost({ statusCode: 401 })).toBe(true);
+        expect(signInOwnedByHost({ statusCode: 500 })).toBe(false);
+        expect(signInOwnedByHost(undefined)).toBe(false);
+        // Signed in again (or the session came back): own errors are shown again.
+        await kailoFetch('/api/graphql');
+        await kailoFetch('/api/graphql');
+        expect(signInOwnedByHost({ statusCode: 401 })).toBe(false);
+        // Kailo not reached: the page keeps its own notice.
+        runtime.requestTopLevelSignIn.mockReturnValue(false);
+        statuses.push(401);
+        await kailoFetch('/api/graphql');
+        expect(signInOwnedByHost({ statusCode: 401 })).toBe(false);
+      } finally {
+        globals.fetch = realFetch;
+      }
     });
   });
 });

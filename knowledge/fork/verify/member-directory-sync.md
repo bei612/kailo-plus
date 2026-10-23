@@ -102,3 +102,22 @@ None of the following has been done:
 - three-person business acceptance (admin → native admin, removal → sessions gone).
 
 Postgres migration 000110 has not been run against a real database in this batch.
+
+## Production defect: pre-provisioning wrote tenant_id 0 (2026-10-23)
+
+Deployed at `6c63b717` (binding `9830dc36-3ae2-5fa8-9054-f69f66029e03`,
+`--directory-client-id kailo-knowledge-directory`): every directory read
+succeeded, but every apply failed with
+`pre-provision directory account: ... violates foreign key constraint "fk_users_tenant" (SQLSTATE 23503)`.
+`directoryUser` inserted the new account with `db.Create`, so GORM wrote the
+`uint64` zero into `users.tenant_id`; `repository.CreateUser` (the first-login
+path) omits the column for exactly this reason. Because the snapshot is applied
+whole, no member, role or Workspace space was reconciled while any directory
+member had no WeKnora account yet. The fixture's SQLite does not enforce the
+foreign key, so the existing tests passed.
+
+Fix: insert with `Omit("tenant_id")` (SQL NULL), as the repository does;
+`syncLocked` then sets the home space. New test
+`TestKailoDirectoryPreProvisionInsertsNoZeroTenant` records the user inserts
+and refuses any that writes `tenant_id`. Image build, deployment and the live
+re-check are not part of this change.

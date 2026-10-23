@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/mcp_connection_transport.schema.json",
+  "title": "McpConnectionTransport",
+  "description": "DD-149(7)：连接器端点的 MCP 传输。STREAMABLE_HTTP 为现行 Streamable HTTP；SSE 为旧版 HTTP+SSE。",
+  "type": "string",
+  "enum": [
+    "STREAMABLE_HTTP",
+    "SSE"
+  ]
+}

@@ -133,6 +133,13 @@ import type {
   GatewayStatsDimension,
   GatewayToolPage,
   GatewayToolTestCallResult,
+  McpConnectionPage,
+  McpConnectionProbeRequest,
+  McpConnectionProbeResult,
+  McpConnectionRefreshResult,
+  McpConnectionView,
+  McpOauthAttemptView,
+  McpOauthStartRequest,
 } from "@client-kit/contracts";
 import type { CollaborationUserState } from "./inbox";
 import { PlatformSessionAccessMode } from "@client-kit/contracts";
@@ -596,6 +603,20 @@ export function createBffClient(transport: BffTransport) {
     /** 受控探测：只接受交付目录条目引用；Core 经 Gateway 临时验证 route 读 initialize 与 tools/list。 */
     gatewayMcpProbe: (body: GatewayMcpProbeRequest) =>
       call<GatewayMcpProbeResult>({ method: "POST", path: "/api/v1/platform/gateway/mcp/probes", body }),
+
+    // DD-149 连接器：列表、详情与 OAuth 状态是 fresh 只读查询；探测与刷新是只读 POST（凭据只作
+    // 一次性输入，不回显）。登记、更新、轮换、停用、恢复、删除与策略只经 submitAction（mcp_connection.*）。
+    mcpConnections: () => get<McpConnectionPage>("/api/v1/mcp-connections", true),
+    mcpConnection: (connectionId: string) =>
+      get<McpConnectionView>(`/api/v1/mcp-connections/${encodeURIComponent(connectionId)}`, true),
+    mcpConnectionProbe: (body: McpConnectionProbeRequest) =>
+      call<McpConnectionProbeResult>({ method: "POST", path: "/api/v1/mcp-connections/probes", body }),
+    mcpConnectionRefresh: (connectionId: string) =>
+      call<McpConnectionRefreshResult>({ method: "POST", path: `/api/v1/mcp-connections/${encodeURIComponent(connectionId)}/refresh`, body: {} }),
+    mcpOauthStart: (body: McpOauthStartRequest) =>
+      call<McpOauthAttemptView>({ method: "POST", path: "/api/v1/mcp-connections/oauth/attempts", body }),
+    mcpOauthAttempt: (attemptId: string) =>
+      get<McpOauthAttemptView>(`/api/v1/mcp-connections/oauth/attempts/${encodeURIComponent(attemptId)}`, true),
 
     /** DD-123：本 Tenant 的平台额度（OpenMeter 唯一权威）；只对 Tenant admin 与 auditor 开放，其余 403。 */
     tenantQuotas: () => get<TenantQuotaPage>("/api/v1/tenant/quotas"),

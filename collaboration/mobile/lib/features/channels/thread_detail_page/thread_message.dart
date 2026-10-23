@@ -43,6 +43,9 @@ class _ThreadMessage extends HookConsumerWidget {
     final isAgent =
         ref.watch(agentMentionPubkeysProvider(channelId)).contains(pk) ||
         profile?.ownerPubkey != null;
+    // Original canManageMessageForCurrentUser: own messages. The original owner-of-Agent branch
+    // is DD-142's Core-signed BFF path, which Mobile does not host.
+    final canManageMessage = currentPubkey?.toLowerCase() == pk;
 
     final userCache = ref.watch(userCacheProvider);
     final knownAgentPubkeys = agentPubkeysWithProfileOwners(
@@ -78,6 +81,7 @@ class _ThreadMessage extends HookConsumerWidget {
         message: message,
         channelId: channelId,
         allMessages: allMessages,
+        canManageMessage: canManageMessage,
         currentPubkey: currentPubkey,
         isMember: isMember,
         isArchived: isArchived,
@@ -259,6 +263,14 @@ class _ThreadMessage extends HookConsumerWidget {
                                         message: message,
                                         channelId: channelId,
                                         imageUrl: imageUrl,
+                                        canManageMessage: canManageMessage,
+                                        onDeleted: () {
+                                          if (viewerContext.mounted) {
+                                            Navigator.of(
+                                              viewerContext,
+                                            ).maybePop();
+                                          }
+                                        },
                                       ),
                                   onChannelTap: (targetChannelId) {
                                     openChannelLink(
@@ -278,6 +290,24 @@ class _ThreadMessage extends HookConsumerWidget {
                       ],
                     ),
                   ),
+                  if (isThreadHead || message.reactions.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(
+                        left: messageAvatarSize + messageAvatarContentGap,
+                      ),
+                      child: ReactionRow(
+                        messageId: message.id,
+                        reactions: message.reactions,
+                        onToggle: (emoji) =>
+                            toggleReaction(ref, message, emoji),
+                        showAddButton: isMember && !isArchived,
+                        onAddReaction: () => showAddReactionPicker(
+                          context: context,
+                          ref: ref,
+                          message: message,
+                        ),
+                      ),
+                    ),
                 ],
               ),
             ),

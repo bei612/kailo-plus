@@ -135,7 +135,9 @@ class _MessageActionRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final foreground = context.colors.onSurface;
+    final foreground = action.destructive
+        ? context.colors.error
+        : context.colors.onSurface;
     return Semantics(
       button: true,
       label: action.title,

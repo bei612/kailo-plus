@@ -189,7 +189,8 @@ it("shows the original per-file upload progress and cancels one upload without a
   expect(progress()!.getAttribute("aria-valuenow")).toBeNull();
   await act(async () => uploads[0]!.options!.onProgress!(40));
   expect(progress()!.getAttribute("aria-valuenow")).toBe("40");
-  expect(button(host, "platform.send").disabled).toBe(true);
+  // DD-146: sending stays available while uploading; it holds the send until confirmation.
+  expect(button(host, "platform.send").disabled).toBe(false);
 
   await click(host.querySelector<HTMLButtonElement>('button[aria-label="Cancel upload"]')!);
   expect(uploads[0]!.options!.signal!.aborted).toBe(true);
@@ -298,6 +299,7 @@ vi.mock("@/platform/bff-client", async () => ({
     submitAction: (...args: unknown[]) => state.submit(...args),
     customEmoji: async () => ({pubkey:"d".repeat(64),events:[],mediaPaths:{}}),
     workspaceChannel: async () => ({channelId:"relay-channel-a",channelType:"stream",archived:false}),
+    agentDefinitions: async () => ({definitions:[{displayName:"Scout"}]}),
     agentDefinition: async (id:string) => ({resourceId:id,resourceState:"ACTIVE",displayName:id.replace("definition-","")}),
     agentInstallations: async (_workspace:string,offset=0) => {
       if (!state.success) throw new Error("Agent directory unavailable");
@@ -871,7 +873,7 @@ it("reuses the Buzz picker to send all selected Agents once in canonical order a
     [],
     expect.any(String),
     ["agent-a", "agent-b"],
-    {mentionPubkeys: []},
+    {addressedInstallationIds: ["agent-a", "agent-b"], mentionPubkeys: []},
   );
   expect(host.querySelector('[data-testid="message-input"]')?.textContent).toBe("");
 });
@@ -1146,3 +1148,108 @@ describe("DD-125(8) mentioning people outside the Workspace channel", () => {
     expect(state.publish.mock.calls[0]![5]).toEqual({mentionPubkeys: [outsider]});
   });
 });
+
+describe("DD-146 original send-then-upload over a frozen intent", () => {
+  type Descriptor = {sha256:string;size:number;type:string;url:string};
+  async function attachPending(host: HTMLElement) {
+    const fileInput = host.querySelector<HTMLInputElement>('[data-testid="attach-input"]')!;
+    await act(async () => {
+      Object.defineProperty(fileInput, "files", { configurable: true, value: [new File(["one"], "one.txt", { type: "text/plain" })] });
+      fileInput.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await settle();
+  }
+  function uploader() {
+    const uploads: {options?: MediaUploadOptions; resolve: (d: Descriptor) => void; reject: (e: unknown) => void}[] = [];
+    const upload = vi.fn((_file: File, options?: MediaUploadOptions) => new Promise<Descriptor>((resolve, reject) => { uploads.push({options, resolve, reject}); }));
+    return {upload, uploads};
+  }
+  const input = (host: HTMLElement) => host.querySelector<HTMLElement>('[data-testid="message-input"]')!;
+  const descriptor = { sha256: "a".repeat(64), size: 3, type: "text/plain", url: "media:one" };
+
+  it("holds the send while uploading and publishes once, only with the confirmed attachment", async () => {
+    const {upload, uploads} = uploader();
+    const host = await render(<Composer workspaceId="workspace-a" draftIdentity="alice" draftKey="queued-ok" onUpload={upload} />);
+    await type(input(host), "with a file");
+    await attachPending(host);
+    await click(button(host, "platform.send"));
+    await settle();
+    expect(state.publish).not.toHaveBeenCalled();
+    expect(host.querySelector('[data-testid="composer-queued-send"]')).not.toBeNull();
+    await act(async () => uploads[0]!.options!.onProgress!(50));
+    expect(host.querySelector('[data-testid="composer-queued-send"]')!.textContent).toContain("platform.sendAfterUpload");
+    await act(async () => uploads[0]!.resolve(descriptor));
+    await vi.waitFor(() => expect(state.publish).toHaveBeenCalledTimes(1));
+    expect(state.publish.mock.calls[0][1]).toBe("with a file");
+    expect(state.publish.mock.calls[0][2]).toEqual([expect.objectContaining({ sha256: descriptor.sha256, url: descriptor.url })]);
+    expect(host.querySelector('[data-testid="composer-queued-send"]')).toBeNull();
+  });
+
+  it("never publishes when a held upload fails, and keeps the draft for the user", async () => {
+    const {upload, uploads} = uploader();
+    const host = await render(<Composer workspaceId="workspace-a" draftIdentity="alice" draftKey="queued-fail" onUpload={upload} />);
+    await type(input(host), "keep me");
+    await attachPending(host);
+    await click(button(host, "platform.send"));
+    await act(async () => uploads[0]!.reject(new BffError(413, "too large")));
+    await settle(); await settle();
+    expect(state.publish).not.toHaveBeenCalled();
+    expect(input(host).textContent).toBe("keep me");
+    expect(host.textContent).toContain("platform.uploadTooLarge");
+    expect(host.querySelector('[data-testid="composer-queued-send"]')).toBeNull();
+  });
+
+  it("cancels the held send from the progress pill without publishing", async () => {
+    const {upload, uploads} = uploader();
+    const host = await render(<Composer workspaceId="workspace-a" draftIdentity="alice" draftKey="queued-cancel" onUpload={upload} />);
+    await type(input(host), "maybe later");
+    await attachPending(host);
+    await click(button(host, "platform.send"));
+    await click(host.querySelector<HTMLElement>('[data-testid="composer-queued-send-cancel"]')!);
+    await settle();
+    expect(uploads[0]!.options!.signal!.aborted).toBe(true);
+    await act(async () => uploads[0]!.resolve(descriptor));
+    await settle();
+    expect(state.publish).not.toHaveBeenCalled();
+    expect(input(host).textContent).toBe("maybe later");
+  });
+
+  it("keeps the same key after an UNKNOWN publication of a held send and does not auto-resend on remount", async () => {
+    state.publish.mockRejectedValue(new TransportError("lost response"));
+    const {upload, uploads} = uploader();
+    const host = await render(<Composer workspaceId="workspace-a" draftIdentity="alice" draftKey="queued-unknown" onUpload={upload} />);
+    await type(input(host), "uncertain");
+    await attachPending(host);
+    await click(button(host, "platform.send"));
+    await act(async () => uploads[0]!.resolve(descriptor));
+    await vi.waitFor(() => expect(state.publish).toHaveBeenCalledTimes(1));
+    const key = state.publish.mock.calls[0][3];
+    await click(button(host, "platform.send"));
+    await vi.waitFor(() => expect(state.publish).toHaveBeenCalledTimes(2));
+    expect(state.publish.mock.calls[1][3]).toBe(key);
+    await rerender(<Composer workspaceId="workspace-a" draftIdentity="alice" draftKey="queued-unknown" onUpload={upload} />);
+    await settle();
+    expect(state.publish).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("DD-144 Agent mention in a DM", () => {
+  it("refuses an @Agent mention before sending and keeps the draft", async () => {
+    const host = await render(<Composer workspaceId="workspace-a" channelType="dm" draftIdentity="alice" draftKey="dm-agent" />);
+    await settle();
+    await type(host.querySelector<HTMLElement>('[data-testid="message-input"]')!, "hey @Scout can you help");
+    await click(button(host, "platform.send"));
+    await settle();
+    expect(state.publish).not.toHaveBeenCalled();
+    expect(host.textContent).toContain("dm.agentMentionRefused");
+    expect(host.querySelector('[data-testid="message-input"]')!.textContent).toBe("hey @Scout can you help");
+  });
+  it("sends a DM that names no Agent", async () => {
+    const host = await render(<Composer workspaceId="workspace-a" channelType="dm" draftIdentity="alice" draftKey="dm-human" />);
+    await settle();
+    await type(host.querySelector<HTMLElement>('[data-testid="message-input"]')!, "hey @Scoutmaster");
+    await click(button(host, "platform.send"));
+    await vi.waitFor(() => expect(state.publish).toHaveBeenCalledTimes(1));
+  });
+});
+

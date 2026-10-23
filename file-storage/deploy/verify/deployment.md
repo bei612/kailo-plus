@@ -1,5 +1,21 @@
 # Cells 独立原生部署接缝
 
+## 2026-10-23 个人文件数据源版本策略声明式（验收批次 3）
+
+生产只读核对（CI 节点，`/var/cells/pydio.json` 的 `services.pydio.grpc.data.sync.<名>.VersioningPolicyName`）：
+`personal`、`pydiods1`、`cellsdata` 均为 `default-policy`（固定上游 `data/versions/grpc/service/service.go`
+`InitDefaults` 中名为 "30 days max" 的策略，即控制台「最多 30 天」），由控制台手工设置；`kailobinding` 为
+`keep-all`（入口 `CELLS_BINDING_VERSIONING_POLICY`），`versions`、`thumbnails` 无策略。
+
+`reconcile.py` 的 `DATASOURCE_VERSIONING` 声明这三项，`ensure_datasource_versioning` 在绑定数据源回读之后执行：
+策略须已定义、数据源须存在（不在运行中服务里创建数据源，原因见下文 2026-10-19 (b)），不同时才按控制台同一路径
+`GET /a/config/datasource/{Name}` → 只改 `VersioningPolicyName` 的同一对象 `POST` 回去（`PutDataSource` 对已存在
+数据源是 UPDATE：回传的 vault 引用保持不变），再回读。与生产现状一致时不写任何东西；控制台改成别的策略会在下次
+`start.sh` 被改回。绑定数据源不在声明内，仍只回读。
+
+测试：`test_reconcile.py` 新增 4 项（现状为空操作且控制台改动被改回、缺数据源拒绝且不创建、策略未定义时零写入、
+回读不一致拒绝），首装用例断言只写这三项且其余字段原样。
+
 ## 2026-10-23 Kailo 成员目录读取（DD-133(4)，07 §4.7.4）
 
 部署单元在 `CELLS_DIRECTORY_BINDING_ID` 非空时由 `start.sh` 叠加 `compose.member-directory.yaml`：

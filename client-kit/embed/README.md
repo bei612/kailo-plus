@@ -102,8 +102,16 @@ from Kailo at run time.
    // Top-level visit only: seed the language from the OIDC `locale` claim.
    embed.useIdentityLocale(idTokenClaims.locale);
    // prompt=none returned login_required inside the frame:
-   embed.requestTopLevelSignIn();
+   if (!embed.requestTopLevelSignIn()) showOwnExpiredNotice();
    ```
+
+   `requestTopLevelSignIn()` returns `true` once `auth-required` was posted to
+   the Kailo origin. From then on Kailo alone prompts for the new sign-in
+   (V-SCN-226): the page shows no "sign in again" notice, dialog or toast of
+   its own (for the request that failed or the ones that follow) and leaves the
+   frame neutral until Kailo reloads it after the sign-in. Only when it returns
+   `false` (top level, or no Kailo origin configured) does the page explain the
+   expired session itself.
 
    The runtime also emits `window` event `kailo:presentation`
    (`detail: {state, changed}`) for frameworks that prefer DOM events.

@@ -15,6 +15,7 @@ import 'package:buzz/features/channels/channel.dart';
 import 'package:buzz/features/channels/channel_detail_page.dart';
 import 'package:buzz/features/channels/channel_management_provider.dart';
 import 'package:buzz/features/channels/channel_messages_provider.dart';
+import 'package:buzz/features/channels/channel_typing_provider.dart';
 import 'package:buzz/features/channels/composer_dock_size_reporter.dart';
 import 'package:buzz/features/channels/date_formatters.dart';
 import 'package:buzz/features/channels/day_divider.dart';
@@ -166,6 +167,7 @@ Widget _buildTestable({
   String? currentPubkey,
   http.Client? mediaClient,
   Widget? home,
+  List<TypingEntry> typing = const [],
 }) {
   final resolvedChannel = channel ?? _testChannel;
   final navigatorKey = GlobalKey<NavigatorState>();
@@ -179,6 +181,9 @@ Widget _buildTestable({
       channelMessagesProvider(
         _channelId,
       ).overrideWith(() => fakeMessagesNotifier),
+      channelTypingProvider(
+        _channelId,
+      ).overrideWith(() => _FakeTypingNotifier(typing)),
       userCacheProvider.overrideWith(
         () => userCacheNotifier ?? _FakeUserCacheNotifier(users),
       ),
@@ -277,6 +282,12 @@ Widget _buildNavigationTestable({
       channelMessagesProvider(
         channelA.id,
       ).overrideWith(() => _FakeMessagesNotifier([], channelId: channelA.id)),
+      channelTypingProvider(
+        channelA.id,
+      ).overrideWith(() => _FakeTypingNotifier([], channelId: channelA.id)),
+      channelTypingProvider(
+        channelB.id,
+      ).overrideWith(() => _FakeTypingNotifier([], channelId: channelB.id)),
       channelMessagesProvider(
         channelB.id,
       ).overrideWith(() => _FakeMessagesNotifier([], channelId: channelB.id)),
@@ -825,6 +836,33 @@ void main() {
 
       expect(find.text('No messages yet'), findsOneWidget);
       expect(find.text('Be the first to say something!'), findsOneWidget);
+    });
+
+    testWidgets('shows channel-level typing from others above the composer', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _buildTestable(
+          messages: [],
+          typing: const [
+            TypingEntry(pubkey: 'bob', expiresAtMs: 1 << 52),
+            TypingEntry(
+              pubkey: 'carol',
+              threadHeadId: 'thread-head',
+              expiresAtMs: 1 << 52,
+            ),
+          ],
+        ),
+      );
+      // The indicator shimmers continuously, so the page never settles.
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      expect(
+        find.byKey(const ValueKey('channel-typing-indicator')),
+        findsOneWidget,
+      );
+      expect(find.textContaining('typing'), findsOneWidget);
     });
 
     testWidgets('renders text messages with author and content', (
@@ -8033,4 +8071,13 @@ class _TestNavigatorObserver extends NavigatorObserver {
     pushCount += 1;
     super.didPush(route, previousRoute);
   }
+}
+
+class _FakeTypingNotifier extends ChannelTypingNotifier {
+  final List<TypingEntry> _entries;
+  _FakeTypingNotifier(this._entries, {String channelId = _channelId})
+    : super(channelId);
+
+  @override
+  List<TypingEntry> build() => _entries;
 }

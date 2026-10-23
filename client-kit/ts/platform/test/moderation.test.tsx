@@ -17,7 +17,8 @@ import {
 } from "../src/moderation";
 import { PlatformProvider } from "../src/react/context";
 import { MessageActionBarSurface, type TimelineMessage } from "../src/react/messages";
-import { ComposerTimeoutBanner, clearTimeoutState, recordTimeoutFromRestriction, useTimeoutState } from "../src/react/moderation";
+import { ComposerTimeoutBanner, NativeReportPublisherProvider, clearTimeoutState, recordTimeoutFromRestriction, useTimeoutState,
+  type NativeReportPublisher } from "../src/react/moderation";
 import { TooltipProvider } from "../src/react/sidebar/tooltip";
 import type { BffReply, BffRequest } from "../src/transport";
 import { click, render, settle } from "./render";
@@ -127,7 +128,7 @@ function submission(dispatchState: ActionDispatchState, actionKey: string): Acti
   return { operationId: "op", actionExecutionId: "ae", actionKey, gateState: ActionGateState.Allowed, dispatchState };
 }
 
-function mount(target: TimelineMessage, answers: ActionDispatchState[] = [ActionDispatchState.Dispatched]) {
+function mount(target: TimelineMessage, answers: ActionDispatchState[] = [ActionDispatchState.Dispatched], nativeReport?: NativeReportPublisher) {
   const commands: Record<string, unknown>[] = [];
   const route = (request: BffRequest): BffReply => {
     if (request.path === "/api/v1/moderation/access") return { status: 200, body: { canModerate: true } };
@@ -146,8 +147,10 @@ function mount(target: TimelineMessage, answers: ActionDispatchState[] = [Action
   const send = vi.fn(async (request: BffRequest) => route(request));
   const cache = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
   const ui = render(<QueryClientProvider client={cache}><PlatformProvider client={createBffClient({ send })} locale="en">
+    <NativeReportPublisherProvider value={nativeReport ?? null}>
     <TooltipProvider><MessageActionBarSurface message={target} onCopyMessage={vi.fn()}
       moderation={{ scope: { workspaceId: "w" }, selfPubkey: self }} /></TooltipProvider>
+    </NativeReportPublisherProvider>
   </PlatformProvider></QueryClientProvider>);
   return { ui, send, commands };
 }
@@ -159,6 +162,28 @@ async function openMenu(host: HTMLElement) {
 }
 
 describe("original message menu moderation", () => {
+  it("lets a native host publish the original 1984 itself and never claims an unknown report (DD-125(2))", async () => {
+    const outcomes: Array<"done" | "unknown"> = ["unknown", "done"];
+    const nativeReport = vi.fn<NativeReportPublisher>(async () => outcomes.shift()!);
+    const { ui, commands } = mount(message, undefined, nativeReport);
+    await openMenu(await ui);
+    await click(document.querySelector<HTMLElement>(`[data-testid="report-message-${eventId}"]`)!);
+    await vi.waitFor(() => expect(document.querySelector('[data-testid="report-message-dialog"]')).not.toBeNull());
+    const dialog = document.querySelector<HTMLElement>('[data-testid="report-message-dialog"]')!;
+    await click(dialog.querySelector<HTMLElement>(`[data-testid="report-category-${ModerationReportType.Spam}"]`)!);
+    const submit = dialog.querySelector<HTMLButtonElement>('[data-testid="report-submit"]')!;
+    await click(submit);
+    await vi.waitFor(() => expect(nativeReport).toHaveBeenCalledTimes(1));
+    expect(nativeReport.mock.calls[0]![0]).toEqual({ eventId, authorPubkey: author, reportType: ModerationReportType.Spam });
+    // Unknown: the dialog stays open for the same report; the host resends its signed event.
+    await vi.waitFor(() => expect(submit.disabled).toBe(false));
+    expect(document.querySelector('[data-testid="report-message-dialog"]')).not.toBeNull();
+    await click(submit);
+    await vi.waitFor(() => expect(nativeReport).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() => expect(document.querySelector('[data-testid="report-message-dialog"]')).toBeNull());
+    expect(commands.filter((command) => command.actionKey === "moderation.report.submit")).toHaveLength(0);
+  });
+
   it("offers Report message and the moderator items, and bans the raw signer through Core", async () => {
     const { ui, commands } = mount(message);
     await openMenu(await ui);

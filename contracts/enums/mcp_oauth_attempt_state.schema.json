@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/mcp_oauth_attempt_state.schema.json",
+  "title": "McpOauthAttemptState",
+  "description": "DD-149(6)：一次 OAuth 授权尝试的状态。",
+  "type": "string",
+  "enum": [
+    "PENDING",
+    "COMPLETED",
+    "FAILED",
+    "EXPIRED",
+    "CONSUMED"
+  ]
+}

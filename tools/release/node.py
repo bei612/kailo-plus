@@ -9,6 +9,9 @@
   node.py runtime --commit <commit>      从固定发布树执行：输出 CI 配置的运行目录（组件入口据此导出
                                          KAILO_RUNTIME_DIR，ADR-20 §3）
   node.py drift --commit <commit>        从固定发布树执行，只读：列出长期运行服务的配置漂移（ADR-20 §9）
+  node.py retention [--dry-run] [--ci-config 路径] [--keep <commit>]... [--prune-docker]
+                                         发布树与代理暂存保留（ADR-20 §11）：deploy 成功后自动执行；
+                                         CI worker 准入空间不足时以 origin/main 的本文件执行并加 --prune-docker
 
 backup/deploy/verify 只在 <sources>/<commit>/apps/tools/release/node.py 上运行，先核对发布树 HEAD、
 干净与 full 回执；发布树只读，运行投递与数据只在运行目录。进度写 stderr，结果 JSON 写 stdout；
@@ -630,7 +633,467 @@ def inspect(request):
             except NodeError as error:  # 例如目标 commit 要求的 .env 键缺失：plan 照常输出，deploy 时重算
                 result["config_drift"] = dict(error=str(error))
     result["active_ci_deploys"] = active_ci_deploys(cfg)
+    keep_request = request.get("retention")
+    if keep_request is not None:
+        keep = [str(c) for c in (keep_request or {}).get("keep") or []]
+        if not all(TREE_NAME.fullmatch(c) for c in keep):
+            raise NodeError("retention.keep 必须是 40 位完整 commit")
+        try:
+            result["retention"] = run_retention(cfg, dry_run=True, keep=keep)
+        except (NodeError, OSError, ValueError) as error:  # plan 照常输出；deploy 结束时以届时现场重算
+            result["retention"] = dict(error=str(error))
     return result
+
+
+# ---- 发布树与代理暂存保留（ADR-20 §11）--------------------------------------------------
+
+# 策略缺省值随代码版本化；节点路径（journal、回执归档、暂存根、链接扫描根）只来自 CI 配置的 retention 段
+RETENTION_DEFAULTS = dict(keep_releases=3, grace_seconds=2 * 3600, scratch_max_age_seconds=24 * 3600, link_depth=6)
+TREE_NAME = re.compile(r"[0-9a-f]{40}")
+ACTIVE_JOB_STATES = ("QUEUED", "RUNNING", "DEPLOYING")
+DOCKER_PRUNE_UNTIL = "72h"
+
+
+def retention_policy(cfg):
+    spec = cfg.get("retention")
+    if not isinstance(spec, dict):
+        raise NodeError("CI 配置缺少 retention 段")
+    missing = [k for k in ("journal", "receipts") if not spec.get(k)]
+    if missing:
+        raise NodeError(f"CI 配置 retention 缺少 {missing}")
+    policy = dict(RETENTION_DEFAULTS)
+    for key in RETENTION_DEFAULTS:
+        if key in spec:
+            value = spec[key]
+            if not isinstance(value, int) or isinstance(value, bool) or value < (1 if key == "keep_releases" else 0):
+                raise NodeError(f"CI 配置 retention.{key} 不是合法的非负整数")
+            policy[key] = value
+    for key in ("scratch", "link_roots"):
+        if not isinstance(spec.get(key, []), list):
+            raise NodeError(f"CI 配置 retention.{key} 不是列表")
+    policy.update(journal=str(spec["journal"]), receipts=str(spec["receipts"]),
+                  scratch=[str(p) for p in spec.get("scratch") or []],
+                  link_roots=[str(p) for p in spec.get("link_roots") or [cfg["runtime"]]])
+    return policy
+
+
+def tree_of(path, sources):
+    """路径落在 <sources>/<40 位 commit>（含其自身）之内 → commit，否则 None。sources 可给多种写法。"""
+    path = os.path.normpath(str(path))
+    for base in sources:
+        rel = os.path.relpath(path, base)
+        head = rel.split(os.sep)[0]
+        if not rel.startswith("..") and TREE_NAME.fullmatch(head):
+            return head
+    return None
+
+
+def source_bases(sources):
+    return sorted({os.path.normpath(sources), os.path.realpath(sources)})
+
+
+def container_references(entries, sources):
+    """docker inspect 条目（含已停止的容器：重启时仍用原挂载）→ {commit: [原因]}。引用包括挂载来源、
+    挂载来源经软链接解析到的位置、Compose 项目目录与 Compose 文件。"""
+    bases, found = source_bases(sources), {}
+    for entry in entries:
+        name = str(entry.get("Name") or entry.get("Id", "")[:12]).lstrip("/")
+        labels = (entry.get("Config") or {}).get("Labels") or {}
+        paths = [(m.get("Source"), "挂载") for m in entry.get("Mounts") or []]
+        paths.append((labels.get(COMPOSE_WORKDIR_LABEL), "Compose 项目目录"))
+        paths += [(f, "Compose 文件") for f in (labels.get(COMPOSE_FILES_LABEL) or "").split(",")]
+        for path, kind in paths:
+            if not path:
+                continue
+            direct = tree_of(path, bases)
+            linked = tree_of(os.path.realpath(path), bases)
+            for commit, how in ((direct, kind), (linked if linked != direct else None, kind + "经链接")):
+                if commit:
+                    kinds = found.setdefault(commit, {}).setdefault(name, [])
+                    if how not in kinds:
+                        kinds.append(how)
+    return {commit: [f"容器 {name}（{'、'.join(kinds)}）" for name, kinds in by_name.items()]
+            for commit, by_name in found.items()}
+
+
+def link_references(roots, sources, max_depth):
+    """链接扫描根下（不跟随目录链接，深度受限）指向发布树的软链接 → ({commit: [原因]}, [无法读取的子目录])。
+    扫描根本身缺失或不可读即停止；根下由容器 uid 持有、本用户不可读的数据目录（如 OpenBao 存储）只报告：
+    其中的链接只在容器内解析，宿主上消费发布树的路径都已出现在容器挂载与 Compose 标签里。"""
+    bases, refs, unreadable = source_bases(sources), {}, []
+    for root in roots:
+        if not os.path.isdir(root) or not os.access(root, os.R_OK | os.X_OK):
+            raise NodeError(f"链接扫描根不可读：{root}")
+        depth0 = os.path.normpath(root).count(os.sep)
+        for folder, dirs, files in os.walk(root, onerror=lambda e: unreadable.append(e.filename)):
+            if tree_of(folder, bases):
+                dirs[:] = []
+                continue
+            for name in dirs + files:
+                path = os.path.join(folder, name)
+                if not os.path.islink(path):
+                    continue
+                target = os.path.normpath(os.path.join(folder, os.readlink(path)))
+                commit = tree_of(target, bases) or tree_of(os.path.realpath(path), bases)
+                if commit:
+                    refs.setdefault(commit, []).append(f"链接 {path}")
+            if os.path.normpath(folder).count(os.sep) - depth0 >= max_depth:
+                dirs[:] = []
+    return refs, unreadable
+
+
+def release_history(journal):
+    """发布 journal：每个 commit 目录的 deploy.json → [dict(commit, state, started_at, finished_at)]。"""
+    found = []
+    for name in sorted(os.listdir(journal)) if os.path.isdir(journal) else []:
+        path = os.path.join(journal, name, "deploy.json")
+        if not TREE_NAME.fullmatch(name) or not os.path.isfile(path):
+            continue
+        with open(path, encoding="utf-8") as stream:
+            value = json.load(stream)
+        found.append(dict(commit=name, state=value.get("state"), started_at=value.get("started_at") or 0,
+                          finished_at=value.get("finished_at")))
+    return found
+
+
+def active_job_commits(queue):
+    """CI 队列中未结束任务（含尚未领取的请求）引用的 commit。"""
+    found = set()
+    for path in [os.path.join(queue, "jobs", job, "status.json")
+                 for job in (os.listdir(os.path.join(queue, "jobs")) if os.path.isdir(os.path.join(queue, "jobs")) else [])]:
+        try:
+            with open(path, encoding="utf-8") as stream:
+                status = json.load(stream)
+        except (OSError, ValueError):
+            continue
+        if status.get("state") in ACTIVE_JOB_STATES and TREE_NAME.fullmatch(str(status.get("commit"))):
+            found.add(status["commit"])
+    for folder in (os.path.join(queue, "pending"), os.path.join(queue, "pending", "feedback")):
+        for name in os.listdir(folder) if os.path.isdir(folder) else []:
+            if not name.endswith(".json"):
+                continue
+            try:
+                with open(os.path.join(folder, name), encoding="utf-8") as stream:
+                    commit = str(json.load(stream).get("commit"))
+            except (OSError, ValueError, AttributeError):
+                continue
+            if TREE_NAME.fullmatch(commit):
+                found.add(commit)
+    return found
+
+
+def newest_mtime(path, depth=1):
+    """路径自身及 depth 层以内条目的最新 mtime（lstat，不跟随链接）。"""
+    newest = os.lstat(path).st_mtime
+    if depth and os.path.isdir(path) and not os.path.islink(path):
+        for name in os.listdir(path):
+            try:
+                newest = max(newest, newest_mtime(os.path.join(path, name), depth - 1))
+            except OSError:
+                continue
+    return newest
+
+
+def source_trees(sources):
+    """→ ({commit: 最新活动时间}, [不是发布树的条目])。活动时间取树根、ready.json、check.json 的 mtime。"""
+    trees, other = {}, []
+    for name in sorted(os.listdir(sources)):
+        path = os.path.join(sources, name)
+        if not TREE_NAME.fullmatch(name) or os.path.islink(path) or not os.path.isdir(path):
+            other.append(name)
+            continue
+        stamps = [os.lstat(path).st_mtime] + [os.lstat(os.path.join(path, f)).st_mtime
+                                               for f in ("ready.json", "check.json") if os.path.isfile(os.path.join(path, f))]
+        trees[name] = max(stamps)
+    return trees, other
+
+
+def scratch_entries(roots):
+    """代理暂存根（~/scratch）下每个条目 → 最新活动时间（条目自身与其直接子项）。链接条目不处理。"""
+    found = {}
+    for root in roots:
+        for name in sorted(os.listdir(root)) if os.path.isdir(root) else []:
+            path = os.path.join(root, name)
+            if not os.path.islink(path):
+                found[path] = newest_mtime(path)
+    return found
+
+
+def current_pin(releases):
+    """journal 中最近一次 SUCCEEDED 的 deploy 的 commit。"""
+    succeeded = [r for r in releases if r.get("state") == "SUCCEEDED"]
+    if not succeeded:
+        return None
+    return max(succeeded, key=lambda r: (r.get("finished_at") or r.get("started_at") or 0))["commit"]
+
+
+def retention_decision(trees, *, now, policy, references=None, releases=(), active=(), main=None, keep=(),
+                       scratch=None):
+    """纯推导。trees: {commit: 最新活动时间}；references: {commit: [原因]}（容器挂载与链接）；
+    releases: 发布 journal 摘要；active: 进行中任务的 commit；main: origin/main；keep: 调用方要求保留的 commit。
+    保留：被引用、当前 pin（最近一次成功发布）、最近 keep_releases 次发布、进行中任务、origin/main、调用方指定、
+    grace_seconds 内活动过的树；其余删除。暂存条目超过 scratch_max_age_seconds 未活动即删除。"""
+    kept = {}
+
+    def hold(commit, reason):
+        if commit in trees and reason not in kept.setdefault(commit, []):
+            kept[commit].append(reason)
+
+    for commit, reasons in (references or {}).items():
+        for reason in reasons:
+            hold(commit, reason)
+    pin = current_pin(releases)
+    if pin:
+        hold(pin, "当前 pin（最近一次成功发布）")
+    ordered = sorted(releases, key=lambda r: r.get("started_at") or 0, reverse=True)
+    for rank, r in enumerate(ordered[:policy["keep_releases"]], 1):
+        hold(r["commit"], f"最近 {policy['keep_releases']} 次发布之一（第 {rank} 新）")
+    for commit in sorted(active):
+        hold(commit, "CI 队列中未结束的任务")
+    if main:
+        hold(main, "origin/main")
+    for commit in keep:
+        hold(commit, "本次发布")
+    for commit, stamp in trees.items():
+        if now - stamp < policy["grace_seconds"]:
+            hold(commit, f"{policy['grace_seconds'] // 3600} 小时内活动")
+    kept = {c: r for c, r in kept.items() if r}
+    delete = sorted((c for c in trees if c not in kept), key=lambda c: trees[c])
+    stale = sorted(p for p, stamp in (scratch or {}).items() if now - stamp >= policy["scratch_max_age_seconds"])
+    return dict(keep=kept, delete=delete, scratch=stale)
+
+
+def disk_usage(path):
+    """(独占字节, 与其他位置共享的字节)：按块计；硬链接（git clone --local 的对象）删除本树并不释放。"""
+    own = shared = 0
+    seen = set()
+    for folder, dirs, files in os.walk(path, onerror=lambda e: None):
+        for name in dirs + files:
+            try:
+                info = os.lstat(os.path.join(folder, name))
+            except OSError:
+                continue
+            size = info.st_blocks * 512
+            if info.st_nlink > 1 and not os.path.isdir(os.path.join(folder, name)):
+                if (info.st_dev, info.st_ino) in seen:
+                    continue
+                seen.add((info.st_dev, info.st_ino))
+                shared += size
+            else:
+                own += size
+    return own, shared
+
+
+def archive_receipts(root, receipts, commit):
+    """发布树根下的 *.json 回执（ready/check）→ <receipts>/<commit>/；已存在且内容相同则跳过，不同则加时间后缀。"""
+    archived = []
+    names = [n for n in sorted(os.listdir(root)) if n.endswith(".json")
+             and os.path.isfile(os.path.join(root, n)) and not os.path.islink(os.path.join(root, n))]
+    if not names:
+        return archived
+    folder = os.path.join(receipts, commit)
+    os.makedirs(folder, mode=0o775, exist_ok=True)
+    for name in names:
+        data = _read_bytes(os.path.join(root, name))
+        dest = os.path.join(folder, name)
+        if os.path.isfile(dest):
+            if _read_bytes(dest) == data:
+                archived.append(name)
+                continue
+            dest = os.path.join(folder, f"{name[:-5]}.{int(time.time())}.json")
+        fd, tmp = tempfile.mkstemp(dir=folder, prefix=".")
+        with os.fdopen(fd, "wb") as stream:
+            stream.write(data)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.chmod(tmp, 0o644)
+        os.replace(tmp, dest)
+        archived.append(os.path.basename(dest))
+    return archived
+
+
+def remove_path(path):
+    """删除可重建内容：先 chmod -R u+w（go module cache 等只读树），再删除；本用户无权限的条目经 sudo -n 删除。"""
+    if os.path.islink(path) or not os.path.isdir(path):
+        os.unlink(path)
+        return
+    try:
+        for folder, dirs, files in os.walk(path):
+            for name in [""] + dirs + files:
+                item = os.path.join(folder, name) if name else folder
+                if not os.path.islink(item):
+                    mode = os.lstat(item).st_mode
+                    if not mode & 0o200:
+                        os.chmod(item, (mode & 0o7777) | 0o200)
+        shutil.rmtree(path)
+    except OSError:
+        run(["sudo", "-n", "chmod", "-R", "u+w", "--", path])
+        run(["sudo", "-n", "rm", "-rf", "--one-file-system", "--", path])
+    if os.path.lexists(path):
+        raise NodeError(f"删除后仍存在：{path}")
+
+
+def free_bytes(path):
+    stats = os.statvfs(path)
+    return stats.f_bavail * stats.f_frsize
+
+
+def all_containers():
+    ids = out(DOCKER + ["ps", "-a", "-q", "--no-trunc"]).split()
+    return json.loads(out(DOCKER + ["inspect", *ids])) if ids else []
+
+
+def origin_main(cfg):
+    repo = cfg.get("source_repository")
+    if not repo:
+        return None
+    r = run(["git", "-C", str(repo), "rev-parse", "--verify", "-q", "refs/remotes/origin/main"], check=False)
+    value = r.stdout.decode().strip()
+    return value if r.returncode == 0 and TREE_NAME.fullmatch(value) else None
+
+
+CHECK_IMAGE = "local/kailo-check:"
+CHECK_RECIPE = "tools/check.Dockerfile"
+HOLD_LABEL = "io.kailo.retention.hold"
+
+
+def git_show(repo):
+    """(commit, 仓库内路径) → 文件内容 bytes；对象不存在时 None。"""
+    def show(commit, path):
+        r = run(["git", "-C", str(repo), "show", f"{commit}:{path}"], check=False)
+        return r.stdout if r.returncode == 0 else None
+    return show
+
+
+def protected_check_images(commits, show):
+    """检查镜像按配方 SHA-256 命名（local/kailo-check:<sha256(tools/check.Dockerfile)>）。commits: [(commit, 原因)]
+    → {镜像引用: [原因]}：这些 commit 的配方对应的检查镜像不得被 prune（重建一次很贵）。"""
+    found = {}
+    for commit, reason in commits:
+        if not commit:
+            continue
+        recipe = show(commit, CHECK_RECIPE)
+        if recipe is None:
+            raise NodeError(f"读不到 {commit[:12]} 的 {CHECK_RECIPE}，无法确定要保护的检查镜像，不执行 docker prune")
+        ref = CHECK_IMAGE + hashlib.sha256(recipe).hexdigest()
+        if reason not in found.setdefault(ref, []):
+            found[ref].append(reason)
+    return found
+
+
+def docker_prune(dry_run, protect=None, docker=None):
+    """未被任何容器使用、且早于 72h 的镜像与构建缓存。protect 中的镜像（{引用: [原因]}）在 image prune 期间各由一个
+    从不启动的 created 容器（带 HOLD_LABEL）占用，prune 之后删除；上次异常遗留的占位容器先清掉。
+    dry-run 只回报 docker system df 的可回收上界与受保护镜像。"""
+    docker = docker or (lambda argv: out(DOCKER + argv))
+    protect = protect or {}
+    commands = [["image", "prune", "-a", "-f", "--filter", f"until={DOCKER_PRUNE_UNTIL}"],
+                ["builder", "prune", "-f", "--filter", f"until={DOCKER_PRUNE_UNTIL}"]]
+
+    def image_id(ref):
+        try:
+            return docker(["image", "inspect", "--format", "{{.Id}}", ref]) or None
+        except NodeError:
+            return None
+
+    present = {ref: image_id(ref) for ref in sorted(protect)}
+    report = dict(protected={ref: dict(image=present[ref], reasons=protect[ref]) for ref in sorted(protect)})
+    if dry_run:
+        rows = [json.loads(line) for line in docker(["system", "df", "--format", "{{json .}}"]).splitlines() if line]
+        report.update(commands=[" ".join(["docker"] + c) for c in commands],
+                      reclaimable_upper_bound={r.get("Type"): r.get("Reclaimable") for r in rows})
+        return report
+
+    def release_holds():
+        stale = docker(["ps", "-a", "-q", "--no-trunc", "--filter", f"label={HOLD_LABEL}"]).split()
+        if stale:
+            docker(["rm", "-f", *stale])
+
+    release_holds()
+    reclaimed, holds = {}, []
+    try:
+        for ref, image in present.items():
+            if image:
+                holds.append(docker(["create", "--pull=never", "--network", "none", "--label", f"{HOLD_LABEL}={ref}",
+                                     image, "/kailo-retention-hold"]))
+        for argv in commands:
+            text = docker(argv)
+            m = re.search(r"Total(?: reclaimed space)?:\s*(.+)$", text, re.M)
+            reclaimed[argv[0]] = m.group(1).strip() if m else "0B"
+    finally:
+        if holds:
+            docker(["rm", "-f", *holds])
+    report["reclaimed"] = reclaimed
+    return report
+
+
+@contextlib.contextmanager
+def source_lock(cfg):
+    """与 CI worker 的发布树准备（<queue>/source.lock）互斥：删除期间不会有任务正在准备同一棵树。"""
+    with open(os.path.join(cfg["queue"], "source.lock"), "a") as stream:
+        fcntl.flock(stream, fcntl.LOCK_EX)
+        yield
+
+
+def run_retention(cfg, *, dry_run, keep=(), prune=False, now=None):
+    """发布树与代理暂存保留（ADR-20 §11）。任何引用事实读不全（Docker、journal、链接扫描根）即停止，不删除。
+    非 dry-run 在 source.lock 下重新取事实后删除；先归档回执再删树。"""
+    policy = retention_policy(cfg)
+    sources = cfg["sources"]
+    workspace = (cfg.get("environment") or {}).get("TMPDIR") or sources
+
+    def decide():
+        trees, other = source_trees(sources)
+        refs = container_references(all_containers(), sources)
+        links, unreadable = link_references(policy["link_roots"], sources, policy["link_depth"])
+        report["unscanned"] = unreadable
+        for commit, reasons in links.items():
+            refs.setdefault(commit, []).extend(reasons)
+        releases, main = release_history(policy["journal"]), origin_main(cfg)
+        decision = retention_decision(trees, now=time.time() if now is None else now, policy=policy,
+                                      references=refs, releases=releases,
+                                      active=active_job_commits(cfg["queue"]), main=main, keep=keep,
+                                      scratch=scratch_entries(policy["scratch"]))
+        anchors.extend([(main, "origin/main 的检查配方"), (current_pin(releases), "当前 pin 的检查配方")]
+                       + [(c, "本次指定 commit 的检查配方") for c in keep])
+        return trees, other, decision
+
+    anchors = []
+
+    stamp = time.time() if now is None else now
+    before = free_bytes(workspace)
+    report = dict(dry_run=dry_run, policy={k: policy[k] for k in RETENTION_DEFAULTS}, free_before=before)
+    with (contextlib.nullcontext() if dry_run else source_lock(cfg)):
+        trees, other, decision = decide()
+        report.update(kept={c: decision["keep"][c] for c in sorted(decision["keep"])}, not_trees=other)
+        removed, freed = [], 0
+        for commit in decision["delete"]:
+            root = os.path.join(sources, commit)
+            own, shared = disk_usage(root)
+            entry = dict(commit=commit, bytes=own, shared_bytes=shared, idle_hours=round((stamp - trees[commit]) / 3600, 1))
+            if not dry_run:
+                entry["receipts"] = archive_receipts(root, policy["receipts"], commit)
+                remove_path(root)
+            removed.append(entry)
+            freed += own
+        scratch = []
+        for path in decision["scratch"]:
+            own, shared = disk_usage(path) if os.path.isdir(path) else (os.lstat(path).st_blocks * 512, 0)
+            if not dry_run:
+                remove_path(path)
+            scratch.append(dict(path=path, bytes=own))
+            freed += own
+    report.update(trees=removed, scratch=scratch, tree_bytes=sum(t["bytes"] for t in removed),
+                  scratch_bytes=sum(s["bytes"] for s in scratch), estimated_bytes=freed)
+    if prune:
+        try:
+            if not cfg.get("source_repository"):
+                raise NodeError("CI 配置缺少 source_repository，无法确定要保护的检查镜像，不执行 docker prune")
+            report["docker"] = docker_prune(dry_run, protected_check_images(anchors, git_show(cfg["source_repository"])))
+        except NodeError as error:  # 发布树与暂存的保留已完成；prune 不在无保护时执行
+            report["docker"] = dict(error=str(error))
+    report["free_after"] = free_bytes(workspace)
+    return report
 
 
 # ---- 固定发布树上的阶段 ---------------------------------------------------------
@@ -1346,10 +1809,31 @@ class Release:
         journal.update(state="SUCCEEDED" if not stopped else "FAILED", finished_at=time.time(),
                        unrelated_stopped=stopped, unrelated_recreated=recreated)
         self.write_journal("deploy.json", journal)
+        if not stopped:
+            journal["retention"] = self.retention()
+            self.write_journal("deploy.json", journal)
         lock.close()
         if stopped:
             raise NodeError(f"部署后不再运行的无关容器：{stopped}")
         return journal
+
+    def retention(self):
+        """deploy 成功后的发布树保留（ADR-20 §11）：本 commit 已是当前 pin。发布本身已成功，保留失败只记入
+        journal 与输出，不改变 deploy 结果。"""
+        say("== 发布树与代理暂存保留")
+        try:
+            policy = retention_policy(self.cfg)
+            if os.path.realpath(policy["journal"]) != os.path.realpath(self.decl["node"]["journal"]):
+                raise NodeError("CI 配置 retention.journal 与 release.yaml node.journal 不一致")
+            report = run_retention(self.cfg, dry_run=False, keep=[self.commit])
+        except (NodeError, OSError, ValueError) as error:
+            say(f"   保留未执行：{error}")
+            return dict(error=str(error))
+        say(f"   删除发布树 {len(report['trees'])} 棵、暂存 {len(report['scratch'])} 项，约释放 "
+            f"{report['estimated_bytes'] / 2**30:.1f} GiB；保留 {len(report['kept'])} 棵")
+        return dict(deleted=[t["commit"] for t in report["trees"]], scratch=[s["path"] for s in report["scratch"]],
+                    estimated_bytes=report["estimated_bytes"], kept=report["kept"],
+                    free_before=report["free_before"], free_after=report["free_after"])
 
     def verify(self):
         results, bad = [], []
@@ -1396,6 +1880,15 @@ class Release:
         return value
 
 
+def default_ci_config():
+    """本文件所在仓库 release.yaml 的 node.ci_config（从标准输入或仓库外执行时必须显式 --ci-config）。"""
+    if FROM_STDIN or HERE is None:
+        raise NodeError("从标准输入执行 retention 需要 --ci-config")
+    sys.path.insert(0, HERE)
+    import model
+    return model.declarations()["node"]["ci_config"]
+
+
 def sha256_file(path):
     h = hashlib.sha256()
     with open(path, "rb") as stream:
@@ -1411,13 +1904,24 @@ def main():
     probe.add_argument("request")
     for stage in ("backup", "deploy", "verify", "normalize", "runtime", "drift"):
         sub.add_parser(stage).add_argument("--commit", required=True)
+    keep = sub.add_parser("retention")
+    keep.add_argument("--dry-run", action="store_true", help="只读：列出将删除的发布树与暂存及其大小")
+    keep.add_argument("--ci-config", help="缺省取本发布树 release.yaml 的 node.ci_config")
+    keep.add_argument("--keep", action="append", default=[], help="额外保留的 40 位 commit")
+    keep.add_argument("--prune-docker", action="store_true",
+                      help=f"另外清理未被容器使用、早于 {DOCKER_PRUNE_UNTIL} 的镜像与构建缓存")
     args = parser.parse_args()
     try:
         if args.stage == "inspect":
             value = inspect(json.loads(base64.b64decode(args.request)))
+        elif args.stage == "retention":
+            if not all(TREE_NAME.fullmatch(c) for c in args.keep):
+                raise NodeError("--keep 必须是 40 位完整 commit")
+            value = run_retention(ci_config(args.ci_config or default_ci_config()), dry_run=args.dry_run,
+                                  keep=args.keep, prune=args.prune_docker)
         else:
             if FROM_STDIN:
-                raise NodeError("从标准输入执行时只允许只读 inspect")
+                raise NodeError("从标准输入执行时只允许 inspect 与 retention")
             # normalize: every deploy from this fixed tree (platform or component) first gives
             # tracked files their Git modes, so non-root containers can read bind-mounted config.
             release = Release(args.commit, need_receipt=args.stage not in ("verify", "normalize", "runtime", "drift"))

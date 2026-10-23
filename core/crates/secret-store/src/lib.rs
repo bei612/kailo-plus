@@ -765,6 +765,31 @@ impl SecretStore {
         self.destroy_version_one(&reference.locator, unbound).await
     }
 
+    /// DD-149(5)(6)：连接器的每个凭据版本独占一个 CAS=0 locator
+    /// （`mcp-connection/<credential-id>`）。轮换、OAuth 刷新与删除只销毁这一形状的
+    /// version 1；不扩大其他前缀的删除权。`unbound` 为 true 时允许销毁从未写成的意图
+    /// （写入结果不明后的收敛）。
+    pub async fn retire_mcp_connection_credential(
+        &self,
+        tenant_id: Uuid,
+        reference: &SecretRef,
+        unbound: bool,
+    ) -> Result<(), SecretError> {
+        let prefix = self.tenant_locator(tenant_id, "mcp-connection/");
+        let Some(id) = reference.locator.strip_prefix(&prefix) else {
+            return Err(SecretError::Refused);
+        };
+        if reference.version != 1
+            || reference.audience != self.identity
+            || Uuid::parse_str(id)
+                .map(|parsed| parsed.to_string() != id)
+                .unwrap_or(true)
+        {
+            return Err(SecretError::Refused);
+        }
+        self.destroy_version_one(&reference.locator, unbound).await
+    }
+
     /// DD-113 (1)：平台自持私钥各自独占的 locator 形状。HUMAN 与 CONTROL 只在该
     /// Tenant 的 namespace 与 KV mount 下（含 DD-85 归位后的目标），OPERATOR 只在
     /// 部署级 namespace 的 `relay-operator/` 下。形状之外的引用（例如尚未归位的
@@ -1317,6 +1342,7 @@ impl SecretStore {
              path \"{mount}/destroy/buzz-human/*\" {{ capabilities = [\"update\"] }}\n\
              path \"{mount}/destroy/buzz-control/*\" {{ capabilities = [\"update\"] }}\n\
              path \"{mount}/destroy/automation-webhook/*\" {{ capabilities = [\"update\"] }}\n\
+             path \"{mount}/destroy/mcp-connection/*\" {{ capabilities = [\"update\"] }}\n\
              path \"{mount}/destroy/buzz-ref-rehome/*\" {{ capabilities = [\"update\"] }}\n",
             mount = self.tenant.mount
         );

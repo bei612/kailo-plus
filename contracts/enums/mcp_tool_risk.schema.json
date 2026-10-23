@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/mcp_tool_risk.schema.json",
+  "title": "McpToolRisk",
+  "description": "DD-149(7)：工具风险等级（annotations 只是提示，最终为管理员确认值）。",
+  "type": "string",
+  "enum": [
+    "READ_ONLY",
+    "WRITE",
+    "DESTRUCTIVE"
+  ]
+}

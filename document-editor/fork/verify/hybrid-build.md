@@ -67,6 +67,7 @@
   - `common/main/lib/controller/Themes.js`：URL 指定 Kailo 主题时锁定主题选择，并接受同源写入的 Kailo 主题即时换肤。
   - `common/main/lib/view/Header.js`、`header.less`、`about.less`：logo 改为 Kailo 图标，不再链接到外站。
   - `MacrosDialog.js`：去掉上游文档链接与提示词中的产品名（宏已按 DD-35 关闭）。
+  - `common/main/lib/controller/ExternalUsers.js`、`common/main/lib/view/Header.js`：头像地址（`user.image` 与 info 回传）每个地址只试载一次；`07` §4.7.3 中没有头像的人其地址回 404，试载失败即记为无图（null）并以 `mentions:setusers`/`info` 通知页头、批注、审阅与历史，显示首字母而不是空圆；页头从有图回到无图时清掉背景图。
   - 页面模板（`*.deploy` 与源 html）的静态标题、forms 页头链接，六种语言中 `textNoLicenseTitle` 的产品名，以及 forms 葡萄牙语、日语错误信息中的上游 API 链接。
   - sdkjs 拼写检查例外词中的产品名。
   - `server/Common/config/default.json`：AI 插件 CORS 来源清空（DD-35），许可证到期通知不再指向上游销售邮箱。

@@ -57,6 +57,8 @@ struct ToolRow {
     action_version: Option<i32>,
     policy_id: Option<Uuid>,
     policy_version: Option<i32>,
+    mcp_connection_id: Option<Uuid>,
+    mcp_connection_name: Option<String>,
 }
 
 const TOOL_LIST: &str = "select r.id as resource_id,r.version as resource_version,t.name,t.source,
@@ -67,9 +69,12 @@ const TOOL_LIST: &str = "select r.id as resource_id,r.version as resource_versio
        (select d.version from catalog.action_definition d
           where d.component_release_id=b.component_release_id and d.action_key=t.action_key and d.status='ACTIVE'
           order by d.version desc limit 1) as action_version,
-       policy.id as policy_id,policy.version as policy_version
+       policy.id as policy_id,policy.version as policy_version,
+       t.mcp_connection_id,connection.display_name as mcp_connection_name
      from catalog.resource r
      join catalog.tool_definition t on t.resource_id=r.id
+     left join catalog.mcp_connection connection on connection.resource_id=t.mcp_connection_id
+       and connection.tenant_id=r.tenant_id
      left join catalog.application_binding b on b.id=r.application_binding_id and b.tenant_id=r.tenant_id
      left join catalog.component_release release on release.id=b.component_release_id
      left join lateral (
@@ -224,6 +229,12 @@ async fn tool_page(
                 row.contract_permission.clone().map(Value::from),
             ),
             ("applicationBindingId", row.binding_id.map(|b| json!(b))),
+            // DD-149: user connector tools name their connector.
+            ("mcpConnectionId", row.mcp_connection_id.map(|c| json!(c))),
+            (
+                "mcpConnectionName",
+                row.mcp_connection_name.clone().map(Value::from),
+            ),
             (
                 "applicationBindingVersion",
                 row.binding_version.map(Value::from),

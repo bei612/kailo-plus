@@ -96,7 +96,7 @@ func TestContinueAsNewResumesWithoutLosingDecisions(t *testing.T) {
 		t.Fatalf("续跑后 A 的冲突值应仍被拒绝为 DUPLICATE_DECISION，得到 %v", conflict.rejected)
 	}
 	last := rec.last()
-	if last.Status != generated.Consumed || len(last.Decisions) != 2 {
+	if last.Status != generated.ApprovalStatusCONSUMED || len(last.Decisions) != 2 {
 		t.Fatalf("续跑后应在两人批准后 APPROVED 并被消费: %+v", last)
 	}
 	if rec.statuses()[0] == generated.Requested {

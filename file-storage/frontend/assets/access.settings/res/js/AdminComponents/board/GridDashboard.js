@@ -28,6 +28,9 @@ const {PydioContextConsumer} = Pydio.requireLib('boot');
 
 class GridDashboard extends React.Component{
 
+    // Kailo (DD-133(1), DD-138(7)): no upstream edition teaser cards
+    // ("支助和维护", in-app upgrade, links to the upstream site) and no
+    // software-update card; the artifact is released by Kailo.
     getDefaultCards(){
         return [
             {
@@ -39,33 +42,13 @@ class GridDashboard extends React.Component{
                 }
             },
             {
-                id:'graph.files',
-                componentClass:'AdminComponents.FakeGraph',
-                defaultPosition:{
-                    x:0, y:1
-                },
-                props:{
-                    type:'files'
-                }
-            },
-            {
-                id:'graph.connections',
-                componentClass:'AdminComponents.FakeGraph',
-                defaultPosition:{
-                    x:4, y:1
-                },
-                props:{
-                    type:'connections'
-                }
-            },
-            {
                 id:'recent.logs',
                 componentClass:'AdminComponents.RecentLogs',
                 props:{
                     interval:60
                 },
                 defaultPosition:{
-                    x:0, y:3
+                    x:0, y:1
                 }
             }
         ];

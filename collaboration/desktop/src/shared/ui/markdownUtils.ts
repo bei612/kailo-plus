@@ -45,6 +45,7 @@ export function markdownPropsAreEqual(
     shallowArrayEqual(prev.mentionNames, next.mentionNames) &&
     shallowArrayEqual(prev.channelNames, next.channelNames) &&
     prev.imetaByUrl === next.imetaByUrl &&
+    prev.onRemoveLinkPreviewsForEveryone === next.onRemoveLinkPreviewsForEveryone &&
     prev.searchQuery === next.searchQuery &&
     prev.videoReviewContext === next.videoReviewContext
   );

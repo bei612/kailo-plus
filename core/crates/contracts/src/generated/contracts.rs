@@ -1529,6 +1529,11 @@ pub struct AgentInstallationView {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub execution_permission: Option<AgentInstallationViewExecutionPermission>,
 
+    /// DD-147(1)：该 Installation owner 在本 Tenant 的显示名，只在其 TenantMembership 与 HumanIdentity 仍为
+    /// ACTIVE 时给出；可读条件与本视图相同。缺省时客户端显示原版 owner unavailable，不以 Installation 目录合成作者名（DD-117(6)）。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub owner_display_name: Option<String>,
+
     pub owner_principal_id: String,
 
     pub pinned_version_asset_id: String,
@@ -1950,6 +1955,9 @@ pub enum AgentInstallationToolSource {
 
     #[serde(rename = "PLATFORM_NATIVE")]
     PlatformNative,
+
+    #[serde(rename = "USER_REGISTERED_EXTERNAL")]
+    UserRegisteredExternal,
 }
 
 /// 05 §2.10、17 §8：一个 Agent Installation 在其 Workspace 的成员使用权目录。requested 是该成员显式持有
@@ -6384,6 +6392,14 @@ pub struct GatewayToolView {
 
     pub failed: i64,
 
+    /// 仅 USER_REGISTERED_EXTERNAL（DD-149）：所属连接器
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mcp_connection_id: Option<String>,
+
+    /// 仅 USER_REGISTERED_EXTERNAL：连接器显示名
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mcp_connection_name: Option<String>,
+
     pub name: String,
 
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -6756,6 +6772,415 @@ pub enum LegacySecretRefBindingKind {
     Human,
 }
 
+/// DD-149(10)：本人可发现的连接器与登记能力。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpConnectionPage {
+    pub can_register_personal: bool,
+
+    pub can_register_tenant: bool,
+
+    pub connections: Vec<McpConnectionView>,
+
+    pub policy: McpConnectionPolicyView,
+
+    pub registrable_workspace_ids: Vec<String>,
+}
+
+/// DD-149(10)：连接器详情；凭据只以 credentialSet 表示，从不回显。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpConnectionView {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub api_key_header: Option<String>,
+
+    pub auth_mode: McpConnectionAuthMode,
+
+    pub can_manage: bool,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub created_at: Option<String>,
+
+    pub credential_set: bool,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub credential_updated_at: Option<String>,
+
+    pub display_name: String,
+
+    /// 最近一次探测的清单摘要与已确认的不同
+    pub drift: bool,
+
+    pub endpoint_host: String,
+
+    pub endpoint_url: String,
+
+    pub generation: i64,
+
+    pub health: McpConnectionHealth,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub health_checked_at: Option<String>,
+
+    pub id: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub observed_tools_digest: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub owner_display_name: Option<String>,
+
+    pub owner_principal_id: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub server_name: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub server_version: Option<String>,
+
+    pub slug: String,
+
+    pub state: McpConnectionState,
+
+    pub tools: Vec<McpConnectionToolView>,
+
+    pub tools_digest: String,
+
+    pub transport: McpConnectionTransport,
+
+    pub version: i64,
+
+    pub visibility: McpConnectionVisibility,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
+}
+
+/// DD-149(5)(6)：连接器认证方式。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum McpConnectionAuthMode {
+    #[serde(rename = "API_KEY")]
+    ApiKey,
+
+    Bearer,
+
+    None,
+
+    Oauth,
+}
+
+/// DD-149(10)：最近一次探测观测；不是授权或状态权威。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum McpConnectionHealth {
+    #[serde(rename = "AUTH_FAILED")]
+    AuthFailed,
+
+    #[serde(rename = "EGRESS_DENIED")]
+    EgressDenied,
+
+    Ok,
+
+    #[serde(rename = "PROTOCOL_ERROR")]
+    ProtocolError,
+
+    #[serde(rename = "REAUTHORIZATION_REQUIRED")]
+    ReauthorizationRequired,
+
+    Unchecked,
+
+    Unreachable,
+}
+
+/// DD-149(3)：连接器状态；DELETED 是墓碑。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum McpConnectionState {
+    #[serde(rename = "ACTIVE")]
+    Active,
+
+    #[serde(rename = "DELETED")]
+    Deleted,
+
+    #[serde(rename = "DISABLED")]
+    Disabled,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpConnectionToolView {
+    pub call_policy: McpToolCallPolicy,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub destructive_hint: Option<bool>,
+
+    pub input_schema_json: String,
+
+    /// Agent 看到的工具名 <slug>__<上游名>
+    pub name: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub read_only_hint: Option<bool>,
+
+    pub risk: McpToolRisk,
+
+    pub risk_declared: bool,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+
+    pub tool_resource_id: String,
+
+    pub upstream_name: String,
+}
+
+/// DD-149(7)：工具调用策略。AUTO 只允许 READ_ONLY；CONFIRM 由 Agent 负责人逐次确认；APPROVAL 由 Tenant 管理员逐次批准。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum McpToolCallPolicy {
+    #[serde(rename = "APPROVAL")]
+    Approval,
+
+    #[serde(rename = "AUTO")]
+    Auto,
+
+    #[serde(rename = "CONFIRM")]
+    Confirm,
+}
+
+/// DD-149(7)：工具风险等级（annotations 只是提示，最终为管理员确认值）。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum McpToolRisk {
+    Destructive,
+
+    #[serde(rename = "READ_ONLY")]
+    ReadOnly,
+
+    Write,
+}
+
+/// DD-149(7)：连接器端点的 MCP 传输。STREAMABLE_HTTP 为现行 Streamable HTTP；SSE 为旧版 HTTP+SSE。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum McpConnectionTransport {
+    Sse,
+
+    #[serde(rename = "STREAMABLE_HTTP")]
+    StreamableHttp,
+}
+
+/// DD-149(4)：连接器与其工具的可见范围。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum McpConnectionVisibility {
+    #[serde(rename = "PERSONAL")]
+    Personal,
+
+    #[serde(rename = "TENANT")]
+    Tenant,
+
+    #[serde(rename = "WORKSPACE")]
+    Workspace,
+}
+
+/// DD-149(4)(5)：Tenant 连接器策略与部署出站上限。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpConnectionPolicyView {
+    pub can_manage: bool,
+
+    pub egress_host_suffixes: Vec<String>,
+
+    pub member_registration: McpMemberRegistration,
+
+    pub platform_any_public_host: bool,
+
+    pub platform_host_suffixes: Vec<String>,
+
+    pub version: i64,
+}
+
+/// DD-149(4)：Tenant 连接器策略中普通成员的登记权限。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum McpMemberRegistration {
+    Disabled,
+
+    #[serde(rename = "PERSONAL_ONLY")]
+    PersonalOnly,
+}
+
+/// DD-149(7)：添加连接器前的只读探测。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpConnectionProbeRequest {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub api_key_header: Option<String>,
+
+    pub auth_mode: McpConnectionAuthMode,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub credential: Option<McpConnectionCredentialInput>,
+
+    pub endpoint_url: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub oauth_attempt_id: Option<String>,
+
+    pub transport: McpConnectionTransport,
+}
+
+/// DD-149(5)：仅 mcp_connection.create 与 mcp_connection.rotate_credential 的瞬态凭据（API_KEY 或
+/// BEARER）；Core 写入该 Tenant 的 OpenBao 后只保存 SecretRef，值不进入
+/// parameters、ActionExecution、日志、审计或回应。其他命令禁止携带。
+///
+/// DD-149(5)：API Key 或 Bearer 的一次性输入，只随
+/// mcp_connection.create、mcp_connection.rotate_credential 与探测请求；Core 写入 OpenBao 后只保存
+/// SecretRef，从不回显、记录或进入 parameters。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct McpConnectionCredentialInput {
+    pub value: String,
+}
+
+/// DD-149(10)：以已保存凭据重新探测；变化需经 mcp_connection.update 重新确认。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpConnectionRefreshResult {
+    pub added_tools: Vec<String>,
+
+    pub changed_tools: Vec<String>,
+
+    pub checked_at: String,
+
+    pub drift: bool,
+
+    pub health: McpConnectionHealth,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub probe: Option<McpConnectionProbeResult>,
+
+    pub removed_tools: Vec<String>,
+}
+
+/// DD-149(7)：探测结果。toolsDigest 是规范化清单摘要，登记与更新以它比对 fresh 探测。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpConnectionProbeResult {
+    pub endpoint_host: String,
+
+    /// 上游 instructions（不可信内容，截断至 2000 字符）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub instructions: Option<String>,
+
+    pub protocol_version: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub server_name: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub server_version: Option<String>,
+
+    pub tools: Vec<McpProbedTool>,
+
+    pub tools_digest: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpProbedTool {
+    /// 上游描述（不可信内容，界面以纯文本显示）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub destructive_hint: Option<bool>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub idempotent_hint: Option<bool>,
+
+    pub input_schema_json: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub open_world_hint: Option<bool>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub output_schema_json: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub read_only_hint: Option<bool>,
+
+    pub suggested_call_policy: McpToolCallPolicy,
+
+    pub suggested_risk: McpToolRisk,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+
+    pub upstream_name: String,
+}
+
+/// DD-149(6)：OAuth 授权尝试的状态；从不包含令牌。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpOauthAttemptView {
+    pub attempt_id: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub authorization_server: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub authorization_url: Option<String>,
+
+    pub expires_at: String,
+
+    /// 固定原因码
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub failure: Option<String>,
+
+    pub state: McpOauthAttemptState,
+}
+
+/// DD-149(6)：一次 OAuth 授权尝试的状态。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum McpOauthAttemptState {
+    #[serde(rename = "COMPLETED")]
+    Completed,
+
+    #[serde(rename = "CONSUMED")]
+    Consumed,
+
+    #[serde(rename = "EXPIRED")]
+    Expired,
+
+    #[serde(rename = "FAILED")]
+    Failed,
+
+    #[serde(rename = "PENDING")]
+    Pending,
+}
+
+/// DD-149(6)：发起一次 OAuth 授权尝试。forConnectionId 只用于轮换已存在连接器的授权。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpOauthStartRequest {
+    /// 未提供注册端点时的预注册 client ID
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub client_id: Option<String>,
+
+    /// 可选预注册 client 密钥，一次性输入，写入 OpenBao
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub client_secret: Option<String>,
+
+    pub endpoint_url: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub for_connection_id: Option<String>,
+
+    pub transport: McpConnectionTransport,
+}
+
 /// GET /api/v1/moderation/access（DD-125(2)）：原版只对 Community owner/admin 显示的审核入口在 Kailo 对应
 /// Tenant manage。canModerate 是与 moderation.ban 准入同一条 fresh 判定（目录开放、非 Platform Catalog、scope
 /// guard 与 tenant manage）的提示，不是授权票据，提交时仍完整重新准入；它不读取任何限制或队列事实。
@@ -7119,6 +7544,28 @@ pub struct ActionCommand {
     /// 仅 llm_route.create：确切原生 Provider/Model 与受控 provider SecretRef；不接收 URL 或 key 正文。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub llm_route_create: Option<LlmRouteCreateInput>,
+
+    /// 仅 mcp_connection.create（DD-149、05 §2.15）且必带；其他动作携带即拒绝。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mcp_connection_create: Option<McpConnectionCreate>,
+
+    /// DD-149(5)：仅 mcp_connection.create 与 mcp_connection.rotate_credential 的瞬态凭据（API_KEY 或
+    /// BEARER）；Core 写入该 Tenant 的 OpenBao 后只保存 SecretRef，值不进入
+    /// parameters、ActionExecution、日志、审计或回应。其他命令禁止携带。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mcp_connection_credential: Option<McpConnectionCredentialInput>,
+
+    /// 仅 mcp_connection.policy.update 且必带。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mcp_connection_policy_update: Option<McpConnectionPolicyUpdate>,
+
+    /// 仅 mcp_connection.update 且必带；目标连接器由 resourceId 与 resourceVersion 给出。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mcp_connection_update: Option<McpConnectionUpdate>,
+
+    /// DD-149(6)：仅 OAUTH 连接器的 mcp_connection.rotate_credential：本人本会话已完成且未使用的授权尝试。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mcp_oauth_attempt_id: Option<String>,
 
     /// 仅 HUMAN agent.memory.core.replace / entry.set / entry.patch / entry.remove 的瞬态 native
     /// 输入；其他命令禁止携带。
@@ -7550,6 +7997,97 @@ pub struct LlmRouteCreateInputProviderSecretRef {
     pub locator: String,
 
     pub version: i64,
+}
+
+/// 仅 mcp_connection.create（DD-149、05 §2.15）且必带；其他动作携带即拒绝。
+///
+/// 仅 mcp_connection.create（DD-149、05 §2.15）：端点、认证方式、可见范围与确认的工具清单。凭据值只经
+/// ActionCommand.mcpConnectionCredential 一次性提交；OAuth 只引用本人本会话已完成的授权尝试。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpConnectionCreate {
+    /// 仅 API_KEY：小写 header 名
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub api_key_header: Option<String>,
+
+    pub auth_mode: McpConnectionAuthMode,
+
+    /// 连接器显示名，1–80 字符
+    pub display_name: String,
+
+    /// https 端点；不含 userinfo、query 与 fragment
+    pub endpoint_url: String,
+
+    /// 仅 OAUTH：本人本会话已完成且未使用的授权尝试
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub oauth_attempt_id: Option<String>,
+
+    /// OAUTH 且可见范围不是 PERSONAL 时必须为 true：同意其他人的 Agent 以本人授权调用
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub shared_authorization_consent: Option<bool>,
+
+    pub tools: Vec<McpToolSelection>,
+
+    /// 确认时探测结果的清单摘要；提交时 Core 重新探测比对
+    pub tools_digest: String,
+
+    pub transport: McpConnectionTransport,
+
+    pub visibility: McpConnectionVisibility,
+
+    /// 仅 WORKSPACE 可见范围：所属 Workspace
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
+}
+
+/// DD-149(7)：确认清单中的一个上游工具。未列出的上游工具即不启用。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpToolSelection {
+    pub call_policy: McpToolCallPolicy,
+
+    pub enabled: bool,
+
+    pub risk: McpToolRisk,
+
+    /// 风险等级低于 annotations 建议时必须为 true，作为管理员声明冻结进审计
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub risk_declared: Option<bool>,
+
+    /// 上游 tools/list 中的工具名，原样
+    pub upstream_name: String,
+}
+
+/// 仅 mcp_connection.policy.update 且必带。
+///
+/// 仅 mcp_connection.policy.update：Tenant 连接器策略；白名单条目须落在部署声明的出站上限内。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpConnectionPolicyUpdate {
+    /// 小写主机名后缀；空表示只受部署上限约束
+    pub egress_host_suffixes: Vec<String>,
+
+    pub member_registration: McpMemberRegistration,
+}
+
+/// 仅 mcp_connection.update 且必带；目标连接器由 resourceId 与 resourceVersion 给出。
+///
+/// 仅 mcp_connection.update：以新探测结果重新确认工具清单、风险、策略与可见范围，形成新 generation。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpConnectionUpdate {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub shared_authorization_consent: Option<bool>,
+
+    pub tools: Vec<McpToolSelection>,
+
+    pub tools_digest: String,
+
+    pub visibility: McpConnectionVisibility,
+
+    /// 仅 WORKSPACE 可见范围
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
 }
 
 /// 仅 HUMAN agent.memory.core.replace / entry.set / entry.patch / entry.remove 的瞬态 native
@@ -8143,14 +8681,22 @@ pub struct PlatformToolPage {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PlatformToolView {
-    /// DD-140 (1)：平台原生工具名到动作键的封闭映射；记忆工具即其自身，project_channel_request 为 workspace.create。
+    /// DD-140 (1)：平台原生工具名到动作键的封闭映射；记忆工具即其自身，project_channel_request 为
+    /// workspace.create。DD-149：连接器工具为其调用策略对应的子动作键。
     pub action_key: PlatformToolViewActionKey,
 
     pub can_consume: bool,
 
+    /// 仅 USER_REGISTERED_EXTERNAL（DD-149）：所属连接器与冻结的工具元数据。描述是上游提供的不可信文本。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub connector: Option<PlatformToolConnector>,
+
     pub input_schema_hash: String,
 
-    pub name: PlatformToolViewName,
+    /// PLATFORM_NATIVE
+    /// 为固定原生工具名（agent.memory.entry.list、agent.memory.entry.read、project_channel_request）；USER_REGISTERED_EXTERNAL
+    /// 为 <连接器标识>__<上游工具名>（DD-149(3)）。
+    pub name: String,
 
     pub output_schema_hash: String,
 
@@ -8167,7 +8713,8 @@ pub struct PlatformToolView {
     pub status: PlatformToolViewStatus,
 }
 
-/// DD-140 (1)：平台原生工具名到动作键的封闭映射；记忆工具即其自身，project_channel_request 为 workspace.create。
+/// DD-140 (1)：平台原生工具名到动作键的封闭映射；记忆工具即其自身，project_channel_request 为
+/// workspace.create。DD-149：连接器工具为其调用策略对应的子动作键。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum PlatformToolViewActionKey {
     #[serde(rename = "agent.memory.entry.list")]
@@ -8176,21 +8723,45 @@ pub enum PlatformToolViewActionKey {
     #[serde(rename = "agent.memory.entry.read")]
     AgentMemoryEntryRead,
 
+    #[serde(rename = "mcp_connection.tool.invoke")]
+    McpConnectionToolInvoke,
+
+    #[serde(rename = "mcp_connection.tool.invoke_approved")]
+    McpConnectionToolInvokeApproved,
+
+    #[serde(rename = "mcp_connection.tool.invoke_confirmed")]
+    McpConnectionToolInvokeConfirmed,
+
     #[serde(rename = "workspace.create")]
     WorkspaceCreate,
 }
 
+/// 仅 USER_REGISTERED_EXTERNAL（DD-149）：所属连接器与冻结的工具元数据。描述是上游提供的不可信文本。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum PlatformToolViewName {
-    #[serde(rename = "agent.memory.entry.list")]
-    AgentMemoryEntryList,
+#[serde(rename_all = "camelCase")]
+pub struct PlatformToolConnector {
+    pub call_policy: McpToolCallPolicy,
 
-    #[serde(rename = "agent.memory.entry.read")]
-    AgentMemoryEntryRead,
+    pub connection_id: String,
 
-    #[serde(rename = "project_channel_request")]
-    ProjectChannelRequest,
+    pub connection_name: String,
+
+    pub connection_state: McpConnectionState,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+
+    pub risk: McpToolRisk,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+
+    pub upstream_name: String,
+
+    pub visibility: McpConnectionVisibility,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -8198,6 +8769,9 @@ pub enum PlatformToolViewName {
 pub enum PlatformToolViewSource {
     #[serde(rename = "PLATFORM_NATIVE")]
     PlatformNative,
+
+    #[serde(rename = "USER_REGISTERED_EXTERNAL")]
+    UserRegisteredExternal,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -10194,6 +10768,13 @@ pub struct WebProfileUpdateRequest {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WebPublishMessageRequest {
+    /// DD-148 原 Agent 收件人栏：须为同一请求 mentionInstallationIds 的子集（否则 SCOPE_GUARD_FAILED 前的 400）；BFF
+    /// 排序去重并冻结于同一发布意图（幂等重放逐项比较），对其中经准入并实际投递的 Installation 的 AGENT 公钥签原版 ["mention", <pubkey>,
+    /// "agent-address"] 标签，与 p 并存，只作呈现元数据，不改变通知或 agent.invoke 准入；与
+    /// editEventId、deleteEventId、sendToChannelSourceEventId 互斥，私聊目标拒绝。缺省为空。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub addressed_installation_ids: Option<Vec<String>>,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub attachments: Option<Vec<WebMessageAttachment>>,
 

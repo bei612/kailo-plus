@@ -349,6 +349,26 @@ fn identity_avatar_answers_404_without_a_session_but_keeps_outages() {
     }
 }
 
+// A member list asks once per person: a resolved answer, the redirect or the
+// "no Kailo avatar" 404 alike, is kept only by the requester's browser and only
+// for its cookies, so it does not spend the requester's Relay budget per render.
+#[test]
+fn identity_avatar_resolved_answers_are_private_to_the_requesters_session() {
+    let path = format!("/api/v1/profile/media/{}", "ab".repeat(32));
+    let found = avatar_resolved(Some(path.clone()));
+    assert_eq!(found.status(), StatusCode::FOUND);
+    assert_eq!(found.headers()[axum::http::header::LOCATION], path.as_str());
+    let missing = avatar_resolved(None);
+    assert_eq!(missing.status(), StatusCode::NOT_FOUND);
+    for response in [found, missing] {
+        assert_eq!(
+            response.headers()[axum::http::header::CACHE_CONTROL],
+            "private, max-age=300"
+        );
+        assert_eq!(response.headers()[axum::http::header::VARY], "Cookie");
+    }
+}
+
 #[tokio::test]
 #[ignore = "requires PROFILE_TEST_DATABASE_URL pointing at an isolated migrated database"]
 async fn identity_avatar_resolves_the_subjects_server_identity_inside_the_requesters_tenant() {

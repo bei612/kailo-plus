@@ -22,10 +22,13 @@ import 'channel_link_navigation.dart';
 import 'channel_messages_provider.dart';
 import 'thread_replies_provider.dart';
 import 'channels_provider.dart';
+import 'channel_typing_indicator.dart';
+import 'channel_typing_provider.dart';
 import 'compose_bar.dart';
 import 'composer_dock_size_reporter.dart';
 import 'date_formatters.dart';
 import 'package:client_kit/shared/platform/platform_text.dart';
+import 'reaction_row.dart';
 import 'day_divider.dart';
 import 'ime_metrics_settle_observer.dart';
 import 'initial_thread_tail_settle.dart';
@@ -127,7 +130,10 @@ class ThreadDetailPage extends HookConsumerWidget {
         ref.watch(channelMessagesProvider(channelId)).value ??
         const <NostrEvent>[];
     final replyMessages = repliesState.whenData((events) {
-      return formatTimeline(mergeThreadEvents(events, liveChannelEvents));
+      return formatTimeline(
+        mergeThreadEvents(events, liveChannelEvents),
+        currentPubkey: currentPubkey,
+      );
     });
 
     final fetchedReplies = replyMessages.value;
@@ -690,6 +696,17 @@ class ThreadDetailPage extends HookConsumerWidget {
       return null;
     }, [threadHead.id, readState.isReady, visibleReplyReadKey]);
 
+    // Thread-scoped typing indicators (exclude self).
+    final allTyping = ref.watch(channelTypingProvider(channelId));
+    final threadTyping = allTyping
+        .where((e) => e.threadHeadId == threadHead.id)
+        .where(
+          (e) =>
+              currentPubkey == null ||
+              e.pubkey.toLowerCase() != currentPubkey?.toLowerCase(),
+        )
+        .toList();
+
     // The root of the entire thread chain. If the current thread head is
     // itself a root message its rootId is null, so fall back to its own id.
     final effectiveRootId = threadHead.rootId ?? threadHead.id;
@@ -892,6 +909,8 @@ class ThreadDetailPage extends HookConsumerWidget {
                   childrenByParent: childrenByParent,
                 ),
               ),
+              if (!isMember || isArchived)
+                _ThreadTypingIndicator(entries: threadTyping, animated: false),
             ],
           ),
           if (threadViewportVisible)
@@ -914,6 +933,7 @@ class ThreadDetailPage extends HookConsumerWidget {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
+                      _ThreadTypingIndicator(entries: threadTyping),
                       ComposeBar(
                         channelId: channelId,
                         focusNode: composerFocusNode,
@@ -921,6 +941,7 @@ class ThreadDetailPage extends HookConsumerWidget {
                             restoreComposerFocus.value = restoreFocus,
                         hintText: 'Reply in thread\u2026',
                         threadHeadId: threadHead.id,
+                        rootId: effectiveRootId,
                         onFocusRequested: followThreadTailFromComposer,
                         onSend:
                             (

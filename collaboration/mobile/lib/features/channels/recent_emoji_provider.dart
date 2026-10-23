@@ -17,6 +17,16 @@ import '../../shared/theme/theme_provider.dart';
 /// leak across an in-place community or account switch.
 const _recentEmojiPrefsKey = 'buzz.quick-reaction-emojis.v1';
 
+/// Desktop's `DEFAULT_QUICK_REACTIONS`, plus one mobile-only slot that fits in
+/// the compact action sheet, used until the user has reacted enough to fill it.
+const defaultQuickEmojis = <String>[
+  '\u{1F44D}',
+  '\u{2764}\u{FE0F}',
+  '\u{1F602}',
+  '\u{1F389}',
+  '\u{1F525}',
+];
+
 /// Desktop's `MAX_STORED_REACTIONS`.
 const _maxStoredEmoji = 24;
 
@@ -149,3 +159,32 @@ final recentEmojiProvider =
     NotifierProvider<RecentEmojiNotifier, List<RecentEmojiEntry>>(
       RecentEmojiNotifier.new,
     );
+
+/// The top [limit] emoji for a quick-reaction row, topped up with
+/// [defaultQuickEmojis] so the row is never short. Custom-emoji shortcodes are
+/// dropped when they are no longer in the community palette — desktop's
+/// `canRenderQuickReactionEmoji` guard, which stops a removed custom emoji from
+/// rendering as literal `:shortcode:` text.
+List<String> quickReactionEmoji(
+  List<RecentEmojiEntry> entries, {
+  required Set<String> customShortcodes,
+  int limit = 5,
+}) {
+  final result = <String>[];
+  void add(String emoji) {
+    if (result.length >= limit || result.contains(emoji)) return;
+    if (emoji.startsWith(':') && emoji.endsWith(':')) {
+      final shortcode = emoji.substring(1, emoji.length - 1).toLowerCase();
+      if (!customShortcodes.contains(shortcode)) return;
+    }
+    result.add(emoji);
+  }
+
+  for (final entry in entries) {
+    add(entry.emoji);
+  }
+  for (final emoji in defaultQuickEmojis) {
+    add(emoji);
+  }
+  return result;
+}

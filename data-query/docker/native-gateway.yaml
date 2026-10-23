@@ -45,7 +45,7 @@ binds:
                   cache-control: '"no-store"'
                   x-content-type-options: '"nosniff"'
                   referrer-policy: '"strict-origin-when-cross-origin"'
-                  content-security-policy: '"default-src ''none''; script-src ''sha256-wOvZzzIkWq1cjHWKHJXtniyjktiXDdSLVx1GxySolpk=''; style-src ''unsafe-inline''; frame-src ''self'' ${WREN_OIDC_ISSUER}/; base-uri ''none''; form-action ''none''; frame-ancestors ''self'' ${KAILO_FRAME_ANCESTORS}"'
+                  content-security-policy: '"default-src ''none''; script-src ''sha256-mrEO4wD7egxL1CBjP08j+Je0m+Yax9ysVTn5HQXmNZA=''; style-src ''unsafe-inline''; frame-src ''self'' ${WREN_OIDC_ISSUER}/; base-uri ''none''; form-action ''none''; frame-ancestors ''self'' ${KAILO_FRAME_ANCESTORS}"'
                 body: |
                   <!doctype html>
                   <html lang="zh-CN">
@@ -99,8 +99,9 @@ binds:
                       return typeof value === 'string' && value.charAt(0) === '/' && value.charAt(1) !== '/' && !/[\\\u0000- \u007f]/.test(value) ? value : '/';
                     };
                     var post = function (type) {
-                      if (!embedded) return;
+                      if (!embedded) return false;
                       for (var i = 0; i < origins.length; i++) window.parent.postMessage({ source: 'kailo-embed', version: 1, type: type }, origins[i]);
+                      return origins.length > 0;
                     };
                     var show = function (message, href) {
                       document.getElementById('t').textContent = message;
@@ -147,8 +148,9 @@ binds:
                           location.replace(target);
                           return;
                         }
-                        post('auth-required');
-                        show(text.expired, null);
+                        // V-SCN-226: once Kailo has the request it alone prompts; the frame stays
+                        // blank. Only when no Kailo origin is configured does the page explain itself.
+                        if (!post('auth-required')) show(text.expired, null);
                       });
                     } else if (page === '/kailo-embed/signed-out') {
                       var logout = meta('kailo-logout-url');

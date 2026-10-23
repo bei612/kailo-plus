@@ -36,8 +36,6 @@ import SubHeader from './styles/SubHeader'
 
 import QuickLinks from "./cards/QuickLinks";
 import RecentLogs from "./cards/RecentLogs";
-import SoftwareUpdate from "./cards/SoftwareUpdate";
-import FakeGraph from "./cards/FakeGraph";
 
 
 import {PaperEditorLayout, PaperEditorNavEntry, PaperEditorNavHeader} from './styles/PaperEditor'
@@ -70,7 +68,5 @@ export {
 
     QuickLinks,
     RecentLogs,
-    SoftwareUpdate,
-    FakeGraph,
     ReloadWrapper
 };

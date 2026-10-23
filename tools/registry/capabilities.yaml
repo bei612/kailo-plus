@@ -69,6 +69,29 @@ capabilities:
   tools: []
   workflow_kinds:
   - AGENT_INSTALLATION
+- id: agent.mcp_connection
+  exposure: end_user
+  routes:
+  - /api/v1/mcp-connections
+  - /api/v1/mcp-connections/probes
+  - /api/v1/mcp-connections/oauth/attempts
+  - /api/v1/mcp-connections/oauth/attempts/{attempt_id}
+  - /api/v1/mcp-connections/oauth/callback
+  - /api/v1/mcp-connections/{resource_id}
+  - /api/v1/mcp-connections/{resource_id}/refresh
+  actions:
+  - mcp_connection.create
+  - mcp_connection.update
+  - mcp_connection.rotate_credential
+  - mcp_connection.disable
+  - mcp_connection.enable
+  - mcp_connection.delete
+  - mcp_connection.policy.update
+  - mcp_connection.tool.invoke
+  - mcp_connection.tool.invoke_confirmed
+  - mcp_connection.tool.invoke_approved
+  tools: []
+  workflow_kinds: []
 - id: agent.skill_management
   exposure: end_user
   routes:

@@ -203,7 +203,11 @@ func (s *kailoOrgService) directoryUser(
 		UpdatedAt:    now,
 	}
 	created.Preferences.OidcOnlyLogin = &oidcOnly
-	if err := db.Create(created).Error; err != nil {
+	// Same rule as repository.CreateUser for a first OIDC login: the account
+	// has no tenant yet, so tenant_id is stored as SQL NULL. Writing GORM's
+	// uint64 zero violates the PostgreSQL fk_users_tenant constraint and the
+	// whole snapshot would never apply. syncLocked sets the home space next.
+	if err := db.Omit("tenant_id").Create(created).Error; err != nil {
 		// A simultaneous first login may have inserted this identity.
 		if lookup := db.Where("oidc_issuer = ? AND oidc_subject = ?", issuer, subject).First(&user).Error; lookup == nil {
 			return &user, nil

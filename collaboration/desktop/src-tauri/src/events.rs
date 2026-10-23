@@ -328,3 +328,47 @@ mod forum_tests {
         .is_err());
     }
 }
+
+#[cfg(test)]
+mod link_preview_removal_tests {
+    use super::*;
+
+    /// DD-125(5): "Remove previews for everyone" is the author's 40003 with
+    /// `["link-preview","none"]`; an ordinary edit carries no suppression.
+    #[test]
+    fn removal_edit_carries_the_original_suppression_marker() {
+        let keys = nostr::Keys::generate();
+        let channel = Uuid::new_v4();
+        let target = EventId::from_hex("22".repeat(32)).unwrap();
+        let tags = MessageEditTags {
+            media: &[],
+            custom_emoji: &[],
+            mentions: &[],
+            mention_refs: None,
+        };
+        let suppressed =
+            build_message_edit(channel, target, "hello https://example.org", tags, true)
+                .unwrap()
+                .sign_with_keys(&keys)
+                .unwrap();
+        assert_eq!(suppressed.kind.as_u16(), 40003);
+        assert!(suppressed
+            .tags
+            .iter()
+            .any(|tag| tag.as_slice() == ["link-preview", "none"]));
+        let tags = MessageEditTags {
+            media: &[],
+            custom_emoji: &[],
+            mentions: &[],
+            mention_refs: None,
+        };
+        let plain = build_message_edit(channel, target, "hello", tags, false)
+            .unwrap()
+            .sign_with_keys(&keys)
+            .unwrap();
+        assert!(!plain
+            .tags
+            .iter()
+            .any(|tag| tag.as_slice().first().map(String::as_str) == Some("link-preview")));
+    }
+}

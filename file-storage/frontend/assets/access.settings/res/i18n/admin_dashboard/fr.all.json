@@ -29,42 +29,6 @@
   "cont.topic.translate": {
     "other": "Comment créer ou completer une traduction?"
   },
-  "ent.advanced": {
-    "other": "Une console d'admin unique"
-  },
-  "ent.advanced.legend": {
-    "other": "Surveillance en temps réel et rapports, imports/exports de données, etc."
-  },
-  "ent.btn.contact": {
-    "other": "Contactez un commercial"
-  },
-  "ent.btn.more": {
-    "other": "En savoir plus"
-  },
-  "ent.features": {
-    "other": "Des fonctionnalités orientées entreprises"
-  },
-  "ent.features.legend": {
-    "other": "Connecteurs AD/LDAP, Logs auditables, mise en page EasyTransfer..."
-  },
-  "ent.subtitle": {
-    "other": "PLUS DE FONCTIONS - PRÊT POUR LA RGPD - BRANDING AVANCE"
-  },
-  "ent.support": {
-    "other": "Support et Maintenance"
-  },
-  "ent.support.legend": {
-    "other": "L'équipe de développeurs officielle de Pydio à votre service"
-  },
-  "ent.title": {
-    "other": "Découvrez Pydio Cells Enterprise"
-  },
-  "ent.upgrade": {
-    "other": "Mettre à jour maintenant!"
-  },
-  "ent.upgrade.legend": {
-    "other": "Mise à niveau vers Cells Enterprise (licence requise)"
-  },
   "welc.btn.advanced": {
     "other": "Réglages Avancés"
   },
@@ -104,15 +68,6 @@
   "card.quick-access.add": {
     "other": "Ajouter un raccourci..."
   },
-  "card.update.current": {
-    "other": "Version du logiciel"
-  },
-  "card.update.no-updates": {
-    "other": "Le logiciel est à jour"
-  },
-  "card.update.new-version": {
-    "other": "Une nouvelle version est disponible"
-  },
   "recentLogs.title": {
     "other": "Derniers événements"
   },
@@ -124,11 +79,5 @@
   },
   "recentLogs.more": {
     "other": "Voir tout"
-  },
-  "graph.files": {
-    "other": "Activité sur les fichiers"
-  },
-  "graph.connections": {
-    "other": "Connexions Web"
   }
 }

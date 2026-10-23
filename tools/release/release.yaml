@@ -23,23 +23,8 @@ units:
       - collaboration/crates/buzz-core
       - collaboration/crates/buzz-sdk
       - collaboration/crates/buzz-project-git
-      - contracts/domain/automation_step.schema.json
+      - contracts
       - model-gateway/crates/protos/proto/ext_mcp.proto
-      - contracts/api/action_submission.schema.json
-      - contracts/api/projects_publish_request.schema.json
-      - contracts/api/delegated_action_metadata_v1.schema.json
-      - contracts/compatibility/action-submission-v1.json
-      - contracts/compatibility/action-submission-v2.json
-      - contracts/api/conversation_open_request.schema.json
-      - contracts/adapter/knowledge.v1/registration.json
-      - contracts/adapter/data_query.v1/registration.json
-      - contracts/adapter/file_storage.v1/registration.json
-      - contracts/api/agent_memory_entry_page.schema.json
-      - contracts/api/agent_memory_entry_view.schema.json
-      - contracts/api/agent_memory_read_view.schema.json
-      - contracts/domain/agent_memory_entry_list_input.schema.json
-      - contracts/domain/agent_memory_entry_read_input.schema.json
-      - contracts/domain/application_model_gateway_config.schema.json
       - tools/registry/capabilities.yaml
       - agent-runtime/fork/upstream.yaml
 
@@ -113,6 +98,10 @@ env:
     # DD-137：Core 管理 MCP 调用的专用受众（亦即 IdP 可选 scope 名，由上方 idp 段声明收敛）
     CORE_MCP_AUDIENCE: kailo-core-mcp
     PROTOCOL_PEER_REFERENCE_MEMORY: 256m
+    # OpenMeter Kafka 容器预算（deploy/local/compose.yaml openmeter-kafka 注释为实测依据）：broker heap 1 GiB
+    # （运行 .env 的 OPENMETER_KAFKA_HEAP_OPTS='-Xms1G -Xmx1G'，含空白不能在此声明，bootstrap 校验 -Xmx 小于本值）
+    # + 堆外约 0.6 GiB + 一个有界健康检查 JVM，合计不到 4 GiB 的一半。
+    OPENMETER_KAFKA_MEMORY: 4g
   # 一致性套件同一时间只有一个候选（07 §8A）：原生 MCP peer 只投递 environment，HTTP adapter 的另两项须缺省
   unset: [COMPONENT_CONFORMANCE_FIXTURE_FILE, COMPONENT_CONFORMANCE_IDENTITY_FILE]
 
