@@ -777,8 +777,23 @@ func (c *CoreAPI) RunComponentConformanceStep(ctx context.Context, input generat
 	step := plan.Steps[input.StepIndex]
 	if plan.ConnectorKind != nil && string(*plan.ConnectorKind) == "PROTOCOL_PEER" {
 		info := activity.GetInfo(ctx)
-		if info.Attempt != 1 || (input.Reconcile != nil && *input.Reconcile) ||
-			info.WorkflowExecution.ID != plan.WorkflowID || info.WorkflowExecution.RunID != plan.RunID {
+		if info.WorkflowExecution.ID != plan.WorkflowID || info.WorkflowExecution.RunID != plan.RunID {
+			return generated.ComponentConformanceStepObservation{}, temporal.NewNonRetryableApplicationError("原生 MCP 尝试结果不明，禁止重放", ErrTypeUnknownExternalResult, nil)
+		}
+		if input.Reconcile != nil && *input.Reconcile {
+			// A synchronous MCP attempt has no native job to observe and is
+			// never replayed. Core records the unresolved step against the
+			// original operation and answers with a definite rejection: the
+			// suite cannot certify this registration (07 §6, DD-124/136).
+			// Anything else is still an unknown answer from Core itself.
+			err := c.post(ctx, "/service/v1/component-releases/authorize-probe", input, nil)
+			var application *temporal.ApplicationError
+			if err != nil && errors.As(err, &application) && application.Type() == ErrTypeRejected {
+				return generated.ComponentConformanceStepObservation{}, temporal.NewNonRetryableApplicationError("原生 MCP 尝试结果不明，套件无法认证本次登记（不重放）", ErrTypeRejected, err)
+			}
+			return generated.ComponentConformanceStepObservation{}, temporal.NewNonRetryableApplicationError("原生 MCP 尝试结果不明，禁止重放", ErrTypeUnknownExternalResult, nil)
+		}
+		if info.Attempt != 1 {
 			return generated.ComponentConformanceStepObservation{}, temporal.NewNonRetryableApplicationError("原生 MCP 尝试结果不明，禁止重放", ErrTypeUnknownExternalResult, nil)
 		}
 		// Core consumes the real SDK response in memory. No raw body, native
