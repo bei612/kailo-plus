@@ -130,3 +130,12 @@ HTML、SVG、CSS 与 locale 不享有 comment 类的放行。
   - `--font-family-base` 计算值为 `"Inter Variable", Inter, "Avenir Next", "Segoe UI", sans-serif`；body、工具栏与功能区页签的计算字体都以该字体栈开头；`document.fonts` 中 `Inter Variable` 已加载（拉丁子集；其他子集按 unicode-range 按需加载）；
   - 文档页面中部像素为 `rgb(255,255,255)`，浅色与深色主题下文档画布都不变；
   - 主题、白标、用户与头像的结果与上一节相同。截图见 CI 节点 `/home/ubuntu/oo-trial/ui-check/run-ed389039615e/out/`。
+
+### 合并 main 后复验（固定提交 `8bdf0b0dedcb6768e942848b2bfd3584d355ecff`）
+
+合并 `origin/main` 2b054bbf 后 artifact `inputs` 与 ed389039 相同，仍按同一方法重新试构建与复验（ubuntu 身份、不加 sudo，未推送、未登记 digest）：
+
+- 镜像 `sha256:be6367748f857f1dc8de8f3ae6ea15993df0800d07670f6f4603d6b06d55ac4a`，825,471,914 字节，1 层；品牌扫描 finding 0，各类计数与上一节相同。
+- 冒烟与界面核验结果与上一节一致；法律页的源码地址为 `https://github.com/bei612/kailo-plus/tree/8bdf0b0dedcb6768e942848b2bfd3584d355ecff/document-editor`。截图见 `/home/ubuntu/oo-trial/ui-check/run-8bdf0b0dedcb/out/`。
+- Cells：`gateway/restv2`、`gateway/wopi`、`frontend/rest` 的 gofmt、vet 与测试通过；`editor.onlyoffice` 以锁文件安装、webpack 构建，vitest 8 项通过；`file-storage/deploy` 的 reconcile 测试 15 项通过。
+- `tools/check-docs.sh` 以设计 `993bddb9` 全部通过（216 个场景：215 已映射，1 明确排除）。

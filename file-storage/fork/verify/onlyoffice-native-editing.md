@@ -54,5 +54,5 @@ Go 测试在 `golang:1.26.8-alpine@sha256:8ac98ca5…` 中运行，设置 `CGO_E
 - 编辑器打开后，Kailo 切换明暗时，插件向编辑器页发送 WOPI 宿主消息 `Kailo_Presentation`（`targetOrigin` 为编辑器 origin）。编辑器页只接受 `PostMessageOrigin` 来的消息，写入同源的主题选择，编辑器框架即时换成 `theme-kailo-light` 或 `theme-kailo-dark`。语言在下一次打开时生效。
 - 插件在编辑器下方常驻“开源许可与法律声明”入口，打开实例的 `/kailo-legal/`。
 - 插件的名称与设置标签不含上游名称：中文为“文档编辑器”，英文为 “Document editor”。
-- 编辑器页把 CheckFileInfo `UserFriendlyName` 作为显示名，把 `UserExtraInfo.avatar` 作为头像。Cells 的原生 FileInfo 目前只填 `UserFriendlyName`，取自 Cells 账号显示名，即 DD-127(9) 开户时的 OIDC `name`；还不填 `UserExtraInfo.avatar`。头像需由 Cells 线按 DD-133 §4.7.3 填入 `picture`，在此之前编辑器显示首字母头像。
+- 编辑器页把 CheckFileInfo `UserFriendlyName` 作为显示名，把 `UserExtraInfo.avatar` 作为头像。合并 main（2b054bbf）后，Cells 的 FileInfo 按 DD-133 §4.7.3 填入二者（`gateway/wopi/fileinfo-builder.go`）：显示名取 Kailo 资料的 `name`，`UserExtraInfo.avatar` 取 OIDC `picture` 地址（只接受原生 OIDC 头像地址，不传二进制）；没有资料时显示名退回 Cells 账号显示名，编辑器显示首字母头像。`TestFileInfoKailoIdentity` 覆盖这一行为。
 - vitest 8 项通过，新增 4 项：宿主值决定主题和语言、`thm` 映射、宿主消息格式、法律声明链接。
