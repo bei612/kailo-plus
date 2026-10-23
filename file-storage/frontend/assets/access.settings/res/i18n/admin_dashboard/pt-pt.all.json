@@ -29,42 +29,6 @@
   "cont.topic.translate": {
     "other": "Como criar ou completar uma tradução de idioma?"
   },
-  "ent.advanced": {
-    "other": "Painel Avançado de Administrador"
-  },
-  "ent.advanced.legend": {
-    "other": "Painel de administração exclusivo para monitoramento em tempo real do uso da plataforma."
-  },
-  "ent.btn.contact": {
-    "other": "Contatar Vendas"
-  },
-  "ent.btn.more": {
-    "other": "Saiba mais"
-  },
-  "ent.features": {
-    "other": "Recursos destinados para empresas"
-  },
-  "ent.features.legend": {
-    "other": "Recursos prontos para empresas: conectores AD / LDAP, registros auditáveis para conformidade, fácil transferência ..."
-  },
-  "ent.subtitle": {
-    "other": "MAIS RECURSOS - COMPLIANÇA GDPR - MARCA EXTENDIDA"
-  },
-  "ent.support": {
-    "other": "Suporte e Manutenção"
-  },
-  "ent.support.legend": {
-    "other": "Obtenha ajuda com a sua instalação diretamente da equipe principal"
-  },
-  "ent.title": {
-    "other": "Descubra Pydio Cells Empresarial"
-  },
-  "ent.upgrade": {
-    "other": "Atualize agora!"
-  },
-  "ent.upgrade.legend": {
-    "other": "Atualização do Cells Empresarial no aplicativo (requer licença)"
-  },
   "welc.btn.advanced": {
     "other": "Avançado"
   },
@@ -104,15 +68,6 @@
   "card.quick-access.add": {
     "other": "Add a shortcut ..."
   },
-  "card.update.current": {
-    "other": "Software Version"
-  },
-  "card.update.no-updates": {
-    "other": "Software is up-to-date"
-  },
-  "card.update.new-version": {
-    "other": "A new version is available"
-  },
   "recentLogs.title": {
     "other": "Last Events"
   },
@@ -124,11 +79,5 @@
   },
   "recentLogs.more": {
     "other": "All Activities"
-  },
-  "graph.files": {
-    "other": "Files Activity"
-  },
-  "graph.connections": {
-    "other": "Web Connections"
   }
 }

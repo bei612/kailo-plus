@@ -27,7 +27,6 @@ import SitesParameters from "./core/SitesParameters";
 
 import AuthenticationPluginsDashboard from './auth/AuthenticationPluginsDashboard'
 import EditorsDashboard from './editors/EditorsDashboard'
-import UpdaterDashboard from './updater/UpdaterDashboard'
 import JSDocsDashboard from './docs/JSDocsDashboard'
 
 export {
@@ -38,7 +37,6 @@ export {
     CoreAndPluginsDashboard,
     AuthenticationPluginsDashboard,
     EditorsDashboard,
-    UpdaterDashboard,
     JSDocsDashboard,
     ServiceEditor,
     SitesParameters

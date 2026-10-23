@@ -29,42 +29,6 @@
   "cont.topic.translate": {
     "other": "언어 번역을 작성하거나 완료하는 방법 ?"
   },
-  "ent.advanced": {
-    "other": "고급 관리자 대시보드"
-  },
-  "ent.advanced.legend": {
-    "other": "플랫폼 사용 현황을 실시간으로 모니터링하는 고유한 관리 대시보드"
-  },
-  "ent.btn.contact": {
-    "other": "영업팀에 문의"
-  },
-  "ent.btn.more": {
-    "other": "자세히 알아보기"
-  },
-  "ent.features": {
-    "other": "엔터프라이즈 지향 기능"
-  },
-  "ent.features.legend": {
-    "other": "엔터프라이즈 지원 기능: AD/LDAP 커넥터, 규정 준수를 위한 감사 가능한 로그, 간편 전송..."
-  },
-  "ent.subtitle": {
-    "other": "추가 기능 - GDPR 규정 준수 - 확장된 브랜딩"
-  },
-  "ent.support": {
-    "other": "지원과 유지보수"
-  },
-  "ent.support.legend": {
-    "other": "핵심 팀으로부터 직접 설치 지원 받기"
-  },
-  "ent.title": {
-    "other": "Pydio Cells 엔터프라이즈 발견"
-  },
-  "ent.upgrade": {
-    "other": "업그레이드 하세요!"
-  },
-  "ent.upgrade.legend": {
-    "other": "인앱 업그레이드 Cells 엔터프라이즈 (라이센스 필수)"
-  },
   "welc.btn.advanced": {
     "other": "고급"
   },
@@ -104,15 +68,6 @@
   "card.quick-access.add": {
     "other": "바로가기 추가"
   },
-  "card.update.current": {
-    "other": "소프트웨어 버전"
-  },
-  "card.update.no-updates": {
-    "other": "소프트웨어가 최신 상태임"
-  },
-  "card.update.new-version": {
-    "other": "새로운 버전을 사용할 수 있습니다."
-  },
   "recentLogs.title": {
     "other": "최신 이벤트"
   },
@@ -124,11 +79,5 @@
   },
   "recentLogs.more": {
     "other": "모든 활동"
-  },
-  "graph.files": {
-    "other": "파일 활동"
-  },
-  "graph.connections": {
-    "other": "웹 연결"
   }
 }
