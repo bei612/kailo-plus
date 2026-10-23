@@ -59,6 +59,7 @@ import { CollaborationPreferencesProvider, useCollaborationPreferenceActions } f
 import { DesktopAgentActivityOpenerHost } from "@/features/channels/ui/useDesktopChannelAgentActivity";
 import { NativePresenceHost } from "@/features/platform/NativePresenceHost";
 import { NativeCandidatePictureProvider } from "@/features/platform/NativeCandidatePictureProvider";
+import { NativeProjectChannelRequests } from "@/features/platform/NativeProjectChannelRequests";
 import { EncryptedBackupProvider } from "@/features/settings/EncryptedBackupProvider";
 import { NativeReminderHost } from "@/features/platform/ReminderHost";
 
@@ -401,6 +402,7 @@ export function AppShell() {
     <CollaborationPreferencesProvider value={collaborationPreferences}>
     <NativePresenceHost>
     <NativeCandidatePictureProvider>
+    <NativeProjectChannelRequests />
     <DesktopAgentActivityOpenerHost>
       <AppShellProvider
         value={{

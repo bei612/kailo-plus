@@ -30,3 +30,4 @@ export { SidebarProjectsSection, type SidebarProjectChannel, type SidebarProject
 export type { ProjectAgentChatHost } from "./projectAgentChatHost";
 export type { ProjectAgentConversationEvent, ProjectAgentSendRequest } from "./lib/projectAgentConversation";
 export type { ProjectConversationRenderProps, ProjectDiscussionHost } from "./DiscussionChannels";
+export { ProjectChannelRequestDialog, ProjectChannelRequestDetails } from "./ProjectChannelRequestDialog";
