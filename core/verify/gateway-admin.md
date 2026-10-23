@@ -87,3 +87,23 @@
 
 以上均为源码与单元测试证据，生产复验待合并发布后进行。
 
+
+## 6. 第二轮生产验收缺陷（2026-10-23，main `2b054bbf`）与处置（分支 `fix/mcp-token-audience`，设计 `1bd1d477`，DD-137）
+
+| 缺陷 | 处置 | 测试 |
+|---|---|---|
+| 阻断：探测、binding 激活验证、release 一致性、测试调用四条管理 route 的 `jwtAuth` 要求 Core 自身 service 受众，Core 的 client credentials 令牌不带它，Gateway 以 `InvalidAudience` 拒绝（向导 503 `MCP initialize unknown`） | 专用 Core MCP 受众：Core 只在这些调用时以 `scope=CORE_MCP_AUDIENCE` 取令牌（`oidc.rs::TokenSource::core_mcp`）；管理 route 只接受该受众、`preserveToken: false`（`service_auth.rs::core_mcp_authentication`）；ExtMcp 两相以 route 元数据 `coreMcpCaller`（Gateway 已验证的 `iss`/`azp`/`aud`）判定 Core 并拒绝仍带 `authorization` 的管理请求；bearer 不再进入 ExtMcp 动态元数据。Agent 会话工具 route（`mcpAuthentication`）不变 | `core_mcp_caller_requires_issuer_core_client_and_dedicated_audience`、`management_caller_is_gateway_metadata_and_a_forwarded_bearer_is_refused`、`management_metadata_carries_verified_claims_not_a_bearer`、`scope_token_follows_rfc_6749`；Gateway `test_strict_without_preserve_strips_bearer_and_keeps_claims_for_guardrail_metadata` |
+| 安全约束核实：保留的 bearer 是否到达第三方 peer | 属实。`IncomingRequestContext::apply` 把入站 header 全部复制给 target；stateless 会话清理 DELETE（以原始 parts 重建上下文）、客户端通知与合成 initialize 后的通知不经 ExtMcp 请求相位，PEP 的 header 移除覆盖不到（SF-AGW-29）。因此只给 Core 令牌加上自身受众会把它交给 peer | 设计 DD-137(3)；Gateway 现有 `apply_propagates_other_headers` 与新增 strip 测试 |
+| IdP | 可选 client scope（名即受众）+ audience mapper，只以可选 scope 挂在 Core service client；`idp-declarations.py service-scopes [--verify]`，`bootstrap.sh --declare-service-scopes/--verify-service-scopes`，`release.yaml` idp apply/verify 与 `init-local.sh` 调用；模板 Core client 登记 `optionalClientScopes`（Keycloak 导入时 scope 尚不存在即告警忽略，由声明创建） | `tools/release/test_node.py::ServiceScopeDeclaration`（4 项）；CI 节点一次性 Keycloak（compose 固定 digest）实测见下 |
+| `agent.version.create` 缺 OUTCOME | 派发结果确定时经 `model_route::record_settled` 在 DISPATCH 后追加 OUTCOME（`AGENT_VERSION_CREATED`/`AGENT_VERSION_CREATION_ABORTED`），结果不明只记 DISPATCH；同文件的 update/publish/retire 在准入事务内已由 `record_local_outcome` 写 DISPATCH+OUTCOME | 编译与既有测试 |
+| 平台统计混入非模型请求 | 检索恒带 `listener=llm` 与 `gen_ai.operation.name∈{chat,embeddings}`（DD-134(3)①、SF-AGW-31），Tenant 范围叠加 gateway user；下钻检索不到即 `TARGET_NOT_FOUND`。生产 3 天 request log 中 191 条无 provider 的记录全部是 `GET /v1/models`（模型监听器），MCP 流量不写 request log（SF-AGW-27） | `log_search_only_counts_model_calls_on_the_model_listener` |
+| 新建路由来源无法区分 | 选项显示 `模型名 · 类型 · provider 原生 ID / model 原生 ID`，选中后另列两者版本；`llm_route.create` 契约没有名称或用途字段，未加表单项 | `gateway.test.tsx`“tells apart same-named model sources…” |
+
+CI 节点检查（提交 `9f90cc72`）：`cargo clippy --all-targets -D warnings` 通过；`cargo test -p platform-core` 694 通过、0 失败（staging 须含 `deploy/local/protocol-peers`）；model-gateway 在固定 digest 的 `rust:1.98.0-trixie` 中
+`cargo test -p agentgateway --lib -- http::jwt mcp::upstream mcp::guardrails` 129 通过；client-kit platform `tsc --noEmit`（含 test 配置）通过、vitest 126 文件 1729 通过；
+`python3 -I -B -m unittest discover -s tools/release` 59 通过；`tools/check.sh lint`、`security`、`docs` 通过；`trace` 只有 dist/ 发布证明缺失项，与 main `2b054bbf` 在同一环境的结果逐行相同；`seam` 报 model-gateway、web-client、desktop-client 源码摘要变化（本分支改了其输入，需重建），data-query 上游不可达为环境问题。
+
+一次性 Keycloak（`quay.io/keycloak/keycloak@sha256:9409c59b…`，模板渲染、测试值）：导入时 `Referenced client scope 'kailo-core-mcp' doesn't exist. Ignoring`；`service-scopes --verify` 报 DRIFTED 且不写；声明 `changed=3`；重跑 `changed=0`；回读 DECLARED。
+Core 不带 scope 的令牌 `aud=gateway-admin`；带 scope 的 `aud=[gateway-admin, kailo-core-mcp]`、`scope=kailo-core-mcp`；Worker 申请该 scope 得到 `invalid_scope`。
+
+已知限制：管理面受众仍由 Core client 的 client 级 mapper 恒签入，专用 MCP 令牌同时带它，直到 DD-137(5) 的收窄（管理面令牌改按 scope 申请并在已部署与回滚目标都升级后移除 client 级 mapper）；在此之前由 `preserveToken: false` 保证它不离开 Gateway。`agent_definition.rs` 的 create/owner transfer 异步派发同样只写 DISPATCH，未在本分支处理。
