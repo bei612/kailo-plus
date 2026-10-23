@@ -15,6 +15,9 @@ import type { TimelineMessage } from "./messages/types";
 import { useAgentAuthorScope, withAgentAuthorFacts } from "./messages/agentAuthorFacts";
 import { MessageMetaSeparator } from "./messages/MessageHeader";
 import { MessageAgentOwner } from "./messages/system/MessageAgentOwner";
+import { KIND_HUDDLE_STARTED, KIND_STREAM_MESSAGE_DIFF } from "./messages/thread/kinds";
+import { parseWaveMessageContent } from "./messages/waveMessage";
+import { WaveMessageAttachment } from "./messages/WaveMessageAttachment";
 
 type ReactionActionProps = Pick<React.ComponentProps<typeof MessageActionBarSurface>,
   "reactions" | "onReactionSelect" | "onReactionBadgeBurstRequest" | "reactionErrorMessage" | "customEmoji" | "reactionScope" | "resolveMediaUrl">;
@@ -44,6 +47,10 @@ export function InboxMessageRowSurface({
   const { emojiOnly } = useMessageEmoji(message.body, message.tags);
   const identity = (node: React.ReactNode, kind: "avatar" | "author") => renderIdentity?.(node, kind) ?? node;
   const absoluteTimestamp = fullTimestampLabel ?? formatFullDateTime(message.createdAt);
+  // DD-125(3): a private-conversation wave renders its card here too (as in MessageRowSurface);
+  // the marked wire content is never shown as text in the Inbox detail.
+  const waveMessage = message.kind === KIND_STREAM_MESSAGE_DIFF || message.kind === KIND_HUDDLE_STARTED
+    ? null : parseWaveMessageContent(message.body);
   return <div className="relative px-2">
     {showUnreadBoundary ? <UnreadDivider /> : null}
     {isSelected ? <div aria-hidden="true" className={cn(
@@ -81,7 +88,8 @@ export function InboxMessageRowSurface({
           </p>
         </div>}
         <div className={isContinuation ? "mt-0" : "mt-conversation-body"} data-testid="message-body">
-          {renderBody(cn("max-w-full text-left text-message text-foreground", emojiOnly &&
+          {waveMessage ? <WaveMessageAttachment fallbackText={waveMessage.fallbackText} />
+            : renderBody(cn("max-w-full text-left text-message text-foreground", emojiOnly &&
             "text-4xl leading-tight [&_p]:leading-tight [&_img[data-custom-emoji]]:h-[1.45em] [&_img[data-custom-emoji]]:align-middle [&_button:has(img[data-custom-emoji])]:align-middle"))}
           <MessageReactions canToggle={reaction.canToggle} messageId={message.id}
             onSelect={emoji => { void reaction.select(emoji).catch(() => undefined); }}

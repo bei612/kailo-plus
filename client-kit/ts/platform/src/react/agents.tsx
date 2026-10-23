@@ -629,7 +629,7 @@ function AutomationList({ workspaceId, workspaceName, locked, onCreate, onEdit, 
         <div className="grid grid-cols-1 gap-3 [@container(min-width:42rem)]:grid-cols-2 [@container(min-width:63rem)]:grid-cols-3">
           {page.canCreate ? <button type="button" disabled={locked} aria-label={t("agents.automation.create")}
             className="group relative flex min-h-60 w-full min-w-0 items-center justify-center overflow-hidden rounded-2xl border border-dashed border-border/80 bg-transparent text-muted-foreground shadow-xs transition-colors hover:border-border hover:bg-muted/70 hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
-            data-testid="new-workflow-card" onClick={onCreate}><Plus aria-hidden className="h-7 w-7 transition-colors" /></button> : null}
+            data-testid="new-workflow-card" onClick={onCreate}><span className="flex flex-col items-center gap-2"><Plus aria-hidden className="h-7 w-7 transition-colors" /><span className="text-sm">{t("agents.automation.create")}</span></span></button> : null}
           {page.automations.map((row) => <AutomationCard key={row.resourceId} row={row} workspaceName={workspaceName}
             authors={authors} locked={locked} onView={() => onSelect(row.resourceId)} onEdit={onEdit} />)}
         </div>

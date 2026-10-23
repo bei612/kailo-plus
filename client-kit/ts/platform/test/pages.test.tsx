@@ -513,7 +513,7 @@ describe("independent shared Workflows page", () => {
     expect(Array.from(host.querySelectorAll("h1,h2")).filter((node) => node.textContent === title)).toHaveLength(1);
     expect(host.querySelector("[data-testid=new-workflow-card]")).not.toBeNull();
     expect(host.textContent).not.toContain(locale === "en" ? "No workflows" : "暂无工作流");
-    expect(host.textContent).toContain(locale === "en" ? "Automations that keep your community moving." : "让社区协作自动运转。");
+    expect(host.textContent).toContain(locale === "en" ? "Automations that keep your team moving." : "让团队协作自动运转。");
     const refreshButtons = host.querySelectorAll<HTMLButtonElement>(`button[aria-label="${refresh}"]`);
     expect(refreshButtons).toHaveLength(1);
     const reads = (path: string) => t.send.mock.calls.filter(([request]) => request.path.startsWith(path)).length;
