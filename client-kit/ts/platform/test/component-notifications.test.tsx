@@ -187,7 +187,7 @@ describe("07 §4.8.4 component search results", () => {
   it("reports each unavailable source once and validates the page shape", () => {
     expect(unavailableComponentSources([
       { nativePageCategory: NativePageCategory.Knowledge, state: ComponentSearchSourceState.Unavailable },
-      { nativePageCategory: NativePageCategory.FileStorage, state: ComponentSearchSourceState.Available },
+      { nativePageCategory: NativePageCategory.FileStorage, state: ComponentSearchSourceState.Answered },
       { nativePageCategory: NativePageCategory.Knowledge, state: ComponentSearchSourceState.Unavailable },
     ])).toEqual(["knowledge"]);
     expect(validComponentSearchPage({ results: [hit("f1", NativePageCategory.FileStorage)], sources: [] })).toBe(true);
