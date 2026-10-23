@@ -873,7 +873,7 @@ it("reuses the Buzz picker to send all selected Agents once in canonical order a
     [],
     expect.any(String),
     ["agent-a", "agent-b"],
-    {mentionPubkeys: []},
+    {addressedInstallationIds: ["agent-a", "agent-b"], mentionPubkeys: []},
   );
   expect(host.querySelector('[data-testid="message-input"]')?.textContent).toBe("");
 });
