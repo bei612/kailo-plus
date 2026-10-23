@@ -3,6 +3,7 @@ import 'package:buzz/features/platform/platform_sign_in_page.dart';
 import 'package:buzz/shared/auth/auth.dart';
 import 'package:buzz/shared/platform/platform_api.dart';
 import 'package:buzz/shared/theme/theme_provider.dart';
+import 'package:client_kit/shared/platform/platform_text.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -63,7 +64,17 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(const ValueKey('platform-sign-in')), findsOneWidget);
-    expect(find.text('Server: platform.test'), findsOneWidget);
+    // 未选择语言时应用默认 zh-CN，文案取自共享目录。
+    expect(
+      find.text(
+        platformText(
+          PlatformMessageKey.nativeConfigServer,
+          locale: 'zh-CN',
+          variables: {'host': 'platform.test'},
+        ),
+      ),
+      findsOneWidget,
+    );
   });
 }
 

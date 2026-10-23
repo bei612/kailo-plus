@@ -738,7 +738,7 @@ void main() {
           }),
         );
         expect(
-          find.text('No definitions visible on this page.'),
+          find.text(platformText(PlatformMessageKey.agentsNone, locale: 'en')),
           findsOneWidget,
         );
         await tester.tap(
@@ -751,7 +751,7 @@ void main() {
         );
         await tester.pumpAndSettle();
         expect(
-          find.text('No definitions visible on this page.'),
+          find.text(platformText(PlatformMessageKey.agentsNone, locale: 'en')),
           findsOneWidget,
         );
         expect(offsets, ['0', '40', '0']);
@@ -884,7 +884,10 @@ void main() {
           find.byKey(const ValueKey('platform-view-error')),
           findsOneWidget,
         );
-        expect(find.text('No definitions visible on this page.'), findsNothing);
+        expect(
+          find.text(platformText(PlatformMessageKey.agentsNone, locale: 'en')),
+          findsNothing,
+        );
         expect(find.text('Reviewer'), findsNothing);
       });
     }
@@ -1336,7 +1339,12 @@ void main() {
         await tester.tap(find.text('Ops'));
         await tester.pumpAndSettle();
         expect(
-          find.text('No installations you may read on this page.'),
+          find.text(
+            platformText(
+              PlatformMessageKey.agentsInstallationNone,
+              locale: 'en',
+            ),
+          ),
           findsOneWidget,
         );
         await tester.tap(
