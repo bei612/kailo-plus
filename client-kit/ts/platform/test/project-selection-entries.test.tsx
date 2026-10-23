@@ -12,6 +12,10 @@ import { commitShareLink } from "../src/react/projects/projectShareLinks";
 import type { Repository } from "../src/react/projects/projectModels";
 import { TooltipProvider } from "../src/react/sidebar/tooltip";
 import { render, settle } from "./render";
+import { createBffClient } from "../src/client";
+import { PlatformProvider } from "../src/react/context";
+
+const platform = (children: React.ReactNode) => <PlatformProvider client={createBffClient({ send: async () => ({ status: 404, body: {} }) })} locale="en">{children}</PlatformProvider>;
 
 beforeEach(() => { setLocale("en"); });
 
@@ -34,11 +38,11 @@ describe("remaining Projects selection entry points", () => {
   });
 
   it("selects commit rows with the original shift range inside a selection provider", async () => {
-    const host = await render(<TooltipProvider><ProjectSelectionProvider resetKey="r:commits">
+    const host = await render(platform(<TooltipProvider><ProjectSelectionProvider resetKey="r:commits">
       <ActivityPanel commitItems={commits.map(item => ({ commit: item, project: repository, projectId: "p" }))} snapshot={null}
         isLoading={false} error={null} project={repository} projectId="p" repoContributors={[]} />
       <Probe />
-    </ProjectSelectionProvider></TooltipProvider>);
+    </ProjectSelectionProvider></TooltipProvider>));
     const controls = [...host.querySelectorAll<HTMLElement>('[data-testid="projects-row-select"]')];
     expect(controls).toHaveLength(3);
     await act(async () => { controls[0]!.click(); }); await settle();
@@ -50,8 +54,8 @@ describe("remaining Projects selection entry points", () => {
   });
 
   it("renders commit rows without select controls outside a selection provider", async () => {
-    const host = await render(<TooltipProvider><ActivityPanel commitItems={[{ commit: commits[0]!, project: repository, projectId: "p" }]}
-      snapshot={null} isLoading={false} error={null} project={repository} projectId="p" repoContributors={[]} /></TooltipProvider>);
+    const host = await render(platform(<TooltipProvider><ActivityPanel commitItems={[{ commit: commits[0]!, project: repository, projectId: "p" }]}
+      snapshot={null} isLoading={false} error={null} project={repository} projectId="p" repoContributors={[]} /></TooltipProvider>));
     expect(host.querySelector('[data-testid="projects-row-select"]')).toBeNull();
   });
 
