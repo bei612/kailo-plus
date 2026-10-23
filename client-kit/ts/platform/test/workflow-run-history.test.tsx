@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createBffClient } from "../src/client";
 import { PlatformProvider } from "../src/react/context";
-import { WorkflowsPage } from "../src/react/workflows";
+import { automationRunSummary, WorkflowsPage } from "../src/react/workflows";
 import type { BffReply, BffRequest } from "../src/transport";
 import { button, click, render, settle } from "./render";
 
@@ -235,5 +235,59 @@ describe("original trigger to persisted run selection through governed automatio
     const pending = history(host).querySelector('[data-testid="workflow-run-created"]')!;
     expect(pending.textContent).toContain("运行请求已记录");
     expect(pending.textContent).toContain("状态可能尚未更新，等待对账");
+  });
+});
+
+describe("original WorkflowDetailPanel run-card facts", () => {
+  const step = (stepId: string, status: AutomationStepTrace["status"], startedAt?: string, completedAt?: string): AutomationStepTrace =>
+    ({ stepId, status, output: {}, ...(startedAt ? { startedAt } : {}), ...(completedAt ? { completedAt } : {}) });
+
+  it("derives step count, duration and current step only from native trace facts", () => {
+    expect(automationRunSummary({ ...run, executionTrace: [step("a", AutomationStepStatus.Completed, "2026-10-07T01:00:00Z", "2026-10-07T01:00:01Z"),
+      step("b", AutomationStepStatus.Completed, "2026-10-07T01:00:01Z", "2026-10-07T01:00:03.5Z")] }))
+      .toEqual({ steps: 2, duration: "3.5s", currentStep: null });
+    expect(automationRunSummary({ ...run, executionTrace: [step("a", AutomationStepStatus.Completed, "2026-10-07T01:00:00Z", "2026-10-07T01:00:00.25Z")] }).duration).toBe("250ms");
+    // An open step: no duration, its 1-based position is the current step.
+    expect(automationRunSummary({ ...run, executionTrace: [step("a", AutomationStepStatus.Completed, "2026-10-07T01:00:00Z", "2026-10-07T01:00:01Z"),
+      step("b", AutomationStepStatus.WaitingApproval, "2026-10-07T01:00:01Z")] })).toEqual({ steps: 2, duration: null, currentStep: 2 });
+    // A missing native completion time or an unknown step is never inferred into a duration.
+    expect(automationRunSummary({ ...run, executionTrace: [step("a", AutomationStepStatus.Completed, "2026-10-07T01:00:00Z")] }).duration).toBeNull();
+    expect(automationRunSummary({ ...run, executionTrace: [step("a", AutomationStepStatus.Unknown, "2026-10-07T01:00:00Z", "2026-10-07T01:00:01Z")] }).duration).toBeNull();
+    expect(automationRunSummary(run)).toEqual({ steps: 0, duration: null, currentStep: null });
+  });
+
+  it.each([["en", "2 steps", "Current step 2"], ["zh-CN", "2 个步骤", "当前第 2 步"]] as const)("renders the run card facts in %s", async (locale, steps, current) => {
+    const executionTrace = [step("a", AutomationStepStatus.Completed, "2026-10-07T01:00:00Z", "2026-10-07T01:00:01Z"),
+      step("b", AutomationStepStatus.Running, "2026-10-07T01:00:01Z")];
+    const { host } = await setup((request) => request.path.endsWith("/runs") ? { status: 200,
+      body: { ...page, runs: [{ ...run, executionTrace }] } } : undefined, locale);
+    if (locale === "en") await trigger(host);
+    else {
+      await click(button(host, "查看定义"));
+      await click(button(definition(), "运行一次"));
+      await click(button(document.body, "核对请求"));
+      await click(button(document.body, "提交受治理请求"));
+    }
+    const card = history(host).querySelector<HTMLElement>('[data-testid="workflow-selected-run"]')!;
+    expect(card.textContent).toContain(steps);
+    expect(card.textContent).toContain(current);
+  });
+
+  it("shows a failed run's reason in red and keeps an unknown outcome neutral", async () => {
+    const { host } = await setup((request) => request.path.endsWith("/runs") ? { status: 200, body: { ...page, runs: [
+      { ...run, task: { ...task, taskStatus: "FAILED", reason: "PERMISSION_DENIED" } }] } } : undefined);
+    await trigger(host);
+    const reason = history(host).querySelector<HTMLElement>('[data-testid="workflow-run-failure-reason"]')!;
+    expect(reason.textContent).toContain("You do not have permission");
+    expect(reason.className).toContain("text-destructive");
+  });
+
+  it("does not render an unknown outcome's reason as a failure", async () => {
+    const { host } = await setup((request) => request.path.endsWith("/runs") ? { status: 200, body: { ...page, runs: [
+      { ...run, task: { ...task, dispatchState: "UNKNOWN", reason: "PERMISSION_DENIED" } }] } } : undefined);
+    await trigger(host);
+    const reason = history(host).querySelector<HTMLElement>('[data-testid="workflow-run-failure-reason"]')!;
+    expect(reason.className).toContain("text-muted-foreground");
+    expect(reason.className).not.toContain("text-destructive");
   });
 });

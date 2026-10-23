@@ -8,12 +8,14 @@ import {
 	ReasonCode,
 	TaskStatus,
 	type AutomationRunPage,
+	type AutomationRunView,
 	type ActionSubmission,
 } from "@client-kit/contracts";
 import { useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { AutomationManagement, type WorkflowRouteNavigation, type WorkspaceNavigation } from "./agents";
-import { useBffClient, useLocale, useT } from "./context";
+import { useBffClient, useLocale, useReasonText, useT } from "./context";
+import { taskPhase } from "../governance";
 import { TaskDetail, TaskStatusBadge, WaitingReason } from "./governance";
 import { WorkflowRunTrace } from "./workflow-run-trace";
 import { Button, Notice, ReadFailure } from "./ui";
@@ -119,6 +121,29 @@ export function validAutomationRuns(
 	);
 }
 
+// Buzz 779af8886caae1317b4de962082429867ab61503
+// desktop/src/features/workflows/ui/WorkflowDetailPanel.tsx::{formatRunDuration, WorkflowDetailPanel}
+// run-card facts, derived only from the governed step trace: "N steps", the run duration when every
+// step carries native start/completion times and none is still open, and "Current step N" for the
+// step still running or waiting for approval. Absent native facts are omitted, never inferred.
+export function automationRunSummary(run: AutomationRunView): {
+	steps: number; duration: string | null; currentStep: number | null;
+} {
+	const trace = run.executionTrace ?? [];
+	const open = trace.findIndex((step) => step.status === "running" || step.status === "waiting_approval");
+	const settled = trace.length > 0 && trace.every((step) => step.status !== "pending" && step.status !== "running"
+		&& step.status !== "waiting_approval" && step.status !== "unknown");
+	const starts = trace.map((step) => step.startedAt ? Date.parse(step.startedAt) : Number.NaN);
+	const ends = trace.map((step) => step.completedAt ? Date.parse(step.completedAt) : Number.NaN);
+	let duration: string | null = null;
+	if (settled && starts.some(Number.isFinite) && ends.every(Number.isFinite)) {
+		const seconds = (Math.max(...ends) - Math.min(...starts.filter(Number.isFinite))) / 1000;
+		if (Number.isFinite(seconds) && seconds >= 0)
+			duration = seconds < 1 ? `${Math.round(seconds * 1000)}ms` : `${seconds.toFixed(1)}s`;
+	}
+	return { steps: trace.length, duration, currentStep: open >= 0 ? open + 1 : null };
+}
+
 function AutomationRunHistory({
 	resourceId,
 	workspaceId,
@@ -131,6 +156,7 @@ function AutomationRunHistory({
 	const client = useBffClient();
 	const t = useT();
 	const locale = useLocale();
+	const reasonText = useReasonText();
 	const [cursors, setCursors] = useState<(string | undefined)[]>([undefined]);
 	const [index, setIndex] = useState(0);
 	const [open, setOpen] = useState<string | null>(null);
@@ -200,10 +226,18 @@ function AutomationRunHistory({
 									{/* Buzz 779af8886caae1317b4de962082429867ab61503:
 									    desktop/src/features/workflows/ui/WorkflowDetailPanel.tsx
 									    WorkflowDetailPanel run cards. Temporal TaskView replaces
-									    Relay WorkflowRun; no fabricated step trace or duration. */}
+									    Relay WorkflowRun; step count, duration and current step come
+									    only from the governed trace (automationRunSummary). */}
 									{page.runs.map((run) => {
 										const id = run.task.actionExecutionId;
 										const isSelected = selectedRunId === id;
+										const summary = automationRunSummary(run);
+										// Original workflowRunFailureReason: a denied/expired/aborted/failed run shows its
+										// reason in red; an unknown outcome stays neutral (never a failure or success).
+										const phase = taskPhase(run.task);
+										const reasonTone = run.task.reason === undefined ? null
+											: phase.tone === "negative" ? "text-destructive"
+											: phase.label === "tasks.status.unknown" ? "text-muted-foreground" : null;
 										return (
 											<div
 												className={`overflow-hidden rounded-xl border bg-card/70 transition-colors ${isSelected
@@ -229,9 +263,14 @@ function AutomationRunHistory({
 															</div>
 															<div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 pl-6 text-2xs text-muted-foreground">
 																<time dateTime={run.task.createdAt} title={run.task.createdAt}>{new Date(run.task.createdAt).toLocaleString(locale)}</time>
+																{run.executionTrace ? <span>{t(summary.steps === 1 ? "workflows.run.step" : "workflows.run.steps", { count: summary.steps })}</span> : null}
+																{summary.duration ? <span>{summary.duration}</span> : null}
+																{summary.currentStep !== null ? <span>{t("workflows.run.currentStep", { step: summary.currentStep })}</span> : null}
 																{run.progress ? <span>{t("workflows.progress")}: {run.progress}</span> : null}
 																{run.stepApprovalTask ? <TaskStatusBadge task={run.stepApprovalTask} /> : null}
 															</div>
+															{run.task.reason !== undefined && reasonTone ? <p className={`mt-2 break-words pl-6 text-xs ${reasonTone}`}
+																data-testid="workflow-run-failure-reason">{reasonText(run.task.reason)}</p> : null}
 															{run.task.waitingReason ? <p className="mt-2 break-words pl-6 text-xs text-muted-foreground"><WaitingReason code={run.task.waitingReason} /></p> : null}
 														</div>
 													</div>

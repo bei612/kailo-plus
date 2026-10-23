@@ -81,7 +81,8 @@ import { WorkflowDeleteDialog } from "./workflow-delete-dialog";
 import { WorkflowWebhookSecretDialog, type WorkflowWebhookSecret } from "./workflow-webhook-secret-dialog";
 import { Skeleton } from "./sidebar/skeleton";
 import { ChannelCombobox } from "./workflow-channel-combobox";
-import { WorkflowActionTileStack, WorkflowStatusToggle } from "./workflow-card-actions";
+import { ActionEmoji, WorkflowActionTileStack, WorkflowStatusToggle } from "./workflow-card-actions";
+import { generateWorkflowName } from "./workflow-name";
 import { workflowCardLabel, workflowTriggerSummary } from "./workflow-card-label";
 import { Button as WorkflowButton } from "./profile/buzz/shared/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "./composer/shared/ui/dialog";
@@ -491,6 +492,7 @@ export function AutomationManagement({ renderRunHistory, workspaceId, onWorkspac
         if (createRouted && workflowCreateRoute) onWorkflowCreateRouteChange?.(false, workspace?.id);
       }}
       onReset={() => { setEdit(null); setEditorOpen(false); }} onLocked={setLocked}
+      onSwitch={(value) => { setEdit(value); setEditorOpen(true); }}
       onRecorded={(command, submission) => {
         const issued = submission.webhookSecret;
         if ((command.actionKey === "automation.enable" || command.actionKey === "automation.rotate_webhook_secret")
@@ -641,6 +643,10 @@ function AutomationCard({ row, workspaceName, authors, locked, onView, onEdit }:
     content.trigger.kind === TriggerKind.DiffPosted ? "diff_posted"
       : content.trigger.kind === TriggerKind.ReactionAdded ? "reaction_added" : "message_posted") : undefined;
   const authorCondition = conditions?.find(condition => condition.field === "trigger_author");
+  // Original workflowDefinition.ts::getWorkflowTriggerEmoji: legacy emoji, else the equals condition.
+  const triggerEmoji = content?.trigger.kind !== TriggerKind.ReactionAdded ? null
+    : content.trigger.emoji?.trim() || conditions?.find(condition => condition.field === "trigger_emoji"
+      && condition.operator === "equals")?.value.trim() || null;
   const messageCondition = conditions?.find(condition => condition.field === "trigger_message_id");
   const messageScope = useWorkflowMessageScope(messageCondition ? row.workspaceId : undefined);
   const message = useWorkflowTriggerMessage(messageCondition ? normalizeMessageEventId(messageCondition.value) : null, messageScope.scope);
@@ -684,7 +690,8 @@ function AutomationCard({ row, workspaceName, authors, locked, onView, onEdit }:
             ? "border-violet-400/30 bg-violet-600 text-white" : content?.trigger.kind === TriggerKind.ReactionAdded
             ? "border-pink-400/30 bg-pink-600 text-white" : content?.trigger.kind === TriggerKind.Webhook
             ? "border-orange-300/30 bg-orange-500 text-white" : "border-blue-400/30 bg-blue-600 text-white"}`}>
-            {!content ? <Zap className="h-5 w-5" /> : content.trigger.kind === TriggerKind.Schedule ? <CalendarClock className="h-5 w-5" />
+            {triggerEmoji ? <ActionEmoji value={triggerEmoji} />
+              : !content ? <Zap className="h-5 w-5" /> : content.trigger.kind === TriggerKind.Schedule ? <CalendarClock className="h-5 w-5" />
               : content.trigger.kind === TriggerKind.DiffPosted ? <GitPullRequest className="h-5 w-5" />
               : content.trigger.kind === TriggerKind.ReactionAdded ? <SmilePlus className="h-5 w-5" />
               : content.trigger.kind === TriggerKind.Webhook ? <Webhook className="h-5 w-5" /> : <MessageSquare className="h-5 w-5" />}
@@ -953,8 +960,10 @@ function WorkflowNameEditor({ disabled, name, onCommit }: {
   </div>;
 }
 
-function AutomationAction({ workspaceId: hostWorkspaceId, workspaces, edit, open, onClose, onReset, onLocked, onRecorded, workflowNavigation }: {
+function AutomationAction({ workspaceId: hostWorkspaceId, workspaces, edit, open, onClose, onReset, onLocked, onRecorded, onSwitch, workflowNavigation }: {
   workspaceId?: string; workspaces: WorkspaceView[] | null; edit: AutomationEdit | null; onReset: () => void;
+  /** Original WorkflowDialog header WorkflowActionsMenu: reopen this editor on another governed action. */
+  onSwitch?: (edit: AutomationEdit) => void;
   open: boolean; onClose: () => void;
   onLocked: (locked: boolean) => void; onRecorded: (command: ActionCommand, submission: ActionSubmission) => void;
   workflowNavigation?: WorkflowNavigation;
@@ -1097,7 +1106,9 @@ function AutomationAction({ workspaceId: hostWorkspaceId, workspaces, edit, open
     if (!open || intent) return;
     const content = edit && (edit.action === "copy" || edit.action === "publish_version")
       ? edit.content ?? edit.detail.versions[0]?.content : edit?.detail.versions[0]?.content;
-    setName(content?.name ?? "");
+    // Original WorkflowDialog names a fresh create draft (not a duplicate) with three words;
+    // the generated name is part of the initial snapshot, so it is not a dirty change.
+    setName(content?.name ?? (!edit ? generateWorkflowName() ?? "" : ""));
     setDescription(content?.description);
     setTrigger(content?.trigger.kind ?? TriggerKind.ChannelMessage); setPrefix(content?.trigger.textPrefix ?? "");
     setFilter(content?.trigger.filter ?? ""); setTriggerEmoji(content?.trigger.emoji ?? "");
@@ -1158,6 +1169,16 @@ function AutomationAction({ workspaceId: hostWorkspaceId, workspaces, edit, open
     if (dirty) setDiscardOpen(true);
     else onClose();
   };
+  // Original WorkflowDialog::requestEditorTransition: a dirty draft asks before it is replaced.
+  const pendingTransition = useRef<(() => void) | null>(null);
+  const requestTransition = (next: AutomationEdit) => {
+    if (intent || busy || !onSwitch) return;
+    if (dirty) { pendingTransition.current = () => onSwitch(next); setDiscardOpen(true); }
+    else onSwitch(next);
+  };
+  const editedDetail = edit?.action === "publish_version" ? edit.detail : null;
+  const editedContent = edit?.action === "publish_version" ? edit.content ?? edit.detail.versions[0]?.content : undefined;
+  const editedEnabled = editedDetail?.automation.state === AutomationState.Enabled;
   useEffect(() => { setExecutorIndex(0); setExecutorOffsets([0]); }, [workspaceId]);
   const changeEditor = (mode: "form" | "yaml") => {
     if (mode === editorMode) return;
@@ -1363,7 +1384,16 @@ function AutomationAction({ workspaceId: hostWorkspaceId, workspaces, edit, open
             try { nameDocument.set("name", next); setYamlText(nameDocument.toString()); setEditorError(false); return true; }
             catch { return false; }
           }} /> : null}</div>
-      <Button disabled={!!intent || busy} aria-label={t("buzz.close")} className="h-8 w-8 text-muted-foreground" onClick={requestClose}><X aria-hidden className="h-4 w-4" /></Button>
+      <div className="flex items-center gap-2">
+        {editedDetail && onSwitch ? <WorkflowActionsMenu isEnabled={editedEnabled} disabled={!!intent || busy}
+          showEnabledToggle={editedDetail.canManage}
+          onTrigger={editedDetail.canRun === true && editedEnabled ? () => requestTransition({ detail: editedDetail, action: "run" }) : undefined}
+          onEdit={editedContent ? () => requestTransition({ detail: editedDetail, action: "publish_version", content: editedContent }) : undefined}
+          onDuplicate={editedContent ? () => requestTransition({ detail: editedDetail, action: "copy", content: editedContent }) : undefined}
+          onToggleEnabled={() => requestTransition({ detail: editedDetail, action: editedEnabled ? "disable" : "enable" })}
+          onDelete={() => requestTransition({ detail: editedDetail, action: "delete" })} /> : null}
+        <Button disabled={!!intent || busy} aria-label={t("buzz.close")} className="h-8 w-8 text-muted-foreground" onClick={requestClose}><X aria-hidden className="h-4 w-4" /></Button>
+      </div>
     </DialogHeader>
     <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-6 pb-4 pt-2">
     {!intent ? <form className="flex min-h-full flex-col gap-3" onSubmit={(event) => { event.preventDefault(); prepare(); }}>
@@ -1499,11 +1529,15 @@ function AutomationAction({ workspaceId: hostWorkspaceId, workspaces, edit, open
     <WorkflowDiscardDialog open={(discardOpen || navigationBlocked) && open && !intent && !busy}
       onOpenChange={(next) => {
         setDiscardOpen(next);
+        if (!next) pendingTransition.current = null;
         if (!next && navigationBlocked && !proceedingNavigation.current) workflowNavigation?.blocker.reset?.();
       }}
       onDiscard={() => {
         if (intent || busy) return;
         setDiscardOpen(false);
+        const transition = pendingTransition.current;
+        pendingTransition.current = null;
+        if (transition && !navigationBlocked) { transition(); return; }
         if (navigationBlocked) { proceedingNavigation.current = true; workflowNavigation?.blocker.proceed?.(); }
         onClose();
       }} />

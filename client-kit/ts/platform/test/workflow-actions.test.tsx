@@ -735,6 +735,64 @@ describe("original workflow action menu with governed consumers", () => {
     expect(menu.querySelector('[role="menuitemcheckbox"]')).toBeNull();
   });
 
+  it("offers the original editor header actions in edit mode and moves to the governed action", async () => {
+    const { host, send } = await setup();
+    await chooseAction(host, "Edit");
+    const dialog = document.querySelector<HTMLElement>('[data-testid="workflow-editor-dialog"]')!;
+    const trigger = dialog.querySelector<HTMLButtonElement>('button[aria-label="Workflow actions"]')!;
+    expect(trigger).not.toBeNull();
+    await act(async () => trigger.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })));
+    await settle();
+    const menu = document.querySelector<HTMLElement>('[role="menu"]')!;
+    expect([...menu.querySelectorAll('[role^="menuitem"]')].map((item) => item.textContent?.trim()))
+      .toEqual(["Run once", "Edit", "Copy as new draft", "Enable", "Delete"]);
+    const run = [...menu.querySelectorAll<HTMLElement>('[role^="menuitem"]')].find((item) => item.textContent === "Run once")!;
+    await click(run);
+    const runDialog = document.querySelector<HTMLElement>('[data-testid="workflow-editor-dialog"]')!;
+    await click(button(runDialog, "Review request"));
+    await click(button(runDialog, "Submit governed request"));
+    expect(writes(send)[0]).toMatchObject({ actionKey: "automation.run", resourceId: "workflow", resourceVersion: 2 });
+  });
+
+  it("asks before a header action replaces a dirty edit draft", async () => {
+    const { host, send } = await setup();
+    await chooseAction(host, "Edit");
+    const dialog = document.querySelector<HTMLElement>('[data-testid="workflow-editor-dialog"]')!;
+    await canvasNode(dialog, 1);
+    await type(dialog.querySelector<HTMLTextAreaElement>("textarea")!, "Unsaved draft");
+    const trigger = dialog.querySelector<HTMLButtonElement>('button[aria-label="Workflow actions"]')!;
+    await act(async () => trigger.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })));
+    await settle();
+    const copy = [...document.querySelectorAll<HTMLElement>('[role="menu"] [role^="menuitem"]')].find((item) => item.textContent === "Copy as new draft")!;
+    await click(copy);
+    const prompt = document.querySelector<HTMLElement>('[role="alertdialog"]')!;
+    expect(prompt.textContent).toContain("Your unsaved workflow changes will be lost.");
+    await click(button(prompt, "Discard changes"));
+    const copied = document.querySelector<HTMLElement>('[data-testid="workflow-editor-dialog"]')!;
+    expect(copied).not.toBeNull();
+    expect(copied.textContent).toContain("Latest");
+    expect(writes(send)).toHaveLength(0);
+  });
+
+  it("shows the reaction trigger emoji on the original card instead of the generic icon", async () => {
+    const content = { name: "React", trigger: { kind: "REACTION_ADDED", emoji: "🎉" },
+      action: { kind: "AGENT_TURN", template: "x" }, resultTarget: "TRIGGER_THREAD" };
+    const { host } = await setup((request) => request.path.startsWith("/api/v1/automations/workflow?")
+      ? { status: 200, body: { ...detail, versions: [{ ...detail.versions[0], content }] } } : undefined);
+    const card = host.querySelector<HTMLElement>('[data-testid="workflow-card-workflow"]')!;
+    expect(card.textContent).toContain("🎉");
+  });
+
+  it("names a fresh create draft with three original wordlist words without marking it dirty", async () => {
+    const { host } = await setup();
+    await click(host.querySelector<HTMLButtonElement>('[data-testid="new-workflow-card"]')!);
+    const dialog = document.querySelector<HTMLElement>('[data-testid="workflow-editor-dialog"]')!;
+    expect(dialog.textContent).not.toContain("Untitled workflow");
+    expect(dialog.textContent).toMatch(/[a-z]+(-[a-z]+){2,}/);
+    await click(dialog.querySelector<HTMLButtonElement>('button[aria-label="Close"]')!);
+    expect(document.querySelector('[role="alertdialog"]')).toBeNull();
+  });
+
   it("rechecks permission before the card switch opens a governed disable request", async () => {
     let revoked = false;
     const { host, send } = await setup((request) => request.path.startsWith("/api/v1/automations/workflow?")
