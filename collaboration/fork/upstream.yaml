@@ -989,7 +989,8 @@ remove_paths:
   - mobile/lib/features/channels/channel_metadata_updates.dart
   - mobile/lib/features/channels/channel_mutes
   - mobile/lib/features/channels/channel_push_cache.dart
-  - mobile/lib/features/channels/channel_sections
+  - mobile/lib/features/channels/channel_sections/channel_sections_manager.dart
+  - mobile/lib/features/channels/channel_sections/channel_sections_storage.dart
   - mobile/lib/features/channels/channel_sort
   - mobile/lib/features/channels/channel_stars
   - mobile/lib/features/channels/channels_page/badges.dart
