@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -19,6 +20,7 @@ import (
 	"apps/worker/internal/oidc"
 	"github.com/google/uuid"
 	"go.temporal.io/sdk/activity"
+	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/testsuite"
 )
 
@@ -239,7 +241,7 @@ func TestReceiverActionStepUsesTheIsolatedDeploymentEntry(t *testing.T) {
 }
 
 func TestProtocolPeerConformanceUsesOriginalCoreConsumerWithoutReplaying(t *testing.T) {
-	for _, scenario := range []string{"success", "lost-reply", "invented-job", "missing-protocol-result", "reconcile", "wrong-workflow"} {
+	for _, scenario := range []string{"success", "lost-reply", "invented-job", "missing-protocol-result", "reconcile", "reconcile-unavailable", "wrong-workflow"} {
 		t.Run(scenario, func(t *testing.T) {
 			calls := 0
 			request, expected := `{"arguments":{},"name":"declared-read"}`, `"native text"`
@@ -255,7 +257,19 @@ func TestProtocolPeerConformanceUsesOriginalCoreConsumerWithoutReplaying(t *test
 				if r.URL.Path != "/service/v1/component-releases/authorize-probe" || r.Header.Get("Authorization") != "Bearer isolated-worker" {
 					t.Error("MCP probe bypassed original Core service consumer")
 				}
-				if scenario == "lost-reply" {
+				var probe struct {
+					Reconcile *bool `json:"reconcile"`
+				}
+				_ = json.NewDecoder(r.Body).Decode(&probe)
+				if (probe.Reconcile != nil && *probe.Reconcile) != strings.HasPrefix(scenario, "reconcile") {
+					t.Error("reconcile flag not forwarded exactly")
+				}
+				if scenario == "reconcile" {
+					// Core records the unresolved step and refuses definitively.
+					w.WriteHeader(http.StatusConflict)
+					return
+				}
+				if scenario == "lost-reply" || scenario == "reconcile-unavailable" {
 					w.WriteHeader(http.StatusServiceUnavailable)
 					return
 				}
@@ -282,7 +296,7 @@ func TestProtocolPeerConformanceUsesOriginalCoreConsumerWithoutReplaying(t *test
 			input := generated.ComponentConformanceProbe{Plan: generated.ComponentConformancePlan{ConnectorKind: &connector,
 				Steps: []generated.ComponentConformanceStep{{CaseKey: "native", StepKey: "read", Operation: generated.MCPCall,
 					RequestJSON: request, ExpectedResponseJSON: expected, ExpectedMCPResultKind: &kind}}}}
-			if scenario == "reconcile" {
+			if strings.HasPrefix(scenario, "reconcile") {
 				reconcile := true
 				input.Reconcile = &reconcile
 			}
@@ -303,11 +317,23 @@ func TestProtocolPeerConformanceUsesOriginalCoreConsumerWithoutReplaying(t *test
 				t.Fatalf("scenario=%s err=%v", scenario, err)
 			}
 			want := 1
-			if scenario == "reconcile" || scenario == "wrong-workflow" {
+			if scenario == "wrong-workflow" {
 				want = 0
 			}
 			if calls != want {
 				t.Fatalf("original call count=%d want=%d", calls, want)
+			}
+			// Only Core's definite answer ends the registration; an unknown
+			// answer keeps the original attempt unresolved and never replays it.
+			var application *temporal.ApplicationError
+			if strings.HasPrefix(scenario, "reconcile") {
+				wantType := ErrTypeUnknownExternalResult
+				if scenario == "reconcile" {
+					wantType = ErrTypeRejected
+				}
+				if !errors.As(err, &application) || application.Type() != wantType {
+					t.Fatalf("scenario=%s err=%v want type %s", scenario, err, wantType)
+				}
 			}
 		})
 	}

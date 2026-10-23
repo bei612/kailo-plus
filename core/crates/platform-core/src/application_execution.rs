@@ -621,7 +621,7 @@ pub(crate) async fn committed_children(
                   and result.workspace_id is not distinct from c.workspace_id
                   and result.action_key=c.action_key and result.action_version=c.action_version
                   and result.target_id=c.target_id and result.parameter_hash=c.parameter_hash
-                  and result.event_type='RESULT' and result.result_code in ('SUCCEEDED','FAILED')),false)
+                  and result.event_type='OUTCOME' and result.result_code in ('SUCCEEDED','FAILED')),false)
          from catalog.agent_invocation i join admission.action_execution parent on parent.id=i.action_execution_id
          join admission.action_execution c on c.parent_action_execution_id=parent.id
          join catalog.action_definition d on d.id=c.action_definition_id and d.component_release_id=c.component_release_id

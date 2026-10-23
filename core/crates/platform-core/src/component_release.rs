@@ -2964,7 +2964,7 @@ async fn persist_registration(
                 "select exists(select 1 from audit.audit_event
                 where event_key=$1 and tenant_id=$2 and operation_id=$3 and action_key=$4
                   and action_version=$5 and target_id=$6 and parameter_hash=$7
-                  and event_type='RESULT' and decision='ALLOW' and result_code='SUCCEEDED')",
+                  and event_type='OUTCOME' and decision='ALLOW' and result_code='SUCCEEDED')",
             )
             .bind(format!("{}:mcp-probe:{index}:result", ae.operation_id))
             .bind(ae.tenant_id)

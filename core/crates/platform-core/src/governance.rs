@@ -9240,3 +9240,277 @@ mod dispatch_tests {
         }
     }
 }
+
+/// 审计事件类型只有一个权威集合：设计 03 §9 的 AuditEvent.event_type，经
+/// `contracts/enums/audit_event_type.schema.json` 生成，并由迁移中的
+/// `audit_event_type_enum` 约束。写入方与回读方各自拼写字面量时，任何一方
+/// 漂移到集合之外都只会在生产写审计时才暴露（PROTOCOL_PEER 一致性探测曾按
+/// 不存在的 `RESULT` 写入与回读，release 永远停在 RUNNING）。
+#[cfg(test)]
+mod audit_event_type_tests {
+    use super::*;
+    use sqlx::{Connection, PgConnection};
+    use std::collections::BTreeSet;
+
+    fn declared() -> BTreeSet<String> {
+        let schema: Value = serde_json::from_str(include_str!(
+            "../../../../contracts/enums/audit_event_type.schema.json"
+        ))
+        .unwrap();
+        schema["enum"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_str().unwrap().to_owned())
+            .collect()
+    }
+
+    /// 取出文本中与 event_type 比较或赋值的全部大写字面量：SQL 的等值比较与
+    /// in 列表（单引号），以及 Rust 结构体字段的字符串字面量（双引号）。
+    /// 其它出现（列名、约束名）不计。
+    fn literals(text: &str) -> Vec<String> {
+        fn quoted(s: &str, quote: char) -> Option<String> {
+            let body = s.strip_prefix(quote)?;
+            let end = body.find(quote)?;
+            let value = &body[..end];
+            (!value.is_empty() && value.bytes().all(|b| b.is_ascii_uppercase() || b == b'_'))
+                .then(|| value.to_owned())
+        }
+        let lower = text.to_ascii_lowercase();
+        let mut found = Vec::new();
+        let mut from = 0;
+        while let Some(at) = lower[from..].find("event_type") {
+            let start = from + at + "event_type".len();
+            from = start;
+            let rest = text[start..].trim_start();
+            let rest_lower = lower[start..].trim_start();
+            // SQL compares with single-quoted literals; Rust names the field
+            // with a string literal. A Rust assignment (`x.event_type = "..."`)
+            // is a test double, not a written or read type.
+            if let Some(value) = rest.strip_prefix('=') {
+                found.extend(quoted(value.trim_start(), '\''));
+            } else if let Some(value) = rest.strip_prefix(':') {
+                found.extend(quoted(value.trim_start(), '"'));
+            } else if rest_lower.starts_with("in") && rest[2..].trim_start().starts_with('(') {
+                let list = rest[2..].trim_start();
+                let list = &list[1..list.find(')').unwrap_or(list.len())];
+                found.extend(list.split(',').filter_map(|item| quoted(item.trim(), '\'')));
+            }
+        }
+        found
+    }
+
+    #[test]
+    fn literal_scan_sees_every_comparison_shape() {
+        assert_eq!(
+            literals("where a.event_type='OUTCOME' and b.EVENT_TYPE IN ('DISPATCH', 'RECONCILIATION') and audit_event_type_enum"),
+            ["OUTCOME", "DISPATCH", "RECONCILIATION"]
+        );
+        assert_eq!(
+            literals("AuditEntry { event_type: \"ACCESS\", }"),
+            ["ACCESS"]
+        );
+        assert!(literals("event_type text NOT NULL, event_type = $1").is_empty());
+        assert!(literals("entry.event_type = \"TEST_DOUBLE\";").is_empty());
+    }
+
+    #[test]
+    fn every_source_event_type_literal_is_declared() {
+        let declared = declared();
+        let mut pending = vec![std::path::PathBuf::from(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/src"
+        ))];
+        let mut undeclared = Vec::new();
+        while let Some(dir) = pending.pop() {
+            for entry in std::fs::read_dir(dir).unwrap() {
+                let path = entry.unwrap().path();
+                if path.is_dir() {
+                    pending.push(path);
+                } else if path.extension().is_some_and(|e| e == "rs") {
+                    let text = std::fs::read_to_string(&path).unwrap();
+                    for value in literals(&text) {
+                        if !declared.contains(&value) {
+                            undeclared.push(format!("{}: {value}", path.display()));
+                        }
+                    }
+                }
+            }
+        }
+        assert!(
+            undeclared.is_empty(),
+            "undeclared audit event types: {undeclared:?}"
+        );
+    }
+
+    #[tokio::test]
+    #[ignore = "requires a disposable PostgreSQL with every core migration applied; all fixtures roll back"]
+    async fn migrated_schema_admits_exactly_the_declared_audit_event_types() {
+        let mut conn = PgConnection::connect(
+            &std::env::var("AUDIT_EVENT_TYPE_TEST_DATABASE_URL").expect("disposable database"),
+        )
+        .await
+        .unwrap();
+        let declared = declared();
+        let mut tx = conn.begin().await.unwrap();
+
+        // The constraint is the same set as the contract, not a superset.
+        let constraint: String = sqlx::query_scalar(
+            "select pg_get_constraintdef(c.oid) from pg_constraint c
+             join pg_class t on t.oid=c.conrelid join pg_namespace n on n.oid=t.relnamespace
+             where n.nspname='audit' and t.relname='audit_event' and c.conname='audit_event_type_enum'",
+        )
+        .fetch_one(&mut *tx)
+        .await
+        .unwrap();
+        let admitted: BTreeSet<String> = constraint
+            .split('\'')
+            .skip(1)
+            .step_by(2)
+            .map(str::to_owned)
+            .collect();
+        assert_eq!(admitted, declared);
+
+        // No stored function or trigger body reads an undeclared type.
+        let bodies: Vec<(String, String)> = sqlx::query_as(
+            "select n.nspname||'.'||p.proname, p.prosrc from pg_proc p
+             join pg_namespace n on n.oid=p.pronamespace
+             where n.nspname not in ('pg_catalog','information_schema') and n.nspname not like 'pg_toast%'",
+        )
+        .fetch_all(&mut *tx)
+        .await
+        .unwrap();
+        let undeclared: Vec<String> = bodies
+            .iter()
+            .flat_map(|(name, body)| {
+                literals(body)
+                    .into_iter()
+                    .filter(|v| !declared.contains(v))
+                    .map(move |v| format!("{name}: {v}"))
+            })
+            .collect();
+        assert!(
+            undeclared.is_empty(),
+            "undeclared audit event types: {undeclared:?}"
+        );
+
+        // The original PROTOCOL_PEER release fixture: a dispatched APPLICATION
+        // child of a PROTOCOL_PEER release, written through the same audit path.
+        let base = include_str!("../../../verify/application-execution-base.sql")
+            .replace("\nBEGIN;\n", "\n")
+            .replace("\nCOMMIT;", "\n");
+        sqlx::raw_sql(&base).execute(&mut *tx).await.unwrap();
+        let fixture = include_str!("../../../verify/application-execution-dispatch.sql").replacen(
+            "manifest:=jsonb_build_object('componentTypeKey',provider,",
+            "manifest:=jsonb_build_object('componentTypeKey',provider,\
+             'executionConnector',jsonb_build_object('mode','PROTOCOL_PEER'),",
+            1,
+        );
+        sqlx::raw_sql(&fixture).execute(&mut *tx).await.unwrap();
+        let (child, binding): (Uuid, Uuid) =
+            sqlx::query_as("select child,binding from application_dispatch_fixture")
+                .fetch_one(&mut *tx)
+                .await
+                .unwrap();
+        sqlx::query(
+            "update admission.action_execution set dispatch_state='DISPATCHED' where id=$1",
+        )
+        .bind(child)
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+        let ae = lock_execution(&mut tx, child).await.unwrap();
+        let class = AuditClass {
+            component_type_key: "catalog_fixture_two",
+            target_type: "RESOURCE",
+            result_exposure: "CONSUME_ONLY",
+        };
+        let unresolved = "select exists(select 1 from admission.action_execution a
+            where a.id=$1 and not exists(select 1 from audit.audit_event result
+              where result.event_key=a.operation_id::text||':child:'||a.id::text||':protocol-result'
+                and result.event_type='OUTCOME' and result.result_code in ('SUCCEEDED','FAILED')))";
+        assert!(sqlx::query_scalar::<_, bool>(unresolved)
+            .bind(child)
+            .fetch_one(&mut *tx)
+            .await
+            .unwrap());
+
+        // An undeclared type is refused by the schema, never stored.
+        sqlx::query("savepoint undeclared")
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        let refused = audit_as(
+            &mut tx,
+            &ae,
+            class,
+            "undeclared",
+            "RESULT",
+            "ALLOW",
+            "SUCCEEDED",
+            None,
+            Vec::new(),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(
+            refused
+                .as_database_error()
+                .and_then(|e| e.code())
+                .as_deref(),
+            Some("23514")
+        );
+        sqlx::query("rollback to savepoint undeclared")
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+
+        // Consistency probe result, synchronous peer result and Agent tool
+        // result stages are all OUTCOME after their DISPATCH.
+        for stage in ["mcp-probe:0:result", "result", "protocol-result"] {
+            audit_as(
+                &mut tx,
+                &ae,
+                class,
+                stage,
+                "OUTCOME",
+                "ALLOW",
+                "SUCCEEDED",
+                None,
+                Vec::new(),
+            )
+            .await
+            .unwrap();
+        }
+        assert!(!sqlx::query_scalar::<_, bool>(unresolved)
+            .bind(child)
+            .fetch_one(&mut *tx)
+            .await
+            .unwrap());
+
+        // The drain guard now recognises the recorded OUTCOME: disabling the
+        // binding is no longer refused for an unresolved peer dispatch.
+        sqlx::query("savepoint drain")
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        let drained =
+            sqlx::query("update catalog.application_binding set state='DISABLED' where id=$1")
+                .bind(binding)
+                .execute(&mut *tx)
+                .await;
+        if let Err(error) = drained {
+            assert!(
+                !error
+                    .to_string()
+                    .contains("unresolved protocol peer dispatch"),
+                "{error}"
+            );
+        }
+        sqlx::query("rollback to savepoint drain")
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        tx.rollback().await.unwrap();
+    }
+}
