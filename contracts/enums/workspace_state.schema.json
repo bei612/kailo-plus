@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "enums/workspace_state.schema.json",
   "title": "WorkspaceState",
-  "description": "Workspace 状态机中对外可见的状态。权威定义见 .design/03-领域模型与权限模型.md。DD-150 的 DELETED 是 Core 内的墓碑，不出现在任何对外视图中（列表与提示都不返回已删除的 Workspace），因此不在本枚举。",
+  "description": "Workspace 状态机的全部状态，与库约束 workspace_state_enum 逐值相等。权威定义见 .design/03-领域模型与权限模型.md。DD-150 的 DELETED 是 Core 内的墓碑：任何对外视图（列表、提示、目录）都不返回已删除的 Workspace，客户端不会收到该值。",
   "type": "string",
   "enum": [
     "PROVISIONING",
@@ -11,6 +11,7 @@
     "SUSPENDED",
     "RESTORING",
     "DELETING",
+    "DELETED",
     "ERROR"
   ]
 }

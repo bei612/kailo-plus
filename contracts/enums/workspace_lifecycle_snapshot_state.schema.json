@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/workspace_lifecycle_snapshot_state.schema.json",
+  "title": "WorkspaceLifecycleSnapshotState",
+  "description": "DD-150 频道删除时冻结的生命周期清单状态：DELETING 推进中，DELETED 全部收尾并回读，ABORTED 准入后放弃。",
+  "type": "string",
+  "enum": [
+    "DELETING",
+    "DELETED",
+    "ABORTED"
+  ]
+}
