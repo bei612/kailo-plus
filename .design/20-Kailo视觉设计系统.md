@@ -13,7 +13,7 @@
 | 功能与交互 | 固定 Buzz 上游（REQ-24、GOAL §1） | 页面、入口、菜单项、设置项、弹窗、快捷键、状态、数据与流程继续与原版对齐；Buzz 还原工作照常进行。 |
 | 视觉语言 | 本文 | 色彩、字体、字号层级、间距、圆角、阴影、图标线宽、布局外壳（侧栏、顶栏、频道头、消息列表、输入框、面板、弹窗、菜单、表格、空态、加载、通知、设置页）、插画、品牌标识与动效，全部以本文为准。 |
 
-“看不出 Buzz 原样”的反例清单（验收时逐项否定）：黄—灰蓝竖向渐变画布；渐变上悬浮、只在右下留边的白色内容卡；GitHub Light/Dark 的灰阶与黑色主按钮；圆形黑底黄蜂图标；Catppuccin 薰衣草紫强调色；Buzz 的胶囊日期分隔；粗体中文回落到文泉驿的字形。
+“看不出 Buzz 原样”的反例清单（验收时逐项否定）：黄—灰蓝竖向渐变画布；渐变上悬浮、只在右下留边的白色内容卡；GitHub Light/Dark 的灰阶与黑色主按钮；圆形黑底黄蜂图标；Catppuccin 薰衣草紫强调色；Buzz 的胶囊日期分隔；粗体中文回落到文泉驿的字形；用户可见文案中的 “Buzz” 字样（产品名仍只来自 DD-111 的部署配置，协作中继在文案中称“中继”）。
 
 ## 2. 色彩
 
@@ -217,7 +217,7 @@ Orchid 保留为品牌渐变的第二色标（§2.5），让 Iris 在品牌时�
 
 - **画布与顶栏**：顶栏与侧栏同为 canvas 底，连成一体；左上角为 22 px 品牌标识（品牌渐变圆角方块 + 白色标识），其后是侧栏开关与前进后退。画布左上角一处品牌光晕（§2.5）。
 - **侧栏**：行高 30、圆角 md、图标 16；悬停 sidebarHover；选中为 brand-soft 底 + brand-soft-text 文字与图标，左缘内侧 3 px brand 指示条；未读为 text 色 600 字重 + 右侧 brand 计数；分组标题为 Overline，悬停时显示分组操作。组件入口与平台导航之间以 12 px 间距分组，不用分隔线。个人卡片在底部，头像 28 + 名称 + 状态。
-- **内容平面**：surface 底，左缘 1 px line 与侧栏分隔，顶部与顶栏之间 1 px line；不使用外边距和大圆角悬浮卡（反例清单）。
+- **内容平面**：surface 底，左缘与顶部各 1 px line 与画布分隔，只在左上角以 12 px 圆角与顶栏、侧栏过渡；右、下贴边，不使用外边距和悬浮卡（反例清单）。
 - **频道头**：高 52，下缘 1 px line；左侧 28 px brand-soft 圆角方块内放频道图标（公开 #、私密锁、论坛），名称 Headline，说明 Caption text-muted 单行截断；右侧成员头像叠放 + 计数、通话、更多，均为 32 px 幽灵按钮。
 - **消息列表**：头像 36 圆角方形；作者 14/600、时间 12 text-muted；连续消息合并；悬停行 sunken 底与右上浮动操作条（overlay、圆角 lg、阴影 sm）；日期分隔为左对齐 Overline 文字 + 延伸细线；系统消息 Caption 居中 text-muted；提及高亮 brand-soft 底 + brand-soft-text 字。
 - **输入器**：surface 底、line-strong 描边、圆角 xl、阴影 xs；聚焦 brand 描边 + 光晕；工具栏图标 16 text-muted；发送按钮 28 圆角 lg，有内容时 brand 实色，无内容时 hover 底。
@@ -241,7 +241,8 @@ Orchid 保留为品牌渐变的第二色标（§2.5），让 Iris 在品牌时�
 
 - 令牌唯一来源：`apps/client-kit/ts/platform/src/theme/kailo-tokens.ts`；`src/styles/kailo-tokens.css` 与 `client-kit/embed/kailo-theme-tokens.css` 均由它生成并有漂移测试；`tailwind.config.js` 与 `typography.css` 只引用令牌变量。Web 与 Desktop 共用，不各自定义。
 - 视觉样张：`apps/web-client/web/design.html`（仅开发服务器提供，不进入生产构建），渲染三个紫色方向的明暗色阶、语义角色、字体层级、核心组件全部状态与外壳样例，是本文的可运行对照。
-- 截图证据：CI/CD 节点 `~/kailo-acceptance/visual/` 下 `before/`（改造前生产页面，兼作 Buzz 反例）、`spec/`（样张）、`after-<批次>/`（各批改造后），逐张打开复核。
+- 截图证据：CI/CD 节点 `~/kailo-acceptance/visual/` 下 `before/`（改造前生产页面，兼作 Buzz 反例）、`spec/`（样张：`00-directions-light-dark.png` 为三方向明暗对比，`10/20/30-<方向>-<明暗>-full.png` 为各方向完整样张，`11-iris-<明暗>-<分区>.png` 为选用方向的分区样张，`kailo-icon-*.png` 为品牌标识栅格），`after-<批次>/`（各批改造后），逐张打开复核。
+- 品牌标识：品牌渐变圆角方块内的白色 “K”，两臂末端各一节点（人与 Agent 在同一处汇合）；SVG 源在共享外壳组件，应用图标、favicon 与 Desktop 图标集均由它栅格化，不含文字。
 
 ## 13. 验收口径（V-SCN-238）
 
