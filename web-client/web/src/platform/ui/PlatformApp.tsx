@@ -869,7 +869,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
               onOpenMembers={() => { window.requestAnimationFrame(() => setMembersOpenFor(chosenConversation.id)); }}
               onCopy={writeTextToClipboard} />
           </> : null}
-          <main className={tab === "inbox" || tab === "new-message" || tab === "agents" || tab === "projects" ? "flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden" : tab === "application" ? "flex min-h-0 flex-1 flex-col overflow-hidden p-4" : "min-h-0 flex-1 overflow-auto p-4"}>
+          <main className={tab === "inbox" || tab === "new-message" || tab === "agents" || tab === "projects" ? "flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden" : tab === "application" ? "flex min-h-0 flex-1 flex-col overflow-hidden" : "min-h-0 flex-1 overflow-auto px-6 py-5"}>
             {body}
           </main>
         </ContentSurface>
