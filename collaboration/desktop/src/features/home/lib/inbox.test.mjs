@@ -19,21 +19,31 @@ import { hasInboxThreadContext } from "./inboxViewHelpers.ts";
 test("Native original header delete captures its admitted anchor and cannot retarget a stale or UNKNOWN intent", () => {
   const file=ts.createSourceFile("InboxDetailPane.tsx",readFileSync(new URL("../ui/InboxDetailPane.tsx",import.meta.url),"utf8"),ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
   const names=new Set(["canEdit","headerDeleteTarget","headerDeletePending","requestHeaderDelete"]), declarations=[];
-  let header;
+  // The shared InboxDetailFrame renders `<InboxDetailHeader key={headerKey} {...header}/>`
+  // (client-kit inbox/InboxDetailFrame.tsx), so the pane's actual headerKey and header
+  // expressions are the admitted header element.
+  let header,headerKey;
   function visit(node) {
     if(ts.isVariableDeclaration(node)&&names.has(node.name.getText(file)))declarations.push(`const ${node.getText(file)};`);
-    if(ts.isJsxSelfClosingElement(node)&&node.tagName.getText(file)==="InboxDetailHeader")header=node.getText(file);
+    if((ts.isJsxSelfClosingElement(node)||ts.isJsxOpeningElement(node))&&node.tagName.getText(file)==="InboxDetailFrame")
+      for(const attribute of node.attributes.properties)if(ts.isJsxAttribute(attribute)&&attribute.initializer&&ts.isJsxExpression(attribute.initializer)){
+        if(attribute.name.getText(file)==="header")header=attribute.initializer.expression.getText(file);
+        if(attribute.name.getText(file)==="headerKey")headerKey=attribute.initializer.expression.getText(file);
+      }
     ts.forEachChild(node,visit);
   }
-  visit(file);assert.equal(declarations.length,names.size);assert.ok(header);
-  const fields=["videoReviewMessages","sourceEventId","canManageMessages","hasThreadContextLoadError","isThreadContextLoading","currentPubkey","editing","unresolved","isSendingReply","editTarget","deleteDialog","owner","currentHeaderDelete","editScopeKey","contextLabel","onBack","openContextLabel","item","contextChannelId","canOpenContext","onOpenContext","contextThreadRootId"];
-  const source=ts.transpile(`const {${fields.join(",")}}=input;${declarations.join("\n")}currentHeaderDelete.current=requestHeaderDelete;return ${header};`,{target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.React});
+  visit(file);assert.equal(declarations.length,names.size);assert.ok(header);assert.ok(headerKey);
+  const frameSource=readFileSync(new URL("../../../../../../client-kit/ts/platform/src/react/inbox/InboxDetailFrame.tsx",import.meta.url),"utf8");
+  assert.match(frameSource,/<InboxDetailHeader key=\{headerKey\} \{\.\.\.header\} \/>/,"the frame passes the pane's header through unchanged");
+  const fields=["videoReviewMessages","sourceEventId","canManageMessages","hasThreadContextLoadError","isThreadContextLoading","currentPubkey","editing","unresolved","isSendingReply","editTarget","deleteDialog","owner","currentHeaderDelete","editScopeKey","contextLabel","onBack","openContextLabel","item","contextChannelId","canOpenContext","onOpenContext","contextThreadRootId","reopenStatus","headerActions"];
+  const source=ts.transpile(`const {${fields.join(",")}}=input;${declarations.join("\n")}currentHeaderDelete.current=requestHeaderDelete;return React.createElement(InboxDetailHeader,{key:${headerKey},...(${header})});`,{target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.React});
   const render=new Function("React","InboxDetailHeader","input",source);
   const calls=[],pubkey="a".repeat(64),target={id:"b".repeat(64),kind:9,signerPubkey:pubkey};
   const currentHeaderDelete={current:undefined};
   const input={videoReviewMessages:[target],sourceEventId:target.id,canManageMessages:true,hasThreadContextLoadError:false,isThreadContextLoading:false,currentPubkey:pubkey,
     editing:false,unresolved:false,isSendingReply:false,editTarget:null,deleteDialog:{pending:false,unresolvedMessageId:null,requestDelete:message=>calls.push(message)},owner:{active:true},currentHeaderDelete,
-    editScopeKey:"actor/channel/thread",contextLabel:"Original channel",openContextLabel:"open",item:{fullTimestampLabel:"now"},contextChannelId:"channel",canOpenContext:false,onOpenContext:()=>assert.fail("delete cannot navigate"),contextThreadRootId:"root"};
+    editScopeKey:"actor/channel/thread",contextLabel:"Original channel",openContextLabel:"open",item:{fullTimestampLabel:"now"},contextChannelId:"channel",canOpenContext:false,onOpenContext:()=>assert.fail("delete cannot navigate"),contextThreadRootId:"root",
+    reopenStatus:null,headerActions:undefined};
   const build=changes=>render(React,()=>null,{...input,...changes});
   for(const kind of [9,45001,45003]) {
     const message={...target,kind};const element=build({videoReviewMessages:[message]});
@@ -106,15 +116,16 @@ test("Native Inbox edit/delete consumes the signed target, scope, original publi
   function visit(node){if(ts.isVariableDeclaration(node)&&node.name.getText(file)==="mutateMessage")mutation=node.initializer.getText(file);ts.forEachChild(node,visit);}
   visit(file);assert.ok(mutation);
   const source=ts.transpile(`return (${mutation});`,{target:ts.ScriptTarget.ES2022});
-  const factory=new Function("selectedItem","threadContext","canManageMessages","currentPubkey","nativeSession","editMessage","deleteMessage","TransportError","t","mutationOwner","mutationOwnerRef","onRefresh",source);
+  const factory=new Function("threadContext","currentPubkey","nativeSession","editMessage","deleteMessage","TransportError","t","mutationOwner","mutationOwnerRef","onRefresh",source);
   const pubkey="a".repeat(64),target="b".repeat(64);
   const row={id:target,pubkey,kind:9};
   const calls=[],refreshes=[];
   const owner={active:true},ownerRef={current:owner};
-  const make=(allowed=true,events=[row],receipt={id:"c".repeat(64),kind:40003,pubkey,tags:[["e",target]]})=>factory({item:{channelId:"admitted-channel"}},
-    {events,refreshReactions:async()=>{refreshes.push("structural");}},allowed,pubkey,{devicePubkey:pubkey,facts:{relayUrl:"https://relay.example.invalid"}},
+  const make=(allowed=true,events=[row],receipt={id:"c".repeat(64),kind:40003,pubkey,tags:[["e",target]]})=>{const mutate=factory(
+    {events,refreshReactions:async()=>{refreshes.push("structural");}},pubkey,{devicePubkey:pubkey,facts:{relayUrl:"https://relay.example.invalid"}},
     async(...args)=>{calls.push(["edit",...args]);return receipt;},async(...args)=>{calls.push(["delete",...args]);return {...receipt,kind:5};},TransportError,
     key=>translate("en",key),owner,ownerRef,()=>refreshes.push("feed"));
+    return (message,edit)=>mutate({item:{channelId:"admitted-channel"}},message,allowed,edit);};
   await make()(row,{content:"updated with media",mentions:["d".repeat(64)],media:[["imeta","url https://media.example.invalid/a"],["untrusted","ignored"]]});
   assert.deepEqual(calls[0],["edit","admitted-channel",target,"updated with media",[["imeta","url https://media.example.invalid/a"]],["d".repeat(64)],"https://relay.example.invalid",pubkey]);
   assert.deepEqual(refreshes,["structural","feed"]);
@@ -143,12 +154,12 @@ test("Native Inbox Forum management keeps fresh scope and author guards without 
     const file=ts.createSourceFile(path,readFileSync(new URL(path,import.meta.url),"utf8"),ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
     let value;function visit(node){if(ts.isVariableDeclaration(node)&&node.name.getText(file)===name)value=node.initializer.getText(file);ts.forEachChild(node,visit);}visit(file);assert.ok(value);return value;
   };
-  const admission=new Function("selectedItem","availableChannelIds","coreReads","channelsQuery","threadContext","currentPubkey","nativeSession","selectedChannel","directChannel",
+  const admission=new Function("selectedItem","availableChannelIds","visibleChannels","channelsQuery","threadContext","currentPubkey","devicePubkey","selectedChannel","directChannel",
     ts.transpile(`return ${readDeclaration("../ui/HomeView.tsx","canManageMessages")};`,{target:ts.ScriptTarget.ES2022}));
   const eligible=new Function("canManageMessages","hasThreadContextLoadError","isThreadContextLoading","currentPubkey",
     ts.transpile(`return ${readDeclaration("../ui/InboxDetailPane.tsx","canEdit")};`,{target:ts.ScriptTarget.ES2022}));
   const pubkey="a".repeat(64),channelId="forum";
-  const admit=(visible=true,archived=false,device=pubkey)=>admission({item:{channelId}},new Set([channelId]),{visibleChannels:new Set(visible?[channelId]:[])},{isFetching:false,isError:false},{hasLoadError:false,isLoading:false},pubkey,{devicePubkey:device},{isMember:true,archivedAt:archived?1:null},null);
+  const admit=(visible=true,archived=false,device=pubkey)=>admission({item:{channelId}},new Set([channelId]),new Set(visible?[channelId]:[]),{isFetching:false,isError:false},{hasLoadError:false,isLoading:false},pubkey,device,{isMember:true,archivedAt:archived?1:null},null);
   assert.equal(admit(),true);
   for(const kind of [9,45001,45003]){
     const row={kind,signerPubkey:pubkey};
