@@ -11,6 +11,7 @@ import {
   ChannelManagementSheet, type ChannelManagementChannel, type ChannelManagementHost,
 } from "../src/react/channel-management-sheet";
 import { ChannelMembersBar } from "../src/react/channel-members";
+import { TooltipProvider } from "../src/react/sidebar/tooltip";
 import { TransportError, type BffReply, type BffRequest } from "../src/transport";
 import { click, render, settle, type } from "./render";
 
@@ -297,9 +298,9 @@ describe("original ChannelMembersBar count", () => {
     const send = vi.fn((request: BffRequest): Promise<BffReply> => request.path === "/api/v1/workspaces/w/members"
       ? new Promise<BffReply>(() => {}) : Promise.resolve({ status: 404, body: {} }));
     const cache = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
-    await render(<QueryClientProvider client={cache}><PlatformProvider client={createBffClient({ send })} locale="en">
+    await render(<QueryClientProvider client={cache}><PlatformProvider client={createBffClient({ send })} locale="en"><TooltipProvider>
       <ChannelMembersBar fallbackMemberCount={7} onManageChannel={() => {}} onToggleMembers={() => {}} roster={{ kind: "workspace", workspaceId: "w" }} />
-    </PlatformProvider></QueryClientProvider>);
+    </TooltipProvider></PlatformProvider></QueryClientProvider>);
     await settle();
     expect(q("[data-testid=channel-members-trigger]")?.getAttribute("aria-label")).toContain("7");
   });

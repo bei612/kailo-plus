@@ -761,7 +761,6 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
               leadingContent={<ChannelGlyph channel={activeRow} className="h-4 w-4 translate-y-px text-muted-foreground" />}
               actions={<ChannelMembersBar roster={{kind: "workspace", workspaceId: active}} onToggleMembers={() => setMembersOpenFor(membersOpenFor === active ? null : active)}
                 onManageChannel={() => setManageOpenFor(active)} variant={headerActionsCompact ? "compact" : "inline"}
-                fallbackMemberCount={activeRow.memberCount}
                 huddle={{parent: {kind: "workspace", workspaceId: active, channelId: channel.data.channelId},
                   channelName: buildHuddleChannelName({kind: "channel", channelName: channel.data.name}),
                   startDisabled: channel.data.archived === true}} />}
