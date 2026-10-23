@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "api/gateway_mcp_probe_result.schema.json",
   "title": "GatewayMcpProbeResult",
-  "description": "DD-134(5)②：经 Gateway 临时验证 route 的 initialize 与 tools/list 结果（route 已删除并回读不存在）。matchingContracts 为输入 schema 摘要一致的 ACTIVE 契约 TOOL 键。",
+  "description": "DD-134(5)②：经 Gateway 临时验证 route 的 initialize 与 tools/list 结果（route 已删除并回读不存在）。matchingContracts 为输入 schema 摘要一致的 ACTIVE 契约 TOOL 键，并带该契约生成 PROTOCOL_PEER release 草稿所需的 Catalog 元数据（DD-134(5)③④），不含 schema 正文。",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -83,7 +83,11 @@
                 "categoryKey",
                 "contractVersion",
                 "contractKey",
-                "permission"
+                "permission",
+                "targetType",
+                "outputSchemaDigest",
+                "resourceTypeKeys",
+                "operationContractKeys"
               ],
               "properties": {
                 "categoryKey": {
@@ -97,6 +101,28 @@
                 },
                 "permission": {
                   "$ref": "../enums/capability_permission.schema.json"
+                },
+                "targetType": {
+                  "type": "string",
+                  "description": "该 TOOL 契约键在 ACTIVE 契约中的 targetType。"
+                },
+                "outputSchemaDigest": {
+                  "type": "string",
+                  "description": "该 TOOL 契约键在 ACTIVE 契约中的输出 schema 摘要；release 的动作与工具逐字采用。"
+                },
+                "resourceTypeKeys": {
+                  "type": "array",
+                  "description": "该 ACTIVE 契约 resourceTypeFamily 的全部 typeKey；release 须逐一登记。",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "operationContractKeys": {
+                  "type": "array",
+                  "description": "该 ACTIVE 契约的全部 operation 契约键；release 须为每个键登记动作与工具。",
+                  "items": {
+                    "type": "string"
+                  }
                 }
               }
             }

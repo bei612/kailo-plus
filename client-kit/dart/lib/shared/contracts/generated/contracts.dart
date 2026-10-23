@@ -12265,7 +12265,8 @@ class GatewayMcpProbeRequest {
 }
 
 ///DD-134(5)②：经 Gateway 临时验证 route 的 initialize 与 tools/list 结果（route
-///已删除并回读不存在）。matchingContracts 为输入 schema 摘要一致的 ACTIVE 契约 TOOL 键。
+///已删除并回读不存在）。matchingContracts 为输入 schema 摘要一致的 ACTIVE 契约 TOOL 键，并带该契约生成 PROTOCOL_PEER
+///release 草稿所需的 Catalog 元数据（DD-134(5)③④），不含 schema 正文。
 class GatewayMcpProbeResult {
   final String adapterServiceRef;
   final String probedAt;
@@ -12372,13 +12373,29 @@ class GatewayMcpContractMatch {
   final String categoryKey;
   final String contractKey;
   final int contractVersion;
+
+  ///该 ACTIVE 契约的全部 operation 契约键；release 须为每个键登记动作与工具。
+  final List<String> operationContractKeys;
+
+  ///该 TOOL 契约键在 ACTIVE 契约中的输出 schema 摘要；release 的动作与工具逐字采用。
+  final String outputSchemaDigest;
   final CapabilityPermission permission;
+
+  ///该 ACTIVE 契约 resourceTypeFamily 的全部 typeKey；release 须逐一登记。
+  final List<String> resourceTypeKeys;
+
+  ///该 TOOL 契约键在 ACTIVE 契约中的 targetType。
+  final String targetType;
 
   GatewayMcpContractMatch({
     required this.categoryKey,
     required this.contractKey,
     required this.contractVersion,
+    required this.operationContractKeys,
+    required this.outputSchemaDigest,
     required this.permission,
+    required this.resourceTypeKeys,
+    required this.targetType,
   });
 
   factory GatewayMcpContractMatch.fromJson(Map<String, dynamic> json) =>
@@ -12386,14 +12403,28 @@ class GatewayMcpContractMatch {
         categoryKey: json["categoryKey"],
         contractKey: json["contractKey"],
         contractVersion: json["contractVersion"],
+        operationContractKeys: List<String>.from(
+          json["operationContractKeys"].map((x) => x),
+        ),
+        outputSchemaDigest: json["outputSchemaDigest"],
         permission: capabilityPermissionValues.map[json["permission"]]!,
+        resourceTypeKeys: List<String>.from(
+          json["resourceTypeKeys"].map((x) => x),
+        ),
+        targetType: json["targetType"],
       );
 
   Map<String, dynamic> toJson() => _stripNulls({
     "categoryKey": categoryKey,
     "contractKey": contractKey,
     "contractVersion": contractVersion,
+    "operationContractKeys": List<dynamic>.from(
+      operationContractKeys.map((x) => x),
+    ),
+    "outputSchemaDigest": outputSchemaDigest,
     "permission": capabilityPermissionValues.reverse[permission],
+    "resourceTypeKeys": List<dynamic>.from(resourceTypeKeys.map((x) => x)),
+    "targetType": targetType,
   });
 }
 
