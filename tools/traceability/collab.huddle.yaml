@@ -41,9 +41,9 @@ release:
   # Core、Relay 与 Web 由 311d76cbe 构建；部署与业务验收以发布记录为准；Desktop 原生 Huddle 未恢复。
   artifacts:
     - name: core
-      digest: sha256:d539427307f6509e272499c0636d6527da78069046703103532215f5766d946a
+      digest: sha256:36d0194773964f25659cb8efdc960f08bb7ae55e916dd90e9f863e4d75ae8f30
     - name: collaboration-relay
       digest: sha256:12484da76dc3d4909a6e50f98c208e3556de1b8311f80ab9bb73c9b4fc934524
     - name: web-client
-      digest: sha256:b853d2b0bec88805e205eead1ad7be7736d22d5c9185d6d377a1325729ee31e0
+      digest: sha256:d532b4df67587d731690b5fc163ae0eca315e8319849fc5b62eb828aa04cf523
   gate: blocked_until_seams_closed
