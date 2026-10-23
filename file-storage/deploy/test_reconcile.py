@@ -72,6 +72,7 @@ class Cells:
         self.workspaces["common-files"] = {"UUID": common, "Slug": "common-files", "Label": "Common Files", "RootNodes": {"DATASOURCE:pydiods1": {}}}
         self.acls.append({"ID": fresh(), "NodeID": "DATASOURCE:pydiods1", "WorkspaceID": common, "Action": {"Name": "workspace-path", "Value": "pydiods1"}})
         self.mutations = []
+        self.ignore_datasource_update = False
 
     @property
     def params(self):
@@ -115,8 +116,18 @@ class Cells:
             name = path.rsplit("/", 1)[1]
             if method == "GET":
                 return (200, copy.deepcopy(self.datasources[name])) if name in self.datasources else (404, {})
-            # The original handler would save the whole in-memory configuration
-            # and give the datasource a new vault entry: never called.
+            if method == "POST" and name in self.datasources and self.ignore_datasource_update:
+                return 200, body  # accepted but not applied
+            if method == "POST" and name in self.datasources:
+                # PutDataSource on an existing datasource (the console's update):
+                # the vault reference passed back is kept. Only the versioning
+                # policy may differ from what GET returned.
+                assert {k: v for k, v in body.items() if k != "VersioningPolicyName"} == \
+                    {k: v for k, v in self.datasources[name].items() if k != "VersioningPolicyName"}, body
+                self.datasources[name] = copy.deepcopy(body)
+                return 200, body
+            # Creating one: the original handler would save the whole in-memory
+            # configuration and give the datasource a new vault entry: never called.
             return 500, {}
         if path == "user-meta/namespace":
             if method == "GET":
@@ -308,7 +319,15 @@ class ReconcileTests(unittest.TestCase):
         self.assertEqual(json.loads(out)["nativeScopeRef"], workspace)
         grants = {(a["RoleID"], a["Action"]["Name"]) for a in self.cells.acls if a.get("RoleID") and a.get("NodeID")}
         self.assertEqual(grants, {(self.cells.users["svc"], "read"), (self.cells.users["actor"], "read"), (self.cells.users["actor"], "write")})
-        self.assertFalse([m for m in self.cells.mutations if m[1].startswith("config/datasource")])
+        # Only the declared content datasources' versioning policy is written; the
+        # binding datasource is read back, the internal ones are not touched.
+        self.assertEqual([m for m in self.cells.mutations if m[1].startswith("config/datasource")],
+                         [("POST", "config/datasource/" + n) for n, _ in reconcile.DATASOURCE_VERSIONING])
+        for name in ("personal", "pydiods1", "cellsdata"):
+            self.assertEqual(self.cells.datasources[name]["VersioningPolicyName"], "default-policy")
+        for name in ("versions", "thumbnails"):
+            self.assertNotIn("VersioningPolicyName", self.cells.datasources[name])
+        self.assertIn("personal versioning policy set", json.loads(out)["changes"])
         # DD-132(3): Collabora is switched off declaratively, other parameters kept;
         # without a DocumentServer origin the ONLYOFFICE plugin is declared disabled.
         self.assertEqual(self.cells.plugins["editor.libreoffice"], {"PYDIO_PLUGIN_ENABLED": False, "LIBREOFFICE_HOST": "office"})
@@ -390,6 +409,47 @@ class ReconcileTests(unittest.TestCase):
         self.assertIn("versioning policy is not defined", err)
         self.assertEqual(self.cells.datasources["kailobinding"], self.cells.binding_datasource())
         self.assertFalse(self.cells.writes())
+
+    def test_content_datasource_versioning_is_declared_and_put_back(self):
+        # Production state: set to "30 days max" in the console; nothing to write.
+        for name, policy in reconcile.DATASOURCE_VERSIONING:
+            self.cells.datasources[name]["VersioningPolicyName"] = policy
+        before = copy.deepcopy(self.cells.datasources)
+        code, _, err = self.run_main()
+        self.assertEqual(code, 0, err)
+        self.assertFalse([m for m in self.cells.mutations if m[1].startswith("config/datasource")])
+        self.assertEqual(self.cells.datasources, before)
+        # A later console change is put back, and only on that datasource.
+        self.cells.datasources["pydiods1"]["VersioningPolicyName"] = "keep-all"
+        self.cells.mutations.clear()
+        code, out, err = self.run_main()
+        self.assertEqual(code, 0, err)
+        self.assertEqual([m for m in self.cells.mutations if m[1].startswith("config/datasource")],
+                         [("POST", "config/datasource/pydiods1")])
+        self.assertEqual(self.cells.datasources, before)
+        self.assertEqual(json.loads(out)["changes"], ["pydiods1 versioning policy set"])
+
+    def test_missing_content_datasource_is_refused_not_created(self):
+        del self.cells.datasources["cellsdata"]
+        code, _, err = self.run_main()
+        self.assertEqual(code, 2)
+        self.assertIn("content datasource cellsdata does not exist", err)
+        self.assertNotIn("cellsdata", self.cells.datasources)
+        self.assertEqual(self.cells.nodes, {})
+
+    def test_undefined_content_versioning_policy_fails_closed(self):
+        self.cells.policies.remove("default-policy")
+        code, _, err = self.run_main()
+        self.assertEqual(code, 2)
+        self.assertIn("versioning policy default-policy declared for personal is not defined", err)
+        self.assertFalse(self.cells.writes())
+
+    def test_content_versioning_read_back_must_match(self):
+        self.cells.ignore_datasource_update = True
+        code, _, err = self.run_main()
+        self.assertEqual(code, 2)
+        self.assertIn("personal versioning policy read-back differs", err)
+        self.assertEqual(self.cells.nodes, {})
 
     def test_existing_non_boolean_namespace_is_never_rewritten(self):
         self.cells.namespaces["usermeta-kailo-draft"] = {"Namespace": "usermeta-kailo-draft", "JsonDefinition": json.dumps({"type": "string"}),
