@@ -38,7 +38,7 @@ test('the Gateway receives back-channel logout on the fixed path (07 §4.7.5)', 
   assert.equal(lines[at + 1].trim(), 'path: /oauth/backchannel-logout');
 });
 
-function run({ path, search = '', embedded = true, probe = 'ok', logout = '', stored = null }) {
+function run({ path, search = '', embedded = true, probe = 'ok', logout = '', stored = null, kailoOrigin = `${KAILO} not-an-origin` }) {
   const calls = { replace: [], posted: [], shown: null, theme: null };
   const elements = {
     m: { style: {} },
@@ -60,7 +60,7 @@ function run({ path, search = '', embedded = true, probe = 'ok', logout = '', st
     parent: embedded ? parent : self,
     sessionStorage: { getItem: () => (stored ? JSON.stringify(stored) : null) },
   };
-  const meta = { 'kailo-web-origin': `${KAILO} not-an-origin`, 'kailo-logout-url': logout };
+  const meta = { 'kailo-web-origin': kailoOrigin, 'kailo-logout-url': logout };
   const document = {
     documentElement: { setAttribute: (name, value) => name === 'data-kailo-theme' && (calls.theme = value) },
     querySelector: (selector) => {
@@ -117,22 +117,23 @@ test('in Kailo with an IdP session: silent sign-in, back to the same page', () =
   assert.equal(calls.shown, null);
 });
 
-test('in Kailo without an IdP session: wire v1 auth-required to the exact origin, no login in the frame', () => {
+test('in Kailo without an IdP session: wire v1 auth-required to the exact origin, Kailo alone prompts (V-SCN-226)', () => {
   for (const probe of ['cross-origin', 'callback-error']) {
     const calls = run({ path: '/kailo-embed/signin', search: signin('/home?kailo_theme=dark&kailo_locale=en'), probe });
     assert.deepEqual(calls.replace, []);
     assert.deepEqual(calls.posted, [{ message: { source: 'kailo-embed', version: 1, type: 'auth-required' }, origin: KAILO }]);
-    assert.ok(calls.shown);
-    assert.match(calls.shown.t.textContent, /Sign in to Kailo again/);
-    assert.equal(calls.shown.l.style.display, 'none', 'no sign-in link or form in the frame');
+    assert.equal(calls.shown, null, 'no second re-login notice inside the frame');
     assert.equal(calls.theme, 'dark', 'Kailo theme kept');
   }
 });
 
-test('the theme this tab already received from Kailo is kept after redirects', () => {
-  const calls = run({ path: '/kailo-embed/signin', search: signin('/home'), probe: 'cross-origin', stored: { theme: 'dark', locale: 'zh-CN' } });
-  assert.equal(calls.theme, 'dark');
+test('without a configured Kailo origin the frame explains the expired session itself', () => {
+  const calls = run({ path: '/kailo-embed/signin', search: signin('/home'), probe: 'cross-origin', kailoOrigin: 'not-an-origin',
+    stored: { theme: 'dark', locale: 'zh-CN' } });
+  assert.deepEqual(calls.posted, []);
+  assert.equal(calls.theme, 'dark', 'the theme this tab already received from Kailo is kept after redirects');
   assert.match(calls.shown.t.textContent, /重新登录 Kailo/);
+  assert.equal(calls.shown.l.style.display, 'none', 'no sign-in link or form in the frame');
 });
 
 test('return targets are local paths only', () => {
