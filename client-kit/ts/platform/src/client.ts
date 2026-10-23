@@ -13,6 +13,7 @@ import type {
   ConversationPage,
   ConversationParticipantPage,
   ConversationPreferenceRequest,
+  WorkspacePreferenceRequest,
   ProjectPreferenceRequest,
   ApplicationBindingPage,
   ApplicationReadResourcePage,
@@ -318,6 +319,9 @@ export function createBffClient(transport: BffTransport) {
       call<UserStateVersion>({method:"PUT",path:"/api/v1/user-state/projects",body}),
     setConversationPreference: (id: string, body: ConversationPreferenceRequest) =>
       call<UserStateVersion>({ method: "PUT", path: `/api/v1/user-state/conversations/${encodeURIComponent(id)}`, body }),
+    /** DD-40/DD-150(3): a Workspace channel's Star and Mute, one CAS write of both values. */
+    setWorkspacePreference: (workspaceId: string, body: WorkspacePreferenceRequest) =>
+      call<UserStateVersion>({ method: "PUT", path: `/api/v1/user-state/workspaces/${encodeURIComponent(workspaceId)}`, body }),
     /** Original batched channel-list activity: one Core read, one Relay request per NIP-11 filter batch. */
     workspaceActivity: (body: WebWorkspaceActivityQuery) =>
       call<WebWorkspaceActivityPage>({ method: "POST", path: "/api/v1/workspace-activity", body }),

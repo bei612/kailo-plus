@@ -29,6 +29,7 @@ import '../../shared/platform/platform_test_support.dart';
 
 part 'direct_message_preferences_cases.dart';
 part 'workspace_preferences_cases.dart';
+part 'channel_sections_cases.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -39,6 +40,7 @@ void main() {
 
   mutePreferenceCases(preferences);
   starPreferenceCases(preferences);
+  channelSectionCases(preferences);
 
   test(
     'fresh HUMAN directory maps multiple keys to two people, not three',
@@ -478,6 +480,13 @@ class _Server {
   int? rejectStarStatus;
   final mutePuts = <String>[];
   final starPuts = <String>[];
+  // DD-150(3) sidebar sections (Core `sidebar_sections`).
+  final sections = <Map<String, Object?>>[];
+  final assignments = <String, String>{};
+  final sectionRequests = <String>[];
+  bool loseSection = false;
+  bool applySectionBeforeLost = false;
+  int? rejectSectionStatus;
   final readPuts = <String>[];
   final readContexts = <String, String>{};
   bool loseRead = false;
@@ -564,7 +573,54 @@ class _Server {
     participantPubkeys: raw ? keys : [client.public, peer.public],
     participantPrincipalIds: raw ? [] : [principal, bob],
   );
+  http.Response sectionResponse(http.Request request) {
+    final path = request.url.path;
+    sectionRequests.add('${request.method} $path ${request.body}');
+    if (rejectSectionStatus != null) {
+      return http.Response('', rejectSectionStatus!);
+    }
+    final body = jsonDecode(request.body) as Map<String, dynamic>;
+    if (body['version'] != preferenceVersion) return http.Response('', 409);
+    if (loseSection && !applySectionBeforeLost) {
+      throw http.ClientException('lost section response');
+    }
+    const prefix = '/api/v1/user-state/sidebar-sections/';
+    if (path.startsWith(prefix)) {
+      final id = path.substring(prefix.length);
+      sections.removeWhere((row) => row['id'] == id);
+      assignments.removeWhere((_, section) => section == id && request.method == 'DELETE');
+      if (request.method == 'PUT') {
+        sections.add({
+          'id': id,
+          'name': body['name'],
+          if (body['icon'] != null) 'icon': body['icon'],
+          'order': body['order'],
+        });
+      }
+    } else if (path == '/api/v1/user-state/sidebar-section-order') {
+      final ids = (body['sectionIds'] as List).cast<String>();
+      for (final row in sections) {
+        row['order'] = ids.indexOf(row['id']! as String);
+      }
+    } else if (path == '/api/v1/user-state/sidebar-assignments') {
+      final section = body['sectionId'] as String?;
+      if (section == null) {
+        assignments.remove(body['channelKey']);
+      } else {
+        assignments[body['channelKey'] as String] = section;
+      }
+    } else {
+      return http.Response('', 404);
+    }
+    ++preferenceVersion;
+    if (loseSection) throw http.ClientException('lost committed section');
+    return jsonResponse({'version': preferenceVersion});
+  }
+
   Future<http.Response> respond(http.Request request) async {
+    if (request.url.path.startsWith('/api/v1/user-state/sidebar-')) {
+      return sectionResponse(request);
+    }
     switch (request.url.path) {
       case '/api/v1/session':
         return jsonResponse(actor);
@@ -614,6 +670,7 @@ class _Server {
             workspace: {'muted': workspaceMuted, 'starred': workspaceStarred},
           },
           'projectPreferences': {},
+          'sidebarSections': {'sections': sections, 'assignments': assignments},
         });
       case '/api/v1/user-state/read':
         final read = ReadMarkRequest.fromJson(jsonDecode(request.body));

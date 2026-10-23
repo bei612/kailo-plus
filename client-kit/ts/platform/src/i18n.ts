@@ -1876,6 +1876,8 @@ export const platformMessages = {
   "channelMembers.removeAction": { en: "Remove", "zh-CN": "移除" },
   "channelDetails.back": { en: "Back", "zh-CN": "返回" },
   "channelDetails.edit": { en: "Edit", "zh-CN": "编辑" },
+  "channelDetails.mute": { en: "Mute", "zh-CN": "静音" },
+  "channelDetails.unmute": { en: "Unmute", "zh-CN": "取消静音" },
   "channelDetails.seeAll": { en: "See all", "zh-CN": "查看全部" },
   "channelDetails.membersUnavailable": { en: "Members unavailable", "zh-CN": "成员不可用" },
   "channelDetails.copyName": { en: "Copy channel name", "zh-CN": "复制频道名称" },

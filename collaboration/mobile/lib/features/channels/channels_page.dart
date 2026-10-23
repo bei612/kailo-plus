@@ -31,6 +31,7 @@ import '../profile/profile_avatar.dart';
 import '../profile/presence_cache_provider.dart';
 import 'channel.dart';
 import 'channel_actions_sheet.dart';
+import 'channel_sections/channel_section_sheets.dart';
 import 'channel_management_actions.dart';
 import 'channel_detail_page.dart';
 import 'channels_provider.dart';

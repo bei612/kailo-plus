@@ -6,9 +6,9 @@
 // (channel_governed_actions.dart): Edit opens the manage sheet (`workspace.update`), Add members
 // lists only admitted candidates (`workspace.member.add`), Join/Leave are `workspace.join/leave`,
 // Archive/Unarchive are `workspace.suspend/restore` (DD-119). A recorded request is not done:
-// the page reports it and rereads. Star is the governed collaboration preference. Not restored:
-// channel mute and "Move to section…" (no Kailo channel mute/section authority on Mobile yet)
-// and Delete channel (no governed delete action).
+// the page reports it and rereads. Star, Mute and "Move to section…" are the caller's
+// CollaborationUserState preferences (workspace_preferences, sidebar_sections; DD-40,
+// DD-150(3)), shown only from a Core readback.
 import 'dart:async';
 
 import 'package:client_kit/shared/contracts/contracts.dart';
@@ -34,6 +34,7 @@ import '../../shared/widgets/lucide_star_icon.dart';
 import '../../shared/widgets/modal_presentation.dart';
 import 'add_members_sheet.dart';
 import 'channel.dart';
+import 'channel_sections/channel_section_sheets.dart';
 import 'channel_governed_actions.dart';
 import 'direct_messages.dart';
 import 'manage_channel_sheet.dart';
@@ -89,6 +90,8 @@ class ChannelDetailsPage extends HookConsumerWidget {
     final starred = resolvedChannel.channelType == 'stream'
         ? preferences.starred(resolvedChannel.id)
         : null;
+    final muted = preferences.workspaceMuted(resolvedChannel.id);
+    final sections = ref.watch(channelSectionsProvider);
     final membersAsync = ref.watch(
       platformWorkspaceMembersProvider(resolvedChannel.id),
     );
@@ -253,6 +256,18 @@ class ChannelDetailsPage extends HookConsumerWidget {
           .setStarred(resolvedChannel.id, !current);
     }
 
+    Future<void> toggleMute() async {
+      final current = muted;
+      if (current == null ||
+          preferences.busy ||
+          preferences.pendingId != null) {
+        return;
+      }
+      await ref
+          .read(collaborationPreferencesProvider.notifier)
+          .setWorkspaceMuted(resolvedChannel.id, !current);
+    }
+
     Future<void> runLifecycle(
       Future<ChannelActionOutcome?> Function() submit, {
       bool closeWhenRecorded = false,
@@ -374,6 +389,26 @@ class ChannelDetailsPage extends HookConsumerWidget {
                   const SizedBox(width: Grid.xxs),
                   Expanded(
                     child: BuzzActionTile(
+                      key: const ValueKey('channel-details-mute-action'),
+                      icon: muted == true
+                          ? LucideIcons.bell
+                          : LucideIcons.bellOff,
+                      iconColor: muted == true ? context.colors.primary : null,
+                      label: t(
+                        muted == true
+                            ? PlatformMessageKey.channelDetailsUnmute
+                            : PlatformMessageKey.channelDetailsMute,
+                      ),
+                      isEnabled:
+                          muted != null &&
+                          !preferences.busy &&
+                          preferences.pendingId == null,
+                      onTap: () => unawaited(toggleMute()),
+                    ),
+                  ),
+                  const SizedBox(width: Grid.xxs),
+                  Expanded(
+                    child: BuzzActionTile(
                       key: const ValueKey('channel-details-edit-action'),
                       icon: LucideIcons.pencil,
                       label: t(PlatformMessageKey.channelDetailsEdit),
@@ -472,6 +507,20 @@ class ChannelDetailsPage extends HookConsumerWidget {
             key: const ValueKey('channel-details-channel-card'),
             verticalPadding: _channelDetailsSectionPadding,
             children: [
+              AppListRow(
+                key: const ValueKey('channel-details-move-section-row'),
+                icon: LucideIcons.folderInput,
+                title: t(PlatformMessageKey.sidebarSectionMoveTo),
+                trailing: const _ChannelDetailsChevron(),
+                onTap: sections.writable
+                    ? () => unawaited(
+                        showMoveToSectionSheet(
+                          context,
+                          channel: resolvedChannel,
+                        ),
+                      )
+                    : null,
+              ),
               AppListRow(
                 icon: LucideIcons.copy,
                 title: t(PlatformMessageKey.channelDetailsCopyName),

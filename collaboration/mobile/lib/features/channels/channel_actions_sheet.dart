@@ -15,12 +15,14 @@ import '../../shared/widgets/modal_presentation.dart';
 import '../platform/platform_members_page.dart';
 import 'channel.dart';
 import 'channels_provider.dart';
+import 'channel_sections/channel_section_sheets.dart';
 import 'direct_messages.dart';
 
 /// Opens the mobile channel actions sheet.
 ///
-/// 此 sheet 提供频道收藏、已读/未读、私聊静音、频道成员名单与复制；频道创建和
-/// New DM 由原 launcher 发起。其余频道/DM 管理仍未恢复，不生成假入口。
+/// 此 sheet 提供频道收藏、已读/未读、频道与私聊静音、移到分区（DD-150(3)，本人偏好，
+/// 只在 Core 回读确认后呈现）、频道成员名单与复制；频道创建和 New DM 由原 launcher
+/// 发起。其余频道/DM 管理仍未恢复，不生成假入口。
 Future<void> showChannelActionsSheet({
   required BuildContext context,
   required Channel channel,
@@ -74,7 +76,10 @@ class ChannelActionsSheet extends HookConsumerWidget {
       return null;
     }, [currentConsumer]);
     final preferenceState = ref.watch(collaborationPreferencesProvider);
-    final muted = ownsConsumer ? preferenceState.muted(channel.id) : null;
+    final muted = ownsConsumer
+        ? preferenceState.channelMuted(channel.id, isDm: channel.isDm)
+        : null;
+    final sections = ref.watch(channelSectionsProvider);
     final starred = ownsConsumer && channel.channelType == 'stream'
         ? preferenceState.starred(channel.id)
         : null;
@@ -237,8 +242,39 @@ class ChannelActionsSheet extends HookConsumerWidget {
                       ? toggleRead
                       : null,
                 ),
-              if (channel.isDm)
+              if (!channel.isDm)
                 ListTile(
+                  key: const ValueKey('channel-action-move-section'),
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(LucideIcons.folderInput),
+                  title: Text(text(PlatformMessageKey.sidebarSectionMoveTo)),
+                  subtitle: sections.pending
+                      ? Text(text(PlatformMessageKey.sidebarPreferenceUnknown))
+                      : null,
+                  trailing: sections.pending
+                      ? IconButton(
+                          tooltip: text(PlatformMessageKey.dmCheckStatus),
+                          icon: const Icon(LucideIcons.refreshCw),
+                          onPressed: () => ref
+                              .read(channelSectionsProvider.notifier)
+                              .recheck(),
+                        )
+                      : null,
+                  onTap: ownsConsumer && sections.writable
+                      ? () async {
+                          final pageContext = Navigator.of(
+                            context,
+                            rootNavigator: true,
+                          ).context;
+                          close();
+                          await showMoveToSectionSheet(
+                            pageContext,
+                            channel: channel,
+                          );
+                        }
+                      : null,
+                ),
+              ListTile(
                   key: const ValueKey('channel-action-mute'),
                   contentPadding: EdgeInsets.zero,
                   leading: Icon(
@@ -280,13 +316,19 @@ class ChannelActionsSheet extends HookConsumerWidget {
                           preferenceState.pendingId != null
                       ? null
                       : () async {
-                          await ref
-                              .read(collaborationPreferencesProvider.notifier)
-                              .setMuted(channel.id, !muted);
+                          final notifier = ref.read(
+                            collaborationPreferencesProvider.notifier,
+                          );
+                          await (channel.isDm
+                              ? notifier.setMuted(channel.id, !muted)
+                              : notifier.setWorkspaceMuted(channel.id, !muted));
                           if (context.mounted &&
                               ref
                                       .read(collaborationPreferencesProvider)
-                                      .muted(channel.id) ==
+                                      .channelMuted(
+                                        channel.id,
+                                        isDm: channel.isDm,
+                                      ) ==
                                   !muted &&
                               ref
                                       .read(collaborationPreferencesProvider)

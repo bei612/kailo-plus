@@ -39,6 +39,7 @@ const preferences: CollaborationPreferenceActions = {
   assignChannel: async () => true, sortModeFor: () => "alpha", setSortModeFor: async () => true,
   templates: [], saveTemplate, deleteTemplate: async () => true,
   isFollowing: () => false, setFollowing: async () => true,
+  isWorkspaceMuted: () => false, setWorkspaceMuted: async () => true,
 };
 
 async function typeInto(input: HTMLInputElement | HTMLTextAreaElement, value: string) {

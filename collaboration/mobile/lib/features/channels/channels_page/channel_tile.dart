@@ -14,8 +14,10 @@ class _ChannelTile extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final isMuted =
-        channel.isDm &&
-        ref.watch(collaborationPreferencesProvider).muted(channel.id) == true;
+        ref
+            .watch(collaborationPreferencesProvider)
+            .channelMuted(channel.id, isDm: channel.isDm) ==
+        true;
     final contentColor = isMuted
         ? navigationSecondaryForeground(context)
         : navigationPrimaryForeground(

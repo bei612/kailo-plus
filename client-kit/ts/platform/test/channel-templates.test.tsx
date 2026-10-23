@@ -96,6 +96,7 @@ function preferences(overrides: Partial<CollaborationPreferenceActions>): Collab
     assignChannel: async () => true, sortModeFor: () => "alpha", setSortModeFor: async () => true,
     templates: [], saveTemplate: async () => null, deleteTemplate: async () => true,
     isFollowing: () => false, setFollowing: async () => true,
+    isWorkspaceMuted: () => false, setWorkspaceMuted: async () => true,
     ...overrides,
   };
 }

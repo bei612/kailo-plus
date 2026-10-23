@@ -57,6 +57,10 @@ export type CollaborationPreferenceActions = {
   deleteTemplate: (templateId: string) => Promise<boolean>;
   isFollowing: (pubkey: string) => boolean;
   setFollowing: (pubkey: string, followed: boolean) => Promise<boolean>;
+  /** DD-150(3): a Workspace channel's mute; undefined until Core has been read. */
+  isWorkspaceMuted: (workspaceId: string) => boolean | undefined;
+  /** Writes `workspace_preferences.muted`, keeping the Star Core last returned. */
+  setWorkspaceMuted: (workspaceId: string, muted: boolean) => Promise<boolean>;
 };
 
 function templateRequest(draft: ChannelTemplateDraft, version: number): ChannelTemplateRequest {
@@ -148,6 +152,15 @@ export function useCollaborationPreferenceActions(client: BffClient, reads: Read
       isFollowing: (pubkey) => isPubkeyFollowed(state, pubkey),
       // Core resolves the key to its Principal; the follow list is re-read (DD-77).
       setFollowing: (pubkey, followed) => update((version) => client.setFollowedPrincipal({ pubkey, followed, version })),
+      isWorkspaceMuted: (workspaceId) => state ? state.workspacePreferences[workspaceId]?.muted ?? false : undefined,
+      // Star comes from the same snapshot as the CAS version, never from an older render.
+      setWorkspaceMuted: (workspaceId, muted) => update(
+        (version, current) => client.setWorkspacePreference(workspaceId, {
+          muted, starred: current.workspacePreferences[workspaceId]?.starred ?? false, version,
+        }),
+        (current, now) => ({ ...current, workspacePreferences: { ...current.workspacePreferences,
+          [workspaceId]: { starred: current.workspacePreferences[workspaceId]?.starred ?? false, muted, updatedAt: now } } }),
+      ),
     };
   }, [client, state, pending, unknown, update]);
 }
