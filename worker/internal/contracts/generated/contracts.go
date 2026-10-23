@@ -157,6 +157,9 @@
 //    agentAuthorDirectory, err := UnmarshalAgentAuthorDirectory(bytes)
 //    bytes, err = agentAuthorDirectory.Marshal()
 //
+//    agentCatalogOwners, err := UnmarshalAgentCatalogOwners(bytes)
+//    bytes, err = agentCatalogOwners.Marshal()
+//
 //    agentDefinitionPage, err := UnmarshalAgentDefinitionPage(bytes)
 //    bytes, err = agentDefinitionPage.Marshal()
 //
@@ -240,6 +243,18 @@
 //
 //    agentSnapshotUploadRequest, err := UnmarshalAgentSnapshotUploadRequest(bytes)
 //    bytes, err = agentSnapshotUploadRequest.Marshal()
+//
+//    agentTeamPage, err := UnmarshalAgentTeamPage(bytes)
+//    bytes, err = agentTeamPage.Marshal()
+//
+//    agentTeamSnapshotImportPreview, err := UnmarshalAgentTeamSnapshotImportPreview(bytes)
+//    bytes, err = agentTeamSnapshotImportPreview.Marshal()
+//
+//    agentTeamSnapshotUploadRequest, err := UnmarshalAgentTeamSnapshotUploadRequest(bytes)
+//    bytes, err = agentTeamSnapshotUploadRequest.Marshal()
+//
+//    agentTeamView, err := UnmarshalAgentTeamView(bytes)
+//    bytes, err = agentTeamView.Marshal()
 //
 //    agentTranscriptEvent, err := UnmarshalAgentTranscriptEvent(bytes)
 //    bytes, err = agentTranscriptEvent.Marshal()
@@ -405,6 +420,9 @@
 //
 //    evidenceView, err := UnmarshalEvidenceView(bytes)
 //    bytes, err = evidenceView.Marshal()
+//
+//    exportPackageView, err := UnmarshalExportPackageView(bytes)
+//    bytes, err = exportPackageView.Marshal()
 //
 //    followedPrincipalRequest, err := UnmarshalFollowedPrincipalRequest(bytes)
 //    bytes, err = followedPrincipalRequest.Marshal()
@@ -808,6 +826,9 @@
 //    actionTokenSigningDelivery, err := UnmarshalActionTokenSigningDelivery(bytes)
 //    bytes, err = actionTokenSigningDelivery.Marshal()
 //
+//    agentDefinitionExportInput, err := UnmarshalAgentDefinitionExportInput(bytes)
+//    bytes, err = agentDefinitionExportInput.Marshal()
+//
 //    agentDefinitionImportInput, err := UnmarshalAgentDefinitionImportInput(bytes)
 //    bytes, err = agentDefinitionImportInput.Marshal()
 //
@@ -819,6 +840,15 @@
 //
 //    agentMemoryWriteInput, err := UnmarshalAgentMemoryWriteInput(bytes)
 //    bytes, err = agentMemoryWriteInput.Marshal()
+//
+//    agentTeamExportInput, err := UnmarshalAgentTeamExportInput(bytes)
+//    bytes, err = agentTeamExportInput.Marshal()
+//
+//    agentTeamImportInput, err := UnmarshalAgentTeamImportInput(bytes)
+//    bytes, err = agentTeamImportInput.Marshal()
+//
+//    agentTeamInput, err := UnmarshalAgentTeamInput(bytes)
+//    bytes, err = agentTeamInput.Marshal()
 //
 //    agentVersionContent, err := UnmarshalAgentVersionContent(bytes)
 //    bytes, err = agentVersionContent.Marshal()
@@ -1104,6 +1134,15 @@
 //
 //    protocolSessionReconcileTarget, err := UnmarshalProtocolSessionReconcileTarget(bytes)
 //    bytes, err = protocolSessionReconcileTarget.Marshal()
+//
+//    resourceExportAdvanceRequest, err := UnmarshalResourceExportAdvanceRequest(bytes)
+//    bytes, err = resourceExportAdvanceRequest.Marshal()
+//
+//    resourceExportAdvanceResult, err := UnmarshalResourceExportAdvanceResult(bytes)
+//    bytes, err = resourceExportAdvanceResult.Marshal()
+//
+//    resourceExportTarget, err := UnmarshalResourceExportTarget(bytes)
+//    bytes, err = resourceExportTarget.Marshal()
 //
 //    resourceImportAdvanceRequest, err := UnmarshalResourceImportAdvanceRequest(bytes)
 //    bytes, err = resourceImportAdvanceRequest.Marshal()
@@ -1653,6 +1692,16 @@ func (r *AgentAuthorDirectory) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
+func UnmarshalAgentCatalogOwners(data []byte) (AgentCatalogOwners, error) {
+	var r AgentCatalogOwners
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AgentCatalogOwners) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
 func UnmarshalAgentDefinitionPage(data []byte) (AgentDefinitionPage, error) {
 	var r AgentDefinitionPage
 	err := json.Unmarshal(data, &r)
@@ -1930,6 +1979,46 @@ func UnmarshalAgentSnapshotUploadRequest(data []byte) (AgentSnapshotUploadReques
 }
 
 func (r *AgentSnapshotUploadRequest) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalAgentTeamPage(data []byte) (AgentTeamPage, error) {
+	var r AgentTeamPage
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AgentTeamPage) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalAgentTeamSnapshotImportPreview(data []byte) (AgentTeamSnapshotImportPreview, error) {
+	var r AgentTeamSnapshotImportPreview
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AgentTeamSnapshotImportPreview) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalAgentTeamSnapshotUploadRequest(data []byte) (AgentTeamSnapshotUploadRequest, error) {
+	var r AgentTeamSnapshotUploadRequest
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AgentTeamSnapshotUploadRequest) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalAgentTeamView(data []byte) (AgentTeamView, error) {
+	var r AgentTeamView
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AgentTeamView) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -2480,6 +2569,16 @@ func UnmarshalEvidenceView(data []byte) (EvidenceView, error) {
 }
 
 func (r *EvidenceView) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalExportPackageView(data []byte) (ExportPackageView, error) {
+	var r ExportPackageView
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ExportPackageView) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -3823,6 +3922,16 @@ func (r *ActionTokenSigningDelivery) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
+func UnmarshalAgentDefinitionExportInput(data []byte) (AgentDefinitionExportInput, error) {
+	var r AgentDefinitionExportInput
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AgentDefinitionExportInput) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
 func UnmarshalAgentDefinitionImportInput(data []byte) (AgentDefinitionImportInput, error) {
 	var r AgentDefinitionImportInput
 	err := json.Unmarshal(data, &r)
@@ -3860,6 +3969,36 @@ func UnmarshalAgentMemoryWriteInput(data []byte) (AgentMemoryWriteInput, error) 
 }
 
 func (r *AgentMemoryWriteInput) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalAgentTeamExportInput(data []byte) (AgentTeamExportInput, error) {
+	var r AgentTeamExportInput
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AgentTeamExportInput) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalAgentTeamImportInput(data []byte) (AgentTeamImportInput, error) {
+	var r AgentTeamImportInput
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AgentTeamImportInput) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalAgentTeamInput(data []byte) (AgentTeamInput, error) {
+	var r AgentTeamInput
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AgentTeamInput) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -4813,6 +4952,36 @@ func (r *ProtocolSessionReconcileTarget) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
+func UnmarshalResourceExportAdvanceRequest(data []byte) (ResourceExportAdvanceRequest, error) {
+	var r ResourceExportAdvanceRequest
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ResourceExportAdvanceRequest) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalResourceExportAdvanceResult(data []byte) (ResourceExportAdvanceResult, error) {
+	var r ResourceExportAdvanceResult
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ResourceExportAdvanceResult) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalResourceExportTarget(data []byte) (ResourceExportTarget, error) {
+	var r ResourceExportTarget
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ResourceExportTarget) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
 func UnmarshalResourceImportAdvanceRequest(data []byte) (ResourceImportAdvanceRequest, error) {
 	var r ResourceImportAdvanceRequest
 	err := json.Unmarshal(data, &r)
@@ -5521,6 +5690,20 @@ type AgentAuthorView struct {
 	OwnerPrincipalID string  `json:"ownerPrincipalId"`
 }
 
+// DD-131(6)：GET /api/v1/agent-catalog/owners?ids=<id>,<id>。目录条目（本人可 discover 的本 Tenant
+// ACTIVE AgentDefinition 与 agent.team）的 owner 名，供原版 “Added by <owner>”。一次至多一页 ID；不属本
+// Tenant、非 ACTIVE、非目录类型或读者当前不可 discover 的 ID 一律省略，不能用来查询任意 Principal；不授予任何权限。
+type AgentCatalogOwners struct {
+	Owners []AgentCatalogOwnerView `json:"owners"`
+}
+
+type AgentCatalogOwnerView struct {
+	// owner 在本 Tenant 的显示名；owner 已不是 ACTIVE 成员时省略，客户端显示原版 owner unavailable。
+	OwnerDisplayName *string `json:"ownerDisplayName,omitempty"`
+	OwnerPrincipalID string  `json:"ownerPrincipalId"`
+	ResourceID       string  `json:"resourceId"`
+}
+
 // 同 Tenant 且当前 discover 权限允许的 AgentDefinition 页；nextOffset 续读同一排序，不代表总量上限。
 type AgentDefinitionPage struct {
 	Definitions []AgentDefinitionView `json:"definitions"`
@@ -5529,6 +5712,9 @@ type AgentDefinitionPage struct {
 
 // DD-24/25 的 Core Agent 稳定身份及实际 Resource 事实；不表示版本已发布或 Agent 可运行。
 type AgentDefinitionView struct {
+	// DD-131(6)：该定义已由 agent.definition.share 写入 tenant#member 的 discoverer/reader；缺省即未分享。只表示同
+	// Tenant 成员可发现与读取，不授予任何 Installation 使用权。
+	CatalogShared                  *bool         `json:"catalogShared,omitempty"`
 	CurrentPublishedVersionAssetID *string       `json:"currentPublishedVersionAssetId,omitempty"`
 	DisplayName                    string        `json:"displayName"`
 	OwnerPrincipalID               string        `json:"ownerPrincipalId"`
@@ -5600,8 +5786,9 @@ type AgentDelegationTargetPage struct {
 	WorkspaceID            string                      `json:"workspaceId"`
 }
 
-// DD-131(2)、DD-26：导入人在本 Tenant 可选的 RuntimeProfile 与已治理 Route（与版本配置目录同一来源与过滤）。缺真实来源时两目录为空且
-// canImport=false；目录不授予发布、安装或运行权限。
+// DD-131(2)、DD-26：导入人在本 Tenant 可选的 RuntimeProfile 与已治理
+// Route（与版本配置目录同一来源与过滤）。目录为空不阻止导入（导入时不强制选择，DD-131(2)）；canImport 只反映动作开放与 Tenant
+// create。目录不授予发布、安装或运行权限。
 type AgentImportConfigurationPage struct {
 	CanImport  bool                                  `json:"canImport"`
 	NextOffset *int64                                `json:"nextOffset"`
@@ -5946,27 +6133,84 @@ type AgentSessionView struct {
 // DD-131(2)：校验通过的快照包的导入预览与一次性暂存引用。只含映射后将进入新 DRAFT 的可移植字段与被丢弃的原版字段类别；不回显包正文、名单公钥或记忆。确认导入经
 // agent.definition.import。
 type AgentSnapshotImportPreview struct {
-	// 包内联的头像（≤2 MiB 的 data URL），只供预览识别，不写入 DRAFT。
-	AvatarDataURL          *string                             `json:"avatarDataUrl,omitempty"`
-	Description            *string                             `json:"description,omitempty"`
-	DisplayName            string                              `json:"displayName"`
-	ExpiresAt              string                              `json:"expiresAt"`
-	FormatKey              AgentSnapshotImportPreviewFormatKey `json:"formatKey"`
-	IdleTimeoutSeconds     *int64                              `json:"idleTimeoutSeconds,omitempty"`
-	Instructions           string                              `json:"instructions"`
-	MaxTurnDurationSeconds *int64                              `json:"maxTurnDurationSeconds,omitempty"`
-	MediaType              AgentSnapshotMediaType              `json:"mediaType"`
-	Omitted                []AgentSnapshotOmission             `json:"omitted"`
-	PackageByteSize        int64                               `json:"packageByteSize"`
-	PackageDigest          string                              `json:"packageDigest"`
-	Parallelism            *int64                              `json:"parallelism,omitempty"`
-	SourceIsBuiltIn        *bool                               `json:"sourceIsBuiltIn,omitempty"`
-	UploadID               string                              `json:"uploadId"`
+	// 包内联的头像（≤2 MiB 的 data URL）供预览；上传时已按附件规则存为本 Tenant 内容寻址媒体对象，DRAFT personaIdentity 只引用该对象。
+	AvatarDataURL *string `json:"avatarDataUrl,omitempty"`
+	// 内联头像在本 Tenant 媒体中的对象地址（/media/<sha256>），即新 DRAFT 的 personaIdentity.avatarUrl。
+	AvatarURL          *string                             `json:"avatarUrl,omitempty"`
+	Description        *string                             `json:"description,omitempty"`
+	DisplayName        string                              `json:"displayName"`
+	ExpiresAt          string                              `json:"expiresAt"`
+	FormatKey          AgentSnapshotImportPreviewFormatKey `json:"formatKey"`
+	IdleTimeoutSeconds *int64                              `json:"idleTimeoutSeconds,omitempty"`
+	// 可为空串：包没有 systemPrompt 时生成空指令的 DRAFT，补充后才能发布。
+	Instructions           string                  `json:"instructions"`
+	MaxTurnDurationSeconds *int64                  `json:"maxTurnDurationSeconds,omitempty"`
+	MediaType              AgentSnapshotMediaType  `json:"mediaType"`
+	Omitted                []AgentSnapshotOmission `json:"omitted"`
+	PackageByteSize        int64                   `json:"packageByteSize"`
+	PackageDigest          string                  `json:"packageDigest"`
+	Parallelism            *int64                  `json:"parallelism,omitempty"`
+	SourceIsBuiltIn        *bool                   `json:"sourceIsBuiltIn,omitempty"`
+	UploadID               string                  `json:"uploadId"`
 }
 
 // DD-131(2)、DD-143：一次 Agent 快照包的原始字节（标准 base64，Web 与 Desktop 同一 JSON 传输）。解码后 JSON 不超过 5
 // MiB、PNG 不超过 10 MiB；格式与版本由 Core 判定。
 type AgentSnapshotUploadRequest struct {
+	ContentBase64 string                 `json:"contentBase64"`
+	MediaType     AgentSnapshotMediaType `json:"mediaType"`
+}
+
+// 同 Tenant 且读者当前可 discover 的未删除 AgentTeam 页（DD-131(1)(6)）；nextOffset 续读同一排序。
+type AgentTeamPage struct {
+	NextOffset *int64          `json:"nextOffset,omitempty"`
+	Teams      []AgentTeamView `json:"teams"`
+}
+
+// DD-131(1) 的 Tenant 级 agent_team Resource 及 AgentTeam 事实（03 §7）。memberAgentResourceIds
+// 只列读者当前可 discover 的成员，次序不变；hiddenMemberCount 是其余成员个数，不暴露其 ID。catalogShared 表示该团队已写入
+// tenant#member 的 discoverer/reader（DD-131(6)）。成员停用或删除不改写团队，部署与提及时按当前状态跳过。
+type AgentTeamView struct {
+	CatalogShared          bool          `json:"catalogShared"`
+	Description            *string       `json:"description,omitempty"`
+	HiddenMemberCount      int64         `json:"hiddenMemberCount"`
+	MemberAgentResourceIDS []string      `json:"memberAgentResourceIds"`
+	Name                   string        `json:"name"`
+	OwnerPrincipalID       string        `json:"ownerPrincipalId"`
+	ResourceID             string        `json:"resourceId"`
+	ResourceState          ResourceState `json:"resourceState"`
+	ResourceVersion        int64         `json:"resourceVersion"`
+}
+
+// DD-131(3)：校验通过的团队快照包的导入预览与一次性暂存引用。团队名与说明进入新 agent_team；每个成员按 DD-131(2) 映射为将新建的 Definition
+// 与 DRAFT。团队 instructions 不进入包也不导入（DD-131(1)）。确认导入经 agent.team.import，任一成员失败整包不提交。
+type AgentTeamSnapshotImportPreview struct {
+	Description     *string                                     `json:"description,omitempty"`
+	ExpiresAt       string                                      `json:"expiresAt"`
+	FormatKey       AgentTeamSnapshotImportPreviewFormatKey     `json:"formatKey"`
+	MediaType       AgentSnapshotMediaType                      `json:"mediaType"`
+	Members         []AgentTeamSnapshotImportPreviewMembersItem `json:"members"`
+	Name            string                                      `json:"name"`
+	PackageByteSize int64                                       `json:"packageByteSize"`
+	PackageDigest   string                                      `json:"packageDigest"`
+	// 包内带有原版团队 instructions；按 DD-131(1) 不导入。
+	TeamInstructionsOmitted bool   `json:"teamInstructionsOmitted"`
+	UploadID                string `json:"uploadId"`
+}
+
+type AgentTeamSnapshotImportPreviewMembersItem struct {
+	// 该成员内联头像在本 Tenant 媒体中的对象地址（/media/<sha256>），即其 DRAFT 的 personaIdentity.avatarUrl。
+	AvatarURL   *string `json:"avatarUrl,omitempty"`
+	Description *string `json:"description,omitempty"`
+	DisplayName string  `json:"displayName"`
+	// 可为空串：成员没有 systemPrompt 时生成空指令的 DRAFT，补充后才能发布。
+	Instructions string                  `json:"instructions"`
+	Omitted      []AgentSnapshotOmission `json:"omitted"`
+}
+
+// DD-131(3)：一次团队快照包的原始字节（标准 base64，Web 与 Desktop 同一 JSON 传输）。解码后 JSON 不超过 25 MiB、PNG 不超过 50
+// MiB；格式与版本由 Core 判定。
+type AgentTeamSnapshotUploadRequest struct {
 	ContentBase64 string                 `json:"contentBase64"`
 	MediaType     AgentSnapshotMediaType `json:"mediaType"`
 }
@@ -6109,19 +6353,23 @@ type AgentVersionView struct {
 // 仅 AgentVersion 草稿创建/编辑可携带；publish 只选择已有版本，不替换内容。
 //
 // 03 §7、17 §3 的 requested 行为内容；不含 owner、Workspace、凭据、provider 地址或 host
-// environment。发布不等于安装或运行授权。
+// environment。发布不等于安装或运行授权。DRAFT 可缺 runtimeProfileKey、modelRouteResourceId 与
+// replyPolicy，instructions 可为空串（DD-131(2) 导入草稿与原版一致不要求运行配置）；agent.version.publish
+// 准入时三者必须齐备且 instructions 非空，PUBLISHED 版本总是完整。
 type AgentVersionContent struct {
 	// 精确 contract_key@version，不引用业务能力实现名。
-	CapabilityRequirements  []string                           `json:"capabilityRequirements"`
-	DeclaredToolResourceIDS []string                           `json:"declaredToolResourceIds"`
-	Instructions            string                             `json:"instructions"`
-	MemoryPolicy            AgentVersionContentMemoryPolicy    `json:"memoryPolicy"`
-	ModelRouteResourceID    string                             `json:"modelRouteResourceId"`
-	Parallelism             int64                              `json:"parallelism"`
-	PersonaIdentity         AgentVersionContentPersonaIdentity `json:"personaIdentity"`
-	// RuntimeProfile capability contract 所声明的回复策略键；不隐式授予触发或读取权限。
-	ReplyPolicy          string                        `json:"replyPolicy"`
-	RuntimeProfileKey    string                        `json:"runtimeProfileKey"`
+	CapabilityRequirements  []string                        `json:"capabilityRequirements"`
+	DeclaredToolResourceIDS []string                        `json:"declaredToolResourceIds"`
+	Instructions            string                          `json:"instructions"`
+	MemoryPolicy            AgentVersionContentMemoryPolicy `json:"memoryPolicy"`
+	// DRAFT 可缺省；发布时必填。
+	ModelRouteResourceID *string                            `json:"modelRouteResourceId,omitempty"`
+	Parallelism          int64                              `json:"parallelism"`
+	PersonaIdentity      AgentVersionContentPersonaIdentity `json:"personaIdentity"`
+	// RuntimeProfile capability contract 所声明的回复策略键；不隐式授予触发或读取权限。DRAFT 可缺省；发布时必填。
+	ReplyPolicy *string `json:"replyPolicy,omitempty"`
+	// DRAFT 可缺省；发布时必填。
+	RuntimeProfileKey    *string                       `json:"runtimeProfileKey,omitempty"`
 	SkillVersionAssetIDS []string                      `json:"skillVersionAssetIds"`
 	TriggerDefaults      []AgentTrigger                `json:"triggerDefaults"`
 	TurnLimits           AgentVersionContentTurnLimits `json:"turnLimits"`
@@ -7292,6 +7540,23 @@ type EvidenceView struct {
 	Version *int64 `json:"version,omitempty"`
 }
 
+// DD-42、06 §7.1：源 Tenant 的 ExportPackage Asset。只给当前对该 Asset 有 read 的 HUMAN；READY 后才有
+// digest、大小与下载路径。字节只经下载路由返回，不进入本视图、审计或 Workflow 历史。
+type ExportPackageView struct {
+	ActionExecutionID string  `json:"actionExecutionId"`
+	ByteSize          *int64  `json:"byteSize,omitempty"`
+	ContentDigest     *string `json:"contentDigest,omitempty"`
+	DownloadPath      *string `json:"downloadPath,omitempty"`
+	// 原版文件名：`<显示名>.agent.json` 或 `.agent.png`；团队为 `.team.*`。
+	FileName         *string            `json:"fileName,omitempty"`
+	FormatKey        string             `json:"formatKey"`
+	MediaType        string             `json:"mediaType"`
+	PackageAssetID   string             `json:"packageAssetId"`
+	SourceAssetID    *string            `json:"sourceAssetId,omitempty"`
+	SourceResourceID string             `json:"sourceResourceId"`
+	State            ExportPackageState `json:"state"`
+}
+
 // PUT /api/v1/user-state/followed-principals 的请求体（DD-125(5)、03
 // CollaborationUserState.followed_principals）：原 Pulse 关注/取消关注，取代逐公钥 kind 3。pubkey 是被关注者的任一
 // Buzz 公钥，Core 解析为同 Tenant 的 HUMAN Principal 并按 Principal 存储；关注要求该公钥当前
@@ -8185,9 +8450,18 @@ type NativeHumanScopeQuery struct {
 // actionKey 解释，多出或缺少的参数以 INVALID_PARAMETERS 拒绝。
 type ActionCommand struct {
 	ActionKey string `json:"actionKey"`
+	// 仅 agent.definition.export（DD-131(2)、05 §2.12）：目标 Definition 的一个 PUBLISHED AgentVersion
+	// 与包媒体类型；其他动作携带即拒绝。
+	AgentDefinitionExport *AgentDefinitionExportInput `json:"agentDefinitionExport,omitempty"`
 	// 仅 agent.definition.import（DD-131(2)、05 §2.12）：本会话上传的快照包引用、包 digest 与本 Tenant
 	// 重选的运行配置；其他动作携带即拒绝。
 	AgentDefinitionImport *AgentDefinitionImportInput `json:"agentDefinitionImport,omitempty"`
+	// 仅 agent.team.create / agent.team.update 且必带（DD-131(1)、05 §2.12）；其他动作携带即拒绝。
+	AgentTeam *AgentTeamInput `json:"agentTeam,omitempty"`
+	// 仅 agent.team.export（DD-131(3)、05 §2.12）：团队快照包媒体类型；其他动作携带即拒绝。
+	AgentTeamExport *AgentTeamExportInput `json:"agentTeamExport,omitempty"`
+	// 仅 agent.team.import（DD-131(3)、05 §2.12）：本会话上传的团队快照包引用与包 digest；其他动作携带即拒绝。
+	AgentTeamImport *AgentTeamImportInput `json:"agentTeamImport,omitempty"`
 	// 仅 AgentVersion 草稿创建/编辑可携带；publish 只选择已有版本，不替换内容。
 	AgentVersionContent       *AgentVersionContent      `json:"agentVersionContent,omitempty"`
 	ApplicationBindingCreate  *ApplicationBindingCreate `json:"applicationBindingCreate,omitempty"`
@@ -8315,17 +8589,62 @@ type ActionCommand struct {
 	WorkspaceVisibility *WorkspaceVisibility `json:"workspaceVisibility,omitempty"`
 }
 
+// 仅 agent.definition.export（DD-131(2)、05 §2.12）：目标 Definition 的一个 PUBLISHED AgentVersion
+// 与包媒体类型；其他动作携带即拒绝。
+//
+// 仅 agent.definition.export（DD-131(2)、05 §2.12）：命令的 Resource 目标是 AgentDefinition，这里冻结其一个
+// PUBLISHED AgentVersion 与包的媒体类型。包只含可移植字段，不含
+// owner、公钥、Installation、绑定、llm_route、RuntimeProfile、Delegation、记忆或任何 SecretRef。
+type AgentDefinitionExportInput struct {
+	MediaType      AgentSnapshotMediaType `json:"mediaType"`
+	VersionAssetID string                 `json:"versionAssetId"`
+}
+
 // 仅 agent.definition.import（DD-131(2)、05 §2.12）：本会话上传的快照包引用、包 digest 与本 Tenant
 // 重选的运行配置；其他动作携带即拒绝。
 //
 // 仅 agent.definition.import（DD-131(2)、05 §2.12）：引用本 PlatformSession、本人的一次性快照上传与其包字节
-// SHA-256；包不携带运行时与模型路由（DD-26），由导入人按本 Tenant 目录重选，准入与 Workflow 内各自重验。
+// SHA-256；包不携带运行时与模型路由（DD-26）。导入时不强制选择：所给的 Profile 与 Route 在准入与 Workflow 内各自重验，缺省的由 owner
+// 发布前在版本编辑器补齐（DD-131(2)）。
 type AgentDefinitionImportInput struct {
-	ModelRouteResourceID string `json:"modelRouteResourceId"`
+	ModelRouteResourceID *string `json:"modelRouteResourceId,omitempty"`
 	// 上传返回的包字节 SHA-256；准入与 Workflow 读取包时重算比对。
-	PackageDigest     string `json:"packageDigest"`
-	RuntimeProfileKey string `json:"runtimeProfileKey"`
-	UploadID          string `json:"uploadId"`
+	PackageDigest     string  `json:"packageDigest"`
+	RuntimeProfileKey *string `json:"runtimeProfileKey,omitempty"`
+	UploadID          string  `json:"uploadId"`
+}
+
+// 仅 agent.team.create / agent.team.update 且必带（DD-131(1)、05 §2.12）；其他动作携带即拒绝。
+//
+// 仅 agent.team.create / agent.team.update 且必带（DD-131(1)、05 §2.12）：Tenant 级 Agent
+// 团队的名称、说明与有序成员。成员是同 Tenant、发起人当前可 read 的 AgentDefinition Resource，按给出次序保存、不重复、至多 64
+// 个（沿原团队目录上限）；不含原版团队级 instructions、内置 welcome 团队或任何运行配置。update 另带 resourceId 与读到的
+// resourceVersion 做 CAS。
+type AgentTeamInput struct {
+	// 可选说明，至多 2000 字符；去首尾空白后为空即省略
+	Description            *string  `json:"description,omitempty"`
+	MemberAgentResourceIDS []string `json:"memberAgentResourceIds"`
+	// 去首尾空白后非空，至多 200 字符
+	Name string `json:"name"`
+}
+
+// 仅 agent.team.export（DD-131(3)、05 §2.12）：团队快照包媒体类型；其他动作携带即拒绝。
+//
+// 仅 agent.team.export（DD-131(3)、05 §2.12）：命令的 Resource 目标是
+// agent_team，这里只冻结包媒体类型。各成员取审批开始时冻结的当前已发布版本；包是团队信息加各成员的 DD-131(2) 清单，不含团队
+// instructions、owner、公钥、Installation、绑定、llm_route、RuntimeProfile、记忆或任何 SecretRef。
+type AgentTeamExportInput struct {
+	MediaType AgentSnapshotMediaType `json:"mediaType"`
+}
+
+// 仅 agent.team.import（DD-131(3)、05 §2.12）：本会话上传的团队快照包引用与包 digest；其他动作携带即拒绝。
+//
+// 仅 agent.team.import（DD-131(3)、05 §2.12）：本会话、本人上传的 buzz-team-snapshot@1 包引用与包
+// digest。agent_team 没有 slug；各成员 Definition 的 slug 由 Core 按成员显示名规范化生成并在本 Tenant 内加序号去重。成员
+// DRAFT 不带运行配置，由 owner 发布前补齐。
+type AgentTeamImportInput struct {
+	PackageDigest string `json:"packageDigest"`
+	UploadID      string `json:"uploadId"`
 }
 
 // DD-88/94：pin 已批准 release 的业务绑定选择。不接受密钥正文、调用方自选 SecretRef 或运行端点 URL；secret 值只经同一
@@ -10724,6 +11043,28 @@ type ProtocolSessionReconcileResult struct {
 	WaitingReason     string                        `json:"waitingReason"`
 }
 
+type ResourceExportAdvanceRequest struct {
+	CancelRequested bool                 `json:"cancelRequested"`
+	RunID           string               `json:"runId"`
+	Target          ResourceExportTarget `json:"target"`
+}
+
+// 06 §7.1、DD-42：源 Tenant 的 RESOURCE_EXPORT 冻结目标。只引用本 Tenant 的 ActionExecution、来源
+// Resource、准入时预写的 ExportPackage Asset 与 TransferFormat；不携带包字节或任何来源内容。
+type ResourceExportTarget struct {
+	ActionExecutionID string `json:"actionExecutionId"`
+	FormatKey         string `json:"formatKey"`
+	PackageAssetID    string `json:"packageAssetId"`
+	SourceResourceID  string `json:"sourceResourceId"`
+	WorkflowID        string `json:"workflowId"`
+}
+
+type ResourceExportAdvanceResult struct {
+	PackageAssetID string     `json:"packageAssetId"`
+	Status         TaskStatus `json:"status"`
+	WaitingReason  string     `json:"waitingReason"`
+}
+
 type ResourceImportAdvanceRequest struct {
 	CancelRequested bool                 `json:"cancelRequested"`
 	RunID           string               `json:"runId"`
@@ -11245,8 +11586,8 @@ const (
 
 // DD-131(2)：快照中存在、导入不带入新 DRAFT 的原版字段。RUNTIME/MODEL/PROVIDER/NAME_POOL
 // 属本机运行时（DD-26）；RESPOND_TO_ALLOWLIST 的名单公钥属来源身份；RESPOND_TO_ANYONE
-// 不提供（DD-125(6)）；SESSION_POLICY 由运行时合同决定；MEMORY 见 DD-131(4)；AVATAR 内联头像不写入版本正文，由 owner
-// 在版本编辑器重新上传；SKILLS 由 owner 按本 Tenant 目录重选。
+// 不提供（DD-125(6)）；SESSION_POLICY 由运行时合同决定；MEMORY 见 DD-131(4)；AVATAR
+// 只指包引用的外部头像地址（内联头像按附件规则导入，不在此列）；SKILLS 由 owner 按本 Tenant 目录重选。
 type AgentSnapshotOmission string
 
 const (
@@ -11260,6 +11601,12 @@ const (
 	Runtime                    AgentSnapshotOmission = "RUNTIME"
 	SessionPolicy              AgentSnapshotOmission = "SESSION_POLICY"
 	Skills                     AgentSnapshotOmission = "SKILLS"
+)
+
+type AgentTeamSnapshotImportPreviewFormatKey string
+
+const (
+	BuzzTeamSnapshot1 AgentTeamSnapshotImportPreviewFormatKey = "buzz-team-snapshot@1"
 )
 
 // Codex FileUpdateChange.kind 的标签（add/delete/update）；update 的改名目标另以 movePath 给出。
@@ -11486,6 +11833,7 @@ const (
 	BuzzPubkey                    EvidenceKind = "BUZZ_PUBKEY"
 	DeploymentBootstrap           EvidenceKind = "DEPLOYMENT_BOOTSTRAP"
 	EvidenceKindACTIONEXECUTIONID EvidenceKind = "ACTION_EXECUTION_ID"
+	ExportPackageAssetID          EvidenceKind = "EXPORT_PACKAGE_ASSET_ID"
 	ExternalSubjectSha256         EvidenceKind = "EXTERNAL_SUBJECT_SHA256"
 	OpenmeterEventID              EvidenceKind = "OPENMETER_EVENT_ID"
 	OriginalActionExecutionID     EvidenceKind = "ORIGINAL_ACTION_EXECUTION_ID"
@@ -11644,6 +11992,7 @@ const (
 	MembershipProjection     WorkflowKind = "MEMBERSHIP_PROJECTION"
 	MembershipRevocation     WorkflowKind = "MEMBERSHIP_REVOCATION"
 	ProtocolSessionReconcile WorkflowKind = "PROTOCOL_SESSION_RECONCILE"
+	ResourceExport           WorkflowKind = "RESOURCE_EXPORT"
 	ResourceImport           WorkflowKind = "RESOURCE_IMPORT"
 	ResourceProvision        WorkflowKind = "RESOURCE_PROVISION"
 	SecretRefRehome          WorkflowKind = "SECRET_REF_REHOME"
@@ -11907,6 +12256,17 @@ const (
 	NotFound                            EvidenceUnavailableReason = "NOT_FOUND"
 	Unrecognized                        EvidenceUnavailableReason = "UNRECOGNIZED"
 	Unverifiable                        EvidenceUnavailableReason = "UNVERIFIABLE"
+)
+
+// 03 §3 ExportPackage 的状态：只有 READY 可下载；ERROR 是确定失败，DELETED 是 Tenant 销毁后的墓碑。
+type ExportPackageState string
+
+const (
+	Creating                  ExportPackageState = "CREATING"
+	ExportPackageStateDELETED ExportPackageState = "DELETED"
+	ExportPackageStateERROR   ExportPackageState = "ERROR"
+	ExportPackageStateREVOKED ExportPackageState = "REVOKED"
+	Ready                     ExportPackageState = "READY"
 )
 
 // DD-134(2)：网关管理区的范围取会话 Tenant。PLATFORM：Platform Catalog Tenant 会话，只见 Gateway 原生事实与 Tenant
