@@ -121,8 +121,8 @@
   --buzz-nav-fg: inherit;
   --buzz-hover-surface: hsl(var(--foreground) / 0.055);
   --buzz-sidebar-scrollbar-thumb: hsl(var(--foreground) / 0.16);
-  --buzz-active-fill: var(--primary);
-  --buzz-active-foreground: var(--primary);
+  --buzz-active-fill: var(--sidebar-active);
+  --buzz-active-foreground: var(--sidebar-active-foreground);
 }
 
 :root[data-buzz-sidebar].dark {
@@ -257,13 +257,6 @@
   [data-testid="app-sidebar"]
   [data-sidebar="footer"]::before {
   background: none;
-}
-
-/* Active navigation tokens, scoped to the navigation containers only. */
-:root[data-buzz-sidebar] [data-testid="app-sidebar"],
-:root[data-buzz-sidebar] [data-testid="settings-sidebar"] {
-  --sidebar-active: var(--buzz-active-fill);
-  --sidebar-active-foreground: var(--buzz-active-foreground);
 }
 
 /*

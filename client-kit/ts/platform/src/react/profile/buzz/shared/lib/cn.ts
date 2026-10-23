@@ -8,7 +8,7 @@ const mergeClassNames = extendTailwindMerge({
       "font-size": [
         {
           // DD-141: `text-control` is the Kailo 13px control size, not a color.
-          text: ["message", "message-timestamp", "control"],
+          text: ["message", "message-timestamp", "control", "headline"],
         },
       ],
       rounded: ["rounded-squircle"],

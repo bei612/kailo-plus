@@ -178,7 +178,8 @@ export function kailoThemeVars(mode: KailoMode, direction: KailoBrandDirection =
     "--border": h(r.line), "--input": h(r.lineStrong), "--ring": h(r.ring),
     "--sidebar-background": h(r.sidebar), "--sidebar-foreground": h(r.sidebarText),
     "--sidebar-primary": h(r.brand), "--sidebar-primary-foreground": h(r.onBrand),
-    "--sidebar-active": h(r.brand), "--sidebar-active-foreground": h(r.onBrand),
+    // Selected navigation (nested navs, catalog rows, avatar edit chips): brand-soft, not a solid pill.
+    "--sidebar-active": h(r.brandSoft), "--sidebar-active-foreground": h(r.brandSoftText),
     "--sidebar-accent": h(r.sidebarHover), "--sidebar-accent-foreground": h(r.text),
     "--sidebar-border": h(r.sidebarLine), "--sidebar-ring": h(r.ring),
     "--status-added": r.success, "--status-deleted": mode === "dark" ? r.dangerText : r.danger, "--status-modified": r.warning,

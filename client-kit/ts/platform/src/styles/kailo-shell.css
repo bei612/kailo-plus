@@ -67,12 +67,6 @@ svg.lucide[stroke-width="2"] {
 }
 
 /* ── Sidebar ──────────────────────────────────────────────────────────── */
-[data-testid="app-sidebar"],
-[data-testid="settings-sidebar"] {
-  --sidebar-active: var(--primary);
-  --sidebar-active-foreground: var(--primary);
-}
-
 :is([data-testid="app-sidebar"], [data-testid="settings-sidebar"]) :is([data-sidebar="menu-button"], [data-sidebar="menu-sub-button"]) {
   position: relative;
   min-height: var(--kailo-sidebar-row-height);

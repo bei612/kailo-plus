@@ -203,10 +203,13 @@ export function PlatformApp() {
   );
 }
 
+// DD-141 brand moment: session gates show the Kailo mark over the canvas aura.
 function Notice({ text }: { text: string }) {
   return (
-    <div className="flex min-h-dvh items-center justify-center text-sm text-muted-foreground">
-      {text}
+    <div className="relative flex min-h-dvh flex-col items-center justify-center gap-4 text-sm text-muted-foreground">
+      <GradientLayer />
+      <KailoMark className="animate-pulse rounded-[14px] shadow-md" size={44} />
+      <span>{text}</span>
     </div>
   );
 }
@@ -819,7 +822,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
               onCopyTitle={async (title) => {
                 try { await writeTextToClipboard(title); toast.success(translate(getLocale(), "platform.profile.copied")); }
                 catch { toast.error(translate(getLocale(), "platform.profile.copyFailed")); }
-              }} /> : tab === "new-message" || tab === "agents" || tab === "projects" || tab === "inbox" ? null : <header className="flex h-12 shrink-0 items-center border-b px-4 font-semibold">
+              }} /> : tab === "new-message" || tab === "agents" || tab === "projects" || tab === "inbox" ? null : <header className="flex h-[52px] shrink-0 items-center border-b px-5 text-headline font-semibold tracking-[-0.006em]" data-kailo-page-header>
             {tabLabel(tab)}
           </header>}
           {tab === "channel" && active && activeRow?.isMember === true && channel.data ?

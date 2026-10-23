@@ -43,14 +43,17 @@ export function AgentIdentityCard({
   return (
     <div
       className={cn(
-        "group relative aspect-[4/5] w-full min-w-0 overflow-hidden rounded-2xl border border-border/70 bg-muted/50 text-left shadow-xs transition-colors hover:border-border hover:bg-muted/65",
+        // DD-141 §10: Kailo identity card — card surface, brand band and aura, gentle lift.
+        "group relative aspect-[4/5] w-full min-w-0 overflow-hidden rounded-xl border border-border bg-card text-left transition-[transform,box-shadow,border-color] duration-200 ease-out-expo hover:-translate-y-px hover:border-input hover:shadow-md",
       )}
       data-testid={dataTestId}
     >
+      <span aria-hidden="true" className="kailo-card-aura pointer-events-none absolute inset-0" />
+      <span aria-hidden="true" className="kailo-card-band pointer-events-none absolute inset-x-0 top-0 h-[3px]" />
       <button
         aria-label={ariaLabel}
         disabled={disabled}
-        className="absolute inset-0 z-10 rounded-2xl focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+        className="absolute inset-0 z-10 rounded-xl focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
         onClick={onClick}
         type="button"
       ><span className="sr-only">{ariaLabel}</span></button>

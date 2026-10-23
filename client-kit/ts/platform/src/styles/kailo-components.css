@@ -1,0 +1,250 @@
+/*
+ * DD-141 Kailo component surfaces (.design/20 §9): menus, listboxes, dialogs,
+ * overlays, tooltips, tables, native controls and settings cards.
+ *
+ * Like kailo-shell.css these rules only target accessible roles, Radix state
+ * attributes and existing data-slot hooks, consume theme roles and change no
+ * behaviour. They are unlayered so one rule restyles the many per-feature
+ * copies of the same primitive that the original code base carries.
+ */
+
+/* ── Menus (dropdown, context, overflow) and listboxes ─────────────────── */
+:is([role="menu"], [data-radix-popper-content-wrapper] > [role="listbox"]) {
+  border: 1px solid hsl(var(--border));
+  border-radius: 12px;
+  background-color: hsl(var(--popover));
+  color: hsl(var(--popover-foreground));
+  box-shadow: var(--k-shadow-md);
+  padding: 4px;
+}
+
+:is([role="menu"], [role="listbox"]) :is([role="menuitem"], [role="menuitemcheckbox"], [role="menuitemradio"], [role="option"]) {
+  min-height: 30px;
+  border-radius: 6px;
+  padding-block: 5px;
+  font-size: calc(var(--buzz-type-rem) * 0.8125);
+  transition: background-color var(--k-duration-instant) var(--k-ease-standard), color var(--k-duration-instant) var(--k-ease-standard);
+}
+
+:is([role="menu"], [role="listbox"]) :is([role="menuitem"], [role="menuitemcheckbox"], [role="menuitemradio"], [role="option"]) > svg {
+  color: hsl(var(--muted-foreground));
+}
+
+:is([role="menu"], [role="listbox"]) :is([role="menuitem"], [role="menuitemcheckbox"], [role="menuitemradio"], [role="option"]):is([data-highlighted], :focus-visible, [aria-selected="true"]) {
+  background-color: hsl(var(--accent));
+  color: hsl(var(--accent-foreground));
+}
+
+:is([role="menu"], [role="listbox"]) :is([role="menuitem"], [role="option"])[data-state="checked"],
+[role="menu"] :is([role="menuitemcheckbox"], [role="menuitemradio"])[data-state="checked"] {
+  color: var(--k-brand-soft-text);
+}
+
+[role="menu"] [role="separator"] {
+  margin-block: 4px;
+  background-color: hsl(var(--border));
+}
+
+/* ── Modal overlays and centered dialogs ──────────────────────────────── */
+div.fixed.inset-0[data-state]:not([role]):not([data-radix-popper-content-wrapper]) {
+  background-color: rgb(10 10 16 / 0.38);
+  backdrop-filter: blur(2px);
+}
+
+.dark div.fixed.inset-0[data-state]:not([role]):not([data-radix-popper-content-wrapper]) {
+  background-color: rgb(0 0 0 / 0.6);
+}
+
+:is([role="dialog"], [role="alertdialog"])[data-state]:is([class*="left-[50%]"], [class*="left-1/2"]) {
+  border-color: hsl(var(--border));
+  border-radius: 16px;
+  box-shadow: var(--k-shadow-xl);
+}
+
+:is([role="dialog"], [role="alertdialog"])[data-state]:is([class*="left-[50%]"], [class*="left-1/2"]) :is(h2, [data-slot="dialog-title"]) {
+  letter-spacing: -0.012em;
+}
+
+/* ── Tooltips (Radix tooltip content) ─────────────────────────────────── */
+[data-radix-popper-content-wrapper] > [data-side][data-state$="open"]:not([role]) {
+  border-radius: 6px;
+}
+
+/* ── Toasts (sonner) ──────────────────────────────────────────────────── */
+[data-sonner-toaster] [data-sonner-toast] {
+  border-radius: 12px;
+  border-color: hsl(var(--border));
+  background-color: hsl(var(--popover));
+  box-shadow: var(--k-shadow-lg);
+  font-size: calc(var(--buzz-type-rem) * 0.8125);
+}
+
+[data-sonner-toaster] [data-sonner-toast] [data-title] {
+  font-weight: 600;
+}
+
+[data-sonner-toaster] [data-sonner-toast][data-type="success"] [data-icon] {
+  color: var(--k-success);
+}
+
+[data-sonner-toaster] [data-sonner-toast][data-type="error"] [data-icon] {
+  color: var(--k-danger-text);
+}
+
+[data-sonner-toaster] [data-sonner-toast][data-type="warning"] [data-icon] {
+  color: var(--k-warning);
+}
+
+[data-sonner-toaster] [data-sonner-toast][data-type="info"] [data-icon] {
+  color: var(--k-info);
+}
+
+/* ── Tables in the content plane ──────────────────────────────────────── */
+[data-buzz-content-surface] table {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+[data-buzz-content-surface] table thead th {
+  font-size: calc(var(--buzz-type-rem) * 0.6875);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: hsl(var(--muted-foreground));
+  border-bottom: 1px solid hsl(var(--border));
+}
+
+[data-buzz-content-surface] table tbody tr {
+  transition: background-color var(--k-duration-instant) var(--k-ease-standard);
+}
+
+[data-buzz-content-surface] table tbody tr:hover {
+  background-color: hsl(var(--foreground) / 0.025);
+}
+
+[data-buzz-content-surface] table td {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Native form controls used by original pages ──────────────────────── */
+[data-buzz-content-surface] select:not([multiple]),
+[data-testid="settings-content-surface"] select:not([multiple]) {
+  min-height: 32px;
+  border: 1px solid hsl(var(--input));
+  border-radius: 6px;
+  background-color: hsl(var(--background));
+  padding-inline: 10px 8px;
+  font-size: calc(var(--buzz-type-rem) * 0.8125);
+  color: hsl(var(--foreground));
+  box-shadow: var(--k-shadow-xs);
+  transition: border-color var(--k-duration-fast) var(--k-ease-standard), box-shadow var(--k-duration-fast) var(--k-ease-standard);
+}
+
+[data-buzz-content-surface] select:not([multiple]):hover,
+[data-testid="settings-content-surface"] select:not([multiple]):hover {
+  border-color: hsl(var(--muted-foreground) / 0.4);
+}
+
+[data-buzz-content-surface] select:not([multiple]):focus-visible,
+[data-testid="settings-content-surface"] select:not([multiple]):focus-visible {
+  outline: none;
+  border-color: hsl(var(--ring));
+  box-shadow: 0 0 0 3px hsl(var(--ring) / 0.15);
+}
+
+:is([data-buzz-content-surface], [data-testid="settings-content-surface"], [role="dialog"]) :is(input[type="text"], input[type="search"], input[type="email"], input[type="url"], input[type="number"], input:not([type]), textarea):focus-visible {
+  outline: none;
+  border-color: hsl(var(--ring));
+  box-shadow: 0 0 0 3px hsl(var(--ring) / 0.15);
+}
+
+:is([data-buzz-content-surface], [data-testid="settings-content-surface"], [role="dialog"]) :is(input[type="checkbox"], input[type="radio"]) {
+  accent-color: hsl(var(--primary));
+}
+
+kbd {
+  border: 1px solid hsl(var(--border));
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background-color: hsl(var(--muted));
+  padding: 0 4px;
+  font-size: 0.85em;
+}
+
+/* ── Settings cards (SettingsOptionGroup) ─────────────────────────────── */
+[data-slot="settings-section-card"] {
+  border-radius: 12px;
+}
+
+[data-slot="settings-section-card"]:not([class*="bg-muted"]) {
+  border-color: hsl(var(--border));
+  background-color: hsl(var(--card));
+}
+
+/* ── Links inside rendered content ────────────────────────────────────── */
+:is(.markdown, [data-testid="message-body"]) a[href] {
+  color: var(--k-brand-text);
+  text-decoration-color: rgb(var(--k-brand-rgb) / 0.35);
+  text-underline-offset: 3px;
+}
+
+:is(.markdown, [data-testid="message-body"]) a[href]:hover {
+  text-decoration-color: currentColor;
+}
+
+/* ── Brand moments: onboarding and cold-boot backgrounds (§2.5) ───────── */
+.buzz-onboarding-neutral-theme {
+  /* The original chartreuse field becomes a pale Kailo lavender; the CTA label and
+     key ink follow the brand ramp. */
+  --buzz-welcome-chartreuse: #e4e3ff;
+  --buzz-onboarding-shell-bottom: #f6f7fe;
+  --buzz-onboarding-cta-label: #e4e3ff;
+  --buzz-onboarding-backup-ink: #452f9f;
+}
+
+.buzz-setup-loading-shell {
+  --buzz-grainient-color-0: color-mix(in srgb, var(--k-gradient-to) calc(var(--buzz-grainient-alpha-strong) * 100%), transparent);
+  --buzz-grainient-color-1: color-mix(in srgb, var(--k-brand-400) calc(var(--buzz-grainient-alpha-strong) * 100%), transparent);
+  --buzz-grainient-color-2: color-mix(in srgb, var(--k-brand) calc(var(--buzz-grainient-alpha-medium) * 100%), transparent);
+  --buzz-grainient-color-3: color-mix(in srgb, var(--k-info) calc(var(--buzz-grainient-alpha-soft) * 100%), transparent);
+}
+
+/* ── Agent identity cards: brand band + soft aura (§2.5 Agent identity) ── */
+.kailo-card-band {
+  background-image: var(--k-gradient-brand);
+  opacity: 0.9;
+}
+
+.kailo-card-aura {
+  background-image: radial-gradient(
+    120% 70% at 50% 0%,
+    rgb(var(--k-glow-rgb) / 0.08),
+    transparent 62%
+  );
+  transition: opacity var(--k-duration-base) var(--k-ease-standard);
+}
+
+.dark .kailo-card-aura {
+  background-image: radial-gradient(
+    120% 70% at 50% 0%,
+    rgb(var(--k-glow-rgb) / 0.16),
+    transparent 62%
+  );
+}
+
+.group:hover > .kailo-card-aura {
+  opacity: 1.0;
+  filter: saturate(1.2);
+}
+
+/* ── Projects: flush panes instead of nested floating pods (§10) ─────── */
+[data-testid="projects-overview-layout"][data-project-context-detached] {
+  padding: 0;
+  background-color: hsl(var(--background));
+}
+
+:is([data-testid="projects-overview-content-pod"], [data-testid="project-content-pod"]) {
+  margin-left: 0;
+  border-radius: 0;
+  border-right: 1px solid hsl(var(--border));
+}

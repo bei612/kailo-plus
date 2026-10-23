@@ -12,6 +12,8 @@ export default {
         "2xs": "calc(var(--buzz-type-rem) * 0.6875)", // 11px at 16px type rem
         // DD-141 §3 Callout: buttons, sidebar rows and form labels (13px).
         control: "calc(var(--buzz-type-rem) * 0.8125)",
+        // DD-141 §3 Headline: channel and page headers (15px).
+        headline: "calc(var(--buzz-type-rem) * 0.9375)",
         "3xs": "calc(var(--buzz-type-rem) * 0.5)", // 8px at 16px type rem
         badge: "calc(var(--buzz-type-rem) * 0.625)", // 10px at 16px type rem
         "status-indicator": "0.9375rem", // 15px at the default root size
