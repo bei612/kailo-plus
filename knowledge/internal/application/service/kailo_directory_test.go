@@ -9,11 +9,13 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 
 	"github.com/Tencent/WeKnora/internal/config"
 	"github.com/Tencent/WeKnora/internal/types"
+	"gorm.io/gorm"
 )
 
 const (
@@ -217,6 +219,37 @@ func TestKailoDirectoryPreProvisionsMembersRolesAndWorkspaces(t *testing.T) {
 	// The same version again changes nothing.
 	if runner.SyncOnce(context.Background()) {
 		t.Fatal("an unchanged directoryVersion must not be applied again")
+	}
+}
+
+// A pre-provisioned account is inserted like repository.CreateUser inserts a
+// first OIDC login: without tenant_id. PostgreSQL's fk_users_tenant refuses
+// the uint64 zero (production 2026-10-23: every snapshot failed with SQLSTATE
+// 23503); the fixture's SQLite does not enforce it, so the insert is checked.
+func TestKailoDirectoryPreProvisionInsertsNoZeroTenant(t *testing.T) {
+	f, core, runner := newDirectoryFixture(t)
+	var inserts []string
+	if err := f.db.Callback().Create().After("gorm:create").Register("kailo_test:user_inserts", func(tx *gorm.DB) {
+		if tx.Statement.Table == "users" {
+			inserts = append(inserts, tx.Statement.SQL.String())
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	core.answer(http.StatusOK, firstSnapshot(t))
+	if !runner.SyncOnce(context.Background()) {
+		t.Fatal("first snapshot was not applied")
+	}
+	if len(inserts) != 2 {
+		t.Fatalf("user inserts = %d, want the two directory members of this issuer", len(inserts))
+	}
+	for _, statement := range inserts {
+		if strings.Contains(statement, "tenant_id") {
+			t.Fatalf("pre-provisioning writes tenant_id: %s", statement)
+		}
+	}
+	if ada := f.userBySubject(t, "ada"); ada == nil || ada.TenantID == 0 {
+		t.Fatal("the applied snapshot must still give the account its home space")
 	}
 }
 

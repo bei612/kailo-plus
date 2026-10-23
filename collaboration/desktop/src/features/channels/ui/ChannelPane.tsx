@@ -1,5 +1,12 @@
 import * as React from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { useConversations } from "@client-kit/platform/react/new-message";
+import { NativeReportPublisherProvider } from "@client-kit/platform/react/moderation";
+import { AgentAuthorFactsProvider } from "@client-kit/platform/react/messages";
+import type { MessageModerationContext } from "@client-kit/platform/react/messages";
+import { nativeApplicationWorkspace, useWorkspaceChannelDirectory } from "@/features/channels/hooks";
+import { useNativeReportPublisher } from "@/features/platform/nativeReport";
+import { MessageModerationScopeProvider } from "@/features/messages/ui/messageModerationScope";
 import { useActiveCommunity } from "@/features/platform/activeCommunity";
 import { useAppShell } from "@/app/AppShellContext";
 import { threadReactionRoot } from "@client-kit/platform/react/messages";
@@ -152,6 +159,19 @@ export const ChannelPane = React.memo(function ChannelPane({
     return intro;
   }, [activeChannel.channelType, activeDmHeaderParticipants, t]);
   const timeoutState = useTimeoutState();
+  // DD-125(2): the message moderation menu's admitted scope (Workspace channel, or the ACTIVE
+  // governed conversation behind a DM) and the native 1984 publisher, as the Web host provides.
+  const moderationDirectory = useWorkspaceChannelDirectory({ enabled: activeChannel.channelType !== "dm" });
+  const moderationConversations = useConversations();
+  const moderationWorkspace = activeChannel.channelType === "dm" ? undefined
+    : nativeApplicationWorkspace(moderationDirectory.data, { channelId: activeChannel.id });
+  const moderationConversation = activeChannel.channelType === "dm"
+    ? moderationConversations.items.find((item) => item.channelId === activeChannel.id && item.state === "ACTIVE") : undefined;
+  const moderation = React.useMemo<MessageModerationContext | undefined>(() => moderationWorkspace
+    ? { scope: { workspaceId: moderationWorkspace.id }, selfPubkey: currentPubkey }
+    : moderationConversation ? { scope: { conversationId: moderationConversation.id }, selfPubkey: currentPubkey } : undefined,
+  [moderationWorkspace?.id, moderationConversation?.id, currentPubkey]);
+  const nativeReport = useNativeReportPublisher();
   const composerPlaceholder = timeoutState.active
     ? t("moderation.banner.timedOut")
     : activeChannel.archivedAt
@@ -462,6 +482,9 @@ export const ChannelPane = React.memo(function ChannelPane({
     onResetWidth={onResetThreadPanelWidth} onResizeStart={onThreadPanelResizeStart} widthPx={threadPanelWidthPx}
     restoreFocusTarget={threadSurface.restoreFocusTarget}/>:null;
   return (
+    <MessageModerationScopeProvider value={moderation}>
+    <NativeReportPublisherProvider value={nativeReport}>
+    <AgentAuthorFactsProvider facts={agentActivity.authorFacts}>
     <AgentActivityOpenerProvider value={agentActivity.opener}>
     <div className="relative flex min-h-0 min-w-0 flex-1 flex-row overflow-hidden">
       {!isSinglePanelView ? (
@@ -708,5 +731,8 @@ export const ChannelPane = React.memo(function ChannelPane({
       {deleteMessageDialog.dialog}
     </div>
     </AgentActivityOpenerProvider>
+    </AgentAuthorFactsProvider>
+    </NativeReportPublisherProvider>
+    </MessageModerationScopeProvider>
   );
 });

@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/mcp_connection_state.schema.json",
+  "title": "McpConnectionState",
+  "description": "DD-149(3)：连接器状态；DELETED 是墓碑。",
+  "type": "string",
+  "enum": [
+    "ACTIVE",
+    "DISABLED",
+    "DELETED"
+  ]
+}

@@ -17,12 +17,16 @@ class ComposeBar extends HookConsumerWidget {
 
   /// The thread this composer replies in, when it is a thread composer.
   final String? threadHeadId;
+
+  /// The root of the thread chain, for thread-scoped typing indicators.
+  final String? rootId;
   const ComposeBar({
     super.key,
     required this.channelId,
     this.channelName = '',
     this.hintText,
     this.threadHeadId,
+    this.rootId,
     this.focusNode,
     this.onFocusRestorerChanged,
     this.onFocusRequested,
@@ -327,10 +331,12 @@ class ComposeBar extends HookConsumerWidget {
       ],
     );
 
+    // Typing indicator broadcast — throttled to one event per 3 seconds.
+    final lastTypingSentMs = useRef(0);
     final isModifyingText = useRef(false);
     final lastObservedEditingValue = useRef(controller.value);
 
-    // Detect @mention query on text / selection change.
+    // Detect @mention query and broadcast typing on text / selection change.
     useEffect(() {
       lastObservedEditingValue.value = controller.value;
       void listener() {
@@ -340,6 +346,21 @@ class ComposeBar extends HookConsumerWidget {
         if (isModifyingText.value || editingValue == previousValue) return;
         final text = editingValue.text;
         final sel = editingValue.selection;
+        final textChanged = text != previousValue.text;
+
+        // Broadcast typing indicator (throttled).
+        if (textChanged && text.isNotEmpty) {
+          final now = DateTime.now().millisecondsSinceEpoch;
+          if (now - lastTypingSentMs.value > _typingThrottleMs) {
+            lastTypingSentMs.value = now;
+            _sendTypingIndicator(
+              ref,
+              channelId: channelId,
+              threadHeadId: threadHeadId,
+              rootId: rootId,
+            );
+          }
+        }
 
         if (!sel.isValid || !sel.isCollapsed) {
           mentionQuery.value = null;

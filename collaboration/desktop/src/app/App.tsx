@@ -1,4 +1,5 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { emit } from "@tauri-apps/api/event";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider } from "@tanstack/react-router";
@@ -201,7 +202,8 @@ export function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <DeviceIdentityGate loading={<AppLoadingGate />}>
-        <NativeBootstrap connect={connectCommunity} invoke={invoke} copyText={writeTextToClipboard}>
+        <NativeBootstrap connect={connectCommunity} invoke={invoke} copyText={writeTextToClipboard}
+          openExternalUrl={(url) => { void openUrl(url); }}>
           {(session) => (
             <ActiveCommunityProvider
               key={`${session.facts.relayUrl}-${session.devicePubkey}`}

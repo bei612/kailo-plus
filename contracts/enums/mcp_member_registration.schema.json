@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/mcp_member_registration.schema.json",
+  "title": "McpMemberRegistration",
+  "description": "DD-149(4)：Tenant 连接器策略中普通成员的登记权限。",
+  "type": "string",
+  "enum": [
+    "DISABLED",
+    "PERSONAL_ONLY"
+  ]
+}

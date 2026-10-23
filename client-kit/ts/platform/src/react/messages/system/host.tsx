@@ -32,6 +32,11 @@ function useSystemMessageHost() {
   return host;
 }
 
+/** Ordinary message rows render outside a system host; they show the owner without a popover. */
+export function useHasSystemMessageHost() {
+  return React.useContext(Context) !== null;
+}
+
 export function UserProfilePopover(props: React.ComponentProps<SystemMessageHost["ProfilePopover"]>) {
   const Component = useSystemMessageHost().ProfilePopover;
   return <Component {...props} />;

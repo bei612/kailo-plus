@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Tooltip } from 'antd';
 
 // DD-133 §3: a Kailo user shown with the Kailo display name and avatar.
@@ -22,18 +23,23 @@ function initial(name?: string | null) {
 
 export default function KailoUser(props: Props) {
   const { user, size = 20, showName = true, emptyText, className } = props;
+  // 07 §4.7.3: a person without a Kailo avatar answers 404, so a picture that
+  // fails to load falls back to the initial instead of a broken image.
+  const [failedPicture, setFailedPicture] = useState<string | null>(null);
   if (!user?.name && !user?.picture)
     return emptyText ? (
       <span className={`kailo-user ${className || ''}`}>{emptyText}</span>
     ) : null;
-  const avatar = user.picture ? (
+  const picture = user.picture !== failedPicture ? user.picture : null;
+  const avatar = picture ? (
     <img
       className="kailo-user__avatar"
-      src={user.picture}
+      src={picture}
       alt=""
       width={size}
       height={size}
       referrerPolicy="no-referrer"
+      onError={() => setFailedPicture(picture)}
     />
   ) : (
     <span

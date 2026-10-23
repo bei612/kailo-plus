@@ -66,7 +66,9 @@ import {
   MarkdownRuntimeContext,
   useMarkdownRuntime,
 } from "./markdown/runtimeContext";
-import { resolveFileCard } from "./markdownFileCard";
+import { resolveFileCard, resolveSnapshotCard } from "./markdownFileCard";
+import { SnapshotCard } from "@client-kit/platform/react/messages/SnapshotCard";
+import { invokeTauri } from "@/shared/api/tauri";
 import type { MarkdownProps, MarkdownRuntime } from "./markdown/types";
 import { SpoilerInline } from "./markdown/SpoilerInline";
 import { getReactNodeText, useStableArray } from "./markdown/utils";
@@ -127,6 +129,13 @@ export function createMarkdownComponents(
     }
 
     const label = getReactNodeText(children);
+
+    // DD-143: `.agent.*`/`.team.*` attachments render as the original snapshot card.
+    const snapshot = resolveSnapshotCard(href ? imetaByUrl?.get(href) : undefined, href, label);
+    if (snapshot) {
+      return <SnapshotCard {...snapshot}
+        onDownload={(url, filename) => invokeTauri("download_file", { url, filename })} />;
+    }
 
     const audioAttachment = renderAudioMessageAttachment(
       href ? imetaByUrl?.get(href) : undefined,
@@ -432,6 +441,7 @@ function MarkdownInner({
   linkPreviewTags,
   mentionNames,
   mentionPubkeysByName,
+  onRemoveLinkPreviewsForEveryone,
   searchQuery,
   videoReviewContext,
 }: MarkdownProps) {
@@ -523,6 +533,7 @@ function MarkdownInner({
           <LinkPreviewList
             ImageLightbox={LinkPreviewImageLightbox}
             key={messageId}
+            onRemoveForEveryone={onRemoveLinkPreviewsForEveryone}
             previews={resolvedLinkPreviews}
           />
         </VideoReviewMarkdownContext.Provider>

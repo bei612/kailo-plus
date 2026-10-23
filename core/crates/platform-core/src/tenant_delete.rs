@@ -2067,6 +2067,10 @@ async fn finish(state: &ServiceState, deletion: &Delete) -> Result<(), sqlx::Err
         "update catalog.skill_definition set status='DELETED' where tenant_id=$1 and status<>'DELETED'",
         "update catalog.skill_version set artifact=null where tenant_id=$1 and artifact is not null",
         "delete from admission.skill_artifact_upload where tenant_id = $1",
+        // DD-149(11)：连接器转墓碑（其 Resource 与工具已随上方语句 DELETED，凭据随 Tenant
+        // namespace 销毁）；未完成的 OAuth 尝试作废并清掉 verifier。
+        "update catalog.mcp_connection set state='DELETED',version=version+1,updated_at=now() where tenant_id=$1 and state<>'DELETED'",
+        "update admission.mcp_oauth_attempt set state='EXPIRED',pkce_verifier=null where tenant_id=$1 and state='PENDING'",
         "delete from identity.collaboration_user_state where tenant_principal_id in (select id from identity.principal where tenant_id = $1)",
         // DD-138(4): inbox notifications from components leave with the Tenant (03 ComponentNotification).
         "delete from identity.component_notification where tenant_id = $1",

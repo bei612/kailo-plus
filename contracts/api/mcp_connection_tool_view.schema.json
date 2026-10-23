@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/mcp_connection_tool_view.schema.json",
+  "title": "McpConnectionToolView",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "toolResourceId",
+    "name",
+    "upstreamName",
+    "inputSchemaJson",
+    "risk",
+    "callPolicy",
+    "riskDeclared"
+  ],
+  "properties": {
+    "toolResourceId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "name": {
+      "type": "string",
+      "description": "Agent 看到的工具名 <slug>__<上游名>"
+    },
+    "upstreamName": {
+      "type": "string"
+    },
+    "title": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string"
+    },
+    "inputSchemaJson": {
+      "type": "string"
+    },
+    "risk": {
+      "$ref": "../enums/mcp_tool_risk.schema.json"
+    },
+    "callPolicy": {
+      "$ref": "../enums/mcp_tool_call_policy.schema.json"
+    },
+    "riskDeclared": {
+      "type": "boolean"
+    },
+    "readOnlyHint": {
+      "type": "boolean"
+    },
+    "destructiveHint": {
+      "type": "boolean"
+    }
+  }
+}

@@ -76,6 +76,8 @@ export type MarkdownProps = {
   messageId?: string;
   linkPreviewsSuppressed?: boolean;
   linkPreviewTags?: readonly (readonly string[])[];
+  /** Original MessageRow removeLinkPreviewsForEveryone: offered on the author's own message only. */
+  onRemoveLinkPreviewsForEveryone?: () => Promise<void>;
   /** Inline content prepended inside the first rendered prose paragraph. */
   leadingInlineContent?: React.ReactNode;
   searchQuery?: string;

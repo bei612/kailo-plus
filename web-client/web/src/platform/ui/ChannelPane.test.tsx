@@ -30,7 +30,7 @@ const state = vi.hoisted(() => ({
   userState: { isSuccess: true, data: { version: 0, readContexts: {}, workspacePreferences: {}, conversationPreferences: {} as Record<string, {muted: boolean}> } },
   notify: vi.fn(),
   richContent: false,
-  typingAgents: {isSuccess:true,isFetching:false,data:{agents:[] as {pubkey:string;installation:{resourceId:string}}[]}},
+  typingAgents: {isSuccess:true,isFetching:false,data:{principalId:"me",members:[] as unknown[],agents:[] as {pubkey:string;installation:{resourceId:string}}[]}},
   // DD-125(6): the readable Installation directory behind the working signal.
   channelAgents: {isSuccess:true,isFetching:false,data:[] as Record<string, unknown>[]},
   openActivity: vi.fn(),
@@ -320,7 +320,7 @@ it.each(["channel", "conversation"] as const)("freshly reads a reloaded %s threa
 });
 
 it.each(["channel", "conversation"] as const)("passes admitted %s thread typing from the live window and clears completed, expired and revoked indicators", async scope => {
-  state.typingAgents.data={agents:[{pubkey:"agent",installation:{resourceId:"agent-installation"}}]};
+  state.typingAgents.data={principalId:"me",members:[],agents:[{pubkey:"agent",installation:{resourceId:"agent-installation"}}]};
   state.members.data = [{principalId:"human-a",pubkeys:["self-key"],displayName:"Me"}, {principalId:"human-b",pubkeys:["peer"],displayName:"Peer"}];
   const conversation=scope==="conversation"?{id:"workspace-a",channelId:"channel-a",state:ConversationViewState.Active,participantPrincipalIds:["human-a","human-b"],operationId:"operation",version:1}:undefined;
   await act(async () => root.render(<TooltipProvider><ChannelPane workspaceId="workspace-a" channelId="channel-a" myPrincipalId="human-a" conversation={conversation} /></TooltipProvider>));

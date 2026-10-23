@@ -311,6 +311,15 @@ impl Policy {
                         }
                     }
                     child
+                } else if crate::mcp_connection::tool::is_connector_name(&call.name) {
+                    // DD-149: connector child (Delegation, call policy, approval).
+                    crate::mcp_connection::tool::prepare(
+                        &self.state,
+                        invocation,
+                        &call.name,
+                        &arguments,
+                    )
+                    .await?
                 } else if call.name == crate::project_channel_request::TOOL {
                     // DD-140: an owner-approved proposal, never a direct create.
                     crate::project_channel_request::prepare(&self.state, invocation, &arguments)
@@ -522,8 +531,13 @@ impl Policy {
                     if !seen.insert(tool.name.to_string()) {
                         return Err(invalid());
                     }
-                    let original =
-                        agent_tool_mcp::schema_tool(&tool.name).map_err(|_| invalid())?;
+                    let original = if crate::mcp_connection::tool::is_connector_name(&tool.name) {
+                        crate::mcp_connection::tool::schema(&self.state, invocation, &tool.name)
+                            .await
+                            .map_err(|_| invalid())?
+                    } else {
+                        agent_tool_mcp::schema_tool(&tool.name).map_err(|_| invalid())?
+                    };
                     if serde_json::to_value(&original).map_err(|_| invalid())?
                         != serde_json::to_value(&tool).map_err(|_| invalid())?
                     {
@@ -552,6 +566,24 @@ impl Policy {
                     serde_json::from_slice(&response.mcp_response).map_err(|_| invalid())?;
                 let result: CallToolResult =
                     serde_json::from_value(raw.clone()).map_err(|_| invalid())?;
+                if crate::mcp_connection::tool::is_connector_name(name) {
+                    // DD-149: exactly the labelled result the relay recorded, as sent.
+                    crate::mcp_connection::tool::disclose(
+                        &self.state,
+                        invocation,
+                        child,
+                        operation,
+                        name,
+                        &raw,
+                    )
+                    .await?;
+                    self.sessions
+                        .verify(authorization.strip_prefix("Bearer ").ok_or_else(denied)?)
+                        .map_err(|_| denied())?;
+                    return Ok(wire::McpResponseResult {
+                        result: Some(wire::mcp_response_result::Result::Pass(wire::Pass {})),
+                    });
+                }
                 let disclosed = if application.is_some() {
                     crate::application_tool::disclose(
                         &self.state,

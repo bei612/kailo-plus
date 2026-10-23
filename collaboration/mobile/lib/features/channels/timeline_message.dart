@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 
+import '../../shared/custom_emoji/custom_emoji.dart';
 import '../../shared/relay/relay.dart';
 import 'channel_window.dart';
 
@@ -118,6 +119,27 @@ String _describeTextFieldChange(String field, String? value) {
 }
 
 @immutable
+class TimelineReaction {
+  final String emoji;
+  final int count;
+  final bool reactedByCurrentUser;
+  final List<String> userPubkeys;
+  final String? emojiUrl;
+
+  /// The event ID of the current user's reaction, for deletion.
+  final String? currentUserReactionId;
+
+  const TimelineReaction({
+    required this.emoji,
+    required this.count,
+    required this.reactedByCurrentUser,
+    required this.userPubkeys,
+    this.emojiUrl,
+    this.currentUserReactionId,
+  });
+}
+
+@immutable
 class TimelineMessage {
   final String id;
   final String pubkey;
@@ -130,6 +152,9 @@ class TimelineMessage {
 
   /// Pubkeys mentioned in this message (from p-tags).
   final List<String> mentionPubkeys;
+
+  /// Aggregated reactions on this message.
+  final List<TimelineReaction> reactions;
 
   /// Direct parent event ID (null for top-level messages).
   final String? parentId;
@@ -147,6 +172,7 @@ class TimelineMessage {
     this.edited = false,
     this.systemEvent,
     this.mentionPubkeys = const [],
+    this.reactions = const [],
     this.parentId,
     this.rootId,
   });
@@ -285,10 +311,15 @@ List<List<MainTimelineEntry>> groupMembershipTimelineEntries(
 }
 
 /// Process a chronologically-sorted list of [NostrEvent]s into a list of
-/// [TimelineMessage]s, applying deletions, edits, and system event parsing.
+/// [TimelineMessage]s, applying deletions, edits, reactions, and system event
+/// parsing.
 ///
 /// Mirrors the desktop's `formatTimelineMessages` logic.
-List<TimelineMessage> formatTimeline(List<NostrEvent> events) {
+/// [currentPubkey] is used to determine if the current user has reacted.
+List<TimelineMessage> formatTimeline(
+  List<NostrEvent> events, {
+  String? currentPubkey,
+}) {
   // 1. Collect deletion targets. Both kind:5 (NIP-09) and kind:9005
   // (Buzz-native) are deletion markers; mirror desktop's behavior.
   final deletedIds = <String>{};
@@ -323,7 +354,60 @@ List<TimelineMessage> formatTimeline(List<NostrEvent> events) {
     }
   }
 
-  // 3. Filter to visible content events and build TimelineMessages.
+  // 3. Aggregate reactions: targetId → { emoji → { pubkey → eventId } }.
+  final reactionMap = <String, Map<String, Map<String, String>>>{};
+  final reactionEmojiUrls = <String, Map<String, String>>{};
+  for (final event in events) {
+    if (event.kind != EventKind.reaction) continue;
+    if (deletedIds.contains(event.id)) continue;
+
+    final targetId = _lastETag(event.tags);
+    if (targetId == null || deletedIds.contains(targetId)) continue;
+
+    final emoji = event.content.trim();
+    if (emoji.isEmpty) continue;
+
+    reactionMap
+            .putIfAbsent(targetId, () => {})
+            .putIfAbsent(emoji, () => {})[event.pubkey.toLowerCase()] =
+        event.id;
+
+    final shortcode = normalizeShortcode(emoji);
+    if (shortcode != null) {
+      for (final tag in event.tags) {
+        if (tag.length < 3 || tag[0] != 'emoji') continue;
+        if (normalizeShortcode(tag[1]) == shortcode) {
+          reactionEmojiUrls.putIfAbsent(targetId, () => {})[emoji] = tag[2];
+          break;
+        }
+      }
+    }
+  }
+
+  final normalizedCurrentPubkey = currentPubkey?.toLowerCase();
+
+  List<TimelineReaction> reactionsFor(String eventId) {
+    final emojiMap = reactionMap[eventId];
+    if (emojiMap == null) return const [];
+
+    return [
+      for (final entry in emojiMap.entries)
+        TimelineReaction(
+          emoji: entry.key,
+          count: entry.value.length,
+          reactedByCurrentUser:
+              normalizedCurrentPubkey != null &&
+              entry.value.containsKey(normalizedCurrentPubkey),
+          userPubkeys: entry.value.keys.toList(),
+          emojiUrl: reactionEmojiUrls[eventId]?[entry.key],
+          currentUserReactionId: normalizedCurrentPubkey != null
+              ? entry.value[normalizedCurrentPubkey]
+              : null,
+        ),
+    ];
+  }
+
+  // 4. Filter to visible content events and build TimelineMessages.
   final result = <TimelineMessage>[];
   for (final event in events) {
     if (deletedIds.contains(event.id)) continue;
@@ -340,6 +424,7 @@ List<TimelineMessage> formatTimeline(List<NostrEvent> events) {
             tags: event.tags,
             isSystem: true,
             systemEvent: systemEvent,
+            reactions: reactionsFor(event.id),
           ),
         );
       }
@@ -370,6 +455,7 @@ List<TimelineMessage> formatTimeline(List<NostrEvent> events) {
           tags: effectiveTags,
           edited: edit != null,
           mentionPubkeys: mentions,
+          reactions: reactionsFor(event.id),
           parentId: threadRef.parentId,
           rootId: threadRef.rootId,
         ),

@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "domain/mcp_connection_create.schema.json",
+  "title": "McpConnectionCreate",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "displayName",
+    "endpointUrl",
+    "transport",
+    "authMode",
+    "visibility",
+    "toolsDigest",
+    "tools"
+  ],
+  "properties": {
+    "displayName": {
+      "type": "string",
+      "description": "连接器显示名，1–80 字符"
+    },
+    "endpointUrl": {
+      "type": "string",
+      "description": "https 端点；不含 userinfo、query 与 fragment"
+    },
+    "transport": {
+      "$ref": "../enums/mcp_connection_transport.schema.json"
+    },
+    "authMode": {
+      "$ref": "../enums/mcp_connection_auth_mode.schema.json"
+    },
+    "apiKeyHeader": {
+      "type": "string",
+      "description": "仅 API_KEY：小写 header 名"
+    },
+    "visibility": {
+      "$ref": "../enums/mcp_connection_visibility.schema.json"
+    },
+    "workspaceId": {
+      "type": "string",
+      "format": "uuid",
+      "description": "仅 WORKSPACE 可见范围：所属 Workspace"
+    },
+    "oauthAttemptId": {
+      "type": "string",
+      "format": "uuid",
+      "description": "仅 OAUTH：本人本会话已完成且未使用的授权尝试"
+    },
+    "toolsDigest": {
+      "type": "string",
+      "description": "确认时探测结果的清单摘要；提交时 Core 重新探测比对"
+    },
+    "tools": {
+      "type": "array",
+      "items": {
+        "$ref": "mcp_tool_selection.schema.json"
+      }
+    },
+    "sharedAuthorizationConsent": {
+      "type": "boolean",
+      "description": "OAUTH 且可见范围不是 PERSONAL 时必须为 true：同意其他人的 Agent 以本人授权调用"
+    }
+  },
+  "description": "仅 mcp_connection.create（DD-149、05 §2.15）：端点、认证方式、可见范围与确认的工具清单。凭据值只经 ActionCommand.mcpConnectionCredential 一次性提交；OAuth 只引用本人本会话已完成的授权尝试。"
+}

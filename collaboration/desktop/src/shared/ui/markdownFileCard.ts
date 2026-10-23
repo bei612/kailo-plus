@@ -1,10 +1,24 @@
 import {
   resolveFileCard as resolveSharedFileCard,
+  resolveSnapshotCard as resolveSharedSnapshotCard,
   type FileCardImetaEntry,
   type ResolvedFileCard,
+  type ResolvedSnapshotCard,
 } from "@client-kit/platform/react/messages/resolveFileCard";
 import { rewriteRelayUrl } from "@/shared/lib/mediaUrl";
-export type { FileCardImetaEntry, ResolvedFileCard };
+export type { FileCardImetaEntry, ResolvedFileCard, ResolvedSnapshotCard };
+
+/** DD-143 original snapshot card classification, with relay media URLs rewritten. */
+export function resolveSnapshotCard(
+  entry: FileCardImetaEntry | undefined,
+  href: string | undefined,
+  childText: string,
+): ResolvedSnapshotCard | null {
+  const card = resolveSharedSnapshotCard(entry, href, childText);
+  if (!card) return null;
+  const url = rewriteRelayUrl(card.href);
+  return { ...card, href: url, thumb: card.thumb ? url : undefined };
+}
 
 /**
  * Decide whether a markdown link should render as a generic-file download

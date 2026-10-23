@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/mcp_connection_auth_mode.schema.json",
+  "title": "McpConnectionAuthMode",
+  "description": "DD-149(5)(6)：连接器认证方式。",
+  "type": "string",
+  "enum": [
+    "NONE",
+    "API_KEY",
+    "BEARER",
+    "OAUTH"
+  ]
+}

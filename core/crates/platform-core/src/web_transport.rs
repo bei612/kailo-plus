@@ -514,6 +514,32 @@ fn mention_targets(ids: Option<&[String]>) -> Option<Vec<Uuid>> {
     Some(ids)
 }
 
+/// DD-148: the original Agent address tray. A sorted, deduplicated subset of the same
+/// request's Installation mentions, only on a new Workspace message (not an edit,
+/// deletion or send-to-channel); anything else is a malformed request.
+fn addressed_targets(request: &PublishRequest, mention_ids: &[Uuid]) -> Option<Vec<Uuid>> {
+    let ids = mention_targets(request.addressed_installation_ids.as_deref())?;
+    if ids.is_empty() {
+        return Some(ids);
+    }
+    let new_message = request.edit_event_id.is_none()
+        && request.delete_event_id.is_none()
+        && request.send_to_channel_source_event_id.is_none();
+    let subset = ids.iter().all(|id| mention_ids.binary_search(id).is_ok());
+    (new_message && subset).then_some(ids)
+}
+
+/// DD-148: the AGENT keys of the addressed Installations. `agent_keys` is
+/// `resolve_mentions`' answer, which covers `mention_ids` exactly and in order.
+fn addressed_keys(mention_ids: &[Uuid], agent_keys: &[String], addressed: &[Uuid]) -> Vec<String> {
+    mention_ids
+        .iter()
+        .zip(agent_keys)
+        .filter(|(id, _)| addressed.binary_search(id).is_ok())
+        .map(|(_, key)| key.clone())
+        .collect()
+}
+
 fn mention_intent_matches(frozen: &[Uuid], requested: &[Uuid]) -> bool {
     frozen == requested
 }
@@ -1975,6 +2001,13 @@ async fn publish(
         None => return StatusCode::BAD_REQUEST.into_response(),
     };
 
+    let addressed_ids = match &publication {
+        Publication::Message(request) => match addressed_targets(request, &mention_ids) {
+            Some(ids) => ids,
+            None => return StatusCode::BAD_REQUEST.into_response(),
+        },
+        _ => Vec::new(),
+    };
     // 同一个键已经发过：不再发，回答那次的结论。只有确定未送达才允许重新发送。
     let human_mentions = match human_mention_targets(match &publication {
         Publication::Message(request) => request.mention_pubkeys.as_deref(),
@@ -2000,6 +2033,7 @@ async fn publish(
         event_id: String,
         result: Option<String>,
         mention_installation_ids: Vec<Uuid>,
+        addressed_installation_ids: Vec<Uuid>,
         mention_pubkeys: Vec<String>,
         reference_mention_pubkeys: Vec<String>,
         target_ids: Vec<Option<Uuid>>,
@@ -2014,6 +2048,7 @@ async fn publish(
     let previous = match sqlx::query_as::<_, PreviousPublish>(
         r#"select a.operation_id, a.event_id, a.mention_installation_ids, a.mention_pubkeys, a.message_kind, a.parent_event_id, a.edit_event_id, a.delete_event_id, a.send_to_channel_source_event_id,
                   a.link_preview_snapshot_ids, a.suppress_link_previews, a.reference_mention_pubkeys,
+                  a.addressed_installation_ids,
                   array(select r.target_id from audit.audit_event r
                     where r.operation_id=a.operation_id and r.event_type='DISPATCH'
                       and r.action_key=$3 and r.target_type=$4
@@ -2047,6 +2082,7 @@ async fn publish(
     if let Some(p) = &previous {
         if !publish_scope_matches(&p.target_ids, target.id())
             || !mention_intent_matches(&p.mention_installation_ids, &mention_ids)
+            || p.addressed_installation_ids != addressed_ids
             || p.mention_pubkeys != human_mentions
             || p.reference_mention_pubkeys != reference_mentions
             || p.message_kind != requested_kind
@@ -2135,6 +2171,9 @@ async fn publish(
         Ok(keys) => keys,
         Err(response) => return response,
     };
+    // DD-148: every addressed Installation was admitted with the rest of the
+    // mentions (resolve_mentions refuses any partial coverage), so all are delivered.
+    let address_keys = addressed_keys(&mention_ids, &mentions, &addressed_ids);
     mentions.extend(human_mentions.iter().cloned());
     mentions.sort_unstable();
     mentions.dedup();
@@ -2539,12 +2578,13 @@ async fn publish(
             &media_tags,
             &mentions,
         ),
-        Publication::Message(_) => client.sign_channel_message_references(
+        Publication::Message(_) => client.sign_channel_message_addressed(
             &channel_id,
             &content,
             &media_tags,
             &mentions,
             &reference_mentions,
+            &address_keys,
             &message_type,
             ancestry
                 .as_ref()
@@ -2651,8 +2691,8 @@ async fn publish(
             None => sqlx::query(
                 "insert into admission.publish_attempt
                      (tenant_principal_id, idempotency_key, operation_id, event_id, mention_installation_ids, message_kind, parent_event_id, edit_event_id, delete_event_id, mention_pubkeys, send_to_channel_source_event_id,
-                      link_preview_snapshot_ids, suppress_link_previews, reference_mention_pubkeys)
-                 values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) on conflict do nothing"
+                      link_preview_snapshot_ids, suppress_link_previews, reference_mention_pubkeys, addressed_installation_ids)
+                 values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) on conflict do nothing"
             )
             .bind(ctx.tenant_principal_id)
             .bind(idempotency_key)
@@ -2668,6 +2708,7 @@ async fn publish(
             .bind(&preview_ids)
             .bind(suppress_previews)
             .bind(&reference_mentions)
+            .bind(&addressed_ids)
             .execute(&mut *tx)
             .await?
             .rows_affected(),
@@ -2677,6 +2718,7 @@ async fn publish(
             #[derive(sqlx::FromRow)]
             struct ConcurrentPublish {
                 mention_installation_ids: Vec<Uuid>,
+                addressed_installation_ids: Vec<Uuid>,
                 mention_pubkeys: Vec<String>,
                 reference_mention_pubkeys: Vec<String>,
                 message_kind: i32,
@@ -2691,6 +2733,7 @@ async fn publish(
             let frozen: ConcurrentPublish = sqlx::query_as(
                 "select a.mention_installation_ids, a.mention_pubkeys, a.message_kind, a.parent_event_id, a.edit_event_id, a.delete_event_id, a.send_to_channel_source_event_id,
                     a.link_preview_snapshot_ids, a.suppress_link_previews, a.reference_mention_pubkeys,
+                    a.addressed_installation_ids,
                     array(select r.target_id from audit.audit_event r
                       where r.operation_id=a.operation_id and r.event_type='DISPATCH'
                         and r.action_key=$3 and r.target_type=$4
@@ -2702,6 +2745,7 @@ async fn publish(
                 .fetch_one(&mut *tx).await?;
             return Ok(if publish_scope_matches(&frozen.target_ids, target.id())
                 && mention_intent_matches(&frozen.mention_installation_ids, &mention_ids)
+                && frozen.addressed_installation_ids == addressed_ids
                 && frozen.mention_pubkeys == human_mentions
                 && frozen.reference_mention_pubkeys == reference_mentions
                 && frozen.message_kind == requested_kind && frozen.parent_event_id == parent_event_id
@@ -5854,6 +5898,38 @@ mod tests {
             &[Some(original), Some(other)],
             original
         ));
+    }
+
+    #[test]
+    fn agent_address_is_a_subset_of_new_message_mentions() {
+        let (a, b, c) = (Uuid::from_u128(1), Uuid::from_u128(2), Uuid::from_u128(3));
+        let request = |extra: serde_json::Value| -> PublishRequest {
+            let mut value = serde_json::json!({"content": "hello"});
+            for (key, item) in extra.as_object().unwrap() {
+                value[key] = item.clone();
+            }
+            serde_json::from_value(value).unwrap()
+        };
+        let mentions = vec![a, b];
+        let ok = request(
+            serde_json::json!({"addressedInstallationIds": [b.to_string(), b.to_string()]}),
+        );
+        assert_eq!(addressed_targets(&ok, &mentions), Some(vec![b]));
+        let outside = request(serde_json::json!({"addressedInstallationIds": [c.to_string()]}));
+        assert_eq!(addressed_targets(&outside, &mentions), None);
+        let edit = request(
+            serde_json::json!({"addressedInstallationIds": [a.to_string()],
+            "editEventId": "a".repeat(64)}),
+        );
+        assert_eq!(addressed_targets(&edit, &mentions), None);
+        assert_eq!(
+            addressed_targets(&request(serde_json::json!({})), &mentions),
+            Some(vec![])
+        );
+        assert_eq!(
+            addressed_keys(&mentions, &["ka".into(), "kb".into()], &[b]),
+            vec!["kb".to_owned()]
+        );
     }
 
     #[test]

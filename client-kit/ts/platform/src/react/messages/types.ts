@@ -26,6 +26,11 @@ export type TimelineMessage = {
   isAgent?: boolean;
   ownerPubkey?: string | null;
   ownerLabel?: string | null;
+  /**
+   * DD-147(2): the owner-only respondTo badge. Only `allowlist` exists in Kailo (`anyone` is not
+   * offered, DD-125(6)); absent means the default owner-only.
+   */
+  respondTo?: "allowlist";
   reactions?: TimelineReaction[];
   time: string;
   body: string;

@@ -30,6 +30,7 @@ const messages = {
   "platform.attachments": { en: "Attachments", "zh-CN": "附件" },
   "platform.removeAttachment": { en: "Remove", "zh-CN": "移除" },
   "platform.uploading": { en: "Uploading…", "zh-CN": "上传中…" },
+  "platform.sendAfterUpload": { en: "Sending once uploads finish… {percent}%", "zh-CN": "上传完成后发送… {percent}%" },
   "platform.uploadFailed": {
     en: "Upload failed — the result is unknown. Try again.",
     "zh-CN": "上传失败，结果不明。请重试。",

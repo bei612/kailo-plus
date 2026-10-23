@@ -10,6 +10,8 @@ import { useComposerSpoilerParticles } from "@client-kit/platform/react/composer
 import { useEmojiAutocomplete, type EmojiSuggestion } from "@client-kit/platform/react/composer/features/messages/lib/useEmojiAutocomplete";
 import { writeTextToClipboard } from "@/shared/lib/clipboard";
 import { useComposerAgentDirectory } from "@client-kit/platform/react/composer/features/messages/ui/useComposerAgentDirectory";
+import { findDmAgentMention, useDmAgentMentionNames } from "@client-kit/platform/react/composer/dmAgentMention";
+import { ComposerQueuedSendPill } from "./ComposerQueuedSendPill";
 import { getPersistentAgentAudienceScope } from "@client-kit/platform/react/composer/features/messages/lib/persistentAgentAudience";
 import { setKeepMentionedAgentsPinned } from "@client-kit/platform/react/composer/features/messages/lib/autoPinMentionedAgentsPreference";
 import { useThreadAgentAudience } from "@client-kit/platform/react/composer/features/messages/ui/useThreadAgentAudience";
@@ -101,7 +103,7 @@ import { AnimatePresence } from "motion/react";
 import { useIsThreadPanelOverlay } from "@client-kit/platform/react/thread";
 import { MessageAuthorAvatar, MessageAuthorIdentity, useMessageAuthorLabels, MessageAuthorProfile } from "./MessageAuthorProfile";
 import { resolveConversationHeaderParticipants, formatDmParticipantDisplayName } from "@client-kit/platform/react/conversations/dm-participant-display";
-import { UserAvatar } from "@client-kit/platform/react/messages";
+import { UserAvatar, agentAddressHost, useAgentAuthorFacts, withAgentAuthorFacts, type AgentAuthorFacts } from "@client-kit/platform/react/messages";
 import type { MessageTimelineProps } from "@client-kit/platform/react/messages/timeline/types";
 import { useSearchHighlightProps } from "@client-kit/platform/react/search/useSearchHighlightProps";
 import { useUiT } from "@client-kit/platform/react/context";
@@ -401,6 +403,9 @@ export function ChannelPane({
   );
   const typingAgents = useComposerAgentDirectory(bff, {workspaceId, principalId: myPrincipalId}, !conversation && live && !denied && !metadataPending);
   const agentTypingPubkeys = useMemo(() => new Set(typingAgents.data?.agents.map(agent => agent.pubkey.toLowerCase())), [typingAgents.data]);
+  // DD-147/148: owner line, owner-only respondTo badge and address prefix from the same directory.
+  const agentFacts: AgentAuthorFacts = useAgentAuthorFacts(bff, typingAgents.data);
+  const agentAddress = useMemo(() => agentAddressHost(agentFacts), [agentFacts]);
   // Original canManageMessageForCurrentUser "own Agent": Installations this person owns here.
   const ownedAgentPubkeys = useMemo(() => new Set(typingAgents.data?.agents
     .filter(agent => agent.installation.ownerPrincipalId === myPrincipalId).map(agent => agent.pubkey.toLowerCase())),
@@ -436,12 +441,12 @@ export function ChannelPane({
     .map(entry => entry.pubkey);
   const authorLabel = useMessageAuthorLabels({principalId: myPrincipalId, workspaceId, conversationId: conversation?.id},
     events, live && !denied && !metadataPending);
-  const timelineMessages = useMemo<TimelineMessage[]>(() => events.map((event) => ({
+  const timelineMessages = useMemo<TimelineMessage[]>(() => events.map((event) => withAgentAuthorFacts({
     id: event.id, createdAt: event.created_at, pubkey: event.pubkey,
     signerPubkey: event.pubkey, author: authorLabel(event, byPubkey.get(event.pubkey)?.displayName),
     body: event.content, tags: event.tags, kind: event.kind, time: "", depth: 0, reactions:messageReactions.reactions.get(event.id),
     edited: event.edited, isAgent: agentTypingPubkeys.has(event.pubkey.toLowerCase()), ...getThreadReference(event.tags),
-  })), [events, byPubkey, messageReactions.reactions, authorLabel, agentTypingPubkeys]);
+  }, agentFacts)), [events, byPubkey, messageReactions.reactions, authorLabel, agentTypingPubkeys, agentFacts]);
   // Original ChannelScreen merges freshly read route context with its channel
   // window. Search results and URL ids are not permission to reuse stale bodies.
   const routeReadId = targetMessageId ?? effectiveThreadHeadId;
@@ -457,12 +462,12 @@ export function ChannelPane({
   const routeContextAvailable = Boolean(routeReadId && live && !denied && !routeContext.denied && !routeContext.interrupted && routeContext.thread.isSuccess && !routeContext.thread.isError);
   const routeAuthorLabel = useMessageAuthorLabels({principalId: myPrincipalId, workspaceId, conversationId: conversation?.id},
     routeContext.messages, routeContextAvailable);
-  const routeMessages = useMemo<TimelineMessage[]>(() => routeContextAvailable ? routeContext.messages.map(event => ({
+  const routeMessages = useMemo<TimelineMessage[]>(() => routeContextAvailable ? routeContext.messages.map(event => withAgentAuthorFacts({
     id: event.id, createdAt: event.createdAt, pubkey: event.pubkey, signerPubkey: event.pubkey,
     author: routeAuthorLabel(event, byPubkey.get(event.pubkey)?.displayName),
     body: event.content, tags: event.tags, kind: event.kind, time: "", depth: 0,
     edited: event.edited, isAgent: agentTypingPubkeys.has(event.pubkey.toLowerCase()), ...getThreadReference(event.tags),
-  })) : [], [routeContextAvailable, routeContext.messages, byPubkey, routeAuthorLabel, agentTypingPubkeys]);
+  }, agentFacts)) : [], [routeContextAvailable, routeContext.messages, byPubkey, routeAuthorLabel, agentTypingPubkeys, agentFacts]);
   const routeMessageById = useMemo(() => new Map([...timelineMessages, ...routeMessages].map(message => [message.id, message])), [timelineMessages, routeMessages]);
   // DD-121: own top-level and open-thread messages that @mention a channel Agent (Workspace channels only).
   const mentionAgents = useMemo<MentionableAgent[]>(() => (typingAgents.data?.agents ?? []).map(agent =>
@@ -905,7 +910,7 @@ export function ChannelPane({
             return <div key={message.id} data-event-id={message.id} className={`flex flex-col gap-1 ${followedByContinuation ? "pb-0" : "pb-2.5"}`}>
               <MessageRowSurface message={message} isContinuation={isContinuation} showDepthGuides={false} highlighted={highlightedMessageId === message.id}
                 searchQuery={props.searchMatchingMessageIds?.has(message.id) ? props.searchQuery : undefined}
-                agentMentionStatus={renderAgentMentionStatus(message)}
+                agentMentionStatus={renderAgentMentionStatus(message)} agentAddress={agentAddress}
                 reference={<SentFromThreadLine channelId={channelId} tags={message.tags}
                   renderLink={(link, threadExcerpt) => <SentFromThreadLink link={link}
                     channelLabel={channelName || link.channelId.slice(0, 8)} threadExcerpt={threadExcerpt}
@@ -1022,7 +1027,7 @@ export function ChannelPane({
     </Suspense> : null}
     {threadAdmissionAvailable ? <AnimatePresence mode="wait" onExitComplete={markExitComplete}>
     {replaceThreadWithIdleAuxiliary && !profileTarget && !systemProfileTarget && !participantProfileTarget ? idleAuxiliarySurface : replyTarget ? <div ref={threadSurface.ref} inert={threadSurface.covered || undefined} aria-hidden={threadSurface.covered || undefined} key={`${myPrincipalId}:${workspaceId}:${getThreadReference(replyTarget.tags ?? []).rootId ?? replyTarget.id}`} className={profileTarget || systemProfileTarget || participantProfileTarget ? "hidden" : "contents"}><FocusThreadDrawer escapeEnabled={!threadSurface.covered} hasActiveEdit={threadEditTarget!==null} active={focusThread && !profileTarget && !systemProfileTarget && !participantProfileTarget} channelName={channelName} onClose={handleCloseThread}><ChannelThreadPane key={`${myPrincipalId}:${workspaceId}:${getThreadReference(replyTarget.tags ?? []).rootId ?? replyTarget.id}`}
-      channelName={channelName} agentPubkeys={agentTypingPubkeys} ownedAgentPubkeys={ownedAgentPubkeys}
+      channelName={channelName} agentPubkeys={agentTypingPubkeys} agentFacts={agentFacts} ownedAgentPubkeys={ownedAgentPubkeys}
       restoreDraftKey={restoreDraftKey} autoSendDraftKey={autoSendDraftKey} onAutoSendConsumed={onAutoSendConsumed}
       channelId={conversation?.channelId ?? channelId}
       conversation={conversation}
@@ -1101,7 +1106,9 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
    * forwards the preview intent pass it; the built-in Workspace publication needs none. */
   linkPreviewTarget?: { workspaceId: string } | { conversationId: string };
   /** `referenceMentionPubkeys` (DD-125(8)) is passed only when the person chose to send without inviting. */
-  onPublish?: (content: string, attachments: readonly MediaDescriptor[], idempotencyKey: string, mentionInstallationIds: string[], humanMentionPubkeys?: string[], linkPreviews?: LinkPreviewPublication, referenceMentionPubkeys?: string[]) => Promise<unknown>;
+  onPublish?: (content: string, attachments: readonly MediaDescriptor[], idempotencyKey: string, mentionInstallationIds: string[], humanMentionPubkeys?: string[], linkPreviews?: LinkPreviewPublication, referenceMentionPubkeys?: string[],
+    /** DD-148: the address-tray subset of mentionInstallationIds (original agent-address tags). */
+    addressedInstallationIds?: string[]) => Promise<unknown>;
   onCancel?: () => void;
   containerClassName?: string;
   layoutMode?: "standalone" | "dock";
@@ -1192,6 +1199,15 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
   const [problemNeutral, setProblemNeutral] = useState(false);
   const [mentionInstallationIds, setMentionInstallationIds] = useState<string[]>([]);
   const [sending, setSending] = useState(false);
+  // DD-146 original send-then-upload: a send requested while attachments upload is held (frozen
+  // until every attachment has a BFF-confirmed descriptor), then published once; a failed or
+  // canceled upload releases it with the draft intact, so nothing is ever published that
+  // references unconfirmed media (DD-81 intent and key handling is the ordinary send below).
+  const [queuedSend, setQueuedSend] = useState(false);
+  const queuedSendRef = useRef(false);
+  const queuedUploadFailed = useRef(false);
+  // DD-144: an Agent mention in a DM is refused before sending, with the draft kept.
+  const dmAgentNames = useDmAgentMentionNames(bff, channelType === "dm" && !editTarget);
   useEffect(() => { onSendingChange?.(sending); }, [sending, onSendingChange]);
   useEffect(() => () => { onSendingChange?.(false); }, [onSendingChange]);
   const [dragging, setDragging] = useState(false);
@@ -1294,6 +1310,7 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
           if (!owner.active) return;
           // Original cancelUpload: a canceled file raises no problem and never becomes imeta.
           if (upload.signal.aborted) continue;
+          if (queuedSendRef.current) queuedUploadFailed.current = true;
           setProblemNeutral(e instanceof ConversationPreparationPending || isOutcomeUnknown(e));
           // 413 是 BFF 侧先行设定的上界，是确定的拒绝；其余是结果不明
           setProblem(
@@ -1358,7 +1375,7 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
   const onTypingRef = useRef(onTyping);
   onTypingRef.current = onTyping;
   const richText = useRichTextEditor({
-    placeholder: placeholder ?? t("platform.message"), editable: !disabled && !sending,
+    placeholder: placeholder ?? t("platform.message"), editable: !disabled && !sending && !queuedSend,
     restoreFocusOnEnable: () => !compact || Boolean(draft.trim() || pending.length || problem),
     readClipboardText: () => navigator.clipboard.readText(),
     customEmoji,
@@ -1584,7 +1601,18 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
   }, [invitation.cancel]);
 
   const send = useCallback(async (decision?: NonMemberDecision) => {
-    if (sending || owner.sending || disabled || uploading > 0 || voiceNote.statusRef.current !== "idle" || !mentionVerified) return;
+    if (sending || owner.sending || disabled || queuedSendRef.current || voiceNote.statusRef.current !== "idle" || !mentionVerified) return;
+    if (channelType === "dm" && dmAgentNames.length && findDmAgentMention(richText.getMarkdown(), dmAgentNames)) {
+      setProblemNeutral(false);
+      setProblem(t("dm.agentMentionRefused"));
+      return;
+    }
+    if (uploading > 0) {
+      queuedUploadFailed.current = false;
+      queuedSendRef.current = true;
+      setQueuedSend(true);
+      return;
+    }
     if (editTarget && onRequestEmptyEditDelete && !richText.getMarkdown().trim() && pending.length === 0) {
       if (!intent.current) onRequestEmptyEditDelete(editTarget);
       else {setProblemNeutral(true);setProblem(t("platform.sendUnknown", {operation: ""}));}
@@ -1607,6 +1635,8 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
     let humanMentionPubkeys:string[]=[];
     let nonMemberPubkeys: string[] = [];
     let selectedInstallationIds: string[] = [];
+    // DD-148 original buildAgentAddressMentionTags input: the tray-addressed Agents that are delivered.
+    let addressedInstallationIds: string[] = [];
     try {
       // A typed label binds only channel members; people outside are mentioned by explicit selection.
       const memberCandidates=mentionCandidates.map(person=>({...person,isMember:person.notInChannel!==true}));
@@ -1618,6 +1648,10 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
         if (agentRecipients.some(pubkey => !fresh.agents.some(agent => agent.pubkey === pubkey)) ||
             mentionInstallationIds.some(id => !fresh.agents.some(agent => agent.installation.resourceId === id))) throw new MentionAgentNotAllowedError();
         selectedInstallationIds = [...new Set([...mentionInstallationIds, ...agentRecipients.map(pubkey => fresh.agents.find(agent => agent.pubkey === pubkey)!.installation.resourceId)])].sort();
+        addressedInstallationIds = [...new Set(audience.pubkeys.flatMap(pubkey => {
+          const agent = fresh.agents.find(candidate => candidate.pubkey === pubkey);
+          return agent && selectedInstallationIds.includes(agent.installation.resourceId) ? [agent.installation.resourceId] : [];
+        }))].sort();
       }
       humanMentionPubkeys=recipients.filter(pubkey => !agentRecipients.includes(pubkey));
       // DD-125(8): people who are not ACTIVE members of this channel's Workspace. Outside the
@@ -1644,6 +1678,7 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
         return [a.sha256, a.filename, a.spoiler, ...(Object.values(metadata).some((value) => value !== undefined) ? [metadata] : [])];
       }),
       selectedInstallationIds,
+      ...(addressedInstallationIds.length ? [addressedInstallationIds] : []),
     ];
     // DD-125(5): an unresolved intent for this same message keeps the previews it first named
     // (same key, same publication); otherwise wait for this draft's previews (original 10 s
@@ -1709,14 +1744,17 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
     setMentionInstallationIds(selectedInstallationIds);
     persistDraft(content, pending, selectedInstallationIds);
     const publish = onPublish
-      ? referenceMentionPubkeys.length
+      ? addressedInstallationIds.length
+        ? onPublish(published, attachments, key, selectedInstallationIds, humanMentionPubkeys, linkPreviewIntent, referenceMentionPubkeys, addressedInstallationIds)
+      : referenceMentionPubkeys.length
         ? onPublish(published, attachments, key, selectedInstallationIds, humanMentionPubkeys, linkPreviewIntent, referenceMentionPubkeys)
         : linkPreviewIntent
           ? onPublish(published, attachments, key, selectedInstallationIds, humanMentionPubkeys, linkPreviewIntent)
           : onPublish(published, attachments, key, selectedInstallationIds, humanMentionPubkeys)
       : workspaceId
         ? publishMessage(workspaceId, published, attachments, key, selectedInstallationIds, {mentionPubkeys: humanMentionPubkeys,
-            ...(referenceMentionPubkeys.length ? {referenceMentionPubkeys} : {}), ...linkPreviewIntent}).then((receipt) => {
+            ...(referenceMentionPubkeys.length ? {referenceMentionPubkeys} : {}),
+            ...(addressedInstallationIds.length ? {addressedInstallationIds} : {}), ...linkPreviewIntent}).then((receipt) => {
             if (!receipt?.eventId || !receipt.operationId) throw new TransportError("Message has no confirmed receipt.");
             return receipt;
           })
@@ -1770,8 +1808,21 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
       owner.sending = false;
       if (owner.active) setSending(false);
     }
-  }, [pending, pendingGifs, linkPreviews.prepareSubmit, workspaceId, mentionInstallationIds, mentionVerified, sending, uploading, disabled, onPublish, richText.getMarkdown, richText.setContent, owner, persistDraft, attachmentActions.spoileredAttachmentUrls, attachmentActions.setSpoileredAttachmentUrls, editTarget, draftKey, onConfirmed, pasteBinding, onRequestEmptyEditDelete, mentionCandidates, knownAgentKeys, audience.pubkeys, agentDirectory.verify, voiceNote.statusRef, channelLinks.clearChannels, emojiAutocomplete.clearEmojis, nonMemberFlow, promptNonMembers]);
+  }, [channelType, dmAgentNames, pending, pendingGifs, linkPreviews.prepareSubmit, workspaceId, mentionInstallationIds, mentionVerified, sending, uploading, disabled, onPublish, richText.getMarkdown, richText.setContent, owner, persistDraft, attachmentActions.spoileredAttachmentUrls, attachmentActions.setSpoileredAttachmentUrls, editTarget, draftKey, onConfirmed, pasteBinding, onRequestEmptyEditDelete, mentionCandidates, knownAgentKeys, audience.pubkeys, agentDirectory.verify, voiceNote.statusRef, channelLinks.clearChannels, emojiAutocomplete.clearEmojis, nonMemberFlow, promptNonMembers]);
   sendRef.current = send;
+  // DD-146: the held send is released once no upload is in flight — published if every upload was
+  // confirmed, otherwise left as the intact draft beside the upload problem.
+  useEffect(() => {
+    if (!queuedSend || uploading > 0) return;
+    queuedSendRef.current = false;
+    setQueuedSend(false);
+    if (queuedUploadFailed.current) { queuedUploadFailed.current = false; return; }
+    sendRef.current();
+  }, [queuedSend, uploading]);
+  const cancelQueuedSend = useCallback(() => {
+    queuedUploadFailed.current = true;
+    for (const id of [...activeUploads.current.keys()]) cancelUpload(id);
+  }, [cancelUpload]);
 
   const autoSent = useRef<typeof owner | null>(null);
   useEffect(() => {
@@ -1832,7 +1883,7 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
         event.preventDefault(); linkEditor.focusCardFirstControl();
       }
     }}
-    toolbar={{ layoutMode, composerDisabled: disabled || sending, customEmoji,
+    toolbar={{ layoutMode, composerDisabled: disabled || sending || queuedSend, customEmoji,
       addressedAgents: disabled || sending || editTarget ? [] : addressLock.lockedAgents,
       autoPinConfirmationTitle: autoPin.confirmationTitle,
       onAutoPinConfirmationDismiss: autoPin.dismissConfirmation,
@@ -1842,7 +1893,7 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
       pulseVersionByPubkey: addressPulse.pulseVersionByPubkey,
       shakeVersionByPubkey: addressPulse.shakeVersionByPubkey,
       extraActions: onCancel || toolbarExtraActions ? <>{onCancel ? <Button type="button" variant="ghost" disabled={sending} onClick={onCancel}>{t("platform.cancel")}</Button> : null}{toolbarExtraActions}</> : undefined,
-      editor: richText.editor, formattingDisabled: disabled || sending, isEmojiPickerOpen, isFormattingOpen,
+      editor: richText.editor, formattingDisabled: disabled || sending || queuedSend, isEmojiPickerOpen, isFormattingOpen,
       isSending: sending, isUploading: uploading > 0,
       isVoiceNoteProcessing: voiceNote.status !== "recording",
       isVoiceNoteRecording: voiceNote.status !== "idle",
@@ -1855,7 +1906,7 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
       onOpenMentionPicker: mentionPeople || workspaceId ? openPeople : undefined,
       onPaperclip: () => { if (!voiceNote.hasAttachmentRef.current) picker.current?.click(); },
       onFinishVoiceNote: () => void voiceNote.finish(), onVoiceNote: voiceNote.toggle,
-      sendDisabled: disabled || sending || uploading > 0 || voiceNote.status !== "idle" || !mentionVerified || (!(editTarget && onRequestEmptyEditDelete) && !draft.trim() && pending.length === 0 && pendingGifs.length === 0),
+      sendDisabled: disabled || sending || queuedSend || voiceNote.status !== "idle" || !mentionVerified || (!(editTarget && onRequestEmptyEditDelete) && !draft.trim() && pending.length === 0 && pendingGifs.length === 0),
       gifs: gifOption,
     }}>
       {dragging ? <DropZoneOverlay /> : null}
@@ -1886,6 +1937,7 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
           {problem}
         </div>
       ) : null}
+      {queuedSend ? <ComposerQueuedSendPill previews={uploadingPreviews} onCancel={cancelQueuedSend} /> : null}
       <ComposerLinkPreviewPreparing previews={linkPreviews} />
       <ComposerLinkPreviewCards previews={linkPreviews} resolveMedia={resolvePreviewMedia} />
       <ComposerGifAttachments gifs={pendingGifs} onRemove={(gif) => setPendingGifs((current) => current.filter((entry) => entry !== gif))} />
@@ -1902,7 +1954,7 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
           multiple
           hidden
           data-testid="attach-input"
-          disabled={disabled || sending || !voiceNote.acceptsAttachment}
+          disabled={disabled || sending || queuedSend || !voiceNote.acceptsAttachment}
           onChange={(e) => {
             void attachFilesWhenIdle(e.target.files);
             e.target.value = "";

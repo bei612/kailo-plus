@@ -16,6 +16,7 @@
     "agentPrincipalState": {"type": "string", "enum": ["ACTIVE", "DISABLED"]},
     "agentDisplayName": {"type": "string", "description": "17 §3：固定 Version personaIdentity 的展示名，经同一 Installation Resource read 准入；只供提及与成员目录呈现，不授予执行或 Definition 读取。旧服务缺省时调用方回退到原 Definition 读取。"},
     "ownerPrincipalId": {"type": "string", "format": "uuid"},
+    "ownerDisplayName": {"type": "string", "minLength": 1, "description": "DD-147(1)：该 Installation owner 在本 Tenant 的显示名，只在其 TenantMembership 与 HumanIdentity 仍为 ACTIVE 时给出；可读条件与本视图相同。缺省时客户端显示原版 owner unavailable，不以 Installation 目录合成作者名（DD-117(6)）。"},
     "resourceVersion": {"type": "integer", "minimum": 1},
     "resourceState": {"$ref": "../enums/resource_state.schema.json"},
     "state": {"$ref": "../enums/agent_installation_state.schema.json"},

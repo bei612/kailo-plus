@@ -1,3 +1,10 @@
+// Buzz 779af8886caae1317b4de962082429867ab61503 mobile/lib/features/channels/message_actions.dart
+// and its parts (reaction popover, quick reaction row, reaction tray, action popover), restored.
+// Kailo: reactions, edits and deletions are this device's own CLIENT-signed events published
+// directly to the Relay through MessageMutations (DD-75), resent unchanged after an unknown
+// outcome. "Remind me" is not offered on Mobile (no Mobile reminder host yet), and
+// canManageMessage covers only the viewer's own messages: an owner edit of their Agent's message
+// is the Core-signed path of DD-142, which Mobile does not host yet.
 import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
@@ -7,6 +14,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/physics.dart';
 import 'package:flutter/services.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -18,9 +26,17 @@ import '../../shared/clipboard_utils.dart';
 import '../../shared/deeplink/deep_link.dart';
 import '../../shared/relay/relay.dart';
 import '../../shared/theme/theme.dart';
+import '../../shared/custom_emoji/custom_emoji.dart';
+import '../../shared/custom_emoji/custom_emoji_provider.dart';
+import '../../shared/custom_emoji/custom_emoji_render.dart';
+import '../../shared/emoji/native_emoji_glyph.dart';
 import '../../shared/widgets/sheet_divider.dart';
 import '../../shared/widgets/modal_presentation.dart';
+import 'emoji_picker.dart';
+import 'message_mutations.dart';
 import 'message_action_backdrop_state.dart';
+import 'reaction_row.dart';
+import 'recent_emoji_provider.dart';
 import '../../shared/read_state/message_read_state.dart';
 import '../../shared/read_state/read_state_format.dart';
 import '../../shared/read_state/read_state_provider.dart';
@@ -28,8 +44,11 @@ import 'thread_detail_page.dart';
 import 'thread_follows/thread_follows_provider.dart';
 import 'timeline_message.dart';
 
+part 'message_actions/reaction_popover.dart';
+part 'message_actions/quick_reaction_row.dart';
 part 'message_actions/message_action_popover.dart';
 part 'message_actions/message_action_popover_widgets.dart';
+part 'message_actions/message_reaction_tray.dart';
 
 const _messageActionBackdropBlurSigma = 20.0;
 const _messageActionBackdropTintOpacity = 0.10;
@@ -38,9 +57,6 @@ final _messageActionBackdropFilter = ImageFilter.blur(
   sigmaY: _messageActionBackdropBlurSigma,
 );
 
-/// 移动端在 Channel 里只发布消息（kind 9）：表情回应、编辑、删除与提醒都
-/// 不交付（`DD-80` 只放行已交付能力所需的 kind），这里不生成它们的入口。
-///
 /// Presents the actions for [message] as an anchored popover when both
 /// [anchorRect] and [captureAnchorSnapshot] are supplied, otherwise as a sheet.
 ///
@@ -61,6 +77,7 @@ void showMessageActions({
   required WidgetRef ref,
   required TimelineMessage message,
   required String channelId,
+  required bool canManageMessage,
   List<TimelineMessage>? allMessages,
   String? currentPubkey,
   bool isMember = false,
@@ -73,14 +90,24 @@ void showMessageActions({
   bool isArchived = false,
   EdgeInsets popoverSpotlightPadding = const EdgeInsets.all(Grid.xxs),
 }) {
-  // System rows carry no message actions.
-  if (message.isSystem) return;
+  final hasReactionOnlyActions = message.isSystem && !canManageMessage;
+  if (anchorRect != null && hasReactionOnlyActions) {
+    _showMessageReactionPopover(
+      context: context,
+      ref: ref,
+      message: message,
+      anchorRect: anchorRect,
+      spotlightPadding: popoverSpotlightPadding,
+    );
+    return;
+  }
 
   if (_tryShowMessageActionsPopover(
     context: context,
     ref: ref,
     message: message,
     channelId: channelId,
+    canManageMessage: canManageMessage,
     allMessages: allMessages,
     currentPubkey: currentPubkey,
     isMember: isMember,
@@ -118,7 +145,14 @@ void showMessageActions({
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  ...[
+                  _QuickReactionRow(
+                    message: message,
+                    sheetContext: sheetContext,
+                    pageContext: context,
+                    pageRef: ref,
+                  ),
+                  const SizedBox(height: Grid.xs),
+                  if (!message.isSystem) ...[
                     // Fast actions: respond now, hand off context, defer.
                     _FastActionsRow(
                       message: message,
@@ -147,6 +181,43 @@ void showMessageActions({
                       },
                     ),
                   ],
+                  if (canManageMessage) ...[
+                    if (!message.isSystem) const SheetDivider(),
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(LucideIcons.pencil),
+                      title: const Text('Edit message'),
+                      onTap: () {
+                        Navigator.of(sheetContext).pop();
+                        _showEditSheet(
+                          context: context,
+                          ref: ref,
+                          message: message,
+                          channelId: channelId,
+                        );
+                      },
+                    ),
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: Icon(
+                        LucideIcons.trash2,
+                        color: sheetContext.colors.error,
+                      ),
+                      title: Text(
+                        'Delete message',
+                        style: TextStyle(color: sheetContext.colors.error),
+                      ),
+                      onTap: () {
+                        Navigator.of(sheetContext).pop();
+                        _confirmDelete(
+                          context: context,
+                          ref: ref,
+                          channelId: channelId,
+                          messageId: message.id,
+                        );
+                      },
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -164,6 +235,8 @@ void showImageActions({
   required TimelineMessage message,
   required String channelId,
   required String imageUrl,
+  required bool canManageMessage,
+  VoidCallback? onDeleted,
 }) {
   showBuzzModalBottomSheet<void>(
     context: context,
@@ -224,6 +297,30 @@ void showImageActions({
                   );
                 },
               ),
+              if (canManageMessage) ...[
+                const SheetDivider(),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(
+                    LucideIcons.trash2,
+                    color: sheetContext.colors.error,
+                  ),
+                  title: Text(
+                    'Delete message',
+                    style: TextStyle(color: sheetContext.colors.error),
+                  ),
+                  onTap: () {
+                    Navigator.of(sheetContext).pop();
+                    _confirmDelete(
+                      context: context,
+                      ref: ref,
+                      channelId: channelId,
+                      messageId: message.id,
+                      onDeleted: onDeleted,
+                    );
+                  },
+                ),
+              ],
             ],
           ),
         ),
@@ -566,4 +663,220 @@ class _FastActionTile extends StatelessWidget {
       ),
     );
   }
+}
+
+/// The emoji shown are the user's own frequently-used set (desktop's
+/// `useQuickReactionEmojis` behaviour), topped up with [defaultQuickEmojis] so
+/// the row is full on a fresh install.
+class _ReactionItemReveal extends StatelessWidget {
+  final Animation<double>? animation;
+  final int index;
+  final Widget child;
+
+  const _ReactionItemReveal({
+    super.key,
+    required this.animation,
+    required this.index,
+    required this.child,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final parent = animation;
+    if (parent == null) return child;
+
+    final start = 0.06 + (index * 0.11);
+    final opacityEnd = math.min(1.0, start + 0.20);
+    final scaleEnd = math.min(1.0, start + 0.30);
+    final opacity = CurvedAnimation(
+      parent: parent,
+      curve: Interval(start, opacityEnd, curve: Curves.easeOutCubic),
+    );
+    final scale = Tween<double>(begin: 0.86, end: 1).animate(
+      CurvedAnimation(
+        parent: parent,
+        curve: Interval(start, scaleEnd, curve: _reactionSpringCurve),
+      ),
+    );
+
+    return FadeTransition(
+      opacity: opacity,
+      child: ScaleTransition(scale: scale, child: child),
+    );
+  }
+}
+
+/// Renders a quick-reaction value: a Unicode glyph as text, a `:shortcode:` as
+/// its custom-emoji image.
+class _QuickReactionGlyph extends StatelessWidget {
+  final String value;
+  final Map<String, CustomEmoji> customByShortcode;
+
+  const _QuickReactionGlyph({
+    required this.value,
+    required this.customByShortcode,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (value.startsWith(':') && value.endsWith(':')) {
+      final shortcode = value.substring(1, value.length - 1).toLowerCase();
+      final custom = customByShortcode[shortcode];
+      if (custom != null) {
+        return CustomEmojiImage(
+          shortcode: custom.shortcode,
+          url: custom.url,
+          size: 24,
+        );
+      }
+    }
+    return NativeEmojiGlyph(emoji: value, size: 24);
+  }
+}
+
+/// Circular filled tap target shared by the quick-reaction emojis and the
+/// "+" emoji-picker tile — one treatment, one place to change it.
+class _QuickReactionCircle extends StatelessWidget {
+  final VoidCallback onTap;
+  final Widget child;
+  final double size;
+
+  const _QuickReactionCircle({
+    required this.onTap,
+    required this.child,
+    required this.size,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () {
+        unawaited(HapticFeedback.lightImpact());
+        onTap();
+      },
+      child: Container(
+        width: size,
+        height: size,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: Color.lerp(
+            context.colors.surface,
+            context.colors.primaryContainer,
+            0.78,
+          ),
+          shape: BoxShape.circle,
+        ),
+        child: child,
+      ),
+    );
+  }
+}
+
+void _showEditSheet({
+  required BuildContext context,
+  required WidgetRef ref,
+  required TimelineMessage message,
+  required String channelId,
+}) {
+  final controller = TextEditingController(text: message.content);
+  showBuzzModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    showDragHandle: true,
+    builder: (sheetContext) => Padding(
+      padding: EdgeInsets.fromLTRB(
+        Grid.gutter,
+        0,
+        Grid.gutter,
+        MediaQuery.viewInsetsOf(sheetContext).bottom,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TextField(
+            controller: controller,
+            autofocus: true,
+            minLines: 1,
+            maxLines: 5,
+            decoration: const InputDecoration(hintText: 'Edit message'),
+          ),
+          const SizedBox(height: Grid.xxs),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              TextButton(
+                onPressed: () => Navigator.of(sheetContext).pop(),
+                child: const Text('Cancel'),
+              ),
+              const SizedBox(width: Grid.half),
+              FilledButton(
+                onPressed: () {
+                  final text = controller.text.trim();
+                  if (text.isEmpty || text == message.content) {
+                    Navigator.of(sheetContext).pop();
+                    return;
+                  }
+                  ref
+                      .read(messageMutationsProvider)
+                      .editMessage(
+                        channelId: channelId,
+                        eventId: message.id,
+                        content: text,
+                        mediaTags: buildCustomEmojiTags(
+                          text,
+                          ref.read(customEmojiListProvider),
+                        ),
+                      );
+                  Navigator.of(sheetContext).pop();
+                },
+                child: const Text('Save'),
+              ),
+            ],
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+void _confirmDelete({
+  required BuildContext context,
+  required WidgetRef ref,
+  required String channelId,
+  required String messageId,
+  VoidCallback? onDeleted,
+}) {
+  showBuzzDialog<void>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      title: const Text('Delete message'),
+      content: const Text('This cannot be undone.'),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(dialogContext).pop(),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () async {
+            Navigator.of(dialogContext).pop();
+            final messenger = ScaffoldMessenger.of(context);
+            try {
+              await ref
+                  .read(messageMutationsProvider)
+                  .deleteMessage(channelId: channelId, eventId: messageId);
+              onDeleted?.call();
+            } catch (error) {
+              messenger.showSnackBar(
+                SnackBar(content: Text('Failed to delete message: $error')),
+              );
+            }
+          },
+          style: FilledButton.styleFrom(
+            backgroundColor: dialogContext.colors.error,
+          ),
+          child: const Text('Delete'),
+        ),
+      ],
+    ),
+  );
 }

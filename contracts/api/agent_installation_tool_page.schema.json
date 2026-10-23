@@ -43,7 +43,8 @@
             "type": "string",
             "enum": [
               "PLATFORM_NATIVE",
-              "APPLICATION"
+              "APPLICATION",
+              "USER_REGISTERED_EXTERNAL"
             ]
           },
           "capabilityRequirement": {

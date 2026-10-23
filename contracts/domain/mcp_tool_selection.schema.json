@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "domain/mcp_tool_selection.schema.json",
+  "title": "McpToolSelection",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "upstreamName",
+    "enabled",
+    "risk",
+    "callPolicy"
+  ],
+  "properties": {
+    "upstreamName": {
+      "type": "string",
+      "description": "上游 tools/list 中的工具名，原样"
+    },
+    "enabled": {
+      "type": "boolean"
+    },
+    "risk": {
+      "$ref": "../enums/mcp_tool_risk.schema.json"
+    },
+    "callPolicy": {
+      "$ref": "../enums/mcp_tool_call_policy.schema.json"
+    },
+    "riskDeclared": {
+      "type": "boolean",
+      "description": "风险等级低于 annotations 建议时必须为 true，作为管理员声明冻结进审计"
+    }
+  },
+  "description": "DD-149(7)：确认清单中的一个上游工具。未列出的上游工具即不启用。"
+}

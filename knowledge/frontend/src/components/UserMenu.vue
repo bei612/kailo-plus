@@ -8,7 +8,7 @@
         <t-icon name="system-sum" size="14px" />
       </div>
       <div v-else class="user-avatar">
-        <img v-if="userAvatar" :src="userAvatar" :alt="$t('common.avatar')" />
+        <img v-if="shownAvatar" :src="shownAvatar" :alt="$t('common.avatar')" @error="onAvatarError" />
         <span v-else class="avatar-placeholder">{{ userInitial }}</span>
       </div>
       <template v-if="!uiStore.sidebarCollapsed">
@@ -42,7 +42,7 @@
           @click="handleQuickNav('userprofile')" @keydown.enter.prevent="handleQuickNav('userprofile')"
           @keydown.space.prevent="handleQuickNav('userprofile')">
           <div class="dropdown-user-avatar">
-            <img v-if="userAvatar" :src="userAvatar" :alt="$t('common.avatar')" />
+            <img v-if="shownAvatar" :src="shownAvatar" :alt="$t('common.avatar')" @error="onAvatarError" />
             <span v-else class="dropdown-user-avatar-placeholder">{{ userInitial }}</span>
           </div>
           <div class="dropdown-user-meta">
@@ -304,6 +304,11 @@ const userInfo = ref({
 const userName = computed(() => userInfo.value.username)
 const userEmail = computed(() => userInfo.value.email)
 const userAvatar = computed(() => userInfo.value.avatar)
+// A Kailo picture of a person without an avatar answers 404 (07 §4.7.3): the
+// failed address falls back to the initial instead of a broken image.
+const failedAvatar = ref('')
+const shownAvatar = computed(() => (userAvatar.value && userAvatar.value !== failedAvatar.value ? userAvatar.value : ''))
+const onAvatarError = () => { failedAvatar.value = userAvatar.value }
 
 // 用户名首字母（用于无头像时显示）
 const userInitial = computed(() => {

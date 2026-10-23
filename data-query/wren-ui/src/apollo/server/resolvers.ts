@@ -208,12 +208,22 @@ const resolvers = {
   JSON: GraphQLJSON,
   DialectSQL: DialectSQLScalar,
   Query: {
-    kailoSession: async (_root: any, _args: any, ctx: IContext) => ({
-      user: ctx.kailoUser ? kailoUserOutput(ctx.kailoUser, true) : null,
-      isAdmin: await isKailoAdmin(ctx.kailoUser, ctx.nativeHumanToken),
-      productName: kailoProductName(),
-      identityLocale: ctx.kailoUser?.locale ?? null,
-    }),
+    kailoSession: async (_root: any, _args: any, ctx: IContext) => {
+      // DD-133(3)(4): the signed-in member is shown like every owner, with the
+      // stored profile (the member directory's Kailo display name and avatar
+      // once applied); the token claims only when nothing is stored yet.
+      const stored = ctx.kailoUser
+        ? await ctx.kailoUsers?.load(ctx.kailoUser.key)
+        : null;
+      return {
+        user: ctx.kailoUser
+          ? kailoUserOutput(stored ?? ctx.kailoUser, true)
+          : null,
+        isAdmin: await isKailoAdmin(ctx.kailoUser, ctx.nativeHumanToken),
+        productName: kailoProductName(),
+        identityLocale: ctx.kailoUser?.locale ?? null,
+      };
+    },
     kailoShareMembers: kailoShareResolver.members,
     listDataSourceTables: projectResolver.listDataSourceTables,
     autoGenerateRelation: projectResolver.autoGenerateRelation,

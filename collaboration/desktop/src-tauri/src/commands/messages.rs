@@ -522,6 +522,9 @@ pub async fn edit_message(
     mention_pubkeys: Vec<String>,
     expected_relay_url: String,
     expected_signer_pubkey: String,
+    // DD-125(5): the original "Remove previews for everyone" re-edit carries
+    // `["link-preview","none"]` (desktop MessageRow.tsx::removeLinkPreviewsForEveryone).
+    suppress_link_previews: Option<bool>,
     state: State<'_, AppState>,
 ) -> Result<serde_json::Value, String> {
     if expected_relay_url.trim().is_empty()
@@ -586,7 +589,7 @@ pub async fn edit_message(
             mentions: &new_mentions,
             mention_refs: None,
         },
-        false,
+        suppress_link_previews.unwrap_or(false),
     )?;
     let fresh = builder.sign_with_keys(&keys).map_err(|e| e.to_string())?;
     let intent_key = format!("edit:{relay_base}:{}:{target_id}", keys.public_key());

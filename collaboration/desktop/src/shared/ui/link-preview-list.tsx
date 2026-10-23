@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useUiT } from "@client-kit/platform/react/context";
 
 import { useLinkPreviewStyle } from "@/shared/lib/linkPreviewStylePreference";
 import type { ResolvedLinkPreview } from "@/shared/lib/useResolvedLinkPreviews";
@@ -31,9 +32,10 @@ export function LinkPreviewList({
   const [dialogOpen, setDialogOpen] = useState(false);
   const [removed, setRemoved] = useState(false);
   const style = useLinkPreviewStyle();
+  const t = useUiT();
   if (removed || previews.length === 0) return null;
 
-  const previewNoun = previews.length === 1 ? "preview" : "previews";
+  const one = previews.length === 1;
   const controlsIndex = 0;
   return (
     <>
@@ -64,17 +66,15 @@ export function LinkPreviewList({
         <AlertDialog onOpenChange={setDialogOpen} open={dialogOpen}>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>Remove {previewNoun}?</AlertDialogTitle>
+              <AlertDialogTitle>{t(one ? "linkPreview.removeTitleOne" : "linkPreview.removeTitleMany")}</AlertDialogTitle>
               <AlertDialogDescription>
-                This removes{" "}
-                {previews.length === 1 ? "the preview" : "the previews"} for
-                everyone.
+                {t(one ? "linkPreview.removeBodyOne" : "linkPreview.removeBodyMany")}
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel asChild>
                 <Button type="button" variant="outline">
-                  Cancel
+                  {t("platform.cancel")}
                 </Button>
               </AlertDialogCancel>
               <AlertDialogAction asChild>
@@ -86,7 +86,7 @@ export function LinkPreviewList({
                   type="button"
                   variant="destructive"
                 >
-                  Remove {previewNoun}
+                  {t(one ? "linkPreview.remove" : "linkPreview.removeConfirmMany")}
                 </Button>
               </AlertDialogAction>
             </AlertDialogFooter>

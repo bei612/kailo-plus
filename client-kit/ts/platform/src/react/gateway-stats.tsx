@@ -21,7 +21,7 @@ import { auditEventTypeMessages, enumLabel, operationUsageStateMessages } from "
 import { useBffClient, useLocale, useReasonText, useT } from "./context";
 import {
   dimensionLabel, EnumText, GatewayLoad, GatewaySection, kindLabel, OutcomeBadge, outcomeLabel,
-  useDuration, useNumber, usePercent, useTimestamp,
+  toolSourceLabel, useDuration, useNumber, usePercent, useTimestamp,
 } from "./gateway-shared";
 import { ScopeSelect } from "./pages";
 import { ActionLabel, Button, Cell, Notice, Table } from "./ui";
@@ -240,6 +240,7 @@ export function CallDetail({ scope, callId, onBack }: { scope: GatewayAdminScope
         [t("gateway.detail.provider"), call.provider],
         [t("gateway.detail.model"), call.model],
         [t("gateway.dimension.tool"), call.toolName ?? call.toolResourceId],
+        [t("gateway.tools.source"), call.toolSource ? (Object.hasOwn(toolSourceLabel, call.toolSource) ? t(toolSourceLabel[call.toolSource]) : call.toolSource) : undefined],
         [t("gateway.dimension.agent"), call.agentName ?? call.agentInstallationResourceId],
         [t("gateway.dimension.binding"), call.applicationBindingId],
         [t("gateway.stats.tokens"), call.totalTokens === undefined ? undefined

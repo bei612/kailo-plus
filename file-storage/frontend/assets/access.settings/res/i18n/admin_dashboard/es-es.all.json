@@ -29,42 +29,6 @@
   "cont.topic.translate": {
     "other": "¿Cómo crear o completar una traducción?"
   },
-  "ent.advanced": {
-    "other": "Panel de Control de Administrador Avanzado"
-  },
-  "ent.advanced.legend": {
-    "other": "Panel de control de administrador único para monitorizar la plataforma en tiempo real."
-  },
-  "ent.btn.contact": {
-    "other": "Contacto de Ventas"
-  },
-  "ent.btn.more": {
-    "other": "Saber más"
-  },
-  "ent.features": {
-    "other": "Funcionalidades para empresas"
-  },
-  "ent.features.legend": {
-    "other": "Funcionalidades para Empresas: AD/LDAP Connectors, EasyTransfer y mucho más..."
-  },
-  "ent.subtitle": {
-    "other": "MÁS FUNCIONALIDADES - GDPR-READY - BRANDING EXTENDIDO"
-  },
-  "ent.support": {
-    "other": "Soporte y Mantenimiento"
-  },
-  "ent.support.legend": {
-    "other": "Consiga ayuda directamente del equipo desarrollador"
-  },
-  "ent.title": {
-    "other": "Descubra Pydio Cells Enterprise"
-  },
-  "ent.upgrade": {
-    "other": "¡Actualizar ahora!"
-  },
-  "ent.upgrade.legend": {
-    "other": "Actualizar Cell Enterprise desde la aplicación (se requiere licencia)"
-  },
   "welc.btn.advanced": {
     "other": "Avanzado"
   },
@@ -104,15 +68,6 @@
   "card.quick-access.add": {
     "other": "Add a shortcut ..."
   },
-  "card.update.current": {
-    "other": "Software Version"
-  },
-  "card.update.no-updates": {
-    "other": "Software is up-to-date"
-  },
-  "card.update.new-version": {
-    "other": "A new version is available"
-  },
   "recentLogs.title": {
     "other": "Last Events"
   },
@@ -124,11 +79,5 @@
   },
   "recentLogs.more": {
     "other": "All Activities"
-  },
-  "graph.files": {
-    "other": "Files Activity"
-  },
-  "graph.connections": {
-    "other": "Web Connections"
   }
 }

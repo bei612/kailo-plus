@@ -17,6 +17,8 @@ import { useTheme } from "@/shared/theme/ThemeProvider";
 import { isLinuxPlatform } from "@/shared/lib/platform";
 import { performDefaultHaptic } from "@/shared/lib/haptics";
 import { AgentsSettingsPanel } from "@client-kit/platform/react/agents-settings";
+// DD-149: the shared Connectors panel (user-registered MCP servers).
+import { ConnectorsSettingsPanel } from "@client-kit/platform/react/connectors";
 // DD-125(4): original ChannelTemplatesSettingsCard over Core CollaborationUserState (BFF).
 import { ChannelTemplatesSettingsCard } from "@client-kit/platform/react/channel-templates";
 // DD-125(2): original ModerationQueueCard; queue, audit and restrictions are Tenant `manage` BFF reads.
@@ -41,6 +43,7 @@ const SETTINGS_SECTION_VALUES: readonly SettingsSection[] = [
   "custom-emoji",
   "channel-templates",
   "agents",
+  "connectors",
   "experimental",
 ];
 
@@ -114,6 +117,8 @@ export function renderSettingsSection(
       return <KeyboardShortcutsCard />;
     case "agents":
       return <AgentsSettingsPanel />;
+    case "connectors":
+      return <ConnectorsSettingsPanel />;
     case "experimental":
       return <ExperimentalFeaturesCard />;
     case "moderation":

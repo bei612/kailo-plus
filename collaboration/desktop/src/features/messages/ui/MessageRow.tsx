@@ -16,7 +16,10 @@ import { hasLinkPreviewSuppression } from "@/features/messages/lib/formatTimelin
 import { MessageActionBar } from "./MessageActionBar";
 import { MessageAuthorIdentity } from "./MessageHeader";
 import { SentFromThreadLine } from "./SentFromThreadLine";
-import { MessageRowSurface, type ThreadDepthGuideAction } from "@client-kit/platform/react/messages";
+import { MessageRowSurface, canRemoveLinkPreviews, type ThreadDepthGuideAction } from "@client-kit/platform/react/messages";
+import { useUiT } from "@client-kit/platform/react/context";
+import { toast } from "sonner";
+import { editMessage } from "@/shared/api/tauriMessages";
 export type { ThreadDepthGuideAction } from "@client-kit/platform/react/messages";
 type MessageRowProps = {
     channelId?: string | null;
@@ -71,11 +74,29 @@ export const MessageRow = React.memo(function MessageRow(props: MessageRowProps)
  const { mentionNames, mentionPubkeysByName } = React.useMemo(() => resolveMentionProps(message.tags, profiles, message.body), [profiles,message.tags,message.body]);
  const imetaByUrl = React.useMemo(() => message.tags ? parseImetaTags(message.tags) : undefined,[message.tags]);
  const handleSendToChannel = React.useCallback(async(target:TimelineMessage)=>{assertCanSendMessageToChannel(target,currentPubkey);await onSendToChannel?.(target);},[currentPubkey,onSendToChannel]);
+ const t = useUiT();
+ const ownEditable = message.kind === 9 && message.signerPubkey === currentPubkey && !message.pending;
+ // Buzz 779af8886caae1317b4de962082429867ab61503 MessageRow.tsx L172-195 removeLinkPreviewsForEveryone
+ // (DD-125(5)): the author's own native re-edit with the same body and media plus
+ // ["link-preview","none"], on the captured relay and signer; an unknown outcome is resent by the
+ // native mutation cache only as the same event, never re-signed.
+ const relayUrl = community.relayUrl;
+ const removeLinkPreviewsForEveryone = React.useMemo(() => channelId && currentPubkey && relayUrl && props.onEdit && ownEditable
+   && canRemoveLinkPreviews(message)
+   ? async () => {
+     const tags = message.tags ?? [];
+     try {
+       await editMessage(channelId, message.id, message.body, tags.filter((tag) => tag[0] === "imeta"), [], relayUrl, currentPubkey, true);
+     } catch (error) {
+       toast.error(t("linkPreview.removeFailed", { reason: error instanceof Error ? error.message : String(error) }));
+       throw error;
+     }
+   } : undefined, [channelId, currentPubkey, relayUrl, props.onEdit, ownEditable, message, t]);
  return <MessageRowSurface {...props} resolveMediaUrl={rewriteRelayUrl} customEmoji={customEmoji}
  reactionScope={currentPubkey ? JSON.stringify([community.id,currentPubkey]) : null}
  renderIdentity={message.pubkey ? (node,kind)=>kind === "author" ? <MessageAuthorIdentity pubkey={message.pubkey}>{node}</MessageAuthorIdentity> : <UserProfilePopover pubkey={message.pubkey!}><button className="flex shrink-0 items-start rounded-full focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring" type="button">{node}</button></UserProfilePopover> : undefined}
- renderBody={(className)=><VideoReviewCommentMarkdown channelNames={channelNames} className={className} content={message.body} messageId={message.id} linkPreviewsSuppressed={hasLinkPreviewSuppression(message.tags)} linkPreviewTags={message.tags} imetaByUrl={imetaByUrl} mentionNames={mentionNames} mentionPubkeysByName={mentionPubkeysByName} searchQuery={searchQuery} videoReviewCommentRootId={videoReviewCommentRootId} videoReviewContext={videoReviewContext}/>}
- renderActions={(ref,reactions)=><MessageActionBar {...props} {...reactions} ref={ref} onEdit={message.kind === 9 && message.signerPubkey === currentPubkey && !message.pending ? props.onEdit : undefined} onDelete={currentPubkey && message.kind === 9 && message.signerPubkey === currentPubkey && !message.pending ? props.onDelete : undefined} onSendToChannel={onSendToChannel && canSendMessageToChannel(message,currentPubkey) ? handleSendToChannel : undefined}/>}
+ renderBody={(className)=><VideoReviewCommentMarkdown channelNames={channelNames} className={className} content={message.body} messageId={message.id} linkPreviewsSuppressed={hasLinkPreviewSuppression(message.tags)} linkPreviewTags={message.tags} onRemoveLinkPreviewsForEveryone={removeLinkPreviewsForEveryone} imetaByUrl={imetaByUrl} mentionNames={mentionNames} mentionPubkeysByName={mentionPubkeysByName} searchQuery={searchQuery} videoReviewCommentRootId={videoReviewCommentRootId} videoReviewContext={videoReviewContext}/>}
+ renderActions={(ref,reactions)=><MessageActionBar {...props} {...reactions} ref={ref} onEdit={ownEditable ? props.onEdit : undefined} onDelete={currentPubkey && message.kind === 9 && message.signerPubkey === currentPubkey && !message.pending ? props.onDelete : undefined} onSendToChannel={onSendToChannel && canSendMessageToChannel(message,currentPubkey) ? handleSendToChannel : undefined}/>}
  reference={<SentFromThreadLine channelId={channelId} tags={message.tags}/>} />;
 },
   (prev, next) =>

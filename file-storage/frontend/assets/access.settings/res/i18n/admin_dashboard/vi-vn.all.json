@@ -29,42 +29,6 @@
   "cont.topic.translate": {
     "other": "Làm thế nào để tạo hoặc hoàn thành một bản dịch ngôn ngữ?"
   },
-  "ent.advanced": {
-    "other": "Administrator Dashboard nâng cao"
-  },
-  "ent.advanced.legend": {
-    "other": "Admin dashboard duy nhứt để theo dõi thời gian thực sử dụng nền tảng."
-  },
-  "ent.btn.contact": {
-    "other": "Liên hệ bán hàng"
-  },
-  "ent.btn.more": {
-    "other": "Tìm Hiểu Thêm"
-  },
-  "ent.features": {
-    "other": "Tính năng định hướng doanh nghiệp"
-  },
-  "ent.features.legend": {
-    "other": "Các tính năng sẵn sàng cho doanh nghiệp: Trình kết nối AD/LDAP, Nhật ký kiểm toán để tuân thủ, EasyTransfer..."
-  },
-  "ent.subtitle": {
-    "other": "THÊM CÁC TÍNH NĂNG - GDPR HOÀN TOÀN - THƯƠNG HIỆU XUẤT HIỆN"
-  },
-  "ent.support": {
-    "other": "Hỗ trợ và bảo trì"
-  },
-  "ent.support.legend": {
-    "other": "Nhận trợ giúp với cài đặt của bạn trực tiếp từ core team"
-  },
-  "ent.title": {
-    "other": "Khám phá Pydio Cells Enterprise"
-  },
-  "ent.upgrade": {
-    "other": "Nâng cấp ngay!"
-  },
-  "ent.upgrade.legend": {
-    "other": "Nâng cấp trong ứng dụng Cells Enterprise (yêu cầu license)"
-  },
   "welc.btn.advanced": {
     "other": "Nâng cao"
   },
@@ -104,15 +68,6 @@
   "card.quick-access.add": {
     "other": "Add a shortcut ..."
   },
-  "card.update.current": {
-    "other": "Software Version"
-  },
-  "card.update.no-updates": {
-    "other": "Software is up-to-date"
-  },
-  "card.update.new-version": {
-    "other": "A new version is available"
-  },
   "recentLogs.title": {
     "other": "Last Events"
   },
@@ -124,11 +79,5 @@
   },
   "recentLogs.more": {
     "other": "All Activities"
-  },
-  "graph.files": {
-    "other": "Files Activity"
-  },
-  "graph.connections": {
-    "other": "Web Connections"
   }
 }

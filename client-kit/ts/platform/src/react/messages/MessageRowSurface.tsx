@@ -19,6 +19,9 @@ import { MessageReactions } from "./reactions/MessageReactions";
 import { useReactionHandler } from "./reactions/useReactionHandler";
 import type { CustomEmoji } from "../custom-emoji/emoji";
 import type { MessageActionBarSurface } from "./MessageActionBarSurface";
+import { MessageAgentOwner } from "./system/MessageAgentOwner";
+import { useMessageAgentAddressPrefix, type AgentAddressHost } from "./MessageAgentAddressPrefix";
+import { useAgentAuthorScope, withAgentAuthorFacts } from "./agentAuthorFacts";
 const DiffMessage = React.lazy(() => import("./diff/DiffMessage"));
 const DiffMessageExpanded = React.lazy(() => import("./diff/DiffMessageExpanded"));
 type ReactionActionProps = Pick<React.ComponentProps<typeof MessageActionBarSurface>,
@@ -42,7 +45,7 @@ export function MessageRowSurface({
     collapseDescendantsLabel,
     isContinuation = false,
     layoutVariant = "default",
-    message,
+    message: rowMessage,
     onCollapseDepthGuide,
     onCollapseDepthGuideHoverChange,
     onCollapseDescendants,
@@ -51,7 +54,7 @@ export function MessageRowSurface({
     playEntrance = false,
     showDepthGuides = true,
     renderBody, renderIdentity, renderActions, reference, resolveMediaUrl, searchQuery,
-    onToggleReaction, customEmoji = [], reactionScope, agentMentionStatus,
+    onToggleReaction, customEmoji = [], reactionScope, agentMentionStatus, agentAddress,
   }: {
     collapseDepthGuideActions?: ReadonlyArray<ThreadDepthGuideAction>;
     connectDescendants?: boolean;
@@ -90,8 +93,15 @@ export function MessageRowSurface({
     searchQuery?: string;
     /** DD-121: the sender-only Agent @mention outcome line under their own message; absent → unchanged row. */
     agentMentionStatus?: React.ReactNode;
+    /** DD-148: the channel's admitted Agents for the original address-tray prefix; absent → none. */
+    agentAddress?: AgentAddressHost;
   }) {
     const translateUi = useUiT();
+    // DD-147/148: a host may provide the admitted Agent directory once instead of per row.
+    const agentScope = useAgentAuthorScope();
+    const message = React.useMemo(() => agentScope ? withAgentAuthorFacts(rowMessage, agentScope.facts) : rowMessage,
+      [agentScope, rowMessage]);
+    const agentAddressPrefix = useMessageAgentAddressPrefix(agentAddress ?? agentScope?.host, message.body, message.tags);
     const [expandedDiffId, setExpandedDiffId] = React.useState<string | null>(null);
     const [badgeBurstEmoji, setBadgeBurstEmoji] = React.useState<string | null>(null);
     const reaction = useReactionHandler(message, onToggleReaction, customEmoji);
@@ -221,6 +231,18 @@ export function MessageRowSurface({
           shape={message.isAgent ? "squircle" : "circle"}
           testId="message-avatar"
         />
+        {/* Fixed Buzz MessageRow showRespondToIndicator (DD-147(2)): owner-only allowlist badge. */}
+        {message.respondTo === "allowlist" && !isThreadReplyLayout ? (
+          <span
+            aria-label={translateUi("messages.agentRespondToAllowlist")}
+            className="absolute -bottom-0.5 -right-0.5 flex h-3 w-3 items-center justify-center rounded-full bg-background"
+            data-testid="message-respond-to-badge"
+            role="img"
+            title={translateUi("messages.agentRespondToAllowlist")}
+          >
+            <span className="h-2 w-2 rounded-full bg-primary" />
+          </span>
+        ) : null}
       </div>
     );
 
@@ -324,6 +346,9 @@ export function MessageRowSurface({
             desktop/src/features/messages/ui/MessageAuthorWithIndicators.tsx: DD-120 status
             indicator after the author; renders nothing without a presence host or status. */}
         <UserNameIndicators className="-ml-0.5 self-center" pubkey={message.pubkey} />
+        {/* Fixed Buzz MessageRow agentOwnerNode (DD-147(1)): only where the host resolved owner facts. */}
+        {message.isAgent && message.ownerLabel !== undefined
+          ? <MessageAgentOwner ownerLabel={message.ownerLabel} ownerPubkey={message.ownerPubkey} /> : null}
         {inlineMetadataNode}
       </MessageHeaderRow>
     );
@@ -334,6 +359,7 @@ export function MessageRowSurface({
     const messageBodyNode = (
       <>
         {reference}
+        {agentAddressPrefix ? <div className="text-message">{agentAddressPrefix}</div> : null}
         {bodyNode}
         {continuationMetadataNode}
         <MessageReactions

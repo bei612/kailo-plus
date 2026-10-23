@@ -1,0 +1,33 @@
+# Kailo CI 的 Docker Hub 拉取缓存（distribution 3 proxy 模式）。
+# 只缓存 registry-1.docker.io 的公开内容；不保存凭据，不接受 push。
+version: 0.1
+log:
+  level: info
+  fields:
+    service: kailo-registry-mirror
+storage:
+  filesystem:
+    rootdirectory: /var/lib/registry
+  delete:
+    enabled: true
+  maintenance:
+    uploadpurging:
+      enabled: true
+      age: 24h
+      interval: 24h
+      dryrun: false
+http:
+  # 实际监听由 compose 的 REGISTRY_HTTP_ADDR 覆盖为 127.0.0.1:<MIRROR_PORT>（host 网络）。
+  addr: 127.0.0.1:55001
+  headers:
+    X-Content-Type-Options: [nosniff]
+health:
+  storagedriver:
+    enabled: true
+    interval: 30s
+    threshold: 3
+proxy:
+  remoteurl: https://registry-1.docker.io
+  # 缓存条目在写入 30 天后由 registry 调度器删除，磁盘占用随在用基础镜像集合有界；
+  # 基础镜像按 digest 固定、变化稀疏，过短的 TTL 只会让同一批 blob 反复经抖动链路下载。
+  ttl: 720h

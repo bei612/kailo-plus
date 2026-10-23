@@ -156,7 +156,7 @@ func TestConsumeRechecksOriginalApprovers(t *testing.T) {
 			}
 			want := generated.Invalidated
 			if mode == "current" || mode == "legacy" || mode == "admission" {
-				want = generated.Consumed
+				want = generated.ApprovalStatusCONSUMED
 			}
 			last := rec.last()
 			if last.Status != want {
@@ -209,10 +209,10 @@ func TestConsumedRemainsIdempotentWithoutFreshActivity(t *testing.T) {
 	var suite testsuite.WorkflowTestSuite
 	env := suite.NewTestWorkflowEnvironment()
 	env.ExecuteWorkflow(func(ctx workflow.Context) error {
-		a := approval{status: generated.Consumed}
+		a := approval{status: generated.ApprovalStatusCONSUMED}
 		for i := 0; i < 2; i++ {
 			result, err := a.consume(ctx)
-			if err != nil || result.Status != generated.Consumed {
+			if err != nil || result.Status != generated.ApprovalStatusCONSUMED {
 				return errors.New("already consumed approval reopened")
 			}
 		}
@@ -281,7 +281,7 @@ func TestApproveThenConsume(t *testing.T) {
 	if reasonOf(conflict.rejected) != string(generated.DuplicateDecision) {
 		t.Fatalf("冲突值应被拒绝为 DUPLICATE_DECISION，得到 %v", conflict.rejected)
 	}
-	want := []generated.ApprovalStatus{generated.Requested, generated.ApprovalStatusWAITING, generated.ApprovalStatusAPPROVED, generated.Consumed}
+	want := []generated.ApprovalStatus{generated.Requested, generated.ApprovalStatusWAITING, generated.ApprovalStatusAPPROVED, generated.ApprovalStatusCONSUMED}
 	if got := rec.statuses(); len(got) != len(want) || got[3] != want[3] || got[2] != want[2] {
 		t.Fatalf("投影序列 %v，期望 %v", got, want)
 	}
@@ -368,7 +368,7 @@ func TestIneligibleApproverDoesNotDecide(t *testing.T) {
 	if out.Admitted || *out.Reason != generated.ApproverNotEligible {
 		t.Fatalf("不合格 approver 的 DENY 不应形成决定: %+v", out)
 	}
-	if rec.last().Status != generated.Consumed || len(rec.last().Decisions) != 1 {
+	if rec.last().Status != generated.ApprovalStatusCONSUMED || len(rec.last().Decisions) != 1 {
 		t.Fatalf("不合格的否决不应终结审批: %+v", rec.last())
 	}
 }
@@ -440,7 +440,7 @@ func TestMultiRoleRequirementsCountDistinctApprovers(t *testing.T) {
 	if s := c.outcome.(generated.ApprovalDecisionOutcome).Status; s != generated.ApprovalStatusAPPROVED {
 		t.Fatalf("第二位不同的 TENANT_ADMIN 批准后应 APPROVED，状态 %v", s)
 	}
-	if rec.last().Status != generated.Consumed || len(rec.last().Decisions) != 3 {
+	if rec.last().Status != generated.ApprovalStatusCONSUMED || len(rec.last().Decisions) != 3 {
 		t.Fatalf("应有三个不同决定并被消费: %+v", rec.last())
 	}
 }

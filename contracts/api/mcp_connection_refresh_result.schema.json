@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/mcp_connection_refresh_result.schema.json",
+  "title": "McpConnectionRefreshResult",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "health",
+    "checkedAt",
+    "drift",
+    "addedTools",
+    "removedTools",
+    "changedTools"
+  ],
+  "properties": {
+    "health": {
+      "$ref": "../enums/mcp_connection_health.schema.json"
+    },
+    "checkedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "probe": {
+      "$ref": "mcp_connection_probe_result.schema.json"
+    },
+    "drift": {
+      "type": "boolean"
+    },
+    "addedTools": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "removedTools": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "changedTools": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "description": "DD-149(10)：以已保存凭据重新探测；变化需经 mcp_connection.update 重新确认。"
+}

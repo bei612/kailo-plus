@@ -37,6 +37,9 @@ class _MessageBubble extends HookConsumerWidget {
     final isAgent =
         ref.watch(agentMentionPubkeysProvider(currentChannelId)).contains(pk) ||
         profile?.ownerPubkey != null;
+    // Original canManageMessageForCurrentUser: own messages. The original owner-of-Agent branch
+    // is DD-142's Core-signed BFF path, which Mobile does not host.
+    final canManageMessage = currentPubkey?.toLowerCase() == pk;
 
     // Watch only profiles referenced by this message. A batched profile fetch
     // should not rebuild every visible message just because an unrelated user
@@ -83,6 +86,7 @@ class _MessageBubble extends HookConsumerWidget {
         message: message,
         channelId: currentChannelId,
         allMessages: allMessages,
+        canManageMessage: canManageMessage,
         currentPubkey: currentPubkey,
         isMember: isMember,
         isArchived: isArchived,
@@ -249,6 +253,14 @@ class _MessageBubble extends HookConsumerWidget {
                                       message: message,
                                       channelId: currentChannelId,
                                       imageUrl: imageUrl,
+                                      canManageMessage: canManageMessage,
+                                      onDeleted: () {
+                                        if (viewerContext.mounted) {
+                                          Navigator.of(
+                                            viewerContext,
+                                          ).maybePop();
+                                        }
+                                      },
                                     ),
                                 onChannelTap: (channelId) {
                                   openChannelLink(
@@ -268,6 +280,23 @@ class _MessageBubble extends HookConsumerWidget {
                     ],
                   ),
                 ),
+                if (message.reactions.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(
+                      left: messageAvatarSize + messageAvatarContentGap,
+                    ),
+                    child: ReactionRow(
+                      messageId: message.id,
+                      reactions: message.reactions,
+                      onToggle: (emoji) => toggleReaction(ref, message, emoji),
+                      showAddButton: isMember && !isArchived,
+                      onAddReaction: () => showAddReactionPicker(
+                        context: context,
+                        ref: ref,
+                        message: message,
+                      ),
+                    ),
+                  ),
               ],
             ),
           ),

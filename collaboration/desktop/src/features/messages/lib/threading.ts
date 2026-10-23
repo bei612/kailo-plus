@@ -90,3 +90,25 @@ export function resolveReplyRootId(
   const thread = getThreadReference(parent.tags);
   return thread.rootId ?? parent.id;
 }
+
+/** Buzz 779af8886caae1317b4de962082429867ab61503 features/messages/lib/threading.ts::buildThreadReferenceTags. */
+export function buildThreadReferenceTags(
+  channelId: string,
+  parentEventId: string | null,
+  rootEventId: string | null,
+) {
+  const tags: string[][] = [["h", channelId]];
+
+  if (!parentEventId) {
+    return tags;
+  }
+
+  if (!rootEventId || parentEventId === rootEventId) {
+    tags.push(["e", parentEventId, "", "reply"]);
+    return tags;
+  }
+
+  tags.push(["e", rootEventId, "", "root"]);
+  tags.push(["e", parentEventId, "", "reply"]);
+  return tags;
+}

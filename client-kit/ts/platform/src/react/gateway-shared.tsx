@@ -2,6 +2,7 @@
 // 只用宿主语义色与 ui.tsx 原语；读取失败与无权不渲染成空或零。
 
 import {
+  AgentInstallationToolSource,
   GatewayCallKind,
   GatewayCallOutcome,
   GatewayConfigChangeKind,
@@ -68,6 +69,13 @@ const outcomeTone: Record<GatewayCallOutcome, Tone> = {
   [GatewayCallOutcome.Denied]: "negative",
   [GatewayCallOutcome.Running]: "neutral",
   [GatewayCallOutcome.Unknown]: "neutral",
+};
+
+/** DD-149(10)：连接器工具的来源显示“用户连接器”。 */
+export const toolSourceLabel: Record<AgentInstallationToolSource, PlatformMessageKey> = {
+  [AgentInstallationToolSource.PlatformNative]: "gateway.tools.native",
+  [AgentInstallationToolSource.Application]: "gateway.tools.application",
+  [AgentInstallationToolSource.UserRegisteredExternal]: "gateway.tools.connector",
 };
 
 export const revisionSourceLabel: Record<GatewayConfigRevisionSource, PlatformMessageKey> = {

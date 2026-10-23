@@ -295,6 +295,7 @@ class DeployOrder(unittest.TestCase):
             r.readback = lambda svc: dict(service=svc)
             r.readback_config = lambda svc, d, h: dict(service=svc)
             r.compose = lambda *args, **kw: events.append(args[0] + " " + args[-1])
+            r.retention = lambda: events.append("retention") or dict(deleted=[])
             saved = node.containers, node.running_containers, node.container_file
             node.containers, node.running_containers, node.container_file = \
                 (lambda project: live), (lambda: {}), (lambda cid, target: None)
@@ -303,7 +304,8 @@ class DeployOrder(unittest.TestCase):
             finally:
                 node.containers, node.running_containers, node.container_file = saved
         self.assertEqual(events, ["pull worker", "oneoffs", "up peer", "up keycloak", "wait keycloak", "idp",
-                                  "up worker", "up sidecar"])
+                                  "up worker", "up sidecar", "retention"])
+        self.assertEqual(journal["retention"], dict(deleted=[]))
         self.assertEqual(journal["operated"], ["peer"])
         self.assertEqual(journal["services"][0], dict(service="peer", operated=True))
         self.assertEqual(journal["config_converge"]["before"], ["keycloak"])
@@ -1326,6 +1328,307 @@ class FirstBuild(unittest.TestCase):
         self.assertEqual(node.build_targets({}), [])
         with self.assertRaises(node.NodeError):
             node.build_targets({"build_targets": "document-editor"})
+
+
+C = {k: k * 40 for k in "abcdefgh"}
+HOUR = 3600
+NOW = 1_800_000_000
+
+
+def policy(**over):
+    value = dict(node.RETENTION_DEFAULTS)
+    value.update(over)
+    return value
+
+
+class RetentionDecision(unittest.TestCase):
+    def test_each_keep_rule_and_the_rest_is_deleted_oldest_first(self):
+        trees = {C["a"]: NOW - 90 * HOUR, C["b"]: NOW - 80 * HOUR, C["c"]: NOW - 70 * HOUR, C["d"]: NOW - 60 * HOUR,
+                 C["e"]: NOW - 50 * HOUR, C["f"]: NOW - 1 * HOUR, C["g"]: NOW - 40 * HOUR, C["h"]: NOW - 30 * HOUR}
+        releases = [dict(commit=C["a"], state="SUCCEEDED", started_at=10, finished_at=11),   # 当前 pin，但不在最近 1 次
+                    dict(commit=C["b"], state="FAILED", started_at=20, finished_at=21)]
+        got = node.retention_decision(trees, now=NOW, policy=policy(keep_releases=1),
+                                      references={C["c"]: ["容器 openbao 的挂载"]}, releases=releases,
+                                      active={C["d"]}, main=C["e"], keep=[C["g"]])
+        self.assertEqual(got["keep"][C["a"]], ["当前 pin（最近一次成功发布）"])
+        self.assertIn("最近 1 次发布之一（第 1 新）", got["keep"][C["b"]])
+        self.assertEqual(got["keep"][C["c"]], ["容器 openbao 的挂载"])
+        self.assertEqual(got["keep"][C["d"]], ["CI 队列中未结束的任务"])
+        self.assertEqual(got["keep"][C["e"]], ["origin/main"])
+        self.assertEqual(got["keep"][C["f"]], ["2 小时内活动"])
+        self.assertEqual(got["keep"][C["g"]], ["本次发布"])
+        self.assertEqual(got["delete"], [C["h"]])
+
+    def test_recent_releases_count_and_missing_trees_are_ignored(self):
+        trees = {C[k]: NOW - 100 * HOUR for k in "abcd"}
+        releases = [dict(commit=C[k], state="SUCCEEDED", started_at=i, finished_at=i)
+                    for i, k in enumerate("abcd")] + [dict(commit=C["h"], state="SUCCEEDED", started_at=99, finished_at=99)]
+        got = node.retention_decision(trees, now=NOW, policy=policy(keep_releases=3), releases=releases)
+        # C["h"] 是 pin 与最近一次，但树已不存在：不出现在保留表中，名额仍按发布次数计
+        self.assertEqual(sorted(got["keep"]), [C["c"], C["d"]])
+        self.assertEqual(got["delete"], [C["a"], C["b"]])
+
+    def test_grace_boundary_and_scratch_age(self):
+        trees = {C["a"]: NOW - 2 * HOUR + 1, C["b"]: NOW - 2 * HOUR}
+        scratch = {"/s/new": NOW - 23 * HOUR, "/s/old": NOW - 24 * HOUR}
+        got = node.retention_decision(trees, now=NOW, policy=policy(), scratch=scratch)
+        self.assertEqual(list(got["keep"]), [C["a"]])
+        self.assertEqual(got["delete"], [C["b"]])
+        self.assertEqual(got["scratch"], ["/s/old"])
+
+    def test_policy_requires_node_paths_and_valid_numbers(self):
+        cfg = dict(runtime="/rt")
+        with self.assertRaises(node.NodeError):
+            node.retention_policy(cfg)
+        with self.assertRaises(node.NodeError):
+            node.retention_policy(dict(cfg, retention=dict(journal="/j")))
+        with self.assertRaises(node.NodeError):
+            node.retention_policy(dict(cfg, retention=dict(journal="/j", receipts="/r", keep_releases=0)))
+        got = node.retention_policy(dict(cfg, retention=dict(journal="/j", receipts="/r", grace_seconds=60)))
+        self.assertEqual((got["grace_seconds"], got["keep_releases"], got["link_roots"], got["scratch"]),
+                         (60, 3, ["/rt"], []))
+
+
+class RetentionReferences(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = self.tmp.name
+        self.sources = os.path.join(self.root, "sources")
+        for k in "abcd":
+            os.makedirs(os.path.join(self.sources, C[k], "apps", "deploy", "local"))
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_mounts_compose_labels_and_mounts_through_links(self):
+        runtime_link = os.path.join(self.root, "openbao-config")
+        os.symlink(os.path.join(self.sources, C["d"], "apps", "deploy", "local"), runtime_link)
+        entries = [
+            dict(Name="/platform-local-openbao-1", Config=dict(Labels={}),
+                 Mounts=[dict(Type="bind", Source=os.path.join(self.sources, C["a"], "apps/deploy/local/data/x"))]),
+            dict(Name="/kailo-knowledge-app-1", Mounts=[], Config=dict(Labels={
+                node.COMPOSE_WORKDIR_LABEL: os.path.join(self.sources, C["b"], "apps/knowledge/fork/deploy"),
+                node.COMPOSE_FILES_LABEL: "/elsewhere/compose.yaml," + os.path.join(self.sources, C["c"], "x.yaml")})),
+            dict(Name="/openmeter", Config=dict(Labels={}), Mounts=[dict(Type="bind", Source=runtime_link + "/x.hcl")]),
+            dict(Name="/unrelated", Config=dict(Labels={}), Mounts=[dict(Type="volume", Source="/var/lib/docker/v")]),
+        ]
+        refs = node.container_references(entries, self.sources)
+        self.assertEqual(refs[C["a"]], ["容器 platform-local-openbao-1（挂载）"])
+        self.assertEqual(refs[C["b"]], ["容器 kailo-knowledge-app-1（Compose 项目目录）"])
+        self.assertEqual(refs[C["c"]], ["容器 kailo-knowledge-app-1（Compose 文件）"])
+        self.assertEqual(refs[C["d"]], ["容器 openmeter（挂载经链接）"])
+        self.assertEqual(len(refs), 4)
+
+    def test_links_under_scan_roots_point_at_trees(self):
+        runtime = os.path.join(self.root, "runtime")
+        os.makedirs(os.path.join(runtime, "data", "deep", "er"))
+        os.symlink(os.path.join(self.sources, C["a"], "apps"), os.path.join(runtime, "current"))
+        os.symlink("../../sources/" + C["b"] + "/apps/x", os.path.join(runtime, "data", "relative"))
+        os.symlink(os.path.join(self.sources, C["c"]), os.path.join(runtime, "data", "deep", "er", "too-deep"))
+        os.symlink("/etc/hostname", os.path.join(runtime, "data", "unrelated"))
+        refs, unreadable = node.link_references([runtime], self.sources, max_depth=1)
+        self.assertEqual(sorted(refs), [C["a"], C["b"]])
+        self.assertEqual(unreadable, [])
+        refs, _ = node.link_references([runtime], self.sources, max_depth=6)
+        self.assertIn(C["c"], refs)
+        with self.assertRaises(node.NodeError):
+            node.link_references([os.path.join(self.root, "missing")], self.sources, 6)
+        locked = os.path.join(runtime, "data", "container-owned")
+        os.makedirs(locked, mode=0o000)
+        try:
+            refs, unreadable = node.link_references([runtime], self.sources, max_depth=6)
+        finally:
+            os.chmod(locked, 0o755)
+        self.assertEqual(unreadable if os.geteuid() else [locked], [locked])
+        self.assertIn(C["a"], refs)
+
+
+class RetentionRun(unittest.TestCase):
+    """run_retention 端到端（本地临时目录；Docker 与 origin/main 以替身注入）。"""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        r = self.root = self.tmp.name
+        self.sources = os.path.join(r, "sources")
+        self.journal = os.path.join(r, "releases")
+        self.receipts = os.path.join(r, "receipts")
+        self.scratch = os.path.join(r, "scratch")
+        runtime = os.path.join(r, "runtime")
+        for path in (self.journal, os.path.join(r, "queue", "jobs"), runtime, self.scratch):
+            os.makedirs(path)
+        old = NOW - 100 * HOUR
+        for k in "abcde":
+            tree = os.path.join(self.sources, C[k])
+            os.makedirs(os.path.join(tree, "apps", "deploy"))
+            with open(os.path.join(tree, "apps", "deploy", "file"), "w") as s:
+                s.write("x" * 5000)
+            with open(os.path.join(tree, "ready.json"), "w") as s:
+                json.dump(dict(commit=C[k]), s)
+            for path in (os.path.join(tree, "ready.json"), tree):
+                os.utime(path, (old, old))
+        with open(os.path.join(self.sources, C["a"], "check.json"), "w") as s:
+            json.dump(dict(commit=C["a"], diff=""), s)
+        os.utime(os.path.join(self.sources, C["a"], "check.json"), (old, old))
+        os.utime(os.path.join(self.sources, C["a"]), (old, old))
+        # 当前 pin = b
+        os.makedirs(os.path.join(self.journal, C["b"]))
+        with open(os.path.join(self.journal, C["b"], "deploy.json"), "w") as s:
+            json.dump(dict(state="SUCCEEDED", started_at=1, finished_at=2), s)
+        # c 被运行目录中的链接引用；d 被容器挂载
+        os.symlink(os.path.join(self.sources, C["c"], "apps", "deploy"), os.path.join(runtime, "link"))
+        self.containers = [dict(Name="/openbao", Config=dict(Labels={}),
+                                Mounts=[dict(Type="bind", Source=os.path.join(self.sources, C["d"], "apps"))])]
+        # go module cache：只读目录树，超过 24h；另一个新的暂存
+        cache = os.path.join(self.scratch, "agent-a", "pkg", "mod")
+        os.makedirs(cache)
+        with open(os.path.join(cache, "m.go"), "w") as s:
+            s.write("package m")
+        os.chmod(os.path.join(cache, "m.go"), 0o444)
+        for path in (cache, os.path.dirname(cache), os.path.join(self.scratch, "agent-a")):
+            os.chmod(path, 0o555)
+            os.utime(path, (old, old))
+        os.makedirs(os.path.join(self.scratch, "agent-b"))
+        os.utime(os.path.join(self.scratch, "agent-b"), (NOW - HOUR, NOW - HOUR))
+        self.cfg = dict(sources=self.sources, queue=os.path.join(r, "queue"), runtime=runtime,
+                        retention=dict(journal=self.journal, receipts=self.receipts, scratch=[self.scratch]))
+        self.saved = node.all_containers, node.origin_main
+        node.all_containers = lambda: self.containers
+        node.origin_main = lambda cfg: None
+
+    def tearDown(self):
+        node.all_containers, node.origin_main = self.saved
+        for folder, dirs, files in os.walk(self.root):
+            for name in dirs:
+                path = os.path.join(folder, name)
+                if not os.path.islink(path):
+                    os.chmod(path, 0o755)
+        self.tmp.cleanup()
+
+    def trees(self):
+        return sorted(os.listdir(self.sources))
+
+    def test_dry_run_reports_and_deletes_nothing(self):
+        report = node.run_retention(self.cfg, dry_run=True, now=NOW)
+        self.assertEqual(sorted(t["commit"] for t in report["trees"]), [C["a"], C["e"]])
+        self.assertEqual(sorted(report["kept"]), [C["b"], C["c"], C["d"]])
+        self.assertTrue(report["kept"][C["c"]][0].startswith("链接 "))
+        self.assertEqual([s["path"] for s in report["scratch"]], [os.path.join(self.scratch, "agent-a")])
+        self.assertGreater(report["estimated_bytes"], 0)
+        self.assertEqual(self.trees(), sorted(C[k] for k in "abcde"))
+        self.assertTrue(os.path.isdir(os.path.join(self.scratch, "agent-a", "pkg", "mod")))
+        self.assertFalse(os.path.exists(self.receipts))
+
+    def test_apply_archives_receipts_then_deletes_and_clears_read_only_cache(self):
+        report = node.run_retention(self.cfg, dry_run=False, keep=[C["e"]], now=NOW)
+        self.assertEqual([t["commit"] for t in report["trees"]], [C["a"]])
+        self.assertEqual(self.trees(), sorted(C[k] for k in "bcde"))
+        self.assertEqual(sorted(os.listdir(os.path.join(self.receipts, C["a"]))), ["check.json", "ready.json"])
+        with open(os.path.join(self.receipts, C["a"], "ready.json")) as s:
+            self.assertEqual(json.load(s), dict(commit=C["a"]))
+        self.assertEqual(os.listdir(self.scratch), ["agent-b"])
+        # 重跑幂等：无可删
+        again = node.run_retention(self.cfg, dry_run=False, keep=[C["e"]], now=NOW)
+        self.assertEqual((again["trees"], again["scratch"]), ([], []))
+
+    def test_unreadable_reference_facts_stop_without_deleting(self):
+        def broken():
+            raise node.NodeError("docker 不可用")
+        node.all_containers = broken
+        with self.assertRaises(node.NodeError):
+            node.run_retention(self.cfg, dry_run=False, now=NOW)
+        self.cfg["retention"]["link_roots"] = [os.path.join(self.root, "missing")]
+        node.all_containers = lambda: self.containers
+        with self.assertRaises(node.NodeError):
+            node.run_retention(self.cfg, dry_run=False, now=NOW)
+        self.assertEqual(self.trees(), sorted(C[k] for k in "abcde"))
+
+    def test_active_jobs_and_pending_requests_keep_their_trees(self):
+        job = os.path.join(self.cfg["queue"], "jobs", "1" * 32)
+        os.makedirs(job)
+        with open(os.path.join(job, "status.json"), "w") as s:
+            json.dump(dict(state="RUNNING", commit=C["a"]), s)
+        os.makedirs(os.path.join(self.cfg["queue"], "pending", "feedback"))
+        with open(os.path.join(self.cfg["queue"], "pending", "feedback", "2" * 32 + ".json"), "w") as s:
+            json.dump(dict(commit=C["e"]), s)
+        report = node.run_retention(self.cfg, dry_run=True, now=NOW)
+        self.assertEqual(report["trees"], [])
+        self.assertEqual(report["kept"][C["a"]], ["CI 队列中未结束的任务"])
+
+
+class FakeDocker:
+    """记录 docker 子命令；image inspect 只认 present 中的引用；prune 时记下当时存在的占位容器。"""
+
+    def __init__(self, present, stale=(), fail_prune=False):
+        self.present, self.stale, self.fail_prune = present, list(stale), fail_prune
+        self.calls, self.holds, self.held_during_prune = [], [], None
+
+    def __call__(self, argv):
+        self.calls.append(argv[:2])
+        if argv[:2] == ["image", "inspect"]:
+            if argv[-1] not in self.present:
+                raise node.NodeError("No such image")
+            return self.present[argv[-1]]
+        if argv[0] == "ps":
+            return "\n".join(self.stale)
+        if argv[0] == "create":
+            self.holds.append(argv[-2])
+            return "hold-%d" % len(self.holds)
+        if argv[0] == "rm":
+            self.stale = [c for c in self.stale if c not in argv]
+            self.holds = [h for i, h in enumerate(self.holds) if "hold-%d" % (i + 1) not in argv] \
+                if any(a.startswith("hold-") for a in argv) else self.holds
+            return ""
+        if argv[:2] == ["image", "prune"]:
+            self.held_during_prune = list(self.holds)
+            if self.fail_prune:
+                raise node.NodeError("prune 失败")
+            return "Total reclaimed space: 1.5GB"
+        if argv[:2] == ["builder", "prune"]:
+            return "Total:\t0B"
+        if argv[:2] == ["system", "df"]:
+            return json.dumps(dict(Type="Images", Reclaimable="9GB"))
+        raise AssertionError(argv)
+
+
+class CheckImageProtection(unittest.TestCase):
+    MAIN, PIN = b"FROM main", b"FROM pin"
+
+    def show(self, commit, path):
+        self.assertEqual(path, "tools/check.Dockerfile")
+        return {C["a"]: self.MAIN, C["b"]: self.PIN, C["c"]: self.MAIN}.get(commit)
+
+    def ref(self, recipe):
+        return "local/kailo-check:" + node.hashlib.sha256(recipe).hexdigest()
+
+    def test_recipes_of_main_and_pin_name_the_protected_images(self):
+        got = node.protected_check_images([(C["a"], "origin/main"), (C["b"], "pin"), (C["c"], "keep"), (None, "x")],
+                                          self.show)
+        self.assertEqual(got, {self.ref(self.MAIN): ["origin/main", "keep"], self.ref(self.PIN): ["pin"]})
+        with self.assertRaises(node.NodeError):
+            node.protected_check_images([(C["d"], "pin")], self.show)
+
+    def test_protected_images_are_held_by_created_containers_during_image_prune(self):
+        protect = node.protected_check_images([(C["a"], "origin/main"), (C["b"], "pin")], self.show)
+        fake = FakeDocker({self.ref(self.MAIN): "sha256:main"}, stale=["old-hold"])  # pin 的镜像本机不存在
+        got = node.docker_prune(False, protect, docker=fake)
+        self.assertEqual(fake.held_during_prune, ["sha256:main"])
+        self.assertEqual(fake.holds, [])
+        self.assertEqual(fake.stale, [])  # 上次遗留的占位容器先被清理
+        self.assertLess(fake.calls.index(["create", "--pull=never"]), fake.calls.index(["image", "prune"]))
+        self.assertEqual(got["reclaimed"], {"image": "1.5GB", "builder": "0B"})
+        self.assertEqual(got["protected"][self.ref(self.PIN)]["image"], None)
+
+    def test_holds_are_removed_when_prune_fails_and_dry_run_creates_nothing(self):
+        protect = node.protected_check_images([(C["a"], "origin/main")], self.show)
+        fake = FakeDocker({self.ref(self.MAIN): "sha256:main"}, fail_prune=True)
+        with self.assertRaises(node.NodeError):
+            node.docker_prune(False, protect, docker=fake)
+        self.assertEqual(fake.holds, [])
+        dry = FakeDocker({self.ref(self.MAIN): "sha256:main"})
+        got = node.docker_prune(True, protect, docker=dry)
+        self.assertNotIn(["create", "--pull=never"], dry.calls)
+        self.assertNotIn(["image", "prune"], dry.calls)
+        self.assertEqual(got["protected"][self.ref(self.MAIN)], dict(image="sha256:main", reasons=["origin/main"]))
 
 
 if __name__ == "__main__":

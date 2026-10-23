@@ -33,6 +33,11 @@
       "type": "array",
       "items": {"type": "string", "format": "uuid"},
       "description": "用户明确选中的本 Workspace Installation；缺省为空，BFF 排序去重并冻结于原发布幂等记录。"
+    },
+    "addressedInstallationIds": {
+      "type": "array",
+      "items": {"type": "string", "format": "uuid"},
+      "description": "DD-148 原 Agent 收件人栏：须为同一请求 mentionInstallationIds 的子集（否则 SCOPE_GUARD_FAILED 前的 400）；BFF 排序去重并冻结于同一发布意图（幂等重放逐项比较），对其中经准入并实际投递的 Installation 的 AGENT 公钥签原版 [\"mention\", <pubkey>, \"agent-address\"] 标签，与 p 并存，只作呈现元数据，不改变通知或 agent.invoke 准入；与 editEventId、deleteEventId、sendToChannelSourceEventId 互斥，私聊目标拒绝。缺省为空。"
     }
   }
 }

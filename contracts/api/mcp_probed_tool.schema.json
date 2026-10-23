@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/mcp_probed_tool.schema.json",
+  "title": "McpProbedTool",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "upstreamName",
+    "inputSchemaJson",
+    "suggestedRisk",
+    "suggestedCallPolicy"
+  ],
+  "properties": {
+    "upstreamName": {
+      "type": "string"
+    },
+    "title": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string",
+      "description": "上游描述（不可信内容，界面以纯文本显示）"
+    },
+    "inputSchemaJson": {
+      "type": "string"
+    },
+    "outputSchemaJson": {
+      "type": "string"
+    },
+    "readOnlyHint": {
+      "type": "boolean"
+    },
+    "destructiveHint": {
+      "type": "boolean"
+    },
+    "idempotentHint": {
+      "type": "boolean"
+    },
+    "openWorldHint": {
+      "type": "boolean"
+    },
+    "suggestedRisk": {
+      "$ref": "../enums/mcp_tool_risk.schema.json"
+    },
+    "suggestedCallPolicy": {
+      "$ref": "../enums/mcp_tool_call_policy.schema.json"
+    }
+  }
+}
