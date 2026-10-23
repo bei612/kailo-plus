@@ -17,6 +17,6 @@ DROP TRIGGER workspace_lifecycle_snapshot_guard ON admission.workspace_lifecycle
 DROP FUNCTION admission.guard_workspace_lifecycle_snapshot();
 DROP TABLE admission.workspace_lifecycle_snapshot;
 
-ALTER TABLE identity.workspace DROP CONSTRAINT workspace_state_enum;
+ALTER TABLE identity.workspace DROP CONSTRAINT workspace_state_lifecycle;
 ALTER TABLE identity.workspace ADD CONSTRAINT workspace_state_enum CHECK (state IN
     ('PROVISIONING','ACTIVE','SUSPENDING','SUSPENDED','RESTORING','ERROR'));

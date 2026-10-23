@@ -10,8 +10,10 @@
 --    Workspace scope 已关闭），在目标 Workspace 上检查 manage（≙ 原 Channel owner，DD-82 无
 --    owner/admin 两级），只接受 HUMAN；EXPLICIT 确认、无审批，由 WORKSPACE_LIFECYCLE 的 DELETE
 --    段收敛。旧版本 Core 没有该 key 的语义，按 BLOCKED 拒绝。
+-- 库内生命周期多一个墓碑 DELETED，对外契约 enums/workspace_state 不含它（任何视图都不返回已删除的
+-- Workspace），所以库约束改名为 workspace_state_lifecycle，不再按 *_enum 与契约逐值比对。
 ALTER TABLE identity.workspace DROP CONSTRAINT workspace_state_enum;
-ALTER TABLE identity.workspace ADD CONSTRAINT workspace_state_enum CHECK (state IN
+ALTER TABLE identity.workspace ADD CONSTRAINT workspace_state_lifecycle CHECK (state IN
     ('PROVISIONING','ACTIVE','SUSPENDING','SUSPENDED','RESTORING','DELETING','DELETED','ERROR'));
 
 CREATE TABLE admission.workspace_lifecycle_snapshot (
