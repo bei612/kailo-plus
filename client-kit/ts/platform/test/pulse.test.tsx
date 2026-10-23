@@ -235,3 +235,28 @@ describe("original Pulse governed consumers",()=>{
     success.mockRestore();failure.mockRestore();
   });
 });
+
+describe("original Pulse like pending presentation without optimistic success",()=>{
+  const note={id:eventId,pubkey:author,createdAt:1,content:"note",tags:[]};
+  function Like({reactions}:{reactions:Map<string,{count:number;reactedByCurrentUser:boolean;ownEventIds:string[]}>}){
+    const actions=usePulseNoteActions({currentPubkey:viewer,reactionQueryKey:pulseQueryKeys.reactions([]),reactions});
+    return <button data-pending={String(actions.isUpvotePending(eventId))} data-liked={String(actions.isUpvoted(eventId))}
+      data-count={actions.reactionCount(eventId)} onClick={()=>void actions.toggleUpvote(note,actions.isUpvoted(eventId))}>like</button>;
+  }
+  it("shows the original target heart only while in flight and settles from the read model on success, failure and UNKNOWN",async()=>{
+    for(const outcome of ["ok","fail","unknown"] as const){
+      let release:()=>void=()=>{};
+      const publish=vi.fn(()=>new Promise<{eventId:string}>((resolve,reject)=>{release=()=>outcome==="ok"?resolve({eventId})
+        :reject(outcome==="fail"?new BffError(403,"denied"):new TransportError("timeout"));}));
+      const ui=await render(wrap(host({publish}),<Like reactions={new Map([[eventId,{count:2,reactedByCurrentUser:false,ownEventIds:[]}]])}/>));
+      const node=ui.querySelector("button")!;
+      await click(node);
+      // In flight: the original pending presentation (target state, disabled by the card).
+      expect([node.dataset.pending,node.dataset.liked,node.dataset.count]).toEqual(["true","true","3"]);
+      await act(async()=>{release();await new Promise(r=>setTimeout(r,0));});
+      await vi.waitFor(()=>expect(node.dataset.pending).toBe("false"));
+      // Settled: only the read model decides; the unchanged fixture never shows a success.
+      expect([node.dataset.liked,node.dataset.count]).toEqual(["false","2"]);
+    }
+  });
+});
