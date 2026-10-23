@@ -44,13 +44,13 @@ svg.lucide[stroke-width="2"] {
 }
 
 [data-kailo-brand-mark] {
-  display: inline-flex;
   flex-shrink: 0;
-  height: 22px;
-  width: 22px;
+}
+
+[data-testid="app-top-chrome"] [data-kailo-brand-mark] {
   margin-inline: 2px 8px;
   border-radius: 7px;
-  box-shadow: 0 1px 2px rgb(var(--k-brand-rgb) / 0.35), inset 0 0 0 1px rgb(255 255 255 / 0.14);
+  filter: drop-shadow(0 1px 1.5px rgb(var(--k-brand-rgb) / 0.35));
 }
 
 /* Brand mark gradient stops (DD-141 §2.5); token-driven, so both modes follow. */
