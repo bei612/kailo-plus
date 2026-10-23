@@ -14,7 +14,7 @@ design:
   entities: [ComponentRelease, FrontendPresentationContract, ApplicationBinding, BuzzIdentityBinding, TenantMembership, WorkspaceMembership, ExternalIdentity]
 
 validation:
-  scenarios: [V-SCN-198, V-SCN-199, V-SCN-200, V-SCN-201, V-SCN-202, V-SCN-203, V-SCN-204, V-SCN-205, V-SCN-218, V-SCN-219]
+  scenarios: [V-SCN-198, V-SCN-199, V-SCN-200, V-SCN-201, V-SCN-202, V-SCN-203, V-SCN-204, V-SCN-205, V-SCN-218, V-SCN-219, V-SCN-222]
   evidence:
     - dimension: 上游接缝
       ref: model-gateway/fork/verify/end-session.md
@@ -26,6 +26,8 @@ validation:
       ref: core/crates/platform-core/src/component_directory.rs
     - dimension: 退出联动
       ref: collaboration/fork/verify/desktop-embedded-idp-logout.md
+    - dimension: 单元测试
+      ref: tools/release/test_node.py
 
 implementation:
   owners: [team-platform]
