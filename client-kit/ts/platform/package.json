@@ -238,6 +238,7 @@
     "./react/theme-settings-controls": "./src/react/theme-settings-controls.tsx",
     "./react/settings-option-group": "./src/react/settings-option-group.tsx",
     "./theme/use-appearance": "./src/theme/use-appearance.ts",
+    "./theme/kailo-tokens": "./src/theme/kailo-tokens.ts",
     "./theme/safe-storage": "./src/theme/safe-storage.ts",
     "./theme/theme-preview-frame": "./src/theme/theme-preview-frame.tsx",
     "./theme/use-theme-preview-vars": "./src/theme/use-theme-preview-vars.ts",

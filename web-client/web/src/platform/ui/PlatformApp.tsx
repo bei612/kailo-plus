@@ -47,7 +47,7 @@ import {
   MembersPane,
   WorkspaceManagementPanels,
 } from "@client-kit/platform/react/pages";
-import { ContentSurface, GradientLayer } from "@client-kit/platform/react/surfaces";
+import { ContentSurface, GradientLayer, KailoMark } from "@client-kit/platform/react/surfaces";
 import { ChannelMembersBar, ChannelMembersDialog, type MemberProfileRequest } from "@client-kit/platform/react/channel-members";
 import { MemberHover, useOptionalMemberProfile, type MemberTarget } from "@client-kit/platform/react/members";
 import { CandidatePictureProvider, sameOriginAvatarPicture } from "@client-kit/platform/react/profile/candidate-picture";
@@ -680,6 +680,8 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
         <SidebarProvider className="relative z-10 min-h-0 min-w-0 flex-1 flex-col overflow-visible" data-testid="app-sidebar-layer">
           <div className={`${tab === "settings" ? "absolute inset-x-0 top-0" : "relative"} z-45 flex h-(--buzz-top-chrome-height,40px) shrink-0 cursor-default select-none items-center bg-sidebar pl-3 pr-3 text-sidebar-foreground`} data-testid="app-top-chrome">
             <div className="flex items-center gap-0.5">
+              {/* DD-141: Kailo brand mark leads the top chrome. */}
+              <KailoMark />
               <SidebarTrigger className="h-[28px] w-[28px] rounded-[4px] text-sidebar-foreground/65 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground" />
               <TopChromeHistoryButtons canGoBack={navigation.canGoBack === true} canGoForward={navigation.canGoForward === true}
                 onGoBack={() => navigation.goBack?.()} onGoForward={() => navigation.goForward?.()} />

@@ -9,6 +9,7 @@ import { DrawerPanelIcon } from "@/shared/ui/DrawerPanelIcon";
 import { cn } from "@/shared/lib/cn";
 import { topChromeBackdrop } from "@/shared/layout/chromeLayout";
 import { useOptionalSidebar } from "@/shared/ui/sidebar";
+import { KailoMark } from "@client-kit/platform/react/surfaces";
 
 type AppTopChromeProps = {
   canGoBack: boolean;
@@ -122,6 +123,8 @@ export function AppTopChrome({
       }
     >
       <div className={cn("flex items-center gap-0.5", navRowAlignmentClass)}>
+        {/* DD-141: Kailo brand mark leads the top chrome. */}
+        <KailoMark />
         <TopChromeSidebarTrigger />
         <TopChromeHistoryButtons
           canGoBack={canGoBack}

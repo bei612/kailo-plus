@@ -1,5 +1,6 @@
 import { act, useState } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { kailoThemeVars } from "../src/theme/kailo-tokens";
 import { ThemeSettingsControls } from "../src/react/theme-settings-controls";
 import { AppearanceSettings } from "../src/react/appearance-settings";
 import { GlassBackgroundSetting } from "../src/react/glass-background-setting";
@@ -162,7 +163,9 @@ describe("original Buzz appearance in both hosts", () => {
     await act(async () => appearance.setTheme("buzz-dark"));
     await vi.waitFor(() => expect(appearance.isLoading).toBe(false));
     expect(host.querySelector('[data-testid="accent-color-options"]')).toBeNull();
-    expect(document.documentElement.style.getPropertyValue("--primary")).toBe(document.documentElement.style.getPropertyValue("--foreground"));
+    // DD-141: the first-party theme pins the Kailo brand accent (not the stored red, not a neutral foreground).
+    expect(document.documentElement.style.getPropertyValue("--primary")).toBe(kailoThemeVars("dark")["--primary"]);
+    expect(document.documentElement.style.getPropertyValue("--background")).toBe(kailoThemeVars("dark")["--background"]);
     expect(localStorage.getItem("buzz-accent-color")).toBe("#ef4444");
     await act(async () => appearance.setTheme("github-dark"));
     await vi.waitFor(() => expect(appearance.isLoading).toBe(false));
