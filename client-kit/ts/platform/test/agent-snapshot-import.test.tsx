@@ -13,7 +13,7 @@ import {
 import { SnapshotCard } from "../src/react/messages/SnapshotCard";
 import type { BffReply, BffRequest, BffTransport } from "../src/transport";
 import { act } from "react";
-import { click, render, settle } from "./render";
+import { click, render, settle, until } from "./render";
 
 const uploadId = "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d";
 const routeId = "6d7f8a1c-0f1e-4e1b-9a55-0c1f3a2b4d5e";
@@ -95,7 +95,7 @@ describe("agent snapshot import", () => {
     await render(<PlatformProvider client={createBffClient(t)} locale="en">
       <AgentSnapshotImportDialog source={source} onClose={() => {}} onImported={imported} />
     </PlatformProvider>);
-    await settle();
+    await until(() => !!document.querySelector("[data-testid=agent-snapshot-import-preview]"), "import preview");
     const dialog = document.querySelector("[data-testid=agent-snapshot-import-preview]")!;
     expect(dialog.textContent).toContain("Write release notes.");
     expect(dialog.textContent).toContain("Respond-to allowlist");
@@ -121,7 +121,7 @@ describe("agent snapshot import", () => {
     await render(<PlatformProvider client={createBffClient(t)} locale="en">
       <AgentSnapshotImportDialog source={source} onClose={() => {}} />
     </PlatformProvider>);
-    await settle();
+    await until(() => !!document.querySelector("[data-testid=agent-snapshot-import-preview]"), "import preview");
     expect(document.body.textContent).toContain("choose them in the version editor before publishing");
     await click(document.querySelector<HTMLButtonElement>("[data-testid=agent-snapshot-import-review]")!);
     await click(document.querySelector<HTMLButtonElement>("[data-testid=agent-snapshot-import-submit]")!);
@@ -136,7 +136,7 @@ describe("agent snapshot import", () => {
     await render(<PlatformProvider client={createBffClient(t)} locale="zh-CN">
       <AgentSnapshotImportDialog source={source} onClose={() => {}} />
     </PlatformProvider>);
-    await settle();
+    await until(() => !!document.querySelector("[data-testid=agent-snapshot-import-preview]"), "import preview");
     expect(document.querySelector("[data-testid=agent-snapshot-import-instructions]")).toBeNull();
     expect(document.querySelector("[data-testid=agent-snapshot-import-no-instructions]")!.textContent).toContain("补充指令后才能发布");
     expect(document.querySelector<HTMLButtonElement>("[data-testid=agent-snapshot-import-review]")!.disabled).toBe(false);
@@ -151,7 +151,7 @@ describe("agent snapshot import", () => {
     await render(<PlatformProvider client={createBffClient(t)} locale="en">
       <AgentSnapshotImportDialog source={source} onClose={() => {}} />
     </PlatformProvider>);
-    await settle();
+    await until(() => !!document.querySelector("[data-testid=agent-snapshot-import-preview]"), "import preview");
     expect(document.querySelector("[data-testid=agent-snapshot-import-avatar]")).not.toBeNull();
     expect(document.querySelector("[data-testid=agent-snapshot-import-avatar-imported]")).not.toBeNull();
   });
@@ -163,7 +163,7 @@ describe("agent snapshot import", () => {
     await render(<PlatformProvider client={createBffClient(unstaged)} locale="en">
       <AgentSnapshotImportDialog source={source} onClose={() => {}} />
     </PlatformProvider>);
-    await settle();
+    await until(() => !!document.querySelector("[data-testid=agent-snapshot-import-rejected]"), "preview rejection");
     expect(document.querySelector("[data-testid=agent-snapshot-import-preview]")).toBeNull();
     expect(document.querySelector("[data-testid=agent-snapshot-import-rejected]")).not.toBeNull();
   });
@@ -175,8 +175,10 @@ describe("agent snapshot import", () => {
       <SnapshotCard displayName="Writer" href="/media/x" filename="writer.agent.json" size={manifest.length}
         sha256={"0".repeat(64)} snapshotKind="agent" onDownload={async () => {}} readBytes={async () => manifest} />
     </PlatformProvider>);
-    await settle();
-    await click(host.querySelector<HTMLButtonElement>("[data-testid=agent-snapshot-card-add]")!);
+    const add = host.querySelector<HTMLButtonElement>("[data-testid=agent-snapshot-card-add]")!;
+    await click(add);
+    // 卡片先读字节并以 WebCrypto 复核 imeta 摘要；等这次核对结束（按钮恢复可点）再断言没有上传。
+    await until(() => !add.disabled, "imeta verification");
     expect(t.send).not.toHaveBeenCalled();
     expect(document.querySelector("[data-testid=agent-snapshot-import-preview]")).toBeNull();
   });
