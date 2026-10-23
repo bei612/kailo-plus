@@ -58,6 +58,15 @@ const replyPreviewTextStyle = TextStyle(
   letterSpacing: 0,
 );
 
+/// Reaction counts: 13.1sp medium on a 17sp line height.
+const reactionCountTextStyle = TextStyle(
+  fontFamily: _fontFamily,
+  fontSize: 13.1,
+  fontWeight: FontWeight.w500,
+  height: 17 / 13.1,
+  letterSpacing: 0,
+);
+
 /// Channel and thread titles: 20sp bold on a 24sp line height.
 const channelTitleTextStyle = TextStyle(
   fontFamily: _fontFamily,

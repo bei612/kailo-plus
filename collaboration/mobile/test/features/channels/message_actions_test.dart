@@ -94,6 +94,7 @@ Future<void> _pumpSheet(
   required TimelineMessage message,
   required SharedPreferences prefs,
   ReadStateNotifier Function()? readStateOverride,
+  bool canManageMessage = false,
   List<TimelineMessage>? allMessages,
 }) async {
   await tester.pumpWidget(
@@ -118,6 +119,7 @@ Future<void> _pumpSheet(
                 ref: ref,
                 message: message,
                 channelId: _channelId,
+                canManageMessage: canManageMessage,
                 allMessages: allMessages,
                 currentPubkey: 'self',
                 isMember: true,
@@ -136,6 +138,7 @@ Future<void> _pumpSheet(
 Future<void> _pumpImageSheet(
   WidgetTester tester, {
   required TimelineMessage message,
+  bool canManageMessage = false,
 }) async {
   await tester.pumpWidget(
     ProviderScope(
@@ -149,6 +152,7 @@ Future<void> _pumpImageSheet(
                 ref: ref,
                 message: message,
                 channelId: _channelId,
+                canManageMessage: canManageMessage,
                 imageUrl: 'https://example.com/photo.png',
               ),
               child: const Text('open image actions'),
@@ -187,6 +191,7 @@ Future<_MessageActionsPopoverHarness> _pumpMessageActionsPopover(
   required TimelineMessage message,
   required SharedPreferences prefs,
   ReadStateNotifier Function()? readStateOverride,
+  bool canManageMessage = false,
   List<TimelineMessage>? allMessages,
   bool disableAnimations = false,
   EdgeInsets viewInsets = EdgeInsets.zero,
@@ -213,6 +218,7 @@ Future<_MessageActionsPopoverHarness> _pumpMessageActionsPopover(
               ref: ref,
               message: message,
               channelId: _channelId,
+              canManageMessage: canManageMessage,
               allMessages: allMessages,
               currentPubkey: 'self',
               isMember: true,
@@ -482,28 +488,42 @@ void main() {
   });
 
   group('Mobile message actions', () {
-    testWidgets('offer no reactions, edits, deletions or reminders', (
+    testWidgets('own messages offer quick reactions, edit and delete', (
       tester,
     ) async {
       await _pumpSheet(
         tester,
         message: _message(pubkey: 'self'),
         prefs: await _mockPrefs(),
+        canManageMessage: true,
         allMessages: [_message(pubkey: 'self')],
       );
 
       expect(find.text('Reply'), findsOneWidget);
       expect(find.text('Copy link'), findsOneWidget);
       expect(find.text('Copy text'), findsOneWidget);
-      for (final removed in ['Edit message', 'Delete message', 'Remind me']) {
-        expect(find.text(removed), findsNothing);
-      }
-      // 上游在这里放一排快捷表情回应
-      expect(find.byType(NativeEmojiGlyph), findsNothing);
+      expect(find.text('Edit message'), findsOneWidget);
+      expect(find.text('Delete message'), findsOneWidget);
+      // Mobile 尚无提醒宿主
+      expect(find.text('Remind me'), findsNothing);
+      expect(find.byType(NativeEmojiGlyph), findsWidgets);
     });
 
-    testWidgets('image actions never offer deletion', (tester) async {
-      await _pumpImageSheet(tester, message: _message(pubkey: 'self'));
+    testWidgets('others\' messages offer no edit or delete', (tester) async {
+      await _pumpSheet(
+        tester,
+        message: _message(pubkey: 'other'),
+        prefs: await _mockPrefs(),
+      );
+
+      expect(find.text('Edit message'), findsNothing);
+      expect(find.text('Delete message'), findsNothing);
+    });
+
+    testWidgets('image actions offer deletion only with manage rights', (
+      tester,
+    ) async {
+      await _pumpImageSheet(tester, message: _message(pubkey: 'other'));
 
       expect(find.text('Save image'), findsOneWidget);
       expect(find.text('Share image'), findsOneWidget);

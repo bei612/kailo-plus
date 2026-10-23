@@ -12,7 +12,7 @@ import 'custom_emoji.dart';
 class CustomEmojiPaletteNotifier extends AsyncNotifier<List<CustomEmoji>> {
   @override
   Future<List<CustomEmoji>> build() {
-    ref.watch(relayClientProvider);
+    ref.watch(relayConfigProvider);
     ref.watch(relaySessionProvider);
     return _fetch();
   }
