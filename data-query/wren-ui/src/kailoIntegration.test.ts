@@ -153,6 +153,29 @@ describe('DD-133 role mapping on a STANDALONE instance', () => {
   });
 });
 
+test('kailoSession shows the stored Kailo name and avatar of the signed-in member', async () => {
+  const user = profile({ name: 'IdP Name' });
+  const load = jest.fn(async () => ({
+    userKey: user.key,
+    name: 'Kailo Display',
+    username: 'member',
+    email: null,
+    picture: 'https://kailo.example/api/v1/identity/avatars/member',
+    locale: null,
+  }));
+  const session = await (originalResolvers.Query as any).kailoSession(
+    undefined,
+    {},
+    { kailoUser: user, kailoUsers: { load } },
+  );
+  expect(load).toHaveBeenCalledWith(user.key);
+  expect(session.user).toMatchObject({
+    name: 'Kailo Display',
+    picture: 'https://kailo.example/api/v1/identity/avatars/member',
+    isCurrentUser: true,
+  });
+});
+
 describe('Kailo users and ownership in the native database', () => {
   let db: Knex;
   beforeEach(async () => {
