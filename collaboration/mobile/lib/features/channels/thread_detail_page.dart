@@ -26,6 +26,7 @@ import 'compose_bar.dart';
 import 'composer_dock_size_reporter.dart';
 import 'date_formatters.dart';
 import 'package:client_kit/shared/platform/platform_text.dart';
+import 'reaction_row.dart';
 import 'day_divider.dart';
 import 'ime_metrics_settle_observer.dart';
 import 'initial_thread_tail_settle.dart';
@@ -127,7 +128,10 @@ class ThreadDetailPage extends HookConsumerWidget {
         ref.watch(channelMessagesProvider(channelId)).value ??
         const <NostrEvent>[];
     final replyMessages = repliesState.whenData((events) {
-      return formatTimeline(mergeThreadEvents(events, liveChannelEvents));
+      return formatTimeline(
+        mergeThreadEvents(events, liveChannelEvents),
+        currentPubkey: currentPubkey,
+      );
     });
 
     final fetchedReplies = replyMessages.value;

@@ -34,6 +34,7 @@ import 'compose_bar.dart';
 import 'composer_dock_size_reporter.dart';
 import 'date_formatters.dart';
 import 'package:client_kit/shared/platform/platform_text.dart';
+import 'reaction_row.dart';
 import 'day_divider.dart';
 import 'ime_metrics_settle_observer.dart';
 import 'jump_to_latest_button.dart';
@@ -43,6 +44,7 @@ import 'local_message_send_transition.dart';
 import 'message_actions.dart';
 import 'message_action_backdrop_state.dart';
 import 'message_long_press_region.dart';
+import 'message_mutations.dart';
 import 'message_content.dart';
 import '../../shared/read_state/deferred_read_state_update.dart';
 import '../../shared/read_state/read_state_format.dart';
@@ -354,7 +356,10 @@ class ChannelDetailPage extends HookConsumerWidget {
                       ),
                     ),
                     data: (events) {
-                      final messages = formatTimeline(events);
+                      final messages = formatTimeline(
+                        events,
+                        currentPubkey: currentPubkey,
+                      );
                       final summaries = ref
                           .read(channelMessagesProvider(channel.id).notifier)
                           .threadSummaries;
