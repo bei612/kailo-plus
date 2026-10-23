@@ -1,8 +1,12 @@
 // Fixed Buzz 779af8886caae1317b4de962082429867ab61503 desktop/src/features/projects/ui/ProjectWorkItemRow.tsx.
-// Original read presentation; selection-to-Agent remains an explicitly missing consumer.
+// Original selection control inside a ProjectSelectionProvider (hover/focus reveals the checkbox).
 import type * as React from "react";
 
 import { cn } from "../profile/buzz/shared/lib/cn";
+import { useUiT } from "../context";
+import type { ProjectSelectionItem } from "./lib/projectSelection";
+import { useProjectSelection } from "./lib/useProjectSelection";
+import { ProjectEntitySelectControl } from "./ProjectEntityListRow";
 
 export function ProjectWorkItemRow({
   eventId,
@@ -11,6 +15,7 @@ export function ProjectWorkItemRow({
   identifierTitle,
   metadata,
   onOpen,
+  selection,
   statusIcon,
   testId,
   title,
@@ -22,17 +27,24 @@ export function ProjectWorkItemRow({
   identifierTitle?: string;
   metadata?: React.ReactNode;
   onOpen?: () => void;
+  selection?: { item: ProjectSelectionItem; rangeItems: ProjectSelectionItem[] };
   statusIcon: React.ReactNode;
   testId: string;
   title: string;
   trailing?: React.ReactNode;
 }) {
+  const t = useUiT();
+  const projectSelection = useProjectSelection();
+  const selected = Boolean(selection && projectSelection?.isSelected(selection.item.id));
+  const showSelectControl = Boolean(selection && projectSelection && selected);
   return (
     <article
       className={cn(
         "group/work-item mx-2 flex min-h-10 min-w-0 items-center gap-3 rounded-md px-2 py-2 transition-colors hover:bg-muted/30",
+        selected && "bg-muted/40",
       )}
       data-project-event-id={eventId}
+      data-selected={selected ? "true" : undefined}
       data-testid={testId}
     >
       <span
@@ -42,11 +54,29 @@ export function ProjectWorkItemRow({
         <span
           className={cn(
             "flex items-center justify-center opacity-80 transition-opacity",
+            selection && projectSelection && "group-hover/work-item:opacity-0 group-focus-within/work-item:opacity-0",
+            showSelectControl && "opacity-0",
           )}
           data-testid="project-work-item-status-icon"
         >
           {statusIcon}
         </span>
+        {selection && projectSelection ? (
+          <span
+            className={cn(
+              "absolute inset-0 flex items-center justify-center opacity-0 transition-opacity group-hover/work-item:opacity-100 group-focus-within/work-item:opacity-100",
+              showSelectControl && "opacity-100",
+            )}
+          >
+            <ProjectEntitySelectControl
+              checked={selected}
+              label={t("projects.selection.select", { name: selection.item.title })}
+              onToggle={({ shiftKey }) =>
+                projectSelection.toggle(selection.item, { rangeItems: selection.rangeItems, shiftKey })
+              }
+            />
+          </span>
+        ) : null}
       </span>
       {onOpen ? (
         <button

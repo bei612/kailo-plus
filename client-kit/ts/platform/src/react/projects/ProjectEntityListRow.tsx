@@ -1,14 +1,64 @@
 // Original Buzz 779af8886caae1317b4de962082429867ab61503 desktop/src/features/projects/ui/ProjectEntityListRow.tsx.
-// Original read presentation; selection-to-Agent context remains a separate missing consumer, not a fake control.
-import { MessageSquare } from "lucide-react";
+// Original selection control: hover/focus reveals the row checkbox inside a ProjectSelectionProvider
+// (shift extends the range over `rangeItems`); outside one the row is the read presentation only.
+import { Check, MessageSquare, Minus } from "lucide-react";
 import type * as React from "react";
 import { relativeTime } from "./lib/projectsViewHelpers";
-import { useUiLocale } from "../context";
+import { useUiLocale, useUiT } from "../context";
+import type { ProjectSelectionItem } from "./lib/projectSelection";
+import { useProjectSelection } from "./lib/useProjectSelection";
 import { twMerge as cn } from "tailwind-merge";
 
 /** One-line list row: title, optional description column, then trailing metadata. */
 export const PROJECT_ENTITY_LIST_ROW_CLASS =
   "mx-2 flex min-h-9 min-w-0 items-center gap-3 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-muted/30";
+
+export function ProjectEntitySelectControl({
+  checked,
+  indeterminate = false,
+  label,
+  onToggle,
+  testId = "projects-row-select",
+}: {
+  checked: boolean;
+  indeterminate?: boolean;
+  label: string;
+  onToggle: (event: { shiftKey: boolean }) => void;
+  testId?: string;
+}) {
+  return (
+    <label
+      className={cn(
+        "pointer-events-auto relative flex h-3.5 w-3.5 shrink-0 cursor-pointer items-center justify-center rounded-xs border focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-1",
+        checked || indeterminate
+          ? "border-primary bg-primary text-primary-foreground"
+          : "border-muted-foreground/55 bg-background",
+      )}
+    >
+      <input
+        aria-label={label}
+        checked={checked}
+        className="absolute inset-0 z-10 cursor-pointer opacity-0"
+        data-testid={testId}
+        onChange={(event) => {
+          const mouse = event.nativeEvent;
+          onToggle({ shiftKey: "shiftKey" in mouse ? Boolean(mouse.shiftKey) : false });
+        }}
+        onClick={(event) => event.stopPropagation()}
+        onPointerDown={(event) => event.stopPropagation()}
+        ref={(input) => {
+          if (input) input.indeterminate = indeterminate;
+        }}
+        type="checkbox"
+      />
+      {checked ? (
+        <Check className="h-2.5 w-2.5" strokeWidth={3} />
+      ) : indeterminate ? (
+        <Minus className="h-2.5 w-2.5" strokeWidth={3} />
+      ) : null}
+    </label>
+  );
+}
 
 export function ProjectEntityListRow({
   affiliation,
@@ -28,6 +78,7 @@ export function ProjectEntityListRow({
   onClick,
   peopleSlot,
   peopleTestId,
+  selection,
   testId,
   title,
   titleAttr,
@@ -53,6 +104,7 @@ export function ProjectEntityListRow({
   onClick?: () => void;
   peopleSlot?: React.ReactNode;
   peopleTestId?: string;
+  selection?: { item: ProjectSelectionItem; rangeItems: ProjectSelectionItem[] };
   testId?: string;
   title: React.ReactNode;
   titleAttr?: string;
@@ -62,7 +114,11 @@ export function ProjectEntityListRow({
   trailing?: React.ReactNode;
 }) {
   const locale = useUiLocale();
-  const useOverlay = Boolean(trailing || peopleSlot);
+  const t = useUiT();
+  const projectSelection = useProjectSelection();
+  const selected = Boolean(selection && projectSelection?.isSelected(selection.item.id));
+  const showSelectControl = Boolean(selection && projectSelection && selected);
+  const useOverlay = Boolean(trailing || peopleSlot || (selection && projectSelection));
   const peopleContent = peopleSlot;
 
   const interactiveSlotClass = useOverlay ? "pointer-events-auto" : undefined;
@@ -78,10 +134,28 @@ export function ProjectEntityListRow({
         <span
           className={cn(
             "flex items-center justify-center",
+            selection && projectSelection && "group-hover:opacity-0 group-focus-within:opacity-0",
+            showSelectControl && "opacity-0",
           )}
         >
           {icon}
         </span>
+        {selection && projectSelection ? (
+          <span
+            className={cn(
+              "absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 group-focus-within:opacity-100",
+              showSelectControl && "opacity-100",
+            )}
+          >
+            <ProjectEntitySelectControl
+              checked={selected}
+              label={t("projects.selection.select", { name: selection.item.title })}
+              onToggle={({ shiftKey }) =>
+                projectSelection.toggle(selection.item, { rangeItems: selection.rangeItems, shiftKey })
+              }
+            />
+          </span>
+        ) : null}
       </span>
       <span
         className={cn(
@@ -203,6 +277,7 @@ export function ProjectEntityListRow({
     return (
       <div
         className="group relative"
+        data-selected={selected ? "true" : undefined}
         data-testid={testId}
       >
         {onClick ? (
@@ -219,6 +294,7 @@ export function ProjectEntityListRow({
           className={cn(
             PROJECT_ENTITY_LIST_ROW_CLASS,
             "pointer-events-none relative z-10 group-hover:bg-muted/30",
+            selected && "bg-muted/40",
           )}
         >
           {body}

@@ -2,11 +2,17 @@
 // Selected Task/Review branches (ProjectRepositoryActionsPanel) and the repository branch-scoped /
 // repository-scoped context card (ProjectRepositoryContextPanel): repository management, the branch
 // picker, Fetch, Create task / Create review and the original Details rows. The local source toggle,
-// Clone/Pull/Push, Open folder and Terminal are Desktop-local checkout actions, and selection-to-Agent
-// is the project Agent chat; none has a governed consumer here and none is rendered as an empty control.
+// Clone/Pull/Push, Open folder and Terminal are Desktop-local checkout actions with no governed
+// consumer here and are not rendered as empty controls. An active repository selection replaces the
+// card header with the original ProjectsSelectionCountMenu (Agent chat DD-130, discuss, copy links).
+import * as React from "react";
 import type { ComponentProps,ReactNode } from "react";
 import { CheckCircle2, CircleDot, FileCode2, GitCommitHorizontal, GitMerge, GitPullRequest, Loader2, Plus, RefreshCw, Users } from "lucide-react";
 import { useUiT } from "../context";
+import { projectSelectionPresentation, type ProjectSelectionItem } from "./lib/projectSelection";
+import { useProjectSelection } from "./lib/useProjectSelection";
+import { ProjectsSelectionCountMenu } from "./ProjectsSelectionCountMenu";
+import type { ProjectDiscussInChannel } from "./useProjectDiscussInChannel";
 import { RightAuxiliaryPane } from "../messages/thread/RightAuxiliaryPane";
 import { Button } from "../profile/buzz/shared/ui/button";
 import { PROJECT_CONTEXT_ACTION_BUTTON_CLASS } from "./projectContextActionStyles";
@@ -63,7 +69,7 @@ function DetailRow({ count, icon: Icon, label, testId }: { count: ReactNode; ico
 
 /** Original ProjectRepositoryActionsPanel without a selected item: the repository context card. */
 export function ProjectRepositoryContextPanel({ activeTab, fetch, host, identityPubkey, issues, onCreatePullRequest, onCreateTask,
-  onRepositoryChange, project, projects, pullRequests, repository, snapshot, sourceControls, ...pane }: {
+  onRepositoryChange, project, projects, pullRequests, repository, snapshot, sourceControls, selectionActions, ...pane }: {
   activeTab: string;
   fetch?: RepositoryFetchControls;
   host: ProjectsHost;
@@ -78,8 +84,13 @@ export function ProjectRepositoryContextPanel({ activeTab, fetch, host, identity
   repository: Repository;
   snapshot: ProjectRepoSnapshot | null | undefined;
   sourceControls?: RepoBranchHeaderControls;
+  /** Original selection pod actions; each appears only with its existing consumer. */
+  selectionActions?: { onChatWithAgent?: (items: ProjectSelectionItem[]) => void; onDiscussInChannel?: ProjectDiscussInChannel; scopeKey: string };
 } & PaneProps) {
   const t = useUiT();
+  const selection = useProjectSelection();
+  const selectionItems = selection?.items;
+  const selectionPresentation = React.useMemo(() => projectSelectionPresentation(selectionItems ?? []), [selectionItems]);
   const branchScoped = projectRightPanelScope(activeTab) === "branch";
   const taskActivity = projectTaskActivity(issues);
   const reviewActivity = projectReviewActivity(pullRequests);
@@ -91,12 +102,16 @@ export function ProjectRepositoryContextPanel({ activeTab, fetch, host, identity
   return <RightAuxiliaryPane {...pane} detached constrainToAvailableSpace={false} testId="project-repository-actions-panel">
     <div className="relative z-30 min-h-0 flex-1 overflow-y-auto">
       <div className="rounded-2xl bg-background" data-testid="project-context-card">
-        <div className="flex min-w-0 items-center justify-between gap-2 px-4 pt-3">
+        <div className={`flex min-w-0 items-center justify-between gap-2 px-4 pt-3 ${selectionPresentation ? "pb-3" : ""}`}>
+          {selectionPresentation && selection ? <ProjectsSelectionCountMenu onChatWithAgent={selectionActions?.onChatWithAgent}
+            onCreatePullRequest={onCreatePullRequest} onDiscussInChannel={selectionActions?.onDiscussInChannel}
+            presentation={selectionPresentation} scopeKey={selectionActions?.scopeKey ?? host.scopeKey} selectionItems={selection.items}/> : <>
           <h2 className="min-w-0 truncate text-sm font-normal text-muted-foreground/70">{repository.name}</h2>
           {branchScoped ? <div className="flex shrink-0 items-center" data-testid="project-repository-management-actions">
             <ProjectRepositoryManagement compact host={host} identityPubkey={identityPubkey} onChange={onRepositoryChange}
               project={project} projects={projects} repository={repository}/>
           </div> : null}
+          </>}
         </div>
         <div className="space-y-0.5 px-4 pb-3 pt-2">
           {showActions ? <section className="space-y-0.5" data-testid="project-context-actions">

@@ -1,5 +1,5 @@
 // Fixed Buzz 779af8886caae1317b4de962082429867ab61503 desktop/src/features/projects/ui/ProjectsPullRequestsList.tsx.
-// Atomic governed loading replaces upstream partial-section fallback; selection remains missing.
+// Atomic governed loading replaces upstream partial-section fallback; the original row/group selection is restored.
 import { useUiT } from "../context";
 import { translateCurrent } from "../../i18n";
 import { FolderKanban, GitPullRequest } from "lucide-react";
@@ -28,6 +28,7 @@ import { ProjectPanelState } from "./ProjectPanelState";
 import { groupProjectWorkItemsByProject } from "./projectWorkItemGroups";
 import { CopyShareLinkMenuItem } from "./CopyShareLinkMenuItem";
 import { pullRequestShareLink } from "./projectShareLinks";
+import { selectionItemFromReview, type ProjectSelectionItem } from "./lib/projectSelection";
 
 const statusKey = {
   Open: "projects.status.open",
@@ -120,16 +121,28 @@ const PullRequestGridCard = React.memo(function PullRequestGridCard({
 // Memoized: these rows render in unbounded lists, and any Projects-view
 // state change used to re-render every row. Props are kept identity-stable
 // by the list (memoized groups/selection arrays, stable onOpen).
+function pullRequestSelectionItem(project: Project, repository: Repository, pullRequest: ProjectPullRequest) {
+  return selectionItemFromReview({
+    author: pullRequest.author,
+    channelId: repository.channelId ?? project.projectChannelId,
+    id: pullRequest.id,
+    shareLink: pullRequestShareLink(pullRequest),
+    title: pullRequest.title,
+  });
+}
+
 const PullRequestListRow = React.memo(function PullRequestListRow({
   project,
   profiles,
   pullRequest,
+  rangeItems,
   repository,
   onOpen,
 }: {
   project: Project;
   profiles?: UserProfileLookup;
   pullRequest: ProjectPullRequest;
+  rangeItems: ProjectSelectionItem[];
   repository: Repository;
   onOpen: (
     project: Project,
@@ -142,6 +155,7 @@ const PullRequestListRow = React.memo(function PullRequestListRow({
     profiles,
     pubkey: pullRequest.author,
   });
+  const selectionItem = React.useMemo(() => pullRequestSelectionItem(project, repository, pullRequest), [project, repository, pullRequest]);
 
   return (
     <ProjectEntityListRow
@@ -151,6 +165,7 @@ const PullRequestListRow = React.memo(function PullRequestListRow({
       dateTestId="projects-row-date"
       icon={null}
       onClick={() => onOpen(project, repository, pullRequest)}
+      selection={{ item: selectionItem, rangeItems }}
       peopleSlot={
         <ProjectAuthorIdentity
           label={authorLabel}
@@ -194,7 +209,10 @@ export function ProjectsPullRequestsList({
   // Grouping and per-group selection arrays are identity-stable across
   // re-renders so the memoized rows only re-render when their data changes.
   const allGroups = React.useMemo(
-    () => groupProjectWorkItemsByProject(pullRequests),
+    () => groupProjectWorkItemsByProject(pullRequests).map((group) => ({
+      ...group,
+      selectionItems: group.rows.map((row) => pullRequestSelectionItem(row.project, row.repository, row.pullRequest)),
+    })),
     [pullRequests],
   );
   // Mount rows progressively: a one-shot mount of hundreds of rows blocked
@@ -262,6 +280,7 @@ export function ProjectsPullRequestsList({
               headerClassName="mx-0 gap-3 px-4"
               headerTestId="projects-review-project-group-header"
               icon={<FolderKanban className="h-4 w-4" />}
+              items={group.selectionItems}
               key={group.project.id}
               label={group.project.name}
               labelTestId="project-review-project"
@@ -278,6 +297,7 @@ export function ProjectsPullRequestsList({
                       profiles={profiles}
                       project={project}
                       pullRequest={pullRequest}
+                      rangeItems={group.selectionItems}
                       repository={repository}
                     />
                   </li>

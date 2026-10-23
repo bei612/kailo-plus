@@ -1,7 +1,8 @@
 // Original Buzz 779af8886caae1317b4de962082429867ab61503
 // desktop/src/features/projects/ui/ProjectsChannelsList.tsx. Keep the original
 // project/repository grouping, search, activity ordering and row presentation.
-// Directory, Principal roster and navigation are governed host adapters.
+// Directory, Principal roster and navigation are governed host adapters. Rows and project groups
+// carry the original channel selection items (overview selection pod).
 import { FolderKanban, Hash, LockKeyhole } from "lucide-react";
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -10,6 +11,7 @@ import { useBffClient, useUiT } from "../context";
 import { loadChannelDirectory } from "../channel-browser/loadChannelDirectory";
 import { TransportError } from "../../transport";
 import { MemberProfilePanel } from "../members";
+import { selectionItemFromChannel, type ProjectSelectionItem } from "./lib/projectSelection";
 import type { Project } from "./projectModels";
 import { collapseProjectRelatedChannelRows, collectProjectRelatedChannelRows, projectRelatedChannelDisplayRowKey } from "./lib/projectRelatedChannels";
 import { matchesProjectsSearch } from "./lib/projectsSearch";
@@ -64,6 +66,18 @@ export function ProjectsChannelsList({projects,scopeKey,searchQuery="",lastMessa
       else grouped.set(row.projectId,{projectId:row.projectId,projectName:row.projectName,rows:[row]});}
     return [...grouped.values()];
   },[rows]);
+  // Original selectionItemsByRowKey: one item per display row (a channel may appear under several projects).
+  const selectionItemsByRowKey=React.useMemo(()=>{
+    const items=new Map<string,ProjectSelectionItem>();
+    for(const row of rows){
+      const channel=channelsById.get(row.channelId);const name=channel?.channel.name??t("projects.channels.unavailable");
+      const rowKey=projectRelatedChannelDisplayRowKey(row);
+      const item=selectionItemFromChannel({channelId:row.channelId,title:channel?`#${name}`:name});
+      items.set(rowKey,{...item,id:`${item.id}:${rowKey}`});
+    }
+    return items;
+  },[channelsById,rows,t]);
+  const rangeItems=React.useMemo(()=>[...selectionItemsByRowKey.values()],[selectionItemsByRowKey]);
   const open=async(channel:DiscoverableWorkspace)=>{
     if(running.current||!lifetime.active)return;
     running.current=true;setOpening(true);setNavigationFailed(false);
@@ -84,6 +98,7 @@ export function ProjectsChannelsList({projects,scopeKey,searchQuery="",lastMessa
       {navigationFailed?<p role="alert">{t("platform.loadFailed")}</p>:null}
       {groups.map(group=><ProjectSelectableGroup count={group.rows.length} groupKey={group.projectId} headerClassName="mx-0 gap-3 px-4"
         headerTestId="projects-channel-project-group-header" icon={<FolderKanban className="h-4 w-4"/>} key={group.projectId}
+        items={group.rows.flatMap(row=>{const item=selectionItemsByRowKey.get(projectRelatedChannelDisplayRowKey(row));return item?[item]:[];})}
         label={group.projectName} labelTestId="project-channel-project" testId="projects-channel-project-group">
         <ul className="space-y-0.5">{group.rows.map(row=>{
           const channel=channelsById.get(row.channelId);const name=channel?.channel.name??t("projects.channels.unavailable");
@@ -97,6 +112,7 @@ export function ProjectsChannelsList({projects,scopeKey,searchQuery="",lastMessa
             onClick={channel&&!opening?()=>{void open(channel);}:undefined}
             peopleSlot={channel?<ProjectChannelMembers workspaceId={channel.id} scopeKey={scopeKey} onOpenProfile={setSelectedProfile} renderMember={renderMember}/>:undefined}
             peopleTestId="project-channel-participants" testId="project-channel-row" title={channel?`#${name}`:name}
+            selection={(()=>{const item=selectionItemsByRowKey.get(projectRelatedChannelDisplayRowKey(row));return item?{item,rangeItems}:undefined;})()}
             titleAttr={channel?t("projects.channels.open",{name}):undefined}/></li>;
         })}</ul>
       </ProjectSelectableGroup>)}

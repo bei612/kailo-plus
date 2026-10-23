@@ -22,6 +22,7 @@ import { PROJECT_LIST_ROW_PREVIEW_CLASS, PROJECT_LIST_ROW_TITLE_CLASS } from "./
 import { ProjectListRowMenu } from "./ProjectListRowMenu";
 import type { Project, Repository } from "./projectModels";
 import { repositoryShareLink } from "./projectShareLinks";
+import { selectionItemFromRepository, type ProjectSelectionItem } from "./lib/projectSelection";
 
 export type RepositoryListItem = {
   project: Project;
@@ -34,7 +35,20 @@ type RepositoryItemProps = RepositoryListItem & {
   summary?: ProjectActivitySummary;
   /** The share action copies through the work-item host. */
   canCopyLink: boolean;
+  /** Original selectionRangeItems: the visible repositories in order (list rows only). */
+  selectionRangeItems?: ProjectSelectionItem[];
 };
+
+/** Original ProjectsOverviewItems repository selection item. */
+export function repositorySelectionItem(project: Project, repository: Repository): ProjectSelectionItem {
+  return selectionItemFromRepository({
+    channelId: repository.channelId ?? project.projectChannelId,
+    id: repository.id,
+    owner: repository.owner,
+    shareLink: repositoryShareLink(repository),
+    title: repository.name,
+  });
+}
 
 function RepositoryHostIcon({ compact = false }: { compact?: boolean }) {
   const t = useUiT();
@@ -183,9 +197,10 @@ export const RepositoryGridCard = React.memo(function RepositoryGridCard(
 export const RepositoryListRow = React.memo(function RepositoryListRow(
   props: RepositoryItemProps,
 ) {
-  const { canCopyLink, onOpen, profiles, project, repository, summary } = props;
+  const { canCopyLink, onOpen, profiles, project, repository, selectionRangeItems, summary } = props;
   const updatedAt = summary?.updatedAt || repository.createdAt;
   const people = repositoryPeople(repository, summary);
+  const selectionItem = repositorySelectionItem(project, repository);
   return (
     <ProjectEntityListRow
       beforeDate={
@@ -198,6 +213,7 @@ export const RepositoryListRow = React.memo(function RepositoryListRow(
       icon={<RepositoryHostIcon compact />}
       onClick={() => onOpen(project, repository)}
       peopleSlot={people.length > 0 ? <ProjectEntityFacepile interactive participants={people} profiles={profiles} /> : undefined}
+      selection={selectionRangeItems ? { item: selectionItem, rangeItems: selectionRangeItems } : undefined}
       peopleTestId="repositories-row-people"
       testId={`repository-row-${repository.dtag}`}
       title={repository.name}

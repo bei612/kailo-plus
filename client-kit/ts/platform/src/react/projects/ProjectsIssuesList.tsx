@@ -1,5 +1,5 @@
 // Fixed Buzz 779af8886caae1317b4de962082429867ab61503 desktop/src/features/projects/ui/ProjectsIssuesList.tsx.
-// Atomic governed loading replaces upstream partial-section fallback; selection remains missing.
+// Atomic governed loading replaces upstream partial-section fallback; the original row/group selection is restored.
 import { useUiT } from "../context";
 import { translateCurrent } from "../../i18n";
 import { Eye, FolderKanban } from "lucide-react";
@@ -28,6 +28,7 @@ import { ProjectPanelState } from "./ProjectPanelState";
 import { groupProjectWorkItemsByProject } from "./projectWorkItemGroups";
 import { CopyShareLinkMenuItem } from "./CopyShareLinkMenuItem";
 import { issueShareLink } from "./projectShareLinks";
+import { selectionItemFromTask, type ProjectSelectionItem } from "./lib/projectSelection";
 
 const statusKey = {
   Triage: "projects.status.triage",
@@ -122,11 +123,22 @@ const IssueGridCard = React.memo(function IssueGridCard({
 // Memoized: these rows render in unbounded lists, and any Projects-view
 // state change used to re-render every row. Props are kept identity-stable
 // by the list (memoized groups/selection arrays, stable onOpen).
+function issueSelectionItem(project: Project, repository: Repository, issue: ProjectIssue) {
+  return selectionItemFromTask({
+    author: issue.author,
+    channelId: repository.channelId ?? project.projectChannelId,
+    id: issue.id,
+    shareLink: issueShareLink(issue),
+    title: issue.title,
+  });
+}
+
 const IssueListRow = React.memo(function IssueListRow({
   issue,
   onOpen,
   profiles,
   project,
+  rangeItems,
   repository,
 }: {
   issue: ProjectIssue;
@@ -137,10 +149,12 @@ const IssueListRow = React.memo(function IssueListRow({
   ) => void;
   profiles?: UserProfileLookup;
   project: Project;
+  rangeItems: ProjectSelectionItem[];
   repository: Repository;
 }) {
   const t = useUiT();
   const authorLabel = resolveUserLabel({ profiles, pubkey: issue.author });
+  const selectionItem = React.useMemo(() => issueSelectionItem(project, repository, issue), [project, repository, issue]);
 
   return (
     <ProjectEntityListRow
@@ -159,6 +173,7 @@ const IssueListRow = React.memo(function IssueListRow({
           testId="projects-issue-author"
         />
       }
+      selection={{ item: selectionItem, rangeItems }}
       testId={`projects-issue-row-${issue.id}`}
       title={issue.title}
       titleAttr={t("projects.list.openTaskNamed", { name: issue.title })}
@@ -189,7 +204,10 @@ export function ProjectsIssuesList({
   // Grouping and per-group selection arrays are identity-stable across
   // re-renders so the memoized rows only re-render when their data changes.
   const allGroups = React.useMemo(
-    () => groupProjectWorkItemsByProject(issues),
+    () => groupProjectWorkItemsByProject(issues).map((group) => ({
+      ...group,
+      selectionItems: group.rows.map((row) => issueSelectionItem(row.project, row.repository, row.issue)),
+    })),
     [issues],
   );
   // Mount rows progressively: a one-shot mount of hundreds of rows blocked
@@ -257,6 +275,7 @@ export function ProjectsIssuesList({
               headerClassName="mx-0 gap-3 px-4"
               headerTestId="projects-issue-project-group-header"
               icon={<FolderKanban className="h-4 w-4" />}
+              items={group.selectionItems}
               key={group.project.id}
               label={group.project.name}
               labelTestId="project-issue-project"
@@ -273,6 +292,7 @@ export function ProjectsIssuesList({
                       onOpen={onOpen}
                       profiles={profiles}
                       project={project}
+                      rangeItems={group.selectionItems}
                       repository={repository}
                     />
                   </li>
