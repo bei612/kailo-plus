@@ -10,7 +10,7 @@ const IDENTITY_INITIAL_AVATAR_CLASS_NAMES = [
   "bg-info-soft text-info-text",
   "bg-success-soft text-success-text",
   "bg-warning-soft text-warning-text",
-  "bg-brand-100 text-brand-700",
+  "bg-accent text-accent-foreground",
   "bg-muted text-foreground",
 ] as const;
 
