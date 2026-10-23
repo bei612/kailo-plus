@@ -59,7 +59,7 @@ pub(crate) async fn configuration(
     .await?;
     let mut names = Vec::new();
     for tool in bindings {
-        let def = crate::agent_memory::read_definition(&state.pool, &tool.action_key).await?;
+        let def = crate::agent_tool::tool_definition(&state.pool, &tool.name).await?;
         match crate::agent_tool::tool_admission(state, &mut tx, &context, &parent, &tool, &def)
             .await
         {

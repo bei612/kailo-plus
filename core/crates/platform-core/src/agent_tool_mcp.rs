@@ -121,7 +121,74 @@ fn reference(headers: &HeaderMap, name: &str) -> Result<Uuid, ErrorData> {
     Ok(id)
 }
 
+/// DD-140: the MCP client cannot resolve repository-relative `$ref`s. Inline the
+/// exact referenced enum contracts and drop the submission fields this child can
+/// never carry (they reference unrelated contracts); the registry hash stays the
+/// one of the original contract files (`agent_tool::schema_hashes`).
+fn project_channel_request_tool() -> Result<Tool, ErrorData> {
+    let parse = |text: &str| serde_json::from_str::<Value>(text).map_err(|_| denied());
+    let mut input = parse(include_str!(
+        "../../../../contracts/api/project_channel_request.schema.json"
+    ))?;
+    let visibility = parse(include_str!(
+        "../../../../contracts/domain/workspace_visibility.schema.json"
+    ))?;
+    let field = input
+        .pointer_mut("/properties/visibility")
+        .ok_or_else(denied)?;
+    if field.get("$ref").and_then(Value::as_str)
+        != Some("../domain/workspace_visibility.schema.json")
+    {
+        return Err(denied());
+    }
+    *field = visibility;
+    let mut output = parse(include_str!(
+        "../../../../contracts/api/action_submission.schema.json"
+    ))?;
+    let properties = output
+        .get_mut("properties")
+        .and_then(Value::as_object_mut)
+        .ok_or_else(denied)?;
+    for unrelated in ["invitation", "documentLaunch", "webhookSecret"] {
+        properties.remove(unrelated).ok_or_else(denied)?;
+    }
+    for (name, reference, text) in [
+        (
+            "gateState",
+            "../enums/action_gate_state.schema.json",
+            include_str!("../../../../contracts/enums/action_gate_state.schema.json"),
+        ),
+        (
+            "dispatchState",
+            "../enums/action_dispatch_state.schema.json",
+            include_str!("../../../../contracts/enums/action_dispatch_state.schema.json"),
+        ),
+        (
+            "reason",
+            "../enums/reason_code.schema.json",
+            include_str!("../../../../contracts/enums/reason_code.schema.json"),
+        ),
+    ] {
+        let field = properties.get_mut(name).ok_or_else(denied)?;
+        if field.get("$ref").and_then(Value::as_str) != Some(reference) {
+            return Err(denied());
+        }
+        *field = parse(text)?;
+    }
+    let input = input.as_object().cloned().ok_or_else(denied)?;
+    let output = output.as_object().cloned().ok_or_else(denied)?;
+    Ok(Tool::new_with_raw(
+        crate::project_channel_request::TOOL.to_owned(),
+        None,
+        Arc::new(input),
+    )
+    .with_raw_output_schema(Arc::new(output)))
+}
+
 pub(crate) fn schema_tool(name: &str) -> Result<Tool, ErrorData> {
+    if name == crate::project_channel_request::TOOL {
+        return project_channel_request_tool();
+    }
     let (input, output) = match name {
         "agent.memory.entry.list" => (
             include_str!("../../../../contracts/domain/agent_memory_entry_list_input.schema.json"),
@@ -274,6 +341,14 @@ impl ServerHandler for MemoryTools {
         let parts = context.extensions.get::<Parts>().ok_or_else(denied)?;
         let action = reference(&parts.headers, ACTION_HEADER)?;
         let operation = reference(&parts.headers, OPERATION_HEADER)?;
+        if request.name.as_ref() == crate::project_channel_request::TOOL {
+            // DD-140: the PEP already opened the owner-approved child; the result
+            // is only that child's own submission, never an execution here.
+            let result = crate::project_channel_request::result(&self.state, action, operation)
+                .await
+                .map_err(refusal)?;
+            return Ok(CallToolResult::structured(result).into());
+        }
         // The operation header is only a reference to compare with the original
         // admitted child; it never supplies Tenant/Workspace/Installation scope.
         let exact: bool = sqlx::query_scalar(

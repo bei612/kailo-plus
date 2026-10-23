@@ -700,6 +700,8 @@ struct ApprovalRow {
     ref_state: String,
     automation_version_asset_id: Option<Uuid>,
     automation_action: Option<Value>,
+    /// DD-140: the frozen project channel proposal, when this is one.
+    project_channel_parameters: Option<Value>,
 }
 
 const APPROVAL_QUERY: &str = "
@@ -707,7 +709,9 @@ const APPROVAL_QUERY: &str = "
            ae.workspace_id, ae.tenant_id, ae.initiator_principal_id, ap.status, ap.decisions,
            ap.expires_at, ap.consume_deadline, ap.reason_code, pol.role_requirements,
            pol.self_approval, w.projection_state as ref_state,
-           av.asset_id as automation_version_asset_id, av.action as automation_action
+           av.asset_id as automation_version_asset_id, av.action as automation_action,
+           case when ae.action_key = 'workspace.create' and ae.parameters ? 'projectChannelRequest'
+             then ae.parameters end as project_channel_parameters
     from projection.approval_projection ap
     join admission.action_execution ae on ae.id = ap.action_execution_id
     join projection.workflow_ref w on w.workflow_id = ap.workflow_id
@@ -717,8 +721,12 @@ const APPROVAL_QUERY: &str = "
     left join catalog.agent_invocation ai on ai.action_execution_id=ae.parent_action_execution_id and ae.action_key='automation.run'
     left join catalog.automation_version av on av.asset_id=ai.automation_version_asset_id and av.automation_resource_id=ai.automation_resource_id
     join catalog.approval_policy pol
-      on pol.id = coalesce(d.approval_policy_id,av.approval_policy_id)
-        and pol.version = coalesce(d.approval_policy_version,av.approval_policy_version)
+      on pol.id = coalesce(d.approval_policy_id,av.approval_policy_id,
+          case when ae.action_key = 'workspace.create'
+            then (ae.parameters->'projectChannelRequest'->>'policyId')::uuid end)
+        and pol.version = coalesce(d.approval_policy_version,av.approval_policy_version,
+          case when ae.action_key = 'workspace.create'
+            then (ae.parameters->'projectChannelRequest'->>'policyVersion')::int end)
     where ap.tenant_id = $1";
 
 impl ApprovalRow {
@@ -776,6 +784,9 @@ impl ApprovalRow {
             reason: self.reason_code.as_deref().and_then(parse),
             observation,
             automation_step,
+            project_channel_request: crate::project_channel_request::view(
+                self.project_channel_parameters.as_ref(),
+            ),
         })
     }
 }
@@ -801,6 +812,20 @@ async fn eligible(
         {
             crate::application_catalog::approval::eligible(g, &execution, ctx.tenant_principal_id)
                 .await
+        } else {
+            Ok(false)
+        };
+    }
+    // DD-140: only the frozen, still-current Installation owner decides.
+    if crate::project_channel_request::is_child(&execution) {
+        return if ctx.access_mode == contracts::PlatformSessionAccessMode::Full {
+            crate::project_channel_request::approver_eligible(
+                &g.pool,
+                &execution,
+                ctx.tenant_id,
+                ctx.tenant_principal_id,
+            )
+            .await
         } else {
             Ok(false)
         };

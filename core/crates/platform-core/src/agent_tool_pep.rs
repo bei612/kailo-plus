@@ -311,6 +311,10 @@ impl Policy {
                         }
                     }
                     child
+                } else if call.name == crate::project_channel_request::TOOL {
+                    // DD-140: an owner-approved proposal, never a direct create.
+                    crate::project_channel_request::prepare(&self.state, invocation, &arguments)
+                        .await?
                 } else {
                     crate::agent_memory::tool_arguments(&call.name, &arguments)?;
                     crate::agent_memory::prepare_tool_read(
@@ -562,6 +566,24 @@ impl Policy {
                         &result,
                     )
                     .await?
+                } else if name == crate::project_channel_request::TOOL {
+                    if result.is_error == Some(true) {
+                        return Err(invalid());
+                    }
+                    let value = result.structured_content.as_ref().ok_or_else(invalid)?;
+                    normalize_disclosed_result(&raw, value.clone(), false)?;
+                    // The disclosed result must be this child's own submission; its gate may
+                    // already have moved on (owner decision), its identity cannot.
+                    let expected =
+                        crate::project_channel_request::result(&self.state, child, operation)
+                            .await?;
+                    if ["actionExecutionId", "operationId", "actionKey"]
+                        .iter()
+                        .any(|field| value.get(field) != expected.get(field))
+                    {
+                        return Err(invalid());
+                    }
+                    value.clone()
                 } else {
                     if result.is_error == Some(true) {
                         return Err(invalid());

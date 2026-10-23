@@ -938,13 +938,18 @@ impl Ctx {
                     "insert into catalog.tool_definition(resource_id,name,source,action_key,
                      capability_contract_key,input_schema_hash,output_schema_hash,backend_ref,
                      status)
-                     values($1,$2,'PLATFORM_NATIVE',$2,null,$3,$4,'CORE_STREAMABLE_MCP',
+                     values($1,$2,'PLATFORM_NATIVE',$5,null,$3,$4,'CORE_STREAMABLE_MCP',
                      'PROVISIONING')",
                 )
                 .bind(id)
                 .bind(name)
                 .bind(&input)
                 .bind(&output)
+                // DD-140: the closed native name → action key map.
+                .bind(
+                    crate::agent_tool::native_action_key(name)
+                        .ok_or_else(|| format!("原生工具 {name} 没有固定动作键"))?,
+                )
                 .execute(&mut *tx)
                 .await
                 .map_err(|e| format!("登记原生工具 {name}: {e}"))?;
@@ -1858,7 +1863,7 @@ mod tests {
         use crate::agent_tool::{native_tool_id, NATIVE_TOOLS};
         let tenant = Uuid::new_v4();
         let other = Uuid::new_v4();
-        let [list, read] = NATIVE_TOOLS;
+        let [list, read, _] = NATIVE_TOOLS;
         // A re-run converges on the same Resource and the same bootstrap intent.
         assert_eq!(native_tool_id(tenant, list), native_tool_id(tenant, list));
         assert_eq!(native_tool_key(tenant, list), native_tool_key(tenant, list));
@@ -1882,7 +1887,7 @@ mod tests {
     fn native_tool_member_grants_are_their_own_stable_intent() {
         use crate::agent_tool::{native_tool_id, NATIVE_TOOLS};
         let tenant = Uuid::new_v4();
-        let [list, read] = NATIVE_TOOLS;
+        let [list, read, _] = NATIVE_TOOLS;
         // 重跑（含修订前已登记的工具）收敛到同一授予意图，不与登记意图共用键。
         let key = native_tool_members_key(tenant, list);
         assert_eq!(key, native_tool_members_key(tenant, list));

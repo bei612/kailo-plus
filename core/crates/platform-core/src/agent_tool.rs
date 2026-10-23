@@ -14,7 +14,36 @@ use crate::spicedb::{Consistency, Relationship, RelationshipFilter, Subject, Wri
 const MEMORY_LIST: &str = "agent.memory.entry.list";
 const MEMORY_READ: &str = "agent.memory.entry.read";
 /// DD-122 (1): the PLATFORM_NATIVE tool set fixed by this platform build.
-pub(crate) const NATIVE_TOOLS: [&str; 2] = [MEMORY_LIST, MEMORY_READ];
+pub(crate) const NATIVE_TOOLS: [&str; 3] = [
+    MEMORY_LIST,
+    MEMORY_READ,
+    crate::project_channel_request::TOOL,
+];
+
+/// DD-140 (1): the closed native tool name → action key map. Memory tools are
+/// their own action; `project_channel_request` alone proposes `workspace.create`.
+pub(crate) fn native_action_key(name: &str) -> Option<&'static str> {
+    match name {
+        MEMORY_LIST => Some(MEMORY_LIST),
+        MEMORY_READ => Some(MEMORY_READ),
+        crate::project_channel_request::TOOL => Some(crate::project_channel_request::ACTION),
+        _ => None,
+    }
+}
+
+/// The admitted definition behind one bound native tool, by its closed map.
+pub(crate) async fn tool_definition(
+    pool: &sqlx::PgPool,
+    name: &str,
+) -> Result<Definition, Refusal> {
+    match native_action_key(name) {
+        Some(crate::project_channel_request::ACTION) => {
+            crate::project_channel_request::definition(pool).await
+        }
+        Some(action) => crate::agent_memory::read_definition(pool, action).await,
+        None => Err(Refusal::Blocked(ReasonCode::CapabilityBlocked)),
+    }
+}
 /// DD-122 (3): the Agent relationships written on each granted Tool.
 const TOOL_RELATIONS: [(&str, &str); 2] = [("discoverer", "discover"), ("consumer", "consume")];
 /// Upper bound of relationship updates in one native write request.
@@ -199,7 +228,7 @@ pub(crate) async fn bound_tools(
     let mut allowed = Vec::new();
     for row in rows {
         let hashes = schema_hashes(&row.name)?;
-        if row.action_key != row.name
+        if native_action_key(&row.name) != Some(row.action_key.as_str())
             || hashes
                 != (
                     row.input_schema_hash.clone(),
@@ -295,7 +324,7 @@ pub(crate) async fn invocation_tools(
     .await?;
     let mut names = Vec::new();
     for tool in rows {
-        let def = crate::agent_memory::read_definition(&state.pool, &tool.action_key).await?;
+        let def = tool_definition(&state.pool, &tool.name).await?;
         match tool_admission(state, &mut tx, &context, &parent, &tool, &def).await {
             Ok(_) => names.push(tool.name),
             Err(Refusal::Denied(_) | Refusal::Blocked(_) | Refusal::Conflict(_)) => {}
@@ -344,7 +373,7 @@ pub(crate) async fn tool_admission(
     tool: &BoundTool,
     def: &Definition,
 ) -> Result<String, Refusal> {
-    if tool.name != def.action_key
+    if native_action_key(&tool.name) != Some(def.action_key.as_str())
         || parent.id != context.parent_action_execution_id
         || parent.tenant_id != context.tenant_id
         || parent.workspace_id != Some(context.workspace_id)
@@ -416,6 +445,11 @@ pub(crate) fn schema_hashes(name: &str) -> Result<(String, String), Refusal> {
         MEMORY_READ => (
             include_str!("../../../../contracts/domain/agent_memory_entry_read_input.schema.json"),
             include_str!("../../../../contracts/api/agent_memory_read_view.schema.json"),
+        ),
+        // DD-140: the proposal input; the result is the child's ActionSubmission.
+        crate::project_channel_request::TOOL => (
+            include_str!("../../../../contracts/api/project_channel_request.schema.json"),
+            include_str!("../../../../contracts/api/action_submission.schema.json"),
         ),
         _ => return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked)),
     };

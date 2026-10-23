@@ -76,6 +76,7 @@ mod platform_info;
 mod platform_keys;
 mod platform_views;
 mod presence;
+mod project_channel_request;
 mod projects;
 mod projects_git;
 mod projects_git_merge;
