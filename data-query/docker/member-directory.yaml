@@ -1,0 +1,40 @@
+# DD-133(4), `.design/07` §4.7.4: optional overlay that lets the native UI read
+# the Kailo Core member directory of its native page entry binding. It does
+# not create a binding, register an IdP client or grant any Kailo permission.
+#
+# Added by deploy/components/component-deploy.sh only when the component env
+# gives WREN_DIRECTORY_BINDING_ID; the other four keys are then required (a
+# partial set also makes wren-ui refuse to start). wren-ui reads, every
+# WREN_DIRECTORY_INTERVAL_SECONDS (default 60):
+#   POST <WREN_DIRECTORY_TOKEN_URL>  client_credentials as the instance's own
+#        directory client WREN_DIRECTORY_CLIENT_ID (= the binding's
+#        normalizedConfig.directoryClientId, registered with --directory-client-id)
+#   GET  <WREN_DIRECTORY_CORE_URL>/service/v1/component-directory/bindings/<binding>/members
+# The Core service listener is only on the platform app network, reached here
+# through the same external network the governed overlay uses
+# (WREN_QUERY_PLATFORM_NETWORK). The client secret is the platform runtime file
+# written by the release IdP declaration (bootstrap.sh --declare-directory-clients),
+# mounted read-only as a Compose secret; its value never enters an env value.
+services:
+  wren-ui:
+    environment:
+      KAILO_DIRECTORY_BINDING_ID: ${WREN_DIRECTORY_BINDING_ID:?native page entry binding id is required}
+      KAILO_DIRECTORY_CLIENT_ID: ${WREN_DIRECTORY_CLIENT_ID:?member directory client id is required}
+      KAILO_DIRECTORY_CLIENT_SECRET_FILE: /run/secrets/kailo_directory_client_secret
+      KAILO_DIRECTORY_TOKEN_URL: ${WREN_DIRECTORY_TOKEN_URL:?IdP token endpoint is required}
+      KAILO_DIRECTORY_CORE_URL: ${WREN_DIRECTORY_CORE_URL:?Core service listener origin is required}
+      KAILO_DIRECTORY_INTERVAL_SECONDS: ${WREN_DIRECTORY_INTERVAL_SECONDS:-60}
+    secrets:
+      - kailo_directory_client_secret
+    networks:
+      - wren
+      - query-platform
+
+networks:
+  query-platform:
+    external: true
+    name: ${WREN_QUERY_PLATFORM_NETWORK:?existing private platform network is required}
+
+secrets:
+  kailo_directory_client_secret:
+    file: ${WREN_DIRECTORY_CLIENT_SECRET_FILE:?member directory client secret file is required}

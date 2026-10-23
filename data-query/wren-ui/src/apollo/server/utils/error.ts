@@ -64,6 +64,8 @@ export enum GeneralErrorCodes {
   // DD-133 §3: modeling, connection, project and knowledge administration of a
   // STANDALONE instance require the Kailo Tenant admin entitlement.
   KAILO_ADMIN_REQUIRED = 'KAILO_ADMIN_REQUIRED',
+  // DD-133(4): the Kailo user is not in the applied member directory.
+  KAILO_NOT_MEMBER = 'KAILO_NOT_MEMBER',
 }
 
 export const errorMessages = {
@@ -134,6 +136,8 @@ export const errorMessages = {
   [GeneralErrorCodes.SQL_EXECUTION_ERROR]: 'SQL execution error',
   [GeneralErrorCodes.KAILO_ADMIN_REQUIRED]:
     'Only a Kailo Tenant administrator can change this.',
+  [GeneralErrorCodes.KAILO_NOT_MEMBER]:
+    'You are not a member of the Kailo Tenant of this instance.',
 };
 
 export const shortMessages = {
@@ -168,6 +172,7 @@ export const shortMessages = {
   [GeneralErrorCodes.POLLING_TIMEOUT]: 'Polling timeout',
   [GeneralErrorCodes.SQL_EXECUTION_ERROR]: 'SQL execution error',
   [GeneralErrorCodes.KAILO_ADMIN_REQUIRED]: 'Administrator required',
+  [GeneralErrorCodes.KAILO_NOT_MEMBER]: 'Not a member',
 };
 
 export const create = (

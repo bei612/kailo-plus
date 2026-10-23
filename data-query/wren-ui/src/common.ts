@@ -47,6 +47,11 @@ import { SqlPairService } from './apollo/server/services/sqlPairService';
 import { loadQueryDelivery } from './apollo/server/services/nativeQueryAdmission';
 import { isGovernedQueryMode } from './apollo/server/services/nativeQueryMode';
 import { KailoUserDirectory } from './apollo/server/services/kailoUserService';
+import {
+  kailoDirectoryConfig,
+  KailoMemberDirectoryStore,
+  KailoMemberDirectorySync,
+} from './apollo/server/services/kailoMemberDirectory';
 
 export const serverConfig = getConfig();
 
@@ -88,7 +93,24 @@ export const initComponents = () => {
   const dashboardItemRefreshJobRepository =
     new DashboardItemRefreshJobRepository(knex);
   const kailoUserRepository = new KailoUserRepository(knex);
-  const kailoUserDirectory = new KailoUserDirectory(kailoUserRepository);
+  // DD-133(4): the Core member directory, only when the deployment configures
+  // it (a partial configuration refuses to start). The persisted snapshot
+  // decides membership and the STANDALONE role; reads repeat every interval.
+  const kailoDirectoryConfiguration = kailoDirectoryConfig();
+  const kailoMemberDirectory = kailoDirectoryConfiguration
+    ? new KailoMemberDirectoryStore(knex)
+    : null;
+  const kailoUserDirectory = new KailoUserDirectory(
+    kailoUserRepository,
+    kailoMemberDirectory,
+  );
+  const kailoMemberDirectorySync = kailoDirectoryConfiguration
+    ? new KailoMemberDirectorySync(
+        kailoDirectoryConfiguration,
+        kailoMemberDirectory,
+      )
+    : null;
+  kailoMemberDirectorySync?.start();
 
   // adaptors
   const wrenEngineAdaptor = new WrenEngineAdaptor({
@@ -213,6 +235,8 @@ export const initComponents = () => {
     dashboardItemRefreshJobRepository,
     kailoUserRepository,
     kailoUserDirectory,
+    kailoMemberDirectory,
+    kailoMemberDirectorySync,
 
     // adaptors
     wrenEngineAdaptor,

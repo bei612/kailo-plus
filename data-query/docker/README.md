@@ -358,6 +358,49 @@ token in its URL. Browser/IdP frame policy and third-party-cookie restrictions
 still apply; if they block embedded login, open the independent native address.
 Do not relax CSP, cookie security or instance admission to make an iframe work.
 
+## Member directory (DD-133(4))
+
+`.design/07` §4.7.4 (Wren table): once the platform member directory is
+delivered, the members of the native page entry binding's Tenant are the
+people of this instance and their Tenant role is their Wren role.
+
+1. The platform release declares the instance's directory client
+   (`COMPONENT_DIRECTORY_CLIENTS` entry `data-query=kailo-wren-directory` in the
+   platform `.env`; `bootstrap.sh --declare-directory-clients`, ADR-20 §8): a
+   service-account-only confidential client whose access token carries the
+   Core service audience. Its secret is written to the platform runtime
+   `secrets/component-directory/data-query/client_secret` (0600) and verified by
+   the release `verify` stage. Nothing is registered here.
+2. Register the client on the native page entry binding:
+   `component-bind.mjs ... --directory-client-id kailo-wren-directory`
+   (Core answers only a token whose `azp` is that client).
+3. Fill `WREN_DIRECTORY_*` in the component env
+   (`deploy/components/data-query.env.template`) and deploy with
+   `component-deploy.sh data-query <commit>`; a non-empty
+   `WREN_DIRECTORY_BINDING_ID` adds `member-directory.yaml` (wren-ui joins
+   `WREN_QUERY_PLATFORM_NETWORK`, gets `KAILO_DIRECTORY_*` and the secret at
+   `/run/secrets/kailo_directory_client_secret`). A partial key set makes
+   wren-ui refuse to start.
+
+wren-ui reads the directory at start and every `WREN_DIRECTORY_INTERVAL_SECONDS`
+(client credentials with HTTP Basic, no redirects, bounded time and size, the
+snapshot checked against `contracts/api/component_member_directory.schema.json`
+and the configured binding). A new `directoryVersion` replaces
+`kailo_directory_member` in one transaction and refreshes `kailo_user` with the
+Kailo display name and avatar (rows are never deleted); the version is recorded
+in `kailo_directory_state` only after that commit. A 503, 401/403, transport
+error, malformed or foreign snapshot changes nothing; the persisted snapshot
+keeps deciding across restarts.
+
+Before the first applied snapshot nothing changes (every signed-in user is a
+member, nobody an admin). Afterwards the middleware asks the same instance's
+Node consumer `GET /api/kailo/directory-access` (for the user it verified) on
+every page, GraphQL and REST request: a person absent from the snapshot gets
+`403 {"error":"KAILO_NOT_MEMBER"}` in both modes; on a STANDALONE instance a
+Tenant `ADMIN` is a Wren admin and a `MEMBER` asks and manages own threads.
+`workspaces[]` create nothing and raise no role. A GOVERNED instance keeps the
+Core binding `manage`/`discover` as its role authority.
+
 ## Deployment query mode (STANDALONE | GOVERNED)
 
 The query mode is one deployment fact, decided in one place

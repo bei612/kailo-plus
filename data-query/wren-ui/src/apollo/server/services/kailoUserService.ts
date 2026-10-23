@@ -9,6 +9,7 @@ import {
   KailoUser,
 } from '../repositories/kailoUserRepository';
 import { isGovernedQueryMode } from './nativeQueryMode';
+import type { KailoMemberDirectoryStore } from './kailoMemberDirectory';
 import { create, GeneralErrorCodes } from '../utils/error';
 
 // DD-133 §3/(4) role mapping of this dedicated instance (`07` §4.7.4):
@@ -17,9 +18,12 @@ import { create, GeneralErrorCodes } from '../utils/error';
 //   Kailo Tenant member -> Wren member (asking, own threads, reading)
 // Roles come only from Core. GOVERNED: the binding permission (`manage` =
 // admin, `discover` = member) checked by the existing resolver wrappers.
-// STANDALONE: the platform member directory's Tenant role once delivered;
+// STANDALONE: the platform member directory's Tenant role once delivered
+// (the middleware sets `admin` from the applied snapshot, kailoMemberDirectory);
 // until then every user is a member (`admin` is false) and no admin is
 // granted inside the component, never from IdP groups, e-mail or names.
+// With the directory delivered, a person absent from it is refused at the
+// entry in both modes.
 
 type RequestHeaders = { [name: string]: string | string[] | undefined };
 
@@ -40,17 +44,29 @@ export interface KailoUserLoader {
 export class KailoUserDirectory {
   private readonly seen = new Map<string, string>();
 
-  constructor(private readonly repository: IKailoUserRepository) {}
+  constructor(
+    private readonly repository: IKailoUserRepository,
+    private readonly members: Pick<
+      KailoMemberDirectoryStore,
+      'profile'
+    > | null = null,
+  ) {}
 
   // Refresh the stored display claims whenever a login presents new values.
+  // Once the member directory is applied, a member's name and picture are the
+  // Kailo display name and avatar it states (DD-133(4)); the token still
+  // supplies login name, verified e-mail and locale.
   public async remember(profile: KailoUserProfile | null): Promise<void> {
     if (!profile) return;
+    const listed = this.members
+      ? await this.members.profile(profile.key)
+      : null;
     const user: KailoUser = {
       userKey: profile.key,
-      name: profile.name,
+      name: listed ? listed.name : profile.name,
       username: profile.username,
       email: profile.email,
-      picture: profile.picture,
+      picture: listed ? listed.picture : profile.picture,
       locale: profile.locale,
     };
     const fingerprint = JSON.stringify(user);
