@@ -4080,7 +4080,8 @@ export interface GatewayMcpProbeRequest {
 
 /**
  * DD-134(5)②：经 Gateway 临时验证 route 的 initialize 与 tools/list 结果（route
- * 已删除并回读不存在）。matchingContracts 为输入 schema 摘要一致的 ACTIVE 契约 TOOL 键。
+ * 已删除并回读不存在）。matchingContracts 为输入 schema 摘要一致的 ACTIVE 契约 TOOL 键，并带该契约生成 PROTOCOL_PEER
+ * release 草稿所需的 Catalog 元数据（DD-134(5)③④），不含 schema 正文。
  */
 export interface GatewayMcpProbeResult {
     adapterServiceRef: string;
@@ -4109,7 +4110,23 @@ export interface GatewayMcpContractMatch {
     categoryKey:     string;
     contractKey:     string;
     contractVersion: number;
-    permission:      CapabilityPermission;
+    /**
+     * 该 ACTIVE 契约的全部 operation 契约键；release 须为每个键登记动作与工具。
+     */
+    operationContractKeys: string[];
+    /**
+     * 该 TOOL 契约键在 ACTIVE 契约中的输出 schema 摘要；release 的动作与工具逐字采用。
+     */
+    outputSchemaDigest: string;
+    permission:         CapabilityPermission;
+    /**
+     * 该 ACTIVE 契约 resourceTypeFamily 的全部 typeKey；release 须逐一登记。
+     */
+    resourceTypeKeys: string[];
+    /**
+     * 该 TOOL 契约键在 ACTIVE 契约中的 targetType。
+     */
+    targetType: string;
 }
 
 export enum CapabilityPermission {

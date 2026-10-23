@@ -152,6 +152,8 @@ implementation:
     - core/migrations/20261020020000_native_page_binding.down.sql
     - core/migrations/20261021010000_native_page_model_route.up.sql
     - core/migrations/20261021010000_native_page_model_route.down.sql
+    - core/migrations/20261023010000_protocol_peer_outcome_event.up.sql
+    - core/migrations/20261023010000_protocol_peer_outcome_event.down.sql
 
 runtime:
   routes: ["/api/v1/application-bindings", "/api/v1/application-bindings/{id}/native-page", "/api/v1/application-bindings/{id}/read-resources"]

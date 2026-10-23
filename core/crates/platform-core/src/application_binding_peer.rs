@@ -9,6 +9,45 @@ pub(crate) const HEADER: &str = "x-platform-binding-validation";
 pub(crate) const PROBE_HEADER: &str = "x-platform-component-probe";
 pub(crate) const RUN_HEADER: &str = "x-platform-component-run";
 
+/// 只供 Gateway route 与 ExtMcp 判定的平台内部 header（DD-137(3)、SF-AGW-29）。
+/// MCP backend 把入站 header 复制到发往 target 的每个上游请求，合成 initialize
+/// 之后的通知、客户端通知与 stateless 会话清理 DELETE 都不经 ExtMcp 请求相位，
+/// header_mutation 覆盖不到；因此在 target 的上游段以 `requestHeaderModifier`
+/// 统一移除。该段在 ExtMcp 读取入站上下文之后、发往 target 之前执行，也在
+/// `backendAuth` 注入 target 自身凭据之后执行，不影响二者。
+pub(crate) const PLATFORM_HEADERS: [&str; 8] = [
+    HEADER,
+    PROBE_HEADER,
+    RUN_HEADER,
+    crate::gateway_admin::probe::HEADER,
+    crate::application_tool_human::HEADER,
+    crate::agent_tool_mcp::INVOCATION_HEADER,
+    crate::agent_tool_mcp::ACTION_HEADER,
+    crate::agent_tool_mcp::OPERATION_HEADER,
+];
+
+/// 给第三方 MCP target（`PROTOCOL_PEER` 与交付目录 peer）加上平台内部 header
+/// 的上游剥离。target 已有同名策略即为构造错误，不静默覆盖。
+pub(crate) fn strip_platform_headers(target: &mut Value) -> Result<(), Refusal> {
+    let policies = target
+        .as_object_mut()
+        .ok_or_else(invalid)?
+        .entry("policies")
+        .or_insert_with(|| json!({}))
+        .as_object_mut()
+        .ok_or_else(invalid)?;
+    if policies
+        .insert(
+            "requestHeaderModifier".into(),
+            json!({ "remove": PLATFORM_HEADERS }),
+        )
+        .is_some()
+    {
+        return Err(invalid());
+    }
+    Ok(())
+}
+
 /// Standard MCP has both structured and text results. A text-only native result
 /// remains a string; JSON-looking text is never guessed into an object. The
 /// frozen capability output schema determines whether that value is usable.
@@ -289,6 +328,35 @@ async fn validate_tools(
 #[cfg(test)]
 mod native_peer_tests {
     use super::*;
+
+    #[test]
+    fn third_party_target_strips_every_platform_header_after_backend_auth() {
+        // 所有 x-platform-* 管理与会话关联 header 都在剥离表中，且不剥离 target
+        // 自身凭据所在的 authorization（由 backendAuth 注入）。
+        assert!(PLATFORM_HEADERS
+            .iter()
+            .all(|h| h.starts_with("x-platform-")));
+        assert_eq!(
+            PLATFORM_HEADERS.iter().collect::<BTreeSet<_>>().len(),
+            PLATFORM_HEADERS.len()
+        );
+        let mut target = json!({"name":"t","mcp":{"host":"http://peer:8080/mcp"},
+            "policies":{"backendAuth":{"key":"ref"}}});
+        strip_platform_headers(&mut target).unwrap();
+        assert_eq!(target["policies"]["backendAuth"], json!({"key":"ref"}));
+        assert_eq!(
+            target["policies"]["requestHeaderModifier"],
+            json!({"remove":[
+                "x-platform-binding-validation","x-platform-component-probe","x-platform-component-run",
+                "x-platform-gateway-probe","x-platform-tool-test","x-platform-agent-invocation-id",
+                "x-platform-action-execution-id","x-platform-operation-id"]})
+        );
+        // 不带 policies 的 target 同样得到剥离；重复施加是构造错误。
+        let mut bare = json!({"name":"t","mcp":{"host":"http://peer:8080/mcp"}});
+        strip_platform_headers(&mut bare).unwrap();
+        assert!(bare["policies"]["requestHeaderModifier"]["remove"].is_array());
+        assert!(strip_platform_headers(&mut bare).is_err());
+    }
 
     #[test]
     fn native_result_preserves_standard_mcp_value_without_adapter_envelope() {

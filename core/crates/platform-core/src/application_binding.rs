@@ -990,7 +990,7 @@ async fn finish_generation(
                       and result.workspace_id is not distinct from a.workspace_id
                       and result.action_key=a.action_key and result.action_version=a.action_version
                       and result.target_id=a.target_id and result.parameter_hash=a.parameter_hash
-                      and result.event_type='RESULT' and result.result_code in ('SUCCEEDED','FAILED')))")
+                      and result.event_type='OUTCOME' and result.result_code in ('SUCCEEDED','FAILED')))")
             .bind(ae.target_id).fetch_one(&mut *tx).await?;
         if pending
             || crate::application_action::native_human::permission_binding_pending(

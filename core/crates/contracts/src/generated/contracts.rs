@@ -5897,7 +5897,8 @@ pub struct GatewayMcpProbeRequest {
 }
 
 /// DD-134(5)②：经 Gateway 临时验证 route 的 initialize 与 tools/list 结果（route
-/// 已删除并回读不存在）。matchingContracts 为输入 schema 摘要一致的 ACTIVE 契约 TOOL 键。
+/// 已删除并回读不存在）。matchingContracts 为输入 schema 摘要一致的 ACTIVE 契约 TOOL 键，并带该契约生成 PROTOCOL_PEER
+/// release 草稿所需的 Catalog 元数据（DD-134(5)③④），不含 schema 正文。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GatewayMcpProbeResult {
@@ -5957,7 +5958,19 @@ pub struct GatewayMcpContractMatch {
 
     pub contract_version: i64,
 
+    /// 该 ACTIVE 契约的全部 operation 契约键；release 须为每个键登记动作与工具。
+    pub operation_contract_keys: Vec<String>,
+
+    /// 该 TOOL 契约键在 ACTIVE 契约中的输出 schema 摘要；release 的动作与工具逐字采用。
+    pub output_schema_digest: String,
+
     pub permission: CapabilityPermission,
+
+    /// 该 ACTIVE 契约 resourceTypeFamily 的全部 typeKey；release 须逐一登记。
+    pub resource_type_keys: Vec<String>,
+
+    /// 该 TOOL 契约键在 ACTIVE 契约中的 targetType。
+    pub target_type: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

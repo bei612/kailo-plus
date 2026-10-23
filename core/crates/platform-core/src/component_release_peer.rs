@@ -251,6 +251,7 @@ async fn route(
     if let Some(auth) = crate::application_binding::credentials::backend_auth(&credentials)? {
         native_target["policies"] = json!({"backendAuth":auth});
     }
+    transport::strip_platform_headers(&mut native_target)?;
     let value = json!({"name":id,"gateways":[signer.gateway_name()],"matches":[{"path":{"exact":url.path()}}],
         "policies":{"jwtAuth":state.auth.core_mcp_authentication().map_err(|_|bad())?,
         "mcpGuardrails":{"processors":[{"kind":"remote","host":service.ext_mcp_url().as_str(),
@@ -277,6 +278,71 @@ async fn route(
     Ok(url)
 }
 
+/// A synchronous MCP attempt has no native job, dedupe key or query: once its
+/// DISPATCH audit exists without the step OUTCOME (or its observation was lost
+/// on the way back to the Worker), nothing can prove what the peer answered.
+/// The attempt is never replayed. Core appends one RECONCILIATION fact for the
+/// step to the original operation and answers definitively that the suite
+/// cannot certify this registration; the original Workflow then fails without
+/// writing a release (07 §6, DD-124/136). A new registration is a new
+/// `component_release.register`, never a resumed attempt.
+async fn reconcile_probe(
+    state: &ServiceState,
+    input: &Value,
+    action: Uuid,
+    index: usize,
+) -> Result<contracts::ComponentConformanceStepObservation, Refusal> {
+    let mut tx = state.pool.begin().await?;
+    let ae = crate::governance::lock_execution(&mut tx, action).await?;
+    let plan: Option<Value> = sqlx::query_scalar(
+        "select component_conformance_plan from admission.action_execution
+        where id=$1 and component_conformance_observation is null",
+    )
+    .bind(ae.id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    let plan = plan.ok_or_else(bad)?;
+    let mut provided = input["plan"].clone();
+    provided["runId"] = json!("");
+    if ae.action_key != REGISTER
+        || ae.gate_state != "ALLOWED"
+        || ae.dispatch_state != "DISPATCHED"
+        || provided != plan
+        || plan["connectorKind"] != "PROTOCOL_PEER"
+        || plan["steps"]
+            .as_array()
+            .is_none_or(|steps| index >= steps.len())
+    {
+        return Err(bad());
+    }
+    let (dispatched,outcome):(bool,bool)=sqlx::query_as("select
+        exists(select 1 from audit.audit_event where event_key=$1 and operation_id=$3 and event_type='DISPATCH'),
+        exists(select 1 from audit.audit_event where event_key=$2 and operation_id=$3 and event_type='OUTCOME')")
+        .bind(format!("{}:mcp-probe:{index}:dispatch",ae.operation_id))
+        .bind(format!("{}:mcp-probe:{index}:result",ae.operation_id))
+        .bind(ae.operation_id).fetch_one(&mut *tx).await?;
+    let code = match (dispatched, outcome) {
+        (false, _) => "NOT_DISPATCHED",
+        (true, false) => "DISPATCH_RESULT_UNKNOWN",
+        (true, true) => "OBSERVATION_UNAVAILABLE",
+    };
+    let def = crate::governance::exact_definition_for_execution(&state.pool, &ae).await?;
+    crate::governance::audit(
+        &mut tx,
+        &ae,
+        &def,
+        &format!("mcp-probe:{index}:reconcile"),
+        "RECONCILIATION",
+        "DENY",
+        code,
+        None,
+        Vec::new(),
+    )
+    .await?;
+    tx.commit().await?;
+    Err(Refusal::Conflict(ReasonCode::TargetStateConflict))
+}
+
 pub(super) async fn run_probe(
     state: &ServiceState,
     input: contracts::ComponentConformanceProbe,
@@ -286,7 +352,8 @@ pub(super) async fn run_probe(
         let input=serde_json::to_value(input).map_err(|_|bad())?;
         let action=Uuid::parse_str(text(&input["plan"],"actionExecutionId")?).map_err(|_|bad())?;
         let index=usize::try_from(input["stepIndex"].as_u64().ok_or_else(bad)?).map_err(|_|bad())?;
-        if input["reconcile"]==true || input.get("contentReference").is_some() { return Err(unavailable()); }
+        if input.get("contentReference").is_some() { return Err(unavailable()); }
+        if input["reconcile"]==true { return reconcile_probe(state,&input,action,index).await; }
         let mut tx=state.pool.begin().await?;
         let ae=crate::governance::lock_execution(&mut tx,action).await?;
         let run=text(&input["plan"],"runId")?;
@@ -338,7 +405,7 @@ pub(super) async fn run_probe(
         } else if raw!=expected { return Err(bad()); }
         let mut tx=state.pool.begin().await?;
         fresh_suite(state,&mut tx,&ae,run).await?;
-        crate::governance::audit(&mut tx,&ae,&def,&format!("mcp-probe:{index}:result"),"RESULT","ALLOW","SUCCEEDED",None,Vec::new()).await?;
+        crate::governance::audit(&mut tx,&ae,&def,&format!("mcp-probe:{index}:result"),"OUTCOME","ALLOW","SUCCEEDED",None,Vec::new()).await?;
         tx.commit().await?;
         let typed:contracts::ComponentConformanceStepObservation=serde_json::from_value(observed).map_err(|_|bad())?;
         Ok::<_,Refusal>(typed)
