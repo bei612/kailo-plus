@@ -58,10 +58,10 @@ services:
   core-db:
     # 按 digest 引用，不使用可变 tag（ADR-06）。tag 16-alpine 只作人类可读别名。
     image: postgres@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea
-    restart: unless-stopped
     # 只在 core-data：只有 Core 自身可达；Worker 不直写 Core 数据库（01 §4），
     # 迁移从宿主经下方回环端口进行。
     networks: [core-data]
+    restart: unless-stopped
     environment:
       POSTGRES_DB: ${CORE_DB_NAME:?必须显式提供，禁止硬编码}
       POSTGRES_USER: ${CORE_DB_USER:?必须显式提供，禁止硬编码}
@@ -81,10 +81,10 @@ services:
   otel-collector:
     # 按 digest 引用（ADR-06）。别名 tag 为 0.139.0。
     image: otel/opentelemetry-collector-contrib@sha256:faf125d656fa47cea568b2f3b4494efd2525083bc75c1e96038bc23f05cd68fd
-    restart: unless-stopped
     # 应用侧只依赖 OTLP（ADR-05）。Stage 0/1 只跑 Collector 并导出到
     # 控制台与本地文件；Prometheus/Loki/Tempo 在 Stage 2 出现跨服务链路时接入。
     networks: [app, mgmt]
+    restart: unless-stopped
     command: ["--config=/etc/otelcol/config.yaml"]
     configs:
       - source: otel_config
@@ -93,8 +93,8 @@ services:
   # Temporal 是独立的 Workflow 权威，存储与 Core 分离——不共用实例也不共用凭据。
   temporal-db:
     image: postgres@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea
-    restart: unless-stopped
     networks: [temporal-data]
+    restart: unless-stopped
     environment:
       POSTGRES_DB: ${TEMPORAL_DB_NAME:?必须显式提供，禁止硬编码}
       POSTGRES_USER: ${TEMPORAL_DB_USER:?必须显式提供，禁止硬编码}
@@ -139,10 +139,10 @@ services:
 
   temporal:
     image: temporalio/server@sha256:c3e752127759616bb1615e0f9ba0e21635aeb5fdeb922de4f371c350955f46ae
-    restart: unless-stopped
     # component 网络：Core 与 Worker 经 app<->component 的显式连接到达它；
     # 它不接入 edge，Browser 永远无法直达（01 §8）。
     networks: [component, app, temporal-data]
+    restart: unless-stopped
     depends_on:
       temporal-schema: { condition: service_completed_successfully }
       keycloak: { condition: service_healthy }
@@ -188,8 +188,8 @@ services:
   # 只改地址，digest 引用方式不变。
   registry:
     image: registry@sha256:325b4b29b041e82803abeb703e201655e4e23ab83264ec1a7c9ddb0a5b14a6e0
-    restart: unless-stopped
     networks: [mgmt]
+    restart: unless-stopped
     volumes:
       - ${KAILO_RUNTIME_DIR:-.}/data/registry:/var/lib/registry
     ports:
@@ -198,8 +198,8 @@ services:
   # Buzz Relay 是协作与 NIP-AE 记忆权威（.design/01 §2）。存储与 Core 分离。
   buzz-db:
     image: postgres@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea
-    restart: unless-stopped
     networks: [buzz-data]
+    restart: unless-stopped
     environment:
       POSTGRES_DB: ${BUZZ_DB_NAME:?必须显式提供，禁止硬编码}
       POSTGRES_USER: ${BUZZ_DB_USER:?必须显式提供，禁止硬编码}
@@ -217,8 +217,8 @@ services:
   # 并拒绝请求——fail closed，而不是放行未去重的请求。
   buzz-replay:
     image: redis@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
-    restart: unless-stopped
     networks: [buzz-data]
+    restart: unless-stopped
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -229,8 +229,8 @@ services:
   # conformance probe 失败并拒绝启动，因此不是可选项。
   buzz-objects:
     image: quay.io/minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
-    restart: unless-stopped
     networks: [buzz-data]
+    restart: unless-stopped
     env_file:
       - ${KAILO_RUNTIME_DIR:-.}/secrets/buzz-objects.env
     command: ["server", "/data"]
@@ -282,13 +282,13 @@ services:
   # 发布镜像：上游的 NIP-29 权限比平台宽且无开关可收紧（SF-BUZ-37）。
   buzz-relay:
     image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/collaboration-relay@sha256:12484da76dc3d4909a6e50f98c208e3556de1b8311f80ab9bb73c9b4fc934524
-    restart: unless-stopped
     networks:
       component:
         aliases: ["${BUZZ_RELAY_HOST:?必须显式提供，禁止硬编码}"]
       app:
         aliases: ["${BUZZ_RELAY_HOST:?必须显式提供，禁止硬编码}"]
       buzz-data: {}
+    restart: unless-stopped
     depends_on:
       buzz-schema: { condition: service_completed_successfully }
       buzz-objects-init: { condition: service_completed_successfully }
@@ -329,8 +329,8 @@ services:
   # 与原生双侧去重消费者；不用 quickstart seed、额外管理 UI 或无调用方的 billing worker。
   openmeter-postgres:
     image: postgres@sha256:14f02666642586a64d6fae8ef42d479fd76456a77c73ae8a626b8fe323b76d22
-    restart: unless-stopped
     networks: [openmeter-data]
+    restart: unless-stopped
     cpus: ${OPENMETER_POSTGRES_CPUS:?必须显式提供本机运行预算}
     mem_limit: ${OPENMETER_POSTGRES_MEMORY:?必须显式提供本机运行预算}
     memswap_limit: ${OPENMETER_POSTGRES_MEMORY:?必须显式提供本机运行预算}
@@ -396,8 +396,8 @@ services:
 
   openmeter-clickhouse:
     image: clickhouse/clickhouse-server@sha256:74da41cd61db84f652c6364fd30d59e19b7276d34f7c82515f5f0e70d6f325da
-    restart: unless-stopped
     networks: [openmeter-data]
+    restart: unless-stopped
     cpus: ${OPENMETER_CLICKHOUSE_CPUS:?必须显式提供本机运行预算}
     mem_limit: ${OPENMETER_CLICKHOUSE_MEMORY:?必须显式提供本机运行预算}
     memswap_limit: ${OPENMETER_CLICKHOUSE_MEMORY:?必须显式提供本机运行预算}
@@ -424,11 +424,11 @@ services:
 
   openmeter:
     image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/metering@sha256:ed8f821f2a1ee510751a68fcb41d9a09cbeff66c693fdd7ad9fffea1b1ec6907
-    restart: unless-stopped
     networks:
       app:
         aliases: ["${OPENMETER_HOST:?必须显式提供，禁止硬编码}"]
       openmeter-data: {}
+    restart: unless-stopped
     cpus: ${OPENMETER_API_CPUS:?必须显式提供本机运行预算}
     mem_limit: ${OPENMETER_API_MEMORY:?必须显式提供本机运行预算}
     memswap_limit: ${OPENMETER_API_MEMORY:?必须显式提供本机运行预算}
@@ -484,8 +484,8 @@ services:
   # AOF always 保留已确认的索引写入，但不宣称消除原生 Kafka/ClickHouse 崩溃窗口。
   openmeter-dedupe:
     image: redis@sha256:c6e4a82ce60b829a72a21cc4ad4c1c274fa6962eb0d6ac698e8157cbc3fe16a4
-    restart: unless-stopped
     networks: [openmeter-data]
+    restart: unless-stopped
     cpus: ${OPENMETER_REDIS_CPUS:?必须显式提供本机运行预算}
     mem_limit: ${OPENMETER_REDIS_MEMORY:?必须显式提供本机运行预算}
     memswap_limit: ${OPENMETER_REDIS_MEMORY:?必须显式提供本机运行预算}
@@ -514,8 +514,8 @@ services:
   # 只接自己的数据网络，无 Core credential、共享网络或宿主发布端口。
   openmeter-sink-worker:
     image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/metering@sha256:ed8f821f2a1ee510751a68fcb41d9a09cbeff66c693fdd7ad9fffea1b1ec6907
-    restart: unless-stopped
     networks: [openmeter-data]
+    restart: unless-stopped
     cpus: ${OPENMETER_SINK_CPUS:?必须显式提供本机运行预算}
     mem_limit: ${OPENMETER_SINK_MEMORY:?必须显式提供本机运行预算}
     memswap_limit: ${OPENMETER_SINK_MEMORY:?必须显式提供本机运行预算}
@@ -803,13 +803,13 @@ services:
   # 那里（DD-72）。
   worker:
     image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/worker@sha256:46eb680ae60266a118bcec48ddb5e7bfc68c578733b65a2ef7654294a84113b7
-    restart: unless-stopped
     build:
       context: ../..
       dockerfile: worker/Dockerfile
     # app 到 Core 与 Temporal，component 到 SpiceDB 与 Keycloak。
     # 不接 edge：它不对外提供任何入口。
     networks: [app, component]
+    restart: unless-stopped
     depends_on:
       temporal: { condition: service_healthy }
       spicedb: { condition: service_healthy }
@@ -855,8 +855,8 @@ services:
     # digest 与 web-client/fork/upstream.yaml 的 artifact_digest
     # 必须一致，由 check.sh 校验。
     image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/web-client@sha256:925d2d3867678bafaf677945eb944d4f67ab36d69ad39bf700adcf12fe1bf0b9
-    restart: unless-stopped
     networks: [app]
+    restart: unless-stopped
     environment:
       PLATFORM_DISPLAY_NAME: ${PLATFORM_DISPLAY_NAME:?必须显式提供，禁止硬编码}
       WEB_EDITOR_ORIGINS: ${WEB_EDITOR_ORIGINS:-}
@@ -879,7 +879,6 @@ services:
     # digest 与 model-gateway/fork/upstream.yaml 的 artifact_digest
     # 必须一致，由 check.sh 校验——两处不等说明镜像与 manifest 脱节。
     image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/model-gateway@sha256:8e97360b5b627e0e70d01c195e309f3bb53765d97c39efbe103d85a5e175cb0f
-    restart: unless-stopped
     # edge 是唯一对外可达层；它同时进 app 以到达 BFF。
     # 不接入 mgmt——admin router 不得与公开入口同面（SS-AGW-ADMIN）。admin 端口
     # （配置里的 adminAddr）不在下方 ports 中发布到宿主；Core 经 app 网络访问，且每个
@@ -891,6 +890,7 @@ services:
       app:
         aliases: ["${PUBLIC_HOST:?必须显式提供，禁止硬编码}"]
       agentgateway-data: {}
+    restart: unless-stopped
     depends_on:
       keycloak: { condition: service_healthy }
       # 配了日志库时网关启动即迁移并连接，库不可用则拒绝启动
@@ -945,10 +945,10 @@ services:
   # 不配 admin/storage，端口不发布到宿主，只在 automation-egress 网络。
   automation-egress:
     image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/model-gateway@sha256:8e97360b5b627e0e70d01c195e309f3bb53765d97c39efbe103d85a5e175cb0f
-    restart: unless-stopped
     networks:
       automation-egress:
         ipv4_address: ${AUTOMATION_EGRESS_GATEWAY_IP:?必须显式提供出站网关地址}
+    restart: unless-stopped
     environment:
       OIDC_ISSUER: ${OIDC_ISSUER:?必须显式提供，禁止硬编码}
       OIDC_JWKS_URI: ${OIDC_ISSUER:?必须显式提供，禁止硬编码}/protocol/openid-connect/certs
@@ -998,8 +998,8 @@ services:
 
   agentgateway-db:
     image: postgres@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea
-    restart: unless-stopped
     networks: [agentgateway-data]
+    restart: unless-stopped
     environment:
       POSTGRES_DB: ${AGENTGATEWAY_DB_NAME:?必须显式提供，禁止硬编码}
       POSTGRES_USER: ${AGENTGATEWAY_DB_USER:?必须显式提供，禁止硬编码}
@@ -1056,8 +1056,8 @@ services:
   # 与 openbao 同一 digest 的镜像、同一 uid，不接任何网络，只挂这一个目录。
   openbao-audit-bound:
     image: openbao/openbao@sha256:7d26314820a535ef346f1e63911809e4d356b48068fef00a9dcb3400bb9e11b6
-    restart: unless-stopped
     network_mode: none
+    restart: unless-stopped
     depends_on:
       openbao: { condition: service_started }
     user: "100:1000"
@@ -1156,7 +1156,6 @@ services:
   # 声明读取 "<namespace>:<role>"（SF-TMP-06）。
   keycloak:
     image: quay.io/keycloak/keycloak@sha256:9409c59bdfb65dbffa20b11e6f18b8abb9281d480c7ca402f51ed3d5977e6007
-    restart: unless-stopped
     # 带点的别名：HTTP 客户端的 cookie 引擎普遍不为单标签主机名保存或发送
     # cookie，OIDC 浏览器流会因此在本地拓扑里断掉。真实部署用 FQDN 不会遇到，
     # 本地也应保持同一形状，否则接缝在本地验不了。
@@ -1167,6 +1166,7 @@ services:
         aliases: ["${OIDC_HOST:?必须显式提供，禁止硬编码}"]
       component:
         aliases: ["${OIDC_HOST:?必须显式提供，禁止硬编码}"]
+    restart: unless-stopped
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USER:?必须显式提供，禁止硬编码}
       KC_HTTP_ENABLED: "true"
@@ -1202,8 +1202,8 @@ services:
   # 一样自持一个库，不与 Core 业务库共用。
   spicedb-db:
     image: postgres@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea
-    restart: unless-stopped
     networks: [spicedb-data]
+    restart: unless-stopped
     environment:
       POSTGRES_DB: ${SPICEDB_DB_NAME:?必须显式提供，禁止硬编码}
       POSTGRES_USER: ${SPICEDB_DB_USER:?必须显式提供，禁止硬编码}
@@ -1231,8 +1231,8 @@ services:
 
   spicedb:
     image: authzed/spicedb@sha256:aa96009a0477f8a759149823407d47ad16d1a74390bae3102b3b0b7143502764
-    restart: unless-stopped
     networks: [component, app, spicedb-data]
+    restart: unless-stopped
     depends_on:
       spicedb-migrate: { condition: service_completed_successfully }
     environment:
