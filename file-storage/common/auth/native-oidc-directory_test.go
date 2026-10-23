@@ -221,7 +221,7 @@ func workspaceACLs(t *testing.T, ctx context.Context, ws *idm.Workspace) []strin
 	return out
 }
 
-func hasPolicy(ws *idm.Workspace, action service.ResourcePolicyAction, subject string) bool {
+func wsHasPolicy(ws *idm.Workspace, action service.ResourcePolicyAction, subject string) bool {
 	return slices.ContainsFunc(ws.GetPolicies(), func(p *service.ResourcePolicy) bool {
 		return p.GetAction() == action && p.GetSubject() == subject && p.GetEffect() == service.ResourcePolicy_allow
 	})
@@ -343,9 +343,9 @@ func TestNativeOIDCMemberDirectory(t *testing.T) {
 			if got := workspaceACLs(t, ctx, ws); !slices.Equal(got, want) {
 				t.Fatalf("workspace ACLs: %v, want %v", got, want)
 			}
-			if !hasPolicy(ws, service.ResourcePolicyAction_WRITE, permissions.PolicySubjectUuidPrefix+derived("dir-bob")) ||
-				hasPolicy(ws, service.ResourcePolicyAction_WRITE, permissions.PolicySubjectUuidPrefix+derived("dir-admin")) ||
-				!hasPolicy(ws, service.ResourcePolicyAction_READ, permissions.PolicySubjectRolePrefix+slug) {
+			if !wsHasPolicy(ws, service.ResourcePolicyAction_WRITE, permissions.PolicySubjectUuidPrefix+derived("dir-bob")) ||
+				wsHasPolicy(ws, service.ResourcePolicyAction_WRITE, permissions.PolicySubjectUuidPrefix+derived("dir-admin")) ||
+				!wsHasPolicy(ws, service.ResourcePolicyAction_READ, permissions.PolicySubjectRolePrefix+slug) {
 				t.Fatalf("workspace policies: %v", ws.GetPolicies())
 			}
 			ops := nativeWorkspace(t, ctx, dirWsOps)
@@ -453,8 +453,8 @@ func TestNativeOIDCMemberDirectory(t *testing.T) {
 			if got := workspaceACLs(t, ctx, gone); !slices.Equal(got, []string{"root:" + folder + ":" + dirRoot + "/" + dirWsDesign}) {
 				t.Fatalf("vanished Workspace grants: %v", got)
 			}
-			if hasPolicy(gone, service.ResourcePolicyAction_READ, permissions.PolicySubjectRolePrefix+"kailo-ws-"+dirWsDesign) ||
-				hasPolicy(gone, service.ResourcePolicyAction_WRITE, permissions.PolicySubjectUuidPrefix+derived("dir-bob")) {
+			if wsHasPolicy(gone, service.ResourcePolicyAction_READ, permissions.PolicySubjectRolePrefix+"kailo-ws-"+dirWsDesign) ||
+				wsHasPolicy(gone, service.ResourcePolicyAction_WRITE, permissions.PolicySubjectUuidPrefix+derived("dir-bob")) {
 				t.Fatalf("vanished Workspace still in the members' view: %v", gone.GetPolicies())
 			}
 			if _, err := login("dir-bob", map[string]any{"preferred_username": "bob"}); !errors.Is(err, auth.ErrNativeOIDCNotMember) {
@@ -499,7 +499,7 @@ func TestNativeOIDCMemberDirectory(t *testing.T) {
 				t.Fatalf("readmitted member cannot log in: %v", err)
 			}
 			back := nativeWorkspace(t, ctx, dirWsDesign)
-			if len(workspaceACLs(t, ctx, back)) != 3 || !hasPolicy(back, service.ResourcePolicyAction_WRITE, permissions.PolicySubjectUuidPrefix+derived("dir-bob")) {
+			if len(workspaceACLs(t, ctx, back)) != 3 || !wsHasPolicy(back, service.ResourcePolicyAction_WRITE, permissions.PolicySubjectUuidPrefix+derived("dir-bob")) {
 				t.Fatalf("Workspace back in the snapshot not restored: %v", back.GetPolicies())
 			}
 		})
