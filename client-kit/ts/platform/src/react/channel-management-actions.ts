@@ -7,6 +7,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   ActionDispatchState,
   ActionGateState,
+  DiscoverableWorkspaceJoinActionKey,
   DiscoverableWorkspaceLeaveActionKey,
   DiscoverableWorkspaceUpdateActionKey,
   WorkspaceLifecycleActionKey,
@@ -43,6 +44,8 @@ export type ChannelManagementHints = {
   /** With updateActionKey: the Channel was archived by the TTL reaper and only reopen is offered. */
   canReopen: boolean;
   leaveActionKey?: DiscoverableWorkspaceLeaveActionKey;
+  /** Original canJoin: a non-member of an open, unarchived channel (directory joinActionKey). */
+  joinActionKey?: DiscoverableWorkspaceJoinActionKey;
   lifecycleActionKey?: WorkspaceLifecycleActionKey;
 };
 
@@ -88,12 +91,14 @@ export function useChannelManagementHints(workspaceId: string | undefined, chann
       if (!row) return { canReopen: false, lifecycleActionKey };
       if ((row.updateActionKey !== undefined && row.updateActionKey !== DiscoverableWorkspaceUpdateActionKey.WorkspaceUpdate)
         || (row.leaveActionKey !== undefined && row.leaveActionKey !== DiscoverableWorkspaceLeaveActionKey.WorkspaceLeave)
+        || (row.joinActionKey !== undefined && row.joinActionKey !== DiscoverableWorkspaceJoinActionKey.WorkspaceJoin)
         || (row.canReopen !== undefined && typeof row.canReopen !== "boolean"))
         throw new TransportError("Invalid channel management hint");
       return {
         updateActionKey: row.updateActionKey,
         canReopen: row.updateActionKey !== undefined && row.canReopen === true,
         leaveActionKey: row.leaveActionKey,
+        joinActionKey: row.isMember || row.channel.archived ? undefined : row.joinActionKey,
         lifecycleActionKey,
       };
     },

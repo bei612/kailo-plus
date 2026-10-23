@@ -427,6 +427,12 @@ export function ChannelScreen({
     channelContentWidthPx > 0 &&
     channelContentWidthPx < AUXILIARY_PANEL_SINGLE_COLUMN_BREAKPOINT_PX &&
     hasAuxiliaryPanel;
+  // Original shouldCompactHeaderActions: with an auxiliary panel open in a narrow channel the
+  // header actions collapse into the compact menu.
+  const shouldCompactHeaderActions =
+    hasAuxiliaryPanel &&
+    channelContentWidthPx > 0 &&
+    channelContentWidthPx < 760;
   const channelHeaderChromeRef = useMeasuredCssVariable({
     targetRef: mainInsetRef,
     ...channelContentTopPaddingMeasurement,
@@ -438,6 +444,7 @@ export function ChannelScreen({
       <ChannelScreenHeader
         activeChannel={activeChannel}
         activeChannelEphemeralDisplay={activeChannelEphemeralDisplay}
+        actionsVariant={shouldCompactHeaderActions ? "compact" : "inline"}
         currentPubkey={currentPubkey}
         chromeWrapperRef={channelHeaderChromeRef}
       />

@@ -169,3 +169,13 @@ it("shares the original read shortcuts with foreground Escape ownership and Stri
   expect(mark).toHaveBeenCalledTimes(1);
   expect(all).toHaveBeenCalledTimes(1);
 });
+
+it("labels every fixed-official registry shortcut in both locales, as the original card lists them all", () => {
+  // Original KeyboardShortcutsCard renders getShortcutsByCategory() unfiltered (incl. publish-note).
+  // Huddle rows are listed only by a host that consumes them (huddleShortcutText, DD-125(3)).
+  for (const row of KEYBOARD_SHORTCUTS.filter(item => item.id !== "toggle-huddle" && item.id !== "push-to-talk")) {
+    expect(shortcutText("en", row.id)?.label, row.id).toBeTruthy();
+    expect(shortcutText("zh-CN", row.id)?.label, row.id).toMatch(/[\u4e00-\u9fff]/);
+  }
+  expect(shortcutText("en", "publish-note")).toEqual({ label: "Publish note", description: "Publish a Pulse note" });
+});

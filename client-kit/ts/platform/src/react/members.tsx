@@ -74,9 +74,16 @@ export function memberProfileDisplayName(profile: {displayName?: string|null; pu
 export type MemberIdentityRenderer = (pubkey: string, children: ReactNode, label: string) => ReactNode;
 
 function useMemberProfile(target: MemberTarget) {
+  return useOptionalMemberProfile(target);
+}
+
+/** The same authorized profile read for a host surface that may have no target yet (original
+ * DM header ProfileAvatar): no target, no read. */
+export function useOptionalMemberProfile(target: MemberTarget|undefined) {
   const client = useBffClient();
-  return useQuery({queryKey:["workspace-member-profile",target.conversationId!==undefined?`conversation:${target.conversationId}`:target.workspaceId,target.principalId,target.pubkey,...(target.alternatePubkeys??[])],
-    queryFn:()=>readMemberProfile(client,target),retry:false,staleTime:0});
+  return useQuery({queryKey:target?["workspace-member-profile",target.conversationId!==undefined?`conversation:${target.conversationId}`:target.workspaceId,target.principalId,target.pubkey,...(target.alternatePubkeys??[])]
+    :["workspace-member-profile","none"],
+    queryFn:()=>readMemberProfile(client,target!),enabled:target!==undefined,retry:false,staleTime:0});
 }
 
 export function MemberAvatar({target,label,className="h-9 w-9 text-xs shadow-none"}:{target:MemberTarget;label:string;className?:string}) {

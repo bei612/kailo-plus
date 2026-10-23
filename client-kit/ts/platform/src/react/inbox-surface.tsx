@@ -142,19 +142,33 @@ export function InboxEmptyDetail() {
   </div></section>;
 }
 
-export function InboxDetailHeader({ title, onBack, onOpen, openLabel, fallbackTitle, onDelete, deletePending = false }: {
+export function InboxDetailHeader({ title, onBack, onOpen, openLabel, fallbackTitle, onDelete, deletePending = false, reopen, actions }: {
   title: string; onBack?: () => void; onOpen?: () => void; openLabel: string; fallbackTitle?: string;
   /** The host supplies only its current admitted original message target. */
   onDelete?: () => void; deletePending?: boolean;
+  /** Original InboxDetailPane home-inbox-reopen-status chip for the hidden-DM reopen of this context. */
+  reopen?: { pending: boolean; error: boolean; unknown?: boolean; onRetry?: () => void };
+  /** Original header ChannelMembersBar slot (between Open and the more menu). */
+  actions?: React.ReactNode;
 }) {
   const t = useUiT();
+  const reopenChip = reopen && (reopen.pending || reopen.error) ? <div aria-live="polite"
+    className={cn("flex items-center gap-1.5 rounded-full px-2 py-1 text-xs font-medium",
+      reopen.error && !reopen.unknown ? "bg-destructive/10 text-destructive" : "bg-muted/60 text-muted-foreground")}
+    data-testid="home-inbox-reopen-status" role="status">
+    {reopen.pending ? <><LoaderCircle className="h-3.5 w-3.5 shrink-0 animate-spin" /><span>{t("inbox.reopening")}</span></>
+      : <><AlertCircle className="h-3.5 w-3.5 shrink-0" /><span>{t(reopen.unknown ? "dm.retryUnknown" : "inbox.reopenFailed")}</span>
+        {reopen.onRetry ? <button className="ml-0.5 rounded font-semibold underline underline-offset-2 hover:no-underline focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+          data-testid="home-inbox-reopen-retry" onClick={reopen.onRetry} type="button">{t("platform.retry")}</button> : null}</>}
+  </div> : null;
   return <div className="relative z-40 shrink-0"><div className="px-5 py-2"><div className="flex min-h-9 min-w-0 items-center justify-between gap-3">
     <div className={cn("flex min-w-0 items-center", onBack ? "gap-[4px]" : "gap-1")}>
       {onBack ? <button aria-label={t("inbox.back")} className={cn(iconButton, "rounded-full hover:bg-muted/60")} onClick={onBack} type="button"><ArrowLeft /></button> : null}
       <div className="min-w-0"><h2 className="min-w-0 text-sm font-semibold leading-5 tracking-tight text-foreground" title={fallbackTitle}>
         {onOpen ? <button className="block min-w-0 max-w-full text-left text-sm font-semibold leading-5 tracking-tight text-foreground hover:underline focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2" data-testid="home-inbox-context-title" onClick={onOpen} title={openLabel} type="button"><span className="block min-w-0 translate-y-px truncate">{title}</span></button> : <span className="block min-w-0 translate-y-px truncate">{title}</span>}
       </h2></div>
-    </div><div className="flex shrink-0 items-center gap-1">{onOpen ? <InboxRowActionButton label={openLabel} onClick={onOpen}><ExternalLink /></InboxRowActionButton> : null}
+    </div><div className="flex shrink-0 items-center gap-1">{reopenChip}{onOpen ? <InboxRowActionButton label={openLabel} onClick={onOpen}><ExternalLink /></InboxRowActionButton> : null}
+      {actions}
       {onDelete ? <DropdownMenu modal={false}>
         <Tooltip><TooltipTrigger asChild><DropdownMenuTrigger asChild>
           <button aria-label={t("buzz.moreActions")} data-testid="home-inbox-detail-more" type="button" className={cn(iconButton, "rounded-full text-muted-foreground")}><Ellipsis /></button>

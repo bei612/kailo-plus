@@ -227,8 +227,9 @@ describe("Web original settings host", () => {
       // Original Settings footer: the host's own app version.
       expect(host.querySelector('[data-testid="settings-version"]')?.textContent).toMatch(/^v\d+\.\d+\.\d+/);
       await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="settings-nav-shortcuts"]')!.click());
-      // 24 original rows plus the two original Huddle shortcuts the Web host consumes (DD-125(3)).
-      expect(host.querySelectorAll('[data-shortcut]')).toHaveLength(26);
+      // All 25 original rows (incl. Publish note) plus the two original Huddle shortcuts the Web host consumes (DD-125(3)).
+      expect(host.querySelectorAll('[data-shortcut]')).toHaveLength(27);
+      expect(host.querySelector('[data-shortcut="publish-note"]')).not.toBeNull();
       for (const id of ["toggle-huddle", "push-to-talk"])
         expect(host.querySelector(`[data-shortcut="${id}"]`)).not.toBeNull();
       expect(host.querySelector('[data-shortcut="always-address-agent"]')).not.toBeNull();

@@ -12,18 +12,18 @@
 // answers its action hint (Core re-admits every submission): updateActionKey → the edit dialog
 // (name, description, TTL as the "Channel type" row, visibility) as one workspace.update with
 // only the changed fields, or reopen alone when canReopen; leaveActionKey → Leave
-// (workspace.leave); lifecycleActionKey → Archive/Unarchive (workspace.suspend/restore, DD-46);
+// (workspace.leave); joinActionKey → Join (workspace.join, original canJoin row); lifecycleActionKey → Archive/Unarchive (workspace.suspend/restore, DD-46);
 // the member topic is the host's own-identity publication. Delete has no governed path (DD-46),
 // and stream/forum type is fixed at creation, so neither is rendered.
 import * as React from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import {
-  Archive, ArchiveRestore, BookOpenText, Check, ChevronRight, Copy, DoorClosed, Info, MessageSquare, Pencil, Plus,
+  Archive, ArchiveRestore, BookOpenText, Check, ChevronRight, Copy, DoorClosed, DoorOpen, Info, MessageSquare, Pencil, Plus,
   Workflow as WorkflowIcon, type LucideIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
-  AutomationState, DiscoverableWorkspaceLeaveActionKey, DiscoverableWorkspaceUpdateActionKey, WorkspaceLifecycleActionKey, WorkspaceMembershipState, WorkspaceVisibility,
+  AutomationState, DiscoverableWorkspaceJoinActionKey, DiscoverableWorkspaceLeaveActionKey, DiscoverableWorkspaceUpdateActionKey, WorkspaceLifecycleActionKey, WorkspaceMembershipState, WorkspaceVisibility,
   type AutomationView, type WorkspaceUpdate,
 } from "@client-kit/contracts";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -203,6 +203,10 @@ export function ChannelManagementSheet({ open, onOpenChange, roster, channel, is
     readBack();
     void queryClient.invalidateQueries({ queryKey: rosterQueryKey(roster) });
   });
+  const join = useGovernedChannelAction(() => {
+    readBack();
+    void queryClient.invalidateQueries({ queryKey: rosterQueryKey(roster) });
+  });
   const topic = useTopicPublication(management, workspaceId, readBack);
   const lifecycleAction = lifecycle.intent?.actionKey ?? (canReopen ? undefined : hints?.lifecycleActionKey);
   const suspending = lifecycleAction === WorkspaceLifecycleActionKey.WorkspaceSuspend;
@@ -302,6 +306,10 @@ export function ChannelManagementSheet({ open, onOpenChange, roster, channel, is
       managementRef.current?.onLeft?.();
     }
   }
+  function handleJoin() {
+    if (workspaceId === undefined) return;
+    void join.submit({ actionKey: DiscoverableWorkspaceJoinActionKey.WorkspaceJoin, workspaceId });
+  }
   function handleReopen() {
     if (workspaceId === undefined) return;
     void reopen.submit({ actionKey: DiscoverableWorkspaceUpdateActionKey.WorkspaceUpdate, workspaceId, workspaceUpdate: { reopen: true } });
@@ -311,6 +319,7 @@ export function ChannelManagementSheet({ open, onOpenChange, roster, channel, is
     const result = await lifecycle.submit({ actionKey: lifecycleAction, workspaceId });
     if (result && result.kind !== "unknown") setConfirmLifecycle(false);
   }
+  const showJoin = !archived && (hints?.joinActionKey !== undefined || join.intent !== null);
   const showLeave = canLeave || leave.intent !== null;
   const showReopen = canReopen || reopen.intent !== null;
   const showLifecycle = !showReopen && lifecycleAction !== undefined;
@@ -417,8 +426,13 @@ export function ChannelManagementSheet({ open, onOpenChange, roster, channel, is
                     />
                   ) : null}
 
-                  {showLeave || showReopen || showLifecycle ? (
+                  {showJoin || showLeave || showReopen || showLifecycle ? (
                     <PanelSectionGroup testId="channel-management-actions">
+                      {showJoin ? (
+                        <ActionFieldRow description={t("channelManagement.joinDescription")} disabled={join.busy} icon={DoorOpen}
+                          label={t(join.busy ? "channelManagement.joining" : join.unknown ? "workspace.lifecycle.retry" : "channelManagement.join")}
+                          onClick={handleJoin} testId="channel-management-join" />
+                      ) : null}
                       {showLeave ? (
                         <ActionFieldRow disabled={leave.busy} icon={DoorClosed}
                           label={t(leave.busy ? "channelManagement.leaving" : leave.unknown ? "workspace.lifecycle.retry" : "channelManagement.leave")}
@@ -459,6 +473,7 @@ export function ChannelManagementSheet({ open, onOpenChange, roster, channel, is
                   {update.outcome?.kind === "recorded" || update.outcome?.kind === "waiting"
                     ? <ActionOutcome outcome={update.outcome} testId="channel-management-update-outcome" /> : null}
                   <ActionOutcome outcome={reopen.outcome} testId="channel-management-reopen-outcome" />
+                  <ActionOutcome outcome={join.outcome} testId="channel-management-join-outcome" />
                   <ActionOutcome outcome={leave.outcome} testId="channel-management-leave-outcome" />
                   <ActionOutcome outcome={lifecycle.outcome} testId="channel-management-lifecycle-outcome" />
                 </div>}

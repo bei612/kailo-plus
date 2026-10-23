@@ -23,7 +23,7 @@ import { MessageAuthorAvatar, MessageAuthorIdentity, useMessageAuthorLabels, typ
 import { useMessageReactions } from "./useMessageReactions";
 import { BffVideoReviewProvider } from "@/features/chat/ui/BffVideoReview";
 
-export function InboxThreadPane({ principalId, workspaceId, channelId, conversation, forum = false, canInteract = true, rootId, selectedEventId, selectionItemId, channelName, senderLabel, members, onBack, onOpen, autoSendDraftKey, restoreDraftKey, replyTargetEventId, onOpenAuthor, onAuthorScopeUnavailable, onPublicationPendingChange }: {
+export function InboxThreadPane({ principalId, workspaceId, channelId, conversation, forum = false, canInteract = true, rootId, selectedEventId, selectionItemId, channelName, senderLabel, members, onBack, onOpen, autoSendDraftKey, restoreDraftKey, replyTargetEventId, onOpenAuthor, onAuthorScopeUnavailable, onPublicationPendingChange, unreadBoundaryEventId, reopen }: {
   principalId: string; workspaceId: string; rootId: string; selectedEventId: string; channelName: string; senderLabel?: string;
   members: (WorkspaceMemberView | ConversationParticipant)[]; onBack?: () => void; onOpen?: () => void;
   conversation?: ConversationView;
@@ -37,6 +37,10 @@ export function InboxThreadPane({ principalId, workspaceId, channelId, conversat
   onOpenAuthor?: (target: MessageAuthor) => void;
   onAuthorScopeUnavailable?: (workspaceId: string) => void;
   onPublicationPendingChange?: (pending: boolean) => void;
+  /** Original InboxDetailPane "New" divider before the first unread event of this context. */
+  unreadBoundaryEventId?: string | null;
+  /** Original header reopen chip for this context's hidden-DM reopen. */
+  reopen?: { pending: boolean; error: boolean; unknown?: boolean; onRetry?: () => void };
 }) {
   const t = useT(); const locale = useLocale();
   const [selection, setSelection] = useState({ anchor: selectedEventId, root: rootId });
@@ -153,8 +157,9 @@ export function InboxThreadPane({ principalId, workspaceId, channelId, conversat
     channelName={channelName} channelType={conversation ? "dm" : forum ? "forum" : "stream"} messages={rows}
     available={Boolean(canUseContext)} canSendComment={Boolean(canReply)} onToggleReaction={messageReactions.onToggleReaction} resolveMediaUrl={messageReactions.resolveMediaUrl} refresh={refresh}>
     <InboxDetailFrame headerKey={JSON.stringify([principalId, ownProfile.data?.pubkey, workspaceId, conversation?.id, anchor])}
-      header={{title: contextLabel, onBack, onOpen, openLabel: openContextLabel, deletePending: headerDeletePending, onDelete: requestHeaderDelete}}
+      header={{title: contextLabel, onBack, onOpen, openLabel: openContextLabel, deletePending: headerDeletePending, onDelete: requestHeaderDelete, reopen}}
       renderMessages={composerOverlayRef => <InboxDetailMessages conversationId={anchorRoot} selectedEventId={anchor} messages={rows} composerOverlayRef={composerOverlayRef}
+      unreadBoundaryEventId={unreadBoundaryEventId}
       unavailable={unavailable} interrupted={interrupted} loading={thread.isPending}
       onRetry={!denied ? () => { void thread.refetch(); } : undefined}
       pending={sending || deleteDialog.pending} unknown={unresolved}
