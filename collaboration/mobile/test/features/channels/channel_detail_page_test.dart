@@ -854,7 +854,9 @@ void main() {
           ],
         ),
       );
-      await tester.pumpAndSettle();
+      // The indicator shimmers continuously, so the page never settles.
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
 
       expect(
         find.byKey(const ValueKey('channel-typing-indicator')),
