@@ -588,7 +588,9 @@ class _Server {
     if (path.startsWith(prefix)) {
       final id = path.substring(prefix.length);
       sections.removeWhere((row) => row['id'] == id);
-      assignments.removeWhere((_, section) => section == id && request.method == 'DELETE');
+      assignments.removeWhere(
+        (_, section) => section == id && request.method == 'DELETE',
+      );
       if (request.method == 'PUT') {
         sections.add({
           'id': id,

@@ -275,69 +275,69 @@ class ChannelActionsSheet extends HookConsumerWidget {
                       : null,
                 ),
               ListTile(
-                  key: const ValueKey('channel-action-mute'),
-                  contentPadding: EdgeInsets.zero,
-                  leading: Icon(
-                    muted == true ? LucideIcons.bell : LucideIcons.bellOff,
-                  ),
-                  title: Text(
-                    text(
-                      muted == true
-                          ? PlatformMessageKey.sidebarUnmute
-                          : PlatformMessageKey.sidebarMute,
-                    ),
-                  ),
-                  subtitle: preferenceState.pendingId != null
-                      ? Text(text(PlatformMessageKey.sidebarPreferenceUnknown))
-                      : preferenceState.error != null
-                      ? Text(text(PlatformMessageKey.platformLoadFailed))
-                      : null,
-                  trailing: preferenceState.busy
-                      ? const SizedBox.square(
-                          dimension: 22,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : muted == null || preferenceState.pendingId != null
-                      ? IconButton(
-                          tooltip: text(
-                            preferenceState.pendingId != null
-                                ? PlatformMessageKey.dmCheckStatus
-                                : PlatformMessageKey.platformRefresh,
-                          ),
-                          icon: const Icon(LucideIcons.refreshCw),
-                          onPressed: () => ref
-                              .read(collaborationPreferencesProvider.notifier)
-                              .recheck(),
-                        )
-                      : null,
-                  onTap:
-                      muted == null ||
-                          preferenceState.busy ||
-                          preferenceState.pendingId != null
-                      ? null
-                      : () async {
-                          final notifier = ref.read(
-                            collaborationPreferencesProvider.notifier,
-                          );
-                          await (channel.isDm
-                              ? notifier.setMuted(channel.id, !muted)
-                              : notifier.setWorkspaceMuted(channel.id, !muted));
-                          if (context.mounted &&
-                              ref
-                                      .read(collaborationPreferencesProvider)
-                                      .channelMuted(
-                                        channel.id,
-                                        isDm: channel.isDm,
-                                      ) ==
-                                  !muted &&
-                              ref
-                                      .read(collaborationPreferencesProvider)
-                                      .pendingId ==
-                                  null) {
-                            close();
-                          }
-                        },
+                key: const ValueKey('channel-action-mute'),
+                contentPadding: EdgeInsets.zero,
+                leading: Icon(
+                  muted == true ? LucideIcons.bell : LucideIcons.bellOff,
                 ),
+                title: Text(
+                  text(
+                    muted == true
+                        ? PlatformMessageKey.sidebarUnmute
+                        : PlatformMessageKey.sidebarMute,
+                  ),
+                ),
+                subtitle: preferenceState.pendingId != null
+                    ? Text(text(PlatformMessageKey.sidebarPreferenceUnknown))
+                    : preferenceState.error != null
+                    ? Text(text(PlatformMessageKey.platformLoadFailed))
+                    : null,
+                trailing: preferenceState.busy
+                    ? const SizedBox.square(
+                        dimension: 22,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : muted == null || preferenceState.pendingId != null
+                    ? IconButton(
+                        tooltip: text(
+                          preferenceState.pendingId != null
+                              ? PlatformMessageKey.dmCheckStatus
+                              : PlatformMessageKey.platformRefresh,
+                        ),
+                        icon: const Icon(LucideIcons.refreshCw),
+                        onPressed: () => ref
+                            .read(collaborationPreferencesProvider.notifier)
+                            .recheck(),
+                      )
+                    : null,
+                onTap:
+                    muted == null ||
+                        preferenceState.busy ||
+                        preferenceState.pendingId != null
+                    ? null
+                    : () async {
+                        final notifier = ref.read(
+                          collaborationPreferencesProvider.notifier,
+                        );
+                        await (channel.isDm
+                            ? notifier.setMuted(channel.id, !muted)
+                            : notifier.setWorkspaceMuted(channel.id, !muted));
+                        if (context.mounted &&
+                            ref
+                                    .read(collaborationPreferencesProvider)
+                                    .channelMuted(
+                                      channel.id,
+                                      isDm: channel.isDm,
+                                    ) ==
+                                !muted &&
+                            ref
+                                    .read(collaborationPreferencesProvider)
+                                    .pendingId ==
+                                null) {
+                          close();
+                        }
+                      },
+              ),
               if (!channel.isDm)
                 ListTile(
                   key: const ValueKey('channel-action-members'),

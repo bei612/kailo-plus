@@ -145,7 +145,9 @@ class _SliverChannelsList extends HookConsumerWidget {
     final userSections = sectionsState.sections;
     List<Channel> sectionChannels(String sectionId) =>
         unstarredStreamChannels
-            .where((channel) => sectionsState.sectionOf(channel.id) == sectionId)
+            .where(
+              (channel) => sectionsState.sectionOf(channel.id) == sectionId,
+            )
             .toList()
           ..sort((left, right) {
             final name = left.name.toLowerCase().compareTo(

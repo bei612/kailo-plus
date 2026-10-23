@@ -15,10 +15,8 @@ import '../../../shared/widgets/modal_presentation.dart';
 import '../channel.dart';
 import '../direct_messages.dart';
 
-String _text(BuildContext context, PlatformMessageKey key) => platformText(
-  key,
-  locale: Localizations.localeOf(context).toLanguageTag(),
-);
+String _text(BuildContext context, PlatformMessageKey key) =>
+    platformText(key, locale: Localizations.localeOf(context).toLanguageTag());
 
 void _reportSectionFailure(BuildContext context, ProviderContainer container) {
   if (!context.mounted) return;
@@ -136,7 +134,10 @@ Future<void> showMoveToSectionSheet(
                   contentPadding: EdgeInsets.zero,
                   leading: section.icon == null
                       ? const Icon(LucideIcons.folder)
-                      : Text(section.icon!, style: const TextStyle(fontSize: 20)),
+                      : Text(
+                          section.icon!,
+                          style: const TextStyle(fontSize: 20),
+                        ),
                   title: Text(section.name),
                   trailing: sectionId == section.id
                       ? Icon(
@@ -158,7 +159,10 @@ Future<void> showMoveToSectionSheet(
                 contentPadding: EdgeInsets.zero,
                 leading: const Icon(LucideIcons.folderPlus),
                 title: Text(
-                  _text(sheetContext, PlatformMessageKey.sidebarSectionNewEllipsis),
+                  _text(
+                    sheetContext,
+                    PlatformMessageKey.sidebarSectionNewEllipsis,
+                  ),
                 ),
                 onTap: () async {
                   Navigator.of(sheetContext).pop();
@@ -187,7 +191,10 @@ Future<void> showMoveToSectionSheet(
                   contentPadding: EdgeInsets.zero,
                   leading: const Icon(LucideIcons.folderMinus),
                   title: Text(
-                    _text(sheetContext, PlatformMessageKey.sidebarSectionRemove),
+                    _text(
+                      sheetContext,
+                      PlatformMessageKey.sidebarSectionRemove,
+                    ),
                   ),
                   onTap: () {
                     Navigator.of(sheetContext).pop();

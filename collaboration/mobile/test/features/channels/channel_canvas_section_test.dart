@@ -60,7 +60,10 @@ Future<_Actions> _pump(
       ],
       child: const Scaffold(
         body: SingleChildScrollView(
-          child: ChannelCanvasSection(workspaceId: _workspace, isArchived: false),
+          child: ChannelCanvasSection(
+            workspaceId: _workspace,
+            isArchived: false,
+          ),
         ),
       ),
     ),
@@ -70,16 +73,17 @@ Future<_Actions> _pump(
 }
 
 void main() {
-  testWidgets('members read the Canvas but get no edit entry without the hint', (
-    tester,
-  ) async {
-    await _pump(
-      tester,
-      view: WebChannelCanvasView(workspaceId: _workspace, content: '# Plan'),
-    );
-    expect(find.text('# Plan'), findsOneWidget);
-    expect(find.byKey(const ValueKey('channel-canvas-edit')), findsNothing);
-  });
+  testWidgets(
+    'members read the Canvas but get no edit entry without the hint',
+    (tester) async {
+      await _pump(
+        tester,
+        view: WebChannelCanvasView(workspaceId: _workspace, content: '# Plan'),
+      );
+      expect(find.text('# Plan'), findsOneWidget);
+      expect(find.byKey(const ValueKey('channel-canvas-edit')), findsNothing);
+    },
+  );
 
   testWidgets('an empty Canvas says so', (tester) async {
     await _pump(tester, view: WebChannelCanvasView(workspaceId: _workspace));
@@ -112,7 +116,10 @@ void main() {
       expect(command.workspaceCanvas?.content, 'new plan');
       expect(find.byKey(const ValueKey('channel-canvas-editor')), findsNothing);
       expect(find.text('adopted'), findsOneWidget, reason: 'Core readback');
-      expect(find.byKey(const ValueKey('channel-canvas-outcome')), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('channel-canvas-outcome')),
+        findsOneWidget,
+      );
     },
   );
 

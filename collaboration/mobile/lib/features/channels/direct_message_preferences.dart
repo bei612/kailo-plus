@@ -357,8 +357,7 @@ class CollaborationPreferenceNotifier
     if (consumer == null || _runningEpoch == epoch) return;
     if (id != null &&
         (_original != null ||
-            (workspace ? state.workspaceMuted(id) : state.muted(id)) ==
-                null)) {
+            (workspace ? state.workspaceMuted(id) : state.muted(id)) == null)) {
       return;
     }
     _runningEpoch = epoch;
@@ -399,7 +398,9 @@ class CollaborationPreferenceNotifier
                 id,
                 WorkspacePreferenceRequest(
                   muted:
-                      muted ?? snapshot.workspacePreferences[id]?.muted ?? false,
+                      muted ??
+                      snapshot.workspacePreferences[id]?.muted ??
+                      false,
                   starred:
                       starred ??
                       snapshot.workspacePreferences[id]?.starred ??
