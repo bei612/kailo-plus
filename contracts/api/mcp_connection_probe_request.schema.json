@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/mcp_connection_probe_request.schema.json",
+  "title": "McpConnectionProbeRequest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "endpointUrl",
+    "transport",
+    "authMode"
+  ],
+  "properties": {
+    "endpointUrl": {
+      "type": "string"
+    },
+    "transport": {
+      "$ref": "../enums/mcp_connection_transport.schema.json"
+    },
+    "authMode": {
+      "$ref": "../enums/mcp_connection_auth_mode.schema.json"
+    },
+    "apiKeyHeader": {
+      "type": "string"
+    },
+    "credential": {
+      "$ref": "../domain/mcp_connection_credential_input.schema.json"
+    },
+    "oauthAttemptId": {
+      "type": "string",
+      "format": "uuid"
+    }
+  },
+  "description": "DD-149(7)：添加连接器前的只读探测。"
+}

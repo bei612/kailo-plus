@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/mcp_connection_visibility.schema.json",
+  "title": "McpConnectionVisibility",
+  "description": "DD-149(4)：连接器与其工具的可见范围。",
+  "type": "string",
+  "enum": [
+    "PERSONAL",
+    "WORKSPACE",
+    "TENANT"
+  ]
+}

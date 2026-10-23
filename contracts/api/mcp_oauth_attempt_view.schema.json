@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/mcp_oauth_attempt_view.schema.json",
+  "title": "McpOauthAttemptView",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "attemptId",
+    "state",
+    "expiresAt"
+  ],
+  "properties": {
+    "attemptId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "state": {
+      "$ref": "../enums/mcp_oauth_attempt_state.schema.json"
+    },
+    "authorizationUrl": {
+      "type": "string"
+    },
+    "expiresAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "authorizationServer": {
+      "type": "string"
+    },
+    "failure": {
+      "type": "string",
+      "description": "固定原因码"
+    }
+  },
+  "description": "DD-149(6)：OAuth 授权尝试的状态；从不包含令牌。"
+}

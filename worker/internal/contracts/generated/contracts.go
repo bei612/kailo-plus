@@ -457,6 +457,36 @@
 //    legacySecretRefPage, err := UnmarshalLegacySecretRefPage(bytes)
 //    bytes, err = legacySecretRefPage.Marshal()
 //
+//    mCPConnectionPage, err := UnmarshalMCPConnectionPage(bytes)
+//    bytes, err = mCPConnectionPage.Marshal()
+//
+//    mCPConnectionPolicyView, err := UnmarshalMCPConnectionPolicyView(bytes)
+//    bytes, err = mCPConnectionPolicyView.Marshal()
+//
+//    mCPConnectionProbeRequest, err := UnmarshalMCPConnectionProbeRequest(bytes)
+//    bytes, err = mCPConnectionProbeRequest.Marshal()
+//
+//    mCPConnectionProbeResult, err := UnmarshalMCPConnectionProbeResult(bytes)
+//    bytes, err = mCPConnectionProbeResult.Marshal()
+//
+//    mCPConnectionRefreshResult, err := UnmarshalMCPConnectionRefreshResult(bytes)
+//    bytes, err = mCPConnectionRefreshResult.Marshal()
+//
+//    mCPConnectionToolView, err := UnmarshalMCPConnectionToolView(bytes)
+//    bytes, err = mCPConnectionToolView.Marshal()
+//
+//    mCPConnectionView, err := UnmarshalMCPConnectionView(bytes)
+//    bytes, err = mCPConnectionView.Marshal()
+//
+//    mCPOauthAttemptView, err := UnmarshalMCPOauthAttemptView(bytes)
+//    bytes, err = mCPOauthAttemptView.Marshal()
+//
+//    mCPOauthStartRequest, err := UnmarshalMCPOauthStartRequest(bytes)
+//    bytes, err = mCPOauthStartRequest.Marshal()
+//
+//    mCPProbedTool, err := UnmarshalMCPProbedTool(bytes)
+//    bytes, err = mCPProbedTool.Marshal()
+//
 //    moderationAccessView, err := UnmarshalModerationAccessView(bytes)
 //    bytes, err = moderationAccessView.Marshal()
 //
@@ -855,6 +885,21 @@
 //
 //    llmRouteCreateInput, err := UnmarshalLlmRouteCreateInput(bytes)
 //    bytes, err = llmRouteCreateInput.Marshal()
+//
+//    mCPConnectionCreate, err := UnmarshalMCPConnectionCreate(bytes)
+//    bytes, err = mCPConnectionCreate.Marshal()
+//
+//    mCPConnectionCredentialInput, err := UnmarshalMCPConnectionCredentialInput(bytes)
+//    bytes, err = mCPConnectionCredentialInput.Marshal()
+//
+//    mCPConnectionPolicyUpdate, err := UnmarshalMCPConnectionPolicyUpdate(bytes)
+//    bytes, err = mCPConnectionPolicyUpdate.Marshal()
+//
+//    mCPConnectionUpdate, err := UnmarshalMCPConnectionUpdate(bytes)
+//    bytes, err = mCPConnectionUpdate.Marshal()
+//
+//    mCPToolSelection, err := UnmarshalMCPToolSelection(bytes)
+//    bytes, err = mCPToolSelection.Marshal()
 //
 //    nativeDocumentSelection, err := UnmarshalNativeDocumentSelection(bytes)
 //    bytes, err = nativeDocumentSelection.Marshal()
@@ -2551,6 +2596,106 @@ func (r *LegacySecretRefPage) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
+func UnmarshalMCPConnectionPage(data []byte) (MCPConnectionPage, error) {
+	var r MCPConnectionPage
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *MCPConnectionPage) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalMCPConnectionPolicyView(data []byte) (MCPConnectionPolicyView, error) {
+	var r MCPConnectionPolicyView
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *MCPConnectionPolicyView) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalMCPConnectionProbeRequest(data []byte) (MCPConnectionProbeRequest, error) {
+	var r MCPConnectionProbeRequest
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *MCPConnectionProbeRequest) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalMCPConnectionProbeResult(data []byte) (MCPConnectionProbeResult, error) {
+	var r MCPConnectionProbeResult
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *MCPConnectionProbeResult) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalMCPConnectionRefreshResult(data []byte) (MCPConnectionRefreshResult, error) {
+	var r MCPConnectionRefreshResult
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *MCPConnectionRefreshResult) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalMCPConnectionToolView(data []byte) (MCPConnectionToolView, error) {
+	var r MCPConnectionToolView
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *MCPConnectionToolView) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalMCPConnectionView(data []byte) (MCPConnectionView, error) {
+	var r MCPConnectionView
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *MCPConnectionView) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalMCPOauthAttemptView(data []byte) (MCPOauthAttemptView, error) {
+	var r MCPOauthAttemptView
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *MCPOauthAttemptView) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalMCPOauthStartRequest(data []byte) (MCPOauthStartRequest, error) {
+	var r MCPOauthStartRequest
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *MCPOauthStartRequest) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalMCPProbedTool(data []byte) (MCPProbedTool, error) {
+	var r MCPProbedTool
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *MCPProbedTool) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
 func UnmarshalModerationAccessView(data []byte) (ModerationAccessView, error) {
 	var r ModerationAccessView
 	err := json.Unmarshal(data, &r)
@@ -3878,6 +4023,56 @@ func UnmarshalLlmRouteCreateInput(data []byte) (LlmRouteCreateInput, error) {
 }
 
 func (r *LlmRouteCreateInput) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalMCPConnectionCreate(data []byte) (MCPConnectionCreate, error) {
+	var r MCPConnectionCreate
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *MCPConnectionCreate) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalMCPConnectionCredentialInput(data []byte) (MCPConnectionCredentialInput, error) {
+	var r MCPConnectionCredentialInput
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *MCPConnectionCredentialInput) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalMCPConnectionPolicyUpdate(data []byte) (MCPConnectionPolicyUpdate, error) {
+	var r MCPConnectionPolicyUpdate
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *MCPConnectionPolicyUpdate) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalMCPConnectionUpdate(data []byte) (MCPConnectionUpdate, error) {
+	var r MCPConnectionUpdate
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *MCPConnectionUpdate) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalMCPToolSelection(data []byte) (MCPToolSelection, error) {
+	var r MCPToolSelection
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *MCPToolSelection) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -7063,22 +7258,26 @@ type GatewayToolView struct {
 	CanDisableBinding         bool                     `json:"canDisableBinding"`
 	// 契约 permission 为 discover、consume 或 read，且存在本人可作用的 ACTIVE 目标 Resource 与有效结果策略；最终准入仍在提交时
 	// fresh 重做。
-	CanTestCall           bool                        `json:"canTestCall"`
-	CapabilityContractKey *string                     `json:"capabilityContractKey,omitempty"`
-	ComponentReleaseID    *string                     `json:"componentReleaseId,omitempty"`
-	ComponentTypeKey      *string                     `json:"componentTypeKey,omitempty"`
-	ContractPermission    *CapabilityPermission       `json:"contractPermission,omitempty"`
-	Denied                int64                       `json:"denied"`
-	Failed                int64                       `json:"failed"`
-	Name                  string                      `json:"name"`
-	ReleaseVersion        *string                     `json:"releaseVersion,omitempty"`
-	Requests              int64                       `json:"requests"`
-	ResourceID            string                      `json:"resourceId"`
-	ResourceState         ResourceState               `json:"resourceState"`
-	ResourceVersion       int64                       `json:"resourceVersion"`
-	Source                AgentInstallationToolSource `json:"source"`
-	TestCall              *GatewayToolTestCall        `json:"testCall,omitempty"`
-	ToolP95MS             *int64                      `json:"toolP95Ms,omitempty"`
+	CanTestCall           bool                  `json:"canTestCall"`
+	CapabilityContractKey *string               `json:"capabilityContractKey,omitempty"`
+	ComponentReleaseID    *string               `json:"componentReleaseId,omitempty"`
+	ComponentTypeKey      *string               `json:"componentTypeKey,omitempty"`
+	ContractPermission    *CapabilityPermission `json:"contractPermission,omitempty"`
+	Denied                int64                 `json:"denied"`
+	Failed                int64                 `json:"failed"`
+	// 仅 USER_REGISTERED_EXTERNAL（DD-149）：所属连接器
+	MCPConnectionID *string `json:"mcpConnectionId,omitempty"`
+	// 仅 USER_REGISTERED_EXTERNAL：连接器显示名
+	MCPConnectionName *string                     `json:"mcpConnectionName,omitempty"`
+	Name              string                      `json:"name"`
+	ReleaseVersion    *string                     `json:"releaseVersion,omitempty"`
+	Requests          int64                       `json:"requests"`
+	ResourceID        string                      `json:"resourceId"`
+	ResourceState     ResourceState               `json:"resourceState"`
+	ResourceVersion   int64                       `json:"resourceVersion"`
+	Source            AgentInstallationToolSource `json:"source"`
+	TestCall          *GatewayToolTestCall        `json:"testCall,omitempty"`
+	ToolP95MS         *int64                      `json:"toolP95Ms,omitempty"`
 }
 
 type GatewayToolTestCall struct {
@@ -7256,6 +7455,153 @@ type LegacySecretRefBinding struct {
 	Kind        LegacySecretRefBindingKind `json:"kind"`
 	PrincipalID string                     `json:"principalId"`
 	Pubkey      string                     `json:"pubkey"`
+}
+
+// DD-149(10)：本人可发现的连接器与登记能力。
+type MCPConnectionPage struct {
+	CanRegisterPersonal     bool                    `json:"canRegisterPersonal"`
+	CanRegisterTenant       bool                    `json:"canRegisterTenant"`
+	Connections             []MCPConnectionView     `json:"connections"`
+	Policy                  MCPConnectionPolicyView `json:"policy"`
+	RegistrableWorkspaceIDS []string                `json:"registrableWorkspaceIds"`
+}
+
+// DD-149(10)：连接器详情；凭据只以 credentialSet 表示，从不回显。
+type MCPConnectionView struct {
+	APIKeyHeader        *string               `json:"apiKeyHeader,omitempty"`
+	AuthMode            MCPConnectionAuthMode `json:"authMode"`
+	CanManage           bool                  `json:"canManage"`
+	CreatedAt           *string               `json:"createdAt,omitempty"`
+	CredentialSet       bool                  `json:"credentialSet"`
+	CredentialUpdatedAt *string               `json:"credentialUpdatedAt,omitempty"`
+	DisplayName         string                `json:"displayName"`
+	// 最近一次探测的清单摘要与已确认的不同
+	Drift               bool                    `json:"drift"`
+	EndpointHost        string                  `json:"endpointHost"`
+	EndpointURL         string                  `json:"endpointUrl"`
+	Generation          int64                   `json:"generation"`
+	Health              MCPConnectionHealth     `json:"health"`
+	HealthCheckedAt     *string                 `json:"healthCheckedAt,omitempty"`
+	ID                  string                  `json:"id"`
+	ObservedToolsDigest *string                 `json:"observedToolsDigest,omitempty"`
+	OwnerDisplayName    *string                 `json:"ownerDisplayName,omitempty"`
+	OwnerPrincipalID    string                  `json:"ownerPrincipalId"`
+	ServerName          *string                 `json:"serverName,omitempty"`
+	ServerVersion       *string                 `json:"serverVersion,omitempty"`
+	Slug                string                  `json:"slug"`
+	State               MCPConnectionState      `json:"state"`
+	Tools               []MCPConnectionToolView `json:"tools"`
+	ToolsDigest         string                  `json:"toolsDigest"`
+	Transport           MCPConnectionTransport  `json:"transport"`
+	Version             int64                   `json:"version"`
+	Visibility          MCPConnectionVisibility `json:"visibility"`
+	WorkspaceID         *string                 `json:"workspaceId,omitempty"`
+}
+
+type MCPConnectionToolView struct {
+	CallPolicy      MCPToolCallPolicy `json:"callPolicy"`
+	Description     *string           `json:"description,omitempty"`
+	DestructiveHint *bool             `json:"destructiveHint,omitempty"`
+	InputSchemaJSON string            `json:"inputSchemaJson"`
+	// Agent 看到的工具名 <slug>__<上游名>
+	Name           string      `json:"name"`
+	ReadOnlyHint   *bool       `json:"readOnlyHint,omitempty"`
+	Risk           MCPToolRisk `json:"risk"`
+	RiskDeclared   bool        `json:"riskDeclared"`
+	Title          *string     `json:"title,omitempty"`
+	ToolResourceID string      `json:"toolResourceId"`
+	UpstreamName   string      `json:"upstreamName"`
+}
+
+// DD-149(4)(5)：Tenant 连接器策略与部署出站上限。
+type MCPConnectionPolicyView struct {
+	CanManage             bool                  `json:"canManage"`
+	EgressHostSuffixes    []string              `json:"egressHostSuffixes"`
+	MemberRegistration    MCPMemberRegistration `json:"memberRegistration"`
+	PlatformAnyPublicHost bool                  `json:"platformAnyPublicHost"`
+	PlatformHostSuffixes  []string              `json:"platformHostSuffixes"`
+	Version               int64                 `json:"version"`
+}
+
+// DD-149(7)：添加连接器前的只读探测。
+type MCPConnectionProbeRequest struct {
+	APIKeyHeader   *string                       `json:"apiKeyHeader,omitempty"`
+	AuthMode       MCPConnectionAuthMode         `json:"authMode"`
+	Credential     *MCPConnectionCredentialInput `json:"credential,omitempty"`
+	EndpointURL    string                        `json:"endpointUrl"`
+	OauthAttemptID *string                       `json:"oauthAttemptId,omitempty"`
+	Transport      MCPConnectionTransport        `json:"transport"`
+}
+
+// DD-149(5)：仅 mcp_connection.create 与 mcp_connection.rotate_credential 的瞬态凭据（API_KEY 或
+// BEARER）；Core 写入该 Tenant 的 OpenBao 后只保存 SecretRef，值不进入
+// parameters、ActionExecution、日志、审计或回应。其他命令禁止携带。
+//
+// DD-149(5)：API Key 或 Bearer 的一次性输入，只随
+// mcp_connection.create、mcp_connection.rotate_credential 与探测请求；Core 写入 OpenBao 后只保存
+// SecretRef，从不回显、记录或进入 parameters。
+type MCPConnectionCredentialInput struct {
+	Value string `json:"value"`
+}
+
+// DD-149(10)：以已保存凭据重新探测；变化需经 mcp_connection.update 重新确认。
+type MCPConnectionRefreshResult struct {
+	AddedTools   []string                  `json:"addedTools"`
+	ChangedTools []string                  `json:"changedTools"`
+	CheckedAt    string                    `json:"checkedAt"`
+	Drift        bool                      `json:"drift"`
+	Health       MCPConnectionHealth       `json:"health"`
+	Probe        *MCPConnectionProbeResult `json:"probe,omitempty"`
+	RemovedTools []string                  `json:"removedTools"`
+}
+
+// DD-149(7)：探测结果。toolsDigest 是规范化清单摘要，登记与更新以它比对 fresh 探测。
+type MCPConnectionProbeResult struct {
+	EndpointHost string `json:"endpointHost"`
+	// 上游 instructions（不可信内容，截断至 2000 字符）
+	Instructions    *string         `json:"instructions,omitempty"`
+	ProtocolVersion string          `json:"protocolVersion"`
+	ServerName      *string         `json:"serverName,omitempty"`
+	ServerVersion   *string         `json:"serverVersion,omitempty"`
+	Tools           []MCPProbedTool `json:"tools"`
+	ToolsDigest     string          `json:"toolsDigest"`
+}
+
+type MCPProbedTool struct {
+	// 上游描述（不可信内容，界面以纯文本显示）
+	Description         *string           `json:"description,omitempty"`
+	DestructiveHint     *bool             `json:"destructiveHint,omitempty"`
+	IdempotentHint      *bool             `json:"idempotentHint,omitempty"`
+	InputSchemaJSON     string            `json:"inputSchemaJson"`
+	OpenWorldHint       *bool             `json:"openWorldHint,omitempty"`
+	OutputSchemaJSON    *string           `json:"outputSchemaJson,omitempty"`
+	ReadOnlyHint        *bool             `json:"readOnlyHint,omitempty"`
+	SuggestedCallPolicy MCPToolCallPolicy `json:"suggestedCallPolicy"`
+	SuggestedRisk       MCPToolRisk       `json:"suggestedRisk"`
+	Title               *string           `json:"title,omitempty"`
+	UpstreamName        string            `json:"upstreamName"`
+}
+
+// DD-149(6)：OAuth 授权尝试的状态；从不包含令牌。
+type MCPOauthAttemptView struct {
+	AttemptID           string  `json:"attemptId"`
+	AuthorizationServer *string `json:"authorizationServer,omitempty"`
+	AuthorizationURL    *string `json:"authorizationUrl,omitempty"`
+	ExpiresAt           string  `json:"expiresAt"`
+	// 固定原因码
+	Failure *string              `json:"failure,omitempty"`
+	State   MCPOauthAttemptState `json:"state"`
+}
+
+// DD-149(6)：发起一次 OAuth 授权尝试。forConnectionId 只用于轮换已存在连接器的授权。
+type MCPOauthStartRequest struct {
+	// 未提供注册端点时的预注册 client ID
+	ClientID *string `json:"clientId,omitempty"`
+	// 可选预注册 client 密钥，一次性输入，写入 OpenBao
+	ClientSecret    *string                `json:"clientSecret,omitempty"`
+	EndpointURL     string                 `json:"endpointUrl"`
+	ForConnectionID *string                `json:"forConnectionId,omitempty"`
+	Transport       MCPConnectionTransport `json:"transport"`
 }
 
 // GET /api/v1/moderation/access（DD-125(2)）：原版只对 Community owner/admin 显示的审核入口在 Kailo 对应
@@ -7440,6 +7786,18 @@ type ActionCommand struct {
 	InvitationID *string `json:"invitationId,omitempty"`
 	// 仅 llm_route.create：确切原生 Provider/Model 与受控 provider SecretRef；不接收 URL 或 key 正文。
 	LlmRouteCreate *LlmRouteCreateInput `json:"llmRouteCreate,omitempty"`
+	// 仅 mcp_connection.create（DD-149、05 §2.15）且必带；其他动作携带即拒绝。
+	MCPConnectionCreate *MCPConnectionCreate `json:"mcpConnectionCreate,omitempty"`
+	// DD-149(5)：仅 mcp_connection.create 与 mcp_connection.rotate_credential 的瞬态凭据（API_KEY 或
+	// BEARER）；Core 写入该 Tenant 的 OpenBao 后只保存 SecretRef，值不进入
+	// parameters、ActionExecution、日志、审计或回应。其他命令禁止携带。
+	MCPConnectionCredential *MCPConnectionCredentialInput `json:"mcpConnectionCredential,omitempty"`
+	// 仅 mcp_connection.policy.update 且必带。
+	MCPConnectionPolicyUpdate *MCPConnectionPolicyUpdate `json:"mcpConnectionPolicyUpdate,omitempty"`
+	// 仅 mcp_connection.update 且必带；目标连接器由 resourceId 与 resourceVersion 给出。
+	MCPConnectionUpdate *MCPConnectionUpdate `json:"mcpConnectionUpdate,omitempty"`
+	// DD-149(6)：仅 OAUTH 连接器的 mcp_connection.rotate_credential：本人本会话已完成且未使用的授权尝试。
+	MCPOauthAttemptID *string `json:"mcpOauthAttemptId,omitempty"`
 	// 仅 HUMAN agent.memory.core.replace / entry.set / entry.patch / entry.remove 的瞬态 native
 	// 输入；其他命令禁止携带。
 	MemoryWrite *AgentMemoryWriteInput `json:"memoryWrite,omitempty"`
@@ -7664,6 +8022,63 @@ type LlmRouteCreateInputProviderSecretRef struct {
 	Audience string `json:"audience"`
 	Locator  string `json:"locator"`
 	Version  int64  `json:"version"`
+}
+
+// 仅 mcp_connection.create（DD-149、05 §2.15）且必带；其他动作携带即拒绝。
+//
+// 仅 mcp_connection.create（DD-149、05 §2.15）：端点、认证方式、可见范围与确认的工具清单。凭据值只经
+// ActionCommand.mcpConnectionCredential 一次性提交；OAuth 只引用本人本会话已完成的授权尝试。
+type MCPConnectionCreate struct {
+	// 仅 API_KEY：小写 header 名
+	APIKeyHeader *string               `json:"apiKeyHeader,omitempty"`
+	AuthMode     MCPConnectionAuthMode `json:"authMode"`
+	// 连接器显示名，1–80 字符
+	DisplayName string `json:"displayName"`
+	// https 端点；不含 userinfo、query 与 fragment
+	EndpointURL string `json:"endpointUrl"`
+	// 仅 OAUTH：本人本会话已完成且未使用的授权尝试
+	OauthAttemptID *string `json:"oauthAttemptId,omitempty"`
+	// OAUTH 且可见范围不是 PERSONAL 时必须为 true：同意其他人的 Agent 以本人授权调用
+	SharedAuthorizationConsent *bool              `json:"sharedAuthorizationConsent,omitempty"`
+	Tools                      []MCPToolSelection `json:"tools"`
+	// 确认时探测结果的清单摘要；提交时 Core 重新探测比对
+	ToolsDigest string                  `json:"toolsDigest"`
+	Transport   MCPConnectionTransport  `json:"transport"`
+	Visibility  MCPConnectionVisibility `json:"visibility"`
+	// 仅 WORKSPACE 可见范围：所属 Workspace
+	WorkspaceID *string `json:"workspaceId,omitempty"`
+}
+
+// DD-149(7)：确认清单中的一个上游工具。未列出的上游工具即不启用。
+type MCPToolSelection struct {
+	CallPolicy MCPToolCallPolicy `json:"callPolicy"`
+	Enabled    bool              `json:"enabled"`
+	Risk       MCPToolRisk       `json:"risk"`
+	// 风险等级低于 annotations 建议时必须为 true，作为管理员声明冻结进审计
+	RiskDeclared *bool `json:"riskDeclared,omitempty"`
+	// 上游 tools/list 中的工具名，原样
+	UpstreamName string `json:"upstreamName"`
+}
+
+// 仅 mcp_connection.policy.update 且必带。
+//
+// 仅 mcp_connection.policy.update：Tenant 连接器策略；白名单条目须落在部署声明的出站上限内。
+type MCPConnectionPolicyUpdate struct {
+	// 小写主机名后缀；空表示只受部署上限约束
+	EgressHostSuffixes []string              `json:"egressHostSuffixes"`
+	MemberRegistration MCPMemberRegistration `json:"memberRegistration"`
+}
+
+// 仅 mcp_connection.update 且必带；目标连接器由 resourceId 与 resourceVersion 给出。
+//
+// 仅 mcp_connection.update：以新探测结果重新确认工具清单、风险、策略与可见范围，形成新 generation。
+type MCPConnectionUpdate struct {
+	SharedAuthorizationConsent *bool                   `json:"sharedAuthorizationConsent,omitempty"`
+	Tools                      []MCPToolSelection      `json:"tools"`
+	ToolsDigest                string                  `json:"toolsDigest"`
+	Visibility                 MCPConnectionVisibility `json:"visibility"`
+	// 仅 WORKSPACE 可见范围
+	WorkspaceID *string `json:"workspaceId,omitempty"`
 }
 
 // 仅 HUMAN agent.memory.core.replace / entry.set / entry.patch / entry.remove 的瞬态 native
@@ -7979,18 +8394,38 @@ type PlatformToolPage struct {
 }
 
 type PlatformToolView struct {
-	// DD-140 (1)：平台原生工具名到动作键的封闭映射；记忆工具即其自身，project_channel_request 为 workspace.create。
-	ActionKey        PlatformToolViewActionKey `json:"actionKey"`
-	CanConsume       bool                      `json:"canConsume"`
-	InputSchemaHash  string                    `json:"inputSchemaHash"`
-	Name             PlatformToolViewName      `json:"name"`
-	OutputSchemaHash string                    `json:"outputSchemaHash"`
-	OwnerPrincipalID string                    `json:"ownerPrincipalId"`
-	ResourceID       string                    `json:"resourceId"`
-	ResourceState    ResourceState             `json:"resourceState"`
-	ResourceVersion  int64                     `json:"resourceVersion"`
-	Source           PlatformToolViewSource    `json:"source"`
-	Status           PlatformToolViewStatus    `json:"status"`
+	// DD-140 (1)：平台原生工具名到动作键的封闭映射；记忆工具即其自身，project_channel_request 为
+	// workspace.create。DD-149：连接器工具为其调用策略对应的子动作键。
+	ActionKey  PlatformToolViewActionKey `json:"actionKey"`
+	CanConsume bool                      `json:"canConsume"`
+	// 仅 USER_REGISTERED_EXTERNAL（DD-149）：所属连接器与冻结的工具元数据。描述是上游提供的不可信文本。
+	Connector       *PlatformToolConnector `json:"connector,omitempty"`
+	InputSchemaHash string                 `json:"inputSchemaHash"`
+	// PLATFORM_NATIVE
+	// 为固定原生工具名（agent.memory.entry.list、agent.memory.entry.read、project_channel_request）；USER_REGISTERED_EXTERNAL
+	// 为 <连接器标识>__<上游工具名>（DD-149(3)）。
+	Name             string                 `json:"name"`
+	OutputSchemaHash string                 `json:"outputSchemaHash"`
+	OwnerPrincipalID string                 `json:"ownerPrincipalId"`
+	ResourceID       string                 `json:"resourceId"`
+	ResourceState    ResourceState          `json:"resourceState"`
+	ResourceVersion  int64                  `json:"resourceVersion"`
+	Source           PlatformToolViewSource `json:"source"`
+	Status           PlatformToolViewStatus `json:"status"`
+}
+
+// 仅 USER_REGISTERED_EXTERNAL（DD-149）：所属连接器与冻结的工具元数据。描述是上游提供的不可信文本。
+type PlatformToolConnector struct {
+	CallPolicy      MCPToolCallPolicy       `json:"callPolicy"`
+	ConnectionID    string                  `json:"connectionId"`
+	ConnectionName  string                  `json:"connectionName"`
+	ConnectionState MCPConnectionState      `json:"connectionState"`
+	Description     *string                 `json:"description,omitempty"`
+	Risk            MCPToolRisk             `json:"risk"`
+	Title           *string                 `json:"title,omitempty"`
+	UpstreamName    string                  `json:"upstreamName"`
+	Visibility      MCPConnectionVisibility `json:"visibility"`
+	WorkspaceID     *string                 `json:"workspaceId,omitempty"`
 }
 
 // DD-40 original Projects Added/remove preference. Native coordinate only, not membership
@@ -9997,9 +10432,9 @@ const (
 	ProtocolSessionPepRequestNativeOperationOBSERVE ProtocolSessionPepRequestNativeOperation = "OBSERVE"
 	ProtocolSessionPepRequestNativeOperationOPEN    ProtocolSessionPepRequestNativeOperation = "OPEN"
 	ProtocolSessionPepRequestNativeOperationREAD    ProtocolSessionPepRequestNativeOperation = "READ"
+	ProtocolSessionPepRequestNativeOperationWRITE   ProtocolSessionPepRequestNativeOperation = "WRITE"
 	TokenObserve                                    ProtocolSessionPepRequestNativeOperation = "TOKEN_OBSERVE"
 	TokenRevoke                                     ProtocolSessionPepRequestNativeOperation = "TOKEN_REVOKE"
-	Write                                           ProtocolSessionPepRequestNativeOperation = "WRITE"
 )
 
 type ProtocolWriteObservationPhase string
@@ -10221,8 +10656,9 @@ const (
 type AgentInstallationToolSource string
 
 const (
-	AgentInstallationToolSourcePLATFORMNATIVE AgentInstallationToolSource = "PLATFORM_NATIVE"
-	Application                               AgentInstallationToolSource = "APPLICATION"
+	AgentInstallationToolSourcePLATFORMNATIVE         AgentInstallationToolSource = "PLATFORM_NATIVE"
+	AgentInstallationToolSourceUSERREGISTEREDEXTERNAL AgentInstallationToolSource = "USER_REGISTERED_EXTERNAL"
+	Application                                       AgentInstallationToolSource = "APPLICATION"
 )
 
 // DD-125(6)：原 respondTo 在本页的映射。至少一名成员 requested=true 即 ALLOWLIST，否则 OWNER_ONLY；切换只经逐成员
@@ -10458,10 +10894,10 @@ type ApprovalStatus string
 const (
 	ApprovalStatusAPPROVED  ApprovalStatus = "APPROVED"
 	ApprovalStatusCANCELLED ApprovalStatus = "CANCELLED"
+	ApprovalStatusCONSUMED  ApprovalStatus = "CONSUMED"
 	ApprovalStatusDENIED    ApprovalStatus = "DENIED"
 	ApprovalStatusEXPIRED   ApprovalStatus = "EXPIRED"
 	ApprovalStatusWAITING   ApprovalStatus = "WAITING"
-	Consumed                ApprovalStatus = "CONSUMED"
 	Invalidated             ApprovalStatus = "INVALIDATED"
 	Requested               ApprovalStatus = "REQUESTED"
 )
@@ -10471,16 +10907,16 @@ const (
 type AuditEventType string
 
 const (
-	Access         AuditEventType = "ACCESS"
-	Approval       AuditEventType = "APPROVAL"
-	Authentication AuditEventType = "AUTHENTICATION"
-	Decision       AuditEventType = "DECISION"
-	Dispatch       AuditEventType = "DISPATCH"
-	Intent         AuditEventType = "INTENT"
-	Outcome        AuditEventType = "OUTCOME"
-	Reconciliation AuditEventType = "RECONCILIATION"
-	Revocation     AuditEventType = "REVOCATION"
-	Session        AuditEventType = "SESSION"
+	Access                 AuditEventType = "ACCESS"
+	AuditEventTypeAPPROVAL AuditEventType = "APPROVAL"
+	Authentication         AuditEventType = "AUTHENTICATION"
+	Decision               AuditEventType = "DECISION"
+	Dispatch               AuditEventType = "DISPATCH"
+	Intent                 AuditEventType = "INTENT"
+	Outcome                AuditEventType = "OUTCOME"
+	Reconciliation         AuditEventType = "RECONCILIATION"
+	Revocation             AuditEventType = "REVOCATION"
+	Session                AuditEventType = "SESSION"
 )
 
 // EvidenceRef 所指证据的源码权威。
@@ -11039,6 +11475,92 @@ const (
 	Human   LegacySecretRefBindingKind = "HUMAN"
 )
 
+// DD-149(5)(6)：连接器认证方式。
+type MCPConnectionAuthMode string
+
+const (
+	APIKey                    MCPConnectionAuthMode = "API_KEY"
+	Bearer                    MCPConnectionAuthMode = "BEARER"
+	MCPConnectionAuthModeNONE MCPConnectionAuthMode = "NONE"
+	Oauth                     MCPConnectionAuthMode = "OAUTH"
+)
+
+// DD-149(10)：最近一次探测观测；不是授权或状态权威。
+type MCPConnectionHealth string
+
+const (
+	AuthFailed              MCPConnectionHealth = "AUTH_FAILED"
+	EgressDenied            MCPConnectionHealth = "EGRESS_DENIED"
+	Ok                      MCPConnectionHealth = "OK"
+	ProtocolError           MCPConnectionHealth = "PROTOCOL_ERROR"
+	ReauthorizationRequired MCPConnectionHealth = "REAUTHORIZATION_REQUIRED"
+	Unchecked               MCPConnectionHealth = "UNCHECKED"
+	Unreachable             MCPConnectionHealth = "UNREACHABLE"
+)
+
+// DD-149(3)：连接器状态；DELETED 是墓碑。
+type MCPConnectionState string
+
+const (
+	MCPConnectionStateACTIVE   MCPConnectionState = "ACTIVE"
+	MCPConnectionStateDELETED  MCPConnectionState = "DELETED"
+	MCPConnectionStateDISABLED MCPConnectionState = "DISABLED"
+)
+
+// DD-149(7)：工具调用策略。AUTO 只允许 READ_ONLY；CONFIRM 由 Agent 负责人逐次确认；APPROVAL 由 Tenant 管理员逐次批准。
+type MCPToolCallPolicy string
+
+const (
+	Auto                      MCPToolCallPolicy = "AUTO"
+	Confirm                   MCPToolCallPolicy = "CONFIRM"
+	MCPToolCallPolicyAPPROVAL MCPToolCallPolicy = "APPROVAL"
+)
+
+// DD-149(7)：工具风险等级（annotations 只是提示，最终为管理员确认值）。
+type MCPToolRisk string
+
+const (
+	Destructive         MCPToolRisk = "DESTRUCTIVE"
+	MCPToolRiskREADONLY MCPToolRisk = "READ_ONLY"
+	MCPToolRiskWRITE    MCPToolRisk = "WRITE"
+)
+
+// DD-149(7)：连接器端点的 MCP 传输。STREAMABLE_HTTP 为现行 Streamable HTTP；SSE 为旧版 HTTP+SSE。
+type MCPConnectionTransport string
+
+const (
+	SSE            MCPConnectionTransport = "SSE"
+	StreamableHTTP MCPConnectionTransport = "STREAMABLE_HTTP"
+)
+
+// DD-149(4)：连接器与其工具的可见范围。
+type MCPConnectionVisibility string
+
+const (
+	MCPConnectionVisibilityTENANT MCPConnectionVisibility = "TENANT"
+	Personal                      MCPConnectionVisibility = "PERSONAL"
+	Workspace                     MCPConnectionVisibility = "WORKSPACE"
+)
+
+// DD-149(4)：Tenant 连接器策略中普通成员的登记权限。
+type MCPMemberRegistration string
+
+const (
+	MCPMemberRegistrationDISABLED MCPMemberRegistration = "DISABLED"
+	PersonalOnly                  MCPMemberRegistration = "PERSONAL_ONLY"
+)
+
+// DD-149(6)：一次 OAuth 授权尝试的状态。
+type MCPOauthAttemptState string
+
+const (
+	MCPOauthAttemptStateCOMPLETED MCPOauthAttemptState = "COMPLETED"
+	MCPOauthAttemptStateCONSUMED  MCPOauthAttemptState = "CONSUMED"
+	MCPOauthAttemptStateEXPIRED   MCPOauthAttemptState = "EXPIRED"
+	MCPOauthAttemptStateFAILED    MCPOauthAttemptState = "FAILED"
+	MCPOauthAttemptStatePENDING   MCPOauthAttemptState = "PENDING"
+)
+
 // 原 Buzz NIP-56 举报类型（buzz-relay handlers/report.rs::REPORT_TYPES，SF-BUZ-52）。线格式即 kind 1984
 // 目标标签第三元素，Relay 只接受这七个值（DD-125(2)）。
 type ModerationReportType string
@@ -11201,27 +11723,24 @@ const (
 	TenantStateSUSPENDING   TenantState = "SUSPENDING"
 )
 
-// DD-140 (1)：平台原生工具名到动作键的封闭映射；记忆工具即其自身，project_channel_request 为 workspace.create。
+// DD-140 (1)：平台原生工具名到动作键的封闭映射；记忆工具即其自身，project_channel_request 为
+// workspace.create。DD-149：连接器工具为其调用策略对应的子动作键。
 type PlatformToolViewActionKey string
 
 const (
-	PlatformToolViewActionKeyAgentMemoryEntryList PlatformToolViewActionKey = "agent.memory.entry.list"
-	PlatformToolViewActionKeyAgentMemoryEntryRead PlatformToolViewActionKey = "agent.memory.entry.read"
-	PlatformToolViewActionKeyWorkspaceCreate      PlatformToolViewActionKey = "workspace.create"
-)
-
-type PlatformToolViewName string
-
-const (
-	PlatformToolViewNameAgentMemoryEntryList  PlatformToolViewName = "agent.memory.entry.list"
-	PlatformToolViewNameAgentMemoryEntryRead  PlatformToolViewName = "agent.memory.entry.read"
-	PlatformToolViewNameProjectChannelRequest PlatformToolViewName = "project_channel_request"
+	AgentMemoryEntryList                     PlatformToolViewActionKey = "agent.memory.entry.list"
+	AgentMemoryEntryRead                     PlatformToolViewActionKey = "agent.memory.entry.read"
+	MCPConnectionToolInvoke                  PlatformToolViewActionKey = "mcp_connection.tool.invoke"
+	MCPConnectionToolInvokeApproved          PlatformToolViewActionKey = "mcp_connection.tool.invoke_approved"
+	MCPConnectionToolInvokeConfirmed         PlatformToolViewActionKey = "mcp_connection.tool.invoke_confirmed"
+	PlatformToolViewActionKeyWorkspaceCreate PlatformToolViewActionKey = "workspace.create"
 )
 
 type PlatformToolViewSource string
 
 const (
-	PlatformToolViewSourcePLATFORMNATIVE PlatformToolViewSource = "PLATFORM_NATIVE"
+	PlatformToolViewSourcePLATFORMNATIVE         PlatformToolViewSource = "PLATFORM_NATIVE"
+	PlatformToolViewSourceUSERREGISTEREDEXTERNAL PlatformToolViewSource = "USER_REGISTERED_EXTERNAL"
 )
 
 type PlatformToolViewStatus string
@@ -11333,10 +11852,10 @@ const (
 	ProtocolSessionReconcileRoundStateEXPIRED  ProtocolSessionReconcileRoundState = "EXPIRED"
 	ProtocolSessionReconcileRoundStateFAILED   ProtocolSessionReconcileRoundState = "FAILED"
 	ProtocolSessionReconcileRoundStateOPEN     ProtocolSessionReconcileRoundState = "OPEN"
+	ProtocolSessionReconcileRoundStateREADONLY ProtocolSessionReconcileRoundState = "READ_ONLY"
 	ProtocolSessionReconcileRoundStateREVOKED  ProtocolSessionReconcileRoundState = "REVOKED"
 	ProtocolSessionReconcileRoundStateSAVED    ProtocolSessionReconcileRoundState = "SAVED"
 	ProtocolSessionReconcileRoundStateUNKNOWN  ProtocolSessionReconcileRoundState = "UNKNOWN"
-	ReadOnly                                   ProtocolSessionReconcileRoundState = "READ_ONLY"
 )
 
 type PulsePublishRequestOperation string

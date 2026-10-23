@@ -152,6 +152,16 @@
 //     final invitationRedemptionRequest = invitationRedemptionRequestFromJson(jsonString);
 //     final issuedInvitation = issuedInvitationFromJson(jsonString);
 //     final legacySecretRefPage = legacySecretRefPageFromJson(jsonString);
+//     final mcpConnectionPage = mcpConnectionPageFromJson(jsonString);
+//     final mcpConnectionPolicyView = mcpConnectionPolicyViewFromJson(jsonString);
+//     final mcpConnectionProbeRequest = mcpConnectionProbeRequestFromJson(jsonString);
+//     final mcpConnectionProbeResult = mcpConnectionProbeResultFromJson(jsonString);
+//     final mcpConnectionRefreshResult = mcpConnectionRefreshResultFromJson(jsonString);
+//     final mcpConnectionToolView = mcpConnectionToolViewFromJson(jsonString);
+//     final mcpConnectionView = mcpConnectionViewFromJson(jsonString);
+//     final mcpOauthAttemptView = mcpOauthAttemptViewFromJson(jsonString);
+//     final mcpOauthStartRequest = mcpOauthStartRequestFromJson(jsonString);
+//     final mcpProbedTool = mcpProbedToolFromJson(jsonString);
 //     final moderationAccessView = moderationAccessViewFromJson(jsonString);
 //     final moderationAuditPage = moderationAuditPageFromJson(jsonString);
 //     final moderationReportPage = moderationReportPageFromJson(jsonString);
@@ -285,6 +295,11 @@
 //     final huddleStartInput = huddleStartInputFromJson(jsonString);
 //     final resolvedIdentity = resolvedIdentityFromJson(jsonString);
 //     final llmRouteCreateInput = llmRouteCreateInputFromJson(jsonString);
+//     final mcpConnectionCreate = mcpConnectionCreateFromJson(jsonString);
+//     final mcpConnectionCredentialInput = mcpConnectionCredentialInputFromJson(jsonString);
+//     final mcpConnectionPolicyUpdate = mcpConnectionPolicyUpdateFromJson(jsonString);
+//     final mcpConnectionUpdate = mcpConnectionUpdateFromJson(jsonString);
+//     final mcpToolSelection = mcpToolSelectionFromJson(jsonString);
 //     final nativeDocumentSelection = nativeDocumentSelectionFromJson(jsonString);
 //     final platformBuildInfo = platformBuildInfoFromJson(jsonString);
 //     final protocolSessionOpenInput = protocolSessionOpenInputFromJson(jsonString);
@@ -1286,6 +1301,65 @@ LegacySecretRefPage legacySecretRefPageFromJson(String str) =>
 String legacySecretRefPageToJson(LegacySecretRefPage data) =>
     json.encode(data.toJson());
 
+McpConnectionPage mcpConnectionPageFromJson(String str) =>
+    McpConnectionPage.fromJson(json.decode(str));
+
+String mcpConnectionPageToJson(McpConnectionPage data) =>
+    json.encode(data.toJson());
+
+McpConnectionPolicyView mcpConnectionPolicyViewFromJson(String str) =>
+    McpConnectionPolicyView.fromJson(json.decode(str));
+
+String mcpConnectionPolicyViewToJson(McpConnectionPolicyView data) =>
+    json.encode(data.toJson());
+
+McpConnectionProbeRequest mcpConnectionProbeRequestFromJson(String str) =>
+    McpConnectionProbeRequest.fromJson(json.decode(str));
+
+String mcpConnectionProbeRequestToJson(McpConnectionProbeRequest data) =>
+    json.encode(data.toJson());
+
+McpConnectionProbeResult mcpConnectionProbeResultFromJson(String str) =>
+    McpConnectionProbeResult.fromJson(json.decode(str));
+
+String mcpConnectionProbeResultToJson(McpConnectionProbeResult data) =>
+    json.encode(data.toJson());
+
+McpConnectionRefreshResult mcpConnectionRefreshResultFromJson(String str) =>
+    McpConnectionRefreshResult.fromJson(json.decode(str));
+
+String mcpConnectionRefreshResultToJson(McpConnectionRefreshResult data) =>
+    json.encode(data.toJson());
+
+McpConnectionToolView mcpConnectionToolViewFromJson(String str) =>
+    McpConnectionToolView.fromJson(json.decode(str));
+
+String mcpConnectionToolViewToJson(McpConnectionToolView data) =>
+    json.encode(data.toJson());
+
+McpConnectionView mcpConnectionViewFromJson(String str) =>
+    McpConnectionView.fromJson(json.decode(str));
+
+String mcpConnectionViewToJson(McpConnectionView data) =>
+    json.encode(data.toJson());
+
+McpOauthAttemptView mcpOauthAttemptViewFromJson(String str) =>
+    McpOauthAttemptView.fromJson(json.decode(str));
+
+String mcpOauthAttemptViewToJson(McpOauthAttemptView data) =>
+    json.encode(data.toJson());
+
+McpOauthStartRequest mcpOauthStartRequestFromJson(String str) =>
+    McpOauthStartRequest.fromJson(json.decode(str));
+
+String mcpOauthStartRequestToJson(McpOauthStartRequest data) =>
+    json.encode(data.toJson());
+
+McpProbedTool mcpProbedToolFromJson(String str) =>
+    McpProbedTool.fromJson(json.decode(str));
+
+String mcpProbedToolToJson(McpProbedTool data) => json.encode(data.toJson());
+
 ModerationAccessView moderationAccessViewFromJson(String str) =>
     ModerationAccessView.fromJson(json.decode(str));
 
@@ -2089,6 +2163,36 @@ LlmRouteCreateInput llmRouteCreateInputFromJson(String str) =>
     LlmRouteCreateInput.fromJson(json.decode(str));
 
 String llmRouteCreateInputToJson(LlmRouteCreateInput data) =>
+    json.encode(data.toJson());
+
+McpConnectionCreate mcpConnectionCreateFromJson(String str) =>
+    McpConnectionCreate.fromJson(json.decode(str));
+
+String mcpConnectionCreateToJson(McpConnectionCreate data) =>
+    json.encode(data.toJson());
+
+McpConnectionCredentialInput mcpConnectionCredentialInputFromJson(String str) =>
+    McpConnectionCredentialInput.fromJson(json.decode(str));
+
+String mcpConnectionCredentialInputToJson(McpConnectionCredentialInput data) =>
+    json.encode(data.toJson());
+
+McpConnectionPolicyUpdate mcpConnectionPolicyUpdateFromJson(String str) =>
+    McpConnectionPolicyUpdate.fromJson(json.decode(str));
+
+String mcpConnectionPolicyUpdateToJson(McpConnectionPolicyUpdate data) =>
+    json.encode(data.toJson());
+
+McpConnectionUpdate mcpConnectionUpdateFromJson(String str) =>
+    McpConnectionUpdate.fromJson(json.decode(str));
+
+String mcpConnectionUpdateToJson(McpConnectionUpdate data) =>
+    json.encode(data.toJson());
+
+McpToolSelection mcpToolSelectionFromJson(String str) =>
+    McpToolSelection.fromJson(json.decode(str));
+
+String mcpToolSelectionToJson(McpToolSelection data) =>
     json.encode(data.toJson());
 
 NativeDocumentSelection nativeDocumentSelectionFromJson(String str) =>
@@ -5767,11 +5871,17 @@ final reasonCodeValues = EnumValues({
   "WAITING_APPROVAL": ReasonCode.WAITING_APPROVAL,
 });
 
-enum AgentInstallationToolSource { APPLICATION, PLATFORM_NATIVE }
+enum AgentInstallationToolSource {
+  APPLICATION,
+  PLATFORM_NATIVE,
+  USER_REGISTERED_EXTERNAL,
+}
 
 final agentInstallationToolSourceValues = EnumValues({
   "APPLICATION": AgentInstallationToolSource.APPLICATION,
   "PLATFORM_NATIVE": AgentInstallationToolSource.PLATFORM_NATIVE,
+  "USER_REGISTERED_EXTERNAL":
+      AgentInstallationToolSource.USER_REGISTERED_EXTERNAL,
 });
 
 ///05 §2.10、17 §8：一个 Agent Installation 在其 Workspace 的成员使用权目录。requested 是该成员显式持有
@@ -13336,6 +13446,12 @@ class GatewayToolView {
   final CapabilityPermission? contractPermission;
   final int denied;
   final int failed;
+
+  ///仅 USER_REGISTERED_EXTERNAL（DD-149）：所属连接器
+  final String? mcpConnectionId;
+
+  ///仅 USER_REGISTERED_EXTERNAL：连接器显示名
+  final String? mcpConnectionName;
   final String name;
   final String? releaseVersion;
   final int requests;
@@ -13360,6 +13476,8 @@ class GatewayToolView {
     this.contractPermission,
     required this.denied,
     required this.failed,
+    this.mcpConnectionId,
+    this.mcpConnectionName,
     required this.name,
     this.releaseVersion,
     required this.requests,
@@ -13390,6 +13508,8 @@ class GatewayToolView {
             : capabilityPermissionValues.map[json["contractPermission"]]!,
         denied: json["denied"],
         failed: json["failed"],
+        mcpConnectionId: json["mcpConnectionId"],
+        mcpConnectionName: json["mcpConnectionName"],
         name: json["name"],
         releaseVersion: json["releaseVersion"],
         requests: json["requests"],
@@ -13418,6 +13538,8 @@ class GatewayToolView {
         capabilityPermissionValues.reverse[contractPermission],
     "denied": denied,
     "failed": failed,
+    "mcpConnectionId": mcpConnectionId,
+    "mcpConnectionName": mcpConnectionName,
     "name": name,
     "releaseVersion": releaseVersion,
     "requests": requests,
@@ -14072,6 +14194,654 @@ final legacySecretRefBindingKindValues = EnumValues({
   "HUMAN": LegacySecretRefBindingKind.HUMAN,
 });
 
+///DD-149(10)：本人可发现的连接器与登记能力。
+class McpConnectionPage {
+  final bool canRegisterPersonal;
+  final bool canRegisterTenant;
+  final List<McpConnectionView> connections;
+  final McpConnectionPolicyView policy;
+  final List<String> registrableWorkspaceIds;
+
+  McpConnectionPage({
+    required this.canRegisterPersonal,
+    required this.canRegisterTenant,
+    required this.connections,
+    required this.policy,
+    required this.registrableWorkspaceIds,
+  });
+
+  factory McpConnectionPage.fromJson(Map<String, dynamic> json) =>
+      McpConnectionPage(
+        canRegisterPersonal: json["canRegisterPersonal"],
+        canRegisterTenant: json["canRegisterTenant"],
+        connections: List<McpConnectionView>.from(
+          json["connections"].map((x) => McpConnectionView.fromJson(x)),
+        ),
+        policy: McpConnectionPolicyView.fromJson(json["policy"]),
+        registrableWorkspaceIds: List<String>.from(
+          json["registrableWorkspaceIds"].map((x) => x),
+        ),
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "canRegisterPersonal": canRegisterPersonal,
+    "canRegisterTenant": canRegisterTenant,
+    "connections": List<dynamic>.from(connections.map((x) => x.toJson())),
+    "policy": policy.toJson(),
+    "registrableWorkspaceIds": List<dynamic>.from(
+      registrableWorkspaceIds.map((x) => x),
+    ),
+  });
+}
+
+///DD-149(10)：连接器详情；凭据只以 credentialSet 表示，从不回显。
+class McpConnectionView {
+  final String? apiKeyHeader;
+  final McpConnectionAuthMode authMode;
+  final bool canManage;
+  final String? createdAt;
+  final bool credentialSet;
+  final String? credentialUpdatedAt;
+  final String displayName;
+
+  ///最近一次探测的清单摘要与已确认的不同
+  final bool drift;
+  final String endpointHost;
+  final String endpointUrl;
+  final int generation;
+  final McpConnectionHealth health;
+  final String? healthCheckedAt;
+  final String id;
+  final String? observedToolsDigest;
+  final String? ownerDisplayName;
+  final String ownerPrincipalId;
+  final String? serverName;
+  final String? serverVersion;
+  final String slug;
+  final McpConnectionState state;
+  final List<McpConnectionToolView> tools;
+  final String toolsDigest;
+  final McpConnectionTransport transport;
+  final int version;
+  final McpConnectionVisibility visibility;
+  final String? workspaceId;
+
+  McpConnectionView({
+    this.apiKeyHeader,
+    required this.authMode,
+    required this.canManage,
+    this.createdAt,
+    required this.credentialSet,
+    this.credentialUpdatedAt,
+    required this.displayName,
+    required this.drift,
+    required this.endpointHost,
+    required this.endpointUrl,
+    required this.generation,
+    required this.health,
+    this.healthCheckedAt,
+    required this.id,
+    this.observedToolsDigest,
+    this.ownerDisplayName,
+    required this.ownerPrincipalId,
+    this.serverName,
+    this.serverVersion,
+    required this.slug,
+    required this.state,
+    required this.tools,
+    required this.toolsDigest,
+    required this.transport,
+    required this.version,
+    required this.visibility,
+    this.workspaceId,
+  });
+
+  factory McpConnectionView.fromJson(Map<String, dynamic> json) =>
+      McpConnectionView(
+        apiKeyHeader: json["apiKeyHeader"],
+        authMode: mcpConnectionAuthModeValues.map[json["authMode"]]!,
+        canManage: json["canManage"],
+        createdAt: json["createdAt"],
+        credentialSet: json["credentialSet"],
+        credentialUpdatedAt: json["credentialUpdatedAt"],
+        displayName: json["displayName"],
+        drift: json["drift"],
+        endpointHost: json["endpointHost"],
+        endpointUrl: json["endpointUrl"],
+        generation: json["generation"],
+        health: mcpConnectionHealthValues.map[json["health"]]!,
+        healthCheckedAt: json["healthCheckedAt"],
+        id: json["id"],
+        observedToolsDigest: json["observedToolsDigest"],
+        ownerDisplayName: json["ownerDisplayName"],
+        ownerPrincipalId: json["ownerPrincipalId"],
+        serverName: json["serverName"],
+        serverVersion: json["serverVersion"],
+        slug: json["slug"],
+        state: mcpConnectionStateValues.map[json["state"]]!,
+        tools: List<McpConnectionToolView>.from(
+          json["tools"].map((x) => McpConnectionToolView.fromJson(x)),
+        ),
+        toolsDigest: json["toolsDigest"],
+        transport: mcpConnectionTransportValues.map[json["transport"]]!,
+        version: json["version"],
+        visibility: mcpConnectionVisibilityValues.map[json["visibility"]]!,
+        workspaceId: json["workspaceId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "apiKeyHeader": apiKeyHeader,
+    "authMode": mcpConnectionAuthModeValues.reverse[authMode],
+    "canManage": canManage,
+    "createdAt": createdAt,
+    "credentialSet": credentialSet,
+    "credentialUpdatedAt": credentialUpdatedAt,
+    "displayName": displayName,
+    "drift": drift,
+    "endpointHost": endpointHost,
+    "endpointUrl": endpointUrl,
+    "generation": generation,
+    "health": mcpConnectionHealthValues.reverse[health],
+    "healthCheckedAt": healthCheckedAt,
+    "id": id,
+    "observedToolsDigest": observedToolsDigest,
+    "ownerDisplayName": ownerDisplayName,
+    "ownerPrincipalId": ownerPrincipalId,
+    "serverName": serverName,
+    "serverVersion": serverVersion,
+    "slug": slug,
+    "state": mcpConnectionStateValues.reverse[state],
+    "tools": List<dynamic>.from(tools.map((x) => x.toJson())),
+    "toolsDigest": toolsDigest,
+    "transport": mcpConnectionTransportValues.reverse[transport],
+    "version": version,
+    "visibility": mcpConnectionVisibilityValues.reverse[visibility],
+    "workspaceId": workspaceId,
+  });
+}
+
+///DD-149(5)(6)：连接器认证方式。
+enum McpConnectionAuthMode { API_KEY, BEARER, NONE, OAUTH }
+
+final mcpConnectionAuthModeValues = EnumValues({
+  "API_KEY": McpConnectionAuthMode.API_KEY,
+  "BEARER": McpConnectionAuthMode.BEARER,
+  "NONE": McpConnectionAuthMode.NONE,
+  "OAUTH": McpConnectionAuthMode.OAUTH,
+});
+
+///DD-149(10)：最近一次探测观测；不是授权或状态权威。
+enum McpConnectionHealth {
+  AUTH_FAILED,
+  EGRESS_DENIED,
+  OK,
+  PROTOCOL_ERROR,
+  REAUTHORIZATION_REQUIRED,
+  UNCHECKED,
+  UNREACHABLE,
+}
+
+final mcpConnectionHealthValues = EnumValues({
+  "AUTH_FAILED": McpConnectionHealth.AUTH_FAILED,
+  "EGRESS_DENIED": McpConnectionHealth.EGRESS_DENIED,
+  "OK": McpConnectionHealth.OK,
+  "PROTOCOL_ERROR": McpConnectionHealth.PROTOCOL_ERROR,
+  "REAUTHORIZATION_REQUIRED": McpConnectionHealth.REAUTHORIZATION_REQUIRED,
+  "UNCHECKED": McpConnectionHealth.UNCHECKED,
+  "UNREACHABLE": McpConnectionHealth.UNREACHABLE,
+});
+
+///DD-149(3)：连接器状态；DELETED 是墓碑。
+enum McpConnectionState { ACTIVE, DELETED, DISABLED }
+
+final mcpConnectionStateValues = EnumValues({
+  "ACTIVE": McpConnectionState.ACTIVE,
+  "DELETED": McpConnectionState.DELETED,
+  "DISABLED": McpConnectionState.DISABLED,
+});
+
+class McpConnectionToolView {
+  final McpToolCallPolicy callPolicy;
+  final String? description;
+  final bool? destructiveHint;
+  final String inputSchemaJson;
+
+  ///Agent 看到的工具名 <slug>__<上游名>
+  final String name;
+  final bool? readOnlyHint;
+  final McpToolRisk risk;
+  final bool riskDeclared;
+  final String? title;
+  final String toolResourceId;
+  final String upstreamName;
+
+  McpConnectionToolView({
+    required this.callPolicy,
+    this.description,
+    this.destructiveHint,
+    required this.inputSchemaJson,
+    required this.name,
+    this.readOnlyHint,
+    required this.risk,
+    required this.riskDeclared,
+    this.title,
+    required this.toolResourceId,
+    required this.upstreamName,
+  });
+
+  factory McpConnectionToolView.fromJson(Map<String, dynamic> json) =>
+      McpConnectionToolView(
+        callPolicy: mcpToolCallPolicyValues.map[json["callPolicy"]]!,
+        description: json["description"],
+        destructiveHint: json["destructiveHint"],
+        inputSchemaJson: json["inputSchemaJson"],
+        name: json["name"],
+        readOnlyHint: json["readOnlyHint"],
+        risk: mcpToolRiskValues.map[json["risk"]]!,
+        riskDeclared: json["riskDeclared"],
+        title: json["title"],
+        toolResourceId: json["toolResourceId"],
+        upstreamName: json["upstreamName"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "callPolicy": mcpToolCallPolicyValues.reverse[callPolicy],
+    "description": description,
+    "destructiveHint": destructiveHint,
+    "inputSchemaJson": inputSchemaJson,
+    "name": name,
+    "readOnlyHint": readOnlyHint,
+    "risk": mcpToolRiskValues.reverse[risk],
+    "riskDeclared": riskDeclared,
+    "title": title,
+    "toolResourceId": toolResourceId,
+    "upstreamName": upstreamName,
+  });
+}
+
+///DD-149(7)：工具调用策略。AUTO 只允许 READ_ONLY；CONFIRM 由 Agent 负责人逐次确认；APPROVAL 由 Tenant 管理员逐次批准。
+enum McpToolCallPolicy { APPROVAL, AUTO, CONFIRM }
+
+final mcpToolCallPolicyValues = EnumValues({
+  "APPROVAL": McpToolCallPolicy.APPROVAL,
+  "AUTO": McpToolCallPolicy.AUTO,
+  "CONFIRM": McpToolCallPolicy.CONFIRM,
+});
+
+///DD-149(7)：工具风险等级（annotations 只是提示，最终为管理员确认值）。
+enum McpToolRisk { DESTRUCTIVE, READ_ONLY, WRITE }
+
+final mcpToolRiskValues = EnumValues({
+  "DESTRUCTIVE": McpToolRisk.DESTRUCTIVE,
+  "READ_ONLY": McpToolRisk.READ_ONLY,
+  "WRITE": McpToolRisk.WRITE,
+});
+
+///DD-149(7)：连接器端点的 MCP 传输。STREAMABLE_HTTP 为现行 Streamable HTTP；SSE 为旧版 HTTP+SSE。
+enum McpConnectionTransport { SSE, STREAMABLE_HTTP }
+
+final mcpConnectionTransportValues = EnumValues({
+  "SSE": McpConnectionTransport.SSE,
+  "STREAMABLE_HTTP": McpConnectionTransport.STREAMABLE_HTTP,
+});
+
+///DD-149(4)：连接器与其工具的可见范围。
+enum McpConnectionVisibility { PERSONAL, TENANT, WORKSPACE }
+
+final mcpConnectionVisibilityValues = EnumValues({
+  "PERSONAL": McpConnectionVisibility.PERSONAL,
+  "TENANT": McpConnectionVisibility.TENANT,
+  "WORKSPACE": McpConnectionVisibility.WORKSPACE,
+});
+
+///DD-149(4)(5)：Tenant 连接器策略与部署出站上限。
+class McpConnectionPolicyView {
+  final bool canManage;
+  final List<String> egressHostSuffixes;
+  final McpMemberRegistration memberRegistration;
+  final bool platformAnyPublicHost;
+  final List<String> platformHostSuffixes;
+  final int version;
+
+  McpConnectionPolicyView({
+    required this.canManage,
+    required this.egressHostSuffixes,
+    required this.memberRegistration,
+    required this.platformAnyPublicHost,
+    required this.platformHostSuffixes,
+    required this.version,
+  });
+
+  factory McpConnectionPolicyView.fromJson(Map<String, dynamic> json) =>
+      McpConnectionPolicyView(
+        canManage: json["canManage"],
+        egressHostSuffixes: List<String>.from(
+          json["egressHostSuffixes"].map((x) => x),
+        ),
+        memberRegistration:
+            mcpMemberRegistrationValues.map[json["memberRegistration"]]!,
+        platformAnyPublicHost: json["platformAnyPublicHost"],
+        platformHostSuffixes: List<String>.from(
+          json["platformHostSuffixes"].map((x) => x),
+        ),
+        version: json["version"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "canManage": canManage,
+    "egressHostSuffixes": List<dynamic>.from(egressHostSuffixes.map((x) => x)),
+    "memberRegistration":
+        mcpMemberRegistrationValues.reverse[memberRegistration],
+    "platformAnyPublicHost": platformAnyPublicHost,
+    "platformHostSuffixes": List<dynamic>.from(
+      platformHostSuffixes.map((x) => x),
+    ),
+    "version": version,
+  });
+}
+
+///DD-149(4)：Tenant 连接器策略中普通成员的登记权限。
+enum McpMemberRegistration { DISABLED, PERSONAL_ONLY }
+
+final mcpMemberRegistrationValues = EnumValues({
+  "DISABLED": McpMemberRegistration.DISABLED,
+  "PERSONAL_ONLY": McpMemberRegistration.PERSONAL_ONLY,
+});
+
+///DD-149(7)：添加连接器前的只读探测。
+class McpConnectionProbeRequest {
+  final String? apiKeyHeader;
+  final McpConnectionAuthMode authMode;
+  final McpConnectionCredentialInput? credential;
+  final String endpointUrl;
+  final String? oauthAttemptId;
+  final McpConnectionTransport transport;
+
+  McpConnectionProbeRequest({
+    this.apiKeyHeader,
+    required this.authMode,
+    this.credential,
+    required this.endpointUrl,
+    this.oauthAttemptId,
+    required this.transport,
+  });
+
+  factory McpConnectionProbeRequest.fromJson(Map<String, dynamic> json) =>
+      McpConnectionProbeRequest(
+        apiKeyHeader: json["apiKeyHeader"],
+        authMode: mcpConnectionAuthModeValues.map[json["authMode"]]!,
+        credential: json["credential"] == null
+            ? null
+            : McpConnectionCredentialInput.fromJson(json["credential"]),
+        endpointUrl: json["endpointUrl"],
+        oauthAttemptId: json["oauthAttemptId"],
+        transport: mcpConnectionTransportValues.map[json["transport"]]!,
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "apiKeyHeader": apiKeyHeader,
+    "authMode": mcpConnectionAuthModeValues.reverse[authMode],
+    "credential": credential?.toJson(),
+    "endpointUrl": endpointUrl,
+    "oauthAttemptId": oauthAttemptId,
+    "transport": mcpConnectionTransportValues.reverse[transport],
+  });
+}
+
+///DD-149(5)：仅 mcp_connection.create 与 mcp_connection.rotate_credential 的瞬态凭据（API_KEY 或
+///BEARER）；Core 写入该 Tenant 的 OpenBao 后只保存 SecretRef，值不进入
+///parameters、ActionExecution、日志、审计或回应。其他命令禁止携带。
+///
+///DD-149(5)：API Key 或 Bearer 的一次性输入，只随
+///mcp_connection.create、mcp_connection.rotate_credential 与探测请求；Core 写入 OpenBao 后只保存
+///SecretRef，从不回显、记录或进入 parameters。
+class McpConnectionCredentialInput {
+  final String value;
+
+  McpConnectionCredentialInput({required this.value});
+
+  factory McpConnectionCredentialInput.fromJson(Map<String, dynamic> json) =>
+      McpConnectionCredentialInput(value: json["value"]);
+
+  Map<String, dynamic> toJson() => _stripNulls({"value": value});
+}
+
+///DD-149(10)：以已保存凭据重新探测；变化需经 mcp_connection.update 重新确认。
+class McpConnectionRefreshResult {
+  final List<String> addedTools;
+  final List<String> changedTools;
+  final String checkedAt;
+  final bool drift;
+  final McpConnectionHealth health;
+  final McpConnectionProbeResult? probe;
+  final List<String> removedTools;
+
+  McpConnectionRefreshResult({
+    required this.addedTools,
+    required this.changedTools,
+    required this.checkedAt,
+    required this.drift,
+    required this.health,
+    this.probe,
+    required this.removedTools,
+  });
+
+  factory McpConnectionRefreshResult.fromJson(Map<String, dynamic> json) =>
+      McpConnectionRefreshResult(
+        addedTools: List<String>.from(json["addedTools"].map((x) => x)),
+        changedTools: List<String>.from(json["changedTools"].map((x) => x)),
+        checkedAt: json["checkedAt"],
+        drift: json["drift"],
+        health: mcpConnectionHealthValues.map[json["health"]]!,
+        probe: json["probe"] == null
+            ? null
+            : McpConnectionProbeResult.fromJson(json["probe"]),
+        removedTools: List<String>.from(json["removedTools"].map((x) => x)),
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "addedTools": List<dynamic>.from(addedTools.map((x) => x)),
+    "changedTools": List<dynamic>.from(changedTools.map((x) => x)),
+    "checkedAt": checkedAt,
+    "drift": drift,
+    "health": mcpConnectionHealthValues.reverse[health],
+    "probe": probe?.toJson(),
+    "removedTools": List<dynamic>.from(removedTools.map((x) => x)),
+  });
+}
+
+///DD-149(7)：探测结果。toolsDigest 是规范化清单摘要，登记与更新以它比对 fresh 探测。
+class McpConnectionProbeResult {
+  final String endpointHost;
+
+  ///上游 instructions（不可信内容，截断至 2000 字符）
+  final String? instructions;
+  final String protocolVersion;
+  final String? serverName;
+  final String? serverVersion;
+  final List<McpProbedTool> tools;
+  final String toolsDigest;
+
+  McpConnectionProbeResult({
+    required this.endpointHost,
+    this.instructions,
+    required this.protocolVersion,
+    this.serverName,
+    this.serverVersion,
+    required this.tools,
+    required this.toolsDigest,
+  });
+
+  factory McpConnectionProbeResult.fromJson(Map<String, dynamic> json) =>
+      McpConnectionProbeResult(
+        endpointHost: json["endpointHost"],
+        instructions: json["instructions"],
+        protocolVersion: json["protocolVersion"],
+        serverName: json["serverName"],
+        serverVersion: json["serverVersion"],
+        tools: List<McpProbedTool>.from(
+          json["tools"].map((x) => McpProbedTool.fromJson(x)),
+        ),
+        toolsDigest: json["toolsDigest"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "endpointHost": endpointHost,
+    "instructions": instructions,
+    "protocolVersion": protocolVersion,
+    "serverName": serverName,
+    "serverVersion": serverVersion,
+    "tools": List<dynamic>.from(tools.map((x) => x.toJson())),
+    "toolsDigest": toolsDigest,
+  });
+}
+
+class McpProbedTool {
+  ///上游描述（不可信内容，界面以纯文本显示）
+  final String? description;
+  final bool? destructiveHint;
+  final bool? idempotentHint;
+  final String inputSchemaJson;
+  final bool? openWorldHint;
+  final String? outputSchemaJson;
+  final bool? readOnlyHint;
+  final McpToolCallPolicy suggestedCallPolicy;
+  final McpToolRisk suggestedRisk;
+  final String? title;
+  final String upstreamName;
+
+  McpProbedTool({
+    this.description,
+    this.destructiveHint,
+    this.idempotentHint,
+    required this.inputSchemaJson,
+    this.openWorldHint,
+    this.outputSchemaJson,
+    this.readOnlyHint,
+    required this.suggestedCallPolicy,
+    required this.suggestedRisk,
+    this.title,
+    required this.upstreamName,
+  });
+
+  factory McpProbedTool.fromJson(Map<String, dynamic> json) => McpProbedTool(
+    description: json["description"],
+    destructiveHint: json["destructiveHint"],
+    idempotentHint: json["idempotentHint"],
+    inputSchemaJson: json["inputSchemaJson"],
+    openWorldHint: json["openWorldHint"],
+    outputSchemaJson: json["outputSchemaJson"],
+    readOnlyHint: json["readOnlyHint"],
+    suggestedCallPolicy:
+        mcpToolCallPolicyValues.map[json["suggestedCallPolicy"]]!,
+    suggestedRisk: mcpToolRiskValues.map[json["suggestedRisk"]]!,
+    title: json["title"],
+    upstreamName: json["upstreamName"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "description": description,
+    "destructiveHint": destructiveHint,
+    "idempotentHint": idempotentHint,
+    "inputSchemaJson": inputSchemaJson,
+    "openWorldHint": openWorldHint,
+    "outputSchemaJson": outputSchemaJson,
+    "readOnlyHint": readOnlyHint,
+    "suggestedCallPolicy": mcpToolCallPolicyValues.reverse[suggestedCallPolicy],
+    "suggestedRisk": mcpToolRiskValues.reverse[suggestedRisk],
+    "title": title,
+    "upstreamName": upstreamName,
+  });
+}
+
+///DD-149(6)：OAuth 授权尝试的状态；从不包含令牌。
+class McpOauthAttemptView {
+  final String attemptId;
+  final String? authorizationServer;
+  final String? authorizationUrl;
+  final String expiresAt;
+
+  ///固定原因码
+  final String? failure;
+  final McpOauthAttemptState state;
+
+  McpOauthAttemptView({
+    required this.attemptId,
+    this.authorizationServer,
+    this.authorizationUrl,
+    required this.expiresAt,
+    this.failure,
+    required this.state,
+  });
+
+  factory McpOauthAttemptView.fromJson(Map<String, dynamic> json) =>
+      McpOauthAttemptView(
+        attemptId: json["attemptId"],
+        authorizationServer: json["authorizationServer"],
+        authorizationUrl: json["authorizationUrl"],
+        expiresAt: json["expiresAt"],
+        failure: json["failure"],
+        state: mcpOauthAttemptStateValues.map[json["state"]]!,
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "attemptId": attemptId,
+    "authorizationServer": authorizationServer,
+    "authorizationUrl": authorizationUrl,
+    "expiresAt": expiresAt,
+    "failure": failure,
+    "state": mcpOauthAttemptStateValues.reverse[state],
+  });
+}
+
+///DD-149(6)：一次 OAuth 授权尝试的状态。
+enum McpOauthAttemptState { COMPLETED, CONSUMED, EXPIRED, FAILED, PENDING }
+
+final mcpOauthAttemptStateValues = EnumValues({
+  "COMPLETED": McpOauthAttemptState.COMPLETED,
+  "CONSUMED": McpOauthAttemptState.CONSUMED,
+  "EXPIRED": McpOauthAttemptState.EXPIRED,
+  "FAILED": McpOauthAttemptState.FAILED,
+  "PENDING": McpOauthAttemptState.PENDING,
+});
+
+///DD-149(6)：发起一次 OAuth 授权尝试。forConnectionId 只用于轮换已存在连接器的授权。
+class McpOauthStartRequest {
+  ///未提供注册端点时的预注册 client ID
+  final String? clientId;
+
+  ///可选预注册 client 密钥，一次性输入，写入 OpenBao
+  final String? clientSecret;
+  final String endpointUrl;
+  final String? forConnectionId;
+  final McpConnectionTransport transport;
+
+  McpOauthStartRequest({
+    this.clientId,
+    this.clientSecret,
+    required this.endpointUrl,
+    this.forConnectionId,
+    required this.transport,
+  });
+
+  factory McpOauthStartRequest.fromJson(Map<String, dynamic> json) =>
+      McpOauthStartRequest(
+        clientId: json["clientId"],
+        clientSecret: json["clientSecret"],
+        endpointUrl: json["endpointUrl"],
+        forConnectionId: json["forConnectionId"],
+        transport: mcpConnectionTransportValues.map[json["transport"]]!,
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "clientId": clientId,
+    "clientSecret": clientSecret,
+    "endpointUrl": endpointUrl,
+    "forConnectionId": forConnectionId,
+    "transport": mcpConnectionTransportValues.reverse[transport],
+  });
+}
+
 ///GET /api/v1/moderation/access（DD-125(2)）：原版只对 Community owner/admin 显示的审核入口在 Kailo 对应
 ///Tenant manage。canModerate 是与 moderation.ban 准入同一条 fresh 判定（目录开放、非 Platform Catalog、scope
 ///guard 与 tenant manage）的提示，不是授权票据，提交时仍完整重新准入；它不读取任何限制或队列事实。
@@ -14592,6 +15362,23 @@ class ActionCommand {
   ///仅 llm_route.create：确切原生 Provider/Model 与受控 provider SecretRef；不接收 URL 或 key 正文。
   final LlmRouteCreateInput? llmRouteCreate;
 
+  ///仅 mcp_connection.create（DD-149、05 §2.15）且必带；其他动作携带即拒绝。
+  final McpConnectionCreate? mcpConnectionCreate;
+
+  ///DD-149(5)：仅 mcp_connection.create 与 mcp_connection.rotate_credential 的瞬态凭据（API_KEY 或
+  ///BEARER）；Core 写入该 Tenant 的 OpenBao 后只保存 SecretRef，值不进入
+  ///parameters、ActionExecution、日志、审计或回应。其他命令禁止携带。
+  final McpConnectionCredentialInput? mcpConnectionCredential;
+
+  ///仅 mcp_connection.policy.update 且必带。
+  final McpConnectionPolicyUpdate? mcpConnectionPolicyUpdate;
+
+  ///仅 mcp_connection.update 且必带；目标连接器由 resourceId 与 resourceVersion 给出。
+  final McpConnectionUpdate? mcpConnectionUpdate;
+
+  ///DD-149(6)：仅 OAUTH 连接器的 mcp_connection.rotate_credential：本人本会话已完成且未使用的授权尝试。
+  final String? mcpOauthAttemptId;
+
   ///仅 HUMAN agent.memory.core.replace / entry.set / entry.patch / entry.remove 的瞬态 native
   ///输入；其他命令禁止携带。
   final AgentMemoryWriteInput? memoryWrite;
@@ -14705,6 +15492,11 @@ class ActionCommand {
     required this.idempotencyKey,
     this.invitationId,
     this.llmRouteCreate,
+    this.mcpConnectionCreate,
+    this.mcpConnectionCredential,
+    this.mcpConnectionPolicyUpdate,
+    this.mcpConnectionUpdate,
+    this.mcpOauthAttemptId,
     this.memoryWrite,
     this.moderationEventId,
     this.moderationMember,
@@ -14795,6 +15587,21 @@ class ActionCommand {
     llmRouteCreate: json["llmRouteCreate"] == null
         ? null
         : LlmRouteCreateInput.fromJson(json["llmRouteCreate"]),
+    mcpConnectionCreate: json["mcpConnectionCreate"] == null
+        ? null
+        : McpConnectionCreate.fromJson(json["mcpConnectionCreate"]),
+    mcpConnectionCredential: json["mcpConnectionCredential"] == null
+        ? null
+        : McpConnectionCredentialInput.fromJson(
+            json["mcpConnectionCredential"],
+          ),
+    mcpConnectionPolicyUpdate: json["mcpConnectionPolicyUpdate"] == null
+        ? null
+        : McpConnectionPolicyUpdate.fromJson(json["mcpConnectionPolicyUpdate"]),
+    mcpConnectionUpdate: json["mcpConnectionUpdate"] == null
+        ? null
+        : McpConnectionUpdate.fromJson(json["mcpConnectionUpdate"]),
+    mcpOauthAttemptId: json["mcpOauthAttemptId"],
     memoryWrite: json["memoryWrite"] == null
         ? null
         : AgentMemoryWriteInput.fromJson(json["memoryWrite"]),
@@ -14876,6 +15683,11 @@ class ActionCommand {
     "idempotencyKey": idempotencyKey,
     "invitationId": invitationId,
     "llmRouteCreate": llmRouteCreate?.toJson(),
+    "mcpConnectionCreate": mcpConnectionCreate?.toJson(),
+    "mcpConnectionCredential": mcpConnectionCredential?.toJson(),
+    "mcpConnectionPolicyUpdate": mcpConnectionPolicyUpdate?.toJson(),
+    "mcpConnectionUpdate": mcpConnectionUpdate?.toJson(),
+    "mcpOauthAttemptId": mcpOauthAttemptId,
     "memoryWrite": memoryWrite?.toJson(),
     "moderationEventId": moderationEventId,
     "moderationMember": moderationMember?.toJson(),
@@ -15557,6 +16369,189 @@ class LlmRouteCreateInputProviderSecretRef {
     "audience": audience,
     "locator": locator,
     "version": version,
+  });
+}
+
+///仅 mcp_connection.create（DD-149、05 §2.15）且必带；其他动作携带即拒绝。
+///
+///仅 mcp_connection.create（DD-149、05 §2.15）：端点、认证方式、可见范围与确认的工具清单。凭据值只经
+///ActionCommand.mcpConnectionCredential 一次性提交；OAuth 只引用本人本会话已完成的授权尝试。
+class McpConnectionCreate {
+  ///仅 API_KEY：小写 header 名
+  final String? apiKeyHeader;
+  final McpConnectionAuthMode authMode;
+
+  ///连接器显示名，1–80 字符
+  final String displayName;
+
+  ///https 端点；不含 userinfo、query 与 fragment
+  final String endpointUrl;
+
+  ///仅 OAUTH：本人本会话已完成且未使用的授权尝试
+  final String? oauthAttemptId;
+
+  ///OAUTH 且可见范围不是 PERSONAL 时必须为 true：同意其他人的 Agent 以本人授权调用
+  final bool? sharedAuthorizationConsent;
+  final List<McpToolSelection> tools;
+
+  ///确认时探测结果的清单摘要；提交时 Core 重新探测比对
+  final String toolsDigest;
+  final McpConnectionTransport transport;
+  final McpConnectionVisibility visibility;
+
+  ///仅 WORKSPACE 可见范围：所属 Workspace
+  final String? workspaceId;
+
+  McpConnectionCreate({
+    this.apiKeyHeader,
+    required this.authMode,
+    required this.displayName,
+    required this.endpointUrl,
+    this.oauthAttemptId,
+    this.sharedAuthorizationConsent,
+    required this.tools,
+    required this.toolsDigest,
+    required this.transport,
+    required this.visibility,
+    this.workspaceId,
+  });
+
+  factory McpConnectionCreate.fromJson(Map<String, dynamic> json) =>
+      McpConnectionCreate(
+        apiKeyHeader: json["apiKeyHeader"],
+        authMode: mcpConnectionAuthModeValues.map[json["authMode"]]!,
+        displayName: json["displayName"],
+        endpointUrl: json["endpointUrl"],
+        oauthAttemptId: json["oauthAttemptId"],
+        sharedAuthorizationConsent: json["sharedAuthorizationConsent"],
+        tools: List<McpToolSelection>.from(
+          json["tools"].map((x) => McpToolSelection.fromJson(x)),
+        ),
+        toolsDigest: json["toolsDigest"],
+        transport: mcpConnectionTransportValues.map[json["transport"]]!,
+        visibility: mcpConnectionVisibilityValues.map[json["visibility"]]!,
+        workspaceId: json["workspaceId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "apiKeyHeader": apiKeyHeader,
+    "authMode": mcpConnectionAuthModeValues.reverse[authMode],
+    "displayName": displayName,
+    "endpointUrl": endpointUrl,
+    "oauthAttemptId": oauthAttemptId,
+    "sharedAuthorizationConsent": sharedAuthorizationConsent,
+    "tools": List<dynamic>.from(tools.map((x) => x.toJson())),
+    "toolsDigest": toolsDigest,
+    "transport": mcpConnectionTransportValues.reverse[transport],
+    "visibility": mcpConnectionVisibilityValues.reverse[visibility],
+    "workspaceId": workspaceId,
+  });
+}
+
+///DD-149(7)：确认清单中的一个上游工具。未列出的上游工具即不启用。
+class McpToolSelection {
+  final McpToolCallPolicy callPolicy;
+  final bool enabled;
+  final McpToolRisk risk;
+
+  ///风险等级低于 annotations 建议时必须为 true，作为管理员声明冻结进审计
+  final bool? riskDeclared;
+
+  ///上游 tools/list 中的工具名，原样
+  final String upstreamName;
+
+  McpToolSelection({
+    required this.callPolicy,
+    required this.enabled,
+    required this.risk,
+    this.riskDeclared,
+    required this.upstreamName,
+  });
+
+  factory McpToolSelection.fromJson(Map<String, dynamic> json) =>
+      McpToolSelection(
+        callPolicy: mcpToolCallPolicyValues.map[json["callPolicy"]]!,
+        enabled: json["enabled"],
+        risk: mcpToolRiskValues.map[json["risk"]]!,
+        riskDeclared: json["riskDeclared"],
+        upstreamName: json["upstreamName"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "callPolicy": mcpToolCallPolicyValues.reverse[callPolicy],
+    "enabled": enabled,
+    "risk": mcpToolRiskValues.reverse[risk],
+    "riskDeclared": riskDeclared,
+    "upstreamName": upstreamName,
+  });
+}
+
+///仅 mcp_connection.policy.update 且必带。
+///
+///仅 mcp_connection.policy.update：Tenant 连接器策略；白名单条目须落在部署声明的出站上限内。
+class McpConnectionPolicyUpdate {
+  ///小写主机名后缀；空表示只受部署上限约束
+  final List<String> egressHostSuffixes;
+  final McpMemberRegistration memberRegistration;
+
+  McpConnectionPolicyUpdate({
+    required this.egressHostSuffixes,
+    required this.memberRegistration,
+  });
+
+  factory McpConnectionPolicyUpdate.fromJson(Map<String, dynamic> json) =>
+      McpConnectionPolicyUpdate(
+        egressHostSuffixes: List<String>.from(
+          json["egressHostSuffixes"].map((x) => x),
+        ),
+        memberRegistration:
+            mcpMemberRegistrationValues.map[json["memberRegistration"]]!,
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "egressHostSuffixes": List<dynamic>.from(egressHostSuffixes.map((x) => x)),
+    "memberRegistration":
+        mcpMemberRegistrationValues.reverse[memberRegistration],
+  });
+}
+
+///仅 mcp_connection.update 且必带；目标连接器由 resourceId 与 resourceVersion 给出。
+///
+///仅 mcp_connection.update：以新探测结果重新确认工具清单、风险、策略与可见范围，形成新 generation。
+class McpConnectionUpdate {
+  final bool? sharedAuthorizationConsent;
+  final List<McpToolSelection> tools;
+  final String toolsDigest;
+  final McpConnectionVisibility visibility;
+
+  ///仅 WORKSPACE 可见范围
+  final String? workspaceId;
+
+  McpConnectionUpdate({
+    this.sharedAuthorizationConsent,
+    required this.tools,
+    required this.toolsDigest,
+    required this.visibility,
+    this.workspaceId,
+  });
+
+  factory McpConnectionUpdate.fromJson(Map<String, dynamic> json) =>
+      McpConnectionUpdate(
+        sharedAuthorizationConsent: json["sharedAuthorizationConsent"],
+        tools: List<McpToolSelection>.from(
+          json["tools"].map((x) => McpToolSelection.fromJson(x)),
+        ),
+        toolsDigest: json["toolsDigest"],
+        visibility: mcpConnectionVisibilityValues.map[json["visibility"]]!,
+        workspaceId: json["workspaceId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "sharedAuthorizationConsent": sharedAuthorizationConsent,
+    "tools": List<dynamic>.from(tools.map((x) => x.toJson())),
+    "toolsDigest": toolsDigest,
+    "visibility": mcpConnectionVisibilityValues.reverse[visibility],
+    "workspaceId": workspaceId,
   });
 }
 
@@ -16613,11 +17608,19 @@ class PlatformToolPage {
 }
 
 class PlatformToolView {
-  ///DD-140 (1)：平台原生工具名到动作键的封闭映射；记忆工具即其自身，project_channel_request 为 workspace.create。
+  ///DD-140 (1)：平台原生工具名到动作键的封闭映射；记忆工具即其自身，project_channel_request 为
+  ///workspace.create。DD-149：连接器工具为其调用策略对应的子动作键。
   final PlatformToolViewActionKey actionKey;
   final bool canConsume;
+
+  ///仅 USER_REGISTERED_EXTERNAL（DD-149）：所属连接器与冻结的工具元数据。描述是上游提供的不可信文本。
+  final PlatformToolConnector? connector;
   final String inputSchemaHash;
-  final PlatformToolViewName name;
+
+  ///PLATFORM_NATIVE
+  ///为固定原生工具名（agent.memory.entry.list、agent.memory.entry.read、project_channel_request）；USER_REGISTERED_EXTERNAL
+  ///为 <连接器标识>__<上游工具名>（DD-149(3)）。
+  final String name;
   final String outputSchemaHash;
   final String ownerPrincipalId;
   final String resourceId;
@@ -16629,6 +17632,7 @@ class PlatformToolView {
   PlatformToolView({
     required this.actionKey,
     required this.canConsume,
+    this.connector,
     required this.inputSchemaHash,
     required this.name,
     required this.outputSchemaHash,
@@ -16644,8 +17648,11 @@ class PlatformToolView {
       PlatformToolView(
         actionKey: platformToolViewActionKeyValues.map[json["actionKey"]]!,
         canConsume: json["canConsume"],
+        connector: json["connector"] == null
+            ? null
+            : PlatformToolConnector.fromJson(json["connector"]),
         inputSchemaHash: json["inputSchemaHash"],
-        name: platformToolViewNameValues.map[json["name"]]!,
+        name: json["name"],
         outputSchemaHash: json["outputSchemaHash"],
         ownerPrincipalId: json["ownerPrincipalId"],
         resourceId: json["resourceId"],
@@ -16658,8 +17665,9 @@ class PlatformToolView {
   Map<String, dynamic> toJson() => _stripNulls({
     "actionKey": platformToolViewActionKeyValues.reverse[actionKey],
     "canConsume": canConsume,
+    "connector": connector?.toJson(),
     "inputSchemaHash": inputSchemaHash,
-    "name": platformToolViewNameValues.reverse[name],
+    "name": name,
     "outputSchemaHash": outputSchemaHash,
     "ownerPrincipalId": ownerPrincipalId,
     "resourceId": resourceId,
@@ -16670,35 +17678,88 @@ class PlatformToolView {
   });
 }
 
-///DD-140 (1)：平台原生工具名到动作键的封闭映射；记忆工具即其自身，project_channel_request 为 workspace.create。
+///DD-140 (1)：平台原生工具名到动作键的封闭映射；记忆工具即其自身，project_channel_request 为
+///workspace.create。DD-149：连接器工具为其调用策略对应的子动作键。
 enum PlatformToolViewActionKey {
   AGENT_MEMORY_ENTRY_LIST,
   AGENT_MEMORY_ENTRY_READ,
+  MCP_CONNECTION_TOOL_INVOKE,
+  MCP_CONNECTION_TOOL_INVOKE_APPROVED,
+  MCP_CONNECTION_TOOL_INVOKE_CONFIRMED,
   WORKSPACE_CREATE,
 }
 
 final platformToolViewActionKeyValues = EnumValues({
   "agent.memory.entry.list": PlatformToolViewActionKey.AGENT_MEMORY_ENTRY_LIST,
   "agent.memory.entry.read": PlatformToolViewActionKey.AGENT_MEMORY_ENTRY_READ,
+  "mcp_connection.tool.invoke":
+      PlatformToolViewActionKey.MCP_CONNECTION_TOOL_INVOKE,
+  "mcp_connection.tool.invoke_approved":
+      PlatformToolViewActionKey.MCP_CONNECTION_TOOL_INVOKE_APPROVED,
+  "mcp_connection.tool.invoke_confirmed":
+      PlatformToolViewActionKey.MCP_CONNECTION_TOOL_INVOKE_CONFIRMED,
   "workspace.create": PlatformToolViewActionKey.WORKSPACE_CREATE,
 });
 
-enum PlatformToolViewName {
-  AGENT_MEMORY_ENTRY_LIST,
-  AGENT_MEMORY_ENTRY_READ,
-  PROJECT_CHANNEL_REQUEST,
+///仅 USER_REGISTERED_EXTERNAL（DD-149）：所属连接器与冻结的工具元数据。描述是上游提供的不可信文本。
+class PlatformToolConnector {
+  final McpToolCallPolicy callPolicy;
+  final String connectionId;
+  final String connectionName;
+  final McpConnectionState connectionState;
+  final String? description;
+  final McpToolRisk risk;
+  final String? title;
+  final String upstreamName;
+  final McpConnectionVisibility visibility;
+  final String? workspaceId;
+
+  PlatformToolConnector({
+    required this.callPolicy,
+    required this.connectionId,
+    required this.connectionName,
+    required this.connectionState,
+    this.description,
+    required this.risk,
+    this.title,
+    required this.upstreamName,
+    required this.visibility,
+    this.workspaceId,
+  });
+
+  factory PlatformToolConnector.fromJson(Map<String, dynamic> json) =>
+      PlatformToolConnector(
+        callPolicy: mcpToolCallPolicyValues.map[json["callPolicy"]]!,
+        connectionId: json["connectionId"],
+        connectionName: json["connectionName"],
+        connectionState: mcpConnectionStateValues.map[json["connectionState"]]!,
+        description: json["description"],
+        risk: mcpToolRiskValues.map[json["risk"]]!,
+        title: json["title"],
+        upstreamName: json["upstreamName"],
+        visibility: mcpConnectionVisibilityValues.map[json["visibility"]]!,
+        workspaceId: json["workspaceId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "callPolicy": mcpToolCallPolicyValues.reverse[callPolicy],
+    "connectionId": connectionId,
+    "connectionName": connectionName,
+    "connectionState": mcpConnectionStateValues.reverse[connectionState],
+    "description": description,
+    "risk": mcpToolRiskValues.reverse[risk],
+    "title": title,
+    "upstreamName": upstreamName,
+    "visibility": mcpConnectionVisibilityValues.reverse[visibility],
+    "workspaceId": workspaceId,
+  });
 }
 
-final platformToolViewNameValues = EnumValues({
-  "agent.memory.entry.list": PlatformToolViewName.AGENT_MEMORY_ENTRY_LIST,
-  "agent.memory.entry.read": PlatformToolViewName.AGENT_MEMORY_ENTRY_READ,
-  "project_channel_request": PlatformToolViewName.PROJECT_CHANNEL_REQUEST,
-});
-
-enum PlatformToolViewSource { PLATFORM_NATIVE }
+enum PlatformToolViewSource { PLATFORM_NATIVE, USER_REGISTERED_EXTERNAL }
 
 final platformToolViewSourceValues = EnumValues({
   "PLATFORM_NATIVE": PlatformToolViewSource.PLATFORM_NATIVE,
+  "USER_REGISTERED_EXTERNAL": PlatformToolViewSource.USER_REGISTERED_EXTERNAL,
 });
 
 enum PlatformToolViewStatus { ACTIVE, PROVISIONING }

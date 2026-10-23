@@ -4224,6 +4224,58 @@ pub(crate) async fn open_project_channel_child(
     .await?)
 }
 
+/// DD-149(9): a connector tool call is a child of the Agent's admitted root turn with
+/// the root's initiator and actor, targeting the Installation (as native tools do).
+pub(crate) async fn open_connector_child(
+    tx: &mut Transaction<'_, Postgres>,
+    parent: &Execution,
+    def: &Definition,
+    target: &Target,
+    parameters: Value,
+    idempotency_key: Uuid,
+) -> Result<Execution, Refusal> {
+    let root: bool = sqlx::query_scalar(
+        "select parent_action_execution_id is null
+        from admission.action_execution where id=$1 for update",
+    )
+    .bind(parent.id)
+    .fetch_one(&mut **tx)
+    .await?;
+    if !root
+        || parent.gate_state != "ALLOWED"
+        || parent.dispatch_state != "DISPATCHED"
+        || !matches!(
+            parent.action_key.as_str(),
+            "agent.invoke" | "automation.run"
+        )
+        || !crate::mcp_connection::is_tool_action(&def.action_key)
+        || parent.workspace_id.is_none()
+        || target.workspace_id != parent.workspace_id
+    {
+        return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
+    }
+    let hash = collab_bridge::limits::canonical_digest(&json!({"actionKey":def.action_key,
+        "actionVersion":def.version,"targetId":target.id,"parameters":parameters}));
+    Ok(open_execution_in_operation(
+        tx,
+        Actor {
+            tenant_id: parent.tenant_id,
+            principal_id: parent.initiator_principal_id,
+            human_identity_id: None,
+        },
+        parent.actor_principal_id,
+        def,
+        target,
+        parameters,
+        hash,
+        idempotency_key,
+        Some(parent.correlation_id),
+        Some((parent.id, parent.operation_id)),
+        None,
+    )
+    .await?)
+}
+
 /// The same root factory freezes an APPLICATION protocol's exact declaration
 /// on its first INSERT. It does not backfill identity after admission.
 pub(crate) async fn open_protocol_execution(
@@ -7720,6 +7772,8 @@ impl Governance {
             (policy.owner_requirement == "NONE"
                 || installation_owner
                 || project_channel.is_some()
+                || (crate::mcp_connection::tool::is_child(ae)
+                    && policy.owner_requirement == "TARGET_OWNER")
                 || (deletion && policy.owner_requirement == "ALL_AFFECTED_OWNERS"))
                 && policy.role_requirements.iter().all(|r| match r.selector {
                     ApprovalSelector::TenantAdmin => true,
@@ -8035,6 +8089,11 @@ impl Governance {
         let affected_owner_refs: Vec<contracts::AffectedOwnerRef> =
             if crate::project_channel_request::is_child(ae) {
                 crate::project_channel_request::owners(ae)?
+            } else if crate::mcp_connection::tool::is_child(ae)
+                && policy.owner_requirement == "TARGET_OWNER"
+            {
+                // DD-149: "ask every time" is decided by the Installation owner.
+                crate::mcp_connection::tool::owners(ae)?
             } else if crate::automation::step_approval::is_child(ae) {
                 crate::automation::step_approval::owners(ae)?
                     .into_iter()
@@ -8200,6 +8259,9 @@ impl Governance {
             _ => return Ok(()),
         }
         let def = exact_definition_for_execution(&self.pool, &ae).await?;
+        if crate::mcp_connection::tool::is_child(&ae) {
+            return self.after_connector_approval(&ae, &def).await;
+        }
         if crate::application_catalog::approval::is_application(&self.pool, &ae).await? {
             return self.after_application_approval(&ae, &def).await;
         }
@@ -8290,6 +8352,75 @@ impl Governance {
             return Ok(());
         }
         self.dispatch(ae.id).await;
+        Ok(())
+    }
+
+    /// DD-149: an approved connector call never replays the Tool body. It opens the
+    /// original child gate when the tool and connector are still ACTIVE and unchanged;
+    /// the same turn's identical call then dispatches through the relay.
+    async fn after_connector_approval(
+        &self,
+        ae: &Execution,
+        def: &Definition,
+    ) -> Result<(), Refusal> {
+        let current = crate::mcp_connection::tool::approval_current(&self.pool, ae).await?;
+        let eval = Evaluation {
+            allowed: current,
+            scope: if current { "ALLOW" } else { "DENY" },
+            authorization: if current { "ALLOW" } else { "NOT_APPLICABLE" },
+            quota: "NOT_APPLICABLE",
+            zed_token: None,
+            reason: (!current).then_some(ReasonCode::ApprovalInvalidated),
+        };
+        if !current {
+            self.close_gate(
+                ae,
+                def,
+                "RECHECK",
+                "REVOKED",
+                &eval,
+                &ReasonCode::ApprovalInvalidated,
+                None,
+            )
+            .await?;
+            self.invalidate(ae.id).await;
+            return Ok(());
+        }
+        let mut tx = self.pool.begin().await?;
+        let locked = lock_execution(&mut tx, ae.id).await?;
+        if locked.gate_state != "WAITING" || locked.dispatch_state != "NOT_DISPATCHED" {
+            return Ok(());
+        }
+        sqlx::query("update admission.action_execution set gate_state='ALLOWED',reason_code=null,updated_at=now()
+            where id=$1 and gate_state='WAITING' and dispatch_state='NOT_DISPATCHED'")
+            .bind(ae.id)
+            .execute(&mut *tx)
+            .await?;
+        record_decision(
+            &mut tx,
+            &locked.subject(),
+            "RECHECK",
+            eval.scope,
+            eval.authorization,
+            "SATISFIED",
+            eval.quota,
+            None,
+            None,
+        )
+        .await?;
+        audit(
+            &mut tx,
+            &locked,
+            def,
+            "recheck:decision",
+            "DECISION",
+            "ALLOW",
+            "ALLOWED",
+            None,
+            Vec::new(),
+        )
+        .await?;
+        tx.commit().await?;
         Ok(())
     }
 
@@ -9159,6 +9290,16 @@ impl Governance {
                 )
                 .await?;
                 Ok("APPROVAL_LOST")
+            }
+            // DD-149: connector management effects are re-driven by the original key
+            // (they may need its transient credential); connector tool children only by
+            // the same turn's call through the relay. Never the generic dispatcher.
+            ("ALLOWED", "NOT_DISPATCHED" | "UNKNOWN")
+                if stale
+                    && (crate::mcp_connection::is_action(&ae.action_key)
+                        || crate::mcp_connection::is_tool_action(&ae.action_key)) =>
+            {
+                Ok("CONNECTOR_PENDING")
             }
             ("ALLOWED", "NOT_DISPATCHED" | "UNKNOWN")
                 if stale

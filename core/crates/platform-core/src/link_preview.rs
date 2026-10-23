@@ -84,7 +84,7 @@ impl Network {
         (prefix <= max).then_some(Self { addr, prefix })
     }
 
-    fn contains(&self, ip: IpAddr) -> bool {
+    pub(crate) fn contains(&self, ip: IpAddr) -> bool {
         match (self.addr, ip) {
             (IpAddr::V4(net), IpAddr::V4(ip)) => {
                 let shift = 32 - u32::from(self.prefix);
@@ -139,7 +139,7 @@ impl Config {
 }
 
 /// Built-in egress refusals: everything that is not a globally routed unicast address.
-fn reserved(ip: IpAddr) -> bool {
+pub(crate) fn reserved(ip: IpAddr) -> bool {
     match ip {
         IpAddr::V4(ip) => reserved_v4(ip),
         IpAddr::V6(ip) => reserved_v6(ip),

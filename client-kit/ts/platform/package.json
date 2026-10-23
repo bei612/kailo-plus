@@ -222,6 +222,7 @@
     "./react/roles": "./src/react/roles.tsx",
     "./react/settings": "./src/react/settings.tsx",
     "./react/agents-settings": "./src/react/agents-settings.tsx",
+    "./react/connectors": "./src/react/connectors.tsx",
     "./react/settings-sections": "./src/react/settings-sections.ts",
     "./react/features": "./src/react/features/index.ts",
     "./react/conversation-display-settings": "./src/react/conversation-display-settings.tsx",

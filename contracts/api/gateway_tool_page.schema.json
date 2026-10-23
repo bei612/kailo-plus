@@ -53,7 +53,8 @@
             "type": "string",
             "enum": [
               "PLATFORM_NATIVE",
-              "APPLICATION"
+              "APPLICATION",
+              "USER_REGISTERED_EXTERNAL"
             ]
           },
           "resourceState": {
@@ -171,6 +172,15 @@
                 }
               }
             }
+          },
+          "mcpConnectionId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "仅 USER_REGISTERED_EXTERNAL（DD-149）：所属连接器"
+          },
+          "mcpConnectionName": {
+            "type": "string",
+            "description": "仅 USER_REGISTERED_EXTERNAL：连接器显示名"
           }
         }
       }
