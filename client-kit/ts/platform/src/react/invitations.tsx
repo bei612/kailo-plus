@@ -41,7 +41,7 @@ function forbidden(error: unknown): boolean {
   return error instanceof BffError && error.status === 403;
 }
 
-const inputClass = "h-8 rounded-md border border-input bg-transparent px-2 text-sm";
+const inputClass = "h-8 rounded-md border border-input bg-background px-2.5 text-sm shadow-xs";
 
 function invitationReceipt(result:ActionSubmission,command:ActionCommand,previous:ActionSubmission|null) {
   if(!result||result.actionKey!==command.actionKey||!result.actionExecutionId||!result.operationId

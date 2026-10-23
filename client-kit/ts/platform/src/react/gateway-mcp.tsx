@@ -33,7 +33,7 @@ import { Badge, Button, Cell, Notice, Table } from "./ui";
 import { useLoad } from "./use-load";
 
 const textareaClass = "min-h-32 w-full rounded-md border border-input bg-transparent p-2 font-mono text-xs";
-const inputClass = "h-8 rounded-md border border-input bg-transparent px-2 text-sm";
+const inputClass = "h-8 rounded-md border border-input bg-background px-2.5 text-sm shadow-xs";
 
 function Step({ index, title, children, testId }: { index: number; title: string; children: ReactNode; testId?: string }) {
   return <section className="flex flex-col gap-2 rounded-md border p-3" data-testid={testId}>

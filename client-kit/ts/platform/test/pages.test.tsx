@@ -3482,7 +3482,13 @@ describe("platform pages render only through the host theme", () => {
     "sidebar-foreground", "sidebar-border",
     "sidebar-ring", "sidebar-accent", "sidebar-accent-foreground", "sidebar-active", "sidebar-active-foreground",
     "warning", "warning-bg",
+    // DD-141 status and brand roles (host variables are the Kailo `--k-*` tokens).
+    "success-soft", "success-text", "danger-soft", "danger-text", "brand-soft", "brand-soft-foreground", "brand-text",
   ];
+  const kailoRoleVariable: Record<string, string> = {
+    "success-soft": "k-success-soft", "success-text": "k-success-text", "danger-soft": "k-danger-soft",
+    "danger-text": "k-danger-text", "brand-soft": "k-brand-soft", "brand-soft-foreground": "k-brand-soft-text", "brand-text": "k-brand-text",
+  };
   const neutral = new Set(["transparent", "current", "inherit"]);
   const notColor =
     /^(xs|sm|base|lg|xl|[2-9]xl|left|center|right|justify|start|end|[tblrxyse]|\d+|none|solid|dashed|dotted|double|collapse|separate|wrap|nowrap|balance|pretty|ellipsis|clip)$/;
@@ -4006,7 +4012,7 @@ describe("platform pages render only through the host theme", () => {
     }
     expect([...used].filter((token) => !semanticColors.includes(token))).toEqual([]);
     for (const token of semanticColors) {
-      const variable = token === "warning" ? "ui-warning" : token === "warning-bg" ? "ui-warning-bg" : token;
+      const variable = kailoRoleVariable[token] ?? (token === "warning" ? "ui-warning" : token === "warning-bg" ? "ui-warning-bg" : token);
       for (const config of hosts) expect(config).toContain(`var(--${variable})`);
     }
     // The original monthly schedule hint uses the same adaptive host warning

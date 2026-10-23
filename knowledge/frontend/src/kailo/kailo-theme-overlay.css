@@ -174,3 +174,17 @@ html[data-kailo-mode]:root:root {
 html[data-kailo-mode]:root:root ::selection {
   background: hsl(var(--kailo-hsl-ring) / 0.3);
 }
+
+/* DD-141 §5/§9: Kailo rounded-square avatar; initials on the selected (brand-soft) role. */
+html[data-kailo-mode] .user-avatar,
+html[data-kailo-mode] .user-avatar img {
+  border-radius: 30%;
+}
+
+html[data-kailo-mode] .user-avatar .avatar-placeholder,
+html[data-kailo-mode] .dropdown-user-avatar-placeholder {
+  border-radius: 30%;
+  background: var(--kailo-color-selected);
+  color: var(--kailo-color-selected-foreground);
+  font-weight: 600;
+}

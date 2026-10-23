@@ -221,10 +221,11 @@ code,
 
   .kailo-user__avatar {
     flex: none;
-    border-radius: 50%;
+    // DD-141 §5/§9: Kailo rounded-square avatar; initials on the selected (brand-soft) role.
+    border-radius: 30%;
     object-fit: cover;
-    background: var(--kailo-color-muted);
-    color: var(--kailo-color-foreground);
+    background: var(--kailo-color-selected, var(--kailo-color-muted));
+    color: var(--kailo-color-selected-foreground, var(--kailo-color-foreground));
     display: inline-flex;
     align-items: center;
     justify-content: center;
