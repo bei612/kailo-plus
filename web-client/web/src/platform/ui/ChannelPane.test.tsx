@@ -31,6 +31,8 @@ const state = vi.hoisted(() => ({
   notify: vi.fn(),
   richContent: false,
   typingAgents: {isSuccess:true,isFetching:false,data:{principalId:"me",members:[] as unknown[],agents:[] as {pubkey:string;installation:{resourceId:string}}[]}},
+  // DD-147(1): the member-readable Agent author directory (owner line).
+  agentAuthors: {isSuccess:true,isFetching:false,data:{agents:[] as unknown[]}},
   // DD-125(6): the readable Installation directory behind the working signal.
   channelAgents: {isSuccess:true,isFetching:false,data:[] as Record<string, unknown>[]},
   openActivity: vi.fn(),
@@ -60,6 +62,7 @@ vi.mock("@tanstack/react-query", () => ({
   useQueries: ({queries}: {queries: readonly unknown[]}) => queries.map(() => ({isSuccess:false,isFetching:false})),
   useQuery: (options: { queryKey: readonly unknown[] }) => {
     if (options.queryKey.includes("composer-agent-directory")) return state.typingAgents;
+    if (options.queryKey.includes("agent-authors")) return state.agentAuthors;
     // DD-125(8): the Tenant @ directory is read only on demand; these shell tests never open it.
     if (options.queryKey.includes("tenant-mention-directory")) return { data: undefined };
     if (options.queryKey.includes("channel-agents")) return state.channelAgents;
@@ -174,6 +177,7 @@ beforeEach(async () => {
   state.notify.mockClear();
   state.richContent = false;
   state.typingAgents.data.agents=[];
+  state.agentAuthors.data.agents=[];
   state.channelAgents.data=[];
   state.openActivity.mockClear();
   state.route.messages=[];state.route.denied=false;state.route.interrupted=false;
