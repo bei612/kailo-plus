@@ -21,10 +21,7 @@ describe('KailoUser avatar (07 §4.7.3)', () => {
   });
 
   it('falls back to the initial once the picture answered 404', () => {
-    mockedState().mockImplementationOnce(() => [
-      picture,
-      jest.fn(),
-    ]);
+    mockedState().mockImplementationOnce(() => [picture, jest.fn()]);
     const html = renderToStaticMarkup(
       <KailoUser user={{ name: 'qa one', picture }} />,
     );
@@ -33,10 +30,7 @@ describe('KailoUser avatar (07 §4.7.3)', () => {
   });
 
   it('tries a changed picture again', () => {
-    mockedState().mockImplementationOnce(() => [
-      picture,
-      jest.fn(),
-    ]);
+    mockedState().mockImplementationOnce(() => [picture, jest.fn()]);
     const html = renderToStaticMarkup(
       <KailoUser user={{ name: 'qa one', picture: `${picture}-2` }} />,
     );
