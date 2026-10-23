@@ -150,3 +150,30 @@ test('sign-out: top level continues to the Kailo sign-out; inside Kailo nothing 
   const fallback = run({ path: '/kailo-embed/signed-out', embedded: false });
   assert.equal(fallback.shown.l.attributes.href, `${KAILO}/`);
 });
+
+// Listener policies run before route policies in the Gateway, so a listener
+// transformation that strips Cookie hides the route OIDC policy's own
+// transaction and session cookies: every callback fails with "missing
+// transaction" and no session is ever recognised. The strip belongs on the
+// native-ui route beside oidc (route transformations run after route OIDC).
+test('Cookie is stripped by the native-ui route after OIDC, never on the listener', () => {
+  const indentOf = (line) => line.match(/^ */)[0].length;
+  const listener = lines.findIndex((line) => line.trim() === '- name: wren-native-browser');
+  const routes = lines.findIndex((line, i) => i > listener && line.trim() === 'routes:');
+  assert.ok(listener > 0 && routes > listener);
+  assert.ok(!lines.slice(listener, routes).some((line) => line.trim() === 'transformations:'), 'no listener-level transformation');
+  const route = lines.findIndex((line) => line.trim() === '- name: native-ui');
+  const oidc = lines.findIndex((line, i) => i > route && line.trim() === 'oidc:');
+  const strip = lines.findIndex((line, i) => i > route && line.trim() === 'transformations:');
+  assert.ok(oidc > route && strip > route, 'native-ui has oidc and transformations');
+  assert.equal(indentOf(lines[strip]), indentOf(lines[oidc]), 'both are native-ui route policies');
+  const removed = [];
+  for (let i = strip + 1; i < lines.length && (!lines[i].trim() || indentOf(lines[i]) > indentOf(lines[strip])); i++) {
+    const item = lines[i].trim().match(/^- (.+)$/);
+    if (item) removed.push(item[1]);
+  }
+  for (const header of ['authorization', 'cookie', 'proxy-authorization', 'x-platform-oidc-issuer', 'x-platform-oidc-subject',
+    'x-platform-tenant', 'x-platform-workspace', 'x-platform-principal']) {
+    assert.ok(removed.includes(header), `${header} is stripped before the backend hop`);
+  }
+});

@@ -32,18 +32,6 @@ binds:
     listeners:
       - name: wren-native-browser
         protocol: HTTP
-        policies:
-          transformations:
-            request:
-              remove:
-                - authorization
-                - cookie
-                - proxy-authorization
-                - x-platform-oidc-issuer
-                - x-platform-oidc-subject
-                - x-platform-tenant
-                - x-platform-workspace
-                - x-platform-principal
         routes:
           - name: kailo-embed-page
             matches:
@@ -197,6 +185,22 @@ binds:
                 # as this client's back-channel logout URL (session required).
                 backchannelLogout:
                   path: /oauth/backchannel-logout
+              # Browser credentials and platform identity headers never reach
+              # the native UI. This runs on the route, after the OIDC policy
+              # above has read its own transaction and session cookies: listener
+              # policies run before route policies, so stripping Cookie there
+              # leaves the route OIDC without them ("missing transaction").
+              transformations:
+                request:
+                  remove:
+                    - authorization
+                    - cookie
+                    - proxy-authorization
+                    - x-platform-oidc-issuer
+                    - x-platform-oidc-subject
+                    - x-platform-tenant
+                    - x-platform-workspace
+                    - x-platform-principal
               # The pinned Gateway exposes CSRF on routes, not listener policy.
               # This catch-all covers every native UI write with no extra origin.
               csrf: {}
