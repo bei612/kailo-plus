@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/agent_team_page.schema.json",
+  "title": "AgentTeamPage",
+  "description": "同 Tenant 且读者当前可 discover 的未删除 AgentTeam 页（DD-131(1)(6)）；nextOffset 续读同一排序。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["teams"],
+  "properties": {
+    "teams": {"type": "array", "items": {"$ref": "agent_team_view.schema.json"}},
+    "nextOffset": {"type": "integer"}
+  }
+}

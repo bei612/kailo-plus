@@ -2067,6 +2067,8 @@ async fn finish(state: &ServiceState, deletion: &Delete) -> Result<(), sqlx::Err
         "update catalog.skill_definition set status='DELETED' where tenant_id=$1 and status<>'DELETED'",
         "update catalog.skill_version set artifact=null where tenant_id=$1 and artifact is not null",
         "delete from admission.skill_artifact_upload where tenant_id = $1",
+        // DD-131(1)：团队转墓碑；成员引用只是历史，不级联删除成员 Definition。
+        "update catalog.agent_team set state='DELETED' where resource_id in (select id from catalog.resource where tenant_id=$1 and type_key='agent.team') and state<>'DELETED'",
         // DD-131(2)：快照包暂存不是历史；导入审计只引用其摘要。
         "delete from admission.transfer_upload where tenant_id = $1",
         // DD-149(11)：连接器转墓碑（其 Resource 与工具已随上方语句 DELETED，凭据随 Tenant

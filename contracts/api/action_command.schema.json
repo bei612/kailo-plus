@@ -121,6 +121,10 @@
       "type": "integer",
       "description": "调用方实际读取的 Asset 版本；旧版本不能改写新的草稿或发布事实。"
     },
+    "agentTeam": {
+      "$ref": "../domain/agent_team_input.schema.json",
+      "description": "仅 agent.team.create / agent.team.update 且必带（DD-131(1)、05 §2.12）；其他动作携带即拒绝。"
+    },
     "agentDefinitionImport": {
       "$ref": "../domain/agent_definition_import_input.schema.json",
       "description": "仅 agent.definition.import（DD-131(2)、05 §2.12）：本会话上传的快照包引用、包 digest 与本 Tenant 重选的运行配置；其他动作携带即拒绝。"

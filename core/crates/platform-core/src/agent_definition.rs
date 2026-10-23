@@ -461,7 +461,9 @@ async fn lifecycle_resource(
             or (r.type_key='tool.definition' and r.home_workspace_id is null
                 and exists(select 1 from catalog.tool_definition t where t.resource_id=r.id))
             or (r.type_key='skill.definition' and r.home_workspace_id is null
-                and exists(select 1 from catalog.skill_definition s where s.resource_id=r.id))) for update of r")
+                and exists(select 1 from catalog.skill_definition s where s.resource_id=r.id))
+            or (r.type_key='agent.team' and r.home_workspace_id is null
+                and exists(select 1 from catalog.agent_team t where t.resource_id=r.id))) for update of r")
         .bind(tenant).bind(id).fetch_optional(conn).await
 }
 
@@ -668,7 +670,7 @@ struct DefinitionRow {
     current_published_version_asset_id: Option<Uuid>,
 }
 impl DefinitionRow {
-    fn view(self) -> contracts::AgentDefinitionView {
+    fn view(self, shared: bool) -> contracts::AgentDefinitionView {
         contracts::AgentDefinitionView {
             resource_id: self.resource_id.to_string(),
             owner_principal_id: self.owner_principal_id.to_string(),
@@ -680,8 +682,29 @@ impl DefinitionRow {
                 .current_published_version_asset_id
                 .map(|id| id.to_string()),
             resource_state: contracts::ResourceState::Active,
+            catalog_shared: shared.then_some(true),
         }
     }
+}
+
+/// DD-131(6)：投影闭合（容许目录授予）时返回是否已分享到目录；不一致或不可核验即不可用。
+async fn catalog_shared(
+    state: &BffState,
+    tenant: Uuid,
+    r: &DefinitionRow,
+) -> Result<bool, Refusal> {
+    state
+        .governance
+        .spicedb
+        .catalog_projection(
+            &r.resource_id.to_string(),
+            &tenant.to_string(),
+            &r.owner_principal_id.to_string(),
+            state.governance.cfg.relationship_page,
+        )
+        .await
+        .map_err(|e| Refusal::Unavailable(e.to_string()))?
+        .ok_or_else(|| Refusal::Unavailable("Resource 权限投影不一致".into()))
 }
 
 pub async fn list(
@@ -714,19 +737,13 @@ pub async fn list(
         Ok(r) => r,
         Err(e) => return crate::service_api::unavailable(e),
     };
+    let mut shared = std::collections::HashSet::new();
     for r in &rows {
-        match projection_matches(
-            &state.governance,
-            r.resource_id,
-            ctx.tenant_id,
-            r.owner_principal_id,
-        )
-        .await
-        {
-            Ok(true) => {}
-            Ok(false) => {
-                return Refusal::Unavailable("Resource 权限投影不一致".into()).respond(None)
+        match catalog_shared(&state, ctx.tenant_id, r).await {
+            Ok(true) => {
+                shared.insert(r.resource_id);
             }
+            Ok(false) => {}
             Err(e) => return e.respond(None),
         }
     }
@@ -752,17 +769,8 @@ pub async fn list(
             .into_iter()
             .filter(|r| allowed.contains(&r.resource_id.to_string()))
             .map(|r| {
-                let v = r.view();
-                contracts::AgentDefinitionView {
-                    resource_id: v.resource_id,
-                    owner_principal_id: v.owner_principal_id,
-                    stable_slug: v.stable_slug,
-                    display_name: v.display_name,
-                    status: v.status,
-                    resource_version: v.resource_version,
-                    current_published_version_asset_id: v.current_published_version_asset_id,
-                    resource_state: v.resource_state,
-                }
+                let catalog = shared.contains(&r.resource_id);
+                r.view(catalog)
             })
             .collect(),
         next_offset: next,
@@ -789,18 +797,10 @@ pub async fn get(
         Ok(None) => return StatusCode::NOT_FOUND.into_response(),
         Err(e) => return crate::service_api::unavailable(e),
     };
-    match projection_matches(
-        &state.governance,
-        row.resource_id,
-        ctx.tenant_id,
-        row.owner_principal_id,
-    )
-    .await
-    {
-        Ok(true) => {}
-        Ok(false) => return Refusal::Unavailable("Resource 权限投影不一致".into()).respond(None),
+    let shared = match catalog_shared(&state, ctx.tenant_id, &row).await {
+        Ok(shared) => shared,
         Err(e) => return e.respond(None),
-    }
+    };
     match state
         .governance
         .spicedb
@@ -813,7 +813,7 @@ pub async fn get(
         )
         .await
     {
-        Ok(c) if c.allowed => Json(row.view()).into_response(),
+        Ok(c) if c.allowed => Json(row.view(shared)).into_response(),
         Ok(_) => StatusCode::FORBIDDEN.into_response(),
         Err(e) => Refusal::Unavailable(e.to_string()).respond(None),
     }

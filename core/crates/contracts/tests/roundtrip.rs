@@ -1245,3 +1245,26 @@ fn dd131_agent_snapshot_import_preserves_fields_and_absence() {
     unknown["omitted"][0] = serde_json::json!("SECRET");
     assert!(serde_json::from_value::<contracts::AgentSnapshotImportPreview>(unknown).is_err());
 }
+
+#[test]
+fn dd131_agent_teams_preserve_fields_and_absence() {
+    // DD-131(1)(6): team create/update/share commands, the team page (visible
+    // members only, hidden count) and a catalog-shared definition view keep
+    // every field and keep absent optionals absent.
+    let value: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(sample_path().with_file_name("agent-teams.sample.json")).unwrap(),
+    )
+    .unwrap();
+    fn roundtrip<T: serde::de::DeserializeOwned + serde::Serialize>(value: &serde_json::Value) {
+        let typed: T = serde_json::from_value(value.clone()).unwrap();
+        assert_eq!(&serde_json::to_value(typed).unwrap(), value);
+    }
+    roundtrip::<contracts::ActionCommand>(&value["createCommand"]);
+    roundtrip::<contracts::ActionCommand>(&value["updateCommand"]);
+    roundtrip::<contracts::ActionCommand>(&value["shareCommand"]);
+    roundtrip::<contracts::AgentTeamPage>(&value["teamPage"]);
+    roundtrip::<contracts::AgentDefinitionView>(&value["sharedDefinitionView"]);
+    let mut missing = value["teamPage"]["teams"][0].clone();
+    missing.as_object_mut().unwrap().remove("catalogShared");
+    assert!(serde_json::from_value::<contracts::AgentTeamView>(missing).is_err());
+}

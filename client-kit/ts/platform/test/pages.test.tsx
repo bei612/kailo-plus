@@ -4073,9 +4073,12 @@ describe("AgentDefinitionsPage read outcomes", () => {
     expect(host.textContent).not.toContain("TARGET_NOT_FOUND");
 
     reply = { status: 200, body: { definitions: [] } };
+    // DD-131(1): the Teams area reads the same directory on its own; "Try again" repeats only the list GET.
+    const listReads = () => t.send.mock.calls.filter(([r]) => r.path === "/api/v1/agent-definitions").length;
+    const before = listReads();
     await click(button(host, "Try again"));
     expect(host.querySelector("[data-testid=new-agent-card]")).not.toBeNull();
-    expect(t.send.mock.calls.filter(([r]) => r.path === "/api/v1/agent-definitions")).toHaveLength(2);
+    expect(listReads() - before).toBe(1);
     expect(t.send.mock.calls.every(([r]) => r.method === "GET")).toBe(true);
   });
 

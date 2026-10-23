@@ -506,6 +506,15 @@ pub fn router(state: BffState) -> Router {
             "/api/v1/agent-definitions",
             get(crate::agent_definition::list),
         )
+        // DD-131(1)(6)：读者可 discover 的 Tenant 级团队（成员只列读者可 discover 者）
+        .exposed_route(
+            "/api/v1/agent-teams",
+            get(crate::governance::agent_team::list),
+        )
+        .exposed_route(
+            "/api/v1/agent-teams/{resource_id}",
+            get(crate::governance::agent_team::get),
+        )
         // DD-131(2)、DD-143：Agent 快照包的一次性上传暂存与导入预览，以及导入人可重选的运行配置
         .exposed_route(
             "/api/v1/agent-snapshots/uploads",

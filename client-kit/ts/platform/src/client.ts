@@ -20,6 +20,8 @@ import type {
   ApplicationNativePage,
   AgentDefinitionPage,
   AgentDefinitionView,
+  AgentTeamPage,
+  AgentTeamView,
   AgentInstallationPage,
   AgentInstallationUsePage,
   AgentAuthorDirectory,
@@ -367,6 +369,14 @@ export function createBffClient(transport: BffTransport) {
       get<AgentVersionPage>(`/api/v1/agent-definitions/${encodeURIComponent(resourceId)}/versions${offset !== undefined ? `?offset=${offset}` : ""}`),
     agentVersionConfiguration: (resourceId: string, offset?: number) =>
       get<AgentVersionConfigurationPage>(`/api/v1/agent-definitions/${encodeURIComponent(resourceId)}/version-configuration${offset !== undefined ? `?offset=${offset}` : ""}`),
+    /**
+     * DD-131(1)(6): same-Tenant, undeleted Agent teams the caller can discover. Members list only
+     * the Definitions the caller can discover (original order); the rest are a count.
+     */
+    agentTeams: (offset?: number) =>
+      get<AgentTeamPage>(`/api/v1/agent-teams${offset ? `?offset=${offset}` : ""}`),
+    agentTeam: (resourceId: string) =>
+      get<AgentTeamView>(`/api/v1/agent-teams/${encodeURIComponent(resourceId)}`),
 
     /** DD-135：Tenant 级 Skill 目录（逐项 discover 过滤）、定义与版本（fresh read；DRAFT 需版本 read）。 */
     skillDefinitions: (offset?: number) =>

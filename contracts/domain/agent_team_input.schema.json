@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "domain/agent_team_input.schema.json",
+  "title": "AgentTeamInput",
+  "description": "仅 agent.team.create / agent.team.update 且必带（DD-131(1)、05 §2.12）：Tenant 级 Agent 团队的名称、说明与有序成员。成员是同 Tenant、发起人当前可 read 的 AgentDefinition Resource，按给出次序保存、不重复、至多 64 个（沿原团队目录上限）；不含原版团队级 instructions、内置 welcome 团队或任何运行配置。update 另带 resourceId 与读到的 resourceVersion 做 CAS。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["name", "memberAgentResourceIds"],
+  "properties": {
+    "name": {"type": "string", "description": "去首尾空白后非空，至多 200 字符"},
+    "description": {"type": "string", "description": "可选说明，至多 2000 字符；去首尾空白后为空即省略"},
+    "memberAgentResourceIds": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {"type": "string", "format": "uuid"}
+    }
+  }
+}

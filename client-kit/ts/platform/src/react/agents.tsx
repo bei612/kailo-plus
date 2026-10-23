@@ -89,6 +89,7 @@ import { Button as WorkflowButton } from "./profile/buzz/shared/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "./composer/shared/ui/dialog";
 import { AgentIdentityCard } from "./agent-library/AgentIdentityCard";
 import { AgentsPageFrame } from "./agent-library/AgentsPageFrame";
+import { AgentTeamsLibrary } from "./agent-library/AgentTeamsLibrary";
 import { CreateIdentityCard } from "./agent-library/CreateIdentityCard";
 import { AgentManagementDialog } from "./agent-library/AgentManagementDialog";
 import { AgentSnapshotImportDialog, agentSnapshotSource, type AgentSnapshotSource } from "./agent-library/AgentSnapshotImportDialog";
@@ -265,6 +266,8 @@ export function AgentDefinitionsPage(navigation: WorkspaceNavigation & { avatarH
           onEdit={(target, owner) => { setSelected(null); setEdit({ target, owner }); }}
           onVersionEdit={(next) => { setSelected(null); setVersionEdit(next); }} /> : null}
       </AgentManagementDialog>
+      {/* DD-131(1)(6)：原版 Agents 页的团队区（新建、编辑、删除、部署到频道、分享到目录）。 */}
+      <AgentTeamsLibrary refreshRevision={refreshRevision + versionRevision} locked={blocked || versionEdit !== null} />
       {/* DD-135、17 §8：Skills 是 Agents 页内与定义并列的管理区。 */}
       <SkillsSection locked={blocked || versionEdit !== null} refreshRevision={refreshRevision} />
       <Button className="w-fit" disabled={blocked} onClick={() => setToolsOpen(true)}>{t("agents.tools.title")}</Button>

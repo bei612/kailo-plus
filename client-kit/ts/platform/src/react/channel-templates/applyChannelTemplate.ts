@@ -49,7 +49,7 @@ export async function waitForCreatedWorkspace(
 }
 
 /** The Definition's current published Version as an installable candidate in this Workspace. */
-async function currentCandidate(client: TemplateApplyClient, workspaceId: string, resourceId: string): Promise<{ name?: string; candidate: AgentInstallationCandidate | null }> {
+export async function currentCandidate(client: TemplateApplyClient, workspaceId: string, resourceId: string): Promise<{ name?: string; candidate: AgentInstallationCandidate | null }> {
   const definition = await client.agentDefinition(resourceId);
   if (definition.resourceId !== resourceId) throw new TransportError("Agent definition mismatch");
   const name = definition.displayName;

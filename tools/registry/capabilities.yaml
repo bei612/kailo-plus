@@ -7,6 +7,8 @@ capabilities:
   - /api/v1/agent-installations/{resource_id}/invocations
   - /api/v1/agent-definitions
   - /api/v1/agent-definitions/{resource_id}
+  - /api/v1/agent-teams
+  - /api/v1/agent-teams/{resource_id}
   - /api/v1/agent-versions/{asset_id}
   - /api/v1/agent-installations
   - /api/v1/agent-installations/{resource_id}
@@ -39,6 +41,13 @@ capabilities:
   - agent.version.publish
   - agent.version.retire
   - resource.transfer_owner
+  - agent.team.create
+  - agent.team.update
+  - agent.team.delete
+  - agent.team.share
+  - agent.team.unshare
+  - agent.definition.share
+  - agent.definition.unshare
   - automation.create
   - automation.publish_version
   - automation.enable
