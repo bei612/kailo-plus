@@ -4343,18 +4343,18 @@ Top 30 之外的 (c)：
 - **视觉由 DD-141 接管**：2026-10-23 用户裁定 Kailo 视觉全面超越且不再复刻 Buzz（DD-141 Kailo 视觉设计系统）；纯视觉、无功能与交互语义的 (c) 行不计入剩余缺口。剩余计数只统计功能与交互项。
 - 这是第 0 节“(b)”规则的同一口径，比“有效行覆盖 ≥30%”宽松，逐项功能是否完整以 8.3 的功能记录与后续截图验收为准。
 
-### 8.2 当前计数（feat/buzz-restore-r5）
+### 8.2 当前计数（feat/buzz-restore-r6）
 
 | 项目 | 数量 |
 |---|---:|
 | 第 6 节 (c) 行 | 459 |
-| 已有源码替代（按引用判定） | 145 |
-| 原位改写已恢复（8.6） | 4 |
-| 原版未挂载，不计缺口（8.7） | 6 |
+| 已有源码替代（按引用判定） | 157 |
+| 原位改写已恢复（8.6） | 5 |
+| 原版未挂载，不计缺口（8.7） | 7 |
 | 纯视觉，由 DD-141 接管（8.7） | 1 |
-| **剩余功能与交互缺口** | **303** |
+| **剩余功能与交互缺口** | **289** |
 
-上一轮（r4）为 325 行剩余（当时尚未扣除未挂载与纯视觉行）。
+上一轮（r5）为 303 行剩余，r4 为 325 行（当时尚未扣除未挂载与纯视觉行）。按引用判定脚本本轮另命中 3630（`ios_profile_text_editor.dart`）、3637（`profile_edit_page.dart`）与 3676（`settings_page/notifications_section.dart`）三行，但命中处是“尚未恢复”的注释或仅恢复了“此版本不提供推送”分支，按功能口径仍计为缺口，未列入 8.5。
 
 ### 8.3 各轮关闭的功能缺口
 
@@ -4363,14 +4363,14 @@ Top 30 之外的 (c)：
 - **r3**：DD-139 Desktop 经设备会话取头像；多选剩余接入点；DD-140 项目频道申请（Core 工具与审批、原版对话框、Needs action 详情）。
 - **r4**：DD-140 可用链路（工具可选、Delegation 可授予、owner 回执回传 Agent、DB 守卫）；Web 标签页全局徽标；私聊行“工作中”徽标与活动弹层；私聊不提供原版没有的星标分组。
 - **r5**：Desktop 举报与审核菜单、对所有人移除链接预览、输入中广播；Agent 消息 owner 行与 owner 可见的 allowlist 角标（DD-147）；Agent 收件人前缀与 `agent-address` 标签（DD-148）；消息中的快照卡（DD-143，下载）；Web 先发后传（DD-146）与私聊提及 Agent 的拒绝提示（DD-144）；Mobile 消息编辑/删除、回应行与快捷回应、自定义表情回应、频道与线程输入中提示；Welcome 横幅随 Welcome 自动起步排除（DD-145）。
+- **r6**：DD-146 按原版点发送即清空（含无上传的普通发送）、失败/取消恢复、刷新后“待发送”恢复且不自动重发、同一 DD-81 幂等键；DD-144 私聊提及读取 Agent 目录全部分页；DD-147 成员可读的 Agent 作者目录（owner 行不再依赖 Installation 读取授权），接入 Web、Desktop Inbox 与独立线程窗口，点 owner 名打开资料卡；通用 RESOURCE_IMPORT 机制与 Agent 快照导入（DD-131(2)、DD-143“添加”）；Mobile 频道详情、成员、添加成员、管理频道（只走 BFF 已有受治理动作）、自定义状态、资料显示名/简介编辑、设置页资料头状态徽章；Mobile WEBHOOK 触发器穷尽分支修复，flutter analyze/test 恢复编译。
 
-### 8.4 仍缺的主要项（r5 结束时）
+### 8.4 仍缺的主要项（r6 结束时）
 
-- owner 编辑/删除自有 Agent 的消息（DD-142）：Core 以 Agent 身份签名的改动被权限分类器拦下，待用户明确批准后提交；Web/Desktop 入口随之接入。
-- 快照导入/导出与团队（DD-131、DD-143 的“添加”）：需要通用 RESOURCE_IMPORT/EXPORT 机制（06 §17、DD-42）。
-- owner 行对没有使用授权的普通成员的可读性：当前沿用 Installation 读取授权，DD-147 要求的成员可读目录尚未单独开放。
-- DD-146 与原版的交互差异：等待上传时输入框锁定而非清空；刷新后的“待发送”恢复未单独实现。
-- Desktop Huddle 全模块、Local archive、Updates、Voice、Terminal、托盘菜单、OS 空闲；Mobile 频道详情/成员/管理、资料编辑与状态、设置分区、提醒、推送、论坛、Pulse、Activity。
+- owner 编辑/删除自有 Agent 的消息（DD-142）：Core 以 Agent 身份签名的改动被权限分类器拦下，待用户明确批准；补丁未应用，也未改写绕开。
+- 快照导出与团队：RESOURCE_EXPORT 导出动作（owner 审批）、导出包资产与下载、转移格式登记、persona 作为附件分享、剪贴板快照；Teams 资源、动作、TeamsSection/TeamDialog、团队快照导入导出与部署到频道。导入侧尚待裁定的偏差：头像不写入草稿、导入人即 owner、运行配置与模型路由导入时选择、无提示词的包拒绝。
+- Desktop Huddle 全模块、Local archive、Updates、Voice、Terminal、托盘菜单、OS 空闲。
+- Mobile 头像编辑整条链路与 `profile_edit_page`、iOS 原生文本编辑器、在线状态（20001）、成员 sheet 的 Agents 分区、频道静音/移到分区/删除频道/Canvas 编辑（无对应治理动作）、推送开关、社区与连接分区、提醒、论坛、Pulse、Activity。
 
 ### 8.5 已有源码替代的 (c) 行
 
@@ -4381,6 +4381,7 @@ Top 30 之外的 (c)：
 | 414 | `desktop/src/features/agent-memory/lib/buildMemoryGraph.ts` | `client-kit/ts/platform/src/react/memory-order.ts` |
 | 433 | `desktop/src/features/agents/agentWorkingSignal.ts` | `client-kit/ts/platform/src/react/agent-activity/agentWorkingSignal.ts` |
 | 465 | `desktop/src/features/agents/lib/catalog.ts` | `client-kit/ts/platform/src/huddle.ts` |
+| 572 | `desktop/src/features/agents/ui/AgentSnapshotImportDialog.tsx` | `client-kit/ts/platform/src/react/agent-library/AgentSnapshotImportDialog.tsx` |
 | 628 | `desktop/src/features/agents/ui/TeamsSection.tsx` | `client-kit/ts/platform/src/react/skills.tsx` |
 | 849 | `desktop/src/features/channels/ui/BotActivityBar.tsx` | `client-kit/ts/platform/src/react/agent-activity/BotActivityBar.tsx` |
 | 852 | `desktop/src/features/channels/ui/ChannelComposerActivityAccessory.tsx` | `client-kit/ts/platform/src/react/agent-activity/ChannelComposerActivityAccessory.tsx` |
@@ -4507,20 +4508,31 @@ Top 30 之外的 (c)：
 | 3172 | `desktop/src-tauri/crates/buzz-terminal/src/context.rs` | `client-kit/ts/platform/src/i18n.ts` |
 | 3179 | `desktop/src-tauri/crates/buzz-terminal/src/lifecycle.rs` | `client-kit/ts/platform/src/huddle.ts` |
 | 3181 | `desktop/src-tauri/crates/buzz-terminal/src/listener.rs` | `client-kit/ts/platform/src/i18n.ts` |
+| 3469 | `mobile/lib/features/channels/add_members_sheet.dart` | `collaboration/mobile/lib/features/channels/add_members_sheet.dart` |
+| 3492 | `mobile/lib/features/channels/channel_details_page.dart` | `collaboration/mobile/lib/features/channels/channel_details_page.dart` |
 | 3512 | `mobile/lib/features/channels/channel_typing_indicator.dart` | `collaboration/mobile/lib/features/channels/channel_detail_page.dart` |
 | 3513 | `mobile/lib/features/channels/channel_typing_provider.dart` | `collaboration/mobile/lib/features/channels/channel_typing_indicator.dart` |
 | 3515 | `mobile/lib/features/channels/channels_page/badges.dart` | `→ mobile/lib/features/channels/channels_page/error_view.dart collaboration/mobile/lib/features/channels/channels_page.dart` |
+| 3543 | `mobile/lib/features/channels/manage_channel_sheet.dart` | `collaboration/mobile/lib/features/channels/manage_channel_sheet.dart` |
+| 3544 | `mobile/lib/features/channels/members_sheet.dart` | `collaboration/mobile/lib/features/channels/members_sheet.dart` |
 | 3550 | `mobile/lib/features/channels/message_actions/message_reaction_tray.dart` | `collaboration/mobile/lib/features/channels/message_actions.dart` |
 | 3551 | `mobile/lib/features/channels/message_actions/quick_reaction_row.dart` | `collaboration/mobile/lib/features/channels/message_actions.dart` |
 | 3552 | `mobile/lib/features/channels/message_actions/reaction_popover.dart` | `collaboration/mobile/lib/features/channels/message_actions.dart` |
 | 3557 | `mobile/lib/features/channels/reaction_row.dart` | `collaboration/mobile/lib/features/channels/channel_detail_page.dart` |
 | 3627 | `mobile/lib/features/profile/image_avatar_capture/camera_preview.dart` | `collaboration/mobile/lib/features/channels/compose_bar.dart` |
+| 3638 | `mobile/lib/features/profile/profile_provider.dart` | `collaboration/mobile/lib/features/profile/profile_provider.dart` |
+| 3640 | `mobile/lib/features/profile/profile_text_editor.dart` | `collaboration/mobile/lib/features/profile/profile_text_editor.dart` |
+| 3641 | `mobile/lib/features/profile/set_status_sheet.dart` | `collaboration/mobile/lib/features/profile/set_status_sheet.dart` |
 | 3644 | `mobile/lib/features/profile/user_status.dart` | `client-kit/ts/platform/src/react/user-status/hooks.ts` |
+| 3645 | `mobile/lib/features/profile/user_status_cache_provider.dart` | `collaboration/mobile/lib/features/profile/user_status_cache_provider.dart` |
+| 3646 | `mobile/lib/features/profile/user_status_provider.dart` | `collaboration/mobile/lib/features/profile/user_status_provider.dart` |
 | 3722 | `mobile/lib/shared/custom_emoji/custom_emoji.dart` | `client-kit/ts/platform/src/react/composer/features/messages/lib/customEmojiNode.ts` |
 | 3723 | `mobile/lib/shared/custom_emoji/custom_emoji_provider.dart` | `collaboration/mobile/lib/features/channels/message_mutations.dart` |
 | 3724 | `mobile/lib/shared/custom_emoji/custom_emoji_render.dart` | `collaboration/mobile/lib/features/channels/reaction_row.dart` |
 | 3738 | `mobile/lib/shared/emoji/emoji_burst.dart` | `collaboration/mobile/lib/features/channels/reaction_row.dart` |
 | 3740 | `mobile/lib/shared/emoji/positive_emoji.dart` | `collaboration/mobile/lib/features/channels/reaction_row.dart` |
+| 3843 | `mobile/lib/shared/widgets/lucide_star_icon.dart` | `collaboration/mobile/lib/shared/widgets/lucide_star_icon.dart` |
+| 3844 | `mobile/lib/shared/widgets/masked_avatar_badge.dart` | `collaboration/mobile/lib/shared/widgets/masked_avatar_badge.dart` |
 
 ### 8.6 原位改写已恢复的 (c) 行
 
@@ -4530,6 +4542,7 @@ Top 30 之外的 (c)：
 | 3548 | `mobile/lib/features/channels/message_actions/message_action_popover.dart` | 消息动作弹层 |
 | 3491 | `mobile/lib/features/channels/channel_detail_page/system_rows.dart` | 系统行回应（Huddle 部分不恢复） |
 | 3566 | `mobile/lib/features/channels/timeline_message.dart` | 回应聚合与自定义表情回应 |
+| 3642 | `mobile/lib/features/profile/settings_profile_header.dart` | 设置页资料头的状态徽章、状态文字与设置状态入口 |
 
 ### 8.7 不计入缺口的 (c) 行
 
@@ -4541,4 +4554,5 @@ Top 30 之外的 (c)：
 | 1887 | `desktop/src/features/projects/ui/ProjectsOverviewChatToggle.tsx` | 原版未挂载 |
 | 1900 | `desktop/src/features/projects/ui/ProjectsWorkItemTable.tsx` | 原版未挂载 |
 | 2644 | `desktop/src/shared/ui/step-progress.tsx` | 原版未挂载 |
+| 3672 | `mobile/lib/features/settings/accent_picker_page.dart` | 原版未挂载（固定提交中无任何引用；本轮已随强调色能力恢复文件，同样不挂载） |
 | 1538 | `desktop/src/features/onboarding/ui/LandingBees.tsx` | 纯视觉，由 DD-141 接管 |
