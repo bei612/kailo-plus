@@ -58,6 +58,7 @@ class UserAvatar extends React.Component{
     }
 
     componentWillUnmount(){
+        this._unmounted = true;
         if(this._userLoggedObs){
             this.props.pydio.stopObserving('user_logged', this._userLoggedObs);
         }
@@ -82,11 +83,22 @@ class UserAvatar extends React.Component{
                 };
                 pydio.observe('user_logged', this._userLoggedObs);
             }
+            const avatar = userObject.getAvatar();
+            // A Kailo picture is shown only once it loads; a 404 (no Kailo
+            // avatar, 07 §4.7.3) keeps the initials instead of an empty circle.
+            const picture = UsersApi.isPictureUrl(avatar);
             this.setState({
                 user:  userObject,
-                avatar: userObject.getAvatar(),
+                avatar: picture ? null : avatar,
                 local: userObject.isLocal()
             });
+            if (picture) {
+                UsersApi.probePicture(avatar).then((loaded) => {
+                    if (loaded && !this._unmounted && this.state.user === userObject) {
+                        this.setState({avatar});
+                    }
+                });
+            }
             // Load graph
             if(richCard && !userObject.isNotFound()) {
                 PydioApi.getRestClient().getIdmApi().loadUserGraph(userId).then(response => {
@@ -338,7 +350,9 @@ class UserAvatar extends React.Component{
 
         if(avatar){
             let avUrl= avatar;
-            if (avUrl.indexOf('?') >= 0) {
+            if (UsersApi.isPictureUrl(avatar)) {
+                // The Kailo picture is one address per person: no size variant, so every size shares one browser cache entry.
+            } else if (avUrl.indexOf('?') >= 0) {
                 avUrl += '&dim=' + avatarSize
             } else {
                 avUrl += '?dim=' + avatarSize

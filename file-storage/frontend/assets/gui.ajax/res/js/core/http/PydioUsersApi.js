@@ -338,6 +338,35 @@ class UsersApi{
     }
 
     /**
+     * Whether a Kailo picture address loads. A person without a Kailo avatar
+     * answers 404 there (07 §4.7.3), and a member list shows the same person
+     * many times: one probe per address is shared by every avatar on the page,
+     * and its answer is kept for PICTURE_PROBE_TTL_MS so that an avatar set
+     * meanwhile appears without a reload.
+     * @param url string
+     * @returns {Promise<boolean>}
+     */
+    static probePicture(url){
+        const now = Date.now();
+        const known = UsersApi.pictureProbes.get(url);
+        if (known && now - known.at < UsersApi.PICTURE_PROBE_TTL_MS) {
+            return known.loaded;
+        }
+        const loaded = new Promise((resolve) => {
+            if (typeof Image === 'undefined') {
+                resolve(true);
+                return;
+            }
+            const probe = new Image();
+            probe.onload = () => resolve(true);
+            probe.onerror = () => resolve(false);
+            probe.src = url;
+        });
+        UsersApi.pictureProbes.set(url, {at: now, loaded});
+        return loaded;
+    }
+
+    /**
      * Build avatar url from avatarId
      * @param userId
      * @param avatarId
@@ -421,6 +450,9 @@ class UsersApi{
 }
 
 UsersApi.avatarsCache = [];
+UsersApi.pictureProbes = new Map();
+// The same lifetime as the private browser cache of the Core avatar route.
+UsersApi.PICTURE_PROBE_TTL_MS = 5 * 60 * 1000;
 UsersApi.avatarFromExternalProvider = debounce(UsersApi.avatarFromExternalProvider, 500);
 
 export {User, UsersApi}
