@@ -270,6 +270,7 @@
 //     final componentConformanceReceiverEnvironment = componentConformanceReceiverEnvironmentFromJson(jsonString);
 //     final componentNativeReceiverObservation = componentNativeReceiverObservationFromJson(jsonString);
 //     final componentNativeReceiverRequest = componentNativeReceiverRequestFromJson(jsonString);
+//     final componentPreferenceDeclaration = componentPreferenceDeclarationFromJson(jsonString);
 //     final componentProtocolPeerEnvironment = componentProtocolPeerEnvironmentFromJson(jsonString);
 //     final componentReleaseApprovalTarget = componentReleaseApprovalTargetFromJson(jsonString);
 //     final componentReleaseRegistration = componentReleaseRegistrationFromJson(jsonString);
@@ -1990,6 +1991,14 @@ ComponentNativeReceiverRequest componentNativeReceiverRequestFromJson(
 
 String componentNativeReceiverRequestToJson(
   ComponentNativeReceiverRequest data,
+) => json.encode(data.toJson());
+
+ComponentPreferenceDeclaration componentPreferenceDeclarationFromJson(
+  String str,
+) => ComponentPreferenceDeclaration.fromJson(json.decode(str));
+
+String componentPreferenceDeclarationToJson(
+  ComponentPreferenceDeclaration data,
 ) => json.encode(data.toJson());
 
 ComponentProtocolPeerEnvironment componentProtocolPeerEnvironmentFromJson(
@@ -7330,6 +7339,11 @@ class ApplicationBindingView {
   ///DD-127(4): presentation category the approved NATIVE_PAGE release declares. The sidebar
   ///labels the entry by capabilityCategories ∪ this value; it grants nothing.
   final NativePageCategory? nativePageCategory;
+
+  ///DD-138: preference items the pinned APPROVED KAILO_EMBED release declares for Kailo
+  ///settings (07 §4.8.2). Kailo settings render them by category, never by component. Absent
+  ///when none; Core keeps no values.
+  final List<ComponentPreferenceDeclaration>? preferences;
   final ApplicationBindingState state;
   final String tenantId;
   final int version;
@@ -7345,6 +7359,7 @@ class ApplicationBindingView {
     this.hasNativePage,
     this.hasReadReceiver,
     this.nativePageCategory,
+    this.preferences,
     required this.state,
     required this.tenantId,
     required this.version,
@@ -7368,6 +7383,13 @@ class ApplicationBindingView {
         nativePageCategory: json["nativePageCategory"] == null
             ? null
             : nativePageCategoryValues.map[json["nativePageCategory"]]!,
+        preferences: json["preferences"] == null
+            ? null
+            : List<ComponentPreferenceDeclaration>.from(
+                json["preferences"]!.map(
+                  (x) => ComponentPreferenceDeclaration.fromJson(x),
+                ),
+              ),
         state: applicationBindingStateValues.map[json["state"]]!,
         tenantId: json["tenantId"],
         version: json["version"],
@@ -7386,6 +7408,9 @@ class ApplicationBindingView {
     "hasNativePage": hasNativePage,
     "hasReadReceiver": hasReadReceiver,
     "nativePageCategory": nativePageCategoryValues.reverse[nativePageCategory],
+    "preferences": preferences == null
+        ? null
+        : List<dynamic>.from(preferences!.map((x) => x.toJson())),
     "state": applicationBindingStateValues.reverse[state],
     "tenantId": tenantId,
     "version": version,
@@ -7421,6 +7446,113 @@ final nativePageCategoryValues = EnumValues({
   "knowledge": NativePageCategory.KNOWLEDGE,
 });
 
+///DD-138：KAILO_EMBED release 向 Kailo 设置页贡献的一项偏好声明（03
+///FrontendPresentationContract.preference_declarations[]，07 §4.8.2）。值对象，随 APPROVED release
+///固定；Core 不保存偏好的值。键规则、选项数量与文案长度由 Core 登记时校验。
+class ComponentPreferenceDeclaration {
+  ///BOOLEAN 为 true/false，ENUM 为 options[].value 之一。
+  final String defaultValue;
+  final ComponentPreferenceText? description;
+
+  ///Kailo 侧偏好键，2–4 段以 . 连接，不含组件名。
+  final String key;
+  final ComponentPreferenceText label;
+
+  ///ENUM 时 2–12 项；BOOLEAN 时为空。
+  final List<ComponentPreferenceOption> options;
+  final ComponentPreferenceCategory settingsCategory;
+  final ComponentPreferenceValueType valueType;
+
+  ComponentPreferenceDeclaration({
+    required this.defaultValue,
+    this.description,
+    required this.key,
+    required this.label,
+    required this.options,
+    required this.settingsCategory,
+    required this.valueType,
+  });
+
+  factory ComponentPreferenceDeclaration.fromJson(Map<String, dynamic> json) =>
+      ComponentPreferenceDeclaration(
+        defaultValue: json["defaultValue"],
+        description: json["description"] == null
+            ? null
+            : ComponentPreferenceText.fromJson(json["description"]),
+        key: json["key"],
+        label: ComponentPreferenceText.fromJson(json["label"]),
+        options: List<ComponentPreferenceOption>.from(
+          json["options"].map((x) => ComponentPreferenceOption.fromJson(x)),
+        ),
+        settingsCategory:
+            componentPreferenceCategoryValues.map[json["settingsCategory"]]!,
+        valueType: componentPreferenceValueTypeValues.map[json["valueType"]]!,
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "defaultValue": defaultValue,
+    "description": description?.toJson(),
+    "key": key,
+    "label": label.toJson(),
+    "options": List<dynamic>.from(options.map((x) => x.toJson())),
+    "settingsCategory":
+        componentPreferenceCategoryValues.reverse[settingsCategory],
+    "valueType": componentPreferenceValueTypeValues.reverse[valueType],
+  });
+}
+
+class ComponentPreferenceText {
+  final String en;
+  final String zhCn;
+
+  ComponentPreferenceText({required this.en, required this.zhCn});
+
+  factory ComponentPreferenceText.fromJson(Map<String, dynamic> json) =>
+      ComponentPreferenceText(en: json["EN"], zhCn: json["ZH_CN"]);
+
+  Map<String, dynamic> toJson() => _stripNulls({"EN": en, "ZH_CN": zhCn});
+}
+
+class ComponentPreferenceOption {
+  final ComponentPreferenceText label;
+  final String value;
+
+  ComponentPreferenceOption({required this.label, required this.value});
+
+  factory ComponentPreferenceOption.fromJson(Map<String, dynamic> json) =>
+      ComponentPreferenceOption(
+        label: ComponentPreferenceText.fromJson(json["label"]),
+        value: json["value"],
+      );
+
+  Map<String, dynamic> toJson() =>
+      _stripNulls({"label": label.toJson(), "value": value});
+}
+
+///DD-138：组件偏好项所属的 Kailo 设置功能分类（07 §4.8.2）。APPEARANCE 外观、NOTIFICATIONS 通知、DOCUMENTS
+///文档与文件、ANSWERS 问答；不按组件分类。
+enum ComponentPreferenceCategory {
+  ANSWERS,
+  APPEARANCE,
+  DOCUMENTS,
+  NOTIFICATIONS,
+}
+
+final componentPreferenceCategoryValues = EnumValues({
+  "ANSWERS": ComponentPreferenceCategory.ANSWERS,
+  "APPEARANCE": ComponentPreferenceCategory.APPEARANCE,
+  "DOCUMENTS": ComponentPreferenceCategory.DOCUMENTS,
+  "NOTIFICATIONS": ComponentPreferenceCategory.NOTIFICATIONS,
+});
+
+///DD-138：组件偏好项的取值类型。只有布尔与封闭选项，不接受自由文本、数字区间、URL、凭据或用户数据（07 §4.8.2）。
+enum ComponentPreferenceValueType { BOOLEAN, ENUM }
+
+final componentPreferenceValueTypeValues = EnumValues({
+  "BOOLEAN": ComponentPreferenceValueType.BOOLEAN,
+  "ENUM": ComponentPreferenceValueType.ENUM,
+});
+
 enum ApplicationBindingState {
   ACTIVE,
   DISABLED,
@@ -7445,6 +7577,10 @@ class ApplicationNativePage {
   final List<String> allowedOrigins;
   final String bindingId;
   final String origin;
+
+  ///DD-138: preference items the pinned APPROVED KAILO_EMBED release declares for Kailo
+  ///settings (07 §4.8.2); the host sends their values to this page only. Absent when none.
+  final List<ComponentPreferenceDeclaration>? preferences;
   final int projectionGeneration;
   final String url;
 
@@ -7452,6 +7588,7 @@ class ApplicationNativePage {
     required this.allowedOrigins,
     required this.bindingId,
     required this.origin,
+    this.preferences,
     required this.projectionGeneration,
     required this.url,
   });
@@ -7461,6 +7598,13 @@ class ApplicationNativePage {
         allowedOrigins: List<String>.from(json["allowedOrigins"].map((x) => x)),
         bindingId: json["bindingId"],
         origin: json["origin"],
+        preferences: json["preferences"] == null
+            ? null
+            : List<ComponentPreferenceDeclaration>.from(
+                json["preferences"]!.map(
+                  (x) => ComponentPreferenceDeclaration.fromJson(x),
+                ),
+              ),
         projectionGeneration: json["projectionGeneration"],
         url: json["url"],
       );
@@ -7469,6 +7613,9 @@ class ApplicationNativePage {
     "allowedOrigins": List<dynamic>.from(allowedOrigins.map((x) => x)),
     "bindingId": bindingId,
     "origin": origin,
+    "preferences": preferences == null
+        ? null
+        : List<dynamic>.from(preferences!.map((x) => x.toJson())),
     "projectionGeneration": projectionGeneration,
     "url": url,
   });

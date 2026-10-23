@@ -108,4 +108,48 @@ describe("kailo-embed.js", () => {
     expect(load({ search: "?kailo_locale=zh-CN" }).useIdentityLocale("en")).toBe(false);
     expect(window.KailoEmbed!.getState().locale).toBe("zh-CN");
   });
+
+  // DD-138 (07 §4.8.2, V-SCN-225): the values of the release's declared Kailo settings items.
+  it("receives Kailo preferences, keeps them across a redirect and reports the changed keys", () => {
+    const embed = load({ framed: true });
+    expect(embed.getPreferences()).toEqual({});
+    const seen: Array<[Record<string, unknown>, string[]]> = [];
+    embed.onPreferencesChange((values, changed) => seen.push([values, changed]));
+    const events: string[][] = [];
+    window.addEventListener("kailo:preferences", (event) => events.push((event as CustomEvent).detail.changed));
+    fromParent({ source: "kailo-host", version: 1, type: "preferences", values: { "documents.measurementUnit": "pt", "documents.spellcheck": true } });
+    expect(embed.getPreferences()).toEqual({ "documents.measurementUnit": "pt", "documents.spellcheck": true });
+    fromParent({ source: "kailo-host", version: 1, type: "preferences", values: { "documents.measurementUnit": "pt", "documents.spellcheck": false } });
+    expect(seen.map(([, changed]) => changed)).toEqual([["documents.measurementUnit", "documents.spellcheck"], ["documents.spellcheck"]]);
+    expect(events.at(-1)).toEqual(["documents.spellcheck"]);
+    // A returned copy cannot change the runtime's values.
+    embed.getPreferences()["documents.spellcheck"] = true;
+    expect(embed.getPreferences()["documents.spellcheck"]).toBe(false);
+    // Preferences are not presentation: theme and locale stay as they were.
+    expect(embed.getState().hostConnected).toBe(false);
+    delete window.KailoEmbed;
+    expect(load({ framed: true }).getPreferences()).toEqual({ "documents.measurementUnit": "pt", "documents.spellcheck": false });
+  });
+
+  it("rejects preferences from another origin or window and any malformed message as a whole", () => {
+    const embed = load({ framed: true });
+    const changed = vi.fn();
+    embed.onPreferencesChange(changed);
+    const good = { "documents.spellcheck": false };
+    fromParent({ source: "kailo-host", version: 1, type: "preferences", values: good }, "https://evil.example.test");
+    fromParent({ source: "kailo-host", version: 1, type: "preferences", values: good }, KAILO, window);
+    fromParent({ source: "kailo-host", version: 2, type: "preferences", values: good });
+    for (const values of [null, ["documents.spellcheck"], { "documents.spellcheck": false, "Bad Key": true },
+      { "documents.note": "free text with spaces" }, { "documents.zoom": 100 }, { "documents.spellcheck": null },
+      Object.fromEntries(Array.from({ length: 17 }, (_, i) => [`documents.flag${i}`, true]))])
+      fromParent({ source: "kailo-host", version: 1, type: "preferences", values });
+    expect(changed).not.toHaveBeenCalled();
+    expect(embed.getPreferences()).toEqual({});
+  });
+
+  it("ignores preferences on a top-level visit (no Kailo host)", () => {
+    const embed = load();
+    fromParent({ source: "kailo-host", version: 1, type: "preferences", values: { "documents.spellcheck": false } }, KAILO, window);
+    expect(embed.getPreferences()).toEqual({});
+  });
 });

@@ -1,6 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { NativeApplicationPage } from "@client-kit/platform/react/native-application-page";
-import { useAppNavigation } from "@/app/navigation/useAppNavigation";
 
 export const Route = createFileRoute("/applications/$bindingId")({
   validateSearch: (search: Record<string, unknown>): { workspaceId?: string } => ({
@@ -11,8 +10,8 @@ export const Route = createFileRoute("/applications/$bindingId")({
 
 function NativeApplicationRoute() {
   const { bindingId } = Route.useParams();
-  const { goHome } = useAppNavigation();
   return <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-6 pb-6 pt-14">
-    <NativeApplicationPage key={bindingId} bindingId={bindingId} onBack={() => { void goHome(); }} />
+    {/* DD-138(3): a Kailo page, no Back/Refresh chrome around the component. */}
+    <NativeApplicationPage key={bindingId} bindingId={bindingId} />
   </div>;
 }

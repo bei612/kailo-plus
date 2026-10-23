@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "domain/component_preference_declaration.schema.json",
+  "title": "ComponentPreferenceDeclaration",
+  "description": "DD-138：KAILO_EMBED release 向 Kailo 设置页贡献的一项偏好声明（03 FrontendPresentationContract.preference_declarations[]，07 §4.8.2）。值对象，随 APPROVED release 固定；Core 不保存偏好的值。键规则、选项数量与文案长度由 Core 登记时校验。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["key", "settingsCategory", "valueType", "options", "defaultValue", "label"],
+  "properties": {
+    "key": {"type": "string", "description": "Kailo 侧偏好键，2–4 段以 . 连接，不含组件名。"},
+    "settingsCategory": {"$ref": "../enums/component_preference_category.schema.json"},
+    "valueType": {"$ref": "../enums/component_preference_value_type.schema.json"},
+    "options": {
+      "type": "array",
+      "description": "ENUM 时 2–12 项；BOOLEAN 时为空。",
+      "items": {
+        "title": "ComponentPreferenceOption",
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["value", "label"],
+        "properties": {
+          "value": {"type": "string"},
+          "label": {"$ref": "#/$defs/text"}
+        }
+      }
+    },
+    "defaultValue": {"type": "string", "description": "BOOLEAN 为 true/false，ENUM 为 options[].value 之一。"},
+    "label": {"$ref": "#/$defs/text"},
+    "description": {"$ref": "#/$defs/text"}
+  },
+  "$defs": {
+    "text": {
+      "title": "ComponentPreferenceText",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ZH_CN", "EN"],
+      "properties": {
+        "ZH_CN": {"type": "string"},
+        "EN": {"type": "string"}
+      }
+    }
+  }
+}

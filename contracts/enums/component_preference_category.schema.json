@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/component_preference_category.schema.json",
+  "title": "ComponentPreferenceCategory",
+  "description": "DD-138：组件偏好项所属的 Kailo 设置功能分类（07 §4.8.2）。APPEARANCE 外观、NOTIFICATIONS 通知、DOCUMENTS 文档与文件、ANSWERS 问答；不按组件分类。",
+  "type": "string",
+  "enum": ["APPEARANCE", "NOTIFICATIONS", "DOCUMENTS", "ANSWERS"]
+}

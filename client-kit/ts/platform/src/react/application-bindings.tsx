@@ -14,6 +14,7 @@ import { TaskDetail } from "./governance";
 import { Badge, Button, Cell, Notice, ReadFailure, Table } from "./ui";
 import { useLoad } from "./use-load";
 import { NativeApplicationPage } from "./native-application-page";
+import { validDeclaration } from "../component-preferences";
 import { ServiceReadPermissions } from "./service-read-permissions";
 
 const states = {
@@ -55,6 +56,8 @@ export function validBindingPage(page: ApplicationBindingPage, workspaceId: stri
       && (row.nativePageCategory === undefined || Object.values(NativePageCategory).includes(row.nativePageCategory))
       && (row.activeProjectionGeneration === undefined || positive(row.activeProjectionGeneration))
       && (row.state !== ApplicationBindingState.Active || positive(row.activeProjectionGeneration))
+      // DD-138: contributed Kailo settings items, already validated by Core at registration.
+      && (row.preferences === undefined || (Array.isArray(row.preferences) && row.preferences.every(validDeclaration)))
       // DD-127: a native page entry binding enables no capability category.
       && Array.isArray(row.capabilityCategories)
       && row.capabilityCategories.every((capability) => !!capability && nonempty(capability.category) && positive(capability.version)));

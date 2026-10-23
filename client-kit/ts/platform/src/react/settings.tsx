@@ -6,6 +6,8 @@ import { SettingsViewSurface, SettingsSectionHeader, type SettingsSection } from
 import { SettingsOptionGroup, SettingsOptionGroupList, SettingsOptionRow } from "./settings-option-group";
 import { TenantInvitations } from "./invitations";
 import type { Loaded } from "./use-load";
+import { ReadFailure } from "./ui";
+import { ContributedPreferenceItems, ContributedPreferenceSection, contributedCategories, useContributedPreferences } from "./component-preferences";
 export { SettingsNavigation, SettingsBackButton, SettingsContentSurface, SettingsSectionHeader, settingsSectionKeys, settingsSectionValues, isSettingsSection, type SettingsSection } from "./settings-surface";
 export { ExperimentalFeaturesCard } from "./experimental-features-settings";
 import {
@@ -178,6 +180,7 @@ export function SettingsPage({
   appVersion,
   channelTemplates,
   moderation,
+  workspaceId,
 }: {
   locale: PlatformLocale;
   section: SettingsSection;
@@ -192,12 +195,32 @@ export function SettingsPage({
   channelTemplates?: boolean;
   /** DD-125(2): show the original "Moderation" section (host renders ModerationQueueCard). */
   moderation?: boolean;
+  /** DD-138: the Workspace whose native page bindings also contribute settings items. */
+  workspaceId?: string;
 }) {
+  // DD-138 (07 §4.8.2): component items join Kailo's own categories; the
+  // "documents" and "answers" categories exist only when an item does.
+  const [contributed, reloadContributed] = useContributedPreferences(workspaceId);
+  const categories = contributedCategories(contributed);
+  const contributedSections: SettingsSection[] = [
+    ...(categories.has("DOCUMENTS") ? ["documents" as const] : []),
+    ...(categories.has("ANSWERS") ? ["answers" as const] : []),
+  ];
+  const declarations = contributed.status === "ok" ? contributed.data : [];
   return (
     <SettingsViewSurface locale={locale} section={section} onSelect={onSelect} onClose={onClose}
       active={active} appVersion={appVersion} invitationAccess={invitationAccess} onRetryInvitations={onRetryInvitations}
-      channelTemplates={channelTemplates} moderation={moderation}>
+      channelTemplates={channelTemplates} moderation={moderation} contributedSections={contributedSections}>
       {children}
+      {section === "appearance" ? <ContributedPreferenceItems declarations={declarations} category="APPEARANCE" />
+        : section === "notifications" ? <ContributedPreferenceItems declarations={declarations} category="NOTIFICATIONS" />
+        : section === "documents" || section === "answers" ? (contributed.status === "error"
+          ? <ReadFailure error={contributed.error} onRetry={reloadContributed} />
+          : contributed.status === "pending" ? <p role="status">{translate(locale, "platform.loading")}</p>
+          : section === "documents"
+            ? <ContributedPreferenceSection declarations={declarations} category="DOCUMENTS" titleKey="platform.settings.documents" descriptionKey="platform.settings.documentsDescription" />
+            : <ContributedPreferenceSection declarations={declarations} category="ANSWERS" titleKey="platform.settings.answers" descriptionKey="platform.settings.answersDescription" />)
+        : null}
     </SettingsViewSurface>
   );
 }

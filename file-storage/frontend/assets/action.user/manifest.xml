@@ -18,6 +18,10 @@
 				</gui>
 				<rightsContext noUser="false" userLogged="only" read="false" write="false" adminOnly="false"/>
 				<processing>
+					<!-- DD-138: account settings live in Kailo settings only (07 §4.8.1). -->
+					<activeCondition><![CDATA[
+						return !window.KailoCells || window.KailoCells.showPersonalShell();
+					]]></activeCondition>
 					<clientCallback module="UserAccount.Callbacks.openDashboard"/>
 				</processing>
 			</action>

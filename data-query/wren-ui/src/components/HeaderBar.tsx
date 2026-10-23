@@ -1,5 +1,5 @@
 import { useRouter } from 'next/router';
-import { Button, Dropdown, Layout, Menu, Space } from 'antd';
+import { Button, Layout, Space } from 'antd';
 import styled from 'styled-components';
 import LogoBar from '@/components/LogoBar';
 import { Path } from '@/utils/enum';
@@ -7,12 +7,14 @@ import Deploy from '@/components/deploy/Deploy';
 import KailoUser from '@/components/kailo/KailoUser';
 import useKailoSession from '@/hooks/useKailoSession';
 import useKailoText from '@/utils/kailoI18n';
+import { headerAccount } from '@/utils/kailoShell';
 
 const { Header } = Layout;
 
 // DD-133 §4: Kailo token styling; the header keeps only this component's
-// business navigation. Inside Kailo the product mark and account menu are
-// Kailo's own shell and are not repeated here.
+// business navigation. Inside Kailo the product mark and identity are Kailo's
+// own shell and are not repeated here. DD-138 §2: no account menu or sign-out
+// in either mode — signing out is a Kailo action.
 const StyledButton = styled(Button)<{ $isHighlight: boolean }>`
   background: ${(props) =>
     props.$isHighlight ? 'var(--kailo-color-accent)' : 'transparent'};
@@ -38,16 +40,6 @@ const StyledHeader = styled(Header)`
   padding: 10px 16px;
 `;
 
-function signOut() {
-  // The gateway clears this page's session (same-origin POST, Origin
-  // checked) and continues to the Kailo sign-out (DD-133 §2).
-  const form = document.createElement('form');
-  form.method = 'POST';
-  form.action = '/auth/logout';
-  document.body.appendChild(form);
-  form.submit();
-}
-
 export default function HeaderBar() {
   const router = useRouter();
   const t = useKailoText();
@@ -56,8 +48,8 @@ export default function HeaderBar() {
   const showNav = !pathname.startsWith(Path.Onboarding);
   const isModeling = pathname.startsWith(Path.Modeling);
 
-  const account = user && (
-    <KailoUser user={user} size={24} showName={!embedded} />
+  const account = headerAccount(embedded, !!user) === 'identity' && (
+    <KailoUser user={user} size={24} />
   );
 
   return (
@@ -109,33 +101,7 @@ export default function HeaderBar() {
         </Space>
         <Space size={[16, 0]}>
           {isModeling && isAdmin && <Deploy />}
-          {account &&
-            (embedded ? (
-              account
-            ) : (
-              <Dropdown
-                trigger={['click']}
-                overlay={
-                  <Menu
-                    items={[
-                      {
-                        key: 'sign-out',
-                        label: t('signOut'),
-                        onClick: signOut,
-                      },
-                    ]}
-                  />
-                }
-              >
-                <Button
-                  type="text"
-                  size="small"
-                  className="d-flex align-center"
-                >
-                  {account}
-                </Button>
-              </Dropdown>
-            ))}
+          {account}
         </Space>
       </div>
     </StyledHeader>

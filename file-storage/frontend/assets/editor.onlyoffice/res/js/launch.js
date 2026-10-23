@@ -3,9 +3,47 @@
  * Licensed under the GNU Affero General Public License v3, like Pydio Cells.
  */
 
-// DD-132(3): macros and plugins are closed for every launch through the native
-// docs_api_config form field of the WOPI editor route (SF-OFF-11).
-export const DOCS_API_CONFIG = JSON.stringify({editorConfig: {customization: {macros: false, plugins: false}}});
+// DD-138 (07 §4.8.2): document editor preferences declared by the Files release
+// (manifest.native-page.json frontendPresentationContract.preferences) and set
+// only in Kailo settings. Missing or invalid values fall back to the declared
+// defaults, which must stay equal to the release declaration.
+export const DOCUMENT_PREFERENCES = Object.freeze({
+    measurementUnit: Object.freeze({key: 'documents.measurementUnit', options: Object.freeze(['cm', 'pt', 'inch']), defaultValue: 'cm'}),
+    spellcheck: Object.freeze({key: 'documents.spellcheck', defaultValue: true}),
+});
+
+// Values Kailo supplied through the platform runtime (window.KailoEmbed); an
+// absent or failing runtime yields no values, so the declared defaults apply.
+export function kailoPreferences(runtime) {
+    try {
+        const values = runtime && typeof runtime.getPreferences === 'function' ? runtime.getPreferences() : null;
+        return values && typeof values === 'object' && !Array.isArray(values) ? values : {};
+    } catch (_) {
+        return {};
+    }
+}
+
+// DD-132(3) + DD-138: the editor configuration posted through the native
+// docs_api_config form field of the WOPI editor route (SF-OFF-11) at each
+// document launch. Macros and plugins stay closed and the editor "Advanced
+// settings" file-menu item is hidden (ONLYOFFICE checks
+// Common.UI.LayoutManager.isElementVisible('toolbar-file-settings')), so the
+// Kailo settings page is the only place for these preferences. The editor
+// reads the configuration only when it starts: a preference change applies
+// at the next document open.
+export function docsApiConfig(preferences) {
+    const values = preferences && typeof preferences === 'object' ? preferences : {};
+    const {measurementUnit, spellcheck} = DOCUMENT_PREFERENCES;
+    const unit = measurementUnit.options.indexOf(values[measurementUnit.key]) >= 0 ? values[measurementUnit.key] : measurementUnit.defaultValue;
+    const check = typeof values[spellcheck.key] === 'boolean' ? values[spellcheck.key] : spellcheck.defaultValue;
+    return JSON.stringify({editorConfig: {customization: {
+        macros: false,
+        plugins: false,
+        layout: {toolbar: {file: {settings: false}}},
+        unit,
+        features: {spellcheck: {mode: check, change: false}},
+    }}});
+}
 
 // DocumentServer locale from the Cells user preference (en-us -> en-US).
 export function editorLocale(preference) {

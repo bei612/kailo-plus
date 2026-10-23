@@ -93,6 +93,14 @@
         return cached || {};
     }
 
+    // Kailo mode (07 §4.8.1, DD-138): the deployment declared KAILO_EMBED, i.e.
+    // the Cells index page rendered startParameters.KAILO_EMBED (web/kailo-embed.go).
+    // Independent of framing: a top-level visit is still Kailo mode.
+    function kailoMode() {
+        var start = window.startParameters;
+        return !!(start && start.KAILO_EMBED && typeof start.KAILO_EMBED === 'object');
+    }
+
     function presentation() {
         var s = embedState();
         return {theme: s.theme, dark: s.theme === 'dark', locale: s.locale, language: nativeLanguage(s.locale), embedded: !!s.embedded};
@@ -248,6 +256,11 @@
         logoutUrl: logoutUrl,
         // The native "logout" entry is shown only outside a Kailo frame.
         showLogout: function () { return !embedState().embedded && (!!logoutUrl() || !params().sso); },
+        kailoMode: kailoMode,
+        // DD-138: personal/global-shell entries (account dashboard, password,
+        // about, admin console switch, rail theme toggle, notification bell,
+        // rail user menu) render only outside Kailo mode; Kailo provides them.
+        showPersonalShell: function () { return !kailoMode(); },
         startLogin: startLogin,
         consumeReturnPath: consumeReturnPath,
         _internal: {nativeLanguage: nativeLanguage, kailoLocale: kailoLocale, safeReturnPath: safeReturnPath, params: params}

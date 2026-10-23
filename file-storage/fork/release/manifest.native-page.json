@@ -1,7 +1,7 @@
 {
   "id": "{{releaseId}}",
   "componentTypeKey": "cells",
-  "version": "1.1.0-native-page",
+  "version": "1.2.0-native-page",
   "class": "APPLICATION",
   "platformPortKey": "NONE",
   "manifestSchemaVersion": 1,
@@ -56,6 +56,30 @@
     "themeMapping": {"LIGHT": "mui3-light", "DARK": "mui3-dark"},
     "localeMapping": {"ZH_CN": "zh-cn", "EN": "en-us"},
     "themeChangePolicy": "LIVE",
-    "localeResolutionPolicy": "BROWSER_RESOLVED"
+    "localeResolutionPolicy": "BROWSER_RESOLVED",
+    "preferences": [
+      {
+        "key": "documents.measurementUnit",
+        "settingsCategory": "DOCUMENTS",
+        "valueType": "ENUM",
+        "options": [
+          {"value": "cm", "label": {"ZH_CN": "厘米", "EN": "Centimeters"}},
+          {"value": "pt", "label": {"ZH_CN": "点", "EN": "Points"}},
+          {"value": "inch", "label": {"ZH_CN": "英寸", "EN": "Inches"}}
+        ],
+        "defaultValue": "cm",
+        "label": {"ZH_CN": "度量单位", "EN": "Measurement unit"},
+        "description": {"ZH_CN": "文档编辑器中标尺、页边距与段落间距使用的单位", "EN": "Unit for rulers, margins and paragraph spacing in the document editor"}
+      },
+      {
+        "key": "documents.spellcheck",
+        "settingsCategory": "DOCUMENTS",
+        "valueType": "BOOLEAN",
+        "options": [],
+        "defaultValue": "true",
+        "label": {"ZH_CN": "拼写检查", "EN": "Spell checking"},
+        "description": {"ZH_CN": "在文档编辑器中标出拼写错误", "EN": "Underline misspelled words in the document editor"}
+      }
+    ]
   }
 }

@@ -130,6 +130,11 @@ const RailIcon = muiThemeable()(({muiTheme,icon,iconOnly = false,text,active,ale
 
 const defaultWidth = 294
 
+// DD-138 (07 §4.8.1): in Kailo mode (deployment declared KAILO_EMBED, framed or
+// top level) Kailo alone provides identity, theme and notifications, so the
+// rail user menu, theme toggle and notification bell are not rendered.
+const kailoMode = () => !!(typeof window !== 'undefined' && window.KailoCells && window.KailoCells.kailoMode && window.KailoCells.kailoMode())
+
 let RailPanel = ({
                      style = {},
                      railPanelStyle={},
@@ -148,6 +153,7 @@ let RailPanel = ({
         ...uWidgetProps.style
     };
     const {MessageHash, Controller, user} = pydio
+    const hidePersonalShell = kailoMode()
     const [hover, setHover] = useState(false)
     const [handlerHover, setHandlerHover] = useState(false)
     const [hoverBarDef, setHoverBarDef] = useState(null)
@@ -306,11 +312,15 @@ let RailPanel = ({
         },
         {
             id: 'notifications',
+            // DD-138: notifications move to the Kailo inbox (07 §4.8.3). In Kailo
+            // mode the entry stays only while background file jobs run (copy,
+            // move, compress progress is business state), without activities.
+            ignore: hidePersonalShell && running.length === 0,
             text: MessageHash['notification_center.1'],
             icon: 'bell-outline',
             position:'bottom',
             hoverWidth: 320,
-            alert: unreadCount > 0,
+            alert: !hidePersonalShell && unreadCount > 0,
             progress: progress,
             indeterminate:running.length > 0 && !progress,
             hoverBar: (lib, data=[], jobs=[]) => {
@@ -321,7 +331,7 @@ let RailPanel = ({
                             ASLib={lib}
                             muiTheme={muiTheme}
                             pydio={pydio}
-                            activities={data}
+                            activities={hidePersonalShell ? [] : data}
                             jobs={jobs}
                             style={{overflowY: 'scroll', flex: 1}}
                             onRequestClose={()=>{setHover(false)}}
@@ -348,6 +358,8 @@ let RailPanel = ({
         },
         {
             id:'theme',
+            // DD-138: the theme is a Kailo appearance setting (07 §4.8.1).
+            ignore: hidePersonalShell,
             text: pydio.MessageHash['ajax_gui.leftrail.buttons.theme.' + (muiTheme.darkMode?'light':'dark')],
             icon: 'theme-light-dark',
             position:'bottom',
@@ -480,7 +492,7 @@ let RailPanel = ({
                 overflow: hoverBarDef ? 'visible' : null
             }} onClick={onClick} onMouseOver={onMouseOver}>
                 <div className={"left-rail vertical_layout"} style={railStyle}>
-                    <UserWidget
+                    {!hidePersonalShell && <UserWidget
                         pydio={pydio}
                         controller={pydio.getController()}
                         toolbars={["rail_user","zlogin"]}
@@ -494,7 +506,7 @@ let RailPanel = ({
                         popoverStyle={{minWidth: 200, marginTop:2, background:'var(--md-sys-color-surface)'}}
                         menuStyle={{width:200, listStyle:{background:'transparent'}}}
                         popoverHeaderAvatar={true}
-                    />
+                    />}
                     <div>{loaded.filter(a => a.position==='top').map((b, i, a) => <RailIcon {...b} last={i === a.length - 1}/>)}</div>
                     <div className={"vertical_fit"}/>
                     <div>{loaded.filter(a => a.position==='bottom').map((b, i, a) => <RailIcon iconOnly {...b} last={i === a.length - 1}/>)}</div>

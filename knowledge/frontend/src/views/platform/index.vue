@@ -18,8 +18,8 @@
         <!-- 知识库文件上传进度浮层：上传队列放在 store 里，切换页面不中断 -->
         <UploadTasksPanel />
         <!-- 带遮罩层的新手引导：首次进入自动开启，可从用户菜单顶部昵称旁帮助按钮重新打开 -->
-        <!-- Inside the Kailo frame the native onboarding tour is not shown (DD-133 §4). -->
-        <NewUserGuide v-if="!kailoEmbedded" />
+        <!-- Kailo mode (embedded or top-level): onboarding belongs to Kailo (DD-133 §4, DD-138 §2). -->
+        <NewUserGuide v-if="!kailoMode" />
     </div>
 </template>
 <script setup lang="ts">
@@ -33,7 +33,6 @@ import GlobalInvitationBell from '@/components/GlobalInvitationBell.vue'
 import UploadTasksPanel from '@/components/upload-tasks/UploadTasksPanel.vue'
 import NewUserGuide from '@/components/NewUserGuide.vue'
 import { kailoConfig } from '@/kailo/runtime'
-import { isKailoEmbedded } from '@/kailo/setup'
 import { useCommandPaletteStore } from '@/stores/commandPalette'
 import { useChatResourcesStore } from '@/stores/chatResources'
 import { useUIStore } from '@/stores/ui'
@@ -43,7 +42,6 @@ import { useI18n } from 'vue-i18n'
 import { collectDroppedFiles } from './collectDroppedFiles'
 
 const kailoMode = kailoConfig().mode
-const kailoEmbedded = isKailoEmbedded()
 
 const route = useRoute();
 const router = useRouter();

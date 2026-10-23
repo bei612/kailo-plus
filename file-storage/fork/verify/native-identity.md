@@ -3868,3 +3868,10 @@ scripts/webpack 告警保留；SBOM 成功不是漏洞门禁通过。
    `onlyoffice-native-editing.md` 生产验收一节与 `fix/onlyoffice-cells-messages`。
 4. 单文件作为共享空间根时路径为空间 slug、无扩展名，`EditorProvider` 按路径扩展名判断，编辑器入口缺失
    （以文件夹共享时正常）。
+
+## 2026-10-23 个人与全局外壳只由 Kailo 提供（DD-138，07 §4.8.1，源码阶段）
+
+- Kailo 模式 = 首页渲染了 `startParameters.KAILO_EMBED`（`web/index-handler.go`），与是否在 iframe 内无关；`kailo-cells.js` 新增 `KailoCells.kailoMode()` 与 `KailoCells.showPersonalShell()`（Kailo 模式下为 false）。
+- Kailo 模式下不渲染：用户菜单“我的账户” `open_user_dashboard`、关于 `splash`、管理控制台切换 `switch_to_settings`（action manifest `activeCondition`）；资料面板的改密码 `PasswordPopover`；左侧栏主题切换、通知铃铛与顶部用户头像菜单（`RailPanel.js`）。地址簿（`directory`/`open_address_book`）作为分享的业务目录保留。非 Kailo 模式的上游路径不变。
+- 仅前端不渲染，不构成授权边界；服务端关闭仍以 `reconcile.py` 的 ROOT_GROUP 角色参数为准。
+- `kailo-cells.test.js` 新增 Kailo 模式（嵌入与顶层）隐藏、非 Kailo 模式保留的用例。2026-10-23 CI 节点对 `c8ef6d4a8` 运行 `vitest run kailo.embed editor.onlyoffice`：2 个文件 21 项通过。左侧铃铛在 Kailo 模式下只在后台文件任务运行时出现、不含活动通知（`5642ad8f6`）。webpack 产物、部署与截图验收未执行。

@@ -13,6 +13,12 @@
  *   component -> Kailo  {source:"kailo-embed", version:1, type:"auth-required"}
  *   Kailo -> component  {source:"kailo-host", version:1, type:"presentation",
  *                        theme:"light"|"dark", locale:"zh-CN"|"en"}
+ *   Kailo -> component  {source:"kailo-host", version:1, type:"preferences",
+ *                        values:{<key>: boolean | "<option>"}}   (DD-138)
+ *
+ * Preferences are the values of the items the component's release declares
+ * for Kailo settings (design 07 §4.8.2). Kailo sends every declared key; the
+ * component uses its own declared default for a key it has not received.
  */
 (function (global) {
   "use strict";
@@ -23,6 +29,10 @@
   var THEMES = ["light", "dark"];
   var LOCALES = ["zh-CN", "en"];
   var STORE_KEY = "kailo-embed-presentation";
+  var PREFERENCES_KEY = "kailo-embed-preferences";
+  var PREFERENCE_KEY = /^[a-z][a-zA-Z0-9]*(\.[a-z][a-zA-Z0-9]*){1,3}$/;
+  var PREFERENCE_OPTION = /^[A-Za-z0-9._-]{1,32}$/;
+  var MAX_PREFERENCES = 16;
   var root = doc.documentElement;
   var framed = false;
   try { framed = global.parent !== global; } catch (e) { framed = true; }
@@ -63,6 +73,27 @@
     try { global.sessionStorage.setItem(STORE_KEY, JSON.stringify(value)); } catch (e) { /* storage denied */ }
   }
 
+  // DD-138: only booleans and option tokens under declared-key shapes; any
+  // other shape rejects the whole message (no partial application).
+  function validPreferences(values) {
+    if (!values || typeof values !== "object" || Array.isArray(values)) return null;
+    var keys = Object.keys(values);
+    if (keys.length > MAX_PREFERENCES) return null;
+    var out = {};
+    for (var i = 0; i < keys.length; i += 1) {
+      var key = keys[i];
+      var value = values[key];
+      if (key.length > 64 || !PREFERENCE_KEY.test(key)) return null;
+      if (typeof value === "boolean" || (typeof value === "string" && PREFERENCE_OPTION.test(value))) out[key] = value;
+      else return null;
+    }
+    return out;
+  }
+
+  function readPreferences() {
+    try { return validPreferences(JSON.parse(global.sessionStorage.getItem(PREFERENCES_KEY) || "null")) || {}; } catch (e) { return {}; }
+  }
+
   var params;
   try { params = new URLSearchParams(global.location.search); } catch (e) { params = null; }
   var stored = readStore();
@@ -87,6 +118,9 @@
   if (urlTheme || urlLocale) writeStore(supplied);
   var hostConnected = false;
   var listeners = [];
+  // Values Kailo supplied in this tab (kept across OIDC redirects like the presentation).
+  var preferences = readPreferences();
+  var preferenceListeners = [];
 
   function apply() {
     if (state.theme === "dark") root.setAttribute("data-kailo-theme", "dark");
@@ -124,11 +158,37 @@
     return origins.length > 0;
   }
 
+  function copy(values) {
+    var out = {};
+    for (var key in values) if (Object.prototype.hasOwnProperty.call(values, key)) out[key] = values[key];
+    return out;
+  }
+
+  function updatePreferences(next) {
+    var changed = [];
+    var key;
+    for (key in next) if (next[key] !== preferences[key]) changed.push(key);
+    for (key in preferences) if (!Object.prototype.hasOwnProperty.call(next, key)) changed.push(key);
+    preferences = next;
+    try { global.sessionStorage.setItem(PREFERENCES_KEY, JSON.stringify(next)); } catch (e) { /* storage denied */ }
+    if (!changed.length) return;
+    var targets = preferenceListeners.slice();
+    for (var i = 0; i < targets.length; i += 1) {
+      try { targets[i](copy(next), changed.slice()); } catch (e) { setTimeout(function (error) { return function () { throw error; }; }(e), 0); }
+    }
+    try { global.dispatchEvent(new CustomEvent("kailo:preferences", { detail: { values: copy(next), changed: changed.slice() } })); } catch (e) { /* old engines */ }
+  }
+
   global.addEventListener("message", function (event) {
     if (!framed || event.source !== global.parent || origins.indexOf(event.origin) < 0) return;
     var data = event.data;
-    if (!data || typeof data !== "object" || data.source !== "kailo-host" || data.version !== VERSION
-      || data.type !== "presentation") return;
+    if (!data || typeof data !== "object" || data.source !== "kailo-host" || data.version !== VERSION) return;
+    if (data.type === "preferences") {
+      var values = validPreferences(data.values);
+      if (values) updatePreferences(values);
+      return;
+    }
+    if (data.type !== "presentation") return;
     var theme = member(data.theme, THEMES);
     var locale = member(data.locale, LOCALES);
     if (!theme || !locale) return;
@@ -175,7 +235,18 @@
      * Silent OIDC (prompt=none) failed inside the Kailo frame: ask Kailo to
      * re-authenticate at the top level. Never show a login form in the frame.
      */
-    requestTopLevelSignIn: function () { return post("auth-required"); }
+    requestTopLevelSignIn: function () { return post("auth-required"); },
+    /** DD-138: values of the component's declared Kailo settings items that Kailo supplied. */
+    getPreferences: function () { return copy(preferences); },
+    /** listener(values, changedKeys); returns unsubscribe. */
+    onPreferencesChange: function (listener) {
+      if (typeof listener !== "function") throw new TypeError("KailoEmbed listener must be a function");
+      preferenceListeners.push(listener);
+      return function unsubscribe() {
+        var index = preferenceListeners.indexOf(listener);
+        if (index >= 0) preferenceListeners.splice(index, 1);
+      };
+    }
   });
 
   apply();

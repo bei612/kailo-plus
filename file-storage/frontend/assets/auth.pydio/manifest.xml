@@ -65,7 +65,10 @@
                 </gui>
                 <rightsContext adminOnly="false" noUser="false" read="false" userLogged="only" write="false"/>
                 <processing>
+                    <!-- DD-138: the native admin console never appears as a separate
+                         product in Kailo mode (07 §4.8.1, phase 1: switch hidden). -->
                     <activeCondition><![CDATA[
+                        if (window.KailoCells && !window.KailoCells.showPersonalShell()) { return false; }
                         return (pydio && pydio.user && (pydio.user.getRepositoriesList().has('settings') && pydio.user.activeRepository !== 'settings'));
                     ]]> </activeCondition>
                     <clientCallback module="PydioCoreActions.Navigation.switchToSettings"/>

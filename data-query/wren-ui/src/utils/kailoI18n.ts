@@ -11,7 +11,6 @@ const messages = {
     navKnowledge: '知识',
     navApi: 'API',
     settings: '设置',
-    signOut: '退出登录',
     threads: '对话',
     newThread: '新建',
     dashboard: '看板',
@@ -39,6 +38,9 @@ const messages = {
     resetHint: '重置会删除当前全部设置与记录，包括建模页面与问答对话。',
     languageUpdated: '回答语言已更新。',
     sqlLabel: 'SQL',
+    notFoundTitle: '页面不存在',
+    notFoundDescription: '该链接可能已失效，或页面已被移动。',
+    backToHome: '返回问答',
   },
   en: {
     componentName: 'Data Q&A',
@@ -47,7 +49,6 @@ const messages = {
     navKnowledge: 'Knowledge',
     navApi: 'API',
     settings: 'Settings',
-    signOut: 'Sign out',
     threads: 'Threads',
     newThread: 'New',
     dashboard: 'Dashboard',
@@ -77,6 +78,9 @@ const messages = {
       'Resetting deletes all current settings and records, including the modeling page and the threads.',
     languageUpdated: 'Successfully updated the answer language.',
     sqlLabel: 'SQL',
+    notFoundTitle: 'Page not found',
+    notFoundDescription: 'The link may be outdated, or the page has moved.',
+    backToHome: 'Back to Ask',
   },
 } as const;
 

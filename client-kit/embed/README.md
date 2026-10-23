@@ -108,6 +108,21 @@ from Kailo at run time.
    The runtime also emits `window` event `kailo:presentation`
    (`detail: {state, changed}`) for frameworks that prefer DOM events.
 
+6. **Preferences (DD-138).** Personal preferences live in Kailo settings,
+   never in the component page. Declare each one in the release manifest's
+   `frontendPresentationContract.preferences` (key, Kailo settings category,
+   `BOOLEAN`/`ENUM`, options, default, `ZH_CN`/`EN` labels; design 07 §4.8.2)
+   and read the values Kailo sends:
+
+   ```js
+   const values = embed.getPreferences();        // {"documents.spellcheck": false, ...}
+   embed.onPreferencesChange((values, changedKeys) => applyPreferences(values));
+   ```
+
+   A key that has not arrived uses the declared default; unknown keys are
+   ignored. The runtime also emits `kailo:preferences`
+   (`detail: {values, changed}`).
+
 ## Wire protocol v1
 
 | Direction | Message |
@@ -115,6 +130,7 @@ from Kailo at run time.
 | component → Kailo | `{source: "kailo-embed", version: 1, type: "ready"}` on load |
 | component → Kailo | `{source: "kailo-embed", version: 1, type: "auth-required"}` |
 | Kailo → component | `{source: "kailo-host", version: 1, type: "presentation", theme, locale}` on `ready` and on every change |
+| Kailo → component | `{source: "kailo-host", version: 1, type: "preferences", values}` on `ready` (after `presentation`) and on every change of a declared preference (DD-138) |
 
 Both sides post to one exact origin (never `"*"`), check `event.origin` against
 the configured origin and `event.source` against the expected window, and

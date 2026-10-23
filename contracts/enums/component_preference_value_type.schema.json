@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/component_preference_value_type.schema.json",
+  "title": "ComponentPreferenceValueType",
+  "description": "DD-138：组件偏好项的取值类型。只有布尔与封闭选项，不接受自由文本、数字区间、URL、凭据或用户数据（07 §4.8.2）。",
+  "type": "string",
+  "enum": ["BOOLEAN", "ENUM"]
+}

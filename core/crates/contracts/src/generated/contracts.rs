@@ -2868,6 +2868,12 @@ pub struct ApplicationBindingView {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub native_page_category: Option<NativePageCategory>,
 
+    /// DD-138: preference items the pinned APPROVED KAILO_EMBED release declares for Kailo
+    /// settings (07 §4.8.2). Kailo settings render them by category, never by component. Absent
+    /// when none; Core keeps no values.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preferences: Option<Vec<ComponentPreferenceDeclaration>>,
+
     pub state: ApplicationBindingState,
 
     pub tenant_id: String,
@@ -2901,6 +2907,73 @@ pub enum NativePageCategory {
     Knowledge,
 }
 
+/// DD-138：KAILO_EMBED release 向 Kailo 设置页贡献的一项偏好声明（03
+/// FrontendPresentationContract.preference_declarations[]，07 §4.8.2）。值对象，随 APPROVED release
+/// 固定；Core 不保存偏好的值。键规则、选项数量与文案长度由 Core 登记时校验。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ComponentPreferenceDeclaration {
+    /// BOOLEAN 为 true/false，ENUM 为 options[].value 之一。
+    pub default_value: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<ComponentPreferenceText>,
+
+    /// Kailo 侧偏好键，2–4 段以 . 连接，不含组件名。
+    pub key: String,
+
+    pub label: ComponentPreferenceText,
+
+    /// ENUM 时 2–12 项；BOOLEAN 时为空。
+    pub options: Vec<ComponentPreferenceOption>,
+
+    pub settings_category: ComponentPreferenceCategory,
+
+    pub value_type: ComponentPreferenceValueType,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub struct ComponentPreferenceText {
+    pub en: String,
+
+    pub zh_cn: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ComponentPreferenceOption {
+    pub label: ComponentPreferenceText,
+
+    pub value: String,
+}
+
+/// DD-138：组件偏好项所属的 Kailo 设置功能分类（07 §4.8.2）。APPEARANCE 外观、NOTIFICATIONS 通知、DOCUMENTS
+/// 文档与文件、ANSWERS 问答；不按组件分类。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum ComponentPreferenceCategory {
+    #[serde(rename = "ANSWERS")]
+    Answers,
+
+    #[serde(rename = "APPEARANCE")]
+    Appearance,
+
+    #[serde(rename = "DOCUMENTS")]
+    Documents,
+
+    #[serde(rename = "NOTIFICATIONS")]
+    Notifications,
+}
+
+/// DD-138：组件偏好项的取值类型。只有布尔与封闭选项，不接受自由文本、数字区间、URL、凭据或用户数据（07 §4.8.2）。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum ComponentPreferenceValueType {
+    #[serde(rename = "BOOLEAN")]
+    Boolean,
+
+    #[serde(rename = "ENUM")]
+    Enum,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum ApplicationBindingState {
     #[serde(rename = "ACTIVE")]
@@ -2932,6 +3005,11 @@ pub struct ApplicationNativePage {
     pub binding_id: String,
 
     pub origin: String,
+
+    /// DD-138: preference items the pinned APPROVED KAILO_EMBED release declares for Kailo
+    /// settings (07 §4.8.2); the host sends their values to this page only. Absent when none.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preferences: Option<Vec<ComponentPreferenceDeclaration>>,
 
     pub projection_generation: i64,
 
