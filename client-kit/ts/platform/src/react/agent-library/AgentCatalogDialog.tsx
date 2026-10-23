@@ -183,7 +183,7 @@ export function AgentCatalogDialog({ open, preferSection = "agents", onOpenChang
 }
 
 function CatalogListSkeleton() {
-  return <div className="space-y-2 px-3 py-2" aria-hidden>
+  return <div className="space-y-2 px-3 py-2" aria-hidden data-testid="agent-catalog-loading">
     {["a", "b", "c", "d"].map((k) => <div className="flex items-center gap-2" key={k}>
       <span className="h-6 w-6 animate-pulse rounded-squircle bg-muted" /><span className="h-3.5 w-28 animate-pulse rounded-sm bg-muted" />
     </div>)}

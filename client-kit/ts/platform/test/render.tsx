@@ -29,6 +29,20 @@ export async function settle(): Promise<void> {
   for (let i = 0; i < 5; i++) await act(async () => {});
 }
 
+/**
+ * 按条件等待：WebCrypto 摘要、Blob/FileReader 读取与计时器都在宏任务里完成，
+ * 微任务次数（settle）在 CI 负载下不够。逐轮让出一个宏任务直到条件成立，超时报出等待对象。
+ */
+export async function until(condition: () => boolean, label: string, timeoutMs = 5000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    await act(async () => {});
+    if (condition()) return;
+    if (Date.now() > deadline) throw new Error(`等待超时：${label}`);
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 10)); });
+  }
+}
+
 export function button(host: HTMLElement, label: string): HTMLButtonElement {
   const found = [...host.querySelectorAll("button")].find((b) => b.textContent === label);
   if (!found) throw new Error(`没有「${label}」按钮：${host.textContent}`);

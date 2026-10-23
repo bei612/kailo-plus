@@ -23,7 +23,7 @@ import {
   teamCopyCommand,
 } from "../src/react/agent-library/agentCatalog";
 import { TransportError, type BffReply, type BffRequest } from "../src/transport";
-import { click, render, settle, type } from "./render";
+import { click, render, settle, until, type } from "./render";
 
 const ME = "00000000-0000-4000-8000-000000000001";
 const DANA = "00000000-0000-4000-8000-000000000002";
@@ -95,7 +95,9 @@ async function mount(route: (request: BffRequest) => BffReply | undefined | Prom
   await render(<PlatformProvider client={client} locale={locale} currentPrincipalId={ME}>
     <AgentCatalogDialog open preferSection={preferSection} onOpenChange={() => undefined} onRecorded={onRecorded} />
   </PlatformProvider>);
-  await settle(); await settle();
+  await until(() => !!document.querySelector('[data-testid="agent-catalog-dialog"]')
+    && !document.querySelector('[data-testid="agent-catalog-loading"]'), "catalog directory");
+  await settle();
   const actions = () => send.mock.calls.map(([request]) => request).filter((request) => request.path === "/api/v1/actions")
     .map((request) => request.body as ActionCommand);
   const dialog = document.querySelector<HTMLElement>('[data-testid="agent-catalog-dialog"]')!;
@@ -163,7 +165,8 @@ describe("DD-131(6) catalog dialog", () => {
     expect(slug.value).toBe("scout-copy");
     await type(slug, "my-scout");
     await click(dialog.querySelector<HTMLElement>('[data-testid="agent-catalog-copy-submit"]')!);
-    await settle(); await settle();
+    // 复制要等新 Definition 落定（轮询带计时器）后再提交版本：按完成标记等待。
+    await until(() => !!dialog.querySelector('[data-testid="agent-catalog-copy-done"]'), "copy completion");
     const [create, versionCreate] = actions();
     expect(create).toMatchObject({ actionKey: "agent.definition.create", name: "Scout", slug: "my-scout" });
     expect(versionCreate).toMatchObject({ actionKey: "agent.version.create", resourceId: NEW_DEF, resourceVersion: 4 });
@@ -183,12 +186,12 @@ describe("DD-131(6) catalog dialog", () => {
       return ok(receipt(command, { gateState: ActionGateState.Denied, reason: ReasonCode.InvalidParameters, dispatchState: ActionDispatchState.NotDispatched }));
     });
     await click(dialog.querySelector<HTMLElement>('[data-testid="agent-catalog-copy-submit"]')!);
-    await settle();
+    await until(() => dialog.querySelector('[data-testid="agent-catalog-copy-submit"]')?.textContent === "Re-check same request", "unknown outcome");
     const retry = dialog.querySelector<HTMLElement>('[data-testid="agent-catalog-copy-submit"]')!;
     expect(retry.textContent).toBe("Re-check same request");
     expect(dialog.querySelector<HTMLInputElement>('[data-testid="agent-catalog-copy-slug"]')!.disabled).toBe(true);
     await click(retry);
-    await settle();
+    await until(() => actions().length === 2, "re-check of the same request");
     const [one, two] = actions();
     expect(two!.idempotencyKey).toBe(one!.idempotencyKey);
     expect(actions().every((command) => command.actionKey === "agent.definition.create")).toBe(true);
@@ -203,7 +206,7 @@ describe("DD-131(6) catalog dialog", () => {
       return undefined;
     });
     await click(dialog.querySelector<HTMLElement>('[data-testid="agent-catalog-install-submit"]')!);
-    await settle();
+    await until(() => !!dialog.querySelector('[data-testid="agent-catalog-install-result"]'), "install result");
     expect(actions()).toEqual([expect.objectContaining({ actionKey: "agent.installation.create", workspaceId: WORKSPACE,
       resourceId: A, assetId: `${A}-v`, assetVersion: 3 })]);
     expect(dialog.querySelector('[data-testid="agent-catalog-install-result"]')!.textContent).toContain("Install requested");
@@ -216,7 +219,7 @@ describe("DD-131(6) catalog dialog", () => {
     expect(dialog.textContent).toContain("1 member is not visible to you");
     await type(dialog.querySelector<HTMLInputElement>('[data-testid="agent-catalog-team-copy-name"]')!, "My crew");
     await click(dialog.querySelector<HTMLElement>('[data-testid="agent-catalog-add-team"]')!);
-    await settle();
+    await until(() => (dialog.textContent ?? "").includes("Team added."), "team copy result");
     expect(actions()).toEqual([expect.objectContaining({ actionKey: "agent.team.create", explicitConfirmation: true,
       agentTeam: { name: "My crew", description: "Reviews", memberAgentResourceIds: [A, B] } })]);
     expect(dialog.textContent).toContain(`Team added. Operation: ${OP}.`);
