@@ -94,7 +94,7 @@ import { SettingsPane } from "@/platform/ui/SettingsPane";
 import { AgentDefinitionsPane } from "./AgentDefinitionsPane";
 import { NewMessagePage } from "./NewMessagePage";
 import { PulsePane } from "./PulsePane";
-import { ProjectsPane, useProjectsHost } from "./ProjectsPane";
+import { ProjectsPane, useProjectsHost, useWebProjectAgentChat } from "./ProjectsPane";
 import { ProjectChannelRequestDialog } from "@client-kit/platform/react/projects";
 import { SidebarProjects } from "./SidebarProjects";
 import { WorkspaceChannelCreateChannelType } from "@client-kit/contracts";
@@ -266,6 +266,8 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
   const searchScopeKey = `${session.tenantId}:${session.tenantPrincipalId}:${session.platformSessionId}`;
   // DD-140: the original global owner-review dialog for Agent project channel requests.
   const projectRequestHost = useProjectsHost(searchScopeKey);
+  // DD-140 (5): the decision receipt's governed send, resolved only when a request is shown.
+  const useProjectRequestAgentChat = useCallback(() => useWebProjectAgentChat(searchScopeKey), [searchScopeKey]);
   const navigation = usePlatformNavigation(searchScopeKey);
   // DD-125(6): a working Agent row outside the channel view opens that channel, then its activity.
   const openAgentActivityChannel = useCallback((workspaceId: string) => { void navigation.openChannel(workspaceId); }, [navigation]);
@@ -661,7 +663,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
     <CollaborationPreferencesProvider value={preferences}>
     <AgentActivityOpenerHost navigate={openAgentActivityChannel}>
     <ProfileDirectMessageProvider value={profileDirectMessage}>
-    <ProjectChannelRequestDialog host={projectRequestHost} />
+    <ProjectChannelRequestDialog host={projectRequestHost} useAgentChat={useProjectRequestAgentChat} />
     {/* Original `#channel` composer suggestions: the admitted directory's channel names. */}
     <ComposerChannelLinksProvider channels={searchDirectory.isError ? undefined : searchDirectory.data?.channels}>
     <BffReminderHost scopeKey={searchScopeKey} principalId={session.tenantPrincipalId} onOpen={openSearchChannel}>
