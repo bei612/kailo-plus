@@ -231,6 +231,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(service.NewDatasetService))
 	must(container.Provide(service.NewEvaluationService))
 	must(container.Provide(service.NewKailoOrgService))
+	must(container.Provide(service.NewKailoDirectorySyncRunner))
 	must(container.Provide(service.NewUserService))
 	must(container.Provide(service.NewSystemSettingService))
 	must(container.Provide(func(
@@ -449,6 +450,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Invoke(startDataSourceScheduler))
 	logger.Debugf(ctx, "[Container] Data source sync framework registered")
 	must(container.Invoke(startAuditLogRetention))
+	must(container.Invoke(startKailoDirectorySync))
 	logger.Debugf(ctx, "[Container] Audit log retention runner registered")
 	must(container.Provide(service.NewHousekeepingService))
 	must(container.Invoke(startHousekeepingService))
@@ -1924,6 +1926,18 @@ func startTemporaryDocumentCleanup(svc interfaces.TemporaryDocumentService, clea
 	}()
 	cleaner.RegisterWithName("TemporaryDocumentCleanup", func() error {
 		close(stop)
+		return nil
+	})
+}
+
+// startKailoDirectorySync starts the Kailo member directory read (DD-133(4));
+// it is a no-op unless Kailo mode and the directory are configured.
+func startKailoDirectorySync(
+	runner *service.KailoDirectorySyncRunner, cleaner interfaces.ResourceCleaner,
+) {
+	runner.Start(context.Background())
+	cleaner.RegisterWithName("KailoDirectorySyncRunner", func() error {
+		runner.Stop()
 		return nil
 	})
 }

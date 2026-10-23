@@ -2,8 +2,11 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"os"
+	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -29,6 +32,50 @@ type KailoIntegrationConfig struct {
 	TenantName string `yaml:"tenant_name" json:"tenant_name"`
 	// SessionMaxLifetime caps a native session including refresh rotations.
 	SessionMaxLifetime time.Duration `yaml:"session_max_lifetime" json:"session_max_lifetime"`
+	// Directory is the Kailo member directory read (DD-133(4), 07 §4.7.4);
+	// nil or empty means the directory is not delivered to this instance.
+	Directory *KailoDirectoryConfig `yaml:"directory" json:"directory"`
+}
+
+// Directory poll interval bounds (deployment contract, seconds).
+const (
+	DefaultKailoDirectoryInterval = 60 * time.Second
+	minKailoDirectoryInterval     = 10 * time.Second
+	maxKailoDirectoryInterval     = 3600 * time.Second
+)
+
+var kailoDirectoryUUIDPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
+var kailoDirectoryClientPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,255}$`)
+
+// KailoDirectoryConfig is the member directory read of this instance: the
+// native page entry binding, the instance's own confidential directory
+// client (client-credentials, audience Core service) and Core's service
+// listener. All are deployment facts; the secret only lives in the file.
+type KailoDirectoryConfig struct {
+	BindingID        string        `yaml:"binding_id"         json:"binding_id"`
+	ClientID         string        `yaml:"client_id"          json:"client_id"`
+	ClientSecretFile string        `yaml:"client_secret_file" json:"client_secret_file"`
+	TokenURL         string        `yaml:"token_url"          json:"token_url"`
+	CoreURL          string        `yaml:"core_url"           json:"core_url"`
+	Interval         time.Duration `yaml:"interval"           json:"interval"`
+}
+
+func (d *KailoDirectoryConfig) anySet() bool {
+	return d != nil && (d.BindingID != "" || d.ClientID != "" || d.ClientSecretFile != "" ||
+		d.TokenURL != "" || d.CoreURL != "")
+}
+
+// KailoDirectory returns the member directory configuration when Kailo mode
+// is on and the directory is configured, otherwise nil.
+func (c *Config) KailoDirectory() *KailoDirectoryConfig {
+	if !c.KailoEnabled() || !c.Kailo.Directory.anySet() {
+		return nil
+	}
+	d := *c.Kailo.Directory
+	if d.Interval == 0 {
+		d.Interval = DefaultKailoDirectoryInterval
+	}
+	return &d
 }
 
 // KailoEnabled reports whether the Kailo embedded product mode is on.
@@ -75,6 +122,72 @@ func applyKailoEnvOverrides(cfg *Config) {
 			cfg.Kailo.SessionMaxLifetime = -1
 		}
 	}
+	directory := map[string]*string{}
+	if cfg.Kailo.Directory == nil {
+		cfg.Kailo.Directory = &KailoDirectoryConfig{}
+	}
+	d := cfg.Kailo.Directory
+	directory["KAILO_DIRECTORY_BINDING_ID"] = &d.BindingID
+	directory["KAILO_DIRECTORY_CLIENT_ID"] = &d.ClientID
+	directory["KAILO_DIRECTORY_CLIENT_SECRET_FILE"] = &d.ClientSecretFile
+	directory["KAILO_DIRECTORY_TOKEN_URL"] = &d.TokenURL
+	directory["KAILO_DIRECTORY_CORE_URL"] = &d.CoreURL
+	for name, target := range directory {
+		if value := strings.TrimSpace(os.Getenv(name)); value != "" {
+			*target = value
+		}
+	}
+	if value := strings.TrimSpace(os.Getenv("KAILO_DIRECTORY_INTERVAL_SECONDS")); value != "" {
+		if seconds, err := strconv.Atoi(value); err == nil && seconds > 0 {
+			d.Interval = time.Duration(seconds) * time.Second
+		} else {
+			d.Interval = -1
+		}
+	}
+}
+
+func absoluteHTTPURL(raw string, allowPath bool) bool {
+	u, err := url.Parse(raw)
+	return err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Host != "" && u.User == nil &&
+		u.RawQuery == "" && u.Fragment == "" && (allowPath || u.Path == "" || u.Path == "/")
+}
+
+func validateKailoDirectory(cfg *Config) []string {
+	d := cfg.Kailo.Directory
+	if !d.anySet() {
+		if d != nil && d.Interval != 0 {
+			return []string{"kailo.directory.interval is set but the member directory is not configured"}
+		}
+		return nil
+	}
+	var errs []string
+	// The five keys are one group: a partial group would silently leave the
+	// instance on the pre-directory behaviour while looking configured.
+	if !kailoDirectoryUUIDPattern.MatchString(d.BindingID) {
+		errs = append(errs, "kailo.directory.binding_id must be the native page entry binding UUID")
+	}
+	if !kailoDirectoryClientPattern.MatchString(d.ClientID) {
+		errs = append(errs, "kailo.directory.client_id must be one IdP client id segment")
+	}
+	if cfg.OIDCAuth != nil && d.ClientID != "" && d.ClientID == strings.TrimSpace(cfg.OIDCAuth.ClientID) {
+		errs = append(errs, "kailo.directory.client_id must be the directory client, not the browser client")
+	}
+	if !filepath.IsAbs(d.ClientSecretFile) {
+		errs = append(errs, "kailo.directory.client_secret_file must be an absolute path")
+	}
+	if !absoluteHTTPURL(d.TokenURL, true) {
+		errs = append(errs, "kailo.directory.token_url must be an absolute http(s) URL")
+	}
+	if !absoluteHTTPURL(d.CoreURL, false) {
+		errs = append(errs, "kailo.directory.core_url must be the Core service origin (no path)")
+	}
+	if d.Interval != 0 && (d.Interval < minKailoDirectoryInterval || d.Interval > maxKailoDirectoryInterval) {
+		errs = append(errs, "kailo.directory.interval must be between 10s and 3600s")
+	}
+	if cfg.OIDCAuth == nil || strings.TrimSpace(cfg.OIDCAuth.IssuerURL) == "" {
+		errs = append(errs, "kailo.directory requires oidc_auth.issuer_url: directory identities are matched on it")
+	}
+	return errs
 }
 
 func validateKailoConfig(cfg *Config) []string {
@@ -94,5 +207,6 @@ func validateKailoConfig(cfg *Config) []string {
 	if cfg.Kailo.SessionMaxLifetime < 0 {
 		errs = append(errs, fmt.Sprintf("kailo.session_max_lifetime must be a positive duration, got %v", cfg.Kailo.SessionMaxLifetime))
 	}
+	errs = append(errs, validateKailoDirectory(cfg)...)
 	return errs
 }

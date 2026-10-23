@@ -88,7 +88,8 @@ func newKailoFixture(t *testing.T) *kailoFixture {
 		"ALTER TABLE auth_tokens DROP COLUMN oidc_sid; ALTER TABLE auth_tokens DROP COLUMN session_expires_at").Error; err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"000024_oidc_identity.up.sql", "000028_kailo_integration.up.sql"} {
+	for _, name := range []string{"000024_oidc_identity.up.sql", "000028_kailo_integration.up.sql",
+		"000029_kailo_member_directory.up.sql"} {
 		migration, err := os.ReadFile("../../../migrations/sqlite/" + name)
 		if err != nil {
 			t.Fatal(err)

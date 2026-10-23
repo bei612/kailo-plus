@@ -112,6 +112,54 @@ def builtin_model_references(env):
         required(env, name)
 
 
+DIRECTORY_KEYS = (
+    "KAILO_DIRECTORY_BINDING_ID",
+    "KAILO_DIRECTORY_CLIENT_ID",
+    "KAILO_DIRECTORY_CLIENT_SECRET_FILE",
+    "KAILO_DIRECTORY_TOKEN_URL",
+    "KAILO_DIRECTORY_CORE_URL",
+)
+UUID = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
+
+
+def member_directory(env):
+    """DD-133(4): the member directory read is one group of deployment facts.
+    The client credential stays a private file that the native process reads
+    per request (it can be rotated by the release without a restart); only
+    its shape is checked here and its bytes never enter the environment."""
+    present = [name for name in DIRECTORY_KEYS if env.get(name)]
+    if not present:
+        if env.get("KAILO_DIRECTORY_INTERVAL_SECONDS"):
+            raise ConfigurationError("KAILO_DIRECTORY_INTERVAL_SECONDS: member directory not configured")
+        for name in DIRECTORY_KEYS + ("KAILO_DIRECTORY_INTERVAL_SECONDS",):
+            env.pop(name, None)
+        return
+    for name in DIRECTORY_KEYS:
+        required(env, name)
+    if not UUID.fullmatch(env["KAILO_DIRECTORY_BINDING_ID"]):
+        raise ConfigurationError("KAILO_DIRECTORY_BINDING_ID: binding UUID required")
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,255}", env["KAILO_DIRECTORY_CLIENT_ID"]) or env[
+        "KAILO_DIRECTORY_CLIENT_ID"
+    ] == env.get("OIDC_AUTH_CLIENT_ID"):
+        raise ConfigurationError("KAILO_DIRECTORY_CLIENT_ID: dedicated directory client id required")
+    http_url(env, "KAILO_DIRECTORY_TOKEN_URL")
+    http_url(env, "KAILO_DIRECTORY_CORE_URL", origin=True)
+    interval = env.get("KAILO_DIRECTORY_INTERVAL_SECONDS", "")
+    if interval and (not re.fullmatch(r"[1-9][0-9]{1,3}", interval) or not 10 <= int(interval) <= 3600):
+        raise ConfigurationError("KAILO_DIRECTORY_INTERVAL_SECONDS: 10 to 3600 required")
+    path = env["KAILO_DIRECTORY_CLIENT_SECRET_FILE"]
+    if not os.path.isabs(path):
+        raise ConfigurationError("KAILO_DIRECTORY_CLIENT_SECRET_FILE: absolute file path required")
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        with os.fdopen(fd, "rb") as secret_file:
+            info = os.fstat(secret_file.fileno())
+            if not stat.S_ISREG(info.st_mode) or info.st_mode & 0o007 or not 0 < info.st_size <= 4096:
+                raise ConfigurationError("KAILO_DIRECTORY_CLIENT_SECRET_FILE: private nonempty regular file required")
+    except OSError:
+        raise ConfigurationError("KAILO_DIRECTORY_CLIENT_SECRET_FILE: unreadable") from None
+
+
 def prepare_environment(original):
     env = dict(original)
     # This entrypoint belongs to the adjacent independent-service Compose only.
@@ -165,6 +213,7 @@ def prepare_environment(original):
             allowed.append(host)
         env["SSRF_WHITELIST_EXTRA"] = ",".join(allowed)
         del env["KNOWLEDGE_PLATFORM_MODEL_BASE_URL"]
+    member_directory(env)
     scopes = required(env, "OIDC_AUTH_SCOPES").replace(",", " ").split()
     if "openid" not in scopes or len(scopes) != len(set(scopes)):
         raise ConfigurationError("OIDC_AUTH_SCOPES: unique scopes including openid required")

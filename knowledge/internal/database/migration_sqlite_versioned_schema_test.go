@@ -30,6 +30,7 @@ var versionedSQLiteTables = []string{
 	"mcp_endpoints",
 	"message_artifacts",
 	"oidc_logout_token_ids",
+	"kailo_member_directory",
 }
 
 // versionedSQLiteColumns maps each existing table to the columns that the
@@ -51,7 +52,7 @@ var versionedSQLiteColumns = map[string][]string{
 	"auth_tokens":        {"oidc_sid", "session_expires_at"},                                // 000109
 }
 
-const expectedSQLiteMigrationVersion = 28
+const expectedSQLiteMigrationVersion = 29
 
 func TestSQLiteMigrationsCreateVersionedSchema(t *testing.T) {
 	repoRoot := sqliteRepoRoot(t)

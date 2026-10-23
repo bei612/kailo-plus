@@ -75,7 +75,15 @@ func (s *kailoOrgService) SyncLogin(
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.syncLocked(ctx, user, membership)
+}
 
+// syncLocked is SyncLogin with s.mu held (also used by ApplyDirectory).
+func (s *kailoOrgService) syncLocked(
+	ctx context.Context,
+	user *types.User,
+	membership *types.KailoMembership,
+) (*types.Tenant, error) {
 	tenantSpace, err := s.ensureSpace(ctx, membership.TenantScopeRef(), membership.Tenant.Name)
 	if err != nil {
 		return nil, err
@@ -115,7 +123,18 @@ func (s *kailoOrgService) SyncLogin(
 	if err != nil {
 		return nil, fmt.Errorf("kailo organisation sync failed: %w", err)
 	}
-	s.emitMembershipAudit(ctx, user.ID, changes)
+	if err := s.afterReconcile(ctx, user.ID, changes); err != nil {
+		return nil, err
+	}
+	return tenantSpace, nil
+}
+
+// afterReconcile audits the membership changes and, when any membership was
+// removed, revokes every native session of the person: a removed membership
+// must not survive in an earlier session. A role change needs no
+// revocation — the space role is read from tenant_members on every request.
+func (s *kailoOrgService) afterReconcile(ctx context.Context, userID string, changes []kailoMembershipChange) error {
+	s.emitMembershipAudit(ctx, userID, changes)
 	removed := false
 	for _, change := range changes {
 		if change.action == types.AuditActionMemberRemoved {
@@ -123,12 +142,11 @@ func (s *kailoOrgService) SyncLogin(
 		}
 	}
 	if removed && s.tokenRepo != nil {
-		// A removed membership must not survive in an earlier session.
-		if err := s.tokenRepo.RevokeTokensByUserID(ctx, user.ID); err != nil {
-			return nil, fmt.Errorf("kailo organisation sync could not revoke stale sessions: %w", err)
+		if err := s.tokenRepo.RevokeTokensByUserID(ctx, userID); err != nil {
+			return fmt.Errorf("kailo organisation sync could not revoke stale sessions: %w", err)
 		}
 	}
-	return tenantSpace, nil
+	return nil
 }
 
 // ensureSpace returns the native space representing ref, creating it with
