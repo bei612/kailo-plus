@@ -273,13 +273,15 @@ String inboxDayLabel(int unixSeconds, {DateTime? now, String? locale}) {
   final dayDiff = today.difference(day).inDays;
   final intlLocale = platformIntlLocale(locale: locale);
 
-  if (dayDiff == 0)
+  if (dayDiff == 0) {
     return platformText(PlatformMessageKey.chatTimeToday, locale: locale);
+  }
   if (dayDiff == 1) {
     return platformText(PlatformMessageKey.chatTimeYesterday, locale: locale);
   }
-  if (dayDiff < 7 && dayDiff > 0)
+  if (dayDiff < 7 && dayDiff > 0) {
     return DateFormat.EEEE(intlLocale).format(date);
+  }
   return date.year == current.year
       ? DateFormat.MMMd(intlLocale).format(date)
       : DateFormat.yMMMd(intlLocale).format(date);
