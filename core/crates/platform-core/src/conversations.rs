@@ -176,6 +176,9 @@ pub(crate) async fn list(
     }
 }
 
+/// One new-DM recipient: principal, display name, ACTIVE keys and first ACTIVE external subject (DD-139).
+type RecipientRow = (Uuid, String, Vec<String>, Option<String>);
+
 /// Same-Tenant active HUMAN directory, not the cross-Tenant identity directory.
 pub(crate) async fn participants(
     State(state): State<BffState>,
@@ -195,7 +198,7 @@ pub(crate) async fn participants(
     {
         return e;
     }
-    let rows:Result<Vec<(Uuid,String,Vec<String>,Option<String>)>,_>=sqlx::query_as(
+    let rows:Result<Vec<RecipientRow>,_>=sqlx::query_as(
         "select p.id,h.display_name,keys.pubkeys,
            (select min(ei.subject) from identity.external_identity ei
              where ei.human_identity_id=h.id and ei.status='ACTIVE') as subject
