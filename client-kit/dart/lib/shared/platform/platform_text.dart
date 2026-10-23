@@ -1880,6 +1880,9 @@ enum PlatformMessageKey {
   projectsDiscussionThisTask,
   projectsDiscussionThisReview,
   projectsDiscussionOpenConversation,
+  projectsConversationOpenChannel,
+  projectsConversationLoadFailed,
+  projectsConversationClose,
   projectsDiscussionOpenChannel,
   projectsDiscussionOpenLatest,
   projectsDiscussionOpenNamed,
@@ -2371,6 +2374,9 @@ enum PlatformMessageKey {
   workflowsTraceOutput,
   workflowsTraceError,
   workflowsTraceApproval,
+  workflowsApprovalRequired,
+  workflowsApprovalApprover,
+  workflowsApprovalExpires,
   workflowsTraceStatusPending,
   workflowsTraceStatusRunning,
   workflowsTraceStatusWaitingApproval,
@@ -8538,6 +8544,15 @@ const _messages = <PlatformMessageKey, (String, String)>{
     'Open conversation in #{name}',
     '打开 #{name} 中的对话',
   ),
+  PlatformMessageKey.projectsConversationOpenChannel: (
+    'Open #{name}',
+    '打开 #{name}',
+  ),
+  PlatformMessageKey.projectsConversationLoadFailed: (
+    'This conversation could not be loaded.',
+    '无法加载此对话。',
+  ),
+  PlatformMessageKey.projectsConversationClose: ('Close', '关闭'),
   PlatformMessageKey.projectsDiscussionOpenChannel: (
     'Open channel #{name}',
     '打开频道 #{name}',
@@ -9947,6 +9962,15 @@ const _messages = <PlatformMessageKey, (String, String)>{
   PlatformMessageKey.workflowsTraceOutput: ('Output', '输出'),
   PlatformMessageKey.workflowsTraceError: ('Error', '错误'),
   PlatformMessageKey.workflowsTraceApproval: ('Pending approval', '等待审批'),
+  PlatformMessageKey.workflowsApprovalRequired: ('Approval Required', '需要审批'),
+  PlatformMessageKey.workflowsApprovalApprover: (
+    'Approver: {approver}',
+    '审批人：{approver}',
+  ),
+  PlatformMessageKey.workflowsApprovalExpires: (
+    'Expires: {time}',
+    '过期时间：{time}',
+  ),
   PlatformMessageKey.workflowsTraceStatusPending: ('pending', '未开始'),
   PlatformMessageKey.workflowsTraceStatusRunning: ('running', '运行中'),
   PlatformMessageKey.workflowsTraceStatusWaitingApproval: (

@@ -6517,7 +6517,10 @@ type ConversationParticipantPage struct {
 
 // 同租户当前有效 HUMAN 及其已投影真实身份公钥，不伪造用户资料。
 type ConversationParticipant struct {
-	DisplayName string   `json:"displayName"`
+	DisplayName string `json:"displayName"`
+	// DD-139：同 Tenant 头像地址 <PUBLIC_ORIGIN>/api/v1/identity/avatars/<subject>（07 §4.7.3），只对有
+	// ACTIVE 外部身份的成员给出；只是地址，不含图片或资料正文，读取仍按该路由的 Tenant 准入。
+	Picture     *string  `json:"picture,omitempty"`
 	PrincipalID string   `json:"principalId"`
 	Pubkeys     []string `json:"pubkeys"`
 }
@@ -8311,8 +8314,11 @@ type RoleMemberView struct {
 	CreatedAt   *string `json:"createdAt,omitempty"`
 	DisplayName string  `json:"displayName"`
 	// 有效 Tenant admin 仅剩此人；该人的撤销按钮禁用，服务端最终准入仍重查
-	LastTenantAdmin bool   `json:"lastTenantAdmin"`
-	PrincipalID     string `json:"principalId"`
+	LastTenantAdmin bool `json:"lastTenantAdmin"`
+	// DD-139：同 Tenant 头像地址 <PUBLIC_ORIGIN>/api/v1/identity/avatars/<subject>（07 §4.7.3），只对有
+	// ACTIVE 外部身份的成员给出；只是地址，不含图片或资料正文，读取仍按该路由的 Tenant 准入。
+	Picture     *string `json:"picture,omitempty"`
+	PrincipalID string  `json:"principalId"`
 	// 同一 Tenant、同一 HUMAN Principal 当前 ACTIVE 的 Buzz 身份公钥，按公钥排序；仅向具有 Tenant manage
 	// 的查看者提供非空列表，无有效绑定、旧服务或仅 Workspace manage 时省略。缺省不提供可读取资料的身份凭据，不以当前查看者或其他 Workspace 身份替代。
 	Pubkeys     []string `json:"pubkeys,omitempty"`

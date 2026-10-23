@@ -3637,6 +3637,11 @@ export interface ConversationParticipantPage {
  */
 export interface ConversationParticipant {
     displayName: string;
+    /**
+     * DD-139：同 Tenant 头像地址 <PUBLIC_ORIGIN>/api/v1/identity/avatars/<subject>（07 §4.7.3），只对有
+     * ACTIVE 外部身份的成员给出；只是地址，不含图片或资料正文，读取仍按该路由的 Tenant 准入。
+     */
+    picture?:    string;
     principalId: string;
     pubkeys:     string[];
 }
@@ -6441,7 +6446,12 @@ export interface RoleMemberView {
      * 有效 Tenant admin 仅剩此人；该人的撤销按钮禁用，服务端最终准入仍重查
      */
     lastTenantAdmin: boolean;
-    principalId:     string;
+    /**
+     * DD-139：同 Tenant 头像地址 <PUBLIC_ORIGIN>/api/v1/identity/avatars/<subject>（07 §4.7.3），只对有
+     * ACTIVE 外部身份的成员给出；只是地址，不含图片或资料正文，读取仍按该路由的 Tenant 准入。
+     */
+    picture?:    string;
+    principalId: string;
     /**
      * 同一 Tenant、同一 HUMAN Principal 当前 ACTIVE 的 Buzz 身份公钥，按公钥排序；仅向具有 Tenant manage
      * 的查看者提供非空列表，无有效绑定、旧服务或仅 Workspace manage 时省略。缺省不提供可读取资料的身份凭据，不以当前查看者或其他 Workspace 身份替代。

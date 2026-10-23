@@ -5239,6 +5239,11 @@ pub struct ConversationParticipantPage {
 pub struct ConversationParticipant {
     pub display_name: String,
 
+    /// DD-139：同 Tenant 头像地址 <PUBLIC_ORIGIN>/api/v1/identity/avatars/<subject>（07 §4.7.3），只对有
+    /// ACTIVE 外部身份的成员给出；只是地址，不含图片或资料正文，读取仍按该路由的 Tenant 准入。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub picture: Option<String>,
+
     pub principal_id: String,
 
     pub pubkeys: Vec<String>,
@@ -9007,6 +9012,11 @@ pub struct RoleMemberView {
 
     /// 有效 Tenant admin 仅剩此人；该人的撤销按钮禁用，服务端最终准入仍重查
     pub last_tenant_admin: bool,
+
+    /// DD-139：同 Tenant 头像地址 <PUBLIC_ORIGIN>/api/v1/identity/avatars/<subject>（07 §4.7.3），只对有
+    /// ACTIVE 外部身份的成员给出；只是地址，不含图片或资料正文，读取仍按该路由的 Tenant 准入。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub picture: Option<String>,
 
     pub principal_id: String,
 

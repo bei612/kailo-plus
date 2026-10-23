@@ -11222,11 +11222,16 @@ class ConversationParticipantPage {
 ///同租户当前有效 HUMAN 及其已投影真实身份公钥，不伪造用户资料。
 class ConversationParticipant {
   final String displayName;
+
+  ///DD-139：同 Tenant 头像地址 <PUBLIC_ORIGIN>/api/v1/identity/avatars/<subject>（07 §4.7.3），只对有
+  ///ACTIVE 外部身份的成员给出；只是地址，不含图片或资料正文，读取仍按该路由的 Tenant 准入。
+  final String? picture;
   final String principalId;
   final List<String> pubkeys;
 
   ConversationParticipant({
     required this.displayName,
+    this.picture,
     required this.principalId,
     required this.pubkeys,
   });
@@ -11234,12 +11239,14 @@ class ConversationParticipant {
   factory ConversationParticipant.fromJson(Map<String, dynamic> json) =>
       ConversationParticipant(
         displayName: json["displayName"],
+        picture: json["picture"],
         principalId: json["principalId"],
         pubkeys: List<String>.from(json["pubkeys"].map((x) => x)),
       );
 
   Map<String, dynamic> toJson() => _stripNulls({
     "displayName": displayName,
+    "picture": picture,
     "principalId": principalId,
     "pubkeys": List<dynamic>.from(pubkeys.map((x) => x)),
   });
@@ -17939,6 +17946,10 @@ class RoleMemberView {
 
   ///有效 Tenant admin 仅剩此人；该人的撤销按钮禁用，服务端最终准入仍重查
   final bool lastTenantAdmin;
+
+  ///DD-139：同 Tenant 头像地址 <PUBLIC_ORIGIN>/api/v1/identity/avatars/<subject>（07 §4.7.3），只对有
+  ///ACTIVE 外部身份的成员给出；只是地址，不含图片或资料正文，读取仍按该路由的 Tenant 准入。
+  final String? picture;
   final String principalId;
 
   ///同一 Tenant、同一 HUMAN Principal 当前 ACTIVE 的 Buzz 身份公钥，按公钥排序；仅向具有 Tenant manage
@@ -17960,6 +17971,7 @@ class RoleMemberView {
     this.createdAt,
     required this.displayName,
     required this.lastTenantAdmin,
+    this.picture,
     required this.principalId,
     this.pubkeys,
     required this.tenantAdmin,
@@ -17977,6 +17989,7 @@ class RoleMemberView {
     createdAt: json["createdAt"],
     displayName: json["displayName"],
     lastTenantAdmin: json["lastTenantAdmin"],
+    picture: json["picture"],
     principalId: json["principalId"],
     pubkeys: json["pubkeys"] == null
         ? null
@@ -17996,6 +18009,7 @@ class RoleMemberView {
     "createdAt": createdAt,
     "displayName": displayName,
     "lastTenantAdmin": lastTenantAdmin,
+    "picture": picture,
     "principalId": principalId,
     "pubkeys": pubkeys == null
         ? null
