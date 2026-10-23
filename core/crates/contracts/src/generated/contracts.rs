@@ -8143,13 +8143,14 @@ pub struct PlatformToolPage {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PlatformToolView {
+    /// DD-140 (1)：平台原生工具名到动作键的封闭映射；记忆工具即其自身，project_channel_request 为 workspace.create。
     pub action_key: PlatformToolViewActionKey,
 
     pub can_consume: bool,
 
     pub input_schema_hash: String,
 
-    pub name: PlatformToolViewActionKey,
+    pub name: PlatformToolViewName,
 
     pub output_schema_hash: String,
 
@@ -8166,6 +8167,7 @@ pub struct PlatformToolView {
     pub status: PlatformToolViewStatus,
 }
 
+/// DD-140 (1)：平台原生工具名到动作键的封闭映射；记忆工具即其自身，project_channel_request 为 workspace.create。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum PlatformToolViewActionKey {
     #[serde(rename = "agent.memory.entry.list")]
@@ -8173,6 +8175,22 @@ pub enum PlatformToolViewActionKey {
 
     #[serde(rename = "agent.memory.entry.read")]
     AgentMemoryEntryRead,
+
+    #[serde(rename = "workspace.create")]
+    WorkspaceCreate,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PlatformToolViewName {
+    #[serde(rename = "agent.memory.entry.list")]
+    AgentMemoryEntryList,
+
+    #[serde(rename = "agent.memory.entry.read")]
+    AgentMemoryEntryRead,
+
+    #[serde(rename = "project_channel_request")]
+    ProjectChannelRequest,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

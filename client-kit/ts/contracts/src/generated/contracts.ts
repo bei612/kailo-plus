@@ -5837,10 +5837,13 @@ export interface PlatformToolPage {
 }
 
 export interface PlatformToolView {
+    /**
+     * DD-140 (1)：平台原生工具名到动作键的封闭映射；记忆工具即其自身，project_channel_request 为 workspace.create。
+     */
     actionKey:        PlatformToolViewActionKey;
     canConsume:       boolean;
     inputSchemaHash:  string;
-    name:             PlatformToolViewActionKey;
+    name:             PlatformToolViewName;
     outputSchemaHash: string;
     ownerPrincipalId: string;
     resourceId:       string;
@@ -5850,9 +5853,19 @@ export interface PlatformToolView {
     status:           PlatformToolViewStatus;
 }
 
+/**
+ * DD-140 (1)：平台原生工具名到动作键的封闭映射；记忆工具即其自身，project_channel_request 为 workspace.create。
+ */
 export enum PlatformToolViewActionKey {
     AgentMemoryEntryList = "agent.memory.entry.list",
     AgentMemoryEntryRead = "agent.memory.entry.read",
+    WorkspaceCreate = "workspace.create",
+}
+
+export enum PlatformToolViewName {
+    AgentMemoryEntryList = "agent.memory.entry.list",
+    AgentMemoryEntryRead = "agent.memory.entry.read",
+    ProjectChannelRequest = "project_channel_request",
 }
 
 export enum PlatformToolViewSource {
