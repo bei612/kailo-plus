@@ -10,7 +10,9 @@ import { createBffClient } from "../src/client";
 import { PlatformProvider } from "../src/react/context";
 import { GatewayPage, gatewayTabs } from "../src/react/gateway";
 import { PlatformNavigation } from "../src/react/navigation";
-import { canonicalDigest, canonicalJson, sha256Hex } from "../src/gateway-drafts";
+import {
+  canonicalDigest, canonicalJson, refreshReleaseDigests, releaseDraft, sha256Hex, UncoveredOperationsError,
+} from "../src/gateway-drafts";
 import { type BffReply, type BffRequest, TransportError } from "../src/transport";
 import { button, click, render, settle, type } from "./render";
 
@@ -274,11 +276,13 @@ describe("gateway writes only submit existing actions", () => {
 
 describe("MCP server wizard", () => {
   const peer = { adapterServiceRef: "time-mcp", mcpUrl: "http://time-mcp:8000/mcp", nativeInstanceRef: "time-1",
-    artifactDigest: `sha256:${"b".repeat(64)}`, timeoutSeconds: 10, maxResponseBytes: 65536, conformanceReady: true, bindingFacts: [] };
+    artifactDigest: "b".repeat(64), timeoutSeconds: 10, maxResponseBytes: 65536, conformanceReady: true, bindingFacts: [] };
   const probe = { probeId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", adapterServiceRef: "time-mcp", probedAt: "2026-10-21T02:00:00Z",
     serverName: "mcp-time", serverVersion: "1.0", protocolVersion: "2025-06-18", toolSchemaDigest: "d".repeat(64),
     tools: [{ name: "convert_time", description: "Convert", inputSchemaJson: '{"type":"object"}', inputSchemaDigest: "e".repeat(64),
-      readOnlyHint: true, matchingContracts: [{ categoryKey: "time", contractVersion: 1, contractKey: "time.convert_time@v1", permission: "consume" }] }] };
+      readOnlyHint: true, matchingContracts: [{ categoryKey: "time", contractVersion: 1, contractKey: "time.convert_time@v1", permission: "consume",
+        targetType: "RESOURCE", outputSchemaDigest: "f".repeat(64), resourceTypeKeys: ["time.service"],
+        operationContractKeys: ["time.convert_time@v1"] }] }] };
   const wizardRoutes = (write: Route) => routes(platformAccess, (request) => {
     const path = request.path.split("?")[0] ?? "";
     if (path === "/api/v1/platform/gateway/mcp/peers") return { status: 200, body: { directoryAvailable: true, peers: [peer] } };
@@ -395,6 +399,60 @@ describe("gateway drafts", () => {
 
   it("matches the Core canonical JSON", () => {
     expect(canonicalJson({ b: 2, a: [1, { d: true, c: "x" }] })).toBe('{"a":[1,{"c":"x","d":true}],"b":2}');
+  });
+
+  // 与 Core 共用的对照样例：core/crates/platform-core/src/component_release/draft_sample.rs 对同一份
+  // release 运行 registration 与 validate_declarations（PROTOCOL_PEER 观测来源须含 AGENTGATEWAY、
+  // APPLICATION 动作 capacityPolicy=NATIVE、类型键与输出摘要取 ACTIVE 契约）。
+  type Sample = {
+    peer: Parameters<typeof releaseDraft>[0]["peer"]; probe: Parameters<typeof releaseDraft>[0]["probe"];
+    activeContract: { resourceTypeFamily: { typeKey: string }[]; operationContracts: { contractKey: string; permission: string;
+      targetType: string; outputSchemaDigest: string; inputSchemaDigest: string }[] };
+    input: { componentTypeKey: string; vendor: string; artifactVersion: string; choices: Record<string, string> };
+    release: { manifest: { id: string }; package: unknown; bindingConfigSchema: unknown };
+  };
+  const sample: Sample = JSON.parse(readFileSync(resolve(import.meta.dirname,
+    "../../../../contracts/samples/gateway-mcp-release-draft.sample.json"), "utf8"));
+  const draftFrom = (choices: Record<string, string>) => releaseDraft({
+    peer: sample.peer, probe: sample.probe, componentTypeKey: sample.input.componentTypeKey,
+    vendor: sample.input.vendor, artifactVersion: sample.input.artifactVersion,
+    choices: sample.probe.tools.map((tool) => ({ tool, ...(choices[tool.name] ? { contractKey: choices[tool.name] } : {}) })),
+  });
+
+  it("drafts exactly the PROTOCOL_PEER release Core accepts (shared sample)", async () => {
+    const draft = await draftFrom(sample.input.choices);
+    const manifest = JSON.parse(draft.manifestJson);
+    manifest.id = sample.release.manifest.id;
+    const normalised = await refreshReleaseDigests({ ...draft, manifestJson: JSON.stringify(manifest) });
+    expect(normalised).not.toBeNull();
+    expect(JSON.parse(normalised!.manifestJson)).toEqual(sample.release.manifest);
+    expect(JSON.parse(normalised!.packageJson)).toEqual(sample.release.package);
+    expect(JSON.parse(normalised!.bindingConfigSchemaJson)).toEqual(sample.release.bindingConfigSchema);
+  });
+
+  it("takes every release fact from the ACTIVE contract the probe matched", async () => {
+    // The sample's probe matches must be the Catalog projection of its ACTIVE contract (Core probed_tool).
+    for (const tool of sample.probe.tools) {
+      for (const match of tool.matchingContracts) {
+        const operation = sample.activeContract.operationContracts.find((item) => item.contractKey === match.contractKey)!;
+        expect(match).toMatchObject({ permission: operation.permission, targetType: operation.targetType,
+          outputSchemaDigest: operation.outputSchemaDigest });
+        expect(tool.inputSchemaDigest).toBe(operation.inputSchemaDigest);
+        expect(match.resourceTypeKeys).toEqual(sample.activeContract.resourceTypeFamily.map((family) => family.typeKey).sort());
+        expect(match.operationContractKeys).toEqual(sample.activeContract.operationContracts.map((item) => item.contractKey).sort());
+      }
+    }
+    const manifest = JSON.parse((await draftFrom(sample.input.choices)).manifestJson);
+    expect(manifest.businessObservabilityContract.businessStateSources).toEqual(expect.arrayContaining(["CORE_ACTION", "AGENTGATEWAY"]));
+    for (const action of manifest.actionDefinitions) expect(action.capacityPolicy).toBe("NATIVE");
+    expect(manifest.targetResourceTypeKeys).toEqual(["time.service"]);
+    expect(JSON.stringify(manifest)).not.toContain("<kind>");
+  });
+
+  it("refuses a draft that leaves an operation of a chosen ACTIVE contract without its tool", async () => {
+    const error = await draftFrom({ convert_time: "time.convert_time@v1" }).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(UncoveredOperationsError);
+    expect((error as UncoveredOperationsError).contractKeys).toEqual(["time.get_current_time@v1"]);
   });
 
   it("keeps every gateway page within the host theme (no inline style or colour literal)", () => {

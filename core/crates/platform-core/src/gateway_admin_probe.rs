@@ -528,8 +528,17 @@ async fn probed_tool(conn: &mut sqlx::PgConnection, tool: &Value) -> Result<Valu
     let name = tool["name"].as_str().ok_or_else(invalid)?;
     let input = tool.get("inputSchema").ok_or_else(invalid)?;
     let input_digest = collab_bridge::limits::canonical_digest(input);
-    let matches: Vec<(String, i32, String, String)> = sqlx::query_as(
-        "select c.category_key,c.contract_version,op->>'contractKey',op->>'permission'
+    // 同时带出该 ACTIVE 契约生成 release 草稿所需的 Catalog 元数据（DD-134(5)④）：
+    // release 须逐一登记契约的全部 resourceTypeFamily 与 operation，动作/工具的
+    // targetType 与输出摘要须与契约逐字相同（component_release::validate_declarations）。
+    type Match = (String, i32, String, String, String, String, Value, Value);
+    let matches: Vec<Match> = sqlx::query_as(
+        "select c.category_key,c.contract_version,op->>'contractKey',op->>'permission',
+          op->>'targetType',op->>'outputSchemaDigest',
+          (select coalesce(jsonb_agg(family->>'typeKey' order by family->>'typeKey'),'[]'::jsonb)
+             from jsonb_array_elements(c.content->'resourceTypeFamily') family),
+          (select coalesce(jsonb_agg(operation->>'contractKey' order by operation->>'contractKey'),'[]'::jsonb)
+             from jsonb_array_elements(c.content->'operationContracts') operation)
         from catalog.capability_contract c
         join catalog.capability_category category on category.category_key=c.category_key
           and category.catalog_tenant_id=c.catalog_tenant_id and category.status='ACTIVE'
@@ -545,8 +554,9 @@ async fn probed_tool(conn: &mut sqlx::PgConnection, tool: &Value) -> Result<Valu
     let mut value = json!({"name":name,
         "inputSchemaJson":collab_bridge::limits::canonical_json(input),
         "inputSchemaDigest":input_digest,
-        "matchingContracts":matches.into_iter().map(|(category, version, key, permission)| json!({
-            "categoryKey":category,"contractVersion":version,"contractKey":key,"permission":permission}))
+        "matchingContracts":matches.into_iter().map(|(category, version, key, permission, target, output, types, operations)| json!({
+            "categoryKey":category,"contractVersion":version,"contractKey":key,"permission":permission,
+            "targetType":target,"outputSchemaDigest":output,"resourceTypeKeys":types,"operationContractKeys":operations}))
             .collect::<Vec<_>>()});
     if let Some(title) = tool["title"].as_str() {
         value["displayTitle"] = json!(title);

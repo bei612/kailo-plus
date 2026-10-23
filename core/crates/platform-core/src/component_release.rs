@@ -3122,6 +3122,9 @@ async fn read_releases(
 }
 
 #[cfg(test)]
+mod draft_sample;
+
+#[cfg(test)]
 mod report_tests {
     use super::*;
 
