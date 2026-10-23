@@ -20,7 +20,8 @@ import {
 import { ImageOff } from "lucide-react";
 import { cn } from "@client-kit/platform/react/cn";
 import { FileCard } from "@client-kit/platform/react/messages";
-import { resolveFileCard } from "@client-kit/platform/react/messages/resolveFileCard";
+import { resolveFileCard, resolveSnapshotCard } from "@client-kit/platform/react/messages/resolveFileCard";
+import { SnapshotCard } from "@client-kit/platform/react/messages/SnapshotCard";
 import { ImageBlock, ImageMosaic, ImageZoomOverlay, createLinkPreviewImageLightbox, type ImageActions } from "@client-kit/platform/react/image-lightbox";
 import { Children, isValidElement } from "react";
 import { classifyChildren, hasBlockMedia, isImageOnlyParagraph } from "@client-kit/platform/react/composer/shared/ui/markdownMedia";
@@ -322,6 +323,18 @@ const MarkdownLink: NonNullable<Components["a"]> = ({ href, children }) => {
     duration: media.duration,
     size: media.size,
   };
+  // DD-143: `.agent.*`/`.team.*` attachments render as the original snapshot card.
+  const snapshot = resolveSnapshotCard({ ...entry, x: media.sha256 }, href, getReactNodeText(children));
+  if (snapshot) {
+    const url = resolveMediaUrl(media.sha256);
+    return <SnapshotCard {...snapshot} href={url} thumb={snapshot.thumb ? url : undefined}
+      onDownload={async (target, filename) => {
+        const anchor = document.createElement("a");
+        anchor.href = target;
+        anchor.download = filename;
+        anchor.click();
+      }} />;
+  }
   const attachment = resolveAudioAttachment(entry, resolveMediaUrl(media.sha256), String(children));
   if (attachment) {
     return (
