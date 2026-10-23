@@ -152,7 +152,7 @@ class UserProfileSheet extends HookConsumerWidget {
                       icon: copied.value ? LucideIcons.check : LucideIcons.key,
                       label: copied.value
                           ? platformText(
-                              PlatformMessageKey.platformProfileCopied,
+                              PlatformMessageKey.platformProfileCopiedShort,
                               locale: locale,
                             )
                           : platformText(

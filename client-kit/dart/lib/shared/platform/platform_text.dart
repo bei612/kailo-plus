@@ -3468,6 +3468,7 @@ enum PlatformMessageKey {
   platformProfileIdentityDetails,
   platformProfileCopy,
   platformProfileCopied,
+  platformProfileCopiedShort,
   platformProfileCopyFailed,
   platformProfileNotSet,
   platformProfileClearIgnored,
@@ -12905,6 +12906,7 @@ const _messages = <PlatformMessageKey, (String, String)>{
   ),
   PlatformMessageKey.platformProfileCopy: ('Copy', '复制'),
   PlatformMessageKey.platformProfileCopied: ('Copied to clipboard', '已复制到剪贴板'),
+  PlatformMessageKey.platformProfileCopiedShort: ('Copied', '已复制'),
   PlatformMessageKey.platformProfileCopyFailed: (
     'Could not copy to clipboard',
     '未能复制到剪贴板',

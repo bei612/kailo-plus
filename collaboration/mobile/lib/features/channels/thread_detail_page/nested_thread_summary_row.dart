@@ -77,9 +77,15 @@ class _NestedThreadSummaryRow extends ConsumerWidget {
                   children: [
                     TextSpan(
                       text: platformText(
-                        platformPluralOne(summary.replyCount)
+                        platformPluralOne(
+                              summary.replyCount,
+                              locale: Localizations.localeOf(
+                                context,
+                              ).toLanguageTag(),
+                            )
                             ? PlatformMessageKey.chatThreadReplyCountOne
                             : PlatformMessageKey.chatThreadReplyCountOther,
+                        locale: Localizations.localeOf(context).toLanguageTag(),
                         variables: {'count': summary.replyCount},
                       ),
                       style: replyPreviewTextStyle.copyWith(
