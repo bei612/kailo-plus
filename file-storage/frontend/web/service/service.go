@@ -96,6 +96,9 @@ func init() {
 			// DD-133(4): periodic Kailo member directory read in this (single)
 			// native process; absent delivery starts nothing, a partial one fails.
 			service.AfterServe(auth.StartNativeOIDCDirectorySync),
+			// DD-138(4), 07 §4.8.3: Kailo notification delivery, same directory
+			// client; nothing starts outside Kailo mode or without that client.
+			service.AfterServe(startKailoNotify),
 			service.Migrations([]*service.Migration{
 				{
 					TargetVersion: service.FirstRun(),

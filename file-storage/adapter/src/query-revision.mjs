@@ -16,6 +16,7 @@ import { deleteAction, deleteConfiguration, executeDelete, observeDelete } from 
 import { shareAction, shareConfiguration, executeShare, observeShare } from './share-execution.mjs';
 import { mcpConfiguration, handleMcp } from './mcp.mjs';
 import { nativeJsonFetch } from './native-actor.mjs';
+import { SEARCH_PATH, nativeSearch } from './native-search.mjs';
 import { bindingValidationConfiguration, bindingArguments, bindingObservation } from '../../../client-kit/adapter/binding-validation.mjs';
 
 // The fixed Cells REST v2 read seam and original DOCUMENT PAT launch share this
@@ -336,11 +337,21 @@ export function createAdapter(rawConfig) {
       }
       if (request.method !== 'POST' || ![QUERY_PATH, '/platform-adapter/v1/execute',
         '/platform-adapter/v1/observe', '/platform-adapter/v1/extract_usage', '/platform-adapter/v1/cancel', '/platform-adapter/v1/handshake',
-        '/platform-adapter/v1/validate_binding', '/platform-adapter/v1/reconcile', '/platform-adapter/v1/map_native_status_error'].includes(request.url)) throw new Refused(404);
+        '/platform-adapter/v1/validate_binding', '/platform-adapter/v1/reconcile', '/platform-adapter/v1/map_native_status_error',
+        SEARCH_PATH].includes(request.url)) throw new Refused(404);
+      // DD-138(5), 07 §4.8.4: search is a Core machine route; a browser
+      // context (Origin or Cookie) is never admitted.
+      if (request.url === SEARCH_PATH && (request.headers.origin !== undefined || request.headers.cookie !== undefined)) throw new Refused(403);
       if (request.headers['content-type'] !== 'application/json' || typeof request.headers.authorization !== 'string'
         || !request.headers.authorization.startsWith('Bearer ')) throw new Refused(401);
       const deadline = Date.now() + config.timeoutMs;
       const raw = await boundedBody(request, config.maxBodyBytes);
+      if (request.url === SEARCH_PATH) {
+        const value = await nativeSearch(config, deadline, raw, request.headers['idempotency-key'], request.headers.authorization.slice(7));
+        response.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
+        response.end(JSON.stringify(value));
+        return;
+      }
       if (request.url === '/platform-adapter/v1/reconcile') {
         const value = await reconcileBinding(config, deadline, raw, request.headers['idempotency-key'], request.headers.authorization.slice(7));
         response.writeHead(200, {'content-type':'application/json','cache-control':'no-store'});

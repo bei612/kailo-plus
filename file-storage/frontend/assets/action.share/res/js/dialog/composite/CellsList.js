@@ -105,7 +105,7 @@ class CellsList extends React.Component {
                             onUserObjectAdd={cellModel.addUser.bind(cellModel)}
                             onUserObjectRemove={cellModel.removeUser.bind(cellModel)}
                             onUserObjectUpdateRight={cellModel.updateUserRight.bind(cellModel)}
-                            sendInvitations={(targetUsers) => usersInvitations(targetUsers, cellModel)}
+                            sendInvitations={usersInvitations ? (targetUsers) => usersInvitations(targetUsers, cellModel) : null}
                             saveSelectionAsTeam={false}
                             readonly={!cellModel.isEditable()}
                         />

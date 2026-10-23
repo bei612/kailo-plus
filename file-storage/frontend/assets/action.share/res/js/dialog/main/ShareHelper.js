@@ -25,7 +25,18 @@ const {moment} = Pydio.requireLib('boot');
 
 class ShareHelper {
 
+    // DD-138(4) (07 §4.8.1, §4.8.3): Kailo mode is the frontend's
+    // KailoCells.kailoMode() (startParameters.KAILO_EMBED).
+    static kailoMode() {
+        return !!(typeof window !== 'undefined' && window.KailoCells && window.KailoCells.kailoMode && window.KailoCells.kailoMode());
+    }
+
     static mailerSupported(pydio) {
+        // DD-138(4): in Kailo mode the component sends no share/invitation
+        // e-mail (the mailer REST route refuses it too); Kailo notifies.
+        if (ShareHelper.kailoMode()) {
+            return false;
+        }
         return pydio.Parameters.get('validMailer');
     }
 
@@ -154,6 +165,11 @@ class ShareHelper {
      * @param callback
      */
     static sendCellInvitation(node, cellModel, targetUsers, callback = ()=>{} ){
+        // DD-138(4) (07 §4.8.3): no invitation reminder mail in Kailo mode; the
+        // share itself is delivered to the Kailo inbox as SHARED.
+        if (ShareHelper.kailoMode()) {
+            return;
+        }
         const {templateId, templateData} = ShareHelper.prepareEmail(node, null, cellModel);
         const mail = new MailerMail();
         const api = new MailerServiceApi(PydioApi.getRestClient());

@@ -205,44 +205,59 @@ func (e *NativeOIDCDirectoryUnavailable) Error() string {
 }
 
 func (c *NativeOIDCDirectoryConfig) token(ctx context.Context) (string, error) {
+	bearer, _, err := c.clientCredentials(ctx)
+	return bearer, err
+}
+
+// clientCredentials is the directory client's client-credentials grant; it is
+// shared with the Kailo notification delivery (DD-138(4), 07 §4.8.3), which
+// also caches the token for its expires_in (0 when the IdP gives none).
+func (c *NativeOIDCDirectoryConfig) clientCredentials(ctx context.Context) (string, time.Duration, error) {
 	file, err := os.Open(c.ClientSecretFile)
 	if err != nil {
-		return "", &NativeOIDCDirectoryUnavailable{Stage: "client secret"}
+		return "", 0, &NativeOIDCDirectoryUnavailable{Stage: "client secret"}
 	}
 	raw, err := io.ReadAll(io.LimitReader(file, directorySecretMax+1))
 	_ = file.Close()
 	secret := strings.TrimRight(string(raw), "\r\n")
 	if err != nil || len(raw) > directorySecretMax || secret == "" || strings.ContainsAny(secret, "\r\n") {
-		return "", &NativeOIDCDirectoryUnavailable{Stage: "client secret"}
+		return "", 0, &NativeOIDCDirectoryUnavailable{Stage: "client secret"}
 	}
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	form := url.Values{"grant_type": {"client_credentials"}}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.TokenURL, strings.NewReader(form.Encode()))
 	if err != nil {
-		return "", &NativeOIDCDirectoryUnavailable{Stage: "token"}
+		return "", 0, &NativeOIDCDirectoryUnavailable{Stage: "token"}
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Accept", "application/json")
 	req.SetBasicAuth(url.QueryEscape(c.ClientID), url.QueryEscape(secret))
 	resp, err := c.client().Do(req)
 	if err != nil {
-		return "", &NativeOIDCDirectoryUnavailable{Stage: "token"}
+		return "", 0, &NativeOIDCDirectoryUnavailable{Stage: "token"}
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return "", &NativeOIDCDirectoryUnavailable{Stage: "token", Status: resp.StatusCode}
+		return "", 0, &NativeOIDCDirectoryUnavailable{Stage: "token", Status: resp.StatusCode}
 	}
 	var answer struct {
 		AccessToken string `json:"access_token"`
 		TokenType   string `json:"token_type"`
+		// Raw: an unusual expires_in shape must not refuse the token (the
+		// directory read ignored the field before it was shared).
+		ExpiresIn json.RawMessage `json:"expires_in"`
 	}
 	body, err := io.ReadAll(io.LimitReader(resp.Body, directoryTokenMax+1))
 	if err != nil || len(body) > directoryTokenMax || json.Unmarshal(body, &answer) != nil ||
 		answer.AccessToken == "" || !strings.EqualFold(answer.TokenType, "bearer") || strings.ContainsAny(answer.AccessToken, " \r\n") {
-		return "", &NativeOIDCDirectoryUnavailable{Stage: "token"}
+		return "", 0, &NativeOIDCDirectoryUnavailable{Stage: "token"}
 	}
-	return answer.AccessToken, nil
+	var lifetime time.Duration
+	if seconds, err := strconv.ParseInt(strings.Trim(string(answer.ExpiresIn), `"`), 10, 64); err == nil && seconds > 0 && seconds < 86400 {
+		lifetime = time.Duration(seconds) * time.Second
+	}
+	return answer.AccessToken, lifetime, nil
 }
 
 // Fetch reads one full snapshot and checks it against the contract

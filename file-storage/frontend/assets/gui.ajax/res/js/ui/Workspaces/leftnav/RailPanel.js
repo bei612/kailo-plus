@@ -27,7 +27,7 @@ import UserWidget from './UserWidget'
 import WorkspacesList from '../wslist/WorkspacesList'
 import useWorkspacePref from '../views/useWorkspacePref'
 
-const {useRunningTasksMonitor} = Pydio.requireLib("boot");
+const {useRunningTasksMonitor, TasksPanel} = Pydio.requireLib("boot");
 import {muiThemeable} from 'material-ui/styles'
 import {Resizable} from 're-resizable'
 import PydioApi from 'pydio/http/api';
@@ -185,6 +185,11 @@ let RailPanel = ({
         if (!ASLib) {
             return
         }
+        // DD-138(4) (07 §4.8.3): in Kailo mode the native activity inbox is
+        // not read at all; notifications are delivered to the Kailo inbox.
+        if (hidePersonalShell) {
+            return
+        }
         const {ASClient} = ASLib
         if (hover && hoverBarDef && hoverBarDef.id === 'notifications') {
             // Reload when opening notification panel
@@ -312,10 +317,10 @@ let RailPanel = ({
         },
         {
             id: 'notifications',
-            // DD-138: notifications move to the Kailo inbox (07 §4.8.3). In Kailo
-            // mode the entry stays only while background file jobs run (copy,
-            // move, compress progress is business state), without activities.
-            ignore: hidePersonalShell && running.length === 0,
+            // DD-138(4): notifications move to the Kailo inbox (07 §4.8.3). In
+            // Kailo mode the bell never renders; background file jobs (copy,
+            // move, compress) keep the native TasksPanel progress below.
+            ignore: hidePersonalShell,
             text: MessageHash['notification_center.1'],
             icon: 'bell-outline',
             position:'bottom',
@@ -563,6 +568,9 @@ let RailPanel = ({
                         </div>
                     }
                 </div>
+                {/* DD-138(4) (07 §4.8.3): without the bell in Kailo mode, running background
+                    jobs stay visible in the native TasksPanel (hidden when none run). */}
+                {hidePersonalShell && <TasksPanel pydio={pydio} mode={"absolute"} panelStyle={{left: 8, marginLeft: 0, bottom: 8}}/>}
             </div>
     )
 

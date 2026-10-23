@@ -29,6 +29,7 @@ import (
 	"strings"
 
 	"github.com/pydio/cells/v5/common"
+	"github.com/pydio/cells/v5/common/auth"
 	"github.com/pydio/cells/v5/common/config"
 	pb "github.com/pydio/cells/v5/common/proto/registry"
 	"github.com/pydio/cells/v5/common/registry"
@@ -102,7 +103,11 @@ func (h *IndexHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		startParameters["KAILO_OIDC_LOGIN"] = login
 	}
 	// Public Kailo presentation parameters read by kailo.embed (DD-133).
-	startParameters["KAILO_EMBED"] = nativeKailoEmbedParameters(r)
+	// DD-138 (07 §4.8.1): Kailo mode is this one server-side condition
+	// (auth.NativeKailoMode), shared with the e-mail and notification code.
+	if auth.NativeKailoMode() {
+		startParameters["KAILO_EMBED"] = nativeKailoEmbedParameters(r)
+	}
 
 	if regXml, e := xml.Marshal(registry); e == nil {
 		startParameters["PRELOADED_REGISTRY"] = string(regXml)
