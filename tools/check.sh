@@ -165,10 +165,10 @@ prepare_check_dependencies() {
 }
 
 # 组件前端依赖按「安装输入内容 + Node 版本 + 安装命令」寻址，缓存在 /cache/component-lint；
-# 命中时只把 node_modules 链接进本次检查快照，不重装。安装在同目录临时副本内完成后原子改名，
-# 并发或中断不会留下半成品。不运行依赖的安装脚本（--mode=skip-build/--ignore-scripts）：
-# 格式与类型检查不需要原生模块，也不在检查容器里编译它们。
-# 用法：component_lint_deps <组件目录> <安装输入（相对路径）…> -- <node_modules 目录…> -- <安装命令…>
+# 命中时直接复用，不重装。安装在同目录临时副本内完成后原子改名，并发或中断不会留下半成品。
+# 不运行依赖的安装脚本（--mode=skip-build/--ignore-scripts）：格式与类型检查不需要原生模块，
+# 也不在检查容器里编译它们。结果目录写入 COMPONENT_DEPS；给出的 node_modules 目录链接进快照。
+# 用法：component_lint_deps <组件目录> <安装输入（相对路径）…> -- [链接的 node_modules 目录…] -- <安装命令…>
 component_lint_deps() {
   local dir=$1; shift
   local inputs=() links=() key root entry staging path
@@ -199,12 +199,36 @@ component_lint_deps() {
     [ -d "$entry/$path" ] || { echo "拒绝检查：安装结果缺少 $path" >&2; return 2; }
     rm -rf -- "${dir:?}/$path" && ln -s "$entry/$path" "$dir/$path" || return 2
   done
+  COMPONENT_DEPS=$entry
+}
+
+# 读 `tsc --pretty false` 的输出，按 next build 类型检查（next/dist/lib/typescript/runTypeCheck.js）
+# 的同一规则去掉测试文件（*.test.*、*.spec.*、__tests__/、__mocks__/）的诊断；其余错误或 tsc
+# 异常退出而无诊断时失败。
+tsc_as_next_build() {
+  python3 -c '
+import re, sys
+ignored = re.compile(r"[\\/]__(?:tests|mocks)__[\\/]|(?<=[\\/.])(?:spec|test)\.[^\\/]+$")
+keep, kept, total = True, 0, 0
+for line in sys.stdin:
+    m = re.match(r"^(\S.*?)\(\d+,\d+\): (error|warning) ", line)
+    if m or line.startswith("error TS"):
+        total += 1
+        keep = not (m and ignored.search(m.group(1)))
+        kept += keep
+    if keep:
+        sys.stdout.write(line)
+sys.exit(1 if kept or (sys.argv[1] != "0" and total == 0) else 0)' "$1"
 }
 
 # 组件镜像构建里会跑的格式/静态门禁，在合并检查阶段提前暴露，判定与构建一致：
 # - data-query/wren-ui：`next build` 内置 next lint（.eslintrc.json，prettier/prettier 为 error）
-#   与 tsc 类型检查；另以锁定的 prettier（yarn.lock）显式 --check 源码。用构建镜像同一
-#   Node 18（检查镜像 /opt/node18）运行锁定的 yarn 4.5.3，它在 Node 24 下遇下载超时会崩溃。
+#   与 tsc 类型检查。按其 Dockerfile builder 阶段的源码输入在依赖目录下暂存一份再检查：
+#   node_modules 是真实上级目录，ESLint 的插件与共享配置解析与构建一致（经符号链接接入时
+#   plugin:@typescript-eslint/recommended 会解析到 eslint-config-next 内嵌的 v8 而崩溃），
+#   tsc 也只看到构建所见的 src。另以锁定的 prettier（yarn.lock）显式 --check eslint 实际门禁的
+#   js/jsx/ts/tsx（沿用 .eslintrc.json 的忽略项；.less 与生成的 GraphQL 类型不在构建门禁内）。
+#   用构建镜像同一 Node 18（检查镜像 /opt/node18）运行，锁定的 yarn 4.5.3 在 Node 24 下遇下载超时会崩溃。
 # - collaboration/web、admin-web：镜像构建为 `tsc && vite build`。
 # knowledge/frontend（vite build）、file-storage 前端（build.sh 的 webpack）与 document-editor
 # （grunt 打包，jshint 未注册）的镜像构建不含 lint 或类型门禁，此处不另立判定。
@@ -214,19 +238,34 @@ lint_wren_ui() {
   ran=1
   [ -x /opt/node18/bin/node ] || { fail "检查镜像缺少 wren-ui 构建所用 Node 18（/opt/node18）"; return 0; }
   local -x PATH="/opt/node18/bin:$PATH" NEXT_TELEMETRY_DISABLED=1 YARN_ENABLE_TELEMETRY=0
-  if ! component_lint_deps "$ui" package.json yarn.lock .yarnrc.yml .yarn/releases -- node_modules -- \
+  if ! component_lint_deps "$ui" package.json yarn.lock .yarnrc.yml .yarn/releases -- -- \
        node .yarn/releases/yarn-4.5.3.cjs install --immutable --mode=skip-build; then
     fail "wren-ui 依赖安装失败，组件 lint 无法执行"; return 0
   fi
-  # next build 在类型检查前生成 next-env.d.ts（未入库）；检查快照内按同一内容补齐。
-  [ -f "$ui/next-env.d.ts" ] || printf '%s\n' '/// <reference types="next" />' \
-    '/// <reference types="next/image-types/global" />' > "$ui/next-env.d.ts"
-  (cd "$ui" && diag node_modules/.bin/prettier --check src) \
-    && pass "wren-ui prettier --check" || fail "wren-ui prettier --check（修复：在 $ui 用锁定的 prettier --write）"
-  (cd "$ui" && diag node_modules/.bin/next lint) \
-    && pass "wren-ui next lint（eslint + prettier）" || fail "wren-ui next lint（eslint + prettier）"
-  (cd "$ui" && diag node_modules/.bin/tsc --noEmit) \
-    && pass "wren-ui tsc --noEmit" || fail "wren-ui tsc --noEmit"
+  local bin="$COMPONENT_DEPS/node_modules/.bin" runs="$COMPONENT_DEPS/runs" run app out rc
+  mkdir -p "$runs" && find "$runs" -mindepth 1 -maxdepth 1 -mmin +720 -exec rm -rf -- {} + 2>/dev/null
+  run=$(mktemp -d "$runs/XXXXXX") || { fail "wren-ui 检查暂存目录创建失败"; return 0; }
+  app="$run/$ui"
+  # 与 data-query/wren-ui/Dockerfile builder 阶段同一源码输入（public 与 Kailo 静态资源不参与检查）。
+  mkdir -p "$app" "$run/client-kit/adapter" "$run/client-kit/embed" \
+    && (cd "$ui" && tar -cf - package.json src .eslintrc.json .eslintignore .prettierrc \
+          next.config.js tsconfig.json) | tar -xf - -C "$app" \
+    && cp client-kit/adapter/protocol.mjs "$run/client-kit/adapter/" \
+    && cp client-kit/embed/kailo-embed.d.ts "$run/client-kit/embed/" \
+    || { fail "wren-ui 构建输入暂存失败"; rm -rf -- "$run"; return 0; }
+  # next build 在类型检查前生成 next-env.d.ts（未入库），这里写入同一内容。
+  printf '%s\n' '/// <reference types="next" />' \
+    '/// <reference types="next/image-types/global" />' > "$app/next-env.d.ts"
+  (cd "$app" && node -p 'require("./.eslintrc.json").ignorePatterns.filter(p => !p.startsWith("!")).join("\n")' \
+     && cat .eslintignore) > "$app/.lint-prettierignore"
+  (cd "$app" && diag "$bin/prettier" --check --ignore-path .lint-prettierignore 'src/**/*.{js,jsx,ts,tsx}') \
+    && pass "wren-ui prettier --check" || fail "wren-ui prettier --check（修复：在 $ui 用锁定的 prettier 3.2.5 --write）"
+  (cd "$app" && diag "$bin/next" lint) \
+    && pass "wren-ui next lint（eslint + prettier，next build 同一配置）" || fail "wren-ui next lint（eslint + prettier）"
+  rc=0; out=$(cd "$app" && "$bin/tsc" --noEmit --pretty false 2>&1) || rc=$?
+  printf '%s\n' "$out" | tsc_as_next_build "$rc" \
+    && pass "wren-ui tsc（next build 类型检查范围）" || fail "wren-ui tsc（next build 类型检查范围）"
+  rm -rf -- "$run"
 }
 
 lint_component_frontends() {
