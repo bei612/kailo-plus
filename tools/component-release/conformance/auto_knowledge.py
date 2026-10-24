@@ -19,12 +19,15 @@ deployment facts and run-local secrets, stage by stage, without an operator:
              isolated OpenBao, the public JWKS is rendered by the original Agent path), then
              start-core.sh --no-build so the isolated Core signs receiver actions with it
 
-Later stages (native, bootstrap, seed, inputs, driver) still need the isolated Gateway model route
-over the declared keyless upstreams (DD-136(5), adapters.json knowledge.conformanceModels) for the
-PLATFORM_LLM_ROUTE receiver binding, the source Cells (cells@2.0.0) and WeKnora candidate deliveries
-rendered from bootstrap identities fixed in advance, and the bootstrap/seed/observe/driver inputs; a
-run records what remains in auto-state.json (blockedAfterIdentity) and stops there with an explicit
-FAILED state instead of an operator step.
+  models     DD-136(5): keyless native sources for the declared upstreams (adapters.json
+             knowledge.conformanceModels and its gatewaySource bodies) written into the isolated
+             AgentGateway through its admin API, then one governed llm_route.create each through the
+             isolated Web origin (flow/llm-route-create.mjs) for the PLATFORM_LLM_ROUTE receiver binding
+
+Later stages (native, bootstrap, seed, inputs, driver) still need the source Cells (cells@2.0.0) and
+WeKnora candidate deliveries rendered from bootstrap identities fixed in advance, and the
+bootstrap/seed/observe/driver inputs; a run records what remains in auto-state.json
+(blockedAfterModelRoutes) and stops there with an explicit FAILED state instead of an operator step.
 
 Nothing here touches production state; production is only read (its .env keys, its running
 Core/Worker image digests and the release-proof store).
@@ -351,16 +354,17 @@ def drive(r, args, runtime_env, declaration, h):
         receiver(h, r, "contracts")
     ensure_action_token(h, r)
     ensure_model_routes(h, r, declaration)
-    r.record(blockedAfterIdentity=(
-        "native/bootstrap/seed/inputs/driver not automated yet: (1) isolated AgentGateway model sources and a "
-        "governed model route over the declared keyless upstreams (adapters.json knowledge.conformanceModels, "
-        "DD-136(5)) for the PLATFORM_LLM_ROUTE receiver binding; (2) source Cells cells@2.0.0 instance and its "
-        "native-action/adapter delivery bound to the isolated Core (isolated IdP client, isolated platform OpenBao "
-        "SecretRefs) under bootstrap identities fixed in advance; (3) WeKnora candidate native env with "
-        "--platform-adapter --file-storage-sync and the forward adapter config for the production Worker; (4) "
-        "bootstrap input (receiver-environment-bootstrap.rs prepare), seed-knowledge input, observe receiver block, "
-        "driver input and the isolated session refresher; (5) production registration also needs cells@2.0.0 "
-        "APPROVED in the production Catalog (receiverEnvironment.sourceReleaseId)"))
+    r.record(blockedAfterModelRoutes=(
+        "native/bootstrap/seed/inputs/driver not automated yet: (1) source Cells cells@2.0.0 instance (file-storage "
+        "helpers in a sub run directory) with its native-action and adapter delivery bound to the isolated Core: "
+        "isolated IdP adapter client, Agent/AppRole in the isolated platform OpenBao, binding SecretRefs written "
+        "there at the bootstrap's fixed locators, an adapters[] entry with nativeResources evidence in "
+        "RECEIVER_ADAPTER_DIRECTORY_FILE; (2) WeKnora candidate native env (secrets, isolated OIDC client, native "
+        "models over the governed routes) with --platform-adapter --file-storage-sync and the forward adapter "
+        "configuration for the production Worker (Core's isolated conformance identity); (3) bootstrap input "
+        "(receiver-environment-bootstrap.rs prepare: endpoints, resources/preconditions, three isolated session "
+        "token files), seed-knowledge input, observe receiver block, driver input and RECEIVER_SESSION_COMMAND; "
+        "(4) production registration also needs cells@2.0.0 APPROVED in the production Catalog"))
     raise h.Refused("knowledge: isolated platform, contracts and ActionToken identity ready; native and later receiver "
                     f"stages are not automated yet (auto-state.json blockedAfterIdentity; {manifest['componentTypeKey']}@{manifest['version']})")
 
