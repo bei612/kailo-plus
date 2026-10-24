@@ -244,7 +244,13 @@ def ensure_action_token(h, r):
            # container-safety requires an execution TMPDIR on Data (same short path as receiver.env).
            "TMPDIR": str(h.private_dir(Path("/volumes/data/kailo/tmp") / f"kr-{r.dir.name.rsplit('-', 1)[-1]}"))}
     h.say("isolated-identity", action="prepare-action-token")
-    h.run(["bash", "./start-core.sh", "--prepare-action-token"], cwd=str(local), env=env, log=r.log)
+    # The deployment-only path is idempotent (an existing key is read back, never regenerated); on the
+    # fresh isolated platform its first Agent readback has failed once without a message, so it is
+    # retried once before the run stops.
+    if h.run(["bash", "./start-core.sh", "--prepare-action-token"], cwd=str(local), env=env, log=r.log,
+             check=False).returncode != 0:
+        h.say("isolated-identity", action="prepare-action-token", retry=1)
+        h.run(["bash", "./start-core.sh", "--prepare-action-token"], cwd=str(local), env=env, log=r.log)
     h.say("isolated-identity", action="restart-core")
     h.run(["bash", "./start-core.sh", "--no-build"], cwd=str(local), env=env, log=r.log)
     marker.write_text("")
