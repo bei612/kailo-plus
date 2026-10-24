@@ -2,10 +2,7 @@ import { useMemo } from 'react';
 import SimpleLayout from '@/components/layouts/SimpleLayout';
 import ContainerCard from '@/components/pages/setup/ContainerCard';
 import useSetupModels from '@/hooks/useSetupModels';
-import {
-  SETUP_STEPS,
-  SETUP_STEP_TITLES,
-} from '@/components/pages/setup/utils';
+import { SETUP_STEPS, SETUP_STEP_TITLES } from '@/components/pages/setup/utils';
 import useKailoPage from '@/hooks/useKailoPage';
 import useKailoText from '@/utils/kailoI18n';
 

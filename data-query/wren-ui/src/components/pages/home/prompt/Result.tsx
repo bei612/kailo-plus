@@ -66,10 +66,7 @@ interface Props {
 
 const Wrapper = ({ children }) => {
   return (
-    <StyledResult
-      className="p-4"
-      data-testid="prompt__result"
-    >
+    <StyledResult className="p-4" data-testid="prompt__result">
       {children}
     </StyledResult>
   );

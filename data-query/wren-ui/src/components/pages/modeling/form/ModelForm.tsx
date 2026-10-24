@@ -186,7 +186,10 @@ export default function ModelForm(props: Props) {
               }
               leftColumns={defaultColumns}
               rightColumns={defaultColumns}
-              titles={[t('modeling.availableColumns'), t('modeling.targetColumns')]}
+              titles={[
+                t('modeling.availableColumns'),
+                t('modeling.targetColumns'),
+              ]}
               showSearch
             />
           </Form.Item>

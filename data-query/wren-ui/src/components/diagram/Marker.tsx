@@ -56,7 +56,12 @@ export default function Marker() {
             transform="translate(-407 -263)"
             fill="none"
           />
-          <rect x="6" width="2" height="22" fill="var(--kailo-color-line-strong)" />
+          <rect
+            x="6"
+            width="2"
+            height="22"
+            fill="var(--kailo-color-line-strong)"
+          />
         </marker>
         <marker
           id="one_left"
@@ -72,7 +77,12 @@ export default function Marker() {
             transform="translate(-407 -263)"
             fill="none"
           />
-          <rect x="6" width="2" height="22" fill="var(--kailo-color-line-strong)" />
+          <rect
+            x="6"
+            width="2"
+            height="22"
+            fill="var(--kailo-color-line-strong)"
+          />
         </marker>
 
         {/* seleceted */}

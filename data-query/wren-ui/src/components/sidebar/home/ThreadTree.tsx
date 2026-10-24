@@ -63,7 +63,6 @@ const StyledSidebarTree = styled(SidebarTree)`
 
   .adm-treeNode {
     &.adm-treeNode__thread {
-
       .ant-tree-title {
         flex-grow: 1;
         display: inline-flex;

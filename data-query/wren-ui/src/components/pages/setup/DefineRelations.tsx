@@ -2,11 +2,7 @@ import { useEffect, useState } from 'react';
 import { omit } from 'lodash';
 import { Button, Col, Row, Space, Spin, Typography, Alert } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
-import {
-  PencilIcon,
-  PlusIcon,
-  TrashIcon,
-} from '@/components/kailo/KailoIcons';
+import { PencilIcon, PlusIcon, TrashIcon } from '@/components/kailo/KailoIcons';
 import useKailoText from '@/utils/kailoI18n';
 import useKailoSession from '@/hooks/useKailoSession';
 import { confirmDanger } from '@/utils/kailoHost';

@@ -338,10 +338,9 @@ export default function ChartAnswer(props: AnswerResultProps) {
             ? query.completed &&
               query.receipt?.data && (
                 <ChartWrapper
-                  className={clsx(
-                    'mt-4 pb-3 overflow-hidden',
-                    { isEditMode: isEditMode },
-                  )}
+                  className={clsx('mt-4 pb-3 overflow-hidden', {
+                    isEditMode: isEditMode,
+                  })}
                 >
                   <Toolbar className={clsx({ isEditMode: isEditMode })}>
                     <Form

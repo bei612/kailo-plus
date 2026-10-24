@@ -280,11 +280,7 @@ export default function APIHistory() {
             </div>
           );
         }
-        return (
-          <div>
-            {payload?.question || payload?.sql || '-'}
-          </div>
-        );
+        return <div>{payload?.question || payload?.sql || '-'}</div>;
       },
     },
     {

@@ -79,10 +79,7 @@ export default function DatabricksProperties(props: Props) {
           },
         ]}
       >
-        <Input
-          placeholder={kailoT('setup.phHttpPath')}
-          disabled={isEditMode}
-        />
+        <Input placeholder={kailoT('setup.phHttpPath')} disabled={isEditMode} />
       </Form.Item>
       {databricksType === DATABRICKS_AUTH_METHOD.token && (
         <Form.Item

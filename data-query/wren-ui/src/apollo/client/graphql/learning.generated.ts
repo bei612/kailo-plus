@@ -3,26 +3,31 @@ import * as Types from './__types__';
 import { gql } from '@apollo/client';
 import * as Apollo from '@apollo/client';
 const defaultOptions = {} as const;
-export type LearningRecordQueryVariables = Types.Exact<{ [key: string]: never; }>;
+export type LearningRecordQueryVariables = Types.Exact<{
+  [key: string]: never;
+}>;
 
-
-export type LearningRecordQuery = { __typename?: 'Query', learningRecord: { __typename?: 'LearningRecord', paths: Array<string> } };
+export type LearningRecordQuery = {
+  __typename?: 'Query';
+  learningRecord: { __typename?: 'LearningRecord'; paths: Array<string> };
+};
 
 export type SaveLearningRecordMutationVariables = Types.Exact<{
   data: Types.SaveLearningRecordInput;
 }>;
 
-
-export type SaveLearningRecordMutation = { __typename?: 'Mutation', saveLearningRecord: { __typename?: 'LearningRecord', paths: Array<string> } };
-
+export type SaveLearningRecordMutation = {
+  __typename?: 'Mutation';
+  saveLearningRecord: { __typename?: 'LearningRecord'; paths: Array<string> };
+};
 
 export const LearningRecordDocument = gql`
-    query LearningRecord {
-  learningRecord {
-    paths
+  query LearningRecord {
+    learningRecord {
+      paths
+    }
   }
-}
-    `;
+`;
 
 /**
  * __useLearningRecordQuery__
@@ -39,25 +44,51 @@ export const LearningRecordDocument = gql`
  *   },
  * });
  */
-export function useLearningRecordQuery(baseOptions?: Apollo.QueryHookOptions<LearningRecordQuery, LearningRecordQueryVariables>) {
-        const options = {...defaultOptions, ...baseOptions}
-        return Apollo.useQuery<LearningRecordQuery, LearningRecordQueryVariables>(LearningRecordDocument, options);
-      }
-export function useLearningRecordLazyQuery(baseOptions?: Apollo.LazyQueryHookOptions<LearningRecordQuery, LearningRecordQueryVariables>) {
-          const options = {...defaultOptions, ...baseOptions}
-          return Apollo.useLazyQuery<LearningRecordQuery, LearningRecordQueryVariables>(LearningRecordDocument, options);
-        }
-export type LearningRecordQueryHookResult = ReturnType<typeof useLearningRecordQuery>;
-export type LearningRecordLazyQueryHookResult = ReturnType<typeof useLearningRecordLazyQuery>;
-export type LearningRecordQueryResult = Apollo.QueryResult<LearningRecordQuery, LearningRecordQueryVariables>;
-export const SaveLearningRecordDocument = gql`
-    mutation SaveLearningRecord($data: SaveLearningRecordInput!) {
-  saveLearningRecord(data: $data) {
-    paths
-  }
+export function useLearningRecordQuery(
+  baseOptions?: Apollo.QueryHookOptions<
+    LearningRecordQuery,
+    LearningRecordQueryVariables
+  >,
+) {
+  const options = { ...defaultOptions, ...baseOptions };
+  return Apollo.useQuery<LearningRecordQuery, LearningRecordQueryVariables>(
+    LearningRecordDocument,
+    options,
+  );
 }
-    `;
-export type SaveLearningRecordMutationFn = Apollo.MutationFunction<SaveLearningRecordMutation, SaveLearningRecordMutationVariables>;
+export function useLearningRecordLazyQuery(
+  baseOptions?: Apollo.LazyQueryHookOptions<
+    LearningRecordQuery,
+    LearningRecordQueryVariables
+  >,
+) {
+  const options = { ...defaultOptions, ...baseOptions };
+  return Apollo.useLazyQuery<LearningRecordQuery, LearningRecordQueryVariables>(
+    LearningRecordDocument,
+    options,
+  );
+}
+export type LearningRecordQueryHookResult = ReturnType<
+  typeof useLearningRecordQuery
+>;
+export type LearningRecordLazyQueryHookResult = ReturnType<
+  typeof useLearningRecordLazyQuery
+>;
+export type LearningRecordQueryResult = Apollo.QueryResult<
+  LearningRecordQuery,
+  LearningRecordQueryVariables
+>;
+export const SaveLearningRecordDocument = gql`
+  mutation SaveLearningRecord($data: SaveLearningRecordInput!) {
+    saveLearningRecord(data: $data) {
+      paths
+    }
+  }
+`;
+export type SaveLearningRecordMutationFn = Apollo.MutationFunction<
+  SaveLearningRecordMutation,
+  SaveLearningRecordMutationVariables
+>;
 
 /**
  * __useSaveLearningRecordMutation__
@@ -76,10 +107,24 @@ export type SaveLearningRecordMutationFn = Apollo.MutationFunction<SaveLearningR
  *   },
  * });
  */
-export function useSaveLearningRecordMutation(baseOptions?: Apollo.MutationHookOptions<SaveLearningRecordMutation, SaveLearningRecordMutationVariables>) {
-        const options = {...defaultOptions, ...baseOptions}
-        return Apollo.useMutation<SaveLearningRecordMutation, SaveLearningRecordMutationVariables>(SaveLearningRecordDocument, options);
-      }
-export type SaveLearningRecordMutationHookResult = ReturnType<typeof useSaveLearningRecordMutation>;
-export type SaveLearningRecordMutationResult = Apollo.MutationResult<SaveLearningRecordMutation>;
-export type SaveLearningRecordMutationOptions = Apollo.BaseMutationOptions<SaveLearningRecordMutation, SaveLearningRecordMutationVariables>;
+export function useSaveLearningRecordMutation(
+  baseOptions?: Apollo.MutationHookOptions<
+    SaveLearningRecordMutation,
+    SaveLearningRecordMutationVariables
+  >,
+) {
+  const options = { ...defaultOptions, ...baseOptions };
+  return Apollo.useMutation<
+    SaveLearningRecordMutation,
+    SaveLearningRecordMutationVariables
+  >(SaveLearningRecordDocument, options);
+}
+export type SaveLearningRecordMutationHookResult = ReturnType<
+  typeof useSaveLearningRecordMutation
+>;
+export type SaveLearningRecordMutationResult =
+  Apollo.MutationResult<SaveLearningRecordMutation>;
+export type SaveLearningRecordMutationOptions = Apollo.BaseMutationOptions<
+  SaveLearningRecordMutation,
+  SaveLearningRecordMutationVariables
+>;

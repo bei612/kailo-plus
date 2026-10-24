@@ -314,10 +314,7 @@ export default function TextBasedAnswer(props: AnswerResultProps) {
           ) : (
             <>
               {!isStreaming && (
-                <Alert
-                  message={t('home.noDataHint')}
-                  type="info"
-                />
+                <Alert message={t('home.noDataHint')} type="info" />
               )}
             </>
           )}

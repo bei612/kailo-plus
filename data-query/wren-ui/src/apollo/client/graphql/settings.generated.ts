@@ -3,37 +3,54 @@ import * as Types from './__types__';
 import { gql } from '@apollo/client';
 import * as Apollo from '@apollo/client';
 const defaultOptions = {} as const;
-export type GetSettingsQueryVariables = Types.Exact<{ [key: string]: never; }>;
+export type GetSettingsQueryVariables = Types.Exact<{ [key: string]: never }>;
 
+export type GetSettingsQuery = {
+  __typename?: 'Query';
+  settings: {
+    __typename?: 'Settings';
+    productVersion: string;
+    language: Types.ProjectLanguage;
+    dataSource: {
+      __typename?: 'DataSource';
+      type: Types.DataSourceName;
+      properties: any;
+      sampleDataset?: Types.SampleDatasetName | null;
+    };
+  };
+};
 
-export type GetSettingsQuery = { __typename?: 'Query', settings: { __typename?: 'Settings', productVersion: string, language: Types.ProjectLanguage, dataSource: { __typename?: 'DataSource', type: Types.DataSourceName, properties: any, sampleDataset?: Types.SampleDatasetName | null } } };
+export type ResetCurrentProjectMutationVariables = Types.Exact<{
+  [key: string]: never;
+}>;
 
-export type ResetCurrentProjectMutationVariables = Types.Exact<{ [key: string]: never; }>;
-
-
-export type ResetCurrentProjectMutation = { __typename?: 'Mutation', resetCurrentProject: boolean };
+export type ResetCurrentProjectMutation = {
+  __typename?: 'Mutation';
+  resetCurrentProject: boolean;
+};
 
 export type UpdateCurrentProjectMutationVariables = Types.Exact<{
   data: Types.UpdateCurrentProjectInput;
 }>;
 
-
-export type UpdateCurrentProjectMutation = { __typename?: 'Mutation', updateCurrentProject: boolean };
-
+export type UpdateCurrentProjectMutation = {
+  __typename?: 'Mutation';
+  updateCurrentProject: boolean;
+};
 
 export const GetSettingsDocument = gql`
-    query GetSettings {
-  settings {
-    productVersion
-    dataSource {
-      type
-      properties
-      sampleDataset
+  query GetSettings {
+    settings {
+      productVersion
+      dataSource {
+        type
+        properties
+        sampleDataset
+      }
+      language
     }
-    language
   }
-}
-    `;
+`;
 
 /**
  * __useGetSettingsQuery__
@@ -50,23 +67,47 @@ export const GetSettingsDocument = gql`
  *   },
  * });
  */
-export function useGetSettingsQuery(baseOptions?: Apollo.QueryHookOptions<GetSettingsQuery, GetSettingsQueryVariables>) {
-        const options = {...defaultOptions, ...baseOptions}
-        return Apollo.useQuery<GetSettingsQuery, GetSettingsQueryVariables>(GetSettingsDocument, options);
-      }
-export function useGetSettingsLazyQuery(baseOptions?: Apollo.LazyQueryHookOptions<GetSettingsQuery, GetSettingsQueryVariables>) {
-          const options = {...defaultOptions, ...baseOptions}
-          return Apollo.useLazyQuery<GetSettingsQuery, GetSettingsQueryVariables>(GetSettingsDocument, options);
-        }
-export type GetSettingsQueryHookResult = ReturnType<typeof useGetSettingsQuery>;
-export type GetSettingsLazyQueryHookResult = ReturnType<typeof useGetSettingsLazyQuery>;
-export type GetSettingsQueryResult = Apollo.QueryResult<GetSettingsQuery, GetSettingsQueryVariables>;
-export const ResetCurrentProjectDocument = gql`
-    mutation ResetCurrentProject {
-  resetCurrentProject
+export function useGetSettingsQuery(
+  baseOptions?: Apollo.QueryHookOptions<
+    GetSettingsQuery,
+    GetSettingsQueryVariables
+  >,
+) {
+  const options = { ...defaultOptions, ...baseOptions };
+  return Apollo.useQuery<GetSettingsQuery, GetSettingsQueryVariables>(
+    GetSettingsDocument,
+    options,
+  );
 }
-    `;
-export type ResetCurrentProjectMutationFn = Apollo.MutationFunction<ResetCurrentProjectMutation, ResetCurrentProjectMutationVariables>;
+export function useGetSettingsLazyQuery(
+  baseOptions?: Apollo.LazyQueryHookOptions<
+    GetSettingsQuery,
+    GetSettingsQueryVariables
+  >,
+) {
+  const options = { ...defaultOptions, ...baseOptions };
+  return Apollo.useLazyQuery<GetSettingsQuery, GetSettingsQueryVariables>(
+    GetSettingsDocument,
+    options,
+  );
+}
+export type GetSettingsQueryHookResult = ReturnType<typeof useGetSettingsQuery>;
+export type GetSettingsLazyQueryHookResult = ReturnType<
+  typeof useGetSettingsLazyQuery
+>;
+export type GetSettingsQueryResult = Apollo.QueryResult<
+  GetSettingsQuery,
+  GetSettingsQueryVariables
+>;
+export const ResetCurrentProjectDocument = gql`
+  mutation ResetCurrentProject {
+    resetCurrentProject
+  }
+`;
+export type ResetCurrentProjectMutationFn = Apollo.MutationFunction<
+  ResetCurrentProjectMutation,
+  ResetCurrentProjectMutationVariables
+>;
 
 /**
  * __useResetCurrentProjectMutation__
@@ -84,19 +125,36 @@ export type ResetCurrentProjectMutationFn = Apollo.MutationFunction<ResetCurrent
  *   },
  * });
  */
-export function useResetCurrentProjectMutation(baseOptions?: Apollo.MutationHookOptions<ResetCurrentProjectMutation, ResetCurrentProjectMutationVariables>) {
-        const options = {...defaultOptions, ...baseOptions}
-        return Apollo.useMutation<ResetCurrentProjectMutation, ResetCurrentProjectMutationVariables>(ResetCurrentProjectDocument, options);
-      }
-export type ResetCurrentProjectMutationHookResult = ReturnType<typeof useResetCurrentProjectMutation>;
-export type ResetCurrentProjectMutationResult = Apollo.MutationResult<ResetCurrentProjectMutation>;
-export type ResetCurrentProjectMutationOptions = Apollo.BaseMutationOptions<ResetCurrentProjectMutation, ResetCurrentProjectMutationVariables>;
-export const UpdateCurrentProjectDocument = gql`
-    mutation UpdateCurrentProject($data: UpdateCurrentProjectInput!) {
-  updateCurrentProject(data: $data)
+export function useResetCurrentProjectMutation(
+  baseOptions?: Apollo.MutationHookOptions<
+    ResetCurrentProjectMutation,
+    ResetCurrentProjectMutationVariables
+  >,
+) {
+  const options = { ...defaultOptions, ...baseOptions };
+  return Apollo.useMutation<
+    ResetCurrentProjectMutation,
+    ResetCurrentProjectMutationVariables
+  >(ResetCurrentProjectDocument, options);
 }
-    `;
-export type UpdateCurrentProjectMutationFn = Apollo.MutationFunction<UpdateCurrentProjectMutation, UpdateCurrentProjectMutationVariables>;
+export type ResetCurrentProjectMutationHookResult = ReturnType<
+  typeof useResetCurrentProjectMutation
+>;
+export type ResetCurrentProjectMutationResult =
+  Apollo.MutationResult<ResetCurrentProjectMutation>;
+export type ResetCurrentProjectMutationOptions = Apollo.BaseMutationOptions<
+  ResetCurrentProjectMutation,
+  ResetCurrentProjectMutationVariables
+>;
+export const UpdateCurrentProjectDocument = gql`
+  mutation UpdateCurrentProject($data: UpdateCurrentProjectInput!) {
+    updateCurrentProject(data: $data)
+  }
+`;
+export type UpdateCurrentProjectMutationFn = Apollo.MutationFunction<
+  UpdateCurrentProjectMutation,
+  UpdateCurrentProjectMutationVariables
+>;
 
 /**
  * __useUpdateCurrentProjectMutation__
@@ -115,10 +173,24 @@ export type UpdateCurrentProjectMutationFn = Apollo.MutationFunction<UpdateCurre
  *   },
  * });
  */
-export function useUpdateCurrentProjectMutation(baseOptions?: Apollo.MutationHookOptions<UpdateCurrentProjectMutation, UpdateCurrentProjectMutationVariables>) {
-        const options = {...defaultOptions, ...baseOptions}
-        return Apollo.useMutation<UpdateCurrentProjectMutation, UpdateCurrentProjectMutationVariables>(UpdateCurrentProjectDocument, options);
-      }
-export type UpdateCurrentProjectMutationHookResult = ReturnType<typeof useUpdateCurrentProjectMutation>;
-export type UpdateCurrentProjectMutationResult = Apollo.MutationResult<UpdateCurrentProjectMutation>;
-export type UpdateCurrentProjectMutationOptions = Apollo.BaseMutationOptions<UpdateCurrentProjectMutation, UpdateCurrentProjectMutationVariables>;
+export function useUpdateCurrentProjectMutation(
+  baseOptions?: Apollo.MutationHookOptions<
+    UpdateCurrentProjectMutation,
+    UpdateCurrentProjectMutationVariables
+  >,
+) {
+  const options = { ...defaultOptions, ...baseOptions };
+  return Apollo.useMutation<
+    UpdateCurrentProjectMutation,
+    UpdateCurrentProjectMutationVariables
+  >(UpdateCurrentProjectDocument, options);
+}
+export type UpdateCurrentProjectMutationHookResult = ReturnType<
+  typeof useUpdateCurrentProjectMutation
+>;
+export type UpdateCurrentProjectMutationResult =
+  Apollo.MutationResult<UpdateCurrentProjectMutation>;
+export type UpdateCurrentProjectMutationOptions = Apollo.BaseMutationOptions<
+  UpdateCurrentProjectMutation,
+  UpdateCurrentProjectMutationVariables
+>;

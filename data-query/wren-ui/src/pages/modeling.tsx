@@ -220,9 +220,7 @@ export default function Modeling() {
       : null;
   useKailoPage({
     title: openNode?.displayName || t('navModeling'),
-    breadcrumbs: openNode
-      ? [{ id: 'modeling', label: t('navModeling') }]
-      : [],
+    breadcrumbs: openNode ? [{ id: 'modeling', label: t('navModeling') }] : [],
     ready: !!diagramData || !!diagramError,
     actions: [
       {

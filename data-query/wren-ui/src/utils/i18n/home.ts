@@ -40,8 +40,10 @@ const zh = {
   'home.noDataHint': '点击“查看 SQL”，逐步核对查询逻辑，确认数据不可用的原因。',
   'home.copiedSemanticSql': '已复制语义层 SQL',
   'home.copiedSemanticSqlHint': '这种方言不一定能直接在你的数据库上运行。',
-  'home.copiedSemanticSqlNative': '这种方言不一定能直接在你的数据库上运行；打开“显示原始 SQL”可获取可执行版本。',
-  'home.semanticSqlBanner': '默认显示语义层 SQL。如需在你自己的数据库上运行，打开“显示原始 SQL”获取确切语法。',
+  'home.copiedSemanticSqlNative':
+    '这种方言不一定能直接在你的数据库上运行；打开“显示原始 SQL”可获取可执行版本。',
+  'home.semanticSqlBanner':
+    '默认显示语义层 SQL。如需在你自己的数据库上运行，打开“显示原始 SQL”获取确切语法。',
   'home.showOriginalSql': '显示原始 SQL',
   'home.adjustSql': '调整 SQL',
   'home.noMatchingRecords': '没有符合条件的记录。',
@@ -56,7 +58,8 @@ const zh = {
   'home.adjust': '调整',
   'home.chartRenderFailed': '未能绘制图表',
   'home.noData': '没有可用数据',
-  'home.tooManyCategories': '类别过多，无法清晰显示。可以只看前 25 项，或继续追问以聚焦某个分组或筛选结果。',
+  'home.tooManyCategories':
+    '类别过多，无法清晰显示。可以只看前 25 项，或继续追问以聚焦某个分组或筛选结果。',
   'home.showTop25': '显示前 25 项',
   'home.regenerateChart': '重新生成图表',
   'home.editChart': '编辑图表',
@@ -89,10 +92,12 @@ const zh = {
   'home.rerun': '重新运行',
   'home.stepCount': '{count} 个步骤',
   'home.sqlGenerationFailed': '未能生成 SQL 语句',
-  'home.sqlGenerationFailedHint': '根据你的问题生成 SQL 时遇到问题，可以手动修正 SQL 后继续。',
+  'home.sqlGenerationFailedHint':
+    '根据你的问题生成 SQL 时遇到问题，可以手动修正 SQL 后继续。',
   'home.fixSql': '修正 SQL',
   'home.stepFixedSqlTitle': '已应用你提供的 SQL',
-  'home.stepFixedSqlDescription': '生成 SQL 时遇到问题，正在处理你手动提交的查询。',
+  'home.stepFixedSqlDescription':
+    '生成 SQL 时遇到问题，正在处理你手动提交的查询。',
   'home.stepSqlPairTitle': '使用问答对',
   'home.stepSqlPairDescription': '找到匹配的问答对，直接返回结果。',
   'home.stepViewTitle': '使用已保存的视图',
@@ -111,7 +116,8 @@ const zh = {
   'home.stepCandidatesFound': '已找到前 {count} 个候选模型',
   'home.stepSearching': '正在检索',
   'home.emptyDashboardTitle': '看板上还没有图表',
-  'home.emptyDashboardDescription': '新建对话并生成图表，然后把图表固定到看板。',
+  'home.emptyDashboardDescription':
+    '新建对话并生成图表，然后把图表固定到看板。',
   'home.lastRefreshed': '上次刷新：{time}',
   'home.dayMonday': '星期一',
   'home.dayTuesday': '星期二',
@@ -131,7 +137,8 @@ const zh = {
   'home.cacheSettings': '缓存设置',
   'home.save': '保存',
   'home.enableCaching': '启用缓存',
-  'home.enableCachingHint': '复用最近的结果以加快看板加载。可在下方选择合适的刷新计划。',
+  'home.enableCachingHint':
+    '复用最近的结果以加快看板加载。可在下方选择合适的刷新计划。',
   'home.refreshSettings': '刷新设置',
   'home.frequency': '频率',
   'home.selectFrequency': '选择频率',
@@ -160,11 +167,13 @@ const zh = {
   'home.name': '名称',
   'home.adjustSteps': '调整步骤',
   'home.selectedModels': '已选模型',
-  'home.selectedModelsHint': '选择回答问题所需的模型，未选择的模型不会用于生成 SQL。',
+  'home.selectedModelsHint':
+    '选择回答问题所需的模型，未选择的模型不会用于生成 SQL。',
   'home.selectModels': '选择模型',
   'home.reasoningSteps': '推理步骤',
   'home.mentionTip': '提示：在文本框中输入 @ 可选择模型。',
-  'home.reasoningStepsHint': '在下方编辑推理逻辑，每一步都应有助于准确回答问题。',
+  'home.reasoningStepsHint':
+    '在下方编辑推理逻辑，每一步都应有助于准确回答问题。',
   'home.characterCountMax': '{count} / {max} 个字符',
   'home.characterCount': '{count} 个字符',
   'home.editMode': '编辑',

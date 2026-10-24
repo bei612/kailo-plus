@@ -81,9 +81,7 @@ export default function ProjectSettings(props: Props) {
               </Form.Item>
             </Col>
             <Col>
-              <Button type="primary" onClick={submit}
-                loading={loading}
-              >
+              <Button type="primary" onClick={submit} loading={loading}>
                 {t('save')}
               </Button>
             </Col>

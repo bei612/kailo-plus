@@ -77,7 +77,7 @@ export default function SelectModels(props: Props) {
         <Col span={12}>
           <Button
             onClick={onBack}
-                        className="adm-onboarding-btn"
+            className="adm-onboarding-btn"
             disabled={submitting}
           >
             {t('setup.back')}
@@ -86,7 +86,7 @@ export default function SelectModels(props: Props) {
         <Col className="text-right" span={12}>
           <Button
             type="primary"
-                        onClick={submit}
+            onClick={submit}
             className="adm-onboarding-btn"
             loading={submitting}
           >

@@ -7,53 +7,87 @@ export type CreateViewMutationVariables = Types.Exact<{
   data: Types.CreateViewInput;
 }>;
 
-
-export type CreateViewMutation = { __typename?: 'Mutation', createView: { __typename?: 'ViewInfo', id: number, name: string, statement: string } };
+export type CreateViewMutation = {
+  __typename?: 'Mutation';
+  createView: {
+    __typename?: 'ViewInfo';
+    id: number;
+    name: string;
+    statement: string;
+  };
+};
 
 export type DeleteViewMutationVariables = Types.Exact<{
   where: Types.ViewWhereUniqueInput;
 }>;
 
-
-export type DeleteViewMutation = { __typename?: 'Mutation', deleteView: boolean };
+export type DeleteViewMutation = {
+  __typename?: 'Mutation';
+  deleteView: boolean;
+};
 
 export type GetViewQueryVariables = Types.Exact<{
   where: Types.ViewWhereUniqueInput;
 }>;
 
+export type GetViewQuery = {
+  __typename?: 'Query';
+  view: {
+    __typename?: 'ViewInfo';
+    id: number;
+    name: string;
+    statement: string;
+  };
+};
 
-export type GetViewQuery = { __typename?: 'Query', view: { __typename?: 'ViewInfo', id: number, name: string, statement: string } };
+export type ListViewsQueryVariables = Types.Exact<{ [key: string]: never }>;
 
-export type ListViewsQueryVariables = Types.Exact<{ [key: string]: never; }>;
-
-
-export type ListViewsQuery = { __typename?: 'Query', listViews: Array<{ __typename?: 'ViewInfo', id: number, name: string, displayName: string, statement: string }> };
+export type ListViewsQuery = {
+  __typename?: 'Query';
+  listViews: Array<{
+    __typename?: 'ViewInfo';
+    id: number;
+    name: string;
+    displayName: string;
+    statement: string;
+  }>;
+};
 
 export type PreviewViewDataMutationVariables = Types.Exact<{
   where: Types.PreviewViewDataInput;
 }>;
 
-
-export type PreviewViewDataMutation = { __typename?: 'Mutation', previewViewData: any };
+export type PreviewViewDataMutation = {
+  __typename?: 'Mutation';
+  previewViewData: any;
+};
 
 export type ValidateViewMutationVariables = Types.Exact<{
   data: Types.ValidateViewInput;
 }>;
 
-
-export type ValidateViewMutation = { __typename?: 'Mutation', validateView: { __typename?: 'ViewValidationResponse', valid: boolean, message?: string | null } };
-
+export type ValidateViewMutation = {
+  __typename?: 'Mutation';
+  validateView: {
+    __typename?: 'ViewValidationResponse';
+    valid: boolean;
+    message?: string | null;
+  };
+};
 
 export const CreateViewDocument = gql`
-    mutation CreateView($data: CreateViewInput!) {
-  createView(data: $data) {
-    id
-    name
-    statement
+  mutation CreateView($data: CreateViewInput!) {
+    createView(data: $data) {
+      id
+      name
+      statement
+    }
   }
-}
-    `;
-export type CreateViewMutationFn = Apollo.MutationFunction<CreateViewMutation, CreateViewMutationVariables>;
+`;
+export type CreateViewMutationFn = Apollo.MutationFunction<
+  CreateViewMutation,
+  CreateViewMutationVariables
+>;
 
 /**
  * __useCreateViewMutation__
@@ -72,19 +106,36 @@ export type CreateViewMutationFn = Apollo.MutationFunction<CreateViewMutation, C
  *   },
  * });
  */
-export function useCreateViewMutation(baseOptions?: Apollo.MutationHookOptions<CreateViewMutation, CreateViewMutationVariables>) {
-        const options = {...defaultOptions, ...baseOptions}
-        return Apollo.useMutation<CreateViewMutation, CreateViewMutationVariables>(CreateViewDocument, options);
-      }
-export type CreateViewMutationHookResult = ReturnType<typeof useCreateViewMutation>;
-export type CreateViewMutationResult = Apollo.MutationResult<CreateViewMutation>;
-export type CreateViewMutationOptions = Apollo.BaseMutationOptions<CreateViewMutation, CreateViewMutationVariables>;
-export const DeleteViewDocument = gql`
-    mutation DeleteView($where: ViewWhereUniqueInput!) {
-  deleteView(where: $where)
+export function useCreateViewMutation(
+  baseOptions?: Apollo.MutationHookOptions<
+    CreateViewMutation,
+    CreateViewMutationVariables
+  >,
+) {
+  const options = { ...defaultOptions, ...baseOptions };
+  return Apollo.useMutation<CreateViewMutation, CreateViewMutationVariables>(
+    CreateViewDocument,
+    options,
+  );
 }
-    `;
-export type DeleteViewMutationFn = Apollo.MutationFunction<DeleteViewMutation, DeleteViewMutationVariables>;
+export type CreateViewMutationHookResult = ReturnType<
+  typeof useCreateViewMutation
+>;
+export type CreateViewMutationResult =
+  Apollo.MutationResult<CreateViewMutation>;
+export type CreateViewMutationOptions = Apollo.BaseMutationOptions<
+  CreateViewMutation,
+  CreateViewMutationVariables
+>;
+export const DeleteViewDocument = gql`
+  mutation DeleteView($where: ViewWhereUniqueInput!) {
+    deleteView(where: $where)
+  }
+`;
+export type DeleteViewMutationFn = Apollo.MutationFunction<
+  DeleteViewMutation,
+  DeleteViewMutationVariables
+>;
 
 /**
  * __useDeleteViewMutation__
@@ -103,22 +154,36 @@ export type DeleteViewMutationFn = Apollo.MutationFunction<DeleteViewMutation, D
  *   },
  * });
  */
-export function useDeleteViewMutation(baseOptions?: Apollo.MutationHookOptions<DeleteViewMutation, DeleteViewMutationVariables>) {
-        const options = {...defaultOptions, ...baseOptions}
-        return Apollo.useMutation<DeleteViewMutation, DeleteViewMutationVariables>(DeleteViewDocument, options);
-      }
-export type DeleteViewMutationHookResult = ReturnType<typeof useDeleteViewMutation>;
-export type DeleteViewMutationResult = Apollo.MutationResult<DeleteViewMutation>;
-export type DeleteViewMutationOptions = Apollo.BaseMutationOptions<DeleteViewMutation, DeleteViewMutationVariables>;
-export const GetViewDocument = gql`
-    query GetView($where: ViewWhereUniqueInput!) {
-  view(where: $ViewWhereUniqueInput) {
-    id
-    name
-    statement
-  }
+export function useDeleteViewMutation(
+  baseOptions?: Apollo.MutationHookOptions<
+    DeleteViewMutation,
+    DeleteViewMutationVariables
+  >,
+) {
+  const options = { ...defaultOptions, ...baseOptions };
+  return Apollo.useMutation<DeleteViewMutation, DeleteViewMutationVariables>(
+    DeleteViewDocument,
+    options,
+  );
 }
-    `;
+export type DeleteViewMutationHookResult = ReturnType<
+  typeof useDeleteViewMutation
+>;
+export type DeleteViewMutationResult =
+  Apollo.MutationResult<DeleteViewMutation>;
+export type DeleteViewMutationOptions = Apollo.BaseMutationOptions<
+  DeleteViewMutation,
+  DeleteViewMutationVariables
+>;
+export const GetViewDocument = gql`
+  query GetView($where: ViewWhereUniqueInput!) {
+    view(where: $ViewWhereUniqueInput) {
+      id
+      name
+      statement
+    }
+  }
+`;
 
 /**
  * __useGetViewQuery__
@@ -136,27 +201,43 @@ export const GetViewDocument = gql`
  *   },
  * });
  */
-export function useGetViewQuery(baseOptions: Apollo.QueryHookOptions<GetViewQuery, GetViewQueryVariables>) {
-        const options = {...defaultOptions, ...baseOptions}
-        return Apollo.useQuery<GetViewQuery, GetViewQueryVariables>(GetViewDocument, options);
-      }
-export function useGetViewLazyQuery(baseOptions?: Apollo.LazyQueryHookOptions<GetViewQuery, GetViewQueryVariables>) {
-          const options = {...defaultOptions, ...baseOptions}
-          return Apollo.useLazyQuery<GetViewQuery, GetViewQueryVariables>(GetViewDocument, options);
-        }
+export function useGetViewQuery(
+  baseOptions: Apollo.QueryHookOptions<GetViewQuery, GetViewQueryVariables>,
+) {
+  const options = { ...defaultOptions, ...baseOptions };
+  return Apollo.useQuery<GetViewQuery, GetViewQueryVariables>(
+    GetViewDocument,
+    options,
+  );
+}
+export function useGetViewLazyQuery(
+  baseOptions?: Apollo.LazyQueryHookOptions<
+    GetViewQuery,
+    GetViewQueryVariables
+  >,
+) {
+  const options = { ...defaultOptions, ...baseOptions };
+  return Apollo.useLazyQuery<GetViewQuery, GetViewQueryVariables>(
+    GetViewDocument,
+    options,
+  );
+}
 export type GetViewQueryHookResult = ReturnType<typeof useGetViewQuery>;
 export type GetViewLazyQueryHookResult = ReturnType<typeof useGetViewLazyQuery>;
-export type GetViewQueryResult = Apollo.QueryResult<GetViewQuery, GetViewQueryVariables>;
+export type GetViewQueryResult = Apollo.QueryResult<
+  GetViewQuery,
+  GetViewQueryVariables
+>;
 export const ListViewsDocument = gql`
-    query ListViews {
-  listViews {
-    id
-    name
-    displayName
-    statement
+  query ListViews {
+    listViews {
+      id
+      name
+      displayName
+      statement
+    }
   }
-}
-    `;
+`;
 
 /**
  * __useListViewsQuery__
@@ -173,23 +254,47 @@ export const ListViewsDocument = gql`
  *   },
  * });
  */
-export function useListViewsQuery(baseOptions?: Apollo.QueryHookOptions<ListViewsQuery, ListViewsQueryVariables>) {
-        const options = {...defaultOptions, ...baseOptions}
-        return Apollo.useQuery<ListViewsQuery, ListViewsQueryVariables>(ListViewsDocument, options);
-      }
-export function useListViewsLazyQuery(baseOptions?: Apollo.LazyQueryHookOptions<ListViewsQuery, ListViewsQueryVariables>) {
-          const options = {...defaultOptions, ...baseOptions}
-          return Apollo.useLazyQuery<ListViewsQuery, ListViewsQueryVariables>(ListViewsDocument, options);
-        }
-export type ListViewsQueryHookResult = ReturnType<typeof useListViewsQuery>;
-export type ListViewsLazyQueryHookResult = ReturnType<typeof useListViewsLazyQuery>;
-export type ListViewsQueryResult = Apollo.QueryResult<ListViewsQuery, ListViewsQueryVariables>;
-export const PreviewViewDataDocument = gql`
-    mutation PreviewViewData($where: PreviewViewDataInput!) {
-  previewViewData(where: $where)
+export function useListViewsQuery(
+  baseOptions?: Apollo.QueryHookOptions<
+    ListViewsQuery,
+    ListViewsQueryVariables
+  >,
+) {
+  const options = { ...defaultOptions, ...baseOptions };
+  return Apollo.useQuery<ListViewsQuery, ListViewsQueryVariables>(
+    ListViewsDocument,
+    options,
+  );
 }
-    `;
-export type PreviewViewDataMutationFn = Apollo.MutationFunction<PreviewViewDataMutation, PreviewViewDataMutationVariables>;
+export function useListViewsLazyQuery(
+  baseOptions?: Apollo.LazyQueryHookOptions<
+    ListViewsQuery,
+    ListViewsQueryVariables
+  >,
+) {
+  const options = { ...defaultOptions, ...baseOptions };
+  return Apollo.useLazyQuery<ListViewsQuery, ListViewsQueryVariables>(
+    ListViewsDocument,
+    options,
+  );
+}
+export type ListViewsQueryHookResult = ReturnType<typeof useListViewsQuery>;
+export type ListViewsLazyQueryHookResult = ReturnType<
+  typeof useListViewsLazyQuery
+>;
+export type ListViewsQueryResult = Apollo.QueryResult<
+  ListViewsQuery,
+  ListViewsQueryVariables
+>;
+export const PreviewViewDataDocument = gql`
+  mutation PreviewViewData($where: PreviewViewDataInput!) {
+    previewViewData(where: $where)
+  }
+`;
+export type PreviewViewDataMutationFn = Apollo.MutationFunction<
+  PreviewViewDataMutation,
+  PreviewViewDataMutationVariables
+>;
 
 /**
  * __usePreviewViewDataMutation__
@@ -208,22 +313,39 @@ export type PreviewViewDataMutationFn = Apollo.MutationFunction<PreviewViewDataM
  *   },
  * });
  */
-export function usePreviewViewDataMutation(baseOptions?: Apollo.MutationHookOptions<PreviewViewDataMutation, PreviewViewDataMutationVariables>) {
-        const options = {...defaultOptions, ...baseOptions}
-        return Apollo.useMutation<PreviewViewDataMutation, PreviewViewDataMutationVariables>(PreviewViewDataDocument, options);
-      }
-export type PreviewViewDataMutationHookResult = ReturnType<typeof usePreviewViewDataMutation>;
-export type PreviewViewDataMutationResult = Apollo.MutationResult<PreviewViewDataMutation>;
-export type PreviewViewDataMutationOptions = Apollo.BaseMutationOptions<PreviewViewDataMutation, PreviewViewDataMutationVariables>;
-export const ValidateViewDocument = gql`
-    mutation ValidateView($data: ValidateViewInput!) {
-  validateView(data: $data) {
-    valid
-    message
-  }
+export function usePreviewViewDataMutation(
+  baseOptions?: Apollo.MutationHookOptions<
+    PreviewViewDataMutation,
+    PreviewViewDataMutationVariables
+  >,
+) {
+  const options = { ...defaultOptions, ...baseOptions };
+  return Apollo.useMutation<
+    PreviewViewDataMutation,
+    PreviewViewDataMutationVariables
+  >(PreviewViewDataDocument, options);
 }
-    `;
-export type ValidateViewMutationFn = Apollo.MutationFunction<ValidateViewMutation, ValidateViewMutationVariables>;
+export type PreviewViewDataMutationHookResult = ReturnType<
+  typeof usePreviewViewDataMutation
+>;
+export type PreviewViewDataMutationResult =
+  Apollo.MutationResult<PreviewViewDataMutation>;
+export type PreviewViewDataMutationOptions = Apollo.BaseMutationOptions<
+  PreviewViewDataMutation,
+  PreviewViewDataMutationVariables
+>;
+export const ValidateViewDocument = gql`
+  mutation ValidateView($data: ValidateViewInput!) {
+    validateView(data: $data) {
+      valid
+      message
+    }
+  }
+`;
+export type ValidateViewMutationFn = Apollo.MutationFunction<
+  ValidateViewMutation,
+  ValidateViewMutationVariables
+>;
 
 /**
  * __useValidateViewMutation__
@@ -242,10 +364,24 @@ export type ValidateViewMutationFn = Apollo.MutationFunction<ValidateViewMutatio
  *   },
  * });
  */
-export function useValidateViewMutation(baseOptions?: Apollo.MutationHookOptions<ValidateViewMutation, ValidateViewMutationVariables>) {
-        const options = {...defaultOptions, ...baseOptions}
-        return Apollo.useMutation<ValidateViewMutation, ValidateViewMutationVariables>(ValidateViewDocument, options);
-      }
-export type ValidateViewMutationHookResult = ReturnType<typeof useValidateViewMutation>;
-export type ValidateViewMutationResult = Apollo.MutationResult<ValidateViewMutation>;
-export type ValidateViewMutationOptions = Apollo.BaseMutationOptions<ValidateViewMutation, ValidateViewMutationVariables>;
+export function useValidateViewMutation(
+  baseOptions?: Apollo.MutationHookOptions<
+    ValidateViewMutation,
+    ValidateViewMutationVariables
+  >,
+) {
+  const options = { ...defaultOptions, ...baseOptions };
+  return Apollo.useMutation<
+    ValidateViewMutation,
+    ValidateViewMutationVariables
+  >(ValidateViewDocument, options);
+}
+export type ValidateViewMutationHookResult = ReturnType<
+  typeof useValidateViewMutation
+>;
+export type ValidateViewMutationResult =
+  Apollo.MutationResult<ValidateViewMutation>;
+export type ValidateViewMutationOptions = Apollo.BaseMutationOptions<
+  ValidateViewMutation,
+  ValidateViewMutationVariables
+>;

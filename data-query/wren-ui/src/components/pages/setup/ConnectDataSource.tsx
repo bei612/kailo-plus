@@ -89,7 +89,7 @@ export default function ConnectDataSource(props: Props) {
         <Col span={12}>
           <Button
             onClick={onBack}
-                        className="adm-onboarding-btn"
+            className="adm-onboarding-btn"
             disabled={submitting}
           >
             {t('setup.back')}
@@ -98,7 +98,7 @@ export default function ConnectDataSource(props: Props) {
         <Col className="text-right" span={12}>
           <Button
             type="primary"
-                        onClick={submit}
+            onClick={submit}
             loading={submitting}
             className="adm-onboarding-btn"
           >

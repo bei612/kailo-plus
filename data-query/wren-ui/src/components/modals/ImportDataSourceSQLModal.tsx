@@ -38,8 +38,7 @@ export const isSupportSubstitute = (dataSource: DataSource) => {
 export default function ImportDataSourceSQLModal(props: Props) {
   const { visible, defaultValue, onSubmit, onClose } = props;
   const t = useKailoText();
-  const name =
-    getDataSourceName(defaultValue?.dataSource) || t('dataSource');
+  const name = getDataSourceName(defaultValue?.dataSource) || t('dataSource');
 
   // Handle errors via try/catch blocks rather than onError callback
   const [substituteDialectSQL, modelSubstitudeResult] =

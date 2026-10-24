@@ -1,13 +1,5 @@
 import { useMemo } from 'react';
-import {
-  Modal,
-  Button,
-  Table,
-  Typography,
-  Collapse,
-  Alert,
-  Tag,
-} from 'antd';
+import { Modal, Button, Table, Typography, Collapse, Alert, Tag } from 'antd';
 import styled from 'styled-components';
 import WarningOutlined from '@ant-design/icons/WarningOutlined';
 import PlusSquareOutlined from '@ant-design/icons/PlusSquareOutlined';

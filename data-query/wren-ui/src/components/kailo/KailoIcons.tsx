@@ -235,7 +235,10 @@ export const ListIcon = icon(
   </>,
 );
 
-export const ChevronRightIcon = icon('chevron-right', <path d="m9 18 6-6-6-6" />);
+export const ChevronRightIcon = icon(
+  'chevron-right',
+  <path d="m9 18 6-6-6-6" />,
+);
 
 export const ChevronDownIcon = icon('chevron-down', <path d="m6 9 6 6 6-6" />);
 

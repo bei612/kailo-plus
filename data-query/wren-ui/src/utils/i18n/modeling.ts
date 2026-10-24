@@ -117,8 +117,10 @@ const zh = {
   'modeling.search': '搜索',
   'modeling.selectStringField': '请选择字符串类型的字段',
   'modeling.selectNumberField': '请选择数值类型的字段',
-  'modeling.aggregationSourceFieldBlocked': '聚合函数不能选择源模型的字段，以免结果不符合预期',
-  'modeling.relationshipNeedsPrimaryKey': '先为此模型设置主键，才能在计算字段中使用关系',
+  'modeling.aggregationSourceFieldBlocked':
+    '聚合函数不能选择源模型的字段，以免结果不符合预期',
+  'modeling.relationshipNeedsPrimaryKey':
+    '先为此模型设置主键，才能在计算字段中使用关系',
   'modeling.sourceCalculatedFieldUnsupported': '不支持使用源模型的计算字段',
   'modeling.relationshipInUse': '此关系已被使用',
   'modeling.example': '示例',
@@ -134,7 +136,8 @@ const zh = {
   'modeling.affectedResource': '受影响的资源',
   'modeling.calculatedField': '计算字段',
   'modeling.resolveConfirmTitle': '处理「{title}」？',
-  'modeling.resolveConfirmDescription': '处理后，受影响的模型、关系和计算字段可能会被自动删除，且无法恢复。',
+  'modeling.resolveConfirmDescription':
+    '处理后，受影响的模型、关系和计算字段可能会被自动删除，且无法恢复。',
   'modeling.resolve': '处理',
   'modeling.tablesAffected': '影响 {count} 张表',
   'modeling.affectedModel': '受影响的模型',
@@ -142,14 +145,18 @@ const zh = {
   'modeling.deletedColumns': '被删除的字段',
   'modeling.affectedColumns': '受影响的字段',
   'modeling.schemaChanges': '数据源结构变化',
-  'modeling.schemaChangesIntro': '检测到已连接数据源的结构有变化，请查看这些变化的影响。',
-  'modeling.schemaChangesWarning': '点击“处理”可能会自动删除所有受影响的模型、关系和计算字段。',
+  'modeling.schemaChangesIntro':
+    '检测到已连接数据源的结构有变化，请查看这些变化的影响。',
+  'modeling.schemaChangesWarning':
+    '点击“处理”可能会自动删除所有受影响的模型、关系和计算字段。',
   'modeling.sourceTableDeleted': '源表已删除',
   'modeling.sourceColumnDeleted': '源字段已删除',
   'modeling.sourceColumnTypeChanged': '源字段类型已变化',
   'modeling.tipDeletedTable': '下表列出受此模型影响的资源，处理时会一并删除。',
-  'modeling.tipDeletedColumn': '下表列出受模型中此字段影响的资源，处理时会一并删除。',
-  'modeling.tipModifiedColumn': '下表列出使用模型中此字段的资源。请逐一检查，并按需手动更新。',
+  'modeling.tipDeletedColumn':
+    '下表列出受模型中此字段影响的资源，处理时会一并删除。',
+  'modeling.tipModifiedColumn':
+    '下表列出使用模型中此字段的资源。请逐一检查，并按需手动更新。',
   'modeling.aggregation': '聚合',
   'modeling.mathFunctions': '数学函数',
   'modeling.stringFunctions': '字符串函数',
@@ -279,11 +286,11 @@ const en: Record<keyof typeof zh, string> = {
   'modeling.selectStringField': 'Select a string field',
   'modeling.selectNumberField': 'Select a number field',
   'modeling.aggregationSourceFieldBlocked':
-    'Aggregation functions can\'t use source model fields, to avoid unexpected results',
+    "Aggregation functions can't use source model fields, to avoid unexpected results",
   'modeling.relationshipNeedsPrimaryKey':
     'Set a primary key on this model to use it in a calculated field',
   'modeling.sourceCalculatedFieldUnsupported':
-    'Calculated fields of the source model aren\'t supported',
+    "Calculated fields of the source model aren't supported",
   'modeling.relationshipInUse': 'This relationship is in use',
   'modeling.example': 'Example',
   'modeling.selectField': 'Select a field',

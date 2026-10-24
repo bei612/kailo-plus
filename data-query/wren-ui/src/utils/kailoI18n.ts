@@ -204,9 +204,7 @@ export function kailoText(
   key: KailoTextKey,
   vars?: KailoTextVars,
 ): string {
-  const text: string = (locale === 'en' ? messages.en : messages['zh-CN'])[
-    key
-  ];
+  const text: string = (locale === 'en' ? messages.en : messages['zh-CN'])[key];
   if (!vars) return text;
   return text.replace(/\{(\w+)\}/g, (match, name) =>
     name in vars ? String(vars[name]) : match,

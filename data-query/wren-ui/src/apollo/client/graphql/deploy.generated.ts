@@ -3,23 +3,26 @@ import * as Types from './__types__';
 import { gql } from '@apollo/client';
 import * as Apollo from '@apollo/client';
 const defaultOptions = {} as const;
-export type DeployMutationVariables = Types.Exact<{ [key: string]: never; }>;
+export type DeployMutationVariables = Types.Exact<{ [key: string]: never }>;
 
+export type DeployMutation = { __typename?: 'Mutation'; deploy: any };
 
-export type DeployMutation = { __typename?: 'Mutation', deploy: any };
+export type DeployStatusQueryVariables = Types.Exact<{ [key: string]: never }>;
 
-export type DeployStatusQueryVariables = Types.Exact<{ [key: string]: never; }>;
-
-
-export type DeployStatusQuery = { __typename?: 'Query', modelSync: { __typename?: 'ModelSyncResponse', status: Types.SyncStatus } };
-
+export type DeployStatusQuery = {
+  __typename?: 'Query';
+  modelSync: { __typename?: 'ModelSyncResponse'; status: Types.SyncStatus };
+};
 
 export const DeployDocument = gql`
-    mutation Deploy {
-  deploy
-}
-    `;
-export type DeployMutationFn = Apollo.MutationFunction<DeployMutation, DeployMutationVariables>;
+  mutation Deploy {
+    deploy
+  }
+`;
+export type DeployMutationFn = Apollo.MutationFunction<
+  DeployMutation,
+  DeployMutationVariables
+>;
 
 /**
  * __useDeployMutation__
@@ -37,20 +40,31 @@ export type DeployMutationFn = Apollo.MutationFunction<DeployMutation, DeployMut
  *   },
  * });
  */
-export function useDeployMutation(baseOptions?: Apollo.MutationHookOptions<DeployMutation, DeployMutationVariables>) {
-        const options = {...defaultOptions, ...baseOptions}
-        return Apollo.useMutation<DeployMutation, DeployMutationVariables>(DeployDocument, options);
-      }
+export function useDeployMutation(
+  baseOptions?: Apollo.MutationHookOptions<
+    DeployMutation,
+    DeployMutationVariables
+  >,
+) {
+  const options = { ...defaultOptions, ...baseOptions };
+  return Apollo.useMutation<DeployMutation, DeployMutationVariables>(
+    DeployDocument,
+    options,
+  );
+}
 export type DeployMutationHookResult = ReturnType<typeof useDeployMutation>;
 export type DeployMutationResult = Apollo.MutationResult<DeployMutation>;
-export type DeployMutationOptions = Apollo.BaseMutationOptions<DeployMutation, DeployMutationVariables>;
+export type DeployMutationOptions = Apollo.BaseMutationOptions<
+  DeployMutation,
+  DeployMutationVariables
+>;
 export const DeployStatusDocument = gql`
-    query DeployStatus {
-  modelSync {
-    status
+  query DeployStatus {
+    modelSync {
+      status
+    }
   }
-}
-    `;
+`;
 
 /**
  * __useDeployStatusQuery__
@@ -67,14 +81,37 @@ export const DeployStatusDocument = gql`
  *   },
  * });
  */
-export function useDeployStatusQuery(baseOptions?: Apollo.QueryHookOptions<DeployStatusQuery, DeployStatusQueryVariables>) {
-        const options = {...defaultOptions, ...baseOptions}
-        return Apollo.useQuery<DeployStatusQuery, DeployStatusQueryVariables>(DeployStatusDocument, options);
-      }
-export function useDeployStatusLazyQuery(baseOptions?: Apollo.LazyQueryHookOptions<DeployStatusQuery, DeployStatusQueryVariables>) {
-          const options = {...defaultOptions, ...baseOptions}
-          return Apollo.useLazyQuery<DeployStatusQuery, DeployStatusQueryVariables>(DeployStatusDocument, options);
-        }
-export type DeployStatusQueryHookResult = ReturnType<typeof useDeployStatusQuery>;
-export type DeployStatusLazyQueryHookResult = ReturnType<typeof useDeployStatusLazyQuery>;
-export type DeployStatusQueryResult = Apollo.QueryResult<DeployStatusQuery, DeployStatusQueryVariables>;
+export function useDeployStatusQuery(
+  baseOptions?: Apollo.QueryHookOptions<
+    DeployStatusQuery,
+    DeployStatusQueryVariables
+  >,
+) {
+  const options = { ...defaultOptions, ...baseOptions };
+  return Apollo.useQuery<DeployStatusQuery, DeployStatusQueryVariables>(
+    DeployStatusDocument,
+    options,
+  );
+}
+export function useDeployStatusLazyQuery(
+  baseOptions?: Apollo.LazyQueryHookOptions<
+    DeployStatusQuery,
+    DeployStatusQueryVariables
+  >,
+) {
+  const options = { ...defaultOptions, ...baseOptions };
+  return Apollo.useLazyQuery<DeployStatusQuery, DeployStatusQueryVariables>(
+    DeployStatusDocument,
+    options,
+  );
+}
+export type DeployStatusQueryHookResult = ReturnType<
+  typeof useDeployStatusQuery
+>;
+export type DeployStatusLazyQueryHookResult = ReturnType<
+  typeof useDeployStatusLazyQuery
+>;
+export type DeployStatusQueryResult = Apollo.QueryResult<
+  DeployStatusQuery,
+  DeployStatusQueryVariables
+>;

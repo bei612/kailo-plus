@@ -273,9 +273,7 @@ export default function QuestionSQLPairModal(props: Props) {
   return (
     <>
       <Modal
-        title={t(
-          isCreateMode ? 'addQuestionSqlPair' : 'knowledge.editSqlPair',
-        )}
+        title={t(isCreateMode ? 'addQuestionSqlPair' : 'knowledge.editSqlPair')}
         centered
         closable
         confirmLoading={confirmLoading}
@@ -294,10 +292,7 @@ export default function QuestionSQLPairModal(props: Props) {
               style={{ width: 300 }}
             >
               <InfoCircleOutlined className="mr-2 text-sm gray-7" />
-              <Typography.Text
-                type="secondary"
-                className="text-sm text-left"
-              >
+              <Typography.Text type="secondary" className="text-sm text-left">
                 {t('knowledge.sqlDialectHint')}
               </Typography.Text>
             </div>

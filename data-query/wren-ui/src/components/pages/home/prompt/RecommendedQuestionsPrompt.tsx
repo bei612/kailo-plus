@@ -84,10 +84,7 @@ const QuestionTemplate = ({
         onClick={onClick}
       >
         <div className="d-flex justify-space-between align-center text-sm mb-3">
-          <div
-            className="kailo-tag text-truncate"
-            title={category}
-          >
+          <div className="kailo-tag text-truncate" title={category}>
             {category}
           </div>
           {isSelected && loading && <LoadingOutlined className="ml-1 gray-7" />}

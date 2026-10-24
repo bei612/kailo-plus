@@ -197,7 +197,10 @@ const texts = {
       REQUIRED: ['请输入匹配的问题', 'Enter a matching question'],
     },
     IS_DEFAULT_GLOBAL: {
-      REQUIRED: ['请选择指令的适用范围', 'Choose how to apply this instruction'],
+      REQUIRED: [
+        '请选择指令的适用范围',
+        'Choose how to apply this instruction',
+      ],
     },
   },
   FIX_SQL: {

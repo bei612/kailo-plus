@@ -20,7 +20,8 @@ const zh = {
   'setup.change': '更换',
   'setup.changeSampleDataset': '更换示例数据集',
   'setup.changeSampleDatasetConfirm': '更换为示例数据集「{name}」？',
-  'setup.changeSampleDatasetHint': '更换示例数据集会删除问答页中的全部对话记录。',
+  'setup.changeSampleDatasetHint':
+    '更换示例数据集会删除问答页中的全部对话记录。',
   'setup.comingSoon': '即将支持',
   'setup.connectDataSource': '连接数据源',
   'setup.dataSourceUpdated': '数据源已更新',
@@ -109,15 +110,20 @@ const zh = {
   'setup.hintDuckDbConfig': 'DuckDB 提供多种可调整系统行为的配置选项。',
   'setup.hintDuckDbExtensions': 'DuckDB 支持动态加载扩展。',
   'setup.hintInitSql': '这些语句只在初始化时执行一次。',
-  'setup.hintInstanceProfile': '将自动使用当前计算环境（EC2、ECS、EKS）所分配实例配置文件角色的 AWS 凭据。',
+  'setup.hintInstanceProfile':
+    '将自动使用当前计算环境（EC2、ECS、EKS）所分配实例配置文件角色的 AWS 凭据。',
   'setup.hintPrivateKey': '上传用于密钥对认证的私钥文件。',
   'setup.hintRedshiftUser': 'DB 用户权限中指定的 Redshift 数据库用户名。',
   'setup.hintRoleSessionName': '可选，用于 AWS STS AssumeRole 操作的会话名称。',
   'setup.hintS3StagingDir': 'Athena 存放查询结果与元数据的 S3 路径。',
-  'setup.hintS3StagingDirWhere': '可在 Athena 控制台的“设置 → 查询结果位置”中找到。',
-  'setup.hintSnowflakePasswordDeprecated': '用户名密码认证将于 2025 年 11 月停用，建议改用密钥对认证。',
-  'setup.hintTrustServerCertificate': '开启后跳过服务器证书校验；使用受信任的证书时可以关闭。',
-  'setup.hintWarehouse': '执行查询所用的虚拟计算仓库；留空时使用账户的默认计算仓库（如已配置）。',
+  'setup.hintS3StagingDirWhere':
+    '可在 Athena 控制台的“设置 → 查询结果位置”中找到。',
+  'setup.hintSnowflakePasswordDeprecated':
+    '用户名密码认证将于 2025 年 11 月停用，建议改用密钥对认证。',
+  'setup.hintTrustServerCertificate':
+    '开启后跳过服务器证书校验；使用受信任的证书时可以关闭。',
+  'setup.hintWarehouse':
+    '执行查询所用的虚拟计算仓库；留空时使用账户的默认计算仓库（如已配置）。',
   'setup.learnMore': '了解详情',
   'setup.next': '下一步',
   'setup.noRecommendedRelations': '没有推荐的关系',
@@ -146,14 +152,16 @@ const zh = {
   'setup.relationTo': '到',
   'setup.relationType': '类型',
   'setup.sampleData': '使用示例数据',
-  'setup.selectTablesHint': '系统会根据所选的表创建数据模型，帮助 AI 更好地理解你的数据。',
+  'setup.selectTablesHint':
+    '系统会根据所选的表创建数据模型，帮助 AI 更好地理解你的数据。',
   'setup.selectTablesTitle': '选择要建模的表',
   'setup.skipStep': '跳过此步',
   'setup.stepConnect': '连接数据源',
   'setup.stepDefineRelations': '定义关系',
   'setup.stepSelectTables': '选择表',
   'setup.tableName': '表名',
-  'setup.tipOracleDsn': 'Oracle 数据源名称（DSN），可替代主机、端口与数据库配置',
+  'setup.tipOracleDsn':
+    'Oracle 数据源名称（DSN），可替代主机、端口与数据库配置',
   'setup.uploadJsonKey': '上传 JSON 密钥文件',
   'setup.uploadPrivateKey': '上传私钥',
   'setup.uploadValidCredentials': '请上传有效的凭据文件。',

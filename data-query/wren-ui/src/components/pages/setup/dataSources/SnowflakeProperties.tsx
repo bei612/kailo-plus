@@ -140,9 +140,7 @@ export default function SnowflakeProperties(props: Props) {
       <Form.Item
         label={kailoT('setup.fieldWarehouse')}
         name="warehouse"
-        extra={
-          <span className="gray-7">{kailoT('setup.hintWarehouse')}</span>
-        }
+        extra={<span className="gray-7">{kailoT('setup.hintWarehouse')}</span>}
       >
         <Input />
       </Form.Item>

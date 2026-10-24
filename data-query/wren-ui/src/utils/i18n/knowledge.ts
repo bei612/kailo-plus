@@ -5,8 +5,10 @@ const zh = {
   'knowledge.actions': '操作',
   'knowledge.addQuestion': '添加问题',
   'knowledge.apiDetails': 'API 调用详情',
-  'knowledge.apiHistoryDescription': '查看全部 API 调用记录，包括请求输入、响应与执行详情。',
-  'knowledge.apiHistoryEmptyDescription': '通过 API 提问或管理知识后，调用记录会显示在这里。',
+  'knowledge.apiHistoryDescription':
+    '查看全部 API 调用记录，包括请求输入、响应与执行详情。',
+  'knowledge.apiHistoryEmptyDescription':
+    '通过 API 提问或管理知识后，调用记录会显示在这里。',
   'knowledge.apiHistoryEmptyTitle': '暂无 API 记录',
   'knowledge.apiType': 'API 类型',
   'knowledge.apiTypeAsk': '提问',
@@ -27,7 +29,8 @@ const zh = {
   'knowledge.apiTypeUpdateSqlPair': '更新问答对',
   'knowledge.appliesToAll': '（适用于全部问题）',
   'knowledge.applyGlobal': '全局（适用于全部问题）',
-  'knowledge.applyInstructionHint': '选择该指令适用于全部提问，还是仅在检测到相似问题时适用。',
+  'knowledge.applyInstructionHint':
+    '选择该指令适用于全部提问，还是仅在检测到相似问题时适用。',
   'knowledge.applyInstructionTo': '适用范围',
   'knowledge.applyMatched': '仅匹配的问题',
   'knowledge.convert': '转换',
@@ -51,13 +54,15 @@ const zh = {
   'knowledge.instructionUpdated': '已更新指令',
   'knowledge.instructionsDescription':
     '管理用于指导 SQL 生成的指令。指令描述你的数据模型与业务规则，可以提高查询准确度、减少手动调整。',
-  'knowledge.instructionsEmptyDescription': '添加指令，告诉 AI 生成 SQL 时要遵循的业务规则。',
+  'knowledge.instructionsEmptyDescription':
+    '添加指令，告诉 AI 生成 SQL 时要遵循的业务规则。',
   'knowledge.instructionsEmptyTitle': '暂无指令',
   'knowledge.invalidDialectSql': '{name} SQL 语法无效',
   'knowledge.invalidSqlSyntax': 'SQL 语法无效',
   'knowledge.matchingQuestionPlaceholder': '输入一个应触发该指令的示例问题',
   'knowledge.matchingQuestions': '匹配的问题',
-  'knowledge.matchingQuestionsHint': '系统按相似度匹配用户问题，相关时应用该指令。',
+  'knowledge.matchingQuestionsHint':
+    '系统按相似度匹配用户问题，相关时应用该指令。',
   'knowledge.moreQuestions': '还有 {count} 个问题',
   'knowledge.question': '问题',
   'knowledge.questionOrSql': '问题 / SQL',
@@ -70,8 +75,10 @@ const zh = {
   'knowledge.sqlPairCreated': '已添加问答对',
   'knowledge.sqlPairDeleted': '已删除问答对',
   'knowledge.sqlPairUpdated': '已更新问答对',
-  'knowledge.sqlPairsDescription': '管理已保存的问答对。问答对展示你的团队如何编写 SQL，让生成的查询更符合预期。',
-  'knowledge.sqlPairsEmptyDescription': '添加问题与对应的 SQL，让 AI 学习你的团队的写法。',
+  'knowledge.sqlPairsDescription':
+    '管理已保存的问答对。问答对展示你的团队如何编写 SQL，让生成的查询更符合预期。',
+  'knowledge.sqlPairsEmptyDescription':
+    '添加问题与对应的 SQL，让 AI 学习你的团队的写法。',
   'knowledge.sqlPairsEmptyTitle': '暂无问答对',
   'knowledge.sqlStatement': 'SQL 语句',
   'knowledge.startDate': '开始日期',
