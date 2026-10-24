@@ -3999,3 +3999,15 @@ Core 不可用时仍按已应用快照拒绝非成员并保留管理员。另有
 未验证：Go 未编译、`go vet`/`go test`/`node --test`/vitest 均未运行；webpack 产物、部署、与 Core 的端到端投递、
 `AppearsIn` 在真实 UUID 路由下的取值、上传/评论/分享/任务的真实事件次序与去重、Cells Lookup 返回 `Path`/`Modified` 的真实形态、
 以及 Kailo 收件箱与“搜索全部”中的打开效果均未验收。评论 @ 只识别原生登录名（评论框无提及选择器）。
+
+## 验收批次 4：原生页面 release 摘要与运行镜像不一致（2026-10-24）
+
+- 现象：生产 `cells@1.2.0-native-page` 登记时 `adapterBuildRef` 取自当时的 `fork/upstream.yaml`
+  （`file-storage-service` `sha256:90312bca…`，提交 `6c63b717a`）；其后 `a6dac5fa3` 以 `ad9752bdf` 重建并部署
+  `sha256:602d4c69…`，release 仍记录 `90312bca`，运行中是 `602d4c69`。
+- 规则（`knowledge/fork/verify/native-page-release.md`）：版本只取 `manifest.native-page.json`；同一 id 不得换内容，
+  已登记的版本不得复用。因此不重登 `1.2.0`，版本升为 `1.3.0-native-page`。
+- 顺序：本分支合并后 → 读回运行中 `file-storage-service` digest 等于 `fork/upstream.yaml` 的 `artifact_digest`
+  → `tools/component-release/render.mjs --material native-page --source-commit <部署提交>` → `component_release.register`
+  → 另一位平台管理员 `component_release.approve` → `application_binding.create`（新 binding）→ 旧 binding
+  `application_binding.disable`。合并前若镜像再变，版本再升，不复用已登记版本。

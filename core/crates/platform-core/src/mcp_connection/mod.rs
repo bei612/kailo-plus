@@ -210,13 +210,21 @@ pub(crate) struct Connection {
     pub(crate) owner_principal_id: Uuid,
     pub(crate) resource_version: i32,
     pub(crate) projection_action_execution_id: Option<Uuid>,
+    /// The registrant's Tenant display name (ACTIVE membership and identity, non-blank);
+    /// same source as the Agent author directory (DD-147(1)). Absent is shown as an unknown member.
+    pub(crate) owner_display_name: Option<String>,
 }
 
 pub(crate) const CONNECTION_SELECT: &str = "select c.resource_id,c.tenant_id,c.slug,c.display_name,
     c.endpoint_url,c.endpoint_host,c.transport,c.auth_mode,c.api_key_header,c.visibility,c.workspace_id,
     c.credential_ref,c.credential_updated_at,c.oauth,c.active_generation,
     c.state,c.version,c.created_at,r.owner_principal_id,r.version resource_version,
-    r.projection_action_execution_id
+    r.projection_action_execution_id,
+    (select owner_identity.display_name from identity.tenant_membership owner_membership
+      join identity.human_identity owner_identity on owner_identity.id=owner_membership.human_identity_id
+        and owner_identity.status='ACTIVE'
+      where owner_membership.tenant_principal_id=r.owner_principal_id and owner_membership.tenant_id=r.tenant_id
+        and owner_membership.state='ACTIVE' and btrim(owner_identity.display_name)<>'') as owner_display_name
     from catalog.mcp_connection c join catalog.resource r on r.id=c.resource_id and r.tenant_id=c.tenant_id";
 
 pub(crate) async fn load(
@@ -454,6 +462,26 @@ pub(crate) fn valid_api_key_header(name: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Defect 7b: the registrant is shown by Tenant display name, never by Principal UUID; the
+    /// name comes from an ACTIVE membership and identity like the Agent author directory.
+    #[test]
+    fn connection_select_reads_the_owner_display_name() {
+        let sql = CONNECTION_SELECT
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ");
+        for needle in [
+            "as owner_display_name from catalog.mcp_connection c",
+            "owner_membership.tenant_principal_id=r.owner_principal_id",
+            "owner_membership.tenant_id=r.tenant_id",
+            "owner_membership.state='ACTIVE'",
+            "owner_identity.status='ACTIVE'",
+            "btrim(owner_identity.display_name)<>''",
+        ] {
+            assert!(sql.contains(needle), "{needle}: {sql}");
+        }
+    }
 
     #[test]
     fn slug_and_names_follow_the_constraint() {

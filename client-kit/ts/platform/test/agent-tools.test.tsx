@@ -93,6 +93,15 @@ async function choose(host: HTMLElement, label: string, value: string) {
   await settle();
 }
 
+/** DD-153: delegation scopes are a checkbox list; tick the one whose label starts with `label`. */
+async function tick(host: HTMLElement, label: string) {
+  const row = [...host.querySelectorAll<HTMLElement>("[data-testid=agent-delegation-scope-choice]")]
+    .find((item) => item.textContent?.startsWith(label));
+  const box = row?.querySelector("input[type=checkbox]");
+  if (!(box instanceof HTMLInputElement)) throw new Error(`Missing scope choice ${label}`);
+  await click(box);
+}
+
 const posts = (send: ReturnType<typeof agentsPage>) => send.mock.calls.map(([r]) => r).filter((r) => r.path === "/api/v1/actions");
 
 describe("Installation tools (DD-122)", () => {
@@ -199,30 +208,129 @@ describe("Delegation tool scopes (DD-122 (5))", () => {
     return undefined;
   });
 
-  it("lists tool scopes with action, target and tool name instead of blanking the grant form", async () => {
+  const choices = (host: HTMLElement) => [...host.querySelectorAll("[data-testid=agent-delegation-scope-choice]")]
+    .map((row) => row.textContent);
+
+  it("grants agent.invoke and two tool scopes in one grant (DD-153, V-SCN-252)", async () => {
     const send = routes();
     const host = await mountAgents(send);
     await click(button(host, "View delegation grants"));
     await settle();
     const management = section(host, "agent-delegation-management");
-    const options = [...management.querySelectorAll("option")].map((option) => option.textContent);
-    expect(options).toContain(`Memory list · agent.memory.entry.list · ${installation.resourceId} · 1`);
-    expect(options).toContain("Knowledge search · knowledge.search · knowledge-base-1 · 2");
-    expect(options).toContain(`agent.invoke · ${installation.resourceId} · 1`);
+    expect(choices(management)).toContain(`Memory list · agent.memory.entry.list · ${installation.resourceId} · 1`);
+    expect(choices(management)).toContain("Knowledge search · knowledge.search · knowledge-base-1 · 2");
+    expect(choices(management)).toContain(`agent.invoke · ${installation.resourceId} · 1`);
     expect(management.textContent).toContain("Tool reference: Knowledge search");
     expect(management.querySelector("form")).not.toBeNull();
 
-    const select = [...management.querySelectorAll("select")][0]!;
-    const value = [...select.options].find((option) => option.textContent?.startsWith("Memory list"))!.value;
-    await choose(management, "Exact governed action and target", value);
+    await tick(management, "agent.invoke");
+    await tick(management, "Memory list");
+    await tick(management, "Knowledge search");
+    expect(management.textContent).toContain("3 scopes selected");
     await choose(management, "Valid from", "2026-11-01T00:00:00");
     await choose(management, "Expires at", "2026-12-01T00:00:00");
+    expect(management.textContent).not.toContain("Tool scopes only take effect together with an invocation grant.");
     await click(button(management, "Review request"));
     expect(management.textContent).toContain("Tool reference: Memory list");
     await click(button(management, "Submit governed request"));
     const command = posts(send)[0]?.body as { actionKey: string; delegationGrant: { scopes: unknown[] } };
     expect(command.actionKey).toBe("agent.delegation.grant");
-    expect(command.delegationGrant.scopes).toEqual([memory]);
+    expect(command.delegationGrant.scopes).toEqual([invoke, memory, search]);
+  });
+
+  it("refuses a grant with tool scopes but no invocation scope and explains why (DD-153)", async () => {
+    const send = routes();
+    const host = await mountAgents(send);
+    await click(button(host, "View delegation grants"));
+    await settle();
+    const management = section(host, "agent-delegation-management");
+    await tick(management, "Memory list");
+    await choose(management, "Valid from", "2026-11-01T00:00:00");
+    await choose(management, "Expires at", "2026-12-01T00:00:00");
+    expect(management.textContent).toContain("Tool scopes only take effect together with an invocation grant.");
+    expect(button(management, "Review request").disabled).toBe(true);
+    await tick(management, "agent.invoke");
+    expect(management.textContent).not.toContain("Tool scopes only take effect together with an invocation grant.");
+    expect(button(management, "Review request").disabled).toBe(false);
+    expect(posts(send)).toHaveLength(0);
+  });
+
+  it("marks an active tool-only grant as lacking an invocation grant (DD-153 (3))", async () => {
+    const host = await mountAgents(routes());
+    await click(button(host, "View delegation grants"));
+    await settle();
+    const management = section(host, "agent-delegation-management");
+    expect(section(management, "agent-delegation-tool-only").textContent)
+      .toContain("No invocation grant: the tools in it do not take effect in triggers.");
+  });
+
+  it("keeps selected scopes across target pages and grants them together (DD-153)", async () => {
+    const send = agentsPage((r) => {
+      if (r.path.includes("/delegations?")) return { status: 200, body: { installationResourceId: installation.resourceId,
+        resourceVersion: installation.resourceVersion, workspaceId, canGrant: true, canRevoke: false, grants: [] } };
+      if (r.path.includes("/delegation-targets?")) {
+        const second = r.path.includes("offset=1");
+        return { status: 200, body: { installationResourceId: installation.resourceId,
+          resourceVersion: installation.resourceVersion, workspaceId, scopes: second ? [memory] : [invoke],
+          ...(second ? {} : { nextOffset: 1 }) } };
+      }
+      if (r.path === `/api/v1/agent-installations/${installation.resourceId}`) return { status: 200, body: installation };
+      if (r.path === "/api/v1/actions") return { status: 202, body: { actionKey: "agent.delegation.grant",
+        actionExecutionId: "grant-ae", operationId: "grant-op", gateState: "WAITING", dispatchState: "NOT_DISPATCHED", approvalWorkflowId: "approval" } };
+      return undefined;
+    });
+    const host = await mountAgents(send);
+    await click(button(host, "View delegation grants"));
+    await settle();
+    const management = section(host, "agent-delegation-management");
+    await tick(management, "agent.invoke");
+    await click(button(management, "Next page"));
+    await tick(management, "Memory list");
+    expect(management.textContent).toContain("2 scopes selected");
+    await choose(management, "Valid from", "2026-11-01T00:00:00");
+    await choose(management, "Expires at", "2026-12-01T00:00:00");
+    await click(button(management, "Review request"));
+    await click(button(management, "Submit governed request"));
+    const command = posts(send)[0]?.body as { delegationGrant: { scopes: unknown[] } };
+    expect(command.delegationGrant.scopes).toEqual([invoke, memory]);
+  });
+
+  it("guides a tool scope into renewing the existing agent.invoke grant and appends it (DD-153 (2))", async () => {
+    const invokeGrant = { ...grant, delegationId: "grant-invoke", delegationVersion: 4,
+      parameters: { ...grant.parameters, scopes: [invoke] } };
+    const send = agentsPage((r) => {
+      if (r.path.includes("/delegations?")) return { status: 200, body: { installationResourceId: installation.resourceId,
+        resourceVersion: installation.resourceVersion, workspaceId, canGrant: true, canRevoke: true, grants: [invokeGrant] } };
+      if (r.path.includes("/delegation-targets?")) return { status: 200, body: { installationResourceId: installation.resourceId,
+        resourceVersion: installation.resourceVersion, workspaceId, scopes: [invoke, memory, search] } };
+      if (r.path === `/api/v1/agent-installations/${installation.resourceId}`) return { status: 200, body: installation };
+      if (r.path === "/api/v1/actions") return { status: 202, body: { actionKey: "agent.delegation.grant",
+        actionExecutionId: "grant-ae", operationId: "grant-op", gateState: "WAITING", dispatchState: "NOT_DISPATCHED", approvalWorkflowId: "approval" } };
+      return undefined;
+    });
+    await render(<PlatformProvider client={createBffClient({ send })} locale="en" currentPrincipalId="human-1">
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <AgentDefinitionsPage />
+      </QueryClientProvider>
+    </PlatformProvider>);
+    await settle();
+    await click(button(section(document.body, "agent-installations"), "View installation"));
+    await click(button(document.body, "View delegation grants"));
+    await settle();
+    const management = section(document.body, "agent-delegation-management");
+    await tick(management, "Memory list");
+    expect(section(management, "agent-delegation-renew-for-tools").textContent).toContain("grant-invoke");
+    await click(button(management, "Renew to add tools"));
+    const renewal = section(management, "agent-delegation-renewal");
+    expect(renewal.textContent).toContain("Renewal replaces grant-invoke (version 4).");
+    await tick(renewal, "Knowledge search");
+    await choose(renewal, "Valid from", "2026-11-01T00:00:00");
+    await choose(renewal, "Expires at", "2026-12-01T00:00:00");
+    await click(button(renewal, "Review request"));
+    await click(button(management, "Submit governed request"));
+    const command = posts(send)[0]?.body as { delegationGrant: { scopes: unknown[]; renewsDelegationId: string } };
+    expect(command.delegationGrant.scopes).toEqual([invoke, memory, search]);
+    expect(command.delegationGrant.renewsDelegationId).toBe("grant-invoke");
   });
 
   it("still refuses a tool scope whose memory target is another installation", async () => {
@@ -236,8 +344,9 @@ describe("Delegation tool scopes (DD-122 (5))", () => {
     });
     const host = await mountAgents(send);
     await click(button(host, "View delegation grants"));
+    await settle();
     const management = section(host, "agent-delegation-management");
-    expect([...management.querySelectorAll("option")].some((option) => option.textContent?.includes("installation-2"))).toBe(false);
+    expect(choices(management).some((label) => label?.includes("installation-2"))).toBe(false);
   });
 });
 

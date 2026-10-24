@@ -170,7 +170,10 @@ function validAttempt(view: McpOauthAttemptView, attemptId?: string): boolean {
     && member(McpOauthAttemptState, view.state) && typeof view.expiresAt === "string";
 }
 
-/** DD-149(12)：连接器流程里既有原因码的用户语言；原因码仍随文案显示。 */
+/**
+ * DD-149(12)：连接器流程里既有原因码的用户语言。正文只显示本地化说明；原因码不进入可见文本，
+ * 只放在 data-reason-code 上供排障（apps/06 §4）。
+ */
 const connectorReasons: Partial<Record<ReasonCode, PlatformMessageKey>> = {
   [ReasonCode.PermissionDenied]: "connectors.error.permission",
   [ReasonCode.InvalidParameters]: "connectors.error.invalid",
@@ -185,7 +188,7 @@ function useConnectorReasonText() {
   const reasonText = useReasonText();
   return useCallback((reason: ReasonCode) => {
     const key = connectorReasons[reason];
-    return key ? t("platform.reasonWithCode", { text: t(key), code: reason }) : reasonText(reason);
+    return key ? t(key) : reasonText(reason);
   }, [reasonText, t]);
 }
 
@@ -242,12 +245,13 @@ export function ConnectorActionPanel({ action, testId, conflictText }: {
         {!busy && !unknown ? <Button onClick={action.cancel}>{t("platform.cancel")}</Button> : null}
       </div>
     </div> : null}
-    {submission ? <p role="status" className="break-words">{unknown ? t("agents.unknown", { operation: submission.operationId })
+    {submission ? <p role="status" className="break-words" data-reason-code={submission.reason}>{unknown ? t("agents.unknown", { operation: submission.operationId })
       : conflict && conflictText ? t(conflictText)
       : submission.gateState === ActionGateState.Denied
-        ? t("connectors.action.denied", { reason: submission.reason ? reasonText(submission.reason) : submission.gateState })
+        ? t("connectors.action.denied", { reason: submission.reason ? reasonText(submission.reason) : t("platform.reasonUnknown") })
         : t("connectors.action.done")}</p> : null}
-    {failure ? <p role={failure.kind === "unknown" ? "status" : "alert"}>{failure.kind === "unknown"
+    {failure ? <p role={failure.kind === "unknown" ? "status" : "alert"}
+      data-reason-code={failure.kind === "rejected" ? failure.reason : undefined}>{failure.kind === "unknown"
       ? t("agents.unknown", { operation: failure.operationId ?? submission?.operationId ?? "—" })
       : conflict && conflictText ? t(conflictText) : failureText(failure)}</p> : null}
   </div>;
@@ -955,7 +959,7 @@ function ConnectorRow({ connection, page, workspaceName, onChanged }: {
         <p className="break-all text-xs text-muted-foreground">{connection.endpointHost}</p>
         <p className="text-xs text-muted-foreground">
           <VisibilityText connection={connection} workspaceName={workspaceName} />
-          {` · ${t("connectors.owner", { owner: connection.ownerDisplayName ?? connection.ownerPrincipalId })}`}
+          {` · ${t("connectors.owner", { owner: connection.ownerDisplayName?.trim() || t("connectors.ownerUnknown") })}`}
           {` · ${t("connectors.toolCount", { count: connection.tools.length })}`}
         </p>
       </div>

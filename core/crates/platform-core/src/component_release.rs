@@ -854,10 +854,15 @@ fn validate_declarations(release: &Registration, contracts: &[Value]) -> Result<
         if resource["transferFormats"] != json!([]) {
             return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
         }
-        for incremental in resource["incrementalContracts"]
+        // DD-155(2)：每个 ResourceType 至少一份增量合同（`03` §7、`07` §8.1）。空列表在准入时
+        // 拒绝，不留到 binding 投影写库时以库约束失败进入无限重试。
+        let incrementals = resource["incrementalContracts"]
             .as_array()
-            .ok_or_else(bad)?
-        {
+            .ok_or_else(bad)?;
+        if incrementals.is_empty() {
+            return Err(bad());
+        }
+        for incremental in incrementals {
             exact_fields(
                 incremental,
                 &[

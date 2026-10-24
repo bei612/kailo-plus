@@ -178,3 +178,13 @@ export function kailoUserLabel(
 ): string | null {
   return user ? user.name || user.username || user.email || null : null;
 }
+
+// The actor named in Kailo notifications and shares: the Kailo display name
+// of the Core member directory, else the login name. The token `name` claim
+// is IdP profile data (e.g. given/family name), not the Kailo display name.
+export function kailoActorLabel(
+  user: Pick<KailoUserProfile, 'username'> | null | undefined,
+  listedName: string | null | undefined,
+): string | null {
+  return listedName || user?.username || null;
+}

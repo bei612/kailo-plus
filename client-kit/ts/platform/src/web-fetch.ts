@@ -27,13 +27,31 @@ const READ_POSTS = /^\/api\/v1\/(?:(?:workspaces|conversations)\/[^/]+\/messages
 /** Cold-start settle window: the shell, sidebars, Inbox and panes read these within ~0.4 s. */
 export const SETTLED_READ_MS = 2_000;
 
+/** DD-156(3): a rate-limited read is re-sent after `Retry-After` at most this many times. */
+export const MAX_LIMITED_READ_RETRIES = 3;
+/** DD-156(3): a single `Retry-After` wait above this is not waited out; the read fails with it. */
+export const MAX_LIMITED_READ_WAIT_SECONDS = 30;
+
+/** `Retry-After` as seconds: delta-seconds or an HTTP date; absent or unreadable is `undefined`. */
+export function retryAfterSeconds(value: string | null | undefined): number | undefined {
+  if (value === null || value === undefined || value.trim() === "") return undefined;
+  const seconds = Number(value.trim());
+  if (Number.isFinite(seconds)) return Math.max(0, seconds);
+  const at = Date.parse(value);
+  return Number.isNaN(at) ? undefined : Math.max(0, Math.ceil((at - Date.now()) / 1_000));
+}
+
 /** Identity/directory reads and first message windows that several mounts read back to back.
  * Paged or anchored message reads (any query string) are never shared. */
 export function isSettledRead(path: string): boolean {
   return /^\/api\/v1\/(?:session|conversations|conversation-participants|application-bindings)(?:\?|$)/.test(path)
     // Personal preferences/read positions; every CAS write invalidates before it is sent.
     || path === "/api/v1/user-state"
-    || /^\/api\/v1\/(?:conversations|workspaces)\/[^/?]+\/messages$/.test(path);
+    || /^\/api\/v1\/(?:conversations|workspaces)\/[^/?]+\/messages$/.test(path)
+    // DD-156(2): read-only POST queries the sidebar and Inbox repeat on every channel switch;
+    // shared per method + path + body, cleared by any write like the reads above.
+    || path === "/api/v1/workspace-activity"
+    || path === "/api/v1/inbox/mentions";
 }
 
 export type FetchTransportOptions = {
@@ -48,6 +66,8 @@ export type FetchTransportOptions = {
    * write, stream frame or interruption invalidated it first. Omitted: only in-flight sharing. */
   settleMs?: number;
   settled?: (path: string) => boolean;
+  /** Waits before a rate-limited read is re-sent; tests replace it. Omitted: `setTimeout`. */
+  sleep?: (ms: number) => Promise<void>;
 };
 
 export function createFetchTransport(options: FetchTransportOptions): FetchTransport {
@@ -63,26 +83,47 @@ export function createFetchTransport(options: FetchTransportOptions): FetchTrans
   const settledReads = new Map<string, { at: number; reply: BffReply }>();
   let generation = 0;
   const invalidateReads = () => { generation += 1; reads.clear(); settledReads.clear(); };
-  const copy = (reply: BffReply): BffReply =>
-    ({ status: reply.status, body: reply.body === undefined ? undefined : structuredClone(reply.body) });
+  const copy = (reply: BffReply): BffReply => ({
+    status: reply.status,
+    body: reply.body === undefined ? undefined : structuredClone(reply.body),
+    ...(reply.retryAfterSeconds === undefined ? {} : { retryAfterSeconds: reply.retryAfterSeconds }),
+  });
+  const sleep = options.sleep ?? ((ms: number) => new Promise<void>((resolve) => { setTimeout(resolve, ms); }));
+  // DD-156(3): LIMIT/RATE_LIMITED means the read was definitely not processed. A read-only read
+  // waits out `Retry-After` and is re-sent a bounded number of times; a write is never re-sent.
+  const sendRead = async (path: string, init: RequestInit): Promise<BffReply> => {
+    for (let attempt = 0; ; attempt += 1) {
+      const reply = await send(path, init);
+      if (reply.status !== 429 || attempt >= MAX_LIMITED_READ_RETRIES) return reply;
+      const wait = reply.retryAfterSeconds ?? 1;
+      if (wait > MAX_LIMITED_READ_WAIT_SECONDS) return reply;
+      await sleep(wait * 1_000);
+    }
+  };
   const coalesced = async (path: string, init: RequestInit, fresh = false): Promise<BffReply> => {
     const method = (init.method ?? "GET").toUpperCase();
-    if (method !== "GET" || init.body !== undefined) {
-      if (!(method === "POST" && READ_POSTS.test(path))) invalidateReads();
+    const readPost = method === "POST" && READ_POSTS.test(path);
+    if (!readPost && (method !== "GET" || init.body !== undefined)) {
+      invalidateReads();
       return send(path, init);
     }
+    // Read-only POST queries share by method + path + body; a body that is not plain JSON text
+    // (none today) is sent on its own rather than guessed at.
+    const key = !readPost ? path
+      : init.body === undefined || typeof init.body === "string" ? `POST ${path}\n${init.body ?? ""}` : undefined;
+    if (key === undefined) return sendRead(path, init);
     const settle = options.settleMs !== undefined && options.settleMs > 0 && options.settled?.(path) === true;
-    const hit = settle && !fresh ? settledReads.get(path) : undefined;
+    const hit = settle && !fresh ? settledReads.get(key) : undefined;
     if (hit && Date.now() - hit.at < options.settleMs!) return copy(hit.reply);
     // A fresh read is a security re-check: it neither joins an in-flight read nor answers others.
-    let read = fresh ? undefined : reads.get(path);
+    let read = fresh ? undefined : reads.get(key);
     if (!read) {
-      read = send(path, init);
+      read = sendRead(path, init);
       const current = read, started = generation, at = Date.now();
-      if (!fresh) reads.set(path, current);
+      if (!fresh) reads.set(key, current);
       void current.then((reply) => {
-        if (settle && !fresh && started === generation && reply.status >= 200 && reply.status < 300) settledReads.set(path, { at, reply });
-      }, () => undefined).finally(() => { if (reads.get(path) === current) reads.delete(path); });
+        if (settle && !fresh && started === generation && reply.status >= 200 && reply.status < 300) settledReads.set(key, { at, reply });
+      }, () => undefined).finally(() => { if (reads.get(key) === current) reads.delete(key); });
     }
     return copy(await read);
   };
@@ -108,7 +149,8 @@ export function createFetchTransport(options: FetchTransportOptions): FetchTrans
     // 错误体只有分类、reason code 与 operationId；取不到就当没有
     const body =
       response.status === 204 ? undefined : await response.json().catch(() => undefined);
-    return { status: response.status, body };
+    const retryAfter = response.status === 429 ? retryAfterSeconds(response.headers?.get("Retry-After")) : undefined;
+    return retryAfter === undefined ? { status: response.status, body } : { status: response.status, body, retryAfterSeconds: retryAfter };
   };
 
   const exchange = coalesced;

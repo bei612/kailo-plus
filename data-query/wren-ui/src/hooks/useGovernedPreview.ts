@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { v4 as uuidv4, validate as uuidValidate } from 'uuid';
 import { getUserConfig } from '@/utils/env';
+import type { UserConfig } from '@/utils/env';
 import { queryReceiptState } from '@/utils/queryReceipt';
 
 const matchesSelection = (
@@ -36,6 +37,14 @@ const matchesSelection = (
   }
 };
 
+// A scope read is final only while its revision is still the latest one.
+// Overlapping reads (mount, focus, visibility, an explicit preview) supersede
+// earlier reads; a superseded read is not an identity failure.
+type ScopeRead =
+  | { revision: number; status: 'superseded' }
+  | { revision: number; status: 'failed' }
+  | { revision: number; status: 'ready'; scope: string | undefined };
+
 // Original native preview controls use the same existing HUMAN action.
 // Only an opaque retry key is stored; SQL, credentials and results stay native.
 export default function useGovernedPreview(
@@ -66,41 +75,78 @@ export default function useGovernedPreview(
     id: number;
     data: any;
   } | null>(null);
-  const readScope = async () => {
+  const latestRead = useRef<Promise<ScopeRead>>();
+  const readScope = (): Promise<ScopeRead> => {
     const revision = ++sequence.current;
-    const config = await getUserConfig();
-    if (
-      revision === sequence.current &&
-      config.nativeBindingConfigured === false
-    )
-      return undefined;
-    const { queryScope } = config;
-    if (
-      revision !== sequence.current ||
-      config.nativeBindingConfigured !== true ||
-      typeof queryScope !== 'string' ||
-      !/^[a-f0-9]{64}$/.test(queryScope)
-    )
-      throw new Error('Query identity unavailable');
-    return queryScope;
+    const read = (async (): Promise<ScopeRead> => {
+      let config: UserConfig;
+      try {
+        config = await getUserConfig();
+      } catch {
+        return revision === sequence.current
+          ? { revision, status: 'failed' }
+          : { revision, status: 'superseded' };
+      }
+      if (revision !== sequence.current)
+        return { revision, status: 'superseded' };
+      if (config.nativeBindingConfigured === false)
+        return { revision, status: 'ready', scope: undefined };
+      const { queryScope } = config;
+      if (
+        config.nativeBindingConfigured !== true ||
+        typeof queryScope !== 'string' ||
+        !/^[a-f0-9]{64}$/.test(queryScope)
+      )
+        return { revision, status: 'failed' };
+      return { revision, status: 'ready', scope: queryScope };
+    })();
+    latestRead.current = read;
+    return read;
+  };
+  // An explicit preview whose own read was overtaken adopts the newest read
+  // for the same selection instead of failing. Without a newer read (unmount
+  // or selection change) it stays superseded and is ignored.
+  const adoptLatestScope = async (
+    read: Promise<ScopeRead>,
+  ): Promise<ScopeRead> => {
+    let outcome = await read;
+    while (
+      outcome.status === 'superseded' ||
+      outcome.revision !== sequence.current
+    ) {
+      const next = latestRead.current;
+      if (
+        !next ||
+        next === read ||
+        selected.current.kind !== kind ||
+        selected.current.id !== id
+      )
+        return { revision: outcome.revision, status: 'superseded' };
+      read = next;
+      outcome = await read;
+    }
+    return outcome;
   };
   useEffect(() => {
     let active = true;
     const refresh = async () => {
       setPreviewScope(undefined);
       setIndependentData(null);
-      try {
-        const scope = await readScope();
-        if (active) {
-          setPreviewScope(scope);
-          setScopeError(false);
-        }
-      } catch {
-        if (active) {
-          setPreviewScope(undefined);
-          setScopeError(true);
-        }
+      const outcome = await readScope();
+      // Only the current revision may publish a scope or an identity failure.
+      if (
+        !active ||
+        outcome.status === 'superseded' ||
+        outcome.revision !== sequence.current
+      )
+        return;
+      if (outcome.status === 'failed') {
+        setPreviewScope(undefined);
+        setScopeError(true);
+        return;
       }
+      setPreviewScope(outcome.scope);
+      setScopeError(false);
     };
     void refresh();
     const visible = () => {
@@ -120,17 +166,20 @@ export default function useGovernedPreview(
     setPreparing(true);
     setPreviewScope(undefined);
     setIndependentData(null);
-    let scope: string;
-    try {
-      scope = await readScope();
-      setPreviewScope(scope);
-      setScopeError(false);
-    } catch {
+    const outcome = await adoptLatestScope(readScope());
+    if (outcome.status === 'superseded') {
+      setPreparing(false);
+      return;
+    }
+    if (outcome.status === 'failed') {
       setPreviewScope(undefined);
       setScopeError(true);
       setPreparing(false);
       return;
     }
+    const scope = outcome.scope;
+    setPreviewScope(scope);
+    setScopeError(false);
     if (scope === undefined) {
       submitted.current = {
         selection: { kind, id },

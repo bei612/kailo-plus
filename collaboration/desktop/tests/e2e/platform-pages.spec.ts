@@ -311,9 +311,8 @@ test("my tasks: list, detail with the approval, and withdrawing through the BFF"
   await expect(tasks.getByRole("status")).toContainText(
     "The request is now: Withdrawn.",
   );
-  await expect(tasks).toContainText(
-    "The request was withdrawn. (APPROVAL_WITHDRAWN)",
-  );
+  await expect(tasks).toContainText("The request was withdrawn.");
+  await expect(tasks).not.toContainText("APPROVAL_WITHDRAWN");
   await expect(
     tasks.getByRole("button", { name: "Withdraw request" }),
   ).toHaveCount(0);

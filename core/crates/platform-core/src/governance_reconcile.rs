@@ -192,6 +192,11 @@ pub fn spawn(
             if let Err(error) = crate::agent_task::stranded::reconcile(&state, cfg.batch).await {
                 tracing::warn!(error = %error, "已关闭 AgentTaskWorkflow 的 Invocation 收尾本轮未完成");
             }
+            // DD-154：只剩 birth 结果不明、Invocation 已全部确定终态的 Session 过期后放弃，
+            // 否则排空永不收敛；有结果不明 Invocation 的 Session 不动。
+            if let Err(error) = crate::agent_session_abandon::reconcile(&state, cfg.batch).await {
+                tracing::warn!(error = %error, "AgentSession 放弃对账本轮未完成");
+            }
             if let Err(error) = crate::agent_invocation::reconcile(&state, cfg.batch).await {
                 tracing::warn!(reason_code=%crate::governance::wire(&error.reason()),
                     state="UNKNOWN", "普通 Agent 持久触发对账未完成；原 checkpoint 保留");

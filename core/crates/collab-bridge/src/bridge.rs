@@ -227,6 +227,19 @@ impl IdentityClient {
         self.keys.public_key().to_hex()
     }
 
+    /// 已过 Core 预算的 bridge 调用收到非 2xx 时的错误。挂了预算的客户端收到 Relay
+    /// 自身的 `429` 时，带上该身份预算窗口推算的等待秒数（DD-156(3)），BFF 据此总给
+    /// `Retry-After`；其余情况与原先一样是 `Rejected`。
+    fn relay_rejected(&self, status: u16, body: String) -> OperatorError {
+        match (&self.budget, status) {
+            (Some(budget), 429) => OperatorError::RelayRateLimited {
+                retry_after_secs: budget.retry_after_secs(&self.community_host, &self.pubkey_hex()),
+                body,
+            },
+            _ => OperatorError::Rejected { status, body },
+        }
+    }
+
     /// Relay 按 Host 绑定 Community；不经本客户端发出的请求（git 子进程）须带同一 Host。
     pub fn community_host(&self) -> &str {
         &self.community_host
@@ -1609,10 +1622,7 @@ impl IdentityClient {
         let status = resp.status();
         let text = resp.text().await?;
         if !status.is_success() {
-            return Err(OperatorError::Rejected {
-                status: status.as_u16(),
-                body: text.chars().take(200).collect(),
-            });
+            return Err(self.relay_rejected(status.as_u16(), text.chars().take(200).collect()));
         }
         serde_json::from_str(&text).map_err(|e| OperatorError::Sign(e.to_string()))
     }
@@ -1646,10 +1656,7 @@ impl IdentityClient {
         let status = resp.status();
         let text = resp.text().await?;
         if !status.is_success() {
-            return Err(OperatorError::Rejected {
-                status: status.as_u16(),
-                body: text.chars().take(200).collect(),
-            });
+            return Err(self.relay_rejected(status.as_u16(), text.chars().take(200).collect()));
         }
         serde_json::from_str(&text).map_err(|e| OperatorError::Sign(e.to_string()))
     }
@@ -2081,18 +2088,108 @@ impl IdentityClient {
             .await?;
         let status = resp.status();
         if !status.is_success() {
-            return Err(OperatorError::Rejected {
-                status: status.as_u16(),
-                body: resp
-                    .text()
-                    .await
-                    .unwrap_or_default()
-                    .chars()
-                    .take(200)
-                    .collect(),
-            });
+            let body = resp
+                .text()
+                .await
+                .unwrap_or_default()
+                .chars()
+                .take(200)
+                .collect();
+            return Err(self.relay_rejected(status.as_u16(), body));
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod relay_rate_limit_tests {
+    use super::*;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    /// 一个只会回 `429` 的 Relay：每个连接读完请求后回空体 429 并关闭。
+    async fn limited_relay(connections: usize) -> (String, tokio::task::JoinHandle<()>) {
+        let listener = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
+            .await
+            .unwrap();
+        let origin = format!("http://{}", listener.local_addr().unwrap());
+        let task = tokio::spawn(async move {
+            for _ in 0..connections {
+                let (mut socket, _) = listener.accept().await.unwrap();
+                let mut received = Vec::new();
+                let mut chunk = [0; 4096];
+                let header_end = loop {
+                    let n = socket.read(&mut chunk).await.unwrap();
+                    assert_ne!(n, 0);
+                    received.extend_from_slice(&chunk[..n]);
+                    if let Some(end) = received.windows(4).position(|v| v == b"\r\n\r\n") {
+                        break end + 4;
+                    }
+                };
+                let head = String::from_utf8_lossy(&received[..header_end]).to_string();
+                let length: usize = head
+                    .lines()
+                    .filter_map(|line| line.split_once(':'))
+                    .find(|(key, _)| key.eq_ignore_ascii_case("content-length"))
+                    .map(|(_, value)| value.trim().parse().unwrap())
+                    .unwrap_or(0);
+                while received.len() - header_end < length {
+                    let n = socket.read(&mut chunk).await.unwrap();
+                    assert_ne!(n, 0);
+                    received.extend_from_slice(&chunk[..n]);
+                }
+                let response: &[u8] = b"HTTP/1.1 429 Too Many Requests\r\n\
+                    content-length: 0\r\nconnection: close\r\n\r\n";
+                socket.write_all(response).await.unwrap();
+                socket.shutdown().await.ok();
+            }
+        });
+        (origin, task)
+    }
+
+    fn client(origin: &str) -> IdentityClient {
+        let keys = Keys::generate();
+        IdentityClient::new(
+            Custody::Server,
+            &keys.secret_key().to_secret_hex(),
+            origin,
+            "limits.platform.test",
+        )
+        .unwrap()
+    }
+
+    /// DD-156(3)：挂了 Core 预算的身份收到 Relay 自身的 429，错误带该身份预算窗口中
+    /// 最早一次调用离开窗口的剩余秒数；未挂预算的客户端仍是原样的 `Rejected { 429 }`。
+    #[tokio::test]
+    async fn relay_429_carries_budget_window_retry_after() {
+        let (origin, task) = limited_relay(2).await;
+        let http = reqwest::Client::new();
+        let filter = [serde_json::json!({ "kinds": [9], "limit": 1 })];
+
+        let budget =
+            Arc::new(ApiBudget::new(10, std::time::Duration::from_secs(60)).expect("预算"));
+        let budgeted = client(&origin).with_budget(budget);
+        let err = budgeted.query(&http, &filter).await.unwrap_err();
+        assert_eq!(err.limit(), Some(LimitKind::RateLimited));
+        assert!(
+            matches!(
+                err,
+                OperatorError::RelayRateLimited { retry_after_secs, .. }
+                    if (59..=60).contains(&retry_after_secs)
+            ),
+            "挂预算的 Relay 429 必须带预算窗口推算的等待：{err:?}"
+        );
+        let secs = err.retry_after_secs().unwrap_or_default();
+        assert!((59..=60).contains(&secs), "{err:?}");
+
+        let bare = client(&origin);
+        let err = bare.query(&http, &filter).await.unwrap_err();
+        assert!(
+            matches!(err, OperatorError::Rejected { status: 429, .. }),
+            "未挂预算时保持原样：{err:?}"
+        );
+        assert_eq!(err.limit(), Some(LimitKind::RateLimited));
+        assert_eq!(err.retry_after_secs(), None);
+        task.await.unwrap();
     }
 }
 
