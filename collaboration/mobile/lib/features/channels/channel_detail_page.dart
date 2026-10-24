@@ -36,6 +36,7 @@ import 'unread_badge/observed_unread_event.dart';
 import 'compose_bar.dart';
 import 'composer_dock_size_reporter.dart';
 import 'date_formatters.dart';
+import 'ephemeral_channel_display.dart';
 import 'package:client_kit/shared/platform/platform_text.dart';
 import 'reaction_row.dart';
 import 'channel_details_page.dart';

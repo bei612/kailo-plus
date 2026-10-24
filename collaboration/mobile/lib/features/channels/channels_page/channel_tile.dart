@@ -72,6 +72,10 @@ class _ChannelTile extends ConsumerWidget {
                 ),
               ),
             ),
+            if (channel.isEphemeral) ...[
+              const SizedBox(width: Grid.xxs),
+              _EphemeralBadge(channel: channel),
+            ],
             if (isMuted) ...[
               const SizedBox(width: Grid.xxs),
               Icon(
@@ -178,6 +182,33 @@ class _DmAvatar extends ConsumerWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// Original Buzz `channels_page/badges.dart` _EphemeralBadge: a TTL channel's
+// clock icon, with the cleanup schedule as its tooltip.
+class _EphemeralBadge extends StatelessWidget {
+  final Channel channel;
+
+  const _EphemeralBadge({required this.channel});
+
+  @override
+  Widget build(BuildContext context) {
+    final display = ephemeralChannelDisplay(
+      channel,
+      locale: Localizations.localeOf(context).toLanguageTag(),
+    );
+    if (display == null) return const SizedBox.shrink();
+
+    return Tooltip(
+      message: display.tooltipLabel,
+      child: Icon(
+        LucideIcons.clockFading,
+        key: Key('channel-ephemeral-${channel.id}'),
+        size: 16,
+        color: context.colors.onSurfaceVariant,
       ),
     );
   }

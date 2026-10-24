@@ -36,6 +36,7 @@ import 'channel_management_actions.dart';
 import 'channel_detail_page.dart';
 import 'channels_provider.dart';
 import 'direct_messages.dart';
+import 'ephemeral_channel_display.dart';
 import 'relay_sync_banner.dart';
 import '../../shared/read_state/deferred_read_state_update.dart';
 import '../../shared/read_state/read_state_format.dart';

@@ -37,15 +37,29 @@ class _ChannelAppBarTitle extends ConsumerWidget {
         .watch(platformWorkspaceMembersProvider(channel.id))
         .value
         ?.length;
+    final locale = Localizations.localeOf(context).toLanguageTag();
     final memberLabel = memberCount == null
-        ? 'Members'
-        : '$memberCount ${memberCount == 1 ? 'member' : 'members'}';
+        ? platformText(PlatformMessageKey.channelHeaderMembers, locale: locale)
+        : platformText(
+            memberCount == 1
+                ? PlatformMessageKey.channelManagementMemberCountOne
+                : PlatformMessageKey.channelManagementMemberCountOther,
+            locale: locale,
+            variables: {'count': memberCount},
+          );
 
     return Semantics(
       button: true,
-      label: 'Open members of ${channel.name}, $memberLabel',
+      label: platformText(
+        PlatformMessageKey.channelHeaderOpenMembers,
+        locale: locale,
+        variables: {'name': channel.name, 'members': memberLabel},
+      ),
       child: Tooltip(
-        message: 'Open channel members',
+        message: platformText(
+          PlatformMessageKey.channelHeaderOpenMembersTooltip,
+          locale: locale,
+        ),
         child: InkWell(
           key: const ValueKey('channel-header-settings-trigger'),
           borderRadius: BorderRadius.circular(Radii.md),
@@ -100,6 +114,10 @@ class _ChannelAppBarTitle extends ConsumerWidget {
                               ),
                             ),
                           ),
+                          if (channel.isEphemeral) ...[
+                            const SizedBox(width: Grid.quarter),
+                            _HeaderEphemeralBadge(channel: channel),
+                          ],
                         ],
                       ),
                       Text(
@@ -165,13 +183,23 @@ class _DmAppBarTitle extends ConsumerWidget {
         ),
       ),
     );
-    final name = Text(
+    final nameText = Text(
       label,
       key: const ValueKey('dm-header-name'),
       maxLines: 1,
       overflow: TextOverflow.ellipsis,
       style: context.textTheme.titleSmall,
     );
+    final Widget name = channel.isEphemeral
+        ? Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Flexible(child: nameText),
+              const SizedBox(width: Grid.quarter),
+              _HeaderEphemeralBadge(channel: channel),
+            ],
+          )
+        : nameText;
     return Row(
       children: [
         if (presence == null)
@@ -232,6 +260,33 @@ class _DmAppBarTitle extends ConsumerWidget {
                 ),
         ),
       ],
+    );
+  }
+}
+
+// Original Buzz `channel_detail_page/banners.dart` _HeaderEphemeralBadge: the
+// clock icon beside a TTL channel's name, with the cleanup schedule as tooltip.
+class _HeaderEphemeralBadge extends StatelessWidget {
+  final Channel channel;
+
+  const _HeaderEphemeralBadge({required this.channel});
+
+  @override
+  Widget build(BuildContext context) {
+    final display = ephemeralChannelDisplay(
+      channel,
+      locale: Localizations.localeOf(context).toLanguageTag(),
+    );
+    if (display == null) return const SizedBox.shrink();
+
+    return Tooltip(
+      message: display.tooltipLabel,
+      child: Icon(
+        LucideIcons.clockFading,
+        key: const Key('chat-ephemeral-badge'),
+        size: 16,
+        color: context.colors.onSurfaceVariant,
+      ),
     );
   }
 }
