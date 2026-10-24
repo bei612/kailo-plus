@@ -100,7 +100,12 @@ done
 # audit device 由 secret-store-config.hcl 声明式配置，不经 API 启用——该版本
 # 直接拒绝 API 创建（SF-OBA-11）。此处只核验它确实生效：零 device 时
 # audit broker 的 fail-closed 分支被短路，取用不留痕（SF-OBA-06）。
-audit_devices=$(root audit list 2>/dev/null || true)
+# Right after unseal the declared devices may not be listed yet; wait for them, bounded.
+for _ in $(seq 1 30); do
+  audit_devices=$(root audit list 2>/dev/null || true)
+  grep -q '^file/' <<<"$audit_devices" && grep -q '^core-observed/' <<<"$audit_devices" && break
+  sleep 2
+done
 if grep -q '^file/' <<<"$audit_devices"; then
   echo "audit device 已生效（声明式）"
 else
