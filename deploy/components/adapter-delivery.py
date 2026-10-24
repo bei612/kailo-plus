@@ -429,6 +429,11 @@ def command_config(args):
         # (ADR-12 §7), so an isolated audience replaces both (data_query_delivery checks it).
         if key == "actionTokenAudience" and args.kind == "data-query" and "gatewayAudience" in config:
             config["gatewayAudience"] = value
+        # Cells/WeKnora adapters carry the same transport audience under mcp (file-storage/adapter
+        # mcp.mjs requires mcp.gatewayAudience == actionTokenAudience).
+        if key == "actionTokenAudience" and args.kind == "adapter" and isinstance(config.get("mcp"), dict) \
+                and "gatewayAudience" in config["mcp"]:
+            config["mcp"]["gatewayAudience"] = value
     config["bindingId"] = plan["bindingId"]
     config["tenantId"] = plan["tenantId"]
     if "workspaceId" in plan:
