@@ -264,7 +264,7 @@ const { t } = useI18n();
 // conversation's own actions (the native header row is not rendered).
 const kailoShell = isKailoShell();
 const deleteCurrentSession = () => {
-    const session = currentSession.value as { id?: string } | null;
+    const session = currentSession.value;
     if (!session?.id) return;
     const sessionId = session.id;
     DialogPlugin.confirm({
@@ -284,7 +284,7 @@ const deleteCurrentSession = () => {
     });
 };
 const togglePinCurrentSession = async () => {
-    const session = currentSession.value as { id?: string; is_pinned?: boolean } | null;
+    const session = currentSession.value;
     if (!session?.id) return;
     const pinned = !session.is_pinned;
     try {
@@ -294,7 +294,7 @@ const togglePinCurrentSession = async () => {
     }
 };
 usePageHeader('chat', () => {
-    const session = currentSession.value as { id?: string; title?: string; is_pinned?: boolean } | null;
+    const session = currentSession.value;
     if (!session) return null;
     return {
         title: session.title?.trim() || t('menu.newSession'),
