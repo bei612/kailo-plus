@@ -5,6 +5,7 @@ import useModalAction from '@/hooks/useModalAction';
 import ErrorCollapse from '@/components/ErrorCollapse';
 import { FixSQLModal } from '@/components/modals/FixSQLModal';
 import { Error } from '@/apollo/client/graphql/__types__';
+import useKailoText from '@/utils/kailoI18n';
 
 export interface Props {
   children: React.ReactNode;
@@ -17,25 +18,22 @@ export interface Props {
 
 export default function ErrorBoundary({ children, error }: Props) {
   const fixItModal = useModalAction();
+  const t = useKailoText();
   if (!error) return <>{children}</>;
   const hasInvalidSql = !!error.invalidSql;
   return (
     <Timeline className="px-1 -mb-4">
-      <Timeline.Item dot={<CloseCircleFilled className="red-5" />}>
+      <Timeline.Item dot={<CloseCircleFilled className="kailo-text-danger" />}>
         <Typography.Text className="gray-8">
-          {hasInvalidSql
-            ? 'Failed to generate SQL statement'
-            : error.shortMessage}
+          {hasInvalidSql ? t('home.sqlGenerationFailed') : error.shortMessage}
         </Typography.Text>
         <div className="gray-7 text-sm mt-1">
           <div>
-            {hasInvalidSql
-              ? 'We tried to generate SQL based on your question but encountered a small issue. Help us fix it!'
-              : error.message}
+            {hasInvalidSql ? t('home.sqlGenerationFailedHint') : error.message}
           </div>
           {hasInvalidSql && (
             <>
-              <div className="bg-gray-2 p-2 my-4">
+              <div className="kailo-soft-block p-2 my-4">
                 <ErrorCollapse message={error.message} defaultActive />
               </div>
               <Button
@@ -44,7 +42,7 @@ export default function ErrorBoundary({ children, error }: Props) {
                 size="small"
                 onClick={() => fixItModal.openModal({ sql: error.invalidSql })}
               >
-                Fix it
+                {t('home.fixSql')}
               </Button>
               <FixSQLModal
                 {...fixItModal.state}

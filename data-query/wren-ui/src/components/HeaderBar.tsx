@@ -1,43 +1,54 @@
 import { useRouter } from 'next/router';
-import { Button, Layout, Space } from 'antd';
+import { Button, Layout, Space, Tooltip } from 'antd';
 import styled from 'styled-components';
 import LogoBar from '@/components/LogoBar';
 import { Path } from '@/utils/enum';
 import Deploy from '@/components/deploy/Deploy';
 import KailoUser from '@/components/kailo/KailoUser';
 import useKailoSession from '@/hooks/useKailoSession';
+import { KAILO_TABS, pageTabs } from '@/hooks/useKailoPage';
 import useKailoText from '@/utils/kailoI18n';
 import { headerAccount } from '@/utils/kailoShell';
+import * as events from '@/utils/events';
+import { SettingsIcon } from '@/components/kailo/KailoIcons';
 
 const { Header } = Layout;
 
-// DD-133 §4: Kailo token styling; the header keeps only this component's
-// business navigation. Inside Kailo the product mark and identity are Kailo's
-// own shell and are not repeated here. DD-138 §2: no account menu or sign-out
-// in either mode — signing out is a Kailo action.
-const StyledButton = styled(Button)<{ $isHighlight: boolean }>`
-  background: ${(props) =>
-    props.$isHighlight ? 'var(--kailo-color-accent)' : 'transparent'};
-  font-weight: ${(props) => (props.$isHighlight ? '600' : 'normal')};
-  border: none;
-  box-shadow: none;
-  color: ${(props) =>
-    props.$isHighlight
-      ? 'var(--kailo-color-foreground)'
-      : 'var(--kailo-color-muted-foreground)'};
-
-  &:hover,
-  &:focus {
-    background: var(--kailo-color-accent);
-    color: var(--kailo-color-foreground);
-  }
-`;
-
+// DD-152: rendered only on top-level visits (sign-in redirects, direct
+// links); inside Kailo the same tabs and actions are Kailo's page header
+// (useKailoPage). Tabs follow 20 §13: 2px brand underline, selected text 600.
+// DD-138 §2: no account menu or sign-out in either mode.
 const StyledHeader = styled(Header)`
   height: 48px;
+  line-height: normal;
   border-bottom: 1px solid var(--kailo-color-border);
   background: var(--kailo-color-background);
-  padding: 10px 16px;
+  padding: 0 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+`;
+
+const Tab = styled.button<{ $active: boolean }>`
+  height: 48px;
+  padding: 0 4px;
+  margin: 0 8px;
+  border: 0;
+  border-bottom: 2px solid
+    ${(props) => (props.$active ? 'var(--kailo-color-brand)' : 'transparent')};
+  background: none;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: ${(props) => (props.$active ? 600 : 500)};
+  color: ${(props) =>
+    props.$active
+      ? 'var(--kailo-color-foreground)'
+      : 'var(--kailo-color-muted-foreground)'};
+  transition: color var(--kailo-duration-fast) var(--kailo-ease-standard);
+
+  &:hover {
+    color: var(--kailo-color-foreground);
+  }
 `;
 
 export default function HeaderBar() {
@@ -47,6 +58,11 @@ export default function HeaderBar() {
   const { pathname } = router;
   const showNav = !pathname.startsWith(Path.Onboarding);
   const isModeling = pathname.startsWith(Path.Modeling);
+  const { tabs, activeTab } = pageTabs(
+    router.locale,
+    pathname,
+    loaded && isAdmin,
+  );
 
   const account = headerAccount(embedded, !!user) === 'identity' && (
     <KailoUser user={user} size={24} />
@@ -54,56 +70,40 @@ export default function HeaderBar() {
 
   return (
     <StyledHeader>
-      <div
-        className="d-flex justify-space-between align-center"
-        style={{ marginTop: -2 }}
-      >
-        <Space size={[32, 0]}>
-          {!embedded && <LogoBar />}
-          {showNav && (
-            <Space size={[8, 0]}>
-              <StyledButton
-                shape="round"
-                size="small"
-                $isHighlight={pathname.startsWith(Path.Home)}
-                onClick={() => router.push(Path.Home)}
+      <Space size={[24, 0]} style={{ height: '100%' }}>
+        {!embedded && <LogoBar />}
+        {showNav && (
+          <nav className="d-flex" style={{ height: 48 }}>
+            {tabs.map((tab) => (
+              <Tab
+                key={tab.id}
+                type="button"
+                $active={tab.id === activeTab}
+                onClick={() =>
+                  router.push(KAILO_TABS.find((def) => def.id === tab.id).path)
+                }
               >
-                {t('navHome')}
-              </StyledButton>
-              {loaded && isAdmin && (
-                <StyledButton
-                  shape="round"
-                  size="small"
-                  $isHighlight={pathname.startsWith(Path.Modeling)}
-                  onClick={() => router.push(Path.Modeling)}
-                >
-                  {t('navModeling')}
-                </StyledButton>
-              )}
-              <StyledButton
-                shape="round"
-                size="small"
-                $isHighlight={pathname.startsWith(Path.Knowledge)}
-                onClick={() => router.push(Path.KnowledgeQuestionSQLPairs)}
-              >
-                {t('navKnowledge')}
-              </StyledButton>
-              <StyledButton
-                shape="round"
-                size="small"
-                $isHighlight={pathname.startsWith(Path.APIManagement)}
-                onClick={() => router.push(Path.APIManagementHistory)}
-              >
-                {t('navApi')}
-              </StyledButton>
-            </Space>
-          )}
-        </Space>
-        <Space size={[16, 0]}>
-          {isModeling && isAdmin && <Deploy />}
-          {account}
-        </Space>
-      </div>
+                {tab.label}
+              </Tab>
+            ))}
+          </nav>
+        )}
+      </Space>
+      <Space size={[12, 0]}>
+        {isModeling && isAdmin && <Deploy />}
+        {showNav && loaded && isAdmin && (
+          <Tooltip title={t('dataSourceSettings')} mouseEnterDelay={0.4}>
+            <Button
+              type="text"
+              className="kailo-icon-button"
+              aria-label={t('dataSourceSettings')}
+              icon={<SettingsIcon />}
+              onClick={() => events.dispatch(events.EVENT_NAME.OPEN_SETTINGS)}
+            />
+          </Tooltip>
+        )}
+        {account}
+      </Space>
     </StyledHeader>
   );
 }

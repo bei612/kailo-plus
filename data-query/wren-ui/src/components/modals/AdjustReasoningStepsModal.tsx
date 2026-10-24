@@ -8,6 +8,7 @@ import useAutoComplete, { convertMention } from '@/hooks/useAutoComplete';
 import { ModalAction } from '@/hooks/useModalAction';
 import MarkdownEditor from '@/components/editor/MarkdownEditor';
 import { useListModelsQuery } from '@/apollo/client/graphql/model.generated';
+import useKailoText from '@/utils/kailoI18n';
 
 const MultiSelect = styled(Select)`
   .ant-select-selector {
@@ -35,6 +36,7 @@ type Props = ModalAction<{
 export default function AdjustReasoningStepsModal(props: Props) {
   const { visible, defaultValue, loading, onSubmit, onClose } = props;
   const [form] = Form.useForm();
+  const t = useKailoText();
 
   const mentions = useAutoComplete({
     convertor: convertMention,
@@ -76,7 +78,7 @@ export default function AdjustReasoningStepsModal(props: Props) {
         onMouseDown={(e) => e.stopPropagation()}
         closable={closable}
         onClose={onClose}
-        className="d-flex align-center bg-gray-3 border-gray-3"
+        className="d-flex align-center"
         style={{ maxWidth: 140 }}
       >
         <div className="pr-1" style={{ minWidth: 0 }}>
@@ -113,10 +115,11 @@ export default function AdjustReasoningStepsModal(props: Props) {
 
   return (
     <Modal
-      title="Adjust steps"
+      title={t('home.adjustSteps')}
       width={640}
       visible={visible}
-      okText="Regenerate answer"
+      okText={t('home.regenerateAnswer')}
+      cancelText={t('cancel')}
       onOk={submit}
       onCancel={onClose}
       confirmLoading={loading}
@@ -127,7 +130,7 @@ export default function AdjustReasoningStepsModal(props: Props) {
     >
       <Form form={form} preserve={false} layout="vertical">
         <Form.Item
-          label="Selected models"
+          label={t('home.selectedModels')}
           name="tables"
           required={false}
           rules={[
@@ -137,34 +140,30 @@ export default function AdjustReasoningStepsModal(props: Props) {
             },
           ]}
           extra={
-            <div className="text-sm gray-6 mt-1">
-              Select the tables needed to answer your question.{' '}
-              <span className="gray-7">
-                Tables not selected won't be used in SQL generation.
-              </span>
+            <div className="text-sm gray-7 mt-1">
+              {t('home.selectedModelsHint')}
             </div>
           }
         >
           <MultiSelect
             mode="multiple"
-            placeholder="Select models"
+            placeholder={t('home.selectModels')}
             options={modelOptions}
             tagRender={tagRender}
           />
         </Form.Item>
         <Form.Item
-          label="Reasoning steps"
+          label={t('home.reasoningSteps')}
           className="pb-0"
           extra={
-            <div className="text-sm gray-6 mt-1">
+            <div className="text-sm gray-7 mt-1">
               <QuestionCircleOutlined className="mr-1" />
-              Protip: Use @ to choose model in the textarea.
+              {t('home.mentionTip')}
             </div>
           }
         >
-          <div className="text-sm gray-6 mb-1">
-            Edit the reasoning logic below. Each step should build toward
-            answering the question accurately.
+          <div className="text-sm gray-7 mb-1">
+            {t('home.reasoningStepsHint')}
           </div>
           <Form.Item
             noStyle

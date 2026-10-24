@@ -1,20 +1,19 @@
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import styled from 'styled-components';
-import FunctionOutlined from '@ant-design/icons/FunctionOutlined';
 import { Path, MENU_KEY } from '@/utils/enum';
-import { InstructionsSVG } from '@/utils/svgs';
+import { FileTextIcon, ListIcon } from '@/components/kailo/KailoIcons';
 import SidebarMenu from '@/components/sidebar/SidebarMenu';
 import useKailoText from '@/utils/kailoI18n';
 
 const Layout = styled.div`
-  padding: 16px 0;
+  padding: 8px 0;
   position: absolute;
   z-index: 1;
   left: 0;
   top: 0;
   width: 100%;
-  background-color: var(--kailo-color-sidebar-background);
+  background-color: var(--kailo-color-background);
   overflow: hidden;
 `;
 
@@ -37,9 +36,8 @@ export default function Knowledge() {
           {t('questionSqlPairs')}
         </Link>
       ),
-      icon: <FunctionOutlined />,
+      icon: <ListIcon />,
       key: MENU_KEY.QUESTION_SQL_PAIRS,
-      className: 'pl-4',
     },
     {
       'data-guideid': 'instructions',
@@ -48,9 +46,8 @@ export default function Knowledge() {
           {t('instructions')}
         </Link>
       ),
-      icon: <InstructionsSVG />,
+      icon: <FileTextIcon />,
       key: MENU_KEY.INSTRUCTIONS,
-      className: 'pl-4',
     },
   ];
 

@@ -15,12 +15,14 @@
 }
 
 .adm-fix-it-btn {
-  border-color: @citrus-6;
-  color: @citrus-6;
-  background-color: @citrus-1;
-  &:hover,&:focus {
-    background-color: @citrus-1;
-    border-color: @citrus-4;
-    color: @citrus-5;
+  // DD-152: Kailo warning role (soft background + text), both themes.
+  border-color: color-mix(in srgb, var(--kailo-color-warning) 40%, transparent);
+  color: var(--kailo-color-warning-text);
+  background-color: var(--kailo-color-warning-soft);
+  &:hover,
+  &:focus {
+    background-color: var(--kailo-color-warning-soft);
+    border-color: var(--kailo-color-warning);
+    color: var(--kailo-color-warning-text);
   }
 }

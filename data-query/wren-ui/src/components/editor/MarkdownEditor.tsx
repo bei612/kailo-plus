@@ -8,29 +8,37 @@ import { nextTick } from '@/utils/time';
 import { Mention } from '@/hooks/useAutoComplete';
 import { FormItemInputContext } from 'antd/lib/form/context';
 import MarkdownBlock from './MarkdownBlock';
+import useKailoText from '@/utils/kailoI18n';
 
 const Wrapper = styled.div`
-  transition: all 0.3s cubic-bezier(0.645, 0.045, 0.355, 1);
+  /* DD-152 (20 §13 输入): line-strong border, radius 6; hover neutral,
+     focus brand ring (token), error danger. */
+  border-color: var(--kailo-color-line-strong) !important;
+  border-radius: 6px !important;
+  background: var(--kailo-color-background);
+  transition:
+    border-color var(--kailo-duration-fast) var(--kailo-ease-standard),
+    box-shadow var(--kailo-duration-fast) var(--kailo-ease-standard);
 
   &:hover {
-    border-color: var(--geekblue-5) !important;
+    border-color: var(--kailo-color-muted-foreground) !important;
   }
 
   &.adm-markdown-editor-error {
-    border-color: var(--red-5) !important;
+    border-color: var(--kailo-color-danger) !important;
 
     .adm-markdown-editor-length {
-      color: var(--red-5) !important;
+      color: var(--kailo-color-danger-text) !important;
     }
   }
   &:not(.adm-markdown-editor-error).adm-markdown-editor-focused {
-    border-color: var(--geekblue-5) !important;
-    box-shadow: 0 0 0 2px rgba(47, 84, 235, 0.2);
+    border-color: var(--kailo-color-brand) !important;
+    box-shadow: var(--kailo-focus-ring);
   }
 
   &.adm-markdown-editor-focused.adm-markdown-editor-error {
-    borer-color: var(--red-4) !important;
-    box-shadow: 0 0 0 2px rgba(255, 77, 79, 0.2);
+    border-color: var(--kailo-color-danger) !important;
+    box-shadow: none;
   }
 `;
 
@@ -95,6 +103,7 @@ const MentionOption = (props: Mention) => {
 
 export default function MarkdownEditor(props: Props) {
   const { value, onChange, maxLength, autoFocus, mentions } = props;
+  const t = useKailoText();
   const $wrapper = useRef<HTMLDivElement>(null);
   const $textarea = useRef<HTMLElement & { textarea: HTMLTextAreaElement }>(
     null,
@@ -208,15 +217,20 @@ export default function MarkdownEditor(props: Props) {
       )}
       tabIndex={-1}
     >
-      <div className="bg-gray-3 px-2 py-1 d-flex align-center justify-space-between">
-        <div className="adm-markdown-editor-length gray-6 text-sm mr-2">
-          {maxLength ? (
-            <>
-              {value?.length} / {maxLength} characters
-            </>
-          ) : (
-            <>{value?.length} characters</>
-          )}
+      <div
+        className="px-2 py-1 d-flex align-center justify-space-between"
+        style={{
+          background: 'var(--kailo-color-canvas)',
+          borderBottom: '1px solid var(--kailo-color-border)',
+        }}
+      >
+        <div className="adm-markdown-editor-length gray-7 text-sm mr-2">
+          {maxLength
+            ? t('home.characterCountMax', {
+                count: value?.length || 0,
+                max: maxLength,
+              })
+            : t('home.characterCount', { count: value?.length || 0 })}
         </div>
         <LinkButton
           icon={isPreviewMode ? <EditOutlined /> : <ReadOutlined />}
@@ -224,7 +238,7 @@ export default function MarkdownEditor(props: Props) {
           size="small"
           onClick={() => setIsPreviewMode(!isPreviewMode)}
         >
-          {isPreviewMode ? 'Edit mode' : 'Read mode'}
+          {isPreviewMode ? t('home.editMode') : t('home.readMode')}
         </LinkButton>
       </div>
       <OverflowContainer className={clsx({ 'p-4': isPreviewMode })}>

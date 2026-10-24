@@ -1,10 +1,11 @@
 import { useMemo, useState, useEffect } from 'react';
 import { groupBy, orderBy, flatMap } from 'lodash';
-import { message } from 'antd';
 import Icon from '@/import/icon';
 import ReloadOutlined from '@ant-design/icons/ReloadOutlined';
 import { CopilotSVG } from '@/utils/svgs';
 import { isRecommendedFinished } from '@/hooks/useAskPrompt';
+import { notify } from '@/utils/kailoHost';
+import useKailoText from '@/utils/kailoI18n';
 import {
   ResultQuestion,
   RecommendedQuestionsTaskStatus,
@@ -32,6 +33,7 @@ const getGroupedQuestions = (
 };
 
 export default function useRecommendedQuestionsInstruction() {
+  const t = useKailoText();
   const [showRetry, setShowRetry] = useState<boolean>(false);
   const [generating, setGenerating] = useState<boolean>(false);
   const [isRegenerate, setIsRegenerate] = useState<boolean>(false);
@@ -90,9 +92,7 @@ export default function useRecommendedQuestionsInstruction() {
           recommendedQuestionsTask.status ===
             RecommendedQuestionsTaskStatus.FAILED
         ) {
-          message.error(
-            `We couldn't regenerate questions right now. Let's try again later.`,
-          );
+          notify.error(t('home.regenerateFailed'), t('home.tryAgainLater'));
         }
       } else {
         setIsRegenerate(true);
@@ -129,7 +129,7 @@ export default function useRecommendedQuestionsInstruction() {
       return {
         ...baseProps,
         icon: <ReloadOutlined />,
-        children: 'Regenerate',
+        children: t('home.regenerate'),
       };
     }
 
@@ -138,15 +138,21 @@ export default function useRecommendedQuestionsInstruction() {
       icon: showRetry ? (
         <ReloadOutlined />
       ) : (
-        <Icon component={CopilotSVG} className="geekblue-6" />
+        <Icon component={CopilotSVG} className="kailo-text-brand" />
       ),
       children: generating
-        ? 'Generating questions'
+        ? t('home.generatingQuestionsShort')
         : showRetry
-          ? 'Retry'
-          : 'What could I ask?',
+          ? t('home.retry')
+          : t('home.whatCanIAsk'),
     };
-  }, [generating, isRegenerate, showRetry, showRecommendedQuestionsPromptMode]);
+  }, [
+    generating,
+    isRegenerate,
+    showRetry,
+    showRecommendedQuestionsPromptMode,
+    t,
+  ]);
 
   return {
     recommendedQuestions,

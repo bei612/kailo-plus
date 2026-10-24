@@ -2,7 +2,7 @@ import dynamic from 'next/dynamic';
 import { useRouter } from 'next/router';
 import { useSearchParams } from 'next/navigation';
 import { forwardRef, useEffect, useMemo, useRef } from 'react';
-import { message } from 'antd';
+import { notify } from '@/utils/kailoHost';
 import client from '@/apollo/client';
 import { runNativeMetadataWrite } from '@/utils/errorHandler';
 import styled from 'styled-components';
@@ -23,6 +23,9 @@ import useRelationshipModal from '@/hooks/useRelationshipModal';
 import { convertFormValuesToIdentifier } from '@/hooks/useCombineFieldOptions';
 import { ClickPayload } from '@/components/diagram/Context';
 import { DeployStatusContext } from '@/components/deploy/Context';
+import { useDeploy } from '@/components/deploy/Deploy';
+import useKailoPage from '@/hooks/useKailoPage';
+import useKailoText, { kailoT } from '@/utils/kailoI18n';
 import { DIAGRAM } from '@/apollo/client/graphql/diagram';
 import { LIST_MODELS } from '@/apollo/client/graphql/model';
 import { useDiagramQuery } from '@/apollo/client/graphql/diagram.generated';
@@ -99,7 +102,7 @@ export default function Modeling() {
       getBaseOptions({
         onError: null,
         onCompleted: () => {
-          message.success('Successfully created calculated field.');
+          notify.success(kailoT('modeling.calculatedFieldCreated'));
         },
       }),
     );
@@ -109,7 +112,7 @@ export default function Modeling() {
       getBaseOptions({
         onError: null,
         onCompleted: () => {
-          message.success('Successfully updated calculated field.');
+          notify.success(kailoT('modeling.calculatedFieldUpdated'));
         },
       }),
     );
@@ -117,7 +120,7 @@ export default function Modeling() {
   const [deleteCalculatedField] = useDeleteCalculatedFieldMutation(
     getBaseOptions({
       onCompleted: () => {
-        message.success('Successfully deleted calculated field.');
+        notify.success(kailoT('modeling.calculatedFieldDeleted'));
       },
     }),
   );
@@ -128,7 +131,7 @@ export default function Modeling() {
   const [deleteModelMutation] = useDeleteModelMutation(
     getBaseOptions({
       onCompleted: () => {
-        message.success('Successfully deleted model.');
+        notify.success(kailoT('modeling.modelDeleted'));
       },
       refetchQueries: refetchQueriesForModel,
     }),
@@ -138,7 +141,7 @@ export default function Modeling() {
     useUpdateModelMutation(
       getBaseOptions({
         onCompleted: () => {
-          message.success('Successfully updated model.');
+          notify.success(kailoT('modeling.modelUpdated'));
         },
         refetchQueries: refetchQueriesForModel,
       }),
@@ -147,7 +150,7 @@ export default function Modeling() {
   const [deleteViewMutation] = useDeleteViewMutation(
     getBaseOptions({
       onCompleted: () => {
-        message.success('Successfully deleted view.');
+        notify.success(kailoT('modeling.viewDeleted'));
       },
     }),
   );
@@ -156,7 +159,7 @@ export default function Modeling() {
     useUpdateModelMetadataMutation(
       getBaseOptions({
         onCompleted: () => {
-          message.success('Successfully updated model metadata.');
+          notify.success(kailoT('modeling.modelMetadataUpdated'));
         },
       }),
     );
@@ -165,7 +168,7 @@ export default function Modeling() {
     useCreateRelationshipMutation(
       getBaseOptions({
         onCompleted: () => {
-          message.success('Successfully created relationship.');
+          notify.success(kailoT('modeling.relationshipCreated'));
         },
       }),
     );
@@ -173,7 +176,7 @@ export default function Modeling() {
   const [deleteRelationshipMutation] = useDeleteRelationshipMutation(
     getBaseOptions({
       onCompleted: () => {
-        message.success('Successfully deleted relationship.');
+        notify.success(kailoT('modeling.relationshipDeleted'));
       },
     }),
   );
@@ -182,7 +185,7 @@ export default function Modeling() {
     useUpdateRelationshipMutation(
       getBaseOptions({
         onCompleted: () => {
-          message.success('Successfully updated relationship.');
+          notify.success(kailoT('modeling.relationshipUpdated'));
         },
       }),
     );
@@ -191,7 +194,7 @@ export default function Modeling() {
     useUpdateViewMetadataMutation(
       getBaseOptions({
         onCompleted: () => {
-          message.success('Successfully updated view metadata.');
+          notify.success(kailoT('modeling.viewMetadataUpdated'));
         },
       }),
     );
@@ -206,6 +209,36 @@ export default function Modeling() {
   const editMetadataModal = useModalAction();
   const calculatedFieldModal = useModalAction();
   const relationshipModal = useRelationshipModal(diagramData);
+  const t = useKailoText();
+  const deploy = useDeploy(deployStatusQueryResult);
+
+  // DD-152: Kailo page header — 建模 (→ the open model or view), primary
+  // 发布模型 (busy while deploying, disabled when nothing is pending).
+  const openNode =
+    metadataDrawer.state.visible && diagramData
+      ? metadataDrawer.state.defaultValue
+      : null;
+  useKailoPage({
+    title: openNode?.displayName || t('navModeling'),
+    breadcrumbs: openNode ? [{ id: 'modeling', label: t('navModeling') }] : [],
+    ready: !!diagramData || !!diagramError,
+    actions: [
+      {
+        id: 'deploy',
+        label: t('deployModels'),
+        variant: 'primary',
+        icon: 'rocket',
+        busy: deploy.busy,
+        disabled: deploy.disabled,
+      },
+    ],
+    onAction: (id) => {
+      if (id === 'deploy' && !deploy.disabled) deploy.onDeploy();
+    },
+    onBreadcrumb: (id) => {
+      if (id === 'modeling') metadataDrawer.closeDrawer();
+    },
+  });
 
   const queryParams = {
     viewId: searchParams.get('viewId'),
@@ -478,7 +511,7 @@ export default function Modeling() {
               void deployStatusQueryResult
                 .refetch()
                 .catch((error) => console.error(error));
-              message.success('Successfully created model.');
+              notify.success(kailoT('modeling.modelCreated'));
             }
           }}
         />

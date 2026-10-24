@@ -89,7 +89,7 @@ describe('original modeling sidebar schema-change consumer', () => {
     expect(create).toHaveBeenCalledTimes(1);
     mockActions
       .find((action) => action.key === 'trigger-schema-detection')
-      .icon()
+      .render({ key: 'trigger-schema-detection', disabled: false })
       .props.onClick();
     expect(mockDetect).toHaveBeenCalledTimes(1);
   });

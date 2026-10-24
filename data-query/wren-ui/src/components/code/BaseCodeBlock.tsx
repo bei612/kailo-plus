@@ -44,9 +44,9 @@ export const Block = styled.div<{
   position: relative;
   white-space: pre;
   font-size: 13px;
-  border: 1px var(--gray-4) solid;
-  border-radius: 4px;
-  font-family: 'Source Code Pro', monospace;
+  border: 1px var(--kailo-color-border) solid;
+  border-radius: 8px;
+  font-family: var(--kailo-font-mono, 'Source Code Pro', monospace);
   user-select: text;
   cursor: text;
   &:focus {
@@ -69,8 +69,8 @@ export const Block = styled.div<{
       min-width: 14px;
       text-align: right;
       margin-right: 1em;
-      color: var(--gray-6);
-      font-weight: 700;
+      color: var(--kailo-color-muted-foreground);
+      font-weight: 500;
       font-size: 12px;
     }
   }
@@ -199,7 +199,7 @@ export const createCodeBlock = (HighlightRules: any) => {
                     />,
                     <Button
                       key="copied-icon"
-                      icon={<CheckOutlined className="green-6" />}
+                      icon={<CheckOutlined className="kailo-text-success" />}
                       size="small"
                     />,
                   ],

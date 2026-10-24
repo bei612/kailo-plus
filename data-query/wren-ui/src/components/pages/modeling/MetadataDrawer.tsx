@@ -1,6 +1,7 @@
 import { Button, Drawer } from 'antd';
 import { NODE_TYPE } from '@/utils/enum';
-import EditOutlined from '@ant-design/icons/EditOutlined';
+import { PencilIcon } from '@/components/kailo/KailoIcons';
+import useKailoText from '@/utils/kailoI18n';
 import { DrawerAction } from '@/hooks/useDrawerAction';
 import ModelMetadata, {
   Props as ModelMetadataProps,
@@ -18,6 +19,7 @@ type Props = DrawerAction<Metadata> & { onEditClick: (value?: any) => void };
 
 export default function MetadataDrawer(props: Props) {
   const { visible, defaultValue, onClose, onEditClick } = props;
+  const t = useKailoText();
   const { displayName, nodeType = NODE_TYPE.MODEL } = defaultValue || {};
   const isModel = nodeType === NODE_TYPE.MODEL;
   const isView = nodeType === NODE_TYPE.VIEW;
@@ -26,16 +28,16 @@ export default function MetadataDrawer(props: Props) {
     <Drawer
       visible={visible}
       title={displayName}
-      width={760}
+      width={480}
       closable
       destroyOnClose
       onClose={onClose}
       extra={
         <Button
-          icon={<EditOutlined />}
+          icon={<PencilIcon className="mr-1" />}
           onClick={() => onEditClick(defaultValue)}
         >
-          Edit
+          {t('modeling.edit')}
         </Button>
       }
     >

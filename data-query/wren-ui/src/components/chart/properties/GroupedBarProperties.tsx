@@ -6,6 +6,7 @@ import {
   ChartTypeProperty,
   AxisProperty,
 } from './BasicProperties';
+import { kailoT } from '@/utils/kailoI18n';
 
 export default function GroupedBarProperties(props: PropertiesProps) {
   const { columns, titleMap } = props;
@@ -18,11 +19,15 @@ export default function GroupedBarProperties(props: PropertiesProps) {
           <ChartTypeProperty options={chartTypeOptions} />
         </Col>
         <Col span={12}>
-          <Form.Item className="mb-0" label="Sub-category" name="xOffset">
+          <Form.Item
+            className="mb-0"
+            label={kailoT('home.subCategory')}
+            name="xOffset"
+          >
             <Select
               size="small"
               options={columnOptions}
-              placeholder="Select sub-category"
+              placeholder={kailoT('home.selectSubCategory')}
             />
           </Form.Item>
         </Col>

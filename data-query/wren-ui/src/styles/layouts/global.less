@@ -8,8 +8,9 @@ body {
 }
 
 @media (prefers-color-scheme: dark) {
+  // DD-152: the Kailo theme decides, never the OS (first frame already dark).
   html body {
-    background: #fff;
+    background: var(--kailo-color-background);
   }
   h1.next-error-h1 {
     border-right: 1px solid rgba(0, 0, 0, 0.3);

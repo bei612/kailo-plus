@@ -1,13 +1,15 @@
 import dynamic from 'next/dynamic';
-import { Button, message, Table, TableColumnsType, Typography } from 'antd';
+import { Button, Table, TableColumnsType, Typography } from 'antd';
 import { format } from 'sql-formatter';
 import SiderLayout from '@/components/layouts/SiderLayout';
 import PageLayout from '@/components/layouts/PageLayout';
-import FunctionOutlined from '@ant-design/icons/FunctionOutlined';
-import EyeOutlined from '@ant-design/icons/EyeOutlined';
+import KailoEmpty from '@/components/kailo/KailoEmpty';
+import { EyeIcon, ListIcon } from '@/components/kailo/KailoIcons';
+import { notify } from '@/utils/kailoHost';
 import KailoUser from '@/components/kailo/KailoUser';
 import useKailoSession from '@/hooks/useKailoSession';
 import useKailoText from '@/utils/kailoI18n';
+import useKailoPage from '@/hooks/useKailoPage';
 import { MORE_ACTION } from '@/utils/enum';
 import { getCompactTime } from '@/utils/time';
 import useDrawerAction from '@/hooks/useDrawerAction';
@@ -83,7 +85,7 @@ export default function ManageQuestionSQLPairs() {
       const config = await getUserConfig();
       if (config.nativeBindingConfigured === false) {
         await deleteSqlPairMutation({ variables: { where: { id: data.id } } });
-        message.success('Successfully deleted question-sql pair.');
+        notify.success(t('knowledge.sqlPairDeleted'));
         return;
       }
       const text = getNativeWriteText(locale);
@@ -121,7 +123,7 @@ export default function ManageQuestionSQLPairs() {
         )
           throw new Error(text.scopeError);
         sessionStorage.removeItem(slot);
-        message.success('Successfully deleted question-sql pair.');
+        notify.success(t('knowledge.sqlPairDeleted'));
       } catch (error) {
         if (
           nativeWriteEvidence(error)?.outcome === 'NOT_STARTED' &&
@@ -130,7 +132,7 @@ export default function ManageQuestionSQLPairs() {
           sessionStorage.removeItem(slot);
           throw error;
         }
-        message.warning(text.unknown);
+        notify.warning(text.unknown);
       }
     } else if (type === MORE_ACTION.EDIT) {
       questionSqlPairModal.openModal(data);
@@ -141,7 +143,7 @@ export default function ManageQuestionSQLPairs() {
 
   const columns: TableColumnsType<SqlPair> = [
     {
-      title: 'Question',
+      title: t('knowledge.question'),
       dataIndex: 'question',
       width: 300,
       render: (question) => (
@@ -151,7 +153,7 @@ export default function ManageQuestionSQLPairs() {
       ),
     },
     {
-      title: 'SQL statement',
+      title: t('knowledge.sqlStatement'),
       dataIndex: 'sql',
       width: '60%',
       render: (sql) => (
@@ -170,7 +172,7 @@ export default function ManageQuestionSQLPairs() {
       ),
     },
     {
-      title: 'Created time',
+      title: t('knowledge.createdTime'),
       dataIndex: 'createdAt',
       width: 130,
       render: (time) => <Text className="gray-7">{getCompactTime(time)}</Text>,
@@ -189,7 +191,8 @@ export default function ManageQuestionSQLPairs() {
           <Button
             type="text"
             size="small"
-            icon={<EyeOutlined />}
+            aria-label={t('knowledge.view')}
+            icon={<EyeIcon />}
             onClick={() =>
               onMoreClick({ type: MORE_ACTION.VIEW_SQL_PAIR, data: record })
             }
@@ -198,47 +201,62 @@ export default function ManageQuestionSQLPairs() {
     },
   ];
 
+  // DD-152: Kailo page header — 问答对, primary 添加问答对 (admins).
+  useKailoPage({
+    title: t('questionSqlPairs'),
+    ready: !loading,
+    actions: isAdmin
+      ? [
+          {
+            id: 'add',
+            label: t('addQuestionSqlPair'),
+            variant: 'primary',
+            icon: 'plus',
+          },
+        ]
+      : [],
+    onAction: (id) => id === 'add' && questionSqlPairModal.openModal(),
+  });
+
   return (
     <SiderLayout loading={false}>
       <PageLayout
-        title={
-          <>
-            <FunctionOutlined className="mr-2 gray-8" />
-            Manage question-SQL pairs
-          </>
-        }
+        title={t('questionSqlPairs')}
         titleExtra={
           isAdmin && (
             <Button
               type="primary"
-              className=""
               onClick={() => questionSqlPairModal.openModal()}
             >
-              Add question-SQL pair
+              {t('addQuestionSqlPair')}
             </Button>
           )
         }
-        description={
-          <>
-            On this page, you can manage your saved question-SQL pairs. These
-            pairs show how your organization writes SQL, so that generated
-            queries better align with your expectations.
-          </>
-        }
+        description={t('knowledge.sqlPairsDescription')}
       >
-        <Table
-          className="ant-table-has-header"
-          dataSource={sqlPairs}
-          loading={loading}
-          columns={columns}
-          rowKey="id"
-          pagination={{
-            hideOnSinglePage: true,
-            pageSize: 10,
-            size: 'small',
-          }}
-          scroll={{ x: 1080 }}
-        />
+        {!loading && sqlPairs.length === 0 ? (
+          <KailoEmpty
+            icon={ListIcon}
+            title={t('knowledge.sqlPairsEmptyTitle')}
+            description={t('knowledge.sqlPairsEmptyDescription')}
+            actionLabel={isAdmin ? t('addQuestionSqlPair') : undefined}
+            onAction={() => questionSqlPairModal.openModal()}
+          />
+        ) : (
+          <Table
+            className="ant-table-has-header"
+            dataSource={sqlPairs}
+            loading={loading}
+            columns={columns}
+            rowKey="id"
+            pagination={{
+              hideOnSinglePage: true,
+              pageSize: 10,
+              size: 'small',
+            }}
+            scroll={{ x: 1080 }}
+          />
+        )}
         <SQLPairDrawer
           {...sqlPairDrawer.state}
           onClose={sqlPairDrawer.closeDrawer}

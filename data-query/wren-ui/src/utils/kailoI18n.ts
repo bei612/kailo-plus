@@ -1,9 +1,17 @@
-import { useRouter } from 'next/router';
+import Router, { useRouter } from 'next/router';
+import { presentation } from './kailoEmbed';
+import homeMessages from './i18n/home';
+import modelingMessages from './i18n/modeling';
+import knowledgeMessages from './i18n/knowledge';
+import setupMessages from './i18n/setup';
 
-// DD-133 §1/§4: product naming and the shared page shell follow the Kailo
-// locale. The component name is fixed by DD-133 (问数 / Data Q&A); the
-// deployment display name comes from PLATFORM_DISPLAY_NAME.
-const messages = {
+// DD-133 §1/§4, DD-152 (20 §13.8): every visible string follows the Kailo
+// locale (zh-CN default, en). The component name is fixed by DD-133
+// (问数 / Data Q&A); the deployment display name comes from
+// PLATFORM_DISPLAY_NAME. Shell keys live here; each product area keeps its
+// strings in ./i18n/<area>.ts with area-prefixed keys ("home.ask"), merged
+// below into one dictionary per locale.
+const shell = {
   'zh-CN': {
     componentName: '问数',
     navHome: '问答',
@@ -13,8 +21,38 @@ const messages = {
     settings: '设置',
     threads: '对话',
     newThread: '新建',
+    // DD-152 (20 §13.2): page header Kailo renders for this component.
+    newConversation: '新对话',
+    newConversationAction: '新建对话',
+    share: '分享',
+    deployModels: '发布模型',
+    deploying: '正在发布…',
+    deploySynced: '已发布',
+    deployPending: '有未发布的更改',
+    deployFailed: '模型未能发布',
+    deployFailedHint: '请查看日志了解原因。',
+    dataSourceSettings: '数据源设置',
+    addQuestionSqlPair: '添加问答对',
+    addInstruction: '添加指令',
+    actionFailed: '操作未完成',
+    // DD-152 (20 §13.8 确认): destructive actions are questions.
+    cancel: '取消',
+    confirm: '确定',
+    delete: '删除',
+    deleteTitle: '删除{item}？',
+    deleteNamedTitle: '删除{item}「{name}」？',
+    deleteDescription: '删除后无法恢复。',
+    deleteThreadDescription: '对话中的全部问答记录将被永久删除，且无法恢复。',
+    itemThread: '对话',
+    itemView: '视图',
+    itemModel: '模型',
+    itemCalculatedField: '计算字段',
+    itemRelationship: '关系',
+    itemDashboardItem: '看板项',
+    itemQuestionSqlPair: '问答对',
+    itemInstruction: '指令',
     dashboard: '看板',
-    questionSqlPairs: '问题与 SQL',
+    questionSqlPairs: '问答对',
     instructions: '指令',
     apiHistory: 'API 记录',
     owner: '创建者',
@@ -26,6 +64,7 @@ const messages = {
     askAboutData: '了解你的数据',
     tryAsking: '可以试着这样提问',
     loading: '加载中…',
+    noData: '暂无数据',
     dataSource: '数据源',
     project: '项目',
     projectLanguage: '回答语言',
@@ -34,9 +73,9 @@ const messages = {
     save: '保存',
     resetProject: '重置项目',
     reset: '重置',
-    resetConfirm: '确定要重置吗？',
+    resetConfirm: '重置项目？',
     resetHint: '重置会删除当前全部设置与记录，包括建模页面与问答对话。',
-    languageUpdated: '回答语言已更新。',
+    languageUpdated: '回答语言已更新',
     sqlLabel: 'SQL',
     notFoundTitle: '页面不存在',
     notFoundDescription: '该链接可能已失效，或页面已被移动。',
@@ -50,7 +89,7 @@ const messages = {
     shareNoMembers: '没有可以分享的其他成员',
     shareSubmit: '分享',
     shareCancel: '取消',
-    shareDone: '已通知所选成员。',
+    shareDone: '已通知所选成员',
     shareFailed: '分享未完成，请稍后重试。',
   },
   en: {
@@ -60,8 +99,39 @@ const messages = {
     navKnowledge: 'Knowledge',
     navApi: 'API',
     settings: 'Settings',
-    threads: 'Threads',
+    threads: 'Conversations',
     newThread: 'New',
+    // DD-152 (20 §13.2): page header Kailo renders for this component.
+    newConversation: 'New conversation',
+    newConversationAction: 'New conversation',
+    share: 'Share',
+    deployModels: 'Deploy models',
+    deploying: 'Deploying…',
+    deploySynced: 'Deployed',
+    deployPending: 'Undeployed changes',
+    deployFailed: 'Models were not deployed',
+    deployFailedHint: 'Check the log for the reason.',
+    dataSourceSettings: 'Data source settings',
+    addQuestionSqlPair: 'Add question-SQL pair',
+    addInstruction: 'Add instruction',
+    actionFailed: 'Action did not complete',
+    // DD-152 (20 §13.8 确认): destructive actions are questions.
+    cancel: 'Cancel',
+    confirm: 'Confirm',
+    delete: 'Delete',
+    deleteTitle: 'Delete this {item}?',
+    deleteNamedTitle: 'Delete {item} "{name}"?',
+    deleteDescription: 'This cannot be undone.',
+    deleteThreadDescription:
+      'Every question and answer in this conversation is deleted permanently.',
+    itemThread: 'conversation',
+    itemView: 'view',
+    itemModel: 'model',
+    itemCalculatedField: 'calculated field',
+    itemRelationship: 'relationship',
+    itemDashboardItem: 'dashboard item',
+    itemQuestionSqlPair: 'question-SQL pair',
+    itemInstruction: 'instruction',
     dashboard: 'Dashboard',
     questionSqlPairs: 'Question-SQL pairs',
     instructions: 'Instructions',
@@ -74,7 +144,8 @@ const messages = {
       'No data source is connected yet. Ask a Kailo Tenant administrator to connect and model the data.',
     askAboutData: 'Know more about your data',
     tryAsking: 'Try asking some of the following questions',
-    loading: 'Loading...',
+    loading: 'Loading…',
+    noData: 'No data',
     dataSource: 'Data source',
     project: 'Project',
     projectLanguage: 'Answer language',
@@ -84,10 +155,10 @@ const messages = {
     save: 'Save',
     resetProject: 'Reset project',
     reset: 'Reset',
-    resetConfirm: 'Are you sure you want to reset?',
+    resetConfirm: 'Reset the project?',
     resetHint:
       'Resetting deletes all current settings and records, including the modeling page and the threads.',
-    languageUpdated: 'Successfully updated the answer language.',
+    languageUpdated: 'Answer language updated',
     sqlLabel: 'SQL',
     notFoundTitle: 'Page not found',
     notFoundDescription: 'The link may be outdated, or the page has moved.',
@@ -102,15 +173,58 @@ const messages = {
     shareNoMembers: 'There are no other members to share with',
     shareSubmit: 'Share',
     shareCancel: 'Cancel',
-    shareDone: 'The selected members have been notified.',
+    shareDone: 'Selected members notified',
     shareFailed: 'Sharing did not complete. Please try again later.',
   },
 } as const;
 
-export type KailoTextKey = keyof (typeof messages)['en'];
+const messages = {
+  'zh-CN': {
+    ...shell['zh-CN'],
+    ...homeMessages['zh-CN'],
+    ...modelingMessages['zh-CN'],
+    ...knowledgeMessages['zh-CN'],
+    ...setupMessages['zh-CN'],
+  },
+  en: {
+    ...shell.en,
+    ...homeMessages.en,
+    ...modelingMessages.en,
+    ...knowledgeMessages.en,
+    ...setupMessages.en,
+  },
+};
 
-export function kailoText(locale: string | undefined, key: KailoTextKey) {
-  return (locale === 'en' ? messages.en : messages['zh-CN'])[key];
+export type KailoTextKey = keyof (typeof messages)['en'];
+export type KailoTextVars = Record<string, string | number>;
+
+// "{name}" placeholders are replaced from vars; unknown names stay visible.
+export function kailoText(
+  locale: string | undefined,
+  key: KailoTextKey,
+  vars?: KailoTextVars,
+): string {
+  const text: string = (locale === 'en' ? messages.en : messages['zh-CN'])[key];
+  if (!vars) return text;
+  return text.replace(/\{(\w+)\}/g, (match, name) =>
+    name in vars ? String(vars[name]) : match,
+  );
+}
+
+// The locale outside React (Apollo error handlers, toasts from hooks): the
+// Next router once it exists, else the Kailo presentation locale.
+export function currentLocale(): string {
+  try {
+    if (Router.router?.locale) return Router.router.locale;
+  } catch {
+    // no router instance yet (unit tests, early module code)
+  }
+  return presentation().locale;
+}
+
+// Non-hook accessor for code that runs outside components.
+export function kailoT(key: KailoTextKey, vars?: KailoTextVars) {
+  return kailoText(currentLocale(), key, vars);
 }
 
 // "<deployment display name> 问数" / "<deployment display name> Data Q&A".
@@ -123,7 +237,23 @@ export function kailoProductTitle(
   return name ? `${name} ${component}` : component;
 }
 
+// The Next locale, or the Kailo one where no router is mounted (component
+// renders outside a page, unit tests).
+export function useKailoLocale(): string {
+  let locale: string | undefined;
+  try {
+    // Called on every render (the try is not a condition); Next throws only
+    // when no router is mounted.
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    locale = useRouter()?.locale;
+  } catch {
+    locale = undefined;
+  }
+  return locale || presentation().locale;
+}
+
 export default function useKailoText() {
-  const { locale } = useRouter();
-  return (key: KailoTextKey) => kailoText(locale, key);
+  const locale = useKailoLocale();
+  return (key: KailoTextKey, vars?: KailoTextVars) =>
+    kailoText(locale, key, vars);
 }

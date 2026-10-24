@@ -6,6 +6,7 @@ import ConnectDataSource from './ConnectDataSource';
 import SelectModels from './SelectModels';
 import DefineRelations from './DefineRelations';
 import { ERROR_CODES } from '@/utils/errorHandler';
+import type { KailoTextKey } from '@/utils/kailoI18n';
 import {
   getDataSourceConfig,
   getDataSourceFormComponent,
@@ -21,6 +22,13 @@ type SetupStep = {
   ) => JSX.Element;
   maxWidth?: number;
 };
+
+// DD-152: the onboarding step titles (Kailo page header and the stepper).
+export const SETUP_STEP_TITLES: KailoTextKey[] = [
+  'setup.stepConnect',
+  'setup.stepSelectTables',
+  'setup.stepDefineRelations',
+];
 
 export type ButtonOption = {
   label: string;

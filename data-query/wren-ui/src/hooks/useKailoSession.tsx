@@ -12,7 +12,9 @@ import {
   pendingLocale,
   presentation,
 } from '@/utils/kailoEmbed';
-import { kailoProductTitle } from '@/utils/kailoI18n';
+import { kailoProductTitle, kailoText } from '@/utils/kailoI18n';
+import KailoEmpty from '@/components/kailo/KailoEmpty';
+import { hostRendersPage } from '@/utils/kailoHost';
 
 // DD-133: the Kailo user, derived role, presentation (theme/locale/embedding,
 // from kailo-embed.js) and product naming shared by the page shell.
@@ -30,6 +32,9 @@ export interface KailoSessionValue {
   loaded: boolean;
   productName: string;
   embedded: boolean;
+  // DD-152: Kailo renders the page header (title, tabs, actions); the page
+  // renders none of its own.
+  hostPage: boolean;
   theme: KailoTheme;
 }
 
@@ -40,6 +45,7 @@ const KailoSessionContext = createContext<KailoSessionValue>({
   loaded: false,
   productName: '',
   embedded: false,
+  hostPage: false,
   theme: 'light',
 });
 
@@ -53,6 +59,7 @@ interface Props {
 export function KailoSessionProvider({ children, displayName }: Props) {
   const router = useRouter();
   const [embedded, setEmbedded] = useState(false);
+  const [hostPage, setHostPage] = useState(false);
   const [theme, setTheme] = useState<KailoTheme>('light');
   const [serverName] = useState(displayName || '');
   const { data, loading } = useKailoSessionQuery({
@@ -70,6 +77,7 @@ export function KailoSessionProvider({ children, displayName }: Props) {
   useEffect(() => {
     const state = presentation();
     setEmbedded(state.embedded);
+    setHostPage(hostRendersPage());
     setTheme(state.theme);
     const runtime = kailoRuntime();
     if (!runtime) return;
@@ -103,9 +111,10 @@ export function KailoSessionProvider({ children, displayName }: Props) {
       loaded: !loading && !!session,
       productName: session?.productName || serverName,
       embedded,
+      hostPage,
       theme,
     }),
-    [session, loading, embedded, theme, serverName],
+    [session, loading, embedded, hostPage, theme, serverName],
   );
 
   return (
@@ -113,7 +122,20 @@ export function KailoSessionProvider({ children, displayName }: Props) {
       <Head>
         <title>{kailoProductTitle(router.locale, value.productName)}</title>
       </Head>
-      <ConfigProvider locale={router.locale === 'en' ? enUS : zhCN}>
+      <ConfigProvider
+        locale={router.locale === 'en' ? enUS : zhCN}
+        // Kailo buttons keep their label as written ("取消", not "取 消").
+        autoInsertSpaceInButton={false}
+        renderEmpty={() => (
+          // DD-152 (20 §13 空态): no antd illustration. Lists and tables
+          // inside a page show a quiet line; page-level empty states use
+          // KailoEmpty with an illustration and action themselves.
+          <KailoEmpty
+            className="kailo-empty--compact"
+            title={kailoText(router.locale, 'noData')}
+          />
+        )}
+      >
         {children}
       </ConfigProvider>
     </KailoSessionContext.Provider>

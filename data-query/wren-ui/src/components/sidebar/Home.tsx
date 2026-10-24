@@ -4,7 +4,7 @@ import { useRouter } from 'next/router';
 import { useParams } from 'next/navigation';
 import styled from 'styled-components';
 import { Path } from '@/utils/enum';
-import FundViewOutlined from '@ant-design/icons/FundViewOutlined';
+import { DashboardIcon } from '@/components/kailo/KailoIcons';
 import SidebarTree, {
   StyledTreeNodeLink,
   useSidebarTreeState,
@@ -20,6 +20,39 @@ export interface Props {
   onDelete: (id: string) => Promise<void>;
   onRename: (id: string, newName: string) => Promise<void>;
 }
+
+// DD-152 (20 §2 列表窗格): the 看板 entry is a pane row like the threads.
+const DashboardLink = styled(StyledTreeNodeLink)`
+  && {
+    display: flex;
+    align-items: center;
+    margin: 8px 8px 0;
+    padding: 0 8px;
+    height: 32px;
+    line-height: 32px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--kailo-color-foreground);
+    transition: background-color var(--kailo-duration-instant);
+  }
+  &&:hover {
+    background-color: var(--kailo-color-hover);
+  }
+  &&:active {
+    background-color: var(--kailo-color-pressed);
+  }
+  &&.adm-treeNode--selected {
+    background-color: var(--kailo-color-selected);
+    color: var(--kailo-color-selected-foreground);
+  }
+  .kailo-icon {
+    color: var(--kailo-color-muted-foreground);
+  }
+  &&.adm-treeNode--selected .kailo-icon {
+    color: inherit;
+  }
+`;
 
 export const StyledSidebarTree = styled(SidebarTree)`
   .adm-treeNode {
@@ -73,15 +106,15 @@ export default function Home(props: Props) {
 
   return (
     <>
-      <StyledTreeNodeLink
+      <DashboardLink
         className={clsx({
           'adm-treeNode--selected': router.pathname === Path.HomeDashboard,
         })}
         href={Path.HomeDashboard}
       >
-        <FundViewOutlined className="mr-2" />
-        <span className="text-medium">{t('dashboard')}</span>
-      </StyledTreeNodeLink>
+        <DashboardIcon className="mr-2" />
+        <span>{t('dashboard')}</span>
+      </DashboardLink>
       <ThreadTree
         threads={threads}
         selectedKeys={treeSelectedKeys}

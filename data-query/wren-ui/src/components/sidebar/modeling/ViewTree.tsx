@@ -1,8 +1,9 @@
-import Link from 'next/link';
+import { useRouter } from 'next/router';
 import { useEffect, useState } from 'react';
-import { Modal } from 'antd';
 import { DataNode } from 'antd/es/tree';
-import PlusOutlined from '@ant-design/icons/PlusOutlined';
+import { PlusIcon } from '@/components/kailo/KailoIcons';
+import useKailoText from '@/utils/kailoI18n';
+import { confirm } from '@/utils/kailoHost';
 import { Path } from '@/utils/enum';
 import { DiagramView } from '@/utils/data';
 import { getNodeTypeIcon } from '@/utils/nodeType';
@@ -21,33 +22,35 @@ interface Props {
 
 export default function ViewTree(props: Props) {
   const { views } = props;
+  const router = useRouter();
+  const t = useKailoText();
 
-  const onAddView = () => {
-    Modal.info({
-      title: 'How to create a View?',
-      content: (
-        <div>
-          Pose your questions at <Link href={Path.Home}>homepage</Link>, and get
-          some helpful answers to save as views.
-        </div>
-      ),
-      okButtonProps: {} as any,
+  // Views are saved from answers: explain, and offer to go and ask.
+  const onAddView = async () => {
+    const go = await confirm({
+      tone: 'default',
+      title: t('modeling.howToCreateView'),
+      description: t('modeling.howToCreateViewHint'),
+      confirmLabel: t('modeling.goAsk'),
+      cancelLabel: t('cancel'),
     });
+    if (go) router.push(Path.Home);
   };
 
   const getViewGroupNode = createTreeGroupNode({
-    groupName: 'Views',
+    groupName: t('modeling.views'),
     groupKey: 'views',
+    emptyText: t('modeling.noViews'),
     actions: [
       {
         key: 'add-view-info',
         render: () => (
           <GroupActionButton
-            icon={<PlusOutlined />}
+            icon={<PlusIcon size={14} className="mr-1" />}
             size="small"
             onClick={onAddView}
           >
-            New
+            {t('newThread')}
           </GroupActionButton>
         ),
       },

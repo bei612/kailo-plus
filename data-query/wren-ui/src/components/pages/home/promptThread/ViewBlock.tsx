@@ -4,6 +4,7 @@ import FileDoneOutlined from '@ant-design/icons/FileDoneOutlined';
 import SaveOutlined from '@ant-design/icons/SaveOutlined';
 import { Path } from '@/utils/enum';
 import { ViewInfo } from '@/apollo/client/graphql/__types__';
+import useKailoText from '@/utils/kailoI18n';
 
 interface Props {
   view?: ViewInfo;
@@ -12,12 +13,13 @@ interface Props {
 
 export default function ViewBlock({ view, onClick }: Props) {
   const isViewSaved = !!view;
+  const t = useKailoText();
 
   if (isViewSaved) {
     return (
-      <div className="gray-6 text-medium">
+      <div className="gray-7 text-medium">
         <FileDoneOutlined className="mr-2" />
-        Generated from saved view{' '}
+        {t('home.generatedFromView')}{' '}
         <Link
           className="gray-7"
           href={`${Path.Modeling}?viewId=${view.id}&openMetadata=true`}
@@ -32,13 +34,13 @@ export default function ViewBlock({ view, onClick }: Props) {
 
   return (
     <Button
-      className="gray-6"
+      className="gray-7"
       type="text"
       size="small"
       icon={<SaveOutlined />}
       onClick={onClick}
     >
-      Save as View
+      {t('home.saveAsView')}
     </Button>
   );
 }

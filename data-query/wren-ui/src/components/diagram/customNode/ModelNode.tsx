@@ -31,10 +31,12 @@ import {
   ColumnDropdown,
 } from '@/components/diagram/CustomDropdown';
 import { AddButton, MoreButton } from '@/components/ActionButton';
+import useKailoText from '@/utils/kailoI18n';
 
 const { Text } = Typography;
 
 export const ModelNode = ({ data }: CustomNodeProps<DiagramModel>) => {
+  const t = useKailoText();
   const context = useContext(DiagramContext);
   const onMoreClick = (type: MORE_ACTION) => {
     context?.onMoreClick({
@@ -77,7 +79,6 @@ export const ModelNode = ({ data }: CustomNodeProps<DiagramModel>) => {
           <CachedIcon originalData={data.originalData} />
           <ModelDropdown data={data.originalData} onMoreClick={onMoreClick}>
             <MoreButton
-              className="gray-1"
               marginRight={-4}
               data-guideid={`edit-model-${data.index}`}
             />
@@ -87,32 +88,32 @@ export const ModelNode = ({ data }: CustomNodeProps<DiagramModel>) => {
         <MarkerHandle id={data.originalData.id.toString()} />
       </NodeHeader>
       <NodeBody draggable={false}>
-        <Column.Title show={true}>Columns</Column.Title>
+        <Column.Title show={true}>{t('modeling.columns')}</Column.Title>
         {renderColumns(data.originalData.fields)}
         <Column.Title
           show={true}
           extra={
             <AddButton
-              className="gray-8"
+              className="kailo-node-action"
               marginRight={-8}
               onClick={() => onAddClick(NODE_TYPE.CALCULATED_FIELD)}
             />
           }
         >
-          Calculated Fields
+          {t('modeling.calculatedFields')}
         </Column.Title>
         {renderColumns(data.originalData.calculatedFields)}
         <Column.Title
           show={true}
           extra={
             <AddButton
-              className="gray-8"
+              className="kailo-node-action"
               marginRight={-8}
               onClick={() => onAddClick(NODE_TYPE.RELATION)}
             />
           }
         >
-          Relationships
+          {t('modeling.relationships')}
         </Column.Title>
         {renderColumns(data.originalData.relationFields)}
       </NodeBody>
@@ -195,7 +196,11 @@ const ColumnTemplate = (props) => {
     <Column
       {...props}
       key={id}
-      className={highlight.includes(id) ? 'bg-gray-3' : undefined}
+      style={
+        highlight.includes(id)
+          ? { backgroundColor: 'var(--kailo-color-selected)' }
+          : undefined
+      }
       icon={isRelationship ? <ModelIcon /> : getColumnTypeIcon({ type })}
       extra={
         <>
@@ -207,7 +212,7 @@ const ColumnTemplate = (props) => {
               onMenuEnter={onMenuEnter}
             >
               <MoreButton
-                className="gray-8"
+                className="kailo-node-action"
                 marginRight={-4}
                 onMouseEnter={onMoreMouseEnter}
                 onMouseLeave={onMoreMouseLeave}

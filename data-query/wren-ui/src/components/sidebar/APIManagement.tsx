@@ -2,18 +2,18 @@ import Link from 'next/link';
 import { useRouter } from 'next/router';
 import styled from 'styled-components';
 import { Path, MENU_KEY } from '@/utils/enum';
-import ApiOutlined from '@ant-design/icons/ApiOutlined';
+import { CodeIcon } from '@/components/kailo/KailoIcons';
 import SidebarMenu from '@/components/sidebar/SidebarMenu';
 import useKailoText from '@/utils/kailoI18n';
 
 const Layout = styled.div`
-  padding: 16px 0;
+  padding: 8px 0;
   position: absolute;
   z-index: 1;
   left: 0;
   top: 0;
   width: 100%;
-  background-color: var(--kailo-color-sidebar-background);
+  background-color: var(--kailo-color-background);
   overflow: hidden;
 `;
 
@@ -35,9 +35,8 @@ export default function APIManagement() {
           {t('apiHistory')}
         </Link>
       ),
-      icon: <ApiOutlined />,
+      icon: <CodeIcon />,
       key: MENU_KEY.API_HISTORY,
-      className: 'pl-4',
     },
   ];
 

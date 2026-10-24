@@ -3,6 +3,8 @@ import { Typography, Row, Col } from 'antd';
 import { getDataSources, getTemplates } from './utils';
 import { makeIterable } from '@/utils/iteration';
 import ButtonItem from './ButtonItem';
+import useKailoText from '@/utils/kailoI18n';
+import useKailoSession from '@/hooks/useKailoSession';
 import {
   DataSourceName,
   SampleDatasetName,
@@ -23,6 +25,9 @@ export default function Starter(props) {
   const { onNext, submitting } = props;
 
   const [template, setTemplate] = useState<SampleDatasetName>();
+  const t = useKailoText();
+  // Inside Kailo the step title is the page header (no second title).
+  const { hostPage } = useKailoSession();
 
   const dataSources = getDataSources();
   const templates = getTemplates();
@@ -38,10 +43,12 @@ export default function Starter(props) {
 
   return (
     <>
-      <Typography.Title level={1} className="mb-3">
-        Connect a data source
-      </Typography.Title>
-      <Row className="mt-6" gutter={[16, 16]}>
+      {!hostPage && (
+        <Typography.Title level={2} className="mb-3">
+          {t('setup.connectDataSource')}
+        </Typography.Title>
+      )}
+      <Row className="mt-4" gutter={[16, 16]}>
         <DataSourceIterator
           data={dataSources}
           onSelect={onSelectDataSource}
@@ -52,8 +59,8 @@ export default function Starter(props) {
       {templates.length > 0 && (
         <>
           <div className="py-8" />
-          <Typography.Title level={1} className="mb-3">
-            Play around with sample data
+          <Typography.Title level={2} className="mb-3">
+            {t('setup.sampleData')}
           </Typography.Title>
           <Row className="mt-6" gutter={[16, 16]}>
             <TemplatesIterator

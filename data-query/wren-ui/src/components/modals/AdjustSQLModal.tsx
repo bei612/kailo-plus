@@ -10,6 +10,7 @@ import PreviewData from '@/components/dataPreview/PreviewData';
 import useGovernedSqlPreview from '@/hooks/useGovernedSqlPreview';
 import { useRouter } from 'next/router';
 import { getQueryPreviewText } from '@/utils/language';
+import useKailoText from '@/utils/kailoI18n';
 
 interface AdjustSQLFormValues {
   responseId: number;
@@ -36,6 +37,7 @@ export default function AdjustSQLModal(props: Props) {
   const previewSqlMutation = query.preview;
   const previewSqlResult = query.result;
   const text = getQueryPreviewText(useRouter().locale);
+  const t = useKailoText();
 
   useEffect(() => {
     if (visible) {
@@ -66,7 +68,7 @@ export default function AdjustSQLModal(props: Props) {
 
   const handleError = (error) => {
     const graphQLError = parseGraphQLError(error);
-    setError({ ...graphQLError, shortMessage: 'Invalid SQL syntax' });
+    setError({ ...graphQLError, shortMessage: t('home.invalidSql') });
     console.error(graphQLError);
   };
 
@@ -123,7 +125,7 @@ export default function AdjustSQLModal(props: Props) {
 
   return (
     <Modal
-      title="Adjust SQL"
+      title={t('home.adjustSql')}
       centered
       closable
       confirmLoading={confirmLoading}
@@ -146,18 +148,17 @@ export default function AdjustSQLModal(props: Props) {
               type="secondary"
               className="text-sm gray-7 text-left"
             >
-              The SQL statement used here follows the semantic-layer SQL
-              dialect, which is based on ANSI SQL.
+              {t('home.semanticDialectHint')}
             </Typography.Text>
           </div>
           <div>
-            <Button onClick={onClose}>Cancel</Button>
+            <Button onClick={onClose}>{t('cancel')}</Button>
             <Button
               type="primary"
               onClick={onSubmitButton}
               loading={confirmLoading}
             >
-              Submit
+              {t('home.submit')}
             </Button>
           </div>
         </div>
@@ -165,7 +166,7 @@ export default function AdjustSQLModal(props: Props) {
     >
       <Form form={form} preserve={false} layout="vertical">
         <Form.Item
-          label="SQL statement"
+          label={t('home.sqlStatement')}
           name="sql"
           required
           rules={[
@@ -193,14 +194,14 @@ export default function AdjustSQLModal(props: Props) {
       ) : null}
       <div className="my-3">
         <Typography.Text className="d-block gray-7 mb-2">
-          Data preview (50 rows)
+          {t('home.dataPreview50')}
         </Typography.Text>
         <Button
           onClick={onPreviewData}
           loading={previewing}
           disabled={disabled}
         >
-          Preview data
+          {t('home.previewData')}
         </Button>
         {showPreview && (
           <div className="my-3">

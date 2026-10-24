@@ -5,27 +5,35 @@ import Icon from '@/import/icon';
 import { IterableComponent } from '@/utils/iteration';
 import { ButtonOption } from './utils';
 import { SampleDatasetName } from '@/apollo/client/graphql/__types__';
+import useKailoText from '@/utils/kailoI18n';
 
+// DD-152 (20 §3 卡片): selectable card — surface, 1px line, radius 12;
+// hover lifts with shadow-sm, selected uses the brand line.
 const StyledButton = styled(Button)`
-  border: 2px var(--gray-4) solid;
-  background-color: var(--gray-2);
-  border-radius: 4px;
+  border: 1px var(--kailo-color-border) solid;
+  background-color: var(--kailo-color-background);
+  color: var(--kailo-color-foreground);
+  border-radius: 12px;
   width: 100%;
   height: auto;
+  box-shadow: none;
 
   &:focus {
-    border: 2px var(--gray-4) solid;
-    background-color: var(--gray-2);
+    border: 1px var(--kailo-color-border) solid;
+    background-color: var(--kailo-color-background);
+    color: var(--kailo-color-foreground);
   }
 
   &:hover {
-    border-color: var(--geekblue-6);
-    background-color: var(--gray-2);
+    border-color: var(--kailo-color-brand);
+    background-color: var(--kailo-color-background);
+    color: var(--kailo-color-foreground);
+    box-shadow: var(--kailo-shadow-sm);
   }
 
   &.is-active {
-    border-color: var(--geekblue-6) !important;
-    background-color: var(--gray-2) !important;
+    border-color: var(--kailo-color-brand) !important;
+    background-color: var(--kailo-color-selected) !important;
   }
 
   &:disabled {
@@ -48,21 +56,22 @@ const StyledIcon = styled(Icon)`
 `;
 
 const PlainImage = styled.div`
-  border: 1px var(--gray-4) solid;
-  background-color: white;
+  border: 1px var(--kailo-color-border) solid;
+  border-radius: 8px;
+  background-color: var(--kailo-color-muted);
   width: 40px;
   height: 40px;
 `;
 
 const ComingSoon = styled.div`
-  border: 1px var(--gray-7) solid;
-  color: var(--gray-7);
-  font-size: 8px;
-  padding: 2px 6px;
+  background: var(--kailo-color-muted);
+  color: var(--kailo-color-muted-foreground);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 20px;
+  padding: 0 8px;
   border-radius: 999px;
-  &:before {
-    content: 'COMING SOON';
-  }
+  white-space: nowrap;
 `;
 
 type Props = ButtonOption & {
@@ -82,13 +91,14 @@ export default function ButtonItem(props: IterableComponent<Props>) {
     selectedTemplate,
   } = props;
 
+  const t = useKailoText();
   const isSelected = selectedTemplate === value;
   const loading = isSelected && submitting;
 
   return (
     <StyledButton
       className={[
-        'px-4 py-2 gray-8 d-flex align-center',
+        'px-4 py-2 d-flex align-center',
         loading ? 'flex-start' : 'justify-space-between',
         isSelected ? 'is-active' : '',
       ].join(' ')}
@@ -112,7 +122,7 @@ export default function ButtonItem(props: IterableComponent<Props>) {
         )}
         {label}
       </div>
-      {disabled && <ComingSoon />}
+      {disabled && <ComingSoon>{t('setup.comingSoon')}</ComingSoon>}
     </StyledButton>
   );
 }

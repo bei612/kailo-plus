@@ -140,6 +140,43 @@ const config: Config = {
   point: { size: 60, color: DEFAULT_COLOR },
 };
 
+// DD-152 (20 §13, 暗色无低对比文字): chart text and grid follow the Kailo
+// theme. Vega draws SVG attributes, so the token values are resolved from
+// the document when the chart is built (the Chart component rebuilds on a
+// theme change); the brand-neutral series palette stays as content.
+const token = (name: string, fallback: string) => {
+  if (typeof window === 'undefined' || !window.getComputedStyle)
+    return fallback;
+  const value = window
+    .getComputedStyle(document.documentElement)
+    .getPropertyValue(name)
+    .trim();
+  return value || fallback;
+};
+
+export const themedConfig = (): Config => {
+  const text = token('--kailo-color-foreground', COLOR.GRAY_10);
+  const secondary = token('--kailo-color-text-secondary', COLOR.GRAY_9);
+  const muted = token('--kailo-color-muted-foreground', COLOR.GRAY_8);
+  const line = token('--kailo-color-border', COLOR.GRAY_5);
+  const font = token('--kailo-font-sans', config.font as string);
+  return {
+    ...config,
+    font,
+    title: { ...config.title, color: text },
+    axis: {
+      ...config.axis,
+      gridColor: line,
+      domainColor: line,
+      tickColor: line,
+      titleColor: secondary,
+      labelColor: muted,
+      labelFont: font,
+    },
+    legend: { ...config.legend, labelColor: muted, titleColor: secondary },
+  };
+};
+
 export default class ChartSpecHandler {
   public config: Config;
   public options: ChartOptions;
@@ -153,7 +190,7 @@ export default class ChartSpecHandler {
   public transform: TransformSpec;
 
   constructor(spec: TopLevelSpec, options?: ChartOptions) {
-    this.config = config;
+    this.config = themedConfig();
     this.data = spec.data as DataSpec;
     this.autosize = { type: 'fit', contains: 'padding' };
     this.params = [

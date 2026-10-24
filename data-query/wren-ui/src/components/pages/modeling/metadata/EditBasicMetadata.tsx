@@ -3,6 +3,7 @@ import { Typography, Row, Col } from 'antd';
 import { cloneDeep, set } from 'lodash';
 import { NODE_TYPE } from '@/utils/enum';
 import EditableWrapper from '@/components/EditableWrapper';
+import useKailoText from '@/utils/kailoI18n';
 
 interface Props {
   dataSource: any;
@@ -12,6 +13,7 @@ interface Props {
 }
 
 export default function EditBasicMetadata(props: Props) {
+  const t = useKailoText();
   const { dataSource, onChange, nodeType, rules } = props;
   const [data, setData] = useState(dataSource);
 
@@ -42,7 +44,7 @@ export default function EditBasicMetadata(props: Props) {
           <Col span={12}>
             <div className="mb-6" data-testid="edit-metadata__name">
               <Typography.Text className="d-block gray-7 mb-2">
-                Name
+                {t('modeling.name')}
               </Typography.Text>
               <div>{data.referenceName}</div>
             </div>
@@ -50,7 +52,7 @@ export default function EditBasicMetadata(props: Props) {
           <Col span={12} data-testid="edit-metadata__alias">
             <div className="mb-6" data-testid="metadata__name">
               <Typography.Text className="d-block gray-7 mb-2">
-                Alias
+                {t('modeling.alias')}
               </Typography.Text>
               <EditableWrapper
                 record={data}
@@ -67,7 +69,7 @@ export default function EditBasicMetadata(props: Props) {
       {isView && (
         <div className="mb-6" data-testid="edit-metadata__name">
           <Typography.Text className="d-block gray-7 mb-2">
-            Name
+            {t('modeling.name')}
           </Typography.Text>
           <EditableWrapper
             record={data}
@@ -82,7 +84,7 @@ export default function EditBasicMetadata(props: Props) {
 
       <div className="mb-6" data-testid="edit-metadata__description">
         <Typography.Text className="d-block gray-7 mb-2">
-          Description
+          {t('modeling.description')}
         </Typography.Text>
         <EditableWrapper
           record={data}

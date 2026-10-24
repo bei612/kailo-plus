@@ -10,10 +10,12 @@ import { useRouter } from 'next/router';
 import { getQueryPreviewText } from '@/utils/language';
 import useGovernedPreview from '@/hooks/useGovernedPreview';
 import { getUserConfig } from '@/utils/env';
+import useKailoText from '@/utils/kailoI18n';
 
 export type Props = DiagramView;
 
 export default function ViewMetadata(props: Props) {
+  const t = useKailoText();
   const text = getQueryPreviewText(useRouter().locale);
   const {
     displayName,
@@ -131,20 +133,22 @@ export default function ViewMetadata(props: Props) {
   return (
     <>
       <div className="mb-6" data-testid="metadata__name">
-        <Typography.Text className="d-block gray-7 mb-2">Name</Typography.Text>
+        <Typography.Text className="d-block gray-7 mb-2">
+          {t('modeling.name')}
+        </Typography.Text>
         <div>{displayName || '-'}</div>
       </div>
 
       <div className="mb-6" data-testid="metadata__description">
         <Typography.Text className="d-block gray-7 mb-2">
-          Description
+          {t('modeling.description')}
         </Typography.Text>
         <div>{description || '-'}</div>
       </div>
 
       <div className="mb-6" data-testid="metadata__columns">
         <Typography.Text className="d-block gray-7 mb-2">
-          Columns ({fields.length})
+          {t('modeling.columnsCount', { count: fields.length })}
         </Typography.Text>
         <FieldTable
           columns={[COLUMN.NAME, COLUMN.TYPE, COLUMN.DESCRIPTION]}
@@ -155,14 +159,14 @@ export default function ViewMetadata(props: Props) {
 
       <div className="mb-6" data-testid="metadata__sql-statement">
         <Typography.Text className="d-block gray-7 mb-2">
-          SQL statement
+          {t('modeling.sqlStatement')}
         </Typography.Text>
         <SQLCodeBlock code={statement} showLineNumbers maxHeight="300" />
       </div>
 
       <div className="mb-6" data-testid="metadata__preview-data">
         <Typography.Text className="d-block gray-7 mb-2">
-          Data preview (100 rows)
+          {t('modeling.dataPreview')}
         </Typography.Text>
         <Button
           onClick={onPreviewData}

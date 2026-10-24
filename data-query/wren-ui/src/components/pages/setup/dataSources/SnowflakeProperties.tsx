@@ -1,10 +1,12 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import { Button, Form, Input, Radio, Upload, UploadProps, message } from 'antd';
+import { Button, Form, Input, Radio, Upload, UploadProps } from 'antd';
+import { notify } from '@/utils/kailoHost';
 import UploadOutlined from '@ant-design/icons/UploadOutlined';
 import { ERROR_TEXTS } from '@/utils/error';
 import { FORM_MODE } from '@/utils/enum';
 import { readFileContent, extractPrivateKeyString } from '@/utils/file';
+import { kailoT } from '@/utils/kailoI18n';
 
 const TAB_KEY = {
   PASSWORD_AUTHENTICATION: 'password_authentication',
@@ -38,8 +40,9 @@ const UploadPrivateKey = (props: {
         setFileList([uploadFile]);
       } catch (error) {
         console.error('Failed to handle file', error);
-        message.error(
-          'Failed to handle file. Please upload a valid private key file.',
+        notify.error(
+          kailoT('setup.fileReadFailed'),
+          kailoT('setup.uploadValidPrivateKey'),
         );
       }
     }
@@ -58,7 +61,9 @@ const UploadPrivateKey = (props: {
       onRemove={onRemove}
       maxCount={1}
     >
-      <Button icon={<UploadOutlined />}>Upload private key</Button>
+      <Button icon={<UploadOutlined />}>
+        {kailoT('setup.uploadPrivateKey')}
+      </Button>
     </Upload>
   );
 };
@@ -75,7 +80,7 @@ export default function SnowflakeProperties(props: Props) {
   return (
     <>
       <Form.Item
-        label="Display name"
+        label={kailoT('setup.fieldDisplayName')}
         name="displayName"
         required
         rules={[
@@ -88,7 +93,7 @@ export default function SnowflakeProperties(props: Props) {
         <Input />
       </Form.Item>
       <Form.Item
-        label="Account"
+        label={kailoT('setup.fieldAccount')}
         name="account"
         required
         rules={[
@@ -104,7 +109,7 @@ export default function SnowflakeProperties(props: Props) {
         />
       </Form.Item>
       <Form.Item
-        label="Database name"
+        label={kailoT('setup.fieldDatabaseName')}
         name="database"
         required
         rules={[
@@ -114,10 +119,13 @@ export default function SnowflakeProperties(props: Props) {
           },
         ]}
       >
-        <Input placeholder="Snowflake database name" disabled={isEditMode} />
+        <Input
+          placeholder={kailoT('setup.phSnowflakeDatabase')}
+          disabled={isEditMode}
+        />
       </Form.Item>
       <Form.Item
-        label="Schema"
+        label={kailoT('setup.fieldSchema')}
         name="schema"
         required
         rules={[
@@ -130,19 +138,14 @@ export default function SnowflakeProperties(props: Props) {
         <Input />
       </Form.Item>
       <Form.Item
-        label="Warehouse"
+        label={kailoT('setup.fieldWarehouse')}
         name="warehouse"
-        extra={
-          <span className="gray-6">
-            Specifies the virtual warehouse for query execution. If blank, the
-            account's default warehouse is used (if configured).
-          </span>
-        }
+        extra={<span className="gray-7">{kailoT('setup.hintWarehouse')}</span>}
       >
         <Input />
       </Form.Item>
       <Form.Item
-        label="User"
+        label={kailoT('setup.fieldUser')}
         name="user"
         rules={[
           {
@@ -156,18 +159,16 @@ export default function SnowflakeProperties(props: Props) {
       <Form.Item
         label={
           <div>
-            Authentication method
-            <div className="gray-6">
-              Username and password authentication will be{' '}
-              <span className="gray-7">deprecated by November 2025</span>. We
-              recommend switching to key pair authentication.{' '}
+            {kailoT('setup.fieldAuthMethod')}
+            <div className="gray-7">
+              {kailoT('setup.hintSnowflakePasswordDeprecated')}{' '}
               <Link
                 className="gray-7 underline"
                 href="https://www.snowflake.com/en/blog/blocking-single-factor-password-authentification"
                 target="_blank"
                 rel="noreferrer noopener"
               >
-                Learn more
+                {kailoT('setup.learnMore')}
               </Link>
             </div>
           </div>
@@ -175,10 +176,10 @@ export default function SnowflakeProperties(props: Props) {
       >
         <Radio.Group value={tabKey} onChange={changeTabKey} buttonStyle="solid">
           <Radio.Button value={TAB_KEY.PASSWORD_AUTHENTICATION}>
-            Password authentication
+            {kailoT('setup.authPassword')}
           </Radio.Button>
           <Radio.Button value={TAB_KEY.KEY_PAIR_AUTHENTICATION}>
-            Key pair authentication
+            {kailoT('setup.authKeyPair')}
           </Radio.Button>
         </Radio.Group>
       </Form.Item>
@@ -186,7 +187,7 @@ export default function SnowflakeProperties(props: Props) {
       <div>
         {tabKey === TAB_KEY.PASSWORD_AUTHENTICATION && (
           <Form.Item
-            label="Password"
+            label={kailoT('setup.fieldPassword')}
             name="password"
             required
             rules={[
@@ -196,12 +197,12 @@ export default function SnowflakeProperties(props: Props) {
               },
             ]}
           >
-            <Input.Password placeholder="input password" />
+            <Input.Password placeholder={kailoT('setup.phPassword')} />
           </Form.Item>
         )}
         {tabKey === TAB_KEY.KEY_PAIR_AUTHENTICATION && (
           <Form.Item
-            label="Private key file"
+            label={kailoT('setup.fieldPrivateKeyFile')}
             name="privateKey"
             required
             rules={[
@@ -211,9 +212,7 @@ export default function SnowflakeProperties(props: Props) {
               },
             ]}
             extra={
-              <div className="gray-6">
-                Upload your private key file for key pair authentication.
-              </div>
+              <div className="gray-7">{kailoT('setup.hintPrivateKey')}</div>
             }
           >
             <UploadPrivateKey />

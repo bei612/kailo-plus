@@ -9,7 +9,9 @@ import {
   useState,
 } from 'react';
 import { isEmpty } from 'lodash';
-import { message } from 'antd';
+import { Button } from 'antd';
+import { notify } from '@/utils/kailoHost';
+import { ShareIcon } from '@/components/kailo/KailoIcons';
 import client from '@/apollo/client';
 import { LIST_VIEWS } from '@/apollo/client/graphql/view';
 import { runNativeMetadataWrite } from '@/utils/errorHandler';
@@ -29,7 +31,9 @@ import SaveAsViewModal from '@/components/modals/SaveAsViewModal';
 import QuestionSQLPairModal from '@/components/modals/QuestionSQLPairModal';
 import AdjustReasoningStepsModal from '@/components/modals/AdjustReasoningStepsModal';
 import AdjustSQLModal from '@/components/modals/AdjustSQLModal';
-import { KailoShareButton } from '@/components/kailo/KailoShare';
+import { useKailoShare } from '@/components/kailo/KailoShare';
+import useKailoPage from '@/hooks/useKailoPage';
+import useKailoText from '@/utils/kailoI18n';
 import { getAnswerIsFinished } from '@/components/pages/home/promptThread/TextBasedAnswer';
 import { getIsChartFinished } from '@/components/pages/home/promptThread/ChartAnswer';
 import { PromptThreadProvider } from '@/components/pages/home/promptThread/store';
@@ -88,6 +92,8 @@ export default function HomeThread() {
   const params = useParams();
   const homeSidebar = useHomeSidebar();
   const threadId = useMemo(() => Number(params?.id) || null, [params]);
+  const t = useKailoText();
+  const share = useKailoShare(threadId !== null ? { threadId } : null);
   const askPrompt = useAskPrompt(threadId);
   const adjustAnswer = useAdjustAnswer(threadId);
   const saveAsViewModal = useModalAction();
@@ -133,7 +139,7 @@ export default function HomeThread() {
     useUpdateThreadResponseMutation({
       onError: (error) => console.error(error),
       onCompleted: (data) => {
-        message.success('Successfully updated the SQL statement');
+        notify.success(t('home.sqlUpdated'));
         // trigger generate answer after sql statement updated
         onGenerateThreadResponseAnswer(data.updateThreadResponse.id);
       },
@@ -453,14 +459,48 @@ export default function HomeThread() {
     onOpenAdjustSQLModal: adjustSqlModal.openModal,
   };
 
+  // DD-152: Kailo page header — the conversation's summary as title, 分享
+  // (DD-138(4), 07 §4.8.3: notify Kailo members) and 新建对话.
+  const threadTitle =
+    homeSidebar.data?.threads?.find((thread) => thread.id === String(threadId))
+      ?.name || data?.thread?.responses?.[0]?.question;
+  const { hosted } = useKailoPage({
+    title: threadTitle || t('threads'),
+    ready: !!data?.thread,
+    actions: [
+      ...(share.available
+        ? [
+            {
+              id: 'share',
+              label: t('share'),
+              variant: 'secondary' as const,
+              icon: 'share' as const,
+            },
+          ]
+        : []),
+      {
+        id: 'new-conversation',
+        label: t('newConversationAction'),
+        variant: 'primary',
+        icon: 'message-square-plus',
+      },
+    ],
+    onAction: (id) => {
+      if (id === 'share') share.open();
+      if (id === 'new-conversation') router.push(Path.Home);
+    },
+  });
+
   return (
     <SiderLayout loading={false} sidebar={homeSidebar}>
-      {/* DD-138(4), 07 §4.8.3: notify Kailo members about this thread. */}
-      {threadId !== null && (
+      {!hosted && share.available && (
         <div className="d-flex justify-end px-4 pt-3">
-          <KailoShareButton target={{ threadId }} />
+          <Button icon={<ShareIcon className="mr-1" />} onClick={share.open}>
+            {t('share')}
+          </Button>
         </div>
       )}
+      {share.modal}
       <PromptThreadProvider value={providerValue}>
         <PromptThread />
       </PromptThreadProvider>
@@ -494,7 +534,7 @@ export default function HomeThread() {
                   },
                 }))
               ) {
-                message.warning(getQueryPreviewText(router.locale).unknown);
+                notify.warning(getQueryPreviewText(router.locale).unknown);
                 throw new Error('QUERY_EVIDENCE_UNAVAILABLE');
               }
               const completed = saveViewQuery.completedQuery();
@@ -530,7 +570,7 @@ export default function HomeThread() {
               );
             },
           });
-          message.success('Successfully created view.');
+          notify.success(t('home.viewCreated'));
         }}
       />
       <QuestionSQLPairModal
