@@ -240,7 +240,9 @@ def ensure_action_token(h, r):
                                  "ACTION_TOKEN_JWKS_READER_ROLE": "action-token-jwks-reader"})
     config = h.read_json("/volumes/kailo/ci/config.json")["environment"]
     env = {**os.environ, "KAILO_RUNTIME_DIR": str(local), "CHECK_CPUS": "2", "CHECK_MEMORY": "4g",
-           "BUILDX_BUILDER": config.get("BUILDX_BUILDER", "")}
+           "BUILDX_BUILDER": config.get("BUILDX_BUILDER", ""),
+           # container-safety requires an execution TMPDIR on Data (same short path as receiver.env).
+           "TMPDIR": str(h.private_dir(Path("/volumes/data/kailo/tmp") / f"kr-{r.dir.name.rsplit('-', 1)[-1]}"))}
     h.say("isolated-identity", action="prepare-action-token")
     h.run(["bash", "./start-core.sh", "--prepare-action-token"], cwd=str(local), env=env, log=r.log)
     h.say("isolated-identity", action="restart-core")
