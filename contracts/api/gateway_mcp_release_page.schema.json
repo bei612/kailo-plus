@@ -45,6 +45,10 @@
           "adapterBuildRef": {
             "type": "string"
           },
+          "retainOnTenantDelete": {
+            "type": "boolean",
+            "description": "DD-155(3)：release 所选能力类别任一声明 tenantDelete=RETAIN_ON_TENANT_DELETE 即为 true；建立连接的保留选项取此值，Core 要求一致。"
+          },
           "adapterServiceRef": {
             "type": "string",
             "description": "交付目录中 artifactDigest 等于 adapterBuildRef 的 peer；没有时省略。"
