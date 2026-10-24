@@ -22,7 +22,7 @@ import { AnimatedCount } from "../host";
 import { Markdown } from "../host";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../../sidebar/tooltip";
 import { UserAvatar } from "../../messages/UserAvatar";
-import { truncateNpub } from "../host";
+import { unknownMemberLabel } from "../../messages/system/identity";
 
 export type NoteCardActions = {
   reply?: (
@@ -73,7 +73,7 @@ function ReplyParentContext({
   const parentDisplayName = parentNote
     ? (cachedProfile?.displayName ??
       fetchedProfile?.displayName ??
-      truncateNpub(parentNote.pubkey))
+      unknownMemberLabel(t))
     : null;
   const parentAvatarUrl =
     cachedProfile?.avatarUrl ?? fetchedProfile?.avatarUrl ?? null;
@@ -144,7 +144,7 @@ export function NoteCard({
   const t = useUiT();
   const host = usePulseHost();
   const locale = useUiLocale();
-  const displayName = profile?.displayName ?? truncateNpub(note.pubkey);
+  const displayName = profile?.displayName ?? unknownMemberLabel(t);
   const avatarUrl = profile?.avatarUrl ?? null;
   const [isReplyComposerOpen, setIsReplyComposerOpen] = React.useState(false);
   const actionButtonClass =

@@ -13,7 +13,7 @@ import { AvatarHostProvider } from "../profile/avatar-host";
 type TypingChannel = Pick<Channel, "channelType" | "participants" | "participantPubkeys">;
 import { cn } from "../profile/buzz/shared/lib/cn";
 import { Shimmer } from "./Shimmer";
-import { truncateNpub } from "../conversations/pubkey";
+import { unknownMemberLabel } from "./system/identity";
 
 type TypingIndicatorRowProps = {
   channel: TypingChannel | null;
@@ -105,13 +105,13 @@ export function TypingIndicatorRow({
           <div className="flex shrink-0 items-center">
             {typingPubkeys.map((pubkey, index) => {
               const profile = profiles?.[pubkey.toLowerCase()];
-              const label = labels[index] ?? truncateNpub(pubkey);
+              const label = labels[index] ?? unknownMemberLabel(t);
               return (
                 <div
                   key={pubkey}
                   className={cn(
                     "relative shrink-0 ring-1 ring-background",
-                    profile?.isAgent ? "rounded-squircle" : "rounded-full",
+                    profile?.isAgent ? "rounded-squircle" : "rounded-[28%]",
                     isActivityVariant ? "h-4 w-4" : "h-5 w-5",
                     index > 0 && "-ml-1.5",
                   )}

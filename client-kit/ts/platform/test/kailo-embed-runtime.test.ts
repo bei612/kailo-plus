@@ -4,15 +4,21 @@ import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { KailoEmbedRuntime } from "../../../embed/kailo-embed";
+import type { KailoEmbedRuntime, KailoPage } from "../../../embed/kailo-embed";
 
 const source = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), "../../../embed/kailo-embed.js"), "utf8");
 const KAILO = "https://kailo.example.test";
 const parentDescriptor = Object.getOwnPropertyDescriptor(window, "parent");
 let host: HTMLIFrameElement | null = null;
 
-function load(options: { search?: string; framed?: boolean; origins?: string } = {}): KailoEmbedRuntime {
+function load(options: { search?: string; framed?: boolean; origins?: string; features?: string } = {}): KailoEmbedRuntime {
   window.history.replaceState(null, "", `/component/${options.search ?? ""}`);
+  if (options.features !== undefined) {
+    const declared = document.createElement("meta");
+    declared.name = "kailo-embed-features";
+    declared.content = options.features;
+    document.head.append(declared);
+  }
   const meta = document.createElement("meta");
   meta.name = "kailo-web-origin";
   meta.content = options.origins ?? KAILO;
@@ -35,9 +41,9 @@ function fromParent(data: unknown, origin = KAILO, from: Window | null = host?.c
 beforeEach(() => {
   delete window.KailoEmbed;
   window.sessionStorage.clear();
-  for (const name of ["data-kailo-theme", "data-kailo-embedded", "lang", "style"])
+  for (const name of ["data-kailo-theme", "data-kailo-embedded", "data-kailo-runtime", "data-kailo-theme-switching", "lang", "style"])
     document.documentElement.removeAttribute(name);
-  document.head.querySelectorAll('meta[name="kailo-web-origin"]').forEach((meta) => meta.remove());
+  document.head.querySelectorAll('meta[name="kailo-web-origin"], meta[name="kailo-embed-features"]').forEach((meta) => meta.remove());
 });
 
 afterEach(() => {
@@ -151,5 +157,103 @@ describe("kailo-embed.js", () => {
     const embed = load();
     fromParent({ source: "kailo-host", version: 1, type: "preferences", values: { "documents.spellcheck": false } }, KAILO, window);
     expect(embed.getPreferences()).toEqual({});
+  });
+});
+
+// DD-152 (07 §4.8.7, V-SCN-252..254): page shell API.
+describe("kailo-embed.js page shell (DD-152)", () => {
+  function framedWithSpy(features = "page toast confirm shortcuts") {
+    host = document.createElement("iframe");
+    document.body.append(host);
+    const posted = vi.spyOn(host.contentWindow!, "postMessage");
+    const embed = load({ framed: true, features });
+    return { embed, posted };
+  }
+  const connect = () => fromParent({ source: "kailo-host", version: 1, type: "presentation", theme: "light", locale: "zh-CN" });
+  const page: KailoPage & { actions: NonNullable<KailoPage["actions"]> } = { title: "季度报告", breadcrumbs: [{ id: "/ws/a", label: "个人文件" }], tabs: [{ id: "home", label: "主页" }, { id: "all", label: "所有文件" }],
+    activeTab: "all", actions: [{ id: "upload", label: "上传", variant: "primary", icon: "upload" }, { id: "mkdir", label: "新建文件夹" }] };
+
+  it("announces the declared features in ready and marks the Kailo runtime", () => {
+    const { embed, posted } = framedWithSpy("page toast bogus page");
+    expect(embed.features).toEqual(["page", "toast"]);
+    expect(posted).toHaveBeenCalledWith({ source: "kailo-embed", version: 1, type: "ready", features: ["page", "toast"] }, KAILO);
+    expect(document.documentElement.hasAttribute("data-kailo-runtime")).toBe(true);
+  });
+
+  it("sends a validated page header and re-sends it when Kailo first answers", () => {
+    const { embed, posted } = framedWithSpy();
+    expect(embed.setPage(page)).toBe(true);
+    const sent = { source: "kailo-embed", version: 1, type: "page",
+      page: { ...page, actions: [page.actions[0]!, { id: "mkdir", label: "新建文件夹", variant: "secondary" }] } };
+    expect(posted).toHaveBeenLastCalledWith(sent, KAILO);
+    posted.mockClear();
+    connect();
+    expect(posted).toHaveBeenCalledWith(sent, KAILO);
+    expect(() => embed.setPage({ title: "" })).toThrow(TypeError);
+    expect(() => embed.setPage({ ...page, activeTab: "missing" })).toThrow(TypeError);
+    expect(() => embed.setPage({ ...page, actions: [page.actions[0]!, { ...page.actions[0]!, id: "b" }] })).toThrow(TypeError);
+    expect(() => embed.setPage({ title: "x", actions: [{ id: "a", label: "a", icon: "skull" as never }] })).toThrow(TypeError);
+  });
+
+  it("does nothing for pages that did not declare the feature", () => {
+    const { embed } = framedWithSpy("toast");
+    expect(embed.setPage(page)).toBe(false);
+    expect(embed.confirm({ title: "删除？" })).toBeNull();
+  });
+
+  it("delivers navigate and action only for ids of the current header", () => {
+    const { embed } = framedWithSpy();
+    const navigations: unknown[] = [];
+    const actions: string[] = [];
+    embed.onNavigate((target) => navigations.push(target));
+    embed.onAction((id) => actions.push(id));
+    embed.setPage(page);
+    fromParent({ source: "kailo-host", version: 1, type: "navigate", target: { kind: "tab", id: "home" } });
+    fromParent({ source: "kailo-host", version: 1, type: "navigate", target: { kind: "tab", id: "/ws/a" } });
+    fromParent({ source: "kailo-host", version: 1, type: "navigate", target: { kind: "breadcrumb", id: "/ws/a" } });
+    fromParent({ source: "kailo-host", version: 1, type: "action", id: "upload" });
+    fromParent({ source: "kailo-host", version: 1, type: "action", id: "rm -rf" });
+    fromParent({ source: "kailo-host", version: 1, type: "action", id: "upload" }, "https://evil.example.test");
+    expect(navigations).toEqual([{ kind: "tab", id: "home" }, { kind: "breadcrumb", id: "/ws/a" }]);
+    expect(actions).toEqual(["upload"]);
+  });
+
+  it("hands toasts and confirmations to Kailo once connected, and resolves the confirmation from its answer", async () => {
+    const { embed, posted } = framedWithSpy();
+    expect(embed.toast({ tone: "success", title: "已上传" })).toBe(false);
+    expect(embed.confirm({ title: "删除？" })).toBeNull();
+    connect();
+    expect(embed.toast({ tone: "success", title: "已上传", description: "3 个文件" })).toBe(true);
+    expect(posted).toHaveBeenLastCalledWith({ source: "kailo-embed", version: 1, type: "toast",
+      toast: { tone: "success", title: "已上传", description: "3 个文件" } }, KAILO);
+    expect(embed.toast({ tone: "loud" as never, title: "x" })).toBe(false);
+    const answer = embed.confirm({ tone: "danger", title: "删除 3 个文件？", confirmLabel: "删除" })!;
+    const request = (posted.mock.lastCall![0] as { confirm: { id: string } }).confirm;
+    expect(request).toMatchObject({ tone: "danger", title: "删除 3 个文件？", confirmLabel: "删除" });
+    fromParent({ source: "kailo-host", version: 1, type: "confirm-result", id: "other", confirmed: true });
+    fromParent({ source: "kailo-host", version: 1, type: "confirm-result", id: request.id, confirmed: true });
+    await expect(answer).resolves.toBe(true);
+  });
+
+  it("forwards Kailo's global chords to Kailo before the page's own handlers", () => {
+    const { posted } = framedWithSpy();
+    const own = vi.fn();
+    document.addEventListener("keydown", own);
+    const ctrl = !/mac/i.test(navigator.platform);
+    const event = new KeyboardEvent("keydown", { key: "k", code: "KeyK", ctrlKey: ctrl, metaKey: !ctrl, bubbles: true, cancelable: true });
+    document.body.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(true);
+    expect(own).not.toHaveBeenCalled();
+    expect(posted).toHaveBeenLastCalledWith({ source: "kailo-embed", version: 1, type: "shortcut", shortcut: "search" }, KAILO);
+    // Ordinary typing is untouched.
+    document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "k", bubbles: true }));
+    expect(own).toHaveBeenCalledOnce();
+    document.removeEventListener("keydown", own);
+  });
+
+  it("switches theme without transitions for one frame", () => {
+    framedWithSpy();
+    fromParent({ source: "kailo-host", version: 1, type: "presentation", theme: "dark", locale: "zh-CN" });
+    expect(document.documentElement.hasAttribute("data-kailo-theme-switching")).toBe(true);
   });
 });

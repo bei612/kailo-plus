@@ -7,7 +7,7 @@ import { AuxiliaryPanelBody, AuxiliaryPanelHeaderGroup, AuxiliaryPanelHeaderTitl
 import { useEscapeKey } from "@client-kit/platform/react/thread/useEscapeKey";
 import { useUiT } from "@client-kit/platform/react/context";
 import { TransportError } from "@client-kit/platform/transport";
-import { truncatePubkey } from "@client-kit/platform/format";
+import { unknownMemberLabel } from "@client-kit/platform/react/messages/system/identity";
 import { UserAvatar, type UserAvatarProps } from "@client-kit/platform/react/messages";
 import { resolveUserLabel } from "@client-kit/platform/react/messages/system/identity";
 import { normalizePubkey } from "@client-kit/platform/react/conversations/pubkey";
@@ -179,7 +179,7 @@ export function MessageAuthorProfile({target,onClose,onStartDm,onWidthChange,isS
   const panel = agent.status==="agent"&&agentScope ? <UserProfileAgentPanel key={target.pubkey} isSplitLayout={layout === "split"} isOverlay={isOverlay}
     transparentChrome={transparentChrome} onClose={onClose} widthPx={width.widthPx} onResizeStart={width.onResizeStart}
     isSinglePanelView={isSinglePanelView} splitPaneClamp={false} onResetWidth={width.onResetWidth} canResetWidth={width.canReset}
-    displayName={data?.displayName??(agent.installation.agentDisplayName?.trim()||truncatePubkey(target.pubkey))}
+    displayName={data?.displayName??(agent.installation.agentDisplayName?.trim()||unknownMemberLabel())}
     installation={agent.installation} rows={agent.rows} reload={agent.reload} scope={agentScope}
     profile={data} pubkey={target.pubkey} mediaUrl={(url)=>data?.avatarMediaPaths[url]??url}/>
   : <UserProfilePanelFrame isSplitLayout={layout === "split"} isOverlay={isOverlay} transparentChrome={transparentChrome} onClose={onClose} widthPx={width.widthPx} onResizeStart={width.onResizeStart} isSinglePanelView={isSinglePanelView} splitPaneClamp={false}
@@ -189,7 +189,7 @@ export function MessageAuthorProfile({target,onClose,onStartDm,onWidthChange,isS
     headerLeftContent={<AuxiliaryPanelHeaderGroup><AuxiliaryPanelHeaderTitleBlock title={t("platform.settings.profile")}/></AuxiliaryPanelHeaderGroup>}
     profileBody={
     <AuxiliaryPanelBody className="overflow-y-auto px-4 pb-6" data-testid="user-profile-scroll-body">
-      {data&&agent.status!=="pending"?<ProfileSummaryView displayName={data.displayName??truncatePubkey(data.pubkey)}
+      {data&&agent.status!=="pending"?<ProfileSummaryView displayName={data.displayName??unknownMemberLabel()}
         profile={data} pubkey={data.pubkey} copy={writeTextToClipboard} mediaUrl={(url)=>data.avatarMediaPaths[url]??url}
         messagePending={opening} onMessage={onStartDm?()=>{void openMessage();}:undefined}
         onWave={wave.onWave} wavePending={wave.pending}/>

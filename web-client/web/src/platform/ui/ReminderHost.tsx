@@ -5,7 +5,7 @@ import { loadChannelDirectory } from "@client-kit/platform/react/channel-browser
 import { loadInboxConversations, loadConversationPeople } from "@client-kit/platform/react/new-message";
 import { resolveConversationHeaderParticipants, formatDmParticipantDisplayName } from "@client-kit/platform/react/conversations/dm-participant-display";
 import { getThreadReference } from "@client-kit/platform/react/messages/threading";
-import { truncatePubkey } from "@client-kit/platform/format";
+import { unknownMemberLabel } from "@client-kit/platform/react/messages/system/identity";
 import { TransportError } from "@client-kit/platform/transport";
 import { bff, queryReminders, publishReminder, reminderSource } from "../bff-client";
 import { useBrowserNotifications } from "./BrowserNotifications";
@@ -31,7 +31,7 @@ export function BffReminderHost({scopeKey,principalId,onOpen,children}:{scopeKey
         if(author.pubkey!==event.pubkey)throw new TransportError("Reminder author mismatch");
         const participants=conversation?resolveConversationHeaderParticipants(conversation,principalId,await loadConversationPeople(bff,check)):null;check();
         if(conversation&&!participants)throw new TransportError("Reminder conversation participants unavailable");
-        return {authorLabel:author.displayName||truncatePubkey(author.pubkey),avatarUrl:author.avatarUrl?author.avatarMediaPaths[author.avatarUrl]??null:null,
+        return {authorLabel:author.displayName||unknownMemberLabel(),avatarUrl:author.avatarUrl?author.avatarMediaPaths[author.avatarUrl]??null:null,
           channel:{channelType:conversation?"dm":workspace!.channel.channelType},channelLabel:conversation?formatDmParticipantDisplayName(participants!):workspace!.channel.name};
       },
       navigate:async(target)=>{check();const {event}=await reminderSource({channelId:target.channelId,eventId:target.eventId});check();

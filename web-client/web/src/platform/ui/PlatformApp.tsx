@@ -832,7 +832,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
               onCopyTitle={async (title) => {
                 try { await writeTextToClipboard(title); toast.success(translate(getLocale(), "platform.profile.copied")); }
                 catch { toast.error(translate(getLocale(), "platform.profile.copyFailed")); }
-              }} /> : tab === "new-message" || tab === "agents" || tab === "projects" || tab === "inbox" ? null : <header className="flex h-[52px] shrink-0 items-center border-b px-5 text-headline font-semibold tracking-[-0.006em]" data-kailo-page-header>
+              }} /> : tab === "new-message" || tab === "agents" || tab === "projects" || tab === "inbox" || tab === "application" ? null : <header className="flex h-[52px] shrink-0 items-center border-b px-5 text-headline font-semibold tracking-[-0.006em]" data-kailo-page-header>
             {tabLabel(tab)}
           </header>}
           {tab === "channel" && active && activeRow?.isMember === true && channel.data ?

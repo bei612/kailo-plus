@@ -11,7 +11,8 @@ const Avatar = React.forwardRef<
   <AvatarPrimitive.Root
     ref={ref}
     className={cn(
-      "relative flex h-9 w-9 shrink-0 overflow-hidden rounded-full",
+      // DD-141 §5: Kailo avatars are rounded squares (28%), not Buzz circles.
+      "relative flex h-9 w-9 shrink-0 overflow-hidden rounded-[28%]",
       className,
     )}
     {...props}

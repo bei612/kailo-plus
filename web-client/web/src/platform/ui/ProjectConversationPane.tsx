@@ -19,6 +19,7 @@ import { writeTextToClipboard } from "@/shared/lib/clipboard";
 import { buildMessageLink } from "@client-kit/platform/react/composer/features/messages/lib/messageLink";
 import { ChannelThreadPane } from "./ChannelThreadPane";
 import { useWorkspaceThread } from "./useWorkspaceThread";
+import { unknownMemberLabel } from "@client-kit/platform/react/messages/system/identity";
 
 export function ProjectConversationPane({ hit, onClose, widthPx, canResetWidth, onResetWidth, onResizeStart, principalId }:
   ProjectConversationRenderProps & { principalId: string }) {
@@ -44,7 +45,7 @@ export function ProjectConversationPane({ hit, onClose, widthPx, canResetWidth, 
       <p className="text-sm text-muted-foreground">{t("projects.conversation.loadFailed")}</p>
       <Button onClick={onClose} size="sm" variant="outline">{t("projects.conversation.close")}</Button>
     </div>);
-  const author = members.data.find(member => member.pubkeys.includes(root.pubkey))?.displayName ?? root.pubkey.slice(0, 8);
+  const author = members.data.find(member => member.pubkeys.includes(root.pubkey))?.displayName ?? unknownMemberLabel();
   const selected: TimelineMessage = { id: root.id, pubkey: root.pubkey, signerPubkey: root.pubkey, kind: root.kind, body: root.content,
     tags: root.tags, createdAt: root.createdAt, depth: 0, edited: root.edited, author,
     time: relativeTime(locale, new Date(root.createdAt * 1000).toISOString()), ...inboxThread(root.tags) };

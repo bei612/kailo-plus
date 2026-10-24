@@ -3,8 +3,8 @@
 // Input events have already passed the host's Relay/BFF authorization and signature checks.
 import type { RelayEvent } from "../../forum/channelWindowResponse";
 import type { TimelineReaction } from "../types";
-import type { UserProfileLookup } from "../system/identity";
-import { truncateNpub } from "../../conversations/pubkey";
+import { unknownMemberLabel, type UserProfileLookup } from "../system/identity";
+import { translateCurrent } from "../../../i18n";
 import { KIND_REACTION, KIND_DELETION, KIND_NIP29_DELETE_EVENT } from "../thread/kinds";
 
 const HEX_RE = /^[0-9a-f]+$/i;
@@ -112,10 +112,10 @@ export function buildMessageReactions<E extends RelayEvent>(
     const profile = profiles?.[actorPubkey];
     const displayName =
       currentPubkeyLower && actorPubkey === currentPubkeyLower
-        ? "You"
+        ? translateCurrent("messages.system.you")
         : profile?.displayName?.trim() ||
           profile?.nip05Handle?.trim() ||
-          truncateNpub(actorPubkey);
+          unknownMemberLabel();
     existing.users.push({
       pubkey: actorPubkey,
       displayName,
