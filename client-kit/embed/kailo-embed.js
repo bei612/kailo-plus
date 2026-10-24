@@ -29,7 +29,8 @@
  *   component -> Kailo  {type:"confirm", confirm:{id, tone, title, description?, confirmLabel?, cancelLabel?}}
  *   component -> Kailo  {type:"shortcut", shortcut:"search"|"settings"|"back"|"forward"}
  *   Kailo -> component  {type:"navigate", target:{kind:"tab"|"breadcrumb", id}}
- *   Kailo -> component  {type:"action", id}
+ *   Kailo -> component  {type:"action", id, files?, paths?}   files: File[] the user chose in
+ *                       Kailo's picker for an action declaring files:{accept, multiple, directory}
  *   Kailo -> component  {type:"confirm-result", id, confirmed}
  *   Kailo -> component  presentation carries features:[...] the host draws/handles;
  *                       <html data-kailo-host-features> mirrors it once known
@@ -57,6 +58,8 @@
   var TOAST_TONES = ["success", "info", "warning", "error"];
   var CONFIRM_TONES = ["default", "danger"];
   var CONTROL = /[\u0000-\u001f\u007f]/;
+  var ACCEPT = /^[A-Za-z0-9.+\-\/*, ]{1,200}$/;
+  var MAX_FILES = 1000;
   var root = doc.documentElement;
   var framed = false;
   try { framed = global.parent !== global; } catch (e) { framed = true; }
@@ -203,6 +206,15 @@
       if (variant === "primary") primaries += 1;
       var out = { id: id, label: label, variant: variant };
       if (icon) out.icon = icon;
+      if (action.files !== undefined) {
+        // DD-157: a file-choosing action; Kailo opens the picker inside the user's click.
+        var files = action.files || {};
+        if (typeof files !== "object" || (files.accept !== undefined && !(typeof files.accept === "string" && ACCEPT.test(files.accept)))) return null;
+        out.files = {};
+        if (files.accept) out.files.accept = files.accept;
+        if (files.multiple === true) out.files.multiple = true;
+        if (files.directory === true) out.files.directory = true;
+      }
       if (action.disabled === true) out.disabled = true;
       if (action.busy === true) out.busy = true;
       actions.push(out);
@@ -278,6 +290,13 @@
     }
   }
 
+  function notifyAction(id, selection) {
+    var targets = actionListeners.slice();
+    for (var i = 0; i < targets.length; i += 1) {
+      try { targets[i](id, selection); } catch (e) { setTimeout(function (error) { return function () { throw error; }; }(e), 0); }
+    }
+  }
+
   function listen(list, listener) {
     if (typeof listener !== "function") throw new TypeError("KailoEmbed listener must be a function");
     list.push(listener);
@@ -348,8 +367,22 @@
     }
     if (data.type === "action") {
       var actionId = opaqueId(data.id);
-      if (actionId && currentPage && currentPage.actions.some(function (action) { return action.id === actionId && !action.disabled; }))
-        notify(actionListeners, actionId);
+      var declaredAction = null;
+      if (actionId && currentPage) currentPage.actions.forEach(function (action) { if (action.id === actionId && !action.disabled) declaredAction = action; });
+      if (!declaredAction) return;
+      if (!declaredAction.files) { if (data.files === undefined) notifyAction(actionId); return; }
+      // Files only for an action that declared them; every entry a File, paths parallel and bounded.
+      var chosen = data.files;
+      var paths = data.paths === undefined ? [] : data.paths;
+      var FileType = global.File;
+      if (!Array.isArray(chosen) || !chosen.length || chosen.length > MAX_FILES || !FileType) return;
+      if (!declaredAction.files.multiple && !declaredAction.files.directory && chosen.length !== 1) return;
+      if (!Array.isArray(paths) || (paths.length && paths.length !== chosen.length)) return;
+      for (var f = 0; f < chosen.length; f += 1) {
+        if (!(chosen[f] instanceof FileType)) return;
+        if (paths.length && !(typeof paths[f] === "string" && paths[f].length <= 1024 && !CONTROL.test(paths[f]))) return;
+      }
+      notifyAction(actionId, { files: chosen.slice(), paths: paths.length ? paths.slice() : chosen.map(function (file) { return file.name; }) });
       return;
     }
     if (data.type === "confirm-result") {
@@ -460,7 +493,10 @@
     hostSupports: function (feature) { return hostHas(feature); },
     /** listener({kind: "tab"|"breadcrumb", id}); only ids of the current header arrive. */
     onNavigate: function (listener) { return listen(navigateListeners, listener); },
-    /** listener(id) when the user activates one of the current header's actions in Kailo. */
+    /**
+     * listener(id, selection?) when the user activates one of the current header's actions in
+     * Kailo; selection = {files: File[], paths: string[]} for an action declaring `files`.
+     */
     onAction: function (listener) { return listen(actionListeners, listener); },
     /**
      * DD-157: Kailo shows the toast (one notification surface). Returns false when no

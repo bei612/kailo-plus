@@ -229,6 +229,22 @@ describe("kailo-embed.js page shell (DD-157)", () => {
     expect(actions).toEqual(["upload"]);
   });
 
+  it("delivers files chosen in Kailo only to an action that declared them", () => {
+    const { embed } = framedWithSpy();
+    const seen: unknown[] = [];
+    embed.onAction((id, selection) => seen.push([id, selection?.paths ?? null]));
+    embed.setPage({ title: "x", actions: [{ id: "upload", label: "上传", variant: "primary", files: { multiple: true, accept: ".pdf,image/*" } },
+      { id: "mkdir", label: "新建文件夹" }] });
+    const file = new File(["a"], "a.pdf");
+    fromParent({ source: "kailo-host", version: 1, type: "action", id: "upload", files: [file, new File(["b"], "b.pdf")], paths: ["a.pdf", "b.pdf"] });
+    fromParent({ source: "kailo-host", version: 1, type: "action", id: "mkdir", files: [file] });
+    fromParent({ source: "kailo-host", version: 1, type: "action", id: "upload", files: ["not a file"] });
+    fromParent({ source: "kailo-host", version: 1, type: "action", id: "upload", files: [file], paths: ["a\u0000"] });
+    fromParent({ source: "kailo-host", version: 1, type: "action", id: "mkdir" });
+    expect(seen).toEqual([["upload", ["a.pdf", "b.pdf"]], ["mkdir", null]]);
+    expect(() => embed.setPage({ title: "x", actions: [{ id: "u", label: "u", files: { accept: "<script>" } }] })).toThrow(TypeError);
+  });
+
   it("hands toasts and confirmations to Kailo once connected, and resolves the confirmation from its answer", async () => {
     const { embed, posted } = framedWithSpy();
     expect(embed.toast({ tone: "success", title: "已上传" })).toBe(false);

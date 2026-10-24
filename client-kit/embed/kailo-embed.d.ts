@@ -43,6 +43,12 @@ export interface KailoPageAction {
   /** primary: at most one, the page's main action; secondary: outline button; menu: in the "more" menu. */
   variant?: "primary" | "secondary" | "menu";
   icon?: KailoActionIcon;
+  /**
+   * DD-157: the action needs files the user chooses. Kailo opens its file picker inside the
+   * user's click (a frame never receives the host's user activation) and delivers the files
+   * with the action. accept: same syntax as <input accept>, 1–200 chars.
+   */
+  files?: { accept?: string; multiple?: boolean; directory?: boolean };
   disabled?: boolean;
   busy?: boolean;
 }
@@ -63,6 +69,12 @@ export interface KailoPage {
 export interface KailoNavigateTarget {
   kind: "tab" | "breadcrumb";
   id: string;
+}
+
+/** Files chosen in Kailo's picker; paths are relative paths for a directory pick, else file names. */
+export interface KailoFileSelection {
+  files: File[];
+  paths: string[];
 }
 
 export interface KailoToast {
@@ -101,7 +113,7 @@ export interface KailoEmbedRuntime {
   /** DD-157: the Kailo host announced this feature; false until it answered. Re-check in onChange. */
   hostSupports(feature: KailoEmbedFeature): boolean;
   onNavigate(listener: (target: KailoNavigateTarget) => void): () => void;
-  onAction(listener: (id: string) => void): () => void;
+  onAction(listener: (id: string, selection?: KailoFileSelection) => void): () => void;
   /** DD-157: shown by Kailo; false at top level (show your own Kailo-styled toast). */
   toast(toast: KailoToast): boolean;
   /** DD-157: Kailo's confirmation dialog; null at top level (use your own Kailo-styled dialog). */

@@ -235,7 +235,7 @@ export function NativeApplicationPage({ bindingId, onBack, title, path }: { bind
     {onBack ? <div className="px-5 pt-3"><Button onClick={onBack}>{t("platform.back")}</Button></div> : null}
     <NativePageHeader productTitle={productTitle} category={entry?.category ?? null}
       page={connected && features.includes("page") ? embedPage : null}
-      onNavigate={(kind, id) => postToFrame(navigateMessage(kind, id))} onAction={(id) => postToFrame(actionMessage(id))} />
+      onNavigate={(kind, id) => postToFrame(navigateMessage(kind, id))} onAction={(id, selection) => postToFrame(actionMessage(id, selection))} />
     {unhandshaked ? <div className="flex flex-wrap items-center gap-2 px-5 py-3">
       <Button disabled={loading || authenticationPending} onClick={() => signInToService(page.url)}>{t("bindings.signInNative")}</Button>
       <p className="text-sm text-muted-foreground">{t("bindings.nativeBoundary")}</p></div> : null}

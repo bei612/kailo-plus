@@ -29,7 +29,8 @@ export type EmbedActionIcon = (typeof EMBED_ACTION_ICONS)[number];
 export type EmbedShortcut = "search" | "settings" | "back" | "forward";
 
 export interface EmbedPageItem { id: string; label: string }
-export interface EmbedPageAction { id: string; label: string; variant: "primary" | "secondary" | "menu"; icon?: EmbedActionIcon; disabled?: boolean; busy?: boolean }
+export interface EmbedFilePick { accept?: string; multiple?: boolean; directory?: boolean }
+export interface EmbedPageAction { id: string; label: string; variant: "primary" | "secondary" | "menu"; icon?: EmbedActionIcon; files?: EmbedFilePick; disabled?: boolean; busy?: boolean }
 export interface EmbedPage { title: string; breadcrumbs: EmbedPageItem[]; tabs: EmbedPageItem[]; activeTab?: string; actions: EmbedPageAction[] }
 export interface EmbedToast { tone: "success" | "info" | "warning" | "error"; title: string; description?: string }
 export interface EmbedConfirm { id: string; tone: "default" | "danger"; title: string; description?: string; confirmLabel?: string; cancelLabel?: string }
@@ -92,7 +93,17 @@ export function parseEmbedPage(value: unknown): EmbedPage | null {
     const variant = member(raw?.variant ?? "secondary", ["primary", "secondary", "menu"] as const);
     const icon = raw?.icon === undefined ? undefined : member(raw.icon, EMBED_ACTION_ICONS);
     if (!id || !label || !variant || icon === null || actions.some((action) => action.id === id)) return null;
-    actions.push({ id, label, variant, ...(icon ? { icon } : {}), ...(raw.disabled === true ? { disabled: true } : {}), ...(raw.busy === true ? { busy: true } : {}) });
+    let files: EmbedFilePick | undefined;
+    if (raw.files !== undefined) {
+      // DD-157: a file-choosing action; Kailo opens its picker inside the user's click.
+      const pick = raw.files as Record<string, unknown> | null;
+      if (typeof pick !== "object" || pick === null) return null;
+      if (pick.accept !== undefined && !(typeof pick.accept === "string" && /^[A-Za-z0-9.+\-/*, ]{1,200}$/.test(pick.accept))) return null;
+      files = { ...(pick.accept ? { accept: pick.accept as string } : {}), ...(pick.multiple === true ? { multiple: true } : {}),
+        ...(pick.directory === true ? { directory: true } : {}) };
+    }
+    actions.push({ id, label, variant, ...(icon ? { icon } : {}), ...(files ? { files } : {}),
+      ...(raw.disabled === true ? { disabled: true } : {}), ...(raw.busy === true ? { busy: true } : {}) });
   }
   if (actions.filter((action) => action.variant === "primary").length > 1) return null;
   return { title, breadcrumbs, tabs, ...(activeTab ? { activeTab } : {}), actions };
@@ -152,8 +163,32 @@ export function navigateMessage(kind: "tab" | "breadcrumb", id: string) {
   return { source: "kailo-host", version: EMBED_PROTOCOL_VERSION, type: "navigate", target: { kind, id } } as const;
 }
 
-export function actionMessage(id: string) {
-  return { source: "kailo-host", version: EMBED_PROTOCOL_VERSION, type: "action", id } as const;
+/** At most this many files travel with one action (07 §4.8.7). */
+export const EMBED_MAX_FILES = 1000;
+
+export function actionMessage(id: string, selection?: { files: File[]; paths: string[] }) {
+  return selection
+    ? { source: "kailo-host", version: EMBED_PROTOCOL_VERSION, type: "action", id, files: selection.files, paths: selection.paths } as const
+    : { source: "kailo-host", version: EMBED_PROTOCOL_VERSION, type: "action", id } as const;
+}
+
+/**
+ * DD-157: open Kailo's file picker for a header action inside the user's click (the frame
+ * never receives the host's user activation). Resolves with the chosen files and their
+ * relative paths; nothing is read, stored or uploaded by Kailo.
+ */
+export function pickFiles(pick: EmbedFilePick, onPicked: (selection: { files: File[]; paths: string[] }) => void): void {
+  const input = document.createElement("input");
+  input.type = "file";
+  if (pick.accept) input.accept = pick.accept;
+  input.multiple = pick.multiple === true || pick.directory === true;
+  if (pick.directory) input.setAttribute("webkitdirectory", "");
+  input.addEventListener("change", () => {
+    const files = [...(input.files ?? [])].slice(0, EMBED_MAX_FILES);
+    if (!files.length) return;
+    onPicked({ files, paths: files.map((file) => file.webkitRelativePath || file.name) });
+  }, { once: true });
+  input.click();
 }
 
 export function confirmResultMessage(id: string, confirmed: boolean) {

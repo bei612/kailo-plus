@@ -178,6 +178,23 @@ describe("DD-157 component page shell", () => {
     expect(host.textContent).not.toContain("伪造");
   });
 
+  it("opens Kailo's file picker inside the click and sends the chosen files with the action", async () => {
+    const { target, posted, host } = await mount({ locale: "zh-CN" });
+    await fromFrame(target, ready);
+    await fromFrame(target, { source: "kailo-embed", version: 1, type: "page",
+      page: { title: "x", actions: [{ id: "upload", label: "上传", variant: "primary", files: { multiple: true } }] } });
+    let picker: HTMLInputElement | null = null;
+    const click = vi.spyOn(HTMLInputElement.prototype, "click").mockImplementation(function (this: HTMLInputElement) { picker = this; });
+    await act(async () => { button(host, "上传").click(); });
+    click.mockRestore();
+    expect(picker!.type).toBe("file");
+    expect(picker!.multiple).toBe(true);
+    const file = new File(["a"], "a.pdf");
+    Object.defineProperty(picker!, "files", { value: [file] });
+    await act(async () => { picker!.dispatchEvent(new Event("change")); });
+    expect(posted).toHaveBeenLastCalledWith(actionMessage("upload", { files: [file], paths: ["a.pdf"] }), page.origin);
+  });
+
   it("does not wait for a header from a page that did not declare one", async () => {
     const { host, target } = await mount();
     await fromFrame(target, { source: "kailo-embed", version: 1, type: "ready" });

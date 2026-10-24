@@ -12,7 +12,7 @@ import { Button } from "./profile/buzz/shared/ui/button";
 import { AgentAlertDialog, AlertDialogAction, AlertDialogCancel } from "./agent-library/AgentAlertDialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "./sidebar/dropdown-menu";
 import { useT } from "./context";
-import type { EmbedActionIcon, EmbedConfirm, EmbedPage } from "./native-embed-host";
+import { pickFiles, type EmbedActionIcon, type EmbedConfirm, type EmbedPage, type EmbedPageAction } from "./native-embed-host";
 
 export type NativePageCategoryKey = "files" | "knowledge" | "data" | null;
 
@@ -40,9 +40,14 @@ export function NativePageHeader({ productTitle, category, page, onNavigate, onA
   category: NativePageCategoryKey;
   page: EmbedPage | null;
   onNavigate: (kind: "tab" | "breadcrumb", id: string) => void;
-  onAction: (id: string) => void;
+  onAction: (id: string, selection?: { files: File[]; paths: string[] }) => void;
 }) {
   const t = useT();
+  // A file-choosing action opens Kailo's picker within this click (DD-157, 07 §4.8.7).
+  const activate = (action: EmbedPageAction) => {
+    if (action.files) pickFiles(action.files, (selection) => onAction(action.id, selection));
+    else onAction(action.id);
+  };
   const Glyph = category ? CATEGORY_ICONS[category] : AppWindow;
   const crumbs = page?.breadcrumbs ?? [];
   // A component landing page titled with the product name itself is not repeated (云盘 › 云盘).
@@ -77,7 +82,7 @@ export function NativePageHeader({ productTitle, category, page, onNavigate, onA
         {ordered.map((action) => {
           const Icon = action.icon ? ACTION_ICONS[action.icon] : null;
           return <Button key={action.id} type="button" variant={action.variant === "primary" ? "default" : "outline"}
-            disabled={action.disabled || action.busy} aria-busy={action.busy || undefined} onClick={() => onAction(action.id)}>
+            disabled={action.disabled || action.busy} aria-busy={action.busy || undefined} onClick={() => activate(action)}>
             {action.busy ? <Spinner /> : Icon ? <Icon strokeWidth={1.75} /> : null}{action.label}</Button>;
         })}
         {menu.length ? <DropdownMenu>
@@ -88,7 +93,7 @@ export function NativePageHeader({ productTitle, category, page, onNavigate, onA
           <DropdownMenuContent align="end">
             {menu.map((action) => {
               const Icon = action.icon ? ACTION_ICONS[action.icon] : null;
-              return <DropdownMenuItem key={action.id} disabled={action.disabled || action.busy} onSelect={() => onAction(action.id)}>
+              return <DropdownMenuItem key={action.id} disabled={action.disabled || action.busy} onSelect={() => activate(action)}>
                 {Icon ? <Icon className="size-4 text-muted-foreground" strokeWidth={1.75} /> : null}{action.label}</DropdownMenuItem>;
             })}
           </DropdownMenuContent>
