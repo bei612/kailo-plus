@@ -151,8 +151,9 @@ def _model_config(r, h, models):
             document = document.replace("${WREN_MODEL_EMBEDDING_ID}", models["embedding"]["model"]) \
                 .replace("${AGENTGATEWAY_MODEL_BASE_URL}", models["embedding"]["apiBase"])
         document = document.replace("${WREN_MODEL_EMBEDDING_DIM}", str(models["embedding"]["dimension"]))
-        # The declared isolated upstreams are keyless: no key name, no key file entry.
-        document = "\n".join(line for line in document.split("\n") if "api_key_name: ${WREN_MODEL_API_KEY_NAME}" not in line)
+        # The declared upstreams take no credential, but the OpenAI-compatible client refuses an empty
+        # key: the runner supplies a random per-run value (ai.env) that authenticates nothing.
+        document = document.replace("${WREN_MODEL_API_KEY_NAME}", "KAILO_MODEL_API_KEY")
         out.append(document)
     rendered = "\n---\n".join(out)
     h.require(not any("${" in line for line in rendered.split("\n") if not line.lstrip().startswith("#")),
@@ -172,7 +173,7 @@ def _secrets(r, h):
     h.write_private(sec / "database-url", url)
     h.write_private(sec / "reader-password", h.secret_text(40))
     h.write_private(sec / "browser-oidc.env", f"WREN_OIDC_CLIENT_SECRET={h.secret_text(48)}\nOIDC_COOKIE_SECRET={secrets.token_hex(32)}\n")
-    h.write_private(sec / "ai.env", "")
+    h.write_private(sec / "ai.env", f"KAILO_MODEL_API_KEY=unauthenticated-{secrets.token_hex(16)}\n")
     keys = h.private_dir(d / "data-keys")
     h.write_private(keys / "encryption-password", h.secret_text(48))
     h.write_private(keys / "encryption-salt", h.secret_text(32))
