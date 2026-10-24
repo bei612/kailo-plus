@@ -300,6 +300,9 @@ fn valid_deletion_request(request: &PublishRequest) -> bool {
     })
 }
 
+/// Installation, Agent public key and the key's SecretRef parts (locator, version, audience).
+type OwnedAgentKeyRow = (Uuid, String, Option<String>, Option<i32>, Option<String>);
+
 /// DD-142: the SERVER keys of an AGENT author in this Workspace channel when the caller
 /// owns its ACTIVE Installation (Core owner fact and fresh SpiceDB `manage`), the
 /// Installation is bound to the channel, and the key reference is the Installation's
@@ -310,7 +313,7 @@ async fn owned_agent_keys(
     workspace: Uuid,
     author: &nostr::PublicKey,
 ) -> Result<Option<nostr::Keys>, Response> {
-    let row: Option<(Uuid, String, Option<String>, Option<i32>, Option<String>)> = sqlx::query_as(
+    let row: Option<OwnedAgentKeyRow> = sqlx::query_as(
         "select inst.resource_id,a.pubkey,a.private_key_secret_ref,a.private_key_secret_version,
                 a.private_key_secret_audience
          from identity.buzz_identity_binding a
