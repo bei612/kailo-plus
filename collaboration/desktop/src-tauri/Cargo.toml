@@ -90,6 +90,8 @@ url = "2"
 buzz_core_pkg = { package = "buzz-core", path = "../../crates/buzz-core" }
 buzz_sdk_pkg = { package = "buzz-sdk", path = "../../crates/buzz-sdk", features = ["media"] }
 buzz_ws_client_pkg = { package = "buzz-ws-client", path = "../../crates/buzz-ws-client" }
+# DD-118/DD-160: the Projects git plumbing shared with Kailo Core.
+buzz_project_git = { package = "buzz-project-git", path = "../../crates/buzz-project-git" }
 base64 = "0.22"
 sha2 = "0.11"
 chrono = { version = "0.4", features = ["serde"] }
