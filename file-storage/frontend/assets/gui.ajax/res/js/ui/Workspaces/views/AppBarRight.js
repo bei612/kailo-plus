@@ -25,7 +25,7 @@ const {Toolbar} = Pydio.requireLib('components');
 const {ThemedContainers:{IconButton}} = Pydio.requireLib('hoc');
 
 
-const AppBarRight = ({pydio, muiTheme, styles, containerStyle, searchIconButton, searchIconCallback, searchView, searchTools, searchViewTransition, showInfoPanel, infoPanelOpen, showChatTab, chatOpen, onUpdateSearchView, onToggleRightPanel, displayMode}) => {
+const AppBarRight = ({pydio, muiTheme, styles, containerStyle, hideSearch = false, searchIconButton, searchIconCallback, searchView, searchTools, searchViewTransition, showInfoPanel, infoPanelOpen, showChatTab, chatOpen, onUpdateSearchView, onToggleRightPanel, displayMode}) => {
 
     const {breakpoint = 'md'} = muiTheme;
     const smallScreen = (breakpoint==='s'|| breakpoint==='xs')
@@ -33,7 +33,7 @@ const AppBarRight = ({pydio, muiTheme, styles, containerStyle, searchIconButton,
 
     return (
         <div style={containerStyle}>
-            {!smallScreen && !searchIconButton &&
+            {!smallScreen && !hideSearch && !searchIconButton &&
                 <UnifiedSearchForm
                     style={{flex: 1}}
                     active={searchView}
@@ -45,7 +45,7 @@ const AppBarRight = ({pydio, muiTheme, styles, containerStyle, searchIconButton,
                     onRequestClose={()=>onUpdateSearchView(false)}
                 />
             }
-            {!smallScreen && searchIconButton &&
+            {!smallScreen && !hideSearch && searchIconButton &&
                 <IconButton
                     iconClassName={"mdi mdi-magnify"}
                     style={styles.buttonsStyle}

@@ -135,6 +135,13 @@ const defaultWidth = 294
 // rail user menu, theme toggle and notification bell are not rendered.
 const kailoMode = () => !!(typeof window !== 'undefined' && window.KailoCells && window.KailoCells.kailoMode && window.KailoCells.kailoMode())
 
+// DD-157 (07 §4.8.7, 20 §13.2): inside a Kailo frame Kailo draws the page
+// header and its tabs (主页 / 所有文件 / 收藏) replace this rail. Only the list
+// pane stays: the location tree, or the favorites under the 收藏 tab.
+const kailoCells = () => (typeof window !== 'undefined' && window.KailoCells) || null
+const pageHosted = () => !!(kailoCells() && kailoCells().pageHosted && kailoCells().pageHosted())
+const LIST_PANE_WIDTH = 264, LIST_PANE_MIN = 220, LIST_PANE_MAX = 360
+
 let RailPanel = ({
                      style = {},
                      railPanelStyle={},
@@ -161,6 +168,11 @@ let RailPanel = ({
     const [ASLib, setASLib] = useState()
     const [unreadCount, setUnreadCount] = useState(0)
     const {wsDisconnected, running, jobs, progress} = useRunningTasksMonitor({pydio, statusString:'Any'})
+    // DD-157: Kailo's first answer can hand the header back (an older Kailo).
+    const [hosted, setHosted] = useState(pageHosted)
+    useEffect(() => (kailoCells() && kailoCells().onPageHosted ? kailoCells().onPageHosted(setHosted) : undefined), [])
+    const [listPane, setListPane] = useState(() => (kailoCells() && kailoCells().listPane ? kailoCells().listPane() : 'files'))
+    useEffect(() => (kailoCells() && kailoCells().onListPane ? kailoCells().onListPane(setListPane) : undefined), [])
 
     const {breakpoint} = muiTheme;
     const smallScreen = breakpoint === 'xs'
@@ -489,6 +501,43 @@ let RailPanel = ({
             }
         </div>
     )
+
+    if (hosted) {
+        const gateway = user.getActiveRepositoryObject().accessType === 'gateway'
+        let paneContent = null
+        if (!closed && listPane === 'bookmarks') {
+            paneContent = (
+                <div className={"kailo-list-pane-favorites"} style={{height:'100%', display:'flex', flexDirection:'column', width:'100%', overflow:'hidden'}}>
+                    <div className={"kailo-list-pane-title"}>{kailoCells().text('bookmarks')}</div>
+                    <BookmarksList pydio={pydio} open={true} asPopover={false} useCache={true} onRequestClose={()=>{}}/>
+                </div>
+            )
+        } else if (!closed && gateway) {
+            paneContent = wsBar('')
+        }
+        const stored = resizerWidth === defaultWidth ? LIST_PANE_WIDTH : resizerWidth
+        const paneWidth = Math.min(LIST_PANE_MAX, Math.max(LIST_PANE_MIN, stored))
+        return (
+            <div className="left-panel kailo-list-pane-host" style={{height: '100%', display: 'flex'}} onClick={onClick} onMouseOver={onMouseOver}>
+                {paneContent &&
+                    <Resizable
+                        enable={{top: false, right: true, bottom: false, left: false, topRight: false, bottomRight: false, bottomLeft: false, topLeft: false}}
+                        size={{width: paneWidth, height: '100%'}}
+                        onResizeStop={(e, direction, ref, d)=> updateResizerWidth(paneWidth + d.width)}
+                        minWidth={LIST_PANE_MIN}
+                        maxWidth={LIST_PANE_MAX}
+                        handleStyles={{right: {zIndex: 900, width: 8, right: -4}}}
+                        style={{zIndex: 900}}
+                    >
+                        <div id={"left-rail-active-column"} className={"vertical_layout kailo-list-pane"} style={{flex: 1, height: '100%', overflow:'hidden', ...style}}>
+                            {paneContent}
+                        </div>
+                    </Resizable>
+                }
+                <TasksPanel pydio={pydio} mode={"absolute"} panelStyle={{left: 8, marginLeft: 0, bottom: 8}}/>
+            </div>
+        )
+    }
 
     return (
             <div className="left-panel" style={{

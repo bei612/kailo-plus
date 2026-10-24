@@ -38,13 +38,19 @@ class Themes(unittest.TestCase):
         self.assertEqual(set(generated), {"theme-kailo-light", "theme-kailo-dark"})
         light, dark = generated["theme-kailo-light"], generated["theme-kailo-dark"]
         self.assertEqual((light["type"], dark["type"]), ("light", "dark"))
-        self.assertEqual(set(light["colors"]), set(themes.MAPPING) | {"font-family-base"})
+        self.assertEqual(set(light["colors"]), set(themes.MAPPING) | set(themes.HEADER_ICONS["light"]) | {"font-family-base"})
+        self.assertEqual(set(dark["colors"]), set(themes.MAPPING) | {"font-family-base"})
+        # DD-157: dark header glyphs on the light Kailo header, fully opaque.
+        self.assertEqual(light["colors"]["button-header-normal-icon-offset-x"], "0")
+        self.assertEqual(light["colors"]["header-component-normal-icon-opacity"], "1")
         # Light canvas is Kailo's white background; dark is its content canvas.
         self.assertEqual(light["colors"]["background-normal"], "#ffffff")
-        self.assertEqual(dark["colors"]["background-normal"], "#1a1a1a")
+        self.assertEqual(dark["colors"]["background-normal"], "#121218")
         for theme in generated.values():
             colors = dict(theme["colors"])
             self.assertEqual(colors.pop("font-family-base"), fonts.font_stack(TOKENS))
+            for name in themes.HEADER_ICONS[theme["type"]]:
+                colors.pop(name)
             self.assertTrue(all(len(v) == 7 and v.startswith("#") for v in colors.values()))
 
     def test_a_missing_block_or_token_is_refused(self):
