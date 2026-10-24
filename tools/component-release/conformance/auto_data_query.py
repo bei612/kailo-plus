@@ -413,6 +413,12 @@ def drive(r, args, runtime_env, declaration, h):
                                                  "humanTokenFile": str(prep / "human-token"), "projectId": record["projectId"],
                                                  "modelId": record["modelId"], "manifest": record["manifest"]})
     if not (stages / "stage-2.done").exists():
+        # A failed earlier attempt of stage 2 leaves its isolated OpenBao; it is never reused.
+        if h.exists("container", f"kailo-openbao-conformance-{run_id}"):
+            h.run(["bash", f"{source}/tools/component-release/conformance/isolated-openbao.sh", "down", str(d / "openbao.env")],
+                  log=r.log, check=False)
+            for item in (d / "openbao-state").iterdir():
+                item.unlink()
         r.conformance(2)
     if not (stages / "stage-3.done").exists():
         r.conformance(3)
