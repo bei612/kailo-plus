@@ -118,7 +118,7 @@ pub async fn get_user_state(State(state): State<BffState>, headers: HeaderMap) -
                 .filter_map(|id| EventId::from_hex(id).ok())
                 .collect();
             event_ids.extend(collab.thread_roots());
-            let readable_events = match readable_event_ids(&state, &ctx, &event_ids).await {
+            let readable_events = match own_readable_event_ids(&state, &ctx, &event_ids).await {
                 Ok(events) => events,
                 Err(r) => return r,
             };
@@ -501,6 +501,8 @@ pub async fn put_read_mark(
         }
     }
 
+    // DD-156(2)：本人的读标记写入即让本人的可读事件判定复用失效。
+    forget_own_readable(&ctx);
     // 三端读写同一个值，格式必须是一个：RFC 3339，统一存成 UTC。不校验，
     // 一端写进去的任意字符串在另一端就是解析不了的垃圾。
     let last_read_at = last_read_at
@@ -745,6 +747,89 @@ impl ReadScope {
             _ => false,
         }
     }
+}
+
+type ReadableEvents = HashMap<EventId, (Option<Uuid>, bool)>;
+
+/// DD-156(2)：本人已读状态的 Relay 可读事件判定在同一身份、同一输入下的短时复用。
+/// 远小于 Relay 调用预算窗口（每分钟），只为让窗口聚焦、读标记后的连续重读不重复
+/// 花预算。复用只针对本人自己的读取结果，不跨身份，也不作为授权依据：Workspace 与
+/// 私聊的可见性在每次读取时仍按当前 admission 重新判定。
+const READABLE_REUSE_TTL: std::time::Duration = std::time::Duration::from_secs(10);
+
+struct ReadableReuseEntry {
+    /// 本次判定开始的时刻；复用期从开始算起，判定耗时不延长它。
+    started: std::time::Instant,
+    requested: HashSet<EventId>,
+    events: ReadableEvents,
+}
+
+#[derive(Default)]
+struct ReadableReuse {
+    entries: HashMap<(Uuid, Uuid), ReadableReuseEntry>,
+    /// 读标记写入的时刻：早于它开始的判定结果不再写回。
+    forgotten: HashMap<(Uuid, Uuid), std::time::Instant>,
+}
+
+static READABLE_REUSE: std::sync::OnceLock<std::sync::Mutex<ReadableReuse>> =
+    std::sync::OnceLock::new();
+
+fn readable_reuse() -> std::sync::MutexGuard<'static, ReadableReuse> {
+    READABLE_REUSE
+        .get_or_init(Default::default)
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+}
+
+fn own_reuse_key(ctx: &ExecutionContext) -> (Uuid, Uuid) {
+    (ctx.tenant_id, ctx.tenant_principal_id)
+}
+
+/// 本人读标记写入：丢弃本人的复用结果，并让此前开始的判定不再写回。
+fn forget_own_readable(ctx: &ExecutionContext) {
+    let key = own_reuse_key(ctx);
+    let mut reuse = readable_reuse();
+    reuse.entries.remove(&key);
+    reuse.forgotten.insert(key, std::time::Instant::now());
+}
+
+/// `GET /user-state` 专用：同一身份同一输入在 [`READABLE_REUSE_TTL`] 内复用
+/// [`readable_event_ids`] 的结果。写入路径的准入判定不经过这里，总是重新查证。
+async fn own_readable_event_ids(
+    state: &BffState,
+    ctx: &ExecutionContext,
+    requested: &HashSet<EventId>,
+) -> Result<ReadableEvents, Response> {
+    let key = own_reuse_key(ctx);
+    let started = std::time::Instant::now();
+    {
+        let mut reuse = readable_reuse();
+        reuse
+            .entries
+            .retain(|_, entry| started.duration_since(entry.started) < READABLE_REUSE_TTL);
+        reuse
+            .forgotten
+            .retain(|_, at| started.duration_since(*at) < READABLE_REUSE_TTL);
+        if let Some(entry) = reuse.entries.get(&key) {
+            if entry.requested == *requested {
+                return Ok(entry.events.clone());
+            }
+        }
+    }
+    let events = readable_event_ids(state, ctx, requested).await?;
+    let mut reuse = readable_reuse();
+    let forgotten_since = reuse.forgotten.get(&key).is_some_and(|at| *at >= started);
+    if !forgotten_since && started.elapsed() < READABLE_REUSE_TTL {
+        reuse.entries.insert(
+            key,
+            ReadableReuseEntry {
+                started,
+                requested: requested.clone(),
+                events: events.clone(),
+            },
+        );
+    }
+    Ok(events)
 }
 
 /// 临时查证事件所属的可读原生 Channel（Workspace 或私聊）；正文不入 Core。

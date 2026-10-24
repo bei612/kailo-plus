@@ -750,9 +750,13 @@ export function ChannelPane({
     },
     // Readback is not permission to resend: only a higher CAS version fences
     // the old request. Never advance lastRead optimistically after an error.
+    // DD-156(2): one read mark triggers one user-state re-read. Both consumers (this pane's
+    // query and the shared Inbox state) start together, so the transport shares one GET.
     onSettled: async () => {
-      await queryClient.invalidateQueries({ queryKey: platformQueries.userState.queryKey });
-      await onReadStateChanged?.();
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: platformQueries.userState.queryKey }),
+        onReadStateChanged?.(),
+      ]);
     },
   });
   const readPending = read.isPending;

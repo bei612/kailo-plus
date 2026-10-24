@@ -4,7 +4,7 @@
 // and group sort persist in the same Core CollaborationUserState, keyed by native channel ID.
 import { WorkspaceChannelCreateChannelType, type DiscoverableWorkspace, type WorkspaceView } from "@client-kit/contracts";
 import { loadWorkspaceActivity } from "@client-kit/platform/react/workspace-activity";
-import { TransportError } from "@client-kit/platform/transport";
+import { isRateLimited, rateLimitRetryMs, TransportError } from "@client-kit/platform/transport";
 import { useT } from "@client-kit/platform/react/context";
 import { ChannelGroupSection, type SidebarChannel } from "@client-kit/platform/react/sidebar/channel-group";
 import { ChannelContextMenuItems } from "@client-kit/platform/react/sidebar/channel-context-menu";
@@ -36,6 +36,8 @@ import {
 } from "@client-kit/platform/react/sidebar/custom-channel-section";
 
 type Group = "starred" | "channels" | "forums";
+/** DD-156(3): sidebar re-reads after the query's own rate-limited retries are exhausted. */
+const SIDEBAR_LIMITED_REREADS = 3;
 const NO_SECTIONS: readonly (CustomSidebarSection & { order: number })[] = [];
 const NO_ASSIGNMENTS: Readonly<Record<string, string>> = {};
 
@@ -88,6 +90,25 @@ export function ChannelSidebar({ principalId, workspaces, directory, selectedId,
       return pages;
     },
   });
+  // DD-156(3): a rate-limited read is definitely unprocessed and is retried after Retry-After
+  // (query retries, then a bounded number of re-reads here); it is never shown as a failure.
+  const [limitedRereads, setLimitedRereads] = useState(0);
+  const messagesLimitedError = messages.isError && isRateLimited(messages.error);
+  const messagesRetryingLimited = !messages.isError && messages.isFetching && isRateLimited(messages.failureReason);
+  const { refetch: refetchMessages } = messages;
+  useEffect(() => {
+    if (!messagesLimitedError || limitedRereads >= SIDEBAR_LIMITED_REREADS) return;
+    const timer = setTimeout(() => {
+      setLimitedRereads((count) => count + 1);
+      void refetchMessages();
+    }, rateLimitRetryMs(messages.error) ?? 1_000);
+    return () => clearTimeout(timer);
+  }, [messagesLimitedError, limitedRereads, messages.error, refetchMessages]);
+  useEffect(() => { if (messages.isSuccess && !messages.isFetching) setLimitedRereads(0); }, [messages.isSuccess, messages.isFetching]);
+  const messagesAwaitingReread = messagesLimitedError && (limitedRereads < SIDEBAR_LIMITED_REREADS || messages.isFetching);
+  // Only a real failure shows the failure notice; a pending rate-limited re-read shows its own status.
+  const loadFailed = (messages.isError && !messagesAwaitingReread) || reads.failed;
+  const rateLimited = reads.rateLimited || messagesRetryingLimited || messagesAwaitingReread;
   const preferences = reads.state?.workspacePreferences ?? {};
   const activity = useMemo(() => new Map([...(!messages.isError ? messages.data ?? [] : [])].map(([id, { events }]) => {
     const latest = events.reduce<number | null>((at, event) => Math.max(at ?? event.createdAt, event.createdAt), null);
@@ -271,9 +292,10 @@ export function ChannelSidebar({ principalId, workspaces, directory, selectedId,
     setDeleteSectionTarget(null);
   };
   return <TooltipProvider>
-    {messages.isError || reads.failed ? <p role="alert" className="px-4 text-sm">
+    {loadFailed ? <p role="alert" className="px-4 text-sm">
       {t("platform.loadFailed")} <Button size="sm" onClick={() => { void messages.refetch(); void reads.refresh(); }}>{t("platform.retry")}</Button>
-    </p> : joined.length > 0 && (messages.isPending || reads.state === null) ? <p role="status" className="px-4 text-sm">{t("platform.loading")}</p> : null}
+    </p> : rateLimited ? <p role="status" className="px-4 text-sm">{t("platform.rateLimitedRetrying")}</p>
+      : joined.length > 0 && (messages.isPending || reads.state === null) ? <p role="status" className="px-4 text-sm">{t("platform.loading")}</p> : null}
     {starred.length > 0 ? group("starred", starred) : null}
     <SidebarDndContext enabled={sectionsWritable} sectionIds={sections.map((section) => section.id)}
       onAssignChannel={(channelId, sectionId) => { if (sectionPrefs) runSectionWrite(sectionPrefs.assignChannel(channelId, sectionId)); }}

@@ -263,6 +263,27 @@ impl ApiBudget {
         q.push_back(now);
         Ok(())
     }
+
+    /// DD-156(3)：Relay 自身回 `429` 时给出的 `Retry-After`。只读，不消耗额度：
+    /// 取该身份窗口内最早一次调用离开窗口的剩余秒数（向上取整，至少 1 秒）。
+    /// 窗口内没有调用时返回 1——此时 Relay 的额度被本侧之外的调用占用，本侧
+    /// 没有更好的依据。
+    pub fn retry_after_secs(&self, community_host: &str, pubkey: &str) -> u64 {
+        let now = Instant::now();
+        let slots = self.slots.lock().unwrap_or_else(|e| e.into_inner());
+        let key = (community_host.to_owned(), pubkey.to_owned());
+        let oldest = slots.used.get(&key).and_then(|q| {
+            q.iter()
+                .find(|at| now.duration_since(**at) < self.window)
+                .copied()
+        });
+        let Some(oldest) = oldest else {
+            return 1;
+        };
+        let wait = self.window.saturating_sub(now.duration_since(oldest));
+        let secs = wait.as_secs() + u64::from(wait.subsec_nanos() > 0);
+        secs.max(1)
+    }
 }
 
 #[cfg(test)]
@@ -334,6 +355,34 @@ mod tests {
             b.try_acquire("h", "k").is_err(),
             "t1 仍在窗口内，只恢复一次"
         );
+    }
+
+    #[test]
+    fn retry_after_reads_the_oldest_call_without_spending_budget() {
+        let b = ApiBudget::new(2, Duration::from_secs(60)).expect("预算");
+        // 没有调用时至少 1 秒
+        assert_eq!(b.retry_after_secs("h", "k"), 1);
+        b.try_acquire("h", "k").expect("第 1 次");
+        let secs = b.retry_after_secs("h", "k");
+        // 取最早一次调用离开窗口的剩余秒数
+        assert!((59..=60).contains(&secs), "{secs}");
+        // 只读：反复读取不占额度
+        for _ in 0..5 {
+            b.retry_after_secs("h", "k");
+        }
+        b.try_acquire("h", "k").expect("读取不消耗额度，第 2 次仍可取");
+        // 不跨身份
+        assert_eq!(b.retry_after_secs("h", "other"), 1);
+    }
+
+    #[test]
+    fn retry_after_is_at_least_one_second() {
+        let window = Duration::from_millis(200);
+        let b = ApiBudget::new(1, window).expect("预算");
+        b.try_acquire("h", "k").expect("t0");
+        assert_eq!(b.retry_after_secs("h", "k"), 1, "不足 1 秒向上取整为 1");
+        std::thread::sleep(Duration::from_millis(250));
+        assert_eq!(b.retry_after_secs("h", "k"), 1, "窗口外的调用不计");
     }
 
     #[test]

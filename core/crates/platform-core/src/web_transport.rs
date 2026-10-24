@@ -2882,12 +2882,18 @@ pub(crate) fn error_body(
         .into_response()
 }
 
-/// `LIMIT` 类回应（`apps/06` §4）。Core 预算给出重置时刻时带 `Retry-After`。
+/// `LIMIT` 类回应（`apps/06` §4）。DD-156(3)：限流回应总带 `Retry-After`——Core 预算
+/// 拒绝取预算计算值，挂预算的身份收到 Relay `429` 取预算窗口推算值；两者都没有时
+/// （未挂预算的客户端）取下限 1 秒，客户端据此有上限地自动重读。
 pub(crate) fn limit_response(
     kind: LimitKind,
     retry_after: Option<u64>,
     operation_id: Option<Uuid>,
 ) -> Response {
+    let retry_after = match kind {
+        LimitKind::RateLimited => Some(retry_after.unwrap_or(1).max(1)),
+        _ => retry_after,
+    };
     let (status, reason) = match kind {
         LimitKind::RateLimited => (StatusCode::TOO_MANY_REQUESTS, ReasonCode::RateLimited),
         LimitKind::PayloadTooLarge => (StatusCode::PAYLOAD_TOO_LARGE, ReasonCode::PayloadTooLarge),
@@ -5988,7 +5994,27 @@ mod tests {
             (b["class"].as_str(), b["reason"].as_str()),
             (Some("LIMIT"), Some("RATE_LIMITED"))
         );
-        assert_eq!(retry, None, "Relay 的 429 没有可机读的重置时刻，不编一个");
+        assert_eq!(
+            retry.as_deref(),
+            Some("1"),
+            "DD-156(3)：限流总带 Retry-After，未挂预算时取下限 1 秒"
+        );
+
+        // DD-156(3)：挂预算的身份收到 Relay 自身的 429，按预算窗口推算 Retry-After
+        let (s, retry, b) = parts(relay_error_response(
+            &OperatorError::RelayRateLimited {
+                retry_after_secs: 42,
+                body: String::new(),
+            },
+            None,
+        ))
+        .await;
+        assert_eq!(s, StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(
+            (b["class"].as_str(), b["reason"].as_str()),
+            (Some("LIMIT"), Some("RATE_LIMITED"))
+        );
+        assert_eq!(retry.as_deref(), Some("42"), "Relay 的 429 带预算窗口推算的 Retry-After");
 
         let (s, retry, b) = parts(relay_error_response(
             &OperatorError::BudgetExhausted {
