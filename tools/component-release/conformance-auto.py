@@ -260,7 +260,7 @@ class Run:
         values = {k: v for k, v in state.get("runEnv", {}).items()}
         for key, path in state.get("runEnvFiles", {}).items():
             if key == "CONFORMANCE_MOUNTS":
-                present = [p for p in path.split() if Path(p).is_file()]
+                present = [p for p in path.split() if Path(p).exists()]
                 if present:
                     values[key] = " ".join(present)
             elif Path(path).is_file():
@@ -542,7 +542,8 @@ def file_storage(r, args, runtime_env, declaration):
         "CONFORMANCE_OPENBAO_ENV": str(d / "openbao.env"), "CONFORMANCE_SEED_FILE": str(d / "seed.json"),
         "CONFORMANCE_OBSERVE_FILE": str(d / "observe.json"), "CONFORMANCE_PROVIDER_FILE": str(d / "provider" / "provider.json"),
         "CONFORMANCE_MANIFEST": s["manifest"],
-        "CONFORMANCE_MOUNTS": f"{d}/secrets/admin.pat {d}/secrets/actor.pat"})
+        # Inputs the observer and the suite provider read outside RUN_DIR (stages/).
+        "CONFORMANCE_MOUNTS": f"{d}/secrets/admin.pat {d}/secrets/actor.pat {d}/secrets/service.pat {d}/provider"})
     if not (stages / "stage-0.done").exists():
         r.conformance(0)
     if not (stages / "stage-1.done").exists():
