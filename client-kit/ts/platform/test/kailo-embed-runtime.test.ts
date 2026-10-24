@@ -169,7 +169,7 @@ describe("kailo-embed.js page shell (DD-157)", () => {
     const embed = load({ framed: true, features });
     return { embed, posted };
   }
-  const connect = (features = ["page", "toast", "confirm", "shortcuts"]) =>
+  const connect = (features = ["page", "toast", "confirm", "shortcuts", "files"]) =>
     fromParent({ source: "kailo-host", version: 1, type: "presentation", theme: "light", locale: "zh-CN", features });
   const page: KailoPage & { actions: NonNullable<KailoPage["actions"]> } = { title: "季度报告", breadcrumbs: [{ id: "/ws/a", label: "个人文件" }], tabs: [{ id: "home", label: "主页" }, { id: "all", label: "所有文件" }],
     activeTab: "all", actions: [{ id: "upload", label: "上传", variant: "primary", icon: "upload" }, { id: "mkdir", label: "新建文件夹" }] };
@@ -243,6 +243,19 @@ describe("kailo-embed.js page shell (DD-157)", () => {
     fromParent({ source: "kailo-host", version: 1, type: "action", id: "mkdir" });
     expect(seen).toEqual([["upload", ["a.pdf", "b.pdf"]], ["mkdir", null]]);
     expect(() => embed.setPage({ title: "x", actions: [{ id: "u", label: "u", files: { accept: "<script>" } }] })).toThrow(TypeError);
+  });
+
+  it("delivers a file action without files from a Kailo that has no file channel, and only then", () => {
+    const { embed } = framedWithSpy();
+    const seen: unknown[] = [];
+    embed.onAction((id, selection) => seen.push([id, selection ?? null]));
+    embed.setPage({ title: "x", actions: [{ id: "upload", label: "上传", files: { multiple: true } }] });
+    connect(["page", "toast", "confirm", "shortcuts", "files"]);
+    fromParent({ source: "kailo-host", version: 1, type: "action", id: "upload" });
+    expect(seen).toEqual([]);
+    connect(["page", "toast", "confirm", "shortcuts"]);
+    fromParent({ source: "kailo-host", version: 1, type: "action", id: "upload" });
+    expect(seen).toEqual([["upload", null]]);
   });
 
   it("hands toasts and confirmations to Kailo once connected, and resolves the confirmation from its answer", async () => {

@@ -224,7 +224,7 @@ export function embedRequest(data: unknown): EmbedRequest | null {
 
 export function presentationMessage(presentation: EmbedPresentation) {
   return { source: "kailo-host", version: EMBED_PROTOCOL_VERSION, type: "presentation",
-    theme: presentation.theme, locale: presentation.locale, features: [...EMBED_FEATURES] } as const;
+    theme: presentation.theme, locale: presentation.locale, features: [...EMBED_FEATURES, "files"] } as const;
 }
 
 /**

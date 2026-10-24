@@ -11,7 +11,7 @@ export interface KailoPresentationState {
   /** A validated presentation message from the Kailo host has arrived. */
   hostConnected: boolean;
   /** DD-157: features the Kailo host announced it handles (present once it answered). */
-  hostFeatures?: KailoEmbedFeature[];
+  hostFeatures?: (KailoEmbedFeature | "files")[];
 }
 
 /** Declared preference key -> BOOLEAN value or ENUM option (design 07 §4.8.2). */
@@ -111,7 +111,7 @@ export interface KailoEmbedRuntime {
   /** DD-157: Kailo renders the page header; false when the feature is undeclared or no Kailo frame. Throws on an invalid shape. */
   setPage(page: KailoPage | null): boolean;
   /** DD-157: the Kailo host announced this feature; false until it answered. Re-check in onChange. */
-  hostSupports(feature: KailoEmbedFeature): boolean;
+  hostSupports(feature: KailoEmbedFeature | "files"): boolean;
   onNavigate(listener: (target: KailoNavigateTarget) => void): () => void;
   onAction(listener: (id: string, selection?: KailoFileSelection) => void): () => void;
   /** DD-157: shown by Kailo; false at top level (show your own Kailo-styled toast). */

@@ -52,6 +52,8 @@
   var MAX_PREFERENCES = 16;
   // DD-157 (07 §4.8.7): closed vocabularies and bounds, mirrored by the host.
   var FEATURES = ["page", "toast", "confirm", "shortcuts"];
+  // What a host may announce: the page features plus the file selection channel.
+  var HOST_FEATURES = FEATURES.concat(["files"]);
   var ACTION_ICONS = ["upload", "plus", "folder-plus", "share", "download", "rocket", "refresh", "settings",
     "message-square-plus", "play", "trash", "pencil", "filter", "search", "more"];
   var ACTION_VARIANTS = ["primary", "secondary", "menu"];
@@ -371,6 +373,8 @@
       if (actionId && currentPage) currentPage.actions.forEach(function (action) { if (action.id === actionId && !action.disabled) declaredAction = action; });
       if (!declaredAction) return;
       if (!declaredAction.files) { if (data.files === undefined) notifyAction(actionId); return; }
+      // A Kailo without the file channel delivers the bare action; the page uses its own picker flow.
+      if (data.files === undefined && !hostHas("files")) { notifyAction(actionId); return; }
       // Files only for an action that declared them; every entry a File, paths parallel and bounded.
       var chosen = data.files;
       var paths = data.paths === undefined ? [] : data.paths;
@@ -400,7 +404,7 @@
     var firstContact = !hostConnected;
     var announced = [];
     (Array.isArray(data.features) ? data.features : []).forEach(function (name) {
-      if (FEATURES.indexOf(name) >= 0 && announced.indexOf(name) < 0) announced.push(name);
+      if (HOST_FEATURES.indexOf(name) >= 0 && announced.indexOf(name) < 0) announced.push(name);
     });
     hostFeatures = announced;
     root.setAttribute("data-kailo-host-features", announced.join(" "));
