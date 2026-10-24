@@ -40,9 +40,9 @@ release:
   # 仅记录本批已构建候选；full、部署及业务验收尚未通过。
   artifacts:
     - name: core
-      digest: sha256:848a654708a5c08e5492aa43aa4689de34e1a908101200b1b7d2c9c366ecd253
+      digest: sha256:a6c37cbf2ea58b4c983f9bd2bb7a5dca5c94fcb674c5a35ee6d4b901794f1a17
     - name: worker
-      digest: sha256:67ab920da0cf1f4c57c74c214570dfb10ca7b28a89f9e9e05985a1c8522c3071
+      digest: sha256:05d868dc23c303d58e7320e1a5f463bc919d02097e9e9eba2971df7b366d30d5
     - name: collaboration-relay
-      digest: sha256:12484da76dc3d4909a6e50f98c208e3556de1b8311f80ab9bb73c9b4fc934524
+      digest: sha256:d67a5fd0250451525e787a5c7273fa41bdaf01b31f86aaf0a4fa967d3f4a2547
   gate: blocked_until_seams_closed

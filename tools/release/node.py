@@ -22,6 +22,7 @@ import argparse
 import base64
 import contextlib
 import fcntl
+import fnmatch
 import hashlib
 import io
 import json
@@ -360,6 +361,22 @@ def running_containers():
         cid, _, name = line.partition(" ")
         found[cid] = name
     return found
+
+
+def long_running(found, disposable=()):
+    """部署附带损伤的比较对象：有重启策略的长期运行容器（无重启策略的是一次性任务或测试容器，
+    会自行结束），且不属于声明为一次性的 Compose 项目（一致性、接收方演练按命名约定独立建拆）。"""
+    if not found:
+        return {}
+    keep = {}
+    fmt = "{{.Id}}\t{{.HostConfig.RestartPolicy.Name}}\t{{index .Config.Labels \"com.docker.compose.project\"}}"
+    for line in out(DOCKER + ["inspect", "--format", fmt, *found]).splitlines():
+        cid, policy, project = (line.split("\t") + ["", ""])[:3]
+        if policy in ("", "no") or any(fnmatch.fnmatchcase(project, p) for p in disposable):
+            continue
+        if cid in found:
+            keep[cid] = found[cid]
+    return keep
 
 
 def single_container(found, service, running_only=True):
@@ -1788,7 +1805,9 @@ class Release:
         swapped = set(targets) | {p for t in targets for p in self.model.prerequisites(self.services, t)}
         touched = swapped | set(converge["before"]) | set(converge["after"]) | set(operated)
         replaced = {c["id"] for svc in touched for c in found.get(svc, [])}
-        before = {cid: name for cid, name in running_containers().items() if cid not in replaced}
+        disposable = tuple((self.decl.get("deploy") or {}).get("disposable_projects") or ())
+        before = {cid: name for cid, name in long_running(running_containers(), disposable).items()
+                  if cid not in replaced}
         say("== 目标：" + (", ".join(targets) or "无（运行镜像均已等于 pin，也无受管服务配置漂移）"))
         say("== 运维域运行体，创建：" + (", ".join(operated) or "无（均已运行）"))
         if delivered:
