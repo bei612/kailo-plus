@@ -375,7 +375,10 @@ verify_component_frontends() {
          "$tooling/node_modules/.bin/pnpm" install --frozen-lockfile --ignore-scripts; then
       (cd "$cells" && diag node_modules/.bin/vitest run kailo.embed editor.onlyoffice) \
         && pass "file-storage 嵌入层 vitest" || fail "file-storage 嵌入层 vitest"
-      (cd "$cells" && diag node_modules/.bin/eslint kailo.embed editor.onlyoffice/res/js) \
+      (cd "$cells" && diag node_modules/.bin/eslint kailo.embed editor.onlyoffice/res/js \
+           gui.ajax/res/js/ui/ReactUI/KailoTheme.js gui.ajax/res/js/ui/ReactUI/KailoTheme.test.js \
+           gui.ajax/res/js/core/model/nativeCell.js action.share/res/js/dialog/links/nativeRevoke.js \
+           access.settings/res/js/AdminComponents/board/kailo-admin-dashboard.test.js) \
         && pass "file-storage 嵌入层 eslint" || fail "file-storage 嵌入层 eslint"
       rm -f -- "$cells/node_modules"
     else
