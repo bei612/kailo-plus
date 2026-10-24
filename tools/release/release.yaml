@@ -132,3 +132,8 @@ node:
   ci_environment: [CHECK_CPUS, CHECK_MEMORY, BUILDX_BUILDER]
   backups: /volumes/data/kailo/backups/release
   journal: /volumes/data/kailo/releases
+
+# 部署附带损伤判定（ADR-20 §7）：只比较有重启策略的长期运行容器；以下 Compose 项目按命名约定
+# 由一致性与接收方演练脚本独立建拆，不属于生产运行面。
+deploy:
+  disposable_projects: ["*-conformance*", "*-receiver*"]

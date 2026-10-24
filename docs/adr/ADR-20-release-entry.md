@@ -149,6 +149,13 @@ backup 先于 deploy 推导漂移与需备份的库，此时声明尚未落盘�
 graph driver 下是 config digest，所以不拿 image ID 直接比 pin；pin 的 manifest 必须由其 registry 以同一 digest 提供
 （`HEAD /v2/<repo>/manifests/<digest>`），404 判“产物不在 registry，不可复现”，无法确认同样判失败。
 
+### 6A. 部署附带损伤的比较范围
+
+deploy 前后比较「不属于本次替换、却不再运行」的容器，只比较有重启策略（always、unless-stopped、
+on-failure）的长期运行容器，并排除 `release.yaml` `deploy.disposable_projects` 声明的一次性 Compose
+项目（一致性与接收方演练按命名约定独立建拆）。无重启策略的容器是一次性任务或测试容器，会自行结束，
+它们结束不是部署造成的；把它们算进来曾使发布在代理测试容器自行退出时误判失败（2026-10-23/24 两次）。
+
 ### 7. Web 部署结果为 UNKNOWN 的根因
 
 CI worker 的 Web 部署在 `up` 之后用 `docker ps -q`（12 位截断 ID）减去 `docker compose ps -q buzz-web`（64 位完整 ID），

@@ -1631,5 +1631,24 @@ class CheckImageProtection(unittest.TestCase):
         self.assertEqual(got["protected"][self.ref(self.MAIN)], dict(image="sha256:main", reasons=["origin/main"]))
 
 
+class LongRunningContainers(unittest.TestCase):
+    """部署附带损伤只比较有重启策略、不属于一次性演练项目的容器。"""
+
+    def test_keeps_restartable_and_drops_ephemeral_and_disposable(self):
+        found = {"a": "core-db", "b": "agent-test-pg", "c": "kailo-wren-conformance-1-ui", "d": "asr"}
+        lines = "\n".join(["a\tunless-stopped\tplatform-local", "b\tno\t",
+                           "c\ton-failure\tkailo-wren-conformance-1", "d\talways\tasr-service"])
+        saved = node.out
+        node.out = lambda argv: lines
+        try:
+            kept = node.long_running(found, ("*-conformance*", "*-receiver*"))
+        finally:
+            node.out = saved
+        self.assertEqual(kept, {"a": "core-db", "d": "asr"})
+
+    def test_nothing_running_reads_nothing(self):
+        self.assertEqual(node.long_running({}, ()), {})
+
+
 if __name__ == "__main__":
     unittest.main()
