@@ -12,8 +12,6 @@ import { useDeployStatusContext } from '@/components/deploy/Context';
 import useKailoText, { kailoT } from '@/utils/kailoI18n';
 import { notify } from '@/utils/kailoHost';
 
-const { Text } = Typography;
-
 /**
  * Deploy state and action for the modeling page. DD-152: inside Kailo the
  * page header shows "发布模型" (primary, busy while deploying, disabled when
@@ -76,19 +74,19 @@ function DeployStatus({ status }: { status?: SyncStatus }) {
       [SyncStatus.IN_PROGRESS]: (
         <Space size={[4, 0]}>
           <LoadingOutlined className="mr-1 gray-7" />
-          <Text className="gray-7">{t('deploying')}</Text>
+          <Typography.Text className="gray-7">{t('deploying')}</Typography.Text>
         </Space>
       ),
       [SyncStatus.SYNCRONIZED]: (
         <Space size={[4, 0]}>
           <CheckCircleOutlined className="mr-1 kailo-text-success" />
-          <Text className="gray-7">{t('deploySynced')}</Text>
+          <Typography.Text className="gray-7">{t('deploySynced')}</Typography.Text>
         </Space>
       ),
       [SyncStatus.UNSYNCRONIZED]: (
         <Space size={[4, 0]}>
           <WarningOutlined className="mr-1 kailo-text-warning" />
-          <Text className="gray-7">{t('deployPending')}</Text>
+          <Typography.Text className="gray-7">{t('deployPending')}</Typography.Text>
         </Space>
       ),
     }[status] || null

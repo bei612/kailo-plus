@@ -237,8 +237,20 @@ export function kailoProductTitle(
   return name ? `${name} ${component}` : component;
 }
 
+// The Next locale, or the Kailo one where no router is mounted (component
+// renders outside a page, unit tests).
+export function useKailoLocale(): string {
+  let locale: string | undefined;
+  try {
+    locale = useRouter()?.locale;
+  } catch {
+    locale = undefined;
+  }
+  return locale || presentation().locale;
+}
+
 export default function useKailoText() {
-  const { locale } = useRouter();
+  const locale = useKailoLocale();
   return (key: KailoTextKey, vars?: KailoTextVars) =>
     kailoText(locale, key, vars);
 }

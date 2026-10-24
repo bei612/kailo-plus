@@ -598,7 +598,10 @@ describe('original API History detail bounded native observation consumers', () 
     );
     renderToStaticMarkup(action.render(pending));
     await mockButtons
-      .findLast((button: any) => button.children?.[1] === ' Details')
+      .findLast(
+        (button: any) =>
+          button.children === kailoText(mockLocale, 'knowledge.details'),
+      )
       .onClick();
     return mockButtons.find(
       (button: any) =>
@@ -792,7 +795,10 @@ describe('original API History detail bounded native observation consumers', () 
     );
     renderToStaticMarkup(action.render(completed));
     await mockButtons
-      .findLast((button: any) => button.children?.[1] === ' Details')
+      .findLast(
+        (button: any) =>
+          button.children === kailoText(mockLocale, 'knowledge.details'),
+      )
       .onClick();
     expect(mockHistoryRead).toHaveBeenCalledTimes(1);
     expect(mockHistoryOpen).not.toHaveBeenCalled();
@@ -1688,9 +1694,13 @@ describe('original saved-view preview controls', () => {
         onClose: close,
       } as any),
     );
-    expect(markup).toContain('Submit');
-    expect(markup).toContain('Preview data');
-    await mockButtons.find((button) => button.children === 'Submit').onClick();
+    expect(markup).toContain(kailoText(mockLocale, 'knowledge.submit'));
+    expect(markup).toContain(getQueryPreviewText(mockLocale).preview);
+    await mockButtons
+      .find(
+        (button) => button.children === kailoText(mockLocale, 'knowledge.submit'),
+      )
+      .onClick();
     expect(submit).toHaveBeenCalledWith({
       nativeWriteGuarded: true,
       data: {
@@ -1812,8 +1822,10 @@ describe('original saved-view preview controls', () => {
         submit,
         close,
         changed,
-        click: mockButtons.find((button) => button.children === 'Submit')
-          .onClick,
+        click: mockButtons.find(
+          (button) =>
+            button.children === kailoText(mockLocale, 'knowledge.submit'),
+        ).onClick,
       };
     };
     beforeEach(() => {
@@ -1851,7 +1863,10 @@ describe('original saved-view preview controls', () => {
     it('uses both original native dry-run and data preview calls in explicitly unconfigured standalone mode', async () => {
       setup(jest.fn(), false);
       await mockButtons
-        .find((button) => button.children === 'Preview data')
+        .find(
+          (button) =>
+            button.children === getQueryPreviewText(mockLocale).preview,
+        )
         .onClick();
       expect(mockPreview.mock.calls.map(([input]) => input)).toEqual([
         { variables: { data: { sql: mockSqlWatch, limit: 1, dryRun: true } } },
@@ -3169,7 +3184,12 @@ describe('original native metadata create UNKNOWN and authorized read-back consu
         );
         const save = mockButtons.find(
           (button) =>
-            button.children === (nativeType === 'view' ? 'Save' : 'Submit'),
+            (nativeType === 'view'
+              ? ['home.save' as const]
+              : ['modeling.create' as const, 'modeling.save' as const]
+            )
+              .map((key) => kailoText(mockLocale, key))
+              .includes(button.children),
         );
         save.onClick();
         await Promise.resolve();
@@ -3216,7 +3236,9 @@ describe('original native metadata create UNKNOWN and authorized read-back consu
       },
     });
     const click = async () => {
-      const save = mockButtons.find((button) => button.children === 'Save');
+      const save = mockButtons.find(
+        (button) => button.children === kailoText(mockLocale, 'home.save'),
+      );
       save.onClick();
       await Promise.resolve();
       return pending;
