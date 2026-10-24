@@ -600,7 +600,9 @@ def file_storage(r, args, runtime_env, declaration):
              "--action-token-audience", audience,
              "--public-file", f"action-token-jwks.json={identity['jwksFile']}",
              "--public-file", f"gateway-service-jwks.json={runtime_env['GATEWAY_SERVICE_JWKS_FILE']}",
-             "--set", f"nativeRootRef={read_json(d / 'binding/facts.json')['nativeRootRef']}",
+             # The seeded root (isolated-plan.py): the simulated binding is rooted where the seed put the
+             # vector objects, the same root the native action delivery names.
+             "--set", f"nativeRootRef={context['nativeActionSets']['nativeRootRef']}",
              "--set", f"downloadOrigin={s['external']}", "--set", "bindingGeneration=1",
              "--release-dir", s["releaseDir"],
              "--registration", f"{source}/contracts/adapter/file_storage.v2/registration.json",
