@@ -1,4 +1,4 @@
-// DD-152 (07 §4.8.7, 20 §13): one notification and one confirmation surface.
+// DD-157 (07 §4.8.7, 20 §13): one notification and one confirmation surface.
 // Inside the Kailo frame toasts and confirmations are shown by Kailo; at top
 // level (or when Kailo declines) the caller keeps its own, Kailo-styled UI.
 

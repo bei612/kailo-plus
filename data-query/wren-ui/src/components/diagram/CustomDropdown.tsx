@@ -24,7 +24,7 @@ import {
   DeleteInstructionModal,
 } from '@/components/modals/DeleteModal';
 
-// DD-152 (20 §13 菜单): Kailo menu — line icons in muted, text in the
+// DD-157 (20 §13 菜单): Kailo menu — line icons in muted, text in the
 // foreground colour, the destructive item last (danger text via `danger`).
 // The surface, radius, padding and row height come from the Kailo overlay.
 const StyledMenu = styled(Menu)`

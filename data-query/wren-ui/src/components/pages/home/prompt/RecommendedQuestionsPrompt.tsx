@@ -11,7 +11,7 @@ import { makeIterable } from '@/utils/iteration';
 import { GroupedQuestion } from '@/hooks/useRecommendedQuestionsInstruction';
 import useKailoText from '@/utils/kailoI18n';
 
-// DD-152 (20 §13 卡片): card surface, 1px line, radius 12, no shadow;
+// DD-157 (20 §13 卡片): card surface, 1px line, radius 12, no shadow;
 // clickable cards lift with shadow-sm on hover.
 const CategorySectionBlock = styled.div`
   background: var(--kailo-color-card);

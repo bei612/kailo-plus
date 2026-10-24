@@ -1,5 +1,5 @@
 <template>
-  <!-- DD-152 (20 §13.3): list scopes as a segmented control at the top of the
+  <!-- DD-157 (20 §13.3): list scopes as a segmented control at the top of the
        content area; replaces the native vertical icon strip inside the Kailo shell. -->
   <div class="kailo-segments" role="tablist" :aria-label="label">
     <button v-for="option in options" :key="option.value" type="button" role="tab" class="kailo-segments__item"

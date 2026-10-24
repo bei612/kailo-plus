@@ -4,7 +4,7 @@
       :count-mine="agents.length" :count-by-org="effectiveSharedCountByOrg" :count-favorites="agentFavoritesCount"
       :count-recents="agentRecentsCount" />
     <div class="agent-list-content">
-      <!-- DD-152: title and "新建 Agent" are in Kailo's header inside the Kailo shell. -->
+      <!-- DD-157: title and "新建 Agent" are in Kailo's header inside the Kailo shell. -->
       <div v-if="kailoShell" class="kailo-list-toolbar">
         <ScopeSegments v-if="!authStore.isLiteMode" v-model="spaceSelection" :options="kailoScopeOptions" />
       </div>
@@ -1588,7 +1588,7 @@ const handleCreateAgent = () => {
   openCreateModal()
 }
 
-// DD-152: Kailo's page header for the Agent list.
+// DD-157: Kailo's page header for the Agent list.
 usePageHeader('agentList', () => {
   if (loading.value && agents.value.length === 0) return null
   return {
@@ -1624,7 +1624,7 @@ defineExpose({
   padding: 0 24px 16px 0;
 }
 
-// DD-152 (20 §2): list page insets 16 top / 24 sides inside the Kailo shell.
+// DD-157 (20 §2): list page insets 16 top / 24 sides inside the Kailo shell.
 .is-kailo-shell .agent-list-content {
   padding: 16px 0 0 24px;
 }

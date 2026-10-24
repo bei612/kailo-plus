@@ -32,7 +32,7 @@ export interface KailoSessionValue {
   loaded: boolean;
   productName: string;
   embedded: boolean;
-  // DD-152: Kailo renders the page header (title, tabs, actions); the page
+  // DD-157: Kailo renders the page header (title, tabs, actions); the page
   // renders none of its own.
   hostPage: boolean;
   theme: KailoTheme;
@@ -83,9 +83,13 @@ export function KailoSessionProvider({ children, displayName }: Props) {
     if (!runtime) return;
     const stopTheme = runtime.onThemeChange(setTheme);
     const stopLocale = runtime.onLocaleChange(followLocale);
+    // The host's feature announcement arrives with its first presentation.
+    const onPresentation = () => setHostPage(hostRendersPage());
+    window.addEventListener('kailo:presentation', onPresentation);
     return () => {
       stopTheme();
       stopLocale();
+      window.removeEventListener('kailo:presentation', onPresentation);
     };
   }, []);
 
@@ -127,7 +131,7 @@ export function KailoSessionProvider({ children, displayName }: Props) {
         // Kailo buttons keep their label as written ("取消", not "取 消").
         autoInsertSpaceInButton={false}
         renderEmpty={() => (
-          // DD-152 (20 §13 空态): no antd illustration. Lists and tables
+          // DD-157 (20 §13 空态): no antd illustration. Lists and tables
           // inside a page show a quiet line; page-level empty states use
           // KailoEmpty with an illustration and action themselves.
           <KailoEmpty

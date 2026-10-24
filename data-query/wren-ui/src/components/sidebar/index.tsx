@@ -52,7 +52,7 @@ const DynamicSidebar = (
   return <Content>{getContent()}</Content>;
 };
 
-// DD-152 (20 §13 list pane) / DD-138(6): the pane holds only the
+// DD-157 (20 §13 list pane) / DD-138(6): the pane holds only the
 // section's business list; 数据源设置 is a page header menu entry for
 // administrators, not a pane footer.
 export default function Sidebar(props: Props) {

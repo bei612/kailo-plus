@@ -212,7 +212,7 @@ export default function Modeling() {
   const t = useKailoText();
   const deploy = useDeploy(deployStatusQueryResult);
 
-  // DD-152: Kailo page header — 建模 (→ the open model or view), primary
+  // DD-157: Kailo page header — 建模 (→ the open model or view), primary
   // 发布模型 (busy while deploying, disabled when nothing is pending).
   const openNode =
     metadataDrawer.state.visible && diagramData

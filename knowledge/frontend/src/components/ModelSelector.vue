@@ -105,7 +105,7 @@ const placeholderText = computed(() => {
   return props.placeholder || t('model.selectModelPlaceholder')
 })
 
-// DD-152: never show an opaque model identifier as its name.
+// DD-157: never show an opaque model identifier as its name.
 const modelDisplayName = (model: ModelConfig) => modelLabel(model, locale.value)
 
 const showContextWindow = computed(() => modelHasContextWindow(props.modelType))

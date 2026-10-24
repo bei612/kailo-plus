@@ -1,7 +1,7 @@
 import { ApiType } from '@/apollo/client/graphql/__types__';
 import { kailoText, KailoTextKey } from '@/utils/kailoI18n';
 
-// DD-152 (20 §13.8): API types as Kailo wording in both locales; the raw
+// DD-157 (20 §13.8): API types as Kailo wording in both locales; the raw
 // endpoint name stays available in the request payload.
 const API_TYPE_KEYS: Record<ApiType, KailoTextKey> = {
   [ApiType.ASK]: 'knowledge.apiTypeAsk',

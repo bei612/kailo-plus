@@ -1,4 +1,4 @@
-// DD-152 (07 §4.8.7, 20 §13.2): the page header Kailo renders for this
+// DD-157 (07 §4.8.7, 20 §13.2): the page header Kailo renders for this
 // component. Views describe their header with usePageHeader(); the platform
 // frame (views/platform/index.vue) owns the one subscription to the runtime:
 // it adds the product tabs, publishes on every route/context change and routes

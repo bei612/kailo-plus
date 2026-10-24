@@ -25,7 +25,7 @@ interface Props {
 }
 
 /**
- * DD-152: the share dialog state, so the Kailo page header action "分享"
+ * DD-157: the share dialog state, so the Kailo page header action "分享"
  * (or the page's own button at top level) opens the same dialog.
  */
 export function useKailoShare(target: KailoShareTargetInput | null) {

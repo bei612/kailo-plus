@@ -11,7 +11,7 @@ export type CustomNodeProps<T> = NodeProps<{
   highlight: string[];
 }>;
 
-// DD-152 (20 §13 卡片): canvas cards are Kailo cards — card surface, 1px
+// DD-157 (20 §13 卡片): canvas cards are Kailo cards — card surface, 1px
 // line, radius 12, no resting shadow; a brand header strip with on-brand
 // text. All colours are tokens so the dark theme has no white cards.
 export const StyledNode = styled.div`

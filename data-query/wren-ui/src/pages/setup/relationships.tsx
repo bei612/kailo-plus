@@ -20,7 +20,7 @@ export default function SetupRelationships() {
   const current = useMemo(() => SETUP_STEPS[stepKey], [stepKey]);
   const t = useKailoText();
 
-  // DD-152: Kailo page header — the onboarding step (no tabs while
+  // DD-157: Kailo page header — the onboarding step (no tabs while
   // onboarding; useKailoPage omits them).
   useKailoPage({ title: t(SETUP_STEP_TITLES[current.step]), ready: true });
 

@@ -201,7 +201,7 @@ export default function ManageQuestionSQLPairs() {
     },
   ];
 
-  // DD-152: Kailo page header — 问答对, primary 添加问答对 (admins).
+  // DD-157: Kailo page header — 问答对, primary 添加问答对 (admins).
   useKailoPage({
     title: t('questionSqlPairs'),
     ready: !loading,

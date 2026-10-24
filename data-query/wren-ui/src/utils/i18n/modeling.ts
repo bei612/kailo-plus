@@ -1,4 +1,4 @@
-// DD-152 (20 §13.8): modeling strings — model/view tree, canvas cards,
+// DD-157 (20 §13.8): modeling strings — model/view tree, canvas cards,
 // metadata drawer, model form, calculated fields, relationships, schema
 // changes, expression names. Keys are prefixed "modeling." and the en table
 // must carry exactly the zh-CN keys (enforced by the type below).

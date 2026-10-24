@@ -459,7 +459,7 @@ export default function HomeThread() {
     onOpenAdjustSQLModal: adjustSqlModal.openModal,
   };
 
-  // DD-152: Kailo page header — the conversation's summary as title, 分享
+  // DD-157: Kailo page header — the conversation's summary as title, 分享
   // (DD-138(4), 07 §4.8.3: notify Kailo members) and 新建对话.
   const threadTitle =
     homeSidebar.data?.threads?.find((thread) => thread.id === String(threadId))

@@ -3,7 +3,7 @@ import { Card, Steps } from 'antd';
 import useKailoText from '@/utils/kailoI18n';
 import { SETUP_STEP_TITLES } from './utils';
 
-// DD-152 (20 §2): content padding 24, Kailo card (surface, 1px line, 12
+// DD-157 (20 §2): content padding 24, Kailo card (surface, 1px line, 12
 // radius, no shadow) from the theme overlay.
 const Container = styled.div<{ maxWidth?: number }>`
   max-width: ${(props) => props.maxWidth || 1200}px;

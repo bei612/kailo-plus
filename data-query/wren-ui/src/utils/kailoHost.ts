@@ -1,4 +1,4 @@
-// DD-152 (`07` §4.8.7, `20` §13): Kailo owns the page shell around this
+// DD-157 (`07` §4.8.7, `20` §13): Kailo owns the page shell around this
 // component — header (title, breadcrumbs, tabs, actions), toasts and
 // confirmation dialogs. Inside the Kailo frame these go through the
 // presentation runtime (kailo-embed.js); on a top-level visit the runtime
@@ -136,11 +136,19 @@ export async function confirmDanger(
 /** True when Kailo renders this page's header (page feature, in the frame). */
 export function hostRendersPage(): boolean {
   const runtime = kailoRuntime();
+  if (
+    !runtime ||
+    !presentation().embedded ||
+    !Array.isArray(runtime.features) ||
+    !runtime.features.includes('page')
+  )
+    return false;
+  // DD-157: before Kailo answers, its skeleton covers the page; once it has
+  // answered, only a host that announced "page" draws the header.
   return (
-    !!runtime &&
-    presentation().embedded &&
-    Array.isArray(runtime.features) &&
-    runtime.features.includes('page')
+    !runtime.getState().hostConnected ||
+    (typeof runtime.hostSupports === 'function' &&
+      runtime.hostSupports('page'))
   );
 }
 

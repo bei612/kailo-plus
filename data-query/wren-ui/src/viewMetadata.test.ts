@@ -170,7 +170,7 @@ jest.mock('./components/modals/ImportDataSourceSQLModal', () => ({
   default: () => null,
   isSupportSubstitute: () => false,
 }));
-// DD-152: results are announced through Kailo (kailoHost.notify); the
+// DD-157: results are announced through Kailo (kailoHost.notify); the
 // top-level fallback is not under test here, so notify forwards to the
 // mocked antd message the assertions below read.
 jest.mock('./utils/kailoHost', () => {

@@ -221,7 +221,7 @@ export const ERROR_CODES = {
   NO_CHART: 'NO_CHART',
 };
 
-// DD-152 (20 §13.8): one Kailo toast per failed action, in the Kailo
+// DD-157 (20 §13.8): one Kailo toast per failed action, in the Kailo
 // locale; the reason is the description where the server gives one.
 abstract class ErrorHandler {
   public handle(error: GraphQLError) {

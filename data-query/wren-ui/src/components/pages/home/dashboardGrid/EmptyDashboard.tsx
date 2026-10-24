@@ -4,7 +4,7 @@ import { DashboardIcon } from '@/components/kailo/KailoIcons';
 import useKailoText from '@/utils/kailoI18n';
 import { Path } from '@/utils/enum';
 
-// DD-152 (20 §13 空态): line illustration, title, description, one action.
+// DD-157 (20 §13 空态): line illustration, title, description, one action.
 const EmptyDashboard = (props: {
   show: boolean;
   children: React.ReactNode;

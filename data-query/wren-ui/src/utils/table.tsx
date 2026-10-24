@@ -44,7 +44,7 @@ const SearchFilter = ({
   confirm,
   clearFilters,
   visible,
-  // The column key is not shown (DD-152: no raw field names as copy).
+  // The column key is not shown (DD-157: no raw field names as copy).
   dataIndex: _dataIndex,
   placeholder,
   filteredValue,

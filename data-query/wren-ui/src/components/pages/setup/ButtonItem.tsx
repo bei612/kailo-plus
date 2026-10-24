@@ -7,7 +7,7 @@ import { ButtonOption } from './utils';
 import { SampleDatasetName } from '@/apollo/client/graphql/__types__';
 import useKailoText from '@/utils/kailoI18n';
 
-// DD-152 (20 §3 卡片): selectable card — surface, 1px line, radius 12;
+// DD-157 (20 §3 卡片): selectable card — surface, 1px line, radius 12;
 // hover lifts with shadow-sm, selected uses the brand line.
 const StyledButton = styled(Button)`
   border: 1px var(--kailo-color-border) solid;

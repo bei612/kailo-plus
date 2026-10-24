@@ -21,7 +21,7 @@ export interface KailoPresentationState {
   hostConnected: boolean
 }
 
-/** DD-152 (07 §4.8.7): what a build opts into with <meta name="kailo-embed-features">. */
+/** DD-157 (07 §4.8.7): what a build opts into with <meta name="kailo-embed-features">. */
 export type KailoEmbedFeature = 'page' | 'toast' | 'confirm' | 'shortcuts'
 
 /** Closed icon vocabulary for header actions; Kailo draws them with its own (Lucide) icons. */
@@ -76,16 +76,18 @@ export interface KailoEmbedRuntime {
   onLocaleChange(listener: (locale: KailoLocale) => void): () => void
   useIdentityLocale(locale: string): boolean
   requestTopLevelSignIn(): boolean
-  /** DD-152: declared features of this build (absent on runtimes before DD-152). */
+  /** DD-157: declared features of this build (absent on runtimes before DD-157). */
   readonly features?: readonly KailoEmbedFeature[]
-  /** DD-152: true = Kailo renders the page header; throws TypeError on an invalid shape. */
+  /** DD-157: true = Kailo renders the page header; throws TypeError on an invalid shape. */
   setPage?(page: KailoPage | null): boolean
   onNavigate?(listener: (target: KailoNavigateTarget) => void): () => void
   onAction?(listener: (id: string) => void): () => void
-  /** DD-152: true = Kailo showed it; false at top level. */
+  /** DD-157: true = Kailo showed it; false at top level. */
   toast?(toast: KailoToast): boolean
-  /** DD-152: Kailo's dialog, or null when the page must use its own. */
+  /** DD-157: Kailo's dialog, or null when the page must use its own. */
   confirm?(options: KailoConfirm): Promise<boolean> | null
+  /** DD-157: the Kailo host announced it handles this feature (false until it answers). */
+  hostSupports?(feature: KailoEmbedFeature): boolean
 }
 
 type RuntimeHost = { KailoEmbed?: unknown }
@@ -165,13 +167,18 @@ export function requestTopLevelSignIn(runtime: KailoEmbedRuntime | null): boolea
 }
 
 /**
- * DD-152: Kailo renders this page's header, toasts and confirmations when the
+ * DD-157: Kailo renders this page's header, toasts and confirmations when the
  * build declared the `page` feature and the page runs inside the Kailo frame.
  * The component then renders content only (no own title, breadcrumbs or
  * product navigation).
  */
+export const HOST_WITHOUT_PAGE_KEY = 'kailo-knowledge-host-without-page'
+
 export function hostRendersPage(runtime: KailoEmbedRuntime | null): boolean {
   if (!runtime || typeof runtime.setPage !== 'function') return false
   const features = Array.isArray(runtime.features) ? runtime.features : []
-  return features.includes('page') && runtime.getState().embedded === true
+  if (!features.includes('page') || runtime.getState().embedded !== true) return false
+  // DD-157: an older Kailo answered without drawing headers (remembered for this tab).
+  try { if (window.sessionStorage.getItem(HOST_WITHOUT_PAGE_KEY) === '1') return false } catch { /* storage denied */ }
+  return true
 }

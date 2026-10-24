@@ -13,7 +13,7 @@ import useKailoText, { kailoT } from '@/utils/kailoI18n';
 import { notify } from '@/utils/kailoHost';
 
 /**
- * Deploy state and action for the modeling page. DD-152: inside Kailo the
+ * Deploy state and action for the modeling page. DD-157: inside Kailo the
  * page header shows "发布模型" (primary, busy while deploying, disabled when
  * nothing is pending); at top level the same state drives <Deploy />.
  */

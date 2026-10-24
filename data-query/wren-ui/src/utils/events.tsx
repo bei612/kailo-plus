@@ -13,7 +13,7 @@ export const dispatch = (eventName: string, detail?: any) => {
 
 export const EVENT_NAME = {
   GO_TO_FIRST_MODEL: 'goToFirstModel',
-  // DD-152: "数据源设置" from the Kailo page header menu (or the top-level
+  // DD-157: "数据源设置" from the Kailo page header menu (or the top-level
   // header) opens the admin settings dialog owned by SiderLayout.
   OPEN_SETTINGS: 'kailoOpenSettings',
 };

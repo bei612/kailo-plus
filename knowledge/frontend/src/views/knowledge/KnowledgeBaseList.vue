@@ -4,7 +4,7 @@
       :count-mine="kbs.length" :count-by-org="effectiveSharedCountByOrg" :count-favorites="kbFavoritesCount"
       :count-recents="kbRecentsCount" />
     <div class="kb-list-content">
-      <!-- DD-152: inside the Kailo shell the title and "新建知识库" are in Kailo's header;
+      <!-- DD-157: inside the Kailo shell the title and "新建知识库" are in Kailo's header;
            the list scopes become a segmented control. -->
       <div v-if="kailoShell" class="kailo-list-toolbar">
         <ScopeSegments v-if="!authStore.isLiteMode" v-model="spaceSelection" :options="kailoScopeOptions" />
@@ -1521,7 +1521,7 @@ const handleCreateKnowledgeBase = () => {
   uiStore.openCreateKB('document', initialSection)
 }
 
-// DD-152: Kailo's page header for the list; published once the first load settled.
+// DD-157: Kailo's page header for the list; published once the first load settled.
 usePageHeader('knowledgeBaseList', () => {
   if (loading.value && kbs.value.length === 0) return null
   return {
@@ -1675,7 +1675,7 @@ const handleUploadFinishedEvent = (event: Event) => {
   padding: 0 24px 16px 0;
 }
 
-// DD-152 (20 §2): list page insets 16 top / 24 sides inside the Kailo shell.
+// DD-157 (20 §2): list page insets 16 top / 24 sides inside the Kailo shell.
 .is-kailo-shell .kb-list-content {
   padding: 16px 0 0 24px;
 }

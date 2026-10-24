@@ -2,7 +2,7 @@ import React from 'react';
 import styled from 'styled-components';
 import { Menu, MenuProps } from 'antd';
 
-// DD-152 (20 §13 列表窗格): the same rows as the list pane tree — 32 high,
+// DD-157 (20 §13 列表窗格): the same rows as the list pane tree — 32 high,
 // 13/500, radius 6, 8 px padding and margin; hover / brand-soft selected;
 // group titles as Overline; line icons in muted.
 const StyledMenu = styled(Menu)`

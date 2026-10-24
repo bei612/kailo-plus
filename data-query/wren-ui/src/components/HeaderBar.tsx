@@ -14,7 +14,7 @@ import { SettingsIcon } from '@/components/kailo/KailoIcons';
 
 const { Header } = Layout;
 
-// DD-152: rendered only on top-level visits (sign-in redirects, direct
+// DD-157: rendered only on top-level visits (sign-in redirects, direct
 // links); inside Kailo the same tabs and actions are Kailo's page header
 // (useKailoPage). Tabs follow 20 §13: 2px brand underline, selected text 600.
 // DD-138 §2: no account menu or sign-out in either mode.

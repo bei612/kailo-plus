@@ -108,7 +108,7 @@ export default function Dashboard() {
     await deleteDashboardItem({ variables: { where: { id } } });
   };
 
-  // DD-152: Kailo page header — 看板, 分享 (DD-138(4)) and 新建对话.
+  // DD-157: Kailo page header — 看板, 分享 (DD-138(4)) and 新建对话.
   const { hosted } = useKailoPage({
     title: t('dashboard'),
     ready: !loading,

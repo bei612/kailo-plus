@@ -41,7 +41,7 @@ const adjustmentType: Record<ThreadResponseAdjustmentType, KailoTextKey> = {
   [ThreadResponseAdjustmentType.REASONING]: 'home.adjustmentReasoning',
 };
 
-// DD-152 (20 §13 标签页): line tabs, 2px brand underline, selected text
+// DD-157 (20 §13 标签页): line tabs, 2px brand underline, selected text
 // 600, unselected muted; single-colour line icons.
 const StyledTabs = styled(Tabs)`
   .ant-tabs-nav {

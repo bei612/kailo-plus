@@ -1,4 +1,4 @@
-// DD-152 (20 §13.8): onboarding, data source and settings strings, and the
+// DD-157 (20 §13.8): onboarding, data source and settings strings, and the
 // Apollo failure toasts (utils/errorHandler). Keys are prefixed "setup."
 // and the en table must carry exactly the zh-CN keys (enforced by the
 // type below). Product and protocol names (PostgreSQL, AWS, OIDC) stay.

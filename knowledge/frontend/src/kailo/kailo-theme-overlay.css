@@ -173,7 +173,7 @@ html[data-kailo-mode]:root:root {
 }
 
 /* Selection, scrollbars, focus ring and the theme-switch frame come from the token
-   sheet's DD-152 base layer (html[data-kailo-runtime]); this overlay does not restate them. */
+   sheet's DD-157 base layer (html[data-kailo-runtime]); this overlay does not restate them. */
 
 /* DD-141 §5/§9: Kailo rounded-square avatar; initials on the selected (brand-soft) role. */
 html[data-kailo-mode] .user-avatar,
@@ -190,7 +190,7 @@ html[data-kailo-mode] .dropdown-user-avatar-placeholder {
 }
 
 /* ===========================================================================
- * DD-152 (20 §13, spec §3): TDesign controls in Kailo control geometry.
+ * DD-157 (20 §13, spec §3): TDesign controls in Kailo control geometry.
  * Kailo mode only; values are Kailo tokens. Sizes follow the Kailo scale:
  * controls 32 (sm 28 / lg 36), inputs 34, menus 30-row, dialogs radius 16.
  * ======================================================================== */
@@ -522,7 +522,7 @@ html[data-kailo-mode] .menu_item_c_active .kailo-mono-icon,
 html[data-kailo-mode] .menu_item:hover .kailo-mono-icon { color: currentColor; }
 
 /* ===========================================================================
- * DD-152 Kailo shell (html[data-kailo-shell], inside the Kailo frame with the
+ * DD-157 Kailo shell (html[data-kailo-shell], inside the Kailo frame with the
  * page header): the conversation history is a list pane (spec §2).
  * ======================================================================== */
 html[data-kailo-shell] .aside_box.aside_box--pane {

@@ -47,7 +47,7 @@ function embedHtmlDevFallback(): Plugin {
     },
   }
 }
-// DD-152: app imports of 'tdesign-vue-next' resolve to the Kailo shell, which
+// DD-157: app imports of 'tdesign-vue-next' resolve to the Kailo shell, which
 // routes MessagePlugin / DialogPlugin.confirm to Kailo's toast and confirmation
 // inside the Kailo frame and re-exports everything else unchanged. The shell
 // itself (and node_modules) keep the real package.

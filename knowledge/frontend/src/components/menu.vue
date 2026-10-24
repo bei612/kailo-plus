@@ -1,7 +1,7 @@
 <template>
     <div class="aside_box" :class="{ 'aside_box--collapsed': collapsed, 'aside_box--pane': pane }">
         <!-- 展开时：Logo + 搜索/折叠按钮同行 -->
-        <!-- DD-152 pane mode (inside the Kailo shell): only the conversation list remains;
+        <!-- DD-157 pane mode (inside the Kailo shell): only the conversation list remains;
              logo, search, collapse, space switcher, product entries and user menu are Kailo's. -->
         <div class="logo_row" v-if="!collapsed && !pane">
             <!-- White-label (DD-133 §1): Kailo logo + product name; hidden inside the Kailo frame. -->
@@ -273,7 +273,7 @@ import { kailoConfig } from '@/kailo/runtime';
 import { isKailoEmbedded } from '@/kailo/setup';
 
 const props = withDefaults(defineProps<{
-    /** DD-152: render only the conversation list pane (Kailo shell, Chat tab). */
+    /** DD-157: render only the conversation list pane (Kailo shell, Chat tab). */
     pane?: boolean
 }>(), { pane: false });
 const collapsed = computed(() => !props.pane && uiStore.sidebarCollapsed);

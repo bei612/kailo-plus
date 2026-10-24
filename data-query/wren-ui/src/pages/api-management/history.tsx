@@ -345,7 +345,7 @@ export default function APIHistory() {
     },
   ];
 
-  // DD-152: Kailo page header — API 记录 (no page action).
+  // DD-157: Kailo page header — API 记录 (no page action).
   useKailoPage({
     title: kailoText(locale, 'apiHistory'),
     ready: !loading,

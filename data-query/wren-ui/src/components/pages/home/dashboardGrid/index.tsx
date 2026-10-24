@@ -46,7 +46,7 @@ const StyledDashboardGrid = styled.div`
     height: 100%;
   }
 
-  /* DD-152 (20 §13 卡片): card surface, 1px line, radius 12, no shadow;
+  /* DD-157 (20 §13 卡片): card surface, 1px line, radius 12, no shadow;
      hover lifts with shadow-sm. */
   .adm-pinned-item {
     cursor: grab;

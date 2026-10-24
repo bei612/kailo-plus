@@ -3,14 +3,14 @@ import { TrashIcon } from '@/components/kailo/KailoIcons';
 import useKailoText, { KailoTextKey } from '@/utils/kailoI18n';
 import { confirmDanger } from '@/utils/kailoHost';
 
-// DD-152 (20 §13.8 确认): destructive actions are confirmed in Kailo's dialog
+// DD-157 (20 §13.8 确认): destructive actions are confirmed in Kailo's dialog
 // (KailoEmbed.confirm, tone danger): a question as the title, the
 // consequence as the description, "删除" / "取消". At top level the page shows
 // the same dialog itself (kailoHost.confirm).
 
 type DeleteModalProps = {
   disabled?: boolean;
-  /** Ignored since DD-152: the dialog is Kailo's. Kept for callers. */
+  /** Ignored since DD-157: the dialog is Kailo's. Kept for callers. */
   modalProps?: ModalProps;
   onConfirm: () => unknown;
   /** Shown in the title: 删除对话「名称」？ */

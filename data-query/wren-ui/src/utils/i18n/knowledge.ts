@@ -1,4 +1,4 @@
-// DD-152 (20 §13.8): 知识（问答对、指令）与 API 记录 strings. Keys are
+// DD-157 (20 §13.8): 知识（问答对、指令）与 API 记录 strings. Keys are
 // prefixed "knowledge." and the en table must carry exactly the zh-CN keys
 // (enforced by the type below).
 const zh = {

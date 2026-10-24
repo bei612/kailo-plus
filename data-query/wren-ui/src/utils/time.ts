@@ -12,7 +12,7 @@ export const browserTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 export const nextTick = (ms = 1) =>
   new Promise((resolve) => setTimeout(resolve, ms));
 
-// DD-152 (20 §13.8): dates follow the Kailo locale.
+// DD-157 (20 §13.8): dates follow the Kailo locale.
 const dayLocale = () => (currentLocale() === 'en' ? 'en' : 'zh-cn');
 
 export const getRelativeTime = (time: string) => {

@@ -1,4 +1,4 @@
-// DD-152 (20 §13.8): Kailo wording in Kailo mode. Applied centrally to the
+// DD-157 (20 §13.8): Kailo wording in Kailo mode. Applied centrally to the
 // message trees (like the white-label brand word), so the upstream locale
 // files stay identical to upstream and an upstream sync adds no conflicts.
 //

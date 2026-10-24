@@ -8,7 +8,7 @@ interface PageLayoutProps {
   titleExtra?: string | React.ReactNode;
 }
 
-// DD-152 (20 §13 页面框架): inside Kailo the title and the page's main
+// DD-157 (20 §13 页面框架): inside Kailo the title and the page's main
 // action are Kailo's page header (useKailoPage), so only the description
 // and content render here; top-level visits keep the title row. List and
 // table pages: 24 sides, 16 top.

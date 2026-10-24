@@ -1,6 +1,6 @@
 <template>
     <div class="main" ref="dropzone">
-        <!-- DD-152: inside the Kailo shell the product menu is Kailo's header tabs; only the
+        <!-- DD-157: inside the Kailo shell the product menu is Kailo's header tabs; only the
              conversation history stays, as the list pane of the Chat tab. -->
         <Menu v-if="!kailoShell || isChatRoute" :pane="kailoShell"></Menu>
         <div v-if="isRouterAlive" class="platform-route-outlet">
@@ -60,7 +60,7 @@ const { t, locale } = useI18n();
 
 const isChatRoute = computed(() => CHAT_DROP_ROUTE_NAMES.has(String(route.name || '')));
 
-// DD-152: Kailo renders the page header; publish it for every route change.
+// DD-157: Kailo renders the page header; publish it for every route change.
 if (kailoShell) {
     const runtime = kailoEmbed()
     const capabilities = useDeploymentCapabilitiesStore()

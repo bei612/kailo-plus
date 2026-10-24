@@ -6,7 +6,7 @@ import { FormItemInputContext } from 'antd/lib/form/context';
 import useAutoComplete from '@/hooks/useAutoComplete';
 
 const Wrapper = styled.div`
-  /* DD-152 (20 §13 输入): line-strong border, radius 6; hover neutral,
+  /* DD-157 (20 §13 输入): line-strong border, radius 6; hover neutral,
      focus brand ring (token), error danger. */
   border-color: var(--kailo-color-line-strong) !important;
   border-radius: 6px !important;

@@ -1,6 +1,6 @@
 import { currentLocale } from '@/utils/kailoI18n';
 
-// DD-152 (20 §13.8): form validation messages in both Kailo locales. Each
+// DD-157 (20 §13.8): form validation messages in both Kailo locales. Each
 // leaf is [zh-CN, en]; ERROR_TEXTS resolves it when read (form rules and
 // validators read it at validation time), so the shape callers use is
 // unchanged: ERROR_TEXTS.SQL_PAIR.SQL.REQUIRED is a string.

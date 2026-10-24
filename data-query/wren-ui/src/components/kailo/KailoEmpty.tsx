@@ -2,7 +2,7 @@ import { ComponentType, ReactNode } from 'react';
 import { Button } from 'antd';
 import { InboxIcon, KailoIconProps } from './KailoIcons';
 
-// DD-152 (20 §13 空态): centred 64px line illustration in brand colour,
+// DD-157 (20 §13 空态): centred 64px line illustration in brand colour,
 // title 17/24 600, description 14 muted, at most one primary action.
 interface Props {
   icon?: ComponentType<KailoIconProps>;

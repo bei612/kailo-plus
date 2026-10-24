@@ -15,7 +15,7 @@ import TreeTitle from './TreeTitle';
 import useKailoText from '@/utils/kailoI18n';
 import { KailoUserView } from '@/components/kailo/KailoUser';
 
-// DD-152 (20 §2 列表窗格): rows 32 high, 13/500, radius 6, 8 inner padding,
+// DD-157 (20 §2 列表窗格): rows 32 high, 13/500, radius 6, 8 inner padding,
 // 8 outer margin; hover/selected roles; the group title is an Overline.
 const StyledSidebarTree = styled(SidebarTree)`
   ${sidebarCommonStyle}

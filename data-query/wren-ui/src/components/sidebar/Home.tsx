@@ -21,7 +21,7 @@ export interface Props {
   onRename: (id: string, newName: string) => Promise<void>;
 }
 
-// DD-152 (20 §2 列表窗格): the 看板 entry is a pane row like the threads.
+// DD-157 (20 §2 列表窗格): the 看板 entry is a pane row like the threads.
 const DashboardLink = styled(StyledTreeNodeLink)`
   && {
     display: flex;

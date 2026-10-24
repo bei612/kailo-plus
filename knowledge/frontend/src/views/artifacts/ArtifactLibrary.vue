@@ -1,6 +1,6 @@
 <template>
   <div class="artifact-library">
-    <!-- DD-152: the title is Kailo's header inside the Kailo shell. -->
+    <!-- DD-157: the title is Kailo's header inside the Kailo shell. -->
     <div v-if="!kailoShell" class="header" style="--wails-draggable: drag">
       <div class="header-title" style="--wails-draggable: drag">
         <h2 style="--wails-draggable: drag">{{ $t('artifactLibrary.title') }}</h2>
@@ -211,7 +211,7 @@ import EmptyState from '@/components/EmptyState.vue'
 import DocumentPreview from '@/components/document-preview.vue'
 import ArtifactFileIcon from '@/views/chat/components/ArtifactFileIcon.vue'
 
-// DD-152: inside the Kailo shell the page title is Kailo's header.
+// DD-157: inside the Kailo shell the page title is Kailo's header.
 const kailoShell = isKailoShell()
 
 const PAGE_SIZE = 30

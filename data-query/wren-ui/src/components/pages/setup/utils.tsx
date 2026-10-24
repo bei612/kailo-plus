@@ -23,7 +23,7 @@ type SetupStep = {
   maxWidth?: number;
 };
 
-// DD-152: the onboarding step titles (Kailo page header and the stepper).
+// DD-157: the onboarding step titles (Kailo page header and the stepper).
 export const SETUP_STEP_TITLES: KailoTextKey[] = [
   'setup.stepConnect',
   'setup.stepSelectTables',

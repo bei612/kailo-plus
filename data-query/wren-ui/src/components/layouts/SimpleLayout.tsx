@@ -35,11 +35,11 @@ export default function SimpleLayout(props: Props) {
         'overflow-hidden': pageLoading,
       })}
     >
-      {/* DD-152: inside Kailo the header (tabs, actions) is Kailo's. */}
+      {/* DD-157: inside Kailo the header (tabs, actions) is Kailo's. */}
       {!hostPage && <HeaderBar />}
       <Content className="adm-content">
         {blocked ? (
-          // DD-152 (20 §13 空态): Kailo state, no upstream illustration.
+          // DD-157 (20 §13 空态): Kailo state, no upstream illustration.
           <KailoEmpty
             className="h-100"
             icon={SettingsIcon}

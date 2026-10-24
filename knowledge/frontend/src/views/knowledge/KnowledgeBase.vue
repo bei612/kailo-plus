@@ -1784,7 +1784,7 @@ const handleOpenKBSettings = () => {
   uiStore.openKBSettings(kbId.value);
 };
 
-// DD-152: Kailo's page header — 知识库 › <name> › <folders>, upload as the main action.
+// DD-157: Kailo's page header — 知识库 › <name> › <folders>, upload as the main action.
 const kailoShell = isKailoShell();
 const kailoKbSections = computed(() => [
   { value: 'documents', label: t('knowledgeEditor.wikiBrowser.tabDocuments') },
@@ -2318,7 +2318,7 @@ async function createNewSession(value: string): Promise<void> {
     <div class="knowledge-layout">
       <div class="document-header">
         <div class="document-header-title">
-          <!-- DD-152: inside the Kailo shell the title, breadcrumbs and settings are Kailo's
+          <!-- DD-157: inside the Kailo shell the title, breadcrumbs and settings are Kailo's
                header; the Wiki sections stay as a segmented control in the content. -->
           <div v-if="kailoShell && isWiki" class="kailo-kb-toolbar">
             <ScopeSegments :model-value="activeKbTab" :options="kailoKbSections"

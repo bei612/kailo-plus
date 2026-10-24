@@ -2,7 +2,7 @@ import { ExpressionName } from '@/apollo/client/graphql/__types__';
 import { JOIN_TYPE } from '@/utils/enum';
 import { kailoT, KailoTextKey } from '@/utils/kailoI18n';
 
-// DD-152 (20 §13.8): relation and expression labels follow the Kailo locale.
+// DD-157 (20 §13.8): relation and expression labels follow the Kailo locale.
 const defaultText = () => kailoT('modeling.unknown');
 
 export const getJoinTypeText = (type) => {

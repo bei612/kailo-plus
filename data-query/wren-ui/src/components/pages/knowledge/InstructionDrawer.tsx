@@ -10,7 +10,7 @@ const { Text } = Typography;
 
 type Props = DrawerAction<Instruction>;
 
-// DD-152 (20 §13 抽屉): from the right, 480 wide, Kailo wording.
+// DD-157 (20 §13 抽屉): from the right, 480 wide, Kailo wording.
 export default function InstructionDrawer(props: Props) {
   const { visible, defaultValue, onClose } = props;
   const t = useKailoText();

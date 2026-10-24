@@ -36,7 +36,7 @@
       </t-dropdown>
     </t-tooltip>
 
-    <!-- DD-152: an action started from Kailo's header carries no user activation into
+    <!-- DD-157: an action started from Kailo's header carries no user activation into
          this frame, so the browser would refuse the file chooser; one click here opens it. -->
     <t-dialog
       v-model:visible="pickerDialogVisible"
@@ -91,7 +91,7 @@ const props = withDefaults(defineProps<{
   dataGuide?: string
   tooltip?: string
   placement?: 'top' | 'bottom' | 'bottom-right' | 'bottom-left'
-  /** DD-152: the entries are Kailo header actions; keep inputs and dialogs, hide the trigger. */
+  /** DD-157: the entries are Kailo header actions; keep inputs and dialogs, hide the trigger. */
   triggerHidden?: boolean
 }>(), {
   triggerHidden: false,
@@ -246,7 +246,7 @@ const choosePicked = () => {
   ;(pickerFolder.value ? folderInputRef : fileInputRef).value?.click()
 }
 
-/** Runs one entry of the source menu (DD-152: from Kailo's page header). */
+/** Runs one entry of the source menu (DD-157: from Kailo's page header). */
 const runAction = (value: 'upload' | 'uploadFolder' | 'importURL' | 'manualCreate') => {
   if ((value === 'upload' || value === 'uploadFolder') && !hasUserActivation()) {
     pickerFolder.value = value === 'uploadFolder'

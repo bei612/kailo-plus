@@ -12,7 +12,7 @@ import {
 } from '@/components/pages/home/dashboardGrid/CacheSettingsDrawer';
 
 interface Props {
-  // DD-152: inside Kailo, 分享 is a page header action instead.
+  // DD-157: inside Kailo, 分享 is a page header action instead.
   showShare?: boolean;
   onShare?: () => void;
   isSupportCached: boolean;

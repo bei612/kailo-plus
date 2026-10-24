@@ -1104,7 +1104,7 @@ const selectedModelDisplayName = computed(() => {
   return t('input.notConfigured');
 });
 
-// DD-152: never show an opaque model identifier as its name.
+// DD-157: never show an opaque model identifier as its name.
 const modelDisplayName = (model: ModelConfig) => modelLabel(model, String(locale.value));
 
 const contextWindowTitle = (tokens?: number) => {

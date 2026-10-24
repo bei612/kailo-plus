@@ -1,4 +1,4 @@
-// DD-152 (20 §13.8): home strings. Keys are prefixed "home." and the en table
+// DD-157 (20 §13.8): home strings. Keys are prefixed "home." and the en table
 // must carry exactly the zh-CN keys (enforced by the type below).
 const zh = {
   'home.generatingQuestions': '正在为你准备推荐问题，约需 1 分钟…',

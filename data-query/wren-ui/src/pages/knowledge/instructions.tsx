@@ -184,7 +184,7 @@ export default function ManageInstructions() {
     },
   ];
 
-  // DD-152: Kailo page header — 指令, primary 添加指令 (admins).
+  // DD-157: Kailo page header — 指令, primary 添加指令 (admins).
   useKailoPage({
     title: t('instructions'),
     ready: !loading,

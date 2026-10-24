@@ -44,7 +44,7 @@ const minimapStyle = {
   height: 120,
 };
 
-// DD-152 (20 §13): canvas chrome on Kailo tokens — the minimap, zoom
+// DD-157 (20 §13): canvas chrome on Kailo tokens — the minimap, zoom
 // controls and dot grid follow the theme (no white panels in dark).
 const Canvas = styled.div`
   width: 100%;

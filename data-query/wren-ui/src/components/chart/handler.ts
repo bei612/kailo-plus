@@ -140,7 +140,7 @@ const config: Config = {
   point: { size: 60, color: DEFAULT_COLOR },
 };
 
-// DD-152 (20 §13, 暗色无低对比文字): chart text and grid follow the Kailo
+// DD-157 (20 §13, 暗色无低对比文字): chart text and grid follow the Kailo
 // theme. Vega draws SVG attributes, so the token values are resolved from
 // the document when the chart is built (the Chart component rebuilds on a
 // theme change); the brand-neutral series palette stays as content.

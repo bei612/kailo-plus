@@ -10,7 +10,7 @@ import * as events from '@/utils/events';
 
 const { Sider } = Layout;
 
-// DD-152: inside Kailo there is no header of our own (Kailo renders it), so
+// DD-157: inside Kailo there is no header of our own (Kailo renders it), so
 // the panes take the full frame height and only the content area scrolls.
 const basicStyle = css<{ $hostPage?: boolean }>`
   height: ${(props) => (props.$hostPage ? '100vh' : 'calc(100vh - 48px)')};

@@ -1,6 +1,6 @@
 import { CSSProperties, ReactNode } from 'react';
 
-// DD-152 (20 §13.9): single-colour line icons in the Kailo (Lucide) style —
+// DD-157 (20 §13.9): single-colour line icons in the Kailo (Lucide) style —
 // 24 grid, stroke 1.75, round caps, currentColor (text-muted, selected rows
 // follow the row text). Inlined so the build adds no icon dependency. Path
 // data from Lucide (ISC licence).

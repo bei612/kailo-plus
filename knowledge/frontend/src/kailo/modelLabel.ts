@@ -1,4 +1,4 @@
-// DD-152 (20 §13): models registered through the Kailo model gateway may carry
+// DD-157 (20 §13): models registered through the Kailo model gateway may carry
 // an opaque identifier (a UUID) as their name. A raw identifier is never shown
 // as a model name: the display name wins, then a readable name, then a neutral
 // label ("默认模型" / "Default model").

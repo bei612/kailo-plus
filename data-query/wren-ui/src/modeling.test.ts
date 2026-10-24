@@ -27,7 +27,7 @@ jest.mock('./apollo/client', () => ({
   },
 }));
 jest.mock('antd', () => ({}));
-// DD-152: results are announced through Kailo (kailoHost.notify).
+// DD-157: results are announced through Kailo (kailoHost.notify).
 jest.mock('./utils/kailoHost', () => ({
   notify: { success: jest.fn(), warning: jest.fn(), error: jest.fn() },
   setPage: jest.fn(),

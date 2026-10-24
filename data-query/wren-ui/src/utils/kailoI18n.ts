@@ -5,7 +5,7 @@ import modelingMessages from './i18n/modeling';
 import knowledgeMessages from './i18n/knowledge';
 import setupMessages from './i18n/setup';
 
-// DD-133 §1/§4, DD-152 (20 §13.8): every visible string follows the Kailo
+// DD-133 §1/§4, DD-157 (20 §13.8): every visible string follows the Kailo
 // locale (zh-CN default, en). The component name is fixed by DD-133
 // (问数 / Data Q&A); the deployment display name comes from
 // PLATFORM_DISPLAY_NAME. Shell keys live here; each product area keeps its
@@ -21,7 +21,7 @@ const shell = {
     settings: '设置',
     threads: '对话',
     newThread: '新建',
-    // DD-152 (20 §13.2): page header Kailo renders for this component.
+    // DD-157 (20 §13.2): page header Kailo renders for this component.
     newConversation: '新对话',
     newConversationAction: '新建对话',
     share: '分享',
@@ -35,7 +35,7 @@ const shell = {
     addQuestionSqlPair: '添加问答对',
     addInstruction: '添加指令',
     actionFailed: '操作未完成',
-    // DD-152 (20 §13.8 确认): destructive actions are questions.
+    // DD-157 (20 §13.8 确认): destructive actions are questions.
     cancel: '取消',
     confirm: '确定',
     delete: '删除',
@@ -101,7 +101,7 @@ const shell = {
     settings: 'Settings',
     threads: 'Conversations',
     newThread: 'New',
-    // DD-152 (20 §13.2): page header Kailo renders for this component.
+    // DD-157 (20 §13.2): page header Kailo renders for this component.
     newConversation: 'New conversation',
     newConversationAction: 'New conversation',
     share: 'Share',
@@ -115,7 +115,7 @@ const shell = {
     addQuestionSqlPair: 'Add question-SQL pair',
     addInstruction: 'Add instruction',
     actionFailed: 'Action did not complete',
-    // DD-152 (20 §13.8 确认): destructive actions are questions.
+    // DD-157 (20 §13.8 确认): destructive actions are questions.
     cancel: 'Cancel',
     confirm: 'Confirm',
     delete: 'Delete',

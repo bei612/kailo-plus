@@ -3,7 +3,7 @@ import { useState } from 'react';
 import styled, { css } from 'styled-components';
 import { Tree, TreeProps } from 'antd';
 
-// DD-152 (20 §13 列表窗格): rows 32 high, 13/500, radius 6, 8 px inner
+// DD-157 (20 §13 列表窗格): rows 32 high, 13/500, radius 6, 8 px inner
 // padding and 8 px outer margin; hover = hover token, selected = brand-soft
 // with brand-soft text; group titles are Overline 11/14 600 0.04em muted
 // upper case; icons are single-colour line in muted (selected rows follow

@@ -85,7 +85,7 @@ export default function Home() {
   const askPrompt = useAskPrompt();
   const t = useKailoText();
 
-  // DD-152: Kailo page header — 新对话, primary 新建对话 (starts over).
+  // DD-157: Kailo page header — 新对话, primary 新建对话 (starts over).
   useKailoPage({
     title: t('newConversation'),
     actions: [

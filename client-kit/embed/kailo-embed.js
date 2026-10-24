@@ -237,7 +237,7 @@
     return out;
   }
 
-  function update(theme, locale) {
+  function update(theme, locale, announce) {
     var changed = { theme: theme !== state.theme, locale: locale !== state.locale };
     state.theme = theme;
     state.locale = locale;
@@ -249,7 +249,8 @@
       if (global.requestAnimationFrame) global.requestAnimationFrame(function () { global.requestAnimationFrame(settle); });
       else setTimeout(settle, 32);
     }
-    if (!changed.theme && !changed.locale) return;
+    // DD-157: the first answer from Kailo is always announced (it carries the host's features).
+    if (!changed.theme && !changed.locale && !announce) return;
     var current = snapshot();
     var targets = listeners.slice();
     for (var i = 0; i < targets.length; i += 1) {
@@ -373,7 +374,7 @@
     hostConnected = true;
     supplied = { theme: theme, locale: locale };
     writeStore(supplied);
-    update(theme, locale);
+    update(theme, locale, firstContact);
     // A header set before Kailo answered is delivered once the host is known.
     if (firstContact && currentPage && hostHas("page")) post("page", { page: currentPage });
   });

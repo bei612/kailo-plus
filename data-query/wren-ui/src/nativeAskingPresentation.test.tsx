@@ -38,7 +38,7 @@ describe('original Asking stopped controls consume governed query evidence', () 
       data: {},
       preparedTask: { status: AskingTaskStatus.STOPPED },
     };
-    // DD-152: Kailo wording in the page locale (the last one set above).
+    // DD-157: Kailo wording in the page locale (the last one set above).
     const html = renderToStaticMarkup(<PreparationStatus {...props} />);
     expect(html).toContain(kailoText(mockLocale, 'home.cancelledByUser'));
     expect(html).toContain(kailoText(mockLocale, 'home.rerun'));

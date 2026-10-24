@@ -3,7 +3,7 @@
 import { watch } from 'vue'
 import { kailoConfig } from './runtime'
 import { productName } from './brand'
-import { connectHost, hostRendersPage, isEmbedded, kailoEmbed, offerIdentityLocale } from './bridge'
+import { HOST_WITHOUT_PAGE_KEY, connectHost, hostRendersPage, isEmbedded, kailoEmbed, offerIdentityLocale } from './bridge'
 import { setHostTheme } from '@/composables/useTheme'
 
 let embedded = false
@@ -15,7 +15,7 @@ export function isKailoEmbedded(): boolean {
 }
 
 /**
- * DD-152: Kailo renders the page header, toasts and confirmations (Kailo mode,
+ * DD-157: Kailo renders the page header, toasts and confirmations (Kailo mode,
  * inside the Kailo frame, `page` declared). The app then renders content only:
  * no product menu, page titles, breadcrumbs or own navigation chrome.
  */
@@ -57,6 +57,17 @@ export function installKailo(i18n: I18nLike): void {
     if (runtime) {
       shell = hostRendersPage(runtime)
       if (shell) document.documentElement.setAttribute('data-kailo-shell', '')
+      // DD-157: the shell decision is read once per document; if the Kailo that
+      // answers does not draw headers, keep our own navigation from the next load.
+      if (shell && typeof runtime.hostSupports === 'function') {
+        const check = () => {
+          if (!runtime.getState().hostConnected || runtime.hostSupports?.('page')) return
+          window.removeEventListener('kailo:presentation', check)
+          try { window.sessionStorage.setItem(HOST_WITHOUT_PAGE_KEY, '1') } catch { return }
+          window.location.reload()
+        }
+        window.addEventListener('kailo:presentation', check)
+      }
       connectHost(runtime, {
         onTheme: theme => setHostTheme(theme),
         onLocale: locale => setI18nLocale(i18n, locale),

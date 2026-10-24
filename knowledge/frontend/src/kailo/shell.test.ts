@@ -1,4 +1,4 @@
-// DD-152: page header shape, host feedback routing, Kailo wording and model labels.
+// DD-157: page header shape, host feedback routing, Kailo wording and model labels.
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { hostRendersPage, type KailoEmbedRuntime, type KailoPage, type KailoToast, type KailoConfirm } from './bridge'

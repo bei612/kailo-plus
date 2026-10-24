@@ -2,7 +2,7 @@ import { Spin } from 'antd';
 import styled, { keyframes } from 'styled-components';
 import useKailoText from '@/utils/kailoI18n';
 
-// DD-152 (20 §13 加载): pages load behind a low-contrast skeleton (list pane
+// DD-157 (20 §13 加载): pages load behind a low-contrast skeleton (list pane
 // rows and content blocks, 1.6s linear band) on the Kailo surface — never a
 // white full-screen veil with a large spinner; local waits use a 14–16px
 // ring in the brand colour.

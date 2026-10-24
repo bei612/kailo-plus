@@ -18,7 +18,7 @@ const branded = brandLocaleMessages({
   'ko-KR': koKR,
   'ja-JP': jaJP
 }, kailoConfig().displayName)
-// DD-152 (20 §13.8): Kailo wording (你 / Agent / 对话 …) in Kailo mode, applied centrally.
+// DD-157 (20 §13.8): Kailo wording (你 / Agent / 对话 …) in Kailo mode, applied centrally.
 const messages = kailoConfig().mode ? kailoLocaleMessages(branded) : branded
 
 // User's explicit past choice wins; otherwise use the deployment default.

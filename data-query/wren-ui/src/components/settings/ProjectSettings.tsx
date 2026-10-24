@@ -35,7 +35,7 @@ export default function ProjectSettings(props: Props) {
     },
   });
 
-  // DD-152 (20 §13.8): irreversible, so Kailo's danger confirmation.
+  // DD-157 (20 §13.8): irreversible, so Kailo's danger confirmation.
   const reset = async () => {
     const confirmed = await confirm({
       tone: 'danger',

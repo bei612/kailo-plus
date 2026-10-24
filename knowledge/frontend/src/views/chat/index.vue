@@ -5,7 +5,7 @@
         'has-references-panel': referencesDrawerVisible,
         'has-sandbox-panel': sandboxPanel.visible.value,
     }" :style="{ '--sandbox-panel-width': `${sandboxPanel.width.value}px` }">
-        <!-- DD-152: inside the Kailo shell the conversation title and actions are Kailo's header. -->
+        <!-- DD-157: inside the Kailo shell the conversation title and actions are Kailo's header. -->
         <ChatHeader v-if="!embeddedMode && !kailoShell" :session="currentSession" :has-references-panel="referencesDrawerVisible" />
         <!-- 沙箱面板收起时：图标与左侧栏展开按钮同一套，位置镜像会话左上角三个点。 -->
         <div v-if="!embeddedMode && !sandboxPanel.visible.value" class="sandbox-header-toggle">
@@ -260,7 +260,7 @@ const uiStore = useUIStore();
 const { navigateToKnowledgeBaseList } = useKnowledgeBaseCreationNavigation();
 const { t } = useI18n();
 
-// DD-152: Kailo's page header for a conversation — its title, 新建对话 and the
+// DD-157: Kailo's page header for a conversation — its title, 新建对话 and the
 // conversation's own actions (the native header row is not rendered).
 const kailoShell = isKailoShell();
 const deleteCurrentSession = () => {
