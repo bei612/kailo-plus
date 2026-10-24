@@ -20,8 +20,9 @@
 #                WeKnora: start.sh --platform-adapter；Wren: tenants/<tenantId> 组件专属
 #                OpenBao Agent（compose.adapter-agent.yaml）+ query-governance.yaml overlay，
 #                平台 namespace 的 ActionToken/Gateway 公钥取平台 Agent 已渲染的只读文件）。
-#                需要 binding 计划、adapter 配置（Wren: config --kind data-query）与
-#                adapter-delivery.py reader 已完成。
+#                DD-136(6)：云盘由 adapter-converge.py 按 deploy/components/adapters.json 的声明幂等推导
+#                release 与 binding 计划、adapter 配置、Tenant namespace 只读 AppRole/一次性 secret-id、
+#                交付目录条目，binding 存在后声明其 adapter IdP client；不创建 binding、不写 binding secret。
 # 受控 env 默认：Cells cells/deploy.env、WeKnora knowledge/native.env、Wren
 # data-query/native.env、DocumentServer document-editor/native.env（均在
 # /volumes/data/kailo/components 下，0600）；平台 .env 只读取
@@ -74,6 +75,7 @@ if [ -n "$conformance_close" ]; then
   exec python3 -I -B "$S/tools/component-release/conformance-auto.py" close "$conformance_close" --runtime "$R"
 fi
 stamp=$(date -u +%Y%m%dT%H%M%SZ)
+converge=$S/deploy/components/adapter-converge.py
 backup_root=${COMPONENT_BACKUP_ROOT:-/volumes/data/kailo/backups/components}
 before=$("${D[@]}" ps --format '{{.ID}} {{.Names}} {{.Image}} {{.Status}}' | sort -k2)
 
@@ -146,7 +148,11 @@ case "$component" in
     directory_secret "$ENV" CELLS file-storage
     if "$check"; then
       bash "$here/start.sh" --check "$ENV"
-      if "$adapter"; then ensure_image "$(env_value "$ENV" CELLS_ADAPTER_IMAGE)"; bash "$here/start.sh" --check --platform-adapter "$ENV"; fi
+      if "$adapter"; then
+        ensure_image "$(env_value "$ENV" CELLS_ADAPTER_IMAGE)"
+        python3 -I -B "$converge" plan file-storage --source "$S" --commit "$commit" --runtime "$R"
+        [ ! -f "$(env_value "$ENV" CELLS_ADAPTER_CONFIG_FILE)" ] || bash "$here/start.sh" --check --platform-adapter "$ENV"
+      fi
       exit 0
     fi
     echo "== 1. 备份 Cells 数据库（数据目录原地保留）"
@@ -154,7 +160,9 @@ case "$component" in
     echo "== 2. Cells（同一 Compose 项目原地替换）"
     bash "$here/start.sh" "$ENV"
     if "$adapter"; then
-      echo "== 3. 组件专属 OpenBao Agent"
+      echo "== 3. adapter 声明式投递（DD-136(6)）：release/binding 计划、adapter 配置、Tenant namespace 只读 AppRole 与一次性 secret-id、交付目录条目"
+      python3 -I -B "$converge" deliver file-storage --source "$S" --commit "$commit" --runtime "$R"
+      echo "== 3a. 组件专属 OpenBao Agent"
       ensure_image "$(env_value "$ENV" ADAPTER_AGENT_IMAGE)"
       ensure_image "$(env_value "$ENV" CELLS_ADAPTER_IMAGE)"
       agent=("${D[@]}" compose --env-file "$ENV" -f "$S/deploy/components/compose.adapter-agent.yaml")
@@ -167,6 +175,8 @@ case "$component" in
       [ -S "$delivery/bao.sock" ] || { echo 'Agent socket 未出现；查看 Agent 日志（不含 secret）' >&2; exit 1; }
       echo "== 4. Cells adapter"
       bash "$here/start.sh" --platform-adapter "$ENV"
+      echo "== 5. binding 的 adapter IdP client（binding 已创建且 Agent 已渲染凭据时声明，否则 PENDING）"
+      python3 -I -B "$converge" client file-storage --source "$S" --commit "$commit" --runtime "$R"
     fi
     readback_project=$project
     frame_headers "$(env_value "$ENV" CELLS_EXTERNAL)/"
