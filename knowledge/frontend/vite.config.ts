@@ -47,6 +47,24 @@ function embedHtmlDevFallback(): Plugin {
     },
   }
 }
+// DD-152: app imports of 'tdesign-vue-next' resolve to the Kailo shell, which
+// routes MessagePlugin / DialogPlugin.confirm to Kailo's toast and confirmation
+// inside the Kailo frame and re-exports everything else unchanged. The shell
+// itself (and node_modules) keep the real package.
+const TDESIGN_SHELL = resolve(__dirname, 'src/kailo/tdesign-shell.ts')
+function kailoTDesignShell(): Plugin {
+  return {
+    name: 'kailo-tdesign-shell',
+    enforce: 'pre',
+    resolveId(source, importer) {
+      if (source !== 'tdesign-vue-next' || !importer) return null
+      const from = importer.split('?')[0]
+      if (from === TDESIGN_SHELL || from.includes('/node_modules/')) return null
+      return TDESIGN_SHELL
+    },
+  }
+}
+
 const DEV_PROXY_TARGET =
   process.env.VITE_DEV_PROXY_TARGET ||
   process.env.FRONTEND_BACKEND_URL ||
@@ -120,6 +138,7 @@ export default defineConfig({
     vue(),
     vueJsx(),
     embedHtmlDevFallback(),
+    kailoTDesignShell(),
   ],
   resolve: {
     alias: {

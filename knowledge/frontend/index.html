@@ -7,6 +7,9 @@
          KAILO_FRAME_ANCESTORS), Kailo logo, design tokens and the platform runtime.
          All three files are build inputs served from this origin. -->
     <meta name="kailo-web-origin" content="__KAILO_WEB_ORIGIN__">
+    <!-- DD-152 (07 §4.8.7): Kailo renders this page's header, toasts, confirmations
+         and global shortcuts; read by kailo-embed.js, so it precedes the script. -->
+    <meta name="kailo-embed-features" content="page toast confirm shortcuts">
     <link rel="icon" type="image/png" href="/kailo/app-icon.png" vite-ignore>
     <link rel="stylesheet" href="/kailo/kailo-theme-tokens.css" vite-ignore>
     <script src="/kailo/kailo-embed.js" vite-ignore></script>
