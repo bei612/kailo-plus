@@ -90,10 +90,16 @@ func kailoPlatformLogoutURL(raw string) error {
 	return nil
 }
 
+// kailoEmbedFeatures are the DD-152 page-shell features this build implements
+// (07 §4.8.7): Kailo draws the page header, toasts and destructive confirmations
+// and owns the global chords. Read by kailo-embed.js, so it precedes the runtime.
+const kailoEmbedFeatures = "page toast confirm shortcuts"
+
 // kailoHead places, before the native styles and boot script (07 §4.7.1):
 // the Kailo web origin (KAILO_FRAME_ANCESTORS, the frame-ancestors fact), the
-// platform token sheet and runtime (kailo-embed.js), the Cells overlay and
-// the Cells bridge, so the first paint already uses the Kailo theme.
+// DD-152 feature declaration, the platform token sheet and runtime
+// (kailo-embed.js), the Cells overlay and the Cells bridge, so the first paint
+// already uses the Kailo theme.
 // The paths are root-absolute: this head precedes the page's <base>, so a
 // relative path resolved against the request path (/login/callback loaded
 // /login/plug/... as HTML and the runtime never started after SSO).
@@ -102,6 +108,7 @@ func kailoHead(version string) template.HTML {
 	root := "/" + kailoEmbedRoot
 	var b strings.Builder
 	fmt.Fprintf(&b, `<meta name="kailo-web-origin" content="%s">`+"\n", template.HTMLEscapeString(strings.Join(kailoWebOrigins(), " ")))
+	fmt.Fprintf(&b, `<meta name="kailo-embed-features" content="%s">`+"\n", kailoEmbedFeatures)
 	fmt.Fprintf(&b, `<link rel="stylesheet" type="text/css" href="%s/kailo-theme-tokens.css?v=%s">`+"\n", root, v)
 	fmt.Fprintf(&b, `<link rel="stylesheet" type="text/css" href="%s/kailo-overlay.css?v=%s">`+"\n", root, v)
 	fmt.Fprintf(&b, `<script type="text/javascript" src="%s/kailo-embed.js?v=%s"></script>`+"\n", root, v)

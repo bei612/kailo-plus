@@ -411,6 +411,7 @@ export default class ThemeBuilder {
         }
 
         const themeCusto = {
+            kailo: !!kailo,
             palette,
             fontFamily: kailo ? kailo.fontFamily : undefined,
             borderRadius: kailo ? kailo.radius : (isMUI3?20:undefined),
@@ -527,6 +528,19 @@ export default class ThemeBuilder {
             shape:{
                 borderRadius:themeCusto.borderRadius
             },
+            // DD-152 (20 §13.6): no ripple; Kailo tooltips (dark chip, 12px, radius 6, no arrow, 400 ms).
+            components: kailo ? {
+                MuiButtonBase: {defaultProps: {disableRipple: true}},
+                MuiTooltip: {
+                    defaultProps: {arrow: false, enterDelay: 400, enterNextDelay: 400},
+                    styleOverrides: {tooltip: {
+                        backgroundColor: systemDark ? 'var(--kailo-color-accent)' : 'var(--kailo-color-foreground)',
+                        color: systemDark ? 'var(--kailo-color-foreground)' : 'var(--kailo-color-background)',
+                        fontSize: 12, lineHeight: '16px', fontWeight: 500, borderRadius: 6, padding: '4px 8px',
+                        boxShadow: 'var(--kailo-shadow-sm)',
+                    }},
+                },
+            } : undefined,
         })
 
         if(customPalette) {
@@ -877,6 +891,24 @@ export default class ThemeBuilder {
         // Merge active styles
         styles.activeButtonStyle = {...styles.buttonsStyle, ...styles.activeButtonStyle};
         styles.activeButtonIconStyle = {...styles.buttonsIconStyle, ...styles.activeButtonIconStyle};
+
+        if(themeCusto.kailo) {
+            // DD-152 (20 §13.3): Kailo page frame — flat panes on the page
+            // surface separated by 1px lines, list-pane rows of 32px / radius 6.
+            const line = '1px solid var(--kailo-color-border)'
+            styles.masterStyle = {...styles.masterStyle, backgroundColor: 'var(--kailo-color-background)'}
+            styles.masterListContainer = {...styles.masterListContainer, padding: 0, paddingBottom: 0, columnGap: 0}
+            styles.listStyle = {...styles.listStyle, borderRadius: 0, backgroundColor: isGrid ? 'transparent' : 'var(--kailo-color-background)'}
+            styles.leftPanel.masterStyle = {...styles.leftPanel.masterStyle, background: 'var(--kailo-color-background)', color: 'var(--kailo-color-foreground)', borderRight: line, borderRadius: 0}
+            styles.leftPanel.railPanelStyle = {...styles.leftPanel.railPanelStyle, background: 'var(--kailo-color-background)', borderRight: line}
+            const styler = styles.leftPanel.workspacesList.workspaceEntryStyler
+            styler.rootItemStyle.default = {padding: '6px 8px', borderRadius: 6, margin: '0 8px'}
+            styler.treeItemStyle.default = {borderRadius: 6}
+            styles.infoPanel.masterStyle = {...styles.infoPanel.masterStyle, backgroundColor: 'var(--kailo-color-background)', borderLeft: line}
+            if(!searchView) {
+                styles.appBarStyle = {...styles.appBarStyle, borderRadius: 0, margin: 0, borderBottom: line}
+            }
+        }
 
         if(this.userTheme === 'material') {
             // Invert uwidget

@@ -23,6 +23,10 @@ import React from 'react'
 import Pydio from 'pydio'
 import { connect } from 'react-redux';
 import { Paper } from 'material-ui';
+import PydioApi from 'pydio/http/api'
+import DataModel from 'pydio/model/data-model'
+
+const kailoHostsHeader = () => !!(window.KailoCells && window.KailoCells.pageHosted && window.KailoCells.pageHosted())
 import Tab from './EditorTab';
 import EditorToolbar from './EditorToolbar';
 import Button from './EditorButton';
@@ -78,6 +82,48 @@ function buttonStyleVisible(rootStyle, visible) {
     style: (props) => props.minimiseStyle
 })
 class Editor extends React.Component {
+
+    // DD-152 (07 §4.8.7): Kailo's header shows the open file (title, folder
+    // breadcrumbs, download / share) and closes it from the breadcrumbs.
+    reportToKailo(open) {
+        const kailo = window.KailoCells
+        if (!kailo || !kailo.setEditor) {
+            return
+        }
+        const {activeTab, isMinimised, tabDeleteAll} = this.props
+        const node = open && activeTab && !isMinimised ? activeTab.node : null
+        if (!node) {
+            if (this._kailoNode) {
+                this._kailoNode = null
+                kailo.setEditor(null)
+            }
+            return
+        }
+        if (this._kailoNode === node && this._kailoTitle === activeTab.title) {
+            return
+        }
+        this._kailoNode = node
+        this._kailoTitle = activeTab.title
+        const a = Pydio.getInstance().getController().getActionByName('download')
+        const download = a && !a.deny && !a.contextHidden ? () => {
+            const selection = new DataModel(true)
+            selection.setSelectedNodes([node])
+            PydioApi.getClient().downloadSelection(selection)
+        } : null
+        kailo.setEditor({node, title: activeTab.title, download, close: () => tabDeleteAll && tabDeleteAll()})
+    }
+
+    componentDidMount() {
+        this.reportToKailo(true)
+    }
+
+    componentDidUpdate() {
+        this.reportToKailo(true)
+    }
+
+    componentWillUnmount() {
+        this.reportToKailo(false)
+    }
 
     handleBlurOnSelection(e) {
         const {editorModify} = this.props
@@ -153,7 +199,7 @@ class Editor extends React.Component {
         return (
             <Paper zDepth={5} style={paperStyle} onClick={(e) => this.handleBlurOnSelection(e)} tabIndex={"-1"} onKeyDown={keyPress}>
 
-                {!hideToolbar && (
+                {!hideToolbar && !kailoHostsHeader() && (
                     <EditorToolbar style={toolbarStyle} display={fixedToolbar ? "fixed" : "removable"} />
                 )}
                 <div className="body" style={parentStyle} onClick={(e) => this.handleFocusOnSelection(e)}>

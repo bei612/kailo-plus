@@ -63,6 +63,7 @@ class Pydio extends Observable{
         if(window.MessageHash) {
             this.MessageHash = window.MessageHash;
         }
+        Pydio.kailoWording(this.MessageHash, this.currentLanguage);
         this.ApiClient = PydioApi.getClient();
         this.ApiClient.setPydioObject(this);
         this.ActivityMonitor = new ActivityMonitor(this);
@@ -449,6 +450,7 @@ class Pydio extends Observable{
                         this.MessageHash[key] = this.MessageHash[key].replace("\\n", "\n");
                     }
                 }
+                Pydio.kailoWording(this.MessageHash, newLanguage);
                 this.notify("language", newLanguage);
                 this.Controller.refreshGuiActionsI18n();
                 if(reloadRegistry){
@@ -624,6 +626,18 @@ class Pydio extends Observable{
             return Pydio.instance.Parameters.get("backend")["Version"];
         }
         return "";
+    }
+
+    /**
+     * Kailo vocabulary (DD-152, 20 §13.8) applied to a loaded message table in
+     * Kailo mode; kailo-cells.js owns the rules.
+     */
+    static kailoWording(hash, language){
+        const kailo = typeof window !== 'undefined' && window.KailoCells;
+        if(kailo && kailo.wording){
+            kailo.wording(hash, language);
+        }
+        return hash;
     }
 
     /**

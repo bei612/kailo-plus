@@ -52,19 +52,29 @@ export default function (pydio) {
     return function(){
         let message = MessageHash[176];
         let moreComponents
+        let permanent = false
         const allowPermanentDeletion = pydio.getPluginConfigs("access.gateway").get("DELETE_ALLOW_PERMANENT")
         if (pydio.getContextHolder().getRootNode().getMetadata().get("ws_skip_recycle") === "true"
             || pydio.getContextHolder().getContextNode().getPath().indexOf('/recycle_bin') === 0) {
             message = MessageHash[177];
+            permanent = true
         } else if (allowPermanentDeletion) {
             moreComponents = {
                 removePermanently: (onChange) => <PermanentRemoveCheckbox onChange={onChange} messages={MessageHash}/>
             };
         }
+        // DD-152: Kailo asks the question ("删除 3 个项目？") unless the native
+        // dialog carries the extra "delete permanently" choice.
+        const selected = pydio.getContextHolder().getSelectedNodes()
+        const kailo = window.KailoCells
+        const kailoConfirm = !moreComponents && kailo && kailo.deleteConfirm
+            ? kailo.deleteConfirm(selected.length, selected.length === 1 ? selected[0].getLabel() : '', permanent)
+            : undefined
         pydio.UI.openComponentInModal('PydioReactUI', 'ConfirmDialog', {
             message:message,
             dialogTitleId: 7,
             moreComponents,
+            kailoConfirm,
             validCallback: (moreValues) => {
                 const nodes = pydio.getContextHolder().getSelectedNodes();
                 const slug = pydio.user.getActiveRepositoryObject().getSlug();

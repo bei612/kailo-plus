@@ -219,6 +219,20 @@ export default class Builder{
     }
 
     openComponentInModal(namespace, componentName, props){
+        // DD-152 (07 §4.8.7): a destructive confirmation that declares its Kailo
+        // form is shown by Kailo; the native dialog remains for top-level visits.
+        const kailo = window.KailoCells;
+        if(namespace === 'PydioReactUI' && componentName === 'ConfirmDialog' && props && props.kailoConfirm && kailo && kailo.confirm){
+            const answer = kailo.confirm(props.kailoConfirm);
+            if(answer && answer.then){
+                answer.then(confirmed => {
+                    if(confirmed && props.validCallback){
+                        props.validCallback();
+                    }
+                });
+                return;
+            }
+        }
         if(!this._modalOpener){
             Logger.error('Cannot find any modal opener for opening component ' + namespace + '.' + componentName);
             return;
@@ -269,6 +283,11 @@ export default class Builder{
     }
 
     displayMessage(type, message, actionLabel = null, actionCallback = null){
+        // DD-152: one notification surface, Kailo's toast, inside a Kailo frame.
+        const kailo = window.KailoCells;
+        if(kailo && kailo.toast && kailo.toast(type, message, actionLabel)){
+            return;
+        }
         if(!this._messageBar){
             Logger.error('Cannot find any messageBar for displaying message ' + message);
             return;

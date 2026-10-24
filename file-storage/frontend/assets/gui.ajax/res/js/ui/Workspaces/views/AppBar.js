@@ -115,6 +115,42 @@ const AppBar = ({pydio, muiTheme, styles, searchIconButton, searchIconCallback, 
     }
     const appBarRightProps = {pydio, muiTheme, styles, searchIconButton, searchIconCallback, searchView, searchTools, searchViewTransition, showInfoPanel, infoPanelOpen, showChatTab, chatOpen, onOpenDrawer, onUpdateSearchView, onToggleRightPanel, sortingInfo, displayMode}
 
+    // DD-152 (07 §4.8.7): inside a Kailo frame Kailo draws the title,
+    // breadcrumbs and the upload / new-folder actions (and the file search);
+    // the native bar keeps only the selection toolbar and the view controls.
+    const kailo = typeof window !== 'undefined' && window.KailoCells
+    if(!searchView && kailo && kailo.pageHosted && kailo.pageHosted()) {
+        return (
+            <Paper zDepth={0} style={{...masterStyle, height: displayMode === 'pages' ? 0 : 48, alignItems: 'center', padding: displayMode === 'pages' ? 0 : '0 8px 0 16px'}} rounded={false} className={"kailo-content-toolbar"}>
+                <div id="workspace_toolbar" style={{flex: 1, display: 'flex', alignItems: 'center', overflow: 'hidden'}}>
+                    {!mobile &&
+                        <Toolbar
+                            pydio={pydio}
+                            id="main-toolbar"
+                            toolbars={mainToolbars}
+                            groupOtherList={mainToolbarsOthers}
+                            renderingType="button"
+                            toolbarStyle={{overflow:'hidden'}}
+                            flatButtonStyle={styles.flatButtonStyle}
+                            buttonStyle={styles.flatButtonLabelStyle}
+                        />
+                    }
+                    <span style={{flex: 1}}/>
+                    <ListPaginator
+                        id="paginator-toolbar"
+                        style={{height: 24, borderRadius: 6, background: 'var(--md-sys-color-surface-3)', color: 'var(--md-sys-color-secondary)', marginRight: 5}}
+                        toolbarColor={'var(--md-sys-color-secondary)'}
+                        dataModel={pydio.getContextHolder()}
+                        smallDisplay={true}
+                        toolbarDisplay={true}
+                    />
+                    {sortingTag}
+                </div>
+                <AppBarRight {...appBarRightProps} hideSearch={true} containerStyle={{display:'flex', alignItems:'center'}}/>
+            </Paper>
+        )
+    }
+
     return (
         <Paper zDepth={styles.appBarZDepth} style={masterStyle} rounded={false}>
             {searchView &&

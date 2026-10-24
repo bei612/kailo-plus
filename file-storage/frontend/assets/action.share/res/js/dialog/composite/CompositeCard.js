@@ -146,9 +146,12 @@ class CompositeCard extends React.Component {
     deleteAllShares() {
         const {pydio} = this.props;
         const {model} = this.state;
+        const kailo = window.KailoCells;
         pydio.UI.openComponentInModal('PydioReactUI', 'ConfirmDialog', {
             dialogTitleId: 'share_center.composite.deleteAll',
             message: pydio.MessageHash['share_center.' + 255],
+            // DD-152: shown by Kailo inside a Kailo frame.
+            kailoConfirm: kailo && kailo.namedConfirm ? kailo.namedConfirm('delete-shares') : undefined,
             validCallback: () => {
                 model.stopObserving('update');
                 model.deleteAll().then(res => {

@@ -138,3 +138,227 @@ body.react-mui-context,
 [data-kailo-theme="dark"] .react-mui-context [class*="MuiPaper-elevation"] {
     box-shadow: var(--kailo-shadow-md) !important;
 }
+
+/* ======================================================================
+ * DD-152 integrated interaction (07 §4.8.7, 20 §13): the native page is a
+ * Kailo business page. Everything below uses Kailo roles only.
+ * ====================================================================== */
+
+/* Theme switch: the native re-render outlasts the runtime's one-frame
+ * marker (kailo-cells.js keeps data-kailo-cells-theme-switching for it). */
+:root[data-kailo-cells-theme-switching] *,
+:root[data-kailo-cells-theme-switching] *::before,
+:root[data-kailo-cells-theme-switching] *::after {
+    transition: none !important;
+    animation: none !important;
+}
+
+/* No missing-glyph boxes while the icon font loads (spec §3 加载). */
+:root[data-kailo-runtime]:not([data-kailo-icons-ready]) .mdi::before,
+:root[data-kailo-runtime]:not([data-kailo-icons-ready]) [class^="mdi-"]::before,
+:root[data-kailo-runtime]:not([data-kailo-icons-ready]) [class*=" mdi-"]::before,
+:root[data-kailo-runtime]:not([data-kailo-icons-ready]) [class*="icomoon-"]::before {
+    visibility: hidden;
+}
+
+/* Page surface: no tinted canvas behind the panes, no aura in a frame. */
+:root[data-kailo-page-hosted] #orbit_content,
+:root[data-kailo-page-hosted] #background-imager {
+    background-image: none !important;
+}
+
+/* ---- List pane (spec §2): location tree / favorites ------------------- */
+.kailo-list-pane {
+    background: var(--kailo-color-background) !important;
+    color: var(--kailo-color-foreground) !important;
+    border-right: 1px solid var(--kailo-color-border);
+    border-radius: 0 !important;
+}
+
+.kailo-list-pane-title,
+:root[data-kailo-runtime] .user-workspaces-list .workspaces-list-section-title,
+:root[data-kailo-runtime] .user-workspaces-list > div > div:first-child > div[style*="text-transform"] {
+    font-size: 11px !important;
+    line-height: 14px !important;
+    font-weight: 600 !important;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--kailo-color-muted-foreground) !important;
+}
+
+.kailo-list-pane-title {
+    padding: 16px 16px 8px;
+}
+
+:root[data-kailo-runtime] .workspace-entry {
+    min-height: 32px;
+    box-sizing: border-box;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--kailo-color-foreground);
+}
+
+:root[data-kailo-runtime] .workspace-entry:hover {
+    background-color: var(--kailo-color-hover);
+}
+
+:root[data-kailo-runtime] .workspace-entry .workspace-label {
+    font-size: 13px;
+    line-height: 20px;
+}
+
+/* Monochrome line icons in navigation (spec §4 图标). */
+:root[data-kailo-runtime] .workspace-entry .mdi,
+:root[data-kailo-runtime] .kailo-list-pane .mdi {
+    color: var(--kailo-color-muted-foreground);
+}
+
+/* ---- Files list (spec §3 列表/表格): 40px rows, selected = brand-soft --- */
+:root[data-kailo-runtime] .react-mui-context.mui3-token .material-list .material-list-entry.selected,
+:root[data-kailo-runtime] .react-mui-context.mui3-token .modern-list .modern-list-entry.selected {
+    background-color: var(--kailo-color-selected) !important;
+    color: var(--kailo-color-selected-foreground) !important;
+}
+
+:root[data-kailo-runtime] .react-mui-context.mui3-token .material-list .material-list-entry.selected .material-list-line-2,
+:root[data-kailo-runtime] .react-mui-context.mui3-token .material-list .material-list-entry.selected .material-list-line-2 .overlay-icon-span,
+:root[data-kailo-runtime] .react-mui-context.mui3-token .modern-list .modern-list-entry.selected .material-list-line-2,
+:root[data-kailo-runtime] .react-mui-context.mui3-token .material-list.table-mode .material-list-entry.selected-dark span.cell,
+:root[data-kailo-runtime] .react-mui-context.mui3-token .modern-list.table-mode .modern-list-entry.selected-dark span.cell {
+    color: var(--kailo-color-muted-foreground) !important;
+}
+
+:root[data-kailo-runtime] .react-mui-context.mui3-token .material-list.table-mode .material-list-entry.selected-dark span.cell.cell-ajxp_label,
+:root[data-kailo-runtime] .react-mui-context.mui3-token .modern-list.table-mode .modern-list-entry.selected-dark span.cell.cell-ajxp_label,
+:root[data-kailo-runtime] .react-mui-context.mui3-token .material-list.table-mode .material-list-entry.selected-dark .mimefont,
+:root[data-kailo-runtime] .react-mui-context.mui3-token .modern-list.table-mode .modern-list-entry.selected-dark .mimefont {
+    color: var(--kailo-color-selected-foreground) !important;
+}
+
+:root[data-kailo-runtime] .react-mui-context.mui3-token .material-list.files-list.material-list-grid .material-list-entry.selected,
+:root[data-kailo-runtime] .react-mui-context.mui3-token .modern-list.files-list.material-list-grid .modern-list-entry.selected {
+    background: var(--kailo-color-selected) !important;
+    box-shadow: inset 0 0 0 1px var(--kailo-color-brand-line) !important;
+}
+
+/* One line per file: name 14/500, date and size as a 12px muted column. */
+:root[data-kailo-runtime] .main-files-list:not(.material-list-grid):not(.table-mode) .material-list-entry {
+    min-height: 40px;
+    height: 40px;
+    border-bottom: 1px solid var(--kailo-color-border) !important;
+    box-sizing: border-box;
+}
+
+:root[data-kailo-runtime] .main-files-list:not(.material-list-grid):not(.table-mode) .material-list-entry .material-list-icon {
+    width: 40px;
+    min-width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 4px 0 8px;
+}
+
+:root[data-kailo-runtime] .main-files-list:not(.material-list-grid):not(.table-mode) .material-list-entry .material-list-icon .mimefont-container {
+    width: 28px !important;
+    height: 28px !important;
+    min-width: 28px;
+    line-height: 28px !important;
+    margin: 0 !important;
+    border-radius: 6px !important;
+    background-color: transparent !important;
+}
+
+:root[data-kailo-runtime] .main-files-list:not(.material-list-grid):not(.table-mode) .material-list-entry .material-list-icon .mimefont {
+    font-size: 20px !important;
+    line-height: 28px !important;
+}
+
+:root[data-kailo-runtime] .main-files-list:not(.material-list-grid):not(.table-mode) .material-list-entry .material-list-text {
+    display: flex !important;
+    flex-direction: row;
+    align-items: center;
+    height: 40px !important;
+    padding: 0 8px 0 0 !important;
+    overflow: hidden;
+}
+
+:root[data-kailo-runtime] .main-files-list:not(.material-list-grid):not(.table-mode) .material-list-entry .material-list-line-1 {
+    flex: 1;
+    min-width: 0;
+    font-size: 14px !important;
+    line-height: 20px !important;
+    font-weight: 500 !important;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+:root[data-kailo-runtime] .main-files-list:not(.material-list-grid):not(.table-mode) .material-list-entry .material-list-line-2 {
+    flex: none;
+    margin-left: 16px;
+    font-size: 12px !important;
+    line-height: 16px !important;
+    color: var(--kailo-color-muted-foreground);
+    white-space: nowrap;
+}
+
+:root[data-kailo-runtime] .main-files-list:not(.material-list-grid):not(.table-mode) .material-list-entry .material-list-line-3 {
+    display: none;
+}
+
+:root[data-kailo-runtime] .main-files-list .material-list-entry:hover:not(.selected) {
+    background-color: var(--kailo-color-hover) !important;
+}
+
+/* ---- Buttons and icon buttons (spec §3) ------------------------------- */
+:root[data-kailo-runtime] .react-mui-context button {
+    text-transform: none !important;
+    letter-spacing: 0 !important;
+}
+
+:root[data-kailo-runtime] .react-mui-context button[style*="border-radius: 50%"] {
+    border-radius: 8px !important;
+}
+
+/* ---- Avatars: rounded squares, neutral initials (spec §3 头像) ---------- */
+:root[data-kailo-runtime] .react-mui-context .user-avatar,
+:root[data-kailo-runtime] .react-mui-context .mui-avatar,
+:root[data-kailo-runtime] .react-mui-context .MuiAvatar-root {
+    border-radius: 28% !important;
+}
+
+/* ---- Menus and context menus (spec §3 菜单) ---------------------------- */
+:root[data-kailo-runtime] .react-mui-context [role="menu"] {
+    background-color: var(--kailo-color-popover) !important;
+    color: var(--kailo-color-popover-foreground) !important;
+    padding: 4px !important;
+}
+
+:root[data-kailo-runtime] .react-mui-context [role="menuitem"] {
+    min-height: 30px !important;
+    line-height: 30px !important;
+    font-size: 13px !important;
+    border-radius: 6px;
+}
+
+:root[data-kailo-runtime] .react-mui-context [role="menuitem"]:hover {
+    background-color: var(--kailo-color-hover) !important;
+}
+
+:root[data-kailo-runtime] .react-mui-context [role="menuitem"] .mdi {
+    color: var(--kailo-color-muted-foreground) !important;
+    font-size: 16px !important;
+}
+
+/* ---- Dialogs (spec §3 对话框) ------------------------------------------ */
+:root[data-kailo-runtime] .react-mui-context [role="dialog"] {
+    border-radius: var(--kailo-radius-2xl, 16px) !important;
+    box-shadow: var(--kailo-shadow-xl) !important;
+}
+
+/* ---- Side panels (spec §2 详情侧板): flat, no floating window --------- */
+:root[data-kailo-runtime] .react-mui-context .info-panel-card,
+:root[data-kailo-runtime] .react-mui-context .detail-panel-card {
+    box-shadow: none !important;
+}

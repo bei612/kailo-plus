@@ -102,7 +102,10 @@ export default class Repository {
         } else if(this.accessType === 'settings'){
             return Pydio.getMessages()['165'] || 'Settings'
         }
-		return this.label;
+        // DD-152: Kailo names of the default locations (个人文件 / 公共文件).
+        const kailo = typeof window !== 'undefined' && window.KailoCells;
+        const kailoLabel = kailo && kailo.locationLabel ? kailo.locationLabel(this.slug, this.label) : '';
+		return kailoLabel || this.label;
 	}
 	/**
 	 * @param label String
