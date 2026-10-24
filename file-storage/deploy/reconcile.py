@@ -513,7 +513,7 @@ def ensure_root(native, cli, s, deadline, changes):
         # served by the admin tree until the next start; one restart resolves it.
         if made == "unserved":
             unserved_since = unserved_since or time.monotonic()
-            if time.monotonic() - unserved_since > 90:
+            if time.monotonic() - unserved_since > 60 or time.monotonic() >= deadline:
                 raise RestartRequired("binding datasource is not served before a restart")
         else:
             unserved_since = None
