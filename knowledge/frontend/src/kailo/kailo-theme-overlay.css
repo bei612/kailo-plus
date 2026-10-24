@@ -172,9 +172,8 @@ html[data-kailo-mode]:root:root {
   --td-shadow-3: var(--kailo-shadow-lg);
 }
 
-html[data-kailo-mode]:root:root ::selection {
-  background: hsl(var(--kailo-hsl-ring) / 0.3);
-}
+/* Selection, scrollbars, focus ring and the theme-switch frame come from the token
+   sheet's DD-152 base layer (html[data-kailo-runtime]); this overlay does not restate them. */
 
 /* DD-141 §5/§9: Kailo rounded-square avatar; initials on the selected (brand-soft) role. */
 html[data-kailo-mode] .user-avatar,
@@ -201,18 +200,10 @@ html[data-kailo-mode]:root:root {
   --td-comp-size-m: 32px;
   --td-comp-size-l: 36px;
   --td-mask-active: hsl(0 0% 0% / 0.4);
-  --td-scrollbar-color: transparent;
 }
 
 html[data-kailo-mode][data-kailo-theme="dark"]:root:root {
   --td-mask-active: hsl(0 0% 0% / 0.6);
-}
-
-/* Theme switch: no transition frame between the two palettes (07 §4.8.7). */
-html[data-kailo-theme-switching] *,
-html[data-kailo-theme-switching] *::before,
-html[data-kailo-theme-switching] *::after {
-  transition: none !important;
 }
 
 /* Buttons. */
