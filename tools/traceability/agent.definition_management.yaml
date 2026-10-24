@@ -6,7 +6,7 @@ exposure: end_user
 
 design:
   requirements: [V-REQ-03, V-REQ-05, V-REQ-09, V-REQ-11, V-REQ-15, V-REQ-19, V-REQ-20, V-REQ-23, V-REQ-24]
-  decisions: [DD-24, DD-25, DD-26, DD-27, DD-49, DD-65, DD-66, DD-67, DD-68, DD-107, DD-13, DD-105, DD-121, DD-122, DD-117, DD-126, DD-131, DD-143, DD-42]
+  decisions: [DD-24, DD-25, DD-26, DD-27, DD-49, DD-65, DD-66, DD-67, DD-68, DD-107, DD-13, DD-105, DD-121, DD-122, DD-117, DD-126, DD-131]
   # 此列表仅登记 S5 决策；复用的跨阶段合同由下方既有核验记录关联。
   # S1: DD-37/DD-70/DD-71；S3: DD-99/DD-100，归属仍以覆盖矩阵为准。
   facts: [SF-SPZ-01, SF-SPZ-02, SF-COD-09, SF-COD-17, SF-BUZ-16, SF-BUZ-17, SF-BUZ-55, SF-BUZ-58, SF-TMP-01, SF-TMP-04]
