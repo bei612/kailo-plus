@@ -44,7 +44,10 @@ export const ViewNode = ({ data }: CustomNodeProps<DiagramView>) => {
       onClick={onNodeClick}
       data-testid={`diagram__view-node__${data.originalData.displayName}`}
     >
-      <NodeHeader className="dragHandle" color="var(--green-6)">
+      <NodeHeader
+        className="dragHandle"
+        color="var(--kailo-color-success-text)"
+      >
         <span className="adm-model-header">
           <ViewIcon />
           <Text ellipsis title={data.originalData.displayName}>
@@ -54,7 +57,6 @@ export const ViewNode = ({ data }: CustomNodeProps<DiagramView>) => {
         <span>
           <ViewDropdown onMoreClick={onMoreClick}>
             <Button
-              className="gray-1"
               icon={<MoreIcon />}
               onClick={(event) => event.stopPropagation()}
               type="text"

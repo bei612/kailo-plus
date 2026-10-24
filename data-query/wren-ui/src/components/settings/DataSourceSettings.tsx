@@ -1,7 +1,9 @@
 import { useRouter } from 'next/router';
 import Image from 'next/image';
 import { useEffect, useMemo } from 'react';
-import { Button, Form, Modal, message, Alert } from 'antd';
+import { Button, Form, Alert, Typography } from 'antd';
+import { confirm, notify } from '@/utils/kailoHost';
+import useKailoText from '@/utils/kailoI18n';
 import { makeIterable } from '@/utils/iteration';
 import { DATA_SOURCES, FORM_MODE, Path } from '@/utils/enum';
 import { getDataSource, getTemplates } from '@/components/pages/setup/utils';
@@ -34,6 +36,7 @@ const SampleDatasetIterator = makeIterable(ButtonItem);
 const SampleDatasetPanel = (props: Props) => {
   const router = useRouter();
   const { sampleDataset, closeModal } = props;
+  const t = useKailoText();
   const templates = getTemplates();
   const [startSampleDataset] = useStartSampleDatasetMutation({
     onError: (error) => console.error(error),
@@ -48,20 +51,23 @@ const SampleDatasetPanel = (props: Props) => {
     const isCurrentTemplate = sampleDataset === name;
     if (!isCurrentTemplate) {
       const template = templates.find((item) => item.value === name);
-      Modal.confirm({
-        title: `Are you sure you want to change to "${template.label}" dataset?`,
-        okButtonProps: { danger: true },
-        okText: 'Change',
-        onOk: async () => {
+      // Replaces the dataset and deletes every conversation: danger.
+      void confirm({
+        tone: 'danger',
+        title: t('setup.changeSampleDatasetConfirm', { name: template.label }),
+        description: t('setup.changeSampleDatasetHint'),
+        confirmLabel: t('setup.change'),
+        cancelLabel: t('cancel'),
+      }).then(async (confirmed) => {
+        if (confirmed)
           await startSampleDataset({ variables: { data: { name } } });
-        },
       });
     }
   };
 
   return (
     <>
-      <div className="mb-2">Change sample dataset</div>
+      <div className="mb-2">{t('setup.changeSampleDataset')}</div>
       <div className="d-grid grid-columns-3 g-4">
         <SampleDatasetIterator
           data={templates}
@@ -69,16 +75,16 @@ const SampleDatasetPanel = (props: Props) => {
           onSelect={onSelect}
         />
       </div>
-      <div className="gray-6 mt-1">
-        Please be aware that choosing another sample dataset will delete all
-        thread records in the Home page.
-      </div>
+      <Typography.Paragraph type="secondary" className="mt-1">
+        {t('setup.changeSampleDatasetHint')}
+      </Typography.Paragraph>
     </>
   );
 };
 
 const DataSourcePanel = (props: Props) => {
   const { type, properties, refetchSettings } = props;
+  const t = useKailoText();
 
   const current = getDataSource(type as unknown as DATA_SOURCES);
   const [form] = Form.useForm();
@@ -87,7 +93,7 @@ const DataSourcePanel = (props: Props) => {
     onError: (error) => console.error(error),
     onCompleted: async () => {
       refetchSettings();
-      message.success('Successfully update data source.');
+      notify.success(t('setup.dataSourceUpdated'));
     },
   });
 
@@ -142,16 +148,11 @@ const DataSourcePanel = (props: Props) => {
         )}
 
         <div className="py-2 text-right">
-          <Button className="mr-2" style={{ width: 80 }} onClick={reset}>
-            Cancel
+          <Button className="mr-2" onClick={reset}>
+            {t('cancel')}
           </Button>
-          <Button
-            type="primary"
-            style={{ width: 80 }}
-            onClick={submit}
-            loading={loading}
-          >
-            Save
+          <Button type="primary" onClick={submit} loading={loading}>
+            {t('save')}
           </Button>
         </div>
       </Form>

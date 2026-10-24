@@ -1,4 +1,5 @@
-import { Button, Modal, Select, Row, Col, Form, message } from 'antd';
+import { Button, Select, Row, Col, Form, Typography } from 'antd';
+import { confirm, notify } from '@/utils/kailoHost';
 import { useRouter } from 'next/router';
 import { Path } from '@/utils/enum';
 import {
@@ -8,6 +9,7 @@ import {
 import { getLanguageText } from '@/utils/language';
 import { ProjectLanguage } from '@/apollo/client/graphql/__types__';
 import useKailoText from '@/utils/kailoI18n';
+import { SECTION_TITLE } from './utils';
 
 interface Props {
   data: { language: string };
@@ -29,21 +31,23 @@ export default function ProjectSettings(props: Props) {
     refetchQueries: ['GetSettings'],
     onError: (error) => console.error(error),
     onCompleted: () => {
-      message.success(t('languageUpdated'));
+      notify.success(t('languageUpdated'));
     },
   });
 
-  const reset = () => {
-    Modal.confirm({
+  // DD-157 (20 §13.8): irreversible, so Kailo's danger confirmation.
+  const reset = async () => {
+    const confirmed = await confirm({
+      tone: 'danger',
       title: t('resetConfirm'),
-      okButtonProps: { danger: true },
-      okText: t('reset'),
-      onOk: async () => {
-        await resetCurrentProject();
-        client.clearStore();
-        router.push(Path.OnboardingConnection);
-      },
+      description: t('resetHint'),
+      confirmLabel: t('reset'),
+      cancelLabel: t('cancel'),
     });
+    if (!confirmed) return;
+    await resetCurrentProject();
+    client.clearStore();
+    router.push(Path.OnboardingConnection);
   };
 
   const submit = () => {
@@ -77,23 +81,22 @@ export default function ProjectSettings(props: Props) {
               </Form.Item>
             </Col>
             <Col>
-              <Button
-                type="primary"
-                style={{ width: 70 }}
-                onClick={submit}
-                loading={loading}
-              >
+              <Button type="primary" onClick={submit} loading={loading}>
                 {t('save')}
               </Button>
             </Col>
           </Row>
         </Form.Item>
       </Form>
-      <div className="gray-8 mb-2">{t('resetProject')}</div>
-      <Button type="primary" style={{ width: 70 }} danger onClick={reset}>
+      <div style={SECTION_TITLE} className="mb-2">
+        {t('resetProject')}
+      </div>
+      <Typography.Paragraph type="secondary" className="mb-3">
+        {t('resetHint')}
+      </Typography.Paragraph>
+      <Button danger onClick={reset}>
         {t('reset')}
       </Button>
-      <div className="gray-6 mt-1">{t('resetHint')}</div>
     </div>
   );
 }

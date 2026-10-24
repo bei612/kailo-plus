@@ -13,6 +13,7 @@ import {
   AskingTask,
   AdjustmentTask,
 } from '@/apollo/client/graphql/__types__';
+import useKailoText from '@/utils/kailoI18n';
 
 export type Props = IPromptThreadStore['preparation'] & {
   className?: string;
@@ -27,6 +28,7 @@ export default function Preparation(props: Props) {
   const { className, data, minimized, onFixSQLStatement, fixStatementLoading } =
     props;
   const { askingTask, adjustmentTask, adjustment, id: responseId, sql } = data;
+  const t = useKailoText();
 
   const [isActive, setIsActive] = useState(!sql);
 
@@ -73,15 +75,19 @@ export default function Preparation(props: Props) {
   const isStopped = preparedTask.status === AskingTaskStatus.STOPPED;
 
   return (
-    <div className={clsx('border border-gray-4 rounded', className)}>
+    <div className={clsx('kailo-preparation', className)}>
       <Collapse
-        className="bg-gray-1"
+        style={{
+          background: 'var(--kailo-color-card)',
+          border: '1px solid var(--kailo-color-border)',
+          borderRadius: 12,
+        }}
         bordered={false}
         expandIconPosition="right"
         expandIcon={({ isActive }) =>
           !isStopped && (
             <DownOutlined
-              className="gray-6 text-sm"
+              className="gray-7 text-sm"
               rotate={isActive ? 180 : 0}
             />
           )
@@ -96,12 +102,12 @@ export default function Preparation(props: Props) {
               <Typography.Title level={5} className="gray-8 text-medium mb-0">
                 <Image
                   src="/images/icon/message-ai.svg"
-                  alt="Answer Preparation Steps"
+                  alt=""
                   width={24}
                   height={24}
                   className="mr-1"
                 />
-                Answer preparation steps
+                {t('home.preparationSteps')}
               </Typography.Title>
               <PreparationStatus {...props} preparedTask={preparedTask} />
             </div>

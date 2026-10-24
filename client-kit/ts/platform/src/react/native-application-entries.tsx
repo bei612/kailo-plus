@@ -11,7 +11,7 @@ import { SidebarMenuLabel } from "./sidebar/sidebar-menu-label";
 export type NativeCategory = "files" | "knowledge" | "data";
 
 /**
- * DD-152: the product title and category of each discovered entry, so the component
+ * DD-157: the product title and category of each discovered entry, so the component
  * page in either host labels its Kailo header exactly like its sidebar entry.
  * Display facts only; every launch still re-admits the binding (DD-138).
  */

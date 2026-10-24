@@ -421,6 +421,7 @@ export const platformMessages = {
   "platform.backup.errorAvailable": { en: "{message} It will be available to download for 5 minutes.", "zh-CN": "{message} 备份仍可在 5 分钟内下载。" },
   "messages.system.someone": {en:"Someone","zh-CN":"某位成员"},
   "messages.system.you": {en:"You","zh-CN":"你"},
+  "messages.system.unknownMember": {en:"Unknown member","zh-CN":"未知成员"},
   "messages.system.inlineYou": {en:"you","zh-CN":"你"},
   "messages.system.joined": {en:"joined","zh-CN":"已加入"},
   "messages.system.arrived": {en:"arrived","zh-CN":"已到达"},
@@ -3958,7 +3959,6 @@ export const platformMessages = {
   "platform.back": { en: "Back", "zh-CN": "返回" },
   "platform.confirm": { en: "Confirm", "zh-CN": "确认" },
   "platform.cancel": { en: "Cancel", "zh-CN": "取消" },
-  // DD-152: Kailo shell of component pages.
   "platform.nativePage.breadcrumb": { en: "Location", "zh-CN": "位置" },
   "platform.nativePage.more": { en: "More actions", "zh-CN": "更多操作" },
   "platform.nativePage.confirm": { en: "Confirm", "zh-CN": "确定" },

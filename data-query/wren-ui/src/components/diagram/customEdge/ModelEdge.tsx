@@ -8,6 +8,7 @@ import {
 import styled from 'styled-components';
 import CustomPopover from '../CustomPopover';
 import { getJoinTypeText } from '@/utils/data';
+import useKailoText from '@/utils/kailoI18n';
 
 const Joint = styled.div`
   position: absolute;
@@ -27,6 +28,7 @@ const ModelEdge = ({
   markerEnd,
   data,
 }: EdgeProps) => {
+  const t = useKailoText();
   const [edgePath, labelX, labelY] = getSmoothStepPath({
     sourceX,
     sourceY,
@@ -39,10 +41,10 @@ const ModelEdge = ({
   const isPopoverShow = data.highlight;
   const style = isPopoverShow
     ? {
-        stroke: 'var(--geekblue-6)',
+        stroke: 'var(--kailo-color-brand)',
         strokeWidth: 1.5,
       }
-    : { stroke: 'var(--gray-5)' };
+    : { stroke: 'var(--kailo-color-line-strong)' };
 
   const relation = useMemo(() => {
     const fromField = `${data.relation.fromModelName}.${data.relation.fromColumnName}`;
@@ -67,19 +69,19 @@ const ModelEdge = ({
       <EdgeLabelRenderer>
         <CustomPopover
           visible={isPopoverShow}
-          title="Relationship"
+          title={t('modeling.relationship')}
           content={
             <CustomPopover.Row gutter={16}>
-              <CustomPopover.Col title="From" span={12}>
+              <CustomPopover.Col title={t('modeling.from')} span={12}>
                 {relation.fromField}
               </CustomPopover.Col>
-              <CustomPopover.Col title="To" span={12}>
+              <CustomPopover.Col title={t('modeling.to')} span={12}>
                 {relation.toField}
               </CustomPopover.Col>
-              <CustomPopover.Col title="Type" span={12}>
+              <CustomPopover.Col title={t('modeling.type')} span={12}>
                 {relation.joinType}
               </CustomPopover.Col>
-              <CustomPopover.Col title="Description">
+              <CustomPopover.Col title={t('modeling.description')}>
                 {relation.description}
               </CustomPopover.Col>
             </CustomPopover.Row>

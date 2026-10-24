@@ -3,13 +3,17 @@ import styled from 'styled-components';
 import { Dropdown, Menu } from 'antd';
 import { ItemType } from 'antd/lib/menu/hooks/useItems';
 import { MORE_ACTION, NODE_TYPE } from '@/utils/enum';
-import EditOutlined from '@ant-design/icons/EditOutlined';
-import ReloadOutlined from '@ant-design/icons/ReloadOutlined';
-import EyeInvisibleOutlined from '@ant-design/icons/EyeInvisibleOutlined';
-import EyeOutlined from '@ant-design/icons/EyeOutlined';
-import CodeFilled from '@ant-design/icons/CodeFilled';
-import DatabaseOutlined from '@ant-design/icons/DatabaseOutlined';
-import { EditSVG } from '@/utils/svgs';
+import { kailoT } from '@/utils/kailoI18n';
+import {
+  CodeIcon,
+  ColumnsIcon,
+  DatabaseIcon,
+  EyeIcon,
+  EyeOffIcon,
+  ListChecksIcon,
+  PencilIcon,
+  RefreshIcon,
+} from '@/components/kailo/KailoIcons';
 import {
   DeleteCalculatedFieldModal,
   DeleteRelationshipModal,
@@ -20,9 +24,23 @@ import {
   DeleteInstructionModal,
 } from '@/components/modals/DeleteModal';
 
+// DD-157 (20 §13 菜单): Kailo menu — line icons in muted, text in the
+// foreground colour, the destructive item last (danger text via `danger`).
+// The surface, radius, padding and row height come from the Kailo overlay.
 const StyledMenu = styled(Menu)`
-  .ant-dropdown-menu-item:not(.ant-dropdown-menu-item-disabled) {
-    color: var(--gray-8);
+  .ant-dropdown-menu-item:not(.ant-dropdown-menu-item-disabled):not(
+      .ant-dropdown-menu-item-danger
+    ) {
+    color: var(--kailo-color-foreground);
+  }
+
+  .kailo-icon {
+    color: var(--kailo-color-muted-foreground);
+  }
+
+  .ant-dropdown-menu-item-danger .kailo-icon,
+  .ant-dropdown-menu-item-danger a {
+    color: var(--kailo-color-danger-text);
   }
 `;
 
@@ -43,7 +61,7 @@ const makeDropdown =
     return (
       <Dropdown
         trigger={['click']}
-        overlayStyle={{ minWidth: 100, userSelect: 'none' }}
+        overlayStyle={{ minWidth: 160, userSelect: 'none' }}
         overlay={
           <StyledMenu
             onClick={(e) => e.domEvent.stopPropagation()}
@@ -58,28 +76,33 @@ const makeDropdown =
     );
   };
 
+const withIcon = (Icon: React.ComponentType<any>, text: string) => (
+  <>
+    <Icon className="mr-2" />
+    {text}
+  </>
+);
+
+const deleteItem = (label: React.ReactNode): ItemType => ({
+  label,
+  danger: true,
+  key: MORE_ACTION.DELETE,
+  onClick: ({ domEvent }) => domEvent.stopPropagation(),
+});
+
 export const ModelDropdown = makeDropdown((props: Props) => {
   const { onMoreClick } = props;
 
   const items: ItemType[] = [
     {
-      label: (
-        <>
-          <EditOutlined className="mr-2" />
-          Update Columns
-        </>
-      ),
+      label: withIcon(ColumnsIcon, kailoT('modeling.updateColumns')),
       key: MORE_ACTION.UPDATE_COLUMNS,
       onClick: () => onMoreClick(MORE_ACTION.UPDATE_COLUMNS),
     },
-    {
-      label: (
-        <DeleteModelModal onConfirm={() => onMoreClick(MORE_ACTION.DELETE)} />
-      ),
-      className: 'red-5',
-      key: MORE_ACTION.DELETE,
-      onClick: ({ domEvent }) => domEvent.stopPropagation(),
-    },
+    { type: 'divider' },
+    deleteItem(
+      <DeleteModelModal onConfirm={() => onMoreClick(MORE_ACTION.DELETE)} />,
+    ),
   ];
 
   return items;
@@ -88,14 +111,9 @@ export const ModelDropdown = makeDropdown((props: Props) => {
 export const ViewDropdown = makeDropdown((props: Props) => {
   const { onMoreClick } = props;
   const items: ItemType[] = [
-    {
-      label: (
-        <DeleteViewModal onConfirm={() => onMoreClick(MORE_ACTION.DELETE)} />
-      ),
-      className: 'red-5',
-      key: MORE_ACTION.DELETE,
-      onClick: ({ domEvent }) => domEvent.stopPropagation(),
-    },
+    deleteItem(
+      <DeleteViewModal onConfirm={() => onMoreClick(MORE_ACTION.DELETE)} />,
+    ),
   ];
   return items;
 });
@@ -112,23 +130,14 @@ export const ColumnDropdown = makeDropdown((props: Props) => {
 
   const items: ItemType[] = [
     {
-      label: (
-        <>
-          <EditOutlined className="mr-2" />
-          Edit
-        </>
-      ),
+      label: withIcon(PencilIcon, kailoT('modeling.edit')),
       key: MORE_ACTION.EDIT,
       onClick: () => onMoreClick(MORE_ACTION.EDIT),
     },
-    {
-      label: (
-        <DeleteColumnModal onConfirm={() => onMoreClick(MORE_ACTION.DELETE)} />
-      ),
-      className: 'red-5',
-      key: MORE_ACTION.DELETE,
-      onClick: ({ domEvent }) => domEvent.stopPropagation(),
-    },
+    { type: 'divider' },
+    deleteItem(
+      <DeleteColumnModal onConfirm={() => onMoreClick(MORE_ACTION.DELETE)} />,
+    ),
   ];
 
   return items;
@@ -138,21 +147,16 @@ export const DashboardDropdown = makeDropdown((props: Props) => {
   const { onMoreClick, isSupportCached } = props;
   const items: ItemType[] = [
     isSupportCached && {
-      label: (
-        <>
-          <DatabaseOutlined className="mr-2" />
-          Cache settings
-        </>
-      ),
+      label: withIcon(DatabaseIcon, kailoT('modeling.cacheSettings')),
       key: MORE_ACTION.CACHE_SETTINGS,
       onClick: () => onMoreClick(MORE_ACTION.CACHE_SETTINGS),
     },
     {
-      label: (
-        <>
-          <ReloadOutlined className="mr-2" />
-          {isSupportCached ? 'Refresh all caches' : 'Refresh all'}
-        </>
+      label: withIcon(
+        RefreshIcon,
+        isSupportCached
+          ? kailoT('modeling.refreshAllCaches')
+          : kailoT('modeling.refreshAll'),
       ),
       key: MORE_ACTION.REFRESH,
       onClick: () => onMoreClick(MORE_ACTION.REFRESH),
@@ -165,40 +169,28 @@ export const DashboardItemDropdown = makeDropdown((props: Props) => {
   const { onMoreClick, isHideLegend, isSupportCached } = props;
   const items: ItemType[] = [
     {
-      label: isHideLegend ? (
-        <>
-          <EyeOutlined className="mr-2" />
-          Show categories
-        </>
-      ) : (
-        <>
-          {<EyeInvisibleOutlined className="mr-2" />}
-          Hide categories
-        </>
-      ),
+      label: isHideLegend
+        ? withIcon(EyeIcon, kailoT('modeling.showCategories'))
+        : withIcon(EyeOffIcon, kailoT('modeling.hideCategories')),
       key: MORE_ACTION.HIDE_CATEGORY,
       onClick: () => onMoreClick(MORE_ACTION.HIDE_CATEGORY),
     },
     {
-      label: (
-        <>
-          <ReloadOutlined className="mr-2" />
-          {isSupportCached ? 'Refresh cache' : 'Refresh'}
-        </>
+      label: withIcon(
+        RefreshIcon,
+        isSupportCached
+          ? kailoT('modeling.refreshCache')
+          : kailoT('modeling.refresh'),
       ),
       key: MORE_ACTION.REFRESH,
       onClick: () => onMoreClick(MORE_ACTION.REFRESH),
     },
-    {
-      label: (
-        <DeleteDashboardItemModal
-          onConfirm={() => onMoreClick(MORE_ACTION.DELETE)}
-        />
-      ),
-      className: 'red-5',
-      key: MORE_ACTION.DELETE,
-      onClick: ({ domEvent }) => domEvent.stopPropagation(),
-    },
+    { type: 'divider' },
+    deleteItem(
+      <DeleteDashboardItemModal
+        onConfirm={() => onMoreClick(MORE_ACTION.DELETE)}
+      />,
+    ),
   ];
   return items;
 });
@@ -212,12 +204,7 @@ export const SQLPairDropdown = makeDropdown(
     const { onMoreClick, data } = props;
     const items: ItemType[] = [
       {
-        label: (
-          <>
-            <EyeOutlined className="mr-2" />
-            View
-          </>
-        ),
+        label: withIcon(EyeIcon, kailoT('modeling.view')),
         key: MORE_ACTION.VIEW_SQL_PAIR,
         onClick: () =>
           onMoreClick({
@@ -226,12 +213,7 @@ export const SQLPairDropdown = makeDropdown(
           }),
       },
       {
-        label: (
-          <>
-            <EditOutlined className="mr-2" />
-            Edit
-          </>
-        ),
+        label: withIcon(PencilIcon, kailoT('modeling.edit')),
         key: MORE_ACTION.EDIT,
         onClick: () =>
           onMoreClick({
@@ -239,24 +221,17 @@ export const SQLPairDropdown = makeDropdown(
             data,
           }),
       },
-      {
-        label: (
-          <DeleteQuestionSQLPairModal
-            onConfirm={() =>
-              onMoreClick({
-                type: MORE_ACTION.DELETE,
-                data,
-              })
-            }
-            modalProps={{
-              cancelButtonProps: { autoFocus: true },
-            }}
-          />
-        ),
-        className: 'red-5',
-        key: MORE_ACTION.DELETE,
-        onClick: ({ domEvent }) => domEvent.stopPropagation(),
-      },
+      { type: 'divider' },
+      deleteItem(
+        <DeleteQuestionSQLPairModal
+          onConfirm={() =>
+            onMoreClick({
+              type: MORE_ACTION.DELETE,
+              data,
+            })
+          }
+        />,
+      ),
     ];
     return items;
   },
@@ -271,12 +246,7 @@ export const InstructionDropdown = makeDropdown(
     const { onMoreClick, data } = props;
     const items: ItemType[] = [
       {
-        label: (
-          <>
-            <EyeOutlined className="mr-2" />
-            View
-          </>
-        ),
+        label: withIcon(EyeIcon, kailoT('modeling.view')),
         key: MORE_ACTION.VIEW_INSTRUCTION,
         onClick: () =>
           onMoreClick({
@@ -285,12 +255,7 @@ export const InstructionDropdown = makeDropdown(
           }),
       },
       {
-        label: (
-          <>
-            <EditOutlined className="mr-2" />
-            Edit
-          </>
-        ),
+        label: withIcon(PencilIcon, kailoT('modeling.edit')),
         key: MORE_ACTION.EDIT,
         onClick: () =>
           onMoreClick({
@@ -298,24 +263,17 @@ export const InstructionDropdown = makeDropdown(
             data,
           }),
       },
-      {
-        label: (
-          <DeleteInstructionModal
-            onConfirm={() =>
-              onMoreClick({
-                type: MORE_ACTION.DELETE,
-                data,
-              })
-            }
-            modalProps={{
-              cancelButtonProps: { autoFocus: true },
-            }}
-          />
-        ),
-        className: 'red-5',
-        key: MORE_ACTION.DELETE,
-        onClick: ({ domEvent }) => domEvent.stopPropagation(),
-      },
+      { type: 'divider' },
+      deleteItem(
+        <DeleteInstructionModal
+          onConfirm={() =>
+            onMoreClick({
+              type: MORE_ACTION.DELETE,
+              data,
+            })
+          }
+        />,
+      ),
     ];
     return items;
   },
@@ -330,8 +288,8 @@ export const AdjustAnswerDropdown = makeDropdown(
     const { onMoreClick, data } = props;
     const items: ItemType[] = [
       {
-        label: 'Adjust steps',
-        icon: <EditSVG />,
+        label: kailoT('modeling.adjustSteps'),
+        icon: <ListChecksIcon />,
         disabled: !data.sqlGenerationReasoning,
         key: 'adjust-steps',
         onClick: () =>
@@ -341,8 +299,8 @@ export const AdjustAnswerDropdown = makeDropdown(
           }),
       },
       {
-        label: 'Adjust SQL',
-        icon: <CodeFilled className="text-base" />,
+        label: kailoT('modeling.adjustSql'),
+        icon: <CodeIcon />,
         disabled: !data.sql,
         key: 'adjust-sql',
         onClick: () =>

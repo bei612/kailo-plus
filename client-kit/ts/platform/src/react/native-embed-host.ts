@@ -17,7 +17,7 @@ export interface EmbedPresentation {
 /** Messages a component page may send to Kailo. Anything else is ignored. */
 export type EmbedRequest = "ready" | "auth-required";
 
-// ── DD-152 (07 §4.8.7): page shell messages, same wire version 1 ─────────────
+// ── DD-157 (07 §4.8.7): page shell messages, same wire version 1 ─────────────
 // Bounds and vocabularies mirror client-kit/embed/kailo-embed.js; the host
 // re-validates every message and drops an invalid one whole.
 
@@ -121,7 +121,7 @@ function parseConfirm(value: unknown): EmbedConfirm | null {
   return { id, tone, title, ...(description ? { description } : {}), ...(confirmLabel ? { confirmLabel } : {}), ...(cancelLabel ? { cancelLabel } : {}) };
 }
 
-/** Every component → Kailo message of wire v1 (DD-133, DD-152); null for anything else. */
+/** Every component → Kailo message of wire v1 (DD-133, DD-157); null for anything else. */
 export function embedMessage(data: unknown): EmbedMessage | null {
   if (typeof data !== "object" || data === null) return null;
   const message = data as Record<string, unknown>;
@@ -163,7 +163,7 @@ export function confirmResultMessage(id: string, confirmed: boolean) {
 /**
  * A Kailo global chord pressed inside the frame, replayed on the host window so the
  * host's own shortcut handlers (search, settings, history) run exactly as for a key
- * pressed in Kailo itself (DD-152, 07 §4.8.7).
+ * pressed in Kailo itself (DD-157, 07 §4.8.7).
  */
 export function replayShortcut(shortcut: EmbedShortcut, mac: boolean, target: Window = window): void {
   const primary = mac ? { metaKey: true } : { ctrlKey: true };
@@ -189,7 +189,7 @@ export function embedRequest(data: unknown): EmbedRequest | null {
 
 export function presentationMessage(presentation: EmbedPresentation) {
   return { source: "kailo-host", version: EMBED_PROTOCOL_VERSION, type: "presentation",
-    theme: presentation.theme, locale: presentation.locale } as const;
+    theme: presentation.theme, locale: presentation.locale, features: [...EMBED_FEATURES] } as const;
 }
 
 /**

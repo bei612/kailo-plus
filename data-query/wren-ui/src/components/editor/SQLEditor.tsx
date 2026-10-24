@@ -6,34 +6,41 @@ import { FormItemInputContext } from 'antd/lib/form/context';
 import useAutoComplete from '@/hooks/useAutoComplete';
 
 const Wrapper = styled.div`
-  transition: all 0.3s cubic-bezier(0.645, 0.045, 0.355, 1);
+  /* DD-157 (20 §13 输入): line-strong border, radius 6; hover neutral,
+     focus brand ring (token), error danger. */
+  border-color: var(--kailo-color-line-strong) !important;
+  border-radius: 6px !important;
+  background: var(--kailo-color-background);
+  transition:
+    border-color var(--kailo-duration-fast) var(--kailo-ease-standard),
+    box-shadow var(--kailo-duration-fast) var(--kailo-ease-standard);
 
   &:hover {
-    border-color: var(--geekblue-5) !important;
+    border-color: var(--kailo-color-muted-foreground) !important;
   }
 
   &.adm-markdown-editor-error {
-    border-color: var(--red-5) !important;
+    border-color: var(--kailo-color-danger) !important;
 
     .adm-markdown-editor-length {
-      color: var(--red-5) !important;
+      color: var(--kailo-color-danger-text) !important;
     }
   }
   &:not(.adm-markdown-editor-error).adm-markdown-editor-focused {
-    border-color: var(--geekblue-5) !important;
-    box-shadow: 0 0 0 2px rgba(47, 84, 235, 0.2);
+    border-color: var(--kailo-color-brand) !important;
+    box-shadow: var(--kailo-focus-ring);
   }
 
   &.adm-markdown-editor-focused.adm-markdown-editor-error {
-    borer-color: var(--red-4) !important;
-    box-shadow: 0 0 0 2px rgba(255, 77, 79, 0.2);
+    border-color: var(--kailo-color-danger) !important;
+    box-shadow: none;
   }
 `;
 
 const Toolbar = styled.div`
-  color: var(--gray-8);
-  background-color: var(--gray-3);
-  border-bottom: 1px solid var(--gray-5);
+  color: var(--kailo-color-text-secondary);
+  background-color: var(--kailo-color-canvas);
+  border-bottom: 1px solid var(--kailo-color-border);
   height: 32px;
   padding: 4px 8px;
   border-radius: 4px 4px 0px 0px;

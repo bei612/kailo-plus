@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Collapse } from 'antd';
 import styled from 'styled-components';
 import CaretRightOutlined from '@ant-design/icons/CaretRightOutlined';
+import useKailoText from '@/utils/kailoI18n';
 
 const StyledCollapse = styled(Collapse)`
   .ant-collapse-item {
@@ -32,6 +33,7 @@ interface Props {
 
 export default function ErrorCollapse(props: Props) {
   const { message, className, defaultActive } = props;
+  const t = useKailoText();
   const [activeKey, setActiveKey] = useState<string[]>(
     defaultActive ? ['1'] : [],
   );
@@ -46,7 +48,7 @@ export default function ErrorCollapse(props: Props) {
         <CaretRightOutlined rotate={isActive ? 90 : 0} />
       )}
     >
-      <Collapse.Panel key="1" header="Show error messages">
+      <Collapse.Panel key="1" header={t('home.showErrorDetails')}>
         <pre className="text-sm mb-0 pl-5" style={{ whiteSpace: 'pre-wrap' }}>
           {message}
         </pre>

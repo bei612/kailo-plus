@@ -10,6 +10,8 @@ export interface KailoPresentationState {
   embedded: boolean;
   /** A validated presentation message from the Kailo host has arrived. */
   hostConnected: boolean;
+  /** DD-157: features the Kailo host announced it handles (present once it answered). */
+  hostFeatures?: KailoEmbedFeature[];
 }
 
 /** Declared preference key -> BOOLEAN value or ENUM option (design 07 §4.8.2). */
@@ -20,7 +22,7 @@ export interface KailoPresentationChange {
   locale: boolean;
 }
 
-/** DD-152 (07 §4.8.7): what a build opts into with <meta name="kailo-embed-features">. */
+/** DD-157 (07 §4.8.7): what a build opts into with <meta name="kailo-embed-features">. */
 export type KailoEmbedFeature = "page" | "toast" | "confirm" | "shortcuts";
 
 /** Closed icon vocabulary for header actions; Kailo draws them with its own (Lucide) icons. */
@@ -92,15 +94,17 @@ export interface KailoEmbedRuntime {
   /** DD-138: values Kailo supplied for the release's declared settings items. */
   getPreferences(): KailoPreferenceValues;
   onPreferencesChange(listener: (values: KailoPreferenceValues, changed: string[]) => void): () => void;
-  /** DD-152: declared features of this build. */
+  /** DD-157: declared features of this build. */
   readonly features: readonly KailoEmbedFeature[];
-  /** DD-152: Kailo renders the page header; false when the feature is undeclared or no Kailo frame. Throws on an invalid shape. */
+  /** DD-157: Kailo renders the page header; false when the feature is undeclared or no Kailo frame. Throws on an invalid shape. */
   setPage(page: KailoPage | null): boolean;
+  /** DD-157: the Kailo host announced this feature; false until it answered. Re-check in onChange. */
+  hostSupports(feature: KailoEmbedFeature): boolean;
   onNavigate(listener: (target: KailoNavigateTarget) => void): () => void;
   onAction(listener: (id: string) => void): () => void;
-  /** DD-152: shown by Kailo; false at top level (show your own Kailo-styled toast). */
+  /** DD-157: shown by Kailo; false at top level (show your own Kailo-styled toast). */
   toast(toast: KailoToast): boolean;
-  /** DD-152: Kailo's confirmation dialog; null at top level (use your own Kailo-styled dialog). */
+  /** DD-157: Kailo's confirmation dialog; null at top level (use your own Kailo-styled dialog). */
   confirm(options: KailoConfirm): Promise<boolean> | null;
 }
 

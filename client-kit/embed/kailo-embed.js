@@ -20,7 +20,7 @@
  * for Kailo settings (design 07 §4.8.2). Kailo sends every declared key; the
  * component uses its own declared default for a key it has not received.
  *
- * DD-152 page shell (design 07 §4.8.7), same version 1; a host that predates it
+ * DD-157 page shell (design 07 §4.8.7), same version 1; a host that predates it
  * ignores the unknown types. Opt in per build with
  *   <meta name="kailo-embed-features" content="page toast confirm shortcuts">
  *   component -> Kailo  ready carries features:[...] (the declared subset)
@@ -31,6 +31,8 @@
  *   Kailo -> component  {type:"navigate", target:{kind:"tab"|"breadcrumb", id}}
  *   Kailo -> component  {type:"action", id}
  *   Kailo -> component  {type:"confirm-result", id, confirmed}
+ *   Kailo -> component  presentation carries features:[...] the host draws/handles;
+ *                       <html data-kailo-host-features> mirrors it once known
  * Text in page/toast/confirm is display text for this user's own browser
  * only: Kailo renders it as plain text, never stores, logs or sends it on.
  */
@@ -47,7 +49,7 @@
   var PREFERENCE_KEY = /^[a-z][a-zA-Z0-9]*(\.[a-z][a-zA-Z0-9]*){1,3}$/;
   var PREFERENCE_OPTION = /^[A-Za-z0-9._-]{1,32}$/;
   var MAX_PREFERENCES = 16;
-  // DD-152 (07 §4.8.7): closed vocabularies and bounds, mirrored by the host.
+  // DD-157 (07 §4.8.7): closed vocabularies and bounds, mirrored by the host.
   var FEATURES = ["page", "toast", "confirm", "shortcuts"];
   var ACTION_ICONS = ["upload", "plus", "folder-plus", "share", "download", "rocket", "refresh", "settings",
     "message-square-plus", "play", "trash", "pencil", "filter", "search", "more"];
@@ -144,7 +146,7 @@
   var preferences = readPreferences();
   var preferenceListeners = [];
 
-  // DD-152: what this build opted into (a build fact, like kailo-web-origin).
+  // DD-157: what this build opted into (a build fact, like kailo-web-origin).
   var featureMeta = doc.querySelector('meta[name="kailo-embed-features"]');
   var features = [];
   (featureMeta ? String(featureMeta.getAttribute("content") || "").split(/\s+/) : []).forEach(function (name) {
@@ -212,6 +214,9 @@
   }
 
   var currentPage = null;
+  // What the Kailo host announced it handles; null until the first presentation.
+  var hostFeatures = null;
+  function hostHas(feature) { return hostConnected && hostFeatures !== null && hostFeatures.indexOf(feature) >= 0; }
   var navigateListeners = [];
   var actionListeners = [];
   var pendingConfirms = {};
@@ -227,14 +232,16 @@
   }
 
   function snapshot() {
-    return { theme: state.theme, locale: state.locale, embedded: framed, hostConnected: hostConnected };
+    var out = { theme: state.theme, locale: state.locale, embedded: framed, hostConnected: hostConnected };
+    if (hostFeatures !== null) out.hostFeatures = hostFeatures.slice();
+    return out;
   }
 
-  function update(theme, locale) {
+  function update(theme, locale, announce) {
     var changed = { theme: theme !== state.theme, locale: locale !== state.locale };
     state.theme = theme;
     state.locale = locale;
-    // DD-152: a theme flip lands in one frame, without each control animating to its new color.
+    // DD-157: a theme flip lands in one frame, without each control animating to its new color.
     if (changed.theme) root.setAttribute("data-kailo-theme-switching", "");
     apply();
     if (changed.theme) {
@@ -242,7 +249,8 @@
       if (global.requestAnimationFrame) global.requestAnimationFrame(function () { global.requestAnimationFrame(settle); });
       else setTimeout(settle, 32);
     }
-    if (!changed.theme && !changed.locale) return;
+    // DD-157: the first answer from Kailo is always announced (it carries the host's features).
+    if (!changed.theme && !changed.locale && !announce) return;
     var current = snapshot();
     var targets = listeners.slice();
     for (var i = 0; i < targets.length; i += 1) {
@@ -279,7 +287,7 @@
     };
   }
 
-  // DD-152: Kailo's global chords pressed inside the frame go to Kailo (07 §4.8.7),
+  // DD-157: Kailo's global chords pressed inside the frame go to Kailo (07 §4.8.7),
   // before any component handler sees them, so no second search or settings opens.
   function shortcutOf(event) {
     var mac = /mac|iphone|ipad|ipod/i.test(String(global.navigator && global.navigator.platform || ""));
@@ -357,12 +365,18 @@
     var locale = member(data.locale, LOCALES);
     if (!theme || !locale) return;
     var firstContact = !hostConnected;
+    var announced = [];
+    (Array.isArray(data.features) ? data.features : []).forEach(function (name) {
+      if (FEATURES.indexOf(name) >= 0 && announced.indexOf(name) < 0) announced.push(name);
+    });
+    hostFeatures = announced;
+    root.setAttribute("data-kailo-host-features", announced.join(" "));
     hostConnected = true;
     supplied = { theme: theme, locale: locale };
     writeStore(supplied);
-    update(theme, locale);
+    update(theme, locale, firstContact);
     // A header set before Kailo answered is delivered once the host is known.
-    if (firstContact && currentPage && has("page")) post("page", { page: currentPage });
+    if (firstContact && currentPage && hostHas("page")) post("page", { page: currentPage });
   });
 
   if (framed && has("shortcuts")) {
@@ -425,31 +439,35 @@
         if (index >= 0) preferenceListeners.splice(index, 1);
       };
     },
-    /** DD-152: the features this build declared in <meta name="kailo-embed-features">. */
+    /** DD-157: the features this build declared in <meta name="kailo-embed-features">. */
     features: features.slice(),
     /**
-     * DD-152: Kailo renders this page's header (title, breadcrumbs, tabs, actions); the
+     * DD-157: Kailo renders this page's header (title, breadcrumbs, tabs, actions); the
      * page renders no header of its own while `true` is returned. `null` clears it.
      * Invalid shapes throw, so a mistake shows in development instead of a blank header.
      */
     setPage: function (page) {
       if (!has("page")) return false;
-      if (page === null) { currentPage = null; return post("page", { page: null }); }
-      var valid = validPage(page);
-      if (!valid) throw new TypeError("KailoEmbed.setPage: invalid page header");
+      var valid = page === null ? null : validPage(page);
+      if (page !== null && !valid) throw new TypeError("KailoEmbed.setPage: invalid page header");
       currentPage = valid;
+      // Before Kailo answers the page is hidden behind Kailo's skeleton; once it has
+      // answered, only a host that announced "page" draws the header.
+      if (hostConnected && !hostHas("page")) return false;
       return post("page", { page: valid });
     },
+    /** DD-157: whether the Kailo host announced it handles a feature (false until it answers). */
+    hostSupports: function (feature) { return hostHas(feature); },
     /** listener({kind: "tab"|"breadcrumb", id}); only ids of the current header arrive. */
     onNavigate: function (listener) { return listen(navigateListeners, listener); },
     /** listener(id) when the user activates one of the current header's actions in Kailo. */
     onAction: function (listener) { return listen(actionListeners, listener); },
     /**
-     * DD-152: Kailo shows the toast (one notification surface). Returns false when no
+     * DD-157: Kailo shows the toast (one notification surface). Returns false when no
      * Kailo frame is present (top-level visit): the page then shows its own, styled per 20 §13.
      */
     toast: function (toast) {
-      if (!has("toast") || !framed || !hostConnected || !toast) return false;
+      if (!has("toast") || !framed || !hostHas("toast") || !toast) return false;
       var tone = member(toast.tone || "info", TOAST_TONES);
       var title = text(toast.title, 120);
       var description = text(toast.description, 280, true);
@@ -459,11 +477,11 @@
       return post("toast", { toast: payload });
     },
     /**
-     * DD-152: Kailo's confirmation dialog. Resolves true/false; returns null when no
+     * DD-157: Kailo's confirmation dialog. Resolves true/false; returns null when no
      * Kailo frame is present, so the page uses its own dialog (styled per 20 §13).
      */
     confirm: function (options) {
-      if (!has("confirm") || !framed || !hostConnected || !options || typeof Promise !== "function") return null;
+      if (!has("confirm") || !framed || !hostHas("confirm") || !options || typeof Promise !== "function") return null;
       var tone = member(options.tone || "default", CONFIRM_TONES);
       var title = text(options.title, 120);
       var description = text(options.description, 400, true);

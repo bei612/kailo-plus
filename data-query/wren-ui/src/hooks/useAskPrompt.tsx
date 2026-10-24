@@ -19,6 +19,7 @@ import {
   useInstantRecommendedQuestionsLazyQuery,
 } from '@/apollo/client/graphql/home.generated';
 import useAskingStreamTask from './useAskingStreamTask';
+import { kailoT } from '@/utils/kailoI18n';
 import { THREAD } from '@/apollo/client/graphql/home';
 import { ApolloClient, NormalizedCacheObject } from '@apollo/client';
 import { nextTick } from '@/utils/time';
@@ -387,8 +388,8 @@ export default function useAskPrompt(threadId?: number) {
     onStoreThreadQuestions,
     inputProps: {
       placeholder: threadId
-        ? 'Ask follow-up questions to explore your data'
-        : 'Ask to explore your data',
+        ? kailoT('home.askFollowUpPlaceholder')
+        : kailoT('home.askPlaceholder'),
     },
   };
 }

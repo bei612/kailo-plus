@@ -8,6 +8,7 @@ import {
   RecommendedQuestionsTask,
   RecommendedQuestionsTaskStatus,
 } from '@/apollo/client/graphql/__types__';
+import useKailoText from '@/utils/kailoI18n';
 
 export interface SelectQuestionProps {
   question: string;
@@ -82,6 +83,7 @@ const QuestionList = makeIterable(QuestionItem);
 
 export default function RecommendedQuestions(props: Props) {
   const { items, loading, className, onSelect } = props;
+  const t = useKailoText();
 
   const data = useMemo(
     () => items.map(({ question, sql }) => ({ question, sql })),
@@ -89,10 +91,12 @@ export default function RecommendedQuestions(props: Props) {
   );
 
   return (
-    <div className={clsx('bg-gray-2 rounded p-3', className)}>
+    <div className={clsx('kailo-soft-block p-3', className)}>
       <div className="mb-2">
-        <BulbOutlined className="mr-1 gray-6" />
-        <b className="text-semi-bold text-sm gray-7">Recommended questions</b>
+        <BulbOutlined className="mr-1 gray-7" />
+        <b className="text-semi-bold text-sm gray-7">
+          {t('home.recommendedQuestions')}
+        </b>
       </div>
       <div className="pl-1 gray-8">
         <StyledSkeleton

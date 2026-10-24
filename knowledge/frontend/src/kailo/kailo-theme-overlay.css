@@ -3,7 +3,8 @@
  *
  * Maps the native TDesign / app variables onto the Kailo presentation tokens
  * from /kailo/kailo-theme-tokens.css (client-kit/embed, a build input copied
- * into this artifact). This file holds no colours: every value is a
+ * into this artifact). This file holds no colours (except the black dialog
+ * scrim of 20 §13): every value is a
  * --kailo-color-*, --kailo-hsl-*, --kailo-font-*, --kailo-radius* or
  * --kailo-shadow-* token. Dark values come from the token sheet itself under
  * :root[data-kailo-theme="dark"], which kailo-embed.js sets together with the
@@ -171,9 +172,8 @@ html[data-kailo-mode]:root:root {
   --td-shadow-3: var(--kailo-shadow-lg);
 }
 
-html[data-kailo-mode]:root:root ::selection {
-  background: hsl(var(--kailo-hsl-ring) / 0.3);
-}
+/* Selection, scrollbars, focus ring and the theme-switch frame come from the token
+   sheet's DD-157 base layer (html[data-kailo-runtime]); this overlay does not restate them. */
 
 /* DD-141 §5/§9: Kailo rounded-square avatar; initials on the selected (brand-soft) role. */
 html[data-kailo-mode] .user-avatar,
@@ -187,4 +187,383 @@ html[data-kailo-mode] .dropdown-user-avatar-placeholder {
   background: var(--kailo-color-selected);
   color: var(--kailo-color-selected-foreground);
   font-weight: 600;
+}
+
+/* ===========================================================================
+ * DD-157 (20 §13, spec §3): TDesign controls in Kailo control geometry.
+ * Kailo mode only; values are Kailo tokens. Sizes follow the Kailo scale:
+ * controls 32 (sm 28 / lg 36), inputs 34, menus 30-row, dialogs radius 16.
+ * ======================================================================== */
+html[data-kailo-mode]:root:root {
+  --td-comp-size-xxxs: 4px;
+  --td-comp-size-s: 28px;
+  --td-comp-size-m: 32px;
+  --td-comp-size-l: 36px;
+  --td-mask-active: hsl(0 0% 0% / 0.4);
+}
+
+html[data-kailo-mode][data-kailo-theme="dark"]:root:root {
+  --td-mask-active: hsl(0 0% 0% / 0.6);
+}
+
+/* Buttons. */
+html[data-kailo-mode] .t-button {
+  height: 32px;
+  border-radius: var(--kailo-radius-lg);
+  font: 500 13px/20px var(--kailo-font-sans);
+  letter-spacing: 0;
+  text-transform: none;
+  box-shadow: none;
+  transition: background-color var(--kailo-duration-fast) var(--kailo-ease-standard),
+    border-color var(--kailo-duration-fast) var(--kailo-ease-standard),
+    color var(--kailo-duration-fast) var(--kailo-ease-standard);
+}
+html[data-kailo-mode] .t-button.t-size-s { height: 28px; }
+html[data-kailo-mode] .t-button.t-size-l { height: 36px; }
+html[data-kailo-mode] .t-button .t-icon { font-size: 16px; }
+html[data-kailo-mode] .t-button .t-button__text:not(:empty) + .t-icon,
+html[data-kailo-mode] .t-button .t-icon + .t-button__text:not(:empty) { margin-left: 6px; }
+html[data-kailo-mode] .t-button--theme-primary.t-button--variant-base {
+  background: var(--kailo-color-brand);
+  border-color: var(--kailo-color-brand);
+  color: var(--kailo-color-on-brand);
+}
+html[data-kailo-mode] .t-button--theme-primary.t-button--variant-base:not(.t-is-disabled):hover {
+  background: var(--kailo-color-brand-hover);
+  border-color: var(--kailo-color-brand-hover);
+}
+html[data-kailo-mode] .t-button--theme-primary.t-button--variant-base:not(.t-is-disabled):active {
+  background: var(--kailo-color-brand-pressed);
+  border-color: var(--kailo-color-brand-pressed);
+}
+html[data-kailo-mode] .t-button--variant-outline,
+html[data-kailo-mode] .t-button--theme-default.t-button--variant-base {
+  background: var(--kailo-color-background);
+  border: 1px solid var(--kailo-color-line-strong);
+  color: var(--kailo-color-foreground);
+  box-shadow: var(--kailo-shadow-xs);
+}
+html[data-kailo-mode] .t-button--variant-outline:not(.t-is-disabled):hover,
+html[data-kailo-mode] .t-button--theme-default.t-button--variant-base:not(.t-is-disabled):hover {
+  background: var(--kailo-color-hover);
+  border-color: var(--kailo-color-line-strong);
+  color: var(--kailo-color-foreground);
+}
+html[data-kailo-mode] .t-button--variant-text,
+html[data-kailo-mode] .t-button--variant-dashed {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+html[data-kailo-mode] .t-button--variant-text.t-button--theme-default { color: var(--kailo-color-foreground); }
+html[data-kailo-mode] .t-button--variant-text:not(.t-is-disabled):hover {
+  background: var(--kailo-color-hover);
+  border-color: transparent;
+}
+html[data-kailo-mode] .t-button--theme-danger.t-button--variant-base {
+  background: var(--kailo-color-danger);
+  border-color: var(--kailo-color-danger);
+  color: var(--kailo-color-destructive-foreground);
+}
+html[data-kailo-mode] .t-button.t-is-disabled { opacity: 0.5; }
+/* Icon buttons: rounded squares, never circles. */
+html[data-kailo-mode] .t-button--shape-square,
+html[data-kailo-mode] .t-button--shape-circle {
+  width: 32px;
+  border-radius: var(--kailo-radius-lg);
+}
+html[data-kailo-mode] .t-button--shape-square.t-size-s,
+html[data-kailo-mode] .t-button--shape-circle.t-size-s { width: 28px; }
+
+/* Inputs, selects, text areas. :where() keeps the mode at zero specificity so composite
+   controls (range inputs, the chat composer, tag inputs) keep their own inner geometry. */
+:where(html[data-kailo-mode]) .t-input {
+  height: 34px;
+  border-radius: var(--kailo-radius-md);
+  border: 1px solid var(--kailo-color-line-strong);
+  background: var(--kailo-color-background);
+  font-size: 14px;
+  box-shadow: none;
+  transition: border-color var(--kailo-duration-fast) var(--kailo-ease-standard),
+    box-shadow var(--kailo-duration-fast) var(--kailo-ease-standard);
+}
+:where(html[data-kailo-mode]) .t-input.t-size-s { height: 28px; font-size: 13px; }
+:where(html[data-kailo-mode]) .t-input:hover:not(.t-is-disabled) {
+  border-color: hsl(var(--kailo-hsl-muted-foreground) / 0.4);
+}
+:where(html[data-kailo-mode]) .t-input--focused,
+:where(html[data-kailo-mode]) .t-input--focused:hover {
+  border-color: var(--kailo-color-brand);
+  box-shadow: 0 0 0 3px hsl(var(--kailo-hsl-primary) / 0.15);
+}
+:where(html[data-kailo-mode]) .t-input .t-input__inner::placeholder,
+:where(html[data-kailo-mode]) .t-textarea__inner::placeholder { color: var(--kailo-color-muted-foreground); }
+:where(html[data-kailo-mode]) .t-is-error .t-input,
+:where(html[data-kailo-mode]) .t-input.t-is-error { border-color: var(--kailo-color-danger); }
+:where(html[data-kailo-mode]) .t-input__tips.t-tips--error,
+:where(html[data-kailo-mode]) .t-form__controls .t-input__extra { color: var(--kailo-color-danger-text); font-size: 12px; }
+:where(html[data-kailo-mode]) .t-textarea__inner {
+  border-radius: var(--kailo-radius-md);
+  border: 1px solid var(--kailo-color-line-strong);
+  background: var(--kailo-color-background);
+  font-size: 14px;
+}
+:where(html[data-kailo-mode]) .t-textarea__inner:hover { border-color: hsl(var(--kailo-hsl-muted-foreground) / 0.4); }
+:where(html[data-kailo-mode]) .t-textarea__inner:focus,
+:where(html[data-kailo-mode]) .t-textarea__inner--focused {
+  border-color: var(--kailo-color-brand);
+  box-shadow: 0 0 0 3px hsl(var(--kailo-hsl-primary) / 0.15);
+}
+:where(html[data-kailo-mode]) .t-input-number,
+:where(html[data-kailo-mode]) .t-select-input,
+:where(html[data-kailo-mode]) .t-date-range-picker { border-radius: var(--kailo-radius-md); }
+
+/* Checkbox / radio / switch. */
+html[data-kailo-mode] .t-checkbox__input {
+  width: 16px;
+  height: 16px;
+  border-radius: var(--kailo-radius-sm);
+  border-color: var(--kailo-color-line-strong);
+}
+html[data-kailo-mode] .t-is-checked .t-checkbox__input,
+html[data-kailo-mode] .t-is-indeterminate .t-checkbox__input {
+  background: var(--kailo-color-brand);
+  border-color: var(--kailo-color-brand);
+}
+html[data-kailo-mode] .t-switch.t-is-checked { background-color: var(--kailo-color-brand); }
+
+/* Tabs: 2px brand underline, selected text 600, others muted. */
+html[data-kailo-mode] .t-tabs__nav-item {
+  height: 40px;
+  color: var(--kailo-color-muted-foreground);
+  font-size: 14px;
+}
+html[data-kailo-mode] .t-tabs__nav-item.t-is-active {
+  color: var(--kailo-color-foreground);
+  font-weight: 600;
+}
+html[data-kailo-mode] .t-tabs__bar { height: 2px; background-color: var(--kailo-color-brand); }
+html[data-kailo-mode] .t-tabs__nav-item:not(.t-is-disabled):not(.t-is-active):hover .t-tabs__nav-item-wrapper {
+  background: transparent;
+  color: var(--kailo-color-foreground);
+}
+
+/* Tags and badges: 20 high, soft fill with semantic text. */
+html[data-kailo-mode] .t-tag {
+  height: 20px;
+  padding: 0 6px;
+  border-radius: var(--kailo-radius-sm);
+  font: 500 12px/20px var(--kailo-font-sans);
+}
+html[data-kailo-mode] .t-tag--theme-primary.t-tag--light,
+html[data-kailo-mode] .t-tag--theme-primary.t-tag--dark { background: var(--kailo-color-selected); color: var(--kailo-color-selected-foreground); border-color: transparent; }
+html[data-kailo-mode] .t-tag--theme-success { background: var(--kailo-color-success-soft); color: var(--kailo-color-success-text); border-color: transparent; }
+html[data-kailo-mode] .t-tag--theme-warning { background: var(--kailo-color-warning-soft); color: var(--kailo-color-warning-text); border-color: transparent; }
+html[data-kailo-mode] .t-tag--theme-danger { background: var(--kailo-color-danger-soft); color: var(--kailo-color-danger-text); border-color: transparent; }
+html[data-kailo-mode] .t-tag--theme-default { background: var(--kailo-color-hover); color: var(--kailo-color-text-secondary); border-color: transparent; }
+
+/* Popups, dropdowns, select panels, context menus. */
+html[data-kailo-mode] .t-popup__content {
+  background: var(--kailo-color-popover);
+  color: var(--kailo-color-popover-foreground);
+  border-radius: var(--kailo-radius-xl);
+  box-shadow: var(--kailo-shadow-md);
+  border: 1px solid var(--kailo-color-border);
+}
+html[data-kailo-mode] .t-dropdown__menu,
+html[data-kailo-mode] .t-select__dropdown-inner { padding: 4px; }
+html[data-kailo-mode] .t-dropdown__item,
+html[data-kailo-mode] .t-select-option {
+  min-height: 30px;
+  height: auto;
+  padding: 0 8px;
+  border-radius: var(--kailo-radius-md);
+  font-size: 13px;
+  color: var(--kailo-color-foreground);
+}
+html[data-kailo-mode] .t-dropdown__item .t-icon,
+html[data-kailo-mode] .t-dropdown__item-icon { font-size: 16px; color: var(--kailo-color-muted-foreground); }
+html[data-kailo-mode] .t-dropdown__item:hover,
+html[data-kailo-mode] .t-dropdown__item.t-dropdown__item--active,
+html[data-kailo-mode] .t-select-option:hover { background: var(--kailo-color-hover); }
+html[data-kailo-mode] .t-select-option.t-is-selected {
+  background: var(--kailo-color-selected);
+  color: var(--kailo-color-selected-foreground);
+}
+html[data-kailo-mode] .t-dropdown__item--theme-error,
+html[data-kailo-mode] .t-dropdown__item--theme-error .t-icon { color: var(--kailo-color-danger-text); }
+html[data-kailo-mode] .t-divider { border-color: var(--kailo-color-border); }
+
+/* Tooltips: dark neutral, white text, 12px, radius 6, no arrow. */
+html[data-kailo-mode] .t-tooltip .t-popup__content {
+  background: var(--kailo-color-foreground);
+  color: var(--kailo-color-background);
+  border: 0;
+  border-radius: var(--kailo-radius-md);
+  box-shadow: var(--kailo-shadow-sm);
+  font-size: 12px;
+  line-height: 16px;
+  padding: 6px 8px;
+}
+html[data-kailo-mode][data-kailo-theme="dark"] .t-tooltip .t-popup__content {
+  background: color-mix(in srgb, var(--kailo-color-foreground) 22%, var(--kailo-color-background));
+  color: var(--kailo-color-foreground);
+}
+html[data-kailo-mode] .t-tooltip .t-popup__arrow { display: none; }
+
+/* Dialogs: radius 16, shadow-xl, padding 24, title 17/24 600, no header rule. */
+html[data-kailo-mode] .t-dialog {
+  border-radius: var(--kailo-radius-2xl);
+  box-shadow: var(--kailo-shadow-xl);
+  border: 1px solid var(--kailo-color-border);
+  background: var(--kailo-color-popover);
+  padding: 24px;
+}
+html[data-kailo-mode] .t-dialog__header {
+  font: 600 17px/24px var(--kailo-font-sans);
+  color: var(--kailo-color-foreground);
+  border-bottom: 0;
+}
+html[data-kailo-mode] .t-dialog__body { color: var(--kailo-color-text-secondary); font-size: 14px; }
+html[data-kailo-mode] .t-dialog__footer { border-top: 0; }
+html[data-kailo-mode] .t-dialog__close {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--kailo-radius-lg);
+  color: var(--kailo-color-muted-foreground);
+}
+html[data-kailo-mode] .t-dialog__close:hover { background: var(--kailo-color-hover); color: var(--kailo-color-foreground); }
+html[data-kailo-mode] .t-dialog__mask,
+html[data-kailo-mode] .t-drawer__mask {
+  background: var(--td-mask-active);
+  backdrop-filter: blur(2px);
+}
+
+/* Drawers: from the right, left corners 12, shadow-lg. */
+html[data-kailo-mode] .t-drawer--right .t-drawer__content-wrapper {
+  border-radius: var(--kailo-radius-xl) 0 0 var(--kailo-radius-xl);
+  box-shadow: var(--kailo-shadow-lg);
+  background: var(--kailo-color-popover);
+}
+html[data-kailo-mode] .t-drawer__header { font: 600 17px/24px var(--kailo-font-sans); border-bottom-color: var(--kailo-color-border); }
+
+/* Tables and lists. */
+html[data-kailo-mode] .t-table { background: transparent; color: var(--kailo-color-foreground); }
+html[data-kailo-mode] .t-table th,
+html[data-kailo-mode] .t-table thead td {
+  background: transparent;
+  color: var(--kailo-color-muted-foreground);
+  font: 600 11px/14px var(--kailo-font-sans);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--kailo-color-border);
+}
+html[data-kailo-mode] .t-table td {
+  height: 40px;
+  border-bottom: 1px solid var(--kailo-color-border);
+  background: transparent;
+}
+html[data-kailo-mode] .t-table--hoverable tbody tr:hover,
+html[data-kailo-mode] .t-table tbody tr:hover > td { background: var(--kailo-color-hover); }
+html[data-kailo-mode] .t-table__row--selected > td,
+html[data-kailo-mode] .t-table tr.t-table__row--active > td { background: var(--kailo-color-selected); }
+html[data-kailo-mode] .t-list-item { border-color: var(--kailo-color-border); }
+
+/* Cards: line border, radius 12, no shadow at rest. */
+html[data-kailo-mode] .t-card {
+  background: var(--kailo-color-card);
+  border: 1px solid var(--kailo-color-border);
+  border-radius: var(--kailo-radius-xl);
+  box-shadow: none;
+}
+
+/* Avatars: rounded squares, neutral / brand-soft initials. */
+html[data-kailo-mode] .t-avatar { border-radius: 28%; }
+html[data-kailo-mode] .t-avatar:not(.t-avatar--image) {
+  background: var(--kailo-color-selected);
+  color: var(--kailo-color-selected-foreground);
+}
+
+/* Skeletons: low-contrast sweep, 1.6s linear. */
+html[data-kailo-mode] .t-skeleton__col { background: var(--kailo-color-hover); border-radius: var(--kailo-radius-md); }
+html[data-kailo-mode] .t-skeleton--animation-gradient::after,
+html[data-kailo-mode] .t-skeleton--animation-gradient .t-skeleton__col::after {
+  background: linear-gradient(90deg, transparent, hsl(var(--kailo-hsl-foreground) / 0.04), transparent);
+  animation-duration: 1.6s;
+  animation-timing-function: linear;
+}
+html[data-kailo-mode] .t-loading { color: var(--kailo-color-brand); }
+
+/* Native message (top-level visits only; inside Kailo toasts are Kailo's). */
+html[data-kailo-mode] .t-message {
+  background: var(--kailo-color-popover);
+  color: var(--kailo-color-popover-foreground);
+  border: 1px solid var(--kailo-color-border);
+  border-radius: var(--kailo-radius-xl);
+  box-shadow: var(--kailo-shadow-lg);
+  font-size: 13px;
+}
+
+/* Popconfirm: same surface as Kailo menus. */
+html[data-kailo-mode] .t-popconfirm .t-popup__content { padding: 16px; }
+
+/* Native left menu (top-level Kailo mode): one-colour line icons. */
+html[data-kailo-mode] .kailo-mono-icon {
+  display: inline-block;
+  width: 18px;
+  height: 18px;
+  background-color: currentColor;
+  -webkit-mask: var(--kailo-icon) center / contain no-repeat;
+  mask: var(--kailo-icon) center / contain no-repeat;
+  color: var(--kailo-color-muted-foreground);
+}
+html[data-kailo-mode] .menu_item_active .kailo-mono-icon,
+html[data-kailo-mode] .menu_item_c_active .kailo-mono-icon,
+html[data-kailo-mode] .menu_item:hover .kailo-mono-icon { color: currentColor; }
+
+/* ===========================================================================
+ * DD-157 Kailo shell (html[data-kailo-shell], inside the Kailo frame with the
+ * page header): the conversation history is a list pane (spec §2).
+ * ======================================================================== */
+html[data-kailo-shell] .aside_box.aside_box--pane {
+  width: 264px;
+  min-width: 264px;
+  padding: 8px;
+  background: var(--kailo-color-background);
+  border-right: 1px solid var(--kailo-color-border);
+  box-shadow: none;
+}
+html[data-kailo-shell] .aside_box--pane .menu_top { padding-top: 0; }
+html[data-kailo-shell] .aside_box--pane .timeline_header-label {
+  font: 600 11px/14px var(--kailo-font-sans);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--kailo-color-muted-foreground);
+}
+html[data-kailo-shell] .aside_box--pane .submenu_item_p {
+  min-height: 32px;
+  border-radius: var(--kailo-radius-md);
+  font: 500 13px/20px var(--kailo-font-sans);
+}
+html[data-kailo-shell] .aside_box--pane .submenu_item_p:hover { background: var(--kailo-color-hover); }
+html[data-kailo-shell] .aside_box--pane .submenu_item_p.session-chat-row--active {
+  background: var(--kailo-color-selected);
+  color: var(--kailo-color-selected-foreground);
+}
+
+/* Page content insets inside the shell (spec §2: 24, list pages 16 top). */
+html[data-kailo-shell] .main { background: var(--kailo-color-background); }
+
+/* Drop target over the content area (spec §4: inset 12, 2px dashed brand, brand-soft 60%). */
+html[data-kailo-mode] .upload-mask {
+  background: transparent !important;
+  padding: 12px;
+  box-sizing: border-box;
+}
+html[data-kailo-mode] .upload-mask > * {
+  width: 100%;
+  height: 100%;
+  border: 2px dashed var(--kailo-color-brand);
+  border-radius: var(--kailo-radius-xl);
+  background: color-mix(in srgb, var(--kailo-color-selected) 60%, transparent);
 }

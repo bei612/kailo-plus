@@ -10,8 +10,8 @@ import {translateCurrent as t} from "../../i18n";
 import type {ProjectPullRequest,ProjectPullRequestCommentAnchor} from "./projectPullRequests.mjs";
 import {projectPullRequestCommentTimelineKind} from "./projectPullRequests.mjs";
 import type {Repository as Project} from "./projectModels";
-import type {UserProfileLookup} from "../messages/system/identity";
-import {normalizePubkey,truncateNpub} from "../conversations/pubkey";
+import {unknownMemberLabel,type UserProfileLookup} from "../messages/system/identity";
+import {normalizePubkey} from "../conversations/pubkey";
 import {relativeTime,formatExactTimestamp} from "./lib/projectsViewHelpers";
 import {ProjectFeedRow,ProjectFeedRowCluster,ProjectFeedRowMonoCell} from "./ProjectFeedRow";
 import {CopyCommitHashButton} from "./ProjectCommitCopyButton";
@@ -53,7 +53,7 @@ function labelForPubkey(pubkey: string, profiles?: UserProfileLookup) {
   return (
     profile?.displayName?.trim() ||
     profile?.nip05Handle?.trim() ||
-    truncateNpub(pubkey)
+    unknownMemberLabel()
   );
 }
 

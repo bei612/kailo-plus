@@ -27,7 +27,7 @@ svg.lucide[stroke-width="2"] {
   }
 }
 
-/* ── Scrollbars (20 §7; DD-152: same as the embed base layer) ─────────── */
+/* ── Scrollbars (20 §7; DD-157: same as the embed base layer) ─────────── */
 @layer base {
   ::-webkit-scrollbar {
     width: 8px;
@@ -299,7 +299,7 @@ svg.lucide[stroke-width="2"] {
 
 /* Human avatars are rounded squares; agents keep their squircle. */
 [data-avatar-shape="circle"] {
-  border-radius: 30%;
+  border-radius: 28%;
 }
 
 /* ── Composer ─────────────────────────────────────────────────────────── */

@@ -17,7 +17,7 @@ import { Button, ReadFailure } from "./ui";
 /** How long a page may take to complete the wire v1 handshake before it is treated as a DD-127 page. */
 export const NATIVE_HANDSHAKE_GRACE_MS = 8000;
 
-/** DD-152 (07 §4.8.7): at most this many component toasts per window, identical ones merged. */
+/** DD-157 (07 §4.8.7): at most this many component toasts per window, identical ones merged. */
 export const NATIVE_TOAST_LIMIT = { count: 5, windowMs: 10_000, duplicateMs: 3_000 };
 
 export function validNativePage(page: ApplicationNativePage, bindingId: string): boolean {
@@ -113,7 +113,7 @@ export function NativeApplicationPage({ bindingId, onBack, title, path }: { bind
   const [embedded, setEmbedded] = useState<{ key: string; authRequired: boolean; features: EmbedFeature[] } | null>(null);
   const connected = embedded !== null && embedded.key === frameKey;
   const features = connected ? embedded.features : [];
-  // DD-152: the component's own header, drawn by Kailo; reset with every document.
+  // DD-157: the component's own header, drawn by Kailo; reset with every document.
   const [header, setHeader] = useState<{ key: string; page: EmbedPage | null } | null>(null);
   const embedPage = header && header.key === frameKey ? header.page : null;
   const headerArrived = header !== null && header.key === frameKey;
@@ -224,14 +224,14 @@ export function NativeApplicationPage({ bindingId, onBack, title, path }: { bind
     const timer = window.setTimeout(() => setGraceOver(true), NATIVE_HANDSHAKE_GRACE_MS);
     return () => window.clearTimeout(timer);
   }, [frameKey]);
-  // DD-152: a page that declared `page` stays behind Kailo's skeleton until its first
+  // DD-157: a page that declared `page` stays behind Kailo's skeleton until its first
   // header (its content is ready), so the first paint is never a half-built frame.
   const awaitingHeader = connected && features.includes("page") && !headerArrived && !graceOver && !embedded?.authRequired;
   const awaitingHandshake = page !== null && ((!connected && !graceOver) || awaitingHeader);
   const unhandshaked = page !== null && !connected && graceOver;
   const productTitle = entry?.title ?? title ?? "";
   return <section className="flex h-full min-h-0 flex-1 flex-col bg-background" data-testid="native-application-page">
-    {/* DD-138(3)/DD-152: the Kailo page header; Back only where opened from a list. */}
+    {/* DD-138(3)/DD-157: the Kailo page header; Back only where opened from a list. */}
     {onBack ? <div className="px-5 pt-3"><Button onClick={onBack}>{t("platform.back")}</Button></div> : null}
     <NativePageHeader productTitle={productTitle} category={entry?.category ?? null}
       page={connected && features.includes("page") ? embedPage : null}
@@ -245,8 +245,8 @@ export function NativeApplicationPage({ bindingId, onBack, title, path }: { bind
       <Button disabled={authenticationPending} onClick={() => signInAgain(page.url)}>{t("bindings.embedSignIn")}</Button></div> : null}
     {page && frameKey && launch.current ? <NativePageFrame>
       <iframe key={frameKey} ref={frame}
-        className={`min-h-0 w-full flex-1 border-0 bg-background${awaitingHandshake ? " invisible" : ""}`} title={productTitle || title || t("bindings.nativeTitle")}
-        style={{ colorScheme: presentation.theme }}
+        className={`min-h-0 w-full flex-1 border-0 bg-background ${presentation.theme === "dark" ? "[color-scheme:dark]" : "[color-scheme:light]"}${awaitingHandshake ? " invisible" : ""}`}
+        title={productTitle || title || t("bindings.nativeTitle")}
         src={launch.current.src} sandbox="allow-scripts allow-same-origin allow-forms allow-downloads allow-popups allow-popups-to-escape-sandbox"
         referrerPolicy="no-referrer" />
       {awaitingHandshake ? <div role="status" aria-label={t("platform.loading")} data-testid="native-page-loading"><NativePageSkeleton /></div> : null}

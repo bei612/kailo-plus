@@ -6,7 +6,6 @@
 import * as React from "react";
 import { CircleDot, GitCommitHorizontal, GitPullRequest } from "lucide-react";
 import { useUiT } from "../context";
-import { truncateNpub } from "../conversations/pubkey";
 import { resolveUserLabel, type UserProfileLookup } from "../messages/system/identity";
 import { useUsersBatchQuery } from "../pulse/host";
 import {
@@ -122,7 +121,7 @@ export function ContributorsPanel({
         commitCount: signedCounts.commits as number | null,
         id: `buzz:${pubkey}`,
         isAgent,
-        label: profile ? resolveUserLabel({ profiles, pubkey }) : truncateNpub(pubkey),
+        label: resolveUserLabel({ profiles, pubkey }),
         profileLinked: true,
         pubkey: pubkey as string | null,
         reviewCount: signedCounts.reviews as number | null,

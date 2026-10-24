@@ -7,7 +7,8 @@ import type { Translate } from "./context";
 import { parseConditionExpressions, type ParsedConditionExpression } from "./workflow-condition-expression";
 import { formatDurationSeconds, formatDurationSecondsVerbose, parseDurationSeconds } from "./workflow-duration";
 import { scheduleFormFromTrigger } from "./workflow-schedule";
-import { truncateNpub, truncatePubkey } from "./conversations/pubkey";
+import { truncatePubkey } from "./conversations/pubkey";
+import { unknownMemberLabel } from "./messages/system/identity";
 
 export type WorkflowTriggerPresentation = {
   authorLabel?: string;
@@ -26,7 +27,7 @@ function messageTriggerDescription(content: AutomationVersionContent, t: Transla
   const author = conditions?.find(condition => condition.field === "trigger_author");
   const showAuthor = author && (!options.omitUnresolvedReferences || options.authorLabel || options.authorLoading);
   const authorLabel = showAuthor ? options.authorLoading ? t("workflows.trigger.loadingAuthor")
-    : options.authorLabel ?? truncateNpub(author.value) : undefined;
+    : options.authorLabel ?? unknownMemberLabel(t) : undefined;
   const attribution = authorLabel ? t(author?.operator === "not_equals"
     ? "workflows.trigger.exceptAuthor" : "workflows.trigger.byAuthor", {author: authorLabel}) : "";
   const values = {value: text ? `“${compact(text.value, 36)}”` : "", author: attribution};
@@ -64,7 +65,7 @@ const diffCardKeys = {
 function authorAttribution(conditions: ParsedConditionExpression[], t: Translate, options: WorkflowTriggerDescriptionOptions): string {
   const author = conditions.find(condition => condition.field === "trigger_author");
   if (!author || (options.omitUnresolvedReferences && !options.authorLabel && !options.authorLoading)) return "";
-  const label = options.authorLoading ? t("workflows.trigger.loadingAuthor") : options.authorLabel ?? truncateNpub(author.value);
+  const label = options.authorLoading ? t("workflows.trigger.loadingAuthor") : options.authorLabel ?? unknownMemberLabel(t);
   return t(author.operator === "not_equals" ? "workflows.trigger.exceptAuthor" : "workflows.trigger.byAuthor", {author: label});
 }
 function messageTarget(conditions: ParsedConditionExpression[], t: Translate, options: WorkflowTriggerDescriptionOptions): string {

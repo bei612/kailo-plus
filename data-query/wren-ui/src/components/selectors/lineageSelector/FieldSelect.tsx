@@ -4,16 +4,15 @@ import { NODE_TYPE } from '@/utils/enum';
 import { ModelIcon } from '@/utils/icons';
 import { IterableComponent } from '@/utils/iteration';
 import Selector, { Option } from '@/components/selectors/Selector';
+import { kailoT } from '@/utils/kailoI18n';
 
 const FieldBox = styled.div`
   user-select: none;
-  border-radius: 4px;
-  background-color: white;
+  border-radius: 8px;
+  background-color: var(--kailo-color-card);
+  border: 1px var(--kailo-color-border) solid;
   width: 170px;
-  box-shadow:
-    0px 9px 28px 8px rgba(0, 0, 0, 0.05),
-    0px 6px 16px 0px rgba(0, 0, 0, 0.08),
-    0px 3px 6px -4px rgba(0, 0, 0, 0.12);
+  box-shadow: var(--kailo-shadow-xs);
 
   + .adm-fieldBox {
     position: relative;
@@ -25,23 +24,23 @@ const FieldBox = styled.div`
       left: -40px;
       width: 40px;
       height: 1px;
-      background-color: var(--gray-8);
+      background-color: var(--kailo-color-line-strong);
     }
   }
 
   .ant-select-selection-placeholder {
-    color: var(--geekblue-6);
+    color: var(--kailo-color-brand-text);
   }
 
   &:last-child {
-    border: 1px var(--geekblue-6) solid;
+    border: 1px var(--kailo-color-brand) solid;
   }
 `;
 
 const FieldHeader = styled.div`
   display: flex;
   align-items: center;
-  border-bottom: 1px var(--gray-4) solid;
+  border-bottom: 1px var(--kailo-color-border) solid;
 `;
 
 const StyledSelector = styled(Selector)`
@@ -130,14 +129,16 @@ export default function FieldSelect(props: IterableComponent<Props>) {
       </FieldHeader>
 
       {selectedValue?.nodeType === NODE_TYPE.RELATION && (
-        <div className="gray-7 text-sm px-3 pt-1">Relationships</div>
+        <div className="gray-7 text-sm px-3 pt-1">
+          {kailoT('modeling.relationships')}
+        </div>
       )}
 
       <StyledSelector
         bordered={false}
         options={options}
         optionLabelProp="label"
-        placeholder="Select field"
+        placeholder={kailoT('modeling.selectField')}
         suffixIcon={null}
         value={selectedValue}
         dropdownClassName="adm-model-field-select-dropdown"

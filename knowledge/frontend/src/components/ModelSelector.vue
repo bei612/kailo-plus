@@ -31,7 +31,7 @@
         <div class="model-option">
           <t-icon name="check-circle-filled" class="model-icon" />
           <span class="model-name">{{ modelDisplayName(model) }}</span>
-          <span v-if="model.display_name" class="model-raw-name">{{ model.name }}</span>
+          <span v-if="modelRawName(model)" class="model-raw-name">{{ modelRawName(model) }}</span>
           <t-tag v-if="model.is_builtin" size="small" theme="primary">{{ $t('model.builtinTag') }}</t-tag>
           <t-tag v-if="model.is_default" size="small" theme="success">{{ $t('model.defaultTag') }}</t-tag>
           <span
@@ -59,6 +59,7 @@
 </template>
 
 <script setup lang="ts">
+import { modelLabel, modelRawName } from '@/kailo/modelLabel'
 import { ref, computed, watch, onMounted } from 'vue'
 import { type ModelConfig } from '@/api/model'
 import { useChatResourcesStore } from '@/stores/chatResources'
@@ -97,17 +98,15 @@ const emit = defineEmits<{
 
 const models = ref<ModelConfig[]>([])
 const loading = ref(false)
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const chatResources = useChatResourcesStore()
 
 const placeholderText = computed(() => {
   return props.placeholder || t('model.selectModelPlaceholder')
 })
 
-const modelDisplayName = (model: ModelConfig) => {
-  const displayName = model.display_name?.trim()
-  return displayName || model.name
-}
+// DD-157: never show an opaque model identifier as its name.
+const modelDisplayName = (model: ModelConfig) => modelLabel(model, locale.value)
 
 const showContextWindow = computed(() => modelHasContextWindow(props.modelType))
 

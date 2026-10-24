@@ -19,6 +19,7 @@ import {
   type TaskView,
 } from "@client-kit/contracts";
 import { type ReactNode, useEffect, useRef, useState } from "react";
+import { ClipboardCheck, ListChecks } from "lucide-react";
 import { relativeTime } from "../format";
 import { approvalOpen, newIdempotencyKey, taskPhase } from "../governance";
 import {
@@ -194,7 +195,7 @@ function TaskList({ onOpen }: { onOpen: (actionExecutionId: string) => void }) {
       <Resource state={state} reload={reload}>
         {(rows) =>
           rows.length === 0 ? (
-            <Notice>{t("tasks.none")}</Notice>
+            <Notice icon={ListChecks}>{t("tasks.none")}</Notice>
           ) : (
             <Table head={[t("tasks.created"), t("platform.action"), t("platform.state")]}>
               {rows.map((task) => (
@@ -415,7 +416,7 @@ function ApprovalList({ onOpen }: { onOpen: (workflowId: string) => void }) {
       <Resource state={state} reload={reload}>
         {(rows) =>
           rows.length === 0 ? (
-            <Notice>{t("approvals.none")}</Notice>
+            <Notice icon={ClipboardCheck}>{t("approvals.none")}</Notice>
           ) : (
             <Table head={[t("platform.action"), t("approvals.status"), t("approvals.expires")]}>
               {rows.map((a) => (

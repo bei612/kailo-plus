@@ -51,6 +51,9 @@ import DocumentListView from './components/DocumentListView.vue';
 import DocumentCardView from './components/DocumentCardView.vue';
 import DocumentBatchBar from './components/DocumentBatchBar.vue';
 import KbUploadSourceDropdown from './components/KbUploadSourceDropdown.vue';
+import ScopeSegments from '@/kailo/ScopeSegments.vue';
+import { isKailoShell } from '@/kailo/setup';
+import { usePageHeader, type PageAction, type PageCrumb } from '@/kailo/page';
 import KbFolderTree from './components/KbFolderTree.vue';
 import TagEditDialog from './components/TagEditDialog.vue';
 import BatchTagDialog from './components/BatchTagDialog.vue';
@@ -1781,6 +1784,43 @@ const handleOpenKBSettings = () => {
   uiStore.openKBSettings(kbId.value);
 };
 
+// DD-157: Kailo's page header — 知识库 › <name> › <folders>, upload as the main action.
+const kailoShell = isKailoShell();
+const kailoKbSections = computed(() => [
+  { value: 'documents', label: t('knowledgeEditor.wikiBrowser.tabDocuments') },
+  { value: 'wiki', label: 'Wiki' },
+  { value: 'graph', label: t('knowledgeEditor.wikiBrowser.tabGraph') },
+]);
+usePageHeader('knowledgeBaseDetail', () => {
+  if (!kbInfo.value) return null;
+  const name = String(kbInfo.value.name || '');
+  const folders = isFAQ.value || (isWiki.value && activeKbTab.value !== 'documents') ? [] : folderBreadcrumbs.value;
+  const breadcrumbs: PageCrumb[] = [];
+  if (folders.length) {
+    breadcrumbs.push({ id: 'kb-root', label: name, go: () => handleFolderSelect('') });
+    folders.slice(0, -1).forEach((crumb) => {
+      breadcrumbs.push({ id: `folder:${crumb.path}`, label: crumb.name, go: () => handleFolderSelect(crumb.path) });
+    });
+  }
+  const actions: PageAction[] = [];
+  if (canEdit.value && !isFAQ.value) {
+    actions.push(
+      { id: 'upload', label: t('upload.uploadDocument'), variant: 'primary', icon: 'upload', run: () => uploadSourceRef.value?.runAction('upload') },
+      { id: 'upload-folder', label: t('upload.uploadFolder'), variant: 'menu', icon: 'folder-plus', run: () => uploadSourceRef.value?.runAction('uploadFolder') },
+      { id: 'import-url', label: t('knowledgeBase.importURL'), variant: 'menu', run: () => uploadSourceRef.value?.runAction('importURL') },
+      { id: 'write', label: t('upload.onlineEdit'), variant: 'menu', icon: 'pencil', run: handleManualCreate },
+    );
+  }
+  if (canManage.value) {
+    actions.push({ id: 'kb-settings', label: t('knowledgeBase.settings'), variant: 'menu', icon: 'settings', disabled: !kbId.value, run: handleOpenKBSettings });
+  }
+  return {
+    title: folders.length ? folders[folders.length - 1].name : name,
+    breadcrumbs,
+    actions,
+  };
+});
+
 const handleNavigateToKbList = () => {
   router.push('/platform/knowledge-bases');
 };
@@ -2278,7 +2318,13 @@ async function createNewSession(value: string): Promise<void> {
     <div class="knowledge-layout">
       <div class="document-header">
         <div class="document-header-title">
-          <div class="document-title-row">
+          <!-- DD-157: inside the Kailo shell the title, breadcrumbs and settings are Kailo's
+               header; the Wiki sections stay as a segmented control in the content. -->
+          <div v-if="kailoShell && isWiki" class="kailo-kb-toolbar">
+            <ScopeSegments :model-value="activeKbTab" :options="kailoKbSections"
+              @update:model-value="(tab) => (activeKbTab = tab as KbTab)" />
+          </div>
+          <div v-if="!kailoShell" class="document-title-row">
             <h2 class="document-breadcrumb">
               <button type="button" class="breadcrumb-link" @click="handleNavigateToKbList">
                 {{ $t('menu.knowledgeBase') }}
@@ -2340,7 +2386,7 @@ async function createNewSession(value: string): Promise<void> {
               </t-tooltip>
             </div>
           </div>
-          <p class="document-subtitle">{{ $t('knowledgeEditor.document.subtitle') }}</p>
+          <p v-if="!kailoShell" class="document-subtitle">{{ $t('knowledgeEditor.document.subtitle') }}</p>
           <p v-if="unsupportedFileTypes.length" class="parser-hint" @click="goToParserSettings">
             <t-icon name="info-circle" class="parser-hint-icon" />
             <span>{{$t('knowledgeBase.unsupportedTypesHint', {
@@ -2381,6 +2427,8 @@ async function createNewSession(value: string): Promise<void> {
                     <t-icon name="folder" size="14px" />
                   </button>
                 </t-tooltip>
+                <!-- Kailo shell: the folder path is part of Kailo's breadcrumbs. -->
+                <template v-if="!kailoShell">
                 <span v-if="!folderBreadcrumbs.length" class="doc-folder-path__crumb is-current">
                   {{ $t('knowledgeBase.folderTree.rootRow') }}
                 </span>
@@ -2396,6 +2444,7 @@ async function createNewSession(value: string): Promise<void> {
                   <button v-else type="button" class="doc-folder-path__crumb" @click="handleFolderSelect(crumb.path)">
                     {{ crumb.name }}
                   </button>
+                </template>
                 </template>
                 <!-- Filtering silently widens the scope to sub-folders, so say so. -->
                 <span v-if="isFiltering" class="doc-folder-path__scope">
@@ -2455,6 +2504,9 @@ async function createNewSession(value: string): Promise<void> {
                 </div>
                 </div>
                 <div class="doc-filter-bar__trailing">
+                  <!-- Kailo shell: the knowledge base details sit with the list tools. -->
+                  <KBInfoPopover v-if="kailoShell && kbInfo && !authStore.isLiteMode" :kb-info="kbInfo"
+                    :supported-file-types="[...supportedFileTypes]" />
                   <t-button v-if="(canDownloadKnowledge || canMutateKnowledge) && cardList.length"
                     variant="outline" size="small"
                     :disabled="batchDeleting || batchReparsing || batchTagging || batchDownloading"
@@ -2475,8 +2527,10 @@ async function createNewSession(value: string): Promise<void> {
                       </button>
                     </t-tooltip>
                   </div>
+                  <!-- Kailo shell: the entries are Kailo header actions; the dropdown stays mounted
+                       for its file inputs and import dialog. -->
                   <div v-if="canEdit" class="doc-filter-actions">
-                    <KbUploadSourceDropdown ref="uploadSourceRef" :accept-file-types="acceptFileTypes"
+                    <KbUploadSourceDropdown ref="uploadSourceRef" :trigger-hidden="kailoShell" :accept-file-types="acceptFileTypes"
                       :supported-file-types="[...supportedFileTypes]" include-manual trigger-icon="file-add"
                       trigger-class="content-bar-icon-btn" data-guide="kb-detail-add-doc"
                       :tooltip="t('knowledgeBase.addDocument')" placement="bottom-right" @files="handleUploadSourceFiles"
@@ -2680,6 +2734,14 @@ async function createNewSession(value: string): Promise<void> {
 }
 
 // Breadcrumb tab switch (文档/Wiki in breadcrumb)
+.kailo-kb-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 32px;
+}
+
 .breadcrumb-tab {
   cursor: pointer;
   color: var(--td-text-color-placeholder);

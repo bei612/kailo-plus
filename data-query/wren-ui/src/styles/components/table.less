@@ -1,6 +1,6 @@
 // override antd styles
 .ant-table {
-  border: 1px @gray-4 solid;
+  border: 1px var(--gray-4) solid;
 
   .ant-table-row:last-child .ant-table-cell {
     border-bottom: none;
@@ -18,7 +18,7 @@
 
   .ant-table-expanded-row {
     > .ant-table-cell {
-      background-color: @gray-3;
+      background-color: var(--gray-3);
     }
   }
 
@@ -28,12 +28,12 @@
       border-radius: 0;
 
       .ant-table-thead > tr > th {
-        background: @gray-2;
+        background: var(--gray-2);
       }
 
       .ant-table-tbody > tr.ant-table-row:hover > td,
       .ant-table-tbody > tr > td.ant-table-cell-row-hover {
-        background: @gray-2;
+        background: var(--gray-2);
       }
     }
   }

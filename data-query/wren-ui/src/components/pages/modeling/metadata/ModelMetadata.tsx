@@ -10,10 +10,12 @@ import { usePreviewModelDataMutation } from '@/apollo/client/graphql/model.gener
 import useGovernedPreview from '@/hooks/useGovernedPreview';
 import { useRouter } from 'next/router';
 import { getQueryPreviewText } from '@/utils/language';
+import useKailoText from '@/utils/kailoI18n';
 
 export type Props = DiagramModel;
 
 export default function ModelMetadata(props: Props) {
+  const t = useKailoText();
   const text = getQueryPreviewText(useRouter().locale);
   const {
     modelId,
@@ -57,27 +59,27 @@ export default function ModelMetadata(props: Props) {
       <Row className="mb-6">
         <Col span={12} data-testid="metadata__name">
           <Typography.Text className="d-block gray-7 mb-2">
-            Name
+            {t('modeling.name')}
           </Typography.Text>
           <div>{referenceName || '-'}</div>
         </Col>
         <Col span={12} data-testid="metadata__alias">
           <Typography.Text className="d-block gray-7 mb-2">
-            Alias
+            {t('modeling.alias')}
           </Typography.Text>
           <div>{displayName || '-'}</div>
         </Col>
       </Row>
       <div className="mb-6" data-testid="metadata__description">
         <Typography.Text className="d-block gray-7 mb-2">
-          Description
+          {t('modeling.description')}
         </Typography.Text>
         <div>{description || '-'}</div>
       </div>
 
       <div className="mb-6" data-testid="metadata__columns">
         <Typography.Text className="d-block gray-7 mb-2">
-          Columns ({fields.length})
+          {t('modeling.columnsCount', { count: fields.length })}
         </Typography.Text>
         <FieldTable dataSource={fields} showExpandable />
       </div>
@@ -85,7 +87,9 @@ export default function ModelMetadata(props: Props) {
       {!!calculatedFields.length && (
         <div className="mb-6" data-testid="metadata__calculated-fields">
           <Typography.Text className="d-block gray-7 mb-2">
-            Calculated fields ({calculatedFields.length})
+            {t('modeling.calculatedFieldsCount', {
+              count: calculatedFields.length,
+            })}
           </Typography.Text>
           <CalculatedFieldTable dataSource={calculatedFields} showExpandable />
         </div>
@@ -94,7 +98,9 @@ export default function ModelMetadata(props: Props) {
       {!!relationFields.length && (
         <div className="mb-6" data-testid="metadata__relationships">
           <Typography.Text className="d-block gray-7 mb-2">
-            Relationships ({relationFields.length})
+            {t('modeling.relationshipsCount', {
+              count: relationFields.length,
+            })}
           </Typography.Text>
           <RelationTable dataSource={relationFields} showExpandable />
         </div>
@@ -102,7 +108,7 @@ export default function ModelMetadata(props: Props) {
 
       <div className="mb-6" data-testid="metadata__preview-data">
         <Typography.Text className="d-block gray-7 mb-2">
-          Data preview (100 rows)
+          {t('modeling.dataPreview')}
         </Typography.Text>
         <Button
           onClick={query.preview}

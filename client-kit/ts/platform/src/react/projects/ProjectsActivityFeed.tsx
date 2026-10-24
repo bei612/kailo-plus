@@ -419,7 +419,7 @@ function ActivityCard({
               aria-label={t("projects.discussion.viewProfile", { name: actorLabel })}
               className={cn(
                 "pointer-events-auto relative z-10 shrink-0 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring",
-                profile?.isAgent ? "rounded-[30%]" : "rounded-full",
+                profile?.isAgent ? "rounded-[30%]" : "rounded-[28%]",
               )}
               type="button"
             >

@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { Button, Modal, Select, Typography, message } from 'antd';
-import ShareAltOutlined from '@ant-design/icons/ShareAltOutlined';
+import { Button, Modal, Select, Typography } from 'antd';
+import { ShareIcon } from '@/components/kailo/KailoIcons';
+import { notify } from '@/utils/kailoHost';
 import { v4 as uuidv4 } from 'uuid';
 import useKailoSession from '@/hooks/useKailoSession';
 import useKailoText from '@/utils/kailoI18n';
@@ -23,24 +24,38 @@ interface Props {
   className?: string;
 }
 
-export function KailoShareButton({ target, className }: Props) {
-  const t = useKailoText();
+/**
+ * DD-157: the share dialog state, so the Kailo page header action "分享"
+ * (or the page's own button at top level) opens the same dialog.
+ */
+export function useKailoShare(target: KailoShareTargetInput | null) {
   const { shareAvailable, user } = useKailoSession();
   const [open, setOpen] = useState(false);
-  if (!shareAvailable || !user) return null;
+  const available = shareAvailable && !!user && !!target;
+  return {
+    available,
+    open: () => available && setOpen(true),
+    modal:
+      available && open ? (
+        <KailoShareModal target={target} onClose={() => setOpen(false)} />
+      ) : null,
+  };
+}
+
+export function KailoShareButton({ target, className }: Props) {
+  const t = useKailoText();
+  const share = useKailoShare(target);
+  if (!share.available) return null;
   return (
     <>
       <Button
-        size="small"
-        icon={<ShareAltOutlined />}
+        icon={<ShareIcon className="mr-1" />}
         className={className}
-        onClick={() => setOpen(true)}
+        onClick={share.open}
       >
-        {t('shareWithMember')}
+        {t('share')}
       </Button>
-      {open && (
-        <KailoShareModal target={target} onClose={() => setOpen(false)} />
-      )}
+      {share.modal}
     </>
   );
 }
@@ -66,10 +81,10 @@ function KailoShareModal(props: {
       await share({
         variables: { data: { target, recipients: selected, requestId } },
       });
-      message.success(t('shareDone'));
+      notify.success(t('shareDone'));
       onClose();
     } catch {
-      message.error(t('shareFailed'));
+      notify.error(t('shareFailed'));
     }
   };
 
@@ -77,6 +92,7 @@ function KailoShareModal(props: {
     <Modal
       visible
       centered
+      width={480}
       destroyOnClose
       title={t(target.dashboard ? 'shareDashboardTitle' : 'shareThreadTitle')}
       okText={t('shareSubmit')}

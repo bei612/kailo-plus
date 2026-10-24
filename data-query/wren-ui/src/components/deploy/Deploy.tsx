@@ -1,43 +1,23 @@
 import { useEffect } from 'react';
-import { Button, Space, Typography, message } from 'antd';
+import { Button, Space, Typography } from 'antd';
 import CheckCircleOutlined from '@ant-design/icons/CheckCircleOutlined';
 import LoadingOutlined from '@ant-design/icons/LoadingOutlined';
 import WarningOutlined from '@ant-design/icons/WarningOutlined';
 import { SyncStatus } from '@/apollo/client/graphql/__types__';
-import { useDeployMutation } from '@/apollo/client/graphql/deploy.generated';
+import {
+  DeployStatusQueryHookResult,
+  useDeployMutation,
+} from '@/apollo/client/graphql/deploy.generated';
 import { useDeployStatusContext } from '@/components/deploy/Context';
+import useKailoText, { kailoT } from '@/utils/kailoI18n';
+import { notify } from '@/utils/kailoHost';
 
-const { Text } = Typography;
-
-const getDeployStatus = (deploying: boolean, status: SyncStatus) => {
-  const syncStatus = deploying ? SyncStatus.IN_PROGRESS : status;
-
-  return (
-    {
-      [SyncStatus.IN_PROGRESS]: (
-        <Space size={[4, 0]}>
-          <LoadingOutlined className="mr-1 gray-1" />
-          <Text className="gray-1">Deploying...</Text>
-        </Space>
-      ),
-      [SyncStatus.SYNCRONIZED]: (
-        <Space size={[4, 0]}>
-          <CheckCircleOutlined className="mr-1 green-7" />
-          <Text className="gray-1">Synced</Text>
-        </Space>
-      ),
-      [SyncStatus.UNSYNCRONIZED]: (
-        <Space size={[4, 0]}>
-          <WarningOutlined className="mr-1 gold-6" />
-          <Text className="gray-1">Undeployed changes</Text>
-        </Space>
-      ),
-    }[syncStatus] || ''
-  );
-};
-
-export default function Deploy() {
-  const deployContext = useDeployStatusContext();
+/**
+ * Deploy state and action for the modeling page. DD-157: inside Kailo the
+ * page header shows "发布模型" (primary, busy while deploying, disabled when
+ * nothing is pending); at top level the same state drives <Deploy />.
+ */
+export function useDeploy(deployContext: DeployStatusQueryHookResult) {
   const { data, loading, startPolling, stopPolling } = deployContext;
 
   const [deployMutation, { data: deployResult, loading: deploying }] =
@@ -46,9 +26,7 @@ export default function Deploy() {
       onCompleted: (data) => {
         if (data.deploy?.status === 'FAILED') {
           console.error('Failed to deploy - ', data.deploy?.error);
-          message.error(
-            'Failed to deploy. Please check the log for more details.',
-          );
+          notify.error(kailoT('deployFailed'), kailoT('deployFailedHint'));
         }
       },
     });
@@ -59,37 +37,82 @@ export default function Deploy() {
       deployResult?.deploy?.status === 'FAILED' &&
       data?.modelSync.status === SyncStatus.UNSYNCRONIZED
     ) {
-      stopPolling();
+      stopPolling?.();
     }
   }, [deployResult, data]);
 
   const syncStatus = data?.modelSync.status;
 
-  const onDeploy = () => {
-    deployMutation();
-    startPolling(1000);
-  };
-
   useEffect(() => {
-    if (syncStatus === SyncStatus.SYNCRONIZED) stopPolling();
+    if (syncStatus === SyncStatus.SYNCRONIZED) stopPolling?.();
   }, [syncStatus]);
 
+  const onDeploy = () => {
+    deployMutation();
+    startPolling?.(1000);
+  };
+
+  const busy = deploying || syncStatus === SyncStatus.IN_PROGRESS;
   const disabled =
     deploying ||
     loading ||
+    !syncStatus ||
     [SyncStatus.SYNCRONIZED, SyncStatus.IN_PROGRESS].includes(syncStatus);
+
+  return {
+    status: deploying ? SyncStatus.IN_PROGRESS : syncStatus,
+    busy,
+    disabled,
+    onDeploy,
+  };
+}
+
+function DeployStatus({ status }: { status?: SyncStatus }) {
+  const t = useKailoText();
+  return (
+    {
+      [SyncStatus.IN_PROGRESS]: (
+        <Space size={[4, 0]}>
+          <LoadingOutlined className="mr-1 gray-7" />
+          <Typography.Text className="gray-7">{t('deploying')}</Typography.Text>
+        </Space>
+      ),
+      [SyncStatus.SYNCRONIZED]: (
+        <Space size={[4, 0]}>
+          <CheckCircleOutlined className="mr-1 kailo-text-success" />
+          <Typography.Text className="gray-7">
+            {t('deploySynced')}
+          </Typography.Text>
+        </Space>
+      ),
+      [SyncStatus.UNSYNCRONIZED]: (
+        <Space size={[4, 0]}>
+          <WarningOutlined className="mr-1 kailo-text-warning" />
+          <Typography.Text className="gray-7">
+            {t('deployPending')}
+          </Typography.Text>
+        </Space>
+      ),
+    }[status] || null
+  );
+}
+
+// Top-level visits only (the Kailo header carries the action in the frame).
+export default function Deploy() {
+  const t = useKailoText();
+  const deploy = useDeploy(useDeployStatusContext());
 
   return (
     <Space size={[8, 0]}>
-      {getDeployStatus(deploying, syncStatus)}
+      <DeployStatus status={deploy.status} />
       <Button
-        className={`adm-modeling-header-btn ${disabled ? '' : 'gray-10'}`}
-        disabled={disabled}
-        onClick={() => onDeploy()}
-        size="small"
+        type="primary"
+        disabled={deploy.disabled}
+        loading={deploy.busy}
+        onClick={deploy.onDeploy}
         data-guideid="deploy-model"
       >
-        Deploy
+        {t('deployModels')}
       </Button>
     </Space>
   );
