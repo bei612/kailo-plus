@@ -40,6 +40,7 @@ const OVERRIDES: Record<'zh' | 'en', Record<string, string>> = {
     'menu.newSession': '新对话',
     'menu.agents': 'Agent',
     'menu.settings': '设置',
+    'agent.createAgent': '新建 Agent',
     'knowledgeList.subtitle': '管理和组织你的知识库，支持文档型和问答型知识库',
   },
   en: {
