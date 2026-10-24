@@ -323,7 +323,7 @@
         [/！/g, '。'],
     ];
     var KEY_WORDING = {
-        'zh-cn': {'198': '新建'},
+        'zh-cn': {'198': '新建', 'user_home.reco.workspace': '位置'},
         'en-us': {'147': 'Favorites', '152-on': 'Favorites'},
     };
 

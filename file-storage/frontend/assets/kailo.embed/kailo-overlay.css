@@ -97,16 +97,18 @@ body.react-mui-context,
 .icomoon-cells-clear-minus:before {
     font-family: "Material Design Icons" !important;
 }
+/* !important: the native icon sheet loads later with the same specificity
+ * (its content won while the font switched, leaving an empty glyph). */
 .icomoon-cells:before {
-    content: "\F0B9C"; /* folder-account-outline */
+    content: "\F0B9C" !important; /* folder-account-outline */
 }
 .icomoon-cells-full-plus:before,
 .icomoon-cells-clear-plus:before {
-    content: "\F0B9D"; /* folder-plus-outline */
+    content: "\F0B9D" !important; /* folder-plus-outline */
 }
 .icomoon-cells-full-minus:before,
 .icomoon-cells-clear-minus:before {
-    content: "\F0B9E"; /* folder-remove-outline */
+    content: "\F0B9E" !important; /* folder-remove-outline */
 }
 
 /* DD-141: no upstream wallpaper. The home header sits on a quiet Kailo brand
