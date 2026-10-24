@@ -242,6 +242,9 @@ export function kailoProductTitle(
 export function useKailoLocale(): string {
   let locale: string | undefined;
   try {
+    // Called on every render (the try is not a condition); Next throws only
+    // when no router is mounted.
+    // eslint-disable-next-line react-hooks/rules-of-hooks
     locale = useRouter()?.locale;
   } catch {
     locale = undefined;

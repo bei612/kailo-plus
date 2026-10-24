@@ -462,8 +462,9 @@ export default function HomeThread() {
   // DD-152: Kailo page header — the conversation's summary as title, 分享
   // (DD-138(4), 07 §4.8.3: notify Kailo members) and 新建对话.
   const threadTitle =
-    homeSidebar.data.threads.find((thread) => thread.id === String(threadId))
-      ?.name || data?.thread?.responses?.[0]?.question;
+    homeSidebar.data?.threads?.find(
+      (thread) => thread.id === String(threadId),
+    )?.name || data?.thread?.responses?.[0]?.question;
   const { hosted } = useKailoPage({
     title: threadTitle || t('threads'),
     ready: !!data?.thread,
