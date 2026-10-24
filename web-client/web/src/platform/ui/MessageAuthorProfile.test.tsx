@@ -8,7 +8,8 @@ import { setLocale } from "@client-kit/platform/i18n";
 import { MessageAuthorAvatar, MessageAuthorIdentity, useMessageAuthorLabels, useMessageAuthorProfiles, MessageAuthorProfile, type MessageAuthor } from "./MessageAuthorProfile";
 import { MessageAuthorText, UserAvatar } from "@client-kit/platform/react/messages";
 import { MoreUnreadButton, type UnreadDmPreview } from "@client-kit/platform/react/sidebar/MoreUnreadButton";
-import { canonicalNpub, truncateNpub } from "@client-kit/platform/react/conversations/pubkey";
+import { canonicalNpub } from "@client-kit/platform/react/conversations/pubkey";
+import { unknownMemberLabel } from "@client-kit/platform/react/messages/system/identity";
 import { ForumAuthorButton } from "@client-kit/platform/react/forum/ForumView";
 import { InboxMessageRowSurface } from "@client-kit/platform/react/inbox-surface";
 import { KIND_STREAM_MESSAGE, KIND_SYSTEM_MESSAGE } from "@client-kit/platform/react/thread/kinds";
@@ -117,8 +118,9 @@ it("uses one admitted read for the original author text and avatar, preferring t
 it.each([
   [{displayName:"",nip05Handle:"  person@example.org  "}, "Member fallback", "person@example.org"],
   [{displayName:null,nip05Handle:null}, "  Member fallback  ", "Member fallback"],
-  [{displayName:null,nip05Handle:null}, undefined, truncateNpub(author)],
-] as const)("keeps the original NIP-05, explicit fallback and npub precedence %#", async (fields, fallbackName, expected) => {
+  // DD-141/DD-152(8): no raw key as a name; Kailo copy instead.
+  [{displayName:null,nip05Handle:null}, undefined, unknownMemberLabel()],
+] as const)("keeps the original NIP-05, explicit fallback and unknown-member precedence %#", async (fields, fallbackName, expected) => {
   api.conversationMessageAuthorProfile.mockResolvedValue({...profile(), ...fields});
   await render(<ResolvedAuthor target={{...target,conversationId:"private"}} fallbackName={fallbackName} />);
   await vi.waitFor(() => expect(cache.isFetching()).toBe(0));
