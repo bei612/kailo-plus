@@ -425,6 +425,10 @@ def command_config(args):
                     and parts.password is None and not parts.query and not parts.fragment and parts.path == path,
                     f"{flag}: absolute http(s) URL ending exactly in {path} required")
         config[key] = value
+        # Wren: the Gateway transport is signed for the binding's exact adapter audience
+        # (ADR-12 §7), so an isolated audience replaces both (data_query_delivery checks it).
+        if key == "actionTokenAudience" and args.kind == "data-query" and "gatewayAudience" in config:
+            config["gatewayAudience"] = value
     config["bindingId"] = plan["bindingId"]
     config["tenantId"] = plan["tenantId"]
     if "workspaceId" in plan:
