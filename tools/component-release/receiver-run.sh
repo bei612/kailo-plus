@@ -172,6 +172,9 @@ platform)
     [[ $(basename -- "$entry") == local ]] || ln -s "$entry" "$run/apps/deploy/$(basename -- "$entry")"
   done
   cp -a "$src/deploy/local" "$platform"
+  # The release tree's design snapshot sits beside apps/ (CI fetch); start-core.sh's registry
+  # check reads it at ../.design from the staged apps/.
+  [[ ! -d $src/../.design ]] || ln -s "$(realpath -e -- "$src/../.design")" "$run/.design"
   rm -rf -- "$platform/.env" "$platform/secrets" "$platform/data"
   install -m 0600 "$RECEIVER_PLATFORM_ENV" "$platform/.env"
   python3 -I - "$platform/compose.yaml" "$RECEIVER_PROJECT" <<'PY'
