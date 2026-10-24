@@ -2320,11 +2320,9 @@ async function createNewSession(value: string): Promise<void> {
         <div class="document-header-title">
           <!-- DD-152: inside the Kailo shell the title, breadcrumbs and settings are Kailo's
                header; the Wiki sections stay as a segmented control in the content. -->
-          <div v-if="kailoShell && (isWiki || (kbInfo && !authStore.isLiteMode))" class="kailo-kb-toolbar">
-            <ScopeSegments v-if="isWiki" :model-value="activeKbTab" :options="kailoKbSections"
+          <div v-if="kailoShell && isWiki" class="kailo-kb-toolbar">
+            <ScopeSegments :model-value="activeKbTab" :options="kailoKbSections"
               @update:model-value="(tab) => (activeKbTab = tab as KbTab)" />
-            <KBInfoPopover v-if="kbInfo && !authStore.isLiteMode" :kb-info="kbInfo"
-              :supported-file-types="[...supportedFileTypes]" />
           </div>
           <div v-if="!kailoShell" class="document-title-row">
             <h2 class="document-breadcrumb">
@@ -2506,6 +2504,9 @@ async function createNewSession(value: string): Promise<void> {
                 </div>
                 </div>
                 <div class="doc-filter-bar__trailing">
+                  <!-- Kailo shell: the knowledge base details sit with the list tools. -->
+                  <KBInfoPopover v-if="kailoShell && kbInfo && !authStore.isLiteMode" :kb-info="kbInfo"
+                    :supported-file-types="[...supportedFileTypes]" />
                   <t-button v-if="(canDownloadKnowledge || canMutateKnowledge) && cardList.length"
                     variant="outline" size="small"
                     :disabled="batchDeleting || batchReparsing || batchTagging || batchDownloading"
