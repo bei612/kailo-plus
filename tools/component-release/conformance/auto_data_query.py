@@ -6,9 +6,11 @@ Loaded by tools/component-release/conformance-auto.py (`run data-query`); h is t
   instance   a dedicated Compose project kailo-wren-conformance-<id> from
              data-query/docker/docker-compose.yaml + conformance/isolated.yaml (own PostgreSQL
              for the original wren-ui metadata and the synthetic vector source, no browser Gateway),
-             its own networks and the AI service on the actually discovered, keyless upstream
-             model services declared in deploy/components/adapters.json (07 §8.3, no key exists
-             or is invented); digest-pinned images of the candidate release.
+             its own networks and the AI service on the actually discovered upstream model
+             services declared in deploy/components/adapters.json (07 §8.3). They take no
+             credential; the OpenAI-compatible client only refuses an empty key, so the runner
+             passes a random per-run value that authenticates nothing (no platform key is used);
+             digest-pinned images of the candidate release.
   identity   the instance's native identity is a key pair generated for this run (the private key
              stays in an owner-only file; its public JWKS is what the instance's verifier fetches
              at the conformance-provider origin). The native SERVICE token for onboarding and the
