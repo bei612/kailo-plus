@@ -268,3 +268,19 @@ kbd {
 .mention-chip.mention-chip-hover:hover {
   background: var(--k-brand-soft-hover);
 }
+
+/* ── DD-152 (20 §13.6): component page first-paint skeleton ─────────────── */
+.kailo-embed-skeleton {
+  background: linear-gradient(90deg, hsl(var(--foreground) / 0.06) 0%, hsl(var(--foreground) / 0.1) 50%, hsl(var(--foreground) / 0.06) 100%);
+  background-size: 200% 100%;
+  animation: kailo-embed-skeleton-sweep 1.6s linear infinite;
+}
+
+@keyframes kailo-embed-skeleton-sweep {
+  from { background-position: 100% 0; }
+  to { background-position: -100% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kailo-embed-skeleton { animation: none; }
+}
