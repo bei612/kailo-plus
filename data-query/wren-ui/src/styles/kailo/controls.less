@@ -1438,3 +1438,130 @@ h5.ant-typography {
     color: var(--kailo-color-foreground);
   }
 }
+
+// 23. Metadata drawer (480, `20` §9 侧滑面板): labels are Caption, section
+//     titles Callout 600, and columns / calculated fields / relationships are
+//     one row per item (MetadataList) — the main line wraps instead of
+//     clipping, details follow as a muted Caption.
+.kailo-metadata-drawer {
+  .ant-typography.gray-7 {
+    font-size: 12px;
+    line-height: 16px;
+    color: var(--kailo-color-muted-foreground);
+  }
+
+  .ant-typography.gray-7.kailo-meta-section__title {
+    font-size: 13px;
+    line-height: 20px;
+    font-weight: 600;
+    color: var(--kailo-color-foreground);
+  }
+}
+
+.kailo-meta-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--kailo-color-border);
+  border-radius: 8px;
+
+  &--plain {
+    border: 0;
+    border-radius: 0;
+  }
+
+  &__group + &__group,
+  & > &__row + &__row {
+    border-top: 1px solid var(--kailo-color-border);
+  }
+
+  &__row {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    min-height: 40px;
+    padding: 10px 12px;
+
+    &--nested {
+      padding-left: 36px;
+      border-top: 1px solid var(--kailo-color-border);
+    }
+  }
+
+  &__icon {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 20px;
+    color: var(--kailo-color-muted-foreground);
+  }
+
+  &__body {
+    flex: 1;
+    min-width: 0;
+  }
+
+  &__line {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  &__main {
+    flex: 1;
+    min-width: 0;
+    font-size: 13px;
+    line-height: 20px;
+    font-weight: 500;
+    color: var(--kailo-color-foreground);
+    overflow-wrap: anywhere;
+  }
+
+  &__arrow {
+    margin: 0 6px;
+    color: var(--kailo-color-muted-foreground);
+    font-weight: 400;
+  }
+
+  &__side {
+    flex: none;
+    max-width: 45%;
+    font-size: 12px;
+    line-height: 20px;
+    color: var(--kailo-color-muted-foreground);
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+    overflow-wrap: anywhere;
+  }
+
+  &__caption {
+    display: flex;
+    flex-wrap: wrap;
+    margin-top: 2px;
+    font-size: 12px;
+    line-height: 16px;
+    color: var(--kailo-color-muted-foreground);
+    overflow-wrap: anywhere;
+  }
+
+  &__part + &__part::before {
+    content: '·';
+    margin: 0 6px;
+  }
+
+  &__code {
+    font-family: var(--kailo-font-mono);
+    font-size: 12px;
+    color: var(--kailo-color-text-secondary);
+    background: none;
+    padding: 0;
+  }
+
+  &__empty {
+    padding: 12px;
+    font-size: 13px;
+    color: var(--kailo-color-muted-foreground);
+  }
+}
