@@ -131,7 +131,7 @@ def receiver_env(h, r, extra=None):
         "RECEIVER_CORE_PROVENANCE": s["coreProvenance"],
         "RECEIVER_FLOW_NODE": "/usr/local/bin/node", "RECEIVER_PLAYWRIGHT_PACKAGE": "/volumes/kailo/apps/package.json",
         "RECEIVER_ACCOUNTS_DIR": str(r.dir / "accounts"), "RECEIVER_MANIFEST": s.get("manifest", ""),
-        "CHECK_CPUS": "4", "CHECK_MEMORY": "8g",
+        "CHECK_CPUS": "4", "CHECK_MEMORY": "8g", "TMPDIR": str(h.private_dir(r.dir / "tmp")),
     }
     values.update(extra or {})
     return h.env_file(r.dir / "receiver.env", {k: v for k, v in values.items() if v != ""})
