@@ -317,6 +317,20 @@ if wanted 1; then
     bash "$start" "$CONFORMANCE_NATIVE_ENV"
     started=$?
   fi
+  if [[ $started == 2 ]]; then
+    # A fresh install applies the delivered datasource keys and creates the
+    # binding datasource in the entrypoint of the post-configure start ("restart
+    # pending"); the admin tree resolves that datasource only after one more
+    # restart, so the declarative configuration's root-folder step refuses.
+    # Restart the native service once and re-apply the (idempotent) configuration.
+    echo 'native configuration refused on a fresh install; restarting the native service once'
+    "${docker[@]}" compose --project-name "$(project_of "$CONFORMANCE_NATIVE_ENV")" --env-file "$CONFORMANCE_NATIVE_ENV" \
+      -f "$src/file-storage/deploy/compose.yaml" restart cells >/dev/null
+    "${docker[@]}" compose --project-name "$(project_of "$CONFORMANCE_NATIVE_ENV")" --env-file "$CONFORMANCE_NATIVE_ENV" \
+      -f "$src/file-storage/deploy/compose.yaml" up --detach --no-build --no-recreate --pull never --wait --wait-timeout 600 cells
+    bash "$start" --reconcile "$CONFORMANCE_NATIVE_ENV"
+    started=$?
+  fi
   set -e
   [[ $started == 0 ]] || { echo "isolated native instance did not start (exit $started)" >&2; exit 1; }
   done_stage 1

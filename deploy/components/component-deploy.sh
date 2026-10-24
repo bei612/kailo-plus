@@ -7,6 +7,14 @@
 # 用法（CI 节点，ubuntu）：
 #   kailo-ci submit <commit> fetch            # 先准备 /volumes/kailo/ci/sources/<commit>/apps
 #   component-deploy.sh <file-storage|knowledge|data-query|document-editor> <commit> [--check] [--adapter]
+#   component-deploy.sh <file-storage|knowledge|data-query> <commit> --conformance
+#   component-deploy.sh <file-storage|knowledge|data-query> <commit> --conformance-close=<运行目录>
+#     --conformance        DD-136(5)：以本发布树对该组件的 REMOTE_ADAPTER 候选执行无人值守的 07 §8A 隔离运行
+#                          （tools/component-release/conformance-auto.py）：隔离原生实例、隔离 OpenBao/Agent、suite
+#                          PEP provider；原生凭据由运行器经隔离实例的原生 API/CLI 生成，只在运行目录 0600 文件或隔离
+#                          OpenBao 中。成功后把候选写入运行目录 COMPONENT_CONFORMANCE_DIR/<artifactDigest>/（DD-136(2)，
+#                          Core 按次读取，不重建）并把生产 Worker 接入该次运行的专用网络（登记窗口）。
+#     --conformance-close  该 release 的 component_release.register 到达终态后：撤下候选、断开 Worker、删除隔离环境
 #     --check    只做配置与镜像校验（各组件原 --check/--validate/config --quiet），不启动
 #     --adapter  另起 adapter（Cells: 组件专属 OpenBao Agent + start.sh --platform-adapter；
 #                WeKnora: start.sh --platform-adapter；Wren: tenants/<tenantId> 组件专属
@@ -30,13 +38,21 @@ commit=${2:?commit}
 shift 2
 check=false
 adapter=false
+conformance=false
+conformance_close=
 for option in "$@"; do
   case "$option" in
     --check) check=true ;;
     --adapter) adapter=true ;;
+    --conformance) conformance=true ;;
+    --conformance-close=/*) conformance_close=${option#--conformance-close=} ;;
     *) echo "未知参数 $option" >&2; exit 2 ;;
   esac
 done
+if "$conformance" || [ -n "$conformance_close" ]; then
+  case "$component" in file-storage|knowledge|data-query) ;; *) echo "$component 没有 REMOTE_ADAPTER 候选" >&2; exit 2 ;; esac
+  { "$check" || "$adapter" || { "$conformance" && [ -n "$conformance_close" ]; }; } && { echo '--conformance/--conformance-close 是独立步骤' >&2; exit 2; }
+fi
 [[ $commit =~ ^[0-9a-f]{40}$ ]] || { echo '必须是 40 位完整 commit' >&2; exit 2; }
 S=/volumes/kailo/ci/sources/$commit/apps
 [ -d "$S/deploy/local" ] || { echo "缺少固定发布树 $S（先 kailo-ci submit $commit fetch）" >&2; exit 2; }
@@ -50,6 +66,13 @@ KAILO_RUNTIME_DIR=$(python3 -I -B "$S/tools/release/node.py" runtime --commit "$
 . "$S/deploy/local/runtime-dir.sh"
 R=$KAILO_RUNTIME_DIR
 D=(sudo -n --preserve-env=KAILO_RUNTIME_DIR docker)
+# DD-136(5)：隔离一致性运行与登记窗口（不触碰生产 Core 状态、数据库、OpenBao 或 binding）。
+if "$conformance"; then
+  exec python3 -I -B "$S/tools/component-release/conformance-auto.py" run "$component" --source "$S" --commit "$commit" --runtime "$R"
+fi
+if [ -n "$conformance_close" ]; then
+  exec python3 -I -B "$S/tools/component-release/conformance-auto.py" close "$conformance_close" --runtime "$R"
+fi
 stamp=$(date -u +%Y%m%dT%H%M%SZ)
 backup_root=${COMPONENT_BACKUP_ROOT:-/volumes/data/kailo/backups/components}
 before=$("${D[@]}" ps --format '{{.ID}} {{.Names}} {{.Image}} {{.Status}}' | sort -k2)
