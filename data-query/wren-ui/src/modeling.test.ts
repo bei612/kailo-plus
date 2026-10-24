@@ -3,7 +3,8 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import Modeling from './pages/modeling';
 import { FORM_MODE } from './utils/enum';
 import { webcrypto } from 'node:crypto';
-import { message } from 'antd';
+import { notify } from './utils/kailoHost';
+import { kailoT } from './utils/kailoI18n';
 
 let mockResult: any;
 let mockQueryOptions: any;
@@ -25,8 +26,12 @@ jest.mock('./apollo/client', () => ({
     refetchQueries: (...args: any[]) => mockNativeRefetch(...args),
   },
 }));
-jest.mock('antd', () => ({
-  message: { success: jest.fn(), warning: jest.fn(), error: jest.fn() },
+jest.mock('antd', () => ({}));
+// DD-152: results are announced through Kailo (kailoHost.notify).
+jest.mock('./utils/kailoHost', () => ({
+  notify: { success: jest.fn(), warning: jest.fn(), error: jest.fn() },
+  setPage: jest.fn(),
+  hostRendersPage: () => false,
 }));
 jest.mock('next/router', () => ({ useRouter: () => ({ replace: jest.fn() }) }));
 jest.mock('next/navigation', () => ({
@@ -47,6 +52,7 @@ jest.mock('./apollo/client/graphql/diagram.generated', () => ({
 }));
 jest.mock('./apollo/client/graphql/deploy.generated', () => ({
   useDeployStatusQuery: () => ({ refetch: mockDeployRefetch }),
+  useDeployMutation: () => [jest.fn(), {}],
 }));
 jest.mock('./apollo/client/graphql/model.generated', () => ({
   useCreateModelMutation: () => [mockCreateModel, {}],
@@ -146,7 +152,7 @@ describe('original modeling page authorization result consumer', () => {
     mockNativeRead.mockReset();
     mockNativeRefetch.mockReset().mockResolvedValue({});
     mockDeployRefetch.mockReset().mockResolvedValue({});
-    jest.mocked(message.success).mockClear();
+    jest.mocked(notify.success).mockClear();
     entries.clear();
     Object.defineProperty(global, 'crypto', {
       configurable: true,
@@ -208,7 +214,7 @@ describe('original modeling page authorization result consumer', () => {
     await expect(mockModelDrawer.onSubmit({ data })).rejects.toThrow(
       'NATIVE_EXECUTION_UNKNOWN',
     );
-    expect(message.success).not.toHaveBeenCalled();
+    expect(notify.success).not.toHaveBeenCalled();
     await mockModelDrawer.onSubmit({ data });
     expect(mockCreateModel).toHaveBeenCalledTimes(1);
     expect(mockNativeRead).toHaveBeenCalledWith(
@@ -216,7 +222,9 @@ describe('original modeling page authorization result consumer', () => {
     );
     expect(mockNativeRefetch).toHaveBeenCalledTimes(1);
     expect(mockDeployRefetch).toHaveBeenCalledTimes(1);
-    expect(message.success).toHaveBeenCalledWith('Successfully created model.');
+    expect(notify.success).toHaveBeenCalledWith(
+      kailoT('modeling.modelCreated'),
+    );
   });
   it('keeps the original sidebar create callback connected to its model drawer and submit consumer while diagram reads fail', async () => {
     mockResult = { error: new Error('QUERY_SCOPE_DENIED') };
@@ -247,8 +255,8 @@ describe('original modeling page authorization result consumer', () => {
           mockModelDrawer.onSubmit({ data: { sourceTableName: 'original' } }),
         ).resolves.toBeUndefined();
         expect(mockCreateModel).toHaveBeenCalledTimes(1);
-        expect(message.success).toHaveBeenCalledWith(
-          'Successfully created model.',
+        expect(notify.success).toHaveBeenCalledWith(
+          kailoT('modeling.modelCreated'),
         );
       } finally {
         logged.mockRestore();

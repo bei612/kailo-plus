@@ -3,6 +3,7 @@ import moment from 'moment';
 import { Input, Button, Space, DatePicker, Divider } from 'antd';
 import SearchOutlined from '@ant-design/icons/SearchOutlined';
 import CalendarOutlined from '@ant-design/icons/CalendarOutlined';
+import { kailoT } from './kailoI18n';
 
 export const getColumnSearchProps = (props: {
   dataIndex: string;
@@ -55,7 +56,7 @@ const SearchFilter = ({
       <Space className="p-2">
         <Input
           size="small"
-          placeholder={`Search ${placeholder || dataIndex}`}
+          placeholder={placeholder || kailoT('knowledge.search')}
           value={selectedKeys[0]}
           onChange={(e) =>
             setSelectedKeys(e.target.value ? [e.target.value] : [])
@@ -72,10 +73,10 @@ const SearchFilter = ({
           size="small"
           disabled={!filteredValue}
         >
-          Reset
+          {kailoT('knowledge.reset')}
         </Button>
         <Button type="primary" onClick={() => confirm()} size="small">
-          Search
+          {kailoT('knowledge.search')}
         </Button>
       </Space>
     </>
@@ -97,7 +98,10 @@ const DateFilter = ({
     <>
       <Space className="p-2">
         <DatePicker.RangePicker
-          placeholder={['Start Date', 'End Date']}
+          placeholder={[
+            kailoT('knowledge.startDate'),
+            kailoT('knowledge.endDate'),
+          ]}
           value={[
             selectedKeys[0] ? moment(selectedKeys[0]) : null,
             selectedKeys[1] ? moment(selectedKeys[1]) : null,
@@ -119,10 +123,10 @@ const DateFilter = ({
           size="small"
           disabled={!filteredValue}
         >
-          Reset
+          {kailoT('knowledge.reset')}
         </Button>
         <Button type="primary" onClick={() => confirm()} size="small">
-          OK
+          {kailoT('confirm')}
         </Button>
       </Space>
     </>

@@ -2,6 +2,7 @@ import { Form, Input } from 'antd';
 import { ERROR_TEXTS } from '@/utils/error';
 import { FORM_MODE } from '@/utils/enum';
 import { hostValidator } from '@/utils/validator';
+import { kailoT } from '@/utils/kailoI18n';
 
 interface Props {
   mode?: FORM_MODE;
@@ -13,7 +14,7 @@ export default function OracleProperties(props: Props) {
   return (
     <>
       <Form.Item
-        label="Display name"
+        label={kailoT('setup.fieldDisplayName')}
         name="displayName"
         required
         rules={[
@@ -26,7 +27,7 @@ export default function OracleProperties(props: Props) {
         <Input />
       </Form.Item>
       <Form.Item
-        label="Host"
+        label={kailoT('setup.fieldHost')}
         name="host"
         rules={[
           {
@@ -43,7 +44,7 @@ export default function OracleProperties(props: Props) {
         <Input placeholder="10.1.1.1" disabled={isEditMode} />
       </Form.Item>
       <Form.Item
-        label="Port"
+        label={kailoT('setup.fieldPort')}
         name="port"
         rules={[
           {
@@ -54,7 +55,7 @@ export default function OracleProperties(props: Props) {
         <Input placeholder="1521" disabled={isEditMode} />
       </Form.Item>
       <Form.Item
-        label="Username"
+        label={kailoT('setup.fieldUsername')}
         name="user"
         rules={[
           {
@@ -66,7 +67,7 @@ export default function OracleProperties(props: Props) {
         <Input />
       </Form.Item>
       <Form.Item
-        label="Password"
+        label={kailoT('setup.fieldPassword')}
         name="password"
         required
         rules={[
@@ -76,10 +77,10 @@ export default function OracleProperties(props: Props) {
           },
         ]}
       >
-        <Input.Password placeholder="input password" />
+        <Input.Password placeholder={kailoT('setup.phPassword')} />
       </Form.Item>
       <Form.Item
-        label="Database name"
+        label={kailoT('setup.fieldDatabaseName')}
         name="database"
         rules={[
           {
@@ -87,12 +88,15 @@ export default function OracleProperties(props: Props) {
           },
         ]}
       >
-        <Input placeholder="Oracle database name" disabled={isEditMode} />
+        <Input
+          placeholder={kailoT('setup.phOracleDatabase')}
+          disabled={isEditMode}
+        />
       </Form.Item>
       <Form.Item
-        label="DSN"
+        label={kailoT('setup.fieldDsn')}
         name="dsn"
-        tooltip="Oracle Data Source Name (DSN) - Alternative to host/port/database configuration"
+        tooltip={kailoT('setup.tipOracleDsn')}
       >
         <Input placeholder="(DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=host)(PORT=port))(CONNECT_DATA=(SERVICE_NAME=service)))" />
       </Form.Item>

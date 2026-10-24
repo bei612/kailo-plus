@@ -10,13 +10,13 @@ const { Panel } = Collapse;
 
 const StyledCollapse = styled(Collapse)`
   &.ant-collapse.adm-error {
-    border-color: var(--red-5);
-    border-bottom: 1px solid var(--red-5);
+    border-color: var(--kailo-color-danger);
+    border-bottom: 1px solid var(--kailo-color-danger);
   }
 
   &.ant-collapse {
-    background-color: white;
-    border-color: var(--gray-4);
+    background-color: var(--kailo-color-card);
+    border-color: var(--kailo-color-border);
 
     > .ant-collapse-item > .ant-collapse-header {
       padding: 16px 12px;
@@ -25,7 +25,7 @@ const StyledCollapse = styled(Collapse)`
 
     > .ant-collapse-item,
     .ant-collapse-content {
-      border-color: var(--gray-4);
+      border-color: var(--kailo-color-border);
     }
 
     .ant-collapse-content-box {
@@ -37,7 +37,7 @@ const StyledCollapse = styled(Collapse)`
 
       .ant-table-thead > tr > th {
         color: var(--gray-7);
-        background-color: white;
+        background-color: var(--kailo-color-card);
       }
 
       &.ant-table-empty {

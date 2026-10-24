@@ -21,16 +21,18 @@ import {
   AskingTaskType,
   RecommendedQuestionsTask,
 } from '@/apollo/client/graphql/__types__';
+import useKailoText, { KailoTextKey } from '@/utils/kailoI18n';
 
 const StyledResult = styled.div`
   position: absolute;
   bottom: calc(100% + 12px);
   left: 0;
   width: 100%;
-  background: white;
-  box-shadow:
-    rgba(0, 0, 0, 0.1) 0px 10px 15px -3px,
-    rgba(0, 0, 0, 0.05) 0px 4px 6px -2px;
+  background: var(--kailo-color-popover);
+  color: var(--kailo-color-popover-foreground);
+  border: 1px solid var(--kailo-color-border);
+  border-radius: 12px;
+  box-shadow: var(--kailo-shadow-lg);
 
   .adm-brain-svg {
     width: 14px;
@@ -65,7 +67,7 @@ interface Props {
 const Wrapper = ({ children }) => {
   return (
     <StyledResult
-      className="border border-gray-3 rounded p-4"
+      className="p-4"
       data-testid="prompt__result"
     >
       {children}
@@ -73,19 +75,20 @@ const Wrapper = ({ children }) => {
   );
 };
 
-const makeProcessing = (text: string) => (props: Props) => {
+const makeProcessing = (textKey: KailoTextKey) => (props: Props) => {
   const { onStop } = props;
+  const t = useKailoText();
   const [loading, setLoading] = useState(false);
   return (
     <Wrapper>
       <div className="d-flex justify-space-between">
         <span>
-          <LoadingOutlined className="mr-2 geekblue-6 text-lg" spin />
-          {text}
+          <LoadingOutlined className="mr-2 kailo-text-brand text-lg" spin />
+          {t(textKey)}
         </span>
         <Button
           className={clsx(
-            'adm-btn-no-style bg-gray-3 text-sm px-2',
+            'adm-btn-no-style text-sm px-2',
             loading ? 'gray-6' : 'gray-7',
           )}
           type="text"
@@ -94,7 +97,7 @@ const makeProcessing = (text: string) => (props: Props) => {
           disabled={loading}
         >
           <StopOutlined className="-mr-1" />
-          Stop
+          {t('home.stop')}
         </Button>
       </div>
     </Wrapper>
@@ -102,9 +105,10 @@ const makeProcessing = (text: string) => (props: Props) => {
 };
 
 const makeProcessingError =
-  (config: { icon: ReactNode; title?: string; description?: string }) =>
+  (config: { icon: ReactNode; title?: KailoTextKey; description?: string }) =>
   (props: Props) => {
     const { onClose, onSelectRecommendedQuestion, data, error } = props;
+    const t = useKailoText();
     const { message, shortMessage, stacktrace } = error || {};
     const hasStacktrace = !!stacktrace;
 
@@ -117,16 +121,16 @@ const makeProcessingError =
         <div className="d-flex justify-space-between text-medium mb-2">
           <div className="d-flex align-center">
             {config.icon}
-            {config.title || shortMessage}
+            {config.title ? t(config.title) : shortMessage}
           </div>
           <Button
-            className="adm-btn-no-style gray-7 bg-gray-3 text-sm px-2"
+            className="adm-btn-no-style gray-7 text-sm px-2"
             type="text"
             size="small"
             onClick={onClose}
           >
             <CloseOutlined className="-mr-1" />
-            Close
+            {t('home.close')}
           </Button>
         </div>
         <div className="gray-7">
@@ -147,13 +151,15 @@ const makeProcessingError =
     );
   };
 
-const ErrorIcon = () => <CloseCircleFilled className="mr-2 red-5 text-lg" />;
+const ErrorIcon = () => (
+  <CloseCircleFilled className="mr-2 kailo-text-danger text-lg" />
+);
 
 const Failed = makeProcessingError({
   icon: <ErrorIcon />,
 });
 
-const Understanding = makeProcessing('Understanding question');
+const Understanding = makeProcessing('home.understanding');
 
 const IntentionFinished = (props: Props) => {
   const { data, onIntentSQLAnswer } = props;
@@ -172,6 +178,7 @@ const IntentionFinished = (props: Props) => {
 
 const GeneralAnswer = (props: Props) => {
   const { onClose, onSelectRecommendedQuestion, data, loading } = props;
+  const t = useKailoText();
   const $wrapper = useRef<HTMLDivElement>(null);
 
   const { originalQuestion, askingStreamTask, recommendedQuestions } = data;
@@ -200,24 +207,24 @@ const GeneralAnswer = (props: Props) => {
     <Wrapper>
       <div className="d-flex justify-space-between">
         <div className="d-flex align-start">
-          <MessageOutlined className="mr-2 mt-1 geekblue-6" />
+          <MessageOutlined className="mr-2 mt-1 gray-7" />
           <b className="text-semi-bold">{originalQuestion}</b>
         </div>
         <Button
-          className="adm-btn-no-style gray-7 bg-gray-3 text-sm px-2"
+          className="adm-btn-no-style gray-7 text-sm px-2"
           type="text"
           size="small"
           onClick={onClose}
         >
           <CloseOutlined className="-mr-1" />
-          Close
+          {t('home.close')}
         </Button>
       </div>
       <div className="py-3">
-        <div className="bg-gray-2 gray-6 py-2 px-3">
+        <div className="kailo-soft-block gray-7 py-2 px-3">
           <div className="d-flex align-center">
             <BrainSVG className="mr-2 adm-brain-svg" />
-            <span className="text-medium ">User Intent Recognized</span>
+            <span className="text-medium">{t('home.intentRecognized')}</span>
           </div>
           <div style={{ paddingLeft: 22 }}>{data.intentReasoning}</div>
         </div>
@@ -228,11 +235,11 @@ const GeneralAnswer = (props: Props) => {
           style={{ maxHeight: 'calc(100vh - 480px)', overflowY: 'auto' }}
         >
           <MarkdownBlock content={askingStreamTask} />
-          {loading && <LoadingOutlined className="geekblue-6" spin />}
+          {loading && <LoadingOutlined className="kailo-text-brand" spin />}
           {isDone && (
-            <div className="gray-6">
+            <div className="gray-7">
               <InfoCircleOutlined className="mr-2" />
-              For the most accurate semantics, please visit the modeling page.
+              {t('home.generalAnswerHint')}
             </div>
           )}
         </div>
@@ -249,8 +256,8 @@ const GeneralAnswer = (props: Props) => {
 };
 
 const MisleadingQuery = makeProcessingError({
-  icon: <WarningOutlined className="mr-2 text-lg gold-6" />,
-  title: 'Clarification needed',
+  icon: <WarningOutlined className="mr-2 text-lg kailo-text-warning" />,
+  title: 'home.clarificationNeeded',
 });
 
 const getGeneralAnswerStateComponent = (state: PROCESS_STATE) => {

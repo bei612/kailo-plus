@@ -28,6 +28,7 @@ import {
 import useDashboardQuery from '@/hooks/useDashboardQuery';
 import { getQueryPreviewText } from '@/utils/language';
 import { useRouter } from 'next/router';
+import useKailoText from '@/utils/kailoI18n';
 
 import 'react-grid-layout/css/styles.css';
 import 'react-resizable/css/styles.css';
@@ -45,17 +46,19 @@ const StyledDashboardGrid = styled.div`
     height: 100%;
   }
 
+  /* DD-152 (20 §13 卡片): card surface, 1px line, radius 12, no shadow;
+     hover lifts with shadow-sm. */
   .adm-pinned-item {
     cursor: grab;
-    background-color: white;
+    background-color: var(--kailo-color-card);
+    color: var(--kailo-color-card-foreground);
     height: 100%;
-    border-radius: 4px;
-    border: 2px solid transparent;
-    box-shadow: rgba(45, 62, 80, 0.12) 0px 1px 5px 0px;
-    transition: border-color 0.2s ease;
+    border-radius: 12px;
+    border: 1px solid var(--kailo-color-border);
+    transition: box-shadow var(--kailo-duration-fast);
 
     &:hover {
-      border-color: var(--geekblue-6);
+      box-shadow: var(--kailo-shadow-sm);
     }
   }
 
@@ -71,7 +74,7 @@ const StyledDashboardGrid = styled.div`
 
   .adm-pinned-item-title {
     font-size: 14px;
-    font-weight: 700;
+    font-weight: 600;
     flex-grow: 1;
   }
 
@@ -94,7 +97,7 @@ const StyledDashboardGrid = styled.div`
 
     &-info {
       font-size: 12px;
-      color: var(--gray-6);
+      color: var(--kailo-color-muted-foreground);
       text-align: right;
       user-select: none;
     }
@@ -105,7 +108,8 @@ const StyledDashboardGrid = styled.div`
   }
 
   .react-grid-placeholder {
-    background-color: var(--blue-6);
+    background-color: var(--kailo-color-brand);
+    border-radius: 12px;
   }
 `;
 
@@ -196,7 +200,7 @@ const DashboardGrid = forwardRef(
     useEffect(() => {
       const renderColumnSize = () => {
         if (!$container.current) return;
-        const sidebarWidth = 280;
+        const sidebarWidth = 264;
         const padding = 16 * 2;
         const containerWidth = window.innerWidth - sidebarWidth - padding;
 
@@ -293,6 +297,7 @@ const PinnedItem = forwardRef(
     const [forceLoading, setForceLoading] = useState(false);
     const [forceUpdate, setForceUpdate] = useState(0);
     const text = getQueryPreviewText(useRouter().locale);
+    const t = useKailoText();
 
     useImperativeHandle(
       ref,
@@ -369,7 +374,7 @@ const PinnedItem = forwardRef(
               isSupportCached={isSupportCached}
             >
               <Button
-                className="adm-pinned-more gray-8"
+                className="adm-pinned-more gray-7"
                 type="text"
                 size="small"
                 icon={<MoreIcon />}
@@ -398,7 +403,7 @@ const PinnedItem = forwardRef(
             {query.state.ended ? (
               <Alert type="error" message={text.ended} />
             ) : null}
-            <LoadingWrapper loading={loading} tip="Loading...">
+            <LoadingWrapper loading={loading} tip={t('loading')}>
               {previewItem ? (
                 <Chart
                   className="adm-pinned-item-chart"
@@ -420,7 +425,9 @@ const PinnedItem = forwardRef(
           </div>
           {lastRefreshTime && (
             <div className="adm-pinned-content-info">
-              Last refreshed: {getCompactTime(lastRefreshTime)}
+              {t('home.lastRefreshed', {
+                time: getCompactTime(lastRefreshTime),
+              })}
             </div>
           )}
         </div>

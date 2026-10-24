@@ -3,6 +3,7 @@ import { Form, Input, Radio } from 'antd';
 import { FORM_MODE, DATABRICKS_AUTH_METHOD } from '@/utils/enum';
 import { ERROR_TEXTS } from '@/utils/error';
 import { hostValidator } from '@/utils/validator';
+import { kailoT } from '@/utils/kailoI18n';
 
 interface Props {
   mode?: FORM_MODE;
@@ -29,7 +30,7 @@ export default function DatabricksProperties(props: Props) {
   return (
     <>
       <Form.Item
-        label="Display name"
+        label={kailoT('setup.fieldDisplayName')}
         name="displayName"
         required
         rules={[
@@ -41,18 +42,18 @@ export default function DatabricksProperties(props: Props) {
       >
         <Input />
       </Form.Item>
-      <Form.Item label="Authentication method" name="databricksType">
+      <Form.Item label={kailoT('setup.fieldAuthMethod')} name="databricksType">
         <Radio.Group buttonStyle="solid">
           <Radio.Button value={DATABRICKS_AUTH_METHOD.token}>
-            Personal Access Token (PAT)
+            {kailoT('setup.authPat')}
           </Radio.Button>
           <Radio.Button value={DATABRICKS_AUTH_METHOD.service_principal}>
-            Service Principal
+            {kailoT('setup.authServicePrincipal')}
           </Radio.Button>
         </Radio.Group>
       </Form.Item>
       <Form.Item
-        label="Server hostname"
+        label={kailoT('setup.fieldServerHostname')}
         name="serverHostname"
         required
         rules={[
@@ -63,12 +64,12 @@ export default function DatabricksProperties(props: Props) {
         ]}
       >
         <Input
-          placeholder="e.g. adb-123456789.12.azuredatabricks.net"
+          placeholder={kailoT('setup.phDatabricksHost')}
           disabled={isEditMode}
         />
       </Form.Item>
       <Form.Item
-        label="HTTP path"
+        label={kailoT('setup.fieldHttpPath')}
         name="httpPath"
         required
         rules={[
@@ -79,13 +80,13 @@ export default function DatabricksProperties(props: Props) {
         ]}
       >
         <Input
-          placeholder="e.g. /sql/1.0/endpoints/abc123"
+          placeholder={kailoT('setup.phHttpPath')}
           disabled={isEditMode}
         />
       </Form.Item>
       {databricksType === DATABRICKS_AUTH_METHOD.token && (
         <Form.Item
-          label="Access token"
+          label={kailoT('setup.fieldAccessToken')}
           name="accessToken"
           required
           rules={[
@@ -95,13 +96,13 @@ export default function DatabricksProperties(props: Props) {
             },
           ]}
         >
-          <Input.Password placeholder="Enter your Databricks personal access token" />
+          <Input.Password placeholder={kailoT('setup.phDatabricksToken')} />
         </Form.Item>
       )}
       {databricksType === DATABRICKS_AUTH_METHOD.service_principal && (
         <>
           <Form.Item
-            label="Client ID"
+            label={kailoT('setup.fieldClientId')}
             name="clientId"
             required
             rules={[
@@ -111,10 +112,10 @@ export default function DatabricksProperties(props: Props) {
               },
             ]}
           >
-            <Input placeholder="Enter your service principal’s Client ID" />
+            <Input placeholder={kailoT('setup.phClientId')} />
           </Form.Item>
           <Form.Item
-            label="Client secret"
+            label={kailoT('setup.fieldClientSecret')}
             name="clientSecret"
             required
             rules={[
@@ -124,10 +125,13 @@ export default function DatabricksProperties(props: Props) {
               },
             ]}
           >
-            <Input.Password placeholder="Enter your service principal’s Client Secret" />
+            <Input.Password placeholder={kailoT('setup.phClientSecret')} />
           </Form.Item>
-          <Form.Item label="Azure tenant ID" name="azureTenantId">
-            <Input placeholder="e.g. 72f988bf-86f1-41af-91ab-2d7cd011db47" />
+          <Form.Item
+            label={kailoT('setup.fieldAzureTenantId')}
+            name="azureTenantId"
+          >
+            <Input placeholder={kailoT('setup.phAzureTenant')} />
           </Form.Item>
         </>
       )}

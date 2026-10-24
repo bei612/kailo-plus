@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { Button, Form, Input, Modal, Row, Col, Radio } from 'antd';
-import DeleteOutlined from '@ant-design/icons/DeleteOutlined';
-import PlusOutlined from '@ant-design/icons/PlusOutlined';
+import { PlusIcon, TrashIcon } from '@/components/kailo/KailoIcons';
+import useKailoText from '@/utils/kailoI18n';
 import { isEmpty } from 'lodash';
 import { FORM_MODE } from '@/utils/enum';
 import { ERROR_TEXTS } from '@/utils/error';
@@ -18,6 +18,7 @@ export default function InstructionModal(props: Props) {
   const { defaultValue, formMode, loading, onClose, onSubmit, visible } = props;
 
   const isCreateMode = formMode === FORM_MODE.CREATE;
+  const t = useKailoText();
 
   const [form] = Form.useForm();
   const isDefault = Form.useWatch('isDefault', form);
@@ -49,7 +50,7 @@ export default function InstructionModal(props: Props) {
 
   return (
     <Modal
-      title={`${isCreateMode ? 'Add' : 'Update'} an instruction`}
+      title={t(isCreateMode ? 'addInstruction' : 'knowledge.editInstruction')}
       centered
       closable
       confirmLoading={loading}
@@ -57,15 +58,16 @@ export default function InstructionModal(props: Props) {
       maskClosable={false}
       onCancel={onClose}
       visible={visible}
-      width={720}
+      width={640}
       cancelButtonProps={{ disabled: loading }}
-      okText="Submit"
+      okText={t('knowledge.submit')}
+      cancelText={t('cancel')}
       onOk={onSubmitButton}
       afterClose={() => form.resetFields()}
     >
       <Form form={form} preserve={false} layout="vertical">
         <Form.Item
-          label="Instruction details"
+          label={t('knowledge.instructionDetails')}
           name="instruction"
           rules={[
             {
@@ -76,14 +78,14 @@ export default function InstructionModal(props: Props) {
         >
           <Input.TextArea
             autoFocus
-            placeholder="Enter a rule to follow when generating SQL queries."
+            placeholder={t('knowledge.instructionPlaceholder')}
             maxLength={1000}
             rows={3}
             showCount
           />
         </Form.Item>
         <Form.Item
-          label="Apply instruction to"
+          label={t('knowledge.applyInstructionTo')}
           name="isDefault"
           required={false}
           rules={[
@@ -92,31 +94,22 @@ export default function InstructionModal(props: Props) {
               message: ERROR_TEXTS.INSTRUCTION.IS_DEFAULT_GLOBAL.REQUIRED,
             },
           ]}
-          extra={
-            <>
-              Choose whether this instruction applies to{' '}
-              <span className="gray-7">all queries</span> or{' '}
-              <span className="gray-7">
-                only when similar user questions are detected
-              </span>
-              .
-            </>
-          }
+          extra={t('knowledge.applyInstructionHint')}
         >
           <Radio.Group>
             <Radio.Button value={true}>
-              Global (applies to all questions)
+              {t('knowledge.applyGlobal')}
             </Radio.Button>
             <Radio.Button value={false}>
-              Matched to specific questions
+              {t('knowledge.applyMatched')}
             </Radio.Button>
           </Radio.Group>
         </Form.Item>
         {!isDefault && (
           <Form.Item
-            label="Matching questions"
+            label={t('knowledge.matchingQuestions')}
             required
-            extra="User questions are matched by similarity and this instruction is applied when relevant."
+            extra={t('knowledge.matchingQuestionsHint')}
           >
             <Form.List name="questions" initialValue={['']}>
               {(fields, { add, remove }) => (
@@ -140,7 +133,9 @@ export default function InstructionModal(props: Props) {
                           ]}
                         >
                           <Input
-                            placeholder="Enter an example question that should trigger this instruction."
+                            placeholder={t(
+                              'knowledge.matchingQuestionPlaceholder',
+                            )}
                             maxLength={100}
                             showCount
                           />
@@ -150,10 +145,10 @@ export default function InstructionModal(props: Props) {
                         <Button
                           onClick={() => remove(name)}
                           disabled={fields.length <= 1}
-                          icon={<DeleteOutlined />}
+                          icon={<TrashIcon />}
+                          type="text"
                           size="small"
-                          style={{ border: 'none' }}
-                          className="bg-gray-1"
+                          aria-label={t('delete')}
                         />
                       </Col>
                     </Row>
@@ -163,11 +158,11 @@ export default function InstructionModal(props: Props) {
                       type="dashed"
                       onClick={() => add()}
                       block
-                      icon={<PlusOutlined />}
+                      icon={<PlusIcon className="mr-1" />}
                       disabled={fields.length >= MAX_QUESTIONS}
                       className="mb-1"
                     >
-                      Add a question
+                      {t('knowledge.addQuestion')}
                     </Button>
                   </Form.Item>
                 </>

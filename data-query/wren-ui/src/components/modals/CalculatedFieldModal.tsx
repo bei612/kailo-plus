@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Modal, Form, Input, Typography, Button, Alert } from 'antd';
 import { FORM_MODE } from '@/utils/enum';
 import { ERROR_TEXTS } from '@/utils/error';
+import useKailoText from '@/utils/kailoI18n';
 import { DiagramModel } from '@/utils/data/type';
 import { ModalAction } from '@/hooks/useModalAction';
 import {
@@ -50,6 +51,7 @@ export default function AddCalculatedFieldModal(props: Props) {
   } = props;
 
   const isEditMode = formMode === FORM_MODE.EDIT;
+  const t = useKailoText();
   const [error, setError] =
     useState<ReturnType<typeof parseGraphQLError>>(null);
 
@@ -136,8 +138,12 @@ export default function AddCalculatedFieldModal(props: Props) {
 
   return (
     <Modal
-      title={`${isEditMode ? 'Update' : 'Add'} calculated field`}
-      width={750}
+      title={
+        isEditMode
+          ? t('modeling.editCalculatedField')
+          : t('modeling.addCalculatedField')
+      }
+      width={640}
       visible={visible}
       onCancel={onClose}
       confirmLoading={loading}
@@ -145,20 +151,17 @@ export default function AddCalculatedFieldModal(props: Props) {
       destroyOnClose
       afterClose={() => reset()}
       footer={
-        <div className="d-flex justify-space-between align-center">
-          <div />
-          <div>
-            <Button onClick={onClose}>Cancel</Button>
-            <Button type="primary" onClick={submit} loading={loading}>
-              Save
-            </Button>
-          </div>
+        <div className="d-flex justify-end align-center">
+          <Button onClick={onClose}>{t('cancel')}</Button>
+          <Button type="primary" onClick={submit} loading={loading}>
+            {t('modeling.save')}
+          </Button>
         </div>
       }
     >
       <Form form={form} preserve={false} layout="vertical">
         <Form.Item
-          label="Name"
+          label={t('modeling.name')}
           name="name"
           required
           rules={[
@@ -173,7 +176,7 @@ export default function AddCalculatedFieldModal(props: Props) {
         </Form.Item>
 
         <Form.Item
-          label="Select an expression"
+          label={t('modeling.selectExpression')}
           name="expression"
           required
           rules={[
@@ -184,7 +187,7 @@ export default function AddCalculatedFieldModal(props: Props) {
           ]}
         >
           <DescriptiveSelector
-            placeholder="Select an expression"
+            placeholder={t('modeling.selectExpression')}
             options={expressionOptions}
             descriptiveContentRender={(content) => {
               return (

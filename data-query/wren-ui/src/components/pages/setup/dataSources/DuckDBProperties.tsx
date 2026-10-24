@@ -3,6 +3,7 @@ import { Col, Form, Input, Button, Row } from 'antd';
 import { ERROR_TEXTS } from '@/utils/error';
 import DeleteOutlined from '@ant-design/icons/DeleteOutlined';
 import PlusOutlined from '@ant-design/icons/PlusOutlined';
+import { kailoT } from '@/utils/kailoI18n';
 
 const { TextArea } = Input;
 
@@ -10,7 +11,7 @@ export default function DuckDBProperties() {
   return (
     <>
       <Form.Item
-        label="Display name"
+        label={kailoT('setup.fieldDisplayName')}
         name="displayName"
         rules={[
           {
@@ -22,9 +23,9 @@ export default function DuckDBProperties() {
         <Input placeholder="DuckDB" />
       </Form.Item>
       <Form.Item
-        label="Initial SQL statements"
+        label={kailoT('setup.fieldInitSql')}
         name="initSql"
-        extra="These statements are meant to be executed only once during initialization."
+        extra={kailoT('setup.hintInitSql')}
         rules={[
           {
             required: true,
@@ -39,17 +40,16 @@ export default function DuckDBProperties() {
       </Form.Item>
 
       <Form.Item
-        label="Configuration options"
+        label={kailoT('setup.fieldConfigOptions')}
         extra={
           <>
-            DuckDB offers various configuration options that can modify the
-            system's behavior.{' '}
+            {kailoT('setup.hintDuckDbConfig')}{' '}
             <Link
               href="https://duckdb.org/docs/configuration/overview.html"
               target="_blank"
               rel="noopener noreferrer"
             >
-              Learn more
+              {kailoT('setup.learnMore')}
             </Link>
           </>
         }
@@ -83,7 +83,7 @@ export default function DuckDBProperties() {
                         }),
                       ]}
                     >
-                      <Input placeholder="Key" />
+                      <Input placeholder={kailoT('setup.phKey')} />
                     </Form.Item>
                   </Col>
                   <Col flex="1 0">
@@ -110,7 +110,7 @@ export default function DuckDBProperties() {
                         }),
                       ]}
                     >
-                      <Input placeholder="Value" />
+                      <Input placeholder={kailoT('setup.phValue')} />
                     </Form.Item>
                   </Col>
                   <Col flex="none" className="p-1">
@@ -125,7 +125,7 @@ export default function DuckDBProperties() {
                   block
                   icon={<PlusOutlined />}
                 >
-                  Add an option
+                  {kailoT('setup.addOption')}
                 </Button>
               </Form.Item>
             </>
@@ -133,17 +133,16 @@ export default function DuckDBProperties() {
         </Form.List>
       </Form.Item>
       <Form.Item
-        label="Extensions"
+        label={kailoT('setup.fieldExtensions')}
         extra={
           <>
-            DuckDB has an extension mechanism that enables the dynamic loading
-            of extensions.{' '}
+            {kailoT('setup.hintDuckDbExtensions')}{' '}
             <Link
               href="https://duckdb.org/docs/extensions/overview.html"
               target="_blank"
               rel="noopener noreferrer"
             >
-              Learn more
+              {kailoT('setup.learnMore')}
             </Link>
           </>
         }
@@ -160,7 +159,7 @@ export default function DuckDBProperties() {
                       noStyle
                       style={{ width: '100%' }}
                     >
-                      <Input placeholder="Extension name" />
+                      <Input placeholder={kailoT('setup.phExtensionName')} />
                     </Form.Item>
                   </Col>
                   <Col flex="none" className="p-1">
@@ -175,7 +174,7 @@ export default function DuckDBProperties() {
                   block
                   icon={<PlusOutlined />}
                 >
-                  Add an extension
+                  {kailoT('setup.addExtension')}
                 </Button>
               </Form.Item>
             </>

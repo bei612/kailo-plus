@@ -8,13 +8,14 @@ import {
   FormItemInputContext,
   FormItemStatusContextProps,
 } from 'antd/lib/form/context';
+import useKailoText from '@/utils/kailoI18n';
 
 const StyledBox = styled.div`
-  border: 1px solid var(--gray-5);
+  border: 1px solid var(--kailo-color-line-strong);
   border-radius: 4px;
 
   &.multiSelectBox-input-error {
-    border-color: var(--red-5);
+    border-color: var(--kailo-color-danger);
   }
 
   .ant-table {
@@ -28,7 +29,7 @@ const StyledBox = styled.div`
 
 const StyledTotal = styled.div`
   padding: 8px 12px;
-  border-bottom: 1px var(--gray-3) solid;
+  border-bottom: 1px var(--kailo-color-border) solid;
 `;
 
 interface Props {
@@ -40,6 +41,7 @@ interface Props {
 }
 
 export default function MultiSelectBox(props: Props) {
+  const t = useKailoText();
   const { columns, loading, items, onChange, value } = props;
   const [selectedRowKeys, setSelectedRowKeys] = useState<Set<string>>(
     new Set(value),
@@ -85,12 +87,12 @@ export default function MultiSelectBox(props: Props) {
     <StyledBox
       className={status ? `multiSelectBox-input-${status}` : undefined}
     >
-      <StyledTotal>{total} table(s)</StyledTotal>
+      <StyledTotal>{t('modeling.tableCount', { count: total })}</StyledTotal>
       <div className="p-2">
         <Input
           prefix={<SearchOutlined />}
           onChange={onSearchChange}
-          placeholder="Search here"
+          placeholder={t('modeling.search')}
           allowClear
         />
       </div>

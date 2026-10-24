@@ -11,25 +11,34 @@ import { makeIterable } from '@/utils/iteration';
 import { GroupedQuestion } from '@/hooks/useRecommendedQuestionsInstruction';
 import useKailoText from '@/utils/kailoI18n';
 
+// DD-152 (20 §13 卡片): card surface, 1px line, radius 12, no shadow;
+// clickable cards lift with shadow-sm on hover.
 const CategorySectionBlock = styled.div`
-  background: var(--gray-1);
-  border: 1px solid var(--gray-4);
-  border-radius: 4px;
+  background: var(--kailo-color-card);
+  border: 1px solid var(--kailo-color-border);
+  border-radius: 12px;
   padding: 16px;
 `;
 
 const QuestionBlock = styled.div`
-  background: var(--gray-1);
+  background: var(--kailo-color-card);
+  color: var(--kailo-color-foreground);
   user-select: none;
   height: 150px;
-  transition: border-color ease 0.2s;
+  border-radius: 12px !important;
+  transition:
+    border-color var(--kailo-duration-fast) var(--kailo-ease-standard),
+    box-shadow var(--kailo-duration-fast) var(--kailo-ease-standard),
+    transform var(--kailo-duration-fast) var(--kailo-ease-standard);
 
   &:hover:not(.is-disabled) {
-    border-color: var(--geekblue-6) !important;
+    border-color: var(--kailo-color-line-strong) !important;
+    box-shadow: var(--kailo-shadow-sm);
+    transform: translateY(-1px);
   }
 
   &.is-active {
-    border-color: var(--geekblue-6) !important;
+    border-color: var(--kailo-color-brand) !important;
   }
 
   &.is-disabled {
@@ -76,7 +85,7 @@ const QuestionTemplate = ({
       >
         <div className="d-flex justify-space-between align-center text-sm mb-3">
           <div
-            className="border border-gray-5 px-2 rounded-pill text-truncate"
+            className="kailo-tag text-truncate"
             title={category}
           >
             {category}
@@ -115,13 +124,11 @@ export default function RecommendedQuestionsPrompt(props: Props) {
   };
 
   return (
-    <div className="bg-gray-2 px-10 py-6">
+    <div className="px-10 py-6">
       <div className="d-flex align-center mb-3">
         <Logo size={24} />
-        <div className="text-md text-medium gray-8 mx-3">
-          {t('askAboutData')}
-        </div>
-        <div className="text-medium gray-7">{t('tryAsking')}</div>
+        <div className="kailo-section-title mx-3">{t('askAboutData')}</div>
+        <div className="gray-7">{t('tryAsking')}</div>
       </div>
       <Space
         style={{ width: 680 }}
@@ -142,12 +149,12 @@ export default function RecommendedQuestionsPrompt(props: Props) {
             <div className="text-right">
               <Button
                 onClick={() => onHandleToggle()}
-                className="gray-6 mt-3"
+                className="gray-7 mt-3"
                 type="text"
                 size="small"
                 icon={isExpanded ? <MinusOutlined /> : <ColumnHeightOutlined />}
               >
-                {isExpanded ? 'Collapse' : 'Expand all'}
+                {isExpanded ? t('home.collapse') : t('home.expandAll')}
               </Button>
             </div>
           )}

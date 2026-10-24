@@ -6,8 +6,11 @@ import {
   stringFunctions,
 } from '@/utils/expressionType';
 import { useMemo } from 'react';
+import { useRouter } from 'next/router';
+import { kailoT } from '@/utils/kailoI18n';
 
 export default function useExpressionFieldOptions() {
+  const { locale } = useRouter();
   const expressionOptions = useMemo(() => {
     const convertor = (name: ExpressionName) => {
       const texts = getExpressionTexts(name);
@@ -24,19 +27,19 @@ export default function useExpressionFieldOptions() {
 
     return [
       {
-        label: 'Aggregation',
+        label: kailoT('modeling.aggregation'),
         options: aggregations.map(convertor),
       },
       {
-        label: 'Math functions',
+        label: kailoT('modeling.mathFunctions'),
         options: mathFunctions.map(convertor),
       },
       {
-        label: 'String functions',
+        label: kailoT('modeling.stringFunctions'),
         options: stringFunctions.map(convertor),
       },
     ];
-  }, []);
+  }, [locale]);
 
   return expressionOptions;
 }

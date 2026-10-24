@@ -1,17 +1,14 @@
-import {
-  Button,
-  Tag,
-  Table,
-  TableColumnsType,
-  Typography,
-  message,
-} from 'antd';
+import { Button, Tag, Table, TableColumnsType, Typography } from 'antd';
 import styled from 'styled-components';
 import SiderLayout from '@/components/layouts/SiderLayout';
 import PageLayout from '@/components/layouts/PageLayout';
-import { InstructionsSVG } from '@/utils/svgs';
-import QuestionOutlined from '@ant-design/icons/QuestionOutlined';
-import EyeOutlined from '@ant-design/icons/EyeOutlined';
+import KailoEmpty from '@/components/kailo/KailoEmpty';
+import {
+  EyeIcon,
+  FileTextIcon,
+  MessageSquareIcon,
+} from '@/components/kailo/KailoIcons';
+import { notify } from '@/utils/kailoHost';
 import KailoUser from '@/components/kailo/KailoUser';
 import useKailoSession from '@/hooks/useKailoSession';
 import useKailoText from '@/utils/kailoI18n';
@@ -47,11 +44,6 @@ const StyledTag = styled(Tag)`
   }
 `;
 
-const StyledInstructionsIcon = styled(InstructionsSVG)`
-  width: 20px;
-  height: 20px;
-`;
-
 export default function ManageInstructions() {
   const t = useKailoText();
   // DD-133 §3: knowledge changes are Kailo Tenant admin actions.
@@ -77,7 +69,7 @@ export default function ManageInstructions() {
     useCreateInstructionMutation(
       getBaseOptions({
         onCompleted: () => {
-          message.success('Successfully created instruction.');
+          notify.success(t('knowledge.instructionCreated'));
         },
       }),
     );
@@ -86,7 +78,7 @@ export default function ManageInstructions() {
     useUpdateInstructionMutation(
       getBaseOptions({
         onCompleted: () => {
-          message.success('Successfully updated instruction.');
+          notify.success(t('knowledge.instructionUpdated'));
         },
       }),
     );
@@ -94,7 +86,7 @@ export default function ManageInstructions() {
   const [deleteInstructionMutation] = useDeleteInstructionMutation(
     getBaseOptions({
       onCompleted: () => {
-        message.success('Successfully deleted instruction.');
+        notify.success(t('knowledge.instructionDeleted'));
       },
     }),
   );
@@ -114,7 +106,7 @@ export default function ManageInstructions() {
 
   const columns: TableColumnsType<Instruction> = [
     {
-      title: 'Instruction details',
+      title: t('knowledge.instructionDetails'),
       dataIndex: 'instruction',
       render: (instruction) => (
         <Paragraph title={instruction} ellipsis={{ rows: 3 }}>
@@ -123,7 +115,7 @@ export default function ManageInstructions() {
       ),
     },
     {
-      title: 'Matching questions',
+      title: t('knowledge.matchingQuestions'),
       dataIndex: 'questions',
       width: '50%',
       render: (questions, record) => {
@@ -136,8 +128,8 @@ export default function ManageInstructions() {
           <StyledQuestionsBlock>
             {displayQuestions.map((question) => (
               <div key={question} className="mb-1">
-                <StyledTag className="bg-gray-1 border-gray-5 text-truncate">
-                  <QuestionOutlined className="geekblue-6" />
+                <StyledTag className="text-truncate">
+                  <MessageSquareIcon size={12} className="gray-7 mr-1" />
                   <Text className="gray-9" title={question}>
                     {question}
                   </Text>
@@ -146,7 +138,7 @@ export default function ManageInstructions() {
             ))}
             {moreCount > 0 && (
               <div className="text-sm gray-7 pl-1">
-                +{moreCount} more question{moreCount > 1 ? 's' : ''}
+                {t('knowledge.moreQuestions', { count: moreCount })}
               </div>
             )}
           </StyledQuestionsBlock>
@@ -163,7 +155,7 @@ export default function ManageInstructions() {
       ),
     },
     {
-      title: 'Created time',
+      title: t('knowledge.createdTime'),
       dataIndex: 'createdAt',
       width: 130,
       render: (time) => <Text className="gray-7">{getCompactTime(time)}</Text>,
@@ -182,7 +174,8 @@ export default function ManageInstructions() {
           <Button
             type="text"
             size="small"
-            icon={<EyeOutlined />}
+            aria-label={t('knowledge.view')}
+            icon={<EyeIcon />}
             onClick={() =>
               onMoreClick({ type: MORE_ACTION.VIEW_INSTRUCTION, data: record })
             }
@@ -211,41 +204,39 @@ export default function ManageInstructions() {
   return (
     <SiderLayout loading={false}>
       <PageLayout
-        title={
-          <>
-            <StyledInstructionsIcon className="mr-2 gray-8" />
-            Manage instruction
-          </>
-        }
+        title={t('instructions')}
         titleExtra={
           isAdmin && (
             <Button type="primary" onClick={() => instructionModal.openModal()}>
-              Add an instruction
+              {t('addInstruction')}
             </Button>
           )
         }
-        description={
-          <>
-            On this page, you can manage saved instructions that guide SQL
-            generation. These instructions describe your data model and business
-            rules, improving query accuracy and reducing the need for manual
-            refinements.
-          </>
-        }
+        description={t('knowledge.instructionsDescription')}
       >
-        <Table
-          className="ant-table-has-header"
-          dataSource={instructions}
-          loading={loading}
-          columns={columns}
-          rowKey="id"
-          pagination={{
-            hideOnSinglePage: true,
-            pageSize: 10,
-            size: 'small',
-          }}
-          scroll={{ x: 1080 }}
-        />
+        {!loading && instructions.length === 0 ? (
+          <KailoEmpty
+            icon={FileTextIcon}
+            title={t('knowledge.instructionsEmptyTitle')}
+            description={t('knowledge.instructionsEmptyDescription')}
+            actionLabel={isAdmin ? t('addInstruction') : undefined}
+            onAction={() => instructionModal.openModal()}
+          />
+        ) : (
+          <Table
+            className="ant-table-has-header"
+            dataSource={instructions}
+            loading={loading}
+            columns={columns}
+            rowKey="id"
+            pagination={{
+              hideOnSinglePage: true,
+              pageSize: 10,
+              size: 'small',
+            }}
+            scroll={{ x: 1080 }}
+          />
+        )}
         <InstructionDrawer
           {...instructionDrawer.state}
           onClose={instructionDrawer.closeDrawer}

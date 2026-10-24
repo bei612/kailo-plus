@@ -10,6 +10,8 @@ import EditOutlined from '@ant-design/icons/EditOutlined';
 import EyeOutlined from '@ant-design/icons/EyeOutlined';
 import PushPinOutlined from '@ant-design/icons/PushpinOutlined';
 import ErrorCollapse from '@/components/ErrorCollapse';
+import useKailoText, { kailoT } from '@/utils/kailoI18n';
+import useKailoSession from '@/hooks/useKailoSession';
 
 const embedOptions: EmbedOptions = {
   mode: 'vega-lite',
@@ -55,6 +57,9 @@ export default function Chart(props: VegaLiteProps) {
     onEdit,
     onPin,
   } = props;
+  const t = useKailoText();
+  // Rebuilt on a Kailo theme change: axis and legend colours are tokens.
+  const { theme } = useKailoSession();
 
   const [donutInner, setDonutInner] = useState(null);
   const [parsedSpec, setParsedSpec] =
@@ -91,7 +96,7 @@ export default function Chart(props: VegaLiteProps) {
       console.error(error);
       setParsedError({
         code: 'CLIENT_PARSE_ERROR',
-        shortMessage: 'Failed to render chart visualization',
+        shortMessage: kailoT('home.chartRenderFailed'),
         message: error?.message,
         stacktrace: error?.stack?.split('\n') || [],
       });
@@ -100,7 +105,7 @@ export default function Chart(props: VegaLiteProps) {
       setParsedSpec(null);
       setParsedError(null);
     };
-  }, [spec, values, isShowTopCategories, donutInner, forceUpdate]);
+  }, [spec, values, isShowTopCategories, donutInner, forceUpdate, theme]);
 
   // initial vega view
   useEffect(() => {
@@ -125,7 +130,8 @@ export default function Chart(props: VegaLiteProps) {
   };
 
   const getChartContent = () => {
-    if (values.length === 0) return <div>No available data</div>;
+    if (values.length === 0)
+      return <div className="gray-7">{t('home.noData')}</div>;
 
     if (parsedError) {
       return (
@@ -151,17 +157,13 @@ export default function Chart(props: VegaLiteProps) {
           className="mt-12 mb-4 mx-4"
           message={
             <div className="d-flex align-center justify-space-between">
-              <div>
-                There are too many categories to display effectively. Click
-                'Show top 25' to view the top results, or ask a follow-up
-                question to focus on a specific group or filter results.
-              </div>
+              <div>{t('home.tooManyCategories')}</div>
               <Button
                 size="small"
                 icon={<EyeOutlined />}
                 onClick={onShowTopCategories}
               >
-                Show top 25
+                {t('home.showTop25')}
               </Button>
             </div>
           }
@@ -187,21 +189,21 @@ export default function Chart(props: VegaLiteProps) {
       {isAdditionalShow && (
         <div className="adm-chart-additional d-flex justify-content-between align-center">
           {!!onReload && (
-            <Tooltip title="Regenerate chart">
+            <Tooltip title={t('home.regenerateChart')}>
               <button onClick={onReload}>
                 <ReloadOutlined />
               </button>
             </Tooltip>
           )}
           {!!onEdit && (
-            <Tooltip title="Edit chart">
+            <Tooltip title={t('home.editChart')}>
               <button onClick={onEdit}>
                 <EditOutlined />
               </button>
             </Tooltip>
           )}
           {!!onPin && (
-            <Tooltip title="Pin chart to dashboard">
+            <Tooltip title={t('home.pinChart')}>
               <button onClick={onPin}>
                 <PushPinOutlined />
               </button>

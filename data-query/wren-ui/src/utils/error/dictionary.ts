@@ -1,192 +1,239 @@
-export const ERROR_TEXTS = {
+import { currentLocale } from '@/utils/kailoI18n';
+
+// DD-152 (20 §13.8): form validation messages in both Kailo locales. Each
+// leaf is [zh-CN, en]; ERROR_TEXTS resolves it when read (form rules and
+// validators read it at validation time), so the shape callers use is
+// unchanged: ERROR_TEXTS.SQL_PAIR.SQL.REQUIRED is a string.
+type Pair = readonly [string, string];
+type Tree = { readonly [key: string]: Pair | Tree };
+type Localized<T> = {
+  readonly [K in keyof T]: T[K] extends Pair ? string : Localized<T[K]>;
+};
+
+const isPair = (value: Pair | Tree): value is Pair => Array.isArray(value);
+
+function localize<T extends Tree>(tree: T): Localized<T> {
+  const out = {};
+  for (const [key, value] of Object.entries(tree)) {
+    if (isPair(value)) {
+      Object.defineProperty(out, key, {
+        enumerable: true,
+        get: () => (currentLocale() === 'en' ? value[1] : value[0]),
+      });
+    } else {
+      Object.defineProperty(out, key, {
+        enumerable: true,
+        value: localize(value),
+      });
+    }
+  }
+  return out as Localized<T>;
+}
+
+const texts = {
   CONNECTION: {
     DISPLAY_NAME: {
-      REQUIRED: 'Please input display name.',
+      REQUIRED: ['请输入显示名称', 'Enter a display name'],
     },
     PROJECT_ID: {
-      REQUIRED: 'Please input project id.',
+      REQUIRED: ['请输入项目 ID', 'Enter the project ID'],
     },
     DATASET_ID: {
-      REQUIRED: 'Please input dataset ID.',
+      REQUIRED: ['请输入数据集 ID', 'Enter the dataset ID'],
     },
     CREDENTIAL: {
-      REQUIRED: 'Please upload credential.',
+      REQUIRED: ['请上传凭据文件', 'Upload the credentials file'],
     },
     INIT_SQL: {
-      REQUIRED: 'Please input initial SQL statements.',
+      REQUIRED: ['请输入初始化 SQL 语句', 'Enter the initial SQL statements'],
     },
     CONFIGURATION: {
       KEY: {
-        REQUIRED: 'Please input configuration key.',
+        REQUIRED: ['请输入配置项名称', 'Enter the configuration key'],
       },
       VALUE: {
-        REQUIRED: 'Please input configuration value.',
+        REQUIRED: ['请输入配置项的值', 'Enter the configuration value'],
       },
     },
     HOST: {
-      REQUIRED: 'Please input host.',
-      INVALID:
-        "Invalid host. Use 'host.docker.internal' on macOS/Windows to connect to the local database.",
+      REQUIRED: ['请输入主机地址', 'Enter the host'],
+      INVALID: [
+        '主机地址无效。在 macOS 或 Windows 上连接本机数据库时，请使用 host.docker.internal。',
+        'Invalid host. To connect to a local database on macOS or Windows, use host.docker.internal.',
+      ],
     },
     PORT: {
-      REQUIRED: 'Please input port.',
+      REQUIRED: ['请输入端口', 'Enter the port'],
     },
     USER: {
-      REQUIRED: 'Please input user.',
+      REQUIRED: ['请输入用户', 'Enter the user'],
     },
     USERNAME: {
-      REQUIRED: 'Please input username.',
+      REQUIRED: ['请输入用户名', 'Enter the username'],
     },
     PASSWORD: {
-      REQUIRED: 'Please input password.',
+      REQUIRED: ['请输入密码', 'Enter the password'],
     },
     DATABASE: {
-      REQUIRED: 'Please input database name.',
+      REQUIRED: ['请输入数据库名称', 'Enter the database name'],
     },
     SCHEMA: {
-      REQUIRED: 'Please input schema name.',
+      REQUIRED: ['请输入 schema 名称', 'Enter the schema name'],
     },
     SCHEMAS: {
-      REQUIRED: 'Please input list of catalog.schema separated by comma.',
+      REQUIRED: [
+        '请输入以逗号分隔的 catalog.schema 列表',
+        'Enter catalog.schema entries separated by commas',
+      ],
     },
     ACCOUNT: {
-      REQUIRED: 'Please input account.',
+      REQUIRED: ['请输入账户', 'Enter the account'],
     },
     S3_STAGING_DIR: {
-      REQUIRED: 'Please input S3 staging directory.',
+      REQUIRED: ['请输入 S3 暂存目录', 'Enter the S3 staging directory'],
     },
     AWS_REGION: {
-      REQUIRED: 'Please input AWS region.',
+      REQUIRED: ['请输入 AWS 区域', 'Enter the AWS region'],
     },
     AWS_ACCESS_KEY: {
-      REQUIRED: 'Please input AWS access key ID.',
+      REQUIRED: ['请输入 AWS 访问密钥 ID', 'Enter the AWS access key ID'],
     },
     AWS_SECRET_KEY: {
-      REQUIRED: 'Please input AWS secret access key.',
+      REQUIRED: ['请输入 AWS 秘密访问密钥', 'Enter the AWS secret access key'],
     },
     AWS_ROLE_ARN: {
-      REQUIRED: 'Please input AWS role ARN.',
+      REQUIRED: ['请输入 AWS 角色 ARN', 'Enter the AWS role ARN'],
     },
     WEB_IDENTITY_TOKEN: {
-      REQUIRED: 'Please input web identity token.',
+      REQUIRED: ['请输入 Web 身份令牌', 'Enter the web identity token'],
     },
     CLUSTER_IDENTIFIER: {
-      REQUIRED: 'Please input cluster identifier.',
+      REQUIRED: ['请输入集群标识符', 'Enter the cluster identifier'],
     },
     PRIVATE_KEY_FILE: {
-      REQUIRED: 'Please upload a private key file.',
+      REQUIRED: ['请上传私钥文件', 'Upload a private key file'],
     },
     HTTP_PATH: {
-      REQUIRED: 'Please input HTTP path.',
+      REQUIRED: ['请输入 HTTP 路径', 'Enter the HTTP path'],
     },
     PERSONAL_ACCESS_TOKEN: {
-      REQUIRED: 'Please input personal access token.',
+      REQUIRED: ['请输入个人访问令牌', 'Enter the personal access token'],
     },
     CLIENT_ID: {
-      REQUIRED: 'Please input client ID.',
+      REQUIRED: ['请输入客户端 ID', 'Enter the client ID'],
     },
     CLIENT_SECRET: {
-      REQUIRED: 'Please input client secret.',
+      REQUIRED: ['请输入客户端密钥', 'Enter the client secret'],
     },
   },
   ADD_RELATION: {
     FROM_FIELD: {
-      REQUIRED: 'Please select a field.',
+      REQUIRED: ['请选择字段', 'Select a field'],
     },
     TO_FIELD: {
-      REQUIRED: 'Please select a field.',
+      REQUIRED: ['请选择字段', 'Select a field'],
     },
     RELATION_TYPE: {
-      REQUIRED: 'Please select a relationship type.',
+      REQUIRED: ['请选择关系类型', 'Select a relationship type'],
     },
     RELATIONSHIP: {
-      EXIST: 'This relationship already exists.',
+      EXIST: ['该关系已存在', 'This relationship already exists'],
     },
   },
   SETUP_MODEL: {
     TABLE: {
-      REQUIRED: 'Please select at least one table.',
+      REQUIRED: ['请至少选择一张表', 'Select at least one table'],
     },
   },
   SAVE_AS_VIEW: {
     NAME: {
-      REQUIRED: 'Please input view name.',
+      REQUIRED: ['请输入视图名称', 'Enter a view name'],
     },
   },
   MODELING_CREATE_MODEL: {
     TABLE: {
-      REQUIRED: 'Please select a table.',
+      REQUIRED: ['请选择一张表', 'Select a table'],
     },
     COLUMNS: {
-      REQUIRED: 'Please select at least one column.',
+      REQUIRED: ['请至少选择一列', 'Select at least one column'],
     },
     PRIMARY_KEY: {
-      INVALID:
-        'Please select again, the primary key must be one of the selected columns.',
+      INVALID: [
+        '主键必须是已选列之一，请重新选择',
+        'The primary key must be one of the selected columns. Select it again.',
+      ],
     },
   },
   CALCULATED_FIELD: {
     NAME: {
-      REQUIRED: 'Please input field name.',
+      REQUIRED: ['请输入字段名称', 'Enter a field name'],
     },
     EXPRESSION: {
-      REQUIRED: 'Please select an expression.',
+      REQUIRED: ['请选择表达式', 'Select an expression'],
     },
     LINEAGE: {
-      REQUIRED: 'Please select a field.',
-      INVALID_STRING_TYPE: 'Please select a string type field.',
-      INVALID_NUMBER_TYPE: 'Please select a number type field.',
+      REQUIRED: ['请选择字段', 'Select a field'],
+      INVALID_STRING_TYPE: ['请选择字符串类型的字段', 'Select a string field'],
+      INVALID_NUMBER_TYPE: ['请选择数值类型的字段', 'Select a number field'],
     },
   },
   SQL_PAIR: {
     SQL: {
-      REQUIRED: 'Please input SQL statement.',
+      REQUIRED: ['请输入 SQL 语句', 'Enter a SQL statement'],
     },
     QUESTION: {
-      REQUIRED: 'Please input a matching question.',
-      MAX_LENGTH: 'Question must be 300 characters or fewer.',
+      REQUIRED: ['请输入匹配的问题', 'Enter a matching question'],
+      MAX_LENGTH: [
+        '问题不能超过 300 个字符',
+        'The question must be 300 characters or fewer',
+      ],
     },
   },
   INSTRUCTION: {
     DETAILS: {
-      REQUIRED: 'Please input an instruction details.',
+      REQUIRED: ['请输入指令内容', 'Enter the instruction details'],
     },
     QUESTIONS: {
-      REQUIRED: 'Please input a matching question.',
+      REQUIRED: ['请输入匹配的问题', 'Enter a matching question'],
     },
     IS_DEFAULT_GLOBAL: {
-      REQUIRED: 'Please select how to apply this instruction.',
+      REQUIRED: ['请选择指令的适用范围', 'Choose how to apply this instruction'],
     },
   },
   FIX_SQL: {
     SQL: {
-      REQUIRED: 'Please input SQL statement.',
+      REQUIRED: ['请输入 SQL 语句', 'Enter a SQL statement'],
     },
   },
   ADJUST_REASONING: {
     SELECTED_MODELS: {
-      REQUIRED: 'Please select at least one model',
+      REQUIRED: ['请至少选择一个模型', 'Select at least one model'],
     },
     STEPS: {
-      REQUIRED: 'Please input reasoning steps',
-      MAX_LENGTH: 'Reasoning steps must be 6000 characters or fewer.',
+      REQUIRED: ['请输入推理步骤', 'Enter the reasoning steps'],
+      MAX_LENGTH: [
+        '推理步骤不能超过 6000 个字符',
+        'Reasoning steps must be 6000 characters or fewer',
+      ],
     },
   },
   IMPORT_DATA_SOURCE_SQL: {
     SQL: {
-      REQUIRED: 'Please input SQL statement.',
+      REQUIRED: ['请输入 SQL 语句', 'Enter a SQL statement'],
     },
   },
   CRON: {
-    REQUIRED: 'Please input cron expression.',
-    INVALID: 'Invalid cron expression.',
+    REQUIRED: ['请输入 Cron 表达式', 'Enter a cron expression'],
+    INVALID: ['Cron 表达式无效', 'Invalid cron expression'],
   },
   CACHE_SETTINGS: {
     DAY: {
-      REQUIRED: 'Please select day.',
+      REQUIRED: ['请选择日期', 'Select a day'],
     },
     TIME: {
-      REQUIRED: 'Please select time.',
+      REQUIRED: ['请选择时间', 'Select a time'],
     },
   },
-};
+} as const;
+
+export const ERROR_TEXTS = localize(texts);

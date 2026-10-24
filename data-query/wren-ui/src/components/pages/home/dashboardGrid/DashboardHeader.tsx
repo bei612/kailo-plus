@@ -66,7 +66,7 @@ export default function DashboardHeader(props: Props) {
       </div>
       <div>
         {schedule && (
-          <div className="d-flex align-center gray-6 gx-2">
+          <div className="d-flex align-center gray-7 gx-2">
             {isSupportCached && (
               <>
                 {nextScheduleTime ? (
@@ -75,12 +75,16 @@ export default function DashboardHeader(props: Props) {
                     title={
                       <>
                         <div>
-                          <span className="gray-6">Next schedule:</span>{' '}
+                          <span className="gray-6">
+                            {t('home.nextSchedule')}
+                          </span>{' '}
                           {getCompactTime(nextScheduleTime)}
                         </div>
                         {schedule.cron && (
                           <div>
-                            <span className="gray-6">Cron expression:</span>{' '}
+                            <span className="gray-6">
+                              {t('home.cronExpressionLabel')}
+                            </span>{' '}
                             {schedule.cron}
                           </div>
                         )}
@@ -98,7 +102,11 @@ export default function DashboardHeader(props: Props) {
               onMoreClick={onMoreClick}
               isSupportCached={isSupportCached}
             >
-              <Button type="text" icon={<MoreIcon className="gray-8" />} />
+              <Button
+                type="text"
+                aria-label={t('home.moreActions')}
+                icon={<MoreIcon className="gray-7" />}
+              />
             </DashboardDropdown>
           </div>
         )}

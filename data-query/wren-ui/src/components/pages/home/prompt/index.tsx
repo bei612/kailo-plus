@@ -43,12 +43,14 @@ const PromptStyle = styled.div`
   position: fixed;
   width: 680px;
   left: 50%;
-  margin-left: calc(-340px + 133px);
+  /* centred on the content area right of the 264px list pane */
+  margin-left: calc(-340px + 132px);
   bottom: 18px;
   z-index: 999;
-  box-shadow:
-    rgba(0, 0, 0, 0.1) 0px 10px 15px -3px,
-    rgba(0, 0, 0, 0.05) 0px 4px 6px -2px;
+  background: var(--kailo-color-popover);
+  border: 1px solid var(--kailo-color-border);
+  border-radius: 12px;
+  box-shadow: var(--kailo-shadow-lg);
 `;
 
 export default forwardRef<Attributes, Props>(function Prompt(props, ref) {
@@ -162,7 +164,7 @@ export default forwardRef<Attributes, Props>(function Prompt(props, ref) {
   );
 
   return (
-    <PromptStyle className="d-flex align-end bg-gray-2 p-3 border border-gray-3 rounded">
+    <PromptStyle className="d-flex align-end p-3">
       <PromptInput
         question={question}
         isProcessing={isProcessing}

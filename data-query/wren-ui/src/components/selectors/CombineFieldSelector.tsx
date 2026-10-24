@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Select, Input } from 'antd';
+import { kailoT } from '@/utils/kailoI18n';
 
 interface Value {
   model?: string;
@@ -65,7 +66,7 @@ export default function CombineFieldSelector(props: Props) {
         style={{ width: '35%' }}
         options={modelOptions}
         onChange={changeModel}
-        placeholder="Model"
+        placeholder={kailoT('modeling.model')}
         value={value?.model || modelValue}
         disabled={modelDisabled}
         showSearch
@@ -76,7 +77,7 @@ export default function CombineFieldSelector(props: Props) {
         className="flex-grow-1"
         options={fieldOptions}
         onChange={changeField}
-        placeholder="Field"
+        placeholder={kailoT('modeling.field')}
         value={value?.field || fieldValue}
         disabled={fieldDisabled}
         showSearch

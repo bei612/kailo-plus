@@ -238,3 +238,40 @@ export const ListIcon = icon(
 export const ChevronRightIcon = icon('chevron-right', <path d="m9 18 6-6-6-6" />);
 
 export const ChevronDownIcon = icon('chevron-down', <path d="m6 9 6 6 6-6" />);
+
+export const EyeIcon = icon(
+  'eye',
+  <>
+    <path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0" />
+    <circle cx="12" cy="12" r="3" />
+  </>,
+);
+
+export const EyeOffIcon = icon(
+  'eye-off',
+  <>
+    <path d="M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49" />
+    <path d="M14.084 14.158a3 3 0 0 1-4.242-4.242" />
+    <path d="M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143" />
+    <path d="m2 2 20 20" />
+  </>,
+);
+
+export const ColumnsIcon = icon(
+  'columns',
+  <>
+    <rect width="18" height="18" x="3" y="3" rx="2" />
+    <path d="M12 3v18" />
+  </>,
+);
+
+export const ListChecksIcon = icon(
+  'list-checks',
+  <>
+    <path d="m3 17 2 2 4-4" />
+    <path d="m3 7 2 2 4-4" />
+    <path d="M13 6h8" />
+    <path d="M13 12h8" />
+    <path d="M13 18h8" />
+  </>,
+);

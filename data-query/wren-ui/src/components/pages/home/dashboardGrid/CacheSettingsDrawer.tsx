@@ -1,5 +1,4 @@
 import { useEffect } from 'react';
-import { capitalize } from 'lodash';
 import { CronExpressionParser } from 'cron-parser';
 import moment from 'moment';
 import {
@@ -20,6 +19,7 @@ import { DrawerAction } from '@/hooks/useDrawerAction';
 import { ERROR_TEXTS } from '@/utils/error';
 import { isValidCronLength, cronValidator } from '@/utils/validator';
 import { CacheScheduleDayEnum } from '@/apollo/client/graphql/__types__';
+import { kailoT, KailoTextKey } from '@/utils/kailoI18n';
 
 type Props = DrawerAction & {
   loading?: boolean;
@@ -54,23 +54,31 @@ const DAY_OF_WEEK = [
   CacheScheduleDayEnum.SAT,
 ];
 
+const DAY_LABELS: Record<CacheScheduleDayEnum, KailoTextKey> = {
+  [CacheScheduleDayEnum.MON]: 'home.dayMonday',
+  [CacheScheduleDayEnum.TUE]: 'home.dayTuesday',
+  [CacheScheduleDayEnum.WED]: 'home.dayWednesday',
+  [CacheScheduleDayEnum.THU]: 'home.dayThursday',
+  [CacheScheduleDayEnum.FRI]: 'home.dayFriday',
+  [CacheScheduleDayEnum.SAT]: 'home.daySaturday',
+  [CacheScheduleDayEnum.SUN]: 'home.daySunday',
+};
+
 const getDayOfWeekText = (day: CacheScheduleDayEnum) => {
-  return (
-    {
-      [CacheScheduleDayEnum.MON]: 'Monday',
-      [CacheScheduleDayEnum.TUE]: 'Tuesday',
-      [CacheScheduleDayEnum.WED]: 'Wednesday',
-      [CacheScheduleDayEnum.THU]: 'Thursday',
-      [CacheScheduleDayEnum.FRI]: 'Friday',
-      [CacheScheduleDayEnum.SAT]: 'Saturday',
-      [CacheScheduleDayEnum.SUN]: 'Sunday',
-    }[day] || ''
-  );
+  return DAY_LABELS[day] ? kailoT(DAY_LABELS[day]) : '';
+};
+
+const FREQUENCY_LABELS: Record<string, KailoTextKey> = {
+  [FREQUENCY.DAILY]: 'home.frequencyDaily',
+  [FREQUENCY.WEEKLY]: 'home.frequencyWeekly',
+  [FREQUENCY.CUSTOM]: 'home.frequencyCustom',
+  [FREQUENCY.NEVER]: 'home.frequencyNever',
 };
 
 const getFrequencyText = (frequency: string) => {
-  if (frequency === FREQUENCY.NEVER) return 'Manual refresh only';
-  return capitalize(frequency);
+  return FREQUENCY_LABELS[frequency]
+    ? kailoT(FREQUENCY_LABELS[frequency])
+    : frequency;
 };
 
 const getInitialSchedule = (frequency: string) => {
@@ -125,17 +133,20 @@ export const getScheduleText = (schedule: Schedule): string => {
   switch (frequency) {
     case FREQUENCY.DAILY: {
       const time = convertTime(schedule);
-      return `Cache refreshes daily at ${time}`;
+      return kailoT('home.scheduleDaily', { time });
     }
     case FREQUENCY.WEEKLY: {
       const time = convertTime(schedule);
-      return `Cache refreshes every ${getDayOfWeekText(schedule.day as CacheScheduleDayEnum)} at ${time}`;
+      return kailoT('home.scheduleWeekly', {
+        day: getDayOfWeekText(schedule.day as CacheScheduleDayEnum),
+        time,
+      });
     }
     case FREQUENCY.CUSTOM: {
-      return `Cache refreshes on custom schedule`;
+      return kailoT('home.scheduleCustom');
     }
     case FREQUENCY.NEVER: {
-      return 'Cache refresh: manual only';
+      return kailoT('home.scheduleManual');
     }
     default: {
       return '';
@@ -245,8 +256,8 @@ export default function CacheSettingsDrawer(props: Props) {
   return (
     <Drawer
       visible={visible}
-      title="Cache settings"
-      width={410}
+      title={kailoT('home.cacheSettings')}
+      width={440}
       closable
       destroyOnClose
       maskClosable={false}
@@ -255,7 +266,7 @@ export default function CacheSettingsDrawer(props: Props) {
       footer={
         <Space className="d-flex justify-end">
           <Button onClick={onClose} disabled={loading}>
-            Cancel
+            {kailoT('cancel')}
           </Button>
           <Button
             type="primary"
@@ -263,17 +274,17 @@ export default function CacheSettingsDrawer(props: Props) {
             loading={loading}
             disabled={loading}
           >
-            Submit
+            {kailoT('home.save')}
           </Button>
         </Space>
       }
     >
       <Form form={form} layout="vertical">
         <Form.Item
-          label="Enable caching"
+          label={kailoT('home.enableCaching')}
           name="cacheEnabled"
           valuePropName="checked"
-          extra="Enable caching to speed up dashboard loading by reusing recent results. Choose a refresh schedule that fits your needs below."
+          extra={kailoT('home.enableCachingHint')}
         >
           <Switch />
         </Form.Item>
@@ -300,10 +311,15 @@ function Schedule() {
 
   return (
     <>
-      <Divider className="gray-6 text-sm">Refresh settings</Divider>
-      <Form.Item label="Frequency" name={['schedule', 'frequency']}>
+      <Divider className="gray-7 text-sm">
+        {kailoT('home.refreshSettings')}
+      </Divider>
+      <Form.Item
+        label={kailoT('home.frequency')}
+        name={['schedule', 'frequency']}
+      >
         <Select
-          placeholder="Select frequency"
+          placeholder={kailoT('home.selectFrequency')}
           options={Object.keys(FREQUENCY).map((key) => ({
             label: getFrequencyText(key),
             value: FREQUENCY[key],
@@ -316,11 +332,11 @@ function Schedule() {
       {frequency === FREQUENCY.WEEKLY && <WeeklyTimeSelection />}
       {frequency === FREQUENCY.CUSTOM && (
         <Form.Item
-          label="Cron expression"
+          label={kailoT('home.cronExpression')}
           name={['schedule', 'cron']}
           required={false}
           rules={[{ validator: cronValidator }]}
-          extra="Cron expression will be executed in UTC timezone (e.g. '0 0 * * *' for daily at midnight UTC)"
+          extra={kailoT('home.cronHint')}
         >
           <Input style={{ maxWidth: 200 }} placeholder="* * * * *" />
         </Form.Item>
@@ -328,7 +344,7 @@ function Schedule() {
 
       {nextSchedule && (
         <div className="gray-7">
-          Next scheduled refresh:
+          {kailoT('home.nextRefresh')}
           <div className="gray-8">
             {nextSchedule} {browserTimeZone && <span>({browserTimeZone})</span>}
           </div>
@@ -342,7 +358,7 @@ function DailyTimeSelection() {
   return (
     <>
       <Form.Item
-        label="Time"
+        label={kailoT('home.time')}
         name={['schedule', 'time']}
         required={false}
         rules={[
@@ -364,7 +380,7 @@ function WeeklyTimeSelection() {
       <Row gutter={16}>
         <Col>
           <Form.Item
-            label="Day"
+            label={kailoT('home.day')}
             name={['schedule', 'day']}
             required={false}
             rules={[
@@ -380,13 +396,13 @@ function WeeklyTimeSelection() {
                 label: getDayOfWeekText(value),
                 value,
               }))}
-              placeholder="Select day"
+              placeholder={kailoT('home.selectDay')}
             />
           </Form.Item>
         </Col>
         <Col>
           <Form.Item
-            label="Time"
+            label={kailoT('home.time')}
             name={['schedule', 'time']}
             required={false}
             rules={[

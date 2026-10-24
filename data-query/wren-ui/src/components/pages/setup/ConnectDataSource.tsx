@@ -3,15 +3,20 @@ import { Alert, Typography, Form, Row, Col, Button } from 'antd';
 import styled from 'styled-components';
 import { DATA_SOURCES } from '@/utils/enum/dataSources';
 import { getDataSource, getPostgresErrorMessage } from './utils';
+import useKailoText from '@/utils/kailoI18n';
+import useKailoSession from '@/hooks/useKailoSession';
 
 const StyledForm = styled(Form)`
-  border: 1px var(--gray-4) solid;
-  border-radius: 4px;
+  border: 1px var(--kailo-color-border) solid;
+  border-radius: 12px;
+  max-width: 720px;
 `;
 
 const DataSource = styled.div`
-  border: 1px var(--gray-4) solid;
-  border-radius: 4px;
+  border: 1px var(--kailo-color-border) solid;
+  border-radius: 8px;
+  background: var(--kailo-color-muted);
+  color: var(--kailo-color-foreground);
 `;
 
 interface Props {
@@ -26,6 +31,9 @@ export default function ConnectDataSource(props: Props) {
   const { connectError, dataSource, submitting, onNext, onBack } = props;
   const [form] = Form.useForm();
   const current = getDataSource(dataSource);
+  const t = useKailoText();
+  // Inside Kailo the step title is the page header (no second title).
+  const { hostPage } = useKailoSession();
 
   const submit = () => {
     form
@@ -40,13 +48,15 @@ export default function ConnectDataSource(props: Props) {
 
   return (
     <>
-      <Typography.Title level={1} className="mb-3">
-        Connect the data source
-      </Typography.Title>
+      {!hostPage && (
+        <Typography.Title level={2} className="mb-3">
+          {t('setup.connectDataSource')}
+        </Typography.Title>
+      )}
       <StyledForm form={form} layout="vertical" className="p-6 my-6">
         <Row align="middle" className="mb-6">
           <Col span={12}>
-            <DataSource className="d-inline-block px-4 py-2 bg-gray-2 gray-8">
+            <DataSource className="d-inline-block px-4 py-2">
               <Image
                 className="mr-2"
                 src={current.logo}
@@ -79,22 +89,20 @@ export default function ConnectDataSource(props: Props) {
         <Col span={12}>
           <Button
             onClick={onBack}
-            size="large"
-            className="adm-onboarding-btn"
+                        className="adm-onboarding-btn"
             disabled={submitting}
           >
-            Back
+            {t('setup.back')}
           </Button>
         </Col>
         <Col className="text-right" span={12}>
           <Button
             type="primary"
-            size="large"
-            onClick={submit}
+                        onClick={submit}
             loading={submitting}
             className="adm-onboarding-btn"
           >
-            Next
+            {t('setup.next')}
           </Button>
         </Col>
       </Row>

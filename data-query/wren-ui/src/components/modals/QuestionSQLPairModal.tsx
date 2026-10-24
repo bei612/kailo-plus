@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import styled from 'styled-components';
-import { Alert, Button, Form, Input, Modal, Typography, message } from 'antd';
+import { Alert, Button, Form, Input, Modal, Typography } from 'antd';
+import { notify } from '@/utils/kailoHost';
+import useKailoText from '@/utils/kailoI18n';
 import { Logo } from '@/components/Logo';
 import InfoCircleOutlined from '@ant-design/icons/InfoCircleOutlined';
 import SelectOutlined from '@ant-design/icons/SelectOutlined';
@@ -45,6 +47,7 @@ const StyledForm = styled(Form)`
 const Toolbar = (props: { dataSource: string; onClick: () => void }) => {
   const { dataSource, onClick } = props;
   const name = getDataSourceName(dataSource);
+  const t = useKailoText();
   return (
     <div className="d-flex justify-space-between align-center px-1">
       <span className="d-flex align-center gx-2">
@@ -53,7 +56,7 @@ const Toolbar = (props: { dataSource: string; onClick: () => void }) => {
       </span>
       <Button className="px-0" type="link" size="small" onClick={onClick}>
         <SelectOutlined />
-        Import from {name} SQL
+        {t('knowledge.importFromDataSource', { name })}
       </Button>
     </div>
   );
@@ -107,6 +110,7 @@ export default function QuestionSQLPairModal(props: Props) {
   const locale = useRouter().locale;
   const text = getQueryPreviewText(locale);
   const writeText = getNativeWriteText(locale);
+  const t = useKailoText();
 
   useEffect(() => {
     if (visible) {
@@ -142,7 +146,7 @@ export default function QuestionSQLPairModal(props: Props) {
       ...graphQLError,
       shortMessage:
         graphQLError?.code === 'INVALID_SQL_ERROR'
-          ? 'Invalid SQL syntax'
+          ? t('knowledge.invalidSqlSyntax')
           : graphQLError?.shortMessage || text.unknown,
     });
     console.error(graphQLError);
@@ -224,10 +228,12 @@ export default function QuestionSQLPairModal(props: Props) {
             },
           });
           setWriteUnknown(false);
-          message.success(
-            isCreateMode
-              ? 'Successfully created question-sql pair.'
-              : 'Successfully updated question-sql pair.',
+          notify.success(
+            t(
+              isCreateMode
+                ? 'knowledge.sqlPairCreated'
+                : 'knowledge.sqlPairUpdated',
+            ),
           );
           onClose();
         } catch (error) {
@@ -267,7 +273,9 @@ export default function QuestionSQLPairModal(props: Props) {
   return (
     <>
       <Modal
-        title={`${isCreateMode ? 'Add' : 'Update'} question-SQL pair`}
+        title={t(
+          isCreateMode ? 'addQuestionSqlPair' : 'knowledge.editSqlPair',
+        )}
         centered
         closable
         confirmLoading={confirmLoading}
@@ -288,21 +296,20 @@ export default function QuestionSQLPairModal(props: Props) {
               <InfoCircleOutlined className="mr-2 text-sm gray-7" />
               <Typography.Text
                 type="secondary"
-                className="text-sm gray-7 text-left"
+                className="text-sm text-left"
               >
-                The SQL statement used here follows the semantic-layer SQL
-                dialect, which is based on ANSI SQL.
+                {t('knowledge.sqlDialectHint')}
               </Typography.Text>
             </div>
             <div>
-              <Button onClick={onClose}>Cancel</Button>
+              <Button onClick={onClose}>{t('cancel')}</Button>
               <Button
                 type="primary"
                 onClick={onSubmitButton}
                 loading={confirmLoading}
                 disabled={previewSqlResult.loading}
               >
-                Submit
+                {t('knowledge.submit')}
               </Button>
             </div>
           </div>
@@ -316,9 +323,9 @@ export default function QuestionSQLPairModal(props: Props) {
                 className="d-flex justify-space-between"
                 style={{ width: '100%' }}
               >
-                <span>Question</span>
-                <div className="gray-8 text-sm">
-                  Let AI create a matching question for this SQL statement.
+                <span>{t('knowledge.question')}</span>
+                <div className="gray-7 text-sm">
+                  {t('knowledge.generateQuestionHint')}
                   <Button
                     className="ml-2"
                     size="small"
@@ -326,7 +333,9 @@ export default function QuestionSQLPairModal(props: Props) {
                     onClick={onGenerateQuestion}
                     disabled={disabled}
                   >
-                    <span className="text-sm">Generate question</span>
+                    <span className="text-sm">
+                      {t('knowledge.generateQuestion')}
+                    </span>
                   </Button>
                 </div>
               </div>
@@ -344,7 +353,7 @@ export default function QuestionSQLPairModal(props: Props) {
             <Input />
           </Form.Item>
           <Form.Item
-            label="SQL statement"
+            label={t('knowledge.sqlStatement')}
             name="sql"
             required
             rules={[
@@ -386,15 +395,15 @@ export default function QuestionSQLPairModal(props: Props) {
           <Alert type="warning" message={text.denied} />
         ) : null}
         <div className="my-3">
-          <Typography.Text className="d-block gray-7 mb-2">
-            Data preview (50 rows)
+          <Typography.Text type="secondary" className="d-block mb-2">
+            {t('knowledge.dataPreview50')}
           </Typography.Text>
           <Button
             onClick={onPreviewData}
             loading={previewing}
             disabled={disabled}
           >
-            Preview data
+            {text.preview}
           </Button>
           {showPreview && (
             <div className="my-3">

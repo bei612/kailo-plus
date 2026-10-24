@@ -9,7 +9,8 @@ import {
   useState,
 } from 'react';
 import { isEmpty } from 'lodash';
-import { Button, message } from 'antd';
+import { Button } from 'antd';
+import { notify } from '@/utils/kailoHost';
 import { ShareIcon } from '@/components/kailo/KailoIcons';
 import client from '@/apollo/client';
 import { LIST_VIEWS } from '@/apollo/client/graphql/view';
@@ -138,7 +139,7 @@ export default function HomeThread() {
     useUpdateThreadResponseMutation({
       onError: (error) => console.error(error),
       onCompleted: (data) => {
-        message.success('Successfully updated the SQL statement');
+        notify.success(t('home.sqlUpdated'));
         // trigger generate answer after sql statement updated
         onGenerateThreadResponseAnswer(data.updateThreadResponse.id);
       },
@@ -533,7 +534,7 @@ export default function HomeThread() {
                   },
                 }))
               ) {
-                message.warning(getQueryPreviewText(router.locale).unknown);
+                notify.warning(getQueryPreviewText(router.locale).unknown);
                 throw new Error('QUERY_EVIDENCE_UNAVAILABLE');
               }
               const completed = saveViewQuery.completedQuery();
@@ -569,7 +570,7 @@ export default function HomeThread() {
               );
             },
           });
-          message.success('Successfully created view.');
+          notify.success(t('home.viewCreated'));
         }}
       />
       <QuestionSQLPairModal

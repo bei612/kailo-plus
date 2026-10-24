@@ -1,4 +1,6 @@
-import { Layout, Result } from 'antd';
+import { Layout } from 'antd';
+import KailoEmpty from '@/components/kailo/KailoEmpty';
+import { SettingsIcon } from '@/components/kailo/KailoIcons';
 import { useRouter } from 'next/router';
 import HeaderBar from '@/components/HeaderBar';
 import PageLoading from '@/components/PageLoading';
@@ -37,10 +39,12 @@ export default function SimpleLayout(props: Props) {
       {!hostPage && <HeaderBar />}
       <Content className="adm-content">
         {blocked ? (
-          <Result
-            status="403"
+          // DD-152 (20 §13 空态): Kailo state, no upstream illustration.
+          <KailoEmpty
+            className="h-100"
+            icon={SettingsIcon}
             title={t('adminRequiredTitle')}
-            subTitle={
+            description={
               pathname.startsWith(Path.Onboarding)
                 ? t('adminRequiredOnboarding')
                 : t('adminOnly')

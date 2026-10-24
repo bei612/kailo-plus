@@ -2,6 +2,7 @@ import { Form, Input, Switch } from 'antd';
 import { ERROR_TEXTS } from '@/utils/error';
 import { FORM_MODE } from '@/utils/enum';
 import { hostValidator } from '@/utils/validator';
+import { kailoT } from '@/utils/kailoI18n';
 
 interface Props {
   mode?: FORM_MODE;
@@ -13,7 +14,7 @@ export default function PostgreSQLProperties(props: Props) {
   return (
     <>
       <Form.Item
-        label="Display name"
+        label={kailoT('setup.fieldDisplayName')}
         name="displayName"
         required
         rules={[
@@ -26,7 +27,7 @@ export default function PostgreSQLProperties(props: Props) {
         <Input />
       </Form.Item>
       <Form.Item
-        label="Host"
+        label={kailoT('setup.fieldHost')}
         name="host"
         required
         rules={[
@@ -39,7 +40,7 @@ export default function PostgreSQLProperties(props: Props) {
         <Input placeholder="10.1.1.1" disabled={isEditMode} />
       </Form.Item>
       <Form.Item
-        label="Port"
+        label={kailoT('setup.fieldPort')}
         name="port"
         required
         rules={[
@@ -52,7 +53,7 @@ export default function PostgreSQLProperties(props: Props) {
         <Input placeholder="5432" disabled={isEditMode} />
       </Form.Item>
       <Form.Item
-        label="Username"
+        label={kailoT('setup.fieldUsername')}
         name="user"
         rules={[
           {
@@ -64,7 +65,7 @@ export default function PostgreSQLProperties(props: Props) {
         <Input />
       </Form.Item>
       <Form.Item
-        label="Password"
+        label={kailoT('setup.fieldPassword')}
         name="password"
         required
         rules={[
@@ -74,10 +75,10 @@ export default function PostgreSQLProperties(props: Props) {
           },
         ]}
       >
-        <Input.Password placeholder="input password" />
+        <Input.Password placeholder={kailoT('setup.phPassword')} />
       </Form.Item>
       <Form.Item
-        label="Database name"
+        label={kailoT('setup.fieldDatabaseName')}
         name="database"
         required
         rules={[
@@ -87,9 +88,16 @@ export default function PostgreSQLProperties(props: Props) {
           },
         ]}
       >
-        <Input placeholder="PostgreSQL database name" disabled={isEditMode} />
+        <Input
+          placeholder={kailoT('setup.phPostgresDatabase')}
+          disabled={isEditMode}
+        />
       </Form.Item>
-      <Form.Item label="Use SSL" name="ssl" valuePropName="checked">
+      <Form.Item
+        label={kailoT('setup.fieldUseSsl')}
+        name="ssl"
+        valuePropName="checked"
+      >
         <Switch />
       </Form.Item>
     </>

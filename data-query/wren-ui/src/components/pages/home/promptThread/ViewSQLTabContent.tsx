@@ -2,19 +2,10 @@ import dynamic from 'next/dynamic';
 import Image from 'next/image';
 import { useEffect } from 'react';
 import styled from 'styled-components';
-import {
-  Alert,
-  Button,
-  Divider,
-  Empty,
-  message,
-  Space,
-  Switch,
-  Typography,
-} from 'antd';
+import { Alert, Button, Divider, Empty, Space, Switch, Typography } from 'antd';
 import CheckOutlined from '@ant-design/icons/CheckOutlined';
 import CloseOutlined from '@ant-design/icons/CloseOutlined';
-import CodeFilled from '@ant-design/icons/CodeFilled';
+import CodeOutlined from '@ant-design/icons/CodeOutlined';
 import { BinocularsIcon } from '@/utils/icons';
 import { nextTick } from '@/utils/time';
 import useNativeSQL from '@/hooks/useNativeSQL';
@@ -27,6 +18,8 @@ import { usePreviewDataMutation } from '@/apollo/client/graphql/home.generated';
 import useGovernedPreview from '@/hooks/useGovernedPreview';
 import { getQueryPreviewText } from '@/utils/language';
 import { useRouter } from 'next/router';
+import { notify } from '@/utils/kailoHost';
+import useKailoText from '@/utils/kailoI18n';
 
 const SQLCodeBlock = dynamic(() => import('@/components/code/SQLCodeBlock'), {
   ssr: false,
@@ -42,17 +35,18 @@ const StyledPre = styled.pre`
 `;
 
 const StyledToolBar = styled.div`
-  background-color: var(--gray-2);
-  height: 32px;
+  background-color: var(--kailo-color-canvas);
+  height: 36px;
   padding: 4px 8px;
-  border: 1px solid var(--gray-3);
-  border-radius: 4px 4px 0px 0px;
+  border: 1px solid var(--kailo-color-border);
+  border-radius: 8px 8px 0px 0px;
 `;
 
 export default function ViewSQLTabContent(props: AnswerResultProps) {
   const { isLastThreadResponse, onInitPreviewDone, threadResponse } = props;
   const { id, sql } = threadResponse;
   const text = getQueryPreviewText(useRouter().locale);
+  const t = useKailoText();
 
   const { onOpenAdjustSQLModal } = usePromptThreadStore();
   const { fetchNativeSQL, nativeSQLResult } = useNativeSQL(id);
@@ -104,17 +98,13 @@ export default function ViewSQLTabContent(props: AnswerResultProps) {
 
   const onCopy = () => {
     if (!nativeSQLResult.nativeSQLMode) {
-      message.success(
-        <>
-          You copied the semantic-layer SQL. This dialect may not run directly
-          on your database.
-          {hasNativeSQL && (
-            <>
-              {' '}
-              Click “<b>Show original SQL</b>” to get the executable version.
-            </>
-          )}
-        </>,
+      notify.success(
+        t('home.copiedSemanticSql'),
+        t(
+          hasNativeSQL
+            ? 'home.copiedSemanticSqlNative'
+            : 'home.copiedSemanticSqlHint',
+        ),
       );
     }
   };
@@ -124,13 +114,7 @@ export default function ViewSQLTabContent(props: AnswerResultProps) {
       <Alert
         banner
         className="mb-3 adm-alert-info"
-        message={
-          <>
-            You’re viewing the semantic-layer SQL by default. If you want to run
-            this query on your own database, click “Show original SQL” to get
-            the exact syntax.
-          </>
-        }
+        message={t('home.semanticSqlBanner')}
         type="info"
       />
       <StyledPre className="p-0 mb-3">
@@ -173,17 +157,17 @@ export default function ViewSQLTabContent(props: AnswerResultProps) {
                   loading={nativeSQLResult.loading}
                 />
                 <Text className="gray-8 text-medium text-base">
-                  Show original SQL
+                  {t('home.showOriginalSql')}
                 </Text>
               </div>
             )}
             <Button
               type="link"
-              icon={<CodeFilled />}
+              icon={<CodeOutlined />}
               size="small"
               onClick={() => onOpenAdjustSQLModal({ sql, responseId: id })}
             >
-              Adjust SQL
+              {t('home.adjustSql')}
             </Button>
           </Space>
         </StyledToolBar>
@@ -232,13 +216,15 @@ export default function ViewSQLTabContent(props: AnswerResultProps) {
                 emptyText: (
                   <Empty
                     image={Empty.PRESENTED_IMAGE_SIMPLE}
-                    description="Sorry, we couldn't find any records that match your search criteria."
+                    description={t('home.noMatchingRecords')}
                   />
                 ),
               }}
             />
             <div className="text-right">
-              <Text className="text-base gray-6">Showing up to 500 rows</Text>
+              <Text className="text-base gray-7">
+                {t('home.showingUpTo500')}
+              </Text>
             </div>
           </div>
         )}

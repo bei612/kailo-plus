@@ -11,6 +11,7 @@ import { getQueryPreviewText } from './utils/language';
 import { getNativeWriteText } from './utils/language';
 import errorHandler, { runNativeMetadataWrite } from './utils/errorHandler';
 import { message } from 'antd';
+import { kailoT, kailoText } from './utils/kailoI18n';
 import { webcrypto } from 'node:crypto';
 import SaveAsViewModal from './components/modals/SaveAsViewModal';
 import ModelDrawer from './components/pages/modeling/ModelDrawer';
@@ -169,6 +170,29 @@ jest.mock('./components/modals/ImportDataSourceSQLModal', () => ({
   default: () => null,
   isSupportSubstitute: () => false,
 }));
+// DD-152: results are announced through Kailo (kailoHost.notify); the
+// top-level fallback is not under test here, so notify forwards to the
+// mocked antd message the assertions below read.
+jest.mock('./utils/kailoHost', () => {
+  const forward =
+    (tone: 'success' | 'warning' | 'error' | 'info') =>
+    (...args: any[]) =>
+      jest
+        .requireMock('antd')
+        .message[tone](...args.filter((arg) => arg !== undefined));
+  return {
+    notify: {
+      success: forward('success'),
+      warning: forward('warning'),
+      error: forward('error'),
+      info: forward('warning'),
+    },
+    confirm: jest.fn(async () => true),
+    confirmDanger: jest.fn(async (_options: any, action: any) => action()),
+    setPage: jest.fn(),
+    hostRendersPage: () => false,
+  };
+});
 jest.mock('antd', () => {
   const React = jest.requireActual('react');
   const field = ({ children }: any) =>
@@ -192,7 +216,13 @@ jest.mock('antd', () => {
     Form,
     Modal: overlay,
     Drawer: (props: any) => {
-      if (props.title === 'API details') mockHistoryDrawer = props;
+      const { kailoText: text } = jest.requireActual('./utils/kailoI18n');
+      if (
+        ['zh-CN', 'en']
+          .map((locale) => text(locale, 'knowledge.apiDetails'))
+          .includes(props.title)
+      )
+        mockHistoryDrawer = props;
       return overlay(props);
     },
     Tag: (props: any) =>
@@ -3104,7 +3134,7 @@ describe('original native metadata create UNKNOWN and authorized read-back consu
       graphQLErrors: [{ message: 'native validation error' }],
       operation: { operationName: 'CreateView', getContext: () => ({}) },
     } as any);
-    expect(message.error).toHaveBeenCalledWith('Failed to create view.');
+    expect(message.error).toHaveBeenCalledWith(kailoT('setup.errCreateView'));
     expect(message.warning).not.toHaveBeenCalled();
   });
   it.each(['view', 'model'] as const)(
@@ -3256,7 +3286,7 @@ describe('original native metadata create UNKNOWN and authorized read-back consu
       await Promise.resolve();
       expect(close).toHaveBeenCalledTimes(1);
       expect(message.success).toHaveBeenCalledWith(
-        'Successfully created view.',
+        kailoText(mockLocale, 'home.viewCreated'),
       );
     });
     it('UNKNOWN leaves the original modal open and a later check retains the same query key before any native INSERT', async () => {

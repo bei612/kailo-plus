@@ -1,5 +1,4 @@
 import { useMemo, useRef } from 'react';
-import { message } from 'antd';
 import { Path } from '@/utils/enum';
 import { useRouter } from 'next/router';
 import SiderLayout from '@/components/layouts/SiderLayout';
@@ -12,6 +11,7 @@ import DashboardHeader from '@/components/pages/home/dashboardGrid/DashboardHead
 import { useKailoShare } from '@/components/kailo/KailoShare';
 import useKailoPage from '@/hooks/useKailoPage';
 import useKailoText from '@/utils/kailoI18n';
+import { notify } from '@/utils/kailoHost';
 import CacheSettingsDrawer, {
   Schedule,
 } from '@/components/pages/home/dashboardGrid/CacheSettingsDrawer';
@@ -56,7 +56,7 @@ export default function Dashboard() {
   } = useDashboardQuery({
     fetchPolicy: 'cache-and-network',
     onError: () => {
-      message.error('Failed to fetch dashboard items.');
+      notify.error(t('home.dashboardLoadFailed'));
       router.push(Path.Home);
     },
   });
@@ -68,20 +68,20 @@ export default function Dashboard() {
   const [setDashboardSchedule] = useSetDashboardScheduleMutation({
     refetchQueries: ['Dashboard'],
     onCompleted: () => {
-      message.success('Successfully updated dashboard schedule.');
+      notify.success(t('home.scheduleUpdated'));
     },
     onError: (error) => console.error(error),
   });
 
   const [updateDashboardItemLayouts] = useUpdateDashboardItemLayoutsMutation({
     onError: () => {
-      message.error('Failed to update dashboard item layouts.');
+      notify.error(t('home.layoutUpdateFailed'));
     },
   });
   const [deleteDashboardItem] = useDeleteDashboardItemMutation({
     onError: (error) => console.error(error),
     onCompleted: (_, query) => {
-      message.success('Successfully deleted dashboard item.');
+      notify.success(t('home.dashboardItemDeleted'));
       onRemoveDashboardItemFromQueryCache(query.variables.where.id);
     },
   });

@@ -87,6 +87,7 @@ export interface KailoPageSpec {
  */
 export default function useKailoPage(spec: KailoPageSpec) {
   const router = useRouter();
+  const pathname = router.pathname || '';
   const { isAdmin, loaded, hostPage } = useKailoSession();
   const latest = useRef(spec);
   latest.current = spec;
@@ -94,11 +95,11 @@ export default function useKailoPage(spec: KailoPageSpec) {
   const page = useMemo<KailoPage>(() => {
     const { tabs, activeTab } = pageTabs(
       router.locale,
-      router.pathname,
+      pathname,
       loaded && isAdmin,
     );
     const actions = [...(spec.actions || [])];
-    if (loaded && isAdmin && !router.pathname.startsWith(Path.Onboarding)) {
+    if (loaded && isAdmin && !pathname.startsWith(Path.Onboarding)) {
       actions.push({
         id: SETTINGS_ACTION,
         label: kailoText(router.locale, 'dataSourceSettings'),
@@ -107,7 +108,7 @@ export default function useKailoPage(spec: KailoPageSpec) {
       });
     }
     return {
-      title: spec.title.trim().slice(0, 120) || '—',
+      title: (spec.title || '').trim().slice(0, 120) || '—',
       breadcrumbs: (spec.breadcrumbs || []).slice(0, 8),
       tabs,
       ...(activeTab ? { activeTab } : {}),
@@ -115,7 +116,7 @@ export default function useKailoPage(spec: KailoPageSpec) {
     };
   }, [
     router.locale,
-    router.pathname,
+    pathname,
     loaded,
     isAdmin,
     spec.title,
@@ -151,7 +152,7 @@ export default function useKailoPage(spec: KailoPageSpec) {
       stopNavigate();
       stopAction();
     };
-  }, [router.pathname]);
+  }, [pathname]);
 
   return { hosted: hostPage };
 }

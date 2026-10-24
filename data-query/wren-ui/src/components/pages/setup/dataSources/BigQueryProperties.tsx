@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
-import { Form, Input, Button, Upload, UploadProps, message } from 'antd';
+import { Form, Input, Button, Upload, UploadProps } from 'antd';
+import { notify } from '@/utils/kailoHost';
 import UploadOutlined from '@ant-design/icons/UploadOutlined';
 import { ERROR_TEXTS } from '@/utils/error';
 import { FORM_MODE } from '@/utils/enum';
 import { readFileContent } from '@/utils/file';
+import { kailoT } from '@/utils/kailoI18n';
 
 interface Props {
   mode?: FORM_MODE;
@@ -33,8 +35,9 @@ const UploadCredentials = (props: {
         setFileList([uploadFile]);
       } catch (error) {
         console.error('Failed to handle file', error);
-        message.error(
-          'Failed to handle file. Please upload a valid credentials file.',
+        notify.error(
+          kailoT('setup.fileReadFailed'),
+          kailoT('setup.uploadValidCredentials'),
         );
       }
     }
@@ -53,7 +56,7 @@ const UploadCredentials = (props: {
       onRemove={onRemove}
       maxCount={1}
     >
-      <Button icon={<UploadOutlined />}>Click to upload JSON key file</Button>
+      <Button icon={<UploadOutlined />}>{kailoT('setup.uploadJsonKey')}</Button>
     </Upload>
   );
 };
@@ -65,7 +68,7 @@ export default function BigQueryProperties(props: Props) {
   return (
     <>
       <Form.Item
-        label="Display name"
+        label={kailoT('setup.fieldDisplayName')}
         required
         name="displayName"
         rules={[
@@ -75,10 +78,10 @@ export default function BigQueryProperties(props: Props) {
           },
         ]}
       >
-        <Input placeholder="Our BigQuery" />
+        <Input placeholder={kailoT('setup.phBigQueryDisplayName')} />
       </Form.Item>
       <Form.Item
-        label="Project ID"
+        label={kailoT('setup.fieldProjectId')}
         required
         name="projectId"
         rules={[
@@ -88,10 +91,13 @@ export default function BigQueryProperties(props: Props) {
           },
         ]}
       >
-        <Input placeholder="The GCP project ID" disabled={isEditMode} />
+        <Input
+          placeholder={kailoT('setup.phGcpProjectId')}
+          disabled={isEditMode}
+        />
       </Form.Item>
       <Form.Item
-        label="Dataset ID"
+        label={kailoT('setup.fieldDatasetId')}
         required
         name="datasetId"
         rules={[
@@ -104,7 +110,7 @@ export default function BigQueryProperties(props: Props) {
         <Input disabled={isEditMode} />
       </Form.Item>
       <Form.Item
-        label="Credentials"
+        label={kailoT('setup.fieldCredentials')}
         required={!isEditMode}
         name="credentials"
         rules={[

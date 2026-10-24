@@ -21,6 +21,7 @@ import useGovernedPreview from '@/hooks/useGovernedPreview';
 import { getQueryPreviewText } from '@/utils/language';
 import { useRouter } from 'next/router';
 import { queryReceiptState } from '@/utils/queryReceipt';
+import useKailoText from '@/utils/kailoI18n';
 
 const { Text } = Typography;
 
@@ -51,6 +52,7 @@ export default function TextBasedAnswer(props: AnswerResultProps) {
   const { isLastThreadResponse, onInitPreviewDone, threadResponse } = props;
   const { id } = threadResponse;
   const text = getQueryPreviewText(useRouter().locale);
+  const t = useKailoText();
   const answerQuery = queryReceiptState(threadResponse.queryReceipt);
   const answerUnknown =
     answerQuery.completed && !threadResponse.answerDetail?.queryId;
@@ -191,7 +193,7 @@ export default function TextBasedAnswer(props: AnswerResultProps) {
         icon={<EditOutlined />}
         onClick={(event) => event.stopPropagation()}
       >
-        Adjust the answer
+        {t('home.adjustAnswer')}
         <CaretDownOutlined
           className="ml-1"
           rotate={adjustResultsDropdown.visible ? 180 : 0}
@@ -241,17 +243,17 @@ export default function TextBasedAnswer(props: AnswerResultProps) {
         <div className="text-md gray-10 py-4 px-6">
           <div className="text-right mb-4">{adjustAnswerDropdown}</div>
           <MarkdownBlock content={textAnswer} />
-          {isStreaming && <LoadingOutlined className="geekblue-6" spin />}
+          {isStreaming && <LoadingOutlined className="kailo-text-brand" spin />}
           {status === ThreadResponseAnswerStatus.INTERRUPTED && (
             <div className="mt-2 text-right">
               <Button
                 icon={<ReloadOutlined />}
                 size="small"
                 type="link"
-                title="Regenerate answer"
+                title={t('home.regenerateAnswer')}
                 onClick={onRegenerateAnswer}
               >
-                Regenerate
+                {t('home.regenerate')}
               </Button>
             </div>
           )}
@@ -295,8 +297,7 @@ export default function TextBasedAnswer(props: AnswerResultProps) {
               >
                 {hasPreviewData && (
                   <Text type="secondary" className="text-sm">
-                    Considering the limit of the context window, we retrieve up
-                    to 500 rows of results to generate the answer.
+                    {t('home.previewRowsHint')}
                   </Text>
                 )}
                 <PreviewData
@@ -314,12 +315,7 @@ export default function TextBasedAnswer(props: AnswerResultProps) {
             <>
               {!isStreaming && (
                 <Alert
-                  message={
-                    <>
-                      Click <b>View SQL</b> to review the step-by-step query
-                      logic and verify why the data is unavailable.
-                    </>
-                  }
+                  message={t('home.noDataHint')}
                   type="info"
                 />
               )}

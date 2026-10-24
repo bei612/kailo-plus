@@ -9,6 +9,7 @@ import SQLEditor from '@/components/editor/SQLEditor';
 import ErrorCollapse from '@/components/ErrorCollapse';
 import { useModelSubstituteMutation } from '@/apollo/client/graphql/sql.generated';
 import { DataSource, DataSourceName } from '@/apollo/client/graphql/__types__';
+import useKailoText from '@/utils/kailoI18n';
 
 type Props = ModalAction<{ dataSource: DATA_SOURCES }>;
 
@@ -36,7 +37,9 @@ export const isSupportSubstitute = (dataSource: DataSource) => {
 
 export default function ImportDataSourceSQLModal(props: Props) {
   const { visible, defaultValue, onSubmit, onClose } = props;
-  const name = getDataSourceName(defaultValue?.dataSource) || 'data source';
+  const t = useKailoText();
+  const name =
+    getDataSourceName(defaultValue?.dataSource) || t('dataSource');
 
   // Handle errors via try/catch blocks rather than onError callback
   const [substituteDialectSQL, modelSubstitudeResult] =
@@ -47,7 +50,7 @@ export default function ImportDataSourceSQLModal(props: Props) {
       modelSubstitudeResult.error
         ? {
             ...parseGraphQLError(modelSubstitudeResult.error),
-            shortMessage: `Invalid ${name} SQL syntax`,
+            shortMessage: t('knowledge.invalidDialectSql', { name }),
           }
         : null,
     [modelSubstitudeResult.error],
@@ -77,7 +80,7 @@ export default function ImportDataSourceSQLModal(props: Props) {
 
   return (
     <Modal
-      title={`Import from ${name} SQL`}
+      title={t('knowledge.importFromDataSource', { name })}
       centered
       closable
       confirmLoading={loading}
@@ -85,16 +88,17 @@ export default function ImportDataSourceSQLModal(props: Props) {
       maskClosable={false}
       onCancel={onClose}
       onOk={submit}
-      okText="Convert"
+      okText={t('knowledge.convert')}
+      cancelText={t('cancel')}
       visible={visible}
-      width={600}
+      width={640}
       cancelButtonProps={{ disabled: loading }}
       afterClose={() => reset()}
     >
       <Form form={form} layout="vertical">
         <Form.Item
           name="dialectSql"
-          label="SQL statement"
+          label={t('knowledge.sqlStatement')}
           rules={[
             {
               required: true,

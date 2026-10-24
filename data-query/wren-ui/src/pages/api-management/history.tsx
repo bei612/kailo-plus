@@ -5,8 +5,7 @@ import useDrawerAction from '@/hooks/useDrawerAction';
 import { getColumnSearchProps } from '@/utils/table';
 import SiderLayout from '@/components/layouts/SiderLayout';
 import PageLayout from '@/components/layouts/PageLayout';
-import ApiOutlined from '@ant-design/icons/ApiOutlined';
-import EyeOutlined from '@ant-design/icons/EyeOutlined';
+import { EyeIcon } from '@/components/kailo/KailoIcons';
 import CheckCircleOutlined from '@ant-design/icons/CheckCircleOutlined';
 import CloseCircleOutlined from '@ant-design/icons/CloseCircleOutlined';
 import SQLCodeBlock from '@/components/code/SQLCodeBlock';
@@ -20,7 +19,9 @@ import { getUserConfig } from '@/utils/env';
 import { getApiHistoryText } from '@/utils/language';
 import { useRouter } from 'next/router';
 import KailoUser from '@/components/kailo/KailoUser';
-import { kailoText } from '@/utils/kailoI18n';
+import useKailoText, { kailoText } from '@/utils/kailoI18n';
+import { apiTypeLabel } from '@/components/pages/apiManagement/apiTypeLabel';
+import KailoEmpty from '@/components/kailo/KailoEmpty';
 import useKailoPage from '@/hooks/useKailoPage';
 
 const PAGE_SIZE = 10;
@@ -60,6 +61,7 @@ export default function APIHistory() {
   const activeHistoryId = useRef<string>();
   const { locale } = useRouter();
   const text = getApiHistoryText(locale);
+  const t = useKailoText();
   const [readPage] = useApiHistoryLazyQuery({ fetchPolicy: 'no-cache' });
   const [readHistory] = useApiHistoryLazyQuery({ fetchPolicy: 'no-cache' });
 
@@ -215,7 +217,7 @@ export default function APIHistory() {
 
   const columns: TableColumnsType<ApiHistoryResponse> = [
     {
-      title: 'Timestamp',
+      title: t('knowledge.timestamp'),
       dataIndex: 'createdAt',
       key: 'createdAt',
       width: 180,
@@ -224,22 +226,22 @@ export default function APIHistory() {
       ),
     },
     {
-      title: 'API type',
+      title: t('knowledge.apiType'),
       dataIndex: 'apiType',
       key: 'apiType',
       width: 180,
       render: (type: ApiHistoryResponse['apiType']) => (
-        <Tag className="gray-8">{type.toLowerCase()}</Tag>
+        <Tag>{apiTypeLabel(locale, type)}</Tag>
       ),
       filters: Object.keys(ApiType).map((type) => ({
-        text: type.toLowerCase(),
+        text: apiTypeLabel(locale, ApiType[type]),
         value: type,
       })),
       filteredValue: filters['apiType'],
       filterMultiple: false,
     },
     {
-      title: 'Status',
+      title: t('knowledge.status'),
       dataIndex: 'statusCode',
       key: 'statusCode',
       width: 100,
@@ -259,15 +261,15 @@ export default function APIHistory() {
         );
       },
       filters: [
-        { text: 'Successful (code: 2xx)', value: 200 },
-        { text: 'Client error (code: 4xx)', value: 400 },
-        { text: 'Server error (code: 5xx)', value: 500 },
+        { text: t('knowledge.status2xx'), value: 200 },
+        { text: t('knowledge.status4xx'), value: 400 },
+        { text: t('knowledge.status5xx'), value: 500 },
       ],
       filteredValue: filters['statusCode'],
       filterMultiple: false,
     },
     {
-      title: 'Question / SQL',
+      title: t('knowledge.questionOrSql'),
       dataIndex: 'requestPayload',
       key: 'requestPayload',
       render: (payload: Record<string, any>, record: ApiHistoryResponse) => {
@@ -279,14 +281,14 @@ export default function APIHistory() {
           );
         }
         return (
-          <div className="gray-8">
+          <div>
             {payload?.question || payload?.sql || '-'}
           </div>
         );
       },
     },
     {
-      title: 'Thread ID',
+      title: t('knowledge.threadId'),
       dataIndex: 'threadId',
       key: 'threadId',
       width: 200,
@@ -304,7 +306,7 @@ export default function APIHistory() {
       },
       ...getColumnSearchProps({
         dataIndex: 'threadId',
-        placeholder: 'thread ID',
+        placeholder: t('knowledge.searchThreadId'),
         filteredValue: filters['threadId'],
       }),
     },
@@ -320,7 +322,7 @@ export default function APIHistory() {
       ),
     },
     {
-      title: 'Duration (ms)',
+      title: t('knowledge.durationMs'),
       dataIndex: 'durationMs',
       key: 'durationMs',
       width: 124,
@@ -329,19 +331,19 @@ export default function APIHistory() {
       ),
     },
     {
-      title: 'Actions',
+      title: t('knowledge.actions'),
       key: 'actions',
       width: 110,
       align: 'center',
       fixed: 'right',
       render: (record) => (
         <Button
-          className="gray-8"
           type="text"
           size="small"
+          icon={<EyeIcon className="mr-1" />}
           onClick={() => readSelectedHistory(record.id)}
         >
-          <EyeOutlined /> Details
+          {t('knowledge.details')}
         </Button>
       ),
     },
@@ -356,26 +358,21 @@ export default function APIHistory() {
   return (
     <SiderLayout loading={false} sidebar={null}>
       <PageLayout
-        title={
-          <>
-            <ApiOutlined className="mr-2 gray-8" />
-            API history
-          </>
-        }
-        description={
-          <>
-            <div>
-              Here you can view the full history of API calls, including request
-              inputs, responses, and execution details.
-            </div>
-          </>
-        }
+        title={kailoText(locale, 'apiHistory')}
+        description={t('knowledge.apiHistoryDescription')}
       >
         <Table
           className="ant-table-has-header"
           dataSource={page?.items || []}
           loading={loading || observing}
-          locale={pageError ? { emptyText: pageError } : undefined}
+          locale={{
+            emptyText: pageError || (
+              <KailoEmpty
+                title={t('knowledge.apiHistoryEmptyTitle')}
+                description={t('knowledge.apiHistoryEmptyDescription')}
+              />
+            ),
+          }}
           columns={columns}
           rowKey="id"
           pagination={{

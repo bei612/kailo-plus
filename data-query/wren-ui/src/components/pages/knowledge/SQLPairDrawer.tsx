@@ -3,27 +3,36 @@ import { getCompactTime } from '@/utils/time';
 import { DrawerAction } from '@/hooks/useDrawerAction';
 import SQLCodeBlock from '@/components/code/SQLCodeBlock';
 import { SqlPair } from '@/apollo/client/graphql/__types__';
+import useKailoText from '@/utils/kailoI18n';
+
+const { Text } = Typography;
 
 type Props = DrawerAction<SqlPair>;
 
+// DD-152 (20 §13 抽屉): from the right, 480 wide, Kailo wording.
 export default function SQLPairDrawer(props: Props) {
   const { visible, defaultValue, onClose } = props;
+  const t = useKailoText();
 
   return (
     <Drawer
       closable
       destroyOnClose
       onClose={onClose}
-      title="View question-SQL pair"
+      title={t('knowledge.viewSqlPair')}
       visible={visible}
-      width={760}
+      width={480}
     >
       <div className="mb-6">
-        <Typography.Text className="gray-7 mb-2">Question</Typography.Text>
+        <Text type="secondary" className="d-block mb-2">
+          {t('knowledge.question')}
+        </Text>
         <div>{defaultValue?.question || '-'}</div>
       </div>
       <div className="mb-6">
-        <Typography.Text className="gray-7 mb-2">SQL statement</Typography.Text>
+        <Text type="secondary" className="d-block mb-2">
+          {t('knowledge.sqlStatement')}
+        </Text>
         <SQLCodeBlock
           code={defaultValue?.sql || ''}
           showLineNumbers
@@ -31,7 +40,9 @@ export default function SQLPairDrawer(props: Props) {
         />
       </div>
       <div className="mb-6">
-        <Typography.Text className="gray-7 mb-2">Created time</Typography.Text>
+        <Text type="secondary" className="d-block mb-2">
+          {t('knowledge.createdTime')}
+        </Text>
         <div>
           {defaultValue?.createdAt
             ? getCompactTime(defaultValue.createdAt)

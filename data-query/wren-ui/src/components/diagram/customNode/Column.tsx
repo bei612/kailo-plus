@@ -1,6 +1,7 @@
 import React from 'react';
 import styled from 'styled-components';
 import MarkerHandle from '@/components/diagram/customNode/MarkerHandle';
+import useKailoText from '@/utils/kailoI18n';
 
 const NodeColumn = styled.div`
   position: relative;
@@ -8,15 +9,20 @@ const NodeColumn = styled.div`
   align-items: center;
   justify-content: space-between;
   padding: 4px 8px;
-  color: var(--gray-9);
+  color: var(--kailo-color-foreground);
+  font-size: 13px;
   line-height: 24px;
 
   &:hover {
-    background-color: var(--gray-3);
+    background-color: var(--kailo-color-hover);
   }
 
   svg {
     flex-shrink: 0;
+  }
+
+  .kailo-node-action {
+    color: var(--kailo-color-muted-foreground);
   }
 
   .adm-column-title {
@@ -25,6 +31,7 @@ const NodeColumn = styled.div`
     min-width: 1px;
     svg {
       margin-right: 6px;
+      color: var(--kailo-color-muted-foreground);
     }
     > span {
       white-space: nowrap;
@@ -34,13 +41,24 @@ const NodeColumn = styled.div`
   }
 `;
 
+// Section label: Overline 11/14 600 0.04em, muted.
 const Title = styled.div`
   display: flex;
   justify-content: space-between;
   align-items: center;
-  color: var(--gray-8);
-  padding: 4px 12px;
+  min-height: 28px;
+  color: var(--kailo-color-muted-foreground);
+  font-size: 11px;
+  line-height: 14px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 6px 8px 2px;
   cursor: default;
+
+  .kailo-node-action {
+    color: var(--kailo-color-muted-foreground);
+  }
 `;
 
 type ColumnProps = {
@@ -93,7 +111,15 @@ export default function Column(props: ColumnProps) {
 }
 
 const MoreColumnTip = (props: { count: number }) => {
-  return <div className="text-sm gray-7 px-3 py-1">and {props.count} more</div>;
+  const t = useKailoText();
+  return (
+    <div
+      className="text-sm px-2 py-1"
+      style={{ color: 'var(--kailo-color-muted-foreground)' }}
+    >
+      {t('modeling.moreColumns', { count: props.count })}
+    </div>
+  );
 };
 
 const ColumnTitle = (props: ColumnTitleProps) => {

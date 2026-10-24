@@ -12,7 +12,8 @@ import {
   pendingLocale,
   presentation,
 } from '@/utils/kailoEmbed';
-import { kailoProductTitle } from '@/utils/kailoI18n';
+import { kailoProductTitle, kailoText } from '@/utils/kailoI18n';
+import KailoEmpty from '@/components/kailo/KailoEmpty';
 import { hostRendersPage } from '@/utils/kailoHost';
 
 // DD-133: the Kailo user, derived role, presentation (theme/locale/embedding,
@@ -121,7 +122,21 @@ export function KailoSessionProvider({ children, displayName }: Props) {
       <Head>
         <title>{kailoProductTitle(router.locale, value.productName)}</title>
       </Head>
-      <ConfigProvider locale={router.locale === 'en' ? enUS : zhCN}>
+      <ConfigProvider
+        locale={router.locale === 'en' ? enUS : zhCN}
+        renderEmpty={(componentName) => (
+          // DD-152 (20 §13 空态): Kailo empty state instead of antd's
+          // illustration; compact inside selects and pickers.
+          <KailoEmpty
+            className={
+              componentName === 'Table' || componentName === 'List'
+                ? undefined
+                : 'kailo-empty--compact'
+            }
+            title={kailoText(router.locale, 'noData')}
+          />
+        )}
+      >
         {children}
       </ConfigProvider>
     </KailoSessionContext.Provider>

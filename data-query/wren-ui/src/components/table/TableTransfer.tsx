@@ -4,6 +4,7 @@ import { Table, Transfer, Tag } from 'antd';
 import difference from 'lodash/difference';
 import { TransferItem, TransferProps } from 'antd/es/transfer';
 import { ColumnsType, TableRowSelection } from 'antd/es/table/interface';
+import { kailoT } from '@/utils/kailoI18n';
 
 const StyledTable = styled(Table)`
   .ant-table-row {
@@ -11,9 +12,9 @@ const StyledTable = styled(Table)`
   }
   .ant-table-row-disabled {
     cursor: not-allowed;
-    color: var(--gray-5);
+    color: var(--kailo-color-text-disabled);
     .ant-tag {
-      color: var(--gray-5);
+      color: var(--kailo-color-text-disabled);
     }
   }
 `;
@@ -22,11 +23,15 @@ const StyledTable = styled(Table)`
 export const defaultColumns = [
   {
     dataIndex: 'name',
-    title: 'Column Name',
+    get title() {
+      return kailoT('modeling.columnName');
+    },
   },
   {
     dataIndex: 'type',
-    title: 'Column Type',
+    get title() {
+      return kailoT('modeling.columnType');
+    },
     render: (type: string) => <Tag>{type.toUpperCase()}</Tag>,
   },
 ];

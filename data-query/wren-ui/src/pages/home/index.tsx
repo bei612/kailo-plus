@@ -28,7 +28,7 @@ const Wrapper = ({ children }) => {
       style={{ height: '100%' }}
     >
       <Logo size={48} />
-      <div className="text-md text-medium gray-8 mt-3">{t('askAboutData')}</div>
+      <div className="kailo-empty__title mt-3">{t('askAboutData')}</div>
       {children}
     </div>
   );
@@ -47,6 +47,7 @@ function RecommendedQuestionsInstruction(props) {
   // DD-133 §3: generating the project's recommended questions writes project
   // state (Core `manage` / Kailo Tenant admin); members ask directly.
   const { isAdmin } = useKailoSession();
+  const t = useKailoText();
 
   return showRecommendedQuestionsPromptMode ? (
     <div
@@ -64,15 +65,13 @@ function RecommendedQuestionsInstruction(props) {
     <Wrapper>
       {isAdmin && <Button className="mt-6" {...buttonProps} />}
       {generating && (
-        <Text className="mt-3 text-sm gray-6">
-          Thinking of good questions for you... (about 1 minute)
+        <Text className="mt-3 text-sm gray-7">
+          {t('home.generatingQuestions')}
         </Text>
       )}
       {!generating && showRetry && (
-        <Text className="mt-3 text-sm gray-6 text-center">
-          We couldn't think of questions right now.
-          <br />
-          Let's try again later.
+        <Text className="mt-3 text-sm gray-7 text-center">
+          {t('home.questionsUnavailable')}
         </Text>
       )}
     </Wrapper>

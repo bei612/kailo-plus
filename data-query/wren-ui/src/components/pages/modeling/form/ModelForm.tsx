@@ -5,6 +5,7 @@ import { isEmpty } from 'lodash';
 import { FORM_MODE } from '@/utils/enum';
 import { DiagramModelField } from '@/utils/data';
 import { ERROR_TEXTS } from '@/utils/error';
+import useKailoText from '@/utils/kailoI18n';
 import { DrawerAction } from '@/hooks/useDrawerAction';
 import { Loading } from '@/components/PageLoading';
 import TableTransfer, {
@@ -39,6 +40,7 @@ const primaryKeyValidator =
 
 export default function ModelForm(props: Props) {
   const { defaultValue, form, formMode } = props;
+  const t = useKailoText();
 
   const [selectedColumns, setSelectedColumns] = useState<string[]>([]);
   const [sourceTableName, setSourceTableName] = useState<string>(undefined);
@@ -140,7 +142,7 @@ export default function ModelForm(props: Props) {
         {!isUpdateMode && (
           <div>
             <Form.Item
-              label="Select a table"
+              label={t('modeling.selectTable')}
               name={FormFieldKey.SOURCE_TABLE}
               required
               rules={[
@@ -152,7 +154,7 @@ export default function ModelForm(props: Props) {
             >
               <Select
                 getPopupContainer={(trigger) => trigger.parentElement!}
-                placeholder="Select a table"
+                placeholder={t('modeling.selectTable')}
                 showSearch
                 loading={dataSourceTablesLoading}
                 disabled={isUpdateMode}
@@ -164,7 +166,7 @@ export default function ModelForm(props: Props) {
         )}
         <Loading spinning={isUpdateMode ? dataSourceTablesLoading : false}>
           <Form.Item
-            label="Select columns"
+            label={t('modeling.selectColumns')}
             name={FormFieldKey.COLUMNS}
             rules={[
               {
@@ -184,13 +186,13 @@ export default function ModelForm(props: Props) {
               }
               leftColumns={defaultColumns}
               rightColumns={defaultColumns}
-              titles={['Available Columns', 'Target Columns']}
+              titles={[t('modeling.availableColumns'), t('modeling.targetColumns')]}
               showSearch
             />
           </Form.Item>
         </Loading>
         <Form.Item
-          label="Select primary key"
+          label={t('modeling.selectPrimaryKey')}
           name={FormFieldKey.PRIMARY_KEY}
           rules={[
             {
@@ -200,7 +202,7 @@ export default function ModelForm(props: Props) {
         >
           <Select
             getPopupContainer={(trigger) => trigger.parentElement!}
-            placeholder="Select a column"
+            placeholder={t('modeling.selectColumn')}
             showSearch
             allowClear
           >
