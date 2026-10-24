@@ -268,6 +268,11 @@
   border-color: transparent;
 }
 
+// Full-width text buttons are list rows (settings menu): start-aligned.
+.ant-btn-text.ant-btn-block {
+  justify-content: flex-start;
+}
+
 // Icon buttons: 32×32 (sm 28), radius 8, icon text-muted; hover text.
 .ant-btn-icon-only,
 .kailo-icon-button.ant-btn {
@@ -440,6 +445,11 @@ input.ant-input,
     left: 2px;
     width: 14px;
     height: 14px;
+  }
+
+  // Kailo switches carry no glyphs in the track.
+  .ant-switch-inner {
+    display: none;
   }
 
   &.ant-switch-checked {
@@ -1384,4 +1394,47 @@ h5.ant-typography {
   line-height: 20px;
   background: var(--kailo-color-muted);
   color: var(--kailo-color-text-secondary);
+}
+
+// 20. List pane rows: title shrinks with an ellipsis, trailing marks
+//     (owner avatar, more) stay on the row.
+.ant-tree-title > .adm-treeTitle__title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ant-tree-title > .adm-actionIcon {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+// 21. Detail drawers (400–480): compact tables so names stay readable.
+.ant-drawer .ant-table {
+  font-size: 13px;
+
+  .ant-table-thead > tr > th,
+  .ant-table-tbody > tr > td {
+    padding: 8px;
+  }
+}
+
+// 22. Code editor (ace) in dark: no light active-line band.
+:root[data-kailo-theme='dark'] {
+  .ace_editor .ace_marker-layer .ace_active-line,
+  .ace_editor .ace_gutter-active-line {
+    background: var(--kailo-color-hover);
+  }
+
+  .ace_editor .ace_marker-layer .ace_selection {
+    background: color-mix(in srgb, var(--kailo-color-brand) 35%, transparent);
+  }
+
+  .ace_editor .ace_cursor {
+    color: var(--kailo-color-foreground);
+  }
 }

@@ -124,15 +124,14 @@ export function KailoSessionProvider({ children, displayName }: Props) {
       </Head>
       <ConfigProvider
         locale={router.locale === 'en' ? enUS : zhCN}
-        renderEmpty={(componentName) => (
-          // DD-152 (20 §13 空态): Kailo empty state instead of antd's
-          // illustration; compact inside selects and pickers.
+        // Kailo buttons keep their label as written ("取消", not "取 消").
+        autoInsertSpaceInButton={false}
+        renderEmpty={() => (
+          // DD-152 (20 §13 空态): no antd illustration. Lists and tables
+          // inside a page show a quiet line; page-level empty states use
+          // KailoEmpty with an illustration and action themselves.
           <KailoEmpty
-            className={
-              componentName === 'Table' || componentName === 'List'
-                ? undefined
-                : 'kailo-empty--compact'
-            }
+            className="kailo-empty--compact"
             title={kailoText(router.locale, 'noData')}
           />
         )}
