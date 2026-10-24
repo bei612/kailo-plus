@@ -683,8 +683,24 @@ def file_storage(r, args, runtime_env, declaration):
 DRIVERS = {"file-storage": file_storage}
 
 
+def driver(component):
+    """Built-in driver, or conformance/auto_<component>.py whose drive(r, args, runtime_env, declaration, h)
+    receives this module as h (shared helpers); each returns the staged candidate files and records
+    "network" (the run's dedicated network) and "artifactDigest"."""
+    if component in DRIVERS:
+        return DRIVERS[component]
+    import importlib.util
+    path = Path(__file__).resolve().parent / "conformance" / f"auto_{component.replace('-', '_')}.py"
+    require(path.is_file(), f"{component}: no unattended driver")
+    spec = importlib.util.spec_from_file_location(f"auto_{component.replace('-', '_')}", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    helpers = sys.modules[__name__]
+    return lambda r, args, runtime_env, declaration: module.drive(r, args, runtime_env, declaration, helpers)
+
+
 def cmd_run(args):
-    require(args.component in DRIVERS, f"{args.component}: no unattended driver")
+    drive = driver(args.component)
     require(re.fullmatch(r"[0-9a-f]{40}", args.commit), "--commit must be a full commit")
     source = Path(args.source).resolve()
     require((source / "tools/component-release/conformance-run.sh").is_file(), "--source is not a release tree")
@@ -702,7 +718,7 @@ def cmd_run(args):
                  nodeImage=node_image(source), state="RUNNING")
     say("run", component=args.component, run=str(r.dir))
     try:
-        staged = DRIVERS[args.component](r, args, runtime_env, declaration)
+        staged = drive(r, args, runtime_env, declaration)
         if args.no_install:
             r.record(state="INPUTS_READY")
             say("done", state="INPUTS_READY", run=str(r.dir))
