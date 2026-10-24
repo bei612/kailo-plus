@@ -10,6 +10,19 @@
   },
   "data-query": {
     "registry": "127.0.0.1:55000",
-    "nativePageOrigin": "http://192.168.0.193:58095"
+    "nativePageOrigin": "http://192.168.0.193:58095",
+    "conformanceModels": {
+      "$comment": "07 §8A/§8.3: the isolated Wren AI service uses these actually discovered, keyless upstream model services (the same upstreams the platform AgentGateway model sources serve); no platform key is delivered to the isolated instance",
+      "chat": {
+        "model": "qwen",
+        "apiBase": "https://vision-27b-uat.geniusafc.com/v1",
+        "contextWindow": 32768
+      },
+      "embedding": {
+        "model": "Qwen3-Embedding-4B",
+        "apiBase": "http://10.33.33.120/v1",
+        "dimension": 2560
+      }
+    }
   }
 }
