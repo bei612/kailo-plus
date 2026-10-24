@@ -43,7 +43,7 @@ export function tokenColor(value) {
             return color
         }
         return Color(v)
-    } catch (e) {
+    } catch {
         return null
     }
 }

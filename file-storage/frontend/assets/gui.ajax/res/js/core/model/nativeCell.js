@@ -64,7 +64,7 @@ export default async function nativeCell(pydio, request, api) {
             return null;
         }
         return unknown();
-    } catch (error) {
+    } catch {
         return unknown();
     }
 }
