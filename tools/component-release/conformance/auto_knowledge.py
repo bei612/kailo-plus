@@ -15,9 +15,10 @@ deployment facts and run-local secrets, stage by stage, without an operator:
              0600 account file only); receiver-run.sh contracts
 
 Later stages (native, bootstrap, seed, inputs, driver) need the isolated platform's own
-ActionToken identity, a governed model route for the PLATFORM_LLM_ROUTE receiver binding and the
-source Cells instance; they are listed in `blocked_after_contracts` with the reason, so a run stops
-there with an explicit state instead of an operator step.
+ActionToken identity, a governed model route with a real provider for the PLATFORM_LLM_ROUTE receiver
+binding (no design source for an isolated provider credential yet) and the source Cells instance; a
+run records them in auto-state.json (blockedAfterContracts) and stops there with an explicit FAILED
+state instead of an operator step.
 
 Nothing here touches production state; production is only read (its .env keys, its running
 Core/Worker image digests and the release-proof store).
@@ -214,13 +215,17 @@ def drive(r, args, runtime_env, declaration, h):
         ensure_approver(h, r)
         receiver(h, r, "contracts")
     r.record(blockedAfterContracts=(
-        "native/bootstrap/seed/inputs/driver need: the isolated platform's own ActionToken signing identity "
-        "(start-core.sh --prepare-action-token in the isolated runtime), a governed PLATFORM_LLM_ROUTE model route "
-        "for the receiver binding (receiver_environment_bootstrap requires modelCallMode PLATFORM_LLM_ROUTE), the "
-        "source Cells instance of cells@2.0.0 with its native-action delivery, and the WeKnora candidate with "
-        "--platform-adapter --file-storage-sync; not automated yet"))
-    raise h.Refused("knowledge: isolated platform and contracts ready; later receiver stages are not automated yet "
-                    f"(manifest {manifest['componentTypeKey']}@{manifest['version']})")
+        "native/bootstrap/seed/inputs/driver: (1) the receiver binding must be PLATFORM_LLM_ROUTE "
+        "(receiver_environment_bootstrap prepare) and WeKnora parse completion needs a real embedding/LLM "
+        "route, but the isolated platform has no model provider credential and the design does not say where "
+        "an isolated deployment's provider credential comes from (07 §8A/§8.3 only allow explicitly delivered, "
+        "actually discovered model services); (2) the isolated Core needs its own ActionToken identity "
+        "(start-core.sh --prepare-action-token in the isolated runtime) before it can dispatch receiver actions; "
+        "(3) the source Cells (cells@2.0.0) and the WeKnora candidate deliveries must be rendered from the "
+        "bootstrap identities fixed in advance; (4) production registration additionally needs cells@2.0.0 "
+        "APPROVED in the production Catalog (receiverEnvironment.sourceReleaseId)"))
+    raise h.Refused("knowledge: isolated platform and contracts ready; native and later receiver stages are blocked "
+                    f"(see auto-state.json blockedAfterContracts; manifest {manifest['componentTypeKey']}@{manifest['version']})")
 
 
 def teardown(r, h):
