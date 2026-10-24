@@ -26,7 +26,7 @@ failed stage stops the run and leaves everything for inspection, a new run
 uses a new directory.
 
   conformance-auto.py run <component> --source <release tree apps/> --commit <40-hex>
-        --runtime <KAILO_RUNTIME_DIR> [--run-root DIR] [--no-install]
+        --runtime <KAILO_RUNTIME_DIR> [--run-root DIR] [--no-install | --no-window]
   conformance-auto.py close <run dir> --runtime <KAILO_RUNTIME_DIR>
   conformance-auto.py status <run dir>
 
@@ -711,15 +711,12 @@ def cmd_run(args):
     declarations = read_json(source / "deploy/components/adapters.json")
     declaration = declarations[args.component]
     runtime_env = runtime_facts(args.runtime)
-    if args.resume:
-        r = Run(args.resume)
-        require(r.state.get("component") == args.component, "--resume names another component's run")
-        r.record(source=str(source), commit=args.commit, state="RUNNING")
-    else:
-        root = private_dir(args.run_root)
-        r = Run(private_dir(root / f"{args.component}-{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}-{secrets.token_hex(3)}"))
-        r.record(component=args.component, source=str(source), commit=args.commit, runtime=str(Path(args.runtime).resolve()),
-                 nodeImage=node_image(source), state="RUNNING")
+    # DD-136(5): every run starts a fresh isolated environment in a new directory; a failed
+    # stage is investigated, never continued.
+    root = private_dir(args.run_root)
+    r = Run(private_dir(root / f"{args.component}-{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}-{secrets.token_hex(3)}"))
+    r.record(component=args.component, source=str(source), commit=args.commit, runtime=str(Path(args.runtime).resolve()),
+             nodeImage=node_image(source), state="RUNNING")
     say("run", component=args.component, run=str(r.dir))
     try:
         staged = drive(r, args, runtime_env, declaration)
@@ -728,6 +725,10 @@ def cmd_run(args):
             say("done", state="INPUTS_READY", run=str(r.dir))
             return
         install_candidate(r, runtime_env, staged)
+        if args.no_window:
+            r.record(state="CANDIDATE_INSTALLED_NO_WINDOW")
+            say("done", state="CANDIDATE_INSTALLED_NO_WINDOW", artifactDigest=r.state["artifactDigest"], run=str(r.dir))
+            return
         attach_worker(r, r.state["network"])
         r.record(state="CANDIDATE_INSTALLED")
         say("done", state="CANDIDATE_INSTALLED", artifactDigest=r.state["artifactDigest"], run=str(r.dir))
@@ -806,8 +807,8 @@ def main():
     p.add_argument("--commit", required=True)
     p.add_argument("--runtime", required=True)
     p.add_argument("--run-root", default=RUN_ROOT)
-    p.add_argument("--resume", help="continue a run directory whose last stage failed after the cause was fixed")
     p.add_argument("--no-install", action="store_true", help="stop after the inputs (no candidate, no Worker window)")
+    p.add_argument("--no-window", action="store_true", help="install the candidate but do not attach the Worker")
     c = sub.add_parser("close")
     c.add_argument("run")
     c.add_argument("--runtime", required=True)
