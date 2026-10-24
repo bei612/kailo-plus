@@ -242,9 +242,9 @@ def cmd_plan(ctx):
 
 
 def cmd_deliver(ctx):
+    require(not ctx.state_override, "--state-dir only verifies plan")
     manifest, plan = cmd_plan(ctx)
     tool = str(ctx.source / "deploy/components/adapter-delivery.py")
-    require(not ctx.state_override, "--state-dir only verifies plan")
     delivery, config = config_path(ctx)
     if not delivery.exists() and delivery.parent.is_dir():
         delivery.mkdir(mode=0o700)
