@@ -58,17 +58,12 @@ function Empty() {
   return <div className="kailo-meta-list__empty">{t('noData')}</div>;
 }
 
-export function FieldList(props: {
-  dataSource: Item[];
-  showAlias?: boolean;
-}) {
+export function FieldList(props: { dataSource: Item[]; showAlias?: boolean }) {
   const { dataSource = [], showAlias = true } = props;
   const t = useKailoText();
   if (!dataSource.length) return <Empty />;
   const alias = (field: { displayName?: string; referenceName?: string }) =>
-    showAlias &&
-    field.displayName &&
-    field.displayName !== field.referenceName
+    showAlias && field.displayName && field.displayName !== field.referenceName
       ? `${t('modeling.alias')} ${field.displayName}`
       : null;
   return (
