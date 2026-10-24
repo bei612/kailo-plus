@@ -1300,7 +1300,7 @@ html[data-kailo-mode] .doc-card-view .knowledge-card .card-content-txt {
 html[data-kailo-mode] .doc-card-view .knowledge-card .card-analyze-txt,
 html[data-kailo-mode] .doc-card-view .knowledge-card .card-analyze-loading,
 html[data-kailo-mode] .doc-card-view .knowledge-card .card-analyze-trace-btn {
-  font-size: 12px;
+  font-size: var(--app-text-sm);
   color: var(--kailo-color-brand-text);
 }
 html[data-kailo-mode] .doc-card-view .knowledge-card .failure,
@@ -1330,7 +1330,7 @@ html[data-kailo-mode] .doc-card-view .knowledge-card .card-type {
 }
 html[data-kailo-mode] .doc-card-view .folder-card__body { padding: 16px 16px 8px; }
 html[data-kailo-mode] .doc-card-view .folder-card__icon {
-  font-size: 24px;
+  font-size: var(--app-text-4xl);
   color: var(--kailo-color-muted-foreground);
   opacity: 1;
 }

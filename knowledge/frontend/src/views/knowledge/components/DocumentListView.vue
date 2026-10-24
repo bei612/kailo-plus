@@ -892,7 +892,7 @@ html[data-kailo-mode] .doc-list-view .doc-list-header {
 html[data-kailo-mode] .doc-list-view .doc-list-body { border-radius: 0; }
 html[data-kailo-mode] .doc-list-view .doc-list-row {
   min-height: 40px;
-  font-size: 12px;
+  font-size: var(--app-text-sm);
   color: var(--kailo-color-muted-foreground);
   border-bottom: 1px solid var(--kailo-color-border);
   transition: background-color var(--kailo-duration-instant) var(--kailo-ease-standard);
@@ -904,7 +904,7 @@ html[data-kailo-mode] .doc-list-view .doc-list-row {
 html[data-kailo-mode] .doc-list-view .row-file-icon-wrap {
   width: 20px;
   height: 20px;
-  font-size: 16px;
+  font-size: var(--app-text-xl);
   background: transparent;
   color: var(--kailo-color-muted-foreground);
 }
@@ -925,22 +925,22 @@ html[data-kailo-mode] .doc-list-view .row-file-desc { display: none; }
 html[data-kailo-mode] .doc-list-view .row-file-folder {
   flex: 0 1 auto;
   min-width: 0;
-  font-size: 12px;
+  font-size: var(--app-text-sm);
   color: var(--kailo-color-muted-foreground);
   &:hover { color: var(--kailo-color-foreground); }
 }
-html[data-kailo-mode] .doc-list-view .row-source-icon { font-size: 14px; color: var(--kailo-color-muted-foreground); }
+html[data-kailo-mode] .doc-list-view .row-source-icon { font-size: var(--app-text-base); color: var(--kailo-color-muted-foreground); }
 html[data-kailo-mode] .doc-list-view .row-source-label,
 html[data-kailo-mode] .doc-list-view .row-mono,
 html[data-kailo-mode] .doc-list-view .row-folder-meta {
-  font-size: 12px;
+  font-size: var(--app-text-sm);
   line-height: 16px;
   color: var(--kailo-color-muted-foreground);
 }
 html[data-kailo-mode] .doc-list-view .row-status-tag.t-tag {
   height: auto;
   padding: 0;
-  font-size: 12px;
+  font-size: var(--app-text-sm);
   font-weight: 400;
   line-height: 16px;
   background: transparent;
