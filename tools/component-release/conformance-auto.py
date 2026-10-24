@@ -763,7 +763,16 @@ def cmd_close(args):
         if (r.dir / "openbao.env").is_file():
             run(["bash", f"{s['source']}/tools/component-release/conformance/isolated-openbao.sh", "down", str(r.dir / "openbao.env")],
                 log=r.log, check=False)
-        if s.get("project"):
+        if s["component"] != CELLS:
+            import importlib.util
+            path = Path(__file__).resolve().parent / "conformance" / f"auto_{s['component'].replace('-', '_')}.py"
+            if path.is_file():
+                spec = importlib.util.spec_from_file_location("auto_close", path)
+                module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(module)
+                if hasattr(module, "teardown"):
+                    module.teardown(r, sys.modules[__name__])
+        elif s.get("project"):
             for env in ("delivery.env", "native.env"):
                 if (r.dir / env).is_file():
                     files = ["-f", f"{s['source']}/file-storage/deploy/compose.yaml", "-f",
