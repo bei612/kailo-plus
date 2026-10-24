@@ -165,13 +165,15 @@ export default class Editor extends React.Component {
         const {launch, failed, kailoDelivery, exportingReference, referenceError} = this.state;
         const messages = Pydio.getMessages();
         return (
-            <div style={{display: 'flex', flexDirection: 'column', width: '100%', height: '100%'}}>
-                {kailoDelivery ? <div>
+            // DD-152 (20 §13.6): Kailo surface around the editor frame (dark from the first frame),
+            // Kailo-styled actions, inline errors and the legal link (kailo-overlay.css).
+            <div className={"kailo-onlyoffice"} style={{display: 'flex', flexDirection: 'column', width: '100%', height: '100%', backgroundColor: 'var(--kailo-color-background, white)'}}>
+                {kailoDelivery ? <div className={"kailo-onlyoffice-actions"}>
                     <button disabled={exportingReference} onClick={() => this.openInKailo('file_storage.open_view@v2')}>{messages['onlyoffice.kailo_view']}</button>
                     <button disabled={exportingReference || this.props.node.hasMetadataInBranch('node_readonly', 'true')} onClick={() => this.openInKailo('file_storage.open_edit@v2')}>{messages['onlyoffice.kailo_edit']}</button>
                 </div> : null}
-                {referenceError ? <div role="alert">{messages['onlyoffice.kailo_reference_unavailable']}</div> : null}
-                {failed ? <div role="alert">{messages['onlyoffice.unavailable']}</div> : null}
+                {referenceError ? <div role="alert" className={"kailo-inline-error"}>{messages['onlyoffice.kailo_reference_unavailable']}</div> : null}
+                {failed ? <div role="alert" className={"kailo-inline-error"}>{messages['onlyoffice.unavailable']}</div> : null}
                 {launch && !launch.submitted ? (
                     <form ref={this.form} action={launch.action} method="post" target={FRAME} style={{display: 'none'}}>
                         <input type="hidden" name="access_token" value={launch.token}/>
@@ -180,9 +182,9 @@ export default class Editor extends React.Component {
                     </form>
                 ) : null}
                 {launch ? <iframe name={FRAME} ref={(el) => { this.frame = el; }} title={messages['onlyoffice.1']} allow="clipboard-read; clipboard-write; fullscreen"
-                    style={{backgroundColor: 'white', width: '100%', height: '100%', border: 0, flex: 1}}/> : null}
+                    style={{backgroundColor: 'var(--kailo-color-background, white)', width: '100%', height: '100%', border: 0, flex: 1}}/> : null}
                 {this.publicOrigin ? (
-                    <div style={{fontSize: 12, padding: '2px 8px', textAlign: 'right'}}>
+                    <div className={"kailo-onlyoffice-legal"} style={{fontSize: 12, padding: '2px 8px', textAlign: 'right'}}>
                         <a href={legalNoticeUrl(this.publicOrigin)} target="_blank" rel="noopener noreferrer">{messages['onlyoffice.legal_notices']}</a>
                     </div>
                 ) : null}

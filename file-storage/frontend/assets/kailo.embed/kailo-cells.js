@@ -732,7 +732,7 @@
     }
 
     function watchFileDrag() {
-        if (!kailoMode() || !document.addEventListener) {
+        if (!document.addEventListener) {
             return;
         }
         var depth = 0;
@@ -749,6 +749,10 @@
             overlay = null;
         };
         var show = function () {
+            // Kailo mode is known once the start parameters exist (after this script).
+            if (!kailoMode()) {
+                return;
+            }
             var list = document.querySelector('.main-files-list');
             var name = dropTargetName(window.pydio);
             if (!list || !name) {

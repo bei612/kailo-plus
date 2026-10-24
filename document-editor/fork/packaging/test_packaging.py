@@ -45,7 +45,7 @@ class Themes(unittest.TestCase):
         self.assertEqual(light["colors"]["header-component-normal-icon-opacity"], "1")
         # Light canvas is Kailo's white background; dark is its content canvas.
         self.assertEqual(light["colors"]["background-normal"], "#ffffff")
-        self.assertEqual(dark["colors"]["background-normal"], "#1a1a1a")
+        self.assertEqual(dark["colors"]["background-normal"], "#121218")
         for theme in generated.values():
             colors = dict(theme["colors"])
             self.assertEqual(colors.pop("font-family-base"), fonts.font_stack(TOKENS))

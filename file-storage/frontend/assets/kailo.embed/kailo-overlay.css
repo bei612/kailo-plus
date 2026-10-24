@@ -518,3 +518,83 @@ body.react-mui-context,
     background-color: var(--kailo-color-selected) !important;
     box-shadow: inset 0 0 0 1px var(--kailo-color-brand);
 }
+
+/* ---- Home: page surface, Kailo search field ---------------------------- */
+:root[data-kailo-runtime] .home-center-paper {
+    background-color: var(--kailo-color-background) !important;
+}
+
+:root[data-kailo-runtime] .home-search-form {
+    background-color: var(--kailo-color-background) !important;
+    border: 1px solid var(--kailo-color-line-strong, var(--kailo-color-input)) !important;
+    border-radius: 8px !important;
+    box-shadow: var(--kailo-shadow-xs) !important;
+}
+
+/* ---- Document editor shell (editor.onlyoffice) ------------------------- */
+.kailo-onlyoffice-legal {
+    background-color: var(--kailo-color-background);
+    border-top: 1px solid var(--kailo-color-border);
+    color: var(--kailo-color-muted-foreground);
+    line-height: 16px;
+}
+
+.kailo-onlyoffice-legal a {
+    color: var(--kailo-color-muted-foreground);
+    text-decoration: none;
+}
+
+.kailo-onlyoffice-legal a:hover {
+    color: var(--kailo-color-foreground);
+    text-decoration: underline;
+}
+
+.kailo-onlyoffice-actions {
+    display: flex;
+    gap: 8px;
+    padding: 8px 16px;
+    background-color: var(--kailo-color-background);
+    border-bottom: 1px solid var(--kailo-color-border);
+}
+
+.kailo-onlyoffice-actions button {
+    height: 32px;
+    padding: 0 12px;
+    border-radius: 8px;
+    border: 1px solid var(--kailo-color-line-strong, var(--kailo-color-input));
+    background-color: var(--kailo-color-background);
+    box-shadow: var(--kailo-shadow-xs);
+    color: var(--kailo-color-foreground);
+    font: 500 13px/20px var(--kailo-font-sans);
+    cursor: pointer;
+}
+
+.kailo-onlyoffice-actions button:hover:not(:disabled) {
+    background-color: var(--kailo-color-hover);
+}
+
+.kailo-onlyoffice-actions button:disabled {
+    opacity: 0.5;
+    cursor: default;
+}
+
+/* Inline error (spec §3 错误): danger mark, 14/600 title. */
+.kailo-inline-error {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 16px;
+    font: 600 14px/20px var(--kailo-font-sans);
+    color: var(--kailo-color-foreground);
+    background-color: var(--kailo-color-background);
+}
+
+.kailo-inline-error::before {
+    content: "";
+    width: 16px;
+    height: 16px;
+    flex: none;
+    border-radius: 50%;
+    border: 1.5px solid var(--kailo-color-danger);
+    box-sizing: border-box;
+}
