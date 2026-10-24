@@ -9,6 +9,9 @@ import { LoadingWrapper } from '@/components/PageLoading';
 import DashboardGrid from '@/components/pages/home/dashboardGrid';
 import EmptyDashboard from '@/components/pages/home/dashboardGrid/EmptyDashboard';
 import DashboardHeader from '@/components/pages/home/dashboardGrid/DashboardHeader';
+import { useKailoShare } from '@/components/kailo/KailoShare';
+import useKailoPage from '@/hooks/useKailoPage';
+import useKailoText from '@/utils/kailoI18n';
 import CacheSettingsDrawer, {
   Schedule,
 } from '@/components/pages/home/dashboardGrid/CacheSettingsDrawer';
@@ -37,6 +40,8 @@ export default function Dashboard() {
   const dashboardGridRef = useRef<{ onRefreshAll: () => void }>(null);
   const homeSidebar = useHomeSidebar();
   const cacheSettingsDrawer = useDrawerAction();
+  const t = useKailoText();
+  const share = useKailoShare({ dashboard: true });
   const { data: settingsResult } = useGetSettingsQuery();
   const settings = settingsResult?.settings;
   const isSupportCached = useMemo(
@@ -103,12 +108,43 @@ export default function Dashboard() {
     await deleteDashboardItem({ variables: { where: { id } } });
   };
 
+  // DD-152: Kailo page header — 看板, 分享 (DD-138(4)) and 新建对话.
+  const { hosted } = useKailoPage({
+    title: t('dashboard'),
+    ready: !loading,
+    actions: [
+      ...(share.available
+        ? [
+            {
+              id: 'share',
+              label: t('share'),
+              variant: 'secondary' as const,
+              icon: 'share' as const,
+            },
+          ]
+        : []),
+      {
+        id: 'new-conversation',
+        label: t('newConversationAction'),
+        variant: 'primary',
+        icon: 'message-square-plus',
+      },
+    ],
+    onAction: (id) => {
+      if (id === 'share') share.open();
+      if (id === 'new-conversation') router.push(Path.Home);
+    },
+  });
+
   return (
     <SiderLayout loading={false} color="gray-3" sidebar={homeSidebar}>
+      {share.modal}
       <LoadingWrapper loading={loading}>
         <>
           <EmptyDashboard show={dashboardItems.length === 0}>
             <DashboardHeader
+              showShare={!hosted && share.available}
+              onShare={share.open}
               isSupportCached={isSupportCached}
               schedule={data?.dashboard?.schedule as Schedule}
               nextScheduleTime={data?.dashboard?.nextScheduledAt}

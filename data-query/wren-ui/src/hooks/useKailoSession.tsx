@@ -13,6 +13,7 @@ import {
   presentation,
 } from '@/utils/kailoEmbed';
 import { kailoProductTitle } from '@/utils/kailoI18n';
+import { hostRendersPage } from '@/utils/kailoHost';
 
 // DD-133: the Kailo user, derived role, presentation (theme/locale/embedding,
 // from kailo-embed.js) and product naming shared by the page shell.
@@ -30,6 +31,9 @@ export interface KailoSessionValue {
   loaded: boolean;
   productName: string;
   embedded: boolean;
+  // DD-152: Kailo renders the page header (title, tabs, actions); the page
+  // renders none of its own.
+  hostPage: boolean;
   theme: KailoTheme;
 }
 
@@ -40,6 +44,7 @@ const KailoSessionContext = createContext<KailoSessionValue>({
   loaded: false,
   productName: '',
   embedded: false,
+  hostPage: false,
   theme: 'light',
 });
 
@@ -53,6 +58,7 @@ interface Props {
 export function KailoSessionProvider({ children, displayName }: Props) {
   const router = useRouter();
   const [embedded, setEmbedded] = useState(false);
+  const [hostPage, setHostPage] = useState(false);
   const [theme, setTheme] = useState<KailoTheme>('light');
   const [serverName] = useState(displayName || '');
   const { data, loading } = useKailoSessionQuery({
@@ -70,6 +76,7 @@ export function KailoSessionProvider({ children, displayName }: Props) {
   useEffect(() => {
     const state = presentation();
     setEmbedded(state.embedded);
+    setHostPage(hostRendersPage());
     setTheme(state.theme);
     const runtime = kailoRuntime();
     if (!runtime) return;
@@ -103,9 +110,10 @@ export function KailoSessionProvider({ children, displayName }: Props) {
       loaded: !loading && !!session,
       productName: session?.productName || serverName,
       embedded,
+      hostPage,
       theme,
     }),
-    [session, loading, embedded, theme, serverName],
+    [session, loading, embedded, hostPage, theme, serverName],
   );
 
   return (

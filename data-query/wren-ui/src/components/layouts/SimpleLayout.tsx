@@ -20,7 +20,7 @@ export default function SimpleLayout(props: Props) {
   const { children, loading } = props;
   const { pathname } = useRouter();
   const t = useKailoText();
-  const { isAdmin, loaded } = useKailoSession();
+  const { isAdmin, loaded, hostPage } = useKailoSession();
   // DD-133 §3: connection, onboarding and modeling are Kailo Tenant admin
   // pages (the server enforces the same rule on every write).
   const adminOnly =
@@ -33,7 +33,8 @@ export default function SimpleLayout(props: Props) {
         'overflow-hidden': pageLoading,
       })}
     >
-      <HeaderBar />
+      {/* DD-152: inside Kailo the header (tabs, actions) is Kailo's. */}
+      {!hostPage && <HeaderBar />}
       <Content className="adm-content">
         {blocked ? (
           <Result

@@ -8,6 +8,7 @@ import EyeOutlined from '@ant-design/icons/EyeOutlined';
 import KailoUser from '@/components/kailo/KailoUser';
 import useKailoSession from '@/hooks/useKailoSession';
 import useKailoText from '@/utils/kailoI18n';
+import useKailoPage from '@/hooks/useKailoPage';
 import { MORE_ACTION } from '@/utils/enum';
 import { getCompactTime } from '@/utils/time';
 import useDrawerAction from '@/hooks/useDrawerAction';
@@ -197,6 +198,23 @@ export default function ManageQuestionSQLPairs() {
         ),
     },
   ];
+
+  // DD-152: Kailo page header — 问答对, primary 添加问答对 (admins).
+  useKailoPage({
+    title: t('questionSqlPairs'),
+    ready: !loading,
+    actions: isAdmin
+      ? [
+          {
+            id: 'add',
+            label: t('addQuestionSqlPair'),
+            variant: 'primary',
+            icon: 'plus',
+          },
+        ]
+      : [],
+    onAction: (id) => id === 'add' && questionSqlPairModal.openModal(),
+  });
 
   return (
     <SiderLayout loading={false}>

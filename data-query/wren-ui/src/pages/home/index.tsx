@@ -15,6 +15,7 @@ import {
 } from '@/apollo/client/graphql/home.generated';
 import useKailoSession from '@/hooks/useKailoSession';
 import useKailoText from '@/utils/kailoI18n';
+import useKailoPage from '@/hooks/useKailoPage';
 import { CreateThreadInput } from '@/apollo/client/graphql/__types__';
 
 const { Text } = Typography;
@@ -83,6 +84,25 @@ export default function Home() {
   const router = useRouter();
   const homeSidebar = useHomeSidebar();
   const askPrompt = useAskPrompt();
+  const t = useKailoText();
+
+  // DD-152: Kailo page header — 新对话, primary 新建对话 (starts over).
+  useKailoPage({
+    title: t('newConversation'),
+    actions: [
+      {
+        id: 'new-conversation',
+        label: t('newConversationAction'),
+        variant: 'primary',
+        icon: 'message-square-plus',
+      },
+    ],
+    onAction: (id) => {
+      if (id !== 'new-conversation') return;
+      $prompt.current?.close();
+      router.push(Path.Home);
+    },
+  });
 
   const [createThread, { loading: threadCreating }] = useCreateThreadMutation({
     onError: (error) => console.error(error),

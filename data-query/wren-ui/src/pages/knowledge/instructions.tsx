@@ -15,6 +15,7 @@ import EyeOutlined from '@ant-design/icons/EyeOutlined';
 import KailoUser from '@/components/kailo/KailoUser';
 import useKailoSession from '@/hooks/useKailoSession';
 import useKailoText from '@/utils/kailoI18n';
+import useKailoPage from '@/hooks/useKailoPage';
 import { MORE_ACTION } from '@/utils/enum';
 import { getCompactTime } from '@/utils/time';
 import { MoreButton } from '@/components/ActionButton';
@@ -189,6 +190,23 @@ export default function ManageInstructions() {
         ),
     },
   ];
+
+  // DD-152: Kailo page header — 指令, primary 添加指令 (admins).
+  useKailoPage({
+    title: t('instructions'),
+    ready: !loading,
+    actions: isAdmin
+      ? [
+          {
+            id: 'add',
+            label: t('addInstruction'),
+            variant: 'primary',
+            icon: 'plus',
+          },
+        ]
+      : [],
+    onAction: (id) => id === 'add' && instructionModal.openModal(),
+  });
 
   return (
     <SiderLayout loading={false}>

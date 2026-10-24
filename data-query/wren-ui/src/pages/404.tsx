@@ -2,6 +2,7 @@ import Link from 'next/link';
 import styled from 'styled-components';
 import { Path } from '@/utils/enum';
 import useKailoText from '@/utils/kailoI18n';
+import useKailoPage from '@/hooks/useKailoPage';
 
 // DD-133 §1 / DD-138 (07 §4.8.1 错误页): no upstream default 404; a neutral
 // Kailo content-area state with Kailo tokens and copy. The page title is the
@@ -19,9 +20,10 @@ const Wrapper = styled.div`
   color: var(--kailo-color-foreground);
 `;
 
-const Title = styled.h1`
+const Title = styled.div`
   margin: 0;
-  font-size: 18px;
+  font-size: 17px;
+  line-height: 24px;
   font-weight: 600;
   color: var(--kailo-color-foreground);
 `;
@@ -49,6 +51,7 @@ const HomeLink = styled(Link)`
 
 export default function NotFound() {
   const t = useKailoText();
+  useKailoPage({ title: t('notFoundTitle') });
   return (
     <Wrapper>
       <Title>{t('notFoundTitle')}</Title>

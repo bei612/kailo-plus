@@ -23,6 +23,9 @@ import useRelationshipModal from '@/hooks/useRelationshipModal';
 import { convertFormValuesToIdentifier } from '@/hooks/useCombineFieldOptions';
 import { ClickPayload } from '@/components/diagram/Context';
 import { DeployStatusContext } from '@/components/deploy/Context';
+import { useDeploy } from '@/components/deploy/Deploy';
+import useKailoPage from '@/hooks/useKailoPage';
+import useKailoText from '@/utils/kailoI18n';
 import { DIAGRAM } from '@/apollo/client/graphql/diagram';
 import { LIST_MODELS } from '@/apollo/client/graphql/model';
 import { useDiagramQuery } from '@/apollo/client/graphql/diagram.generated';
@@ -206,6 +209,38 @@ export default function Modeling() {
   const editMetadataModal = useModalAction();
   const calculatedFieldModal = useModalAction();
   const relationshipModal = useRelationshipModal(diagramData);
+  const t = useKailoText();
+  const deploy = useDeploy(deployStatusQueryResult);
+
+  // DD-152: Kailo page header — 建模 (→ the open model or view), primary
+  // 发布模型 (busy while deploying, disabled when nothing is pending).
+  const openNode =
+    metadataDrawer.state.visible && diagramData
+      ? metadataDrawer.state.defaultValue
+      : null;
+  useKailoPage({
+    title: openNode?.displayName || t('navModeling'),
+    breadcrumbs: openNode
+      ? [{ id: 'modeling', label: t('navModeling') }]
+      : [],
+    ready: !!diagramData || !!diagramError,
+    actions: [
+      {
+        id: 'deploy',
+        label: t('deployModels'),
+        variant: 'primary',
+        icon: 'rocket',
+        busy: deploy.busy,
+        disabled: deploy.disabled,
+      },
+    ],
+    onAction: (id) => {
+      if (id === 'deploy' && !deploy.disabled) deploy.onDeploy();
+    },
+    onBreadcrumb: (id) => {
+      if (id === 'modeling') metadataDrawer.closeDrawer();
+    },
+  });
 
   const queryParams = {
     viewId: searchParams.get('viewId'),

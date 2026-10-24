@@ -4,13 +4,17 @@ import { MoreIcon } from '@/utils/icons';
 import { MORE_ACTION } from '@/utils/enum';
 import { getCompactTime } from '@/utils/time';
 import { DashboardDropdown } from '@/components/diagram/CustomDropdown';
-import { KailoShareButton } from '@/components/kailo/KailoShare';
+import { ShareIcon } from '@/components/kailo/KailoIcons';
+import useKailoText from '@/utils/kailoI18n';
 import {
   Schedule,
   getScheduleText,
 } from '@/components/pages/home/dashboardGrid/CacheSettingsDrawer';
 
 interface Props {
+  // DD-152: inside Kailo, 分享 is a page header action instead.
+  showShare?: boolean;
+  onShare?: () => void;
   isSupportCached: boolean;
   nextScheduleTime?: string;
   schedule?: Schedule;
@@ -24,12 +28,15 @@ const StyledHeader = styled.div`
   justify-content: space-between;
   min-height: 49px;
   padding: 8px 16px;
-  background-color: white;
-  border-bottom: 1px solid var(--gray-4);
+  background-color: var(--kailo-color-background);
+  border-bottom: 1px solid var(--kailo-color-border);
 `;
 
 export default function DashboardHeader(props: Props) {
+  const t = useKailoText();
   const {
+    showShare,
+    onShare,
     isSupportCached,
     nextScheduleTime,
     schedule,
@@ -51,7 +58,11 @@ export default function DashboardHeader(props: Props) {
     <StyledHeader>
       {/* DD-138(4), 07 §4.8.3: notify Kailo members about the dashboard. */}
       <div>
-        <KailoShareButton target={{ dashboard: true }} />
+        {showShare && (
+          <Button icon={<ShareIcon className="mr-1" />} onClick={onShare}>
+            {t('share')}
+          </Button>
+        )}
       </div>
       <div>
         {schedule && (

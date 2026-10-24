@@ -21,6 +21,7 @@ import { getApiHistoryText } from '@/utils/language';
 import { useRouter } from 'next/router';
 import KailoUser from '@/components/kailo/KailoUser';
 import { kailoText } from '@/utils/kailoI18n';
+import useKailoPage from '@/hooks/useKailoPage';
 
 const PAGE_SIZE = 10;
 
@@ -345,6 +346,12 @@ export default function APIHistory() {
       ),
     },
   ];
+
+  // DD-152: Kailo page header — API 记录 (no page action).
+  useKailoPage({
+    title: kailoText(locale, 'apiHistory'),
+    ready: !loading,
+  });
 
   return (
     <SiderLayout loading={false} sidebar={null}>

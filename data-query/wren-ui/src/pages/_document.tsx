@@ -43,6 +43,13 @@ export default class AppDocument extends Document<Props> {
               all served from this origin and ahead of the page's own styles
               and scripts; the runtime applies the Kailo theme before paint. */}
           <meta name="kailo-web-origin" content={this.props.kailoWebOrigin} />
+          {/* DD-152 (`07` §4.8.7): Kailo renders the page header, toasts and
+              confirmations and owns the global shortcuts; read by
+              kailo-embed.js, so it precedes the runtime script. */}
+          <meta
+            name="kailo-embed-features"
+            content="page toast confirm shortcuts"
+          />
           <link rel="icon" type="image/png" href="/kailo/app-icon.png" />
           {/* eslint-disable-next-line @next/next/no-css-tags */}
           <link rel="stylesheet" href="/kailo/kailo-theme-tokens.css" />

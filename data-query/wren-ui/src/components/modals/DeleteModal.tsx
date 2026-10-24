@@ -1,116 +1,106 @@
-import { ReactNode } from 'react';
-import { ButtonProps, Modal, ModalProps } from 'antd';
-import ExclamationCircleOutlined from '@ant-design/icons/ExclamationCircleOutlined';
-import DeleteOutlined from '@ant-design/icons/DeleteOutlined';
+import { ButtonProps, ModalProps } from 'antd';
+import { TrashIcon } from '@/components/kailo/KailoIcons';
+import useKailoText, { KailoTextKey } from '@/utils/kailoI18n';
+import { confirmDanger } from '@/utils/kailoHost';
+
+// DD-152 (20 §13.8 确认): destructive actions are confirmed in Kailo's dialog
+// (KailoEmbed.confirm, tone danger): a question as the title, the
+// consequence as the description, "删除" / "取消". At top level the page shows
+// the same dialog itself (kailoHost.confirm).
 
 type DeleteModalProps = {
   disabled?: boolean;
+  /** Ignored since DD-152: the dialog is Kailo's. Kept for callers. */
   modalProps?: ModalProps;
-  onConfirm: () => void;
+  onConfirm: () => unknown;
+  /** Shown in the title: 删除对话「名称」？ */
+  name?: string;
   style?: any;
 } & Partial<ButtonProps>;
 
 type Config = {
-  icon?: ReactNode;
-  itemName?: string;
-  content?: string;
+  item?: KailoTextKey;
+  description?: KailoTextKey;
 };
 
 export const makeDeleteModal =
-  (Component, config?: Config) => (props: DeleteModalProps) => {
-    const { title, content, modalProps = {}, onConfirm, ...restProps } = props;
+  (Component, config: Config = {}) =>
+  (props: DeleteModalProps) => {
+    const t = useKailoText();
+    const {
+      title: _title,
+      content: _content,
+      modalProps: _modalProps,
+      onConfirm,
+      name,
+      ...restProps
+    } = props as DeleteModalProps & { content?: unknown };
+    const item = t(config.item || 'itemDashboardItem');
 
     return (
       <Component
-        icon={config.icon}
-        onClick={() =>
-          Modal.confirm({
-            autoFocusButton: null,
-            cancelText: 'Cancel',
-            content:
-              config?.content ||
-              'This will be permanently deleted, please confirm you want to delete it.',
-            icon: <ExclamationCircleOutlined />,
-            okText: 'Delete',
-            onOk: onConfirm,
-            title: `Are you sure you want to delete this ${config?.itemName}?`,
-            width: 464,
-            ...modalProps,
-            okButtonProps: {
-              ...modalProps.okButtonProps,
-              danger: true,
+        icon={<TrashIcon className="mr-2" />}
+        onClick={() => {
+          if (props.disabled) return;
+          void confirmDanger(
+            {
+              title: name
+                ? t('deleteNamedTitle', { item, name })
+                : t('deleteTitle', { item }),
+              description: t(config.description || 'deleteDescription'),
+              confirmLabel: t('delete'),
+              cancelLabel: t('cancel'),
             },
-          })
-        }
+            onConfirm,
+          );
+        }}
         {...restProps}
       />
     );
   };
 
 const DefaultDeleteButton = (props) => {
+  const t = useKailoText();
   const { icon = null, disabled, ...restProps } = props;
   return (
-    <a className={disabled ? '' : 'red-5'} {...restProps}>
-      {icon}Delete
+    <a className={disabled ? '' : 'kailo-text-danger'} {...restProps}>
+      {icon}
+      {t('delete')}
     </a>
   );
 };
 
 export default makeDeleteModal(DefaultDeleteButton);
 
-// Customize delete modal
 export const DeleteThreadModal = makeDeleteModal(DefaultDeleteButton, {
-  icon: <DeleteOutlined className="mr-2" />,
-  itemName: 'thread',
-  content:
-    'This will permanently delete all results history in this thread, please confirm you want to delete it.',
+  item: 'itemThread',
+  description: 'deleteThreadDescription',
 });
 
 export const DeleteViewModal = makeDeleteModal(DefaultDeleteButton, {
-  icon: <DeleteOutlined className="mr-2" />,
-  itemName: 'view',
-  content:
-    'This will be permanently deleted, please confirm you want to delete it.',
+  item: 'itemView',
 });
 
 export const DeleteModelModal = makeDeleteModal(DefaultDeleteButton, {
-  icon: <DeleteOutlined className="mr-2" />,
-  itemName: 'model',
-  content:
-    'This will be permanently deleted, please confirm you want to delete it.',
+  item: 'itemModel',
 });
 
 export const DeleteCalculatedFieldModal = makeDeleteModal(DefaultDeleteButton, {
-  icon: <DeleteOutlined className="mr-2" />,
-  itemName: 'calculated field',
-  content:
-    'This will be permanently deleted, please confirm you want to delete it.',
+  item: 'itemCalculatedField',
 });
 
 export const DeleteRelationshipModal = makeDeleteModal(DefaultDeleteButton, {
-  icon: <DeleteOutlined className="mr-2" />,
-  itemName: 'relationship',
-  content:
-    'This will be permanently deleted, please confirm you want to delete it.',
+  item: 'itemRelationship',
 });
 
 export const DeleteDashboardItemModal = makeDeleteModal(DefaultDeleteButton, {
-  icon: <DeleteOutlined className="mr-2" />,
-  itemName: 'dashboard item',
-  content:
-    'This will be permanently deleted, please confirm you want to delete it.',
+  item: 'itemDashboardItem',
 });
 
 export const DeleteQuestionSQLPairModal = makeDeleteModal(DefaultDeleteButton, {
-  icon: <DeleteOutlined className="mr-2" />,
-  itemName: 'question-SQL pair',
-  content:
-    'This action is permanent and cannot be undone. Are you sure you want to proceed?',
+  item: 'itemQuestionSqlPair',
 });
 
 export const DeleteInstructionModal = makeDeleteModal(DefaultDeleteButton, {
-  icon: <DeleteOutlined className="mr-2" />,
-  itemName: 'instruction',
-  content:
-    'This action is permanent and cannot be undone. Are you sure you want to proceed?',
+  item: 'itemInstruction',
 });
