@@ -5,11 +5,12 @@
 // they are listed only when an item exists.
 // DD-149: "connectors" is the Kailo App-group category for user-registered MCP servers (Web and Desktop only).
 // DD-125(5): "updates" is the original App-group section; only the Desktop host offers it.
-export type SettingsSection = "profile" | "appearance" | "notifications" | "documents" | "answers" | "shortcuts" | "community-members" | "moderation" | "custom-emoji" | "channel-templates" | "agents" | "connectors" | "experimental" | "updates";
+// DD-159: "local-archive" is the original Personal-group section; only the Desktop host offers it.
+export type SettingsSection = "profile" | "appearance" | "notifications" | "documents" | "answers" | "shortcuts" | "community-members" | "moderation" | "custom-emoji" | "local-archive" | "channel-templates" | "agents" | "connectors" | "experimental" | "updates";
 
 /** Every section a host may route to (original /settings?section=). */
 export const settingsSectionValues: readonly SettingsSection[] = [
-  "profile", "appearance", "notifications", "documents", "answers", "shortcuts", "community-members", "moderation", "custom-emoji", "channel-templates", "agents", "connectors", "experimental", "updates",
+  "profile", "appearance", "notifications", "documents", "answers", "shortcuts", "community-members", "moderation", "custom-emoji", "local-archive", "channel-templates", "agents", "connectors", "experimental", "updates",
 ];
 
 export function isSettingsSection(value: unknown): value is SettingsSection {

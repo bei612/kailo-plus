@@ -12,6 +12,7 @@ mod initial_window;
 mod key_backup;
 mod link_preview_tags;
 mod linux_media;
+mod local_archive;
 #[cfg(target_os = "macos")]
 mod macos_notifications;
 #[cfg(target_os = "macos")]
@@ -248,6 +249,12 @@ pub fn run() {
             get_nsec,
             get_presence,
             get_os_idle_seconds,
+            local_archive::local_archive_status,
+            local_archive::local_archive_subscribe,
+            local_archive::local_archive_unsubscribe,
+            local_archive::local_archive_sync,
+            local_archive::local_archive_read,
+            local_archive::local_archive_clear,
             is_auto_update_supported,
             updater_release_url,
             tray_menu::clear_tray_agent_activity,
