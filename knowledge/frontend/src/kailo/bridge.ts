@@ -38,8 +38,27 @@ export interface KailoPageAction {
   label: string
   variant?: 'primary' | 'secondary' | 'menu'
   icon?: KailoActionIcon
+  /**
+   * DD-157: the action needs files the user chooses. Kailo opens its file
+   * picker inside the user's click (a frame never receives the host's user
+   * activation) and delivers the files with the action. accept: same syntax as
+   * <input accept>, 1–200 chars of letters, digits and `.+-/*, `.
+   */
+  files?: KailoActionFiles
   disabled?: boolean
   busy?: boolean
+}
+
+export interface KailoActionFiles {
+  accept?: string
+  multiple?: boolean
+  directory?: boolean
+}
+
+/** Files chosen in Kailo's picker; paths are relative paths for a directory pick, else file names. */
+export interface KailoFileSelection {
+  files: File[]
+  paths: string[]
 }
 
 export interface KailoPage {
@@ -81,7 +100,7 @@ export interface KailoEmbedRuntime {
   /** DD-157: true = Kailo renders the page header; throws TypeError on an invalid shape. */
   setPage?(page: KailoPage | null): boolean
   onNavigate?(listener: (target: KailoNavigateTarget) => void): () => void
-  onAction?(listener: (id: string) => void): () => void
+  onAction?(listener: (id: string, selection?: KailoFileSelection) => void): () => void
   /** DD-157: true = Kailo showed it; false at top level. */
   toast?(toast: KailoToast): boolean
   /** DD-157: Kailo's dialog, or null when the page must use its own. */

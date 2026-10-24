@@ -118,7 +118,7 @@
           <template #actions="{ row }">
             <div v-if="canShare" class="share-table-actions">
               <t-popconfirm :content="$t('knowledgeEditor.share.unshareConfirm', { name: row.organization_name })"
-                :confirm-btn="{ content: $t('common.confirm'), theme: 'danger' }"
+                :confirm-btn="{ content: $t('organization.share.unshareAction'), theme: 'danger' }"
                 :cancel-btn="{ content: $t('common.cancel') }" placement="left" @confirm="handleUnshare(row)">
                 <t-tooltip :content="$t('organization.share.unshareAction')" placement="top">
                   <t-button theme="danger" shape="square" variant="text" size="small" @click.stop>

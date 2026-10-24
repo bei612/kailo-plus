@@ -373,7 +373,7 @@ const handleAction = (action: 'download' | 'edit' | 'view-trace' | 'reparse' | '
               @click.stop="openMenu(index)"
               :class="[activeMenuIndex === index ? 'active-more' : '']"
             >
-              <img class="more-icon" src="@/assets/img/more.png" alt="" />
+              <t-icon class="more-icon" name="more" size="16px" />
             </div>
             <template #content>
               <!-- Move: folder picker (must win over the normal menu while open) -->
@@ -919,7 +919,7 @@ const handleAction = (action: 'download' | 'edit' | 'view-trace' | 'reparse' | '
     &:hover { background: var(--td-component-stroke); }
   }
 
-  .more-icon { width: 14px; height: 14px; }
+  .more-icon { width: 16px; height: 16px; color: var(--td-text-color-secondary); }
   .active-more { background: var(--td-component-stroke); }
 
   .card-content-txt {
@@ -1256,4 +1256,106 @@ const handleAction = (action: 'download' | 'edit' | 'view-trace' | 'reparse' | '
     color: var(--td-text-color-secondary);
   }
 }
+</style>
+
+<style lang="less">
+/* DD-157 (20 §9 卡片 / §13.3): Kailo cards — raised surface, 1px line, radius 12,
+   no resting shadow; hover sm shadow and 1px lift. Title 15/600, summary 13
+   muted on two lines, Caption metadata at the bottom; one-colour icons. */
+html[data-kailo-mode] .doc-card-view .doc-card-list { gap: 16px; animation: none; }
+html[data-kailo-mode] .doc-card-view .knowledge-card,
+html[data-kailo-mode] .doc-card-view .folder-card {
+  height: 144px;
+  background: var(--kailo-color-card);
+  color: var(--kailo-color-card-foreground);
+  border: 1px solid var(--kailo-color-border);
+  border-radius: var(--kailo-radius-xl);
+  box-shadow: none;
+  transition:
+    box-shadow var(--kailo-duration-fast) var(--kailo-ease-standard),
+    transform var(--kailo-duration-fast) var(--kailo-ease-standard);
+  &:hover {
+    border-color: var(--kailo-color-border);
+    box-shadow: var(--kailo-shadow-sm);
+    transform: translateY(-1px);
+  }
+  &:focus-visible { outline: 2px solid var(--kailo-color-brand); outline-offset: 2px; box-shadow: none; }
+}
+html[data-kailo-mode] .doc-card-view .knowledge-card.is-selected {
+  border-color: var(--kailo-color-brand);
+  background: var(--kailo-color-selected);
+}
+html[data-kailo-mode] .doc-card-view .knowledge-card .card-content { padding: 16px 16px 8px; }
+html[data-kailo-mode] .doc-card-view .knowledge-card .card-content-nav { margin-bottom: 4px; }
+html[data-kailo-mode] .doc-card-view .knowledge-card .card-content-title {
+  height: 22px;
+  font: 600 15px/22px var(--kailo-font-sans);
+  letter-spacing: 0;
+  color: var(--kailo-color-foreground);
+}
+html[data-kailo-mode] .doc-card-view .knowledge-card .card-content-txt {
+  font: 400 13px/20px var(--kailo-font-sans);
+  color: var(--kailo-color-muted-foreground);
+}
+html[data-kailo-mode] .doc-card-view .knowledge-card .card-analyze-txt,
+html[data-kailo-mode] .doc-card-view .knowledge-card .card-analyze-loading,
+html[data-kailo-mode] .doc-card-view .knowledge-card .card-analyze-trace-btn {
+  font-size: 12px;
+  color: var(--kailo-color-brand-text);
+}
+html[data-kailo-mode] .doc-card-view .knowledge-card .failure,
+html[data-kailo-mode] .doc-card-view .knowledge-card .card-analyze.failure .card-analyze-trace-btn { color: var(--kailo-color-danger-text); }
+html[data-kailo-mode] .doc-card-view .knowledge-card .more-wrap {
+  width: 28px;
+  height: 28px;
+  margin: -3px -6px 0 0;
+  border-radius: var(--kailo-radius-lg);
+  color: var(--kailo-color-muted-foreground);
+  &:hover { background: var(--kailo-color-hover); }
+}
+html[data-kailo-mode] .doc-card-view .knowledge-card .more-icon { color: var(--kailo-color-muted-foreground); }
+html[data-kailo-mode] .doc-card-view .knowledge-card .active-more { background: var(--kailo-color-hover); }
+html[data-kailo-mode] .doc-card-view .knowledge-card .card-bottom {
+  height: 36px;
+  padding: 0 16px 4px;
+  background: transparent;
+  border-top: 0;
+}
+html[data-kailo-mode] .doc-card-view .knowledge-card .card-time,
+html[data-kailo-mode] .doc-card-view .knowledge-card .card-folder,
+html[data-kailo-mode] .doc-card-view .knowledge-card .card-type {
+  font: 400 12px/16px var(--kailo-font-sans);
+  letter-spacing: 0;
+  color: var(--kailo-color-muted-foreground);
+}
+html[data-kailo-mode] .doc-card-view .folder-card__body { padding: 16px 16px 8px; }
+html[data-kailo-mode] .doc-card-view .folder-card__icon {
+  font-size: 24px;
+  color: var(--kailo-color-muted-foreground);
+  opacity: 1;
+}
+html[data-kailo-mode] .doc-card-view .folder-card__title {
+  font: 600 15px/22px var(--kailo-font-sans);
+  max-height: 44px;
+  color: var(--kailo-color-foreground);
+}
+html[data-kailo-mode] .doc-card-view .folder-card__footer {
+  padding: 0 16px 12px;
+  border-top: 0;
+  font: 400 12px/16px var(--kailo-font-sans);
+  color: var(--kailo-color-muted-foreground);
+}
+/* The loading skeleton (KnowledgeBase.vue) has the same card shape. */
+html[data-kailo-mode] .doc-card-list > .knowledge-card-skeleton {
+  height: 144px;
+  background: var(--kailo-color-card);
+  border: 1px solid var(--kailo-color-border);
+  border-radius: var(--kailo-radius-xl);
+  box-shadow: none;
+  .card-content { padding: 16px 16px 8px; }
+  .card-bottom { padding: 0 16px 4px; background: transparent; border-top: 0; }
+}
+html[data-kailo-mode] .doc-card-list:has(> .knowledge-card-skeleton) { gap: 16px; animation: none; }
+html[data-kailo-theme-switching] .doc-card-view .knowledge-card,
+html[data-kailo-theme-switching] .doc-card-view .folder-card { transition: none; }
 </style>

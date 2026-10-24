@@ -866,3 +866,93 @@ const handleAction = (action: 'download' | 'edit' | 'reparse' | 'cancel-parse' |
 }
 
 </style>
+
+<style lang="less">
+/* DD-157 (20 §9 / §13.3): Kailo file list — 40px rows, name 14/500, the other
+   columns as 12px muted metadata, Overline header, flat surface (no card). */
+html[data-kailo-mode] .doc-list-view {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  animation: none;
+}
+html[data-kailo-mode] .doc-list-view .doc-list-header {
+  height: 32px;
+  font: 600 11px/14px var(--kailo-font-sans);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--kailo-color-muted-foreground);
+  background: var(--kailo-color-background);
+  border-bottom: 1px solid var(--kailo-color-border);
+  border-radius: 0;
+  box-shadow: none;
+  &.is-stuck { box-shadow: none; }
+}
+html[data-kailo-mode] .doc-list-view .doc-list-body { border-radius: 0; }
+html[data-kailo-mode] .doc-list-view .doc-list-row {
+  min-height: 40px;
+  font-size: 12px;
+  color: var(--kailo-color-muted-foreground);
+  border-bottom: 1px solid var(--kailo-color-border);
+  transition: background-color var(--kailo-duration-instant) var(--kailo-ease-standard);
+  &:last-child { border-bottom: 1px solid var(--kailo-color-border); }
+  &:hover:not(.selected),
+  &.menu-open:not(.selected) { background: var(--kailo-color-hover); }
+  &.selected { background: var(--kailo-color-selected); }
+}
+html[data-kailo-mode] .doc-list-view .row-file-icon-wrap {
+  width: 20px;
+  height: 20px;
+  font-size: 16px;
+  background: transparent;
+  color: var(--kailo-color-muted-foreground);
+}
+html[data-kailo-mode] .doc-list-view .row-folder-icon { color: var(--kailo-color-muted-foreground); }
+html[data-kailo-mode] .doc-list-view .row-file-text {
+  flex-direction: row;
+  align-items: baseline;
+  gap: 8px;
+}
+html[data-kailo-mode] .doc-list-view .row-file-name,
+html[data-kailo-mode] .doc-list-view .doc-list-row--folder .row-file-name {
+  flex: 0 1 auto;
+  font: 500 14px/20px var(--kailo-font-sans);
+  letter-spacing: 0;
+  color: var(--kailo-color-foreground);
+}
+html[data-kailo-mode] .doc-list-view .row-file-desc { display: none; }
+html[data-kailo-mode] .doc-list-view .row-file-folder {
+  flex: 0 1 auto;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--kailo-color-muted-foreground);
+  &:hover { color: var(--kailo-color-foreground); }
+}
+html[data-kailo-mode] .doc-list-view .row-source-icon { font-size: 14px; color: var(--kailo-color-muted-foreground); }
+html[data-kailo-mode] .doc-list-view .row-source-label,
+html[data-kailo-mode] .doc-list-view .row-mono,
+html[data-kailo-mode] .doc-list-view .row-folder-meta {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--kailo-color-muted-foreground);
+}
+html[data-kailo-mode] .doc-list-view .row-status-tag.t-tag {
+  height: auto;
+  padding: 0;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 16px;
+  background: transparent;
+  border: 0;
+  color: var(--kailo-color-muted-foreground);
+}
+html[data-kailo-mode] .doc-list-view .row-status-tag.t-tag--theme-danger { color: var(--kailo-color-danger-text); }
+html[data-kailo-mode] .doc-list-view .row-status-tag.t-tag--theme-primary { color: var(--kailo-color-brand-text); }
+html[data-kailo-mode] .doc-list-view .row-more-btn {
+  border-radius: var(--kailo-radius-lg);
+  color: var(--kailo-color-muted-foreground);
+  &:hover,
+  &.active { background: var(--kailo-color-hover); color: var(--kailo-color-foreground); }
+}
+</style>

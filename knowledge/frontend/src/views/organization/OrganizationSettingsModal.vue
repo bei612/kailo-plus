@@ -454,7 +454,7 @@
               <template #actions="{ row }">
                 <t-popconfirm v-if="isAdmin && !kailoMode && !isOwnerMember(row)"
                   :content="$t('organization.detail.removeMemberConfirm', { name: memberPrimaryLabel(row) })"
-                  :confirm-btn="{ content: $t('common.confirm'), theme: 'danger' }"
+                  :confirm-btn="{ content: $t('common.remove'), theme: 'danger' }"
                   :cancel-btn="{ content: $t('common.cancel') }" placement="left"
                   @confirm="confirmRemoveMember(row)">
                   <t-tooltip :content="$t('organization.detail.removeMember')" placement="top">
@@ -668,7 +668,7 @@
                   </t-tooltip>
                   <t-popconfirm v-if="isAdmin"
                   :content="$t('organization.settings.removeShareConfirm', { name: row.knowledge_base_name || row.knowledge_base_id })"
-                  :confirm-btn="{ content: $t('common.confirm'), theme: 'danger' }"
+                  :confirm-btn="{ content: $t('common.remove'), theme: 'danger' }"
                   :cancel-btn="{ content: $t('common.cancel') }" placement="left"
                   @confirm="handleRemoveShare(row)">
                   <t-tooltip :content="$t('organization.settings.removeShareFromOrg')" placement="top">
@@ -754,7 +754,7 @@
               <template #actions="{ row }">
                 <t-popconfirm v-if="isAdmin"
                   :content="$t('organization.settings.removeAgentShareConfirm', { name: row.agent_name || row.agent_id })"
-                  :confirm-btn="{ content: $t('common.confirm'), theme: 'danger' }"
+                  :confirm-btn="{ content: $t('common.remove'), theme: 'danger' }"
                   :cancel-btn="{ content: $t('common.cancel') }" placement="left"
                   @confirm="handleRemoveAgentShare(row)">
                   <t-tooltip :content="$t('organization.settings.removeShareFromOrg')" placement="top">

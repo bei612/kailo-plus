@@ -50,8 +50,10 @@ function embedHtmlDevFallback(): Plugin {
 // DD-157: app imports of 'tdesign-vue-next' resolve to the Kailo shell, which
 // routes MessagePlugin / DialogPlugin.confirm to Kailo's toast and confirmation
 // inside the Kailo frame and re-exports everything else unchanged. The shell
-// itself (and node_modules) keep the real package.
+// itself, the Kailo popconfirm it registers (which wraps the native one) and
+// node_modules keep the real package.
 const TDESIGN_SHELL = resolve(__dirname, 'src/kailo/tdesign-shell.ts')
+const TDESIGN_NATIVE_IMPORTERS = new Set([TDESIGN_SHELL, resolve(__dirname, 'src/kailo/popconfirm.ts')])
 function kailoTDesignShell(): Plugin {
   return {
     name: 'kailo-tdesign-shell',
@@ -59,7 +61,7 @@ function kailoTDesignShell(): Plugin {
     resolveId(source, importer) {
       if (source !== 'tdesign-vue-next' || !importer) return null
       const from = importer.split('?')[0]
-      if (from === TDESIGN_SHELL || from.includes('/node_modules/')) return null
+      if (TDESIGN_NATIVE_IMPORTERS.has(from) || from.includes('/node_modules/')) return null
       return TDESIGN_SHELL
     },
   }

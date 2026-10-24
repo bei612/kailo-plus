@@ -36,22 +36,6 @@
       </t-dropdown>
     </t-tooltip>
 
-    <!-- DD-157: an action started from Kailo's header carries no user activation into
-         this frame, so the browser would refuse the file chooser; one click here opens it. -->
-    <t-dialog
-      v-model:visible="pickerDialogVisible"
-      :header="pickerFolder ? t('upload.uploadFolder') : t('upload.uploadDocument')"
-      :footer="false"
-      width="480px"
-    >
-      <div class="upload-picker">
-        <t-button theme="primary" @click="choosePicked">
-          <template #icon><t-icon :name="pickerFolder ? 'folder-add' : 'upload'" size="16px" /></template>
-          {{ pickerFolder ? t('upload.uploadFolder') : t('upload.uploadDocument') }}
-        </t-button>
-      </div>
-    </t-dialog>
-
     <t-dialog
       v-model:visible="urlDialogVisible"
       :header="t('knowledgeBase.importURLTitle')"
@@ -81,6 +65,8 @@ import { ref, computed, h } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { MessagePlugin, Icon as TIcon } from 'tdesign-vue-next'
 import { filterUploadFiles } from '../utils/uploadSources'
+import { setRelativePath } from '@/views/platform/collectDroppedFiles'
+import type { KailoFileSelection } from '@/kailo/bridge'
 
 const props = withDefaults(defineProps<{
   acceptFileTypes?: string
@@ -185,23 +171,23 @@ const notifyFilterResult = (result: ReturnType<typeof filterUploadFiles>, emptyA
   return true
 }
 
-const handleFilesChange = (event: Event, fromFolder: boolean) => {
-  const input = event.target as HTMLInputElement
-  const files = input.files
-  if (!files || files.length === 0) return
-
+/** Filters the chosen files like the native inputs do and hands the rest to the upload flow. */
+const acceptChosenFiles = (files: FileList | File[], fromFolder: boolean) => {
+  if (files.length === 0) return
   const result = filterUploadFiles(files, {
     supportedFileTypes: props.supportedFileTypes,
     fromFolder,
     multiFile: files.length > 1,
   })
-
-  if (!notifyFilterResult(result, 'knowledgeBase.allFilesSkippedNoEngine')) {
-    input.value = ''
-    return
-  }
-
+  if (!notifyFilterResult(result, 'knowledgeBase.allFilesSkippedNoEngine')) return
   emit('files', result.validFiles)
+}
+
+const handleFilesChange = (event: Event, fromFolder: boolean) => {
+  const input = event.target as HTMLInputElement
+  const files = input.files
+  if (!files || files.length === 0) return
+  acceptChosenFiles(files, fromFolder)
   input.value = ''
 }
 
@@ -232,25 +218,24 @@ const openUrlDialog = () => {
   urlDialogVisible.value = true
 }
 
-const pickerDialogVisible = ref(false)
-const pickerFolder = ref(false)
-
-/** The browser opens a file chooser only with a user activation in this document. */
-const hasUserActivation = () => {
-  const activation = (navigator as Navigator & { userActivation?: { isActive: boolean } }).userActivation
-  return activation ? activation.isActive : true
-}
-
-const choosePicked = () => {
-  pickerDialogVisible.value = false
-  ;(pickerFolder.value ? folderInputRef : fileInputRef).value?.click()
-}
-
-/** Runs one entry of the source menu (DD-157: from Kailo's page header). */
-const runAction = (value: 'upload' | 'uploadFolder' | 'importURL' | 'manualCreate') => {
-  if ((value === 'upload' || value === 'uploadFolder') && !hasUserActivation()) {
-    pickerFolder.value = value === 'uploadFolder'
-    pickerDialogVisible.value = true
+/**
+ * Runs one entry of the source menu from Kailo's page header (DD-157). The
+ * upload entries are file actions: Kailo opened the system picker inside the
+ * user's click and passes the chosen files here (07 §4.8.7 file selection
+ * channel); a folder pick carries each file's relative path, which a
+ * structured-cloned File does not keep, so it is restored for the folder
+ * mapping of the upload flow.
+ */
+const runAction = (value: 'upload' | 'uploadFolder' | 'importURL' | 'manualCreate', selection?: KailoFileSelection) => {
+  if ((value === 'upload' || value === 'uploadFolder') && selection) {
+    const fromFolder = value === 'uploadFolder'
+    if (fromFolder) {
+      selection.files.forEach((file, index) => {
+        const path = selection.paths[index]
+        if (path && path !== file.name && !file.webkitRelativePath) setRelativePath(file, path)
+      })
+    }
+    acceptChosenFiles(selection.files, fromFolder)
     return
   }
   handleActionSelect({ value })
@@ -260,12 +245,6 @@ defineExpose({ openUrlDialog, runAction })
 </script>
 
 <style lang="less" scoped>
-.upload-picker {
-  display: flex;
-  justify-content: center;
-  padding: 8px 0 4px;
-}
-
 .hidden-file-input {
   position: absolute;
   width: 0;
