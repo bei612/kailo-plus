@@ -8463,6 +8463,221 @@ fn target_request_header_modifier_strips_platform_headers_on_every_upstream_requ
 	}
 }
 
+// Kailo DD-152(1) / SF-AGW-32: `mcpAuthentication` validates the Agent session
+// bearer and always removes it (its JWT config fixes `preserve_token=false`)
+// before `mcpGuardrails` runs, so the ExtMcp request never carries
+// `authorization`; the session route used to read it from there and Core
+// refused every request (production: initialize -> TOOL_REJECTED). Route
+// metadata still evaluates the validated token as `jwt.rawToken.unredacted()`
+// in both phases, and no upstream request ever carries the bearer.
+#[test]
+fn mcp_authentication_strips_session_bearer_and_route_metadata_carries_validated_token() {
+	use std::collections::HashMap;
+	use std::sync::Mutex as StdMutex;
+
+	use base64::Engine;
+
+	use crate::cel::Expression;
+	use crate::test_helpers::extmcpmock::{closure_mock, pass_request, pass_response};
+
+	type Seen = Arc<StdMutex<Vec<(String, bool, Option<serde_json::Value>)>>>;
+	let runtime = tokio::runtime::Builder::new_multi_thread()
+		.enable_all()
+		.thread_stack_size(4 * 1024 * 1024)
+		.build()
+		.unwrap();
+	let (token, requests, responses, upstream, refused) = runtime.block_on(async move {
+		use aws_lc_rs::signature::{ECDSA_P256_SHA256_FIXED_SIGNING, EcdsaKeyPair, KeyPair};
+		use rmcp::ServiceExt;
+		use rmcp::model::{ClientCapabilities, ClientInfo, Implementation};
+		use rmcp::transport::StreamableHttpClientTransport;
+		use rmcp::transport::streamable_http_client::StreamableHttpClientTransportConfig;
+
+		crate::crypto::jwt::init();
+		// Ephemeral test-only signing material, like Core's per-process Session signer.
+		let rng = aws_lc_rs::rand::SystemRandom::new();
+		let pkcs8 = EcdsaKeyPair::generate_pkcs8(&ECDSA_P256_SHA256_FIXED_SIGNING, &rng).unwrap();
+		let pair = EcdsaKeyPair::from_pkcs8(&ECDSA_P256_SHA256_FIXED_SIGNING, pkcs8.as_ref()).unwrap();
+		let public = pair.public_key().as_ref().to_vec();
+		let b64 = |bytes: &[u8]| base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
+		let jwks: jsonwebtoken::jwk::JwkSet = serde_json::from_value(serde_json::json!({"keys":[{
+			"kty":"EC","crv":"P-256","alg":"ES256","kid":"session","use":"sig",
+			"x":b64(&public[1..33]),"y":b64(&public[33..65])}]}))
+		.unwrap();
+		let issuer = "urn:test:session";
+		let audience = "urn:test:mcp";
+		let provider = crate::http::jwt::Provider::from_jwks(
+			jwks,
+			issuer.to_string(),
+			Some(vec![audience.to_string()]),
+			crate::http::jwt::JWTValidationOptions {
+				required_claims: ["exp", "aud", "iss", "sub"]
+					.into_iter()
+					.map(String::from)
+					.collect(),
+			},
+		)
+		.unwrap();
+		let authn = crate::types::agent::McpAuthentication {
+			issuer: issuer.to_string(),
+			audiences: vec![audience.to_string()],
+			provider: None,
+			resource_metadata: crate::types::agent::ResourceMetadata {
+				extra: Default::default(),
+			},
+			jwt_validator: Arc::new(crate::http::jwt::Jwt::from_providers(
+				vec![provider],
+				crate::http::jwt::Mode::Strict,
+				crate::http::auth::AuthorizationLocation::bearer_header(),
+				false,
+			)),
+			mode: crate::types::agent::McpAuthenticationMode::Strict,
+			client_id: None,
+			client_secret: None,
+		};
+		let now = std::time::SystemTime::now()
+			.duration_since(std::time::UNIX_EPOCH)
+			.unwrap()
+			.as_secs();
+		let mut header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::ES256);
+		header.kid = Some("session".into());
+		let token = jsonwebtoken::encode(
+			&header,
+			&serde_json::json!({"iss":issuer,"aud":audience,"sub":"agent-principal",
+				"iat":now,"exp":now+60,"jti":"session-jti","installation_resource_id":"installation"}),
+			&jsonwebtoken::EncodingKey::from_ec_der(pkcs8.as_ref()),
+		)
+		.unwrap();
+
+		let requests: Seen = Arc::new(StdMutex::new(Vec::new()));
+		let responses: Seen = Arc::new(StdMutex::new(Vec::new()));
+		let session = |md: Option<&prost_wkt_types::Struct>| {
+			md.and_then(|md| md.fields.get("session"))
+				.map(|value| serde_json::to_value(value).unwrap())
+		};
+		let extmcp_mock = {
+			let requests = requests.clone();
+			let responses = responses.clone();
+			closure_mock(
+				move |req| {
+					requests.lock().unwrap().push((
+						req.method.clone(),
+						req
+							.headers
+							.iter()
+							.any(|h| h.key.eq_ignore_ascii_case("authorization")),
+						session(req.metadata_context.as_ref()),
+					));
+					pass_request()
+				},
+				move |res| {
+					responses
+						.lock()
+						.unwrap()
+						.push((res.method.clone(), false, session(res.metadata_context.as_ref())));
+					pass_response()
+				},
+			)
+			.spawn()
+			.await
+		};
+		let mut metadata = HashMap::new();
+		metadata.insert(
+			"session".to_string(),
+			Arc::new(Expression::new_strict("'Bearer ' + jwt.rawToken.unredacted()").unwrap()),
+		);
+		let methods = ["initialize", "tools/list", "tools/call"]
+			.into_iter()
+			.map(|m| (m.to_string(), guardrails::Phase::Full))
+			.collect();
+		let guard = guardrails_test_support::policy_with(
+			extmcp_mock.address,
+			guardrails::FailureMode::FailClosed,
+			methods,
+			metadata,
+		);
+		let (mock, captured) = mock_streamable_http_server_with_capture(false).await;
+		let (_bind, io) = setup_proxy_policies_with_target(
+			&mock,
+			false,
+			false,
+			vec![BackendTrafficPolicy::McpAuthentication(authn), guard],
+			Vec::new(),
+		)
+		.await;
+
+		let config = StreamableHttpClientTransportConfig::with_uri(format!("http://{io}/mcp"))
+			.auth_header(token.clone());
+		let client = ClientInfo::new(
+			ClientCapabilities::default(),
+			Implementation::new("codex-session-client", "0.0.1"),
+		)
+		.serve(StreamableHttpClientTransport::from_config(config))
+		.await
+		.expect("an authenticated session initializes");
+		client.list_tools(None).await.expect("tools/list");
+		client
+			.call_tool(
+				rmcp::model::CallToolRequestParams::new("echo").with_arguments(
+					serde_json::json!({"hi": "world"})
+						.as_object()
+						.cloned()
+						.unwrap(),
+				),
+			)
+			.await
+			.expect("tools/call");
+		let _ = client.cancel().await;
+		tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+
+		// Without a session the route refuses before any processor or upstream call.
+		let before = requests.lock().unwrap().len();
+		let refused = ClientInfo::new(
+			ClientCapabilities::default(),
+			Implementation::new("anonymous-client", "0.0.1"),
+		)
+		.serve(StreamableHttpClientTransport::from_config(
+			StreamableHttpClientTransportConfig::with_uri(format!("http://{io}/mcp")),
+		))
+		.await
+		.is_err()
+			&& requests.lock().unwrap().len() == before;
+
+		let upstream = captured.lock().unwrap().clone();
+		let requests = requests.lock().unwrap().clone();
+		let responses = responses.lock().unwrap().clone();
+		(token, requests, responses, upstream, refused)
+	});
+	runtime.shutdown_timeout(std::time::Duration::from_secs(1));
+
+	let expected = serde_json::json!(format!("Bearer {token}"));
+	for method in ["initialize", "tools/list", "tools/call"] {
+		assert!(
+			requests.iter().any(|(m, _, _)| m == method),
+			"ExtMcp request phase saw {method}; saw {requests:?}"
+		);
+	}
+	for (method, authorization, session) in &requests {
+		assert!(
+			!authorization,
+			"{method}: the validated bearer is removed before mcpGuardrails"
+		);
+		assert_eq!(session.as_ref(), Some(&expected), "{method}: request metadata");
+	}
+	assert!(responses.iter().any(|(m, _, _)| m == "tools/call"));
+	for (method, _, session) in &responses {
+		assert_eq!(session.as_ref(), Some(&expected), "{method}: response metadata");
+	}
+	assert!(upstream.len() >= 2, "saw {upstream:?}");
+	for h in &upstream {
+		assert!(
+			h.get(::http::header::AUTHORIZATION).is_none(),
+			"no upstream request carries the session bearer; saw {h:?}"
+		);
+	}
+	assert!(refused, "a request without a session never reaches ExtMcp");
+}
+
 #[tokio::test]
 async fn mcp_guardrails_mutated_prompt_request_reaches_upstream() {
 	use crate::test_helpers::extmcpmock::{
