@@ -96,6 +96,11 @@ def platform_env(h, r, project):
         "AUTOMATION_WEBHOOK_PUBLIC_BASE_URL": "",
     })
     overrides.update({k: str(v) for k, v in ports.items()})
+    # The automation egress network has a fixed subnet and gateway address; the isolated copy gets
+    # a free /28 of its own (same shape as production's, gateway at .10).
+    egress = h.free_subnets(1, prefix="10.202.", start=16, stop=250)[0]
+    egress = egress.replace(".0/24", ".0/28")
+    overrides.update({"AUTOMATION_EGRESS_SUBNET": egress, "AUTOMATION_EGRESS_GATEWAY_IP": egress.replace(".0/28", ".10")})
     out = []
     for line in lines:
         match = re.match(r"^([A-Z][A-Z0-9_]*)=", line)
