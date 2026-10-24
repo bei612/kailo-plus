@@ -284,8 +284,9 @@ html[data-kailo-mode] .t-button--shape-circle {
 html[data-kailo-mode] .t-button--shape-square.t-size-s,
 html[data-kailo-mode] .t-button--shape-circle.t-size-s { width: 28px; }
 
-/* Inputs, selects, text areas. */
-html[data-kailo-mode] .t-input {
+/* Inputs, selects, text areas. :where() keeps the mode at zero specificity so composite
+   controls (range inputs, the chat composer, tag inputs) keep their own inner geometry. */
+:where(html[data-kailo-mode]) .t-input {
   height: 34px;
   border-radius: var(--kailo-radius-md);
   border: 1px solid var(--kailo-color-line-strong);
@@ -295,36 +296,36 @@ html[data-kailo-mode] .t-input {
   transition: border-color var(--kailo-duration-fast) var(--kailo-ease-standard),
     box-shadow var(--kailo-duration-fast) var(--kailo-ease-standard);
 }
-html[data-kailo-mode] .t-input.t-size-s { height: 28px; font-size: 13px; }
-html[data-kailo-mode] .t-input:hover:not(.t-is-disabled) {
+:where(html[data-kailo-mode]) .t-input.t-size-s { height: 28px; font-size: 13px; }
+:where(html[data-kailo-mode]) .t-input:hover:not(.t-is-disabled) {
   border-color: hsl(var(--kailo-hsl-muted-foreground) / 0.4);
 }
-html[data-kailo-mode] .t-input--focused,
-html[data-kailo-mode] .t-input--focused:hover {
+:where(html[data-kailo-mode]) .t-input--focused,
+:where(html[data-kailo-mode]) .t-input--focused:hover {
   border-color: var(--kailo-color-brand);
   box-shadow: 0 0 0 3px hsl(var(--kailo-hsl-primary) / 0.15);
 }
-html[data-kailo-mode] .t-input .t-input__inner::placeholder,
-html[data-kailo-mode] .t-textarea__inner::placeholder { color: var(--kailo-color-muted-foreground); }
-html[data-kailo-mode] .t-is-error .t-input,
-html[data-kailo-mode] .t-input.t-is-error { border-color: var(--kailo-color-danger); }
-html[data-kailo-mode] .t-input__tips.t-tips--error,
-html[data-kailo-mode] .t-form__controls .t-input__extra { color: var(--kailo-color-danger-text); font-size: 12px; }
-html[data-kailo-mode] .t-textarea__inner {
+:where(html[data-kailo-mode]) .t-input .t-input__inner::placeholder,
+:where(html[data-kailo-mode]) .t-textarea__inner::placeholder { color: var(--kailo-color-muted-foreground); }
+:where(html[data-kailo-mode]) .t-is-error .t-input,
+:where(html[data-kailo-mode]) .t-input.t-is-error { border-color: var(--kailo-color-danger); }
+:where(html[data-kailo-mode]) .t-input__tips.t-tips--error,
+:where(html[data-kailo-mode]) .t-form__controls .t-input__extra { color: var(--kailo-color-danger-text); font-size: 12px; }
+:where(html[data-kailo-mode]) .t-textarea__inner {
   border-radius: var(--kailo-radius-md);
   border: 1px solid var(--kailo-color-line-strong);
   background: var(--kailo-color-background);
   font-size: 14px;
 }
-html[data-kailo-mode] .t-textarea__inner:hover { border-color: hsl(var(--kailo-hsl-muted-foreground) / 0.4); }
-html[data-kailo-mode] .t-textarea__inner:focus,
-html[data-kailo-mode] .t-textarea__inner--focused {
+:where(html[data-kailo-mode]) .t-textarea__inner:hover { border-color: hsl(var(--kailo-hsl-muted-foreground) / 0.4); }
+:where(html[data-kailo-mode]) .t-textarea__inner:focus,
+:where(html[data-kailo-mode]) .t-textarea__inner--focused {
   border-color: var(--kailo-color-brand);
   box-shadow: 0 0 0 3px hsl(var(--kailo-hsl-primary) / 0.15);
 }
-html[data-kailo-mode] .t-input-number,
-html[data-kailo-mode] .t-select-input,
-html[data-kailo-mode] .t-date-range-picker { border-radius: var(--kailo-radius-md); }
+:where(html[data-kailo-mode]) .t-input-number,
+:where(html[data-kailo-mode]) .t-select-input,
+:where(html[data-kailo-mode]) .t-date-range-picker { border-radius: var(--kailo-radius-md); }
 
 /* Checkbox / radio / switch. */
 html[data-kailo-mode] .t-checkbox__input {
