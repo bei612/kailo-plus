@@ -124,6 +124,14 @@ describe("connectors settings section (DD-149 (1))", () => {
 });
 
 describe("connector list (DD-149 (10))", () => {
+  it("names a registrant without a display name as an unknown member, never by Principal ID (defect 7b)", async () => {
+    const anonymous = { ...connection, ownerDisplayName: undefined, ownerPrincipalId: "6f1c2a7e-0000-4000-8000-00000000abcd" };
+    const { host } = await mount(routes(undefined, { ...page, connections: [anonymous] }), <ConnectorsSettingsPanel />);
+    const row = host.querySelector<HTMLElement>("[data-testid=connector-row]")!;
+    expect(row.textContent).toContain("Owner: Unknown member");
+    expect(host.textContent).not.toContain(anonymous.ownerPrincipalId);
+  });
+
   it("shows state, health, scope, owner, tool count and drift without internal terms", async () => {
     const { host, send } = await mount(routes(), <ConnectorsSettingsPanel />);
     const row = host.querySelector<HTMLElement>("[data-testid=connector-row]")!;
@@ -131,6 +139,7 @@ describe("connector list (DD-149 (10))", () => {
     expect(row.textContent).toContain("mcp.example.com");
     expect(row.textContent).toContain("Everyone in the organization");
     expect(row.textContent).toContain("Owner: Alice");
+    expect(row.textContent).not.toContain("human-1");
     expect(row.textContent).toContain("2 tools");
     expect(row.textContent).toContain("Active");
     expect(row.textContent).toContain("Available");
@@ -224,14 +233,16 @@ describe("adding a connector (V-SCN-240)", () => {
   });
 
   it.each([
-    [{ status: 403, body: { reason: "BINDING_NOT_ACTIVE" } }, "Authentication failed. Check the credential or authorize again (BINDING_NOT_ACTIVE)"],
-    [{ status: 503, body: { reason: "DEPENDENCY_UNAVAILABLE", class: "UNKNOWN" } }, "Can't reach the service. Try again later (DEPENDENCY_UNAVAILABLE)"],
-    [{ status: 400, body: { reason: "INVALID_PARAMETERS" } }, "The address or a field is invalid, or this address may not be connected (INVALID_PARAMETERS)"],
-  ])("explains a failed connection test and saves nothing (%j)", async (reply, text) => {
+    [{ status: 403, body: { reason: "BINDING_NOT_ACTIVE" } }, "Authentication failed. Check the credential or authorize again"],
+    [{ status: 503, body: { reason: "DEPENDENCY_UNAVAILABLE", class: "UNKNOWN" } }, "Can't reach the service. Try again later"],
+    [{ status: 400, body: { reason: "INVALID_PARAMETERS" } }, "The address or a field is invalid, or this address may not be connected"],
+  ])("explains a failed connection test in words only and saves nothing (%j)", async (reply, text) => {
     const { host, send } = await mount(routes((request) => request.path === "/api/v1/mcp-connections/probes"
       ? reply : undefined), <AddConnectorFlow page={page as never} onDone={() => {}} />);
     await fillApiKey(host);
+    // Defect 7c: the reason code never appears in visible text.
     expect(host.querySelector("[data-testid=connector-probe-failure]")?.textContent).toBe(text);
+    expect(host.textContent).not.toContain(reply.body.reason);
     expect([...host.querySelectorAll("button")].some((node) => node.textContent === "Next: choose tools")).toBe(false);
     expect(actions(send)).toHaveLength(0);
     expect(document.body.textContent).not.toContain(SECRET);

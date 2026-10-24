@@ -8,6 +8,7 @@ import {
   withAgentAuthorFacts, type AgentOwnerRenderer, type TimelineMessage,
 } from "../src/react/messages";
 import { InboxMessageRowSurface } from "../src/react/inbox-surface";
+import { UserProfilePopoverSurface } from "../src/react/pulse/UserProfilePopover";
 import { TooltipProvider } from "../src/react/sidebar/tooltip";
 import { render } from "./render";
 
@@ -106,4 +107,41 @@ it("opens the owner's member profile card from the owner name on any host render
   </AgentAuthorFactsProvider></TooltipProvider>);
   expect(plain.querySelector('[data-testid="owner-card"]')).toBeNull();
   expect(plain.querySelector('[data-testid="message-agent-owner"]')?.textContent).toContain("Dana");
+});
+
+/** The visible (non-sr-only) text of the owner chip, in document order. */
+function visibleOwnerText(chip: Element): string {
+  const clone = chip.cloneNode(true) as Element;
+  clone.querySelectorAll(".sr-only").forEach((node) => node.remove());
+  return (clone.textContent ?? "").replace(/\s+/g, "");
+}
+
+// Defect 7d: "管理者为" was followed by nothing. The name must be rendered as visible text right
+// after the label through a host profile popover (Web wraps it in UserProfilePopoverSurface), and
+// its slot keeps a minimum width so a squeezed header cannot collapse it to zero.
+it("shows the owner name right after “managed by” through a host profile popover trigger", async () => {
+  await act(async () => setLocale("zh-CN"));
+  const facts = agentAuthorFacts(directory);
+  const renderOwner: AgentOwnerRenderer = (owner, name) => <UserProfilePopoverSurface pubkey={owner.pubkey}
+    triggerElement="span" triggerAriaLabel={owner.label} onOpenProfile={() => {}} renderBody={() => null}>{name}</UserProfilePopoverSurface>;
+  const view = await render(<TooltipProvider><AgentAuthorFactsProvider facts={facts} renderOwner={renderOwner}>
+    <MessageRowSurface message={message} renderBody={() => message.body} />
+  </AgentAuthorFactsProvider></TooltipProvider>);
+  const chip = view.querySelector('[data-testid="message-agent-owner"]')!;
+  expect(visibleOwnerText(chip)).toBe("管理者为Dana");
+  const name = chip.querySelector('[data-testid="message-agent-owner-name"]')!;
+  expect(name.textContent).toBe("Dana");
+  const slot = chip.querySelector('[data-testid="message-agent-owner-slot"]')!;
+  expect(slot.contains(name)).toBe(true);
+  expect(slot.className).toContain("min-w-[3ch]");
+  expect(slot.className).toContain("[&>*]:min-w-0");
+
+  // Without a host renderer the Tenant name is plain text after the label, also with a width floor.
+  const plain = await render(<TooltipProvider><AgentAuthorFactsProvider facts={agentAuthorFacts({ principalId: null, members: [],
+    agents: [{ agentPubkey: AGENT, installationResourceId: "inst-1", ownerPrincipalId: "owner-principal", ownerDisplayName: "Dana" }] } as never)}>
+    <MessageRowSurface message={message} renderBody={() => message.body} />
+  </AgentAuthorFactsProvider></TooltipProvider>);
+  const plainChip = plain.querySelector('[data-testid="message-agent-owner"]')!;
+  expect(visibleOwnerText(plainChip)).toBe("管理者为Dana");
+  expect(plainChip.querySelector('[data-testid="message-agent-owner-name"]')?.className).toContain("min-w-[3ch]");
 });

@@ -2524,6 +2524,13 @@ describe("AgentDefinitionsPage governed Version Installation Grant", () => {
     expect(section(host, "agent-installations").querySelector("select")?.disabled).toBe(true);
   });
 
+  /** DD-153: delegation scopes are a checkbox list (multi-select). */
+  async function tickFirstScope(action: HTMLElement) {
+    const box = action.querySelector<HTMLInputElement>("[data-testid=agent-delegation-targets] input[type=checkbox]");
+    expect(box).toBeTruthy();
+    await click(box!);
+  }
+
   it.each([false, true])("delegation %s freezes returned scope/revocation and exact UNKNOWN execution", async (revoke) => {
     const actionKey = revoke ? "agent.delegation.revoke" : "agent.delegation.grant";
     let count = 0;
@@ -2540,10 +2547,7 @@ describe("AgentDefinitionsPage governed Version Installation Grant", () => {
     const action = section(host, "agent-delegation-management");
     if (revoke) await click(button(action, "Review revocation"));
     else {
-      const select = action.querySelector("select");
-      const option = select?.querySelectorAll("option")[1];
-      expect(option).toBeTruthy();
-      await change(action, "Exact governed action and target", option!.value);
+      await tickFirstScope(action);
       await change(action, "Valid from", "2026-10-03T12:00:00");
       await change(action, "Expires at", "2027-10-03T12:00:00");
       await change(action, "Maximum uses", "3");
@@ -2613,9 +2617,7 @@ describe("AgentDefinitionsPage governed Version Installation Grant", () => {
     await click(button(section(host, "agent-installations"), "View installation"));
     await click(button(host, "View delegation grants"));
     const action = section(host, "agent-delegation-management");
-    const option = action.querySelector("select")?.querySelectorAll("option")[1];
-    expect(option).toBeTruthy();
-    await change(action, "Exact governed action and target", option!.value);
+    await tickFirstScope(action);
     await change(action, "Valid from", "2026-10-03T12:00:00");
     await change(action, "Expires at", "2027-10-03T12:00:00");
     expect(action.textContent).toContain("You already have an active delegation covering this scope.");
@@ -2643,9 +2645,7 @@ describe("AgentDefinitionsPage governed Version Installation Grant", () => {
     if (kind === "installation") {
       await change(action, "Definition reference", installation.pinnedVersionAssetId);
     } else if (kind === "delegation") {
-      const option = action.querySelector("select")?.querySelectorAll("option")[1];
-      expect(option).toBeTruthy();
-      await change(action, "Exact governed action and target", option!.value);
+      await tickFirstScope(action);
       await change(action, "Valid from", "2026-10-03T12:00:00");
       await change(action, "Expires at", "2027-10-03T12:00:00");
     }
@@ -2782,7 +2782,8 @@ describe("DevicesPage", () => {
     const host = await mount(t, <DevicesPage />);
     await settle();
     await click(button(host, "Revoke"));
-    expect(host.querySelector("[role=alert]")?.textContent).toContain("CLIENT_KEY_NOT_FOUND");
+    expect(host.querySelector("[role=alert]")?.textContent).toContain("That device is not registered to you.");
+    expect(host.textContent).not.toContain("CLIENT_KEY_NOT_FOUND");
   });
 });
 

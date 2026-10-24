@@ -6,6 +6,11 @@ import type { AgentOwnerRenderer } from "../agentAuthorFacts";
 import { UserProfilePopover, useHasSystemMessageHost } from "./host";
 
 // DD-141 §2.4: owner name in the text-secondary role, text on hover; muted chip stays AA readable.
+// Defect 7d: the label and icon never shrink, so a header squeeze used to collapse the name to
+// zero width ("managed by" followed by nothing). The name slot keeps a floor of a few characters
+// and truncates inside it; host triggers (an unsized inline-flex profile popover) are made
+// shrinkable by the slot so the ellipsis lands on the name rather than the name disappearing.
+const ownerSlotClass = "inline-flex min-w-[3ch] max-w-full items-baseline [&>*]:min-w-0 [&>*]:max-w-full";
 const ownerNameClass = "min-w-0 truncate rounded font-semibold text-[var(--k-text-secondary)] transition-colors duration-100 hover:text-foreground hover:underline focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring";
 
 export function MessageAgentOwner({
@@ -54,26 +59,30 @@ export function MessageAgentOwner({
       {memberOwner && renderOwner ? (
         <>
           <span aria-hidden="true" className="shrink-0">{t("messages.system.managedBy")}</span>
-          {renderOwner(memberOwner, <span className={ownerNameClass} data-testid="message-agent-owner-name">{ownerLabel}</span>)}
+          <span className={ownerSlotClass} data-testid="message-agent-owner-slot">
+            {renderOwner(memberOwner, <span className={ownerNameClass} data-testid="message-agent-owner-name">{ownerLabel}</span>)}
+          </span>
         </>
       ) : ownerLabel && !ownerPubkey ? (
         // DD-147(1): the owner's Tenant name without a Workspace key to open a profile for.
         <>
           <span aria-hidden="true" className="shrink-0">{t("messages.system.managedBy")}</span>
-          <span className="min-w-0 truncate font-semibold text-[var(--k-text-secondary)]">{ownerLabel}</span>
+          <span className="min-w-[3ch] truncate font-semibold text-[var(--k-text-secondary)]" data-testid="message-agent-owner-name">{ownerLabel}</span>
         </>
       ) : ownerPubkey && ownerLabel ? (
         <>
           <span aria-hidden="true" className="shrink-0">
             {t("messages.system.managedBy")}
           </span>
-          <UserProfilePopover
-            pubkey={ownerPubkey}
-            triggerAriaLabel={ownerLabel}
-            triggerElement="span"
-          >
-            <span className={ownerNameClass}>{ownerLabel}</span>
-          </UserProfilePopover>
+          <span className={ownerSlotClass} data-testid="message-agent-owner-slot">
+            <UserProfilePopover
+              pubkey={ownerPubkey}
+              triggerAriaLabel={ownerLabel}
+              triggerElement="span"
+            >
+              <span className={ownerNameClass} data-testid="message-agent-owner-name">{ownerLabel}</span>
+            </UserProfilePopover>
+          </span>
         </>
       ) : (
         <span aria-hidden="true" className="min-w-0 truncate">

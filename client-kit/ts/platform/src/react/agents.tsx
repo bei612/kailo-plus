@@ -2021,6 +2021,34 @@ function renewable(row: AgentDelegationView, principal: string | undefined): boo
     && ["ACTIVE", "EXPIRED"].includes(row.state) && row.supersededByDelegationId === undefined;
 }
 
+/** DD-153: a scope that lets a trigger invoke this installation (agent.invoke on it, or automation.run). */
+function invocationScope(scope: DelegationScopeParameters, installationResourceId: string | undefined): boolean {
+  return scope.toolResourceId === undefined && (scope.actionKey === "automation.run"
+    || (scope.actionKey === "agent.invoke" && !!installationResourceId && scope.targetId === installationResourceId));
+}
+
+/** DD-153: platform-native, connector (mcp_connection.tool.*) and application tool scopes. */
+function toolScope(scope: DelegationScopeParameters): boolean {
+  return scope.toolResourceId !== undefined || scope.actionKey.startsWith("mcp_connection.tool.")
+    || memoryToolActions.includes(scope.actionKey);
+}
+
+/** DD-153 (1): tools only take effect inside the same Grant as the invocation scope that admits the turn. */
+function toolsWithoutInvocation(scopes: readonly DelegationScopeParameters[], installationResourceId: string | undefined): boolean {
+  return scopes.some(toolScope) && !scopes.some((scope) => invocationScope(scope, installationResourceId));
+}
+
+/** DD-153 (2): a renewal keeps the offered old scopes and appends newly selected ones (same key once). */
+function withAddedScopes(base: readonly DelegationScopeParameters[], added: readonly DelegationScopeParameters[]): DelegationScopeParameters[] {
+  const keys = new Set(base.map(renewalKey));
+  return [...base, ...added.filter((scope) => !keys.has(renewalKey(scope))).map((scope) => ({ ...scope }))];
+}
+
+function delegationScopeLabel(scope: DelegationScopeParameters, toolNames: ReadonlyMap<string, string>): string {
+  const tool = scope.toolResourceId !== undefined ? `${toolNames.get(scope.toolResourceId) ?? scope.toolResourceId} · ` : "";
+  return `${tool}${scope.actionKey} · ${scope.targetId ?? scope.createWorkspaceId ?? ""} · ${scope.actionVersion}`;
+}
+
 function InstallationDelegation({ installation, locked, onLocked, onReset, onRecorded }: {
   installation: AgentInstallationView | null; locked: boolean; onLocked: (locked: boolean) => void;
   onReset: () => void; onRecorded: () => void;
@@ -2035,7 +2063,8 @@ function InstallationDelegation({ installation, locked, onLocked, onReset, onRec
   const [targetOffsets, setTargetOffsets] = useState([0]);
   const [grantIndex, setGrantIndex] = useState(0);
   const [targetIndex, setTargetIndex] = useState(0);
-  const [selected, setSelected] = useState("");
+  // DD-153 (2): every chosen scope, kept across target pages, goes into one Grant.
+  const [selected, setSelected] = useState<ReadonlyMap<string, DelegationScopeParameters>>(() => new Map());
   const [validFrom, setValidFrom] = useState("");
   const [expiresAt, setExpiresAt] = useState("");
   const [maxUses, setMaxUses] = useState("");
@@ -2068,12 +2097,27 @@ function InstallationDelegation({ installation, locked, onLocked, onReset, onRec
     && new Set(targets.data.scopes.map(scopeKey)).size === targets.data.scopes.length
     && (targets.data.nextOffset === undefined || (Number.isSafeInteger(targets.data.nextOffset) && targets.data.nextOffset > targetOffset))
     ? targets.data : null;
-  const scope = targetPage?.scopes.find((row) => scopeKey(row) === selected);
+  const chosen = [...selected.values()];
+  const toggleScope = (row: DelegationScopeParameters) => setSelected((old) => {
+    const next = new Map(old);
+    const key = scopeKey(row);
+    if (next.has(key)) next.delete(key); else next.set(key, { ...row });
+    return next;
+  });
   // DD-126 (5): one in-period ACTIVE grant per grantor and scope key; Core rejects a parallel one.
-  const overlapping = !!scope && !!page && page.grants.some((row) => row.grantorPrincipalId === currentPrincipalId
-    && String(row.state) === "ACTIVE" && Date.parse(String(row.parameters.expiresAt)) > Date.now()
-    && row.parameters.scopes.some((item) => renewalKey(item) === renewalKey(scope)));
+  const ownActive = page?.grants.filter((row) => row.grantorPrincipalId === currentPrincipalId
+    && String(row.state) === "ACTIVE" && Date.parse(String(row.parameters.expiresAt)) > Date.now()) ?? [];
+  const overlapping = chosen.some((scope) => ownActive.some((row) =>
+    row.parameters.scopes.some((item) => renewalKey(item) === renewalKey(scope))));
+  // DD-153 (2): tool scopes need an invocation scope in the same Grant; an existing invocation
+  // grant is extended by renewal instead.
+  const grantMissingInvocation = toolsWithoutInvocation(chosen, resourceId);
+  const invocationGrant = grantMissingInvocation ? ownActive.find((row) => renewable(row, currentPrincipalId)
+    && row.parameters.scopes.some((item) => invocationScope(item, resourceId))) : undefined;
   const renewal = renewing && targetPage ? renewalScopes(renewing, targetPage.scopes) : null;
+  const renewalAll = renewal ? withAddedScopes(renewal.scopes, chosen) : [];
+  const renewalAdded = renewal ? renewalAll.slice(renewal.scopes.length) : [];
+  const renewalMissingInvocation = toolsWithoutInvocation(renewalAll, resourceId);
   // Tool names only label scopes; the scope itself (and Core's recheck) stays the authority.
   const toolScoped = !!page?.grants.some((row) => row.parameters.scopes.some((item) => item.toolResourceId !== undefined))
     || !!targetPage?.scopes.some((row) => row.toolResourceId !== undefined);
@@ -2099,7 +2143,7 @@ function InstallationDelegation({ installation, locked, onLocked, onReset, onRec
     || (submission?.gateState === ActionGateState.Allowed && submission.dispatchState === ActionDispatchState.NotDispatched);
   useEffect(() => {
     setGrantOffsets([0]); setTargetOffsets([0]); setGrantIndex(0); setTargetIndex(0);
-    setSelected(""); setValidFrom(""); setExpiresAt(""); setMaxUses(""); setRenewing(null);
+    setSelected(new Map()); setValidFrom(""); setExpiresAt(""); setMaxUses(""); setRenewing(null);
     if (installation) { setSubmission(null); setFailure(null); }
   }, [installation]);
   const prepare = (revoke?: AgentDelegationView, renew?: AgentDelegationView) => {
@@ -2112,17 +2156,18 @@ function InstallationDelegation({ installation, locked, onLocked, onReset, onRec
       command.delegationId = revoke.delegationId; command.delegationVersion = revoke.delegationVersion;
     } else if (renew) {
       const mapped = targetPage ? renewalScopes(renew, targetPage.scopes) : null;
+      const scopes = mapped ? withAddedScopes(mapped.scopes, chosen) : [];
       if (!page.canGrant || !page.grants.includes(renew) || !renewable(renew, currentPrincipalId)
-        || !mapped?.scopes.length || !periodValid || !usesValid) return;
+        || !mapped?.scopes.length || toolsWithoutInvocation(scopes, installation.resourceId) || !periodValid || !usesValid) return;
       command.delegationId = newIdempotencyKey();
       command.delegationGrant = { validFrom: from.toISOString(), expiresAt: until.toISOString(),
-        ...(uses === undefined ? {} : { maxUses: uses }), scopes: mapped.scopes,
+        ...(uses === undefined ? {} : { maxUses: uses }), scopes,
         renewsDelegationId: renew.delegationId, renewsDelegationVersion: renew.delegationVersion };
     } else {
-      if (!page.canGrant || !scope || overlapping || !periodValid || !usesValid) return;
+      if (!page.canGrant || !chosen.length || overlapping || grantMissingInvocation || !periodValid || !usesValid) return;
       command.delegationId = newIdempotencyKey();
       command.delegationGrant = { validFrom: from.toISOString(), expiresAt: until.toISOString(),
-        ...(uses === undefined ? {} : { maxUses: uses }), scopes: [{ ...scope }] };
+        ...(uses === undefined ? {} : { maxUses: uses }), scopes: chosen.map((scope) => ({ ...scope })) };
     }
     setIntent({ command, installation, ...(revoke ? { revokedGrant: revoke } : {}) }); setFailure(null); setSubmission(null); onLocked(true);
   };
@@ -2144,7 +2189,7 @@ function InstallationDelegation({ installation, locked, onLocked, onReset, onRec
       setFailure(null); setSubmission(result);
       if (result.dispatchState !== ActionDispatchState.Unknown && result.gateState !== ActionGateState.Evaluating
         && !(result.gateState === ActionGateState.Allowed && result.dispatchState === ActionDispatchState.NotDispatched)) {
-        setIntent(null); setRenewing(null); onLocked(false); onReset(); onRecorded(); reloadGrants(); reloadTargets();
+        setIntent(null); setRenewing(null); setSelected(new Map()); onLocked(false); onReset(); onRecorded(); reloadGrants(); reloadTargets();
       }
     } catch (error) {
       if (!unknown) {
@@ -2199,9 +2244,11 @@ function InstallationDelegation({ installation, locked, onLocked, onReset, onRec
               <p>{t("agents.delegation.validFrom")}: {String(row.parameters.validFrom)} · {t("agents.delegation.expiresAt")}: {String(row.parameters.expiresAt)}</p>
               <p>{t("agents.delegation.uses")}: {row.uses} · {t("agents.delegation.maxUses")}: {row.parameters.maxUses ?? t("agents.delegation.noUseLimit")}</p>
               {row.parameters.scopes.map((item) => <DelegationScope key={scopeKey(item)} scope={item} toolNames={toolNames} />)}
+              {String(row.state) === "ACTIVE" && toolsWithoutInvocation(row.parameters.scopes, installation.resourceId)
+                ? <div data-testid="agent-delegation-tool-only"><Notice>{t("agents.delegation.toolOnlyGrant")}</Notice></div> : null}
               <div className="flex gap-2">
                 {page.canGrant && renewable(row, currentPrincipalId) ? <Button className="w-fit" disabled={locked || requestBlocked}
-                  onClick={() => { setRenewing(row); setSelected(""); }}>{t("agents.delegation.renew")}</Button> : null}
+                  onClick={() => { setRenewing(row); setSelected(new Map()); }}>{t("agents.delegation.renew")}</Button> : null}
                 {page.canRevoke && ["ACTIVE", "REVOKING"].includes(row.state) ? <Button className="w-fit" disabled={locked || requestBlocked} onClick={() => prepare(row)}>{t("agents.delegation.revoke")}</Button> : null}
               </div>
             </section>)}
@@ -2223,25 +2270,39 @@ function InstallationDelegation({ installation, locked, onLocked, onReset, onRec
               {renewal.dropped.map((row) => <DelegationScope key={scopeKey(row)} scope={row} toolNames={toolNames} />)}
             </div> : null}
             {renewal.scopes.length === 0 ? <Notice role="alert">{t("agents.delegation.renewUnavailable")}</Notice> : null}
+            <fieldset className="flex flex-col gap-1 text-sm" data-testid="agent-delegation-renewal-add">
+              <legend>{t("agents.delegation.renewAdd")}</legend>
+              {targetPage.scopes.filter((row) => !renewal.scopes.some((item) => renewalKey(item) === renewalKey(row)))
+                .map((row) => <DelegationScopeChoice key={scopeKey(row)} label={delegationScopeLabel(row, toolNames)}
+                  checked={selected.has(scopeKey(row))} disabled={locked} onToggle={() => toggleScope(row)} />)}
+            </fieldset>
+            {renewalAdded.map((row) => <DelegationScope key={scopeKey(row)} scope={row} toolNames={toolNames} />)}
+            {renewalMissingInvocation ? <Notice role="alert">{t("agents.delegation.toolNeedsInvoke")}</Notice> : null}
             {periodFields}
             <div className="flex gap-2">
-              <Button className="w-fit" disabled={locked || requestBlocked || !renewal.scopes.length || !periodValid || !usesValid} type="submit">{t("agents.review")}</Button>
+              <Button className="w-fit" disabled={locked || requestBlocked || !renewal.scopes.length || renewalMissingInvocation || !periodValid || !usesValid} type="submit">{t("agents.review")}</Button>
               <Button className="w-fit" disabled={locked} onClick={() => setRenewing(null)}>{t("agents.cancel")}</Button>
             </div>
           </form> : targetPage.scopes.length === 0 ? <Notice>{t("agents.delegation.noTarget")}</Notice> : <form className="flex flex-col gap-3" onSubmit={(event) => { event.preventDefault(); prepare(); }}>
-            <label className="flex flex-col gap-1 text-sm">{t("agents.delegation.target")}
-              <select disabled={locked} required value={selected} onChange={(event) => setSelected(event.target.value)} className="h-8 rounded-md border border-input bg-background px-2">
-                <option value="">{t("agents.automation.select")}</option>{targetPage.scopes.map((row) => <option key={scopeKey(row)} value={scopeKey(row)}>
-                  {row.toolResourceId !== undefined ? `${toolNames.get(row.toolResourceId) ?? row.toolResourceId} · ` : ""}{row.actionKey} · {row.targetId} · {row.actionVersion}</option>)}
-              </select>
-            </label>
+            <fieldset className="flex flex-col gap-1 text-sm" data-testid="agent-delegation-targets">
+              <legend>{t("agents.delegation.target")}</legend>
+              {targetPage.scopes.map((row) => <DelegationScopeChoice key={scopeKey(row)} label={delegationScopeLabel(row, toolNames)}
+                checked={selected.has(scopeKey(row))} disabled={locked} onToggle={() => toggleScope(row)} />)}
+            </fieldset>
+            {chosen.length ? <p className="text-xs text-muted-foreground">{t("agents.delegation.selectedCount", { count: chosen.length })}</p> : null}
             {overlapping ? <Notice role="alert">{t("agents.delegation.overlap")}</Notice> : null}
+            {grantMissingInvocation ? <Notice role="alert">{t("agents.delegation.toolNeedsInvoke")}</Notice> : null}
+            {grantMissingInvocation && invocationGrant ? <div className="flex flex-col gap-2 text-sm" data-testid="agent-delegation-renew-for-tools">
+              <p>{t("agents.delegation.renewToAddTools", { delegation: invocationGrant.delegationId })}</p>
+              <Button className="w-fit" disabled={locked || requestBlocked}
+                onClick={() => setRenewing(invocationGrant)}>{t("agents.delegation.renewWithTools")}</Button>
+            </div> : null}
             {periodFields}
-            <Button className="w-fit" disabled={locked || requestBlocked || !scope || overlapping || !periodValid || !usesValid} type="submit">{t("agents.review")}</Button>
+            <Button className="w-fit" disabled={locked || requestBlocked || !chosen.length || overlapping || grantMissingInvocation || !periodValid || !usesValid} type="submit">{t("agents.review")}</Button>
           </form>}
           <div className="flex gap-2">
-            {targetIndex > 0 ? <Button disabled={locked} onClick={() => { setSelected(""); setTargetIndex(targetIndex - 1); }}>{t("roles.previous")}</Button> : null}
-            {targetPage.nextOffset !== undefined ? <Button disabled={locked} onClick={() => { setSelected(""); setTargetOffsets((old) => [...old.slice(0, targetIndex + 1), targetPage.nextOffset!]); setTargetIndex(targetIndex + 1); }}>{t("roles.next")}</Button> : null}
+            {targetIndex > 0 ? <Button disabled={locked} onClick={() => setTargetIndex(targetIndex - 1)}>{t("roles.previous")}</Button> : null}
+            {targetPage.nextOffset !== undefined ? <Button disabled={locked} onClick={() => { setTargetOffsets((old) => [...old.slice(0, targetIndex + 1), targetPage.nextOffset!]); setTargetIndex(targetIndex + 1); }}>{t("roles.next")}</Button> : null}
           </div>
         </> : null}
       <div className="flex gap-2"><Button disabled={locked} onClick={() => { reloadGrants(); reloadTargets(); }}>{t("platform.refresh")}</Button><Button disabled={locked} onClick={onReset}>{t("platform.back")}</Button></div>
@@ -2262,6 +2323,16 @@ const delegationLabels: Record<AgentDelegationView["effectiveState"], PlatformMe
   USES_EXHAUSTED: "agents.delegation.state.usesExhausted", REVOKING: "agents.delegation.state.revoking",
   REVOKED: "agents.delegation.state.revoked", SUPERSEDED: "agents.delegation.state.superseded",
 };
+
+/** DD-153 (2): one checkbox per offered scope; the selection survives target-page changes. */
+function DelegationScopeChoice({ label, checked, disabled, onToggle }: {
+  label: string; checked: boolean; disabled: boolean; onToggle: () => void;
+}) {
+  return <label className="flex items-start gap-2 break-words" data-testid="agent-delegation-scope-choice">
+    <input type="checkbox" className="mt-1" checked={checked} disabled={disabled} onChange={onToggle} />
+    <span>{label}</span>
+  </label>;
+}
 
 function DelegationScope({ scope, toolNames }: { scope: DelegationScopeParameters; toolNames: ReadonlyMap<string, string> }) {
   const t = useT();

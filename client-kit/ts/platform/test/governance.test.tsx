@@ -137,7 +137,8 @@ describe("TasksPage", () => {
     expect(el.textContent).toContain("Waiting for approval");
     await click(button(el, "Remove organization membertenant.member.revoke"));
     expect(el.textContent).toContain("op-1");
-    expect(el.textContent).toContain("Waiting for approval. (WAITING_APPROVAL)");
+    expect(el.textContent).toContain("Waiting for approval.");
+    expect(el.textContent).not.toContain("WAITING_APPROVAL");
     expect(el.textContent).toContain("Organization admin: at least 1");
     await click(button(el, "Withdraw request"));
     // 先确认，未确认前不提交
@@ -183,14 +184,17 @@ describe("TasksPage", () => {
     const el = await host;
     await settle();
     await click(button(el, "Remove organization membertenant.member.revoke"));
-    expect(el.textContent).toContain("Waiting for approval. (WAITING_APPROVAL)");
+    expect(el.textContent).toContain("Waiting for approval.");
+    expect(el.textContent).not.toContain("WAITING_APPROVAL");
     await click(button(el, "Withdraw request"));
     await click(button(el, "Confirm"));
-    expect(el.textContent).toContain("Waiting for approval. (WAITING_APPROVAL)");
+    expect(el.textContent).toContain("Waiting for approval.");
+    expect(el.textContent).not.toContain("WAITING_APPROVAL");
     await vi.waitFor(async () => {
       await settle();
       expect(el.textContent).not.toContain("WAITING_APPROVAL");
-      expect(el.textContent).toContain("APPROVAL_WITHDRAWN");
+      expect(el.textContent).toContain("The request was withdrawn.");
+      expect(el.textContent).not.toContain("APPROVAL_WITHDRAWN");
     }, { timeout: 6000, interval: 200 });
     expect(posts(send)).toHaveLength(1);
   }, 10000);
@@ -466,7 +470,7 @@ describe("ApprovalsPage", () => {
     expect(el.querySelector("[role=status]")?.textContent).toContain("Denied");
   });
 
-  it("冲突与资格拒绝以用户能懂的话加 reason code 显示", async () => {
+  it("冲突与资格拒绝只以用户能懂的话显示，正文不含 reason code", async () => {
     const { el } = await openFirst((r) =>
       r.method === "POST"
         ? { status: 409, body: { class: ErrorClass.Conflict, reason: ReasonCode.DuplicateDecision, operationId: "op-2" } }
@@ -475,7 +479,7 @@ describe("ApprovalsPage", () => {
     await click(button(el, "Approve"));
     await click(button(el, "Confirm"));
     expect(el.querySelector("[role=alert]")?.textContent).toBe(
-      "Your decision was not accepted: You already recorded a different decision, which cannot be changed. (DUPLICATE_DECISION)",
+      "Your decision was not accepted: You already recorded a different decision, which cannot be changed.",
     );
     // A first, definite refusal is not an uncertain earlier decision.
     expect(button(el, "Approve").disabled).toBe(false);

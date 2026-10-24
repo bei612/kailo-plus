@@ -6,7 +6,6 @@ import type { BffClient } from "../client";
 import type { ReasonCode } from "@client-kit/contracts";
 import type { WriteFailure } from "../transport";
 import {
-  enumLabel,
   type PlatformLocale,
   type PlatformMessageKey,
   reasonMessages,
@@ -139,17 +138,18 @@ export function useT(): Translate {
   return useCallback((key, variables) => translate(locale, key, variables), [locale]);
 }
 
-/** reason code 的界面文案：说明加稳定 code，两者同时显示（apps/06 §4）。 */
+/**
+ * reason code 的界面文案：正文只显示本地化说明，原因码不进入可见文本（apps/06 §4）；
+ * 没有映射的码显示通用说明，不回退为原始码。排障用的码由调用方放在 data-reason-code 上。
+ */
+function reasonTextFor(locale: PlatformLocale, code: ReasonCode | string): string {
+  const message = (reasonMessages as Readonly<Record<string, { readonly en: string; readonly "zh-CN": string } | undefined>>)[code];
+  return message?.[locale] ?? translate(locale, "platform.reasonUnknown");
+}
+
 export function useReasonText(): (code: ReasonCode) => string {
   const locale = useLocale();
-  return useCallback(
-    (code) =>
-      translate(locale, "platform.reasonWithCode", {
-        text: enumLabel(locale, reasonMessages, code),
-        code,
-      }),
-    [locale],
-  );
+  return useCallback((code) => reasonTextFor(locale, code), [locale]);
 }
 
 /** 确定被拒的写动作的说明：有 reason code 就用它，否则只有状态码或原话。 */
