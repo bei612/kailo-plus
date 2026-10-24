@@ -52,8 +52,8 @@ export default function SaveAsViewModal(props: Props) {
       footer={
         <div className="d-flex justify-space-between align-center">
           <div
-            className="d-flex justify-space-between align-center ml-2"
-            style={{ width: 300 }}
+            className="d-flex align-center ml-2"
+            style={{ flex: 1, minWidth: 0, marginRight: 16 }}
           >
             <InfoCircleOutlined className="mr-2 text-sm gray-7" />
             <Text type="secondary" className="text-sm gray-7 text-left">

@@ -638,8 +638,15 @@ input.ant-input,
   border-top: 0;
   background: transparent;
 
-  .ant-btn + .ant-btn:not(.ant-dropdown-trigger) {
+  // Buttons laid out by the footer's own gap; custom footers that wrap them
+  // in a group (hint on the left, actions on the right) keep antd's 8px.
+  > .ant-btn + .ant-btn:not(.ant-dropdown-trigger) {
     margin-left: 0;
+  }
+
+  > .d-flex {
+    flex: 1;
+    min-width: 0;
   }
 }
 

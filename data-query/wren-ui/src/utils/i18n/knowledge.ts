@@ -141,7 +141,7 @@ const en: Record<keyof typeof zh, string> = {
     'Let AI write a matching question for this SQL statement.',
   'knowledge.global': 'Global',
   'knowledge.headers': 'Headers',
-  'knowledge.importFromDataSource': 'Import from {name} SQL',
+  'knowledge.importFromDataSource': 'Import from {name}',
   'knowledge.instructionCreated': 'Instruction added',
   'knowledge.instructionDeleted': 'Instruction deleted',
   'knowledge.instructionDetails': 'Instruction',

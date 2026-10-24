@@ -288,8 +288,8 @@ export default function QuestionSQLPairModal(props: Props) {
         footer={
           <div className="d-flex justify-space-between align-center">
             <div
-              className="text-sm ml-2 d-flex justify-space-between align-center"
-              style={{ width: 300 }}
+              className="text-sm ml-2 d-flex align-center"
+              style={{ flex: 1, minWidth: 0, marginRight: 16 }}
             >
               <InfoCircleOutlined className="mr-2 text-sm gray-7" />
               <Typography.Text type="secondary" className="text-sm text-left">
