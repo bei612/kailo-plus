@@ -60,7 +60,7 @@ class App extends React.Component {
             bottom: fullBrowserScreen ? 0 : "1%",
         }
 
-        const overlayStyle = {
+        let overlayStyle = {
             position: "fixed",
             top: 0,
             bottom: 0,
@@ -70,6 +70,11 @@ class App extends React.Component {
             opacity: "0.8",
             transition: "opacity .5s ease-in"
         };
+        // DD-152 (20 §13.6): in Kailo mode an open file is a page on the Kailo
+        // surface (Kailo's header names it), not a dimmed full-screen layer.
+        if (window.KailoCells && window.KailoCells.kailoMode && window.KailoCells.kailoMode()) {
+            overlayStyle = {...overlayStyle, background: "var(--kailo-color-background)", opacity: 1, transition: "none"}
+        }
 
         const buttonCenterPositionTop = documentHeight - 50
         const buttonCenterPositionLeft = documentWidth - 50

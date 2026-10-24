@@ -354,7 +354,7 @@
     }
 
     // Kailo names of the default locations (20 §13.8: 个人文件 / 公共文件).
-    function locationLabel(slug, label) {
+    function locationLabel(slug) {
         if (!kailoMode()) {
             return '';
         }
@@ -395,7 +395,7 @@
         }
         try {
             return embed.toast(payload) === true;
-        } catch (e) {
+        } catch {
             return false;
         }
     }
@@ -407,7 +407,7 @@
         }
         try {
             return embed.confirm(options) || null;
-        } catch (e) {
+        } catch {
             return null;
         }
     }
@@ -447,7 +447,7 @@
         paneListeners.slice().forEach(function (fn) {
             try {
                 fn(pane);
-            } catch (e) {
+            } catch {
                 /* consumer errors stay local */
             }
         });
@@ -490,7 +490,7 @@
     function action(controller, name) {
         try {
             return controller && controller.getActionByName ? controller.getActionByName(name) : null;
-        } catch (e) {
+        } catch {
             return null;
         }
     }
@@ -574,7 +574,7 @@
             var templates = [];
             try {
                 templates = builder() || [];
-            } catch (e) {
+            } catch {
                 templates = [];
             }
             templates.filter(function (tpl) { return tpl && typeof tpl.callback === 'function' && tpl.alt; }).slice(0, 3).forEach(function (tpl, i) {
@@ -616,7 +616,7 @@
         try {
             hosted = embed.setPage(page) === true;
             lastPage = key;
-        } catch (e) {
+        } catch {
             hosted = false;
         }
         markRoot();

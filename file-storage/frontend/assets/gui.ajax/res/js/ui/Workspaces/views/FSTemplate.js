@@ -24,6 +24,7 @@ import {debounce} from 'lodash'
 const {withSearch, emptyDataModel} = Pydio.requireLib('hoc')
 const {PromptValidators} = Pydio.requireLib('boot')
 import Action from 'pydio/model/action'
+import PydioDataModel from 'pydio/model/data-model'
 import {muiThemeable} from 'material-ui/styles'
 import {MainFilesListV2} from './MainFilesListV2'
 import MainFilesList from './MainFilesList'
@@ -139,8 +140,7 @@ class FSTemplate extends React.Component {
         const kailo = window.KailoCells
         if(kailo && kailo.setShareOpener) {
             kailo.setShareOpener((node) => {
-                const DataModel = require('pydio/model/data-model')
-                const selection = new DataModel(true)
+                const selection = new PydioDataModel(true)
                 selection.setSelectedNodes([node])
                 pydio.UI.openComponentInModal('ShareDialog', 'CompositeDialog', {pydio, selection})
             })

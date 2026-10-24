@@ -598,3 +598,8 @@ body.react-mui-context,
     border: 1.5px solid var(--kailo-color-danger);
     box-sizing: border-box;
 }
+
+/* Home header band: no dimming layer over the (removed) wallpaper. */
+:root[data-kailo-runtime] .user-dashboard-template .desktop-container > div:first-child {
+    background-color: transparent !important;
+}
