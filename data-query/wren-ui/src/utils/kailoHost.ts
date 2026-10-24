@@ -147,8 +147,7 @@ export function hostRendersPage(): boolean {
   // answered, only a host that announced "page" draws the header.
   return (
     !runtime.getState().hostConnected ||
-    (typeof runtime.hostSupports === 'function' &&
-      runtime.hostSupports('page'))
+    (typeof runtime.hostSupports === 'function' && runtime.hostSupports('page'))
   );
 }
 
