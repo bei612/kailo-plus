@@ -81,6 +81,9 @@ function fixture() {
         onContainerMouseDown: noop, shouldSuppressClick: () => false,
       }) }
       if (name === './folderTree') return folderTree
+      // DD-152 Kailo shell: top-level (not framed) here, so the native header renders.
+      if (name === '@/kailo/setup') return { isKailoShell: () => false }
+      if (name === '@/kailo/page') return { usePageHeader: noop }
       if (name.endsWith('.vue')) return { __esModule: true, default: component(name) }
       if (name === '@/api/knowledge-base/index') return {
         listKnowledgeFolders: async () => ({ data: null }), listKnowledgeTags: async () => ({ data: { data: [] } }),
