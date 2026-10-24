@@ -238,9 +238,7 @@ if len(subjects) != 1 or 'sha256:' + subjects[0]['digest']['sha256'] != pin or n
     sys.exit('core provenance does not name the pinned production Core image and its build id')
 json.dump({'isolatedCoreBuildId': build, 'coreImage': pin}, open(out, 'x', encoding='utf-8'))
 PY
-  edge=$RECEIVER_PROJECT-edge
-  "${docker[@]}" network inspect "$edge" >/dev/null 2>&1 \
-    || "${docker[@]}" network create --label kailo.receiver="$RECEIVER_PROJECT" "$edge" >/dev/null
+  # The edge network ($RECEIVER_PROJECT-edge) is created by the staged compose project itself.
   "${docker[@]}" network inspect "$RECEIVER_NETWORK" >/dev/null 2>&1 \
     || "${docker[@]}" network create --internal --label kailo.receiver="$RECEIVER_PROJECT" "$RECEIVER_NETWORK" >/dev/null
   # The core-observed/ OpenBao audit device writes into data/secret-store-audit (owner 100,
