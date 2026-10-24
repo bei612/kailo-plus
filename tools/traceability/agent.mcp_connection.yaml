@@ -44,7 +44,7 @@ release:
   # 已随发布 a6dac5fa（源 ad9752bd）构建并固定；业务验收见 core/verify/mcp-connection.md。
   artifacts:
     - name: core
-      digest: sha256:a6c37cbf2ea58b4c983f9bd2bb7a5dca5c94fcb674c5a35ee6d4b901794f1a17
+      digest: sha256:b67df6197490144b7f602e0d4e4519f36fba3ab58703b99c817ec62c73de4efa
     - name: web-client
-      digest: sha256:c0f470e5053510c0899aae6e311502b5498d98ead4301a362c82650cfc133042
+      digest: sha256:86effa5e9adb4b720712e075bafd8df0769d4789b2fabdcb0d225eac929f918f
   gate: blocked_until_seams_closed

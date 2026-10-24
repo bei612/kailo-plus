@@ -42,5 +42,5 @@ release:
   # 本批未构建；artifact 沿当前登记的 Web 产物，发布时由 release 流程统一回填。
   artifacts:
     - name: web-client
-      digest: sha256:c0f470e5053510c0899aae6e311502b5498d98ead4301a362c82650cfc133042
+      digest: sha256:86effa5e9adb4b720712e075bafd8df0769d4789b2fabdcb0d225eac929f918f
   gate: blocked_until_seams_closed
