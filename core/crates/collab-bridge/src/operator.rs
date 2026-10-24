@@ -52,6 +52,12 @@ pub enum OperatorError {
     /// 在 BFF 侧先行设界，不把压力透传给 Relay）。
     #[error("Core 的 Relay 调用预算已用完，{retry_after_secs} 秒后可再试")]
     BudgetExhausted { retry_after_secs: u64 },
+    /// 请求已发往 Relay，Relay 以 `429` 拒绝（`enforce_http_admission`，在读取事件之前），
+    /// 因此是确定未处理。只由挂了 Core 预算的身份客户端产生：`retry_after_secs` 取该身份
+    /// 预算窗口中最早一次调用离开窗口的剩余秒数（DD-156(3)，至少 1 秒）。未挂预算的客户端
+    /// 仍按 `Rejected { status: 429 }` 返回。
+    #[error("Relay 限流（HTTP 429），{retry_after_secs} 秒后可再试 {body}")]
+    RelayRateLimited { retry_after_secs: u64, body: String },
     /// 请求会超出 Relay 在 NIP-11 中声明的上界，因此没有发出（`.design/09`
     /// 「BFF Relay 连接模型」、`SF-BUZ-28`）。
     #[error("超出 Relay 声明的上界: {0}")]
@@ -84,19 +90,23 @@ impl OperatorError {
     /// **确定未处理**，不是结果不明。
     pub fn limit(&self) -> Option<LimitKind> {
         match self {
-            OperatorError::BudgetExhausted { .. } | OperatorError::Rejected { status: 429, .. } => {
-                Some(LimitKind::RateLimited)
-            }
+            OperatorError::BudgetExhausted { .. }
+            | OperatorError::RelayRateLimited { .. }
+            | OperatorError::Rejected { status: 429, .. } => Some(LimitKind::RateLimited),
             OperatorError::Rejected { status: 413, .. } => Some(LimitKind::PayloadTooLarge),
             OperatorError::OverLimit(_) => Some(LimitKind::Capacity),
             _ => None,
         }
     }
 
-    /// Core 预算给出的等待时长；Relay 的 429 不带可机读的重置时刻，返回 `None`。
+    /// 限流的等待时长：Core 预算拒绝取预算计算值；挂预算的身份收到 Relay `429` 时取
+    /// 预算窗口推算值（DD-156(3)）。未挂预算时 Relay 的 429 不带可机读的重置时刻，返回 `None`。
     pub fn retry_after_secs(&self) -> Option<u64> {
         match self {
-            OperatorError::BudgetExhausted { retry_after_secs } => Some(*retry_after_secs),
+            OperatorError::BudgetExhausted { retry_after_secs }
+            | OperatorError::RelayRateLimited {
+                retry_after_secs, ..
+            } => Some(*retry_after_secs),
             _ => None,
         }
     }

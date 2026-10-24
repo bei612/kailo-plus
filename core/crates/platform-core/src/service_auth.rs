@@ -180,6 +180,23 @@ impl GatewayServiceAuth {
         &self.mcp_url
     }
 
+    /// Route-shape unit tests only: no key file is read and nothing is signed.
+    #[cfg(test)]
+    pub(crate) fn for_test() -> Self {
+        Self {
+            issuer: "urn:test:gateway".into(),
+            audience: "urn:test:core-mcp".into(),
+            caller: "test-gateway".into(),
+            jwks_file: "/not-used-in-unit-test".into(),
+            max_token_seconds: 70,
+            signing_key_file: "/gateway-only/test-key".into(),
+            key_id: "ephemeral".into(),
+            token_seconds: 60,
+            mcp_url: Self::url("http://core.test:8081/service/v1/agent-tools/mcp").unwrap(),
+            ext_mcp_url: Self::url("http://core.test:8081/").unwrap(),
+        }
+    }
+
     pub(crate) fn ext_mcp_url(&self) -> &reqwest::Url {
         &self.ext_mcp_url
     }

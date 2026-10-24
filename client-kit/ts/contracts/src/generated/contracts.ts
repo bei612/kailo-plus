@@ -1740,11 +1740,18 @@ export interface AgentSessionView {
      */
     rootEventId:      string;
     runtimeThreadId?: string;
-    status:           AgentSessionViewStatus;
-    workspaceId:      string;
+    /**
+     * ABANDONED：只剩 birth 结果不明、Invocation 已全部确定终态的 Session 超过对账期限后由 Core 放弃，不再派发 turn（DD-154）。
+     */
+    status:      AgentSessionViewStatus;
+    workspaceId: string;
 }
 
+/**
+ * ABANDONED：只剩 birth 结果不明、Invocation 已全部确定终态的 Session 超过对账期限后由 Core 放弃，不再派发 turn（DD-154）。
+ */
 export enum AgentSessionViewStatus {
+    Abandoned = "ABANDONED",
     Active = "ACTIVE",
     Closed = "CLOSED",
     Pending = "PENDING",
@@ -4686,10 +4693,15 @@ export interface GatewayMcpReleaseView {
     componentTypeKey:         string;
     deliveryFacts:            GatewayMcpBindingFact[];
     nativeInstanceRef?:       string;
-    secretKeys:               string[];
-    status:                   ComponentReleaseStatus;
-    tools:                    GatewayMcpReleaseTool[];
-    version:                  string;
+    /**
+     * DD-155(3)：release 所选能力类别任一声明 tenantDelete=RETAIN_ON_TENANT_DELETE 即为
+     * true；建立连接的保留选项取此值，Core 要求一致。
+     */
+    retainOnTenantDelete?: boolean;
+    secretKeys:            string[];
+    status:                ComponentReleaseStatus;
+    tools:                 GatewayMcpReleaseTool[];
+    version:               string;
 }
 
 export enum ApplicationModelCallMode {

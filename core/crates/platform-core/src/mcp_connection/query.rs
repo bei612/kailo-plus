@@ -136,7 +136,12 @@ async fn view(
             .ok_or_else(|| super::unavailable("visibility"))?,
         workspace_id: connection.workspace_id.map(|id| id.to_string()),
         owner_principal_id: connection.owner_principal_id.to_string(),
-        owner_display_name: None,
+        owner_display_name: connection
+            .owner_display_name
+            .as_deref()
+            .map(str::trim)
+            .filter(|name| !name.is_empty())
+            .map(str::to_owned),
         state: crate::governance::parse(&connection.state)
             .ok_or_else(|| super::unavailable("state"))?,
         generation: i64::from(connection.active_generation),

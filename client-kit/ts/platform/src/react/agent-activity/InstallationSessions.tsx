@@ -16,7 +16,7 @@ import { AgentSessionTranscriptView } from "../agent-transcript/AgentSessionPane
 const sessionLabels = {
   PENDING: "agents.sessions.state.pending", STARTING: "agents.sessions.state.starting",
   ACTIVE: "agents.sessions.state.active", UNKNOWN: "agents.sessions.state.unknown",
-  CLOSED: "agents.sessions.state.closed",
+  CLOSED: "agents.sessions.state.closed", ABANDONED: "agents.sessions.state.abandoned",
 } as const satisfies Record<AgentSessionView["status"], PlatformMessageKey>;
 const invocationLabels = {
   CREATED: "agents.invocations.state.created", DISPATCHING: "agents.invocations.state.dispatching",

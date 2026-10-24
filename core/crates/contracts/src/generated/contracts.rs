@@ -2496,13 +2496,18 @@ pub struct AgentSessionView {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub runtime_thread_id: Option<String>,
 
+    /// ABANDONED：只剩 birth 结果不明、Invocation 已全部确定终态的 Session 超过对账期限后由 Core 放弃，不再派发 turn（DD-154）。
     pub status: AgentSessionViewStatus,
 
     pub workspace_id: String,
 }
 
+/// ABANDONED：只剩 birth 结果不明、Invocation 已全部确定终态的 Session 超过对账期限后由 Core 放弃，不再派发 turn（DD-154）。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum AgentSessionViewStatus {
+    #[serde(rename = "ABANDONED")]
+    Abandoned,
+
     #[serde(rename = "ACTIVE")]
     Active,
 
@@ -6731,6 +6736,11 @@ pub struct GatewayMcpReleaseView {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub native_instance_ref: Option<String>,
+
+    /// DD-155(3)：release 所选能力类别任一声明 tenantDelete=RETAIN_ON_TENANT_DELETE 即为
+    /// true；建立连接的保留选项取此值，Core 要求一致。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub retain_on_tenant_delete: Option<bool>,
 
     pub secret_keys: Vec<String>,
 

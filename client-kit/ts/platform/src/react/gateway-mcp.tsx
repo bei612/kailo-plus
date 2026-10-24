@@ -308,7 +308,8 @@ function BindRelease({ release, fact, tenantId, onClose, onSettled }: {
   const action = useGatewayAction(() => onSettled());
   const [config, setConfig] = useState("{}");
   const [mode, setMode] = useState<ApplicationModelCallMode>(release.allowedModelCallModes[0] ?? ApplicationModelCallMode.None);
-  const [retain, setRetain] = useState(false);
+  // DD-155(3)：保留选项是 release 声明的事实（Core 要求一致），只读显示，不另设默认。
+  const retain = release.retainOnTenantDelete === true;
   const [secrets, setSecrets] = useState<Record<string, string>>({});
   const [problem, setProblem] = useState<"invalid" | "digest" | "secrets" | null>(null);
   const prepare = async () => {
@@ -347,8 +348,9 @@ function BindRelease({ release, fact, tenantId, onClose, onSettled }: {
       </select>
     </label>
     <label className="flex items-center gap-2 text-sm">
-      <input type="checkbox" checked={retain} disabled={action.frozen} onChange={(event) => setRetain(event.target.checked)} />
+      <input type="checkbox" checked={retain} disabled readOnly />
       {t("gateway.mcp.retain")}
+      <span className="text-xs text-muted-foreground">{t("gateway.mcp.retainFromRelease")}</span>
     </label>
     {release.secretKeys.length ? <fieldset className="flex flex-col gap-1 text-sm">
       <legend>{t("gateway.mcp.secrets")}</legend>

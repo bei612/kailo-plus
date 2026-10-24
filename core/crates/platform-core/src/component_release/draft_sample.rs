@@ -87,6 +87,14 @@ fn rules_the_wizard_once_broke_are_enforced() {
         manifest["toolDefinitions"][0]["outputSchemaHash"] = other;
     });
     assert!(accepted(&output, contract).is_err());
+    // DD-155：ResourceType 没有增量合同（库约束要求至少一份）在登记准入时拒绝。
+    let no_incremental = with_manifest(release, |manifest| {
+        manifest["resourceTypeDefinitions"][0]["incrementalContracts"] = json!([]);
+    });
+    assert!(matches!(
+        accepted(&no_incremental, contract),
+        Err(Refusal::Precondition(ReasonCode::InvalidParameters))
+    ));
     // 对照：未改动的样例通过。
     accepted(release, contract).expect("unchanged sample registers");
 }

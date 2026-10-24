@@ -2,7 +2,7 @@ import { WorkspaceMembershipState, WebMessageType, type WorkspaceMemberView, typ
 import { useLocale, useT } from "@client-kit/platform/react/context";
 import { ThreadPanelSurface, MessageThreadPanelSkeleton, ThreadRepliesErrorCard, AuxiliaryPanel, MessageThreadPanelHeader, useThreadPanelWidth, buildThreadPanelData, getThreadRouteTarget, useRoutedMessageEdit, ThreadViewModeToggle, useThreadViewModeSwitch, RightAuxiliaryPane } from "@client-kit/platform/react/thread";
 import { agentAddressHost, withAgentAuthorFacts, type AgentAuthorFacts, type AgentOwnerRenderer } from "@client-kit/platform/react/messages";
-import { MessageRowSurface, MessageActionBarSurface, SentFromThreadLine, SentFromThreadLink, canSendMessageToChannel, getThreadReference, isThreadReply, useSendToChannelIntent, type MessageModerationContext, type TimelineMessage, canRemoveLinkPreviews, useRemoveLinkPreviewsIntent, type LinkPreviewRemovalEdit } from "@client-kit/platform/react/messages";
+import { MessageRowSurface, MessageActionBarSurface, SentFromThreadLine, SentFromThreadLink, canManageMessageForCurrentUser, canSendMessageToChannel, getThreadReference, isThreadReply, useSendToChannelIntent, type MessageModerationContext, type TimelineMessage, canRemoveLinkPreviews, useRemoveLinkPreviewsIntent, type LinkPreviewRemovalEdit } from "@client-kit/platform/react/messages";
 import { useCollaborationPreferences } from "@client-kit/platform/react/collaboration-preferences";
 import type { ParsedMessageLink } from "@client-kit/platform/react/composer/features/messages/lib/messageLink";
 import { relativeTime } from "@client-kit/platform/format";
@@ -181,7 +181,7 @@ export function ChannelThreadPane({ workspaceId, principalId, conversation, sele
       canEdit &&
       rows.some(
         (row) =>
-          row.id === editTarget.id && row.kind === 9 && row.signerPubkey === editAuthorPubkey,
+          row.id === editTarget.id && canManageMessageForCurrentUser(row, editAuthorPubkey, conversation ? undefined : ownedAgentPubkeys),
       ),
   );
   const handleSendingChange = useCallback(
@@ -274,8 +274,8 @@ export function ChannelThreadPane({ workspaceId, principalId, conversation, sele
         isUnread={isMessageUnread?.(row.message)}
         onMarkRead={!disabled && !unavailable && !interrupted && !loading && onMarkRead ? message => onMarkRead(message, rows) : undefined}
         onMarkUnread={!disabled && !unavailable && !interrupted && !loading && onMarkUnread ? message => onMarkUnread(message, rows) : undefined}
-        onDelete={canEdit && !editBusy && row.message.kind === 9 && row.message.signerPubkey === editAuthorPubkey ? onDelete : undefined}
-        onEdit={canEdit && !editBusy && onEdit && row.message.kind === 9 && row.message.signerPubkey === editAuthorPubkey
+        onDelete={canEdit && !editBusy && canManageMessageForCurrentUser(row.message, editAuthorPubkey, conversation ? undefined : ownedAgentPubkeys) ? onDelete : undefined}
+        onEdit={canEdit && !editBusy && onEdit && canManageMessageForCurrentUser(row.message, editAuthorPubkey, conversation ? undefined : ownedAgentPubkeys)
           ? (message) => {if (onEdit(message) !== false) setReplyId(rootId);} : undefined}
         onReply={canReply ? handleSelectReplyTarget : undefined} />} />}
     renderComposer={(composer) => <Composer key={editTarget ? `edit:${editTarget.id}` : replyId} workspaceId={conversation ? undefined : workspaceId} draftIdentity={principalId}

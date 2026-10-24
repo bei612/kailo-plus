@@ -104,7 +104,7 @@ pub(super) async fn publish(state: &ServiceState, ae: &Execution) -> Result<(), 
                 "host":service.ext_mcp_url().as_str(),"policies":{"backendAuth":service.backend_auth()},"failureMode":"failClosed",
                 "methods":{"*":"request","initialize":"full","ping":"full","tools/list":"full","tools/call":"full"},
                 "requestHeaders":{"allowed":["authorization"]},"metadata":{
-                    "session":"has(mcpGuardrails.session) ? mcpGuardrails.session : ''",
+                    (crate::agent_tool_pep::SESSION_METADATA.0):crate::agent_tool_pep::SESSION_METADATA.1,
                     "invocationId":"has(mcpGuardrails.invocationId) ? mcpGuardrails.invocationId : ''",
                     "childAE":"has(mcpGuardrails.childAE) ? mcpGuardrails.childAE : ''",
                     "operationId":"has(mcpGuardrails.operationId) ? mcpGuardrails.operationId : ''",

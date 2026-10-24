@@ -170,7 +170,18 @@
           "typeKey": "time.service",
           "capabilityCategory": "time",
           "capabilityContractVersion": 1,
-          "incrementalContracts": [],
+          "incrementalContracts": [
+            {
+              "contractKey": "time.service@v1",
+              "role": "NATIVE_INTERNAL",
+              "engine": "NATIVE",
+              "stableKeyRule": "The binding's pinned native instance (nativeInstanceRef) is the only native object; tools hold no per-item state in Kailo.",
+              "revisionRule": "No content revision: the implementation version is pinned by the release adapterBuildRef (artifact digest).",
+              "deleteSemantics": "NONE",
+              "reconciliationTrigger": "NONE: tool results return synchronously through AgentGateway and ExtMcp; there is no native background work to reconcile.",
+              "readinessSemantics": "Binding activation verification: initialize and tools/list over the Core-managed Gateway route succeed."
+            }
+          ],
           "llmGatewayContract": "NOT_USED",
           "transferFormats": [],
           "tenantDeleteActionKey": "NONE",
@@ -297,7 +308,7 @@
     },
     "package": {
       "componentReleaseId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-      "manifestDigest": "36d2220a3d1a23a45f4e56aa51c3907b10d21682e9f4054df08b243d7c11c398",
+      "manifestDigest": "9671f2d8c6ec6b04a9f23bc7fcc4adbb0f975542f4f75ebeaf2cf46b9c9c80f0",
       "webArtifacts": [],
       "backendDelivery": "EXTERNAL_SERVICE"
     },

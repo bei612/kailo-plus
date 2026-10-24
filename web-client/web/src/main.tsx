@@ -13,6 +13,7 @@ import { TooltipProvider } from "@/shared/ui/tooltip";
 import { EmojiBurstProvider } from "@client-kit/platform/react/emoji-burst";
 import { AvatarClipPaths } from "@client-kit/platform/react/thread/AvatarClipPaths";
 import { RootErrorBoundary } from "@client-kit/platform/react/root-error-boundary";
+import { queryRetry, queryRetryDelay } from "@client-kit/platform/transport";
 
 initializeDocumentLanguage();
 initializeFontSizePreference();
@@ -29,7 +30,9 @@ if ("serviceWorker" in navigator && import.meta.env.PROD) {
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      retry: 1,
+      // DD-156(3): LIMIT/RATE_LIMITED reads wait out Retry-After (bounded); others retry once.
+      retry: queryRetry,
+      retryDelay: queryRetryDelay,
       refetchOnWindowFocus: false,
       networkMode: "always",
       gcTime: 5 * 60 * 1_000,

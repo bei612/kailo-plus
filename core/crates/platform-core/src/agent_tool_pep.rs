@@ -226,12 +226,15 @@ impl Policy {
                 ),
             });
         }
-        let authorization = session_header(&request.headers)?;
+        let authorization = session_metadata(&request.headers, request.metadata_context.as_ref())?;
         let calling = request.method == "tools/call";
         let (invocation, application) = self
-            .invocation(authorization, &request.service_names, calling)
+            .invocation(&authorization, &request.service_names, calling)
             .await?;
-        let mut metadata = json!({"invocationId":invocation,"session":authorization});
+        // The bearer stays out of the dynamic metadata returned to the Gateway
+        // (request log, later filters); CheckResponse re-reads it from the route
+        // metadata the Gateway evaluates again (DD-152(1)).
+        let mut metadata = json!({"invocationId":invocation});
         let mut normalized_request = None;
         let mut peer_call = false;
         let mut set = vec![wire::McpHeader {
@@ -493,7 +496,10 @@ impl Policy {
                 .await?;
             }
         }
-        let authorization = metadata["session"].as_str().ok_or_else(denied)?;
+        let authorization = metadata[SESSION_METADATA.0]
+            .as_str()
+            .filter(|value| !value.is_empty())
+            .ok_or_else(denied)?;
         let (invocation, application) = self
             .invocation(
                 authorization,
@@ -724,15 +730,39 @@ fn management_caller(request: &wire::McpRequest) -> Result<Value, Refusal> {
     Ok(metadata[crate::service_auth::CORE_MCP_METADATA.0].clone())
 }
 
-fn session_header(headers: &[wire::McpHeader]) -> Result<&str, Refusal> {
-    let mut values = headers
+/// DD-152(1) / SF-AGW-32: the Agent session route's `mcpAuthentication` always
+/// removes the bearer after validating it (its JWT config fixes
+/// `preserve_token=false`), before `mcpGuardrails` runs, so the session never
+/// reaches ExtMcp as a header. The route metadata hands ExtMcp the token the
+/// Gateway has just validated (`jwt.rawToken`, SF-AGW-30); the PEP still verifies
+/// it in full with the Session signer. Route metadata is computed by the Gateway
+/// from the route definition Core wrote and read back, never by the client.
+pub(crate) const SESSION_METADATA: (&str, &str) =
+    ("session", "'Bearer ' + jwt.rawToken.unredacted()");
+
+/// A request that still carries `authorization` means the route did not strip
+/// the bearer; it would also reach the target on notification and session
+/// cleanup paths that bypass ExtMcp (SF-AGW-29), so it is refused.
+fn session_metadata(
+    headers: &[wire::McpHeader],
+    metadata: Option<&prost_wkt_types::Struct>,
+) -> Result<String, Refusal> {
+    if headers
         .iter()
-        .filter(|header| header.key.eq_ignore_ascii_case("authorization"));
-    let value = values.next().ok_or_else(denied)?;
-    if values.next().is_some() {
+        .any(|header| header.key.eq_ignore_ascii_case("authorization"))
+    {
         return Err(denied());
     }
-    std::str::from_utf8(&value.value).map_err(|_| denied())
+    let metadata = metadata
+        .map(serde_json::to_value)
+        .transpose()
+        .map_err(|_| invalid())?
+        .ok_or_else(denied)?;
+    metadata[SESSION_METADATA.0]
+        .as_str()
+        .filter(|value| value.starts_with("Bearer ") && value.len() > "Bearer ".len())
+        .map(str::to_owned)
+        .ok_or_else(denied)
 }
 
 fn optional_header<'a>(
@@ -1076,14 +1106,62 @@ mod tool_pep_tests {
         );
     }
 
+    /// DD-152(1): the session comes only from Gateway route metadata; a bearer
+    /// still present as a header means the route did not strip it.
     #[test]
-    fn duplicate_session_header_and_noncanonical_reference_are_rejected() {
+    fn session_is_route_metadata_and_a_forwarded_bearer_is_refused() {
         let header = || wire::McpHeader {
             key: "Authorization".into(),
             value: b"Bearer session".to_vec(),
         };
-        assert_eq!(session_header(&[header()]).unwrap(), "Bearer session");
-        assert!(session_header(&[header(), header()]).is_err());
+        let metadata = |value: Value| -> prost_wkt_types::Struct {
+            serde_json::from_value(json!({SESSION_METADATA.0: value})).unwrap()
+        };
+        let session = metadata(json!("Bearer session"));
+        assert_eq!(
+            session_metadata(&[], Some(&session)).unwrap(),
+            "Bearer session"
+        );
+        assert!(session_metadata(&[header()], Some(&session)).is_err());
+        assert!(session_metadata(&[], None).is_err());
+        assert!(session_metadata(&[], Some(&metadata(json!("")))).is_err());
+        assert!(session_metadata(&[], Some(&metadata(json!("Bearer ")))).is_err());
+        assert!(session_metadata(&[], Some(&metadata(json!("session")))).is_err());
+        assert!(session_metadata(&[], Some(&metadata(json!(7)))).is_err());
+        let empty: prost_wkt_types::Struct = serde_json::from_value(json!({})).unwrap();
+        assert!(session_metadata(&[], Some(&empty)).is_err());
+    }
+
+    /// The value the Gateway evaluates from `jwt.rawToken` is the Session bearer
+    /// Core issued for this thread; the PEP verifies it exactly as before.
+    #[test]
+    fn route_metadata_session_is_verified_by_the_session_signer() {
+        let signer = SessionSigner::for_test();
+        let scope = crate::agent_tool_session::SessionScope {
+            tenant_id: Uuid::new_v4(),
+            workspace_id: Uuid::new_v4(),
+            installation_resource_id: Uuid::new_v4(),
+            agent_principal_id: Uuid::new_v4(),
+            agent_version_asset_id: Uuid::new_v4(),
+            projection_generation: 3,
+            root_event_id: "cd".repeat(32),
+        };
+        let token = signer.issue(&scope).unwrap();
+        let metadata: prost_wkt_types::Struct =
+            serde_json::from_value(json!({SESSION_METADATA.0: format!("Bearer {token}")})).unwrap();
+        let session = session_metadata(&[], Some(&metadata)).unwrap();
+        let verified = signer
+            .verify(session.strip_prefix("Bearer ").unwrap())
+            .unwrap();
+        assert_eq!(verified.scope, scope);
+        let other = SessionSigner::for_test();
+        assert!(other
+            .verify(session.strip_prefix("Bearer ").unwrap())
+            .is_err());
+    }
+
+    #[test]
+    fn noncanonical_reference_is_rejected() {
         assert!(uuid(&json!({"id":Uuid::nil()}), "id").is_err());
         let id = Uuid::new_v4();
         assert_eq!(uuid(&json!({"id":id}), "id").unwrap(), id);

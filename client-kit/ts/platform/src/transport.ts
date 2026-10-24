@@ -5,7 +5,7 @@
 // `platform_api` 命令、令牌只在 Rust 侧（native.ts）。两个都是真实实现，因此这里只定义
 // 两者共同的最小形状，其余（错误解读、各端点的路径与类型）都在 client.ts 里只写一次。
 
-import { type ErrorBody, ErrorClass } from "@client-kit/contracts";
+import { type ErrorBody, ErrorClass, ReasonCode } from "@client-kit/contracts";
 
 export type BffMethod = "GET" | "POST" | "PUT" | "DELETE";
 
@@ -16,8 +16,11 @@ export type BffRequest = {
   fresh?: boolean;
 };
 
-/** BFF 的回应：状态码与已解析的正文（没有正文或不是 JSON 时为 `undefined`）。 */
-export type BffReply = { status: number; body: unknown };
+/**
+ * BFF 的回应：状态码与已解析的正文（没有正文或不是 JSON 时为 `undefined`）。
+ * `retryAfterSeconds` 取自 `Retry-After`（DD-156(3)：BFF 的 429 总带它）；没有时缺省。
+ */
+export type BffReply = { status: number; body: unknown; retryAfterSeconds?: number };
 
 export interface BffTransport {
   send(request: BffRequest): Promise<BffReply>;
@@ -37,7 +40,9 @@ export class BffError extends Error {
   readonly operationId?: string;
   /** DD-125(2)：PUBLISH_REJECTED 因社区禁言/封禁时的结构化限制（原禁言横幅的唯一来源）。 */
   readonly restriction?: ErrorBody["restriction"];
-  constructor(status: number, message: string, body?: Partial<ErrorBody>) {
+  /** DD-156(3)：限流回应的 `Retry-After` 秒数；回应没有带时缺省。 */
+  readonly retryAfterSeconds?: number;
+  constructor(status: number, message: string, body?: Partial<ErrorBody>, retryAfterSeconds?: number) {
     super(message);
     this.name = "BffError";
     this.status = status;
@@ -45,7 +50,39 @@ export class BffError extends Error {
     this.reason = body?.reason;
     this.operationId = body?.operationId;
     this.restriction = body?.restriction;
+    this.retryAfterSeconds = retryAfterSeconds;
   }
+}
+
+/**
+ * DD-156(3)：`LIMIT`/`RATE_LIMITED`（或没有错误体的 429）是确定未处理，不是结果不明。
+ * 只读读取据此按 `Retry-After` 自动重读；写动作不自动重放。
+ */
+export function isRateLimited(error: unknown): error is BffError {
+  return error instanceof BffError && (
+    error.status === 429
+    || (error.errorClass === ErrorClass.Limit && error.reason === ReasonCode.RateLimited)
+  );
+}
+
+/** 限流错误给出的等待毫秒数；不是限流或没有 `Retry-After` 时为 `undefined`。 */
+export function rateLimitRetryMs(error: unknown): number | undefined {
+  if (!isRateLimited(error) || error.retryAfterSeconds === undefined) return undefined;
+  return Math.max(0, error.retryAfterSeconds) * 1_000;
+}
+
+/** DD-156(3)：查询缓存对限流读取的自动重读上限；其他失败维持原先的 1 次。 */
+export const RATE_LIMITED_QUERY_RETRIES = 3;
+
+/** react-query `retry`：限流按次数上限重读，其他失败只重试 1 次（原默认）。 */
+export function queryRetry(failureCount: number, error: unknown): boolean {
+  return failureCount < (isRateLimited(error) ? RATE_LIMITED_QUERY_RETRIES : 1);
+}
+
+/** react-query `retryDelay`：限流等 `Retry-After`（没带时 1 秒），其他失败沿用原默认退避。 */
+export function queryRetryDelay(failureCount: number, error: unknown): number {
+  if (isRateLimited(error)) return rateLimitRetryMs(error) ?? 1_000;
+  return Math.min(1_000 * 2 ** failureCount, 30_000);
 }
 
 /**
@@ -81,6 +118,7 @@ export function unwrap<T>(request: BffRequest, reply: BffReply): T {
       reply.status,
       `${request.method} ${request.path} → ${reply.status}`,
       errorBody(reply.body),
+      reply.retryAfterSeconds,
     );
   }
   return reply.body as T;

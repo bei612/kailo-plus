@@ -228,7 +228,7 @@ fn route(
                 "host":service.ext_mcp_url().as_str(),"policies":{"backendAuth":service.backend_auth()},"failureMode":"failClosed",
                 "methods":{"*":"request","initialize":"full","ping":"full","tools/list":"full","tools/call":"full"},
                 "requestHeaders":{"allowed":["authorization"]},"metadata":{
-                    "session":"request.headers['authorization']",
+                    (crate::agent_tool_pep::SESSION_METADATA.0):crate::agent_tool_pep::SESSION_METADATA.1,
                     "invocationId":"has(mcpGuardrails.invocationId) ? mcpGuardrails.invocationId : ''",
                     "childAE":"has(mcpGuardrails.childAE) ? mcpGuardrails.childAE : ''",
                     "operationId":"has(mcpGuardrails.operationId) ? mcpGuardrails.operationId : ''",
@@ -292,4 +292,56 @@ pub(crate) async fn retire(state: &ServiceState, tenant: Uuid) -> Result<(), Ref
         where installation_resource_id in (select id from catalog.resource where tenant_id=$1) and status<>'REVOKED'")
         .bind(tenant).execute(&state.pool).await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod route_tests {
+    use super::*;
+
+    /// DD-152(1) / V-SCN-251: the session route lets the Gateway strip the bearer
+    /// and hands ExtMcp the token it validated through route metadata; nothing
+    /// reads the (already removed) `authorization` header any more, and a user
+    /// connector tool is listed as an exact `tools/call` rule.
+    #[test]
+    fn session_route_hands_ext_mcp_the_validated_session_for_connector_tools() {
+        let signer = SessionSigner::for_test();
+        let service = GatewayServiceAuth::for_test();
+        let scope = SessionScope {
+            tenant_id: Uuid::new_v4(),
+            workspace_id: Uuid::new_v4(),
+            installation_resource_id: Uuid::new_v4(),
+            agent_principal_id: Uuid::new_v4(),
+            agent_version_asset_id: Uuid::new_v4(),
+            projection_generation: 2,
+            root_event_id: "ab".repeat(32),
+        };
+        let names = vec!["ci__echo".to_string()];
+        let desired = route(&signer, &service, &scope, &names).unwrap();
+        let authentication = &desired["policies"]["mcpAuthentication"];
+        assert_eq!(authentication["mode"], "strict");
+        assert_eq!(authentication["audiences"], json!([signer.audience()]));
+        assert!(authentication.get("preserveToken").is_none());
+        let processor = &desired["policies"]["mcpGuardrails"]["processors"][0];
+        assert_eq!(
+            processor["metadata"][crate::agent_tool_pep::SESSION_METADATA.0],
+            crate::agent_tool_pep::SESSION_METADATA.1
+        );
+        // Only kept so a route that failed to strip the bearer is detectable.
+        assert_eq!(
+            processor["requestHeaders"]["allowed"],
+            json!(["authorization"])
+        );
+        assert!(!desired.to_string().contains("request.headers"));
+        let rules = desired["policies"]["mcpAuthorization"]["rules"]
+            .as_array()
+            .unwrap();
+        assert_eq!(rules.len(), 2);
+        assert!(rules[1]
+            .as_str()
+            .unwrap()
+            .ends_with("mcp.methodName == 'tools/call' && mcp.tool.name == 'ci__echo'"));
+        for unsafe_name in ["ci__echo'||true", "ci__ech o"] {
+            assert!(route(&signer, &service, &scope, &[unsafe_name.to_string()]).is_err());
+        }
+    }
 }

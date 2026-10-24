@@ -254,3 +254,18 @@ registration, and acceptance with real Tenant members.
 未验证：全部测试尚未在 CI 执行，`tsc`/`eslint`/`prettier` 未跑；`__types__.ts`、
 `kailo.generated.ts` 为手工补写，需 codegen 核对；Core 端通知入口与搜索调用的联调、
 真实收件箱呈现、镜像构建与部署、真实成员的端到端验收均未做。
+
+## 验收批次 4 修复：看板图表不出图、通知操作者名（2026-10-24，源码阶段）
+
+- 缺陷 6（看板图表不渲染、提示「无法核验当前查询身份」）：`src/hooks/useGovernedPreview.ts` 的 `readScope`
+  用共享计数器，被更新读取超越的旧读取抛出 `Query identity unavailable`，mount/focus/visibility 的 refresh 与
+  `ChartAnswer` 的 `preview()` 重叠时被当成身份失败。修复：读取返回 `superseded`/`failed`/`ready` 标记；
+  被取代的读取不设 `scopeError`、不改 scope，只有当前 revision 的确定失败才设 `scopeError`；`preview()` 自身读取
+  被超越时采用同一选择下最新的读取结果（卸载或切换选择则放弃）。所有使用方共用该 hook，行为一致。
+- 缺陷 7a（通知显示令牌 `name`「2 QA」而非 Kailo 名「kailo-qa-2」）：分享（`services/kailoShare.ts`）与看板加入通知
+  （`resolvers/dashboardResolver.ts`）的操作者名改用 `kailoActorLabel`（`utils/kailoUser.ts`）：成员目录的 Kailo
+  显示名，查不到时回退到登录名 username，不再使用令牌 `name`。
+
+测试（jest，未在本机运行）：`src/viewMetadata.test.ts` 的 `overlapping query identity reads`（refresh 被 preview
+超越、preview 被 focus 超越后采用最新结果、focus 与 visibility 重叠、当前读取确定失败仍报错）；新增
+`src/kailoActorName.test.ts`（标签优先级、分享与看板加入通知的目录名及三种回退）。

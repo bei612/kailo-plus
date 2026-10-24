@@ -319,7 +319,7 @@ describe("InvitationRedeemPage", () => {
     expect(el.querySelector("[role=alert]")?.textContent).toContain("Submitting again is safe.");
     await click(button(el, "Submit again"));
     expect(el.querySelector("[role=alert]")?.textContent).toBe(
-      "The invitation could not be used: This invitation was withdrawn. Ask for a new one. (INVITATION_REVOKED)",
+      "The invitation could not be used: This invitation was withdrawn. Ask for a new one.",
     );
   });
 
