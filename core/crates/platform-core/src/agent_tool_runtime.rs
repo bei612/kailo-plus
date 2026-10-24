@@ -316,20 +316,20 @@ mod route_tests {
             root_event_id: "ab".repeat(32),
         };
         let names = vec!["ci__echo".to_string()];
-        let route = route(&signer, &service, &scope, &names).unwrap();
-        let authentication = &route["policies"]["mcpAuthentication"];
+        let desired = route(&signer, &service, &scope, &names).unwrap();
+        let authentication = &desired["policies"]["mcpAuthentication"];
         assert_eq!(authentication["mode"], "strict");
         assert_eq!(authentication["audiences"], json!([signer.audience()]));
         assert!(authentication.get("preserveToken").is_none());
-        let processor = &route["policies"]["mcpGuardrails"]["processors"][0];
+        let processor = &desired["policies"]["mcpGuardrails"]["processors"][0];
         assert_eq!(
             processor["metadata"][crate::agent_tool_pep::SESSION_METADATA.0],
             crate::agent_tool_pep::SESSION_METADATA.1
         );
         // Only kept so a route that failed to strip the bearer is detectable.
         assert_eq!(processor["requestHeaders"]["allowed"], json!(["authorization"]));
-        assert!(!route.to_string().contains("request.headers"));
-        let rules = route["policies"]["mcpAuthorization"]["rules"]
+        assert!(!desired.to_string().contains("request.headers"));
+        let rules = desired["policies"]["mcpAuthorization"]["rules"]
             .as_array()
             .unwrap();
         assert_eq!(rules.len(), 2);
