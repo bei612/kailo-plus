@@ -297,11 +297,17 @@ class Cli:
             return 1, ""
         return result.returncode, result.stdout.decode("utf-8", "replace")
 
-    def token(self, login, seconds):
-        code, out = self.run(["admin", "user", "token", "-u", login, "-e", f"{seconds}s", "-q"], 180)
-        candidates = [line.strip() for line in out.splitlines() if TOKEN.fullmatch(line.strip())]
-        require(code == 0 and len(candidates) == 1, "native admin token could not be minted")
-        return candidates[0]
+    def token(self, login, seconds, attempts=12):
+        # Right after a (first-install) restart the container is healthy before the
+        # identity services answer the CLI; retry within a bounded window.
+        for attempt in range(attempts):
+            code, out = self.run(["admin", "user", "token", "-u", login, "-e", f"{seconds}s", "-q"], 180)
+            candidates = [line.strip() for line in out.splitlines() if TOKEN.fullmatch(line.strip())]
+            if code == 0 and len(candidates) == 1:
+                return candidates[0]
+            if attempt + 1 < attempts:
+                time.sleep(10)
+        raise Refused("native admin token could not be minted")
 
     def mkdir(self, path, login):
         code, _ = self.run(["admin", "file", "mkdir", "--path", path, "--user", login], 180)

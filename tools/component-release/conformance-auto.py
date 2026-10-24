@@ -678,6 +678,7 @@ def cmd_run(args):
     if args.resume:
         r = Run(args.resume)
         require(r.state.get("component") == args.component, "--resume names another component's run")
+        r.record(source=str(source), commit=args.commit, state="RUNNING")
     else:
         root = private_dir(args.run_root)
         r = Run(private_dir(root / f"{args.component}-{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}-{secrets.token_hex(3)}"))
