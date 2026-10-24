@@ -46,6 +46,9 @@ class PendingDeepLinkNotifier extends Notifier<BuzzDeepLink?> {
     _enqueue(link);
   }
 
+  /// Park an already-parsed link, e.g. a push notification tap (DD-151(6)).
+  void openLink(BuzzDeepLink link) => _enqueue(link);
+
   /// Acknowledge the current link and expose the next queued link, if any.
   void consume() {
     state = _waiting.isEmpty ? null : _waiting.removeFirst();

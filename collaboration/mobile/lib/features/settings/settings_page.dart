@@ -11,6 +11,8 @@ import 'package:package_info_plus/package_info_plus.dart';
 import '../../shared/clipboard_utils.dart';
 import '../../shared/platform/platform_link.dart';
 import '../../shared/platform/platform_locale.dart';
+import '../../shared/push/push_bridge.dart';
+import '../../shared/push/push_registration.dart';
 import 'package:client_kit/shared/platform/platform_text.dart';
 import '../../shared/relay/relay.dart';
 import '../../shared/utils/string_utils.dart';

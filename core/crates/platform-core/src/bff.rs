@@ -862,6 +862,12 @@ pub fn router(state: BffState) -> Router {
         )
         // 原生端的 Community 连接事实（DD-75/78）；Web 拿不到
         .exposed_route("/api/v1/native/community", get(crate::native::community))
+        // DD-151: 本设备推送登记与部署能力回读；只对原生 listener 开放
+        .exposed_route(crate::push::CAPABILITY_PATH, get(crate::push::capability))
+        .exposed_route(
+            crate::push::REGISTRATION_PATH,
+            get(crate::push::get_registration).put(crate::push::put_registration),
+        )
         .exposed_route("/api/v1/conversations", get(crate::conversations::list))
         .exposed_route(
             "/api/v1/conversations/{conversation_id}/hide",

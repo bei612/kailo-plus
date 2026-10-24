@@ -2077,6 +2077,8 @@ async fn finish(state: &ServiceState, deletion: &Delete) -> Result<(), sqlx::Err
         // namespace 销毁）；未完成的 OAuth 尝试作废并清掉 verifier。
         "update catalog.mcp_connection set state='DELETED',version=version+1,updated_at=now() where tenant_id=$1 and state<>'DELETED'",
         "update admission.mcp_oauth_attempt set state='EXPIRED',pkce_verifier=null where tenant_id=$1 and state='PENDING'",
+        // DD-151(1)：推送登记转 REVOKED 墓碑；令牌随 Tenant namespace 销毁，此处只清引用与摘要。
+        "update identity.push_registration set state='REVOKED',enabled=false,token_digest=null,token_secret_locator=null,token_secret_version=null,token_secret_audience=null,version=version+1,updated_at=now() where tenant_id=$1 and state<>'REVOKED'",
         "delete from identity.collaboration_user_state where tenant_principal_id in (select id from identity.principal where tenant_id = $1)",
         // DD-138(4): inbox notifications from components leave with the Tenant (03 ComponentNotification).
         "delete from identity.component_notification where tenant_id = $1",

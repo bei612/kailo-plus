@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/push_platform.schema.json",
+  "title": "PushPlatform",
+  "description": "DD-151(1)：设备推送登记的提供方。APNS 为 iOS，FCM 为 Android。",
+  "type": "string",
+  "enum": ["APNS", "FCM"]
+}
