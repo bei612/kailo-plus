@@ -4,8 +4,8 @@
 // admin. Input is the render.mjs output directory (registration.json with the
 // three exact JSON strings). Core freezes the conformance plan from the
 // deployment's COMPONENT_CONFORMANCE_* delivery, whose artifactDigest must equal
-// this manifest's adapterBuildRef: deliver the matching conformance inputs
-// (start-core.sh --no-build) before running this for each component.
+// this manifest's adapterBuildRef: the candidate <COMPONENT_CONFORMANCE_DIR>/<digest>/
+// installed by component-deploy.sh <component> <commit> --conformance (DD-136(2)(5)).
 // A DD-127 native page entry (render.mjs --material native-page) has no
 // adapter: Core freezes an empty suite and needs no conformance inputs.
 //

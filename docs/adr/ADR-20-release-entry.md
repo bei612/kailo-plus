@@ -281,13 +281,17 @@ DD-133(3)、`.design/07` §4.7.3/§4.7.5）只能经管理 API 收敛。此前�
   不同即是 §9 的配置漂移（镜像在 Compose 配置哈希内），由漂移收敛重建，本节不重复处理。verify 每次回读其镜像引用、本地解析与
   健康。上游镜像来自原 registry，不做本仓库产物的 registry 复现核对。
 - **delivery.protocol_peers**：仓库内的 `deploy/local/protocol-peers/directory.json`（只含 `protocolPeers`）与一致性环境，由 deploy
-  渲染到运行目录 `data/protocol-peers/` 下的真实规范文件（0644，同目录临时文件 + fsync + 原子替换，内容不变不改写）。交付目录中
-  `adapters` 保留运行文件已有条目（组件入口以 `adapter-directory.mjs --existing` 维护同一文件），`adapterServiceRef` 两类唯一。
-  `.env` 的 `APPLICATION_ADAPTER_DIRECTORY_FILE` 与 `COMPONENT_CONFORMANCE_ENVIRONMENT_FILE` 由 `env.set` 以 `${KAILO_RUNTIME_DIR}`
-  引用指向这两个文件；一致性套件同一时间只有一个候选，HTTP adapter 才有的另两项由 `env.unset` 删除。
-- **生效**：start-core.sh 以原路径只读挂载这些文件，替换文件不会进入已运行的 Core/Worker，只有新的一次性投递（`DD-70`）重建后生效。
-  因此入口记录声明摘要（发布 journal 目录的 `deliveries.json`），摘要与上次经 `restart`（core-bff）启动入口生效的不同时把 core-bff
-  加入部署目标（并入 §9 的 `converge_plan` 替换对象，backup 随之覆盖 core-db），回读成功后才记下新摘要；摘要相同不重建。plan 列出运行体状态与投递是否待生效。
+  渲染到运行目录（0644，同目录临时文件 + fsync + 原子替换，内容不变不改写）：交付目录写成 `data/protocol-peers/adapter-directory.json`，
+  其中 `adapters` 保留运行文件已有条目（组件入口以 `adapter-directory.mjs --existing` 维护同一文件），`adapterServiceRef` 两类唯一；
+  一致性环境写成候选集合 `data/conformance/<artifactDigest>/environment.json`（2026-10-24 修订，DD-136(2)：候选按 artifactDigest
+  并存，入口只删除不再声明的 `PROTOCOL_PEER` 候选，`component-deploy.sh --conformance` 写入的 `REMOTE_ADAPTER` 候选不动，单一候选时期的
+  `data/protocol-peers/conformance-environment.json` 删除）。`.env` 的 `APPLICATION_ADAPTER_DIRECTORY_FILE`、`COMPONENT_CONFORMANCE_DIR` 与
+  只给 Worker 的 receiver 凭据目录 `COMPONENT_CONFORMANCE_WORKER_DIR` 由 `env.set` 以 `${KAILO_RUNTIME_DIR}` 引用声明，单一候选时期的
+  三个文件键由 `env.unset` 删除，不再手工改 `.env` 切换候选。
+- **生效**：start-core.sh 以目录只读挂载交付目录所在文件夹与候选集合（Worker 另挂载 receiver 凭据目录），Core/Worker 每次使用时读取，
+  因此内容变化（peer 声明、binding 归属事实、组件候选的增删）在下一次读取即生效，不重建 Core。入口只记录挂载形态摘要（`.env` 键与三个
+  运行目录位置，发布 journal 目录的 `deliveries.json`），形态与上次经 `restart`（core-bff）启动入口生效的不同时把 core-bff 加入部署目标
+  （并入 §9 的 `converge_plan` 替换对象，backup 随之覆盖 core-db），回读成功后才记下；相同不重建。plan 列出运行体状态与投递是否待生效。
 - **校验**：`model.peer_delivery` 在 plan 即拒绝不合规的声明——端点不是 operated 运行体、`artifactDigest` 不等于其固定 digest、
   binding 归属事实或一致性环境不符合契约、期望应答未记录、`.env` 键与渲染位置不一致；拒绝时不改动现场。
 - **期望应答**：一致性环境的 `initializeResultJson`/`listResultJson` 由 `deploy/local/protocol-peers/record-conformance.py` 在 CI 节点

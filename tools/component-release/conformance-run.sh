@@ -45,6 +45,10 @@
 #   6 provider  publish Core's isolated identity JWKS to the adapter and keep the
 #               suite PEP provider running for component_release.register
 #
+# DD-136(5): tools/component-release/conformance-auto.py (component-deploy.sh --conformance)
+# drives these stages unattended, minting the isolated native credentials through the
+# instance's own API/CLI; the operator steps described below are what it automates.
+#
 # run.env (mode 0600, operator-delivered, no secret values inline; per stage):
 #   CONFORMANCE_SOURCE        fixed release tree (/volumes/kailo/ci/sources/<commit>/apps)
 #   CONFORMANCE_RUN_DIR       new empty 0700 directory on /volumes/data
@@ -293,8 +297,9 @@ Isolated conformance inputs ready (no production state changed):
   COMPONENT_CONFORMANCE_FIXTURE_FILE=$run/inputs/fixture.json
   COMPONENT_CONFORMANCE_IDENTITY_FILE=$run/inputs/identity.json
   COMPONENT_CONFORMANCE_ENVIRONMENT_FILE=$run/inputs/environment.json
-Deliver them read-only to core-bff/worker (deploy/local start-core.sh --no-build) and attach the Worker
-to $CONFORMANCE_NETWORK (wren-ui joins it through the query overlay) only for the registration window.
+component-deploy.sh <component> <commit> --conformance installs them as the candidate
+<COMPONENT_CONFORMANCE_DIR>/<artifactDigest>/ (DD-136(2); Core and Worker read it per use) and attaches the
+Worker to $CONFORMANCE_NETWORK (wren-ui joins it through the query overlay) only for the registration window.
 NEXT
   fi
   exit 0
@@ -433,7 +438,8 @@ Isolated conformance inputs ready (no production state changed):
   COMPONENT_CONFORMANCE_FIXTURE_FILE=$run/inputs/fixture.json
   COMPONENT_CONFORMANCE_IDENTITY_FILE=$run/inputs/identity.json
   COMPONENT_CONFORMANCE_ENVIRONMENT_FILE=$run/inputs/environment.json
-Deliver them read-only to core-bff/worker (deploy/local start-core.sh --no-build) and attach the Worker
-to $CONFORMANCE_NETWORK only for the registration window; this script does neither.
+component-deploy.sh <component> <commit> --conformance installs them as the candidate
+<COMPONENT_CONFORMANCE_DIR>/<artifactDigest>/ (DD-136(2); Core and Worker read it per use) and attaches the
+Worker to $CONFORMANCE_NETWORK only for the registration window; this script does neither.
 EOF
 fi

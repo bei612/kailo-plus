@@ -370,9 +370,8 @@ inputs)
     --out "$run/inputs"
   cat <<EOF
 Isolated receiver conformance inputs ready (no production state changed):
-  COMPONENT_CONFORMANCE_FIXTURE_FILE=$run/inputs/fixture.json
-  COMPONENT_CONFORMANCE_IDENTITY_FILE=$run/inputs/identity.json
-  COMPONENT_CONFORMANCE_ENVIRONMENT_FILE=$run/inputs/environment.json
+  $run/inputs/fixture.json, identity.json, environment.json
+form the candidate <COMPONENT_CONFORMANCE_DIR>/<artifactDigest>/ (DD-136(2)).
 EOF
   ;;
 driver)
