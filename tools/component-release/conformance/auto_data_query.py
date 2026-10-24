@@ -131,7 +131,11 @@ def _native_env(r, h):
         "WREN_AI_IDENTITY_DIR": f"{d}/ai-identity", "WREN_UI_SECRET_ENV_FILE": f"{d}/secrets/ui-database.env",
         "WREN_NATIVE_DATA_KEY_DIR": f"{d}/data-keys",
         # Governed overlay (stage 2 on): the run's Agent delivery and the conformance network.
-        "WREN_QUERY_DELIVERY_DIR": f"{w}/delivery", "WREN_QUERY_ACTION_JWKS_FILE": f"{w}/query-jwks/action-token-jwks.json",
+        # query.json's actionTokenJwksFile lives in the delivery directory, which the overlay mounts as a
+        # directory: observe.mjs and stage 6 replace it atomically, and a single-file bind mount would keep
+        # the replaced inode. The overlay's separate file mount then only needs an existing public JWKS:
+        # Core's isolated conformance JWKS (read-only, public).
+        "WREN_QUERY_DELIVERY_DIR": f"{w}/delivery", "WREN_QUERY_ACTION_JWKS_FILE": s["coreJwks"],
         "GATEWAY_SERVICE_JWKS_FILE": s["gatewayJwks"], "WREN_QUERY_PLATFORM_NETWORK": s["network"],
     }
     return h.env_file(d / "native.env", values)
@@ -233,6 +237,7 @@ def drive(r, args, runtime_env, declaration, h):
                                  "accessClaim": "kailo_conformance_instance", "accessValue": instance,
                                  "publicOrigin": f"http://wren-conformance-{run_id}.invalid"},
                  gatewayJwks=runtime_env["GATEWAY_SERVICE_JWKS_FILE"],
+                 coreJwks=h.core_identity(runtime_env)[0]["jwksFile"],
                  nodeModules=_node_modules(h, source),
                  images={"ui": f"{declaration['registry']}/data-query-ui@{_artifact(source, 'data-query-ui')}",
                          "ai": f"{declaration['registry']}/data-query-ai-service@{_artifact(source, 'data-query-ai-service')}",
@@ -260,7 +265,7 @@ def drive(r, args, runtime_env, declaration, h):
     w = stages / "wren"
     r.record(runEnv={"CONFORMANCE_SOURCE": source, "CONFORMANCE_RUN_DIR": str(stages), "CONFORMANCE_NODE_IMAGE": s["nodeImage"],
                      "CONFORMANCE_NETWORK": s["network"], "CONFORMANCE_WREN_NODE_MODULES": s["nodeModules"],
-                     "CONFORMANCE_ADAPTER_JWKS": str(w / "query-jwks/action-token-jwks.json")},
+                     "CONFORMANCE_ADAPTER_JWKS": str(w / "delivery/action-token-jwks.json")},
              runEnvFiles={"CONFORMANCE_NATIVE_ENV": str(d / "native.env"), "CONFORMANCE_OPENBAO_ENV": str(d / "openbao.env"),
                           "CONFORMANCE_SEED_FILE": str(w / "prepare.json"), "CONFORMANCE_OBSERVE_FILE": str(w / "observe.json"),
                           "CONFORMANCE_PROVIDER_FILE": str(w / "provider.json"), "CONFORMANCE_MANIFEST": s["manifest"],
@@ -272,7 +277,7 @@ def drive(r, args, runtime_env, declaration, h):
         r.conformance(0)
     if not (stages / "stage-1.done").exists():
         r.conformance(1)
-    for sub in ("", "prep", "fixture", "query-jwks"):
+    for sub in ("", "prep", "fixture"):
         h.private_dir(w / sub)
     h.private_dir(w / "delivery")
 
@@ -358,8 +363,8 @@ def drive(r, args, runtime_env, declaration, h):
         h.require(sorted(connection) == record["connectionKeys"], "native connectionInfo keys differ from the delivered connection")
         h.write_private(d / "secrets/connection-secret", json.dumps(connection, separators=(",", ":")))
         h.write_private(d / "secrets/service-client-secret", h.secret_text(48))
-        h.write_json(w / "query-jwks/action-token-jwks.json", {"keys": []})
-        h.write_json(prep / "signing.json", {"issuer": identity["issuer"], "jwksFile": str(w / "query-jwks/action-token-jwks.json")})
+        h.write_json(w / "delivery/action-token-jwks.json", {"keys": []})
+        h.write_json(prep / "signing.json", {"issuer": identity["issuer"], "jwksFile": str(w / "delivery/action-token-jwks.json")})
         provider = s["providerOrigin"]
         h.run(["python3", "-I", f"{source}/deploy/components/adapter-delivery.py", "config", "--kind", "data-query",
                "--plan", str(w / "isolated-plan.json"), "--template", f"{source}/deploy/components/data-query-adapter.template.json",
