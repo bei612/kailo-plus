@@ -67,6 +67,21 @@ MAPPING = {
     "canvas-background": "muted",
     "canvas-page-border": "border",
 }
+# DD-152: the header button glyphs are a two-column sprite; the editor's
+# default light theme picks the white column for its coloured header. On the
+# light Kailo header (sidebar-background) the dark column must be used, at full
+# opacity, as in the editor's own white theme; the dark theme keeps the white one.
+HEADER_ICONS = {
+    "light": {
+        "button-header-normal-icon-offset-x": "0",
+        "button-header-active-icon-offset-x": "0",
+        "header-component-normal-icon-opacity": "1",
+        "header-component-hover-icon-opacity": "1",
+        "header-component-active-icon-opacity": "1",
+        "header-component-active-hover-icon-opacity": "1",
+    },
+    "dark": {},
+}
 THEMES = {
     "light": {"id": "theme-kailo-light", "name": "Light", "l10n": {"zh": "浅色"}},
     "dark": {"id": "theme-kailo-dark", "name": "Dark", "l10n": {"zh": "深色"}},
@@ -116,6 +131,7 @@ def themes(css):
             raise Refused(kind + " tokens missing: " + ",".join(missing))
         result[meta["id"]] = {"name": meta["name"], "l10n": meta["l10n"], "id": meta["id"], "type": kind,
                               "colors": {**{var: hex_color(tokens[kind][token]) for var, token in MAPPING.items()},
+                                         **HEADER_ICONS[kind],
                                          "font-family-base": font}}
     return result
 
