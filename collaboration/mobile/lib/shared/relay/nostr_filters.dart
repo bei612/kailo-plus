@@ -1,5 +1,8 @@
 import 'nostr_models.dart';
 
+/// The relay rejects a REQ whose explicit `#h` values exceed this count.
+const int kMaxExplicitChannelValues = 128;
+
 /// Canonical [NostrFilter] constructors for common Buzz queries.
 ///
 /// Centralising filter shapes keeps relay queries consistent across providers
