@@ -509,7 +509,9 @@ describe('original GeneralAnswer rendering', () => {
     expect(html).not.toContain(kailoText(undefined, 'home.generalAnswerHint'));
   });
   it('preserves the original completion text only with actual done evidence', () => {
-    expect(render(true, false)).toContain(kailoText(undefined, 'home.generalAnswerHint'));
+    expect(render(true, false)).toContain(
+      kailoText(undefined, 'home.generalAnswerHint'),
+    );
   });
   it('keeps the original loading icon while current native observation is unresolved', () => {
     const html = render(false, true);
