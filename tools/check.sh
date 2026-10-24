@@ -232,7 +232,8 @@ sys.exit(1 if kept or (sys.argv[1] != "0" and total == 0) else 0)' "$1"
 #   用构建镜像同一 Node 18（检查镜像 /opt/node18）运行，锁定的 yarn 4.5.3 在 Node 24 下遇下载超时会崩溃。
 # - collaboration/web、admin-web：镜像构建为 `tsc && vite build`。
 # knowledge/frontend（vite build）、file-storage 前端（build.sh 的 webpack）与 document-editor
-# （grunt 打包，jshint 未注册）的镜像构建不含 lint 或类型门禁，此处不另立判定。
+# （grunt 打包，jshint 未注册）的镜像构建不含 lint 或类型门禁，此处不另立判定；前两者的
+# Kailo 集成测试在第 2 步 verify_component_frontends（DD-157）。
 lint_wren_ui() {
   local ui=data-query/wren-ui
   populated "$ui/src" || return 0
@@ -342,6 +343,47 @@ step_lint() {
   return 0
 }
 
+# DD-157：组件前端的 Kailo 集成测试并入 verify（镜像构建本身不跑测试）。
+# - knowledge/frontend：与其 Dockerfile builder 同一 Node 24 与 package-lock，`npm ci` 后跑
+#   vue-tsc --build 与全部 node:test 测试（tsx --test）。
+# - file-storage/frontend/assets：Kailo 自有的嵌入层（kailo.embed、editor.onlyoffice）
+#   跑 vitest 与 eslint（KailoTheme 依赖 gui.ajax 自身的包，不在根锁内，随 gui.ajax 构建验证）；固定 pnpm 版本与 pnpm-lock.yaml 安装。其余上游插件测试不在本门禁内。
+verify_component_frontends() {
+  local kn=knowledge/frontend cells=file-storage/frontend/assets manager tooling
+  if populated "$kn/src"; then
+    ran=1
+    if component_lint_deps "$kn" package.json package-lock.json -- node_modules -- \
+         npm ci --no-audit --no-fund --ignore-scripts; then
+      (cd "$kn" && diag node_modules/.bin/vue-tsc --build) \
+        && pass "knowledge/frontend vue-tsc --build" || fail "knowledge/frontend vue-tsc --build"
+      (cd "$kn" && diag node_modules/.bin/tsx --test) \
+        && pass "knowledge/frontend tsx --test" || fail "knowledge/frontend tsx --test"
+      rm -f -- "$kn/node_modules"
+    else
+      fail "knowledge/frontend 依赖安装失败，测试无法执行"
+    fi
+  fi
+  if populated "$cells/kailo.embed"; then
+    ran=1
+    manager=$(node -p "require('./$cells/package.json').packageManager.split('+')[0]") || { fail "$cells packageManager 无法读取"; return 0; }
+    if [[ ! "$manager" =~ ^pnpm@[0-9]+\.[0-9]+\.[0-9]+$ ]]; then fail "$cells/package.json 的 packageManager 不是固定 pnpm 版本"; return 0; fi
+    tooling="$HOME/tooling/$manager"
+    [ -x "$tooling/node_modules/.bin/pnpm" ] \
+      || diag npm install --prefix "$tooling" --no-audit --no-fund "$manager" \
+      || { fail "安装 $manager 失败"; return 0; }
+    if component_lint_deps "$cells" package.json pnpm-lock.yaml -- node_modules -- \
+         "$tooling/node_modules/.bin/pnpm" install --frozen-lockfile --ignore-scripts; then
+      (cd "$cells" && diag node_modules/.bin/vitest run kailo.embed editor.onlyoffice) \
+        && pass "file-storage 嵌入层 vitest" || fail "file-storage 嵌入层 vitest"
+      (cd "$cells" && diag node_modules/.bin/eslint kailo.embed editor.onlyoffice/res/js) \
+        && pass "file-storage 嵌入层 eslint" || fail "file-storage 嵌入层 eslint"
+      rm -f -- "$cells/node_modules"
+    else
+      fail "file-storage 前端依赖安装失败，测试无法执行"
+    fi
+  fi
+}
+
 step_verify()   { hdr "2/10 受影响范围的验证"
   local ran=0
   if populated core && have cargo; then ran=1
@@ -354,6 +396,7 @@ step_verify()   { hdr "2/10 受影响范围的验证"
     (cd web-client/web && npm test) && pass "web-client vitest" || fail "web-client vitest"; fi
   if populated client-kit/dart/test && have dart; then ran=1
     (cd client-kit/dart && diag dart test) && pass "dart test" || fail "dart test"; fi
+  have node && verify_component_frontends
   [ "$ran" -eq 0 ] && skip "尚无可验证范围"
   return 0
 }
