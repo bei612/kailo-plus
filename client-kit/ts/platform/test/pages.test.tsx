@@ -4147,7 +4147,7 @@ describe("AgentDefinitionsPage read outcomes", () => {
   it.each([
     { reply: { status: 403, body: undefined }, label: "Not allowed", open: "View definition", locale: "en" as const },
     { reply: { status: 404, body: { class: ErrorClass.Precondition, reason: ReasonCode.TargetNotFound,
-      content: "private-error-body" } }, label: "TARGET_NOT_FOUND", open: "查看定义", locale: "zh-CN" as const },
+      content: "private-error-body" } }, label: "对象已不存在，或你无权查看。", open: "查看定义", locale: "zh-CN" as const },
   ])("published Version shows actual refusal $label, not parent permission", async ({ reply, label, open, locale }) => {
     const t = transport((r) => r.path === "/api/v1/tasks" ? { status: 200, body: [] }
       : r.path === "/api/v1/agent-definitions" ? { status: 200, body: { definitions: [definition] } }
@@ -4160,6 +4160,8 @@ describe("AgentDefinitionsPage read outcomes", () => {
     expect(section?.querySelector("[role=alert]")?.textContent).toContain(label);
     expect(section?.textContent).not.toMatch(/result is unknown|结果不明/);
     expect(section?.textContent).not.toContain("private-error-body");
+    // Plain-language copy only: the reason code never appears in visible text.
+    expect(section?.textContent).not.toContain("TARGET_NOT_FOUND");
     if (reply.body === undefined) expect(section?.textContent).not.toContain("PERMISSION_DENIED");
     expect(section?.querySelector("pre")).toBeNull();
     expect(t.send).toHaveBeenCalledWith({ method: "GET", path: "/api/v1/agent-versions/asset-1" });
