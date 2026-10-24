@@ -98,6 +98,15 @@ async function graphql(config, token, document, variables) {
 }
 
 async function onboard(config) {
+  // saveTables starts the original deploy at once; the AI service must already answer,
+  // otherwise DeployService loses its semantics preparation and the intent stays IN_PROGRESS.
+  const deadline = Date.now() + config.timeoutMs * 5;
+  for (;;) {
+    const ready = await fetch(config.aiHealthUrl, { signal: AbortSignal.timeout(5000) }).then((r) => r.ok, () => false);
+    if (ready) break;
+    if (Date.now() > deadline) refuse('the native AI service did not become ready');
+    await new Promise((resolve) => setTimeout(resolve, 5000));
+  }
   const token = ownerOnly(config.tokenFile).trim();
   const connection = json(config.connectionFile);
   const status = await graphql(config, token, 'query { onboardingStatus { status } }');

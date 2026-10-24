@@ -316,7 +316,8 @@ def drive(r, args, runtime_env, declaration, h):
             h.write_json(prep / "onboard.json", {"graphqlUrl": f"{s['adapterOrigin']}/api/graphql", "publicOrigin": s["publicOrigin"],
                                                  "tokenFile": str(prep / "service-token"),
                                                  "connectionFile": str(d / "secrets/connection.json"),
-                                                 "displayName": "Kailo conformance source", "table": TABLE, "timeoutMs": 120000})
+                                                 "displayName": "Kailo conformance source", "table": TABLE, "timeoutMs": 120000,
+                                                 "aiHealthUrl": "http://wren-ai-service:5555/health"})
             for attempt in range(30):
                 try:
                     _node(r, h, network, ["onboard", str(prep / "onboard.json")])
