@@ -1947,7 +1947,7 @@ describe('original saved-view preview controls', () => {
       expect(actual.changed).toHaveBeenCalledWith(
         expect.objectContaining({
           code: 'INVALID_SQL_ERROR',
-          shortMessage: 'Invalid SQL syntax',
+          shortMessage: kailoText(mockLocale, 'knowledge.invalidSqlSyntax'),
         }),
       );
       expect(actual.close).not.toHaveBeenCalled();
