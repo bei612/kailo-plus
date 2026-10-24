@@ -205,7 +205,9 @@ fi
 
 if [[ $component == data-query ]]; then
   # Wren (data_query@2): see the data-query section of the header.
-  compose_files=(-f "$src/data-query/docker/docker-compose.yaml")
+  # The isolated overlay (no browser Gateway, own PostgreSQL for metadata and the
+  # synthetic vector source) is part of every isolated Wren Compose call.
+  compose_files=(-f "$src/data-query/docker/docker-compose.yaml" -f "$src/data-query/docker/conformance/isolated.yaml")
   governed_files=("${compose_files[@]}" -f "$src/data-query/docker/query-governance.yaml")
   wren_compose() { # wren_compose <env file> <compose files...> -- <compose args...>
     local env=$1 files=()
