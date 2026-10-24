@@ -165,7 +165,10 @@ async function retain(config) {
         modelColumnRepository: new ModelColumnRepository(tx), modelNestedColumnRepository: new ModelNestedColumnRepository(tx),
         relationRepository: new RelationRepository(tx), viewRepository: new ViewRepository(tx),
       });
-      const { manifest, nativeObjectRefs } = await service.makeCurrentModelMDL();
+      const original = await service.makeCurrentModelMDL();
+      // The bytes DeployService hashed and stored: JSON drops undefined members.
+      const manifest = JSON.parse(JSON.stringify(original.manifest));
+      const { nativeObjectRefs } = original;
       const hash = crypto.createHash('sha1').update(`${project.id} ${JSON.stringify(manifest)}`).digest('hex');
       const last = await tx('deploy_log').where({ project_id: project.id }).orderBy('id', 'desc').first();
       // The retained input must be byte-identical to what DeployService hashed.
