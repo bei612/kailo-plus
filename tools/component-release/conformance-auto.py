@@ -252,8 +252,24 @@ class Run:
         state.update(fields)
         write_json(self.state_path, state)
 
+    def run_env(self):
+        """run.env for the existing runner. It bind-mounts every named input file into its Node
+        steps, and Docker would create a missing source as a root-owned directory, so optional
+        inputs are named only once they exist."""
+        state = self.state
+        values = {k: v for k, v in state.get("runEnv", {}).items()}
+        for key, path in state.get("runEnvFiles", {}).items():
+            if key == "CONFORMANCE_MOUNTS":
+                present = [p for p in path.split() if Path(p).is_file()]
+                if present:
+                    values[key] = " ".join(present)
+            elif Path(path).is_file():
+                values[key] = path
+        return env_file(self.dir / "run.env", values)
+
     def conformance(self, stage):
         """One stage of the existing runner (it keeps its own done markers)."""
+        self.run_env()
         state = self.state
         say("conformance-run", component=state["component"], stage=stage)
         run(["bash", f"{state['source']}/tools/component-release/conformance-run.sh", state["component"],
@@ -517,13 +533,14 @@ def file_storage(r, args, runtime_env, declaration):
     stages = d / "stages"
     if not (stages / "stage-1.done").exists():
         cells_native_env(r, f"{admin}:rw", "")
-    env_file(d / "run.env", {
+    r.record(runEnv={
         "CONFORMANCE_SOURCE": source, "CONFORMANCE_RUN_DIR": str(stages), "CONFORMANCE_NODE_IMAGE": s["nodeImage"],
-        "CONFORMANCE_NETWORK": s["network"], "CONFORMANCE_NATIVE_ENV": str(d / "native.env"),
-        "CONFORMANCE_DELIVERY_ENV": str(d / "delivery.env"), "CONFORMANCE_OPENBAO_ENV": str(d / "openbao.env"),
-        "CONFORMANCE_SEED_FILE": str(d / "seed.json"), "CONFORMANCE_OBSERVE_FILE": str(d / "observe.json"),
-        "CONFORMANCE_PROVIDER_FILE": str(d / "provider" / "provider.json"), "CONFORMANCE_MANIFEST": s["manifest"],
-        "CONFORMANCE_CORE_JWKS": s.get("coreJwks", ""), "CONFORMANCE_ADAPTER_JWKS": str(d / "adapter-delivery" / "action-token-jwks.json"),
+        "CONFORMANCE_NETWORK": s["network"], "CONFORMANCE_ADAPTER_JWKS": str(d / "adapter-delivery" / "action-token-jwks.json")},
+        runEnvFiles={
+        "CONFORMANCE_NATIVE_ENV": str(d / "native.env"), "CONFORMANCE_DELIVERY_ENV": str(d / "delivery.env"),
+        "CONFORMANCE_OPENBAO_ENV": str(d / "openbao.env"), "CONFORMANCE_SEED_FILE": str(d / "seed.json"),
+        "CONFORMANCE_OBSERVE_FILE": str(d / "observe.json"), "CONFORMANCE_PROVIDER_FILE": str(d / "provider" / "provider.json"),
+        "CONFORMANCE_MANIFEST": s["manifest"],
         "CONFORMANCE_MOUNTS": f"{d}/secrets/admin.pat {d}/secrets/actor.pat"})
     if not (stages / "stage-0.done").exists():
         r.conformance(0)
@@ -609,12 +626,9 @@ def file_storage(r, args, runtime_env, declaration):
         "ADAPTER_AGENT_UID": str(os.getuid()), "ADAPTER_AGENT_GID": str(os.getgid()),
         "ADAPTER_AGENT_BOOTSTRAP_DIR": str(d / "agent-bootstrap"), "ADAPTER_AGENT_DELIVERY_DIR": str(d / "adapter-delivery"),
         "ADAPTER_AGENT_EXTRA_DIR": str(d / "native-action")})
-    # The secret files exist before the runner reads run.env again.
-    env_file(d / "run.env", {**{k: env_value(d / "run.env", k) for k in (
-        "CONFORMANCE_SOURCE", "CONFORMANCE_RUN_DIR", "CONFORMANCE_NODE_IMAGE", "CONFORMANCE_NETWORK", "CONFORMANCE_NATIVE_ENV",
-        "CONFORMANCE_DELIVERY_ENV", "CONFORMANCE_OPENBAO_ENV", "CONFORMANCE_SEED_FILE", "CONFORMANCE_OBSERVE_FILE",
-        "CONFORMANCE_PROVIDER_FILE", "CONFORMANCE_MANIFEST", "CONFORMANCE_ADAPTER_JWKS", "CONFORMANCE_MOUNTS")},
-        "CONFORMANCE_CORE_JWKS": identity["jwksFile"]})
+    files = r.state["runEnvFiles"]
+    files["CONFORMANCE_CORE_JWKS"] = identity["jwksFile"]
+    r.record(runEnvFiles=files)
     if not (stages / "stage-3.done").exists():
         r.conformance(3)
 
