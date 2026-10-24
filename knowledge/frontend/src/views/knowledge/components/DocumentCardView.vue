@@ -1294,6 +1294,8 @@ html[data-kailo-mode] .doc-card-view .knowledge-card .card-content-title {
   color: var(--kailo-color-foreground);
 }
 html[data-kailo-mode] .doc-card-view .knowledge-card .card-content-txt {
+  flex: 0 0 auto;
+  max-height: 40px;
   font: 400 13px/20px var(--kailo-font-sans);
   color: var(--kailo-color-muted-foreground);
 }
