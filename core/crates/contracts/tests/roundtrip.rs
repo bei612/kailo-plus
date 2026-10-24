@@ -1322,3 +1322,25 @@ fn dd131_team_snapshot_transfer_preserves_fields_and_absence() {
     unknown["members"][0]["omitted"][0] = serde_json::json!("SECRET");
     assert!(serde_json::from_value::<contracts::AgentTeamSnapshotImportPreview>(unknown).is_err());
 }
+
+#[test]
+fn push_registration_roundtrip_keeps_proof_and_omits_token_from_view() {
+    let raw =
+        fs::read_to_string(sample_path().with_file_name("push-registration.sample.json")).unwrap();
+    let sample: serde_json::Value = serde_json::from_str(&raw).unwrap();
+    let request: contracts::PushRegistrationRequest =
+        serde_json::from_value(sample["request"].clone()).unwrap();
+    assert_eq!(serde_json::to_value(request).unwrap(), sample["request"]);
+    let view: contracts::PushRegistrationView =
+        serde_json::from_value(sample["view"].clone()).unwrap();
+    let back = serde_json::to_value(view).unwrap();
+    assert_eq!(back, sample["view"]);
+    // DD-151(1): the view never carries the provider token or its digest.
+    assert!(back.get("token").is_none() && back.get("tokenDigest").is_none());
+    let capability: contracts::PushCapability =
+        serde_json::from_value(sample["capability"].clone()).unwrap();
+    assert_eq!(
+        serde_json::to_value(capability).unwrap(),
+        sample["capability"]
+    );
+}

@@ -477,6 +477,8 @@ capabilities:
   - /api/v1/identity/client-keys
   - /api/v1/identity/client-keys/{pubkey}
   - /api/v1/native/community
+  - /api/v1/push/capability
+  - /api/v1/push/registration
   actions: []
   tools: []
   workflow_kinds:

@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/push_capability.schema.json",
+  "title": "PushCapability",
+  "description": "DD-151(2)：GET /api/v1/push/capability（仅原生端）。部署是否配置了 APNs 与 FCM 凭据；只回读配置事实，不回显任何凭据字段。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["apns", "fcm"],
+  "properties": {
+    "apns": {"$ref": "../enums/push_availability.schema.json"},
+    "fcm": {"$ref": "../enums/push_availability.schema.json"}
+  }
+}

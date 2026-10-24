@@ -417,6 +417,21 @@ import os.log
     didReceive response: UNNotificationResponse,
     withCompletionHandler completionHandler: @escaping () -> Void
   ) {
+    // DD-151: Kailo's own push carries only ids under `kailo_push` (no content); a tap on
+    // it opens the message through the existing navigation buffer.
+    if response.actionIdentifier == UNNotificationDefaultActionIdentifier,
+      let kailo = response.notification.request.content.userInfo["kailo_push"] as? [String: Any],
+      let eventID = kailo["event_id"] as? String, !eventID.isEmpty,
+      let tenantID = kailo["tenant_id"] as? String, !tenantID.isEmpty,
+      let channelID = kailo["channel_id"] as? String, !channelID.isEmpty
+    {
+      let target = BuzzPushNavigationTarget(
+        eventID: eventID, communityID: tenantID, channelID: channelID)
+      pushNavigationBuffer.record(target)
+      deliverPushNavigationTarget(target)
+      completionHandler()
+      return
+    }
     BuzzPushNotificationResponseCoordinator.handle(
       actionIdentifier: response.actionIdentifier,
       userInfo: response.notification.request.content.userInfo,

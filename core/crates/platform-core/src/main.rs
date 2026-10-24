@@ -93,6 +93,7 @@ mod projects_git_ref;
 mod protocol_session;
 mod publish_reconcile;
 mod pulse;
+mod push;
 mod reminders;
 mod resource_export;
 mod resource_provision;
@@ -341,6 +342,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             service_state.clone(),
             &opentelemetry::global::meter("platform-core"),
             publish_reconcile::Config::from_env()?,
+        );
+
+        // DD-151: Mobile push. Without configured provider credentials it only converges
+        // revocations; it never pushes history (each Tenant starts at its first sight).
+        push::worker::spawn(
+            service_state.clone(),
+            &opentelemetry::global::meter("platform-core"),
+            push::worker::Config::from_env()?,
         );
 
         let bff_state = bff::BffState {

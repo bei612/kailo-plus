@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/push_registration_view.schema.json",
+  "title": "PushRegistrationView",
+  "description": "DD-151(1)：本设备的推送登记（GET/PUT /api/v1/push/registration）。不含令牌或其摘要。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["devicePubkey", "platform", "appId", "locale", "enabled", "state", "version", "updatedAt"],
+  "properties": {
+    "devicePubkey": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "platform": {"$ref": "../enums/push_platform.schema.json"},
+    "appId": {"type": "string"},
+    "locale": {"type": "string", "enum": ["en", "zh-CN"]},
+    "enabled": {"type": "boolean"},
+    "state": {"$ref": "../enums/push_registration_state.schema.json"},
+    "version": {"type": "integer", "minimum": 1},
+    "updatedAt": {"type": "string", "format": "date-time"}
+  }
+}

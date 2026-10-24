@@ -616,6 +616,14 @@ services:
       # DD-125(5)：部署登记的 GIF 图片来源；与 Web CSP img-src 追加项同一份。空即不提供 GIF
       # 选择器（Relay 另需在 secrets/buzz-relay.env 配 BUZZ_KLIPY_API_KEY 并由 NIP-11 广告 gif）。
       BFF_GIF_IMAGE_ORIGINS: ${GIF_IMAGE_ORIGINS:-}
+      # DD-151(2)：Mobile 推送凭据是部署级 OpenBao SecretRef（locator 与钉定版本），值不进 .env。
+      # APNs 条目字段：key_p8、key_id、team_id、bundle_id、environment（production|development）；
+      # FCM 条目字段：service_account_json。缺省即该平台“不可用”，客户端保留原版不可用分支。
+      PUSH_APNS_CREDENTIAL_LOCATOR: ${PUSH_APNS_CREDENTIAL_LOCATOR:-}
+      PUSH_APNS_CREDENTIAL_VERSION: ${PUSH_APNS_CREDENTIAL_VERSION:-}
+      PUSH_FCM_CREDENTIAL_LOCATOR: ${PUSH_FCM_CREDENTIAL_LOCATOR:-}
+      PUSH_FCM_CREDENTIAL_VERSION: ${PUSH_FCM_CREDENTIAL_VERSION:-}
+      PUSH_POLL_SECONDS: ${PUSH_POLL_SECONDS:-5}
       # 设备持钥证明允许的时钟偏差：截获的证明最多还能用这么久（DD-79）
       BFF_CLIENT_KEY_PROOF_WINDOW_SECONDS: ${BFF_CLIENT_KEY_PROOF_WINDOW_SECONDS:?必须显式提供，禁止硬编码}
       # 部署显示名（DD-111）：BFF 的公开平台信息与 Web 静态入口投影自同一个值；缺失即拒绝启动
