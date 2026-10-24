@@ -19,6 +19,20 @@
  * Preferences are the values of the items the component's release declares
  * for Kailo settings (design 07 §4.8.2). Kailo sends every declared key; the
  * component uses its own declared default for a key it has not received.
+ *
+ * DD-152 page shell (design 07 §4.8.7), same version 1; a host that predates it
+ * ignores the unknown types. Opt in per build with
+ *   <meta name="kailo-embed-features" content="page toast confirm shortcuts">
+ *   component -> Kailo  ready carries features:[...] (the declared subset)
+ *   component -> Kailo  {type:"page", page:{title, breadcrumbs, tabs, activeTab, actions}}
+ *   component -> Kailo  {type:"toast", toast:{tone, title, description?}}
+ *   component -> Kailo  {type:"confirm", confirm:{id, tone, title, description?, confirmLabel?, cancelLabel?}}
+ *   component -> Kailo  {type:"shortcut", shortcut:"search"|"settings"|"back"|"forward"}
+ *   Kailo -> component  {type:"navigate", target:{kind:"tab"|"breadcrumb", id}}
+ *   Kailo -> component  {type:"action", id}
+ *   Kailo -> component  {type:"confirm-result", id, confirmed}
+ * Text in page/toast/confirm is display text for this user's own browser
+ * only: Kailo renders it as plain text, never stores, logs or sends it on.
  */
 (function (global) {
   "use strict";
@@ -33,6 +47,14 @@
   var PREFERENCE_KEY = /^[a-z][a-zA-Z0-9]*(\.[a-z][a-zA-Z0-9]*){1,3}$/;
   var PREFERENCE_OPTION = /^[A-Za-z0-9._-]{1,32}$/;
   var MAX_PREFERENCES = 16;
+  // DD-152 (07 §4.8.7): closed vocabularies and bounds, mirrored by the host.
+  var FEATURES = ["page", "toast", "confirm", "shortcuts"];
+  var ACTION_ICONS = ["upload", "plus", "folder-plus", "share", "download", "rocket", "refresh", "settings",
+    "message-square-plus", "play", "trash", "pencil", "filter", "search", "more"];
+  var ACTION_VARIANTS = ["primary", "secondary", "menu"];
+  var TOAST_TONES = ["success", "info", "warning", "error"];
+  var CONFIRM_TONES = ["default", "danger"];
+  var CONTROL = /[\u0000-\u001f\u007f]/;
   var root = doc.documentElement;
   var framed = false;
   try { framed = global.parent !== global; } catch (e) { framed = true; }
@@ -122,7 +144,81 @@
   var preferences = readPreferences();
   var preferenceListeners = [];
 
+  // DD-152: what this build opted into (a build fact, like kailo-web-origin).
+  var featureMeta = doc.querySelector('meta[name="kailo-embed-features"]');
+  var features = [];
+  (featureMeta ? String(featureMeta.getAttribute("content") || "").split(/\s+/) : []).forEach(function (name) {
+    if (FEATURES.indexOf(name) >= 0 && features.indexOf(name) < 0) features.push(name);
+  });
+  function has(feature) { return features.indexOf(feature) >= 0; }
+
+  function text(value, max, optional) {
+    if (value === undefined || value === null || value === "") return optional ? undefined : null;
+    if (typeof value !== "string") return null;
+    var trimmed = value.replace(/\s+/g, " ").trim();
+    if (!trimmed || trimmed.length > max || CONTROL.test(trimmed)) return null;
+    return trimmed;
+  }
+
+  function opaqueId(value) {
+    return typeof value === "string" && value.length >= 1 && value.length <= 256 && !CONTROL.test(value) ? value : null;
+  }
+
+  function items(list, max, label) {
+    if (list === undefined) return [];
+    if (!Array.isArray(list) || list.length > max) return null;
+    var out = [];
+    for (var i = 0; i < list.length; i += 1) {
+      var item = list[i] || {};
+      var id = opaqueId(item.id);
+      var name = text(item.label, label);
+      if (!id || !name) return null;
+      out.push({ id: id, label: name });
+    }
+    return out;
+  }
+
+  // Shape of one page header; invalid input is rejected whole (never partially shown).
+  function validPage(page) {
+    if (!page || typeof page !== "object") return null;
+    var title = text(page.title, 120);
+    var breadcrumbs = items(page.breadcrumbs, 8, 80);
+    var tabs = items(page.tabs, 8, 40);
+    if (!title || !breadcrumbs || !tabs) return null;
+    var activeTab = page.activeTab === undefined || page.activeTab === null ? undefined : opaqueId(page.activeTab);
+    if (activeTab === null || (activeTab !== undefined && !tabs.some(function (tab) { return tab.id === activeTab; }))) return null;
+    var actions = [];
+    var primaries = 0;
+    var list = page.actions === undefined ? [] : page.actions;
+    if (!Array.isArray(list) || list.length > 8) return null;
+    for (var i = 0; i < list.length; i += 1) {
+      var action = list[i] || {};
+      var id = opaqueId(action.id);
+      var label = text(action.label, 40);
+      var variant = member(action.variant || "secondary", ACTION_VARIANTS);
+      var icon = action.icon === undefined ? undefined : member(action.icon, ACTION_ICONS);
+      if (!id || !label || !variant || icon === null) return null;
+      if (variant === "primary") primaries += 1;
+      var out = { id: id, label: label, variant: variant };
+      if (icon) out.icon = icon;
+      if (action.disabled === true) out.disabled = true;
+      if (action.busy === true) out.busy = true;
+      actions.push(out);
+    }
+    if (primaries > 1) return null;
+    var result = { title: title, breadcrumbs: breadcrumbs, tabs: tabs, actions: actions };
+    if (activeTab) result.activeTab = activeTab;
+    return result;
+  }
+
+  var currentPage = null;
+  var navigateListeners = [];
+  var actionListeners = [];
+  var pendingConfirms = {};
+  var confirmSequence = 0;
+
   function apply() {
+    root.setAttribute("data-kailo-runtime", "");
     if (state.theme === "dark") root.setAttribute("data-kailo-theme", "dark");
     else root.removeAttribute("data-kailo-theme");
     root.style.colorScheme = state.theme;
@@ -138,7 +234,14 @@
     var changed = { theme: theme !== state.theme, locale: locale !== state.locale };
     state.theme = theme;
     state.locale = locale;
+    // DD-152: a theme flip lands in one frame, without each control animating to its new color.
+    if (changed.theme) root.setAttribute("data-kailo-theme-switching", "");
     apply();
+    if (changed.theme) {
+      var settle = function () { root.removeAttribute("data-kailo-theme-switching"); };
+      if (global.requestAnimationFrame) global.requestAnimationFrame(function () { global.requestAnimationFrame(settle); });
+      else setTimeout(settle, 32);
+    }
     if (!changed.theme && !changed.locale) return;
     var current = snapshot();
     var targets = listeners.slice();
@@ -149,13 +252,50 @@
     try { global.dispatchEvent(new CustomEvent("kailo:presentation", { detail: { state: current, changed: changed } })); } catch (e) { /* old engines */ }
   }
 
-  function post(type) {
+  function post(type, payload) {
     if (!framed) return false;
+    var message = { source: "kailo-embed", version: VERSION, type: type };
+    for (var key in payload || {}) if (Object.prototype.hasOwnProperty.call(payload, key)) message[key] = payload[key];
     for (var i = 0; i < origins.length; i += 1) {
       // The browser delivers only to the origin that actually frames us.
-      global.parent.postMessage({ source: "kailo-embed", version: VERSION, type: type }, origins[i]);
+      global.parent.postMessage(message, origins[i]);
     }
     return origins.length > 0;
+  }
+
+  function notify(list, value) {
+    var targets = list.slice();
+    for (var i = 0; i < targets.length; i += 1) {
+      try { targets[i](value); } catch (e) { setTimeout(function (error) { return function () { throw error; }; }(e), 0); }
+    }
+  }
+
+  function listen(list, listener) {
+    if (typeof listener !== "function") throw new TypeError("KailoEmbed listener must be a function");
+    list.push(listener);
+    return function unsubscribe() {
+      var index = list.indexOf(listener);
+      if (index >= 0) list.splice(index, 1);
+    };
+  }
+
+  // DD-152: Kailo's global chords pressed inside the frame go to Kailo (07 §4.8.7),
+  // before any component handler sees them, so no second search or settings opens.
+  function shortcutOf(event) {
+    var mac = /mac|iphone|ipad|ipod/i.test(String(global.navigator && global.navigator.platform || ""));
+    var primary = mac ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey;
+    var key = String(event.key || "").toLowerCase();
+    if (primary && !event.altKey && !event.shiftKey) {
+      if (key === "k" || event.code === "KeyK") return "search";
+      if (key === "," || event.code === "Comma") return "settings";
+      if (mac && (key === "[" || event.code === "BracketLeft")) return "back";
+      if (mac && (key === "]" || event.code === "BracketRight")) return "forward";
+    }
+    if (!mac && event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
+      if (key === "arrowleft") return "back";
+      if (key === "arrowright") return "forward";
+    }
+    return null;
   }
 
   function copy(values) {
@@ -188,15 +328,53 @@
       if (values) updatePreferences(values);
       return;
     }
+    if (data.type === "navigate") {
+      var target = data.target || {};
+      var kind = member(target.kind, ["tab", "breadcrumb"]);
+      var targetId = opaqueId(target.id);
+      // Only an id this page declared in its current header is a valid target.
+      var declared = currentPage && (kind === "tab" ? currentPage.tabs : currentPage.breadcrumbs);
+      if (kind && targetId && declared && declared.some(function (item) { return item.id === targetId; }))
+        notify(navigateListeners, { kind: kind, id: targetId });
+      return;
+    }
+    if (data.type === "action") {
+      var actionId = opaqueId(data.id);
+      if (actionId && currentPage && currentPage.actions.some(function (action) { return action.id === actionId && !action.disabled; }))
+        notify(actionListeners, actionId);
+      return;
+    }
+    if (data.type === "confirm-result") {
+      var resolve = typeof data.id === "string" && Object.prototype.hasOwnProperty.call(pendingConfirms, data.id) ? pendingConfirms[data.id] : null;
+      if (resolve && typeof data.confirmed === "boolean") {
+        delete pendingConfirms[data.id];
+        resolve(data.confirmed);
+      }
+      return;
+    }
     if (data.type !== "presentation") return;
     var theme = member(data.theme, THEMES);
     var locale = member(data.locale, LOCALES);
     if (!theme || !locale) return;
+    var firstContact = !hostConnected;
     hostConnected = true;
     supplied = { theme: theme, locale: locale };
     writeStore(supplied);
     update(theme, locale);
+    // A header set before Kailo answered is delivered once the host is known.
+    if (firstContact && currentPage && has("page")) post("page", { page: currentPage });
   });
+
+  if (framed && has("shortcuts")) {
+    global.addEventListener("keydown", function (event) {
+      if (event.isComposing || event.repeat) return;
+      var shortcut = shortcutOf(event);
+      if (!shortcut || !origins.length) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      post("shortcut", { shortcut: shortcut });
+    }, true);
+  }
 
   function subscribe(listener) {
     if (typeof listener !== "function") throw new TypeError("KailoEmbed listener must be a function");
@@ -246,9 +424,65 @@
         var index = preferenceListeners.indexOf(listener);
         if (index >= 0) preferenceListeners.splice(index, 1);
       };
+    },
+    /** DD-152: the features this build declared in <meta name="kailo-embed-features">. */
+    features: features.slice(),
+    /**
+     * DD-152: Kailo renders this page's header (title, breadcrumbs, tabs, actions); the
+     * page renders no header of its own while `true` is returned. `null` clears it.
+     * Invalid shapes throw, so a mistake shows in development instead of a blank header.
+     */
+    setPage: function (page) {
+      if (!has("page")) return false;
+      if (page === null) { currentPage = null; return post("page", { page: null }); }
+      var valid = validPage(page);
+      if (!valid) throw new TypeError("KailoEmbed.setPage: invalid page header");
+      currentPage = valid;
+      return post("page", { page: valid });
+    },
+    /** listener({kind: "tab"|"breadcrumb", id}); only ids of the current header arrive. */
+    onNavigate: function (listener) { return listen(navigateListeners, listener); },
+    /** listener(id) when the user activates one of the current header's actions in Kailo. */
+    onAction: function (listener) { return listen(actionListeners, listener); },
+    /**
+     * DD-152: Kailo shows the toast (one notification surface). Returns false when no
+     * Kailo frame is present (top-level visit): the page then shows its own, styled per 20 §13.
+     */
+    toast: function (toast) {
+      if (!has("toast") || !framed || !hostConnected || !toast) return false;
+      var tone = member(toast.tone || "info", TOAST_TONES);
+      var title = text(toast.title, 120);
+      var description = text(toast.description, 280, true);
+      if (!tone || !title || description === null) return false;
+      var payload = { tone: tone, title: title };
+      if (description) payload.description = description;
+      return post("toast", { toast: payload });
+    },
+    /**
+     * DD-152: Kailo's confirmation dialog. Resolves true/false; returns null when no
+     * Kailo frame is present, so the page uses its own dialog (styled per 20 §13).
+     */
+    confirm: function (options) {
+      if (!has("confirm") || !framed || !hostConnected || !options || typeof Promise !== "function") return null;
+      var tone = member(options.tone || "default", CONFIRM_TONES);
+      var title = text(options.title, 120);
+      var description = text(options.description, 400, true);
+      var confirmLabel = text(options.confirmLabel, 24, true);
+      var cancelLabel = text(options.cancelLabel, 24, true);
+      if (!tone || !title || description === null || confirmLabel === null || cancelLabel === null) return null;
+      confirmSequence += 1;
+      var id = "c" + confirmSequence + "-" + Date.now().toString(36);
+      var payload = { id: id, tone: tone, title: title };
+      if (description) payload.description = description;
+      if (confirmLabel) payload.confirmLabel = confirmLabel;
+      if (cancelLabel) payload.cancelLabel = cancelLabel;
+      return new Promise(function (resolve) {
+        pendingConfirms[id] = resolve;
+        if (!post("confirm", { confirm: payload })) { delete pendingConfirms[id]; resolve(false); }
+      });
     }
   });
 
   apply();
-  post("ready");
+  post("ready", features.length ? { features: features.slice() } : undefined);
 })(window);
