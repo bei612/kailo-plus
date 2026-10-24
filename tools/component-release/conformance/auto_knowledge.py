@@ -257,6 +257,79 @@ def ensure_action_token(h, r):
     h.say("isolated-identity", actionToken="READY")
 
 
+def isolated_token(h, r):
+    """Isolated Core service token from the isolated IdP (client credentials; kept in memory)."""
+    local = r.dir / "receiver" / "apps/deploy/local"
+    form = urllib.parse.urlencode({"grant_type": "client_credentials", "client_id": isolated_value(r, "OIDC_SERVICE_CLIENT_ID"),
+                                   "client_secret": (local / "secrets/core_client_secret").read_text().strip()}).encode()
+    url = f"http://{OIDC_HOST}:{isolated_value(r, 'KEYCLOAK_PORT')}/realms/{isolated_value(r, 'OIDC_REALM')}/protocol/openid-connect/token"
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    with opener.open(url, form, timeout=30) as response:
+        return json.load(response)["access_token"]
+
+
+def gateway_admin(h, r, method, path, body=None):
+    """The isolated AgentGateway admin API (reachable only on the isolated app network): one curl
+    container per call, bearer and body through a 0600 config file, never argv or output."""
+    work = h.private_dir(r.dir / "gateway-admin")
+    cfg = work / "curl.cfg"
+    h.write_private(cfg, f'header = "authorization: Bearer {isolated_token(h, r)}"\nheader = "content-type: application/json"\n')
+    argv = ["run", "--rm", "-i", "-u", f"{os.getuid()}:{os.getgid()}", "--network", f"{r.state['project']}_app",
+            "-v", f"{cfg}:{cfg}:ro", "curlimages/curl:latest", "-sS", "-m", "30", "-K", str(cfg), "-X", method]
+    if body is not None:
+        argv += ["--data-binary", "@-"]
+    argv.append(isolated_value(r, "AGENTGATEWAY_ADMIN_URL") + path)
+    try:
+        out = h.docker(*argv, stdin=None if body is None else json.dumps(body).encode())
+    finally:
+        cfg.unlink(missing_ok=True)
+    return json.loads(out) if out.strip() else {}
+
+
+def flow(h, r, script, *args):
+    """A governed flow script against the isolated platform (its own Web origin, IdP and accounts)."""
+    local = r.dir / "receiver" / "apps/deploy/local"
+    env = {**os.environ, "KAILO_WEB": f"http://127.0.0.1:{isolated_value(r, 'AGENTGATEWAY_PORT')}",
+           "KAILO_DEPLOY_DIR": str(local), "KAILO_FLOW_ACCOUNTS_DIR": str(r.dir / "accounts"),
+           "KAILO_FLOW_OUT": str(r.dir / "flow-out"), "KAILO_PLAYWRIGHT_PACKAGE": "/volumes/kailo/apps/package.json",
+           "TMPDIR": str(h.private_dir(Path("/volumes/data/kailo/tmp") / f"kr-{r.dir.name.rsplit('-', 1)[-1]}"))}
+    return h.run(["/usr/local/bin/node", f"{r.state['source']}/tools/component-release/flow/{script}", *args],
+                 env=env, log=r.log)
+
+
+def ensure_tenant_admin(h, r):
+    """accounts/admin.env: the isolated business Tenant's bootstrap admin (BOOTSTRAP_USER) for the flows."""
+    path = h.private_dir(r.dir / "accounts") / "admin.env"
+    if not path.is_file():
+        local = r.dir / "receiver" / "apps/deploy/local"
+        h.write_private(path, f"KAILO_ACCEPT_USER={isolated_value(r, 'BOOTSTRAP_USER')}\n"
+                              f"KAILO_ACCEPT_PASSWORD={(local / 'secrets/bootstrap_user_password').read_text().strip()}\n")
+
+
+def ensure_model_routes(h, r, declaration):
+    """DD-136(5): keyless Gateway sources for the declared upstreams in the isolated Gateway (the isolated
+    platform operator's path) and one governed llm_route.create each; records the route Resource ids."""
+    models = declaration["conformanceModels"]
+    source = models["gatewaySource"]
+    routes = {}
+    ensure_tenant_admin(h, r)
+    for role in ("chat", "embedding"):
+        out = r.dir / f"route-{role}.json"
+        if not out.is_file():
+            name = f"conformance-{role}"
+            gateway_admin(h, r, "PUT", "/api/config/resources/llm.provider", {"resources": [{"value": {
+                "name": name, "params": {"baseUrl": models[role]["apiBase"]},
+                "provider": {"custom": {"formats": [{"type": source["formats"][role]}]}}}}]})
+            gateway_admin(h, r, "PUT", "/api/config/resources/llm.model", {"resources": [{"value": {
+                "name": name, "provider": {"reference": name}, "params": {"model": models[role]["model"]},
+                "authorization": source["authorization"]}}]})
+            flow(h, r, "llm-route-create.mjs", "--provider-id", name, "--model-id", name, "--out", str(out))
+        routes[role] = h.read_json(out)["routeResourceId"]
+    r.record(modelRoutes=routes)
+    h.say("isolated-model-routes", routes=len(routes))
+    return routes
+
+
 def drive(r, args, runtime_env, declaration, h):
     s = r.state
     if "project" not in s:
@@ -277,6 +350,7 @@ def drive(r, args, runtime_env, declaration, h):
         ensure_approver(h, r)
         receiver(h, r, "contracts")
     ensure_action_token(h, r)
+    ensure_model_routes(h, r, declaration)
     r.record(blockedAfterIdentity=(
         "native/bootstrap/seed/inputs/driver not automated yet: (1) isolated AgentGateway model sources and a "
         "governed model route over the declared keyless upstreams (adapters.json knowledge.conformanceModels, "

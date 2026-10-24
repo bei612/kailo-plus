@@ -51,6 +51,18 @@
         "model": "Qwen3-Embedding-4B",
         "apiBase": "http://10.33.33.120/v1",
         "dimension": 2560
+      },
+      "gatewaySource": {
+        "$comment": "Native AgentGateway source bodies the isolated receiver platform's operator path writes for the two upstreams above (custom provider, no apiKey: Core native_provider_without_auth). The model-level authorization is required non-null by llm_route.create; the isolated sources admit every request that already passed the Gateway's strict per-key authentication. Production sources are operator-written and not versioned here.",
+        "formats": {
+          "chat": "completions",
+          "embedding": "embeddings"
+        },
+        "authorization": {
+          "rules": [
+            "true"
+          ]
+        }
       }
     }
   },
