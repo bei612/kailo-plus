@@ -3958,6 +3958,10 @@ export const platformMessages = {
   "platform.back": { en: "Back", "zh-CN": "返回" },
   "platform.confirm": { en: "Confirm", "zh-CN": "确认" },
   "platform.cancel": { en: "Cancel", "zh-CN": "取消" },
+  // DD-152: Kailo shell of component pages.
+  "platform.nativePage.breadcrumb": { en: "Location", "zh-CN": "位置" },
+  "platform.nativePage.more": { en: "More actions", "zh-CN": "更多操作" },
+  "platform.nativePage.confirm": { en: "Confirm", "zh-CN": "确定" },
   "platform.settings.organization": { en: "Organization", "zh-CN": "组织" },
   "platform.settings.close": { en: "Close settings", "zh-CN": "关闭设置" },
   "platform.settings.title": { en: "Settings", "zh-CN": "设置" },

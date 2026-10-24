@@ -5,9 +5,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createBffClient } from "../src/client";
 import { PlatformProvider } from "../src/react/context";
 import { NATIVE_HANDSHAKE_GRACE_MS, NativeApplicationPage } from "../src/react/native-application-page";
-import { embedRequest, nativeEmbedUrl, preferencesMessage, presentationMessage } from "../src/react/native-embed-host";
+import { actionMessage, confirmResultMessage, embedMessage, embedRequest, nativeEmbedUrl, navigateMessage, preferencesMessage, presentationMessage } from "../src/react/native-embed-host";
 import { COMPONENT_PREFERENCES_EVENT, COMPONENT_PREFERENCES_STORAGE_KEY } from "../src/component-preferences";
 import { button, click, render, settle } from "./render";
+
+const toasts = vi.hoisted(() => ({ success: vi.fn(), info: vi.fn(), warning: vi.fn(), error: vi.fn() }));
+vi.mock("sonner", () => ({ toast: toasts }));
 
 const page = { bindingId: "binding-fixture", projectionGeneration: 4,
   url: "https://files.example.test/app/#/folder", origin: "https://files.example.test",
@@ -131,5 +134,94 @@ describe("DD-133 component presentation host", () => {
     await fromFrame(target, { source: "kailo-embed", version: 1, type: "ready" });
     expect(host.querySelector('[role="alert"]')).toBeNull();
     popup.mockRestore();
+  });
+});
+
+// DD-152 (07 §4.8.7, V-SCN-251..253): Kailo draws the component page shell.
+describe("DD-152 component page shell", () => {
+  const ready = { source: "kailo-embed", version: 1, type: "ready", features: ["page", "toast", "confirm", "shortcuts"] };
+  const header = { title: "季度报告", breadcrumbs: [{ id: "/ws/a", label: "个人文件" }],
+    tabs: [{ id: "home", label: "主页" }, { id: "all", label: "所有文件" }], activeTab: "all",
+    actions: [{ id: "upload", label: "上传", variant: "primary", icon: "upload" }, { id: "mkdir", label: "新建文件夹", variant: "secondary" }] };
+
+  it("validates every page shell message whole", () => {
+    expect(embedMessage(ready)).toEqual({ type: "ready", features: ["page", "toast", "confirm", "shortcuts"] });
+    expect(embedMessage({ source: "kailo-embed", version: 1, type: "page", page: header })).toMatchObject({ type: "page", page: { title: "季度报告" } });
+    for (const page of [{ title: "" }, { ...header, activeTab: "nope" }, { ...header, tabs: Array.from({ length: 9 }, (_, i) => ({ id: `t${i}`, label: "x" })) },
+      { ...header, actions: [header.actions[0], { ...header.actions[0], id: "x" }] }, { title: "a\u0007b" }, { title: "x", actions: [{ id: "a", label: "a", icon: "skull" }] }])
+      expect(embedMessage({ source: "kailo-embed", version: 1, type: "page", page })).toBeNull();
+    expect(embedMessage({ source: "kailo-embed", version: 1, type: "toast", toast: { tone: "loud", title: "x" } })).toBeNull();
+    expect(embedMessage({ source: "kailo-embed", version: 1, type: "shortcut", shortcut: "quit" })).toBeNull();
+    expect(embedMessage({ source: "kailo-embed", version: 1, type: "confirm", confirm: { id: "../x", title: "x" } })).toBeNull();
+  });
+
+  it("keeps Kailo's skeleton until the first header, then renders it and relays clicks to the frame only", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const { host, frame, target, posted } = await mount({ locale: "zh-CN" });
+    await fromFrame(target, ready);
+    expect(host.querySelector('[data-testid="native-page-loading"]')).not.toBeNull();
+    expect(frame.className).toContain("invisible");
+    await fromFrame(target, { source: "kailo-embed", version: 1, type: "page", page: header });
+    expect(host.querySelector('[data-testid="native-page-loading"]')).toBeNull();
+    expect(frame.className).not.toContain("invisible");
+    const bar = host.querySelector('[data-testid="native-page-header"]')!;
+    expect(bar.textContent).toContain("个人文件");
+    expect(bar.querySelector('[aria-current="page"]')?.textContent).toContain("季度报告");
+    await click(button(host, "上传"));
+    expect(posted).toHaveBeenLastCalledWith(actionMessage("upload"), page.origin);
+    await click(host.querySelector<HTMLButtonElement>('[role="tab"][aria-selected="false"]')!);
+    expect(posted).toHaveBeenLastCalledWith(navigateMessage("tab", "home"), page.origin);
+    await click(button(host, "个人文件"));
+    expect(posted).toHaveBeenLastCalledWith(navigateMessage("breadcrumb", "/ws/a"), page.origin);
+    // The header from another window is ignored.
+    await fromFrame(window, { source: "kailo-embed", version: 1, type: "page", page: { title: "伪造" } });
+    expect(host.textContent).not.toContain("伪造");
+  });
+
+  it("does not wait for a header from a page that did not declare one", async () => {
+    const { host, target } = await mount();
+    await fromFrame(target, { source: "kailo-embed", version: 1, type: "ready" });
+    expect(host.querySelector('[data-testid="native-page-loading"]')).toBeNull();
+    // An undeclared page header is not drawn.
+    await fromFrame(target, { source: "kailo-embed", version: 1, type: "page", page: header });
+    expect(host.querySelector('[data-testid="native-page-tabs"]')).toBeNull();
+  });
+
+  it("shows component toasts through Kailo, merging repeats and capping bursts", async () => {
+    Object.values(toasts).forEach((fn) => fn.mockClear());
+    const { target } = await mount();
+    await fromFrame(target, ready);
+    const toast = (title: string) => fromFrame(target, { source: "kailo-embed", version: 1, type: "toast", toast: { tone: "success", title } });
+    await toast("已上传");
+    await toast("已上传");
+    expect(toasts.success).toHaveBeenCalledTimes(1);
+    for (let i = 0; i < 8; i++) await toast(`第 ${i} 个`);
+    expect(toasts.success).toHaveBeenCalledTimes(5);
+  });
+
+  it("answers a confirmation in Kailo's dialog and declines a second one while it is open", async () => {
+    const { target, posted } = await mount({ locale: "zh-CN" });
+    await fromFrame(target, ready);
+    await fromFrame(target, { source: "kailo-embed", version: 1, type: "confirm", confirm: { id: "c1", tone: "danger", title: "删除 3 个文件？", confirmLabel: "删除" } });
+    const dialog = document.querySelector('[data-testid="native-confirm-dialog"]') as HTMLElement;
+    expect(dialog.textContent).toContain("删除 3 个文件？");
+    await fromFrame(target, { source: "kailo-embed", version: 1, type: "confirm", confirm: { id: "c2", title: "另一个？" } });
+    expect(posted).toHaveBeenLastCalledWith(confirmResultMessage("c2", false), page.origin);
+    await click(button(dialog, "删除"));
+    expect(posted).toHaveBeenLastCalledWith(confirmResultMessage("c1", true), page.origin);
+    expect(document.querySelector('[data-testid="native-confirm-dialog"]')).toBeNull();
+  });
+
+  it("replays Kailo's chords pressed inside the frame on the host window", async () => {
+    const { target } = await mount();
+    await fromFrame(target, ready);
+    const seen: KeyboardEvent[] = [];
+    const listener = (event: KeyboardEvent) => seen.push(event);
+    window.addEventListener("keydown", listener);
+    await fromFrame(target, { source: "kailo-embed", version: 1, type: "shortcut", shortcut: "search" });
+    window.removeEventListener("keydown", listener);
+    expect(seen).toHaveLength(1);
+    expect(seen[0]!.key).toBe("k");
+    expect(seen[0]!.ctrlKey || seen[0]!.metaKey).toBe(true);
   });
 });
