@@ -16,6 +16,7 @@ mod agent_policy;
 mod agent_profile;
 mod agent_runtime;
 mod agent_session;
+mod agent_session_abandon;
 mod agent_session_query;
 mod agent_snapshot;
 mod agent_task;
