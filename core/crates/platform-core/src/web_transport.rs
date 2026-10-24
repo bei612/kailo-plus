@@ -6014,7 +6014,11 @@ mod tests {
             (b["class"].as_str(), b["reason"].as_str()),
             (Some("LIMIT"), Some("RATE_LIMITED"))
         );
-        assert_eq!(retry.as_deref(), Some("42"), "Relay 的 429 带预算窗口推算的 Retry-After");
+        assert_eq!(
+            retry.as_deref(),
+            Some("42"),
+            "Relay 的 429 带预算窗口推算的 Retry-After"
+        );
 
         let (s, retry, b) = parts(relay_error_response(
             &OperatorError::BudgetExhausted {

@@ -370,7 +370,8 @@ mod tests {
         for _ in 0..5 {
             b.retry_after_secs("h", "k");
         }
-        b.try_acquire("h", "k").expect("读取不消耗额度，第 2 次仍可取");
+        b.try_acquire("h", "k")
+            .expect("读取不消耗额度，第 2 次仍可取");
         // 不跨身份
         assert_eq!(b.retry_after_secs("h", "other"), 1);
     }

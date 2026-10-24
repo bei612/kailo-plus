@@ -327,7 +327,10 @@ mod route_tests {
             crate::agent_tool_pep::SESSION_METADATA.1
         );
         // Only kept so a route that failed to strip the bearer is detectable.
-        assert_eq!(processor["requestHeaders"]["allowed"], json!(["authorization"]));
+        assert_eq!(
+            processor["requestHeaders"]["allowed"],
+            json!(["authorization"])
+        );
         assert!(!desired.to_string().contains("request.headers"));
         let rules = desired["policies"]["mcpAuthorization"]["rules"]
             .as_array()

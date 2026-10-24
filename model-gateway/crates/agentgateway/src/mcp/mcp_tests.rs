@@ -8571,10 +8571,11 @@ fn mcp_authentication_strips_session_bearer_and_route_metadata_carries_validated
 					pass_request()
 				},
 				move |res| {
-					responses
-						.lock()
-						.unwrap()
-						.push((res.method.clone(), false, session(res.metadata_context.as_ref())));
+					responses.lock().unwrap().push((
+						res.method.clone(),
+						false,
+						session(res.metadata_context.as_ref()),
+					));
 					pass_response()
 				},
 			)
@@ -8662,11 +8663,19 @@ fn mcp_authentication_strips_session_bearer_and_route_metadata_carries_validated
 			!authorization,
 			"{method}: the validated bearer is removed before mcpGuardrails"
 		);
-		assert_eq!(session.as_ref(), Some(&expected), "{method}: request metadata");
+		assert_eq!(
+			session.as_ref(),
+			Some(&expected),
+			"{method}: request metadata"
+		);
 	}
 	assert!(responses.iter().any(|(m, _, _)| m == "tools/call"));
 	for (method, _, session) in &responses {
-		assert_eq!(session.as_ref(), Some(&expected), "{method}: response metadata");
+		assert_eq!(
+			session.as_ref(),
+			Some(&expected),
+			"{method}: response metadata"
+		);
 	}
 	assert!(upstream.len() >= 2, "saw {upstream:?}");
 	for h in &upstream {

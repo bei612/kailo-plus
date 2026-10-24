@@ -335,10 +335,7 @@ mod tests {
         .fetch_all(&mut *tx)
         .await
         .expect("statuses");
-        assert_eq!(
-            statuses.iter().filter(|(_, s)| s == "ABANDONED").count(),
-            1
-        );
+        assert_eq!(statuses.iter().filter(|(_, s)| s == "ABANDONED").count(), 1);
         assert!(statuses
             .iter()
             .all(|(id, s)| (*id == settled) == (s == "ABANDONED")));
@@ -349,7 +346,11 @@ mod tests {
         .fetch_all(&mut *tx)
         .await
         .expect("audit");
-        assert_eq!(facts.len(), 1, "one reconciliation fact per abandoned Session");
+        assert_eq!(
+            facts.len(),
+            1,
+            "one reconciliation fact per abandoned Session"
+        );
         assert_eq!(
             (facts[0].0.as_str(), facts[0].1.as_str()),
             ("RECONCILIATION", "SESSION_ABANDONED")

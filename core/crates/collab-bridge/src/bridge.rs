@@ -2165,9 +2165,8 @@ mod relay_rate_limit_tests {
         let http = reqwest::Client::new();
         let filter = [serde_json::json!({ "kinds": [9], "limit": 1 })];
 
-        let budget = Arc::new(
-            ApiBudget::new(10, std::time::Duration::from_secs(60)).expect("预算"),
-        );
+        let budget =
+            Arc::new(ApiBudget::new(10, std::time::Duration::from_secs(60)).expect("预算"));
         let budgeted = client(&origin).with_budget(budget);
         let err = budgeted.query(&http, &filter).await.unwrap_err();
         assert_eq!(err.limit(), Some(LimitKind::RateLimited));

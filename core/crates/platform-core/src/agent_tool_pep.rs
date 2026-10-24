@@ -737,10 +737,8 @@ fn management_caller(request: &wire::McpRequest) -> Result<Value, Refusal> {
 /// Gateway has just validated (`jwt.rawToken`, SF-AGW-30); the PEP still verifies
 /// it in full with the Session signer. Route metadata is computed by the Gateway
 /// from the route definition Core wrote and read back, never by the client.
-pub(crate) const SESSION_METADATA: (&str, &str) = (
-    "session",
-    "'Bearer ' + jwt.rawToken.unredacted()",
-);
+pub(crate) const SESSION_METADATA: (&str, &str) =
+    ("session", "'Bearer ' + jwt.rawToken.unredacted()");
 
 /// A request that still carries `authorization` means the route did not strip
 /// the bearer; it would also reach the target on notification and session
@@ -1150,8 +1148,7 @@ mod tool_pep_tests {
         };
         let token = signer.issue(&scope).unwrap();
         let metadata: prost_wkt_types::Struct =
-            serde_json::from_value(json!({SESSION_METADATA.0: format!("Bearer {token}")}))
-                .unwrap();
+            serde_json::from_value(json!({SESSION_METADATA.0: format!("Bearer {token}")})).unwrap();
         let session = session_metadata(&[], Some(&metadata)).unwrap();
         let verified = signer
             .verify(session.strip_prefix("Bearer ").unwrap())
