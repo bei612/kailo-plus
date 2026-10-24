@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { canSendMessageToChannel, useSendToChannelIntent, type TimelineMessage } from "../src/react/messages";
+import { canManageMessageForCurrentUser, canSendMessageToChannel, useSendToChannelIntent, type TimelineMessage } from "../src/react/messages";
 import { BffError, TransportError } from "../src/transport";
 import { ErrorClass, ReasonCode } from "@client-kit/contracts";
 import { button, click, render } from "./render";
@@ -17,6 +17,21 @@ describe("original canSendMessageToChannel", () => {
     expect(canSendMessageToChannel(message({ signerPubkey: other }), mine, agents)).toBe(false);
     expect(canSendMessageToChannel(message({ pending: true }), mine)).toBe(false);
     expect(canSendMessageToChannel(message({ kind: 45003 }), mine)).toBe(false);
+  });
+});
+
+describe("DD-142 canManageMessageForCurrentUser (edit/delete)", () => {
+  it("offers the viewer's own settled stream messages and, when given, those of Agents they own", () => {
+    const agents = new Set([agent]);
+    expect(canManageMessageForCurrentUser(message({}), own)).toBe(true);
+    expect(canManageMessageForCurrentUser(message({ signerPubkey: own.toUpperCase() }), own)).toBe(true);
+    expect(canManageMessageForCurrentUser(message({ signerPubkey: agent }), own, agents)).toBe(true);
+    // DMs pass no owned set: an owned Agent's message is not manageable there.
+    expect(canManageMessageForCurrentUser(message({ signerPubkey: agent }), own)).toBe(false);
+    expect(canManageMessageForCurrentUser(message({ signerPubkey: other }), own, agents)).toBe(false);
+    expect(canManageMessageForCurrentUser(message({ pending: true }), own)).toBe(false);
+    expect(canManageMessageForCurrentUser(message({ kind: 45003 }), own)).toBe(false);
+    expect(canManageMessageForCurrentUser(message({}), undefined)).toBe(false);
   });
 });
 

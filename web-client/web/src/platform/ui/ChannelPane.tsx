@@ -64,7 +64,7 @@ import { useTypingBroadcast } from "./useTypingBroadcast";
 import { platformQueries } from "@/platform/ui/queries";
 import { t } from "@/shared/i18n";
 import { toast } from "sonner";
-import { AgentMentionStatus, MessageRowSurface, MessageActionBarSurface, SentFromThreadLine, SentFromThreadLink, getThreadReference, useMessageDeleteDialog, reactionThreadInteractionRoots, type MessageModerationContext, type TimelineMessage } from "@client-kit/platform/react/messages";
+import { AgentMentionStatus, MessageRowSurface, MessageActionBarSurface, SentFromThreadLine, SentFromThreadLink, canManageMessageForCurrentUser, getThreadReference, useMessageDeleteDialog, reactionThreadInteractionRoots, type MessageModerationContext, type TimelineMessage } from "@client-kit/platform/react/messages";
 import { ComposerTimeoutBanner, clearTimeoutState, recordTimeoutFromRestriction, useTimeoutState } from "@client-kit/platform/react/moderation";
 import { useAgentMentionOutcomes, type MentionableAgent } from "./useAgentMentionOutcomes";
 import { useCollaborationPreferences } from "@client-kit/platform/react/collaboration-preferences";
@@ -337,6 +337,9 @@ export function ChannelPane({
     },
     [setEditTarget],
   );
+  // DD-142: owned Agents are known only after the composer directory loads below; the delete
+  // callback reads the latest set through this ref.
+  const ownedAgentPubkeysRef = useRef<ReadonlySet<string>>(new Set());
   const canDelete = live && !denied && !archived && !metadataPending && !composerBusy &&
     ownProfile.isSuccess && !ownProfile.isFetching && Boolean(ownProfile.data?.pubkey) && (!conversation || conversation.state === "ACTIVE");
   // DD-125(5) original "Remove preview" for everyone: the author's own 40003 with the
@@ -348,7 +351,7 @@ export function ChannelPane({
   const deleteMessageDialog = useMessageDeleteDialog(
     JSON.stringify([myPrincipalId, ownProfile.data?.pubkey, conversation?.id ?? workspaceId]), canDelete,
     async (message) => {
-      if (!canDelete || message.kind !== 9 || message.pending || message.signerPubkey !== ownProfile.data?.pubkey) throw new Error("Deletion identity or scope is unavailable.");
+      if (!canDelete || !canManageMessageForCurrentUser(message, ownProfile.data?.pubkey, conversation ? undefined : ownedAgentPubkeysRef.current)) throw new Error("Deletion identity or scope is unavailable.");
       const receipt = await deleteMessage(workspaceId, message.id, WebMessageType.Stream, conversation?.id);
       if (!receipt?.eventId || !receipt.operationId) throw new TransportError("Deletion has no confirmed receipt.");
     },
@@ -414,6 +417,7 @@ export function ChannelPane({
   const ownedAgentPubkeys = useMemo(() => new Set(typingAgents.data?.agents
     .filter(agent => agent.installation.ownerPrincipalId === myPrincipalId).map(agent => agent.pubkey.toLowerCase())),
   [typingAgents.data, myPrincipalId]);
+  ownedAgentPubkeysRef.current = ownedAgentPubkeys;
   // DD-125(6): the original Agent activity panel, for Installation `audit` holders only.
   const agentActivityPanel = useChannelAgentActivityPanel({agents: typingAgents.data?.agents, channelName,
     channelId: conversation ? null : admittedChannelId ?? null, scopeId: conversation ? null : workspaceId,
@@ -638,7 +642,7 @@ export function ChannelPane({
   })), [members.data, members.isSuccess, members.isError, live, denied, conversation, workspaceId, myPrincipalId, timelineMessages]);
   useEffect(() => {
     if (!restoreEditEventId || restoredEdit.current || !ownProfile.isSuccess) return;
-    const message = timelineMessages.find((item) => item.id === restoreEditEventId && item.kind === 9 && item.signerPubkey === ownProfile.data.pubkey);
+    const message = timelineMessages.find((item) => item.id === restoreEditEventId && canManageMessageForCurrentUser(item, ownProfile.data.pubkey, conversation ? undefined : ownedAgentPubkeys));
     if (message) { restoredEdit.current = true; setEditTarget(message); }
   }, [restoreEditEventId, timelineMessages, ownProfile.isSuccess, ownProfile.data]);
   const copyMessage = async (message: TimelineMessage) => {
@@ -933,8 +937,8 @@ export function ChannelPane({
                     testId="message-avatar" /></div> : node}</MessageAuthorIdentity> : undefined}
                 renderActions={(ref,reactions) => <MessageActionBarSurface ref={ref} {...reactions} message={message} onCopyMessage={copyMessage}
                   moderation={moderation}
-                  onEdit={message.kind === 9 && live && !denied && !archived && !metadataPending && !composerBusy && ownProfile.isSuccess && !ownProfile.isFetching && message.signerPubkey === ownProfile.data.pubkey ? handleRoutedEdit : undefined}
-                  onDelete={canDelete && message.kind === 9 && message.signerPubkey === ownProfile.data?.pubkey ? deleteMessageDialog.requestDelete : undefined}
+                  onEdit={live && !denied && !archived && !metadataPending && !composerBusy && ownProfile.isSuccess && !ownProfile.isFetching && canManageMessageForCurrentUser(message, ownProfile.data.pubkey, conversation ? undefined : ownedAgentPubkeys) ? handleRoutedEdit : undefined}
+                  onDelete={canDelete && canManageMessageForCurrentUser(message, ownProfile.data?.pubkey, conversation ? undefined : ownedAgentPubkeys) ? deleteMessageDialog.requestDelete : undefined}
                   isUnread={isMessageUnread(message)}
                   onMarkRead={canMarkMessage ? target => markMessageSubtree(target, routedTimelineMessages, true) : undefined}
                   onMarkUnread={canMarkMessage ? target => markMessageSubtree(target, routedTimelineMessages, false) : undefined}
