@@ -155,7 +155,8 @@ def _model_config(r, h, models):
         document = "\n".join(line for line in document.split("\n") if "api_key_name: ${WREN_MODEL_API_KEY_NAME}" not in line)
         out.append(document)
     rendered = "\n---\n".join(out)
-    h.require("${" not in rendered, "isolated model configuration still has placeholders")
+    h.require(not any("${" in line for line in rendered.split("\n") if not line.lstrip().startswith("#")),
+              "isolated model configuration still has placeholders")
     return h.write_private(r.dir / "wren-project/config.yaml", rendered)
 
 
