@@ -77,7 +77,9 @@ def say(step, **fields):
 def private_dir(path, mode=0o700):
     path = Path(path)
     path.mkdir(mode=mode, parents=True, exist_ok=True)
-    os.chmod(path, mode)
+    # Native state directories are taken over by the service uid (e.g. PostgreSQL) once started.
+    if path.stat().st_uid == os.getuid():
+        os.chmod(path, mode)
     return path
 
 
