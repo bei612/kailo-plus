@@ -330,7 +330,7 @@ try:
     rest_v2, rest_v1 = urlsplit(conf['cellsRestBaseUrl']), urlsplit(conf['cellsRestV1BaseUrl'])
     require(rest_v2.scheme in ('http', 'https') and rest_v2.netloc and (rest_v1.scheme, rest_v1.netloc) == (rest_v2.scheme, rest_v2.netloc))
     require(rest_v2.path.rstrip('/') == '/v2' and rest_v1.path.rstrip('/') == '/a')
-    require(not any((u.query, u.fragment, u.username, u.password) for u in (rest_v2, rest_v1)))
+    require(not any(u.query or u.fragment or u.username or u.password for u in (rest_v2, rest_v1)))
     if 'cellShare' in conf:
         native = json.loads(pathlib.Path(env['CELLS_NATIVE_ACTION_CONFIG_FILE']).read_text())
         require(conf['cellShare'] == {key: native['cellShare'][key] for key in ('nativeJobId', 'bindingGeneration')})
