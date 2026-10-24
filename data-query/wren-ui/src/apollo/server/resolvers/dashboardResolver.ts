@@ -31,7 +31,7 @@ import {
 import { isGovernedQueryMode } from '../services/nativeQueryMode';
 import { queryReceiptState } from '@/utils/queryReceipt';
 import { nativeWriteUnknown } from '../utils/error';
-import { kailoUserLabel } from '@/utils/kailoUser';
+import { kailoActorLabel } from '@/utils/kailoUser';
 
 const logger = getLogger('DashboardResolver');
 logger.level = 'debug';
@@ -331,9 +331,13 @@ export class DashboardResolver {
         id: threadId,
       });
       if (!thread || thread.projectId !== projectId) return;
+      // The Kailo display name from the member directory, not the token name.
+      const listed = await components.kailoMemberDirectory
+        ?.profile(actor.key)
+        .catch((): null => null);
       await components.kailoNotifications.dashboardItemAdded({
         actorKey: actor.key,
-        actorName: kailoUserLabel(actor),
+        actorName: kailoActorLabel(actor, listed?.name),
         ownerKey: thread.ownerKey,
         itemId,
         threadName: thread.summary,
