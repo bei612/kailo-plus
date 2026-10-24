@@ -1698,7 +1698,8 @@ describe('original saved-view preview controls', () => {
     expect(markup).toContain(getQueryPreviewText(mockLocale).preview);
     await mockButtons
       .find(
-        (button) => button.children === kailoText(mockLocale, 'knowledge.submit'),
+        (button) =>
+          button.children === kailoText(mockLocale, 'knowledge.submit'),
       )
       .onClick();
     expect(submit).toHaveBeenCalledWith({
@@ -3182,14 +3183,13 @@ describe('original native metadata create UNKNOWN and authorized read-back consu
             ? createElement(SaveAsViewModal, props)
             : createElement(ModelDrawer, props),
         );
-        const save = mockButtons.find(
-          (button) =>
-            (nativeType === 'view'
-              ? ['home.save' as const]
-              : ['modeling.create' as const, 'modeling.save' as const]
-            )
-              .map((key) => kailoText(mockLocale, key))
-              .includes(button.children),
+        const save = mockButtons.find((button) =>
+          (nativeType === 'view'
+            ? ['home.save' as const]
+            : ['modeling.create' as const, 'modeling.save' as const]
+          )
+            .map((key) => kailoText(mockLocale, key))
+            .includes(button.children),
         );
         save.onClick();
         await Promise.resolve();

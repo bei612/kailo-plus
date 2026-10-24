@@ -80,13 +80,17 @@ function DeployStatus({ status }: { status?: SyncStatus }) {
       [SyncStatus.SYNCRONIZED]: (
         <Space size={[4, 0]}>
           <CheckCircleOutlined className="mr-1 kailo-text-success" />
-          <Typography.Text className="gray-7">{t('deploySynced')}</Typography.Text>
+          <Typography.Text className="gray-7">
+            {t('deploySynced')}
+          </Typography.Text>
         </Space>
       ),
       [SyncStatus.UNSYNCRONIZED]: (
         <Space size={[4, 0]}>
           <WarningOutlined className="mr-1 kailo-text-warning" />
-          <Typography.Text className="gray-7">{t('deployPending')}</Typography.Text>
+          <Typography.Text className="gray-7">
+            {t('deployPending')}
+          </Typography.Text>
         </Space>
       ),
     }[status] || null
