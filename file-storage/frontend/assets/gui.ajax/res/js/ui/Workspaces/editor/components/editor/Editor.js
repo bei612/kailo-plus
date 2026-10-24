@@ -83,7 +83,7 @@ function buttonStyleVisible(rootStyle, visible) {
 })
 class Editor extends React.Component {
 
-    // DD-152 (07 §4.8.7): Kailo's header shows the open file (title, folder
+    // DD-157 (07 §4.8.7): Kailo's header shows the open file (title, folder
     // breadcrumbs, download / share) and closes it from the breadcrumbs.
     reportToKailo(open) {
         const kailo = window.KailoCells

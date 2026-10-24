@@ -67,7 +67,7 @@ MAPPING = {
     "canvas-background": "muted",
     "canvas-page-border": "border",
 }
-# DD-152: the header button glyphs are a two-column sprite; the editor's
+# DD-157: the header button glyphs are a two-column sprite; the editor's
 # default light theme picks the white column for its coloured header. On the
 # light Kailo header (sidebar-background) the dark column must be used, at full
 # opacity, as in the editor's own white theme; the dark theme keeps the white one.

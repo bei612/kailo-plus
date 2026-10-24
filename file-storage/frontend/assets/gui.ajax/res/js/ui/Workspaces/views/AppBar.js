@@ -115,7 +115,7 @@ const AppBar = ({pydio, muiTheme, styles, searchIconButton, searchIconCallback, 
     }
     const appBarRightProps = {pydio, muiTheme, styles, searchIconButton, searchIconCallback, searchView, searchTools, searchViewTransition, showInfoPanel, infoPanelOpen, showChatTab, chatOpen, onOpenDrawer, onUpdateSearchView, onToggleRightPanel, sortingInfo, displayMode}
 
-    // DD-152 (07 §4.8.7): inside a Kailo frame Kailo draws the title,
+    // DD-157 (07 §4.8.7): inside a Kailo frame Kailo draws the title,
     // breadcrumbs and the upload / new-folder actions (and the file search);
     // the native bar keeps only the selection toolbar and the view controls.
     const kailo = typeof window !== 'undefined' && window.KailoCells

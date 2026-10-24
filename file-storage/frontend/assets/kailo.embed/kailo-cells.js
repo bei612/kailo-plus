@@ -242,7 +242,7 @@
         return typeof url === 'string' && /^https?:\/\//.test(url) ? url : '';
     }
 
-    // ---- DD-152 page shell (07 §4.8.7, 20 §13) ------------------------------
+    // ---- DD-157 page shell (07 §4.8.7, 20 §13) ------------------------------
     // Inside a Kailo frame that accepts the "page" feature, Kailo draws the page
     // header (title, breadcrumbs, tabs, main actions), toasts and destructive
     // confirmations; the native page renders only its content area.
@@ -293,11 +293,45 @@
     }
 
     // Kailo draws this page's header: a Kailo frame, the page feature declared
-    // and a Kailo origin to talk to (the conditions under which setPage posts).
-    var hosted = !!embed && hasFeature('page') && embedState().embedded && hostOrigins();
+    // and a Kailo origin to talk to. Until Kailo answers, its skeleton covers the
+    // page; once it has answered, only a host that announced "page" draws the
+    // header (an older Kailo leaves the native header in place).
+    var candidate = !!embed && hasFeature('page') && embedState().embedded && hostOrigins();
+    var hosted = candidate;
+    var hostedListeners = [];
 
     function pageHosted() {
         return hosted;
+    }
+
+    function hostAnswered() {
+        return !!embed && !!embedState().hostConnected;
+    }
+
+    function hostHandles(feature) {
+        return !!embed && (typeof embed.hostSupports === 'function' ? embed.hostSupports(feature) : hostAnswered());
+    }
+
+    function setHosted(next) {
+        next = !!next && candidate;
+        if (next === hosted) {
+            return;
+        }
+        hosted = next;
+        lastPage = '';
+        markRoot();
+        hostedListeners.slice().forEach(function (fn) {
+            try {
+                fn(hosted);
+            } catch {
+                /* consumer errors stay local */
+            }
+        });
+        var ui = window.pydio && window.pydio.UI;
+        if (ui && ui.refreshTemplateParts) {
+            ui.refreshTemplateParts();
+        }
+        schedulePage();
     }
 
     function markRoot() {
@@ -613,14 +647,19 @@
         if (key === lastPage) {
             return true;
         }
+        var shown = false;
         try {
-            hosted = embed.setPage(page) === true;
-            lastPage = key;
+            shown = embed.setPage(page) === true;
         } catch {
-            hosted = false;
+            shown = false;
         }
-        markRoot();
-        return hosted;
+        lastPage = shown ? key : '';
+        // Before Kailo answers the page waits behind Kailo's skeleton; an
+        // answered host that does not draw the header gives it back.
+        if (!shown && (hostAnswered() || !candidate)) {
+            setHosted(false);
+        }
+        return shown;
     }
 
     function schedulePage() {
@@ -845,7 +884,7 @@
         showPersonalShell: function () { return !kailoMode(); },
         startLogin: startLogin,
         consumeReturnPath: consumeReturnPath,
-        // DD-152 (07 §4.8.7): Kailo draws the page header; the GUI renders no
+        // DD-157 (07 §4.8.7): Kailo draws the page header; the GUI renders no
         // title, breadcrumb, rail or create menu of its own while true.
         pageHosted: pageHosted,
         text: text,
@@ -855,6 +894,15 @@
         confirm: confirm,
         deleteConfirm: deleteConfirm,
         namedConfirm: namedConfirm,
+        // listener(hosted) when Kailo's answer changes who draws the header.
+        onPageHosted: function (fn) {
+            if (typeof fn === 'function') {
+                hostedListeners.push(fn);
+            }
+            return function () {
+                hostedListeners = hostedListeners.filter(function (f) { return f !== fn; });
+            };
+        },
         listPane: function () { return pane; },
         setListPane: function (next) { setPane(next === 'bookmarks' ? 'bookmarks' : 'files'); },
         onListPane: function (fn) {
@@ -894,6 +942,10 @@
         embed.onChange(function (state, changed) {
             if (changed && changed.theme) {
                 holdThemeSwitch();
+            }
+            // DD-157: the host's first answer says whether it draws the header.
+            if (candidate && state && state.hostConnected) {
+                setHosted(hostHandles('page'));
             }
             notify();
             if (changed && changed.locale) {

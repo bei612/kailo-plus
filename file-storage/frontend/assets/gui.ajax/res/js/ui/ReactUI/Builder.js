@@ -219,7 +219,7 @@ export default class Builder{
     }
 
     openComponentInModal(namespace, componentName, props){
-        // DD-152 (07 §4.8.7): a destructive confirmation that declares its Kailo
+        // DD-157 (07 §4.8.7): a destructive confirmation that declares its Kailo
         // form is shown by Kailo; the native dialog remains for top-level visits.
         const kailo = window.KailoCells;
         if(namespace === 'PydioReactUI' && componentName === 'ConfirmDialog' && props && props.kailoConfirm && kailo && kailo.confirm){
@@ -283,7 +283,7 @@ export default class Builder{
     }
 
     displayMessage(type, message, actionLabel = null, actionCallback = null){
-        // DD-152: one notification surface, Kailo's toast, inside a Kailo frame.
+        // DD-157: one notification surface, Kailo's toast, inside a Kailo frame.
         const kailo = window.KailoCells;
         if(kailo && kailo.toast && kailo.toast(type, message, actionLabel)){
             return;

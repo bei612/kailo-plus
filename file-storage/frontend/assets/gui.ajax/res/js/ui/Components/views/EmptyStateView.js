@@ -78,7 +78,7 @@ class EmptyStateView extends Component{
                 color: muiTheme.palette.mui3.primary
             }
         };
-        // DD-152 (20 §13.6 空态): Kailo empty state — no tinted (white in dark) box,
+        // DD-157 (20 §13.6 空态): Kailo empty state — no tinted (white in dark) box,
         // a 64px brand line icon, title 17/24 600, description 14 muted, one action.
         const kailo = typeof window !== 'undefined' && window.KailoCells && window.KailoCells.kailoMode && window.KailoCells.kailoMode()
         if (kailo) {

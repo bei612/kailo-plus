@@ -150,7 +150,7 @@ class CompositeCard extends React.Component {
         pydio.UI.openComponentInModal('PydioReactUI', 'ConfirmDialog', {
             dialogTitleId: 'share_center.composite.deleteAll',
             message: pydio.MessageHash['share_center.' + 255],
-            // DD-152: shown by Kailo inside a Kailo frame.
+            // DD-157: shown by Kailo inside a Kailo frame.
             kailoConfirm: kailo && kailo.namedConfirm ? kailo.namedConfirm('delete-shares') : undefined,
             validCallback: () => {
                 model.stopObserving('update');

@@ -73,7 +73,7 @@ class RecoLoader {
                     }
                 }
                 const node = MetaNodeProvider.parseTreeNode(n, slug)
-                // DD-152 (20 §13.8): Kailo names of the default locations (个人文件 / 公共文件).
+                // DD-157 (20 §13.8): Kailo names of the default locations (个人文件 / 公共文件).
                 const kailo = window.KailoCells
                 const kailoLabel = workspaceReco && kailo && kailo.locationLabel ? kailo.locationLabel(slug) : ''
                 if (kailoLabel) {

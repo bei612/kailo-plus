@@ -90,14 +90,14 @@ func kailoPlatformLogoutURL(raw string) error {
 	return nil
 }
 
-// kailoEmbedFeatures are the DD-152 page-shell features this build implements
+// kailoEmbedFeatures are the DD-157 page-shell features this build implements
 // (07 §4.8.7): Kailo draws the page header, toasts and destructive confirmations
 // and owns the global chords. Read by kailo-embed.js, so it precedes the runtime.
 const kailoEmbedFeatures = "page toast confirm shortcuts"
 
 // kailoHead places, before the native styles and boot script (07 §4.7.1):
 // the Kailo web origin (KAILO_FRAME_ANCESTORS, the frame-ancestors fact), the
-// DD-152 feature declaration, the platform token sheet and runtime
+// DD-157 feature declaration, the platform token sheet and runtime
 // (kailo-embed.js), the Cells overlay and the Cells bridge, so the first paint
 // already uses the Kailo theme.
 // The paths are root-absolute: this head precedes the page's <base>, so a

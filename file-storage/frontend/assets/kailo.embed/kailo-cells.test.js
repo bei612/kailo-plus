@@ -211,14 +211,14 @@ function pagePydio({ path = '/2026/reports', slug = 'personal-files', readOnly =
     })
 }
 
-describe('DD-152 page shell over the Kailo embed runtime', () => {
+describe('DD-157 page shell over the Kailo embed runtime', () => {
     const FEATURES = 'page toast confirm shortcuts'
 
     function hostedLoad(pydio, extra = {}) {
         window.KailoCells = undefined
         const loaded = load({ features: FEATURES, pydio, ...extra })
         window.KailoCells = loaded.api
-        loaded.host({ theme: 'light', locale: 'zh-CN' })
+        loaded.host({ theme: 'light', locale: 'zh-CN', features: FEATURES.split(' ') })
         return loaded
     }
 
@@ -337,6 +337,25 @@ describe('DD-152 page shell over the Kailo embed runtime', () => {
         expect(api._internal.dropTargetName(pagePydio())).toBe('reports')
         expect(api._internal.dropTargetName(pagePydio({ path: '/' }))).toBe('个人文件')
         expect(api._internal.dropTargetName(pagePydio({ readOnly: true }))).toBe('')
+    })
+
+    it('keeps the native header when the answering Kailo does not draw page headers (DD-157)', () => {
+        const pydio = pagePydio()
+        window.KailoCells = undefined
+        const { api, host, posted } = load({ features: FEATURES, pydio })
+        window.KailoCells = api
+        const changes = vi.fn()
+        api.onPageHosted(changes)
+        // Before Kailo answers the header is Kailo's (its skeleton covers the page).
+        expect(api.pageHosted()).toBe(true)
+        host({ theme: 'light', locale: 'zh-CN', features: ['shortcuts'] })
+        expect(api.pageHosted()).toBe(false)
+        expect(changes).toHaveBeenCalledWith(false)
+        expect(document.documentElement.hasAttribute('data-kailo-page-hosted')).toBe(false)
+        expect(api._internal.syncPage()).toBe(false)
+        expect(posted('page')).toEqual([])
+        expect(api.toast('SUCCESS', '已上传')).toBe(false)
+        expect(api.confirm(api.deleteConfirm(1, 'a', false))).toBe(null)
     })
 
     it('does not host the header when the build did not declare the page feature', () => {

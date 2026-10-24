@@ -30,7 +30,7 @@ export default function (pydio) {
         pydio.UI.openComponentInModal('PydioReactUI', 'ConfirmDialog', {
             message:MessageHash[177],
             dialogTitleId: 220,
-            // DD-152: shown by Kailo inside a Kailo frame.
+            // DD-157: shown by Kailo inside a Kailo frame.
             kailoConfirm: kailo && kailo.namedConfirm ? kailo.namedConfirm('empty-recycle') : undefined,
             validCallback:()=>{
                 const slug = pydio.user.getActiveRepositoryObject().getSlug();

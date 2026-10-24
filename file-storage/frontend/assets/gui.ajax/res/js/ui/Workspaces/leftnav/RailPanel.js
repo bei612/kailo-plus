@@ -135,7 +135,7 @@ const defaultWidth = 294
 // rail user menu, theme toggle and notification bell are not rendered.
 const kailoMode = () => !!(typeof window !== 'undefined' && window.KailoCells && window.KailoCells.kailoMode && window.KailoCells.kailoMode())
 
-// DD-152 (07 §4.8.7, 20 §13.2): inside a Kailo frame Kailo draws the page
+// DD-157 (07 §4.8.7, 20 §13.2): inside a Kailo frame Kailo draws the page
 // header and its tabs (主页 / 所有文件 / 收藏) replace this rail. Only the list
 // pane stays: the location tree, or the favorites under the 收藏 tab.
 const kailoCells = () => (typeof window !== 'undefined' && window.KailoCells) || null
@@ -168,9 +168,11 @@ let RailPanel = ({
     const [ASLib, setASLib] = useState()
     const [unreadCount, setUnreadCount] = useState(0)
     const {wsDisconnected, running, jobs, progress} = useRunningTasksMonitor({pydio, statusString:'Any'})
-    const hosted = pageHosted()
-    const [listPane, setListPane] = useState(() => (hosted && kailoCells().listPane ? kailoCells().listPane() : 'files'))
-    useEffect(() => (hosted && kailoCells().onListPane ? kailoCells().onListPane(setListPane) : undefined), [hosted])
+    // DD-157: Kailo's first answer can hand the header back (an older Kailo).
+    const [hosted, setHosted] = useState(pageHosted)
+    useEffect(() => (kailoCells() && kailoCells().onPageHosted ? kailoCells().onPageHosted(setHosted) : undefined), [])
+    const [listPane, setListPane] = useState(() => (kailoCells() && kailoCells().listPane ? kailoCells().listPane() : 'files'))
+    useEffect(() => (kailoCells() && kailoCells().onListPane ? kailoCells().onListPane(setListPane) : undefined), [])
 
     const {breakpoint} = muiTheme;
     const smallScreen = breakpoint === 'xs'

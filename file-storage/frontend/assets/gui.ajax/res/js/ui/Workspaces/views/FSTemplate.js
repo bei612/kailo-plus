@@ -62,7 +62,7 @@ class FSTemplate extends React.Component {
         const uPref = (k, v) => {
             return pydio.user ? pydio.user.getLayoutPreference(k, v) : v
         }
-        // DD-152 (20 §13.3): in Kailo mode the space chat is a docked side panel,
+        // DD-157 (20 §13.3): in Kailo mode the space chat is a docked side panel,
         // never a floating window with window controls.
         const kailo = typeof window !== 'undefined' && window.KailoCells
         const kailoMode = !!(kailo && kailo.kailoMode && kailo.kailoMode())
@@ -136,8 +136,12 @@ class FSTemplate extends React.Component {
             this.setState(this.stateFromPrefs())
         }
         pydio.getController().updateGuiActions(this.getPydioActions());
-        // DD-152: Kailo's header opens the native share dialog for one node.
+        // DD-157: Kailo's header opens the native share dialog for one node; the
+        // app bar follows when Kailo's answer changes who draws the header.
         const kailo = window.KailoCells
+        if(kailo && kailo.onPageHosted) {
+            this._stopPageHosted = kailo.onPageHosted(() => this.forceUpdate())
+        }
         if(kailo && kailo.setShareOpener) {
             kailo.setShareOpener((node) => {
                 const selection = new PydioDataModel(true)
@@ -152,6 +156,9 @@ class FSTemplate extends React.Component {
 
     componentWillUnmount(){
         const {pydio} = this.props;
+        if(this._stopPageHosted) {
+            this._stopPageHosted()
+        }
         pydio.stopObserving('context_changed', this._ctxObserver)
         pydio.stopObserving('set_layout_preference', this._prefObserver)
         pydio.stopObserving('reload_layout_preferences', this._reloadPrefObserver)

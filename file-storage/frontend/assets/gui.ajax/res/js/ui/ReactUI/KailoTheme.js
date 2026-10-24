@@ -134,7 +134,7 @@ export function kailoScheme(tokens, dark) {
     const primaryContainer = t('--selected') || background.mix(primary, dark ? 0.24 : 0.14)
     const onPrimaryContainer = t('--selected-foreground') || foreground
     const errorContainer = background.mix(destructive, dark ? 0.24 : 0.14)
-    // DD-152 (20 §13.6): selected rows/entries use the Kailo selected role
+    // DD-157 (20 §13.6): selected rows/entries use the Kailo selected role
     // (brand-soft), hover the Kailo hover role.
     const selected = t('--selected')
     const selectedForeground = t('--selected-foreground')

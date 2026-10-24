@@ -70,7 +70,7 @@ class App extends React.Component {
             opacity: "0.8",
             transition: "opacity .5s ease-in"
         };
-        // DD-152 (20 §13.6): in Kailo mode an open file is a page on the Kailo
+        // DD-157 (20 §13.6): in Kailo mode an open file is a page on the Kailo
         // surface (Kailo's header names it), not a dimmed full-screen layer.
         if (window.KailoCells && window.KailoCells.kailoMode && window.KailoCells.kailoMode()) {
             overlayStyle = {...overlayStyle, background: "var(--kailo-color-background)", opacity: 1, transition: "none"}

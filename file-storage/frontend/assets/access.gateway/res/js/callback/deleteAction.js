@@ -63,7 +63,7 @@ export default function (pydio) {
                 removePermanently: (onChange) => <PermanentRemoveCheckbox onChange={onChange} messages={MessageHash}/>
             };
         }
-        // DD-152: Kailo asks the question ("删除 3 个项目？") unless the native
+        // DD-157: Kailo asks the question ("删除 3 个项目？") unless the native
         // dialog carries the extra "delete permanently" choice.
         const selected = pydio.getContextHolder().getSelectedNodes()
         const kailo = window.KailoCells

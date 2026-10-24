@@ -629,7 +629,7 @@ class Pydio extends Observable{
     }
 
     /**
-     * Kailo vocabulary (DD-152, 20 §13.8) applied to a loaded message table in
+     * Kailo vocabulary (DD-157, 20 §13.8) applied to a loaded message table in
      * Kailo mode; kailo-cells.js owns the rules.
      */
     static kailoWording(hash, language){

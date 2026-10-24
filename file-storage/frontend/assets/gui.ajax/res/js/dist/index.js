@@ -29,7 +29,7 @@ import * as MUIStyle from 'material-ui/styles'
 import EnhancedButton from 'material-ui/internal/EnhancedButton'
 import Color from 'color'
 
-// DD-152 (20 §13.6): no Material ink ripple in Kailo mode, for every native
+// DD-157 (20 §13.6): no Material ink ripple in Kailo mode, for every native
 // button, icon button, list and menu item (they all render EnhancedButton).
 if (window.KailoCells && window.KailoCells.kailoMode && window.KailoCells.kailoMode()) {
     [EnhancedButton, MUI.IconButton].forEach((Component) => {

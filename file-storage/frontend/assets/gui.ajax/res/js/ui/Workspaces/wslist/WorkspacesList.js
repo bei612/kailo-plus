@@ -310,7 +310,7 @@ class WorkspacesList extends React.Component{
 
 
         const messages = pydio.MessageHash;
-        // DD-152 (20 §13.8): the location group is named 位置 in Kailo mode.
+        // DD-157 (20 §13.8): the location group is named 位置 in Kailo mode.
         const kailo = typeof window !== 'undefined' && window.KailoCells
         const locationsTitle = kailo && kailo.kailoMode && kailo.kailoMode() && kailo.text ? kailo.text('locations') : messages[468]
 

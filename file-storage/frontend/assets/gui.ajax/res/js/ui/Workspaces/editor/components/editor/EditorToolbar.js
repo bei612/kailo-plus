@@ -52,7 +52,7 @@ class EditorToolbar extends React.Component {
         let mainStyle =  {}, innerStyle = {}, spanStyle;
         const kailo = window.KailoCells && window.KailoCells.kailoMode && window.KailoCells.kailoMode()
         if (display === "fixed" && kailo) {
-            // DD-152 (20 §13.6): the Kailo page surface, not a dark grey bar.
+            // DD-157 (20 §13.6): the Kailo page surface, not a dark grey bar.
             mainStyle = {
                 position:'relative',
                 backgroundColor: 'var(--kailo-color-background)',

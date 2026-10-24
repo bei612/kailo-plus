@@ -40,7 +40,7 @@ class Themes(unittest.TestCase):
         self.assertEqual((light["type"], dark["type"]), ("light", "dark"))
         self.assertEqual(set(light["colors"]), set(themes.MAPPING) | set(themes.HEADER_ICONS["light"]) | {"font-family-base"})
         self.assertEqual(set(dark["colors"]), set(themes.MAPPING) | {"font-family-base"})
-        # DD-152: dark header glyphs on the light Kailo header, fully opaque.
+        # DD-157: dark header glyphs on the light Kailo header, fully opaque.
         self.assertEqual(light["colors"]["button-header-normal-icon-offset-x"], "0")
         self.assertEqual(light["colors"]["header-component-normal-icon-opacity"], "1")
         # Light canvas is Kailo's white background; dark is its content canvas.

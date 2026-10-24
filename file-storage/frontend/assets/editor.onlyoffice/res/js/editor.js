@@ -165,7 +165,7 @@ export default class Editor extends React.Component {
         const {launch, failed, kailoDelivery, exportingReference, referenceError} = this.state;
         const messages = Pydio.getMessages();
         return (
-            // DD-152 (20 §13.6): Kailo surface around the editor frame (dark from the first frame),
+            // DD-157 (20 §13.6): Kailo surface around the editor frame (dark from the first frame),
             // Kailo-styled actions, inline errors and the legal link (kailo-overlay.css).
             <div className={"kailo-onlyoffice"} style={{display: 'flex', flexDirection: 'column', width: '100%', height: '100%', backgroundColor: 'var(--kailo-color-background, white)'}}>
                 {kailoDelivery ? <div className={"kailo-onlyoffice-actions"}>

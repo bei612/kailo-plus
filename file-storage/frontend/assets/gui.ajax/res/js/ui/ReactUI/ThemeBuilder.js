@@ -528,7 +528,7 @@ export default class ThemeBuilder {
             shape:{
                 borderRadius:themeCusto.borderRadius
             },
-            // DD-152 (20 §13.6): no ripple; Kailo tooltips (dark chip, 12px, radius 6, no arrow, 400 ms).
+            // DD-157 (20 §13.6): no ripple; Kailo tooltips (dark chip, 12px, radius 6, no arrow, 400 ms).
             components: kailo ? {
                 MuiButtonBase: {defaultProps: {disableRipple: true}},
                 MuiTooltip: {
@@ -893,7 +893,7 @@ export default class ThemeBuilder {
         styles.activeButtonIconStyle = {...styles.buttonsIconStyle, ...styles.activeButtonIconStyle};
 
         if(themeCusto.kailo) {
-            // DD-152 (20 §13.3): Kailo page frame — flat panes on the page
+            // DD-157 (20 §13.3): Kailo page frame — flat panes on the page
             // surface separated by 1px lines, list-pane rows of 32px / radius 6.
             const line = '1px solid var(--kailo-color-border)'
             styles.masterStyle = {...styles.masterStyle, backgroundColor: 'var(--kailo-color-background)'}
