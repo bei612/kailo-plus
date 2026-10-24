@@ -20,7 +20,7 @@
 #                WeKnora: start.sh --platform-adapter；Wren: tenants/<tenantId> 组件专属
 #                OpenBao Agent（compose.adapter-agent.yaml）+ query-governance.yaml overlay，
 #                平台 namespace 的 ActionToken/Gateway 公钥取平台 Agent 已渲染的只读文件）。
-#                DD-136(6)：云盘由 adapter-converge.py 按 deploy/components/adapters.json 的声明幂等推导
+#                DD-136(6)：云盘与问数由 adapter-converge.py 按 deploy/components/adapters.json 的声明幂等推导
 #                release 与 binding 计划、adapter 配置、Tenant namespace 只读 AppRole/一次性 secret-id、
 #                交付目录条目，binding 存在后声明其 adapter IdP client；不创建 binding、不写 binding secret。
 # 受控 env 默认：Cells cells/deploy.env、WeKnora knowledge/native.env、Wren
@@ -274,6 +274,14 @@ case "$component" in
         docker compose -f "$S/deploy/components/compose.adapter-agent.yaml")
       "${agent[@]}" config --quiet
       ensure_image "$(wren_value WREN_QUERY_OPENBAO_IMAGE)"
+      # DD-136(6)：release 与 binding 计划、adapter 记录与 query.json/binding.json、Tenant namespace 只读 AppRole 与
+      # 一次性 secret-id、交付目录条目由 adapter-converge.py 按 adapters.json 声明与原生只读事实幂等推导；--check 只推导计划。
+      if "$check"; then
+        python3 -I -B "$converge" plan data-query --source "$S" --commit "$commit" --runtime "$R"
+      else
+        echo "== 0a. adapter 声明式投递（DD-136(6)）"
+        python3 -I -B "$converge" deliver data-query --source "$S" --commit "$commit" --runtime "$R"
+      fi
       # 只核对受控投递的路径/身份/引用一致，不读取 secret 值、不打印内容。
       names=(WREN_QUERY_DELIVERY_DIR WREN_QUERY_AGENT_BOOTSTRAP_DIR WREN_QUERY_AGENT_UID WREN_QUERY_AGENT_GID
         WREN_QUERY_AGENT_PROJECT WREN_COMPOSE_PROJECT_NAME WREN_QUERY_ACTION_JWKS_FILE GATEWAY_SERVICE_JWKS_FILE
@@ -285,6 +293,9 @@ case "$component" in
           *) values+=("$name=$(wren_value "$name")") ;;
         esac
       done
+      if "$check" && [ ! -f "$delivery/query.json" ]; then
+        echo "Wren 治理投递尚未渲染（--check 只推导计划）"
+      else
       env "${values[@]}" python3 -I - <<'PYWREN'
 import json, os, re, stat, sys
 from pathlib import Path
@@ -365,6 +376,7 @@ except (OSError, ValueError, KeyError, TypeError, IndexError):
     refuse("受控文件缺失或格式不符")
 print(f"Wren 治理投递校验通过：平台公钥 2 份只读文件 + {namespace} Agent（{len(destinations)} 个模板、api_proxy socket）；不声明 binding 已激活")
 PYWREN
+      fi
     fi
     "${compose[@]}" config --quiet
     while read -r image; do ensure_image "$image"; done < <("${compose[@]}" config --images | sort -u)
@@ -408,6 +420,8 @@ PYWREN
         || { echo 'wren-ui 缺少治理投递挂载' >&2; exit 1; }
       "${D[@]}" inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$ui" | grep -E '^WREN_PLATFORM_(QUERY|BINDING)_CONFIG_FILE=' \
         || { echo 'wren-ui 缺少治理投递环境' >&2; exit 1; }
+      echo "== binding 的 adapter IdP client（binding 已创建且 Agent 已渲染凭据时声明，否则 PENDING）"
+      python3 -I -B "$converge" client data-query --source "$S" --commit "$commit" --runtime "$R"
     fi
     ;;
   document-editor)
