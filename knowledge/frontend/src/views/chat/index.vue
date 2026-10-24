@@ -5,7 +5,8 @@
         'has-references-panel': referencesDrawerVisible,
         'has-sandbox-panel': sandboxPanel.visible.value,
     }" :style="{ '--sandbox-panel-width': `${sandboxPanel.width.value}px` }">
-        <ChatHeader v-if="!embeddedMode" :session="currentSession" :has-references-panel="referencesDrawerVisible" />
+        <!-- DD-152: inside the Kailo shell the conversation title and actions are Kailo's header. -->
+        <ChatHeader v-if="!embeddedMode && !kailoShell" :session="currentSession" :has-references-panel="referencesDrawerVisible" />
         <!-- 沙箱面板收起时：图标与左侧栏展开按钮同一套，位置镜像会话左上角三个点。 -->
         <div v-if="!embeddedMode && !sandboxPanel.visible.value" class="sandbox-header-toggle">
             <t-tooltip placement="bottom">
@@ -197,7 +198,7 @@ import { persistedAssistantId, previewSteerMessage, discardSteerPreview, reconci
 import { useMenuStore } from '@/stores/menu';
 import { useSettingsStore } from '@/stores/settings';
 import { useBrowserConnectionStore } from '@/stores/browserConnection';
-import { MessagePlugin } from 'tdesign-vue-next';
+import { DialogPlugin, MessagePlugin } from 'tdesign-vue-next';
 import { useI18n } from 'vue-i18n';
 import { useUIStore } from '@/stores/ui';
 import KnowledgeBaseEditorModal from '@/views/knowledge/KnowledgeBaseEditorModal.vue';
@@ -212,6 +213,9 @@ import MessageTimestamp from '@/components/chat/MessageTimestamp.vue';
 import ChatQuestionMinimap from '@/components/chat/ChatQuestionMinimap.vue';
 import { shouldShowConversationTimestamp } from '@/utils/messageTimestamp';
 import ChatHeader from '@/components/ChatHeader.vue';
+import { isKailoShell } from '@/kailo/setup';
+import { usePageHeader } from '@/kailo/page';
+import { removeSession, setSessionPinned } from '@/components/sessionMutations';
 import {
     notifySessionMutation,
     SESSION_MUTATION_EVENT,
@@ -255,6 +259,52 @@ const isAgentStreamSession = () => {
 const uiStore = useUIStore();
 const { navigateToKnowledgeBaseList } = useKnowledgeBaseCreationNavigation();
 const { t } = useI18n();
+
+// DD-152: Kailo's page header for a conversation — its title, 新建对话 and the
+// conversation's own actions (the native header row is not rendered).
+const kailoShell = isKailoShell();
+const deleteCurrentSession = () => {
+    const session = currentSession.value as { id?: string } | null;
+    if (!session?.id) return;
+    const sessionId = session.id;
+    DialogPlugin.confirm({
+        header: t('chatHeader.deleteConfirmTitle'),
+        body: t('chatHeader.deleteConfirmBody'),
+        theme: 'danger',
+        confirmBtn: { content: t('common.delete'), theme: 'danger' },
+        cancelBtn: t('common.cancel'),
+        onConfirm: async () => {
+            try {
+                await removeSession(sessionId);
+                MessagePlugin.success(t('chatHeader.deleteSuccess'));
+            } catch {
+                MessagePlugin.error(t('chat.deleteSessionFailed'));
+            }
+        },
+    });
+};
+const togglePinCurrentSession = async () => {
+    const session = currentSession.value as { id?: string; is_pinned?: boolean } | null;
+    if (!session?.id) return;
+    const pinned = !session.is_pinned;
+    try {
+        await setSessionPinned(session.id, pinned);
+    } catch {
+        MessagePlugin.error(pinned ? t('menu.pinFailed') : t('menu.unpinFailed'));
+    }
+};
+usePageHeader('chat', () => {
+    const session = currentSession.value as { id?: string; title?: string; is_pinned?: boolean } | null;
+    if (!session) return null;
+    return {
+        title: session.title?.trim() || t('menu.newSession'),
+        actions: [
+            { id: 'new-chat', label: t('menu.newChat'), variant: 'primary', icon: 'message-square-plus', run: () => router.push('/platform/creatChat') },
+            { id: 'pin', label: session.is_pinned ? t('menu.unpin') : t('menu.pin'), variant: 'menu', run: () => void togglePinCurrentSession() },
+            { id: 'delete', label: t('chatHeader.deleteSession'), variant: 'menu', icon: 'trash', run: deleteCurrentSession },
+        ],
+    };
+});
 const { firstQuery, firstMentionedItems, firstModelId, firstImageFiles, firstAttachmentFiles, firstQuestionOrigin } = storeToRefs(usemenuStore);
 // Capture before the initial send consumes firstQuery; the child focuses after mounting.
 const focusComposerOnMount = Boolean(firstQuery.value);

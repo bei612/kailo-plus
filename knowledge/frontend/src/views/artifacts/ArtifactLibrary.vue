@@ -1,6 +1,7 @@
 <template>
   <div class="artifact-library">
-    <div class="header" style="--wails-draggable: drag">
+    <!-- DD-152: the title is Kailo's header inside the Kailo shell. -->
+    <div v-if="!kailoShell" class="header" style="--wails-draggable: drag">
       <div class="header-title" style="--wails-draggable: drag">
         <h2 style="--wails-draggable: drag">{{ $t('artifactLibrary.title') }}</h2>
         <p class="header-subtitle" style="--wails-draggable: drag">{{ $t('artifactLibrary.subtitle') }}</p>
@@ -190,6 +191,7 @@
 </template>
 
 <script setup lang="ts">
+import { isKailoShell } from '@/kailo/setup'
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
@@ -208,6 +210,9 @@ import { resolveFilePreviewExt } from '@/utils/filePreview'
 import EmptyState from '@/components/EmptyState.vue'
 import DocumentPreview from '@/components/document-preview.vue'
 import ArtifactFileIcon from '@/views/chat/components/ArtifactFileIcon.vue'
+
+// DD-152: inside the Kailo shell the page title is Kailo's header.
+const kailoShell = isKailoShell()
 
 const PAGE_SIZE = 30
 const SEARCH_DEBOUNCE_MS = 300

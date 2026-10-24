@@ -1,10 +1,15 @@
 <template>
-  <div class="kb-list-container">
-    <ListSpaceSidebar v-if="!authStore.isLiteMode" v-model="spaceSelection" :count-all="allKnowledgeBases"
+  <div class="kb-list-container" :class="{ 'is-kailo-shell': kailoShell }">
+    <ListSpaceSidebar v-if="!authStore.isLiteMode && !kailoShell" v-model="spaceSelection" :count-all="allKnowledgeBases"
       :count-mine="kbs.length" :count-by-org="effectiveSharedCountByOrg" :count-favorites="kbFavoritesCount"
       :count-recents="kbRecentsCount" />
     <div class="kb-list-content">
-      <div class="header" style="--wails-draggable: drag">
+      <!-- DD-152: inside the Kailo shell the title and "新建知识库" are in Kailo's header;
+           the list scopes become a segmented control. -->
+      <div v-if="kailoShell" class="kailo-list-toolbar">
+        <ScopeSegments v-if="!authStore.isLiteMode" v-model="spaceSelection" :options="kailoScopeOptions" />
+      </div>
+      <div v-else class="header" style="--wails-draggable: drag">
         <div class="header-title" style="--wails-draggable: drag">
           <div class="title-row" style="--wails-draggable: drag">
             <h2 style="--wails-draggable: drag">{{ $t('knowledgeBase.title') }}</h2>
@@ -725,6 +730,9 @@ import KnowledgeBaseEditorModal from './KnowledgeBaseEditorModal.vue'
 import KbWikiBadge from './components/KbWikiBadge.vue'
 import ShareKnowledgeBaseDialog from '@/components/ShareKnowledgeBaseDialog.vue'
 import ListSpaceSidebar from '@/components/ListSpaceSidebar.vue'
+import ScopeSegments from '@/kailo/ScopeSegments.vue'
+import { isKailoShell } from '@/kailo/setup'
+import { usePageHeader } from '@/kailo/page'
 import ResourceOriginBadge from '@/components/ResourceOriginBadge.vue'
 import { shouldShowResourceOriginBadge } from '@/utils/card-list-badge'
 import ContextualGuide from '@/components/ContextualGuide.vue'
@@ -753,11 +761,20 @@ const { t } = useI18n()
 // stored value (not "workspace") for back-compat with any external link
 // that might point at the old query — its display label is rebranded
 // via ListSpaceSidebar's workspaceLabel computed.
-const defaultScope: 'all' | 'mine' = authStore.hasRole('contributor') ? 'mine' : 'all'
+const kailoShell = isKailoShell()
+// Kailo shell: spaces and organizations are Kailo's; the list offers 全部 / 收藏 / 最近.
+const defaultScope: 'all' | 'mine' = !kailoShell && authStore.hasRole('contributor') ? 'mine' : 'all'
 const { scope: spaceSelection, creator: creatorFilter } = useListUrlState({
   defaultScope,
   defaultCreator: 'all',
 })
+const KAILO_SCOPES = ['all', 'favorites', 'recents']
+if (kailoShell && !KAILO_SCOPES.includes(spaceSelection.value)) spaceSelection.value = 'all'
+const kailoScopeOptions = computed(() => [
+  { value: 'all', label: t('listSpaceSidebar.all') },
+  { value: 'favorites', label: t('listSpaceSidebar.favorites') },
+  { value: 'recents', label: t('listSpaceSidebar.recents') },
+])
 
 // Per-user favorites + recents (localStorage-backed). isFavorite & touchRecent
 // are wired into card render and click handlers below.
@@ -1504,6 +1521,17 @@ const handleCreateKnowledgeBase = () => {
   uiStore.openCreateKB('document', initialSection)
 }
 
+// DD-152: Kailo's page header for the list; published once the first load settled.
+usePageHeader('knowledgeBaseList', () => {
+  if (loading.value && kbs.value.length === 0) return null
+  return {
+    title: t('menu.knowledgeBase'),
+    actions: authStore.hasRole('contributor')
+      ? [{ id: 'create-kb', label: t('knowledgeList.create'), variant: 'primary' as const, icon: 'plus' as const, run: handleCreateKnowledgeBase }]
+      : [],
+  }
+})
+
 // 知识库编辑器成功回调（创建或编辑成功）
 const handleKBEditorSuccess = (kbId: string) => {
   console.log('[KnowledgeBaseList] knowledge operation success:', kbId)
@@ -1638,6 +1666,22 @@ const handleUploadFinishedEvent = (event: Event) => {
   font-size: var(--app-text-sm);
   color: var(--td-brand-color);
   margin-left: 6px;
+}
+
+.kailo-list-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 24px 16px 0;
+}
+
+// DD-152 (20 §2): list page insets 16 top / 24 sides inside the Kailo shell.
+.is-kailo-shell .kb-list-content {
+  padding: 16px 0 0 24px;
+}
+
+.is-kailo-shell .kb-list-main {
+  padding-right: 24px;
 }
 
 .header-subtitle {

@@ -1,10 +1,14 @@
 <template>
-  <div class="agent-list-container">
-    <ListSpaceSidebar v-if="!authStore.isLiteMode" v-model="spaceSelection" :count-all="allAgentsCount"
+  <div class="agent-list-container" :class="{ 'is-kailo-shell': kailoShell }">
+    <ListSpaceSidebar v-if="!authStore.isLiteMode && !kailoShell" v-model="spaceSelection" :count-all="allAgentsCount"
       :count-mine="agents.length" :count-by-org="effectiveSharedCountByOrg" :count-favorites="agentFavoritesCount"
       :count-recents="agentRecentsCount" />
     <div class="agent-list-content">
-      <div class="header" style="--wails-draggable: drag">
+      <!-- DD-152: title and "新建 Agent" are in Kailo's header inside the Kailo shell. -->
+      <div v-if="kailoShell" class="kailo-list-toolbar">
+        <ScopeSegments v-if="!authStore.isLiteMode" v-model="spaceSelection" :options="kailoScopeOptions" />
+      </div>
+      <div v-else class="header" style="--wails-draggable: drag">
         <div class="header-title" style="--wails-draggable: drag">
           <div class="title-row" style="--wails-draggable: drag">
             <h2 style="--wails-draggable: drag">{{ $t('agent.title') }}</h2>
@@ -804,6 +808,9 @@ import { useTenantModelReadiness } from '@/composables/useTenantModelReadiness'
 import { useUIStore } from '@/stores/ui'
 import AgentAvatar from '@/components/AgentAvatar.vue'
 import ListSpaceSidebar from '@/components/ListSpaceSidebar.vue'
+import ScopeSegments from '@/kailo/ScopeSegments.vue'
+import { isKailoShell } from '@/kailo/setup'
+import { usePageHeader } from '@/kailo/page'
 import ResourceOriginBadge from '@/components/ResourceOriginBadge.vue'
 import { shouldShowResourceOriginBadge } from '@/utils/card-list-badge'
 import { useAuthStore } from '@/stores/auth'
@@ -837,11 +844,20 @@ type DisplayAgent = (AgentWithUI & { isMine: true }) | (CustomAgent & { isMine: 
 // State synced to `?scope=` so links are shareable. The "mine" value is
 // retained for back-compat with existing links; its display label is
 // rebranded to the active tenant name inside ListSpaceSidebar.
-const defaultScope: 'all' | 'mine' = authStore.hasRole('contributor') ? 'mine' : 'all'
+const kailoShell = isKailoShell()
+// Kailo shell: spaces and organizations are Kailo's; the list offers 全部 / 收藏 / 最近.
+const defaultScope: 'all' | 'mine' = !kailoShell && authStore.hasRole('contributor') ? 'mine' : 'all'
 const { scope: spaceSelection, creator: creatorFilter } = useListUrlState({
   defaultScope,
   defaultCreator: 'all',
 })
+const KAILO_SCOPES = ['all', 'favorites', 'recents']
+if (kailoShell && !KAILO_SCOPES.includes(spaceSelection.value)) spaceSelection.value = 'all'
+const kailoScopeOptions = computed(() => [
+  { value: 'all', label: t('listSpaceSidebar.all') },
+  { value: 'favorites', label: t('listSpaceSidebar.favorites') },
+  { value: 'recents', label: t('listSpaceSidebar.recents') },
+])
 
 // Per-user favorites + recents (localStorage-backed). See useResourcePins.
 const pins = useResourcePins()
@@ -1572,6 +1588,17 @@ const handleCreateAgent = () => {
   openCreateModal()
 }
 
+// DD-152: Kailo's page header for the Agent list.
+usePageHeader('agentList', () => {
+  if (loading.value && agents.value.length === 0) return null
+  return {
+    title: t('menu.agents'),
+    actions: authStore.hasRole('contributor')
+      ? [{ id: 'create-agent', label: t('agent.createAgent'), variant: 'primary' as const, icon: 'plus' as const, run: handleCreateAgent }]
+      : [],
+  }
+})
+
 defineExpose({
   openCreateModal
 })
@@ -1588,6 +1615,22 @@ defineExpose({
   display: flex;
   position: relative;
   min-height: 0;
+}
+
+.kailo-list-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 24px 16px 0;
+}
+
+// DD-152 (20 §2): list page insets 16 top / 24 sides inside the Kailo shell.
+.is-kailo-shell .agent-list-content {
+  padding: 16px 0 0 24px;
+}
+
+.is-kailo-shell .agent-list-main {
+  padding-right: 24px;
 }
 
 .agent-list-content {

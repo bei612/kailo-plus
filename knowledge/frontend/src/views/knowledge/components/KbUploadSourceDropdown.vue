@@ -17,7 +17,7 @@
       @change="(e) => handleFilesChange(e, true)"
     />
 
-    <t-tooltip :content="tooltipText" placement="top">
+    <t-tooltip v-if="!triggerHidden" :content="tooltipText" placement="top">
       <t-dropdown
         :options="dropdownOptions"
         trigger="click"
@@ -35,6 +35,22 @@
         </t-button>
       </t-dropdown>
     </t-tooltip>
+
+    <!-- DD-152: an action started from Kailo's header carries no user activation into
+         this frame, so the browser would refuse the file chooser; one click here opens it. -->
+    <t-dialog
+      v-model:visible="pickerDialogVisible"
+      :header="pickerFolder ? t('upload.uploadFolder') : t('upload.uploadDocument')"
+      :footer="false"
+      width="480px"
+    >
+      <div class="upload-picker">
+        <t-button theme="primary" @click="choosePicked">
+          <template #icon><t-icon :name="pickerFolder ? 'folder-add' : 'upload'" size="16px" /></template>
+          {{ pickerFolder ? t('upload.uploadFolder') : t('upload.uploadDocument') }}
+        </t-button>
+      </div>
+    </t-dialog>
 
     <t-dialog
       v-model:visible="urlDialogVisible"
@@ -75,7 +91,10 @@ const props = withDefaults(defineProps<{
   dataGuide?: string
   tooltip?: string
   placement?: 'top' | 'bottom' | 'bottom-right' | 'bottom-left'
+  /** DD-152: the entries are Kailo header actions; keep inputs and dialogs, hide the trigger. */
+  triggerHidden?: boolean
 }>(), {
+  triggerHidden: false,
   acceptFileTypes: '',
   supportedFileTypes: () => [],
   includeManual: false,
@@ -213,10 +232,40 @@ const openUrlDialog = () => {
   urlDialogVisible.value = true
 }
 
-defineExpose({ openUrlDialog })
+const pickerDialogVisible = ref(false)
+const pickerFolder = ref(false)
+
+/** The browser opens a file chooser only with a user activation in this document. */
+const hasUserActivation = () => {
+  const activation = (navigator as Navigator & { userActivation?: { isActive: boolean } }).userActivation
+  return activation ? activation.isActive : true
+}
+
+const choosePicked = () => {
+  pickerDialogVisible.value = false
+  ;(pickerFolder.value ? folderInputRef : fileInputRef).value?.click()
+}
+
+/** Runs one entry of the source menu (DD-152: from Kailo's page header). */
+const runAction = (value: 'upload' | 'uploadFolder' | 'importURL' | 'manualCreate') => {
+  if ((value === 'upload' || value === 'uploadFolder') && !hasUserActivation()) {
+    pickerFolder.value = value === 'uploadFolder'
+    pickerDialogVisible.value = true
+    return
+  }
+  handleActionSelect({ value })
+}
+
+defineExpose({ openUrlDialog, runAction })
 </script>
 
 <style lang="less" scoped>
+.upload-picker {
+  display: flex;
+  justify-content: center;
+  padding: 8px 0 4px;
+}
+
 .hidden-file-input {
   position: absolute;
   width: 0;
