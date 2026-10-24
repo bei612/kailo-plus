@@ -526,6 +526,7 @@ def file_storage(r, args, runtime_env, declaration):
     private_dir(d / "adapter-delivery")
     cells_secrets(r)
     manifest = render_release(r, CELLS, declaration["nativePageOrigin"])
+    s = r.state
     require(f"sha256:{manifest['adapterBuildRef']}" == artifact("file-storage-adapter"),
             "rendered adapterBuildRef differs from the recorded adapter artifact")
     admin = "kailo-conformance-admin"
