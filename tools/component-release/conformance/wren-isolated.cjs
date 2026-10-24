@@ -59,7 +59,7 @@ async function sign(config) {
   const { importPKCS8, SignJWT } = require('jose');
   const key = await importPKCS8(ownerOnly(config.privateKeyFile), 'ES256');
   const now = Math.floor(Date.now() / 1000);
-  const claims = { [config.claim]: [config.value] };
+  const claims = { [config.claim]: config.value };
   if (config.azp) claims.azp = config.azp;
   const token = await new SignJWT(claims).setProtectedHeader({ alg: 'ES256', kid: config.kid, typ: 'JWT' })
     .setIssuer(config.issuer).setAudience(config.audience).setSubject(config.subject)
