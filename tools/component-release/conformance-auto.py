@@ -565,7 +565,7 @@ def file_storage(r, args, runtime_env, declaration):
         write_json(d / "seed.json", {
             "requirementsFile": str(stages / "requirements.json"), "cellsOrigin": "http://cells:8080",
             "cellsExternal": s["external"], "restBasePath": "/v2/", "restV1BasePath": "/a/",
-            "workspaceSlug": "kailo-binding", "rootName": f"kailo-conformance-{d.name}",
+            "workspaceSlug": "kailo-binding", "rootName": f"kailo-conformance-{d.name.rsplit('-', 1)[-1]}",
             "adminTokenFile": str(d / "secrets/admin.pat"), "actorTokenFile": str(d / "secrets/actor.pat"),
             "s3Secret": "gatewaysecret", "timeoutMs": 30000, "out": str(stages / "native-facts.json")})
         r.conformance(2)
