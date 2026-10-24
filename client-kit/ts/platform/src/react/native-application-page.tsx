@@ -245,8 +245,8 @@ export function NativeApplicationPage({ bindingId, onBack, title, path }: { bind
       <Button disabled={authenticationPending} onClick={() => signInAgain(page.url)}>{t("bindings.embedSignIn")}</Button></div> : null}
     {page && frameKey && launch.current ? <NativePageFrame>
       <iframe key={frameKey} ref={frame}
-        className={`min-h-0 w-full flex-1 border-0 bg-background${awaitingHandshake ? " invisible" : ""}`} title={productTitle || title || t("bindings.nativeTitle")}
-        style={{ colorScheme: presentation.theme }}
+        className={`min-h-0 w-full flex-1 border-0 bg-background ${presentation.theme === "dark" ? "[color-scheme:dark]" : "[color-scheme:light]"}${awaitingHandshake ? " invisible" : ""}`}
+        title={productTitle || title || t("bindings.nativeTitle")}
         src={launch.current.src} sandbox="allow-scripts allow-same-origin allow-forms allow-downloads allow-popups allow-popups-to-escape-sandbox"
         referrerPolicy="no-referrer" />
       {awaitingHandshake ? <div role="status" aria-label={t("platform.loading")} data-testid="native-page-loading"><NativePageSkeleton /></div> : null}

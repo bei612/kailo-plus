@@ -6,7 +6,7 @@
 import type { ComponentType, ReactNode } from "react";
 import {
   ChevronRight, Database, Download, Filter, Folder, FolderPlus, Library, MessageSquarePlus, MoreHorizontal, Pencil,
-  Play, Plus, RefreshCw, Rocket, Search, Settings, Share2, Trash2, Upload, AppWindow, type LucideProps,
+  Loader2, Play, Plus, RefreshCw, Rocket, Search, Settings, Share2, Trash2, Upload, AppWindow, type LucideProps,
 } from "lucide-react";
 import { Button } from "./profile/buzz/shared/ui/button";
 import { AgentAlertDialog, AlertDialogAction, AlertDialogCancel } from "./agent-library/AgentAlertDialog";
@@ -27,7 +27,7 @@ const CATEGORY_ICONS: Record<Exclude<NativePageCategoryKey, null>, ComponentType
 };
 
 function Spinner() {
-  return <span aria-hidden className="size-3.5 animate-spin rounded-full border-[1.5px] border-current border-r-transparent" />;
+  return <Loader2 aria-hidden className="size-3.5 animate-spin" strokeWidth={1.75} />;
 }
 
 /**
@@ -57,8 +57,8 @@ export function NativePageHeader({ productTitle, category, page, onNavigate, onA
         <Glyph className="size-4" strokeWidth={1.75} />
       </span>
       <nav aria-label={t("platform.nativePage.breadcrumb")} className="min-w-0 flex-1">
-        <ol className="flex min-w-0 items-center gap-1 text-control">
-          <li className={`shrink-0 ${title ? "text-muted-foreground" : "text-headline font-semibold tracking-[-0.006em] text-foreground"}`}
+        <ol className="flex min-w-0 items-center gap-1 text-[0.8125rem]">
+          <li className={`shrink-0 ${title ? "text-muted-foreground" : "text-[0.9375rem] font-semibold tracking-[-0.006em] text-foreground"}`}
             aria-current={title ? undefined : "page"}>{productTitle}</li>
           {crumbs.map((crumb) => <li key={crumb.id} className="flex min-w-0 items-center gap-1">
             <ChevronRight aria-hidden className="size-3.5 shrink-0 text-muted-foreground/60" strokeWidth={1.75} />
@@ -68,7 +68,7 @@ export function NativePageHeader({ productTitle, category, page, onNavigate, onA
           </li>)}
           {title ? <li className="flex min-w-0 items-center gap-1" aria-current="page">
             <ChevronRight aria-hidden className="size-3.5 shrink-0 text-muted-foreground/60" strokeWidth={1.75} />
-            <span className="truncate px-1 text-headline font-semibold tracking-[-0.006em] text-foreground" title={title}>{title}</span>
+            <span className="truncate px-1 text-[0.9375rem] font-semibold tracking-[-0.006em] text-foreground" title={title}>{title}</span>
           </li> : null}
         </ol>
       </nav>
@@ -100,8 +100,8 @@ export function NativePageHeader({ productTitle, category, page, onNavigate, onA
         const selected = tab.id === page.activeTab;
         return <button key={tab.id} type="button" role="tab" aria-selected={selected}
           onClick={() => { if (!selected) onNavigate("tab", tab.id); }}
-          className={`relative -mb-px border-b-2 text-control transition-colors duration-100 ${selected
-            ? "border-brand font-semibold text-foreground" : "border-transparent font-medium text-muted-foreground hover:text-foreground"}`}>
+          className={`relative -mb-px border-b-2 text-[0.8125rem] transition-colors duration-100 ${selected
+            ? "border-primary font-semibold text-foreground" : "border-transparent font-medium text-muted-foreground hover:text-foreground"}`}>
           {tab.label}</button>;
       })}
     </div> : null}
@@ -111,9 +111,9 @@ export function NativePageHeader({ productTitle, category, page, onNavigate, onA
 /** First paint until the component's first header arrives: the same header and a quiet content skeleton. */
 export function NativePageSkeleton() {
   return <div aria-hidden data-testid="native-page-skeleton" className="absolute inset-0 flex flex-col gap-3 bg-background p-6">
-    {[56, 72, 64, 80, 48, 68].map((width, index) => <div key={index} className="flex items-center gap-3">
+    {["w-56", "w-72", "w-64", "w-80", "w-48", "w-64"].map((width, index) => <div key={index} className="flex items-center gap-3">
       <div className="kailo-embed-skeleton size-5 rounded-md" />
-      <div className="kailo-embed-skeleton h-3.5 rounded" style={{ width: `${width * 4}px` }} />
+      <div className={`kailo-embed-skeleton h-3.5 rounded ${width}`} />
     </div>)}
   </div>;
 }
