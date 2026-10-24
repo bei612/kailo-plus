@@ -244,7 +244,7 @@
   --kailo-focus-ring: 0 0 0 2px #121218, 0 0 0 4px #9e97fd;
 }
 /*
- * DD-152 base layer (.design/20 §13.6): Kailo canvas, scrollbars, selection, focus
+ * DD-157 base layer (.design/20 §13.6): Kailo canvas, scrollbars, selection, focus
  * ring and theme-switch behaviour for every page that runs kailo-embed.js
  * (<html data-kailo-runtime>). Zero-specificity where a component may refine it.
  */

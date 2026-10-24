@@ -144,9 +144,9 @@ function modeBlock(selector: string, mode: KailoMode): string {
   return lines.join("\n");
 }
 
-/** DD-152 (20 §13.6): static base layer for pages running kailo-embed.js; values only via tokens. */
+/** DD-157 (20 §13.6): static base layer for pages running kailo-embed.js; values only via tokens. */
 export const EMBED_BASE_LAYER = `/*
- * DD-152 base layer (.design/20 §13.6): Kailo canvas, scrollbars, selection, focus
+ * DD-157 base layer (.design/20 §13.6): Kailo canvas, scrollbars, selection, focus
  * ring and theme-switch behaviour for every page that runs kailo-embed.js
  * (<html data-kailo-runtime>). Zero-specificity where a component may refine it.
  */

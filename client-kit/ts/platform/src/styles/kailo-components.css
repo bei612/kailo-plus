@@ -304,7 +304,7 @@ kbd {
   background: var(--k-brand-soft-hover);
 }
 
-/* ── DD-152 (20 §13.6): component page first-paint skeleton ─────────────── */
+/* ── DD-157 (20 §13.6): component page first-paint skeleton ─────────────── */
 .kailo-embed-skeleton {
   background: linear-gradient(90deg, hsl(var(--foreground) / 0.06) 0%, hsl(var(--foreground) / 0.1) 50%, hsl(var(--foreground) / 0.06) 100%);
   background-size: 200% 100%;

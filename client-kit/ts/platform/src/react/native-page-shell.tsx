@@ -1,4 +1,4 @@
-// DD-152 (.design/20 §13, 07 §4.8.7): the Kailo shell of a component page. Kailo draws
+// DD-157 (.design/20 §13, 07 §4.8.7): the Kailo shell of a component page. Kailo draws
 // the page header (product, breadcrumbs, title, actions), the section tabs, the
 // first-paint skeleton and the confirmation dialog; the component draws only its
 // content. Everything the component supplied is display text, rendered as React
@@ -45,7 +45,8 @@ export function NativePageHeader({ productTitle, category, page, onNavigate, onA
   const t = useT();
   const Glyph = category ? CATEGORY_ICONS[category] : AppWindow;
   const crumbs = page?.breadcrumbs ?? [];
-  const title = page?.title ?? null;
+  // A component landing page titled with the product name itself is not repeated (云盘 › 云盘).
+  const title = page && !(crumbs.length === 0 && page.title === productTitle) ? page.title : null;
   const visible = (page?.actions ?? []).filter((action) => action.variant !== "menu");
   const menu = (page?.actions ?? []).filter((action) => action.variant === "menu");
   // Secondary actions first, the one primary action rightmost (20 §9 dialog/footer order).

@@ -27,7 +27,7 @@ svg.lucide[stroke-width="2"] {
   }
 }
 
-/* ── Scrollbars (20 §7; DD-152: same as the embed base layer) ─────────── */
+/* ── Scrollbars (20 §7; DD-157: same as the embed base layer) ─────────── */
 @layer base {
   ::-webkit-scrollbar {
     width: 8px;

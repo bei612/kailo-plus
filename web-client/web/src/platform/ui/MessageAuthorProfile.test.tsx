@@ -117,7 +117,7 @@ it("uses one admitted read for the original author text and avatar, preferring t
 it.each([
   [{displayName:"",nip05Handle:"  person@example.org  "}, "Member fallback", "person@example.org"],
   [{displayName:null,nip05Handle:null}, "  Member fallback  ", "Member fallback"],
-  // DD-141/DD-152(8): no raw key as a name; the English UI shows Kailo copy instead.
+  // DD-141/DD-157(8): no raw key as a name; the English UI shows Kailo copy instead.
   [{displayName:null,nip05Handle:null}, undefined, "Unknown member"],
 ] as const)("keeps the original NIP-05, explicit fallback and unknown-member precedence %#", async (fields, fallbackName, expected) => {
   api.conversationMessageAuthorProfile.mockResolvedValue({...profile(), ...fields});

@@ -137,8 +137,8 @@ describe("DD-133 component presentation host", () => {
   });
 });
 
-// DD-152 (07 §4.8.7, V-SCN-252..254): Kailo draws the component page shell.
-describe("DD-152 component page shell", () => {
+// DD-157 (07 §4.8.7, V-SCN-257..259): Kailo draws the component page shell.
+describe("DD-157 component page shell", () => {
   const ready = { source: "kailo-embed", version: 1, type: "ready", features: ["page", "toast", "confirm", "shortcuts"] };
   const header = { title: "季度报告", breadcrumbs: [{ id: "/ws/a", label: "个人文件" }],
     tabs: [{ id: "home", label: "主页" }, { id: "all", label: "所有文件" }], activeTab: "all",
