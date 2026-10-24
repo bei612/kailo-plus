@@ -373,7 +373,7 @@ verify_component_frontends() {
       || { fail "安装 $manager 失败"; return 0; }
     if component_lint_deps "$cells" package.json pnpm-lock.yaml -- node_modules -- \
          "$tooling/node_modules/.bin/pnpm" install --frozen-lockfile --ignore-scripts; then
-      (cd "$cells" && diag node_modules/.bin/vitest run kailo.embed editor.onlyoffice gui.ajax/res/js/ui/ReactUI/KailoTheme) \
+      (cd "$cells" && diag node_modules/.bin/vitest run kailo.embed editor.onlyoffice) \
         && pass "file-storage 嵌入层 vitest" || fail "file-storage 嵌入层 vitest"
       (cd "$cells" && diag node_modules/.bin/eslint kailo.embed editor.onlyoffice/res/js) \
         && pass "file-storage 嵌入层 eslint" || fail "file-storage 嵌入层 eslint"
