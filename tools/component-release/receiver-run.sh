@@ -180,7 +180,19 @@ path, project = sys.argv[1:3]
 text = open(path, encoding='utf-8').read()
 if text.count('\nname: platform-local\n') != 1:
     sys.exit('staged compose.yaml has no single platform-local project name')
-open(path, 'w', encoding='utf-8').write(text.replace('\nname: platform-local\n', f'\nname: {project}\n'))
+text = text.replace('\nname: platform-local\n', f'\nname: {project}\n')
+# The isolated IdP is published on loopback only, and its issuer
+# http://<OIDC_HOST>:<KEYCLOAK_PORT> must be the same address for the host browser
+# flows (OIDC_HOST *.localhost resolves to loopback) and for containers (the
+# compose network alias OIDC_HOST). Production publishes the container port
+# itself (8080); the isolated copy cannot, so Keycloak listens on KEYCLOAK_PORT.
+published = '${KEYCLOAK_PORT:?必须显式提供，禁止硬编码}:8080"'
+listen = '      KC_HTTP_ENABLED: "true"\n'
+if text.count(published) != 1 or text.count(listen) != 1:
+    sys.exit('staged compose.yaml keycloak listener is not the expected shape')
+text = text.replace(published, '${KEYCLOAK_PORT:?必须显式提供，禁止硬编码}:${KEYCLOAK_PORT}"')
+text = text.replace(listen, listen + '      KC_HTTP_PORT: ${KEYCLOAK_PORT}\n')
+open(path, 'w', encoding='utf-8').write(text)
 PY
   python3 -I - "$platform/.env" "$RECEIVER_PROJECT" <<'PY'
 import re, socket, sys
