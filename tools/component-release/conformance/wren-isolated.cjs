@@ -170,7 +170,16 @@ async function retain(config) {
       const last = await tx('deploy_log').where({ project_id: project.id }).orderBy('id', 'desc').first();
       // The retained input must be byte-identical to what DeployService hashed.
       if (!last || last.hash !== hash || canonical(parsed(last.manifest)) !== canonical(manifest)) {
-        refuse('the original MDL of the current model differs from the deployed manifest');
+        // Name the differing paths only (MDL structure, never connection values).
+        const paths = [];
+        const walk = (a, b, at) => {
+          if (canonical(a) === canonical(b)) return;
+          if (a && b && typeof a === 'object' && typeof b === 'object') {
+            for (const key of new Set([...Object.keys(a), ...Object.keys(b)])) walk(a[key], b[key], `${at}/${key}`);
+          } else paths.push(at || '/');
+        };
+        walk(parsed(last?.manifest), manifest, '');
+        refuse(`the original MDL of the current model differs from the deployed manifest (hash ${last?.hash === hash ? 'same' : 'differs'}; paths ${paths.slice(0, 12).join(',') || 'none: key order only'})`);
       }
       return { projectId: project.id, modelId: models[0].id, manifest, nativeObjectRefs, deploymentId: last.id,
         projectConnectionDigest: digest({ type: project.type, connectionInfo: parsed(project.connection_info),
