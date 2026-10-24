@@ -52,16 +52,16 @@ for o in $origins; do
   [ "$o" != "$public" ] || bad "NATIVE_PAGE_ORIGINS 不得包含 PUBLIC_ORIGIN"
 done
 for k in APPLICATION_ADAPTER_DIRECTORY_FILE ACTION_TOKEN_SIGNING_FILE ACTION_TOKEN_PUBLIC_JWKS_LOCATOR ACTION_TOKEN_JWKS_READER_ROLE \
-  COMPONENT_CONFORMANCE_ENVIRONMENT_FILE COMPONENT_CONFORMANCE_FIXTURE_FILE COMPONENT_CONFORMANCE_IDENTITY_FILE; do
+  COMPONENT_CONFORMANCE_DIR COMPONENT_CONFORMANCE_WORKER_DIR; do
   v=$(value "$k"); [ -n "$v" ] && ok "$k=$v" || echo "  -- $k 未设置"
 done
 
 echo "== 3. 受控投递文件（只看元数据与公开字段）"
 python3 -I - "$(value APPLICATION_ADAPTER_DIRECTORY_FILE)" "$(value ACTION_TOKEN_SIGNING_FILE)" \
-  "$(value COMPONENT_CONFORMANCE_ENVIRONMENT_FILE)" "$(value COMPONENT_CONFORMANCE_FIXTURE_FILE)" "$(value COMPONENT_CONFORMANCE_IDENTITY_FILE)" <<'PY' || fail=1
+  "$(value COMPONENT_CONFORMANCE_DIR)" <<'PY' || fail=1
 import json, os, stat, sys
 from pathlib import Path
-directory, signing, *conformance = sys.argv[1:]
+directory, signing, conformance = sys.argv[1:]
 failed = False
 def note(ok, text):
     global failed
@@ -89,13 +89,18 @@ if signing:
             keys = json.loads(jwks.read_text()).get("keys", [])
             note(bool(keys) and not any(set(k) & {"d", "p", "q", "k"} for k in keys), "jwksFile 仅含公钥")
             note(str(s.get("secretVersion")) in {k.get("kid") for k in keys}, "jwksFile 含 secretVersion 对应 kid")
-digests = set()
-for path in conformance:
-    if path:
-        c = readable(path)
-        if c: digests.add(c.get("artifactDigest"))
-if digests:
-    note(len(digests) == 1, f"一致性三件 artifactDigest 一致：{sorted(d[:12] for d in digests if d)}")
+# DD-136(2): one subdirectory per artifact digest; every file in it carries that digest.
+if conformance:
+    root = Path(conformance)
+    if root.is_dir():
+        for candidate in sorted(root.iterdir()):
+            files = sorted(f.name for f in candidate.iterdir()) if candidate.is_dir() else []
+            kind = "PROTOCOL_PEER" if files == ["environment.json"] else "REMOTE_ADAPTER"
+            agree = all((readable(candidate / f) or {}).get("artifactDigest") == candidate.name
+                        for f in files if f in ("environment.json", "fixture.json", "identity.json"))
+            note(agree, f"候选 {candidate.name[:12]} {kind} {files}")
+    else:
+        note(False, f"{conformance}: 候选集合目录不存在")
 sys.exit(1 if failed else 0)
 PY
 
@@ -103,10 +108,10 @@ echo "== 4. 运行容器实际投递"
 cb=$(container_env core-bff NATIVE_PAGE_ORIGINS); wb=$(container_env buzz-web NATIVE_PAGE_ORIGINS)
 [ "$cb" = "$origins" ] && ok "core-bff NATIVE_PAGE_ORIGINS 与 .env 一致" || bad "core-bff NATIVE_PAGE_ORIGINS='$cb'（需 start-core.sh --no-build）"
 [ "$wb" = "$origins" ] && ok "buzz-web NATIVE_PAGE_ORIGINS 与 .env 一致" || bad "buzz-web NATIVE_PAGE_ORIGINS='$wb'（需重建 buzz-web）"
-for k in APPLICATION_ADAPTER_DIRECTORY_FILE ACTION_TOKEN_SIGNING_FILE COMPONENT_CONFORMANCE_ENVIRONMENT_FILE; do
+for k in APPLICATION_ADAPTER_DIRECTORY_FILE ACTION_TOKEN_SIGNING_FILE COMPONENT_CONFORMANCE_DIR; do
   v=$(container_env core-bff "$k"); [ -n "$v" ] && ok "core-bff $k=$v" || echo "  -- core-bff 无 $k"
 done
-v=$(container_env worker COMPONENT_CONFORMANCE_ENVIRONMENT_FILE); [ -n "$v" ] && ok "worker COMPONENT_CONFORMANCE_ENVIRONMENT_FILE=$v" || echo "  -- worker 无一致性投递"
+v=$(container_env worker COMPONENT_CONFORMANCE_DIR); [ -n "$v" ] && ok "worker COMPONENT_CONFORMANCE_DIR=$v" || echo "  -- worker 无一致性投递"
 for k in OPENBAO_AUDIT_LOG_FILE OPENBAO_AUDIT_LOG_MAX_BYTES; do
   "${D[@]}" inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$(container core-bff)" | grep -q "^$k=." \
     && ok "core-bff 有 $k" || bad "core-bff 无 $k（binding secret 读取审计核对必然失败，binding 停在 PROVISIONING）"

@@ -855,3 +855,30 @@ func TestComponentConformanceCapturesMirrorCoreBindings(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestConformanceCandidatesAreSelectedByDigest(t *testing.T) {
+	root := t.TempDir()
+	peer, adapter := strings.Repeat("a", 64), strings.Repeat("b", 64)
+	for _, digest := range []string{peer, adapter} {
+		if err := os.Mkdir(filepath.Join(root, digest), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, digest := range []string{peer, adapter} {
+		path, ok := conformanceCandidateFile(root, digest, "environment.json")
+		if !ok || path != filepath.Join(root, digest, "environment.json") {
+			t.Fatalf("candidate %s not selected: %q %v", digest, path, ok)
+		}
+	}
+	for _, c := range []struct{ root, digest string }{
+		{root, strings.Repeat("c", 64)},
+		{"", peer},
+		{"relative", peer},
+		{root, strings.ToUpper(peer)},
+		{root, "../" + peer},
+	} {
+		if path, ok := conformanceCandidateFile(c.root, c.digest, "environment.json"); ok {
+			t.Fatalf("unexpected candidate %q for %q/%q", path, c.root, c.digest)
+		}
+	}
+}

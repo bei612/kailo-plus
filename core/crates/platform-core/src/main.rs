@@ -45,6 +45,7 @@ mod capability_contract;
 mod capability_registry;
 mod capacity;
 mod client_keys;
+mod component_conformance_delivery;
 mod component_conformance_identity;
 mod component_directory;
 mod component_notification;

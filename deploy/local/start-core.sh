@@ -354,18 +354,21 @@ fi
 # DD-94/98: the original Core consumer reads a controlled adapter directory.
 # No directory means no business-component delivery, not an empty credential or
 # a platform startup dependency. Core receives only supplied facts/public JWKS;
-# receiver credentials are exact private file mounts for Worker alone. Never
+# receiver credentials are a private directory mounted for Worker alone. Never
 # create missing paths or generate native identities here.
+# DD-136(2): the adapter directory's folder and the conformance candidate set
+# are mounted as read-only directories; Core and Worker read them per use, so
+# the release entry and the component deploy entry replace files atomically
+# without rebuilding Core. Only a changed mount shape needs this entry.
 adapter_compose=()
 # Preparing the conformance identity renders the very JWKS a conformance
 # identity delivery names; that one-off command consumes no adapter delivery.
 if [ "${prepare_conformance_identity:-false}" != true ] \
-  && [ -n "${APPLICATION_ADAPTER_DIRECTORY_FILE:-}${COMPONENT_CONFORMANCE_ENVIRONMENT_FILE:-}${COMPONENT_CONFORMANCE_FIXTURE_FILE:-}${COMPONENT_CONFORMANCE_IDENTITY_FILE:-}" ]; then
+  && [ -n "${APPLICATION_ADAPTER_DIRECTORY_FILE:-}${COMPONENT_CONFORMANCE_DIR:-}${COMPONENT_CONFORMANCE_WORKER_DIR:-}" ]; then
   adapter_config=$(mktemp)
   APPLICATION_ADAPTER_DIRECTORY_FILE="${APPLICATION_ADAPTER_DIRECTORY_FILE:-}" \
-  COMPONENT_CONFORMANCE_ENVIRONMENT_FILE="${COMPONENT_CONFORMANCE_ENVIRONMENT_FILE:-}" \
-  COMPONENT_CONFORMANCE_FIXTURE_FILE="${COMPONENT_CONFORMANCE_FIXTURE_FILE:-}" \
-  COMPONENT_CONFORMANCE_IDENTITY_FILE="${COMPONENT_CONFORMANCE_IDENTITY_FILE:-}" \
+  COMPONENT_CONFORMANCE_DIR="${COMPONENT_CONFORMANCE_DIR:-}" \
+  COMPONENT_CONFORMANCE_WORKER_DIR="${COMPONENT_CONFORMANCE_WORKER_DIR:-}" \
   python3 - "$adapter_config" <<'PYADAPTER'
 import json
 import os
@@ -414,6 +417,22 @@ def public_file(raw):
         reject()
     return public
 
+def source_dir(raw, private):
+    if not isinstance(raw, str):
+        reject()
+    path = PurePosixPath(raw)
+    if not path.is_absolute() or path == PurePosixPath("/") or ".." in path.parts or str(path) != raw:
+        reject()
+    source = Path(raw)
+    if not source.is_dir() or source.resolve(strict=True) != source:
+        reject()
+    mode = source.stat().st_mode
+    # Never group/other writable; the Worker-only credential directory is
+    # owner-only as well.
+    if mode & 0o022 or (private and mode & 0o077):
+        reject()
+    return source
+
 def delivery(environment, files):
     return {"environment": environment, "volumes": [
         {"type": "bind", "source": str(source), "target": str(source), "read_only": True,
@@ -428,7 +447,10 @@ try:
         adapters = document.get("adapters")
         if not isinstance(adapters, list):
             reject()
-        files.add(directory)
+        # DD-136(2): the folder, so atomic replacement by the release entry or
+        # the component deploy entry reaches the running Core.
+        folder = source_dir(str(directory.parent), private=False)
+        files.add(folder)
         environment["APPLICATION_ADAPTER_DIRECTORY_FILE"] = str(directory)
     for adapter in adapters:
         if not isinstance(adapter, dict):
@@ -438,66 +460,28 @@ try:
             reject()
         for identity in identities:
             files.add(public_file(identity["jwksFile"]))
-    names = ("COMPONENT_CONFORMANCE_ENVIRONMENT_FILE", "COMPONENT_CONFORMANCE_FIXTURE_FILE",
-             "COMPONENT_CONFORMANCE_IDENTITY_FILE")
-    supplied = {name: os.environ[name] for name in names if os.environ[name]}
-    if supplied:
-        if names[0] not in supplied:
-            reject()
-        candidate, configuration = document_file(supplied[names[0]])
-        # HTTP adapters require all three deliveries; native MCP peers consume
-        # only their original environment. Neither branch fabricates evidence.
-        peer = "mcpUrl" in configuration
-        if set(supplied) != ({names[0]} if peer else set(names)):
-            reject()
-        artifact = configuration.get("artifactDigest")
-        if not isinstance(artifact, str) or not artifact:
-            reject()
-        for name, raw in supplied.items():
-            source, document = document_file(raw)
-            if document.get("artifactDigest") != artifact:
+    conformance = os.environ["COMPONENT_CONFORMANCE_DIR"]
+    worker_private = os.environ["COMPONENT_CONFORMANCE_WORKER_DIR"]
+    if worker_private and not conformance:
+        reject()
+    if conformance:
+        # DD-136(2): one subdirectory per artifact digest; Core and Worker pick
+        # the candidate of the release they run and read it per use.
+        candidates = source_dir(conformance, private=False)
+        files.add(candidates)
+        environment["COMPONENT_CONFORMANCE_DIR"] = str(candidates)
+        worker_environment, worker_files = {"COMPONENT_CONFORMANCE_DIR": str(candidates)}, {candidates}
+        if worker_private:
+            # Receiver credentials (nativeReadAuthorities[].oidcClientSecretFile)
+            # live only here; never part of Core's mounts.
+            credentials = source_dir(worker_private, private=True)
+            if credentials == candidates or candidates in credentials.parents or credentials in candidates.parents:
                 reject()
-            environment[name] = str(source)
-            files.add(source)
-            if name == names[2]:
-                files.add(public_file(document["jwksFile"]))
-        worker_files, identities = {candidate}, set()
-        authorities = configuration.get("nativeReadAuthorities", [])
-        if not isinstance(authorities, list) or (peer and authorities):
-            reject()
-        for authority in authorities:
-            if not isinstance(authority, dict) or set(authority) != {
-                "bindingId", "generation", "coreBaseUrl", "oidcTokenUrl", "oidcClientId", "oidcClientSecretFile"
-            }:
-                reject()
-            binding, generation = authority["bindingId"], authority["generation"]
-            if not isinstance(binding, str) or UUID(binding).int == 0 or type(generation) is not int or generation <= 0:
-                reject()
-            key = (UUID(binding), generation)
-            if key in identities:
-                reject()
-            identities.add(key)
-            for name in ("coreBaseUrl", "oidcTokenUrl"):
-                if not isinstance(authority[name], str):
-                    reject()
-                endpoint = urlsplit(authority[name])
-                if endpoint.scheme not in ("http", "https") or not endpoint.hostname or endpoint.username is not None or endpoint.fragment:
-                    reject()
-                if name == "coreBaseUrl" and (endpoint.query or endpoint.path not in ("", "/")):
-                    reject()
-            if not isinstance(authority["oidcClientId"], str) or not authority["oidcClientId"].strip():
-                reject()
-            credential = source_file(authority["oidcClientSecretFile"])
-            if credential in files or credential.stat().st_mode & 0o077 or not credential.read_text(encoding="utf-8").strip():
-                reject()
-            # Only the original Worker reads this receiver credential. Several
-            # frozen authorities may use one file; never mount its directory
-            # or leak it through Core's public/configuration file set.
-            worker_files.add(credential)
-        services["worker"] = delivery({names[0]: str(candidate)}, worker_files)
-        # The Worker consumes this delivery only through its own container env
-        # and mounts; the label lets the caller recreate it exactly when they
-        # change (start-core.sh tail), including a removed delivery.
+            worker_files.add(credentials)
+            worker_environment["COMPONENT_CONFORMANCE_WORKER_DIR"] = str(credentials)
+        services["worker"] = delivery(worker_environment, worker_files)
+        # The label lets the caller recreate the Worker exactly when this mount
+        # shape changes (start-core.sh tail), including a removed delivery.
         import hashlib
         fixed = json.dumps(services["worker"], sort_keys=True, separators=(",", ":")).encode()
         services["worker"]["labels"] = {"kailo.component-conformance.delivery": hashlib.sha256(fixed).hexdigest()}
@@ -953,13 +937,13 @@ running_environment=
 if [ -n "$worker_id" ]; then
   running_worker=$(sudo -n docker inspect --format '{{index .Config.Labels "kailo.component-conformance.delivery"}}' "$worker_id")
   running_environment=$(sudo -n docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$worker_id" \
-    | sed -n 's/^COMPONENT_CONFORMANCE_ENVIRONMENT_FILE=//p')
+    | sed -n 's/^COMPONENT_CONFORMANCE_DIR=//p')
 fi
 # A supplied delivery always recreates (unchanged behaviour); without one the
 # Worker is recreated only to drop a delivery it still carries.
 if [ -n "$desired_worker" ] || [ -n "$running_worker" ] || [ -n "$running_environment" ]; then
   if [ -z "$worker_id" ] || [ -n "$desired_worker" ] || [ "$desired_worker" != "$running_worker" ] \
-    || [ "${COMPONENT_CONFORMANCE_ENVIRONMENT_FILE:-}" != "$running_environment" ]; then
+    || [ "${COMPONENT_CONFORMANCE_DIR:-}" != "$running_environment" ]; then
     compose up -d --no-deps --force-recreate --no-build worker
   fi
 fi

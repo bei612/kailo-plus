@@ -2,7 +2,7 @@
 //! binding 归属事实草稿。
 //!
 //! 交付目录（`APPLICATION_ADAPTER_DIRECTORY_FILE` 的 `protocolPeers`）与一致性环境
-//! （`COMPONENT_CONFORMANCE_ENVIRONMENT_FILE`）是运维域事实（DD-94(2)(5)、DD-98）：
+//! 候选集合（`COMPONENT_CONFORMANCE_DIR`，按 digest 寻址，DD-136(2)）是运维域事实（DD-94(2)(5)、DD-98）：
 //! 这里每次读取并呈现，从不写入；URL 去掉 userinfo、query 与 fragment，凭据只列键名。
 //! 契约、release 与 binding 的写入只经既有 Governed Action（`05` §2.8）。
 
@@ -46,15 +46,9 @@ pub(crate) fn directory() -> Option<Value> {
     value.is_object().then_some(value)
 }
 
-/// 部署一致性环境的 artifact digest（PROTOCOL_PEER 分支）。
-pub(crate) fn conformance_digest() -> Option<String> {
-    let path = std::env::var("COMPONENT_CONFORMANCE_ENVIRONMENT_FILE").ok()?;
-    let bytes = std::fs::read(path).ok()?;
-    let value: Value = serde_json::from_slice(&bytes).ok()?;
-    value
-        .get("artifactDigest")
-        .and_then(Value::as_str)
-        .map(str::to_owned)
+/// 该 peer digest 的一致性候选是否就绪（DD-136(2)：候选集合按 digest 寻址）。
+pub(crate) fn conformance_ready(digest: &str) -> bool {
+    crate::component_conformance_delivery::peer_ready(digest)
 }
 
 pub(crate) fn peers_of(directory: &Value) -> Vec<&Value> {
@@ -91,7 +85,7 @@ pub(crate) fn binding_fact(fact: &Value, bound: &HashSet<String>) -> Option<Valu
 /// 交付目录 peer → `GatewayMcpPeerView` 形状；`tenant` 给出时只保留该 Tenant 的归属事实。
 pub(crate) fn peer_view(
     peer: &Value,
-    conformance: Option<&str>,
+    conformance: &dyn Fn(&str) -> bool,
     bound: &HashSet<String>,
     tenant: Option<Uuid>,
 ) -> Option<Value> {
@@ -114,7 +108,7 @@ pub(crate) fn peer_view(
         "nativeInstanceRef":text("nativeInstanceRef")?,"artifactDigest":digest,
         "timeoutSeconds":peer.get("timeoutSeconds").and_then(Value::as_i64)?,
         "maxResponseBytes":peer.get("maxResponseBytes").and_then(Value::as_i64)?,
-        "conformanceReady":conformance == Some(digest),"bindingFacts":facts}),
+        "conformanceReady":conformance(digest),"bindingFacts":facts}),
     )
 }
 
@@ -128,18 +122,14 @@ async fn bound_ids(pool: &sqlx::PgPool) -> Result<HashSet<String>, Refusal> {
 async fn peer_page(state: &BffState, caller: &Caller) -> Result<GatewayMcpPeerPage, Refusal> {
     require_zone(state, caller).await?;
     require_platform(state, caller, "manage").await?;
-    let conformance = conformance_digest();
     let mut value = json!({"directoryAvailable":false,"peers":[]});
     if let Some(directory) = directory() {
         let bound = bound_ids(&state.pool).await?;
         let peers: Vec<Value> = peers_of(&directory)
             .into_iter()
-            .filter_map(|peer| peer_view(peer, conformance.as_deref(), &bound, None))
+            .filter_map(|peer| peer_view(peer, &conformance_ready, &bound, None))
             .collect();
         value = json!({"directoryAvailable":true,"peers":peers});
-    }
-    if let Some(digest) = conformance {
-        value["conformanceArtifactDigest"] = json!(digest);
     }
     serde_json::from_value(value)
         .map_err(|e| Refusal::Unavailable(format!("GatewayMcpPeerPage: {e}")))
@@ -257,7 +247,7 @@ async fn release_page(state: &BffState, caller: &Caller) -> Result<GatewayMcpRel
                     == Some(row.adapter_build_ref.as_str())
             })
         }) {
-            if let Some(peer) = peer_view(peer, None, &bound, Some(tenant)) {
+            if let Some(peer) = peer_view(peer, &|_| false, &bound, Some(tenant)) {
                 view["adapterServiceRef"] = peer["adapterServiceRef"].clone();
                 view["nativeInstanceRef"] = peer["nativeInstanceRef"].clone();
                 view["deliveryFacts"] = peer["bindingFacts"].clone();
@@ -404,7 +394,7 @@ mod tests {
         let bound: HashSet<String> = [binding.to_string()].into_iter().collect();
         let peer = peers_of(&directory)[0];
         let digest = "a".repeat(64);
-        let all = peer_view(peer, Some(&digest), &bound, None).unwrap();
+        let all = peer_view(peer, &|d| d == digest, &bound, None).unwrap();
         assert_eq!(all["mcpUrl"], "http://time-mcp:8080/mcp");
         assert_eq!(all["conformanceReady"], true);
         // 非法枚举的条目不呈现
@@ -413,7 +403,7 @@ mod tests {
         assert_eq!(fact["credentialKeys"], json!(["token"]));
         assert_eq!(fact["bound"], true);
         assert!(!all.to_string().contains("tenants/x/kv/y"));
-        let scoped = peer_view(peer, None, &HashSet::new(), Some(Uuid::new_v4())).unwrap();
+        let scoped = peer_view(peer, &|_| false, &HashSet::new(), Some(Uuid::new_v4())).unwrap();
         assert!(scoped["bindingFacts"].as_array().unwrap().is_empty());
         assert_eq!(scoped["conformanceReady"], false);
     }

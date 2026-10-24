@@ -168,6 +168,21 @@ func validConformanceDigest(value string) bool {
 	return err == nil && len(decoded) == sha256.Size && value == strings.ToLower(value)
 }
 
+// conformanceCandidateFile resolves one file of the candidate whose directory
+// is named by the artifact digest (DD-136(2)). A missing delivery directory, a
+// malformed digest or a missing candidate yields no path, never another
+// candidate.
+func conformanceCandidateFile(root, artifactDigest, name string) (string, bool) {
+	if root == "" || !filepath.IsAbs(root) || !validConformanceDigest(artifactDigest) {
+		return "", false
+	}
+	candidate := filepath.Join(root, artifactDigest)
+	if info, err := os.Stat(candidate); err != nil || !info.IsDir() {
+		return "", false
+	}
+	return filepath.Join(candidate, name), true
+}
+
 // JSON is canonicalized as data, not evaluated. Number tokens remain exact so
 // an adapter returning a rounded integer cannot satisfy a frozen expectation.
 func conformanceJSONDigest(body []byte) (string, error) {
@@ -883,8 +898,10 @@ func (c *CoreAPI) RunComponentConformanceStep(ctx context.Context, input generat
 	if info.Attempt != 1 && step.Operation != "observe" && step.Operation != "reconcile" {
 		return unknown()
 	}
-	path := os.Getenv("COMPONENT_CONFORMANCE_ENVIRONMENT_FILE")
-	if path == "" {
+	// DD-136(2): candidates coexist under COMPONENT_CONFORMANCE_DIR, one
+	// directory per artifact digest; the frozen plan's digest selects one.
+	path, ok := conformanceCandidateFile(os.Getenv("COMPONENT_CONFORMANCE_DIR"), plan.ArtifactDigest, "environment.json")
+	if !ok {
 		return generated.ComponentConformanceStepObservation{}, temporal.NewNonRetryableApplicationError("隔离候选配置未投递", ErrTypeAdmissionDenied, nil)
 	}
 	encoded, err := os.ReadFile(path)

@@ -22,10 +22,11 @@ fn nonempty<'a>(value: &'a Value, key: &str) -> Result<&'a str, Refusal> {
 }
 
 pub(crate) fn load(artifact: &str, production_audience: &str) -> Result<Value, Refusal> {
-    let file = std::env::var("COMPONENT_CONFORMANCE_IDENTITY_FILE")
-        .map_err(|_| Refusal::Blocked(ReasonCode::CapabilityBlocked))?;
-    let bytes = std::fs::read(file)
-        .map_err(|_| Refusal::Unavailable("isolated identity delivery unavailable".into()))?;
+    // DD-136(2): the REMOTE_ADAPTER candidate of this artifact digest.
+    let bytes = crate::component_conformance_delivery::read(
+        artifact,
+        crate::component_conformance_delivery::IDENTITY,
+    )?;
     let identity: contracts::ComponentConformanceIdentity =
         serde_json::from_slice(&bytes).map_err(|_| refused())?;
     let value = serde_json::to_value(identity).map_err(|_| refused())?;
@@ -35,6 +36,12 @@ pub(crate) fn load(artifact: &str, production_audience: &str) -> Result<Value, R
         return Err(refused());
     }
     validate(&value, artifact, production_audience)?;
+    // DD-136(2): a candidate is self-contained; its public JWKS sits in the
+    // same digest directory, so no second mount or other candidate's key.
+    let candidate = crate::component_conformance_delivery::candidate(artifact)?;
+    if std::path::Path::new(nonempty(&value, "jwksFile")?).parent() != Some(candidate.as_path()) {
+        return Err(refused());
+    }
     Ok(value)
 }
 
