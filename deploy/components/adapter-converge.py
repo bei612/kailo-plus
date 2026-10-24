@@ -22,7 +22,14 @@ It never creates a binding, writes a binding secret into OpenBao, approves anyth
 credential. Existing AppRoles, policies and clients that differ are refused, not overwritten.
 
   adapter-converge.py <plan|deliver|client|secrets> <component> --source <tree> --commit <sha>
-        --runtime <KAILO_RUNTIME_DIR>
+        --runtime <KAILO_RUNTIME_DIR> [--state-dir <dir>]
+
+Native facts are read, never typed in: Cells from the binding facts reconcile.py wrote; Wren
+(data-query) by a read-only query of its own metadata database inside the running wren-ui
+container (the single native project: id = nativeScopeRef, projectConnectionDigest over
+{type, connectionInfo, catalog, schema} exactly as nativeBindingService.ts computes it, and the
+non-secret connection fields). --state-dir only redirects the rendered release/plan for a
+read-only verification of `plan`; deliver/client/secrets refuse it.
 """
 import argparse
 import json
@@ -103,9 +110,13 @@ class Context:
         self.adapter = declaration["adapter"]
         self.env = self.adapter["componentEnv"]
         require(Path(self.env).is_file(), f"component env {self.env} missing")
-        self.state = Path(self.adapter["stateDir"])
+        self.state_override = bool(getattr(args, "state_dir", None))
+        self.state = Path(args.state_dir if self.state_override else self.adapter["stateDir"])
+        if not self.state.exists() and self.state.parent.is_dir():
+            self.state.mkdir(mode=0o700)
         require(self.state.is_dir() and not self.state.is_symlink(), f"adapter state directory {self.state} missing")
         os.chmod(self.state, 0o700)
+        self._wren = None
         self.node_image = "node@" + re.search(r"^FROM node:[^\s@]+@(sha256:[0-9a-f]{64})",
                                               (self.source / "file-storage/adapter/Dockerfile").read_text(), re.M).group(1)
 
@@ -133,8 +144,65 @@ class Context:
         return self.state / f"plan-{self.commit[:12]}.json"
 
 
+WREN_PROBE = r"""
+const crypto = require('crypto');
+const knex = require('knex')({ client: 'better-sqlite3', connection: { filename: process.env.SQLITE_FILE, readonly: true },
+  useNullAsDefault: true });
+const canonical = (v) => Array.isArray(v) ? `[${v.map(canonical).join(',')}]` : v !== null && typeof v === 'object'
+  ? `{${Object.keys(v).sort().map((k) => `${JSON.stringify(k)}:${canonical(v[k])}`).join(',')}}` : JSON.stringify(v);
+(async () => {
+  const projects = await knex('project').select('id', 'type', 'catalog', 'schema', 'connection_info');
+  const out = projects.map((p) => {
+    const info = typeof p.connection_info === 'string' ? JSON.parse(p.connection_info) : p.connection_info;
+    return { projectId: p.id, type: p.type, connectionKeys: Object.keys(info || {}).sort(),
+      connection: { host: info?.host, port: info?.port, database: info?.database, user: info?.user },
+      projectConnectionDigest: crypto.createHash('sha256')
+        .update(canonical({ type: p.type, connectionInfo: info, catalog: p.catalog, schema: p.schema })).digest('hex') };
+  });
+  process.stdout.write(JSON.stringify(out));
+  await knex.destroy();
+})().catch((e) => { process.stderr.write(`wren probe refused ${e?.code ?? e?.name}\n`); process.exit(1); });
+"""
+
+
+def wren_facts(ctx):
+    """The single native Wren project, read-only (no connection value except host/port/database/user)."""
+    if ctx._wren is None:
+        project = ctx.component_value("WREN_COMPOSE_PROJECT_NAME")
+        container = run(DOCKER + ["ps", "-q", "--filter", f"label=com.docker.compose.project={project}",
+                                  "--filter", "label=com.docker.compose.service=wren-ui"], capture=True).split()
+        require(len(container) == 1, "production wren-ui is not running")
+        projects = json.loads(run(DOCKER + ["exec", "-i", "-w", "/app/data-query/wren-ui", container[0], "node", "-"],
+                                  capture=True, stdin=WREN_PROBE.encode()))
+        require(len(projects) == 1 and projects[0]["type"] == "POSTGRES",
+                "the dedicated Wren instance must hold exactly one POSTGRES project")
+        ctx._wren = projects[0]
+    return ctx._wren
+
+
+def native_fact(ctx, rule):
+    if rule.startswith("bindingFacts:"):
+        value = read_json(ctx.component_value(ctx.adapter["bindingFactsKey"])).get(rule.split(":", 1)[1])
+    elif rule.startswith("wren:"):
+        value = wren_facts(ctx).get(rule.split(":", 1)[1])
+    elif rule.startswith("env:"):
+        value = ctx.component_value(rule[4:])
+    else:
+        value = rule
+    require(value is not None and str(value) != "", f"native fact {rule} unavailable")
+    return str(value)
+
+
+def config_path(ctx):
+    delivery = Path(ctx.component_value(ctx.adapter["deliveryDirKey"]))
+    key = ctx.adapter.get("configFileKey")
+    return delivery, (Path(ctx.component_value(key)) if key else delivery / ctx.adapter["configFileName"])
+
+
 def native_scope(ctx):
     rule = ctx.adapter["nativeScopeRef"]
+    if rule.startswith("wren:"):
+        return native_fact(ctx, rule)
     if rule.startswith("bindingFacts:"):
         facts = read_json(ctx.component_value(ctx.adapter["bindingFactsKey"]))
         value = facts.get(rule.split(":", 1)[1])
@@ -174,35 +242,36 @@ def cmd_plan(ctx):
 
 
 def cmd_deliver(ctx):
+    require(not ctx.state_override, "--state-dir only verifies plan")
     manifest, plan = cmd_plan(ctx)
     tool = str(ctx.source / "deploy/components/adapter-delivery.py")
-    delivery = Path(ctx.component_value(ctx.adapter["deliveryDirKey"]))
-    config = Path(ctx.component_value(ctx.adapter["configFileKey"]))
+    delivery, config = config_path(ctx)
+    if not delivery.exists() and delivery.parent.is_dir():
+        delivery.mkdir(mode=0o700)
     require(delivery.is_dir() and config.parent == delivery, "adapter delivery directory/config file mismatch in the component env")
     signing = ctx.platform("ACTION_TOKEN_SIGNING_FILE")
     if not config.is_file():
         argv = ["python3", "-I", tool, "config", "--kind", ctx.adapter["kind"], "--plan", str(ctx.plan_file),
                 "--template", str(ctx.source / "deploy/components" / ctx.adapter["template"]), "--delivery-dir", str(delivery),
-                "--env-file", str(ctx.runtime / ".env"), "--action-token-signing-file", signing,
-                "--release-dir", str(ctx.release_dir), "--out", str(config)]
+                "--env-file", str(ctx.runtime / ".env"), "--action-token-signing-file", signing, "--out", str(config)]
+        # {{tools}} only where the template publishes MCP tools (Cells, WeKnora); Wren serves its own route.
+        if ctx.adapter["registrations"]:
+            argv += ["--release-dir", str(ctx.release_dir)]
         for registration in ctx.adapter["registrations"]:
             argv += ["--registration", str(ctx.source / registration)]
         if ctx.adapter["kind"] == "adapter":
             argv += ["--public-file", f"action-token-jwks.json={read_json(signing)['jwksFile']}",
                      "--public-file", f"gateway-service-jwks.json={ctx.platform('GATEWAY_SERVICE_JWKS_FILE')}"]
         for name, rule in ctx.adapter.get("sets", {}).items():
-            value = rule
-            if rule.startswith("bindingFacts:"):
-                value = read_json(ctx.component_value(ctx.adapter["bindingFactsKey"]))[rule.split(":", 1)[1]]
-            elif rule.startswith("env:"):
-                value = ctx.component_value(rule[4:])
-            argv += ["--set", f"{name}={value}"]
+            argv += ["--set", f"{name}={native_fact(ctx, rule)}"]
         run(argv)
     else:
         current = read_json(config)
         require(current.get("bindingId") == plan["bindingId"], "existing adapter configuration belongs to another binding; refusing")
     say("config", bindingId=plan["bindingId"], configured=True)
     bootstrap = Path(ctx.component_value(ctx.adapter["bootstrapDirKey"]))
+    if not bootstrap.exists() and bootstrap.parent.is_dir():
+        bootstrap.mkdir(mode=0o700)
     role = f"{ctx.component}-adapter-{plan['bindingId'][:8]}"
     agent_running = subprocess.run(DOCKER + ["ps", "-q", "--filter", f"name={ctx.adapter['agentContainer']}"],
                                    capture_output=True).stdout.strip()
@@ -238,8 +307,9 @@ def cmd_deliver(ctx):
 
 
 def cmd_client(ctx):
+    require(not ctx.state_override, "--state-dir only verifies plan")
     _, plan = cmd_plan(ctx)
-    config = Path(ctx.component_value(ctx.adapter["configFileKey"]))
+    _, config = config_path(ctx)
     secret = Path(read_json(config)["oidcClientSecretFile"])
     if not secret.is_file():
         say("client", bindingId=plan["bindingId"], state="PENDING", reason="the binding SecretRef is not rendered yet")
@@ -254,6 +324,7 @@ def cmd_client(ctx):
 
 def cmd_secrets(ctx):
     """bindingSecretValues for the governed create: native service credential + the adapter client secret."""
+    require(not ctx.state_override, "--state-dir only verifies plan")
     _, plan = cmd_plan(ctx)
     out = ctx.state / f"binding-secrets-{plan['bindingId'][:8]}.json"
     if out.is_file():
@@ -274,6 +345,17 @@ def cmd_secrets(ctx):
             tokens = [l.strip() for l in output.splitlines() if re.fullmatch(r"[A-Za-z0-9._~+/=-]{20,}", l.strip())]
             require(len(tokens) == 1, f"native token for {login} could not be minted")
             values[key] = tokens[0]
+        elif rule.startswith("wren-connection:"):
+            # The original Postgres connectionInfo of the single native project (nativeBindingService.ts
+            # governedConnectionInfo): its non-secret fields as stored, the read-only role's password from
+            # the component's own 0600 secret env file. Never printed.
+            _, file_key, password_key = rule.split(":")
+            facts = wren_facts(ctx)
+            require(facts["connectionKeys"] == ["database", "host", "password", "port", "user"],
+                    "native connectionInfo is not the Postgres host/port/database/user/password shape")
+            password = env_value(ctx.component_value(file_key), password_key)
+            require(password, "read-only role password missing from the component secret env")
+            values[key] = json.dumps({**facts["connection"], "password": password}, separators=(",", ":"))
         else:
             raise Refused(f"{key}: unknown binding secret rule")
     require(sorted(values) == sorted(r["secretKey"] for r in plan["secretRefs"]), "binding secrets differ from the release secretSchema")
@@ -288,6 +370,7 @@ def main():
     parser.add_argument("--source", required=True)
     parser.add_argument("--commit", required=True)
     parser.add_argument("--runtime", required=True)
+    parser.add_argument("--state-dir", help="verification only: render release and plan here instead of the declared stateDir")
     args = parser.parse_args()
     os.umask(0o077)
     try:
