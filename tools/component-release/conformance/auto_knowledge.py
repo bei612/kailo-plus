@@ -241,9 +241,9 @@ def ensure_action_token(h, r):
     config = h.read_json("/volumes/kailo/ci/config.json")["environment"]
     env = {**os.environ, "KAILO_RUNTIME_DIR": str(local), "CHECK_CPUS": "2", "CHECK_MEMORY": "4g",
            "BUILDX_BUILDER": config.get("BUILDX_BUILDER", "")}
-    h.say("isolated-identity", step="prepare-action-token")
+    h.say("isolated-identity", action="prepare-action-token")
     h.run(["bash", "./start-core.sh", "--prepare-action-token"], cwd=str(local), env=env, log=r.log)
-    h.say("isolated-identity", step="restart-core")
+    h.say("isolated-identity", action="restart-core")
     h.run(["bash", "./start-core.sh", "--no-build"], cwd=str(local), env=env, log=r.log)
     marker.write_text("")
     h.say("isolated-identity", actionToken="READY")
