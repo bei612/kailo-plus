@@ -150,6 +150,25 @@ export const emptyBindingConfigSchema = {
   properties: {},
 } as const;
 
+/**
+ * DD-155(1)：PROTOCOL_PEER 服务型资源的增量合同。每个 ResourceType 至少一份（`03` §7、`07` §8.1，
+ * 库约束）；不对应单独操作的 NATIVE_INTERNAL 合同按 `13` §3 取 `<typeKey>@v<contractVersion>`。
+ * 规则字段如实写：稳定键是 binding 固定的 native 实例，没有内容 revision，删除语义 NONE，
+ * 没有后台增量与对账，就绪是 binding 激活验证。
+ */
+export function peerIncrementalContract(typeKey: string, contractVersion: number) {
+  return {
+    contractKey: `${typeKey}@v${contractVersion}`,
+    role: "NATIVE_INTERNAL",
+    engine: "NATIVE",
+    stableKeyRule: "The binding's pinned native instance (nativeInstanceRef) is the only native object; tools hold no per-item state in Kailo.",
+    revisionRule: "No content revision: the implementation version is pinned by the release adapterBuildRef (artifact digest).",
+    deleteSemantics: "NONE",
+    reconciliationTrigger: "NONE: tool results return synchronously through AgentGateway and ExtMcp; there is no native background work to reconcile.",
+    readinessSemantics: "Binding activation verification: initialize and tools/list over the Core-managed Gateway route succeed.",
+  };
+}
+
 /** 所选 ACTIVE 契约中有 operation 没有对应工具：Core 要求 release 覆盖契约的全部 operation。 */
 export class UncoveredOperationsError extends Error {
   constructor(readonly contractKeys: string[]) {
@@ -244,7 +263,8 @@ export async function releaseDraft(input: {
     resourceTypeDefinitions: typeKeys.map((typeKey) => ({
       typeKey, capabilityCategory: resourceTypes.get(typeKey)!.categoryKey,
       capabilityContractVersion: resourceTypes.get(typeKey)!.contractVersion,
-      incrementalContracts: [], llmGatewayContract: "NOT_USED", transferFormats: [], tenantDeleteActionKey: "NONE", status: "ACTIVE",
+      incrementalContracts: [peerIncrementalContract(typeKey, resourceTypes.get(typeKey)!.contractVersion)],
+      llmGatewayContract: "NOT_USED", transferFormats: [], tenantDeleteActionKey: "NONE", status: "ACTIVE",
     })),
     actionDefinitions,
     toolDefinitions,

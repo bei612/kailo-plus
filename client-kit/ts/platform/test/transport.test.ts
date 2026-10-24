@@ -8,10 +8,19 @@ import { createInvokeTransport, createNativeHost } from "../src/native";
 import {
   BffError,
   isOutcomeUnknown,
+  isRateLimited,
+  queryRetry,
+  queryRetryDelay,
   SessionEndedError,
   TransportError,
 } from "../src/transport";
-import { createFetchTransport, isSettledRead, SETTLED_READ_MS } from "../src/web-fetch";
+import {
+  createFetchTransport,
+  isSettledRead,
+  MAX_LIMITED_READ_RETRIES,
+  retryAfterSeconds,
+  SETTLED_READ_MS,
+} from "../src/web-fetch";
 
 function json(status: number, body: unknown): Response {
   return new Response(body === undefined ? null : JSON.stringify(body), {
@@ -269,6 +278,106 @@ describe("web-fetch", () => {
     const f = await bare.revokeClientKey("ab").catch((x: unknown) => x);
     expect(f).toMatchObject({ status: 502, errorClass: undefined });
     expect(isOutcomeUnknown(f)).toBe(false);
+  });
+
+  // DD-156 / V-SCN-255: BFF Relay read budget.
+  function limited(retryAfter: string | null): Response {
+    return new Response(JSON.stringify({ class: ErrorClass.Limit, reason: ReasonCode.RateLimited }), {
+      status: 429,
+      headers: { "Content-Type": "application/json", ...(retryAfter === null ? {} : { "Retry-After": retryAfter }) },
+    });
+  }
+  const activityBody = (init?: RequestInit) => {
+    const { items } = JSON.parse(String(init?.body)) as { items: { workspaceId: string }[] };
+    return { items: items.map(({ workspaceId }) => ({ workspaceId, channelId: `c-${workspaceId}`, events: [] })) };
+  };
+
+  it("只读读取（GET 与只读 POST）遇 429 按 Retry-After 等待后自动重读", async () => {
+    const sleep = vi.fn(async (_ms: number) => undefined);
+    let userState = 0, activity = 0;
+    const fetch = vi.fn<typeof globalThis.fetch>(async (path, init) => {
+      if (path === "/api/v1/user-state") return (userState += 1) === 1 ? limited("2") : json(200, { version: 1, readContexts: {} });
+      return (activity += 1) === 1 ? limited("3") : json(200, activityBody(init));
+    });
+    const client = createBffClient(createFetchTransport({ fetch, onSessionEnded: () => {}, sleep }));
+    await expect(client.collaborationUserState()).resolves.toMatchObject({ version: 1 });
+    await expect(client.workspaceActivity({ items: [{ workspaceId: "w", messageType: WebMessageType.Stream }] }))
+      .resolves.toMatchObject({ items: [{ workspaceId: "w" }] });
+    expect(fetch).toHaveBeenCalledTimes(4);
+    expect(sleep.mock.calls.map(([ms]) => ms)).toEqual([2_000, 3_000]);
+  });
+
+  it("限流重读有上限：次数用尽或等待超过上限时抛出带 retryAfterSeconds 的 LIMIT 错误，不是结果不明", async () => {
+    const sleep = vi.fn(async (_ms: number) => undefined);
+    const always = vi.fn<typeof globalThis.fetch>(async () => limited("1"));
+    const client = createBffClient(createFetchTransport({ fetch: always, onSessionEnded: () => {}, sleep }));
+    const e = await client.collaborationUserState().catch((x: unknown) => x);
+    expect(always).toHaveBeenCalledTimes(1 + MAX_LIMITED_READ_RETRIES);
+    expect(e).toBeInstanceOf(BffError);
+    expect(e).toMatchObject({ status: 429, errorClass: "LIMIT", reason: "RATE_LIMITED", retryAfterSeconds: 1 });
+    expect(isRateLimited(e)).toBe(true);
+    expect(isOutcomeUnknown(e)).toBe(false);
+
+    sleep.mockClear();
+    const long = vi.fn<typeof globalThis.fetch>(async () => limited("60"));
+    const patient = createBffClient(createFetchTransport({ fetch: long, onSessionEnded: () => {}, sleep }));
+    await expect(patient.collaborationUserState()).rejects.toMatchObject({ status: 429, retryAfterSeconds: 60 });
+    expect(long).toHaveBeenCalledTimes(1);
+    expect(sleep).not.toHaveBeenCalled();
+  });
+
+  it("写动作遇 429 绝不自动重放，错误带 Retry-After", async () => {
+    const sleep = vi.fn(async (_ms: number) => undefined);
+    const fetch = vi.fn<typeof globalThis.fetch>(async () => limited("4"));
+    const client = createBffClient(createFetchTransport({ fetch, onSessionEnded: () => {}, sleep }));
+    await expect(client.logout()).rejects.toMatchObject({ status: 429, retryAfterSeconds: 4 });
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(sleep).not.toHaveBeenCalled();
+  });
+
+  it("只读 POST 按 方法+路径+正文 合并同时刻请求，并按 settled 规则短窗口复用；写动作清空", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => { release = resolve; });
+      const fetch = vi.fn<typeof globalThis.fetch>(async (path, init) => {
+        await gate;
+        return path === "/api/v1/workspace-activity" ? json(200, activityBody(init)) : json(200, { revoked: true });
+      });
+      const transport = createFetchTransport({ fetch, onSessionEnded: () => {}, settleMs: SETTLED_READ_MS, settled: isSettledRead });
+      const client = createBffClient(transport);
+      const items = (workspaceId: string) => ({ items: [{ workspaceId, messageType: WebMessageType.Stream }] });
+      const reads = [client.workspaceActivity(items("a")), client.workspaceActivity(items("a")), client.workspaceActivity(items("b"))];
+      release();
+      const [first, second, other] = await Promise.all(reads);
+      const count = () => fetch.mock.calls.filter(([path]) => path === "/api/v1/workspace-activity").length;
+      expect(count()).toBe(2);
+      expect(first).toEqual(second);
+      expect(first).not.toBe(second);
+      expect(other).toMatchObject({ items: [{ workspaceId: "b" }] });
+      await client.workspaceActivity(items("a"));
+      expect(count()).toBe(2);
+      await client.logout();
+      await client.workspaceActivity(items("a"));
+      expect(count()).toBe(3);
+      vi.setSystemTime(Date.now() + SETTLED_READ_MS);
+      await client.workspaceActivity(items("a"));
+      expect(count()).toBe(4);
+      expect(isSettledRead("/api/v1/workspace-activity")).toBe(true);
+      expect(isSettledRead("/api/v1/search/messages")).toBe(false);
+    } finally { vi.useRealTimers(); }
+  });
+
+  it("Retry-After 解析与查询缓存的限流重试策略", () => {
+    expect(retryAfterSeconds("7")).toBe(7);
+    expect(retryAfterSeconds(null)).toBeUndefined();
+    expect(retryAfterSeconds("soon")).toBeUndefined();
+    const limitedError = new BffError(429, "limited", { class: ErrorClass.Limit, reason: ReasonCode.RateLimited }, 9);
+    const other = new BffError(503, "down", { class: ErrorClass.Precondition, reason: ReasonCode.DependencyUnavailable });
+    expect([queryRetry(0, limitedError), queryRetry(2, limitedError), queryRetry(3, limitedError)]).toEqual([true, true, false]);
+    expect([queryRetry(0, other), queryRetry(1, other)]).toEqual([true, false]);
+    expect(queryRetryDelay(0, limitedError)).toBe(9_000);
+    expect(queryRetryDelay(0, other)).toBe(1_000);
   });
 
   it("没有回应即结果不明", async () => {

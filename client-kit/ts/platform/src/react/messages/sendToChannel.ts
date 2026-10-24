@@ -22,6 +22,22 @@ export function canSendMessageToChannel(
 }
 
 /**
+ * Original canManageMessageForCurrentUser for edit/delete (DD-142): a settled stream message the
+ * viewer signed, or, in a Workspace channel only, one signed by an Agent whose ACTIVE Installation
+ * the viewer owns. Hosts only offer the action; Core re-checks ownership and `manage` and signs as
+ * that Agent.
+ */
+export function canManageMessageForCurrentUser(
+  message: TimelineMessage,
+  ownPubkey: string | null | undefined,
+  ownedAgentPubkeys?: ReadonlySet<string>,
+): boolean {
+  const signer = (message.signerPubkey ?? "").toLowerCase();
+  if (message.kind !== KIND_STREAM_MESSAGE || message.pending || signer.length === 0) return false;
+  return (ownPubkey ?? "").toLowerCase() === signer || ownedAgentPubkeys?.has(signer) === true;
+}
+
+/**
  * One publication intent per source reply (DD-81): while an earlier attempt's outcome
  * is unknown, a retry reuses its idempotency key so Core answers that attempt instead
  * of signing a second copy. A confirmed or refused attempt releases the key.

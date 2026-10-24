@@ -984,6 +984,95 @@ describe('original independent preview selection and visibility consumers', () =
       expect(hook.data).toBeUndefined();
     },
   );
+  describe('overlapping query identity reads', () => {
+    const scope = 'c'.repeat(64);
+    const governed = { nativeBindingConfigured: true, queryScope: scope };
+    const entries = new Map<string, string>();
+    let originalStorage: PropertyDescriptor | undefined;
+    const delayed = () => {
+      let release: (value: any) => void;
+      mockConfig.mockImplementationOnce(
+        () =>
+          new Promise((done) => {
+            release = done;
+          }),
+      );
+      return (value: any) => release(value);
+    };
+    beforeEach(() => {
+      entries.clear();
+      originalStorage = Object.getOwnPropertyDescriptor(
+        global,
+        'sessionStorage',
+      );
+      Object.defineProperty(global, 'sessionStorage', {
+        configurable: true,
+        value: {
+          getItem: (key: string) => entries.get(key) ?? null,
+          setItem: (key: string, value: string) => entries.set(key, value),
+          removeItem: (key: string) => entries.delete(key),
+        },
+      });
+      mockConfig.mockReset().mockResolvedValue(governed);
+    });
+    afterEach(() => {
+      if (originalStorage)
+        Object.defineProperty(global, 'sessionStorage', originalStorage);
+      else delete (global as any).sessionStorage;
+    });
+    it('a mount refresh overtaken by the chart preview arrives late without an identity failure', async () => {
+      const releaseRefresh = delayed();
+      listeners.get('focus')();
+      await hook.preview();
+      releaseRefresh(governed);
+      await flush();
+      expect(render()).toMatchObject({ scopeError: false, governed: true });
+      expect(mockPreview).toHaveBeenCalledTimes(1);
+      expect(mockPreview).toHaveBeenCalledWith({
+        id: 7,
+        idempotencyKey: expect.any(String),
+        idempotencyScope: scope,
+      });
+    });
+    it('a preview whose own read is overtaken adopts the newest same-selection read', async () => {
+      const releasePreview = delayed();
+      const request = hook.preview();
+      listeners.get('focus')();
+      await flush();
+      // The stale answer would be an identity failure if it were current.
+      releasePreview({});
+      await request;
+      await flush();
+      expect(render()).toMatchObject({ scopeError: false, governed: true });
+      expect(mockPreview).toHaveBeenCalledTimes(1);
+      expect(mockPreview.mock.calls[0][0].idempotencyScope).toBe(scope);
+    });
+    it('overlapping focus and visibility reads do not report a superseded read', async () => {
+      const releaseFocus = delayed();
+      listeners.get('focus')();
+      listeners.get('visibilitychange')();
+      await flush();
+      releaseFocus({});
+      await flush();
+      expect(render()).toMatchObject({ scopeError: false, governed: true });
+    });
+    it('a definite failure of the current read still reports the identity failure', async () => {
+      mockConfig.mockResolvedValue({
+        nativeBindingConfigured: true,
+        queryScope: 'not-a-scope',
+      });
+      listeners.get('focus')();
+      await flush();
+      expect(render()).toMatchObject({ scopeError: true, governed: false });
+      await hook.preview();
+      expect(render()).toMatchObject({
+        scopeError: true,
+        governed: false,
+        preparing: false,
+      });
+      expect(mockPreview).not.toHaveBeenCalled();
+    });
+  });
 });
 
 describe('original saved-view reference export identity consumers', () => {

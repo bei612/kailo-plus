@@ -12,7 +12,7 @@
     "projectionGeneration": {"type": "integer", "minimum": 1},
     "agentVersionAssetId": {"type": "string", "format": "uuid"},
     "runtimeThreadId": {"type": "string", "minLength": 1},
-    "status": {"type": "string", "enum": ["PENDING", "STARTING", "ACTIVE", "UNKNOWN", "CLOSED"]},
+    "status": {"type": "string", "enum": ["PENDING", "STARTING", "ACTIVE", "UNKNOWN", "CLOSED", "ABANDONED"], "description": "ABANDONED：只剩 birth 结果不明、Invocation 已全部确定终态的 Session 超过对账期限后由 Core 放弃，不再派发 turn（DD-154）。"},
     "createdAt": {"type": "string", "description": "Core 记录的 RFC3339 时间字符串，按原线格式传输。"}
   }
 }

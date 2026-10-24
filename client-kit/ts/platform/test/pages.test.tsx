@@ -513,7 +513,7 @@ describe("independent shared Workflows page", () => {
     expect(Array.from(host.querySelectorAll("h1,h2")).filter((node) => node.textContent === title)).toHaveLength(1);
     expect(host.querySelector("[data-testid=new-workflow-card]")).not.toBeNull();
     expect(host.textContent).not.toContain(locale === "en" ? "No workflows" : "暂无工作流");
-    expect(host.textContent).toContain(locale === "en" ? "Automations that keep your community moving." : "让社区协作自动运转。");
+    expect(host.textContent).toContain(locale === "en" ? "Automations that keep your team moving." : "让团队协作自动运转。");
     const refreshButtons = host.querySelectorAll<HTMLButtonElement>(`button[aria-label="${refresh}"]`);
     expect(refreshButtons).toHaveLength(1);
     const reads = (path: string) => t.send.mock.calls.filter(([request]) => request.path.startsWith(path)).length;
@@ -2524,6 +2524,13 @@ describe("AgentDefinitionsPage governed Version Installation Grant", () => {
     expect(section(host, "agent-installations").querySelector("select")?.disabled).toBe(true);
   });
 
+  /** DD-153: delegation scopes are a checkbox list (multi-select). */
+  async function tickFirstScope(action: HTMLElement) {
+    const box = action.querySelector<HTMLInputElement>("[data-testid=agent-delegation-targets] input[type=checkbox]");
+    expect(box).toBeTruthy();
+    await click(box!);
+  }
+
   it.each([false, true])("delegation %s freezes returned scope/revocation and exact UNKNOWN execution", async (revoke) => {
     const actionKey = revoke ? "agent.delegation.revoke" : "agent.delegation.grant";
     let count = 0;
@@ -2540,10 +2547,7 @@ describe("AgentDefinitionsPage governed Version Installation Grant", () => {
     const action = section(host, "agent-delegation-management");
     if (revoke) await click(button(action, "Review revocation"));
     else {
-      const select = action.querySelector("select");
-      const option = select?.querySelectorAll("option")[1];
-      expect(option).toBeTruthy();
-      await change(action, "Exact governed action and target", option!.value);
+      await tickFirstScope(action);
       await change(action, "Valid from", "2026-10-03T12:00:00");
       await change(action, "Expires at", "2027-10-03T12:00:00");
       await change(action, "Maximum uses", "3");
@@ -2613,9 +2617,7 @@ describe("AgentDefinitionsPage governed Version Installation Grant", () => {
     await click(button(section(host, "agent-installations"), "View installation"));
     await click(button(host, "View delegation grants"));
     const action = section(host, "agent-delegation-management");
-    const option = action.querySelector("select")?.querySelectorAll("option")[1];
-    expect(option).toBeTruthy();
-    await change(action, "Exact governed action and target", option!.value);
+    await tickFirstScope(action);
     await change(action, "Valid from", "2026-10-03T12:00:00");
     await change(action, "Expires at", "2027-10-03T12:00:00");
     expect(action.textContent).toContain("You already have an active delegation covering this scope.");
@@ -2643,9 +2645,7 @@ describe("AgentDefinitionsPage governed Version Installation Grant", () => {
     if (kind === "installation") {
       await change(action, "Definition reference", installation.pinnedVersionAssetId);
     } else if (kind === "delegation") {
-      const option = action.querySelector("select")?.querySelectorAll("option")[1];
-      expect(option).toBeTruthy();
-      await change(action, "Exact governed action and target", option!.value);
+      await tickFirstScope(action);
       await change(action, "Valid from", "2026-10-03T12:00:00");
       await change(action, "Expires at", "2027-10-03T12:00:00");
     }
@@ -2782,7 +2782,8 @@ describe("DevicesPage", () => {
     const host = await mount(t, <DevicesPage />);
     await settle();
     await click(button(host, "Revoke"));
-    expect(host.querySelector("[role=alert]")?.textContent).toContain("CLIENT_KEY_NOT_FOUND");
+    expect(host.querySelector("[role=alert]")?.textContent).toContain("That device is not registered to you.");
+    expect(host.textContent).not.toContain("CLIENT_KEY_NOT_FOUND");
   });
 });
 
@@ -4146,7 +4147,7 @@ describe("AgentDefinitionsPage read outcomes", () => {
   it.each([
     { reply: { status: 403, body: undefined }, label: "Not allowed", open: "View definition", locale: "en" as const },
     { reply: { status: 404, body: { class: ErrorClass.Precondition, reason: ReasonCode.TargetNotFound,
-      content: "private-error-body" } }, label: "TARGET_NOT_FOUND", open: "查看定义", locale: "zh-CN" as const },
+      content: "private-error-body" } }, label: "对象已不存在，或你无权查看。", open: "查看定义", locale: "zh-CN" as const },
   ])("published Version shows actual refusal $label, not parent permission", async ({ reply, label, open, locale }) => {
     const t = transport((r) => r.path === "/api/v1/tasks" ? { status: 200, body: [] }
       : r.path === "/api/v1/agent-definitions" ? { status: 200, body: { definitions: [definition] } }
@@ -4159,6 +4160,8 @@ describe("AgentDefinitionsPage read outcomes", () => {
     expect(section?.querySelector("[role=alert]")?.textContent).toContain(label);
     expect(section?.textContent).not.toMatch(/result is unknown|结果不明/);
     expect(section?.textContent).not.toContain("private-error-body");
+    // Plain-language copy only: the reason code never appears in visible text.
+    expect(section?.textContent).not.toContain("TARGET_NOT_FOUND");
     if (reply.body === undefined) expect(section?.textContent).not.toContain("PERMISSION_DENIED");
     expect(section?.querySelector("pre")).toBeNull();
     expect(t.send).toHaveBeenCalledWith({ method: "GET", path: "/api/v1/agent-versions/asset-1" });

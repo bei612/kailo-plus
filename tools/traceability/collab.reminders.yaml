@@ -33,9 +33,9 @@ release:
   # 以下为该源码实际构建并推送的产物，仅登记发布事实，不提升能力状态或开放门禁。
   artifacts:
     - name: core
-      digest: sha256:848a654708a5c08e5492aa43aa4689de34e1a908101200b1b7d2c9c366ecd253
+      digest: sha256:a6c37cbf2ea58b4c983f9bd2bb7a5dca5c94fcb674c5a35ee6d4b901794f1a17
     - name: web-client
-      digest: sha256:93f38189428207bb5bf051a893ab15dff1c8106978ac950f8f81979b5bcf91f3
+      digest: sha256:c0f470e5053510c0899aae6e311502b5498d98ead4301a362c82650cfc133042
   # 未完成本固定发布树的 full 门禁；定向检查不替代全量验收。
   # 新产物尚未部署，不证明线上已使用本版提醒消费者。
   # 尚未完成真实用户提醒创建、到期通知与发布对账的业务验收。

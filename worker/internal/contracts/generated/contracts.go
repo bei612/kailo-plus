@@ -6163,10 +6163,11 @@ type AgentSessionView struct {
 	InstallationResourceID string `json:"installationResourceId"`
 	ProjectionGeneration   int64  `json:"projectionGeneration"`
 	// 既有 BUZZ_EVENT、SCHEDULE 或 MANUAL Session 根引用；不从客户端生成 native thread。
-	RootEventID     string                 `json:"rootEventId"`
-	RuntimeThreadID *string                `json:"runtimeThreadId,omitempty"`
-	Status          AgentSessionViewStatus `json:"status"`
-	WorkspaceID     string                 `json:"workspaceId"`
+	RootEventID     string  `json:"rootEventId"`
+	RuntimeThreadID *string `json:"runtimeThreadId,omitempty"`
+	// ABANDONED：只剩 birth 结果不明、Invocation 已全部确定终态的 Session 超过对账期限后由 Core 放弃，不再派发 turn（DD-154）。
+	Status      AgentSessionViewStatus `json:"status"`
+	WorkspaceID string                 `json:"workspaceId"`
 }
 
 // DD-131(2)：校验通过的快照包的导入预览与一次性暂存引用。只含映射后将进入新 DRAFT 的可移植字段与被丢弃的原版字段类别；不回显包正文、名单公钥或记忆。确认导入经
@@ -7868,10 +7869,13 @@ type GatewayMCPReleaseView struct {
 	ComponentTypeKey        string                      `json:"componentTypeKey"`
 	DeliveryFacts           []GatewayMCPBindingFact     `json:"deliveryFacts"`
 	NativeInstanceRef       *string                     `json:"nativeInstanceRef,omitempty"`
-	SecretKeys              []string                    `json:"secretKeys"`
-	Status                  ComponentReleaseStatus      `json:"status"`
-	Tools                   []GatewayMCPReleaseTool     `json:"tools"`
-	Version                 string                      `json:"version"`
+	// DD-155(3)：release 所选能力类别任一声明 tenantDelete=RETAIN_ON_TENANT_DELETE 即为
+	// true；建立连接的保留选项取此值，Core 要求一致。
+	RetainOnTenantDelete *bool                   `json:"retainOnTenantDelete,omitempty"`
+	SecretKeys           []string                `json:"secretKeys"`
+	Status               ComponentReleaseStatus  `json:"status"`
+	Tools                []GatewayMCPReleaseTool `json:"tools"`
+	Version              string                  `json:"version"`
 }
 
 type GatewayMCPReleaseCategory struct {
@@ -11641,9 +11645,11 @@ const (
 	Replied                         AgentMentionOutcomeState = "REPLIED"
 )
 
+// ABANDONED：只剩 birth 结果不明、Invocation 已全部确定终态的 Session 超过对账期限后由 Core 放弃，不再派发 turn（DD-154）。
 type AgentSessionViewStatus string
 
 const (
+	Abandoned                     AgentSessionViewStatus = "ABANDONED"
 	AgentSessionViewStatusACTIVE  AgentSessionViewStatus = "ACTIVE"
 	AgentSessionViewStatusCLOSED  AgentSessionViewStatus = "CLOSED"
 	AgentSessionViewStatusPENDING AgentSessionViewStatus = "PENDING"

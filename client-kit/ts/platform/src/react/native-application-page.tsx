@@ -177,7 +177,7 @@ export function NativeApplicationPage({ bindingId, onBack, title, path }: { bind
       <Button disabled={loading || authenticationPending} onClick={() => signInToService(page.url)}>{t("bindings.signInNative")}</Button>
       <p className="text-sm text-muted-foreground">{t("bindings.nativeBoundary")}</p></div> : null}
     {authenticationError ? <ReadFailure error={authenticationError} onRetry={() => setAuthenticationError(undefined)} /> : null}
-    {page && connected && embedded?.authRequired ? <div role="alert" className="flex flex-wrap items-center gap-2 text-sm">
+    {page && connected && embedded?.authRequired ? <div role="alert" className="mx-auto mt-12 flex w-full max-w-md flex-col items-center gap-4 rounded-xl border border-border bg-card px-6 py-8 text-center text-sm text-foreground shadow-xs">
       <span>{t("bindings.embedSignInRequired")}</span>
       <Button disabled={authenticationPending} onClick={() => signInAgain(page.url)}>{t("bindings.embedSignIn")}</Button></div> : null}
     {page && frameKey && launch.current ? <div className="relative flex min-h-0 w-full flex-1 flex-col">

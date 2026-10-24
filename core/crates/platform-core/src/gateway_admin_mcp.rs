@@ -214,8 +214,19 @@ pub(crate) fn release_view(
         .filter_map(Value::as_str)
         .filter(|mode| matches!(*mode, "PLATFORM_LLM_ROUTE" | "SELF_MANAGED_MODEL" | "NONE"))
         .collect();
+    // DD-155(3)：建立连接时 Core 要求 retainOnTenantDelete 与所选类别的声明一致（任一类别
+    // 声明 RETAIN_ON_TENANT_DELETE 即保留）；向导以此为该项的值，不另设默认。
+    let retain = row_manifest
+        .get("capabilityDeclarations")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .any(|declaration| {
+            declaration.get("tenantDelete").and_then(Value::as_str)
+                == Some("RETAIN_ON_TENANT_DELETE")
+        });
     json!({"componentReleaseId":id,"componentTypeKey":type_key,"version":version,"status":status,
-        "adapterBuildRef":adapter_build_ref,
+        "adapterBuildRef":adapter_build_ref,"retainOnTenantDelete":retain,
         "bindingConfigSchemaJson":collab_bridge::limits::canonical_json(binding_config_schema),
         "capabilityCategories":categories,"tools":tools,"secretKeys":secrets,
         "allowedModelCallModes":modes,"deliveryFacts":[],"bindingIds":[]})

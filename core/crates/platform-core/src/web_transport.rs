@@ -300,6 +300,88 @@ fn valid_deletion_request(request: &PublishRequest) -> bool {
     })
 }
 
+/// Installation, Agent public key and the key's SecretRef parts (locator, version, audience).
+type OwnedAgentKeyRow = (Uuid, String, Option<String>, Option<i32>, Option<String>);
+
+/// DD-142: the SERVER keys of an AGENT author in this Workspace channel when the caller
+/// owns its ACTIVE Installation (Core owner fact and fresh SpiceDB `manage`), the
+/// Installation is bound to the channel, and the key reference is the Installation's
+/// fixed SecretRef. `None` refuses the mutation; dependency failures are surfaced.
+async fn owned_agent_keys(
+    state: &BffState,
+    ctx: &ExecutionContext,
+    workspace: Uuid,
+    author: &nostr::PublicKey,
+) -> Result<Option<nostr::Keys>, Response> {
+    let row: Option<OwnedAgentKeyRow> = sqlx::query_as(
+        "select inst.resource_id,a.pubkey,a.private_key_secret_ref,a.private_key_secret_version,
+                a.private_key_secret_audience
+         from identity.buzz_identity_binding a
+         join catalog.agent_installation inst on inst.agent_principal_id=a.principal_id
+           and inst.workspace_id=$3
+         join catalog.resource r on r.id=inst.resource_id and r.tenant_id=a.tenant_id
+           and r.type_key='agent.installation' and r.state='ACTIVE' and r.owner_principal_id=$4
+         join catalog.channel_agent_binding cb on cb.installation_resource_id=inst.resource_id
+           and cb.workspace_id=$3 and cb.status='ACTIVE'
+         where a.tenant_id=$1 and a.pubkey=$2 and a.kind='AGENT' and a.custody='SERVER'
+           and a.state='ACTIVE' and a.private_key_secret_status='ACTIVE'",
+    )
+    .bind(ctx.tenant_id)
+    .bind(author.to_hex())
+    .bind(workspace)
+    .bind(ctx.tenant_principal_id)
+    .fetch_optional(&state.pool)
+    .await
+    .map_err(crate::service_api::unavailable)?;
+    let Some((installation, pubkey, locator, version, audience)) = row else {
+        return Ok(None);
+    };
+    let proof = state
+        .governance
+        .spicedb
+        .check(
+            "resource",
+            &installation.to_string(),
+            "manage",
+            &ctx.tenant_principal_id.to_string(),
+            crate::spicedb::Consistency::FullyConsistent,
+        )
+        .await
+        .map_err(|_| StatusCode::SERVICE_UNAVAILABLE.into_response())?;
+    if proof.zed_token.is_empty() {
+        return Err(StatusCode::SERVICE_UNAVAILABLE.into_response());
+    }
+    if !proof.allowed {
+        return Ok(None);
+    }
+    let expected = state.secrets.tenant_locator(
+        ctx.tenant_id,
+        &format!("buzz-agent/installation/{installation}"),
+    );
+    let (Some(locator), Some(version), Some(audience)) = (
+        locator,
+        version
+            .and_then(|v| u32::try_from(v).ok())
+            .filter(|v| *v > 0),
+        audience,
+    ) else {
+        return Err(StatusCode::SERVICE_UNAVAILABLE.into_response());
+    };
+    if locator != expected || audience != state.memory_service.secret_audience {
+        tracing::warn!(%installation, "AGENT 钥匙引用不在固定位置");
+        return Ok(None);
+    }
+    let reference = SecretRef {
+        locator,
+        version,
+        audience,
+    };
+    crate::server_identity::read_bound_keys(&state.secrets, &reference, &pubkey)
+        .await
+        .map(Some)
+        .map_err(|_| StatusCode::SERVICE_UNAVAILABLE.into_response())
+}
+
 fn mutation_target_matches(
     event: &nostr::Event,
     author: nostr::PublicKey,
@@ -2319,6 +2401,7 @@ async fn publish(
     // The browser selects a semantic target, never its author, channel or tags.
     // Read the original signed event through the already admitted actor, then
     // let Relay recheck native edit ownership at ingestion as well.
+    let mut agent_signer: Option<nostr::Keys> = None;
     let mutation_target = match edit_event_id.as_deref().or(delete_event_id.as_deref()) {
         Some(id) => {
             let event = match read_message_event(&state, &client, &channel_id, id).await {
@@ -2326,12 +2409,29 @@ async fn publish(
                 Err(response) => return response,
             };
             if !mutation_target_matches(&event, keys.public_key(), &message_type) {
-                return error_body(
-                    StatusCode::FORBIDDEN,
-                    ErrorClass::Denied,
-                    ReasonCode::PermissionDenied,
-                    None,
-                );
+                // DD-142: the original "own Agent" edit/delete. Only a Workspace channel
+                // message of the same kind whose AGENT author belongs to an ACTIVE
+                // Installation the caller owns; Core signs as that Agent (DD-72/75).
+                let owned = match target {
+                    MessageTarget::Workspace(workspace)
+                        if mutation_target_matches(&event, event.pubkey, &message_type) =>
+                    {
+                        match owned_agent_keys(&state, &ctx, workspace, &event.pubkey).await {
+                            Ok(found) => found,
+                            Err(response) => return response,
+                        }
+                    }
+                    _ => None,
+                };
+                let Some(agent) = owned else {
+                    return error_body(
+                        StatusCode::FORBIDDEN,
+                        ErrorClass::Denied,
+                        ReasonCode::PermissionDenied,
+                        None,
+                    );
+                };
+                agent_signer = Some(agent);
             }
             Some(event)
         }
@@ -2545,6 +2645,18 @@ async fn publish(
     {
         return response;
     }
+    // DD-142: an owned Agent's edit/delete is signed and delivered as that Agent.
+    let agent_client = match agent_signer.as_ref() {
+        Some(agent) => match community_client(&state, agent, &community_host) {
+            Ok(agent_client) => Some(agent_client),
+            Err(response) => return response,
+        },
+        None => None,
+    };
+    let signer_pubkey = agent_signer
+        .as_ref()
+        .map(|agent| agent.public_key().to_hex());
+    let client = agent_client.as_ref().unwrap_or(&client);
     let admitted = match client.admit() {
         Ok(a) => a,
         Err(e) => return relay_error_response(&e, None),
@@ -2656,10 +2768,17 @@ async fn publish(
             decision: "ALLOW",
             result_code,
             result_exposure: "NONE",
-            evidence_refs: vec![
-                Evidence::new(EvidenceKind::BuzzEventId, &event_id),
-                Evidence::new(EvidenceKind::PlatformSessionId, ctx.session_id),
-            ],
+            evidence_refs: {
+                let mut refs = vec![
+                    Evidence::new(EvidenceKind::BuzzEventId, &event_id),
+                    Evidence::new(EvidenceKind::PlatformSessionId, ctx.session_id),
+                ];
+                // DD-142: actor is the owner, the signer is the owned Agent.
+                if let Some(signer) = signer_pubkey.as_deref() {
+                    refs.push(Evidence::new(EvidenceKind::BuzzPubkey, signer));
+                }
+                refs
+            },
             correlation_id: operation_id,
         }
     };
@@ -2882,12 +3001,18 @@ pub(crate) fn error_body(
         .into_response()
 }
 
-/// `LIMIT` 类回应（`apps/06` §4）。Core 预算给出重置时刻时带 `Retry-After`。
+/// `LIMIT` 类回应（`apps/06` §4）。DD-156(3)：限流回应总带 `Retry-After`——Core 预算
+/// 拒绝取预算计算值，挂预算的身份收到 Relay `429` 取预算窗口推算值；两者都没有时
+/// （未挂预算的客户端）取下限 1 秒，客户端据此有上限地自动重读。
 pub(crate) fn limit_response(
     kind: LimitKind,
     retry_after: Option<u64>,
     operation_id: Option<Uuid>,
 ) -> Response {
+    let retry_after = match kind {
+        LimitKind::RateLimited => Some(retry_after.unwrap_or(1).max(1)),
+        _ => retry_after,
+    };
     let (status, reason) = match kind {
         LimitKind::RateLimited => (StatusCode::TOO_MANY_REQUESTS, ReasonCode::RateLimited),
         LimitKind::PayloadTooLarge => (StatusCode::PAYLOAD_TOO_LARGE, ReasonCode::PayloadTooLarge),
@@ -5988,7 +6113,31 @@ mod tests {
             (b["class"].as_str(), b["reason"].as_str()),
             (Some("LIMIT"), Some("RATE_LIMITED"))
         );
-        assert_eq!(retry, None, "Relay 的 429 没有可机读的重置时刻，不编一个");
+        assert_eq!(
+            retry.as_deref(),
+            Some("1"),
+            "DD-156(3)：限流总带 Retry-After，未挂预算时取下限 1 秒"
+        );
+
+        // DD-156(3)：挂预算的身份收到 Relay 自身的 429，按预算窗口推算 Retry-After
+        let (s, retry, b) = parts(relay_error_response(
+            &OperatorError::RelayRateLimited {
+                retry_after_secs: 42,
+                body: String::new(),
+            },
+            None,
+        ))
+        .await;
+        assert_eq!(s, StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(
+            (b["class"].as_str(), b["reason"].as_str()),
+            (Some("LIMIT"), Some("RATE_LIMITED"))
+        );
+        assert_eq!(
+            retry.as_deref(),
+            Some("42"),
+            "Relay 的 429 带预算窗口推算的 Retry-After"
+        );
 
         let (s, retry, b) = parts(relay_error_response(
             &OperatorError::BudgetExhausted {

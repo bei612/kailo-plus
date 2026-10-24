@@ -7122,6 +7122,8 @@ class AgentSessionView {
   ///既有 BUZZ_EVENT、SCHEDULE 或 MANUAL Session 根引用；不从客户端生成 native thread。
   final String rootEventId;
   final String? runtimeThreadId;
+
+  ///ABANDONED：只剩 birth 结果不明、Invocation 已全部确定终态的 Session 超过对账期限后由 Core 放弃，不再派发 turn（DD-154）。
   final AgentSessionViewStatus status;
   final String workspaceId;
 
@@ -7160,9 +7162,18 @@ class AgentSessionView {
   });
 }
 
-enum AgentSessionViewStatus { ACTIVE, CLOSED, PENDING, STARTING, UNKNOWN }
+///ABANDONED：只剩 birth 结果不明、Invocation 已全部确定终态的 Session 超过对账期限后由 Core 放弃，不再派发 turn（DD-154）。
+enum AgentSessionViewStatus {
+  ABANDONED,
+  ACTIVE,
+  CLOSED,
+  PENDING,
+  STARTING,
+  UNKNOWN,
+}
 
 final agentSessionViewStatusValues = EnumValues({
+  "ABANDONED": AgentSessionViewStatus.ABANDONED,
   "ACTIVE": AgentSessionViewStatus.ACTIVE,
   "CLOSED": AgentSessionViewStatus.CLOSED,
   "PENDING": AgentSessionViewStatus.PENDING,
@@ -14240,6 +14251,10 @@ class GatewayMcpReleaseView {
   final String componentTypeKey;
   final List<GatewayMcpBindingFact> deliveryFacts;
   final String? nativeInstanceRef;
+
+  ///DD-155(3)：release 所选能力类别任一声明 tenantDelete=RETAIN_ON_TENANT_DELETE 即为
+  ///true；建立连接的保留选项取此值，Core 要求一致。
+  final bool? retainOnTenantDelete;
   final List<String> secretKeys;
   final ComponentReleaseStatus status;
   final List<GatewayMcpReleaseTool> tools;
@@ -14256,6 +14271,7 @@ class GatewayMcpReleaseView {
     required this.componentTypeKey,
     required this.deliveryFacts,
     this.nativeInstanceRef,
+    this.retainOnTenantDelete,
     required this.secretKeys,
     required this.status,
     required this.tools,
@@ -14284,6 +14300,7 @@ class GatewayMcpReleaseView {
           json["deliveryFacts"].map((x) => GatewayMcpBindingFact.fromJson(x)),
         ),
         nativeInstanceRef: json["nativeInstanceRef"],
+        retainOnTenantDelete: json["retainOnTenantDelete"],
         secretKeys: List<String>.from(json["secretKeys"].map((x) => x)),
         status: componentReleaseStatusValues.map[json["status"]]!,
         tools: List<GatewayMcpReleaseTool>.from(
@@ -14309,6 +14326,7 @@ class GatewayMcpReleaseView {
     "componentTypeKey": componentTypeKey,
     "deliveryFacts": List<dynamic>.from(deliveryFacts.map((x) => x.toJson())),
     "nativeInstanceRef": nativeInstanceRef,
+    "retainOnTenantDelete": retainOnTenantDelete,
     "secretKeys": List<dynamic>.from(secretKeys.map((x) => x)),
     "status": componentReleaseStatusValues.reverse[status],
     "tools": List<dynamic>.from(tools.map((x) => x.toJson())),

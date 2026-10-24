@@ -11,8 +11,8 @@
 /deploy/local/.env.*
 !/deploy/local/.env.example
 
-# Dependency and build output
-node_modules/
+# Dependency and build output（无斜杠：检查环境以软链接接入的依赖目录也被忽略，不进源码摘要）
+node_modules
 target/
 build/
 dist/

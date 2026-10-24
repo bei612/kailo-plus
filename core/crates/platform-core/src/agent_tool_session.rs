@@ -159,6 +159,19 @@ impl SessionSigner {
         })
     }
 
+    /// Ephemeral in-memory signer for unit tests of the route and PEP shapes.
+    #[cfg(test)]
+    pub(crate) fn for_test() -> Self {
+        Self::new(
+            "urn:test:session".into(),
+            "urn:test:mcp".into(),
+            60,
+            reqwest::Url::parse("http://gateway.test:8080/mcp").unwrap(),
+            "test-gateway".into(),
+        )
+        .unwrap()
+    }
+
     pub(crate) fn issuer(&self) -> &str {
         &self.issuer
     }

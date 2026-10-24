@@ -357,6 +357,30 @@ describe("MCP server wizard", () => {
     expect(sent[0]).toMatchObject({ path: "/api/v1/gateway/mcp/binding-drafts", body: { componentReleaseId: release.componentReleaseId,
       nativeScopeRef: "scope-1", normalizedConfigJson: "{}" } });
   });
+
+  it.each([true, false])("takes the retain-on-delete value from the release declaration (%s) and shows it read-only (DD-155)", async (retain) => {
+    const fact = { bindingId: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee", bound: false, configDigest: "f".repeat(64), credentialKeys: [],
+      isolationMode: "DEDICATED_NATIVE_SCOPE", nativeScopeRef: "scope-1", servicePrincipalId: "s1", tenantId };
+    const release = { componentReleaseId: "dddddddd-dddd-4ddd-8ddd-dddddddddddd", componentTypeKey: "time_server", version: "1.0.0",
+      status: "APPROVED", adapterBuildRef: peer.artifactDigest, adapterServiceRef: "time-mcp", nativeInstanceRef: "time-1",
+      retainOnTenantDelete: retain, capabilityCategories: [{ category: "time", version: 1 }], tools: [], secretKeys: [],
+      allowedModelCallModes: ["NONE"], deliveryFacts: [fact], bindingIds: [] };
+    const { host, send } = await mount(routes(tenantAccess, (request) => {
+      const path = request.path.split("?")[0] ?? "";
+      if (path === "/api/v1/gateway/mcp/releases") return { status: 200, body: { releases: [release] } };
+      if (path === "/api/v1/gateway/tools") return { status: 200, body: { from: "x", to: "y", tools: [] } };
+      if (path === "/api/v1/gateway/stats") return { status: 200, body: stats("MODEL_ROUTE") };
+      return { status: 503, body: undefined };
+    }));
+    await click(tab(host, "tools"));
+    await click(button(host.querySelector("[data-testid=gateway-mcp-release-row]") as HTMLElement, "Connect"));
+    const bind = await waitFor(() => host.querySelector<HTMLElement>("[data-testid=gateway-mcp-bind]"));
+    const box = bind.querySelector<HTMLInputElement>("input[type=checkbox]")!;
+    expect(box.checked).toBe(retain);
+    expect(box.disabled).toBe(true);
+    expect(bind.textContent).toContain("Set by the release declaration");
+    expect(posts(send)).toHaveLength(0);
+  });
 });
 
 describe("live configuration", () => {

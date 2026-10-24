@@ -211,6 +211,7 @@ enum PlatformMessageKey {
   agentsSessionsStateActive,
   agentsSessionsStateUnknown,
   agentsSessionsStateClosed,
+  agentsSessionsStateAbandoned,
   agentsInvocationsTitle,
   agentsInvocationsEmpty,
   agentsInvocationsId,
@@ -3110,6 +3111,12 @@ enum PlatformMessageKey {
   agentsDelegationRenewDropped,
   agentsDelegationRenewUnavailable,
   agentsDelegationOverlap,
+  agentsDelegationSelectedCount,
+  agentsDelegationToolNeedsInvoke,
+  agentsDelegationRenewToAddTools,
+  agentsDelegationRenewWithTools,
+  agentsDelegationRenewAdd,
+  agentsDelegationToolOnlyGrant,
   agentsInstallationNone,
   agentsInstallationNoWorkspace,
   agentsInstallationId,
@@ -3514,6 +3521,7 @@ enum PlatformMessageKey {
   platformNoWorkspace,
   platformLoadFailed,
   platformRetry,
+  platformRateLimitedRetrying,
   platformMember,
   platformState,
   platformProtocolIdentity,
@@ -3999,6 +4007,7 @@ enum PlatformMessageKey {
   platformSettingsKeyCopied,
   platformSettingsSignOutConfirm,
   platformReasonWithCode,
+  platformReasonUnknown,
   tasksNone,
   tasksTitle,
   actionsUnknown,
@@ -4743,6 +4752,7 @@ enum PlatformMessageKey {
   gatewayMcpConfig,
   gatewayMcpModelMode,
   gatewayMcpRetain,
+  gatewayMcpRetainFromRelease,
   gatewayMcpSecrets,
   gatewayMcpConfigDigestMismatch,
   gatewayMcpPrepareBind,
@@ -4760,6 +4770,7 @@ enum PlatformMessageKey {
   connectorsProvidedByService,
   connectorsHost,
   connectorsOwner,
+  connectorsOwnerUnknown,
   connectorsToolCount,
   connectorsCheckedAt,
   connectorsDrift,
@@ -5372,6 +5383,10 @@ const _messages = <PlatformMessageKey, (String, String)>{
   PlatformMessageKey.agentsSessionsStateActive: ('Active', '活跃'),
   PlatformMessageKey.agentsSessionsStateUnknown: ('Unknown', '结果不明'),
   PlatformMessageKey.agentsSessionsStateClosed: ('Closed', '已关闭'),
+  PlatformMessageKey.agentsSessionsStateAbandoned: (
+    'Abandoned (reconciled)',
+    '已放弃（结果已对账）',
+  ),
   PlatformMessageKey.agentsInvocationsTitle: ('Invocations', '调用'),
   PlatformMessageKey.agentsInvocationsEmpty: (
     'No visible invocations on this page.',
@@ -6163,7 +6178,7 @@ const _messages = <PlatformMessageKey, (String, String)>{
   PlatformMessageKey.threadCollapseThread: ('Collapse thread', '收起线程'),
   PlatformMessageKey.threadReplyTo: (
     'Reply in thread to {author}',
-    '在线程中回复{author}',
+    '在线程中回复 {author}',
   ),
   PlatformMessageKey.threadNewMessageOne: (
     '{count} new message',
@@ -12651,6 +12666,30 @@ const _messages = <PlatformMessageKey, (String, String)>{
     'You already have an active delegation covering this scope. Renew it instead of adding another.',
     '你已有覆盖该范围的有效委托，请续签它，而不是再增加一条。',
   ),
+  PlatformMessageKey.agentsDelegationSelectedCount: (
+    '{count} scopes selected; the selection is kept when you change pages.',
+    '已选 {count} 条 Scope，翻页时保留所选。',
+  ),
+  PlatformMessageKey.agentsDelegationToolNeedsInvoke: (
+    'Tool scopes only take effect together with an invocation grant. Also select agent.invoke for this agent (or automation.run) in the same grant.',
+    '工具 Scope 只随调用授权生效：请在同一授权中同时选择对该 Agent 的 agent.invoke 或 automation.run。',
+  ),
+  PlatformMessageKey.agentsDelegationRenewToAddTools: (
+    'You already have an active invocation grant {delegation} for this agent. Renew it to add these tools.',
+    '你已有该 Agent 的有效调用授权 {delegation}，请续签该授权以追加这些工具。',
+  ),
+  PlatformMessageKey.agentsDelegationRenewWithTools: (
+    'Renew to add tools',
+    '续签以追加工具',
+  ),
+  PlatformMessageKey.agentsDelegationRenewAdd: (
+    'Add scopes to this renewal (optional)',
+    '在续签中追加 Scope（可选）',
+  ),
+  PlatformMessageKey.agentsDelegationToolOnlyGrant: (
+    'No invocation grant: the tools in it do not take effect in triggers. Renew it with agent.invoke to merge.',
+    '不含调用授权，其中的工具不会在触发中生效。续签并加入 agent.invoke 即可合并。',
+  ),
   PlatformMessageKey.agentsInstallationNone: (
     'No agents to show on this page.',
     '此页暂无可显示的 Agent。',
@@ -12790,8 +12829,8 @@ const _messages = <PlatformMessageKey, (String, String)>{
   PlatformMessageKey.agentsVersionHash: ('Configuration hash', '配置摘要'),
   PlatformMessageKey.agentsAutomationTitle: ('Automations', '自动化'),
   PlatformMessageKey.agentsAutomationScope: (
-    'Automations that keep your community moving.',
-    '让社区协作自动运转。',
+    'Automations that keep your team moving.',
+    '让团队协作自动运转。',
   ),
   PlatformMessageKey.agentsAutomationNone: (
     'No workflows in this workspace yet.',
@@ -12802,7 +12841,7 @@ const _messages = <PlatformMessageKey, (String, String)>{
   PlatformMessageKey.agentsAutomationStatePaused: ('Paused', '已暂停'),
   PlatformMessageKey.agentsAutomationStateDisabled: ('Disabled', '已停用'),
   PlatformMessageKey.agentsAutomationVersionRetired: ('Retired', '已退役'),
-  PlatformMessageKey.agentsAutomationCreate: ('Create automation', '创建自动化'),
+  PlatformMessageKey.agentsAutomationCreate: ('New workflow', '新建工作流'),
   PlatformMessageKey.agentsAutomationCopy: ('Copy as new draft', '复制为新草稿'),
   PlatformMessageKey.agentsAutomationForm: ('Form', '表单'),
   PlatformMessageKey.agentsAutomationYaml: ('Workflow YAML', '工作流 YAML'),
@@ -13598,6 +13637,10 @@ const _messages = <PlatformMessageKey, (String, String)>{
     '未能载入，结果不明。',
   ),
   PlatformMessageKey.platformRetry: ('Try again', '重试'),
+  PlatformMessageKey.platformRateLimitedRetrying: (
+    'Too many requests — retrying automatically shortly.',
+    '请求过于频繁，稍后自动重试。',
+  ),
   PlatformMessageKey.platformMember: ('Member', '成员'),
   PlatformMessageKey.platformState: ('State', '状态'),
   PlatformMessageKey.platformProtocolIdentity: ('Protocol identity', '协议身份'),
@@ -14841,6 +14884,10 @@ const _messages = <PlatformMessageKey, (String, String)>{
   PlatformMessageKey.platformReasonWithCode: (
     '{text} ({code})',
     '{text}（{code}）',
+  ),
+  PlatformMessageKey.platformReasonUnknown: (
+    'The operation did not complete.',
+    '操作未完成。',
   ),
   PlatformMessageKey.tasksNone: (
     'You have not started any governed action yet.',
@@ -16663,6 +16710,10 @@ const _messages = <PlatformMessageKey, (String, String)>{
     'Retain native data when the organization is deleted',
     '组织删除时保留原生数据',
   ),
+  PlatformMessageKey.gatewayMcpRetainFromRelease: (
+    'Set by the release declaration; Kailo checks it when connecting.',
+    '按 release 声明确定，建立连接时由 Kailo 核对。',
+  ),
   PlatformMessageKey.gatewayMcpSecrets: ('Connection credentials', '连接凭据'),
   PlatformMessageKey.gatewayMcpConfigDigestMismatch: (
     'The configuration does not match the digest in the delivery directory. Nothing was submitted.',
@@ -16704,6 +16755,7 @@ const _messages = <PlatformMessageKey, (String, String)>{
   ),
   PlatformMessageKey.connectorsHost: ('Host', '主机'),
   PlatformMessageKey.connectorsOwner: ('Owner: {owner}', '登记人：{owner}'),
+  PlatformMessageKey.connectorsOwnerUnknown: ('Unknown member', '未知成员'),
   PlatformMessageKey.connectorsToolCount: ('{count} tools', '{count} 个工具'),
   PlatformMessageKey.connectorsCheckedAt: ('Last checked {at}', '最近检查：{at}'),
   PlatformMessageKey.connectorsDrift: (

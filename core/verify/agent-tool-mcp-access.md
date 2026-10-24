@@ -163,3 +163,31 @@ DD-122（10-17）与 DD-134（本次）之后逐条复核第 5 节：
 3. 其后的 `resource.create`、Installation 升级、委托授予与频道内 @ Agent 调用沿第 3 节第 5、6 步。
 
 每次换 peer 镜像或 Gateway 镜像后，在 CI 节点以待发布 commit 的检出重新运行记录脚本并提交结果；未重新记录时登记会失败，不会放行。
+
+## 7. 生产验收批次 4：用户连接器工具在 Agent 回合中被拒（2026-10-24）
+
+现象（CI 节点 `~/kailo-acceptance/20261023-release-166fa355/`，`dd149-242-echo.jsonl`、
+`shots/dd149/thread-echo-01-thread.png`）：连接器工具 `ci__echo` 经安装准入后，@研究助理 的回合失败，
+Core PEP 对 `initialize` 返回 `TOOL_REJECTED`，`thread/start` 失败，Session 停在 `UNKNOWN`。
+
+根因（`SF-AGW-32`）：Installation 平台工具 route 的 `mcpAuthentication` 在 `mcpGuardrails` 之前校验会话
+bearer，并固定以 `preserve_token=false` 移除（`LocalMcpAuthentication::as_jwt`）；route 元数据又以
+`request.headers['authorization']` 读取会话，PEP 的 `session_header` 因此每次都拿不到 bearer。这不是
+DD-137 管理 route 的剥离误用到会话 route：两条会话 route（原生、应用工具）从未把会话交到 ExtMcp。
+
+修复（`DD-152`）：两条会话 route 的元数据 `session` 改为 `'Bearer ' + jwt.rawToken.unredacted()`，由
+Gateway 以刚校验过的令牌求值；PEP 仍以会话签发者完整验签；仍带 `authorization` 的请求拒绝；PEP 回给
+Gateway 的动态元数据不再含 bearer。
+
+证据（分支 `fix/acceptance-batch-4`，CI 节点 NVMe 暂存、检查镜像内运行）：
+
+- Gateway：`mcp::tests::mcp_authentication_strips_session_bearer_and_route_metadata_carries_validated_token`
+  以真实 `mcpAuthentication` 与 ExtMcp mock 证明 ExtMcp 请求头与所有上游请求都不含 bearer，而两相元数据带
+  校验过的会话，无令牌请求在到达 ExtMcp 前即被拒；`platform_header` 两项回归同时通过。
+- Core：`agent_tool_runtime::route_tests::session_route_hands_ext_mcp_the_validated_session_for_connector_tools`、
+  `agent_tool_pep::tool_pep_tests::session_is_route_metadata_and_a_forwarded_bearer_is_refused`、
+  `route_metadata_session_is_verified_by_the_session_signer`。
+- 同批：`DD-153`（委托多 Scope，`agent-tools.test.tsx`）、`DD-154`（`agent_session_abandon` 数据库测试以真实
+  `catalog.agent_installation_drained` 证明放弃后排空完成、结果不明的 Invocation 仍阻止排空）。
+
+未验证：真实 Codex 回合调用连接器工具需在发布后于生产复验（V-SCN-251）；本节不代表业务验收通过。

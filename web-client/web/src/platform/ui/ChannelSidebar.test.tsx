@@ -6,8 +6,10 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { ChannelSidebar } from "./ChannelSidebar";
 import type { Event as SidebarEvent } from "./inbox-events";
+import { ErrorClass, ReasonCode } from "@client-kit/contracts";
+import { BffError } from "@client-kit/platform/transport";
 
-const snapshot = vi.hoisted(() => ({ failed: false, fetching: false, query: undefined as undefined | ((context: { signal: AbortSignal }) => Promise<Map<string, { channelId: string; events: SidebarEvent[] }>>),
+const snapshot = vi.hoisted(() => ({ failed: false, fetching: false, error: undefined as unknown, query: undefined as undefined | ((context: { signal: AbortSignal }) => Promise<Map<string, { channelId: string; events: SidebarEvent[] }>>),
   channel: vi.fn(async (workspace: string) => ({channelId:`native-${workspace}`, channelType:"stream"})), messages: vi.fn(),
   types: { one: "stream", two: "stream" } as Record<string, string>,
   // Core's batched endpoint, modeled as the per-channel binding and window it replaces.
@@ -30,7 +32,7 @@ vi.mock("@client-kit/platform/react/sidebar/custom-channel-section", () => ({
 }));
 vi.mock("@client-kit/platform/react/context", () => ({ useT: () => (key: string) => key }));
 vi.mock("@tanstack/react-query", () => ({
-  useQuery: (options: { queryFn: typeof snapshot.query }) => { snapshot.query = options.queryFn; return ({ isSuccess: !snapshot.failed, isFetching:snapshot.fetching, isError: snapshot.failed, data: new Map([
+  useQuery: (options: { queryFn: typeof snapshot.query }) => { snapshot.query = options.queryFn; return ({ isSuccess: !snapshot.failed, isFetching:snapshot.fetching, isError: snapshot.failed, error: snapshot.error, failureReason: snapshot.error, refetch: vi.fn(), data: new Map([
     ["one", { channelId: "native-one", channelType: "stream", events: [{ id: "one-event", channelId: "native-one", createdAt: 30, tags: [] }] }],
     ["two", { channelId: "native-two", channelType: "forum", events: [{ id: "two-event", channelId: "native-two", createdAt: 10, tags: [] }] }],
   ]) }); },
@@ -72,7 +74,7 @@ beforeEach(() => localStorage.setItem("buzz-feature-overrides-v1", JSON.stringif
 
 const reads: ComponentProps<typeof ChannelSidebar>["reads"] = {
   state: { version: 3, readContexts: {}, workspacePreferences: { one: { starred: true, muted: false } } },
-  failed: false, unknown: false, pending: false, refresh: vi.fn(), write: vi.fn(), update: vi.fn(), readAt: () => 20, visibleChannels: new Set(["one", "two"]),
+  failed: false, rateLimited: false, unknown: false, pending: false, refresh: vi.fn(), write: vi.fn(), update: vi.fn(), readAt: () => 20, visibleChannels: new Set(["one", "two"]),
   workspaceChannels: new Set(["one", "two"]), conversations: [], eventReadAt: () => 20,
 };
 const directory = () => ["one", "two"].map((id) => ({ id, visibility: "open", isMember: true, memberCount: 1,
@@ -103,6 +105,30 @@ it("renders a failed activity observation as an error, not a confirmed read stat
   expect(html).toContain('role="alert"');
   expect(html).not.toContain('data-read-enabled="true"');
   snapshot.failed = false;
+});
+it("shows a rate-limited read as automatically retried, never as a failed or unknown result (DD-156, V-SCN-255)", () => {
+  snapshot.failed = false;
+  const limitedInbox = markup({ rateLimited: true });
+  expect(limitedInbox).toContain("platform.rateLimitedRetrying");
+  expect(limitedInbox).not.toContain("platform.loadFailed");
+  expect(limitedInbox).not.toContain('role="alert"');
+
+  snapshot.failed = true;
+  snapshot.error = new BffError(429, "POST /api/v1/workspace-activity → 429",
+    { class: ErrorClass.Limit, reason: ReasonCode.RateLimited }, 5);
+  try {
+    const limitedActivity = markup();
+    expect(limitedActivity).toContain("platform.rateLimitedRetrying");
+    expect(limitedActivity).not.toContain("platform.loadFailed");
+
+    // A real failure still shows the failure notice, even while another read is rate limited.
+    snapshot.error = new BffError(503, "POST /api/v1/workspace-activity → 503",
+      { class: ErrorClass.Precondition, reason: ReasonCode.DependencyUnavailable });
+    const failed = markup({ rateLimited: true });
+    expect(failed).toContain("platform.loadFailed");
+    expect(failed).not.toContain("platform.rateLimitedRetrying");
+  } finally { snapshot.failed = false; snapshot.error = undefined; }
+  expect(markup({ failed: true })).toContain("platform.loadFailed");
 });
 it("keeps management-visible rows without unread markers or read commands for nonmembers", () => {
   snapshot.failed = false;

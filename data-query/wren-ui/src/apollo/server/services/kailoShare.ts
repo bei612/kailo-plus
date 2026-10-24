@@ -1,4 +1,4 @@
-import { KailoUserProfile, kailoUserLabel } from '@/utils/kailoUser';
+import { KailoUserProfile, kailoActorLabel } from '@/utils/kailoUser';
 import { create, GeneralErrorCodes } from '../utils/error';
 import type { IKailoUserRepository } from '../repositories/kailoUserRepository';
 import type { KailoMemberDirectoryStore } from './kailoMemberDirectory';
@@ -114,7 +114,10 @@ export class KailoShareService {
       )
     )
       throw invalid();
-    const actorName = kailoUserLabel(user);
+    const actorName = kailoActorLabel(
+      user,
+      listed.find((member) => member.userKey === user.key)?.name,
+    );
     if (threadId !== null) {
       const threadName = await lookups.threadName(threadId);
       if (threadName === null) throw invalid();
