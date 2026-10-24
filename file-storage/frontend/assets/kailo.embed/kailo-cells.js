@@ -250,25 +250,25 @@
     var TEXT = {
         'zh-CN': {
             home: '主页', files: '所有文件', bookmarks: '收藏', search: '搜索结果',
-            upload: '上传', mkdir: '新建文件夹', newFile: '新建{0}', shareFolder: '分享此文件夹', share: '分享',
+            upload: '上传', uploadFolder: '上传文件夹', mkdir: '新建文件夹', newFile: '新建{0}', shareFolder: '分享此文件夹', share: '分享',
             refresh: '刷新', download: '下载', locations: '位置', personal: '个人文件', common: '公共文件',
             cells: '共享空间', cancel: '取消', remove: '删除', empty: '清空',
             deleteOne: '删除「{0}」？', deleteMany: '删除 {0} 个项目？',
             toRecycle: '项目将移到回收站，可以从回收站恢复。', permanent: '项目将被永久删除，无法恢复。',
             emptyRecycle: '清空回收站？', emptyRecycleBody: '回收站中的所有项目将被永久删除，无法恢复。',
             deleteShares: '删除全部分享？', deleteSharesBody: '公开链接和共享成员将立即失去访问权限。',
-            dropTo: '松开即可上传到「{0}」',
+            dropTo: '松开即可上传到「{0}」', uploadFailed: '未能开始上传',
         },
         en: {
             home: 'Home', files: 'All files', bookmarks: 'Favorites', search: 'Search results',
-            upload: 'Upload', mkdir: 'New folder', newFile: 'New {0}', shareFolder: 'Share this folder', share: 'Share',
+            upload: 'Upload', uploadFolder: 'Upload folder', mkdir: 'New folder', newFile: 'New {0}', shareFolder: 'Share this folder', share: 'Share',
             refresh: 'Refresh', download: 'Download', locations: 'Locations', personal: 'Personal files', common: 'Common files',
             cells: 'Shared spaces', cancel: 'Cancel', remove: 'Delete', empty: 'Empty',
             deleteOne: 'Delete "{0}"?', deleteMany: 'Delete {0} items?',
             toRecycle: 'The items move to the recycle bin and can be restored from there.', permanent: 'The items are deleted permanently and cannot be restored.',
             emptyRecycle: 'Empty the recycle bin?', emptyRecycleBody: 'Every item in the recycle bin is deleted permanently and cannot be restored.',
             deleteShares: 'Delete all shares?', deleteSharesBody: 'Public links and shared members lose access immediately.',
-            dropTo: 'Drop to upload to "{0}"',
+            dropTo: 'Drop to upload to "{0}"', uploadFailed: 'Could not start the upload',
         }
     };
 
@@ -593,14 +593,21 @@
         var actions = [];
         var upload = action(controller, 'upload');
         if (upload) {
+            // Kailo opens the file picker in the user's click (07 §4.8.7 文件选择通道);
+            // the chosen files go straight to the native uploader for this folder.
             // A read-only location keeps the action visible but unavailable.
-            actions.push({id: 'upload', label: text('upload'), variant: 'primary', icon: 'upload', disabled: unavailable(upload)});
-            handlers.upload = function () { controller.fireAction('upload'); };
+            var blocked = unavailable(upload);
+            actions.push({id: 'upload', label: text('upload'), variant: 'primary', icon: 'upload', files: {multiple: true}, disabled: blocked});
+            handlers.upload = function (selection) { uploadSelection(controller, node, selection); };
         }
         var mkdir = action(controller, 'mkdir');
         if (mkdir) {
             actions.push({id: 'mkdir', label: text('mkdir'), variant: 'secondary', icon: 'folder-plus', disabled: unavailable(mkdir)});
             handlers.mkdir = function () { controller.fireAction('mkdir'); };
+        }
+        if (upload) {
+            actions.push({id: 'upload-folder', label: text('uploadFolder'), variant: 'menu', icon: 'upload', files: {directory: true}, disabled: blocked});
+            handlers['upload-folder'] = function (selection) { uploadSelection(controller, node, selection); };
         }
         var mkfile = action(controller, 'mkfile');
         var builder = mkfile && mkfile.subMenuItems && mkfile.subMenuItems.dynamicBuilder;
@@ -718,11 +725,85 @@
         schedulePage();
     }
 
-    function runAction(id) {
+    function runAction(id, selection) {
         var fn = handlers[id];
         if (typeof fn === 'function') {
-            fn();
+            fn(selection);
         }
+    }
+
+    // ---- Header upload (07 §4.8.7 文件选择通道, 20 §13.4(6)) ------------------
+    // Kailo delivers the files chosen in its picker with the action; they enter
+    // the native upload queue exactly like a drop on the files list
+    // (uploader.html DropUploader: onDrop / onFolderPicked), into the folder
+    // the header was declared for. Progress shows in the files list and, when
+    // the native flow needs a decision (existing files, metadata, manual
+    // start, errors), the native uploader opens its dialog itself.
+
+    // Relative paths of a folder pick ('photos/2026/a.jpg'), or null for plain
+    // files. A path that is not a clean relative path falls back to the name.
+    function relativePaths(files, paths) {
+        var nested = false;
+        var out = files.map(function (file, i) {
+            var name = String(file && file.name || '');
+            var raw = paths && typeof paths[i] === 'string' ? paths[i] : name;
+            var parts = raw.split('/');
+            var clean = parts.length > 1 && parts.every(function (part) {
+                return part !== '' && part !== '.' && part !== '..' && part.indexOf('\\') === -1;
+            });
+            if (!clean) {
+                return name;
+            }
+            nested = true;
+            return raw;
+        });
+        return nested ? out : null;
+    }
+
+    function loadUploader() {
+        if (window.UploaderModel && window.UploaderModel.Store) {
+            return Promise.resolve(window.UploaderModel);
+        }
+        try {
+            return Promise.resolve(window.require('pydio/http/resources-manager').loadClass('UploaderModel'));
+        } catch (e) {
+            return Promise.reject(e);
+        }
+    }
+
+    function readOnly(node) {
+        var meta = node && node.getMetadata ? node.getMetadata() : null;
+        return !!meta && (meta.get('node_readonly') === 'true' || meta.get('level_readonly') === 'true');
+    }
+
+    function uploadSelection(controller, node, selection) {
+        var files = selection && Array.isArray(selection.files) ? selection.files.slice() : [];
+        if (!files.length) {
+            // A Kailo without the file channel: the native upload dialog.
+            controller.fireAction('upload');
+            return;
+        }
+        var pydio = window.pydio;
+        var forbidden = function () {
+            var hash = pydio && pydio.MessageHash;
+            var ui = pydio && pydio.UI;
+            if (ui && ui.displayMessage) {
+                ui.displayMessage('ERROR', (hash && hash['html_uploader.upload.forbidden']) || text('uploadFailed'));
+            }
+        };
+        if (!node || readOnly(node)) {
+            forbidden();
+            return;
+        }
+        var paths = relativePaths(files, selection.paths);
+        loadUploader().then(function (model) {
+            var store = model.Store.getInstance();
+            if (paths) {
+                store.handleFolderPickerResult(files, node, paths);
+            } else {
+                store.handleDropEventResults(null, files, node);
+            }
+        }).catch(forbidden);
     }
 
     function watchPydio(pydio) {
@@ -916,7 +997,8 @@
         setEditor: setEditor,
         setShareOpener: function (fn) { shareOpener = typeof fn === 'function' ? fn : null; schedulePage(); },
         _internal: {nativeLanguage: nativeLanguage, kailoLocale: kailoLocale, safeReturnPath: safeReturnPath, params: params,
-            buildPage: buildPage, syncPage: syncPage, navigate: navigate, runAction: runAction, dropTargetName: dropTargetName}
+            buildPage: buildPage, syncPage: syncPage, navigate: navigate, runAction: runAction, dropTargetName: dropTargetName,
+            relativePaths: relativePaths}
     };
 
     // The native re-render after a theme change can outlast the runtime's
