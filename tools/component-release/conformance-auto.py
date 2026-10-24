@@ -698,6 +698,15 @@ def cmd_run(args):
         r.record(state="FAILED", reason=str(error))
         say("failed", reason=str(error), run=str(r.dir))
         sys.exit(1)
+    except (OSError, ValueError, KeyError, TypeError, StopIteration):
+        # Python tracebacks name code locations and keys, never file contents; they go to the
+        # owner-only run log only.
+        import traceback
+        with open(r.log, "a", encoding="utf-8") as stream:
+            traceback.print_exc(file=stream)
+        r.record(state="FAILED", reason="internal error; see the run log")
+        say("failed", reason="internal error; see the run log", run=str(r.dir))
+        sys.exit(1)
 
 
 def cmd_close(args):
