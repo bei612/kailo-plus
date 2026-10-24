@@ -257,7 +257,12 @@ else
   compose build worker
 fi
 compose up -d --wait --no-build worker buzz-web agentgateway otel-collector
-curl -fsS "http://127.0.0.1:${BFF_PORT:?缺少 BFF_PORT}/healthz" >/dev/null
+# start-core.sh 返回时 core-bff 进程可能仍在完成启动；有界等待其健康端点（超时即失败）。
+for attempt in $(seq 1 30); do
+  curl -fsS "http://127.0.0.1:${BFF_PORT:?缺少 BFF_PORT}/healthz" >/dev/null 2>&1 && break
+  [ "$attempt" -lt 30 ] || { curl -fsS "http://127.0.0.1:${BFF_PORT}/healthz" >/dev/null; exit 1; }
+  sleep 2
+done
 
 compose exec -T core-bff /usr/local/bin/platform-core bootstrap-tenant \
   --slug "$VERIFY_TENANT_SLUG" --name "$VERIFY_TENANT_NAME" \

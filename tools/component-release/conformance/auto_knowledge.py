@@ -14,11 +14,17 @@ deployment facts and run-local secrets, stage by stage, without an operator:
   contracts  the isolated second Catalog admin created in the isolated IdP (random password,
              0600 account file only); receiver-run.sh contracts
 
-Later stages (native, bootstrap, seed, inputs, driver) need the isolated platform's own
-ActionToken identity, a governed model route with a real provider for the PLATFORM_LLM_ROUTE receiver
-binding (no design source for an isolated provider credential yet) and the source Cells instance; a
-run records them in auto-state.json (blockedAfterContracts) and stops there with an explicit FAILED
-state instead of an operator step.
+  identity   the isolated Core's own ActionToken signing identity (start-core.sh
+             --prepare-action-token in the staged runtime: Core generates the key into the
+             isolated OpenBao, the public JWKS is rendered by the original Agent path), then
+             start-core.sh --no-build so the isolated Core signs receiver actions with it
+
+Later stages (native, bootstrap, seed, inputs, driver) still need the isolated Gateway model route
+over the declared keyless upstreams (DD-136(5), adapters.json knowledge.conformanceModels) for the
+PLATFORM_LLM_ROUTE receiver binding, the source Cells (cells@2.0.0) and WeKnora candidate deliveries
+rendered from bootstrap identities fixed in advance, and the bootstrap/seed/observe/driver inputs; a
+run records what remains in auto-state.json (blockedAfterIdentity) and stops there with an explicit
+FAILED state instead of an operator step.
 
 Nothing here touches production state; production is only read (its .env keys, its running
 Core/Worker image digests and the release-proof store).
@@ -195,6 +201,62 @@ def ensure_approver(h, r):
     h.say("isolated-account", user=name, created=True)
 
 
+def _set_env(h, path, values):
+    """Replace KEY= lines of the staged .env (non-secret values only)."""
+    lines, seen = [], set()
+    for line in _env_lines(path):
+        match = re.match(r"^([A-Z][A-Z0-9_]*)=", line)
+        if match and match.group(1) in values:
+            lines.append(f"{match.group(1)}={values[match.group(1)]}")
+            seen.add(match.group(1))
+        else:
+            lines.append(line)
+    lines += [f"{k}={v}" for k, v in values.items() if k not in seen]
+    h.write_private(path, "\n".join(lines) + "\n")
+
+
+def ensure_action_token(h, r):
+    """The isolated Core's own ActionToken identity through the original deployment-only path."""
+    local = r.dir / "receiver" / "apps/deploy/local"
+    marker = r.dir / "receiver" / "action-token.done"
+    if marker.is_file():
+        return
+    namespace, mount = isolated_value(r, "OPENBAO_PLATFORM_NAMESPACE"), isolated_value(r, "OPENBAO_KV_MOUNT")
+    audience = isolated_value(r, "OIDC_SERVICE_CLIENT_ID")
+    h.require(namespace and mount and audience, "isolated OpenBao namespace/KV mount or Core service client unknown")
+    signing_dir = local / "data" / "action-token"
+    public_dir = local / "data" / "action-token-public"
+    signing_dir.mkdir(mode=0o755, exist_ok=True)
+    os.chmod(signing_dir, 0o755)
+    public_dir.mkdir(mode=0o700, exist_ok=True)
+    os.chmod(public_dir, 0o700)
+    signing = signing_dir / "signing.json"
+    h.write_json(signing, {"issuer": "http://core-bff:8082/action-token", "tokenSeconds": 300,
+                           "secretLocator": f"{namespace}/{mount}/action-token/signing", "secretVersion": 1,
+                           "secretAudience": audience, "privateKeyField": "private_jwk",
+                           "jwksFile": str(public_dir / "jwks.json")}, 0o644)
+    _set_env(h, local / ".env", {"ACTION_TOKEN_SIGNING_FILE": str(signing),
+                                 "ACTION_TOKEN_PUBLIC_JWKS_LOCATOR": f"{namespace}/{mount}/action-token/public-jwks",
+                                 "ACTION_TOKEN_JWKS_READER_ROLE": "action-token-jwks-reader"})
+    config = h.read_json("/volumes/kailo/ci/config.json")["environment"]
+    env = {**os.environ, "KAILO_RUNTIME_DIR": str(local), "CHECK_CPUS": "2", "CHECK_MEMORY": "4g",
+           "BUILDX_BUILDER": config.get("BUILDX_BUILDER", ""),
+           # container-safety requires an execution TMPDIR on Data (same short path as receiver.env).
+           "TMPDIR": str(h.private_dir(Path("/volumes/data/kailo/tmp") / f"kr-{r.dir.name.rsplit('-', 1)[-1]}"))}
+    h.say("isolated-identity", action="prepare-action-token")
+    # The deployment-only path is idempotent (an existing key is read back, never regenerated); on the
+    # fresh isolated platform its first Agent readback has failed once without a message, so it is
+    # retried once before the run stops.
+    if h.run(["bash", "./start-core.sh", "--prepare-action-token"], cwd=str(local), env=env, log=r.log,
+             check=False).returncode != 0:
+        h.say("isolated-identity", action="prepare-action-token", retry=1)
+        h.run(["bash", "./start-core.sh", "--prepare-action-token"], cwd=str(local), env=env, log=r.log)
+    h.say("isolated-identity", action="restart-core")
+    h.run(["bash", "./start-core.sh", "--no-build"], cwd=str(local), env=env, log=r.log)
+    marker.write_text("")
+    h.say("isolated-identity", actionToken="READY")
+
+
 def drive(r, args, runtime_env, declaration, h):
     s = r.state
     if "project" not in s:
@@ -214,18 +276,19 @@ def drive(r, args, runtime_env, declaration, h):
     if not (receiver_dir / "contracts.done").is_file():
         ensure_approver(h, r)
         receiver(h, r, "contracts")
-    r.record(blockedAfterContracts=(
-        "native/bootstrap/seed/inputs/driver: (1) the receiver binding must be PLATFORM_LLM_ROUTE "
-        "(receiver_environment_bootstrap prepare) and WeKnora parse completion needs a real embedding/LLM "
-        "route, but the isolated platform has no model provider credential and the design does not say where "
-        "an isolated deployment's provider credential comes from (07 §8A/§8.3 only allow explicitly delivered, "
-        "actually discovered model services); (2) the isolated Core needs its own ActionToken identity "
-        "(start-core.sh --prepare-action-token in the isolated runtime) before it can dispatch receiver actions; "
-        "(3) the source Cells (cells@2.0.0) and the WeKnora candidate deliveries must be rendered from the "
-        "bootstrap identities fixed in advance; (4) production registration additionally needs cells@2.0.0 "
+    ensure_action_token(h, r)
+    r.record(blockedAfterIdentity=(
+        "native/bootstrap/seed/inputs/driver not automated yet: (1) isolated AgentGateway model sources and a "
+        "governed model route over the declared keyless upstreams (adapters.json knowledge.conformanceModels, "
+        "DD-136(5)) for the PLATFORM_LLM_ROUTE receiver binding; (2) source Cells cells@2.0.0 instance and its "
+        "native-action/adapter delivery bound to the isolated Core (isolated IdP client, isolated platform OpenBao "
+        "SecretRefs) under bootstrap identities fixed in advance; (3) WeKnora candidate native env with "
+        "--platform-adapter --file-storage-sync and the forward adapter config for the production Worker; (4) "
+        "bootstrap input (receiver-environment-bootstrap.rs prepare), seed-knowledge input, observe receiver block, "
+        "driver input and the isolated session refresher; (5) production registration also needs cells@2.0.0 "
         "APPROVED in the production Catalog (receiverEnvironment.sourceReleaseId)"))
-    raise h.Refused("knowledge: isolated platform and contracts ready; native and later receiver stages are blocked "
-                    f"(see auto-state.json blockedAfterContracts; manifest {manifest['componentTypeKey']}@{manifest['version']})")
+    raise h.Refused("knowledge: isolated platform, contracts and ActionToken identity ready; native and later receiver "
+                    f"stages are not automated yet (auto-state.json blockedAfterIdentity; {manifest['componentTypeKey']}@{manifest['version']})")
 
 
 def teardown(r, h):
