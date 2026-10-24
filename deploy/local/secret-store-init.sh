@@ -156,7 +156,15 @@ ns secrets list -format=json 2>/dev/null | grep -q "\"${OPENBAO_KV_MOUNT}/\"" \
 # 因此显式设定保留数，并把它登记为部署前置不变式（07 §1）。
 # cas_required 是运行期 mount 开关；写入必须携带当前版本 CAS，不能静默覆盖 head。
 : "${OPENBAO_KV_MAX_VERSIONS:?缺少 .env 中的 OPENBAO_KV_MAX_VERSIONS}"
-ns write "${OPENBAO_KV_MOUNT}/config" max_versions="$OPENBAO_KV_MAX_VERSIONS" cas_required=true >/dev/null
+# A freshly enabled KV v2 mount answers 400 ("Upgrading from non-versioned to versioned
+# data ... will resume service shortly") until its upgrade finishes; wait for it, bounded.
+for attempt in $(seq 1 30); do
+  if ns write "${OPENBAO_KV_MOUNT}/config" max_versions="$OPENBAO_KV_MAX_VERSIONS" cas_required=true >/dev/null 2>&1; then
+    break
+  fi
+  [ "$attempt" -lt 30 ] || { printf 'OpenBao KV v2 mount 未在超时内可写\n' >&2; exit 1; }
+  sleep 2
+done
 ns read -field=cas_required "${OPENBAO_KV_MOUNT}/config" | grep -qx true \
   || { printf 'OpenBao KV v2 cas_required 未生效\n' >&2; exit 1; }
 ns auth list -format=json 2>/dev/null | grep -q '"approle/"' \
