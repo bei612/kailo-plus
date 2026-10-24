@@ -243,6 +243,11 @@ PY
     || "${docker[@]}" network create --label kailo.receiver="$RECEIVER_PROJECT" "$edge" >/dev/null
   "${docker[@]}" network inspect "$RECEIVER_NETWORK" >/dev/null 2>&1 \
     || "${docker[@]}" network create --internal --label kailo.receiver="$RECEIVER_PROJECT" "$RECEIVER_NETWORK" >/dev/null
+  # The core-observed/ OpenBao audit device writes into data/secret-store-audit (owner 100,
+  # reader group, setgid); without it no audit device comes up and secret-store-init.sh
+  # refuses (production prepares it once with the same command).
+  install -d -m 0700 "$platform/data"
+  (cd "$platform" && ./secret-store-audit-dir.sh --prepare)
   (cd "$platform" && ./init-local.sh --isolated-receiver="$RECEIVER_PROJECT")
   # The production Worker reaches the isolated Core service API, its IdP and
   # (later) the driver only through the dedicated network.
