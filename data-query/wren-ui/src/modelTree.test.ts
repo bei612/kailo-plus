@@ -1,6 +1,7 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import ModelTree from './components/sidebar/modeling/ModelTree';
+import { kailoText } from './utils/kailoI18n';
 
 let mockResult: any;
 let mockOptions: any;
@@ -78,7 +79,7 @@ describe('original modeling sidebar schema-change consumer', () => {
       createElement(ModelTree, { models: [], onOpenModelDrawer: create }),
     );
     expect(html).toContain('permission revoked');
-    expect(html).toContain('Models');
+    expect(html).toContain(kailoText(undefined, 'modeling.models'));
     expect(html).not.toContain('private-model');
     expect(mockModal.defaultValue).toBeUndefined();
     expect(mockModal.visible).toBe(false);
@@ -89,7 +90,7 @@ describe('original modeling sidebar schema-change consumer', () => {
     expect(create).toHaveBeenCalledTimes(1);
     mockActions
       .find((action) => action.key === 'trigger-schema-detection')
-      .icon()
+      .render({ key: 'trigger-schema-detection', disabled: false })
       .props.onClick();
     expect(mockDetect).toHaveBeenCalledTimes(1);
   });
