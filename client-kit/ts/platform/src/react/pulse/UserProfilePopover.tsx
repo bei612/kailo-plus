@@ -19,6 +19,7 @@ import type { WebProfileView } from "@client-kit/contracts";
 import { usePulseHost } from "./host";
 import { cn } from "../profile/buzz/shared/lib/cn";
 import { truncateNpub } from "./host";
+import { unknownMemberLabel } from "../messages/system/identity";
 import {
   DEFAULT_POPOVER_HOVER_OPEN_DELAY_MS,
   Popover,
@@ -353,7 +354,7 @@ export function UserProfilePopoverBody({
   const messageAction = directMessage && profile && role !== "bot" && directMessage.canMessage(pubkey)
     ? <ProfileMessageAction onClose={onClose} pubkey={pubkey} /> : null;
   const identityKeys = presencePubkeys && presencePubkeys.length > 0 ? presencePubkeys : [pubkey];
-  const displayName = profile?.displayName ?? truncateNpub(pubkey);
+  const displayName = profile?.displayName ?? unknownMemberLabel();
   const profileDescription = profile?.about?.trim() ?? "";
   const profileSubheader = profileDescription || profile?.nip05Handle?.trim();
 

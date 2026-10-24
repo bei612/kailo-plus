@@ -127,29 +127,64 @@ div.fixed.inset-0[data-state]:not([role]):not([data-radix-popper-content-wrapper
 }
 
 /* ── Native form controls used by original pages ──────────────────────── */
-[data-buzz-content-surface] select:not([multiple]),
-[data-testid="settings-content-surface"] select:not([multiple]) {
-  min-height: 32px;
+/* DD-141 §9 select: 34 tall, md radius, line-strong border on surface, Kailo
+   chevron instead of the platform arrow, brand focus halo. Applies to every
+   single-value native select (content plane, settings, dialogs, popovers);
+   selects that draw their own chevron (`appearance-none` + icon) keep it. */
+select:not([multiple]):not([size]) {
+  min-height: 34px;
   border: 1px solid hsl(var(--input));
   border-radius: 6px;
   background-color: hsl(var(--background));
   padding-inline: 10px 8px;
   font-size: calc(var(--buzz-type-rem) * 0.8125);
+  line-height: 1.25;
   color: hsl(var(--foreground));
   box-shadow: var(--k-shadow-xs);
+  cursor: pointer;
   transition: border-color var(--k-duration-fast) var(--k-ease-standard), box-shadow var(--k-duration-fast) var(--k-ease-standard);
 }
 
-[data-buzz-content-surface] select:not([multiple]):hover,
-[data-testid="settings-content-surface"] select:not([multiple]):hover {
+select:not([multiple]):not([size]):not([class*="appearance-none"]) {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-inline-end: 30px;
+  /* Lucide chevron-down, 16px, 1.75 stroke, text-muted (neutral 600). */
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%236a6b75' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  background-size: 16px 16px;
+}
+
+/* Dark: chevron in text-muted (neutral 400) so it reads on neutral 950. */
+.dark select:not([multiple]):not([size]):not([class*="appearance-none"]) {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23a3a4ad' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+}
+
+select:not([multiple]):not([size]) option,
+select:not([multiple]):not([size]) optgroup {
+  background-color: hsl(var(--popover));
+  color: hsl(var(--popover-foreground));
+}
+
+select:not([multiple]):not([size]):hover:not(:disabled) {
   border-color: hsl(var(--muted-foreground) / 0.4);
 }
 
-[data-buzz-content-surface] select:not([multiple]):focus-visible,
-[data-testid="settings-content-surface"] select:not([multiple]):focus-visible {
+select:not([multiple]):not([size]):focus-visible {
   outline: none;
   border-color: hsl(var(--ring));
   box-shadow: 0 0 0 3px hsl(var(--ring) / 0.15);
+}
+
+select:not([multiple]):not([size]):disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* Table cells keep the compact 32px row rhythm (§9 lists and tables). */
+:is(td, th) select:not([multiple]):not([size]) {
+  min-height: 30px;
 }
 
 :is([data-buzz-content-surface], [data-testid="settings-content-surface"], [role="dialog"]) :is(input[type="text"], input[type="search"], input[type="email"], input[type="url"], input[type="number"], input:not([type]), textarea):focus-visible {

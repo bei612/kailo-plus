@@ -62,11 +62,11 @@ function ProfileActionTile({active,disabled,icon:Icon,isLoading,label,onClick,te
   return <button aria-label={label} aria-busy={isLoading || undefined}
     className={cn(
       "flex min-h-20 w-full flex-col items-center justify-center gap-1.5 rounded-xl bg-muted px-2 py-3 text-center transition-colors hover:bg-muted/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50",
-      active && "bg-foreground text-background hover:bg-foreground/90",
+      active && "bg-brand-soft text-brand-soft-foreground hover:bg-brand-soft",
     )}
     data-testid={testId} title={title} disabled={disabled} onClick={onClick} type="button">
     {isLoading ? <Spinner aria-hidden="true" className="h-5 w-5 border-2"/> :
-      <Icon className={cn("h-5 w-5 text-foreground",active && "text-background")}/>}
+      <Icon className={cn("h-5 w-5 text-muted-foreground",active && "text-brand-soft-foreground")}/>}
     <span className="min-w-0 text-xs font-medium leading-tight">{label}</span>
   </button>;
 }

@@ -421,6 +421,7 @@ export const platformMessages = {
   "platform.backup.errorAvailable": { en: "{message} It will be available to download for 5 minutes.", "zh-CN": "{message} 备份仍可在 5 分钟内下载。" },
   "messages.system.someone": {en:"Someone","zh-CN":"某位成员"},
   "messages.system.you": {en:"You","zh-CN":"你"},
+  "messages.system.unknownMember": {en:"Unknown member","zh-CN":"未知成员"},
   "messages.system.inlineYou": {en:"you","zh-CN":"你"},
   "messages.system.joined": {en:"joined","zh-CN":"已加入"},
   "messages.system.arrived": {en:"arrived","zh-CN":"已到达"},

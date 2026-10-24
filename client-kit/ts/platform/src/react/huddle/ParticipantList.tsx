@@ -154,7 +154,7 @@ function ParticipantAvatar({ parent, participant, size }: { parent: HuddleParent
   const avatarClass = "h-full w-full border-2 border-black text-2xs";
   return (
     <span className={cn("buzz-huddle-speaking-avatar relative z-0 inline-flex shrink-0",
-      participant.isAgent ? "buzz-huddle-speaking-avatar-agent" : "rounded-full", sizeClass)}
+      participant.isAgent ? "buzz-huddle-speaking-avatar-agent" : "rounded-[28%]", sizeClass)}
       data-testid="huddle-participant-avatar" style={speakerStyle}>
       {participant.isAgent ? (
         <svg aria-hidden="true" className="buzz-huddle-speaking-squircle pointer-events-none absolute inset-0 h-full w-full overflow-visible text-[hsl(142_71%_45%)]"

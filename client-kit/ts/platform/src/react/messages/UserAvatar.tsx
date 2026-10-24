@@ -15,14 +15,14 @@ const sizeClasses: Record<UserAvatarSize, string> = {
   md: "h-9 w-9 text-xs",
 };
 
+// DD-141 §9: initials avatars use Kailo's soft identity tints (the same set as
+// the Agent identity tiles), never saturated Material swatches.
 const fallbackColorClasses = [
-  "bg-blue-500 text-white",
-  "bg-emerald-500 text-white",
-  "bg-amber-400 text-amber-950",
-  "bg-rose-500 text-white",
-  "bg-cyan-400 text-cyan-950",
-  "bg-violet-500 text-white",
-  "bg-orange-500 text-white",
+  "bg-brand-soft text-brand-soft-foreground",
+  "bg-info-soft text-info-text",
+  "bg-success-soft text-success-text",
+  "bg-warning-soft text-warning-text",
+  "bg-accent text-accent-foreground",
 ] as const;
 
 function fallbackColorClass(displayName: string) {
@@ -84,7 +84,7 @@ export function UserAvatar({
       ? resolveMediaUrl(shapedAvatarUrl)
       : null;
   const radiusClass =
-    resolvedShape === "squircle" ? "rounded-squircle" : "rounded-full";
+    resolvedShape === "squircle" ? "rounded-squircle" : "rounded-[28%]";
 
   return (
     <Avatar

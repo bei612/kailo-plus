@@ -22,7 +22,8 @@
 }
 
 .dark .message-markdown [data-link-preview] {
-  --buzz-link-preview-icon-bg: #24292f;
+  /* DD-141: Kailo neutral tile instead of the GitHub dark grey. */
+  --buzz-link-preview-icon-bg: hsl(var(--accent));
 }
 
 .message-markdown [data-link-preview="github-issue"],

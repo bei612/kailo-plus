@@ -83,7 +83,7 @@ import { useChannelWindow } from "./useChannelWindow";
 // DD-125(6): original ChannelComposerActivityAccessory (working Agents + typing) over the shared signal.
 import { ChannelComposerActivityAccessory, useChannelAgentActivity, type BotActivityAgent } from "@client-kit/platform/react/agent-activity";
 import { loadWorkspaceAgents } from "@client-kit/platform/react/agent-installation-view";
-import { truncateNpub } from "@client-kit/platform/react/conversations/pubkey";
+import { unknownMemberLabel } from "@client-kit/platform/react/messages/system/identity";
 import { ComposerDockBackdrop } from "@client-kit/platform/react/thread/ComposerDockBackdrop";
 import { useMessageReactions } from "./useMessageReactions";
 import { BffAudioAttachment } from "@/features/chat/ui/BffAudioAttachment";
@@ -434,9 +434,9 @@ export function ChannelPane({
   const { openAgentActivity } = agentActivityPanel.opener;
   const workingAgents = useMemo<BotActivityAgent[]>(() => (readableAgents ?? []).flatMap((row) => row.agentPubkey ? [{
     pubkey: row.agentPubkey,
-    name: row.agentDisplayName?.trim() || (typingAgents.data?.agents.find((agent) => agent.installation.resourceId === row.resourceId)?.displayName ?? truncateNpub(row.agentPubkey)),
+    name: row.agentDisplayName?.trim() || (typingAgents.data?.agents.find((agent) => agent.installation.resourceId === row.resourceId)?.displayName ?? unknownMemberLabel(uiT)),
     ...(row.canAudit === true ? { auditInstallationId: row.resourceId } : {}),
-  }] : []), [readableAgents, typingAgents.data]);
+  }] : []), [readableAgents, typingAgents.data, uiT]);
   const humanTypingEntries = window.typing.filter(entry => !mine.has(entry.pubkey)
     && entry.pubkey !== ownProfile.data?.pubkey && !agentTypingPubkeys.has(entry.pubkey)
     && !agentActivity.agentPubkeys.has(entry.pubkey.toLowerCase()));
@@ -1729,7 +1729,7 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
       await resolveNonMemberInviteAdmission(bff, nonMemberMentionWorkspaceId, principals.map(principal => principal.principalId));
     if (!owner.active) return;
     const names = pubkeys.map(pubkey => getMentionDisplayName(pubkey)
-      ?? directory.find(person => person.pubkeys.some(key => key.toLowerCase() === pubkey))?.displayName ?? truncateNpub(pubkey));
+      ?? directory.find(person => person.pubkeys.some(key => key.toLowerCase() === pubkey))?.displayName ?? unknownMemberLabel());
     setNonMemberError(null);
     setNonMemberPrompt({owner, workspaceId: nonMemberMentionWorkspaceId, pubkeys, principals, names, canInvite});
   }, [nonMemberMentionWorkspaceId, queryClient, draftIdentity, owner, getMentionDisplayName]);

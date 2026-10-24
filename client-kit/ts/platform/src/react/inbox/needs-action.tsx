@@ -150,7 +150,7 @@ export function NeedsActionInboxRow({ item, selected, done, onSelect, onToggleDo
     : t("inbox.approvalResult", { status: enumLabel(locale, approvalStatusMessages, item.approval.status) });
   return <InboxRow id={item.key} selected={selected} read={done} actionRequired
     sender={<span className="block max-w-full truncate rounded text-sm font-semibold leading-4 text-foreground">{actionLabel}</span>}
-    avatar={<span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground"><ShieldCheck className="h-4 w-4" /></span>}
+    avatar={<span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[28%] bg-muted text-muted-foreground"><ShieldCheck className="h-4 w-4" /></span>}
     timestamp={item.at === null ? "" : formatItemTimestamp(item.at)}
     label={t("inbox.needsActionLabel")} channel={null}
     openLabel={t("inbox.openItem", { sender: actionLabel })}

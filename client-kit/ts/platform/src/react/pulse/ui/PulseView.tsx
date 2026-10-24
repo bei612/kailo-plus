@@ -33,7 +33,6 @@ import { Input } from "../../composer/shared/ui/input";
 import { Skeleton } from "../host";
 import { UserAvatar } from "../../messages/UserAvatar";
 import { VirtualizedList } from "../../forum/VirtualizedList";
-import { truncateNpub } from "../host";
 import { useCollaborationPreferences } from "../../collaboration-preferences";
 import { followedPubkeys } from "../../../collaboration-preferences";
 
@@ -207,7 +206,7 @@ export function PulseView({ currentPubkey }: PulseViewProps) {
     : null;
   const currentDisplayName =
     currentProfile?.displayName ??
-    (currentPubkey ? truncateNpub(currentPubkey) : t("pulse.you"));
+    t("pulse.you");
 
   const pulseMentionMembers = React.useMemo<ChannelMember[]>(() => {
     const members: ChannelMember[] = [];

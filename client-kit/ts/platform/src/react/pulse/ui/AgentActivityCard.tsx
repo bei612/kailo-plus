@@ -9,7 +9,7 @@ import { UserProfilePopover, usePulseHost } from "../host";
 import type { UserProfileSummary } from "../host";
 import { Markdown } from "../host";
 import { UserAvatar } from "../../messages/UserAvatar";
-import { truncateNpub } from "../host";
+import { unknownMemberLabel } from "../../messages/system/identity";
 
 type AgentActivityCardProps = {
   group: AgentNoteGroup;
@@ -42,7 +42,7 @@ export function AgentActivityCard({
   const t=useUiT();const locale=useUiLocale();
   const host=usePulseHost();
   const [expanded, setExpanded] = React.useState(false);
-  const displayName = profile?.displayName ?? truncateNpub(group.pubkey);
+  const displayName = profile?.displayName ?? unknownMemberLabel(t);
   const avatarUrl = profile?.avatarUrl ?? null;
   const isSingleNote = group.notes.length === 1;
 

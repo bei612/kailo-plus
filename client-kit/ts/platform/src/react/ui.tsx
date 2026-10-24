@@ -3,6 +3,7 @@
 // 登记为 Tailwind 的扫描源（@source），类名就按宿主自己的主题生成。
 
 import type { ButtonHTMLAttributes, ReactNode } from "react";
+import { AlertCircle, type LucideIcon } from "lucide-react";
 import { ErrorClass, ReasonCode } from "@client-kit/contracts";
 import { BffError } from "../transport";
 import { platformMessages, type PlatformMessageKey } from "../i18n";
@@ -40,14 +41,21 @@ export function ReadFailure({ error, onRetry }: { error: unknown; onRetry: () =>
     : refusal.status === 403 ? t("tasks.status.denied")
     : refusal.status === 404 ? t("native.unavailable.title")
     : t("workspace.lifecycle.rejected", { reason: String(refusal.status) });
+  // DD-141 §9 / 20 §13.4(7): inline error — AlertCircle in danger, the reason, a secondary retry.
   return <Notice role={refusal ? "alert" : "status"}>
-    {text}<Button onClick={onRetry}>{t("platform.retry")}</Button>
+    <span className="inline-flex items-center gap-2 font-medium text-foreground">
+      <AlertCircle aria-hidden="true" className="h-4 w-4 shrink-0 text-danger-text" strokeWidth={1.75} />{text}
+    </span>
+    <Button onClick={onRetry}>{t("platform.retry")}</Button>
   </Notice>;
 }
 
-export function Notice({ children, role }: { children: ReactNode; role?: "alert" | "status" }) {
+/** Centered page notice. With `icon` it is the §9 empty state: a 48px single-colour
+ * Lucide line glyph (1.5 stroke, brand) above the message. */
+export function Notice({ children, role, icon: Icon }: { children: ReactNode; role?: "alert" | "status"; icon?: LucideIcon }) {
   return (
     <div className="flex min-h-40 flex-col items-center justify-center gap-3 p-6 text-center text-sm text-muted-foreground" role={role}>
+      {Icon ? <Icon aria-hidden="true" className="mb-1 h-12 w-12 text-brand-text opacity-80" strokeWidth={1.5} /> : null}
       {children}
     </div>
   );

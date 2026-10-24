@@ -28,9 +28,19 @@ import { useBffClient, useFailureText, useReasonText, useT } from "./context";
 import { Badge, Button, Notice, ReadFailure } from "./ui";
 import { useLoad } from "./use-load";
 import { AgentIdentityCard } from "./agent-library/AgentIdentityCard";
+import { Sparkles } from "lucide-react";
 import { CreateIdentityCard } from "./agent-library/CreateIdentityCard";
 import { AgentManagementDialog } from "./agent-library/AgentManagementDialog";
 import { IdentityCardSkeleton } from "./agent-library/identity-card-skeleton";
+
+/** DD-141 §7: a Skill's identity tile is a single-colour Lucide glyph on the
+ * same brand-soft squircle the Agent identity cards use, never a text sigil. */
+function SkillGlyph() {
+  return <span aria-hidden="true" data-testid="skill-identity-glyph"
+    className="flex h-full w-full items-center justify-center rounded-squircle border-[3px] border-background bg-brand-soft text-brand-soft-foreground shadow-sm ring-1 ring-border">
+    <Sparkles className="h-9 w-9" strokeWidth={1.75} />
+  </span>;
+}
 
 // Original UnifiedAgentsSection grid at Buzz 779af8886caae1317b4de962082429867ab61503.
 const GRID_CLASS = "w-full grid-cols-1 [@container(min-width:21rem)]:grid-cols-2 [@container(min-width:32rem)]:grid-cols-3 [@container(min-width:43rem)]:grid-cols-4 [@container(min-width:54rem)]:grid-cols-5 grid gap-3";
@@ -323,7 +333,7 @@ export function SkillsSection({ locked = false, refreshRevision = 0 }: { locked?
           {page.definitions.map((row) => <AgentIdentityCard key={`${row.resourceId}:${row.resourceVersion}`}
             dataTestId={`skill-definition-${row.resourceId}`} label={row.displayName} subtitle={`$${row.stableSlug}`}
             ariaLabel={t("skills.open")} disabled={blocked} onClick={() => setSelected(row.resourceId)}
-            avatar={<span aria-hidden className="text-2xl font-semibold text-muted-foreground">$</span>}
+            avatar={<SkillGlyph />}
             statusBadge={row.status === SkillDefinitionStatus.Disabled ? <Badge tone="negative">{t("skills.status.disabled")}</Badge>
               : row.catalogShared ? <Badge tone="positive">{t("skills.shared")}</Badge> : null} />)}
         </div>
