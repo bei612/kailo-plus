@@ -438,12 +438,24 @@ fi
 # the declarative configuration of the governed actions is applied and read
 # back (reconcile.py). Both are idempotent; a refusal fails the deployment.
 native_configuration() {
-  local cells
+  local cells code=0
   mapfile -t cells < <("${compose[@]}" ps --quiet cells)
   [[ ${#cells[@]} == 1 && -n ${cells[0]} ]] || { printf 'no running Cells service in this project\n' >&2; exit 2; }
   "${CONTAINER_DOCKER[@]}" exec "${cells[0]}" cells admin datasource keys --verify \
     --access-key-file /run/secrets/cells_datasource_key --secret-key-file /run/secrets/cells_datasource_secret
-  python3 -I "$here/reconcile.py" --container "${cells[0]}" -- "${CONTAINER_DOCKER[@]}"
+  python3 -I "$here/reconcile.py" --container "${cells[0]}" -- "${CONTAINER_DOCKER[@]}" || code=$?
+  if [[ $code == 76 ]]; then
+    # First install: the binding datasource the entrypoint created is served by the
+    # admin tree only from the next start. Restart once, then re-apply (idempotent).
+    printf 'binding datasource is served from the next start; restarting Cells once\n'
+    "${compose[@]}" restart cells >/dev/null
+    "${compose[@]}" up --detach --no-build --no-recreate --pull never --wait --wait-timeout "${CELLS_START_TIMEOUT_SECONDS:?required}" cells
+    mapfile -t cells < <("${compose[@]}" ps --quiet cells)
+    [[ ${#cells[@]} == 1 && -n ${cells[0]} ]] || { printf 'no running Cells service in this project\n' >&2; exit 2; }
+    code=0
+    python3 -I "$here/reconcile.py" --container "${cells[0]}" -- "${CONTAINER_DOCKER[@]}" || code=$?
+  fi
+  return "$code"
 }
 if "$reconcile_only"; then
   native_configuration

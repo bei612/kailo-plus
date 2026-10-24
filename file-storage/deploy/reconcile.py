@@ -152,6 +152,14 @@ DISABLED_ACTIONS = (
 )
 
 
+# Exit code of a refusal that one native service restart resolves (start.sh restarts once).
+RESTART_REQUIRED = 76
+
+
+class RestartRequired(Exception):
+    pass
+
+
 class Refused(Exception):
     pass
 
@@ -311,7 +319,10 @@ class Cli:
             time.sleep(10)
 
     def mkdir(self, path, login):
-        code, _ = self.run(["admin", "file", "mkdir", "--path", path, "--user", login], 180)
+        """True when created or present; False to retry; "unserved" when the datasource is unknown."""
+        code, out = self.run(["admin", "file", "mkdir", "--path", path, "--user", login], 180)
+        if "Could not find DataSource" in out:
+            return "unserved"
         return code == 0
 
 
@@ -493,7 +504,19 @@ def ensure_root(native, cli, s, deadline, changes):
     existed = admin_stat(native, path) is not None
     # The native mkdir only creates a missing folder and refuses a file; a
     # just-created datasource needs its sync/index services first.
-    while not cli.mkdir(path, s["admin"]):
+    unserved_since = None
+    while True:
+        made = cli.mkdir(path, s["admin"])
+        if made is True:
+            break
+        # A datasource created by the entrypoint of the first post-install start is not
+        # served by the admin tree until the next start; one restart resolves it.
+        if made == "unserved":
+            unserved_since = unserved_since or time.monotonic()
+            if time.monotonic() - unserved_since > 90:
+                raise RestartRequired("binding datasource is not served before a restart")
+        else:
+            unserved_since = None
         require(time.monotonic() < deadline, "binding root folder could not be ensured before the deadline")
         time.sleep(5)
     if not existed:
@@ -627,6 +650,9 @@ def main(argv):
         cli = Cli(argv[3:], argv[1])
         native = Native(s["rest"], cli.token(s["admin"], s["timeout"] + 120, deadline))
         facts, changes = reconcile(s, native, cli, deadline)
+    except RestartRequired as error:
+        print(f"Cells declarative configuration needs one native restart: {error}", file=sys.stderr)
+        return RESTART_REQUIRED
     except Refused as error:
         print(f"Cells declarative configuration refused: {error}", file=sys.stderr)
         return 2
