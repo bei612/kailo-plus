@@ -318,7 +318,9 @@ try:
         require(path.is_absolute() and path == path.resolve() and directory in path.parents)
         entry = path.stat()
         require(entry.st_uid == uid and entry.st_gid == gid)
-        require(stat.S_IMODE(entry.st_mode) in ((0o600,) if socket else (0o400, 0o600)))
+        # A Unix socket accepts a connection only with write permission; the OpenBao
+        # Agent leaves its socket 0755 inside the owner-only (0700) delivery directory.
+        require(not stat.S_IMODE(entry.st_mode) & 0o022 if socket else stat.S_IMODE(entry.st_mode) in (0o400, 0o600))
         require(stat.S_ISSOCK(entry.st_mode) if socket else stat.S_ISREG(entry.st_mode))
         return path
     conf = json.loads(delivered(env['CELLS_ADAPTER_CONFIG_FILE']).read_text())
