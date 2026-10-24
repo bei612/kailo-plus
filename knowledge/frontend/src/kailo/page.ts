@@ -9,7 +9,7 @@
 
 import { getCurrentInstance, onBeforeUnmount, shallowRef, watch, computed, type ComputedRef } from 'vue'
 import type { Router, RouteLocationNormalizedLoaded } from 'vue-router'
-import type { KailoActionIcon, KailoEmbedRuntime, KailoPage, KailoPageAction, KailoPageItem } from './bridge'
+import type { KailoActionFiles, KailoActionIcon, KailoEmbedRuntime, KailoFileSelection, KailoPage, KailoPageAction, KailoPageItem } from './bridge'
 
 export interface PageCrumb {
   id: string
@@ -24,7 +24,13 @@ export interface PageAction {
   icon?: KailoActionIcon
   disabled?: boolean
   busy?: boolean
-  run: () => void
+  /**
+   * DD-157 file selection channel: Kailo opens the system file picker inside
+   * the user's click and `run` receives the chosen files (a frame cannot open
+   * its own picker from a header click — it has no user activation).
+   */
+  files?: KailoActionFiles
+  run: (selection?: KailoFileSelection) => void
 }
 
 export interface PageSpec {
@@ -132,6 +138,23 @@ export function clipText(value: unknown, max: number): string {
   return text.length <= max ? text : `${text.slice(0, max - 1).trimEnd()}…`
 }
 
+/** `<input accept>` values Kailo's picker takes (07 §4.8.7): 1–200 of [A-Za-z0-9.+-/*, ]. */
+const ACCEPT = /^[A-Za-z0-9.+\-/*, ]{1,200}$/
+
+/**
+ * The picker options in the runtime's shape. An accept list the picker cannot
+ * take (too long, unusual characters) is left out — the picker then offers
+ * every file and the view's own type filter still applies.
+ */
+export function pickerFiles(files: KailoActionFiles): KailoActionFiles {
+  const out: KailoActionFiles = {}
+  const accept = typeof files.accept === 'string' ? files.accept.replace(/\s+/g, '') : ''
+  if (accept && ACCEPT.test(accept)) out.accept = accept
+  if (files.multiple) out.multiple = true
+  if (files.directory) out.directory = true
+  return out
+}
+
 function validId(id: unknown): id is string {
   return typeof id === 'string' && id.length >= 1 && id.length <= 256 && !/[\u0000-\u001f\u007f]/.test(id)
 }
@@ -171,6 +194,7 @@ export function toKailoPage(
     }
     const out: KailoPageAction = { id: action.id, label, variant }
     if (action.icon) out.icon = action.icon
+    if (action.files) out.files = pickerFiles(action.files)
     if (action.disabled) out.disabled = true
     if (action.busy) out.busy = true
     actions.push(out)
@@ -258,9 +282,11 @@ export function installPageShell(deps: PageShellDeps): () => void {
     }
     published?.breadcrumbs?.find((crumb) => crumb.id === target.id)?.go()
   })
-  const offAction = runtime.onAction?.((id) => {
+  const offAction = runtime.onAction?.((id, selection) => {
     const action = published?.actions?.find((entry) => entry.id === id)
-    if (action && !action.disabled && !action.busy) action.run()
+    if (!action || action.disabled || action.busy) return
+    // Only file actions take a selection; the runtime already checked its shape.
+    action.run(action.files && selection && selection.files.length ? selection : undefined)
   })
 
   return () => {

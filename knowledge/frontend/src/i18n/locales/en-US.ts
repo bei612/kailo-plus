@@ -730,7 +730,7 @@ export default {
     generatingSummary: 'Generating summary...',
     documentSummary: 'Summary',
     detailSectionMeta: 'Basic info',
-    confirmDeleteDocument: 'Confirm deletion of document "{fileName}", recovery will be impossible after deletion',
+    confirmDeleteDocument: 'Delete document "{fileName}"? This cannot be undone.',
     confirmDelete: 'Confirm Delete',
     viewModeGrid: 'Grid view',
     viewModeList: 'List view',

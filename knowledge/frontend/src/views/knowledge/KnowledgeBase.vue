@@ -1805,8 +1805,17 @@ usePageHeader('knowledgeBaseDetail', () => {
   const actions: PageAction[] = [];
   if (canEdit.value && !isFAQ.value) {
     actions.push(
-      { id: 'upload', label: t('upload.uploadDocument'), variant: 'primary', icon: 'upload', run: () => uploadSourceRef.value?.runAction('upload') },
-      { id: 'upload-folder', label: t('upload.uploadFolder'), variant: 'menu', icon: 'folder-plus', run: () => uploadSourceRef.value?.runAction('uploadFolder') },
+      // File actions: Kailo opens the picker in the user's click and hands over the files.
+      {
+        id: 'upload', label: t('upload.uploadDocument'), variant: 'primary', icon: 'upload',
+        files: { accept: acceptFileTypes.value || undefined, multiple: true },
+        run: (selection) => uploadSourceRef.value?.runAction('upload', selection),
+      },
+      {
+        id: 'upload-folder', label: t('upload.uploadFolder'), variant: 'menu', icon: 'folder-plus',
+        files: { directory: true, multiple: true },
+        run: (selection) => uploadSourceRef.value?.runAction('uploadFolder', selection),
+      },
       { id: 'import-url', label: t('knowledgeBase.importURL'), variant: 'menu', run: () => uploadSourceRef.value?.runAction('importURL') },
       { id: 'write', label: t('upload.onlineEdit'), variant: 'menu', icon: 'pencil', run: handleManualCreate },
     );

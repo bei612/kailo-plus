@@ -504,8 +504,25 @@ html[data-kailo-mode] .t-message {
   font-size: 13px;
 }
 
-/* Popconfirm: same surface as Kailo menus. */
-html[data-kailo-mode] .t-popconfirm .t-popup__content { padding: 16px; }
+/* Popconfirm (top-level visits; inside Kailo it is Kailo's confirmation):
+   same surface as Kailo menus, Body text, actions right-aligned, verb last. */
+html[data-kailo-mode] .t-popconfirm .t-popup__content { padding: 16px; max-width: 320px; }
+html[data-kailo-mode] .t-popconfirm__inner {
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--kailo-color-popover-foreground);
+}
+html[data-kailo-mode] .t-popconfirm__body > .t-icon { font-size: 16px; }
+html[data-kailo-mode] .t-popconfirm__icon--default { color: var(--kailo-color-brand); }
+html[data-kailo-mode] .t-popconfirm__icon--warning { color: var(--kailo-color-warning); }
+html[data-kailo-mode] .t-popconfirm__icon--danger { color: var(--kailo-color-danger); }
+html[data-kailo-mode] .t-popconfirm__buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+}
+html[data-kailo-mode] .t-popconfirm__buttons .t-button { margin-left: 0; }
 
 /* Native left menu (top-level Kailo mode): one-colour line icons. */
 html[data-kailo-mode] .kailo-mono-icon {

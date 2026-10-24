@@ -5,16 +5,45 @@
 // Kailo's toast and confirmation inside the Kailo frame without touching each
 // call site. At top level, or whenever Kailo declines (non-text content,
 // labels over the runtime limits), the native TDesign UI is used unchanged.
+// <t-popconfirm> (55 trigger-bound confirmations) is registered as the Kailo
+// popconfirm (./popconfirm.ts) under TDesign's own component name.
 
-import {
+import NativeTDesign, {
   DialogPlugin as NativeDialogPlugin,
   MessagePlugin as NativeMessagePlugin,
 } from 'tdesign-vue-next'
 import type { DialogInstance, DialogOptions, MessageInstance } from 'tdesign-vue-next'
+import type { App, Component } from 'vue'
 import { hostConfirm, hostToast, type ToastTone } from './feedback'
+import { KailoPopconfirm } from './popconfirm'
 
 export * from 'tdesign-vue-next'
-export { default } from 'tdesign-vue-next'
+export { KailoPopconfirm as Popconfirm }
+
+type InstallArgs = Parameters<typeof NativeTDesign.install>
+
+/**
+ * TDesign's plugin with <t-popconfirm> bound to the Kailo popconfirm. TDesign
+ * registers each component through app.component(name, …); the TPopconfirm
+ * registration is swapped while it installs, so no component is registered twice.
+ */
+const KailoTDesign: typeof NativeTDesign = {
+  ...NativeTDesign,
+  install(app: App, config?: InstallArgs[1]) {
+    const original = app.component
+    const register = original.bind(app) as (name: string, component?: Component) => unknown
+    app.component = ((name: string, component?: Component) => (component === undefined
+      ? register(name)
+      : register(name, name === 'TPopconfirm' ? KailoPopconfirm : component))) as App['component']
+    try {
+      NativeTDesign.install(app, config)
+    } finally {
+      app.component = original
+    }
+  },
+}
+
+export default KailoTDesign
 
 const settledInstance: MessageInstance = { close: () => {} }
 
