@@ -34,6 +34,12 @@ import {
   PROJECT_EVENT_VISUALS,
   type ProjectEventKind,
 } from "./ProjectEventTypeIcon";
+import {
+  assignmentSentence,
+  projectIssueCandidates,
+  readableAssignment,
+  type ReadableAssignment,
+} from "./projectAssignmentText";
 
 type ActivityKind = ProjectEventKind;
 
@@ -71,6 +77,8 @@ type ProjectActivityItem = {
   action: ActivityAction;
   title: string;
   body: string;
+  /** DD-157(8): a task assignment comment, worded from its tags instead of `body`. */
+  assignment: ReadableAssignment | null;
   detail: string | null;
   target: ActivityTarget;
 };
@@ -139,6 +147,13 @@ const DETAIL_KEYS: Record<string, PlatformMessageKey> = {
   "Changes requested": "projects.review.changesSummary",
 };
 
+/** The shown body: an assignment worded from its tags with Kailo names, else the content preview. */
+function activityBodyText(item: ProjectActivityItem, t: Translate, profiles?: UserProfileLookup) {
+  return item.assignment
+    ? assignmentSentence(item.assignment, t, (pubkey) => resolveUserLabel({ profiles, pubkey, t }))
+    : item.body;
+}
+
 function contentPreview(content: string) {
   return markdownToPlainText(content).replace(/\s+/g, " ").trim().slice(0, 280);
 }
@@ -159,6 +174,7 @@ function buildActivityItems({
       action: "repository",
       title: project.name,
       body: project.description,
+      assignment: null,
       detail: null,
       target: { type: "project", project },
     });
@@ -179,6 +195,7 @@ function buildActivityItems({
       action: "reviewOpened",
       title: pullRequest.title,
       body: pullRequest.content,
+      assignment: null,
       detail: pullRequest.status,
       target,
     });
@@ -191,6 +208,7 @@ function buildActivityItems({
         action: "reviewUpdated",
         title: pullRequest.title,
         body: update.content,
+        assignment: null,
         detail: update.commit?.slice(0, 7) ?? null,
         target,
       });
@@ -224,6 +242,7 @@ function buildActivityItems({
                 : "reviewCommented",
         title: pullRequest.title,
         body: comment.content,
+        assignment: null,
         detail:
           kind === "approval"
             ? "Approved"
@@ -245,9 +264,11 @@ function buildActivityItems({
       action: "taskCreated",
       title: issue.title,
       body: issue.content,
+      assignment: null,
       detail: issue.status,
       target,
     });
+    const candidates = projectIssueCandidates(issue);
     for (const comment of issue.comments) {
       items.push({
         id: `issue-comment:${repository.id}:${comment.id}`,
@@ -257,6 +278,7 @@ function buildActivityItems({
         action: "taskCommented",
         title: issue.title,
         body: comment.content,
+        assignment: readableAssignment(comment, candidates),
         detail: null,
         target,
       });
@@ -308,7 +330,11 @@ export function buildProjectsActivityAgentContextItems(
 export function projectsActivityPubkeys(
   input: Pick<ProjectsActivityFeedProps, "issues" | "projects" | "pullRequests">,
 ) {
-  return [...new Set(buildActivityItems(input).map((item) => normalizePubkey(item.actorPubkey)))];
+  return [...new Set(buildActivityItems(input).flatMap((item) => [
+    normalizePubkey(item.actorPubkey),
+    ...(item.assignment?.assignees ?? []).flatMap((assignee) =>
+      assignee && "pubkey" in assignee ? [normalizePubkey(assignee.pubkey)] : []),
+  ]))];
 }
 
 function startOfWeek(timestamp: number) {
@@ -368,6 +394,7 @@ function ActivityCard({
   const TypeIcon = visual.icon;
   const profile = profiles?.[normalizePubkey(item.actorPubkey)];
   const actorLabel = resolveUserLabel({ profiles, pubkey: item.actorPubkey, t });
+  const body = activityBodyText(item, t, profiles);
   return (
     <div
       className={cn(
@@ -500,7 +527,7 @@ function ActivityCard({
                 {item.title}
               </p>
             </div>
-            {item.body ? (
+            {body ? (
               <p
                 className={cn(
                   "mt-0.5 text-sm leading-6 text-muted-foreground/65",
@@ -508,7 +535,7 @@ function ActivityCard({
                 )}
                 data-projects-text-priority="secondary"
               >
-                {item.body}
+                {body}
               </p>
             ) : null}
           </div>
@@ -538,14 +565,14 @@ export function ProjectsActivityFeed(props: ProjectsActivityFeedProps) {
             : null;
         return matchesProjectsSearch(props.searchQuery ?? "", [
           t(ACTION_KEYS[item.action]),
-          item.body,
+          activityBodyText(item, t, props.profiles),
           item.detail ? detailLabel(t, item.detail) : null,
           item.target.project.name,
           item.title,
           repository,
         ]);
       }),
-    [allItems, props.searchQuery, t],
+    [allItems, props.profiles, props.searchQuery, t],
   );
   // Week buckets are clock-derived; ticked so the memo cannot freeze "This
   // week" across a week boundary. Coarse cadence — the boundary moves weekly.

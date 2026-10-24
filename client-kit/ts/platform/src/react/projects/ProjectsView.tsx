@@ -34,7 +34,9 @@ import {loadProjectWorkItems,resolveProjectWorkItemTarget,type ProjectWorkItemTa
 import {ProjectsIssuesList} from "./ProjectsIssuesList";
 import {ProjectsPullRequestsList} from "./ProjectsPullRequestsList";
 import {matchesProjectsSearch} from "./lib/projectsSearch";
-import {usePulseHost,useUsersBatchQuery} from "../pulse/host";
+import {usePulseHost} from "../pulse/host";
+import {useProjectProfiles} from "./useProjectProfiles";
+import {projectIssueAssignmentPubkeys} from "./projectAssignmentText";
 import {ProjectIssueDetail} from "./ProjectIssueDetail";
 import {ProjectPullRequestDetail} from "./ProjectPullRequestDetail";
 import {ProjectPanelState} from "./ProjectPanelState";
@@ -330,7 +332,7 @@ function ProjectWorkItemDetail({workItem,host,onOpen,onDiscussInChannel}:{workIt
     viewLabels:{issues:t("projects.list.tasks"),prs:t("projects.list.reviews")},
     workItems:[null,workItem.type==="issue"?workItem.issue:null,workItem.type==="pull-request"?workItem.pullRequest:null]}):undefined,[chatHost,t,workItem]);
   const channelId=workItem.repository.channelId??workItem.project.projectChannelId;
-  const profiles=useUsersBatchQuery([item.author,...item.comments.map(comment=>comment.author),...(workItem.type==="issue"?workItem.issue.assignees:[...workItem.pullRequest.reviewers,...workItem.pullRequest.updates.map(update=>update.author)])]).data?.profiles;
+  const profiles=useProjectProfiles([item.author,...item.comments.map(comment=>comment.author),...(workItem.type==="issue"?[...workItem.issue.assignees,...projectIssueAssignmentPubkeys(workItem.issue)]:[...workItem.pullRequest.reviewers,...workItem.pullRequest.updates.map(update=>update.author)])]).data?.profiles;
   return workItem.type==="issue"?<>
     <ProjectIssueDetail issue={workItem.issue} profiles={profiles} publication={{host,projectId:workItem.project.id,repository:workItem.repository}}
       contextPanel={{channelId,onCreateTask:host.publish&&onOpen?()=>setCreateOpen(true):undefined,onDiscussInChannel,agentContext}}/>
@@ -384,7 +386,7 @@ function ProjectWorkItemsList({host,query,filter,search,sort,view,onOpen,renderW
 
 function ProjectWorkItemsContent({items,filter,view,search,onOpen}:{items:ProjectInboxWorkItem[];filter:"issues"|"prs";view:ProjectsViewMode;search:string;onOpen:(project:Project,repository:Project["repositories"][number],target:{id:string})=>void}) {
   const t=useUiT();
-  const profiles=useUsersBatchQuery(items.map(item=>item.type==="issue"?item.issue.author:item.pullRequest.author)).data?.profiles;
+  const profiles=useProjectProfiles(items.map(item=>item.type==="issue"?item.issue.author:item.pullRequest.author)).data?.profiles;
   const common={profiles,viewMode:view,embedded:view==="list",onOpen};
   // One block child inside the work-item host's flex row.
   return <div className="min-w-0 flex-1">{filter==="issues"?<ProjectsIssuesList {...common} issues={items.filter(item=>item.type==="issue")} emptyMessage={search.trim()?t("projects.list.tasksNoMatch"):undefined}/>:
@@ -439,7 +441,7 @@ function ProjectsActivityBody({snapshot,search,onOpenProject,onOpen}:{snapshot:P
   const now=useNow(600_000);
   const digest=useMemo(()=>buildProjectsActivityDigest({issues,nowSeconds:Math.floor(now/1_000),projects,pullRequests,summaries,t}),[issues,now,projects,pullRequests,summaries,t]);
   const pubkeys=useMemo(()=>projectsActivityPubkeys({issues,projects,pullRequests}),[issues,projects,pullRequests]);
-  const profiles=useUsersBatchQuery(pubkeys,{enabled:pubkeys.length>0}).data?.profiles;
+  const profiles=useProjectProfiles(pubkeys,{enabled:pubkeys.length>0}).data?.profiles;
   // The work-item host wraps its children in a flex row (for its profile
   // panel); keep the original stacked intro + timeline as one block child.
   return <div className="min-w-0 flex-1">
@@ -488,7 +490,7 @@ function ProjectsOverviewProjectItemsWithActivity({visible,viewerPubkey,view,sum
   // Identity-stable people arrays keep memoized cards from re-rendering.
   const peopleByProject=useMemo(()=>new Map(visible.map(project=>[project.id,projectPeople(project,summaries[project.id])])),[summaries,visible]);
   const pubkeys=useMemo(()=>[...new Set([...peopleByProject.values()].flat())],[peopleByProject]);
-  const profiles=useUsersBatchQuery(pubkeys,{enabled:pubkeys.length>0}).data?.profiles;
+  const profiles=useProjectProfiles(pubkeys,{enabled:pubkeys.length>0}).data?.profiles;
   // One block child inside the work-item host's flex row.
   return <div className="min-w-0 flex-1"><ProjectsOverviewProjectItems visible={visible} viewerPubkey={viewerPubkey} view={view} renderRow={renderRow}
     activityFor={project=>({people:peopleByProject.get(project.id)??[],profiles,summary:summaries[project.id]})}/></div>;
@@ -540,7 +542,7 @@ function ProjectsOverviewRepositoryItems({visible,viewerPubkey,view,summaries,pr
 function ProjectsOverviewRepositoryItemsWithActivity(props:Omit<ComponentProps<typeof ProjectsOverviewRepositoryItems>,"profiles"|"canCopyLink">&{summaries:Record<string,ProjectActivitySummary>}) {
   const pubkeys=useMemo(()=>[...new Set(props.visible.flatMap(({repository})=>[repository.owner,...repository.contributors,
     ...(props.summaries[repository.repoAddress]?.participantPubkeys??[])].map(normalizePubkey)))],[props.visible,props.summaries]);
-  const profiles=useUsersBatchQuery(pubkeys,{enabled:pubkeys.length>0}).data?.profiles;
+  const profiles=useProjectProfiles(pubkeys,{enabled:pubkeys.length>0}).data?.profiles;
   return <ProjectsOverviewRepositoryItems {...props} profiles={profiles} canCopyLink/>;
 }
 
@@ -557,7 +559,7 @@ function ProjectsOverviewContextRailContent({snapshot,projectReadModels,filter,o
   const summaries=useMemo(()=>projectActivitySummaries(snapshot.events,projects),[snapshot,projects]);
   const repositorySummaries=useMemo(()=>repositoryActivitySummaries(snapshot.events,directoryRepositories(projectReadModels).map(row=>row.repository)),[snapshot,projectReadModels]);
   const people=useMemo(()=>projectsOverviewContext({filter,issues,projectReadModels,projects,pullRequests,repositorySummaries,summaries}).people,[filter,issues,projectReadModels,projects,pullRequests,repositorySummaries,summaries]);
-  const profiles=useUsersBatchQuery(people,{enabled:people.length>0}).data?.profiles;
+  const profiles=useProjectProfiles(people,{enabled:people.length>0}).data?.profiles;
   return <div className="min-w-0 flex-1"><ProjectsOverviewContextPanel filter={filter} issues={issues} projectReadModels={projectReadModels} projects={projects} pullRequests={pullRequests}
     repositorySummaries={repositorySummaries} summaries={summaries} profiles={profiles} onSelectSection={onSelectSection} onCreateIssue={onCreateIssue} onCreatePullRequest={onCreatePullRequest} onCreateProject={onCreateProject}
     onAddChannel={onAddChannel} onAddRepository={onAddRepository} canCreateTarget={canCreateTarget}

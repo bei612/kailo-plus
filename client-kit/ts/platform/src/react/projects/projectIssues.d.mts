@@ -10,12 +10,20 @@ export type ProjectIssueStatus =
 
 export type ProjectTaskCategory = "issue" | "change-request" | "improvement";
 
+/** DD-157(8): a labeled assignment comment's `t` operation and `p` assignees. */
+export type ProjectIssueCommentAssignment = {
+  operation: "assign" | "unassign";
+  assignees: string[];
+};
+
 export type ProjectIssueComment = {
   id: string;
   content: string;
   tags: string[][];
   author: string;
   createdAt: number;
+  /** Absent on comments built outside the reducer (optimistic rows, fixtures). */
+  assignment?: ProjectIssueCommentAssignment | null;
 };
 
 export type ProjectIssue = {

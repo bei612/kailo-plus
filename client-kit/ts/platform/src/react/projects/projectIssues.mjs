@@ -176,6 +176,26 @@ function assignmentStateForIssue(issue, issueCommentEvents) {
   };
 }
 
+// DD-157(8): the assignment facts of a labeled comment (its `t` label and
+// `p` assignees), kept so a reader renders the assignment from the tags and
+// never from the signer-chosen display label in `content`. Reading only; the
+// reducer above alone decides who is assigned.
+function commentAssignment(event) {
+  const labels = getAllTags(event, "t");
+  const isAssignment = labels.includes(ISSUE_ASSIGNMENT_LABEL);
+  if (isAssignment === labels.includes(ISSUE_UNASSIGNMENT_LABEL)) return null;
+  const assignees = [
+    ...new Set(
+      getAllTags(event, "p")
+        .filter((pubkey) => /^[a-fA-F0-9]{64}$/.test(pubkey))
+        .map((pubkey) => pubkey.toLowerCase()),
+    ),
+  ];
+  return assignees.length > 0
+    ? { operation: isAssignment ? "assign" : "unassign", assignees }
+    : null;
+}
+
 function commentsForIssue(issueCommentEvents) {
   return sortEvents(issueCommentEvents).map((event) => ({
     id: event.id,
@@ -183,6 +203,7 @@ function commentsForIssue(issueCommentEvents) {
     tags: getImetaTags(event),
     author: event.pubkey,
     createdAt: event.created_at,
+    assignment: commentAssignment(event),
   }));
 }
 
