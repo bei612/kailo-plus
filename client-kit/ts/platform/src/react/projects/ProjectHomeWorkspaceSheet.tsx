@@ -30,7 +30,7 @@ function WorkspaceBody({items,repository,tab,onDetailChange,selectedIssueId,setS
   const selected=current.find(item=>item.type==="issue"?item.issue.id===selectedIssueId:item.pullRequest.id===selectedPullRequestId);
   const authorKeys=[...new Set(current.flatMap(item=>{const value=item.type==="issue"?item.issue:item.pullRequest;return [value.author,...value.comments.map(comment=>comment.author),...(item.type==="issue"?item.issue.assignees:[...item.pullRequest.reviewers,...item.pullRequest.updates.map(update=>update.author)])];}))];
   const profilesQuery=useProjectProfiles(authorKeys);
-  const profiles=profilesQuery.isSuccess&&!profilesQuery.isFetching?profilesQuery.data.profiles:undefined;
+  const profiles=profilesQuery.isSuccess&&!profilesQuery.isFetching?profilesQuery.data?.profiles:undefined;
   React.useEffect(()=>{
     onDetailChange(selected?{backLabel:t(tab==="issues"?"projects.sheet.backTasks":"projects.sheet.backReviews"),navigation:{repositoryId:selected.repository.id,...(selected.type==="issue"?{issueId:selected.issue.id}:{pullRequestId:selected.pullRequest.id})},onBack:()=>{setSelectedIssueId(null);setSelectedPullRequestId(null);}}:null);
     return ()=>onDetailChange(null);
