@@ -1,0 +1,15 @@
+{
+  "$comment": "DD-136(5)(6), ADR-20 §10: deployment declarations of the built-in REMOTE_ADAPTER candidates, versioned with the source. tools/component-release/conformance-auto.py (component-deploy.sh --conformance) renders each candidate release with nativePageOrigin and pulls digest-pinned images from registry; component-deploy.sh --adapter derives the production binding plan from the same entry. No credential, binding secret or run fact is declared here.",
+  "file-storage": {
+    "registry": "127.0.0.1:55000",
+    "nativePageOrigin": "http://192.168.0.193:58092"
+  },
+  "knowledge": {
+    "registry": "127.0.0.1:55000",
+    "nativePageOrigin": "http://192.168.0.193:58094"
+  },
+  "data-query": {
+    "registry": "127.0.0.1:55000",
+    "nativePageOrigin": "http://192.168.0.193:58095"
+  }
+}
