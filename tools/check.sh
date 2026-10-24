@@ -346,8 +346,8 @@ step_lint() {
 # DD-157：组件前端的 Kailo 集成测试并入 verify（镜像构建本身不跑测试）。
 # - knowledge/frontend：与其 Dockerfile builder 同一 Node 24 与 package-lock，`npm ci` 后跑
 #   vue-tsc --build 与全部 node:test 测试（tsx --test）。
-# - file-storage/frontend/assets：Kailo 自有的嵌入层（kailo.embed、editor.onlyoffice、KailoTheme）
-#   跑 vitest 与 eslint；固定 pnpm 版本与 pnpm-lock.yaml 安装。其余上游插件测试不在本门禁内。
+# - file-storage/frontend/assets：Kailo 自有的嵌入层（kailo.embed、editor.onlyoffice）
+#   跑 vitest 与 eslint（KailoTheme 依赖 gui.ajax 自身的包，不在根锁内，随 gui.ajax 构建验证）；固定 pnpm 版本与 pnpm-lock.yaml 安装。其余上游插件测试不在本门禁内。
 verify_component_frontends() {
   local kn=knowledge/frontend cells=file-storage/frontend/assets manager tooling
   if populated "$kn/src"; then
