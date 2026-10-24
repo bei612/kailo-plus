@@ -297,17 +297,18 @@ class Cli:
             return 1, ""
         return result.returncode, result.stdout.decode("utf-8", "replace")
 
-    def token(self, login, seconds, attempts=12):
-        # Right after a (first-install) restart the container is healthy before the
-        # identity services answer the CLI; retry within a bounded window.
-        for attempt in range(attempts):
+    def token(self, login, seconds, deadline=None):
+        # Right after a first install the container is healthy while the native
+        # post-configure run still migrates its services and the identity service
+        # does not answer the CLI yet; retry until the deployment deadline.
+        while True:
             code, out = self.run(["admin", "user", "token", "-u", login, "-e", f"{seconds}s", "-q"], 180)
             candidates = [line.strip() for line in out.splitlines() if TOKEN.fullmatch(line.strip())]
             if code == 0 and len(candidates) == 1:
                 return candidates[0]
-            if attempt + 1 < attempts:
-                time.sleep(10)
-        raise Refused("native admin token could not be minted")
+            if deadline is None or time.monotonic() >= deadline:
+                raise Refused("native admin token could not be minted")
+            time.sleep(10)
 
     def mkdir(self, path, login):
         code, _ = self.run(["admin", "file", "mkdir", "--path", path, "--user", login], 180)
@@ -624,7 +625,7 @@ def main(argv):
         require(len(argv) >= 4 and argv[0] == "--container" and argv[2] == "--", "usage: reconcile.py --container <id> -- <docker argv...>")
         deadline = time.monotonic() + s["timeout"]
         cli = Cli(argv[3:], argv[1])
-        native = Native(s["rest"], cli.token(s["admin"], s["timeout"] + 120))
+        native = Native(s["rest"], cli.token(s["admin"], s["timeout"] + 120, deadline))
         facts, changes = reconcile(s, native, cli, deadline)
     except Refused as error:
         print(f"Cells declarative configuration refused: {error}", file=sys.stderr)
