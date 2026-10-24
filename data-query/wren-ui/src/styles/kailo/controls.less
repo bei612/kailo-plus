@@ -395,9 +395,14 @@ input.ant-input,
   font-weight: 500;
 }
 
+// Disabled fields still show their value (e.g. the connection host and
+// port that cannot be edited): muted text on canvas, not half opacity on top
+// of the 35% disabled colour, which left the value unreadable in dark.
 .ant-input[disabled],
+.ant-input-number-disabled,
 .ant-select-disabled .ant-select-selector {
-  opacity: 0.5;
+  color: var(--kailo-color-muted-foreground) !important;
+  background-color: var(--kailo-color-canvas);
 }
 
 // 4. Checkbox 16 radius 4, switch 32×18, radio — checked in brand.
@@ -445,6 +450,12 @@ input.ant-input,
     left: 2px;
     width: 14px;
     height: 14px;
+
+    // The host switch thumb (client-kit switch.tsx): on-brand white in
+    // both themes, so the off state stays visible on a dark track.
+    &::before {
+      background-color: var(--kailo-color-on-brand);
+    }
   }
 
   // Kailo switches carry no glyphs in the track.
