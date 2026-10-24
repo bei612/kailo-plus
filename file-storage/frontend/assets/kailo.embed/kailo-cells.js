@@ -257,6 +257,7 @@
             toRecycle: '项目将移到回收站，可以从回收站恢复。', permanent: '项目将被永久删除，无法恢复。',
             emptyRecycle: '清空回收站？', emptyRecycleBody: '回收站中的所有项目将被永久删除，无法恢复。',
             deleteShares: '删除全部分享？', deleteSharesBody: '公开链接和共享成员将立即失去访问权限。',
+            dropTo: '松开即可上传到「{0}」',
         },
         en: {
             home: 'Home', files: 'All files', bookmarks: 'Favorites', search: 'Search results',
@@ -267,6 +268,7 @@
             toRecycle: 'The items move to the recycle bin and can be restored from there.', permanent: 'The items are deleted permanently and cannot be restored.',
             emptyRecycle: 'Empty the recycle bin?', emptyRecycleBody: 'Every item in the recycle bin is deleted permanently and cannot be restored.',
             deleteShares: 'Delete all shares?', deleteSharesBody: 'Public links and shared members lose access immediately.',
+            dropTo: 'Drop to upload to "{0}"',
         }
     };
 
@@ -709,6 +711,87 @@
         embed.onAction(runAction);
     }
 
+    // Drag to upload (spec §4): while files are dragged over the page the
+    // files list shows the Kailo drop target (inset dashed brand frame,
+    // Upload icon, "松开即可上传到「目录」"). The native drop handling is kept;
+    // the overlay never takes pointer events.
+    function dropTargetName(pydio) {
+        var user = pydio && pydio.user;
+        var repo = user && user.getActiveRepositoryObject ? user.getActiveRepositoryObject() : null;
+        var holder = pydio && pydio.getContextHolder ? pydio.getContextHolder() : null;
+        var node = holder && holder.getContextNode ? holder.getContextNode() : null;
+        if (!repo || repo.accessType !== 'gateway' || !node) {
+            return '';
+        }
+        var upload = action(pydio.getController ? pydio.getController() : null, 'upload');
+        if (!upload || unavailable(upload)) {
+            return '';
+        }
+        var parts = pathParts(nodePath(node));
+        return parts.length ? (node.getLabel && node.getLabel()) || parts[parts.length - 1] : repo.getLabel();
+    }
+
+    function watchFileDrag() {
+        if (!kailoMode() || !document.addEventListener) {
+            return;
+        }
+        var depth = 0;
+        var overlay = null;
+        var hasFiles = function (event) {
+            var types = event.dataTransfer && event.dataTransfer.types;
+            return !!types && Array.prototype.indexOf.call(types, 'Files') >= 0;
+        };
+        var hide = function () {
+            depth = 0;
+            if (overlay && overlay.parentNode) {
+                overlay.parentNode.removeChild(overlay);
+            }
+            overlay = null;
+        };
+        var show = function () {
+            var list = document.querySelector('.main-files-list');
+            var name = dropTargetName(window.pydio);
+            if (!list || !name) {
+                return;
+            }
+            var box = list.getBoundingClientRect();
+            if (!overlay) {
+                overlay = document.createElement('div');
+                overlay.className = 'kailo-drop-overlay';
+                overlay.setAttribute('aria-hidden', 'true');
+                var icon = document.createElement('div');
+                icon.className = 'kailo-drop-overlay-icon';
+                var label = document.createElement('div');
+                label.className = 'kailo-drop-overlay-label';
+                overlay.appendChild(icon);
+                overlay.appendChild(label);
+                document.body.appendChild(overlay);
+            }
+            overlay.lastChild.textContent = text('dropTo', clip(name, 60));
+            overlay.style.left = box.left + 12 + 'px';
+            overlay.style.top = box.top + 12 + 'px';
+            overlay.style.width = Math.max(0, box.width - 24) + 'px';
+            overlay.style.height = Math.max(0, box.height - 24) + 'px';
+        };
+        document.addEventListener('dragenter', function (event) {
+            if (hasFiles(event)) {
+                depth += 1;
+                show();
+            }
+        }, true);
+        document.addEventListener('dragleave', function (event) {
+            if (hasFiles(event)) {
+                depth -= 1;
+                if (depth <= 0) {
+                    hide();
+                }
+            }
+        }, true);
+        document.addEventListener('drop', hide, true);
+        document.addEventListener('dragend', hide, true);
+    }
+    watchFileDrag();
+
     // Icon font not ready yet: no missing-glyph boxes (spec §3 加载), the
     // icons appear once the native icon font has loaded (at most 6 s).
     function watchIconFont(tries) {
@@ -781,7 +864,7 @@
         setEditor: setEditor,
         setShareOpener: function (fn) { shareOpener = typeof fn === 'function' ? fn : null; schedulePage(); },
         _internal: {nativeLanguage: nativeLanguage, kailoLocale: kailoLocale, safeReturnPath: safeReturnPath, params: params,
-            buildPage: buildPage, syncPage: syncPage, navigate: navigate, runAction: runAction}
+            buildPage: buildPage, syncPage: syncPage, navigate: navigate, runAction: runAction, dropTargetName: dropTargetName}
     };
 
     // The native re-render after a theme change can outlast the runtime's

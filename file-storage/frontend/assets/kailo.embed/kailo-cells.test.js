@@ -332,6 +332,13 @@ describe('DD-152 page shell over the Kailo embed runtime', () => {
         expect(parent.postMessage).not.toHaveBeenCalled()
     })
 
+    it('names the drop target only where uploading is possible', () => {
+        const { api } = hostedLoad(pagePydio())
+        expect(api._internal.dropTargetName(pagePydio())).toBe('reports')
+        expect(api._internal.dropTargetName(pagePydio({ path: '/' }))).toBe('个人文件')
+        expect(api._internal.dropTargetName(pagePydio({ readOnly: true }))).toBe('')
+    })
+
     it('does not host the header when the build did not declare the page feature', () => {
         const { api } = load({ pydio: pagePydio() })
         expect(api.pageHosted()).toBe(false)
