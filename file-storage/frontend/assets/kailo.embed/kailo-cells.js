@@ -19,7 +19,7 @@
     function storage() {
         try {
             return window.sessionStorage;
-        } catch (e) {
+        } catch {
             return null;
         }
     }
@@ -31,7 +31,7 @@
         }
         try {
             return JSON.parse(s.getItem(key) || 'null');
-        } catch (e) {
+        } catch {
             return null;
         }
     }
@@ -41,7 +41,7 @@
         if (s) {
             try {
                 s.setItem(key, JSON.stringify(value));
-            } catch (e) {
+            } catch {
                 /* storage full or disabled */
             }
         }
@@ -57,10 +57,20 @@
         return l.indexOf('zh') === 0 ? 'zh-CN' : l.indexOf('en') === 0 ? 'en' : '';
     }
 
+    function hasControlOrBackslash(value) {
+        for (var i = 0; i < value.length; i += 1) {
+            var code = value.charCodeAt(i);
+            if (code < 0x20 || code === 0x5c) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     // Relative same-origin application path only.
     function safeReturnPath(path) {
         if (typeof path !== 'string' || path.charAt(0) !== '/' || path.charAt(1) === '/' || path.charAt(1) === '\\' ||
-            path.length > 1024 || /[\u0000-\u001f\\]/.test(path) || path.indexOf('/login') === 0 || path.indexOf('/auth/') === 0) {
+            path.length > 1024 || hasControlOrBackslash(path) || path.indexOf('/login') === 0 || path.indexOf('/auth/') === 0) {
             return '/';
         }
         return path;
@@ -153,7 +163,7 @@
         listeners.slice().forEach(function (fn) {
             try {
                 fn(current);
-            } catch (e) {
+            } catch {
                 /* a failing consumer does not stop the others */
             }
         });

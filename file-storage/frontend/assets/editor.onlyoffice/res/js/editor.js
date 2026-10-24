@@ -20,8 +20,7 @@ import {docsApiConfig, editorLocale, kailoPreferences, kailoPresentation, launch
 const {EditorActions} = Pydio.requireLib('hoc');
 const FRAME = 'kailo-onlyoffice-frame';
 
-@connect(null, EditorActions)
-export default class Editor extends React.Component {
+class Editor extends React.Component {
     constructor(props) {
         super(props);
         this.state = {};
@@ -42,7 +41,7 @@ export default class Editor extends React.Component {
                 this.setState({kailoDelivery: referenceDelivery(raw)});
                 return;
             }
-        } catch (_) { this.setState({referenceError: true}); return; }
+        } catch { this.setState({referenceError: true}); return; }
         this.publicOrigin = configs.get("ONLYOFFICE_PUBLIC_ORIGIN");
         this.followKailo();
         this.open();
@@ -58,7 +57,7 @@ export default class Editor extends React.Component {
             if (!frame || !this.state.launch || !this.state.launch.submitted) return;
             try {
                 frame.postMessage(presentationMessage(theme), this.publicOrigin);
-            } catch (_) { /* the next launch carries the theme */ }
+            } catch { /* the next launch carries the theme */ }
         });
     }
 
@@ -120,7 +119,7 @@ export default class Editor extends React.Component {
             // DD-138: Kailo document preferences are read per launch; a change applies at the next open.
             const config = docsApiConfig(kailoPreferences(window.KailoEmbed));
             this.setState({launch: {action, token: token.AccessToken, config, submitted: false}});
-        } catch (_) {
+        } catch {
             if (epoch === this.epoch) this.setState({failed: true});
         }
     }
@@ -192,3 +191,6 @@ export default class Editor extends React.Component {
         );
     }
 }
+
+// Same as the former @connect decorator, without needing decorator syntax.
+export default connect(null, EditorActions)(Editor);
