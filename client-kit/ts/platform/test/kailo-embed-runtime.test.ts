@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { KailoEmbedRuntime } from "../../../embed/kailo-embed";
+import type { KailoEmbedRuntime, KailoPage } from "../../../embed/kailo-embed";
 
 const source = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), "../../../embed/kailo-embed.js"), "utf8");
 const KAILO = "https://kailo.example.test";
@@ -160,7 +160,7 @@ describe("kailo-embed.js", () => {
   });
 });
 
-// DD-152 (07 §4.8.7, V-SCN-251..253): page shell API.
+// DD-152 (07 §4.8.7, V-SCN-252..254): page shell API.
 describe("kailo-embed.js page shell (DD-152)", () => {
   function framedWithSpy(features = "page toast confirm shortcuts") {
     host = document.createElement("iframe");
@@ -170,8 +170,8 @@ describe("kailo-embed.js page shell (DD-152)", () => {
     return { embed, posted };
   }
   const connect = () => fromParent({ source: "kailo-host", version: 1, type: "presentation", theme: "light", locale: "zh-CN" });
-  const page = { title: "季度报告", breadcrumbs: [{ id: "/ws/a", label: "个人文件" }], tabs: [{ id: "home", label: "主页" }, { id: "all", label: "所有文件" }],
-    activeTab: "all", actions: [{ id: "upload", label: "上传", variant: "primary" as const, icon: "upload" as const }, { id: "mkdir", label: "新建文件夹" }] };
+  const page: KailoPage & { actions: NonNullable<KailoPage["actions"]> } = { title: "季度报告", breadcrumbs: [{ id: "/ws/a", label: "个人文件" }], tabs: [{ id: "home", label: "主页" }, { id: "all", label: "所有文件" }],
+    activeTab: "all", actions: [{ id: "upload", label: "上传", variant: "primary", icon: "upload" }, { id: "mkdir", label: "新建文件夹" }] };
 
   it("announces the declared features in ready and marks the Kailo runtime", () => {
     const { embed, posted } = framedWithSpy("page toast bogus page");
@@ -184,14 +184,14 @@ describe("kailo-embed.js page shell (DD-152)", () => {
     const { embed, posted } = framedWithSpy();
     expect(embed.setPage(page)).toBe(true);
     const sent = { source: "kailo-embed", version: 1, type: "page",
-      page: { ...page, actions: [page.actions[0], { id: "mkdir", label: "新建文件夹", variant: "secondary" }] } };
+      page: { ...page, actions: [page.actions[0]!, { id: "mkdir", label: "新建文件夹", variant: "secondary" }] } };
     expect(posted).toHaveBeenLastCalledWith(sent, KAILO);
     posted.mockClear();
     connect();
     expect(posted).toHaveBeenCalledWith(sent, KAILO);
     expect(() => embed.setPage({ title: "" })).toThrow(TypeError);
     expect(() => embed.setPage({ ...page, activeTab: "missing" })).toThrow(TypeError);
-    expect(() => embed.setPage({ ...page, actions: [page.actions[0], { ...page.actions[0], id: "b" }] })).toThrow(TypeError);
+    expect(() => embed.setPage({ ...page, actions: [page.actions[0]!, { ...page.actions[0]!, id: "b" }] })).toThrow(TypeError);
     expect(() => embed.setPage({ title: "x", actions: [{ id: "a", label: "a", icon: "skull" as never }] })).toThrow(TypeError);
   });
 
