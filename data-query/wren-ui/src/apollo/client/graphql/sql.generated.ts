@@ -7,35 +7,30 @@ export type PreviewSqlMutationVariables = Types.Exact<{
   data: Types.PreviewSqlDataInput;
 }>;
 
-export type PreviewSqlMutation = { __typename?: 'Mutation'; previewSql: any };
+
+export type PreviewSqlMutation = { __typename?: 'Mutation', previewSql: any };
 
 export type GenerateQuestionMutationVariables = Types.Exact<{
   data: Types.GenerateQuestionInput;
 }>;
 
-export type GenerateQuestionMutation = {
-  __typename?: 'Mutation';
-  generateQuestion: string;
-};
+
+export type GenerateQuestionMutation = { __typename?: 'Mutation', generateQuestion: string };
 
 export type ModelSubstituteMutationVariables = Types.Exact<{
   data: Types.ModelSubstituteInput;
 }>;
 
-export type ModelSubstituteMutation = {
-  __typename?: 'Mutation';
-  modelSubstitute: string;
-};
+
+export type ModelSubstituteMutation = { __typename?: 'Mutation', modelSubstitute: string };
+
 
 export const PreviewSqlDocument = gql`
-  mutation PreviewSQL($data: PreviewSQLDataInput!) {
-    previewSql(data: $data)
-  }
-`;
-export type PreviewSqlMutationFn = Apollo.MutationFunction<
-  PreviewSqlMutation,
-  PreviewSqlMutationVariables
->;
+    mutation PreviewSQL($data: PreviewSQLDataInput!) {
+  previewSql(data: $data)
+}
+    `;
+export type PreviewSqlMutationFn = Apollo.MutationFunction<PreviewSqlMutation, PreviewSqlMutationVariables>;
 
 /**
  * __usePreviewSqlMutation__
@@ -54,36 +49,19 @@ export type PreviewSqlMutationFn = Apollo.MutationFunction<
  *   },
  * });
  */
-export function usePreviewSqlMutation(
-  baseOptions?: Apollo.MutationHookOptions<
-    PreviewSqlMutation,
-    PreviewSqlMutationVariables
-  >,
-) {
-  const options = { ...defaultOptions, ...baseOptions };
-  return Apollo.useMutation<PreviewSqlMutation, PreviewSqlMutationVariables>(
-    PreviewSqlDocument,
-    options,
-  );
-}
-export type PreviewSqlMutationHookResult = ReturnType<
-  typeof usePreviewSqlMutation
->;
-export type PreviewSqlMutationResult =
-  Apollo.MutationResult<PreviewSqlMutation>;
-export type PreviewSqlMutationOptions = Apollo.BaseMutationOptions<
-  PreviewSqlMutation,
-  PreviewSqlMutationVariables
->;
+export function usePreviewSqlMutation(baseOptions?: Apollo.MutationHookOptions<PreviewSqlMutation, PreviewSqlMutationVariables>) {
+        const options = {...defaultOptions, ...baseOptions}
+        return Apollo.useMutation<PreviewSqlMutation, PreviewSqlMutationVariables>(PreviewSqlDocument, options);
+      }
+export type PreviewSqlMutationHookResult = ReturnType<typeof usePreviewSqlMutation>;
+export type PreviewSqlMutationResult = Apollo.MutationResult<PreviewSqlMutation>;
+export type PreviewSqlMutationOptions = Apollo.BaseMutationOptions<PreviewSqlMutation, PreviewSqlMutationVariables>;
 export const GenerateQuestionDocument = gql`
-  mutation GenerateQuestion($data: GenerateQuestionInput!) {
-    generateQuestion(data: $data)
-  }
-`;
-export type GenerateQuestionMutationFn = Apollo.MutationFunction<
-  GenerateQuestionMutation,
-  GenerateQuestionMutationVariables
->;
+    mutation GenerateQuestion($data: GenerateQuestionInput!) {
+  generateQuestion(data: $data)
+}
+    `;
+export type GenerateQuestionMutationFn = Apollo.MutationFunction<GenerateQuestionMutation, GenerateQuestionMutationVariables>;
 
 /**
  * __useGenerateQuestionMutation__
@@ -102,36 +80,19 @@ export type GenerateQuestionMutationFn = Apollo.MutationFunction<
  *   },
  * });
  */
-export function useGenerateQuestionMutation(
-  baseOptions?: Apollo.MutationHookOptions<
-    GenerateQuestionMutation,
-    GenerateQuestionMutationVariables
-  >,
-) {
-  const options = { ...defaultOptions, ...baseOptions };
-  return Apollo.useMutation<
-    GenerateQuestionMutation,
-    GenerateQuestionMutationVariables
-  >(GenerateQuestionDocument, options);
-}
-export type GenerateQuestionMutationHookResult = ReturnType<
-  typeof useGenerateQuestionMutation
->;
-export type GenerateQuestionMutationResult =
-  Apollo.MutationResult<GenerateQuestionMutation>;
-export type GenerateQuestionMutationOptions = Apollo.BaseMutationOptions<
-  GenerateQuestionMutation,
-  GenerateQuestionMutationVariables
->;
+export function useGenerateQuestionMutation(baseOptions?: Apollo.MutationHookOptions<GenerateQuestionMutation, GenerateQuestionMutationVariables>) {
+        const options = {...defaultOptions, ...baseOptions}
+        return Apollo.useMutation<GenerateQuestionMutation, GenerateQuestionMutationVariables>(GenerateQuestionDocument, options);
+      }
+export type GenerateQuestionMutationHookResult = ReturnType<typeof useGenerateQuestionMutation>;
+export type GenerateQuestionMutationResult = Apollo.MutationResult<GenerateQuestionMutation>;
+export type GenerateQuestionMutationOptions = Apollo.BaseMutationOptions<GenerateQuestionMutation, GenerateQuestionMutationVariables>;
 export const ModelSubstituteDocument = gql`
-  mutation ModelSubstitute($data: ModelSubstituteInput!) {
-    modelSubstitute(data: $data)
-  }
-`;
-export type ModelSubstituteMutationFn = Apollo.MutationFunction<
-  ModelSubstituteMutation,
-  ModelSubstituteMutationVariables
->;
+    mutation ModelSubstitute($data: ModelSubstituteInput!) {
+  modelSubstitute(data: $data)
+}
+    `;
+export type ModelSubstituteMutationFn = Apollo.MutationFunction<ModelSubstituteMutation, ModelSubstituteMutationVariables>;
 
 /**
  * __useModelSubstituteMutation__
@@ -150,24 +111,10 @@ export type ModelSubstituteMutationFn = Apollo.MutationFunction<
  *   },
  * });
  */
-export function useModelSubstituteMutation(
-  baseOptions?: Apollo.MutationHookOptions<
-    ModelSubstituteMutation,
-    ModelSubstituteMutationVariables
-  >,
-) {
-  const options = { ...defaultOptions, ...baseOptions };
-  return Apollo.useMutation<
-    ModelSubstituteMutation,
-    ModelSubstituteMutationVariables
-  >(ModelSubstituteDocument, options);
-}
-export type ModelSubstituteMutationHookResult = ReturnType<
-  typeof useModelSubstituteMutation
->;
-export type ModelSubstituteMutationResult =
-  Apollo.MutationResult<ModelSubstituteMutation>;
-export type ModelSubstituteMutationOptions = Apollo.BaseMutationOptions<
-  ModelSubstituteMutation,
-  ModelSubstituteMutationVariables
->;
+export function useModelSubstituteMutation(baseOptions?: Apollo.MutationHookOptions<ModelSubstituteMutation, ModelSubstituteMutationVariables>) {
+        const options = {...defaultOptions, ...baseOptions}
+        return Apollo.useMutation<ModelSubstituteMutation, ModelSubstituteMutationVariables>(ModelSubstituteDocument, options);
+      }
+export type ModelSubstituteMutationHookResult = ReturnType<typeof useModelSubstituteMutation>;
+export type ModelSubstituteMutationResult = Apollo.MutationResult<ModelSubstituteMutation>;
+export type ModelSubstituteMutationOptions = Apollo.BaseMutationOptions<ModelSubstituteMutation, ModelSubstituteMutationVariables>;
