@@ -634,6 +634,15 @@
 //    pulseQueryRequest, err := UnmarshalPulseQueryRequest(bytes)
 //    bytes, err = pulseQueryRequest.Marshal()
 //
+//    pushCapability, err := UnmarshalPushCapability(bytes)
+//    bytes, err = pushCapability.Marshal()
+//
+//    pushRegistrationRequest, err := UnmarshalPushRegistrationRequest(bytes)
+//    bytes, err = pushRegistrationRequest.Marshal()
+//
+//    pushRegistrationView, err := UnmarshalPushRegistrationView(bytes)
+//    bytes, err = pushRegistrationView.Marshal()
+//
 //    readMarkRequest, err := UnmarshalReadMarkRequest(bytes)
 //    bytes, err = readMarkRequest.Marshal()
 //
@@ -3279,6 +3288,36 @@ func UnmarshalPulseQueryRequest(data []byte) (PulseQueryRequest, error) {
 }
 
 func (r *PulseQueryRequest) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalPushCapability(data []byte) (PushCapability, error) {
+	var r PushCapability
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *PushCapability) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalPushRegistrationRequest(data []byte) (PushRegistrationRequest, error) {
+	var r PushRegistrationRequest
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *PushRegistrationRequest) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalPushRegistrationView(data []byte) (PushRegistrationView, error) {
+	var r PushRegistrationView
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *PushRegistrationView) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -9504,6 +9543,42 @@ type PulseQueryRequest struct {
 	View     PulseQueryRequestView `json:"view"`
 }
 
+// DD-151(2)：GET /api/v1/push/capability（仅原生端）。部署是否配置了 APNs 与 FCM 凭据；只回读配置事实，不回显任何凭据字段。
+type PushCapability struct {
+	Apns PushAvailability `json:"apns"`
+	Fcm  PushAvailability `json:"fcm"`
+}
+
+// DD-151(1)：PUT /api/v1/push/registration（仅原生端）。本设备登记、更新令牌或开关通知。proof 是本设备 CLIENT 私钥签名的
+// NIP-98 事件（u 为本路径、method 为 PUT、session 为当前 PlatformSession），设备公钥即 proof 的签名者，必须是本人 ACTIVE
+// 的设备公钥。expectedVersion 为 0 表示首次登记，其余按 DD-40 version CAS。token 明文只写入本 Tenant 的
+// OpenBao，任何回应、日志与审计都不回显。
+type PushRegistrationRequest struct {
+	// iOS bundle id 或 Android application id；必须与部署配置的推送主题一致。
+	AppID           string `json:"appId"`
+	Enabled         bool   `json:"enabled"`
+	ExpectedVersion int64  `json:"expectedVersion"`
+	// 系统通知文案的语言；通知不含正文。
+	Locale   ProtocolSessionLocale `json:"locale"`
+	Platform PushPlatform          `json:"platform"`
+	// NIP-98 HTTP Auth 事件（kind 27235）。
+	Proof map[string]interface{} `json:"proof"`
+	// APNs 设备令牌（十六进制）或 FCM 注册令牌。
+	Token string `json:"token"`
+}
+
+// DD-151(1)：本设备的推送登记（GET/PUT /api/v1/push/registration）。不含令牌或其摘要。
+type PushRegistrationView struct {
+	AppID        string                `json:"appId"`
+	DevicePubkey string                `json:"devicePubkey"`
+	Enabled      bool                  `json:"enabled"`
+	Locale       ProtocolSessionLocale `json:"locale"`
+	Platform     PushPlatform          `json:"platform"`
+	State        PushRegistrationState `json:"state"`
+	UpdatedAt    string                `json:"updatedAt"`
+	Version      int64                 `json:"version"`
+}
+
 // PUT /api/v1/user-state/read 的请求体（DD-40、03 §2）。contextKey 只接受调用方可读 Workspace 内的 Channel
 // ID、msg:<Buzz event id> 或 thread:<Buzz root event id>；version 是读到的 CollaborationUserState
 // 版本，不符即 409。
@@ -11225,6 +11300,7 @@ const (
 	View ProtocolSessionMode = "VIEW"
 )
 
+// 系统通知文案的语言；通知不含正文。
 type ProtocolSessionLocale string
 
 const (
@@ -12802,6 +12878,32 @@ const (
 	Notes     PulseQueryRequestView = "NOTES"
 	Profiles  PulseQueryRequestView = "PROFILES"
 	Reactions PulseQueryRequestView = "REACTIONS"
+)
+
+// DD-151(2)：本部署是否配置了该提供方的推送凭据。NOT_CONFIGURED 时客户端保留原版“此版本不可用”。
+type PushAvailability string
+
+const (
+	Configured    PushAvailability = "CONFIGURED"
+	NotConfigured PushAvailability = "NOT_CONFIGURED"
+)
+
+// DD-151(1)：设备推送登记的提供方。APNS 为 iOS，FCM 为 Android。
+type PushPlatform string
+
+const (
+	Apns PushPlatform = "APNS"
+	Fcm  PushPlatform = "FCM"
+)
+
+// DD-151(1)(5)：ACTIVE 可投递；INVALID 是提供方报告令牌失效，重新登记新令牌后恢复；REVOKED 是设备公钥或成员资格撤销、Tenant
+// 删除后的终态，令牌已删除。
+type PushRegistrationState string
+
+const (
+	Invalid                      PushRegistrationState = "INVALID"
+	PushRegistrationStateACTIVE  PushRegistrationState = "ACTIVE"
+	PushRegistrationStateREVOKED PushRegistrationState = "REVOKED"
 )
 
 type ReminderOperation string

@@ -211,6 +211,9 @@
 //     final protocolSessionView = protocolSessionViewFromJson(jsonString);
 //     final pulsePublishRequest = pulsePublishRequestFromJson(jsonString);
 //     final pulseQueryRequest = pulseQueryRequestFromJson(jsonString);
+//     final pushCapability = pushCapabilityFromJson(jsonString);
+//     final pushRegistrationRequest = pushRegistrationRequestFromJson(jsonString);
+//     final pushRegistrationView = pushRegistrationViewFromJson(jsonString);
 //     final readMarkRequest = readMarkRequestFromJson(jsonString);
 //     final reminderPublishRequest = reminderPublishRequestFromJson(jsonString);
 //     final reminderSourceRequest = reminderSourceRequestFromJson(jsonString);
@@ -1690,6 +1693,23 @@ PulseQueryRequest pulseQueryRequestFromJson(String str) =>
     PulseQueryRequest.fromJson(json.decode(str));
 
 String pulseQueryRequestToJson(PulseQueryRequest data) =>
+    json.encode(data.toJson());
+
+PushCapability pushCapabilityFromJson(String str) =>
+    PushCapability.fromJson(json.decode(str));
+
+String pushCapabilityToJson(PushCapability data) => json.encode(data.toJson());
+
+PushRegistrationRequest pushRegistrationRequestFromJson(String str) =>
+    PushRegistrationRequest.fromJson(json.decode(str));
+
+String pushRegistrationRequestToJson(PushRegistrationRequest data) =>
+    json.encode(data.toJson());
+
+PushRegistrationView pushRegistrationViewFromJson(String str) =>
+    PushRegistrationView.fromJson(json.decode(str));
+
+String pushRegistrationViewToJson(PushRegistrationView data) =>
     json.encode(data.toJson());
 
 ReadMarkRequest readMarkRequestFromJson(String str) =>
@@ -4168,6 +4188,7 @@ final protocolSessionModeValues = EnumValues({
   "VIEW": ProtocolSessionMode.VIEW,
 });
 
+///系统通知文案的语言；通知不含正文。
 enum ProtocolSessionLocale { EN, ZH_CN }
 
 final protocolSessionLocaleValues = EnumValues({
@@ -20429,6 +20450,150 @@ final pulseQueryRequestViewValues = EnumValues({
   "NOTES": PulseQueryRequestView.NOTES,
   "PROFILES": PulseQueryRequestView.PROFILES,
   "REACTIONS": PulseQueryRequestView.REACTIONS,
+});
+
+///DD-151(2)：GET /api/v1/push/capability（仅原生端）。部署是否配置了 APNs 与 FCM 凭据；只回读配置事实，不回显任何凭据字段。
+class PushCapability {
+  final PushAvailability apns;
+  final PushAvailability fcm;
+
+  PushCapability({required this.apns, required this.fcm});
+
+  factory PushCapability.fromJson(Map<String, dynamic> json) => PushCapability(
+    apns: pushAvailabilityValues.map[json["apns"]]!,
+    fcm: pushAvailabilityValues.map[json["fcm"]]!,
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "apns": pushAvailabilityValues.reverse[apns],
+    "fcm": pushAvailabilityValues.reverse[fcm],
+  });
+}
+
+///DD-151(2)：本部署是否配置了该提供方的推送凭据。NOT_CONFIGURED 时客户端保留原版“此版本不可用”。
+enum PushAvailability { CONFIGURED, NOT_CONFIGURED }
+
+final pushAvailabilityValues = EnumValues({
+  "CONFIGURED": PushAvailability.CONFIGURED,
+  "NOT_CONFIGURED": PushAvailability.NOT_CONFIGURED,
+});
+
+///DD-151(1)：PUT /api/v1/push/registration（仅原生端）。本设备登记、更新令牌或开关通知。proof 是本设备 CLIENT 私钥签名的
+///NIP-98 事件（u 为本路径、method 为 PUT、session 为当前 PlatformSession），设备公钥即 proof 的签名者，必须是本人 ACTIVE
+///的设备公钥。expectedVersion 为 0 表示首次登记，其余按 DD-40 version CAS。token 明文只写入本 Tenant 的
+///OpenBao，任何回应、日志与审计都不回显。
+class PushRegistrationRequest {
+  ///iOS bundle id 或 Android application id；必须与部署配置的推送主题一致。
+  final String appId;
+  final bool enabled;
+  final int expectedVersion;
+
+  ///系统通知文案的语言；通知不含正文。
+  final ProtocolSessionLocale locale;
+  final PushPlatform platform;
+
+  ///NIP-98 HTTP Auth 事件（kind 27235）。
+  final Map<String, dynamic> proof;
+
+  ///APNs 设备令牌（十六进制）或 FCM 注册令牌。
+  final String token;
+
+  PushRegistrationRequest({
+    required this.appId,
+    required this.enabled,
+    required this.expectedVersion,
+    required this.locale,
+    required this.platform,
+    required this.proof,
+    required this.token,
+  });
+
+  factory PushRegistrationRequest.fromJson(Map<String, dynamic> json) =>
+      PushRegistrationRequest(
+        appId: json["appId"],
+        enabled: json["enabled"],
+        expectedVersion: json["expectedVersion"],
+        locale: protocolSessionLocaleValues.map[json["locale"]]!,
+        platform: pushPlatformValues.map[json["platform"]]!,
+        proof: Map.from(
+          json["proof"],
+        ).map((k, v) => MapEntry<String, dynamic>(k, v)),
+        token: json["token"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "appId": appId,
+    "enabled": enabled,
+    "expectedVersion": expectedVersion,
+    "locale": protocolSessionLocaleValues.reverse[locale],
+    "platform": pushPlatformValues.reverse[platform],
+    "proof": Map.from(proof).map((k, v) => MapEntry<String, dynamic>(k, v)),
+    "token": token,
+  });
+}
+
+///DD-151(1)：设备推送登记的提供方。APNS 为 iOS，FCM 为 Android。
+enum PushPlatform { APNS, FCM }
+
+final pushPlatformValues = EnumValues({
+  "APNS": PushPlatform.APNS,
+  "FCM": PushPlatform.FCM,
+});
+
+///DD-151(1)：本设备的推送登记（GET/PUT /api/v1/push/registration）。不含令牌或其摘要。
+class PushRegistrationView {
+  final String appId;
+  final String devicePubkey;
+  final bool enabled;
+  final ProtocolSessionLocale locale;
+  final PushPlatform platform;
+  final PushRegistrationState state;
+  final String updatedAt;
+  final int version;
+
+  PushRegistrationView({
+    required this.appId,
+    required this.devicePubkey,
+    required this.enabled,
+    required this.locale,
+    required this.platform,
+    required this.state,
+    required this.updatedAt,
+    required this.version,
+  });
+
+  factory PushRegistrationView.fromJson(Map<String, dynamic> json) =>
+      PushRegistrationView(
+        appId: json["appId"],
+        devicePubkey: json["devicePubkey"],
+        enabled: json["enabled"],
+        locale: protocolSessionLocaleValues.map[json["locale"]]!,
+        platform: pushPlatformValues.map[json["platform"]]!,
+        state: pushRegistrationStateValues.map[json["state"]]!,
+        updatedAt: json["updatedAt"],
+        version: json["version"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "appId": appId,
+    "devicePubkey": devicePubkey,
+    "enabled": enabled,
+    "locale": protocolSessionLocaleValues.reverse[locale],
+    "platform": pushPlatformValues.reverse[platform],
+    "state": pushRegistrationStateValues.reverse[state],
+    "updatedAt": updatedAt,
+    "version": version,
+  });
+}
+
+///DD-151(1)(5)：ACTIVE 可投递；INVALID 是提供方报告令牌失效，重新登记新令牌后恢复；REVOKED 是设备公钥或成员资格撤销、Tenant
+///删除后的终态，令牌已删除。
+enum PushRegistrationState { ACTIVE, INVALID, REVOKED }
+
+final pushRegistrationStateValues = EnumValues({
+  "ACTIVE": PushRegistrationState.ACTIVE,
+  "INVALID": PushRegistrationState.INVALID,
+  "REVOKED": PushRegistrationState.REVOKED,
 });
 
 ///PUT /api/v1/user-state/read 的请求体（DD-40、03 §2）。contextKey 只接受调用方可读 Workspace 内的 Channel
