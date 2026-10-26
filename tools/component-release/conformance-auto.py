@@ -35,6 +35,7 @@ Output is one JSON line per step with names, counts and states only.
 import argparse
 import base64
 import hashlib
+import importlib.util
 import ipaddress
 import json
 import os
@@ -104,6 +105,21 @@ def write_json(path, value, mode=0o600):
 def read_json(path):
     with open(path, encoding="utf-8") as stream:
         return json.load(stream)
+
+
+def recorded_artifact(source, component, name):
+    """Use this fixed tree's original source-record parser, never a cross-entry regex."""
+    spec = importlib.util.spec_from_file_location("conformance_upstream_manifest", Path(source) / "tools/upstream_manifest.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    record = module.load(Path(source) / component / "fork/upstream.yaml")
+    artifacts = record.get("artifacts")
+    require(isinstance(artifacts, list), "source record has no artifact list")
+    matches = [entry for entry in artifacts if isinstance(entry, dict) and entry.get("name") == name]
+    require(len(matches) == 1 and matches[0].get("kind") == "image", f"{name}: one recorded image artifact required")
+    digest = matches[0].get("artifact_digest")
+    require(isinstance(digest, str) and re.fullmatch(r"sha256:[0-9a-f]{64}", digest), f"{name}: exact artifact digest missing")
+    return digest
 
 
 def secret_text(length, alphabet=string.ascii_letters + string.digits):
@@ -463,27 +479,30 @@ class CellsNative:
         require(len(tokens) == 1, f"native token for {login} could not be minted")
         return tokens[0]
 
-    def call(self, admin_token, method, path, body=None):
+    def call(self, admin_token, method, path, body=None, *, api="a", missing=False):
+        require(api in ("a", "v2"), "original Cells REST API required")
         data = None if body is None else json.dumps(body).encode()
-        request = urllib.request.Request(self.base + path, data=data, method=method)
+        request = urllib.request.Request(self.base.removesuffix("a/") + api + "/" + path, data=data, method=method)
         request.add_header("Authorization", "Bearer " + admin_token)
         request.add_header("Content-Type", "application/json")
         try:
             with urllib.request.urlopen(request, timeout=30) as response:
                 raw = response.read(1 << 20)
         except urllib.error.HTTPError as error:
+            absent = missing and error.code == 404
+            status = error.code
             error.close()
-            raise Refused(f"{method} /a/{path.split('/')[0]}: native HTTP {error.code}") from None
+            if absent:
+                return None
+            raise Refused(f"{method} /{api}/{path.split('/')[0]}: native HTTP {status}") from None
         return json.loads(raw) if raw.strip() else {}
 
     def ensure_user(self, admin_token, login):
         """Create a standard native user through REST PUT /a/user/{Login} (password in the body only)."""
-        try:
-            found = self.call(admin_token, "GET", "user/" + login)
-            if found.get("Uuid"):
-                return found["Uuid"]
-        except Refused:
-            pass
+        found = self.call(admin_token, "GET", "user/" + login, missing=True)
+        if found is not None:
+            require(found.get("Uuid"), f"native user {login} read-back has no identity")
+            return found["Uuid"]
         created = self.call(admin_token, "PUT", "user/" + login, {
             "Login": login, "Password": secret_text(32), "GroupPath": "/",
             "Attributes": {"profile": "standard"}})
@@ -495,12 +514,8 @@ def file_storage(r, args, runtime_env, declaration):
     s = r.state
     d = r.dir
     source = s["source"]
-    upstream = (Path(source) / "file-storage/fork/upstream.yaml").read_text(encoding="utf-8")
-
     def artifact(name):
-        match = re.search(r"- name: " + re.escape(name) + r"\n(?:.*\n)*?\s+artifact_digest: (sha256:[0-9a-f]{64})", upstream)
-        require(match, f"{name} has no recorded artifact digest")
-        return match.group(1)
+        return recorded_artifact(source, "file-storage", name)
 
     if "project" not in s:
         run_id = d.name.rsplit("-", 1)[-1]

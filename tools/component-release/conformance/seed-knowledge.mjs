@@ -35,7 +35,8 @@
 //   "bootstrapFile":"/abs receiver-run.sh bootstrap.json (Resource preconditions the isolated Core's
 //                    real resource.create returned, Resource versions after the read grants)",
 //   "resultExposurePolicyId", "resultExposurePolicyVersion", "fileStorageActionVersion",
-//   "weknoraOrigin":"http://<isolated WeKnora app>/", "weknoraApiKeyFile":"/abs", "knowledgeBaseId",
+//   "weknoraOrigin":"http://<isolated WeKnora app>/", "weknoraTokenFile":"/abs native OIDC session", "knowledgeBaseId",
+//   (legacy operator input may instead name weknoraApiKeyFile; exactly one is required)
 //   "sourceText":"<fixture UTF-8 text of each source file>" (fixture content; a RECEIVER case
 //                  compares no business result, DD-124(4)),
 //   "retiredText":"<fixture text of the retired source file>",
@@ -211,10 +212,12 @@ async function main() {
     const hash = createHash('sha256').update(['seed-knowledge', seed.knowledgeBaseId, ...parts].join('\u001f')).digest('hex');
     return `${hash.slice(0, 8)}-${hash.slice(8, 12)}-5${hash.slice(13, 16)}-${((parseInt(hash[16], 16) & 3) | 8).toString(16)}${hash.slice(17, 20)}-${hash.slice(20, 32)}`;
   };
-  const apiKey = await ownerOnly(seed.weknoraApiKeyFile, false);
+  if (Boolean(seed.weknoraApiKeyFile) === Boolean(seed.weknoraTokenFile)) fail('one native WeKnora credential delivery is required');
+  const credential = await ownerOnly(seed.weknoraTokenFile ?? seed.weknoraApiKeyFile, false);
+  const authorization = seed.weknoraTokenFile ? { authorization: `Bearer ${credential}` } : { 'x-api-key': credential };
   const weknora = async (method, path, body) => {
     const response = await fetch(new URL(path, seed.weknoraOrigin), { method, redirect: 'manual', signal: signal(),
-      headers: { 'x-api-key': apiKey, 'content-type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
+      headers: { ...authorization, 'content-type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
     if (!response.ok) fail(`WeKnora ${method} ${path}: native HTTP ${response.status}`);
     const value = await response.json();
     return value?.data ?? value;

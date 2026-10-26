@@ -42,14 +42,6 @@ PROVIDER_PORT = 4080
 TABLE = "public.source"
 
 
-def _artifact(source, name):
-    text = (Path(source) / "data-query/fork/upstream.yaml").read_text(encoding="utf-8")
-    match = re.search(r"- name: " + re.escape(name) + r"\n(?:.*\n)*?\s+artifact_digest: (sha256:[0-9a-f]{64})", text)
-    if not match:
-        raise RuntimeError(f"{name} has no recorded artifact digest")
-    return match.group(1)
-
-
 def _template_value(source, name):
     text = (Path(source) / "deploy/components/data-query.env.template").read_text(encoding="utf-8")
     match = re.search(r"^" + re.escape(name) + r"=(\S+)$", text, re.M)
@@ -241,10 +233,10 @@ def drive(r, args, runtime_env, declaration, h):
                  gatewayJwks=runtime_env["GATEWAY_SERVICE_JWKS_FILE"],
                  coreJwks=h.core_identity(runtime_env)[0]["jwksFile"],
                  nodeModules=_node_modules(h, source),
-                 images={"ui": f"{declaration['registry']}/data-query-ui@{_artifact(source, 'data-query-ui')}",
-                         "ai": f"{declaration['registry']}/data-query-ai-service@{_artifact(source, 'data-query-ai-service')}",
-                         "engine": f"{declaration['registry']}/data-query-engine@{_artifact(source, 'data-query-engine')}",
-                         "ibis": f"{declaration['registry']}/data-query-ibis@{_artifact(source, 'data-query-ibis')}",
+                 images={"ui": f"{declaration['registry']}/data-query-ui@{h.recorded_artifact(source, COMPONENT, 'data-query-ui')}",
+                         "ai": f"{declaration['registry']}/data-query-ai-service@{h.recorded_artifact(source, COMPONENT, 'data-query-ai-service')}",
+                         "engine": f"{declaration['registry']}/data-query-engine@{h.recorded_artifact(source, COMPONENT, 'data-query-engine')}",
+                         "ibis": f"{declaration['registry']}/data-query-ibis@{h.recorded_artifact(source, COMPONENT, 'data-query-ibis')}",
                          "gateway": gateway,
                          "bootstrap": _template_value(source, "WREN_BOOTSTRAP_IMAGE"),
                          "qdrant": _template_value(source, "WREN_QDRANT_IMAGE"),
@@ -259,7 +251,7 @@ def drive(r, args, runtime_env, declaration, h):
     _secrets(r, h)
     manifest = h.render_release(r, COMPONENT, declaration["nativePageOrigin"])
     s = r.state
-    h.require(f"sha256:{manifest['adapterBuildRef']}" == _artifact(source, "data-query-ui"),
+    h.require(f"sha256:{manifest['adapterBuildRef']}" == h.recorded_artifact(source, COMPONENT, "data-query-ui"),
               "rendered adapterBuildRef differs from the recorded data-query-ui artifact")
     _model_config(r, h, declaration["conformanceModels"])
     _native_env(r, h)

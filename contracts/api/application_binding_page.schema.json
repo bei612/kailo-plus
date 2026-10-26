@@ -33,6 +33,19 @@
       "type": "object", "additionalProperties": false,
       "required": ["bindingId", "tenantId", "componentReleaseId", "componentTypeKey", "state", "version", "capabilityCategories", "canDisable"],
       "properties": {
+        "humanActionPolicies": {"type": "array", "description": "Core 在已准入绑定事务中冻结的已批准 release 最大暴露边界。固定归属于 binding/release/generation/action/version；不是授权，不能替代 fresh target permission、schema 或 redaction 校验。未 ACTIVE 的绑定仅向 canCreate 管理者提供部署引用，仍不得执行。", "items": {
+          "title": "ApplicationHumanActionPolicy",
+          "type": "object", "additionalProperties": false,
+          "required": ["actionKey", "actionVersion", "componentReleaseId", "generation", "resultExposurePolicyId", "resultExposurePolicyVersion"],
+          "properties": {
+            "actionKey": {"type": "string"},
+            "actionVersion": {"type": "integer"},
+            "componentReleaseId": {"type": "string", "format": "uuid"},
+            "generation": {"type": "integer"},
+            "resultExposurePolicyId": {"type": "string", "format": "uuid"},
+            "resultExposurePolicyVersion": {"type": "integer"}
+          }
+        }},
         "canDisable": {"type": "boolean"},
         "hasNativePage": {"type": "boolean", "description": "Approved release declares an independent native page. Launch still freshly checks binding, scope and deployment origins."},
         "nativePageCategory": {"$ref": "../enums/native_page_category.schema.json", "description": "DD-127(4): presentation category the approved NATIVE_PAGE release declares. The sidebar labels the entry by capabilityCategories ∪ this value; it grants nothing."},

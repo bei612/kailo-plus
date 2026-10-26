@@ -8448,6 +8448,11 @@ class ApplicationBindingView {
   ///still freshly check the original source share and receiver update permissions.
   final bool? hasReadReceiver;
 
+  ///Core 在已准入绑定事务中冻结的已批准 release 最大暴露边界。固定归属于
+  ///binding/release/generation/action/version；不是授权，不能替代 fresh target permission、schema 或
+  ///redaction 校验。未 ACTIVE 的绑定仅向 canCreate 管理者提供部署引用，仍不得执行。
+  final List<ApplicationHumanActionPolicy>? humanActionPolicies;
+
   ///DD-127(4): presentation category the approved NATIVE_PAGE release declares. The sidebar
   ///labels the entry by capabilityCategories ∪ this value; it grants nothing.
   final NativePageCategory? nativePageCategory;
@@ -8470,6 +8475,7 @@ class ApplicationBindingView {
     required this.componentTypeKey,
     this.hasNativePage,
     this.hasReadReceiver,
+    this.humanActionPolicies,
     this.nativePageCategory,
     this.preferences,
     required this.state,
@@ -8492,6 +8498,13 @@ class ApplicationBindingView {
         componentTypeKey: json["componentTypeKey"],
         hasNativePage: json["hasNativePage"],
         hasReadReceiver: json["hasReadReceiver"],
+        humanActionPolicies: json["humanActionPolicies"] == null
+            ? null
+            : List<ApplicationHumanActionPolicy>.from(
+                json["humanActionPolicies"]!.map(
+                  (x) => ApplicationHumanActionPolicy.fromJson(x),
+                ),
+              ),
         nativePageCategory: json["nativePageCategory"] == null
             ? null
             : nativePageCategoryValues.map[json["nativePageCategory"]]!,
@@ -8519,6 +8532,9 @@ class ApplicationBindingView {
     "componentTypeKey": componentTypeKey,
     "hasNativePage": hasNativePage,
     "hasReadReceiver": hasReadReceiver,
+    "humanActionPolicies": humanActionPolicies == null
+        ? null
+        : List<dynamic>.from(humanActionPolicies!.map((x) => x.toJson())),
     "nativePageCategory": nativePageCategoryValues.reverse[nativePageCategory],
     "preferences": preferences == null
         ? null
@@ -8544,6 +8560,43 @@ class ApplicationBindingCapability {
 
   Map<String, dynamic> toJson() =>
       _stripNulls({"category": category, "version": version});
+}
+
+class ApplicationHumanActionPolicy {
+  final String actionKey;
+  final int actionVersion;
+  final String componentReleaseId;
+  final int generation;
+  final String resultExposurePolicyId;
+  final int resultExposurePolicyVersion;
+
+  ApplicationHumanActionPolicy({
+    required this.actionKey,
+    required this.actionVersion,
+    required this.componentReleaseId,
+    required this.generation,
+    required this.resultExposurePolicyId,
+    required this.resultExposurePolicyVersion,
+  });
+
+  factory ApplicationHumanActionPolicy.fromJson(Map<String, dynamic> json) =>
+      ApplicationHumanActionPolicy(
+        actionKey: json["actionKey"],
+        actionVersion: json["actionVersion"],
+        componentReleaseId: json["componentReleaseId"],
+        generation: json["generation"],
+        resultExposurePolicyId: json["resultExposurePolicyId"],
+        resultExposurePolicyVersion: json["resultExposurePolicyVersion"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "actionKey": actionKey,
+    "actionVersion": actionVersion,
+    "componentReleaseId": componentReleaseId,
+    "generation": generation,
+    "resultExposurePolicyId": resultExposurePolicyId,
+    "resultExposurePolicyVersion": resultExposurePolicyVersion,
+  });
 }
 
 ///DD-127(4): presentation category the approved NATIVE_PAGE release declares. The sidebar
