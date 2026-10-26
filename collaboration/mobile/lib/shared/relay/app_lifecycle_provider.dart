@@ -11,6 +11,8 @@ import 'relay_session.dart';
 class AppLifecycleNotifier extends Notifier<AppLifecycleState> {
   AppLifecycleListener? _listener;
   StreamSubscription<List<ConnectivityResult>>? _connectivitySub;
+  final _networkRestored = StreamController<void>.broadcast();
+  Stream<void> get networkRestored => _networkRestored.stream;
 
   @override
   AppLifecycleState build() {
@@ -21,12 +23,14 @@ class AppLifecycleNotifier extends Notifier<AppLifecycleState> {
       final hasNetwork = results.any((r) => r != ConnectivityResult.none);
       if (hasNetwork && state == AppLifecycleState.resumed) {
         ref.read(relaySessionProvider.notifier).onAppResumed();
+        _networkRestored.add(null);
       }
     });
 
     ref.onDispose(() {
       _listener?.dispose();
       _connectivitySub?.cancel();
+      _networkRestored.close();
     });
 
     return AppLifecycleState.resumed;

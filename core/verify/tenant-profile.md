@@ -54,6 +54,14 @@ LISTEN 连接，内存通知只作失效提示，丢帧或重连均重新读权�
 Mobile 沿原生 BFF 与前后台生命周期读取，前台更新频道名称/图标和 session view。
 本段为源码边界，不代表新增消费者、真实并发会话或实际设备已通过验收。
 
+固定 `3771720e1f1c6ac99b8a1158e67e4312aa47ecb0` 的原 SDK 1CPU/2GiB 已完成
+四侧生成/check、同源 Mobile 词条 check 与能力注册表生成/check（42 能力、20 封闭
+Workflow kind），退出0。设计输入固定为 `f56cd14336af70d000862febb9e1e40f09375d6f`。
+首轮 launcher 缺少设计挂载导致 registry 失败的日志保留；补齐只读设计输入后通过，
+四侧类型与格式化结果已回读。原件在 CI
+`/volumes/data/kailo/verification/phase1-integration/profile-3771720e1/`，
+`gen.log` 为首轮失败，`gen-fixed-inputs.log` 为完成记录。尚非编译或消费者通过证明。
+
 仍未交付的用户操作/验收边界：运营方反馈 fresh Catalog 权限与附件/分拣真实 HTTP
 链；两名管理员通过实际会话并发编辑；图片图库授权与真机/宿主打包；其他在线
 会话的即时资料失效通知。新增在线读取尚待固定源码验证，不据此声称 V-SCN-261

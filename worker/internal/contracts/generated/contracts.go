@@ -10087,10 +10087,13 @@ type TenantMemberJoinView struct {
 // DD-158(3)：GET /api/v1/tenant/profile。会话 Tenant 的显示名、图标与版本，全体 ACTIVE 成员可读；本人有 Tenant
 // manage 时给出 updateActionKey（tenant.profile.update），提交仍由 Core 重新准入。
 type TenantProfileView struct {
-	Icon            *string `json:"icon,omitempty"`
-	Name            string  `json:"name"`
-	UpdateActionKey *string `json:"updateActionKey,omitempty"`
-	Version         int64   `json:"version"`
+	Icon *string `json:"icon,omitempty"`
+	Name string  `json:"name"`
+	// BFF_STREAM_RETRY_MILLIS 部署事实；在线资料读取中断后再次读取前的等待。afterVersion
+	// 查询只等待有限的再准入时间，回应前重新校验本人会话与成员资格。
+	RefreshAfterMillis *int64  `json:"refreshAfterMillis,omitempty"`
+	UpdateActionKey    *string `json:"updateActionKey,omitempty"`
+	Version            int64   `json:"version"`
 }
 
 // DD-123: platform quota items of the Tenant read from OpenMeter (the only authority).

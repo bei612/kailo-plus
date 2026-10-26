@@ -17,7 +17,7 @@ validation:
       ref: core/verify/tenant-profile.md
 implementation:
   owners: [team-platform]
-  paths: [core/crates/platform-core/src/tenant_profile.rs, core/crates/platform-core/src/governance.rs, core/crates/platform-core/src/bff.rs, client-kit/ts/platform/src/react/tenant-profile, client-kit/ts/platform/src/react/sidebar/profile-popover.tsx, collaboration/mobile/lib/features/tenant_profile, collaboration/mobile/lib/features/settings/settings_page.dart]
+  paths: [core/crates/platform-core/src/tenant_profile.rs, core/crates/platform-core/src/governance.rs, core/crates/platform-core/src/bff.rs, client-kit/ts/platform/src/react/tenant-profile, client-kit/ts/platform/src/react/sidebar/profile-popover.tsx, client-kit/ts/platform/src/react/sidebar/sidebar-profile-card.tsx, web-client/web/src/platform/ui/PlatformApp.tsx, collaboration/mobile/lib/features/tenant_profile, collaboration/mobile/lib/shared/platform/tenant_profile_live.dart, collaboration/mobile/lib/features/settings/settings_page.dart]
   surfaces: [web, desktop, mobile]
   schemas: [contracts/api/action_command.schema.json, contracts/api/tenant_profile_view.schema.json, contracts/domain/tenant_profile_input.schema.json]
   migrations: [core/migrations/20261031050000_tenant_profile.up.sql, core/migrations/20261031050000_tenant_profile.down.sql]

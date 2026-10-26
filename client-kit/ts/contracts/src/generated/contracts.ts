@@ -8142,10 +8142,15 @@ export interface TenantMemberJoinView {
  * manage 时给出 updateActionKey（tenant.profile.update），提交仍由 Core 重新准入。
  */
 export interface TenantProfileView {
-    icon?:            string;
-    name:             string;
-    updateActionKey?: string;
-    version:          number;
+    icon?: string;
+    name:  string;
+    /**
+     * BFF_STREAM_RETRY_MILLIS 部署事实；在线资料读取中断后再次读取前的等待。afterVersion
+     * 查询只等待有限的再准入时间，回应前重新校验本人会话与成员资格。
+     */
+    refreshAfterMillis?: number;
+    updateActionKey?:    string;
+    version:             number;
 }
 
 /**

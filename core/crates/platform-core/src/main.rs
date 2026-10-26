@@ -480,7 +480,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .map_err(|_| "缺少 BFF_STREAM_READMIT_SECONDS")?
                     .parse()
                     .map_err(|_| "BFF_STREAM_READMIT_SECONDS 必须是秒数")?;
-                if seconds == 0 { return Err("BFF_STREAM_READMIT_SECONDS 必须为正".into()); }
+                if seconds == 0 {
+                    return Err("BFF_STREAM_READMIT_SECONDS 必须为正".into());
+                }
                 seconds
             },
             stream_retry_millis: {

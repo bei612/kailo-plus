@@ -9,7 +9,6 @@ use base64::Engine;
 use contracts::{ReasonCode, TenantProfileInput};
 use serde_json::{json, Value};
 use sqlx::{postgres::PgListener, PgConnection, Postgres, Transaction};
-use tokio::sync::broadcast;
 use uuid::Uuid;
 
 use crate::{
@@ -39,7 +38,9 @@ pub(crate) async fn spawn_updates(state: &BffState) -> Result<(), sqlx::Error> {
                 }
                 // Reconnected: a notification could have been lost. All
                 // consumers reread their own admitted Tenant, never the hint.
-                Ok(None) => { let _ = updates.send(Uuid::nil()); }
+                Ok(None) => {
+                    let _ = updates.send(Uuid::nil());
+                }
                 Err(error) => {
                     tracing::warn!(error = %error, "Tenant profile invalidation connection unavailable");
                     tokio::time::sleep(retry).await;
@@ -247,16 +248,14 @@ pub async fn read(
     // Subscribe before reading: an update between the snapshot and wait must
     // not be missed. A finite wait also heals a lost database notification.
     let mut updates = state.tenant_profile_updates.subscribe();
-    let deadline = tokio::time::Instant::now()
-        + std::time::Duration::from_secs(state.stream_readmit_seconds);
+    let deadline =
+        tokio::time::Instant::now() + std::time::Duration::from_secs(state.stream_readmit_seconds);
     loop {
         let view = match read_view(&state, &headers).await {
             Ok(view) => view,
             Err(response) => return response,
         };
-        if query.after_version != Some(view.1)
-            || tokio::time::Instant::now() >= deadline
-        {
+        if query.after_version != Some(view.1) || tokio::time::Instant::now() >= deadline {
             return ([("cache-control", "no-store")], Json(view.2)).into_response();
         }
         let tenant = view.0;
@@ -283,7 +282,8 @@ async fn read_view(state: &BffState, headers: &HeaderMap) -> Result<(Uuid, i32, 
     let Some((name, icon, version)) = row else {
         return Err(StatusCode::FORBIDDEN.into_response());
     };
-    let mut view = json!({"name":name,"version":version,"refreshAfterMillis":state.stream_retry_millis});
+    let mut view =
+        json!({"name":name,"version":version,"refreshAfterMillis":state.stream_retry_millis});
     if let Some(icon) = icon {
         view["icon"] = json!(icon);
     }
@@ -452,7 +452,9 @@ mod tests {
         assert!(icon.is_none());
         tx.commit().await.unwrap();
         let notification = tokio::time::timeout(std::time::Duration::from_secs(5), listener.recv())
-            .await.unwrap().unwrap();
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(notification.payload(), tenant.to_string());
         async fn competing_write(
             pool: &sqlx::PgPool,
@@ -493,17 +495,29 @@ mod tests {
         assert_eq!(version, 4);
         assert!(matches!(name.as_str(), "first" | "second"));
         let notification = tokio::time::timeout(std::time::Duration::from_secs(5), listener.recv())
-            .await.unwrap().unwrap();
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(notification.payload(), tenant.to_string());
         // A later admission/audit failure rolls the profile and its hint back
         // together. Another live client must not observe this attempted name.
         let mut rolled_back = pool.begin().await.unwrap();
         params.resource_version = Some(4);
-        prewrite(&mut rolled_back, &ae, &def, &params).await.unwrap();
+        prewrite(&mut rolled_back, &ae, &def, &params)
+            .await
+            .unwrap();
         rolled_back.rollback().await.unwrap();
-        assert!(tokio::time::timeout(std::time::Duration::from_millis(100), listener.recv()).await.is_err());
-        let actual: (i32, String) = sqlx::query_as("select version,name from identity.tenant where id=$1")
-            .bind(tenant).fetch_one(&pool).await.unwrap();
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(100), listener.recv())
+                .await
+                .is_err()
+        );
+        let actual: (i32, String) =
+            sqlx::query_as("select version,name from identity.tenant where id=$1")
+                .bind(tenant)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
         assert_eq!(actual, (version, name));
         let mut tx = pool.begin().await.unwrap();
         params.resource_version = Some(4);

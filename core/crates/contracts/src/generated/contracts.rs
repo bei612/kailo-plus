@@ -11275,6 +11275,11 @@ pub struct TenantProfileView {
 
     pub name: String,
 
+    /// BFF_STREAM_RETRY_MILLIS 部署事实；在线资料读取中断后再次读取前的等待。afterVersion
+    /// 查询只等待有限的再准入时间，回应前重新校验本人会话与成员资格。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub refresh_after_millis: Option<i64>,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub update_action_key: Option<String>,
 

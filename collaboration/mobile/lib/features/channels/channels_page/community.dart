@@ -10,7 +10,9 @@ class _CommunityIndicator extends ConsumerWidget {
     final activeCommunity = activeAsync.value;
 
     return _CommunityAvatar(
-      name: ref.watch(tenantProfileLiveProvider).value?.name ?? activeCommunity?.name,
+      name:
+          ref.watch(tenantProfileLiveProvider).unwrapPrevious().value?.name ??
+          activeCommunity?.name,
       relayUrl: activeCommunity?.relayUrl,
     );
   }
@@ -23,7 +25,9 @@ class _CommunityHeaderTitle extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final name = ref.watch(tenantProfileLiveProvider).value?.name ?? ref.watch(activeCommunityProvider).value?.name;
+    final name =
+        ref.watch(tenantProfileLiveProvider).unwrapPrevious().value?.name ??
+        ref.watch(activeCommunityProvider).value?.name;
     final title = name?.trim();
     return SizedBox.expand(
       child: Align(
@@ -55,11 +59,16 @@ class _CommunityAvatar extends ConsumerWidget {
         ? trimmedName.substring(0, 1).toUpperCase()
         : '?';
     final relay = relayUrl;
-    final profile = ref.watch(tenantProfileLiveProvider).value;
-    final iconUrl = profile != null ? profile.icon : relay == null
+    final profile = ref.watch(tenantProfileLiveProvider).unwrapPrevious().value;
+    final iconUrl = profile != null
+        ? profile.icon
+        : relay == null
         ? null
         : ref.watch(communityIconProvider(relay)).value;
-    final emoji = profile?.icon != null && !profile!.icon!.startsWith('data:image/') ? profile.icon : null;
+    final emoji =
+        profile?.icon != null && !profile!.icon!.startsWith('data:image/')
+        ? profile.icon
+        : null;
 
     return AvatarImage(
       imageUrl: emoji == null ? iconUrl : null,

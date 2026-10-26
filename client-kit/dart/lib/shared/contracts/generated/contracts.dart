@@ -22235,12 +22235,17 @@ class TenantMemberJoinView {
 class TenantProfileView {
   final String? icon;
   final String name;
+
+  ///BFF_STREAM_RETRY_MILLIS 部署事实；在线资料读取中断后再次读取前的等待。afterVersion
+  ///查询只等待有限的再准入时间，回应前重新校验本人会话与成员资格。
+  final int? refreshAfterMillis;
   final String? updateActionKey;
   final int version;
 
   TenantProfileView({
     this.icon,
     required this.name,
+    this.refreshAfterMillis,
     this.updateActionKey,
     required this.version,
   });
@@ -22249,6 +22254,7 @@ class TenantProfileView {
       TenantProfileView(
         icon: json["icon"],
         name: json["name"],
+        refreshAfterMillis: json["refreshAfterMillis"],
         updateActionKey: json["updateActionKey"],
         version: json["version"],
       );
@@ -22256,6 +22262,7 @@ class TenantProfileView {
   Map<String, dynamic> toJson() => _stripNulls({
     "icon": icon,
     "name": name,
+    "refreshAfterMillis": refreshAfterMillis,
     "updateActionKey": updateActionKey,
     "version": version,
   });
