@@ -11,7 +11,7 @@ import {setLocale} from "../src/i18n";
 import {PlatformProvider} from "../src/react/context";
 import {PulseHostProvider,type PulseHost,type PulseEvent} from "../src/react/pulse/host";
 import {TooltipProvider} from "../src/react/sidebar/tooltip";
-import {createProjectsGitHost,loadProjectWorkItems,ProjectInboxDetail,type ProjectsHost} from "../src/react/projects";
+import {createProjectsGitHost,createNativeProjectsGitHost,loadProjectWorkItems,ProjectInboxDetail,type ProjectsHost} from "../src/react/projects";
 import {canMergeProjectPullRequest,mergeProjectPullRequest,readProjectPullRequestMergeIntent} from "../src/react/projects/pullRequestMutations";
 import {BffError,TransportError} from "../src/transport";
 import {render,click} from "./render";
@@ -21,7 +21,7 @@ const KEY=/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$
 const event=(id:string,kind:number,tags:string[][],pubkey:string,content="",time=20):PulseEvent=>({id:id.repeat(64),kind,pubkey,tags,content,created_at:time});
 const empty:ProjectsGitQueryResponse={view:ProjectsGitQueryRequestView.Snapshot,snapshot:{commits:[],contributors:[],files:[]}};
 
-function fixture({owner=viewer,mergeable=true,closed=false}:{owner?:string;mergeable?:boolean;closed?:boolean}={}){
+function fixture({owner=viewer,mergeable=true,closed=false,native=false}:{owner?:string;mergeable?:boolean;closed?:boolean;native?:boolean}={}){
   const repository=`30617:${owner}:repo`;
   const review=event("2",1618,[["a",repository],["subject","Viewer review"],["c",head],["branch-name","feature"],["target-branch","main"]],viewer,"Review body");
   const rows=[event("8",30617,[["d","repo"],["name","Original repo"],["clone","https://example.test/repo.git"]],owner),
@@ -39,6 +39,17 @@ function fixture({owner=viewer,mergeable=true,closed=false}:{owner?:string;merge
   });
   const host:ProjectsHost={scopeKey:"tenant:human",query,publish:vi.fn<NonNullable<ProjectsHost["publish"]>>(async()=>{throw new Error("unexpected publication");}),
     git:createProjectsGitHost(async()=>empty,undefined,mergeable?merge:undefined)};
+  if(native){
+    const nativeGit=createNativeProjectsGitHost(async(command,args)=>{
+      expect(command).toBe("merge_project_pull_request");
+      const input=args.input as {repository:string;pullRequestEventId:string;branch:string;sourceBranch:string;expectedCommit:string};
+      try{
+        const result=await merge({repository:input.repository,pullRequestEventId:input.pullRequestEventId,targetBranch:input.branch,sourceBranch:input.sourceBranch,expectedCommit:input.expectedCommit},args.idempotencyKey as string);
+        return {...result,statusEventId:result.statusEventId??null};
+      }catch(error){if(error instanceof BffError)throw {code:error.reason,operationId:error.operationId};throw error;}
+    },{expectedRelayUrl:"wss://native.example",expectedSignerPubkey:viewer});
+    host.git={...host.git!,mergeProjectPullRequest:mergeable?nativeGit.mergeProjectPullRequest:undefined};
+  }
   return {host,rows,review,merge,repository};
 }
 async function item(f:ReturnType<typeof fixture>){
@@ -96,8 +107,8 @@ describe("restored review merge",()=>{
     expect(canMergeProjectPullRequest(repository,{status:"Open",branchName:"feature",commit:head},other)).toBe(false);
   });
 
-  it("sends the exact typed merge request with the intent key and shows Merged from the 1631 readback",async()=>{
-    const f=fixture();const success=vi.spyOn(toast,"success").mockImplementation(()=>"ok");
+  it.each([false,true])("sends the exact typed merge request with the intent key and shows Merged from the 1631 readback (native=%s)",async(native)=>{
+    const f=fixture({native});const success=vi.spyOn(toast,"success").mockImplementation(()=>"ok");
     const ui=await mount(f);
     await confirmMerge(ui);
     await vi.waitFor(()=>expect(success).toHaveBeenCalledWith("Merged feature into main."));
@@ -111,8 +122,8 @@ describe("restored review merge",()=>{
     expect(mergeIntents()).toEqual([]);
   });
 
-  it("keeps an UNKNOWN merge on its exact intent and resends only that intent with the same key",async()=>{
-    const f=fixture();const message=vi.spyOn(toast,"message").mockImplementation(()=>"ok");
+  it.each([false,true])("keeps an UNKNOWN merge on its exact intent and resends only that intent with the same key (native=%s)",async(native)=>{
+    const f=fixture({native});const message=vi.spyOn(toast,"message").mockImplementation(()=>"ok");
     const success=vi.spyOn(toast,"success").mockImplementation(()=>"ok");
     const answer=f.merge.getMockImplementation()!;
     f.merge.mockImplementationOnce(async()=>{throw new TransportError("lost answer");});
