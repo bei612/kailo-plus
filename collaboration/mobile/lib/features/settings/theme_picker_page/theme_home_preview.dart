@@ -144,9 +144,7 @@ class _FigmaHomeScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = context.colors;
     final community = ref.watch(activeCommunityProvider).unwrapPrevious().value;
-    final live = ref
-        .watch(tenantProfileLiveProvider)
-        .unwrapPrevious();
+    final live = ref.watch(tenantProfileLiveProvider).unwrapPrevious();
     final tenantProfile = live.value;
     final cleared = live.hasValue && tenantProfile == null;
     final communityName = cleared
