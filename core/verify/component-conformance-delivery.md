@@ -110,3 +110,19 @@ Desktop/Mobile client 的授权码 + PKCE 取得 HUMAN bearer，在隔离原生�
 源码取自该已推送 commit 的所需路径 `git archive`，不是完整工程检查或真实 PKCE/接收方业务验收。
 队列 fetch `1e6913c3c7184e2e83c94b6ff243831d` 因只获取 main 而不认识分支 commit 失败（git 128），
 未开始检查；未修改 main、队列规则或生产部署来消除这一边界。
+
+来源纠偏（同日）：上段第一次检查实际由开发机 `git archive` 经 SSH 传送源码，违反“远端源码只经 GitHub”
+的交付要求。该目录的旧日志、回执保持原样，但其结果不作为有效交付证据。后续在 CI 独立 bare 库
+直接从 GitHub 获取 `codex/knowledge-conformance-completion`，FETCH_HEAD 为
+`8e95706c39c5f5ec5f0d8581bd560d467e0698c2`，核实被测固定提交 `2c36300689060f0794248ffd4fcb3ecf06bf8995`
+是其祖先；只读复用 CI 已有对象并指定 negotiation-tip，未改共享源码库、main 或队列规则。
+源码归档和展开均在 CI 执行，未从开发机传输源码。
+
+第一次 GitHub 来源重跑误写 `conformance/receiver-run.sh` 路径，退出 127，未开始测试；失败回执在
+`/volumes/data/kailo/conformance/checks/github-2c36300689060f0794248ffd4fcb3ecf06bf8995/`，保留原样。
+纠正为 `tools/component-release/receiver-run.sh` 后，在另一个新目录重复上述检查，全部退出 0，
+既有测试 10/10 通过；容器实际限制和镜像与上段一致。有效定向回执在 CI
+`/volumes/data/kailo/conformance/checks/github-2c36300689060f0794248ffd4fcb3ecf06bf8995-2/receipt.json`，
+同目录 `checks.log` 保存完整输出。两次临时检查容器均已移除，旧隔离服务未改动。
+这只证明所列定向检查；真实 PKCE、platform 完成后的 contracts/action-token 及知识库接收方
+native → bootstrap → seed → inputs → driver 仍未获得本轮成功证据。
