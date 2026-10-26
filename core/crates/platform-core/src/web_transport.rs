@@ -4961,12 +4961,14 @@ mod tests {
         sqlx::raw_sql(r#"CREATE TEMP TABLE owned_scope_fixture(tenant uuid,workspace uuid,human uuid,agent uuid,installation uuid) ON COMMIT DROP;
         DO $$ DECLARE
           tenant uuid:=gen_random_uuid(); workspace uuid:=gen_random_uuid();
-          human uuid:=gen_random_uuid(); agent uuid:=gen_random_uuid();
+          human uuid:=gen_random_uuid(); human_identity uuid:=gen_random_uuid(); agent uuid:=gen_random_uuid();
           definition uuid:=gen_random_uuid(); installation uuid:=gen_random_uuid(); route uuid:=gen_random_uuid(); version uuid:=gen_random_uuid();
         BEGIN
           INSERT INTO identity.tenant(id,slug,name,state) VALUES(tenant,tenant::text,'owner scope fixture','ACTIVE');
           INSERT INTO identity.workspace(id,tenant_id,slug,name,state) VALUES(workspace,tenant,workspace::text,'owner scope fixture','ACTIVE');
           INSERT INTO identity.principal(id,tenant_id,kind,status) VALUES(human,tenant,'HUMAN','ACTIVE'),(agent,tenant,'AGENT','ACTIVE');
+          INSERT INTO identity.human_identity(id,display_name,status) VALUES(human_identity,'owner scope fixture','ACTIVE');
+          INSERT INTO identity.tenant_membership(id,tenant_id,human_identity_id,tenant_principal_id,state) VALUES(gen_random_uuid(),tenant,human_identity,human,'ACTIVE');
           INSERT INTO catalog.resource(id,tenant_id,type_key,home_workspace_id,owner_principal_id,component_type_key,native_id,state,version) VALUES
             (definition,tenant,'agent.definition',NULL,human,'core',definition::text,'PROVISIONING',1),
             (route,tenant,'llm_route',workspace,human,'core',route::text,'PROVISIONING',1),
