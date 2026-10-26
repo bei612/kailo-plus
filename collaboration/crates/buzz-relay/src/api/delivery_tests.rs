@@ -260,27 +260,63 @@ async fn delivery_http_uses_real_nip98_replay_writer_and_live_owner_admission() 
 #[ignore = "requires isolated migrated BUZZ_TEST_DATABASE_URL and REDIS_URL"]
 async fn delivery_rechecks_revocation_and_host_binding_after_waiting_for_writer() {
     use std::time::Duration;
-    for drift in ["membership","host","archive"] {
-        let (state,pool,community,host,keys,channel)=fixture().await;
-        let original=event(&keys,Timestamp::now().as_secs());
-        let mut writer=pool.begin().await.unwrap();
-        buzz_db::event::insert_event_in_transaction(&mut writer,community,&original,None).await.unwrap();
-        let mut request=Box::pin(proof(state,&host,&keys,&original));
-        assert!(tokio::time::timeout(Duration::from_millis(200),&mut request).await.is_err(),"request must wait behind the uncommitted writer");
+    for drift in ["membership", "host", "archive"] {
+        let (state, pool, community, host, keys, channel) = fixture().await;
+        let original = event(&keys, Timestamp::now().as_secs());
+        let mut writer = pool.begin().await.unwrap();
+        buzz_db::event::insert_event_in_transaction(&mut writer, community, &original, None)
+            .await
+            .unwrap();
+        let mut request = Box::pin(proof(state, &host, &keys, &original));
+        assert!(
+            tokio::time::timeout(Duration::from_millis(200), &mut request)
+                .await
+                .is_err(),
+            "request must wait behind the uncommitted writer"
+        );
         match drift {
-            "membership"=> { sqlx::query("DELETE FROM channel_members WHERE community_id=$1 AND channel_id=$2")
-                .bind(community.as_uuid()).bind(channel).execute(&pool).await.unwrap(); },
-            "host"=> {
-                sqlx::query("UPDATE communities SET host=$2 WHERE id=$1").bind(community.as_uuid()).bind(format!("retired-{host}")).execute(&pool).await.unwrap();
-                sqlx::query("INSERT INTO communities(id,host) VALUES($1,$2)").bind(uuid::Uuid::new_v4()).bind(&host).execute(&pool).await.unwrap();
-            },
-            "archive"=> { sqlx::query("UPDATE communities SET archived_at=now() WHERE id=$1").bind(community.as_uuid()).execute(&pool).await.unwrap(); },
-            _=>unreachable!(),
+            "membership" => {
+                sqlx::query("DELETE FROM channel_members WHERE community_id=$1 AND channel_id=$2")
+                    .bind(community.as_uuid())
+                    .bind(channel)
+                    .execute(&pool)
+                    .await
+                    .unwrap();
+            }
+            "host" => {
+                sqlx::query("UPDATE communities SET host=$2 WHERE id=$1")
+                    .bind(community.as_uuid())
+                    .bind(format!("retired-{host}"))
+                    .execute(&pool)
+                    .await
+                    .unwrap();
+                sqlx::query("INSERT INTO communities(id,host) VALUES($1,$2)")
+                    .bind(uuid::Uuid::new_v4())
+                    .bind(&host)
+                    .execute(&pool)
+                    .await
+                    .unwrap();
+            }
+            "archive" => {
+                sqlx::query("UPDATE communities SET archived_at=now() WHERE id=$1")
+                    .bind(community.as_uuid())
+                    .execute(&pool)
+                    .await
+                    .unwrap();
+            }
+            _ => unreachable!(),
         }
         writer.commit().await.unwrap();
-        let response=tokio::time::timeout(Duration::from_secs(5),request).await.unwrap();
-        assert!(!response.status().is_success(),"{drift} cannot become absence or delivery proof");
-        let body:serde_json::Value=serde_json::from_slice(&to_bytes(response.into_body(),4096).await.unwrap()).unwrap_or_default();
-        assert!(body.get("accepted").is_none(),"{drift}");
+        let response = tokio::time::timeout(Duration::from_secs(5), request)
+            .await
+            .unwrap();
+        assert!(
+            !response.status().is_success(),
+            "{drift} cannot become absence or delivery proof"
+        );
+        let body: serde_json::Value =
+            serde_json::from_slice(&to_bytes(response.into_body(), 4096).await.unwrap())
+                .unwrap_or_default();
+        assert!(body.get("accepted").is_none(), "{drift}");
     }
 }
