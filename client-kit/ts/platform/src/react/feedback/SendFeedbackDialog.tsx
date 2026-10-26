@@ -14,6 +14,8 @@ import { useEmojiBurst } from "../profile/buzz/shared/ui/EmojiBurstProvider";
 export function SendFeedbackDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const api = useBffClient(), t = useT(), environment = useFeedbackEnvironment();
   const { burstEmoji } = useEmojiBurst();
+  const [previewOpen, setPreviewOpen] = useState(false);
+  useEffect(() => { if (!open) setPreviewOpen(false); }, [open]);
   const [category, setCategory] = useState<FeedbackCategory>();
   const [message, setMessage] = useState("");
   const [image, setImage] = useState<{ url: string; attachment: NonNullable<FeedbackSubmissionRequest["attachment"]> }>();
@@ -78,7 +80,7 @@ export function SendFeedbackDialog({ open, onOpenChange }: { open: boolean; onOp
           <span className="flex h-8 w-8 items-center justify-center rounded-full bg-muted"><Icon className="h-4 w-4"/></span>{t(label)}</button>)}</div>
         <div className="flex items-stretch gap-3"><Textarea className="min-h-32 flex-1 resize-none" value={message} disabled={locked} data-testid="feedback-message"
           onChange={event => setMessage(event.target.value)} placeholder={t("platform.feedback.placeholder")}/>
-          {image ? <div className="relative w-32 shrink-0 overflow-hidden rounded-lg border"><img src={image.url} alt={t("platform.feedback.image")} className="h-32 w-full object-contain"/>
+          {image ? <div className="relative w-32 shrink-0 overflow-hidden rounded-lg border"><button type="button" aria-label={t("platform.feedback.image")} className="h-32 w-full" onClick={() => setPreviewOpen(true)}><img src={image.url} alt={t("platform.feedback.image")} className="h-32 w-full object-contain"/></button>
             <button type="button" disabled={locked} aria-label={t("platform.feedback.removeImage")} className="absolute right-1 top-1 rounded-full bg-background p-1" onClick={() => setImage(undefined)}><X className="h-4 w-4"/></button></div>
             : <button type="button" disabled={locked || attaching} className="flex w-32 flex-col items-center justify-center gap-2 rounded-lg border border-dashed p-3 text-sm"
               onClick={() => input.current?.click()}><ImageIcon className="h-5 w-5"/>{t("platform.feedback.attachImage")}</button>}
@@ -91,5 +93,8 @@ export function SendFeedbackDialog({ open, onOpenChange }: { open: boolean; onOp
           <Button type="submit" disabled={pending || attaching || !message.trim() || [...message.trim()].length > 4000}>{t(pending ? "platform.feedback.sending" : unknown ? "platform.feedback.retry" : "platform.feedback.title")}</Button></div>
       </form>
     </DialogContent>
+    {image ? <Dialog open={previewOpen} onOpenChange={setPreviewOpen}><DialogContent aria-describedby={undefined} className="max-w-4xl border-0 p-2" data-testid="feedback-attachment-preview">
+      <DialogTitle className="sr-only">{t("platform.feedback.image")}</DialogTitle><img src={image.url} alt={t("platform.feedback.image")} className="max-h-[80vh] w-full rounded-lg bg-black/40 object-contain"/>
+    </DialogContent></Dialog> : null}
   </Dialog>;
 }
