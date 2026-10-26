@@ -103,6 +103,18 @@ Desktop 的 1631 结果对账复用上述 writer 事实，经原 Relay HTTP/NIP-
 再作同范围 writer 缺失查证；不能先读空、再跨过窗口补取时间。Relay 还须沿自身原
 时间漂移配置与同一时钟确认过窗，不以 Core 时钟替代 Relay 时钟。
 
+冻结范围还须约束实际写入。SOURCE_FACT（同一 Buzz commit）：
+`.references/buzz/crates/buzz-relay/src/api/bridge.rs::submit_event` 按本次 Host
+建立 TenantContext；原 NIP-98 只绑定 URL、方法与正文，原发布回执没有 Community
+标识，Host 不变不能证明其背后的 Community 未换。
+因此，上述 1631 消费者在原 `POST /events` 的 NIP-98 签名事件中携带唯一
+`["community", "<冻结的不可变Community UUID>"]` 标签。Relay 验签后，标签畸形、
+重复或与本次 Host 解析的 Community 不匹配时，在写入前拒绝；匹配后将同一个
+不可变 TenantContext 传入原准入和 writer，后续 Host 变化不得重新定向这次写入。
+Native 只从持久化意图取得该范围，不能从当前 UI、Host 或重试回应覆盖它。
+携带该绑定的原提交肯定回执才可证明本次发送属于冻结范围；不携带标签的其他既有
+原生提交保持原协议语义，不据此声称完成上述范围证明。不新增发布端点或送达账本。
+
 缺失证明与该原 event ID 的全部原生写入须经过同一 writer 串行屏障。1631 的写入在
 取得该屏障后重验原时间准入；读空持有同一屏障，不能越过仍可提交的旧请求。旧请求
 已持屏障时，查证须等待其提交或回滚；查证先取得屏障且已过窗时，随后到达的旧请求
