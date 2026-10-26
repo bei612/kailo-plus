@@ -131,6 +131,35 @@ UNKNOWN，不能以“早先通过时间检查”证明旧请求已不在途。
 原尝试与证据保留。窗口内、普通查询空、设备时钟跳变或证据不全均保持 UNKNOWN。
 结算窗与观察时刻沿既有原生 Community 事实读取，不能由 WebView 或本机默认值提供。
 
+### Core 原发布的范围与肯定证据
+
+DERIVED_DESIGN（REQ-24、DD-39/48/75/80/81/142，承接本节上述同一固定 Buzz
+writer 与软删除 SOURCE_FACT，`ADAPTER_REQUIRED: SS-BUZ-GOVERNANCE`）：
+Core 新签的协作发布在原发布意图与 DISPATCH 的同一事务内，冻结实际已签事件的
+公钥、kind、原生 Channel（Community 全局事件为空）、不可变 Community ID、
+TenantBuzzBinding 与目标 Channel binding 的版本；不保存正文、标签或私钥。
+这些事实只从 Core 认可的原 binding 与实际签名事件产生，不接受浏览器声明或
+从后来 Host、当前 binding、旧 `message_kind` 默认值补造。实际发送使用上节同形的
+原 `/events?community=<冻结UUID>` 与唯一 NIP-98 Community 标签；原 ACK 必须
+同时匹配事件 ID 和冻结 Community。所有 kind 仍经过其原 Relay 准入，不能将
+1631 的仓库 owner 规则移用于普通消息，也不能因为固定范围而绕过成员或管理白名单。
+
+原 Relay HTTP/NIP-98 面提供只读 `POST /events/observation`，只接收 canonical
+原事件 ID 与冻结 Community ID；完整签名 URL、方法与正文、重放和 HTTP 准入沿原规则。
+该接缝只给肯定证据：从同 Community writer 读取包括软删除的原事件，验证原事件 ID
+与签名，并按原生 Channel、当前成员与该 kind 的读取边界重新准入。只返回事件 ID、
+Community、公钥、kind 与 Channel 引用，不返回正文、标签、删除状态或时间。
+原事件不可读、缺失、已物理清除、Host 改绑、Community 不 ACTIVE 或准入变化时
+不提供肯定证据；其拒绝或空结果绝不表示未送达，也不提供 settled 缺失结论。
+
+Core 仅对同一原意图消费上述证据，逐项匹配冻结事实，查证前后 fresh 核验原 scope、
+binding 与当前资格。Workspace/Community 读取沿原受权身份；私聊必须是原 HUMAN
+作者的当前有效身份与参与资格，CONTROL 不能借该接缝读取私聊证据。owner 编辑
+自有 Agent 消息仍核验原 owner/Installation 边界，不把 owner 当作原事件作者。
+缺历史范围或作者证据的旧意图不从新 Host 推导确定结果，继续保留原审计和 UNKNOWN。
+只有肯定证据成立才追加 ACCEPTED；普通发布的权威缺失结论仍须另有 DD-81 所要求
+的原 writer 在途屏障、原签名时间与可证保留边界，不能用这个肯定证据接缝代替。
+
 ### 原生私聊与多设备映射
 
 REQ-24、DD-77/80 的私聊使用 `03` 的 ConversationBuzzBinding。固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的 `.references/buzz/crates/buzz-relay/src/handlers/command_executor.rs::handle_dm_open` 会把认证公钥加入参与者；`.references/buzz/crates/buzz-db/src/store/dm.rs::{open_dm,create_dm,compute_participant_hash}` 以公钥集合去重并建立 private DM。因此 CONTROL 不能直接冒充发起人调用原路径，否则成为私聊成员；也不能把设备公钥数当作人数。
