@@ -99,3 +99,14 @@ Desktop/Mobile client 的授权码 + PKCE 取得 HUMAN bearer，在隔离原生�
 启动日志为 OpenBao AppRole login 不可达，进程退出 1，非 OOM；其他隔离基础服务仍运行。
 该现场不是当前生产同版本的接收方，未被复用或清理。第 5 节的“已自动化”描述代码覆盖，不能据此声明这次
 知识库运行已完成 platform/contracts；native、bootstrap、seed、inputs、driver 仍无端到端成功证据。
+
+固定提交 `2c36300689060f0794248ffd4fcb3ecf06bf8995` 的定向检查（CI 节点，2026-10-26）退出 0：
+`bash -n receiver-run.sh`、`node --check receiver-sessions.mjs`、conformance Python AST 解析；
+会话入口对缺失参数与生产目录均退出 2 且不创建输出；既有 `seed-cells.test.mjs` 与
+`conformance-provider.test.mjs` 10 项全部通过。镜像为既有 `tools/check.Dockerfile` 对应的
+`sha256:3007729eb192341a4f004a88e42e1e66c94fc67d763acfc96568bd7311116018`；回读 HostConfig 为
+1 CPU、512 MiB、memory-swap 同限、128 PIDs、只读根文件系统与 `network=none`。
+回执和日志在 CI `/volumes/data/kailo/conformance/checks/2c36300689060f0794248ffd4fcb3ecf06bf8995/`。
+源码取自该已推送 commit 的所需路径 `git archive`，不是完整工程检查或真实 PKCE/接收方业务验收。
+队列 fetch `1e6913c3c7184e2e83c94b6ff243831d` 因只获取 main 而不认识分支 commit 失败（git 128），
+未开始检查；未修改 main、队列规则或生产部署来消除这一边界。
