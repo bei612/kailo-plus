@@ -29,6 +29,7 @@ export default function MetadataDrawer(props: Props) {
       visible={visible}
       title={displayName}
       width={480}
+      className="kailo-metadata-drawer"
       closable
       destroyOnClose
       onClose={onClose}

@@ -1,9 +1,7 @@
 import { useMemo } from 'react';
 import { keyBy } from 'lodash';
 import { Alert, Col, Row, Typography, Button } from 'antd';
-import FieldTable from '@/components/table/FieldTable';
-import CalculatedFieldTable from '@/components/table/CalculatedFieldTable';
-import RelationTable from '@/components/table/RelationTable';
+import { CalculatedFieldList, FieldList, RelationList } from './MetadataList';
 import PreviewData from '@/components/dataPreview/PreviewData';
 import { DiagramModel } from '@/utils/data';
 import { usePreviewModelDataMutation } from '@/apollo/client/graphql/model.generated';
@@ -78,36 +76,36 @@ export default function ModelMetadata(props: Props) {
       </div>
 
       <div className="mb-6" data-testid="metadata__columns">
-        <Typography.Text className="d-block gray-7 mb-2">
+        <Typography.Text className="d-block gray-7 mb-2 kailo-meta-section__title">
           {t('modeling.columnsCount', { count: fields.length })}
         </Typography.Text>
-        <FieldTable dataSource={fields} showExpandable />
+        <FieldList dataSource={fields} />
       </div>
 
       {!!calculatedFields.length && (
         <div className="mb-6" data-testid="metadata__calculated-fields">
-          <Typography.Text className="d-block gray-7 mb-2">
+          <Typography.Text className="d-block gray-7 mb-2 kailo-meta-section__title">
             {t('modeling.calculatedFieldsCount', {
               count: calculatedFields.length,
             })}
           </Typography.Text>
-          <CalculatedFieldTable dataSource={calculatedFields} showExpandable />
+          <CalculatedFieldList dataSource={calculatedFields} />
         </div>
       )}
 
       {!!relationFields.length && (
         <div className="mb-6" data-testid="metadata__relationships">
-          <Typography.Text className="d-block gray-7 mb-2">
+          <Typography.Text className="d-block gray-7 mb-2 kailo-meta-section__title">
             {t('modeling.relationshipsCount', {
               count: relationFields.length,
             })}
           </Typography.Text>
-          <RelationTable dataSource={relationFields} showExpandable />
+          <RelationList dataSource={relationFields} />
         </div>
       )}
 
       <div className="mb-6" data-testid="metadata__preview-data">
-        <Typography.Text className="d-block gray-7 mb-2">
+        <Typography.Text className="d-block gray-7 mb-2 kailo-meta-section__title">
           {t('modeling.dataPreview')}
         </Typography.Text>
         <Button

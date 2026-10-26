@@ -2,8 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Alert, Button, Input, InputNumber, Typography } from 'antd';
 import SQLCodeBlock from '@/components/code/SQLCodeBlock';
 import PreviewData from '@/components/dataPreview/PreviewData';
-import { COLUMN } from '@/components/table/BaseTable';
-import FieldTable from '@/components/table/FieldTable';
+import { FieldList } from './MetadataList';
 import { DiagramView } from '@/utils/data';
 import { usePreviewViewDataMutation } from '@/apollo/client/graphql/view.generated';
 import { useRouter } from 'next/router';
@@ -147,25 +146,21 @@ export default function ViewMetadata(props: Props) {
       </div>
 
       <div className="mb-6" data-testid="metadata__columns">
-        <Typography.Text className="d-block gray-7 mb-2">
+        <Typography.Text className="d-block gray-7 mb-2 kailo-meta-section__title">
           {t('modeling.columnsCount', { count: fields.length })}
         </Typography.Text>
-        <FieldTable
-          columns={[COLUMN.NAME, COLUMN.TYPE, COLUMN.DESCRIPTION]}
-          dataSource={fields}
-          showExpandable
-        />
+        <FieldList dataSource={fields} showAlias={false} />
       </div>
 
       <div className="mb-6" data-testid="metadata__sql-statement">
-        <Typography.Text className="d-block gray-7 mb-2">
+        <Typography.Text className="d-block gray-7 mb-2 kailo-meta-section__title">
           {t('modeling.sqlStatement')}
         </Typography.Text>
         <SQLCodeBlock code={statement} showLineNumbers maxHeight="300" />
       </div>
 
       <div className="mb-6" data-testid="metadata__preview-data">
-        <Typography.Text className="d-block gray-7 mb-2">
+        <Typography.Text className="d-block gray-7 mb-2 kailo-meta-section__title">
           {t('modeling.dataPreview')}
         </Typography.Text>
         <Button
@@ -194,7 +189,7 @@ export default function ViewMetadata(props: Props) {
         </div>
       </div>
       <div className="mb-6" data-testid="metadata__platform-query-reference">
-        <Typography.Text className="d-block gray-7 mb-2">
+        <Typography.Text className="d-block gray-7 mb-2 kailo-meta-section__title">
           {text.referenceTitle}
         </Typography.Text>
         <Typography.Paragraph>{text.referenceDescription}</Typography.Paragraph>

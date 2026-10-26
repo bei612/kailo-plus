@@ -120,7 +120,7 @@ const shell = {
     confirm: 'Confirm',
     delete: 'Delete',
     deleteTitle: 'Delete this {item}?',
-    deleteNamedTitle: 'Delete {item} "{name}"?',
+    deleteNamedTitle: 'Delete {item} “{name}”?',
     deleteDescription: 'This cannot be undone.',
     deleteThreadDescription:
       'Every question and answer in this conversation is deleted permanently.',
@@ -157,7 +157,7 @@ const shell = {
     reset: 'Reset',
     resetConfirm: 'Reset the project?',
     resetHint:
-      'Resetting deletes all current settings and records, including the modeling page and the threads.',
+      'Resetting deletes all current settings and records, including models and conversations.',
     languageUpdated: 'Answer language updated',
     sqlLabel: 'SQL',
     notFoundTitle: 'Page not found',
@@ -165,7 +165,7 @@ const shell = {
     backToHome: 'Back to Ask',
     // DD-138(4), `07` §4.8.3: share with Kailo members (Kailo inbox).
     shareWithMember: 'Share with member',
-    shareThreadTitle: 'Share this thread with members',
+    shareThreadTitle: 'Share this conversation with members',
     shareDashboardTitle: 'Share the team dashboard with members',
     shareHint:
       'The selected members are notified in their Kailo inbox and can open it from there.',
@@ -174,7 +174,7 @@ const shell = {
     shareSubmit: 'Share',
     shareCancel: 'Cancel',
     shareDone: 'Selected members notified',
-    shareFailed: 'Sharing did not complete. Please try again later.',
+    shareFailed: 'Sharing did not complete. Try again later.',
   },
 } as const;
 

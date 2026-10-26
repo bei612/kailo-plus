@@ -2,9 +2,9 @@ import { useEffect, useMemo, useState } from 'react';
 import { Alert, Button, Skeleton, Typography } from 'antd';
 import ReloadOutlined from '@ant-design/icons/ReloadOutlined';
 import LoadingOutlined from '@ant-design/icons/LoadingOutlined';
-import CaretDownOutlined from '@ant-design/icons/CaretDownOutlined';
 import EditOutlined from '@ant-design/icons/EditOutlined';
 import styled from 'styled-components';
+import { ChevronDownIcon } from '@/components/kailo/KailoIcons';
 import { BinocularsIcon } from '@/utils/icons';
 import { nextTick } from '@/utils/time';
 import { MORE_ACTION } from '@/utils/enum';
@@ -194,9 +194,14 @@ export default function TextBasedAnswer(props: AnswerResultProps) {
         onClick={(event) => event.stopPropagation()}
       >
         {t('home.adjustAnswer')}
-        <CaretDownOutlined
+        <ChevronDownIcon
+          size={14}
           className="ml-1"
-          rotate={adjustResultsDropdown.visible ? 180 : 0}
+          style={{
+            transform: adjustResultsDropdown.visible
+              ? 'rotate(180deg)'
+              : undefined,
+          }}
         />
       </Button>
     </AdjustAnswerDropdown>

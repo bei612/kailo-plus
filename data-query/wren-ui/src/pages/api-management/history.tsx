@@ -5,7 +5,7 @@ import useDrawerAction from '@/hooks/useDrawerAction';
 import { getColumnSearchProps } from '@/utils/table';
 import SiderLayout from '@/components/layouts/SiderLayout';
 import PageLayout from '@/components/layouts/PageLayout';
-import { EyeIcon } from '@/components/kailo/KailoIcons';
+import { EyeIcon, FilterIcon } from '@/components/kailo/KailoIcons';
 import CheckCircleOutlined from '@ant-design/icons/CheckCircleOutlined';
 import CloseCircleOutlined from '@ant-design/icons/CloseCircleOutlined';
 import SQLCodeBlock from '@/components/code/SQLCodeBlock';
@@ -25,6 +25,18 @@ import KailoEmpty from '@/components/kailo/KailoEmpty';
 import useKailoPage from '@/hooks/useKailoPage';
 
 const PAGE_SIZE = 10;
+
+// DD-157 (20 §13.6): column filters use the Kailo line icon, brand when on.
+const tableFilterIcon = (filtered: boolean) => (
+  <FilterIcon
+    size={14}
+    style={{
+      color: filtered
+        ? 'var(--kailo-color-brand)'
+        : 'var(--kailo-color-muted-foreground)',
+    }}
+  />
+);
 
 async function currentHistoryIdentity() {
   const config = await getUserConfig();
@@ -239,6 +251,7 @@ export default function APIHistory() {
       })),
       filteredValue: filters['apiType'],
       filterMultiple: false,
+      filterIcon: tableFilterIcon,
     },
     {
       title: t('knowledge.status'),
@@ -267,6 +280,7 @@ export default function APIHistory() {
       ],
       filteredValue: filters['statusCode'],
       filterMultiple: false,
+      filterIcon: tableFilterIcon,
     },
     {
       title: t('knowledge.questionOrSql'),
