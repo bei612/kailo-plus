@@ -64,6 +64,8 @@ pub(crate) struct VerifiedBridgeAuth {
     pub(crate) pubkey: nostr::PublicKey,
     pub(crate) event_id_bytes: [u8; 32],
     pub(crate) signed_created_at: Option<u64>,
+    // Interpreted only by the scoped publication consumer, after signature verification.
+    publication_community: Result<Option<uuid::Uuid>, &'static str>,
 }
 
 type BridgeAuthResult = Result<VerifiedBridgeAuth, (StatusCode, Json<Value>)>;
@@ -129,6 +131,7 @@ pub(crate) fn verify_bridge_auth_with_options(
             pubkey,
             event_id_bytes,
             signed_created_at: Some(event.created_at.as_secs()),
+            publication_community: publication_community_tag(&event),
         });
     }
 
@@ -142,6 +145,7 @@ pub(crate) fn verify_bridge_auth_with_options(
                 pubkey,
                 event_id_bytes: [0u8; 32],
                 signed_created_at: None,
+                publication_community: Ok(None),
             });
         }
     }
@@ -718,9 +722,34 @@ fn truncate_reason(s: &str, max_bytes: usize) -> &str {
     &s[..end]
 }
 
+// The scoped form is deliberately canonical: its full URL must also fail closed
+// against an old Relay whose verifier expects only /events.
+fn canonical_community(value: &str) -> Result<uuid::Uuid, &'static str> {
+    let id = uuid::Uuid::parse_str(value).map_err(|_| "invalid publication community")?;
+    if id.to_string() != value {
+        return Err("noncanonical publication community");
+    }
+    Ok(id)
+}
+fn publication_community_tag(event: &nostr::Event) -> Result<Option<uuid::Uuid>, &'static str> {
+    let mut tags = event.tags.iter().filter(|t| t.as_slice().first().is_some_and(|v| v == "community"));
+    let Some(tag) = tags.next() else { return Ok(None) };
+    if tags.next().is_some() || tag.as_slice().len() != 2 {
+        return Err("ambiguous publication community");
+    }
+    canonical_community(&tag.as_slice()[1]).map(Some)
+}
+fn publication_community_query(query: Option<&str>) -> Result<Option<uuid::Uuid>, &'static str> {
+    match query {
+        None => Ok(None),
+        Some(query) => canonical_community(query.strip_prefix("community=").ok_or("invalid publication query")?).map(Some),
+    }
+}
+
 /// Submit a signed Nostr event via HTTP bridge (NIP-98 auth).
 pub async fn submit_event(
     State(state): State<Arc<AppState>>,
+    RawQuery(raw_query): RawQuery,
     headers: HeaderMap,
     body: axum::body::Bytes,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
@@ -741,25 +770,35 @@ pub async fn submit_event(
             )
         })?;
 
-    let url = nip98_expected_url(&state.config.relay_url, &tenant, "/events");
-    let VerifiedBridgeAuth {
-        pubkey,
-        event_id_bytes,
-        signed_created_at,
-    } = verify_bridge_auth(
-        &headers,
-        "POST",
-        &url,
-        Some(&body),
-        state.config.require_auth_token,
+    let community = publication_community_query(raw_query.as_deref())
+        .map_err(|reason| api_error(StatusCode::BAD_REQUEST, reason))?;
+    let path = community.map_or_else(|| "/events".to_owned(), |id| format!("/events?community={id}"));
+    let url = nip98_expected_url(&state.config.relay_url, &tenant, &path);
+    let auth = verify_bridge_auth_with_options(
+        &headers, "POST", &url, Some(&body),
+        community.is_some() || state.config.require_auth_token, community.is_some(),
     )?;
+    let signed_community = auth.publication_community
+        .map_err(|reason| api_error(StatusCode::UNAUTHORIZED, reason))?;
+    if signed_community != community || community.is_some_and(|id| id != tenant.community().as_uuid()) {
+        return Err(api_error(StatusCode::UNAUTHORIZED, "publication community mismatch"));
+    }
+    if community.is_some() {
+        let event: nostr::Event = serde_json::from_slice(&body)
+            .map_err(|_| api_error(StatusCode::BAD_REQUEST, "invalid scoped publication"))?;
+        let repo = buzz_core::publication::merged_status_repository(&event, &auth.pubkey)
+            .map_err(|_| api_error(StatusCode::NOT_FOUND, "publication unavailable"))?;
+        super::delivery::readmit(&state, &tenant, &headers, &auth, repo).await
+            .map_err(|_| api_error(StatusCode::NOT_FOUND, "publication unavailable"))?;
+    }
+    let VerifiedBridgeAuth { pubkey, event_id_bytes, signed_created_at, .. } = auth;
     let pubkey_hex = pubkey.to_hex();
 
     // Everything after auth — admission, replay, membership, parse, ingest —
     // runs inside the helper.  The thin wrapper here owns the single terminal
     // attribution line so it fires for every outcome, including admission/
     // replay/membership failures that previously returned before any log fired.
-    let outcome = submit_event_authed(
+    let mut outcome = submit_event_authed(
         &state,
         &tenant,
         &headers,
@@ -769,6 +808,11 @@ pub async fn submit_event(
         signed_created_at,
     )
     .await;
+
+    if let (Some(id), SubmitOutcome::Ok { response, .. }) = (community, &mut outcome) {
+        // This is the same immutable TenantContext passed to ingest, not a new Host lookup.
+        response.0["community_id"] = serde_json::json!(id.to_string());
+    }
 
     match &outcome {
         SubmitOutcome::Ok { accepted, kind, .. } => {
@@ -1035,6 +1079,7 @@ pub async fn query_events(
         pubkey,
         event_id_bytes,
         signed_created_at,
+        ..
     } = verify_bridge_auth(
         &headers,
         "POST",
@@ -1578,6 +1623,7 @@ pub async fn count_events(
         pubkey,
         event_id_bytes,
         signed_created_at,
+        ..
     } = verify_bridge_auth(
         &headers,
         "POST",

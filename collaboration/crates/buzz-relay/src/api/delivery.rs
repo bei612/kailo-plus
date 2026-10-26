@@ -22,7 +22,7 @@ fn refused() -> Response {
     )
         .into_response()
 }
-async fn readmit(
+pub(super) async fn readmit(
     state: &AppState,
     scope: &buzz_core::TenantContext,
     headers: &HeaderMap,
@@ -75,9 +75,7 @@ pub async fn delivery(
     headers: HeaderMap,
     body: Bytes,
 ) -> Result<Response, Response> {
-    if body.len() > 16 * 1024 {
-        return Err(StatusCode::PAYLOAD_TOO_LARGE.into_response());
-    }
+    // The existing API router supplies the original request-body bound.
     let host = headers
         .get(axum::http::header::HOST)
         .and_then(|v| v.to_str().ok())

@@ -6,6 +6,8 @@ pub struct SubmitEventResponse {
     pub event_id: String,
     pub accepted: bool,
     pub message: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub community_id: Option<String>,
 }
 
 /// POST an already-signed event to an explicit relay with an explicit owner.
@@ -19,7 +21,7 @@ pub async fn submit_signed_event_at_with_keys(
     api_base_url: &str,
     keys: &nostr::Keys,
 ) -> Result<SubmitEventResponse, String> {
-    submit_signed_event_scoped(event, &state.http_client, api_base_url, keys, || Ok(())).await
+    submit_signed_event_scoped(event, &state.http_client, api_base_url, keys, None, || Ok(())).await
 }
 
 /// Original submit path with a lifecycle check after rate-limit waiting.
@@ -29,6 +31,7 @@ pub(crate) async fn submit_signed_event_scoped(
     http: &reqwest::Client,
     api_base_url: &str,
     keys: &nostr::Keys,
+    community: Option<&str>,
     check: impl Fn() -> Result<(), String> + Send + Sync,
 ) -> Result<SubmitEventResponse, String> {
     if event.pubkey != keys.public_key() {
@@ -36,10 +39,13 @@ pub(crate) async fn submit_signed_event_scoped(
     }
     crate::relay_admission::wait_for_rate_limit().await;
     check()?;
-    let url = format!("{}/events", api_base_url.trim_end_matches('/'));
+    let mut url = format!("{}/events", api_base_url.trim_end_matches('/'));
+    if let Some(community) = community {
+        url.push_str(&format!("?community={community}"));
+    }
     let body_bytes = event.as_json().into_bytes();
     crate::egress_guard::assert_no_key_backup_bytes(&body_bytes, "relay event submit")?;
-    let auth_header = build_nip98_auth_header_for_keys(keys, &Method::POST, &url, &body_bytes)?;
+    let auth_header = build_nip98_publication_auth(keys, &Method::POST, &url, &body_bytes, community)?;
 
     let response = build_authenticated_relay_request(
         http,
@@ -61,6 +67,9 @@ pub(crate) async fn submit_signed_event_scoped(
     let result: SubmitEventResponse = parse_json_response(response).await?;
     if result.event_id != event.id.to_hex() {
         return Err("relay returned malformed response: event ID mismatch".to_string());
+    }
+    if community.is_some_and(|expected| result.community_id.as_deref() != Some(expected)) {
+        return Err("relay returned malformed response: community ID mismatch".into());
     }
     if !result.accepted {
         return Err(format!("relay rejected event: {}", result.message));

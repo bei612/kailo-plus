@@ -139,6 +139,7 @@ fn journal_retries_only_proven_unsent_status_and_preserves_old_attempt_and_late_
 }
 
 struct Io {
+    submit_base: Option<String>,
     keys: Keys,
     now: u64,
     observed: Option<Event>,
@@ -212,7 +213,7 @@ impl PublicationIo for Io {
             Ok(())
         }
     }
-    async fn submit(&self, event: &Event) -> Result<(), String> {
+    async fn submit(&self, event: &Event, community: &str) -> Result<(), String> {
         // The original consumer must commit the new exact event before I/O.
         let store = Journal::open(&self.journal).unwrap();
         let frozen = store
@@ -220,6 +221,7 @@ impl PublicationIo for Io {
             .unwrap()
             .unwrap();
         assert_eq!(frozen.event, Some(event.as_json()));
+        assert_eq!(frozen.event_community_id.as_deref(), Some(community));
         assert_eq!(
             frozen.event_community_id.as_deref(),
             Some(self.community.as_str()),
@@ -230,6 +232,12 @@ impl PublicationIo for Io {
         if self.retire_on_submit {
             self.active
                 .store(false, std::sync::atomic::Ordering::SeqCst);
+        }
+        if let Some(base) = &self.submit_base {
+            return crate::relay::submit_signed_event_scoped(event,
+                &reqwest::Client::builder().no_proxy().redirect(reqwest::redirect::Policy::none()).timeout(std::time::Duration::from_secs(3)).build().unwrap(),
+                base,&self.keys,Some(community),|| self.keys().map(|_| ()).map_err(|e| format!("{e:?}")))
+                .await.map(|_| ());
         }
         Ok(())
     }
@@ -254,6 +262,7 @@ fn consumer_fixture(path: &Path, outcome: &str) -> (Io, Event) {
         .unwrap();
     (
         Io {
+            submit_base: None,
             keys,
             now: 200,
             observed: None,
@@ -599,4 +608,66 @@ async fn native_delivery_posts_original_event_with_fresh_device_auth_and_fences_
     );
     assert_eq!(server.calls.load(Ordering::SeqCst), 3);
     task.abort();
+}
+
+#[tokio::test]
+async fn persisted_community_signed_post_requires_matching_ack_before_acceptance() {
+    use std::io::{Read,Write};
+    use base64::Engine;
+    for acknowledgement in ["missing","different","matching"] {
+        let temp=tempfile::tempdir().unwrap();
+        let path=temp.path().join("journal.sqlite");
+        let (mut io,review)=consumer_fixture(&path,"NOT_DELIVERED");
+        let listener=std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr=listener.local_addr().unwrap();
+        let base=format!("http://{addr}");
+        io.submit_base=Some(base.clone());
+        let community=io.community.clone();
+        let server=std::thread::spawn(move || {
+            let (mut socket,_)=listener.accept().unwrap();
+            socket.set_read_timeout(Some(std::time::Duration::from_secs(3))).unwrap();
+            let mut bytes=Vec::new(); let mut chunk=[0;4096];
+            let (headers,body)=loop {
+                let count=socket.read(&mut chunk).unwrap(); assert!(count>0);
+                bytes.extend_from_slice(&chunk[..count]);
+                if let Some(end)=bytes.windows(4).position(|w| w==b"\r\n\r\n") {
+                    let headers=String::from_utf8(bytes[..end].to_vec()).unwrap();
+                    let length:usize=headers.lines().find_map(|line|line.to_ascii_lowercase().strip_prefix("content-length:").map(|v|v.trim().parse().unwrap())).unwrap();
+                    if bytes.len()>=end+4+length { break (headers,bytes[end+4..end+4+length].to_vec()); }
+                }
+            };
+            assert_eq!(headers.lines().next().unwrap(),format!("POST /events?community={community} HTTP/1.1"));
+            let auth=headers.lines().find_map(|line|line.split_once(':').filter(|(name,_)|name.eq_ignore_ascii_case("authorization")).map(|(_,value)|value.trim().to_owned())).unwrap();
+            let token=base64::engine::general_purpose::STANDARD.decode(auth.strip_prefix("Nostr ").unwrap()).unwrap();
+            let signed:Event=serde_json::from_slice(&token).unwrap();
+            signed.verify().unwrap();
+            assert_eq!(field(&signed,"u"),Some(format!("{base}/events?community={community}").as_str()));
+            assert_eq!(field(&signed,"community"),Some(community.as_str()));
+            assert_eq!(signed.tags.iter().filter(|t|t.as_slice()[0]=="community").count(),1);
+            use sha2::{Digest,Sha256};
+            assert_eq!(field(&signed,"payload"),Some(hex::encode(Sha256::digest(&body)).as_str()));
+            let event:Event=serde_json::from_slice(&body).unwrap();
+            assert_eq!(event.pubkey,signed.pubkey);
+            let mut response=json!({"event_id":event.id.to_hex(),"accepted":true,"message":""});
+            match acknowledgement {
+                "matching"=>response["community_id"]=json!(community),
+                "different"=>response["community_id"]=json!(uuid::Uuid::new_v4().to_string()),
+                _=>{},
+            }
+            let response=response.to_string();
+            write!(socket,"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",response.len(),response).unwrap();
+        });
+        let mut intent=io.frozen.clone();
+        let result=ensure_status_with(&io,&path,&mut intent,&review).await;
+        server.join().unwrap();
+        let persisted=Journal::open(&path).unwrap().find(&intent.key,&intent.request).unwrap().unwrap();
+        if acknowledgement=="matching" {
+            assert!(result.unwrap().is_some());
+            assert_eq!(persisted.event_result.as_deref(),Some("ACCEPTED"));
+        } else {
+            assert!(result.is_err(),"missing or mismatched Community ACK must remain UNKNOWN");
+            assert_eq!(persisted.event_result.as_deref(),Some("DISPATCHED"));
+        }
+        assert_eq!(persisted.event_community_id,io.frozen.event_community_id);
+    }
 }

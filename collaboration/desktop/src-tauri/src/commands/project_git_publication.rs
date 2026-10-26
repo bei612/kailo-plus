@@ -226,7 +226,7 @@ trait PublicationIo: Sync {
         &self,
         request: &Request,
     ) -> impl std::future::Future<Output = Result<(), WriteError>> + Send;
-    fn submit(&self, event: &Event)
+    fn submit(&self, event: &Event, community: &str)
         -> impl std::future::Future<Output = Result<(), String>> + Send;
 }
 struct NativePublication<'a> {
@@ -270,7 +270,7 @@ impl PublicationIo for NativePublication<'_> {
         }
         Ok(())
     }
-    async fn submit(&self, event: &Event) -> Result<(), String> {
+    async fn submit(&self, event: &Event, community: &str) -> Result<(), String> {
         let (base, keys) = self.scope.check()?;
         crate::relay::submit_signed_event_scoped(
             event,
@@ -280,6 +280,7 @@ impl PublicationIo for NativePublication<'_> {
                 .media_fetch_client,
             &base,
             &keys,
+            Some(community),
             || self.scope.check().map(|_| ()),
         )
         .await
@@ -416,7 +417,11 @@ async fn submit_status(
     journal.save(intent, "EVENT_DISPATCH")?;
     io.keys()
         .map_err(|_| WriteError::at(UNKNOWN, &intent.key))?;
-    let result = io.submit(event).await;
+    let persisted = journal.find(&intent.key, &intent.request)?
+        .ok_or_else(|| WriteError::at(UNKNOWN, &intent.key))?;
+    let community = persisted.event_community_id.as_deref()
+        .ok_or_else(|| WriteError::at(UNKNOWN, &intent.key))?;
+    let result = io.submit(event, community).await;
     io.keys()
         .map_err(|_| WriteError::at(UNKNOWN, &intent.key))?;
     match result {
