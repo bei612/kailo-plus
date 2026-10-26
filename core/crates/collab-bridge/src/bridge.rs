@@ -4002,6 +4002,36 @@ mod scoped_publication_tests {
             assert_eq!(result.is_ok(), fault == "none", "{fault}: {result:?}");
         }
     }
+    #[tokio::test]
+    async fn publication_policy_requires_actual_ready_nip11_and_never_uses_defaults() {
+        for fault in ["none","missing","not_ready","version","bound","epoch","extra"] {
+            let listener=tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST,0)).await.unwrap();
+            let client=IdentityClient::new(Custody::Server,&Keys::generate().secret_key().to_secret_hex(),
+                &format!("http://{}",listener.local_addr().unwrap()),"publication.platform.test").unwrap();
+            let policy=PublicationPolicy {version:PUBLICATION_POLICY_VERSION,epoch:Uuid::new_v4().to_string(),
+                max_age_seconds:publication_max_age_seconds(9).unwrap(),ready:true};
+            let mut response=serde_json::json!({"publication_policy":policy});
+            match fault {
+                "missing"=>{response.as_object_mut().unwrap().remove("publication_policy");},
+                "not_ready"=>response["publication_policy"]["ready"]=false.into(),
+                "version"=>response["publication_policy"]["version"]=0.into(),
+                "bound"=>response["publication_policy"]["max_age_seconds"]=900.into(),
+                "epoch"=>response["publication_policy"]["epoch"]="".into(),
+                "extra"=>response["publication_policy"]["future"]="unknown".into(),_=>{}
+            }
+            let task=tokio::spawn(async move {
+                let (mut socket,_)=listener.accept().await.unwrap();let mut received=Vec::new();let mut bytes=[0;2048];
+                while !received.windows(4).any(|x|x==b"\r\n\r\n") {let n=socket.read(&mut bytes).await.unwrap();assert_ne!(n,0);received.extend_from_slice(&bytes[..n]);}
+                let request=String::from_utf8(received).unwrap();assert!(request.starts_with("GET /info HTTP/1.1\r\n"));
+                assert!(request.to_ascii_lowercase().contains("host: publication.platform.test\r\n"));
+                let body=response.to_string();socket.write_all(format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",body.len()).as_bytes()).await.unwrap();
+            });
+            let result=client.publication_policy(&reqwest::Client::new()).await;task.await.unwrap();
+            assert_eq!(result.is_ok(),fault=="none","{fault}: {result:?}");
+            if let Ok(actual)=result { assert_eq!(actual,policy); }
+        }
+    }
+
     #[test]
     fn publication_epoch_is_signed_without_changing_native_bytes_or_time() {
         let client = IdentityClient::new(
