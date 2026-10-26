@@ -60,6 +60,24 @@ fn large_events_round_trip_through_ordered_chunks() {
 }
 
 #[test]
+fn authenticated_chunks_from_different_events_cannot_be_spliced() {
+    let archive = store();
+    let author = Keys::generate();
+    let first = message(&author, "chan", &"a".repeat(150_000));
+    let second = message(&author, "chan", &"b".repeat(150_000));
+    archive.ingest("chan", &[first.clone()]).unwrap();
+    let first_sealed = archive.seal(&first.as_json()).unwrap();
+    let second_sealed = archive.seal(&second.as_json()).unwrap();
+    let mut chunks: Vec<&str> = first_sealed.split('.').collect();
+    chunks[1] = second_sealed.split('.').nth(1).unwrap();
+    archive.conn.execute(
+        "UPDATE archived_event SET sealed=?1 WHERE event_id=?2",
+        params![chunks.join("."), first.id.to_hex()],
+    ).unwrap();
+    assert!(archive.read("chan", 1).is_err());
+}
+
+#[test]
 fn ignores_events_outside_the_channel_or_with_bad_signatures() {
     let archive = store();
     let author = Keys::generate();
