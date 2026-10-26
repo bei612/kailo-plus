@@ -31,3 +31,9 @@ analyze 全通过；四项实际 Mobile 控制器/表单回归 **4 passed**：�
 共享 Web/Desktop 首次固定 `796937f7a` 原 SDK 检查在生产 TypeScript 阶段发现
 新表单引用了不存在的 input 模块；已改为现有 composer/shared/ui/input，保留
 `profile-front-796937f7a/profile-front.log` 失败原件。修复后重跑结果另记。
+
+固定 `2ff2d7a01` 的原检查 SDK 1CPU/4GiB、Node heap 3GiB，冻结 pnpm 依赖，
+共享 platform 生产与完整测试 TypeScript 均退出0；实际资料对话框 Vitest
+**4 passed**，覆盖成员只读、确认所显示版本、丢响应及未分类503同键重试、
+明确409后强制刷新。日志 `profile-front-2ff2d7a01/profile-front.log` 与 limits，
+容器已清理。此为共享消费者检查，未替代 Web/Desktop 宿主打包或真实浏览器验收。

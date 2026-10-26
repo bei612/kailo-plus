@@ -1,10 +1,11 @@
+import { act } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { createBffClient } from "../src/client";
 import { PlatformProvider } from "../src/react/context";
 import { SendFeedbackDialog } from "../src/react/feedback/SendFeedbackDialog";
 import { PlatformFeedback } from "../src/react/feedback/PlatformFeedback";
 import { TransportError, type BffRequest } from "../src/transport";
-import { button, click, render, settle, type } from "./render";
+import { button, click, render, settle, type, until } from "./render";
 
 const feedbackId = "0eab04f4-21a8-4fb4-a75c-8b76d6354b25";
 const createdAt = "2026-10-26T00:00:00Z";
@@ -55,6 +56,20 @@ describe("DD-158 actual shared feedback consumers", () => {
     expect(send.mock.calls[0]![0].body).not.toHaveProperty("diagnostics");
     expect(message.value).toBe("反馈内容");
     expect(message.disabled).toBe(false);
+  });
+
+  it("previews the full local attachment without sending it to any endpoint", async () => {
+    const send = vi.fn(async (_request: BffRequest) => ({ status: 200, body: { feedbackId, createdAt } }));
+    await render(<PlatformProvider client={createBffClient({ send })} locale="en"><SendFeedbackDialog open onOpenChange={() => {}}/></PlatformProvider>);
+    const input = document.querySelector<HTMLInputElement>('input[type="file"]')!;
+    const file = new File([new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10])], "private.png", { type: "image/png" });
+    Object.defineProperty(input, "files", { value: [file] });
+    await act(async () => input.dispatchEvent(new Event("change", { bubbles: true })));
+    await until(() => document.querySelector('button[aria-label="Attached image"]') !== null, "local image preview");
+    await click(document.querySelector<HTMLElement>('button[aria-label="Attached image"]')!);
+    const preview = document.querySelector('[data-testid="feedback-attachment-preview"] img');
+    expect(preview?.getAttribute("src")).toBe("data:image/png;base64,iVBORw0KGgo=");
+    expect(send).not.toHaveBeenCalled();
   });
 
   it("operator reads, retrieves an audited attachment representation and triages the displayed CAS version", async () => {
