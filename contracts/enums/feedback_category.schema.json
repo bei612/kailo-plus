@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/feedback_category.schema.json",
+  "title": "FeedbackCategory",
+  "description": "DD-158(1)：原版“发送反馈”的类别（Bug、Praise、Needs work）。",
+  "type": "string",
+  "enum": [
+    "BUG",
+    "PRAISE",
+    "NEEDS_WORK"
+  ]
+}

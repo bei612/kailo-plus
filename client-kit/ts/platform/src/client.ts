@@ -4,6 +4,11 @@
 // 这里不另写一份。身份由网关验证后投影给 BFF，这里没有任何可自报的身份字段。
 
 import type {
+  FeedbackAttachmentContent,
+  FeedbackSubmissionRequest,
+  FeedbackSubmissionReceipt,
+  PlatformFeedbackPage,
+  PlatformFeedbackTriageRequest,
   WebMessageQuery,
   WebInboxQuery,
   WebMessageCursor,
@@ -255,6 +260,10 @@ export function createBffClient(transport: BffTransport) {
 
   return {
     transport,
+    submitFeedback: (body: FeedbackSubmissionRequest) => call<FeedbackSubmissionReceipt>({ method: "POST", path: "/api/v1/feedback", body }),
+    platformFeedback: (offset = 0, state?: "NEW" | "TRIAGED" | "CLOSED") => get<PlatformFeedbackPage>(`/api/v1/platform/feedback?offset=${offset}${state ? `&state=${state}` : ""}`, true),
+    feedbackAttachment: (id: string) => get<FeedbackAttachmentContent>(`/api/v1/platform/feedback/${encodeURIComponent(id)}/attachment?encoding=base64`, true),
+    triageFeedback: (id: string, body: PlatformFeedbackTriageRequest) => call<{ feedbackId: string; state: string; version: number }>({ method: "PUT", path: `/api/v1/platform/feedback/${encodeURIComponent(id)}`, body }),
     profile: () => profileRead("/api/v1/profile", 30_000),
     customEmoji: () => get<WebCustomEmojiView>("/api/v1/custom-emoji"),
     updateCustomEmoji: (body: WebCustomEmojiMutation) => call<{ eventId: string; operationId: string }>({ method: "PUT", path: "/api/v1/custom-emoji", body }),

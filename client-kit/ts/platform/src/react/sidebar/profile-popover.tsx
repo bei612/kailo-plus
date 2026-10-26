@@ -1,10 +1,11 @@
-import { useUiT } from "../context";
+import { useHasPlatform, useUiT } from "../context";
 // Extracted from Buzz 779af8886caae1317b4de962082429867ab61503 desktop/src; host authority remains outside this presentation module.
 // Fixed Buzz 779af8886caae1317b4de962082429867ab61503 desktop/src/features/profile/ui/ProfilePopover.tsx:
 // identity block with presence badge, presence chip and online/away/offline chooser, the
 // Slack-style "Update your status" entry and SetStatusDialog (DD-120), then Settings. The
-// platform Sign out stays; the community switcher and feedback entries have no Web host.
+// platform Sign out stays; feedback follows the Core-owned DD-158 contract.
 import * as React from "react";
+import { SendFeedbackDialog } from "../feedback/SendFeedbackDialog";
 import { Smile } from "lucide-react";
 
 import { Popover, PopoverContent, PopoverTrigger } from "../conversations/popover";
@@ -72,6 +73,8 @@ export function ProfilePopover({
   onClearUserStatus,
 }: ProfilePopoverProps) {
   const translateUi = useUiT();
+  const hasPlatform = useHasPlatform();
+  const [feedbackOpen, setFeedbackOpen] = React.useState(false);
   const settingsShortcutLabel = isMacPlatform() ? "⌘," : "Ctrl+,";
   const [statusDialogOpen, setStatusDialogOpen] = React.useState(false);
   const [presenceMenuOpen, setPresenceMenuOpen] = React.useState(false);
@@ -200,7 +203,8 @@ export function ProfilePopover({
               </div>
             </div>
 
-            {canSetUserStatus ? (
+            {hasPlatform ? <SendFeedbackDialog open={feedbackOpen} onOpenChange={setFeedbackOpen}/> : null}
+      {canSetUserStatus ? (
               /* ── Status input (Slack-style) ──────────────────────── */
               <div className="px-2 pt-0 pb-1">
                 <button
@@ -242,6 +246,10 @@ export function ProfilePopover({
 
             <hr className="my-1 h-px border-0 bg-border/60" />
 
+            {hasPlatform ? <button className={MENU_ITEM_CLASS} role="menuitem" type="button" data-testid="profile-popover-feedback"
+              onClick={() => { closePopover(); window.requestAnimationFrame(() => setFeedbackOpen(true)); }}>
+              <span className="flex-1">{translateUi("platform.feedback.title")}</span>
+            </button> : null}
             {/* ── Settings ───────────────────────────────────────── */}
             <button
               className={MENU_ITEM_CLASS}
@@ -276,6 +284,7 @@ export function ProfilePopover({
         </PopoverContent>
       </Popover>
 
+      {hasPlatform ? <SendFeedbackDialog open={feedbackOpen} onOpenChange={setFeedbackOpen}/> : null}
       {canSetUserStatus ? (
         <SetStatusDialog
           hasExistingStatus={hasUserStatus}

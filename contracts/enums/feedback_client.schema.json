@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/feedback_client.schema.json",
+  "title": "FeedbackClient",
+  "description": "DD-158(1)：提交反馈的客户端，只用于运营方分拣。",
+  "type": "string",
+  "enum": [
+    "WEB",
+    "DESKTOP",
+    "MOBILE"
+  ]
+}

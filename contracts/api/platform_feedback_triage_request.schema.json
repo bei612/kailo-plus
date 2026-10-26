@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/platform_feedback_triage_request.schema.json",
+  "title": "PlatformFeedbackTriageRequest",
+  "description": "DD-158(2)：PUT /api/v1/platform/feedback/{feedbackId}。运营方按读到的 version CAS 前移分拣状态（NEW→TRIAGED→CLOSED，不可回退）。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "state",
+    "version"
+  ],
+  "properties": {
+    "state": {
+      "$ref": "../enums/feedback_state.schema.json"
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1
+    }
+  }
+}
