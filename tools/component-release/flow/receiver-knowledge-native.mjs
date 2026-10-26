@@ -99,12 +99,47 @@ await main(async () => {
     const matching = rows.filter((row) => row.name === input.name);
     if (matching.length > 1) fail('ambiguous native knowledge base');
     if (previous?.knowledgeBaseId && !matching.length) fail('confirmed native knowledge base is missing; refusing to recreate it');
+    // Receiver model delivery is scoped to tenant-owned native models. The
+    // native-page builtins have another binding's key and cannot prove it.
+    if (!input.models || Object.keys(input.models).sort().join(',') !== 'chat,embedding') fail('two receiver model declarations required');
+    if (previous?.knowledgeBaseId && (!previous.models?.chat || !previous.models?.embedding)) fail('confirmed KB lacks receiver model identities; refusing to modify it');
+    const models = await request('GET', '/api/v1/models');
+    if (!Array.isArray(models)) fail('native model list is incomplete');
+    confirmed.models ??= {};
+    for (const [role, type] of [['chat', 'KnowledgeQA'], ['embedding', 'Embedding']]) {
+      const declared = input.models[role];
+      if (!declared || typeof declared.name !== 'string' || !declared.name.trim()
+          || typeof declared.baseUrl !== 'string') fail('receiver model declaration incomplete');
+      const url = new URL(declared.baseUrl);
+      if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash
+          || (role === 'embedding' && (!Number.isSafeInteger(declared.dimension) || declared.dimension <= 0))) {
+        fail('receiver model endpoint or dimension is invalid');
+      }
+      const display = `${input.name}-${role}`;
+      const foundModels = models.filter((model) => model.display_name === display);
+      if (foundModels.length > 1) fail('ambiguous receiver native model');
+      const prior = previous?.models?.[role];
+      if (prior && !foundModels.length) fail('confirmed native model is missing; refusing to recreate it');
+      const parameters = { base_url: declared.baseUrl, interface_type: 'openai', provider: 'generic',
+        ...(role === 'embedding' ? { embedding_parameters: { dimension: declared.dimension } } : {}) };
+      const model = foundModels[0] ?? await request('POST', '/api/v1/models', {
+        name: declared.name, display_name: display, type, source: 'remote', parameters,
+      });
+      if (!UUID.test(model.id ?? '') || model.tenant_id !== tenant || model.is_builtin !== false
+          || model.status !== 'active' || model.name !== declared.name || model.type !== type || model.source !== 'remote'
+          || model.parameters?.base_url !== declared.baseUrl || model.parameters?.interface_type !== 'openai'
+          || model.parameters?.provider !== 'generic' || (role === 'embedding' && model.parameters?.embedding_parameters?.dimension !== declared.dimension)
+          || (prior && prior.nativeModelRef !== model.id)) fail('native model differs from this receiver');
+      confirmed.models[role] = { nativeModelRef: model.id, name: declared.name, baseUrl: declared.baseUrl,
+        ...(role === 'embedding' ? { dimension: declared.dimension } : {}) };
+      remember();
+    }
     const kb = matching[0] ?? await request('POST', '/api/v1/knowledge-bases', {
-      name: input.name, type: 'document', embedding_model_id: 'kailo-platform-embedding', summary_model_id: 'kailo-platform-chat',
+      name: input.name, type: 'document', embedding_model_id: confirmed.models.embedding.nativeModelRef, summary_model_id: confirmed.models.chat.nativeModelRef,
       chunking_config: { chunk_size: 512, chunk_overlap: 50, separators: ['\n\n', '\n'] },
     });
-    if (!UUID.test(kb.id ?? '') || kb.tenant_id !== tenant || kb.embedding_model_id !== 'kailo-platform-embedding'
-        || kb.summary_model_id !== 'kailo-platform-chat' || (previous?.knowledgeBaseId && previous.knowledgeBaseId !== kb.id)) {
+    if (!UUID.test(kb.id ?? '') || kb.tenant_id !== tenant || kb.embedding_model_id !== confirmed.models.embedding.nativeModelRef
+        || kb.summary_model_id !== confirmed.models.chat.nativeModelRef || (previous?.knowledgeBaseId && previous.knowledgeBaseId !== kb.id)) {
       fail('native knowledge base differs from this run');
     }
     confirmed.knowledgeBaseId = kb.id;

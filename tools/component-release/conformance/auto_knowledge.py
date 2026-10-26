@@ -605,7 +605,7 @@ except Exception:
         "KNOWLEDGE_UI_PORT": str(facts["port"]), "KNOWLEDGE_UI_SUBNET": facts["subnets"][0], "KNOWLEDGE_DATA_SUBNET": facts["subnets"][1],
         "KNOWLEDGE_DB_USER": "weknora", "KNOWLEDGE_DB_NAME": "weknora", "KNOWLEDGE_NATIVE_ORIGIN": facts["origin"],
         "KNOWLEDGE_OIDC_ISSUER_URL": runtime["OIDC_ISSUER"], "KNOWLEDGE_OIDC_DISCOVERY_URL": runtime["OIDC_ISSUER"] + "/.well-known/openid-configuration",
-        "KNOWLEDGE_OIDC_CLIENT_ID": facts["project"], "KNOWLEDGE_SSRF_WHITELIST_EXTRA": OIDC_HOST,
+        "KNOWLEDGE_OIDC_CLIENT_ID": facts["project"], "KNOWLEDGE_SSRF_WHITELIST_EXTRA": OIDC_HOST + "," + urllib.parse.urlsplit(runtime["AGENTGATEWAY_MODEL_BASE_URL"]).hostname,
         "PLATFORM_DISPLAY_NAME": runtime["PLATFORM_DISPLAY_NAME"], "KAILO_TENANT_ID": state["sessionIdentities"]["human"]["tenantId"],
         "KAILO_TENANT_NAME": runtime["VERIFY_TENANT_NAME"], "KAILO_SESSION_MAX_LIFETIME": "1h",
         "KNOWLEDGE_DIRECTORY_BINDING_ID": binding["bindingId"], "KNOWLEDGE_DIRECTORY_CLIENT_ID": facts["directoryClient"],
@@ -642,7 +642,12 @@ except Exception:
     h.run(["bash", f"{source}/knowledge/fork/deploy/start.sh", "--native-env", str(env_file)], env=native_process_env, log=r.log)
     h.run(["bash", f"{source}/knowledge/fork/deploy/start.sh", "--native-env", str(env_file), "--platform-model", str(local / ".env")],
           env=native_process_env, log=r.log)
-    native_input = h.write_json(directory / "native-input.json", {"directory": str(directory), "origin": facts["origin"], "name": state["project"]})
+    native_input = h.write_json(directory / "native-input.json", {
+        "directory": str(directory), "origin": facts["origin"], "name": state["project"],
+        "models": {role: {"name": declaration["conformanceModels"][role]["model"],
+                          "baseUrl": runtime["AGENTGATEWAY_MODEL_BASE_URL"],
+                          **({"dimension": dimension} if role == "embedding" else {})}
+                   for role in ("chat", "embedding")}})
     flow(h, r, "receiver-knowledge-native.mjs", "--input", str(native_input))
     r.record(knowledgeObjects=h.read_json(directory / "native.json"))
     h.say("isolated-knowledge-native", status="READY")

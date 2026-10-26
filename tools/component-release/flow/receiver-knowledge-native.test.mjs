@@ -10,12 +10,16 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 const user = 'a45aa396-ec64-407d-bc14-fae7f296818c';
+const modelIds = { chat: 'b7c46cb2-71e6-4d07-80a3-ed864b2eaeac', embedding: '70aac6ac-5da2-4c8b-8dcc-6adc6e77137b' };
+const declarations = { chat: { name: 'fixture-chat', baseUrl: 'http://receiver-model:8080/v1' },
+  embedding: { name: 'fixture-embedding', baseUrl: 'http://receiver-model:8080/v1', dimension: 2560 } };
+const modelState = Object.fromEntries(Object.entries(declarations).map(([role, row]) => [role, { nativeModelRef: modelIds[role], ...row }]));
 const kb = { id: '362628de-bd1c-42f5-953c-876d0bffdcf3', tenant_id: 7,
-  embedding_model_id: 'kailo-platform-embedding', summary_model_id: 'kailo-platform-chat' };
+  embedding_model_id: modelIds.embedding, summary_model_id: modelIds.chat };
 const endpoint = { id: 'a597ebbb-1a28-4aa8-a2b3-c474f4e5bef2', tenant_id: 7, enabled: true,
   knowledge_base_ids: [kb.id], tools: ['search_knowledge', 'read_document', 'export_document', 'add_document', 'delete_document'] };
 
-async function fixture(t, { previous = {}, kbRows = [], endpointRows = [], failAt, bearerDirectory = false } = {}) {
+async function fixture(t, { previous = {}, kbRows = [], endpointRows = [], failAt, bearerDirectory = false, missingModel, emptyModels = false } = {}) {
   const base = '/volumes/data/kailo/conformance/runs';
   await mkdir(base, { recursive: true });
   const root = await mkdtemp(join(base, 'native-unit-'));
@@ -25,10 +29,26 @@ async function fixture(t, { previous = {}, kbRows = [], endpointRows = [], failA
   await mkdir(directory, { mode: 0o700 });
   const name = `kailo-receiver-unit-${randomUUID()}`;
   const calls = [];
-  const server = createServer((req, res) => {
+  const models = Object.entries(declarations).map(([role, row]) => ({ id: modelIds[role], tenant_id: 7, name: row.name,
+    display_name: `${name}-${role}`, is_builtin: false, type: role === 'chat' ? 'KnowledgeQA' : 'Embedding',
+    source: 'remote', status: 'active', parameters: { base_url: row.baseUrl, interface_type: 'openai', provider: 'generic',
+      ...(role === 'embedding' ? { embedding_parameters: { dimension: row.dimension } } : {}) } }));
+  let observedModels = emptyModels ? [] : models.filter((row) => row.id !== modelIds[missingModel]);
+  const server = createServer(async (req, res) => {
     calls.push(`${req.method} ${req.url}`);
     res.setHeader('content-type', 'application/json');
     if (req.url === failAt) { res.writeHead(503).end('{}'); return; }
+    if (req.url === '/api/v1/models') {
+      if (req.method === 'POST') {
+        let raw = ''; for await (const part of req) raw += part;
+        const body = JSON.parse(raw);
+        assert.equal(body.parameters.api_key, undefined);
+        const model = models.find((row) => row.name === body.name);
+        observedModels.push(model);
+        res.end(JSON.stringify({ data: model }));
+      } else res.end(JSON.stringify({ data: observedModels }));
+      return;
+    }
     const data = req.url === '/api/v1/auth/refresh' ? { access_token: 'fixture-access', refresh_token: 'fixture-refresh' }
       : req.url === '/api/v1/auth/me' ? { data: { user: { id: user }, tenant: { id: 7 }, memberships: [{ tenant_id: 7, role: 'admin' }] } }
         : req.url === '/api/v1/knowledge-bases' ? { data: req.method === 'GET' ? kbRows.map((v) => ({ ...v, name })) : { ...kb, name } }
@@ -42,10 +62,10 @@ async function fixture(t, { previous = {}, kbRows = [], endpointRows = [], failA
   const origin = `http://127.0.0.1:${server.address().port}`;
   const stateFile = join(directory, 'native.json');
   const identity = { origin, userId: user, tenantId: 7 };
-  if (previous !== null) await writeFile(stateFile, JSON.stringify({ ...identity, ...previous }), { mode: 0o600 });
+  if (previous !== null) await writeFile(stateFile, JSON.stringify({ ...identity, ...(previous.knowledgeBaseId ? { models: modelState } : {}), ...previous }), { mode: 0o600 });
   await writeFile(join(directory, 'native.refresh'), 'fixture-refresh', { mode: 0o600 });
   const input = join(directory, 'input.json');
-  await writeFile(input, JSON.stringify({ directory, origin, name }), { mode: 0o600 });
+  await writeFile(input, JSON.stringify({ directory, origin, name, models: declarations }), { mode: 0o600 });
   if (bearerDirectory) await mkdir(join(directory, 'mcp-bearer'));
   const run = async (...args) => {
     const child = spawn(process.execPath, [new URL('./receiver-knowledge-native.mjs', import.meta.url).pathname, '--input', input, ...args],
@@ -93,4 +113,19 @@ test('confirmed endpoint is retained before a bearer file write can fail', async
   const f = await fixture(t, { previous: null, bearerDirectory: true });
   assert.equal((await f.run()).code, 1);
   assert.equal((await f.state()).mcpEndpointId, endpoint.id);
+});
+
+test('confirmed missing native model refuses before any replacement model or KB POST', async (t) => {
+  const f = await fixture(t, { previous: { models: modelState }, missingModel: 'chat' });
+  assert.equal((await f.run()).code, 2);
+  assert.ok(!f.calls.some((call) => call.startsWith('POST ')));
+});
+
+test('native model creation is keyless and each confirmed original identity survives later failure', async (t) => {
+  const f = await fixture(t, { previous: null, emptyModels: true, failAt: '/api/v1/mcp-endpoints' });
+  assert.equal((await f.run()).code, 2);
+  assert.deepEqual((await f.state()).models, modelState);
+  assert.equal(f.calls.filter((call) => call === 'POST /api/v1/models').length, 2);
+  assert.equal((await f.run()).code, 2);
+  assert.equal(f.calls.filter((call) => call === 'POST /api/v1/models').length, 2);
 });
