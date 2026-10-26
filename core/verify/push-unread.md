@@ -78,3 +78,22 @@ APNs 桥、通知开关、token 刷新与通知点击深链。未选择 Activity
 `push-integrated-registry.log`，资源均为原 SDK 1 CPU / 2 GiB。此前导出设计对象
 未 fetch 导致脚本退出 2，补取相同设计 pin 后重跑；不改设计或绕过校验。
 集成 Core/数据库与 Flutter 消费者仍待实际运行。
+
+## 实际集成树 Core 验证（2026-10-26）
+
+固定 `090e208dc`（以 `356df4087` 集成基线接入上述依赖），原不可变 check SDK
+4 CPU / 16 GiB + 全新独立 PostgreSQL 1 CPU / 2 GiB、原容量缓存：
+
+- Core workspace fmt 退出 0；全库迁移、push_unread 回退再前进退出 0。
+- `cargo test --locked --manifest-path core/Cargo.toml -p platform-core push:: -- --include-ignored`：
+  **15 passed、0 failed、0 ignored**，其中真实 PostgreSQL 同秒事件/重复设备/
+  read_contexts/999 回归实际执行。其他二进制过滤 0 项不计新增通过。
+- Core `--all-targets` Clippy `-D warnings` 与 workspace SQLx prepare check 均退出 0。
+
+第一次定向导出漏掉 Cargo 实际引用的 `collaboration/examples/countdown-bot`
+workspace 清单，fmt 在 metadata 阶段退出 1；补齐同 commit 的 examples 后
+重跑上述完整定向入口，最终退出 0。未修改 Cargo workspace 或降低检查范围。
+原件 `push-integrated-check.log` 保存输入缺失失败，
+`push-integrated-check-complete-input.log` 和 `push-integrated-check-result.log`
+保存最后成功；同目录 limits/preflight 记录资源读回。容器/PG/独立网络已清理。
+Flutter 消费者、真机推送与持久发送意图恢复仍未验收；未部署。
