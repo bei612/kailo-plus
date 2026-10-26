@@ -1143,14 +1143,31 @@ impl IdentityClient {
         http: &reqwest::Client,
         event_id: &str,
     ) -> Result<bool, OperatorError> {
+        let invalid = || OperatorError::NotConverged("Event existence evidence is invalid".into());
+        let requested = nostr::EventId::from_hex(event_id).map_err(|_| invalid())?;
+        if requested.to_hex() != event_id {
+            return Err(invalid());
+        }
         let page = self
             .query(http, &[serde_json::json!({ "ids": [event_id] })])
             .await?;
-        Ok(page
-            .as_array()
-            .into_iter()
-            .flatten()
-            .any(|e| e.get("id").and_then(|v| v.as_str()) == Some(event_id)))
+        let rows = page.as_array().ok_or_else(invalid)?;
+        let row = match rows.as_slice() {
+            [] => return Ok(false),
+            [row] => row,
+            _ => return Err(invalid()),
+        };
+        // Check the original wire ID as well: deserialization can normalize
+        // hex, but this exact-ID query cannot accept a different spelling or
+        // an unverified object's asserted ID as positive delivery evidence.
+        if row.get("id").and_then(Value::as_str) != Some(event_id) {
+            return Err(invalid());
+        }
+        let event: Event = serde_json::from_value(row.clone()).map_err(|_| invalid())?;
+        if event.id != requested || event.verify().is_err() {
+            return Err(invalid());
+        }
+        Ok(true)
     }
 
     /// 查证已经持久化的 Reply ID，不签名、不发布，也不把消息正文交给 Core。
@@ -2098,6 +2115,136 @@ impl IdentityClient {
             return Err(self.relay_rejected(status.as_u16(), body));
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod event_exists_tests {
+    use super::*;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    /// Exercise the actual query, including its Host and signed NIP-98 payload.
+    async fn observe(event_id: &str, page: Value) -> Result<bool, OperatorError> {
+        let listener = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
+            .await
+            .unwrap();
+        let keys = Keys::generate();
+        let author = keys.public_key();
+        let client = IdentityClient::new(
+            Custody::Server,
+            &keys.secret_key().to_secret_hex(),
+            &format!("http://{}", listener.local_addr().unwrap()),
+            "evidence.platform.test",
+        )
+        .unwrap();
+        let expected = serde_json::json!([{"ids":[event_id]}]);
+        let task = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut received = Vec::new();
+            let mut chunk = [0; 4096];
+            let header_end = loop {
+                let n = socket.read(&mut chunk).await.unwrap();
+                assert_ne!(n, 0);
+                received.extend_from_slice(&chunk[..n]);
+                if let Some(end) = received.windows(4).position(|v| v == b"\r\n\r\n") {
+                    break end + 4;
+                }
+            };
+            let head = String::from_utf8(received[..header_end].to_vec()).unwrap();
+            assert!(head.starts_with("POST /query HTTP/1.1\r\n"));
+            let header = |name: &str| {
+                head.lines()
+                    .filter_map(|line| line.split_once(':'))
+                    .find(|(key, _)| key.eq_ignore_ascii_case(name))
+                    .map(|(_, value)| value.trim().to_owned())
+                    .unwrap()
+            };
+            let length: usize = header("content-length").parse().unwrap();
+            while received.len() - header_end < length {
+                let n = socket.read(&mut chunk).await.unwrap();
+                assert_ne!(n, 0);
+                received.extend_from_slice(&chunk[..n]);
+            }
+            let body = &received[header_end..];
+            assert_eq!(serde_json::from_slice::<Value>(body).unwrap(), expected);
+            assert_eq!(header("host"), "evidence.platform.test");
+            let authorization = header("authorization");
+            let auth: Event = serde_json::from_slice(
+                &base64::engine::general_purpose::STANDARD
+                    .decode(authorization.strip_prefix("Nostr ").unwrap())
+                    .unwrap(),
+            )
+            .unwrap();
+            auth.verify().unwrap();
+            assert_eq!(auth.pubkey, author);
+            assert_eq!(auth.kind, Kind::HttpAuth);
+            for (name, value) in [
+                ("u", "http://evidence.platform.test/query".to_owned()),
+                ("method", "POST".to_owned()),
+                ("payload", hex::encode(Sha256::digest(body))),
+            ] {
+                assert!(auth.tags.iter().any(|tag| tag.as_slice() == [name, &value]));
+            }
+            let body = page.to_string();
+            socket.write_all(format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len(),
+            ).as_bytes()).await.unwrap();
+        });
+        let result = client.event_exists(&reqwest::Client::new(), event_id).await;
+        task.await.unwrap();
+        result
+    }
+
+    fn signed(content: &str) -> Event {
+        EventBuilder::new(Kind::Custom(9), content)
+            .sign_with_keys(&Keys::generate())
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn event_exists_accepts_only_verified_exact_event_and_preserves_empty() {
+        let event = signed("original fixture");
+        let id = event.id.to_hex();
+        assert!(observe(&id, serde_json::json!([event])).await.unwrap());
+        assert!(!observe(&id, serde_json::json!([])).await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn event_exists_rejects_corrupted_signed_event() {
+        let event = signed("original fixture");
+        let id = event.id.to_hex();
+        let original = serde_json::to_value(&event).unwrap();
+        for (field, changed) in [
+            ("content", serde_json::json!("corrupted fixture")),
+            ("created_at", serde_json::json!(event.created_at.as_secs() + 1)),
+            ("kind", serde_json::json!(1)),
+            ("sig", serde_json::json!(signed("another fixture").sig.to_string())),
+            ("pubkey", serde_json::json!(Keys::generate().public_key().to_hex())),
+        ] {
+            let mut row = original.clone();
+            row[field] = changed;
+            assert!(matches!(observe(&id, serde_json::json!([row])).await,
+                Err(OperatorError::NotConverged(_))), "corrupt {field} must not prove delivery");
+        }
+    }
+
+    #[tokio::test]
+    async fn event_exists_rejects_malformed_duplicate_and_mismatched_rows() {
+        let event = signed("original fixture");
+        let id = event.id.to_hex();
+        let mut noncanonical = serde_json::to_value(&event).unwrap();
+        noncanonical["id"] = id.to_uppercase().into();
+        for page in [
+            Value::Null,
+            serde_json::json!({"id": id}),
+            serde_json::json!([{"id": id}]),
+            serde_json::json!([event, event]),
+            serde_json::json!([signed("unrelated fixture")]),
+            serde_json::json!([noncanonical]),
+        ] {
+            assert!(matches!(observe(&id, page).await, Err(OperatorError::NotConverged(_))));
+        }
     }
 }
 
