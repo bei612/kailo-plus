@@ -201,11 +201,12 @@ const UNSETTLED_PUBLICATIONS_SQL: &str = r#"select count(*),
 
 const REAP_PUBLICATIONS_SQL: &str = "delete from admission.publish_attempt a
          where a.created_at < now() - make_interval(secs => $1::bigint)
-           and exists (select 1 from audit.audit_event r
+           and (select max(r.occurred_at) from audit.audit_event r
                        where r.operation_id = a.operation_id
                          and r.event_type in ('OUTCOME', 'RECONCILIATION')
                          and not (r.event_type='RECONCILIATION' and r.result_code='NOT_DELIVERED'
-                                  and r.action_key=any($2)))";
+                                  and r.action_key=any($2)))
+               < now() - make_interval(secs => $1::bigint)";
 
 async fn pass(
     state: &ServiceState,
@@ -382,11 +383,11 @@ fn reconciliation_entry<'a>(p: &'a Pending, result_code: &'a str) -> AuditEntry<
     AuditEntry {
         // The legacy key may already hold a false absence conclusion. A
         // positive observation appends a distinct, idempotent correction.
-        event_key: if FILTERED_PUBLICATION_ACTIONS.contains(&p.action_key.as_str()) {
-            format!("message.publish:{}:reconciled:accepted", p.event_id)
-        } else {
-            format!("message.publish:{}:reconciled", p.event_id)
-        },
+        event_key: crate::web_transport::publication_event_key(
+            p.operation_id,
+            &p.event_id,
+            "RECONCILIATION",
+        ),
         tenant_id: Some(p.tenant_id),
         workspace_id: p.workspace_id,
         operation_id: p.operation_id,
@@ -749,7 +750,26 @@ mod tests {
             .bind(FILTERED_PUBLICATION_ACTIONS.as_slice()).execute(&mut *tx).await.unwrap();
         let retained: i64 = sqlx::query_scalar("select count(*) from admission.publish_attempt where tenant_principal_id=$1")
             .bind(principal).fetch_one(&mut *tx).await.unwrap();
-        assert_eq!(retained, 4, "only positive correction and definite LIMIT release retention");
+        assert_eq!(retained, 6, "a fresh correction or LIMIT starts a complete terminal retention window");
+        // Insert immutable historical terminal facts, never move an audit
+        // timestamp backwards. An older real outcome must not override the
+        // fresh positive correction when calculating the retention age.
+        for index in [0_usize, 2, 3] {
+            let attempt = &attempts[index];
+            sqlx::query("insert into audit.audit_event(id,event_key,tenant_id,operation_id,event_type,action_key,action_version,component_type_key,parameter_hash,decision,result_code,result_exposure,correlation_id,occurred_at) values($1,$2,$3,$4,'OUTCOME',$5,1,'buzz','NONE','ALLOW',$6,'NONE',$4,now()-interval '60 seconds')")
+                .bind(Uuid::new_v4()).bind(format!("publication-fixture:{}:historical", attempt.operation_id))
+                .bind(tenant).bind(attempt.operation_id).bind(&attempt.action_key)
+                .bind(if index == 3 { "NOT_DELIVERED" } else { "ACCEPTED" })
+                .execute(&mut *tx).await.unwrap();
+        }
+        sqlx::query(REAP_PUBLICATIONS_SQL).bind(1_i64)
+            .bind(FILTERED_PUBLICATION_ACTIONS.as_slice()).execute(&mut *tx).await.unwrap();
+        let retained: Vec<Uuid> = sqlx::query_scalar("select operation_id from admission.publish_attempt where tenant_principal_id=$1")
+            .bind(principal).fetch_all(&mut *tx).await.unwrap();
+        assert_eq!(retained.len(), 4);
+        for index in [0_usize, 1, 4, 5] {
+            assert!(retained.contains(&attempts[index].operation_id), "latest real terminal window or UNKNOWN must remain protected");
+        }
         tx.rollback().await.unwrap();
     }
 
