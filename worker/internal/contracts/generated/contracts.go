@@ -424,6 +424,15 @@
 //    exportPackageView, err := UnmarshalExportPackageView(bytes)
 //    bytes, err = exportPackageView.Marshal()
 //
+//    feedbackAttachmentContent, err := UnmarshalFeedbackAttachmentContent(bytes)
+//    bytes, err = feedbackAttachmentContent.Marshal()
+//
+//    feedbackSubmissionReceipt, err := UnmarshalFeedbackSubmissionReceipt(bytes)
+//    bytes, err = feedbackSubmissionReceipt.Marshal()
+//
+//    feedbackSubmissionRequest, err := UnmarshalFeedbackSubmissionRequest(bytes)
+//    bytes, err = feedbackSubmissionRequest.Marshal()
+//
 //    followedPrincipalRequest, err := UnmarshalFollowedPrincipalRequest(bytes)
 //    bytes, err = followedPrincipalRequest.Marshal()
 //
@@ -579,6 +588,12 @@
 //
 //    ownAuditEntry, err := UnmarshalOwnAuditEntry(bytes)
 //    bytes, err = ownAuditEntry.Marshal()
+//
+//    platformFeedbackPage, err := UnmarshalPlatformFeedbackPage(bytes)
+//    bytes, err = platformFeedbackPage.Marshal()
+//
+//    platformFeedbackTriageRequest, err := UnmarshalPlatformFeedbackTriageRequest(bytes)
+//    bytes, err = platformFeedbackTriageRequest.Marshal()
 //
 //    platformInfo, err := UnmarshalPlatformInfo(bytes)
 //    bytes, err = platformInfo.Marshal()
@@ -2591,6 +2606,36 @@ func (r *ExportPackageView) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
+func UnmarshalFeedbackAttachmentContent(data []byte) (FeedbackAttachmentContent, error) {
+	var r FeedbackAttachmentContent
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *FeedbackAttachmentContent) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalFeedbackSubmissionReceipt(data []byte) (FeedbackSubmissionReceipt, error) {
+	var r FeedbackSubmissionReceipt
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *FeedbackSubmissionReceipt) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalFeedbackSubmissionRequest(data []byte) (FeedbackSubmissionRequest, error) {
+	var r FeedbackSubmissionRequest
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *FeedbackSubmissionRequest) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
 func UnmarshalFollowedPrincipalRequest(data []byte) (FollowedPrincipalRequest, error) {
 	var r FollowedPrincipalRequest
 	err := json.Unmarshal(data, &r)
@@ -3108,6 +3153,26 @@ func UnmarshalOwnAuditEntry(data []byte) (OwnAuditEntry, error) {
 }
 
 func (r *OwnAuditEntry) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalPlatformFeedbackPage(data []byte) (PlatformFeedbackPage, error) {
+	var r PlatformFeedbackPage
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *PlatformFeedbackPage) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalPlatformFeedbackTriageRequest(data []byte) (PlatformFeedbackTriageRequest, error) {
+	var r PlatformFeedbackTriageRequest
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *PlatformFeedbackTriageRequest) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -7599,6 +7664,40 @@ type ExportPackageView struct {
 	State            ExportPackageState `json:"state"`
 }
 
+// DD-158(2): authenticated operator attachment read with encoding=base64 for native JSON
+// transport; same audited bytes as the binary response, nosniff.
+type FeedbackAttachmentContent struct {
+	DataBase64 string `json:"dataBase64"`
+	MIMEType   string `json:"mimeType"`
+	Sha256     string `json:"sha256"`
+}
+
+// DD-158(1)：反馈已记入 Core 的回执；同键重放返回同一回执。
+type FeedbackSubmissionReceipt struct {
+	CreatedAt  string `json:"createdAt"`
+	FeedbackID string `json:"feedbackId"`
+}
+
+// DD-158(1)：POST /api/v1/feedback。ACTIVE Tenant 成员的 HUMAN 会话提交给部署运营方的私有反馈；不是 Governed
+// Action。idempotencyKey 由客户端在首次发送前冻结，同一本人同键重放返回原回执、同键异内容 409。
+type FeedbackSubmissionRequest struct {
+	Attachment *FeedbackAttachmentUpload `json:"attachment,omitempty"`
+	Category   *FeedbackCategory         `json:"category,omitempty"`
+	Client     FeedbackClient            `json:"client"`
+	// 本人在提交前预览并同意附带的固定诊断字段（应用版本、平台、User-Agent、语言、采集时间），≤4096 字节
+	Diagnostics    *string `json:"diagnostics,omitempty"`
+	IdempotencyKey string  `json:"idempotencyKey"`
+	// 去首尾空白后 1–4000 字符
+	Message string `json:"message"`
+}
+
+type FeedbackAttachmentUpload struct {
+	// 标准 base64，解码后 ≤2 MiB
+	DataBase64 string `json:"dataBase64"`
+	// image/png、image/jpeg 或 image/webp；Core 另按文件头复核
+	MIMEType string `json:"mimeType"`
+}
+
 // PUT /api/v1/user-state/followed-principals 的请求体（DD-125(5)、03
 // CollaborationUserState.followed_principals）：原 Pulse 关注/取消关注，取代逐公钥 kind 3。pubkey 是被关注者的任一
 // Buzz 公钥，Core 解析为同 Tenant 的 HUMAN Principal 并按 Principal 存储；关注要求该公钥当前
@@ -9189,6 +9288,41 @@ type OwnAuditEntry struct {
 	ResultCode string `json:"resultCode"`
 	// 动作所在的 Workspace；Tenant 级动作（设备公钥登记、认证等）缺省
 	WorkspaceID *string `json:"workspaceId,omitempty"`
+}
+
+// DD-158(2)：GET /api/v1/platform/feedback 的有界回应，只对 Platform Catalog Tenant 中持有 fresh
+// Catalog manage 的会话开放；读取受审计。图片经 GET /api/v1/platform/feedback/{feedbackId}/attachment 取回。
+type PlatformFeedbackPage struct {
+	Items []PlatformFeedbackView `json:"items"`
+	// 下一页偏移，缺省即读完
+	NextOffset *int64 `json:"nextOffset,omitempty"`
+}
+
+type PlatformFeedbackView struct {
+	Attachment  *FeedbackAttachmentView `json:"attachment,omitempty"`
+	Category    *FeedbackCategory       `json:"category,omitempty"`
+	Client      FeedbackClient          `json:"client"`
+	CreatedAt   string                  `json:"createdAt"`
+	Diagnostics *string                 `json:"diagnostics,omitempty"`
+	FeedbackID  string                  `json:"feedbackId"`
+	Message     string                  `json:"message"`
+	State       FeedbackState           `json:"state"`
+	TenantID    string                  `json:"tenantId"`
+	TenantName  string                  `json:"tenantName"`
+	Version     int64                   `json:"version"`
+}
+
+type FeedbackAttachmentView struct {
+	ByteSize int64  `json:"byteSize"`
+	MIMEType string `json:"mimeType"`
+	Sha256   string `json:"sha256"`
+}
+
+// DD-158(2)：PUT /api/v1/platform/feedback/{feedbackId}。运营方按读到的 version CAS
+// 前移分拣状态（NEW→TRIAGED→CLOSED，不可回退）。
+type PlatformFeedbackTriageRequest struct {
+	State   FeedbackState `json:"state"`
+	Version int64         `json:"version"`
 }
 
 // GET /api/v1/platform-info 的回应（DD-111）：只含公开展示字段，不依赖 PlatformSession
@@ -12359,6 +12493,24 @@ const (
 	Ready                     ExportPackageState = "READY"
 )
 
+// DD-158(1)：原版“发送反馈”的类别（Bug、Praise、Needs work）。
+type FeedbackCategory string
+
+const (
+	Bug       FeedbackCategory = "BUG"
+	NeedsWork FeedbackCategory = "NEEDS_WORK"
+	Praise    FeedbackCategory = "PRAISE"
+)
+
+// DD-158(1)：提交反馈的客户端，只用于运营方分拣。
+type FeedbackClient string
+
+const (
+	Desktop FeedbackClient = "DESKTOP"
+	Mobile  FeedbackClient = "MOBILE"
+	Web     FeedbackClient = "WEB"
+)
+
 // DD-134(2)：网关管理区的范围取会话 Tenant。PLATFORM：Platform Catalog Tenant 会话，只见 Gateway 原生事实与 Tenant
 // 归属 ID；TENANT：业务 Tenant 会话，按 Tenant/Workspace audit 下钻本 Tenant 的业务关联。
 type GatewayAdminScope string
@@ -12705,6 +12857,15 @@ const (
 	AutomationRuns    TenantQuotaFeature = "automation_runs"
 )
 
+// DD-158(2)：运营方分拣状态 NEW→TRIAGED→CLOSED；超过 180 天的 CLOSED 记录由 Core 清除。
+type FeedbackState string
+
+const (
+	FeedbackStateCLOSED FeedbackState = "CLOSED"
+	New                 FeedbackState = "NEW"
+	Triaged             FeedbackState = "TRIAGED"
+)
+
 // 按该 Tenant 当前状态可发起的暂停（ACTIVE，或协作面 binding 为 ACTIVE 的 ERROR）或恢复（SUSPENDED）动作
 // key；目录未开放、处于收敛中或本页提示判定失败时省略
 //
@@ -12778,8 +12939,8 @@ const (
 type ProjectPullRequestCommentSide string
 
 const (
-	New ProjectPullRequestCommentSide = "new"
-	Old ProjectPullRequestCommentSide = "old"
+	Old                              ProjectPullRequestCommentSide = "old"
+	ProjectPullRequestCommentSideNew ProjectPullRequestCommentSide = "new"
 )
 
 type ProjectIssueCategory string

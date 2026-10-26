@@ -141,6 +141,9 @@
 //     final discoverableWorkspacePage = discoverableWorkspacePageFromJson(jsonString);
 //     final evidenceView = evidenceViewFromJson(jsonString);
 //     final exportPackageView = exportPackageViewFromJson(jsonString);
+//     final feedbackAttachmentContent = feedbackAttachmentContentFromJson(jsonString);
+//     final feedbackSubmissionReceipt = feedbackSubmissionReceiptFromJson(jsonString);
+//     final feedbackSubmissionRequest = feedbackSubmissionRequestFromJson(jsonString);
 //     final followedPrincipalRequest = followedPrincipalRequestFromJson(jsonString);
 //     final gatewayAccess = gatewayAccessFromJson(jsonString);
 //     final gatewayCallDetail = gatewayCallDetailFromJson(jsonString);
@@ -193,6 +196,8 @@
 //     final nativeHumanScopeResult = nativeHumanScopeResultFromJson(jsonString);
 //     final operationUsageCount = operationUsageCountFromJson(jsonString);
 //     final ownAuditEntry = ownAuditEntryFromJson(jsonString);
+//     final platformFeedbackPage = platformFeedbackPageFromJson(jsonString);
+//     final platformFeedbackTriageRequest = platformFeedbackTriageRequestFromJson(jsonString);
 //     final platformInfo = platformInfoFromJson(jsonString);
 //     final platformTenantPage = platformTenantPageFromJson(jsonString);
 //     final platformToolPage = platformToolPageFromJson(jsonString);
@@ -1278,6 +1283,24 @@ ExportPackageView exportPackageViewFromJson(String str) =>
 String exportPackageViewToJson(ExportPackageView data) =>
     json.encode(data.toJson());
 
+FeedbackAttachmentContent feedbackAttachmentContentFromJson(String str) =>
+    FeedbackAttachmentContent.fromJson(json.decode(str));
+
+String feedbackAttachmentContentToJson(FeedbackAttachmentContent data) =>
+    json.encode(data.toJson());
+
+FeedbackSubmissionReceipt feedbackSubmissionReceiptFromJson(String str) =>
+    FeedbackSubmissionReceipt.fromJson(json.decode(str));
+
+String feedbackSubmissionReceiptToJson(FeedbackSubmissionReceipt data) =>
+    json.encode(data.toJson());
+
+FeedbackSubmissionRequest feedbackSubmissionRequestFromJson(String str) =>
+    FeedbackSubmissionRequest.fromJson(json.decode(str));
+
+String feedbackSubmissionRequestToJson(FeedbackSubmissionRequest data) =>
+    json.encode(data.toJson());
+
 FollowedPrincipalRequest followedPrincipalRequestFromJson(String str) =>
     FollowedPrincipalRequest.fromJson(json.decode(str));
 
@@ -1585,6 +1608,20 @@ OwnAuditEntry ownAuditEntryFromJson(String str) =>
     OwnAuditEntry.fromJson(json.decode(str));
 
 String ownAuditEntryToJson(OwnAuditEntry data) => json.encode(data.toJson());
+
+PlatformFeedbackPage platformFeedbackPageFromJson(String str) =>
+    PlatformFeedbackPage.fromJson(json.decode(str));
+
+String platformFeedbackPageToJson(PlatformFeedbackPage data) =>
+    json.encode(data.toJson());
+
+PlatformFeedbackTriageRequest platformFeedbackTriageRequestFromJson(
+  String str,
+) => PlatformFeedbackTriageRequest.fromJson(json.decode(str));
+
+String platformFeedbackTriageRequestToJson(
+  PlatformFeedbackTriageRequest data,
+) => json.encode(data.toJson());
 
 PlatformInfo platformInfoFromJson(String str) =>
     PlatformInfo.fromJson(json.decode(str));
@@ -13176,6 +13213,137 @@ final exportPackageStateValues = EnumValues({
   "REVOKED": ExportPackageState.REVOKED,
 });
 
+///DD-158(2): authenticated operator attachment read with encoding=base64 for native JSON
+///transport; same audited bytes as the binary response, nosniff.
+class FeedbackAttachmentContent {
+  final String dataBase64;
+  final String mimeType;
+  final String sha256;
+
+  FeedbackAttachmentContent({
+    required this.dataBase64,
+    required this.mimeType,
+    required this.sha256,
+  });
+
+  factory FeedbackAttachmentContent.fromJson(Map<String, dynamic> json) =>
+      FeedbackAttachmentContent(
+        dataBase64: json["dataBase64"],
+        mimeType: json["mimeType"],
+        sha256: json["sha256"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "dataBase64": dataBase64,
+    "mimeType": mimeType,
+    "sha256": sha256,
+  });
+}
+
+///DD-158(1)：反馈已记入 Core 的回执；同键重放返回同一回执。
+class FeedbackSubmissionReceipt {
+  final String createdAt;
+  final String feedbackId;
+
+  FeedbackSubmissionReceipt({
+    required this.createdAt,
+    required this.feedbackId,
+  });
+
+  factory FeedbackSubmissionReceipt.fromJson(Map<String, dynamic> json) =>
+      FeedbackSubmissionReceipt(
+        createdAt: json["createdAt"],
+        feedbackId: json["feedbackId"],
+      );
+
+  Map<String, dynamic> toJson() =>
+      _stripNulls({"createdAt": createdAt, "feedbackId": feedbackId});
+}
+
+///DD-158(1)：POST /api/v1/feedback。ACTIVE Tenant 成员的 HUMAN 会话提交给部署运营方的私有反馈；不是 Governed
+///Action。idempotencyKey 由客户端在首次发送前冻结，同一本人同键重放返回原回执、同键异内容 409。
+class FeedbackSubmissionRequest {
+  final FeedbackAttachmentUpload? attachment;
+  final FeedbackCategory? category;
+  final FeedbackClient client;
+
+  ///本人在提交前预览并同意附带的固定诊断字段（应用版本、平台、User-Agent、语言、采集时间），≤4096 字节
+  final String? diagnostics;
+  final String idempotencyKey;
+
+  ///去首尾空白后 1–4000 字符
+  final String message;
+
+  FeedbackSubmissionRequest({
+    this.attachment,
+    this.category,
+    required this.client,
+    this.diagnostics,
+    required this.idempotencyKey,
+    required this.message,
+  });
+
+  factory FeedbackSubmissionRequest.fromJson(Map<String, dynamic> json) =>
+      FeedbackSubmissionRequest(
+        attachment: json["attachment"] == null
+            ? null
+            : FeedbackAttachmentUpload.fromJson(json["attachment"]),
+        category: json["category"] == null
+            ? null
+            : feedbackCategoryValues.map[json["category"]]!,
+        client: feedbackClientValues.map[json["client"]]!,
+        diagnostics: json["diagnostics"],
+        idempotencyKey: json["idempotencyKey"],
+        message: json["message"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "attachment": attachment?.toJson(),
+    "category": feedbackCategoryValues.reverse[category],
+    "client": feedbackClientValues.reverse[client],
+    "diagnostics": diagnostics,
+    "idempotencyKey": idempotencyKey,
+    "message": message,
+  });
+}
+
+class FeedbackAttachmentUpload {
+  ///标准 base64，解码后 ≤2 MiB
+  final String dataBase64;
+
+  ///image/png、image/jpeg 或 image/webp；Core 另按文件头复核
+  final String mimeType;
+
+  FeedbackAttachmentUpload({required this.dataBase64, required this.mimeType});
+
+  factory FeedbackAttachmentUpload.fromJson(Map<String, dynamic> json) =>
+      FeedbackAttachmentUpload(
+        dataBase64: json["dataBase64"],
+        mimeType: json["mimeType"],
+      );
+
+  Map<String, dynamic> toJson() =>
+      _stripNulls({"dataBase64": dataBase64, "mimeType": mimeType});
+}
+
+///DD-158(1)：原版“发送反馈”的类别（Bug、Praise、Needs work）。
+enum FeedbackCategory { BUG, NEEDS_WORK, PRAISE }
+
+final feedbackCategoryValues = EnumValues({
+  "BUG": FeedbackCategory.BUG,
+  "NEEDS_WORK": FeedbackCategory.NEEDS_WORK,
+  "PRAISE": FeedbackCategory.PRAISE,
+});
+
+///DD-158(1)：提交反馈的客户端，只用于运营方分拣。
+enum FeedbackClient { DESKTOP, MOBILE, WEB }
+
+final feedbackClientValues = EnumValues({
+  "DESKTOP": FeedbackClient.DESKTOP,
+  "MOBILE": FeedbackClient.MOBILE,
+  "WEB": FeedbackClient.WEB,
+});
+
 ///PUT /api/v1/user-state/followed-principals 的请求体（DD-125(5)、03
 ///CollaborationUserState.followed_principals）：原 Pulse 关注/取消关注，取代逐公钥 kind 3。pubkey 是被关注者的任一
 ///Buzz 公钥，Core 解析为同 Tenant 的 HUMAN Principal 并按 Principal 存储；关注要求该公钥当前
@@ -19061,6 +19229,145 @@ class OwnAuditEntry {
     "occurredAt": occurredAt,
     "resultCode": resultCode,
     "workspaceId": workspaceId,
+  });
+}
+
+///DD-158(2)：GET /api/v1/platform/feedback 的有界回应，只对 Platform Catalog Tenant 中持有 fresh
+///Catalog manage 的会话开放；读取受审计。图片经 GET /api/v1/platform/feedback/{feedbackId}/attachment 取回。
+class PlatformFeedbackPage {
+  final List<PlatformFeedbackView> items;
+
+  ///下一页偏移，缺省即读完
+  final int? nextOffset;
+
+  PlatformFeedbackPage({required this.items, this.nextOffset});
+
+  factory PlatformFeedbackPage.fromJson(Map<String, dynamic> json) =>
+      PlatformFeedbackPage(
+        items: List<PlatformFeedbackView>.from(
+          json["items"].map((x) => PlatformFeedbackView.fromJson(x)),
+        ),
+        nextOffset: json["nextOffset"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "items": List<dynamic>.from(items.map((x) => x.toJson())),
+    "nextOffset": nextOffset,
+  });
+}
+
+class PlatformFeedbackView {
+  final FeedbackAttachmentView? attachment;
+  final FeedbackCategory? category;
+  final FeedbackClient client;
+  final String createdAt;
+  final String? diagnostics;
+  final String feedbackId;
+  final String message;
+  final FeedbackState state;
+  final String tenantId;
+  final String tenantName;
+  final int version;
+
+  PlatformFeedbackView({
+    this.attachment,
+    this.category,
+    required this.client,
+    required this.createdAt,
+    this.diagnostics,
+    required this.feedbackId,
+    required this.message,
+    required this.state,
+    required this.tenantId,
+    required this.tenantName,
+    required this.version,
+  });
+
+  factory PlatformFeedbackView.fromJson(Map<String, dynamic> json) =>
+      PlatformFeedbackView(
+        attachment: json["attachment"] == null
+            ? null
+            : FeedbackAttachmentView.fromJson(json["attachment"]),
+        category: json["category"] == null
+            ? null
+            : feedbackCategoryValues.map[json["category"]]!,
+        client: feedbackClientValues.map[json["client"]]!,
+        createdAt: json["createdAt"],
+        diagnostics: json["diagnostics"],
+        feedbackId: json["feedbackId"],
+        message: json["message"],
+        state: feedbackStateValues.map[json["state"]]!,
+        tenantId: json["tenantId"],
+        tenantName: json["tenantName"],
+        version: json["version"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "attachment": attachment?.toJson(),
+    "category": feedbackCategoryValues.reverse[category],
+    "client": feedbackClientValues.reverse[client],
+    "createdAt": createdAt,
+    "diagnostics": diagnostics,
+    "feedbackId": feedbackId,
+    "message": message,
+    "state": feedbackStateValues.reverse[state],
+    "tenantId": tenantId,
+    "tenantName": tenantName,
+    "version": version,
+  });
+}
+
+class FeedbackAttachmentView {
+  final int byteSize;
+  final String mimeType;
+  final String sha256;
+
+  FeedbackAttachmentView({
+    required this.byteSize,
+    required this.mimeType,
+    required this.sha256,
+  });
+
+  factory FeedbackAttachmentView.fromJson(Map<String, dynamic> json) =>
+      FeedbackAttachmentView(
+        byteSize: json["byteSize"],
+        mimeType: json["mimeType"],
+        sha256: json["sha256"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "byteSize": byteSize,
+    "mimeType": mimeType,
+    "sha256": sha256,
+  });
+}
+
+///DD-158(2)：运营方分拣状态 NEW→TRIAGED→CLOSED；超过 180 天的 CLOSED 记录由 Core 清除。
+enum FeedbackState { CLOSED, NEW, TRIAGED }
+
+final feedbackStateValues = EnumValues({
+  "CLOSED": FeedbackState.CLOSED,
+  "NEW": FeedbackState.NEW,
+  "TRIAGED": FeedbackState.TRIAGED,
+});
+
+///DD-158(2)：PUT /api/v1/platform/feedback/{feedbackId}。运营方按读到的 version CAS
+///前移分拣状态（NEW→TRIAGED→CLOSED，不可回退）。
+class PlatformFeedbackTriageRequest {
+  final FeedbackState state;
+  final int version;
+
+  PlatformFeedbackTriageRequest({required this.state, required this.version});
+
+  factory PlatformFeedbackTriageRequest.fromJson(Map<String, dynamic> json) =>
+      PlatformFeedbackTriageRequest(
+        state: feedbackStateValues.map[json["state"]]!,
+        version: json["version"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "state": feedbackStateValues.reverse[state],
+    "version": version,
   });
 }
 

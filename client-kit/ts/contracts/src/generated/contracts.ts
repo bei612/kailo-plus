@@ -4301,6 +4301,72 @@ export enum ExportPackageState {
 }
 
 /**
+ * DD-158(2): authenticated operator attachment read with encoding=base64 for native JSON
+ * transport; same audited bytes as the binary response, nosniff.
+ */
+export interface FeedbackAttachmentContent {
+    dataBase64: string;
+    mimeType:   string;
+    sha256:     string;
+}
+
+/**
+ * DD-158(1)：反馈已记入 Core 的回执；同键重放返回同一回执。
+ */
+export interface FeedbackSubmissionReceipt {
+    createdAt:  string;
+    feedbackId: string;
+}
+
+/**
+ * DD-158(1)：POST /api/v1/feedback。ACTIVE Tenant 成员的 HUMAN 会话提交给部署运营方的私有反馈；不是 Governed
+ * Action。idempotencyKey 由客户端在首次发送前冻结，同一本人同键重放返回原回执、同键异内容 409。
+ */
+export interface FeedbackSubmissionRequest {
+    attachment?: FeedbackAttachmentUpload;
+    category?:   FeedbackCategory;
+    client:      FeedbackClient;
+    /**
+     * 本人在提交前预览并同意附带的固定诊断字段（应用版本、平台、User-Agent、语言、采集时间），≤4096 字节
+     */
+    diagnostics?:   string;
+    idempotencyKey: string;
+    /**
+     * 去首尾空白后 1–4000 字符
+     */
+    message: string;
+}
+
+export interface FeedbackAttachmentUpload {
+    /**
+     * 标准 base64，解码后 ≤2 MiB
+     */
+    dataBase64: string;
+    /**
+     * image/png、image/jpeg 或 image/webp；Core 另按文件头复核
+     */
+    mimeType: string;
+}
+
+/**
+ * DD-158(1)：原版“发送反馈”的类别（Bug、Praise、Needs work）。
+ */
+export enum FeedbackCategory {
+    Bug = "BUG",
+    NeedsWork = "NEEDS_WORK",
+    Praise = "PRAISE",
+}
+
+/**
+ * DD-158(1)：提交反馈的客户端，只用于运营方分拣。
+ */
+export enum FeedbackClient {
+    Desktop = "DESKTOP",
+    Mobile = "MOBILE",
+    Web = "WEB",
+}
+
+/**
  * PUT /api/v1/user-state/followed-principals 的请求体（DD-125(5)、03
  * CollaborationUserState.followed_principals）：原 Pulse 关注/取消关注，取代逐公钥 kind 3。pubkey 是被关注者的任一
  * Buzz 公钥，Core 解析为同 Tenant 的 HUMAN Principal 并按 Principal 存储；关注要求该公钥当前
@@ -6748,6 +6814,56 @@ export interface OwnAuditEntry {
      * 动作所在的 Workspace；Tenant 级动作（设备公钥登记、认证等）缺省
      */
     workspaceId?: string;
+}
+
+/**
+ * DD-158(2)：GET /api/v1/platform/feedback 的有界回应，只对 Platform Catalog Tenant 中持有 fresh
+ * Catalog manage 的会话开放；读取受审计。图片经 GET /api/v1/platform/feedback/{feedbackId}/attachment 取回。
+ */
+export interface PlatformFeedbackPage {
+    items: PlatformFeedbackView[];
+    /**
+     * 下一页偏移，缺省即读完
+     */
+    nextOffset?: number;
+}
+
+export interface PlatformFeedbackView {
+    attachment?:  FeedbackAttachmentView;
+    category?:    FeedbackCategory;
+    client:       FeedbackClient;
+    createdAt:    string;
+    diagnostics?: string;
+    feedbackId:   string;
+    message:      string;
+    state:        FeedbackState;
+    tenantId:     string;
+    tenantName:   string;
+    version:      number;
+}
+
+export interface FeedbackAttachmentView {
+    byteSize: number;
+    mimeType: string;
+    sha256:   string;
+}
+
+/**
+ * DD-158(2)：运营方分拣状态 NEW→TRIAGED→CLOSED；超过 180 天的 CLOSED 记录由 Core 清除。
+ */
+export enum FeedbackState {
+    Closed = "CLOSED",
+    New = "NEW",
+    Triaged = "TRIAGED",
+}
+
+/**
+ * DD-158(2)：PUT /api/v1/platform/feedback/{feedbackId}。运营方按读到的 version CAS
+ * 前移分拣状态（NEW→TRIAGED→CLOSED，不可回退）。
+ */
+export interface PlatformFeedbackTriageRequest {
+    state:   FeedbackState;
+    version: number;
 }
 
 /**

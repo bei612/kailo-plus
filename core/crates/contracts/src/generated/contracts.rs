@@ -6132,6 +6132,85 @@ pub enum ExportPackageState {
     Revoked,
 }
 
+/// DD-158(2): authenticated operator attachment read with encoding=base64 for native JSON
+/// transport; same audited bytes as the binary response, nosniff.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FeedbackAttachmentContent {
+    pub data_base64: String,
+
+    pub mime_type: String,
+
+    pub sha256: String,
+}
+
+/// DD-158(1)：反馈已记入 Core 的回执；同键重放返回同一回执。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FeedbackSubmissionReceipt {
+    pub created_at: String,
+
+    pub feedback_id: String,
+}
+
+/// DD-158(1)：POST /api/v1/feedback。ACTIVE Tenant 成员的 HUMAN 会话提交给部署运营方的私有反馈；不是 Governed
+/// Action。idempotencyKey 由客户端在首次发送前冻结，同一本人同键重放返回原回执、同键异内容 409。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FeedbackSubmissionRequest {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub attachment: Option<FeedbackAttachmentUpload>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub category: Option<FeedbackCategory>,
+
+    pub client: FeedbackClient,
+
+    /// 本人在提交前预览并同意附带的固定诊断字段（应用版本、平台、User-Agent、语言、采集时间），≤4096 字节
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub diagnostics: Option<String>,
+
+    pub idempotency_key: String,
+
+    /// 去首尾空白后 1–4000 字符
+    pub message: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FeedbackAttachmentUpload {
+    /// 标准 base64，解码后 ≤2 MiB
+    pub data_base64: String,
+
+    /// image/png、image/jpeg 或 image/webp；Core 另按文件头复核
+    pub mime_type: String,
+}
+
+/// DD-158(1)：原版“发送反馈”的类别（Bug、Praise、Needs work）。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum FeedbackCategory {
+    Bug,
+
+    #[serde(rename = "NEEDS_WORK")]
+    NeedsWork,
+
+    Praise,
+}
+
+/// DD-158(1)：提交反馈的客户端，只用于运营方分拣。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum FeedbackClient {
+    #[serde(rename = "DESKTOP")]
+    Desktop,
+
+    #[serde(rename = "MOBILE")]
+    Mobile,
+
+    #[serde(rename = "WEB")]
+    Web,
+}
+
 /// PUT /api/v1/user-state/followed-principals 的请求体（DD-125(5)、03
 /// CollaborationUserState.followed_principals）：原 Pulse 关注/取消关注，取代逐公钥 kind 3。pubkey 是被关注者的任一
 /// Buzz 公钥，Core 解析为同 Tenant 的 HUMAN Principal 并按 Principal 存储；关注要求该公钥当前
@@ -9342,6 +9421,79 @@ pub struct OwnAuditEntry {
     /// 动作所在的 Workspace；Tenant 级动作（设备公钥登记、认证等）缺省
     #[serde(skip_serializing_if = "Option::is_none")]
     pub workspace_id: Option<String>,
+}
+
+/// DD-158(2)：GET /api/v1/platform/feedback 的有界回应，只对 Platform Catalog Tenant 中持有 fresh
+/// Catalog manage 的会话开放；读取受审计。图片经 GET /api/v1/platform/feedback/{feedbackId}/attachment 取回。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlatformFeedbackPage {
+    pub items: Vec<PlatformFeedbackView>,
+
+    /// 下一页偏移，缺省即读完
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_offset: Option<i64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlatformFeedbackView {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub attachment: Option<FeedbackAttachmentView>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub category: Option<FeedbackCategory>,
+
+    pub client: FeedbackClient,
+
+    pub created_at: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub diagnostics: Option<String>,
+
+    pub feedback_id: String,
+
+    pub message: String,
+
+    pub state: FeedbackState,
+
+    pub tenant_id: String,
+
+    pub tenant_name: String,
+
+    pub version: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FeedbackAttachmentView {
+    pub byte_size: i64,
+
+    pub mime_type: String,
+
+    pub sha256: String,
+}
+
+/// DD-158(2)：运营方分拣状态 NEW→TRIAGED→CLOSED；超过 180 天的 CLOSED 记录由 Core 清除。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum FeedbackState {
+    #[serde(rename = "CLOSED")]
+    Closed,
+
+    #[serde(rename = "NEW")]
+    New,
+
+    #[serde(rename = "TRIAGED")]
+    Triaged,
+}
+
+/// DD-158(2)：PUT /api/v1/platform/feedback/{feedbackId}。运营方按读到的 version CAS
+/// 前移分拣状态（NEW→TRIAGED→CLOSED，不可回退）。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PlatformFeedbackTriageRequest {
+    pub state: FeedbackState,
+
+    pub version: i64,
 }
 
 /// GET /api/v1/platform-info 的回应（DD-111）：只含公开展示字段，不依赖 PlatformSession
