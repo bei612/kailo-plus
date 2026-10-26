@@ -623,7 +623,8 @@ services:
       PUSH_APNS_CREDENTIAL_VERSION: ${PUSH_APNS_CREDENTIAL_VERSION:-}
       PUSH_FCM_CREDENTIAL_LOCATOR: ${PUSH_FCM_CREDENTIAL_LOCATOR:-}
       PUSH_FCM_CREDENTIAL_VERSION: ${PUSH_FCM_CREDENTIAL_VERSION:-}
-      PUSH_POLL_SECONDS: ${PUSH_POLL_SECONDS:-5}
+      PUSH_POLL_SECONDS: ${PUSH_POLL_SECONDS:?必须显式提供，禁止硬编码}
+      PUSH_DELIVERY_POLICY: ${PUSH_DELIVERY_POLICY:?必须按 contracts/runtime/push_delivery_policy.schema.json 显式投递}
       # 设备持钥证明允许的时钟偏差：截获的证明最多还能用这么久（DD-79）
       BFF_CLIENT_KEY_PROOF_WINDOW_SECONDS: ${BFF_CLIENT_KEY_PROOF_WINDOW_SECONDS:?必须显式提供，禁止硬编码}
       # 部署显示名（DD-111）：BFF 的公开平台信息与 Web 静态入口投影自同一个值；缺失即拒绝启动

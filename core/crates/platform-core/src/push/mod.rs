@@ -11,8 +11,10 @@
 //! * The deployment configures provider credentials as OpenBao SecretRefs; a missing one makes
 //!   that platform `NOT_CONFIGURED` and the client keeps the original "unavailable" branch.
 
+mod config;
 pub(crate) mod decide;
 mod intent;
+mod scan;
 pub(crate) mod send;
 mod token_intent;
 mod unread;
@@ -372,6 +374,7 @@ async fn apply(
             ReasonCode::ClientKeyNotFound,
         ));
     }
+    let policy = config::Policy::parse(&std::env::var("PUSH_DELIVERY_POLICY").map_err(|_|unavailable())?).map_err(|_|unavailable())?;
     let digest = token_digest(&req.token);
     let existing: Option<ExistingRow> = sqlx::query_as(
         "select version, token_digest, token_secret_locator, token_secret_version, token_secret_audience
@@ -413,7 +416,7 @@ async fn apply(
             audience: state.memory_service.secret_audience.clone(),
         };
         // Persist ownership before OpenBao; every error/crash remains discoverable.
-        token_intent::prepare(&state.pool, ctx.tenant_id, device, &reference)
+        token_intent::prepare(&state.pool, ctx.tenant_id, device, &reference, &policy)
             .await
             .map_err(db)?;
         let version = state
