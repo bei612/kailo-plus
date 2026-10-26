@@ -133,8 +133,19 @@ def _under(rel, prefixes):
     return any(rel == p.rstrip("/") or rel.startswith(p.rstrip("/") + "/") for p in prefixes)
 
 
-def public_build_config_digest(art):
+def public_build_config_digest(art, value_digests=None):
     """Fingerprint exact public inputs; absent optional input is explicit, never a secret value."""
+    if value_digests is not None:
+        names = _list(art, "build_args") + _list(art, "optional_build_args")
+        if set(value_digests) != set(names):
+            raise ValueError("公开构建配置摘要的变量集合不匹配")
+        for name, value in value_digests.items():
+            if value is None and name in _list(art, "build_args"):
+                raise ValueError(f"缺少必选公开构建配置 {name}")
+            if value is not None and not re.fullmatch(r"[0-9a-f]{64}", str(value)):
+                raise ValueError("公开构建配置值摘要格式错误")
+        encoded = json.dumps(value_digests, sort_keys=True, separators=(",", ":")).encode()
+        return "sha256:" + hashlib.sha256(encoded).hexdigest()
     values = {}
     for name in _list(art, "build_args") + _list(art, "optional_build_args"):
         value = os.environ.get(name) or None
@@ -155,9 +166,8 @@ def public_build_config_digest(art):
                 return isinstance(node, list) and any(server_credential(v) for v in node)
             if not isinstance(config, dict) or server_credential(config):
                 raise ValueError("Firebase 服务端凭据禁止进入客户端构建参数")
-        values[name] = value
-    encoded = json.dumps(values, sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode()
-    return "sha256:" + hashlib.sha256(encoded).hexdigest()
+        values[name] = hashlib.sha256(value.encode()).hexdigest() if value is not None else None
+    return public_build_config_digest(art, values)
 
 
 def source_digest(art):
@@ -736,12 +746,14 @@ def stage(name, dest):
             os.chmod(dst, 0o755 if os.access(rel, os.X_OK) else 0o644)
 
 
-def record(name, artifact):
+def record(name, artifact, build_config_digest=None):
     """只替换该产物块里的两行：记录里的注释是给人读的，不经 YAML 重写。"""
     path, m, art = resolve(name)
     updates = {}
     if "optional_build_args" in art:
-        config_digest = public_build_config_digest(art) if artifact != "none" else "none"
+        config_digest = (build_config_digest or public_build_config_digest(art)) if artifact != "none" else "none"
+        if config_digest != "none" and not re.fullmatch(r"sha256:[0-9a-f]{64}", config_digest):
+            raise ValueError("构建输出的公开配置摘要格式错误")
         art = dict(art, build_config_digest=config_digest)
         updates["build_config_digest"] = config_digest
     digest = source_digest(art) if artifact != "none" else "none"
@@ -787,7 +799,7 @@ if __name__ == "__main__":
         plan(a[1])
     elif cmd == "stage" and len(a) == 3:
         stage(a[1], a[2])
-    elif cmd == "record" and len(a) == 3:
-        record(a[1], a[2])
+    elif cmd == "record" and len(a) in (3, 4):
+        record(a[1], a[2], a[3] if len(a) == 4 else None)
     else:
         sys.exit(__doc__)
