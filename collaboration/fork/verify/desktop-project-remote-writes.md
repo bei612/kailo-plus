@@ -73,3 +73,21 @@ Native 同一个生产消费者先读取 Core 可信观察，再查原已签事�
 最终 Native 同一 `5d8767b16dafcbeb9f4e93131a1d34929f2aa924` 还做了历史 Community 反向：临时允许没有原 Community ID 的 UNKNOWN 采用 positive proof，原消费者检查真实断言失败、exit 101；逐字恢复后同一检查 1 passed、exit 0。SHA-256 前后一致：`6ec59145798502269e96a042938fcd9fcb5c237f8c18cd290f9ed1b51acf3d3f`，日志在 `negative-5d8767b16dafcbeb9f4e93131a1d34929f2aa924/`。这一历史状态没有足够范围证据就保持 UNKNOWN；已证明 NOT_DELIVERED 的旧尝试仍可在新发送前冻结 Community。最终 Native 增量没有更改上述已验证的 Relay、DB、Shared 源码。
 
 本阶段全部自有检查容器、临时 PG/Redis 和独立网络已实际回读确认不存在，资源已通知根工作流释放。Core 合同生成、设计 pin 和合批门禁由根工作流统一执行；Core 普通消息“墓碑再次删除”的缺口未在本批放宽或冒称修复。本文不将上述 Rust 定向检查算作安装包、Win11、生产发布或 DD-157 三账号双主题真实验收。
+
+## 同日冻结 Community 的实际提交与回执围栏
+
+前一 writer 批的检查没有证明“查证后 Host 改绑，原 `/events` 仍只能写冻结范围”。复核还发现 `/events/delivery` 自行增加了没有原配置来源的 16 KiB 上限。上述两个缺口不由前一批的通过结果覆盖；本批依据独立推送的设计权威 `bb41415a5241ce31564f9da01272ee6b82158c60`，完成 09 同节、DD-160 与 V-SCN-265 的窄接缝，不扩张普通消息或 Git receive-pack 的协议范围。
+
+删除局部 16 KiB 限制，继续消费原 `router::build_router` API 分组的 1 MiB `RequestBodyLimitLayer`。原 `/events` 新的限定形式为 `POST /events?community=<canonical UUID>`，设备 NIP-98 同时签入唯一、恰好两个字段的 `community` 标签。query 与标签缺一、重复、畸形、非 canonical UUID、彼此不一致或不匹配本次 Host 解析的 Community，均在 ingest 前拒绝。验过的同一 TenantContext 继续进入原 admission/replay/member/ingest/writer；本人的空正文、无 expiration 的 1631 还消费原 Git ban 与 live repository 读取准入，未改变原 quota/replay 执行顺序。肯定 ACK 只回填该已验范围的 `community_id`，没有再次按 Host 查找来决定写入或 ACK 的范围。
+
+Native 在 EVENT_DISPATCH 持久化后重读 journal 的 Community，放入完整签名 URL 与标签。只有同 event ID、同 Community 且 accepted=true 的回执才记 ACCEPTED。2xx 缺少或错配 Community、错 event ID、accepted=false、坏 JSON、服务端 401/403 及连接建立后的断流均保持原事件和 DISPATCHED/UNKNOWN；不让普通发布错误字符串把冻结意图改成 REJECTED。journal 重读失败也保留带原 operation key 的 UNKNOWN。明确无法建立连接等原有发送前失败分类仍沿原路径处理。普通无 query、无 community 标签的提交及其 ACK 保留原语义；原 NIP-98 URL verifier 对 query 严格比较，旧 `/events` 的无 query 预期 URL 无法接受新消费者的签名请求。
+
+固定 `1a7c9e7d00a0268410315338701bea50597dcd1f`，原 Desktop SDK、1 CPU/4 GiB、默认 feature，`cargo test --offline --locked --lib commands::project_git_publication::tests` 为 11 passed、0 failed、481 filtered out，exit 0。新增证据使用实际 loopback HTTP、真实设备签名与同一生产 publication/SQLite 消费者，逐项检查请求 URL、唯一 community 标签、payload 与已持久化范围，以及上述 9 类回应/断流。临时移除 `relay/submit.rs` 的 ACK Community 匹配条件后，同一新增检查真实断言失败、exit 101；逐字恢复后 1 passed、exit 0。SHA-256 前后一致：`95c67979aa30f5908e2d7c509e6c74739e9bdbe767981ad53776e8bdaad4634c`。日志在原证据目录的 `1a7c9e7d00a0268410315338701bea50597dcd1f-{cargo,preflight,limits,exit,oom}.log` 与 `negative-1a7c9e7d00a0268410315338701bea50597dcd1f/`。
+
+保留本批真实失败：同一 `1a7c9e7d00a0268410315338701bea50597dcd1f` 的 Relay 首轮编译 exit 101，原因是新增认证元数据后 gifs/workflows 两处解构未加 `..`，以及 Community UUID 值与引用比较错误；不是 Relay 业务检查通过。原日志保留在 `relay-delivery-1a7c9e7d00a0268410315338701bea50597dcd1f/`。修复后才执行下述最终 Relay 轮。
+
+Relay 最终固定 `d5c4667f4d82b326dbdab7c253d0565a2c45119f`，原检查 SDK、2 CPU/16 GiB，加原隔离 PG 1 CPU/2 GiB、Redis 0.5 CPU/128 MiB、独立网络与 tmpfs，`cargo test --offline --locked --lib -p buzz-relay api::delivery::tests -- --ignored --test-threads=1` 为 6 passed、0 failed、1139 filtered out。新场景实际先取得旧 Community 的 proof，再将 Host 改绑至仍授予该设备同一 repository 权限的新 Community：冻结请求返回 401，两个 Community 均无该事件行；恢复原绑定后，同意图成功写入并返回匹配 ACK。另实际覆盖原无 scope 提交成功、缺失/重复/空/畸形/错配 query/tag、签名后篡改标签、旧无 query 预期 URL 验签拒绝，以及 17 KiB 合法 proof 可处理、超过原 1 MiB router 上限返回 413。
+
+同一 Relay 固定源临时取消 Host 所属 Community 与冻结 UUID 的比较，新场景实际收到错误的 200，原检查断言期望 401 而失败、exit 101；逐字恢复后原 6 项再次通过，整个作业 exit 0、OOMKilled=false。`api/bridge.rs` SHA-256 前后一致：`a967362e6f1ffc24d136353e83b6ef9f69dbadc9b0cfe1c9698425c6fe53cdd8`。原日志、实际限额、终态与 OOM 回执在 `relay-delivery-d5c4667f4d82b326dbdab7c253d0565a2c45119f/`。容器、临时 PG/Redis 和独立网络已实际确认不存在，重资源窗口已通知根工作流释放。未改 DB writer 实现，未重复原独立 DB 全批；不把这些结果扩写成全工程、旧 Relay 二进制混部署、安装包或生产 UI 验收。
+
+最终 Native 固定 `f8cb31cf134e1204947f962c27635cd6e421ffd8`，包含原 SDK 格式回填与 journal 重读失败的 UNKNOWN 保真修正，同一原 Desktop SDK、1 CPU/4 GiB、同一 `commands::project_git_publication::tests` 命令再次 11 passed、0 failed、481 filtered out，exit 0，OOMKilled=false；实际编译 11.29 秒。终态日志为 `f8cb31cf134e1204947f962c27635cd6e421ffd8-{cargo,preflight,limits,exit,oom}.log`。此提交没有修改最终 Relay 检查所覆盖的任何 Relay 源码。当前自有 Native 验证容器也已退出清理；这里只交付固定源码与检查证据，根工作流负责设计 pin、合同生成和合批门禁，生产发布、Win11 安装及三账号双主题 after 走查仍须分别完成。
