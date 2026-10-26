@@ -256,7 +256,6 @@ Resource ID 仍由后续真实 `resource.create` 返回。目录沿原 renderer 
 同规格 GitHub 来源 CI 回执 `checks/github-e68efa7bf11cc984b81602df049e849ac457efbc/receipt.json` 退出 0，
 延续前述 27 项单元检查及语法/路径检查；bootstrap 生成器本身仅完成 Python AST 检查，未在新隔离数据库执行。
 
-
 2026-10-26 Core 生产者后续：按主会话分工，适配器专用分支已沿原 binding 准入事务实现
 HUMAN 最大暴露边界物化和精确归属消费，见 [Core 实施与验证边界](application-human-exposure.md)。
 该改动解除的是源码中的生产者缺口；自动化尚需读真实 HUMAN 管理元数据并在 binding 准入与
@@ -314,7 +313,6 @@ inputs、实际 driver 业务与生产权威 suite 尚未跑；需匹配 Core/Wo
 本批不重启/删除遗留栈、不生产登记/批准、不部署共享平台。
 `blockedAfterNative` 仅在实际编排已成功建立原 driver listener 后清空；该运行中事实不是 suite PASS。
 原 upgrade writer 仍不存在，未宣称升级/旧映射兼容完成。
-
 
 ## 10. 遗留隔离环境实际恢复（2026-10-26）
 
