@@ -30,7 +30,7 @@ class _CommunityHeaderTitle extends ConsumerWidget {
     final name = cleared
         ? null
         : live.value?.name ??
-            ref.watch(activeCommunityProvider).unwrapPrevious().value?.name;
+              ref.watch(activeCommunityProvider).unwrapPrevious().value?.name;
     final title = name?.trim();
     return SizedBox.expand(
       child: Align(
@@ -39,7 +39,10 @@ class _CommunityHeaderTitle extends ConsumerWidget {
           padding: const EdgeInsets.only(left: Grid.xxs),
           child: Text(
             title == null || title.isEmpty
-                ? _channelText(context, PlatformMessageKey.platformThemeCommunitySample)
+                ? _channelText(
+                    context,
+                    PlatformMessageKey.platformThemeCommunitySample,
+                  )
                 : title,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
