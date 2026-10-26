@@ -291,7 +291,7 @@ pub(crate) fn fcm_message(target: &Target, reason: Reason, locale: &str, badge: 
         "android": {
             "collapse_key": target.collapse_key,
             "priority": "HIGH",
-            "notification": {"notification_count": badge}
+            "notification": {"notification_count": badge, "tag": target.collapse_key}
         }
     })
 }
@@ -472,6 +472,7 @@ mod tests {
         assert_eq!(apns["aps"]["badge"], 7);
         let fcm = fcm_message(&target, Reason::Mention, "en", 7);
         assert_eq!(fcm["android"]["notification"]["notification_count"], 7);
+        assert_eq!(fcm["android"]["notification"]["tag"], target.collapse_key);
         for body in [apns, fcm] {
             assert!(!body.to_string().contains("secret body text"));
         }
