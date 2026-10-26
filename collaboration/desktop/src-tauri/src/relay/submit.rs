@@ -71,7 +71,9 @@ pub(crate) async fn submit_signed_event_scoped(
         return Err(if community.is_some() { "relay publish outcome unknown".into() } else { error });
     }
 
-    let result: SubmitEventResponse = parse_json_response(response).await?;
+    let result: SubmitEventResponse = parse_json_response(response).await.map_err(|error| {
+        if community.is_some() { "relay publish outcome unknown".into() } else { error }
+    })?;
     if result.event_id != event.id.to_hex() {
         return Err("relay returned malformed response: event ID mismatch".to_string());
     }
@@ -79,7 +81,9 @@ pub(crate) async fn submit_signed_event_scoped(
         return Err("relay returned malformed response: community ID mismatch".into());
     }
     if !result.accepted {
-        return Err(format!("relay rejected event: {}", result.message));
+        return Err(if community.is_some() {
+            "relay publish outcome unknown".into()
+        } else { format!("relay rejected event: {}", result.message) });
     }
 
     Ok(result)
