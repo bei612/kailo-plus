@@ -7,7 +7,7 @@
 //! - Relay 存着这条事件：已送达；
 //! - 普通事件查询为空：仍未知，过窗也不证明从未送达。软删除会隐藏
 //!   原事件及其删除事件，早先通过时间检查的 writer 也可能尚未提交。
-//!   权威缺失接缝未闭合前，不据此允许同一意图新签；
+//!   只有冻结epoch、双身份查证及writer屏障证明可追加确定未送达；
 //! - 依赖不可读或证据不足：继续等，不猜。
 //!
 //! 不重发：DISPATCH 之后用户可能已经重新发了一条，自动重发会造出重复消息
@@ -410,8 +410,8 @@ async fn write_reconciliation_with_proof(
             let current: Option<String> = sqlx::query_scalar(
                 "select i.pubkey from projection.tenant_buzz_binding b
                  join identity.buzz_identity_binding i on i.tenant_id=b.tenant_id and i.principal_id=b.control_service_principal_id
-                 join identity.principal p on p.id=i.principal_id and p.tenant_id=i.tenant_id and p.status='ACTIVE'
-                 where b.tenant_id=$1 and b.state='ACTIVE' and i.state='ACTIVE' and i.custody='SERVER' and i.pubkey=$2 for share of b,i,p")
+                 join identity.principal p on p.id=i.principal_id and p.tenant_id=i.tenant_id and p.kind='SERVICE' and p.status='ACTIVE'
+                 where b.tenant_id=$1 and b.state='ACTIVE' and i.kind='CONTROL' and i.state='ACTIVE' and i.custody='SERVER' and i.pubkey=$2 for share of b,i,p")
                 .bind(p.tenant_id).bind(control_pubkey).fetch_optional(&mut *tx).await?;
             if current.is_none() { return Err(sqlx::Error::RowNotFound); }
             crate::audit::append_publication_proof(&mut tx, reconciliation_entry(p, result_code), proof).await?;

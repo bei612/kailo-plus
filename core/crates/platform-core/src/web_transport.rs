@@ -3250,32 +3250,35 @@ async fn publish(
         Publication::Reopen => client.sign(41010, "", &[vec!["h".into(), channel_id.clone()]]),
     };
     let mut event = match signed {
-            Ok(e) => e,
-            Err(e) => {
-                tracing::warn!(error = %e, "签名失败");
-                return StatusCode::SERVICE_UNAVAILABLE.into_response();
-            }
-        };
+        Ok(e) => e,
+        Err(e) => {
+            tracing::warn!(error = %e, "签名失败");
+            return StatusCode::SERVICE_UNAVAILABLE.into_response();
+        }
+    };
     // Fresh actual writer readiness is required before producing an epoch-bound
     // event. A stale/unsupported policy cannot be replaced by a Core default.
-    let publication_policy = if collab_bridge::bridge::publication_max_age_seconds(event.kind.as_u16()).is_some() {
-        Some(match client.publication_policy(&state.relay_http).await {
-        Ok(policy) => policy,
-        Err(error) => {
-            return previous.as_ref().map_or_else(
-                || relay_error_response(&error, None),
-                |p| {
-                    error_body(
-                        StatusCode::SERVICE_UNAVAILABLE,
-                        ErrorClass::Unknown,
-                        ReasonCode::PublishResultUnknown,
-                        Some(p.operation_id),
+    let publication_policy =
+        if collab_bridge::bridge::publication_max_age_seconds(event.kind.as_u16()).is_some() {
+            Some(match client.publication_policy(&state.relay_http).await {
+                Ok(policy) => policy,
+                Err(error) => {
+                    return previous.as_ref().map_or_else(
+                        || relay_error_response(&error, None),
+                        |p| {
+                            error_body(
+                                StatusCode::SERVICE_UNAVAILABLE,
+                                ErrorClass::Unknown,
+                                ReasonCode::PublishResultUnknown,
+                                Some(p.operation_id),
+                            )
+                        },
                     )
-                },
-            )
-        }
-        })
-    } else { None };
+                }
+            })
+        } else {
+            None
+        };
 
     if let Some(previous) = previous
         .as_ref()
@@ -3285,7 +3288,9 @@ async fn publish(
             .absence_proof
             .clone()
             .and_then(|v| serde_json::from_value::<crate::audit::PublicationProof>(v).ok());
-        if publication_policy.as_ref().is_none_or(|policy|!publication_retry_scope_matches(proof.as_ref(), &current_binding, policy)) {
+        if publication_policy.as_ref().is_none_or(|policy| {
+            !publication_retry_scope_matches(proof.as_ref(), &current_binding, policy)
+        }) {
             // Restore/import rotates the actual writer epoch. A valid historical
             // proof is retained but cannot authorize a signature in the new epoch.
             if crate::publish_reconcile::reconcile_retry_positive(
@@ -3315,7 +3320,7 @@ async fn publish(
     if let Some(policy) = &publication_policy {
         event = match client.bind_publication_epoch(&event, policy) {
             Ok(event) => event,
-            Err(error) => return relay_error_response(&error,None),
+            Err(error) => return relay_error_response(&error, None),
         };
     }
     let Some(event_channel_id) = publication_native_channel(&event, referenced_channel) else {
