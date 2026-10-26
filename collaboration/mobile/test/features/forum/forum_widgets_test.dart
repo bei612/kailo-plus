@@ -209,15 +209,26 @@ void main() {
     );
   });
 
-  test('captured forum draft cannot cross an adopted login with the same relay key', () async {
-    final native = NativeSession(client: MockClient((_) async => http.Response('', 500)), refreshStore: MemoryRefreshStore());
-    await native.adopt(const OidcTokens(accessToken: 'first-fixture'));
-    final container = ProviderContainer(overrides: [nativeSessionProvider.overrideWithValue(native)]);
-    addTearDown(container.dispose);
-    final delivery = ForumEventDelivery.capture(container);
-    await native.adopt(const OidcTokens(accessToken: 'next-fixture'));
-    await expectLater(delivery.createPost(channelId: _channelId, content: 'Old draft'), throwsStateError);
-  });
+  test(
+    'captured forum draft cannot cross an adopted login with the same relay key',
+    () async {
+      final native = NativeSession(
+        client: MockClient((_) async => http.Response('', 500)),
+        refreshStore: MemoryRefreshStore(),
+      );
+      await native.adopt(const OidcTokens(accessToken: 'first-fixture'));
+      final container = ProviderContainer(
+        overrides: [nativeSessionProvider.overrideWithValue(native)],
+      );
+      addTearDown(container.dispose);
+      final delivery = ForumEventDelivery.capture(container);
+      await native.adopt(const OidcTokens(accessToken: 'next-fixture'));
+      await expectLater(
+        delivery.createPost(channelId: _channelId, content: 'Old draft'),
+        throwsStateError,
+      );
+    },
+  );
 
   testWidgets(
     'content-free push reply opens the actual forum thread at a distant comment',
