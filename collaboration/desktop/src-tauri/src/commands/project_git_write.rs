@@ -227,8 +227,14 @@ fn failure_code(sent: bool, message: &str) -> Option<&'static str> {
     None
 }
 
-fn reconstruction_error(journal: &Journal, intent: &mut Intent, code: git::MergeErrorCode) -> WriteError {
-    if code == git::MergeErrorCode::Failed { return WriteError::at(UNKNOWN, &intent.key); }
+fn reconstruction_error(
+    journal: &Journal,
+    intent: &mut Intent,
+    code: git::MergeErrorCode,
+) -> WriteError {
+    if code == git::MergeErrorCode::Failed {
+        return WriteError::at(UNKNOWN, &intent.key);
+    }
     // info/refs already proved the old target. A changed source or a different
     // reconstructed commit is a definite conflict, not an eternal pending slot.
     intent.result = CONFLICT.into();
@@ -332,7 +338,11 @@ fn dispatch(
         if Some(&merge.target_commit) != intent.old.as_ref()
             || Some(&merge.merge_commit) != intent.new.as_ref()
         {
-            return Err(reconstruction_error(journal, &mut intent, git::MergeErrorCode::Conflict));
+            return Err(reconstruction_error(
+                journal,
+                &mut intent,
+                git::MergeErrorCode::Conflict,
+            ));
         }
         prepared = Some(merge);
     }
