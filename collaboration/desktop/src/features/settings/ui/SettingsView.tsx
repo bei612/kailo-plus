@@ -28,10 +28,10 @@ export function SettingsView({ active, onClose, onSectionChange, section, ...pan
     return () => { disposed = true; };
   }, []);
   // DD-125(2)/(4): the original Moderation and Channel templates sections, as on the Web host;
-  // DD-125(5): Updates only on the Desktop.
+  // DD-125(5): Updates only on the Desktop; DD-159: Local archive only on the Desktop.
   return <SettingsPage active={active} locale={locale} section={section} onSelect={onSectionChange}
     onClose={onClose} appVersion={appVersion} invitationAccess={invitations.access} onRetryInvitations={invitations.reload}
-    channelTemplates moderation updates>
+    channelTemplates moderation updates localArchive>
     <CommunityInvitationSettings active={section === "community-members"} onAccessChange={invitations.onAccessChange} />
     {(profileVisited || section === "profile") && <div hidden={section !== "profile"}><ProfileSettingsCard /></div>}
     {(emojiVisited || section === "custom-emoji") && <div hidden={section !== "custom-emoji"}><CustomEmojiSettingsCard /></div>}

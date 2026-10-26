@@ -610,3 +610,15 @@ source 相等，原 manifest 仅该产物 source/artifact 两字段 +2/-2，不�
 未验证：本机未编译、未运行单测或类型检查，未打包、未部署，未做 Desktop 端收件箱、通知点击
 （含 macOS 冷启动队列）、角标、设置开关与搜索的运行验收；BFF 组件通知／搜索端点的真实数据联调
 也未做。
+
+
+## 2026-10-26 DD-159 本地归档源码候选
+
+基于 `64a6b0942a2d5e5bea5c7c435c4cd7bb894c3def` 接续 r10 未提交实现，仅选本地归档独立批；不包含 Projects、Mobile 或反馈合同。固定对照 Buzz `779af8886caae1317b4de962082429867ab61503` 的 `desktop/src-tauri/src/archive`、`desktop/src/features/local-archive` 与 `desktop/src/shared/api/tauriArchive.ts`。读取固定 Git 对象，不执行只读证据树。
+
+- 权威：DD-159、V-SCN-262/263。归档不是平台授权事实；只经本设备 CLIENT 的原 Relay 查询，没有 Core/BFF 路由、正文副本或审计。仅 Desktop 提供设置分区，Web 深链拒绝该分区。
+- 数据：OS 钥匙串保存随机归档密钥，事件以 NIP-44 v2 分片认证加密；SQLite 仅保留清理、排序与续页所需 ID/时间及订阅配置。删除墓碑阻止倒序页或重试把已删消息重新写入；无论显示种类是否选择删除事件，同步均查询删除事件。
+- 异常：网络、限流和服务错误保留副本并重试；明确拒绝及当前 roster 撤员清理频道，身份认证拒绝清除本身份。40 页有界同步持久化复合页游标，未扫完不推进完成水位；重启继续旧页。退出与同步串行，删除密钥后删除数据库；新身份启动清除旧身份，钥匙串不可用不把临时恢复身份当新身份。
+- 影响：复用原 Desktop Settings 页面、Tauri 命令与 Relay 认证；不改公开 schema、Core 迁移或 Workflow。上游差异增加归档实现与壳接线，源码输入已改变，历史 Desktop artifact 不对应本候选。
+
+本节写入时只完成源码审查与 `git diff --check`（退出 0）；Node/Rust 定向验证排队等待 CI 资源，不能称通过。未生成安装包、未部署、未在 Win11/真实设备完成频道与私聊订阅、撤员、断网、退出重登业务验收。`collab.local_archive` 保持 `in_progress`、`exposure: none` 与发布门禁，未借历史 artifact 解除阻断。设计 pin 及 DD152–160 总覆盖由最终集成批统一更新。

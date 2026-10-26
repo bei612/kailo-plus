@@ -84,7 +84,7 @@ pub(crate) async fn platform_sign_out(
     session: State<'_, NativeSession>,
 ) -> Result<SignOutReport, String> {
     super::native_auth::close_all(&app);
-    match require_config(&app) {
+    let result = async { match require_config(&app) {
         Ok(cfg) => {
             let browser = super::native_auth::WindowLogoutBrowser::new(&app, &cfg);
             let report = session
@@ -112,7 +112,9 @@ pub(crate) async fn platform_sign_out(
                 embedded_idp_session_ended: !hint_held,
             })
         }
-    }
+    }}.await;
+    crate::local_archive::erase_on_sign_out(&app).await?;
+    result
 }
 
 /// 代发一次管理平面请求。只接受 `/api/v1/` 下的路径与常用方法。

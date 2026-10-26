@@ -12,6 +12,7 @@ mod initial_window;
 mod key_backup;
 mod link_preview_tags;
 mod linux_media;
+mod local_archive;
 #[cfg(target_os = "macos")]
 mod macos_notifications;
 #[cfg(target_os = "macos")]
@@ -185,6 +186,7 @@ pub fn run() {
                 eprintln!("buzz-desktop: fatal: identity resolution failed: {e}");
                 std::process::exit(1);
             }
+            local_archive::erase_previous_identity(&app_handle, &state)?;
 
             // Start the localhost media streaming proxy. The port is stored in
             // AppState and exposed to the frontend via `get_media_proxy_port`.
@@ -248,6 +250,12 @@ pub fn run() {
             get_nsec,
             get_presence,
             get_os_idle_seconds,
+            local_archive::local_archive_status,
+            local_archive::local_archive_subscribe,
+            local_archive::local_archive_unsubscribe,
+            local_archive::local_archive_sync,
+            local_archive::local_archive_read,
+            local_archive::local_archive_clear,
             is_auto_update_supported,
             updater_release_url,
             tray_menu::clear_tray_agent_activity,

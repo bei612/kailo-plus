@@ -7,9 +7,9 @@ import { createSearchHighlightNavigation } from "@client-kit/platform/react/sear
 import { selectSearchHighlightRouteState } from "@client-kit/platform/react/search/searchHighlightRouteState";
 import { isSettingsSection, type SettingsSection } from "@client-kit/platform/react/settings-sections";
 
-// DD-125(5): Updates is a Desktop-only section; the Web does not route to it.
+// DD-125(5)/DD-159: Updates and Local archive are Desktop-only sections; the Web does not route to them.
 function isWebSettingsSection(value: unknown): value is SettingsSection {
-  return isSettingsSection(value) && value !== "updates";
+  return isSettingsSection(value) && value !== "updates" && value !== "local-archive";
 }
 import { validComponentPath } from "@client-kit/platform/react/native-deep-link";
 
