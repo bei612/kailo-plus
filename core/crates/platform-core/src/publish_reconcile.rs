@@ -186,7 +186,7 @@ const PENDING_PUBLICATIONS_SQL: &str = r#"select d.operation_id, d.occurred_at, 
                  where o.operation_id = d.operation_id
                    and o.event_type in ('OUTCOME', 'RECONCILIATION')
                    and not (o.event_type='RECONCILIATION' and o.result_code='NOT_DELIVERED'
-                            and o.action_key=any($7)))
+                            and o.action_key=any($7) and not audit.publication_absence_proven(o.publication_proof,o.evidence_refs)))
              and ($5::timestamptz is null or (d.occurred_at, d.operation_id) > ($5, $6))
            order by d.occurred_at, d.operation_id
            limit $2"#;
@@ -201,7 +201,7 @@ const UNSETTLED_PUBLICATIONS_SQL: &str = r#"select count(*),
                  where o.operation_id = d.operation_id
                    and o.event_type in ('OUTCOME', 'RECONCILIATION')
                    and not (o.event_type='RECONCILIATION' and o.result_code='NOT_DELIVERED'
-                            and o.action_key=any($2)))"#;
+                            and o.action_key=any($2) and not audit.publication_absence_proven(o.publication_proof,o.evidence_refs)))"#;
 
 const REAP_PUBLICATIONS_SQL: &str = "delete from admission.publish_attempt a
          where a.created_at < now() - make_interval(secs => $1::bigint)
@@ -209,7 +209,7 @@ const REAP_PUBLICATIONS_SQL: &str = "delete from admission.publish_attempt a
                        where r.operation_id = a.operation_id
                          and r.event_type in ('OUTCOME', 'RECONCILIATION')
                          and not (r.event_type='RECONCILIATION' and r.result_code='NOT_DELIVERED'
-                                  and r.action_key=any($2)))
+                                  and r.action_key=any($2) and not audit.publication_absence_proven(r.publication_proof,r.evidence_refs)))
                < now() - make_interval(secs => $1::bigint)";
 
 async fn pass(
@@ -338,17 +338,24 @@ async fn pass(
 }
 
 async fn settle_one(state: &ServiceState, p: &Pending) -> &'static str {
-    let result_code =
-        match reconciliation_result(p.settled_window_passed, observe_delivery(state, p).await) {
-            Ok(result) => result,
-            Err(reason) => return reason,
-        };
-    write_reconciliation(state, p, result_code).await
+    // Positive writer observation is always first, including for old attempts.
+    if observe_delivery(state, p).await == Ok(true) {
+        return write_reconciliation(state, p, "ACCEPTED").await;
+    }
+    if !p.settled_window_passed { return "PENDING"; }
+    match observe_settlement(state, p).await {
+        Ok((proof, _)) if proof.settlement.accepted => write_reconciliation(state, p, "ACCEPTED").await,
+        Ok((proof, control)) if proof.proves_absence() =>
+            write_reconciliation_with_proof(state, p, "NOT_DELIVERED", Some((&proof, &control))).await,
+        Ok(_) => "EVENT_UNOBSERVABLE",
+        Err(reason) => reason,
+    }
 }
 
 /// Ordinary query absence is never an authoritative non-delivery receipt.
 /// All observations in this reconciler use filtered event queries. Keep their
 /// absence out of the terminal audit even after the diagnostic settle window.
+#[cfg(test)]
 fn reconciliation_result(
     settled: bool,
     observed: Result<bool, &'static str>,
@@ -366,22 +373,44 @@ async fn write_reconciliation(
     p: &Pending,
     result_code: &'static str,
 ) -> &'static str {
+    write_reconciliation_with_proof(state, p, result_code, None).await
+}
+
+async fn write_reconciliation_with_proof(
+    state: &ServiceState, p: &Pending, result_code: &'static str,
+    proof: Option<(&crate::audit::PublicationProof, &str)>,
+) -> &'static str {
     let written = async {
         let mut tx = state.pool.begin().await?;
         // Local revocation/binding changes after the HTTP/fresh-authorization
         // recheck cannot race a new ACCEPTED audit row. No external I/O here.
-        if result_code == "ACCEPTED" {
+        if result_code == "ACCEPTED" || proof.is_some() {
             let actor = p.actor_principal_id.ok_or(sqlx::Error::RowNotFound)?;
             let target = publication_target(p).map_err(|_| sqlx::Error::RowNotFound)?;
             let scope: Option<Option<serde_json::Value>> = sqlx::query_scalar(
                 "select delivery_scope from admission.publish_attempt where operation_id=$1 and event_id=$2 and tenant_principal_id=$3 for share")
                 .bind(p.operation_id).bind(&p.event_id).bind(actor).fetch_optional(&mut *tx).await?;
             let scope = parse_frozen_scope(scope.flatten()).map_err(|_| sqlx::Error::RowNotFound)?;
+            if proof.is_some_and(|(proof, _)|proof.scope != scope) {
+                return Err(sqlx::Error::RowNotFound);
+            }
             if !crate::web_transport::locked_publication_scope_matches(&mut tx, p.tenant_id, actor, target, &scope).await? {
                 return Err(sqlx::Error::RowNotFound);
             }
         }
-        append(&mut tx, reconciliation_entry(p, result_code)).await?;
+        if let Some((proof, control_pubkey)) = proof {
+            let current: Option<String> = sqlx::query_scalar(
+                "select i.pubkey from projection.tenant_buzz_binding b
+                 join identity.buzz_identity_binding i on i.tenant_id=b.tenant_id and i.principal_id=b.control_service_principal_id
+                 join identity.principal p on p.id=i.principal_id and p.tenant_id=i.tenant_id and p.status='ACTIVE'
+                 where b.tenant_id=$1 and b.state='ACTIVE' and i.state='ACTIVE' and i.custody='SERVER' and i.pubkey=$2 for share of b,i,p")
+                .bind(p.tenant_id).bind(control_pubkey).fetch_optional(&mut *tx).await?;
+            if current.is_none() { return Err(sqlx::Error::RowNotFound); }
+            crate::audit::append_publication_proof(&mut tx, reconciliation_entry(p, result_code), proof).await?;
+        } else {
+            if result_code == "NOT_DELIVERED" { return Err(sqlx::Error::RowNotFound); }
+            append(&mut tx, reconciliation_entry(p, result_code)).await?;
+        }
         tx.commit().await
     }
     .await;
@@ -469,7 +498,7 @@ async fn frozen_scope(state: &ServiceState, p: &Pending) -> Result<PublicationSc
 fn parse_frozen_scope(value: Option<serde_json::Value>) -> Result<PublicationScope, &'static str> {
     let value = value.ok_or("EVIDENCE_MISSING")?;
     if !value.as_object().is_some_and(|object| {
-        object.len() == 8
+        (object.len() == 8 || (object.len() == 9 && object.contains_key("publication")))
             && [
                 "target_channel_id",
                 "target_binding_version",
@@ -575,6 +604,44 @@ async fn observe_delivery(state: &ServiceState, p: &Pending) -> Result<bool, &'s
     Ok(true)
 }
 
+/// Only a frozen signed epoch and elapsed original-event window can enter the
+/// dual-authenticated settlement path. No external call runs in a DB transaction.
+async fn observe_settlement(state: &ServiceState, p: &Pending)
+    -> Result<(crate::audit::PublicationProof, String), &'static str> {
+    let scope = frozen_scope(state, p).await?;
+    let claim = scope.claim(&p.event_id).ok_or("EVIDENCE_MISSING")?;
+    let now: i64 = sqlx::query_scalar("select floor(extract(epoch from clock_timestamp()))::bigint")
+        .fetch_one(&state.pool).await.map_err(|_|"EVIDENCE_UNREADABLE")?;
+    if !collab_bridge::bridge::publication_timestamp_settled(claim.kind, claim.created_at, now) {
+        return Err("PENDING");
+    }
+    let target = publication_target(p)?;
+    let before = current_scope(state, p, target, &scope).await?;
+    let actor = p.actor_principal_id.ok_or("EVIDENCE_MISSING")?;
+    let keys = if let Some(installation) = scope.signer_installation_id {
+        let MessageTarget::Workspace(workspace) = target else { return Err("ACTOR_UNREADABLE"); };
+        crate::web_transport::publication_agent_keys(state,p.tenant_id,actor,workspace,&scope.event_pubkey,installation).await?
+    } else {
+        crate::web_transport::server_actor_keys(&state.pool,&state.secrets,p.tenant_id,actor)
+            .await.map_err(|_|"ACTOR_UNREADABLE")?
+    };
+    if keys.public_key().to_hex() != scope.event_pubkey { return Err("ACTOR_UNREADABLE"); }
+    let author = collab_bridge::bridge::IdentityClient::new(collab_bridge::bridge::Custody::Server,
+        &keys.secret_key().to_secret_hex(), &state.relay_transport, &before.community_host)
+        .map_err(|_|"ACTOR_UNREADABLE")?;
+    let (control,host) = control_client(state,p.tenant_id,ProjectionDirection::Establish)
+        .await.map_err(|_|"CONTROL_UNREADABLE")?;
+    if host != before.community_host { return Err("SCOPE_CHANGED"); }
+    let policy = author.publication_policy(&state.relay_http).await.map_err(|_|"EVIDENCE_UNREADABLE")?;
+    if scope.publication.as_ref().is_none_or(|window| window.policy != policy) {
+        return Err("PUBLICATION_EPOCH_CHANGED");
+    }
+    let settlement = author.settle_publication(&state.relay_http, &control, &claim)
+        .await.map_err(|_|"EVENT_UNOBSERVABLE")?;
+    if before != current_scope(state,p,target,&scope).await? { return Err("SCOPE_CHANGED"); }
+    Ok((crate::audit::PublicationProof { scope, settlement },control.pubkey_hex()))
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
@@ -593,6 +660,7 @@ mod tests {
             event_kind: 1,
             event_channel_id: None,
             signer_installation_id: None,
+            publication: None,
         };
         let complete = serde_json::to_value(&scope).unwrap();
         assert_eq!(
@@ -792,6 +860,77 @@ mod tests {
                 "latest real terminal window or UNKNOWN must remain protected"
             );
         }
+        tx.rollback().await.unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore = "requires PUBLISH_RECONCILE_TEST_DATABASE_URL pointing at an isolated migrated database"]
+    async fn publication_proof_append_and_original_consumers_preserve_old_attempt() {
+        use collab_bridge::bridge::{PublicationPolicy,PublicationSettlement,PUBLICATION_POLICY_VERSION};
+        use crate::web_transport::PublicationWindow;
+        use sqlx::Row;
+        let pool=sqlx::PgPool::connect(&std::env::var("PUBLISH_RECONCILE_TEST_DATABASE_URL").unwrap()).await.unwrap();
+        let mut tx=pool.begin().await.unwrap();
+        let tenant=Uuid::new_v4(); let actor=Uuid::new_v4(); let operation=Uuid::new_v4(); let idem=Uuid::new_v4();
+        sqlx::query("insert into identity.tenant(id,slug,name,state) values($1,$2,'proof fixture','ACTIVE')")
+            .bind(tenant).bind(format!("proof-{tenant}")).execute(&mut *tx).await.unwrap();
+        sqlx::query("insert into identity.principal(id,tenant_id,kind,status) values($1,$2,'HUMAN','ACTIVE')")
+            .bind(actor).bind(tenant).execute(&mut *tx).await.unwrap();
+        let scope=PublicationScope { community_id:Uuid::new_v4(),tenant_binding_version:1,target_channel_id:None,
+            target_binding_version:None,event_pubkey:nostr::Keys::generate().public_key().to_hex(),event_kind:1,
+            event_channel_id:None,signer_installation_id:None,publication:Some(PublicationWindow {
+                created_at:100,non_expiring:true,policy:PublicationPolicy {version:PUBLICATION_POLICY_VERSION,
+                    epoch:Uuid::new_v4().to_string(),max_age_seconds:960,ready:true}}) };
+        let id="ab".repeat(32);
+        let p=Pending {operation_id:operation,tenant_id:tenant,workspace_id:None,human_identity_id:None,
+            initiator_principal_id:Some(actor),actor_principal_id:Some(actor),target_id:Some(tenant),
+            action_key:crate::pulse::PUBLISH_ACTION.into(),target_type:Some("TENANT".into()),
+            evidence_refs:vec![Evidence::new(contracts::EvidenceKind::BuzzEventId,&id)],event_id:id.clone(),settled_window_passed:true};
+        let proof=crate::audit::PublicationProof {settlement:PublicationSettlement {
+            claim:scope.claim(&id).unwrap(),accepted:false,settled:true,observed_at:1061},scope};
+        sqlx::query("insert into admission.publish_attempt(tenant_principal_id,idempotency_key,operation_id,event_id,delivery_scope,created_at) values($1,$2,$3,$4,$5,now()-interval '2 days')")
+            .bind(actor).bind(idem).bind(operation).bind(&id).bind(sqlx::types::Json(&proof.scope)).execute(&mut *tx).await.unwrap();
+        let mut dispatch=reconciliation_entry(&p,"DISPATCHED");dispatch.event_type="DISPATCH";
+        dispatch.event_key=format!("proof-fixture:{operation}:dispatch");append(&mut tx,dispatch).await.unwrap();
+        for _ in 0..2 { crate::audit::append_publication_proof(&mut tx,reconciliation_entry(&p,"NOT_DELIVERED"),&proof).await.unwrap(); }
+        let (count,valid):(i64,bool)=sqlx::query_as("select count(*),bool_and(audit.publication_absence_proven(publication_proof,evidence_refs)) from audit.audit_event where operation_id=$1 and event_type='RECONCILIATION'")
+            .bind(operation).fetch_one(&mut *tx).await.unwrap();assert_eq!((count,valid),(1,true));
+        let previous=sqlx::query(crate::web_transport::PREVIOUS_PUBLICATION_SQL).bind(actor).bind(idem)
+            .bind(crate::pulse::PUBLISH_ACTION).bind("TENANT").bind(None::<Uuid>)
+            .bind(FILTERED_PUBLICATION_ACTIONS.as_slice()).fetch_one(&mut *tx).await.unwrap();
+        assert_eq!(previous.get::<Option<String>,_>("result").as_deref(),Some("NOT_DELIVERED"));
+        assert!(previous.get::<bool,_>("absence_proven"));
+        let (unsettled,_):(i64,i64)=sqlx::query_as(UNSETTLED_PUBLICATIONS_SQL)
+            .bind([crate::pulse::PUBLISH_ACTION]).bind(FILTERED_PUBLICATION_ACTIONS.as_slice()).fetch_one(&mut *tx).await.unwrap();
+        assert_eq!(unsettled,0);
+        for fault in ["early","epoch","scope","kind","expiration","extra","missing"] {
+            let mut value=serde_json::to_value(&proof).unwrap();
+            match fault {
+                "early"=>value["settlement"]["observed_at"]=1060.into(),
+                "epoch"=>value["settlement"]["claim"]["epoch"]=Uuid::new_v4().to_string().into(),
+                "scope"=>value["settlement"]["claim"]["community_id"]=Uuid::new_v4().to_string().into(),
+                "kind"=>value["settlement"]["claim"]["kind"]=41012.into(),
+                "expiration"=>value["settlement"]["claim"]["non_expiring"]=false.into(),
+                "extra"=>value["content"]="not proof".into(),
+                _=>{value["scope"].as_object_mut().unwrap().remove("publication");}
+            }
+            let valid:bool=sqlx::query_scalar("select audit.publication_absence_proven($1,$2)")
+                .bind(&value).bind(crate::audit::evidence_json(&p.evidence_refs)).fetch_one(&mut *tx).await.unwrap();
+            assert!(!valid,"{fault}");
+            if let Ok(invalid)=serde_json::from_value::<crate::audit::PublicationProof>(value) {
+                assert!(crate::audit::append_publication_proof(&mut tx,reconciliation_entry(&p,"NOT_DELIVERED"),&invalid).await.is_err(),"{fault}");
+            }
+        }
+        // A later signed attempt may replace only its slot, never the proof that
+        // authorized it. Query/history does not join against mutable slot scope.
+        sqlx::query("update admission.publish_attempt set operation_id=$2,event_id=$3,delivery_scope=null where operation_id=$1")
+            .bind(operation).bind(Uuid::new_v4()).bind("cd".repeat(32)).execute(&mut *tx).await.unwrap();
+        let retained:serde_json::Value=sqlx::query_scalar("select publication_proof from audit.audit_event where operation_id=$1 and event_type='RECONCILIATION'")
+            .bind(operation).fetch_one(&mut *tx).await.unwrap();assert_eq!(retained,serde_json::to_value(&proof).unwrap());
+        sqlx::query("savepoint proof_down").execute(&mut *tx).await.unwrap();
+        let error=sqlx::raw_sql(include_str!("../../../migrations/20261101040000_publication_proof.down.sql"))
+            .execute(&mut *tx).await.unwrap_err();assert!(error.to_string().contains("preserve immutable audit"));
+        sqlx::query("rollback to savepoint proof_down").execute(&mut *tx).await.unwrap();
         tx.rollback().await.unwrap();
     }
 
