@@ -475,7 +475,8 @@ async fn dispatch(
         &control,
         &[json!({"ids":[i.event_id],"limit":1})],
         policy,
-    ).await
+    )
+    .await
     else {
         super::intent::defer(&state.pool, i, policy).await?;
         return Ok(None);
@@ -485,13 +486,16 @@ async fn dispatch(
         return Ok(None);
     };
     let message = events.first().and_then(|event| {
-        serde_json::to_value(event).ok().and_then(|value| MessageFacts::from_event(&value))
+        serde_json::to_value(event)
+            .ok()
+            .and_then(|value| MessageFacts::from_event(&value))
     });
     let Some(message) = message else {
         super::intent::cancel(&state.pool, i, "EVENT_ABSENT").await?;
         return Ok(None);
     };
-    let Some(reason) = fresh_reason(state, &control, i.tenant_id, r.principal, &message, policy).await?
+    let Some(reason) =
+        fresh_reason(state, &control, i.tenant_id, r.principal, &message, policy).await?
     else {
         super::intent::cancel(&state.pool, i, "NOT_ELIGIBLE").await?;
         return Ok(None);
@@ -610,7 +614,8 @@ async fn fresh_reason(
     if let Some(root) = &message.root_id {
         view.thread_muted = pref.is_some_and(|p| p.muted_threads.contains(root));
         view.thread_followed = pref.is_some_and(|p| p.followed_threads.contains(root));
-        let authors = root_authors(&state.http, control, vec![root.clone()], policy).await
+        let authors = root_authors(&state.http, control, vec![root.clone()], policy)
+            .await
             .map_err(|_| sqlx::Error::Protocol("push root-author lookup unavailable".into()))?;
         view.thread_authored = authors
             .get(root)
@@ -782,7 +787,10 @@ async fn relay_query(
     tokio::time::timeout(
         Duration::from_secs(policy.relay_read_timeout_seconds as u64),
         control.query(http, filters),
-    ).await.map_err(|_| ())?.map_err(|_| ())
+    )
+    .await
+    .map_err(|_| ())?
+    .map_err(|_| ())
 }
 
 fn verified_page(value: Value, ids: &[String]) -> Result<Vec<nostr::Event>, ()> {
@@ -803,11 +811,21 @@ async fn root_authors(
     roots: Vec<String>,
     policy: &super::config::Policy,
 ) -> Result<HashMap<String, String>, ()> {
-    if roots.is_empty() { return Ok(HashMap::new()); }
+    if roots.is_empty() {
+        return Ok(HashMap::new());
+    }
     let limit = roots.len();
-    let found = relay_query(http, control, &[json!({"ids": roots, "limit": limit})], policy).await?;
-    Ok(verified_page(found, &roots)?.into_iter()
-        .map(|event| (event.id.to_hex(), event.pubkey.to_hex())).collect())
+    let found = relay_query(
+        http,
+        control,
+        &[json!({"ids": roots, "limit": limit})],
+        policy,
+    )
+    .await?;
+    Ok(verified_page(found, &roots)?
+        .into_iter()
+        .map(|event| (event.id.to_hex(), event.pubkey.to_hex()))
+        .collect())
 }
 
 #[cfg(test)]
@@ -821,43 +839,70 @@ mod tests {
         let mode = Arc::new(AtomicU8::new(0));
         let author = nostr::Keys::generate();
         let root = nostr::EventBuilder::new(nostr::Kind::Custom(9), "fixture root")
-            .sign_with_keys(&author).unwrap();
+            .sign_with_keys(&author)
+            .unwrap();
         let value = serde_json::to_value(&root).unwrap();
         let scripted_mode = mode.clone();
-        let router = axum::Router::new().route("/query", axum::routing::post(move || {
-            let mode = scripted_mode.clone();
-            let mut value = value.clone();
-            async move {
-                match mode.load(Ordering::SeqCst) {
-                    1 => { value["content"] = json!("corrupt signature"); Json(json!([value])).into_response() }
-                    2 => { futures_util::future::pending::<()>().await; StatusCode::SERVICE_UNAVAILABLE.into_response() }
-                    3 => StatusCode::SERVICE_UNAVAILABLE.into_response(),
-                    4 => Json(json!([value.clone(), value])).into_response(),
-                    _ => Json(json!([value])).into_response(),
+        let router = axum::Router::new().route(
+            "/query",
+            axum::routing::post(move || {
+                let mode = scripted_mode.clone();
+                let mut value = value.clone();
+                async move {
+                    match mode.load(Ordering::SeqCst) {
+                        1 => {
+                            value["content"] = json!("corrupt signature");
+                            Json(json!([value])).into_response()
+                        }
+                        2 => {
+                            futures_util::future::pending::<()>().await;
+                            StatusCode::SERVICE_UNAVAILABLE.into_response()
+                        }
+                        3 => StatusCode::SERVICE_UNAVAILABLE.into_response(),
+                        4 => Json(json!([value.clone(), value])).into_response(),
+                        _ => Json(json!([value])).into_response(),
+                    }
                 }
-            }
-        }));
+            }),
+        );
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = format!("http://{}", listener.local_addr().unwrap());
         let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
         let control = nostr::Keys::generate();
         let client = collab_bridge::bridge::IdentityClient::new(
-            collab_bridge::bridge::Custody::Server, &control.secret_key().to_secret_hex(),
-            &url, "push-relay.fixture").unwrap();
+            collab_bridge::bridge::Custody::Server,
+            &control.secret_key().to_secret_hex(),
+            &url,
+            "push-relay.fixture",
+        )
+        .unwrap();
         let http = reqwest::Client::builder().no_proxy().build().unwrap();
         let mut policy = super::super::config::Policy::fixture();
         policy.relay_read_timeout_seconds = 1;
         let roots = vec![root.id.to_hex()];
-        let actual = root_authors(&http, &client, roots.clone(), &policy).await.unwrap();
-        assert_eq!(actual.get(&root.id.to_hex()), Some(&author.public_key().to_hex()));
+        let actual = root_authors(&http, &client, roots.clone(), &policy)
+            .await
+            .unwrap();
+        assert_eq!(
+            actual.get(&root.id.to_hex()),
+            Some(&author.public_key().to_hex())
+        );
         for invalid in [1, 3, 4] {
             mode.store(invalid, Ordering::SeqCst);
-            assert!(root_authors(&http, &client, roots.clone(), &policy).await.is_err());
+            assert!(root_authors(&http, &client, roots.clone(), &policy)
+                .await
+                .is_err());
         }
         mode.store(2, Ordering::SeqCst);
-        let bounded = tokio::time::timeout(Duration::from_secs(3), root_authors(&http, &client, roots, &policy)).await;
+        let bounded = tokio::time::timeout(
+            Duration::from_secs(3),
+            root_authors(&http, &client, roots, &policy),
+        )
+        .await;
         server.abort();
-        assert!(bounded.expect("the consumer must stop on the delivered read deadline").is_err());
+        assert!(bounded
+            .expect("the consumer must stop on the delivered read deadline")
+            .is_err());
     }
 
     #[test]
