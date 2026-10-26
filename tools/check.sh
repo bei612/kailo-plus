@@ -1076,7 +1076,9 @@ fi
 '''
 with tempfile.TemporaryDirectory() as temporary:
     location = pathlib.Path(temporary)
-    directory = location / "adapters.json"
+    public_folder = location / "public-delivery"
+    public_folder.mkdir(mode=0o755)
+    directory = public_folder / "adapters.json"
     public = location / "public.json"
     public_doc = {"keys": [{"kty": "EC", "crv": "P-256", "alg": "ES256",
         "kid": "fixture", "x": "A" * 43, "y": "A" * 43}]}
@@ -1103,14 +1105,14 @@ with tempfile.TemporaryDirectory() as temporary:
     empty_core = json.loads(empty.stdout)["services"]["core-bff"]
     # DD-136(2): the adapter directory's folder is mounted, so an atomic
     # replacement by the release/component entry reaches the running Core.
-    assert [m["source"] for m in empty_core["volumes"]] == [str(location)]
+    assert [m["source"] for m in empty_core["volumes"]] == [str(public_folder)]
     directory.write_text(json.dumps(delivery), encoding="utf-8")
     original = adapter_produce(directory)
     assert original.returncode == 0, original.stderr
     core_delivery = json.loads(original.stdout)["services"]["core-bff"]
     assert core_delivery["environment"] == {"APPLICATION_ADAPTER_DIRECTORY_FILE": str(directory)}
     mounts = core_delivery["volumes"]
-    assert len(mounts) == 2 and {mount["source"] for mount in mounts} == {str(location), str(public)}
+    assert len(mounts) == 2 and {mount["source"] for mount in mounts} == {str(public_folder), str(public)}
     assert all(mount["target"] == mount["source"] and mount["read_only"] is True
         and mount["bind"]["create_host_path"] is False for mount in mounts)
     linked = location / "linked.json"
@@ -1162,7 +1164,20 @@ with tempfile.TemporaryDirectory() as temporary:
     assert json.loads(again.stdout)["services"]["worker"]["labels"]["kailo.component-conformance.delivery"] == label
     combined = adapter_produce(directory, both)
     assert combined.returncode == 0 and {m["source"] for m in json.loads(combined.stdout)["services"]["core-bff"]["volumes"]} \
-        == {str(location), str(public), str(candidates)}
+        == {str(public_folder), str(public), str(candidates)}
+    # A private directory is exposed through a public ancestor even if it is
+    # not itself listed as a Core mount. Equal and nested paths are refused too.
+    for folder in (location, private, private / "public"):
+        folder.mkdir(mode=0o755, exist_ok=True)
+        overlapping = folder / "overlapping-adapters.json"
+        overlapping.write_text(json.dumps(delivery), encoding="utf-8")
+        assert adapter_produce(overlapping, both).returncode != 0, "Core 的目录挂载不得包含或进入 Worker 私有目录"
+        overlapping.unlink()
+    private_public = private / "public.json"
+    private_public.write_text(json.dumps(public_doc), encoding="utf-8")
+    directory.write_text(json.dumps({"adapters": [{"nativeHumanIdentities": [{"jwksFile": str(private_public)}]}]}), encoding="utf-8")
+    assert adapter_produce(directory, both).returncode != 0, "Core 公钥挂载也不得来自 Worker 私有目录"
+    directory.write_text(json.dumps(delivery), encoding="utf-8")
     linked_dir = location / "linked-conformance"
     linked_dir.symlink_to(candidates)
     nested = candidates / "worker"

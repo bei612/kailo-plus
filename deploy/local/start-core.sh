@@ -475,7 +475,11 @@ try:
             # Receiver credentials (nativeReadAuthorities[].oidcClientSecretFile)
             # live only here; never part of Core's mounts.
             credentials = source_dir(worker_private, private=True)
-            if credentials == candidates or candidates in credentials.parents or credentials in candidates.parents:
+            # A read-only parent mount still exposes every child. Check all
+            # Core deliveries, including the adapter directory and public JWKS,
+            # rather than only the conformance candidate directory.
+            if any(credentials == source or source in credentials.parents or credentials in source.parents
+                   for source in files):
                 reject()
             worker_files.add(credentials)
             worker_environment["COMPONENT_CONFORMANCE_WORKER_DIR"] = str(credentials)
