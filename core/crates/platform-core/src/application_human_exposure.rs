@@ -352,11 +352,13 @@ mod tests {
         .await
         .is_err());
         let mut deletion = outer.begin().await.unwrap();
-        assert!(sqlx::query("delete from catalog.result_exposure_policy where id=$1")
-            .bind(policy)
-            .execute(&mut *deletion)
-            .await
-            .is_err());
+        assert!(
+            sqlx::query("delete from catalog.result_exposure_policy where id=$1")
+                .bind(policy)
+                .execute(&mut *deletion)
+                .await
+                .is_err()
+        );
         deletion.rollback().await.unwrap();
         let mut mutation = outer.begin().await.unwrap();
         assert!(sqlx::query(
