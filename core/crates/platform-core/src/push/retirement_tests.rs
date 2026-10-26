@@ -17,6 +17,16 @@ use std::{
 };
 use uuid::Uuid;
 
+type RegistrationSnapshot = (
+    String,
+    bool,
+    Option<String>,
+    Option<String>,
+    Option<i32>,
+    Option<String>,
+    i32,
+);
+
 #[derive(Default)]
 struct Peer {
     logins: BTreeSet<(String, String)>,
@@ -236,7 +246,7 @@ async fn original_sweep_revokes_then_retires_same_token_only_after_native_receip
                 .insert(reference.locator.clone(), 1);
         }
         sweep_dependencies(&pool, &store, &policy).await.unwrap();
-        let row:(String,bool,Option<String>,Option<String>,Option<i32>,Option<String>,i32)=sqlx::query_as("select state,enabled,token_digest,token_secret_locator,token_secret_version,token_secret_audience,version from identity.push_registration where tenant_id=$1 and device_pubkey=$2").bind(tenant).bind(&device).fetch_one(&pool).await.unwrap();
+        let row: RegistrationSnapshot = sqlx::query_as("select state,enabled,token_digest,token_secret_locator,token_secret_version,token_secret_audience,version from identity.push_registration where tenant_id=$1 and device_pubkey=$2").bind(tenant).bind(&device).fetch_one(&pool).await.unwrap();
         assert_eq!(row, ("REVOKED".into(), false, None, None, None, None, 2));
         let state: String =
             sqlx::query_scalar("select state from admission.push_token_intent where locator=$1")
