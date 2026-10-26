@@ -56,7 +56,8 @@ final tenantProfileLiveProvider = StreamProvider.autoDispose<TenantProfileView?>
       );
       if (retired) return;
       if (session.credentialGeneration != generation ||
-          response.status == 401 || response.status == 403) {
+          response.status == 401 ||
+          response.status == 403) {
         ref.invalidate(platformSessionViewProvider);
         yield null;
         return;
