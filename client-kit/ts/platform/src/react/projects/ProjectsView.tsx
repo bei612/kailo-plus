@@ -245,7 +245,7 @@ function RepositoryWorkspace({host,snapshot,project,repository,panel,renderWorkI
     <ProjectDetailPanelLayout state={panel} chatPanel={chatPanel} resetKey={`${repository.id}:${tab}`} panel={<ProjectRepositoryContextPanel activeTab={tab} fetch={host.git?git.fetch:undefined} host={host}
       identityPubkey={snapshot.viewerPubkey} issues={issues} onCreatePullRequest={onCreatePullRequest} onCreateTask={onCreateTask}
       onRepositoryChange={onRepositoryChange} project={project} projects={snapshot.projects} pullRequests={pullRequests} repository={repository}
-      snapshot={host.git?git.snapshot:undefined} sourceControls={host.git?git.sourceControls:undefined}
+      snapshot={host.git?git.snapshot:undefined} sourceControls={host.git?git.sourceControls:undefined} localCheckout={git.localCheckout}
       selectionActions={{onChatWithAgent:chatPanel?items=>panel.openSelectionChat(agentPageContext,items):undefined,onDiscussInChannel,scopeKey:host.scopeKey}}
       widthPx={panel.width.widthPx} onResizeStart={panel.width.onResizeStart} canResetWidth={panel.width.canReset} onResetWidth={panel.width.onResetWidth}/>}>
       {navigationFailed?<p role="alert">{t("platform.loadFailed")}</p>:null}

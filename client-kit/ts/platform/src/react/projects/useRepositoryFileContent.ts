@@ -33,15 +33,24 @@ export function useRepositoryFileContent(file: ProjectRepoFile | null, source?: 
   };
 }
 
-export function useRepositoryFileContentSource({ activeBranch, host, pullRequest, repository }: {
+export function useRepositoryFileContentSource({ activeBranch, host, pullRequest, repository, source = "remote" }: {
   activeBranch: string | null;
   host: ProjectsHost;
   pullRequest: Pick<ProjectPullRequest, "id" | "commit"> | null;
   repository: Repository | null;
+  source?: "remote" | "local";
 }) {
   const git = host.git;
   return React.useMemo<RepositoryFileContentSource | undefined>(() => {
     if (!repository || !git) return undefined;
+    if (source === "local") {
+      const checkout = git.checkout;
+      if (!checkout) return undefined;
+      return {
+        cacheKey: [host.scopeKey, repository.id, "local", activeBranch ?? "default"],
+        load: path => checkout.getProjectLocalRepoFileContent({ repository: repository.repoAddress, path }),
+      };
+    }
     const targetRef = pullRequest ? `refs/nostr/${pullRequest.id}` : null;
     const targetCommit = pullRequest?.commit ?? null;
     return {
@@ -54,5 +63,5 @@ export function useRepositoryFileContentSource({ activeBranch, host, pullRequest
         path,
       }),
     };
-  }, [activeBranch, git, host.scopeKey, pullRequest, repository]);
+  }, [activeBranch, git, host.scopeKey, pullRequest, repository, source]);
 }

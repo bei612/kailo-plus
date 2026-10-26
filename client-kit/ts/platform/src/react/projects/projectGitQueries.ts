@@ -58,12 +58,20 @@ export function useProjectRepoDiffQuery(host: ProjectsHost, project: Repository 
 }
 
 /** Diff of a single commit against its parent, for the commit detail view. */
-export function useProjectCommitDiffQuery(host: ProjectsHost, project: Repository | null | undefined, commitHash: string | null) {
+export function useProjectCommitDiffQuery(host: ProjectsHost, project: Repository | null | undefined, commitHash: string | null, source: "remote" | "local" = "remote") {
   return useQuery({
     enabled: Boolean(host.git && project && commitHash),
-    queryKey: ["project", host.scopeKey, project?.id ?? "none", "commit-diff", "remote", commitHash ?? "none"],
+    queryKey: ["project", host.scopeKey, project?.id ?? "none", "commit-diff", source, commitHash ?? "none"],
     queryFn: () => {
       if (!project || !commitHash || !host.git) return Promise.reject(new Error("No commit selected."));
+      if (source === "local") {
+        const checkout = host.git.checkout;
+        if (!checkout) return Promise.reject(new Error("Local checkout unavailable"));
+        return checkout.getProjectLocalRepoDiff({ repository: project.repoAddress, targetCommit: commitHash }).then(diff => {
+          if (!diff) throw new Error("Local checkout unavailable");
+          return diff;
+        });
+      }
       // Passing only the target commit makes the backend diff it against its parent.
       return host.git.getProjectRepoDiff({ repository: project.repoAddress, defaultBranch: project.defaultBranch, targetCommit: commitHash });
     },

@@ -37,6 +37,7 @@ import { PROJECT_SECTION_HEADER_CLASS } from "./projectPanelStyles";
 import type { ProjectPullRequest } from "./projectPullRequests.mjs";
 import { projectRepoUnavailablePresentation, projectRepoUnavailableReason } from "./lib/projectRepoAvailability";
 import { useRepositoryFileContentSource } from "./useRepositoryFileContent";
+import { useProjectLocalCheckout } from "./useProjectLocalCheckout";
 import type { UserProfileLookup } from "../messages/system/identity";
 
 const NO_BRANCHES: Array<{ name: string; commit: string }> = [];
@@ -71,9 +72,11 @@ export function useRepositoryGitState({ host, repository, pullRequests, commitHa
     tags: NO_BRANCHES,
   });
   const activeBranch = selectedBranch ?? defaultBranch;
-  const snapshotQuery = useProjectRepoSnapshotQuery(host, repository, activeBranch, null, true);
-  const commitDiffQuery = useProjectCommitDiffQuery(host, repository, commitHash);
-  const fileContentSource = useRepositoryFileContentSource({ activeBranch, host, pullRequest: null, repository });
+  const localCheckout = useProjectLocalCheckout(host, repository, activeBranch);
+  const remoteSnapshotQuery = useProjectRepoSnapshotQuery(host, repository, activeBranch, null, localCheckout.source === "remote");
+  const snapshotQuery = localCheckout.source === "local" ? localCheckout.snapshot : remoteSnapshotQuery;
+  const commitDiffQuery = useProjectCommitDiffQuery(host, repository, commitHash, localCheckout.source);
+  const fileContentSource = useRepositoryFileContentSource({ activeBranch, host, pullRequest: null, repository, source: localCheckout.source });
   const snapshot = snapshotQuery.data ?? null;
   const files = React.useMemo(() => snapshot?.files ?? [], [snapshot]);
   const readmeFile = React.useMemo(() => findReadmeFile(files), [files]);
@@ -121,9 +124,9 @@ export function useRepositoryGitState({ host, repository, pullRequests, commitHa
     } : {}),
   };
   // Original handleFetchRepo: refetch, then report the classified failure or the refresh.
-  const refetchSnapshot = snapshotQuery.refetch, refetchState = repoStateQuery.refetch;
+  const refetchSnapshot = snapshotQuery.refetch, refetchState = repoStateQuery.refetch, refetchLocal = localCheckout.status.refetch;
   const onFetch = React.useCallback(() => {
-    void Promise.all([refetchSnapshot(), refetchState()]).then(results => {
+    void Promise.all([refetchSnapshot(), refetchState(), ...(host.git?.checkout ? [refetchLocal()] : [])]).then(results => {
       const error = results.find(result => result.error)?.error;
       if (error) {
         const presentation = projectRepoUnavailablePresentation(projectRepoUnavailableReason(error));
@@ -132,10 +135,10 @@ export function useRepositoryGitState({ host, repository, pullRequests, commitHa
       }
       toast.success(t("projects.repository.fetched"));
     });
-  }, [refetchSnapshot, refetchState, t]);
+  }, [refetchSnapshot, refetchState, refetchLocal, host, t]);
   const fetch: RepositoryFetchControls = { onFetch, fetchPending: snapshotQuery.isFetching || repoStateQuery.isFetching };
   return { activeBranch, activeBranchCommit, branchActions, branchOptions, commitDiffQuery, fetch, fileContentSource, files,
-    gitDataState, readmeFile, snapshot, snapshotQuery, sourceControls, unavailableReason };
+    gitDataState, readmeFile, snapshot, snapshotQuery, sourceControls, unavailableReason, localCheckout };
 }
 
 export type RepositoryGitState = ReturnType<typeof useRepositoryGitState>;

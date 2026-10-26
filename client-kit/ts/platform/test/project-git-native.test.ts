@@ -61,3 +61,38 @@ describe("native Projects git host",()=>{
     await expect(host.getProjectRepoSnapshot({repository})).rejects.toThrow("project_repo_not_found");
   });
 });
+
+describe("native local checkout host",()=>{
+  const rawStatus={local_path:"/app/checkouts/repo",local_branch:null,local_branches:[],local_head:null,
+    remote_branch:"retained-branch",remote_head:null,ahead_count:0,behind_count:0,has_uncommitted_changes:false,
+    has_untracked_files:false,can_push:true,can_pull:false,push_block_reason:null,pull_block_reason:"pending",
+    pending_push:{branch:"retained-branch",old_commit:null,new_commit:"e".repeat(40),outcome:"retry_same_intent"}};
+  it("retains the frozen push target when current local HEAD is absent",async()=>{
+    const invoke=vi.fn(async(_command:string,_args:Record<string,unknown>)=>rawStatus);
+    const host=createNativeProjectsGitHost(invoke,scope);
+    const status=await host.checkout!.getProjectRepoSyncStatus({repository,branchName:"main"});
+    expect(status).toMatchObject({localHead:null,canPush:true,pendingPush:{branch:"retained-branch",newCommit:"e".repeat(40),outcome:"retry_same_intent"}});
+    expect(invoke).toHaveBeenCalledWith("get_project_repo_sync_status",{repository,branchName:"main",baseBranch:null,...scope});
+  });
+  it("reads a local file without invoking the remote reader",async()=>{
+    const invoke=vi.fn(async(_command:string,_args:Record<string,unknown>)=>"local content");
+    const host=createNativeProjectsGitHost(invoke,scope);
+    await expect(host.checkout!.getProjectLocalRepoFileContent({repository,path:"src/local.ts"})).resolves.toBe("local content");
+    expect(invoke).toHaveBeenCalledExactlyOnceWith("get_project_local_repo_file_content",{repository,path:"src/local.ts",...scope});
+  });
+  it("never accepts an unconfirmed push or malformed pending status",async()=>{
+    const host=createNativeProjectsGitHost(async()=>({pushed:false,branch:"main",commit:"e".repeat(40)}),scope);
+    await expect(host.checkout!.pushProjectLocalRepository({repository,branchName:"main"})).rejects.toThrow();
+    for(const raw of [{...rawStatus,pending_push:{...rawStatus.pending_push,outcome:"delivered"}},
+      {...rawStatus,can_push:"yes"},{...rawStatus,pending_push:{...rawStatus.pending_push,new_commit:"bad"}}]){
+      const malformed=createNativeProjectsGitHost(async()=>raw,scope);
+      await expect(malformed.checkout!.getProjectRepoSyncStatus({repository})).rejects.toThrow();
+    }
+  });
+  it("keeps native write uncertainty and conflicts distinguishable",async()=>{
+    for(const code of ["project_repo_outcome_unknown","project_repo_conflict"]){
+      const host=createNativeProjectsGitHost(async()=>{throw code;},scope);
+      await expect(host.checkout!.pushProjectLocalRepository({repository})).rejects.toThrow(code);
+    }
+  });
+});
