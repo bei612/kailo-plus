@@ -388,7 +388,10 @@ final pushTokenRefreshProvider = Provider<void>((ref) {
     ref.invalidate(pushAuthorizationStatusProvider);
     // A permission dialog can resume while the original PUT is still pending.
     // Do not race its CAS version with another read or token request.
-    if (ref.read(pushRegistrationProvider).outcome == PushRegistrationOutcome.saving) return;
+    if (ref.read(pushRegistrationProvider).outcome ==
+        PushRegistrationOutcome.saving) {
+      return;
+    }
     asked = false;
     unawaited(ref.read(pushRegistrationProvider.notifier).refresh());
   });
