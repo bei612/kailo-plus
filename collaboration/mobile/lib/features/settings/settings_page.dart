@@ -249,8 +249,15 @@ class SettingsPage extends HookConsumerWidget {
                     AppListRow(
                       key: const ValueKey('settings-tenant-profile'),
                       icon: LucideIcons.building,
-                      title: platformText(PlatformMessageKey.tenantProfileTitle, locale: locale),
-                      onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const TenantProfilePage())),
+                      title: platformText(
+                        PlatformMessageKey.tenantProfileTitle,
+                        locale: locale,
+                      ),
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => const TenantProfilePage(),
+                        ),
+                      ),
                     ),
                     AppListRow(
                       key: const ValueKey('settings-feedback'),
