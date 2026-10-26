@@ -327,8 +327,10 @@ pub async fn local_archive_sync(app: AppHandle, state: State<'_, AppState>) -> R
                 results.push(LocalArchiveSyncResult { channel_id: sub.channel_id, result: "access_lost", stored: 0 });
             }
             Err(Access::IdentityRejected) => {
+                let tag = opened.tag.clone();
+                let dir = opened.dir.clone();
                 drop(opened);
-                erase(&archive_dir(&app)?, &identity_tag(&state.signing_keys()?.public_key().to_hex()))?;
+                erase(&dir, &tag)?;
                 results.push(LocalArchiveSyncResult { channel_id: sub.channel_id, result: "identity_rejected", stored: 0 });
                 return Ok(results);
             }
