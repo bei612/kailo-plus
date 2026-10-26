@@ -1,17 +1,17 @@
 //! DD-151(3)(4): which recipient a Relay message notifies, and the content-free payload.
 //!
-//! Pure functions only, so the original `shouldNotifyForEvent` order is testable without a
-//! database or Relay: broadcast and mentions win over a muted channel; a muted channel ends
-//! the rest; then direct messages; then replies in a muted thread stop, and replies in a
-//! followed or authored thread notify. Top-level messages in an ordinary channel do not push
-//! (and do not enter the push badge); that is the DD-151(3) recipient set.
+//! DD-151/V-SCN-249 push exclusions take precedence over the original notification
+//! reasons: own messages and muted channels/threads never push, including mentions and
+//! broadcasts. The caller also excludes already-read messages. Eligible events
+//! then follow the original mention, direct-message, followed/authored-thread order.
+//! Desktop/Web in-app notifications retain their separate original mute semantics.
 
 use std::collections::{BTreeSet, HashMap};
 
 use serde_json::{json, Value};
 
 /// Original channel message kinds (`EventKind.channelMessageEventKinds`).
-pub(crate) const MESSAGE_KINDS: [u64; 2] = [9, 40002];
+pub(crate) const MESSAGE_KINDS: [u64; 4] = [9, 40002, 45001, 45003];
 
 /// Why a recipient is notified. It selects the localized system text; nothing else of the
 /// message reaches the provider.
@@ -124,9 +124,12 @@ impl<'a> RecipientView<'a> {
     }
 }
 
-/// The original order (`shouldNotifyForEvent`), narrowed to the DD-151(3) push set.
+/// DD-151 push exclusions, followed by the original eligible-recipient reason order.
 pub(crate) fn decide(message: &MessageFacts, recipient: &RecipientView<'_>) -> Option<Reason> {
-    if recipient.pubkeys.contains(&message.author) {
+    if recipient.pubkeys.contains(&message.author)
+        || recipient.channel_muted
+        || (message.parent_id.is_some() && recipient.thread_muted)
+    {
         return None;
     }
     if message.broadcast
@@ -137,14 +140,8 @@ pub(crate) fn decide(message: &MessageFacts, recipient: &RecipientView<'_>) -> O
     {
         return Some(Reason::Mention);
     }
-    if recipient.channel_muted {
-        return None;
-    }
     if message.parent_id.is_none() {
         return recipient.direct_message.then_some(Reason::DirectMessage);
-    }
-    if recipient.thread_muted {
-        return None;
     }
     if recipient.direct_message {
         return Some(Reason::DirectMessage);
@@ -338,7 +335,7 @@ mod tests {
     }
 
     #[test]
-    fn follows_the_original_order() {
+    fn applies_push_exclusions_before_original_reasons() {
         let keys = me();
         let top = MessageFacts::from_event(&event(json!([["h", "c"]]))).unwrap();
         let mention = MessageFacts::from_event(&event(json!([["h", "c"], ["p", ME]]))).unwrap();
@@ -349,12 +346,12 @@ mod tests {
         ])))
         .unwrap();
         let base = RecipientView::new(&keys);
-        // Mentions win even over a muted channel.
+        // V-SCN-249: muted channels exclude mentions as well as ordinary messages.
         let muted = RecipientView {
             channel_muted: true,
             ..base.clone()
         };
-        assert_eq!(decide(&mention, &muted), Some(Reason::Mention));
+        assert_eq!(decide(&mention, &muted), None);
         assert_eq!(decide(&top, &muted), None);
         // Ordinary top-level channel traffic does not push; a DM does.
         assert_eq!(decide(&top, &base), None);
@@ -392,6 +389,51 @@ mod tests {
             ..mention.clone()
         };
         assert_eq!(decide(&own, &base), None);
+    }
+
+    #[test]
+    fn muted_threads_and_channels_exclude_mentions_broadcasts_and_direct_messages() {
+        let keys = me();
+        for kind in MESSAGE_KINDS {
+            let mut input = event(json!([
+                ["h", "c"], ["p", ME], ["broadcast", "1"],
+                ["e", ROOT, "", "root"], ["e", ROOT, "", "reply"]
+            ]));
+            input["kind"] = json!(kind);
+            let facts = MessageFacts::from_event(&input).unwrap();
+            let base = RecipientView::new(&keys);
+            assert_eq!(decide(&facts, &base), Some(Reason::Mention));
+            for (channel_muted, thread_muted) in [(true, false), (false, true)] {
+                let view = RecipientView {
+                    channel_muted,
+                    thread_muted,
+                    direct_message: true,
+                    thread_followed: true,
+                    thread_authored: true,
+                    ..base.clone()
+                };
+                assert_eq!(decide(&facts, &view), None, "kind {kind}");
+            }
+        }
+    }
+
+    #[test]
+    fn original_forum_posts_and_comments_are_push_messages() {
+        let keys = me();
+        let mut post = event(json!([["h", "forum"], ["p", ME]]));
+        post["kind"] = json!(45001);
+        let facts = MessageFacts::from_event(&post).unwrap();
+        assert_eq!(decide(&facts, &RecipientView::new(&keys)), Some(Reason::Mention));
+        assert_eq!(unread_context(&facts), "forum");
+        let mut reply = event(json!([["h", "forum"], ["e", ROOT, "", "reply"]]));
+        reply["kind"] = json!(45003);
+        let facts = MessageFacts::from_event(&reply).unwrap();
+        let view = RecipientView { thread_followed: true, ..RecipientView::new(&keys) };
+        assert_eq!(decide(&facts, &view), Some(Reason::Thread));
+        assert_eq!(facts.root_id.as_deref(), Some(ROOT));
+        assert_eq!(unread_context(&facts), format!("thread:{ROOT}"));
+        reply["kind"] = json!(1111);
+        assert!(MessageFacts::from_event(&reply).is_none());
     }
 
     #[test]
