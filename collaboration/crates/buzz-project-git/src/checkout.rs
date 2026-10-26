@@ -92,6 +92,7 @@ pub fn validate_checkout(repo: &Path, root: &str, auth: &GitAuthConfig) -> Resul
         let (key, value) = entry.split_once('\n').unwrap_or((entry, ""));
         let permitted = matches!(key, "core.repositoryformatversion" | "core.filemode" | "core.logallrefupdates" | "core.ignorecase" | "core.precomposeunicode" | "core.autocrlf" | "core.symlinks" | "user.name" | "user.email" | "remote.origin.fetch")
             || (key == "core.bare" && value == "false")
+            || (key == "extensions.objectformat" && matches!(value, "sha1" | "sha256"))
             || (key.starts_with("branch.") && (key.ends_with(".remote") || key.ends_with(".merge")));
         if key == "remote.origin.url" {
             if value != root { return Err("Local checkout belongs to another repository.".into()); }
@@ -192,7 +193,7 @@ pub fn push_checkout(repo: &Path, root: &str, branch: Option<&str>, base: Option
     let branch = status.remote_branch.ok_or("No selected branch.")?;
     let commit = status.local_head.ok_or("No local commit.")?;
     if status.local_branch.as_deref() != Some(&branch) && status.remote_head.is_none() {
-        run_git(&["branch", "-M", "--", &branch], Some(repo), auth)?;
+        run_git(&["branch", "-m", "--", &branch], Some(repo), auth)?;
     }
     let reference = format!("refs/heads/{branch}");
     let lease = format!("--force-with-lease={reference}:{}", status.remote_head.as_deref().unwrap_or(""));

@@ -120,3 +120,18 @@ fn metadata_and_preview_symlinks_cannot_escape_checkout() {
     symlink(saved, config).unwrap();
     assert!(validate_checkout(&repo, &remote, &auth).is_err());
 }
+
+#[test]
+fn first_push_aligns_legacy_master_without_overwriting_an_existing_branch() {
+    let auth = auth();
+    let temp = tempfile::tempdir().unwrap();
+    let (remote, repo) = init(temp.path(), &auth);
+    clone_checkout(&repo, &remote, Some("master"), &auth).unwrap();
+    commit(&repo, "initial", &auth);
+    run_git(&["branch", "main"], Some(&repo), &auth).unwrap();
+    assert!(push_checkout(&repo, &remote, Some("main"), None, &auth).is_err());
+    assert_eq!(run_git(&["branch", "--show-current"], Some(&repo), &auth).unwrap().trim(), "master");
+    run_git(&["branch", "-d", "main"], Some(&repo), &auth).unwrap();
+    assert!(push_checkout(&repo, &remote, Some("main"), None, &auth).unwrap().pushed);
+    assert_eq!(run_git(&["branch", "--show-current"], Some(&repo), &auth).unwrap().trim(), "main");
+}
