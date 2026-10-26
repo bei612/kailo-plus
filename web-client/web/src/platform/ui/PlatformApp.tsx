@@ -179,7 +179,8 @@ export function PlatformApp() {
   if (!session) return <Notice text={t("platform.loadingIdentity")} />;
   return (
     <PlatformProvider client={bff} feedbackVersion={feedbackVersion} locale={locale} documentTheme={isDark ? "DARK" : "LIGHT"} currentPrincipalId={session.tenantPrincipalId}
-      reauthenticateTopLevel={reauthenticateTopLevel}>
+      reauthenticateTopLevel={reauthenticateTopLevel} liveTenantProfile={session.accessMode === PlatformSessionAccessMode.Full}
+      onTenantProfile={profile => setSession(current => current?.tenantPrincipalId === session.tenantPrincipalId ? { ...current, tenantName: profile.name } : current)}>
       {/* DD-139: candidate and DM-row avatars load only the Tenant avatar route on this origin. */}
       <CandidatePictureProvider resolve={avatarPicture}>
       {session.accessMode === PlatformSessionAccessMode.LifecycleRestricted ? (

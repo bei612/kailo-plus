@@ -45,10 +45,18 @@ analyze 全通过；四项实际 Mobile 控制器/表单回归 **4 passed**：�
 `4d1cfcca0` 补显式 None，不改变邀请语义；失败原件保留于
 `profile-29fcab1ab/profile-core-check-complete-input.log`。
 
+本轮补入跨会话更新源码（验证待运行）：既有 GET /api/v1/tenant/profile 可带
+afterVersion 做有界等待，回应仍走本人 fresh 会话、成员资格和资料读取；等待与断线
+恢复沿既有 BFF_STREAM_READMIT_SECONDS/BFF_STREAM_RETRY_MILLIS 部署事实。
+资料写入事务使用 PostgreSQL pg_notify，提交才通知，回滚不通知；每个 Core 只用一条
+LISTEN 连接，内存通知只作失效提示，丢帧或重连均重新读权威行。Web/Desktop 共用
+在线读取与侧栏名称/图标，Web 根 session 状态及 Desktop session 查询同步名称。
+Mobile 沿原生 BFF 与前后台生命周期读取，前台更新频道名称/图标和 session view。
+本段为源码边界，不代表新增消费者、真实并发会话或实际设备已通过验收。
+
 仍未交付的用户操作/验收边界：运营方反馈 fresh Catalog 权限与附件/分拣真实 HTTP
 链；两名管理员通过实际会话并发编辑；图片图库授权与真机/宿主打包；其他在线
-会话的即时资料失效通知。当前更改后本端重读资料与既有 session view，其他会话
-下次读取会得到 Core 最新事实，但没有实现跨会话实时广播，不据此声称 V-SCN-261
+会话的即时资料失效通知。新增在线读取尚待固定源码验证，不据此声称 V-SCN-261
 “全员即时一致”。没有合并 main 或部署共享服务。
 
 固定 `4d1cfcca0`：迁移往返、Rust 编译和3项定向检查全部通过（含真实 PG

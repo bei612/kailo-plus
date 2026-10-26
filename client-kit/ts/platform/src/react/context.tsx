@@ -3,7 +3,8 @@
 
 import { createContext, Fragment, type ReactNode, useCallback, useContext, useState, useSyncExternalStore } from "react";
 import type { BffClient } from "../client";
-import type { ReasonCode } from "@client-kit/contracts";
+import type { ReasonCode, TenantProfileView } from "@client-kit/contracts";
+import { TenantDisplayProfileContext, TenantProfileLive } from "./tenant-profile/live";
 import type { WriteFailure } from "../transport";
 import {
   type PlatformLocale,
@@ -31,6 +32,8 @@ export function PlatformProvider({
   currentPrincipalId,
   copyText,
   openExternalUrl,
+  liveTenantProfile = false,
+  onTenantProfile,
 }: {
   client: BffClient;
   feedbackClient?: "WEB" | "DESKTOP";
@@ -55,6 +58,9 @@ export function PlatformProvider({
    * absent, the Web default opens a popup without an opener reference.
    */
   openExternalUrl?: (url: string) => void;
+  /** Signed-in hosts enable the same admitted profile watch. */
+  liveTenantProfile?: boolean;
+  onTenantProfile?: (profile: TenantProfileView) => void;
 }) {
   const deviceLocale = useDeviceLocale();
   // A replacement client is a new authenticated transport scope. Reset its
@@ -65,7 +71,9 @@ export function PlatformProvider({
     setScope({ client, currentPrincipalId, generation: scope.generation + 1 });
   return (
     <PlatformContext.Provider value={{ client, feedbackClient, feedbackVersion, locale: locale ?? deviceLocale, authenticateNativePage, reauthenticateTopLevel, documentTheme, currentPrincipalId, copyText, openExternalUrl }}>
-      <Fragment key={scope.generation}>{children}</Fragment>
+      <Fragment key={scope.generation}>{liveTenantProfile && currentPrincipalId
+        ? <TenantProfileLive client={client} principalId={currentPrincipalId} onProfile={onTenantProfile}>{children}</TenantProfileLive>
+        : children}</Fragment>
     </PlatformContext.Provider>
   );
 }
@@ -101,6 +109,8 @@ export function useTopLevelReauthentication() { return usePlatform().reauthentic
 export function useDocumentTheme() { return usePlatform().documentTheme; }
 
 export function useCurrentPrincipalId() { return usePlatform().currentPrincipalId; }
+
+export function useTenantDisplayProfile() { return useContext(TenantDisplayProfileContext); }
 
 export function useClipboardWrite() {
   const { copyText } = usePlatform();

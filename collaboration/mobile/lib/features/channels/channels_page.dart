@@ -17,6 +17,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../shared/auth/auth.dart';
 import '../../shared/community/community_icon_provider.dart';
 import '../../shared/platform/platform_api.dart';
+import '../../shared/platform/tenant_profile_live.dart';
 import '../../shared/profile/user_cache_provider.dart';
 import '../../shared/relay/relay.dart';
 import '../../shared/theme/theme.dart';

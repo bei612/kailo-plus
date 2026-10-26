@@ -10,7 +10,7 @@ class _CommunityIndicator extends ConsumerWidget {
     final activeCommunity = activeAsync.value;
 
     return _CommunityAvatar(
-      name: activeCommunity?.name,
+      name: ref.watch(tenantProfileLiveProvider).value?.name ?? activeCommunity?.name,
       relayUrl: activeCommunity?.relayUrl,
     );
   }
@@ -23,7 +23,7 @@ class _CommunityHeaderTitle extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final name = ref.watch(activeCommunityProvider).value?.name;
+    final name = ref.watch(tenantProfileLiveProvider).value?.name ?? ref.watch(activeCommunityProvider).value?.name;
     final title = name?.trim();
     return SizedBox.expand(
       child: Align(
@@ -55,16 +55,18 @@ class _CommunityAvatar extends ConsumerWidget {
         ? trimmedName.substring(0, 1).toUpperCase()
         : '?';
     final relay = relayUrl;
-    final iconUrl = relay == null
+    final profile = ref.watch(tenantProfileLiveProvider).value;
+    final iconUrl = profile != null ? profile.icon : relay == null
         ? null
         : ref.watch(communityIconProvider(relay)).value;
+    final emoji = profile?.icon != null && !profile!.icon!.startsWith('data:image/') ? profile.icon : null;
 
     return AvatarImage(
-      imageUrl: iconUrl,
+      imageUrl: emoji == null ? iconUrl : null,
       radius: _kTopSectionCommunityAvatarSize / 2,
       backgroundColor: context.colors.primaryContainer,
       fallback: Text(
-        initial,
+        emoji ?? initial,
         style: context.textTheme.labelMedium?.copyWith(
           color: context.colors.onPrimaryContainer,
           fontWeight: FontWeight.w600,

@@ -402,7 +402,7 @@ export function NativeBootstrap({
   );
 
   return (
-    <PlatformProvider client={client} feedbackClient="DESKTOP" feedbackVersion={feedbackVersion} locale={locale} authenticateNativePage={host.authenticateNativePage} currentPrincipalId={session ? currentPrincipalId : undefined} copyText={copyText} openExternalUrl={openExternalUrl}>
+    <PlatformProvider client={client} feedbackClient="DESKTOP" feedbackVersion={feedbackVersion} locale={locale} authenticateNativePage={host.authenticateNativePage} currentPrincipalId={session ? currentPrincipalId : undefined} liveTenantProfile={!!session} copyText={copyText} openExternalUrl={openExternalUrl}>
       {step.kind === "restricted" ? (
         <LifecycleRestrictedView displayName={displayName} onSignOut={() => void signOut()} />
       ) : session ? (

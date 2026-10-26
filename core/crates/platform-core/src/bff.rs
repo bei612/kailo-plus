@@ -33,6 +33,9 @@ pub struct BffState {
     /// 部署配置下发的公开平台信息（DD-111），启动时校验，运行期不变
     pub platform_info: std::sync::Arc<contracts::PlatformInfo>,
     pub pool: PgPool,
+    /// Transactional PostgreSQL notifications are invalidation hints only;
+    /// profile reads always re-admit and read the authoritative Tenant row.
+    pub tenant_profile_updates: tokio::sync::broadcast::Sender<Uuid>,
     /// 设备公钥登记等用户动作要启动 ComponentTaskWorkflow（DD-79）
     pub temporal: std::sync::Arc<crate::temporal::TemporalClient>,
     /// 语义命令的准入、审批与派发（.design/05 §1）

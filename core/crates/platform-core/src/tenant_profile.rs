@@ -1,6 +1,6 @@
 //! DD-158(3): the session Tenant display profile, changed only by governed version CAS.
 use axum::{
-    extract::State,
+    extract::{Query, State},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     Json,
@@ -8,7 +8,8 @@ use axum::{
 use base64::Engine;
 use contracts::{ReasonCode, TenantProfileInput};
 use serde_json::{json, Value};
-use sqlx::{PgConnection, Postgres, Transaction};
+use sqlx::{postgres::PgListener, PgConnection, Postgres, Transaction};
+use tokio::sync::broadcast;
 use uuid::Uuid;
 
 use crate::{
@@ -17,7 +18,50 @@ use crate::{
 };
 
 pub(crate) const ACTION: &str = "tenant.profile.update";
+const PROFILE_CHANNEL: &str = "kailo_tenant_profile_changed";
 const MAX_ICON_BYTES: usize = 96 * 1024;
+
+/// One LISTEN connection per Core, shared by all admitted profile watches.
+/// A coalesced/lagged hint triggers a fresh read; it is never a profile cache.
+pub(crate) async fn spawn_updates(state: &BffState) -> Result<(), sqlx::Error> {
+    let mut listener = PgListener::connect_with(&state.pool).await?;
+    listener.listen(PROFILE_CHANNEL).await?;
+    let pool = state.pool.clone();
+    let updates = state.tenant_profile_updates.clone();
+    let retry = std::time::Duration::from_millis(state.stream_retry_millis);
+    tokio::spawn(async move {
+        loop {
+            match listener.try_recv().await {
+                Ok(Some(notification)) => {
+                    if let Ok(tenant) = notification.payload().parse() {
+                        let _ = updates.send(tenant);
+                    }
+                }
+                // Reconnected: a notification could have been lost. All
+                // consumers reread their own admitted Tenant, never the hint.
+                Ok(None) => { let _ = updates.send(Uuid::nil()); }
+                Err(error) => {
+                    tracing::warn!(error = %error, "Tenant profile invalidation connection unavailable");
+                    tokio::time::sleep(retry).await;
+                    if let Ok(mut next) = PgListener::connect_with(&pool).await {
+                        if next.listen(PROFILE_CHANNEL).await.is_ok() {
+                            listener = next;
+                            let _ = updates.send(Uuid::nil());
+                        }
+                    }
+                }
+            }
+        }
+    });
+    Ok(())
+}
+
+#[derive(Default, serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ProfileQuery {
+    /// An existing profile version makes this a bounded, read-only watch.
+    after_version: Option<i32>,
+}
 fn invalid() -> Refusal {
     Refusal::Precondition(ReasonCode::InvalidParameters)
 }
@@ -182,33 +226,75 @@ pub(crate) async fn prewrite(
     if updated.rows_affected() != 1 {
         return Err(conflict());
     }
+    // PostgreSQL emits this only after the surrounding admission/result/audit
+    // transaction commits. A rollback cannot invalidate or expose a new name.
+    sqlx::query("select pg_notify($1,$2)")
+        .bind(PROFILE_CHANNEL)
+        .bind(target.id.to_string())
+        .execute(&mut **tx)
+        .await?;
     Ok(())
 }
 
-pub async fn read(State(state): State<BffState>, headers: HeaderMap) -> Response {
-    let ctx = match resolve_execution_context(&state, &headers).await {
+pub async fn read(
+    State(state): State<BffState>,
+    Query(query): Query<ProfileQuery>,
+    headers: HeaderMap,
+) -> Response {
+    if query.after_version.is_some_and(|version| version < 1) {
+        return StatusCode::BAD_REQUEST.into_response();
+    }
+    // Subscribe before reading: an update between the snapshot and wait must
+    // not be missed. A finite wait also heals a lost database notification.
+    let mut updates = state.tenant_profile_updates.subscribe();
+    let deadline = tokio::time::Instant::now()
+        + std::time::Duration::from_secs(state.stream_readmit_seconds);
+    loop {
+        let view = match read_view(&state, &headers).await {
+            Ok(view) => view,
+            Err(response) => return response,
+        };
+        if query.after_version != Some(view.1)
+            || tokio::time::Instant::now() >= deadline
+        {
+            return ([("cache-control", "no-store")], Json(view.2)).into_response();
+        }
+        let tenant = view.0;
+        loop {
+            match tokio::time::timeout_at(deadline, updates.recv()).await {
+                Ok(Ok(changed)) if changed != tenant && !changed.is_nil() => continue,
+                // Timeout, lag, reconnection and a matching invalidation all
+                // require a fresh session/member/permission read before reply.
+                _ => break,
+            }
+        }
+    }
+}
+
+async fn read_view(state: &BffState, headers: &HeaderMap) -> Result<(Uuid, i32, Value), Response> {
+    let ctx = match resolve_execution_context(state, headers).await {
         Ok(c) => c,
-        Err(r) => return r,
+        Err(r) => return Err(r),
     };
     let row: Option<(String, Option<String>, i32)> = match sqlx::query_as("select t.name,t.icon,t.version from identity.tenant t where t.id=$1 and t.state='ACTIVE' and exists(select 1 from identity.principal p join identity.tenant_membership m on m.tenant_principal_id=p.id where p.id=$2 and p.tenant_id=t.id and m.tenant_id=t.id and p.kind='HUMAN' and p.status='ACTIVE' and m.state='ACTIVE')")
         .bind(ctx.tenant_id).bind(ctx.tenant_principal_id).fetch_optional(&state.pool).await {
-        Ok(r) => r, Err(_) => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
+        Ok(r) => r, Err(_) => return Err(StatusCode::SERVICE_UNAVAILABLE.into_response()),
     };
     let Some((name, icon, version)) = row else {
-        return StatusCode::FORBIDDEN.into_response();
+        return Err(StatusCode::FORBIDDEN.into_response());
     };
-    let mut view = json!({"name":name,"version":version});
+    let mut view = json!({"name":name,"version":version,"refreshAfterMillis":state.stream_retry_millis});
     if let Some(icon) = icon {
         view["icon"] = json!(icon);
     }
     let mut conn = match state.pool.acquire().await {
         Ok(c) => c,
-        Err(_) => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
+        Err(_) => return Err(StatusCode::SERVICE_UNAVAILABLE.into_response()),
     };
     let catalog = match crate::platform_bootstrap::is_catalog_tenant(&mut conn, ctx.tenant_id).await
     {
         Ok(c) => c,
-        Err(_) => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
+        Err(_) => return Err(StatusCode::SERVICE_UNAVAILABLE.into_response()),
     };
     drop(conn);
     if !catalog && crate::capability_registry::action_exposed(ACTION) {
@@ -229,10 +315,10 @@ pub async fn read(State(state): State<BffState>, headers: HeaderMap) -> Response
                     view["updateActionKey"] = json!(ACTION);
                 }
             }
-            _ => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
+            _ => return Err(StatusCode::SERVICE_UNAVAILABLE.into_response()),
         }
     }
-    ([("cache-control", "no-store")], Json(view)).into_response()
+    Ok((ctx.tenant_id, version, view))
 }
 
 #[cfg(test)]
@@ -283,6 +369,8 @@ mod tests {
             sqlx::PgPool::connect(&std::env::var("TENANT_PROFILE_TEST_DATABASE_URL").unwrap())
                 .await
                 .unwrap();
+        let mut listener = PgListener::connect_with(&pool).await.unwrap();
+        listener.listen(PROFILE_CHANNEL).await.unwrap();
         let mut tx = pool.begin().await.unwrap();
         let tenant = Uuid::new_v4();
         let principal = Uuid::new_v4();
@@ -363,6 +451,9 @@ mod tests {
                 .unwrap();
         assert!(icon.is_none());
         tx.commit().await.unwrap();
+        let notification = tokio::time::timeout(std::time::Duration::from_secs(5), listener.recv())
+            .await.unwrap().unwrap();
+        assert_eq!(notification.payload(), tenant.to_string());
         async fn competing_write(
             pool: &sqlx::PgPool,
             ae: &Execution,
@@ -401,6 +492,19 @@ mod tests {
                 .unwrap();
         assert_eq!(version, 4);
         assert!(matches!(name.as_str(), "first" | "second"));
+        let notification = tokio::time::timeout(std::time::Duration::from_secs(5), listener.recv())
+            .await.unwrap().unwrap();
+        assert_eq!(notification.payload(), tenant.to_string());
+        // A later admission/audit failure rolls the profile and its hint back
+        // together. Another live client must not observe this attempted name.
+        let mut rolled_back = pool.begin().await.unwrap();
+        params.resource_version = Some(4);
+        prewrite(&mut rolled_back, &ae, &def, &params).await.unwrap();
+        rolled_back.rollback().await.unwrap();
+        assert!(tokio::time::timeout(std::time::Duration::from_millis(100), listener.recv()).await.is_err());
+        let actual: (i32, String) = sqlx::query_as("select version,name from identity.tenant where id=$1")
+            .bind(tenant).fetch_one(&pool).await.unwrap();
+        assert_eq!(actual, (version, name));
         let mut tx = pool.begin().await.unwrap();
         params.resource_version = Some(4);
         sqlx::query(

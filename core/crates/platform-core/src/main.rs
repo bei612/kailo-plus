@@ -362,6 +362,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             memory_service: service_state.clone(),
             platform_info,
             pool: pool.clone(),
+            tenant_profile_updates: tokio::sync::broadcast::channel(1).0,
             temporal,
             governance,
             client_key_proof_window_seconds: std::env::var("BFF_CLIENT_KEY_PROOF_WINDOW_SECONDS")
@@ -474,14 +475,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 max
             },
-            stream_readmit_seconds: std::env::var("BFF_STREAM_READMIT_SECONDS")
-                .map_err(|_| "缺少 BFF_STREAM_READMIT_SECONDS")?
-                .parse()
-                .map_err(|_| "BFF_STREAM_READMIT_SECONDS 必须是秒数")?,
-            stream_retry_millis: std::env::var("BFF_STREAM_RETRY_MILLIS")
-                .map_err(|_| "缺少 BFF_STREAM_RETRY_MILLIS")?
-                .parse()
-                .map_err(|_| "BFF_STREAM_RETRY_MILLIS 必须是毫秒数")?,
+            stream_readmit_seconds: {
+                let seconds: u64 = std::env::var("BFF_STREAM_READMIT_SECONDS")
+                    .map_err(|_| "缺少 BFF_STREAM_READMIT_SECONDS")?
+                    .parse()
+                    .map_err(|_| "BFF_STREAM_READMIT_SECONDS 必须是秒数")?;
+                if seconds == 0 { return Err("BFF_STREAM_READMIT_SECONDS 必须为正".into()); }
+                seconds
+            },
+            stream_retry_millis: {
+                let millis: u64 = std::env::var("BFF_STREAM_RETRY_MILLIS")
+                    .map_err(|_| "缺少 BFF_STREAM_RETRY_MILLIS")?
+                    .parse()
+                    .map_err(|_| "BFF_STREAM_RETRY_MILLIS 必须是毫秒数")?;
+                if millis == 0 || millis > i32::MAX as u64 {
+                    return Err("BFF_STREAM_RETRY_MILLIS 超出客户端定时器正整数范围".into());
+                }
+                millis
+            },
             media_max_bytes: std::env::var("BFF_MEDIA_MAX_BYTES")
                 .map_err(|_| "缺少 BFF_MEDIA_MAX_BYTES")?
                 .parse()
@@ -489,6 +500,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             link_preview: std::sync::Arc::new(link_preview::Config::from_env()?),
             gifs: std::sync::Arc::new(gifs::Config::from_env()?),
         };
+
+        tenant_profile::spawn_updates(&bff_state).await?;
 
         // The SAME tick/batch also observes fixed Memory write IDs. BFF state
         // contributes its existing controlled Relay budget, never a new clock.
