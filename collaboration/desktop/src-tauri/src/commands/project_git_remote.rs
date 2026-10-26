@@ -26,7 +26,9 @@ use tauri::{AppHandle, Manager};
 use crate::{
     app_state::AppState,
     platform::api::NativeSession,
-    relay::{assert_expected_relay_scope, assert_expected_signer, relay_api_base_url_with_override},
+    relay::{
+        assert_expected_relay_scope, assert_expected_signer, relay_api_base_url_with_override,
+    },
 };
 
 /// The whole read, however many git invocations it needs.
@@ -215,15 +217,23 @@ impl RepoScope {
     pub(super) fn capture(app: &AppHandle, relay: &str, signer: &str) -> Result<Self, String> {
         let generation = app.state::<NativeSession>().page_generation()?;
         let scope = Self {
-            app: app.clone(), relay: relay.to_owned(), signer: signer.to_owned(), generation,
+            app: app.clone(),
+            relay: relay.to_owned(),
+            signer: signer.to_owned(),
+            generation,
         };
         scope.check()?;
         Ok(scope)
     }
 
     pub(super) fn check(&self) -> Result<(String, Keys), String> {
-        session_scoped(&self.app.state::<AppState>(), &self.app.state::<NativeSession>(),
-            self.generation, &self.relay, &self.signer)
+        session_scoped(
+            &self.app.state::<AppState>(),
+            &self.app.state::<NativeSession>(),
+            self.generation,
+            &self.relay,
+            &self.signer,
+        )
     }
 
     pub(super) fn repository_root(&self, repo_path: &str) -> Result<String, String> {
@@ -290,18 +300,30 @@ pub async fn get_project_repo_snapshot(
     expected_signer_pubkey: String,
     app: AppHandle,
 ) -> Result<buzz_project_git::ProjectRepoSnapshotInfo, String> {
-    let read = checked_read(&repository, default_branch, base_branch, target_ref, target_commit)?;
+    let read = checked_read(
+        &repository,
+        default_branch,
+        base_branch,
+        target_ref,
+        target_commit,
+    )?;
     let repo_path = read.repo_path.clone();
-    run_read(&app, &expected_relay_url, &expected_signer_pubkey, &repo_path, move |url, auth| {
-        buzz_project_git::project_repo_snapshot(
-            url,
-            read.default_branch,
-            read.base_branch,
-            read.target_ref,
-            read.target_commit,
-            auth,
-        )
-    })
+    run_read(
+        &app,
+        &expected_relay_url,
+        &expected_signer_pubkey,
+        &repo_path,
+        move |url, auth| {
+            buzz_project_git::project_repo_snapshot(
+                url,
+                read.default_branch,
+                read.base_branch,
+                read.target_ref,
+                read.target_commit,
+                auth,
+            )
+        },
+    )
     .await
 }
 
@@ -321,16 +343,22 @@ pub async fn get_project_repo_file_content(
     let read = checked_read(&repository, default_branch, None, target_ref, target_commit)?;
     checked_path(&path)?;
     let repo_path = read.repo_path.clone();
-    run_read(&app, &expected_relay_url, &expected_signer_pubkey, &repo_path, move |url, auth| {
-        buzz_project_git::project_repo_file_content(
-            url,
-            read.default_branch,
-            read.target_ref,
-            read.target_commit,
-            &path,
-            auth,
-        )
-    })
+    run_read(
+        &app,
+        &expected_relay_url,
+        &expected_signer_pubkey,
+        &repo_path,
+        move |url, auth| {
+            buzz_project_git::project_repo_file_content(
+                url,
+                read.default_branch,
+                read.target_ref,
+                read.target_commit,
+                &path,
+                auth,
+            )
+        },
+    )
     .await
 }
 
@@ -347,18 +375,30 @@ pub async fn get_project_repo_diff(
     expected_signer_pubkey: String,
     app: AppHandle,
 ) -> Result<buzz_project_git::ProjectRepoDiffInfo, String> {
-    let read = checked_read(&repository, default_branch, base_branch, target_ref, target_commit)?;
+    let read = checked_read(
+        &repository,
+        default_branch,
+        base_branch,
+        target_ref,
+        target_commit,
+    )?;
     let repo_path = read.repo_path.clone();
-    run_read(&app, &expected_relay_url, &expected_signer_pubkey, &repo_path, move |url, auth| {
-        buzz_project_git::project_repo_diff(
-            url,
-            read.default_branch,
-            read.base_branch,
-            read.target_ref,
-            read.target_commit,
-            auth,
-        )
-    })
+    run_read(
+        &app,
+        &expected_relay_url,
+        &expected_signer_pubkey,
+        &repo_path,
+        move |url, auth| {
+            buzz_project_git::project_repo_diff(
+                url,
+                read.default_branch,
+                read.base_branch,
+                read.target_ref,
+                read.target_commit,
+                auth,
+            )
+        },
+    )
     .await
 }
 

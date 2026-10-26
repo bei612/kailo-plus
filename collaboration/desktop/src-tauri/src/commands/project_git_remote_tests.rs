@@ -100,11 +100,17 @@ fn git_failures_reach_the_webview_only_as_stable_codes() {
 struct Tokens(std::sync::Mutex<Option<String>>);
 
 impl crate::platform::api::RefreshStore for Tokens {
-    fn load(&self) -> Result<Option<String>, String> { Ok(self.0.lock().unwrap().clone()) }
-    fn store(&self, value: &str) -> Result<(), String> {
-        *self.0.lock().unwrap() = Some(value.to_owned()); Ok(())
+    fn load(&self) -> Result<Option<String>, String> {
+        Ok(self.0.lock().unwrap().clone())
     }
-    fn delete(&self) -> Result<(), String> { self.0.lock().unwrap().take(); Ok(()) }
+    fn store(&self, value: &str) -> Result<(), String> {
+        *self.0.lock().unwrap() = Some(value.to_owned());
+        Ok(())
+    }
+    fn delete(&self) -> Result<(), String> {
+        self.0.lock().unwrap().take();
+        Ok(())
+    }
 }
 
 #[tokio::test]
@@ -115,7 +121,9 @@ async fn the_same_relay_and_device_do_not_revive_an_old_login_generation() {
     let signer = state.signing_keys().unwrap().public_key().to_hex();
     let session = NativeSession::with_stores(Box::<Tokens>::default(), Box::<Tokens>::default());
     let tokens = || crate::platform::oidc::TokenResponse {
-        access_token: "access".into(), refresh_token: Some("refresh".into()), id_token: None,
+        access_token: "access".into(),
+        refresh_token: Some("refresh".into()),
+        id_token: None,
     };
     session.adopt(tokens()).await.unwrap();
     let generation = session.page_generation().unwrap();
@@ -126,29 +134,58 @@ async fn the_same_relay_and_device_do_not_revive_an_old_login_generation() {
     assert!(session_scoped(&state, &session, generation, relay, &signer).is_err());
     session.adopt(tokens()).await.unwrap();
     assert!(session_scoped(&state, &session, generation, relay, &signer).is_err());
-    assert!(session_scoped(&state, &session, session.page_generation().unwrap(), relay, &signer).is_ok());
+    assert!(session_scoped(
+        &state,
+        &session,
+        session.page_generation().unwrap(),
+        relay,
+        &signer
+    )
+    .is_ok());
 }
 
 #[tokio::test]
 async fn preflight_hides_auth_refusals_and_never_follows_a_redirect() {
     use axum::{http::StatusCode, routing::get, Router};
-    use std::sync::{atomic::{AtomicUsize, Ordering}, Arc};
+    use std::sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    };
     for (status, expected) in [
-        (200, None), (401, Some(REPO_NOT_FOUND)), (403, Some(REPO_NOT_FOUND)),
-        (404, Some(REPO_NOT_FOUND)), (302, Some(REPO_UNAVAILABLE)), (503, Some(REPO_UNAVAILABLE)),
+        (200, None),
+        (401, Some(REPO_NOT_FOUND)),
+        (403, Some(REPO_NOT_FOUND)),
+        (404, Some(REPO_NOT_FOUND)),
+        (302, Some(REPO_UNAVAILABLE)),
+        (503, Some(REPO_UNAVAILABLE)),
     ] {
         let leaked = Arc::new(AtomicUsize::new(0));
         let leaked_route = Arc::clone(&leaked);
         let router = Router::new()
-            .route("/repo/info/refs", get(move || async move {
-                (StatusCode::from_u16(status).unwrap(), [("location", "/leak")])
-            }))
-            .route("/leak", get(move || { let leaked = Arc::clone(&leaked_route); async move {
-                leaked.fetch_add(1, Ordering::SeqCst); StatusCode::OK
-            }}));
+            .route(
+                "/repo/info/refs",
+                get(move || async move {
+                    (
+                        StatusCode::from_u16(status).unwrap(),
+                        [("location", "/leak")],
+                    )
+                }),
+            )
+            .route(
+                "/leak",
+                get(move || {
+                    let leaked = Arc::clone(&leaked_route);
+                    async move {
+                        leaked.fetch_add(1, Ordering::SeqCst);
+                        StatusCode::OK
+                    }
+                }),
+            );
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let root = format!("http://{}/repo", listener.local_addr().unwrap());
-        let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap(); });
+        let server = tokio::spawn(async move {
+            axum::serve(listener, router).await.unwrap();
+        });
         let state = crate::app_state::build_app_state();
         let result = preflight(&state, &Keys::generate(), &root).await;
         assert_eq!(result.err().as_deref(), expected, "HTTP {status}");
