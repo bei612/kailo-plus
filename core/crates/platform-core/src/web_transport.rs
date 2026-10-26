@@ -45,6 +45,24 @@ pub const PUBLISH_ACTION: &str = "workspace.message.publish";
 pub const CONVERSATION_PUBLISH_ACTION: &str = "conversation.message.publish";
 pub const CONVERSATION_HIDE_ACTION: &str = "conversation.hide";
 pub const CONVERSATION_REOPEN_ACTION: &str = "conversation.reopen";
+
+pub(crate) fn ordinary_publication_action(action: &str) -> bool {
+    matches!(
+        action,
+        PUBLISH_ACTION
+            | CONVERSATION_PUBLISH_ACTION
+            | CONVERSATION_HIDE_ACTION
+            | CONVERSATION_REOPEN_ACTION
+            | TOPIC_ACTION
+            | crate::pulse::PUBLISH_ACTION
+    )
+}
+
+fn publication_retry_confirmed(action: &str, event_type: Option<&str>) -> bool {
+    // Historical reconciliation used filtered Relay queries. Preserve those
+    // audit rows, but never let their NOT_DELIVERED authorize a new signature.
+    !ordinary_publication_action(action) || event_type == Some("OUTCOME")
+}
 /// 成员修改频道原主题（DD-119(9)）。对账按它找这一类发布。
 pub const TOPIC_ACTION: &str = "workspace.channel.topic.publish";
 
@@ -2114,6 +2132,7 @@ async fn publish(
         operation_id: Uuid,
         event_id: String,
         result: Option<String>,
+        result_event_type: Option<String>,
         mention_installation_ids: Vec<Uuid>,
         addressed_installation_ids: Vec<Uuid>,
         mention_pubkeys: Vec<String>,
@@ -2138,7 +2157,11 @@ async fn publish(
                   (select r.result_code from audit.audit_event r
                     where r.operation_id = a.operation_id
                       and r.event_type in ('OUTCOME', 'RECONCILIATION')
-                    order by r.occurred_at desc limit 1) as result
+                    order by r.occurred_at desc, r.id desc limit 1) as result,
+                  (select r.event_type from audit.audit_event r
+                    where r.operation_id = a.operation_id
+                      and r.event_type in ('OUTCOME', 'RECONCILIATION')
+                    order by r.occurred_at desc, r.id desc limit 1) as result_event_type
            from admission.publish_attempt a
            where a.tenant_principal_id = $1 and a.idempotency_key = $2"#,
     )
@@ -2225,7 +2248,8 @@ async fn publish(
                     Some(p.operation_id),
                 );
             }
-            Some("NOT_DELIVERED") => {}
+            Some("NOT_DELIVERED")
+                if publication_retry_confirmed(action_key, p.result_event_type.as_deref()) => {}
             // 还没有结论：仍是那一次的结果不明，不能再发一条
             _ => {
                 return error_body(
@@ -4590,6 +4614,25 @@ fn relay_media_path(media_ref: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn historical_query_absence_cannot_authorize_a_resigned_message() {
+        for action in [
+            super::PUBLISH_ACTION,
+            super::CONVERSATION_PUBLISH_ACTION,
+            super::CONVERSATION_HIDE_ACTION,
+            super::CONVERSATION_REOPEN_ACTION,
+            super::TOPIC_ACTION,
+            crate::pulse::PUBLISH_ACTION,
+        ] {
+            assert!(!super::publication_retry_confirmed(
+                action,
+                Some("RECONCILIATION")
+            ));
+            assert!(!super::publication_retry_confirmed(action, None));
+            assert!(super::publication_retry_confirmed(action, Some("OUTCOME")));
+        }
+    }
+
     #[test]
     fn batched_window_split_attributes_rows_and_target_scoped_actions_to_one_channel() {
         let keys = nostr::Keys::generate();

@@ -5,9 +5,10 @@
 //! 去 Relay 查，把它收敛成确定的结果并以 RECONCILIATION 追加：
 //!
 //! - Relay 存着这条事件：已送达；
-//! - 查不到，且签名时间已超出 Relay 的时间漂移窗口：这条事件再也不可能被接受
-//!   （`SF-BUZ-40`），确定未送达；
-//! - 查不到而仍在窗口内：继续等，不猜。
+//! - 普通事件查询为空：仍未知，过窗也不证明从未送达。软删除会隐藏
+//!   原事件及其删除事件，早先通过时间检查的 writer 也可能尚未提交。
+//!   权威缺失接缝未闭合前，不据此允许同一意图新签；
+//! - 依赖不可读或证据不足：继续等，不猜。
 //!
 //! 不重发：DISPATCH 之后用户可能已经重新发了一条，自动重发会造出重复消息
 //! （`DD-48`「无 native 结论不自动重放」）。
@@ -321,12 +322,36 @@ async fn pass(
 }
 
 async fn settle_one(state: &ServiceState, p: &Pending) -> &'static str {
-    let result_code = match observe_delivery(state, p).await {
-        Ok(true) => "ACCEPTED",
-        Ok(false) if p.settled_window_passed => "NOT_DELIVERED",
-        Ok(false) => return "PENDING",
+    let result_code = match reconciliation_result(
+        p.settled_window_passed,
+        observe_delivery(state, p).await,
+    ) {
+        Ok(result) => result,
         Err(reason) => return reason,
     };
+    write_reconciliation(state, p, result_code).await
+}
+
+/// Ordinary query absence is never an authoritative non-delivery receipt.
+/// All observations in this reconciler use filtered event queries. Keep their
+/// absence out of the terminal audit even after the diagnostic settle window.
+fn reconciliation_result(
+    settled: bool,
+    observed: Result<bool, &'static str>,
+) -> Result<&'static str, &'static str> {
+    match observed {
+        Ok(true) => Ok("ACCEPTED"),
+        Ok(false) if settled => Err("EVENT_UNOBSERVABLE"),
+        Ok(false) => Err("PENDING"),
+        Err(reason) => Err(reason),
+    }
+}
+
+async fn write_reconciliation(
+    state: &ServiceState,
+    p: &Pending,
+    result_code: &'static str,
+) -> &'static str {
     let entry = AuditEntry {
         event_key: format!("message.publish:{}:reconciled", p.event_id),
         tenant_id: Some(p.tenant_id),
@@ -531,9 +556,8 @@ async fn observe_delivery(state: &ServiceState, p: &Pending) -> Result<bool, &'s
         // Relay queries hide soft-deleted events. The Relay only stores a kind:5
         // deletion whose e-target already exists (validate_standard_deletion_event
         // reads including deleted), so an accepted deletion of this exact id
-        // proves it was delivered. Without this, a message the author deleted
-        // inside the settle window is judged NOT_DELIVERED and the same key
-        // re-signs a duplicate.
+        // proves it was delivered. The deletion itself may also be deleted;
+        // absence of both is still UNKNOWN, regardless of the settle window.
         let page = control
             .query(
                 &state.http,
@@ -605,4 +629,28 @@ async fn observe_delivery(state: &ServiceState, p: &Pending) -> Result<bool, &'s
         return Err("PARTICIPANT_UNREADABLE");
     }
     Ok(exists)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ordinary_query_absence_never_authorizes_a_new_publication() {
+        for settled in [false, true] {
+            assert_eq!(
+                reconciliation_result(settled, Ok(false)),
+                Err(if settled { "EVENT_UNOBSERVABLE" } else { "PENDING" }),
+                "deleted events, deleted deletions and delayed writers remain unresolved"
+            );
+            assert_eq!(
+                reconciliation_result(settled, Ok(true)),
+                Ok("ACCEPTED"),
+                "positive delivery evidence still settles"
+            );
+            for reason in ["QUERY_FAILED", "EVIDENCE_MISSING", "PARTICIPANT_UNREADABLE"] {
+                assert_eq!(reconciliation_result(settled, Err(reason)), Err(reason));
+            }
+        }
+    }
 }
