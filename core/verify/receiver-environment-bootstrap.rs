@@ -572,9 +572,21 @@ fn fixed_policy_metadata(binding: &Value, input: &Value, endpoint: &Value) -> Re
 async fn admitted_binding_metadata(
     http: &reqwest::Client,
     input: &Value,
-    token: &str,
+    _token: &str,
     endpoint: &Value,
 ) -> Result<Value, Error> {
+    // The runner renews the same original session files while workflows run.
+    // Re-authenticate their identity before each new business submission/read.
+    let fresh = authenticated_session(
+        http,
+        input,
+        "humanTokenFile",
+        "tenantId",
+        "humanIdentityId",
+        "humanPrincipalId",
+    )
+    .await?;
+    let token = fresh.as_str();
     let mut offset = 0_u64;
     let deadline = tokio::time::Instant::now()
         + Duration::from_secs(input["actionWaitSeconds"].as_u64().unwrap());
@@ -644,10 +656,22 @@ async fn execute_action_until(
     conn: &mut PgConnection,
     http: &reqwest::Client,
     input: &Value,
-    token: &str,
+    _token: &str,
     command: &Value,
     admission_only: bool,
 ) -> Result<(ActionFact, bool), Error> {
+    // The runner renews the same original session files while workflows run.
+    // Re-authenticate their identity before each new business submission/read.
+    let fresh = authenticated_session(
+        http,
+        input,
+        "humanTokenFile",
+        "tenantId",
+        "humanIdentityId",
+        "humanPrincipalId",
+    )
+    .await?;
+    let token = fresh.as_str();
     if admission_only && command["actionKey"] != "application_binding.create" {
         return Err("only original binding creation has a deployment admission checkpoint".into());
     }
@@ -710,7 +734,16 @@ async fn execute_action_until(
                 .await?;
                 if ready {
                     owner_decision_attempted = true;
-                    approve_read_grant(http, input, token, &action).await?;
+                    let owner = authenticated_session(
+                        http,
+                        input,
+                        "humanTokenFile",
+                        "tenantId",
+                        "humanIdentityId",
+                        "humanPrincipalId",
+                    )
+                    .await?;
+                    approve_read_grant(http, input, &owner, &action).await?;
                 }
             }
             let terminal: Option<String> = sqlx::query_scalar("select result_code from audit.audit_event

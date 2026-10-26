@@ -157,8 +157,26 @@ core_env() {
 refresh_sessions() {
   need RECEIVER_SESSION_COMMAND
   [[ $RECEIVER_SESSION_COMMAND == /* && -x $RECEIVER_SESSION_COMMAND ]] || { echo 'RECEIVER_SESSION_COMMAND must be an absolute executable' >&2; exit 2; }
-  "$RECEIVER_SESSION_COMMAND"
+  flock "$run/session-refresh.lock" "$RECEIVER_SESSION_COMMAND"
 }
+
+session_refresh_loop() {
+  local elapsed=0 interval=${RECEIVER_SESSION_SECONDS:-120}
+  [[ $interval =~ ^[1-9][0-9]*$ ]] || { echo 'invalid isolated session renewal interval' >&2; return 2; }
+  trap 'exit 0' TERM INT
+  # Short sleeps let the scoped stage drain promptly without orphaning a refresh.
+  while sleep 1; do
+    elapsed=$((elapsed + 1))
+    if ((elapsed >= interval)); then refresh_sessions || return 1; elapsed=0; fi
+  done
+}
+
+scoped_session_refresh() {
+  session_refresh_loop &
+  stage_refresher=$!
+  trap 'kill "$stage_refresher" 2>/dev/null || true; wait "$stage_refresher" 2>/dev/null || true' EXIT
+}
+
 
 case "$stage" in
 platform)
@@ -326,6 +344,7 @@ admit|bootstrap)
   else record native.done; phase=ready; output=bootstrap; expected=READY; fi
   private "$RECEIVER_BOOTSTRAP_FILE"
   refresh_sessions
+  scoped_session_refresh
   # The bootstrap accepts only the database whose comment fixes this exact input.
   marker=$(python3 -I - "$RECEIVER_BOOTSTRAP_FILE" <<'PY'
 import hashlib, json, re, sys
@@ -358,6 +377,7 @@ PY
   { core_env; printf 'APPLICATION_RECEIVER_BOOTSTRAP_FILE=%s\nAPPLICATION_RECEIVER_BOOTSTRAP_PHASE=%s\n' "$RECEIVER_BOOTSTRAP_FILE" "$phase"; } \
     | core_test application_binding::read_grant::receiver_environment_bootstrap::bootstrap_native_receiver_environment false \
     > "$run/$output.log"
+  kill -0 "$stage_refresher" || { echo 'isolated session renewal stopped during bootstrap' >&2; exit 2; }
   json_line < "$run/$output.log" > "$run/$output.json.next"
   chmod 0600 "$run/$output.json.next"
   python3 -I - "$run/$output.json.next" "$run/$output.json" "$expected" <<'PYRECORD'
@@ -408,7 +428,9 @@ seed)
   need RECEIVER_SEED_FILE
   record bootstrap.json
   refresh_sessions
+  scoped_session_refresh
   node_step "$RECEIVER_NETWORK" tools/component-release/conformance/seed-knowledge.mjs --phase governed --seed "$RECEIVER_SEED_FILE"
+  kill -0 "$stage_refresher" || { echo 'isolated session renewal stopped during seed' >&2; exit 2; }
   ;;
 inputs)
   need RECEIVER_OBSERVE_FILE RECEIVER_MANIFEST RECEIVER_KNOWLEDGE_ENV RECEIVER_FORWARD_ADAPTER_CONFIG RECEIVER_FORWARD_ADAPTER_JWKS RECEIVER_FORWARD_ADAPTER_DELIVERY_DIR
@@ -459,7 +481,7 @@ driver)
   { core_env; printf 'APPLICATION_RECEIVER_DRIVER_FILE=%s\n' "$RECEIVER_DRIVER_FILE"; } \
     | core_test application_binding::read_grant::receiver_action_driver::serve_isolated_receiver_actions true >/dev/null
   # Isolated sessions expire; the operator's refresher keeps the same files fresh.
-  (while sleep "${RECEIVER_SESSION_SECONDS:-120}"; do "$RECEIVER_SESSION_COMMAND" || exit 1; done) &
+  session_refresh_loop &
   echo $! > "$run/session-refresher.pid"
   cat <<EOF
 Receiver driver running in $RECEIVER_PROJECT-driver (receiverActionBaseUrl alias receiver-driver on $RECEIVER_NETWORK).
