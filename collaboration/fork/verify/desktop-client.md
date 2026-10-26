@@ -681,3 +681,7 @@ CI 节点原日志：`/volumes/data/kailo/verification/dd160-checkout-ui/<上述
 ### 同日 DD-160 本机检出收口
 
 本机八命令、按 Community/30617 分区、持久冻结推送意图及第 251 项后的本机文件读取已进入固定集成 Rust 源 `0b9b72ba64c248a239abfb0f5d4ab242c662001c`。原 SDK 全锁检查 Desktop 10 项、共享 Git crate 38 项通过；恢复“待确认推送改用当前 HEAD”的真实缺陷后已有检查失败，逐字恢复后通过。首次分支创建回归失败、锁变化、原始日志和未覆盖的安装包/真机/界面边界保留在[本机检出核验](desktop-project-checkout.md)，不将源码检查算成 V-SCN-264/265 验收。
+
+### 同日 DD-160 原生远程写入定向核验
+
+原共享 Projects 的分支建删与 owner merge 已接到本设备 CLIENT；发送前持久冻结意图，重启以 info/refs 对账，1631 沿原发布/回读链。最终原生源码 `bd1b158b45fb26ab5b7ef8028c55604fecabd328` 的 20 项定向检查通过；前端对应固定源 46 项、共享 Git 固定源 38 项通过。真实 Git HTTP 丢响应重启检查及反向失败/逐字恢复记录、精确源码范围和未完成的 Native DD-81 部署结算事实边界见[远程写入核验](desktop-project-remote-writes.md)。没有构建安装包、部署或完成真实 Desktop/Win11 验收，不能据此解除发布门禁。
