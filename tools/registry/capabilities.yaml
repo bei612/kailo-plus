@@ -354,6 +354,12 @@ capabilities:
   actions: []
   tools: []
   workflow_kinds: []
+- id: component.integrated_ux
+  exposure: none
+  routes: []
+  actions: []
+  tools: []
+  workflow_kinds: []
 - id: component.native_embed
   exposure: end_user
   routes:
