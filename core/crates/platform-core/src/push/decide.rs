@@ -396,8 +396,11 @@ mod tests {
         let keys = me();
         for kind in MESSAGE_KINDS {
             let mut input = event(json!([
-                ["h", "c"], ["p", ME], ["broadcast", "1"],
-                ["e", ROOT, "", "root"], ["e", ROOT, "", "reply"]
+                ["h", "c"],
+                ["p", ME],
+                ["broadcast", "1"],
+                ["e", ROOT, "", "root"],
+                ["e", ROOT, "", "reply"]
             ]));
             input["kind"] = json!(kind);
             let facts = MessageFacts::from_event(&input).unwrap();
@@ -423,12 +426,18 @@ mod tests {
         let mut post = event(json!([["h", "forum"], ["p", ME]]));
         post["kind"] = json!(45001);
         let facts = MessageFacts::from_event(&post).unwrap();
-        assert_eq!(decide(&facts, &RecipientView::new(&keys)), Some(Reason::Mention));
+        assert_eq!(
+            decide(&facts, &RecipientView::new(&keys)),
+            Some(Reason::Mention)
+        );
         assert_eq!(unread_context(&facts), "forum");
         let mut reply = event(json!([["h", "forum"], ["e", ROOT, "", "reply"]]));
         reply["kind"] = json!(45003);
         let facts = MessageFacts::from_event(&reply).unwrap();
-        let view = RecipientView { thread_followed: true, ..RecipientView::new(&keys) };
+        let view = RecipientView {
+            thread_followed: true,
+            ..RecipientView::new(&keys)
+        };
         assert_eq!(decide(&facts, &view), Some(Reason::Thread));
         assert_eq!(facts.root_id.as_deref(), Some(ROOT));
         assert_eq!(unread_context(&facts), format!("thread:{ROOT}"));
