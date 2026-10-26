@@ -55,3 +55,18 @@ SDK 4 CPU / 16 GiB，独立 PostgreSQL 1 CPU / 2 GiB、tmpfs 数据目录。
 `push-pg-limits.log` 保存资源读回。检查结束后已回读确认 SDK、PG 容器及其独立
 网络全部清理。上述数据库回归验证的是实际派生表读写，不替代真实 APNs/FCM
 发送、手机点击跳转、provider 崩溃窗口恢复或三端验收。
+
+## 独立集成候选依赖（2026-10-26）
+
+以 `356df4087` 为基，仅选 `e02bb6ab8` 的 DD-151 基础与
+`5149d6c38`、`412a2b07b`、`7babfa63d`，保留集成版设计覆盖与 DD-159。
+基础依赖包括六份推送 schema、sample 与四侧生成，Core BFF/worker、
+OpenBao 令牌读取、设备撤销及 Tenant 清理、两组可逆迁移，以及 Mobile 原生
+APNs 桥、通知开关、token 刷新与通知点击深链。未选择 Activity 或其他 Mobile
+功能祖先。此前固定 `412a2b07b` 的结果不等于本候选的验证结果；本候选仍待
+原 SDK Core/数据库、四侧生成和 Flutter 实际消费者检查。
+
+推送能力单独登记为 `collab.mobile_push` / `in_progress`，不继承
+`identity.client_keys` 的历史 shipped 或 artifact。iOS 通知扩展正文读取仍为
+独立 WIP，Android 注册桥、真实设备接收、凭据轮换、发送意图持久化与结果不明
+收敛尚未闭合；未构建 Mobile release、未部署共享服务。

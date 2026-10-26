@@ -6,14 +6,14 @@ exposure: end_user
 
 design:
   requirements: [V-REQ-01, V-REQ-08, V-REQ-19]
-  decisions: [DD-77, DD-78, DD-79, DD-151]
+  decisions: [DD-77, DD-78, DD-79]
   facts: [SF-AGW-22, SF-AGW-24, SF-BUZ-26, SF-BUZ-06, SF-BUZ-42]
   seams: [SS-AGW-OIDC]
   blockers: []
-  entities: [BuzzIdentityBinding, PlatformSession, TenantMembership, WorkflowRef, PushRegistration]
+  entities: [BuzzIdentityBinding, PlatformSession, TenantMembership, WorkflowRef]
 
 validation:
-  scenarios: [V-SCN-63, V-SCN-64, V-SCN-249, V-SCN-250]
+  scenarios: [V-SCN-63, V-SCN-64]
   evidence:
     - dimension: 上游接缝
       ref: core/verify/native-identity.md
@@ -23,8 +23,6 @@ validation:
       ref: docs/runbooks/RB-02-secret-rotation-and-revocation.md
     - dimension: 端到端场景
       ref: web-client/fork/verify/web-surface.md
-    - dimension: 端到端场景
-      ref: core/verify/push-unread.md
     - dimension: Workflow 重放
       ref: worker/replay-tests/testdata/component_task_identity_register_history.json
 
@@ -32,13 +30,13 @@ implementation:
   owners: [team-platform]
   # server_keys 与 platform_bootstrap 是共享身份投影的内部调用方；本条 shipped
   # 只覆盖 runtime.routes 中的客户端公钥入口，不声明用户可达的托管身份轮换。
-  paths: [core/crates/platform-core/src/client_keys.rs, core/crates/platform-core/src/identity_projection.rs, core/crates/platform-core/src/membership_projection.rs, core/crates/platform-core/src/server_keys.rs, core/crates/platform-core/src/platform_bootstrap.rs, core/crates/platform-core/src/stream.rs, core/crates/platform-core/src/push, worker/workflows/component_task.go, deploy/local/model-gateway-config.yaml, client-kit/ts/platform, web-client]
+  paths: [core/crates/platform-core/src/client_keys.rs, core/crates/platform-core/src/identity_projection.rs, core/crates/platform-core/src/membership_projection.rs, core/crates/platform-core/src/server_keys.rs, core/crates/platform-core/src/platform_bootstrap.rs, core/crates/platform-core/src/stream.rs, worker/workflows/component_task.go, deploy/local/model-gateway-config.yaml, client-kit/ts/platform, web-client]
   surfaces: [web]
-  schemas: [contracts/enums/workflow_kind.schema.json, contracts/enums/reason_code.schema.json, contracts/api/client_key.schema.json, contracts/api/client_key_status.schema.json, contracts/api/native_community.schema.json, contracts/api/push_capability.schema.json, contracts/api/push_registration_request.schema.json, contracts/api/push_registration_view.schema.json, contracts/enums/push_platform.schema.json, contracts/enums/push_registration_state.schema.json, contracts/enums/push_availability.schema.json]
-  migrations: [core/migrations/20260923040000_buzz_identity_multi_binding.up.sql, core/migrations/20260923050000_workflow_kind_buzz_identity.up.sql, core/migrations/20260928100000_identity_rerun_catalog.up.sql, core/migrations/20261030010000_push_registration.up.sql, core/migrations/20261031040000_push_unread.up.sql]
+  schemas: [contracts/enums/workflow_kind.schema.json, contracts/enums/reason_code.schema.json, contracts/api/client_key.schema.json, contracts/api/client_key_status.schema.json, contracts/api/native_community.schema.json]
+  migrations: [core/migrations/20260923040000_buzz_identity_multi_binding.up.sql, core/migrations/20260923050000_workflow_kind_buzz_identity.up.sql, core/migrations/20260928100000_identity_rerun_catalog.up.sql]
 
 runtime:
-  routes: ["/api/v1/identity/client-keys", "/api/v1/identity/client-keys/{pubkey}", "/api/v1/native/community", "/api/v1/push/capability", "/api/v1/push/registration"]
+  routes: ["/api/v1/identity/client-keys", "/api/v1/identity/client-keys/{pubkey}", "/api/v1/native/community"]
   workflow_kinds: [BUZZ_IDENTITY_PROJECTION]
 
 release:
