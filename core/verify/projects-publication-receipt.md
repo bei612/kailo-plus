@@ -136,3 +136,57 @@ operator probe/轮换查证也使用同一客户端；构造提前到 OpenBao co
 本批无 schema、API、Workflow 或权限变更；未更新运行环境、未部署，也未完成
 普通事件权威缺失证明。HTTP deadline 只保证依赖等待有限，不能把超时或空读转为
 NOT_DELIVERED；DD-81 的保守 UNKNOWN 与后续权威证明工作保持原边界。
+
+
+## 2026-10-26 Core 原发布范围与 Relay writer 肯定证据
+
+权威为单独提交的设计
+`c4d338bce1c97d0dfde18da42e66a9064f12668c` 的 `09` Core 原发布段与 DD-80/81。
+原普通查询隐藏软删除，不能查证“从未送达”；本接缝仅补包括软删除的原 writer
+肯定事实。`POST /events/observation` 请求只有原 event ID 与冻结 Community，
+仍走原 NIP-98 正文摘要、Host、重放与 HTTP 准入，只返回原 ID、Community、
+作者、kind 与原生 Channel 五项引用。包括软删的原事件须通过 `Event::verify`。
+缺失、拒绝、超时或不明历史范围保持 UNKNOWN，接口不提供 absence/settled 结论。
+没有复制正文、标签、删除时间，也没有新增送达表、业务动作或执行权威。
+
+实际发送仍使用原 `/events`，新增 scoped 形式将 Community 同时固定在签名 URL
+query 和唯一 NIP-98 标签，原 ACK 同时返回同一 TenantContext 的 Community。
+1631 保留其原仓库 owner 准入，其他 kind 仍经过原作者、成员与治理 ingest。
+旧 unscoped 原生协议保持原语义；不能用它证明 scoped 交付。
+
+交叉复核后补正两处实际边界。第一，durable ban 不会删除 Community/Channel
+成员行，新肯定证据按原 Git proof 的 ban/已验 owner 级联规则做 fresh 拒绝；
+这是证据读取较严格的准入，原普通 query 与 timeout 读取语义没有改变。第二，
+原 kind:5 作者校验包含软删目标，而 Channel 推导过滤软删，重复删除已软删私聊
+消息会丢失原 Channel。未来 ingest 改用同一个包括软删的目标 writer 读取；
+肯定观察不把历史 NULL、错误范围或不明删除链当作 global，也不悄悄补造旧 scope。
+私聊 Channel 始终要求当前真实成员，Community CONTROL 不是私聊参与者；
+个人 30300 提醒只给原作者读取证据。
+
+两批原 SDK 实际 HTTP/私有 PG/Redis 消费者，均从 GitHub 固定对象取源：
+
+- `c3d10cfed149c31904fe4d767cc9dd5a85777d62`：SDK 2 CPU / 16 GiB，
+  私有 PG 1 CPU / 2 GiB、Redis 0.5 CPU / 128 MiB，9/9 通过。
+  三项破坏分别把 writer getter 改为过滤软删、关闭真实 Channel 成员校验、
+  关闭 Community 匹配，均为原消费者断言失败、exit 101；逐字恢复后 9/9 通过。
+- 最终 Relay 产品源码 `63590d878ee3db7d483f96df4767bbdd96d5dcee`：
+  热缓存 SDK 2 CPU / 8 GiB，PG/Redis 限额同上，11/11 通过，0 ignored。
+  原生 repeat-delete 实际 POST 验证原 Channel 被保留；保留的历史坏行与 NULL
+  删除链被拒绝。分别关闭 fresh ban、还原错误的 kind:5 目标 getter、移除历史
+  scope 校验，三项均原消费者断言失败、exit 101。逐字恢复两个生产文件后
+  11/11 再通过，格式检查退出 0。
+
+使用的原 SDK 均为
+`sha256:3007729eb192341a4f004a88e42e1e66c94fc67d763acfc96568bd7311116018`；
+两批实际 memory+swap 等于 memory，OOMKilled=false，检查容器、PG、Redis 与
+私有网络均已清理。第一批 16 GiB 与后批 8 GiB 分开记录，不互相代替。
+[固定回执](publication-writer-observation-receipts.json)保留各阶段日志摘要与限额。
+CI 原回执分别在
+`/volumes/data/kailo/verification/phase1-integration/observation-c3d10cfed-check/receipt.json`
+（SHA-256 `88146a2dec740d8b01b8bfb1ffcd0cb02bf3b29d0e615a7b1d896455832b806a`）与
+`/volumes/data/kailo/verification/phase1-integration/observation-63590d878-check/receipt.json`
+（SHA-256 `9cfb1948e6482cab6f989cdf348c4673a224e4761413b2fe22d553ec5d887014`）。
+
+这些批次没有 Core/BFF 的完整端到端消费者，不能冒称其范围冻结、404→UNKNOWN
+与最终 audit 消费已经验收。Core 配套实现另取固定源码验证；普通发布的权威缺失
+证明、正式制品、最新 full、真实用户业务与部署仍独立收口。

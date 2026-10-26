@@ -32,6 +32,24 @@ push **31**、profile **2**、feedback **2**、HUMAN policy **2** 均通过。
 没有重跑迁移、SQLx、Clippy 或 workspace full。两次先前命令/快照失败原样保留。
 固定来源、回执摘要及未覆盖范围见[发布证据增量](core/verify/projects-publication-receipt.md)。
 
+普通 Relay HTTP 的有限期限已在后续候选接线：固定 `fc219c4c9` 的 Core
+正常目标 **837 passed / 85 ignored**、all-target Clippy、配置检查均通过；
+移除期限会使真实停滞正文消费者断言失败，逐字恢复通过。显式配置缺失拒绝启动，
+媒体、Push/Memory、长连接与组件任务保留各自原预算。详见
+[原消费者及期限证据](core/verify/projects-publication-receipt.md)。
+
+Agent 资料、Canvas 和审核另三处空读假阴性已修复，并精确恢复能证明来自旧错误
+分支的历史业务终态，保留原审计与真实 LIMIT/拒绝。固定 `a05502296` 的原模块
+**15** 项（含 **3** 项真实 PG）通过，三种破坏各断言失败后恢复通过；迁移往返、
+Clippy 与格式通过。仍不等于权威缺失证明，见
+[历史纠正证据](core/verify/publication-absence-correction.md)。
+
+Relay 新增只返回五项引用的 writer 肯定观察，原事件及删除事件软删后仍可查证。
+固定 `63590d878` 的实际 HTTP/PG/Redis **11/11** 通过；ban、私聊重复删除范围、
+历史 NULL scope 三项实际故障均被检出并逐字恢复。Core 配套消费者尚单独收口，
+不能将本 Relay 批认作 BFF 全链；缺失或拒绝仍 UNKNOWN。详情与原回执见
+[writer 证据](core/verify/projects-publication-receipt.md)。
+
 较早 `06712387a` 的真实 `pg_notify` 删除反向与恢复通过仍独立保留于
 [原联合回执](core/verify/phase1-integration-core-20261026.json)，不改写旧失败或忽略项。
 
