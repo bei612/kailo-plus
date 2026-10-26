@@ -170,3 +170,10 @@ UUID、COLLECTION 类型和所属 workspace 后才记录为事实。重试先读
 404/401 拒绝语义、实际冻结向量分类（三个源 Resource 前置条件）及已有 10 个单元测试通过。
 回执 `/volumes/data/kailo/conformance/checks/github-6813eb7eb8919e75078222f81192eab3762665d8/receipt.json`，
 同目录含命令与日志。未启动 source Cells、WeKnora 或新 receiver；以上仍不是原生运行或端到端证据。
+
+接线交叉核对还发现 Gateway 机器身份尚无自动交付：隔离 `.env` 会清空生产 `GATEWAY_SERVICE_*`，
+而两个 adapter 的 MCP 模板要求独立 Gateway issuer/caller/JWKS。原 `start-core.sh` 只消费、校验并派生该组配置，
+私钥必须留在 Gateway 独占 provider-secret 目录，Core 只取得 public-only JWKS；服务身份与 Tool Session 必须完整交付。
+后续需要在本次隔离 OpenBao 托管该独立身份、沿原 Agent 交付到本次 Gateway 私有卷，并沿原启动入口生效。
+不复用生产签名材料，不以测试 provider/手签 token 代替，也不把签名私钥伪装成某个模型 route 的 provider credential。
+这与源/接收 adapter 的 SecretRef/IdP client、native-action、bootstrap/seed/inputs/driver 编排一起仍未交付。
