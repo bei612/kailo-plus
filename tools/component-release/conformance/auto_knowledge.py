@@ -27,15 +27,19 @@ deployment facts and run-local secrets, stage by stage, without an operator:
              AgentGateway through its admin API, then one governed llm_route.create each through the
              isolated Web origin (flow/llm-route-create.mjs) for the PLATFORM_LLM_ROUTE receiver binding
 
-Later stages (native, bootstrap, seed, inputs, driver) still need the source Cells (cells@2.0.0) and
-WeKnora candidate deliveries rendered from bootstrap identities fixed in advance, and the
-bootstrap/seed/observe/driver inputs; a run records what remains in auto-state.json
-(blockedAfterModelRoutes) and stops there with an explicit FAILED state instead of an operator step.
+  native     independent WeKnora deployment through its original provisioning and Compose entries;
+             governed native-page binding, member directory, model credential delivery and real
+             OIDC Admin session; original APIs create this run's KB and exactly scoped MCP endpoint
+
+Later stages still need the source Cells (cells@2.0.0), both receiver adapter deliveries rendered
+from bootstrap identities fixed in advance, and bootstrap/seed/observe/driver inputs. A run records
+what remains in auto-state.json and stops with an explicit FAILED state instead of an operator step.
 
 Nothing here touches production state; production is only read (its .env keys, its running
 Core/Worker image digests and the release-proof store).
 """
 import json
+import hashlib
 import os
 from pathlib import Path
 import re
@@ -106,7 +110,12 @@ def platform_env(h, r, project):
         "PUBLIC_HOST": "127.0.0.1", "PUBLIC_BIND_ADDR": "127.0.0.1", "OIDC_HOST": OIDC_HOST,
         "PLATFORM_EDGE_NETWORK": f"{project}-edge",
         # Origins of the candidate releases (strings Core compares; nothing is served there).
-        "NATIVE_PAGE_ORIGINS": "\"http://192.168.0.193:58092 http://192.168.0.193:58094\"",
+        "NATIVE_PAGE_ORIGINS": '"http://192.168.0.193:58092 http://192.168.0.193:58094 '
+                               + r.state["knowledgeNative"]["origin"] + '"',
+        # The receiver bootstrap refuses a database with the production name,
+        # even when it is hosted by a different isolated PostgreSQL instance.
+        "CORE_DB_NAME": "receiver_" + project.rsplit("-", 1)[-1],
+        "COMPONENT_DIRECTORY_CLIENTS": "knowledge=" + r.state["knowledgeNative"]["directoryClient"],
         "AUTOMATION_WEBHOOK_PUBLIC_BASE_URL": "",
     })
     overrides.update({k: str(v) for k, v in ports.items()})
@@ -336,7 +345,15 @@ def ensure_sessions(h, r):
     }
     argv = ["env", *[f"{key}={value}" for key, value in values.items()], "/usr/local/bin/node",
             f"{r.state['source']}/tools/component-release/flow/receiver-sessions.mjs", "--out", str(session_dir)]
-    h.write_private(command, "#!/usr/bin/env bash\nset -euo pipefail\nexec " + shlex.join(argv) + "\n", 0o700)
+    script = "#!/usr/bin/env bash\nset -euo pipefail\n" + shlex.join(argv) + "\n"
+    native_input = r.dir / "receiver" / "knowledge" / "native-input.json"
+    native_state = native_input.parent / "native.json"
+    native_argv = argv[:-3] + [f"{r.state['source']}/tools/component-release/flow/receiver-knowledge-native.mjs",
+                              "--input", str(native_input), "--refresh-only"]
+    # Once native setup has succeeded, refresh that real session alongside the
+    # isolated Core sessions before every governed seed/driver operation.
+    script += f"if test -f {shlex.quote(str(native_state))}; then\n  {shlex.join(native_argv)}\nfi\n"
+    h.write_private(command, script, 0o700)
     h.run([str(command)], log=r.log)
     receiver_env(h, r, {"RECEIVER_SESSION_COMMAND": str(command)})
     r.record(sessionIdentities=h.read_json(session_dir / "identities.json"))
@@ -367,7 +384,177 @@ def ensure_model_routes(h, r, declaration):
     return routes
 
 
+def declare_native(h, r):
+    """Freeze independent native addresses before creating the isolated platform."""
+    if "knowledgeNative" not in r.state:
+        suffix = r.dir.name.rsplit("-", 1)[-1]
+        port = h.free_port(59400, 59500)
+        r.record(knowledgeNative={"project": f"kailo-knowledge-receiver-{suffix}",
+                                  "origin": f"http://127.0.0.1:{port}", "port": port,
+                                  "subnets": h.free_subnets(2, prefix="10.204.", start=16, stop=250),
+                                  "directoryClient": f"knowledge-directory-{suffix}"})
+
+
+def runtime_environment(h, r):
+    """Resolve the staged deployment's literal non-secret declarations only."""
+    values = {}
+    for line in _env_lines(r.dir / "receiver/apps/deploy/local/.env"):
+        match = re.fullmatch(r"([A-Z][A-Z0-9_]*)=(.*)", line)
+        if match:
+            values[match[1]] = match[2].strip().strip("'\"")
+
+    def resolve(key, seen=()):
+        h.require(key in values and key not in seen, "isolated deployment variable is missing or cyclic")
+        return re.sub(r"\$\{([A-Z][A-Z0-9_]*)\}", lambda m: resolve(m[1], (*seen, key)), values[key])
+
+    return {key: resolve(key) for key in values}
+
+
+def ensure_knowledge_native(h, r, declaration):
+    """Original native deployment, directory, model delivery, then OIDC KB/MCP creation.
+
+    The native-page binding is local to this receiver's Catalog and Tenant. Its
+    normal workflow supplies the model key and directory authorization; no
+    fixture role, model key, native ID or receipt is invented by this runner.
+    """
+    state = r.state
+    source, facts = state["source"], state["knowledgeNative"]
+    local = r.dir / "receiver/apps/deploy/local"
+    directory = h.private_dir(r.dir / "receiver/knowledge")
+    secrets_dir = h.private_dir(directory / "secrets")
+    model_dir = h.private_dir(directory / "models")
+    runtime = runtime_environment(h, r)
+    runtime_env = {**os.environ, "KAILO_RUNTIME_DIR": str(local), "COMPOSE_PROJECT_NAME": state["project"]}
+    recipe = hashlib.sha256((Path(source) / "tools/check.Dockerfile").read_bytes()).hexdigest()
+    check_image = h.docker("image", "inspect", "--format", "{{.Id}}", f"local/kailo-check:{recipe}").strip()
+    bao_image = h.docker("inspect", "--format", "{{.Config.Image}}", f"{state['project']}-openbao-1").strip()
+    h.require("@sha256:" in bao_image, "isolated OpenBao image must be digest-pinned")
+
+    def agent(hcl, mount):
+        h.docker("run", "--rm", "--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
+                 "--cpus", "0.5", "--memory", "128m", "--memory-swap", "128m", "--pids-limit", "64",
+                 "--user", f"{os.getuid()}:{os.getgid()}", "--network", f"{state['project']}_app",
+                 "--mount", f"type=bind,src={mount},dst={mount}", "--entrypoint", "bao", bao_image,
+                 "agent", "-config=" + str(hcl), log=r.log, timeout=180)
+
+    provision = {
+        "KNOWLEDGE_PROVISION_TIMEOUT_SECONDS": "30", "KNOWLEDGE_DELIVERY_DIRECTORY": str(secrets_dir),
+        "KNOWLEDGE_IDP_ADMIN_URL": f"http://{OIDC_HOST}:{runtime['KEYCLOAK_PORT']}",
+        "KNOWLEDGE_IDP_REALM": runtime["OIDC_REALM"], "KNOWLEDGE_IDP_ADMIN_USER": runtime["KEYCLOAK_ADMIN_USER"],
+        "KNOWLEDGE_IDP_ADMIN_PASSWORD_FILE": str(local / "secrets/keycloak_admin_password"),
+        "KNOWLEDGE_NATIVE_ORIGIN": facts["origin"], "KNOWLEDGE_OIDC_CLIENT_ID": facts["project"],
+        "KNOWLEDGE_OIDC_ISSUER_URL": runtime["OIDC_ISSUER"], "KNOWLEDGE_BAO_NAMESPACE": "knowledge-native",
+        "KNOWLEDGE_BAO_KV_MOUNT": "kv", "KNOWLEDGE_BAO_SECRET_PATH": "native", "KNOWLEDGE_BAO_ROLE": "native-reader",
+        "KNOWLEDGE_BAO_TOKEN_TTL": "1h", "KNOWLEDGE_BAO_WRAP_TTL": "5m", "KNOWLEDGE_BAO_URL": runtime["OPENBAO_ADDR"],
+        "KNOWLEDGE_BAO_BOOTSTRAP_FILE": str(local / "secrets/openbao_init.json"),
+    }
+    provision_file = h.env_file(directory / "provision.env", provision)
+    if not (secrets_dir / "redis_config").is_file():
+        # Provisioning executes on the isolated platform network; the original
+        # helper reads its operator credentials from this run's private mount.
+        h.docker("run", "--rm", "--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
+                 "--cpus", "1", "--memory", "256m", "--memory-swap", "256m", "--pids-limit", "64",
+                 "--user", f"{os.getuid()}:{os.getgid()}", "--network", f"{state['project']}_app",
+                 "--mount", f"type=bind,src={source},dst=/src,readonly",
+                 "--mount", f"type=bind,src={r.dir},dst={r.dir}", "--env-file", str(provision_file),
+                 "--entrypoint", "python3", check_image, "/src/knowledge/fork/deploy/provision.py", "native",
+                 log=r.log, timeout=180)
+        agent(secrets_dir / "agent.hcl", secrets_dir)
+
+    page_release = h.private_dir(directory / "page-release", 0o755)
+    if not (page_release / "manifest.json").is_file():
+        r.node("none", "tools/component-release/render.mjs", "--component", "knowledge", "--material", "native-page",
+               "--source-commit", state["commit"], "--native-page-origin", facts["origin"], "--out", str(page_release))
+    flow(h, r, "component-register.mjs", "--release-dir", str(page_release))
+    flow(h, r, "component-approve.mjs", "--release-dir", str(page_release), "--approver", "kailo-platform-approver")
+    plan_file = directory / "page-binding.json"
+    flow(h, r, "component-bind.mjs", "--component", "knowledge", "--release-dir", str(page_release),
+         "--native-page-url", facts["origin"] + "/", "--native-instance-ref", facts["project"],
+         "--directory-client-id", facts["directoryClient"], "--model-route-ids", ",".join(state["modelRoutes"].values()),
+         "--meter-keys", "component_model_tokens", "--plan-out", str(plan_file))
+    binding = h.read_json(plan_file)
+    for operation, args in (("export", [str(model_dir), binding["bindingId"]]), ("prepare", [str(model_dir)])):
+        h.run(["bash", "./bootstrap.sh", "--native-model-delivery", operation, *args], cwd=str(local), env=runtime_env, log=r.log)
+    agent(model_dir / "model-agent.hcl", model_dir)
+
+    # Measure the embedding through this binding's own governed Gateway key.
+    # The declaration's dimension is an assertion, never a substituted result.
+    # The model listener is intentionally private and has no host port. Read
+    # only this run's delivered key inside a bounded container on its app net.
+    probe = '''import json, sys, urllib.request
+try:
+    with open(sys.argv[1]) as stream:
+        key = json.load(stream)["value"]
+    request = urllib.request.Request(sys.argv[2].rstrip("/") + "/embeddings", method="POST",
+        data=json.dumps({"model": sys.argv[3], "input": "Kailo receiver conformance"}).encode(),
+        headers={"Authorization": "Bearer " + key, "Content-Type": "application/json"})
+    with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(request, timeout=60) as response:
+        vector = json.load(response)["data"][0]["embedding"]
+    assert isinstance(vector, list) and len(vector) == int(sys.argv[4])
+    assert all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in vector)
+    print(len(vector))
+except Exception:
+    sys.exit("isolated native embedding probe failed; no credential details logged")
+'''
+    dimension = int(h.docker("run", "--rm", "--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
+        "--cpus", "0.5", "--memory", "128m", "--memory-swap", "128m", "--pids-limit", "64",
+        "--user", f"{os.getuid()}:{os.getgid()}", "--network", f"{state['project']}_app",
+        "--mount", f"type=bind,src={model_dir / 'credential.json'},dst=/credential.json,readonly",
+        "--entrypoint", "python3", check_image, "-I", "-c", probe, "/credential.json", runtime["AGENTGATEWAY_MODEL_BASE_URL"],
+        declaration["conformanceModels"]["embedding"]["model"], str(declaration["conformanceModels"]["embedding"]["dimension"]),
+        timeout=90).strip())
+
+    upstream = (Path(source) / "knowledge/fork/upstream.yaml").read_text()
+    native_env = {"COMPOSE_PROJECT_NAME": facts["project"], "KNOWLEDGE_UI_BIND_ADDRESS": "127.0.0.1",
+        "KNOWLEDGE_UI_PORT": str(facts["port"]), "KNOWLEDGE_UI_SUBNET": facts["subnets"][0], "KNOWLEDGE_DATA_SUBNET": facts["subnets"][1],
+        "KNOWLEDGE_DB_USER": "weknora", "KNOWLEDGE_DB_NAME": "weknora", "KNOWLEDGE_NATIVE_ORIGIN": facts["origin"],
+        "KNOWLEDGE_OIDC_ISSUER_URL": runtime["OIDC_ISSUER"], "KNOWLEDGE_OIDC_DISCOVERY_URL": runtime["OIDC_ISSUER"] + "/.well-known/openid-configuration",
+        "KNOWLEDGE_OIDC_CLIENT_ID": facts["project"], "KNOWLEDGE_SSRF_WHITELIST_EXTRA": OIDC_HOST,
+        "PLATFORM_DISPLAY_NAME": runtime["PLATFORM_DISPLAY_NAME"], "KAILO_TENANT_ID": state["sessionIdentities"]["human"]["tenantId"],
+        "KAILO_TENANT_NAME": runtime["VERIFY_TENANT_NAME"], "KAILO_SESSION_MAX_LIFETIME": "1h",
+        "KNOWLEDGE_DIRECTORY_BINDING_ID": binding["bindingId"], "KNOWLEDGE_DIRECTORY_CLIENT_ID": facts["directoryClient"],
+        "KNOWLEDGE_DIRECTORY_CLIENT_SECRET_FILE": str(local / "secrets/component-directory/knowledge/client_secret"),
+        "KNOWLEDGE_DIRECTORY_TOKEN_URL": runtime["OIDC_ISSUER"] + "/protocol/openid-connect/token",
+        "KNOWLEDGE_DIRECTORY_CORE_URL": f"http://{runtime['BFF_SERVICE_NAME']}:{runtime['SERVICE_CONTAINER_PORT']}",
+        "KNOWLEDGE_DIRECTORY_INTERVAL_SECONDS": "60", "KNOWLEDGE_ADAPTER_PLATFORM_NETWORK": f"{state['project']}_app",
+        "KNOWLEDGE_NATIVE_MODEL_DELIVERY_DIR": str(model_dir), "KNOWLEDGE_MODEL_SECRET_ENV_FILE": str(model_dir / "model.env"),
+        "KNOWLEDGE_BUILTIN_MODELS_FILE": str(model_dir / "builtin-models.yaml"),
+        "KNOWLEDGE_MODEL_CHAT_ID": declaration["conformanceModels"]["chat"]["model"],
+        "KNOWLEDGE_MODEL_EMBEDDING_ID": declaration["conformanceModels"]["embedding"]["model"],
+        "KNOWLEDGE_MODEL_EMBEDDING_DIM": str(dimension), "KNOWLEDGE_MODEL_API_KEY_NAME": "KAILO_MODEL_RECEIVER"}
+    for key in ("DB_PASSWORD", "REDIS_PASSWORD", "REDIS_CONFIG", "SYSTEM_AES_KEY", "SYSTEM_SIGNING_KEY", "JWT_SECRET", "OIDC_CLIENT_SECRET"):
+        native_env["KNOWLEDGE_" + key + "_FILE"] = str(secrets_dir / key.lower())
+    for role, artifact in (("APP", "knowledge-service"), ("UI", "knowledge-native-ui"), ("DOCREADER", "knowledge-document-reader")):
+        digest = re.search(r"- name: " + artifact + r"\n(?:.*\n)*?\s+artifact_digest: sha256:([0-9a-f]{64})", upstream)
+        h.require(digest, f"{artifact} has no fixed artifact")
+        native_env[f"KNOWLEDGE_{role}_REPOSITORY"] = f"{declaration['registry']}/{artifact}"
+        native_env[f"KNOWLEDGE_{role}_DIGEST"] = digest[1]
+    env_file = h.env_file(directory / "native.env", native_env)
+    h.run(["python3", "-I", f"{source}/deploy/components/native-config.py", "apply", "knowledge", "--env", str(env_file),
+           "--source", state["commit"], "--backup-dir", str(h.private_dir(directory / "backups"))], env=runtime_env, log=r.log)
+    h.run(["bash", "./bootstrap.sh", "--native-model-delivery", "materialize-weknora", str(env_file)], cwd=str(local), env=runtime_env, log=r.log)
+    receiver_env(h, r, {"RECEIVER_KNOWLEDGE_ENV": str(env_file)})
+    # First start all independent dependencies. The platform overlay entry only
+    # updates app (--no-deps); applying it to an empty project cannot work.
+    native_process_env = {**runtime_env, "COMPOSE_PROJECT_NAME": facts["project"]}
+    deployment = Path(source) / "knowledge/fork/deploy"
+    images = h.docker("compose", "--project-directory", str(deployment), "--env-file", str(env_file),
+                      "-f", str(deployment / "compose.yaml"), "config", "--images").splitlines()
+    h.require(images and all(re.fullmatch(r"[^\s@]+@sha256:[0-9a-f]{64}", value) for value in images),
+              "every isolated native dependency must have a fixed image digest")
+    for image in sorted(set(images)):
+        h.docker("pull", image, log=r.log)
+    h.run(["bash", f"{source}/knowledge/fork/deploy/start.sh", "--native-env", str(env_file)], env=native_process_env, log=r.log)
+    h.run(["bash", f"{source}/knowledge/fork/deploy/start.sh", "--native-env", str(env_file), "--platform-model", str(local / ".env")],
+          env=native_process_env, log=r.log)
+    native_input = h.write_json(directory / "native-input.json", {"directory": str(directory), "origin": facts["origin"], "name": state["project"]})
+    flow(h, r, "receiver-knowledge-native.mjs", "--input", str(native_input))
+    r.record(knowledgeObjects=h.read_json(directory / "native.json"))
+    h.say("isolated-knowledge-native", status="READY")
+
+
 def drive(r, args, runtime_env, declaration, h):
+    declare_native(h, r)
     s = r.state
     if "project" not in s:
         run_id = r.dir.name.rsplit("-", 1)[-1]
@@ -393,19 +580,20 @@ def drive(r, args, runtime_env, declaration, h):
     ensure_action_token(h, r)
     ensure_sessions(h, r)
     ensure_model_routes(h, r, declaration)
-    r.record(blockedAfterModelRoutes=(
-        "native/bootstrap/seed/inputs/driver not automated yet: (1) source Cells cells@2.0.0 instance (file-storage "
+    ensure_knowledge_native(h, r, declaration)
+    r.record(blockedAfterNative=(
+        "adapter/bootstrap/seed/inputs/driver not automated yet: (1) source Cells cells@2.0.0 instance (file-storage "
         "helpers in a sub run directory) with its native-action and adapter delivery bound to the isolated Core: "
         "isolated IdP adapter client, Agent/AppRole in the isolated platform OpenBao, binding SecretRefs written "
         "there at the bootstrap's fixed locators, an adapters[] entry with nativeResources evidence in "
-        "RECEIVER_ADAPTER_DIRECTORY_FILE; (2) WeKnora candidate native env (secrets, isolated OIDC client, native "
-        "models over the governed routes) with --platform-adapter --file-storage-sync and the forward adapter "
+        "RECEIVER_ADAPTER_DIRECTORY_FILE; (2) WeKnora candidate adapter delivery "
+        "with --platform-adapter --file-storage-sync and the forward adapter "
         "configuration for the production Worker (Core's isolated conformance identity); (3) bootstrap input "
         "(receiver-environment-bootstrap.rs prepare: endpoints, resources/preconditions, three isolated session "
-        "token files), seed-knowledge input, observe receiver block, driver input and RECEIVER_SESSION_COMMAND; "
+        "token files), seed-knowledge input, observe receiver block and driver input; "
         "(4) production registration also needs cells@2.0.0 APPROVED in the production Catalog"))
-    raise h.Refused("knowledge: isolated platform, contracts and ActionToken identity ready; native and later receiver "
-                    f"stages are not automated yet (auto-state.json blockedAfterIdentity; {manifest['componentTypeKey']}@{manifest['version']})")
+    raise h.Refused("knowledge: isolated native objects ready; adapter and later receiver "
+                    f"stages are not automated yet (auto-state.json blockedAfterNative; {manifest['componentTypeKey']}@{manifest['version']})")
 
 
 def teardown(r, h):
