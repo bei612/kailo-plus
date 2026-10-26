@@ -625,7 +625,7 @@ async fn native_delivery_posts_original_event_with_fresh_device_auth_and_fences_
 async fn persisted_community_signed_post_requires_matching_ack_before_acceptance() {
     use base64::Engine;
     use std::io::{Read, Write};
-    for acknowledgement in ["missing", "different", "matching"] {
+    for acknowledgement in ["missing", "different", "unauthorized", "forbidden", "matching"] {
         let temp = tempfile::tempdir().unwrap();
         let path = temp.path().join("journal.sqlite");
         let (mut io, review) = consumer_fixture(&path, "NOT_DELIVERED");
@@ -704,7 +704,8 @@ async fn persisted_community_signed_post_requires_matching_ack_before_acceptance
                 _ => {}
             }
             let response = response.to_string();
-            write!(socket,"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",response.len(),response).unwrap();
+            let status = match acknowledgement { "unauthorized" => "401 Unauthorized", "forbidden" => "403 Forbidden", _ => "200 OK" };
+            write!(socket,"HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",response.len(),response).unwrap();
         });
         let mut intent = io.frozen.clone();
         let result = ensure_status_with(&io, &path, &mut intent, &review).await;

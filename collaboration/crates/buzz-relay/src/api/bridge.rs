@@ -812,14 +812,7 @@ pub async fn submit_event(
     // runs inside the helper.  The thin wrapper here owns the single terminal
     // attribution line so it fires for every outcome, including admission/
     // replay/membership failures that previously returned before any log fired.
-    let mut outcome = submit_event_authed(
-        &state,
-        &tenant,
-        &headers,
-        &body,
-        &auth,
-    )
-    .await;
+    let mut outcome = submit_event_authed(&state, &tenant, &headers, &body, &auth).await;
 
     if let (Some(id), SubmitOutcome::Ok { response, .. }) = (community, &mut outcome) {
         // This is the same immutable TenantContext passed to ingest, not a new Host lookup.
@@ -980,7 +973,9 @@ async fn submit_event_authed(
     // the exact TenantContext captured before auth throughout the writer path.
     if verified.publication_community.is_ok_and(|id| id.is_some()) {
         let admitted = match buzz_core::publication::merged_status_repository(&event, &pubkey) {
-            Ok(repo) => super::delivery::readmit(state, tenant, headers, verified, repo).await.is_ok(),
+            Ok(repo) => super::delivery::readmit(state, tenant, headers, verified, repo)
+                .await
+                .is_ok(),
             Err(_) => false,
         };
         if !admitted {
