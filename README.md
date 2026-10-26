@@ -23,6 +23,15 @@ push **31**、profile **2**、feedback **2**、HUMAN policy **2** 均通过。
 仅对 scripted HTTP，receiver bootstrap 未执行真实接收方完整激活；详见
 [最新联合回执](core/verify/phase1-integration-core-dd81-20261026.json)。
 
+共享发布肯定证据检查固定 `438baa968`：原 SDK 2 CPU / 4 GiB，collab-bridge
+**74+9+3=86** 项、check、Clippy 与格式检查通过。实际关闭 `Event::verify` 后
+原 HTTP 消费者断言失败（exit 101），按最终 GitHub 原件逐字恢复后 3 项通过。
+该批未运行 PG 或真实 Relay；原查询与响应体读取的 deadline 缺口仍保留。
+最新集成 `ff6109005` 的原 `platform-core` binary 检查 **835 passed / 0 failed /
+85 ignored**，4 CPU / 16 GiB；未投递 PG/live 环境，环境早返不算集成通过，
+没有重跑迁移、SQLx、Clippy 或 workspace full。两次先前命令/快照失败原样保留。
+固定来源、回执摘要及未覆盖范围见[发布证据增量](core/verify/projects-publication-receipt.md)。
+
 较早 `06712387a` 的真实 `pg_notify` 删除反向与恢复通过仍独立保留于
 [原联合回执](core/verify/phase1-integration-core-20261026.json)，不改写旧失败或忽略项。
 
@@ -61,6 +70,11 @@ Android FCM 原生批也已进入候选：固定 `76a879c21` 的 Flutter 消费�
 退出 0：393 引用、96 实体、160 DD、30 SS、260 场景及设计 22 篇均闭合，
 markdownlint 无问题。原件在 CI
 `/volumes/data/kailo/verification/phase1-integration/docs-d6469e936/`，不含源码编译。
+
+随后固定 `ff6109005482332eb8c3a19857fd23d2153938fd` 与同一设计 pin 的原
+文档门禁亦退出 0；CI 原件为上述 verification 根下
+`docs-ff6109005-final-docs-r2/`。这是该固定源码的 docs 结果，不把旧源检查外推为
+最新 full；本次两份文档追加后的门禁另按其提交记录。
 
 较早固定源码 `a52203970` 已通过原 `docs`、`migrate`、`lint`、`contract`、
 `verify`、`replay`、`trace` 七步；Rust 主目标 809 项、平台 TS 1979 项、Web 726
