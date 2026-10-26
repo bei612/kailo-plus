@@ -499,12 +499,10 @@ class CellsNative:
 
     def ensure_user(self, admin_token, login):
         """Create a standard native user through REST PUT /a/user/{Login} (password in the body only)."""
-        try:
-            found = self.call(admin_token, "GET", "user/" + login)
-            if found.get("Uuid"):
-                return found["Uuid"]
-        except Refused:
-            pass
+        found = self.call(admin_token, "GET", "user/" + login, missing=True)
+        if found is not None:
+            require(found.get("Uuid"), f"native user {login} read-back has no identity")
+            return found["Uuid"]
         created = self.call(admin_token, "PUT", "user/" + login, {
             "Login": login, "Password": secret_text(32), "GroupPath": "/",
             "Attributes": {"profile": "standard"}})

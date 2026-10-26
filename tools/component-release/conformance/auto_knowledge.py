@@ -46,6 +46,7 @@ import re
 import shlex
 import secrets
 import socket
+import time
 import urllib.parse
 import urllib.request
 import uuid
@@ -515,6 +516,12 @@ def ensure_knowledge_native(h, r, declaration):
     """
     state = r.state
     source, facts = state["source"], state["knowledgeNative"]
+    if state.get("knowledgeObjects"):
+        # A later adapter/model overlay must survive resumption. Reconcile the
+        # confirmed native API objects, never restart it as an unbound app.
+        flow(h, r, "receiver-knowledge-native.mjs", "--input", str(r.dir / "receiver/knowledge/native-input.json"))
+        h.require(h.read_json(r.dir / "receiver/knowledge/native.json") == state["knowledgeObjects"], "confirmed receiver native objects changed")
+        return
     local = r.dir / "receiver/apps/deploy/local"
     directory = h.private_dir(r.dir / "receiver/knowledge")
     secrets_dir = h.private_dir(directory / "secrets")
@@ -692,19 +699,31 @@ def ensure_source_native(h, r):
     # source project using the same original entry and this exact native env.
     receiver_env(h, r, {"RECEIVER_CELLS_ENV": str(env_file)})
     start = ["bash", f"{source}/file-storage/deploy/start.sh", str(env_file)]
-    result = h.run(start, log=r.log, check=False)
-    if result.returncode == 75:  # Original entry documents the first-install restart.
+    confirmed_source = r.state.get("sourceNative")
+    if not confirmed_source:
         result = h.run(start, log=r.log, check=False)
-    h.require(result.returncode == 0, "source Cells native deployment refused; inspect its original run log")
+        if result.returncode == 75:  # Original entry documents the first-install restart.
+            result = h.run(start, log=r.log, check=False)
+        h.require(result.returncode == 0, "source Cells native deployment refused; inspect its original run log")
     native = h.CellsNative(cells)
     admin_token = native.token(admin)
-    service_id = native.ensure_user(admin_token, service)
-    actor_id = native.ensure_user(admin_token, actor)
+    if confirmed_source:
+        # Resume reads the original users and keeps all active delivery
+        # overlays. A missing confirmed identity is never recreated.
+        service_id = native.call(admin_token, "GET", "user/" + service).get("Uuid")
+        actor_id = native.call(admin_token, "GET", "user/" + actor).get("Uuid")
+        h.require(service_id == confirmed_source["serviceUuid"] and actor_id == confirmed_source["actorUuid"],
+                  "confirmed source identities changed")
+    else:
+        service_id = native.ensure_user(admin_token, service)
+        actor_id = native.ensure_user(admin_token, actor)
     for login, name in ((admin, "admin.pat"), (service, "service.pat"), (actor, "actor.pat")):
         if not (directory / "secrets" / name).is_file():
+            h.require(not confirmed_source, "confirmed source native credential is missing")
             h.write_private(directory / "secrets" / name, native.token(login) + "\n")
-    h.cells_native_env(cells, f"{admin}:rw {service}:r {actor}:rw", service)
-    h.run(["bash", f"{source}/file-storage/deploy/start.sh", "--reconcile", str(env_file)], log=r.log)
+    if not confirmed_source:
+        h.cells_native_env(cells, f"{admin}:rw {service}:r {actor}:rw", service)
+        h.run(["bash", f"{source}/file-storage/deploy/start.sh", "--reconcile", str(env_file)], log=r.log)
     binding = h.read_json(directory / "binding/facts.json")
     h.require(binding["instanceServiceUuid"] == service_id, "source service identity differs from native binding facts")
     requirements_file = directory / "receiver-requirements.json"
@@ -752,20 +771,35 @@ def ensure_adapter_secrets(h, r):
     local = r.dir / "receiver/apps/deploy/local"
     tenant = state["sessionIdentities"]["human"]["tenantId"]
     intents = state.get("adapterIntents")
+    plans = {}
+    source_cells = h.Run(r.dir / "receiver/source-cells")
+    for role, component, release_dir, native, scope in (
+        ("SOURCE", "file-storage", source_cells.state["releaseDir"], state["sourceNative"]["project"], state["sourceNative"]["nativeScopeRef"]),
+        ("RECEIVER", "knowledge", state["releaseDir"], state["knowledgeNative"]["project"], state["knowledgeObjects"]["knowledgeBaseId"]),
+    ):
+        directory = h.private_dir(r.dir / "receiver" / ("source-cells" if role == "SOURCE" else "knowledge"))
+        plan_file = directory / "adapter-plan.json"
+        manifest = h.read_json(Path(release_dir) / "manifest.json")
+        origins = manifest["frontendDelivery"]["nativePageOrigins"]
+        h.require(len(origins) == 1, "receiver release native origin is ambiguous")
+        extra = (["--model-route-ids", ",".join(state["modelRoutes"].values()), "--meter-keys", "component_model_tokens",
+                  "--model-call-mode", "PLATFORM_LLM_ROUTE"] if role == "RECEIVER" else [])
+        flow(h, r, "component-bind.mjs", "--component", component, "--release-dir", release_dir,
+             "--native-page-url", origins[0] + "/", "--native-instance-ref", native, "--native-scope-ref", scope,
+             "--client-id", state["project"] + "-" + role.lower() + "-adapter", "--plan-only", "--tenant-id", tenant,
+             "--plan-out", str(plan_file), *extra)
+        plans[role] = h.read_json(plan_file)
     if intents is None:
-        intents = {}
-        for role, native_key, audience in (
-            ("SOURCE", "cells_bearer", "kailo-adapter-file-storage"),
-            ("RECEIVER", "native_mcp_bearer", "kailo-adapter-knowledge"),
-        ):
-            binding_id = str(uuid.uuid4())
-            intents[role] = {"bindingId": binding_id, "servicePrincipalId": str(uuid.uuid4()),
-                "bindingIdempotencyKey": str(uuid.uuid4()), "tenantId": tenant, "generation": 1,
-                "clientId": state["project"] + "-" + role.lower() + "-adapter",
-                "secretRefs": [{"secretKey": key, "locator": f"tenants/{tenant}/kv/application-binding/{binding_id}/{key}",
-                                "version": 1, "audience": audience} for key in (native_key, "oidc_client_secret")]}
-        # Intent precedes all KV effects, making interruption retry read-only.
+        intents = {role: {"bindingId": plan["bindingId"], "servicePrincipalId": plan["servicePrincipalId"],
+                           "bindingIdempotencyKey": str(uuid.uuid4()), "tenantId": tenant, "generation": plan["bindingVersion"],
+                           "clientId": plan["clientId"], "secretRefs": plan["secretRefs"]}
+                   for role, plan in plans.items()}
+        # Original plan identities precede every KV effect. They are proposals
+        # until bootstrap confirms the actual application_binding.create.
         r.record(adapterIntents=intents)
+    for role, plan in plans.items():
+        h.require(all(intents[role][key] == plan[key] for key in
+                      ("bindingId", "servicePrincipalId", "tenantId", "clientId", "secretRefs")), "retained adapter plan changed")
     h.require(set(intents) == {"SOURCE", "RECEIVER"}
               and all(item["tenantId"] == tenant for item in intents.values()), "adapter bootstrap tenant changed")
     endpoints = []
@@ -781,6 +815,115 @@ def ensure_adapter_secrets(h, r):
            "--input", str(input_file))
     r.record(adapterSecretReferencesPrepared=True)
     h.say("isolated-adapter-secrets", status="FIXED_REFERENCES_PREPARED")
+
+
+def ensure_adapter_readers(h, r):
+    """Original adapter renderer, least-privilege Agent and IdP client delivery.
+
+    This does not start either adapter or claim its binding ACTIVE. Cells'
+    native-action configuration still requires actual result-exposure facts.
+    """
+    source, state = r.state["source"], r.state
+    local = r.dir / "receiver/apps/deploy/local"
+    runtime = runtime_environment(h, r)
+    signing = h.read_json(runtime["ACTION_TOKEN_SIGNING_FILE"])
+    gateway = state["gatewayIdentity"]
+    tool = f"{source}/deploy/components/adapter-delivery.py"
+    recipe = hashlib.sha256((Path(source) / "tools/check.Dockerfile").read_bytes()).hexdigest()
+    image = h.docker("image", "inspect", "--format", "{{.Id}}", f"local/kailo-check:{recipe}").strip()
+    bao_image = h.docker("inspect", "--format", "{{.Config.Image}}", f"{state['project']}-openbao-1").strip()
+    h.require("@sha256:" in bao_image, "isolated Agent image must be immutable")
+    def delivery(*args):
+        h.docker("run", "--rm", "--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
+                 "--cpus", "0.5", "--memory", "256m", "--memory-swap", "256m", "--pids-limit", "64",
+                 "--user", f"{os.getuid()}:{os.getgid()}", "--network", f"{state['project']}_app",
+                 "--mount", f"type=bind,src={source},dst={source},readonly",
+                 "--mount", f"type=bind,src={r.dir},dst={r.dir}", "--entrypoint", "python3", image,
+                 "-I", tool, *args, log=r.log, timeout=180)
+    readers = dict(state.get("adapterReaders", {}))
+    for role, component in (("SOURCE", "file-storage"), ("RECEIVER", "knowledge")):
+        directory = r.dir / "receiver" / ("source-cells" if role == "SOURCE" else "knowledge")
+        outputs = h.private_dir(directory / "adapter-delivery")
+        bootstrap = h.private_dir(directory / "agent-bootstrap")
+        plan_file, config_file = directory / "adapter-plan.json", outputs / "adapter.json"
+        plan = h.read_json(plan_file)
+        release_dir = h.Run(directory).state["releaseDir"] if role == "SOURCE" else state["releaseDir"]
+        sets = (["--set", "nativeRootRef=" + state["sourceNative"]["nativeRootRef"],
+                 "--set", "downloadOrigin=" + h.Run(directory).state["external"], "--set", "bindingGeneration=1",
+                 "--public-file", "action-token-jwks.json=" + signing["jwksFile"]] if role == "SOURCE" else
+                ["--set", "nativeMcpEndpointId=" + state["knowledgeObjects"]["mcpEndpointId"]])
+        manifest = h.read_json(Path(release_dir) / "manifest.json")
+        registration = []
+        for contract in manifest["implements"]:
+            registration += ["--registration", f"{source}/contracts/adapter/{contract['categoryKey']}.v{contract['contractVersion']}/registration.json"]
+        delivery("config", "--plan", str(plan_file), "--template", f"{source}/deploy/components/{component}-adapter.template.json",
+                 "--delivery-dir", str(outputs), "--env-file", str(local / ".env"),
+                 "--action-token-signing-file", runtime["ACTION_TOKEN_SIGNING_FILE"],
+                 "--public-file", "gateway-service-jwks.json=" + gateway["jwksFile"],
+                 "--release-dir", release_dir, *registration, *sets, "--out", str(config_file))
+        role_name = f"receiver-{role.lower()}-{plan['bindingId']}"
+        # Never replace a running Agent's wrapped credential underneath it.
+        # Original Agent renews its token; a stopped delivery gets a new wrap.
+        agent_project = (state["project"] + "-source-reader" if role == "SOURCE" else state["knowledgeNative"]["project"])
+        container = agent_project + "-adapter-agent-1"
+        running = h.docker("ps", "-q", "--filter", "name=^/" + container + "$", "--filter", "label=com.docker.compose.project=" + agent_project).strip()
+        native_action = h.private_dir(directory / "native-action") if role == "SOURCE" else None
+        if not running:
+            extra = ["--extra-delivery-dir", str(native_action), "--extra-secret", "oidc_client_secret"] if native_action else []
+            delivery("reader", "--config", str(config_file), "--role", role_name, "--bootstrap-dir", str(bootstrap),
+                     "--bao-url", runtime["OPENBAO_ADDR"], "--agent-bao-url", runtime["OPENBAO_ADDR"],
+                     "--root-token-file", str(local / "secrets/openbao_init.json"), *extra)
+            if role == "SOURCE":
+                agent_env = h.env_file(directory / "adapter-agent.env", {"ADAPTER_AGENT_PROJECT": agent_project,
+                    "ADAPTER_AGENT_IMAGE": bao_image, "ADAPTER_AGENT_UID": str(os.getuid()), "ADAPTER_AGENT_GID": str(os.getgid()),
+                    "ADAPTER_AGENT_BOOTSTRAP_DIR": str(bootstrap), "ADAPTER_AGENT_DELIVERY_DIR": str(outputs),
+                    "ADAPTER_AGENT_PLATFORM_NETWORK": f"{state['project']}_app", "ADAPTER_AGENT_EXTRA_DIR": str(native_action)})
+                # Record the extra component Agent before its first start so
+                # closing a partially prepared run still removes its own reader.
+                r.record(sourceAdapterAgent={"project": agent_project, "envFile": str(agent_env)})
+                h.docker("compose", "--project-name", agent_project, "--env-file", str(agent_env),
+                         "-f", f"{source}/deploy/components/compose.adapter-agent.yaml",
+                         "-f", f"{source}/deploy/components/compose.adapter-agent.native.yaml",
+                         "up", "--detach", "--no-build", "--pull", "never", "adapter-agent", log=r.log, timeout=120)
+            else:
+                # WeKnora already declares its own Agent. Use that exact
+                # service so the later original --platform-adapter activation
+                # cannot race a second process on this credential socket.
+                native_env = directory / "native.env"
+                registry = h.read_json(Path(source) / "deploy/components/adapters.json")["knowledge"]["registry"]
+                repository, bao_digest = bao_image.split("@sha256:")
+                _set_env(h, native_env, {"KNOWLEDGE_ADAPTER_REPOSITORY": registry + "/knowledge-adapter",
+                    "KNOWLEDGE_ADAPTER_DIGEST": state["artifactDigest"], "KNOWLEDGE_ADAPTER_UID": str(os.getuid()),
+                    "KNOWLEDGE_ADAPTER_GID": str(os.getgid()), "KNOWLEDGE_ADAPTER_CPUS": "0.5", "KNOWLEDGE_ADAPTER_MEMORY": "256m",
+                    "KNOWLEDGE_ADAPTER_CONFIG_FILE": str(config_file), "KNOWLEDGE_ADAPTER_DELIVERY_DIRECTORY": str(outputs),
+                    "KNOWLEDGE_ADAPTER_JWKS_FILE": signing["jwksFile"], "KNOWLEDGE_ADAPTER_BOOTSTRAP_DIRECTORY": str(bootstrap),
+                    "KNOWLEDGE_ADAPTER_AGENT_REPOSITORY": repository, "KNOWLEDGE_ADAPTER_AGENT_DIGEST": bao_digest,
+                    "KNOWLEDGE_ADAPTER_AGENT_CPUS": "0.25", "KNOWLEDGE_ADAPTER_AGENT_MEMORY": "128m"})
+                h.docker("compose", "--project-name", agent_project, "--project-directory", f"{source}/knowledge/fork/deploy",
+                         "--env-file", str(native_env), "-f", f"{source}/knowledge/fork/deploy/compose.yaml",
+                         "-f", f"{source}/knowledge/fork/deploy/compose.adapter.yaml",
+                         "up", "--detach", "--no-build", "--pull", "never", "--no-deps", "adapter-agent", log=r.log, timeout=120)
+        # Agent delivery is ready only when all original files and the proxy
+        # socket exist with the declared owner/mode; never copy a plaintext key.
+        deadline = time.monotonic() + 60
+        while True:
+            files = [outputs / ref["secretKey"] for ref in plan["secretRefs"]]
+            if native_action:
+                files.append(native_action / "oidc_client_secret")
+            socket_file = outputs / "bao.sock"
+            if all(path.is_file() and path.stat().st_uid == os.getuid() and path.stat().st_mode & 0o077 == 0 for path in files) and socket_file.is_socket():
+                break
+            if time.monotonic() >= deadline:
+                raise h.Refused("isolated adapter Agent delivery did not become ready")
+            time.sleep(1)
+        delivery("client", "--config", str(config_file), "--issuer", runtime["OIDC_ISSUER"],
+                 "--admin-user", runtime["KEYCLOAK_ADMIN_USER"], "--admin-password-file", str(local / "secrets/keycloak_admin_password"),
+                 "--service-audience", runtime["OIDC_SERVICE_CLIENT_ID"], "--refuse-client-ids",
+                 ",".join(runtime.get(key, "") for key in ("OIDC_CLIENT_ID", "OIDC_SERVICE_CLIENT_ID", "OIDC_NATIVE_CLIENT_ID")))
+        readers[role] = {"project": agent_project, "roleName": role_name, "configFile": str(config_file), "deliveryDirectory": str(outputs),
+                         "bootstrapDirectory": str(bootstrap), "clientId": plan["clientId"]}
+        r.record(adapterReaders=readers)
+    h.say("isolated-adapter-readers", status="DELIVERED", clients=len(readers))
 
 
 def drive(r, args, runtime_env, declaration, h):
@@ -815,11 +958,11 @@ def drive(r, args, runtime_env, declaration, h):
     ensure_knowledge_native(h, r, declaration)
     ensure_source_native(h, r)
     ensure_adapter_secrets(h, r)
+    ensure_adapter_readers(h, r)
     r.record(blockedAfterNative=(
-        "adapter/bootstrap/seed/inputs/driver not automated yet: (1) source Cells cells@2.0.0 "
-        "native-action and adapter delivery bound to the isolated Core: "
-        "isolated IdP adapter client, Agent/AppRole in the isolated platform OpenBao, binding SecretRefs written "
-        "there at the bootstrap's fixed locators, an adapters[] entry with nativeResources evidence in "
+        "native-action/bootstrap/seed/inputs/driver not automated yet: (1) source Cells cells@2.0.0 "
+        "native-action requires actual ResultExposurePolicy identities/versions; reader/IdP preparation does not create them. "
+        "Both original adapter deliveries still need binding activation and an adapters[] entry with nativeResources evidence in "
         "RECEIVER_ADAPTER_DIRECTORY_FILE; (2) WeKnora candidate adapter delivery "
         "with --platform-adapter --file-storage-sync and the forward adapter "
         "configuration for the production Worker (Core's isolated conformance identity); (3) bootstrap input "
@@ -831,6 +974,14 @@ def drive(r, args, runtime_env, declaration, h):
 
 
 def teardown(r, h):
+    agent = r.state.get("sourceAdapterAgent")
+    if agent:
+        h.require(agent["project"] == r.state["project"] + "-source-reader"
+                  and Path(agent["envFile"]) == r.dir / "receiver/source-cells/adapter-agent.env", "source reader ownership differs")
+        h.docker("compose", "--project-name", agent["project"], "--env-file", agent["envFile"],
+                 "-f", f"{r.state['source']}/deploy/components/compose.adapter-agent.yaml",
+                 "-f", f"{r.state['source']}/deploy/components/compose.adapter-agent.native.yaml",
+                 "down", log=r.log, check=False)
     if (r.dir / "receiver.env").is_file():
         h.run(["bash", f"{r.state['source']}/tools/component-release/receiver-run.sh", str(r.dir / "receiver.env"), "down"],
               log=r.log, check=False)
