@@ -26,22 +26,26 @@ final tenantProfileLiveProvider = StreamProvider.autoDispose<TenantProfileView>(
   if (config == null ||
       scope.$1 != AuthStatus.authenticated ||
       pubkey == null ||
-      lifecycle != AppLifecycleState.resumed)
+      lifecycle != AppLifecycleState.resumed) {
     return;
+  }
   final session = ref.read(nativeSessionProvider);
   final generation = session.credentialGeneration;
   int? version, retryMillis;
   var retired = false;
-      Timer? retryTimer;
-      Completer<void>? waiting;
-      final network = ref.read(appLifecycleProvider.notifier).networkRestored.listen((_) {
+  Timer? retryTimer;
+  Completer<void>? waiting;
+  final network = ref
+      .read(appLifecycleProvider.notifier)
+      .networkRestored
+      .listen((_) {
         if (!retired) ref.invalidateSelf();
       });
   ref.onDispose(() {
     retired = true;
-        network.cancel();
-        retryTimer?.cancel();
-        if (waiting?.isCompleted == false) waiting!.complete();
+    network.cancel();
+    retryTimer?.cancel();
+    if (waiting?.isCompleted == false) waiting!.complete();
   });
   while (!retired && session.credentialGeneration == generation) {
     try {
@@ -77,12 +81,12 @@ final tenantProfileLiveProvider = StreamProvider.autoDispose<TenantProfileView>(
       return;
     } catch (_) {
       if (retired || retryMillis == null) return;
-          final pause = Completer<void>();
-          waiting = pause;
-          retryTimer = Timer(Duration(milliseconds: retryMillis), pause.complete);
-          await pause.future;
-          retryTimer = null;
-          waiting = null;
+      final pause = Completer<void>();
+      waiting = pause;
+      retryTimer = Timer(Duration(milliseconds: retryMillis), pause.complete);
+      await pause.future;
+      retryTimer = null;
+      waiting = null;
     }
   }
 });
