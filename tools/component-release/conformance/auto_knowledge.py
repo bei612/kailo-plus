@@ -48,6 +48,7 @@ import secrets
 import socket
 import urllib.parse
 import urllib.request
+import uuid
 
 RUNTIME_PRODUCTION_PROJECT = "platform-local"
 OIDC_HOST = "keycloak.kailo.local"  # /etc/hosts: 127.0.0.1 on the CI node; compose alias in containers
@@ -560,6 +561,98 @@ except Exception:
     h.say("isolated-knowledge-native", status="READY")
 
 
+def ensure_source_native(h, r):
+    """Reuse the Cells native deployment helpers, without its simulated provider.
+
+    Folder UUIDs below are proposals to the original Create API. Only the
+    subsequent native read-back is retained as an observed object; the Core
+    Resource identities still come exclusively from the later bootstrap.
+    """
+    source = r.state["source"]
+    declaration = h.read_json(Path(source) / "deploy/components/adapters.json")["file-storage"]
+    directory = h.private_dir(r.dir / "receiver/source-cells")
+    cells = h.Run(directory)
+    if not cells.state:
+        suffix = r.dir.name.rsplit("-", 1)[-1]
+        port = h.free_port(59510, 59599)
+        upstream = (Path(source) / "file-storage/fork/upstream.yaml").read_text()
+        def artifact(name):
+            match = re.search(r"- name: " + re.escape(name) + r"\n(?:.*\n)*?\s+artifact_digest: (sha256:[0-9a-f]{64})", upstream)
+            h.require(match, "source Cells fixed artifact is missing")
+            return declaration["registry"] + "/" + name + "@" + match[1]
+        cells.record(component="file-storage", source=source, commit=r.state["commit"], nodeImage=r.state["nodeImage"],
+            project=f"kailo-cells-conformance-source-{suffix}", network=f"{r.state['project']}_app",
+            subnets=h.free_subnets(2, prefix="10.205.", start=16, stop=250), port=port, external=f"http://127.0.0.1:{port}",
+            cellsImage=artifact("file-storage-service"), adapterImage=artifact("file-storage-adapter"),
+            connectors=[{"id": "pydio", "name": "Pydio Cells", "type": "pydio"},
+                {"id": "kailo-conformance-unused", "name": "Kailo", "type": "kailo-oidc", "config": {
+                    "issuer": "http://conformance-idp.invalid/realms/kailo-conformance", "clientId": "kailo-conformance-unused",
+                    "clientSecretFile": "/run/secrets/cells_oidc_client_secret", "redirectUri": f"http://127.0.0.1:{port}/auth/kailo/callback",
+                    "users": [], "requestTimeout": "30s", "transactionMaxAgeSeconds": 600, "clientSecretMaxBytes": 4096,
+                    "provisionUsers": False, "backchannelLogout": {"sessionMaxAgeSeconds": 36000, "logoutTokenMaxAgeSeconds": 300}}}])
+    h.require(cells.state["source"] == source and cells.state["commit"] == r.state["commit"], "source native provenance changed")
+    for sub in ("cells-data", "cells-database", "binding", "backups", "tmp", "native-action", "adapter-delivery", "agent-bootstrap"):
+        h.private_dir(directory / sub)
+    h.cells_secrets(cells)
+    h.render_release(cells, "file-storage", declaration["nativePageOrigin"])
+    admin, service, actor = "kailo-conformance-admin", "kailo-conformance-service", "kailo-conformance-actor"
+    env_file = directory / "native.env"
+    if not env_file.is_file():
+        h.cells_native_env(cells, f"{admin}:rw", "")
+    # Record ownership before starting: teardown can close a partially started
+    # source project using the same original entry and this exact native env.
+    receiver_env(h, r, {"RECEIVER_CELLS_ENV": str(env_file)})
+    start = ["bash", f"{source}/file-storage/deploy/start.sh", str(env_file)]
+    result = h.run(start, log=r.log, check=False)
+    if result.returncode == 75:  # Original entry documents the first-install restart.
+        result = h.run(start, log=r.log, check=False)
+    h.require(result.returncode == 0, "source Cells native deployment refused; inspect its original run log")
+    native = h.CellsNative(cells)
+    admin_token = native.token(admin)
+    service_id = native.ensure_user(admin_token, service)
+    actor_id = native.ensure_user(admin_token, actor)
+    for login, name in ((admin, "admin.pat"), (service, "service.pat"), (actor, "actor.pat")):
+        if not (directory / "secrets" / name).is_file():
+            h.write_private(directory / "secrets" / name, native.token(login) + "\n")
+    h.cells_native_env(cells, f"{admin}:rw {service}:r {actor}:rw", service)
+    h.run(["bash", f"{source}/file-storage/deploy/start.sh", "--reconcile", str(env_file)], log=r.log)
+    binding = h.read_json(directory / "binding/facts.json")
+    h.require(binding["instanceServiceUuid"] == service_id, "source service identity differs from native binding facts")
+    requirements_file = directory / "receiver-requirements.json"
+    if not requirements_file.is_file():
+        r.node("none", "tools/component-release/conformance/vector-requirements.mjs", "--component", "knowledge", "--out", str(requirements_file))
+    requirements = h.read_json(requirements_file)
+    h.require(requirements["component"] == "knowledge" and requirements["satisfiable"] is True, "receiver vector requirements refused")
+    preconditions = [entry for entry in requirements["requirements"]
+                     if entry["kind"] == "weknora-precondition" and entry["role"] == "source-resource"]
+    h.require(preconditions, "knowledge vectors declare no source Resources")
+    folders = cells.state.get("sourceFolders", {})
+    for entry in preconditions:
+        key = entry["caseKey"] + "/" + entry["key"]
+        if key not in folders:
+            folders[key] = {"proposed": str(uuid.uuid4()), "path": "receiver-" + hashlib.sha256(key.encode()).hexdigest()[:24]}
+            cells.record(sourceFolders=folders)
+        item = folders[key]
+        path = "n/node/" + item.get("nativeRef", item["proposed"]) + "?Flags=WithMetaDefaults"
+        node = native.call(admin_token, "GET", path, api="v2", missing="nativeRef" not in item)
+        if node is None:
+            created = native.call(admin_token, "POST", "n/nodes/create", {"Inputs": [{
+                "Locator": {"Path": binding["workspaceSlug"] + "/" + item["path"]}, "Type": "COLLECTION", "ResourceUuid": item["proposed"]}],
+                "Recursive": True}, api="v2")
+            nodes = created.get("Nodes", [])
+            h.require(len(nodes) == 1 and nodes[0].get("Uuid") == item["proposed"], "source folder creation was not acknowledged")
+            node = native.call(admin_token, "GET", path, api="v2")
+        h.require(node.get("Uuid") == item["proposed"] and node.get("Type") == "COLLECTION"
+                  and node.get("ContextWorkspace", {}).get("Uuid") == binding["nativeScopeRef"], "source folder read-back differs from this run")
+        item["nativeRef"] = node["Uuid"]
+        item["observationFile"] = str(h.write_json(directory / ("folder-" + item["nativeRef"] + ".json"), node))
+        cells.record(sourceFolders=folders)
+    cells.record(serviceUuid=service_id, actorUuid=actor_id)
+    r.record(sourceNative={"directory": str(directory), "project": cells.state["project"], "nativeScopeRef": binding["nativeScopeRef"],
+                          "nativeRootRef": binding["nativeRootRef"], "serviceUuid": service_id, "actorUuid": actor_id, "folders": folders})
+    h.say("isolated-source-native", status="READY", folders=len(folders))
+
+
 def drive(r, args, runtime_env, declaration, h):
     declare_native(h, r)
     s = r.state
@@ -588,9 +681,10 @@ def drive(r, args, runtime_env, declaration, h):
     ensure_sessions(h, r)
     ensure_model_routes(h, r, declaration)
     ensure_knowledge_native(h, r, declaration)
+    ensure_source_native(h, r)
     r.record(blockedAfterNative=(
-        "adapter/bootstrap/seed/inputs/driver not automated yet: (1) source Cells cells@2.0.0 instance (file-storage "
-        "helpers in a sub run directory) with its native-action and adapter delivery bound to the isolated Core: "
+        "adapter/bootstrap/seed/inputs/driver not automated yet: (1) source Cells cells@2.0.0 "
+        "native-action and adapter delivery bound to the isolated Core: "
         "isolated IdP adapter client, Agent/AppRole in the isolated platform OpenBao, binding SecretRefs written "
         "there at the bootstrap's fixed locators, an adapters[] entry with nativeResources evidence in "
         "RECEIVER_ADAPTER_DIRECTORY_FILE; (2) WeKnora candidate adapter delivery "

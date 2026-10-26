@@ -463,17 +463,22 @@ class CellsNative:
         require(len(tokens) == 1, f"native token for {login} could not be minted")
         return tokens[0]
 
-    def call(self, admin_token, method, path, body=None):
+    def call(self, admin_token, method, path, body=None, *, api="a", missing=False):
+        require(api in ("a", "v2"), "original Cells REST API required")
         data = None if body is None else json.dumps(body).encode()
-        request = urllib.request.Request(self.base + path, data=data, method=method)
+        request = urllib.request.Request(self.base.removesuffix("a/") + api + "/" + path, data=data, method=method)
         request.add_header("Authorization", "Bearer " + admin_token)
         request.add_header("Content-Type", "application/json")
         try:
             with urllib.request.urlopen(request, timeout=30) as response:
                 raw = response.read(1 << 20)
         except urllib.error.HTTPError as error:
+            absent = missing and error.code == 404
+            status = error.code
             error.close()
-            raise Refused(f"{method} /a/{path.split('/')[0]}: native HTTP {error.code}") from None
+            if absent:
+                return None
+            raise Refused(f"{method} /{api}/{path.split('/')[0]}: native HTTP {status}") from None
         return json.loads(raw) if raw.strip() else {}
 
     def ensure_user(self, admin_token, login):
