@@ -6,6 +6,7 @@ import 'package:uuid/uuid.dart';
 import '../../shared/auth/auth_provider.dart';
 import '../../shared/platform/platform_api.dart';
 import '../../shared/platform/platform_config.dart';
+import '../../shared/platform/platform_views.dart';
 import '../../shared/relay/relay_provider.dart';
 
 typedef TenantProfileSender = Future<PlatformResponse> Function(PlatformMethod method, String path, {Map<String,dynamic>? body});
@@ -15,13 +16,14 @@ final tenantProfileControllerProvider = Provider<TenantProfileController>((ref) 
   final pubkey=ref.watch(myPubkeyProvider);
   final session=ref.read(nativeSessionProvider);
   final controller=TenantProfileController(config!=null && scope.$1==AuthStatus.authenticated && pubkey!=null
-    ? (method,path,{body})=>session.send(config,method,path,body:body) : null);
+    ? (method,path,{body})=>session.send(config,method,path,body:body) : null, onSaved: () {if(ref.mounted){ref.invalidate(platformSessionViewProvider);}});
   ref.onDispose(controller.dispose);
   return controller;
 });
 
 class TenantProfileController extends ChangeNotifier {
-  TenantProfileController(this._send);
+  TenantProfileController(this._send, {this.onSaved});
+  final void Function()? onSaved;
   final TenantProfileSender? _send;
   TenantProfileView? view;
   String name='',icon='';
@@ -74,7 +76,7 @@ class TenantProfileController extends ChangeNotifier {
       if(!recorded){failed=true;needsRefresh=true;}
     } catch(_){if(!_retired){unknown=true;failed=true;}}
     finally{if(!_retired){busy=false;changed();}}
-    if(recorded){await refresh();}
+    if(recorded&&!_retired){onSaved?.call();await refresh();}
     return recorded;
   }
   @override

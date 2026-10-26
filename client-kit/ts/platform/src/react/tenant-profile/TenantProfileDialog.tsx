@@ -1,6 +1,7 @@
 // Buzz 779af8886caae1317b4de962082429867ab61503 CommunityEditForm and
 // CommunityIconSettingsCard: name form, rounded icon, local image/emoji selection.
 // DD-158 changes the server Tenant profile only after explicit governed confirmation.
+import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import type { TenantProfileView } from "@client-kit/contracts";
 import emojiData from "@emoji-mart/data";
@@ -33,6 +34,7 @@ export async function downscaleTenantIcon(file: File): Promise<string> {
 }
 
 export function TenantProfileDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+  const queryClient = useQueryClient();
   const api = useBffClient(), locale = useLocale(), t = useT();
   const [view, setView] = useState<TenantProfileView>();
   const [name, setName] = useState(""), [icon, setIcon] = useState("");
@@ -42,7 +44,7 @@ export function TenantProfileDialog({ open, onOpenChange }: { open: boolean; onO
   const [confirmed, setConfirmed] = useState(false), [reload, setReload] = useState(0);
   const input = useRef<HTMLInputElement>(null), alive = useRef(true), epoch = useRef(0);
   useEffect(() => { alive.current = true; return () => { alive.current = false; epoch.current++; }; }, []);
-  const write = useGovernedChannelAction(() => { if (alive.current) { setConfirmed(false); setReload(v => v + 1); } });
+  const write = useGovernedChannelAction(() => { if (alive.current) { setConfirmed(false); setReload(v => v + 1); void queryClient.invalidateQueries({ queryKey: ["platform", "session"] }); } });
   const locked = write.busy || write.unknown || processing;
   useEffect(() => {
     if (!open || write.unknown) return;
