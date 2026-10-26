@@ -204,7 +204,7 @@ pub(crate) async fn sweep(state:&ServiceState) -> Result<(),sqlx::Error> {
     let mut tx=state.pool.begin().await?;
     let rows:Vec<(Uuid,String,Uuid,Option<String>)>=sqlx::query_as("select r.tenant_id,r.device_pubkey,r.tenant_principal_id,r.token_secret_locator
         from identity.push_registration r where r.state<>'REVOKED' and (
-        not exists(select 1 from identity.tenant t where t.id=r.tenant_id and t.state='ACTIVE') or
+        exists(select 1 from identity.tenant t where t.id=r.tenant_id and t.state in ('DELETING','DELETED')) or
         not exists(select 1 from identity.buzz_identity_binding b where b.tenant_id=r.tenant_id and b.principal_id=r.tenant_principal_id and b.pubkey=r.device_pubkey and b.custody='CLIENT' and b.state='ACTIVE') or
         not exists(select 1 from identity.tenant_membership m where m.tenant_id=r.tenant_id and m.tenant_principal_id=r.tenant_principal_id and m.state='ACTIVE'))
         order by r.tenant_id,r.device_pubkey for update of r skip locked limit 100")

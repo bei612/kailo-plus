@@ -148,3 +148,24 @@ async fn token_ownership_survives_aborted_binding_and_expired_writer_cannot_bind
  assert!(!lock_device(&mut tx,f.tenant,f.principal,&f.device).await.unwrap());
  tx.rollback().await.unwrap();
 }
+
+#[tokio::test]
+#[ignore="requires PUSH_TEST_DATABASE_URL isolated migrated database"]
+async fn accepted_receipt_and_badge_rollback_together_then_only_receipt_is_retried() {
+ let f=Fixture::new().await;let id=f.enqueue(6).await;
+ let i=claim(&f.pool,f.tenant).await.unwrap().unwrap();
+ assert!(begin_send(&f.pool,&i,"c:fixture").await.unwrap());
+ let function=format!("push_fail_{}",f.tenant.simple());
+ sqlx::query(&format!("create function projection.{function}() returns trigger language plpgsql as $$ begin if NEW.tenant_id='{}'::uuid then raise exception 'fixture projection failure'; end if; return NEW; end $$",f.tenant))
+ .execute(&f.pool).await.unwrap();
+ sqlx::query(&format!("create trigger {function} before insert on projection.push_unread for each row execute function projection.{function}()"))
+ .execute(&f.pool).await.unwrap();
+ let receipt=Receipt::local(Outcome::Delivered);
+ assert!(finish(&f.pool,&i,&receipt).await.is_err());
+ assert_eq!(f.status(id).await,"SENDING");assert_eq!(f.badge_rows().await,0);
+ sqlx::query(&format!("drop trigger {function} on projection.push_unread")).execute(&f.pool).await.unwrap();
+ sqlx::query(&format!("drop function projection.{function}()")).execute(&f.pool).await.unwrap();
+ assert!(finish(&f.pool,&i,&receipt).await.unwrap());
+ assert_eq!(f.status(id).await,"ACCEPTED");assert_eq!(f.badge_rows().await,1);
+ assert!(claim(&f.pool,f.tenant).await.unwrap().is_none());
+}
