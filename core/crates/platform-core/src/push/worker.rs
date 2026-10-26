@@ -18,7 +18,8 @@ use uuid::Uuid;
 
 use super::decide::{self, MessageFacts, Reason, RecipientView};
 use super::send::{
-    ApnsCredential, ApnsRequest, ApnsSender, DeviceToken, FcmCredential, FcmSender, Outcome, Receipt,
+    ApnsCredential, ApnsRequest, ApnsSender, DeviceToken, FcmCredential, FcmSender, Outcome,
+    Receipt,
 };
 use super::CredentialRefs;
 use crate::audit::{AuditEntry, Evidence};

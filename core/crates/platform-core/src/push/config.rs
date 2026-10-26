@@ -44,7 +44,8 @@ impl Policy {
         // Runtime value bounds belong to the consumer, keeping the shared schema subset.
         if !value.as_object().is_some_and(|fields| {
             fields.values().all(|v| {
-                v.as_i64().is_some_and(|n| n > 0 && n <= i64::from(i32::MAX))
+                v.as_i64()
+                    .is_some_and(|n| n > 0 && n <= i64::from(i32::MAX))
             })
         }) {
             return Err("推送策略数值必须为正的 32 位整数".into());
