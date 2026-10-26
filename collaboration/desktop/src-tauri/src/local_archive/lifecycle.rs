@@ -52,7 +52,7 @@ pub(super) fn erase(dir: &Path, tag: &str) -> Result<(), String> {
 pub(crate) struct SessionArchive(pub AppHandle);
 
 impl crate::platform::api::SessionArchive for SessionArchive {
-    pub(super) fn erase(&self) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), String>> + Send + '_>> {
+    fn erase(&self) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), String>> + Send + '_>> {
         Box::pin(async move {
             let _guard = lock().lock().await;
             erase_all(&archive_dir(&self.0)?)
