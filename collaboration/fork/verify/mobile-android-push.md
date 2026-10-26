@@ -13,7 +13,8 @@
 Core 准入、设备密钥托管或通知读权威，不引入原 buzz-push-gateway、第二设备授权或设备回执权威。
 Core 的唯一增量为 `decide.rs::fcm_message` 的 `android.notification.tag`，继续使用原折叠键。
 独立提交 `2a11253265b9aa66b9682c8a4d0638e0fcdaa385` 已由主集成选入 `de90ddee2`；
-主集成后续 `push::` 联合检查另计，本 Android 分支不重复认领其 Core 结果。
+主集成后续 `push::` 联合检查尚待其独立终态，本 Android 分支不重复认领其 Core 结果。
+前一证据提交说明中的 separately validated there 表述不准确，以本条尚待联合检查为准。
 
 官方版本依据为 [Firebase Android 安装说明](https://firebase.google.com/docs/android/setup)：
 本次固定 Firebase BoM `35.1.0`、Google Services Gradle plugin `4.5.0`，使用
@@ -75,6 +76,7 @@ Core FCM 服务账号、私钥、APNs 密钥绝不进入客户端；服务账号
 | 范围 | 固定源码 | 真实结果 |
 | --- | --- | --- |
 | Mobile 原消费者 | `76a879c218c7f9e519e0baaea9fc380249deeda6` | Flutter 3.41.7 / Dart 3.11.5，1 CPU / 4 GiB；冻结 pub、6 文件格式零变化、analyze 无问题、28 项通过 |
+| Android 原生 | `d096d4a50eab218c7fb5abb8867eef14d05f7b19` | 原 Flutter SDK 2 CPU / 8 GiB，冻结 pub，debug APK 构建成功，原 AndroidPushTarget 2 项与故障恢复通过 |
 | 原构建/发布工具 | `d096d4a50eab218c7fb5abb8867eef14d05f7b19` | 原工具 SDK 1 CPU / 2 GiB；4 项配置追溯、92 项原 release 检查、shell 语法及 Core 2021 edition rustfmt 通过 |
 
 Mobile 三次真实故障注入分别把 FCM 改回 APNs、移除无导航监听者时的 ACK 保护、移除读取代际：
@@ -95,6 +97,12 @@ upstream manifest 工具为 `e45fde47c992a6adc09941a2d5f9c43ab4229d367f26e417e04
   `426b04d3231418b0c5d27d96892b27ce550d0168052554372fbb4acb39d8ec27`。
 - `android-build-config-final3-d096d4a50/check.log`：
   `6dc30befd57b95d49c1db884d201e575c79c5a10e4af6e7f1c2e8ef0cc468833`。
+- `flutter-android-native5-d096d4a50/check.log`：
+  `ffb4b3273bdbc72a3a07f28f33e9ce5207252ea93a381ac03125ea8f1a0b3c6c`。
+- `flutter-android-native6-d096d4a50/check.log`：
+  `1f38e07baf1b66a540ea8105a20885a24919c761ef3cfa434af8139c1142d5a4`。
+- `flutter-android-native7-d096d4a50/check.log`：
+  `a424163d667abaaa7f81396f2ec7f0bd618e9a99c9338160cb1b1d8402d3bdc8`。
 - `flutter-android-native4-6766101c1/memcg-oom.log`：
   `6864e9da2e807a2a6b9f80ac58ab2f4ba38c97006e3a725647a19fbb2497e170`。
 
@@ -106,7 +114,24 @@ NDK 被隔离后由原 SDK 重取。固定 `6766101c1` 的 2 CPU / 4 GiB 原构�
 memcg OOM：内核记录精确匹配检查容器 `388799cd...`，DartWorker 触发，Java PID 1604110 被杀。
 该结果不计为 Kotlin 编译通过；原始失败与限额回读均保留。
 
-2 CPU / 8 GiB 的固定最新源码重跑仍待终态，Android APK/native 检查暂不宣称通过。
+同一原 SDK 以 2 CPU / 8 GiB（swap 同限）回读实际限额后，固定 `d096d4a50` 的
+`flutter build apk --debug --no-pub` 641.3 秒成功，原 Gradle 原生测试亦成功。检查导出仅限制
+Gradle JVM heap 1.5 GiB、metaspace 768 MiB、单 worker 和 Kotlin 进程内编译，未修改产品 Gradle
+文件或依赖。debug APK 的
+SHA-256 为 `ee30a78a86880e38062eeec900c0c2067e8113163298603ed1a7acae4b875c13`，
+它不是签名 release 交付制品。native5 脚本随后因故障注入字段写错而退出；native6 改正脚本后
+原 AndroidPushTarget 2 项通过，故意无条件清除 pending target 使其中 1 项断言失败，逐字恢复后
+2 项再次通过。恢复文件 SHA-256 为
+`b4726660afd73c81e5002fc0f6bcbb8c6b0cc15ba02aa0dc0bc4309acd2d662b`。两轮 memory.events
+均为 oom/oom_kill 0，没有改变产品依赖或降低检查范围绕过 4 GiB 失败。
+
+native6 的官方 `processDebugGoogleServices` 已成功，但检查脚本使用旧插件输出路径，读取 XML
+时失败；原日志保留，不把脚本 exit 1 写成整体通过。接续同固定源码的 native7 使用 1 CPU / 4 GiB，
+只运行官方配置任务并核对实际 `generated/res/processDebugGoogleServices/values/values.xml` 的
+appId、senderId、projectId；三者吻合公开 fixture。随后仅含 `type=service_account` 的无凭据
+反例由 Gradle 确定拒绝，配置文件移除，脚本整体 exit 0。该轮 oom/oom_kill 亦为 0。
+所有本批 Android 容器均已清理，并回读 `docker ps -a` 确认无残留。
+
 真实 Android/iOS 权限弹窗、系统设置返回、设备冷/热点击、供应商投递、FCM 项目与设备配置、
 APNs entitlement、签名 release 和安装验收仍未提供证据；测试公开配置不能作为真实 Firebase
 项目或投递成功证据。没有部署 Core、Worker、Web、Windows 或 Mobile，也没有新的发布制品 digest。
