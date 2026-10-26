@@ -799,7 +799,7 @@ pub async fn submit_event(
         .publication_community
         .map_err(|reason| api_error(StatusCode::UNAUTHORIZED, reason))?;
     if signed_community != community
-        || community.is_some_and(|id| id != tenant.community().as_uuid())
+        || community.is_some_and(|id| id != *tenant.community().as_uuid())
     {
         return Err(api_error(
             StatusCode::UNAUTHORIZED,
