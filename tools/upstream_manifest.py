@@ -24,8 +24,8 @@
                        的一份树副本）；冲突按 git 标准标记留在文件里，不提交、不改来源记录
   plan <产物>          构建所需字段，输出可 eval 的 shell 赋值
   stage <产物> <目录>   把产物的输入（按仓库忽略规则可见的文件）放进空目录，保持 apps/ 相对路径
-  record <产物> <artifact_digest>
-                       写回该产物的 source_digest（按当前源码算）与 artifact_digest
+  record <产物> <artifact_digest> [build_config_digest]
+                       写回源码、产物及可选公开配置摘要；最后一项供原 release 消费已验证的 CI 摘要
 """
 
 import hashlib
@@ -749,6 +749,8 @@ def stage(name, dest):
 def record(name, artifact, build_config_digest=None):
     """只替换该产物块里的两行：记录里的注释是给人读的，不经 YAML 重写。"""
     path, m, art = resolve(name)
+    if build_config_digest is not None and "optional_build_args" not in art:
+        raise ValueError("该产物未登记可选公开构建配置")
     updates = {}
     if "optional_build_args" in art:
         config_digest = (build_config_digest or public_build_config_digest(art)) if artifact != "none" else "none"

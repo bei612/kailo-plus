@@ -1740,7 +1740,8 @@ class PublicConfigResume(unittest.TestCase):
         from unittest.mock import patch
         orch = _orchestrator()
         old = dict(units={"mobile-client": dict(build_config_digest="sha256:" + "a" * 64, key="sha256:" + "b" * 64)})
-        new = dict(units={"mobile-client": dict(build_config_digest="sha256:" + "c" * 64, key="sha256:" + "d" * 64)})
+        new = dict(units={"mobile-client": dict(build_config_digest="sha256:" + "c" * 64, key="sha256:" + "d" * 64)},
+                   env={"missing_required": []})
         for stage in ("build", "record", "pin", "check", "deploy", "in_flight"):
             with self.subTest(stage=stage):
                 data = dict(plan=copy.deepcopy(old), stages={} if stage == "in_flight" else {stage: {"state": "done"}},
@@ -1749,11 +1750,19 @@ class PublicConfigResume(unittest.TestCase):
                 release = orch.Release.__new__(orch.Release)
                 release.root, release.node, release.decl, release.source = ".", None, {}, "a" * 40
                 release.args = SimpleNamespace(until="pin", dry_run=False)
-                release.state = SimpleNamespace(data=data, lock=lambda: None,
-                                                mark=lambda *a, **k: self.fail("journal must remain untouched"))
-                with patch.object(orch, "compute_plan", return_value=new), self.assertRaises(orch.ReleaseError):
+                effects = []
+                release.note = ""
+                release.state = SimpleNamespace(data=data, path="unused-journal", lock=lambda: None,
+                    mark=lambda name, state, **details: data["stages"].update({name: {"state": state}}),
+                    done=lambda name: (data["stages"].get(name) or {}).get("state") == "done")
+                release.build = lambda plan: effects.append("build")
+                release.record = lambda plan: effects.append("record")
+                release.pin = lambda plan: effects.append("pin")
+                with patch.object(orch, "compute_plan", return_value=new), \
+                        patch.object(orch, "render_plan"), self.assertRaises(orch.ReleaseError):
                     release.run()
                 self.assertEqual(data, before)
+                self.assertEqual(effects, [])
 
     def test_read_only_replanning_and_unchanged_resume_keep_working(self):
         import copy
