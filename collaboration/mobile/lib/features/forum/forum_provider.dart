@@ -100,7 +100,8 @@ Future<ForumThreadResponse> loadForumThread(
       ),
     ]);
     for (final event in events) {
-      if (event.kind == EventKind.forumComment && event.channelId == channelId) {
+      if (event.kind == EventKind.forumComment &&
+          event.channelId == channelId) {
         replies[event.id] = event;
       }
     }
