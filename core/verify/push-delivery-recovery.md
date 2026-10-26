@@ -179,4 +179,10 @@ Mobile 原论坛恢复、深回复定位和原 SDK **76/76** 另见
 [论坛消费者](../../collaboration/fork/verify/mobile-forum-push.md)。静音先于提及排除
 遵循 DD-151 明确排除句与 V-SCN-249；Web/Desktop 原通知行为不改。
 Core 没有系统勿扰状态权威，不以 online/away/offline 推断勿扰，不声称其场景通过。
-Android 原生接入仍在独立候选中；本固定检查不包含它，也没有真实 APNs/FCM 调用。
+Android 原生接入已进入后续集成，原固定检查不包含它；原生/Dart/公开配置消费者的
+证据见 Android 专项记录，没有真实 APNs/FCM 调用。
+
+后续 `697cfe263` 联合检查的 push **31/31** 已包含新 FCM notification.tag 断言，
+以及完整扫描、失败分类与有界根作者读取。SQLx 原生成清理入库为 `b19846236`，
+2,070 文件比较一致后最终 prepare check 退出 0；详见
+[最新联合回执](phase1-integration-core-dd81-20261026.json)。这仍不是供应商投递或设备验收。

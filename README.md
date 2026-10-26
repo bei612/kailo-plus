@@ -12,14 +12,19 @@ DD-124/136 一致性投递、DD-159 本地归档、DD-151 持久推送与 Mobile
 DD-158 反馈和跨会话社区资料，以及 DD-160 原生仓库写入。已提交并推送不代表
 合并 main、产物或部署。下列检查分别对应固定源码，不合并认作最新整树 full。
 
-固定 Core `06712387a66281e3bebce328cc33f350b056d946` 在 CI 原受限 SDK 与全新
-隔离 PG 完成联合检查：格式、完整迁移及 `310700` 回退/重进、正常 workspace、
-all-target Clippy `-D warnings`、SQLx prepare check 全部通过。主目标
-**833 passed / 83 ignored**，push **31**、profile **2**、feedback **2**、
-HUMAN policy **2**、receiver bootstrap **3**、SecretStore push-token **1**。
-SecretStore 对 scripted HTTP，bootstrap 未执行真实接收方完整激活；ignored 不记通过。
-移除真实 `pg_notify` 后检查失败，逐字恢复通过。输入和脚本失败均保留，详见
-[联合回执](core/verify/phase1-integration-core-20261026.json)。
+最新 Core 联合检查从 `697cfe263` 开始，原 SQLx prepare 仅删除一份废弃缓存，
+入库为 `b19846236` 后 2,070 份源文件/缓存逐一匹配，最终 prepare check 退出 0。
+原 SDK 4 CPU / 16 GiB 与私有 PG 1 CPU / 2 GiB：格式、完整迁移及 `310700`
+回退/重进、Clippy all-targets `-D warnings` 全部通过。正常 workspace harness
+**1043 passed / 87 ignored**；显式真实 PG 的 publication **2**、history **1**、
+push **31**、profile **2**、feedback **2**、HUMAN policy **2** 均通过。
+四项故障分别检出 TTL 丢未知意图、历史结论错误选择、旧结论重签与不同 operation
+审计碰撞，逐字恢复后通过。正常测试中的 live 环境早返不计 E2E，SecretStore
+仅对 scripted HTTP，receiver bootstrap 未执行真实接收方完整激活；详见
+[最新联合回执](core/verify/phase1-integration-core-dd81-20261026.json)。
+
+较早 `06712387a` 的真实 `pg_notify` 删除反向与恢复通过仍独立保留于
+[原联合回执](core/verify/phase1-integration-core-20261026.json)，不改写旧失败或忽略项。
 
 固定 `3cd4d1e00` 的原四侧合同、同源 Mobile 词条、能力注册表生成/check 全部
 退出 0，42 能力、20 封闭 Workflow kind。同源 Web/Desktop 资料表单与 live
@@ -49,7 +54,7 @@ Android FCM 原生批也已进入候选：固定 `76a879c21` 的 Flutter 消费�
 固定 `d096d4a50` 的原 Android SDK 构建 debug APK、原生 **2/2**、官方公开配置
 处理均通过，故障检出后逐字恢复通过。原配置/发布工具 **4+92** 项与两项反向
 通过，配置变化不能复用旧阶段产物。debug APK 不是签名 release，尚无设备/供应商
-投递或 iOS 编译证据，Core tag 仍待联合检查；见
+投递或 iOS 编译证据，Core tag 已由上述 push 联合检查覆盖；见
 [Android 证据](collaboration/fork/verify/mobile-android-push.md)。
 
 固定 `d6469e936` 与设计 `bb41415a5` 的原 SDK 1 CPU / 2 GiB 文档门禁全部
@@ -63,11 +68,17 @@ markdownlint 无问题。原件在 CI
 当前仍缺最新 full、supply/seam、匹配制品摘要及真实三端/多账号/多 Agent 验收。
 反馈、推送、资料等追溯中的空 artifact 列表保持原样，不以源码 SHA 冒充制品摘要。
 
+固定 `b19846236` 在已准备 SDK 中执行原 `step_trace`：文档与注册表通过，整体
+退出 1。反馈、推送、资料三条仍缺制品 digest；Git 源码导出还缺 Core/Worker
+对应 `dist/` 发布 SBOM。原件在 CI
+`/volumes/data/kailo/verification/phase1-integration/docs-b19846236-trace-r2/`。
+没有据此声明最新 trace/full 通过，正式制品与配套输入仍须沿原 CI 交付。
+
 后续 Core 发布对账修复已进入候选：普通查询空不再产生确定未送达；旧错误的
 `RECONCILIATION/NOT_DELIVERED` 不再授权重签，也不再触发幂等记录清理或从未决
-扫描/度量消失。肯定证据追加幂等修正，旧审计保留。该新增范围及 Android 通知折叠
-tag 尚待原 SDK 合批检查，不能借上述 `06712387a` 回执记通过；普通消息的完整
-writer 缺失查证仍未闭合。
+扫描/度量消失。肯定证据追加幂等修正，旧审计保留；重试先过滤错误历史结论，保留期
+从有效终态计算，审计键包含 operation。上述真实 PG 与反向已验证这些边界，历史
+缺失 DISPATCH 的范围不补造。普通消息的完整 writer 缺失查证仍未闭合。
 
 上一批发布源 `dc2d6ca18bb5c355ebb3e96609f0f591532479cf` 的八个运行发布阶段完成，
 pin 为 `ebc23eb293942ed9721cb56d2b76ee871f91bc40`，但 journal 业务验收明确为

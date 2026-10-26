@@ -539,7 +539,7 @@ async fn observe_delivery(state: &ServiceState, p: &Pending) -> Result<bool, &'s
         return Ok(exists);
     }
     // DD-119(9)：成员主题命令（严格 h+topic 的 9002）随事件事务存储，CONTROL 按原
-    // event ID 查得到它；查不到并过了结算窗口才是未送达，结果不明时从不另签
+    // event ID 查询肯定证据；普通查询空即使过窗仍未知，结果不明时从不另签。
     if p.action_key == TOPIC_ACTION {
         if p.target_type.as_deref() != Some("CHANNEL")
             || p.workspace_id.is_none()
