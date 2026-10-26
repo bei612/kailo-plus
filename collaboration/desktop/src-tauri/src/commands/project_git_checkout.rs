@@ -3,7 +3,7 @@
 //! path nor a clone URL. Git authentication comes from project_git_remote.
 
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Arc, LazyLock};
 use std::time::Instant;
 
 use buzz_project_git::checkout::*;
@@ -13,12 +13,13 @@ use tauri::{AppHandle, Manager};
 use tauri_plugin_opener::OpenerExt;
 
 use super::project_git_remote::{
-    git_error, repository_path, RepoScope, REPO_FAILED, REPO_INVALID_REQUEST, REQUEST_DEADLINE,
+    git_error, repository_path, RepoScope, REPO_FAILED, REPO_INVALID_REQUEST, REPO_TIMEOUT, REQUEST_DEADLINE,
 };
 
 // Mutating and reading the same checkout must not race within this process.
 // External editors/git retain their ordinary git locks and ff/lease checks.
-static CHECKOUT_LOCK: Mutex<()> = Mutex::new(());
+static CHECKOUT_LOCK: LazyLock<Arc<tokio::sync::Mutex<()>>> =
+    LazyLock::new(|| Arc::new(tokio::sync::Mutex::new(())));
 
 fn partition(base: &str, coordinate: &str) -> Result<PathBuf, String> {
     let checked = repository_path(coordinate).ok_or(REPO_INVALID_REQUEST)?;
@@ -92,11 +93,18 @@ where
     scope.preflight(&root).await?;
     let app_data = app.path().app_data_dir().map_err(|_| REPO_FAILED)?;
     let task_scope = scope.clone();
+    let deadline = started + REQUEST_DEADLINE;
+    let guard = tokio::time::timeout_at(
+        tokio::time::Instant::from_std(deadline),
+        Arc::clone(&CHECKOUT_LOCK).lock_owned(),
+    ).await.map_err(|_| REPO_TIMEOUT)?;
     let result = tauri::async_runtime::spawn_blocking(move || {
-        let _guard = CHECKOUT_LOCK.lock().map_err(|_| REPO_FAILED)?;
+        // Keep the owned guard in the blocking work even if the webview drops
+        // its caller. Queueing itself obeys the same whole-request deadline.
+        let _guard = guard;
         let (base, _) = task_scope.check()?;
         let path = checkout_path(&app_data, &base, &repository)?;
-        let auth = task_scope.auth(root.clone(), started + REQUEST_DEADLINE);
+        let auth = task_scope.auth(root.clone(), deadline);
         let result = work(&path, &root, &auth).map_err(|error| map_checkout_error(&error));
         task_scope.check()?;
         result
