@@ -2217,15 +2217,29 @@ mod event_exists_tests {
         let original = serde_json::to_value(&event).unwrap();
         for (field, changed) in [
             ("content", serde_json::json!("corrupted fixture")),
-            ("created_at", serde_json::json!(event.created_at.as_secs() + 1)),
+            (
+                "created_at",
+                serde_json::json!(event.created_at.as_secs() + 1),
+            ),
             ("kind", serde_json::json!(1)),
-            ("sig", serde_json::json!(signed("another fixture").sig.to_string())),
-            ("pubkey", serde_json::json!(Keys::generate().public_key().to_hex())),
+            (
+                "sig",
+                serde_json::json!(signed("another fixture").sig.to_string()),
+            ),
+            (
+                "pubkey",
+                serde_json::json!(Keys::generate().public_key().to_hex()),
+            ),
         ] {
             let mut row = original.clone();
             row[field] = changed;
-            assert!(matches!(observe(&id, serde_json::json!([row])).await,
-                Err(OperatorError::NotConverged(_))), "corrupt {field} must not prove delivery");
+            assert!(
+                matches!(
+                    observe(&id, serde_json::json!([row])).await,
+                    Err(OperatorError::NotConverged(_))
+                ),
+                "corrupt {field} must not prove delivery"
+            );
         }
     }
 
@@ -2243,7 +2257,10 @@ mod event_exists_tests {
             serde_json::json!([signed("unrelated fixture")]),
             serde_json::json!([noncanonical]),
         ] {
-            assert!(matches!(observe(&id, page).await, Err(OperatorError::NotConverged(_))));
+            assert!(matches!(
+                observe(&id, page).await,
+                Err(OperatorError::NotConverged(_))
+            ));
         }
     }
 }
