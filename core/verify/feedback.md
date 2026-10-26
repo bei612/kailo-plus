@@ -104,3 +104,18 @@ workspace SQLx prepare check。
 原件 `/volumes/data/kailo/verification/buzz-r10/feedback-c20e64d8c/` 中的
 `feedback-core-check-complete-input.log`、`feedback-core-check-result.log` 及
 preflight/limits；SDK、隔离 PG 和网络随脚本清理。
+
+## 固定 Mobile 消费者终态（2026-10-26）
+
+固定 `440d3b09a` Git 导出，原 Flutter 3.41.7 镜像
+`sha256:644e3cea0a8440ce75804b67ceab77b16a87b39d9e9d89b07aceca7a98af1aa3`，
+2 CPU / 4 GiB、原资源 helper，锁定 pub 依赖、四文件格式零差异、三组路径
+analyze 均退出 0；`test/features/feedback/feedback_test.dart` **3 passed**。
+覆盖冻结请求重试、明确拒绝后保留草稿、身份退休忽略晚到结果，以及实际中文表单
+五字段诊断预览与主动勾选。此前固定 c20 的 analyzer 拒绝一条多余 import，
+440d 已删除；失败原件仍保留。日志
+`/volumes/data/kailo/verification/buzz-r10/flutter-feedback-440d3b09a/`
+中 check/result/preflight/limits，检查容器随脚本清理。
+
+这些检查未替代 iOS/Android 真机、图片授权、签名安装、共享站点部署或运营方
+真实 HTTP 验收；Tenant profile 动作与三端消费者仍在实现，DD-158 仍为进行中。
