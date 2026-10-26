@@ -7,7 +7,7 @@ status: in_progress
 exposure: none
 
 design:
-  requirements: [V-REQ-17]
+  requirements: [V-REQ-17, V-REQ-24]
   decisions: [DD-157]
   facts: []
   seams: []
@@ -17,17 +17,17 @@ design:
 validation:
   scenarios: [V-SCN-256, V-SCN-257, V-SCN-258, V-SCN-259]
   evidence:
-    - dimension: 单元测试
+    - dimension: 安全边界
       ref: client-kit/ts/platform/test/kailo-embed-runtime.test.ts
-    - dimension: 单元测试
+    - dimension: 安全边界
       ref: client-kit/ts/platform/test/native-embed-host.test.tsx
-    - dimension: 单元测试
+    - dimension: 呈现
       ref: client-kit/ts/platform/test/embed-tokens.test.ts
-    - dimension: 单元测试
+    - dimension: 呈现
       ref: file-storage/frontend/assets/kailo.embed/kailo-cells.test.js
-    - dimension: 单元测试
+    - dimension: 呈现
       ref: knowledge/frontend/src/kailo/shell.test.ts
-    - dimension: 单元测试
+    - dimension: 呈现
       ref: data-query/wren-ui/src/kailoShell.test.ts
 
 implementation:
