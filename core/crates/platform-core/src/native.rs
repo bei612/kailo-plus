@@ -70,8 +70,10 @@ pub async fn community(State(state): State<BffState>, headers: HeaderMap) -> Res
                     Err(_) => None,
                 };
             (
-                StatusCode::OK,
+                [("cache-control", "no-store")],
                 Json(NativeCommunityFacts {
+                    publish_result_settle_seconds: Some(state.publish_result_settle_seconds),
+                    publish_result_observed_at_unix_seconds: Some(chrono::Utc::now().timestamp()),
                     relay_query_limit,
                     relay_url: state.relay_native_url_template.replace("{host}", &host),
                     community_host: host,

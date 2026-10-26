@@ -47,6 +47,8 @@ pub struct BffState {
     pub client_key_recheck_millis: i64,
     /// 原生端直连 Relay 的地址模板，含 `{host}` 占位（Community host）。
     pub relay_native_url_template: String,
+    /// DD-81: the same validated configuration used by the publication reconciler.
+    pub publish_result_settle_seconds: i64,
     /// PlatformSession 的有效期。它是部署事实，不是常量——不同部署对「多久要
     /// 重新过一次 OIDC」的要求不同。
     pub session_ttl_seconds: i64,
