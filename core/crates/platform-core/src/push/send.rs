@@ -17,12 +17,41 @@ pub(crate) enum Outcome {
     Delivered,
     /// The provider says the device token is gone: the registration becomes INVALID.
     Invalid,
-    /// Transient (rate limit, provider outage, transport): bounded retry.
+    /// A definite transient refusal, or failure before the notification request.
     Retry,
     /// Our provider credential was refused: reload it, do not touch the registration.
     ProviderAuth,
     /// A definite refusal of this one notification; not retried.
     Rejected,
+    /// The request may have been accepted; never automatically resend.
+    Unknown,
+}
+
+/// The provider's acceptance is not proof of display on the device.
+#[derive(Clone, Debug)]
+pub(crate) struct Receipt {
+    pub outcome: Outcome,
+    pub reference: Option<String>,
+    pub retry_after: Duration,
+}
+impl Receipt {
+    pub fn local(outcome: Outcome) -> Self {
+        Self { outcome, reference: None, retry_after: Duration::from_secs(60) }
+    }
+}
+fn retry_after(response: &reqwest::Response, minimum: u64) -> Duration {
+    let header = response.headers().get(reqwest::header::RETRY_AFTER)
+        .and_then(|v| v.to_str().ok());
+    let seconds = header.and_then(|s| s.parse::<u64>().ok().or_else(|| {
+        chrono::DateTime::parse_from_rfc2822(s).ok().map(|at|
+            (at.timestamp() - chrono::Utc::now().timestamp()).max(0) as u64)
+    })).unwrap_or(minimum);
+    Duration::from_secs(seconds.max(minimum))
+}
+fn transport(error: reqwest::Error) -> Outcome {
+    // Connection establishment failed before the request. A timeout/reset after connecting
+    // can lose a successful response, so it is not a retryable rejection.
+    if error.is_connect() { Outcome::Retry } else { Outcome::Unknown }
 }
 
 /// Re-read credentials at least this often, so a rotation in OpenBao takes effect.
@@ -109,6 +138,11 @@ impl ApnsSender {
         &self.credential.bundle_id
     }
 
+    pub(crate) fn target(&self) -> String {
+        format!("APNS:{}:{}:{}", self.credential.team_id, self.credential.bundle_id,
+            if self.credential.sandbox { "development" } else { "production" })
+    }
+
     async fn provider_token(&self) -> Result<String, Outcome> {
         let mut cached = self.jwt.lock().await;
         if let Some((token, at)) = cached.as_ref() {
@@ -136,10 +170,12 @@ impl ApnsSender {
         token: &DeviceToken,
         payload: &Value,
         collapse_key: &str,
-    ) -> Outcome {
+        intent: uuid::Uuid,
+        expires_at: i64,
+    ) -> Receipt {
         let bearer = match self.provider_token().await {
             Ok(b) => b,
-            Err(outcome) => return outcome,
+            Err(outcome) => return Receipt::local(outcome),
         };
         let host = if self.credential.sandbox {
             "api.sandbox.push.apple.com"
@@ -153,7 +189,9 @@ impl ApnsSender {
             .header("apns-push-type", "alert")
             .header("apns-priority", "10")
             .header("apns-collapse-id", collapse_key)
-            .header("apns-expiration", (now_secs() + 3600).to_string())
+            // Tracking only: APNs does not promise idempotency for this ID.
+            .header("apns-id", intent.to_string())
+            .header("apns-expiration", expires_at.to_string())
             .json(payload)
             .timeout(Duration::from_secs(15))
             .send()
@@ -161,14 +199,18 @@ impl ApnsSender {
         match response {
             Ok(response) => {
                 let status = response.status().as_u16();
+                let retry_after = retry_after(&response, if status >= 500 { 900 } else { 60 });
+                let reference = response.headers().get("apns-id")
+                    .and_then(|v| v.to_str().ok()).and_then(|v| uuid::Uuid::parse_str(v).ok())
+                    .map(|v| v.to_string());
                 let body: Value = response.json().await.unwrap_or(Value::Null);
                 let outcome = classify_apns(status, body["reason"].as_str());
                 if outcome == Outcome::ProviderAuth {
                     *self.jwt.lock().await = None;
                 }
-                outcome
+                Receipt { outcome, reference, retry_after }
             }
-            Err(_) => Outcome::Retry,
+            Err(e) => Receipt::local(transport(e)),
         }
     }
 }
@@ -179,6 +221,7 @@ pub(crate) fn classify_apns(status: u16, reason: Option<&str>) -> Outcome {
         (200, _) => Outcome::Delivered,
         (410, _) => Outcome::Invalid,
         (400, Some("BadDeviceToken" | "DeviceTokenNotForTopic")) => Outcome::Invalid,
+        (403, Some("Forbidden")) => Outcome::Rejected,
         (403, _) => Outcome::ProviderAuth,
         (429 | 500 | 503, _) => Outcome::Retry,
         _ => Outcome::Rejected,
@@ -198,6 +241,10 @@ impl FcmSender {
             credential,
             access: Mutex::new(None),
         }
+    }
+
+    pub(crate) fn target(&self) -> String {
+        format!("FCM:{}", self.credential.project_id)
     }
 
     async fn access_token(&self, http: &reqwest::Client) -> Result<String, Outcome> {
@@ -260,13 +307,16 @@ impl FcmSender {
         http: &reqwest::Client,
         token: &DeviceToken,
         message: &Value,
-    ) -> Outcome {
+        expires_at: i64,
+    ) -> Receipt {
         let access = match self.access_token(http).await {
             Ok(a) => a,
-            Err(outcome) => return outcome,
+            Err(outcome) => return Receipt::local(outcome),
         };
         let mut message = message.clone();
         message["token"] = Value::String(token.0.clone());
+        message["android"]["ttl"] = Value::String(format!("{}s", (expires_at-now_secs() as i64).max(0)));
+        message["apns"]["headers"]["apns-expiration"] = Value::String(expires_at.to_string());
         let response = http
             .post(format!(
                 "https://fcm.googleapis.com/v1/projects/{}/messages:send",
@@ -280,14 +330,18 @@ impl FcmSender {
         match response {
             Ok(response) => {
                 let status = response.status().as_u16();
+                let retry_after = retry_after(&response, 60);
                 let body: Value = response.json().await.unwrap_or(Value::Null);
-                let outcome = classify_fcm(status, &body);
+                let reference = body["name"].as_str().filter(|name| name.len() <= 512
+                    && name.starts_with(&format!("projects/{}/messages/", self.credential.project_id)))
+                    .map(str::to_owned);
+                let outcome = if status == 200 && reference.is_none() { Outcome::Unknown } else { classify_fcm(status, &body) };
                 if outcome == Outcome::ProviderAuth {
                     *self.access.lock().await = None;
                 }
-                outcome
+                Receipt { outcome, reference, retry_after }
             }
-            Err(_) => Outcome::Retry,
+            Err(e) => Receipt::local(transport(e)),
         }
     }
 }
@@ -302,8 +356,8 @@ pub(crate) fn classify_fcm(status: u16, body: &Value) -> Outcome {
         .collect();
     let has = |code: &str| codes.contains(&code);
     match status {
-        200 => Outcome::Delivered,
-        404 => Outcome::Invalid,
+        200 if body["name"].as_str().is_some_and(|name| name.starts_with("projects/") && name.contains("/messages/")) => Outcome::Delivered,
+        200 => Outcome::Unknown,
         _ if has("UNREGISTERED") || has("SENDER_ID_MISMATCH") => Outcome::Invalid,
         401 | 403 => Outcome::ProviderAuth,
         429 | 500 | 503 => Outcome::Retry,
@@ -311,10 +365,6 @@ pub(crate) fn classify_fcm(status: u16, body: &Value) -> Outcome {
         _ => Outcome::Rejected,
     }
 }
-
-/// Bounded retry (DD-151(5)): at most three attempts with growing pauses; a notification
-/// is never replayed after this, it would be stale.
-pub(crate) const RETRY_PAUSES: [Duration; 2] = [Duration::from_secs(1), Duration::from_secs(4)];
 
 #[cfg(test)]
 mod tests {
@@ -341,7 +391,9 @@ mod tests {
     #[test]
     fn fcm_errors_map_to_registration_effects() {
         let unregistered = json!({"error": {"details": [{"errorCode": "UNREGISTERED"}]}});
-        assert_eq!(classify_fcm(200, &json!({})), Outcome::Delivered);
+        assert_eq!(classify_fcm(200, &json!({})), Outcome::Unknown);
+        assert_eq!(classify_fcm(200, &json!({"name":"projects/p/messages/m"})), Outcome::Delivered);
+        assert_eq!(classify_fcm(404, &json!({})), Outcome::Rejected);
         assert_eq!(classify_fcm(404, &unregistered), Outcome::Invalid);
         assert_eq!(classify_fcm(400, &unregistered), Outcome::Invalid);
         assert_eq!(classify_fcm(401, &json!({})), Outcome::ProviderAuth);

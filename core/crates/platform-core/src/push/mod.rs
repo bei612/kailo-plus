@@ -14,6 +14,8 @@
 pub(crate) mod decide;
 pub(crate) mod send;
 mod unread;
+mod intent;
+mod token_intent;
 pub(crate) mod worker;
 
 use axum::{
@@ -400,8 +402,8 @@ async fn apply(
     let same_token = existing.as_ref().and_then(|row| row.1.as_deref()) == Some(digest.as_str())
         && old_ref.is_some();
     // A new token gets its own write-once locator; the same token keeps its reference.
-    let (reference, written) = if same_token {
-        (old_ref.clone().expect("checked above"), false)
+    let reference = if same_token {
+        old_ref.clone().expect("checked above")
     } else {
         let reference = secret_store::SecretRef {
             locator: state
@@ -410,6 +412,8 @@ async fn apply(
             version: 1,
             audience: state.memory_service.secret_audience.clone(),
         };
+        // Persist ownership before OpenBao; every error/crash remains discoverable.
+        token_intent::prepare(&state.pool, ctx.tenant_id, device, &reference).await.map_err(db)?;
         let version = state
             .secrets
             .write_once(&reference.locator, "value", &req.token)
@@ -418,15 +422,30 @@ async fn apply(
         if version != 1 {
             return Err(unavailable());
         }
-        (reference, true)
+        reference
     };
     let mut tx = state.pool.begin().await.map_err(db)?;
+    // The pre-write check cannot authorize the post-I/O mutation. Lock all exact facts
+    // again so revocation and binding have a definite transaction ordering.
+    if !intent::lock_device(&mut tx,ctx.tenant_id,ctx.tenant_principal_id,device).await.map_err(db)? {
+        return Err(refuse(StatusCode::FORBIDDEN,ErrorClass::Denied,ReasonCode::ClientKeyNotFound));
+    }
+    // Serialize exact registration mutation before acquiring token-intent ownership.
+    sqlx::query("select pg_advisory_xact_lock(hashtextextended($1,0))")
+        .bind(format!("push-registration:{}:{device}",ctx.tenant_id))
+        .execute(&mut *tx).await.map_err(db)?;
+    sqlx::query("select version from identity.push_registration where tenant_id=$1 and device_pubkey=$2 for update")
+        .bind(ctx.tenant_id).bind(device).execute(&mut *tx).await.map_err(db)?;
+    if !token_intent::bind(&mut tx,ctx.tenant_id,device,&reference).await.map_err(db)? {
+        return Err(unavailable());
+    }
     let row: Option<ViewRow> = sqlx::query_as(
         "insert into identity.push_registration
              (tenant_id, device_pubkey, tenant_principal_id, platform, app_id, locale,
               token_digest, token_secret_locator, token_secret_version, token_secret_audience,
               enabled, state)
-         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'ACTIVE')
+         select $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'ACTIVE'
+          where $12=0 or exists(select 1 from identity.push_registration where tenant_id=$1 and device_pubkey=$2)
          on conflict (tenant_id, device_pubkey) do update set
               tenant_principal_id = excluded.tenant_principal_id,
               platform = excluded.platform, app_id = excluded.app_id, locale = excluded.locale,
@@ -455,13 +474,7 @@ async fn apply(
     .await
     .map_err(db)?;
     let Some(row) = row else {
-        // Lost the CAS race (or a fresh insert collided): the new token version is unbound.
-        if written {
-            let _ = state
-                .secrets
-                .retire_push_token(ctx.tenant_id, &reference, true)
-                .await;
-        }
+        // Rollback leaves PREPARING for the persistent fencing consumer.
         return Err(refuse(
             StatusCode::CONFLICT,
             ErrorClass::Precondition,
@@ -509,20 +522,10 @@ async fn apply(
     )
     .await
     .map_err(db)?;
-    tx.commit().await.map_err(db)?;
-    // The replaced token version is retired after the new one is bound; a failure leaves an
-    // unbound version that the next registration or revocation sweep retires.
-    if written {
-        if let Some(old) = old_ref {
-            if let Err(e) = state
-                .secrets
-                .retire_push_token(ctx.tenant_id, &old, false)
-                .await
-            {
-                tracing::warn!(error = ?e, "退役旧推送令牌失败");
-            }
-        }
+    if let Some(old) = old_ref.filter(|old|old.locator != reference.locator) {
+        token_intent::retire(&mut tx,&old.locator).await.map_err(db)?;
     }
+    tx.commit().await.map_err(db)?;
     Ok(view(row))
 }
 
