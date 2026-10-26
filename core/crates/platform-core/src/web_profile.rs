@@ -768,7 +768,10 @@ pub(crate) async fn publish_prepared(
             };
         }
     }
-    let (result, response) = match fresh_client.deliver(&state.relay_http, &event, admitted).await {
+    let (result, response) = match fresh_client
+        .deliver(&state.relay_http, &event, admitted)
+        .await
+    {
         Delivery::Accepted => match fresh_client.query(&state.relay_http, &[read_filter]).await {
             Ok(actual)
                 if actual.as_array().is_some_and(|rows| {

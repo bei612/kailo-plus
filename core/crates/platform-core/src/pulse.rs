@@ -186,7 +186,10 @@ pub(crate) async fn read_note(
         return Err(StatusCode::BAD_REQUEST.into_response());
     }
     let value = client
-        .query(&state.relay_http, &[json!({"kinds":[1],"ids":[id],"limit":1})])
+        .query(
+            &state.relay_http,
+            &[json!({"kinds":[1],"ids":[id],"limit":1})],
+        )
         .await
         .map_err(|e| relay_error_response(&e, None))?;
     let events = verified(value, &[1])?;
@@ -288,7 +291,10 @@ async fn query_inner(
         // with the note ids would keep removed likes visible forever.
         let ids: Vec<String> = events.iter().map(|event| event.id.to_hex()).collect();
         let removed = client
-            .query(&state.relay_http, &[json!({"kinds":[5],"#e":ids,"limit":cap})])
+            .query(
+                &state.relay_http,
+                &[json!({"kinds":[5],"#e":ids,"limit":cap})],
+            )
             .await
             .map_err(|e| relay_error_response(&e, None))?;
         events.extend(verified(removed, &[5])?);
@@ -323,7 +329,10 @@ async fn query_inner(
         } else {
             verified(
                 client
-                    .query(&state.relay_http, &[json!({"kinds":[1],"ids":ids,"limit":cap})])
+                    .query(
+                        &state.relay_http,
+                        &[json!({"kinds":[1],"ids":ids,"limit":cap})],
+                    )
                     .await
                     .map_err(|e| relay_error_response(&e, None))?,
                 &[1],

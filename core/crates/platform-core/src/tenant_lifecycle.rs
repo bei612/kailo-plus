@@ -1513,7 +1513,10 @@ pub async fn provision_workspace_buzz(
     // 不在其 roster 上就不绑定。
     // 快照是 best-effort 发布的，读到旧值时按结果不明交给重试（SF-BUZ-34）。
     let me = control.pubkey_hex();
-    match control.roster(&state.relay_http, Scope::Channel(&channel)).await {
+    match control
+        .roster(&state.relay_http, Scope::Channel(&channel))
+        .await
+    {
         Ok(roster) if roster.iter().any(|e| e.pubkey == me) => {}
         Ok(_) => {
             tracing::warn!(workspace = %req.workspace_id, "CONTROL 不在该 Channel 的 roster 上");
@@ -2110,7 +2113,9 @@ pub async fn converge_tenant_community_archive(
         }
     }
     let sent = if req.archived {
-        operator.archive_community(&state.relay_http, &host, &owner).await
+        operator
+            .archive_community(&state.relay_http, &host, &owner)
+            .await
     } else {
         operator
             .unarchive_community(&state.relay_http, &host, &owner)

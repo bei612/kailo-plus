@@ -244,7 +244,10 @@ pub(crate) async fn update(
         Err(r) => return r,
     }
     let author = client.pubkey_hex();
-    let prior = match client.query(&state.relay_http, &[own_filter(&author)]).await {
+    let prior = match client
+        .query(&state.relay_http, &[own_filter(&author)])
+        .await
+    {
         Ok(rows) => rows,
         Err(error) => return relay_error_response(&error, None),
     };

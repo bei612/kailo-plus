@@ -103,7 +103,10 @@ pub(crate) async fn publication_target(
         vec![30621, 30617]
     };
     let value = client
-        .query(&state.relay_http, &[json!({"ids":[id],"kinds":target_kinds})])
+        .query(
+            &state.relay_http,
+            &[json!({"ids":[id],"kinds":target_kinds})],
+        )
         .await
         .map_err(|error| relay_error_response(&error, None))?;
     let events: Vec<nostr::Event> =
