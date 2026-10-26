@@ -54,4 +54,3 @@ END;
 $$ LANGUAGE plpgsql;
 CREATE TRIGGER feedback_submission_guard BEFORE UPDATE ON support.feedback_submission
     FOR EACH ROW EXECUTE FUNCTION support.guard_feedback_submission();
-
