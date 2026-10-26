@@ -62,11 +62,17 @@ impl ArchiveStore {
              CREATE TABLE IF NOT EXISTS sync_page(
                channel_id TEXT PRIMARY KEY, until_time INTEGER NOT NULL,
                before_id TEXT NOT NULL, newest_time INTEGER NOT NULL);",
-        ).map_err(|e| format!("local archive sync schema: {e}"))?;
+        )
+        .map_err(|e| format!("local archive sync schema: {e}"))?;
         Ok(Self { conn, key })
     }
 
-    pub(crate) fn subscribe(&self, channel_id: &str, kinds: &[u16], now: i64) -> Result<(), String> {
+    pub(crate) fn subscribe(
+        &self,
+        channel_id: &str,
+        kinds: &[u16],
+        now: i64,
+    ) -> Result<(), String> {
         let kinds = normalized_kinds(kinds)?;
         self.conn
             .execute(
@@ -80,12 +86,29 @@ impl ArchiveStore {
 
     /// Removes the subscription and every archived copy of that channel.
     pub(crate) fn unsubscribe(&self, channel_id: &str) -> Result<(), String> {
-        self.conn.execute("DELETE FROM deleted_event WHERE channel_id=?1", params![channel_id])
-            .and_then(|_| self.conn.execute("DELETE FROM sync_page WHERE channel_id=?1", params![channel_id]))
+        self.conn
+            .execute(
+                "DELETE FROM deleted_event WHERE channel_id=?1",
+                params![channel_id],
+            )
+            .and_then(|_| {
+                self.conn.execute(
+                    "DELETE FROM sync_page WHERE channel_id=?1",
+                    params![channel_id],
+                )
+            })
             .map_err(|e| format!("local archive unsubscribe: {e}"))?;
         self.conn
-            .execute("DELETE FROM archived_event WHERE channel_id=?1", params![channel_id])
-            .and_then(|_| self.conn.execute("DELETE FROM subscription WHERE channel_id=?1", params![channel_id]))
+            .execute(
+                "DELETE FROM archived_event WHERE channel_id=?1",
+                params![channel_id],
+            )
+            .and_then(|_| {
+                self.conn.execute(
+                    "DELETE FROM subscription WHERE channel_id=?1",
+                    params![channel_id],
+                )
+            })
             .map(|_| ())
             .map_err(|e| format!("local archive unsubscribe: {e}"))
     }
@@ -112,11 +135,15 @@ impl ArchiveStore {
                 })
             })
             .map_err(|e| format!("local archive list: {e}"))?;
-        rows.collect::<Result<Vec<_>, _>>().map_err(|e| format!("local archive list: {e}"))
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("local archive list: {e}"))
     }
 
     pub(crate) fn subscription(&self, channel_id: &str) -> Result<Option<Subscription>, String> {
-        Ok(self.subscriptions()?.into_iter().find(|s| s.channel_id == channel_id))
+        Ok(self
+            .subscriptions()?
+            .into_iter()
+            .find(|s| s.channel_id == channel_id))
     }
 
     /// Stores relay-returned events of `channel_id`, sealed. Deletions (5/9005)
@@ -127,12 +154,18 @@ impl ArchiveStore {
     pub(crate) fn ingest(&self, channel_id: &str, events: &[Event]) -> Result<usize, String> {
         let mut stored = 0;
         for event in events {
-            let has_channel = event.tags.iter().any(|tag| tag.as_slice().first().is_some_and(|s| s == "h"));
+            let has_channel = event
+                .tags
+                .iter()
+                .any(|tag| tag.as_slice().first().is_some_and(|s| s == "h"));
             let in_channel = event.tags.iter().any(|tag| {
                 let s = tag.as_slice();
                 s.len() >= 2 && s[0] == "h" && s[1] == channel_id
             }) || (!has_channel && matches!(event.kind.as_u16(), 5 | 7));
-            if !in_channel || !ARCHIVABLE_KINDS.contains(&event.kind.as_u16()) || event.verify().is_err() {
+            if !in_channel
+                || !ARCHIVABLE_KINDS.contains(&event.kind.as_u16())
+                || event.verify().is_err()
+            {
                 continue;
             }
             if DELETION_KINDS.contains(&event.kind.as_u16()) {
@@ -159,21 +192,39 @@ impl ArchiveStore {
                     "INSERT OR IGNORE INTO archived_event(event_id,channel_id,created_at,sealed)
                      SELECT ?1,?2,?3,?4 WHERE NOT EXISTS
                      (SELECT 1 FROM deleted_event WHERE event_id=?1 AND channel_id=?2)",
-                    params![event.id.to_hex(), channel_id, event.created_at.as_secs() as i64, sealed],
+                    params![
+                        event.id.to_hex(),
+                        channel_id,
+                        event.created_at.as_secs() as i64,
+                        sealed
+                    ],
                 )
                 .map_err(|e| format!("local archive insert: {e}"))?;
         }
         Ok(stored)
     }
 
-    pub(crate) fn page_cursor(&self, channel_id: &str) -> Result<Option<(i64, String, i64)>, String> {
-        self.conn.query_row(
-            "SELECT until_time,before_id,newest_time FROM sync_page WHERE channel_id=?1",
-            params![channel_id], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
-        ).optional().map_err(|e| format!("local archive page: {e}"))
+    pub(crate) fn page_cursor(
+        &self,
+        channel_id: &str,
+    ) -> Result<Option<(i64, String, i64)>, String> {
+        self.conn
+            .query_row(
+                "SELECT until_time,before_id,newest_time FROM sync_page WHERE channel_id=?1",
+                params![channel_id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .optional()
+            .map_err(|e| format!("local archive page: {e}"))
     }
 
-    pub(crate) fn save_page(&self, channel_id: &str, until: i64, before_id: &str, newest: i64) -> Result<(), String> {
+    pub(crate) fn save_page(
+        &self,
+        channel_id: &str,
+        until: i64,
+        before_id: &str,
+        newest: i64,
+    ) -> Result<(), String> {
         self.conn.execute(
             "INSERT INTO sync_page(channel_id,until_time,before_id,newest_time) VALUES(?1,?2,?3,?4)
              ON CONFLICT(channel_id) DO UPDATE SET until_time=?2,before_id=?3,newest_time=?4",
@@ -181,14 +232,32 @@ impl ArchiveStore {
         ).map(|_| ()).map_err(|e| format!("local archive page: {e}"))
     }
 
-    pub(crate) fn finish_pages(&self, channel_id: &str, cursor: i64, at: i64) -> Result<(), String> {
-        let tx = self.conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    pub(crate) fn finish_pages(
+        &self,
+        channel_id: &str,
+        cursor: i64,
+        at: i64,
+    ) -> Result<(), String> {
+        let tx = self
+            .conn
+            .unchecked_transaction()
+            .map_err(|e| e.to_string())?;
         self.record_sync(channel_id, "ok", Some(cursor), at)?;
-        tx.execute("DELETE FROM sync_page WHERE channel_id=?1", params![channel_id]).map_err(|e| e.to_string())?;
+        tx.execute(
+            "DELETE FROM sync_page WHERE channel_id=?1",
+            params![channel_id],
+        )
+        .map_err(|e| e.to_string())?;
         tx.commit().map_err(|e| e.to_string())
     }
 
-    pub(crate) fn record_sync(&self, channel_id: &str, result: &str, cursor: Option<i64>, now: i64) -> Result<(), String> {
+    pub(crate) fn record_sync(
+        &self,
+        channel_id: &str,
+        result: &str,
+        cursor: Option<i64>,
+        now: i64,
+    ) -> Result<(), String> {
         self.conn
             .execute(
                 "UPDATE subscription SET last_sync_at=?2,last_result=?3,cursor=max(cursor,coalesce(?4,cursor)) WHERE channel_id=?1",
@@ -211,13 +280,21 @@ impl ArchiveStore {
             .map_err(|e| format!("local archive read: {e}"))?;
         sealed
             .iter()
-            .map(|value| self.open_sealed(value).and_then(|json| Event::from_json(json).map_err(|_| "archived event corrupt".to_string())))
+            .map(|value| {
+                self.open_sealed(value).and_then(|json| {
+                    Event::from_json(json).map_err(|_| "archived event corrupt".to_string())
+                })
+            })
             .collect()
     }
 
     pub(crate) fn has_event(&self, event_id: &str) -> Result<bool, String> {
         self.conn
-            .query_row("SELECT 1 FROM archived_event WHERE event_id=?1", params![event_id], |_| Ok(()))
+            .query_row(
+                "SELECT 1 FROM archived_event WHERE event_id=?1",
+                params![event_id],
+                |_| Ok(()),
+            )
             .optional()
             .map(|found| found.is_some())
             .map_err(|e| format!("local archive lookup: {e}"))
@@ -250,7 +327,9 @@ impl ArchiveStore {
             let plain = nip44::decrypt(self.key.secret_key(), &self.key.public_key(), part)
                 .map_err(|_| "local archive open failed".to_string())?;
             let prefix = format!("{index}/{total}:");
-            let body = plain.strip_prefix(&prefix).ok_or("local archive chunk out of order")?;
+            let body = plain
+                .strip_prefix(&prefix)
+                .ok_or("local archive chunk out of order")?;
             out.push_str(body);
         }
         Ok(out)
@@ -284,11 +363,17 @@ fn normalized_kinds(kinds: &[u16]) -> Result<Vec<u16>, String> {
 }
 
 fn kinds_text(kinds: &[u16]) -> String {
-    kinds.iter().map(u16::to_string).collect::<Vec<_>>().join(",")
+    kinds
+        .iter()
+        .map(u16::to_string)
+        .collect::<Vec<_>>()
+        .join(",")
 }
 
 fn parse_kinds(text: &str) -> Vec<u16> {
-    text.split(',').filter_map(|value| value.parse().ok()).collect()
+    text.split(',')
+        .filter_map(|value| value.parse().ok())
+        .collect()
 }
 
 #[cfg(test)]

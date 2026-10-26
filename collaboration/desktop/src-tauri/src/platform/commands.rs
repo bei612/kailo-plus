@@ -84,35 +84,38 @@ pub(crate) async fn platform_sign_out(
     session: State<'_, NativeSession>,
 ) -> Result<SignOutReport, String> {
     super::native_auth::close_all(&app);
-    let result = async { match require_config(&app) {
-        Ok(cfg) => {
-            let browser = super::native_auth::WindowLogoutBrowser::new(&app, &cfg);
-            let report = session
-                .end_session(&state.http_client, &cfg, &browser)
-                .await?;
-            if report
-                != (SignOutReport {
-                    core_session_revoked: true,
-                    refresh_token_revoked: true,
-                    embedded_idp_session_ended: true,
-                })
-            {
-                eprintln!("platform: 服务端未确认注销：{report:?}");
+    let result = async {
+        match require_config(&app) {
+            Ok(cfg) => {
+                let browser = super::native_auth::WindowLogoutBrowser::new(&app, &cfg);
+                let report = session
+                    .end_session(&state.http_client, &cfg, &browser)
+                    .await?;
+                if report
+                    != (SignOutReport {
+                        core_session_revoked: true,
+                        refresh_token_revoked: true,
+                        embedded_idp_session_ended: true,
+                    })
+                {
+                    eprintln!("platform: 服务端未确认注销：{report:?}");
+                }
+                Ok(report)
             }
-            Ok(report)
+            Err(_) => {
+                // 没有部署配置就到不了任何服务端：本机若还持有凭据，服务端未确认
+                let held = session.has_credentials();
+                let hint_held = session.sign_out().await?;
+                let held = held.unwrap_or(true);
+                Ok(SignOutReport {
+                    core_session_revoked: !held,
+                    refresh_token_revoked: !held,
+                    embedded_idp_session_ended: !hint_held,
+                })
+            }
         }
-        Err(_) => {
-            // 没有部署配置就到不了任何服务端：本机若还持有凭据，服务端未确认
-            let held = session.has_credentials();
-            let hint_held = session.sign_out().await?;
-            let held = held.unwrap_or(true);
-            Ok(SignOutReport {
-                core_session_revoked: !held,
-                refresh_token_revoked: !held,
-                embedded_idp_session_ended: !hint_held,
-            })
-        }
-    }}.await;
+    }
+    .await;
     crate::local_archive::erase_on_sign_out(&app).await?;
     result
 }
