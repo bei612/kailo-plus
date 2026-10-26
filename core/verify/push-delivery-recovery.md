@@ -186,3 +186,48 @@ Android 原生接入已进入后续集成，原固定检查不包含它；原生
 以及完整扫描、失败分类与有界根作者读取。SQLx 原生成清理入库为 `b19846236`，
 2,070 文件比较一致后最终 prepare check 退出 0；详见
 [最新联合回执](phase1-integration-core-dd81-20261026.json)。这仍不是供应商投递或设备验收。
+
+
+## 撤权至 SecretRef 退休的实际组合消费者
+
+本批以 `27bd60c40` 为基，只抽出原 `worker::sweep` 的数据库、SecretStore 与策略
+依赖，原定时入口调用同一函数；`token_intent::sweep` 消费同一原对象。
+没有新模型、表、API、通知偏好或退休规则。原先分开的数据库与 SecretStore
+检查现通过同一个原 Core sweep 串接，关联 DD-151 与 V-SCN-249。
+
+固定源码 `2b991a896d726525a9f0b296052e00a575da54e5`，原不可变 SDK
+`sha256:3007729eb192341a4f004a88e42e1e66c94fc67d763acfc96568bd7311116018`，
+实际 4 CPU / 16 GiB；全新独立 PostgreSQL 1 CPU / 2 GiB。
+源码由 CI 直接从 GitHub 固定对象解包，缓存仍在原 Data 路径。
+
+- 原 `original_sweep_revokes_then_retires_same_token_only_after_native_receipt`
+  显式启用 ignored 检查，真实 PG 与原 SecretStore HTTP client **1/1** 通过，
+  930 项过滤未执行，无环境缺失早返。完整迁移、前后格式和 Core 包
+  `--all-targets` Clippy `-D warnings` 均退出 0；没有重复原 31 项或全 workspace。
+- 分别撤 CLIENT 设备、TenantMembership、将 Tenant 转 DELETING，原 sweep
+  同事务清除登记的 SecretRef、禁用登记并写原 REVOCATION 审计。合法设备保持原引用。
+  HTTP 503 或 destroy 204 后 metadata 尚未确认时，原意图保持 RETIRING，
+  原 bind 拒绝旧绑定；到原退避时间后仍退休同 locator/version 1，查证 destroyed
+  后才转 RETIRED。重试不增加登记版本或重复撤销审计，每个原引用只发一次 destroy。
+- HTTP 对端是 scripted OpenBao，使用独立夹具 AppRole、Tenant namespace 与回执；
+  实际执行的是原 SecretStore 认证、KV metadata/destroy 消费者。这不等于真实部署
+  OpenBao、供应商凭据、APNs/FCM 或真机验收，没有读取或复制部署秘密。
+- 前一固定 `0c5efc4c2` 中，删除原 sweep 的 retire 调用，原检查以
+  BOUND 不等于 RETIRING 实际失败 101；忽略 SecretStore 退休错误，原检查以
+  RETIRED 不等于 RETIRING 实际失败 101。每次逐字恢复后均 1/1 通过。
+  该批随后 Clippy 因测试元组复杂度退出 101；最终固定版本只命名该元组类型，
+  同一消费者与 Clippy 重验通过，未重复破坏检查。
+
+两固定源各 3,286 个归档文件均与执行后源逐字一致；每批 SDK、PG 与独立网络
+实际清理回读为空，SDK 未 OOM。原失败、命令、限额和日志摘要见
+[组合消费者回执](push-token-retirement-receipt.json)，CI 原件分别位于
+`/volumes/data/kailo/conformance/checks/push-retirement-0c5efc4c2` 和
+`/volumes/data/kailo/conformance/checks/push-retirement-2b991a896`。
+
+这补齐撤权到令牌退休的组合消费者验证，不宣称完整 DD-151 完成或已经部署。
+本轮 upstream status 元数据检查退出 0，但隔离导出未挂只读 references，10 项均报告
+缺少上游而无法比较，不能记为无上游变化。对本机只读原对象的额外核对为 Buzz
+`779af8886caae1317b4de962082429867ab61503`、Web
+`a6766c482533d028582d0efcfd3740769f86217c`；没有执行上游源码。
+原三端没有可直接当作全本人 DND 的机器开关；设备通知 enabled、原本地通知开关、
+任意状态文字以及 online/away/offline 不能替代设计认可的 DND 权威，本批未改其语义。
