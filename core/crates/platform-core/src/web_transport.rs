@@ -55,16 +55,16 @@ pub(crate) const FILTERED_PUBLICATION_ACTIONS: [&str; 6] = [
     crate::pulse::PUBLISH_ACTION,
 ];
 
-fn publication_retry_confirmed(action: &str, event_type: Option<&str>) -> bool {
+fn publication_retry_confirmed(action: &str, event_type: Option<&str>, absence_proven: bool) -> bool {
     // Historical reconciliation used filtered Relay queries. Preserve those
     // audit rows, but never let their NOT_DELIVERED authorize a new signature.
-    !FILTERED_PUBLICATION_ACTIONS.contains(&action) || event_type == Some("OUTCOME")
+    !FILTERED_PUBLICATION_ACTIONS.contains(&action) || event_type == Some("OUTCOME") || absence_proven
 }
 /// 成员修改频道原主题（DD-119(9)）。对账按它找这一类发布。
 pub const TOPIC_ACTION: &str = "workspace.channel.topic.publish";
 
 // The retry consumer and its PostgreSQL regression use the same snapshot query.
-const PREVIOUS_PUBLICATION_SQL: &str = r#"select a.operation_id, a.event_id, a.mention_installation_ids, a.mention_pubkeys, a.message_kind, a.parent_event_id, a.edit_event_id, a.delete_event_id, a.send_to_channel_source_event_id,
+pub(crate) const PREVIOUS_PUBLICATION_SQL: &str = r#"select a.operation_id, a.event_id, a.mention_installation_ids, a.mention_pubkeys, a.message_kind, a.parent_event_id, a.edit_event_id, a.delete_event_id, a.send_to_channel_source_event_id,
                   a.link_preview_snapshot_ids, a.suppress_link_previews, a.reference_mention_pubkeys,
                   a.addressed_installation_ids,
                   array(select r.target_id from audit.audit_event r
@@ -75,14 +75,17 @@ const PREVIOUS_PUBLICATION_SQL: &str = r#"select a.operation_id, a.event_id, a.m
                     where r.operation_id = a.operation_id
                       and r.event_type in ('OUTCOME', 'RECONCILIATION')
                       and not (r.event_type='RECONCILIATION' and r.result_code='NOT_DELIVERED'
-                               and r.action_key=any($6))
+                               and r.action_key=any($6) and not audit.publication_absence_proven(r.publication_proof,r.evidence_refs))
                     order by r.occurred_at desc, r.id desc limit 1) as result,
                   (select r.event_type from audit.audit_event r
                     where r.operation_id = a.operation_id
                       and r.event_type in ('OUTCOME', 'RECONCILIATION')
                       and not (r.event_type='RECONCILIATION' and r.result_code='NOT_DELIVERED'
-                               and r.action_key=any($6))
-                    order by r.occurred_at desc, r.id desc limit 1) as result_event_type
+                               and r.action_key=any($6) and not audit.publication_absence_proven(r.publication_proof,r.evidence_refs))
+                    order by r.occurred_at desc, r.id desc limit 1) as result_event_type,
+                  exists(select 1 from audit.audit_event r where r.operation_id=a.operation_id
+                    and r.event_type='RECONCILIATION' and r.result_code='NOT_DELIVERED'
+                    and audit.publication_absence_proven(r.publication_proof,r.evidence_refs)) as absence_proven
            from admission.publish_attempt a
            where a.tenant_principal_id = $1 and a.idempotency_key = $2"#;
 
@@ -177,7 +180,18 @@ pub(crate) struct PublicationScope {
     pub event_kind: u16,
     pub event_channel_id: Option<Uuid>,
     pub signer_installation_id: Option<Uuid>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub publication: Option<PublicationWindow>,
 }
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct PublicationWindow {
+    pub created_at: u64,
+    pub non_expiring: bool,
+    pub policy: collab_bridge::bridge::PublicationPolicy,
+}
+
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct PublicationBinding {
@@ -189,6 +203,20 @@ pub(crate) struct PublicationBinding {
 }
 
 impl PublicationScope {
+    pub(crate) fn claim(&self, event_id: &str) -> Option<collab_bridge::bridge::PublicationClaim> {
+        let window = self.publication.as_ref()?;
+        if !collab_bridge::bridge::valid_publication_policy(&window.policy) { return None; }
+        let claim = collab_bridge::bridge::PublicationClaim {
+            event_id: event_id.to_owned(), community_id: self.community_id.to_string(),
+            pubkey: self.event_pubkey.clone(), kind: self.event_kind,
+            channel_id: self.event_channel_id.map(|id|id.to_string()),
+            created_at: window.created_at, non_expiring: window.non_expiring,
+            epoch: window.policy.epoch.clone(),
+        };
+        claim.validate().ok()?;
+        Some(claim)
+    }
+
     pub(crate) fn matches_binding(&self, binding: &PublicationBinding) -> bool {
         self.community_id == binding.community_id
             && self.tenant_binding_version == binding.tenant_version
@@ -719,6 +747,30 @@ async fn owned_agent_keys(
         .await
         .map(|keys| Some((installation, keys)))
         .map_err(|_| StatusCode::SERVICE_UNAVAILABLE.into_response())
+}
+
+/// Reconciliation authenticates the original Agent author, never its owner or
+/// CONTROL, and only after the same current Installation/SecretRef checks.
+pub(crate) async fn publication_agent_keys(
+    state: &crate::service_api::ServiceState, tenant: Uuid, actor: Uuid,
+    workspace: Uuid, author: &str, expected_installation: Uuid,
+) -> Result<nostr::Keys, &'static str> {
+    if owned_publication_installation(state, tenant, actor, workspace, author).await? != expected_installation {
+        return Err("ACTOR_UNREADABLE");
+    }
+    let row: Option<OwnedAgentKeyRow> = sqlx::query_as(OWNED_AGENT_KEY_SQL)
+        .bind(tenant).bind(author).bind(workspace).bind(actor).fetch_optional(&state.pool)
+        .await.map_err(|_|"ACTOR_UNREADABLE")?;
+    let Some((installation, pubkey, Some(locator), Some(version), Some(audience))) = row else {
+        return Err("ACTOR_UNREADABLE");
+    };
+    let version = u32::try_from(version).ok().filter(|v|*v>0).ok_or("ACTOR_UNREADABLE")?;
+    if installation != expected_installation || audience != state.secret_audience
+        || locator != state.secrets.tenant_locator(tenant, &format!("buzz-agent/installation/{installation}")) {
+        return Err("ACTOR_UNREADABLE");
+    }
+    crate::server_identity::read_bound_keys(&state.secrets, &SecretRef { locator, version, audience }, &pubkey)
+        .await.map_err(|_|"ACTOR_UNREADABLE")
 }
 
 fn mutation_target_matches(
@@ -2474,6 +2526,7 @@ async fn publish(
         event_id: String,
         result: Option<String>,
         result_event_type: Option<String>,
+        absence_proven: bool,
         mention_installation_ids: Vec<Uuid>,
         addressed_installation_ids: Vec<Uuid>,
         mention_pubkeys: Vec<String>,
@@ -2573,7 +2626,7 @@ async fn publish(
                 );
             }
             Some("NOT_DELIVERED")
-                if publication_retry_confirmed(action_key, p.result_event_type.as_deref()) => {}
+                if publication_retry_confirmed(action_key, p.result_event_type.as_deref(), p.absence_proven) => {}
             // 还没有结论：仍是那一次的结果不明，不能再发一条
             _ => {
                 return error_body(
@@ -3057,6 +3110,13 @@ async fn publish(
         _ => None,
     };
 
+    // Fresh actual writer readiness is required before producing an epoch-bound
+    // event. A stale/unsupported policy cannot be replaced by a Core default.
+    let publication_policy = match client.publication_policy(&state.relay_http).await {
+        Ok(policy) => policy,
+        Err(error) => return relay_error_response(&error, None),
+    };
+
     // 先签名：event id 在签完时就确定。把它连同 actor、scope、operation 落进
     // DISPATCH 审计之后才发送——之后无论结果如何，这条消息动作都可关联
     // （Stage 1 退出门禁），结果不明时也有一个能去 Relay 查证的键（DD-81）。
@@ -3133,7 +3193,7 @@ async fn publish(
         Publication::Hide => client.sign(41012, "", &[vec!["h".into(), channel_id.clone()]]),
         Publication::Reopen => client.sign(41010, "", &[vec!["h".into(), channel_id.clone()]]),
     };
-    let event = match signed {
+    let event = match signed.and_then(|event| client.bind_publication_epoch(&event, &publication_policy)) {
         Ok(e) => e,
         Err(e) => {
             tracing::warn!(error = %e, "签名失败");
@@ -3152,6 +3212,11 @@ async fn publish(
         event_kind: event.kind.as_u16(),
         event_channel_id,
         signer_installation_id,
+        publication: Some(PublicationWindow {
+            created_at: event.created_at.as_secs(),
+            non_expiring: !event.tags.iter().any(|tag|tag.as_slice().first().is_some_and(|name|name=="expiration")),
+            policy: publication_policy,
+        }),
     };
     let event_id = event.id.to_hex();
     let operation_id = Uuid::new_v4();
@@ -5097,6 +5162,7 @@ mod tests {
             event_kind: 41012,
             event_channel_id: None,
             signer_installation_id: None,
+            publication: None,
         };
         let scope = PublicationScope {
             event_channel_id: scope.target_channel_id,
@@ -5261,6 +5327,7 @@ mod tests {
             event_kind: 5,
             event_channel_id: Some(channel),
             signer_installation_id: None,
+            publication: None,
         };
         let target = MessageTarget::Workspace(workspace);
         assert!(
@@ -5408,6 +5475,7 @@ mod tests {
             event_kind: 5,
             event_channel_id: binding.channel_id,
             signer_installation_id: None,
+            publication: None,
         };
         let id = "01".repeat(32);
         let observed = collab_bridge::bridge::PublicationObservation {
@@ -5620,10 +5688,10 @@ mod tests {
         ] {
             assert!(!super::publication_retry_confirmed(
                 action,
-                Some("RECONCILIATION")
+                Some("RECONCILIATION"), false
             ));
-            assert!(!super::publication_retry_confirmed(action, None));
-            assert!(super::publication_retry_confirmed(action, Some("OUTCOME")));
+            assert!(!super::publication_retry_confirmed(action, None, false));
+            assert!(super::publication_retry_confirmed(action, Some("OUTCOME"), false));
         }
     }
 

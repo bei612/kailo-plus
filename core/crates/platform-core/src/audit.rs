@@ -150,6 +150,33 @@ pub struct AuditEntry<'a> {
     pub correlation_id: Uuid,
 }
 
+/// DD-81 closed public metadata proof; never an EvidenceRef payload. It lives
+/// with the append-only audit even after the idempotency slot is reused.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct PublicationProof {
+    pub scope: crate::web_transport::PublicationScope,
+    pub settlement: collab_bridge::bridge::PublicationSettlement,
+}
+
+impl PublicationProof {
+    pub(crate) fn proves_absence(&self) -> bool {
+        self.scope.claim(&self.settlement.claim.event_id)
+            .is_some_and(|claim| self.settlement.proves_absence_for(&claim))
+    }
+}
+
+pub(crate) async fn append_publication_proof(
+    tx: &mut Transaction<'_, Postgres>, e: AuditEntry<'_>, proof: &PublicationProof,
+) -> Result<(), sqlx::Error> {
+    if e.event_type != "RECONCILIATION" || e.result_code != "NOT_DELIVERED"
+        || !proof.proves_absence()
+        || !e.evidence_refs.iter().any(|e|e.kind == EvidenceKind::BuzzEventId && e.value == proof.settlement.claim.event_id) {
+        return Err(sqlx::Error::Protocol("Invalid publication absence proof".into()));
+    }
+    append_inner(tx, e, Some(proof)).await
+}
+
 /// 在给定事务内追加一条审计事实。
 ///
 /// `ON CONFLICT (event_key) DO NOTHING`：重试到达同一结果，不是失败。约束本身
@@ -158,14 +185,20 @@ pub async fn append(
     tx: &mut Transaction<'_, Postgres>,
     e: AuditEntry<'_>,
 ) -> Result<(), sqlx::Error> {
+    append_inner(tx, e, None).await
+}
+
+async fn append_inner(
+    tx: &mut Transaction<'_, Postgres>, e: AuditEntry<'_>, proof: Option<&PublicationProof>,
+) -> Result<(), sqlx::Error> {
     sqlx::query(
         "insert into audit.audit_event
              (id, event_key, tenant_id, workspace_id, operation_id, event_type,
               human_identity_id, initiator_principal_id, actor_principal_id,
               action_key, action_version, component_type_key, target_type, target_id,
               parameter_hash, decision, result_code, result_exposure,
-              evidence_refs, correlation_id)
-         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
+              evidence_refs, correlation_id, publication_proof)
+         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
          on conflict (event_key) do nothing",
     )
     .bind(Uuid::new_v4())
@@ -188,6 +221,7 @@ pub async fn append(
     .bind(e.result_exposure)
     .bind(evidence_json(&e.evidence_refs))
     .bind(e.correlation_id)
+    .bind(proof.map(sqlx::types::Json))
     .execute(&mut **tx)
     .await
     .map(|_| ())
