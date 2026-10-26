@@ -654,3 +654,9 @@ source 相等，原 manifest 仅该产物 source/artifact 两字段 +2/-2，不�
 - Rust 格式化在同镜像 1 CPU、512 MiB memory+swap 容器完成；没有使用宿主工具链。主会话在编译前的 diff 复核指出 trait 实现方法多余可见性，已先修正再编译，本增量没有因此产生编译失败回执。
 - 原始日志位于 CI 节点 `/volumes/data/kailo/verification/dd159-lifecycle/`：`format-preflight.log`、`format-limits.log`、`format.log`、`cargo-preflight.log`、`cargo-limits.log`、`24e3c5f6-cargo.log`。正常应用重启走持久 refresh 成功路径，不触发新登录接管的归档擦除；本次没有新增 UI/TypeScript 修改，不重复此前 Node 检查。
 - 这是源码修复与定向验证，不是全量集成门禁、安装包、部署或 V-SCN-262/263 真机验收。OS 钥匙串、真实 Relay 撤员、离线恢复和 Desktop 操作仍待实际设备走查。
+
+#### 新增检查反向验证（2026-10-26）
+
+按 GOAL 的反向验证要求，从已推送 `24e3c5f61d712cf2d899ed5c89a2ef4bdc86c303` 导出独立源码，临时仅把 `local_archive/store.rs` 的 `PRAGMA secure_delete=ON` 改为 `OFF`，恢复删除后密文可留存于 SQLite 空闲页的真实缺陷。原 Desktop SDK、1 CPU、4 GiB memory 与 memory+swap 执行已有 `cargo test --locked --lib local_archive::store::tests::removed_ciphertext_is_not_left_readable_in_the_live_database_free_pages -- --exact`：实际退出 101，0 passed、1 failed；失败位置为 `store_tests.rs:278` 的数据库文件不再包含被删密文片段断言，不是编译、OOM 或依赖失败。
+
+随后逐字恢复原文件，`cmp` 与前后 SHA-256 均一致：`0fcf906e40bd3f66c359252391b6d8c9f52f6a1d2f98f3d33afd8ffd25eca6a9`。同一原命令再次执行为 1 passed、0 failed、0 ignored、退出 0。两轮容器均清理，正式产品工作树始终未作上述变异。日志在 CI 节点 `/volumes/data/kailo/verification/dd159-lifecycle/negative/`：`mutated.log`、`mutated-exit.log`、`mutated-limits.log`、`restored.log`、`restored-exit.log`、`restored-limits.log`、`original.sha256`、`restored.sha256`；两个 OOM 状态记录均为 false。本记录只补新增检查有效性证据，不扩大真机或部署验收范围。
