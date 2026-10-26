@@ -142,6 +142,9 @@ function ProjectRepositoryPage(props:ProjectsViewProps) {
   const onOpen=props.onSelectedProjectChange;
   const t=useUiT();const cache=useQueryClient();
   const panel=useProjectRepositoryPanel(target.repositoryId??"");
+  // Keep source selection in the page, above the permission/read loading gate.
+  // The page is keyed by host.scopeKey, so another identity starts remote.
+  const [checkoutSelection,setCheckoutSelection]=useState<{repository:string;source:"remote"|"local"}|null>(null);
   const chatAvailable=Boolean(useProjectAgentChatHost()&&props.renderWorkItems);
   const lifetime=useMemo(()=>({controller:new AbortController()}),[host]);
   useEffect(()=>{if(lifetime.controller.signal.aborted)lifetime.controller=new AbortController();return()=>lifetime.controller.abort();},[lifetime]);
@@ -188,6 +191,8 @@ function ProjectRepositoryPage(props:ProjectsViewProps) {
     {navigationFailed?<p role="alert">{t("platform.loadFailed")}</p>:null}
     {selected?(props.renderWorkItems?props.renderWorkItems(detail,snapshot.viewerPubkey):detail):
       <RepositoryWorkspace host={host} snapshot={snapshot} project={project} repository={repository} panel={panel} renderWorkItems={props.renderWorkItems}
+        checkoutSource={{source:checkoutSelection?.repository===repository.repoAddress?checkoutSelection.source:"remote",
+          onChange:source=>setCheckoutSelection({repository:repository.repoAddress,source})}}
         tab={tab} onBack={()=>navigate(project.id)} onTabChange={next=>navigate(project.id,{repositoryId:repository.id,tab:urlTab(next)})}
         commitHash={commitHash} filePath={tab==="files"?target.filePath:undefined}
         onSelectCommit={hash=>navigate(project.id,{repositoryId:repository.id,tab:"commits",...(hash?{commitHash:hash}:{})})}
@@ -203,12 +208,13 @@ type WorkItemsSnapshot=Awaited<ReturnType<typeof loadProjectWorkItems>>;
  * and the WorkspaceTabs content. Profiles and discussion reads come from the work-item host, so the
  * tab content renders inside `renderWorkItems`; the rail and its management actions do not need it.
  */
-function RepositoryWorkspace({host,snapshot,project,repository,panel,renderWorkItems,tab,onBack,onTabChange,onOpen,commitHash,filePath,onSelectCommit,onRepositoryChange,onDiscussInChannel}:{
+function RepositoryWorkspace({host,snapshot,project,repository,panel,renderWorkItems,tab,onBack,onTabChange,onOpen,commitHash,filePath,onSelectCommit,onRepositoryChange,onDiscussInChannel,checkoutSource}:{
   host:ProjectsHost;snapshot:WorkItemsSnapshot;project:Project;repository:Project["repositories"][number];panel:ProjectRepositoryPanelState;
   renderWorkItems:ProjectsViewProps["renderWorkItems"];tab:ProjectWorkspaceTab;
   onBack:()=>void;onTabChange:(tab:ProjectWorkspaceTab)=>void;onOpen:(target:ProjectWorkItemTarget)=>void|Promise<void>;
   commitHash:string|null;filePath?:string;onSelectCommit:(hash:string|null)=>void;onRepositoryChange:(repositoryId:string)=>void;
   onDiscussInChannel?:ProjectDiscussInChannel;
+  checkoutSource:import("./useProjectLocalCheckout").ProjectCheckoutSource;
 }) {
   const t=useUiT();const cache=useQueryClient();const [createOpen,setCreateOpen]=useState(false);const [creating,setCreating]=useState(false);
   const [createReviewOpen,setCreateReviewOpen]=useState(false);
@@ -220,7 +226,7 @@ function RepositoryWorkspace({host,snapshot,project,repository,panel,renderWorkI
   const items=useMemo(()=>snapshot.items.filter(item=>item.repository.id===repository.id),[snapshot,repository.id]);
   const issues=useMemo(()=>items.flatMap(item=>item.type==="issue"?[item.issue]:[]),[items]);
   const pullRequests=useMemo(()=>items.flatMap(item=>item.type==="pull-request"?[item.pullRequest]:[]),[items]);
-  const git=useRepositoryGitState({host,repository,pullRequests,commitHash});
+  const git=useRepositoryGitState({host,repository,pullRequests,commitHash,checkoutSource});
   const open=(next:ProjectWorkItemTarget)=>{void Promise.resolve().then(()=>{if(!lifetime.controller.signal.aborted)return onOpen(next);})
     .catch(()=>{if(!lifetime.controller.signal.aborted)setNavigationFailed(true);});};
   const onCreateTask=host.publish?()=>setCreateOpen(true):undefined;
@@ -228,9 +234,9 @@ function RepositoryWorkspace({host,snapshot,project,repository,panel,renderWorkI
   // DD-130: the original Project chat mode, with the repository page context.
   const chatHost=useProjectAgentChatHost();
   const agentPageContext=useMemo(()=>buildProjectDetailAgentContext({activeTab:tab,branch:host.git?git.activeBranch:null,
-    file:tab==="files"&&filePath?{kind:"file",path:filePath}:null,project,repository,source:"remote",
+    file:tab==="files"&&filePath?{kind:"file",path:filePath}:null,project,repository,source:git.localCheckout.source,
     viewLabels:{overview:t("projects.home.overview"),...Object.fromEntries(Object.entries(workspaceTabTitle).map(([key,value])=>[key,t(value)]))},
-    workItems:[commitHash?{hash:commitHash}:null,null,null]}),[commitHash,filePath,git.activeBranch,host.git,project,repository,t,tab]);
+    workItems:[commitHash?{hash:commitHash}:null,null,null]}),[commitHash,filePath,git.activeBranch,git.localCheckout.source,host.git,project,repository,t,tab]);
   const chatPanel=chatHost&&renderWorkItems?(width:ProjectChatPanelWidth)=>renderWorkItems(<ProjectAgentChatPanel canResetWidth={width.canReset}
     constrainToAvailableSpace={false} context={panel.agentContext(agentPageContext)} onClose={panel.collapse} onResetWidth={width.onResetWidth}
     onResizeStart={width.onResizeStart} widthPx={width.widthPx}/>,snapshot.viewerPubkey):undefined;
