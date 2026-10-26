@@ -36,11 +36,22 @@ DD-159 原 Desktop SDK 在 `24e3c5f61` 的归档、原生会话、工作区检�
 原生投递核验与 Android FCM 原生接入的后续批次尚未合入本集成检查；不由 Core
 FCM sender 推断 Android 客户端已经可用。
 
+固定 `d6469e936` 与设计 `bb41415a5` 的原 SDK 1 CPU / 2 GiB 文档门禁全部
+退出 0：393 引用、96 实体、160 DD、30 SS、260 场景及设计 22 篇均闭合，
+markdownlint 无问题。原件在 CI
+`/volumes/data/kailo/verification/phase1-integration/docs-d6469e936/`，不含源码编译。
+
 较早固定源码 `a52203970` 已通过原 `docs`、`migrate`、`lint`、`contract`、
 `verify`、`replay`、`trace` 七步；Rust 主目标 809 项、平台 TS 1979 项、Web 726
 项与发布工具 87 项通过，仅适用于该固定源码。它不代替后续新增范围的完整门禁。
 当前仍缺最新 full、supply/seam、匹配制品摘要及真实三端/多账号/多 Agent 验收。
 反馈、推送、资料等追溯中的空 artifact 列表保持原样，不以源码 SHA 冒充制品摘要。
+
+后续 Core 发布对账修复已进入候选：普通查询空不再产生确定未送达；旧错误的
+`RECONCILIATION/NOT_DELIVERED` 不再授权重签，也不再触发幂等记录清理或从未决
+扫描/度量消失。肯定证据追加幂等修正，旧审计保留。该新增范围及 Android 通知折叠
+tag 尚待原 SDK 合批检查，不能借上述 `06712387a` 回执记通过；普通消息的完整
+writer 缺失查证仍未闭合。
 
 上一批发布源 `dc2d6ca18bb5c355ebb3e96609f0f591532479cf` 的八个运行发布阶段完成，
 pin 为 `ebc23eb293942ed9721cb56d2b76ee871f91bc40`，但 journal 业务验收明确为

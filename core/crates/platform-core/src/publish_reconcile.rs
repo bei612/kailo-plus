@@ -39,8 +39,8 @@ const COMMUNITY_PROJECT_KINDS: [i32; 8] = [1, 5, 1618, 1621, 1630, 1631, 1632, 1
 
 pub struct Config {
     pub interval: Duration,
-    /// DISPATCH 之后至少等这么久仍查不到，才判定未送达。必须不小于 Relay 的
-    /// 时间漂移窗口（`07` §1）
+    /// DISPATCH 之后的诊断结算窗，必须不小于 Relay 的时间漂移窗口（`07` §1）。
+    /// 普通查询空不据此判定未送达；原生 writer 查证另需原签名时间与范围事实。
     pub settle: Duration,
     pub batch: i64,
     /// 幂等记录在其操作有结论之后再保留这么久：够用户在界面上重试，也不让它
