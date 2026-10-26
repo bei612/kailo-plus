@@ -52,7 +52,9 @@ pub(super) fn erase(dir: &Path, tag: &str) -> Result<(), String> {
 pub(crate) struct SessionArchive(pub AppHandle);
 
 impl crate::platform::api::SessionArchive for SessionArchive {
-    fn erase(&self) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), String>> + Send + '_>> {
+    fn erase(
+        &self,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), String>> + Send + '_>> {
         Box::pin(async move {
             let _guard = lock().lock().await;
             erase_all(&archive_dir(&self.0)?)
@@ -60,7 +62,11 @@ impl crate::platform::api::SessionArchive for SessionArchive {
     }
 }
 
-pub(crate) async fn change_device_key(app: &AppHandle, state: &AppState, keys: Keys) -> Result<(), String> {
+pub(crate) async fn change_device_key(
+    app: &AppHandle,
+    state: &AppState,
+    keys: Keys,
+) -> Result<(), String> {
     replace_device_key(&state.keys, keys, || erase_all(&archive_dir(app)?)).await
 }
 
@@ -92,7 +98,6 @@ fn erase_all(dir: &Path) -> Result<(), String> {
     Ok(())
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -111,7 +116,8 @@ mod tests {
             replace_device_key(&task_current, next, || {
                 task_erased.store(true, std::sync::atomic::Ordering::SeqCst);
                 Ok(())
-            }).await
+            })
+            .await
         });
         tokio::task::yield_now().await;
         assert!(!task.is_finished());
@@ -126,8 +132,14 @@ mod tests {
     async fn failed_erasure_preserves_device_identity_and_same_key_does_not_erase() {
         let keys = Keys::generate();
         let current = std::sync::Mutex::new(keys.clone());
-        assert!(replace_device_key(&current, Keys::generate(), || Err("locked".into())).await.is_err());
+        assert!(
+            replace_device_key(&current, Keys::generate(), || Err("locked".into()))
+                .await
+                .is_err()
+        );
         assert_eq!(current.lock().unwrap().public_key(), keys.public_key());
-        replace_device_key(&current, keys, || panic!("same key is not a switch")).await.unwrap();
+        replace_device_key(&current, keys, || panic!("same key is not a switch"))
+            .await
+            .unwrap();
     }
 }

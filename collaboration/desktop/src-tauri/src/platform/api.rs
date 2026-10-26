@@ -151,7 +151,9 @@ impl NativeSession {
     }
 
     pub(crate) fn set_archive(&self, archive: Box<dyn SessionArchive>) -> Result<(), String> {
-        self.archive.set(archive).map_err(|_| "archive lifecycle already installed".to_owned())
+        self.archive
+            .set(archive)
+            .map_err(|_| "archive lifecycle already installed".to_owned())
     }
 
     async fn erase_archive(&self) -> Result<(), String> {
@@ -190,7 +192,11 @@ impl NativeSession {
     }
 
     /// 只接受仍属于该次登录的令牌，迟到回调不恢复已退出的身份。
-    pub(crate) async fn adopt_for(&self, generation: u64, tokens: TokenResponse) -> Result<(), String> {
+    pub(crate) async fn adopt_for(
+        &self,
+        generation: u64,
+        tokens: TokenResponse,
+    ) -> Result<(), String> {
         let _lifecycle = self.lifecycle.lock().await;
         let retired = {
             let mut state = self.state()?;
@@ -260,7 +266,13 @@ impl NativeSession {
             // 退出提示同样先移出本机：不论 IdP 是否确认都不再保留（07 §4.7.5）。
             let hint = self.embedded_hint.load();
             let hint_deleted = self.embedded_hint.delete();
-            (access, refresh, refresh_in_flight, hint, refresh_deleted.and(hint_deleted))
+            (
+                access,
+                refresh,
+                refresh_in_flight,
+                hint,
+                refresh_deleted.and(hint_deleted),
+            )
         };
         // Erase before any remote logout wait. New logins may proceed afterwards;
         // a late logout response must never erase their archive.
@@ -327,7 +339,9 @@ impl NativeSession {
         let refresh_token = {
             let state = self.state()?;
             Self::check_generation(&state, generation)?;
-            if state.retired { return Err(NOT_SIGNED_IN.into()); }
+            if state.retired {
+                return Err(NOT_SIGNED_IN.into());
+            }
             if let Some(access) = state.access.as_ref() {
                 if Some(access.as_str()) != rejected_access {
                     return Ok(access.clone());
@@ -445,16 +459,16 @@ impl NativeSession {
             if status == reqwest::StatusCode::UNAUTHORIZED {
                 let _lifecycle = self.lifecycle.lock().await;
                 let local_clear = {
-                let mut state = self.state()?;
-                Self::check_generation(&state, generation)?;
-                // 该401也可能比同代际的另一刷新迟到，不能清理新访问令牌。
-                if state.access.as_deref() != Some(token.as_str()) {
-                    return Err(SUPERSEDED.to_owned());
-                }
-                state.generation = state.generation.wrapping_add(1);
-                state.access = None;
-                state.retired = true;
-                self.refresh.delete()
+                    let mut state = self.state()?;
+                    Self::check_generation(&state, generation)?;
+                    // 该401也可能比同代际的另一刷新迟到，不能清理新访问令牌。
+                    if state.access.as_deref() != Some(token.as_str()) {
+                        return Err(SUPERSEDED.to_owned());
+                    }
+                    state.generation = state.generation.wrapping_add(1);
+                    state.access = None;
+                    state.retired = true;
+                    self.refresh.delete()
                 };
                 let erased = self.erase_archive().await;
                 local_clear?;
@@ -900,7 +914,10 @@ mod sign_out_tests {
         });
         assert_eq!(result.unwrap_err(), SUPERSEDED);
         assert_eq!(
-            session.adopt_for(generation, replacement()).await.unwrap_err(),
+            session
+                .adopt_for(generation, replacement())
+                .await
+                .unwrap_err(),
             SUPERSEDED
         );
         assert!(!session.has_credentials().unwrap());
@@ -1092,5 +1109,4 @@ mod sign_out_tests {
         assert_eq!(session.embedded_hint.load().unwrap(), None);
     }
     include!("api_archive_tests.rs");
-
 }

@@ -7,9 +7,9 @@
 //! re-verified against the relay). The observer (24200) and turn-metric (44200)
 //! scopes and `referenced_e` are not offered (DD-125(6), DD-159(1)).
 
-mod store;
 mod lifecycle;
-pub(crate) use lifecycle::{erase_previous_identity, change_device_key, SessionArchive};
+mod store;
+pub(crate) use lifecycle::{change_device_key, erase_previous_identity, SessionArchive};
 use lifecycle::{erase, erase_foreign};
 
 use std::path::{Path, PathBuf};
@@ -90,9 +90,10 @@ async fn query_in_scope(
     filters: &[serde_json::Value],
 ) -> Result<Vec<nostr::Event>, Access> {
     let check = || {
-        session.has_credentials().unwrap_or(false) && state
-            .signing_keys()
-            .is_ok_and(|keys| keys.public_key().to_hex() == identity)
+        session.has_credentials().unwrap_or(false)
+            && state
+                .signing_keys()
+                .is_ok_and(|keys| keys.public_key().to_hex() == identity)
             && relay_api_base_url_with_override(state) == relay
     };
     if !check() {
@@ -105,7 +106,13 @@ async fn query_in_scope(
     result.map_err(|error| classify_relay_error(&error))
 }
 
-async fn probe(state: &AppState, session: &NativeSession, identity: &str, relay: &str, channel_id: &str) -> Access {
+async fn probe(
+    state: &AppState,
+    session: &NativeSession,
+    identity: &str,
+    relay: &str,
+    channel_id: &str,
+) -> Access {
     let roster = match query_in_scope(
         state,
         session,
@@ -156,7 +163,6 @@ fn archive_dir(app: &AppHandle) -> Result<PathBuf, String> {
 fn keyring() -> &'static crate::secret_store::SecretStore {
     crate::secret_store::SecretStore::shared(crate::app_state::keyring_service())
 }
-
 
 struct Opened {
     store: ArchiveStore,
@@ -257,7 +263,15 @@ pub async fn local_archive_subscribe(
 ) -> Result<LocalArchiveStatus, String> {
     let _guard = lock().lock().await;
     let opened = open(&app, &state)?;
-    match probe(&state, &app.state::<NativeSession>(), &opened.identity, &opened.relay, &channel_id).await {
+    match probe(
+        &state,
+        &app.state::<NativeSession>(),
+        &opened.identity,
+        &opened.relay,
+        &channel_id,
+    )
+    .await
+    {
         Access::Readable => {}
         Access::Lost => {
             opened.store.unsubscribe(&channel_id)?;
@@ -306,7 +320,14 @@ pub async fn local_archive_sync(
     let mut opened = open(&app, &state)?;
     let mut results = Vec::new();
     for sub in opened.store.subscriptions()? {
-        let access = probe(&state, &app.state::<NativeSession>(), &opened.identity, &opened.relay, &sub.channel_id).await;
+        let access = probe(
+            &state,
+            &app.state::<NativeSession>(),
+            &opened.identity,
+            &opened.relay,
+            &sub.channel_id,
+        )
+        .await;
         let outcome = match access {
             Access::Readable => {
                 pull(
