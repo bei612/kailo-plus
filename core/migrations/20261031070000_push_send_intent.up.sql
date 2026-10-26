@@ -14,7 +14,7 @@ CREATE TABLE projection.push_send_intent (
  event_created_at bigint NOT NULL CHECK (event_created_at >= 0),
  state text NOT NULL DEFAULT 'PREPARED' CONSTRAINT push_send_checkpoint_states
    CHECK (state IN ('PREPARED','CLAIMED','SENDING','RETRY','ACCEPTED','REJECTED','CANCELLED','UNKNOWN')),
- attempts integer NOT NULL DEFAULT 0 CHECK (attempts BETWEEN 0 AND 3),
+ attempts integer NOT NULL DEFAULT 0 CHECK (attempts >= 0),
  lease_id uuid, lease_until timestamptz,
  next_attempt_at timestamptz NOT NULL DEFAULT now(),
  expires_at timestamptz NOT NULL,
@@ -32,12 +32,12 @@ CREATE TABLE admission.push_token_intent (
  audience text NOT NULL, device_pubkey text NOT NULL,
  state text NOT NULL DEFAULT 'PREPARING' CONSTRAINT push_token_checkpoint_states
    CHECK (state IN ('PREPARING','BOUND','RETIRING','RETIRED')),
- lease_until timestamptz NOT NULL DEFAULT now() + interval '2 minutes',
+ lease_until timestamptz NOT NULL,
  next_attempt_at timestamptz NOT NULL DEFAULT now(),
  failures integer NOT NULL DEFAULT 0 CHECK (failures >= 0),
  created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now()
 );
 -- Already-bound tokens use the same retirement consumer. No token values are copied.
-INSERT INTO admission.push_token_intent(locator,tenant_id,audience,device_pubkey,state)
-SELECT token_secret_locator,tenant_id,token_secret_audience,device_pubkey,'BOUND'
+INSERT INTO admission.push_token_intent(locator,tenant_id,audience,device_pubkey,state,lease_until)
+SELECT token_secret_locator,tenant_id,token_secret_audience,device_pubkey,'BOUND',now()
 FROM identity.push_registration WHERE token_secret_locator IS NOT NULL;

@@ -9,14 +9,24 @@ use super::decide::{self, MessageFacts, UnreadContext};
 
 type EventRow = (String, String, String, i64);
 
-async fn events(
+pub(super) async fn events(
     conn: &mut PgConnection,
     tenant: Uuid,
     principal: Uuid,
 ) -> Result<Vec<EventRow>, sqlx::Error> {
     sqlx::query_as(
-        "select event_id, context_key, channel_id, created_at from projection.push_unread
-          where tenant_id = $1 and tenant_principal_id = $2",
+        "select u.event_id,u.context_key,u.channel_id,u.created_at from projection.push_unread u
+          where u.tenant_id=$1 and u.tenant_principal_id=$2
+            and exists(select 1 from identity.tenant t join identity.tenant_membership m on m.tenant_id=t.id
+                where t.id=u.tenant_id and t.state='ACTIVE' and m.tenant_principal_id=u.tenant_principal_id and m.state='ACTIVE')
+            and (exists(select 1 from projection.workspace_buzz_binding b
+                join identity.workspace w on w.id=b.workspace_id
+                join identity.workspace_membership m on m.workspace_id=w.id
+                where b.channel_id::text=u.channel_id and w.tenant_id=u.tenant_id and b.state='ACTIVE'
+                  and w.state='ACTIVE' and m.tenant_principal_id=u.tenant_principal_id and m.state='ACTIVE')
+             or exists(select 1 from projection.conversation_buzz_binding c
+                where c.tenant_id=u.tenant_id and c.channel_id::text=u.channel_id and c.state='ACTIVE'
+                  and u.tenant_principal_id=any(c.participant_principal_ids)))",
     )
     .bind(tenant)
     .bind(principal)

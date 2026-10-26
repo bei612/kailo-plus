@@ -1,0 +1,21 @@
+{
+  "leaseSeconds": 60,
+  "notificationTtlSeconds": 3600,
+  "maxAttempts": 3,
+  "retryBaseSeconds": 60,
+  "apnsRetryFloorSeconds": 900,
+  "providerTimeoutSeconds": 15,
+  "scanPageSize": 500,
+  "scanEventBound": 20000,
+  "dispatchBatchSize": 100,
+  "retirementBatchSize": 100,
+  "tokenPrepareLeaseSeconds": 120,
+  "tokenRetryBaseSeconds": 5,
+  "tokenRetryMaxSeconds": 3600,
+  "receiptCommitAttempts": 3,
+  "collapseSeconds": 30,
+  "deviceWindowSeconds": 60,
+  "deviceAttemptLimit": 20,
+  "credentialTtlSeconds": 600,
+  "relayReadTimeoutSeconds": 15
+}

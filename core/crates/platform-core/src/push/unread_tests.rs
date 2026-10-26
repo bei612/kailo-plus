@@ -14,6 +14,16 @@ fn message(id: u64, at: u64, channel: &str, root: Option<&str>) -> MessageFacts 
     }
 }
 
+async fn visible_workspace(conn:&mut sqlx::PgConnection,tenant:Uuid,actor:Uuid,channel:&str) {
+ let id=Uuid::parse_str(channel).unwrap();
+ sqlx::query("insert into identity.workspace(id,tenant_id,slug,name,state) values($1,$2,$3,'push fixture','ACTIVE')")
+  .bind(id).bind(tenant).bind(channel).execute(&mut *conn).await.unwrap();
+ sqlx::query("insert into projection.workspace_buzz_binding(workspace_id,channel_id,state) values($1,$1,'ACTIVE')")
+  .bind(id).execute(&mut *conn).await.unwrap();
+ sqlx::query("insert into identity.workspace_membership(id,workspace_id,tenant_principal_id,state) values($1,$2,$3,'ACTIVE')")
+  .bind(Uuid::new_v4()).bind(id).bind(actor).execute(conn).await.unwrap();
+}
+
 #[tokio::test]
 #[ignore = "requires PUSH_TEST_DATABASE_URL pointing at an isolated migrated database"]
 async fn accepted_messages_deduplicate_by_id_preserve_same_second_and_read_authority() {
@@ -36,7 +46,11 @@ async fn accepted_messages_deduplicate_by_id_preserve_same_second_and_read_autho
         sqlx::query("insert into identity.principal(id,tenant_id,kind,status) values($1,$2,'HUMAN','ACTIVE')")
             .bind(principal).bind(tenant).execute(&mut *tx).await.unwrap();
     }
+    sqlx::query("insert into identity.human_identity(id,display_name,status) values($1,'push fixture','ACTIVE')").bind(actor).execute(&mut *tx).await.unwrap();
+    sqlx::query("insert into identity.tenant_membership(id,tenant_id,human_identity_id,tenant_principal_id,state) values($1,$2,$3,$3,'ACTIVE')")
+        .bind(Uuid::new_v4()).bind(tenant).bind(actor).execute(&mut *tx).await.unwrap();
     let channel = Uuid::new_v4().to_string();
+    visible_workspace(&mut tx,tenant,actor,&channel).await;
     let first = message(1, 100, &channel, None);
     let second = message(2, 100, &channel, None);
     let marks = HashMap::new();
@@ -133,6 +147,7 @@ async fn accepted_messages_deduplicate_by_id_preserve_same_second_and_read_autho
     );
     // Reading this channel cannot discard accepted unread messages in another context.
     let other_channel = Uuid::new_v4().to_string();
+    visible_workspace(&mut tx,tenant,actor,&other_channel).await;
     let older = message(4000, 50, &other_channel, None);
     record(&mut tx, tenant, actor, &older, &positions)
         .await

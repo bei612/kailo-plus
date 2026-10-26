@@ -18,31 +18,27 @@ use uuid::Uuid;
 
 use super::decide::{self, MessageFacts, Reason, RecipientView};
 use super::send::{
-    self, ApnsCredential, ApnsSender, DeviceToken, FcmCredential, FcmSender, Outcome, Receipt,
+    ApnsCredential, ApnsSender, DeviceToken, FcmCredential, FcmSender, Outcome, Receipt,
 };
 use super::CredentialRefs;
 use crate::audit::{AuditEntry, Evidence};
 use crate::service_api::ServiceState;
 use crate::tenant_lifecycle::{control_client, ProjectionDirection};
 
-/// Relay page per Tenant and tick.
-const PAGE: usize = 500;
 
 pub struct Config {
     pub interval: Duration,
+    policy: super::config::Policy,
 }
 
 impl Config {
     pub fn from_env() -> Result<Self, String> {
-        let seconds = match std::env::var("PUSH_POLL_SECONDS") {
-            Ok(v) => v.parse::<u64>().map_err(|_| "PUSH_POLL_SECONDS 不是整数")?,
-            Err(_) => 5,
-        };
-        if !(1..=300).contains(&seconds) {
-            return Err("PUSH_POLL_SECONDS 须在 1..=300".into());
-        }
+        let seconds=std::env::var("PUSH_POLL_SECONDS").map_err(|_|"缺少 PUSH_POLL_SECONDS")?.parse::<u64>().map_err(|_|"PUSH_POLL_SECONDS 必须为正整数")?;
+        if seconds==0 {return Err("PUSH_POLL_SECONDS 必须为正整数".into())}
+        let policy=super::config::Policy::parse(&std::env::var("PUSH_DELIVERY_POLICY").map_err(|_|"缺少 PUSH_DELIVERY_POLICY")?)?;
         Ok(Self {
             interval: Duration::from_secs(seconds),
+            policy,
         })
     }
 }
@@ -64,10 +60,10 @@ impl Providers {
     }
 
     /// Re-read the provider credentials from OpenBao when due (rotation without restart).
-    async fn refresh(&mut self, state: &ServiceState) {
+    async fn refresh(&mut self, state: &ServiceState, policy:&super::config::Policy) {
         if self
             .loaded
-            .is_some_and(|at| at.elapsed() < send::CREDENTIAL_TTL)
+            .is_some_and(|at| at.elapsed() < Duration::from_secs(policy.credential_ttl_seconds as u64))
         {
             return;
         }
@@ -153,12 +149,12 @@ pub fn spawn(state: ServiceState, meter: &Meter, cfg: Config) {
         tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         loop {
             tick.tick().await;
-            if let Err(e) = sweep(&state).await {
+            if let Err(e) = sweep(&state, &cfg.policy).await {
                 tracing::warn!(error = %e, "推送登记撤销收敛失败");
             }
             match state.pool.acquire().await {
                 Ok(mut conn) => {
-                    if let Err(e) = super::intent::recover(&mut conn).await {
+                    if let Err(e) = super::intent::recover(&mut conn, &cfg.policy).await {
                         tracing::warn!(error=%e,"推送发送检查点恢复失败");
                     }
                 }
@@ -183,7 +179,7 @@ pub fn spawn(state: ServiceState, meter: &Meter, cfg: Config) {
                         .record(count.max(0) as u64, &[KeyValue::new("state", status)]);
                 }
             }
-            providers.refresh(&state).await;
+            providers.refresh(&state, &cfg.policy).await;
             if !providers.any() {
                 continue;
             }
@@ -202,7 +198,7 @@ pub fn spawn(state: ServiceState, meter: &Meter, cfg: Config) {
                 }
             };
             for (tenant,) in tenants {
-                match run_tenant(&state, &providers, &metrics, tenant).await {
+                match run_tenant(&state, &providers, &metrics, tenant, &cfg.policy).await {
                     Ok(true) => providers.invalidate(),
                     Ok(false) => {}
                     Err(e) => tracing::warn!(error = %e, %tenant, "推送本轮失败"),
@@ -214,15 +210,15 @@ pub fn spawn(state: ServiceState, meter: &Meter, cfg: Config) {
 
 /// Revocation clears the live binding and freezes retirement atomically. No secret I/O
 /// occurs in this transaction; the persistent consumer retries fencing and destruction.
-pub(crate) async fn sweep(state: &ServiceState) -> Result<(), sqlx::Error> {
+pub(crate) async fn sweep(state: &ServiceState, policy:&super::config::Policy) -> Result<(), sqlx::Error> {
     let mut tx = state.pool.begin().await?;
     let rows:Vec<(Uuid,String,Uuid,Option<String>)>=sqlx::query_as("select r.tenant_id,r.device_pubkey,r.tenant_principal_id,r.token_secret_locator
         from identity.push_registration r where r.state<>'REVOKED' and (
         exists(select 1 from identity.tenant t where t.id=r.tenant_id and t.state in ('DELETING','DELETED')) or
         not exists(select 1 from identity.buzz_identity_binding b where b.tenant_id=r.tenant_id and b.principal_id=r.tenant_principal_id and b.pubkey=r.device_pubkey and b.custody='CLIENT' and b.state='ACTIVE') or
         not exists(select 1 from identity.tenant_membership m where m.tenant_id=r.tenant_id and m.tenant_principal_id=r.tenant_principal_id and m.state='ACTIVE'))
-        order by r.tenant_id,r.device_pubkey for update of r skip locked limit 100")
-        .fetch_all(&mut *tx).await?;
+        order by r.tenant_id,r.device_pubkey for update of r skip locked limit $1")
+        .bind(policy.retirement_batch_size).fetch_all(&mut *tx).await?;
     for (tenant, device, principal, locator) in rows {
         if let Some(locator) = locator {
             super::token_intent::retire(&mut tx, &locator).await?;
@@ -257,7 +253,7 @@ pub(crate) async fn sweep(state: &ServiceState) -> Result<(), sqlx::Error> {
         .await?;
     }
     tx.commit().await?;
-    super::token_intent::sweep(state).await
+    super::token_intent::sweep(state,policy).await
 }
 
 #[derive(Clone)]
@@ -332,20 +328,21 @@ async fn run_tenant(
     providers: &Providers,
     metrics: &Metrics,
     tenant: Uuid,
+    policy:&super::config::Policy,
 ) -> Result<bool, sqlx::Error> {
-    if let Err(e) = scan(state, providers, tenant).await {
+    if let Err(e) = scan(state, providers, tenant,policy).await {
         tracing::warn!(error=%e,%tenant,"推送扫描检查点失败");
     }
     let mut auth_failed = false;
-    for _ in 0..100 {
-        let Some(intent) = super::intent::claim(&state.pool, tenant).await? else {
+    for _ in 0..policy.dispatch_batch_size {
+        let Some(intent) = super::intent::claim(&state.pool, tenant,policy).await? else {
             break;
         };
-        if let Some(receipt) = dispatch(state, providers, &intent).await? {
+        if let Some(receipt) = dispatch(state, providers, &intent,policy).await? {
             // A local commit failure must not repeat the external request. Retry only the
             // known receipt; a process crash leaves SENDING for UNKNOWN recovery.
             let mut persisted = false;
-            for _ in 0..3 {
+            for _ in 0..policy.receipt_commit_attempts {
                 match super::intent::finish(&state.pool, &intent, &receipt).await {
                     Ok(_) => {
                         persisted = true;
@@ -382,53 +379,24 @@ async fn scan(
     state: &ServiceState,
     providers: &Providers,
     tenant: Uuid,
+    policy:&super::config::Policy,
 ) -> Result<(), sqlx::Error> {
-    let Some((lease, since, seen)) = super::intent::claim_scan(&state.pool, tenant).await? else {
+    let Some((lease, since, seen)) = super::intent::claim_scan(&state.pool, tenant,policy).await? else {
         return Ok(());
     };
-    // Every following await is outside a transaction; a crashed scanner loses its lease.
-    let Ok((control, _)) = control_client(state, tenant, ProjectionDirection::Establish).await
-    else {
-        return Ok(());
-    };
-    let Ok(found) = control
-        .query(
-            &state.http,
-            &[json!({"kinds":decide::MESSAGE_KINDS,"since":since,"limit":PAGE})],
-        )
-        .await
-    else {
-        return Ok(());
-    };
-    let seen: BTreeSet<String> = seen.into_iter().collect();
-    let mut messages: Vec<MessageFacts> = found
-        .as_array()
-        .into_iter()
-        .flatten()
-        .filter_map(MessageFacts::from_event)
-        .filter(|m| !(m.created_at as i64 == since && seen.contains(&m.id)))
-        .collect();
-    messages.sort_by(|a, b| (a.created_at, &a.id).cmp(&(b.created_at, &b.id)));
-    messages.dedup_by(|a, b| a.id == b.id);
-    let targets: Vec<(&str, String)> = ["APNS", "FCM"]
-        .into_iter()
-        .filter_map(|p| provider_target(providers, p).map(|t| (p, t)))
-        .collect();
-    for message in &messages {
-        if !super::intent::enqueue(&state.pool, tenant, lease, message, &targets).await? {
-            return Ok(());
-        }
+    let Ok((control,host))=control_client(state,tenant,ProjectionDirection::Establish).await else {return Ok(())};
+    // Runtime page size obeys the same ACTIVE binding's freshly verified NIP-11.
+    let expected:Option<String>=sqlx::query_scalar("select nip11_snapshot_digest from projection.tenant_buzz_binding where tenant_id=$1 and normalized_host=$2 and state='ACTIVE'")
+        .bind(tenant).bind(&host).fetch_optional(&state.pool).await?.flatten();
+    let Ok(transport)=reqwest::Url::parse(&state.relay_transport) else {return Ok(())};
+    let Ok(Ok(document))=tokio::time::timeout(Duration::from_secs(policy.relay_read_timeout_seconds as u64),collab_bridge::limits::fetch_nip11(&state.http,&transport,&host)).await else {return Ok(())};
+    if expected.as_deref()!=Some(document.digest.as_str()) {return Ok(())}
+    let page_size=policy.scan_page_size.min(document.limits.max_limit as usize);
+    let targets:Vec<(&str,String)>=["APNS","FCM"].into_iter().filter_map(|p|provider_target(providers,p).map(|t|(p,t))).collect();
+    let window=super::scan::Window{pool:&state.pool,tenant,lease,since,seen:seen.into_iter().collect(),until:chrono::Utc::now().timestamp()};
+    if let Err(reason)=window.run(&control,&state.http,policy,page_size,&targets).await {
+        tracing::warn!(%tenant,reason,"推送完整窗口读取未完成，游标保留");
     }
-    let newest = messages.last().map_or(since, |m| m.created_at as i64);
-    let mut at_newest: Vec<String> = messages
-        .iter()
-        .filter(|m| m.created_at as i64 == newest)
-        .map(|m| m.id.clone())
-        .collect();
-    if newest == since {
-        at_newest.extend(seen)
-    }
-    super::intent::checkpoint_scan(&state.pool, tenant, lease, newest, &at_newest).await?;
     Ok(())
 }
 
@@ -436,6 +404,7 @@ async fn dispatch(
     state: &ServiceState,
     providers: &Providers,
     i: &super::intent::Intent,
+    policy:&super::config::Policy,
 ) -> Result<Option<Receipt>, sqlx::Error> {
     let registration = load_registrations(state, i.tenant_id)
         .await?
@@ -450,7 +419,7 @@ async fn dispatch(
         return Ok(None);
     };
     let Some(provider) = provider_target(providers, &r.platform) else {
-        super::intent::defer(&state.pool, i).await?;
+        super::intent::defer(&state.pool, i,policy).await?;
         return Ok(None);
     };
     if provider != i.provider_target {
@@ -459,14 +428,14 @@ async fn dispatch(
     }
     let Ok((control, _)) = control_client(state, i.tenant_id, ProjectionDirection::Establish).await
     else {
-        super::intent::defer(&state.pool, i).await?;
+        super::intent::defer(&state.pool, i,policy).await?;
         return Ok(None);
     };
     let Ok(found) = control
         .query(&state.http, &[json!({"ids":[i.event_id],"limit":1})])
         .await
     else {
-        super::intent::defer(&state.pool, i).await?;
+        super::intent::defer(&state.pool, i,policy).await?;
         return Ok(None);
     };
     let message = found
@@ -512,14 +481,14 @@ async fn dispatch(
     let token = match state.secrets.read(&r.token, "value").await {
         Ok(v) => DeviceToken(v.expose().to_owned()),
         Err(_) => {
-            super::intent::defer(&state.pool, i).await?;
+            super::intent::defer(&state.pool, i,policy).await?;
             return Ok(None);
         }
     };
     let target = decide::target(&i.tenant_id.to_string(), &message);
-    if !super::intent::begin_send(&state.pool, i, &target.collapse_key).await? {
+    if !super::intent::begin_send(&state.pool, i, &target.collapse_key,policy).await? {
         // Includes per-device rate pressure; retry the local preflight, never a sent request.
-        super::intent::defer(&state.pool, i).await?;
+        super::intent::defer(&state.pool, i,policy).await?;
         return Ok(None);
     }
     let mut receipt = match r.platform.as_str() {
@@ -532,10 +501,11 @@ async fn dispatch(
                     &target.collapse_key,
                     i.id,
                     i.expires_at.timestamp(),
+                    policy,
                 )
                 .await
             }
-            _ => Receipt::local(Outcome::Rejected),
+            _ => Receipt::local(Outcome::Rejected,policy),
         },
         "FCM" => match &providers.fcm {
             Some(p) => {
@@ -544,17 +514,18 @@ async fn dispatch(
                     &token,
                     &decide::fcm_message(&target, reason, &r.locale, badge),
                     i.expires_at.timestamp(),
+                    policy,
                 )
                 .await
             }
-            _ => Receipt::local(Outcome::Rejected),
+            _ => Receipt::local(Outcome::Rejected,policy),
         },
-        _ => Receipt::local(Outcome::Rejected),
+        _ => Receipt::local(Outcome::Rejected,policy),
     };
-    // At most three sends, growing delay, honor the provider's larger Retry-After.
+    // Delivered attempt bound and growing delay; honor larger provider Retry-After.
     receipt.retry_after = receipt
         .retry_after
-        .max(Duration::from_secs(60 * (1u64 << i.attempts)));
+        .max(policy.retry_delay(i.attempts));
     Ok(Some(receipt))
 }
 async fn fresh_reason(
