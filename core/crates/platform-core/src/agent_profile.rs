@@ -5,7 +5,7 @@
 //! 原 `agent.installation.create/upgrade` operation。发布沿 DD-81：先落 event ID 与
 //! DISPATCH 再投递，结果不明只按 event ID 对账，不另签新事件。
 //!
-//! 补发判据只有一个：该 Installation 最近一次资料发布不是“当前 pinned Version 与
+//! 补发要求该 Installation 没有任何未决发布，且最近一次不是“当前 pinned Version 与
 //! 当前 AGENT pubkey 的已接受发布”。因此创建、升级/回滚激活后的首次发布与本变更
 //! 之前已 ACTIVE 的存量 Installation 走同一路径。Installation 或 AGENT binding 离开
 //! ACTIVE 后不再签发：已发布资料原样保留，与上游删除托管 Agent 时不撤回 kind:0 一致。

@@ -15,6 +15,8 @@ design:
 validation:
   scenarios: [V-SCN-94, V-SCN-95, V-SCN-96, V-SCN-97, V-SCN-98, V-SCN-99, V-SCN-135, V-SCN-136, V-SCN-247, V-SCN-248]
   evidence:
+    - dimension: 故障与恢复
+      ref: core/verify/publication-absence-correction.md
     - dimension: 领域规则
       ref: core/crates/platform-core/src/workspace_update.rs
     - dimension: 领域规则
@@ -40,7 +42,7 @@ implementation:
   # 本批只交付后端；Web/Desktop 共用的设置入口随客户端批次接入
   surfaces: [web, desktop, mobile]
   schemas: [contracts/domain/workspace_update.schema.json, contracts/api/action_command.schema.json, contracts/api/discoverable_workspace.schema.json, contracts/api/web_channel_view.schema.json, contracts/api/web_publish_topic_request.schema.json, contracts/domain/workspace_canvas_set_input.schema.json, contracts/api/web_channel_canvas_view.schema.json, contracts/api/role_workspace_page.schema.json, contracts/enums/workspace_state.schema.json, contracts/enums/evidence_kind.schema.json]
-  migrations: [core/migrations/20261016130000_workspace_channel_management.up.sql, core/migrations/20261016130000_workspace_channel_management.down.sql, core/migrations/20261016131000_publish_channel_topic_kind.up.sql, core/migrations/20261016131000_publish_channel_topic_kind.down.sql, core/migrations/20261019210000_workspace_canvas.up.sql, core/migrations/20261019210000_workspace_canvas.down.sql, core/migrations/20261029010000_workspace_delete.up.sql, core/migrations/20261029010000_workspace_delete.down.sql]
+  migrations: [core/migrations/20261016130000_workspace_channel_management.up.sql, core/migrations/20261016130000_workspace_channel_management.down.sql, core/migrations/20261016131000_publish_channel_topic_kind.up.sql, core/migrations/20261016131000_publish_channel_topic_kind.down.sql, core/migrations/20261019210000_workspace_canvas.up.sql, core/migrations/20261019210000_workspace_canvas.down.sql, core/migrations/20261029010000_workspace_delete.up.sql, core/migrations/20261029010000_workspace_delete.down.sql, core/migrations/20261101010000_publication_absence_correction.up.sql, core/migrations/20261101010000_publication_absence_correction.down.sql]
 
 runtime:
   routes: ["/api/v1/actions", "/api/v1/discoverable-workspaces", "/api/v1/workspaces/{workspace_id}/channel", "/api/v1/workspaces/{workspace_id}/channel/topic", "/api/v1/workspaces/{workspace_id}/canvas", "/service/v1/workspaces/channel-metadata", "/service/v1/workspaces/delete-advance", "/api/v1/role-workspaces"]
