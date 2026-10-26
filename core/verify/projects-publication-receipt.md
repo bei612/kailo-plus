@@ -97,5 +97,42 @@ MCP、Agent Runtime、Temporal、Git 子进程继续使用各自原有传输与�
 
 新增真实消费者检查在本机 TCP fixture 返回 HTTP 200 与部分 JSON 后停止正文，
 分别调用原 IdentityClient.query/deliver 与 fetch_nip11；查询/NIP-11 必须失败，
-发布必须 UNKNOWN，正常完整查询仍成功。实现阶段尚未运行 SDK，不据此声称通过；
-固定源码正向、移除 deadline 的反向及逐字恢复结果将在执行后补录。无部署。
+发布必须 UNKNOWN，正常完整查询仍成功。启动期 platform_bootstrap::ensure 的
+operator probe/轮换查证也使用同一客户端；构造提前到 OpenBao connect 之前。
+
+固定检查源码 `fc219c4c9580b3bbacf8d2554c2a7d754ae702e8`，从 GitHub fetch 后
+按固定对象导出；原 SDK
+`sha256:3007729eb192341a4f004a88e42e1e66c94fc67d763acfc96568bd7311116018`，
+实际回读限额 2 CPU、16 GiB memory 与 swap，原 `/volumes/data/kailo/check-cache`
+及 `rust-target`，网络 none（fixture 仅容器回环）。执行前 MemAvailable 约 34 GiB、
+无并发 Core 编译；21:51:27–21:53:17 UTC 终态 exit 0、OOMKilled=false，
+所有本批检查容器事后实际查询为空。
+
+- 原 SDK `cargo fmt --manifest-path core/Cargo.toml -p platform-core --check` 与
+  两部署脚本 `bash -n` 退出 0；直接执行原 startup/precheck 校验段，缺失、空值、
+  零、负数、符号、分数、空白、前导零、32 位溢出均拒绝，显式合法值通过。
+  这是隔离的配置消费者验证，没有读取真实部署 `.env`，不冒充完整部署预检。
+- `cargo test --offline --locked --manifest-path core/Cargo.toml -p platform-core
+  --bin platform-core`：837 passed、0 failed、85 ignored，exit 0。没有运行
+  PostgreSQL、SQLx 或真实服务 fixture；环境门控提前返回不计业务验收。
+- `cargo clippy --offline --locked --manifest-path core/Cargo.toml -p platform-core
+  --all-targets -- -D warnings`：exit 0。
+- 仅在隔离导出树移除 `.timeout(timeout)`，运行真实
+  `relay_http::tests::ordinary_relay_consumers_bound_stalled_response_bodies`：
+  exit 101，失败为 `query body must reach the configured deadline: Elapsed(())`，
+  不是编译失败。按原字节还原后 `relay_http::tests::` 两项全部通过，exit 0；
+  还原文件与原件 SHA-256 同为
+  `3fd94513007c31d0a6f86da5ada125e4397d1102d64a15c3d4b8f2eed22d63a8`。
+
+原始日志目录：
+`/volumes/data/kailo/verification/relay-http-deadline/fc219c4c9580b3bbacf8d2554c2a7d754ae702e8-check/`。
+负向日志 SHA-256：
+`a6ee584702fb25bf953e19b3c976bda547e6005ab019d3ef12df3c1122b62d21`。
+保留首轮 `457b488bb607c480f48aa33a8ce4a987cd79c5b5-check` 的真实失败：
+正常 837 项通过，但 Clippy 因新增 TCP fixture 未处理读取字节数而 exit 101，
+故该轮未执行反向验证；随后修复并以上述新固定源重新通过。初次格式化使用
+1 CPU/512 MiB 原 SDK，源 `0f72685397581307f12e140f6cb866d143aed592`，exit 0。
+
+本批无 schema、API、Workflow 或权限变更；未更新运行环境、未部署，也未完成
+普通事件权威缺失证明。HTTP deadline 只保证依赖等待有限，不能把超时或空读转为
+NOT_DELIVERED；DD-81 的保守 UNKNOWN 与后续权威证明工作保持原边界。
