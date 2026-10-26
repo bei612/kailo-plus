@@ -282,12 +282,18 @@ impl ArchiveStore {
             .iter()
             .map(|value| {
                 self.open_sealed(value).and_then(|json| {
-                    Event::from_json(json).map_err(|_| "archived event corrupt".to_string())
+                    let event = Event::from_json(json)
+                        .map_err(|_| "archived event corrupt".to_string())?;
+                    // Chunk authentication also needs the signed whole-event
+                    // binding: valid chunks from two events must not splice.
+                    event.verify().map_err(|_| "archived event corrupt".to_string())?;
+                    Ok(event)
                 })
             })
             .collect()
     }
 
+    #[cfg(test)]
     pub(crate) fn has_event(&self, event_id: &str) -> Result<bool, String> {
         self.conn
             .query_row(
