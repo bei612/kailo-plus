@@ -217,3 +217,13 @@ OpenBao SDK 配置解析另用原固定镜像 `openbao/openbao@sha256:7d26314820
 是 `delegation.rs` 的真实 grant scope，bootstrap SQL 不创建该业务对象，`isolated-plan.py` 的模拟 UUID 不能替代。
 还需 adapter directory/nativeResources、真实 receiver model-delivery proof 与 binding 激活的协调、bootstrap/seed/inputs/driver 全链编排。
 `blockedAfterNative` 保留明确拒绝；未启动新 receiver/Cells/WeKnora 栈，未改动生产，未重启或删除遗留栈。
+
+已确认的策略依赖环（本分支 `48bb217a1`，不是操作员遗漏配置）：
+`core/crates/platform-core/src/delegation.rs:743` 的 `validate_application_scope` 在 791–812 行要求
+真实 ACTIVE AgentInstallation、ToolBinding、APPLICATION Tool，以及 ACTIVE application_binding 与
+application_runtime/gateway_state；策略到 1011 行才随真实 grant scope 写入。
+与此同时 `file-storage/deploy/start.sh:160` 起校验原生动作投递，204 行起要求 write 的真实 policy ID/version，
+delete/share 有相同要求；312–368 行又要求 adapter 的各动作与该原生投递一致。
+`tools/component-release/receiver-run.sh:279` 的 native 阶段先执行这些启动检查，bootstrap 才创建并等待 binding ACTIVE。
+因此“先 delegation 生成 policy”也无法使第一套源 binding 启动。主会话已从原源码复核，负责沿 HUMAN
+componentAction 准入链处理生产者缺口；本自动准入入口保持门禁，不复用 delegation 策略，不用 SQL 或模拟 UUID 补齐。

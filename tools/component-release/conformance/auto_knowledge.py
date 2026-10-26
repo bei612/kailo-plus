@@ -754,7 +754,11 @@ def ensure_source_native(h, r):
         h.require(node.get("Uuid") == item["proposed"] and node.get("Type") == "COLLECTION"
                   and node.get("ContextWorkspace", {}).get("Uuid") == binding["nativeScopeRef"], "source folder read-back differs from this run")
         item["nativeRef"] = node["Uuid"]
-        item["observationFile"] = str(h.write_json(directory / ("folder-" + item["nativeRef"] + ".json"), node))
+        observation = directory / ("folder-" + item["nativeRef"] + ".json")
+        if not observation.is_file():
+            h.write_json(observation, node)
+        h.require(h.read_json(observation).get("Uuid") == item["nativeRef"], "source native evidence belongs to another object")
+        item["observationFile"] = str(observation)
         cells.record(sourceFolders=folders)
     cells.record(serviceUuid=service_id, actorUuid=actor_id)
     r.record(sourceNative={"directory": str(directory), "project": cells.state["project"], "nativeScopeRef": binding["nativeScopeRef"],
@@ -927,6 +931,123 @@ def ensure_adapter_readers(h, r):
     h.say("isolated-adapter-readers", status="DELIVERED", clients=len(readers))
 
 
+def ensure_bootstrap_material(h, r):
+    """Freeze original bootstrap/directory inputs from this run's observed facts.
+
+    Only the isolated catalog is read here; no SQL creates business state and
+    no Core Resource id is proposed. resource.create returns those later.
+    """
+    state, source = r.state, r.state["source"]
+    runtime = runtime_environment(h, r)
+    sessions = state["sessionIdentities"]
+    catalog_tenant = str(uuid.UUID(sessions["catalog"]["tenantId"]))
+    db_container = state["project"] + "-core-db-1"
+    h.require(h.docker("inspect", "--format", '{{index .Config.Labels "com.docker.compose.project"}}', db_container).strip() == state["project"],
+              "bootstrap catalog database is not owned by this receiver")
+    # Public contract queries intentionally expose category/version, not the
+    # internal id required by the existing isolated bootstrap. Read that id
+    # from this exact isolated DB; bootstrap rechecks the complete registration.
+    query = ("BEGIN READ ONLY; SELECT coalesce(json_agg(json_build_object('id',id,'categoryKey',category_key,"
+             "'contractVersion',contract_version,'status',status)), '[]'::json) FROM catalog.capability_contract "
+             f"WHERE catalog_tenant_id='{catalog_tenant}'::uuid AND ((category_key='file_storage' AND contract_version=2) "
+             "OR (category_key='knowledge' AND contract_version=3)); COMMIT;")
+    contracts = json.loads(h.docker("exec", "-i", db_container, "psql", "-X", "-qAt", "-v", "ON_ERROR_STOP=1",
+        "-U", runtime["CORE_DB_USER"], "-d", runtime["CORE_DB_NAME"], stdin=query.encode()).strip())
+    h.require(len(contracts) == 2 and all(row["status"] == "ACTIVE" for row in contracts), "actual isolated source/receiver contracts are not ACTIVE")
+    by_category = {row["categoryKey"]: row for row in contracts}
+    h.require(set(by_category) == {"file_storage", "knowledge"}, "actual contract selection is ambiguous")
+    requirements = h.read_json(r.dir / "receiver/source-cells/receiver-requirements.json")["requirements"]
+    intents = state.get("bootstrapResourceIntents", {})
+    def resource(native_ref, evidence_file, targets, role):
+        evidence = h.read_json(evidence_file)
+        digest = hashlib.sha256(json.dumps(evidence, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()).hexdigest()
+        label = role + ":" + native_ref
+        if label not in intents:
+            intents[label] = {"resourceIdempotencyKey": str(uuid.uuid4()),
+                              **({"readGrantIdempotencyKey": str(uuid.uuid4())} if role == "SOURCE" else {})}
+            r.record(bootstrapResourceIntents=intents)
+        return {**intents[label], "nativeResourceRef": native_ref, "nativeEvidenceRef": "urn:kailo:receiver-native:" + digest,
+                "nativeEvidenceDigest": digest, "preconditions": targets}
+    endpoints, adapters = [], []
+    for role, component, category, native_type, type_key, directory in (
+        ("SOURCE", "file-storage", "file_storage", "COLLECTION", "file_storage.space", r.dir / "receiver/source-cells"),
+        ("RECEIVER", "knowledge", "knowledge", "knowledge_base", "knowledge.base", r.dir / "receiver/knowledge"),
+    ):
+        plan = h.read_json(directory / "adapter-plan.json")
+        release = h.Run(directory).state["releaseDir"] if role == "SOURCE" else state["releaseDir"]
+        manifest = h.read_json(Path(release) / "manifest.json")
+        resources = []
+        if role == "SOURCE":
+            for item in requirements:
+                if item.get("kind") != "weknora-precondition" or item.get("role") != "source-resource":
+                    continue
+                folder = state["sourceNative"]["folders"][item["caseKey"] + "/" + item["key"]]
+                resources.append(resource(folder["nativeRef"], folder["observationFile"],
+                    [{"caseKey": item["caseKey"], "key": item["key"]}], role))
+        else:
+            targets = [{"caseKey": item["caseKey"], "key": item["key"]} for item in requirements
+                       if item.get("kind") == "weknora-precondition" and item.get("role") == "receiver-resource"]
+            h.require(targets, "frozen vectors have no receiver Resource precondition")
+            resources.append(resource(state["knowledgeObjects"]["knowledgeBaseId"], directory / "knowledge-base-observed.json", targets, role))
+        h.require(resources, "frozen vectors have no source Resources")
+        endpoint = {"role": role, "contractId": str(uuid.UUID(by_category[category]["id"])), "releaseId": manifest["id"],
+            "bindingId": plan["bindingId"], "servicePrincipalId": plan["servicePrincipalId"],
+            "bindingIdempotencyKey": state["adapterIntents"][role]["bindingIdempotencyKey"], "resources": resources,
+            "modelCallMode": plan["modelCallMode"], "secretRefs": plan["secretRefs"], "generation": plan["bindingVersion"],
+            "isolationMode": plan["isolationMode"], "contractRegistration": h.read_json(Path(source) / f"contracts/adapter/{category}.v{by_category[category]['contractVersion']}/registration.json"),
+            "manifest": manifest, "package": h.read_json(Path(release) / "package.json"),
+            "bindingConfigSchema": h.read_json(Path(release) / "binding-config.schema.json"),
+            "artifactDigest": manifest["adapterBuildRef"], "adapterContractDigest": manifest["adapterBuildRef"],
+            "adapterServiceRef": plan["adapterServiceRef"], "nativeInstanceRef": plan["nativeInstanceRef"], "nativeScopeRef": plan["nativeScopeRef"],
+            "nativeType": native_type, "typeKey": type_key, "serviceAudience": manifest["executionConnector"]["actionTokenAudience"],
+            "normalizedConfig": plan["normalizedConfig"]}
+        endpoints.append(endpoint)
+        native_project = state["sourceNative"]["project"] if role == "SOURCE" else state["knowledgeNative"]["project"]
+        adapter_service = "cells-adapter" if role == "SOURCE" else "adapter"
+        base = f"http://{native_project}-{adapter_service}-1:8080/"
+        adapters.append({"component": component, "release": release, "adapterServiceRef": plan["adapterServiceRef"],
+            "baseUrl": base, "mcpUrl": base + "mcp", "nativeInstanceRef": plan["nativeInstanceRef"], "timeoutSeconds": 30, "maxResponseBytes": 1048576,
+            "secretReaders": [{"servicePrincipalId": plan["servicePrincipalId"], "roleName": state["adapterReaders"][role]["roleName"]}],
+            "bindings": [{**{key: plan[key] for key in ("bindingId", "tenantId", "servicePrincipalId", "nativeScopeRef", "configDigest", "isolationMode")},
+                "nativeResources": [{"typeKey": type_key, "nativeType": native_type, "nativeRef": entry["nativeResourceRef"],
+                                     "evidenceRef": entry["nativeEvidenceRef"], "evidenceDigest": entry["nativeEvidenceDigest"]} for entry in resources]}]})
+    public = h.private_dir(r.dir / "receiver/public", 0o755)
+    directory_input = h.write_json(r.dir / "receiver/adapter-directory-input.json", {"adapters": adapters})
+    directory_file = public / "adapter-directory.initial.json"
+    r.node("none", "tools/component-release/adapter-directory.mjs", "--input", str(directory_input), "--out", str(directory_file))
+    environment = state.get("receiverEnvironmentId")
+    if environment is None:
+        environment = str(uuid.uuid4())
+        r.record(receiverEnvironmentId=environment)
+    production_env = Path(state["runtime"]) / ".env"
+    def prod(key, seen=()):
+        h.require(key not in seen, "production configuration reference is cyclic")
+        value = h.env_value(production_env, key)
+        h.require(value, "production comparison field missing")
+        return re.sub(r"\$\{([A-Z][A-Z0-9_]*)\}", lambda m: prod(m[1], (*seen, key)), value)
+    bootstrap = {"mode": "CONFORMANCE_ONLY", "environmentId": environment,
+        "databaseName": runtime["CORE_DB_NAME"], "databaseOwner": runtime["CORE_DB_USER"], "productionDatabaseName": prod("CORE_DB_NAME"),
+        "spiceDbOrigin": runtime["SPICEDB_HTTP_URL"], "productionSpiceDbOrigin": prod("SPICEDB_HTTP_URL"),
+        "httpTimeoutSeconds": 30, "relationshipPageSize": 100, "actionWaitSeconds": 1800, "actionPollIntervalMillis": 1000,
+        "tenantId": sessions["human"]["tenantId"], "humanIdentityId": sessions["human"]["humanIdentityId"], "humanPrincipalId": sessions["human"]["tenantPrincipalId"],
+        "catalogTenantId": catalog_tenant, "catalogHumanIdentityId": sessions["catalog"]["humanIdentityId"], "catalogPrincipalId": sessions["catalog"]["tenantPrincipalId"],
+        "approverHumanIdentityId": sessions["approver"]["humanIdentityId"], "approverPrincipalId": sessions["approver"]["tenantPrincipalId"],
+        # 8091 is the original native Gateway bind/container port (compose.yaml),
+        # not its freely allocated host publication. Qualified names cannot
+        # accidentally resolve the production service on a shared Docker net.
+        "coreOrigin": f"http://{state['project']}-agentgateway-1:8091", "productionCoreOrigin": f"http://{RUNTIME_PRODUCTION_PROJECT}-agentgateway-1:8091",
+        **{role + "TokenFile": str(r.dir / "receiver/sessions" / (role + ".token")) for role in ("human", "catalog", "approver")},
+        "endpoints": endpoints}
+    bootstrap_file = r.dir / "receiver/bootstrap-input.json"
+    if bootstrap_file.is_file():
+        h.require(h.read_json(bootstrap_file) == bootstrap, "immutable receiver bootstrap inputs changed")
+    else:
+        h.write_json(bootstrap_file, bootstrap)
+    receiver_env(h, r, {"RECEIVER_BOOTSTRAP_FILE": str(bootstrap_file), "RECEIVER_ADAPTER_DIRECTORY_FILE": str(directory_file)})
+    r.record(receiverBootstrapPrepared=True)
+    h.say("isolated-bootstrap-material", status="PREPARED_NOT_EXECUTED")
+
+
 def drive(r, args, runtime_env, declaration, h):
     declare_native(h, r)
     s = r.state
@@ -960,6 +1081,7 @@ def drive(r, args, runtime_env, declaration, h):
     ensure_source_native(h, r)
     ensure_adapter_secrets(h, r)
     ensure_adapter_readers(h, r)
+    ensure_bootstrap_material(h, r)
     r.record(blockedAfterNative=(
         "native-action/bootstrap/seed/inputs/driver not automated yet: (1) source Cells cells@2.0.0 "
         "native-action requires actual ResultExposurePolicy identities/versions; reader/IdP preparation does not create them. "

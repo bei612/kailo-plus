@@ -144,6 +144,9 @@ await main(async () => {
     }
     confirmed.knowledgeBaseId = kb.id;
     remember();
+    const observationFile = join(input.directory, 'knowledge-base-observed.json');
+    if (!existsSync(observationFile)) atomic(observationFile, JSON.stringify(kb, null, 2) + '\n');
+    else if (JSON.parse(privateText(observationFile)).id !== kb.id) fail('native KB evidence belongs to another object');
     const endpoints = await request('GET', '/api/v1/mcp-endpoints');
     if (!Array.isArray(endpoints)) fail('native MCP endpoint list is incomplete');
     const found = endpoints.filter((row) => row.name === input.name);
