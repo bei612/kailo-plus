@@ -68,11 +68,19 @@ pub(crate) async fn submit_signed_event_scoped(
         let error = relay_error_message(response).await;
         // A refusal from this Host is not evidence about the original frozen
         // Community. Keep its original event available for writer reconciliation.
-        return Err(if community.is_some() { "relay publish outcome unknown".into() } else { error });
+        return Err(if community.is_some() {
+            "relay publish outcome unknown".into()
+        } else {
+            error
+        });
     }
 
     let result: SubmitEventResponse = parse_json_response(response).await.map_err(|error| {
-        if community.is_some() { "relay publish outcome unknown".into() } else { error }
+        if community.is_some() {
+            "relay publish outcome unknown".into()
+        } else {
+            error
+        }
     })?;
     if result.event_id != event.id.to_hex() {
         return Err("relay returned malformed response: event ID mismatch".to_string());
@@ -83,7 +91,9 @@ pub(crate) async fn submit_signed_event_scoped(
     if !result.accepted {
         return Err(if community.is_some() {
             "relay publish outcome unknown".into()
-        } else { format!("relay rejected event: {}", result.message) });
+        } else {
+            format!("relay rejected event: {}", result.message)
+        });
     }
 
     Ok(result)

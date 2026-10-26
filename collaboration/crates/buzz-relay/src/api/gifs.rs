@@ -142,6 +142,7 @@ async fn authenticate(
         pubkey,
         event_id_bytes,
         signed_created_at,
+        ..
     } = bridge::verify_bridge_auth_with_options(
         headers,
         "POST",
