@@ -14,7 +14,7 @@ import 'platform_views.dart';
 
 /// Holds no independent profile authority. Every yielded snapshot is a fresh
 /// admitted BFF read; background/disposed identities ignore late responses.
-final tenantProfileLiveProvider = StreamProvider.autoDispose<TenantProfileView>((
+final tenantProfileLiveProvider = StreamProvider.autoDispose<TenantProfileView?>((
   ref,
 ) async* {
   final config = ref.watch(platformConfigProvider);
@@ -54,8 +54,13 @@ final tenantProfileLiveProvider = StreamProvider.autoDispose<TenantProfileView>(
         PlatformMethod.get,
         '/api/v1/tenant/profile${version == null ? '' : '?afterVersion=$version'}',
       );
-      if (retired || session.credentialGeneration != generation) return;
-      if (response.status == 401 || response.status == 403) return;
+      if (retired) return;
+      if (session.credentialGeneration != generation ||
+          response.status == 401 || response.status == 403) {
+        ref.invalidate(platformSessionViewProvider);
+        yield null;
+        return;
+      }
       if (!response.isSuccess) throw PlatformApiError(response);
       final next = TenantProfileView.fromJson(
         response.body! as Map<String, dynamic>,
@@ -78,9 +83,19 @@ final tenantProfileLiveProvider = StreamProvider.autoDispose<TenantProfileView>(
       // An older Core gives one snapshot; a foreground resume rereads it.
       if (retryMillis == null) return;
     } on PlatformNotSignedIn {
+      if (!retired) {
+        ref.invalidate(platformSessionViewProvider);
+        yield null;
+      }
       return;
     } catch (_) {
-      if (retired || retryMillis == null) return;
+      if (retired) return;
+      if (session.credentialGeneration != generation) {
+        ref.invalidate(platformSessionViewProvider);
+        yield null;
+        return;
+      }
+      if (retryMillis == null) return;
       final pause = Completer<void>();
       waiting = pause;
       retryTimer = Timer(Duration(milliseconds: retryMillis), pause.complete);
@@ -88,5 +103,9 @@ final tenantProfileLiveProvider = StreamProvider.autoDispose<TenantProfileView>(
       retryTimer = null;
       waiting = null;
     }
+  }
+  if (!retired && session.credentialGeneration != generation) {
+    ref.invalidate(platformSessionViewProvider);
+    yield null;
   }
 });
