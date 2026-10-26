@@ -239,7 +239,7 @@ async fn publish_one(
     .map_err(|_| "AGENT key unreadable or not the bound pubkey")?;
     let transport =
         reqwest::Url::parse(&state.relay_transport).map_err(|_| "Relay transport invalid")?;
-    let nip11 = collab_bridge::limits::fetch_nip11(&state.http, &transport, &c.normalized_host)
+    let nip11 = collab_bridge::limits::fetch_nip11(&state.relay_http, &transport, &c.normalized_host)
         .await
         .map_err(|_| "Relay NIP-11 unavailable")?;
     if c.nip11_snapshot_digest.as_deref() != Some(nip11.digest.as_str()) {
@@ -327,7 +327,7 @@ async fn publish_one(
         .map_err(|_| "publication intent not committed")?;
     // A crash after this commit leaves only the stable ID; later rounds query it
     // and never sign a second event while it is unknown.
-    let outcome = match client.deliver(&state.http, &event, admitted).await {
+    let outcome = match client.deliver(&state.relay_http, &event, admitted).await {
         Delivery::Accepted => "ACCEPTED",
         Delivery::Rejected(reason) => {
             tracing::warn!(installation=%c.installation_resource_id, event_id=%event_id,
@@ -381,7 +381,7 @@ async fn settle_open(state: &ServiceState, batch: i64, window: Duration) -> Resu
         else {
             continue;
         };
-        let result = match reader.event_exists(&state.http, &row.event_id).await {
+        let result = match reader.event_exists(&state.relay_http, &row.event_id).await {
             Ok(true) => "ACCEPTED",
             Ok(false) if row.settled_window_passed => "NOT_DELIVERED",
             _ => continue,

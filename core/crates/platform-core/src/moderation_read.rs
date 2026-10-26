@@ -197,7 +197,7 @@ async fn authors(
     let limit = ids.len();
     let filter = json!({"ids": ids, "limit": limit});
     let found = control
-        .query(&state.http, &[filter])
+        .query(&state.relay_http, &[filter])
         .await
         .map_err(|_| Refusal::Unavailable("被举报消息不可回读".into()))?;
     let mut authors = HashMap::new();
@@ -265,7 +265,7 @@ pub(crate) async fn reports(
         Ok(admitted) => admitted,
         Err(response) => return response,
     };
-    let Ok(rows) = control.moderation_reports(&state.http, status).await else {
+    let Ok(rows) = control.moderation_reports(&state.relay_http, status).await else {
         return relay_unavailable();
     };
     let truncated = rows.len() >= wire::READ_LIMIT;
@@ -316,7 +316,7 @@ pub(crate) async fn audit_log(State(state): State<BffState>, headers: HeaderMap)
         Ok(admitted) => admitted,
         Err(response) => return response,
     };
-    let Ok(rows) = control.moderation_audit(&state.http).await else {
+    let Ok(rows) = control.moderation_audit(&state.relay_http).await else {
         return relay_unavailable();
     };
     let truncated = rows.len() >= wire::READ_LIMIT;
@@ -374,7 +374,7 @@ pub(crate) async fn restricted(State(state): State<BffState>, headers: HeaderMap
         Ok(admitted) => admitted,
         Err(response) => return response,
     };
-    let Ok(rows) = control.moderation_restricted(&state.http).await else {
+    let Ok(rows) = control.moderation_restricted(&state.relay_http).await else {
         return relay_unavailable();
     };
     let keys = rows.iter().map(|row| row.pubkey.clone()).collect();

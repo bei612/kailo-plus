@@ -41,6 +41,7 @@ mod audit_views;
 mod automation;
 mod automation_query;
 mod bff;
+mod relay_http;
 mod business_observability;
 mod capability_contract;
 mod capability_registry;
@@ -310,6 +311,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             gateway_service_auth.as_deref(),
         )?
         .map(std::sync::Arc::new);
+        let relay_http = relay_http::from_env()?;
         let service_state = service_api::ServiceState {
             pool: pool.clone(),
             auth: worker_service_auth,
@@ -327,6 +329,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             deletion_transport: tenant_delete::DeletionTransport::from_env()?,
             openmeter: std::sync::Arc::clone(&openmeter),
             http: reqwest::Client::new(),
+            relay_http: relay_http.clone(),
             temporal: std::sync::Arc::clone(&temporal),
             governance: std::sync::Arc::clone(&governance),
             agent_runtime: agent_runtime.clone(),
@@ -409,6 +412,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .parse()
                 .map_err(|_| "PLATFORM_SESSION_TTL_SECONDS 必须是秒数")?,
             secrets: std::sync::Arc::clone(&secrets),
+            relay_http,
             // Relay requests are signed for their bound origin; redirects
             // cannot establish that origin's upload or publication result.
             http: reqwest::Client::builder()

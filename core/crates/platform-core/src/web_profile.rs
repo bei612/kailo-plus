@@ -110,7 +110,7 @@ pub(crate) async fn read_author(
 ) -> Result<Option<nostr::Event>, Response> {
     let value = client
         .query(
-            &state.http,
+            &state.relay_http,
             &[json!({"kinds":[0], "authors":[author], "limit":1})],
         )
         .await
@@ -134,7 +134,7 @@ pub(crate) async fn read_authors(
         .map(|author| json!({"kinds":[0], "authors":[author], "limit":1}))
         .collect();
     let value = client
-        .query(&state.http, &filters)
+        .query(&state.relay_http, &filters)
         .await
         .map_err(|error| relay_error_response(&error, None))?;
     author_events(value, authors).map_err(|_| unavailable())
@@ -768,8 +768,8 @@ pub(crate) async fn publish_prepared(
             };
         }
     }
-    let (result, response) = match fresh_client.deliver(&state.http, &event, admitted).await {
-        Delivery::Accepted => match fresh_client.query(&state.http, &[read_filter]).await {
+    let (result, response) = match fresh_client.deliver(&state.relay_http, &event, admitted).await {
+        Delivery::Accepted => match fresh_client.query(&state.relay_http, &[read_filter]).await {
             Ok(actual)
                 if actual.as_array().is_some_and(|rows| {
                     rows.len() == 1
@@ -889,7 +889,7 @@ pub(crate) async fn reconcile(
             continue;
         };
         if !matches!(
-            reader.event_exists(&state.http, &row.event_id).await,
+            reader.event_exists(&state.relay_http, &row.event_id).await,
             Ok(true)
         ) {
             continue;

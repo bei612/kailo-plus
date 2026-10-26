@@ -1068,12 +1068,12 @@ async fn create_projection(
     )
     .await?;
     control
-        .converge(&state.http, Scope::Relay, &pubkey, Presence::Present)
+        .converge(&state.relay_http, Scope::Relay, &pubkey, Presence::Present)
         .await
         .map_err(|_| Refusal::Unavailable("Installation Relay roster 结果不明".into()))?;
     control
         .converge(
-            &state.http,
+            &state.relay_http,
             Scope::Channel(&channel.to_string()),
             &pubkey,
             Presence::Present,
@@ -1415,7 +1415,7 @@ async fn runtime_facts(
     let channel_id = row.channel_id.to_string();
     for scope in [Scope::Relay, Scope::Channel(&channel_id)] {
         let roster = control
-            .roster(&state.http, scope)
+            .roster(&state.relay_http, scope)
             .await
             .map_err(|_| Refusal::Unavailable("Agent roster 查证结果不明".into()))?;
         if !roster.iter().any(|entry| entry.pubkey == row.agent_pubkey) {

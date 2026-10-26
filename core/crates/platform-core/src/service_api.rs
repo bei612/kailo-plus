@@ -53,6 +53,8 @@ pub struct ServiceState {
     pub openmeter: Arc<crate::openmeter::OpenMeter>,
     /// 复用连接池。每次投影新建 Client 会让 TLS 与连接开销落在重试路径上。
     pub http: reqwest::Client,
+    /// Finite ordinary Relay requests; media and independently budgeted work use `http`.
+    pub relay_http: reqwest::Client,
     pub temporal: Arc<crate::temporal::TemporalClient>,
     /// ApprovalWorkflow 的投影写回与审批者资格判定（.design/06 §4）
     pub governance: Arc<crate::governance::Governance>,

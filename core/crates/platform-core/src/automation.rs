@@ -2485,7 +2485,7 @@ pub(crate) async fn fresh_runtime(
         collab_bridge::bridge::Scope::Channel(&channel),
     ] {
         let roster = control
-            .roster(&state.http, scope)
+            .roster(&state.relay_http, scope)
             .await
             .map_err(|_| Refusal::Unavailable("Agent 原生 Relay roster 不可读".into()))?;
         if !roster
@@ -2699,7 +2699,7 @@ async fn inspect(state: &ServiceState, resource: Uuid, batch: i64) -> Result<(),
     .map_err(|_| Refusal::Unavailable("Relay CONTROL 读取身份不可用".into()))?;
     let transport = reqwest::Url::parse(&state.relay_transport)
         .map_err(|_| Refusal::Precondition(ReasonCode::BindingNotActive))?;
-    let document = collab_bridge::limits::fetch_nip11(&state.http, &transport, &host)
+    let document = collab_bridge::limits::fetch_nip11(&state.relay_http, &transport, &host)
         .await
         .map_err(|_| Refusal::Unavailable("Relay 原生 NIP11 上界不可读".into()))?;
     let binding: Option<(Uuid, String)> = sqlx::query_as(
@@ -2728,7 +2728,7 @@ async fn inspect(state: &ServiceState, resource: Uuid, batch: i64) -> Result<(),
         filter["before_id"] = json!(before);
     }
     let page = client
-        .query(&state.http, &[filter])
+        .query(&state.relay_http, &[filter])
         .await
         .map_err(|_| Refusal::Unavailable("Relay 持久触发页不可读".into()))?;
     let values = page
@@ -2798,7 +2798,7 @@ async fn inspect(state: &ServiceState, resource: Uuid, batch: i64) -> Result<(),
                 continue;
             };
             match client
-                .channel_message_root(&state.http, &target, &channel_text)
+                .channel_message_root(&state.relay_http, &target, &channel_text)
                 .await
             {
                 Ok(root) => Some((target, root)),

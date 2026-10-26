@@ -220,7 +220,7 @@ pub(crate) async fn query(
         } else {
             verified(
                 client
-                    .query(&state.http, &[filter])
+                    .query(&state.relay_http, &[filter])
                     .await
                     .map_err(|error| relay_error_response(&error, None))?,
                 &admitted,

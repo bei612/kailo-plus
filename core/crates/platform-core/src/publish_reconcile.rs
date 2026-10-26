@@ -453,7 +453,7 @@ async fn observe_delivery(state: &ServiceState, p: &Pending) -> Result<bool, &'s
             }
             let page = client
                 .query(
-                    &state.http,
+                    &state.relay_http,
                     &[serde_json::json!({
                         "ids":[p.event_id], "authors":[keys.public_key().to_hex()],
                         "kinds":[collab_bridge::bridge::KIND_EVENT_REMINDER]
@@ -493,7 +493,7 @@ async fn observe_delivery(state: &ServiceState, p: &Pending) -> Result<bool, &'s
             }
             let page = client
                 .query(
-                    &state.http,
+                    &state.relay_http,
                     &[serde_json::json!({"ids":[p.event_id], "kinds":[kind]})],
                 )
                 .await
@@ -507,7 +507,7 @@ async fn observe_delivery(state: &ServiceState, p: &Pending) -> Result<bool, &'s
             .map_err(|_| "EVIDENCE_INVALID")?
         } else {
             client
-                .event_exists(&state.http, &p.event_id)
+                .event_exists(&state.relay_http, &p.event_id)
                 .await
                 .map_err(|_| "QUERY_FAILED")?
         };
@@ -551,7 +551,7 @@ async fn observe_delivery(state: &ServiceState, p: &Pending) -> Result<bool, &'s
             .await
             .map_err(|_| "CONTROL_UNREADABLE")?;
         return control
-            .event_exists(&state.http, &p.event_id)
+            .event_exists(&state.relay_http, &p.event_id)
             .await
             .map_err(|_| "QUERY_FAILED");
     }
@@ -566,7 +566,7 @@ async fn observe_delivery(state: &ServiceState, p: &Pending) -> Result<bool, &'s
             .await
             .map_err(|_| "CONTROL_UNREADABLE")?;
         if control
-            .event_exists(&state.http, &p.event_id)
+            .event_exists(&state.relay_http, &p.event_id)
             .await
             .map_err(|_| "QUERY_FAILED")?
         {
@@ -579,7 +579,7 @@ async fn observe_delivery(state: &ServiceState, p: &Pending) -> Result<bool, &'s
         // absence of both is still UNKNOWN, regardless of the settle window.
         let page = control
             .query(
-                &state.http,
+                &state.relay_http,
                 &[serde_json::json!({
                     "kinds": [collab_bridge::bridge::KIND_DELETION],
                     "#e": [p.event_id],
@@ -629,7 +629,7 @@ async fn observe_delivery(state: &ServiceState, p: &Pending) -> Result<bool, &'s
     )
     .map_err(|_| "PARTICIPANT_UNREADABLE")?;
     let exists = client
-        .event_exists(&state.http, &p.event_id)
+        .event_exists(&state.relay_http, &p.event_id)
         .await
         .map_err(|_| "QUERY_FAILED")?;
     let after = crate::conversations::admit_reconciliation(state, p.tenant_id, actor, conversation)

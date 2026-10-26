@@ -303,7 +303,7 @@ async fn query_inner(
     let client = Arc::new(community_client(state, &keys, &before.community_host)?);
     // Relay decides with the person's own identity before any git work starts.
     client
-        .git_info_refs(&state.http, &target.repo_path)
+        .git_info_refs(&state.relay_http, &target.repo_path)
         .await
         .map_err(|error| info_refs_error(&error))?;
     let clone_url = client

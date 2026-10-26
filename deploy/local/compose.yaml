@@ -586,6 +586,7 @@ services:
       # 单条流的缓冲帧数。满了对上游形成背压而不是丢帧
       BFF_STREAM_BUFFER: ${BFF_STREAM_BUFFER:?必须显式提供，禁止硬编码}
       # 连上 Relay 后等 NIP-42 challenge 的上界；超时即以可处理的失败结束该流
+      BUZZ_RELAY_HTTP_TIMEOUT_SECONDS: ${BUZZ_RELAY_HTTP_TIMEOUT_SECONDS:?必须显式提供普通 Relay HTTP 总期限}
       BFF_STREAM_AUTH_TIMEOUT_SECONDS: ${BFF_STREAM_AUTH_TIMEOUT_SECONDS:?必须显式提供，禁止硬编码}
       # Core 的已接入 Relay 预算和 NIP-11 观察上界，来自唯一部署配置。
       BFF_RELAY_API_BUDGET: ${BFF_RELAY_API_BUDGET:?必须显式提供，禁止硬编码}

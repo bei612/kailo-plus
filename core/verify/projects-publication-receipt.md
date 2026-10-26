@@ -24,3 +24,26 @@
 - 最终显式 kind 查询输入：`rustfmt --edition 2021 --config skip_children=true --check crates/collab-bridge/src/projects.rs crates/platform-core/src/publish_reconcile.rs`（`projects-receipt-fmt.log`）退出 0；`cargo clippy --offline --locked -j16 -p platform-core --bin platform-core -- -D warnings`（`projects-receipt-core-clippy-final.log`）退出 0。
 
 未运行真实数据库 DISPATCH→Relay→对账端到端场景；窄检查不证明已部署可用。不另跑全局构建，最终全局校验与发布由主线集中收口。
+
+## 2026-10-26 普通 Relay HTTP 有限期限（DD-81）
+
+基准 `ff6109005482332eb8c3a19857fd23d2153938fd`。普通 HTTP 查询、发布、
+roster/operator、NIP-11、moderation/GIF 与 Git info/refs 前置读取改用同一个
+`relay_http` 连接池，由 ServiceState 与 BffState 共享 clone。总期限覆盖建立连接、
+发送及读取响应正文；发送超时沿原 `Delivery::Unknown`，查询错误不伪装为空结果，
+不修改原身份、授权、签名、幂等、对账或重试语义。
+
+`BUZZ_RELAY_HTTP_TIMEOUT_SECONDS` 是必须显式投递的正 32 位整数秒，没有默认值。
+`.env.example` 保留空值，Compose 同源传递，原 `bootstrap.sh --validate-config`、
+`start-core.sh` 与 Core 构造器拒绝缺失、零、负数、畸形或越界值。启动脚本在取得
+一次性凭据前校验。新增字段未投递即阻断本版启动，不使用 settle/轮询间隔代替它。
+
+保留原 `http` 的消费者为媒体上传/下载、SpiceDB 清理以及已有独立预算的 Push
+和 Memory；Push 的完整分页/lease 约束与 Memory 的完整读取/写入期限不被缩短。
+SSE 的快照和附属 HTTP 查证使用新期限，增量 WebSocket、音频、组件原生长任务、
+MCP、Agent Runtime、Temporal、Git 子进程继续使用各自原有传输与预算。
+
+新增真实消费者检查在本机 TCP fixture 返回 HTTP 200 与部分 JSON 后停止正文，
+分别调用原 IdentityClient.query/deliver 与 fetch_nip11；查询/NIP-11 必须失败，
+发布必须 UNKNOWN，正常完整查询仍成功。实现阶段尚未运行 SDK，不据此声称通过；
+固定源码正向、移除 deadline 的反向及逐字恢复结果将在执行后补录。无部署。

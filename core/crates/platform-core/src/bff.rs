@@ -57,6 +57,8 @@ pub struct BffState {
     pub session_ttl_seconds: i64,
     pub secrets: std::sync::Arc<secret_store::SecretStore>,
     pub http: reqwest::Client,
+    /// Finite ordinary Relay requests; media and independently budgeted work use `http`.
+    pub relay_http: reqwest::Client,
     /// Relay 的网络地址；Community host 另从 binding 取（SF-BUZ-32）
     pub relay_transport: String,
     /// 历史查询的单页上界。NIP-11 声明的 1000 是 Relay 的上限，不是平台该放行

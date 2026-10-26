@@ -411,7 +411,7 @@ async fn converge(
     want: Presence,
 ) -> Result<(), Response> {
     control
-        .converge(&state.http, scope, pubkey, want)
+        .converge(&state.relay_http, scope, pubkey, want)
         .await
         .map_err(|e| {
             // 未收敛是结果不明，不是拒绝：roster 快照可能落后（SF-BUZ-34）。

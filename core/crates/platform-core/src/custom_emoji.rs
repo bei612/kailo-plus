@@ -58,7 +58,7 @@ fn verified_sets(value: Value, author: Option<&str>) -> Result<Vec<nostr::Event>
 async fn own(state: &BffState, client: &IdentityClient) -> Result<Vec<nostr::Event>, Response> {
     let author = client.pubkey_hex();
     let rows = client
-        .query(&state.http, &[own_filter(&author)])
+        .query(&state.relay_http, &[own_filter(&author)])
         .await
         .map_err(|error| relay_error_response(&error, None))?;
     verified_sets(rows, Some(&author)).map_err(|_| unavailable())
@@ -74,7 +74,7 @@ pub(crate) async fn message_tags(
     }
     let rows = client
         .query(
-            &state.http,
+            &state.relay_http,
             &[json!({"kinds":[KIND_EMOJI_SET], "#d":[CUSTOM_EMOJI_SET_D_TAG]})],
         )
         .await
@@ -94,7 +94,7 @@ pub(crate) async fn get(State(state): State<BffState>, headers: HeaderMap) -> Re
     };
     let rows = match client
         .query(
-            &state.http,
+            &state.relay_http,
             &[json!({"kinds":[KIND_EMOJI_SET], "#d":[CUSTOM_EMOJI_SET_D_TAG]})],
         )
         .await

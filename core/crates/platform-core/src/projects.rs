@@ -69,7 +69,7 @@ pub(crate) async fn publication_target(
         );
         let rows = client
             .query(
-                &state.http,
+                &state.relay_http,
                 &[json!({"kinds":[kind],"authors":[client.pubkey_hex()],"#d":[slug],"limit":1})],
             )
             .await
@@ -103,7 +103,7 @@ pub(crate) async fn publication_target(
         vec![30621, 30617]
     };
     let value = client
-        .query(&state.http, &[json!({"ids":[id],"kinds":target_kinds})])
+        .query(&state.relay_http, &[json!({"ids":[id],"kinds":target_kinds})])
         .await
         .map_err(|error| relay_error_response(&error, None))?;
     let events: Vec<nostr::Event> =
@@ -130,7 +130,7 @@ pub(crate) async fn publication_target(
             .ok_or_else(|| StatusCode::BAD_GATEWAY.into_response())?;
         let rows = client
             .query(
-                &state.http,
+                &state.relay_http,
                 &[json!({"kinds":[30617],"authors":[owner],"#d":[slug],"limit":1})],
             )
             .await
@@ -153,7 +153,7 @@ pub(crate) async fn publication_target(
         .tags
         .identifier()
         .ok_or_else(|| StatusCode::BAD_GATEWAY.into_response())?;
-    let value = client.query(&state.http, &[json!({"kinds":[event.kind.as_u16()],"authors":[event.pubkey.to_hex()],"#d":[slug],"limit":1})])
+    let value = client.query(&state.relay_http, &[json!({"kinds":[event.kind.as_u16()],"authors":[event.pubkey.to_hex()],"#d":[slug],"limit":1})])
         .await.map_err(|error| relay_error_response(&error, None))?;
     let heads: Vec<nostr::Event> =
         serde_json::from_value(value).map_err(|_| StatusCode::BAD_GATEWAY.into_response())?;
@@ -193,7 +193,7 @@ pub(crate) async fn latest_comment(
         // IdentityClient::query retains its original per-query budget, timeout
         // and Relay authentication; exhaustion refuses, it is not an empty page.
         let rows = client
-            .query(&state.http, &[filter])
+            .query(&state.relay_http, &[filter])
             .await
             .map_err(|error| relay_error_response(&error, None))?;
         let events: Vec<nostr::Event> =
@@ -248,7 +248,7 @@ pub(crate) async fn latest_pull_request_status(
             filter["before_id"] = json!(before_id);
         }
         let rows = client
-            .query(&state.http, &[filter])
+            .query(&state.relay_http, &[filter])
             .await
             .map_err(|error| relay_error_response(&error, None))?;
         let events: Vec<nostr::Event> =
@@ -332,7 +332,7 @@ async fn newest_review_activity(
             filter["before_id"] = json!(before_id);
         }
         let rows = client
-            .query(&state.http, &[filter])
+            .query(&state.relay_http, &[filter])
             .await
             .map_err(|error| relay_error_response(&error, None))?;
         let events: Vec<nostr::Event> =
@@ -457,7 +457,7 @@ pub(crate) async fn assignment_activity(
         .ok()
         .filter(|cap| *cap > 0)
         .ok_or_else(|| StatusCode::SERVICE_UNAVAILABLE.into_response())?;
-    assignment_activity_page(&state.http, client, request, issue, cap).await
+    assignment_activity_page(&state.relay_http, client, request, issue, cap).await
 }
 
 async fn assignment_activity_page(
@@ -603,7 +603,7 @@ pub(crate) async fn confirm_accepted_issue_publication(
     let kind = publication_kind(request)?;
     let page = client
         .query(
-            &state.http,
+            &state.relay_http,
             &[json!({"ids":[event_id],"authors":[client.pubkey_hex()],"kinds":[kind],"limit":1})],
         )
         .await
@@ -620,7 +620,7 @@ pub(crate) async fn confirm_accepted_issue_publication(
         let target_id = request.target_event_id.as_deref().ok_or_else(unknown)?;
         let page = client
             .query(
-                &state.http,
+                &state.relay_http,
                 &[json!({"ids":[target_id],"kinds":[1618],"limit":1})],
             )
             .await
@@ -639,7 +639,7 @@ pub(crate) async fn confirm_accepted_issue_publication(
             collab_bridge::projects::comment_target_kind(request).map_err(|_| unknown())?;
         let page = client
             .query(
-                &state.http,
+                &state.relay_http,
                 &[json!({"ids":[target_id],"kinds":[target_kind],"limit":1})],
             )
             .await
@@ -881,7 +881,7 @@ pub(crate) async fn readable_work_items(
     for ids in requested.chunks(size) {
         let value = client
             .query(
-                &state.http,
+                &state.relay_http,
                 &[
                     json!({"ids":ids.iter().map(ToString::to_string).collect::<Vec<_>>(),
             "kinds":[1,1618,1619,1621,1630,1631,1632,1633],"limit":ids.len()}),
@@ -949,14 +949,14 @@ async fn query_inner(
     let value = if serde_json::to_value(&request.view)
         .is_ok_and(|view| view.as_str() == Some("WORK_ITEM_ACTIVITY"))
     {
-        work_item_activity_page(&state.http, &client, &request, &kinds, filter, cap).await?
+        work_item_activity_page(&state.relay_http, &client, &request, &kinds, filter, cap).await?
     } else if states_view {
         let coordinates = request.coordinates.as_deref().unwrap_or_default();
         let trusted = relay_self.as_deref();
-        repository_states(&state.http, &client, coordinates, trusted, &filter).await?
+        repository_states(&state.relay_http, &client, coordinates, trusted, &filter).await?
     } else {
         client
-            .query(&state.http, &[filter])
+            .query(&state.relay_http, &[filter])
             .await
             .map_err(|e| relay_error_response(&e, None))?
     };

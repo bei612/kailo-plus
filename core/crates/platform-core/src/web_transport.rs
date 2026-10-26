@@ -302,7 +302,7 @@ async fn reaction_tags(
     if kind == KIND_DELETION as u16 {
         let page = client
             .query(
-                &state.http,
+                &state.relay_http,
                 &[serde_json::json!({
                     "ids":[id],"kinds":[KIND_REACTION],"authors":[client.pubkey_hex()],"limit":1
                 })],
@@ -330,7 +330,7 @@ async fn read_reaction_message(
 ) -> Result<(), Response> {
     let page = client
         .query(
-            &state.http,
+            &state.relay_http,
             &[serde_json::json!({"ids":[id],"#h":[channel],"limit":1})],
         )
         .await
@@ -1174,7 +1174,7 @@ pub async fn conversation_visibility(
         return StatusCode::SERVICE_UNAVAILABLE.into_response();
     };
     let viewer = keys.public_key().to_hex();
-    let events = match client.query(&state.http, &[serde_json::json!({"kinds":[30622],"authors":[author],"#p":[viewer],"#d":[viewer],"limit":1})]).await {
+    let events = match client.query(&state.relay_http, &[serde_json::json!({"kinds":[30622],"authors":[author],"#p":[viewer],"#d":[viewer],"limit":1})]).await {
         Ok(events) => events,
         Err(e) => return relay_error_response(&e, None),
     };
@@ -1424,7 +1424,7 @@ pub async fn query_channel(
         Err(response) => return response,
     };
     let event = match client
-        .channel_metadata(&state.http, &scope.channel_id)
+        .channel_metadata(&state.relay_http, &scope.channel_id)
         .await
     {
         Ok(Some(event)) => event,
@@ -1656,7 +1656,7 @@ pub(crate) async fn read_message_event(
 ) -> Result<nostr::Event, Response> {
     let response = client
         .query(
-            &state.http,
+            &state.relay_http,
             &[serde_json::json!({"ids":[id], "#h":[channel], "limit":1})],
         )
         .await
@@ -1745,7 +1745,7 @@ pub(crate) async fn query_inbox_mentions(
             filter["since"] = serde_json::json!(since);
         }
         let value = client
-            .query(&state.http, &[filter])
+            .query(&state.relay_http, &[filter])
             .await
             .map_err(|error| relay_error_response(&error, None))?;
         let rows = value.as_array().ok_or_else(invalid_message_evidence)?;
@@ -1877,7 +1877,7 @@ async fn verify_inbox_ancestors(
             return Err(StatusCode::PAYLOAD_TOO_LARGE.into_response());
         }
         let page = client
-            .query(&state.http, &[filter])
+            .query(&state.relay_http, &[filter])
             .await
             .map_err(|error| relay_error_response(&error, None))?;
         let rows = page.as_array().ok_or_else(invalid_message_evidence)?;
@@ -2966,7 +2966,7 @@ async fn publish(
         }
     }
 
-    match client.deliver(&state.http, &event, admitted).await {
+    match client.deliver(&state.relay_http, &event, admitted).await {
         Delivery::Accepted => {
             // 结果写不进去不改变「已送达」：DISPATCH 已在，兜底对账按 event id
             // 查到它后补记（publish_reconcile）
@@ -3174,7 +3174,7 @@ pub(crate) async fn community_limits(
     })?;
     let doc = state
         .relay_nip11
-        .get(&state.http, community_host)
+        .get(&state.relay_http, community_host)
         .await
         .map_err(|e| {
             tracing::warn!(error = %e, host = %community_host, "运行期读取 NIP-11 失败");
@@ -3519,7 +3519,7 @@ async fn read_message_authors(
     for ids in event_ids.chunks(cap) {
         let value = client
             .query(
-                &state.http,
+                &state.relay_http,
                 &[serde_json::json!({
                     "ids":ids, "#h":[admitted.channel_id()], "limit":ids.len()
                 })],
@@ -3799,7 +3799,7 @@ async fn query_messages_for(
             "#e": [root.id.to_hex()], "authors": [root.pubkey.to_hex()], "limit": 1,
         }));
     }
-    match client.query(&state.http, &filters).await {
+    match client.query(&state.relay_http, &filters).await {
         Ok(events) => {
             let events = match serde_json::from_value(events) {
                 Ok(events) => events,
@@ -3941,7 +3941,7 @@ pub async fn query_workspace_activity(
                 channel_window_filter(&scope.channel_id, message_type, cap, None)
             })
             .collect();
-        let events: Vec<nostr::Event> = match client.query(&state.http, &filters).await {
+        let events: Vec<nostr::Event> = match client.query(&state.relay_http, &filters).await {
             Ok(value) => match serde_json::from_value(value) {
                 Ok(events) => events,
                 Err(_) => return invalid_message_evidence(),

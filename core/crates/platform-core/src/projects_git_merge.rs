@@ -439,7 +439,7 @@ async fn read_review(
     let id = merge.pull_request_event_id.as_str();
     let filter = json!({"ids": [id], "kinds": [1618], "limit": 1});
     let page = client
-        .query(&state.http, &[filter])
+        .query(&state.relay_http, &[filter])
         .await
         .map_err(|error| relay_error_response(&error, None))?;
     let events: Vec<nostr::Event> =
@@ -811,7 +811,7 @@ async fn publish_status(
             return Err(pending());
         }
     }
-    match client.deliver(&call.state.http, &event, admitted).await {
+    match client.deliver(&call.state.relay_http, &event, admitted).await {
         Delivery::Accepted => {
             record_status(call, operation, &event_id, "OUTCOME", ACCEPTED).await;
             Ok(Some(event_id))
@@ -842,7 +842,7 @@ async fn observe_status(
     let id = attempt.operation_id;
     let event_id = attempt.event_id.as_str();
     let filter = json!({"ids": [event_id], "authors": [call.signer], "kinds": [1631]});
-    let page = call.client.query(&call.state.http, &[filter]).await;
+    let page = call.client.query(&call.state.relay_http, &[filter]).await;
     let page = page.map_err(|_| unknown(id))?;
     let observed = publication_observed(page, event_id, &call.signer, 1631);
     if !matches!(observed, Ok(true)) {
@@ -917,7 +917,7 @@ async fn merge_inner(
     let client = Arc::new(community_client(state, &keys, &before.community_host)?);
     // Relay decides with the person's own identity before anything is recorded.
     client
-        .git_info_refs(&state.http, &merge.repo_path)
+        .git_info_refs(&state.relay_http, &merge.repo_path)
         .await
         .map_err(|error| info_refs_error(&error))?;
     let clone_url = client

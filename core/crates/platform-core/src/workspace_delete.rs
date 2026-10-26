@@ -767,7 +767,7 @@ async fn relay(run: &mut Run<'_>) -> Result<bool, Response> {
         return Ok(false);
     }
     let channel_id = channel.to_string();
-    let present = match control.channel_metadata(&run.state.http, &channel_id).await {
+    let present = match control.channel_metadata(&run.state.relay_http, &channel_id).await {
         Ok(event) => event.is_some(),
         Err(e) => {
             tracing::warn!(error = %e, "删除前读取 Channel discovery 失败");
@@ -791,12 +791,12 @@ async fn relay(run: &mut Run<'_>) -> Result<bool, Response> {
         // Relay 拒绝对已归档 Channel 的除解档外的一切变更；roster 已清空，解档不暴露任何内容
         if run.snapshot.from_state == "SUSPENDED"
             || matches!(
-                control.channel_archived(&run.state.http, &channel_id).await,
+                control.channel_archived(&run.state.relay_http, &channel_id).await,
                 Ok(Some(true))
             )
         {
             match control
-                .converge_channel_archived(&run.state.http, &channel_id, false)
+                .converge_channel_archived(&run.state.relay_http, &channel_id, false)
                 .await
             {
                 Ok(true) => {}
@@ -832,7 +832,7 @@ async fn relay(run: &mut Run<'_>) -> Result<bool, Response> {
         )
         .await
         .map_err(unavailable)?;
-        let result = match control.deliver(&run.state.http, &event, admitted).await {
+        let result = match control.deliver(&run.state.relay_http, &event, admitted).await {
             Delivery::Accepted => "ACCEPTED",
             Delivery::Rejected(why) => {
                 tracing::warn!(reason = %why, "Relay 拒绝 9008");
@@ -851,7 +851,7 @@ async fn relay(run: &mut Run<'_>) -> Result<bool, Response> {
             .await
             .map_err(unavailable)?;
         // 判据是回读：discovery 仍在即结果不明，下一轮重签（9008 重放是幂等的软删除）
-        match control.channel_metadata(&run.state.http, &channel_id).await {
+        match control.channel_metadata(&run.state.relay_http, &channel_id).await {
             Ok(None) => {}
             Ok(Some(_)) => return Ok(false),
             Err(e) => {

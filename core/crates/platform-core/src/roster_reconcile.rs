@@ -259,7 +259,7 @@ async fn compare_relay(
         .await
         .map_err(|e| e.to_string())?;
     let roster: HashSet<String> = control
-        .roster(&state.http, Scope::Relay)
+        .roster(&state.relay_http, Scope::Relay)
         .await
         .map_err(|e| e.to_string())?
         .into_iter()
@@ -413,7 +413,7 @@ async fn compare_channel(
     };
     let channel = channel.to_string();
     let roster: HashSet<String> = control
-        .roster(&state.http, Scope::Channel(&channel))
+        .roster(&state.relay_http, Scope::Channel(&channel))
         .await
         .map_err(|e| e.to_string())?
         .into_iter()

@@ -148,7 +148,7 @@ async fn advertised(state: &BffState, ctx: &ExecutionContext) -> Result<Option<S
     let Some((host, Some(snapshot))) = row else {
         return Ok(None);
     };
-    let Ok(doc) = state.relay_nip11.get(&state.http, &host).await else {
+    let Ok(doc) = state.relay_nip11.get(&state.relay_http, &host).await else {
         return Ok(None);
     };
     Ok((doc.digest == snapshot && doc.gif).then_some(host))
@@ -251,7 +251,7 @@ pub async fn search(
         "customer_id": customer_id(&ctx),
         "locale": request.locale,
     });
-    let page = match client.gif_search(&state.http, &body).await {
+    let page = match client.gif_search(&state.relay_http, &body).await {
         Ok(page) => page,
         Err(error) => return relay_refusal(&error),
     };
@@ -282,7 +282,7 @@ pub async fn share(
         Err(response) => return response,
     };
     let body = json!({"slug": slug, "customer_id": customer_id(&ctx)});
-    match client.gif_share(&state.http, &body).await {
+    match client.gif_share(&state.relay_http, &body).await {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(error) => relay_refusal(&error),
     }

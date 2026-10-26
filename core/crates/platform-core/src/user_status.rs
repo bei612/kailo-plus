@@ -154,7 +154,7 @@ pub(crate) async fn query(
         "kinds": [KIND_USER_STATUS], "#d": [STATUS_D_TAG], "authors": &authors,
         "limit": authors.len(),
     });
-    let rows = match client.query(&state.http, &[filter]).await {
+    let rows = match client.query(&state.relay_http, &[filter]).await {
         Ok(rows) => rows,
         Err(error) => return relay_error_response(&error, None),
     };
@@ -244,7 +244,7 @@ pub(crate) async fn update(
         Err(r) => return r,
     }
     let author = client.pubkey_hex();
-    let prior = match client.query(&state.http, &[own_filter(&author)]).await {
+    let prior = match client.query(&state.relay_http, &[own_filter(&author)]).await {
         Ok(rows) => rows,
         Err(error) => return relay_error_response(&error, None),
     };
