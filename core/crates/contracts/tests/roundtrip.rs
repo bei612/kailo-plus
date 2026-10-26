@@ -964,6 +964,8 @@ fn pulse_requests_and_native_limit_roundtrip() {
             serde_json::json!({"relayUrl":"wss://relay.example","communityHost":"relay.example"});
         if let Some(limit) = limit {
             value["relayQueryLimit"] = serde_json::json!(limit);
+            value["publishResultSettleSeconds"] = serde_json::json!(901);
+            value["publishResultObservedAtUnixSeconds"] = serde_json::json!(1900000000);
         }
         let typed: contracts::NativeCommunityFacts = serde_json::from_value(value.clone()).unwrap();
         assert_eq!(serde_json::to_value(typed).unwrap(), value);

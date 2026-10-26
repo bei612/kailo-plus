@@ -861,8 +861,9 @@ test("Pulse shares original attachment fields and optional native Relay limit", 
   const query:PulseQueryRequest=load("pulse-query.sample.json");
   deepStrictEqual(JSON.parse(JSON.stringify({view:query.view,authors:query.authors,eventIds:query.eventIds,before:query.before} satisfies PulseQueryRequest)),query);
   for(const relayQueryLimit of [undefined,100]) {
-    const facts:NativeCommunityFacts={relayUrl:"wss://relay.example",communityHost:"relay.example",relayQueryLimit};
-    deepStrictEqual(JSON.parse(JSON.stringify(facts)),{relayUrl:facts.relayUrl,communityHost:facts.communityHost,...(relayQueryLimit===undefined?{}:{relayQueryLimit})});
+    const deployment = relayQueryLimit === undefined ? {} : { publishResultSettleSeconds: 901, publishResultObservedAtUnixSeconds: 1900000000 };
+    const facts:NativeCommunityFacts={relayUrl:"wss://relay.example",communityHost:"relay.example",relayQueryLimit,...deployment};
+    deepStrictEqual(JSON.parse(JSON.stringify(facts)),{relayUrl:facts.relayUrl,communityHost:facts.communityHost,...(relayQueryLimit===undefined?{}:{relayQueryLimit}),...deployment});
   }
 });
 

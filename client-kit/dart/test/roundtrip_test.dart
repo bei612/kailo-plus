@@ -696,6 +696,8 @@ void main() {
         'relayUrl': 'wss://relay.example',
         'communityHost': 'relay.example',
         if (limit != null) 'relayQueryLimit': limit,
+        if (limit != null) 'publishResultSettleSeconds': 901,
+        if (limit != null) 'publishResultObservedAtUnixSeconds': 1900000000,
       };
       expect(NativeCommunityFacts.fromJson(value).toJson(), value);
     }

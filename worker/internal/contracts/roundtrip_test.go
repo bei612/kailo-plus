@@ -1071,7 +1071,7 @@ func TestPulseRoundtrip(t *testing.T) {
 			t.Fatalf("Pulse roundtrip changed %s", name)
 		}
 	}
-	for _, raw := range []string{`{"relayUrl":"wss://relay.example","communityHost":"relay.example"}`, `{"relayUrl":"wss://relay.example","communityHost":"relay.example","relayQueryLimit":100}`} {
+	for _, raw := range []string{`{"relayUrl":"wss://relay.example","communityHost":"relay.example"}`, `{"relayUrl":"wss://relay.example","communityHost":"relay.example","relayQueryLimit":100,"publishResultSettleSeconds":901,"publishResultObservedAtUnixSeconds":1900000000}`} {
 		var typed generated.NativeCommunityFacts
 		if err := json.Unmarshal([]byte(raw), &typed); err != nil {
 			t.Fatal(err)
