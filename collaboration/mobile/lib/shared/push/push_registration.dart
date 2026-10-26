@@ -10,6 +10,7 @@ library;
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:nostr/nostr.dart' as nostr;
 import 'package:package_info_plus/package_info_plus.dart';
@@ -18,6 +19,7 @@ import 'package:client_kit/shared/contracts/contracts.dart';
 import 'package:client_kit/shared/platform/platform_text.dart';
 import '../auth/auth_provider.dart';
 import '../relay/relay_provider.dart';
+import '../relay/app_lifecycle_provider.dart';
 import '../platform/platform_api.dart';
 import '../platform/platform_config.dart';
 import '../platform/platform_device.dart';
@@ -356,7 +358,8 @@ final pushRegistrationProvider =
 /// Keeps an enabled registration's provider token current: on launch it asks the native provider again (tokens
 /// can change across restores and reinstalls) and re-registers a changed token.
 final pushTokenRefreshProvider = Provider<void>((ref) {
-  if (ref.watch(pushRegistrationDepsProvider) == null) return;
+  final deps = ref.watch(pushRegistrationDepsProvider);
+  if (deps == null) return;
   final bridge = ref.watch(pushBridgeProvider);
   final subscription = bridge.tokens.listen(
     (token) => unawaited(
@@ -375,6 +378,15 @@ final pushTokenRefreshProvider = Provider<void>((ref) {
       );
     }
   }, fireImmediately: true);
+  ref.listen(appLifecycleProvider, (_, next) {
+    if (next != AppLifecycleState.resumed || !deps.isCurrent()) return;
+    ref.invalidate(pushAuthorizationStatusProvider);
+    // A permission dialog can resume while the original PUT is still pending.
+    // Do not race its CAS version with another read or token request.
+    if (ref.read(pushRegistrationProvider).outcome == PushRegistrationOutcome.saving) return;
+    asked = false;
+    unawaited(ref.read(pushRegistrationProvider.notifier).refresh());
+  });
 });
 
 /// Notification taps (warm and cold start) go into the existing deep-link pipeline.
