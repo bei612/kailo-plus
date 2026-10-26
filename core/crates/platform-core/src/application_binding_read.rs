@@ -9,6 +9,58 @@ use axum::{
     Json,
 };
 
+// The same projection is exercised by the isolated policy regression; scope
+// and fresh permission checks remain in page() before this metadata read.
+pub(super) const BINDING_PAGE_SQL: &str = "select jsonb_strip_nulls(jsonb_build_object(
+        'bindingId',id,'tenantId',tenant_id,'workspaceId',workspace_id,
+        'componentReleaseId',component_release_id,'componentTypeKey',component_type_key,
+        'state',state,'version',version,'activeProjectionGeneration',active_projection_generation,
+        'capabilityCategories',capability_categories,
+        'humanActionPolicies',case when state='ACTIVE' or ($5 and state in ('PROVISIONING','ERROR')) then
+          (select jsonb_agg(jsonb_build_object(
+             'actionKey',policy.action_key,'actionVersion',policy.action_version,
+             'componentReleaseId',policy.component_release_id,'generation',policy.application_projection_generation,
+             'resultExposurePolicyId',policy.id,'resultExposurePolicyVersion',policy.version)
+             order by policy.action_key,policy.action_version)
+           from catalog.result_exposure_policy policy
+           join projection.application_runtime runtime on runtime.binding_id=policy.application_binding_id
+             and runtime.generation=policy.application_projection_generation
+             and runtime.component_release_id=policy.component_release_id
+           join catalog.component_release release on release.id=policy.component_release_id and release.status='APPROVED'
+           where policy.tenant_id=application_binding.tenant_id and policy.application_binding_id=application_binding.id
+             and policy.component_release_id=application_binding.component_release_id and policy.status='ACTIVE'
+             and ((application_binding.state='ACTIVE' and runtime.state='ACTIVE'
+               and runtime.generation=application_binding.active_projection_generation)
+               or (application_binding.state in ('PROVISIONING','ERROR') and runtime.state='PENDING'
+                 and runtime.action_execution_id=application_binding.projection_action_execution_id))) end,
+        'hasReadReceiver',state='ACTIVE' and exists(select 1 from catalog.component_release release
+            join identity.service_principal service on service.principal_id=application_binding.service_principal_id
+              and service.component_binding_kind='APPLICATION' and service.component_binding_id=application_binding.id
+            join identity.principal principal on principal.id=service.principal_id
+              and principal.tenant_id=application_binding.tenant_id and principal.kind='SERVICE' and principal.status='ACTIVE'
+            join projection.application_runtime runtime on runtime.binding_id=application_binding.id
+              and runtime.generation=application_binding.active_projection_generation and runtime.state='ACTIVE'
+              and runtime.component_release_id=release.id
+            where release.id=application_binding.component_release_id and release.status='APPROVED'
+            and exists(select 1 from jsonb_array_elements(release.manifest->'capabilityDeclarations') d
+                where d->>'readEdge' in ('RECEIVER','BOTH'))),
+        'hasNativePage',exists(select 1 from catalog.component_release release
+            where release.id=component_release_id and release.status='APPROVED'
+            and release.manifest->'frontendDelivery'->>'mode'='NATIVE_PAGE'),
+        'nativePageCategory',(select release.manifest->'frontendDelivery'->>'nativePageCategory'
+            from catalog.component_release release
+            where release.id=component_release_id and release.status='APPROVED'
+            and release.manifest->'frontendDelivery'->>'mode'='NATIVE_PAGE'),
+        'preferences',(select release.manifest->'frontendPresentationContract'->'preferences'
+            from catalog.component_release release
+            where release.id=component_release_id and release.status='APPROVED'
+            and release.manifest->'frontendDelivery'->>'mode'='NATIVE_PAGE'
+            and release.manifest->'frontendPresentationContract'->>'integrationMode'='KAILO_EMBED'
+            and jsonb_typeof(release.manifest->'frontendPresentationContract'->'preferences')='array'
+            and jsonb_array_length(release.manifest->'frontendPresentationContract'->'preferences')>0)))
+        from catalog.application_binding
+        where tenant_id=$1 and workspace_id is not distinct from $2 order by id offset $3 limit $4";
+
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct PageQuery {
@@ -341,57 +393,7 @@ async fn page(
             .as_deref()
             .is_some_and(|value| !value.is_empty())
         && crate::capability_registry::action_exposed(CREATE);
-    let mut rows: Vec<Value> = sqlx::query_scalar(
-        "select jsonb_strip_nulls(jsonb_build_object(
-        'bindingId',id,'tenantId',tenant_id,'workspaceId',workspace_id,
-        'componentReleaseId',component_release_id,'componentTypeKey',component_type_key,
-        'state',state,'version',version,'activeProjectionGeneration',active_projection_generation,
-        'capabilityCategories',capability_categories,
-        'humanActionPolicies',case when state='ACTIVE' or ($5 and state in ('PROVISIONING','ERROR')) then
-          (select jsonb_agg(jsonb_build_object(
-             'actionKey',policy.action_key,'actionVersion',policy.action_version,
-             'componentReleaseId',policy.component_release_id,'generation',policy.application_projection_generation,
-             'resultExposurePolicyId',policy.id,'resultExposurePolicyVersion',policy.version)
-             order by policy.action_key,policy.action_version)
-           from catalog.result_exposure_policy policy
-           join projection.application_runtime runtime on runtime.binding_id=policy.application_binding_id
-             and runtime.generation=policy.application_projection_generation
-             and runtime.component_release_id=policy.component_release_id
-           join catalog.component_release release on release.id=policy.component_release_id and release.status='APPROVED'
-           where policy.tenant_id=application_binding.tenant_id and policy.application_binding_id=application_binding.id
-             and policy.component_release_id=application_binding.component_release_id and policy.status='ACTIVE'
-             and ((application_binding.state='ACTIVE' and runtime.state='ACTIVE'
-               and runtime.generation=application_binding.active_projection_generation)
-               or (application_binding.state in ('PROVISIONING','ERROR') and runtime.state='PENDING'
-                 and runtime.action_execution_id=application_binding.projection_action_execution_id))) end,
-        'hasReadReceiver',state='ACTIVE' and exists(select 1 from catalog.component_release release
-            join identity.service_principal service on service.principal_id=application_binding.service_principal_id
-              and service.component_binding_kind='APPLICATION' and service.component_binding_id=application_binding.id
-            join identity.principal principal on principal.id=service.principal_id
-              and principal.tenant_id=application_binding.tenant_id and principal.kind='SERVICE' and principal.status='ACTIVE'
-            join projection.application_runtime runtime on runtime.binding_id=application_binding.id
-              and runtime.generation=application_binding.active_projection_generation and runtime.state='ACTIVE'
-              and runtime.component_release_id=release.id
-            where release.id=application_binding.component_release_id and release.status='APPROVED'
-            and exists(select 1 from jsonb_array_elements(release.manifest->'capabilityDeclarations') d
-                where d->>'readEdge' in ('RECEIVER','BOTH'))),
-        'hasNativePage',exists(select 1 from catalog.component_release release
-            where release.id=component_release_id and release.status='APPROVED'
-            and release.manifest->'frontendDelivery'->>'mode'='NATIVE_PAGE'),
-        'nativePageCategory',(select release.manifest->'frontendDelivery'->>'nativePageCategory'
-            from catalog.component_release release
-            where release.id=component_release_id and release.status='APPROVED'
-            and release.manifest->'frontendDelivery'->>'mode'='NATIVE_PAGE'),
-        'preferences',(select release.manifest->'frontendPresentationContract'->'preferences'
-            from catalog.component_release release
-            where release.id=component_release_id and release.status='APPROVED'
-            and release.manifest->'frontendDelivery'->>'mode'='NATIVE_PAGE'
-            and release.manifest->'frontendPresentationContract'->>'integrationMode'='KAILO_EMBED'
-            and jsonb_typeof(release.manifest->'frontendPresentationContract'->'preferences')='array'
-            and jsonb_array_length(release.manifest->'frontendPresentationContract'->'preferences')>0)))
-        from catalog.application_binding
-        where tenant_id=$1 and workspace_id is not distinct from $2 order by id offset $3 limit $4",
-    )
+    let mut rows: Vec<Value> = sqlx::query_scalar(BINDING_PAGE_SQL)
     .bind(actor.tenant_id)
     .bind(query.workspace_id)
     .bind(offset)
