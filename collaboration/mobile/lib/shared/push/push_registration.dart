@@ -108,7 +108,9 @@ final pushRegistrationDepsProvider = Provider<PushRegistrationDeps?>((ref) {
     authProvider.select((a) => (a.value?.status, a.value?.community?.id)),
   );
   final pubkey = ref.watch(myPubkeyProvider);
-  if (config == null || identity.$1 != AuthStatus.authenticated || pubkey == null) {
+  if (config == null ||
+      identity.$1 != AuthStatus.authenticated ||
+      pubkey == null) {
     return null;
   }
   final session = ref.read(nativeSessionProvider);
