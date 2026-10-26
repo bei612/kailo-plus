@@ -14,17 +14,27 @@ import '../../shared/relay/relay_provider.dart';
 
 enum FeedbackFailure { refused, unconfirmed }
 
-typedef FeedbackSender = Future<PlatformResponse> Function(Map<String, dynamic>);
+typedef FeedbackSender =
+    Future<PlatformResponse> Function(Map<String, dynamic>);
 
 /// Kept while the form is closed, retired on account/device/deployment change.
 final feedbackDraftProvider = Provider<FeedbackDraft>((ref) {
   final config = ref.watch(platformConfigProvider);
-  final scope = ref.watch(authProvider.select((a) => (a.value?.status, a.value?.community?.id)));
+  final scope = ref.watch(
+    authProvider.select((a) => (a.value?.status, a.value?.community?.id)),
+  );
   final pubkey = ref.watch(myPubkeyProvider);
   final session = ref.read(nativeSessionProvider);
-  final draft = FeedbackDraft(config != null && scope.$1 == AuthStatus.authenticated && pubkey != null
-      ? (body) => session.send(config, PlatformMethod.post, '/api/v1/feedback', body: body)
-      : null);
+  final draft = FeedbackDraft(
+    config != null && scope.$1 == AuthStatus.authenticated && pubkey != null
+        ? (body) => session.send(
+            config,
+            PlatformMethod.post,
+            '/api/v1/feedback',
+            body: body,
+          )
+        : null,
+  );
   ref.onDispose(draft.dispose);
   return draft;
 });
@@ -44,63 +54,102 @@ class FeedbackDraft extends ChangeNotifier {
   FeedbackFailure? failure;
 
   bool get locked => sending || _frozen != null;
-  bool get canSend => _send != null && !sending &&
-      (_frozen != null || (message.trim().isNotEmpty && message.trim().runes.length <= 4000));
+  bool get canSend =>
+      _send != null &&
+      !sending &&
+      (_frozen != null ||
+          (message.trim().isNotEmpty && message.trim().runes.length <= 4000));
 
-  void changed() { if (!_retired) notifyListeners(); }
+  void changed() {
+    if (!_retired) notifyListeners();
+  }
 
   void attach(Uint8List bytes) {
     if (locked) return;
-    if (bytes.isEmpty || bytes.length > 2 * 1024 * 1024) throw const FormatException('image size');
-    bool starts(List<int> signature) => bytes.length >= signature.length &&
+    if (bytes.isEmpty || bytes.length > 2 * 1024 * 1024)
+      throw const FormatException('image size');
+    bool starts(List<int> signature) =>
+        bytes.length >= signature.length &&
         listEquals(bytes.sublist(0, signature.length), signature);
-    final mime = starts([137,80,78,71,13,10,26,10]) ? 'image/png'
-        : starts([255,216,255]) ? 'image/jpeg'
-        : bytes.length >= 12 && starts([82,73,70,70]) &&
-            listEquals(bytes.sublist(8,12), [87,69,66,80]) ? 'image/webp' : null;
+    final mime = starts([137, 80, 78, 71, 13, 10, 26, 10])
+        ? 'image/png'
+        : starts([255, 216, 255])
+        ? 'image/jpeg'
+        : bytes.length >= 12 &&
+              starts([82, 73, 70, 70]) &&
+              listEquals(bytes.sublist(8, 12), [87, 69, 66, 80])
+        ? 'image/webp'
+        : null;
     if (mime == null) throw const FormatException('image type');
-    image = Uint8List.fromList(bytes); imageMime = mime; failure = null; changed();
+    image = Uint8List.fromList(bytes);
+    imageMime = mime;
+    failure = null;
+    changed();
   }
 
   Future<bool> submit() async {
     if (_retired || !canSend) return false;
     final request = _frozen ??= FeedbackSubmissionRequest(
-      idempotencyKey: const Uuid().v4(), client: FeedbackClient.MOBILE,
-      category: category, message: message.trim(),
+      idempotencyKey: const Uuid().v4(),
+      client: FeedbackClient.MOBILE,
+      category: category,
+      message: message.trim(),
       diagnostics: includeDiagnostics ? diagnostics : null,
-      attachment: image == null ? null : FeedbackAttachmentUpload(
-        dataBase64: base64Encode(image!), mimeType: imageMime!),
+      attachment: image == null
+          ? null
+          : FeedbackAttachmentUpload(
+              dataBase64: base64Encode(image!),
+              mimeType: imageMime!,
+            ),
     );
-    sending = true; failure = null; changed();
+    sending = true;
+    failure = null;
+    changed();
     try {
       final response = await _send!(request.toJson());
       if (_retired) return false;
       if (response.status == 200) {
-        final receipt = FeedbackSubmissionReceipt.fromJson(response.body! as Map<String, dynamic>);
-        if (!RegExp(r'^[0-9a-f-]{36}$').hasMatch(receipt.feedbackId) || DateTime.tryParse(receipt.createdAt) == null) {
+        final receipt = FeedbackSubmissionReceipt.fromJson(
+          response.body! as Map<String, dynamic>,
+        );
+        if (!RegExp(r'^[0-9a-f-]{36}$').hasMatch(receipt.feedbackId) ||
+            DateTime.tryParse(receipt.createdAt) == null) {
           throw const FormatException('receipt');
         }
-        message = ''; category = null; image = null; imageMime = null;
-        diagnostics = null; includeDiagnostics = false; _frozen = null;
+        message = '';
+        category = null;
+        image = null;
+        imageMime = null;
+        diagnostics = null;
+        includeDiagnostics = false;
+        _frozen = null;
         return true;
       }
       if (response.status >= 500) {
         failure = FeedbackFailure.unconfirmed;
       } else {
-        _frozen = null; failure = FeedbackFailure.refused;
+        _frozen = null;
+        failure = FeedbackFailure.refused;
       }
     } catch (_) {
       if (!_retired) failure = FeedbackFailure.unconfirmed;
     } finally {
-      if (!_retired) { sending = false; changed(); }
+      if (!_retired) {
+        sending = false;
+        changed();
+      }
     }
     return false;
   }
 
   @override
   void dispose() {
-    _retired = true; _frozen = null; message = ''; image = null;
-    imageMime = null; diagnostics = null;
+    _retired = true;
+    _frozen = null;
+    message = '';
+    image = null;
+    imageMime = null;
+    diagnostics = null;
     super.dispose();
   }
 }

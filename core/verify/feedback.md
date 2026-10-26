@@ -62,3 +62,16 @@ Web/Desktop 宿主完整类型检查、真实浏览器操作或 Mobile 验收。
 `/volumes/data/kailo/verification/buzz-r10/feedback-front.log`、
 `feedback-front-retry.log`、`feedback-front-complete-input.log`；相应 limits
 保留资源读回。检查容器已随脚本清理；未部署服务。
+
+## Mobile 源码批（2026-10-26）
+
+`c17de7275` 新增 Mobile 设置入口与真实表单，使用既有 NativeSession 的
+`/api/v1/feedback`、四侧同源请求及同源词条。图片仅本地读取/预览（先读大小、
+限制 2 MiB 与三种文件头），在提交时一起交给 Core；诊断只含五字段、展示原文
+并默认不勾选。未知结果冻结请求，可关窗再开后原样重试；账号/设备/部署变更
+退休草稿，忽略旧身份的晚到完成。新增实际表单及草稿消费者检查源码。
+
+原 check SDK 1 CPU / 2 GiB 的 Dart 格式化与再次零差异检查退出 0，日志
+`/volumes/data/kailo/verification/buzz-r10/feedback-mobile-format.log`。Flutter
+固定原镜像尚在准备，**未运行 Mobile analyzer/widget/controller 检查**。该条
+不表示 Mobile 已验收，也不表示 DD-158 的 Tenant profile 动作与消费者已完成。

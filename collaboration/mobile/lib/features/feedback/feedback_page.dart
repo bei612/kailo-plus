@@ -47,66 +47,163 @@ class _FeedbackForm extends HookWidget {
     }, [draft]);
     final diagnostic = useFuture(diagnosticFuture);
     useEffect(() {
-      if (draft.diagnostics == null && !draft.locked && diagnostic.hasData) draft.diagnostics = diagnostic.data;
+      if (draft.diagnostics == null && !draft.locked && diagnostic.hasData)
+        draft.diagnostics = diagnostic.data;
       return null;
     }, [diagnostic.data]);
 
     Future<void> pickImage() async {
       try {
-        final file = await ImagePicker().pickImage(source: ImageSource.gallery, requestFullMetadata: false);
+        final file = await ImagePicker().pickImage(
+          source: ImageSource.gallery,
+          requestFullMetadata: false,
+        );
         if (file == null || !context.mounted || draft.locked) return;
-        if (await file.length() > 2 * 1024 * 1024) throw const FormatException('image size');
+        if (await file.length() > 2 * 1024 * 1024)
+          throw const FormatException('image size');
         final bytes = await file.readAsBytes();
         if (context.mounted && !draft.locked) draft.attach(bytes);
       } catch (_) {
-        if (context.mounted) { draft.failure = FeedbackFailure.refused; draft.changed(); }
+        if (context.mounted) {
+          draft.failure = FeedbackFailure.refused;
+          draft.changed();
+        }
       }
     }
 
     return FrostedScaffold(
       useUtilitySurfaceTheme: true,
-      appBar: FrostedAppBar(centerTitle: true, title: Text(text(PlatformMessageKey.platformFeedbackTitle))),
+      appBar: FrostedAppBar(
+        centerTitle: true,
+        title: Text(text(PlatformMessageKey.platformFeedbackTitle)),
+      ),
       body: ListView(
-        padding: EdgeInsets.fromLTRB(Grid.gutter, frostedAppBarHeight(context) + Grid.sm, Grid.gutter, Grid.lg),
+        padding: EdgeInsets.fromLTRB(
+          Grid.gutter,
+          frostedAppBarHeight(context) + Grid.sm,
+          Grid.gutter,
+          Grid.lg,
+        ),
         children: [
           Text(text(PlatformMessageKey.platformFeedbackPrivacy)),
           const SizedBox(height: Grid.sm),
-          Wrap(spacing: Grid.xs, children: [
-            for (final choice in [
-              (FeedbackCategory.BUG, PlatformMessageKey.platformFeedbackBug),
-              (FeedbackCategory.PRAISE, PlatformMessageKey.platformFeedbackPraise),
-              (FeedbackCategory.NEEDS_WORK, PlatformMessageKey.platformFeedbackNeedsWork),
-            ]) ChoiceChip(label: Text(text(choice.$2)), selected: draft.category == choice.$1,
-              onSelected: draft.locked ? null : (selected) { draft.category = selected ? choice.$1 : null; draft.changed(); }),
-          ]),
+          Wrap(
+            spacing: Grid.xs,
+            children: [
+              for (final choice in [
+                (FeedbackCategory.BUG, PlatformMessageKey.platformFeedbackBug),
+                (
+                  FeedbackCategory.PRAISE,
+                  PlatformMessageKey.platformFeedbackPraise,
+                ),
+                (
+                  FeedbackCategory.NEEDS_WORK,
+                  PlatformMessageKey.platformFeedbackNeedsWork,
+                ),
+              ])
+                ChoiceChip(
+                  label: Text(text(choice.$2)),
+                  selected: draft.category == choice.$1,
+                  onSelected: draft.locked
+                      ? null
+                      : (selected) {
+                          draft.category = selected ? choice.$1 : null;
+                          draft.changed();
+                        },
+                ),
+            ],
+          ),
           const SizedBox(height: Grid.sm),
-          TextField(key: const ValueKey('feedback-message'), controller: message, enabled: !draft.locked,
-            minLines: 5, maxLines: 12, maxLength: 4000,
-            decoration: InputDecoration(hintText: text(PlatformMessageKey.platformFeedbackPlaceholder)),
-            onChanged: (value) { draft.message = value; draft.changed(); }),
-          Text(text(PlatformMessageKey.platformFeedbackLimits), style: context.textTheme.bodySmall),
+          TextField(
+            key: const ValueKey('feedback-message'),
+            controller: message,
+            enabled: !draft.locked,
+            minLines: 5,
+            maxLines: 12,
+            maxLength: 4000,
+            decoration: InputDecoration(
+              hintText: text(PlatformMessageKey.platformFeedbackPlaceholder),
+            ),
+            onChanged: (value) {
+              draft.message = value;
+              draft.changed();
+            },
+          ),
+          Text(
+            text(PlatformMessageKey.platformFeedbackLimits),
+            style: context.textTheme.bodySmall,
+          ),
           if (draft.image != null) ...[
             const SizedBox(height: Grid.sm),
-            Image.memory(draft.image!, height: 180, semanticLabel: text(PlatformMessageKey.platformFeedbackImage),
-              errorBuilder: (_, _, _) => Text(text(PlatformMessageKey.platformFeedbackFailed))),
-            TextButton(onPressed: draft.locked ? null : () { draft.image = null; draft.imageMime = null; draft.changed(); },
-              child: Text(text(PlatformMessageKey.platformFeedbackRemoveImage))),
-          ] else TextButton(onPressed: draft.locked ? null : pickImage,
-              child: Text(text(PlatformMessageKey.platformFeedbackAttachImage))),
+            Image.memory(
+              draft.image!,
+              height: 180,
+              semanticLabel: text(PlatformMessageKey.platformFeedbackImage),
+              errorBuilder: (_, _, _) =>
+                  Text(text(PlatformMessageKey.platformFeedbackFailed)),
+            ),
+            TextButton(
+              onPressed: draft.locked
+                  ? null
+                  : () {
+                      draft.image = null;
+                      draft.imageMime = null;
+                      draft.changed();
+                    },
+              child: Text(text(PlatformMessageKey.platformFeedbackRemoveImage)),
+            ),
+          ] else
+            TextButton(
+              onPressed: draft.locked ? null : pickImage,
+              child: Text(text(PlatformMessageKey.platformFeedbackAttachImage)),
+            ),
           const SizedBox(height: Grid.sm),
-          if (draft.diagnostics != null) SelectableText(draft.diagnostics!, key: const ValueKey('feedback-diagnostics')),
-          CheckboxListTile(value: draft.includeDiagnostics, contentPadding: EdgeInsets.zero,
-            title: Text(text(PlatformMessageKey.platformFeedbackDiagnosticsConsent)),
-            onChanged: draft.locked || draft.diagnostics == null ? null : (checked) { draft.includeDiagnostics = checked == true; draft.changed(); }),
-          if (draft.failure != null) Text(text(draft.failure == FeedbackFailure.unconfirmed
-              ? PlatformMessageKey.platformFeedbackUnknown : PlatformMessageKey.platformFeedbackFailed),
-            style: TextStyle(color: context.colors.error)),
+          if (draft.diagnostics != null)
+            SelectableText(
+              draft.diagnostics!,
+              key: const ValueKey('feedback-diagnostics'),
+            ),
+          CheckboxListTile(
+            value: draft.includeDiagnostics,
+            contentPadding: EdgeInsets.zero,
+            title: Text(
+              text(PlatformMessageKey.platformFeedbackDiagnosticsConsent),
+            ),
+            onChanged: draft.locked || draft.diagnostics == null
+                ? null
+                : (checked) {
+                    draft.includeDiagnostics = checked == true;
+                    draft.changed();
+                  },
+          ),
+          if (draft.failure != null)
+            Text(
+              text(
+                draft.failure == FeedbackFailure.unconfirmed
+                    ? PlatformMessageKey.platformFeedbackUnknown
+                    : PlatformMessageKey.platformFeedbackFailed,
+              ),
+              style: TextStyle(color: context.colors.error),
+            ),
           const SizedBox(height: Grid.sm),
-          FilledButton(key: const ValueKey('feedback-submit'), onPressed: draft.canSend ? () async {
-            if (await draft.submit() && context.mounted) Navigator.of(context).pop();
-          } : null, child: Text(text(draft.sending ? PlatformMessageKey.platformFeedbackSending
-              : draft.failure == FeedbackFailure.unconfirmed ? PlatformMessageKey.platformFeedbackRetry
-              : PlatformMessageKey.platformFeedbackTitle))),
+          FilledButton(
+            key: const ValueKey('feedback-submit'),
+            onPressed: draft.canSend
+                ? () async {
+                    if (await draft.submit() && context.mounted)
+                      Navigator.of(context).pop();
+                  }
+                : null,
+            child: Text(
+              text(
+                draft.sending
+                    ? PlatformMessageKey.platformFeedbackSending
+                    : draft.failure == FeedbackFailure.unconfirmed
+                    ? PlatformMessageKey.platformFeedbackRetry
+                    : PlatformMessageKey.platformFeedbackTitle,
+              ),
+            ),
+          ),
         ],
       ),
     );

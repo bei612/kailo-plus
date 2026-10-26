@@ -243,14 +243,23 @@ class SettingsPage extends HookConsumerWidget {
                 const _OrganizationSection(),
                 const _AppearanceSection(),
                 const _NotificationsSection(),
-                AppListCard(children: [
-                  AppListRow(
-                    key: const ValueKey('settings-feedback'),
-                    icon: LucideIcons.messageSquare,
-                    title: platformText(PlatformMessageKey.platformFeedbackTitle, locale: locale),
-                    onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const FeedbackPage())),
-                  ),
-                ]),
+                AppListCard(
+                  children: [
+                    AppListRow(
+                      key: const ValueKey('settings-feedback'),
+                      icon: LucideIcons.messageSquare,
+                      title: platformText(
+                        PlatformMessageKey.platformFeedbackTitle,
+                        locale: locale,
+                      ),
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => const FeedbackPage(),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
                 const _LanguageSection(),
                 const _DeviceSection(),
                 const _SignOutSection(),
