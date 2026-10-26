@@ -2,7 +2,8 @@
 // reads (ProjectReadmePanel, ProjectRepositoryPanel, ProjectCommitsPanel, ProjectCommitDetailPanel,
 // ProjectPullRequestFilesChangedPanel) through the Projects host `git` capability.
 import {afterEach,beforeEach,describe,expect,it,vi} from "vitest";
-import {act} from "react";
+import {act,useState} from "react";
+import {toast} from "sonner";
 import {QueryClient,QueryClientProvider} from "@tanstack/react-query";
 import {ErrorClass,ProjectsGitQueryRequestView,ReasonCode,type ProjectsGitQueryRequest,type ProjectsGitQueryResponse} from "@client-kit/contracts";
 import {createBffClient} from "../src/client";
@@ -10,7 +11,7 @@ import {setLocale} from "../src/i18n";
 import {PlatformProvider} from "../src/react/context";
 import {PulseHostProvider,type PulseHost,type PulseEvent} from "../src/react/pulse/host";
 import {TooltipProvider} from "../src/react/sidebar/tooltip";
-import {ProjectsView,createProjectsGitHost,type ProjectsHost} from "../src/react/projects";
+import {ProjectsView,createProjectsGitHost,createNativeProjectsGitHost,type ProjectsHost} from "../src/react/projects";
 import type {ProjectWorkItemTarget} from "../src/react/projects/projectWorkItems";
 import {BffError} from "../src/transport";
 import {render,click} from "./render";
@@ -44,18 +45,27 @@ function fixture(git=true){
   return {host,gitQuery,review,projectId:`30621:${owner}:project`,repositoryId:`${owner}:repo`};
 }
 
-async function mount(f:ReturnType<typeof fixture>,target:ProjectWorkItemTarget){
+async function mount(f:ReturnType<typeof fixture>,target:ProjectWorkItemTarget,interactive=false){
   const cache=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}});
   const pulse:PulseHost={scopeKey:f.host.scopeKey,pubkey:viewer,query:async()=>[],publish:vi.fn(),copy:vi.fn(),startDm:vi.fn(),mediaUrl:url=>url,
     renderComposer:()=>null,renderContent:content=><p data-testid="rendered-content">{content}</p>};
-  const opened=vi.fn();
-  const ui=await render(<><div id="app-top-chrome-content"/><PlatformProvider client={createBffClient({send:async()=>({status:200,body:{items:[]}})})} locale="en">
-    <QueryClientProvider client={cache}><TooltipProvider>
-      <ProjectsView host={f.host} selectedProjectId={f.projectId} workItemTarget={target} onSelectedProjectChange={opened}
-        renderWorkItems={children=><PulseHostProvider host={pulse}>{children}</PulseHostProvider>}/>
-    </TooltipProvider></QueryClientProvider></PlatformProvider></>);
-  return {ui,opened};
+  let changeHost!:(host:ProjectsHost)=>void;
+  let changeTarget!:(target:ProjectWorkItemTarget)=>void;
+  const opened=vi.fn((_id:string|null,next?:ProjectWorkItemTarget)=>{if(interactive&&next)changeTarget(next);});
+  const client=createBffClient({send:async()=>({status:200,body:{items:[]}})});
+  function Surface(){
+    const [host,setHost]=useState(f.host),[currentTarget,setTarget]=useState(target);
+    changeHost=setHost;changeTarget=setTarget;
+    return <><div id="app-top-chrome-content"/><PlatformProvider client={client} locale="en">
+      <QueryClientProvider client={cache}><TooltipProvider>
+        <ProjectsView host={host} selectedProjectId={f.projectId} workItemTarget={currentTarget} onSelectedProjectChange={opened}
+          renderWorkItems={children=><PulseHostProvider host={{...pulse,scopeKey:host.scopeKey}}>{children}</PulseHostProvider>}/>
+      </TooltipProvider></QueryClientProvider></PlatformProvider></>;
+  }
+  const ui=await render(<Surface/>);
+  return {ui,opened,cache,switchHost:async(host:ProjectsHost)=>{await act(async()=>changeHost(host));}};
 }
+
 const requests=(f:ReturnType<typeof fixture>,view:ProjectsGitQueryRequestView)=>f.gitQuery.mock.calls.map(([request])=>request).filter(request=>request.view===view);
 
 beforeEach(()=>{localStorage.clear();sessionStorage.clear();setLocale("en");
@@ -171,5 +181,122 @@ describe("hosts without the Git capability",()=>{
     await vi.waitFor(()=>expect(tasks.ui.querySelectorAll('[role="tab"]')).toHaveLength(2));
     await act(async()=>{});
     expect(f.gitQuery).not.toHaveBeenCalled();
+  });
+});
+
+
+// DD-160: exercise the real restored Projects view through the native host
+// decoder. Only the native command boundary is supplied by this DOM fixture.
+function nativeFixture(initial:"missing"|"ready"|"pending"="ready"){
+  const f=fixture();
+  const rawCommit={hash:commit.hash,short_hash:commit.shortHash,author_name:commit.authorName,author_email:commit.authorEmail,timestamp:commit.timestamp,subject:commit.subject};
+  const remote={latest_commit:rawCommit,commits:[rawCommit],contributors:[],files:[{path:"README.md",kind:"blob",size:12,preview_content:"# Remote readme",last_changed_at:commit.timestamp,latest_commit:rawCommit}]};
+  const local={latest_commit:rawCommit,commits:[rawCommit],contributors:[],files:Array.from({length:251},(_,index)=>({
+    path:index===0?"README.md":`file-${String(index).padStart(4,"0")}.txt`,kind:"blob",size:20,
+    preview_content:index===0?"# Local readme":index<250?`local ${index}`:null,last_changed_at:commit.timestamp,latest_commit:rawCommit}))};
+  const ready={local_path:"/app/checkouts/repo",local_branch:"main",local_branches:["main"],local_head:commit.hash,
+    remote_branch:"main",remote_head:commit.hash,ahead_count:0,behind_count:1,has_uncommitted_changes:false,has_untracked_files:false,
+    can_push:false,can_pull:true,push_block_reason:null,pull_block_reason:null,pending_push:null as null|{branch:string;old_commit:string|null;new_commit:string;outcome:string}};
+  let status:typeof ready|null=initial==="missing"?null:initial==="pending"?{...ready,local_head:"",local_branch:"main",can_push:true,can_pull:false,
+    pending_push:{branch:"frozen-feature",old_commit:commit.hash,new_commit:head,outcome:"retry_same_intent"}}:ready;
+  let content="Local file 251 before pull";
+  const native=vi.fn(async(command:string,_args:Record<string,unknown>):Promise<unknown>=>{
+    if(command==="get_project_repo_snapshot")return remote;
+    if(command==="get_project_repo_file_content")return "REMOTE FILE MUST NOT BE USED";
+    if(command==="get_project_repo_diff"||command==="get_project_local_repo_diff")return {files:[],additions:0,deletions:0,commit_body:null};
+    if(command==="get_project_repo_sync_status")return status;
+    if(command==="get_project_local_repo_snapshot")return {path:ready.local_path,snapshot:local};
+    if(command==="get_project_local_repo_file_content")return content;
+    if(command==="clone_project_repository"){status=ready;return {path:ready.local_path,cloned:true};}
+    if(command==="pull_project_local_repository"){content="Local file 251 after pull";status={...ready,can_pull:false,behind_count:0};return {pulled:true};}
+    if(command==="push_project_local_repository"){status={...ready,can_pull:false,behind_count:0};return {pushed:true,branch:"frozen-feature",commit:head};}
+    if(command==="open_project_repository_folder")return null;
+    throw new Error(`Unexpected native command ${command}`);
+  });
+  f.host.git=createNativeProjectsGitHost(native,{expectedRelayUrl:"wss://native.example",expectedSignerPubkey:viewer});
+  return {...f,native,setStatus:(value:typeof ready|null)=>{status=value;},setContent:(value:string)=>{content=value;},ready};
+}
+const localControls=(ui:HTMLElement)=>ui.querySelector<HTMLElement>('[data-testid="project-local-checkout-controls"]')!;
+const namedButton=(root:ParentNode,label:string)=>[...root.querySelectorAll<HTMLButtonElement>("button")].find(button=>button.textContent?.trim()===label)!;
+async function checkoutMenu(ui:HTMLElement){
+  await vi.waitFor(()=>expect(localControls(ui)).not.toBeNull());
+  const trigger=localControls(ui).querySelector<HTMLButtonElement>('[aria-haspopup="menu"]')!;
+  await act(async()=>{trigger.focus();trigger.dispatchEvent(new KeyboardEvent("keydown",{key:"Enter",bubbles:true,cancelable:true}));});
+  await vi.waitFor(()=>expect(document.querySelector('[role="menu"]')).not.toBeNull());
+}
+const menuChoice=(label:string)=>[...document.querySelectorAll<HTMLElement>('[role="menuitem"],[role="menuitemradio"]')].find(item=>item.textContent?.trim()===label)!;
+async function selectLocal(ui:HTMLElement){await checkoutMenu(ui);await click(menuChoice("Local"));}
+
+describe("Desktop local checkout in the restored Projects consumer",()=>{
+  it("clones, retains Local across tab navigation, reads file 251 locally and refreshes it after pull",async()=>{
+    const f=nativeFixture("missing");
+    const {ui}=await mount(f,{repositoryId:f.repositoryId,tab:"overview"},true);
+    await vi.waitFor(()=>expect(ui.textContent).toContain("Remote readme"));
+    await checkoutMenu(ui);
+    await vi.waitFor(()=>expect(menuChoice("Clone")).toBeDefined());
+    await click(menuChoice("Clone"));
+    await vi.waitFor(()=>expect(ui.textContent).toContain("Local readme"));
+    await click([...ui.querySelectorAll<HTMLElement>('[role="tab"]')].find(tab=>tab.textContent==="Files")!);
+    await vi.waitFor(()=>expect(ui.querySelector('[aria-label="Open file file-0250.txt"]')).not.toBeNull());
+    expect(localControls(ui).textContent).toContain("Local");
+    await click(ui.querySelector<HTMLElement>('[aria-label="Open file file-0250.txt"]')!);
+    await vi.waitFor(()=>expect(ui.querySelector('[data-testid="project-repository-file"]')?.textContent).toContain("Local file 251 before pull"));
+    expect(f.native.mock.calls.filter(([command])=>command==="get_project_repo_file_content")).toEqual([]);
+    await click([...localControls(ui).querySelectorAll<HTMLButtonElement>("button")].find(button=>button.textContent?.trim().startsWith("Pull"))!);
+    await vi.waitFor(()=>expect(ui.querySelector('[data-testid="project-repository-file"]')?.textContent).toContain("Local file 251 after pull"));
+    await click(namedButton(localControls(ui),"Open folder"));
+    expect(f.native.mock.calls.some(([command])=>command==="open_project_repository_folder")).toBe(true);
+  });
+
+  it("retries the persisted frozen branch even while the picker shows main",async()=>{
+    const f=nativeFixture("pending");
+    const {ui}=await mount(f,{repositoryId:f.repositoryId,tab:"overview"});
+    await vi.waitFor(()=>expect(localControls(ui)?.textContent).toContain("frozen-feature"));
+    expect(localControls(ui).textContent).toContain(head.slice(0,7));
+    await click(namedButton(localControls(ui),"Reconcile and retry the same push"));
+    await vi.waitFor(()=>expect(f.native.mock.calls.find(([command])=>command==="push_project_local_repository")?.[1]).toMatchObject({repository,branchName:"frozen-feature"}));
+    expect(f.native.mock.calls.filter(([command])=>command==="push_project_local_repository")).toHaveLength(1);
+  });
+
+  it("never exposes local checkout controls to the Web host",async()=>{
+    const f=fixture();
+    const {ui}=await mount(f,{repositoryId:f.repositoryId,tab:"overview"});
+    await vi.waitFor(()=>expect(ui.textContent).toContain("Readme body text"));
+    expect(localControls(ui)).toBeNull();
+    expect(ui.textContent).not.toContain("Open folder");
+  });
+
+  it("drops an old clone completion after switching identity without notifying or selecting Local",async()=>{
+    const f=nativeFixture("missing");
+    const original=f.native.getMockImplementation()!;
+    let resolveClone!:(value:unknown)=>void;
+    f.native.mockImplementation((command,args)=>command==="clone_project_repository"?new Promise(resolve=>{resolveClone=resolve;}):original(command,args));
+    const success=vi.spyOn(toast,"success");
+    const mounted=await mount(f,{repositoryId:f.repositoryId,tab:"overview"});
+    await vi.waitFor(()=>expect(mounted.ui.textContent).toContain("Remote readme"));
+    await checkoutMenu(mounted.ui);await click(menuChoice("Clone"));
+    await vi.waitFor(()=>expect(resolveClone).toBeTypeOf("function"));
+    const next=nativeFixture("ready");next.host.scopeKey="tenant:another-human";
+    await mounted.switchHost(next.host);
+    await vi.waitFor(()=>expect(localControls(mounted.ui)?.textContent).toContain("Open folder"));
+    await act(async()=>resolveClone({path:"/old/identity/repo",cloned:true}));
+    await act(async()=>{});
+    expect(success).not.toHaveBeenCalled();
+    expect(namedButton(localControls(mounted.ui),"Remote")).toBeDefined();
+    expect(next.native.mock.calls.some(([command])=>command==="get_project_local_repo_snapshot")).toBe(false);
+    expect(mounted.ui.textContent).not.toContain("/old/identity/repo");
+  });
+
+  it("keeps Local for commit details and sends the diff to the local command",async()=>{
+    const f=nativeFixture("ready");
+    const {ui}=await mount(f,{repositoryId:f.repositoryId,tab:"overview"},true);
+    await vi.waitFor(()=>expect(localControls(ui)?.textContent).toContain("Open folder"));
+    await selectLocal(ui);
+    await vi.waitFor(()=>expect(ui.textContent).toContain("Local readme"));
+    await click([...ui.querySelectorAll<HTMLElement>('[role="tab"]')].find(tab=>tab.textContent==="Commits")!);
+    await vi.waitFor(()=>expect(ui.querySelector('[data-testid="project-activity-feed-item"]')?.textContent).toContain("Initial import"));
+    await click([...ui.querySelectorAll<HTMLButtonElement>('[data-testid="project-activity-feed-item"] button')].find(button=>button.textContent==="Initial import")!);
+    await vi.waitFor(()=>expect(f.native.mock.calls.some(([command])=>command==="get_project_local_repo_diff")).toBe(true));
+    expect(f.native.mock.calls.some(([command])=>command==="get_project_repo_diff")).toBe(false);
   });
 });
