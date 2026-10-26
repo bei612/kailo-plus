@@ -163,6 +163,18 @@ async fn readmit_observation(
     )
     .await
     .map_err(|_| refused())?;
+    // A durable ban need not remove the membership row. This evidence reader
+    // uses the same fresh ban/verified owner cascade as original Git proof;
+    // a timeout is not promoted to a read ban.
+    deny_banned_git_principal(
+        &state.db,
+        scope.community(),
+        &auth.pubkey,
+        super::relay_members::extract_auth_tag_header(headers),
+        auth.signed_created_at,
+    )
+    .await
+    .map_err(|_| refused())?;
     // Core-governed channels (including private conversations) require live
     // membership. Never reuse a cached allow or admit CONTROL to a private DM.
     if let Some(channel) = event.channel_id {
