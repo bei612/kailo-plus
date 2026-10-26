@@ -460,13 +460,24 @@ async fn run_tenant(
             .await?;
             let marks = positions.map_or_else(HashMap::new, |(r,)| decide::read_marks(&r));
             if message.created_at as i64
-                <= decide::read_position(&decide::unread_context(message), &message.channel_id, &marks)
+                <= decide::read_position(
+                    &decide::unread_context(message),
+                    &message.channel_id,
+                    &marks,
+                )
             {
                 continue;
             }
             // Preview is read-only: no pending send belongs to the accepted-message set,
             // and no additional transaction/row lock spans the provider's HTTP calls.
-            let badge = super::unread::preview(&mut *state.pool.acquire().await?, tenant, *principal, message, &marks).await?;
+            let badge = super::unread::preview(
+                &mut *state.pool.acquire().await?,
+                tenant,
+                *principal,
+                message,
+                &marks,
+            )
+            .await?;
             let mut recorded = false;
             for registration in registrations.iter().filter(|r| r.principal == *principal) {
                 let outcome = deliver(
@@ -486,7 +497,14 @@ async fn run_tenant(
                     if outcome == Outcome::Delivered {
                         if !recorded {
                             let mut unread_tx = state.pool.begin().await?;
-                            super::unread::record(&mut unread_tx, tenant, *principal, message, &marks).await?;
+                            super::unread::record(
+                                &mut unread_tx,
+                                tenant,
+                                *principal,
+                                message,
+                                &marks,
+                            )
+                            .await?;
                             unread_tx.commit().await?;
                             recorded = true;
                         }
@@ -812,7 +830,7 @@ async fn record_delivery(
     registration: &Registration,
     target: &Target,
 ) -> Result<(), sqlx::Error> {
-            sqlx::query(
+    sqlx::query(
                 "insert into projection.push_delivery_window
                      (tenant_id, device_pubkey, collapse_key, last_sent_at, window_start, window_count)
                  values ($1, $2, $3, now(), now(), 1), ($1, $2, '*', now(), now(), 1)
