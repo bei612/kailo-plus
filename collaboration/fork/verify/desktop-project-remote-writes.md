@@ -91,6 +91,7 @@ Relay 最终固定 `d5c4667f4d82b326dbdab7c253d0565a2c45119f`，原检查 SDK、
 同一 Relay 固定源临时取消 Host 所属 Community 与冻结 UUID 的比较，新场景实际收到错误的 200，原检查断言期望 401 而失败、exit 101；逐字恢复后原 6 项再次通过，整个作业 exit 0、OOMKilled=false。`api/bridge.rs` SHA-256 前后一致：`a967362e6f1ffc24d136353e83b6ef9f69dbadc9b0cfe1c9698425c6fe53cdd8`。原日志、实际限额、终态与 OOM 回执在 `relay-delivery-d5c4667f4d82b326dbdab7c253d0565a2c45119f/`。容器、临时 PG/Redis 和独立网络已实际确认不存在，重资源窗口已通知根工作流释放。未改 DB writer 实现，未重复原独立 DB 全批；不把这些结果扩写成全工程、旧 Relay 二进制混部署、安装包或生产 UI 验收。
 
 最终 Native 固定 `f8cb31cf134e1204947f962c27635cd6e421ffd8`，包含原 SDK 格式回填与 journal 重读失败的 UNKNOWN 保真修正，同一原 Desktop SDK、1 CPU/4 GiB、同一 `commands::project_git_publication::tests` 命令再次 11 passed、0 failed、481 filtered out，exit 0，OOMKilled=false；实际编译 11.29 秒。终态日志为 `f8cb31cf134e1204947f962c27635cd6e421ffd8-{cargo,preflight,limits,exit,oom}.log`。此提交没有修改最终 Relay 检查所覆盖的任何 Relay 源码。当前自有 Native 验证容器也已退出清理；这里只交付固定源码与检查证据，根工作流负责设计 pin、合同生成和合批门禁，生产发布、Win11 安装及三账号双主题 after 走查仍须分别完成。
+
 ## 合批生成与三侧 wire 消费者（2026-10-26）
 
 固定集成 `65f82f0b897a6282479ea6a335ca733196968806`、设计
