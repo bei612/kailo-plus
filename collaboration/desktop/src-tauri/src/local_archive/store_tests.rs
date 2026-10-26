@@ -70,10 +70,13 @@ fn authenticated_chunks_from_different_events_cannot_be_spliced() {
     let second_sealed = archive.seal(&second.as_json()).unwrap();
     let mut chunks: Vec<&str> = first_sealed.split('.').collect();
     chunks[1] = second_sealed.split('.').nth(1).unwrap();
-    archive.conn.execute(
-        "UPDATE archived_event SET sealed=?1 WHERE event_id=?2",
-        params![chunks.join("."), first.id.to_hex()],
-    ).unwrap();
+    archive
+        .conn
+        .execute(
+            "UPDATE archived_event SET sealed=?1 WHERE event_id=?2",
+            params![chunks.join("."), first.id.to_hex()],
+        )
+        .unwrap();
     assert!(archive.read("chan", 1).is_err());
 }
 
