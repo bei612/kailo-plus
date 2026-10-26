@@ -358,8 +358,8 @@ async fn original_status_consumer_recovers_only_the_same_known_unsent_merge_inte
         )
         .unwrap();
     assert_eq!(
-        preserved, 1,
-        "upgrade must preserve the old proven-unsent signed event"
+        preserved, 2,
+        "preserve the old attempt and its newly revalidated writer conclusion"
     );
 }
 #[tokio::test]
@@ -820,6 +820,7 @@ async fn epoch_fence_preserves_old_unknown_without_backfill_and_accepts_positive
         "changed_epoch",
         "missing_current",
         "legacy_negative",
+        "unproven_negative",
         "legacy_positive",
     ] {
         let temp = tempfile::tempdir().unwrap();
@@ -853,8 +854,12 @@ async fn epoch_fence_preserves_old_unknown_without_backfill_and_accepts_positive
         if case == "missing_current" {
             io.epoch = None;
         }
-        if case == "legacy_negative" {
+        if matches!(case, "legacy_negative" | "unproven_negative") {
             io.frozen.event_result = Some("NOT_DELIVERED".into());
+        }
+        if case == "unproven_negative" {
+            io.now = 109;
+            io.relay_settled = false;
         }
         if case == "legacy_positive" {
             io.observed = Some(Event::from_json(io.frozen.event.as_ref().unwrap()).unwrap());
