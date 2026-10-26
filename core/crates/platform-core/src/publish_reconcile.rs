@@ -29,7 +29,7 @@ use crate::service_api::ServiceState;
 use crate::tenant_lifecycle::{control_client, ProjectionDirection};
 use crate::web_transport::{
     CONVERSATION_HIDE_ACTION, CONVERSATION_PUBLISH_ACTION, CONVERSATION_REOPEN_ACTION,
-    PUBLISH_ACTION, TOPIC_ACTION,
+    FILTERED_PUBLICATION_ACTIONS, PUBLISH_ACTION, TOPIC_ACTION,
 };
 
 /// Community-global project publications the reconciler settles: NIP-34
@@ -166,16 +166,8 @@ struct PendingRow {
     settled: bool,
 }
 
-async fn pass(
-    state: &ServiceState,
-    metrics: &Metrics,
-    cfg: &Config,
-    cursor: &mut Option<(chrono::DateTime<chrono::Utc>, Uuid)>,
-) -> Result<(), String> {
-    let min_age = i64::try_from(cfg.interval.as_secs()).unwrap_or(i64::MAX);
-    let settle = i64::try_from(cfg.settle.as_secs()).unwrap_or(i64::MAX);
-    let rows = sqlx::query_as::<_, PendingRow>(
-        r#"select d.operation_id, d.occurred_at, d.tenant_id, d.workspace_id,
+// Shared by the production scan, metrics, retention and isolated SQL regressions.
+const PENDING_PUBLICATIONS_SQL: &str = r#"select d.operation_id, d.occurred_at, d.tenant_id, d.workspace_id,
                   d.human_identity_id, d.initiator_principal_id, d.actor_principal_id,
                   d.target_id, d.action_key, d.target_type, d.evidence_refs,
                   (select e->>'value' from jsonb_array_elements(d.evidence_refs) e
@@ -188,11 +180,42 @@ async fn pass(
              and not exists (
                  select 1 from audit.audit_event o
                  where o.operation_id = d.operation_id
-                   and o.event_type in ('OUTCOME', 'RECONCILIATION'))
+                   and o.event_type in ('OUTCOME', 'RECONCILIATION')
+                   and not (o.event_type='RECONCILIATION' and o.result_code='NOT_DELIVERED'
+                            and o.action_key=any($7)))
              and ($5::timestamptz is null or (d.occurred_at, d.operation_id) > ($5, $6))
            order by d.occurred_at, d.operation_id
-           limit $2"#,
-    )
+           limit $2"#;
+
+const UNSETTLED_PUBLICATIONS_SQL: &str = r#"select count(*),
+                  coalesce(extract(epoch from now() - min(d.occurred_at))::bigint, 0)
+           from audit.audit_event d
+           join identity.tenant t on t.id = d.tenant_id
+           where d.event_type = 'DISPATCH' and d.action_key = any($1)
+             and not exists (
+                 select 1 from audit.audit_event o
+                 where o.operation_id = d.operation_id
+                   and o.event_type in ('OUTCOME', 'RECONCILIATION')
+                   and not (o.event_type='RECONCILIATION' and o.result_code='NOT_DELIVERED'
+                            and o.action_key=any($2)))"#;
+
+const REAP_PUBLICATIONS_SQL: &str = "delete from admission.publish_attempt a
+         where a.created_at < now() - make_interval(secs => $1::bigint)
+           and exists (select 1 from audit.audit_event r
+                       where r.operation_id = a.operation_id
+                         and r.event_type in ('OUTCOME', 'RECONCILIATION')
+                         and not (r.event_type='RECONCILIATION' and r.result_code='NOT_DELIVERED'
+                                  and r.action_key=any($2)))";
+
+async fn pass(
+    state: &ServiceState,
+    metrics: &Metrics,
+    cfg: &Config,
+    cursor: &mut Option<(chrono::DateTime<chrono::Utc>, Uuid)>,
+) -> Result<(), String> {
+    let min_age = i64::try_from(cfg.interval.as_secs()).unwrap_or(i64::MAX);
+    let settle = i64::try_from(cfg.settle.as_secs()).unwrap_or(i64::MAX);
+    let rows = sqlx::query_as::<_, PendingRow>(PENDING_PUBLICATIONS_SQL)
     .bind(
         [
             PUBLISH_ACTION,
@@ -211,6 +234,7 @@ async fn pass(
     .bind(min_age)
     .bind(cursor.map(|c| c.0))
     .bind(cursor.map(|c| c.1))
+    .bind(FILTERED_PUBLICATION_ACTIONS.as_slice())
     .fetch_all(&state.pool)
     .await
     .map_err(|e| e.to_string())?;
@@ -262,17 +286,7 @@ async fn pass(
             .add(1, &[KeyValue::new("outcome", outcome)]);
     }
 
-    let (n, age): (i64, i64) = sqlx::query_as(
-        r#"select count(*),
-                  coalesce(extract(epoch from now() - min(d.occurred_at))::bigint, 0)
-           from audit.audit_event d
-           join identity.tenant t on t.id = d.tenant_id
-           where d.event_type = 'DISPATCH' and d.action_key = any($1)
-             and not exists (
-                 select 1 from audit.audit_event o
-                 where o.operation_id = d.operation_id
-                   and o.event_type in ('OUTCOME', 'RECONCILIATION'))"#,
-    )
+    let (n, age): (i64, i64) = sqlx::query_as(UNSETTLED_PUBLICATIONS_SQL)
     .bind(
         [
             PUBLISH_ACTION,
@@ -286,22 +300,19 @@ async fn pass(
         ]
         .as_slice(),
     )
+    .bind(FILTERED_PUBLICATION_ACTIONS.as_slice())
     .fetch_one(&state.pool)
     .await
     .map_err(|e| e.to_string())?;
     metrics.unsettled.record(n.max(0) as u64, &[]);
     metrics.oldest_age.record(age.max(0) as u64, &[]);
 
-    // 已有结论且超过保留期的幂等记录不再有用：同一个键再来，按新的发送意图处理
+    // Only authoritative conclusions release the frozen intent. Historical
+    // query-only NOT_DELIVERED remains pending, including after retention.
     let retention = i64::try_from(cfg.idempotency_retention.as_secs()).unwrap_or(i64::MAX);
-    sqlx::query!(
-        "delete from admission.publish_attempt a
-         where a.created_at < now() - make_interval(secs => $1::bigint)
-           and exists (select 1 from audit.audit_event r
-                       where r.operation_id = a.operation_id
-                         and r.event_type in ('OUTCOME', 'RECONCILIATION'))",
-        retention
-    )
+    sqlx::query(REAP_PUBLICATIONS_SQL)
+    .bind(retention)
+    .bind(FILTERED_PUBLICATION_ACTIONS.as_slice())
     .execute(&state.pool)
     .await
     .map_err(|e| e.to_string())?;
@@ -352,8 +363,30 @@ async fn write_reconciliation(
     p: &Pending,
     result_code: &'static str,
 ) -> &'static str {
-    let entry = AuditEntry {
-        event_key: format!("message.publish:{}:reconciled", p.event_id),
+    let written = async {
+        let mut tx = state.pool.begin().await?;
+        append(&mut tx, reconciliation_entry(p, result_code)).await?;
+        tx.commit().await
+    }
+    .await;
+    match written {
+        Ok(()) => result_code,
+        Err(e) => {
+            tracing::warn!(error = %e, "对账结果审计未写入");
+            "WRITE_FAILED"
+        }
+    }
+}
+
+fn reconciliation_entry<'a>(p: &'a Pending, result_code: &'a str) -> AuditEntry<'a> {
+    AuditEntry {
+        // The legacy key may already hold a false absence conclusion. A
+        // positive observation appends a distinct, idempotent correction.
+        event_key: if FILTERED_PUBLICATION_ACTIONS.contains(&p.action_key.as_str()) {
+            format!("message.publish:{}:reconciled:accepted", p.event_id)
+        } else {
+            format!("message.publish:{}:reconciled", p.event_id)
+        },
         tenant_id: Some(p.tenant_id),
         workspace_id: p.workspace_id,
         operation_id: p.operation_id,
@@ -372,19 +405,6 @@ async fn write_reconciliation(
         result_exposure: "NONE",
         evidence_refs: p.evidence_refs.clone(),
         correlation_id: p.operation_id,
-    };
-    let written = async {
-        let mut tx = state.pool.begin().await?;
-        append(&mut tx, entry).await?;
-        tx.commit().await
-    }
-    .await;
-    match written {
-        Ok(()) => result_code,
-        Err(e) => {
-            tracing::warn!(error = %e, "对账结果审计未写入");
-            "WRITE_FAILED"
-        }
     }
 }
 
@@ -634,6 +654,104 @@ async fn observe_delivery(state: &ServiceState, p: &Pending) -> Result<bool, &'s
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    #[ignore = "requires PUBLISH_RECONCILE_TEST_DATABASE_URL pointing at an isolated migrated database"]
+    async fn historical_absence_remains_pending_and_retained_until_positive_correction() {
+        let pool = sqlx::PgPool::connect(
+            &std::env::var("PUBLISH_RECONCILE_TEST_DATABASE_URL").unwrap(),
+        )
+        .await
+        .unwrap();
+        let mut tx = pool.begin().await.unwrap();
+        let tenant = Uuid::new_v4();
+        let principal = Uuid::new_v4();
+        sqlx::query("insert into identity.tenant(id,slug,name,state) values($1,$2,'publication fixture','ACTIVE')")
+            .bind(tenant).bind(format!("publication-{tenant}")).execute(&mut *tx).await.unwrap();
+        sqlx::query("insert into identity.principal(id,tenant_id,kind,status) values($1,$2,'HUMAN','ACTIVE')")
+            .bind(principal).bind(tenant).execute(&mut *tx).await.unwrap();
+        let before: (i64, i64) = sqlx::query_as(UNSETTLED_PUBLICATIONS_SQL)
+            .bind(FILTERED_PUBLICATION_ACTIONS.as_slice())
+            .bind(FILTERED_PUBLICATION_ACTIONS.as_slice())
+            .fetch_one(&mut *tx).await.unwrap();
+        let mut attempts = Vec::new();
+        for action in FILTERED_PUBLICATION_ACTIONS {
+            let operation = Uuid::new_v4();
+            let event_id = operation.simple().to_string().repeat(2);
+            sqlx::query("insert into admission.publish_attempt(tenant_principal_id,idempotency_key,operation_id,event_id,created_at) values($1,$2,$3,$4,now()-interval '2 days')")
+                .bind(principal).bind(Uuid::new_v4()).bind(operation).bind(&event_id)
+                .execute(&mut *tx).await.unwrap();
+            // Historical rows are inserted as historical facts, never updated.
+            for (event_type, result, key) in [
+                ("DISPATCH", "DISPATCHED", format!("publication-fixture:{operation}")),
+                ("RECONCILIATION", "NOT_DELIVERED", format!("message.publish:{event_id}:reconciled")),
+            ] {
+                sqlx::query("insert into audit.audit_event(id,event_key,tenant_id,operation_id,event_type,actor_principal_id,action_key,action_version,component_type_key,parameter_hash,decision,result_code,result_exposure,evidence_refs,correlation_id,occurred_at) values($1,$2,$3,$4,$5,$6,$7,1,'buzz','NONE','ALLOW',$8,'NONE',jsonb_build_array(jsonb_build_object('kind','BUZZ_EVENT_ID','value',$9::text)),$4,now()-interval '2 days')")
+                    .bind(Uuid::new_v4()).bind(key).bind(tenant).bind(operation).bind(event_type)
+                    .bind(principal).bind(action).bind(result).bind(&event_id)
+                    .execute(&mut *tx).await.unwrap();
+            }
+            attempts.push(Pending {
+                operation_id: operation,
+                tenant_id: tenant,
+                workspace_id: None,
+                human_identity_id: None,
+                initiator_principal_id: Some(principal),
+                actor_principal_id: Some(principal),
+                target_id: None,
+                action_key: action.into(),
+                target_type: None,
+                evidence_refs: vec![Evidence::new(contracts::EvidenceKind::BuzzEventId, &event_id)],
+                event_id,
+                settled_window_passed: true,
+            });
+        }
+        let pending = sqlx::query_as::<_, PendingRow>(PENDING_PUBLICATIONS_SQL)
+            .bind(FILTERED_PUBLICATION_ACTIONS.as_slice()).bind(10000_i64)
+            .bind(900_i64).bind(1_i64)
+            .bind(None::<chrono::DateTime<chrono::Utc>>).bind(None::<Uuid>)
+            .bind(FILTERED_PUBLICATION_ACTIONS.as_slice())
+            .fetch_all(&mut *tx).await.unwrap();
+        for attempt in &attempts {
+            assert!(pending.iter().any(|row| row.operation_id == attempt.operation_id),
+                "historical absence must remain eligible for positive observation");
+        }
+        let unsettled: (i64, i64) = sqlx::query_as(UNSETTLED_PUBLICATIONS_SQL)
+            .bind(FILTERED_PUBLICATION_ACTIONS.as_slice())
+            .bind(FILTERED_PUBLICATION_ACTIONS.as_slice())
+            .fetch_one(&mut *tx).await.unwrap();
+        assert_eq!(unsettled.0, before.0 + 6);
+        assert!(unsettled.1 >= 172800, "oldest unresolved intent remains visible");
+        sqlx::query(REAP_PUBLICATIONS_SQL).bind(1_i64)
+            .bind(FILTERED_PUBLICATION_ACTIONS.as_slice()).execute(&mut *tx).await.unwrap();
+        let retained: i64 = sqlx::query_scalar("select count(*) from admission.publish_attempt where tenant_principal_id=$1")
+            .bind(principal).fetch_one(&mut *tx).await.unwrap();
+        assert_eq!(retained, 6, "TTL cannot discard an unresolved idempotency key");
+
+        // Exercise the production audit constructor and append path. The old
+        // false conclusion survives, and repeated positive evidence adds once.
+        for _ in 0..2 {
+            append(&mut tx, reconciliation_entry(&attempts[0], "ACCEPTED")).await.unwrap();
+        }
+        let conclusions: Vec<String> = sqlx::query_scalar("select result_code from audit.audit_event where operation_id=$1 and event_type='RECONCILIATION' order by occurred_at,id")
+            .bind(attempts[0].operation_id).fetch_all(&mut *tx).await.unwrap();
+        assert_eq!(conclusions, ["NOT_DELIVERED", "ACCEPTED"]);
+        let mut definite = reconciliation_entry(&attempts[1], "NOT_DELIVERED");
+        definite.event_type = "OUTCOME";
+        definite.event_key = format!("publication-fixture:{}:limited", attempts[1].operation_id);
+        append(&mut tx, definite).await.unwrap();
+        let after: (i64, i64) = sqlx::query_as(UNSETTLED_PUBLICATIONS_SQL)
+            .bind(FILTERED_PUBLICATION_ACTIONS.as_slice())
+            .bind(FILTERED_PUBLICATION_ACTIONS.as_slice())
+            .fetch_one(&mut *tx).await.unwrap();
+        assert_eq!(after.0, before.0 + 4);
+        sqlx::query(REAP_PUBLICATIONS_SQL).bind(1_i64)
+            .bind(FILTERED_PUBLICATION_ACTIONS.as_slice()).execute(&mut *tx).await.unwrap();
+        let retained: i64 = sqlx::query_scalar("select count(*) from admission.publish_attempt where tenant_principal_id=$1")
+            .bind(principal).fetch_one(&mut *tx).await.unwrap();
+        assert_eq!(retained, 4, "only positive correction and definite LIMIT release retention");
+        tx.rollback().await.unwrap();
+    }
 
     #[test]
     fn ordinary_query_absence_never_authorizes_a_new_publication() {

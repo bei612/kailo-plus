@@ -46,22 +46,19 @@ pub const CONVERSATION_PUBLISH_ACTION: &str = "conversation.message.publish";
 pub const CONVERSATION_HIDE_ACTION: &str = "conversation.hide";
 pub const CONVERSATION_REOPEN_ACTION: &str = "conversation.reopen";
 
-pub(crate) fn ordinary_publication_action(action: &str) -> bool {
-    matches!(
-        action,
-        PUBLISH_ACTION
-            | CONVERSATION_PUBLISH_ACTION
-            | CONVERSATION_HIDE_ACTION
-            | CONVERSATION_REOPEN_ACTION
-            | TOPIC_ACTION
-            | crate::pulse::PUBLISH_ACTION
-    )
-}
+pub(crate) const FILTERED_PUBLICATION_ACTIONS: [&str; 6] = [
+    PUBLISH_ACTION,
+    CONVERSATION_PUBLISH_ACTION,
+    CONVERSATION_HIDE_ACTION,
+    CONVERSATION_REOPEN_ACTION,
+    TOPIC_ACTION,
+    crate::pulse::PUBLISH_ACTION,
+];
 
 fn publication_retry_confirmed(action: &str, event_type: Option<&str>) -> bool {
     // Historical reconciliation used filtered Relay queries. Preserve those
     // audit rows, but never let their NOT_DELIVERED authorize a new signature.
-    !ordinary_publication_action(action) || event_type == Some("OUTCOME")
+    !FILTERED_PUBLICATION_ACTIONS.contains(&action) || event_type == Some("OUTCOME")
 }
 /// 成员修改频道原主题（DD-119(9)）。对账按它找这一类发布。
 pub const TOPIC_ACTION: &str = "workspace.channel.topic.publish";
