@@ -57,6 +57,7 @@ import '../../shared/platform/platform_views.dart';
 import 'send_message_provider.dart';
 import '../profile/presence_cache_provider.dart';
 import '../profile/user_profile_sheet.dart';
+import '../forum/forum_channel_page.dart';
 import 'small_avatar.dart';
 import 'sticky_date_header.dart';
 import 'thread_detail_page.dart';
@@ -131,6 +132,9 @@ class ChannelDetailPage extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    if (channel.isForum) {
+      return ForumChannelPage(channel: channel, initialEventId: initialMessageId ?? initialThreadRootId);
+    }
     final composerDockHeight = useState(0.0);
     final composerFocusNode = useFocusNode();
     final restoreComposerFocus = useRef<VoidCallback?>(null);

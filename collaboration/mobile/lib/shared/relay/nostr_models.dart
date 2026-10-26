@@ -21,6 +21,8 @@ abstract final class EventKind {
   static const userStatus = 30315;
   static const auth = 22242;
   static const streamMessageV2 = 40002;
+  static const forumPost = 45001;
+  static const forumComment = 45003;
   static const channelThreadSummary = 39005;
   static const channelWindowBounds = 39006;
   static const streamMessageEdit = 40003;
@@ -31,11 +33,13 @@ abstract final class EventKind {
   static const channelMessageEventKinds = [
     streamMessage, // 9
     streamMessageV2, // 40002
+    forumPost, // 45001
+    forumComment, // 45003
   ];
 
   /// Event kinds that represent channel activity (messages, edits, reactions,
   /// deletions, system events). Matches the desktop's `CHANNEL_EVENT_KINDS`;
-  /// huddle、forum 与 agent job 不在移动端交付。
+  /// huddle 与 agent job 不在移动端交付。
   static const channelEventKinds = [
     reaction, // 7
     deletion, // 5
