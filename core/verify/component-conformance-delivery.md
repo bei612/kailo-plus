@@ -126,3 +126,35 @@ Desktop/Mobile client 的授权码 + PKCE 取得 HUMAN bearer，在隔离原生�
 同目录 `checks.log` 保存完整输出。两次临时检查容器均已移除，旧隔离服务未改动。
 这只证明所列定向检查；真实 PKCE、platform 完成后的 contracts/action-token 及知识库接收方
 native → bootstrap → seed → inputs → driver 仍未获得本轮成功证据。
+
+## 7. 知识库原生实例编排（2026-10-26，尚未端到端验收）
+
+`33037a92cb0b6b23bb55b7e015d3543e619355a4` 与
+`42ec58e2deb961919df8654939b9bea6cedc1322` 补入下列真实入口的编排：
+
+- 原版 `provision.py native` 为本次隔离实例声明独立 OIDC client、OpenBao namespace、固定 KV 版本与一次性 Agent 投递；
+  原版 Compose 入口使用独立数据库、网络、回环地址以及源码声明的固定镜像，首次先启动依赖，再应用平台模型覆盖。
+- 隔离 Catalog 的原版 register → 不同管理员 approve → Tenant bind 创建原生页面 binding；成员目录 client 使用该隔离平台的投递。
+  原版 native-model-delivery export/prepare/Agent/materialize 交付模型 key，私网容器实际调用 embedding，并核对声明维数。
+- `receiver-knowledge-native.mjs` 经原版 OIDC 登录取得目录投影的 Admin 会话，再由原生 API 创建 KB 和仅覆盖该 KB、明确五个工具的 MCP endpoint。
+  续跑固定观测到的用户、Tenant、KB、endpoint；只使用原生 token rotation 恢复丢失的 endpoint bearer。会话刷新与对象创建共享排他锁，失败释放。
+- 种子入口支持这个实际 OIDC Bearer。DD-133 的 Admin 不能创建 Owner-only API key；运行器没有把管理员升为 Owner。
+  实际 Core 会话与原生会话沿同一刷新入口更新。
+
+这仍不是已跑通的接收方：源 Cells 的真实 Core adapter/native-action 投递、接收方 adapter 与 forward adapter、
+bootstrap 资源/授权、seed 输入、observe/inputs、driver 输入仍待自动生成。运行器在已实现阶段之后明确拒绝并记录
+`blockedAfterNative`，没有用模拟 provider 或手签 token 代替真实接收链。
+
+定向检查源码均由 CI 直接 GitHub fetch，再从固定对象在 CI 本地解包。最终被测提交为 `42ec58e2d`，
+检查镜像 `sha256:3007729eb192341a4f004a88e42e1e66c94fc67d763acfc96568bd7311116018`；
+限制 1 CPU、512 MiB 内存及 swap 上限、128 PIDs、无网络、只读根文件系统、无 capabilities。
+Node/Python/Bash 语法、生产部署路径拒绝、并发锁排他与失败释放均通过；已有 seed/provider 单元测试 10/10。
+这些单元测试使用的测试替身不构成接收方业务证据。最终回执退出 0：
+
+`/volumes/data/kailo/conformance/checks/github-42ec58e2deb961919df8654939b9bea6cedc1322/receipt.json`
+
+同目录保存完整 `checks.log` 和 `check-command.sh`。此前 `33037a92c` 的两次检查脚本错误
+（错误要求拒绝 stdout 为空、导出源码时遗漏 `client-kit/adapter`）及第三次通过的回执全部保留；
+对应目录为 `checks/github-33037a92cb0b6b23bb55b7e015d3543e619355a4`、其 `-2`、`-3` 后缀目录。
+本轮检查容器均已移除，旧 receiver 栈未重启或清理，也未启动新的原生实例。
+本分支仍声明旧知识库镜像，等待匹配源码的新镜像与资源窗口后，才能给出真实 OIDC/目录/模型及 receiver E2E 结论。
