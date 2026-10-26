@@ -75,3 +75,9 @@ Web/Desktop 宿主完整类型检查、真实浏览器操作或 Mobile 验收。
 `/volumes/data/kailo/verification/buzz-r10/feedback-mobile-format.log`。Flutter
 固定原镜像尚在准备，**未运行 Mobile analyzer/widget/controller 检查**。该条
 不表示 Mobile 已验收，也不表示 DD-158 的 Tenant profile 动作与消费者已完成。
+
+首次固定 `3e476e982` 的原 SDK Core 检查：fmt 通过，独立空库迁移在
+feedback 建表失败。手写的附件三字段一致性约束名与 PostgreSQL 自动生成的
+attachment 列长度约束同名；现改为明确的 `attachment_presence_check`，不改
+校验语义。该迁移未部署、无旧版在线 writer。本次整体退出 1，Core 测试和
+Clippy 尚未执行；原件 `feedback-core-check-complete-input.log`。后续结果另记。

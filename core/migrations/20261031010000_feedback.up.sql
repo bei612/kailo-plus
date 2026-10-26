@@ -23,7 +23,7 @@ CREATE TABLE support.feedback_submission (
     version           integer     NOT NULL DEFAULT 1 CHECK (version >= 1),
     created_at        timestamptz NOT NULL DEFAULT now(),
     updated_at        timestamptz NOT NULL DEFAULT now(),
-    CONSTRAINT feedback_submission_attachment_check CHECK (
+    CONSTRAINT feedback_submission_attachment_presence_check CHECK (
         (attachment IS NULL) = (attachment_mime IS NULL)
         AND (attachment IS NULL) = (attachment_sha256 IS NULL)),
     CONSTRAINT feedback_submission_idempotency UNIQUE (tenant_id, principal_id, idempotency_key)
