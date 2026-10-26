@@ -71,9 +71,23 @@ void main() {
     expect(find.text('Device key'), findsOneWidget);
     expect(find.text('Sign out'), findsOneWidget);
     expect(find.text('v0.16.0 (432)'), findsOneWidget);
-    expect(find.byKey(const ValueKey('push-notifications-unavailable')), findsOneWidget);
-    expect(find.byKey(const ValueKey('push-notifications-enabled')), findsNothing);
-    expect(find.text(platformText(PlatformMessageKey.platformSettingsPushUnavailable, locale: 'en')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('push-notifications-unavailable')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('push-notifications-enabled')),
+      findsNothing,
+    );
+    expect(
+      find.text(
+        platformText(
+          PlatformMessageKey.platformSettingsPushUnavailable,
+          locale: 'en',
+        ),
+      ),
+      findsOneWidget,
+    );
     // 上游在这里有的入口，一期不交付：一律不生成
     for (final gone in [
       'Invite to community',
@@ -109,8 +123,19 @@ void main() {
       for (final label in ['组织', '外观', '主题', '本机', '服务器连接', '设备密钥', '退出']) {
         expect(find.text(label), findsWidgets, reason: label);
       }
-      expect(find.byKey(const ValueKey('push-notifications-unavailable')), findsOneWidget);
-      expect(find.text(platformText(PlatformMessageKey.platformSettingsPushUnavailable, locale: 'zh-CN')), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('push-notifications-unavailable')),
+        findsOneWidget,
+      );
+      expect(
+        find.text(
+          platformText(
+            PlatformMessageKey.platformSettingsPushUnavailable,
+            locale: 'zh-CN',
+          ),
+        ),
+        findsOneWidget,
+      );
       expect(find.text('Appearance'), findsNothing);
       expect(find.text('Device key'), findsNothing);
       await tester.tap(find.text('退出'));
