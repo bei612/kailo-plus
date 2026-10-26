@@ -230,3 +230,19 @@ Android 原生接入已进入后续集成，原固定检查不包含它；原生
 `a6766c482533d028582d0efcfd3740769f86217c`；没有执行上游源码。
 原三端没有可直接当作全本人 DND 的机器开关；设备通知 enabled、原本地通知开关、
 任意状态文字以及 online/away/offline 不能替代设计认可的 DND 权威，本批未改其语义。
+
+## 集成固定源复验
+
+根集成固定 `11ad2fff18d57604eda738471e98aedb1d212992`，设计 pin
+`c4d338bce1c97d0dfde18da42e66a9064f12668c`，沿同一原 SDK、4 CPU / 16 GiB
+和全新独立 PG 1 CPU / 2 GiB，原退休组合消费者 **1/1** 再次通过，
+930 项过滤未执行。全迁移、前后 fmt、Core 包 all-target Clippy `-D warnings`、
+原 docs 与 runbooks 门禁、两份变更证据 Markdown 以及新增回执 JSON 均退出 0。
+没有重复已验证的两项故障变异，也没有扩大至原 31 项或全 workspace 检查。
+
+完整 apps 与设计分别从 CI 已 fetch 的固定 GitHub 对象解包，位于 Data，
+执行后 96,876 个源码文件及 24 个设计文件与相同归档字节一致；实际限额、日志摘要与
+清理回读追加至[原回执](push-token-retirement-receipt.json)，保留前两批全部证据。
+SDK 未 OOM，本批 SDK、PG 和独立网络清理回读均为空。原始日志目录为
+`/volumes/data/kailo/conformance/checks/push-retirement-11ad2fff1`。
+这是集成源码的定向复验，不改变上述 scripted OpenBao、DND 和实际部署边界。
