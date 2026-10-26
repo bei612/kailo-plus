@@ -250,20 +250,54 @@ pub fn checkout_status(
     validate_checkout(repo, root, auth)?;
     if let Some(pending) = intent::read(repo, root)? {
         let observed = intent::observe(repo, &pending, auth);
-        if observed.as_ref().is_ok_and(|head| head.as_deref() == Some(&pending.new)) {
+        if observed
+            .as_ref()
+            .is_ok_and(|head| head.as_deref() == Some(&pending.new))
+        {
             intent::complete(repo)?;
         } else {
             let can_retry = observed.as_ref().is_ok_and(|head| head == &pending.old);
-            let outcome = if can_retry { "retry_same_intent" } else if observed.is_err() { "unknown" } else { "conflict" };
-            let reason = if observed.is_err() { CHECKOUT_OUTCOME_UNKNOWN } else { CHECKOUT_CONFLICT };
+            let outcome = if can_retry {
+                "retry_same_intent"
+            } else if observed.is_err() {
+                "unknown"
+            } else {
+                "conflict"
+            };
+            let reason = if observed.is_err() {
+                CHECKOUT_OUTCOME_UNKNOWN
+            } else {
+                CHECKOUT_CONFLICT
+            };
             let remote_head = observed.ok().flatten();
-            let branch = pending.reference.trim_start_matches("refs/heads/").to_owned();
+            let branch = pending
+                .reference
+                .trim_start_matches("refs/heads/")
+                .to_owned();
             return Ok(ProjectRepoSyncStatusInfo {
-                local_path: Some(repo.display().to_string()), local_branch: None, local_branches: vec![], local_head: None, local_short_head: None,
-                remote_branch: Some(branch.clone()), remote_short_head: remote_head.as_deref().map(|h| h.chars().take(7).collect()), remote_head,
-                merge_base: pending.merge_base, ahead_count: 0, behind_count: 0, has_uncommitted_changes: false, has_untracked_files: false,
-                can_push: can_retry, push_block_reason: (!can_retry).then(|| reason.to_owned()), can_pull: false, pull_block_reason: Some(CHECKOUT_OUTCOME_UNKNOWN.into()),
-                pending_push: Some(ProjectRepoPendingPushInfo { branch, old_commit: pending.old, new_commit: pending.new, outcome: outcome.into() }),
+                local_path: Some(repo.display().to_string()),
+                local_branch: None,
+                local_branches: vec![],
+                local_head: None,
+                local_short_head: None,
+                remote_branch: Some(branch.clone()),
+                remote_short_head: remote_head.as_deref().map(|h| h.chars().take(7).collect()),
+                remote_head,
+                merge_base: pending.merge_base,
+                ahead_count: 0,
+                behind_count: 0,
+                has_uncommitted_changes: false,
+                has_untracked_files: false,
+                can_push: can_retry,
+                push_block_reason: (!can_retry).then(|| reason.to_owned()),
+                can_pull: false,
+                pull_block_reason: Some(CHECKOUT_OUTCOME_UNKNOWN.into()),
+                pending_push: Some(ProjectRepoPendingPushInfo {
+                    branch,
+                    old_commit: pending.old,
+                    new_commit: pending.new,
+                    outcome: outcome.into(),
+                }),
             });
         }
     }
@@ -396,8 +430,17 @@ pub fn checkout_status(
 
 fn complete_push(repo: &Path, pending: &PushIntent) -> Result<ProjectRepoPushResult, String> {
     intent::complete(repo)?;
-    let branch = pending.reference.trim_start_matches("refs/heads/").to_owned();
-    Ok(ProjectRepoPushResult { pushed: true, message: format!("Pushed {branch} to remote."), branch, commit: pending.new.clone(), merge_base: pending.merge_base.clone() })
+    let branch = pending
+        .reference
+        .trim_start_matches("refs/heads/")
+        .to_owned();
+    Ok(ProjectRepoPushResult {
+        pushed: true,
+        message: format!("Pushed {branch} to remote."),
+        branch,
+        commit: pending.new.clone(),
+        merge_base: pending.merge_base.clone(),
+    })
 }
 
 pub fn push_checkout(
@@ -411,33 +454,65 @@ pub fn push_checkout(
     let pending = if let Some(pending) = intent::read(repo, root)? {
         // A restart or new local commit cannot change a pending push's target.
         let observed = intent::observe(repo, &pending, auth)?;
-        if observed.as_deref() == Some(&pending.new) { return complete_push(repo, &pending); }
-        if observed != pending.old { return Err(CHECKOUT_CONFLICT.into()); }
+        if observed.as_deref() == Some(&pending.new) {
+            return complete_push(repo, &pending);
+        }
+        if observed != pending.old {
+            return Err(CHECKOUT_CONFLICT.into());
+        }
         if let Some(requested) = self::branch(branch)? {
-            if pending.reference != format!("refs/heads/{requested}") { return Err(CHECKOUT_CONFLICT.into()); }
+            if pending.reference != format!("refs/heads/{requested}") {
+                return Err(CHECKOUT_CONFLICT.into());
+            }
         }
         pending
     } else {
         let status = checkout_status(repo, root, branch, base, auth)?;
-        if let Some(reason) = status.push_block_reason { return Err(reason); }
+        if let Some(reason) = status.push_block_reason {
+            return Err(reason);
+        }
         let branch = status.remote_branch.ok_or("No selected branch.")?;
         let commit = status.local_head.ok_or("No local commit.")?;
         if status.local_branch.as_deref() != Some(&branch) && status.remote_head.is_none() {
             run_git(&["branch", "-m", "--", &branch], Some(repo), auth)?;
         }
-        let pending = PushIntent { root: root.to_owned(), reference: format!("refs/heads/{branch}"), old: status.remote_head, new: commit, merge_base: status.merge_base };
+        let pending = PushIntent {
+            root: root.to_owned(),
+            reference: format!("refs/heads/{branch}"),
+            old: status.remote_head,
+            new: commit,
+            merge_base: status.merge_base,
+        };
         // Durable before the first external write; failure means no push.
         intent::persist(repo, &pending)?;
         pending
     };
-    let lease = format!("--force-with-lease={}:{}", pending.reference, pending.old.as_deref().unwrap_or(""));
-    let _ = run_git(&["push", &lease, "--end-of-options", root, &format!("{}:{}", pending.new, pending.reference)], Some(repo), auth);
+    let lease = format!(
+        "--force-with-lease={}:{}",
+        pending.reference,
+        pending.old.as_deref().unwrap_or("")
+    );
+    let _ = run_git(
+        &[
+            "push",
+            &lease,
+            "--end-of-options",
+            root,
+            &format!("{}:{}", pending.new, pending.reference),
+        ],
+        Some(repo),
+        auth,
+    );
     // A process exit or connection error is not the business outcome. Confirm
     // the exact frozen new object via info/refs before forgetting the intent.
     let observed = intent::observe(repo, &pending, auth)?;
-    if observed.as_deref() == Some(&pending.new) { complete_push(repo, &pending) }
-    else if observed == pending.old { Err(CHECKOUT_OUTCOME_UNKNOWN.into()) }
-    else { Err(CHECKOUT_CONFLICT.into()) }
+    if observed.as_deref() == Some(&pending.new) {
+        complete_push(repo, &pending)
+    } else if observed == pending.old {
+        Err(CHECKOUT_OUTCOME_UNKNOWN.into())
+    } else {
+        Err(CHECKOUT_CONFLICT.into())
+    }
 }
 
 pub fn pull_checkout(

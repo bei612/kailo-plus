@@ -221,8 +221,11 @@ fn stop_after_intent_is_durable(repo: &Path) -> GitAuthConfig {
     let intent_file = repo.join(".git/kailo-push-intent");
     test_auth_config(GitAuth::Header {
         authorization: Box::new(move || {
-            if intent_file.exists() { Err("simulated lost session after write-ahead".into()) }
-            else { Ok("Nostr test".into()) }
+            if intent_file.exists() {
+                Err("simulated lost session after write-ahead".into())
+            } else {
+                Ok("Nostr test".into())
+            }
         }),
         host: None,
     })
@@ -239,7 +242,13 @@ fn pending_push_survives_restart_and_head_changes_without_changing_intent() {
     let old = checked_head(&repo, "HEAD", &auth).unwrap();
     commit(&repo, "frozen", &auth);
     let frozen = checked_head(&repo, "HEAD", &auth).unwrap().unwrap();
-    let result = push_checkout(&repo, &remote, Some("main"), None, &stop_after_intent_is_durable(&repo));
+    let result = push_checkout(
+        &repo,
+        &remote,
+        Some("main"),
+        None,
+        &stop_after_intent_is_durable(&repo),
+    );
     assert_eq!(result.err().as_deref(), Some(CHECKOUT_OUTCOME_UNKNOWN));
     let pending = intent::read(&repo, &remote).unwrap().unwrap();
     assert_eq!(pending.old, old);
@@ -250,8 +259,16 @@ fn pending_push_survives_restart_and_head_changes_without_changing_intent() {
     let status = checkout_status(&repo, &remote, Some("main"), None, &auth).unwrap();
     assert_eq!(status.pending_push.unwrap().outcome, "unknown");
     assert!(!status.can_push);
-    assert_eq!(push_checkout(&repo, &remote, Some("main"), None, &auth).err().as_deref(), Some(CHECKOUT_OUTCOME_UNKNOWN));
-    assert_eq!(fs::read(repo.join(".git/kailo-push-intent")).unwrap(), original_bytes);
+    assert_eq!(
+        push_checkout(&repo, &remote, Some("main"), None, &auth)
+            .err()
+            .as_deref(),
+        Some(CHECKOUT_OUTCOME_UNKNOWN)
+    );
+    assert_eq!(
+        fs::read(repo.join(".git/kailo-push-intent")).unwrap(),
+        original_bytes
+    );
     fs::rename(disconnected, &remote).unwrap();
     // A new call reconstructs everything from disk, as after process restart.
     // New local work must not silently replace the old unconfirmed operation.
@@ -263,9 +280,15 @@ fn pending_push_survives_restart_and_head_changes_without_changing_intent() {
     assert_eq!(status.pending_push.unwrap().new_commit, frozen);
     let result = push_checkout(&repo, &remote, Some("main"), None, &auth).unwrap();
     assert_eq!(result.commit, frozen);
-    assert_eq!(intent::observe(&repo, &pending, &auth).unwrap().as_deref(), Some(frozen.as_str()));
+    assert_eq!(
+        intent::observe(&repo, &pending, &auth).unwrap().as_deref(),
+        Some(frozen.as_str())
+    );
     assert!(intent::read(&repo, &remote).unwrap().is_none());
-    assert_eq!(checked_head(&repo, "HEAD", &auth).unwrap().as_deref(), Some(current.as_str()));
+    assert_eq!(
+        checked_head(&repo, "HEAD", &auth).unwrap().as_deref(),
+        Some(current.as_str())
+    );
 }
 
 #[test]
@@ -279,18 +302,45 @@ fn pending_push_conflict_is_preserved_and_never_replaced_or_replayed() {
     let other = temp.path().join("other");
     clone_checkout(&other, &remote, Some("main"), &auth).unwrap();
     commit(&repo, "frozen", &auth);
-    assert_eq!(push_checkout(&repo, &remote, Some("main"), None, &stop_after_intent_is_durable(&repo)).err().as_deref(), Some(CHECKOUT_OUTCOME_UNKNOWN));
+    assert_eq!(
+        push_checkout(
+            &repo,
+            &remote,
+            Some("main"),
+            None,
+            &stop_after_intent_is_durable(&repo)
+        )
+        .err()
+        .as_deref(),
+        Some(CHECKOUT_OUTCOME_UNKNOWN)
+    );
     let bytes = fs::read(repo.join(".git/kailo-push-intent")).unwrap();
     commit(&other, "someone else", &auth);
-    let other_head = push_checkout(&other, &remote, Some("main"), None, &auth).unwrap().commit;
+    let other_head = push_checkout(&other, &remote, Some("main"), None, &auth)
+        .unwrap()
+        .commit;
     let status = checkout_status(&repo, &remote, Some("main"), None, &auth).unwrap();
     assert!(!status.can_push);
     assert!(!status.can_pull);
     assert_eq!(status.pending_push.unwrap().outcome, "conflict");
-    assert_eq!(push_checkout(&repo, &remote, Some("main"), None, &auth).err().as_deref(), Some(CHECKOUT_CONFLICT));
-    assert_eq!(fs::read(repo.join(".git/kailo-push-intent")).unwrap(), bytes);
+    assert_eq!(
+        push_checkout(&repo, &remote, Some("main"), None, &auth)
+            .err()
+            .as_deref(),
+        Some(CHECKOUT_CONFLICT)
+    );
+    assert_eq!(
+        fs::read(repo.join(".git/kailo-push-intent")).unwrap(),
+        bytes
+    );
     let pending = intent::read(&repo, &remote).unwrap().unwrap();
-    assert_eq!(intent::observe(&repo, &pending, &auth).unwrap().as_deref(), Some(other_head.as_str()));
+    assert_eq!(
+        intent::observe(&repo, &pending, &auth).unwrap().as_deref(),
+        Some(other_head.as_str())
+    );
     assert!(intent::persist(&repo, &pending).is_err());
-    assert_eq!(fs::read(repo.join(".git/kailo-push-intent")).unwrap(), bytes);
+    assert_eq!(
+        fs::read(repo.join(".git/kailo-push-intent")).unwrap(),
+        bytes
+    );
 }

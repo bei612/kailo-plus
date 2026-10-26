@@ -13,7 +13,8 @@ use tauri::{AppHandle, Manager};
 use tauri_plugin_opener::OpenerExt;
 
 use super::project_git_remote::{
-    git_error, repository_path, RepoScope, REPO_FAILED, REPO_INVALID_REQUEST, REPO_TIMEOUT, REQUEST_DEADLINE,
+    git_error, repository_path, RepoScope, REPO_FAILED, REPO_INVALID_REQUEST, REPO_TIMEOUT,
+    REQUEST_DEADLINE,
 };
 
 // Mutating and reading the same checkout must not race within this process.
@@ -97,7 +98,9 @@ where
     let guard = tokio::time::timeout_at(
         tokio::time::Instant::from_std(deadline),
         Arc::clone(&CHECKOUT_LOCK).lock_owned(),
-    ).await.map_err(|_| REPO_TIMEOUT)?;
+    )
+    .await
+    .map_err(|_| REPO_TIMEOUT)?;
     let result = tauri::async_runtime::spawn_blocking(move || {
         // Keep the owned guard in the blocking work even if the webview drops
         // its caller. Queueing itself obeys the same whole-request deadline.
