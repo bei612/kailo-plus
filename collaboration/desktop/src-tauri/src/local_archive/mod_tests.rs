@@ -2,7 +2,8 @@ use super::*;
 use nostr::{EventBuilder, Kind, Tag};
 
 fn roster(author: &Keys, members: &[&str]) -> nostr::Event {
-    let mut builder = EventBuilder::new(Kind::Custom(39002), "").tag(Tag::parse(["d", "chan"]).unwrap());
+    let mut builder =
+        EventBuilder::new(Kind::Custom(39002), "").tag(Tag::parse(["d", "chan"]).unwrap());
     for member in members {
         builder = builder.tag(Tag::parse(["p", member]).unwrap());
     }
@@ -11,10 +12,22 @@ fn roster(author: &Keys, members: &[&str]) -> nostr::Event {
 
 #[test]
 fn only_explicit_refusals_revoke_and_transient_errors_keep_data() {
-    assert_eq!(classify_relay_error("relay returned 403 Forbidden: denied"), Access::Lost);
-    assert_eq!(classify_relay_error("relay returned 401 Unauthorized"), Access::IdentityRejected);
-    assert_eq!(classify_relay_error("relay returned 500 Internal Server Error"), Access::Unknown);
-    assert_eq!(classify_relay_error("relay returned 429 Too Many Requests"), Access::Unknown);
+    assert_eq!(
+        classify_relay_error("relay returned 403 Forbidden: denied"),
+        Access::Lost
+    );
+    assert_eq!(
+        classify_relay_error("relay returned 401 Unauthorized"),
+        Access::IdentityRejected
+    );
+    assert_eq!(
+        classify_relay_error("relay returned 500 Internal Server Error"),
+        Access::Unknown
+    );
+    assert_eq!(
+        classify_relay_error("relay returned 429 Too Many Requests"),
+        Access::Unknown
+    );
     assert_eq!(classify_relay_error("request timed out"), Access::Unknown);
 }
 
@@ -22,8 +35,14 @@ fn only_explicit_refusals_revoke_and_transient_errors_keep_data() {
 fn roster_membership_decides_access() {
     let owner = Keys::generate();
     let me = Keys::generate().public_key().to_hex();
-    assert_eq!(access_from_roster(&[roster(&owner, &[&me])], false, &me), Access::Readable);
-    assert_eq!(access_from_roster(&[roster(&owner, &["ab"])], false, &me), Access::Lost);
+    assert_eq!(
+        access_from_roster(&[roster(&owner, &[&me])], false, &me),
+        Access::Readable
+    );
+    assert_eq!(
+        access_from_roster(&[roster(&owner, &["ab"])], false, &me),
+        Access::Lost
+    );
     assert_eq!(access_from_roster(&[], true, &me), Access::Readable);
     assert_eq!(access_from_roster(&[], false, &me), Access::Unknown);
 }
@@ -41,7 +60,8 @@ fn other_identities_archives_are_erased_key_first() {
     erase_foreign(dir.path(), &mine, &|name| {
         deleted.borrow_mut().push(name.to_string());
         Ok(())
-    }).unwrap();
+    })
+    .unwrap();
     assert_eq!(deleted.into_inner(), vec![key_name(&theirs)]);
     assert!(dir.path().join(format!("{mine}.sqlite")).exists());
     assert!(!dir.path().join(format!("{theirs}.sqlite")).exists());

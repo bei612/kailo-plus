@@ -56,7 +56,11 @@ pub(crate) fn classify_relay_error(error: &str) -> Access {
 
 /// Membership proof as in the original probe: the channel's 39002 roster lists
 /// this identity, or (no roster) its 39000 metadata is readable.
-pub(crate) fn access_from_roster(roster: &[nostr::Event], metadata_readable: bool, identity: &str) -> Access {
+pub(crate) fn access_from_roster(
+    roster: &[nostr::Event],
+    metadata_readable: bool,
+    identity: &str,
+) -> Access {
     match roster.first() {
         Some(event) => {
             let member = event.tags.iter().any(|tag| {
@@ -74,14 +78,25 @@ pub(crate) fn access_from_roster(roster: &[nostr::Event], metadata_readable: boo
     }
 }
 
-async fn query_in_scope(state: &AppState, identity: &str, relay: &str, filters: &[serde_json::Value]) -> Result<Vec<nostr::Event>, Access> {
+async fn query_in_scope(
+    state: &AppState,
+    identity: &str,
+    relay: &str,
+    filters: &[serde_json::Value],
+) -> Result<Vec<nostr::Event>, Access> {
     let check = || {
-        state.signing_keys().is_ok_and(|keys| keys.public_key().to_hex() == identity)
+        state
+            .signing_keys()
+            .is_ok_and(|keys| keys.public_key().to_hex() == identity)
             && relay_api_base_url_with_override(state) == relay
     };
-    if !check() { return Err(Access::Unknown); }
+    if !check() {
+        return Err(Access::Unknown);
+    }
     let result = query_relay_at(state, relay, filters).await;
-    if !check() { return Err(Access::Unknown); }
+    if !check() {
+        return Err(Access::Unknown);
+    }
     result.map_err(|error| classify_relay_error(&error))
 }
 
@@ -137,12 +152,18 @@ fn keyring() -> &'static crate::secret_store::SecretStore {
 
 /// Archives of any other local identity are erased: key first, then file
 /// (DD-159(4), identity switch / sign-out / device key change).
-pub(crate) fn erase_foreign(dir: &Path, current_tag: &str, delete_key: &dyn Fn(&str) -> Result<(), String>) -> Result<(), String> {
+pub(crate) fn erase_foreign(
+    dir: &Path,
+    current_tag: &str,
+    delete_key: &dyn Fn(&str) -> Result<(), String>,
+) -> Result<(), String> {
     let entries = std::fs::read_dir(dir).map_err(|e| e.to_string())?;
     for entry in entries {
         let entry = entry.map_err(|e| e.to_string())?;
         let path = entry.path();
-        let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else { continue };
+        let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
+            continue;
+        };
         if path.extension().and_then(|e| e.to_str()) != Some("sqlite") || stem == current_tag {
             continue;
         }
@@ -154,8 +175,14 @@ pub(crate) fn erase_foreign(dir: &Path, current_tag: &str, delete_key: &dyn Fn(&
 
 pub(crate) fn erase_previous_identity(app: &AppHandle, state: &AppState) -> Result<(), String> {
     // A locked keychain gives an ephemeral recovery identity, not a new user.
-    let Ok(keys) = state.signing_keys() else { return Ok(()) };
-    erase_foreign(&archive_dir(app)?, &identity_tag(&keys.public_key().to_hex()), &|name| keyring().delete(name))
+    let Ok(keys) = state.signing_keys() else {
+        return Ok(());
+    };
+    erase_foreign(
+        &archive_dir(app)?,
+        &identity_tag(&keys.public_key().to_hex()),
+        &|name| keyring().delete(name),
+    )
 }
 
 fn erase(dir: &Path, tag: &str) -> Result<(), String> {
@@ -176,7 +203,10 @@ struct Opened {
 }
 
 fn open(app: &AppHandle, state: &AppState) -> Result<Opened, String> {
-    if !app.state::<crate::platform::api::NativeSession>().has_credentials()? {
+    if !app
+        .state::<crate::platform::api::NativeSession>()
+        .has_credentials()?
+    {
         return Err("local archive: sign in required".into());
     }
     let identity = state.signing_keys()?.public_key().to_hex();
@@ -184,7 +214,9 @@ fn open(app: &AppHandle, state: &AppState) -> Result<Opened, String> {
     let dir = archive_dir(app)?;
     erase_foreign(&dir, &tag, &|name| keyring().delete(name))?;
     let key = match keyring().load(&key_name(&tag))? {
-        Some(secret) => Keys::parse(&secret).map_err(|_| "local archive key corrupt".to_string())?,
+        Some(secret) => {
+            Keys::parse(&secret).map_err(|_| "local archive key corrupt".to_string())?
+        }
         None => {
             // A file without its key is unreadable by design; start over.
             let stale = dir.join(format!("{tag}.sqlite"));
@@ -196,8 +228,15 @@ fn open(app: &AppHandle, state: &AppState) -> Result<Opened, String> {
             keys
         }
     };
-    let conn = Connection::open(dir.join(format!("{tag}.sqlite"))).map_err(|e| format!("open local archive: {e}"))?;
-    Ok(Opened { store: ArchiveStore::open(conn, key)?, identity, relay: relay_api_base_url_with_override(state), dir, tag })
+    let conn = Connection::open(dir.join(format!("{tag}.sqlite")))
+        .map_err(|e| format!("open local archive: {e}"))?;
+    Ok(Opened {
+        store: ArchiveStore::open(conn, key)?,
+        identity,
+        relay: relay_api_base_url_with_override(state),
+        dir,
+        tag,
+    })
 }
 
 fn now() -> i64 {
@@ -236,7 +275,10 @@ fn status_of(opened: &Opened) -> Result<LocalArchiveStatus, String> {
 }
 
 #[tauri::command]
-pub async fn local_archive_status(app: AppHandle, state: State<'_, AppState>) -> Result<LocalArchiveStatus, String> {
+pub async fn local_archive_status(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<LocalArchiveStatus, String> {
     let _guard = lock().lock().await;
     status_of(&open(&app, &state)?)
 }
@@ -307,43 +349,79 @@ pub(crate) async fn erase_on_sign_out(app: &AppHandle) -> Result<(), String> {
 
 /// Re-checks access and pulls new events for every subscription.
 #[tauri::command]
-pub async fn local_archive_sync(app: AppHandle, state: State<'_, AppState>) -> Result<Vec<LocalArchiveSyncResult>, String> {
+pub async fn local_archive_sync(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<Vec<LocalArchiveSyncResult>, String> {
     let _guard = lock().lock().await;
     let mut opened = open(&app, &state)?;
     let mut results = Vec::new();
     for sub in opened.store.subscriptions()? {
         let access = probe(&state, &opened.identity, &opened.relay, &sub.channel_id).await;
         let outcome = match access {
-            Access::Readable => pull(&state, &opened.identity, &opened.relay, &mut opened.store, &sub).await,
+            Access::Readable => {
+                pull(
+                    &state,
+                    &opened.identity,
+                    &opened.relay,
+                    &mut opened.store,
+                    &sub,
+                )
+                .await
+            }
             other => Err(other),
         };
         match outcome {
             Ok((stored, cursor)) => {
                 opened.store.finish_pages(&sub.channel_id, cursor, now())?;
-                results.push(LocalArchiveSyncResult { channel_id: sub.channel_id, result: "ok", stored });
+                results.push(LocalArchiveSyncResult {
+                    channel_id: sub.channel_id,
+                    result: "ok",
+                    stored,
+                });
             }
             Err(Access::Lost) => {
                 opened.store.unsubscribe(&sub.channel_id)?;
-                results.push(LocalArchiveSyncResult { channel_id: sub.channel_id, result: "access_lost", stored: 0 });
+                results.push(LocalArchiveSyncResult {
+                    channel_id: sub.channel_id,
+                    result: "access_lost",
+                    stored: 0,
+                });
             }
             Err(Access::IdentityRejected) => {
                 let tag = opened.tag.clone();
                 let dir = opened.dir.clone();
                 drop(opened);
                 erase(&dir, &tag)?;
-                results.push(LocalArchiveSyncResult { channel_id: sub.channel_id, result: "identity_rejected", stored: 0 });
+                results.push(LocalArchiveSyncResult {
+                    channel_id: sub.channel_id,
+                    result: "identity_rejected",
+                    stored: 0,
+                });
                 return Ok(results);
             }
             Err(Access::Unknown) | Err(Access::Readable) => {
-                opened.store.record_sync(&sub.channel_id, "retry", None, now())?;
-                results.push(LocalArchiveSyncResult { channel_id: sub.channel_id, result: "retry", stored: 0 });
+                opened
+                    .store
+                    .record_sync(&sub.channel_id, "retry", None, now())?;
+                results.push(LocalArchiveSyncResult {
+                    channel_id: sub.channel_id,
+                    result: "retry",
+                    stored: 0,
+                });
             }
         }
     }
     Ok(results)
 }
 
-async fn pull(state: &AppState, identity: &str, relay: &str, store: &mut ArchiveStore, sub: &Subscription) -> Result<(usize, i64), Access> {
+async fn pull(
+    state: &AppState,
+    identity: &str,
+    relay: &str,
+    store: &mut ArchiveStore,
+    sub: &Subscription,
+) -> Result<(usize, i64), Access> {
     // Deletions are required even when the user selected messages only.
     let mut kinds = sub.kinds.clone();
     kinds.extend([5, 9005]);
@@ -357,22 +435,35 @@ async fn pull(state: &AppState, identity: &str, relay: &str, store: &mut Archive
     });
     let mut stored = 0;
     let mut cursor = sub.cursor;
-    if let Some((until, before_id, newest)) = store.page_cursor(&sub.channel_id).map_err(|_| Access::Unknown)? {
+    if let Some((until, before_id, newest)) = store
+        .page_cursor(&sub.channel_id)
+        .map_err(|_| Access::Unknown)?
+    {
         filter["until"] = serde_json::json!(until);
         filter["before_id"] = serde_json::json!(before_id);
         cursor = cursor.max(newest);
     }
     for _ in 0..MAX_PAGES_PER_SYNC {
         let page = query_in_scope(state, identity, relay, &[filter.clone()]).await?;
-        stored += store.ingest(&sub.channel_id, &page).map_err(|_| Access::Unknown)?;
+        stored += store
+            .ingest(&sub.channel_id, &page)
+            .map_err(|_| Access::Unknown)?;
         if let Some(newest) = page.iter().map(|e| e.created_at.as_secs() as i64).max() {
             cursor = cursor.max(newest);
         }
-        let Some(last) = page.last() else { return Ok((stored, cursor)) };
+        let Some(last) = page.last() else {
+            return Ok((stored, cursor));
+        };
         if page.len() < PAGE_SIZE {
             return Ok((stored, cursor));
         }
-        store.save_page(&sub.channel_id, last.created_at.as_secs() as i64, &last.id.to_hex(), cursor)
+        store
+            .save_page(
+                &sub.channel_id,
+                last.created_at.as_secs() as i64,
+                &last.id.to_hex(),
+                cursor,
+            )
             .map_err(|_| Access::Unknown)?;
         filter["until"] = serde_json::json!(last.created_at.as_secs());
         filter["before_id"] = serde_json::json!(last.id.to_hex());
