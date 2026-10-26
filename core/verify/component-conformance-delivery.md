@@ -314,3 +314,47 @@ inputs、实际 driver 业务与生产权威 suite 尚未跑；需匹配 Core/Wo
 本批不重启/删除遗留栈、不生产登记/批准、不部署共享平台。
 `blockedAfterNative` 仅在实际编排已成功建立原 driver listener 后清空；该运行中事实不是 suite PASS。
 原 upgrade writer 仍不存在，未宣称升级/旧映射兼容完成。
+
+
+## 10. 遗留隔离环境实际恢复（2026-10-26）
+
+本节补充第 6 节的失败现场，不把旧失败改为通过，也不代替第 9 节的完整接收方验收。
+在 CI 原运行 `knowledge-20261024T040931Z-1ed31c` 内复核并恢复，源码仍为
+`f15dd7802ca684c22ef84dcd8c7aebc084d1bc6b`，未替换镜像、数据库、身份或发布来源信任规则。
+
+- 先只读核验：隔离 OpenBao 的 `127.0.0.1:59110/v1/sys/health` 返回 200，
+  `initialized=true`、`sealed=false`；原 app 网络内 `openbao` 解析到该隔离容器。
+  旧 Core 的 10 月 24 日退出码仍为 1、非 OOM，日志只有 AppRole login 请求连接错误，
+  没有足以认定具体 DNS、路由或鉴权根因的证据。本次健康成功不能追溯证明当时为何失败。
+- 在该运行暂存的 `deploy/local` 执行原 `start-core.sh --no-build`，退出 0。
+  原入口从该隔离 Bao 重新取得一次性 wrapped secret-id，保持原 Core digest
+  `a6c37cbf2ea58b4c983f9bd2bb7a5dca5c94fcb674c5a35ee6d4b901794f1a17`；
+  隔离 Core 恢复 `running`，`127.0.0.1:59103/healthz` 返回 200。
+  没有直接重启并复用旧投递，也没有复制生产 credential。
+- 接续原 `init-local.sh` 的 Tenant 引导末段：经原 IdP admin API 取得实际 subject，
+  分别执行原 `platform-core bootstrap-tenant`，业务 Tenant 与 Catalog Tenant 均返回 `COMPLETED`。
+  实际隔离 PostgreSQL 只读回查为 `identity.tenant` 的 `ACTIVE=2`、
+  `catalog.application_binding` 为 0；没有通过 SQL 写入就绪状态或伪造 binding。
+
+回执在该运行的 `receiver/recovery-20261026-receipt.json`，SHA-256
+`4ac369e47d95bfd97c5b3c742cbf413cdff47fb5c188255b7dc29f57b35467ca`。
+原命令日志 `receiver/core-recovery-20261026.log` 的 SHA-256 为
+`3c9672597e5ab4963681884c9b6f91e9b4d7d33995b2151940580c949059155f`，
+`receiver/tenant-recovery-20261026.log` 为
+`20fea54c66826bf865664d2d07596de4c8b3d373340e52cd23afef6d9699e76f`。
+记录与日志保留在原 owner-only 运行目录；不复制凭据或完整运行环境到仓库。
+
+恢复后仍无 `platform.done`，未执行 contracts、HUMAN binding 准入、native-action、模型 proof、
+ACTIVE bootstrap、seed、inputs、driver 或生产权威 suite。没有手工补 marker：当前运行器明确拒绝
+把非空的未完成 platform 当成就绪。旧隔离 Core 也不再是当前生产同版本，不能用新 SDK bootstrap
+配合旧二进制来声称满足 `.design/07` §8A 的相同消费者约束。
+
+当前生产 Core/Worker 的只读 provenance 均指向
+`dc2d6ca18bb5c355ebb3e96609f0f591532479cf`；两者镜像分别为
+`b67df6197490144b7f602e0d4e4519f36fba3ab58703b99c817ec62c73de4efa` 与
+`b9ba6a3b3d6df2d02b261b6ef08617648d2e1484074c1bef0dd55f1119afa5c9`，本次未变更。
+该源码有旧 receiver bootstrap，但没有本轮 HUMAN policy 生产/管理读取合同及其迁移，
+不能承担第 9 节的新链验证。下一步须先由原发布入口交付包含当前实现的匹配 Core/Worker 与组件制品，
+再用原组件发布 `--conformance` 在新独立运行中执行完整链；遗留运行按原
+`--conformance-close=<运行目录>` 收口后保留证据。本次未关闭旧栈、未安装候选、未批准 release、
+未改变正式 main 或生产数据，也未为获取分支候选放宽 CI 信任策略。
