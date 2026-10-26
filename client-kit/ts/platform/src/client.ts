@@ -5,6 +5,7 @@
 
 import type {
   FeedbackAttachmentContent,
+  TenantProfileView,
   FeedbackSubmissionRequest,
   FeedbackSubmissionReceipt,
   PlatformFeedbackPage,
@@ -260,6 +261,7 @@ export function createBffClient(transport: BffTransport) {
 
   return {
     transport,
+    tenantProfile: () => get<TenantProfileView>("/api/v1/tenant/profile"),
     submitFeedback: (body: FeedbackSubmissionRequest) => call<FeedbackSubmissionReceipt>({ method: "POST", path: "/api/v1/feedback", body }),
     platformFeedback: (offset = 0, state?: "NEW" | "TRIAGED" | "CLOSED") => get<PlatformFeedbackPage>(`/api/v1/platform/feedback?offset=${offset}${state ? `&state=${state}` : ""}`, true),
     feedbackAttachment: (id: string) => get<FeedbackAttachmentContent>(`/api/v1/platform/feedback/${encodeURIComponent(id)}/attachment?encoding=base64`, true),

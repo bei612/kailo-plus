@@ -98,6 +98,21 @@ export function platformPluralForm(locale: PlatformLocale, count: number): "one"
 type Message = { readonly en: string; readonly "zh-CN": string };
 
 export const platformMessages = {
+  "tenantProfile.title": { en: "Community profile", "zh-CN": "社区资料" },
+  "tenantProfile.name": { en: "Community name", "zh-CN": "社区名称" },
+  "tenantProfile.icon": { en: "Community icon", "zh-CN": "社区图标" },
+  "tenantProfile.image": { en: "Choose image", "zh-CN": "选择图片" },
+  "tenantProfile.emoji": { en: "Choose emoji", "zh-CN": "选择表情" },
+  "tenantProfile.clear": { en: "Clear icon", "zh-CN": "清除图标" },
+  "tenantProfile.limits": { en: "Name: 1\u201364 characters. Images are cropped locally to 256 px before saving.", "zh-CN": "名称为 1–64 字。图片在本机裁剪为 256 像素后保存。" },
+  "tenantProfile.confirm": { en: "I confirm these changes to the community name and icon.", "zh-CN": "我确认修改社区名称和图标。" },
+  "tenantProfile.save": { en: "Save profile", "zh-CN": "保存资料" },
+  "tenantProfile.retry": { en: "Retry the same change", "zh-CN": "重试同一修改" },
+  "tenantProfile.refresh": { en: "Refresh current profile", "zh-CN": "刷新当前资料" },
+  "tenantProfile.close": { en: "Close", "zh-CN": "关闭" },
+  "tenantProfile.readOnly": { en: "Only community administrators can edit this profile.", "zh-CN": "仅社区管理员可以修改资料。" },
+  "tenantProfile.failed": { en: "Could not read the profile or process the image. Please refresh or choose another image.", "zh-CN": "无法读取资料或处理图片，请刷新或另选图片。" },
+  "tenantProfile.loading": { en: "Loading profile\u2026", "zh-CN": "正在读取资料…" },
   "platform.feedback.operatorTitle": { en: "Private feedback", "zh-CN": "私有反馈" },
   "platform.feedback.operatorFailed": { en: "The operation could not be confirmed. Refresh the current state before trying again.", "zh-CN": "操作结果未能确认，请刷新当前状态后再操作。" },
   "platform.feedback.refresh": { en: "Refresh", "zh-CN": "刷新" },
