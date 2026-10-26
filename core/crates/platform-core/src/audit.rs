@@ -161,18 +161,27 @@ pub(crate) struct PublicationProof {
 
 impl PublicationProof {
     pub(crate) fn proves_absence(&self) -> bool {
-        self.scope.claim(&self.settlement.claim.event_id)
+        self.scope
+            .claim(&self.settlement.claim.event_id)
             .is_some_and(|claim| self.settlement.proves_absence_for(&claim))
     }
 }
 
 pub(crate) async fn append_publication_proof(
-    tx: &mut Transaction<'_, Postgres>, e: AuditEntry<'_>, proof: &PublicationProof,
+    tx: &mut Transaction<'_, Postgres>,
+    e: AuditEntry<'_>,
+    proof: &PublicationProof,
 ) -> Result<(), sqlx::Error> {
-    if e.event_type != "RECONCILIATION" || e.result_code != "NOT_DELIVERED"
+    if e.event_type != "RECONCILIATION"
+        || e.result_code != "NOT_DELIVERED"
         || !proof.proves_absence()
-        || !e.evidence_refs.iter().any(|e|e.kind == EvidenceKind::BuzzEventId && e.value == proof.settlement.claim.event_id) {
-        return Err(sqlx::Error::Protocol("Invalid publication absence proof".into()));
+        || !e.evidence_refs.iter().any(|e| {
+            e.kind == EvidenceKind::BuzzEventId && e.value == proof.settlement.claim.event_id
+        })
+    {
+        return Err(sqlx::Error::Protocol(
+            "Invalid publication absence proof".into(),
+        ));
     }
     append_inner(tx, e, Some(proof)).await
 }
@@ -189,7 +198,9 @@ pub async fn append(
 }
 
 async fn append_inner(
-    tx: &mut Transaction<'_, Postgres>, e: AuditEntry<'_>, proof: Option<&PublicationProof>,
+    tx: &mut Transaction<'_, Postgres>,
+    e: AuditEntry<'_>,
+    proof: Option<&PublicationProof>,
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
         "insert into audit.audit_event
