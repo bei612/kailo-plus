@@ -1118,6 +1118,7 @@ artifacts:
     build_secrets: [BUZZ_ANDROID_UPLOAD_KEYSTORE, BUZZ_ANDROID_UPLOAD_KEYSTORE_PASSWORD, BUZZ_ANDROID_UPLOAD_KEY_ALIAS, BUZZ_ANDROID_UPLOAD_KEY_PASSWORD]
     build_args: [PLATFORM_DISPLAY_NAME]
     optional_build_args: [BUZZ_ANDROID_GOOGLE_SERVICES_JSON]
+    build_config_digest: none
     blocked: release 签名 upload keystore 未提供（ADR-06 按端分离的 Mobile 发布链）
     source_digest: none
     artifact_digest: none

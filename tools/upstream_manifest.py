@@ -133,6 +133,33 @@ def _under(rel, prefixes):
     return any(rel == p.rstrip("/") or rel.startswith(p.rstrip("/") + "/") for p in prefixes)
 
 
+def public_build_config_digest(art):
+    """Fingerprint exact public inputs; absent optional input is explicit, never a secret value."""
+    values = {}
+    for name in _list(art, "build_args") + _list(art, "optional_build_args"):
+        value = os.environ.get(name) or None
+        if value is None and name in _list(art, "build_args"):
+            raise ValueError(f"缺少必选公开构建配置 {name}")
+        if value is not None and not value.strip():
+            raise ValueError(f"公开构建配置 {name} 只含空白")
+        if name == "BUZZ_ANDROID_GOOGLE_SERVICES_JSON" and value is not None:
+            try:
+                config = json.loads(value)
+            except ValueError:
+                raise ValueError("Firebase 配置必须是官方 Android 客户端 JSON") from None
+            def server_credential(node):
+                if isinstance(node, dict):
+                    return (node.get("type") == "service_account" or
+                            bool(set(node) & {"private_key", "private_key_id", "client_email"}) or
+                            any(server_credential(v) for v in node.values()))
+                return isinstance(node, list) and any(server_credential(v) for v in node)
+            if not isinstance(config, dict) or server_credential(config):
+                raise ValueError("Firebase 服务端凭据禁止进入客户端构建参数")
+        values[name] = value
+    encoded = json.dumps(values, sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode()
+    return "sha256:" + hashlib.sha256(encoded).hexdigest()
+
+
 def source_digest(art):
     """该产物的源码摘要：inputs 内、exclude 外每个文件的路径、类型与字节，以及决定构建方式的字段。
 
@@ -144,6 +171,9 @@ def source_digest(art):
     h = hashlib.sha256()
     for key in ("kind", "build_context", "build_dockerfile", "inputs", "exclude"):
         h.update(f"{key}={art.get(key) or ''}\0".encode())
+    if "optional_build_args" in art:
+        for key in ("build_args", "optional_build_args", "build_config_digest"):
+            h.update(f"{key}={art.get(key) or ''}\0".encode())
     for rel in source_files(*incl):
         if _under(rel, excl):
             continue
@@ -235,6 +265,14 @@ def problems(path, m, check_digest=True):
             bad.append(f"{name}: build_args 有重复项")
         if set(build_args) & set(_list(a, "build_secrets")):
             bad.append(f"{name}: 同一变量不能既是 build_args 又是 build_secrets")
+        if "optional_build_args" in a:
+            if not isinstance(a["optional_build_args"], list):
+                bad.append(f"{name}: optional_build_args 必须为变量名数组")
+            config_digest = a.get("build_config_digest")
+            if config_digest != "none" and not re.fullmatch(r"sha256:[0-9a-f]{64}", str(config_digest)):
+                bad.append(f"{name}: 可选公开配置须登记 build_config_digest")
+            if a.get("artifact_digest") != "none" and config_digest == "none":
+                bad.append(f"{name}: 已构建产物缺少公开配置摘要")
         # 构建事实：不是部署配置，而是本次构建自身的事实，由 build-upstream.sh 从冻结源码
         # 与构建时刻推出，不接受调用方给值，也不回退任何默认值。
         facts = a.get("build_facts") or {}
@@ -653,6 +691,8 @@ def plan(name):
     bad = problems(path, m, check_digest=False)
     if bad:
         sys.exit("\n".join(f"{path}: {b}" for b in bad))
+    if "optional_build_args" in art:
+        art = dict(art, build_config_digest=public_build_config_digest(art))
     q = shlex.quote
     print(f"record={q(path)}")
     print(f"tree={q(tree_of(path))}")
@@ -699,7 +739,13 @@ def stage(name, dest):
 def record(name, artifact):
     """只替换该产物块里的两行：记录里的注释是给人读的，不经 YAML 重写。"""
     path, m, art = resolve(name)
+    updates = {}
+    if "optional_build_args" in art:
+        config_digest = public_build_config_digest(art) if artifact != "none" else "none"
+        art = dict(art, build_config_digest=config_digest)
+        updates["build_config_digest"] = config_digest
     digest = source_digest(art) if artifact != "none" else "none"
+    updates.update(source_digest=digest, artifact_digest=artifact)
     lines = open(path, encoding="utf-8").read().split("\n")
     start = next((i for i, l in enumerate(lines) if re.fullmatch(rf"  - name: {re.escape(art['name'])}\s*", l)), None)
     if start is None:
@@ -708,12 +754,12 @@ def record(name, artifact):
     for i in range(start + 1, len(lines)):
         if lines[i].startswith("  - ") or (lines[i] and not lines[i].startswith(" ")):
             break
-        for key, value in (("source_digest", digest), ("artifact_digest", artifact)):
+        for key, value in updates.items():
             if re.match(rf"    {key}:", lines[i]):
                 lines[i] = f"    {key}: {value}"
                 done.add(key)
-    if done != {"source_digest", "artifact_digest"}:
-        sys.exit(f"{path}: {art['name']} 块缺少 source_digest 或 artifact_digest 行")
+    if done != set(updates):
+        sys.exit(f"{path}: {art['name']} 块缺少摘要行（source/artifact/build_config）")
     with open(path, "w", encoding="utf-8") as f:
         f.write("\n".join(lines))
 
