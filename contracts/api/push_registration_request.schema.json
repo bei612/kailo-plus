@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/push_registration_request.schema.json",
+  "title": "PushRegistrationRequest",
+  "description": "DD-151(1)：PUT /api/v1/push/registration（仅原生端）。本设备登记、更新令牌或开关通知。proof 是本设备 CLIENT 私钥签名的 NIP-98 事件（u 为本路径、method 为 PUT、session 为当前 PlatformSession），设备公钥即 proof 的签名者，必须是本人 ACTIVE 的设备公钥。expectedVersion 为 0 表示首次登记，其余按 DD-40 version CAS。token 明文只写入本 Tenant 的 OpenBao，任何回应、日志与审计都不回显。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["proof", "platform", "appId", "token", "locale", "enabled", "expectedVersion"],
+  "properties": {
+    "proof": {"type": "object", "description": "NIP-98 HTTP Auth 事件（kind 27235）。"},
+    "platform": {"$ref": "../enums/push_platform.schema.json"},
+    "appId": {"type": "string", "pattern": "^[A-Za-z0-9._-]{1,200}$", "description": "iOS bundle id 或 Android application id；必须与部署配置的推送主题一致。"},
+    "token": {"type": "string", "minLength": 1, "maxLength": 4096, "description": "APNs 设备令牌（十六进制）或 FCM 注册令牌。"},
+    "locale": {"type": "string", "enum": ["en", "zh-CN"], "description": "系统通知文案的语言；通知不含正文。"},
+    "enabled": {"type": "boolean"},
+    "expectedVersion": {"type": "integer", "minimum": 0}
+  }
+}

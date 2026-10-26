@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/push_availability.schema.json",
+  "title": "PushAvailability",
+  "description": "DD-151(2)：本部署是否配置了该提供方的推送凭据。NOT_CONFIGURED 时客户端保留原版“此版本不可用”。",
+  "type": "string",
+  "enum": ["CONFIGURED", "NOT_CONFIGURED"]
+}

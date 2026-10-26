@@ -1020,7 +1020,15 @@ remove_paths:
   - mobile/lib/shared/crypto/hkdf.dart
   - mobile/lib/shared/crypto/nip44.dart
   - mobile/lib/shared/huddle
-  - mobile/lib/shared/push
+  - mobile/lib/shared/push/dev_push_lease.dart
+  - mobile/lib/shared/push/push_bootstrap.dart
+  - mobile/lib/shared/push/push_lease_revocation_outbox.dart
+  - mobile/lib/shared/push/push_presentation_cache.dart
+  - mobile/lib/shared/push/push_presentation_export_recovery.dart
+  - mobile/lib/shared/push/push_relay_capability_provider.dart
+  - mobile/lib/shared/push/push_snapshot.dart
+  - mobile/lib/shared/push/push_subscription.dart
+  - mobile/lib/shared/push/push_subscription_provider.dart
   - mobile/lib/shared/relay/identity_scoped_prefs.dart
   - mobile/lib/shared/relay/relay_validation.dart
   - mobile/lib/shared/reminders

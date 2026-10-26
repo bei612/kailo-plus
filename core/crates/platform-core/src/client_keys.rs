@@ -406,6 +406,19 @@ async fn proof_is_valid(
     ctx: &ExecutionContext,
     proof: &nostr::Event,
 ) -> Result<bool, sqlx::Error> {
+    nip98_proof_valid(state, ctx, proof, REGISTER_PATH, "POST").await
+}
+
+/// The same possession proof for another device-only endpoint (DD-151(1) push registration):
+/// signed by the device key, NIP-98 kind, bound to exactly `path` and `method`, to the
+/// caller's current PlatformSession and to the proof window.
+pub(crate) async fn nip98_proof_valid(
+    state: &BffState,
+    ctx: &ExecutionContext,
+    proof: &nostr::Event,
+    path: &str,
+    method: &str,
+) -> Result<bool, sqlx::Error> {
     if proof.verify().is_err() || proof.kind.as_u16() != NIP98_KIND {
         return Ok(false);
     }
@@ -428,8 +441,8 @@ async fn proof_is_valid(
     // 因此核对路径，主机名由网关与 TLS 负责。
     let path_ok = tag("u")
         .and_then(|u| reqwest::Url::parse(&u).ok())
-        .is_some_and(|u| u.path() == REGISTER_PATH && u.query().is_none());
-    let method_ok = tag("method").as_deref() == Some("POST");
+        .is_some_and(|u| u.path() == path && u.query().is_none());
+    let method_ok = tag("method").as_deref() == Some(method);
     let session_ok = tag("session").as_deref() == Some(ctx.session_id.to_string().as_str());
     Ok(path_ok && method_ok && session_ok)
 }

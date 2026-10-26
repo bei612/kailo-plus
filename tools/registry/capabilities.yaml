@@ -235,6 +235,14 @@ capabilities:
   actions: []
   tools: []
   workflow_kinds: []
+- id: collab.mobile_push
+  exposure: end_user
+  routes:
+  - /api/v1/push/capability
+  - /api/v1/push/registration
+  actions: []
+  tools: []
+  workflow_kinds: []
 - id: collab.moderation
   exposure: end_user
   routes:

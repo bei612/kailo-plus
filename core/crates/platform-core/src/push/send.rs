@@ -1,0 +1,377 @@
+//! DD-151(2)(5): the APNs and FCM senders.
+//!
+//! Provider credentials are deployment configuration kept in OpenBao: the Core config only
+//! names their SecretRef (`PUSH_APNS_CREDENTIAL_*`, `PUSH_FCM_CREDENTIAL_*`). They are read
+//! into this process' memory, re-read periodically and after an authentication failure (so a
+//! rotation needs no restart), and never logged: the credential types print as redacted.
+
+use std::time::{Duration, Instant};
+
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use tokio::sync::Mutex;
+
+/// One provider attempt.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Outcome {
+    Delivered,
+    /// The provider says the device token is gone: the registration becomes INVALID.
+    Invalid,
+    /// Transient (rate limit, provider outage, transport): bounded retry.
+    Retry,
+    /// Our provider credential was refused: reload it, do not touch the registration.
+    ProviderAuth,
+    /// A definite refusal of this one notification; not retried.
+    Rejected,
+}
+
+/// Re-read credentials at least this often, so a rotation in OpenBao takes effect.
+pub(crate) const CREDENTIAL_TTL: Duration = Duration::from_secs(10 * 60);
+/// Apple accepts provider tokens up to an hour old and refuses refreshing more than
+/// once every 20 minutes.
+const APNS_JWT_REUSE: Duration = Duration::from_secs(40 * 60);
+
+#[derive(Clone)]
+pub(crate) struct ApnsCredential {
+    pub key_pem: String,
+    pub key_id: String,
+    pub team_id: String,
+    pub bundle_id: String,
+    pub sandbox: bool,
+}
+
+impl std::fmt::Debug for ApnsCredential {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("ApnsCredential(<redacted>)")
+    }
+}
+
+#[derive(Clone, Deserialize)]
+pub(crate) struct FcmCredential {
+    pub client_email: String,
+    pub private_key: String,
+    pub token_uri: String,
+    pub project_id: String,
+}
+
+impl std::fmt::Debug for FcmCredential {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("FcmCredential(<redacted>)")
+    }
+}
+
+/// A device token in memory. Printing it never shows the value.
+#[derive(Clone)]
+pub(crate) struct DeviceToken(pub String);
+
+impl std::fmt::Debug for DeviceToken {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("DeviceToken(<redacted>)")
+    }
+}
+
+#[derive(Serialize)]
+struct ApnsClaims<'a> {
+    iss: &'a str,
+    iat: u64,
+}
+
+#[derive(Serialize)]
+struct FcmClaims<'a> {
+    iss: &'a str,
+    scope: &'a str,
+    aud: &'a str,
+    iat: u64,
+    exp: u64,
+}
+
+fn now_secs() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or_default()
+}
+
+pub(crate) struct ApnsSender {
+    credential: ApnsCredential,
+    jwt: Mutex<Option<(String, Instant)>>,
+}
+
+impl ApnsSender {
+    pub(crate) fn new(credential: ApnsCredential) -> Self {
+        Self {
+            credential,
+            jwt: Mutex::new(None),
+        }
+    }
+
+    pub(crate) fn topic(&self) -> &str {
+        &self.credential.bundle_id
+    }
+
+    async fn provider_token(&self) -> Result<String, Outcome> {
+        let mut cached = self.jwt.lock().await;
+        if let Some((token, at)) = cached.as_ref() {
+            if at.elapsed() < APNS_JWT_REUSE {
+                return Ok(token.clone());
+            }
+        }
+        let key = jsonwebtoken::EncodingKey::from_ec_pem(self.credential.key_pem.as_bytes())
+            .map_err(|_| Outcome::ProviderAuth)?;
+        let mut header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::ES256);
+        header.kid = Some(self.credential.key_id.clone());
+        let claims = ApnsClaims {
+            iss: &self.credential.team_id,
+            iat: now_secs(),
+        };
+        let token =
+            jsonwebtoken::encode(&header, &claims, &key).map_err(|_| Outcome::ProviderAuth)?;
+        *cached = Some((token.clone(), Instant::now()));
+        Ok(token)
+    }
+
+    pub(crate) async fn send(
+        &self,
+        http: &reqwest::Client,
+        token: &DeviceToken,
+        payload: &Value,
+        collapse_key: &str,
+    ) -> Outcome {
+        let bearer = match self.provider_token().await {
+            Ok(b) => b,
+            Err(outcome) => return outcome,
+        };
+        let host = if self.credential.sandbox {
+            "api.sandbox.push.apple.com"
+        } else {
+            "api.push.apple.com"
+        };
+        let response = http
+            .post(format!("https://{host}/3/device/{}", token.0))
+            .header("authorization", format!("bearer {bearer}"))
+            .header("apns-topic", &self.credential.bundle_id)
+            .header("apns-push-type", "alert")
+            .header("apns-priority", "10")
+            .header("apns-collapse-id", collapse_key)
+            .header("apns-expiration", (now_secs() + 3600).to_string())
+            .json(payload)
+            .timeout(Duration::from_secs(15))
+            .send()
+            .await;
+        match response {
+            Ok(response) => {
+                let status = response.status().as_u16();
+                let body: Value = response.json().await.unwrap_or(Value::Null);
+                let outcome = classify_apns(status, body["reason"].as_str());
+                if outcome == Outcome::ProviderAuth {
+                    *self.jwt.lock().await = None;
+                }
+                outcome
+            }
+            Err(_) => Outcome::Retry,
+        }
+    }
+}
+
+/// Apple's documented status and reason codes.
+pub(crate) fn classify_apns(status: u16, reason: Option<&str>) -> Outcome {
+    match (status, reason) {
+        (200, _) => Outcome::Delivered,
+        (410, _) => Outcome::Invalid,
+        (400, Some("BadDeviceToken" | "DeviceTokenNotForTopic")) => Outcome::Invalid,
+        (403, _) => Outcome::ProviderAuth,
+        (429 | 500 | 503, _) => Outcome::Retry,
+        _ => Outcome::Rejected,
+    }
+}
+
+const FCM_SCOPE: &str = "https://www.googleapis.com/auth/firebase.messaging";
+
+pub(crate) struct FcmSender {
+    credential: FcmCredential,
+    access: Mutex<Option<(String, Instant, Duration)>>,
+}
+
+impl FcmSender {
+    pub(crate) fn new(credential: FcmCredential) -> Self {
+        Self {
+            credential,
+            access: Mutex::new(None),
+        }
+    }
+
+    async fn access_token(&self, http: &reqwest::Client) -> Result<String, Outcome> {
+        let mut cached = self.access.lock().await;
+        if let Some((token, at, ttl)) = cached.as_ref() {
+            if at.elapsed() < *ttl {
+                return Ok(token.clone());
+            }
+        }
+        let key = jsonwebtoken::EncodingKey::from_rsa_pem(self.credential.private_key.as_bytes())
+            .map_err(|_| Outcome::ProviderAuth)?;
+        let iat = now_secs();
+        let claims = FcmClaims {
+            iss: &self.credential.client_email,
+            scope: FCM_SCOPE,
+            aud: &self.credential.token_uri,
+            iat,
+            exp: iat + 3600,
+        };
+        let assertion = jsonwebtoken::encode(
+            &jsonwebtoken::Header::new(jsonwebtoken::Algorithm::RS256),
+            &claims,
+            &key,
+        )
+        .map_err(|_| Outcome::ProviderAuth)?;
+        let response = http
+            .post(&self.credential.token_uri)
+            .form(&[
+                ("grant_type", "urn:ietf:params:oauth:grant-type:jwt-bearer"),
+                ("assertion", assertion.as_str()),
+            ])
+            .timeout(Duration::from_secs(15))
+            .send()
+            .await
+            .map_err(|_| Outcome::Retry)?;
+        let status = response.status().as_u16();
+        if status != 200 {
+            return Err(if status >= 500 {
+                Outcome::Retry
+            } else {
+                Outcome::ProviderAuth
+            });
+        }
+        let body: Value = response.json().await.map_err(|_| Outcome::Retry)?;
+        let token = body["access_token"]
+            .as_str()
+            .ok_or(Outcome::ProviderAuth)?
+            .to_owned();
+        let lifetime = body["expires_in"]
+            .as_u64()
+            .unwrap_or(3600)
+            .saturating_sub(120)
+            .max(60);
+        *cached = Some((token.clone(), Instant::now(), Duration::from_secs(lifetime)));
+        Ok(token)
+    }
+
+    pub(crate) async fn send(
+        &self,
+        http: &reqwest::Client,
+        token: &DeviceToken,
+        message: &Value,
+    ) -> Outcome {
+        let access = match self.access_token(http).await {
+            Ok(a) => a,
+            Err(outcome) => return outcome,
+        };
+        let mut message = message.clone();
+        message["token"] = Value::String(token.0.clone());
+        let response = http
+            .post(format!(
+                "https://fcm.googleapis.com/v1/projects/{}/messages:send",
+                self.credential.project_id
+            ))
+            .bearer_auth(access)
+            .json(&serde_json::json!({ "message": message }))
+            .timeout(Duration::from_secs(15))
+            .send()
+            .await;
+        match response {
+            Ok(response) => {
+                let status = response.status().as_u16();
+                let body: Value = response.json().await.unwrap_or(Value::Null);
+                let outcome = classify_fcm(status, &body);
+                if outcome == Outcome::ProviderAuth {
+                    *self.access.lock().await = None;
+                }
+                outcome
+            }
+            Err(_) => Outcome::Retry,
+        }
+    }
+}
+
+/// FCM v1 errors: the token is gone only on UNREGISTERED (404) or a sender mismatch.
+pub(crate) fn classify_fcm(status: u16, body: &Value) -> Outcome {
+    let codes: Vec<&str> = body["error"]["details"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|d| d["errorCode"].as_str())
+        .collect();
+    let has = |code: &str| codes.contains(&code);
+    match status {
+        200 => Outcome::Delivered,
+        404 => Outcome::Invalid,
+        _ if has("UNREGISTERED") || has("SENDER_ID_MISMATCH") => Outcome::Invalid,
+        401 | 403 => Outcome::ProviderAuth,
+        429 | 500 | 503 => Outcome::Retry,
+        _ if has("UNAVAILABLE") || has("INTERNAL") || has("QUOTA_EXCEEDED") => Outcome::Retry,
+        _ => Outcome::Rejected,
+    }
+}
+
+/// Bounded retry (DD-151(5)): at most three attempts with growing pauses; a notification
+/// is never replayed after this, it would be stale.
+pub(crate) const RETRY_PAUSES: [Duration; 2] = [Duration::from_secs(1), Duration::from_secs(4)];
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn apns_statuses_map_to_registration_effects() {
+        assert_eq!(classify_apns(200, None), Outcome::Delivered);
+        assert_eq!(classify_apns(410, Some("Unregistered")), Outcome::Invalid);
+        assert_eq!(classify_apns(400, Some("BadDeviceToken")), Outcome::Invalid);
+        assert_eq!(
+            classify_apns(400, Some("PayloadTooLarge")),
+            Outcome::Rejected
+        );
+        assert_eq!(
+            classify_apns(403, Some("ExpiredProviderToken")),
+            Outcome::ProviderAuth
+        );
+        assert_eq!(classify_apns(429, None), Outcome::Retry);
+        assert_eq!(classify_apns(503, None), Outcome::Retry);
+    }
+
+    #[test]
+    fn fcm_errors_map_to_registration_effects() {
+        let unregistered = json!({"error": {"details": [{"errorCode": "UNREGISTERED"}]}});
+        assert_eq!(classify_fcm(200, &json!({})), Outcome::Delivered);
+        assert_eq!(classify_fcm(404, &unregistered), Outcome::Invalid);
+        assert_eq!(classify_fcm(400, &unregistered), Outcome::Invalid);
+        assert_eq!(classify_fcm(401, &json!({})), Outcome::ProviderAuth);
+        assert_eq!(classify_fcm(429, &json!({})), Outcome::Retry);
+        assert_eq!(
+            classify_fcm(
+                400,
+                &json!({"error": {"details": [{"errorCode": "INVALID_ARGUMENT"}]}})
+            ),
+            Outcome::Rejected
+        );
+    }
+
+    #[test]
+    fn secrets_never_print() {
+        let apns = ApnsCredential {
+            key_pem: "-----BEGIN PRIVATE KEY-----SECRET".into(),
+            key_id: "KID".into(),
+            team_id: "TEAM".into(),
+            bundle_id: "chat.kailo".into(),
+            sandbox: false,
+        };
+        let fcm = FcmCredential {
+            client_email: "x@y".into(),
+            private_key: "SECRET".into(),
+            token_uri: "https://oauth2.googleapis.com/token".into(),
+            project_id: "p".into(),
+        };
+        let token = DeviceToken("device-token-value".into());
+        let printed = format!("{apns:?} {fcm:?} {token:?}");
+        assert!(!printed.contains("SECRET") && !printed.contains("device-token-value"));
+    }
+}

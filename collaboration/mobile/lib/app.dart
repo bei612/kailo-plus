@@ -22,6 +22,7 @@ import 'shared/deeplink/pending_deep_link_provider.dart';
 import 'shared/platform/platform_display_name.dart';
 import 'shared/platform/platform_link.dart';
 import 'shared/platform/platform_locale.dart';
+import 'shared/push/push_registration.dart';
 import 'shared/relay/relay.dart';
 import 'shared/theme/theme.dart';
 import 'shared/widgets/buzz_loading_indicator.dart';
@@ -74,11 +75,15 @@ class App extends HookConsumerWidget {
       ref.watch(relaySessionProvider);
       ref.watch(appLifecycleProvider);
       ref.watch(userStatusCacheProvider);
+      // DD-151: keep this device's push token current with Core.
+      ref.watch(pushTokenRefreshProvider);
     }
 
     // Start listening for buzz:// links immediately (even pre-auth) so a
     // cold-start link survives until the authenticated UI can dispatch it.
     ref.watch(pendingDeepLinkProvider);
+    // DD-151(6): notification taps open the message through the same pipeline.
+    ref.watch(pushNavigationProvider);
 
     void applyBadge(UnreadBadgeState state) {
       if (state.highPriorityCount > 0) {

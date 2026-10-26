@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/push_registration_state.schema.json",
+  "title": "PushRegistrationState",
+  "description": "DD-151(1)(5)：ACTIVE 可投递；INVALID 是提供方报告令牌失效，重新登记新令牌后恢复；REVOKED 是设备公钥或成员资格撤销、Tenant 删除后的终态，令牌已删除。",
+  "type": "string",
+  "enum": ["ACTIVE", "INVALID", "REVOKED"]
+}
