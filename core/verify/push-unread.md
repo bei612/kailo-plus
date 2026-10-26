@@ -70,3 +70,11 @@ APNs 桥、通知开关、token 刷新与通知点击深链。未选择 Activity
 `identity.client_keys` 的历史 shipped 或 artifact。iOS 通知扩展正文读取仍为
 独立 WIP，Android 注册桥、真实设备接收、凭据轮换、发送意图持久化与结果不明
 收敛尚未闭合；未构建 Mobile release、未部署共享服务。
+
+固定 `abea20391` 的原 SDK 四侧生成/一致性与 Dart 文案一致性检查退出 0。
+首次 registry 因集成基线已有 `collab.local_archive` 缺少能力归属行退出 1；
+补入真实未发布边界后，固定 `fb1a0b905` 的 registry 生成与校验均退出 0。
+原件为 `/volumes/data/kailo/verification/buzz-r10/push-integrated-gen.log` 和
+`push-integrated-registry.log`，资源均为原 SDK 1 CPU / 2 GiB。此前导出设计对象
+未 fetch 导致脚本退出 2，补取相同设计 pin 后重跑；不改设计或绕过校验。
+集成 Core/数据库与 Flutter 消费者仍待实际运行。
