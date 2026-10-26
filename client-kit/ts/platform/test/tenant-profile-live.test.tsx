@@ -54,7 +54,7 @@ describe("DD-158 independent online profile consumers", () => {
     const first = await render(<Host client={client("admin")} id="admin" cache={web}/>);
     const second = await render(<Host client={client("member")} id="member" cache={desktop} desktop/>);
     await until(() => waiting.length >= 2, "both independently admitted watches");
-    const form = first.querySelector<HTMLElement>('[data-testid="tenant-profile-dialog"]')!;
+    const form = document.querySelector<HTMLElement>('[data-testid="tenant-profile-dialog"]')!;
     await type(form.querySelector<HTMLInputElement>('[data-testid="tenant-profile-name"]')!, "After");
     await click(form.querySelector<HTMLInputElement>('input[type="checkbox"]')!);
     await click(button(form, "Save profile"));
