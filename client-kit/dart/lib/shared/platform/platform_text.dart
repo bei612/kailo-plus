@@ -4,6 +4,21 @@
 import '../contracts/contracts.dart';
 
 enum PlatformMessageKey {
+  tenantProfileTitle,
+  tenantProfileName,
+  tenantProfileIcon,
+  tenantProfileImage,
+  tenantProfileEmoji,
+  tenantProfileClear,
+  tenantProfileLimits,
+  tenantProfileConfirm,
+  tenantProfileSave,
+  tenantProfileRetry,
+  tenantProfileRefresh,
+  tenantProfileClose,
+  tenantProfileReadOnly,
+  tenantProfileFailed,
+  tenantProfileLoading,
   platformFeedbackOperatorTitle,
   platformFeedbackOperatorFailed,
   platformFeedbackRefresh,
@@ -4984,6 +4999,36 @@ enum PlatformMessageKey {
 }
 
 const _messages = <PlatformMessageKey, (String, String)>{
+  PlatformMessageKey.tenantProfileTitle: ('Community profile', '社区资料'),
+  PlatformMessageKey.tenantProfileName: ('Community name', '社区名称'),
+  PlatformMessageKey.tenantProfileIcon: ('Community icon', '社区图标'),
+  PlatformMessageKey.tenantProfileImage: ('Choose image', '选择图片'),
+  PlatformMessageKey.tenantProfileEmoji: ('Choose emoji', '选择表情'),
+  PlatformMessageKey.tenantProfileClear: ('Clear icon', '清除图标'),
+  PlatformMessageKey.tenantProfileLimits: (
+    'Name: 1–64 characters. Images are cropped locally to 256 px before saving.',
+    '名称为 1–64 字。图片在本机裁剪为 256 像素后保存。',
+  ),
+  PlatformMessageKey.tenantProfileConfirm: (
+    'I confirm these changes to the community name and icon.',
+    '我确认修改社区名称和图标。',
+  ),
+  PlatformMessageKey.tenantProfileSave: ('Save profile', '保存资料'),
+  PlatformMessageKey.tenantProfileRetry: ('Retry the same change', '重试同一修改'),
+  PlatformMessageKey.tenantProfileRefresh: (
+    'Refresh current profile',
+    '刷新当前资料',
+  ),
+  PlatformMessageKey.tenantProfileClose: ('Close', '关闭'),
+  PlatformMessageKey.tenantProfileReadOnly: (
+    'Only community administrators can edit this profile.',
+    '仅社区管理员可以修改资料。',
+  ),
+  PlatformMessageKey.tenantProfileFailed: (
+    'Could not read the profile or process the image. Please refresh or choose another image.',
+    '无法读取资料或处理图片，请刷新或另选图片。',
+  ),
+  PlatformMessageKey.tenantProfileLoading: ('Loading profile…', '正在读取资料…'),
   PlatformMessageKey.platformFeedbackOperatorTitle: (
     'Private feedback',
     '私有反馈',

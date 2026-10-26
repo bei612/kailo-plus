@@ -2,6 +2,11 @@ import 'dart:async';
 import 'package:buzz/features/tenant_profile/tenant_profile_controller.dart';
 import 'package:buzz/shared/platform/platform_api.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:buzz/features/tenant_profile/tenant_profile_page.dart';
+import 'package:buzz/shared/theme/theme.dart';
+import 'package:flutter/material.dart';
+import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 const profile=PlatformResponse(200,{'name':'Before','version':3,'icon':'🎉','updateActionKey':'tenant.profile.update'});
 const receipt=PlatformResponse(200,{'actionKey':'tenant.profile.update','actionExecutionId':'ae-1','operationId':'op-1','gateState':'ALLOWED','dispatchState':'DISPATCHED'});
 void main(){
@@ -24,4 +29,21 @@ void main(){
   final controller=TenantProfileController((method,path,{body})=>late.future);final read=controller.refresh();controller.dispose();late.complete(profile);await read;expect(controller.view,isNull);
   final lateWrite=Completer<PlatformResponse>();final writing=TenantProfileController((method,path,{body})async=>method==PlatformMethod.get?profile:lateWrite.future);await writing.refresh();writing.name='After';writing.confirmed=true;final save=writing.save();writing.dispose();lateWrite.complete(receipt);expect(await save,isFalse);expect(writing.view,isNull);
  });
+ testWidgets('actual Mobile form requires confirmation before sending the displayed Tenant version',(tester)async{
+  tester.view.physicalSize=const Size(800,1800);tester.view.devicePixelRatio=1;addTearDown(tester.view.reset);
+  SharedPreferences.setMockInitialValues({});final prefs=await SharedPreferences.getInstance();
+  final sent=<Map<String,dynamic>>[];
+  final controller=TenantProfileController((method,path,{body})async{if(method==PlatformMethod.get){return profile;}sent.add(body!);return const PlatformResponse(503,{});});
+  addTearDown(controller.dispose);
+  await tester.pumpWidget(ProviderScope(overrides:[savedPrefsProvider.overrideWithValue(prefs),tenantProfileControllerProvider.overrideWithValue(controller)],child:MaterialApp(theme:AppTheme.light(),home:const TenantProfilePage())));
+  await tester.pumpAndSettle();
+  final name=find.byWidgetPredicate((widget)=>widget is TextField&&widget.decoration?.labelText=='Community name');
+  await tester.enterText(name,'After');await tester.pump();
+  expect(tester.widget<FilledButton>(find.byType(FilledButton)).onPressed,isNull);
+  await tester.tap(find.byType(Checkbox));await tester.pump();
+  await tester.tap(find.byType(FilledButton));await tester.pumpAndSettle();
+  expect(sent,hasLength(1));expect(sent.single['resourceVersion'],3);expect(sent.single['tenantProfile'],{'name':'After'});expect(sent.single['explicitConfirmation'],true);
+  expect(controller.unknown,isTrue);expect(tester.widget<TextField>(name).enabled,isFalse);
+ });
+
 }
