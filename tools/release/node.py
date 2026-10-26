@@ -1225,8 +1225,8 @@ class Release:
         return plans
 
     def targets(self, found):
-        """运行 digest 不等于 pin 的受管服务（含未运行的）；运维域投递尚未经启动入口生效时，
-        加上消费它的服务（start-core.sh 按文件原路径只读挂载，替换文件不会进入已运行的容器）。"""
+        """运行 digest 不等于 pin 的受管服务（含未运行的）；运维域投递的挂载形态尚未经启动入口生效时，
+        加上消费它的服务（DD-136(2)：内容以目录挂载按次读取，只有挂载形态变化需要重建）。"""
         out_ = []
         for svc in self.managed:
             ctr = single_container(found, svc)
@@ -1251,10 +1251,10 @@ class Release:
             return json.load(stream)
 
     def delivery_pending(self):
-        return bool(self.delivery) and self.applied_deliveries().get("protocol_peers") != self.delivery["digest"]
+        return bool(self.delivery) and self.applied_deliveries().get("protocol_peers") != self.delivery["shape"]
 
-    def delivery_folder(self):
-        folder = os.path.join(self.runtime, self.delivery["runtime"])
+    def delivery_folder(self, key="runtime"):
+        folder = os.path.join(self.runtime, self.delivery[key])
         parts = os.path.relpath(folder, self.runtime).split(os.sep)
         for i in range(1, len(parts) + 1):
             path = os.path.join(self.runtime, *parts[:i])
@@ -1262,48 +1262,92 @@ class Release:
                 raise NodeError(f"运行目录中的投递路径是软链接：{path}")
         return folder
 
+    @staticmethod
+    def _write_text(folder, path, text, mode=0o644):
+        """内容不变不改写；否则同目录临时文件 + fsync + 原子替换。返回是否改写。"""
+        if os.path.islink(path) or (os.path.exists(path) and not os.path.isfile(path)):
+            raise NodeError(f"投递文件不是普通文件：{path}")
+        if os.path.isfile(path):
+            with open(path, encoding="utf-8") as stream:
+                if stream.read() == text:
+                    os.chmod(path, mode)
+                    return False
+        fd, tmp = tempfile.mkstemp(dir=folder, prefix=".delivery-")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as stream:
+                stream.write(text)
+                stream.flush()
+                os.fchmod(stream.fileno(), mode)
+                os.fsync(stream.fileno())
+            os.replace(tmp, path)
+        finally:
+            if os.path.exists(tmp):
+                os.unlink(tmp)
+        return True
+
+    def peer_candidate(self, folder):
+        """候选目录是否为 PROTOCOL_PEER 候选（只有 environment，且其中有 mcpUrl）：发布入口只增删这一类，
+        组件部署入口写入的 REMOTE_ADAPTER 候选（含 fixture/identity）不属于本入口（DD-136(2)）。"""
+        names = set(os.listdir(folder))
+        if names != {self.model.CANDIDATE_ENVIRONMENT_FILE}:
+            return False
+        try:
+            return "mcpUrl" in self.model.load_json(os.path.join(folder, self.model.CANDIDATE_ENVIRONMENT_FILE))
+        except (OSError, ValueError, self.model.ReleaseError):
+            return False
+
     def write_deliveries(self):
-        """把 delivery.protocol_peers 渲染为运行目录内的真实规范文件（0644，Core uid 与 Worker 只读挂载）：
-        交付目录的 adapters 保留已有条目，protocolPeers 与一致性环境取发布树声明。内容不变的文件不改写；
-        写入用同目录临时文件 + fsync + 原子替换。返回改写的文件名（不含内容）。"""
+        """把 delivery.protocol_peers 渲染为运行目录内的真实规范文件（0644，Core 与 Worker 以目录只读挂载）：
+        交付目录的 adapters 保留已有条目，protocolPeers 取发布树声明；一致性环境写成候选集合中该 peer digest
+        的候选（DD-136(2)），不再声明的 PROTOCOL_PEER 候选删除，REMOTE_ADAPTER 候选不动。候选集合目录 0755、
+        Worker 私有目录 0700 不存在即创建（start-core.sh 不创建挂载来源）。返回改写的位置（不含内容）。"""
         folder = self.delivery_folder()
-        os.makedirs(folder, mode=0o755, exist_ok=True)
-        os.chmod(folder, 0o755)
-        directory_path = os.path.join(folder, self.model.PEER_DIRECTORY_FILE)
-        conformance_path = os.path.join(folder, self.model.PEER_CONFORMANCE_FILE)
-        for path in (directory_path, conformance_path):
-            if os.path.islink(path) or (os.path.exists(path) and not os.path.isfile(path)):
-                raise NodeError(f"投递文件不是普通文件：{path}")
-        existing = self.model.load_json(directory_path) if os.path.isfile(directory_path) else None
-        documents = {directory_path: self.model.render_peer_directory(existing, self.delivery["peers"]),
-                     conformance_path: self.delivery["conformance"]}
+        candidates = self.delivery_folder("candidates")
+        worker = self.delivery_folder("worker")
+        for path, mode in ((folder, 0o755), (candidates, 0o755), (worker, 0o700)):
+            os.makedirs(path, mode=mode, exist_ok=True)
+            if os.path.islink(path) or not os.path.isdir(path):
+                raise NodeError(f"投递目录不是普通目录：{path}")
+            os.chmod(path, mode)
         written = []
-        for path, value in documents.items():
-            text = json.dumps(value, ensure_ascii=False, indent=2) + "\n"
-            if os.path.isfile(path):
-                with open(path, encoding="utf-8") as stream:
-                    if stream.read() == text:
-                        os.chmod(path, 0o644)
-                        continue
-            fd, tmp = tempfile.mkstemp(dir=folder, prefix=".delivery-")
-            try:
-                with os.fdopen(fd, "w", encoding="utf-8") as stream:
-                    stream.write(text)
-                    stream.flush()
-                    os.fchmod(stream.fileno(), 0o644)
-                    os.fsync(stream.fileno())
-                os.replace(tmp, path)
-            finally:
-                if os.path.exists(tmp):
-                    os.unlink(tmp)
-            written.append(os.path.basename(path))
+        directory_path = os.path.join(folder, self.model.PEER_DIRECTORY_FILE)
+        if os.path.islink(directory_path) or (os.path.exists(directory_path) and not os.path.isfile(directory_path)):
+            raise NodeError(f"投递文件不是普通文件：{directory_path}")
+        existing = self.model.load_json(directory_path) if os.path.isfile(directory_path) else None
+        directory_text = json.dumps(self.model.render_peer_directory(existing, self.delivery["peers"]),
+                                    ensure_ascii=False, indent=2) + "\n"
+        if self._write_text(folder, directory_path, directory_text):
+            written.append(self.model.PEER_DIRECTORY_FILE)
+        digest = self.delivery["conformance"]["artifactDigest"]
+        if not re.fullmatch(r"[0-9a-f]{64}", str(digest)):
+            raise NodeError("一致性环境的 artifactDigest 不是 64 位小写十六进制")
+        candidate = os.path.join(candidates, digest)
+        if os.path.islink(candidate) or (os.path.exists(candidate) and not os.path.isdir(candidate)):
+            raise NodeError(f"候选不是普通目录：{candidate}")
+        if os.path.isdir(candidate) and not self.peer_candidate(candidate) and os.listdir(candidate):
+            raise NodeError(f"同一 digest 已有非 PROTOCOL_PEER 候选，拒绝覆盖：{digest}")
+        os.makedirs(candidate, mode=0o755, exist_ok=True)
+        os.chmod(candidate, 0o755)
+        environment_text = json.dumps(self.delivery["conformance"], ensure_ascii=False, indent=2) + "\n"
+        if self._write_text(candidate, os.path.join(candidate, self.model.CANDIDATE_ENVIRONMENT_FILE), environment_text):
+            written.append(f"{os.path.basename(candidates)}/{digest}")
+        for name in sorted(os.listdir(candidates)):
+            path = os.path.join(candidates, name)
+            if name != digest and not os.path.islink(path) and os.path.isdir(path) and self.peer_candidate(path):
+                os.unlink(os.path.join(path, self.model.CANDIDATE_ENVIRONMENT_FILE))
+                os.rmdir(path)
+                written.append(f"-{os.path.basename(candidates)}/{name}")
+        legacy = os.path.join(folder, self.model.LEGACY_PEER_CONFORMANCE_FILE)
+        if os.path.isfile(legacy) and not os.path.islink(legacy):
+            os.unlink(legacy)
+            written.append(f"-{self.model.LEGACY_PEER_CONFORMANCE_FILE}")
         return written
 
     def record_delivery(self):
         """启动入口回读成功后记下已生效的投递摘要。"""
         path = os.path.join(self.decl["node"]["journal"], DELIVERIES)
         applied = self.applied_deliveries()
-        applied["protocol_peers"] = self.delivery["digest"]
+        applied["protocol_peers"] = self.delivery["shape"]
         fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), prefix=".")
         with os.fdopen(fd, "w", encoding="utf-8") as stream:
             json.dump(applied, stream, indent=2)
@@ -1312,14 +1356,15 @@ class Release:
         os.replace(tmp, path)
 
     def delivery_problems(self):
-        """回读：运行目录文件等于声明（protocolPeers 与一致性环境），且已经启动入口生效。"""
+        """回读：运行目录文件等于声明（protocolPeers 与该 peer 的一致性候选），挂载形态已经启动入口生效。"""
         if not self.delivery:
             return []
         bad = []
         folder = os.path.join(self.runtime, self.delivery["runtime"])
+        candidate = os.path.join(self.runtime, self.delivery["candidates"], self.delivery["conformance"]["artifactDigest"])
         try:
             directory = self.model.load_json(os.path.join(folder, self.model.PEER_DIRECTORY_FILE))
-            conformance = self.model.load_json(os.path.join(folder, self.model.PEER_CONFORMANCE_FILE))
+            conformance = self.model.load_json(os.path.join(candidate, self.model.CANDIDATE_ENVIRONMENT_FILE))
         except (OSError, ValueError, self.model.ReleaseError):
             return ["运维域投递文件缺失或不可解析"]
         if directory.get("protocolPeers") != self.delivery["peers"]:

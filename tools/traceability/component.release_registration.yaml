@@ -6,6 +6,7 @@ exposure: tenant_admin
 
 design:
   requirements: [V-REQ-04]
+  # DD-136(2)(5)(6) 的一致性候选集合、无人值守隔离运行与 adapter 声明式部署归属 gateway.admin（S5）；本能力消费候选。
   decisions: [DD-58, DD-88, DD-94, DD-102, DD-124, DD-127]
   # DD-100 的首个归属为 S3；本能力消费其动作策略，证据正文保留该依据。
   facts: []

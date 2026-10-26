@@ -337,10 +337,15 @@ async function main() {
     }
     await new Promise((resolve, reject) => { provider.server.once('error', reject); provider.server.listen(run.provider.listenPort, run.provider.listenHost, resolve); });
 
+    // Like Core (component_release.rs signs every probe of one registration with the
+    // registration's ActionExecution and operation), one observation is one execution:
+    // a repeated execute with the same idempotency key must carry the same references.
+    const observationAction = uuidv5(observationSeed, 'action-execution');
+    const observationOperation = uuidv5(observationSeed, 'operation');
     const call = async (operation, context, request) => {
       const now = Math.floor(Date.now() / 1000);
       const claims = { jti: randomUUID(), iss: run.identity.issuer, aud: run.identity.audience, iat: now,
-        exp: now + run.identity.tokenSeconds, ...claimsFor(context, operation, request, randomUUID(), randomUUID()) };
+        exp: now + run.identity.tokenSeconds, ...claimsFor(context, operation, request, observationAction, observationOperation) };
       const header = Buffer.from(JSON.stringify({ alg: 'ES256', kid, typ: 'JWT' })).toString('base64url');
       const payload = Buffer.from(JSON.stringify(claims)).toString('base64url');
       const token = `${header}.${payload}.${sign('sha256', Buffer.from(`${header}.${payload}`), { key: privateKey, dsaEncoding: 'ieee-p1363' }).toString('base64url')}`;

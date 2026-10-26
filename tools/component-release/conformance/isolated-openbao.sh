@@ -156,8 +156,12 @@ EOF
 chmod 0644 "$state/config.hcl"
 "${docker[@]}" network create --label kailo.conformance.openbao="$name" "$name-setup" >/dev/null
 "${docker[@]}" volume create --label kailo.conformance.openbao="$name" "$name-data" >/dev/null
+# A fresh named volume is root-owned; the server runs as the image's openbao user
+# (uid 100), as the platform service does (deploy/local/compose.yaml user 100).
+"${docker[@]}" run --rm --network none --user 0 --entrypoint chown --mount "type=volume,src=$name-data,dst=/openbao/data" \
+  "$OPENBAO_CONFORMANCE_IMAGE" 100:1000 /openbao/data
 "${docker[@]}" run -d --name "$name" --restart no --cap-add IPC_LOCK --cpus 0.5 --memory 256m --memory-swap 256m \
-  --security-opt no-new-privileges -e BAO_ADDR=http://127.0.0.1:8200 \
+  --security-opt no-new-privileges --user 100:1000 -e BAO_ADDR=http://127.0.0.1:8200 \
   --mount "type=bind,src=$state/config.hcl,dst=/openbao/config/config.hcl,readonly" \
   --mount "type=volume,src=$name-data,dst=/openbao/data" \
   --network "$name-setup" -p "127.0.0.1:$OPENBAO_CONFORMANCE_PORT:8200" \

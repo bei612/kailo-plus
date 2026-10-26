@@ -91,9 +91,12 @@ env:
     # DD-133(4)、07 §4.7.4：三个组件部署单元的成员目录 client（由上方 idp 段声明、凭据写入运行目录
     # secrets/component-directory/<组件>/client_secret）；binding 以 component-bind.mjs --directory-client-id 登记同一值
     COMPONENT_DIRECTORY_CLIENTS: file-storage=kailo-cells-directory,knowledge=kailo-knowledge-directory,data-query=kailo-wren-directory
-    # ADR-20 §10：运维域投递的唯一位置，由下方 delivery.protocol_peers 渲染；start-core.sh 原路径只读挂载给 Core/Worker
+    # ADR-20 §10：运维域投递的唯一位置，由下方 delivery.protocol_peers 渲染；start-core.sh 以所在目录只读挂载给 Core
     APPLICATION_ADAPTER_DIRECTORY_FILE: ${KAILO_RUNTIME_DIR}/data/protocol-peers/adapter-directory.json
-    COMPONENT_CONFORMANCE_ENVIRONMENT_FILE: ${KAILO_RUNTIME_DIR}/data/protocol-peers/conformance-environment.json
+    # DD-136(2)：一致性投递候选集合（每个 artifactDigest 一个子目录，PROTOCOL_PEER 由本入口写入，REMOTE_ADAPTER 由
+    # component-deploy.sh --conformance 写入），目录只读挂载给 Core 与 Worker；receiver 凭据目录只挂载给 Worker
+    COMPONENT_CONFORMANCE_DIR: ${KAILO_RUNTIME_DIR}/data/conformance
+    COMPONENT_CONFORMANCE_WORKER_DIR: ${KAILO_RUNTIME_DIR}/data/conformance-worker
     PROTOCOL_PEER_REFERENCE_CPUS: "0.5"
     # DD-137：Core 管理 MCP 调用的专用受众（亦即 IdP 可选 scope 名，由上方 idp 段声明收敛）
     CORE_MCP_AUDIENCE: kailo-core-mcp
@@ -102,25 +105,27 @@ env:
     # （运行 .env 的 OPENMETER_KAFKA_HEAP_OPTS='-Xms1G -Xmx1G'，含空白不能在此声明，bootstrap 校验 -Xmx 小于本值）
     # + 堆外约 0.6 GiB + 一个有界健康检查 JVM，合计不到 4 GiB 的一半。
     OPENMETER_KAFKA_MEMORY: 4g
-  # 一致性套件同一时间只有一个候选（07 §8A）：原生 MCP peer 只投递 environment，HTTP adapter 的另两项须缺省
-  unset: [COMPONENT_CONFORMANCE_FIXTURE_FILE, COMPONENT_CONFORMANCE_IDENTITY_FILE]
+  # DD-136(2)：候选集合取代单一候选的三个文件键（不再手工改 .env 切换候选）
+  unset: [COMPONENT_CONFORMANCE_ENVIRONMENT_FILE, COMPONENT_CONFORMANCE_FIXTURE_FILE, COMPONENT_CONFORMANCE_IDENTITY_FILE]
 
 # 运维域运行体（ADR-20 §10、DD-94(2)(5)、DD-136）：上游固定 digest 的外部镜像，不是构建单元。deploy 在漂移收敛
 # 与服务替换之前创建缺失者并回读运行、本地解析与健康；已运行者的镜像或配置与发布树不同即是 §9 的配置漂移，
 # 由漂移收敛重建。
 operated: [protocol-peer-reference]
 
-# 运维域投递（ADR-20 §10、DD-94、DD-98、DD-134(5)、DD-136）：仓库内声明 → 运行目录 runtime 下的真实规范文件
-# （adapter-directory.json 与 conformance-environment.json，0644）。交付目录的 adapters 保留运行文件中的已有
-# 条目（组件入口维护），protocolPeers 整体取 directory；一致性环境取 conformance（期望应答由
-# deploy/local/protocol-peers/record-conformance.py 经同一 Gateway 构建记录）。声明摘要与上次经 restart 的启动
-# 入口生效的不同时，deploy 重建该服务（start-core.sh 按文件原路径挂载，替换文件不进入已运行容器）。
-# binding 归属事实（DD-98）在网关管理区生成草稿后登记进 directory 的 bindings，随下一次发布生效。
+# 运维域投递（ADR-20 §10、DD-94、DD-98、DD-134(5)、DD-136）：仓库内声明 → 运行目录中的真实规范文件（0644）。
+# 交付目录 runtime/adapter-directory.json 的 adapters 保留运行文件中的已有条目（组件入口维护），protocolPeers 整体取
+# directory；一致性环境（期望应答由 deploy/local/protocol-peers/record-conformance.py 经同一 Gateway 构建记录）写成
+# candidates/<artifactDigest>/environment.json，不再声明的 PROTOCOL_PEER 候选删除，REMOTE_ADAPTER 候选不动（DD-136(2)）。
+# Core/Worker 以目录只读挂载并按次读取，内容变化不重建；只有挂载形态（.env 键与这三个位置）与上次经 restart 的启动入口
+# 生效的不同时，deploy 才重建该服务。binding 归属事实（DD-98）在网关管理区生成草稿后登记进 directory 的 bindings。
 delivery:
   protocol_peers:
     directory: deploy/local/protocol-peers/directory.json
     conformance: deploy/local/protocol-peers/conformance/protocol-peer-reference.json
     runtime: data/protocol-peers
+    candidates: data/conformance
+    worker: data/conformance-worker
     restart: core-bff
 
 # CI 节点：SSH 名与 CI 执行配置位置。运行目录、发布树根、证明库、Compose 项目名与 Web

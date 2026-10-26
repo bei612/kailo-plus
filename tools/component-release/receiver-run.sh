@@ -94,7 +94,7 @@ platform=$run/apps/deploy/local
 export KAILO_RUNTIME_DIR=$platform
 read -r -a docker <<<"${RECEIVER_DOCKER:-sudo -n docker}"
 need() { for name in "$@"; do [[ -n ${!name:-} ]] || { echo "receiver.env: $name required for $stage" >&2; exit 2; }; done; }
-record() { [[ -s $run/$1 ]] || { echo "missing $run/$1: run the earlier stage first" >&2; exit 2; }; }
+record() { [[ -f $run/$1 && ! -L $run/$1 && ( $1 == *.done || -s $run/$1 ) ]] || { echo "missing $run/$1: run the earlier stage first" >&2; exit 2; }; }
 private() { [[ $1 == /* && -f $1 && ! -L $1 && $(stat -c '%a' -- "$1") =~ ^[46]00$ ]] || { echo "$1 must be an absolute owner-only file" >&2; exit 2; }; }
 compose() { (cd "$platform" && "${docker[@]}" compose --env-file .env -f compose.yaml "$@"); }
 container_of() { compose ps -q "$1" | head -n 1; }
@@ -172,6 +172,9 @@ platform)
     [[ $(basename -- "$entry") == local ]] || ln -s "$entry" "$run/apps/deploy/$(basename -- "$entry")"
   done
   cp -a "$src/deploy/local" "$platform"
+  # The release tree's design snapshot sits beside apps/ (CI fetch); start-core.sh's registry
+  # check reads it at ../.design from the staged apps/.
+  [[ ! -d $src/../.design ]] || ln -s "$(realpath -e -- "$src/../.design")" "$run/.design"
   rm -rf -- "$platform/.env" "$platform/secrets" "$platform/data"
   install -m 0600 "$RECEIVER_PLATFORM_ENV" "$platform/.env"
   python3 -I - "$platform/compose.yaml" "$RECEIVER_PROJECT" <<'PY'
@@ -180,7 +183,19 @@ path, project = sys.argv[1:3]
 text = open(path, encoding='utf-8').read()
 if text.count('\nname: platform-local\n') != 1:
     sys.exit('staged compose.yaml has no single platform-local project name')
-open(path, 'w', encoding='utf-8').write(text.replace('\nname: platform-local\n', f'\nname: {project}\n'))
+text = text.replace('\nname: platform-local\n', f'\nname: {project}\n')
+# The isolated IdP is published on loopback only, and its issuer
+# http://<OIDC_HOST>:<KEYCLOAK_PORT> must be the same address for the host browser
+# flows (OIDC_HOST *.localhost resolves to loopback) and for containers (the
+# compose network alias OIDC_HOST). Production publishes the container port
+# itself (8080); the isolated copy cannot, so Keycloak listens on KEYCLOAK_PORT.
+published = '${KEYCLOAK_PORT:?必须显式提供，禁止硬编码}:8080"'
+listen = '      KC_HTTP_ENABLED: "true"\n'
+if text.count(published) != 1 or text.count(listen) != 1:
+    sys.exit('staged compose.yaml keycloak listener is not the expected shape')
+text = text.replace(published, '${KEYCLOAK_PORT:?必须显式提供，禁止硬编码}:${KEYCLOAK_PORT}"')
+text = text.replace(listen, listen + '      KC_HTTP_PORT: ${KEYCLOAK_PORT}\n')
+open(path, 'w', encoding='utf-8').write(text)
 PY
   python3 -I - "$platform/.env" "$RECEIVER_PROJECT" <<'PY'
 import re, socket, sys
@@ -226,21 +241,26 @@ if len(subjects) != 1 or 'sha256:' + subjects[0]['digest']['sha256'] != pin or n
     sys.exit('core provenance does not name the pinned production Core image and its build id')
 json.dump({'isolatedCoreBuildId': build, 'coreImage': pin}, open(out, 'x', encoding='utf-8'))
 PY
-  edge=$RECEIVER_PROJECT-edge
-  "${docker[@]}" network inspect "$edge" >/dev/null 2>&1 \
-    || "${docker[@]}" network create --label kailo.receiver="$RECEIVER_PROJECT" "$edge" >/dev/null
+  # The edge network ($RECEIVER_PROJECT-edge) is created by the staged compose project itself.
   "${docker[@]}" network inspect "$RECEIVER_NETWORK" >/dev/null 2>&1 \
     || "${docker[@]}" network create --internal --label kailo.receiver="$RECEIVER_PROJECT" "$RECEIVER_NETWORK" >/dev/null
+  # The core-observed/ OpenBao audit device writes into data/secret-store-audit (owner 100,
+  # reader group, setgid); without it no audit device comes up and secret-store-init.sh
+  # refuses (production prepares it once with the same command).
+  install -d -m 0700 "$platform/data"
+  (cd "$platform" && ./secret-store-audit-dir.sh --prepare)
   (cd "$platform" && ./init-local.sh --isolated-receiver="$RECEIVER_PROJECT")
   # The production Worker reaches the isolated Core service API, its IdP and
   # (later) the driver only through the dedicated network.
   "${docker[@]}" network connect --alias receiver-core --alias receiver-driver "$RECEIVER_NETWORK" "$(container_of core-bff)"
   "${docker[@]}" network connect --alias receiver-idp "$RECEIVER_NETWORK" "$(container_of keycloak)"
   "${docker[@]}" network connect --alias receiver-gateway "$RECEIVER_NETWORK" "$(container_of agentgateway)"
+  touch "$run/platform.done"
   echo "isolated platform $RECEIVER_PROJECT ready (CONFORMANCE_ONLY; not production)"
   ;;
 contracts)
   need RECEIVER_FLOW_NODE RECEIVER_PLAYWRIGHT_PACKAGE RECEIVER_ACCOUNTS_DIR RECEIVER_MANIFEST
+  record platform.done
   record core-build.json
   port=$(sed -n 's/^AGENTGATEWAY_PORT=//p' "$platform/.env")
   flow=(env KAILO_WEB="http://127.0.0.1:$port" KAILO_DEPLOY_DIR="$platform" KAILO_FLOW_ACCOUNTS_DIR="$RECEIVER_ACCOUNTS_DIR"
@@ -338,7 +358,8 @@ print(user)
 print(db)
 print(f'COMMENT ON DATABASE "{db}" IS \'{marker}\';')
 PY
-  core_env | core_test application_binding::read_grant::receiver_environment_bootstrap::bootstrap_native_receiver_environment false \
+  { core_env; printf 'APPLICATION_RECEIVER_BOOTSTRAP_FILE=%s\n' "$RECEIVER_BOOTSTRAP_FILE"; } \
+    | core_test application_binding::read_grant::receiver_environment_bootstrap::bootstrap_native_receiver_environment false \
     > "$run/bootstrap.log"
   json_line < "$run/bootstrap.log" > "$run/bootstrap.json.next"
   chmod 0600 "$run/bootstrap.json.next"
@@ -370,9 +391,8 @@ inputs)
     --out "$run/inputs"
   cat <<EOF
 Isolated receiver conformance inputs ready (no production state changed):
-  COMPONENT_CONFORMANCE_FIXTURE_FILE=$run/inputs/fixture.json
-  COMPONENT_CONFORMANCE_IDENTITY_FILE=$run/inputs/identity.json
-  COMPONENT_CONFORMANCE_ENVIRONMENT_FILE=$run/inputs/environment.json
+  $run/inputs/fixture.json, identity.json, environment.json
+form the candidate <COMPONENT_CONFORMANCE_DIR>/<artifactDigest>/ (DD-136(2)).
 EOF
   ;;
 driver)
@@ -397,11 +417,13 @@ down)
   "${docker[@]}" rm -f "$RECEIVER_PROJECT-driver" "$RECEIVER_PROJECT-forward-adapter" >/dev/null 2>&1 || true
   if [[ -n ${RECEIVER_KNOWLEDGE_ENV:-} ]]; then
     knowledge=$(sed -n 's/^COMPOSE_PROJECT_NAME=\(kailo-knowledge-receiver[a-z0-9_-]*\)$/\1/p' "$RECEIVER_KNOWLEDGE_ENV")
-    [[ -z $knowledge ]] || "${docker[@]}" compose --project-name "$knowledge" down --volumes --remove-orphans
+    [[ -z $knowledge ]] || "${docker[@]}" compose --project-name "$knowledge" --env-file "$RECEIVER_KNOWLEDGE_ENV" \
+      -f "$src/knowledge/fork/deploy/compose.yaml" down --volumes --remove-orphans
   fi
   if [[ -n ${RECEIVER_CELLS_ENV:-} ]]; then
     cells=$(sed -n 's/^CELLS_COMPOSE_PROJECT=\(kailo-cells-conformance[a-z0-9_-]*\)$/\1/p' "$RECEIVER_CELLS_ENV")
-    [[ -z $cells ]] || "${docker[@]}" compose --project-name "$cells" down --volumes --remove-orphans
+    [[ -z $cells ]] || "${docker[@]}" compose --project-name "$cells" --env-file "$RECEIVER_CELLS_ENV" \
+      -f "$src/file-storage/deploy/compose.yaml" down --volumes --remove-orphans
   fi
   if [[ -f $platform/compose.yaml ]]; then
     [[ $(sed -n 's/^name: //p' "$platform/compose.yaml") == "$RECEIVER_PROJECT" ]] \

@@ -6,7 +6,8 @@ exposure: tenant_admin
 
 design:
   requirements: [V-REQ-03, V-REQ-10, V-REQ-13, V-REQ-15]
-  # DD-136：外部 MCP 服务器的运维域参考运行体与声明式投递（交付目录、一致性环境），随发布入口部署。
+  # DD-136：外部 MCP 服务器的运维域参考运行体与声明式投递（交付目录、一致性环境），随发布入口部署；
+  # DD-136(2)(5)(6)：一致性候选集合（按 digest 并存、目录挂载按次读取）、组件部署入口的无人值守隔离运行与 adapter 声明式部署。
   # DD-137：Core 管理 MCP 调用的专用受众（scope 申请）与管理 route 的 bearer 剥离。
   decisions: [DD-134, DD-136, DD-137]
   # DD-134 编排的 EXT-BASE 动作（契约、release、binding）沿其既有能力记录
@@ -30,6 +31,8 @@ validation:
       ref: core/verify/gateway-admin.md
     - dimension: 组件集成
       ref: core/verify/agent-tool-mcp-access.md
+    - dimension: 安全边界
+      ref: core/verify/component-conformance-delivery.md
 
 implementation:
   owners: [team-platform]
@@ -40,6 +43,11 @@ implementation:
     - core/crates/platform-core/src/gateway_admin_history.rs
     - core/crates/platform-core/src/gateway_admin_mask.rs
     - core/crates/platform-core/src/gateway_admin_mcp.rs
+    - core/crates/platform-core/src/component_conformance_delivery.rs
+    - tools/component-release/conformance-auto.py
+    - deploy/components/adapter-converge.py
+    - deploy/components/adapters.json
+    - docs/runbooks/RB-11-component-adapter-release.md
     - core/crates/platform-core/src/gateway_admin_probe.rs
     - core/crates/platform-core/src/gateway_admin_routes.rs
     - core/crates/platform-core/src/gateway_admin_stats.rs

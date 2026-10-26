@@ -318,7 +318,9 @@ try:
         require(path.is_absolute() and path == path.resolve() and directory in path.parents)
         entry = path.stat()
         require(entry.st_uid == uid and entry.st_gid == gid)
-        require(stat.S_IMODE(entry.st_mode) in ((0o600,) if socket else (0o400, 0o600)))
+        # A Unix socket accepts a connection only with write permission; the OpenBao
+        # Agent leaves its socket 0755 inside the owner-only (0700) delivery directory.
+        require(not stat.S_IMODE(entry.st_mode) & 0o022 if socket else stat.S_IMODE(entry.st_mode) in (0o400, 0o600))
         require(stat.S_ISSOCK(entry.st_mode) if socket else stat.S_ISREG(entry.st_mode))
         return path
     conf = json.loads(delivered(env['CELLS_ADAPTER_CONFIG_FILE']).read_text())
@@ -328,7 +330,7 @@ try:
     rest_v2, rest_v1 = urlsplit(conf['cellsRestBaseUrl']), urlsplit(conf['cellsRestV1BaseUrl'])
     require(rest_v2.scheme in ('http', 'https') and rest_v2.netloc and (rest_v1.scheme, rest_v1.netloc) == (rest_v2.scheme, rest_v2.netloc))
     require(rest_v2.path.rstrip('/') == '/v2' and rest_v1.path.rstrip('/') == '/a')
-    require(not any((u.query, u.fragment, u.username, u.password) for u in (rest_v2, rest_v1)))
+    require(not any(u.query or u.fragment or u.username or u.password for u in (rest_v2, rest_v1)))
     if 'cellShare' in conf:
         native = json.loads(pathlib.Path(env['CELLS_NATIVE_ACTION_CONFIG_FILE']).read_text())
         require(conf['cellShare'] == {key: native['cellShare'][key] for key in ('nativeJobId', 'bindingGeneration')})
@@ -438,12 +440,24 @@ fi
 # the declarative configuration of the governed actions is applied and read
 # back (reconcile.py). Both are idempotent; a refusal fails the deployment.
 native_configuration() {
-  local cells
+  local cells code=0
   mapfile -t cells < <("${compose[@]}" ps --quiet cells)
   [[ ${#cells[@]} == 1 && -n ${cells[0]} ]] || { printf 'no running Cells service in this project\n' >&2; exit 2; }
   "${CONTAINER_DOCKER[@]}" exec "${cells[0]}" cells admin datasource keys --verify \
     --access-key-file /run/secrets/cells_datasource_key --secret-key-file /run/secrets/cells_datasource_secret
-  python3 -I "$here/reconcile.py" --container "${cells[0]}" -- "${CONTAINER_DOCKER[@]}"
+  python3 -I "$here/reconcile.py" --container "${cells[0]}" -- "${CONTAINER_DOCKER[@]}" || code=$?
+  if [[ $code == 76 ]]; then
+    # First install: the binding datasource the entrypoint created is served by the
+    # admin tree only from the next start. Restart once, then re-apply (idempotent).
+    printf 'binding datasource is served from the next start; restarting Cells once\n'
+    "${compose[@]}" restart cells >/dev/null
+    "${compose[@]}" up --detach --no-build --no-recreate --pull never --wait --wait-timeout "${CELLS_START_TIMEOUT_SECONDS:?required}" cells
+    mapfile -t cells < <("${compose[@]}" ps --quiet cells)
+    [[ ${#cells[@]} == 1 && -n ${cells[0]} ]] || { printf 'no running Cells service in this project\n' >&2; exit 2; }
+    code=0
+    python3 -I "$here/reconcile.py" --container "${cells[0]}" -- "${CONTAINER_DOCKER[@]}" || code=$?
+  fi
+  return "$code"
 }
 if "$reconcile_only"; then
   native_configuration

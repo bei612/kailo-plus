@@ -9,9 +9,15 @@ fn unavailable() -> Refusal {
 }
 
 pub(super) fn environment(release: &Registration) -> Result<Value, Refusal> {
-    let file = std::env::var("COMPONENT_CONFORMANCE_ENVIRONMENT_FILE")
-        .map_err(|_| Refusal::Blocked(ReasonCode::CapabilityBlocked))?;
-    let bytes = std::fs::read(file).map_err(|_| unavailable())?;
+    // DD-136(2): the PROTOCOL_PEER candidate of this release's digest.
+    let bytes = crate::component_conformance_delivery::read(
+        &release.adapter_digest,
+        crate::component_conformance_delivery::ENVIRONMENT,
+    )
+    .map_err(|refusal| match refusal {
+        Refusal::Unavailable(_) => unavailable(),
+        other => other,
+    })?;
     let typed: contracts::ComponentProtocolPeerEnvironment =
         serde_json::from_slice(&bytes).map_err(|_| bad())?;
     let env = serde_json::to_value(typed).map_err(|_| bad())?;

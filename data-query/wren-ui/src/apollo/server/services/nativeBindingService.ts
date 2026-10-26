@@ -21,6 +21,11 @@ const unavailable = () =>
 const denied = () => new NativeQueryRefusal(403, 'BINDING_SCOPE_DENIED');
 const uuid =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+// OpenBao request ids are 128 random bits in UUID text form (hashicorp/go-uuid);
+// they carry no RFC 4122 version/variant, so only the text shape is checked
+// (client-kit/adapter/protocol.mjs readSecretDeliveryReceipt uses the same rule).
+const requestId =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 // This is deployment metadata for the one existing binding, not a registry or
 // caller-selected secret endpoint. No credential value is present in this file.
@@ -170,7 +175,7 @@ async function bindingSecret(
     pending.end();
   });
   if (
-    !uuid.test(value.request_id) ||
+    !requestId.test(value.request_id) ||
     value.data?.metadata?.version !== reference.version ||
     value.data.metadata.destroyed !== false ||
     value.data.metadata.deletion_time !== '' ||

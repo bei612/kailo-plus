@@ -1,0 +1,116 @@
+{
+  "$comment": "DD-136(5)(6), ADR-20 §10: deployment declarations of the built-in REMOTE_ADAPTER candidates, versioned with the source. tools/component-release/conformance-auto.py (component-deploy.sh --conformance) renders each candidate release with nativePageOrigin and pulls digest-pinned images from registry; component-deploy.sh --adapter derives the production binding plan from the same entry. No credential, binding secret or run fact is declared here.",
+  "file-storage": {
+    "registry": "127.0.0.1:55000",
+    "nativePageOrigin": "http://192.168.0.193:58092",
+    "adapter": {
+      "componentEnv": "/volumes/data/kailo/components/cells/deploy.env",
+      "stateDir": "/volumes/data/kailo/components/cells/binding",
+      "tenantId": "6179e160-6055-4e9a-ae63-1793509c230c",
+      "attempt": 1,
+      "nativeInstanceRef": "kailo-cells-native",
+      "bindingFactsKey": "CELLS_BINDING_FACTS_FILE",
+      "nativeScopeRef": "bindingFacts:nativeScopeRef",
+      "kind": "adapter",
+      "template": "file-storage-adapter.template.json",
+      "registrations": [
+        "contracts/adapter/file_storage.v2/registration.json"
+      ],
+      "sets": {
+        "nativeRootRef": "bindingFacts:nativeRootRef",
+        "downloadOrigin": "env:CELLS_EXTERNAL",
+        "bindingGeneration": "1"
+      },
+      "deliveryDirKey": "CELLS_ADAPTER_DELIVERY_DIR",
+      "configFileKey": "CELLS_ADAPTER_CONFIG_FILE",
+      "bootstrapDirKey": "ADAPTER_AGENT_BOOTSTRAP_DIR",
+      "agentContainer": "kailo-cells-adapter-agent-adapter-agent-1",
+      "agentBaoUrl": "http://openbao:8200",
+      "baseUrl": "http://kailo-cells-native-cells-adapter-1:8080/",
+      "mcpUrl": "http://kailo-cells-native-cells-adapter-1:8080/mcp",
+      "timeoutSeconds": 30,
+      "maxResponseBytes": 1048576,
+      "bindingSecrets": {
+        "cells_bearer": "cells-token:CELLS_BINDING_SERVICE_LOGIN",
+        "oidc_client_secret": "generated"
+      },
+      "tokenLifetime": "8760h"
+    }
+  },
+  "knowledge": {
+    "registry": "127.0.0.1:55000",
+    "nativePageOrigin": "http://192.168.0.193:58094",
+    "conformanceModels": {
+      "$comment": "DD-136(5): the isolated receiver deployment's AgentGateway routes the PLATFORM_LLM_ROUTE receiver binding and WeKnora's parsing to these actually discovered, keyless upstreams (the same ones production AgentGateway model sources serve); no production provider credential, Gateway key or platform key is delivered",
+      "chat": {
+        "model": "qwen",
+        "apiBase": "https://vision-27b-uat.geniusafc.com/v1",
+        "contextWindow": 32768
+      },
+      "embedding": {
+        "model": "Qwen3-Embedding-4B",
+        "apiBase": "http://10.33.33.120/v1",
+        "dimension": 2560
+      },
+      "gatewaySource": {
+        "$comment": "Native AgentGateway source bodies the isolated receiver platform's operator path writes for the two upstreams above (custom provider, no apiKey: Core native_provider_without_auth). The model-level authorization is required non-null by llm_route.create; the isolated sources admit every request that already passed the Gateway's strict per-key authentication. Production sources are operator-written and not versioned here.",
+        "formats": {
+          "chat": "completions",
+          "embedding": "embeddings"
+        },
+        "authorization": {
+          "rules": [
+            "true"
+          ]
+        }
+      }
+    }
+  },
+  "data-query": {
+    "registry": "127.0.0.1:55000",
+    "nativePageOrigin": "http://192.168.0.193:58095",
+    "conformanceModels": {
+      "$comment": "07 §8A/§8.3: the isolated Wren AI service uses these actually discovered, keyless upstream model services (the same upstreams the platform AgentGateway model sources serve); no platform key is delivered to the isolated instance",
+      "chat": {
+        "model": "qwen",
+        "apiBase": "https://vision-27b-uat.geniusafc.com/v1",
+        "contextWindow": 32768
+      },
+      "embedding": {
+        "model": "Qwen3-Embedding-4B",
+        "apiBase": "http://10.33.33.120/v1",
+        "dimension": 2560
+      }
+    },
+    "adapter": {
+      "componentEnv": "/volumes/data/kailo/components/data-query/native.env",
+      "stateDir": "/volumes/data/kailo/components/data-query/binding",
+      "tenantId": "6179e160-6055-4e9a-ae63-1793509c230c",
+      "$comment": "workspaceId: the business Tenant's default Workspace 'kailo' (Wren bindings are Workspace bindings, data_query_delivery)",
+      "workspaceId": "ad9a6443-f0a2-47d2-895d-f11b8fef9e38",
+      "attempt": 1,
+      "nativeInstanceRef": "platform-local-wren-native",
+      "nativeScopeRef": "wren:projectId",
+      "kind": "data-query",
+      "template": "data-query-adapter.template.json",
+      "registrations": [],
+      "sets": {
+        "projectConnectionDigest": "wren:projectConnectionDigest",
+        "mcpAuthority": "wren-ui:3000"
+      },
+      "deliveryDirKey": "WREN_QUERY_DELIVERY_DIR",
+      "configFileName": "adapter.json",
+      "bootstrapDirKey": "WREN_QUERY_AGENT_BOOTSTRAP_DIR",
+      "agentContainer": "platform-local-wren-query-agent-adapter-agent-1",
+      "agentBaoUrl": "http://openbao:8200",
+      "baseUrl": "http://wren-ui:3000/",
+      "mcpUrl": "http://wren-ui:3000/api/platform-adapter/mcp",
+      "timeoutSeconds": 30,
+      "maxResponseBytes": 1048576,
+      "bindingSecrets": {
+        "connection": "wren-connection:WREN_SAMPLE_DB_SECRET_ENV_FILE:WREN_SAMPLE_READER_PASSWORD",
+        "oidc_client_secret": "generated"
+      }
+    }
+  }
+}

@@ -385,14 +385,16 @@ class OperatedAndPeerDelivery(unittest.TestCase):
 
     def decl(self, **override):
         env = {"set": {"APPLICATION_ADAPTER_DIRECTORY_FILE": "${KAILO_RUNTIME_DIR}/data/protocol-peers/adapter-directory.json",
-                       "COMPONENT_CONFORMANCE_ENVIRONMENT_FILE":
-                           "${KAILO_RUNTIME_DIR}/data/protocol-peers/conformance-environment.json"},
-               "unset": ["COMPONENT_CONFORMANCE_FIXTURE_FILE", "COMPONENT_CONFORMANCE_IDENTITY_FILE"]}
+                       "COMPONENT_CONFORMANCE_DIR": "${KAILO_RUNTIME_DIR}/data/conformance",
+                       "COMPONENT_CONFORMANCE_WORKER_DIR": "${KAILO_RUNTIME_DIR}/data/conformance-worker"},
+               "unset": ["COMPONENT_CONFORMANCE_ENVIRONMENT_FILE", "COMPONENT_CONFORMANCE_FIXTURE_FILE",
+                         "COMPONENT_CONFORMANCE_IDENTITY_FILE"]}
         value = {"units": {}, "services": {"core-bff": {"command": ["./start-core.sh", "--no-build"]}},
                  "migrations": {}, "order": {}, "node": {}, "env": env, "operated": ["protocol-peer-reference"],
                  "delivery": {"protocol_peers": {"directory": os.path.join(self.tmp.name, "directory.json"),
                                                  "conformance": os.path.join(self.tmp.name, "conformance.json"),
-                                                 "runtime": "data/protocol-peers", "restart": "core-bff"}}}
+                                                 "runtime": "data/protocol-peers", "candidates": "data/conformance",
+                                                 "worker": "data/conformance-worker", "restart": "core-bff"}}}
         value.update(override)
         return value
 
@@ -418,7 +420,14 @@ class OperatedAndPeerDelivery(unittest.TestCase):
                                   "nativeScopeRef": "default", "configDigest": "c" * 64,
                                   "isolationMode": "DEDICATED_INSTANCE"}]
         self.write()
-        self.assertNotEqual(self.model.peer_delivery(self.decl(), self.services)["digest"], first["digest"])
+        second = self.model.peer_delivery(self.decl(), self.services)
+        self.assertNotEqual(second["digest"], first["digest"])
+        # DD-136(2): content changes are read per use; only the mount shape restarts Core.
+        self.assertEqual(second["shape"], first["shape"])
+        decl = self.decl()
+        decl["delivery"]["protocol_peers"]["candidates"] = "data/conformance-2"
+        decl["env"]["set"]["COMPONENT_CONFORMANCE_DIR"] = "${KAILO_RUNTIME_DIR}/data/conformance-2"
+        self.assertNotEqual(self.model.peer_delivery(decl, self.services)["shape"], first["shape"])
 
     def test_endpoint_must_be_an_operated_runtime_with_the_pinned_digest(self):
         self.write({"protocolPeers": [dict(self.peer, mcpUrl="http://vendor.example/mcp")]},
@@ -454,11 +463,24 @@ class OperatedAndPeerDelivery(unittest.TestCase):
         decl["env"]["set"]["APPLICATION_ADAPTER_DIRECTORY_FILE"] = "/elsewhere/adapter-directory.json"
         self.refused("APPLICATION_ADAPTER_DIRECTORY_FILE", decl)
         decl = self.decl()
-        decl["env"]["unset"] = ["COMPONENT_CONFORMANCE_FIXTURE_FILE"]
+        decl["env"]["unset"] = ["COMPONENT_CONFORMANCE_FIXTURE_FILE", "COMPONENT_CONFORMANCE_IDENTITY_FILE"]
         self.refused("env.unset", decl)
+        decl = self.decl()
+        decl["env"]["set"]["COMPONENT_CONFORMANCE_DIR"] = "${KAILO_RUNTIME_DIR}/data/protocol-peers"
+        self.refused("COMPONENT_CONFORMANCE_DIR", decl)
+        decl = self.decl()
+        decl["env"]["set"].pop("COMPONENT_CONFORMANCE_WORKER_DIR")
+        self.refused("COMPONENT_CONFORMANCE_WORKER_DIR", decl)
         decl = self.decl()
         decl["delivery"]["protocol_peers"]["runtime"] = "../outside"
         self.refused("runtime", decl)
+        for key, value in (("candidates", "data/protocol-peers"), ("worker", "data/conformance/worker")):
+            decl = self.decl()
+            decl["delivery"]["protocol_peers"][key] = value
+            self.refused("互不包含", decl)
+        decl = self.decl()
+        decl["delivery"]["protocol_peers"].pop("worker")
+        self.refused("delivery.protocol_peers", decl)
         self.assertIsNone(self.model.peer_delivery(self.decl(delivery={}), self.services))
 
     def test_rendered_directory_keeps_component_adapters_and_refuses_collisions(self):
@@ -510,15 +532,38 @@ class DeliveryRendering(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             release, folder = self.release(tmp)
             model = release.model
+            digest = release.delivery["conformance"]["artifactDigest"]
+            candidates = os.path.join(release.runtime, release.delivery["candidates"])
+            worker = os.path.join(release.runtime, release.delivery["worker"])
+            # A REMOTE_ADAPTER candidate of the component entry, a stale peer
+            # candidate of an earlier declaration and the single-candidate file.
+            component = os.path.join(candidates, "b" * 64)
+            stale = os.path.join(candidates, "c" * 64)
+            for path in (component, stale):
+                os.makedirs(path)
+            for name in ("environment.json", "fixture.json", "identity.json"):
+                with open(os.path.join(component, name), "w", encoding="utf-8") as stream:
+                    json.dump({"artifactDigest": "b" * 64, "adapterBaseUrl": "http://x/"}, stream)
+            with open(os.path.join(stale, "environment.json"), "w", encoding="utf-8") as stream:
+                json.dump({"artifactDigest": "c" * 64, "mcpUrl": "http://old/mcp"}, stream)
+            with open(os.path.join(folder, model.LEGACY_PEER_CONFORMANCE_FILE), "w", encoding="utf-8") as stream:
+                stream.write("{}")
             self.assertEqual(sorted(release.write_deliveries()),
-                             sorted([model.PEER_CONFORMANCE_FILE, model.PEER_DIRECTORY_FILE]))
+                             sorted([model.PEER_DIRECTORY_FILE, f"conformance/{digest}", f"-conformance/{'c' * 64}",
+                                     f"-{model.LEGACY_PEER_CONFORMANCE_FILE}"]))
             self.assertEqual(release.write_deliveries(), [])
+            self.assertEqual(sorted(os.listdir(candidates)), sorted([digest, "b" * 64]))
+            self.assertEqual(sorted(os.listdir(component)), ["environment.json", "fixture.json", "identity.json"])
             with open(os.path.join(folder, model.PEER_DIRECTORY_FILE), encoding="utf-8") as stream:
                 directory = json.load(stream)
             self.assertEqual(directory["adapters"], [{"adapterServiceRef": "knowledge-adapter"}])
             self.assertEqual(directory["protocolPeers"], release.delivery["peers"])
-            for name in (model.PEER_DIRECTORY_FILE, model.PEER_CONFORMANCE_FILE):
-                self.assertEqual(stat.S_IMODE(os.stat(os.path.join(folder, name)).st_mode), 0o644)
+            with open(os.path.join(candidates, digest, "environment.json"), encoding="utf-8") as stream:
+                self.assertEqual(json.load(stream), release.delivery["conformance"])
+            for path in (os.path.join(folder, model.PEER_DIRECTORY_FILE), os.path.join(candidates, digest, "environment.json")):
+                self.assertEqual(stat.S_IMODE(os.stat(path).st_mode), 0o644)
+            for path, mode in ((candidates, 0o755), (os.path.join(candidates, digest), 0o755), (worker, 0o700)):
+                self.assertEqual(stat.S_IMODE(os.stat(path).st_mode), mode)
             self.assertTrue(release.delivery_pending())
             self.assertTrue(any("尚未" in p for p in release.delivery_problems()))
             release.record_delivery()

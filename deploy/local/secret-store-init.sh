@@ -100,7 +100,12 @@ done
 # audit device 由 secret-store-config.hcl 声明式配置，不经 API 启用——该版本
 # 直接拒绝 API 创建（SF-OBA-11）。此处只核验它确实生效：零 device 时
 # audit broker 的 fail-closed 分支被短路，取用不留痕（SF-OBA-06）。
-audit_devices=$(root audit list 2>/dev/null || true)
+# Right after unseal the declared devices may not be listed yet; wait for them, bounded.
+for _ in $(seq 1 30); do
+  audit_devices=$(root audit list 2>/dev/null || true)
+  grep -q '^file/' <<<"$audit_devices" && grep -q '^core-observed/' <<<"$audit_devices" && break
+  sleep 2
+done
 if grep -q '^file/' <<<"$audit_devices"; then
   echo "audit device 已生效（声明式）"
 else
@@ -156,7 +161,15 @@ ns secrets list -format=json 2>/dev/null | grep -q "\"${OPENBAO_KV_MOUNT}/\"" \
 # 因此显式设定保留数，并把它登记为部署前置不变式（07 §1）。
 # cas_required 是运行期 mount 开关；写入必须携带当前版本 CAS，不能静默覆盖 head。
 : "${OPENBAO_KV_MAX_VERSIONS:?缺少 .env 中的 OPENBAO_KV_MAX_VERSIONS}"
-ns write "${OPENBAO_KV_MOUNT}/config" max_versions="$OPENBAO_KV_MAX_VERSIONS" cas_required=true >/dev/null
+# A freshly enabled KV v2 mount answers 400 ("Upgrading from non-versioned to versioned
+# data ... will resume service shortly") until its upgrade finishes; wait for it, bounded.
+for attempt in $(seq 1 30); do
+  if ns write "${OPENBAO_KV_MOUNT}/config" max_versions="$OPENBAO_KV_MAX_VERSIONS" cas_required=true >/dev/null 2>&1; then
+    break
+  fi
+  [ "$attempt" -lt 30 ] || { printf 'OpenBao KV v2 mount 未在超时内可写\n' >&2; exit 1; }
+  sleep 2
+done
 ns read -field=cas_required "${OPENBAO_KV_MOUNT}/config" | grep -qx true \
   || { printf 'OpenBao KV v2 cas_required 未生效\n' >&2; exit 1; }
 ns auth list -format=json 2>/dev/null | grep -q '"approle/"' \
