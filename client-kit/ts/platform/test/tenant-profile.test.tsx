@@ -1,9 +1,12 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { createBffClient } from "../src/client";
 import { PlatformProvider } from "../src/react/context";
 import { TenantProfileDialog } from "../src/react/tenant-profile/TenantProfileDialog";
 import { TransportError, type BffRequest } from "../src/transport";
-import { button, click, render, settle, type } from "./render";
+import { button, click, render as renderRoot, settle, type } from "./render";
+const render = (ui: ReactNode) => renderRoot(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>{ui}</QueryClientProvider>);
 const receipt={actionKey:"tenant.profile.update",actionExecutionId:"ae-1",operationId:"op-1",gateState:"ALLOWED",dispatchState:"DISPATCHED"};
 describe("DD-158 actual shared Tenant profile consumer",()=>{
  it("reads as a member but offers no administrator write",async()=>{
