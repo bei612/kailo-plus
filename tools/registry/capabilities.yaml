@@ -311,6 +311,14 @@ capabilities:
   - reminders.publish
   tools: []
   workflow_kinds: []
+- id: collab.tenant_profile
+  exposure: end_user
+  routes:
+  - /api/v1/tenant/profile
+  actions:
+  - tenant.profile.update
+  tools: []
+  workflow_kinds: []
 - id: collab.user_state
   exposure: end_user
   routes:
