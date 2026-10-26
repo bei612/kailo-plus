@@ -4,9 +4,9 @@
 //! database or Relay: broadcast and mentions win over a muted channel; a muted channel ends
 //! the rest; then direct messages; then replies in a muted thread stop, and replies in a
 //! followed or authored thread notify. Top-level messages in an ordinary channel do not push
-//! (the unread badge covers them); that is the DD-151(3) recipient set.
+//! (and do not enter the push badge); that is the DD-151(3) recipient set.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 
 use serde_json::{json, Value};
 
@@ -190,13 +190,79 @@ pub(crate) fn target(tenant_id: &str, message: &MessageFacts) -> Target {
     }
 }
 
+/// Most notified events remembered per conversation or thread for the badge.
+pub(crate) const BADGE_EVENTS_PER_CONTEXT: i64 = MAX_BADGE as i64;
+/// Upper bound of the number shown on the app icon.
+pub(crate) const MAX_BADGE: u32 = 999;
+
+/// The `read_contexts` key whose read position covers this message (DD-40): the thread for a
+/// reply, the channel (Workspace channel or direct message) otherwise.
+pub(crate) fn unread_context(message: &MessageFacts) -> String {
+    match &message.root_id {
+        Some(root) => format!("thread:{root}"),
+        None => message.channel_id.to_ascii_lowercase(),
+    }
+}
+
+/// The recipient's current read positions as Unix seconds, from `read_contexts` (RFC 3339,
+/// written by every client through the read-mark route). Unparseable values are ignored.
+pub(crate) fn read_marks(read_contexts: &Value) -> HashMap<String, i64> {
+    read_contexts
+        .as_object()
+        .into_iter()
+        .flatten()
+        .filter_map(|(key, value)| {
+            let at = chrono::DateTime::parse_from_rfc3339(value.as_str()?).ok()?;
+            Some((key.to_ascii_lowercase(), at.timestamp()))
+        })
+        .collect()
+}
+
+/// One remembered context: the `read_contexts` key, the channel it lives in and the
+/// `created_at` of the notified events in it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct UnreadContext {
+    pub context_key: String,
+    pub channel_id: String,
+    pub event_times: Vec<i64>,
+}
+
+/// DD-151(4) badge: notified messages the recipient has not read yet. A message counts while
+/// it is newer than both its own context's read position and its channel's (reading the
+/// channel after a reply clears it too). Returns the badge and the contexts that are fully
+/// read, which the caller forgets.
+pub(crate) fn badge(contexts: &[UnreadContext], marks: &HashMap<String, i64>) -> (u32, Vec<String>) {
+    let mut total: u64 = 0;
+    let mut read = Vec::new();
+    for context in contexts {
+        let mark = read_position(&context.context_key, &context.channel_id, marks);
+        let unread = context.event_times.iter().filter(|t| **t > mark).count() as u64;
+        if unread == 0 {
+            read.push(context.context_key.clone());
+        }
+        total += unread;
+    }
+    (total.min(u64::from(MAX_BADGE)) as u32, read)
+}
+
+/// A reply is read if either its thread or channel has advanced past it.
+pub(crate) fn read_position(context: &str, channel: &str, marks: &HashMap<String, i64>) -> i64 {
+    [marks.get(&context.to_ascii_lowercase()), marks.get(&channel.to_ascii_lowercase())]
+        .into_iter()
+        .flatten()
+        .copied()
+        .max()
+        .unwrap_or(i64::MIN)
+}
+
 /// APNs body (DD-151(4)): `aps` alert is the localized fixed text; `kailo_push` holds only ids.
 /// `mutable-content` lets the notification extension replace the text after reading the
-/// message through the user's own session.
-pub(crate) fn apns_payload(target: &Target, reason: Reason, locale: &str) -> Value {
+/// message through the user's own session; `badge` is the unread count, never content.
+pub(crate) fn apns_payload(target: &Target, reason: Reason, locale: &str, badge: u32) -> Value {
     json!({
         "aps": {
             "alert": {"body": alert_text(reason, locale)},
+            "badge": badge,
             "sound": "default",
             "thread-id": target.collapse_key,
             "mutable-content": 1
@@ -210,8 +276,8 @@ pub(crate) fn apns_payload(target: &Target, reason: Reason, locale: &str) -> Val
 }
 
 /// FCM v1 `message` (without `token`): notification body is the localized fixed text, data
-/// carries only ids.
-pub(crate) fn fcm_message(target: &Target, reason: Reason, locale: &str) -> Value {
+/// carries only ids, and the Android notification count is the unread badge.
+pub(crate) fn fcm_message(target: &Target, reason: Reason, locale: &str, badge: u32) -> Value {
     json!({
         "notification": {"body": alert_text(reason, locale)},
         "data": {
@@ -219,7 +285,11 @@ pub(crate) fn fcm_message(target: &Target, reason: Reason, locale: &str) -> Valu
             "channel_id": target.channel_id,
             "event_id": target.event_id
         },
-        "android": {"collapse_key": target.collapse_key, "priority": "HIGH"}
+        "android": {
+            "collapse_key": target.collapse_key,
+            "priority": "HIGH",
+            "notification": {"notification_count": badge}
+        }
     })
 }
 
@@ -323,17 +393,91 @@ mod tests {
         let facts = MessageFacts::from_event(&event(json!([["h", "chan-1"], ["p", ME]]))).unwrap();
         let target = target("tenant-1", &facts);
         for body in [
-            apns_payload(&target, Reason::Mention, "zh-CN"),
-            fcm_message(&target, Reason::Mention, "en"),
+            apns_payload(&target, Reason::Mention, "zh-CN", 3),
+            fcm_message(&target, Reason::Mention, "en", 3),
         ] {
             let text = body.to_string();
             assert!(!text.contains("secret body text"));
             assert!(text.contains(ID) && text.contains("chan-1") && text.contains("tenant-1"));
         }
         assert_eq!(
-            apns_payload(&target, Reason::Mention, "zh-CN")["aps"]["alert"]["body"],
+            apns_payload(&target, Reason::Mention, "zh-CN", 3)["aps"]["alert"]["body"],
             "有人提及了你"
         );
         assert!(target.collapse_key.len() <= 64);
+    }
+
+    #[test]
+    fn badge_is_a_number_and_payloads_stay_content_free() {
+        let facts = MessageFacts::from_event(&event(json!([["h", "chan-1"], ["p", ME]]))).unwrap();
+        let target = target("tenant-1", &facts);
+        let apns = apns_payload(&target, Reason::Mention, "en", 7);
+        assert_eq!(apns["aps"]["badge"], 7);
+        let fcm = fcm_message(&target, Reason::Mention, "en", 7);
+        assert_eq!(fcm["android"]["notification"]["notification_count"], 7);
+        for body in [apns, fcm] {
+            assert!(!body.to_string().contains("secret body text"));
+        }
+    }
+
+    #[test]
+    fn unread_context_is_the_thread_for_replies_and_the_channel_otherwise() {
+        let top = MessageFacts::from_event(&event(json!([["h", "CHAN-1"]]))).unwrap();
+        assert_eq!(unread_context(&top), "chan-1");
+        let reply = MessageFacts::from_event(&event(json!([
+            ["h", "chan-1"],
+            ["e", ROOT, "", "root"],
+            ["e", ROOT, "", "reply"]
+        ])))
+        .unwrap();
+        assert_eq!(unread_context(&reply), format!("thread:{ROOT}"));
+    }
+
+    #[test]
+    fn read_marks_come_from_rfc3339_read_contexts() {
+        let marks = read_marks(&json!({
+            "CHAN-1": "2026-01-01T00:00:10Z",
+            "thread:ab": "2026-01-01T00:00:20+00:00",
+            "bad": "yesterday",
+            "num": 5
+        }));
+        assert_eq!(marks.get("chan-1"), Some(&1_767_225_610));
+        assert_eq!(marks.get("thread:ab"), Some(&1_767_225_620));
+        assert_eq!(marks.len(), 2);
+    }
+
+    #[test]
+    fn badge_counts_only_what_is_newer_than_the_read_positions() {
+        let channel = UnreadContext {
+            context_key: "chan-1".into(),
+            channel_id: "chan-1".into(),
+            event_times: vec![10, 20, 30],
+        };
+        let thread = UnreadContext {
+            context_key: "thread:ab".into(),
+            channel_id: "chan-1".into(),
+            event_times: vec![15, 25],
+        };
+        let contexts = [channel, thread];
+        // Nothing read yet: every notified message counts.
+        let (n, read) = badge(&contexts, &HashMap::new());
+        assert_eq!((n, read.len()), (5, 0));
+        // The thread was read up to 25 and the channel up to 20.
+        let marks = HashMap::from([("chan-1".to_owned(), 20), ("thread:ab".to_owned(), 25)]);
+        let (n, read) = badge(&contexts, &marks);
+        assert_eq!(n, 1);
+        assert_eq!(read, vec!["thread:ab".to_owned()]);
+        // Reading the channel past a reply clears the reply as well.
+        let marks = HashMap::from([("chan-1".to_owned(), 30)]);
+        let (n, read) = badge(&contexts, &marks);
+        assert_eq!(n, 0);
+        assert_eq!(read.len(), 2);
+        // The icon number is bounded.
+        let many = [UnreadContext {
+            context_key: "c".into(),
+            channel_id: "c".into(),
+            event_times: (0..2000).collect(),
+        }];
+        assert_eq!(badge(&many, &HashMap::new()).0, MAX_BADGE);
     }
 }

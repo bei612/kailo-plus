@@ -451,18 +451,47 @@ async fn run_tenant(
                 continue;
             };
             let target = decide::target(&tenant_text, message);
+            // Read positions may have changed while earlier provider calls were in flight.
+            let positions: Option<(Value,)> = sqlx::query_as(
+                "select read_contexts from identity.collaboration_user_state where tenant_principal_id = $1",
+            )
+            .bind(principal)
+            .fetch_optional(&state.pool)
+            .await?;
+            let marks = positions.map_or_else(HashMap::new, |(r,)| decide::read_marks(&r));
+            if message.created_at as i64
+                <= decide::read_position(&decide::unread_context(message), &message.channel_id, &marks)
+            {
+                continue;
+            }
+            // Preview is read-only: no pending send belongs to the accepted-message set,
+            // and no additional transaction/row lock spans the provider's HTTP calls.
+            let badge = super::unread::preview(&mut *state.pool.acquire().await?, tenant, *principal, message, &marks).await?;
+            let mut recorded = false;
             for registration in registrations.iter().filter(|r| r.principal == *principal) {
                 let outcome = deliver(
                     state,
                     providers,
                     tenant,
                     registration,
-                    &target,
-                    reason,
+                    Notice {
+                        target: &target,
+                        reason,
+                        badge,
+                    },
                     &mut tokens,
                 )
                 .await?;
                 if let Some(outcome) = outcome {
+                    if outcome == Outcome::Delivered {
+                        if !recorded {
+                            let mut unread_tx = state.pool.begin().await?;
+                            super::unread::record(&mut unread_tx, tenant, *principal, message, &marks).await?;
+                            unread_tx.commit().await?;
+                            recorded = true;
+                        }
+                        record_delivery(state, tenant, registration, &target).await?;
+                    }
                     metrics.deliveries.add(
                         1,
                         &[
@@ -666,6 +695,14 @@ async fn root_authors(
         .collect()
 }
 
+/// What one delivery says: ids, the fixed-text reason and the unread badge.
+#[derive(Clone, Copy)]
+struct Notice<'a> {
+    target: &'a Target,
+    reason: Reason,
+    badge: u32,
+}
+
 /// Rate limits, token read and the bounded provider retry for one device. `None` when the
 /// notification was folded into a recent one or the provider is not configured.
 async fn deliver(
@@ -673,10 +710,14 @@ async fn deliver(
     providers: &Providers,
     tenant: Uuid,
     registration: &Registration,
-    target: &Target,
-    reason: Reason,
+    notice: Notice<'_>,
     tokens: &mut HashMap<String, DeviceToken>,
 ) -> Result<Option<Outcome>, sqlx::Error> {
+    let Notice {
+        target,
+        reason,
+        badge,
+    } = notice;
     let allowed: Option<(bool,)> = sqlx::query_as(
         "select (select coalesce(bool_and(last_sent_at < now() - make_interval(secs => $4)), true)
                    from projection.push_delivery_window
@@ -715,7 +756,7 @@ async fn deliver(
                     apns.send(
                         &state.http,
                         &token,
-                        &decide::apns_payload(target, reason, &registration.locale),
+                        &decide::apns_payload(target, reason, &registration.locale, badge),
                         &target.collapse_key,
                     )
                     .await
@@ -728,7 +769,7 @@ async fn deliver(
                     fcm.send(
                         &state.http,
                         &token,
-                        &decide::fcm_message(target, reason, &registration.locale),
+                        &decide::fcm_message(target, reason, &registration.locale, badge),
                     )
                     .await
                 }
@@ -744,24 +785,7 @@ async fn deliver(
         }
     }
     match outcome {
-        Outcome::Delivered => {
-            sqlx::query(
-                "insert into projection.push_delivery_window
-                     (tenant_id, device_pubkey, collapse_key, last_sent_at, window_start, window_count)
-                 values ($1, $2, $3, now(), now(), 1), ($1, $2, '*', now(), now(), 1)
-                 on conflict (tenant_id, device_pubkey, collapse_key) do update set
-                     last_sent_at = now(),
-                     window_start = case when push_delivery_window.window_start < now() - interval '1 minute'
-                                         then now() else push_delivery_window.window_start end,
-                     window_count = case when push_delivery_window.window_start < now() - interval '1 minute'
-                                         then 1 else push_delivery_window.window_count + 1 end",
-            )
-            .bind(tenant)
-            .bind(&registration.device)
-            .bind(&target.collapse_key)
-            .execute(&state.pool)
-            .await?;
-        }
+        Outcome::Delivered => {}
         Outcome::Invalid => {
             // The provider says the token is gone: stop until the device registers again.
             sqlx::query(
@@ -778,6 +802,33 @@ async fn deliver(
         Outcome::Retry | Outcome::ProviderAuth | Outcome::Rejected => {}
     }
     Ok(Some(outcome))
+}
+
+// Record rate limits after the caller has retained the known accepted message. A failure
+// here must not roll that message back out of the badge projection.
+async fn record_delivery(
+    state: &ServiceState,
+    tenant: Uuid,
+    registration: &Registration,
+    target: &Target,
+) -> Result<(), sqlx::Error> {
+            sqlx::query(
+                "insert into projection.push_delivery_window
+                     (tenant_id, device_pubkey, collapse_key, last_sent_at, window_start, window_count)
+                 values ($1, $2, $3, now(), now(), 1), ($1, $2, '*', now(), now(), 1)
+                 on conflict (tenant_id, device_pubkey, collapse_key) do update set
+                     last_sent_at = now(),
+                     window_start = case when push_delivery_window.window_start < now() - interval '1 minute'
+                                         then now() else push_delivery_window.window_start end,
+                     window_count = case when push_delivery_window.window_start < now() - interval '1 minute'
+                                         then 1 else push_delivery_window.window_count + 1 end",
+            )
+            .bind(tenant)
+            .bind(&registration.device)
+            .bind(&target.collapse_key)
+            .execute(&state.pool)
+            .await?;
+    Ok(())
 }
 
 #[cfg(test)]
