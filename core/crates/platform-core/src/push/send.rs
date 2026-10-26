@@ -7,8 +7,8 @@
 
 use std::time::{Duration, Instant};
 
-use serde::{Deserialize, Serialize};
 use super::config::Policy;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use tokio::sync::Mutex;
@@ -37,7 +37,7 @@ pub(crate) struct Receipt {
     pub retry_after: Duration,
 }
 impl Receipt {
-    pub fn local(outcome: Outcome, policy:&Policy) -> Self {
+    pub fn local(outcome: Outcome, policy: &Policy) -> Self {
         Self {
             outcome,
             reference: None,
@@ -198,11 +198,11 @@ impl ApnsSender {
         collapse_key: &str,
         intent: uuid::Uuid,
         expires_at: i64,
-        policy:&Policy,
+        policy: &Policy,
     ) -> Receipt {
         let bearer = match self.provider_token().await {
             Ok(b) => b,
-            Err(outcome) => return Receipt::local(outcome,policy),
+            Err(outcome) => return Receipt::local(outcome, policy),
         };
         let host = if self.credential.sandbox {
             "api.sandbox.push.apple.com"
@@ -226,7 +226,14 @@ impl ApnsSender {
         match response {
             Ok(response) => {
                 let status = response.status().as_u16();
-                let retry_after = retry_after(&response, if status >= 500 { policy.apns_retry_floor_seconds as u64 } else {policy.retry_base_seconds as u64});
+                let retry_after = retry_after(
+                    &response,
+                    if status >= 500 {
+                        policy.apns_retry_floor_seconds as u64
+                    } else {
+                        policy.retry_base_seconds as u64
+                    },
+                );
                 let reference = response
                     .headers()
                     .get("apns-id")
@@ -244,7 +251,7 @@ impl ApnsSender {
                     retry_after,
                 }
             }
-            Err(e) => Receipt::local(transport(e),policy),
+            Err(e) => Receipt::local(transport(e), policy),
         }
     }
 }
@@ -283,7 +290,11 @@ impl FcmSender {
         ))
     }
 
-    async fn access_token(&self, http: &reqwest::Client,policy:&Policy) -> Result<String, Outcome> {
+    async fn access_token(
+        &self,
+        http: &reqwest::Client,
+        policy: &Policy,
+    ) -> Result<String, Outcome> {
         let mut cached = self.access.lock().await;
         if let Some((token, at, ttl)) = cached.as_ref() {
             if at.elapsed() < *ttl {
@@ -344,11 +355,11 @@ impl FcmSender {
         token: &DeviceToken,
         message: &Value,
         expires_at: i64,
-        policy:&Policy,
+        policy: &Policy,
     ) -> Receipt {
-        let access = match self.access_token(http,policy).await {
+        let access = match self.access_token(http, policy).await {
             Ok(a) => a,
-            Err(outcome) => return Receipt::local(outcome,policy),
+            Err(outcome) => return Receipt::local(outcome, policy),
         };
         let mut message = message.clone();
         message["token"] = Value::String(token.0.clone());
@@ -394,7 +405,7 @@ impl FcmSender {
                     retry_after,
                 }
             }
-            Err(e) => Receipt::local(transport(e),policy),
+            Err(e) => Receipt::local(transport(e), policy),
         }
     }
 }

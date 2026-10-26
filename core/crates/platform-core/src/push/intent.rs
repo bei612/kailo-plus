@@ -45,7 +45,7 @@ impl Intent {
 pub(super) async fn claim_scan(
     pool: &PgPool,
     tenant: Uuid,
-    policy:&Policy,
+    policy: &Policy,
 ) -> Result<Option<(Uuid, i64, Vec<String>)>, sqlx::Error> {
     // Start at now: do not fan out history when a Tenant first enables push.
     sqlx::query("insert into projection.push_cursor(tenant_id,since) values($1,floor(extract(epoch from now()))::bigint) on conflict do nothing")
@@ -55,7 +55,12 @@ pub(super) async fn claim_scan(
         .bind(tenant).bind(lease).bind(policy.lease_seconds).fetch_optional(pool).await?;
     Ok(row.map(|(since, seen)| (lease, since, seen)))
 }
-pub(super) async fn renew_scan(pool:&PgPool,tenant:Uuid,lease:Uuid,policy:&Policy)->Result<bool,sqlx::Error> {
+pub(super) async fn renew_scan(
+    pool: &PgPool,
+    tenant: Uuid,
+    lease: Uuid,
+    policy: &Policy,
+) -> Result<bool, sqlx::Error> {
     Ok(sqlx::query("update projection.push_cursor set lease_until=now()+make_interval(secs=>$3) where tenant_id=$1 and lease_id=$2 and lease_until>now()")
         .bind(tenant).bind(lease).bind(policy.lease_seconds).execute(pool).await?.rows_affected()==1)
 }
@@ -65,7 +70,7 @@ pub(super) async fn enqueue(
     lease: Uuid,
     message: &MessageFacts,
     targets: &[(&str, String)],
-    policy:&Policy,
+    policy: &Policy,
 ) -> Result<bool, sqlx::Error> {
     let mut tx = pool.begin().await?;
     let owned=sqlx::query("update projection.push_cursor set lease_until=now()+make_interval(secs=>$3) where tenant_id=$1 and lease_id=$2 and lease_until>now()")
@@ -98,7 +103,7 @@ pub(super) async fn checkpoint_scan(
         .bind(tenant).bind(lease).bind(since).bind(seen).execute(pool).await?.rows_affected()==1)
 }
 
-pub(super) async fn recover(conn: &mut PgConnection,policy:&Policy) -> Result<(), sqlx::Error> {
+pub(super) async fn recover(conn: &mut PgConnection, policy: &Policy) -> Result<(), sqlx::Error> {
     // Only claims which have NOT crossed the durable send boundary can be reclaimed.
     sqlx::query("update projection.push_send_intent set state=case when state='SENDING' then 'UNKNOWN' else 'PREPARED' end,
  result_code=case when state='SENDING' then 'RESPONSE_UNKNOWN' else result_code end, updated_at=now()
@@ -113,7 +118,11 @@ pub(super) async fn recover(conn: &mut PgConnection,policy:&Policy) -> Result<()
     Ok(())
 }
 
-pub(super) async fn claim(pool: &PgPool, tenant: Uuid,policy:&Policy) -> Result<Option<Intent>, sqlx::Error> {
+pub(super) async fn claim(
+    pool: &PgPool,
+    tenant: Uuid,
+    policy: &Policy,
+) -> Result<Option<Intent>, sqlx::Error> {
     let lease = Uuid::new_v4();
     sqlx::query_as(
         "update projection.push_send_intent set state='CLAIMED',lease_id=$2,
@@ -124,7 +133,8 @@ pub(super) async fn claim(pool: &PgPool, tenant: Uuid,policy:&Policy) -> Result<
     )
     .bind(tenant)
     .bind(lease)
-    .bind(policy.lease_seconds).bind(policy.max_attempts)
+    .bind(policy.lease_seconds)
+    .bind(policy.max_attempts)
     .fetch_optional(pool)
     .await
 }
@@ -141,7 +151,7 @@ pub(super) async fn cancel(pool: &PgPool, i: &Intent, reason: &str) -> Result<()
     .await?;
     Ok(())
 }
-pub(super) async fn defer(pool: &PgPool, i: &Intent,policy:&Policy) -> Result<(), sqlx::Error> {
+pub(super) async fn defer(pool: &PgPool, i: &Intent, policy: &Policy) -> Result<(), sqlx::Error> {
     sqlx::query("update projection.push_send_intent set state='PREPARED',next_attempt_at=now()+make_interval(secs=>$3),updated_at=now()
  where id=$1 and lease_id=$2 and state='CLAIMED'")
  .bind(i.id).bind(i.lease_id).bind(policy.retry_base_seconds).execute(pool).await?;
@@ -196,7 +206,7 @@ pub(super) async fn begin_send(
     pool: &PgPool,
     i: &Intent,
     collapse: &str,
-    policy:&Policy,
+    policy: &Policy,
 ) -> Result<bool, sqlx::Error> {
     let mut tx = pool.begin().await?;
     if !lock_device(
@@ -293,7 +303,7 @@ pub(super) async fn finish(
     }
     if receipt.outcome == Outcome::Delivered {
         // No resurrection after Tenant/device/member revocation, or a token rotation.
-        if live && authorized && lock_channel(&mut tx,i).await? {
+        if live && authorized && lock_channel(&mut tx, i).await? {
             let positions:Option<serde_json::Value>=sqlx::query_scalar("select read_contexts from identity.collaboration_user_state where tenant_principal_id=$1")
    .bind(i.tenant_principal_id).fetch_optional(&mut *tx).await?;
             let marks = positions.map_or_else(HashMap::new, |v| super::decide::read_marks(&v));

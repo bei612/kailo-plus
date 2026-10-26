@@ -374,7 +374,9 @@ async fn apply(
             ReasonCode::ClientKeyNotFound,
         ));
     }
-    let policy = config::Policy::parse(&std::env::var("PUSH_DELIVERY_POLICY").map_err(|_|unavailable())?).map_err(|_|unavailable())?;
+    let policy =
+        config::Policy::parse(&std::env::var("PUSH_DELIVERY_POLICY").map_err(|_| unavailable())?)
+            .map_err(|_| unavailable())?;
     let digest = token_digest(&req.token);
     let existing: Option<ExistingRow> = sqlx::query_as(
         "select version, token_digest, token_secret_locator, token_secret_version, token_secret_audience
