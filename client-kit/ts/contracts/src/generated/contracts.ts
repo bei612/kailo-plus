@@ -5971,6 +5971,10 @@ export interface ActionCommand {
      */
     tenantId?: string;
     /**
+     * 仅 tenant.profile.update（DD-158(3)）且必带；其他动作携带即拒绝。
+     */
+    tenantProfile?: TenantProfileInput;
+    /**
      * 仅 tenant.quota.set（DD-123）
      */
     tenantQuotaSetting?: TenantQuotaSetting;
@@ -6567,6 +6571,19 @@ export interface SkillVersionUploadInput {
      */
     capabilityRequirements: string[];
     uploadId:               string;
+}
+
+/**
+ * 仅 tenant.profile.update（DD-158(3)）且必带；其他动作携带即拒绝。
+ *
+ * 仅 tenant.profile.update 且必带（DD-158(3)、05 §2.11）：Tenant 显示名与图标。name 去首尾空白后 1–64 字符；icon
+ * 是客户端按原版缩到 256 px 的 PNG/JPEG/WebP data URL（≤96 KiB）或单个 emoji；clearIcon=true 清除图标且不得同时给
+ * icon。至少给出一项；目标固定为会话 Tenant，按 resourceVersion（读到的 Tenant version）CAS。
+ */
+export interface TenantProfileInput {
+    clearIcon?: boolean;
+    icon?:      string;
+    name?:      string;
 }
 
 /**
@@ -8103,6 +8120,17 @@ export interface TenantMemberJoinView {
      */
     joinedAt:    string;
     principalId: string;
+}
+
+/**
+ * DD-158(3)：GET /api/v1/tenant/profile。会话 Tenant 的显示名、图标与版本，全体 ACTIVE 成员可读；本人有 Tenant
+ * manage 时给出 updateActionKey（tenant.profile.update），提交仍由 Core 重新准入。
+ */
+export interface TenantProfileView {
+    icon?:            string;
+    name:             string;
+    updateActionKey?: string;
+    version:          number;
 }
 
 /**
