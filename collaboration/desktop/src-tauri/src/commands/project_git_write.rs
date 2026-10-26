@@ -176,16 +176,54 @@ fn settle_observation(
 // Same classifications as Core projects_git_ref::prepare_error /
 // classify_push_failure: a stale lease is a conflict, not a hook rejection.
 fn failure_code(sent: bool, message: &str) -> Option<&'static str> {
-    let denied = ["returned error: 401", "returned error: 403", "returned error: 404"].iter().any(|v|message.contains(v));
+    let denied = [
+        "returned error: 401",
+        "returned error: 403",
+        "returned error: 404",
+    ]
+    .iter()
+    .any(|v| message.contains(v));
     if !sent {
-        return Some(if denied { "TARGET_NOT_FOUND" }
-            else if ["source branch changed", "Could not resolve the source branch", "default branch cannot be deleted", "branch already exists", "couldn't find remote ref"].iter().any(|v|message.contains(v)) { CONFLICT }
-            else { FAILED });
+        return Some(if denied {
+            "TARGET_NOT_FOUND"
+        } else if [
+            "source branch changed",
+            "Could not resolve the source branch",
+            "default branch cannot be deleted",
+            "branch already exists",
+            "couldn't find remote ref",
+        ]
+        .iter()
+        .any(|v| message.contains(v))
+        {
+            CONFLICT
+        } else {
+            FAILED
+        });
     }
-    if git::is_timeout_error(message) { return None; }
-    if denied || message.contains("hook declined") { return Some("PUBLISH_REJECTED"); }
-    if message.contains("returned error: 413") { return Some("PAYLOAD_TOO_LARGE"); }
-    if ["(stale info)", "(fetch first)", "(non-fast-forward)", "[rejected]", "[remote rejected]", "cannot lock ref", "failed to update ref"].iter().any(|v|message.contains(v)) { return Some(CONFLICT); }
+    if git::is_timeout_error(message) {
+        return None;
+    }
+    if denied || message.contains("hook declined") {
+        return Some("PUBLISH_REJECTED");
+    }
+    if message.contains("returned error: 413") {
+        return Some("PAYLOAD_TOO_LARGE");
+    }
+    if [
+        "(stale info)",
+        "(fetch first)",
+        "(non-fast-forward)",
+        "[rejected]",
+        "[remote rejected]",
+        "cannot lock ref",
+        "failed to update ref",
+    ]
+    .iter()
+    .any(|v| message.contains(v))
+    {
+        return Some(CONFLICT);
+    }
     None
 }
 
@@ -202,9 +240,11 @@ fn dispatch(
     let mut intent = if let Some(mut intent) = previous {
         match intent.result.as_str() {
             "ACCEPTED" => return Ok(intent),
-            "TARGET_STATE_CONFLICT" | "PUBLISH_REJECTED" | "TARGET_NOT_FOUND" | "PAYLOAD_TOO_LARGE" | "DEPENDENCY_UNAVAILABLE" => {
-                return Err(WriteError::at(&intent.result, &intent.key))
-            }
+            "TARGET_STATE_CONFLICT"
+            | "PUBLISH_REJECTED"
+            | "TARGET_NOT_FOUND"
+            | "PAYLOAD_TOO_LARGE"
+            | "DEPENDENCY_UNAVAILABLE" => return Err(WriteError::at(&intent.result, &intent.key)),
             _ => {}
         }
         if observed(journal, &mut intent, root, auth)? {
