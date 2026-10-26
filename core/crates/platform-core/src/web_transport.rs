@@ -67,11 +67,19 @@ fn publication_retry_confirmed(
         || absence_proven
 }
 fn publication_retry_scope_matches(
-    proof: Option<&crate::audit::PublicationProof>, binding: &PublicationBinding,
+    proof: Option<&crate::audit::PublicationProof>,
+    binding: &PublicationBinding,
     policy: &collab_bridge::bridge::PublicationPolicy,
 ) -> bool {
-    proof.is_some_and(|proof| proof.proves_absence() && proof.scope.matches_binding(binding)
-        && proof.scope.publication.as_ref().is_some_and(|window|window.policy == *policy))
+    proof.is_some_and(|proof| {
+        proof.proves_absence()
+            && proof.scope.matches_binding(binding)
+            && proof
+                .scope
+                .publication
+                .as_ref()
+                .is_some_and(|window| window.policy == *policy)
+    })
 }
 
 /// 成员修改频道原主题（DD-119(9)）。对账按它找这一类发布。
@@ -3165,60 +3173,6 @@ async fn publish(
         _ => None,
     };
 
-    // Fresh actual writer readiness is required before producing an epoch-bound
-    // event. A stale/unsupported policy cannot be replaced by a Core default.
-    let publication_policy = match client.publication_policy(&state.relay_http).await {
-        Ok(policy) => policy,
-        Err(error) => {
-            return previous.as_ref().map_or_else(
-                || relay_error_response(&error, None),
-                |p| {
-                    error_body(
-                        StatusCode::SERVICE_UNAVAILABLE,
-                        ErrorClass::Unknown,
-                        ReasonCode::PublishResultUnknown,
-                        Some(p.operation_id),
-                    )
-                },
-            )
-        }
-    };
-
-    if let Some(previous) = previous
-        .as_ref()
-        .filter(|p| p.result_event_type.as_deref() == Some("RECONCILIATION"))
-    {
-        let proof = previous
-            .absence_proof
-            .clone()
-            .and_then(|v| serde_json::from_value::<crate::audit::PublicationProof>(v).ok());
-        if !publication_retry_scope_matches(proof.as_ref(), &current_binding, &publication_policy) {
-            // Restore/import rotates the actual writer epoch. A valid historical
-            // proof is retained but cannot authorize a signature in the new epoch.
-            if crate::publish_reconcile::reconcile_retry_positive(
-                &state.memory_service,
-                previous.operation_id,
-            )
-            .await
-            {
-                return (
-                    StatusCode::OK,
-                    Json(PublishResponse {
-                        event_id: previous.event_id.clone(),
-                        operation_id: previous.operation_id,
-                    }),
-                )
-                    .into_response();
-            }
-            return error_body(
-                StatusCode::SERVICE_UNAVAILABLE,
-                ErrorClass::Unknown,
-                ReasonCode::PublishResultUnknown,
-                Some(previous.operation_id),
-            );
-        }
-    }
-
     // 先签名：event id 在签完时就确定。把它连同 actor、scope、operation 落进
     // DISPATCH 审计之后才发送——之后无论结果如何，这条消息动作都可关联
     // （Stage 1 退出门禁），结果不明时也有一个能去 Relay 查证的键（DD-81）。
@@ -3295,14 +3249,75 @@ async fn publish(
         Publication::Hide => client.sign(41012, "", &[vec!["h".into(), channel_id.clone()]]),
         Publication::Reopen => client.sign(41010, "", &[vec!["h".into(), channel_id.clone()]]),
     };
-    let event =
-        match signed.and_then(|event| client.bind_publication_epoch(&event, &publication_policy)) {
+    let mut event = match signed {
             Ok(e) => e,
             Err(e) => {
                 tracing::warn!(error = %e, "签名失败");
                 return StatusCode::SERVICE_UNAVAILABLE.into_response();
             }
         };
+    // Fresh actual writer readiness is required before producing an epoch-bound
+    // event. A stale/unsupported policy cannot be replaced by a Core default.
+    let publication_policy = if collab_bridge::bridge::publication_max_age_seconds(event.kind.as_u16()).is_some() {
+        Some(match client.publication_policy(&state.relay_http).await {
+        Ok(policy) => policy,
+        Err(error) => {
+            return previous.as_ref().map_or_else(
+                || relay_error_response(&error, None),
+                |p| {
+                    error_body(
+                        StatusCode::SERVICE_UNAVAILABLE,
+                        ErrorClass::Unknown,
+                        ReasonCode::PublishResultUnknown,
+                        Some(p.operation_id),
+                    )
+                },
+            )
+        }
+        })
+    } else { None };
+
+    if let Some(previous) = previous
+        .as_ref()
+        .filter(|p| p.result_event_type.as_deref() == Some("RECONCILIATION"))
+    {
+        let proof = previous
+            .absence_proof
+            .clone()
+            .and_then(|v| serde_json::from_value::<crate::audit::PublicationProof>(v).ok());
+        if publication_policy.as_ref().is_none_or(|policy|!publication_retry_scope_matches(proof.as_ref(), &current_binding, policy)) {
+            // Restore/import rotates the actual writer epoch. A valid historical
+            // proof is retained but cannot authorize a signature in the new epoch.
+            if crate::publish_reconcile::reconcile_retry_positive(
+                &state.memory_service,
+                previous.operation_id,
+            )
+            .await
+            {
+                return (
+                    StatusCode::OK,
+                    Json(PublishResponse {
+                        event_id: previous.event_id.clone(),
+                        operation_id: previous.operation_id,
+                    }),
+                )
+                    .into_response();
+            }
+            return error_body(
+                StatusCode::SERVICE_UNAVAILABLE,
+                ErrorClass::Unknown,
+                ReasonCode::PublishResultUnknown,
+                Some(previous.operation_id),
+            );
+        }
+    }
+
+    if let Some(policy) = &publication_policy {
+        event = match client.bind_publication_epoch(&event, policy) {
+            Ok(event) => event,
+            Err(error) => return relay_error_response(&error,None),
+        };
+    }
     let Some(event_channel_id) = publication_native_channel(&event, referenced_channel) else {
         return AdmissionFailure::BindingNotActive.into_response();
     };
@@ -3315,14 +3330,14 @@ async fn publish(
         event_kind: event.kind.as_u16(),
         event_channel_id,
         signer_installation_id,
-        publication: Some(PublicationWindow {
+        publication: publication_policy.map(|policy| PublicationWindow {
             created_at: event.created_at.as_secs(),
             non_expiring: !event.tags.iter().any(|tag| {
                 tag.as_slice()
                     .first()
                     .is_some_and(|name| name == "expiration")
             }),
-            policy: publication_policy,
+            policy,
         }),
     };
     let event_id = event.id.to_hex();
@@ -5567,23 +5582,70 @@ mod tests {
 
     #[test]
     fn proved_absence_cannot_authorize_retry_after_epoch_or_binding_change() {
-        use collab_bridge::bridge::{PublicationPolicy,PublicationSettlement,PUBLICATION_POLICY_VERSION};
-        let binding=PublicationBinding {community_id:Uuid::new_v4(),community_host:"publication.platform.test".into(),
-            tenant_version:1,channel_id:None,target_version:None};
-        let policy=PublicationPolicy {version:PUBLICATION_POLICY_VERSION,epoch:Uuid::new_v4().to_string(),max_age_seconds:960,ready:true};
-        let scope=PublicationScope {community_id:binding.community_id,tenant_binding_version:1,target_channel_id:None,
-            target_binding_version:None,event_pubkey:nostr::Keys::generate().public_key().to_hex(),event_kind:1,
-            event_channel_id:None,signer_installation_id:None,publication:Some(PublicationWindow {
-                created_at:100,non_expiring:true,policy:policy.clone()})};
-        let proof=crate::audit::PublicationProof {settlement:PublicationSettlement {claim:scope.claim(&"ab".repeat(32)).unwrap(),
-            accepted:false,settled:true,observed_at:1061},scope};
-        assert!(publication_retry_scope_matches(Some(&proof),&binding,&policy));
-        let mut restored=policy.clone();restored.epoch=Uuid::new_v4().to_string();
-        assert!(!publication_retry_scope_matches(Some(&proof),&binding,&restored));
-        assert!(!publication_retry_scope_matches(None,&binding,&policy));
-        let mut rebound=binding.clone();rebound.tenant_version+=1;
-        assert!(!publication_retry_scope_matches(Some(&proof),&rebound,&policy));
-        assert!(proof.proves_absence(),"historical proof remains immutable and valid for its old epoch");
+        use collab_bridge::bridge::{
+            PublicationPolicy, PublicationSettlement, PUBLICATION_POLICY_VERSION,
+        };
+        let binding = PublicationBinding {
+            community_id: Uuid::new_v4(),
+            community_host: "publication.platform.test".into(),
+            tenant_version: 1,
+            channel_id: None,
+            target_version: None,
+        };
+        let policy = PublicationPolicy {
+            version: PUBLICATION_POLICY_VERSION,
+            epoch: Uuid::new_v4().to_string(),
+            max_age_seconds: 960,
+            ready: true,
+        };
+        let scope = PublicationScope {
+            community_id: binding.community_id,
+            tenant_binding_version: 1,
+            target_channel_id: None,
+            target_binding_version: None,
+            event_pubkey: nostr::Keys::generate().public_key().to_hex(),
+            event_kind: 1,
+            event_channel_id: None,
+            signer_installation_id: None,
+            publication: Some(PublicationWindow {
+                created_at: 100,
+                non_expiring: true,
+                policy: policy.clone(),
+            }),
+        };
+        let proof = crate::audit::PublicationProof {
+            settlement: PublicationSettlement {
+                claim: scope.claim(&"ab".repeat(32)).unwrap(),
+                accepted: false,
+                settled: true,
+                observed_at: 1061,
+            },
+            scope,
+        };
+        assert!(publication_retry_scope_matches(
+            Some(&proof),
+            &binding,
+            &policy
+        ));
+        let mut restored = policy.clone();
+        restored.epoch = Uuid::new_v4().to_string();
+        assert!(!publication_retry_scope_matches(
+            Some(&proof),
+            &binding,
+            &restored
+        ));
+        assert!(!publication_retry_scope_matches(None, &binding, &policy));
+        let mut rebound = binding.clone();
+        rebound.tenant_version += 1;
+        assert!(!publication_retry_scope_matches(
+            Some(&proof),
+            &rebound,
+            &policy
+        ));
+        assert!(
+            proof.proves_absence(),
+            "historical proof remains immutable and valid for its old epoch"
+        );
     }
 
     #[test]
