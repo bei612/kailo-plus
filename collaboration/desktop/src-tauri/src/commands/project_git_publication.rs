@@ -421,7 +421,8 @@ async fn submit_status(
     io.keys()
         .map_err(|_| WriteError::at(UNKNOWN, &intent.key))?;
     let persisted = journal
-        .find(&intent.key, &intent.request)?
+        .find(&intent.key, &intent.request)
+        .map_err(|_| WriteError::at(UNKNOWN, &intent.key))?
         .ok_or_else(|| WriteError::at(UNKNOWN, &intent.key))?;
     let community = persisted
         .event_community_id
