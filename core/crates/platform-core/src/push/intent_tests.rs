@@ -85,9 +85,7 @@ async fn crashed_send_is_unknown_not_reclaimed_and_late_receipt_is_atomic() {
  .bind(f.tenant).bind(&f.device).execute(&mut *probe).await.unwrap();
     probe.rollback().await.unwrap();
     f.expire_lease(id).await;
-    recover(&mut f.pool.acquire().await.unwrap())
-        .await
-        .unwrap();
+    recover(&mut f.pool.acquire().await.unwrap()).await.unwrap();
     assert_eq!(f.status(id).await, "UNKNOWN");
     assert!(claim(&f.pool, f.tenant).await.unwrap().is_none());
     assert_eq!(f.badge_rows().await, 0);
@@ -105,9 +103,7 @@ async fn preflight_claim_is_reclaimable_but_old_lease_cannot_send() {
     let id = f.enqueue(2).await;
     let old = claim(&f.pool, f.tenant).await.unwrap().unwrap();
     f.expire_lease(id).await;
-    recover(&mut f.pool.acquire().await.unwrap())
-        .await
-        .unwrap();
+    recover(&mut f.pool.acquire().await.unwrap()).await.unwrap();
     let new = claim(&f.pool, f.tenant).await.unwrap().unwrap();
     assert_ne!(old.lease_id, new.lease_id);
     assert!(!begin_send(&f.pool, &old, "c:fixture").await.unwrap());
@@ -143,9 +139,7 @@ async fn competing_consumers_retry_after_and_attempt_bound() {
             .execute(&f.pool)
             .await
             .unwrap();
-        recover(&mut f.pool.acquire().await.unwrap())
-            .await
-            .unwrap();
+        recover(&mut f.pool.acquire().await.unwrap()).await.unwrap();
         if attempt < 3 {
             i = claim(&f.pool, f.tenant).await.unwrap().unwrap()
         }
@@ -223,9 +217,7 @@ async fn unknown_never_becomes_failed_on_expiry_and_tenant_delete_cannot_resurre
     .execute(&f.pool)
     .await
     .unwrap();
-    recover(&mut f.pool.acquire().await.unwrap())
-        .await
-        .unwrap();
+    recover(&mut f.pool.acquire().await.unwrap()).await.unwrap();
     assert_eq!(f.status(id).await, "UNKNOWN");
     assert_eq!(f.badge_rows().await, 0);
     sqlx::query("update identity.tenant set state='DELETING' where id=$1")
@@ -277,10 +269,16 @@ async fn token_ownership_survives_aborted_binding_and_expired_writer_cannot_bind
             .unwrap();
     assert_eq!(state, "PREPARING");
     sqlx::query("update admission.push_token_intent set lease_until=now()-interval '1 second' where locator=$1").bind(&r.locator).execute(&f.pool).await.unwrap();
-    let reclaimed=token_intent::claim_retirement(&f.pool).await.unwrap();
-    assert!(reclaimed.iter().any(|(locator,_,_)|locator==&r.locator));
+    let reclaimed = token_intent::claim_retirement(&f.pool).await.unwrap();
+    assert!(reclaimed
+        .iter()
+        .any(|(locator, _, _)| locator == &r.locator));
     // The same locator cannot be immediately reclaimed while destruction is in flight.
-    assert!(!token_intent::claim_retirement(&f.pool).await.unwrap().iter().any(|(locator,_,_)|locator==&r.locator));
+    assert!(!token_intent::claim_retirement(&f.pool)
+        .await
+        .unwrap()
+        .iter()
+        .any(|(locator, _, _)| locator == &r.locator));
     let mut tx = f.pool.begin().await.unwrap();
     assert!(!token_intent::bind(&mut tx, f.tenant, &f.device, &r)
         .await
@@ -336,21 +334,53 @@ async fn accepted_receipt_and_badge_rollback_together_then_only_receipt_is_retri
 }
 
 #[tokio::test]
-#[ignore="requires PUSH_TEST_DATABASE_URL isolated migrated database"]
+#[ignore = "requires PUSH_TEST_DATABASE_URL isolated migrated database"]
 async fn scanner_checkpoint_fences_expired_owner_and_replays_only_one_stable_tuple() {
- let f=Fixture::new().await;
- let (old,since,_)=claim_scan(&f.pool,f.tenant).await.unwrap().unwrap();
- assert!(claim_scan(&f.pool,f.tenant).await.unwrap().is_none());
- let message=MessageFacts{id:format!("{:064x}",7),author:"a".repeat(64),created_at:since as u64,channel_id:f.channel.to_string(),broadcast:true,mentioned:BTreeSet::new(),parent_id:None,root_id:None};
- let targets=[("FCM","provider-fixture".to_string())];
- assert!(enqueue(&f.pool,f.tenant,old,&message,&targets).await.unwrap());
- assert!(enqueue(&f.pool,f.tenant,old,&message,&targets).await.unwrap());
- let count:i64=sqlx::query_scalar("select count(*) from projection.push_send_intent where tenant_id=$1").bind(f.tenant).fetch_one(&f.pool).await.unwrap();assert_eq!(count,1);
- sqlx::query("update projection.push_cursor set lease_until=now()-interval '1 second' where tenant_id=$1").bind(f.tenant).execute(&f.pool).await.unwrap();
- let (new,_,_)=claim_scan(&f.pool,f.tenant).await.unwrap().unwrap();
- assert!(!enqueue(&f.pool,f.tenant,old,&message,&targets).await.unwrap());
- assert!(!checkpoint_scan(&f.pool,f.tenant,old,since+100,&[]).await.unwrap());
- assert!(checkpoint_scan(&f.pool,f.tenant,new,since,std::slice::from_ref(&message.id)).await.unwrap());
- let (_,new_since,seen)=claim_scan(&f.pool,f.tenant).await.unwrap().unwrap();
- assert_eq!(new_since,since);assert_eq!(seen,vec![message.id]);
+    let f = Fixture::new().await;
+    let (old, since, _) = claim_scan(&f.pool, f.tenant).await.unwrap().unwrap();
+    assert!(claim_scan(&f.pool, f.tenant).await.unwrap().is_none());
+    let message = MessageFacts {
+        id: format!("{:064x}", 7),
+        author: "a".repeat(64),
+        created_at: since as u64,
+        channel_id: f.channel.to_string(),
+        broadcast: true,
+        mentioned: BTreeSet::new(),
+        parent_id: None,
+        root_id: None,
+    };
+    let targets = [("FCM", "provider-fixture".to_string())];
+    assert!(enqueue(&f.pool, f.tenant, old, &message, &targets)
+        .await
+        .unwrap());
+    assert!(enqueue(&f.pool, f.tenant, old, &message, &targets)
+        .await
+        .unwrap());
+    let count: i64 =
+        sqlx::query_scalar("select count(*) from projection.push_send_intent where tenant_id=$1")
+            .bind(f.tenant)
+            .fetch_one(&f.pool)
+            .await
+            .unwrap();
+    assert_eq!(count, 1);
+    sqlx::query("update projection.push_cursor set lease_until=now()-interval '1 second' where tenant_id=$1").bind(f.tenant).execute(&f.pool).await.unwrap();
+    let (new, _, _) = claim_scan(&f.pool, f.tenant).await.unwrap().unwrap();
+    assert!(!enqueue(&f.pool, f.tenant, old, &message, &targets)
+        .await
+        .unwrap());
+    assert!(!checkpoint_scan(&f.pool, f.tenant, old, since + 100, &[])
+        .await
+        .unwrap());
+    assert!(checkpoint_scan(
+        &f.pool,
+        f.tenant,
+        new,
+        since,
+        std::slice::from_ref(&message.id)
+    )
+    .await
+    .unwrap());
+    let (_, new_since, seen) = claim_scan(&f.pool, f.tenant).await.unwrap().unwrap();
+    assert_eq!(new_since, since);
+    assert_eq!(seen, vec![message.id]);
 }
