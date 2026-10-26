@@ -80,6 +80,23 @@ impl Journal {
             .0
             .unchecked_transaction()
             .map_err(|_| WriteError::at(UNKNOWN, &intent.key))?;
+        let previous: Option<String> = tx.query_row("SELECT payload FROM intent WHERE key=?1", [&intent.key], |row|row.get(0))
+            .optional().map_err(|_|WriteError::at(UNKNOWN,&intent.key))?;
+        if let Some(previous) = previous {
+            let frozen:Intent=serde_json::from_str(&previous).map_err(|_|WriteError::at(UNKNOWN,&intent.key))?;
+            // Persisted identities are immutable even if a caller races or
+            // accidentally presents a stale in-memory copy to the journal.
+            if frozen.request!=intent.request || frozen.old!=intent.old || frozen.new!=intent.new || frozen.author!=intent.author {
+                return Err(WriteError::at("IDEMPOTENCY_KEY_REUSED",&intent.key));
+            }
+            if frozen.event.is_some() && frozen.event!=intent.event {
+                return Err(WriteError::at(UNKNOWN,&intent.key));
+            }
+            if frozen.result=="ACCEPTED" && intent.result!="ACCEPTED"
+                || matches!(frozen.event_result.as_deref(),Some("ACCEPTED"|"REJECTED")) && frozen.event_result!=intent.event_result {
+                return Err(WriteError::at(UNKNOWN,&intent.key));
+            }
+        }
         tx.execute("INSERT INTO intent VALUES(?1,?2,?3,?4,?5) ON CONFLICT(key) DO UPDATE SET payload=excluded.payload,pending=excluded.pending",
             params![intent.key,intent.request.repository,intent.request.branch,payload,pending]).map_err(|_|WriteError::at(UNKNOWN,&intent.key))?;
         let outcome = if phase.starts_with("EVENT_") {
