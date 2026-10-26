@@ -10,7 +10,8 @@ class _NotificationsSection extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    if (defaultTargetPlatform != TargetPlatform.iOS && defaultTargetPlatform != TargetPlatform.android) {
+    if (defaultTargetPlatform != TargetPlatform.iOS &&
+        defaultTargetPlatform != TargetPlatform.android) {
       return const SizedBox.shrink();
     }
     final locale = Localizations.localeOf(context).toLanguageTag();

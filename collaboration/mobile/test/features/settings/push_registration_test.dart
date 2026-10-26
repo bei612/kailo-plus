@@ -77,7 +77,12 @@ void main() {
     required String apns,
     String fcm = 'NOT_CONFIGURED',
     bool Function()? isCurrent,
-    required FutureOr<PlatformResponse> Function(PlatformMethod, String, Object?) put,
+    required FutureOr<PlatformResponse> Function(
+      PlatformMethod,
+      String,
+      Object?,
+    )
+    put,
     _FakeBridge? bridge,
   }) {
     final calls = <(PlatformMethod, String, Object?)>[];
@@ -137,39 +142,83 @@ void main() {
     },
   );
 
-  test('Android uses only the configured native FCM SDK and matching Core capability', () async {
-    final bridge = _FakeBridge()..platform = PushPlatform.FCM;
-    Object? sent;
-    final h = harness(apns: 'NOT_CONFIGURED', fcm: 'CONFIGURED', bridge: bridge,
-      put: (_, _, body) { sent = body; return PlatformResponse(200, {...view(enabled: true, version: 1), 'platform': 'FCM'}); });
-    expect((await loaded(h.container)).available, isTrue);
-    await h.container.read(pushRegistrationProvider.notifier).setEnabled(true);
-    expect((sent! as Map)['platform'], 'FCM');
-    expect(h.container.read(pushRegistrationProvider).effectiveEnabled, isTrue);
-  });
+  test(
+    'Android uses only the configured native FCM SDK and matching Core capability',
+    () async {
+      final bridge = _FakeBridge()..platform = PushPlatform.FCM;
+      Object? sent;
+      final h = harness(
+        apns: 'NOT_CONFIGURED',
+        fcm: 'CONFIGURED',
+        bridge: bridge,
+        put: (_, _, body) {
+          sent = body;
+          return PlatformResponse(200, {
+            ...view(enabled: true, version: 1),
+            'platform': 'FCM',
+          });
+        },
+      );
+      expect((await loaded(h.container)).available, isTrue);
+      await h.container
+          .read(pushRegistrationProvider.notifier)
+          .setEnabled(true);
+      expect((sent! as Map)['platform'], 'FCM');
+      expect(
+        h.container.read(pushRegistrationProvider).effectiveEnabled,
+        isTrue,
+      );
+    },
+  );
 
-  test('missing native Firebase configuration stays unavailable even when Core FCM is configured', () async {
-    final bridge = _FakeBridge()..platform = null;
-    final h = harness(apns: 'CONFIGURED', fcm: 'CONFIGURED', bridge: bridge, put: (_, _, _) => fail('no PUT'));
-    expect((await loaded(h.container)).available, isFalse);
-    await h.container.read(pushRegistrationProvider.notifier).setEnabled(true);
-    expect(bridge.registrations, 0);
-    expect(h.calls, isEmpty);
-  });
+  test(
+    'missing native Firebase configuration stays unavailable even when Core FCM is configured',
+    () async {
+      final bridge = _FakeBridge()..platform = null;
+      final h = harness(
+        apns: 'CONFIGURED',
+        fcm: 'CONFIGURED',
+        bridge: bridge,
+        put: (_, _, _) => fail('no PUT'),
+      );
+      expect((await loaded(h.container)).available, isFalse);
+      await h.container
+          .read(pushRegistrationProvider.notifier)
+          .setEnabled(true);
+      expect(bridge.registrations, 0);
+      expect(h.calls, isEmpty);
+    },
+  );
 
-  test('an Android artifact cannot borrow configured APNs capability', () async {
-    final h = harness(apns: 'CONFIGURED', bridge: _FakeBridge()..platform = PushPlatform.FCM, put: (_, _, _) => fail('no PUT'));
-    expect((await loaded(h.container)).available, isFalse);
-  });
+  test(
+    'an Android artifact cannot borrow configured APNs capability',
+    () async {
+      final h = harness(
+        apns: 'CONFIGURED',
+        bridge: _FakeBridge()..platform = PushPlatform.FCM,
+        put: (_, _, _) => fail('no PUT'),
+      );
+      expect((await loaded(h.container)).available, isFalse);
+    },
+  );
 
-  test('a replaced NativeSession cannot submit a token captured by the old login', () async {
-    var current = true;
-    final h = harness(apns: 'CONFIGURED', isCurrent: () => current, put: (_, _, _) => fail('old login PUT'));
-    await loaded(h.container);
-    current = false;
-    await h.container.read(pushRegistrationProvider.notifier).setEnabled(true);
-    expect(h.calls.where((c) => c.$1 == PlatformMethod.put), isEmpty);
-  });
+  test(
+    'a replaced NativeSession cannot submit a token captured by the old login',
+    () async {
+      var current = true;
+      final h = harness(
+        apns: 'CONFIGURED',
+        isCurrent: () => current,
+        put: (_, _, _) => fail('old login PUT'),
+      );
+      await loaded(h.container);
+      current = false;
+      await h.container
+          .read(pushRegistrationProvider.notifier)
+          .setEnabled(true);
+      expect(h.calls.where((c) => c.$1 == PlatformMethod.put), isEmpty);
+    },
+  );
 
   test(
     'turning on registers this device token once with a device-key proof',
@@ -222,39 +271,64 @@ void main() {
     },
   );
 
-  test('FCM rotation during the first PUT is registered afterwards with the returned CAS version', () async {
-    final bridge = _FakeBridge()..platform = PushPlatform.FCM;
-    final entered = Completer<void>();
-    final firstResponse = Completer<PlatformResponse>();
-    var writes = 0;
-    final h = harness(apns: 'NOT_CONFIGURED', fcm: 'CONFIGURED', bridge: bridge,
-      put: (_, _, body) {
-        writes++;
-        if (writes == 1) { entered.complete(); return firstResponse.future; }
-        return PlatformResponse(200, {...view(enabled: true, version: 2), 'platform': 'FCM'});
-      });
-    await loaded(h.container);
-    final controller = h.container.read(pushRegistrationProvider.notifier);
-    final enabling = controller.setEnabled(true);
-    await entered.future;
-    await controller.tokenChanged('rotated-fcm-token');
-    expect(writes, 1);
-    firstResponse.complete(PlatformResponse(200, {...view(enabled: true, version: 1), 'platform': 'FCM'}));
-    await enabling;
-    for (var i = 0; i < 20 && h.container.read(pushRegistrationProvider).version != 2; i++) {
-      await Future<void>.delayed(Duration.zero);
-    }
-    final puts = h.calls.where((c) => c.$1 == PlatformMethod.put).toList();
-    expect(puts, hasLength(2));
-    expect((puts[1].$3! as Map)['token'], 'rotated-fcm-token');
-    expect((puts[1].$3! as Map)['expectedVersion'], 1);
-    expect((puts[1].$3! as Map)['platform'], 'FCM');
-  });
+  test(
+    'FCM rotation during the first PUT is registered afterwards with the returned CAS version',
+    () async {
+      final bridge = _FakeBridge()..platform = PushPlatform.FCM;
+      final entered = Completer<void>();
+      final firstResponse = Completer<PlatformResponse>();
+      var writes = 0;
+      final h = harness(
+        apns: 'NOT_CONFIGURED',
+        fcm: 'CONFIGURED',
+        bridge: bridge,
+        put: (_, _, body) {
+          writes++;
+          if (writes == 1) {
+            entered.complete();
+            return firstResponse.future;
+          }
+          return PlatformResponse(200, {
+            ...view(enabled: true, version: 2),
+            'platform': 'FCM',
+          });
+        },
+      );
+      await loaded(h.container);
+      final controller = h.container.read(pushRegistrationProvider.notifier);
+      final enabling = controller.setEnabled(true);
+      await entered.future;
+      await controller.tokenChanged('rotated-fcm-token');
+      expect(writes, 1);
+      firstResponse.complete(
+        PlatformResponse(200, {
+          ...view(enabled: true, version: 1),
+          'platform': 'FCM',
+        }),
+      );
+      await enabling;
+      for (
+        var i = 0;
+        i < 20 && h.container.read(pushRegistrationProvider).version != 2;
+        i++
+      ) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      final puts = h.calls.where((c) => c.$1 == PlatformMethod.put).toList();
+      expect(puts, hasLength(2));
+      expect((puts[1].$3! as Map)['token'], 'rotated-fcm-token');
+      expect((puts[1].$3! as Map)['expectedVersion'], 1);
+      expect((puts[1].$3! as Map)['platform'], 'FCM');
+    },
+  );
 
   test('switching off does not prompt for OS display permission', () async {
     final bridge = _FakeBridge();
-    final h = harness(apns: 'CONFIGURED', bridge: bridge,
-      put: (_, _, _) => PlatformResponse(200, view(enabled: false, version: 1)));
+    final h = harness(
+      apns: 'CONFIGURED',
+      bridge: bridge,
+      put: (_, _, _) => PlatformResponse(200, view(enabled: false, version: 1)),
+    );
     await loaded(h.container);
     await h.container.read(pushRegistrationProvider.notifier).setEnabled(false);
     expect(bridge.permissionRequests, [false]);

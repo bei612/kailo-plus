@@ -139,7 +139,9 @@ class MethodChannelPushBridge implements PushBridge {
   @override
   Future<void> startRegistration({bool requestPermission = true}) async {
     try {
-      await _channel.invokeMethod<void>('startRegistration', {'requestPermission': requestPermission});
+      await _channel.invokeMethod<void>('startRegistration', {
+        'requestPermission': requestPermission,
+      });
     } on MissingPluginException {
       // Flutter tests and non-Runner embeddings do not install the native bridge.
     }
@@ -163,9 +165,12 @@ final pushBridgeProvider = Provider<PushBridge>(
 );
 
 /// Display permission as the OS reports it; refreshed when the settings page is shown.
-final pushAuthorizationStatusProvider = FutureProvider<PushAuthorizationStatus?>((ref) {
-  final bridge = ref.watch(pushBridgeProvider);
-  final changes = bridge.authorizationChanges.listen((_) => ref.invalidateSelf());
-  ref.onDispose(changes.cancel);
-  return bridge.authorizationStatus();
-});
+final pushAuthorizationStatusProvider =
+    FutureProvider<PushAuthorizationStatus?>((ref) {
+      final bridge = ref.watch(pushBridgeProvider);
+      final changes = bridge.authorizationChanges.listen(
+        (_) => ref.invalidateSelf(),
+      );
+      ref.onDispose(changes.cancel);
+      return bridge.authorizationStatus();
+    });
