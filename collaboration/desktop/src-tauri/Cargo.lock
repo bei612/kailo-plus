@@ -650,6 +650,7 @@ dependencies = [
  "block2",
  "buzz-core",
  "buzz-media",
+ "buzz-project-git",
  "buzz-sdk",
  "buzz-ws-client",
  "bytes",
@@ -730,6 +731,14 @@ dependencies = [
  "tracing",
  "ulid",
  "uuid",
+]
+
+[[package]]
+name = "buzz-project-git"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "tempfile",
 ]
 
 [[package]]
