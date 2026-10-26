@@ -341,7 +341,11 @@ async fn delivery_rechecks_revocation_and_host_binding_after_waiting_for_writer(
         // changes. Holding that row while awaiting such an UPDATE would make
         // this fixture wait on itself instead of exercising final readmission.
         sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))")
-            .bind(format!("kailo:1631:{}:{}", community.as_uuid(), original.id))
+            .bind(format!(
+                "kailo:1631:{}:{}",
+                community.as_uuid(),
+                original.id
+            ))
             .execute(&mut *writer)
             .await
             .unwrap();
