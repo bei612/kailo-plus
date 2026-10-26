@@ -7,9 +7,9 @@ PNG/JPEG/WebP data URL（≤96 KiB、两边均≤256 px）。同事务 Tenant ve
 修改名称/图标；不改 slug、Community 绑定或 NIP-11。普通成员 GET 只读资料，
 fresh manage 的成员才获得动作键，提交仍重新准入。
 
-当前为未发布的源码候选，四侧契约/词条/注册表与三端定向消费者检查已通过（下文
-记录固定源码）；Core 编译、隔离数据库与完整权限交互仍在验证。不可据此声称
-DD-158、V-SCN-261 已验收。
+当前为未发布的源码候选，四侧契约/词条/注册表、三端定向消费者和 Core 隔离数据库
+检查已通过（下文记录各自固定源码）；完整真实会话权限交互及跨会话即时更新尚未
+验收。不可据此声称 DD-158、V-SCN-261 已交付。
 
 阶段源码已补 Web/Desktop 共用资料对话框和 Mobile 设置入口/真实表单，使用同源
 契约与词条。普通成员只读；管理员编辑名字、图片、表情或清除图标，必须勾选确认
@@ -56,3 +56,21 @@ analyze 全通过；四项实际 Mobile 控制器/表单回归 **4 passed**：�
 `!Option::is_some_and` 的 nonminimal_bool，整体退出101、SQLx未执行。
 `0bc6c74ed` 改为等价 `is_none_or`，不加 allow 绕过。失败原件
 `profile-4d1cfcca0/profile-core-check-complete-input.log` 保留。
+
+## 固定 Core 完整终态（2026-10-26）
+
+固定 `0bc6c74ed`，原 check SDK
+`sha256:3007729eb192341a4f004a88e42e1e66c94fc67d763acfc96568bd7311116018`，
+原 helper 限额4CPU/16GiB与全新独立PG1CPU/2GiB，以下全部退出0：
+
+- Core workspace fmt、全量迁移、资料迁移回退至20261031040000再前进；
+- `cargo test --locked --manifest-path core/Cargo.toml -p platform-core tenant_profile -- --include-ignored`：**3 passed / 0 failed / 0 ignored**；
+- Core all-target Clippy `-D warnings`、workspace SQLx prepare check。
+
+回归覆盖规范化/闭集/明确确认、可解码图像与256px/96KiB及单emoji边界，以及实际
+PostgreSQL `prewrite` 的策略拒绝、会话目标约束、更新与清除图标、slug保持不变、
+同版本两个真实并发事务一胜一冲突、成员撤销后的拒绝。它不代替完整
+ActionExecution HTTP准入与SpiceDB fresh权限交互；测试没有把模拟权限称为真实
+权限验收。原件在 `/volumes/data/kailo/verification/buzz-r10/profile-0bc6c74ed/`：
+`profile-core-check-complete-input.log`、`profile-core-check-result.log`与preflight/limits。
+脚本清理后 docker 容器与网络匹配回读均为空，未启动或部署共享服务。
