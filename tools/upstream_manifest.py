@@ -746,7 +746,8 @@ def record(name, artifact):
         updates["build_config_digest"] = config_digest
     digest = source_digest(art) if artifact != "none" else "none"
     updates.update(source_digest=digest, artifact_digest=artifact)
-    lines = open(path, encoding="utf-8").read().split("\n")
+    with open(path, encoding="utf-8") as source:
+        lines = source.read().split("\n")
     start = next((i for i, l in enumerate(lines) if re.fullmatch(rf"  - name: {re.escape(art['name'])}\s*", l)), None)
     if start is None:
         sys.exit(f"{path}: 缺少 `  - name: {art['name']}` 块")
