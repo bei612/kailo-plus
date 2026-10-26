@@ -438,7 +438,11 @@ fn reconciliation_entry<'a>(p: &'a Pending, result_code: &'a str) -> AuditEntry<
         event_key: crate::web_transport::publication_event_key(
             p.operation_id,
             &p.event_id,
-            if result_code == "NOT_DELIVERED" { "RECONCILIATION:PROVED_ABSENCE" } else { "RECONCILIATION" },
+            if result_code == "NOT_DELIVERED" {
+                "RECONCILIATION:PROVED_ABSENCE"
+            } else {
+                "RECONCILIATION"
+            },
         ),
         tenant_id: Some(p.tenant_id),
         workspace_id: p.workspace_id,
@@ -470,14 +474,32 @@ pub(crate) async fn reconcile_retry_positive(state: &ServiceState, operation: Uu
           (select e->>'value' from jsonb_array_elements(evidence_refs) e where e->>'kind'='BUZZ_EVENT_ID') as event_id,
           false as settled from audit.audit_event where operation_id=$1 and event_type='DISPATCH'")
         .bind(operation).fetch_optional(&state.pool).await;
-    let Ok(Some(row))=row else { return false; };
-    let Some(event_id)=row.event_id else { return false; };
-    let p=Pending {operation_id:row.operation_id,tenant_id:row.tenant_id,workspace_id:row.workspace_id,
-        human_identity_id:row.human_identity_id,initiator_principal_id:row.initiator_principal_id,
-        actor_principal_id:row.actor_principal_id,target_id:row.target_id,action_key:row.action_key,
-        target_type:row.target_type,evidence_refs:row.evidence_refs.as_array().map(|refs|refs.iter().filter_map(Evidence::parse).collect()).unwrap_or_default(),
-        event_id,settled_window_passed:false};
-    observe_delivery(state,&p).await==Ok(true) && write_reconciliation(state,&p,"ACCEPTED").await=="ACCEPTED"
+    let Ok(Some(row)) = row else {
+        return false;
+    };
+    let Some(event_id) = row.event_id else {
+        return false;
+    };
+    let p = Pending {
+        operation_id: row.operation_id,
+        tenant_id: row.tenant_id,
+        workspace_id: row.workspace_id,
+        human_identity_id: row.human_identity_id,
+        initiator_principal_id: row.initiator_principal_id,
+        actor_principal_id: row.actor_principal_id,
+        target_id: row.target_id,
+        action_key: row.action_key,
+        target_type: row.target_type,
+        evidence_refs: row
+            .evidence_refs
+            .as_array()
+            .map(|refs| refs.iter().filter_map(Evidence::parse).collect())
+            .unwrap_or_default(),
+        event_id,
+        settled_window_passed: false,
+    };
+    observe_delivery(state, &p).await == Ok(true)
+        && write_reconciliation(state, &p, "ACCEPTED").await == "ACCEPTED"
 }
 
 fn publication_target(p: &Pending) -> Result<MessageTarget, &'static str> {
