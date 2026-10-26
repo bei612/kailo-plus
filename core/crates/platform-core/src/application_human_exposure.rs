@@ -323,7 +323,7 @@ mod tests {
         .await
         .is_err());
         // Original TEMPORAL admission sets ALLOWED after prewrite, before commit.
-        sqlx::query("update admission.action_execution set gate_state='ALLOWED' where id=(
+        sqlx::query("update admission.action_execution set gate_state='ALLOWED',dispatch_state='DISPATCHED' where id=(
             select action_execution_id from projection.application_runtime where binding_id=$1 and generation=1)")
             .bind(binding).execute(&mut *outer).await.unwrap();
         sqlx::query("update projection.application_runtime set state='ACTIVE',observation=jsonb_build_object(
