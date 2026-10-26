@@ -226,6 +226,10 @@ async function checkoutMenu(ui:HTMLElement){
 }
 const menuChoice=(label:string)=>[...document.querySelectorAll<HTMLElement>('[role="menuitem"],[role="menuitemradio"]')].find(item=>item.textContent?.trim()===label)!;
 async function selectLocal(ui:HTMLElement){await checkoutMenu(ui);await click(menuChoice("Local"));}
+async function activateTab(ui:HTMLElement,label:string){
+  const tab=[...ui.querySelectorAll<HTMLElement>('[role="tab"]')].find(tab=>tab.textContent===label)!;
+  await act(async()=>{tab.focus();tab.dispatchEvent(new KeyboardEvent("keydown",{key:"Enter",bubbles:true,cancelable:true}));});
+}
 
 describe("Desktop local checkout in the restored Projects consumer",()=>{
   it("clones, retains Local across tab navigation, reads file 251 locally and refreshes it after pull",async()=>{
@@ -236,7 +240,7 @@ describe("Desktop local checkout in the restored Projects consumer",()=>{
     await vi.waitFor(()=>expect(menuChoice("Clone")).toBeDefined());
     await click(menuChoice("Clone"));
     await vi.waitFor(()=>expect(ui.textContent).toContain("Local readme"));
-    await click([...ui.querySelectorAll<HTMLElement>('[role="tab"]')].find(tab=>tab.textContent==="Files")!);
+    await activateTab(ui,"Files");
     await vi.waitFor(()=>expect(ui.querySelector('[aria-label="Open file file-0250.txt"]')).not.toBeNull());
     expect(localControls(ui).textContent).toContain("Local");
     await click(ui.querySelector<HTMLElement>('[aria-label="Open file file-0250.txt"]')!);
@@ -244,6 +248,7 @@ describe("Desktop local checkout in the restored Projects consumer",()=>{
     expect(f.native.mock.calls.filter(([command])=>command==="get_project_repo_file_content")).toEqual([]);
     await click([...localControls(ui).querySelectorAll<HTMLButtonElement>("button")].find(button=>button.textContent?.trim().startsWith("Pull"))!);
     await vi.waitFor(()=>expect(ui.querySelector('[data-testid="project-repository-file"]')?.textContent).toContain("Local file 251 after pull"));
+    await vi.waitFor(()=>expect(namedButton(localControls(ui),"Open folder").disabled).toBe(false));
     await click(namedButton(localControls(ui),"Open folder"));
     expect(f.native.mock.calls.some(([command])=>command==="open_project_repository_folder")).toBe(true);
   });
@@ -293,7 +298,7 @@ describe("Desktop local checkout in the restored Projects consumer",()=>{
     await vi.waitFor(()=>expect(localControls(ui)?.textContent).toContain("Open folder"));
     await selectLocal(ui);
     await vi.waitFor(()=>expect(ui.textContent).toContain("Local readme"));
-    await click([...ui.querySelectorAll<HTMLElement>('[role="tab"]')].find(tab=>tab.textContent==="Commits")!);
+    await activateTab(ui,"Commits");
     await vi.waitFor(()=>expect(ui.querySelector('[data-testid="project-activity-feed-item"]')?.textContent).toContain("Initial import"));
     await click([...ui.querySelectorAll<HTMLButtonElement>('[data-testid="project-activity-feed-item"] button')].find(button=>button.textContent==="Initial import")!);
     await vi.waitFor(()=>expect(f.native.mock.calls.some(([command])=>command==="get_project_local_repo_diff")).toBe(true));
