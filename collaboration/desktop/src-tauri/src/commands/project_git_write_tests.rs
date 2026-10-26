@@ -401,13 +401,40 @@ fn native_git_failures_keep_existing_contract_reasons() {
 }
 
 #[test]
-fn reprepare_conflicts_settle_the_ref_but_network_failures_keep_it_frozen(){
-    let temp=tempfile::tempdir().unwrap();let store=Journal::open(&temp.path().join("intent.sqlite")).unwrap();
-    let mut frozen=intent();frozen.result="NOT_DELIVERED".into();store.save(&frozen,"RECONCILIATION").unwrap();
-    assert_eq!(reconstruction_error(&store,&mut frozen,git::MergeErrorCode::Failed).code,UNKNOWN);
-    assert_eq!(store.find(&frozen.key,&frozen.request).unwrap().unwrap().result,"NOT_DELIVERED");
-    assert_eq!(reconstruction_error(&store,&mut frozen,git::MergeErrorCode::BranchChanged).code,CONFLICT);
-    assert_eq!(store.find(&frozen.key,&frozen.request).unwrap().unwrap().result,CONFLICT);
-    let mut changed=frozen.request.clone();changed.expected_commit="e".repeat(40);
-    assert!(store.find(&uuid::Uuid::new_v4().to_string(),&changed).unwrap().is_none());
+fn reprepare_conflicts_settle_the_ref_but_network_failures_keep_it_frozen() {
+    let temp = tempfile::tempdir().unwrap();
+    let store = Journal::open(&temp.path().join("intent.sqlite")).unwrap();
+    let mut frozen = intent();
+    frozen.result = "NOT_DELIVERED".into();
+    store.save(&frozen, "RECONCILIATION").unwrap();
+    assert_eq!(
+        reconstruction_error(&store, &mut frozen, git::MergeErrorCode::Failed).code,
+        UNKNOWN
+    );
+    assert_eq!(
+        store
+            .find(&frozen.key, &frozen.request)
+            .unwrap()
+            .unwrap()
+            .result,
+        "NOT_DELIVERED"
+    );
+    assert_eq!(
+        reconstruction_error(&store, &mut frozen, git::MergeErrorCode::BranchChanged).code,
+        CONFLICT
+    );
+    assert_eq!(
+        store
+            .find(&frozen.key, &frozen.request)
+            .unwrap()
+            .unwrap()
+            .result,
+        CONFLICT
+    );
+    let mut changed = frozen.request.clone();
+    changed.expected_commit = "e".repeat(40);
+    assert!(store
+        .find(&uuid::Uuid::new_v4().to_string(), &changed)
+        .unwrap()
+        .is_none());
 }
