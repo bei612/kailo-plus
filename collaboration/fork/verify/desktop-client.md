@@ -673,3 +673,17 @@ source 相等，原 manifest 仅该产物 source/artifact 两字段 +2/-2，不�
 ### 同日 DD-160 本机检出收口
 
 本机八命令、按 Community/30617 分区、持久冻结推送意图及第 251 项后的本机文件读取已进入固定集成 Rust 源 `0b9b72ba64c248a239abfb0f5d4ab242c662001c`。原 SDK 全锁检查 Desktop 10 项、共享 Git crate 38 项通过；恢复“待确认推送改用当前 HEAD”的真实缺陷后已有检查失败，逐字恢复后通过。首次分支创建回归失败、锁变化、原始日志和未覆盖的安装包/真机/界面边界保留在[本机检出核验](desktop-project-checkout.md)，不将源码检查算成 V-SCN-264/265 验收。
+
+### 2026-10-26 DD-160 本机检出共享界面定向闭环
+
+固定基线 `7ef4f5ab6e8c139c4f1a53d60a58ce6908ca5765`，本节产品与消费者检查源码为 `cadd7290a1070a51d6df76075c061b45316639f6`，分支 `codex/dd160-checkout-ui-20261026`。复用固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的 source 控件、`repoSyncHooks.ts` 和 `useDocumentVisible.ts`；聚焦订阅只替换为已有共享 `foregroundReady` 接缝。未重复本批已通过的原生 Rust 验证。
+
+完整消费者操作发现并修复：切换仓库 tab 会在重新读取工作项期间卸载 Git 子树，原 hook 内的 Local 选择因此丢失；现由同身份页面保存、按 30617 仓库分区，进入文件和 commit detail 继续读本机内容，Agent 上下文同步实际 source。迟到 clone、mutation 提示和 Fetch 完成回调检查原身份/仓库生命周期；旧身份完成不会切换新页面 source、通知新身份或使其查询失效。pull 和 Fetch 同时刷新独立的文件内容缓存，避免第 251 个按需读取文件继续显示旧内容。恢复上游应用聚焦时的 60 秒状态轮询，失焦停止；原生响应中 pending 同时允许 pull 或未知结果允许 push、以及成功响应分支不匹配请求时均拒绝采用。
+
+- SDK：`sha256:3007729eb192341a4f004a88e42e1e66c94fc67d763acfc96568bd7311116018`，原 `container-safety.sh` 回读实际 1 CPU、4 GiB memory、4 GiB memory+swap。源码只从 GitHub 固定 SHA 导出；缓存与证据在 Data，输入在 NVMe，没有宿主 Node/Dart 编译或测试。根工作区 pnpm 10.33.4 与 Desktop 独立工作区 pnpm 11.4.0 均按各自原锁执行 `install --frozen-lockfile`。
+- platform 原 `tsc --noEmit`、`tsc --noEmit -p tsconfig.test.json` 均退出 0；现有 `project-git-native.test.ts`、`project-git.test.tsx`、`project-branch-review.test.tsx` 合计 35 passed、0 failed（9/15/11），`vitest run … --maxWorkers=1` 退出 0；Desktop 原 `tsc --noEmit` 退出 0。原 `tools/gen-platform-i18n.py` 生成及 `--check` 通过，11 个新词条的 Dart 枚举和中英投影已提交，reason 投影未变。既有 React act 提示保留在日志中。
+- 新 DOM 操作沿真实 ProjectsView、TanStack Query、原 Radix 控件及 native decoder，仅替换原生命令边界：Clone 后 Local 跨 tab 保留，逐页打开第 251 个文件并核实不调用 remote，Pull 后当前文件刷新，Open folder 调用；pending 目标为 frozen-feature 而 picker 为 main 时只重试冻结分支；Web 无本机入口；身份切换后迟到 clone 不通知/不选 Local；Local commit detail 使用本机 diff。
+- 真实失败保留：`5f1a31caf6bcea604ee5526a971615e5c30c54f7` 初轮平台类型检查通过，消费者 33/35，新增 tab 操作误用 `.click()` 未触发原 Radix 键盘/鼠标语义；Desktop 前切换 PATH 后未找到 pnpm，退出 127，未运行该轮 Desktop tsc。修正为原控件 Enter 激活及原缓存 pnpm 路径后，`729af8b7afa651319602e9f98d4ab71dd96641a7` 类型检查与 Desktop tsc 通过，消费者 34/35，第 251 文件仍未经过原分页展开。最终检查使用真实“再显示”按钮逐页访问，未删除分页、减小文件集或放宽内容断言，35/35 通过。
+- 反向验证在同一固定源码的独立导出中临时移除成功提示的身份围栏、把冻结 push 分支替换为 picker 分支、把本机文件按需读取错误接到 remote。原三项 DOM 检查分别在迟到提示、请求 branchName 和文件正文断言失败（3 failed、exit 1）；逐字还原后同三项 3 passed、exit 0。还原 SHA-256：`useProjectLocalCheckout.tsx` 为 `8162889cfc2cfa0bb073bf9a329cc811ddd9f058202904eb6e6731954f11edcb`，`useRepositoryFileContent.ts` 为 `91b91ccf6ab30d6d0589146aeb17fa71b131c31100858467e84cff22ff249dcc`。临时缺陷没有进入 Git 提交。
+
+CI 节点原日志：`/volumes/data/kailo/verification/dd160-checkout-ui/<上述固定SHA>/frontend.log` 及同目录 `frontend-{preflight,limits,exit,oom}.log`；最终 SHA 的 `negative/` 保留 `mutated.log`、`restored.log` 与执行限额/退出记录。正向及反向容器均终态并删除，OOMKilled 均为 false。这里是固定源码的类型、DOM 消费者和生成检查，未构建安装包、未部署、未在 Win11/真实 Desktop 进行 clone/push/pull/断网重启验收，也不代替真实发布后 DD-157 三账号双主题验收或解除发布门禁。
