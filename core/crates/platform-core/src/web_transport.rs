@@ -209,6 +209,20 @@ impl PublicationScope {
     }
 }
 
+/// The BFF winner stores the actual scope and DISPATCH together, before any
+/// external send. No caller may persist a different scope for this same attempt.
+async fn persist_publication_dispatch(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>, audit: &PublicationAudit<'_>, scope: &PublicationScope,
+) -> Result<(), sqlx::Error> {
+    let written = sqlx::query("update admission.publish_attempt set delivery_scope=$4
+        where tenant_principal_id=$1 and operation_id=$2 and event_id=$3
+          and (delivery_scope is null or delivery_scope=$4)")
+        .bind(audit.ctx.tenant_principal_id).bind(audit.operation_id).bind(audit.event_id)
+        .bind(sqlx::types::Json(scope)).execute(&mut **tx).await?.rows_affected();
+    if written != 1 { return Err(sqlx::Error::RowNotFound); }
+    append(tx, audit.entry("DISPATCH", "DISPATCHED")).await
+}
+
 /// Lock only local facts, in a short transaction. No Relay, secret or SpiceDB I/O
 /// may occur while these SHARE locks are held.
 pub(crate) async fn locked_publication_binding(
@@ -317,17 +331,10 @@ async fn locked_owned_agent_installation(
     workspace: Uuid,
     author: &str,
 ) -> Result<Option<Uuid>, sqlx::Error> {
-    sqlx::query_scalar(
-        "select inst.resource_id from identity.buzz_identity_binding a
-         join catalog.agent_installation inst on inst.agent_principal_id=a.principal_id and inst.workspace_id=$3
-         join catalog.resource r on r.id=inst.resource_id and r.tenant_id=a.tenant_id
-           and r.type_key='agent.installation' and r.state='ACTIVE' and r.owner_principal_id=$4
-         join catalog.channel_agent_binding cb on cb.installation_resource_id=inst.resource_id
-           and cb.workspace_id=$3 and cb.status='ACTIVE'
-         where a.tenant_id=$1 and a.pubkey=$2 and a.kind='AGENT' and a.custody='SERVER'
-           and a.state='ACTIVE' and a.private_key_secret_status='ACTIVE'
-         for share of a,inst,r,cb")
-        .bind(tenant).bind(author).bind(workspace).bind(actor).fetch_optional(conn).await
+    let query = format!("{OWNED_AGENT_KEY_SQL} for share of a,inst,r,cb,ap");
+    let row: Option<OwnedAgentKeyRow> = sqlx::query_as(&query)
+        .bind(tenant).bind(author).bind(workspace).bind(actor).fetch_optional(conn).await?;
+    Ok(row.map(|row| row.0))
 }
 
 pub(crate) async fn owned_publication_installation(
@@ -616,6 +623,20 @@ fn valid_deletion_request(request: &PublishRequest) -> bool {
 /// Installation, Agent public key and the key's SecretRef parts (locator, version, audience).
 type OwnedAgentKeyRow = (Uuid, String, Option<String>, Option<i32>, Option<String>);
 
+const OWNED_AGENT_KEY_SQL: &str = "select inst.resource_id,a.pubkey,a.private_key_secret_ref,a.private_key_secret_version,
+                a.private_key_secret_audience
+         from identity.buzz_identity_binding a
+         join catalog.agent_installation inst on inst.agent_principal_id=a.principal_id
+           and inst.workspace_id=$3 and inst.state='ACTIVE'
+         join identity.principal ap on ap.id=a.principal_id and ap.tenant_id=a.tenant_id
+           and ap.kind='AGENT' and ap.status='ACTIVE'
+         join catalog.resource r on r.id=inst.resource_id and r.tenant_id=a.tenant_id
+           and r.type_key='agent.installation' and r.state='ACTIVE' and r.owner_principal_id=$4
+         join catalog.channel_agent_binding cb on cb.installation_resource_id=inst.resource_id
+           and cb.workspace_id=$3 and cb.status='ACTIVE'
+         where a.tenant_id=$1 and a.pubkey=$2 and a.kind='AGENT' and a.custody='SERVER'
+           and a.state='ACTIVE' and a.private_key_secret_status='ACTIVE'";
+
 /// DD-142: the SERVER keys of an AGENT author in this Workspace channel when the caller
 /// owns its ACTIVE Installation (Core owner fact and fresh SpiceDB `manage`), the
 /// Installation is bound to the channel, and the key reference is the Installation's
@@ -627,17 +648,7 @@ async fn owned_agent_keys(
     author: &nostr::PublicKey,
 ) -> Result<Option<(Uuid, nostr::Keys)>, Response> {
     let row: Option<OwnedAgentKeyRow> = sqlx::query_as(
-        "select inst.resource_id,a.pubkey,a.private_key_secret_ref,a.private_key_secret_version,
-                a.private_key_secret_audience
-         from identity.buzz_identity_binding a
-         join catalog.agent_installation inst on inst.agent_principal_id=a.principal_id
-           and inst.workspace_id=$3
-         join catalog.resource r on r.id=inst.resource_id and r.tenant_id=a.tenant_id
-           and r.type_key='agent.installation' and r.state='ACTIVE' and r.owner_principal_id=$4
-         join catalog.channel_agent_binding cb on cb.installation_resource_id=inst.resource_id
-           and cb.workspace_id=$3 and cb.status='ACTIVE'
-         where a.tenant_id=$1 and a.pubkey=$2 and a.kind='AGENT' and a.custody='SERVER'
-           and a.state='ACTIVE' and a.private_key_secret_status='ACTIVE'",
+        OWNED_AGENT_KEY_SQL,
     )
     .bind(ctx.tenant_id)
     .bind(author.to_hex())
@@ -3157,16 +3168,16 @@ async fn publish(
             // 上一次确定未送达：把这个键改指向新的一次，条件是它仍指向上一次
             Some(p) => sqlx::query(
                 "update admission.publish_attempt
-                 set operation_id=$3,event_id=$4,created_at=now(),delivery_scope=$6
+                 set operation_id=$3,event_id=$4,created_at=now(),delivery_scope=null
                  where tenant_principal_id=$1 and idempotency_key=$2 and operation_id=$5")
             .bind(ctx.tenant_principal_id).bind(idempotency_key).bind(operation_id).bind(&event_id)
-            .bind(p.operation_id).bind(sqlx::types::Json(&delivery_scope))
+            .bind(p.operation_id)
             .execute(&mut *tx).await?.rows_affected(),
             None => sqlx::query(
                 "insert into admission.publish_attempt
                      (tenant_principal_id, idempotency_key, operation_id, event_id, mention_installation_ids, message_kind, parent_event_id, edit_event_id, delete_event_id, mention_pubkeys, send_to_channel_source_event_id,
-                      link_preview_snapshot_ids, suppress_link_previews, reference_mention_pubkeys, addressed_installation_ids, delivery_scope)
-                 values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) on conflict do nothing"
+                      link_preview_snapshot_ids, suppress_link_previews, reference_mention_pubkeys, addressed_installation_ids)
+                 values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) on conflict do nothing"
             )
             .bind(ctx.tenant_principal_id)
             .bind(idempotency_key)
@@ -3183,7 +3194,6 @@ async fn publish(
             .bind(suppress_previews)
             .bind(&reference_mentions)
             .bind(&addressed_ids)
-            .bind(sqlx::types::Json(&delivery_scope))
             .execute(&mut *tx)
             .await?
             .rows_affected(),
@@ -3231,11 +3241,7 @@ async fn publish(
                 && frozen.suppress_link_previews == suppress_previews
                 { Claim::Pending } else { Claim::TargetMismatch });
         }
-        append(
-            &mut tx,
-            audit.entry("DISPATCH", "DISPATCHED"),
-        )
-        .await?;
+        persist_publication_dispatch(&mut tx, &audit, &delivery_scope).await?;
         tx.commit().await?;
         Ok(Claim::Acquired)
     }
@@ -4926,6 +4932,124 @@ fn relay_media_path(media_ref: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    #[tokio::test]
+    #[ignore = "requires PUBLISH_RECONCILE_TEST_DATABASE_URL pointing at an isolated migrated database"]
+    async fn publication_scope_owned_agent_rejects_disabled_installation_or_principal() {
+        use super::*;
+        let pool = sqlx::PgPool::connect(&std::env::var("PUBLISH_RECONCILE_TEST_DATABASE_URL").unwrap()).await.unwrap();
+        let mut tx = pool.begin().await.unwrap();
+        // Reuse the original Installation lifecycle's migrated fixture shape;
+        // no temporary authority tables or relaxed business constraints.
+        sqlx::raw_sql(r#"CREATE TEMP TABLE owned_scope_fixture(tenant uuid,workspace uuid,human uuid,agent uuid,installation uuid) ON COMMIT DROP;
+        DO $$ DECLARE
+          tenant uuid:=gen_random_uuid(); workspace uuid:=gen_random_uuid();
+          human uuid:=gen_random_uuid(); agent uuid:=gen_random_uuid();
+          definition uuid:=gen_random_uuid(); installation uuid:=gen_random_uuid(); route uuid:=gen_random_uuid(); version uuid:=gen_random_uuid();
+        BEGIN
+          INSERT INTO identity.tenant(id,slug,name,state) VALUES(tenant,tenant::text,'owner scope fixture','ACTIVE');
+          INSERT INTO identity.workspace(id,tenant_id,slug,name,state) VALUES(workspace,tenant,workspace::text,'owner scope fixture','ACTIVE');
+          INSERT INTO identity.principal(id,tenant_id,kind,status) VALUES(human,tenant,'HUMAN','ACTIVE'),(agent,tenant,'AGENT','ACTIVE');
+          INSERT INTO catalog.resource(id,tenant_id,type_key,home_workspace_id,owner_principal_id,component_type_key,native_id,state,version) VALUES
+            (definition,tenant,'agent.definition',NULL,human,'core',definition::text,'PROVISIONING',1),
+            (route,tenant,'llm_route',workspace,human,'core',route::text,'PROVISIONING',1),
+            (installation,tenant,'agent.installation',workspace,human,'core',installation::text,'PROVISIONING',1);
+          INSERT INTO catalog.agent_definition(resource_id,stable_slug,display_name,status) VALUES(definition,definition::text,'owner scope fixture','PROVISIONING');
+          INSERT INTO catalog.asset(id,tenant_id,resource_id,type_key,owner_principal_id,native_ref,state,version) VALUES
+            (version,tenant,definition,'agent.version',human,version::text,'DRAFT',1);
+          INSERT INTO catalog.agent_version(asset_id,agent_resource_id,ordinal,content,config_hash,state) VALUES
+            (version,definition,1,jsonb_build_object('runtimeProfileKey','fixture','modelRouteResourceId',route),repeat('a',64),'DRAFT');
+          INSERT INTO catalog.agent_installation(resource_id,workspace_id,agent_resource_id,pinned_version_asset_id,agent_principal_id,runtime_isolation_ref,state)
+            VALUES(installation,workspace,definition,version,agent,'fixture:'||installation,'PROVISIONING');
+          INSERT INTO catalog.agent_runtime_projection(installation_resource_id,generation,agent_version_asset_id,runtime_profile_key,model_route_resource_id,gateway_resource_ids,effective_fields,config_hash,state) VALUES
+            (installation,1,version,'fixture',route,ARRAY[route],jsonb_build_array(jsonb_build_object('fieldKey','runtimeProfileKey','requestedValueHash',repeat('a',64),'effectiveValueHash',repeat('a',64),'reasonCode',NULL)),repeat('a',64),'ACTIVE');
+          UPDATE catalog.agent_installation SET state='ACTIVE',active_projection_generation=1 WHERE resource_id=installation;
+          UPDATE catalog.resource SET state='ACTIVE' WHERE id=installation;
+          INSERT INTO catalog.channel_agent_binding(workspace_id,installation_resource_id,triggers,status) VALUES(workspace,installation,ARRAY['MENTION'],'ACTIVE');
+          INSERT INTO owned_scope_fixture VALUES(tenant,workspace,human,agent,installation);
+        END $$;"#).execute(&mut *tx).await.unwrap();
+        let (tenant, workspace, human, agent, installation): (Uuid, Uuid, Uuid, Uuid, Uuid) = sqlx::query_as("select tenant,workspace,human,agent,installation from owned_scope_fixture")
+            .fetch_one(&mut *tx).await.unwrap();
+        let author = nostr::Keys::generate().public_key().to_hex();
+        sqlx::query("insert into identity.buzz_identity_binding(tenant_id,principal_id,pubkey,custody,kind,state,private_key_secret_ref,private_key_secret_version,private_key_secret_audience,private_key_secret_status) values($1,$2,$3,'SERVER','AGENT','ACTIVE','fixture/agent',1,'fixture','ACTIVE')")
+            .bind(tenant).bind(agent).bind(&author).execute(&mut *tx).await.unwrap();
+        assert_eq!(locked_owned_agent_installation(&mut tx, tenant, human, workspace, &author).await.unwrap(), Some(installation));
+        for (mutation, id) in [
+            ("update catalog.agent_installation set state='DISABLED' where resource_id=$1", installation),
+            ("update catalog.agent_installation set state='ERROR' where resource_id=$1", installation),
+            ("update catalog.agent_installation set state='DRAINING' where resource_id=$1", installation),
+            ("update identity.principal set status='DISABLED' where id=$1", agent),
+        ] {
+            sqlx::query("savepoint owner_fault").execute(&mut *tx).await.unwrap();
+            sqlx::query(mutation).bind(id).execute(&mut *tx).await.unwrap();
+            assert_eq!(locked_owned_agent_installation(&mut tx, tenant, human, workspace, &author).await.unwrap(), None, "{mutation}");
+            // Key acquisition and reconciliation share this exact eligibility SQL.
+            let key: Option<OwnedAgentKeyRow> = sqlx::query_as(OWNED_AGENT_KEY_SQL).bind(tenant).bind(&author).bind(workspace).bind(human)
+                .fetch_optional(&mut *tx).await.unwrap();
+            assert!(key.is_none(), "key selection must deny {mutation}");
+            sqlx::query("rollback to savepoint owner_fault").execute(&mut *tx).await.unwrap();
+            assert_eq!(locked_owned_agent_installation(&mut tx, tenant, human, workspace, &author).await.unwrap(), Some(installation));
+        }
+        tx.rollback().await.unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore = "requires PUBLISH_RECONCILE_TEST_DATABASE_URL pointing at an isolated migrated database"]
+    async fn publication_scope_dispatch_is_atomic_and_blocks_destructive_rollback() {
+        use super::*;
+        let pool = sqlx::PgPool::connect(&std::env::var("PUBLISH_RECONCILE_TEST_DATABASE_URL").unwrap()).await.unwrap();
+        let mut tx = pool.begin().await.unwrap();
+        let ctx = ExecutionContext { tenant_id: Uuid::new_v4(), tenant_principal_id: Uuid::new_v4(),
+            human_identity_id: Uuid::new_v4(), session_id: Uuid::new_v4(), access_mode: contracts::PlatformSessionAccessMode::Full };
+        sqlx::query("insert into identity.tenant(id,slug,name,state) values($1,$2,'dispatch scope','ACTIVE')")
+            .bind(ctx.tenant_id).bind(ctx.tenant_id.to_string()).execute(&mut *tx).await.unwrap();
+        sqlx::query("insert into identity.principal(id,tenant_id,kind,status) values($1,$2,'HUMAN','ACTIVE')")
+            .bind(ctx.tenant_principal_id).bind(ctx.tenant_id).execute(&mut *tx).await.unwrap();
+        let event_id = "ab".repeat(32); let operation_id = Uuid::new_v4();
+        let scope = PublicationScope { community_id: Uuid::new_v4(), tenant_binding_version: 4,
+            target_channel_id: Some(Uuid::new_v4()), target_binding_version: Some(2), event_pubkey: nostr::Keys::generate().public_key().to_hex(),
+            event_kind: 41012, event_channel_id: None, signer_installation_id: None };
+        let scope = PublicationScope { event_channel_id: scope.target_channel_id, ..scope };
+        let audit = PublicationAudit { ctx: &ctx, target: MessageTarget::Conversation(Uuid::new_v4()), operation_id,
+            action_key: CONVERSATION_HIDE_ACTION, event_id: &event_id, signer_pubkey: None };
+        // The original idempotency row deliberately still has its old default
+        // message_kind=9. Only the actual-event scope records Hide's 41012.
+        sqlx::query("insert into admission.publish_attempt(tenant_principal_id,idempotency_key,operation_id,event_id) values($1,$2,$3,$4)")
+            .bind(ctx.tenant_principal_id).bind(Uuid::new_v4()).bind(operation_id).bind(&event_id).execute(&mut *tx).await.unwrap();
+        sqlx::raw_sql("create function pg_temp.reject_scope_dispatch() returns trigger language plpgsql as $$ begin raise exception 'injected original DISPATCH write failure'; end $$;
+            create trigger reject_scope_dispatch before insert on audit.audit_event for each row execute function pg_temp.reject_scope_dispatch();")
+            .execute(&mut *tx).await.unwrap();
+        sqlx::query("savepoint failed_dispatch").execute(&mut *tx).await.unwrap();
+        assert!(persist_publication_dispatch(&mut tx, &audit, &scope).await.is_err());
+        sqlx::query("rollback to savepoint failed_dispatch").execute(&mut *tx).await.unwrap();
+        let frozen: Option<serde_json::Value> = sqlx::query_scalar("select delivery_scope from admission.publish_attempt where operation_id=$1")
+            .bind(operation_id).fetch_one(&mut *tx).await.unwrap();
+        assert!(frozen.is_none(), "failed DISPATCH must not leave a frozen scope alone");
+        let count: i64 = sqlx::query_scalar("select count(*) from audit.audit_event where operation_id=$1")
+            .bind(operation_id).fetch_one(&mut *tx).await.unwrap();
+        assert_eq!(count, 0);
+        sqlx::query("drop trigger reject_scope_dispatch on audit.audit_event").execute(&mut *tx).await.unwrap();
+        persist_publication_dispatch(&mut tx, &audit, &scope).await.unwrap();
+        persist_publication_dispatch(&mut tx, &audit, &scope).await.unwrap();
+        let (actual, count, actor, target, kind): (serde_json::Value, i64, Uuid, Uuid, i32) = sqlx::query_as(
+            "select p.delivery_scope,(select count(*) from audit.audit_event where operation_id=p.operation_id),a.actor_principal_id,a.target_id,p.message_kind
+             from admission.publish_attempt p join audit.audit_event a on a.operation_id=p.operation_id and a.event_type='DISPATCH'
+             where p.operation_id=$1")
+            .bind(operation_id).fetch_one(&mut *tx).await.unwrap();
+        assert_eq!(serde_json::from_value::<PublicationScope>(actual).unwrap(), scope);
+        assert_eq!((count, actor, target, kind), (1, ctx.tenant_principal_id, audit.target.id(), 9));
+        let mut changed = scope.clone(); changed.community_id = Uuid::new_v4();
+        assert!(matches!(persist_publication_dispatch(&mut tx, &audit, &changed).await, Err(sqlx::Error::RowNotFound)));
+        sqlx::query("savepoint unsafe_down").execute(&mut *tx).await.unwrap();
+        let error = sqlx::raw_sql(include_str!("../../../migrations/20261101020000_publish_delivery_scope.down.sql"))
+            .execute(&mut *tx).await.unwrap_err();
+        assert!(error.to_string().contains("while frozen attempts exist"), "{error}");
+        sqlx::query("rollback to savepoint unsafe_down").execute(&mut *tx).await.unwrap();
+        let still_frozen: serde_json::Value = sqlx::query_scalar("select delivery_scope from admission.publish_attempt where operation_id=$1")
+            .bind(operation_id).fetch_one(&mut *tx).await.unwrap();
+        assert_eq!(serde_json::from_value::<PublicationScope>(still_frozen).unwrap(), scope);
+        tx.rollback().await.unwrap();
+    }
+
     #[tokio::test]
     #[ignore = "requires PUBLISH_RECONCILE_TEST_DATABASE_URL pointing at an isolated migrated database"]
     async fn publication_scope_postgres_fences_membership_identity_binding_and_dm() {
