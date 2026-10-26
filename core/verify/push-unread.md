@@ -1,7 +1,7 @@
 # DD-151 Mobile 推送未读角标
 
 本批从 `f551157f08ddcf7b57c5fdbce4526e2153fc05fd` 接续既有未提交角标实现。
-尚未合并、打包、部署或完成 APNs/FCM 真机验收；原 SDK 定向验证待执行。
+尚未合并、打包、部署或完成 APNs/FCM 真机验收；原 SDK 定向验证结果见下。
 
 ## 实际读写链
 
@@ -31,3 +31,27 @@ advisory lock 跨整个轮询投递；本刀不新增跨 HTTP 的投影事务或
 后续须沿既有 DD-151 派生数据与检查点补持久发送意图和结果不明收敛，不能将这个
 限制当作永久交付豁免。设备授权逐次核验、勿扰、真实提供方回执与客户端徽标归零
 仍需与完整 DD-151 消费者验收，不由这组数据库回归证明。
+
+## 固定源码验证回执（2026-10-26）
+
+固定 `412a2b07b`，来自已推送 `feat/buzz-restore-r10` 的 Git 导出树，未混入
+后续 DD-158 工作区增量。原 `tools/check.Dockerfile` 的不可变 SDK
+`sha256:3007729eb192341a4f004a88e42e1e66c94fc67d763acfc96568bd7311116018`
+（Cargo 1.90.0）使用原 `tools/container-safety.sh` 启动前回读限额；
+SDK 4 CPU / 16 GiB，独立 PostgreSQL 1 CPU / 2 GiB、tmpfs 数据目录。
+沿原 CI Docker 配置与容量缓存运行，未使用宿主 Cargo。
+
+- `cargo fmt --manifest-path core/Cargo.toml --all --check`：退出 0。
+- 原 `sqlx migrate run/revert/run --source core/migrations`：全量前进、
+  `20261031040000_push_unread` 回退与再前进均退出 0。
+- `cargo test --locked --manifest-path core/Cargo.toml -p platform-core push:: -- --include-ignored`：
+  **15 passed、0 failed、0 ignored**；包含上文实际数据库 SQL 回归。
+  其他 integration binaries 的过滤后 0 项不计作新增验收。
+- `cargo clippy --locked --manifest-path core/Cargo.toml -p platform-core --all-targets -- -D warnings`：退出 0。
+- `cd core && cargo sqlx prepare --check --workspace`：退出 0。
+
+原始日志 `/volumes/data/kailo/verification/buzz-r10/push-check.log`，最终回执
+`push-check-result.log`；`push-check-preflight.log`、`push-check-limits.log` 和
+`push-pg-limits.log` 保存资源读回。检查结束后已回读确认 SDK、PG 容器及其独立
+网络全部清理。上述数据库回归验证的是实际派生表读写，不替代真实 APNs/FCM
+发送、手机点击跳转、provider 崩溃窗口恢复或三端验收。
