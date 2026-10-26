@@ -204,6 +204,59 @@ void main() {
     );
   });
 
+  for (final pendingAt in ['read', 'write']) {
+    test('identity change retires a late registration $pendingAt result', () async {
+      final late = Completer<PlatformResponse>();
+      final entered = Completer<void>();
+      final bridge = _FakeBridge();
+      final otherKeys = nostr.Keys.generate();
+      PushRegistrationDeps deps(nostr.Keys identity, {required bool old}) => PushRegistrationDeps(
+        send: (method, path, {body}) async {
+          if (path == pushCapabilityPath) {
+            return const PlatformResponse(200, {'apns': 'CONFIGURED', 'fcm': 'NOT_CONFIGURED'});
+          }
+          if (path == '/api/v1/session') return const PlatformResponse(200, _session);
+          final writing = method == PlatformMethod.put;
+          if (old && ((pendingAt == 'write' && writing) || (pendingAt == 'read' && !writing))) {
+            if (!entered.isCompleted) entered.complete();
+            return late.future;
+          }
+          return const PlatformResponse(404, {});
+        },
+        deviceKeys: () async => identity,
+        appId: () async => 'chat.kailo.mobile',
+        apiUri: (path) => Uri.parse('https://native.example.test$path'),
+        locale: () => 'en',
+      );
+      final original = deps(keys, old: true);
+      final replacement = deps(otherKeys, old: false);
+      final container = ProviderContainer(overrides: [
+        pushRegistrationDepsProvider.overrideWithValue(original),
+        pushBridgeProvider.overrideWithValue(bridge),
+      ]);
+      addTearDown(container.dispose);
+      container.read(pushRegistrationProvider);
+      Future<void>? pending;
+      if (pendingAt == 'write') {
+        await loaded(container);
+        pending = container.read(pushRegistrationProvider.notifier).setEnabled(true);
+      }
+      await entered.future;
+      container.updateOverrides([
+        pushRegistrationDepsProvider.overrideWithValue(replacement),
+        pushBridgeProvider.overrideWithValue(bridge),
+      ]);
+      await loaded(container);
+      late.complete(PlatformResponse(200, view(enabled: true, version: 99)));
+      await pending;
+      await Future<void>.delayed(Duration.zero);
+      final current = container.read(pushRegistrationProvider);
+      expect(current.devicePubkey, otherKeys.public);
+      expect(current.version, 0);
+      expect(current.effectiveEnabled, isFalse);
+    });
+  }
+
   test('notification taps carry ids only into the deep-link pipeline', () {
     expect(
       pushNotificationLink({

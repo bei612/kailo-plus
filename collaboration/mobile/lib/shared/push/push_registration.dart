@@ -16,6 +16,8 @@ import 'package:package_info_plus/package_info_plus.dart';
 
 import 'package:client_kit/shared/contracts/contracts.dart';
 import 'package:client_kit/shared/platform/platform_text.dart';
+import '../auth/auth_provider.dart';
+import '../relay/relay_provider.dart';
 import '../platform/platform_api.dart';
 import '../platform/platform_config.dart';
 import '../platform/platform_device.dart';
@@ -102,7 +104,13 @@ class PushRegistrationDeps {
 
 final pushRegistrationDepsProvider = Provider<PushRegistrationDeps?>((ref) {
   final config = ref.watch(platformConfigProvider);
-  if (config == null) return null;
+  final identity = ref.watch(
+    authProvider.select((a) => (a.value?.status, a.value?.community?.id)),
+  );
+  final pubkey = ref.watch(myPubkeyProvider);
+  if (config == null || identity.$1 != AuthStatus.authenticated || pubkey == null) {
+    return null;
+  }
   final session = ref.read(nativeSessionProvider);
   return PushRegistrationDeps(
     send: (method, path, {body}) =>
@@ -125,6 +133,7 @@ class PushRegistrationNotifier extends Notifier<DevicePushState> {
 
   @override
   DevicePushState build() {
+    _lastToken = null;
     final deps = ref.watch(pushRegistrationDepsProvider);
     if (deps == null) {
       return const DevicePushState(loading: false);
@@ -133,12 +142,16 @@ class PushRegistrationNotifier extends Notifier<DevicePushState> {
     return const DevicePushState();
   }
 
+  bool _current(PushRegistrationDeps deps) =>
+      ref.mounted && identical(ref.read(pushRegistrationDepsProvider), deps);
+
   Future<void> _load(PushRegistrationDeps deps) async {
     try {
       final capability = await deps.send(
         PlatformMethod.get,
         pushCapabilityPath,
       );
+      if (!_current(deps)) return;
       final available =
           capability.status == 200 &&
           PushCapability.fromJson(
@@ -146,12 +159,13 @@ class PushRegistrationNotifier extends Notifier<DevicePushState> {
               ).apns ==
               PushAvailability.CONFIGURED;
       final keys = await deps.deviceKeys();
+      if (!_current(deps)) return;
       final device = keys.public;
       final current = await deps.send(
         PlatformMethod.get,
         '$pushRegistrationPath?devicePubkey=$device',
       );
-      if (!ref.mounted) return;
+      if (!_current(deps)) return;
       var next = state.copyWith(
         loading: false,
         available: available,
@@ -170,7 +184,7 @@ class PushRegistrationNotifier extends Notifier<DevicePushState> {
       state = next;
     } catch (error) {
       debugPrint('push: registration read failed: $error');
-      if (ref.mounted) state = state.copyWith(loading: false);
+      if (_current(deps)) state = state.copyWith(loading: false);
     }
   }
 
@@ -198,12 +212,12 @@ class PushRegistrationNotifier extends Notifier<DevicePushState> {
       await bridge.startRegistration();
       token = await next;
     } catch (_) {
-      if (ref.mounted) {
+      if (_current(deps)) {
         state = state.copyWith(outcome: PushRegistrationOutcome.failed);
       }
       return;
     }
-    if (!ref.mounted) return;
+    if (!_current(deps)) return;
     await _put(deps, token: token, enabled: enabled);
   }
 
@@ -225,9 +239,11 @@ class PushRegistrationNotifier extends Notifier<DevicePushState> {
     required String token,
     required bool enabled,
   }) async {
+    if (!_current(deps)) return;
+    final version = state.version;
     try {
       final current = await deps.send(PlatformMethod.get, '/api/v1/session');
-      if (!ref.mounted) return;
+      if (!_current(deps)) return;
       if (current.status != 200) {
         state = state.copyWith(outcome: PushRegistrationOutcome.failed);
         return;
@@ -236,6 +252,7 @@ class PushRegistrationNotifier extends Notifier<DevicePushState> {
         current.body! as Map<String, dynamic>,
       );
       final keys = await deps.deviceKeys();
+      if (!_current(deps)) return;
       final proof = nostr.Event.from(
         kind: 27235,
         content: '',
@@ -246,20 +263,22 @@ class PushRegistrationNotifier extends Notifier<DevicePushState> {
         ],
         secretKey: keys.secret,
       );
+      final appId = await deps.appId();
+      if (!_current(deps)) return;
       final response = await deps.send(
         PlatformMethod.put,
         pushRegistrationPath,
         body: {
           'proof': proof.toMap(),
           'platform': 'APNS',
-          'appId': await deps.appId(),
+          'appId': appId,
           'token': token,
           'locale': deps.locale(),
           'enabled': enabled,
-          'expectedVersion': state.version,
+          'expectedVersion': version,
         },
       );
-      if (!ref.mounted) return;
+      if (!_current(deps)) return;
       if (response.status == 200) {
         final view = PushRegistrationView.fromJson(
           response.body! as Map<String, dynamic>,
@@ -278,12 +297,12 @@ class PushRegistrationNotifier extends Notifier<DevicePushState> {
         // Another write of this device's preference won: read it back, do not overwrite.
         await refresh();
       }
-      if (ref.mounted) {
+      if (_current(deps)) {
         state = state.copyWith(outcome: PushRegistrationOutcome.failed);
       }
     } catch (_) {
       // Transport loss: the write may or may not have landed. Re-read before any retry.
-      if (!ref.mounted) return;
+      if (!_current(deps)) return;
       state = state.copyWith(outcome: PushRegistrationOutcome.notConfirmed);
       unawaited(refresh());
     }
