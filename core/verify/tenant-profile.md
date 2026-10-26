@@ -7,14 +7,15 @@ PNG/JPEG/WebP data URL（≤96 KiB、两边均≤256 px）。同事务 Tenant ve
 修改名称/图标；不改 slug、Community 绑定或 NIP-11。普通成员 GET 只读资料，
 fresh manage 的成员才获得动作键，提交仍重新准入。
 
-目前是尚未验证的源码候选；三端真实消费者、生成一致性、Core 编译、隔离数据库、
-权限/并发与端到端交互检查仍待完成。不可据此声称 DD-158、V-SCN-261 交付。
+当前为未发布的源码候选，四侧契约/词条/注册表与三端定向消费者检查已通过（下文
+记录固定源码）；Core 编译、隔离数据库与完整权限交互仍在验证。不可据此声称
+DD-158、V-SCN-261 已验收。
 
 阶段源码已补 Web/Desktop 共用资料对话框和 Mobile 设置入口/真实表单，使用同源
 契约与词条。普通成员只读；管理员编辑名字、图片、表情或清除图标，必须勾选确认
 后提交既有 /api/v1/actions。未知结果冻结同键同参数重试，明确冲突要求重新读取；
 身份退休忽略晚到结果。图片只在本机裁剪为 256px，随治理命令提交 Core。新增实际
-共享消费者与 Mobile 控制器回归源码；当前尚未运行，不是验收通过。
+共享消费者与 Mobile 控制器回归源码；其定向检查结果见下文。
 
 固定 fbfc 原 SDK 1CPU/2GiB 四侧生成+一致性退出0，rustfmt完成；Cargo update
 仅 platform-core 新增 emojis 0.9.0、phf 0.13.1、phf_shared 0.13.1、siphasher 1.0.4，
@@ -37,3 +38,15 @@ analyze 全通过；四项实际 Mobile 控制器/表单回归 **4 passed**：�
 **4 passed**，覆盖成员只读、确认所显示版本、丢响应及未分类503同键重试、
 明确409后强制刷新。日志 `profile-front-2ff2d7a01/profile-front.log` 与 limits，
 容器已清理。此为共享消费者检查，未替代 Web/Desktop 宿主打包或真实浏览器验收。
+
+固定 `29fcab1ab` 的首轮 Core fmt、完整迁移、资料迁移回退至
+`20261031040000` 后再前进通过；Rust 编译在既有 invitation.rs 显式 Params
+构造处报缺 tenant_profile 字段，整体退出101，未开始用例/Clippy/SQLx。
+`4d1cfcca0` 补显式 None，不改变邀请语义；失败原件保留于
+`profile-29fcab1ab/profile-core-check-complete-input.log`。
+
+仍未交付的用户操作/验收边界：运营方反馈 fresh Catalog 权限与附件/分拣真实 HTTP
+链；两名管理员通过实际会话并发编辑；图片图库授权与真机/宿主打包；其他在线
+会话的即时资料失效通知。当前更改后本端重读资料与既有 session view，其他会话
+下次读取会得到 Core 最新事实，但没有实现跨会话实时广播，不据此声称 V-SCN-261
+“全员即时一致”。没有合并 main 或部署共享服务。
