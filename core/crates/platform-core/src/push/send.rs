@@ -407,6 +407,30 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn response_lost_after_request_is_unknown_and_retry_after_is_honored() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener=tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address=listener.local_addr().unwrap();
+        let server=tokio::spawn(async move {
+            let (mut stream,_)=listener.accept().await.unwrap();
+            let mut bytes=[0;4096];assert!(stream.read(&mut bytes).await.unwrap()>0);
+            // A provider can accept and then lose its response. Closing here models exactly
+            // that ambiguity; the client must not schedule another provider request.
+        });
+        let client=reqwest::Client::builder().no_proxy().build().unwrap();
+        let error=client.post(format!("http://{address}/send")).body("content-free").send().await.unwrap_err();
+        server.await.unwrap();assert_eq!(transport(error),Outcome::Unknown);
+        let listener=tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address=listener.local_addr().unwrap();
+        let server=tokio::spawn(async move {
+            let (mut stream,_)=listener.accept().await.unwrap();let mut bytes=[0;4096];stream.read(&mut bytes).await.unwrap();
+            stream.write_all(b"HTTP/1.1 429 Too Many Requests\r\nRetry-After: 1200\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").await.unwrap();
+        });
+        let response=client.post(format!("http://{address}/send")).send().await.unwrap();
+        assert_eq!(retry_after(&response,60),Duration::from_secs(1200));server.await.unwrap();
+    }
+
     #[test]
     fn secrets_never_print() {
         let apns = ApnsCredential {
