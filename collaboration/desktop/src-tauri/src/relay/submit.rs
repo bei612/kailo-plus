@@ -21,7 +21,10 @@ pub async fn submit_signed_event_at_with_keys(
     api_base_url: &str,
     keys: &nostr::Keys,
 ) -> Result<SubmitEventResponse, String> {
-    submit_signed_event_scoped(event, &state.http_client, api_base_url, keys, None, || Ok(())).await
+    submit_signed_event_scoped(event, &state.http_client, api_base_url, keys, None, || {
+        Ok(())
+    })
+    .await
 }
 
 /// Original submit path with a lifecycle check after rate-limit waiting.
@@ -45,7 +48,8 @@ pub(crate) async fn submit_signed_event_scoped(
     }
     let body_bytes = event.as_json().into_bytes();
     crate::egress_guard::assert_no_key_backup_bytes(&body_bytes, "relay event submit")?;
-    let auth_header = build_nip98_publication_auth(keys, &Method::POST, &url, &body_bytes, community)?;
+    let auth_header =
+        build_nip98_publication_auth(keys, &Method::POST, &url, &body_bytes, community)?;
 
     let response = build_authenticated_relay_request(
         http,
