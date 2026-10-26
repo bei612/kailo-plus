@@ -65,7 +65,9 @@ pub(crate) async fn platform_sign_in(
 }
 
 #[tauri::command]
-pub(crate) async fn platform_cancel_sign_in(session: State<'_, NativeSession>) -> Result<(), String> {
+pub(crate) async fn platform_cancel_sign_in(
+    session: State<'_, NativeSession>,
+) -> Result<(), String> {
     // 即使回调已完成、正等令牌端点，取消也必须阻止迟到令牌落盘。
     session.begin_sign_in().await?;
     session.pending.cancel();

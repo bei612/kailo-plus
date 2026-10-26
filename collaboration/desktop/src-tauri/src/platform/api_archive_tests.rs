@@ -9,7 +9,9 @@ impl SessionArchive for Arc<TestArchive> {
     fn erase(&self) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + '_>> {
         Box::pin(async move {
             let gate = self.gate.lock().unwrap().take();
-            if let Some(gate) = gate { gate.wait().await; }
+            if let Some(gate) = gate {
+                gate.wait().await;
+            }
             if self.fail.load(std::sync::atomic::Ordering::SeqCst) {
                 return Err("archive keychain unavailable".into());
             }
@@ -52,13 +54,24 @@ async fn archive_erasure_precedes_remote_logout_and_never_erases_the_new_login()
 
 #[tokio::test]
 async fn identity_rejection_erases_archive_but_transient_failures_do_not() {
-    for (status, error, rejected) in [(400, "invalid_grant", true), (503, "invalid_grant", false), (429, "invalid_grant", false)] {
+    for (status, error, rejected) in [
+        (400, "invalid_grant", true),
+        (503, "invalid_grant", false),
+        (429, "invalid_grant", false),
+    ] {
         let f = fake(true, 200, 200);
-        { let mut f = f.lock().unwrap(); f.token_status = status; f.token_error = error; }
+        {
+            let mut f = f.lock().unwrap();
+            f.token_status = status;
+            f.token_error = error;
+        }
         let cfg = serve(f).await;
         let session = signed_in().await;
         let archive = with_archive(&session);
-        assert_eq!(probe(&session, &cfg).await.unwrap_err() == NOT_SIGNED_IN, rejected);
+        assert_eq!(
+            probe(&session, &cfg).await.unwrap_err() == NOT_SIGNED_IN,
+            rejected
+        );
         assert_eq!(archive.saved.lock().unwrap().is_none(), rejected);
     }
     let f = fake(true, 200, 200);
@@ -74,7 +87,12 @@ async fn identity_rejection_erases_archive_but_transient_failures_do_not() {
 async fn late_identity_rejection_cannot_erase_a_new_sessions_archive() {
     let f = fake(true, 200, 200);
     let gate = Gate::new();
-    { let mut f = f.lock().unwrap(); f.token_status = 400; f.token_error = "invalid_grant"; f.token_gate = Some(gate.clone()); }
+    {
+        let mut f = f.lock().unwrap();
+        f.token_status = 400;
+        f.token_error = "invalid_grant";
+        f.token_gate = Some(gate.clone());
+    }
     let cfg = serve(f).await;
     let session = signed_in().await;
     let archive = with_archive(&session);
@@ -97,7 +115,12 @@ async fn archive_cleanup_blocks_new_adoption_until_the_old_sync_has_drained() {
     let (result, ()) = tokio::join!(session.sign_out(), async {
         gate.arrived().await;
         assert!(!session.has_credentials().unwrap());
-        assert!(tokio::time::timeout(std::time::Duration::from_millis(20), session.begin_sign_in()).await.is_err());
+        assert!(tokio::time::timeout(
+            std::time::Duration::from_millis(20),
+            session.begin_sign_in()
+        )
+        .await
+        .is_err());
         gate.release.add_permits(1);
     });
     result.unwrap();
@@ -109,12 +132,16 @@ async fn archive_cleanup_blocks_new_adoption_until_the_old_sync_has_drained() {
 async fn failed_archive_erasure_cannot_admit_new_credentials_and_can_be_retried() {
     let session = signed_in().await;
     let archive = with_archive(&session);
-    archive.fail.store(true, std::sync::atomic::Ordering::SeqCst);
+    archive
+        .fail
+        .store(true, std::sync::atomic::Ordering::SeqCst);
     assert!(session.sign_out().await.is_err());
     assert!(!session.has_credentials().unwrap());
     assert!(session.adopt(replacement()).await.is_err());
     assert!(!session.has_credentials().unwrap());
-    archive.fail.store(false, std::sync::atomic::Ordering::SeqCst);
+    archive
+        .fail
+        .store(false, std::sync::atomic::Ordering::SeqCst);
     session.adopt(replacement()).await.unwrap();
     assert_replacement(&session);
     assert_eq!(*archive.saved.lock().unwrap(), None);

@@ -75,8 +75,14 @@ impl ArchiveStore {
         now: i64,
     ) -> Result<(), String> {
         let kinds = normalized_kinds(kinds)?;
-        let tx = self.conn.unchecked_transaction().map_err(|e| e.to_string())?;
-        if self.subscription(channel_id)?.is_some_and(|sub| sub.kinds != kinds) {
+        let tx = self
+            .conn
+            .unchecked_transaction()
+            .map_err(|e| e.to_string())?;
+        if self
+            .subscription(channel_id)?
+            .is_some_and(|sub| sub.kinds != kinds)
+        {
             // The selected kinds define this copy's scope. Rebuild it from the
             // beginning, including a partially paged history, when that scope changes.
             self.unsubscribe(channel_id)?;
@@ -84,8 +90,10 @@ impl ArchiveStore {
         tx.execute(
             "INSERT OR IGNORE INTO subscription(channel_id,kinds,created_at) VALUES(?1,?2,?3)",
             params![channel_id, kinds_text(&kinds), now],
-        ).map_err(|e| format!("local archive subscribe: {e}"))?;
-        tx.commit().map_err(|e| format!("local archive subscribe: {e}"))
+        )
+        .map_err(|e| format!("local archive subscribe: {e}"))?;
+        tx.commit()
+            .map_err(|e| format!("local archive subscribe: {e}"))
     }
 
     /// Removes the subscription and every archived copy of that channel.
