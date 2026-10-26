@@ -37,7 +37,8 @@ pub use buzz_core::publication::{
 
 /// Only the actual, ready writer policy can authorize a new signed epoch.
 pub fn valid_publication_policy(policy: &PublicationPolicy) -> bool {
-    policy.ready && policy.version == PUBLICATION_POLICY_VERSION
+    policy.ready
+        && policy.version == PUBLICATION_POLICY_VERSION
         && Some(policy.max_age_seconds) == publication_max_age_seconds(9)
         && Uuid::parse_str(&policy.epoch).is_ok_and(|epoch| epoch.to_string() == policy.epoch)
 }
@@ -1211,77 +1212,127 @@ impl IdentityClient {
     }
 
     /// Read the actual Community writer readiness, without a stale policy cache.
-    pub async fn publication_policy(&self, http: &reqwest::Client) -> Result<PublicationPolicy, OperatorError> {
+    pub async fn publication_policy(
+        &self,
+        http: &reqwest::Client,
+    ) -> Result<PublicationPolicy, OperatorError> {
         self.admit()?;
-        let response = http.get(self.transport.join("/info")?)
-            .header(reqwest::header::HOST, &self.community_host).send().await?;
+        let response = http
+            .get(self.transport.join("/info")?)
+            .header(reqwest::header::HOST, &self.community_host)
+            .send()
+            .await?;
         let status = response.status();
         if !status.is_success() {
             return Err(self.relay_rejected(status.as_u16(), String::new()));
         }
         let document: Value = response.json().await?;
-        let policy: PublicationPolicy = serde_json::from_value(document.get("publication_policy")
-            .cloned().ok_or_else(|| OperatorError::NotConverged("Publication policy missing".into()))?)
-            .map_err(|_| OperatorError::NotConverged("Publication policy invalid".into()))?;
+        let policy: PublicationPolicy = serde_json::from_value(
+            document
+                .get("publication_policy")
+                .cloned()
+                .ok_or_else(|| OperatorError::NotConverged("Publication policy missing".into()))?,
+        )
+        .map_err(|_| OperatorError::NotConverged("Publication policy invalid".into()))?;
         if !valid_publication_policy(&policy) {
-            return Err(OperatorError::NotConverged("Publication writer not ready".into()));
+            return Err(OperatorError::NotConverged(
+                "Publication writer not ready".into(),
+            ));
         }
         Ok(policy)
     }
 
     /// Rebuild only transient signed bytes before DISPATCH, preserving all original
     /// content/tags/time and author. No event body or signature enters the proof.
-    pub fn bind_publication_epoch(&self, event: &Event, policy: &PublicationPolicy) -> Result<Event, OperatorError> {
-        if !valid_publication_policy(policy) || event.verify().is_err()
+    pub fn bind_publication_epoch(
+        &self,
+        event: &Event,
+        policy: &PublicationPolicy,
+    ) -> Result<Event, OperatorError> {
+        if !valid_publication_policy(policy)
+            || event.verify().is_err()
             || event.pubkey != self.keys.public_key()
-            || publication_epoch(event).ok() != Some(None) {
-            return Err(OperatorError::Sign("Publication epoch cannot be bound".into()));
+            || publication_epoch(event).ok() != Some(None)
+        {
+            return Err(OperatorError::Sign(
+                "Publication epoch cannot be bound".into(),
+            ));
         }
         let mut tags: Vec<Tag> = event.tags.iter().cloned().collect();
-        tags.push(Tag::parse([PUBLICATION_EPOCH_TAG, &policy.epoch])
-            .map_err(|error| OperatorError::Sign(error.to_string()))?);
-        EventBuilder::new(event.kind, &event.content).tags(tags)
-            .custom_created_at(event.created_at).sign_with_keys(&self.keys)
+        tags.push(
+            Tag::parse([PUBLICATION_EPOCH_TAG, &policy.epoch])
+                .map_err(|error| OperatorError::Sign(error.to_string()))?,
+        );
+        EventBuilder::new(event.kind, &event.content)
+            .tags(tags)
+            .custom_created_at(event.created_at)
+            .sign_with_keys(&self.keys)
             .map_err(|error| OperatorError::Sign(error.to_string()))
     }
 
     /// Original author authentication plus the independent current CONTROL
     /// attestation over exactly the same URL/method/body and Community.
-    pub async fn settle_publication(&self, http: &reqwest::Client, control: &Self,
-        claim: &PublicationClaim) -> Result<PublicationSettlement, OperatorError> {
-        claim.validate().map_err(|reason| OperatorError::Sign(reason.into()))?;
+    pub async fn settle_publication(
+        &self,
+        http: &reqwest::Client,
+        control: &Self,
+        claim: &PublicationClaim,
+    ) -> Result<PublicationSettlement, OperatorError> {
+        claim
+            .validate()
+            .map_err(|reason| OperatorError::Sign(reason.into()))?;
         if self.keys.public_key().to_hex() != claim.pubkey
-            || self.community_host != control.community_host || self.transport != control.transport
-            || self.keys.public_key() == control.keys.public_key() {
-            return Err(OperatorError::Sign("Publication attestation identity mismatch".into()));
+            || self.community_host != control.community_host
+            || self.transport != control.transport
+            || self.keys.public_key() == control.keys.public_key()
+        {
+            return Err(OperatorError::Sign(
+                "Publication attestation identity mismatch".into(),
+            ));
         }
         self.admit()?;
         let community = Uuid::parse_str(&claim.community_id)
             .map_err(|error| OperatorError::Sign(error.to_string()))?;
         let path = "/events/settlement";
         let signed_url = format!("http://{}{}", self.community_host, path);
-        let payload = serde_json::to_vec(claim).map_err(|error| OperatorError::Sign(error.to_string()))?;
+        let payload =
+            serde_json::to_vec(claim).map_err(|error| OperatorError::Sign(error.to_string()))?;
         let header = self.nip98_scoped_header("POST", &signed_url, &payload, Some(community))?;
-        let attestation = control.nip98_scoped_header("POST", &signed_url, &payload, Some(community))?;
-        let response = http.post(self.transport.join(path)?)
+        let attestation =
+            control.nip98_scoped_header("POST", &signed_url, &payload, Some(community))?;
+        let response = http
+            .post(self.transport.join(path)?)
             .header(reqwest::header::HOST, &self.community_host)
-            .header("Authorization", header).header("X-Kailo-Publication-Attestation", attestation)
-            .header("Content-Type", "application/json").body(payload).send().await?;
+            .header("Authorization", header)
+            .header("X-Kailo-Publication-Attestation", attestation)
+            .header("Content-Type", "application/json")
+            .body(payload)
+            .send()
+            .await?;
         let status = response.status();
         let text = response.text().await?;
         if !status.is_success() {
             return Err(self.relay_rejected(status.as_u16(), text.chars().take(200).collect()));
         }
-        let value: Value = serde_json::from_str(&text).map_err(|error| OperatorError::Sign(error.to_string()))?;
+        let value: Value =
+            serde_json::from_str(&text).map_err(|error| OperatorError::Sign(error.to_string()))?;
         // Option fields must be explicitly present, including channel_id=null.
-        if !value.as_object().is_some_and(|v| v.len()==4)
-            || !value.get("claim").and_then(Value::as_object).is_some_and(|v|v.len()==8 && v.contains_key("channel_id")) {
-            return Err(OperatorError::Sign("Publication settlement incomplete".into()));
+        if !value.as_object().is_some_and(|v| v.len() == 4)
+            || !value
+                .get("claim")
+                .and_then(Value::as_object)
+                .is_some_and(|v| v.len() == 8 && v.contains_key("channel_id"))
+        {
+            return Err(OperatorError::Sign(
+                "Publication settlement incomplete".into(),
+            ));
         }
         let settlement: PublicationSettlement = serde_json::from_value(value)
             .map_err(|error| OperatorError::Sign(error.to_string()))?;
         if settlement.claim != *claim || settlement.observed_at < 0 {
-            return Err(OperatorError::Sign("Publication settlement mismatch".into()));
+            return Err(OperatorError::Sign(
+                "Publication settlement mismatch".into(),
+            ));
         }
         Ok(settlement)
     }
@@ -3813,18 +3864,34 @@ mod scoped_publication_tests {
                     .collect::<Vec<_>>()
             );
             if let Some(attestor) = attestor {
-                let proof: Event = serde_json::from_slice(&base64::engine::general_purpose::STANDARD
-                    .decode(header("x-kailo-publication-attestation").strip_prefix("Nostr ").unwrap()).unwrap()).unwrap();
+                let proof: Event = serde_json::from_slice(
+                    &base64::engine::general_purpose::STANDARD
+                        .decode(
+                            header("x-kailo-publication-attestation")
+                                .strip_prefix("Nostr ")
+                                .unwrap(),
+                        )
+                        .unwrap(),
+                )
+                .unwrap();
                 proof.verify().unwrap();
                 assert_eq!(proof.pubkey, attestor);
                 assert_ne!(proof.pubkey, auth.pubkey);
-                for tag in ["u","method","payload","community"] {
-                    let original: Vec<_> = auth.tags.iter().filter(|t|t.as_slice()[0]==tag).collect();
-                    let attested: Vec<_> = proof.tags.iter().filter(|t|t.as_slice()[0]==tag).collect();
-                    assert_eq!(original.len(),1,"{tag}");
-                    assert_eq!(original,attested,"{tag}");
+                for tag in ["u", "method", "payload", "community"] {
+                    let original: Vec<_> = auth
+                        .tags
+                        .iter()
+                        .filter(|t| t.as_slice()[0] == tag)
+                        .collect();
+                    let attested: Vec<_> = proof
+                        .tags
+                        .iter()
+                        .filter(|t| t.as_slice()[0] == tag)
+                        .collect();
+                    assert_eq!(original.len(), 1, "{tag}");
+                    assert_eq!(original, attested, "{tag}");
                 }
-                assert_ne!(proof.id,auth.id);
+                assert_ne!(proof.id, auth.id);
             }
             let body = response.to_string();
             socket.write_all(format!("HTTP/1.1 {status} Test\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).as_bytes()).await.unwrap();
@@ -3937,53 +4004,126 @@ mod scoped_publication_tests {
     }
     #[test]
     fn publication_epoch_is_signed_without_changing_native_bytes_or_time() {
-        let client=IdentityClient::new(Custody::Server, &Keys::generate().secret_key().to_secret_hex(),
-            "http://127.0.0.1", "publication.platform.test").unwrap();
-        let policy=PublicationPolicy { version:PUBLICATION_POLICY_VERSION, epoch:Uuid::new_v4().to_string(),
-            max_age_seconds:publication_max_age_seconds(9).unwrap(), ready:true };
-        let event=client.sign(9,"transient body", &[vec!["h".into(),Uuid::new_v4().to_string()]]).unwrap();
-        let signed=client.bind_publication_epoch(&event,&policy).unwrap();
-        assert_eq!(signed.created_at,event.created_at); assert_eq!(signed.content,event.content);
-        assert_eq!(signed.pubkey,event.pubkey); assert_ne!(signed.id,event.id);
+        let client = IdentityClient::new(
+            Custody::Server,
+            &Keys::generate().secret_key().to_secret_hex(),
+            "http://127.0.0.1",
+            "publication.platform.test",
+        )
+        .unwrap();
+        let policy = PublicationPolicy {
+            version: PUBLICATION_POLICY_VERSION,
+            epoch: Uuid::new_v4().to_string(),
+            max_age_seconds: publication_max_age_seconds(9).unwrap(),
+            ready: true,
+        };
+        let event = client
+            .sign(
+                9,
+                "transient body",
+                &[vec!["h".into(), Uuid::new_v4().to_string()]],
+            )
+            .unwrap();
+        let signed = client.bind_publication_epoch(&event, &policy).unwrap();
+        assert_eq!(signed.created_at, event.created_at);
+        assert_eq!(signed.content, event.content);
+        assert_eq!(signed.pubkey, event.pubkey);
+        assert_ne!(signed.id, event.id);
         signed.verify().unwrap();
-        assert_eq!(publication_epoch(&signed).unwrap().unwrap().to_string(),policy.epoch);
-        assert_eq!(signed.tags.iter().next(),event.tags.iter().next());
-        assert!(client.bind_publication_epoch(&signed,&policy).is_err());
-        for field in ["ready","version","max_age_seconds","epoch"] {
-            let mut bad=serde_json::to_value(&policy).unwrap();
-            bad[field]=match field { "ready"=>false.into(),"epoch"=>"bad".into(),_=>0.into() };
-            let policy: PublicationPolicy=serde_json::from_value(bad).unwrap();
-            assert!(client.bind_publication_epoch(&event,&policy).is_err());
+        assert_eq!(
+            publication_epoch(&signed).unwrap().unwrap().to_string(),
+            policy.epoch
+        );
+        assert_eq!(signed.tags.iter().next(), event.tags.iter().next());
+        assert!(client.bind_publication_epoch(&signed, &policy).is_err());
+        for field in ["ready", "version", "max_age_seconds", "epoch"] {
+            let mut bad = serde_json::to_value(&policy).unwrap();
+            bad[field] = match field {
+                "ready" => false.into(),
+                "epoch" => "bad".into(),
+                _ => 0.into(),
+            };
+            let policy: PublicationPolicy = serde_json::from_value(bad).unwrap();
+            assert!(client.bind_publication_epoch(&event, &policy).is_err());
         }
     }
 
     #[tokio::test]
     async fn settlement_requires_two_original_signatures_and_exact_public_metadata() {
-        let keys=Keys::generate(); let control_keys=Keys::generate();
-        let community=Uuid::new_v4();
-        let claim=PublicationClaim { event_id:"ab".repeat(32), community_id:community.to_string(),
-            pubkey:keys.public_key().to_hex(), kind:9, channel_id:Some(Uuid::new_v4().to_string()),
-            created_at:100,non_expiring:true,epoch:Uuid::new_v4().to_string() };
-        for fault in ["none","early","accepted","event","scope","missing_channel","extra","denied"] {
-            let mut response=serde_json::to_value(PublicationSettlement {claim:claim.clone(),accepted:false,settled:true,observed_at:1061}).unwrap();
-            let status=if fault=="denied" {403} else {200};
+        let keys = Keys::generate();
+        let control_keys = Keys::generate();
+        let community = Uuid::new_v4();
+        let claim = PublicationClaim {
+            event_id: "ab".repeat(32),
+            community_id: community.to_string(),
+            pubkey: keys.public_key().to_hex(),
+            kind: 9,
+            channel_id: Some(Uuid::new_v4().to_string()),
+            created_at: 100,
+            non_expiring: true,
+            epoch: Uuid::new_v4().to_string(),
+        };
+        for fault in [
+            "none",
+            "early",
+            "accepted",
+            "event",
+            "scope",
+            "missing_channel",
+            "extra",
+            "denied",
+        ] {
+            let mut response = serde_json::to_value(PublicationSettlement {
+                claim: claim.clone(),
+                accepted: false,
+                settled: true,
+                observed_at: 1061,
+            })
+            .unwrap();
+            let status = if fault == "denied" { 403 } else { 200 };
             match fault {
-                "early"=>response["observed_at"]=1060.into(),
-                "accepted"=>response["accepted"]=true.into(),
-                "event"=>response["claim"]["event_id"]="cd".repeat(32).into(),
-                "scope"=>response["claim"]["community_id"]=Uuid::new_v4().to_string().into(),
-                "missing_channel"=>{response["claim"].as_object_mut().unwrap().remove("channel_id");},
-                "extra"=>response["content"]="not metadata".into(), _=>{}
+                "early" => response["observed_at"] = 1060.into(),
+                "accepted" => response["accepted"] = true.into(),
+                "event" => response["claim"]["event_id"] = "cd".repeat(32).into(),
+                "scope" => response["claim"]["community_id"] = Uuid::new_v4().to_string().into(),
+                "missing_channel" => {
+                    response["claim"]
+                        .as_object_mut()
+                        .unwrap()
+                        .remove("channel_id");
+                }
+                "extra" => response["content"] = "not metadata".into(),
+                _ => {}
             }
-            let (author,task)=endpoint("/events/settlement".into(),serde_json::to_value(&claim).unwrap(),
-                Some(community),response,status,Some(keys.clone()),Some(control_keys.public_key())).await;
-            let control=IdentityClient::new(Custody::Server,&control_keys.secret_key().to_secret_hex(),
-                author.transport.as_str(),"publication.platform.test").unwrap();
-            let result=author.settle_publication(&reqwest::Client::new(),&control,&claim).await;
+            let (author, task) = endpoint(
+                "/events/settlement".into(),
+                serde_json::to_value(&claim).unwrap(),
+                Some(community),
+                response,
+                status,
+                Some(keys.clone()),
+                Some(control_keys.public_key()),
+            )
+            .await;
+            let control = IdentityClient::new(
+                Custody::Server,
+                &control_keys.secret_key().to_secret_hex(),
+                author.transport.as_str(),
+                "publication.platform.test",
+            )
+            .unwrap();
+            let result = author
+                .settle_publication(&reqwest::Client::new(), &control, &claim)
+                .await;
             task.await.unwrap();
-            assert_eq!(result.is_ok(),matches!(fault,"none"|"early"|"accepted"),"{fault}: {result:?}");
-            if let Ok(receipt)=result { assert_eq!(receipt.proves_absence_for(&claim),fault=="none"); }
+            assert_eq!(
+                result.is_ok(),
+                matches!(fault, "none" | "early" | "accepted"),
+                "{fault}: {result:?}"
+            );
+            if let Ok(receipt) = result {
+                assert_eq!(receipt.proves_absence_for(&claim), fault == "none");
+            }
         }
     }
-
 }
