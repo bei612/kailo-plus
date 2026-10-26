@@ -54,7 +54,13 @@ mod tests {
     }
 
     fn identity(origin: &str, keys: &Keys) -> IdentityClient {
-        IdentityClient::new(Custody::Server, &keys.secret_key().to_secret_hex(), origin, "deadline.example").unwrap()
+        IdentityClient::new(
+            Custody::Server,
+            &keys.secret_key().to_secret_hex(),
+            origin,
+            "deadline.example",
+        )
+        .unwrap()
     }
 
     #[test]
@@ -73,25 +79,45 @@ mod tests {
         let reader = identity(&origin, &keys);
         let result = tokio::time::timeout(Duration::from_secs(2), reader.query(&http, &[])).await;
         server.abort();
-        assert!(result.expect("query body must reach the configured deadline").is_err());
+        assert!(result
+            .expect("query body must reach the configured deadline")
+            .is_err());
 
         let (origin, server) = self::server(true).await;
         let writer = identity(&origin, &keys);
-        let event = EventBuilder::new(Kind::TextNote, "deadline fixture").sign_with_keys(&keys).unwrap();
+        let event = EventBuilder::new(Kind::TextNote, "deadline fixture")
+            .sign_with_keys(&keys)
+            .unwrap();
         let admitted = writer.admit().unwrap();
-        let result = tokio::time::timeout(Duration::from_secs(2), writer.deliver(&http, &event, admitted)).await;
+        let result = tokio::time::timeout(
+            Duration::from_secs(2),
+            writer.deliver(&http, &event, admitted),
+        )
+        .await;
         server.abort();
-        assert!(matches!(result.expect("ACK body must reach the configured deadline"), Delivery::Unknown(_)));
+        assert!(matches!(
+            result.expect("ACK body must reach the configured deadline"),
+            Delivery::Unknown(_)
+        ));
 
         let (origin, server) = self::server(true).await;
         let transport = reqwest::Url::parse(&origin).unwrap();
-        let result = tokio::time::timeout(Duration::from_secs(2), collab_bridge::limits::fetch_nip11(&http, &transport, "deadline.example")).await;
+        let result = tokio::time::timeout(
+            Duration::from_secs(2),
+            collab_bridge::limits::fetch_nip11(&http, &transport, "deadline.example"),
+        )
+        .await;
         server.abort();
-        assert!(result.expect("NIP-11 body must reach the configured deadline").is_err());
+        assert!(result
+            .expect("NIP-11 body must reach the configured deadline")
+            .is_err());
 
         let (origin, server) = self::server(false).await;
         let reader = identity(&origin, &keys);
-        assert_eq!(reader.query(&http, &[]).await.unwrap(), serde_json::json!([]));
+        assert_eq!(
+            reader.query(&http, &[]).await.unwrap(),
+            serde_json::json!([])
+        );
         server.await.unwrap();
     }
 }

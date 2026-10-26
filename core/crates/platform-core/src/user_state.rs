@@ -932,10 +932,13 @@ pub(crate) async fn readable_event_ids(
                         })
                     })
                     .collect();
-                let result = client.query(&state.relay_http, &filters).await.map_err(|e| {
-                    tracing::warn!(error = %e, "查证已读事件可见性失败");
-                    web_transport::relay_error_response(&e, None)
-                })?;
+                let result = client
+                    .query(&state.relay_http, &filters)
+                    .await
+                    .map_err(|e| {
+                        tracing::warn!(error = %e, "查证已读事件可见性失败");
+                        web_transport::relay_error_response(&e, None)
+                    })?;
                 let events: Vec<nostr::Event> = serde_json::from_value(result).map_err(|e| {
                     tracing::warn!(error = %e, "Relay 可见性回应不是有效事件数组");
                     user_state_unavailable()

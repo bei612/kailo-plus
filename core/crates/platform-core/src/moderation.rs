@@ -961,7 +961,9 @@ async fn send_once(
     signed: Signed,
     client: IdentityClient,
 ) -> Result<(), Refusal> {
-    let delivery = client.deliver_moderation(&state.relay_http, &signed.event).await;
+    let delivery = client
+        .deliver_moderation(&state.relay_http, &signed.event)
+        .await;
     let evidence = vec![Evidence::new(EvidenceKind::BuzzEventId, &signed.event_id)];
     let settled = match delivery {
         Delivery::Accepted => Settled::Verified(evidence),
@@ -1471,7 +1473,8 @@ pub(crate) async fn inherit_restrictions(
         let event = control
             .sign_moderation(kind, "", &tags)
             .map_err(unavailable)?;
-        if let Delivery::Rejected(why) = control.deliver_moderation(&state.relay_http, &event).await {
+        if let Delivery::Rejected(why) = control.deliver_moderation(&state.relay_http, &event).await
+        {
             tracing::warn!(reason = %why, "Relay 拒绝继承限制命令");
         }
     }

@@ -203,7 +203,9 @@ pub async fn project_buzz_roster(
         }
     }
     for pubkey in &plan.target_pubkeys {
-        outcome = client.converge(&state.relay_http, scope, pubkey, want).await;
+        outcome = client
+            .converge(&state.relay_http, scope, pubkey, want)
+            .await;
         if outcome.is_err() {
             break;
         }

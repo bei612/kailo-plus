@@ -1472,7 +1472,9 @@ async fn observe_ended(state: &ServiceState, batch: i64) -> Result<(), Refusal> 
             continue;
         };
         let channel_text = channel.to_string();
-        let archived = control.channel_archived(&state.relay_http, &channel_text).await;
+        let archived = control
+            .channel_archived(&state.relay_http, &channel_text)
+            .await;
         let ended = match archived {
             Ok(Some(true)) => true,
             Ok(_) => {

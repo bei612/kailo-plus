@@ -811,7 +811,10 @@ async fn publish_status(
             return Err(pending());
         }
     }
-    match client.deliver(&call.state.relay_http, &event, admitted).await {
+    match client
+        .deliver(&call.state.relay_http, &event, admitted)
+        .await
+    {
         Delivery::Accepted => {
             record_status(call, operation, &event_id, "OUTCOME", ACCEPTED).await;
             Ok(Some(event_id))

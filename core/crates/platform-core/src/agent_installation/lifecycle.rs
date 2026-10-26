@@ -598,7 +598,12 @@ async fn advance_enable(
     let channel = who.channel_id.to_string();
     for scope in [Scope::Relay, Scope::Channel(&channel)] {
         control
-            .converge(&state.relay_http, scope, &who.agent_pubkey, Presence::Present)
+            .converge(
+                &state.relay_http,
+                scope,
+                &who.agent_pubkey,
+                Presence::Present,
+            )
             .await
             .map_err(|_| Refusal::Unavailable("Installation roster 恢复结果不明".into()))?;
     }

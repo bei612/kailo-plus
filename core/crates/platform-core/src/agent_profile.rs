@@ -239,9 +239,10 @@ async fn publish_one(
     .map_err(|_| "AGENT key unreadable or not the bound pubkey")?;
     let transport =
         reqwest::Url::parse(&state.relay_transport).map_err(|_| "Relay transport invalid")?;
-    let nip11 = collab_bridge::limits::fetch_nip11(&state.relay_http, &transport, &c.normalized_host)
-        .await
-        .map_err(|_| "Relay NIP-11 unavailable")?;
+    let nip11 =
+        collab_bridge::limits::fetch_nip11(&state.relay_http, &transport, &c.normalized_host)
+            .await
+            .map_err(|_| "Relay NIP-11 unavailable")?;
     if c.nip11_snapshot_digest.as_deref() != Some(nip11.digest.as_str()) {
         return Err("Relay NIP-11 differs from the ACTIVE binding snapshot");
     }
