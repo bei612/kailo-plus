@@ -19,8 +19,8 @@ validation:
       ref: core/verify/feedback.md
 implementation:
   owners: [team-platform]
-  paths: [core/crates/platform-core/src/feedback, core/crates/platform-core/src/bff.rs, core/crates/platform-core/src/tenant_delete.rs, client-kit/ts/platform/src/react/feedback, client-kit/ts/platform/src/react/sidebar/profile-popover.tsx, client-kit/ts/platform/src/client.ts]
-  surfaces: [web, desktop]
+  paths: [core/crates/platform-core/src/feedback, core/crates/platform-core/src/bff.rs, core/crates/platform-core/src/tenant_delete.rs, client-kit/ts/platform/src/react/feedback, client-kit/ts/platform/src/react/sidebar/profile-popover.tsx, client-kit/ts/platform/src/client.ts, collaboration/mobile/lib/features/feedback, collaboration/mobile/lib/features/settings/settings_page.dart]
+  surfaces: [web, desktop, mobile]
   schemas: [contracts/api/feedback_submission_request.schema.json, contracts/api/feedback_submission_receipt.schema.json, contracts/api/platform_feedback_page.schema.json, contracts/api/platform_feedback_triage_request.schema.json, contracts/api/feedback_attachment_content.schema.json, contracts/enums/feedback_category.schema.json, contracts/enums/feedback_client.schema.json, contracts/enums/feedback_state.schema.json]
   migrations: [core/migrations/20261031010000_feedback.up.sql, core/migrations/20261031010000_feedback.down.sql]
 runtime:
