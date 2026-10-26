@@ -47,8 +47,9 @@ class _FeedbackForm extends HookWidget {
     }, [draft]);
     final diagnostic = useFuture(diagnosticFuture);
     useEffect(() {
-      if (draft.diagnostics == null && !draft.locked && diagnostic.hasData)
+      if (draft.diagnostics == null && !draft.locked && diagnostic.hasData) {
         draft.diagnostics = diagnostic.data;
+      }
       return null;
     }, [diagnostic.data]);
 
@@ -58,11 +59,16 @@ class _FeedbackForm extends HookWidget {
           source: ImageSource.gallery,
           requestFullMetadata: false,
         );
-        if (file == null || !context.mounted || draft.locked) return;
-        if (await file.length() > 2 * 1024 * 1024)
+        if (file == null || !context.mounted || draft.locked) {
+          return;
+        }
+        if (await file.length() > 2 * 1024 * 1024) {
           throw const FormatException('image size');
+        }
         final bytes = await file.readAsBytes();
-        if (context.mounted && !draft.locked) draft.attach(bytes);
+        if (context.mounted && !draft.locked) {
+          draft.attach(bytes);
+        }
       } catch (_) {
         if (context.mounted) {
           draft.failure = FeedbackFailure.refused;
@@ -190,8 +196,9 @@ class _FeedbackForm extends HookWidget {
             key: const ValueKey('feedback-submit'),
             onPressed: draft.canSend
                 ? () async {
-                    if (await draft.submit() && context.mounted)
+                    if (await draft.submit() && context.mounted) {
                       Navigator.of(context).pop();
+                    }
                   }
                 : null,
             child: Text(

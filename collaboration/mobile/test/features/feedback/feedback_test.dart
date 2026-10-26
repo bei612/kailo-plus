@@ -25,7 +25,9 @@ void main() {
       final sent = <Map<String, dynamic>>[];
       final draft = FeedbackDraft((body) async {
         sent.add(body);
-        if (sent.length == 1) throw Exception('lost response');
+        if (sent.length == 1) {
+          throw Exception('lost response');
+        }
         return receipt;
       });
       addTearDown(draft.dispose);

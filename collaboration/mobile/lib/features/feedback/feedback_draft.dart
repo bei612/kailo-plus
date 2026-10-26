@@ -61,13 +61,18 @@ class FeedbackDraft extends ChangeNotifier {
           (message.trim().isNotEmpty && message.trim().runes.length <= 4000));
 
   void changed() {
-    if (!_retired) notifyListeners();
+    if (!_retired) {
+      notifyListeners();
+    }
   }
 
   void attach(Uint8List bytes) {
-    if (locked) return;
-    if (bytes.isEmpty || bytes.length > 2 * 1024 * 1024)
+    if (locked) {
+      return;
+    }
+    if (bytes.isEmpty || bytes.length > 2 * 1024 * 1024) {
       throw const FormatException('image size');
+    }
     bool starts(List<int> signature) =>
         bytes.length >= signature.length &&
         listEquals(bytes.sublist(0, signature.length), signature);
@@ -80,7 +85,9 @@ class FeedbackDraft extends ChangeNotifier {
               listEquals(bytes.sublist(8, 12), [87, 69, 66, 80])
         ? 'image/webp'
         : null;
-    if (mime == null) throw const FormatException('image type');
+    if (mime == null) {
+      throw const FormatException('image type');
+    }
     image = Uint8List.fromList(bytes);
     imageMime = mime;
     failure = null;
@@ -88,7 +95,9 @@ class FeedbackDraft extends ChangeNotifier {
   }
 
   Future<bool> submit() async {
-    if (_retired || !canSend) return false;
+    if (_retired || !canSend) {
+      return false;
+    }
     final request = _frozen ??= FeedbackSubmissionRequest(
       idempotencyKey: const Uuid().v4(),
       client: FeedbackClient.MOBILE,
@@ -107,7 +116,9 @@ class FeedbackDraft extends ChangeNotifier {
     changed();
     try {
       final response = await _send!(request.toJson());
-      if (_retired) return false;
+      if (_retired) {
+        return false;
+      }
       if (response.status == 200) {
         final receipt = FeedbackSubmissionReceipt.fromJson(
           response.body! as Map<String, dynamic>,
@@ -132,7 +143,9 @@ class FeedbackDraft extends ChangeNotifier {
         failure = FeedbackFailure.refused;
       }
     } catch (_) {
-      if (!_retired) failure = FeedbackFailure.unconfirmed;
+      if (!_retired) {
+        failure = FeedbackFailure.unconfirmed;
+      }
     } finally {
       if (!_retired) {
         sending = false;
