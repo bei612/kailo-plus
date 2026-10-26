@@ -13,8 +13,8 @@
 
 pub(crate) mod decide;
 pub(crate) mod send;
-pub(crate) mod worker;
 mod unread;
+pub(crate) mod worker;
 
 use axum::{
     extract::{rejection::JsonRejection, Query, State},

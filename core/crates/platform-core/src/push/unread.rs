@@ -9,7 +9,11 @@ use super::decide::{self, MessageFacts, UnreadContext};
 
 type EventRow = (String, String, String, i64);
 
-async fn events(conn: &mut PgConnection, tenant: Uuid, principal: Uuid) -> Result<Vec<EventRow>, sqlx::Error> {
+async fn events(
+    conn: &mut PgConnection,
+    tenant: Uuid,
+    principal: Uuid,
+) -> Result<Vec<EventRow>, sqlx::Error> {
     sqlx::query_as(
         "select event_id, context_key, channel_id, created_at from projection.push_unread
           where tenant_id = $1 and tenant_principal_id = $2",
@@ -25,9 +29,14 @@ fn contexts(events: Vec<EventRow>) -> Vec<UnreadContext> {
     for (_, context, channel, at) in events {
         grouped.entry((context, channel)).or_default().push(at);
     }
-    grouped.into_iter().map(|((context_key, channel_id), event_times)| UnreadContext {
-        context_key, channel_id, event_times,
-    }).collect()
+    grouped
+        .into_iter()
+        .map(|((context_key, channel_id), event_times)| UnreadContext {
+            context_key,
+            channel_id,
+            event_times,
+        })
+        .collect()
 }
 
 /// Read-only prospective payload count. Preparing or failing a send never records a push.
@@ -40,7 +49,12 @@ pub(super) async fn preview(
 ) -> Result<u32, sqlx::Error> {
     let mut rows = events(conn, tenant, principal).await?;
     if !rows.iter().any(|(id, _, _, _)| id == &message.id) {
-        rows.push((message.id.clone(), decide::unread_context(message), message.channel_id.clone(), message.created_at as i64));
+        rows.push((
+            message.id.clone(),
+            decide::unread_context(message),
+            message.channel_id.clone(),
+            message.created_at as i64,
+        ));
     }
     Ok(decide::badge(&contexts(rows), marks).0)
 }

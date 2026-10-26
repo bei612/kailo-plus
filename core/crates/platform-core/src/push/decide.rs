@@ -231,7 +231,10 @@ pub(crate) struct UnreadContext {
 /// it is newer than both its own context's read position and its channel's (reading the
 /// channel after a reply clears it too). Returns the badge and the contexts that are fully
 /// read, which the caller forgets.
-pub(crate) fn badge(contexts: &[UnreadContext], marks: &HashMap<String, i64>) -> (u32, Vec<String>) {
+pub(crate) fn badge(
+    contexts: &[UnreadContext],
+    marks: &HashMap<String, i64>,
+) -> (u32, Vec<String>) {
     let mut total: u64 = 0;
     let mut read = Vec::new();
     for context in contexts {
@@ -247,12 +250,15 @@ pub(crate) fn badge(contexts: &[UnreadContext], marks: &HashMap<String, i64>) ->
 
 /// A reply is read if either its thread or channel has advanced past it.
 pub(crate) fn read_position(context: &str, channel: &str, marks: &HashMap<String, i64>) -> i64 {
-    [marks.get(&context.to_ascii_lowercase()), marks.get(&channel.to_ascii_lowercase())]
-        .into_iter()
-        .flatten()
-        .copied()
-        .max()
-        .unwrap_or(i64::MIN)
+    [
+        marks.get(&context.to_ascii_lowercase()),
+        marks.get(&channel.to_ascii_lowercase()),
+    ]
+    .into_iter()
+    .flatten()
+    .copied()
+    .max()
+    .unwrap_or(i64::MIN)
 }
 
 /// APNs body (DD-151(4)): `aps` alert is the localized fixed text; `kailo_push` holds only ids.
