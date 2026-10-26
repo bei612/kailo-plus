@@ -1308,7 +1308,9 @@ pub(crate) async fn get_event_by_id_including_deleted_with_operation(
 }
 
 pub(crate) async fn get_event_by_id_including_deleted_on(
-    connection: &mut PgConnection, community_id: CommunityId, id_bytes: &[u8],
+    connection: &mut PgConnection,
+    community_id: CommunityId,
+    id_bytes: &[u8],
 ) -> Result<Option<StoredEvent>> {
     let row = sqlx::query(
         "SELECT id, pubkey, created_at, kind, tags, content, sig, received_at, channel_id \

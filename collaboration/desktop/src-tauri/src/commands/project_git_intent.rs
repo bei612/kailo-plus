@@ -106,7 +106,9 @@ impl Journal {
             {
                 return Err(WriteError::at("IDEMPOTENCY_KEY_REUSED", &intent.key));
             }
-            if frozen.event_community_id.is_some() && frozen.event_community_id != intent.event_community_id {
+            if frozen.event_community_id.is_some()
+                && frozen.event_community_id != intent.event_community_id
+            {
                 return Err(WriteError::at(UNKNOWN, &intent.key));
             }
             if frozen.event.is_some()

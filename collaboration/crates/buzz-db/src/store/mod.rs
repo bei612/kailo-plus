@@ -30,10 +30,10 @@ pub mod moderation;
 pub mod partition;
 /// Buzz product-feedback sidecar persistence.
 pub mod product_feedback;
-/// Community-scoped push lease and durable wake-outbox persistence.
-pub mod push;
 /// Writer-fenced merged-status delivery observation.
 pub mod publication;
+/// Community-scoped push lease and durable wake-outbox persistence.
+pub mod push;
 /// Reaction persistence.
 pub mod reaction;
 /// HTTP report-resolution enforcement state machine persistence.

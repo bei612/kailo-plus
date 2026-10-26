@@ -25,9 +25,12 @@ pub async fn submit_signed_event_at_with_keys(
 /// Original submit path with a lifecycle check after rate-limit waiting.
 /// Scoped callers provide the original no-redirect authenticated client.
 pub(crate) async fn submit_signed_event_scoped(
-    event: &nostr::Event, http: &reqwest::Client, api_base_url: &str, keys: &nostr::Keys,
-    check: impl Fn() -> Result<(),String> + Send + Sync,
-) -> Result<SubmitEventResponse,String> {
+    event: &nostr::Event,
+    http: &reqwest::Client,
+    api_base_url: &str,
+    keys: &nostr::Keys,
+    check: impl Fn() -> Result<(), String> + Send + Sync,
+) -> Result<SubmitEventResponse, String> {
     if event.pubkey != keys.public_key() {
         return Err("signed event does not match the publishing identity".to_string());
     }
