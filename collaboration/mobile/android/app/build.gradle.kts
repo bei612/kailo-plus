@@ -1,10 +1,24 @@
 import java.util.Properties
+import groovy.json.JsonSlurper
 
 plugins {
     id("com.android.application")
     id("kotlin-android")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
+}
+
+// DD-151: deployment supplies the SDK-standard public client configuration.
+// With no file the app still builds, but its native push capability is unavailable.
+// A supplied malformed/mismatched file is rejected by the official plugin.
+if (file("google-services.json").isFile) {
+    val clientConfig = JsonSlurper().parse(file("google-services.json")) as? Map<*, *>
+        ?: throw GradleException("Firebase configuration must be the public Android client JSON")
+    if (clientConfig["type"] == "service_account" ||
+        clientConfig.keys.any { it in setOf("private_key", "private_key_id", "client_email") }) {
+        throw GradleException("Firebase server credentials must never be included in the Android client")
+    }
+    apply(plugin = "com.google.gms.google-services")
 }
 
 val uploadKeystorePath = providers.environmentVariable("BUZZ_ANDROID_UPLOAD_KEYSTORE_PATH").orNull
@@ -172,6 +186,9 @@ android {
 
 dependencies {
     implementation("androidx.appcompat:appcompat:1.6.1")
+    // Verified against https://firebase.google.com/docs/android/setup on 2026-10-26.
+    implementation(platform("com.google.firebase:firebase-bom:35.1.0"))
+    implementation("com.google.firebase:firebase-messaging")
 
     testImplementation(kotlin("test"))
 

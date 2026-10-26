@@ -481,7 +481,7 @@ import os.log
     }
     switch call.method {
     case "startRegistration":
-      startPushRegistration(result: result)
+      startPushRegistration(requestPermission: (call.arguments as? [String: Any])?["requestPermission"] as? Bool ?? true, result: result)
     case "takePendingNotificationResponse":
       result(pushNavigationBuffer.take()?.flutterArguments)
     case "notificationAuthorizationStatus":
@@ -555,15 +555,20 @@ import os.log
     }
   }
 
-  private func startPushRegistration(result: @escaping FlutterResult) {
-    UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .badge, .sound]) {
-      _, error in
-      if let error {
-        os_log(
-          "Buzz notification authorization request failed: %{public}@",
-          type: .error,
-          error.localizedDescription
-        )
+  private func startPushRegistration(requestPermission: Bool, result: @escaping FlutterResult) {
+    if requestPermission {
+      UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .badge, .sound]) {
+        _, error in
+        DispatchQueue.main.async {
+          self.pushChannel?.invokeMethod("notificationAuthorizationChanged", arguments: nil)
+        }
+        if let error {
+          os_log(
+            "Buzz notification authorization request failed: %{public}@",
+            type: .error,
+            error.localizedDescription
+          )
+        }
       }
     }
     // APNs token registration is independent from display authorization. A

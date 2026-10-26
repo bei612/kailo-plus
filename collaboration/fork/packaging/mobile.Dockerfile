@@ -20,6 +20,12 @@ RUN flutter pub get --enforce-lockfile
 # 应用名是部署配置（DD-111）：由发布配置以构建参数注入（记录的 build_args），release 构建
 # 缺失即失败（android/app/build.gradle.kts）；源码里不写应用名。
 ARG PLATFORM_DISPLAY_NAME
+# DD-151: official Firebase public Android client configuration, never a service-account key.
+# Optional: without it the shipped native bridge reports push unavailable.
+ARG BUZZ_ANDROID_GOOGLE_SERVICES_JSON
+RUN if [ -n "$BUZZ_ANDROID_GOOGLE_SERVICES_JSON" ]; then \
+      printf '%s' "$BUZZ_ANDROID_GOOGLE_SERVICES_JSON" > android/app/google-services.json; \
+    fi
 RUN --mount=type=secret,id=BUZZ_ANDROID_UPLOAD_KEYSTORE,target=/run/secrets/upload-keystore.jks,required=true \
     --mount=type=secret,id=BUZZ_ANDROID_UPLOAD_KEYSTORE_PASSWORD,required=true \
     --mount=type=secret,id=BUZZ_ANDROID_UPLOAD_KEY_ALIAS,required=true \
