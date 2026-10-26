@@ -102,3 +102,8 @@ preflight、SDK/PG limits 和结果。主日志 SHA-256 为
 `9df02d3826c09b326106772c1d848ef82ea6f4c6196f072b4603c791f0c6bcbf`。
 结束后实际回读本批 SDK、PG 与独立 network 全为空，未修改共享服务。
 测试固定源码与后续纯证据文档分开提交；未合并主线、未打包、未部署。
+
+固定证据树 `1c14a2067` 原 SDK 1 CPU / 2 GiB：三份变更文档的 markdownlint
+零问题、反向检查脚本 `bash -n` 退出 0；原件
+`/volumes/data/kailo/verification/buzz-r10/push-intent-docs-1c14a2067/`。
+这是本批文档检查，不代替集成分支全量设计覆盖门禁。
