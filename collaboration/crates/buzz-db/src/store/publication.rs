@@ -78,6 +78,7 @@ pub async fn merged_status_delivery(
 }
 impl Db {
     /// Narrow writer observation; no event content is returned to the caller.
+    #[buzz_datastore_tracing::datastore_span(name = "merged_status_delivery", system = "postgresql")]
     pub async fn merged_status_delivery(
         &self,
         community: CommunityId,
