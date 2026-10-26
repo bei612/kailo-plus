@@ -133,7 +133,7 @@ function targetFacts(value) {
 // Fixed native read probes only; no configurable method, path or body.
 function nativeCheckConfig(value) {
   const [urlKey, fileKey] = value?.kind === 'cells' ? ['restBaseUrl', 'bearerFile']
-    : value?.kind === 'weknora' ? ['apiBaseUrl', 'apiKeyFile'] : refuse();
+    : value?.kind === 'weknora' ? ['apiBaseUrl', Object.hasOwn(value, 'tokenFile') ? 'tokenFile' : 'apiKeyFile'] : refuse();
   if (!exactKeys(value, ['kind', urlKey, fileKey]) || !isAbsolute(value[fileKey] ?? '')) refuse();
   let url;
   try { url = new URL(value[urlKey]); } catch { refuse(); }
@@ -186,7 +186,8 @@ async function cellsNode(check, target, deadline) {
 async function weknoraBase(check, target, deadline) {
   const url = new URL(`api/v1/knowledge-bases/${encodeURIComponent(target.nativeRef)}`, new URL(check.apiBaseUrl));
   const response = await fetch(url, { redirect: 'manual', signal: AbortSignal.timeout(Math.max(1, deadline - Date.now())),
-    headers: { 'x-api-key': await ownerOnly(check.apiKeyFile, false) } });
+    headers: check.tokenFile ? { authorization: `Bearer ${await ownerOnly(check.tokenFile, false)}` }
+      : { 'x-api-key': await ownerOnly(check.apiKeyFile, false) } });
   if (response.status !== 200) { await response.body?.cancel(); refuse(); }
   const value = JSON.parse(await boundedBody(response.body, 1 << 20));
   if (value?.success !== true || value.data?.id !== target.nativeRef) refuse();

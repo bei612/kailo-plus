@@ -1,0 +1,50 @@
+{
+  "sourceCommit": "4f2929800ed769f1b4a0564ddc0d898f1a5ac6ec",
+  "sourceTransport": "CI direct GitHub fetch; CI-local git archive of fixed object",
+  "sdkImage": "sha256:3007729eb192341a4f004a88e42e1e66c94fc67d763acfc96568bd7311116018",
+  "container": "/receiver-stages-4f2929800-sdk",
+  "exitCode": 0,
+  "limits": {
+    "nanoCpus": 1000000000,
+    "memory": 536870912,
+    "memorySwap": 536870912,
+    "pids": 128,
+    "network": "none",
+    "readOnlyRootfs": true,
+    "capDrop": [
+      "ALL"
+    ],
+    "securityOpt": [
+      "no-new-privileges"
+    ]
+  },
+  "results": {
+    "pythonAst": 0,
+    "bashSyntax": 0,
+    "rustfmt": 0,
+    "node": {
+      "passed": 23,
+      "failed": 0
+    },
+    "pythonNativeEntrypoint": {
+      "passed": 42,
+      "failed": 0
+    }
+  },
+  "files": {
+    "check-command.sh": "9a83c6255d14c1ae222fc3901bfacf2d2721f2b03dcdbd9ec7fe1c38d442c2bf",
+    "check.log": "41401bd60518ae9bc1dc373e86dd11525319f6a1814e7d3877864ce84ab0b2a4",
+    "inspect.json": "1e6ea4c6a4c1120d92b8f0ddfa3835ed6eec5a52eb78ab20f46d7396f07ef48f"
+  },
+  "notExecuted": [
+    "Core bootstrap compilation and its three unit tests: root joint SDK batch pending",
+    "new isolated receiver E2E",
+    "production registration/approval/deployment"
+  ],
+  "priorReceipts": [
+    "../receiver-stages-080a25238/check.exit: rustfmt failure, subsequently fixed",
+    "../receiver-stages-2c71a04b8/check.exit: noexec test tmpfs and omitted original nginx template",
+    "../receiver-stages-2c71a04b8/native-exec.exit: omitted original nginx template",
+    "../receiver-stages-2c71a04b8/native-complete.exit: 41 Python tests passed after exact fixed-source input was restored"
+  ]
+}

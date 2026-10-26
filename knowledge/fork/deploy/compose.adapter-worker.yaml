@@ -1,0 +1,9 @@
+# The original receiver Agent renders only its OIDC callback secret here.
+# Neither the native app nor the adapter receives this Worker-only directory.
+services:
+  adapter-agent:
+    volumes:
+      - type: bind
+        source: ${KNOWLEDGE_ADAPTER_WORKER_DELIVERY_DIR:?private Worker credential directory required}
+        target: ${KNOWLEDGE_ADAPTER_WORKER_DELIVERY_DIR:?private Worker credential directory required}
+        bind: {create_host_path: false}

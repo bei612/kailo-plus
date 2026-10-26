@@ -234,8 +234,9 @@ def runtime_facts(runtime):
     env = runtime / ".env"
     require(env.is_file(), "runtime .env missing")
     facts = {name: env_value(env, name) for name in (
-        "COMPONENT_CONFORMANCE_DIR", "COMPONENT_CONFORMANCE_SIGNING_FILE", "GATEWAY_SERVICE_JWKS_FILE")}
-    facts["COMPONENT_CONFORMANCE_DIR"] = facts["COMPONENT_CONFORMANCE_DIR"].replace("${KAILO_RUNTIME_DIR}", str(runtime))
+        "COMPONENT_CONFORMANCE_DIR", "COMPONENT_CONFORMANCE_WORKER_DIR", "COMPONENT_CONFORMANCE_SIGNING_FILE", "GATEWAY_SERVICE_JWKS_FILE")}
+    for name in ("COMPONENT_CONFORMANCE_DIR", "COMPONENT_CONFORMANCE_WORKER_DIR"):
+        facts[name] = facts[name].replace("${KAILO_RUNTIME_DIR}", str(runtime))
     facts["env"] = str(env)
     return facts
 

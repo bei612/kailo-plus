@@ -504,6 +504,37 @@ def seconds(value):
     return int(match[1]) * {"s": 1, "m": 60, "h": 3600}[match[2]]
 
 
+def model_reader_path(path, config, role):
+    """Resume a reader only with its already frozen model generation input."""
+    material = json.loads(private_file(path))
+    require(set(material) == {"projection", "models"}, "exact model delivery input required")
+    projection = material["projection"]
+    validation = config["management"]["validation"]
+    reference = projection["serviceSecretRef"]
+    reader = projection["secretReader"]
+    digest = hashlib.sha256(json.dumps(validation["normalizedConfig"], sort_keys=True,
+        separators=(",", ":"), ensure_ascii=False).encode()).hexdigest()
+    require(projection["bindingId"] == config["bindingId"] and projection["tenantId"] == config["tenantId"]
+        and projection["generation"] == validation["bindingVersion"]
+        and projection["gatewayPrincipalId"] == validation["servicePrincipalId"]
+        and projection["nativeScopeRef"] == validation["nativeScopeRef"] and projection["configDigest"] == digest
+        and reader == {"servicePrincipalId": validation["servicePrincipalId"], "roleName": role, "audience": config["actionTokenAudience"]}
+        and set(reference) == {"locator", "version", "audience"} and reference["audience"] == reader["audience"]
+        and type(reference["version"]) is int and reference["version"] > 0
+        and projection["secretRef"]["locator"] == reference["locator"] and projection["secretRef"]["version"] == reference["version"],
+        "model reader does not belong to this binding/generation/service")
+    parts = reference["locator"].split("/")
+    require(len(parts) == 6 and parts[:2] == ["tenants", config["tenantId"]]
+        and parts[3:] == ["application-model", config["bindingId"], str(validation["bindingVersion"])]
+        and all(SEGMENT.fullmatch(part) for part in parts), "fixed generation model locator required")
+    for entry in validation["secretDeliveries"]:
+        binding = entry["locator"].split("/")
+        require(len(binding) == 6 and binding[:2] == parts[:2]
+            and binding[3:] == ["application-binding", config["bindingId"], entry["secretKey"]]
+            and entry["audience"] == reference["audience"], "model reader binding SecretRef mismatch")
+    return parts[2] + "/data/" + "/".join(parts[3:])
+
+
 def command_reader(args):
     config = json.loads(private_file(args.config))
     validation = config["management"]["validation"]
@@ -549,6 +580,10 @@ def command_reader(args):
                               "destination": str(extra / key), "perms": "0600", "error_on_missing_key": True})
     role = args.role
     require(SEGMENT.fullmatch(role) is not None, "--role must be one path segment")
+    if getattr(args, "model_delivery_file", None):
+        # model-reader performs the original scoped merge; this path only
+        # accepts its exact resulting ACL during adapter Agent recovery.
+        paths.add(model_reader_path(args.model_delivery_file, config, role))
     token = json.loads(private_file(args.root_token_file))["root_token"]
     api = API(args.bao_url, args.timeout, {"X-Vault-Token": token, "X-Vault-Namespace": namespace})
     mounts = api.request("GET", "/v1/sys/mounts")["data"]
@@ -684,6 +719,7 @@ def main():
     r.add_argument("--wrap-ttl", default="30m")
     r.add_argument("--hcl-name", default="adapter-agent.hcl")
     r.add_argument("--extra-delivery-dir", help="second owner-only directory (e.g. Cells native action delivery)")
+    r.add_argument("--model-delivery-file", help="existing same-generation model projection for exact combined-reader recovery")
     r.add_argument("--extra-secret", action="append", help="binding secretKey also rendered into --extra-delivery-dir")
     r.add_argument("--timeout", type=int, default=15)
     k = sub.add_parser("client")

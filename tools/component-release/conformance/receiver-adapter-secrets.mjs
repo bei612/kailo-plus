@@ -19,8 +19,12 @@ await main(async () => {
     const root = deployment.split('/receiver/apps/')[0];
     require(/^kailo-receiver-[a-f0-9]{6,32}$/.test(input.project ?? '')
       && input.project === `kailo-receiver-${basename(root).split('-').at(-1)}`, 'adapter project differs from its isolated run');
-    require(UUID.test(input.tenantId ?? '') && Array.isArray(input.endpoints) && input.endpoints.length === 2,
-      'actual isolated tenant and two adapter intents required');
+    const forward = input.purpose === 'FORWARD_PROTOCOL';
+    require(input.purpose === undefined || forward, 'unknown adapter delivery purpose');
+    require(UUID.test(input.tenantId ?? '') && Array.isArray(input.endpoints) && input.endpoints.length === (forward ? 1 : 2),
+      'actual isolated tenant and exact adapter intents required');
+    const receiverPlan = forward ? JSON.parse(privateText(join(root, 'receiver/knowledge/adapter-plan.json'))) : undefined;
+    if (forward) require(receiverPlan.tenantId === input.tenantId, 'forward delivery tenant differs from actual receiver');
     const base = new URL(input.baoUrl);
     require(['http:', 'https:'].includes(base.protocol) && base.hostname === 'openbao' && base.origin === input.baoUrl
       && !base.username && !base.password, 'isolated in-network OpenBao origin required');
@@ -29,11 +33,13 @@ await main(async () => {
     const namespace = `tenants/${input.tenantId}`, ids = new Set(), roles = new Set();
     // Validate every path before the first HTTP call or mutation.
     const entries = input.endpoints.flatMap((endpoint) => {
-      require(['SOURCE', 'RECEIVER'].includes(endpoint.role) && !roles.has(endpoint.role)
+      require((forward ? endpoint.role === 'FORWARD' : ['SOURCE', 'RECEIVER'].includes(endpoint.role)) && !roles.has(endpoint.role)
         && UUID.test(endpoint.bindingId ?? '') && !ids.has(endpoint.bindingId), 'distinct fixed adapter intents required');
       roles.add(endpoint.role); ids.add(endpoint.bindingId);
       const nativeKey = endpoint.role === 'SOURCE' ? 'cells_bearer' : 'native_mcp_bearer';
-      const expectedFile = join(root, endpoint.role === 'SOURCE' ? 'receiver/source-cells/secrets/service.pat' : 'receiver/knowledge/mcp-bearer');
+      if (forward) require(endpoint.bindingId === receiverPlan.bindingId, 'forward delivery binding differs from actual receiver');
+      const expectedFile = join(root, forward ? 'receiver/knowledge/forward-mcp-bearer'
+        : endpoint.role === 'SOURCE' ? 'receiver/source-cells/secrets/service.pat' : 'receiver/knowledge/mcp-bearer');
       require(endpoint.nativeFile === expectedFile && realpathSync(expectedFile) === expectedFile, 'native credential must belong to the exact isolated component');
       const native = privateText(expectedFile).trim();
       require(native && !/[\s\x00]/.test(native), 'native credential unavailable');
@@ -43,10 +49,13 @@ await main(async () => {
         const key = ref.secretKey;
         require([nativeKey, 'oidc_client_secret'].includes(key) && !keys.has(key), 'adapter secret schema differs');
         keys.add(key);
+        const scope = forward ? 'conformance-forward' : 'application-binding';
+        const audience = forward ? 'kailo-conformance-knowledge'
+          : endpoint.role === 'SOURCE' ? 'kailo-adapter-file-storage' : 'kailo-adapter-knowledge';
         require(Object.keys(ref).sort().join(',') === 'audience,locator,secretKey,version'
-          && ref.locator === `${namespace}/kv/application-binding/${endpoint.bindingId}/${key}` && ref.version === 1
-          && ref.audience === (endpoint.role === 'SOURCE' ? 'kailo-adapter-file-storage' : 'kailo-adapter-knowledge'), 'fixed original binding SecretRef required');
-        return { path: `/v1/kv/data/application-binding/${endpoint.bindingId}/${key}`, value: key === nativeKey ? native : undefined };
+          && ref.locator === `${namespace}/kv/${scope}/${endpoint.bindingId}/${key}` && ref.version === 1
+          && ref.audience === audience, 'fixed purpose-scoped SecretRef required');
+        return { path: `/v1/kv/data/${scope}/${endpoint.bindingId}/${key}`, value: key === nativeKey ? native : undefined };
       });
     });
     const api = async (method, path, body, missing = false) => {
