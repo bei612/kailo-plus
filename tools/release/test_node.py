@@ -1695,10 +1695,6 @@ class LongRunningContainers(unittest.TestCase):
         self.assertEqual(node.long_running({}, ()), {})
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class PublicClientBuildConfig(unittest.TestCase):
     def test_node_returns_only_digests_of_exact_ci_environment_inputs(self):
         values = node.public_build_config_values({"environment": {
@@ -1735,3 +1731,7 @@ class PublicClientBuildConfig(unittest.TestCase):
             orch.upstream_build_values("mobile", basic + f"+    build_config_digest: {source}\n", unit, {})
         with self.assertRaises(orch.ReleaseError):
             orch.upstream_build_values("mobile", changed + f"+    source_digest: {source}\n", unit, {})
+
+
+if __name__ == "__main__":
+    unittest.main()

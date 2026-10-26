@@ -6,6 +6,8 @@ import 'package:buzz/shared/platform/platform_api.dart';
 import 'package:buzz/shared/push/push_bridge.dart';
 import 'package:buzz/shared/push/push_registration.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/widgets.dart';
+import 'package:buzz/shared/relay/app_lifecycle_provider.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:nostr/nostr.dart' as nostr;
 
@@ -16,6 +18,7 @@ class _FakeBridge implements PushBridge {
   String token = 'ab' * 32;
   PushPlatform? platform = PushPlatform.APNS;
   final permissionRequests = <bool>[];
+  PushAuthorizationStatus permission = PushAuthorizationStatus.authorized;
   @override
   Future<PushPlatform?> deliveryPlatform() async => platform;
   @override
@@ -23,7 +26,7 @@ class _FakeBridge implements PushBridge {
 
   @override
   Future<PushAuthorizationStatus?> authorizationStatus() async =>
-      PushAuthorizationStatus.authorized;
+      permission;
 
   @override
   Future<bool> openNotificationSettings() async => true;
@@ -43,6 +46,12 @@ class _FakeBridge implements PushBridge {
 
   @override
   Future<MessageDeepLink?> takePendingOpen() async => null;
+}
+
+class _Lifecycle extends AppLifecycleNotifier {
+  @override
+  AppLifecycleState build() => AppLifecycleState.resumed;
+  void change(AppLifecycleState value) => state = value;
 }
 
 const _session = {
@@ -106,6 +115,7 @@ void main() {
     );
     final container = ProviderContainer(
       overrides: [
+        appLifecycleProvider.overrideWith(_Lifecycle.new),
         pushRegistrationDepsProvider.overrideWithValue(deps),
         pushBridgeProvider.overrideWithValue(bridge ?? _FakeBridge()),
       ],
@@ -332,6 +342,29 @@ void main() {
     await loaded(h.container);
     await h.container.read(pushRegistrationProvider.notifier).setEnabled(false);
     expect(bridge.permissionRequests, [false]);
+  });
+
+  test('foreground resume rereads OS settings and refreshes an enabled FCM token without prompting', () async {
+    final bridge = _FakeBridge()..platform = PushPlatform.FCM;
+    final h = harness(apns: 'NOT_CONFIGURED', fcm: 'CONFIGURED', bridge: bridge,
+      put: (_, _, _) => PlatformResponse(200, {...view(enabled: true, version: 1), 'platform': 'FCM'}));
+    await loaded(h.container);
+    await h.container.read(pushRegistrationProvider.notifier).setEnabled(true);
+    h.container.read(pushTokenRefreshProvider);
+    expect(await h.container.read(pushAuthorizationStatusProvider.future), PushAuthorizationStatus.authorized);
+    await Future<void>.delayed(Duration.zero);
+    final before = bridge.registrations;
+    final lifecycle = h.container.read(appLifecycleProvider.notifier) as _Lifecycle;
+    lifecycle.change(AppLifecycleState.paused);
+    bridge.permission = PushAuthorizationStatus.denied;
+    lifecycle.change(AppLifecycleState.resumed);
+    for (var i = 0; i < 20 && bridge.registrations == before; i++) {
+      await Future<void>.delayed(Duration.zero);
+    }
+    expect(bridge.registrations, before + 1);
+    expect(bridge.permissionRequests.last, isFalse);
+    expect(await h.container.read(pushAuthorizationStatusProvider.future), PushAuthorizationStatus.denied);
+    expect(h.calls.where((c) => c.$1 == PlatformMethod.put), hasLength(1));
   });
 
   test('a stale version is re-read instead of overwritten', () async {
