@@ -247,3 +247,51 @@ adapter/native-action 启动之间协调。未跑真实新 receiver，`blockedAf
 四侧生成一致、迁移往返、实际 PostgreSQL producer/读取回归、原 HUMAN tool 单测、Clippy 与 SQLx，均退出 0。
 这仍不是 receiver 环境的真实 HUMAN HTTP、原生动作、模型投递或 driver 业务验收；需要包含该 Core
 实现的匹配镜像，再沿原运行器完成前述编排。没有移除当前明确拒绝。
+
+## 9. 真实接收方阶段编排（2026-10-26，源码及定向检查）
+
+本节更新第 8 节的编排缺口，不把生产者、协议观察或单元检查升级为实际接收方验收。
+相对已交付 `caa5500bbaed796eef2fa5bcb04c0305dfede2b4`，代码固定为
+`4f2929800ed769f1b4a0564ddc0d898f1a5ac6ec`，18 文件新增 1543 行、删除 141 行。
+关联 `.design/07` §8A、DD-124、DD-136，复用原入口和原业务实体，不增加业务授权或策略管理入口。
+
+- `b82988566`：原 bootstrap 拆成 `admit` / `ready`，相同不可变输入、相同业务 idempotency key。
+  admit 只等待真实 HUMAN binding.create 的 ALLOWED，再由原管理读取取得同 binding/release/generation/action 的
+  固定 HUMAN policy 引用；PENDING 部署元数据不等于 ACTIVE。旧 ACTIVE 行缺少固定 mapping 一样拒绝，不回填。
+- `080a25238`：原 Cells 模板消费实际 write/delete/share policy，原生 UUID 只来自原 API；未知 PUT ACK
+  仅按已落盘的拟用 UUID 查询，确认对象消失时拒绝重建。native-action 配置由真实 HUMAN 准入事实生成。
+- `486b83333`：receiver 模型 reader 只合并本 binding 冻结 secretRefs 与本 generation 模型确切路径，生成前后
+  核对原 AppRole/policy，拒绝漂移、跨 binding/namespace、wildcard 和未知 capability；原 Agent、原生受控映射、
+  原 nonce proof、原目录回执、ACTIVE bootstrap 继续同链。Resource 与读授权由真实原动作产生。
+  治理 seed 留存原 AE/command 和原生 datasource/batch ID，未知状态只观测，不新发副本。
+- `2c71a04b8`：inputs/driver 已接原运行器。第二原生 MCP endpoint 经原 API 创建、立即固定身份和凭据；
+  独立 FORWARD_PROTOCOL CAS0 secret 路径、独立 client secret，经原 Agent 交付，原 MCPAdapterConfigs 数组
+  按不同 endpoint 唯一选择，原 receiver 业务引用不变。没有新增 loader、OpenBao 服务或身份权威。
+  显式 forward 只读投递 overlay 不默认开启；Worker 单独只得到原 receiver OIDC callback secret。
+  原 observe 的临时内存签名/provider 仅是 FORWARD wire 协议观察；观察后还原生产 Core 自己的
+  COMPONENT_CONFORMANCE 公钥，生产私钥不出原 OpenBao。真实 RECEIVER 动作仍沿隔离 Core/Worker/Gateway。
+- `ac37cd57a`：长阶段沿同一个原会话命令加锁续期，新 HUMAN 动作和 owner 审批重新认证实际身份。
+  `4f2929800`：forward/Worker overlay 拒绝重复、缺值、相对目录和不完整显式启用，原入口正反检查覆盖。
+
+CI 直接 GitHub fetch，CI 本地从上述固定对象归档源码；没有本机源码包传输。
+原 SDK `sha256:3007729eb192341a4f004a88e42e1e66c94fc67d763acfc96568bd7311116018`，
+1 CPU、512 MiB（swap 同限）、128 PIDs、只读根、cap-drop ALL、no-new-privileges、network none。
+Python/Bash 语法、rustfmt、23/23 Node 正反检查、42/42 原 Python deploy/reader 检查均退出 0。
+原始日志和 inspect 在 CI `/volumes/data/kailo/conformance/checks/receiver-stages-4f2929800/`，
+摘要与日志哈希见 [机器回执](component-conformance-receiver-stages-20261026.json)。
+
+失败历史完整保留：`receiver-stages-080a25238/check.log` 的 Rust 格式失败已修正；
+`receiver-stages-2c71a04b8/check.log` 的临时目录 noexec 和遗漏原 Nginx 模板输入导致 Python 检查失败；
+同目录 `native-exec.log` 调整 test-only tmpfs exec 后仍有两个模板缺失错误；
+`native-complete.log` 从同一 GitHub 固定对象补回原模板后 41/41 通过，最终新提交上述 42/42 通过。
+这没有把失败改为 PASS，也没有启动真实 OpenBao/原生业务作为单元 fixture。
+
+仍未验收：本批 bootstrap Rust 的实际编译及三个既有/新增检查由主集成候选统一排原 SDK Core 窗口：
+`retained_receiver_setup_action_requires_exact_actor_and_command`、
+`receiver_owner_approval_uses_original_http_decision_and_refuses_unknown`、
+`admitted_policy_metadata_requires_exact_original_ownership`。
+完整新 receiver 的 contracts、真实 HUMAN 准入、native-action、模型 proof、ACTIVE、Resource/授权、seed、
+inputs、实际 driver 业务与生产权威 suite 尚未跑；需匹配 Core/Worker/组件产物后实际执行。
+本批不重启/删除遗留栈、不生产登记/批准、不部署共享平台。
+`blockedAfterNative` 仅在实际编排已成功建立原 driver listener 后清空；该运行中事实不是 suite PASS。
+原 upgrade writer 仍不存在，未宣称升级/旧映射兼容完成。
