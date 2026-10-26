@@ -37,22 +37,37 @@ pub(crate) struct Receipt {
 }
 impl Receipt {
     pub fn local(outcome: Outcome) -> Self {
-        Self { outcome, reference: None, retry_after: Duration::from_secs(60) }
+        Self {
+            outcome,
+            reference: None,
+            retry_after: Duration::from_secs(60),
+        }
     }
 }
 fn retry_after(response: &reqwest::Response, minimum: u64) -> Duration {
-    let header = response.headers().get(reqwest::header::RETRY_AFTER)
+    let header = response
+        .headers()
+        .get(reqwest::header::RETRY_AFTER)
         .and_then(|v| v.to_str().ok());
-    let seconds = header.and_then(|s| s.parse::<u64>().ok().or_else(|| {
-        chrono::DateTime::parse_from_rfc2822(s).ok().map(|at|
-            (at.timestamp() - chrono::Utc::now().timestamp()).max(0) as u64)
-    })).unwrap_or(minimum);
+    let seconds = header
+        .and_then(|s| {
+            s.parse::<u64>().ok().or_else(|| {
+                chrono::DateTime::parse_from_rfc2822(s)
+                    .ok()
+                    .map(|at| (at.timestamp() - chrono::Utc::now().timestamp()).max(0) as u64)
+            })
+        })
+        .unwrap_or(minimum);
     Duration::from_secs(seconds.max(minimum))
 }
 fn transport(error: reqwest::Error) -> Outcome {
     // Connection establishment failed before the request. A timeout/reset after connecting
     // can lose a successful response, so it is not a retryable rejection.
-    if error.is_connect() { Outcome::Retry } else { Outcome::Unknown }
+    if error.is_connect() {
+        Outcome::Retry
+    } else {
+        Outcome::Unknown
+    }
 }
 
 /// Re-read credentials at least this often, so a rotation in OpenBao takes effect.
@@ -140,8 +155,19 @@ impl ApnsSender {
     }
 
     pub(crate) fn target(&self) -> String {
-        hex::encode(Sha256::digest(format!("APNS:{}:{}:{}", self.credential.team_id, self.credential.bundle_id,
-            if self.credential.sandbox { "development" } else { "production" }).as_bytes()))
+        hex::encode(Sha256::digest(
+            format!(
+                "APNS:{}:{}:{}",
+                self.credential.team_id,
+                self.credential.bundle_id,
+                if self.credential.sandbox {
+                    "development"
+                } else {
+                    "production"
+                }
+            )
+            .as_bytes(),
+        ))
     }
 
     async fn provider_token(&self) -> Result<String, Outcome> {
@@ -201,15 +227,22 @@ impl ApnsSender {
             Ok(response) => {
                 let status = response.status().as_u16();
                 let retry_after = retry_after(&response, if status >= 500 { 900 } else { 60 });
-                let reference = response.headers().get("apns-id")
-                    .and_then(|v| v.to_str().ok()).and_then(|v| uuid::Uuid::parse_str(v).ok())
+                let reference = response
+                    .headers()
+                    .get("apns-id")
+                    .and_then(|v| v.to_str().ok())
+                    .and_then(|v| uuid::Uuid::parse_str(v).ok())
                     .map(|v| v.to_string());
                 let body: Value = response.json().await.unwrap_or(Value::Null);
                 let outcome = classify_apns(status, body["reason"].as_str());
                 if outcome == Outcome::ProviderAuth {
                     *self.jwt.lock().await = None;
                 }
-                Receipt { outcome, reference, retry_after }
+                Receipt {
+                    outcome,
+                    reference,
+                    retry_after,
+                }
             }
             Err(e) => Receipt::local(transport(e)),
         }
@@ -245,7 +278,9 @@ impl FcmSender {
     }
 
     pub(crate) fn target(&self) -> String {
-        hex::encode(Sha256::digest(format!("FCM:{}", self.credential.project_id).as_bytes()))
+        hex::encode(Sha256::digest(
+            format!("FCM:{}", self.credential.project_id).as_bytes(),
+        ))
     }
 
     async fn access_token(&self, http: &reqwest::Client) -> Result<String, Outcome> {
@@ -316,7 +351,8 @@ impl FcmSender {
         };
         let mut message = message.clone();
         message["token"] = Value::String(token.0.clone());
-        message["android"]["ttl"] = Value::String(format!("{}s", (expires_at-now_secs() as i64).max(0)));
+        message["android"]["ttl"] =
+            Value::String(format!("{}s", (expires_at - now_secs() as i64).max(0)));
         message["apns"]["headers"]["apns-expiration"] = Value::String(expires_at.to_string());
         let response = http
             .post(format!(
@@ -333,14 +369,29 @@ impl FcmSender {
                 let status = response.status().as_u16();
                 let retry_after = retry_after(&response, 60);
                 let body: Value = response.json().await.unwrap_or(Value::Null);
-                let reference = body["name"].as_str().filter(|name| name.len() <= 512
-                    && name.starts_with(&format!("projects/{}/messages/", self.credential.project_id)))
+                let reference = body["name"]
+                    .as_str()
+                    .filter(|name| {
+                        name.len() <= 512
+                            && name.starts_with(&format!(
+                                "projects/{}/messages/",
+                                self.credential.project_id
+                            ))
+                    })
                     .map(str::to_owned);
-                let outcome = if status == 200 && reference.is_none() { Outcome::Unknown } else { classify_fcm(status, &body) };
+                let outcome = if status == 200 && reference.is_none() {
+                    Outcome::Unknown
+                } else {
+                    classify_fcm(status, &body)
+                };
                 if outcome == Outcome::ProviderAuth {
                     *self.access.lock().await = None;
                 }
-                Receipt { outcome, reference, retry_after }
+                Receipt {
+                    outcome,
+                    reference,
+                    retry_after,
+                }
             }
             Err(e) => Receipt::local(transport(e)),
         }
@@ -357,7 +408,12 @@ pub(crate) fn classify_fcm(status: u16, body: &Value) -> Outcome {
         .collect();
     let has = |code: &str| codes.contains(&code);
     match status {
-        200 if body["name"].as_str().is_some_and(|name| name.starts_with("projects/") && name.contains("/messages/")) => Outcome::Delivered,
+        200 if body["name"]
+            .as_str()
+            .is_some_and(|name| name.starts_with("projects/") && name.contains("/messages/")) =>
+        {
+            Outcome::Delivered
+        }
         200 => Outcome::Unknown,
         _ if has("UNREGISTERED") || has("SENDER_ID_MISMATCH") => Outcome::Invalid,
         401 | 403 => Outcome::ProviderAuth,
@@ -393,7 +449,10 @@ mod tests {
     fn fcm_errors_map_to_registration_effects() {
         let unregistered = json!({"error": {"details": [{"errorCode": "UNREGISTERED"}]}});
         assert_eq!(classify_fcm(200, &json!({})), Outcome::Unknown);
-        assert_eq!(classify_fcm(200, &json!({"name":"projects/p/messages/m"})), Outcome::Delivered);
+        assert_eq!(
+            classify_fcm(200, &json!({"name":"projects/p/messages/m"})),
+            Outcome::Delivered
+        );
         assert_eq!(classify_fcm(404, &json!({})), Outcome::Rejected);
         assert_eq!(classify_fcm(404, &unregistered), Outcome::Invalid);
         assert_eq!(classify_fcm(400, &unregistered), Outcome::Invalid);
@@ -411,25 +470,39 @@ mod tests {
     #[tokio::test]
     async fn response_lost_after_request_is_unknown_and_retry_after_is_honored() {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
-        let listener=tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let address=listener.local_addr().unwrap();
-        let server=tokio::spawn(async move {
-            let (mut stream,_)=listener.accept().await.unwrap();
-            let mut bytes=[0;4096];assert!(stream.read(&mut bytes).await.unwrap()>0);
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut bytes = [0; 4096];
+            assert!(stream.read(&mut bytes).await.unwrap() > 0);
             // A provider can accept and then lose its response. Closing here models exactly
             // that ambiguity; the client must not schedule another provider request.
         });
-        let client=reqwest::Client::builder().no_proxy().build().unwrap();
-        let error=client.post(format!("http://{address}/send")).body("content-free").send().await.unwrap_err();
-        server.await.unwrap();assert_eq!(transport(error),Outcome::Unknown);
-        let listener=tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let address=listener.local_addr().unwrap();
-        let server=tokio::spawn(async move {
-            let (mut stream,_)=listener.accept().await.unwrap();let mut bytes=[0;4096];stream.read(&mut bytes).await.unwrap();
+        let client = reqwest::Client::builder().no_proxy().build().unwrap();
+        let error = client
+            .post(format!("http://{address}/send"))
+            .body("content-free")
+            .send()
+            .await
+            .unwrap_err();
+        server.await.unwrap();
+        assert_eq!(transport(error), Outcome::Unknown);
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut bytes = [0; 4096];
+            stream.read(&mut bytes).await.unwrap();
             stream.write_all(b"HTTP/1.1 429 Too Many Requests\r\nRetry-After: 1200\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").await.unwrap();
         });
-        let response=client.post(format!("http://{address}/send")).send().await.unwrap();
-        assert_eq!(retry_after(&response,60),Duration::from_secs(1200));server.await.unwrap();
+        let response = client
+            .post(format!("http://{address}/send"))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(retry_after(&response, 60), Duration::from_secs(1200));
+        server.await.unwrap();
     }
 
     #[test]

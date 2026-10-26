@@ -12,10 +12,10 @@
 //!   that platform `NOT_CONFIGURED` and the client keeps the original "unavailable" branch.
 
 pub(crate) mod decide;
-pub(crate) mod send;
-mod unread;
 mod intent;
+pub(crate) mod send;
 mod token_intent;
+mod unread;
 pub(crate) mod worker;
 
 use axum::{
@@ -413,7 +413,9 @@ async fn apply(
             audience: state.memory_service.secret_audience.clone(),
         };
         // Persist ownership before OpenBao; every error/crash remains discoverable.
-        token_intent::prepare(&state.pool, ctx.tenant_id, device, &reference).await.map_err(db)?;
+        token_intent::prepare(&state.pool, ctx.tenant_id, device, &reference)
+            .await
+            .map_err(db)?;
         let version = state
             .secrets
             .write_once(&reference.locator, "value", &req.token)
@@ -427,16 +429,28 @@ async fn apply(
     let mut tx = state.pool.begin().await.map_err(db)?;
     // The pre-write check cannot authorize the post-I/O mutation. Lock all exact facts
     // again so revocation and binding have a definite transaction ordering.
-    if !intent::lock_device(&mut tx,ctx.tenant_id,ctx.tenant_principal_id,device).await.map_err(db)? {
-        return Err(refuse(StatusCode::FORBIDDEN,ErrorClass::Denied,ReasonCode::ClientKeyNotFound));
+    if !intent::lock_device(&mut tx, ctx.tenant_id, ctx.tenant_principal_id, device)
+        .await
+        .map_err(db)?
+    {
+        return Err(refuse(
+            StatusCode::FORBIDDEN,
+            ErrorClass::Denied,
+            ReasonCode::ClientKeyNotFound,
+        ));
     }
     // Serialize exact registration mutation before acquiring token-intent ownership.
     sqlx::query("select pg_advisory_xact_lock(hashtextextended($1,0))")
-        .bind(format!("push-registration:{}:{device}",ctx.tenant_id))
-        .execute(&mut *tx).await.map_err(db)?;
+        .bind(format!("push-registration:{}:{device}", ctx.tenant_id))
+        .execute(&mut *tx)
+        .await
+        .map_err(db)?;
     sqlx::query("select version from identity.push_registration where tenant_id=$1 and device_pubkey=$2 for update")
         .bind(ctx.tenant_id).bind(device).execute(&mut *tx).await.map_err(db)?;
-    if !token_intent::bind(&mut tx,ctx.tenant_id,device,&reference).await.map_err(db)? {
+    if !token_intent::bind(&mut tx, ctx.tenant_id, device, &reference)
+        .await
+        .map_err(db)?
+    {
         return Err(unavailable());
     }
     let row: Option<ViewRow> = sqlx::query_as(
@@ -522,8 +536,10 @@ async fn apply(
     )
     .await
     .map_err(db)?;
-    if let Some(old) = old_ref.filter(|old|old.locator != reference.locator) {
-        token_intent::retire(&mut tx,&old.locator).await.map_err(db)?;
+    if let Some(old) = old_ref.filter(|old| old.locator != reference.locator) {
+        token_intent::retire(&mut tx, &old.locator)
+            .await
+            .map_err(db)?;
     }
     tx.commit().await.map_err(db)?;
     Ok(view(row))

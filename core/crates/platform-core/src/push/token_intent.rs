@@ -1,43 +1,72 @@
 //! DD-151: persist a SecretRef before write_once, then bind or fence/destroy version one.
 //! The existing secret-store retirement primitive performs CAS=0 fencing and metadata
 //! verification. Server-key intents cannot be reused: those carry different key authority.
-use uuid::Uuid;
-use sqlx::PgConnection;
 use crate::service_api::ServiceState;
+use sqlx::PgConnection;
+use uuid::Uuid;
 
-pub(super) async fn prepare(pool:&sqlx::PgPool,tenant:Uuid,device:&str,r:&secret_store::SecretRef) -> Result<(),sqlx::Error> {
- sqlx::query("insert into admission.push_token_intent(locator,tenant_id,audience,device_pubkey) values($1,$2,$3,$4)")
+pub(super) async fn prepare(
+    pool: &sqlx::PgPool,
+    tenant: Uuid,
+    device: &str,
+    r: &secret_store::SecretRef,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("insert into admission.push_token_intent(locator,tenant_id,audience,device_pubkey) values($1,$2,$3,$4)")
  .bind(&r.locator).bind(tenant).bind(&r.audience).bind(device).execute(pool).await?;
- Ok(())
+    Ok(())
 }
-pub(super) async fn bind(conn:&mut PgConnection,tenant:Uuid,device:&str,r:&secret_store::SecretRef) -> Result<bool,sqlx::Error> {
- let changed=sqlx::query("update admission.push_token_intent set state='BOUND',updated_at=now()
+pub(super) async fn bind(
+    conn: &mut PgConnection,
+    tenant: Uuid,
+    device: &str,
+    r: &secret_store::SecretRef,
+) -> Result<bool, sqlx::Error> {
+    let changed = sqlx::query(
+        "update admission.push_token_intent set state='BOUND',updated_at=now()
  where locator=$1 and tenant_id=$2 and device_pubkey=$3 and audience=$4
- and (state='BOUND' or (state='PREPARING' and lease_until>now()))")
- .bind(&r.locator).bind(tenant).bind(device).bind(&r.audience).execute(conn).await?.rows_affected();
- Ok(changed==1)
+ and (state='BOUND' or (state='PREPARING' and lease_until>now()))",
+    )
+    .bind(&r.locator)
+    .bind(tenant)
+    .bind(device)
+    .bind(&r.audience)
+    .execute(conn)
+    .await?
+    .rows_affected();
+    Ok(changed == 1)
 }
-pub(super) async fn retire(conn:&mut PgConnection,locator:&str) -> Result<(),sqlx::Error> {
- sqlx::query("update admission.push_token_intent set state='RETIRING',next_attempt_at=now(),updated_at=now() where locator=$1 and state<>'RETIRED'")
+pub(super) async fn retire(conn: &mut PgConnection, locator: &str) -> Result<(), sqlx::Error> {
+    sqlx::query("update admission.push_token_intent set state='RETIRING',next_attempt_at=now(),updated_at=now() where locator=$1 and state<>'RETIRED'")
  .bind(locator).execute(conn).await?;
- Ok(())
+    Ok(())
 }
-pub(super) async fn sweep(state:&ServiceState) -> Result<(),sqlx::Error> {
- // Freeze before external I/O: a late registration cannot bind this locator anymore.
- // Unique CAS=0 means a writer racing the fence cannot resurrect the destroyed version.
- let rows:Vec<(String,Uuid,String)>=sqlx::query_as("update admission.push_token_intent set state='RETIRING',
+pub(super) async fn sweep(state: &ServiceState) -> Result<(), sqlx::Error> {
+    // Freeze before external I/O: a late registration cannot bind this locator anymore.
+    // Unique CAS=0 means a writer racing the fence cannot resurrect the destroyed version.
+    let rows:Vec<(String,Uuid,String)>=sqlx::query_as("update admission.push_token_intent set state='RETIRING',
  next_attempt_at=now()+make_interval(secs=>least(3600,5*power(2,least(failures,10)))::double precision),failures=least(16,failures+1),updated_at=now()
  where locator in(select i.locator from admission.push_token_intent i where
  ((i.state='PREPARING' and i.lease_until<=now()) or (i.state='RETIRING' and i.next_attempt_at<=now()))
  and not exists(select 1 from identity.push_registration r where r.token_secret_locator=i.locator)
  order by next_attempt_at for update skip locked limit 100) returning locator,tenant_id,audience")
  .fetch_all(&state.pool).await?;
- for (locator,tenant,audience) in rows {
-  let reference=secret_store::SecretRef{locator,version:1,audience};
-  if state.secrets.retire_push_token(tenant,&reference,true).await.is_ok() {
-   sqlx::query("update admission.push_token_intent set state='RETIRED',updated_at=now() where locator=$1 and state='RETIRING'")
+    for (locator, tenant, audience) in rows {
+        let reference = secret_store::SecretRef {
+            locator,
+            version: 1,
+            audience,
+        };
+        if state
+            .secrets
+            .retire_push_token(tenant, &reference, true)
+            .await
+            .is_ok()
+        {
+            sqlx::query("update admission.push_token_intent set state='RETIRED',updated_at=now() where locator=$1 and state='RETIRING'")
    .bind(&reference.locator).execute(&state.pool).await?;
-  } else { tracing::warn!(%tenant,"推送令牌退休等待元数据查证，持久退避后重试"); }
- }
- Ok(())
+        } else {
+            tracing::warn!(%tenant,"推送令牌退休等待元数据查证，持久退避后重试");
+        }
+    }
+    Ok(())
 }
