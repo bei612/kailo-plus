@@ -153,11 +153,15 @@ class PushRegistrationNotifier extends Notifier<DevicePushState> {
   }
 
   bool _current(PushRegistrationDeps deps) =>
-      ref.mounted && deps.isCurrent() && identical(ref.read(pushRegistrationDepsProvider), deps);
+      ref.mounted &&
+      deps.isCurrent() &&
+      identical(ref.read(pushRegistrationDepsProvider), deps);
 
   Future<void> _load(PushRegistrationDeps deps) async {
     try {
-      final nativePlatform = await ref.read(pushBridgeProvider).deliveryPlatform();
+      final nativePlatform = await ref
+          .read(pushBridgeProvider)
+          .deliveryPlatform();
       if (!_current(deps)) return;
       _platform = nativePlatform;
       if (nativePlatform == null) {
@@ -170,8 +174,13 @@ class PushRegistrationNotifier extends Notifier<DevicePushState> {
       );
       if (!_current(deps)) return;
       final capabilityView = capability.status == 200
-          ? PushCapability.fromJson(capability.body! as Map<String, dynamic>) : null;
-      final available = (nativePlatform == PushPlatform.APNS ? capabilityView?.apns : capabilityView?.fcm) == PushAvailability.CONFIGURED;
+          ? PushCapability.fromJson(capability.body! as Map<String, dynamic>)
+          : null;
+      final available =
+          (nativePlatform == PushPlatform.APNS
+              ? capabilityView?.apns
+              : capabilityView?.fcm) ==
+          PushAvailability.CONFIGURED;
       final keys = await deps.deviceKeys();
       if (!_current(deps)) return;
       final device = keys.public;
@@ -224,7 +233,8 @@ class PushRegistrationNotifier extends Notifier<DevicePushState> {
     try {
       final next = bridge.tokens.first.timeout(_tokenTimeout);
       final results = await Future.wait<Object?>([
-        bridge.startRegistration(requestPermission: enabled), next,
+        bridge.startRegistration(requestPermission: enabled),
+        next,
       ], eagerError: true);
       token = results[1]! as String;
     } catch (_) {
@@ -240,9 +250,7 @@ class PushRegistrationNotifier extends Notifier<DevicePushState> {
   /// APNs/FCM may rotate the token; re-register the same switch state with the new one.
   Future<void> tokenChanged(String token) async {
     final deps = ref.read(pushRegistrationDepsProvider);
-    if (deps == null ||
-        !state.available ||
-        token == _lastToken) {
+    if (deps == null || !state.available || token == _lastToken) {
       return;
     }
     if (state.outcome == PushRegistrationOutcome.saving) {
@@ -328,7 +336,8 @@ class PushRegistrationNotifier extends Notifier<DevicePushState> {
       state = state.copyWith(outcome: PushRegistrationOutcome.notConfirmed);
       unawaited(refresh());
     } finally {
-      if (_current(deps) && state.outcome != PushRegistrationOutcome.notConfirmed) {
+      if (_current(deps) &&
+          state.outcome != PushRegistrationOutcome.notConfirmed) {
         final pending = _pendingToken;
         _pendingToken = null;
         if (pending != null && pending != _lastToken) {
@@ -359,7 +368,11 @@ final pushTokenRefreshProvider = Provider<void>((ref) {
   ref.listen<DevicePushState>(pushRegistrationProvider, (_, next) {
     if (!asked && !next.loading && next.available && next.effectiveEnabled) {
       asked = true;
-      unawaited(bridge.startRegistration(requestPermission: false).catchError((Object _) {}));
+      unawaited(
+        bridge
+            .startRegistration(requestPermission: false)
+            .catchError((Object _) {}),
+      );
     }
   }, fireImmediately: true);
 });
