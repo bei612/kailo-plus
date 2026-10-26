@@ -115,6 +115,13 @@ impl Journal {
             {
                 return Err(WriteError::at(UNKNOWN, &intent.key));
             }
+            // Older app versions persisted the signed attempt only in the
+            // intent row. Preserve that exact evidence before a permitted retry
+            // replaces it, even when this database predates publication_evidence.
+            if let Some(event) = &frozen.event {
+                tx.execute("INSERT INTO publication_evidence(key,event,phase,outcome) SELECT ?1,?2,'EVENT_PREVIOUS_ATTEMPT',?3 WHERE NOT EXISTS(SELECT 1 FROM publication_evidence WHERE key=?1 AND event=?2)",
+                    params![intent.key,event,frozen.event_result.as_deref().unwrap_or("DISPATCHED")]).map_err(|_|WriteError::at(UNKNOWN,&intent.key))?;
+            }
         }
         tx.execute("INSERT INTO intent VALUES(?1,?2,?3,?4,?5) ON CONFLICT(key) DO UPDATE SET payload=excluded.payload,pending=excluded.pending",
             params![intent.key,intent.request.repository,intent.request.branch,payload,pending]).map_err(|_|WriteError::at(UNKNOWN,&intent.key))?;

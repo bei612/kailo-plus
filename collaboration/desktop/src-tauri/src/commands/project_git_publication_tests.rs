@@ -149,6 +149,10 @@ fn consumer_fixture(path:&Path,outcome:&str)->(Io,Event) {
 async fn original_status_consumer_recovers_only_the_same_known_unsent_merge_intent() {
     let temp=tempfile::tempdir().unwrap();let path=temp.path().join("journal.sqlite");
     let (io,review)=consumer_fixture(&path,"NOT_DELIVERED");
+    // Upgrade from the previous journal format: the intent row is the only
+    // retained signed event until the new attempt-evidence table is populated.
+    let legacy=rusqlite::Connection::open(&path).unwrap();
+    legacy.execute("DELETE FROM publication_evidence",[]).unwrap();
     let mut intent=Journal::open(&path).unwrap().find(&io.frozen.key,&io.frozen.request).unwrap().unwrap();
     let result=ensure_status_with(&io,&path,&mut intent,&review).await.unwrap().unwrap();
     let events=io.submitted.lock().unwrap();assert_eq!(events.len(),1);
@@ -157,6 +161,8 @@ async fn original_status_consumer_recovers_only_the_same_known_unsent_merge_inte
     assert_ne!(result,old.id.to_hex()); assert_eq!(events[0].tags,old.tags);
     assert_eq!(events[0].created_at.as_secs(),io.now);
     assert_eq!(intent.key,io.frozen.key);assert_eq!(intent.new,io.frozen.new);
+    let preserved:i64=legacy.query_row("SELECT count(*) FROM publication_evidence WHERE event=?1 AND outcome='NOT_DELIVERED'",[old.as_json()],|r|r.get(0)).unwrap();
+    assert_eq!(preserved,1,"upgrade must preserve the old proven-unsent signed event");
 }
 #[tokio::test]
 async fn original_status_consumer_queries_original_id_and_never_guesses_from_an_empty_page() {
