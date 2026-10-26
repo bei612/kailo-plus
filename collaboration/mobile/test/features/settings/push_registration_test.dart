@@ -221,15 +221,16 @@ void main() {
                     'fcm': 'NOT_CONFIGURED',
                   });
                 }
-                if (path == '/api/v1/session')
+                if (path == '/api/v1/session') {
                   return const PlatformResponse(200, _session);
+                }
                 final writing = method == PlatformMethod.put;
                 if (old &&
                     ((pendingAt == 'write' && writing) ||
                         (pendingAt == 'read' && !writing))) {
                   if (!entered.isCompleted) {
-                  entered.complete();
-                }
+                    entered.complete();
+                  }
                   return late.future;
                 }
                 return const PlatformResponse(404, {});
