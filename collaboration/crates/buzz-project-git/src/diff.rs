@@ -164,7 +164,7 @@ fn parse_numstat(output: &str) -> Vec<(String, usize, usize)> {
         .collect()
 }
 
-fn empty_tree_ref(repo_dir: &std::path::Path, auth: &GitAuthConfig) -> Result<String, String> {
+pub(crate) fn empty_tree_ref(repo_dir: &std::path::Path, auth: &GitAuthConfig) -> Result<String, String> {
     run_git(
         &["hash-object", "-t", "tree", "/dev/null"],
         Some(repo_dir),
@@ -195,7 +195,7 @@ fn diff_range(
 /// view. Root commits fall back to the empty tree so the whole initial tree
 /// renders as additions. Errors when the commit is not reachable in the
 /// available history — diffing an unrelated ref instead would be misleading.
-fn commit_parent_range(
+pub(crate) fn commit_parent_range(
     repo_dir: &std::path::Path,
     auth: &GitAuthConfig,
     commit: &str,
@@ -237,7 +237,7 @@ fn truncate_patch(patch: String) -> (String, bool) {
     }
 }
 
-fn diff_from_repo(
+pub(crate) fn diff_from_repo(
     repo_dir: &std::path::Path,
     auth: &GitAuthConfig,
     range: &str,

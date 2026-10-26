@@ -20,6 +20,7 @@
 #![forbid(unsafe_code)]
 
 mod branches;
+pub mod checkout;
 mod diff;
 mod exec;
 mod file_content;
