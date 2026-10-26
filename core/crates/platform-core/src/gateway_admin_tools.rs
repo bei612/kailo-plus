@@ -66,9 +66,7 @@ const TOOL_LIST: &str = "select r.id as resource_id,r.version as resource_versio
        b.id as binding_id,b.version as binding_version,b.state as binding_state,b.workspace_id as binding_workspace_id,
        b.component_type_key,b.component_release_id,release.version as release_version,
        contract.permission as contract_permission,contract.input_schema,
-       (select d.version from catalog.action_definition d
-          where d.component_release_id=b.component_release_id and d.action_key=t.action_key and d.status='ACTIVE'
-          order by d.version desc limit 1) as action_version,
+       policy.action_version as action_version,
        policy.id as policy_id,policy.version as policy_version,
        t.mcp_connection_id,connection.display_name as mcp_connection_name
      from catalog.resource r
@@ -88,10 +86,19 @@ const TOOL_LIST: &str = "select r.id as resource_id,r.version as resource_versio
        order by c.contract_version desc limit 1
      ) contract on true
      left join lateral (
-       select p.id,p.version from catalog.result_exposure_policy p
+       select p.id,p.version,p.action_version from catalog.result_exposure_policy p
+       join catalog.action_definition d on d.action_key=p.action_key and d.version=p.action_version
+         and d.component_release_id=p.component_release_id and d.status='ACTIVE'
        where p.tenant_id=r.tenant_id and p.status='ACTIVE' and p.output_schema_hash=t.output_schema_hash
+         and p.application_binding_id=b.id and p.application_projection_generation=b.active_projection_generation
+         and p.component_release_id=b.component_release_id and p.action_key=t.action_key
+         and b.state='ACTIVE' and release.status='APPROVED'
+         and exists(select 1 from projection.application_runtime runtime where runtime.binding_id=b.id
+           and runtime.generation=b.active_projection_generation and runtime.component_release_id=b.component_release_id
+           and runtime.state='ACTIVE')
+         and p.mode=d.result_exposure and p.redaction_policy='PLATFORM_METADATA_ONLY'
          and p.mode in ('CONSUME_ONLY','READ')
-       order by (p.mode='CONSUME_ONLY') desc,p.version desc limit 1
+       order by p.action_version desc limit 1
      ) policy on true
      where r.tenant_id=$1 and r.type_key='tool.definition' and t.status<>'DELETED'
      order by t.source desc,t.name,r.id offset $2 limit $3";

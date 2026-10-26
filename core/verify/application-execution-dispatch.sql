@@ -146,6 +146,12 @@ BEGIN
    INSERT INTO projection.application_runtime(binding_id,generation,component_release_id,normalized_manifest_digest,
      adapter_contract_digest,state,action_execution_id)
    VALUES(binding,1,release,repeat('d',64),repeat('b',64),'PENDING',create_ae);
+   -- Opt-in only for the Rust producer test: let Core materialize before the
+   -- fixture activation. Normal dispatch tests retain their original path.
+   IF current_setting('kailo.fixture_pending_human_exposure',true)='on' THEN
+     INSERT INTO application_dispatch_fixture VALUES(business_ae,binding,release,workflow,ee);
+     CONTINUE;
+   END IF;
    BEGIN
      UPDATE catalog.application_binding SET state='ACTIVE',version=2,active_projection_generation=1,native_scope_ref='isolated-scope' WHERE id=binding;
      RAISE EXCEPTION 'ACTIVE WITHOUT OBSERVATION ACCEPTED';

@@ -347,6 +347,23 @@ async fn page(
         'componentReleaseId',component_release_id,'componentTypeKey',component_type_key,
         'state',state,'version',version,'activeProjectionGeneration',active_projection_generation,
         'capabilityCategories',capability_categories,
+        'humanActionPolicies',case when state='ACTIVE' or ($5 and state in ('PROVISIONING','ERROR')) then
+          (select jsonb_agg(jsonb_build_object(
+             'actionKey',policy.action_key,'actionVersion',policy.action_version,
+             'componentReleaseId',policy.component_release_id,'generation',policy.application_projection_generation,
+             'resultExposurePolicyId',policy.id,'resultExposurePolicyVersion',policy.version)
+             order by policy.action_key,policy.action_version)
+           from catalog.result_exposure_policy policy
+           join projection.application_runtime runtime on runtime.binding_id=policy.application_binding_id
+             and runtime.generation=policy.application_projection_generation
+             and runtime.component_release_id=policy.component_release_id
+           join catalog.component_release release on release.id=policy.component_release_id and release.status='APPROVED'
+           where policy.tenant_id=application_binding.tenant_id and policy.application_binding_id=application_binding.id
+             and policy.component_release_id=application_binding.component_release_id and policy.status='ACTIVE'
+             and ((application_binding.state='ACTIVE' and runtime.state='ACTIVE'
+               and runtime.generation=application_binding.active_projection_generation)
+               or (application_binding.state in ('PROVISIONING','ERROR') and runtime.state='PENDING'
+                 and runtime.action_execution_id=application_binding.projection_action_execution_id))) end,
         'hasReadReceiver',state='ACTIVE' and exists(select 1 from catalog.component_release release
             join identity.service_principal service on service.principal_id=application_binding.service_principal_id
               and service.component_binding_kind='APPLICATION' and service.component_binding_id=application_binding.id
@@ -379,6 +396,7 @@ async fn page(
     .bind(query.workspace_id)
     .bind(offset)
     .bind(limit)
+    .bind(can_create)
     .fetch_all(&state.pool)
     .await?;
     let disable = crate::governance::active_definition(&state.pool, DISABLE).await?;

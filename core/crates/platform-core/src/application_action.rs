@@ -332,15 +332,11 @@ async fn validate_reference_and_policy(
     } else if resource != f.target.id || reference.get("assetId").is_some() {
         return Err(denied());
     }
-    let valid:bool=sqlx::query_scalar("select exists(select 1 from catalog.result_exposure_policy
-        where id=$1 and version=$2 and tenant_id=$3 and status='ACTIVE' and mode=$4 and output_schema_hash=$5
-          and redaction_policy='PLATFORM_METADATA_ONLY')")
-        .bind(policy).bind(version).bind(tenant).bind(&f.application.definition.result_exposure)
-        .bind(f.application.declaration["outputSchemaDigest"].as_str().ok_or_else(invalid)?)
-        .fetch_one(&mut *conn).await?;
-    if !valid {
-        return Err(denied());
-    }
+    crate::application_binding::human_exposure::validate(
+        conn, tenant, f.binding, f.generation, f.application.component_release_id,
+        &f.application.definition.action_key, f.application.definition.version,
+        policy, version, &f.application.declaration,
+    ).await?;
     Ok(())
 }
 

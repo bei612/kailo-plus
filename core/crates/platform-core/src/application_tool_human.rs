@@ -368,25 +368,11 @@ async fn admit(
         {
             return Err(invalid());
         }
-        let policy: bool = sqlx::query_scalar(
-            "select exists(select 1 from catalog.result_exposure_policy
-            where id=$1 and version=$2 and tenant_id=$3 and status='ACTIVE' and mode=$4
-              and output_schema_hash=$5 and redaction_policy='PLATFORM_METADATA_ONLY')",
-        )
-        .bind(command.policy)
-        .bind(command.policy_version)
-        .bind(ctx.tenant_id)
-        .bind(&def.result_exposure)
-        .bind(
-            application.declaration["outputSchemaDigest"]
-                .as_str()
-                .ok_or_else(invalid)?,
-        )
-        .fetch_one(&mut *tx)
-        .await?;
-        if !policy {
-            return Err(denied());
-        }
+        crate::application_binding::human_exposure::validate(
+            &mut tx, ctx.tenant_id, binding.binding_id, binding.generation, application.component_release_id,
+            &command.action_key, command.action_version, command.policy, command.policy_version, &application.declaration,
+        ).await?;
+
         let mut evaluation = if crate::agent_definition::active_owner(
             &mut tx,
             ctx.tenant_id,
@@ -757,6 +743,24 @@ async fn live_execution(
     if !fenced {
         return Err(denied());
     }
+    // Both PEP phases re-read the frozen owner. A same-schema policy from a
+    // delegation, different binding or generation is never interchangeable.
+    let (binding, generation): (Uuid, i64) = sqlx::query_as(
+        "select component_binding_id,component_projection_generation
+         from admission.action_execution where id=$1 and component_binding_kind='APPLICATION'",
+    ).bind(ae.id).fetch_one(&state.pool).await?;
+    let mut conn = state.pool.acquire().await?;
+    let application = crate::application_catalog::exact_definition_for_binding(
+        &mut conn, binding, generation, &ae.action_key, ae.action_version,
+    ).await?;
+    let parameters = ae.parameters.as_ref().ok_or_else(denied)?;
+    let policy = uuid_text(&parameters["resultExposurePolicyId"])?;
+    let version = parameters["resultExposurePolicyVersion"].as_i64()
+        .and_then(|v| i32::try_from(v).ok()).filter(|v| *v > 0).ok_or_else(denied)?;
+    crate::application_binding::human_exposure::validate(
+        &mut conn, ae.tenant_id, binding, generation, application.component_release_id,
+        &ae.action_key, ae.action_version, policy, version, &application.declaration,
+    ).await?;
     Ok(ae)
 }
 
