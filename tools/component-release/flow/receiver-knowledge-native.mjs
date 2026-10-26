@@ -17,7 +17,7 @@ function atomic(path, value) {
 await main(async () => {
   let lock;
   try {
-    const args = parseArgs(process.argv.slice(2), ['input'], ['refresh-only']);
+    const args = parseArgs(process.argv.slice(2), ['input'], ['refresh-only', 'forward-endpoint']);
     const input = JSON.parse(privateText(args.input));
     const deployment = process.env.KAILO_DEPLOY_DIR;
     if (!/^\/volumes\/data\/kailo\/conformance\/runs\/[^/]+\/receiver\/apps\/deploy\/local$/.test(deployment ?? '')
@@ -171,6 +171,34 @@ await main(async () => {
     if (!existsSync(bearerFile) && !endpoint.token) endpoint = await request('POST', `/api/v1/mcp-endpoints/${endpoint.id}/rotate-token`);
     if (endpoint.token) atomic(bearerFile, endpoint.token);
     if (!privateText(bearerFile).trim()) fail('native MCP bearer is missing');
+    if (args['forward-endpoint']) {
+      const name = `${input.name}-forward-protocol`;
+      const matches = endpoints.filter((row) => row.name === name);
+      if (matches.length > 1) fail('ambiguous native forward endpoint');
+      let forward = matches[0];
+      if (!forward) {
+        if (confirmed.forwardMcpEndpointId || confirmed.forwardMcpAttempted) fail('forward endpoint absent after submission; refusing to recreate it');
+        confirmed.forwardMcpAttempted = true;
+        remember();
+        forward = await request('POST', '/api/v1/mcp-endpoints', {
+          name, enabled: true, knowledge_base_ids: [kb.id], tools,
+        });
+      }
+      if (!UUID.test(forward.id ?? '') || forward.id === endpoint.id || forward.enabled !== true
+        || forward.knowledge_base_ids?.length !== 1 || forward.knowledge_base_ids[0] !== kb.id || forward.tenant_id !== tenant
+        || JSON.stringify([...(forward.tools ?? [])].sort()) !== JSON.stringify([...tools].sort())
+        || (confirmed.forwardMcpEndpointId && confirmed.forwardMcpEndpointId !== forward.id)) fail('forward endpoint scope changed');
+      confirmed.forwardMcpEndpointId = forward.id;
+      remember();
+      const forwardBearer = join(input.directory, 'forward-mcp-bearer');
+      if (forward.token) {
+        if (existsSync(forwardBearer) && privateText(forwardBearer) !== forward.token) fail('forward endpoint credential changed');
+        if (!existsSync(forwardBearer)) atomic(forwardBearer, forward.token);
+      }
+      // The native API returns plaintext once. An unknown creation/rotation
+      // cannot be repaired by changing the confirmed endpoint's identity/key.
+      if (!existsSync(forwardBearer) || !privateText(forwardBearer).trim()) fail('forward endpoint credential acknowledgement missing; rotation is not automatic');
+    }
     console.log(JSON.stringify({ step: 'receiver-knowledge-native', status: 'READY' }));
   } catch (error) {
     throw error instanceof FlowError ? error : new FlowError('isolated native knowledge preparation failed; credential details are not logged');

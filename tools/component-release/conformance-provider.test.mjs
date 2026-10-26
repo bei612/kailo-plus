@@ -33,6 +33,12 @@ async function fixture(t, change = {}) {
   const id = { tenant: randomUUID(), workspace: randomUUID(), binding: randomUUID(), actor: randomUUID(), denied: randomUUID(),
     resource: randomUUID(), node: randomUUID(), policy: randomUUID(), external: randomUUID(), scope: randomUUID() };
   const native = createServer((request, response) => {
+    if (change.weknoraToken) {
+      response.setHeader('content-type', 'application/json');
+      if (request.url !== `/api/v1/knowledge-bases/${id.node}` || request.headers.authorization !== 'Bearer native-fixture-bearer'
+        || request.headers['x-api-key'] !== undefined) { response.writeHead(403).end('{}'); return; }
+      response.end(JSON.stringify({ success: true, data: { id: id.node } })); return;
+    }
     const match = /^\/v2\/n\/node\/([0-9a-f-]{36})\?Flags=WithMetaDefaults$/.exec(request.url);
     response.setHeader('content-type', 'application/json');
     if (!match || request.headers.authorization !== 'Bearer native-fixture-bearer' || match[1] !== id.node) {
@@ -63,7 +69,9 @@ async function fixture(t, change = {}) {
       nativeInstanceRef: 'isolated-cells', nativeScopeRef: id.scope, serviceClientId: 'isolated-client',
       serviceClientSecretFile: clientSecretFile, artifactDigest: 'a'.repeat(64) }),
     targetsFile: await write('targets.json', { resources: { [id.resource]: { nativeType: 'node', nativeRef: id.node } } }),
-    nativeCheck: { kind: 'cells', restBaseUrl: `${nativeOrigin}/v2/`, bearerFile: await write('bearer', 'native-fixture-bearer') },
+    nativeCheck: change.weknoraToken
+      ? { kind: 'weknora', apiBaseUrl: `${nativeOrigin}/`, tokenFile: await write('bearer', 'native-fixture-bearer') }
+      : { kind: 'cells', restBaseUrl: `${nativeOrigin}/v2/`, bearerFile: await write('bearer', 'native-fixture-bearer') },
     requestTimeoutMs: 3000, requestMaxBytes: 65536 };
   if (change.nativeTask) {
     // DD-124(7): the rendered candidate declares a native task deadline for the
@@ -212,4 +220,16 @@ test('without a declared native task the admission route does not exist; undecla
   assert.equal(Object.hasOwn(await answer.json(), 'nativeTaskDeadline'), false);
   await assert.rejects(fixture(t, { nativeTask: true, nativeTaskTypes: {} }));
   await assert.rejects(fixture(t, { nativeTask: true, nativeTaskTypes: { 'file_storage.read@v2': 'job', 'file_storage.delete@v2': 'job' } }));
+});
+
+
+test('forward native observation uses the delivered OIDC session without an API key', async (t) => {
+  const f = await fixture(t, { weknoraToken: true });
+  const response = await f.pep({ bindingId: f.id.binding, actionToken: f.token(f.executeClaims(f.id.actor)),
+    operation: 'execute', argumentsJson: canonical(f.args) });
+  assert.equal(response.status, 200);
+  await f.write('bearer', 'rotated-without-refresh');
+  const rejected = await f.pep({ bindingId: f.id.binding, actionToken: f.token(f.executeClaims(f.id.actor)),
+    operation: 'execute', argumentsJson: canonical(f.args) });
+  assert.notEqual(rejected.status, 200);
 });

@@ -110,11 +110,12 @@ print(json.dumps(json.loads(lines[-1])))'; }
 node_step() { # node_step <network> <script> [args...]; inputs are mounted at their absolute paths
   local network=$1
   shift
-  local mounts=() file
+  local mounts=() aliases=() file
+  [[ ${1:-} != tools/component-release/conformance/observe.mjs ]] || aliases+=(--network-alias knowledge-forward-provider)
   for file in ${RECEIVER_MOUNTS:-}; do mounts+=(-v "$file:$file:ro"); done
   "${docker[@]}" run --rm --read-only --cap-drop ALL --security-opt no-new-privileges --cpus 1 --memory 768m --memory-swap 768m \
     --pids-limit 256 --tmpfs /tmp:rw,nosuid,nodev,size=64m -u "$(id -u):$(id -g)" -e HOME=/tmp \
-    -v "$src:/src:ro" -v "$run:$run" "${mounts[@]}" -w /src --network "$network" "$RECEIVER_NODE_IMAGE" node "$@"
+    -v "$src:/src:ro" -v "$run:$run" "${mounts[@]}" -w /src --network "$network" "${aliases[@]}" "$RECEIVER_NODE_IMAGE" node "$@"
 }
 
 # One ignored Core test entry in the fixed check image, inside the isolated
@@ -410,7 +411,7 @@ seed)
   node_step "$RECEIVER_NETWORK" tools/component-release/conformance/seed-knowledge.mjs --phase governed --seed "$RECEIVER_SEED_FILE"
   ;;
 inputs)
-  need RECEIVER_OBSERVE_FILE RECEIVER_MANIFEST RECEIVER_KNOWLEDGE_ENV RECEIVER_FORWARD_ADAPTER_CONFIG RECEIVER_FORWARD_ADAPTER_JWKS
+  need RECEIVER_OBSERVE_FILE RECEIVER_MANIFEST RECEIVER_KNOWLEDGE_ENV RECEIVER_FORWARD_ADAPTER_CONFIG RECEIVER_FORWARD_ADAPTER_JWKS RECEIVER_FORWARD_ADAPTER_DELIVERY_DIR
   record receiver-environment.json
   knowledge=$(sed -n 's/^COMPOSE_PROJECT_NAME=\(kailo-knowledge-receiver[a-z0-9_-]*\)$/\1/p' "$RECEIVER_KNOWLEDGE_ENV")
   [[ -n $knowledge ]] || { echo 'dedicated receiver native project required' >&2; exit 2; }
@@ -427,12 +428,13 @@ inputs)
       --memory-swap "$KNOWLEDGE_ADAPTER_MEMORY" -u "$KNOWLEDGE_ADAPTER_UID:$KNOWLEDGE_ADAPTER_GID" \
       -e ADAPTER_CONFIG_FILE="$RECEIVER_FORWARD_ADAPTER_CONFIG" \
       -v "$RECEIVER_FORWARD_ADAPTER_CONFIG:$RECEIVER_FORWARD_ADAPTER_CONFIG:ro" \
-      -v "$KNOWLEDGE_ADAPTER_DELIVERY_DIRECTORY:$KNOWLEDGE_ADAPTER_DELIVERY_DIRECTORY:ro" \
-      -v "$RECEIVER_FORWARD_ADAPTER_JWKS:$RECEIVER_FORWARD_ADAPTER_JWKS:ro" \
+      -v "$RECEIVER_FORWARD_ADAPTER_DELIVERY_DIR:$RECEIVER_FORWARD_ADAPTER_DELIVERY_DIR:ro" \
       --network "${knowledge}_native_ui" "$KNOWLEDGE_ADAPTER_REPOSITORY@sha256:$KNOWLEDGE_ADAPTER_DIGEST" >/dev/null
   )
   "${docker[@]}" network connect --alias knowledge-forward-adapter "$RECEIVER_NETWORK" "$RECEIVER_PROJECT-forward-adapter"
-  node_step "$RECEIVER_NETWORK" tools/component-release/conformance/observe.mjs --run "$RECEIVER_OBSERVE_FILE"
+  if [[ ! -f $run/facts.json ]]; then
+    node_step "$RECEIVER_NETWORK" tools/component-release/conformance/observe.mjs --run "$RECEIVER_OBSERVE_FILE"
+  fi
   install -d -m 0700 "$run/inputs"
   node_step none tools/component-release/conformance-inputs.mjs --facts "$run/facts.json" --manifest "$RECEIVER_MANIFEST" \
     --out "$run/inputs"
@@ -443,10 +445,17 @@ form the candidate <COMPONENT_CONFORMANCE_DIR>/<artifactDigest>/ (DD-136(2)).
 EOF
   ;;
 driver)
-  need RECEIVER_DRIVER_FILE RECEIVER_ADAPTER_DIRECTORY_FILE
+  need RECEIVER_DRIVER_FILE RECEIVER_ADAPTER_DIRECTORY_FILE RECEIVER_FORWARD_PROVIDER_FILE
   record inputs/identity.json
   private "$RECEIVER_DRIVER_FILE"
+  private "$RECEIVER_FORWARD_PROVIDER_FILE"
   refresh_sessions
+  "${docker[@]}" run --detach --name "$RECEIVER_PROJECT-forward-provider" --restart no --read-only --cap-drop ALL \
+    --security-opt no-new-privileges --cpus 0.5 --memory 256m --memory-swap 256m --pids-limit 128 \
+    --tmpfs /tmp:rw,nosuid,nodev,size=32m -u "$(id -u):$(id -g)" -e HOME=/tmp \
+    -e "CONFORMANCE_PROVIDER_CONFIG_FILE=$RECEIVER_FORWARD_PROVIDER_FILE" -v "$src:/src:ro" -v "$run:$run:ro" \
+    -w /src --network "$RECEIVER_NETWORK" --network-alias knowledge-forward-provider \
+    "$RECEIVER_NODE_IMAGE" node tools/component-release/conformance-provider.mjs >/dev/null
   { core_env; printf 'APPLICATION_RECEIVER_DRIVER_FILE=%s\n' "$RECEIVER_DRIVER_FILE"; } \
     | core_test application_binding::read_grant::receiver_action_driver::serve_isolated_receiver_actions true >/dev/null
   # Isolated sessions expire; the operator's refresher keeps the same files fresh.
@@ -461,7 +470,7 @@ EOF
   ;;
 down)
   if [[ -s $run/session-refresher.pid ]]; then kill "$(cat "$run/session-refresher.pid")" 2>/dev/null || true; rm -f "$run/session-refresher.pid"; fi
-  "${docker[@]}" rm -f "$RECEIVER_PROJECT-driver" "$RECEIVER_PROJECT-forward-adapter" >/dev/null 2>&1 || true
+  "${docker[@]}" rm -f "$RECEIVER_PROJECT-driver" "$RECEIVER_PROJECT-forward-adapter" "$RECEIVER_PROJECT-forward-provider" >/dev/null 2>&1 || true
   if [[ -n ${RECEIVER_KNOWLEDGE_ENV:-} ]]; then
     knowledge=$(sed -n 's/^COMPOSE_PROJECT_NAME=\(kailo-knowledge-receiver[a-z0-9_-]*\)$/\1/p' "$RECEIVER_KNOWLEDGE_ENV")
     [[ -z $knowledge ]] || "${docker[@]}" compose --project-name "$knowledge" --env-file "$RECEIVER_KNOWLEDGE_ENV" \

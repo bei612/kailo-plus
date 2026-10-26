@@ -1,0 +1,10 @@
+# Isolated conformance delivery only. The native MCP consumer selects it by
+# its distinct observed endpoint; the original receiver delivery stays mounted.
+services:
+  app:
+    volumes:
+      - type: bind
+        source: ${KNOWLEDGE_CONFORMANCE_FORWARD_DELIVERY_DIR:?isolated forward delivery required}
+        target: ${KNOWLEDGE_CONFORMANCE_FORWARD_DELIVERY_DIR:?isolated forward delivery required}
+        read_only: true
+        bind: {create_host_path: false}

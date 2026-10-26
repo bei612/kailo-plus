@@ -19,7 +19,7 @@ const kb = { id: '362628de-bd1c-42f5-953c-876d0bffdcf3', tenant_id: 7,
 const endpoint = { id: 'a597ebbb-1a28-4aa8-a2b3-c474f4e5bef2', tenant_id: 7, enabled: true,
   knowledge_base_ids: [kb.id], tools: ['search_knowledge', 'read_document', 'export_document', 'add_document', 'delete_document'] };
 
-async function fixture(t, { previous = {}, kbRows = [], endpointRows = [], failAt, bearerDirectory = false, missingModel, emptyModels = false } = {}) {
+async function fixture(t, { previous = {}, kbRows = [], endpointRows = [], failAt, bearerDirectory = false, missingModel, emptyModels = false, forwardMode = false, loseForwardAck = false } = {}) {
   const base = '/volumes/data/kailo/conformance/runs';
   await mkdir(base, { recursive: true });
   const root = await mkdtemp(join(base, 'native-unit-'));
@@ -47,6 +47,17 @@ async function fixture(t, { previous = {}, kbRows = [], endpointRows = [], failA
         observedModels.push(model);
         res.end(JSON.stringify({ data: model }));
       } else res.end(JSON.stringify({ data: observedModels }));
+      return;
+    }
+    if (forwardMode && req.url === '/api/v1/mcp-endpoints') {
+      if (req.method === 'GET') { res.end(JSON.stringify({ data: endpointRows })); return; }
+      let raw = ''; for await (const part of req) raw += part;
+      const body = JSON.parse(raw);
+      const isForward = body.name.endsWith('-forward-protocol');
+      const created = { ...endpoint, name: body.name, id: isForward ? '30c23d40-b4bd-4e6c-a606-e376f007fb99' : endpoint.id };
+      endpointRows.push(created);
+      if (isForward && loseForwardAck) { res.writeHead(503).end('{}'); return; }
+      res.end(JSON.stringify({ data: { ...created, token: isForward ? 'fixture-forward-bearer' : 'fixture-mcp-bearer' } }));
       return;
     }
     const data = req.url === '/api/v1/auth/refresh' ? { access_token: 'fixture-access', refresh_token: 'fixture-refresh' }
@@ -77,7 +88,7 @@ async function fixture(t, { previous = {}, kbRows = [], endpointRows = [], failA
     assert.equal(errors, '');
     return { code, result: JSON.parse(output) };
   };
-  return { run, calls, state: async () => JSON.parse(await readFile(stateFile, 'utf8')), identity };
+  return { run, calls, endpointRows, state: async () => JSON.parse(await readFile(stateFile, 'utf8')), identity };
 }
 
 test('a confirmed missing KB refuses before any replacement POST', async (t) => {
@@ -129,4 +140,29 @@ test('native model creation is keyless and each confirmed original identity surv
   assert.equal(f.calls.filter((call) => call === 'POST /api/v1/models').length, 2);
   assert.equal((await f.run()).code, 2);
   assert.equal(f.calls.filter((call) => call === 'POST /api/v1/models').length, 2);
+});
+
+
+test('forward endpoint is distinct, fixed and does not rotate the original endpoint', async (t) => {
+  const f = await fixture(t, { previous: null, kbRows: [kb], forwardMode: true });
+  assert.equal((await f.run('--forward-endpoint')).code, 0);
+  const first = await f.state();
+  assert.notEqual(first.forwardMcpEndpointId, first.mcpEndpointId);
+  assert.equal((await f.run('--forward-endpoint')).code, 0);
+  assert.deepEqual(await f.state(), first);
+  assert.equal(f.calls.filter((row) => row === 'POST /api/v1/mcp-endpoints').length, 2);
+  f.endpointRows.splice(f.endpointRows.findIndex((row) => row.id === first.forwardMcpEndpointId), 1);
+  assert.equal((await f.run('--forward-endpoint')).code, 2);
+  assert.equal(f.calls.filter((row) => row === 'POST /api/v1/mcp-endpoints').length, 2);
+  assert.ok(!f.calls.some((row) => row.includes('rotate-token')));
+});
+
+test('unknown forward creation acknowledgement is reconciled without rotation or recreation', async (t) => {
+  const f = await fixture(t, { previous: null, kbRows: [kb], forwardMode: true, loseForwardAck: true });
+  assert.equal((await f.run('--forward-endpoint')).code, 2);
+  assert.equal((await f.state()).forwardMcpAttempted, true);
+  assert.equal((await f.run('--forward-endpoint')).code, 2);
+  assert.ok((await f.state()).forwardMcpEndpointId);
+  assert.equal(f.calls.filter((row) => row === 'POST /api/v1/mcp-endpoints').length, 2);
+  assert.ok(!f.calls.some((row) => row.includes('rotate-token')));
 });

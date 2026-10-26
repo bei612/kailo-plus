@@ -93,3 +93,26 @@ test('foreign native files and cross-tenant locators refuse before contacting Op
   assert.equal((await f.run({ endpoints: altered })).code, 2);
   assert.equal(f.calls.length, 0);
 });
+
+
+test('forward delivery uses only its explicit scope and refuses cross-binding drift', async (t) => {
+  const f = await fixture(t);
+  const directory = f.input.deployment.replace('/apps/deploy/local', '/knowledge');
+  const bindingId = f.input.endpoints[1].bindingId;
+  await writeFile(join(directory, 'adapter-plan.json'), JSON.stringify({ tenantId: f.input.tenantId, bindingId }), { mode: 0o600 });
+  await writeFile(join(directory, 'forward-mcp-bearer'), 'fixture-forward-native', { mode: 0o600 });
+  const endpoint = { role: 'FORWARD', bindingId, nativeFile: join(directory, 'forward-mcp-bearer'),
+    secretRefs: ['native_mcp_bearer', 'oidc_client_secret'].map((secretKey) => ({ secretKey,
+      locator: `tenants/${f.input.tenantId}/kv/conformance-forward/${bindingId}/${secretKey}`,
+      version: 1, audience: 'kailo-conformance-knowledge' })) };
+  assert.equal((await f.run({ purpose: 'FORWARD_PROTOCOL', endpoints: [endpoint] })).code, 0);
+  assert.equal(f.saved.size, 2);
+  assert.ok([...f.saved.keys()].every((path) => path.includes('/conformance-forward/')));
+  const before = f.calls.length;
+  assert.equal((await f.run({ purpose: 'FORWARD_PROTOCOL', endpoints: [endpoint] })).code, 0);
+  assert.ok(f.calls.slice(before).every((call) => call.startsWith('GET ')));
+  assert.equal((await f.run({ purpose: 'FORWARD_PROTOCOL', endpoints: [{ ...endpoint, bindingId: randomUUID() }] })).code, 2);
+  const wrong = structuredClone(endpoint); wrong.secretRefs[0].locator = wrong.secretRefs[0].locator.replace('/conformance-forward/', '/application-binding/');
+  assert.equal((await f.run({ purpose: 'FORWARD_PROTOCOL', endpoints: [wrong] })).code, 2);
+  assert.equal(f.saved.size, 2);
+});
