@@ -1081,3 +1081,35 @@ async fn repeated_deletion_keeps_private_writer_scope_and_historical_null_is_not
         "a chain of NULL deletions cannot become a global evidence oracle"
     );
 }
+
+
+#[tokio::test]
+#[ignore = "requires isolated migrated BUZZ_TEST_DATABASE_URL and REDIS_URL"]
+async fn pulse_unlike_keeps_positive_evidence_after_note_and_reaction_are_deleted() {
+    let (state, _, community, host, keys, _) = fixture().await;
+    let note = EventBuilder::new(Kind::TextNote, "public pulse").sign_with_keys(&keys).unwrap();
+    let reaction = EventBuilder::new(Kind::Reaction, "+")
+        .tags([Tag::event(note.id), Tag::public_key(keys.public_key())]).sign_with_keys(&keys).unwrap();
+    let unlike = EventBuilder::new(Kind::EventDeletion, "")
+        .tags([Tag::event(reaction.id)]).sign_with_keys(&keys).unwrap();
+    let path = format!("/events?community={}", community.as_uuid());
+    for event in [&note, &reaction, &unlike] {
+        let body = event.as_json().into_bytes();
+        let token = auth_with_tags(&keys, &host, &path, &body,
+            vec![Tag::parse(["community", &community.as_uuid().to_string()]).unwrap()]);
+        let response = post_at(state.clone(), &host, &path, &token, body).await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let ack: serde_json::Value = serde_json::from_slice(&to_bytes(response.into_body(), 4096).await.unwrap()).unwrap();
+        assert_eq!(ack["accepted"], true, "original Pulse note/like/unlike must be accepted");
+    }
+    for event in [&note, &reaction, &unlike] {
+        state.db.soft_delete_event(community, event.id.as_bytes()).await.unwrap();
+    }
+    let response = observe_reference(state, &host, &keys, community, unlike.id).await;
+    assert_eq!(response.status(), StatusCode::OK,
+        "valid Pulse unlike cannot be lost behind the historical NULL deletion fence");
+    let body: serde_json::Value = serde_json::from_slice(&to_bytes(response.into_body(), 4096).await.unwrap()).unwrap();
+    assert_eq!(body["kind"], 5);
+    assert!(body["channel_id"].is_null());
+    assert_eq!(body.as_object().unwrap().len(), 5);
+}

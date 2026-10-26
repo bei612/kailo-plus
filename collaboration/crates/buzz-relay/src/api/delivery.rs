@@ -195,6 +195,25 @@ async fn readmit_deletion_scope(
     {
         return Err(refused());
     }
+    if original.channel_id.is_none() && original.event.kind.as_u16() == 7 {
+        // Pulse UNLIKE deletes a global kind:7 reaction, not the original note.
+        // Keep that real path available after both have been soft-deleted, but
+        // prove its last e-target is the original public global kind:1 note.
+        let target = original.event.tags.iter().rev().find_map(|tag| {
+            let tag = tag.as_slice();
+            (tag.first().is_some_and(|key| key == "e")).then(|| tag.get(1)).flatten()
+        }).ok_or_else(refused)?;
+        let id = nostr::EventId::from_hex(target).map_err(|_| refused())?;
+        if id.to_hex() != *target { return Err(refused()); }
+        let note = state.db.get_event_by_id_including_deleted(scope.community(), id.as_bytes())
+            .await.map_err(|_| refused())?.ok_or_else(refused)?;
+        if note.event.id != id || note.event.kind.as_u16() != 1
+            || note.channel_id.is_some() || note.event.verify().is_err()
+        {
+            return Err(refused());
+        }
+        return Ok(());
+    }
     if original.channel_id.is_none()
         && !matches!(
             original.event.kind.as_u16(),

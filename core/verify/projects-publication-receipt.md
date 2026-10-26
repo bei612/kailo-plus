@@ -137,7 +137,6 @@ operator probe/轮换查证也使用同一客户端；构造提前到 OpenBao co
 普通事件权威缺失证明。HTTP deadline 只保证依赖等待有限，不能把超时或空读转为
 NOT_DELIVERED；DD-81 的保守 UNKNOWN 与后续权威证明工作保持原边界。
 
-
 ## 2026-10-26 Core 原发布范围与 Relay writer 肯定证据
 
 权威为单独提交的设计
