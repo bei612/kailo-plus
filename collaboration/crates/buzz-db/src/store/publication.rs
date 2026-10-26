@@ -52,6 +52,11 @@ pub async fn merged_status_delivery(
     )
     .await?;
     let mut tx = sqlx::Transaction::begin(connection, None).await?;
+    // The observation after a blocked lock must see the preceding writer's
+    // commit, even when a deployment sets a stronger session default. A
+    // repeatable-read snapshot taken by the waiting lock statement is too old.
+    sqlx::query("SET TRANSACTION ISOLATION LEVEL READ COMMITTED")
+        .execute(tx.as_mut()).await?;
     lock(tx.as_mut(), community, event).await?;
     let active:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM communities WHERE id=$1 AND archived_at IS NULL AND deleted_at IS NULL AND deletion_state='active')")
         .bind(community.as_uuid()).fetch_one(&mut *tx).await?;
@@ -118,13 +123,17 @@ mod tests {
     #[ignore = "requires isolated migrated BUZZ_TEST_DATABASE_URL"]
     async fn delivery_waits_for_original_writer_commit_and_rollback() {
         let (pool, community, keys) = fixture().await;
+        let observers=sqlx::postgres::PgPoolOptions::new().after_connect(|connection,_|Box::pin(async move {
+            sqlx::query("SET default_transaction_isolation='repeatable read'").execute(connection).await?;
+            Ok(())
+        })).connect(&std::env::var("BUZZ_TEST_DATABASE_URL").unwrap()).await.unwrap();
         for commit in [true, false] {
             let event = status(&keys, Timestamp::now().as_secs() + u64::from(commit));
             let mut tx = pool.begin().await.unwrap();
             crate::event::insert_event_in_transaction(&mut tx, community, &event, None)
                 .await
                 .unwrap();
-            let mut observation = Box::pin(merged_status_delivery(&pool, community, &event));
+            let mut observation = Box::pin(merged_status_delivery(&observers, community, &event));
             assert!(
                 tokio::time::timeout(Duration::from_millis(100), &mut observation)
                     .await
