@@ -187,7 +187,6 @@ Android 原生接入已进入后续集成，原固定检查不包含它；原生
 2,070 文件比较一致后最终 prepare check 退出 0；详见
 [最新联合回执](phase1-integration-core-dd81-20261026.json)。这仍不是供应商投递或设备验收。
 
-
 ## 撤权至 SecretRef 退休的实际组合消费者
 
 本批以 `27bd60c40` 为基，只抽出原 `worker::sweep` 的数据库、SecretStore 与策略
