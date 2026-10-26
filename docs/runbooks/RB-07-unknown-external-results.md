@@ -17,6 +17,8 @@
 | Temporal：任务取消请求 | 控制 ActionExecution ID 是固定 `RequestId` 与 `Reason`；首次 run ID 在 RPC 前冻结 | 固定执行链的 History，匹配 `WorkflowExecutionCancelRequested.Cause` 与 Core identity | `governance_reconcile` 先取肯定证据；无事件时仅在原执行仍 OPEN 且首次 run 未变时重发同一请求。原执行已关闭而无肯定证据保持 UNKNOWN，由 Core 值班负责人按操作号处理 |
 | OpenBao：KV v2 写入 | 无（每次写产生新版本） | 写入响应中的版本号 | 结果不明即当作未写：重试产生新版本，binding 只钉响应里拿到的版本；多出的版本不被引用 |
 | OpenBao：业务 Tenant 遗留身份 SecretRef 归位（DD-85） | ActionExecution ID 导出的独立目标 locator，KV v2 `cas=0` 首次写入 | 只读目标 metadata 的版本 1，再读钉定版本并核对派生 pubkey | `SECRET_REF_REHOME` Workflow 的 `COPY_UNKNOWN` 只查目标；不可查证时保留旧 binding 与运维告警，不追加新版本 |
+| APNs/FCM 通知（DD-151） | 本地 intent UUID 与冻结的 `(Tenant,device,event,registration version,provider target digest)`；不宣称 provider 幂等 | 同一请求的明确响应；生产 API 无按我方 ID 查询全部接受事实的接缝 | Core 将发送租约丢失/不明响应持久为 UNKNOWN，不自动重发；Core 值班负责人按 intent UUID 登记。只有同尝试的确定响应可收敛，apns-id/collapse 不是送达证明 |
+| OpenBao 设备推送 token（DD-151） | 外部写前持久的独占 version-1 SecretRef，CAS=0 | 原 `retire_push_token` 查询 metadata 的 version 1 / destroyed | 原 Core token 意图消费者冻结超时写者，持久退避，查证销毁后退休；不丢弃孤儿引用 |
 
 ## 触发信号
 
@@ -42,6 +44,23 @@
 5. **Channel 与 Community 建立**：由 Tenant/Workspace 生命周期 Workflow 的重试收敛；不需要人工动作。
 6. **普通 OpenBao 写入**：确认引用它的 binding 钉的是响应中的版本；此规则不适用于 DD-85 的身份归位，不能拿它覆盖下一步。
 7. **DD-85 身份归位**：以操作号在 `admission.secret_ref_rehome` 查询 `state`、`workflow_id`、`target_locator`、原 binding 版本与冻结旧消费者引用；只向有权限的值班人员展示 locator，不输出 secret。`COPY_UNKNOWN` 只用目标 metadata 与版本 1 的派生公钥判定；目标读不到或版本不符时保持原状态并登记责任人与下次核查时间，不重写、不改库。`COPIED` 检查发起者是否仍有 Tenant manage、目标版本是否可读；`SWITCHED` 按冻结清单逐项检查 ActionExecution 与 Temporal 终态，不能以 Core 投影单独证明终态。修复依赖可达性后由同一固定 Workflow 继续；只有旧版本的 OpenBao metadata 明确标 `destroyed=true`，才可把这次归位视为 `RETIRED`。
+8. **DD-151 推送**：观察 `platform.push.checkpoints{state="UNKNOWN"}`，使用只读数据库权限按下面的稳定意图号检查；此自动派生投递不伪造 Governed Action。`ACCEPTED` 仅表示 provider 接受，不能说明手机已显示。没有生产查询接缝的 UNKNOWN 保留原态，登记 Tenant、intent UUID、事件 ID、最近核查时间、Core 值班负责人及下次核查时间，不换请求、不把普通读取或折叠键当作回执。设备 token 回收则恢复 OpenBao 可达性，由原退休消费者继续 fencing/destroy/metadata 查证；禁止手工删除意图来消除告警。
+
+```sql
+SELECT id, tenant_id, event_id, platform, state, attempts,
+       provider_reference, result_code, created_at, updated_at
+FROM projection.push_send_intent
+WHERE state = 'UNKNOWN'
+ORDER BY created_at LIMIT 100;
+
+SELECT tenant_id, device_pubkey, state, failures, next_attempt_at, updated_at
+FROM admission.push_token_intent
+WHERE state IN ('PREPARING','RETIRING')
+ORDER BY created_at LIMIT 100;
+```
+
+这些查询不读消息正文或 token。实现与已验证/未发布边界见
+[推送恢复证据](../../core/verify/push-delivery-recovery.md)。
 
 ## 不可执行的动作
 
