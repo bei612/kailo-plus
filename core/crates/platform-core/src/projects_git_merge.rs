@@ -1131,7 +1131,10 @@ mod tests {
         assert_eq!(dispatch.target_id, Some(ctx.tenant_id));
         assert_eq!(dispatch.workspace_id, None);
         let outcome = status_entry(&ctx, op, &id, "OUTCOME", ACCEPTED);
-        assert_eq!(outcome.event_key, format!("message.publish:{id}:{op}:OUTCOME"));
+        assert_eq!(
+            outcome.event_key,
+            format!("message.publish:{id}:{op}:OUTCOME")
+        );
         let reconciled = status_entry(&ctx, op, &id, "RECONCILIATION", ACCEPTED);
         let expected = format!("message.publish:{id}:{op}:RECONCILIATION");
         assert_eq!(reconciled.event_key, expected);

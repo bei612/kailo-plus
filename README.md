@@ -39,8 +39,10 @@ DD-160 原生投递核验已进入候选：writer 包括软删除行，全部原
 Community，原 ACK 也须匹配 journal。Native 固定 `f8cb31cf1` 的 publication
 消费者 **11/11**，Relay 固定 `d5c4667f4` 的实际 HTTP/PG/Redis **6/6**；
 旧 Community 缺失、ACK 异常和 Host 改绑等反向均检出，恢复通过。合批四侧
-生成/check 在 `65f82f0b8` 原 SDK 1 CPU / 2 GiB 退出 0，生成物已回读提交；
-新可选结算事实的语言消费者及 Core 编译结果另计。详细固定源码与失败边界见
+生成/check 在 `65f82f0b8` 原 SDK 1 CPU / 2 GiB 退出 0，生成物已回读提交。
+固定合批 `01f332f3a` 的 TS 类型与 **74** 项、Go **57** 个顶层及 **50** 个子用例、
+Dart **75** 项通过；漏掉真实 Dart 输出字段会断言失败，恢复后 75 项通过。
+Core 编译结果另计。详细固定源码与失败边界见
 [Native 发布证据](collaboration/fork/verify/desktop-project-remote-writes.md)。
 
 Android FCM 原生批也已进入候选：固定 `76a879c21` 的 Flutter 消费者 **28/28**，

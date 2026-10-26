@@ -91,3 +91,38 @@ Relay 最终固定 `d5c4667f4d82b326dbdab7c253d0565a2c45119f`，原检查 SDK、
 同一 Relay 固定源临时取消 Host 所属 Community 与冻结 UUID 的比较，新场景实际收到错误的 200，原检查断言期望 401 而失败、exit 101；逐字恢复后原 6 项再次通过，整个作业 exit 0、OOMKilled=false。`api/bridge.rs` SHA-256 前后一致：`a967362e6f1ffc24d136353e83b6ef9f69dbadc9b0cfe1c9698425c6fe53cdd8`。原日志、实际限额、终态与 OOM 回执在 `relay-delivery-d5c4667f4d82b326dbdab7c253d0565a2c45119f/`。容器、临时 PG/Redis 和独立网络已实际确认不存在，重资源窗口已通知根工作流释放。未改 DB writer 实现，未重复原独立 DB 全批；不把这些结果扩写成全工程、旧 Relay 二进制混部署、安装包或生产 UI 验收。
 
 最终 Native 固定 `f8cb31cf134e1204947f962c27635cd6e421ffd8`，包含原 SDK 格式回填与 journal 重读失败的 UNKNOWN 保真修正，同一原 Desktop SDK、1 CPU/4 GiB、同一 `commands::project_git_publication::tests` 命令再次 11 passed、0 failed、481 filtered out，exit 0，OOMKilled=false；实际编译 11.29 秒。终态日志为 `f8cb31cf134e1204947f962c27635cd6e421ffd8-{cargo,preflight,limits,exit,oom}.log`。此提交没有修改最终 Relay 检查所覆盖的任何 Relay 源码。当前自有 Native 验证容器也已退出清理；这里只交付固定源码与检查证据，根工作流负责设计 pin、合同生成和合批门禁，生产发布、Win11 安装及三账号双主题 after 走查仍须分别完成。
+## 合批生成与三侧 wire 消费者（2026-10-26）
+
+固定集成 `65f82f0b897a6282479ea6a335ca733196968806`、设计
+`bb41415a5241ce31564f9da01272ee6b82158c60`：原工具 SDK
+`sha256:3007729eb192341a4f004a88e42e1e66c94fc67d763acfc96568bd7311116018`，
+1 CPU / 2 GiB，四侧生成/check、共享目录及注册表均退出 0，42 能力、20 Workflow kind。
+生成物已逐文件回读提交，原件在 CI
+`/volumes/data/kailo/verification/phase1-integration/profile-65f82f0b8/`。
+
+固定 `01f332f3a2d3c13a2e46ea361c73d4b81ac5bd81` 的同一 SDK，1 CPU / 4 GiB：
+
+- Node 24.21.0 / pnpm 10.33.4：原 contracts 类型检查与 **74/74**。
+- Go 1.25.14：原 contracts `-count=1`，**57** 个顶层、**50** 个子用例通过。
+- Dart 3.9.4：原 `dart pub get` 后 **75/75**；库没有入库 pubspec.lock，未借用
+  Mobile 锁。解析锁 SHA-256 为
+  `d0690a2bc70d95e2d5ecd3312b60d2e6f2caa87105066533d7e00721b3feebde`。
+- 临时从真实生成 `toJson` 移除 `publishResultObservedAtUnixSeconds`，原 roundtrip
+  因缺少 map key 失败；逐字/SHA 恢复后 75/75。恢复生成文件 SHA-256 为
+  `99350571f7306159a7b39de7c93fcc0673061457ec40e0dada538f2607ecf33a`。
+
+CI 原件位于 `/volumes/data/kailo/verification/buzz-r10/`，目录为
+`community-wire2-01f332f3a2d3c13a2e46ea361c73d4b81ac5bd81/`（TS/Go通过，随后不适用
+的无锁 enforce 命令失败，整体 exit 1）及
+`community-wire3-01f332f3a2d3c13a2e46ea361c73d4b81ac5bd81/`（Dart 正/反/恢复，exit 0）。
+第二目录保存实际解析锁，主日志 SHA-256 为
+`06b767781789ec66940a9050d6ba70dd0f7d4afe4fb29d5f7a16e42e448d98c4`。
+首轮缺锁预检早停独立保留，不计消费者失败或通过。本批容器均已清理，无 OOM。
+Rust 合同及 Core 联合结果由合批单独记录，不用三侧结果替代。
+
+固定集成 `1dd5ee3e5fcf22f07ffd93587de459fffb3f124c` 的写入/保留源码复核：
+`store/partition.rs` 仅建分区；硬删状态历史仅限 30078/read-state 与 30003/mesh；
+频道 TTL 只归档；全 Community purge 必须 fenced/tombstone，purge 后不能 abort
+回 ACTIVE。本版本生产 1631 INSERT 均进入已验证 guard，替换写入不接受该 kind。
+这是固定代码范围的结论；屏障位于 Rust 写者，部署时全部在线 writer 必须使用匹配
+实现，不外推旧 Relay 混跑、手工 SQL、恢复或外部分区维护期间仍能证明缺失。

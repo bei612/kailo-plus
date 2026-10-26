@@ -103,7 +103,12 @@ struct PublicationAudit<'a> {
 impl<'a> PublicationAudit<'a> {
     fn entry(&self, event_type: &'static str, result_code: &'static str) -> AuditEntry<'a> {
         let (ctx, target, operation_id, action_key, event_id, signer_pubkey) = (
-            self.ctx, self.target, self.operation_id, self.action_key, self.event_id, self.signer_pubkey,
+            self.ctx,
+            self.target,
+            self.operation_id,
+            self.action_key,
+            self.event_id,
+            self.signer_pubkey,
         );
         AuditEntry {
             event_key: publication_event_key(operation_id, event_id, event_type),
@@ -2222,14 +2227,14 @@ async fn publish(
         suppress_link_previews: bool,
     }
     let previous = match sqlx::query_as::<_, PreviousPublish>(PREVIOUS_PUBLICATION_SQL)
-    .bind(ctx.tenant_principal_id)
-    .bind(idempotency_key)
-    .bind(action_key)
-    .bind(target.target_type())
-    .bind(target.workspace_id())
-    .bind(FILTERED_PUBLICATION_ACTIONS.as_slice())
-    .fetch_optional(&state.pool)
-    .await
+        .bind(ctx.tenant_principal_id)
+        .bind(idempotency_key)
+        .bind(action_key)
+        .bind(target.target_type())
+        .bind(target.workspace_id())
+        .bind(FILTERED_PUBLICATION_ACTIONS.as_slice())
+        .fetch_optional(&state.pool)
+        .await
     {
         Ok(p) => p,
         Err(e) => {
@@ -2965,12 +2970,7 @@ async fn publish(
         Delivery::Accepted => {
             // 结果写不进去不改变「已送达」：DISPATCH 已在，兜底对账按 event id
             // 查到它后补记（publish_reconcile）
-            if let Err(e) = record(
-                &state,
-                audit.entry("OUTCOME", "ACCEPTED"),
-            )
-            .await
-            {
+            if let Err(e) = record(&state, audit.entry("OUTCOME", "ACCEPTED")).await {
                 tracing::warn!(error = %e, "发布结果审计未写入，留给对账");
             }
             (
@@ -2984,12 +2984,7 @@ async fn publish(
         }
         Delivery::Rejected(why) => {
             tracing::warn!(reason = %why, "Relay 拒绝发布");
-            if let Err(e) = record(
-                &state,
-                audit.entry("OUTCOME", "REJECTED"),
-            )
-            .await
-            {
+            if let Err(e) = record(&state, audit.entry("OUTCOME", "REJECTED")).await {
                 tracing::warn!(error = %e, "发布结果审计未写入，留给对账");
             }
             // DD-125(2)：社区禁言/封禁的拒绝带结构化 restriction（V-SCN-129）
@@ -3000,12 +2995,7 @@ async fn publish(
         // REJECTED；回应是 LIMIT，不是 DENIED（`apps/06` §4）。
         Delivery::Limited(kind, why) => {
             tracing::warn!(reason = %why, "Relay 以上界拒绝发布");
-            if let Err(e) = record(
-                &state,
-                audit.entry("OUTCOME", "NOT_DELIVERED"),
-            )
-            .await
-            {
+            if let Err(e) = record(&state, audit.entry("OUTCOME", "NOT_DELIVERED")).await {
                 tracing::warn!(error = %e, "发布结果审计未写入，留给对账");
             }
             limit_response(kind, None, Some(operation_id))
@@ -4641,7 +4631,10 @@ mod tests {
     #[ignore = "requires PUBLISH_RECONCILE_TEST_DATABASE_URL pointing at an isolated migrated database"]
     async fn publication_history_keeps_real_outcomes_and_distinct_operations() {
         use sqlx::Row;
-        let pool = sqlx::PgPool::connect(&std::env::var("PUBLISH_RECONCILE_TEST_DATABASE_URL").unwrap()).await.unwrap();
+        let pool =
+            sqlx::PgPool::connect(&std::env::var("PUBLISH_RECONCILE_TEST_DATABASE_URL").unwrap())
+                .await
+                .unwrap();
         let mut tx = pool.begin().await.unwrap();
         let ctx = super::ExecutionContext {
             human_identity_id: uuid::Uuid::new_v4(),
@@ -4663,9 +4656,12 @@ mod tests {
                 super::MessageTarget::Workspace(uuid::Uuid::new_v4())
             };
             for (real, real_first) in [
-                (Some("ACCEPTED"), true), (Some("ACCEPTED"), false),
-                (Some("REJECTED"), true), (Some("REJECTED"), false),
-                (Some("NOT_DELIVERED"), true), (Some("NOT_DELIVERED"), false),
+                (Some("ACCEPTED"), true),
+                (Some("ACCEPTED"), false),
+                (Some("REJECTED"), true),
+                (Some("REJECTED"), false),
+                (Some("NOT_DELIVERED"), true),
+                (Some("NOT_DELIVERED"), false),
                 (None, true),
             ] {
                 let operation = uuid::Uuid::new_v4();
@@ -4674,15 +4670,25 @@ mod tests {
                 sqlx::query("insert into admission.publish_attempt(tenant_principal_id,idempotency_key,operation_id,event_id) values($1,$2,$3,$4)")
                     .bind(ctx.tenant_principal_id).bind(key).bind(operation).bind(&id).execute(&mut *tx).await.unwrap();
                 let audit = super::PublicationAudit {
-                    ctx: &ctx, target, operation_id: operation, action_key: action,
-                    event_id: &id, signer_pubkey: None,
+                    ctx: &ctx,
+                    target,
+                    operation_id: operation,
+                    action_key: action,
+                    event_id: &id,
+                    signer_pubkey: None,
                 };
                 let mut entries = vec![
                     (audit.entry("DISPATCH", "DISPATCHED"), 400_i64),
-                    (audit.entry("RECONCILIATION", "NOT_DELIVERED"), if real_first {100} else {200}),
+                    (
+                        audit.entry("RECONCILIATION", "NOT_DELIVERED"),
+                        if real_first { 100 } else { 200 },
+                    ),
                 ];
                 if let Some(result) = real {
-                    entries.push((audit.entry("OUTCOME", result), if real_first {200} else {100}));
+                    entries.push((
+                        audit.entry("OUTCOME", result),
+                        if real_first { 200 } else { 100 },
+                    ));
                 }
                 for (mut entry, age) in entries {
                     if entry.event_type == "RECONCILIATION" {
@@ -4697,13 +4703,28 @@ mod tests {
                 // This is the retry handler's exact snapshot query, not a
                 // second implementation of its conclusion-selection rule.
                 let row = sqlx::query(super::PREVIOUS_PUBLICATION_SQL)
-                    .bind(ctx.tenant_principal_id).bind(key).bind(action)
-                    .bind(target.target_type()).bind(target.workspace_id())
+                    .bind(ctx.tenant_principal_id)
+                    .bind(key)
+                    .bind(action)
+                    .bind(target.target_type())
+                    .bind(target.workspace_id())
                     .bind(super::FILTERED_PUBLICATION_ACTIONS.as_slice())
-                    .fetch_one(&mut *tx).await.unwrap();
-                assert_eq!(row.get::<Option<String>,_>("result").as_deref(), real, "{action}: real_first={real_first}");
-                assert_eq!(row.get::<Option<String>,_>("result_event_type").as_deref(), real.map(|_| "OUTCOME"));
-                assert_eq!(row.get::<Vec<Option<uuid::Uuid>>,_>("target_ids"), vec![Some(target.id())]);
+                    .fetch_one(&mut *tx)
+                    .await
+                    .unwrap();
+                assert_eq!(
+                    row.get::<Option<String>, _>("result").as_deref(),
+                    real,
+                    "{action}: real_first={real_first}"
+                );
+                assert_eq!(
+                    row.get::<Option<String>, _>("result_event_type").as_deref(),
+                    real.map(|_| "OUTCOME")
+                );
+                assert_eq!(
+                    row.get::<Vec<Option<uuid::Uuid>>, _>("target_ids"),
+                    vec![Some(target.id())]
+                );
             }
         }
         // Nostr identity need not distinguish two same-second intents. The
@@ -4714,21 +4735,38 @@ mod tests {
         for _ in 0..2 {
             let operation = uuid::Uuid::new_v4();
             let audit = super::PublicationAudit {
-                ctx: &ctx, target, operation_id: operation, action_key: super::PUBLISH_ACTION,
-                event_id: &id, signer_pubkey: None,
+                ctx: &ctx,
+                target,
+                operation_id: operation,
+                action_key: super::PUBLISH_ACTION,
+                event_id: &id,
+                signer_pubkey: None,
             };
-            for (phase, result) in [("DISPATCH","DISPATCHED"),("OUTCOME","ACCEPTED"),("RECONCILIATION","ACCEPTED")] {
+            for (phase, result) in [
+                ("DISPATCH", "DISPATCHED"),
+                ("OUTCOME", "ACCEPTED"),
+                ("RECONCILIATION", "ACCEPTED"),
+            ] {
                 for _ in 0..2 {
-                    crate::audit::append(&mut tx, audit.entry(phase,result)).await.unwrap();
+                    crate::audit::append(&mut tx, audit.entry(phase, result))
+                        .await
+                        .unwrap();
                 }
             }
-            let count: i64 = sqlx::query_scalar("select count(*) from audit.audit_event where operation_id=$1")
-                .bind(operation).fetch_one(&mut *tx).await.unwrap();
-            assert_eq!(count,3,"same event ID must not erase another operation's audit");
+            let count: i64 =
+                sqlx::query_scalar("select count(*) from audit.audit_event where operation_id=$1")
+                    .bind(operation)
+                    .fetch_one(&mut *tx)
+                    .await
+                    .unwrap();
+            assert_eq!(
+                count, 3,
+                "same event ID must not erase another operation's audit"
+            );
         }
         let count: i64 = sqlx::query_scalar("select count(*) from audit.audit_event where evidence_refs @> jsonb_build_array(jsonb_build_object('kind','BUZZ_EVENT_ID','value',$1::text))")
             .bind(&id).fetch_one(&mut *tx).await.unwrap();
-        assert_eq!(count,6);
+        assert_eq!(count, 6);
         // A historical collision can already have lost its DISPATCH. Preserve
         // the existing empty-scope refusal; do not infer scope from this retry.
         let orphan_key = uuid::Uuid::new_v4();
@@ -4736,11 +4774,19 @@ mod tests {
             .bind(ctx.tenant_principal_id).bind(orphan_key).bind(uuid::Uuid::new_v4()).bind(&id)
             .execute(&mut *tx).await.unwrap();
         let row = sqlx::query(super::PREVIOUS_PUBLICATION_SQL)
-            .bind(ctx.tenant_principal_id).bind(orphan_key).bind(super::PUBLISH_ACTION)
-            .bind(target.target_type()).bind(target.workspace_id())
-            .bind(super::FILTERED_PUBLICATION_ACTIONS.as_slice()).fetch_one(&mut *tx).await.unwrap();
-        assert!(row.get::<Vec<Option<uuid::Uuid>>,_>("target_ids").is_empty());
-        assert_eq!(row.get::<Option<String>,_>("result"),None);
+            .bind(ctx.tenant_principal_id)
+            .bind(orphan_key)
+            .bind(super::PUBLISH_ACTION)
+            .bind(target.target_type())
+            .bind(target.workspace_id())
+            .bind(super::FILTERED_PUBLICATION_ACTIONS.as_slice())
+            .fetch_one(&mut *tx)
+            .await
+            .unwrap();
+        assert!(row
+            .get::<Vec<Option<uuid::Uuid>>, _>("target_ids")
+            .is_empty());
+        assert_eq!(row.get::<Option<String>, _>("result"), None);
         tx.rollback().await.unwrap();
     }
 
