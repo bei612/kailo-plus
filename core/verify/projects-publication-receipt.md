@@ -223,6 +223,6 @@ CI 原回执分别在
 
 ### 尚未代表的交付范围
 
-本分支仍沿基线的 `state.http` 字段，主集成须接入已经独立实现的受限 `state.relay_http` 后核对。Relay writer 含软删观察、native 授权/ban、历史 kind 5 NULL scope 拒绝等属于主线独立实现和真实 Relay/PG 检查；本节不把 HTTP 测试服务器当完整 Core→Relay 部署验收。
+本节固定 `afe53b8e7` 分支沿基线的 `state.http` 字段；主集成 `83ec3ebb339ab53f65bbf7b04b1866dfbb10cd71` 已把这两条新请求接入受限 `state.relay_http`，其合批验收另记，不借本节检查代替。Relay writer 含软删观察、native 授权/ban、历史 kind 5 NULL scope 拒绝等属于主线独立实现和真实 Relay/PG 检查；本节不把 HTTP 测试服务器当完整 Core→Relay 部署验收。
 
 没有发布产物、部署或真实三端操作验收。观察缺失、拒绝、purge、不可观察的 41010/41012 或历史 NULL scope 都保持 UNKNOWN；本批只闭合新冻结范围的肯定证据消费，不证明权威缺失，也不宣称完整 DD-81 或旧未知操作已经全部收敛。
