@@ -262,6 +262,7 @@ pub fn run() {
             pull_project_local_repository,
             get_project_local_repo_snapshot,
             get_project_local_repo_diff,
+            get_project_local_repo_file_content,
             open_project_repository_folder,
             local_archive::local_archive_status,
             local_archive::local_archive_subscribe,
