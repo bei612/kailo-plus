@@ -1,0 +1,30 @@
+capability_id: collab.tenant_profile
+title: Tenant 显示资料读取与受治理版本更新
+stage: S1
+status: in_progress
+exposure: end_user
+design:
+  requirements: [V-REQ-24]
+  decisions: [DD-158]
+  facts: [SF-BUZ-57]
+  seams: []
+  blockers: []
+  entities: [Tenant, ActionDefinition, ActionExecution]
+validation:
+  scenarios: [V-SCN-261]
+  evidence:
+    - dimension: 安全边界
+      ref: core/verify/tenant-profile.md
+implementation:
+  owners: [team-platform]
+  paths: [core/crates/platform-core/src/tenant_profile.rs, core/crates/platform-core/src/governance.rs, core/crates/platform-core/src/bff.rs]
+  surfaces: []
+  schemas: [contracts/api/action_command.schema.json, contracts/api/tenant_profile_view.schema.json, contracts/domain/tenant_profile_input.schema.json]
+  migrations: [core/migrations/20261031050000_tenant_profile.up.sql, core/migrations/20261031050000_tenant_profile.down.sql]
+runtime:
+  routes: ["/api/v1/tenant/profile"]
+  actions: [tenant.profile.update]
+  workflow_kinds: []
+release:
+  artifacts: []
+  gate: blocked_until_seams_closed

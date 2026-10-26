@@ -31,6 +31,9 @@ pem = "3"
 jsonschema = { version = "=0.33.0", default-features = false }
 semver = "=1.0.28"
 base64 = "0.22"
+# DD-158: decode bounded profile icons and accept only a complete Unicode emoji.
+image = { version = "=0.25.10", default-features = false, features = ["png", "jpeg", "webp"] }
+emojis = "=0.9.0"
 ring = "0.17"
 nostr = { version = "0.44", default-features = false, features = ["std"] }
 sha2 = "0.10"
