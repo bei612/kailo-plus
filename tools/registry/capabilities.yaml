@@ -229,6 +229,12 @@ capabilities:
   - huddle.end
   tools: []
   workflow_kinds: []
+- id: collab.local_archive
+  exposure: none
+  routes: []
+  actions: []
+  tools: []
+  workflow_kinds: []
 - id: collab.moderation
   exposure: end_user
   routes:
