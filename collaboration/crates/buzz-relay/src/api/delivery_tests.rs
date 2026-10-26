@@ -19,7 +19,16 @@ async fn fixture() -> (
 ) {
     fixture_for(Keys::generate()).await
 }
-async fn fixture_for(keys: Keys) -> (Arc<AppState>, sqlx::PgPool, CommunityId, String, Keys, uuid::Uuid) {
+async fn fixture_for(
+    keys: Keys,
+) -> (
+    Arc<AppState>,
+    sqlx::PgPool,
+    CommunityId,
+    String,
+    Keys,
+    uuid::Uuid,
+) {
     let mut config = crate::config::Config::from_env().unwrap();
     config.database_url =
         std::env::var("BUZZ_TEST_DATABASE_URL").expect("isolated database required");
@@ -115,13 +124,16 @@ fn auth_at(keys: &Keys, host: &str, path: &str, body: &[u8]) -> String {
 }
 fn auth_with_tags(keys: &Keys, host: &str, path: &str, body: &[u8], extra: Vec<Tag>) -> String {
     let mut tags = vec![
-            Tag::parse(["u", &format!("https://{host}{path}")]).unwrap(),
-            Tag::parse(["method", "POST"]).unwrap(),
-            Tag::parse(["payload", &hex::encode(Sha256::digest(body))]).unwrap(),
-            Tag::parse(["nonce", &uuid::Uuid::new_v4().to_string()]).unwrap(),
-        ];
+        Tag::parse(["u", &format!("https://{host}{path}")]).unwrap(),
+        Tag::parse(["method", "POST"]).unwrap(),
+        Tag::parse(["payload", &hex::encode(Sha256::digest(body))]).unwrap(),
+        Tag::parse(["nonce", &uuid::Uuid::new_v4().to_string()]).unwrap(),
+    ];
     tags.extend(extra);
-    let token = EventBuilder::new(Kind::Custom(27235), "").tags(tags).sign_with_keys(keys).unwrap();
+    let token = EventBuilder::new(Kind::Custom(27235), "")
+        .tags(tags)
+        .sign_with_keys(keys)
+        .unwrap();
     format!("Nostr {}", STANDARD.encode(token.as_json()))
 }
 async fn post(state: Arc<AppState>, host: &str, authorization: &str, body: Vec<u8>) -> Response {
@@ -414,92 +426,192 @@ async fn scoped_submit_freezes_proved_community_across_host_rebinding() {
     let original = event(&keys, Timestamp::now().as_secs());
     let response = proof(state.clone(), &host, &keys, &original).await;
     assert_eq!(response.status(), StatusCode::OK);
-    let observed: serde_json::Value = serde_json::from_slice(&to_bytes(response.into_body(),4096).await.unwrap()).unwrap();
+    let observed: serde_json::Value =
+        serde_json::from_slice(&to_bytes(response.into_body(), 4096).await.unwrap()).unwrap();
     assert_eq!(observed["communityId"], community.as_uuid().to_string());
     assert_eq!(observed["accepted"], false);
     let (_, _, other, other_host, _, _) = fixture_for(keys.clone()).await;
     // Both actual communities authorize this exact device and repository.
-    assert_eq!(proof(state.clone(), &other_host, &keys, &original).await.status(), StatusCode::OK);
+    assert_eq!(
+        proof(state.clone(), &other_host, &keys, &original)
+            .await
+            .status(),
+        StatusCode::OK
+    );
     let frozen = community.as_uuid().to_string();
     let path = format!("/events?community={frozen}");
     let raw = original.as_json().into_bytes();
-    let token = auth_with_tags(&keys,&host,&path,&raw,vec![Tag::parse(["community",&frozen]).unwrap()]);
-    sqlx::query("UPDATE communities SET host=$2 WHERE id=$1").bind(community.as_uuid()).bind(format!("retired-{host}")).execute(&pool).await.unwrap();
-    sqlx::query("UPDATE communities SET host=$2 WHERE id=$1").bind(other.as_uuid()).bind(&host).execute(&pool).await.unwrap();
+    let token = auth_with_tags(
+        &keys,
+        &host,
+        &path,
+        &raw,
+        vec![Tag::parse(["community", &frozen]).unwrap()],
+    );
+    sqlx::query("UPDATE communities SET host=$2 WHERE id=$1")
+        .bind(community.as_uuid())
+        .bind(format!("retired-{host}"))
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE communities SET host=$2 WHERE id=$1")
+        .bind(other.as_uuid())
+        .bind(&host)
+        .execute(&pool)
+        .await
+        .unwrap();
     let response = post_at(state.clone(), &host, &path, &token, raw.clone()).await;
-    assert_eq!(response.status(), StatusCode::UNAUTHORIZED, "frozen Community must reject rebound Host before ingest");
-    let rows:i64=sqlx::query_scalar("SELECT count(*) FROM events WHERE id=$1 AND community_id=ANY($2)")
-        .bind(original.id.as_bytes().as_slice()).bind(vec![community.as_uuid(),other.as_uuid()]).fetch_one(&pool).await.unwrap();
-    assert_eq!(rows,0,"rebound POST must not create either Community's row");
+    assert_eq!(
+        response.status(),
+        StatusCode::UNAUTHORIZED,
+        "frozen Community must reject rebound Host before ingest"
+    );
+    let rows: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM events WHERE id=$1 AND community_id=ANY($2)")
+            .bind(original.id.as_bytes().as_slice())
+            .bind(vec![community.as_uuid(), other.as_uuid()])
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        rows, 0,
+        "rebound POST must not create either Community's row"
+    );
     // Restore routing: the same frozen intent now reaches its original writer.
-    sqlx::query("UPDATE communities SET host=$2 WHERE id=$1").bind(other.as_uuid()).bind(&other_host).execute(&pool).await.unwrap();
-    sqlx::query("UPDATE communities SET host=$2 WHERE id=$1").bind(community.as_uuid()).bind(&host).execute(&pool).await.unwrap();
-    let token = auth_with_tags(&keys,&host,&path,&raw,vec![Tag::parse(["community",&frozen]).unwrap()]);
-    let response = post_at(state.clone(),&host,&path,&token,raw).await;
-    assert_eq!(response.status(),StatusCode::OK);
-    let ack:serde_json::Value=serde_json::from_slice(&to_bytes(response.into_body(),4096).await.unwrap()).unwrap();
-    assert_eq!(ack["accepted"],true);
-    assert_eq!(ack["event_id"],original.id.to_hex());
-    assert_eq!(ack["community_id"],frozen);
+    sqlx::query("UPDATE communities SET host=$2 WHERE id=$1")
+        .bind(other.as_uuid())
+        .bind(&other_host)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE communities SET host=$2 WHERE id=$1")
+        .bind(community.as_uuid())
+        .bind(&host)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let token = auth_with_tags(
+        &keys,
+        &host,
+        &path,
+        &raw,
+        vec![Tag::parse(["community", &frozen]).unwrap()],
+    );
+    let response = post_at(state.clone(), &host, &path, &token, raw).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let ack: serde_json::Value =
+        serde_json::from_slice(&to_bytes(response.into_body(), 4096).await.unwrap()).unwrap();
+    assert_eq!(ack["accepted"], true);
+    assert_eq!(ack["event_id"], original.id.to_hex());
+    assert_eq!(ack["community_id"], frozen);
     // Legacy unscoped publication retains its original ACK shape.
-    let legacy=event(&keys,original.created_at.as_secs()+1);
-    let raw=legacy.as_json().into_bytes();
-    let token=auth_at(&keys,&host,"/events",&raw);
-    let response=post_at(state,&host,"/events",&token,raw).await;
-    assert_eq!(response.status(),StatusCode::OK);
-    let ack:serde_json::Value=serde_json::from_slice(&to_bytes(response.into_body(),4096).await.unwrap()).unwrap();
-    assert_eq!(ack["accepted"],true);
+    let legacy = event(&keys, original.created_at.as_secs() + 1);
+    let raw = legacy.as_json().into_bytes();
+    let token = auth_at(&keys, &host, "/events", &raw);
+    let response = post_at(state, &host, "/events", &token, raw).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let ack: serde_json::Value =
+        serde_json::from_slice(&to_bytes(response.into_body(), 4096).await.unwrap()).unwrap();
+    assert_eq!(ack["accepted"], true);
     assert!(ack.get("community_id").is_none());
 }
 
 #[tokio::test]
 #[ignore = "requires isolated migrated BUZZ_TEST_DATABASE_URL and REDIS_URL"]
 async fn scoped_submit_rejects_ambiguous_unsigned_or_old_server_scope() {
-    let (state,pool,community,host,keys,_)=fixture().await;
-    let original=event(&keys,Timestamp::now().as_secs());
-    let raw=original.as_json().into_bytes();
-    let id=community.as_uuid().to_string();
-    let path=format!("/events?community={id}");
-    let tag=Tag::parse(["community",&id]).unwrap();
-    for (url,tags) in [
-        (path.clone(),vec![]),
-        ("/events".into(),vec![tag.clone()]),
-        (path.clone(),vec![tag.clone(),tag.clone()]),
-        (path.clone(),vec![Tag::parse(["community",""]).unwrap()]),
-        (path.clone(),vec![Tag::parse(["community"]).unwrap()]),
-        (path.clone(),vec![Tag::parse(["community",&id,"extra"]).unwrap()]),
-        (path.clone(),vec![Tag::parse(["community",&uuid::Uuid::new_v4().to_string()]).unwrap()]),
-        (format!("{path}&community={id}"),vec![tag.clone()]),
-        ("/events?community=".into(),vec![tag.clone()]),
-        (format!("/events?community={}",id.to_uppercase()),vec![tag.clone()]),
+    let (state, pool, community, host, keys, _) = fixture().await;
+    let original = event(&keys, Timestamp::now().as_secs());
+    let raw = original.as_json().into_bytes();
+    let id = community.as_uuid().to_string();
+    let path = format!("/events?community={id}");
+    let tag = Tag::parse(["community", &id]).unwrap();
+    for (url, tags) in [
+        (path.clone(), vec![]),
+        ("/events".into(), vec![tag.clone()]),
+        (path.clone(), vec![tag.clone(), tag.clone()]),
+        (path.clone(), vec![Tag::parse(["community", ""]).unwrap()]),
+        (path.clone(), vec![Tag::parse(["community"]).unwrap()]),
+        (
+            path.clone(),
+            vec![Tag::parse(["community", &id, "extra"]).unwrap()],
+        ),
+        (
+            path.clone(),
+            vec![Tag::parse(["community", &uuid::Uuid::new_v4().to_string()]).unwrap()],
+        ),
+        (format!("{path}&community={id}"), vec![tag.clone()]),
+        ("/events?community=".into(), vec![tag.clone()]),
+        (
+            format!("/events?community={}", id.to_uppercase()),
+            vec![tag.clone()],
+        ),
     ] {
-        let token=auth_with_tags(&keys,&host,&url,&raw,tags);
-        assert!(!post_at(state.clone(),&host,&url,&token,raw.clone()).await.status().is_success(),"invalid scope {url}");
+        let token = auth_with_tags(&keys, &host, &url, &raw, tags);
+        assert!(
+            !post_at(state.clone(), &host, &url, &token, raw.clone())
+                .await
+                .status()
+                .is_success(),
+            "invalid scope {url}"
+        );
     }
-    let token=auth_with_tags(&keys,&host,&path,&raw,vec![tag]);
-    let signed=String::from_utf8(STANDARD.decode(token.strip_prefix("Nostr ").unwrap()).unwrap()).unwrap();
+    let token = auth_with_tags(&keys, &host, &path, &raw, vec![tag]);
+    let signed = String::from_utf8(
+        STANDARD
+            .decode(token.strip_prefix("Nostr ").unwrap())
+            .unwrap(),
+    )
+    .unwrap();
     // The unchanged old verifier expects /events, and includes query in URL comparison.
-    assert!(buzz_auth::verify_nip98_event(&signed,&format!("https://{host}/events"),"POST",Some(&raw)).is_err());
-    let mut tampered:serde_json::Value=serde_json::from_str(&signed).unwrap();
-    tampered["tags"].as_array_mut().unwrap().last_mut().unwrap()[1]=serde_json::json!(uuid::Uuid::new_v4().to_string());
-    let token=format!("Nostr {}",STANDARD.encode(serde_json::to_vec(&tampered).unwrap()));
-    assert_eq!(post_at(state,&host,&path,&token,raw).await.status(),StatusCode::UNAUTHORIZED);
-    let rows:i64=sqlx::query_scalar("SELECT count(*) FROM events WHERE community_id=$1 AND id=$2").bind(community.as_uuid()).bind(original.id.as_bytes().as_slice()).fetch_one(&pool).await.unwrap();
-    assert_eq!(rows,0);
+    assert!(buzz_auth::verify_nip98_event(
+        &signed,
+        &format!("https://{host}/events"),
+        "POST",
+        Some(&raw)
+    )
+    .is_err());
+    let mut tampered: serde_json::Value = serde_json::from_str(&signed).unwrap();
+    tampered["tags"].as_array_mut().unwrap().last_mut().unwrap()[1] =
+        serde_json::json!(uuid::Uuid::new_v4().to_string());
+    let token = format!(
+        "Nostr {}",
+        STANDARD.encode(serde_json::to_vec(&tampered).unwrap())
+    );
+    assert_eq!(
+        post_at(state, &host, &path, &token, raw).await.status(),
+        StatusCode::UNAUTHORIZED
+    );
+    let rows: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM events WHERE community_id=$1 AND id=$2")
+            .bind(community.as_uuid())
+            .bind(original.id.as_bytes().as_slice())
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(rows, 0);
 }
 
 #[tokio::test]
 #[ignore = "requires isolated migrated BUZZ_TEST_DATABASE_URL and REDIS_URL"]
 async fn delivery_uses_existing_router_body_bound() {
-    let (state,_,_,host,keys,_)=fixture().await;
-    let padding="x".repeat(17*1024);
-    let event=EventBuilder::new(Kind::Custom(1631),"").tags([
-        Tag::parse(["a",&format!("30617:{}:repo",keys.public_key())]).unwrap(),
-        Tag::parse(["test-padding",&padding]).unwrap(),
-    ]).sign_with_keys(&keys).unwrap();
-    assert!(event.as_json().len()>16*1024);
-    assert_eq!(proof(state.clone(),&host,&keys,&event).await.status(),StatusCode::OK);
+    let (state, _, _, host, keys, _) = fixture().await;
+    let padding = "x".repeat(17 * 1024);
+    let event = EventBuilder::new(Kind::Custom(1631), "")
+        .tags([
+            Tag::parse(["a", &format!("30617:{}:repo", keys.public_key())]).unwrap(),
+            Tag::parse(["test-padding", &padding]).unwrap(),
+        ])
+        .sign_with_keys(&keys)
+        .unwrap();
+    assert!(event.as_json().len() > 16 * 1024);
+    assert_eq!(
+        proof(state.clone(), &host, &keys, &event).await.status(),
+        StatusCode::OK
+    );
     // Existing api_router RequestBodyLimitLayer, not an invented proof-specific threshold.
-    let oversized=vec![b' ';1024*1024+1];
-    assert_eq!(post(state,&host,"",oversized).await.status(),StatusCode::PAYLOAD_TOO_LARGE);
+    let oversized = vec![b' '; 1024 * 1024 + 1];
+    assert_eq!(
+        post(state, &host, "", oversized).await.status(),
+        StatusCode::PAYLOAD_TOO_LARGE
+    );
 }

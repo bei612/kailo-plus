@@ -226,8 +226,11 @@ trait PublicationIo: Sync {
         &self,
         request: &Request,
     ) -> impl std::future::Future<Output = Result<(), WriteError>> + Send;
-    fn submit(&self, event: &Event, community: &str)
-        -> impl std::future::Future<Output = Result<(), String>> + Send;
+    fn submit(
+        &self,
+        event: &Event,
+        community: &str,
+    ) -> impl std::future::Future<Output = Result<(), String>> + Send;
 }
 struct NativePublication<'a> {
     app: &'a AppHandle,
@@ -417,9 +420,12 @@ async fn submit_status(
     journal.save(intent, "EVENT_DISPATCH")?;
     io.keys()
         .map_err(|_| WriteError::at(UNKNOWN, &intent.key))?;
-    let persisted = journal.find(&intent.key, &intent.request)?
+    let persisted = journal
+        .find(&intent.key, &intent.request)?
         .ok_or_else(|| WriteError::at(UNKNOWN, &intent.key))?;
-    let community = persisted.event_community_id.as_deref()
+    let community = persisted
+        .event_community_id
+        .as_deref()
         .ok_or_else(|| WriteError::at(UNKNOWN, &intent.key))?;
     let result = io.submit(event, community).await;
     io.keys()
