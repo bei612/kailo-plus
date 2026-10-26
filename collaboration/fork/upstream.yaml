@@ -396,7 +396,16 @@ remove_paths:
   - desktop/src/features/home/useOwnedAgentPubkeys.ts
   - desktop/src/features/huddle
   - desktop/src/features/identity-archive
-  - desktop/src/features/local-archive
+  - desktop/src/features/local-archive/agentMetricArchivePreference.ts
+  - desktop/src/features/local-archive/observerArchivePreference.ts
+  - desktop/src/features/local-archive/ui
+  - desktop/src/features/local-archive/useAgentMetricArchiveSeed.test.mjs
+  - desktop/src/features/local-archive/useAgentMetricArchiveSeed.ts
+  - desktop/src/features/local-archive/useArchiveAgentMetricsBridge.ts
+  - desktop/src/features/local-archive/useArchiveSync.test.mjs
+  - desktop/src/features/local-archive/useArchiveSync.ts
+  - desktop/src/features/local-archive/useObserverArchiveSeed.test.mjs
+  - desktop/src/features/local-archive/useObserverArchiveSeed.ts
   - desktop/src/features/mesh-compute
   - desktop/src/features/messages/lib/agentAddressMention.d.mts
   - desktop/src/features/messages/lib/agentAddressMention.mjs

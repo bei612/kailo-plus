@@ -18,7 +18,7 @@ use sha2::{Digest, Sha256};
 use tauri::{AppHandle, Manager, State};
 
 use crate::app_state::AppState;
-use crate::relay::query_relay;
+use crate::relay::{query_relay_at, relay_api_base_url_with_override};
 use store::{ArchiveStore, Subscription};
 
 const PAGE_SIZE: usize = 500;
@@ -74,27 +74,42 @@ pub(crate) fn access_from_roster(roster: &[nostr::Event], metadata_readable: boo
     }
 }
 
-async fn probe(state: &AppState, identity: &str, channel_id: &str) -> Access {
-    let roster = match query_relay(
+async fn query_in_scope(state: &AppState, identity: &str, relay: &str, filters: &[serde_json::Value]) -> Result<Vec<nostr::Event>, Access> {
+    let check = || {
+        state.signing_keys().is_ok_and(|keys| keys.public_key().to_hex() == identity)
+            && relay_api_base_url_with_override(state) == relay
+    };
+    if !check() { return Err(Access::Unknown); }
+    let result = query_relay_at(state, relay, filters).await;
+    if !check() { return Err(Access::Unknown); }
+    result.map_err(|error| classify_relay_error(&error))
+}
+
+async fn probe(state: &AppState, identity: &str, relay: &str, channel_id: &str) -> Access {
+    let roster = match query_in_scope(
         state,
+        identity,
+        relay,
         &[serde_json::json!({"kinds": [39002], "#d": [channel_id], "limit": 1})],
     )
     .await
     {
         Ok(events) => events,
-        Err(error) => return classify_relay_error(&error),
+        Err(access) => return access,
     };
     if !roster.is_empty() {
         return access_from_roster(&roster, false, identity);
     }
-    match query_relay(
+    match query_in_scope(
         state,
+        identity,
+        relay,
         &[serde_json::json!({"kinds": [39000], "#d": [channel_id], "limit": 1})],
     )
     .await
     {
         Ok(meta) => access_from_roster(&[], !meta.is_empty(), identity),
-        Err(error) => classify_relay_error(&error),
+        Err(access) => access,
     }
 }
 
@@ -155,6 +170,7 @@ fn erase(dir: &Path, tag: &str) -> Result<(), String> {
 struct Opened {
     store: ArchiveStore,
     identity: String,
+    relay: String,
     dir: PathBuf,
     tag: String,
 }
@@ -181,7 +197,7 @@ fn open(app: &AppHandle, state: &AppState) -> Result<Opened, String> {
         }
     };
     let conn = Connection::open(dir.join(format!("{tag}.sqlite"))).map_err(|e| format!("open local archive: {e}"))?;
-    Ok(Opened { store: ArchiveStore::open(conn, key)?, identity, dir, tag })
+    Ok(Opened { store: ArchiveStore::open(conn, key)?, identity, relay: relay_api_base_url_with_override(state), dir, tag })
 }
 
 fn now() -> i64 {
@@ -235,7 +251,7 @@ pub async fn local_archive_subscribe(
 ) -> Result<LocalArchiveStatus, String> {
     let _guard = lock().lock().await;
     let opened = open(&app, &state)?;
-    match probe(&state, &opened.identity, &channel_id).await {
+    match probe(&state, &opened.identity, &opened.relay, &channel_id).await {
         Access::Readable => {}
         Access::Lost => {
             opened.store.unsubscribe(&channel_id)?;
@@ -296,9 +312,9 @@ pub async fn local_archive_sync(app: AppHandle, state: State<'_, AppState>) -> R
     let mut opened = open(&app, &state)?;
     let mut results = Vec::new();
     for sub in opened.store.subscriptions()? {
-        let access = probe(&state, &opened.identity, &sub.channel_id).await;
+        let access = probe(&state, &opened.identity, &opened.relay, &sub.channel_id).await;
         let outcome = match access {
-            Access::Readable => pull(&state, &mut opened.store, &sub).await,
+            Access::Readable => pull(&state, &opened.identity, &opened.relay, &mut opened.store, &sub).await,
             other => Err(other),
         };
         match outcome {
@@ -325,7 +341,7 @@ pub async fn local_archive_sync(app: AppHandle, state: State<'_, AppState>) -> R
     Ok(results)
 }
 
-async fn pull(state: &AppState, store: &mut ArchiveStore, sub: &Subscription) -> Result<(usize, i64), Access> {
+async fn pull(state: &AppState, identity: &str, relay: &str, store: &mut ArchiveStore, sub: &Subscription) -> Result<(usize, i64), Access> {
     // Deletions are required even when the user selected messages only.
     let mut kinds = sub.kinds.clone();
     kinds.extend([5, 9005]);
@@ -345,7 +361,7 @@ async fn pull(state: &AppState, store: &mut ArchiveStore, sub: &Subscription) ->
         cursor = cursor.max(newest);
     }
     for _ in 0..MAX_PAGES_PER_SYNC {
-        let page = query_relay(state, &[filter.clone()]).await.map_err(|e| classify_relay_error(&e))?;
+        let page = query_in_scope(state, identity, relay, &[filter.clone()]).await?;
         stored += store.ingest(&sub.channel_id, &page).map_err(|_| Access::Unknown)?;
         if let Some(newest) = page.iter().map(|e| e.created_at.as_secs() as i64).max() {
             cursor = cursor.max(newest);
