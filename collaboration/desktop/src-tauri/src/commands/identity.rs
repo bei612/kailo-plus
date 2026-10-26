@@ -377,6 +377,8 @@ pub async fn persist_current_identity(
             .identity_lost
             .store(false, std::sync::atomic::Ordering::Release);
 
+        crate::local_archive::erase_previous_identity(&app_handle, &state)?;
+
         let pubkey = keys.public_key();
         let pubkey_hex = pubkey.to_hex();
         let display_name = truncated_display_name(&pubkey)?;

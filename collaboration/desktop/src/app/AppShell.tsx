@@ -43,6 +43,8 @@ import { requestFocusedThreadClose } from "@/features/channels/focusedThreadClos
 import { useChannelStars } from "@/features/sidebar/lib/useChannelStars";
 import { useIdentityQuery } from "@/shared/api/hooks";
 import { useRelayAutoHeal } from "@/shared/api/useRelayAutoHeal";
+// DD-159: periodic local archive sync through this device's own Relay session.
+import { useLocalArchiveBackgroundSync } from "@/features/local-archive/useLocalArchiveBackgroundSync";
 import { useWebviewScrollBoundaryLock } from "@/shared/hooks/useWebviewScrollBoundaryLock";
 import type { SearchHit } from "@/shared/api/types";
 import { ChannelNavigationProvider } from "@/shared/context/ChannelNavigationContext";
@@ -117,6 +119,7 @@ export function AppShell() {
   );
   const profileQuery = useProfileQuery();
   useRelayAutoHeal();
+  useLocalArchiveBackgroundSync(Boolean(identityQuery.data?.pubkey));
   useMembershipNotifications(identityQuery.data?.pubkey);
   const { feedProfilesQuery, homeFeedQuery, notificationSettings } =
     useHomeFeedNotifications(identityQuery.data?.pubkey);

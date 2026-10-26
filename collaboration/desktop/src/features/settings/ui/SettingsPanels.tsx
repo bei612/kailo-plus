@@ -27,6 +27,8 @@ import { KeyboardShortcutsCard } from "./KeyboardShortcutsCard";
 import { NotificationSettingsCard } from "./NotificationSettingsCard";
 // DD-125(5): the original Desktop-only Updates section.
 import { UpdateChecker } from "../UpdateChecker";
+// DD-159: the original Desktop-only Local archive section.
+import { LocalArchiveSettingsCard } from "@/features/local-archive/LocalArchiveSettingsCard";
 
 export type { SettingsSection } from "@client-kit/platform/react/settings";
 
@@ -43,6 +45,7 @@ const SETTINGS_SECTION_VALUES: readonly SettingsSection[] = [
   "community-members",
   "moderation",
   "custom-emoji",
+  "local-archive",
   "channel-templates",
   "agents",
   "connectors",
@@ -128,6 +131,8 @@ export function renderSettingsSection(
       return <ModerationQueueCard />;
     case "updates":
       return <UpdateChecker />;
+    case "local-archive":
+      return <LocalArchiveSettingsCard />;
     default: {
       const exhaustiveCheck: never = section;
       return exhaustiveCheck;
