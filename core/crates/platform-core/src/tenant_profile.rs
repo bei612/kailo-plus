@@ -92,7 +92,7 @@ pub(crate) fn validate_params(p: &Params) -> Result<(), Refusal> {
     };
     if *p != expected
         || p.explicit_confirmation != Some(true)
-        || !p.resource_version.is_some_and(|v| v > 0)
+        || p.resource_version.is_none_or(|v| v <= 0)
     {
         return Err(invalid());
     }
