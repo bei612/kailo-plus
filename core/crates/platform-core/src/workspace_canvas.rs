@@ -724,9 +724,20 @@ async fn apply_observation(
         "update admission.workspace_canvas_intent
          set relay_ack = 'ACCEPTED', outcome = 'VERIFIED', settled_at = now()
          where action_execution_id = $1 and outcome is null",
-    ).bind(ae.id).execute(&mut **tx).await?;
-    audit(tx, ae, definition, Stage::outcome("verify", "VERIFIED"), evidence.clone()).await?;
-    crate::governance::record_dispatch(tx, ae.id, definition.audit_class(), Ok(()), evidence).await?;
+    )
+    .bind(ae.id)
+    .execute(&mut **tx)
+    .await?;
+    audit(
+        tx,
+        ae,
+        definition,
+        Stage::outcome("verify", "VERIFIED"),
+        evidence.clone(),
+    )
+    .await?;
+    crate::governance::record_dispatch(tx, ae.id, definition.audit_class(), Ok(()), evidence)
+        .await?;
     Ok(true)
 }
 
@@ -1064,36 +1075,76 @@ mod tests {
         ));
     }
 
-
     #[tokio::test]
     #[ignore = "requires PUBLICATION_ABSENCE_TEST_DATABASE_URL pointing at an isolated migrated database"]
     async fn historical_absence_canvas_replay_stays_unknown_until_positive_evidence() {
         let mut tx = crate::agent_profile::tests::absence_fixture().await;
-        let id: Uuid = sqlx::query_scalar("select id from absence_fixture where label='canvas-false'").fetch_one(&mut *tx).await.unwrap();
-        let ae = crate::governance::lock_execution(&mut tx,id).await.unwrap();
-        assert_eq!(ae.dispatch_state,"UNKNOWN");
+        let id: Uuid =
+            sqlx::query_scalar("select id from absence_fixture where label='canvas-false'")
+                .fetch_one(&mut *tx)
+                .await
+                .unwrap();
+        let ae = crate::governance::lock_execution(&mut tx, id)
+            .await
+            .unwrap();
+        assert_eq!(ae.dispatch_state, "UNKNOWN");
         assert!(ae.reason_code.is_none());
-        let definition: Definition = sqlx::query_as(&format!("select {} from catalog.action_definition where action_key=$1 and version=1",crate::governance::DEFINITION_COLUMNS)).bind(ACTION).fetch_one(&mut *tx).await.unwrap();
+        let definition: Definition = sqlx::query_as(&format!(
+            "select {} from catalog.action_definition where action_key=$1 and version=1",
+            crate::governance::DEFINITION_COLUMNS
+        ))
+        .bind(ACTION)
+        .fetch_one(&mut *tx)
+        .await
+        .unwrap();
         let intent: Intent = sqlx::query_as("select action_execution_id,tenant_id,workspace_id,channel_id,control_pubkey,event_id,event_created_at,outcome from admission.workspace_canvas_intent where action_execution_id=$1").bind(id).fetch_one(&mut *tx).await.unwrap();
-        assert_eq!(intent.event_created_at,1,"old signed time cannot establish absence");
-        for observed in [Some(false),None] {
-            assert!(!apply_observation(&mut tx,&ae,&definition,&intent,observed).await.unwrap());
-            let current = crate::governance::lock_execution(&mut tx,id).await.unwrap();
-            assert_eq!(current.dispatch_state,"UNKNOWN");
+        assert_eq!(
+            intent.event_created_at, 1,
+            "old signed time cannot establish absence"
+        );
+        for observed in [Some(false), None] {
+            assert!(
+                !apply_observation(&mut tx, &ae, &definition, &intent, observed)
+                    .await
+                    .unwrap()
+            );
+            let current = crate::governance::lock_execution(&mut tx, id)
+                .await
+                .unwrap();
+            assert_eq!(current.dispatch_state, "UNKNOWN");
             let outcome: Option<String> = sqlx::query_scalar("select outcome from admission.workspace_canvas_intent where action_execution_id=$1").bind(id).fetch_one(&mut *tx).await.unwrap();
             assert!(outcome.is_none());
         }
-        assert!(apply_observation(&mut tx,&ae,&definition,&intent,Some(true)).await.unwrap());
-        let current = crate::governance::lock_execution(&mut tx,id).await.unwrap();
-        assert_eq!(current.dispatch_state,"DISPATCHED");
+        assert!(
+            apply_observation(&mut tx, &ae, &definition, &intent, Some(true))
+                .await
+                .unwrap()
+        );
+        let current = crate::governance::lock_execution(&mut tx, id)
+            .await
+            .unwrap();
+        assert_eq!(current.dispatch_state, "DISPATCHED");
         let audit: Vec<(String,String)> = sqlx::query_as("select event_type,result_code from audit.audit_event where operation_id=$1 order by event_key").bind(ae.operation_id).fetch_all(&mut *tx).await.unwrap();
-        assert!(audit.contains(&("RECONCILIATION".into(),"NOT_DELIVERED".into())));
-        assert!(audit.contains(&("RECONCILIATION".into(),"UNKNOWN".into())));
-        assert!(audit.contains(&("OUTCOME".into(),"VERIFIED".into())));
-        sqlx::query("savepoint cannot_restore_false_negative").execute(&mut *tx).await.unwrap();
-        assert!(sqlx::raw_sql(include_str!("../../../migrations/20261101010000_publication_absence_correction.down.sql")).execute(&mut *tx).await.is_err(),"rollback cannot revive the false terminal");
-        sqlx::query("rollback to savepoint cannot_restore_false_negative").execute(&mut *tx).await.unwrap();
+        assert!(audit.contains(&("RECONCILIATION".into(), "NOT_DELIVERED".into())));
+        assert!(audit.contains(&("RECONCILIATION".into(), "UNKNOWN".into())));
+        assert!(audit.contains(&("OUTCOME".into(), "VERIFIED".into())));
+        sqlx::query("savepoint cannot_restore_false_negative")
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        assert!(
+            sqlx::raw_sql(include_str!(
+                "../../../migrations/20261101010000_publication_absence_correction.down.sql"
+            ))
+            .execute(&mut *tx)
+            .await
+            .is_err(),
+            "rollback cannot revive the false terminal"
+        );
+        sqlx::query("rollback to savepoint cannot_restore_false_negative")
+            .execute(&mut *tx)
+            .await
+            .unwrap();
         tx.rollback().await.unwrap();
     }
-
 }

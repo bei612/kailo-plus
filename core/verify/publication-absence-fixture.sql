@@ -3,7 +3,7 @@ CREATE TEMP TABLE absence_fixture(label text PRIMARY KEY,id uuid NOT NULL) ON CO
 DO $$
 DECLARE
  tenant uuid:=gen_random_uuid(); workspace uuid:=gen_random_uuid();
- human uuid:=gen_random_uuid(); agent uuid:=gen_random_uuid(); control uuid:=gen_random_uuid();
+ human uuid:=gen_random_uuid(); human_identity uuid:=gen_random_uuid(); agent uuid:=gen_random_uuid(); control uuid:=gen_random_uuid();
  definition uuid:=gen_random_uuid(); version_asset uuid:=gen_random_uuid();
  installation uuid:=gen_random_uuid(); route uuid:=gen_random_uuid();
  activation uuid:=gen_random_uuid(); operation uuid:=gen_random_uuid();
@@ -17,6 +17,8 @@ BEGIN
  INSERT INTO identity.workspace(id,tenant_id,slug,name,state) VALUES(workspace,tenant,'absence','absence fixture','ACTIVE');
  INSERT INTO identity.principal(id,tenant_id,kind,status) VALUES
    (human,tenant,'HUMAN','ACTIVE'),(agent,tenant,'AGENT','ACTIVE'),(control,tenant,'SERVICE','ACTIVE');
+ INSERT INTO identity.human_identity(id,display_name,status) VALUES(human_identity,'absence fixture','ACTIVE');
+ INSERT INTO identity.tenant_membership(id,tenant_id,human_identity_id,tenant_principal_id,state) VALUES(gen_random_uuid(),tenant,human_identity,human,'ACTIVE');
  INSERT INTO catalog.resource(id,tenant_id,type_key,home_workspace_id,owner_principal_id,component_type_key,native_id,state,version)
  VALUES (definition,tenant,'agent.definition',NULL,human,'core',definition::text,'PROVISIONING',1),
    (route,tenant,'llm_route',workspace,human,'core',route::text,'PROVISIONING',1),
@@ -32,7 +34,8 @@ BEGIN
  VALUES(installation,workspace,definition,version_asset,agent,'fixture:'||installation,'PROVISIONING');
  INSERT INTO catalog.agent_runtime_projection(installation_resource_id,generation,agent_version_asset_id,runtime_profile_key,
    model_route_resource_id,gateway_resource_ids,effective_fields,config_hash,state)
- VALUES(installation,1,version_asset,'absence',route,'{}','[]',repeat('a',64),'ACTIVE');
+ VALUES(installation,1,version_asset,'absence',route,ARRAY[route],
+   jsonb_build_array(jsonb_build_object('fieldKey','runtimeProfileKey','requestedValueHash',repeat('a',64),'effectiveValueHash',repeat('a',64),'reasonCode',NULL)),repeat('a',64),'ACTIVE');
  UPDATE catalog.agent_installation SET state='ACTIVE',active_projection_generation=1 WHERE resource_id=installation;
  INSERT INTO identity.buzz_identity_binding(tenant_id,principal_id,pubkey,custody,private_key_secret_ref,
    private_key_secret_version,private_key_secret_audience,private_key_secret_status,kind,state)
