@@ -754,10 +754,7 @@ fn not_written(ae: &Execution) -> Refusal {
 
 /// Called by the existing publication reconciler tick (DD-81) with its batch.
 /// It only reads back fixed event IDs; it never signs or delivers.
-pub(crate) async fn reconcile(
-    state: &ServiceState,
-    batch: i64,
-) -> Result<(), String> {
+pub(crate) async fn reconcile(state: &ServiceState, batch: i64) -> Result<(), String> {
     let ids: Vec<Uuid> = sqlx::query_scalar(
         "with selected as (
            select a.id from admission.action_execution a

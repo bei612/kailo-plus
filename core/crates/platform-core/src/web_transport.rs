@@ -3284,7 +3284,12 @@ async fn publish(
     }
 
     match client
-        .deliver_scoped(&state.relay_http, &event, delivery_scope.community_id, admitted)
+        .deliver_scoped(
+            &state.relay_http,
+            &event,
+            delivery_scope.community_id,
+            admitted,
+        )
         .await
     {
         Delivery::Accepted => {
