@@ -187,6 +187,32 @@ impl std::fmt::Debug for IdentityClient {
     }
 }
 
+/// Metadata from the writer's verified, including-deleted event. No payload or
+/// deletion state crosses this read-only boundary; an error never proves absence.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PublicationObservation {
+    pub event_id: String,
+    pub community_id: Uuid,
+    pub pubkey: String,
+    pub kind: u16,
+    pub channel_id: Option<Uuid>,
+}
+
+fn scoped_delivery(value: Value, event_id: &str, community: Uuid) -> Delivery {
+    let (Some(id), Some(scope), Some(accepted), Some(message)) = (
+        value.get("event_id").and_then(Value::as_str),
+        value.get("community_id").and_then(Value::as_str),
+        value.get("accepted").and_then(Value::as_bool),
+        value.get("message").and_then(Value::as_str),
+    ) else { return Delivery::Unknown("Relay scoped acknowledgement is incomplete".into()); };
+    if id != event_id || scope != community.to_string() {
+        return Delivery::Unknown("Relay scoped acknowledgement does not match".into());
+    }
+    if accepted || message.starts_with("duplicate:") { Delivery::Accepted }
+    else { Delivery::Rejected(message.to_owned()) }
+}
+
 impl IdentityClient {
     /// `custody` 必须是 `Server`。`Client` 托管的身份由原生端自己持钥并直连
     /// Relay，Core 手里没有那把钥匙——在这里尝试代签意味着实现走错了路径，
@@ -1137,6 +1163,55 @@ impl IdentityClient {
         }
     }
 
+    /// New Core publications bind both the NIP-98 request and ACK to the
+    /// admitted immutable Community. Existing unscoped/native callers stay unchanged.
+    pub async fn deliver_scoped(
+        &self,
+        http: &reqwest::Client,
+        event: &Event,
+        community: Uuid,
+        _admitted: Admitted,
+    ) -> Delivery {
+        let payload = match serde_json::to_vec(event) {
+            Ok(payload) => payload,
+            Err(error) => return Delivery::Unknown(error.to_string()),
+        };
+        let path = format!("/events?community={community}");
+        match self.bridge_post_scoped(http, &path, &payload, Some(community)).await {
+            Ok(value) => scoped_delivery(value, &event.id.to_hex(), community),
+            Err(error) if error.limit().is_some() => {
+                Delivery::Limited(error.limit().expect("checked limit"), error.to_string())
+            }
+            Err(OperatorError::Rejected { status, body }) if (400..500).contains(&status) => {
+                Delivery::Rejected(format!("HTTP {status} {body}"))
+            }
+            Err(error) => Delivery::Unknown(error.to_string()),
+        }
+    }
+
+    pub async fn observe_publication(
+        &self,
+        http: &reqwest::Client,
+        event_id: &str,
+        community_id: Uuid,
+    ) -> Result<PublicationObservation, OperatorError> {
+        let payload = serde_json::to_vec(&serde_json::json!({ "event_id": event_id, "community_id": community_id }))
+            .map_err(|error| OperatorError::Sign(error.to_string()))?;
+        let value = self.bridge_post(http, "/events/observation", &payload).await?;
+        if !value.as_object().is_some_and(|object| object.len() == 5 && object.contains_key("channel_id")) {
+            return Err(OperatorError::Sign("publication observation fields are incomplete".into()));
+        }
+        let observation: PublicationObservation = serde_json::from_value(value)
+            .map_err(|error| OperatorError::Sign(error.to_string()))?;
+        if observation.event_id != event_id || observation.community_id != community_id
+            || !nostr::PublicKey::from_hex(&observation.pubkey)
+                .is_ok_and(|key| key.to_hex() == observation.pubkey)
+        {
+            return Err(OperatorError::Sign("publication observation scope mismatch".into()));
+        }
+        Ok(observation)
+    }
+
     /// 按 event id 查 Relay 是否存着这条事件。只用于结果不明后的对账。
     pub async fn event_exists(
         &self,
@@ -1623,11 +1698,21 @@ impl IdentityClient {
         path: &str,
         payload: &[u8],
     ) -> Result<Value, OperatorError> {
+        self.bridge_post_scoped(http, path, payload, None).await
+    }
+
+    async fn bridge_post_scoped(
+        &self,
+        http: &reqwest::Client,
+        path: &str,
+        payload: &[u8],
+        community: Option<Uuid>,
+    ) -> Result<Value, OperatorError> {
         // 签名对 Community host，请求发往 Relay 的网络地址并显式带同一 Host 头。
         // 两者必须一致：Relay 用 Host 绑定 Community，又用它构造签名期望 URL。
         let signed_url = format!("http://{}{}", self.community_host, path);
         let url = self.transport.join(path)?;
-        let header = self.nip98_header("POST", &signed_url, payload)?;
+        let header = self.nip98_scoped_header("POST", &signed_url, payload, community)?;
         let resp = http
             .post(url)
             .header(reqwest::header::HOST, &self.community_host)
@@ -1680,17 +1765,24 @@ impl IdentityClient {
 
     /// 与 operator 面同一形状：u / method / nonce 必给，带 body 再加 payload 摘要。
     fn nip98_header(&self, method: &str, url: &str, body: &[u8]) -> Result<String, OperatorError> {
+        self.nip98_scoped_header(method, url, body, None)
+    }
+
+    fn nip98_scoped_header(&self, method: &str, url: &str, body: &[u8], community: Option<Uuid>) -> Result<String, OperatorError> {
         let tag = |parts: [&str; 2]| {
             Tag::parse(parts).map_err(|e| OperatorError::Sign(format!("NIP-98 tag: {e}")))
         };
         let nonce = uuid::Uuid::new_v4().to_string();
         let payload_hash = hex::encode(Sha256::digest(body));
-        let tags = vec![
+        let mut tags = vec![
             tag(["u", url])?,
             tag(["method", method])?,
             tag(["nonce", &nonce])?,
             tag(["payload", &payload_hash])?,
         ];
+        if let Some(community) = community {
+            tags.push(tag(["community", &community.to_string()])?);
+        }
         self.http_auth_header(tags)
     }
 
@@ -3512,5 +3604,100 @@ mod channel_metadata_tests {
             buzz_core::channel::topic_change(&topic),
             Some((channel, "Train"))
         );
+    }
+}
+
+#[cfg(test)]
+mod scoped_publication_tests {
+    use super::*;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    async fn endpoint(path: String, expected_body: Value, community: Option<Uuid>, response: Value, status: u16) -> (IdentityClient, tokio::task::JoinHandle<()>) {
+        let listener = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+        let keys = Keys::generate();
+        let client = IdentityClient::new(Custody::Server, &keys.secret_key().to_secret_hex(),
+            &format!("http://{}", listener.local_addr().unwrap()), "publication.platform.test").unwrap();
+        let author = keys.public_key();
+        let task = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut received = Vec::new();
+            let mut chunk = [0; 4096];
+            let header_end = loop {
+                let n = socket.read(&mut chunk).await.unwrap(); assert_ne!(n, 0);
+                received.extend_from_slice(&chunk[..n]);
+                if let Some(end) = received.windows(4).position(|bytes| bytes == b"\r\n\r\n") { break end + 4; }
+            };
+            let head = String::from_utf8(received[..header_end].to_vec()).unwrap();
+            assert!(head.starts_with(&format!("POST {path} HTTP/1.1\r\n")));
+            let header = |name: &str| head.lines().filter_map(|line| line.split_once(':'))
+                .find(|(key, _)| key.eq_ignore_ascii_case(name)).unwrap().1.trim().to_owned();
+            let length: usize = header("content-length").parse().unwrap();
+            while received.len() - header_end < length {
+                let n = socket.read(&mut chunk).await.unwrap(); assert_ne!(n, 0);
+                received.extend_from_slice(&chunk[..n]);
+            }
+            let body = &received[header_end..];
+            assert_eq!(serde_json::from_slice::<Value>(body).unwrap(), expected_body);
+            assert_eq!(header("host"), "publication.platform.test");
+            let auth: Event = serde_json::from_slice(&base64::engine::general_purpose::STANDARD
+                .decode(header("authorization").strip_prefix("Nostr ").unwrap()).unwrap()).unwrap();
+            auth.verify().unwrap(); assert_eq!(auth.pubkey, author);
+            let values = |name: &str| auth.tags.iter().map(Tag::as_slice)
+                .filter(|tag| tag.first().is_some_and(|value| value == name)).map(|tag| tag[1].clone()).collect::<Vec<_>>();
+            assert_eq!(values("u"), [format!("http://publication.platform.test{path}")]);
+            assert_eq!(values("method"), ["POST"]);
+            assert_eq!(values("payload"), [hex::encode(Sha256::digest(body))]);
+            assert_eq!(values("community"), community.into_iter().map(|id| id.to_string()).collect::<Vec<_>>());
+            let body = response.to_string();
+            socket.write_all(format!("HTTP/1.1 {status} Test\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).as_bytes()).await.unwrap();
+        });
+        (client, task)
+    }
+
+    #[tokio::test]
+    async fn scoped_send_signs_community_and_accepts_only_matching_ack() {
+        let event = EventBuilder::new(Kind::from(9), "test").sign_with_keys(&Keys::generate()).unwrap();
+        let community = Uuid::new_v4();
+        let id = event.id.to_hex();
+        let valid = serde_json::json!({"event_id":id,"community_id":community,"accepted":true,"message":""});
+        for field in [None, Some("community_id"), Some("event_id"), Some("missing")] {
+            let mut response = valid.clone();
+            match field {
+                Some("community_id") => response["community_id"] = Uuid::new_v4().to_string().into(),
+                Some("event_id") => response["event_id"] = "00".repeat(32).into(),
+                Some(_) => { response.as_object_mut().unwrap().remove("community_id"); },
+                None => {},
+            }
+            let (client, task) = endpoint(format!("/events?community={community}"), serde_json::to_value(&event).unwrap(), Some(community), response, 200).await;
+            let result = client.deliver_scoped(&reqwest::Client::new(), &event, community, client.admit().unwrap()).await;
+            task.await.unwrap();
+            assert_eq!(matches!(result, Delivery::Accepted), field.is_none(), "{field:?}: {result:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn scoped_observation_requires_exact_metadata_and_never_infers_absence() {
+        let event = EventBuilder::new(Kind::from(5), "").sign_with_keys(&Keys::generate()).unwrap();
+        let community = Uuid::new_v4(); let id = event.id.to_hex();
+        let expected = serde_json::json!({"event_id":id,"community_id":community});
+        let valid = serde_json::json!({"event_id":id,"community_id":community,"pubkey":event.pubkey.to_hex(),"kind":5,"channel_id":null});
+        for fault in ["none", "missing_channel", "body", "community", "event", "author", "absent", "denied"] {
+            let mut response = valid.clone();
+            let mut status = 200;
+            match fault {
+                "missing_channel" => { response.as_object_mut().unwrap().remove("channel_id"); },
+                "body" => response["content"] = "must not be exposed".into(),
+                "community" => response["community_id"] = Uuid::new_v4().to_string().into(),
+                "event" => response["event_id"] = "00".repeat(32).into(),
+                "author" => response["pubkey"] = "invalid".into(),
+                "absent" => status = 404,
+                "denied" => status = 403,
+                _ => {},
+            }
+            let (client, task) = endpoint("/events/observation".into(), expected.clone(), None, response, status).await;
+            let result = client.observe_publication(&reqwest::Client::new(), &id, community).await;
+            task.await.unwrap();
+            assert_eq!(result.is_ok(), fault == "none", "{fault}: {result:?}");
+        }
     }
 }

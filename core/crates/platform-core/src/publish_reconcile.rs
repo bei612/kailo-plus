@@ -29,13 +29,9 @@ use crate::service_api::ServiceState;
 use crate::tenant_lifecycle::{control_client, ProjectionDirection};
 use crate::web_transport::{
     CONVERSATION_HIDE_ACTION, CONVERSATION_PUBLISH_ACTION, CONVERSATION_REOPEN_ACTION,
-    FILTERED_PUBLICATION_ACTIONS, PUBLISH_ACTION, TOPIC_ACTION,
+    FILTERED_PUBLICATION_ACTIONS, PUBLISH_ACTION, TOPIC_ACTION, MessageTarget, PublicationScope,
+    publication_binding, owned_publication_installation,
 };
-
-/// Community-global project publications the reconciler settles: NIP-34
-/// issues, reviews and their lifecycle, the DD-118 merged status (1631)
-/// included.
-const COMMUNITY_PROJECT_KINDS: [i32; 8] = [1, 5, 1618, 1621, 1630, 1631, 1632, 1633];
 
 pub struct Config {
     pub interval: Duration,
@@ -372,6 +368,19 @@ async fn write_reconciliation(
 ) -> &'static str {
     let written = async {
         let mut tx = state.pool.begin().await?;
+        // Local revocation/binding changes after the HTTP/fresh-authorization
+        // recheck cannot race a new ACCEPTED audit row. No external I/O here.
+        if result_code == "ACCEPTED" {
+            let actor = p.actor_principal_id.ok_or(sqlx::Error::RowNotFound)?;
+            let target = publication_target(p).map_err(|_| sqlx::Error::RowNotFound)?;
+            let scope: Option<Option<serde_json::Value>> = sqlx::query_scalar(
+                "select delivery_scope from admission.publish_attempt where operation_id=$1 and event_id=$2 and tenant_principal_id=$3 for share")
+                .bind(p.operation_id).bind(&p.event_id).bind(actor).fetch_optional(&mut *tx).await?;
+            let scope = parse_frozen_scope(scope.flatten()).map_err(|_| sqlx::Error::RowNotFound)?;
+            if !crate::web_transport::locked_publication_scope_matches(&mut tx, p.tenant_id, actor, target, &scope).await? {
+                return Err(sqlx::Error::RowNotFound);
+            }
+        }
         append(&mut tx, reconciliation_entry(p, result_code)).await?;
         tx.commit().await
     }
@@ -415,251 +424,101 @@ fn reconciliation_entry<'a>(p: &'a Pending, result_code: &'a str) -> AuditEntry<
     }
 }
 
+fn publication_target(p: &Pending) -> Result<MessageTarget, &'static str> {
+    match (p.action_key.as_str(), p.target_type.as_deref(), p.target_id, p.workspace_id) {
+        (PUBLISH_ACTION | TOPIC_ACTION | crate::projects::PUBLISH_ACTION, Some("CHANNEL"), Some(target), Some(workspace)) if target == workspace => Ok(MessageTarget::Workspace(workspace)),
+        (CONVERSATION_PUBLISH_ACTION | CONVERSATION_HIDE_ACTION | CONVERSATION_REOPEN_ACTION, Some("CONVERSATION"), Some(id), None) => Ok(MessageTarget::Conversation(id)),
+        (crate::pulse::PUBLISH_ACTION | crate::projects::PUBLISH_ACTION | crate::reminders::PUBLISH_ACTION, Some("TENANT"), Some(tenant), None) if tenant == p.tenant_id => Ok(MessageTarget::Pulse(tenant)),
+        _ => Err("EVIDENCE_MISSING"),
+    }
+}
+
+async fn frozen_scope(state: &ServiceState, p: &Pending) -> Result<PublicationScope, &'static str> {
+    let actor = p.actor_principal_id.ok_or("EVIDENCE_MISSING")?;
+    let scope: Option<Option<serde_json::Value>> = sqlx::query_scalar(
+        "select delivery_scope from admission.publish_attempt where operation_id=$1 and event_id=$2 and tenant_principal_id=$3")
+        .bind(p.operation_id).bind(&p.event_id).bind(actor).fetch_optional(&state.pool).await
+        .map_err(|_| "EVIDENCE_UNREADABLE")?;
+    // Never synthesize the original Community, actual kind or signer from today's
+    // host / the old message_kind default. Legacy attempts remain unresolved.
+    parse_frozen_scope(scope.flatten())
+}
+
+fn parse_frozen_scope(value: Option<serde_json::Value>) -> Result<PublicationScope, &'static str> {
+    let value = value.ok_or("EVIDENCE_MISSING")?;
+    if !value.as_object().is_some_and(|object| object.len() == 8
+        && ["target_channel_id", "target_binding_version", "event_channel_id", "signer_installation_id"]
+            .iter().all(|key| object.contains_key(*key))) { return Err("EVIDENCE_INVALID"); }
+    serde_json::from_value(value).map_err(|_| "EVIDENCE_INVALID")
+}
+
+async fn current_scope(
+    state: &ServiceState, p: &Pending, target: MessageTarget, scope: &PublicationScope,
+) -> Result<crate::web_transport::PublicationBinding, &'static str> {
+    let actor = p.actor_principal_id.ok_or("EVIDENCE_MISSING")?;
+    let binding = publication_binding(state, p.tenant_id, actor, target).await?;
+    if !scope.matches_binding(&binding) { return Err("SCOPE_CHANGED"); }
+    if let Some(installation) = scope.signer_installation_id {
+        let MessageTarget::Workspace(workspace) = target else { return Err("EVIDENCE_INVALID"); };
+        if !matches!(scope.event_kind, 5 | 40003) || p.action_key != PUBLISH_ACTION
+            || owned_publication_installation(state, p.tenant_id, actor, workspace, &scope.event_pubkey).await? != installation
+        { return Err("ACTOR_UNREADABLE"); }
+    } else {
+        let author: Option<String> = sqlx::query_scalar("select pubkey from identity.buzz_identity_binding where tenant_id=$1 and principal_id=$2 and kind='HUMAN' and custody='SERVER' and state='ACTIVE'")
+            .bind(p.tenant_id).bind(actor).fetch_optional(&state.pool).await.map_err(|_| "ACTOR_UNREADABLE")?;
+        if author.as_deref() != Some(&scope.event_pubkey) { return Err("ACTOR_UNREADABLE"); }
+    }
+    Ok(binding)
+}
+
 async fn observe_delivery(state: &ServiceState, p: &Pending) -> Result<bool, &'static str> {
-    if matches!(
-        p.action_key.as_str(),
-        crate::pulse::PUBLISH_ACTION
-            | crate::projects::PUBLISH_ACTION
-            | crate::reminders::PUBLISH_ACTION
-    ) {
-        let community_scope = p.target_type.as_deref() == Some("TENANT")
-            && p.target_id == Some(p.tenant_id)
-            && p.workspace_id.is_none();
-        let project_home_scope = p.action_key == crate::projects::PUBLISH_ACTION
-            && p.target_type.as_deref() == Some("CHANNEL")
-            && p.workspace_id.is_some()
-            && p.target_id == p.workspace_id;
-        if !community_scope && !project_home_scope {
-            return Err("EVIDENCE_MISSING");
-        }
-        let actor = p.actor_principal_id.ok_or("EVIDENCE_MISSING")?;
-        let before = crate::pulse::admit_actor(state, p.tenant_id, actor)
-            .await
-            .map_err(|_| "ACTOR_UNREADABLE")?;
-        let keys = crate::web_transport::server_actor_keys(
-            &state.pool,
-            &state.secrets,
-            p.tenant_id,
-            actor,
-        )
-        .await
-        .map_err(|_| "ACTOR_UNREADABLE")?;
-        let client = collab_bridge::bridge::IdentityClient::new(
-            collab_bridge::bridge::Custody::Server,
-            &keys.secret_key().to_secret_hex(),
-            &state.relay_transport,
-            &before.community_host,
-        )
-        .map_err(|_| "ACTOR_UNREADABLE")?;
-        let exists = if p.action_key == crate::reminders::PUBLISH_ACTION {
-            let kind: Option<i32> = sqlx::query_scalar(
-                "select message_kind from admission.publish_attempt where operation_id=$1 and event_id=$2 and tenant_principal_id=$3",
-            ).bind(p.operation_id).bind(&p.event_id).bind(actor).fetch_optional(&state.pool)
-                .await.map_err(|_| "EVIDENCE_UNREADABLE")?;
-            if kind != Some(collab_bridge::bridge::KIND_EVENT_REMINDER as i32) {
-                return Err("EVIDENCE_MISSING");
-            }
-            let page = client
-                .query(
-                    &state.relay_http,
-                    &[serde_json::json!({
-                        "ids":[p.event_id], "authors":[keys.public_key().to_hex()],
-                        "kinds":[collab_bridge::bridge::KIND_EVENT_REMINDER]
-                    })],
-                )
-                .await
-                .map_err(|_| "QUERY_FAILED")?;
-            let events: Vec<nostr::Event> =
-                serde_json::from_value(page).map_err(|_| "EVIDENCE_INVALID")?;
-            if events.iter().any(|e| {
-                e.id.to_hex() != p.event_id
-                    || e.pubkey != keys.public_key()
-                    || e.kind.as_u16() != collab_bridge::bridge::KIND_EVENT_REMINDER as u16
-                    || e.verify().is_err()
-            }) {
-                return Err("EVIDENCE_INVALID");
-            }
-            !events.is_empty()
-        } else if p.action_key == crate::projects::PUBLISH_ACTION {
-            // The original DISPATCH, actor and immutable event reference must
-            // select the same publication attempt before trusting its kind.
-            let kind: i32 = sqlx::query_scalar(
-                "select message_kind from admission.publish_attempt
-                 where operation_id=$1 and event_id=$2 and tenant_principal_id=$3",
-            )
-            .bind(p.operation_id)
-            .bind(&p.event_id)
-            .bind(actor)
-            .fetch_optional(&state.pool)
-            .await
-            .map_err(|_| "EVIDENCE_UNREADABLE")?
-            .ok_or("EVIDENCE_MISSING")?;
-            if (community_scope && !COMMUNITY_PROJECT_KINDS.contains(&kind))
-                || (project_home_scope && !matches!(kind, 30617 | 30621))
-            {
-                return Err("EVIDENCE_MISSING");
-            }
-            let page = client
-                .query(
-                    &state.relay_http,
-                    &[serde_json::json!({"ids":[p.event_id], "kinds":[kind]})],
-                )
-                .await
-                .map_err(|_| "QUERY_FAILED")?;
-            collab_bridge::projects::publication_observed(
-                page,
-                &p.event_id,
-                &keys.public_key().to_hex(),
-                kind,
-            )
-            .map_err(|_| "EVIDENCE_INVALID")?
-        } else {
-            client
-                .event_exists(&state.relay_http, &p.event_id)
-                .await
-                .map_err(|_| "QUERY_FAILED")?
-        };
-        let after = crate::pulse::admit_actor(state, p.tenant_id, actor)
-            .await
-            .map_err(|_| "ACTOR_UNREADABLE")?;
-        let current = crate::web_transport::server_actor_keys(
-            &state.pool,
-            &state.secrets,
-            p.tenant_id,
-            actor,
-        )
-        .await
-        .map_err(|_| "ACTOR_UNREADABLE")?;
-        if before != after || keys.public_key() != current.public_key() {
-            return Err("ACTOR_UNREADABLE");
-        }
-        // Parameterized replaceable announcements can disappear after a newer
-        // head or an accepted coordinate tombstone. An absent event is not
-        // proof the original mutation was never delivered, even after expiry.
-        if p.action_key == crate::projects::PUBLISH_ACTION && !exists {
-            return Err("PROJECT_EVENT_UNOBSERVABLE");
-        }
-        if p.action_key == crate::reminders::PUBLISH_ACTION && !exists {
-            // A newer 30300 head or expiration may have removed this exact event.
-            // Neither proves non-delivery; never replay an unknown reminder.
-            return Err("REMINDER_EVENT_UNOBSERVABLE");
-        }
-        return Ok(exists);
-    }
-    // DD-119(9)：成员主题命令（严格 h+topic 的 9002）随事件事务存储，CONTROL 按原
-    // event ID 查询肯定证据；普通查询空即使过窗仍未知，结果不明时从不另签。
-    if p.action_key == TOPIC_ACTION {
-        if p.target_type.as_deref() != Some("CHANNEL")
-            || p.workspace_id.is_none()
-            || p.target_id != p.workspace_id
-        {
-            return Err("EVIDENCE_MISSING");
-        }
-        let (control, _) = control_client(state, p.tenant_id, ProjectionDirection::Establish)
-            .await
-            .map_err(|_| "CONTROL_UNREADABLE")?;
-        return control
-            .event_exists(&state.relay_http, &p.event_id)
-            .await
-            .map_err(|_| "QUERY_FAILED");
-    }
-    if p.action_key == PUBLISH_ACTION {
-        if p.target_type.as_deref() != Some("CHANNEL")
-            || p.workspace_id.is_none()
-            || p.target_id != p.workspace_id
-        {
-            return Err("EVIDENCE_MISSING");
-        }
-        let (control, _) = control_client(state, p.tenant_id, ProjectionDirection::Establish)
-            .await
-            .map_err(|_| "CONTROL_UNREADABLE")?;
-        if control
-            .event_exists(&state.relay_http, &p.event_id)
-            .await
-            .map_err(|_| "QUERY_FAILED")?
-        {
-            return Ok(true);
-        }
-        // Relay queries hide soft-deleted events. The Relay only stores a kind:5
-        // deletion whose e-target already exists (validate_standard_deletion_event
-        // reads including deleted), so an accepted deletion of this exact id
-        // proves it was delivered. The deletion itself may also be deleted;
-        // absence of both is still UNKNOWN, regardless of the settle window.
-        let page = control
-            .query(
-                &state.relay_http,
-                &[serde_json::json!({
-                    "kinds": [collab_bridge::bridge::KIND_DELETION],
-                    "#e": [p.event_id],
-                })],
-            )
-            .await
-            .map_err(|_| "QUERY_FAILED")?;
-        let deletions: Vec<nostr::Event> =
-            serde_json::from_value(page).map_err(|_| "EVIDENCE_INVALID")?;
-        return Ok(deletions.iter().any(|deletion| {
-            u32::from(deletion.kind.as_u16()) == collab_bridge::bridge::KIND_DELETION
-                && deletion.verify().is_ok()
-                && deletion.tags.iter().map(nostr::Tag::as_slice).any(|tag| {
-                    tag.first().map(String::as_str) == Some("e") && tag.get(1) == Some(&p.event_id)
-                })
-        }));
-    }
-    if ![
-        CONVERSATION_PUBLISH_ACTION,
-        CONVERSATION_HIDE_ACTION,
-        CONVERSATION_REOPEN_ACTION,
-    ]
-    .contains(&p.action_key.as_str())
-        || p.target_type.as_deref() != Some("CONVERSATION")
-        || p.workspace_id.is_some()
-    {
-        return Err("EVIDENCE_MISSING");
-    }
-    let (Some(conversation), Some(actor)) = (p.target_id, p.actor_principal_id) else {
-        return Err("EVIDENCE_MISSING");
+    let target = publication_target(p)?;
+    let scope = frozen_scope(state, p).await?;
+    let before = current_scope(state, p, target, &scope).await?;
+    let actor = p.actor_principal_id.ok_or("EVIDENCE_MISSING")?;
+    // An owner may read metadata for an owned Agent's edit/delete through the
+    // Workspace CONTROL identity; the original signer and Installation remain
+    // frozen and checked. Private conversations never use CONTROL.
+    let client = if scope.signer_installation_id.is_some() {
+        let (client, host) = control_client(state, p.tenant_id, ProjectionDirection::Establish)
+            .await.map_err(|_| "CONTROL_UNREADABLE")?;
+        if host != before.community_host { return Err("SCOPE_CHANGED"); }
+        client
+    } else {
+        let keys = crate::web_transport::server_actor_keys(&state.pool, &state.secrets, p.tenant_id, actor)
+            .await.map_err(|_| "ACTOR_UNREADABLE")?;
+        if keys.public_key().to_hex() != scope.event_pubkey { return Err("ACTOR_UNREADABLE"); }
+        collab_bridge::bridge::IdentityClient::new(collab_bridge::bridge::Custody::Server,
+            &keys.secret_key().to_secret_hex(), &state.relay_transport, &before.community_host)
+            .map_err(|_| "ACTOR_UNREADABLE")?
     };
-    // CONTROL never joins a private conversation. Query only with its original
-    // human actor's currently authorized SERVER identity; denial is not absence.
-    let before =
-        crate::conversations::admit_reconciliation(state, p.tenant_id, actor, conversation)
-            .await
-            .map_err(|_| "PARTICIPANT_UNREADABLE")?;
-    let keys =
-        crate::web_transport::server_actor_keys(&state.pool, &state.secrets, p.tenant_id, actor)
-            .await
-            .map_err(|_| "PARTICIPANT_UNREADABLE")?;
-    let client = collab_bridge::bridge::IdentityClient::new(
-        collab_bridge::bridge::Custody::Server,
-        &keys.secret_key().to_secret_hex(),
-        &state.relay_transport,
-        &before.community_host,
-    )
-    .map_err(|_| "PARTICIPANT_UNREADABLE")?;
-    let exists = client
-        .event_exists(&state.relay_http, &p.event_id)
-        .await
-        .map_err(|_| "QUERY_FAILED")?;
-    let after = crate::conversations::admit_reconciliation(state, p.tenant_id, actor, conversation)
-        .await
-        .map_err(|_| "PARTICIPANT_UNREADABLE")?;
-    let current_keys =
-        crate::web_transport::server_actor_keys(&state.pool, &state.secrets, p.tenant_id, actor)
-            .await
-            .map_err(|_| "PARTICIPANT_UNREADABLE")?;
-    if before.binding_version != after.binding_version
-        || before.tenant_binding_version != after.tenant_binding_version
-        || before.channel_id != after.channel_id
-        || before.community_host != after.community_host
-        || keys.public_key() != current_keys.public_key()
-    {
-        return Err("PARTICIPANT_UNREADABLE");
-    }
-    Ok(exists)
+    let observation = client.observe_publication(&state.http, &p.event_id, scope.community_id)
+        .await.map_err(|_| "EVENT_UNOBSERVABLE")?;
+    let after = current_scope(state, p, target, &scope).await?;
+    if before != after { return Err("SCOPE_CHANGED"); }
+    if !scope.matches_observation(&p.event_id, &observation) { return Err("EVIDENCE_INVALID"); }
+    // This is only positive writer evidence. 404, denial, purge, unsupported
+    // ephemeral commands (41010/41012), timeout and host changes stay UNKNOWN.
+    Ok(true)
 }
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn historical_or_partial_scope_never_uses_current_host_or_kind_defaults() {
+        assert_eq!(super::parse_frozen_scope(None), Err("EVIDENCE_MISSING"));
+        assert_eq!(super::parse_frozen_scope(Some(serde_json::json!({"message_kind":9}))), Err("EVIDENCE_INVALID"));
+        let scope = super::PublicationScope { community_id: uuid::Uuid::new_v4(), tenant_binding_version: 1,
+            target_channel_id: None, target_binding_version: None, event_pubkey: nostr::Keys::generate().public_key().to_hex(),
+            event_kind: 1, event_channel_id: None, signer_installation_id: None };
+        let complete = serde_json::to_value(&scope).unwrap();
+        assert_eq!(super::parse_frozen_scope(Some(complete.clone())).unwrap(), scope);
+        for key in complete.as_object().unwrap().keys() {
+            let mut partial = complete.clone(); partial.as_object_mut().unwrap().remove(key);
+            assert_eq!(super::parse_frozen_scope(Some(partial)), Err("EVIDENCE_INVALID"), "{key}");
+        }
+    }
+
     use super::*;
 
     #[tokio::test]
