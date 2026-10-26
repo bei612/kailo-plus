@@ -284,15 +284,13 @@ async fn publish_one(
         .begin()
         .await
         .map_err(|_| "database unavailable")?;
-    let still: Option<bool> = sqlx::query_scalar(
-        CLAIMABLE,
-    )
-    .bind(c.installation_resource_id)
-    .bind(c.agent_version_asset_id)
-    .bind(&c.agent_pubkey)
-    .fetch_optional(&mut *tx)
-    .await
-    .map_err(|_| "database unavailable")?;
+    let still: Option<bool> = sqlx::query_scalar(CLAIMABLE)
+        .bind(c.installation_resource_id)
+        .bind(c.agent_version_asset_id)
+        .bind(&c.agent_pubkey)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(|_| "database unavailable")?;
     if still != Some(true) {
         return Ok(None);
     }
@@ -375,15 +373,13 @@ async fn settle_open(
     batch: i64,
     cursor: &mut Option<(chrono::DateTime<chrono::Utc>, String)>,
 ) -> Result<(), String> {
-    let rows: Vec<Open> = sqlx::query_as(
-        OPEN_PUBLICATIONS,
-    )
-    .bind(batch)
-    .bind(cursor.as_ref().map(|(at, _)| *at))
-    .bind(cursor.as_ref().map(|(_, id)| id.as_str()))
-    .fetch_all(&state.pool)
-    .await
-    .map_err(|e| e.to_string())?;
+    let rows: Vec<Open> = sqlx::query_as(OPEN_PUBLICATIONS)
+        .bind(batch)
+        .bind(cursor.as_ref().map(|(at, _)| *at))
+        .bind(cursor.as_ref().map(|(_, id)| id.as_str()))
+        .fetch_all(&state.pool)
+        .await
+        .map_err(|e| e.to_string())?;
     if rows.is_empty() {
         *cursor = None;
     }
@@ -435,7 +431,10 @@ async fn settle(
     evidence: Vec<Evidence>,
 ) -> Result<(), sqlx::Error> {
     let mut tx = state.pool.begin().await?;
-    settle_in(&mut tx, fields, event_id, phase, event_type, result, evidence).await?;
+    settle_in(
+        &mut tx, fields, event_id, phase, event_type, result, evidence,
+    )
+    .await?;
     tx.commit().await
 }
 
@@ -453,8 +452,13 @@ async fn settle_in(
         "select p.state,e.effective_state from projection.agent_profile_publication p
          join projection.agent_profile_publication_effective e on e.event_id=p.event_id
          where p.event_id=$1 for update of p",
-    ).bind(event_id).fetch_optional(&mut **tx).await?;
-    let Some((stored, effective)) = current else { return Ok(()); };
+    )
+    .bind(event_id)
+    .fetch_optional(&mut **tx)
+    .await?;
+    let Some((stored, effective)) = current else {
+        return Ok(());
+    };
     if effective != "DISPATCHED" {
         return Ok(());
     }
@@ -462,7 +466,18 @@ async fn settle_in(
         // An immutable historical row is corrected only by new positive
         // evidence in the original audit; never manufacture a missing outcome.
         if event_type == "RECONCILIATION" && result == "ACCEPTED" {
-            append(tx, entry(fields, event_id, "reconciled-accepted", event_type, result, evidence)).await?;
+            append(
+                tx,
+                entry(
+                    fields,
+                    event_id,
+                    "reconciled-accepted",
+                    event_type,
+                    result,
+                    evidence,
+                ),
+            )
+            .await?;
         }
         return Ok(());
     }
@@ -650,17 +665,40 @@ pub(crate) mod tests {
     }
 
     pub(crate) async fn absence_fixture() -> sqlx::Transaction<'static, sqlx::Postgres> {
-        let pool = sqlx::PgPool::connect(&std::env::var("PUBLICATION_ABSENCE_TEST_DATABASE_URL").expect("isolated migrated PG required")).await.unwrap();
+        let pool = sqlx::PgPool::connect(
+            &std::env::var("PUBLICATION_ABSENCE_TEST_DATABASE_URL")
+                .expect("isolated migrated PG required"),
+        )
+        .await
+        .unwrap();
         let mut tx = pool.begin().await.unwrap();
-        sqlx::raw_sql(include_str!("../../../verify/publication-absence-fixture.sql")).execute(&mut *tx).await.unwrap();
+        sqlx::raw_sql(include_str!(
+            "../../../verify/publication-absence-fixture.sql"
+        ))
+        .execute(&mut *tx)
+        .await
+        .unwrap();
         sqlx::raw_sql("create temp table absence_audit_before on commit drop as select id,to_jsonb(e) as evidence from audit.audit_event e; drop view projection.agent_profile_publication_effective;").execute(&mut *tx).await.unwrap();
-        sqlx::raw_sql(include_str!("../../../migrations/20261101010000_publication_absence_correction.up.sql")).execute(&mut *tx).await.unwrap();
+        sqlx::raw_sql(include_str!(
+            "../../../migrations/20261101010000_publication_absence_correction.up.sql"
+        ))
+        .execute(&mut *tx)
+        .await
+        .unwrap();
         let changed: i64 = sqlx::query_scalar("select count(*) from absence_audit_before b left join audit.audit_event e on e.id=b.id where to_jsonb(e) is distinct from b.evidence").fetch_one(&mut *tx).await.unwrap();
-        assert_eq!(changed,0,"historical audit bytes must remain unchanged");
+        assert_eq!(changed, 0, "historical audit bytes must remain unchanged");
         let states: Vec<(String,String)> = sqlx::query_as("select f.label,a.dispatch_state from absence_fixture f join admission.action_execution a on a.id=f.id where f.label <> 'activation' order by f.label").fetch_all(&mut *tx).await.unwrap();
-        assert_eq!(states.len(),8);
-        for (label,state) in states {
-            assert_eq!(state,if label.ends_with("-false") {"UNKNOWN"} else {"ABORTED"},"{label}: only the proven historical false branch may reopen");
+        assert_eq!(states.len(), 8);
+        for (label, state) in states {
+            assert_eq!(
+                state,
+                if label.ends_with("-false") {
+                    "UNKNOWN"
+                } else {
+                    "ABORTED"
+                },
+                "{label}: only the proven historical false branch may reopen"
+            );
         }
         tx
     }
@@ -669,37 +707,119 @@ pub(crate) mod tests {
     #[ignore = "requires PUBLICATION_ABSENCE_TEST_DATABASE_URL pointing at an isolated migrated database"]
     async fn historical_absence_profiles_block_resigning_and_all_remain_observable() {
         let mut tx = absence_fixture().await;
-        let rows: Vec<Open> = sqlx::query_as(OPEN_PUBLICATIONS).bind(1_i64).bind(None::<chrono::DateTime<chrono::Utc>>).bind(None::<String>).fetch_all(&mut *tx).await.unwrap();
-        assert_eq!(rows.len(),1);
+        let rows: Vec<Open> = sqlx::query_as(OPEN_PUBLICATIONS)
+            .bind(1_i64)
+            .bind(None::<chrono::DateTime<chrono::Utc>>)
+            .bind(None::<String>)
+            .fetch_all(&mut *tx)
+            .await
+            .unwrap();
+        assert_eq!(rows.len(), 1);
         let first = &rows[0];
-        let later: Vec<Open> = sqlx::query_as(OPEN_PUBLICATIONS).bind(1_i64).bind(first.created_at).bind(&first.event_id).fetch_all(&mut *tx).await.unwrap();
-        assert_eq!(later.len(),1,"latest accepted must not hide the second old unresolved profile");
-        assert_ne!(first.event_id,later[0].event_id);
-        let version: Uuid = sqlx::query_scalar("select pinned_version_asset_id from catalog.agent_installation where resource_id=$1").bind(first.installation_resource_id).fetch_one(&mut *tx).await.unwrap();
-        let claim: Option<bool> = sqlx::query_scalar(CLAIMABLE).bind(first.installation_resource_id).bind(version).bind(&first.agent_pubkey).fetch_optional(&mut *tx).await.unwrap();
-        assert_eq!(claim,Some(false));
+        let later: Vec<Open> = sqlx::query_as(OPEN_PUBLICATIONS)
+            .bind(1_i64)
+            .bind(first.created_at)
+            .bind(&first.event_id)
+            .fetch_all(&mut *tx)
+            .await
+            .unwrap();
+        assert_eq!(
+            later.len(),
+            1,
+            "latest accepted must not hide the second old unresolved profile"
+        );
+        assert_ne!(first.event_id, later[0].event_id);
+        let version: Uuid = sqlx::query_scalar(
+            "select pinned_version_asset_id from catalog.agent_installation where resource_id=$1",
+        )
+        .bind(first.installation_resource_id)
+        .fetch_one(&mut *tx)
+        .await
+        .unwrap();
+        let claim: Option<bool> = sqlx::query_scalar(CLAIMABLE)
+            .bind(first.installation_resource_id)
+            .bind(version)
+            .bind(&first.agent_pubkey)
+            .fetch_optional(&mut *tx)
+            .await
+            .unwrap();
+        assert_eq!(claim, Some(false));
         // A newer real limit would normally permit retry; every older unknown
         // must still block both discovery and the transaction's second guard.
-        let newest = format!("{}{}",Uuid::new_v4().simple(),"e".repeat(32));
+        let newest = format!("{}{}", Uuid::new_v4().simple(), "e".repeat(32));
         sqlx::query("insert into projection.agent_profile_publication(event_id,tenant_id,installation_resource_id,agent_pubkey,agent_version_asset_id,action_execution_id,operation_id,content_sha256,signed_at,state) values($1,$2,$3,$4,$5,$6,$7,repeat('a',64),4,'DISPATCHED')")
             .bind(&newest).bind(first.tenant_id).bind(first.installation_resource_id).bind(&first.agent_pubkey).bind(version).bind(first.action_execution_id).bind(first.operation_id).execute(&mut *tx).await.unwrap();
-        settle_in(&mut tx,&Fields::from(first),&newest,"outcome","OUTCOME","NOT_DELIVERED",vec![]).await.unwrap();
-        let candidates: Vec<Candidate> = sqlx::query_as(CANDIDATES).bind(10_i64).bind(Some(first.installation_resource_id)).bind(-1_i64).fetch_all(&mut *tx).await.unwrap();
-        assert!(candidates.is_empty(),"a newer real refusal cannot erase an older unknown");
-        let claim: Option<bool> = sqlx::query_scalar(CLAIMABLE).bind(first.installation_resource_id).bind(version).bind(&first.agent_pubkey).fetch_optional(&mut *tx).await.unwrap();
-        assert_eq!(claim,Some(false));
+        settle_in(
+            &mut tx,
+            &Fields::from(first),
+            &newest,
+            "outcome",
+            "OUTCOME",
+            "NOT_DELIVERED",
+            vec![],
+        )
+        .await
+        .unwrap();
+        let candidates: Vec<Candidate> = sqlx::query_as(CANDIDATES)
+            .bind(10_i64)
+            .bind(Some(first.installation_resource_id))
+            .bind(-1_i64)
+            .fetch_all(&mut *tx)
+            .await
+            .unwrap();
+        assert!(
+            candidates.is_empty(),
+            "a newer real refusal cannot erase an older unknown"
+        );
+        let claim: Option<bool> = sqlx::query_scalar(CLAIMABLE)
+            .bind(first.installation_resource_id)
+            .bind(version)
+            .bind(&first.agent_pubkey)
+            .fetch_optional(&mut *tx)
+            .await
+            .unwrap();
+        assert_eq!(claim, Some(false));
         for row in rows.iter().chain(later.iter()) {
-            let fields=Fields::from(row);
-            settle_in(&mut tx,&fields,&row.event_id,"reconciled-accepted","RECONCILIATION","ACCEPTED",evidence(row.action_execution_id,&row.event_id,&row.agent_pubkey)).await.unwrap();
-            settle_in(&mut tx,&fields,&row.event_id,"reconciled-accepted","RECONCILIATION","ACCEPTED",vec![]).await.unwrap();
+            let fields = Fields::from(row);
+            settle_in(
+                &mut tx,
+                &fields,
+                &row.event_id,
+                "reconciled-accepted",
+                "RECONCILIATION",
+                "ACCEPTED",
+                evidence(row.action_execution_id, &row.event_id, &row.agent_pubkey),
+            )
+            .await
+            .unwrap();
+            settle_in(
+                &mut tx,
+                &fields,
+                &row.event_id,
+                "reconciled-accepted",
+                "RECONCILIATION",
+                "ACCEPTED",
+                vec![],
+            )
+            .await
+            .unwrap();
             let values: (String,String,i64) = sqlx::query_as("select state,effective_state,(select count(*) from audit.audit_event where event_key=$2) from projection.agent_profile_publication_effective where event_id=$1").bind(&row.event_id).bind(format!("{}:installation:profile:{}:reconciled-accepted",row.action_execution_id,row.event_id)).fetch_one(&mut *tx).await.unwrap();
-            assert_eq!(values,("NOT_DELIVERED".into(),"ACCEPTED".into(),1));
+            assert_eq!(values, ("NOT_DELIVERED".into(), "ACCEPTED".into(), 1));
         }
-        let candidates: Vec<Candidate> = sqlx::query_as(CANDIDATES).bind(10_i64).bind(Some(first.installation_resource_id)).bind(-1_i64).fetch_all(&mut *tx).await.unwrap();
-        assert_eq!(candidates.len(),1,"explicit pre-ingest limit remains a real retryable outcome");
+        let candidates: Vec<Candidate> = sqlx::query_as(CANDIDATES)
+            .bind(10_i64)
+            .bind(Some(first.installation_resource_id))
+            .bind(-1_i64)
+            .fetch_all(&mut *tx)
+            .await
+            .unwrap();
+        assert_eq!(
+            candidates.len(),
+            1,
+            "explicit pre-ingest limit remains a real retryable outcome"
+        );
         let old: i64 = sqlx::query_scalar("select count(*) from absence_audit_before b join audit.audit_event e on e.id=b.id where to_jsonb(e)=b.evidence").fetch_one(&mut *tx).await.unwrap();
-        assert_eq!(old,11);
+        assert_eq!(old, 11);
         tx.rollback().await.unwrap();
     }
-
 }

@@ -1055,7 +1055,11 @@ async fn settle_in(
         None => {
             governance::record_dispatch(tx, id, class, Ok(()), evidence.clone()).await?;
             let result = outcome_code(&ae.action_key);
-            let phase = if matches!(ae.action_key.as_str(), REPORT_SUBMIT | MESSAGE_DELETE) { "verified-outcome" } else { "outcome" };
+            let phase = if matches!(ae.action_key.as_str(), REPORT_SUBMIT | MESSAGE_DELETE) {
+                "verified-outcome"
+            } else {
+                "outcome"
+            };
             governance::audit(
                 tx, &ae, def, phase, "OUTCOME", "ALLOW", result, None, evidence,
             )
@@ -1111,14 +1115,15 @@ async fn observe_publication(state: &BffState, ae: &Execution) -> Result<Settled
             .await
             .map(|rows| rows.iter().any(|row| row.report_event_id == event_id))
     } else {
-        control
-            .event_exists(&state.relay_http, &event_id)
-            .await
+        control.event_exists(&state.relay_http, &event_id).await
     };
     Ok(publication_observation(observed, evidence))
 }
 
-fn publication_observation(observed: Result<bool, OperatorError>, evidence: Vec<Evidence>) -> Settled {
+fn publication_observation(
+    observed: Result<bool, OperatorError>,
+    evidence: Vec<Evidence>,
+) -> Settled {
     match observed {
         Ok(true) => Settled::Verified(evidence),
         Ok(false) | Err(_) => Settled::Unknown,
@@ -1760,26 +1765,62 @@ mod tests {
     #[ignore = "requires PUBLICATION_ABSENCE_TEST_DATABASE_URL pointing at an isolated migrated database"]
     async fn historical_absence_moderation_readback_preserves_unknown_and_old_audit() {
         let mut tx = crate::agent_profile::tests::absence_fixture().await;
-        for label in ["report-false","delete-false"] {
-            let id: Uuid = sqlx::query_scalar("select id from absence_fixture where label=$1").bind(label).fetch_one(&mut *tx).await.unwrap();
-            let ae = governance::lock_execution(&mut tx,id).await.unwrap();
-            assert_eq!(ae.dispatch_state,"UNKNOWN");
-            let definition: Definition = sqlx::query_as(&format!("select {} from catalog.action_definition where action_key=$1 and version=1",governance::DEFINITION_COLUMNS)).bind(&ae.action_key).fetch_one(&mut *tx).await.unwrap();
-            for observed in [Ok(false),Err(OperatorError::NotConverged("unavailable".into()))] {
-                settle_in(&mut tx,&definition,id,publication_observation(observed,vec![])).await.unwrap();
-                let current = governance::lock_execution(&mut tx,id).await.unwrap();
-                assert_eq!(current.dispatch_state,"UNKNOWN","{label}: empty or failed reads cannot abort");
+        for label in ["report-false", "delete-false"] {
+            let id: Uuid = sqlx::query_scalar("select id from absence_fixture where label=$1")
+                .bind(label)
+                .fetch_one(&mut *tx)
+                .await
+                .unwrap();
+            let ae = governance::lock_execution(&mut tx, id).await.unwrap();
+            assert_eq!(ae.dispatch_state, "UNKNOWN");
+            let definition: Definition = sqlx::query_as(&format!(
+                "select {} from catalog.action_definition where action_key=$1 and version=1",
+                governance::DEFINITION_COLUMNS
+            ))
+            .bind(&ae.action_key)
+            .fetch_one(&mut *tx)
+            .await
+            .unwrap();
+            for observed in [
+                Ok(false),
+                Err(OperatorError::NotConverged("unavailable".into())),
+            ] {
+                settle_in(
+                    &mut tx,
+                    &definition,
+                    id,
+                    publication_observation(observed, vec![]),
+                )
+                .await
+                .unwrap();
+                let current = governance::lock_execution(&mut tx, id).await.unwrap();
+                assert_eq!(
+                    current.dispatch_state, "UNKNOWN",
+                    "{label}: empty or failed reads cannot abort"
+                );
             }
             let event_id: String = sqlx::query_scalar("select event_id from admission.moderation_publication where action_execution_id=$1 and outcome is null").bind(id).fetch_one(&mut *tx).await.unwrap();
-            settle_in(&mut tx,&definition,id,publication_observation(Ok(true),vec![Evidence::new(EvidenceKind::BuzzEventId,event_id)])).await.unwrap();
-            let current = governance::lock_execution(&mut tx,id).await.unwrap();
-            assert_eq!(current.dispatch_state,"DISPATCHED");
+            settle_in(
+                &mut tx,
+                &definition,
+                id,
+                publication_observation(
+                    Ok(true),
+                    vec![Evidence::new(EvidenceKind::BuzzEventId, event_id)],
+                ),
+            )
+            .await
+            .unwrap();
+            let current = governance::lock_execution(&mut tx, id).await.unwrap();
+            assert_eq!(current.dispatch_state, "DISPATCHED");
             let audit: Vec<(String,String)> = sqlx::query_as("select event_type,result_code from audit.audit_event where operation_id=$1 order by event_key").bind(ae.operation_id).fetch_all(&mut *tx).await.unwrap();
-            assert!(audit.contains(&("OUTCOME".into(),"DEPENDENCY_UNAVAILABLE".into())));
-            assert!(audit.contains(&("RECONCILIATION".into(),"UNKNOWN".into())));
-            assert!(audit.contains(&("OUTCOME".into(),outcome_code(&ae.action_key).into())),"positive correction needs its own key");
+            assert!(audit.contains(&("OUTCOME".into(), "DEPENDENCY_UNAVAILABLE".into())));
+            assert!(audit.contains(&("RECONCILIATION".into(), "UNKNOWN".into())));
+            assert!(
+                audit.contains(&("OUTCOME".into(), outcome_code(&ae.action_key).into())),
+                "positive correction needs its own key"
+            );
         }
         tx.rollback().await.unwrap();
     }
-
 }
