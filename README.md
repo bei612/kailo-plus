@@ -7,10 +7,22 @@
 ## 当前集成与验收边界（2026-10-26）
 
 当前候选从主线 `ebc23eb293942ed9721cb56d2b76ee871f91bc40` 集成 DD-157 共享组件外壳及
-DD-124/136 一致性投递修复，正在完成集成检查与匹配发布；不得把下列历史记录中的“当前”
+DD-124/136 一致性投递修复及 DD-159 本地归档，正在完成集成检查与匹配发布；不得把下列历史记录中的“当前”
 当作本候选状态。固定分支检查、实际部署和真实业务验收分别记录于
 [交付路线](02-纵向交付路线.md)、[组件一致性投递证据](core/verify/component-conformance-delivery.md)
 和[融合界面追溯](tools/traceability/component.integrated_ux.yaml)。
+
+固定集成源码 `a52203970` 已在 CI 原受限 SDK 中通过 `docs`、`migrate`、`lint`、
+`contract`、`verify`、`replay`、`trace` 七个原步骤；发布工具 87 项单元检查通过。
+Rust 主目标 809 项通过、68 项 ignored，另两个目标各 ignored 1 项；平台 TypeScript
+1979 项、Web 726 项通过。真实数据库迁移往返和 SQLx 离线核对已执行；这不是 full、
+supply/seam 或真实业务验收。日志在 CI
+`/volumes/data/kailo/verification/phase1-integration/a52203970-*.log`，仅适用于所列固定源码。
+
+后续 DD-159 仅选择原 `64a6b0942..d7c9005c6` 归档提交范围，没有合入其未验证 Mobile
+祖先。原 Desktop SDK 在 `24e3c5f61` 的归档、原生会话、工作区检查分别 21、18、2 项通过；
+故意关闭安全删除时原数据库残留检查失败，逐字恢复后通过。合批门禁与真实设备仍未验收，
+见[归档验证记录](collaboration/fork/verify/desktop-client.md)。
 
 上一批发布源 `dc2d6ca18bb5c355ebb3e96609f0f591532479cf` 的八个运行发布阶段完成，
 pin 为 `ebc23eb293942ed9721cb56d2b76ee871f91bc40`，但发布 journal 明确记录业务验收
