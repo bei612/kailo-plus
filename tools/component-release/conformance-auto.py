@@ -35,6 +35,7 @@ Output is one JSON line per step with names, counts and states only.
 import argparse
 import base64
 import hashlib
+import importlib.util
 import ipaddress
 import json
 import os
@@ -104,6 +105,21 @@ def write_json(path, value, mode=0o600):
 def read_json(path):
     with open(path, encoding="utf-8") as stream:
         return json.load(stream)
+
+
+def recorded_artifact(source, component, name):
+    """Use this fixed tree's original source-record parser, never a cross-entry regex."""
+    spec = importlib.util.spec_from_file_location("conformance_upstream_manifest", Path(source) / "tools/upstream_manifest.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    record = module.load(Path(source) / component / "fork/upstream.yaml")
+    artifacts = record.get("artifacts")
+    require(isinstance(artifacts, list), "source record has no artifact list")
+    matches = [entry for entry in artifacts if isinstance(entry, dict) and entry.get("name") == name]
+    require(len(matches) == 1 and matches[0].get("kind") == "image", f"{name}: one recorded image artifact required")
+    digest = matches[0].get("artifact_digest")
+    require(isinstance(digest, str) and re.fullmatch(r"sha256:[0-9a-f]{64}", digest), f"{name}: exact artifact digest missing")
+    return digest
 
 
 def secret_text(length, alphabet=string.ascii_letters + string.digits):
@@ -500,12 +516,8 @@ def file_storage(r, args, runtime_env, declaration):
     s = r.state
     d = r.dir
     source = s["source"]
-    upstream = (Path(source) / "file-storage/fork/upstream.yaml").read_text(encoding="utf-8")
-
     def artifact(name):
-        match = re.search(r"- name: " + re.escape(name) + r"\n(?:.*\n)*?\s+artifact_digest: (sha256:[0-9a-f]{64})", upstream)
-        require(match, f"{name} has no recorded artifact digest")
-        return match.group(1)
+        return recorded_artifact(source, "file-storage", name)
 
     if "project" not in s:
         run_id = d.name.rsplit("-", 1)[-1]

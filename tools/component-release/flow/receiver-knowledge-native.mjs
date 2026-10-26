@@ -85,27 +85,36 @@ await main(async () => {
     }
     atomic(tokenFile, token);
     if (args['refresh-only']) {
-      if (!previous) fail('native objects have not been prepared');
+      if (!previous) fail('native identity has not been prepared');
       console.log(JSON.stringify({ step: 'receiver-knowledge-session', status: 'READY' }));
       return;
     }
+    // Retain each confirmed identity before starting the next native mutation.
+    // Partial progress is a resumable session, never proof of complete objects.
+    const confirmed = { ...previous, origin: input.origin, userId: user, tenantId: tenant };
+    const remember = () => atomic(stateFile, JSON.stringify(confirmed, null, 2) + '\n');
+    remember();
     const rows = await request('GET', '/api/v1/knowledge-bases');
     if (!Array.isArray(rows)) fail('native knowledge base list is incomplete');
     const matching = rows.filter((row) => row.name === input.name);
     if (matching.length > 1) fail('ambiguous native knowledge base');
+    if (previous?.knowledgeBaseId && !matching.length) fail('confirmed native knowledge base is missing; refusing to recreate it');
     const kb = matching[0] ?? await request('POST', '/api/v1/knowledge-bases', {
       name: input.name, type: 'document', embedding_model_id: 'kailo-platform-embedding', summary_model_id: 'kailo-platform-chat',
       chunking_config: { chunk_size: 512, chunk_overlap: 50, separators: ['\n\n', '\n'] },
     });
     if (!UUID.test(kb.id ?? '') || kb.tenant_id !== tenant || kb.embedding_model_id !== 'kailo-platform-embedding'
-        || kb.summary_model_id !== 'kailo-platform-chat' || (previous && previous.knowledgeBaseId !== kb.id)) {
+        || kb.summary_model_id !== 'kailo-platform-chat' || (previous?.knowledgeBaseId && previous.knowledgeBaseId !== kb.id)) {
       fail('native knowledge base differs from this run');
     }
+    confirmed.knowledgeBaseId = kb.id;
+    remember();
     const endpoints = await request('GET', '/api/v1/mcp-endpoints');
     if (!Array.isArray(endpoints)) fail('native MCP endpoint list is incomplete');
     const found = endpoints.filter((row) => row.name === input.name);
     if (found.length > 1) fail('ambiguous native MCP endpoint');
     let endpoint = found[0];
+    if (previous?.mcpEndpointId && !endpoint) fail('confirmed native MCP endpoint is missing; refusing to recreate it');
     const tools = ['search_knowledge', 'read_document', 'export_document', 'add_document', 'delete_document'];
     if (!endpoint) endpoint = await request('POST', '/api/v1/mcp-endpoints', {
       name: input.name, enabled: true, knowledge_base_ids: [kb.id], tools,
@@ -113,17 +122,17 @@ await main(async () => {
     if (!UUID.test(endpoint.id ?? '') || endpoint.enabled !== true || endpoint.knowledge_base_ids?.length !== 1
         || endpoint.knowledge_base_ids[0] !== kb.id || endpoint.tenant_id !== tenant
         || JSON.stringify([...(endpoint.tools ?? [])].sort()) !== JSON.stringify([...tools].sort())
-        || (previous && previous.mcpEndpointId !== endpoint.id)) {
+        || (previous?.mcpEndpointId && previous.mcpEndpointId !== endpoint.id)) {
       fail('native MCP endpoint scope differs from this run');
     }
+    confirmed.mcpEndpointId = endpoint.id;
+    remember();
     const bearerFile = join(input.directory, 'mcp-bearer');
     // Recover a lost one-time response only through the native rotate endpoint
     // on this exact isolated endpoint, never by extracting its stored hash.
     if (!existsSync(bearerFile) && !endpoint.token) endpoint = await request('POST', `/api/v1/mcp-endpoints/${endpoint.id}/rotate-token`);
     if (endpoint.token) atomic(bearerFile, endpoint.token);
     if (!privateText(bearerFile).trim()) fail('native MCP bearer is missing');
-    atomic(stateFile, JSON.stringify({ origin: input.origin, userId: user, tenantId: tenant,
-      knowledgeBaseId: kb.id, mcpEndpointId: endpoint.id }, null, 2) + '\n');
     console.log(JSON.stringify({ step: 'receiver-knowledge-native', status: 'READY' }));
   } catch (error) {
     throw error instanceof FlowError ? error : new FlowError('isolated native knowledge preparation failed; credential details are not logged');

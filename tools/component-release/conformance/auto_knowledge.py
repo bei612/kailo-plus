@@ -512,7 +512,6 @@ except Exception:
         declaration["conformanceModels"]["embedding"]["model"], str(declaration["conformanceModels"]["embedding"]["dimension"]),
         timeout=90).strip())
 
-    upstream = (Path(source) / "knowledge/fork/upstream.yaml").read_text()
     native_env = {"COMPOSE_PROJECT_NAME": facts["project"], "KNOWLEDGE_UI_BIND_ADDRESS": "127.0.0.1",
         "KNOWLEDGE_UI_PORT": str(facts["port"]), "KNOWLEDGE_UI_SUBNET": facts["subnets"][0], "KNOWLEDGE_DATA_SUBNET": facts["subnets"][1],
         "KNOWLEDGE_DB_USER": "weknora", "KNOWLEDGE_DB_NAME": "weknora", "KNOWLEDGE_NATIVE_ORIGIN": facts["origin"],
@@ -533,10 +532,9 @@ except Exception:
     for key in ("DB_PASSWORD", "REDIS_PASSWORD", "REDIS_CONFIG", "SYSTEM_AES_KEY", "SYSTEM_SIGNING_KEY", "JWT_SECRET", "OIDC_CLIENT_SECRET"):
         native_env["KNOWLEDGE_" + key + "_FILE"] = str(secrets_dir / key.lower())
     for role, artifact in (("APP", "knowledge-service"), ("UI", "knowledge-native-ui"), ("DOCREADER", "knowledge-document-reader")):
-        digest = re.search(r"- name: " + artifact + r"\n(?:.*\n)*?\s+artifact_digest: sha256:([0-9a-f]{64})", upstream)
-        h.require(digest, f"{artifact} has no fixed artifact")
+        digest = h.recorded_artifact(source, "knowledge", artifact).removeprefix("sha256:")
         native_env[f"KNOWLEDGE_{role}_REPOSITORY"] = f"{declaration['registry']}/{artifact}"
-        native_env[f"KNOWLEDGE_{role}_DIGEST"] = digest[1]
+        native_env[f"KNOWLEDGE_{role}_DIGEST"] = digest
     env_file = h.env_file(directory / "native.env", native_env)
     h.run(["python3", "-I", f"{source}/deploy/components/native-config.py", "apply", "knowledge", "--env", str(env_file),
            "--source", state["commit"], "--backup-dir", str(h.private_dir(directory / "backups"))], env=runtime_env, log=r.log)
@@ -575,11 +573,8 @@ def ensure_source_native(h, r):
     if not cells.state:
         suffix = r.dir.name.rsplit("-", 1)[-1]
         port = h.free_port(59510, 59599)
-        upstream = (Path(source) / "file-storage/fork/upstream.yaml").read_text()
         def artifact(name):
-            match = re.search(r"- name: " + re.escape(name) + r"\n(?:.*\n)*?\s+artifact_digest: (sha256:[0-9a-f]{64})", upstream)
-            h.require(match, "source Cells fixed artifact is missing")
-            return declaration["registry"] + "/" + name + "@" + match[1]
+            return declaration["registry"] + "/" + name + "@" + h.recorded_artifact(source, "file-storage", name)
         cells.record(component="file-storage", source=source, commit=r.state["commit"], nodeImage=r.state["nodeImage"],
             project=f"kailo-cells-conformance-source-{suffix}", network=f"{r.state['project']}_app",
             subnets=h.free_subnets(2, prefix="10.205.", start=16, stop=250), port=port, external=f"http://127.0.0.1:{port}",
