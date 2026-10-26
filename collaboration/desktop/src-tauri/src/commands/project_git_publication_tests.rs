@@ -164,27 +164,45 @@ impl PublicationIo for Io {
         }
     }
     async fn facts(&self) -> Result<Option<PublicationFacts>, WriteError> {
-        self.facts_seen.store(true,std::sync::atomic::Ordering::SeqCst);
+        self.facts_seen
+            .store(true, std::sync::atomic::Ordering::SeqCst);
         Ok(Some(PublicationFacts {
             settle_seconds: 10,
             observed_at: self.now,
         }))
     }
     async fn query(&self, filters: Vec<serde_json::Value>) -> Result<Vec<Event>, WriteError> {
-        assert!(filters.iter().all(|f|f.get("ids").is_none()),"ordinary filtered history cannot prove delivery");
+        assert!(
+            filters.iter().all(|f| f.get("ids").is_none()),
+            "ordinary filtered history cannot prove delivery"
+        );
         if self.retire_on_query {
-            self.active.store(false, std::sync::atomic::Ordering::SeqCst);
+            self.active
+                .store(false, std::sync::atomic::Ordering::SeqCst);
         }
         Ok(Vec::new())
     }
-    async fn delivery(&self,event:&Event)->Result<MergedStatusDelivery,WriteError> {
-        assert!(self.facts_seen.load(std::sync::atomic::Ordering::SeqCst),"Core observation must precede proof");
-        if self.retire_on_delivery { self.active.store(false,std::sync::atomic::Ordering::SeqCst); }
+    async fn delivery(&self, event: &Event) -> Result<MergedStatusDelivery, WriteError> {
+        assert!(
+            self.facts_seen.load(std::sync::atomic::Ordering::SeqCst),
+            "Core observation must precede proof"
+        );
+        if self.retire_on_delivery {
+            self.active
+                .store(false, std::sync::atomic::Ordering::SeqCst);
+        }
         Ok(MergedStatusDelivery {
-            event_id:if self.malformed_id { "f".repeat(64) } else { event.id.to_hex() },
-            community_id:self.community.clone(),
-            accepted:self.observed.as_ref().is_some_and(|seen|seen.id==event.id),
-            settled:self.relay_settled && event.created_at.as_secs()<self.now,
+            event_id: if self.malformed_id {
+                "f".repeat(64)
+            } else {
+                event.id.to_hex()
+            },
+            community_id: self.community.clone(),
+            accepted: self
+                .observed
+                .as_ref()
+                .is_some_and(|seen| seen.id == event.id),
+            settled: self.relay_settled && event.created_at.as_secs() < self.now,
         })
     }
     async fn readmit(&self, _: &Request) -> Result<(), WriteError> {
@@ -202,7 +220,11 @@ impl PublicationIo for Io {
             .unwrap()
             .unwrap();
         assert_eq!(frozen.event, Some(event.as_json()));
-        assert_eq!(frozen.event_community_id.as_deref(),Some(self.community.as_str()),"Community must be durable before POST");
+        assert_eq!(
+            frozen.event_community_id.as_deref(),
+            Some(self.community.as_str()),
+            "Community must be durable before POST"
+        );
         assert_eq!(frozen.event_result.as_deref(), Some("DISPATCHED"));
         self.submitted.lock().unwrap().push(event.clone());
         if self.retire_on_submit {
@@ -297,7 +319,7 @@ async fn original_status_consumer_queries_original_id_and_never_guesses_from_uns
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("journal.sqlite");
     let (mut io, review) = consumer_fixture(&path, "DISPATCHED");
-    io.relay_settled=false;
+    io.relay_settled = false;
     let mut intent = io.frozen.clone();
     assert_eq!(
         ensure_status_with(&io, &path, &mut intent, &review)
@@ -356,96 +378,213 @@ async fn original_status_consumer_fences_revocation_retirement_and_late_ack() {
 
 #[tokio::test]
 async fn writer_absence_requires_both_prior_core_window_and_original_community() {
-    for case in ["core_inside","core_boundary","relay_unsettled","wrong_community","legacy_unknown","bad_id","bad_community"] {
-        let temp=tempfile::tempdir().unwrap(); let path=temp.path().join("journal.sqlite");
-        let (mut io,review)=consumer_fixture(&path,"DISPATCHED");
+    for case in [
+        "core_inside",
+        "core_boundary",
+        "relay_unsettled",
+        "wrong_community",
+        "legacy_unknown",
+        "bad_id",
+        "bad_community",
+    ] {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("journal.sqlite");
+        let (mut io, review) = consumer_fixture(&path, "DISPATCHED");
         match case {
-            "core_inside"=>io.now=109,
-            "core_boundary"=>io.now=110,
-            "relay_unsettled"=>io.relay_settled=false,
-            "wrong_community"=>io.community="00000000-0000-0000-0000-000000000002".into(),
-            "legacy_unknown"=>{
-                io.frozen.event_community_id=None;
-                let db=rusqlite::Connection::open(&path).unwrap();
-                db.execute("UPDATE intent SET payload=?1",[serde_json::to_string(&io.frozen).unwrap()]).unwrap();
-            },
-            "bad_id"=>io.malformed_id=true,
-            "bad_community"=>io.community="invalid".into(),
-            _=>unreachable!(),
+            "core_inside" => io.now = 109,
+            "core_boundary" => io.now = 110,
+            "relay_unsettled" => io.relay_settled = false,
+            "wrong_community" => io.community = "00000000-0000-0000-0000-000000000002".into(),
+            "legacy_unknown" => {
+                io.frozen.event_community_id = None;
+                let db = rusqlite::Connection::open(&path).unwrap();
+                db.execute(
+                    "UPDATE intent SET payload=?1",
+                    [serde_json::to_string(&io.frozen).unwrap()],
+                )
+                .unwrap();
+            }
+            "bad_id" => io.malformed_id = true,
+            "bad_community" => io.community = "invalid".into(),
+            _ => unreachable!(),
         }
-        let mut intent=io.frozen.clone();
-        assert_eq!(ensure_status_with(&io,&path,&mut intent,&review).await.unwrap_err().code,UNKNOWN,"{case}");
-        assert!(io.submitted.lock().unwrap().is_empty(),"{case}");
-        let saved=Journal::open(&path).unwrap().find(&intent.key,&intent.request).unwrap().unwrap();
-        assert_eq!(saved.event,io.frozen.event,"{case}");
-        assert_eq!(saved.event_result.as_deref(),Some("DISPATCHED"),"{case}");
+        let mut intent = io.frozen.clone();
+        assert_eq!(
+            ensure_status_with(&io, &path, &mut intent, &review)
+                .await
+                .unwrap_err()
+                .code,
+            UNKNOWN,
+            "{case}"
+        );
+        assert!(io.submitted.lock().unwrap().is_empty(), "{case}");
+        let saved = Journal::open(&path)
+            .unwrap()
+            .find(&intent.key, &intent.request)
+            .unwrap()
+            .unwrap();
+        assert_eq!(saved.event, io.frozen.event, "{case}");
+        assert_eq!(saved.event_result.as_deref(), Some("DISPATCHED"), "{case}");
     }
 }
 #[tokio::test]
 async fn authoritative_absence_recovers_same_intent_and_keeps_old_signed_evidence() {
-    let temp=tempfile::tempdir().unwrap(); let path=temp.path().join("journal.sqlite");
-    let (io,review)=consumer_fixture(&path,"DISPATCHED");
-    let old=Event::from_json(io.frozen.event.as_ref().unwrap()).unwrap();
-    let mut intent=io.frozen.clone();
-    ensure_status_with(&io,&path,&mut intent,&review).await.unwrap();
-    let sent=io.submitted.lock().unwrap(); assert_eq!(sent.len(),1);
-    assert_ne!(sent[0].id,old.id); assert_eq!(sent[0].tags,old.tags);
-    assert_eq!(intent.key,io.frozen.key); assert_eq!(intent.event_community_id,io.frozen.event_community_id);
-    let db=rusqlite::Connection::open(&path).unwrap();
-    let proven:i64=db.query_row("SELECT count(*) FROM publication_evidence WHERE event=?1 AND outcome='NOT_DELIVERED'",[old.as_json()],|r|r.get(0)).unwrap();
-    assert_eq!(proven,1);
-    let mut late=io.frozen.clone(); late.event_result=Some("ACCEPTED".into());
-    assert!(Journal::open(&path).unwrap().save(&late,"EVENT_OUTCOME").is_err());
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("journal.sqlite");
+    let (io, review) = consumer_fixture(&path, "DISPATCHED");
+    let old = Event::from_json(io.frozen.event.as_ref().unwrap()).unwrap();
+    let mut intent = io.frozen.clone();
+    ensure_status_with(&io, &path, &mut intent, &review)
+        .await
+        .unwrap();
+    let sent = io.submitted.lock().unwrap();
+    assert_eq!(sent.len(), 1);
+    assert_ne!(sent[0].id, old.id);
+    assert_eq!(sent[0].tags, old.tags);
+    assert_eq!(intent.key, io.frozen.key);
+    assert_eq!(intent.event_community_id, io.frozen.event_community_id);
+    let db = rusqlite::Connection::open(&path).unwrap();
+    let proven: i64 = db
+        .query_row(
+            "SELECT count(*) FROM publication_evidence WHERE event=?1 AND outcome='NOT_DELIVERED'",
+            [old.as_json()],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(proven, 1);
+    let mut late = io.frozen.clone();
+    late.event_result = Some("ACCEPTED".into());
+    assert!(Journal::open(&path)
+        .unwrap()
+        .save(&late, "EVENT_OUTCOME")
+        .is_err());
 }
 #[tokio::test]
 async fn first_dispatch_freezes_community_and_cannot_switch_after_restart() {
-    let temp=tempfile::tempdir().unwrap(); let path=temp.path().join("journal.sqlite");
-    let (mut io,review)=consumer_fixture(&path,"DISPATCHED");
-    io.frozen.event=None; io.frozen.event_result=None; io.frozen.event_community_id=None;
-    let db=rusqlite::Connection::open(&path).unwrap();
-    db.execute("UPDATE intent SET payload=?1",[serde_json::to_string(&io.frozen).unwrap()]).unwrap();
-    let mut intent=io.frozen.clone();
-    ensure_status_with(&io,&path,&mut intent,&review).await.unwrap();
-    assert_eq!(io.submitted.lock().unwrap().len(),1);
-    let mut switched=intent.clone(); switched.event_community_id=Some(uuid::Uuid::new_v4().to_string());
-    assert!(Journal::open(&path).unwrap().save(&switched,"EVENT_OUTCOME").is_err());
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("journal.sqlite");
+    let (mut io, review) = consumer_fixture(&path, "DISPATCHED");
+    io.frozen.event = None;
+    io.frozen.event_result = None;
+    io.frozen.event_community_id = None;
+    let db = rusqlite::Connection::open(&path).unwrap();
+    db.execute(
+        "UPDATE intent SET payload=?1",
+        [serde_json::to_string(&io.frozen).unwrap()],
+    )
+    .unwrap();
+    let mut intent = io.frozen.clone();
+    ensure_status_with(&io, &path, &mut intent, &review)
+        .await
+        .unwrap();
+    assert_eq!(io.submitted.lock().unwrap().len(), 1);
+    let mut switched = intent.clone();
+    switched.event_community_id = Some(uuid::Uuid::new_v4().to_string());
+    assert!(Journal::open(&path)
+        .unwrap()
+        .save(&switched, "EVENT_OUTCOME")
+        .is_err());
 }
 
 #[tokio::test]
 async fn native_delivery_posts_original_event_with_fresh_device_auth_and_fences_late_proof() {
-    use axum::{body::Bytes,extract::State,http::HeaderMap,routing::post,Json,Router};
+    use axum::{body::Bytes, extract::State, http::HeaderMap, routing::post, Json, Router};
     use base64::Engine;
     use sha2::Digest;
-    use std::sync::{Arc,Mutex,atomic::{AtomicUsize,Ordering}};
+    use std::sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc, Mutex,
+    };
     #[derive(Clone)]
-    struct Server { url:String, event:Event, calls:Arc<AtomicUsize>, auth_ids:Arc<Mutex<Vec<nostr::EventId>>> }
-    async fn receive(State(server):State<Server>,headers:HeaderMap,body:Bytes)->Json<serde_json::Value> {
-        let raw=headers["authorization"].to_str().unwrap().strip_prefix("Nostr ").unwrap();
-        let auth=Event::from_json(base64::engine::general_purpose::STANDARD.decode(raw).unwrap()).unwrap();
-        assert!(auth.verify().is_ok()); assert_eq!(auth.pubkey,server.event.pubkey);
-        assert_eq!(field(&auth,"u"),Some(server.url.as_str()));
-        assert_eq!(field(&auth,"method"),Some("POST"));
-        assert_eq!(field(&auth,"payload"),Some(hex::encode(sha2::Sha256::digest(&body)).as_str()));
-        assert_eq!(Event::from_json(&body).unwrap(),server.event);
-        let mut ids=server.auth_ids.lock().unwrap(); assert!(!ids.contains(&auth.id));ids.push(auth.id);
-        server.calls.fetch_add(1,Ordering::SeqCst);
-        Json(json!({"eventId":server.event.id.to_hex(),"communityId":"00000000-0000-0000-0000-000000000001","accepted":true,"settled":false}))
+    struct Server {
+        url: String,
+        event: Event,
+        calls: Arc<AtomicUsize>,
+        auth_ids: Arc<Mutex<Vec<nostr::EventId>>>,
     }
-    let (keys,_,request,review)=fixture();
-    let event=merged_status(&keys,&request,&review,None,&"b".repeat(40)).unwrap();
-    let listener=tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let base=format!("http://{}",listener.local_addr().unwrap());
-    let server=Server {url:format!("{base}/events/delivery"),event:event.clone(),calls:Arc::new(AtomicUsize::new(0)),auth_ids:Arc::new(Mutex::new(Vec::new()))};
-    let app=Router::new().route("/events/delivery",post(receive)).with_state(server.clone());
-    let task=tokio::spawn(async move {axum::serve(listener,app).await.unwrap()});
-    let http=reqwest::Client::builder().no_proxy().redirect(reqwest::redirect::Policy::none()).build().unwrap();
-    for _ in 0..2 { assert!(crate::relay::merged_status_delivery(&event,&http,&base,&keys,||Ok(())).await.unwrap().accepted); }
-    assert!(crate::relay::merged_status_delivery(&event,&http,&base,&keys,||Err("retired".into())).await.is_err());
-    assert_eq!(server.calls.load(Ordering::SeqCst),2,"retired identity cannot send a proof request");
-    let checks=AtomicUsize::new(0);
-    assert!(crate::relay::merged_status_delivery(&event,&http,&base,&keys,|| {
-        if checks.fetch_add(1,Ordering::SeqCst)==0 {Ok(())} else {Err("retired".into())}
-    }).await.is_err(),"late proof cannot be adopted by retired identity");
-    assert_eq!(server.calls.load(Ordering::SeqCst),3);
+    async fn receive(
+        State(server): State<Server>,
+        headers: HeaderMap,
+        body: Bytes,
+    ) -> Json<serde_json::Value> {
+        let raw = headers["authorization"]
+            .to_str()
+            .unwrap()
+            .strip_prefix("Nostr ")
+            .unwrap();
+        let auth = Event::from_json(
+            base64::engine::general_purpose::STANDARD
+                .decode(raw)
+                .unwrap(),
+        )
+        .unwrap();
+        assert!(auth.verify().is_ok());
+        assert_eq!(auth.pubkey, server.event.pubkey);
+        assert_eq!(field(&auth, "u"), Some(server.url.as_str()));
+        assert_eq!(field(&auth, "method"), Some("POST"));
+        assert_eq!(
+            field(&auth, "payload"),
+            Some(hex::encode(sha2::Sha256::digest(&body)).as_str())
+        );
+        assert_eq!(Event::from_json(&body).unwrap(), server.event);
+        let mut ids = server.auth_ids.lock().unwrap();
+        assert!(!ids.contains(&auth.id));
+        ids.push(auth.id);
+        server.calls.fetch_add(1, Ordering::SeqCst);
+        Json(
+            json!({"eventId":server.event.id.to_hex(),"communityId":"00000000-0000-0000-0000-000000000001","accepted":true,"settled":false}),
+        )
+    }
+    let (keys, _, request, review) = fixture();
+    let event = merged_status(&keys, &request, &review, None, &"b".repeat(40)).unwrap();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let server = Server {
+        url: format!("{base}/events/delivery"),
+        event: event.clone(),
+        calls: Arc::new(AtomicUsize::new(0)),
+        auth_ids: Arc::new(Mutex::new(Vec::new())),
+    };
+    let app = Router::new()
+        .route("/events/delivery", post(receive))
+        .with_state(server.clone());
+    let task = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let http = reqwest::Client::builder()
+        .no_proxy()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .unwrap();
+    for _ in 0..2 {
+        assert!(
+            crate::relay::merged_status_delivery(&event, &http, &base, &keys, || Ok(()))
+                .await
+                .unwrap()
+                .accepted
+        );
+    }
+    assert!(
+        crate::relay::merged_status_delivery(&event, &http, &base, &keys, || Err("retired".into()))
+            .await
+            .is_err()
+    );
+    assert_eq!(
+        server.calls.load(Ordering::SeqCst),
+        2,
+        "retired identity cannot send a proof request"
+    );
+    let checks = AtomicUsize::new(0);
+    assert!(
+        crate::relay::merged_status_delivery(&event, &http, &base, &keys, || {
+            if checks.fetch_add(1, Ordering::SeqCst) == 0 {
+                Ok(())
+            } else {
+                Err("retired".into())
+            }
+        })
+        .await
+        .is_err(),
+        "late proof cannot be adopted by retired identity"
+    );
+    assert_eq!(server.calls.load(Ordering::SeqCst), 3);
     task.abort();
 }
