@@ -43,6 +43,7 @@ ADR-03 要求四门语言由同一 schema 生成。四个生成器支持的构�
 | `adapter/` | Adapter Protocol（与能力类别无关的线协议层） |
 | `adapter/<category>.vN/` | 能力契约 schema：`<category>` 为 Catalog 登记的能力类别键，预置 `file_storage`、`knowledge`、`data_query`（`DD-102`、`DD-103`），`vN` 为契约版本。按 `.design/07` §2.4 的 v1 契约键固定参数/结果 schema、错误映射与到 SpiceDB permission 的映射，是该契约与其一致性套件的唯一权威；契约键增删或语义变化只以新版本目录发布（`DD-88`）。schema 文件随 `EXT-BASE` 的能力模型实现建立 |
 | `component-host/` | Component manifest 与 Host API |
+| `runtime/` | 原部署配置入口的运行策略形状，当前为 Core 的 DD-151 推送策略；无 API/领域实体或跨端类型输出。仍遵守上述 schema 子集，数值和跨字段约束由 Core 配置消费者校验。显式示例在 `samples/`，不是默认配置 |
 | `workflow/` | Workflow input、Update/Signal、projection、ExternalExecution |
 | `compatibility/` | 已发布合同的原始字节归档，仅用于精确识别旧授权摘要；不作为新接口或类型生成输入。`action-submission-v1.json` 来自 `20dbd472b8baa8ff775322c3c72e59f0c1f7933a:contracts/api/action_submission.schema.json`；`v2` 来自 `b9d64ad70ec0079853520faf7ab1ea4bb9830657` 同路径。旧相对 `$ref` 原样保留以保持摘要，不能将归档作为当前位置可解析的活动 schema。 |
 
