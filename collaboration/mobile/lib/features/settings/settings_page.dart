@@ -32,6 +32,7 @@ import '../platform/platform_members_page.dart';
 import '../platform/platform_status_text.dart';
 import '../platform/platform_tasks_page.dart';
 import '../feedback/feedback_page.dart';
+import '../tenant_profile/tenant_profile_page.dart';
 import 'theme_picker_page.dart';
 
 part 'settings_page/notifications_section.dart';
@@ -245,6 +246,12 @@ class SettingsPage extends HookConsumerWidget {
                 const _NotificationsSection(),
                 AppListCard(
                   children: [
+                    AppListRow(
+                      key: const ValueKey('settings-tenant-profile'),
+                      icon: LucideIcons.building,
+                      title: platformText(PlatformMessageKey.tenantProfileTitle, locale: locale),
+                      onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const TenantProfilePage())),
+                    ),
                     AppListRow(
                       key: const ValueKey('settings-feedback'),
                       icon: LucideIcons.messageSquare,

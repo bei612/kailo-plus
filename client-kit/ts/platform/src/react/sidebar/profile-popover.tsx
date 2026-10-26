@@ -5,6 +5,7 @@ import { useHasPlatform, useUiT } from "../context";
 // Slack-style "Update your status" entry and SetStatusDialog (DD-120), then Settings. The
 // platform Sign out stays; feedback follows the Core-owned DD-158 contract.
 import * as React from "react";
+import { TenantProfileDialog } from "../tenant-profile/TenantProfileDialog";
 import { SendFeedbackDialog } from "../feedback/SendFeedbackDialog";
 import { Smile } from "lucide-react";
 
@@ -74,6 +75,7 @@ export function ProfilePopover({
 }: ProfilePopoverProps) {
   const translateUi = useUiT();
   const hasPlatform = useHasPlatform();
+  const [tenantProfileOpen, setTenantProfileOpen] = React.useState(false);
   const [feedbackOpen, setFeedbackOpen] = React.useState(false);
   const settingsShortcutLabel = isMacPlatform() ? "⌘," : "Ctrl+,";
   const [statusDialogOpen, setStatusDialogOpen] = React.useState(false);
@@ -203,7 +205,8 @@ export function ProfilePopover({
               </div>
             </div>
 
-            {hasPlatform ? <SendFeedbackDialog open={feedbackOpen} onOpenChange={setFeedbackOpen}/> : null}
+            {hasPlatform ? <TenantProfileDialog open={tenantProfileOpen} onOpenChange={setTenantProfileOpen}/> : null}
+      {hasPlatform ? <SendFeedbackDialog open={feedbackOpen} onOpenChange={setFeedbackOpen}/> : null}
       {canSetUserStatus ? (
               /* ── Status input (Slack-style) ──────────────────────── */
               <div className="px-2 pt-0 pb-1">
@@ -250,6 +253,7 @@ export function ProfilePopover({
               onClick={() => { closePopover(); window.requestAnimationFrame(() => setFeedbackOpen(true)); }}>
               <span className="flex-1">{translateUi("platform.feedback.title")}</span>
             </button> : null}
+            {hasPlatform ? <button className={MENU_ITEM_CLASS} role="menuitem" type="button" onClick={() => { closePopover(); window.requestAnimationFrame(() => setTenantProfileOpen(true)); }}><span className="flex-1">{translateUi("tenantProfile.title")}</span></button> : null}
             {/* ── Settings ───────────────────────────────────────── */}
             <button
               className={MENU_ITEM_CLASS}
