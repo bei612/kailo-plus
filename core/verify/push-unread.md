@@ -97,3 +97,22 @@ workspace 清单，fmt 在 metadata 阶段退出 1；补齐同 commit 的 exampl
 `push-integrated-check-complete-input.log` 和 `push-integrated-check-result.log`
 保存最后成功；同目录 limits/preflight 记录资源读回。容器/PG/独立网络已清理。
 Flutter 消费者、真机推送与持久发送意图恢复仍未验收；未部署。
+
+## 原 Flutter 消费者终态（2026-10-26）
+
+固定集成候选 `029b8fbc5`（基于根集成 `356df4087`，不带 Activity 祖先），
+原 Flutter 3.41.7 镜像
+`sha256:644e3cea0a8440ce75804b67ceab77b16a87b39d9e9d89b07aceca7a98af1aa3`，
+2 CPU / 4 GiB、原资源 helper。锁定 pub 依赖、七文件格式零差异、六路径
+analyze 全通过；`test/features/settings/push_registration_test.dart` **7 passed**。
+含真实 notifier 的旧身份读/写结果晚到隔离：身份切换后原请求成功不能覆盖新身份
+状态；配置未就绪、设备签名注册、CAS 冲突重读、未知结果重读、点击只携带 ID
+进入深链管线亦通过。固定 6c/7b 曾因测试代码缺花括号而 analyzer 退出 1，
+未绕过规则，原件保留。最终日志
+`/volumes/data/kailo/verification/buzz-r10/flutter-push-029b8fbc5/`
+中 check/result/preflight/limits，容器随脚本清理。
+
+Core 源码未随这一 Mobile 批变化，仍对应上述固定 `090e208dc` 的原 SDK/真实
+数据库通过证据。未进行 APNs/FCM 真机与系统权限、后台点击、签名打包或部署验收；
+发送成功至本地投影落库之间的结果不明窗口仍待持久发送意图与恢复收敛，不宣称
+exactly-once，DD-151 仍为进行中。
