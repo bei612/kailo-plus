@@ -70,7 +70,10 @@ pub async fn merged_status_delivery(
         event.id.as_bytes(),
     )
     .await?;
-    if stored.as_ref().is_some_and(|row| row.event != *event) {
+    // Nostr identity is the verified canonical event ID, not the randomized
+    // Schnorr signature bytes. A valid earlier signature for the same event
+    // remains delivery evidence for this exact payload and author.
+    if stored.as_ref().is_some_and(|row| row.event.id != event.id || row.event.verify().is_err()) {
         return Err(DbError::InvalidData("publication evidence mismatch".into()));
     }
     let result = MergedStatusDelivery {
@@ -139,8 +142,9 @@ mod tests {
             .connect(&std::env::var("BUZZ_TEST_DATABASE_URL").unwrap())
             .await
             .unwrap();
+        let created=Timestamp::now().as_secs();
         for commit in [true, false] {
-            let event = status(&keys, Timestamp::now().as_secs() + u64::from(commit));
+            let event = status(&keys, created + u64::from(commit));
             let mut tx = pool.begin().await.unwrap();
             crate::event::insert_event_in_transaction(&mut tx, community, &event, None)
                 .await
@@ -164,6 +168,20 @@ mod tests {
             assert_eq!(proof.accepted, commit);
             assert!(!proof.settled);
         }
+    }
+    #[tokio::test]
+    #[ignore = "requires isolated migrated BUZZ_TEST_DATABASE_URL"]
+    async fn delivery_identity_is_verified_event_id_not_randomized_signature_bytes() {
+        let (pool,community,keys)=fixture().await;
+        let original=status(&keys,Timestamp::now().as_secs());
+        crate::event::insert_event(&pool,community,&original,None).await.unwrap();
+        let mut signed_again=original.clone();
+        signed_again.sig=keys.sign_schnorr(&nostr::secp256k1::Message::from_digest(original.id.to_bytes()));
+        assert_ne!(signed_again.sig,original.sig);
+        assert!(signed_again.verify().is_ok()); assert_eq!(signed_again.id,original.id);
+        assert!(merged_status_delivery(&pool,community,&signed_again).await.unwrap().accepted);
+        signed_again.content="changed".into();
+        assert!(merged_status_delivery(&pool,community,&signed_again).await.is_err());
     }
     #[tokio::test]
     #[ignore = "requires isolated migrated BUZZ_TEST_DATABASE_URL"]
