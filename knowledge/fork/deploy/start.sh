@@ -71,6 +71,20 @@ if [[ -n "$platform_env" ]]; then
     exit 78
   fi
 fi
+# Optional private delivery roots must be explicit single absolute paths.
+for field in KNOWLEDGE_ADAPTER_WORKER_DELIVERY_DIR KNOWLEDGE_CONFORMANCE_FORWARD_DELIVERY_DIR; do
+  count=$(grep -Ec "^${field}=" "$native_env" || true)
+  if [[ "$count" != 0 ]]; then
+    [[ "$count" == 1 ]] && grep -Eq "^${field}=/[^[:space:]]+$" "$native_env" || {
+      echo "$field must occur once with an absolute delivery directory" >&2
+      exit 78
+    }
+    [[ "$platform_adapter" == true ]] || {
+      echo "$field requires the original receiver adapter" >&2
+      exit 78
+    }
+  fi
+done
 if [[ "$platform_adapter" == true ]]; then
   args+=(-f "$deployment_dir/compose.adapter.yaml")
   if grep -Eq '^KNOWLEDGE_ADAPTER_WORKER_DELIVERY_DIR=.+$' "$native_env"; then

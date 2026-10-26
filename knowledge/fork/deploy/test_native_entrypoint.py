@@ -189,6 +189,43 @@ class NativeEntrypointTests(unittest.TestCase):
                 else:
                     self.assertFalse(calls.exists())
 
+    def test_private_receiver_overlays_require_explicit_complete_delivery(self):
+        root = Path(self.directory.name)
+        (root / "start.sh").write_bytes(Path(__file__).with_name("start.sh").read_bytes())
+        recorder = root / "docker"
+        recorder.write_text("#!/usr/bin/env python3\nimport json,os,sys\nwith open(os.environ['CALLS'], 'a') as f: f.write(json.dumps(sys.argv[1:])+'\\n')\n")
+        recorder.chmod(0o700)
+        calls = root / "calls"
+        env = {**os.environ, "PATH": str(root) + os.pathsep + os.environ["PATH"], "CALLS": str(calls)}
+        forward = "KNOWLEDGE_CONFORMANCE_FORWARD_DELIVERY_DIR=/runtime/forward\n"
+        worker = "KNOWLEDGE_ADAPTER_WORKER_DELIVERY_DIR=/runtime/worker\n"
+        both = ["--platform-adapter", "--file-storage-sync"]
+        for content, flags, code, overlays in (
+            ("", both, 0, []),
+            (worker, ["--platform-adapter"], 0, ["adapter-worker"]),
+            (forward + worker, both, 0, ["adapter-worker", "conformance-forward"]),
+            (worker, [], 78, []),
+            (forward, ["--platform-adapter"], 78, []),
+            (forward, ["--file-storage-sync"], 78, []),
+            (forward + forward, both, 78, []),
+            (worker + worker, both, 78, []),
+            ("KNOWLEDGE_CONFORMANCE_FORWARD_DELIVERY_DIR=\n", both, 78, []),
+            ("KNOWLEDGE_ADAPTER_WORKER_DELIVERY_DIR=relative\n", both, 78, []),
+        ):
+            with self.subTest(content=content, flags=flags):
+                (root / ".env").write_text(content)
+                result = subprocess.run(["bash", str(root / "start.sh"), "--validate", *flags],
+                                        env=env, capture_output=True)
+                self.assertEqual(result.returncode, code, result.stderr)
+                if code:
+                    self.assertFalse(calls.exists())
+                    continue
+                operations = [json.loads(line) for line in calls.read_text().splitlines()]
+                self.assertEqual(len(operations), 1)
+                for overlay in ("adapter-worker", "conformance-forward"):
+                    self.assertEqual(str(root / ("compose." + overlay + ".yaml")) in operations[0], overlay in overlays)
+                calls.unlink()
+
     def test_aes_is_exactly_32_bytes_not_trimmed_or_hex_decoded(self):
         file = Path(self.env["SYSTEM_AES_KEY_FILE"])
         for raw in (b"A" * 31, b"A" * 33, b"ab" * 32, b"A" * 32 + b"\n"):
