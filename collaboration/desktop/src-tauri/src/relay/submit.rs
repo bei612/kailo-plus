@@ -65,7 +65,10 @@ pub(crate) async fn submit_signed_event_scoped(
     .map_err(|e| classify_request_error(&e))?;
 
     if !response.status().is_success() {
-        return Err(relay_error_message(response).await);
+        let error = relay_error_message(response).await;
+        // A refusal from this Host is not evidence about the original frozen
+        // Community. Keep its original event available for writer reconciliation.
+        return Err(if community.is_some() { "relay publish outcome unknown".into() } else { error });
     }
 
     let result: SubmitEventResponse = parse_json_response(response).await?;
