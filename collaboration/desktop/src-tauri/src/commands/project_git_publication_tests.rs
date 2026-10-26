@@ -820,6 +820,7 @@ async fn epoch_fence_preserves_old_unknown_without_backfill_and_accepts_positive
         "changed_epoch",
         "missing_current",
         "legacy_negative",
+        "legacy_negative_missing_scope",
         "unproven_negative",
         "legacy_positive",
     ] {
@@ -854,8 +855,12 @@ async fn epoch_fence_preserves_old_unknown_without_backfill_and_accepts_positive
         if case == "missing_current" {
             io.epoch = None;
         }
-        if matches!(case, "legacy_negative" | "unproven_negative") {
+        if matches!(case, "legacy_negative" | "legacy_negative_missing_scope" | "unproven_negative") {
             io.frozen.event_result = Some("NOT_DELIVERED".into());
+        }
+        if case == "legacy_negative_missing_scope" {
+            io.frozen.event_community_id = None;
+            io.observed = Some(Event::from_json(io.frozen.event.as_ref().unwrap()).unwrap());
         }
         if case == "unproven_negative" {
             io.now = 109;
