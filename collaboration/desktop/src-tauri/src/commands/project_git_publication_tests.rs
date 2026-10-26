@@ -625,7 +625,7 @@ async fn native_delivery_posts_original_event_with_fresh_device_auth_and_fences_
 async fn persisted_community_signed_post_requires_matching_ack_before_acceptance() {
     use base64::Engine;
     use std::io::{Read, Write};
-    for acknowledgement in ["missing", "different", "unauthorized", "forbidden", "matching"] {
+    for acknowledgement in ["missing", "different", "unauthorized", "forbidden", "rejected", "malformed", "wrong-event", "disconnect", "matching"] {
         let temp = tempfile::tempdir().unwrap();
         let path = temp.path().join("journal.sqlite");
         let (mut io, review) = consumer_fixture(&path, "NOT_DELIVERED");
@@ -700,10 +700,13 @@ async fn persisted_community_signed_post_requires_matching_ack_before_acceptance
             let mut response = json!({"event_id":event.id.to_hex(),"accepted":true,"message":""});
             match acknowledgement {
                 "matching" => response["community_id"] = json!(community),
+                "rejected" => { response["community_id"] = json!(community); response["accepted"] = json!(false); }
+                "wrong-event" => { response["community_id"] = json!(community); response["event_id"] = json!("f".repeat(64)); }
+                "disconnect" => return,
                 "different" => response["community_id"] = json!(uuid::Uuid::new_v4().to_string()),
                 _ => {}
             }
-            let response = response.to_string();
+            let response = if acknowledgement == "malformed" { "{".into() } else { response.to_string() };
             let status = match acknowledgement { "unauthorized" => "401 Unauthorized", "forbidden" => "403 Forbidden", _ => "200 OK" };
             write!(socket,"HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",response.len(),response).unwrap();
         });
