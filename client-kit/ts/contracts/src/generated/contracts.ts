@@ -5713,6 +5713,14 @@ export interface NativeCommunityFacts {
      */
     communityHost: string;
     /**
+     * 读取上述部署事实时 Core 的 Unix 秒时刻；Native 仅以本次可信读的时刻判断原签事件是否严格超过窗口，不信任 Webview now 或设备跳钟。
+     */
+    publishResultObservedAtUnixSeconds?: number;
+    /**
+     * DD-81：与 Core 发布对账器同源的 PUBLISH_RESULT_SETTLE_SECONDS 部署事实，必须为正且不小于 Relay 时间漂移窗口；缺失时不得猜测未送达。
+     */
+    publishResultSettleSeconds?: number;
+    /**
      * 当前固定 Relay NIP-11 的 max_limit；旧客户端忽略，新 Pulse 消费者缺失时不猜测上限。
      */
     relayQueryLimit?: number;

@@ -16798,6 +16798,12 @@ class NativeCommunityFacts {
   ///该 Tenant 的 Community host，可能带非默认端口
   final String communityHost;
 
+  ///读取上述部署事实时 Core 的 Unix 秒时刻；Native 仅以本次可信读的时刻判断原签事件是否严格超过窗口，不信任 Webview now 或设备跳钟。
+  final int? publishResultObservedAtUnixSeconds;
+
+  ///DD-81：与 Core 发布对账器同源的 PUBLISH_RESULT_SETTLE_SECONDS 部署事实，必须为正且不小于 Relay 时间漂移窗口；缺失时不得猜测未送达。
+  final int? publishResultSettleSeconds;
+
   ///当前固定 Relay NIP-11 的 max_limit；旧客户端忽略，新 Pulse 消费者缺失时不猜测上限。
   final int? relayQueryLimit;
 
@@ -16806,6 +16812,8 @@ class NativeCommunityFacts {
 
   NativeCommunityFacts({
     required this.communityHost,
+    this.publishResultObservedAtUnixSeconds,
+    this.publishResultSettleSeconds,
     this.relayQueryLimit,
     required this.relayUrl,
   });
@@ -16813,12 +16821,17 @@ class NativeCommunityFacts {
   factory NativeCommunityFacts.fromJson(Map<String, dynamic> json) =>
       NativeCommunityFacts(
         communityHost: json["communityHost"],
+        publishResultObservedAtUnixSeconds:
+            json["publishResultObservedAtUnixSeconds"],
+        publishResultSettleSeconds: json["publishResultSettleSeconds"],
         relayQueryLimit: json["relayQueryLimit"],
         relayUrl: json["relayUrl"],
       );
 
   Map<String, dynamic> toJson() => _stripNulls({
     "communityHost": communityHost,
+    "publishResultObservedAtUnixSeconds": publishResultObservedAtUnixSeconds,
+    "publishResultSettleSeconds": publishResultSettleSeconds,
     "relayQueryLimit": relayQueryLimit,
     "relayUrl": relayUrl,
   });
