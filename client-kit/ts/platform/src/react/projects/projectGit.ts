@@ -258,7 +258,7 @@ function refArgs(input: ProjectRepoRefInput, scope: NativeProjectsGitScope) {
  * native side names the repository only by its 30617 coordinate, signs NIP-98 in process with the
  * device key and answers the original raw snake_case shapes, mapped back here exactly like the
  * original `fromRawProjectRepoSnapshot`. A response of another shape is never rendered. The
- * native host has no branch or merge writes yet, so the views offer none (DD-160(2) is pending).
+ * native host exposes the original branch and owner-merge commands (DD-160(2)).
  */
 function decodeNativeProjectRepoSnapshot(raw: unknown): ProjectRepoSnapshot {
   if (!isRecord(raw) || !Array.isArray(raw.files) || !Array.isArray(raw.commits) || !Array.isArray(raw.contributors))
@@ -352,7 +352,24 @@ export function createNativeProjectsGitHost(invoke: NativeProjectsGitInvoke, sco
   const send = async (command: string, args: Record<string, unknown>) => {
     try { return await invoke(command, { ...args, ...scope }); }
     catch (error) {
-      const code = typeof error === "string" ? error : error instanceof Error ? error.message : "";
+      if (isRecord(error) && typeof error.code === "string") {
+        const operationId = typeof error.operationId === "string" ? error.operationId : undefined;
+        const reasons: Record<string, [number, ErrorClass, ReasonCode]> = {
+          PUBLISH_RESULT_UNKNOWN: [202, ErrorClass.Unknown, ReasonCode.PublishResultUnknown],
+          TARGET_STATE_CONFLICT: [409, ErrorClass.Conflict, ReasonCode.TargetStateConflict],
+          TARGET_NOT_FOUND: [404, ErrorClass.Denied, ReasonCode.TargetNotFound],
+          PUBLISH_REJECTED: [422, ErrorClass.Precondition, ReasonCode.PublishRejected],
+          PERMISSION_DENIED: [403, ErrorClass.Denied, ReasonCode.PermissionDenied],
+          DEPENDENCY_UNAVAILABLE: [503, ErrorClass.Precondition, ReasonCode.DependencyUnavailable],
+          IDEMPOTENCY_KEY_REUSED: [409, ErrorClass.Conflict, ReasonCode.IdempotencyKeyReused],
+        };
+        const mapped = reasons[error.code];
+        if (mapped) throw new BffError(mapped[0], error.code, { class: mapped[1], reason: mapped[2], operationId });
+        // A typed refusal before dispatch is safe to report; unstructured IPC
+        // loss below still keeps the original retained request.
+        if (error.code === "INVALID_REQUEST") throw new BffError(400, error.code);
+      }
+      const code = typeof error === "string" ? error : error instanceof Error ? error.message : isRecord(error) && typeof error.code === "string" ? error.code : "";
       if (code === "project_repo_not_found") throw new BffError(404, code, { class: ErrorClass.Denied, reason: ReasonCode.TargetNotFound });
       if (code === "project_repo_unavailable" || code === "project_repo_timeout")
         throw new BffError(503, code, { class: ErrorClass.Precondition, reason: ReasonCode.DependencyUnavailable });
@@ -365,7 +382,26 @@ export function createNativeProjectsGitHost(invoke: NativeProjectsGitInvoke, sco
     defaultBranch: input.defaultBranch ?? null, baseBranch: input.baseBranch ?? null });
   const localBranch = (input: CheckoutBranch) => ({ repository: input.repository,
     branchName: input.branchName ?? null, baseBranch: input.baseBranch ?? null });
+  const writeRef = async (command: string, input: CreateProjectRemoteBranchInput | DeleteProjectRemoteBranchInput, idempotencyKey: string) => {
+    const request = projectGitRefRequest(input);
+    const raw = await send(command, { input: request, idempotencyKey });
+    if (!isRecord(raw) || typeof raw.branch !== "string" || typeof raw.commit !== "string") throw new TransportError("Invalid repository ref response");
+    return refAnswer({ branch: raw.branch, commit: raw.commit }, request);
+  };
   return {
+    createProjectRemoteBranch: (input, key) => writeRef("create_project_remote_branch", input, key),
+    deleteProjectRemoteBranch: (input, key) => writeRef("delete_project_remote_branch", input, key),
+    mergeProjectPullRequest: async (input, idempotencyKey) => {
+      if (input.repoAddress.split(":")[1] !== scope.expectedSignerPubkey)
+        throw new BffError(403, "PERMISSION_DENIED", { class: ErrorClass.Denied, reason: ReasonCode.PermissionDenied });
+      const raw = await send("merge_project_pull_request", { idempotencyKey, input: {
+        operation: "MERGE", repository: input.repoAddress, branch: input.targetBranch, sourceBranch: input.sourceBranch,
+        expectedCommit: input.expectedCommit, pullRequestEventId: input.pullRequestId,
+      } });
+      if (!isRecord(raw) || typeof raw.mergeCommit !== "string" || !(raw.statusEventId === null || typeof raw.statusEventId === "string"))
+        throw new TransportError("Invalid repository merge response");
+      return mergeAnswer({ mergeCommit: raw.mergeCommit, ...(raw.statusEventId === null ? {} : { statusEventId: raw.statusEventId }) });
+    },
     getProjectRepoSnapshot: async input => decodeNativeProjectRepoSnapshot(await send("get_project_repo_snapshot", refArgs(input, scope))),
     getProjectRepoFileContent: async input => {
       const content = await send("get_project_repo_file_content", { repository: input.repository,
