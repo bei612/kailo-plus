@@ -636,3 +636,12 @@ source 相等，原 manifest 仅该产物 source/artifact 两字段 +2/-2，不�
 - 未生成安装包、未部署；真实 OS 钥匙串交互、频道和私聊订阅、实际 Relay 撤权、断网恢复、退出重登与设备身份切换仍待业务验收。单测中的钥匙串删除顺序用受控回调验证，不能当作真机钥匙串通过。发布门禁与 `exposure: none` 保留。
 
 原始日志位于 CI 节点 `/volumes/data/kailo/verification/buzz-r10/`：`rustfmt-limits.log`、`local-archive-node-frozen.log`、`node-frozen-limits.log`、`i18n.log`、`registry.log`、`docs.log`、`local-archive-cargo-test.log`、`local-archive-cargo-recheck.log`、`local-archive-cargo-proxy.log`、`local-archive-cargo-build.log`、`cargo-build-limits.log`。最后的 `local-archive-cargo-build.log` 是 17 项通过记录，后续结果未覆盖此前失败。
+
+
+### DD-159 生命周期补充复核（2026-10-26，基于 f551157f0）
+
+独立只读审查发现：旧退出等待远端后才清全部归档，会误删等待期间新登录的归档；IdP 刷新拒绝及 BFF 二次 401 的自动失效链未清归档；`apply_workspace` 的设备公钥替换没有归档清理；既有订阅更新 kinds 保留水位和续页游标，会漏新选种类的历史。设置界面目前不编辑已有订阅 kinds，但 Tauri 命令仍须正确。
+
+本增量沿 NativeSession 原消费链串行本机凭据退役与归档擦除，擦除完成后释放生命周期锁，远端注销等待不持该锁；旧请求仍先核对原 generation。归档查询在每次 Relay 等待前后检查会话仍有效，已在途同步退出后由原归档锁串行擦除。锁序为 lifecycle →（短暂 session state 后释放）→ archive；归档 open 只取 archive → 短暂 session state，没有持 state 等 archive 的反向路径。设备公钥切换同样在 archive 锁内先清旧库再切换；清理失败不接纳新身份。种类变化事务清理旧范围和复合游标，从零同步当前选择；相同选择保留水位。SQLite 开启 secure_delete，避免删除行的密文残留于仍持同身份密钥的活动库空闲页。
+
+本节初次写入时已完成 diff 自检和必要回归源码，未运行本增量的 Rust 检查。等待原 Desktop SDK 受限容器定向验证；未打包或部署，真实 OS 钥匙串与 V-SCN-262/263 设备操作仍未验收。原 f551157f0 的 17 项结果不能代替本增量验证。

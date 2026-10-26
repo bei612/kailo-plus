@@ -187,6 +187,9 @@ pub fn run() {
                 std::process::exit(1);
             }
             local_archive::erase_previous_identity(&app_handle, &state)?;
+            app_handle.state::<platform::api::NativeSession>().set_archive(
+                Box::new(local_archive::SessionArchive(app_handle.clone()))
+            )?;
 
             // Start the localhost media streaming proxy. The port is stored in
             // AppState and exposed to the frontend via `get_media_proxy_port`.

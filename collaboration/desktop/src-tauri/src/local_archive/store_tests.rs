@@ -227,3 +227,32 @@ fn record_sync_keeps_the_cursor_monotonic() {
         (50, "retry", Some(11))
     );
 }
+
+#[test]
+fn changing_kinds_rebuilds_history_but_identical_subscriptions_keep_the_cursor() {
+    let archive = store();
+    archive.subscribe("chan", &[9], 1).unwrap();
+    archive.ingest("chan", &[message(&Keys::generate(), "chan", "old")]).unwrap();
+    archive.record_sync("chan", "ok", Some(100), 2).unwrap();
+    archive.save_page("chan", 20, "page-id", 100).unwrap();
+    archive.subscribe("chan", &[9, 9], 3).unwrap();
+    assert_eq!(archive.subscription("chan").unwrap().unwrap().cursor, 100);
+    assert!(archive.page_cursor("chan").unwrap().is_some());
+    archive.subscribe("chan", &[9, 7], 4).unwrap();
+    let sub = archive.subscription("chan").unwrap().unwrap();
+    assert_eq!((sub.cursor, sub.event_count, sub.last_result.as_str()), (0, 0, "never"));
+    assert!(archive.page_cursor("chan").unwrap().is_none());
+}
+
+#[test]
+fn removed_ciphertext_is_not_left_readable_in_the_live_database_free_pages() {
+    let file = tempfile::NamedTempFile::new().unwrap();
+    let archive = ArchiveStore::open(Connection::open(file.path()).unwrap(), Keys::generate()).unwrap();
+    archive.subscribe("chan", &[9], 1).unwrap();
+    archive.ingest("chan", &[message(&Keys::generate(), "chan", &"sensitive".repeat(1000))]).unwrap();
+    let sealed: String = archive.conn.query_row("SELECT sealed FROM archived_event", [], |r| r.get(0)).unwrap();
+    let needle = &sealed.as_bytes()[100..200];
+    assert!(std::fs::read(file.path()).unwrap().windows(needle.len()).any(|w| w == needle));
+    archive.unsubscribe("chan").unwrap();
+    assert!(!std::fs::read(file.path()).unwrap().windows(needle.len()).any(|w| w == needle));
+}

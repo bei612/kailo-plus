@@ -54,20 +54,20 @@ pub(crate) async fn platform_sign_in(
     session: State<'_, NativeSession>,
 ) -> Result<(), String> {
     let cfg = require_config(&app)?;
-    let generation = session.begin_sign_in()?;
+    let generation = session.begin_sign_in().await?;
     let open = |url: &str| {
         app.opener()
             .open_url(url, None::<&str>)
             .map_err(|e| format!("无法打开系统浏览器：{e}"))
     };
     let tokens = oidc::sign_in(open, &state.http_client, &cfg, &session.pending).await?;
-    session.adopt_for(generation, tokens)
+    session.adopt_for(generation, tokens).await
 }
 
 #[tauri::command]
-pub(crate) fn platform_cancel_sign_in(session: State<'_, NativeSession>) -> Result<(), String> {
+pub(crate) async fn platform_cancel_sign_in(session: State<'_, NativeSession>) -> Result<(), String> {
     // 即使回调已完成、正等令牌端点，取消也必须阻止迟到令牌落盘。
-    session.begin_sign_in()?;
+    session.begin_sign_in().await?;
     session.pending.cancel();
     Ok(())
 }
@@ -116,7 +116,6 @@ pub(crate) async fn platform_sign_out(
         }
     }
     .await;
-    crate::local_archive::erase_on_sign_out(&app).await?;
     result
 }
 
