@@ -13,8 +13,8 @@ use tauri::{AppHandle, Manager};
 use tauri_plugin_opener::OpenerExt;
 
 use super::project_git_remote::{
-    checked_path, git_error, repository_path, RepoScope, REPO_FAILED, REPO_INVALID_REQUEST, REPO_TIMEOUT,
-    REQUEST_DEADLINE,
+    checked_path, git_error, repository_path, RepoScope, REPO_FAILED, REPO_INVALID_REQUEST,
+    REPO_TIMEOUT, REQUEST_DEADLINE,
 };
 
 // Mutating and reading the same checkout must not race within this process.
@@ -252,9 +252,14 @@ pub async fn get_project_local_repo_file_content(
     app: AppHandle,
 ) -> Result<Option<String>, String> {
     checked_path(&path)?;
-    with_checkout(app, repository, expected_relay_url, expected_signer_pubkey, move |repo, root, auth| {
-        checkout_file_content(repo, root, &path, auth)
-    }).await
+    with_checkout(
+        app,
+        repository,
+        expected_relay_url,
+        expected_signer_pubkey,
+        move |repo, root, auth| checkout_file_content(repo, root, &path, auth),
+    )
+    .await
 }
 
 #[tauri::command]
