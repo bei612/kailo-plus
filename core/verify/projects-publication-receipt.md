@@ -226,3 +226,36 @@ CI 原回执分别在
 本节固定 `afe53b8e7` 分支沿基线的 `state.http` 字段；主集成 `83ec3ebb339ab53f65bbf7b04b1866dfbb10cd71` 已把这两条新请求接入受限 `state.relay_http`，其合批验收另记，不借本节检查代替。Relay writer 含软删观察、native 授权/ban、历史 kind 5 NULL scope 拒绝等属于主线独立实现和真实 Relay/PG 检查；本节不把 HTTP 测试服务器当完整 Core→Relay 部署验收。
 
 没有发布产物、部署或真实三端操作验收。观察缺失、拒绝、purge、不可观察的 41010/41012 或历史 NULL scope 都保持 UNKNOWN；本批只闭合新冻结范围的肯定证据消费，不证明权威缺失，也不宣称完整 DD-81 或旧未知操作已经全部收敛。
+
+## 2026-10-26 合批固定源码检查
+
+最终 Core 产品集成固定 `1d0d20b5336f7f3cb124ee33bdc2972263444d6b`，原 SDK
+4 CPU / 16 GiB、私有 PG 1 CPU / 2 GiB，memory+swap 同限。正常 Core 主目标
+839 passed / 91 ignored；显式原消费者 Agent 5、Canvas 4、审核 6、scope 5、
+history 1、reconcile 3 与 bridge 实际 HTTP 2 项全部通过。真实 PG 通过原显式
+环境单独调用，ignored 与正常目标中缺少 live 环境而早返的项不算真实业务验收。
+格式、完整迁移、两条新迁移在空库回退/重进、Core/bridge all-target Clippy 与
+原 `cargo sqlx prepare --workspace --check` 全部退出 0。3,284 份归档输入与
+固定 GitHub 对象逐字一致，包含 SQLx 缓存，没有未提交的生成物或手改缓存。
+
+[集成回执](phase1-integration-publication-20261026.json)原字节 SHA-256 为
+`3671264fad33036e39a7466034ba12cd8a7239c5ded1b9abea43fdc848a1667c`，
+CI 原件在
+`/volumes/data/kailo/conformance/checks/publication-integrated-1d0d20b53/receipt.json`。
+本批不重复已通过的故障变异；原各固定批次分别保留其反向、恢复、前置失败和边界。
+SDK/PG 均无 OOM，容器和私有网络已清理；未运行全工程 full 或部署。
+
+Relay 最后另补真实 Pulse note/like/unlike：为保持私聊历史 NULL scope 拒绝，
+不能同时把合法 global kind:7 的 UNLIKE 也拒绝。固定
+`85c26ebcd1c42d5c962232b0bb103b3dfa237ad9` 在原 SDK 2 CPU / 8 GiB 与原
+私有 PG/Redis 限额内，实际 scoped POST 后把 note、reaction 与 unlike 全部软删，
+原 writer 观察仍成立。12/12 通过；仅关闭验证 global kind:7→kind:1 目标链的
+生产分支，原消费者收到 404 而非 200、实际断言失败 exit 101；逐字恢复后
+12/12 再通过。该批无 OOM、容器与网络已清理。
+
+该原回执 SHA-256 为
+`c8b371317f8c83a42b8912480d89b98fdfac41cfe9a89e55ea19cf1390680a30`，
+CI 在
+`/volumes/data/kailo/verification/phase1-integration/observation-85c26ebcd-check/receipt.json`，
+原字节元数据与日志摘要已加入上面的 writer 回执集合。上述仍是固定原消费者与
+数据库证据，不代表真实三账号、Core→Relay 部署全链或完整权威缺失证明。

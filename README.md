@@ -12,7 +12,15 @@ DD-124/136 一致性投递、DD-159 本地归档、DD-151 持久推送与 Mobile
 DD-158 反馈和跨会话社区资料，以及 DD-160 原生仓库写入。已提交并推送不代表
 合并 main、产物或部署。下列检查分别对应固定源码，不合并认作最新整树 full。
 
-最新 Core 联合检查从 `697cfe263` 开始，原 SQLx prepare 仅删除一份废弃缓存，
+本批最终 Core 集成固定 `1d0d20b53`：原 SDK 4 CPU / 16 GiB、私有 PG
+1 CPU / 2 GiB，正常主目标 **839 passed / 91 ignored**；显式 Agent/Canvas/审核、
+publication scope/history/reconcile 与 bridge HTTP 共 **26** 项通过。格式、完整
+迁移及两新迁移空库往返、Core/bridge all-target Clippy、原 workspace SQLx check
+全部退出 0，3,284 份归档输入与固定 GitHub 字节相同，含 SQLx 缓存；见
+[最终集成回执](core/verify/phase1-integration-publication-20261026.json)。ignored
+与 live 环境早返不算业务验收，这不是最新全工程 full 或部署。
+
+较早的 Core 联合检查从 `697cfe263` 开始，原 SQLx prepare 仅删除一份废弃缓存，
 入库为 `b19846236` 后 2,070 份源文件/缓存逐一匹配，最终 prepare check 退出 0。
 原 SDK 4 CPU / 16 GiB 与私有 PG 1 CPU / 2 GiB：格式、完整迁移及 `310700`
 回退/重进、Clippy all-targets `-D warnings` 全部通过。正常 workspace harness
@@ -46,8 +54,10 @@ Clippy 与格式通过。仍不等于权威缺失证明，见
 
 Relay 新增只返回五项引用的 writer 肯定观察，原事件及删除事件软删后仍可查证。
 固定 `63590d878` 的实际 HTTP/PG/Redis **11/11** 通过；ban、私聊重复删除范围、
-历史 NULL scope 三项实际故障均被检出并逐字恢复。Core 配套消费者尚单独收口，
-不能将本 Relay 批认作 BFF 全链；缺失或拒绝仍 UNKNOWN。详情与原回执见
+历史 NULL scope 三项实际故障均被检出并逐字恢复。后续 `85c26ebcd` 保留合法
+Pulse unlike 的全球目标链，**12/12** 通过，移除该路径断言失败、恢复后 12/12。
+Core 范围冻结与新消费者已进入上述最终集成，但未做真实部署全链；缺失或拒绝仍
+UNKNOWN。详情与原回执见
 [writer 证据](core/verify/projects-publication-receipt.md)。
 
 较早 `06712387a` 的真实 `pg_notify` 删除反向与恢复通过仍独立保留于

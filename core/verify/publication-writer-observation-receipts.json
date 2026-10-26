@@ -148,6 +148,67 @@
           "result.log": "a9dbe799d218528f5f482d1390641d259bd003f7f2d93796bb7a9ba8074878dc"
         }
       }
+    },
+    {
+      "canonical_receipt_sha256": "c8b371317f8c83a42b8912480d89b98fdfac41cfe9a89e55ea19cf1390680a30",
+      "receipt": {
+        "source_commit": "85c26ebcd1c42d5c962232b0bb103b3dfa237ad9",
+        "source_transport": "CI direct GitHub fixed-object archive",
+        "command": "cargo test --offline --locked --lib -p buzz-relay api::delivery::tests -- --ignored --test-threads=1",
+        "job": "/volumes/data/kailo/verification/phase1-integration/observation-85c26ebcd-check",
+        "sdk_image": "sha256:3007729eb192341a4f004a88e42e1e66c94fc67d763acfc96568bd7311116018",
+        "sdk": {
+          "cpus": 2.0,
+          "memory": 8589934592,
+          "memory_swap": 8589934592,
+          "state": {
+            "Status": "exited",
+            "Running": false,
+            "Paused": false,
+            "Restarting": false,
+            "OOMKilled": false,
+            "Dead": false,
+            "Pid": 0,
+            "ExitCode": 0,
+            "Error": "",
+            "StartedAt": "2026-10-26T22:24:39.212576535Z",
+            "FinishedAt": "2026-10-26T22:26:21.721875235Z"
+          }
+        },
+        "test_results": [
+          "test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 1139 filtered out; finished in 8.04s",
+          "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1150 filtered out; finished in 0.29s",
+          "test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 1139 filtered out; finished in 7.58s"
+        ],
+        "negative_assertions": {
+          "pulse": {
+            "exit": 101,
+            "result": "actual consumer received 404 instead of 200 when the valid global unlike path was removed"
+          }
+        },
+        "restored": "byte-identical delivery.rs; complete 12-consumer suite passed",
+        "scope": [
+          "actual original scoped HTTP note/like/unlike publications, private PG writer and Redis",
+          "positive evidence for unlike after note, reaction and unlike were soft-deleted",
+          "previous private channel/ban/historical NULL guards remain"
+        ],
+        "limitations": [
+          "No full Core/BFF-to-Relay deployed end-to-end consumer in this batch.",
+          "Missing/refused observations do not establish non-delivery.",
+          "No formal artifact, production deployment or device acceptance."
+        ],
+        "cleanup_containers": [],
+        "hashes": {
+          "preflight.log": "225d2817a3e92df0962d3e6a124e23a21c4ae20baa762a6208badfa2b44c2582",
+          "pg-limits.log": "9560b0933150697c83028d89702e2dd2936fce7f2eeba5ff26fc25ecb9622f7a",
+          "redis-limits.log": "c4fca7c6ecf490fe62d5ddbdc68e8e800c7bfe3dd988ed1f929297c2dc4a8c00",
+          "inner.sh": "8ee5a759417295c4444203e6db6532b1d135d1984557c71b8e7bfff77a0ed9b1",
+          "check-limits.log": "d1c980cd7510c9a0d0e04b8201890e87926022f29f3d3e09021387150040a921",
+          "check.log": "dc30521b478e296f812b372ca9771a24afb54cfdf1a9dc81d078746c08b9c211",
+          "negative-pulse.log": "e65364b323aec7118699a58957ba5a32a4c31bb5ba7e0e0d9ff249778955b834",
+          "result.log": "6761f11b44de63a6fc39302abd96c9de2c8e86bdc35ae0d110ebce7553cf7a89"
+        }
+      }
     }
   ]
 }
