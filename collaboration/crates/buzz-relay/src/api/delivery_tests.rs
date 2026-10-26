@@ -116,6 +116,22 @@ fn event(keys: &Keys, created: u64) -> Event {
         .sign_with_keys(keys)
         .unwrap()
 }
+async fn stamped_status(
+    pool: &sqlx::PgPool,
+    community: CommunityId,
+    keys: &Keys,
+    created: u64,
+) -> Event {
+    let epoch: uuid::Uuid = sqlx::query_scalar("SELECT publication_epoch FROM communities WHERE id=$1")
+        .bind(community.as_uuid()).fetch_one(pool).await.unwrap();
+    EventBuilder::new(Kind::Custom(1631), "")
+        .tags([
+            Tag::parse(["a", &format!("30617:{}:repo", keys.public_key())]).unwrap(),
+            Tag::parse([buzz_core::publication::PUBLICATION_EPOCH_TAG, &epoch.to_string()]).unwrap(),
+        ])
+        .custom_created_at(Timestamp::from(created))
+        .sign_with_keys(keys).unwrap()
+}
 fn auth(keys: &Keys, host: &str, body: &[u8]) -> String {
     auth_at(keys, host, "/events/delivery", body)
 }
@@ -211,7 +227,7 @@ async fn delivery_http_uses_real_nip98_replay_writer_and_live_owner_admission() 
         serde_json::from_slice(&to_bytes(response.into_body(), 4096).await.unwrap()).unwrap();
     assert_eq!(body["accepted"], true);
     assert_eq!(body.as_object().unwrap().len(), 4);
-    let expired = event(&keys, Timestamp::now().as_secs() - 901);
+    let expired = stamped_status(&pool, community, &keys, Timestamp::now().as_secs() - 901).await;
     let response = proof(state.clone(), &host, &keys, &expired).await;
     assert_eq!(response.status(), StatusCode::OK);
     let body: serde_json::Value =
@@ -374,7 +390,7 @@ async fn delivery_rechecks_revocation_and_host_binding_after_waiting_for_writer(
 async fn original_http_ingest_cannot_commit_after_waiting_past_original_window() {
     use std::time::Duration;
     let (state, pool, community, host, keys, _) = fixture().await;
-    let original = event(&keys, Timestamp::now().as_secs() - 898);
+    let original = stamped_status(&pool, community, &keys, Timestamp::now().as_secs() - 898).await;
     let mut writer = pool.begin().await.unwrap();
     buzz_db::event::insert_event_in_transaction(&mut writer, community, &original, None)
         .await
@@ -1134,4 +1150,196 @@ async fn pulse_unlike_keeps_positive_evidence_after_note_and_reaction_are_delete
     assert_eq!(body["kind"], 5);
     assert!(body["channel_id"].is_null());
     assert_eq!(body.as_object().unwrap().len(), 5);
+}
+
+struct SettlementFixture {
+    state: Arc<AppState>,
+    pool: sqlx::PgPool,
+    community: CommunityId,
+    host: String,
+    author: Keys,
+    controller: Keys,
+    channel: uuid::Uuid,
+}
+
+async fn settlement_fixture() -> SettlementFixture {
+    let (state, pool, community, host, author, channel) = fixture().await;
+    let controller = Keys::generate();
+    let mut tx = pool.begin().await.unwrap();
+    sqlx::query("UPDATE relay_members SET role='member' WHERE community_id=$1 AND pubkey=$2")
+        .bind(community.as_uuid()).bind(author.public_key().to_hex())
+        .execute(&mut *tx).await.unwrap();
+    sqlx::query("INSERT INTO relay_members(community_id,pubkey,role) VALUES($1,$2,'owner')")
+        .bind(community.as_uuid()).bind(controller.public_key().to_hex())
+        .execute(&mut *tx).await.unwrap();
+    tx.commit().await.unwrap();
+    SettlementFixture { state, pool, community, host, author, controller, channel }
+}
+
+async fn settlement_claim(
+    fixture: &SettlementFixture,
+    age: u64,
+) -> (Event, buzz_core::publication::PublicationClaim) {
+    let policy = fixture.state.db.publication_policy(fixture.community).await.unwrap();
+    assert!(policy.ready);
+    let now: i64 = sqlx::query_scalar("SELECT floor(extract(epoch from clock_timestamp()))::bigint")
+        .fetch_one(&fixture.pool).await.unwrap();
+    let created_at = u64::try_from(now).unwrap() - age;
+    let event = EventBuilder::new(Kind::Custom(9), "original private message")
+        .tags([
+            Tag::parse(["h", &fixture.channel.to_string()]).unwrap(),
+            Tag::parse([buzz_core::publication::PUBLICATION_EPOCH_TAG, &policy.epoch]).unwrap(),
+        ])
+        .custom_created_at(Timestamp::from(created_at))
+        .sign_with_keys(&fixture.author).unwrap();
+    let claim = buzz_core::publication::PublicationClaim {
+        event_id: event.id.to_hex(), community_id: fixture.community.as_uuid().to_string(),
+        pubkey: fixture.author.public_key().to_hex(), kind: 9,
+        channel_id: Some(fixture.channel.to_string()), created_at, non_expiring: true,
+        epoch: policy.epoch,
+    };
+    assert!(claim.matches_event(&event, Some(fixture.channel)));
+    (event, claim)
+}
+
+fn settlement_auth(keys: &Keys, host: &str, body: &[u8], community: CommunityId) -> String {
+    auth_with_tags(keys, host, "/events/settlement", body,
+        vec![Tag::parse(["community", &community.as_uuid().to_string()]).unwrap()])
+}
+
+async fn settlement_post(
+    state: Arc<AppState>, host: &str, primary: &str, attestation: Option<&str>, body: Vec<u8>,
+) -> Response {
+    let mut request = Request::builder().method("POST").uri("/events/settlement")
+        .header(header::HOST, host).header(header::AUTHORIZATION, primary);
+    if let Some(attestation) = attestation {
+        request = request.header("x-kailo-publication-attestation", attestation);
+    }
+    crate::router::build_router(state).oneshot(request.body(Body::from(body)).unwrap())
+        .await.unwrap()
+}
+
+async fn settle_claim(
+    fixture: &SettlementFixture, claim: &buzz_core::publication::PublicationClaim,
+) -> Response {
+    let body = serde_json::to_vec(claim).unwrap();
+    let primary = settlement_auth(&fixture.author, &fixture.host, &body, fixture.community);
+    let attestation = settlement_auth(&fixture.controller, &fixture.host, &body, fixture.community);
+    settlement_post(fixture.state.clone(), &fixture.host, &primary, Some(&attestation), body).await
+}
+
+#[tokio::test]
+#[ignore = "requires isolated migrated BUZZ_TEST_DATABASE_URL and REDIS_URL"]
+async fn settlement_requires_independent_current_core_attestation_and_both_replay_gates() {
+    let fixture = settlement_fixture().await;
+    let (_, claim) = settlement_claim(&fixture, 961).await;
+    let body = serde_json::to_vec(&claim).unwrap();
+    let author = settlement_auth(&fixture.author, &fixture.host, &body, fixture.community);
+    assert_eq!(settlement_post(fixture.state.clone(), &fixture.host, &author, None, body.clone())
+        .await.status(), StatusCode::NOT_FOUND);
+    let impostor = settlement_auth(&Keys::generate(), &fixture.host, &body, fixture.community);
+    assert_eq!(settlement_post(fixture.state.clone(), &fixture.host, &author, Some(&impostor), body.clone())
+        .await.status(), StatusCode::NOT_FOUND, "an arbitrary signer is not Core metadata authority");
+    let author = settlement_auth(&fixture.author, &fixture.host, &body, fixture.community);
+    assert_eq!(settlement_post(fixture.state.clone(), &fixture.host, &author, Some(&author), body.clone())
+        .await.status(), StatusCode::NOT_FOUND, "the business author cannot attest its own timestamp");
+    let missing_scope = auth_at(&fixture.controller, &fixture.host, "/events/settlement", &body);
+    let author = settlement_auth(&fixture.author, &fixture.host, &body, fixture.community);
+    assert_eq!(settlement_post(fixture.state.clone(), &fixture.host, &author, Some(&missing_scope), body.clone())
+        .await.status(), StatusCode::NOT_FOUND);
+    let attestation = settlement_auth(&fixture.controller, &fixture.host, &body, fixture.community);
+    let author = settlement_auth(&fixture.author, &fixture.host, &body, fixture.community);
+    let response = settlement_post(fixture.state.clone(), &fixture.host, &author, Some(&attestation), body.clone()).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.headers()["cache-control"], "no-store");
+    let proof: buzz_core::publication::PublicationSettlement = serde_json::from_slice(
+        &to_bytes(response.into_body(), 4096).await.unwrap()).unwrap();
+    assert!(proof.proves_absence_for(&claim));
+    let fresh_author = settlement_auth(&fixture.author, &fixture.host, &body, fixture.community);
+    assert_eq!(settlement_post(fixture.state.clone(), &fixture.host, &fresh_author, Some(&attestation), body.clone())
+        .await.status(), StatusCode::UNAUTHORIZED, "Core attestation has its own replay gate");
+    let fresh_attestation = settlement_auth(&fixture.controller, &fixture.host, &body, fixture.community);
+    assert_eq!(settlement_post(fixture.state.clone(), &fixture.host, &author, Some(&fresh_attestation), body)
+        .await.status(), StatusCode::UNAUTHORIZED, "the original author has its own replay gate");
+}
+
+#[tokio::test]
+#[ignore = "requires isolated migrated BUZZ_TEST_DATABASE_URL and REDIS_URL"]
+async fn settlement_retains_private_soft_deleted_evidence_without_admitting_control_to_dm() {
+    let fixture = settlement_fixture().await;
+    let (event, claim) = settlement_claim(&fixture, 0).await;
+    assert!(!fixture.state.db.is_member(fixture.community, fixture.channel,
+        fixture.controller.public_key().as_bytes()).await.unwrap());
+    fixture.state.db.insert_event(fixture.community, &event, Some(fixture.channel)).await.unwrap();
+    fixture.state.db.soft_delete_event(fixture.community, event.id.as_bytes()).await.unwrap();
+    let response = settle_claim(&fixture, &claim).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let bytes = to_bytes(response.into_body(), 4096).await.unwrap();
+    assert!(!String::from_utf8_lossy(&bytes).contains(&event.content));
+    let proof: buzz_core::publication::PublicationSettlement = serde_json::from_slice(&bytes).unwrap();
+    assert!(proof.accepted);
+    assert_eq!(proof.claim, claim);
+    sqlx::query("DELETE FROM channel_members WHERE community_id=$1 AND channel_id=$2 AND pubkey=$3")
+        .bind(fixture.community.as_uuid()).bind(fixture.channel)
+        .bind(fixture.author.public_key().as_bytes().as_slice())
+        .execute(&fixture.pool).await.unwrap();
+    assert_eq!(settle_claim(&fixture, &claim).await.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+#[ignore = "requires isolated migrated BUZZ_TEST_DATABASE_URL and REDIS_URL"]
+async fn settlement_refuses_old_epochs_and_does_not_advertise_missing_storage_fences() {
+    let fixture = settlement_fixture().await;
+    let (_, claim) = settlement_claim(&fixture, 961).await;
+    let document = crate::nip11::nip11_document(&fixture.state, &fixture.host).await;
+    assert_eq!(document.publication_policy.unwrap().epoch, claim.epoch);
+    sqlx::query("UPDATE communities SET publication_epoch=gen_random_uuid() WHERE id=$1")
+        .bind(fixture.community.as_uuid()).execute(&fixture.pool).await.unwrap();
+    let response = settle_claim(&fixture, &claim).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let proof: buzz_core::publication::PublicationSettlement = serde_json::from_slice(
+        &to_bytes(response.into_body(), 4096).await.unwrap()).unwrap();
+    assert!(!proof.proves_absence_for(&claim),
+        "a restored or rotated Community cannot prove an old signed epoch absent");
+    sqlx::query("ALTER TABLE events DISABLE TRIGGER events_publication_fence")
+        .execute(&fixture.pool).await.unwrap();
+    let document = crate::nip11::nip11_document(&fixture.state, &fixture.host).await;
+    let response = settle_claim(&fixture, &claim).await;
+    sqlx::query("ALTER TABLE events ENABLE TRIGGER events_publication_fence")
+        .execute(&fixture.pool).await.unwrap();
+    assert!(document.publication_policy.is_none(), "NIP-11 must reflect actual writer readiness");
+    assert_eq!(response.status(), StatusCode::OK);
+    let proof: buzz_core::publication::PublicationSettlement = serde_json::from_slice(
+        &to_bytes(response.into_body(), 4096).await.unwrap()).unwrap();
+    assert!(!proof.proves_absence_for(&claim));
+}
+
+#[tokio::test]
+#[ignore = "requires isolated migrated BUZZ_TEST_DATABASE_URL and REDIS_URL"]
+async fn settlement_rechecks_original_private_membership_after_waiting_for_writer() {
+    let fixture = settlement_fixture().await;
+    let (event, claim) = settlement_claim(&fixture, 0).await;
+    let mut writer = fixture.pool.begin().await.unwrap();
+    buzz_db::event::insert_event_in_transaction(&mut writer, fixture.community, &event,
+        Some(fixture.channel)).await.unwrap();
+    let pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+        .fetch_one(&mut *writer).await.unwrap();
+    let body = serde_json::to_vec(&claim).unwrap();
+    let primary = settlement_auth(&fixture.author, &fixture.host, &body, fixture.community);
+    let attestor = settlement_auth(&fixture.controller, &fixture.host, &body, fixture.community);
+    let state = fixture.state.clone();
+    let host = fixture.host.clone();
+    let request = tokio::spawn(async move {
+        settlement_post(state, &host, &primary, Some(&attestor), body).await
+    });
+    wait_for_writer(&fixture.pool, pid, &request).await;
+    sqlx::query("DELETE FROM channel_members WHERE community_id=$1 AND channel_id=$2 AND pubkey=$3")
+        .bind(fixture.community.as_uuid()).bind(fixture.channel)
+        .bind(fixture.author.public_key().as_bytes().as_slice())
+        .execute(&fixture.pool).await.unwrap();
+    writer.commit().await.unwrap();
+    let response = tokio::time::timeout(std::time::Duration::from_secs(5), request)
+        .await.unwrap().unwrap();
+    assert_eq!(response.status(), StatusCode::NOT_FOUND,
+        "pre-read membership cannot survive a revocation while the writer was pending");
 }

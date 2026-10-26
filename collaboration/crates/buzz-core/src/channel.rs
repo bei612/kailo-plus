@@ -18,11 +18,13 @@ pub fn canonical_channel_name(name: &str) -> &str {
 }
 
 /// The SDK's pure topic command, not a general metadata-management envelope.
-/// An empty topic clears it. Extra, duplicate or malformed tags never qualify.
+/// An empty topic clears it. Only the canonical signed publication epoch may
+/// accompany the two business tags; management and unknown tags remain refused.
 pub fn topic_change(event: &nostr::Event) -> Option<(uuid::Uuid, &str)> {
     if crate::kind::event_kind_u32(event) != crate::kind::KIND_NIP29_EDIT_METADATA
         || !event.content.is_empty()
-        || event.tags.len() != 2
+        || !(2..=3).contains(&event.tags.len())
+        || crate::publication::publication_epoch(event).is_err()
     {
         return None;
     }
@@ -35,6 +37,7 @@ pub fn topic_change(event: &nostr::Event) -> Option<(uuid::Uuid, &str)> {
                 channel = Some(uuid::Uuid::parse_str(value).ok()?);
             }
             [key, value] if key == "topic" && topic.is_none() => topic = Some(value.as_str()),
+            [key, _] if key == crate::publication::PUBLICATION_EPOCH_TAG => {}
             _ => return None,
         }
     }
@@ -249,6 +252,14 @@ mod tests {
             .sign_with_keys(&keys)
             .unwrap();
         assert_eq!(super::topic_change(&event), Some((channel, "")));
+        let epoch = Tag::parse([
+            crate::publication::PUBLICATION_EPOCH_TAG,
+            &uuid::Uuid::new_v4().to_string(),
+        ]).unwrap();
+        let stamped = EventBuilder::new(Kind::Custom(9002), "")
+            .tags([h.clone(), topic.clone(), epoch.clone()])
+            .sign_with_keys(&keys).unwrap();
+        assert_eq!(super::topic_change(&stamped), Some((channel, "")));
         for tags in [
             vec![
                 h.clone(),
@@ -265,6 +276,10 @@ mod tests {
             vec![h.clone(), Tag::parse(["topic", "value", "extra"]).unwrap()],
             vec![Tag::parse(["h", "not-a-channel"]).unwrap(), topic.clone()],
             vec![h.clone(), Tag::parse(["purpose", "value"]).unwrap()],
+            vec![h.clone(), topic.clone(), Tag::parse([
+                crate::publication::PUBLICATION_EPOCH_TAG, "not-an-epoch",
+            ]).unwrap()],
+            vec![h.clone(), topic.clone(), epoch.clone(), epoch],
         ] {
             let event = EventBuilder::new(Kind::Custom(9002), "")
                 .tags(tags)

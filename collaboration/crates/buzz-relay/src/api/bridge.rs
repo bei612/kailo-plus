@@ -65,7 +65,7 @@ pub(crate) struct VerifiedBridgeAuth {
     pub(crate) event_id_bytes: [u8; 32],
     pub(crate) signed_created_at: Option<u64>,
     // Interpreted only by the scoped publication consumer, after signature verification.
-    publication_community: Result<Option<uuid::Uuid>, &'static str>,
+    pub(crate) publication_community: Result<Option<uuid::Uuid>, &'static str>,
 }
 
 type BridgeAuthResult = Result<VerifiedBridgeAuth, (StatusCode, Json<Value>)>;

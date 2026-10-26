@@ -21,6 +21,13 @@ from `migrations/0001_initial_schema.sql` (or `schema/schema.sql`) directly.
 
 ## Preconditions
 
+- Stop all Relay writers and publication observation traffic before importing
+  historical events. In a deployment with publication settlement, keep that
+  traffic closed until the current embedded migrations have installed all
+  writer fences and each active Community has a fresh `publication_epoch`.
+  The imported event signatures remain unchanged; historical events without
+  a signed epoch cannot authorize a new absence conclusion. Do not reuse an
+  epoch restored from a snapshot or disable triggers while serving traffic.
 - The DB is pristine pre-1321: no `communities` table, no `community_id`
   columns, no leftover `legacy` schema. The script's guard **refuses to run**
   otherwise (already-migrated, partially-migrated, or failed-prior-run states
@@ -58,9 +65,16 @@ it resolves the canonical 1321 schema regardless of your cwd.
 
 ## After it commits
 
-Boot the 1321 relay with **`BUZZ_AUTO_MIGRATE=false`**. The schema is already
+For the original 1321-only schema, boot the 1321 relay with
+**`BUZZ_AUTO_MIGRATE=false`**. The schema is already
 correct; the relay's idempotent boot-time `ensure_configured_community` /
 allowlist→relay_members backfill finds this community and no-ops.
+
+That legacy setting does not install later publication fences. A current
+Relay must not advertise publication settlement until its actual database
+schema and all partitions pass the writer readiness check. Apply the current
+embedded migrations through the original migrator before reopening settlement;
+never mark an unapplied migration successful by inserting a synthetic version.
 
 If you want the relay's sqlx migrator to consider `0001` already applied (so a
 later `BUZZ_AUTO_MIGRATE=true` boot doesn't try to re-run it), seed its

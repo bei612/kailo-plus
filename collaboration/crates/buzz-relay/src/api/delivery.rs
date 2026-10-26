@@ -392,6 +392,108 @@ pub async fn observation(
         .into_response())
 }
 
+/// Re-admit the original author. The second signer attests only Core metadata;
+/// its Community owner role does not give it access to the author's private DM.
+async fn readmit_settlement(
+    state: &AppState,
+    scope: &buzz_core::TenantContext,
+    headers: &HeaderMap,
+    author: &bridge::VerifiedBridgeAuth,
+    attestor: &bridge::VerifiedBridgeAuth,
+    claim: &buzz_core::publication::PublicationClaim,
+) -> Result<(), Response> {
+    if !state.db.is_community_active(scope.community()).await.map_err(|_| refused())? {
+        return Err(refused());
+    }
+    if author.pubkey.to_hex() != claim.pubkey || author.pubkey == attestor.pubkey {
+        return Err(refused());
+    }
+    let owner = state.db.get_relay_member(scope.community(), &attestor.pubkey.to_hex())
+        .await.map_err(|_| refused())?.ok_or_else(refused)?;
+    if owner.role != "owner" {
+        return Err(refused());
+    }
+    for auth in [author, attestor] {
+        let tag = if auth.pubkey == author.pubkey {
+            super::relay_members::extract_auth_tag_header(headers)
+        } else {
+            None
+        };
+        super::relay_members::enforce_relay_membership(
+            state, scope.community(), auth.pubkey.as_bytes(), tag, auth.signed_created_at,
+        ).await.map_err(|_| refused())?;
+        deny_banned_git_principal(
+            &state.db, scope.community(), &auth.pubkey, tag, auth.signed_created_at,
+        ).await.map_err(|_| refused())?;
+    }
+    if let Some(channel) = claim.channel_id.as_deref() {
+        let channel = uuid::Uuid::parse_str(channel).map_err(|_| refused())?;
+        let record = state.db.get_channel(scope.community(), channel)
+            .await.map_err(|_| refused())?;
+        if record.archived_at.is_some()
+            || !state.db.is_member(scope.community(), channel, author.pubkey.as_bytes())
+                .await.map_err(|_| refused())?
+        {
+            return Err(refused());
+        }
+    }
+    Ok(())
+}
+
+/// POST /events/settlement: original-author authentication plus an independent
+/// current Core owner attestation binds public metadata to the original ID.
+/// A caller-supplied timestamp alone never authorizes an absence observation.
+pub async fn settlement(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Result<Response, Response> {
+    let host = headers.get(axum::http::header::HOST)
+        .and_then(|value| value.to_str().ok()).unwrap_or("");
+    let scope = tenant::bind_community(&state.db, host).await.map_err(|_| refused())?;
+    let url = bridge::nip98_expected_url(&state.config.relay_url, &scope, "/events/settlement");
+    let author = bridge::verify_bridge_auth_with_options(
+        &headers, "POST", &url, Some(&body), true, true,
+    ).map_err(IntoResponse::into_response)?;
+    // Reject ambiguous repeated HTTP fields rather than choosing one proof.
+    let mut attestations = headers.get_all("x-kailo-publication-attestation").iter();
+    let attestation = attestations.next().ok_or_else(refused)?;
+    if attestations.next().is_some() {
+        return Err(refused());
+    }
+    let mut attestor_headers = HeaderMap::new();
+    attestor_headers.insert(axum::http::header::AUTHORIZATION, attestation.clone());
+    let attestor = bridge::verify_bridge_auth_with_options(
+        &attestor_headers, "POST", &url, Some(&body), true, true,
+    ).map_err(IntoResponse::into_response)?;
+    let claim: buzz_core::publication::PublicationClaim =
+        serde_json::from_slice(&body).map_err(|_| StatusCode::BAD_REQUEST.into_response())?;
+    claim.validate().map_err(|_| refused())?;
+    if claim.community_id != scope.community().as_uuid().to_string()
+        || author.publication_community != Ok(Some(*scope.community().as_uuid()))
+        || attestor.publication_community != Ok(Some(*scope.community().as_uuid()))
+        || author.pubkey.to_hex() != claim.pubkey
+        || author.pubkey == attestor.pubkey
+    {
+        return Err(refused());
+    }
+    bridge::enforce_http_admission(&state, &scope, &author.pubkey)
+        .await.map_err(IntoResponse::into_response)?;
+    for auth in [&author, &attestor] {
+        bridge::check_nip98_replay(&state, &scope, auth.event_id_bytes)
+            .await.map_err(IntoResponse::into_response)?;
+    }
+    readmit_settlement(&state, &scope, &headers, &author, &attestor, &claim).await?;
+    let proof = state.db.publication_settlement(scope.community(), &claim)
+        .await.map_err(|_| StatusCode::SERVICE_UNAVAILABLE.into_response())?;
+    let after = tenant::bind_community(&state.db, host).await.map_err(|_| refused())?;
+    if after.community() != scope.community() {
+        return Err(refused());
+    }
+    readmit_settlement(&state, &scope, &headers, &author, &attestor, &claim).await?;
+    Ok(([("cache-control", "no-store")], Json(proof)).into_response())
+}
+
 #[cfg(test)]
 #[path = "delivery_tests.rs"]
 mod tests;

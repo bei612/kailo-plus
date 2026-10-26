@@ -36,6 +36,13 @@ wait_healthy() {
   echo "$1 未就绪" >&2; exit 2
 }
 
+# A restored writer must never reuse the publication epoch from its backup.
+# Stop every local publisher and reader before changing any authority. Relay
+# has a separately published native port, so stopping the web gateway alone
+# does not close publication observations.
+step "关闭入口、Core、Worker 与原生 Relay，保持恢复窗口"
+DC stop agentgateway core-bff worker buzz-relay >/dev/null
+
 step "1. OpenBao：新节点初始化 → 强制恢复快照 → 以原分片解封"
 mkdir -p "$KAILO_RUNTIME_DIR/data/secret-store"
 sudo -n chown 100:1000 "$KAILO_RUNTIME_DIR/data/secret-store"
@@ -74,6 +81,19 @@ restore_pg core-db
 
 step "3. 组件权威"
 restore_pg buzz-db
+step "轮换已恢复的 Community publication epoch"
+# An older backup without this column has no epoch evidence to reuse: the
+# original later migration creates fresh epochs before advertising readiness.
+# Do not hand-apply or forge its SQLx migration record here.
+DC exec -T buzz-db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -q' <<'SQL'
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_schema='public' AND table_name='communities'
+               AND column_name='publication_epoch') THEN
+    EXECUTE 'UPDATE public.communities SET publication_epoch=gen_random_uuid()';
+  END IF;
+END $$;
+SQL
 restore_pg temporal-db
 step "SpiceDB：空库迁移后经批量导入 API 恢复（SF-SPZ-06）"
 DC up -d spicedb >/dev/null 2>&1
@@ -108,4 +128,5 @@ for s in buzz-relay keycloak temporal spicedb; do wait_healthy "$s"; done
 ./start-core.sh >/dev/null 2>&1
 services="$services core-bff"
 echo "  已启动：$services"
+echo "  每个 ACTIVE Community 须回读 NIP-11 publication_policy：屏障 ready、epoch 为本次恢复后的新值；旧 epoch 的缺失证明不可授权重发。"
 echo "  入口仍关闭。投影对账核验通过后执行（deploy/local 下）：KAILO_RUNTIME_DIR=$KAILO_RUNTIME_DIR docker compose --env-file $KAILO_RUNTIME_DIR/.env -f compose.yaml up -d agentgateway"
