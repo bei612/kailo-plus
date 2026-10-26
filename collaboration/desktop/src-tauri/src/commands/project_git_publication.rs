@@ -29,12 +29,17 @@ impl PublicationFacts {
             .filter(|s| !s.trim().is_empty())
             .ok_or_else(|| WriteError::new(FAILED))?;
         crate::relay::assert_expected_relay_scope(Some(relay), base)?;
-        let epoch = body.get("publicationEpoch").map(|value| {
-            let raw = value.as_str().ok_or_else(|| WriteError::new(FAILED))?;
-            let epoch = uuid::Uuid::parse_str(raw).map_err(|_| WriteError::new(FAILED))?;
-            if epoch.to_string() != raw { return Err(WriteError::new(FAILED)); }
-            Ok(epoch)
-        }).transpose()?;
+        let epoch = body
+            .get("publicationEpoch")
+            .map(|value| {
+                let raw = value.as_str().ok_or_else(|| WriteError::new(FAILED))?;
+                let epoch = uuid::Uuid::parse_str(raw).map_err(|_| WriteError::new(FAILED))?;
+                if epoch.to_string() != raw {
+                    return Err(WriteError::new(FAILED));
+                }
+                Ok(epoch)
+            })
+            .transpose()?;
         let settle = body.get("publishResultSettleSeconds");
         let observed = body.get("publishResultObservedAtUnixSeconds");
         if settle.is_none() && observed.is_none() {
@@ -191,8 +196,10 @@ fn merged_status_at(
         .collect::<Result<Vec<_>, _>>()
         .map_err(|_| WriteError::new(FAILED))?;
     if let Some(epoch) = epoch {
-        tags.push(Tag::parse([PUBLICATION_EPOCH_TAG, epoch.to_string().as_str()])
-            .map_err(|_| WriteError::new(FAILED))?);
+        tags.push(
+            Tag::parse([PUBLICATION_EPOCH_TAG, epoch.to_string().as_str()])
+                .map_err(|_| WriteError::new(FAILED))?,
+        );
     }
     let time = latest
         .map_or(Ok(now), |e| {
@@ -369,7 +376,8 @@ async fn ensure_status_with(
         let frozen_epoch = intent.event_publication_epoch.as_deref();
         let eligible = signed_epoch.is_some_and(|epoch| {
             frozen_epoch == Some(epoch.to_string().as_str())
-                && facts.is_some_and(|facts| facts.epoch == Some(epoch) && facts.window_passed(&event))
+                && facts
+                    .is_some_and(|facts| facts.epoch == Some(epoch) && facts.window_passed(&event))
         });
         // A legacy NOT_DELIVERED string is not writer absence evidence. Only
         // the exact original EVENT_OUTCOME can retain a known-unsent conclusion.
@@ -400,7 +408,11 @@ async fn ensure_status_with(
         .max_by_key(|e| (e.created_at, e.id));
     let facts = facts.ok_or_else(pending)?;
     let epoch = facts.epoch.ok_or_else(pending)?;
-    if intent.event_publication_epoch.as_ref().is_some_and(|old| old != &epoch.to_string()) {
+    if intent
+        .event_publication_epoch
+        .as_ref()
+        .is_some_and(|old| old != &epoch.to_string())
+    {
         return Err(pending());
     }
     let now = facts.observed_at;

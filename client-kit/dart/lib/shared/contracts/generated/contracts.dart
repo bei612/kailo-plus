@@ -16798,6 +16798,10 @@ class NativeCommunityFacts {
   ///该 Tenant 的 Community host，可能带非默认端口
   final String communityHost;
 
+  ///DD-81/160：仅从当前 ACTIVE Community 的可信 NIP-11、实际 ready 的 writer policy 读取的规范 publication
+  ///epoch。Native 新签 1631 前冻结并作为唯一 kailo:publication 标签签名；缺失不猜测或回填历史意图。
+  final String? publicationEpoch;
+
   ///读取上述部署事实时 Core 的 Unix 秒时刻；Native 仅以本次可信读的时刻判断原签事件是否严格超过窗口，不信任 Webview now 或设备跳钟。
   final int? publishResultObservedAtUnixSeconds;
 
@@ -16812,6 +16816,7 @@ class NativeCommunityFacts {
 
   NativeCommunityFacts({
     required this.communityHost,
+    this.publicationEpoch,
     this.publishResultObservedAtUnixSeconds,
     this.publishResultSettleSeconds,
     this.relayQueryLimit,
@@ -16821,6 +16826,7 @@ class NativeCommunityFacts {
   factory NativeCommunityFacts.fromJson(Map<String, dynamic> json) =>
       NativeCommunityFacts(
         communityHost: json["communityHost"],
+        publicationEpoch: json["publicationEpoch"],
         publishResultObservedAtUnixSeconds:
             json["publishResultObservedAtUnixSeconds"],
         publishResultSettleSeconds: json["publishResultSettleSeconds"],
@@ -16830,6 +16836,7 @@ class NativeCommunityFacts {
 
   Map<String, dynamic> toJson() => _stripNulls({
     "communityHost": communityHost,
+    "publicationEpoch": publicationEpoch,
     "publishResultObservedAtUnixSeconds": publishResultObservedAtUnixSeconds,
     "publishResultSettleSeconds": publishResultSettleSeconds,
     "relayQueryLimit": relayQueryLimit,
