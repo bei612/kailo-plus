@@ -32,9 +32,23 @@ SecretStore 对 scripted HTTP，bootstrap 未执行真实接收方完整激活�
 
 DD-159 原 Desktop SDK 在 `24e3c5f61` 的归档、原生会话、工作区检查分别
 21、18、2 项通过；故意关闭安全删除能检出数据库残留，恢复后通过。HUMAN 内容
-策略已在 binding 准入事务固定归属，接收方完整激活与实际业务仍未验收。DD-160
-原生投递核验与 Android FCM 原生接入的后续批次尚未合入本集成检查；不由 Core
-FCM sender 推断 Android 客户端已经可用。
+策略已在 binding 准入事务固定归属，接收方完整激活与实际业务仍未验收。
+
+DD-160 原生投递核验已进入候选：writer 包括软删除行，全部原 1631 写者与缺失
+证明共享事务屏障，锁后重验原时间窗；NIP-98 完整 URL 与标签共同固定不可变
+Community，原 ACK 也须匹配 journal。Native 固定 `f8cb31cf1` 的 publication
+消费者 **11/11**，Relay 固定 `d5c4667f4` 的实际 HTTP/PG/Redis **6/6**；
+旧 Community 缺失、ACK 异常和 Host 改绑等反向均检出，恢复通过。合批四侧
+生成/check 在 `65f82f0b8` 原 SDK 1 CPU / 2 GiB 退出 0，生成物已回读提交；
+新可选结算事实的语言消费者及 Core 编译结果另计。详细固定源码与失败边界见
+[Native 发布证据](collaboration/fork/verify/desktop-project-remote-writes.md)。
+
+Android FCM 原生批也已进入候选：固定 `76a879c21` 的 Flutter 消费者 **28/28**，
+固定 `d096d4a50` 的原 Android SDK 构建 debug APK、原生 **2/2**、官方公开配置
+处理均通过，故障检出后逐字恢复通过。原配置/发布工具 **4+92** 项与两项反向
+通过，配置变化不能复用旧阶段产物。debug APK 不是签名 release，尚无设备/供应商
+投递或 iOS 编译证据，Core tag 仍待联合检查；见
+[Android 证据](collaboration/fork/verify/mobile-android-push.md)。
 
 固定 `d6469e936` 与设计 `bb41415a5` 的原 SDK 1 CPU / 2 GiB 文档门禁全部
 退出 0：393 引用、96 实体、160 DD、30 SS、260 场景及设计 22 篇均闭合，
