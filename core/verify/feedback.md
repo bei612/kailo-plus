@@ -81,3 +81,9 @@ feedback 建表失败。手写的附件三字段一致性约束名与 PostgreSQL
 attachment 列长度约束同名；现改为明确的 `attachment_presence_check`，不改
 校验语义。该迁移未部署、无旧版在线 writer。本次整体退出 1，Core 测试和
 Clippy 尚未执行；原件 `feedback-core-check-complete-input.log`。后续结果另记。
+
+修复约束名后的固定 `c9b6eb253`：fmt、完整迁移与反馈/未读两条迁移回退再前进
+均通过，Core feedback 两项真实检查 **2 passed、0 failed、0 ignored**。
+随后 Clippy `-D warnings` 拒绝附件读取的六项 tuple（type_complexity），
+整体尚未通过、SQLx 尚未执行；现改为命名 SQLx 行类型，不加 allow 绕过。
+原件 `feedback-c9b6eb253/feedback-core-check-complete-input.log`。

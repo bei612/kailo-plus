@@ -173,6 +173,16 @@ pub async fn attachment(
         Ok(r) | Err(r) => r,
     }
 }
+#[derive(sqlx::FromRow)]
+struct AttachmentRow {
+    bytes: Vec<u8>,
+    mime: String,
+    client: String,
+    category: Option<String>,
+    diagnostics: bool,
+    sha256: String,
+}
+
 async fn attachment_inner(
     state: &BffState,
     ctx: &ExecutionContext,
@@ -181,10 +191,18 @@ async fn attachment_inner(
 ) -> Result<Response, Response> {
     let mut tx = state.pool.begin().await.map_err(|_| unavailable())?;
     operator(state, ctx, &mut tx).await?;
-    let row: Option<(Vec<u8>, String, String, Option<String>, bool, String)> = sqlx::query_as(
-        "select attachment,attachment_mime,client,category,diagnostics is not null,attachment_sha256 from support.feedback_submission where id=$1 and attachment is not null")
+    let row: Option<AttachmentRow> = sqlx::query_as(
+        "select attachment as bytes,attachment_mime as mime,client,category,diagnostics is not null as diagnostics,attachment_sha256 as sha256 from support.feedback_submission where id=$1 and attachment is not null")
         .bind(id).fetch_optional(&mut *tx).await.map_err(|_| unavailable())?;
-    let Some((bytes, mime, client, category, diagnostics, sha256)) = row else {
+    let Some(AttachmentRow {
+        bytes,
+        mime,
+        client,
+        category,
+        diagnostics,
+        sha256,
+    }) = row
+    else {
         return Err(StatusCode::NOT_FOUND.into_response());
     };
     audit(
