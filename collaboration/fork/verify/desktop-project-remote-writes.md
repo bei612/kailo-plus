@@ -1,16 +1,16 @@
 # Desktop 远程分支与 owner merge 定向核验
 
-日期：2026-10-26。权威为 DD-160(2)、DD-118(5)(6) 与 DD-81；上游原生消费者来源为固定 Buzz `779af8886caae1317b4de962082429867ab61503`。本增量基线是 `019bfa0c086c594d76675227dc37cdc8865aa2ad`，产品最终固定源码是 `bd1b158b45fb26ab5b7ef8028c55604fecabd328`，分支 `codex/dd160-remote-writes-20261026`。基线前的本机检出界面与证据已另行交付，不应重复选择。
+日期：2026-10-26。权威为 DD-160(2)、DD-118(5)(6) 与 DD-81；上游原生消费者来源为固定 Buzz `779af8886caae1317b4de962082429867ab61503`。本增量基线是 `019bfa0c086c594d76675227dc37cdc8865aa2ad`，当前源码固定为 `9abd537d2d1bf0299abd34995213c48333e19598`，各阶段实际执行的固定 SHA 在下文分别记录，分支 `codex/dd160-remote-writes-20261026`。基线前的本机检出界面与证据已另行交付，不应重复选择。
 
 ## 实现与边界
 
 Desktop 原生宿主现接通原共享 Projects 的分支创建、删除和 owner merge，使用既有 `buzz-project-git` branches/merge 与页面消费者。请求只接受仓库坐标、引用和既有操作参数；仓库地址从当前 Relay 推出，本设备 CLIENT 每次新签 NIP-98，私钥不交给 Git。原登录代际、Relay 和设备公钥在等待前后复核。owner merge 必须由坐标 owner 的实际设备公钥执行，作者显示名从本机原会话入口读取实际 HumanIdentity，不采纳页面自报的 owner、作者或 URL。
 
-`project_git_intent.rs` 在应用数据目录按 Community 与设备分区保存 SQLite 操作意图及事后证据。发送前事务持久化幂等键、repo/ref、old→new、merge 作者/时间，使用 DELETE journal 与 synchronous FULL；同 ref 的待确认操作不能被新请求覆盖。SQLite 本身拒绝改写已冻结请求、引用、作者或已签事件，也拒绝终态倒退。重启先用原 info/refs 对账：等于 new 确认成功，等于 old 只允许相同冻结意图续发，其他状态冲突，不能查明保留 UNKNOWN。重建 merge 时源引用变化导致冲突并结束该 ref 的占用；网络失败继续保留冻结声明。Git 成功事实不被迟到传输错误覆盖。
+`project_git_intent.rs` 在应用数据目录按 Community 与设备分区保存 SQLite 操作意图及事后证据。发送前事务持久化幂等键、repo/ref、old→new、merge 作者/时间，使用 DELETE journal 与 synchronous FULL；同 ref 的待确认操作不能被新请求覆盖。SQLite 本身拒绝改写已冻结业务请求、引用、作者和终态；已签事件只允许在确定未送达后由同意图的新签尝试替换，旧签事件与结论追加保留。重启先用原 info/refs 对账：等于 new 确认成功，等于 old 只允许相同冻结意图续发，其他状态冲突，不能查明保留 UNKNOWN。重建 merge 时源引用变化导致冲突并结束该 ref 的占用；网络失败继续保留冻结声明。Git 成功事实不被迟到传输错误覆盖。
 
-merge 后沿原 Relay 查询、设备签名与提交接缝形成 1631，保留原 review/root/repository/owner/author/merge-commit 标签。事件与 ID 在发送前持久化；ACK 或同 ID 回读决定成功，明确拒绝结束事件阶段，丢响应只继续查同一个 ID，不能重新签名或换幂等意图。已知连接未建立的失败重试复用同一已签事件。SQLite 不存仓库正文副本或私钥，没有新增 Core 代理推送、公开 schema、迁移、Workflow 或第二授权权威。
+merge 后沿设备签名、原提交接缝与同 ID 的 writer 证据形成并核对 1631，保留原 review/root/repository/owner/author/merge-commit 标签。Community、事件与 ID 在发送前持久化；ACK 或同 ID 的已接受证据决定成功，明确拒绝结束事件阶段。丢响应先核原 ID，不能改业务意图；只有确定未送达才允许同意图的新签尝试。SQLite 不存仓库正文副本或私钥，没有新增 Core 代理推送、数据库迁移、Workflow 或第二授权权威。
 
-仍有明确未完成边界：Native 尚未消费部署的 `PUBLISH_RESULT_SETTLE_SECONDS` 可信事实。未知提交且按原 ID 暂查不到时继续 UNKNOWN，不擅自猜超时后失败或重签；与 Core 完全同形的结算期限收敛及配置事实投递仍待集成实现。本节不宣称 DD-160 全部交付完成。
+Native 已沿原 native/community 消费部署的 `PUBLISH_RESULT_SETTLE_SECONDS` 与 Core 可信观察时刻，未知事件仅在同 Community writer 缺失、Core 严格过窗和 Relay settled 同时成立时恢复。缺事实、撤权、旧 Community 不明等情况继续 UNKNOWN。Core 合同生成、合批与发布由根工作流统一执行；真实安装、Win11、生产操作仍待发布后验收，不把本批源码检查称为 DD-160 全部交付完成。
 
 ## 固定源码检查
 
@@ -37,7 +37,7 @@ CI 节点根路径为 `/volumes/data/kailo/verification/dd160-remote-writes/`：
 - `f1b83dcc47f180db62f549ed1d621e6789350708/frontend.log` 与同目录 `frontend-{preflight,limits,exit,oom}.log` 保留前端结果。
 - `negative-6fbd532351d801cbb3ab322d5a952dcd3889161d/` 保留 mutated/restored 日志、真实退出码、限额、OOM 和恢复哈希。
 
-本批所有消费者容器均终态并删除。未生成新安装包、未发布共享服务、未在 Win11 或真实 Desktop 完成 V-SCN-264/265 操作；也未替代 DD-157 三账号双主题发布后验收。全量集成门禁、部署事实投递、安装包及真实端到端验收仍由后续集成执行，原发布门禁保留。
+本批所有消费者容器均终态并删除。未生成新安装包、未发布共享服务、未在 Win11 或真实 Desktop 完成 V-SCN-264/265 操作；也未替代 DD-157 三账号双主题发布后验收。全量集成门禁、Core 事实的合批发布、安装包及真实端到端验收由根工作流统一执行，原发布门禁保留。
 
 ## 同日 DD-81 部署事实与已知未送达恢复
 
