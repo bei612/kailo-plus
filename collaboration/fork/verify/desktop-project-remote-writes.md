@@ -1,6 +1,6 @@
 # Desktop 远程分支与 owner merge 定向核验
 
-日期：2026-10-26。权威为 DD-160(2)、DD-118(5)(6) 与 DD-81；上游原生消费者来源为固定 Buzz `779af8886caae1317b4de962082429867ab61503`。本增量基线是 `019bfa0c086c594d76675227dc37cdc8865aa2ad`，当前源码固定为 `9abd537d2d1bf0299abd34995213c48333e19598`，各阶段实际执行的固定 SHA 在下文分别记录，分支 `codex/dd160-remote-writes-20261026`。基线前的本机检出界面与证据已另行交付，不应重复选择。
+日期：2026-10-26。权威为 DD-160(2)、DD-118(5)(6) 与 DD-81；上游原生消费者来源为固定 Buzz `779af8886caae1317b4de962082429867ab61503`。本增量基线是 `019bfa0c086c594d76675227dc37cdc8865aa2ad`，当前源码固定为 `5d8767b16dafcbeb9f4e93131a1d34929f2aa924`，各阶段实际执行的固定 SHA 在下文分别记录，分支 `codex/dd160-remote-writes-20261026`。基线前的本机检出界面与证据已另行交付，不应重复选择。
 
 ## 实现与边界
 
@@ -57,9 +57,9 @@ Native 同一个状态消费者现先查原 ID，再只对持久 NOT_DELIVERED �
 
 `buzz-db::store::publication` 在 writer 事务内持有 `(Community,eventID)` advisory lock，读取原事件行，包括软删除；没有新增送达表。原 `event::insert_event` 的 1631 分支、`insert_event_in_transaction` 经 `insert_event_on`，以及原 RPC ingest 使用的 `insert_event_with_thread_metadata_tx` 均在同锁后复验原时间准入。证据事务显式 READ COMMITTED，防止部署的 REPEATABLE READ 默认值让等待锁之前的旧快照漏看刚提交的原事件。匹配使用已验证 canonical event ID；同 ID 的另一份有效随机 Schnorr 签名仍是同一事件，不能因签名字节不同误拒绝。
 
-Native 同一个生产消费者先读取 Core 可信观察，再查原已签事件。只有原冻结 Community 匹配、Core 已严格过结算窗且 Relay settled 的权威缺失才持久化 NOT_DELIVERED，随后允许同业务意图的新签尝试，并保留旧签事件证据。历史 UNKNOWN 没有 Community ID 时不能凭首次空回应否定送达。新发送在副作用前冻结 Community 与已签事件；网络等待后重新检查登录代际，迟到的证明或 ACK 不能被已退休身份采用。
+Native 同一个生产消费者先读取 Core 可信观察，再查原已签事件。只有原冻结 Community 匹配、Core 已严格过结算窗且 Relay settled 的权威缺失才持久化 NOT_DELIVERED，随后允许同业务意图的新签尝试，并保留旧签事件证据。历史 UNKNOWN 没有 Community ID 时不能采用当前 Host 的肯定或否定回应：同 ID 也可能存在于 Host 新绑定的 Community，恢复必须有原范围证据。新发送在副作用前冻结 Community 与已签事件；网络等待后重新检查登录代际，迟到的证明或 ACK 不能被已退休身份采用。
 
-- Native 固定 `3c4bbd2f01889314b6ab052cc52e03aaa793df9f`，原 Desktop SDK、1 CPU/4 GiB，`cargo test --offline --locked --lib commands::project_git_` 为 29 passed、0 failed、462 filtered out，exit 0，OOMKilled=false。包括实际 HTTP 的原事件正文/设备新签 NIP-98/重复请求独立 nonce/退休前后围栏，以及同一生产状态消费者的双时间窗口、Community、旧意图、重签与真实 SQLite 证据。后续至 `c3f1f2a679085680d90fd45a3ee2c0b8058a61d4` 没有更改这些 Native 源码。
+- Native 最终固定 `5d8767b16dafcbeb9f4e93131a1d34929f2aa924`，原 Desktop SDK、1 CPU/4 GiB，`cargo test --offline --locked --lib commands::project_git_` 为 29 passed、0 failed、462 filtered out，exit 0，OOMKilled=false。包括实际 HTTP 的原事件正文/设备新签 NIP-98/重复请求独立 nonce/退休前后围栏，以及同一生产状态消费者的双时间窗口、Community、旧意图、重签与真实 SQLite 证据；最终增加旧 UNKNOWN 缺 Community 时不采用 positive proof 的范围围栏。初轮 `3c4bbd2f01889314b6ab052cc52e03aaa793df9f` 的 29 项通过日志仍保留，不作为最终源码的替代。
 - 同一 Native 固定源临时移除 `proof.settled` 条件，原 `writer_absence_requires_both_prior_core_window_and_original_community` 真实断言失败，exit 101；逐字恢复后 1 passed，exit 0。文件 SHA-256 前后一致：`a9be856344c08a0c5948f41b85e80127af285b0ff65c8beadafa9882a9c056e9`。日志保留在 `negative-3c4bbd2f01889314b6ab052cc52e03aaa793df9f/`。
 - 后端固定 `c3f1f2a679085680d90fd45a3ee2c0b8058a61d4`，原检查 SDK `sha256:3007729eb192341a4f004a88e42e1e66c94fc67d763acfc96568bd7311116018`，1 CPU/4 GiB，加独立 PG 1 CPU/2 GiB、tmpfs、独立网络。原 Shared `publication::` 2 项、DB `store::publication::tests` 4 项全通过。DB 用真实 writer 事务验证提交/回滚等待、1631 与其墓碑均软删、跨 Community 与归档、等待锁后过窗拒写，以及同 canonical ID 的另一份有效签名。
 - 同一后端固定源的两个反向分别恢复旧快照风险、取消取得锁后的时间准入；原测试均真实断言失败，exit 101。逐字还原后 DB 4 passed、0 failed，整个作业 exit 0。源哈希前后一致：`f94940ad5c65847963ddead257a611fdbfdd4d7f36c6cedb6e98fe6e81c8973d`。日志在 `delivery-c3f1f2a679085680d90fd45a3ee2c0b8058a61d4/`，末尾脚本文字仍写旧的“three”，准确数量以 Cargo 的 4 passed 为准。
@@ -69,5 +69,7 @@ Native 同一个生产消费者先读取 Core 可信观察，再查原已签事�
 最终 Relay 固定 `9abd537d2d1bf0299abd34995213c48333e19598`，上文原检查 SDK、2 CPU/16 GiB，加独立 PG 1 CPU/2 GiB 与 Redis 0.5 CPU/128 MiB（各自 memory+swap 同 memory）。原 `api::delivery::tests` 3 passed、0 failed、1139 filtered out。包括真实 router/NIP-98/payload/replay/ban/owner/member/Community 准入；通过 `pg_stat_activity` 和 `pg_blocking_pids` 确认 HTTP 已实际等待 writer 后才撤成员、换 Host 或归档；原 `/events` 发布请求通过前置时间检查后等锁、跨窗后明确返回 BAD_REQUEST，writer 无行且 settled=true。HTTP 与 WebSocket 原入口均复用 `ingest_event` 的同一写入分支；服务写租约 wrapper 也经受保护的 `insert_event_with_thread_metadata_tx`。
 
 同一固定源临时移除等待后的第二次 `readmit`，原权限撤销检查真实断言失败，exit 101；逐字恢复后原 3 项再次全通过，整个作业 exit 0、OOMKilled=false。`api/delivery.rs` 恢复前后 SHA-256 相同：`2a559efbe41d5e4637037585e882278a114a6bae3bb846afff3a1e12c6122dcf`。原日志与限额在 `relay-delivery-9abd537d2d1bf0299abd34995213c48333e19598/`。初轮 `relay-delivery-c3f1f2a679085680d90fd45a3ee2c0b8058a61d4/` 的 2 项通过日志也保留；最终新增实际等待同步和原发布入口检查，没有改变此前已通过的 Native/Shared/DB 产品代码。
+
+最终 Native 同一 `5d8767b16dafcbeb9f4e93131a1d34929f2aa924` 还做了历史 Community 反向：临时允许没有原 Community ID 的 UNKNOWN 采用 positive proof，原消费者检查真实断言失败、exit 101；逐字恢复后同一检查 1 passed、exit 0。SHA-256 前后一致：`6ec59145798502269e96a042938fcd9fcb5c237f8c18cd290f9ed1b51acf3d3f`，日志在 `negative-5d8767b16dafcbeb9f4e93131a1d34929f2aa924/`。这一历史状态没有足够范围证据就保持 UNKNOWN；已证明 NOT_DELIVERED 的旧尝试仍可在新发送前冻结 Community。最终 Native 增量没有更改上述已验证的 Relay、DB、Shared 源码。
 
 本阶段全部自有检查容器、临时 PG/Redis 和独立网络已实际回读确认不存在，资源已通知根工作流释放。Core 合同生成、设计 pin 和合批门禁由根工作流统一执行；Core 普通消息“墓碑再次删除”的缺口未在本批放宽或冒称修复。本文不将上述 Rust 定向检查算作安装包、Win11、生产发布或 DD-157 三账号双主题真实验收。
