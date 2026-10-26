@@ -106,9 +106,12 @@ fn event(keys: &Keys, created: u64) -> Event {
         .unwrap()
 }
 fn auth(keys: &Keys, host: &str, body: &[u8]) -> String {
+    auth_at(keys,host,"/events/delivery",body)
+}
+fn auth_at(keys:&Keys,host:&str,path:&str,body:&[u8])->String {
     let token = EventBuilder::new(Kind::Custom(27235), "")
         .tags([
-            Tag::parse(["u", &format!("https://{host}/events/delivery")]).unwrap(),
+            Tag::parse(["u", &format!("https://{host}{path}")]).unwrap(),
             Tag::parse(["method", "POST"]).unwrap(),
             Tag::parse(["payload", &hex::encode(Sha256::digest(body))]).unwrap(),
             Tag::parse(["nonce", &uuid::Uuid::new_v4().to_string()]).unwrap(),
@@ -118,11 +121,14 @@ fn auth(keys: &Keys, host: &str, body: &[u8]) -> String {
     format!("Nostr {}", STANDARD.encode(token.as_json()))
 }
 async fn post(state: Arc<AppState>, host: &str, authorization: &str, body: Vec<u8>) -> Response {
+    post_at(state,host,"/events/delivery",authorization,body).await
+}
+async fn post_at(state:Arc<AppState>,host:&str,path:&str,authorization:&str,body:Vec<u8>)->Response {
     crate::router::build_router(state)
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/events/delivery")
+                .uri(path)
                 .header(header::HOST, host)
                 .header(header::AUTHORIZATION, authorization)
                 .body(Body::from(body))
@@ -135,6 +141,20 @@ async fn proof(state: Arc<AppState>, host: &str, keys: &Keys, event: &Event) -> 
     let body = event.as_json().into_bytes();
     let auth = auth(keys, host, &body);
     post(state, host, &auth, body).await
+}
+async fn wait_for_writer(pool:&sqlx::PgPool,writer_pid:i32,request:&tokio::task::JoinHandle<Response>) {
+    use std::time::Duration;
+    // Observe the actual writer wait, not elapsed time: revocation must
+    // happen after the first HTTP admission and before its final readmit.
+    tokio::time::timeout(Duration::from_secs(5),async {
+        loop {
+        let blocked:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE $1=ANY(pg_blocking_pids(pid)) AND wait_event_type='Lock')")
+            .bind(writer_pid).fetch_one(pool).await.unwrap();
+        if blocked {break;}
+        assert!(!request.is_finished(),"proof ended before waiting for writer");
+        tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    }).await.expect("HTTP proof must reach the original writer lock");
 }
 #[tokio::test]
 #[ignore = "requires isolated migrated BUZZ_TEST_DATABASE_URL and REDIS_URL"]
@@ -267,21 +287,14 @@ async fn delivery_rechecks_revocation_and_host_binding_after_waiting_for_writer(
         buzz_db::event::insert_event_in_transaction(&mut writer, community, &original, None)
             .await
             .unwrap();
-        let writer_pid:i32=sqlx::query_scalar("SELECT pg_backend_pid()")
-            .fetch_one(&mut *writer).await.unwrap();
-        let request_host=host.clone();
-        let request=tokio::spawn(async move { proof(state,&request_host,&keys,&original).await });
-        // Observe the actual writer wait, not elapsed time: revocation must
-        // happen after the first HTTP admission and before its final readmit.
-        tokio::time::timeout(Duration::from_secs(5),async {
-            loop {
-                let blocked:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE $1=ANY(pg_blocking_pids(pid)) AND wait_event_type='Lock')")
-                    .bind(writer_pid).fetch_one(&pool).await.unwrap();
-                if blocked {break;}
-                assert!(!request.is_finished(),"proof ended before waiting for writer");
-                tokio::time::sleep(Duration::from_millis(10)).await;
-            }
-        }).await.expect("HTTP proof must reach the original writer lock");
+        let writer_pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+            .fetch_one(&mut *writer)
+            .await
+            .unwrap();
+        let request_host = host.clone();
+        let request =
+            tokio::spawn(async move { proof(state, &request_host, &keys, &original).await });
+        wait_for_writer(&pool,writer_pid,&request).await;
         match drift {
             "membership" => {
                 sqlx::query("DELETE FROM channel_members WHERE community_id=$1 AND channel_id=$2")
@@ -317,7 +330,8 @@ async fn delivery_rechecks_revocation_and_host_binding_after_waiting_for_writer(
         writer.commit().await.unwrap();
         let response = tokio::time::timeout(Duration::from_secs(5), request)
             .await
-            .unwrap().unwrap();
+            .unwrap()
+            .unwrap();
         assert!(
             !response.status().is_success(),
             "{drift} cannot become absence or delivery proof"
@@ -327,4 +341,34 @@ async fn delivery_rechecks_revocation_and_host_binding_after_waiting_for_writer(
                 .unwrap_or_default();
         assert!(body.get("accepted").is_none(), "{drift}");
     }
+}
+
+#[tokio::test]
+#[ignore="requires isolated migrated BUZZ_TEST_DATABASE_URL and REDIS_URL"]
+async fn original_http_ingest_cannot_commit_after_waiting_past_original_window() {
+    use std::time::Duration;
+    let (state,pool,community,host,keys,_)=fixture().await;
+    let original=event(&keys,Timestamp::now().as_secs()-898);
+    let mut writer=pool.begin().await.unwrap();
+    buzz_db::event::insert_event_in_transaction(&mut writer,community,&original,None).await.unwrap();
+    let writer_pid:i32=sqlx::query_scalar("SELECT pg_backend_pid()").fetch_one(&mut *writer).await.unwrap();
+    let raw=original.as_json().into_bytes();
+    let token=auth_at(&keys,&host,"/events",&raw);
+    let request_state=state.clone(); let request_host=host.clone();
+    let request=tokio::spawn(async move {post_at(request_state,&request_host,"/events",&token,raw).await});
+    wait_for_writer(&pool,writer_pid,&request).await;
+    tokio::time::timeout(Duration::from_secs(6),async {
+        while !buzz_core::publication::timestamp_settled(original.created_at.as_secs(),chrono::Utc::now().timestamp()) {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    }).await.unwrap();
+    writer.rollback().await.unwrap();
+    let response=tokio::time::timeout(Duration::from_secs(5),request).await.unwrap().unwrap();
+    assert_eq!(response.status(),StatusCode::BAD_REQUEST);
+    let body:serde_json::Value=serde_json::from_slice(&to_bytes(response.into_body(),4096).await.unwrap()).unwrap();
+    assert!(body.to_string().contains("event timestamp too far"));
+    let response=proof(state,&host,&keys,&original).await;
+    assert_eq!(response.status(),StatusCode::OK);
+    let body:serde_json::Value=serde_json::from_slice(&to_bytes(response.into_body(),4096).await.unwrap()).unwrap();
+    assert_eq!(body["accepted"],false); assert_eq!(body["settled"],true);
 }
