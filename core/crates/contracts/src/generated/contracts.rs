@@ -728,6 +728,7 @@ pub enum ProtocolSessionMode {
     View,
 }
 
+/// 系统通知文案的语言；通知不含正文。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ProtocolSessionLocale {
@@ -10231,6 +10232,95 @@ pub enum PulseQueryRequestView {
 
     #[serde(rename = "REACTIONS")]
     Reactions,
+}
+
+/// DD-151(2)：GET /api/v1/push/capability（仅原生端）。部署是否配置了 APNs 与 FCM 凭据；只回读配置事实，不回显任何凭据字段。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PushCapability {
+    pub apns: PushAvailability,
+
+    pub fcm: PushAvailability,
+}
+
+/// DD-151(2)：本部署是否配置了该提供方的推送凭据。NOT_CONFIGURED 时客户端保留原版“此版本不可用”。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum PushAvailability {
+    Configured,
+
+    #[serde(rename = "NOT_CONFIGURED")]
+    NotConfigured,
+}
+
+/// DD-151(1)：PUT /api/v1/push/registration（仅原生端）。本设备登记、更新令牌或开关通知。proof 是本设备 CLIENT 私钥签名的
+/// NIP-98 事件（u 为本路径、method 为 PUT、session 为当前 PlatformSession），设备公钥即 proof 的签名者，必须是本人 ACTIVE
+/// 的设备公钥。expectedVersion 为 0 表示首次登记，其余按 DD-40 version CAS。token 明文只写入本 Tenant 的
+/// OpenBao，任何回应、日志与审计都不回显。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PushRegistrationRequest {
+    /// iOS bundle id 或 Android application id；必须与部署配置的推送主题一致。
+    pub app_id: String,
+
+    pub enabled: bool,
+
+    pub expected_version: i64,
+
+    /// 系统通知文案的语言；通知不含正文。
+    pub locale: ProtocolSessionLocale,
+
+    pub platform: PushPlatform,
+
+    /// NIP-98 HTTP Auth 事件（kind 27235）。
+    pub proof: HashMap<String, Option<serde_json::Value>>,
+
+    /// APNs 设备令牌（十六进制）或 FCM 注册令牌。
+    pub token: String,
+}
+
+/// DD-151(1)：设备推送登记的提供方。APNS 为 iOS，FCM 为 Android。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum PushPlatform {
+    #[serde(rename = "APNS")]
+    Apns,
+
+    #[serde(rename = "FCM")]
+    Fcm,
+}
+
+/// DD-151(1)：本设备的推送登记（GET/PUT /api/v1/push/registration）。不含令牌或其摘要。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PushRegistrationView {
+    pub app_id: String,
+
+    pub device_pubkey: String,
+
+    pub enabled: bool,
+
+    pub locale: ProtocolSessionLocale,
+
+    pub platform: PushPlatform,
+
+    pub state: PushRegistrationState,
+
+    pub updated_at: String,
+
+    pub version: i64,
+}
+
+/// DD-151(1)(5)：ACTIVE 可投递；INVALID 是提供方报告令牌失效，重新登记新令牌后恢复；REVOKED 是设备公钥或成员资格撤销、Tenant
+/// 删除后的终态，令牌已删除。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum PushRegistrationState {
+    #[serde(rename = "ACTIVE")]
+    Active,
+
+    #[serde(rename = "INVALID")]
+    Invalid,
+
+    #[serde(rename = "REVOKED")]
+    Revoked,
 }
 
 /// PUT /api/v1/user-state/read 的请求体（DD-40、03 §2）。contextKey 只接受调用方可读 Workspace 内的 Channel

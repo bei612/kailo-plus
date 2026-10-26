@@ -3938,6 +3938,17 @@ enum PlatformMessageKey {
   platformSettingsEditProfile,
   platformSettingsPushNotifications,
   platformSettingsPushUnavailable,
+  platformSettingsPushOff,
+  platformSettingsPushOn,
+  platformSettingsPushWaitingPermission,
+  platformSettingsPushPermissionDenied,
+  platformSettingsPushCheckingPermission,
+  platformSettingsPushPermissionUnknown,
+  platformSettingsPushOpenSettings,
+  platformSettingsPushSaving,
+  platformSettingsPushFailed,
+  platformSettingsPushNotConfirmed,
+  platformSettingsPushRevoked,
   platformSettingsDocuments,
   platformSettingsDocumentsDescription,
   platformSettingsAnswers,
@@ -14721,6 +14732,44 @@ const _messages = <PlatformMessageKey, (String, String)>{
   PlatformMessageKey.platformSettingsPushUnavailable: (
     'Unavailable in this build',
     '此版本不提供',
+  ),
+  PlatformMessageKey.platformSettingsPushOff: ('Off on this device', '本设备已关闭'),
+  PlatformMessageKey.platformSettingsPushOn: (
+    'Receive message notifications on this device',
+    '在本设备接收消息通知',
+  ),
+  PlatformMessageKey.platformSettingsPushWaitingPermission: (
+    'Waiting for iOS notification permission',
+    '等待 iOS 通知权限',
+  ),
+  PlatformMessageKey.platformSettingsPushPermissionDenied: (
+    'Enabled in Kailo, but disabled in iOS Settings',
+    'Kailo 中已开启，但 iOS 设置中已关闭',
+  ),
+  PlatformMessageKey.platformSettingsPushCheckingPermission: (
+    'Checking iOS notification permission',
+    '正在检查 iOS 通知权限',
+  ),
+  PlatformMessageKey.platformSettingsPushPermissionUnknown: (
+    'Enabled in Kailo; iOS permission status unavailable',
+    'Kailo 中已开启；无法读取 iOS 通知权限',
+  ),
+  PlatformMessageKey.platformSettingsPushOpenSettings: (
+    'Open iOS Notification Settings',
+    '打开 iOS 通知设置',
+  ),
+  PlatformMessageKey.platformSettingsPushSaving: ('Saving…', '正在保存…'),
+  PlatformMessageKey.platformSettingsPushFailed: (
+    'Couldn\'t update notifications. Try again.',
+    '未能更新通知设置，请重试。',
+  ),
+  PlatformMessageKey.platformSettingsPushNotConfirmed: (
+    'Not confirmed yet. Try again to check.',
+    '尚未确认，请重试以核对。',
+  ),
+  PlatformMessageKey.platformSettingsPushRevoked: (
+    'This device can no longer receive notifications',
+    '本设备已不能接收通知',
   ),
   PlatformMessageKey.platformSettingsDocuments: ('Documents & files', '文档与文件'),
   PlatformMessageKey.platformSettingsDocumentsDescription: (
