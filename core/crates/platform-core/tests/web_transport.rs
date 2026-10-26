@@ -138,6 +138,11 @@ async fn run(http: &reqwest::Client, e: &Env, pool: &PgPool, fx: &common::LiveWo
     assert_eq!(status, reqwest::StatusCode::OK, "发布应成功：{body}");
     let event_id = body["eventId"].as_str().expect("eventId").to_owned();
     assert_eq!(event_id.len(), 64, "event id 应为 64 位十六进制");
+    let operation_id: Uuid = body["operationId"]
+        .as_str()
+        .expect("成功发布必须返回 operationId")
+        .parse()
+        .expect("operationId 应为 UUID");
 
     // 历史：filter 由 Core 构造，调用方没有提交 filter 的入口
     let (status, body) = bff(http, e, &fx.subject, reqwest::Method::GET, &path, None).await;
@@ -152,9 +157,9 @@ async fn run(http: &reqwest::Client, e: &Env, pool: &PgPool, fx: &common::LiveWo
     // 退出门禁：每条消息可关联 actor、scope、operation、Buzz event 与 AuditEvent
     let audit = sqlx::query_as::<_, (Uuid, Option<Uuid>, Option<Uuid>, serde_json::Value)>(
         "select operation_id, actor_principal_id, workspace_id, evidence_refs
-         from audit.audit_event where event_key = $1",
+         from audit.audit_event where operation_id = $1 and event_type = 'OUTCOME'",
     )
-    .bind(format!("message.publish:{event_id}"))
+    .bind(operation_id)
     .fetch_one(pool)
     .await
     .expect("消息应留下 AuditEvent");
@@ -164,14 +169,7 @@ async fn run(http: &reqwest::Client, e: &Env, pool: &PgPool, fx: &common::LiveWo
         "actor 必须是该 HUMAN 的 Principal"
     );
     assert_eq!(audit.2, Some(fx.workspace), "scope 必须是该 Workspace");
-    assert_eq!(
-        audit.0,
-        body["operationId"]
-            .as_str()
-            .and_then(|s| s.parse().ok())
-            .unwrap_or(audit.0),
-        "operation 可关联"
-    );
+    assert_eq!(audit.0, operation_id, "operation 可关联");
     assert!(
         audit.3.as_array().is_some_and(|refs| refs
             .iter()
@@ -189,10 +187,10 @@ async fn run(http: &reqwest::Client, e: &Env, pool: &PgPool, fx: &common::LiveWo
     let (dispatch_op, dispatched_before): (Uuid, bool) = sqlx::query_as(
         "select d.operation_id, d.occurred_at <= o.occurred_at
          from audit.audit_event d, audit.audit_event o
-         where d.event_key = $1 and o.event_key = $2",
+         where d.operation_id = $1 and o.operation_id = $1
+           and d.event_type = 'DISPATCH' and o.event_type = 'OUTCOME'",
     )
-    .bind(format!("message.publish:{event_id}:dispatch"))
-    .bind(format!("message.publish:{event_id}"))
+    .bind(operation_id)
     .fetch_one(pool)
     .await
     .expect("发送前应有 DISPATCH 审计");
