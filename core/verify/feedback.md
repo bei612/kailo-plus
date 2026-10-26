@@ -36,3 +36,8 @@ Tenant 资料受治理动作与三端消费者仍待收口。当前源码尚未�
 `gen.sh --check` 通过，同源 Dart 词条生成及 `--check` 通过，Rust 格式化已执行。
 总命令退出 1：独立生成容器漏挂设计目录，`gen-registry.py` 无法读取 `.design/06`。
 此失败不计为注册表通过；补齐实际反馈 Stage 归属与设计挂载后单独重跑该步。
+
+注册表在固定 `922b4d3df` 的独立导出中补挂该分支 pin 的设计目录后，原 SDK
+1 CPU / 512 MiB 的生成及 `--check` 均退出 0；39 条实际能力与 20 个封闭
+Workflow kind 参与校验，计数不代表功能验收。日志 `feedback-registry.log` 与
+`feedback-registry-limits.log` 位于 `/volumes/data/kailo/verification/buzz-r10/`。

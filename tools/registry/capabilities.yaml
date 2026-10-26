@@ -211,6 +211,16 @@ capabilities:
   tools: []
   workflow_kinds:
   - CONVERSATION_PROJECTION
+- id: collab.feedback
+  exposure: end_user
+  routes:
+  - /api/v1/feedback
+  - /api/v1/platform/feedback
+  - /api/v1/platform/feedback/{feedback_id}
+  - /api/v1/platform/feedback/{feedback_id}/attachment
+  actions: []
+  tools: []
+  workflow_kinds: []
 - id: collab.huddle
   exposure: end_user
   routes:
