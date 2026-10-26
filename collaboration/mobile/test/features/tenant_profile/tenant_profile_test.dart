@@ -78,7 +78,7 @@ void main() {
       final controller = TenantProfileController(
         (method, path, {body}) async => method == PlatformMethod.get
             ? profile
-            : const PlatformResponse(409, {}),
+            : const PlatformResponse(409, {'class':'CONFLICT','reason':'TARGET_STATE_CONFLICT'}),
       );
       addTearDown(controller.dispose);
       await controller.refresh();

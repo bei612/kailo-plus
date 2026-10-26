@@ -153,6 +153,7 @@ class TenantProfileController extends ChangeNotifier {
       if (!response.isSuccess) {
         if (retained ||
             response.status >= 500 ||
+            response.error == null ||
             response.error?.errorBodyClass == ErrorClass.UNKNOWN) {
           unknown = true;
         } else {
