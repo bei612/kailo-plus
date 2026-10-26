@@ -212,14 +212,25 @@ impl PublicationScope {
 /// The BFF winner stores the actual scope and DISPATCH together, before any
 /// external send. No caller may persist a different scope for this same attempt.
 async fn persist_publication_dispatch(
-    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>, audit: &PublicationAudit<'_>, scope: &PublicationScope,
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    audit: &PublicationAudit<'_>,
+    scope: &PublicationScope,
 ) -> Result<(), sqlx::Error> {
-    let written = sqlx::query("update admission.publish_attempt set delivery_scope=$4
+    let written = sqlx::query(
+        "update admission.publish_attempt set delivery_scope=$4
         where tenant_principal_id=$1 and operation_id=$2 and event_id=$3
-          and (delivery_scope is null or delivery_scope=$4)")
-        .bind(audit.ctx.tenant_principal_id).bind(audit.operation_id).bind(audit.event_id)
-        .bind(sqlx::types::Json(scope)).execute(&mut **tx).await?.rows_affected();
-    if written != 1 { return Err(sqlx::Error::RowNotFound); }
+          and (delivery_scope is null or delivery_scope=$4)",
+    )
+    .bind(audit.ctx.tenant_principal_id)
+    .bind(audit.operation_id)
+    .bind(audit.event_id)
+    .bind(sqlx::types::Json(scope))
+    .execute(&mut **tx)
+    .await?
+    .rows_affected();
+    if written != 1 {
+        return Err(sqlx::Error::RowNotFound);
+    }
     append(tx, audit.entry("DISPATCH", "DISPATCHED")).await
 }
 
@@ -333,7 +344,12 @@ async fn locked_owned_agent_installation(
 ) -> Result<Option<Uuid>, sqlx::Error> {
     let query = format!("{OWNED_AGENT_KEY_SQL} for share of a,inst,r,cb,ap");
     let row: Option<OwnedAgentKeyRow> = sqlx::query_as(&query)
-        .bind(tenant).bind(author).bind(workspace).bind(actor).fetch_optional(conn).await?;
+        .bind(tenant)
+        .bind(author)
+        .bind(workspace)
+        .bind(actor)
+        .fetch_optional(conn)
+        .await?;
     Ok(row.map(|row| row.0))
 }
 
@@ -623,7 +639,8 @@ fn valid_deletion_request(request: &PublishRequest) -> bool {
 /// Installation, Agent public key and the key's SecretRef parts (locator, version, audience).
 type OwnedAgentKeyRow = (Uuid, String, Option<String>, Option<i32>, Option<String>);
 
-const OWNED_AGENT_KEY_SQL: &str = "select inst.resource_id,a.pubkey,a.private_key_secret_ref,a.private_key_secret_version,
+const OWNED_AGENT_KEY_SQL: &str =
+    "select inst.resource_id,a.pubkey,a.private_key_secret_ref,a.private_key_secret_version,
                 a.private_key_secret_audience
          from identity.buzz_identity_binding a
          join catalog.agent_installation inst on inst.agent_principal_id=a.principal_id
@@ -647,16 +664,14 @@ async fn owned_agent_keys(
     workspace: Uuid,
     author: &nostr::PublicKey,
 ) -> Result<Option<(Uuid, nostr::Keys)>, Response> {
-    let row: Option<OwnedAgentKeyRow> = sqlx::query_as(
-        OWNED_AGENT_KEY_SQL,
-    )
-    .bind(ctx.tenant_id)
-    .bind(author.to_hex())
-    .bind(workspace)
-    .bind(ctx.tenant_principal_id)
-    .fetch_optional(&state.pool)
-    .await
-    .map_err(crate::service_api::unavailable)?;
+    let row: Option<OwnedAgentKeyRow> = sqlx::query_as(OWNED_AGENT_KEY_SQL)
+        .bind(ctx.tenant_id)
+        .bind(author.to_hex())
+        .bind(workspace)
+        .bind(ctx.tenant_principal_id)
+        .fetch_optional(&state.pool)
+        .await
+        .map_err(crate::service_api::unavailable)?;
     let Some((installation, pubkey, locator, version, audience)) = row else {
         return Ok(None);
     };
@@ -4936,7 +4951,10 @@ mod tests {
     #[ignore = "requires PUBLISH_RECONCILE_TEST_DATABASE_URL pointing at an isolated migrated database"]
     async fn publication_scope_owned_agent_rejects_disabled_installation_or_principal() {
         use super::*;
-        let pool = sqlx::PgPool::connect(&std::env::var("PUBLISH_RECONCILE_TEST_DATABASE_URL").unwrap()).await.unwrap();
+        let pool =
+            sqlx::PgPool::connect(&std::env::var("PUBLISH_RECONCILE_TEST_DATABASE_URL").unwrap())
+                .await
+                .unwrap();
         let mut tx = pool.begin().await.unwrap();
         // Reuse the original Installation lifecycle's migrated fixture shape;
         // no temporary authority tables or relaxed business constraints.
@@ -4967,27 +4985,76 @@ mod tests {
           INSERT INTO catalog.channel_agent_binding(workspace_id,installation_resource_id,triggers,status) VALUES(workspace,installation,ARRAY['MENTION'],'ACTIVE');
           INSERT INTO owned_scope_fixture VALUES(tenant,workspace,human,agent,installation);
         END $$;"#).execute(&mut *tx).await.unwrap();
-        let (tenant, workspace, human, agent, installation): (Uuid, Uuid, Uuid, Uuid, Uuid) = sqlx::query_as("select tenant,workspace,human,agent,installation from owned_scope_fixture")
-            .fetch_one(&mut *tx).await.unwrap();
+        let (tenant, workspace, human, agent, installation): (Uuid, Uuid, Uuid, Uuid, Uuid) =
+            sqlx::query_as(
+                "select tenant,workspace,human,agent,installation from owned_scope_fixture",
+            )
+            .fetch_one(&mut *tx)
+            .await
+            .unwrap();
         let author = nostr::Keys::generate().public_key().to_hex();
         sqlx::query("insert into identity.buzz_identity_binding(tenant_id,principal_id,pubkey,custody,kind,state,private_key_secret_ref,private_key_secret_version,private_key_secret_audience,private_key_secret_status) values($1,$2,$3,'SERVER','AGENT','ACTIVE','fixture/agent',1,'fixture','ACTIVE')")
             .bind(tenant).bind(agent).bind(&author).execute(&mut *tx).await.unwrap();
-        assert_eq!(locked_owned_agent_installation(&mut tx, tenant, human, workspace, &author).await.unwrap(), Some(installation));
+        assert_eq!(
+            locked_owned_agent_installation(&mut tx, tenant, human, workspace, &author)
+                .await
+                .unwrap(),
+            Some(installation)
+        );
         for (mutation, id) in [
-            ("update catalog.agent_installation set state='DISABLED' where resource_id=$1", installation),
-            ("update catalog.agent_installation set state='ERROR' where resource_id=$1", installation),
-            ("update catalog.agent_installation set state='DRAINING' where resource_id=$1", installation),
-            ("update identity.principal set status='DISABLED' where id=$1", agent),
+            (
+                "update catalog.agent_installation set state='DISABLED' where resource_id=$1",
+                installation,
+            ),
+            (
+                "update catalog.agent_installation set state='ERROR' where resource_id=$1",
+                installation,
+            ),
+            (
+                "update catalog.agent_installation set state='DRAINING' where resource_id=$1",
+                installation,
+            ),
+            (
+                "update identity.principal set status='DISABLED' where id=$1",
+                agent,
+            ),
         ] {
-            sqlx::query("savepoint owner_fault").execute(&mut *tx).await.unwrap();
-            sqlx::query(mutation).bind(id).execute(&mut *tx).await.unwrap();
-            assert_eq!(locked_owned_agent_installation(&mut tx, tenant, human, workspace, &author).await.unwrap(), None, "{mutation}");
+            sqlx::query("savepoint owner_fault")
+                .execute(&mut *tx)
+                .await
+                .unwrap();
+            sqlx::query(mutation)
+                .bind(id)
+                .execute(&mut *tx)
+                .await
+                .unwrap();
+            assert_eq!(
+                locked_owned_agent_installation(&mut tx, tenant, human, workspace, &author)
+                    .await
+                    .unwrap(),
+                None,
+                "{mutation}"
+            );
             // Key acquisition and reconciliation share this exact eligibility SQL.
-            let key: Option<OwnedAgentKeyRow> = sqlx::query_as(OWNED_AGENT_KEY_SQL).bind(tenant).bind(&author).bind(workspace).bind(human)
-                .fetch_optional(&mut *tx).await.unwrap();
+            let key: Option<OwnedAgentKeyRow> = sqlx::query_as(OWNED_AGENT_KEY_SQL)
+                .bind(tenant)
+                .bind(&author)
+                .bind(workspace)
+                .bind(human)
+                .fetch_optional(&mut *tx)
+                .await
+                .unwrap();
             assert!(key.is_none(), "key selection must deny {mutation}");
-            sqlx::query("rollback to savepoint owner_fault").execute(&mut *tx).await.unwrap();
-            assert_eq!(locked_owned_agent_installation(&mut tx, tenant, human, workspace, &author).await.unwrap(), Some(installation));
+            sqlx::query("rollback to savepoint owner_fault")
+                .execute(&mut *tx)
+                .await
+                .unwrap();
+            assert_eq!(
+                locked_owned_agent_installation(&mut tx, tenant, human, workspace, &author)
+                    .await
+                    .unwrap(),
+                Some(installation)
+            );
         }
         tx.rollback().await.unwrap();
     }
@@ -4996,21 +5063,46 @@ mod tests {
     #[ignore = "requires PUBLISH_RECONCILE_TEST_DATABASE_URL pointing at an isolated migrated database"]
     async fn publication_scope_dispatch_is_atomic_and_blocks_destructive_rollback() {
         use super::*;
-        let pool = sqlx::PgPool::connect(&std::env::var("PUBLISH_RECONCILE_TEST_DATABASE_URL").unwrap()).await.unwrap();
+        let pool =
+            sqlx::PgPool::connect(&std::env::var("PUBLISH_RECONCILE_TEST_DATABASE_URL").unwrap())
+                .await
+                .unwrap();
         let mut tx = pool.begin().await.unwrap();
-        let ctx = ExecutionContext { tenant_id: Uuid::new_v4(), tenant_principal_id: Uuid::new_v4(),
-            human_identity_id: Uuid::new_v4(), session_id: Uuid::new_v4(), access_mode: contracts::PlatformSessionAccessMode::Full };
+        let ctx = ExecutionContext {
+            tenant_id: Uuid::new_v4(),
+            tenant_principal_id: Uuid::new_v4(),
+            human_identity_id: Uuid::new_v4(),
+            session_id: Uuid::new_v4(),
+            access_mode: contracts::PlatformSessionAccessMode::Full,
+        };
         sqlx::query("insert into identity.tenant(id,slug,name,state) values($1,$2,'dispatch scope','ACTIVE')")
             .bind(ctx.tenant_id).bind(ctx.tenant_id.to_string()).execute(&mut *tx).await.unwrap();
         sqlx::query("insert into identity.principal(id,tenant_id,kind,status) values($1,$2,'HUMAN','ACTIVE')")
             .bind(ctx.tenant_principal_id).bind(ctx.tenant_id).execute(&mut *tx).await.unwrap();
-        let event_id = "ab".repeat(32); let operation_id = Uuid::new_v4();
-        let scope = PublicationScope { community_id: Uuid::new_v4(), tenant_binding_version: 4,
-            target_channel_id: Some(Uuid::new_v4()), target_binding_version: Some(2), event_pubkey: nostr::Keys::generate().public_key().to_hex(),
-            event_kind: 41012, event_channel_id: None, signer_installation_id: None };
-        let scope = PublicationScope { event_channel_id: scope.target_channel_id, ..scope };
-        let audit = PublicationAudit { ctx: &ctx, target: MessageTarget::Conversation(Uuid::new_v4()), operation_id,
-            action_key: CONVERSATION_HIDE_ACTION, event_id: &event_id, signer_pubkey: None };
+        let event_id = "ab".repeat(32);
+        let operation_id = Uuid::new_v4();
+        let scope = PublicationScope {
+            community_id: Uuid::new_v4(),
+            tenant_binding_version: 4,
+            target_channel_id: Some(Uuid::new_v4()),
+            target_binding_version: Some(2),
+            event_pubkey: nostr::Keys::generate().public_key().to_hex(),
+            event_kind: 41012,
+            event_channel_id: None,
+            signer_installation_id: None,
+        };
+        let scope = PublicationScope {
+            event_channel_id: scope.target_channel_id,
+            ..scope
+        };
+        let audit = PublicationAudit {
+            ctx: &ctx,
+            target: MessageTarget::Conversation(Uuid::new_v4()),
+            operation_id,
+            action_key: CONVERSATION_HIDE_ACTION,
+            event_id: &event_id,
+            signer_pubkey: None,
+        };
         // The original idempotency row deliberately still has its old default
         // message_kind=9. Only the actual-event scope records Hide's 41012.
         sqlx::query("insert into admission.publish_attempt(tenant_principal_id,idempotency_key,operation_id,event_id) values($1,$2,$3,$4)")
@@ -5018,35 +5110,93 @@ mod tests {
         sqlx::raw_sql("create function pg_temp.reject_scope_dispatch() returns trigger language plpgsql as $$ begin raise exception 'injected original DISPATCH write failure'; end $$;
             create trigger reject_scope_dispatch before insert on audit.audit_event for each row execute function pg_temp.reject_scope_dispatch();")
             .execute(&mut *tx).await.unwrap();
-        sqlx::query("savepoint failed_dispatch").execute(&mut *tx).await.unwrap();
-        assert!(persist_publication_dispatch(&mut tx, &audit, &scope).await.is_err());
-        sqlx::query("rollback to savepoint failed_dispatch").execute(&mut *tx).await.unwrap();
-        let frozen: Option<serde_json::Value> = sqlx::query_scalar("select delivery_scope from admission.publish_attempt where operation_id=$1")
-            .bind(operation_id).fetch_one(&mut *tx).await.unwrap();
-        assert!(frozen.is_none(), "failed DISPATCH must not leave a frozen scope alone");
-        let count: i64 = sqlx::query_scalar("select count(*) from audit.audit_event where operation_id=$1")
-            .bind(operation_id).fetch_one(&mut *tx).await.unwrap();
+        sqlx::query("savepoint failed_dispatch")
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        assert!(persist_publication_dispatch(&mut tx, &audit, &scope)
+            .await
+            .is_err());
+        sqlx::query("rollback to savepoint failed_dispatch")
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        let frozen: Option<serde_json::Value> = sqlx::query_scalar(
+            "select delivery_scope from admission.publish_attempt where operation_id=$1",
+        )
+        .bind(operation_id)
+        .fetch_one(&mut *tx)
+        .await
+        .unwrap();
+        assert!(
+            frozen.is_none(),
+            "failed DISPATCH must not leave a frozen scope alone"
+        );
+        let count: i64 =
+            sqlx::query_scalar("select count(*) from audit.audit_event where operation_id=$1")
+                .bind(operation_id)
+                .fetch_one(&mut *tx)
+                .await
+                .unwrap();
         assert_eq!(count, 0);
-        sqlx::query("drop trigger reject_scope_dispatch on audit.audit_event").execute(&mut *tx).await.unwrap();
-        persist_publication_dispatch(&mut tx, &audit, &scope).await.unwrap();
-        persist_publication_dispatch(&mut tx, &audit, &scope).await.unwrap();
+        sqlx::query("drop trigger reject_scope_dispatch on audit.audit_event")
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        persist_publication_dispatch(&mut tx, &audit, &scope)
+            .await
+            .unwrap();
+        persist_publication_dispatch(&mut tx, &audit, &scope)
+            .await
+            .unwrap();
         let (actual, count, actor, target, kind): (serde_json::Value, i64, Uuid, Uuid, i32) = sqlx::query_as(
             "select p.delivery_scope,(select count(*) from audit.audit_event where operation_id=p.operation_id),a.actor_principal_id,a.target_id,p.message_kind
              from admission.publish_attempt p join audit.audit_event a on a.operation_id=p.operation_id and a.event_type='DISPATCH'
              where p.operation_id=$1")
             .bind(operation_id).fetch_one(&mut *tx).await.unwrap();
-        assert_eq!(serde_json::from_value::<PublicationScope>(actual).unwrap(), scope);
-        assert_eq!((count, actor, target, kind), (1, ctx.tenant_principal_id, audit.target.id(), 9));
-        let mut changed = scope.clone(); changed.community_id = Uuid::new_v4();
-        assert!(matches!(persist_publication_dispatch(&mut tx, &audit, &changed).await, Err(sqlx::Error::RowNotFound)));
-        sqlx::query("savepoint unsafe_down").execute(&mut *tx).await.unwrap();
-        let error = sqlx::raw_sql(include_str!("../../../migrations/20261101020000_publish_delivery_scope.down.sql"))
-            .execute(&mut *tx).await.unwrap_err();
-        assert!(error.to_string().contains("while frozen attempts exist"), "{error}");
-        sqlx::query("rollback to savepoint unsafe_down").execute(&mut *tx).await.unwrap();
-        let still_frozen: serde_json::Value = sqlx::query_scalar("select delivery_scope from admission.publish_attempt where operation_id=$1")
-            .bind(operation_id).fetch_one(&mut *tx).await.unwrap();
-        assert_eq!(serde_json::from_value::<PublicationScope>(still_frozen).unwrap(), scope);
+        assert_eq!(
+            serde_json::from_value::<PublicationScope>(actual).unwrap(),
+            scope
+        );
+        assert_eq!(
+            (count, actor, target, kind),
+            (1, ctx.tenant_principal_id, audit.target.id(), 9)
+        );
+        let mut changed = scope.clone();
+        changed.community_id = Uuid::new_v4();
+        assert!(matches!(
+            persist_publication_dispatch(&mut tx, &audit, &changed).await,
+            Err(sqlx::Error::RowNotFound)
+        ));
+        sqlx::query("savepoint unsafe_down")
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        let error = sqlx::raw_sql(include_str!(
+            "../../../migrations/20261101020000_publish_delivery_scope.down.sql"
+        ))
+        .execute(&mut *tx)
+        .await
+        .unwrap_err();
+        assert!(
+            error.to_string().contains("while frozen attempts exist"),
+            "{error}"
+        );
+        sqlx::query("rollback to savepoint unsafe_down")
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        let still_frozen: serde_json::Value = sqlx::query_scalar(
+            "select delivery_scope from admission.publish_attempt where operation_id=$1",
+        )
+        .bind(operation_id)
+        .fetch_one(&mut *tx)
+        .await
+        .unwrap();
+        assert_eq!(
+            serde_json::from_value::<PublicationScope>(still_frozen).unwrap(),
+            scope
+        );
         tx.rollback().await.unwrap();
     }
 
