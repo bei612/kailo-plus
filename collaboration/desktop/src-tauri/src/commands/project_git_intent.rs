@@ -103,8 +103,10 @@ impl Journal {
             {
                 return Err(WriteError::at("IDEMPOTENCY_KEY_REUSED", &intent.key));
             }
-            if frozen.event.is_some() && frozen.event != intent.event
-                && !same_publication_retry(&frozen, intent, phase) {
+            if frozen.event.is_some()
+                && frozen.event != intent.event
+                && !same_publication_retry(&frozen, intent, phase)
+            {
                 return Err(WriteError::at(UNKNOWN, &intent.key));
             }
             if frozen.result == "ACCEPTED" && intent.result != "ACCEPTED"
@@ -137,8 +139,11 @@ impl Journal {
         .map_err(|_| WriteError::at(UNKNOWN, &intent.key))?;
         if phase.starts_with("EVENT_") {
             if let Some(event) = &intent.event {
-                tx.execute("INSERT INTO publication_evidence(key,event,phase,outcome) VALUES(?1,?2,?3,?4)",
-                    params![intent.key,event,phase,outcome]).map_err(|_|WriteError::at(UNKNOWN,&intent.key))?;
+                tx.execute(
+                    "INSERT INTO publication_evidence(key,event,phase,outcome) VALUES(?1,?2,?3,?4)",
+                    params![intent.key, event, phase, outcome],
+                )
+                .map_err(|_| WriteError::at(UNKNOWN, &intent.key))?;
             }
         }
         tx.commit()
@@ -150,12 +155,24 @@ impl Journal {
 // definitely NOT_DELIVERED. Its business payload, signer and merge stay fixed.
 fn same_publication_retry(old: &Intent, next: &Intent, phase: &str) -> bool {
     if old.event_result.as_deref() != Some("NOT_DELIVERED")
-        || next.event_result.as_deref() != Some("DISPATCHED") || phase != "EVENT_DISPATCH" {
+        || next.event_result.as_deref() != Some("DISPATCHED")
+        || phase != "EVENT_DISPATCH"
+    {
         return false;
     }
-    let events = old.event.as_deref().zip(next.event.as_deref())
-        .and_then(|(a,b)| Event::from_json(a).ok().zip(Event::from_json(b).ok()));
-    events.is_some_and(|(a,b)| a.verify().is_ok() && b.verify().is_ok()
-        && a.kind.as_u16() == 1631 && b.kind == a.kind && b.pubkey == a.pubkey
-        && b.content == a.content && b.tags == a.tags && b.created_at >= a.created_at)
+    let events = old
+        .event
+        .as_deref()
+        .zip(next.event.as_deref())
+        .and_then(|(a, b)| Event::from_json(a).ok().zip(Event::from_json(b).ok()));
+    events.is_some_and(|(a, b)| {
+        a.verify().is_ok()
+            && b.verify().is_ok()
+            && a.kind.as_u16() == 1631
+            && b.kind == a.kind
+            && b.pubkey == a.pubkey
+            && b.content == a.content
+            && b.tags == a.tags
+            && b.created_at >= a.created_at
+    })
 }
