@@ -547,11 +547,26 @@ def build_targets(cfg):
     return sorted(str(t) for t in targets)
 
 
+def public_build_config_values(cfg, names):
+    """Same CI environment used by build-upstream; return only per-value digests and absence."""
+    environment = cfg.get("environment") or {}
+    result = {}
+    for name in names:
+        if not isinstance(name, str) or not re.fullmatch(r"[A-Z][A-Z0-9_]*", name):
+            raise NodeError("公开构建配置变量名不合法")
+        value = environment.get(name) or None
+        if value is not None and (not isinstance(value, str) or not value.strip()):
+            raise NodeError(f"公开构建配置 {name} 必须为非空白字符串")
+        result[name] = hashlib.sha256(value.encode()).hexdigest() if value is not None else None
+    return result
+
+
 def inspect(request):
     cfg = ci_config(request["ci_config"])
     project = cfg["compose_project"]
     result = dict(sources=cfg["sources"], compose_project=project, runtime_present=os.path.isfile(
         os.path.join(cfg["runtime"], ".env")), build_targets=build_targets(cfg))
+    result["public_build_config_values"] = public_build_config_values(cfg, request.get("public_build_args") or [])
     commit = request.get("commit")
     if commit:
         root = os.path.join(cfg["sources"], commit)

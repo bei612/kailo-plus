@@ -270,6 +270,26 @@ def recorded_artifact(unit):
     return None if value == "none" else value
 
 
+def upstream_build_values(name, diff, unit, artifact):
+    """Validate original CI metadata write-back against the planned source and public configuration."""
+    added = re.findall(r"^\+\s+(source_digest|artifact_digest|build_config_digest):\s*(sha256:[0-9a-f]{64})\s*$", diff, re.M)
+    values = dict(added)
+    expected = {"source_digest", "artifact_digest"}
+    if "build_config_digest" in unit and "build_config_digest" in values:
+        expected.add("build_config_digest")
+    if len(added) != len(expected) or set(values) != expected:
+        raise ReleaseError(f"{name}: generated_metadata_diff 不是单个产物的摘要写回")
+    if values["source_digest"] != unit["key"]:
+        raise ReleaseError(f"{name}: 构建所用源码摘要与规划不一致")
+    if "build_config_digest" in unit:
+        # Unchanged configuration has no added diff line; use the recorded source value.
+        config = values.get("build_config_digest", artifact.get("build_config_digest"))
+        if config != unit["build_config_digest"]:
+            raise ReleaseError(f"{name}: 构建配置在规划后变化，必须重新规划")
+        values["build_config_digest"] = config
+    return values
+
+
 def compute_plan(root, node, decl, source):
     units = model.units(decl)
     text = model.compose_text()
@@ -291,7 +311,9 @@ def compute_plan(root, node, decl, source):
     migrations = [dict(name=name, database=str(spec["database"]), versions=model.migration_versions(name, decl))
                   for name, spec in decl["migrations"].items()]
     idp_files, idp_env = model.idp_inputs(decl)
-    facts = node.inspect(dict(commit=source, services=sorted(set(managed) | set(operated)), proofs=proofs,
+    public_args = sorted({name for unit in units.values() if unit.upstream and "optional_build_args" in unit.artifact
+                          for name in (unit.artifact.get("build_args") or []) + unit.artifact["optional_build_args"]})
+    facts = node.inspect(dict(commit=source, public_build_args=public_args, services=sorted(set(managed) | set(operated)), proofs=proofs,
                               delivery_journal=str(decl["node"]["journal"]),
                               env_set={k: model.env_value_digest(v) for k, v in env_set.items()},
                               env_unset=env_unset, required_env=model.required_env(text), migrations=migrations,
@@ -304,7 +326,17 @@ def compute_plan(root, node, decl, source):
     targets = set(facts.get("build_targets") or [])
     for u in units.values():
         if u.upstream:
-            plan["units"][u.name] = upstream_entry(u, *model.upstream_state(u), targets)
+            config_digest = None
+            if "optional_build_args" in u.artifact and u.name in targets:
+                names = (u.artifact.get("build_args") or []) + u.artifact["optional_build_args"]
+                returned = facts.get("public_build_config_values") or {}
+                if not all(name in returned for name in names):
+                    raise ReleaseError(f"{u.name}: CI 未提供公开构建配置摘要")
+                config_digest = model.um.public_build_config_digest(u.artifact, {name: returned[name] for name in names})
+            entry = upstream_entry(u, *model.upstream_state(u, config_digest), targets)
+            if config_digest is not None:
+                entry["build_config_digest"] = config_digest
+            plan["units"][u.name] = entry
             continue
         commits = {(facts["proofs"].get(proof_name(i, pinned[i])) or {}).get("commit") if i in pinned else None
                    for i in u.images}
@@ -651,22 +683,20 @@ class Release:
                 outputs[name] = dict(digests=digests)
                 say(f"  {name}: " + "，".join(f"{i} {d[:19]}" for i, d in digests.items()))
                 continue
-            diff = build.get("metadata_diff") or ""
-            added = re.findall(r"^\+\s+(source_digest|artifact_digest):\s*(sha256:[0-9a-f]{64})\s*$", diff, re.M)
-            values = dict(added)
-            if len(added) != 2 or set(values) != {"source_digest", "artifact_digest"}:
-                raise ReleaseError(f"{name}: generated_metadata_diff 不是单个产物的摘要写回")
-            if values["source_digest"] != unit["key"]:
-                raise ReleaseError(f"{name}: 构建所用源码摘要 {values['source_digest'][:19]} 不等于当前 {unit['key'][:19]}")
             artifact = model.units(self.decl)[name].artifact
-            if str(artifact.get("artifact_digest")) != values["artifact_digest"]:
+            values = upstream_build_values(name, build.get("metadata_diff") or "", unit, artifact)
+            if (str(artifact.get("artifact_digest")) != values["artifact_digest"] or
+                    ("build_config_digest" in unit and artifact.get("build_config_digest") != values["build_config_digest"])):
                 self.git.as_owner("python3", os.path.join(self.root, "tools", "upstream_manifest.py"), "record",
-                                  name, values["artifact_digest"])
+                                  name, values["artifact_digest"],
+                                  *([values["build_config_digest"]] if "build_config_digest" in unit else []))
             artifact = model.units(self.decl)[name].artifact
             if (str(artifact.get("source_digest")), str(artifact.get("artifact_digest"))) != \
                     (values["source_digest"], values["artifact_digest"]):
                 raise ReleaseError(f"{name}: 写回后的来源记录与构建输出不一致")
             outputs[name] = dict(digests={name: values["artifact_digest"]}, source_digest=values["source_digest"])
+            if "build_config_digest" in values:
+                outputs[name]["build_config_digest"] = values["build_config_digest"]
             self.state.data["pin_files_pending"] = True
             say(f"  {name}: {unit['record']} ← artifact {values['artifact_digest'][:19]}")
         self.state.save()

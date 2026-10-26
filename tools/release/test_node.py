@@ -1697,3 +1697,41 @@ class LongRunningContainers(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PublicClientBuildConfig(unittest.TestCase):
+    def test_node_returns_only_digests_of_exact_ci_environment_inputs(self):
+        values = node.public_build_config_values({"environment": {
+            "PLATFORM_DISPLAY_NAME": "Test", "UNRELATED": "not-selected",
+        }}, ["PLATFORM_DISPLAY_NAME", "BUZZ_ANDROID_GOOGLE_SERVICES_JSON"])
+        self.assertEqual(set(values), {"PLATFORM_DISPLAY_NAME", "BUZZ_ANDROID_GOOGLE_SERVICES_JSON"})
+        self.assertIsNone(values["BUZZ_ANDROID_GOOGLE_SERVICES_JSON"])
+        self.assertRegex(values["PLATFORM_DISPLAY_NAME"], r"^[0-9a-f]{64}$")
+        self.assertNotIn("Test", json.dumps(values))
+        with self.assertRaises(node.NodeError):
+            node.public_build_config_values({"environment": {}}, ["bad-name"])
+
+    def test_remote_and_original_builder_configuration_identities_agree(self):
+        from unittest.mock import patch
+        orch = _orchestrator()
+        artifact = {"build_args": ["PLATFORM_DISPLAY_NAME"], "optional_build_args": ["BUZZ_ANDROID_GOOGLE_SERVICES_JSON"]}
+        environment = {"PLATFORM_DISPLAY_NAME": "Test", "BUZZ_ANDROID_GOOGLE_SERVICES_JSON": "{}"}
+        values = node.public_build_config_values({"environment": environment}, artifact["build_args"] + artifact["optional_build_args"])
+        with patch.dict(os.environ, environment, clear=True):
+            self.assertEqual(orch.model.um.public_build_config_digest(artifact),
+                             orch.model.um.public_build_config_digest(artifact, values))
+
+    def test_record_accepts_exact_configuration_and_rejects_post_plan_change(self):
+        orch = _orchestrator()
+        source, artifact, config = ("sha256:" + c * 64 for c in "abc")
+        unit = dict(key=source, build_config_digest=config)
+        basic = f"+    source_digest: {source}\n+    artifact_digest: {artifact}\n"
+        self.assertEqual(orch.upstream_build_values("mobile", basic, unit, {"build_config_digest": config})["build_config_digest"], config)
+        changed = basic + f"+    build_config_digest: {config}\n"
+        self.assertEqual(orch.upstream_build_values("mobile", changed, unit, {"build_config_digest": "none"})["artifact_digest"], artifact)
+        with self.assertRaises(orch.ReleaseError):
+            orch.upstream_build_values("mobile", basic, unit, {"build_config_digest": "none"})
+        with self.assertRaises(orch.ReleaseError):
+            orch.upstream_build_values("mobile", basic + f"+    build_config_digest: {source}\n", unit, {})
+        with self.assertRaises(orch.ReleaseError):
+            orch.upstream_build_values("mobile", changed + f"+    source_digest: {source}\n", unit, {})

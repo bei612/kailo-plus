@@ -118,9 +118,11 @@ def unit_of_image(all_units):
     return {image: unit for unit in all_units.values() for image in unit.images}
 
 
-def upstream_state(unit):
+def upstream_state(unit, build_config_digest=None):
     """二开产物与当前源码的关系：current / stale / unbuilt（记录 none 且未阻断）/ blocked（none 且阻断）。"""
-    art = unit.artifact
+    art = dict(unit.artifact)
+    if build_config_digest is not None:
+        art["build_config_digest"] = build_config_digest
     recorded = str(art.get("source_digest") or "none")
     cwd = os.getcwd()
     os.chdir(ROOT)
