@@ -1,0 +1,188 @@
+{
+  "sourceCommit": "a055022960ca6c990d6141fa3081ff6c9fa83aca",
+  "sourceTransport": "CI direct GitHub fetch and fixed-object archive",
+  "sdkImage": "sha256:3007729eb192341a4f004a88e42e1e66c94fc67d763acfc96568bd7311116018",
+  "job": "/volumes/data/kailo/conformance/checks/publication-absence-a05502296",
+  "steps": {
+    "fmt": 0,
+    "migrations-up": 0,
+    "migration-absence-down": 0,
+    "migration-absence-up": 0,
+    "agent_profile-consumers": 0,
+    "workspace_canvas-consumers": 0,
+    "moderation-consumers": 0,
+    "agent-negative": 101,
+    "agent-restored": 0,
+    "canvas-negative": 101,
+    "canvas-restored": 0,
+    "moderation-negative": 101,
+    "moderation-restored": 0,
+    "clippy": 0,
+    "fmt-final": 0,
+    "attach": 0,
+    "check": 0
+  },
+  "tests": {
+    "check.log": [
+      "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 917 filtered out; finished in 0.17s",
+      "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 918 filtered out; finished in 0.09s",
+      "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 916 filtered out; finished in 0.09s",
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 921 filtered out; finished in 0.14s",
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 921 filtered out; finished in 0.11s",
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 921 filtered out; finished in 0.09s"
+    ],
+    "agent_profile-consumers.log": [
+      "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 917 filtered out; finished in 0.17s"
+    ],
+    "workspace_canvas-consumers.log": [
+      "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 918 filtered out; finished in 0.09s"
+    ],
+    "moderation-consumers.log": [
+      "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 916 filtered out; finished in 0.09s"
+    ],
+    "agent-negative.log": [
+      "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 921 filtered out; finished in 0.11s"
+    ],
+    "agent-restored.log": [
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 921 filtered out; finished in 0.14s"
+    ],
+    "canvas-negative.log": [
+      "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 921 filtered out; finished in 0.10s"
+    ],
+    "canvas-restored.log": [
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 921 filtered out; finished in 0.11s"
+    ],
+    "moderation-negative.log": [
+      "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 921 filtered out; finished in 0.09s"
+    ],
+    "moderation-restored.log": [
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 921 filtered out; finished in 0.09s"
+    ]
+  },
+  "logs": {
+    "preflight.log": {
+      "sha256": "0d1483d6b667e5e67899e391799975f829cc6a4c0c1b044a9a919f172edf558c",
+      "bytes": 595
+    },
+    "pg-limits.log": {
+      "sha256": "c5cece7742f88c63ea3e199dc02aeb2d2f53b7addb7803071ae9fdccde437123",
+      "bytes": 178
+    },
+    "sdk-limits.log": {
+      "sha256": "4ac0fb89c3fe86ed464259c5d40a6301ba181850cac264128af157eff638bf90",
+      "bytes": 181
+    },
+    "check.log": {
+      "sha256": "fdab0c6f1a46134e6162ec88847618aca630bbae4435f78f26b4d85e38c97127",
+      "bytes": 27557
+    },
+    "fmt.log": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "migrations-up.log": {
+      "sha256": "a4dbbf4ac35ef1d3a23209f91f0178dd46ae7a1d5624f9ccf62243e54f270c2a",
+      "bytes": 11484
+    },
+    "migration-absence-down.log": {
+      "sha256": "2300597d29effb2404aeba2fc01f59fbc54723e93ac7b209cf43c32e24781dc3",
+      "bytes": 10115
+    },
+    "migration-absence-up.log": {
+      "sha256": "5012b3ec3b1cbead18bdb3ffa6e8a3c23a10399264a653f8182e25e768a1dd23",
+      "bytes": 76
+    },
+    "agent_profile-consumers.log": {
+      "sha256": "24c263e4e8f49d9411295afabed09800e9b6e7b4e2fa1ed5692b0f7fecdc5342",
+      "bytes": 1329
+    },
+    "workspace_canvas-consumers.log": {
+      "sha256": "8f3303473b32a129db4e90e50b336843c94b46de7cc59442bdeb5a6fb5b8f389",
+      "bytes": 684
+    },
+    "moderation-consumers.log": {
+      "sha256": "62893f27ed6af1e903f82f5d556e7bdbd8dba475c1f217f06e2e41359b0eba00",
+      "bytes": 845
+    },
+    "agent-negative.log": {
+      "sha256": "38bfd330fc9ec02836c481b6d5fbfa262b53ab5dcd7bbbb7c5bf86f284d035ee",
+      "bytes": 1070
+    },
+    "agent-restored.log": {
+      "sha256": "e1c5c5e338ac2eb435df2657e50f865f606bab84d38228d3d2a7a0ecdd35710d",
+      "bytes": 468
+    },
+    "canvas-negative.log": {
+      "sha256": "f03acdcfef649945e5fc39921b18f8f49288de5288ccfe4eac57d9e835c7c25b",
+      "bytes": 1154
+    },
+    "canvas-restored.log": {
+      "sha256": "285c712db6bcbca30e5065a2365e9f6e706b95097dd561fc78bd77cff0629e09",
+      "bytes": 472
+    },
+    "moderation-negative.log": {
+      "sha256": "8bd8108826fbe513c50bf569ecabdb212920daff426c7e71c44b76ac0871eeaf",
+      "bytes": 1129
+    },
+    "moderation-restored.log": {
+      "sha256": "d0300c82a34b36478acb72575ea81b2d26b2cb3e1bf51290b2afb645e8e17bcd",
+      "bytes": 466
+    },
+    "clippy.log": {
+      "sha256": "6b0270e5d33b9bfd2d02224a2fd34a3e2277ba8394c4adf75d460e6417978695",
+      "bytes": 692
+    },
+    "fmt-final.log": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    }
+  },
+  "cleanup": {
+    "containers": [],
+    "networks": []
+  },
+  "scope": "platform-core agent_profile/workspace_canvas/moderation original filters including three actual PG consumers; three broken-source failures with byte restoration; package all-target clippy; no whole Core rerun or deployment",
+  "sdk": {
+    "image": "sha256:3007729eb192341a4f004a88e42e1e66c94fc67d763acfc96568bd7311116018",
+    "memory": 17179869184,
+    "swap": 17179869184,
+    "nanoCpus": 4000000000,
+    "state": {
+      "Dead": false,
+      "Error": "",
+      "ExitCode": 0,
+      "FinishedAt": "2026-10-26T22:06:53.190514785Z",
+      "OOMKilled": false,
+      "Paused": false,
+      "Pid": 0,
+      "Restarting": false,
+      "Running": false,
+      "StartedAt": "2026-10-26T22:03:24.520579027Z",
+      "Status": "exited"
+    }
+  },
+  "pg": {
+    "image": "sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea",
+    "memory": 2147483648,
+    "swap": 2147483648,
+    "nanoCpus": 1000000000,
+    "state": {
+      "Dead": false,
+      "Error": "",
+      "ExitCode": 0,
+      "FinishedAt": "0001-01-01T00:00:00Z",
+      "OOMKilled": false,
+      "Paused": false,
+      "Pid": 3288783,
+      "Restarting": false,
+      "Running": true,
+      "StartedAt": "2026-10-26T22:03:23.243545966Z",
+      "Status": "running"
+    }
+  },
+  "priorAttempt": {
+    "stage": "format resource preflight",
+    "exit": 2,
+    "reason": "TMPDIR path did not exist; SDK did not start. Created dedicated directory and retried format successfully; original session 37456 retained."
+  }
+}
