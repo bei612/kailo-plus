@@ -645,3 +645,12 @@ source 相等，原 manifest 仅该产物 source/artifact 两字段 +2/-2，不�
 本增量沿 NativeSession 原消费链串行本机凭据退役与归档擦除，擦除完成后释放生命周期锁，远端注销等待不持该锁；旧请求仍先核对原 generation。归档查询在每次 Relay 等待前后检查会话仍有效，已在途同步退出后由原归档锁串行擦除。锁序为 lifecycle →（短暂 session state 后释放）→ archive；归档 open 只取 archive → 短暂 session state，没有持 state 等 archive 的反向路径。设备公钥切换同样在 archive 锁内先清旧库再切换；清理失败不接纳新身份。种类变化事务清理旧范围和复合游标，从零同步当前选择；相同选择保留水位。SQLite 开启 secure_delete，避免删除行的密文残留于仍持同身份密钥的活动库空闲页。
 
 本节初次写入时已完成 diff 自检和必要回归源码，未运行本增量的 Rust 检查。等待原 Desktop SDK 受限容器定向验证；未打包或部署，真实 OS 钥匙串与 V-SCN-262/263 设备操作仍未验收。原 f551157f0 的 17 项结果不能代替本增量验证。
+
+#### 生命周期补充定向验证回读（24e3c5f61）
+
+- 固定 GitHub 提交 `24e3c5f61d712cf2d899ed5c89a2ef4bdc86c303`，分支 `codex/dd159-lifecycle-20261026`，只从该对象导出独立 NVMe 源码。原 Desktop SDK `sha256:df8a3475e3e32ecf5ac79f9c12763b8ce5d4f91a75c25007fd9bfa5b282fc081`、默认 feature、原 Cargo.lock；复用既有 Desktop 编译缓存，没有修改他人源码导出树。
+- 原 `container-safety.sh` 核对实际容器为 2 CPU、16 GiB memory、16 GiB memory+swap，原 Docker 配置投递既有 CI 代理。`cargo test --locked --lib local_archive::` 为 21 passed；`cargo test --locked --lib platform::api::` 为 18 passed；`cargo test --locked --lib commands::workspace::` 为 2 passed；全部 0 failed、0 ignored、退出 0。实际重新编译 `buzz-desktop` 及依赖，用时 19.86 秒。结束后本批容器已删除，无残留消费者。
+- 新回归通过原 HTTP/NativeSession 消费者验证：注销远端等待前归档已擦除、迟到注销和身份拒绝不擦新登录数据、清理等待期间不接纳新登录、IdP 明确拒绝和刷新后再次 401 擦除、429/503 保留、擦除失败不接纳新凭据且能重试；归档侧验证设备换钥等旧操作释放后先擦再换、擦除失败保留旧设备身份、kind 集合改变重置复合游标、相同集合保留，以及删除密文不残留于活动 SQLite 空闲页。
+- Rust 格式化在同镜像 1 CPU、512 MiB memory+swap 容器完成；没有使用宿主工具链。主会话在编译前的 diff 复核指出 trait 实现方法多余可见性，已先修正再编译，本增量没有因此产生编译失败回执。
+- 原始日志位于 CI 节点 `/volumes/data/kailo/verification/dd159-lifecycle/`：`format-preflight.log`、`format-limits.log`、`format.log`、`cargo-preflight.log`、`cargo-limits.log`、`24e3c5f6-cargo.log`。正常应用重启走持久 refresh 成功路径，不触发新登录接管的归档擦除；本次没有新增 UI/TypeScript 修改，不重复此前 Node 检查。
+- 这是源码修复与定向验证，不是全量集成门禁、安装包、部署或 V-SCN-262/263 真机验收。OS 钥匙串、真实 Relay 撤员、离线恢复和 Desktop 操作仍待实际设备走查。
