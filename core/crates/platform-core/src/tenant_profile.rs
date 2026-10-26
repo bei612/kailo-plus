@@ -371,9 +371,10 @@ mod tests {
             Ok(())
         }
         let (first, second) = tokio::join!(competing_write(&pool, &ae, &def, "first"), competing_write(&pool, &ae, &def, "second"));
-        assert_eq!(usize::from(first.is_ok()) + usize::from(second.is_ok()), 1);
-        let refused = if first.is_err() { first.unwrap_err() } else { second.unwrap_err() };
-        assert!(matches!(refused, Refusal::Conflict(ReasonCode::TargetStateConflict)));
+        match (first, second) {
+            (Ok(()), Err(refused)) | (Err(refused), Ok(())) => assert!(matches!(refused, Refusal::Conflict(ReasonCode::TargetStateConflict))),
+            other => panic!("one concurrent request must win and the other must conflict: {other:?}"),
+        }
         let (version, name): (i32, String) = sqlx::query_as("select version,name from identity.tenant where id=$1").bind(tenant).fetch_one(&pool).await.unwrap();
         assert_eq!(version, 4);
         assert!(matches!(name.as_str(), "first" | "second"));
