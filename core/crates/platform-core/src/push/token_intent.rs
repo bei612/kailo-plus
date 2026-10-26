@@ -2,7 +2,6 @@
 //! The existing secret-store retirement primitive performs CAS=0 fencing and metadata
 //! verification. Server-key intents cannot be reused: those carry different key authority.
 use super::config::Policy;
-use crate::service_api::ServiceState;
 use sqlx::PgConnection;
 use uuid::Uuid;
 
@@ -57,22 +56,25 @@ pub(super) async fn claim_retirement(
  .bind(policy.token_retry_max_seconds).bind(policy.token_retry_base_seconds).bind(policy.retirement_batch_size).fetch_all(pool).await?;
     Ok(rows)
 }
-pub(super) async fn sweep(state: &ServiceState, policy: &Policy) -> Result<(), sqlx::Error> {
-    let rows = claim_retirement(&state.pool, policy).await?;
+pub(super) async fn sweep(
+    pool: &sqlx::PgPool,
+    secrets: &secret_store::SecretStore,
+    policy: &Policy,
+) -> Result<(), sqlx::Error> {
+    let rows = claim_retirement(pool, policy).await?;
     for (locator, tenant, audience) in rows {
         let reference = secret_store::SecretRef {
             locator,
             version: 1,
             audience,
         };
-        if state
-            .secrets
+        if secrets
             .retire_push_token(tenant, &reference, true)
             .await
             .is_ok()
         {
             sqlx::query("update admission.push_token_intent set state='RETIRED',updated_at=now() where locator=$1 and state='RETIRING'")
-   .bind(&reference.locator).execute(&state.pool).await?;
+   .bind(&reference.locator).execute(pool).await?;
         } else {
             tracing::warn!(%tenant,"推送令牌退休等待元数据查证，持久退避后重试");
         }

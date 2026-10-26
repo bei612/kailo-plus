@@ -220,7 +220,15 @@ pub(crate) async fn sweep(
     state: &ServiceState,
     policy: &super::config::Policy,
 ) -> Result<(), sqlx::Error> {
-    let mut tx = state.pool.begin().await?;
+    sweep_dependencies(&state.pool, &state.secrets, policy).await
+}
+
+async fn sweep_dependencies(
+    pool: &sqlx::PgPool,
+    secrets: &secret_store::SecretStore,
+    policy: &super::config::Policy,
+) -> Result<(), sqlx::Error> {
+    let mut tx = pool.begin().await?;
     let rows:Vec<(Uuid,String,Uuid,Option<String>)>=sqlx::query_as("select r.tenant_id,r.device_pubkey,r.tenant_principal_id,r.token_secret_locator
         from identity.push_registration r where r.state<>'REVOKED' and (
         exists(select 1 from identity.tenant t where t.id=r.tenant_id and t.state in ('DELETING','DELETED')) or
@@ -262,7 +270,7 @@ pub(crate) async fn sweep(
         .await?;
     }
     tx.commit().await?;
-    super::token_intent::sweep(state, policy).await
+    super::token_intent::sweep(pool, secrets, policy).await
 }
 
 #[derive(Clone)]
@@ -923,3 +931,7 @@ mod tests {
         assert_eq!(p.muted_threads, BTreeSet::from(["cd".to_owned()]));
     }
 }
+
+#[cfg(test)]
+#[path = "retirement_tests.rs"]
+mod retirement_tests;
