@@ -7,7 +7,7 @@ use crate::diff::{
     clean_commit, commit_parent_range, diff_from_repo, empty_tree_ref, ProjectRepoDiffInfo,
 };
 use crate::exec::{clean_branch, run_git, GitAuthConfig};
-use crate::file_content::read_preview_content;
+use crate::file_content::{read_preview_content, validate_repo_file_path};
 use crate::snapshot::{
     branch_activity_range, first_output_line, parse_commits, parse_contributors,
     parse_latest_commit, parse_latest_commit_by_path, MAX_EAGER_FILE_PREVIEWS,
@@ -771,6 +771,21 @@ pub fn checkout_snapshot(
         path: repo.display().to_string(),
         snapshot,
     })
+}
+
+/// Read an individual local file after the original 250 eager previews have
+/// been exhausted. This never substitutes the remote repository's content.
+pub fn checkout_file_content(
+    repo: &Path,
+    root: &str,
+    path: &str,
+    auth: &GitAuthConfig,
+) -> Result<Option<String>, String> {
+    validate_repo_file_path(path)?;
+    validate_checkout(repo, root, auth)?;
+    let content = read_preview_content(repo, path, None);
+    auth.check_deadline()?;
+    Ok(content)
 }
 
 pub fn checkout_diff(
