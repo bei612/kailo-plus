@@ -34,6 +34,7 @@ import { useBffClient, useFailureText, useLocale, useT } from "./context";
 import { ActionLabel, Badge, Button, Cell, Notice, Table } from "./ui";
 import { type Loaded, useLoad } from "./use-load";
 import { LegacySecretRefManagement, RoleManagement } from "./roles";
+import { PlatformFeedback } from "./feedback/PlatformFeedback";
 import { PlatformTenantManagement } from "./tenants";
 import { CapabilityContractsPanel } from "./capability-contracts";
 import { ComponentReleasesPanel } from "./component-releases";
@@ -121,6 +122,7 @@ export function WorkspaceManagementPanels({children}:{children?:ReactNode}) {
     invitations: {label:"invitations.title",content:<TenantInvitations/>},
     roles: {label:"roles.title",content:<RoleManagement/>},
     tenants: {label:"tenants.title",content:<PlatformTenantManagement/>},
+    feedback: {label:"platform.feedback.operatorTitle",content:<PlatformFeedback/>},
     secrets: {label:"secretRehome.title",content:<LegacySecretRefManagement/>},
     capabilities: {label:"capabilities.title",content:<CapabilityContractsPanel/>},
     components: {label:"components.title",content:<ComponentReleasesPanel/>},

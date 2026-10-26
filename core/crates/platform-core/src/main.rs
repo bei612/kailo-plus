@@ -60,6 +60,7 @@ mod external_human;
 mod gateway_admin;
 mod gateway_usage;
 mod gifs;
+mod feedback;
 mod governance;
 mod governance_api;
 mod governance_reconcile;
@@ -353,6 +354,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             &opentelemetry::global::meter("platform-core"),
             push::worker::Config::from_env()?,
         );
+
+        feedback::spawn_cleanup(pool.clone());
 
         let bff_state = bff::BffState {
             memory_service: service_state.clone(),

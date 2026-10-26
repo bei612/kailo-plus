@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/feedback_submission_request.schema.json",
+  "title": "FeedbackSubmissionRequest",
+  "description": "DD-158(1)：POST /api/v1/feedback。ACTIVE Tenant 成员的 HUMAN 会话提交给部署运营方的私有反馈；不是 Governed Action。idempotencyKey 由客户端在首次发送前冻结，同一本人同键重放返回原回执、同键异内容 409。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "idempotencyKey",
+    "client",
+    "message"
+  ],
+  "properties": {
+    "idempotencyKey": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "client": {
+      "$ref": "../enums/feedback_client.schema.json"
+    },
+    "category": {
+      "$ref": "../enums/feedback_category.schema.json"
+    },
+    "message": {
+      "type": "string",
+      "description": "去首尾空白后 1–4000 字符"
+    },
+    "diagnostics": {
+      "type": "string",
+      "description": "本人在提交前预览并同意附带的固定诊断字段（应用版本、平台、User-Agent、语言、采集时间），≤4096 字节"
+    },
+    "attachment": {
+      "title": "FeedbackAttachmentUpload",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mimeType",
+        "dataBase64"
+      ],
+      "properties": {
+        "mimeType": {
+          "type": "string",
+          "description": "image/png、image/jpeg 或 image/webp；Core 另按文件头复核"
+        },
+        "dataBase64": {
+          "type": "string",
+          "description": "标准 base64，解码后 ≤2 MiB"
+        }
+      }
+    }
+  }
+}

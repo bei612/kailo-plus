@@ -15,13 +15,15 @@ import {
   translate,
 } from "../i18n";
 
-type Platform = { client: BffClient; locale: PlatformLocale; authenticateNativePage?: (bindingId: string) => Promise<void>; reauthenticateTopLevel?: () => void; documentTheme?: "LIGHT" | "DARK"; currentPrincipalId?: string; copyText?: (text: string) => Promise<void>; openExternalUrl?: (url: string) => void };
+type Platform = { feedbackVersion?: () => Promise<string>; feedbackClient: "WEB" | "DESKTOP"; client: BffClient; locale: PlatformLocale; authenticateNativePage?: (bindingId: string) => Promise<void>; reauthenticateTopLevel?: () => void; documentTheme?: "LIGHT" | "DARK"; currentPrincipalId?: string; copyText?: (text: string) => Promise<void>; openExternalUrl?: (url: string) => void };
 
 const PlatformContext = createContext<Platform | null>(null);
 
 export function PlatformProvider({
   client,
   locale,
+  feedbackClient = "WEB",
+  feedbackVersion,
   children,
   authenticateNativePage,
   reauthenticateTopLevel,
@@ -31,6 +33,8 @@ export function PlatformProvider({
   openExternalUrl,
 }: {
   client: BffClient;
+  feedbackClient?: "WEB" | "DESKTOP";
+  feedbackVersion?: () => Promise<string>;
   /** Device preference; absent preference defaults to Chinese. */
   locale?: PlatformLocale;
   children: ReactNode;
@@ -60,7 +64,7 @@ export function PlatformProvider({
   if (scope.client !== client || scope.currentPrincipalId !== currentPrincipalId)
     setScope({ client, currentPrincipalId, generation: scope.generation + 1 });
   return (
-    <PlatformContext.Provider value={{ client, locale: locale ?? deviceLocale, authenticateNativePage, reauthenticateTopLevel, documentTheme, currentPrincipalId, copyText, openExternalUrl }}>
+    <PlatformContext.Provider value={{ client, feedbackClient, feedbackVersion, locale: locale ?? deviceLocale, authenticateNativePage, reauthenticateTopLevel, documentTheme, currentPrincipalId, copyText, openExternalUrl }}>
       <Fragment key={scope.generation}>{children}</Fragment>
     </PlatformContext.Provider>
   );
@@ -111,6 +115,8 @@ export function useOpenExternalUrl() {
     else window.open(url, "_blank", "popup,noopener,noreferrer");
   }, [openExternalUrl]);
 }
+
+export function useFeedbackEnvironment() { const { feedbackClient, feedbackVersion } = usePlatform(); return { client: feedbackClient, getVersion: feedbackVersion }; }
 
 export function useLocale(): PlatformLocale {
   return usePlatform().locale;

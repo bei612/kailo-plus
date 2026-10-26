@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/platform_feedback_page.schema.json",
+  "title": "PlatformFeedbackPage",
+  "description": "DD-158(2)：GET /api/v1/platform/feedback 的有界回应，只对 Platform Catalog Tenant 中持有 fresh Catalog manage 的会话开放；读取受审计。图片经 GET /api/v1/platform/feedback/{feedbackId}/attachment 取回。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "items"
+  ],
+  "properties": {
+    "items": {
+      "type": "array",
+      "items": {
+        "title": "PlatformFeedbackView",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "feedbackId",
+          "tenantId",
+          "tenantName",
+          "client",
+          "message",
+          "state",
+          "version",
+          "createdAt"
+        ],
+        "properties": {
+          "feedbackId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "tenantId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "tenantName": {
+            "type": "string"
+          },
+          "client": {
+            "$ref": "../enums/feedback_client.schema.json"
+          },
+          "category": {
+            "$ref": "../enums/feedback_category.schema.json"
+          },
+          "message": {
+            "type": "string"
+          },
+          "diagnostics": {
+            "type": "string"
+          },
+          "attachment": {
+            "title": "FeedbackAttachmentView",
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "mimeType",
+              "sha256",
+              "byteSize"
+            ],
+            "properties": {
+              "mimeType": {
+                "type": "string"
+              },
+              "sha256": {
+                "type": "string"
+              },
+              "byteSize": {
+                "type": "integer",
+                "minimum": 1
+              }
+            }
+          },
+          "state": {
+            "$ref": "../enums/feedback_state.schema.json"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      }
+    },
+    "nextOffset": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "下一页偏移，缺省即读完"
+    }
+  }
+}

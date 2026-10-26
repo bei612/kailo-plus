@@ -1,0 +1,32 @@
+capability_id: collab.feedback
+title: Core 私有反馈提交与部署运营方审计读取分拣
+stage: S1
+status: in_progress
+exposure: end_user
+design:
+  requirements: [V-REQ-24]
+  decisions: [DD-158]
+  facts: [SF-BUZ-57]
+  seams: []
+  blockers: []
+  entities: [FeedbackSubmission]
+validation:
+  scenarios: [V-SCN-260]
+  evidence:
+    - dimension: 安全边界
+      ref: core/verify/feedback.md
+    - dimension: 上游接缝
+      ref: core/verify/feedback.md
+implementation:
+  owners: [team-platform]
+  paths: [core/crates/platform-core/src/feedback, core/crates/platform-core/src/bff.rs, core/crates/platform-core/src/tenant_delete.rs, client-kit/ts/platform/src/react/feedback, client-kit/ts/platform/src/react/sidebar/profile-popover.tsx, client-kit/ts/platform/src/client.ts]
+  surfaces: [web, desktop]
+  schemas: [contracts/api/feedback_submission_request.schema.json, contracts/api/feedback_submission_receipt.schema.json, contracts/api/platform_feedback_page.schema.json, contracts/api/platform_feedback_triage_request.schema.json, contracts/api/feedback_attachment_content.schema.json, contracts/enums/feedback_category.schema.json, contracts/enums/feedback_client.schema.json, contracts/enums/feedback_state.schema.json]
+  migrations: [core/migrations/20261031010000_feedback.up.sql, core/migrations/20261031010000_feedback.down.sql]
+runtime:
+  routes: ["/api/v1/feedback", "/api/v1/platform/feedback", "/api/v1/platform/feedback/{feedback_id}", "/api/v1/platform/feedback/{feedback_id}/attachment"]
+  actions: []
+  workflow_kinds: []
+release:
+  artifacts: []
+  gate: blocked_until_seams_closed

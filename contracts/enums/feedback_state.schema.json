@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/feedback_state.schema.json",
+  "title": "FeedbackState",
+  "description": "DD-158(2)：运营方分拣状态 NEW→TRIAGED→CLOSED；超过 180 天的 CLOSED 记录由 Core 清除。",
+  "type": "string",
+  "enum": [
+    "NEW",
+    "TRIAGED",
+    "CLOSED"
+  ]
+}

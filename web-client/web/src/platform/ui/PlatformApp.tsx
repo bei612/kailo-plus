@@ -1,3 +1,5 @@
+import appPackage from "../../../package.json";
+const feedbackVersion = async () => appPackage.version;
 // 平台页（SS-WEB-01）。
 //
 // 一期的内置管理页：登录状态、Tenant/Workspace 选择、频道、成员、任务、审批、基础审计、设备。
@@ -163,7 +165,7 @@ export function PlatformApp() {
 
   if (notMember)
     return (
-      <PlatformProvider client={bff} locale={locale}>
+      <PlatformProvider client={bff} feedbackVersion={feedbackVersion} locale={locale}>
         <div className="mx-auto flex w-full max-w-xl flex-col gap-4 p-6 text-sm">
           <strong>{t("platform.title")}</strong>
           <RedemptionProgress
@@ -176,7 +178,7 @@ export function PlatformApp() {
   if (error) return <Notice text={error} />;
   if (!session) return <Notice text={t("platform.loadingIdentity")} />;
   return (
-    <PlatformProvider client={bff} locale={locale} documentTheme={isDark ? "DARK" : "LIGHT"} currentPrincipalId={session.tenantPrincipalId}
+    <PlatformProvider client={bff} feedbackVersion={feedbackVersion} locale={locale} documentTheme={isDark ? "DARK" : "LIGHT"} currentPrincipalId={session.tenantPrincipalId}
       reauthenticateTopLevel={reauthenticateTopLevel}>
       {/* DD-139: candidate and DM-row avatars load only the Tenant avatar route on this origin. */}
       <CandidatePictureProvider resolve={avatarPicture}>

@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/feedback_submission_receipt.schema.json",
+  "title": "FeedbackSubmissionReceipt",
+  "description": "DD-158(1)：反馈已记入 Core 的回执；同键重放返回同一回执。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "feedbackId",
+    "createdAt"
+  ],
+  "properties": {
+    "feedbackId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

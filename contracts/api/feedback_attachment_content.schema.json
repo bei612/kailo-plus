@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/feedback_attachment_content.schema.json",
+  "title": "FeedbackAttachmentContent",
+  "description": "DD-158(2): authenticated operator attachment read with encoding=base64 for native JSON transport; same audited bytes as the binary response, nosniff.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "mimeType",
+    "dataBase64",
+    "sha256"
+  ],
+  "properties": {
+    "mimeType": {
+      "type": "string"
+    },
+    "dataBase64": {
+      "type": "string"
+    },
+    "sha256": {
+      "type": "string"
+    }
+  }
+}

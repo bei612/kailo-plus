@@ -1,3 +1,4 @@
+import { getVersion } from "@tauri-apps/api/app";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { emit } from "@tauri-apps/api/event";
@@ -202,7 +203,7 @@ export function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <DeviceIdentityGate loading={<AppLoadingGate />}>
-        <NativeBootstrap connect={connectCommunity} invoke={invoke} copyText={writeTextToClipboard}
+        <NativeBootstrap feedbackVersion={getVersion} connect={connectCommunity} invoke={invoke} copyText={writeTextToClipboard}
           openExternalUrl={(url) => { void openUrl(url); }}>
           {(session) => (
             <ActiveCommunityProvider

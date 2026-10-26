@@ -435,6 +435,11 @@ pub fn router(state: BffState) -> Router {
         )
         // 公开平台信息（DD-111）：不解析身份，三端据此显示部署的产品名
         .exposed_route("/api/v1/platform-info", get(crate::platform_info::get))
+        .exposed_route("/api/v1/feedback", axum::routing::post(crate::feedback::submit)
+            .layer(axum::extract::DefaultBodyLimit::max(crate::feedback::MAX_REQUEST_BYTES)))
+        .exposed_route("/api/v1/platform/feedback", get(crate::feedback::list))
+        .exposed_route("/api/v1/platform/feedback/{feedback_id}", axum::routing::put(crate::feedback::triage))
+        .exposed_route("/api/v1/platform/feedback/{feedback_id}/attachment", get(crate::feedback::attachment))
         // SS-WEB-RELAY：Browser 只发类型化语义命令，不发 raw event、不发任意 filter
         .exposed_route(
             "/api/v1/workspace-activity",
