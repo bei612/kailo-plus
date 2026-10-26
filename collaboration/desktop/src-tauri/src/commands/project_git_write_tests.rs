@@ -177,64 +177,199 @@ fn only_the_advertised_frozen_ref_can_settle_a_restarted_dispatch() {
 /// receive-pack response and its immediate read-back; reopening SQLite must
 /// observe the original target without a second receive-pack.
 #[tokio::test]
-async fn real_native_dispatch_reconciles_a_lost_push_after_restart(){
-    use std::{io::Write,process::{Command,Stdio},sync::atomic::{AtomicBool,AtomicUsize,Ordering}};
-    use axum::{body::{Body,to_bytes},extract::{Request as HttpRequest,State},response::Response,routing::any,Router};
-    fn command(path:&Path,args:&[&str])->String{
-        let out=Command::new("git").current_dir(path).args(args).output().unwrap();
-        assert!(out.status.success(),"{}",String::from_utf8_lossy(&out.stderr));String::from_utf8(out.stdout).unwrap().trim().to_owned()
+async fn real_native_dispatch_reconciles_a_lost_push_after_restart() {
+    use axum::{
+        body::{to_bytes, Body},
+        extract::{Request as HttpRequest, State},
+        response::Response,
+        routing::any,
+        Router,
+    };
+    use std::{
+        io::Write,
+        process::{Command, Stdio},
+        sync::atomic::{AtomicBool, AtomicUsize, Ordering},
+    };
+    fn command(path: &Path, args: &[&str]) -> String {
+        let out = Command::new("git")
+            .current_dir(path)
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8(out.stdout).unwrap().trim().to_owned()
     }
     #[derive(Clone)]
-    struct Server{root:PathBuf,journal:PathBuf,request:Request,key:String,lose:Arc<AtomicBool>,pushes:Arc<AtomicUsize>,durable:Arc<AtomicBool>}
-    async fn serve(State(state):State<Server>,request:HttpRequest)->Response{
-        let method=request.method().as_str().to_owned();let path=request.uri().path().to_owned();let query=request.uri().query().unwrap_or("").to_owned();
-        let content_type=request.headers().get("content-type").and_then(|v|v.to_str().ok()).unwrap_or("").to_owned();
-        let bytes=to_bytes(request.into_body(),16*1024*1024).await.unwrap();
-        if state.lose.load(Ordering::SeqCst) && state.pushes.load(Ordering::SeqCst)>0{return Response::builder().status(502).body(Body::empty()).unwrap();}
-        let receive=path.ends_with("/git-receive-pack");
-        if receive{
-            let journal=Journal::open(&state.journal).unwrap();
-            let persisted=journal.find(&state.key,&state.request).unwrap().unwrap();
-            state.durable.store(persisted.result=="DISPATCHED" && persisted.new==Some(state.request.expected_commit.clone()),Ordering::SeqCst);
-            state.pushes.fetch_add(1,Ordering::SeqCst);
-        }
-        let root=state.root.clone();
-        let output=tokio::task::spawn_blocking(move||{
-            let mut child=Command::new("git").arg("http-backend").env("GIT_PROJECT_ROOT",root).env("GIT_HTTP_EXPORT_ALL","1")
-                .env("REQUEST_METHOD",method).env("PATH_INFO",path).env("QUERY_STRING",query).env("CONTENT_TYPE",content_type)
-                .env("CONTENT_LENGTH",bytes.len().to_string()).env("REMOTE_USER","native-test")
-                .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
-            child.stdin.take().unwrap().write_all(&bytes).unwrap();let output=child.wait_with_output().unwrap();
-            assert!(output.status.success(),"{}",String::from_utf8_lossy(&output.stderr));output.stdout
-        }).await.unwrap();
-        if receive && state.lose.load(Ordering::SeqCst){return Response::builder().status(502).body(Body::empty()).unwrap();}
-        let split=output.windows(4).position(|v|v==b"\r\n\r\n").unwrap();
-        let headers=String::from_utf8_lossy(&output[..split]);let mut response=Response::builder();
-        for line in headers.lines(){if let Some((name,value))=line.split_once(':'){
-            if name.eq_ignore_ascii_case("status"){response=response.status(value.trim().split_whitespace().next().unwrap().parse::<u16>().unwrap());}
-            else {response=response.header(name,value.trim());}
-        }}
-        response.body(Body::from(output[split+4..].to_vec())).unwrap()
+    struct Server {
+        root: PathBuf,
+        journal: PathBuf,
+        request: Request,
+        key: String,
+        lose: Arc<AtomicBool>,
+        pushes: Arc<AtomicUsize>,
+        durable: Arc<AtomicBool>,
     }
-    let temp=tempfile::tempdir().unwrap();let remote=temp.path().join("repo.git");let work=temp.path().join("work");
-    command(temp.path(),&["init","--bare",remote.to_str().unwrap()]);command(&remote,&["config","http.receivepack","true"]);
-    command(temp.path(),&["init",work.to_str().unwrap()]);std::fs::write(work.join("README.md"),"native\n").unwrap();
-    command(&work,&["add","README.md"]);command(&work,&["-c","user.name=Native Test","-c","user.email=native@example.test","commit","-m","first"]);
-    command(&work,&["branch","-M","main"]);command(&work,&["push",remote.to_str().unwrap(),"main"]);
-    command(&remote,&["symbolic-ref","HEAD","refs/heads/main"]);
-    let commit=command(&work,&["rev-parse","HEAD"]);let mut input=request();input.expected_commit=commit;
-    let key=uuid::Uuid::new_v4().to_string();let journal_path=temp.path().join("journal.sqlite");
-    let server=Server{root:temp.path().to_owned(),journal:journal_path.clone(),request:input.clone(),key:key.clone(),lose:Arc::new(AtomicBool::new(true)),pushes:Arc::new(AtomicUsize::new(0)),durable:Arc::new(AtomicBool::new(false))};
-    let listener=tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();let root=format!("http://{}/repo.git",listener.local_addr().unwrap());
-    let router=Router::new().fallback(any(serve)).with_state(server.clone());
-    let serving=tokio::spawn(async move{axum::serve(listener,router).await.unwrap()});
-    let run=|path:PathBuf,key:String,input:Request,root:String|tokio::task::spawn_blocking(move||{
-        let journal=Journal::open(&path).unwrap();let auth=git::GitAuthConfig::new("git",git::GitAuth::Header{authorization:Box::new(||Ok("Nostr test-boundary".into())),host:None});
-        dispatch(&journal,&key,input,&root,&auth,None)
-    });
-    let first=run(journal_path.clone(),key.clone(),input.clone(),root.clone()).await.unwrap().unwrap_err();assert_eq!(first.code,UNKNOWN);
-    assert!(server.durable.load(Ordering::SeqCst));assert_eq!(server.pushes.load(Ordering::SeqCst),1);
-    server.lose.store(false,Ordering::SeqCst);
-    let resumed=run(journal_path,key,input,root).await.unwrap().unwrap();assert_eq!(resumed.result,"ACCEPTED");
-    assert_eq!(server.pushes.load(Ordering::SeqCst),1,"a restarted dispatch only reads its frozen target");serving.abort();
+    async fn serve(State(state): State<Server>, request: HttpRequest) -> Response {
+        let method = request.method().as_str().to_owned();
+        let path = request.uri().path().to_owned();
+        let query = request.uri().query().unwrap_or("").to_owned();
+        let content_type = request
+            .headers()
+            .get("content-type")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("")
+            .to_owned();
+        let bytes = to_bytes(request.into_body(), 16 * 1024 * 1024)
+            .await
+            .unwrap();
+        if state.lose.load(Ordering::SeqCst) && state.pushes.load(Ordering::SeqCst) > 0 {
+            return Response::builder().status(502).body(Body::empty()).unwrap();
+        }
+        let receive = path.ends_with("/git-receive-pack");
+        if receive {
+            let journal = Journal::open(&state.journal).unwrap();
+            let persisted = journal.find(&state.key, &state.request).unwrap().unwrap();
+            state.durable.store(
+                persisted.result == "DISPATCHED"
+                    && persisted.new == Some(state.request.expected_commit.clone()),
+                Ordering::SeqCst,
+            );
+            state.pushes.fetch_add(1, Ordering::SeqCst);
+        }
+        let root = state.root.clone();
+        let output = tokio::task::spawn_blocking(move || {
+            let mut child = Command::new("git")
+                .arg("http-backend")
+                .env("GIT_PROJECT_ROOT", root)
+                .env("GIT_HTTP_EXPORT_ALL", "1")
+                .env("REQUEST_METHOD", method)
+                .env("PATH_INFO", path)
+                .env("QUERY_STRING", query)
+                .env("CONTENT_TYPE", content_type)
+                .env("CONTENT_LENGTH", bytes.len().to_string())
+                .env("REMOTE_USER", "native-test")
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+                .unwrap();
+            child.stdin.take().unwrap().write_all(&bytes).unwrap();
+            let output = child.wait_with_output().unwrap();
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            output.stdout
+        })
+        .await
+        .unwrap();
+        if receive && state.lose.load(Ordering::SeqCst) {
+            return Response::builder().status(502).body(Body::empty()).unwrap();
+        }
+        let split = output.windows(4).position(|v| v == b"\r\n\r\n").unwrap();
+        let headers = String::from_utf8_lossy(&output[..split]);
+        let mut response = Response::builder();
+        for line in headers.lines() {
+            if let Some((name, value)) = line.split_once(':') {
+                if name.eq_ignore_ascii_case("status") {
+                    response = response.status(
+                        value
+                            .trim()
+                            .split_whitespace()
+                            .next()
+                            .unwrap()
+                            .parse::<u16>()
+                            .unwrap(),
+                    );
+                } else {
+                    response = response.header(name, value.trim());
+                }
+            }
+        }
+        response
+            .body(Body::from(output[split + 4..].to_vec()))
+            .unwrap()
+    }
+    let temp = tempfile::tempdir().unwrap();
+    let remote = temp.path().join("repo.git");
+    let work = temp.path().join("work");
+    command(temp.path(), &["init", "--bare", remote.to_str().unwrap()]);
+    command(&remote, &["config", "http.receivepack", "true"]);
+    command(temp.path(), &["init", work.to_str().unwrap()]);
+    std::fs::write(work.join("README.md"), "native\n").unwrap();
+    command(&work, &["add", "README.md"]);
+    command(
+        &work,
+        &[
+            "-c",
+            "user.name=Native Test",
+            "-c",
+            "user.email=native@example.test",
+            "commit",
+            "-m",
+            "first",
+        ],
+    );
+    command(&work, &["branch", "-M", "main"]);
+    command(&work, &["push", remote.to_str().unwrap(), "main"]);
+    command(&remote, &["symbolic-ref", "HEAD", "refs/heads/main"]);
+    let commit = command(&work, &["rev-parse", "HEAD"]);
+    let mut input = request();
+    input.expected_commit = commit;
+    let key = uuid::Uuid::new_v4().to_string();
+    let journal_path = temp.path().join("journal.sqlite");
+    let server = Server {
+        root: temp.path().to_owned(),
+        journal: journal_path.clone(),
+        request: input.clone(),
+        key: key.clone(),
+        lose: Arc::new(AtomicBool::new(true)),
+        pushes: Arc::new(AtomicUsize::new(0)),
+        durable: Arc::new(AtomicBool::new(false)),
+    };
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let root = format!("http://{}/repo.git", listener.local_addr().unwrap());
+    let router = Router::new()
+        .fallback(any(serve))
+        .with_state(server.clone());
+    let serving = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+    let run = |path: PathBuf, key: String, input: Request, root: String| {
+        tokio::task::spawn_blocking(move || {
+            let journal = Journal::open(&path).unwrap();
+            let auth = git::GitAuthConfig::new(
+                "git",
+                git::GitAuth::Header {
+                    authorization: Box::new(|| Ok("Nostr test-boundary".into())),
+                    host: None,
+                },
+            );
+            dispatch(&journal, &key, input, &root, &auth, None)
+        })
+    };
+    let first = run(
+        journal_path.clone(),
+        key.clone(),
+        input.clone(),
+        root.clone(),
+    )
+    .await
+    .unwrap()
+    .unwrap_err();
+    assert_eq!(first.code, UNKNOWN);
+    assert!(server.durable.load(Ordering::SeqCst));
+    assert_eq!(server.pushes.load(Ordering::SeqCst), 1);
+    server.lose.store(false, Ordering::SeqCst);
+    let resumed = run(journal_path, key, input, root).await.unwrap().unwrap();
+    assert_eq!(resumed.result, "ACCEPTED");
+    assert_eq!(
+        server.pushes.load(Ordering::SeqCst),
+        1,
+        "a restarted dispatch only reads its frozen target"
+    );
+    serving.abort();
 }
