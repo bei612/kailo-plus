@@ -3965,6 +3965,7 @@ export const platformMessages = {
   "platform.nativePage.breadcrumb": { en: "Location", "zh-CN": "位置" },
   "platform.nativePage.more": { en: "More actions", "zh-CN": "更多操作" },
   "platform.nativePage.confirm": { en: "Confirm", "zh-CN": "确定" },
+  "platform.nativePage.tooManyFiles": { en: "Choose up to {count} files at a time. No files were uploaded.", "zh-CN": "每次最多选择 {count} 个文件。本次未上传任何文件。" },
   "platform.settings.organization": { en: "Organization", "zh-CN": "组织" },
   "platform.settings.close": { en: "Close settings", "zh-CN": "关闭设置" },
   "platform.settings.title": { en: "Settings", "zh-CN": "设置" },

@@ -3,7 +3,7 @@ import { toast } from "sonner";
 import type { ApplicationNativePage } from "@client-kit/contracts";
 import { useBffClient, useNativeAuthenticationHost, useT, useTopLevelReauthentication } from "./context";
 import {
-  actionMessage, confirmResultMessage, embedMessage, navigateMessage, preferencesMessage, presentationMessage, replayShortcut,
+  actionMessage, confirmResultMessage, EMBED_MAX_FILES, embedMessage, navigateMessage, pickFiles, preferencesMessage, presentationMessage, replayShortcut,
   useEmbedPresentation, type EmbedConfirm, type EmbedFeature, type EmbedPage,
 } from "./native-embed-host";
 import { useNativeEntryPresentation } from "./native-application-entries";
@@ -108,6 +108,9 @@ export function NativeApplicationPage({ bindingId, onBack, title, path }: { bind
   if (page && frameKey && launch.current?.key !== frameKey)
     launch.current = { key: frameKey, src: nativeDeepLinkUrl(page, path, presentation) };
   const frame = useRef<HTMLIFrameElement>(null);
+  const currentFrameKey = useRef(frameKey);
+  currentFrameKey.current = frameKey;
+  const documentRevision = useRef(0);
   const latest = useRef(presentation);
   latest.current = presentation;
   const [embedded, setEmbedded] = useState<{ key: string; authRequired: boolean; features: EmbedFeature[] } | null>(null);
@@ -143,6 +146,8 @@ export function NativeApplicationPage({ bindingId, onBack, title, path }: { bind
       if (event.origin !== origin || !frame.current || event.source !== frame.current.contentWindow) return;
       const message = embedMessage(event.data);
       if (!message) return;
+      // A picker belongs to the document and page declaration at the user's click.
+      if (message.type === "ready" || message.type === "auth-required" || message.type === "page") ++documentRevision.current;
       if (message.type === "ready") {
         setEmbedded({ key: frameKey, authRequired: false, features: message.features });
         post();
@@ -164,6 +169,23 @@ export function NativeApplicationPage({ bindingId, onBack, title, path }: { bind
     window.addEventListener("message", receive);
     return () => window.removeEventListener("message", receive);
   }, [origin, frameKey, post, postToFrame, showToast]);
+  const activate = (id: string) => {
+    const action = connected && features.includes("page") ? embedPage?.actions.find((item) => item.id === id) : null;
+    const element = frame.current;
+    const target = element?.contentWindow;
+    if (!action || action.disabled || action.busy || !element || !target || !origin) return;
+    if (!action.files) { target.postMessage(actionMessage(id), origin); return; }
+    const revision = documentRevision.current;
+    const requestScope = scope.current;
+    const current = () => element.isConnected && frame.current === element && element.contentWindow === target
+      && currentFrameKey.current === frameKey && scope.current === requestScope && documentRevision.current === revision;
+    // Open synchronously inside the click. Never resolve a delayed selection through a mutable frame ref.
+    pickFiles(action.files, (selection) => {
+      if (current()) target.postMessage(actionMessage(id, selection), origin);
+    }, () => {
+      if (current()) showToast("error", t("platform.nativePage.tooManyFiles", { count: EMBED_MAX_FILES }));
+    });
+  };
   // A new document (or another binding) starts without an open confirmation.
   useEffect(() => {
     confirming.current = null;
@@ -235,7 +257,7 @@ export function NativeApplicationPage({ bindingId, onBack, title, path }: { bind
     {onBack ? <div className="px-5 pt-3"><Button onClick={onBack}>{t("platform.back")}</Button></div> : null}
     <NativePageHeader productTitle={productTitle} category={entry?.category ?? null}
       page={connected && features.includes("page") ? embedPage : null}
-      onNavigate={(kind, id) => postToFrame(navigateMessage(kind, id))} onAction={(id, selection) => postToFrame(actionMessage(id, selection))} />
+      onNavigate={(kind, id) => postToFrame(navigateMessage(kind, id))} onAction={activate} />
     {unhandshaked ? <div className="flex flex-wrap items-center gap-2 px-5 py-3">
       <Button disabled={loading || authenticationPending} onClick={() => signInToService(page.url)}>{t("bindings.signInNative")}</Button>
       <p className="text-sm text-muted-foreground">{t("bindings.nativeBoundary")}</p></div> : null}
@@ -244,7 +266,7 @@ export function NativeApplicationPage({ bindingId, onBack, title, path }: { bind
       <span>{t("bindings.embedSignInRequired")}</span>
       <Button disabled={authenticationPending} onClick={() => signInAgain(page.url)}>{t("bindings.embedSignIn")}</Button></div> : null}
     {page && frameKey && launch.current ? <NativePageFrame>
-      <iframe key={frameKey} ref={frame}
+      <iframe key={frameKey} ref={frame} onLoad={() => { ++documentRevision.current; }}
         className={`min-h-0 w-full flex-1 border-0 bg-background ${presentation.theme === "dark" ? "[color-scheme:dark]" : "[color-scheme:light]"}${awaitingHandshake ? " invisible" : ""}`}
         title={productTitle || title || t("bindings.nativeTitle")}
         src={launch.current.src} sandbox="allow-scripts allow-same-origin allow-forms allow-downloads allow-popups allow-popups-to-escape-sandbox"

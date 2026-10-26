@@ -3627,6 +3627,7 @@ enum PlatformMessageKey {
   platformNativePageBreadcrumb,
   platformNativePageMore,
   platformNativePageConfirm,
+  platformNativePageTooManyFiles,
   platformSettingsOrganization,
   platformSettingsClose,
   platformSettingsTitle,
@@ -13866,6 +13867,10 @@ const _messages = <PlatformMessageKey, (String, String)>{
   PlatformMessageKey.platformNativePageBreadcrumb: ('Location', '位置'),
   PlatformMessageKey.platformNativePageMore: ('More actions', '更多操作'),
   PlatformMessageKey.platformNativePageConfirm: ('Confirm', '确定'),
+  PlatformMessageKey.platformNativePageTooManyFiles: (
+    'Choose up to {count} files at a time. No files were uploaded.',
+    '每次最多选择 {count} 个文件。本次未上传任何文件。',
+  ),
   PlatformMessageKey.platformSettingsOrganization: ('Organization', '组织'),
   PlatformMessageKey.platformSettingsClose: ('Close settings', '关闭设置'),
   PlatformMessageKey.platformSettingsTitle: ('Settings', '设置'),
