@@ -1733,5 +1733,44 @@ class PublicClientBuildConfig(unittest.TestCase):
             orch.upstream_build_values("mobile", changed + f"+    source_digest: {source}\n", unit, {})
 
 
+class PublicConfigResume(unittest.TestCase):
+    def test_actual_run_rejects_changed_inputs_before_overwriting_completed_stage_journal(self):
+        import copy
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        orch = _orchestrator()
+        old = dict(units={"mobile-client": dict(build_config_digest="sha256:" + "a" * 64, key="sha256:" + "b" * 64)})
+        new = dict(units={"mobile-client": dict(build_config_digest="sha256:" + "c" * 64, key="sha256:" + "d" * 64)})
+        for stage in ("build", "record", "pin", "check", "deploy", "in_flight"):
+            with self.subTest(stage=stage):
+                data = dict(plan=copy.deepcopy(old), stages={} if stage == "in_flight" else {stage: {"state": "done"}},
+                            builds={"mobile-client": {"state": "UNKNOWN"}} if stage == "in_flight" else {})
+                before = copy.deepcopy(data)
+                release = orch.Release.__new__(orch.Release)
+                release.root, release.node, release.decl, release.source = ".", None, {}, "a" * 40
+                release.args = SimpleNamespace(until="pin", dry_run=False)
+                release.state = SimpleNamespace(data=data, lock=lambda: None,
+                                                mark=lambda *a, **k: self.fail("journal must remain untouched"))
+                with patch.object(orch, "compute_plan", return_value=new), self.assertRaises(orch.ReleaseError):
+                    release.run()
+                self.assertEqual(data, before)
+
+    def test_read_only_replanning_and_unchanged_resume_keep_working(self):
+        import copy
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        orch = _orchestrator()
+        old = dict(units={"mobile-client": dict(build_config_digest="sha256:" + "a" * 64, key="sha256:" + "b" * 64)})
+        new = dict(units={"mobile-client": dict(build_config_digest="sha256:" + "c" * 64, key="sha256:" + "d" * 64)})
+        for initial, next_plan in ((dict(plan=copy.deepcopy(old), stages={"plan": {"state": "done"}}, builds={}), new),
+                                  (dict(plan=copy.deepcopy(old), stages={"record": {"state": "done"}}, builds={}), old)):
+            release = orch.Release.__new__(orch.Release)
+            release.root, release.node, release.decl, release.source = ".", None, {}, "a" * 40
+            release.state = SimpleNamespace(data=initial, mark=lambda *a, **k: None)
+            with patch.object(orch, "compute_plan", return_value=next_plan):
+                self.assertEqual(release.plan(), next_plan)
+                self.assertEqual(release.state.data["plan"], next_plan)
+
+
 if __name__ == "__main__":
     unittest.main()

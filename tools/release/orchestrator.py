@@ -290,6 +290,22 @@ def upstream_build_values(name, diff, unit, artifact):
     return values
 
 
+def guard_resumed_public_config(state, plan):
+    """A source-commit journal cannot reuse completed stages for different public build inputs."""
+    previous = (state.get("plan") or {}).get("units") or {}
+    current = plan.get("units") or {}
+    names = {name for units in (previous, current) for name, unit in units.items()
+             if "build_config_digest" in unit}
+    changed = [name for name in names if
+               tuple((previous.get(name) or {}).get(key) for key in ("build_config_digest", "key")) !=
+               tuple((current.get(name) or {}).get(key) for key in ("build_config_digest", "key"))]
+    started = bool(state.get("builds")) or any(
+        name != "plan" and value for name, value in (state.get("stages") or {}).items())
+    if changed and started:
+        raise ReleaseError("公开构建输入已变化，不能复用同一源 commit 已执行的发布阶段：" + ", ".join(sorted(changed)) +
+                           "；恢复原冻结配置继续，或以新源 commit 重新规划。原日志保留，不自动重放。")
+
+
 def compute_plan(root, node, decl, source):
     units = model.units(decl)
     text = model.compose_text()
@@ -614,6 +630,7 @@ class Release:
     # -- plan
     def plan(self):
         plan = compute_plan(self.root, self.node, self.decl, self.source)
+        guard_resumed_public_config(self.state.data, plan)
         self.state.data["plan"] = plan
         self.state.mark("plan", "done")
         return plan
