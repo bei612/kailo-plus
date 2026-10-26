@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:client_kit/shared/platform/platform_text.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:buzz/features/channels/channel.dart';
@@ -143,21 +144,30 @@ Widget _buildThreadPage({
         eventId: postEventId,
       )).overrideWith((ref) async => threadResponse),
       savedPrefsProvider.overrideWithValue(_testPrefs),
-      channelDetailsProvider(_channelId).overrideWith((ref) async => ChannelDetails.fromChannel(_forumChannel)),
-      forumPostsProvider(_channelId).overrideWith((ref) async => const ForumPostsResponse(posts: [])),
+      channelDetailsProvider(
+        _channelId,
+      ).overrideWith((ref) async => ChannelDetails.fromChannel(_forumChannel)),
+      forumPostsProvider(
+        _channelId,
+      ).overrideWith((ref) async => const ForumPostsResponse(posts: [])),
     ],
     child: MaterialApp(
       theme: AppTheme.light(),
       home: Builder(
         builder: (context) => MediaQuery(
           data: MediaQuery.of(context).copyWith(textScaler: textScaler),
-          child: viaChannel ? ChannelDetailPage(channel: _forumChannel, initialMessageId: postEventId) : ForumThreadPage(
-            channelId: _channelId,
-            postEventId: postEventId,
-            currentPubkey: currentPubkey,
-            isMember: isMember,
-            isArchived: isArchived,
-          ),
+          child: viaChannel
+              ? ChannelDetailPage(
+                  channel: _forumChannel,
+                  initialMessageId: postEventId,
+                )
+              : ForumThreadPage(
+                  channelId: _channelId,
+                  postEventId: postEventId,
+                  currentPubkey: currentPubkey,
+                  isMember: isMember,
+                  isArchived: isArchived,
+                ),
         ),
       ),
     ),
@@ -194,19 +204,47 @@ void main() {
     );
   });
 
-  testWidgets('content-free push reply opens the actual forum thread at a distant comment', (tester) async {
-    final id = 'a' * 64;
-    final link = pushNotificationLink({'channel_id': _channelId, 'event_id': id});
-    expect(link, isNotNull);
-    final replies = List.generate(80, (i) => ThreadReply(eventId: i == 70 ? id : 'r$i', pubkey: 'alice', content: 'Forum reply $i', kind: 45003, createdAt: 2000 + i, channelId: _channelId, tags: const [], depth: 1));
-    await tester.pumpWidget(_buildThreadPage(viaChannel: true, postEventId: link!.messageId,
-      threadResponse: ForumThreadResponse(post: _makePost(content: 'Full original root'), replies: replies, totalReplies: replies.length),
-      isMember: false, users: const {'alice': _aliceProfile}));
-    await tester.pumpAndSettle();
-    expect(find.byType(ForumThreadPage), findsOneWidget);
-    expect(find.text('Forum reply 70'), findsOneWidget);
-    expect(tester.takeException(), isNull);
-  });
+  testWidgets(
+    'content-free push reply opens the actual forum thread at a distant comment',
+    (tester) async {
+      final id = 'a' * 64;
+      final link = pushNotificationLink({
+        'channelId': _channelId,
+        'eventId': id,
+      });
+      expect(link, isNotNull);
+      final replies = List.generate(
+        80,
+        (i) => ThreadReply(
+          eventId: i == 70 ? id : 'r$i',
+          pubkey: 'alice',
+          content: 'Forum reply $i',
+          kind: 45003,
+          createdAt: 2000 + i,
+          channelId: _channelId,
+          tags: const [],
+          depth: 1,
+        ),
+      );
+      await tester.pumpWidget(
+        _buildThreadPage(
+          viaChannel: true,
+          postEventId: link!.messageId,
+          threadResponse: ForumThreadResponse(
+            post: _makePost(content: 'Full original root'),
+            replies: replies,
+            totalReplies: replies.length,
+          ),
+          isMember: false,
+          users: const {'alice': _aliceProfile},
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(ForumThreadPage), findsOneWidget);
+      expect(find.text('Forum reply 70'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   group('ForumPostCard', () {
     testWidgets('renders author name and content', (tester) async {
@@ -497,7 +535,7 @@ void main() {
       await tester.pumpAndSettle();
 
       // Confirmation dialog appears.
-      expect(find.text('This cannot be undone.'), findsOneWidget);
+      expect(find.text(platformText(PlatformMessageKey.forumDeleteDescription, locale: 'en')), findsOneWidget);
 
       // Tap Delete button.
       await tester.tap(find.widgetWithText(FilledButton, 'Delete'));
@@ -550,7 +588,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byType(FloatingActionButton), findsOneWidget);
-      expect(find.byTooltip('New post'), findsOneWidget);
+      expect(find.byTooltip(platformText(PlatformMessageKey.forumStart, locale: 'en')), findsOneWidget);
     });
 
     testWidgets('hides FAB for non-members', (tester) async {
@@ -828,7 +866,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('Reply to this post\u2026'), findsOneWidget);
+      expect(find.text(platformText(PlatformMessageKey.forumReplyPlaceholder, locale: 'en')), findsOneWidget);
     });
 
     testWidgets('renders media previews for forum posts', (tester) async {
@@ -924,7 +962,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('Reply to this post\u2026'), findsNothing);
+      expect(find.text(platformText(PlatformMessageKey.forumReplyPlaceholder, locale: 'en')), findsNothing);
     });
 
     testWidgets('shows 3-dot in app bar for own post', (tester) async {
@@ -940,7 +978,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.byTooltip('Post actions'), findsOneWidget);
+      expect(find.byTooltip(platformText(PlatformMessageKey.messagesActionsLabel, locale: 'en')), findsOneWidget);
     });
 
     testWidgets('hides 3-dot in app bar for others post', (tester) async {
@@ -956,7 +994,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.byTooltip('Post actions'), findsNothing);
+      expect(find.byTooltip(platformText(PlatformMessageKey.messagesActionsLabel, locale: 'en')), findsNothing);
     });
   });
 }

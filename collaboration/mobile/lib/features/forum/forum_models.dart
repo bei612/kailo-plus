@@ -245,19 +245,22 @@ String formatRelativeTime(int timestamp, {String locale = 'en'}) {
     return platformText(
       PlatformMessageKey.messageLinkMinutesAgo,
       locale: locale,
-    ).replaceAll('{count}', '${diff ~/ 60}');
+      variables: {'count': diff ~/ 60},
+    );
   }
   if (diff < 86400) {
     return platformText(
       PlatformMessageKey.messageLinkHoursAgo,
       locale: locale,
-    ).replaceAll('{count}', '${diff ~/ 3600}');
+      variables: {'count': diff ~/ 3600},
+    );
   }
   if (diff < 604800) {
     return platformText(
       PlatformMessageKey.messageLinkDaysAgo,
       locale: locale,
-    ).replaceAll('{count}', '${diff ~/ 86400}');
+      variables: {'count': diff ~/ 86400},
+    );
   }
 
   final dt = DateTime.fromMillisecondsSinceEpoch(
