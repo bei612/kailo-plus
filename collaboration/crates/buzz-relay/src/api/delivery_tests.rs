@@ -1305,7 +1305,12 @@ async fn settlement_requires_independent_current_core_attestation_and_both_repla
         .status(),
         StatusCode::NOT_FOUND
     );
-    let impostor = settlement_auth(&Keys::generate(), &fixture.host, &body, fixture.community);
+    let administrator = Keys::generate();
+    sqlx::query("INSERT INTO relay_members(community_id,pubkey,role) VALUES($1,$2,'admin')")
+        .bind(fixture.community.as_uuid())
+        .bind(administrator.public_key().to_hex())
+        .execute(&fixture.pool).await.unwrap();
+    let impostor = settlement_auth(&administrator, &fixture.host, &body, fixture.community);
     assert_eq!(
         settlement_post(
             fixture.state.clone(),
