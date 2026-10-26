@@ -9,7 +9,7 @@ import emojiEnglish from "@emoji-mart/data/i18n/en.json";
 import emojiChinese from "@emoji-mart/data/i18n/zh.json";
 import Picker from "../profile/buzz/shared/ui/emoji-picker";
 import { Button } from "../profile/buzz/shared/ui/button";
-import { Input } from "../profile/buzz/shared/ui/input";
+import { Input } from "../composer/shared/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../composer/shared/ui/dialog";
 import { useBffClient, useLocale, useT } from "../context";
 import { useGovernedChannelAction, channelActionOutcomeText } from "../channel-management-actions";

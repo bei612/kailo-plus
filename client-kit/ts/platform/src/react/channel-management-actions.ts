@@ -214,7 +214,7 @@ export function useGovernedChannelAction(onRecorded: (command: ActionCommand) =>
         settle(null, result);
       }
     } catch (error) {
-      const failed = unclassifiedServerErrorsAreUnknown && error instanceof BffError && error.status >= 500 && error.errorClass === undefined
+      const failed: ReturnType<typeof writeFailure> = unclassifiedServerErrorsAreUnknown && error instanceof BffError && error.status >= 500 && error.errorClass === undefined
         ? { kind: "unknown" as const } : writeFailure(error);
       if (failed.kind === "unknown") {
         result = { kind: "unknown", operation: failed.operationId ?? priorOperation };

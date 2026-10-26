@@ -18,11 +18,11 @@ describe("DD-158 actual shared Tenant profile consumer",()=>{
   expect(dialog.querySelector('button[type="submit"]')).toBeNull();
   expect(send).toHaveBeenCalledTimes(1);
  });
- it("confirms the displayed version and retries a lost result with the same frozen command",async()=>{
+ it.each(["transport", "server"])("confirms the displayed version and retries an unknown %s result with the same frozen command",async failure=>{
   const sent:BffRequest[]=[];let saved=false;
   const send=vi.fn(async (r:BffRequest)=>{
    if(r.method==="GET")return {status:200,body:{name:saved?"After":"Before",version:saved?4:3,icon:"🎉",updateActionKey:"tenant.profile.update"}};
-   sent.push(structuredClone(r));if(sent.length===1)throw new TransportError("lost");saved=true;return {status:200,body:receipt};
+   sent.push(structuredClone(r));if(sent.length===1){if(failure==="server")return {status:503,body:{}};throw new TransportError("lost");}saved=true;return {status:200,body:receipt};
   });
   await render(<PlatformProvider client={createBffClient({send})} locale="en"><TenantProfileDialog open onOpenChange={()=>{}}/></PlatformProvider>);await settle();
   const dialog=document.querySelector<HTMLElement>('[data-testid="tenant-profile-dialog"]')!;
