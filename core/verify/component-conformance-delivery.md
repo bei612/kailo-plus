@@ -79,3 +79,23 @@
   同一的 binding 计划（云盘 bindingId `b2cde97d…`、问数 `058bd793…`）。
 
 生产登记、批准、binding、adapter 部署与业务验收须在本分支合并 main、经发布入口发布 Core/Worker 与 `.env` 之后执行（RB-11）。
+
+## 6. 接收方身份与阶段恢复修复（2026-10-26）
+
+设计依据为 DD-124(4)、DD-136(5)、07 §8A；修改只影响隔离准入运行器与原生客户端的验收登录，
+不改变业务 schema、API、Workflow、生产批准规则或上游源码。`receiver-sessions.mjs` 通过既有
+Desktop/Mobile client 的授权码 + PKCE 取得 HUMAN bearer，在隔离原生网关读取 `/api/v1/session`。
+三个账号必须分别属于业务 Tenant 管理员、Catalog 登记人和独立 Catalog 批准人；首次观察身份固定，
+续期只接受相同身份，token 与 refresh token 原子写入 0600 文件，重入由私有锁串行化。
+自动运行器将同一刷新命令交给 bootstrap、seed 与 driver；会话失败不会伪造身份继续执行。
+
+阶段修复：空的 `*.done` 是完成标记，不再被非空文件判断永久拒绝；bootstrap 显式投递原测试入口所需
+`APPLICATION_RECEIVER_BOOTSTRAP_FILE`；恢复执行保留 native 后续参数；拆除使用该次运行的 Compose 与
+环境文件。`platform.done` 只在完整启动并连接隔离网络后写入，启动前生成的 `core-build.json` 只证明来源。
+部分启动失败保留原现场并拒绝当作就绪重用；不盲删或重放未明副作用。高频临时文件改用 CI NVMe。
+
+只读现场核验：遗留 `knowledge-20261024T040931Z-1ed31c` 固定来源 `f15dd7802ca684c22ef84dcd8c7aebc084d1bc6b`，
+仅有 `core-build.json`，没有后续阶段完成标记。其 Core 使用旧 digest `a6c37cbf2ea58b4c983f9bd2bb7a5dca5c94fcb674c5a35ee6d4b901794f1a17`，
+启动日志为 OpenBao AppRole login 不可达，进程退出 1，非 OOM；其他隔离基础服务仍运行。
+该现场不是当前生产同版本的接收方，未被复用或清理。第 5 节的“已自动化”描述代码覆盖，不能据此声明这次
+知识库运行已完成 platform/contracts；native、bootstrap、seed、inputs、driver 仍无端到端成功证据。

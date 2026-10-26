@@ -94,7 +94,7 @@ platform=$run/apps/deploy/local
 export KAILO_RUNTIME_DIR=$platform
 read -r -a docker <<<"${RECEIVER_DOCKER:-sudo -n docker}"
 need() { for name in "$@"; do [[ -n ${!name:-} ]] || { echo "receiver.env: $name required for $stage" >&2; exit 2; }; done; }
-record() { [[ -s $run/$1 ]] || { echo "missing $run/$1: run the earlier stage first" >&2; exit 2; }; }
+record() { [[ -f $run/$1 && ! -L $run/$1 && ( $1 == *.done || -s $run/$1 ) ]] || { echo "missing $run/$1: run the earlier stage first" >&2; exit 2; }; }
 private() { [[ $1 == /* && -f $1 && ! -L $1 && $(stat -c '%a' -- "$1") =~ ^[46]00$ ]] || { echo "$1 must be an absolute owner-only file" >&2; exit 2; }; }
 compose() { (cd "$platform" && "${docker[@]}" compose --env-file .env -f compose.yaml "$@"); }
 container_of() { compose ps -q "$1" | head -n 1; }
@@ -255,10 +255,12 @@ PY
   "${docker[@]}" network connect --alias receiver-core --alias receiver-driver "$RECEIVER_NETWORK" "$(container_of core-bff)"
   "${docker[@]}" network connect --alias receiver-idp "$RECEIVER_NETWORK" "$(container_of keycloak)"
   "${docker[@]}" network connect --alias receiver-gateway "$RECEIVER_NETWORK" "$(container_of agentgateway)"
+  touch "$run/platform.done"
   echo "isolated platform $RECEIVER_PROJECT ready (CONFORMANCE_ONLY; not production)"
   ;;
 contracts)
   need RECEIVER_FLOW_NODE RECEIVER_PLAYWRIGHT_PACKAGE RECEIVER_ACCOUNTS_DIR RECEIVER_MANIFEST
+  record platform.done
   record core-build.json
   port=$(sed -n 's/^AGENTGATEWAY_PORT=//p' "$platform/.env")
   flow=(env KAILO_WEB="http://127.0.0.1:$port" KAILO_DEPLOY_DIR="$platform" KAILO_FLOW_ACCOUNTS_DIR="$RECEIVER_ACCOUNTS_DIR"
@@ -356,7 +358,8 @@ print(user)
 print(db)
 print(f'COMMENT ON DATABASE "{db}" IS \'{marker}\';')
 PY
-  core_env | core_test application_binding::read_grant::receiver_environment_bootstrap::bootstrap_native_receiver_environment false \
+  { core_env; printf 'APPLICATION_RECEIVER_BOOTSTRAP_FILE=%s\n' "$RECEIVER_BOOTSTRAP_FILE"; } \
+    | core_test application_binding::read_grant::receiver_environment_bootstrap::bootstrap_native_receiver_environment false \
     > "$run/bootstrap.log"
   json_line < "$run/bootstrap.log" > "$run/bootstrap.json.next"
   chmod 0600 "$run/bootstrap.json.next"
@@ -414,11 +417,13 @@ down)
   "${docker[@]}" rm -f "$RECEIVER_PROJECT-driver" "$RECEIVER_PROJECT-forward-adapter" >/dev/null 2>&1 || true
   if [[ -n ${RECEIVER_KNOWLEDGE_ENV:-} ]]; then
     knowledge=$(sed -n 's/^COMPOSE_PROJECT_NAME=\(kailo-knowledge-receiver[a-z0-9_-]*\)$/\1/p' "$RECEIVER_KNOWLEDGE_ENV")
-    [[ -z $knowledge ]] || "${docker[@]}" compose --project-name "$knowledge" down --volumes --remove-orphans
+    [[ -z $knowledge ]] || "${docker[@]}" compose --project-name "$knowledge" --env-file "$RECEIVER_KNOWLEDGE_ENV" \
+      -f "$src/knowledge/fork/deploy/compose.yaml" down --volumes --remove-orphans
   fi
   if [[ -n ${RECEIVER_CELLS_ENV:-} ]]; then
     cells=$(sed -n 's/^CELLS_COMPOSE_PROJECT=\(kailo-cells-conformance[a-z0-9_-]*\)$/\1/p' "$RECEIVER_CELLS_ENV")
-    [[ -z $cells ]] || "${docker[@]}" compose --project-name "$cells" down --volumes --remove-orphans
+    [[ -z $cells ]] || "${docker[@]}" compose --project-name "$cells" --env-file "$RECEIVER_CELLS_ENV" \
+      -f "$src/file-storage/deploy/compose.yaml" down --volumes --remove-orphans
   fi
   if [[ -f $platform/compose.yaml ]]; then
     [[ $(sed -n 's/^name: //p' "$platform/compose.yaml") == "$RECEIVER_PROJECT" ]] \

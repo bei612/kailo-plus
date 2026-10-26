@@ -19,6 +19,9 @@ deployment facts and run-local secrets, stage by stage, without an operator:
              isolated OpenBao, the public JWKS is rendered by the original Agent path), then
              start-core.sh --no-build so the isolated Core signs receiver actions with it
 
+  sessions   the original native-client PKCE login for three isolated HUMAN accounts;
+             retain their observed identities and refresh tokens in owner-only files
+
   models     DD-136(5): keyless native sources for the declared upstreams (adapters.json
              knowledge.conformanceModels and its gatewaySource bodies) written into the isolated
              AgentGateway through its admin API, then one governed llm_route.create each through the
@@ -36,6 +39,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shlex
 import secrets
 import socket
 import urllib.parse
@@ -147,9 +151,14 @@ def receiver_env(h, r, extra=None):
         "RECEIVER_FLOW_NODE": "/usr/local/bin/node", "RECEIVER_PLAYWRIGHT_PACKAGE": "/volumes/kailo/apps/package.json",
         "RECEIVER_ACCOUNTS_DIR": str(r.dir / "accounts"), "RECEIVER_MANIFEST": s.get("manifest", ""),
         "CHECK_CPUS": "4", "CHECK_MEMORY": "8g", # Short path: Chrome's browser flows bind Unix sockets under TMPDIR (108-byte limit).
-        "TMPDIR": str(h.private_dir(Path("/volumes/data/kailo/tmp") / f"kr-{r.dir.name.rsplit('-', 1)[-1]}")),
+        "TMPDIR": str(h.private_dir(Path("/var/lib/kailo-ci/tmp") / f"kr-{r.dir.name.rsplit('-', 1)[-1]}")),
     }
+    # Resume must retain the native/bootstrap delivery, not silently truncate
+    # receiver.env back to the platform-only fields.
+    values.update(s.get("receiverEnv", {}))
     values.update(extra or {})
+    if extra:
+        r.record(receiverEnv={**s.get("receiverEnv", {}), **extra})
     return h.env_file(r.dir / "receiver.env", {k: v for k, v in values.items() if v != ""})
 
 
@@ -244,8 +253,8 @@ def ensure_action_token(h, r):
     config = h.read_json("/volumes/kailo/ci/config.json")["environment"]
     env = {**os.environ, "KAILO_RUNTIME_DIR": str(local), "CHECK_CPUS": "2", "CHECK_MEMORY": "4g",
            "BUILDX_BUILDER": config.get("BUILDX_BUILDER", ""),
-           # container-safety requires an execution TMPDIR on Data (same short path as receiver.env).
-           "TMPDIR": str(h.private_dir(Path("/volumes/data/kailo/tmp") / f"kr-{r.dir.name.rsplit('-', 1)[-1]}"))}
+           # High-frequency temporary writes use the CI node's NVMe (07 §2.1).
+           "TMPDIR": str(h.private_dir(Path("/var/lib/kailo-ci/tmp") / f"kr-{r.dir.name.rsplit('-', 1)[-1]}"))}
     h.say("isolated-identity", action="prepare-action-token")
     # The deployment-only path is idempotent (an existing key is read back, never regenerated); on the
     # fresh isolated platform its first Agent readback has failed once without a message, so it is
@@ -295,7 +304,7 @@ def flow(h, r, script, *args):
     env = {**os.environ, "KAILO_WEB": f"http://127.0.0.1:{isolated_value(r, 'AGENTGATEWAY_PORT')}",
            "KAILO_DEPLOY_DIR": str(local), "KAILO_FLOW_ACCOUNTS_DIR": str(r.dir / "accounts"),
            "KAILO_FLOW_OUT": str(r.dir / "flow-out"), "KAILO_PLAYWRIGHT_PACKAGE": "/volumes/kailo/apps/package.json",
-           "TMPDIR": str(h.private_dir(Path("/volumes/data/kailo/tmp") / f"kr-{r.dir.name.rsplit('-', 1)[-1]}"))}
+           "TMPDIR": str(h.private_dir(Path("/var/lib/kailo-ci/tmp") / f"kr-{r.dir.name.rsplit('-', 1)[-1]}"))}
     return h.run(["/usr/local/bin/node", f"{r.state['source']}/tools/component-release/flow/{script}", *args],
                  env=env, log=r.log)
 
@@ -307,6 +316,31 @@ def ensure_tenant_admin(h, r):
         local = r.dir / "receiver" / "apps/deploy/local"
         h.write_private(path, f"KAILO_ACCEPT_USER={isolated_value(r, 'BOOTSTRAP_USER')}\n"
                               f"KAILO_ACCEPT_PASSWORD={(local / 'secrets/bootstrap_user_password').read_text().strip()}\n")
+
+
+def ensure_sessions(h, r):
+    """Original native-client PKCE sessions, with immutable observed identities.
+
+    The receiver runner invokes the same command before bootstrap/seed/driver
+    and periodically while the driver is alive. No token enters argv or logs.
+    """
+    ensure_tenant_admin(h, r)
+    local = r.dir / "receiver" / "apps/deploy/local"
+    session_dir = h.private_dir(r.dir / "receiver" / "sessions")
+    command = r.dir / "receiver" / "refresh-sessions.sh"
+    values = {
+        "KAILO_WEB": f"http://127.0.0.1:{isolated_value(r, 'AGENTGATEWAY_PORT')}",
+        "KAILO_DEPLOY_DIR": str(local), "KAILO_FLOW_ACCOUNTS_DIR": str(r.dir / "accounts"),
+        "KAILO_FLOW_OUT": str(r.dir / "flow-out"), "KAILO_PLAYWRIGHT_PACKAGE": "/volumes/kailo/apps/package.json",
+        "TMPDIR": str(h.private_dir(Path("/var/lib/kailo-ci/tmp") / f"kr-{r.dir.name.rsplit('-', 1)[-1]}")),
+    }
+    argv = ["env", *[f"{key}={value}" for key, value in values.items()], "/usr/local/bin/node",
+            f"{r.state['source']}/tools/component-release/flow/receiver-sessions.mjs", "--out", str(session_dir)]
+    h.write_private(command, "#!/usr/bin/env bash\nset -euo pipefail\nexec " + shlex.join(argv) + "\n", 0o700)
+    h.run([str(command)], log=r.log)
+    receiver_env(h, r, {"RECEIVER_SESSION_COMMAND": str(command)})
+    r.record(sessionIdentities=h.read_json(session_dir / "identities.json"))
+    h.say("isolated-sessions", status="READY")
 
 
 def ensure_model_routes(h, r, declaration):
@@ -343,7 +377,11 @@ def drive(r, args, runtime_env, declaration, h):
     manifest = h.render_release(r, "knowledge", declaration["nativePageOrigin"])
     s = r.state
     receiver_dir = r.dir / "receiver"
-    if not (receiver_dir / "core-build.json").is_file():
+    if not (receiver_dir / "platform.done").is_file():
+        # core-build.json records provenance before init-local starts anything;
+        # it is not proof of a completed, healthy isolated deployment.
+        h.require(not any(receiver_dir.iterdir()),
+                  "isolated platform setup is incomplete; inspect its run log and close this owned run before starting a new one")
         facts = platform_env(h, r, s["project"])
         r.record(platformPorts=facts["changedPorts"])
         receiver_env(h, r)
@@ -353,6 +391,7 @@ def drive(r, args, runtime_env, declaration, h):
         ensure_approver(h, r)
         receiver(h, r, "contracts")
     ensure_action_token(h, r)
+    ensure_sessions(h, r)
     ensure_model_routes(h, r, declaration)
     r.record(blockedAfterModelRoutes=(
         "native/bootstrap/seed/inputs/driver not automated yet: (1) source Cells cells@2.0.0 instance (file-storage "
