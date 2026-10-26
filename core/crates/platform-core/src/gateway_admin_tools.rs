@@ -92,6 +92,8 @@ const TOOL_LIST: &str = "select r.id as resource_id,r.version as resource_versio
        where p.tenant_id=r.tenant_id and p.status='ACTIVE' and p.output_schema_hash=t.output_schema_hash
          and p.application_binding_id=b.id and p.application_projection_generation=b.active_projection_generation
          and p.component_release_id=b.component_release_id and p.action_key=t.action_key
+         and p.action_version=(select max(current.version) from catalog.action_definition current
+           where current.component_release_id=b.component_release_id and current.action_key=t.action_key and current.status='ACTIVE')
          and b.state='ACTIVE' and release.status='APPROVED'
          and exists(select 1 from projection.application_runtime runtime where runtime.binding_id=b.id
            and runtime.generation=b.active_projection_generation and runtime.component_release_id=b.component_release_id
