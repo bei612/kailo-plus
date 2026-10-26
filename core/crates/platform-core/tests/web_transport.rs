@@ -1291,11 +1291,11 @@ async fn multiple_active_tenants_are_refused_not_guessed() {
     }
 }
 
-/// 结果不明的发布按 event id 对账成确定结果（DD-81）。
+/// 结果不明的发布仅凭肯定送达证据结算（DD-48/81）。
 ///
-/// 三条只有 DISPATCH 的发布，分别对应对账的三种结论：Relay 存着那条事件
-/// （已送达）；查不到且已超出 settle 窗口（确定未送达）；查不到而仍在窗口内
-/// （继续等，不写结论）。第一条用真实发出的事件，后两条的 event id 从未发出。
+/// Relay 存着的原事件可确认送达；查询空的历史意图无论是否过窗均保持未知。
+/// 第一条用真实发出的事件，后两条的 event id 从未发出，但缺少原签名与范围
+/// 元事实的普通查询不能据此写 NOT_DELIVERED，不能补造这些事实。
 /// 审计只追加，因此以显式的发生时间写入历史 DISPATCH，而不是改已有行。
 #[tokio::test]
 async fn unsettled_publishes_are_reconciled_by_event_id() {
@@ -1368,9 +1368,9 @@ async fn run_reconcile(http: &reqwest::Client, e: &Env, pool: &PgPool, fx: &comm
             op
         }
     };
-    let accepted = seed(delivered, interval * 2).await;
     let lost = seed(never_sent(), settle + interval * 2).await;
     let pending = seed(never_sent(), interval * 2).await;
+    let accepted = seed(delivered, interval * 2).await;
 
     let result = |op: Uuid| {
         let pool = pool.clone();
@@ -1388,7 +1388,9 @@ async fn run_reconcile(http: &reqwest::Client, e: &Env, pool: &PgPool, fx: &comm
     let deadline = std::time::Instant::now()
         + std::time::Duration::from_secs(u64::try_from(interval * 3 + 10).unwrap_or(u64::MAX));
     loop {
-        if result(accepted).await.is_some() && result(lost).await.is_some() {
+        // Include a positive completion witness; the decision-boundary unit
+        // regression separately exercises absence before and after the window.
+        if result(accepted).await.is_some() {
             break;
         }
         assert!(std::time::Instant::now() < deadline, "三轮内没有对账出结论");
@@ -1401,8 +1403,8 @@ async fn run_reconcile(http: &reqwest::Client, e: &Env, pool: &PgPool, fx: &comm
     );
     assert_eq!(
         result(lost).await.as_deref(),
-        Some("NOT_DELIVERED"),
-        "超出 settle 窗口仍查不到：确定未送达"
+        None,
+        "过窗后的普通查询空仍不是权威缺失，不允许同键新签"
     );
     assert_eq!(result(pending).await, None, "窗口内查不到：不下结论");
 }
