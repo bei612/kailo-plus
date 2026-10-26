@@ -199,6 +199,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // 配置一律显式提供：缺任一项拒绝启动，不回退默认值（GOAL 的硬编码红线）
     let platform_info = std::sync::Arc::new(platform_info::from_env()?);
+    let relay_http = relay_http::from_env()?;
     let database_url = std::env::var("DATABASE_URL").map_err(|_| "缺少 DATABASE_URL")?;
     let listen: SocketAddr = std::env::var("BFF_LISTEN")
         .map_err(|_| "缺少 BFF_LISTEN")?
@@ -257,7 +258,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             &secrets,
             &audit,
             &platform_bootstrap::BootstrapConfig::from_env()?,
-            &reqwest::Client::new(),
+            &relay_http,
         )
         .await?;
         converge_tenant_namespaces(&pool, &secrets).await?;
@@ -311,7 +312,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             gateway_service_auth.as_deref(),
         )?
         .map(std::sync::Arc::new);
-        let relay_http = relay_http::from_env()?;
         let service_state = service_api::ServiceState {
             pool: pool.clone(),
             auth: worker_service_auth,
