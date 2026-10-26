@@ -31,8 +31,9 @@ deployment facts and run-local secrets, stage by stage, without an operator:
              governed native-page binding, member directory, model credential delivery and real
              OIDC Admin session; original APIs create this run's KB and exactly scoped MCP endpoint
 
-Later stages still need the source Cells (cells@2.0.0), both receiver adapter deliveries rendered
-from bootstrap identities fixed in advance, and bootstrap/seed/observe/driver inputs. A run records
+The source Cells (cells@2.0.0), original adapter plans, fixed tenant SecretRefs,
+Agent readers and isolated IdP clients are prepared next. Native-action policies,
+adapter activation and bootstrap/seed/observe/driver inputs remain. A run records
 what remains in auto-state.json and stops with an explicit FAILED state instead of an operator step.
 
 Nothing here touches production state; production is only read (its .env keys, its running

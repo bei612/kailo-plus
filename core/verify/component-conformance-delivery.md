@@ -177,3 +177,43 @@ UUID、COLLECTION 类型和所属 workspace 后才记录为事实。重试先读
 后续需要在本次隔离 OpenBao 托管该独立身份、沿原 Agent 交付到本次 Gateway 私有卷，并沿原启动入口生效。
 不复用生产签名材料，不以测试 provider/手签 token 代替，也不把签名私钥伪装成某个模型 route 的 provider credential。
 这与源/接收 adapter 的 SecretRef/IdP client、native-action、bootstrap/seed/inputs/driver 编排一起仍未交付。
+
+## 8. 隔离机器身份与接收方凭据编排（2026-10-26，定向检查）
+
+本节更新第 7 节末尾的“尚无自动交付”：代码已补齐以下部分，真实运行仍待匹配镜像和受限资源窗口。
+
+- `8514021ab` 修复恢复语义：已确认 KB/MCP endpoint 缺失时在 POST 前拒绝，身份与每个原生对象确认后立即原子持久化。
+  artifact digest 改用原 `tools/upstream_manifest.py` 解析后的精确条目，拒绝缺失/重复名称，不能跨条目借用摘要。
+- `f1399ad15`、`435dc1688` 在隔离 OpenBao 中 CAS0 保存独立 Gateway EC 机器密钥。
+  原 OpenBao Agent 将私钥以 Gateway 实际 uid 的 0600 文件投递到本项目独占卷；Core 只接收公开 JWKS。
+  完整 Gateway 服务身份与 Tool Session 配置通过原 `start-core.sh` 生效，重建后恢复 receiver 网络别名。
+  运行器不签 token、不复用生产身份、不把私钥交给 Core。
+- `d180b94a0`、`1dd9a5689` 修复接收模型归属：原模型交付要求 `is_builtin=false`，不能把原生页面 binding 的内置模型
+  当成 receiver binding 的原生模型。运行器经原生 API 创建两个无密钥租户模型，逐项确认并保存原生返回的 UUID，
+  KB 只关联这两个模型；后续模型密钥仍须通过真实 binding 投递及原生 proof 回执，当前未执行。
+- `4ec9583eb`、`48bb217a1` 复用原 `component-bind --plan-only` 固定两个 binding 的提案，
+  把本次原生 PAT/MCP bearer 以及独立 OIDC client secret 写入隔离租户原 KV 路径，固定 version=1，CAS0，拒绝漂移和跨租户路径。
+  这些提案不是已创建的 binding/Principal。adapter 配置、AppRole reader、Agent HCL 和 IdP service client 继续使用原
+  `adapter-delivery.py`；Cells 使用原通用 Agent Compose，WeKnora 使用自身原 Agent 服务，不竞争同一 socket。
+  新增源 Agent 在启动前记录所有权，关闭本次运行时可回收；续跑保留已接入的原生配置覆盖层，确认对象缺失不重建。
+
+有效 CI 定向回执（所有源码均为 CI 直接 GitHub fetch，随后 CI 本地从固定对象展开）：
+
+| 固定提交 | CI `/volumes/data/kailo/conformance/checks/` 下回执 | 结果及范围 |
+| --- | --- | --- |
+| `8514021ab0e843bce63861957390444b6059bb0a` | `github-8514021ab0e843bce63861957390444b6059bb0a/receipt.json` | 原检查、5 项 native 恢复与 4 项 artifact 解析通过 |
+| `435dc168834806d2252608a398ecf60328d2cd6b` | `github-435dc168834806d2252608a398ecf60328d2cd6b/receipt.json` | 另 3 项 Gateway 单元检查通过；原 OpenBao Agent 内部 test-only 配置解析退出 0，未认证、未运行真实投递 |
+| `1dd9a5689e2cb690867fd6a6527ea8321b2cd2f2` | `github-1dd9a5689e2cb690867fd6a6527ea8321b2cd2f2/receipt.json` | 7 项 native 恢复/模型检查、原 10 项 seed/provider、4 项解析等通过 |
+| `48bb217a131fe782ba99c3395e0e948c1af1ed10` | `github-48bb217a131fe782ba99c3395e0e948c1af1ed10/receipt.json` | 前项检查及 3 项固定 SecretRef 单元检查、3 项 Gateway 单元检查通过；编排仅语法检查 |
+
+以上检查镜像均为 `sha256:3007729eb192341a4f004a88e42e1e66c94fc67d763acfc96568bd7311116018`，
+1 CPU、512 MiB（swap 同限）、128 PIDs、只读根文件系统、无 capabilities、`network=none`。
+OpenBao SDK 配置解析另用原固定镜像 `openbao/openbao@sha256:7d26314820a535ef346f1e63911809e4d356b48068fef00a9dcb3400bb9e11b6`，
+0.5 CPU、128 MiB、64 PIDs、无网络，只执行原源码声明的内部测试配置解析参数，不把该参数加入运行时自动化。
+`d180b94a0` 首次检查将正常 auth/refresh POST 误算业务对象重建而失败；其原回执保留，后续仅修正断言并重跑。
+测试 HTTP fixture 只验证实现边界，不能当成真实 OpenBao、IdP、Gateway 或接收方业务成功。
+
+仍未闭合：源 Cells native-action 与 driver 需要真实 `ResultExposurePolicy` ID/version；本分支目前找到的业务创建路径
+是 `delegation.rs` 的真实 grant scope，bootstrap SQL 不创建该业务对象，`isolated-plan.py` 的模拟 UUID 不能替代。
+还需 adapter directory/nativeResources、真实 receiver model-delivery proof 与 binding 激活的协调、bootstrap/seed/inputs/driver 全链编排。
+`blockedAfterNative` 保留明确拒绝；未启动新 receiver/Cells/WeKnora 栈，未改动生产，未重启或删除遗留栈。
