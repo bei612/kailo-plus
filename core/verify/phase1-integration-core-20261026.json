@@ -1,0 +1,460 @@
+{
+  "checkedAt": "2026-10-26T19:39:06.054618+00:00",
+  "sourceCommit": "06712387a66281e3bebce328cc33f350b056d946",
+  "designPin": "0d8f9cc11b8765e66a10b5aaa8524c4714f98a4a",
+  "sourceTransport": "CI direct GitHub fetch; CI-local archive from fixed object; original shared object stores read-only",
+  "scope": "Original targeted Core source checks; not check.sh --full, release, deployment or real receiver E2E",
+  "resourceLimits": {
+    "sdk": {
+      "cpus": 4,
+      "memory": 17179869184,
+      "memorySwap": 17179869184,
+      "pids": 1024,
+      "uid": 1000
+    },
+    "isolatedPostgres": {
+      "cpus": 1,
+      "memory": 2147483648,
+      "memorySwap": 2147483648,
+      "pids": 256
+    },
+    "cache": "/volumes/data/kailo/check-cache"
+  },
+  "steps": {
+    "fmt": {
+      "attempt": "-r2",
+      "exit": 0,
+      "log": "/volumes/data/kailo/conformance/checks/integration-core-06712387a-r2/fmt.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "testGroups": []
+    },
+    "migrations-up": {
+      "attempt": "-r2",
+      "exit": 0,
+      "log": "/volumes/data/kailo/conformance/checks/integration-core-06712387a-r2/migrations-up.log",
+      "sha256": "c709b58f217cf3cadbc84d606d92adc0ae8c254c2a16fa79adc8a88c9a21e374",
+      "testGroups": []
+    },
+    "migration-700-down": {
+      "attempt": "-r2",
+      "exit": 0,
+      "log": "/volumes/data/kailo/conformance/checks/integration-core-06712387a-r2/migration-700-down.log",
+      "sha256": "f37399ff20429213feb9032d4c1140b305af26c7487b474162361de0075c74e2",
+      "testGroups": []
+    },
+    "migration-700-up": {
+      "attempt": "-r2",
+      "exit": 0,
+      "log": "/volumes/data/kailo/conformance/checks/integration-core-06712387a-r2/migration-700-up.log",
+      "sha256": "68925cbd9ae337db3e40b3fe858aaab7a5dc0ac3c7072651deff9920e6857d6b",
+      "testGroups": []
+    },
+    "core-normal": {
+      "attempt": "-r2",
+      "exit": 0,
+      "log": "/volumes/data/kailo/conformance/checks/integration-core-06712387a-r2/core-normal.log",
+      "sha256": "1eddb4676c3465b1574aed372248cae80b9ec802973c01b7a5226b4678ac09b8",
+      "testGroups": [
+        {
+          "result": "ok",
+          "passed": 71,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "result": "ok",
+          "passed": 9,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "result": "ok",
+          "passed": 3,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "result": "ok",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "result": "ok",
+          "passed": 70,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "result": "ok",
+          "passed": 833,
+          "failed": 0,
+          "ignored": 83
+        },
+        {
+          "result": "ok",
+          "passed": 1,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "result": "ok",
+          "passed": 1,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "result": "ok",
+          "passed": 1,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "result": "ok",
+          "passed": 0,
+          "failed": 0,
+          "ignored": 1
+        },
+        {
+          "result": "ok",
+          "passed": 0,
+          "failed": 0,
+          "ignored": 1
+        },
+        {
+          "result": "ok",
+          "passed": 1,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "result": "ok",
+          "passed": 1,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "result": "ok",
+          "passed": 1,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "result": "ok",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "result": "ok",
+          "passed": 1,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "result": "ok",
+          "passed": 1,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "result": "ok",
+          "passed": 1,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "result": "ok",
+          "passed": 1,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "result": "ok",
+          "passed": 1,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "result": "ok",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "result": "ok",
+          "passed": 3,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "result": "ok",
+          "passed": 1,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "result": "ok",
+          "passed": 1,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "result": "ok",
+          "passed": 1,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "result": "ok",
+          "passed": 10,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "result": "ok",
+          "passed": 1,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "result": "ok",
+          "passed": 1,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "result": "ok",
+          "passed": 19,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "result": "ok",
+          "passed": 1,
+          "failed": 0,
+          "ignored": 0
+        }
+      ]
+    },
+    "push-pg": {
+      "attempt": "-r2",
+      "exit": 0,
+      "log": "/volumes/data/kailo/conformance/checks/integration-core-06712387a-r2/push-pg.log",
+      "sha256": "12add7004f0dcf9dd9d9cd04537ae23fd0e17422d09007afc2036db0342a5237",
+      "testGroups": [
+        {
+          "result": "ok",
+          "passed": 31,
+          "failed": 0,
+          "ignored": 0
+        }
+      ]
+    },
+    "profile-pg": {
+      "attempt": "-r2",
+      "exit": 0,
+      "log": "/volumes/data/kailo/conformance/checks/integration-core-06712387a-r2/profile-pg.log",
+      "sha256": "2cd597e0cf5e9ebccfc5f459777649b32f661e3ab3b2def4100745d5f681fcc2",
+      "testGroups": [
+        {
+          "result": "ok",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        }
+      ]
+    },
+    "feedback-pg": {
+      "attempt": "-r2",
+      "exit": 0,
+      "log": "/volumes/data/kailo/conformance/checks/integration-core-06712387a-r2/feedback-pg.log",
+      "sha256": "53c638504a88e139cf35a0d8016ffc987368d902d1f01ee5b444aeb6633a2698",
+      "testGroups": [
+        {
+          "result": "ok",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        }
+      ]
+    },
+    "receiver-bootstrap": {
+      "attempt": "-r2",
+      "exit": 0,
+      "log": "/volumes/data/kailo/conformance/checks/integration-core-06712387a-r2/receiver-bootstrap.log",
+      "sha256": "69d65b4f6e75550c367d3f0c3735cb9534dfab290b4c4a2c28c75be73f099bae",
+      "testGroups": [
+        {
+          "result": "ok",
+          "passed": 3,
+          "failed": 0,
+          "ignored": 1
+        }
+      ]
+    },
+    "secret-push-token": {
+      "attempt": "-r2",
+      "exit": 0,
+      "log": "/volumes/data/kailo/conformance/checks/integration-core-06712387a-r2/secret-push-token.log",
+      "sha256": "ddb2749ad7e63a22f38aa10339604d170cd959299c3fa1b46e17bcea28e4becb",
+      "testGroups": [
+        {
+          "result": "ok",
+          "passed": 1,
+          "failed": 0,
+          "ignored": 0
+        }
+      ]
+    },
+    "profile-restored": {
+      "attempt": "-r3",
+      "exit": 0,
+      "log": "/volumes/data/kailo/conformance/checks/integration-core-06712387a-r3/profile-restored.log",
+      "sha256": "6979717491df1da46be5d481504ef1f5216727ab11c603838d9dc747eef3a347",
+      "testGroups": [
+        {
+          "result": "ok",
+          "passed": 1,
+          "failed": 0,
+          "ignored": 0
+        }
+      ]
+    },
+    "clippy": {
+      "attempt": "-r3",
+      "exit": 0,
+      "log": "/volumes/data/kailo/conformance/checks/integration-core-06712387a-r3/clippy.log",
+      "sha256": "3a289b6f3e31131af4e1d59ef6fedba98affc4eb41cf6a71a89eae078701ad2c",
+      "testGroups": []
+    },
+    "sqlx": {
+      "attempt": "-r3",
+      "exit": 0,
+      "log": "/volumes/data/kailo/conformance/checks/integration-core-06712387a-r3/sqlx.log",
+      "sha256": "c24ad8e719e499daeabc615d92c26df55101f1ed5200999de42d8d45ebeaeebd",
+      "testGroups": []
+    },
+    "application-base-fixture": {
+      "attempt": "-r5",
+      "exit": 0,
+      "log": "/volumes/data/kailo/conformance/checks/integration-core-06712387a-r5/application-base-fixture.log",
+      "sha256": "b8d91234df6dc7522f3996b7a41d8cc59cbdb5628003cd4487e4072093a85952",
+      "testGroups": []
+    },
+    "human-exposure-pg": {
+      "attempt": "-r5",
+      "exit": 0,
+      "log": "/volumes/data/kailo/conformance/checks/integration-core-06712387a-r5/human-exposure-pg.log",
+      "sha256": "049b5fac5692276a6e8855745a30468413f7926b926e777ccdde99b0c58d7703",
+      "testGroups": [
+        {
+          "result": "ok",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        }
+      ]
+    }
+  },
+  "faultInjection": {
+    "change": "Remove only the actual pg_notify call in the private CI source copy",
+    "expectedFailure": {
+      "attempt": "-r2",
+      "exit": 101,
+      "log": "/volumes/data/kailo/conformance/checks/integration-core-06712387a-r2/profile-no-notify-negative.log",
+      "sha256": "c0103442fcd902910ed2ebc206d4c476244b0c9df6012c00e5bce6caaa3ba7ab",
+      "testGroups": [
+        {
+          "result": "FAILED",
+          "passed": 0,
+          "failed": 1,
+          "ignored": 0
+        }
+      ]
+    },
+    "restore": "Byte-equal to fixed GitHub blob before positive rerun",
+    "restoredSourceSha256": "19c9d68b61d8a6473d389bbd5911c218c152ba8e37d80a596624ac4230a5e85a",
+    "restoreTest": {
+      "attempt": "-r3",
+      "exit": 0,
+      "log": "/volumes/data/kailo/conformance/checks/integration-core-06712387a-r3/profile-restored.log",
+      "sha256": "6979717491df1da46be5d481504ef1f5216727ab11c603838d9dc747eef3a347",
+      "testGroups": [
+        {
+          "result": "ok",
+          "passed": 1,
+          "failed": 0,
+          "ignored": 0
+        }
+      ]
+    }
+  },
+  "attempts": [
+    {
+      "path": "/volumes/data/kailo/conformance/checks/integration-core-06712387a",
+      "exit": 101,
+      "sdkImage": "sha256:3007729eb192341a4f004a88e42e1e66c94fc67d763acfc96568bd7311116018",
+      "pgImage": "sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea",
+      "sdkOomKilled": false,
+      "commandSha256": "f8028b08c22babdd82a30ad6c0514195de748b44f05471e0956e410a86c0996d",
+      "cleanupContainersEmpty": true,
+      "cleanupNetworksEmpty": true
+    },
+    {
+      "path": "/volumes/data/kailo/conformance/checks/integration-core-06712387a-r2",
+      "exit": 127,
+      "sdkImage": "sha256:3007729eb192341a4f004a88e42e1e66c94fc67d763acfc96568bd7311116018",
+      "pgImage": "sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea",
+      "sdkOomKilled": false,
+      "commandSha256": "f8028b08c22babdd82a30ad6c0514195de748b44f05471e0956e410a86c0996d",
+      "cleanupContainersEmpty": true,
+      "cleanupNetworksEmpty": true
+    },
+    {
+      "path": "/volumes/data/kailo/conformance/checks/integration-core-06712387a-r3",
+      "exit": 0,
+      "sdkImage": "sha256:3007729eb192341a4f004a88e42e1e66c94fc67d763acfc96568bd7311116018",
+      "pgImage": "sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea",
+      "sdkOomKilled": false,
+      "commandSha256": "32b790d1444e748929071f10f19160b0cf3bcc1445da9cefafba453d0e143764",
+      "cleanupContainersEmpty": true,
+      "cleanupNetworksEmpty": true
+    },
+    {
+      "path": "/volumes/data/kailo/conformance/checks/integration-core-06712387a-r4",
+      "exit": 101,
+      "sdkImage": "sha256:3007729eb192341a4f004a88e42e1e66c94fc67d763acfc96568bd7311116018",
+      "pgImage": "sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea",
+      "sdkOomKilled": false,
+      "commandSha256": "74495ee39e048c5d4422fca34b2e1fe6eddf801e47e2c269f55428dfa0328d54",
+      "cleanupContainersEmpty": true,
+      "cleanupNetworksEmpty": true
+    },
+    {
+      "path": "/volumes/data/kailo/conformance/checks/integration-core-06712387a-r5",
+      "exit": 0,
+      "sdkImage": "sha256:3007729eb192341a4f004a88e42e1e66c94fc67d763acfc96568bd7311116018",
+      "pgImage": "sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea",
+      "sdkOomKilled": false,
+      "commandSha256": "a21ab4a43ab30972812bd8e064970aeb9667797b6bbc181ad2ab7c8742e26839",
+      "cleanupContainersEmpty": true,
+      "cleanupNetworksEmpty": true
+    }
+  ],
+  "retainedFailures": [
+    "first: original archive omitted deploy/local/protocol-peers/conformance/protocol-peer-reference.json; core normal failed at the actual missing-file expectation",
+    "r2 preparation: shell sed quoting failed before starting containers; corrected the local launch wrapper",
+    "r2: negative profile test correctly failed101; runner then stopped127 because SDK has no rg; original bytes were already restored before this failure",
+    "r2 human-exposure filter used filename rather than module and ran zero tests; explicitly not counted as acceptance",
+    "r4: correct producer test failed23503 because the documented application-execution-base.sql prerequisite was omitted; original same-commit fixture delivered only to fresh r5 isolated PG"
+  ],
+  "notClaimed": [
+    "83 platform-core ignored tests in normal run are not passes",
+    "new real receiver/IdP/native actions/model proof/activation E2E",
+    "production registration/approval/deployment",
+    "24-hour application availability"
+  ],
+  "windowReleased": true,
+  "projectSourceChanges": 0
+}

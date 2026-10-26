@@ -6,37 +6,46 @@
 
 ## 当前集成与验收边界（2026-10-26）
 
-当前候选从主线 `ebc23eb293942ed9721cb56d2b76ee871f91bc40` 集成 DD-157 共享组件外壳、
-DD-124/136 一致性投递、DD-159 本地归档、DD-151 推送基础和 DD-158 反馈与社区资料。
-HUMAN 内容策略已在真实 binding 准入事务固定归属，解除原生投递前置缺生产者的代码缺口；
-接收方完整激活与业务仍未验收。正在完成合批检查与匹配发布；不得把下列历史记录中的“当前”
-当作本候选状态。固定分支检查、实际部署和真实业务验收分别记录于
-[交付路线](02-纵向交付路线.md)、[组件一致性投递证据](core/verify/component-conformance-delivery.md)
-和[融合界面追溯](tools/traceability/component.integrated_ux.yaml)。
+候选分支 `codex/phase1-integration-20261026` 从主线
+`ebc23eb293942ed9721cb56d2b76ee871f91bc40` 集成 DD-157 组件外壳、
+DD-124/136 一致性投递、DD-159 本地归档、DD-151 持久推送与 Mobile 论坛消费者、
+DD-158 反馈和跨会话社区资料，以及 DD-160 原生仓库写入。已提交并推送不代表
+合并 main、产物或部署。下列检查分别对应固定源码，不合并认作最新整树 full。
 
-固定集成源码 `a52203970` 已在 CI 原受限 SDK 中通过 `docs`、`migrate`、`lint`、
-`contract`、`verify`、`replay`、`trace` 七个原步骤；发布工具 87 项单元检查通过。
-Rust 主目标 809 项通过、68 项 ignored，另两个目标各 ignored 1 项；平台 TypeScript
-1979 项、Web 726 项通过。真实数据库迁移往返和 SQLx 离线核对已执行；这不是 full、
-supply/seam 或真实业务验收。日志在 CI
-`/volumes/data/kailo/verification/phase1-integration/a52203970-*.log`，仅适用于所列固定源码。
+固定 Core `06712387a66281e3bebce328cc33f350b056d946` 在 CI 原受限 SDK 与全新
+隔离 PG 完成联合检查：格式、完整迁移及 `310700` 回退/重进、正常 workspace、
+all-target Clippy `-D warnings`、SQLx prepare check 全部通过。主目标
+**833 passed / 83 ignored**，push **31**、profile **2**、feedback **2**、
+HUMAN policy **2**、receiver bootstrap **3**、SecretStore push-token **1**。
+SecretStore 对 scripted HTTP，bootstrap 未执行真实接收方完整激活；ignored 不记通过。
+移除真实 `pg_notify` 后检查失败，逐字恢复通过。输入和脚本失败均保留，详见
+[联合回执](core/verify/phase1-integration-core-20261026.json)。
 
-后续 DD-159 仅选择原 `64a6b0942..d7c9005c6` 归档提交范围，没有合入其未验证 Mobile
-祖先。原 Desktop SDK 在 `24e3c5f61` 的归档、原生会话、工作区检查分别 21、18、2 项通过；
-故意关闭安全删除时原数据库残留检查失败，逐字恢复后通过。合批门禁与真实设备仍未验收，
-见[归档验证记录](collaboration/fork/verify/desktop-client.md)。
+固定 `3cd4d1e00` 的原四侧合同、同源 Mobile 词条、能力注册表生成/check 全部
+退出 0，42 能力、20 封闭 Workflow kind。同源 Web/Desktop 资料表单与 live
+消费者 **10/10**、共享生产/测试类型与两宿主类型检查通过；三处实际缓存、撤权、
+恢复网络故障均被检出，逐字恢复后 10/10 再次通过。Core 有界等待仍 fresh 核验身份，
+缓存不成为权限权威。Mobile 资料固定 `f23d2de52` 原消费者 **11/11**；固定
+`8047b742d` 原论坛/通知定位 **76/76**，反向可检出深回复未滚到目标。详情见
+[资料证据](core/verify/tenant-profile.md)与
+[Mobile 论坛证据](collaboration/fork/verify/mobile-forum-push.md)。
 
-固定合批源码 `880e5dccc` 的原四侧合同、同源 Mobile 词条与能力注册表生成/check
-在 CI 原 SDK（1 CPU、2 GiB）全部退出 0，回读七份生成物与集成树完全一致；42 条能力、
-20 个封闭 Workflow kind。日志为 CI
-`/volumes/data/kailo/verification/phase1-integration/880e5dcc-codegen.log`。
-这只证明合批生成一致，后续源码门禁和真实业务验收仍须分别执行。推送持久意图与
-故障恢复、跨会话资料即时更新、接收方全链，以及匹配安装包/部署仍未完成。
+DD-159 原 Desktop SDK 在 `24e3c5f61` 的归档、原生会话、工作区检查分别
+21、18、2 项通过；故意关闭安全删除能检出数据库残留，恢复后通过。HUMAN 内容
+策略已在 binding 准入事务固定归属，接收方完整激活与实际业务仍未验收。DD-160
+原生投递核验与 Android FCM 原生接入的后续批次尚未合入本集成检查；不由 Core
+FCM sender 推断 Android 客户端已经可用。
+
+较早固定源码 `a52203970` 已通过原 `docs`、`migrate`、`lint`、`contract`、
+`verify`、`replay`、`trace` 七步；Rust 主目标 809 项、平台 TS 1979 项、Web 726
+项与发布工具 87 项通过，仅适用于该固定源码。它不代替后续新增范围的完整门禁。
+当前仍缺最新 full、supply/seam、匹配制品摘要及真实三端/多账号/多 Agent 验收。
+反馈、推送、资料等追溯中的空 artifact 列表保持原样，不以源码 SHA 冒充制品摘要。
 
 上一批发布源 `dc2d6ca18bb5c355ebb3e96609f0f591532479cf` 的八个运行发布阶段完成，
-pin 为 `ebc23eb293942ed9721cb56d2b76ee871f91bc40`，但发布 journal 明确记录业务验收
-`NOT_RUN`。组件有独立部署入口，平台发布完成不证明组件运行镜像已更新；DD-157 需要
-宿主与组件匹配发布后，以三账号完成真实交互和明暗主题截图验收。平台仍未生产就绪。
+pin 为 `ebc23eb293942ed9721cb56d2b76ee871f91bc40`，但 journal 业务验收明确为
+`NOT_RUN`。本候选未部署、未更新 Win11/Mobile 包；组件仍须与宿主匹配发布后，
+用实际三账号业务和中英文、明暗主题关键状态逐项验收。平台仍未生产就绪。
 
 ## 历史使用与恢复范围（2026-10-09）
 

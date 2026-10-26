@@ -159,3 +159,24 @@ preflight、SDK/PG limits 和结果。主日志 SHA-256 为
 `e4e6d361a3d2ae6a4fa306209c1965d3d5b9e323e3e8e7090f148e2a8d12e735`。
 实际回读本批容器与独立网络均已清理。失败来源 `003f2d958` 的日志独立保留。
 当前结论为固定源码与隔离依赖检查通过，未打包、未部署、未记发布制品 digest。
+
+## 集成读取边界与最终 Core 检查（2026-10-26）
+
+集成复核发现 dispatch 的消息查询与根消息作者查询未应用已投递的 Relay deadline，
+根作者查询失败还会返回空集合，导致本可通知的消息被记为无资格。现两条查询都由
+`worker::relay_query` 使用既有 `relay_read_timeout_seconds`；返回事件必须验证签名、
+请求 ID 与重复项。根作者依赖失败返回错误，保持可恢复意图，不将依赖不可用作为
+`NOT_ELIGIBLE`。未增加消息正文存储、默认超时或新的通知权威。
+
+固定 `06712387a66281e3bebce328cc33f350b056d946`，原 SDK 4 CPU / 16 GiB、
+独立 PG 1 CPU / 2 GiB，push **31/31**，包含四种原消息 kind、静音排除，以及
+原 HTTP consumer 对有效/损坏/重复事件、503 和悬停读取的检查。fmt、完整迁移、
+`310700` 回退/重进、正常 workspace、all-target Clippy 与 SQLx 均退出 0。
+SecretStore push-token consumer **1/1** 仍只对 scripted HTTP，不记为真实 Bao E2E。
+命令与日志摘要见[联合回执](phase1-integration-core-20261026.json)。
+
+Mobile 原论坛恢复、深回复定位和原 SDK **76/76** 另见
+[论坛消费者](../../collaboration/fork/verify/mobile-forum-push.md)。静音先于提及排除
+遵循 DD-151 明确排除句与 V-SCN-249；Web/Desktop 原通知行为不改。
+Core 没有系统勿扰状态权威，不以 online/away/offline 推断勿扰，不声称其场景通过。
+Android 原生接入仍在独立候选中；本固定检查不包含它，也没有真实 APNs/FCM 调用。
