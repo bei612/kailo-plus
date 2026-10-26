@@ -742,6 +742,47 @@ def ensure_source_native(h, r):
     h.say("isolated-source-native", status="READY", folders=len(folders))
 
 
+def ensure_adapter_secrets(h, r):
+    """Freeze bootstrap intents, then seed only this isolated tenant's fixed KV.
+
+    These proposed binding/Principal IDs are not claimed as created entities;
+    the later original bootstrap must submit and confirm the real actions.
+    """
+    state = r.state
+    local = r.dir / "receiver/apps/deploy/local"
+    tenant = state["sessionIdentities"]["human"]["tenantId"]
+    intents = state.get("adapterIntents")
+    if intents is None:
+        intents = {}
+        for role, native_key, audience in (
+            ("SOURCE", "cells_bearer", "kailo-adapter-file-storage"),
+            ("RECEIVER", "native_mcp_bearer", "kailo-adapter-knowledge"),
+        ):
+            binding_id = str(uuid.uuid4())
+            intents[role] = {"bindingId": binding_id, "servicePrincipalId": str(uuid.uuid4()),
+                "bindingIdempotencyKey": str(uuid.uuid4()), "tenantId": tenant, "generation": 1,
+                "clientId": state["project"] + "-" + role.lower() + "-adapter",
+                "secretRefs": [{"secretKey": key, "locator": f"tenants/{tenant}/kv/application-binding/{binding_id}/{key}",
+                                "version": 1, "audience": audience} for key in (native_key, "oidc_client_secret")]}
+        # Intent precedes all KV effects, making interruption retry read-only.
+        r.record(adapterIntents=intents)
+    h.require(set(intents) == {"SOURCE", "RECEIVER"}
+              and all(item["tenantId"] == tenant for item in intents.values()), "adapter bootstrap tenant changed")
+    endpoints = []
+    for role, native_file in (("SOURCE", r.dir / "receiver/source-cells/secrets/service.pat"),
+                              ("RECEIVER", r.dir / "receiver/knowledge/mcp-bearer")):
+        endpoints.append({"role": role, "bindingId": intents[role]["bindingId"],
+                          "nativeFile": str(native_file), "secretRefs": intents[role]["secretRefs"]})
+    runtime = runtime_environment(h, r)
+    input_file = h.write_json(r.dir / "receiver/adapter-secrets-input.json", {
+        "deployment": str(local), "project": state["project"], "tenantId": tenant,
+        "baoUrl": runtime["OPENBAO_ADDR"], "endpoints": endpoints})
+    r.node(f"{state['project']}_app", "tools/component-release/conformance/receiver-adapter-secrets.mjs",
+           "--input", str(input_file))
+    r.record(adapterSecretReferencesPrepared=True)
+    h.say("isolated-adapter-secrets", status="FIXED_REFERENCES_PREPARED")
+
+
 def drive(r, args, runtime_env, declaration, h):
     declare_native(h, r)
     s = r.state
@@ -773,6 +814,7 @@ def drive(r, args, runtime_env, declaration, h):
     ensure_model_routes(h, r, declaration)
     ensure_knowledge_native(h, r, declaration)
     ensure_source_native(h, r)
+    ensure_adapter_secrets(h, r)
     r.record(blockedAfterNative=(
         "adapter/bootstrap/seed/inputs/driver not automated yet: (1) source Cells cells@2.0.0 "
         "native-action and adapter delivery bound to the isolated Core: "
