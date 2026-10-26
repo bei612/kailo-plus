@@ -138,7 +138,7 @@ pub(super) async fn ensure_status(
         match intent.event_result.as_deref() {
             Some("ACCEPTED") => return Ok(Some(event.id.to_hex())),
             Some("REJECTED") => return Ok(None),
-            Some("NOT_DELIVERED") => return submit_status(app, scope, &journal, intent, &event).await,
+            Some("NOT_DELIVERED") => return submit_status(app, scope, journal, intent, &event).await,
             _ => {}
         }
         let events=query(app,scope,&[json!({"ids":[event.id.to_hex()],"authors":[event.pubkey.to_hex()],"kinds":[1631],"limit":1})]).await.map_err(|_|pending())?;
@@ -178,10 +178,10 @@ pub(super) async fn ensure_status(
     .map_err(|_| pending())?;
     scope.check().map_err(|_| pending())?;
     intent.event = Some(event.as_json());
-    submit_status(app, scope, &journal, intent, &event).await
+    submit_status(app, scope, journal, intent, &event).await
 }
 
-async fn submit_status(app:&AppHandle,scope:&RepoScope,journal:&Journal,intent:&mut Intent,event:&Event)->Result<Option<String>,WriteError>{
+async fn submit_status(app:&AppHandle,scope:&RepoScope,journal:Journal,intent:&mut Intent,event:&Event)->Result<Option<String>,WriteError>{
     intent.event_result = Some("DISPATCHED".into());
     journal.save(intent, "EVENT_DISPATCH")?;
     let (base, keys) = scope
