@@ -5390,7 +5390,9 @@ mod tests {
         };
         sqlx::query("insert into admission.publish_attempt(tenant_principal_id,idempotency_key,operation_id,event_id) values($1,$2,$3,$4)")
             .bind(ctx.tenant_principal_id).bind(Uuid::new_v4()).bind(stored_operation).bind(&stored_id).execute(&mut *tx).await.unwrap();
-        persist_publication_dispatch(&mut tx, &stored_audit, &stored_scope).await.unwrap();
+        persist_publication_dispatch(&mut tx, &stored_audit, &stored_scope)
+            .await
+            .unwrap();
         let (window, dispatches): (serde_json::Value, i64) = sqlx::query_as(
             "select a.delivery_scope,(select count(*) from audit.audit_event e where e.operation_id=a.operation_id and e.event_type='DISPATCH') from admission.publish_attempt a where a.operation_id=$1")
             .bind(stored_operation).fetch_one(&mut *tx).await.unwrap();
