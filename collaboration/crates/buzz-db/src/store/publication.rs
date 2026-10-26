@@ -275,7 +275,10 @@ pub async fn merged_status_delivery(
 }
 impl Db {
     /// Narrow writer observation; no event content is returned to the caller.
-    #[buzz_datastore_tracing::datastore_span(name = "merged_status_delivery", system = "postgresql")]
+    #[buzz_datastore_tracing::datastore_span(
+        name = "merged_status_delivery",
+        system = "postgresql"
+    )]
     pub async fn merged_status_delivery(
         &self,
         community: CommunityId,
@@ -706,7 +709,10 @@ mod tests {
         let mut tx = pool.begin().await.unwrap();
         sqlx::query("CREATE OR REPLACE FUNCTION public.events_publication_guard() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NEW; END $$")
             .execute(&mut *tx).await.unwrap();
-        assert!(!fence_ready(tx.as_mut()).await.unwrap(), "an inert function must not advertise readiness");
+        assert!(
+            !fence_ready(tx.as_mut()).await.unwrap(),
+            "an inert function must not advertise readiness"
+        );
         tx.rollback().await.unwrap();
         let mut tx = pool.begin().await.unwrap();
         sqlx::query("ALTER TABLE communities RENAME COLUMN publication_epoch TO unavailable_epoch")
