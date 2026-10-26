@@ -13,6 +13,13 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 use tokio::sync::Mutex;
 
+/// Stable APNs metadata for one persisted delivery intent.
+pub(crate) struct ApnsRequest<'a> {
+    pub collapse_key: &'a str,
+    pub intent: uuid::Uuid,
+    pub expires_at: i64,
+}
+
 /// One provider attempt.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Outcome {
@@ -195,9 +202,7 @@ impl ApnsSender {
         http: &reqwest::Client,
         token: &DeviceToken,
         payload: &Value,
-        collapse_key: &str,
-        intent: uuid::Uuid,
-        expires_at: i64,
+        request: ApnsRequest<'_>,
         policy: &Policy,
     ) -> Receipt {
         let bearer = match self.provider_token().await {
@@ -215,10 +220,10 @@ impl ApnsSender {
             .header("apns-topic", &self.credential.bundle_id)
             .header("apns-push-type", "alert")
             .header("apns-priority", "10")
-            .header("apns-collapse-id", collapse_key)
+            .header("apns-collapse-id", request.collapse_key)
             // Tracking only: APNs does not promise idempotency for this ID.
-            .header("apns-id", intent.to_string())
-            .header("apns-expiration", expires_at.to_string())
+            .header("apns-id", request.intent.to_string())
+            .header("apns-expiration", request.expires_at.to_string())
             .json(payload)
             .timeout(policy.timeout())
             .send()
