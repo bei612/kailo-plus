@@ -5364,6 +5364,39 @@ mod tests {
             (count, actor, target, kind),
             (1, ctx.tenant_principal_id, audit.target.id(), 9)
         );
+        // The same original BFF DISPATCH writer also persists the signed window,
+        // not just the earlier eight-field scope. Unsupported Hide above stays old-shaped.
+        let stored_operation = Uuid::new_v4();
+        let stored_id = "cd".repeat(32);
+        let stored_scope = PublicationScope {
+            event_kind: 9,
+            publication: Some(PublicationWindow {
+                created_at: 100,
+                non_expiring: true,
+                policy: collab_bridge::bridge::PublicationPolicy {
+                    version: collab_bridge::bridge::PUBLICATION_POLICY_VERSION,
+                    epoch: Uuid::new_v4().to_string(),
+                    max_age_seconds: 960,
+                    ready: true,
+                },
+            }),
+            ..scope.clone()
+        };
+        let stored_audit = PublicationAudit {
+            operation_id: stored_operation,
+            event_id: &stored_id,
+            action_key: CONVERSATION_PUBLISH_ACTION,
+            ..audit
+        };
+        sqlx::query("insert into admission.publish_attempt(tenant_principal_id,idempotency_key,operation_id,event_id) values($1,$2,$3,$4)")
+            .bind(ctx.tenant_principal_id).bind(Uuid::new_v4()).bind(stored_operation).bind(&stored_id).execute(&mut *tx).await.unwrap();
+        persist_publication_dispatch(&mut tx, &stored_audit, &stored_scope).await.unwrap();
+        let (window, dispatches): (serde_json::Value, i64) = sqlx::query_as(
+            "select a.delivery_scope,(select count(*) from audit.audit_event e where e.operation_id=a.operation_id and e.event_type='DISPATCH') from admission.publish_attempt a where a.operation_id=$1")
+            .bind(stored_operation).fetch_one(&mut *tx).await.unwrap();
+        assert_eq!(window, serde_json::to_value(&stored_scope).unwrap());
+        assert_eq!(dispatches, 1);
+
         let mut changed = scope.clone();
         changed.community_id = Uuid::new_v4();
         assert!(matches!(
