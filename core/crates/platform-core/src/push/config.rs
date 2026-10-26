@@ -41,8 +41,20 @@ impl Policy {
                     .into(),
             );
         }
+        // Runtime value bounds belong to the consumer, keeping the shared schema subset.
+        if !value.as_object().is_some_and(|fields| {
+            fields.values().all(|v| {
+                v.as_i64().is_some_and(|n| n > 0 && n <= i64::from(i32::MAX))
+            })
+        }) {
+            return Err("推送策略数值必须为正的 32 位整数".into());
+        }
         let policy: Self =
             serde_json::from_value(value).map_err(|_| "PUSH_DELIVERY_POLICY 类型错误")?;
+        // Provider protocol retry floors, not deployment defaults.
+        if policy.retry_base_seconds < 60 || policy.apns_retry_floor_seconds < 900 {
+            return Err("推送重试间隔低于 FCM/APNs 协议要求".into());
+        }
         if policy.scan_event_bound < policy.scan_page_size
             || policy.token_retry_max_seconds < policy.token_retry_base_seconds
             || policy.lease_seconds <= policy.relay_read_timeout_seconds
@@ -85,6 +97,8 @@ mod tests {
         for (field, value) in [
             ("retryBaseSeconds", serde_json::json!(1)),
             ("maxAttempts", serde_json::json!(0)),
+            ("scanPageSize", serde_json::json!(i64::MAX)),
+            ("apnsRetryFloorSeconds", serde_json::json!(1)),
             ("leaseSeconds", serde_json::json!(1)),
             ("unrecognized", serde_json::json!(true)),
         ] {

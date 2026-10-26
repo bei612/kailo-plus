@@ -18,7 +18,7 @@ use uuid::Uuid;
 
 use super::decide::{self, MessageFacts, Reason, RecipientView};
 use super::send::{
-    ApnsCredential, ApnsSender, DeviceToken, FcmCredential, FcmSender, Outcome, Receipt,
+    ApnsCredential, ApnsRequest, ApnsSender, DeviceToken, FcmCredential, FcmSender, Outcome, Receipt,
 };
 use super::CredentialRefs;
 use crate::audit::{AuditEntry, Evidence};
@@ -34,16 +34,16 @@ impl Config {
     pub fn from_env() -> Result<Self, String> {
         let seconds = std::env::var("PUSH_POLL_SECONDS")
             .map_err(|_| "缺少 PUSH_POLL_SECONDS")?
-            .parse::<u64>()
+            .parse::<i32>()
             .map_err(|_| "PUSH_POLL_SECONDS 必须为正整数")?;
-        if seconds == 0 {
+        if seconds <= 0 {
             return Err("PUSH_POLL_SECONDS 必须为正整数".into());
         }
         let policy = super::config::Policy::parse(
             &std::env::var("PUSH_DELIVERY_POLICY").map_err(|_| "缺少 PUSH_DELIVERY_POLICY")?,
         )?;
         Ok(Self {
-            interval: Duration::from_secs(seconds),
+            interval: Duration::from_secs(seconds as u64),
             policy,
         })
     }
@@ -536,9 +536,11 @@ async fn dispatch(
                     &state.http,
                     &token,
                     &decide::apns_payload(&target, reason, &r.locale, badge),
-                    &target.collapse_key,
-                    i.id,
-                    i.expires_at.timestamp(),
+                    ApnsRequest {
+                        collapse_key: &target.collapse_key,
+                        intent: i.id,
+                        expires_at: i.expires_at.timestamp(),
+                    },
                     policy,
                 )
                 .await

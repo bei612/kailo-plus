@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "runtime/push_delivery_policy.schema.json",
-  "title": "DD-151 deployment delivered push worker policy",
+  "title": "PushDeliveryPolicy",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -27,101 +27,63 @@
   ],
   "properties": {
     "leaseSeconds": {
-      "type": "integer",
-      "minimum": 1,
-      "maximum": 2147483647
+      "type": "integer"
     },
     "notificationTtlSeconds": {
-      "type": "integer",
-      "minimum": 1,
-      "maximum": 2147483647
+      "type": "integer"
     },
     "maxAttempts": {
-      "type": "integer",
-      "minimum": 1,
-      "maximum": 2147483647
+      "type": "integer"
     },
     "retryBaseSeconds": {
       "type": "integer",
-      "minimum": 60,
-      "maximum": 2147483647,
       "description": "FCM documented quota retry floor; deployments may choose a longer delay."
     },
     "apnsRetryFloorSeconds": {
       "type": "integer",
-      "minimum": 900,
-      "maximum": 2147483647,
       "description": "APNs documented 5xx retry floor; deployments may choose a longer delay."
     },
     "providerTimeoutSeconds": {
-      "type": "integer",
-      "minimum": 1,
-      "maximum": 2147483647
+      "type": "integer"
     },
     "scanPageSize": {
-      "type": "integer",
-      "minimum": 1,
-      "maximum": 2147483647
+      "type": "integer"
     },
     "scanEventBound": {
-      "type": "integer",
-      "minimum": 1,
-      "maximum": 2147483647
+      "type": "integer"
     },
     "dispatchBatchSize": {
-      "type": "integer",
-      "minimum": 1,
-      "maximum": 2147483647
+      "type": "integer"
     },
     "retirementBatchSize": {
-      "type": "integer",
-      "minimum": 1,
-      "maximum": 2147483647
+      "type": "integer"
     },
     "tokenPrepareLeaseSeconds": {
-      "type": "integer",
-      "minimum": 1,
-      "maximum": 2147483647
+      "type": "integer"
     },
     "tokenRetryBaseSeconds": {
-      "type": "integer",
-      "minimum": 1,
-      "maximum": 2147483647
+      "type": "integer"
     },
     "tokenRetryMaxSeconds": {
-      "type": "integer",
-      "minimum": 1,
-      "maximum": 2147483647
+      "type": "integer"
     },
     "receiptCommitAttempts": {
-      "type": "integer",
-      "minimum": 1,
-      "maximum": 2147483647
+      "type": "integer"
     },
     "collapseSeconds": {
-      "type": "integer",
-      "minimum": 1,
-      "maximum": 2147483647
+      "type": "integer"
     },
     "deviceWindowSeconds": {
-      "type": "integer",
-      "minimum": 1,
-      "maximum": 2147483647
+      "type": "integer"
     },
     "deviceAttemptLimit": {
-      "type": "integer",
-      "minimum": 1,
-      "maximum": 2147483647
+      "type": "integer"
     },
     "credentialTtlSeconds": {
-      "type": "integer",
-      "minimum": 1,
-      "maximum": 2147483647
+      "type": "integer"
     },
     "relayReadTimeoutSeconds": {
-      "type": "integer",
-      "minimum": 1,
-      "maximum": 2147483647
+      "type": "integer"
     }
   }
 }
