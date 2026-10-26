@@ -360,9 +360,7 @@ async fn ensure_status_with(
         // Historical unknown attempts did not freeze Community ID. The first
         // response cannot establish the old Community, even if the same ID exists
         // in a new Community now served by this Host.
-        if intent.event_community_id.is_none()
-            && intent.event_result.as_deref() != Some("NOT_DELIVERED")
-        {
+        if intent.event_community_id.is_none() {
             return Err(pending());
         }
         if proof.accepted {
