@@ -24,7 +24,7 @@ const spell = { key: "documents.spellcheck", settingsCategory: "DOCUMENTS", valu
   defaultValue: "true", label: text("拼写检查", "Spell checking") };
 
 async function mount(extra: { reauthenticateTopLevel?: () => void; locale?: "en" | "zh-CN"; body?: object } = {}) {
-  const client = createBffClient({ send: async () => ({ status: 200, body: extra.body ?? page }) });
+  const client = createBffClient({ send: async () => ({ status: 200, body: { ...(extra.body ?? page) } }) });
   const host = await render(<PlatformProvider client={client} locale={extra.locale ?? "en"}
     reauthenticateTopLevel={extra.reauthenticateTopLevel}>
     <NativeApplicationPage bindingId={page.bindingId} />
