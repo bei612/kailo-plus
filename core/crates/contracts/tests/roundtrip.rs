@@ -963,6 +963,7 @@ fn pulse_requests_and_native_limit_roundtrip() {
         let mut value =
             serde_json::json!({"relayUrl":"wss://relay.example","communityHost":"relay.example"});
         if let Some(limit) = limit {
+            value["publicationEpoch"] = serde_json::json!("00000000-0000-0000-0000-00000000002a");
             value["relayQueryLimit"] = serde_json::json!(limit);
             value["publishResultSettleSeconds"] = serde_json::json!(901);
             value["publishResultObservedAtUnixSeconds"] = serde_json::json!(1900000000);

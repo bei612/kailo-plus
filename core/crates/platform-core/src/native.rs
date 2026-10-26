@@ -69,9 +69,11 @@ pub async fn community(State(state): State<BffState>, headers: HeaderMap) -> Res
                     // issue a bounded query without the optional current limit.
                     Err(_) => None,
                 };
+            let publication_epoch = publication_epoch(&state, ctx.tenant_id, &host).await;
             (
                 [("cache-control", "no-store")],
                 Json(NativeCommunityFacts {
+                    publication_epoch,
                     publish_result_settle_seconds: Some(state.publish_result_settle_seconds),
                     publish_result_observed_at_unix_seconds: Some(chrono::Utc::now().timestamp()),
                     relay_query_limit,
@@ -88,4 +90,27 @@ pub async fn community(State(state): State<BffState>, headers: HeaderMap) -> Res
             StatusCode::SERVICE_UNAVAILABLE.into_response()
         }
     }
+}
+
+// No client or Host-supplied default can acquire publication proof authority.
+// Retain the original connection facts when the optional writer capability is
+// unavailable; the Native publisher must not invent an epoch in that case.
+async fn publication_epoch(state: &BffState, tenant: uuid::Uuid, host: &str) -> Option<String> {
+    let (client, observed_host) = crate::tenant_lifecycle::control_client(
+        &state.memory_service,
+        tenant,
+        crate::tenant_lifecycle::ProjectionDirection::Establish,
+    ).await.ok()?;
+    if observed_host != host {
+        return None;
+    }
+    let policy = client
+        .with_budget(std::sync::Arc::clone(&state.relay_budget))
+        .publication_policy(&state.relay_http)
+        .await
+        .ok()?;
+    let current: bool = sqlx::query_scalar(
+        "select exists(select 1 from projection.tenant_buzz_binding where tenant_id=$1 and normalized_host=$2 and state='ACTIVE')",
+    ).bind(tenant).bind(host).fetch_one(&state.pool).await.ok()?;
+    current.then_some(policy.epoch)
 }
