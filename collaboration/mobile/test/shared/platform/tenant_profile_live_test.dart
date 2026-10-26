@@ -110,7 +110,7 @@ void main() {
         }
       });
       expect(
-        (await h.container.read(tenantProfileLiveProvider.future)).name,
+        (await h.container.read(tenantProfileLiveProvider.future))?.name,
         'Before',
       );
       await started.future.timeout(const Duration(seconds: 5));
@@ -168,7 +168,7 @@ void main() {
       h.lifecycle.resume();
       await h.container.pump();
       expect(
-        (await h.container.read(tenantProfileLiveProvider.future)).name,
+        (await h.container.read(tenantProfileLiveProvider.future))?.name,
         'Fresh foreground',
       );
       expect(calls, 3);
@@ -193,10 +193,79 @@ void main() {
       await Future<void>.delayed(Duration.zero);
       await h.container.pump();
       expect(
-        (await h.container.read(tenantProfileLiveProvider.future)).name,
+        (await h.container.read(tenantProfileLiveProvider.future))?.name,
         'Recovered',
       );
       expect(calls, 2);
     },
   );
+  test('a terminal profile denial clears the previous admitted profile', () async {
+    var calls = 0;
+    final refused = Completer<void>();
+    final h = await harness((request) async {
+      calls++;
+      if (calls == 1) {
+        return jsonResponse({'name': 'Previously visible', 'version': 1, 'refreshAfterMillis': 10});
+      }
+      refused.complete();
+      return jsonResponse(null, 403);
+    });
+    h.container.listen(tenantProfileLiveProvider, (_, _) {});
+    await h.container.read(tenantProfileLiveProvider.future);
+    await refused.future.timeout(const Duration(seconds: 5));
+    for (var n = 0; n < 20; n++) {
+      await Future<void>.delayed(Duration.zero);
+    }
+    await h.container.pump();
+    expect(h.container.read(tenantProfileLiveProvider).unwrapPrevious().value, isNull);
+    expect(calls, 2);
+  });
+
+  test('an expired login clears the old profile without retrying the denied session', () async {
+    var calls = 0;
+    final denied = Completer<void>();
+    final h = await harness((request) async {
+      calls++;
+      if (calls == 1) {
+        return jsonResponse({'name': 'Before expiry', 'version': 1, 'refreshAfterMillis': 10});
+      }
+      denied.complete();
+      return jsonResponse(null, 401);
+    });
+    h.container.listen(tenantProfileLiveProvider, (_, _) {});
+    await h.container.read(tenantProfileLiveProvider.future);
+    await denied.future.timeout(const Duration(seconds: 5));
+    for (var n = 0; n < 20; n++) {
+      await Future<void>.delayed(Duration.zero);
+    }
+    await h.container.pump();
+    expect(h.container.read(tenantProfileLiveProvider).unwrapPrevious().value, isNull);
+    expect(calls, 2);
+  });
+
+  test('an adopted login fences the late old watch and removes its previous snapshot', () async {
+    var calls = 0;
+    final started = Completer<void>();
+    final late = Completer<http.Response>();
+    final h = await harness((request) async {
+      calls++;
+      if (calls == 1) {
+        return jsonResponse({'name': 'Old login', 'version': 1, 'refreshAfterMillis': 10});
+      }
+      started.complete();
+      return late.future;
+    });
+    h.container.listen(tenantProfileLiveProvider, (_, _) {});
+    await h.container.read(tenantProfileLiveProvider.future);
+    await started.future.timeout(const Duration(seconds: 5));
+    await h.container.read(nativeSessionProvider).adopt(const OidcTokens(accessToken: 'replacement-access'));
+    late.complete(jsonResponse({'name': 'Late old identity', 'version': 2, 'refreshAfterMillis': 10}));
+    for (var n = 0; n < 20; n++) {
+      await Future<void>.delayed(Duration.zero);
+    }
+    await h.container.pump();
+    expect(h.container.read(tenantProfileLiveProvider).unwrapPrevious().value, isNull);
+    expect(calls, 2);
+  });
+
 }
