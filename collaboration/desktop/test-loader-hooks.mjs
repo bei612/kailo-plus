@@ -172,7 +172,12 @@ export async function load(url, context, nextLoad) {
     return {
       format: "module",
       shortCircuit: true,
-      source: transpiled.outputText,
+      // The real Desktop/Web hosts inject Vite's environment in shared source,
+      // including the same-origin profile asset base imported by Settings.
+      // Supply that bundler context in node:test without changing product code.
+      source:
+        'import.meta.env ??= { BASE_URL: "/", MODE: "test", DEV: false, PROD: false, SSR: false };\n' +
+        transpiled.outputText,
     };
   }
 
