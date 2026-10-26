@@ -98,6 +98,7 @@ pub fn spawn(state: ServiceState, meter: &Meter, cfg: Config) {
         // Scheduling cursor only; audit remains the publication authority. An
         // unobservable replaceable profile must not starve later intents.
         let mut profile_cursor = None;
+        let mut agent_profile_cursor = None;
         // Same scheduling-only cursor for message publications: a DISPATCH that
         // can never settle (missing evidence, unobservable replaceable event)
         // stays unsettled and counted, but must not starve later intents.
@@ -111,7 +112,7 @@ pub fn spawn(state: ServiceState, meter: &Meter, cfg: Config) {
             }
             // DD-117: Agent kind:0 publications settle by event ID within the same
             // Relay drift window; missing/stale Agent profiles are (re)published.
-            if let Err(e) = crate::agent_profile::reconcile(&state, cfg.batch, cfg.settle).await {
+            if let Err(e) = crate::agent_profile::reconcile(&state, cfg.batch, cfg.settle, &mut agent_profile_cursor).await {
                 tracing::warn!(error = %e, "Agent profile projection reconciliation incomplete");
             }
             // DD-125(4): CONTROL Canvas events settle by event ID within the same window.
