@@ -72,6 +72,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         // Nostr HTTP bridge (NIP-98 auth)
         .route("/events", post(api::bridge::submit_event))
         .route("/events/delivery", post(api::delivery::delivery))
+        .route("/events/observation", post(api::delivery::observation))
         .route("/query", post(api::bridge::query_events))
         .route("/count", post(api::bridge::count_events))
         // Relay-owned third-party GIF metadata proxy (NIP-98 auth).

@@ -971,7 +971,12 @@ async fn submit_event_authed(
 
     // Scoped publication retains the original quota/replay ordering and uses
     // the exact TenantContext captured before auth throughout the writer path.
-    if verified.publication_community.is_ok_and(|id| id.is_some()) {
+    // Repository-owner admission belongs only to the original merged-status
+    // kind. Other scoped Core publications retain their own original ingest
+    // author, kind, membership and governance checks below.
+    if verified.publication_community.is_ok_and(|id| id.is_some())
+        && event.kind.as_u16() == 1631
+    {
         let admitted = match buzz_core::publication::merged_status_repository(&event, &pubkey) {
             Ok(repo) => super::delivery::readmit(state, tenant, headers, verified, repo)
                 .await
