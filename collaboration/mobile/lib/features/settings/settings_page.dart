@@ -31,6 +31,7 @@ import '../platform/platform_devices_page.dart';
 import '../platform/platform_members_page.dart';
 import '../platform/platform_status_text.dart';
 import '../platform/platform_tasks_page.dart';
+import '../feedback/feedback_page.dart';
 import 'theme_picker_page.dart';
 
 part 'settings_page/notifications_section.dart';
@@ -242,6 +243,14 @@ class SettingsPage extends HookConsumerWidget {
                 const _OrganizationSection(),
                 const _AppearanceSection(),
                 const _NotificationsSection(),
+                AppListCard(children: [
+                  AppListRow(
+                    key: const ValueKey('settings-feedback'),
+                    icon: LucideIcons.messageSquare,
+                    title: platformText(PlatformMessageKey.platformFeedbackTitle, locale: locale),
+                    onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const FeedbackPage())),
+                  ),
+                ]),
                 const _LanguageSection(),
                 const _DeviceSection(),
                 const _SignOutSection(),
