@@ -38,3 +38,13 @@ CI 节点根路径为 `/volumes/data/kailo/verification/dd160-remote-writes/`：
 - `negative-6fbd532351d801cbb3ab322d5a952dcd3889161d/` 保留 mutated/restored 日志、真实退出码、限额、OOM 和恢复哈希。
 
 本批所有消费者容器均终态并删除。未生成新安装包、未发布共享服务、未在 Win11 或真实 Desktop 完成 V-SCN-264/265 操作；也未替代 DD-157 三账号双主题发布后验收。全量集成门禁、部署事实投递、安装包及真实端到端验收仍由后续集成执行，原发布门禁保留。
+
+## 同日 DD-81 部署事实与已知未送达恢复
+
+源码增量基于此前 `8ac00ac9e32a547a389b7379a0b7d0b8bfa7f511`，原生定向固定源为 `fa06d4b819b1dbdb5ccef1b1e109d5505acf6344`。`66211f082b5ca37243dbd93c5bfac84c4d242cb0` 在原 native/community 增加可选 `publishResultSettleSeconds` 与 `publishResultObservedAtUnixSeconds`：窗口来自 Core 对账器同一个启动配置对象，时刻来自 Core 原 UTC 时钟，响应 no-store；没有另一套窗口、默认值或 Webview now 参数。Native 直接经 NativeSession 读取，复核原 Relay 与登录代际；旧 Core 缺失字段不猜结算窗口。四侧原合同往返检查增加新事实及旧缺省用例；生成物、Core 编译与四侧执行留给集中合批，本轮未声称这些检查通过。
+
+Native 同一个状态消费者现先查原 ID，再只对持久 NOT_DELIVERED 的同一 merge 意图重建 1631；新尝试保留原签名者、正文、标签与 merge commit，发送前重新核仓库准入并持久化，未知原意图不能被替换。SQLite 以追加证据保留旧签事件与结论；从旧版本只有 intent 行的数据库升级时，也在替换事务中先补存旧证据。退休期间晚到的查询、ACK 不终结新会话操作。此时仍不把普通查询为空判作未送达。
+
+原因已经源码复核：原 Relay 的 kind5 能软删除 1631，也能再次软删除前一条 kind5；原 ID 与墓碑查询同时为空，仍可能是已送达。包括软删除的 writer 读取保留这项事实，但还需解决原 ingest 先校验时间、稍后异步入库的在途竞态。新的窄读取接缝需先冻结设计与 writer 串行/过窗规则；本阶段没有开放新 HTTP 出口，不能据“窗口已到”重签未知事件，也不称完整 DD-81 收口。
+
+原 Desktop SDK（上文同 digest）、1 CPU、4 GiB memory/memory+swap、默认 feature，固定 `fa06d4b819b1dbdb5ccef1b1e109d5505acf6344` 的 `cargo test --offline --locked --lib commands::project_git_`：25 passed、0 failed、462 filtered out，退出 0，实际重编译 18.29 秒。新增用例经同一生产状态消费者和真实 SQLite 验证可信事实/严格时间边界、原 ID 查证、无送达证据不猜、已知未送达的同意图恢复、旧库升级、撤权、退休及迟到 ACK。原生 I/O 边界在这些用例中受控，不冒称实际 Relay 或安装包通过。原 20 项中的真实 Git HTTP 丢 ACK/重启回归仍通过。OOMKilled=false，本批容器已删除；证据同目录 `fa06d4b819b1dbdb5ccef1b1e109d5505acf6344-{cargo,preflight,limits,exit,oom}.log`。后续新接缝须另留真实数据库/HTTP、负向及最终固定源码证据。
