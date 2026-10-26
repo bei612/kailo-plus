@@ -40,7 +40,7 @@ pub(super) async fn retire(conn: &mut PgConnection, locator: &str) -> Result<(),
  .bind(locator).execute(conn).await?;
     Ok(())
 }
-pub(super) async fn sweep(state: &ServiceState) -> Result<(), sqlx::Error> {
+pub(super) async fn claim_retirement(pool: &sqlx::PgPool) -> Result<Vec<(String,Uuid,String)>,sqlx::Error> {
     // Freeze before external I/O: a late registration cannot bind this locator anymore.
     // Unique CAS=0 means a writer racing the fence cannot resurrect the destroyed version.
     let rows:Vec<(String,Uuid,String)>=sqlx::query_as("update admission.push_token_intent set state='RETIRING',
@@ -49,7 +49,11 @@ pub(super) async fn sweep(state: &ServiceState) -> Result<(), sqlx::Error> {
  ((i.state='PREPARING' and i.lease_until<=now()) or (i.state='RETIRING' and i.next_attempt_at<=now()))
  and not exists(select 1 from identity.push_registration r where r.token_secret_locator=i.locator)
  order by next_attempt_at for update skip locked limit 100) returning locator,tenant_id,audience")
- .fetch_all(&state.pool).await?;
+ .fetch_all(pool).await?;
+    Ok(rows)
+}
+pub(super) async fn sweep(state: &ServiceState) -> Result<(), sqlx::Error> {
+    let rows=claim_retirement(&state.pool).await?;
     for (locator, tenant, audience) in rows {
         let reference = secret_store::SecretRef {
             locator,

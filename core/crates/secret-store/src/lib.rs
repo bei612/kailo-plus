@@ -2866,6 +2866,29 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn push_token_orphan_fences_late_write_and_proves_lost_destroy_response() {
+        let tenant=Uuid::from_u128(11);let token_intent=Uuid::from_u128(12);
+        let (addr,server)=scripted_openbao(vec![
+            ("404 Not Found",""),
+            ("200 OK",r#"{"data":{"version":1}}"#),
+            ("200 OK",r#"{"data":{"current_version":1,"versions":{"1":{"destroyed":false}}}}"#),
+            ("",""),
+            ("200 OK",r#"{"data":{"current_version":1,"versions":{"1":{"destroyed":true}}}}"#),
+        ]);
+        let store=fake_tenant_store(&addr,tenant).await;
+        let reference=SecretRef{locator:store.tenant_locator(tenant,&format!("push-token/{token_intent}")),version:1,audience:store.identity.clone()};
+        let wrong=SecretRef{locator:store.tenant_locator(tenant,"buzz-human/other"),..reference.clone()};
+        assert!(matches!(store.retire_push_token(tenant,&wrong,true).await,Err(SecretError::Refused)));
+        store.retire_push_token(tenant,&reference,true).await.unwrap();
+        let requests=server.join().unwrap();assert_eq!(requests.len(),5);
+        assert!(requests[1].starts_with(&format!("POST /v1/kv/data/push-token/{token_intent} ")));
+        assert!(requests[1].contains("\"cas\":0"));assert!(requests[1].contains("\"fence\":\"true\""));
+        assert!(requests[3].starts_with(&format!("POST /v1/kv/destroy/push-token/{token_intent} ")));
+        assert!(requests[3].contains("\"versions\":[1]"));
+        assert!(requests[4].starts_with("GET /v1/kv/metadata/push-token/"));
+    }
+
+    #[tokio::test]
     async fn bound_retirement_never_claims_an_empty_locator() {
         let tenant = Uuid::from_u128(7);
         let (addr, server) = scripted_openbao(vec![("404 Not Found", "")]);

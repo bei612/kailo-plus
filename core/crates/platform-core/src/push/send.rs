@@ -493,7 +493,7 @@ mod tests {
         let server = tokio::spawn(async move {
             let (mut stream, _) = listener.accept().await.unwrap();
             let mut bytes = [0; 4096];
-            stream.read(&mut bytes).await.unwrap();
+            assert!(stream.read(&mut bytes).await.unwrap()>0);
             stream.write_all(b"HTTP/1.1 429 Too Many Requests\r\nRetry-After: 1200\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").await.unwrap();
         });
         let response = client

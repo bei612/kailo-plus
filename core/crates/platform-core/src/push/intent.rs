@@ -41,6 +41,38 @@ impl Intent {
     }
 }
 
+pub(super) async fn claim_scan(pool:&PgPool,tenant:Uuid) -> Result<Option<(Uuid,i64,Vec<String>)>,sqlx::Error> {
+    // Start at now: do not fan out history when a Tenant first enables push.
+    sqlx::query("insert into projection.push_cursor(tenant_id,since) values($1,extract(epoch from now())::bigint) on conflict do nothing")
+        .bind(tenant).execute(pool).await?;
+    let lease=Uuid::new_v4();
+    let row:Option<(i64,Vec<String>)>=sqlx::query_as("update projection.push_cursor set lease_id=$2,lease_until=now()+interval '60 seconds' where tenant_id=$1 and (lease_until is null or lease_until<=now()) returning since,seen_ids")
+        .bind(tenant).bind(lease).fetch_optional(pool).await?;
+    Ok(row.map(|(since,seen)|(lease,since,seen)))
+}
+pub(super) async fn enqueue(pool:&PgPool,tenant:Uuid,lease:Uuid,message:&MessageFacts,targets:&[(&str,String)]) -> Result<bool,sqlx::Error> {
+    let mut tx=pool.begin().await?;
+    let owned=sqlx::query("update projection.push_cursor set lease_until=now()+interval '60 seconds' where tenant_id=$1 and lease_id=$2 and lease_until>now()")
+        .bind(tenant).bind(lease).execute(&mut *tx).await?.rows_affected();
+    if owned!=1 {return Ok(false)}
+    for (platform,provider) in targets {
+        // References only. Message and authorization facts are reread for each attempt.
+        sqlx::query("insert into projection.push_send_intent(id,tenant_id,tenant_principal_id,device_pubkey,registration_version,platform,provider_target,event_id,channel_id,root_id,event_created_at,expires_at)
+            select gen_random_uuid(),r.tenant_id,r.tenant_principal_id,r.device_pubkey,r.version,r.platform,$3,$4,$5,$6,$7::bigint,
+            least(to_timestamp($7::bigint)+interval '1 hour',now()+interval '1 hour') from identity.push_registration r join identity.tenant t on t.id=r.tenant_id
+            where r.tenant_id=$1 and r.platform=$2 and r.state='ACTIVE' and r.enabled and t.state='ACTIVE'
+            and to_timestamp($7::bigint)+interval '1 hour'>now() on conflict(tenant_id,device_pubkey,event_id) do nothing")
+            .bind(tenant).bind(platform).bind(provider).bind(&message.id).bind(&message.channel_id)
+            .bind(&message.root_id).bind(message.created_at as i64).execute(&mut *tx).await?;
+    }
+    tx.commit().await?;Ok(true)
+}
+pub(super) async fn checkpoint_scan(pool:&PgPool,tenant:Uuid,lease:Uuid,since:i64,seen:&[String])->Result<bool,sqlx::Error> {
+    Ok(sqlx::query("update projection.push_cursor set since=$3,seen_ids=$4,lease_until=null,lease_id=null,updated_at=now()
+        where tenant_id=$1 and lease_id=$2 and lease_until>now()")
+        .bind(tenant).bind(lease).bind(since).bind(seen).execute(pool).await?.rows_affected()==1)
+}
+
 pub(super) async fn recover(conn: &mut PgConnection) -> Result<(), sqlx::Error> {
     // Only claims which have NOT crossed the durable send boundary can be reclaimed.
     sqlx::query("update projection.push_send_intent set state=case when state='SENDING' then 'UNKNOWN' else 'PREPARED' end,
@@ -155,6 +187,16 @@ pub(super) async fn begin_send(
     if registration != Some(i.registration_version) || !lock_channel(&mut tx, i).await? {
         return Ok(false);
     }
+    // Only a real prior send can fold this eligible notification. Queued Relay references
+    // may turn out ineligible; they must never suppress an earlier eligible mention.
+    let collapsed:bool=sqlx::query_scalar("select exists(select 1 from projection.push_delivery_window where tenant_id=$1 and device_pubkey=$2 and collapse_key=$3 and last_sent_at>=now()-interval '30 seconds')")
+        .bind(i.tenant_id).bind(&i.device_pubkey).bind(collapse).fetch_one(&mut *tx).await?;
+    if collapsed {
+        sqlx::query("update projection.push_send_intent set state='CANCELLED',result_code='COLLAPSED',updated_at=now() where id=$1 and lease_id=$2 and state='CLAIMED'")
+            .bind(i.id).bind(i.lease_id).execute(&mut *tx).await?;
+        tx.commit().await?;
+        return Ok(false);
+    }
     let allowed:bool=sqlx::query_scalar("select not exists(select 1 from projection.push_delivery_window where tenant_id=$1 and device_pubkey=$2 and ((collapse_key=$3 and last_sent_at>=now()-interval '30 seconds') or (collapse_key='*' and window_start>=now()-interval '1 minute' and window_count>=20)))")
  .bind(i.tenant_id).bind(&i.device_pubkey).bind(collapse).fetch_one(&mut *tx).await?;
     if !allowed {
@@ -191,8 +233,9 @@ pub(super) async fn finish(
         &i.device_pubkey,
     )
     .await?;
-    let live:bool=sqlx::query_scalar("select exists(select 1 from identity.push_registration where tenant_id=$1 and device_pubkey=$2 and version=$3 and state='ACTIVE' and enabled)")
- .bind(i.tenant_id).bind(&i.device_pubkey).bind(i.registration_version).fetch_one(&mut *tx).await?;
+    let registration:Option<i32>=sqlx::query_scalar("select version from identity.push_registration where tenant_id=$1 and device_pubkey=$2 and state='ACTIVE' and enabled for update")
+        .bind(i.tenant_id).bind(&i.device_pubkey).fetch_optional(&mut *tx).await?;
+    let live=registration==Some(i.registration_version);
     // Late responses are evidence only for the original attempt, never for a newer lease.
     let status = match receipt.outcome {
         Outcome::Delivered => "ACCEPTED",
