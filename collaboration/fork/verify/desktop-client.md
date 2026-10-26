@@ -660,3 +660,11 @@ source 相等，原 manifest 仅该产物 source/artifact 两字段 +2/-2，不�
 按 GOAL 的反向验证要求，从已推送 `24e3c5f61d712cf2d899ed5c89a2ef4bdc86c303` 导出独立源码，临时仅把 `local_archive/store.rs` 的 `PRAGMA secure_delete=ON` 改为 `OFF`，恢复删除后密文可留存于 SQLite 空闲页的真实缺陷。原 Desktop SDK、1 CPU、4 GiB memory 与 memory+swap 执行已有 `cargo test --locked --lib local_archive::store::tests::removed_ciphertext_is_not_left_readable_in_the_live_database_free_pages -- --exact`：实际退出 101，0 passed、1 failed；失败位置为 `store_tests.rs:278` 的数据库文件不再包含被删密文片段断言，不是编译、OOM 或依赖失败。
 
 随后逐字恢复原文件，`cmp` 与前后 SHA-256 均一致：`0fcf906e40bd3f66c359252391b6d8c9f52f6a1d2f98f3d33afd8ffd25eca6a9`。同一原命令再次执行为 1 passed、0 failed、0 ignored、退出 0。两轮容器均清理，正式产品工作树始终未作上述变异。日志在 CI 节点 `/volumes/data/kailo/verification/dd159-lifecycle/negative/`：`mutated.log`、`mutated-exit.log`、`mutated-limits.log`、`restored.log`、`restored-exit.log`、`restored-limits.log`、`original.sha256`、`restored.sha256`；两个 OOM 状态记录均为 false。本记录只补新增检查有效性证据，不扩大真机或部署验收范围。
+
+### 2026-10-26 DD-160 原生仓库读取接线
+
+从 r10 保留工作中只选择远程读取接线，不带入 Mobile、反馈或 Tenant 资料。固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的 `desktop/src-tauri/src/commands/project_git.rs`、`project_git_file_content.rs`、`project_git_diff.rs` 与 `desktop/src/shared/api/projectGit.ts`；复用已有 `buzz-project-git` 实现和共享 Projects 页面，不另造仓库内容或授权权威。
+
+本机命令只收 30617 坐标与已存在的引用参数，仓库根从当前 Relay 推出；首个 `info/refs` 的 401/403/404 都为不可读。整次调用沿 Core 已有 120 秒预算，git 沿共享 crate 的原限额。每次 git 调用前重验原登录代际、Relay 和设备公钥，在本机新签 NIP-98；私钥不进入 git 参数、环境或文件。HTTP 预检与 git 均禁用重定向，避免认证头跨源。已退出又以相同设备登录也不能恢复旧操作。读取结果在交还页面前重验原 scope。
+
+影响仅为 Desktop 宿主适配、共享 Git 的重定向限制、客户端响应映射与追溯；无公开 schema、数据库或 Workflow 改动。Desktop 新增共享 path crate 依赖，需要由原 SDK 更新锁并验证；本节写入时未编译本增量。分支建删、owner merge、本机检出尚在同批继续实现；未生成新安装包、未部署，V-SCN-264/265 尚未实际设备验收，原发布门禁保留。

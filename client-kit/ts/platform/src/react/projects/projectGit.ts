@@ -10,6 +10,8 @@
 // the 1618 and publishes the owner-signed status) and travels as the typed ProjectsGitMergeRequest.
 import {
   ProjectGitRefOperation,
+  ErrorClass,
+  ReasonCode,
   ProjectsGitQueryRequestView,
   type ProjectsGitMergeRequest,
   type ProjectsGitMergeResponse,
@@ -19,7 +21,7 @@ import {
   type ProjectsGitRefResponse,
   type ProjectRepoCommit as ContractRepoCommit,
 } from "@client-kit/contracts";
-import { TransportError } from "../../transport";
+import { BffError, TransportError } from "../../transport";
 
 export type ProjectRepoCommit = {
   hash: string;
@@ -106,6 +108,8 @@ export type ProjectRepoMergeResult = { mergeCommit: string; statusEventId: strin
 
 /** Remote repository reads of the original Desktop, behind the Projects host seam. */
 export type ProjectsGitHost = {
+  /** DD-160: offered by Desktop only, using the same shared Projects pages. */
+  checkout?: ProjectsCheckoutHost;
   getProjectRepoSnapshot: (input: ProjectRepoRefInput) => Promise<ProjectRepoSnapshot>;
   getProjectRepoFileContent: (input: Omit<ProjectRepoRefInput, "baseBranch"> & { path: string }) => Promise<string | null>;
   getProjectRepoDiff: (input: ProjectRepoRefInput) => Promise<ProjectRepoDiff>;
@@ -215,6 +219,192 @@ export function createProjectsGitHost(query: (request: ProjectsGitQueryRequest) 
       return { additions: diff.additions, deletions: diff.deletions, commitBody: diff.commitBody,
         files: diff.files.map(file => ({ path: file.path, additions: file.additions, deletions: file.deletions,
           patch: file.patch, truncated: file.truncated })) };
+    },
+  };
+}
+
+/** Desktop's admitted Relay and device signer; every native read is refused for another scope. */
+export type NativeProjectsGitScope = { expectedRelayUrl: string; expectedSignerPubkey: string };
+
+/** The Desktop command invoker (Tauri `invoke`); kept abstract so the mapping is testable. */
+export type NativeProjectsGitInvoke = (command: string, args: Record<string, unknown>) => Promise<unknown>;
+
+type RawCommit = { hash: string; short_hash: string; author_name: string; author_email: string; timestamp: number; subject: string };
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function rawCommit(value: unknown): ProjectRepoCommit | null {
+  if (value === null || value === undefined) return null;
+  const raw = value as RawCommit;
+  if (!isRecord(value) || typeof raw.hash !== "string" || typeof raw.short_hash !== "string"
+    || typeof raw.author_name !== "string" || typeof raw.author_email !== "string"
+    || typeof raw.timestamp !== "number" || typeof raw.subject !== "string") throw new Error("Invalid repository commit");
+  return { hash: raw.hash, shortHash: raw.short_hash, authorName: raw.author_name, authorEmail: raw.author_email,
+    timestamp: raw.timestamp, subject: raw.subject };
+}
+
+const nullableNumber = (value: unknown) => typeof value === "number" ? value : null;
+const nullableString = (value: unknown) => typeof value === "string" ? value : null;
+
+function refArgs(input: ProjectRepoRefInput, scope: NativeProjectsGitScope) {
+  return { repository: input.repository, defaultBranch: input.defaultBranch ?? null, baseBranch: input.baseBranch ?? null,
+    targetRef: input.targetRef ?? null, targetCommit: input.targetCommit ?? null, ...scope };
+}
+
+/**
+ * DD-160: the original Desktop `get_project_repo_*` commands behind the Projects host seam. The
+ * native side names the repository only by its 30617 coordinate, signs NIP-98 in process with the
+ * device key and answers the original raw snake_case shapes, mapped back here exactly like the
+ * original `fromRawProjectRepoSnapshot`. A response of another shape is never rendered. The
+ * native host has no branch or merge writes yet, so the views offer none (DD-160(2) is pending).
+ */
+function decodeNativeProjectRepoSnapshot(raw: unknown): ProjectRepoSnapshot {
+  if (!isRecord(raw) || !Array.isArray(raw.files) || !Array.isArray(raw.commits) || !Array.isArray(raw.contributors))
+    throw new Error("Invalid repository snapshot");
+  return {
+        latestCommit: rawCommit(raw.latest_commit),
+        commits: raw.commits.map(value => {
+          const commit = rawCommit(value);
+          if (!commit) throw new Error("Invalid repository commit");
+          return commit;
+        }),
+        files: raw.files.map(value => {
+          if (!isRecord(value) || typeof value.path !== "string" || typeof value.kind !== "string") throw new Error("Invalid repository file");
+          return { path: value.path, kind: value.kind, size: nullableNumber(value.size), previewContent: nullableString(value.preview_content),
+            lastChangedAt: nullableNumber(value.last_changed_at), latestCommit: rawCommit(value.latest_commit) };
+        }),
+        contributors: raw.contributors.map(value => {
+          if (!isRecord(value) || typeof value.name !== "string" || typeof value.email !== "string"
+            || typeof value.commit_count !== "number" || typeof value.last_commit_at !== "number") throw new Error("Invalid repository contributor");
+          return { name: value.name, email: value.email, commitCount: value.commit_count, lastCommitAt: value.last_commit_at };
+        }),
+      };
+}
+
+function decodeNativeProjectRepoDiff(raw: unknown): ProjectRepoDiff {
+  if (!isRecord(raw) || !Array.isArray(raw.files) || typeof raw.additions !== "number" || typeof raw.deletions !== "number")
+    throw new Error("Invalid repository diff");
+  return {
+        additions: raw.additions, deletions: raw.deletions, commitBody: nullableString(raw.commit_body),
+        files: raw.files.map(value => {
+          if (!isRecord(value) || typeof value.path !== "string" || typeof value.additions !== "number"
+            || typeof value.deletions !== "number" || typeof value.patch !== "string" || typeof value.truncated !== "boolean")
+            throw new Error("Invalid repository diff file");
+          return { path: value.path, additions: value.additions, deletions: value.deletions, patch: value.patch, truncated: value.truncated };
+        }),
+      };
+}
+
+export type ProjectPendingPush = {
+  branch: string; oldCommit: string | null; newCommit: string;
+  outcome: "retry_same_intent" | "unknown" | "conflict";
+};
+export type ProjectRepoSyncStatus = {
+  localPath: string | null; localBranch: string | null; localBranches: string[];
+  localHead: string | null; remoteBranch: string | null; remoteHead: string | null;
+  aheadCount: number; behindCount: number; hasUncommittedChanges: boolean; hasUntrackedFiles: boolean;
+  canPush: boolean; canPull: boolean; pushBlockReason: string | null; pullBlockReason: string | null;
+  pendingPush: ProjectPendingPush | null;
+};
+type CheckoutRef = Pick<ProjectRepoRefInput, "repository" | "defaultBranch" | "baseBranch">;
+type CheckoutBranch = { repository: string; branchName?: string | null; baseBranch?: string | null };
+
+/** The original Desktop local Git operations; paths and credentials remain native-owned. */
+export type ProjectsCheckoutHost = {
+  cloneProjectRepository(input: CheckoutRef): Promise<{ path: string; cloned: boolean }>;
+  getProjectRepoSyncStatus(input: CheckoutBranch): Promise<ProjectRepoSyncStatus | null>;
+  pushProjectLocalRepository(input: CheckoutBranch): Promise<{ branch: string; commit: string }>;
+  pullProjectLocalRepository(input: CheckoutBranch): Promise<void>;
+  getProjectLocalRepoSnapshot(input: CheckoutRef): Promise<{ path: string; snapshot: ProjectRepoSnapshot } | null>;
+  getProjectLocalRepoDiff(input: CheckoutRef & { baseCommit?: string | null; targetCommit?: string | null }): Promise<ProjectRepoDiff | null>;
+  getProjectLocalRepoFileContent(input: { repository: string; path: string }): Promise<string | null>;
+  openProjectRepositoryFolder(input: { repository: string }): Promise<void>;
+};
+
+function localStatus(raw: unknown): ProjectRepoSyncStatus | null {
+  if (raw === null) return null;
+  if (!isRecord(raw) || !Array.isArray(raw.local_branches) || !raw.local_branches.every(v => typeof v === "string")
+    || ![raw.ahead_count, raw.behind_count].every(v => typeof v === "number" && Number.isSafeInteger(v) && v >= 0)
+    || ![raw.can_push, raw.can_pull, raw.has_uncommitted_changes, raw.has_untracked_files].every(v => typeof v === "boolean"))
+    throw new TransportError("Invalid local repository status");
+  let pendingPush: ProjectPendingPush | null = null;
+  if (raw.pending_push !== null && raw.pending_push !== undefined) {
+    const pending = raw.pending_push;
+    if (!isRecord(pending) || typeof pending.branch !== "string" || typeof pending.new_commit !== "string" || !COMMIT.test(pending.new_commit)
+      || pending.old_commit !== null && (typeof pending.old_commit !== "string" || !COMMIT.test(pending.old_commit))
+      || !["retry_same_intent", "unknown", "conflict"].includes(String(pending.outcome))) throw new TransportError("Invalid pending repository push");
+    pendingPush = { branch: pending.branch, oldCommit: pending.old_commit as string | null,
+      newCommit: pending.new_commit, outcome: pending.outcome as ProjectPendingPush["outcome"] };
+  }
+  return { localPath: nullableString(raw.local_path), localBranch: nullableString(raw.local_branch),
+    localBranches: raw.local_branches as string[], localHead: nullableString(raw.local_head), remoteBranch: nullableString(raw.remote_branch),
+    remoteHead: nullableString(raw.remote_head), aheadCount: raw.ahead_count as number, behindCount: raw.behind_count as number,
+    hasUncommittedChanges: raw.has_uncommitted_changes as boolean, hasUntrackedFiles: raw.has_untracked_files as boolean,
+    canPush: raw.can_push as boolean, canPull: raw.can_pull as boolean,
+    pushBlockReason: nullableString(raw.push_block_reason), pullBlockReason: nullableString(raw.pull_block_reason), pendingPush };
+}
+
+export function createNativeProjectsGitHost(invoke: NativeProjectsGitInvoke, scope: NativeProjectsGitScope): ProjectsGitHost {
+  const send = async (command: string, args: Record<string, unknown>) => {
+    try { return await invoke(command, { ...args, ...scope }); }
+    catch (error) {
+      const code = typeof error === "string" ? error : error instanceof Error ? error.message : "";
+      if (code === "project_repo_not_found") throw new BffError(404, code, { class: ErrorClass.Denied, reason: ReasonCode.TargetNotFound });
+      if (code === "project_repo_unavailable" || code === "project_repo_timeout")
+        throw new BffError(503, code, { class: ErrorClass.Precondition, reason: ReasonCode.DependencyUnavailable });
+      if (code === "project_repo_conflict") throw new BffError(409, code, { class: ErrorClass.Conflict, reason: ReasonCode.TargetStateConflict });
+      // Unrecognized native failures and lost replies are never a definitive write rejection.
+      throw new TransportError(code === "project_repo_outcome_unknown" ? code : "project_repo_unavailable");
+    }
+  };
+  const localRef = (input: CheckoutRef) => ({ repository: input.repository,
+    defaultBranch: input.defaultBranch ?? null, baseBranch: input.baseBranch ?? null });
+  const localBranch = (input: CheckoutBranch) => ({ repository: input.repository,
+    branchName: input.branchName ?? null, baseBranch: input.baseBranch ?? null });
+  return {
+    getProjectRepoSnapshot: async input => decodeNativeProjectRepoSnapshot(await send("get_project_repo_snapshot", refArgs(input, scope))),
+    getProjectRepoFileContent: async input => {
+      const content = await send("get_project_repo_file_content", { repository: input.repository,
+        defaultBranch: input.defaultBranch ?? null, targetRef: input.targetRef ?? null, targetCommit: input.targetCommit ?? null, path: input.path });
+      if (content !== null && typeof content !== "string") throw new Error("Invalid repository file content");
+      return content;
+    },
+    getProjectRepoDiff: async input => decodeNativeProjectRepoDiff(await send("get_project_repo_diff", refArgs(input, scope))),
+    checkout: {
+      cloneProjectRepository: async input => {
+        const raw = await send("clone_project_repository", localRef(input));
+        if (!isRecord(raw) || typeof raw.path !== "string" || typeof raw.cloned !== "boolean") throw new TransportError("Invalid clone response");
+        return { path: raw.path, cloned: raw.cloned };
+      },
+      getProjectRepoSyncStatus: async input => localStatus(await send("get_project_repo_sync_status", localBranch(input))),
+      pushProjectLocalRepository: async input => {
+        const raw = await send("push_project_local_repository", localBranch(input));
+        if (!isRecord(raw) || raw.pushed !== true || typeof raw.branch !== "string" || typeof raw.commit !== "string" || !COMMIT.test(raw.commit))
+          throw new TransportError("Unconfirmed repository push");
+        return { branch: raw.branch, commit: raw.commit };
+      },
+      pullProjectLocalRepository: async input => {
+        const raw = await send("pull_project_local_repository", { repository: input.repository, branchName: input.branchName ?? null });
+        if (!isRecord(raw) || raw.pulled !== true) throw new TransportError("Unconfirmed repository pull");
+      },
+      getProjectLocalRepoSnapshot: async input => {
+        const raw = await send("get_project_local_repo_snapshot", localRef(input));
+        if (raw === null) return null;
+        if (!isRecord(raw) || typeof raw.path !== "string") throw new TransportError("Invalid local repository snapshot");
+        return { path: raw.path, snapshot: decodeNativeProjectRepoSnapshot(raw.snapshot) };
+      },
+      getProjectLocalRepoDiff: async input => {
+        const raw = await send("get_project_local_repo_diff", { ...localRef(input), baseCommit: input.baseCommit ?? null, targetCommit: input.targetCommit ?? null });
+        return raw === null ? null : decodeNativeProjectRepoDiff(raw);
+      },
+      getProjectLocalRepoFileContent: async input => {
+        const raw = await send("get_project_local_repo_file_content", { repository: input.repository, path: input.path });
+        if (raw !== null && typeof raw !== "string") throw new TransportError("Invalid local repository content");
+        return raw;
+      },
+      openProjectRepositoryFolder: async input => { await send("open_project_repository_folder", { repository: input.repository }); },
     },
   };
 }
