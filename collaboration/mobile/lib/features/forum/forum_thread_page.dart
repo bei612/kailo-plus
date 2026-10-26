@@ -50,9 +50,11 @@ class ForumThreadPage extends HookConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     ref.watch(platformAuthorNamesProvider(channelId));
-    final threadAsync = ref.watch(
-      forumThreadProvider((channelId: channelId, eventId: postEventId)),
-    ).unwrapPrevious();
+    final threadAsync = ref
+        .watch(
+          forumThreadProvider((channelId: channelId, eventId: postEventId)),
+        )
+        .unwrapPrevious();
 
     // Periodic refresh (every 10s, matching desktop).
     useEffect(() {
@@ -82,7 +84,10 @@ class ForumThreadPage extends HookConsumerWidget {
             IconButton(
               onPressed: () =>
                   _showPostActions(context, ref, threadAsync.value!),
-              tooltip: forumText(context, PlatformMessageKey.messagesActionsLabel),
+              tooltip: forumText(
+                context,
+                PlatformMessageKey.messagesActionsLabel,
+              ),
               icon: const Icon(LucideIcons.ellipsis),
             ),
         ],
@@ -93,7 +98,10 @@ class ForumThreadPage extends HookConsumerWidget {
           child: Center(
             child: BuzzLoadingIndicator(
               size: 44,
-              semanticLabel: forumText(context, PlatformMessageKey.platformLoading),
+              semanticLabel: forumText(
+                context,
+                PlatformMessageKey.platformLoading,
+              ),
             ),
           ),
         ),
@@ -143,7 +151,12 @@ class ForumThreadPage extends HookConsumerWidget {
               children: [
                 ListTile(
                   leading: const Icon(LucideIcons.copy),
-                  title: Text(forumText(context, PlatformMessageKey.messagesActionsCopyText)),
+                  title: Text(
+                    forumText(
+                      context,
+                      PlatformMessageKey.messagesActionsCopyText,
+                    ),
+                  ),
                   onTap: () {
                     Navigator.of(sheetContext).pop();
                     Clipboard.setData(ClipboardData(text: thread.post.content));
@@ -176,7 +189,9 @@ class ForumThreadPage extends HookConsumerWidget {
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: Text(forumText(context, PlatformMessageKey.forumDeletePost)),
-        content: Text(forumText(context, PlatformMessageKey.forumDeleteDescription)),
+        content: Text(
+          forumText(context, PlatformMessageKey.forumDeleteDescription),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(),
@@ -253,71 +268,82 @@ class _ThreadContent extends HookConsumerWidget {
     }, [allPubkeysKey]);
 
     final readState = ref.watch(readStateProvider);
-    final latestAt = replies.fold<int>(post.createdAt, (at, reply) => reply.createdAt > at ? reply.createdAt : at);
+    final latestAt = replies.fold<int>(
+      post.createdAt,
+      (at, reply) => reply.createdAt > at ? reply.createdAt : at,
+    );
     useEffect(() {
       if (!readState.isReady) return null;
       return deferReadStateUpdate(context, () {
-        ref.read(readStateProvider.notifier).markContextRead(threadContextKey(post.eventId), latestAt);
-        ref.read(readStateProvider.notifier).markContextRead(msgContextKey(post.eventId), post.createdAt);
+        ref
+            .read(readStateProvider.notifier)
+            .markContextRead(threadContextKey(post.eventId), latestAt);
+        ref
+            .read(readStateProvider.notifier)
+            .markContextRead(msgContextKey(post.eventId), post.createdAt);
       });
     }, [channelId, post.eventId, latestAt, readState.isReady]);
     final rows = <Widget>[
-              _OriginalPost(post: post),
+      _OriginalPost(post: post),
 
-              Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: Grid.gutter,
-                  vertical: Grid.xxs,
-                ),
-                child: Row(
-                  children: [
-                    Icon(
-                      LucideIcons.messageSquare,
-                      size: 16,
-                      color: context.colors.onSurfaceVariant,
-                    ),
-                    const SizedBox(width: Grid.half),
-                    Text(
-                      forumReplyCount(context, replies.length),
-                      style: context.textTheme.labelMedium?.copyWith(
-                        color: context.colors.onSurfaceVariant,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
+      Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: Grid.gutter,
+          vertical: Grid.xxs,
+        ),
+        child: Row(
+          children: [
+            Icon(
+              LucideIcons.messageSquare,
+              size: 16,
+              color: context.colors.onSurfaceVariant,
+            ),
+            const SizedBox(width: Grid.half),
+            Text(
+              forumReplyCount(context, replies.length),
+              style: context.textTheme.labelMedium?.copyWith(
+                color: context.colors.onSurfaceVariant,
+                fontWeight: FontWeight.w600,
               ),
+            ),
+          ],
+        ),
+      ),
 
-              // Reply list
-              if (replies.isEmpty)
-                Padding(
-                  padding: const EdgeInsets.all(Grid.sm),
-                  child: Text(
-                    forumText(context, PlatformMessageKey.forumNoReplies),
-                    style: context.textTheme.bodyMedium?.copyWith(
-                      color: context.colors.onSurfaceVariant,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                )
-              else
-                for (final reply in replies)
-                  _ReplyRow(
-                    reply: reply,
-                    currentPubkey: currentPubkey,
-                    channelId: channelId,
-                    rootEventId: post.eventId,
-                  ),
-
+      // Reply list
+      if (replies.isEmpty)
+        Padding(
+          padding: const EdgeInsets.all(Grid.sm),
+          child: Text(
+            forumText(context, PlatformMessageKey.forumNoReplies),
+            style: context.textTheme.bodyMedium?.copyWith(
+              color: context.colors.onSurfaceVariant,
+            ),
+            textAlign: TextAlign.center,
+          ),
+        )
+      else
+        for (final reply in replies)
+          _ReplyRow(
+            reply: reply,
+            currentPubkey: currentPubkey,
+            channelId: channelId,
+            rootEventId: post.eventId,
+          ),
     ];
-    final targetIndex = replies.indexWhere((reply) => reply.eventId == initialEventId);
+    final targetIndex = replies.indexWhere(
+      (reply) => reply.eventId == initialEventId,
+    );
     return Column(
       children: [
         Expanded(
           child: ScrollablePositionedList.builder(
             key: ValueKey('forum-thread-$initialEventId'),
             initialScrollIndex: targetIndex < 0 ? 0 : targetIndex + 2,
-            padding: EdgeInsets.only(top: frostedAppBarHeight(context), bottom: Grid.xs),
+            padding: EdgeInsets.only(
+              top: frostedAppBarHeight(context),
+              bottom: Grid.xs,
+            ),
             itemCount: rows.length,
             itemBuilder: (_, index) => rows[index],
           ),
@@ -327,7 +353,10 @@ class _ThreadContent extends HookConsumerWidget {
         if (isMember && !isArchived)
           ComposeBar(
             channelId: channelId,
-            hintText: forumText(context, PlatformMessageKey.forumReplyPlaceholder),
+            hintText: forumText(
+              context,
+              PlatformMessageKey.forumReplyPlaceholder,
+            ),
             onSend:
                 (
                   content,
@@ -410,7 +439,12 @@ class _OriginalPost extends ConsumerWidget {
                     ConstrainedBox(
                       constraints: const BoxConstraints(maxWidth: Grid.xxl),
                       child: Text(
-                        formatRelativeTime(post.createdAt, locale: Localizations.localeOf(context).toLanguageTag()),
+                        formatRelativeTime(
+                          post.createdAt,
+                          locale: Localizations.localeOf(
+                            context,
+                          ).toLanguageTag(),
+                        ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: messageTimestampTextStyle.copyWith(
@@ -516,7 +550,12 @@ class _ReplyRow extends ConsumerWidget {
                     ConstrainedBox(
                       constraints: const BoxConstraints(maxWidth: Grid.xxl),
                       child: Text(
-                        formatRelativeTime(reply.createdAt, locale: Localizations.localeOf(context).toLanguageTag()),
+                        formatRelativeTime(
+                          reply.createdAt,
+                          locale: Localizations.localeOf(
+                            context,
+                          ).toLanguageTag(),
+                        ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: messageTimestampTextStyle.copyWith(
@@ -584,7 +623,12 @@ class _ReplyRow extends ConsumerWidget {
               children: [
                 ListTile(
                   leading: const Icon(LucideIcons.copy),
-                  title: Text(forumText(context, PlatformMessageKey.messagesActionsCopyText)),
+                  title: Text(
+                    forumText(
+                      context,
+                      PlatformMessageKey.messagesActionsCopyText,
+                    ),
+                  ),
                   onTap: () {
                     Navigator.of(sheetContext).pop();
                     Clipboard.setData(ClipboardData(text: reply.content));
@@ -618,7 +662,9 @@ class _ReplyRow extends ConsumerWidget {
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: Text(forumText(context, PlatformMessageKey.forumDeleteReply)),
-        content: Text(forumText(context, PlatformMessageKey.forumDeleteDescription)),
+        content: Text(
+          forumText(context, PlatformMessageKey.forumDeleteDescription),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(),

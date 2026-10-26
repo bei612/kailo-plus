@@ -133,7 +133,10 @@ class ChannelDetailPage extends HookConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     if (channel.isForum) {
-      return ForumChannelPage(channel: channel, initialEventId: initialMessageId ?? initialThreadRootId);
+      return ForumChannelPage(
+        channel: channel,
+        initialEventId: initialMessageId ?? initialThreadRootId,
+      );
     }
     final composerDockHeight = useState(0.0);
     final composerFocusNode = useFocusNode();

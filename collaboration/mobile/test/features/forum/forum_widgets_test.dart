@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:buzz/features/channels/channel.dart';
+import 'package:buzz/features/channels/channel_detail_page.dart';
+import 'package:buzz/features/channels/channel_management_provider.dart';
+import 'package:buzz/shared/push/push_bridge.dart';
 import 'package:buzz/features/forum/forum_models.dart';
 import 'package:buzz/features/forum/forum_post_card.dart';
 import 'package:buzz/features/forum/forum_posts_view.dart';
@@ -101,9 +104,6 @@ Widget _buildPostsView({
       userCacheProvider.overrideWith(() => _FakeUserCacheNotifier(users)),
       profileProvider.overrideWith(() => _FakeProfileNotifier()),
       forumPostsProvider(ch.id).overrideWith((ref) async => postsResponse),
-      relayClientProvider.overrideWithValue(
-        RelayClient(baseUrl: 'http://localhost:3000'),
-      ),
     ],
     child: MaterialApp(
       theme: AppTheme.light(),
@@ -121,6 +121,7 @@ late SharedPreferences _testPrefs;
 Widget _buildThreadPage({
   required ForumThreadResponse threadResponse,
   String postEventId = 'post1',
+  bool viaChannel = false,
   String? currentPubkey = 'self',
   bool isMember = true,
   bool isArchived = false,
@@ -142,16 +143,15 @@ Widget _buildThreadPage({
         eventId: postEventId,
       )).overrideWith((ref) async => threadResponse),
       savedPrefsProvider.overrideWithValue(_testPrefs),
-      relayClientProvider.overrideWithValue(
-        RelayClient(baseUrl: 'http://localhost:3000'),
-      ),
+      channelDetailsProvider(_channelId).overrideWith((ref) async => ChannelDetails.fromChannel(_forumChannel)),
+      forumPostsProvider(_channelId).overrideWith((ref) async => const ForumPostsResponse(posts: [])),
     ],
     child: MaterialApp(
       theme: AppTheme.light(),
       home: Builder(
         builder: (context) => MediaQuery(
           data: MediaQuery.of(context).copyWith(textScaler: textScaler),
-          child: ForumThreadPage(
+          child: viaChannel ? ChannelDetailPage(channel: _forumChannel, initialMessageId: postEventId) : ForumThreadPage(
             channelId: _channelId,
             postEventId: postEventId,
             currentPubkey: currentPubkey,
@@ -192,6 +192,20 @@ void main() {
         ),
       ),
     );
+  });
+
+  testWidgets('content-free push reply opens the actual forum thread at a distant comment', (tester) async {
+    final id = 'a' * 64;
+    final link = pushNotificationLink({'channel_id': _channelId, 'event_id': id});
+    expect(link, isNotNull);
+    final replies = List.generate(80, (i) => ThreadReply(eventId: i == 70 ? id : 'r$i', pubkey: 'alice', content: 'Forum reply $i', kind: 45003, createdAt: 2000 + i, channelId: _channelId, tags: const [], depth: 1));
+    await tester.pumpWidget(_buildThreadPage(viaChannel: true, postEventId: link!.messageId,
+      threadResponse: ForumThreadResponse(post: _makePost(content: 'Full original root'), replies: replies, totalReplies: replies.length),
+      isMember: false, users: const {'alice': _aliceProfile}));
+    await tester.pumpAndSettle();
+    expect(find.byType(ForumThreadPage), findsOneWidget);
+    expect(find.text('Forum reply 70'), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 
   group('ForumPostCard', () {

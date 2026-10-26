@@ -37,13 +37,23 @@ class ForumPostsView extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final postsAsync = ref.watch(forumPostsProvider(channel.id)).unwrapPrevious();
+    final postsAsync = ref
+        .watch(forumPostsProvider(channel.id))
+        .unwrapPrevious();
     final readState = ref.watch(readStateProvider);
     final posts = postsAsync.asData?.value.posts;
-    final newestAt = posts?.fold<int>(0, (at, post) => post.createdAt > at ? post.createdAt : at);
+    final newestAt = posts?.fold<int>(
+      0,
+      (at, post) => post.createdAt > at ? post.createdAt : at,
+    );
     useEffect(() {
       if (!readState.isReady || newestAt == null || newestAt == 0) return null;
-      return deferReadStateUpdate(context, () => ref.read(readStateProvider.notifier).markContextRead(channel.id, newestAt));
+      return deferReadStateUpdate(
+        context,
+        () => ref
+            .read(readStateProvider.notifier)
+            .markContextRead(channel.id, newestAt),
+      );
     }, [channel.id, newestAt, readState.isReady]);
     final isComposing = useState(false);
     // A queued attachment can finish after this view is popped. Capture the
@@ -82,7 +92,10 @@ class ForumPostsView extends HookConsumerWidget {
                 child: Center(
                   child: BuzzLoadingIndicator(
                     size: 44,
-                    semanticLabel: forumText(context, PlatformMessageKey.platformLoading),
+                    semanticLabel: forumText(
+                      context,
+                      PlatformMessageKey.platformLoading,
+                    ),
                   ),
                 ),
               ),
@@ -149,14 +162,20 @@ class ForumPostsView extends HookConsumerWidget {
               child: IconButton(
                 onPressed: () => isComposing.value = false,
                 icon: const Icon(LucideIcons.x, size: 18),
-                tooltip: forumText(context, PlatformMessageKey.tenantProfileClose),
+                tooltip: forumText(
+                  context,
+                  PlatformMessageKey.tenantProfileClose,
+                ),
                 visualDensity: VisualDensity.compact,
               ),
             ),
           ),
           ComposeBar(
             channelId: channel.id,
-            hintText: forumText(context, PlatformMessageKey.forumPostPlaceholder),
+            hintText: forumText(
+              context,
+              PlatformMessageKey.forumPostPlaceholder,
+            ),
             onSend:
                 (
                   content,

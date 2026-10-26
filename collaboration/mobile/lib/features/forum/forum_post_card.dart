@@ -142,7 +142,10 @@ class ForumPostCard extends HookConsumerWidget {
                 ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: Grid.xxl),
                   child: Text(
-                    formatRelativeTime(post.createdAt, locale: Localizations.localeOf(context).toLanguageTag()),
+                    formatRelativeTime(
+                      post.createdAt,
+                      locale: Localizations.localeOf(context).toLanguageTag(),
+                    ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: messageTimestampTextStyle.copyWith(
@@ -222,7 +225,10 @@ class ForumPostCard extends HookConsumerWidget {
                     ),
                     const SizedBox(width: Grid.half),
                     Text(
-                      formatRelativeTime(summary.lastReplyAt!, locale: Localizations.localeOf(context).toLanguageTag()),
+                      formatRelativeTime(
+                        summary.lastReplyAt!,
+                        locale: Localizations.localeOf(context).toLanguageTag(),
+                      ),
                       style: context.textTheme.labelSmall?.copyWith(
                         color: context.colors.onSurfaceVariant,
                       ),
@@ -260,7 +266,12 @@ class ForumPostCard extends HookConsumerWidget {
               children: [
                 ListTile(
                   leading: const Icon(LucideIcons.copy),
-                  title: Text(forumText(context, PlatformMessageKey.messagesActionsCopyText)),
+                  title: Text(
+                    forumText(
+                      context,
+                      PlatformMessageKey.messagesActionsCopyText,
+                    ),
+                  ),
                   onTap: () {
                     Navigator.of(sheetContext).pop();
                     Clipboard.setData(ClipboardData(text: post.content));
@@ -294,7 +305,9 @@ class ForumPostCard extends HookConsumerWidget {
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: Text(forumText(context, PlatformMessageKey.forumDeletePost)),
-        content: Text(forumText(context, PlatformMessageKey.forumDeleteDescription)),
+        content: Text(
+          forumText(context, PlatformMessageKey.forumDeleteDescription),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(),
