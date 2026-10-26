@@ -331,17 +331,18 @@ async fn ensure_status_with(
         {
             return Err(pending());
         }
-        if proof.accepted {
-            intent.event_result = Some("ACCEPTED".into());
-            journal.save(intent, "EVENT_RECONCILIATION")?;
-            return Ok(Some(event.id.to_hex()));
-        }
         // Historical unknown attempts did not freeze Community ID. The first
-        // empty answer can never establish which old Community received it.
+        // response cannot establish the old Community, even if the same ID exists
+        // in a new Community now served by this Host.
         if intent.event_community_id.is_none()
             && intent.event_result.as_deref() != Some("NOT_DELIVERED")
         {
             return Err(pending());
+        }
+        if proof.accepted {
+            intent.event_result = Some("ACCEPTED".into());
+            journal.save(intent, "EVENT_RECONCILIATION")?;
+            return Ok(Some(event.id.to_hex()));
         }
         if intent.event_result.as_deref() != Some("NOT_DELIVERED") {
             if !proof.settled || !facts.is_some_and(|facts| facts.window_passed(&event)) {
