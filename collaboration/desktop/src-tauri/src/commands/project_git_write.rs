@@ -173,6 +173,22 @@ fn settle_observation(
     Ok(intent.result == "ACCEPTED")
 }
 
+// Same classifications as Core projects_git_ref::prepare_error /
+// classify_push_failure: a stale lease is a conflict, not a hook rejection.
+fn failure_code(sent: bool, message: &str) -> Option<&'static str> {
+    let denied = ["returned error: 401", "returned error: 403", "returned error: 404"].iter().any(|v|message.contains(v));
+    if !sent {
+        return Some(if denied { "TARGET_NOT_FOUND" }
+            else if ["source branch changed", "Could not resolve the source branch", "default branch cannot be deleted", "branch already exists", "couldn't find remote ref"].iter().any(|v|message.contains(v)) { CONFLICT }
+            else { FAILED });
+    }
+    if git::is_timeout_error(message) { return None; }
+    if denied || message.contains("hook declined") { return Some("PUBLISH_REJECTED"); }
+    if message.contains("returned error: 413") { return Some("PAYLOAD_TOO_LARGE"); }
+    if ["(stale info)", "(fetch first)", "(non-fast-forward)", "[rejected]", "[remote rejected]", "cannot lock ref", "failed to update ref"].iter().any(|v|message.contains(v)) { return Some(CONFLICT); }
+    None
+}
+
 fn dispatch(
     journal: &Journal,
     key: &str,
@@ -186,7 +202,7 @@ fn dispatch(
     let mut intent = if let Some(mut intent) = previous {
         match intent.result.as_str() {
             "ACCEPTED" => return Ok(intent),
-            "TARGET_STATE_CONFLICT" | "PUBLISH_REJECTED" => {
+            "TARGET_STATE_CONFLICT" | "PUBLISH_REJECTED" | "TARGET_NOT_FOUND" | "PAYLOAD_TOO_LARGE" | "DEPENDENCY_UNAVAILABLE" => {
                 return Err(WriteError::at(&intent.result, &intent.key))
             }
             _ => {}
@@ -304,10 +320,10 @@ fn dispatch(
             if observed(journal, &mut intent, root, auth)? {
                 return Ok(intent);
             }
-            if !sent || message.contains("[remote rejected]") {
-                intent.result = "PUBLISH_REJECTED".into();
+            if let Some(code) = failure_code(sent, &message) {
+                intent.result = code.into();
                 journal.save(&intent, "OUTCOME")?;
-                Err(WriteError::at("PUBLISH_REJECTED", &intent.key))
+                Err(WriteError::at(code, &intent.key))
             } else {
                 Err(WriteError::at(UNKNOWN, &intent.key))
             }
@@ -390,6 +406,7 @@ async fn execute(
     let auth = scope.auth(root.clone(), deadline);
     let task_scope = scope.clone();
     let task_path = path.clone();
+    let operation_key = key.clone();
     let (result, _guard) = tauri::async_runtime::spawn_blocking(move || {
         let result = (|| {
             task_scope.check()?;
@@ -399,7 +416,7 @@ async fn execute(
         (result, guard)
     })
     .await
-    .map_err(|_| WriteError::new(UNKNOWN))?;
+    .map_err(|_| WriteError::at(UNKNOWN, &operation_key))?;
     let mut intent = result?;
     scope
         .check()

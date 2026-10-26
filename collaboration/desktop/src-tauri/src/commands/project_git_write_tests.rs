@@ -373,3 +373,14 @@ async fn real_native_dispatch_reconciles_a_lost_push_after_restart() {
     );
     serving.abort();
 }
+
+#[test]
+fn native_git_failures_keep_existing_contract_reasons(){
+    assert_eq!(failure_code(false,"The repository's default branch cannot be deleted."),Some(CONFLICT));
+    assert_eq!(failure_code(false,"The source branch changed. Refresh the repository."),Some(CONFLICT));
+    assert_eq!(failure_code(true," ! [rejected] feature -> feature (stale info)"),Some(CONFLICT));
+    assert_eq!(failure_code(true,"remote: denied\npre-receive hook declined"),Some("PUBLISH_REJECTED"));
+    assert_eq!(failure_code(true,"The requested URL returned error: 413"),Some("PAYLOAD_TOO_LARGE"));
+    assert_eq!(failure_code(false,"could not connect"),Some(FAILED));
+    assert_eq!(failure_code(true,"connection reset"),None);
+}
