@@ -1,8 +1,8 @@
 //! DD-151: persist a SecretRef before write_once, then bind or fence/destroy version one.
 //! The existing secret-store retirement primitive performs CAS=0 fencing and metadata
 //! verification. Server-key intents cannot be reused: those carry different key authority.
-use crate::service_api::ServiceState;
 use super::config::Policy;
+use crate::service_api::ServiceState;
 use sqlx::PgConnection;
 use uuid::Uuid;
 
@@ -11,7 +11,7 @@ pub(super) async fn prepare(
     tenant: Uuid,
     device: &str,
     r: &secret_store::SecretRef,
-    policy:&Policy,
+    policy: &Policy,
 ) -> Result<(), sqlx::Error> {
     sqlx::query("insert into admission.push_token_intent(locator,tenant_id,audience,device_pubkey,lease_until) values($1,$2,$3,$4,now()+make_interval(secs=>$5))")
  .bind(&r.locator).bind(tenant).bind(&r.audience).bind(device).bind(policy.token_prepare_lease_seconds).execute(pool).await?;
@@ -44,7 +44,7 @@ pub(super) async fn retire(conn: &mut PgConnection, locator: &str) -> Result<(),
 }
 pub(super) async fn claim_retirement(
     pool: &sqlx::PgPool,
-    policy:&Policy,
+    policy: &Policy,
 ) -> Result<Vec<(String, Uuid, String)>, sqlx::Error> {
     // Freeze before external I/O: a late registration cannot bind this locator anymore.
     // Unique CAS=0 means a writer racing the fence cannot resurrect the destroyed version.
@@ -57,8 +57,8 @@ pub(super) async fn claim_retirement(
  .bind(policy.token_retry_max_seconds).bind(policy.token_retry_base_seconds).bind(policy.retirement_batch_size).fetch_all(pool).await?;
     Ok(rows)
 }
-pub(super) async fn sweep(state: &ServiceState,policy:&Policy) -> Result<(), sqlx::Error> {
-    let rows = claim_retirement(&state.pool,policy).await?;
+pub(super) async fn sweep(state: &ServiceState, policy: &Policy) -> Result<(), sqlx::Error> {
+    let rows = claim_retirement(&state.pool, policy).await?;
     for (locator, tenant, audience) in rows {
         let reference = secret_store::SecretRef {
             locator,

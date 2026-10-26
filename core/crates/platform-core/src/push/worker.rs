@@ -25,7 +25,6 @@ use crate::audit::{AuditEntry, Evidence};
 use crate::service_api::ServiceState;
 use crate::tenant_lifecycle::{control_client, ProjectionDirection};
 
-
 pub struct Config {
     pub interval: Duration,
     policy: super::config::Policy,
@@ -33,9 +32,16 @@ pub struct Config {
 
 impl Config {
     pub fn from_env() -> Result<Self, String> {
-        let seconds=std::env::var("PUSH_POLL_SECONDS").map_err(|_|"缺少 PUSH_POLL_SECONDS")?.parse::<u64>().map_err(|_|"PUSH_POLL_SECONDS 必须为正整数")?;
-        if seconds==0 {return Err("PUSH_POLL_SECONDS 必须为正整数".into())}
-        let policy=super::config::Policy::parse(&std::env::var("PUSH_DELIVERY_POLICY").map_err(|_|"缺少 PUSH_DELIVERY_POLICY")?)?;
+        let seconds = std::env::var("PUSH_POLL_SECONDS")
+            .map_err(|_| "缺少 PUSH_POLL_SECONDS")?
+            .parse::<u64>()
+            .map_err(|_| "PUSH_POLL_SECONDS 必须为正整数")?;
+        if seconds == 0 {
+            return Err("PUSH_POLL_SECONDS 必须为正整数".into());
+        }
+        let policy = super::config::Policy::parse(
+            &std::env::var("PUSH_DELIVERY_POLICY").map_err(|_| "缺少 PUSH_DELIVERY_POLICY")?,
+        )?;
         Ok(Self {
             interval: Duration::from_secs(seconds),
             policy,
@@ -60,11 +66,10 @@ impl Providers {
     }
 
     /// Re-read the provider credentials from OpenBao when due (rotation without restart).
-    async fn refresh(&mut self, state: &ServiceState, policy:&super::config::Policy) {
-        if self
-            .loaded
-            .is_some_and(|at| at.elapsed() < Duration::from_secs(policy.credential_ttl_seconds as u64))
-        {
+    async fn refresh(&mut self, state: &ServiceState, policy: &super::config::Policy) {
+        if self.loaded.is_some_and(|at| {
+            at.elapsed() < Duration::from_secs(policy.credential_ttl_seconds as u64)
+        }) {
             return;
         }
         let refs = CredentialRefs::from_env();
@@ -210,7 +215,10 @@ pub fn spawn(state: ServiceState, meter: &Meter, cfg: Config) {
 
 /// Revocation clears the live binding and freezes retirement atomically. No secret I/O
 /// occurs in this transaction; the persistent consumer retries fencing and destruction.
-pub(crate) async fn sweep(state: &ServiceState, policy:&super::config::Policy) -> Result<(), sqlx::Error> {
+pub(crate) async fn sweep(
+    state: &ServiceState,
+    policy: &super::config::Policy,
+) -> Result<(), sqlx::Error> {
     let mut tx = state.pool.begin().await?;
     let rows:Vec<(Uuid,String,Uuid,Option<String>)>=sqlx::query_as("select r.tenant_id,r.device_pubkey,r.tenant_principal_id,r.token_secret_locator
         from identity.push_registration r where r.state<>'REVOKED' and (
@@ -253,7 +261,7 @@ pub(crate) async fn sweep(state: &ServiceState, policy:&super::config::Policy) -
         .await?;
     }
     tx.commit().await?;
-    super::token_intent::sweep(state,policy).await
+    super::token_intent::sweep(state, policy).await
 }
 
 #[derive(Clone)]
@@ -328,17 +336,17 @@ async fn run_tenant(
     providers: &Providers,
     metrics: &Metrics,
     tenant: Uuid,
-    policy:&super::config::Policy,
+    policy: &super::config::Policy,
 ) -> Result<bool, sqlx::Error> {
-    if let Err(e) = scan(state, providers, tenant,policy).await {
+    if let Err(e) = scan(state, providers, tenant, policy).await {
         tracing::warn!(error=%e,%tenant,"推送扫描检查点失败");
     }
     let mut auth_failed = false;
     for _ in 0..policy.dispatch_batch_size {
-        let Some(intent) = super::intent::claim(&state.pool, tenant,policy).await? else {
+        let Some(intent) = super::intent::claim(&state.pool, tenant, policy).await? else {
             break;
         };
-        if let Some(receipt) = dispatch(state, providers, &intent,policy).await? {
+        if let Some(receipt) = dispatch(state, providers, &intent, policy).await? {
             // A local commit failure must not repeat the external request. Retry only the
             // known receipt; a process crash leaves SENDING for UNKNOWN recovery.
             let mut persisted = false;
@@ -379,22 +387,52 @@ async fn scan(
     state: &ServiceState,
     providers: &Providers,
     tenant: Uuid,
-    policy:&super::config::Policy,
+    policy: &super::config::Policy,
 ) -> Result<(), sqlx::Error> {
-    let Some((lease, since, seen)) = super::intent::claim_scan(&state.pool, tenant,policy).await? else {
+    let Some((lease, since, seen)) = super::intent::claim_scan(&state.pool, tenant, policy).await?
+    else {
         return Ok(());
     };
-    let Ok((control,host))=control_client(state,tenant,ProjectionDirection::Establish).await else {return Ok(())};
+    let Ok((control, host)) = control_client(state, tenant, ProjectionDirection::Establish).await
+    else {
+        return Ok(());
+    };
     // Runtime page size obeys the same ACTIVE binding's freshly verified NIP-11.
     let expected:Option<String>=sqlx::query_scalar("select nip11_snapshot_digest from projection.tenant_buzz_binding where tenant_id=$1 and normalized_host=$2 and state='ACTIVE'")
         .bind(tenant).bind(&host).fetch_optional(&state.pool).await?.flatten();
-    let Ok(transport)=reqwest::Url::parse(&state.relay_transport) else {return Ok(())};
-    let Ok(Ok(document))=tokio::time::timeout(Duration::from_secs(policy.relay_read_timeout_seconds as u64),collab_bridge::limits::fetch_nip11(&state.http,&transport,&host)).await else {return Ok(())};
-    if expected.as_deref()!=Some(document.digest.as_str()) {return Ok(())}
-    let page_size=policy.scan_page_size.min(document.limits.max_limit as usize);
-    let targets:Vec<(&str,String)>=["APNS","FCM"].into_iter().filter_map(|p|provider_target(providers,p).map(|t|(p,t))).collect();
-    let window=super::scan::Window{pool:&state.pool,tenant,lease,since,seen:seen.into_iter().collect(),until:chrono::Utc::now().timestamp()};
-    if let Err(reason)=window.run(&control,&state.http,policy,page_size,&targets).await {
+    let Ok(transport) = reqwest::Url::parse(&state.relay_transport) else {
+        return Ok(());
+    };
+    let Ok(Ok(document)) = tokio::time::timeout(
+        Duration::from_secs(policy.relay_read_timeout_seconds as u64),
+        collab_bridge::limits::fetch_nip11(&state.http, &transport, &host),
+    )
+    .await
+    else {
+        return Ok(());
+    };
+    if expected.as_deref() != Some(document.digest.as_str()) {
+        return Ok(());
+    }
+    let page_size = policy
+        .scan_page_size
+        .min(document.limits.max_limit as usize);
+    let targets: Vec<(&str, String)> = ["APNS", "FCM"]
+        .into_iter()
+        .filter_map(|p| provider_target(providers, p).map(|t| (p, t)))
+        .collect();
+    let window = super::scan::Window {
+        pool: &state.pool,
+        tenant,
+        lease,
+        since,
+        seen: seen.into_iter().collect(),
+        until: chrono::Utc::now().timestamp(),
+    };
+    if let Err(reason) = window
+        .run(&control, &state.http, policy, page_size, &targets)
+        .await
+    {
         tracing::warn!(%tenant,reason,"推送完整窗口读取未完成，游标保留");
     }
     Ok(())
@@ -404,7 +442,7 @@ async fn dispatch(
     state: &ServiceState,
     providers: &Providers,
     i: &super::intent::Intent,
-    policy:&super::config::Policy,
+    policy: &super::config::Policy,
 ) -> Result<Option<Receipt>, sqlx::Error> {
     let registration = load_registrations(state, i.tenant_id)
         .await?
@@ -419,7 +457,7 @@ async fn dispatch(
         return Ok(None);
     };
     let Some(provider) = provider_target(providers, &r.platform) else {
-        super::intent::defer(&state.pool, i,policy).await?;
+        super::intent::defer(&state.pool, i, policy).await?;
         return Ok(None);
     };
     if provider != i.provider_target {
@@ -428,14 +466,14 @@ async fn dispatch(
     }
     let Ok((control, _)) = control_client(state, i.tenant_id, ProjectionDirection::Establish).await
     else {
-        super::intent::defer(&state.pool, i,policy).await?;
+        super::intent::defer(&state.pool, i, policy).await?;
         return Ok(None);
     };
     let Ok(found) = control
         .query(&state.http, &[json!({"ids":[i.event_id],"limit":1})])
         .await
     else {
-        super::intent::defer(&state.pool, i,policy).await?;
+        super::intent::defer(&state.pool, i, policy).await?;
         return Ok(None);
     };
     let message = found
@@ -481,14 +519,14 @@ async fn dispatch(
     let token = match state.secrets.read(&r.token, "value").await {
         Ok(v) => DeviceToken(v.expose().to_owned()),
         Err(_) => {
-            super::intent::defer(&state.pool, i,policy).await?;
+            super::intent::defer(&state.pool, i, policy).await?;
             return Ok(None);
         }
     };
     let target = decide::target(&i.tenant_id.to_string(), &message);
-    if !super::intent::begin_send(&state.pool, i, &target.collapse_key,policy).await? {
+    if !super::intent::begin_send(&state.pool, i, &target.collapse_key, policy).await? {
         // Includes per-device rate pressure; retry the local preflight, never a sent request.
-        super::intent::defer(&state.pool, i,policy).await?;
+        super::intent::defer(&state.pool, i, policy).await?;
         return Ok(None);
     }
     let mut receipt = match r.platform.as_str() {
@@ -505,7 +543,7 @@ async fn dispatch(
                 )
                 .await
             }
-            _ => Receipt::local(Outcome::Rejected,policy),
+            _ => Receipt::local(Outcome::Rejected, policy),
         },
         "FCM" => match &providers.fcm {
             Some(p) => {
@@ -518,14 +556,12 @@ async fn dispatch(
                 )
                 .await
             }
-            _ => Receipt::local(Outcome::Rejected,policy),
+            _ => Receipt::local(Outcome::Rejected, policy),
         },
-        _ => Receipt::local(Outcome::Rejected,policy),
+        _ => Receipt::local(Outcome::Rejected, policy),
     };
     // Delivered attempt bound and growing delay; honor larger provider Retry-After.
-    receipt.retry_after = receipt
-        .retry_after
-        .max(policy.retry_delay(i.attempts));
+    receipt.retry_after = receipt.retry_after.max(policy.retry_delay(i.attempts));
     Ok(Some(receipt))
 }
 async fn fresh_reason(
