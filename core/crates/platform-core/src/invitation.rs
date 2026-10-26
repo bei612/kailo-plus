@@ -536,6 +536,7 @@ impl Governance {
             agent_team_export: None,
             agent_team: None,
             tenant_quota_setting: None,
+            tenant_profile: None,
             skill_version_upload: None,
         };
         let admit = match open_execution(
