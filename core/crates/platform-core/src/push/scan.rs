@@ -27,7 +27,7 @@ impl Window<'_> {
         page_size: usize,
         targets: &[(&str, String)],
     ) -> Result<(), &'static str> {
-        let values = buzz_core::relay::query_raw_all(
+        let values = collab_bridge::query_raw_all(
             json!({"kinds":decide::MESSAGE_KINDS,"since":self.since,"until":self.until}),
             page_size,
             policy.scan_event_bound,
@@ -48,9 +48,9 @@ impl Window<'_> {
         )
         .await
         .map_err(|error| match error {
-            buzz_core::relay::QueryAllError::Query(_) => "RELAY_OR_LEASE_UNAVAILABLE",
-            buzz_core::relay::QueryAllError::InvalidPage => "INVALID_RELAY_PAGE",
-            buzz_core::relay::QueryAllError::BoundExceeded => "SCAN_BOUND_EXCEEDED",
+            collab_bridge::QueryAllError::Query(_) => "RELAY_OR_LEASE_UNAVAILABLE",
+            collab_bridge::QueryAllError::InvalidPage => "INVALID_RELAY_PAGE",
+            collab_bridge::QueryAllError::BoundExceeded => "SCAN_BOUND_EXCEEDED",
         })?;
         // No checkpoint, partial enqueue or provider call occurs before exhaustive validation.
         let mut messages = Vec::new();
