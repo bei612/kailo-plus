@@ -533,7 +533,7 @@ mod tests {
         sqlx::query("INSERT INTO events(community_id,id,pubkey,created_at,kind,tags,content,sig,received_at) VALUES($1,$2,$3,to_timestamp($4),$5,$6,$7,$8,now()) ON CONFLICT DO NOTHING")
             .bind(community.as_uuid()).bind(event.id.as_bytes().as_slice()).bind(event.pubkey.to_bytes().as_slice())
             .bind(event.created_at.as_secs() as f64).bind(i32::from(event.kind.as_u16()))
-            .bind(serde_json::to_value(&event.tags).unwrap()).bind(&event.content).bind(event.sig.as_ref())
+            .bind(serde_json::to_value(&event.tags).unwrap()).bind(&event.content).bind(event.sig.serialize().as_slice())
             .execute(connection).await.map(|result| result.rows_affected())
     }
     #[tokio::test]
