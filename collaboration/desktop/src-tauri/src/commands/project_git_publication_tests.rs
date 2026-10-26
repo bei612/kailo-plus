@@ -383,7 +383,9 @@ async fn writer_absence_requires_both_prior_core_window_and_original_community()
         "core_boundary",
         "relay_unsettled",
         "wrong_community",
+        "wrong_community_accepted",
         "legacy_unknown",
+        "legacy_accepted",
         "bad_id",
         "bad_community",
     ] {
@@ -394,8 +396,12 @@ async fn writer_absence_requires_both_prior_core_window_and_original_community()
             "core_inside" => io.now = 109,
             "core_boundary" => io.now = 110,
             "relay_unsettled" => io.relay_settled = false,
-            "wrong_community" => io.community = "00000000-0000-0000-0000-000000000002".into(),
-            "legacy_unknown" => {
+            "wrong_community" | "wrong_community_accepted" => {
+                io.community = "00000000-0000-0000-0000-000000000002".into();
+                if case=="wrong_community_accepted" { io.observed=Some(Event::from_json(io.frozen.event.as_ref().unwrap()).unwrap()); }
+            },
+            "legacy_unknown" | "legacy_accepted" => {
+                if case=="legacy_accepted" { io.observed=Some(Event::from_json(io.frozen.event.as_ref().unwrap()).unwrap()); }
                 io.frozen.event_community_id = None;
                 let db = rusqlite::Connection::open(&path).unwrap();
                 db.execute(
