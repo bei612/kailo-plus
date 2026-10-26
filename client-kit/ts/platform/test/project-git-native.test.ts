@@ -49,11 +49,28 @@ describe("native Projects git host",()=>{
     expect(diff).toEqual({additions:2,deletions:1,commitBody:null,files:[{path:"a.ts",additions:2,deletions:1,patch:"@@",truncated:true}]});
   });
 
-  it("offers no branch or merge writes, so the views show none",()=>{
-    const host=createNativeProjectsGitHost(async()=>null,scope);
-    expect(host.createProjectRemoteBranch).toBeUndefined();
-    expect(host.deleteProjectRemoteBranch).toBeUndefined();
-    expect(host.mergeProjectPullRequest).toBeUndefined();
+  it("routes native branch writes with a retained key and no URL or signer supplied by the page",async()=>{
+    const invoke=vi.fn(async()=>({branch:"feature",commit:commit.hash}));
+    const host=createNativeProjectsGitHost(invoke,scope);
+    const key="11111111-1111-4111-8111-111111111111";
+    await host.createProjectRemoteBranch!({repository,sourceBranch:"main",newBranch:"feature",expectedCommit:commit.hash},key);
+    expect(invoke).toHaveBeenLastCalledWith("create_project_remote_branch",{input:{operation:"CREATE_BRANCH",repository,branch:"feature",sourceBranch:"main",expectedCommit:commit.hash},idempotencyKey:key,...scope});
+    await host.deleteProjectRemoteBranch!({repository,branch:"feature",expectedCommit:commit.hash},key);
+    expect(invoke).toHaveBeenLastCalledWith("delete_project_remote_branch",{input:{operation:"DELETE_BRANCH",repository,branch:"feature",expectedCommit:commit.hash},idempotencyKey:key,...scope});
+  });
+  it("requires the actual device owner for merge and preserves the native confirmed status",async()=>{
+    const invoke=vi.fn(async()=>({mergeCommit:commit.hash,statusEventId:"e".repeat(64)}));
+    const input={repoAddress:repository,pullRequestId:"f".repeat(64),targetBranch:"main",sourceBranch:"feature",expectedCommit:commit.hash};
+    await expect(createNativeProjectsGitHost(invoke,scope).mergeProjectPullRequest!(input,"key")).rejects.toThrow("PERMISSION_DENIED");
+    expect(invoke).not.toHaveBeenCalled();
+    const owner={...scope,expectedSignerPubkey:"a".repeat(64)};
+    await expect(createNativeProjectsGitHost(invoke,owner).mergeProjectPullRequest!(input,"key")).resolves.toEqual({mergeCommit:commit.hash,statusEventId:"e".repeat(64)});
+    expect(invoke).toHaveBeenLastCalledWith("merge_project_pull_request",{input:{operation:"MERGE",repository,branch:"main",sourceBranch:"feature",expectedCommit:commit.hash,pullRequestEventId:"f".repeat(64)},idempotencyKey:"key",...owner});
+  });
+  it("keeps typed native uncertainty and its operation ID for the original dialog",async()=>{
+    const operationId="11111111-1111-4111-8111-111111111111";
+    const host=createNativeProjectsGitHost(async()=>{throw {code:"PUBLISH_RESULT_UNKNOWN",operationId};},scope);
+    await expect(host.deleteProjectRemoteBranch!({repository,branch:"feature",expectedCommit:commit.hash},operationId)).rejects.toMatchObject({errorClass:"UNKNOWN",reason:"PUBLISH_RESULT_UNKNOWN",operationId});
   });
 
   it("propagates native refusals instead of showing an empty repository",async()=>{
