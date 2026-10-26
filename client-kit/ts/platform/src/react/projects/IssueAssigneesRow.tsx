@@ -5,7 +5,7 @@ import { Check, Search, UserPlus, Users, X } from "lucide-react";
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useBffClient,useUiT } from "../context";
-import { normalizePubkey, truncateNpub } from "../conversations/pubkey";
+import { normalizePubkey } from "../conversations/pubkey";
 import type { UserProfileLookup } from "../messages/system/identity";
 import { UserAvatar } from "../messages/UserAvatar";
 import { Button } from "../profile/buzz/shared/ui/button";
@@ -131,8 +131,7 @@ export function IssueAssigneesRow({ issue, profiles, viewerPubkey, scopeKey, can
                 data-testid={`project-assignee-result-${pubkey}`} disabled={pending||!allowedPending("assign",pubkey)} key={pubkey}
                 onClick={()=>void assign(pubkey,name??ASSIGNMENT_UNKNOWN_LABEL)} type="button">
                 <UserAvatar avatarUrl={profile?.avatarUrl??null} displayName={label} shape="circle" size="xs"/>
-                <span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium text-foreground">{label}</span>
-                  <span className="block truncate text-xs text-muted-foreground">{truncateNpub(pubkey)}</span></span>
+                <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">{label}</span>
               </button>;
             }):<p className="px-3 py-4 text-sm text-muted-foreground">{t("projects.assignment.noMatches")}</p>}
         </div>
