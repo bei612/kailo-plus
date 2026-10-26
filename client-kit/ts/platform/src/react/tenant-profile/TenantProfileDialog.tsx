@@ -44,7 +44,7 @@ export function TenantProfileDialog({ open, onOpenChange }: { open: boolean; onO
   const [confirmed, setConfirmed] = useState(false), [reload, setReload] = useState(0);
   const input = useRef<HTMLInputElement>(null), alive = useRef(true), epoch = useRef(0);
   useEffect(() => { alive.current = true; return () => { alive.current = false; epoch.current++; }; }, []);
-  const write = useGovernedChannelAction(() => { if (alive.current) { setConfirmed(false); setReload(v => v + 1); void queryClient.invalidateQueries({ queryKey: ["platform", "session"] }); } });
+  const write = useGovernedChannelAction(() => { if (alive.current) { setConfirmed(false); setReload(v => v + 1); void queryClient.invalidateQueries({ queryKey: ["platform", "session"] }); } }, true);
   const locked = write.busy || write.unknown || processing;
   useEffect(() => {
     if (!open || write.unknown) return;

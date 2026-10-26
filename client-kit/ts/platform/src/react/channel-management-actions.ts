@@ -149,7 +149,7 @@ export function channelActionOutcomeText(t: Translate, outcome: ChannelActionOut
  * sent; an unknown outcome keeps it and only that same command can be resent. A definite answer
  * settles it. Recorded (or approval-pending) commands trigger the host readback.
  */
-export function useGovernedChannelAction(onRecorded: (command: ActionCommand) => void) {
+export function useGovernedChannelAction(onRecorded: (command: ActionCommand) => void, unclassifiedServerErrorsAreUnknown = false) {
   const client = useBffClient();
   const failureText = useFailureText();
   const reasonText = useReasonText();
@@ -214,7 +214,8 @@ export function useGovernedChannelAction(onRecorded: (command: ActionCommand) =>
         settle(null, result);
       }
     } catch (error) {
-      const failed = writeFailure(error);
+      const failed = unclassifiedServerErrorsAreUnknown && error instanceof BffError && error.status >= 500 && error.errorClass === undefined
+        ? { kind: "unknown" as const } : writeFailure(error);
       if (failed.kind === "unknown") {
         result = { kind: "unknown", operation: failed.operationId ?? priorOperation };
         settle(frozen, result);
@@ -231,7 +232,7 @@ export function useGovernedChannelAction(onRecorded: (command: ActionCommand) =>
       if (mounted.current) setBusy(false);
     }
     return result;
-  }, [client, failureText, reasonText, outcome]);
+  }, [client, failureText, reasonText, outcome, unclassifiedServerErrorsAreUnknown]);
 
   /** Clears a settled outcome; a retained unknown intent is never dropped here. */
   const dismiss = useCallback(() => { if (!intentRef.current && mounted.current) setOutcome(null); }, []);
