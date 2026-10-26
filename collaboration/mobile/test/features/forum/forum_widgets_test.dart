@@ -19,6 +19,11 @@ import 'package:buzz/shared/relay/relay.dart';
 import 'package:buzz/shared/theme/theme.dart';
 import 'package:buzz/shared/widgets/avatar_image.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:buzz/shared/platform/platform_api.dart';
+import 'package:buzz/shared/platform/platform_oidc.dart';
+import 'package:http/testing.dart';
+import 'package:http/http.dart' as http;
+import '../../shared/platform/platform_test_support.dart';
 
 const _channelId = 'forum-channel';
 
@@ -202,6 +207,16 @@ void main() {
         ),
       ),
     );
+  });
+
+  test('captured forum draft cannot cross an adopted login with the same relay key', () async {
+    final native = NativeSession(client: MockClient((_) async => http.Response('', 500)), refreshStore: MemoryRefreshStore());
+    await native.adopt(const OidcTokens(accessToken: 'first-fixture'));
+    final container = ProviderContainer(overrides: [nativeSessionProvider.overrideWithValue(native)]);
+    addTearDown(container.dispose);
+    final delivery = ForumEventDelivery.capture(container);
+    await native.adopt(const OidcTokens(accessToken: 'next-fixture'));
+    await expectLater(delivery.createPost(channelId: _channelId, content: 'Old draft'), throwsStateError);
   });
 
   testWidgets(
@@ -535,7 +550,12 @@ void main() {
       await tester.pumpAndSettle();
 
       // Confirmation dialog appears.
-      expect(find.text(platformText(PlatformMessageKey.forumDeleteDescription, locale: 'en')), findsOneWidget);
+      expect(
+        find.text(
+          platformText(PlatformMessageKey.forumDeleteDescription, locale: 'en'),
+        ),
+        findsOneWidget,
+      );
 
       // Tap Delete button.
       await tester.tap(find.widgetWithText(FilledButton, 'Delete'));
@@ -588,7 +608,12 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byType(FloatingActionButton), findsOneWidget);
-      expect(find.byTooltip(platformText(PlatformMessageKey.forumStart, locale: 'en')), findsOneWidget);
+      expect(
+        find.byTooltip(
+          platformText(PlatformMessageKey.forumStart, locale: 'en'),
+        ),
+        findsOneWidget,
+      );
     });
 
     testWidgets('hides FAB for non-members', (tester) async {
@@ -866,7 +891,12 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text(platformText(PlatformMessageKey.forumReplyPlaceholder, locale: 'en')), findsOneWidget);
+      expect(
+        find.text(
+          platformText(PlatformMessageKey.forumReplyPlaceholder, locale: 'en'),
+        ),
+        findsOneWidget,
+      );
     });
 
     testWidgets('renders media previews for forum posts', (tester) async {
@@ -962,7 +992,12 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text(platformText(PlatformMessageKey.forumReplyPlaceholder, locale: 'en')), findsNothing);
+      expect(
+        find.text(
+          platformText(PlatformMessageKey.forumReplyPlaceholder, locale: 'en'),
+        ),
+        findsNothing,
+      );
     });
 
     testWidgets('shows 3-dot in app bar for own post', (tester) async {
@@ -978,7 +1013,12 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.byTooltip(platformText(PlatformMessageKey.messagesActionsLabel, locale: 'en')), findsOneWidget);
+      expect(
+        find.byTooltip(
+          platformText(PlatformMessageKey.messagesActionsLabel, locale: 'en'),
+        ),
+        findsOneWidget,
+      );
     });
 
     testWidgets('hides 3-dot in app bar for others post', (tester) async {
@@ -994,7 +1034,12 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.byTooltip(platformText(PlatformMessageKey.messagesActionsLabel, locale: 'en')), findsNothing);
+      expect(
+        find.byTooltip(
+          platformText(PlatformMessageKey.messagesActionsLabel, locale: 'en'),
+        ),
+        findsNothing,
+      );
     });
   });
 }
