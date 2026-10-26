@@ -10,7 +10,7 @@ use reqwest::Method;
 use serde::Serialize;
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::{Mutex as StateMutex, MutexGuard};
+use std::sync::{Mutex as StateMutex, MutexGuard, OnceLock};
 use tokio::sync::Mutex;
 
 use super::config::PlatformConfig;
@@ -57,7 +57,14 @@ pub(crate) trait LogoutBrowser: Send + Sync {
     fn end_session<'a>(&'a self, url: url::Url) -> Pin<Box<dyn Future<Output = bool> + Send + 'a>>;
 }
 
+/// DD-159: erase local copies at the same lifecycle boundary as credentials.
+pub(crate) trait SessionArchive: Send + Sync {
+    fn erase(&self) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + '_>>;
+}
+
 pub(crate) struct NativeSession {
+    lifecycle: Mutex<()>,
+    archive: OnceLock<Box<dyn SessionArchive>>,
     state: StateMutex<SessionState>,
     refreshing: Mutex<()>,
     refresh: Box<dyn RefreshStore>,
@@ -70,6 +77,7 @@ pub(crate) struct NativeSession {
 struct SessionState {
     generation: u64,
     access: Option<String>,
+    retired: bool,
 }
 
 impl Default for NativeSession {
@@ -132,11 +140,24 @@ impl NativeSession {
         embedded_hint: Box<dyn RefreshStore>,
     ) -> Self {
         Self {
+            lifecycle: Mutex::new(()),
+            archive: OnceLock::new(),
             state: StateMutex::new(SessionState::default()),
             refreshing: Mutex::new(()),
             refresh,
             embedded_hint,
             pending: PendingLogin::default(),
+        }
+    }
+
+    pub(crate) fn set_archive(&self, archive: Box<dyn SessionArchive>) -> Result<(), String> {
+        self.archive.set(archive).map_err(|_| "archive lifecycle already installed".to_owned())
+    }
+
+    async fn erase_archive(&self) -> Result<(), String> {
+        match self.archive.get() {
+            Some(archive) => archive.erase().await,
+            None => Ok(()),
         }
     }
 
@@ -161,14 +182,28 @@ impl NativeSession {
     }
 
     /// 在等待浏览器之前固定登录代际；取消、退出及下一次登录都会使它失效。
-    pub(crate) fn begin_sign_in(&self) -> Result<u64, String> {
+    pub(crate) async fn begin_sign_in(&self) -> Result<u64, String> {
+        let _lifecycle = self.lifecycle.lock().await;
         let mut state = self.state()?;
         state.generation = state.generation.wrapping_add(1);
         Ok(state.generation)
     }
 
     /// 只接受仍属于该次登录的令牌，迟到回调不恢复已退出的身份。
-    pub(crate) fn adopt_for(&self, generation: u64, tokens: TokenResponse) -> Result<(), String> {
+    pub(crate) async fn adopt_for(&self, generation: u64, tokens: TokenResponse) -> Result<(), String> {
+        let _lifecycle = self.lifecycle.lock().await;
+        let retired = {
+            let mut state = self.state()?;
+            Self::check_generation(&state, generation)?;
+            // No archive command may start under old credentials while cleanup waits
+            // for an already-running sync. A failed erase cannot admit the new login.
+            state.access = None;
+            state.retired = true;
+            self.refresh.delete()
+        };
+        let erased = self.erase_archive().await;
+        retired?;
+        erased?;
         let mut state = self.state()?;
         Self::check_generation(&state, generation)?;
         // 刷新令牌是长期凭据：没有它，下次启动就得重新登录；有它却存不进
@@ -178,12 +213,13 @@ impl NativeSession {
             None => self.refresh.delete()?,
         }
         state.access = Some(tokens.access_token);
+        state.retired = false;
         Ok(())
     }
 
     #[cfg(test)]
     pub(crate) async fn adopt(&self, tokens: TokenResponse) -> Result<(), String> {
-        self.adopt_for(self.begin_sign_in()?, tokens)
+        self.adopt_for(self.begin_sign_in().await?, tokens).await
     }
 
     fn check_generation(state: &SessionState, generation: u64) -> Result<(), String> {
@@ -195,7 +231,7 @@ impl NativeSession {
 
     pub(crate) fn has_credentials(&self) -> Result<bool, String> {
         let state = self.state()?;
-        Ok(state.access.is_some() || self.refresh.load()?.is_some())
+        Ok(!state.retired && (state.access.is_some() || self.refresh.load()?.is_some()))
     }
 
     /// 结束本机的平台登录（`SS-AGW-OIDC` 的原生部分）：先撤销 Core 的
@@ -208,22 +244,30 @@ impl NativeSession {
         cfg: &PlatformConfig,
         browser: &dyn LogoutBrowser,
     ) -> Result<SignOutReport, String> {
-        let (mut access, mut refresh, refresh_in_flight, hint) = {
+        let lifecycle = self.lifecycle.lock().await;
+        let (mut access, mut refresh, refresh_in_flight, hint, local_clear) = {
             let mut state = self.state()?;
             state.generation = state.generation.wrapping_add(1);
             self.pending.cancel();
             let refresh = self.refresh.load();
             let access = state.access.take();
+            state.retired = true;
             // 已发出的刷新可能已在 IdP 轮换、但尚未回到本机。撤销快照成功也
             // 不能证明那个结果不明的令牌被撤销，报告仍须保持未确认。
             let refresh_in_flight = self.refreshing.try_lock().is_err();
             // 即使读取失败也尝试删除，不让一次读取错误跳过本机退出。
-            self.refresh.delete()?;
+            let refresh_deleted = self.refresh.delete();
             // 退出提示同样先移出本机：不论 IdP 是否确认都不再保留（07 §4.7.5）。
             let hint = self.embedded_hint.load();
-            self.embedded_hint.delete()?;
-            (access, refresh, refresh_in_flight, hint)
+            let hint_deleted = self.embedded_hint.delete();
+            (access, refresh, refresh_in_flight, hint, refresh_deleted.and(hint_deleted))
         };
+        // Erase before any remote logout wait. New logins may proceed afterwards;
+        // a late logout response must never erase their archive.
+        let erased = self.erase_archive().await;
+        drop(lifecycle);
+        local_clear?;
+        erased?;
         let core_session_revoked = match refresh.as_mut() {
             Ok(refresh) => logout_snapshot(http, cfg, &mut access, refresh).await,
             Err(_) => false,
@@ -253,13 +297,21 @@ impl NativeSession {
     /// 没有部署配置时的本机退出：丢弃令牌与退出提示，返回提示是否存在过
     /// （存在而无法结束即未确认）。
     pub(crate) async fn sign_out(&self) -> Result<bool, String> {
-        let mut state = self.state()?;
-        state.generation = state.generation.wrapping_add(1);
-        state.access = None;
-        self.pending.cancel();
-        let hint_held = !matches!(self.embedded_hint.load(), Ok(None));
-        self.embedded_hint.delete()?;
-        self.refresh.delete()?;
+        let _lifecycle = self.lifecycle.lock().await;
+        let (hint_held, local_clear) = {
+            let mut state = self.state()?;
+            state.generation = state.generation.wrapping_add(1);
+            state.access = None;
+            state.retired = true;
+            self.pending.cancel();
+            let hint_held = !matches!(self.embedded_hint.load(), Ok(None));
+            let hint_deleted = self.embedded_hint.delete();
+            let refresh_deleted = self.refresh.delete();
+            (hint_held, hint_deleted.and(refresh_deleted))
+        };
+        let erased = self.erase_archive().await;
+        local_clear?;
+        erased?;
         Ok(hint_held)
     }
 
@@ -275,6 +327,7 @@ impl NativeSession {
         let refresh_token = {
             let state = self.state()?;
             Self::check_generation(&state, generation)?;
+            if state.retired { return Err(NOT_SIGNED_IN.into()); }
             if let Some(access) = state.access.as_ref() {
                 if Some(access.as_str()) != rejected_access {
                     return Ok(access.clone());
@@ -285,10 +338,11 @@ impl NativeSession {
                 .ok_or_else(|| NOT_SIGNED_IN.to_owned())?
         };
         let result = oidc::refresh(http, cfg, &refresh_token).await;
-        let mut state = self.state()?;
-        Self::check_generation(&state, generation)?;
+        let _lifecycle = self.lifecycle.lock().await;
+        Self::check_generation(&*self.state()?, generation)?;
         match result {
             Ok(mut tokens) => {
+                let mut state = self.state()?;
                 let access = tokens.access_token.clone();
                 // OAuth 刷新可不轮换 refresh_token；缺省不等于撤销原凭据。
                 let refresh = tokens.refresh_token.take().unwrap_or(refresh_token);
@@ -298,9 +352,16 @@ impl NativeSession {
             }
             // 刷新令牌被 IdP 拒绝（过期、撤销、会话已结束）：只能重新登录
             Err(OidcError::Rejected(_)) => {
-                state.generation = state.generation.wrapping_add(1);
-                state.access = None;
-                self.refresh.delete()?;
+                let local_clear = {
+                    let mut state = self.state()?;
+                    state.generation = state.generation.wrapping_add(1);
+                    state.access = None;
+                    state.retired = true;
+                    self.refresh.delete()
+                };
+                let erased = self.erase_archive().await;
+                local_clear?;
+                erased?;
                 Err(NOT_SIGNED_IN.to_owned())
             }
             // IdP 暂不可达：凭据留着，稍后再试
@@ -382,6 +443,8 @@ impl NativeSession {
                 continue;
             }
             if status == reqwest::StatusCode::UNAUTHORIZED {
+                let _lifecycle = self.lifecycle.lock().await;
+                let local_clear = {
                 let mut state = self.state()?;
                 Self::check_generation(&state, generation)?;
                 // 该401也可能比同代际的另一刷新迟到，不能清理新访问令牌。
@@ -390,7 +453,12 @@ impl NativeSession {
                 }
                 state.generation = state.generation.wrapping_add(1);
                 state.access = None;
-                self.refresh.delete()?;
+                state.retired = true;
+                self.refresh.delete()
+                };
+                let erased = self.erase_archive().await;
+                local_clear?;
+                erased?;
                 return Err(NOT_SIGNED_IN.to_owned());
             }
             return Ok((resp, generation));
@@ -475,6 +543,7 @@ mod sign_out_tests {
         token_requests: usize,
         token_gate: Option<Arc<Gate>>,
         probe_gate: Option<Arc<Gate>>,
+        reject_refreshed_access: bool,
         logout_gate: Option<Arc<Gate>>,
     }
 
@@ -608,7 +677,7 @@ mod sign_out_tests {
                     get(|AxumState(f): AxumState<Shared>, headers: HeaderMap| async move {
                         let gate = f.lock().unwrap().probe_gate.clone();
                         if let Some(gate) = gate { gate.wait().await; }
-                        let status = if headers.get("authorization").unwrap() == "Bearer access-1" {
+                        let status = if f.lock().unwrap().reject_refreshed_access || headers.get("authorization").unwrap() == "Bearer access-1" {
                             StatusCode::UNAUTHORIZED
                         } else { StatusCode::OK };
                         (status, Json(serde_json::json!({ "ok": true })))
@@ -823,7 +892,7 @@ mod sign_out_tests {
         f.lock().unwrap().token_gate = Some(gate.clone());
         let cfg = serve(f).await;
         let session = signed_in().await;
-        let generation = session.begin_sign_in().unwrap();
+        let generation = session.begin_sign_in().await.unwrap();
         let (result, ()) = tokio::join!(probe(&session, &cfg), async {
             gate.arrived().await;
             session.sign_out().await.unwrap();
@@ -831,7 +900,7 @@ mod sign_out_tests {
         });
         assert_eq!(result.unwrap_err(), SUPERSEDED);
         assert_eq!(
-            session.adopt_for(generation, replacement()).unwrap_err(),
+            session.adopt_for(generation, replacement()).await.unwrap_err(),
             SUPERSEDED
         );
         assert!(!session.has_credentials().unwrap());
@@ -1022,4 +1091,6 @@ mod sign_out_tests {
         assert!(session.sign_out().await.unwrap(), "退出报告提示曾存在");
         assert_eq!(session.embedded_hint.load().unwrap(), None);
     }
+    include!("api_archive_tests.rs");
+
 }

@@ -64,7 +64,13 @@ pub async fn apply_workspace(
     // generation before making its first mutation.
     assert_current_apply_generation(&state.workspace_apply_generation, apply_generation)?;
 
-    // ── Apply all state changes (nothing below can fail) ──────────────────
+    // Device identity retirement shares the archive lock with all sync/read
+    // commands; do it before exposing the new relay or key.
+    if let Some(keys) = parsed_keys {
+        crate::local_archive::change_device_key(&app, &state, keys).await?;
+    }
+
+    // ── Apply remaining connection state ─────────────────────────────────
     {
         let mut override_guard = state.relay_url_override.lock().map_err(|e| e.to_string())?;
         *override_guard = Some(relay_url);
@@ -73,10 +79,6 @@ pub async fn apply_workspace(
     // matching `resetRateLimitGate()` on the TS side.
     crate::relay_admission::reset_gate_for_workspace_change();
 
-    if let Some(keys) = parsed_keys {
-        let mut keys_guard = state.keys.lock().map_err(|e| e.to_string())?;
-        *keys_guard = keys;
-    }
     Ok(())
 }
 
