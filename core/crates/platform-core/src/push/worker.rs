@@ -470,24 +470,28 @@ async fn dispatch(
         super::intent::defer(&state.pool, i, policy).await?;
         return Ok(None);
     };
-    let Ok(found) = control
-        .query(&state.http, &[json!({"ids":[i.event_id],"limit":1})])
-        .await
+    let Ok(found) = relay_query(
+        &state.http,
+        &control,
+        &[json!({"ids":[i.event_id],"limit":1})],
+        policy,
+    ).await
     else {
         super::intent::defer(&state.pool, i, policy).await?;
         return Ok(None);
     };
-    let message = found
-        .as_array()
-        .into_iter()
-        .flatten()
-        .filter_map(MessageFacts::from_event)
-        .find(|m| m.id == i.event_id);
+    let Ok(events) = verified_page(found, std::slice::from_ref(&i.event_id)) else {
+        super::intent::defer(&state.pool, i, policy).await?;
+        return Ok(None);
+    };
+    let message = events.first().and_then(|event| {
+        serde_json::to_value(event).ok().and_then(|value| MessageFacts::from_event(&value))
+    });
     let Some(message) = message else {
         super::intent::cancel(&state.pool, i, "EVENT_ABSENT").await?;
         return Ok(None);
     };
-    let Some(reason) = fresh_reason(state, &control, i.tenant_id, r.principal, &message).await?
+    let Some(reason) = fresh_reason(state, &control, i.tenant_id, r.principal, &message, policy).await?
     else {
         super::intent::cancel(&state.pool, i, "NOT_ELIGIBLE").await?;
         return Ok(None);
@@ -573,6 +577,7 @@ async fn fresh_reason(
     tenant: Uuid,
     principal: Uuid,
     message: &MessageFacts,
+    policy: &super::config::Policy,
 ) -> Result<Option<Reason>, sqlx::Error> {
     let principals = [principal];
     let pubkeys = principal_pubkeys(state, tenant, &principals).await?;
@@ -605,7 +610,8 @@ async fn fresh_reason(
     if let Some(root) = &message.root_id {
         view.thread_muted = pref.is_some_and(|p| p.muted_threads.contains(root));
         view.thread_followed = pref.is_some_and(|p| p.followed_threads.contains(root));
-        let authors = root_authors(state, control, vec![root.clone()]).await;
+        let authors = root_authors(&state.http, control, vec![root.clone()], policy).await
+            .map_err(|_| sqlx::Error::Protocol("push root-author lookup unavailable".into()))?;
         view.thread_authored = authors
             .get(root)
             .is_some_and(|author| keys.contains(author));
@@ -767,34 +773,92 @@ async fn workspace_members(
     Ok(rows.into_iter().collect())
 }
 
+async fn relay_query(
+    http: &reqwest::Client,
+    control: &collab_bridge::bridge::IdentityClient,
+    filters: &[Value],
+    policy: &super::config::Policy,
+) -> Result<Value, ()> {
+    tokio::time::timeout(
+        Duration::from_secs(policy.relay_read_timeout_seconds as u64),
+        control.query(http, filters),
+    ).await.map_err(|_| ())?.map_err(|_| ())
+}
+
+fn verified_page(value: Value, ids: &[String]) -> Result<Vec<nostr::Event>, ()> {
+    let events: Vec<nostr::Event> = serde_json::from_value(value).map_err(|_| ())?;
+    let mut seen = BTreeSet::new();
+    for event in &events {
+        let id = event.id.to_hex();
+        if !ids.contains(&id) || !seen.insert(id) || event.verify().is_err() {
+            return Err(());
+        }
+    }
+    Ok(events)
+}
+
 async fn root_authors(
-    state: &ServiceState,
+    http: &reqwest::Client,
     control: &collab_bridge::bridge::IdentityClient,
     roots: Vec<String>,
-) -> HashMap<String, String> {
+    policy: &super::config::Policy,
+) -> Result<HashMap<String, String>, ()> {
+    if roots.is_empty() { return Ok(HashMap::new()); }
     let limit = roots.len();
-    let Ok(found) = control
-        .query(&state.http, &[json!({"ids": roots, "limit": limit})])
-        .await
-    else {
-        return HashMap::new();
-    };
-    found
-        .as_array()
-        .into_iter()
-        .flatten()
-        .filter_map(|e| {
-            Some((
-                e.get("id")?.as_str()?.to_ascii_lowercase(),
-                e.get("pubkey")?.as_str()?.to_ascii_lowercase(),
-            ))
-        })
-        .collect()
+    let found = relay_query(http, control, &[json!({"ids": roots, "limit": limit})], policy).await?;
+    Ok(verified_page(found, &roots)?.into_iter()
+        .map(|event| (event.id.to_hex(), event.pubkey.to_hex())).collect())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn root_lookup_verifies_events_and_bounds_unavailable_relay_reads() {
+        use axum::{http::StatusCode, response::IntoResponse, Json};
+        use std::sync::atomic::{AtomicU8, Ordering};
+        let mode = Arc::new(AtomicU8::new(0));
+        let author = nostr::Keys::generate();
+        let root = nostr::EventBuilder::new(nostr::Kind::Custom(9), "fixture root")
+            .sign_with_keys(&author).unwrap();
+        let value = serde_json::to_value(&root).unwrap();
+        let scripted_mode = mode.clone();
+        let router = axum::Router::new().route("/query", axum::routing::post(move || {
+            let mode = scripted_mode.clone();
+            let mut value = value.clone();
+            async move {
+                match mode.load(Ordering::SeqCst) {
+                    1 => { value["content"] = json!("corrupt signature"); Json(json!([value])).into_response() }
+                    2 => { futures_util::future::pending::<()>().await; StatusCode::SERVICE_UNAVAILABLE.into_response() }
+                    3 => StatusCode::SERVICE_UNAVAILABLE.into_response(),
+                    4 => Json(json!([value.clone(), value])).into_response(),
+                    _ => Json(json!([value])).into_response(),
+                }
+            }
+        }));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+        let control = nostr::Keys::generate();
+        let client = collab_bridge::bridge::IdentityClient::new(
+            collab_bridge::bridge::Custody::Server, &control.secret_key().to_secret_hex(),
+            &url, "push-relay.fixture").unwrap();
+        let http = reqwest::Client::builder().no_proxy().build().unwrap();
+        let mut policy = super::super::config::Policy::fixture();
+        policy.relay_read_timeout_seconds = 1;
+        let roots = vec![root.id.to_hex()];
+        let actual = root_authors(&http, &client, roots.clone(), &policy).await.unwrap();
+        assert_eq!(actual.get(&root.id.to_hex()), Some(&author.public_key().to_hex()));
+        for invalid in [1, 3, 4] {
+            mode.store(invalid, Ordering::SeqCst);
+            assert!(root_authors(&http, &client, roots.clone(), &policy).await.is_err());
+        }
+        mode.store(2, Ordering::SeqCst);
+        let bounded = tokio::time::timeout(Duration::from_secs(3), root_authors(&http, &client, roots, &policy)).await;
+        server.abort();
+        assert!(bounded.expect("the consumer must stop on the delivered read deadline").is_err());
+    }
 
     #[test]
     fn preferences_read_mutes_and_thread_states() {
