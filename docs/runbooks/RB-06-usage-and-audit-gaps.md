@@ -50,7 +50,7 @@ order by occurred_at, id;
 
 `usable_terminal_result` 与当前 Core 对这六类历史行的过滤一致；原始审计仍全部展示。
 做终态数量、最近结论或未决列表统计时必须使用同一过滤，不能只按有无 RECONCILIATION 计数。
-普通 `/query` 会隐藏软删除事件，先前通过时间检查的 writer 也可能尚未提交；查询成功但为空，
+普通 `/query` 会隐藏软删除事件，先前通过时间检查不证明对应 writer 已提交或退出；查询成功但为空，
 即使已过 settle 窗口，也不能证明从未送达。原 `publish_reconcile` 窗口内记 `PENDING`，过窗记
 `EVENT_UNOBSERVABLE`，都不追加确定失败。后续取得肯定证据才以包含原 operation/event 的独立
 幂等审计键追加 `ACCEPTED`，不改写或删除旧假阴性，也不伪造原来缺失的 DISPATCH。
