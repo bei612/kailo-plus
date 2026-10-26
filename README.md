@@ -6,8 +6,10 @@
 
 ## 当前集成与验收边界（2026-10-26）
 
-当前候选从主线 `ebc23eb293942ed9721cb56d2b76ee871f91bc40` 集成 DD-157 共享组件外壳及
-DD-124/136 一致性投递修复及 DD-159 本地归档，正在完成集成检查与匹配发布；不得把下列历史记录中的“当前”
+当前候选从主线 `ebc23eb293942ed9721cb56d2b76ee871f91bc40` 集成 DD-157 共享组件外壳、
+DD-124/136 一致性投递、DD-159 本地归档、DD-151 推送基础和 DD-158 反馈与社区资料。
+HUMAN 内容策略已在真实 binding 准入事务固定归属，解除原生投递前置缺生产者的代码缺口；
+接收方完整激活与业务仍未验收。正在完成合批检查与匹配发布；不得把下列历史记录中的“当前”
 当作本候选状态。固定分支检查、实际部署和真实业务验收分别记录于
 [交付路线](02-纵向交付路线.md)、[组件一致性投递证据](core/verify/component-conformance-delivery.md)
 和[融合界面追溯](tools/traceability/component.integrated_ux.yaml)。
@@ -23,6 +25,13 @@ supply/seam 或真实业务验收。日志在 CI
 祖先。原 Desktop SDK 在 `24e3c5f61` 的归档、原生会话、工作区检查分别 21、18、2 项通过；
 故意关闭安全删除时原数据库残留检查失败，逐字恢复后通过。合批门禁与真实设备仍未验收，
 见[归档验证记录](collaboration/fork/verify/desktop-client.md)。
+
+固定合批源码 `880e5dccc` 的原四侧合同、同源 Mobile 词条与能力注册表生成/check
+在 CI 原 SDK（1 CPU、2 GiB）全部退出 0，回读七份生成物与集成树完全一致；42 条能力、
+20 个封闭 Workflow kind。日志为 CI
+`/volumes/data/kailo/verification/phase1-integration/880e5dcc-codegen.log`。
+这只证明合批生成一致，后续源码门禁和真实业务验收仍须分别执行。推送持久意图与
+故障恢复、跨会话资料即时更新、接收方全链，以及匹配安装包/部署仍未完成。
 
 上一批发布源 `dc2d6ca18bb5c355ebb3e96609f0f591532479cf` 的八个运行发布阶段完成，
 pin 为 `ebc23eb293942ed9721cb56d2b76ee871f91bc40`，但发布 journal 明确记录业务验收
