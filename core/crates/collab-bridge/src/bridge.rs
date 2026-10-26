@@ -3644,11 +3644,12 @@ mod scoped_publication_tests {
         community: Option<Uuid>,
         response: Value,
         status: u16,
+        keys: Option<Keys>,
     ) -> (IdentityClient, tokio::task::JoinHandle<()>) {
         let listener = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
             .await
             .unwrap();
-        let keys = Keys::generate();
+        let keys = keys.unwrap_or_else(Keys::generate);
         let client = IdentityClient::new(
             Custody::Server,
             &keys.secret_key().to_secret_hex(),
@@ -3729,8 +3730,9 @@ mod scoped_publication_tests {
 
     #[tokio::test]
     async fn scoped_send_signs_community_and_accepts_only_matching_ack() {
+        let keys = Keys::generate();
         let event = EventBuilder::new(Kind::from(9), "test")
-            .sign_with_keys(&Keys::generate())
+            .sign_with_keys(&keys)
             .unwrap();
         let community = Uuid::new_v4();
         let id = event.id.to_hex();
@@ -3758,6 +3760,7 @@ mod scoped_publication_tests {
                 Some(community),
                 response,
                 200,
+                Some(keys.clone()),
             )
             .await;
             let result = client
@@ -3816,6 +3819,7 @@ mod scoped_publication_tests {
                 None,
                 response,
                 status,
+                None,
             )
             .await;
             let result = client
