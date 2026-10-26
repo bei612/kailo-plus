@@ -2,7 +2,7 @@
 // DD-124/133: original WeKnora OIDC and native APIs, inside one isolated run.
 // A directory-projected native admin can create a KB and MCP endpoint. It is
 // deliberately not elevated to native Owner to mint an all-powerful API key.
-import { existsSync, lstatSync, realpathSync, renameSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { account, FlowError, launch, main, parseArgs, privateText, UUID } from './lib.mjs';
@@ -15,6 +15,7 @@ function atomic(path, value) {
 }
 
 await main(async () => {
+  let lock;
   try {
     const args = parseArgs(process.argv.slice(2), ['input'], ['refresh-only']);
     const input = JSON.parse(privateText(args.input));
@@ -30,6 +31,9 @@ await main(async () => {
     const origin = new URL(input.origin);
     if (origin.origin !== input.origin || origin.protocol !== 'http:' || origin.hostname !== '127.0.0.1'
         || !origin.port || !/^kailo-receiver-[a-z0-9-]+$/.test(input.name ?? '')) fail('isolated native origin and run name required');
+    const lockPath = join(input.directory, 'native-session.lock');
+    try { mkdirSync(lockPath, { mode: 0o700 }); } catch { fail('native knowledge session is already being refreshed'); }
+    lock = lockPath;
     const stateFile = join(input.directory, 'native.json'), tokenFile = join(input.directory, 'native.token');
     const refreshFile = join(input.directory, 'native.refresh');
     const previous = existsSync(stateFile) ? JSON.parse(privateText(stateFile)) : null;
@@ -123,5 +127,7 @@ await main(async () => {
     console.log(JSON.stringify({ step: 'receiver-knowledge-native', status: 'READY' }));
   } catch (error) {
     throw error instanceof FlowError ? error : new FlowError('isolated native knowledge preparation failed; credential details are not logged');
+  } finally {
+    if (lock) rmSync(lock, { recursive: true });
   }
 });
