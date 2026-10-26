@@ -126,3 +126,22 @@ Desktop/Mobile client 的授权码 + PKCE 取得 HUMAN bearer，在隔离原生�
 同目录 `checks.log` 保存完整输出。两次临时检查容器均已移除，旧隔离服务未改动。
 这只证明所列定向检查；真实 PKCE、platform 完成后的 contracts/action-token 及知识库接收方
 native → bootstrap → seed → inputs → driver 仍未获得本轮成功证据。
+
+## 7. Core 公共挂载与 Worker 私有凭据隔离复核（2026-10-26）
+
+集成复核发现，Core 不仅挂载候选目录，还挂载 adapter directory 的父目录及公开 JWKS。
+只比较候选目录与 Worker 私有目录，会漏掉父目录将私有凭据一起带入 Core 的情形。
+`40bca13e7` 将同路径、祖先和后代关系检查应用到全部 Core 挂载来源；原 security 步骤增加
+公开父目录包含私有目录、两者相同、公开目录进入私有目录以及 JWKS 位于私有目录的拒绝断言。
+发布声明中的 `protocol-peers`、`conformance`、`conformance-worker` 保持三个独立兄弟目录。
+没有改变 ActionToken、会话、业务 schema 或 Workflow，也没有投递或读取真实 receiver 凭据。
+
+CI 直接从 GitHub 取得固定集成提交 `0fde3bccd8b1b3a94a1b3840b1dcbaa9590ed747`，
+原 `tools/check.sh security` 在固定检查镜像
+`sha256:3007729eb192341a4f004a88e42e1e66c94fc67d763acfc96568bd7311116018`
+与实际 1 CPU、2 GiB memory/memory-swap 限额中退出 0。
+在该任务独有的检查副本恢复旧路径判断后，原检查退出 1，明确命中
+“Core 的目录挂载不得包含或进入 Worker 私有目录”；随后从同一提交恢复文件并确认工作树干净。
+日志位于 CI `/volumes/data/kailo/verification/phase1-integration/0fde3bcc-security.log`
+与 `0fde3bcc-security-mutated.log`。检查副本没有生产 `.env`，对应配置预检保持 SKIP；
+这两次结果不证明生产投递已变更，也不替代真实接收方端到端验收。
