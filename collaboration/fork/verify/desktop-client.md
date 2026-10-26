@@ -622,3 +622,14 @@ source 相等，原 manifest 仅该产物 source/artifact 两字段 +2/-2，不�
 - 影响：复用原 Desktop Settings 页面、Tauri 命令与 Relay 认证；不改公开 schema、Core 迁移或 Workflow。上游差异增加归档实现与壳接线，源码输入已改变，历史 Desktop artifact 不对应本候选。
 
 本节写入时只完成源码审查与 `git diff --check`（退出 0）；Node/Rust 定向验证排队等待 CI 资源，不能称通过。未生成安装包、未部署、未在 Win11/真实设备完成频道与私聊订阅、撤员、断网、退出重登业务验收。`collab.local_archive` 保持 `in_progress`、`exposure: none` 与发布门禁，未借历史 artifact 解除阻断。设计 pin 及 DD152–160 总覆盖由最终集成批统一更新。
+
+### 同日定向验证回读（c3c2b589b）
+
+- 固定源码 `c3c2b589bb28c0a86ffd485b6f14b0a34dcdf504`，只由 GitHub 分支拉取并导出真实提交树。原 `container-safety.sh` 在启动前核对实际容器 CPU、memory 与 memory+swap；容量缓存和日志在 `/volumes/data/kailo`，临时输入在 `/var/lib/kailo-ci/tmp/buzz-r10`。没有使用宿主 Cargo、Node 或 Dart。
+- 原 Desktop SDK `sha256:df8a3475e3e32ecf5ac79f9c12763b8ce5d4f91a75c25007fd9bfa5b282fc081`：Rust/Cargo 1.95.0、rustfmt 1.9.0、GTK 3.24.41、WebKitGTK/JSC 2.52.6。依赖与 `collaboration/fork/packaging/desktop.Dockerfile` 对齐。归档 Rust 文件和退出接线的 rustfmt 已在 1 CPU、512 MiB 容器执行并回填；这不是编译通过证据。
+- 原检查 SDK `sha256:3007729eb192341a4f004a88e42e1e66c94fc67d763acfc96568bd7311116018`：Node 24.21.0、pnpm 11.4.0；1 CPU、2 GiB。按 Desktop 原配方执行 `pnpm install --frozen-lockfile`，归档模型与 `SettingsSections.test.mjs` 共 7 项通过，Desktop 原 `tsc --noEmit` 通过；锁文件前后 SHA-256 均为 `c4c42520d2c7e966bd4d259520df308fbf5809772ab3602f2db367fc3a8f4dd6`。初次 Settings 测试在既有资料模块的 `import.meta.env.BASE_URL` 导入处失败；修复原测试 loader 的 Vite 上下文后复验，未改产品配置或断言。
+- 同检查 SDK 的 Dart 3.9.4、1 CPU、1 GiB 执行原 `tools/gen-platform-i18n.py` 及 `--check`，35 个归档 message key 的 Dart 投影通过。只生成该固定提交的字典，未混入同工作树其他 Mobile 文案。
+- 原 `tools/check.sh --docs-only`、1 CPU、1 GiB 在 `0dc380bc5` 退出 1：该分支 pin `59af271be2cdb8412e636b0098d8e93554448263` 不含 `DD-159` / `V-SCN-262`，矩阵相对该 pin 多 `DD-159`。其余禁用词、相对链接、实体/SS、场景映射及实施与设计两套 markdownlint 均通过；最终集成负责新设计 pin 与总覆盖。
+- 原 Desktop `cargo test --locked --lib local_archive::` 的第一轮在 `0dc380bc5` 因 crates.io `tauri-plugin-updater` 索引下载超时退出 101，尚未编译源码；`c3c2b589b` 的同入口重试仍在执行。Rust 单测、原生安装包及真实设备业务操作均未登记为通过。
+
+原始日志位于 CI 节点 `/volumes/data/kailo/verification/buzz-r10/`：`rustfmt-limits.log`、`local-archive-node-frozen.log`、`node-frozen-limits.log`、`i18n.log`、`docs.log`、`local-archive-cargo-test.log`、`local-archive-cargo-recheck.log`。后续结果不得覆盖首轮失败记录。
