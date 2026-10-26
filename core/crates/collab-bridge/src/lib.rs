@@ -16,3 +16,6 @@ pub use buzz_sdk::custom_emoji_tags;
 pub use buzz_sdk::{
     build_custom_emoji_set, normalize_custom_emoji_shortcode, CustomEmoji, CUSTOM_EMOJI_SET_D_TAG,
 };
+
+// Shared original Relay cursor; consumers retain their existing authenticated transport.
+pub use buzz_core::relay::{query_raw_all, QueryAllError};
