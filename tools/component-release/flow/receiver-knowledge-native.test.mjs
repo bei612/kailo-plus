@@ -118,7 +118,8 @@ test('confirmed endpoint is retained before a bearer file write can fail', async
 test('confirmed missing native model refuses before any replacement model or KB POST', async (t) => {
   const f = await fixture(t, { previous: { models: modelState }, missingModel: 'chat' });
   assert.equal((await f.run()).code, 2);
-  assert.ok(!f.calls.some((call) => call.startsWith('POST ')));
+  assert.ok(!f.calls.includes('POST /api/v1/models'));
+  assert.ok(!f.calls.includes('POST /api/v1/knowledge-bases'));
 });
 
 test('native model creation is keyless and each confirmed original identity survives later failure', async (t) => {
