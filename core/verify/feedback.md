@@ -119,3 +119,10 @@ analyze 均退出 0；`test/features/feedback/feedback_test.dart` **3 passed**�
 
 这些检查未替代 iOS/Android 真机、图片授权、签名安装、共享站点部署或运营方
 真实 HTTP 验收；Tenant profile 动作与三端消费者仍在实现，DD-158 仍为进行中。
+
+恢复原版全尺寸附件预览后，固定 `4af8d99fa` 的原 SDK 1CPU/4GiB、冻结 pnpm，
+共享生产与完整测试 TypeScript 退出0；feedback Vitest **5 passed**。新增实际
+文件选择与全尺寸预览证明图片只读本地 data URL、未调用任何网络端点；原四项
+同源提交与运营消费者同时通过。日志 `feedback-preview-4af8d99fa/feedback-preview.log`
+及限额读回位于同一原验证目录。该变化未改 Core 或 Mobile，前述各自固定源码
+验证仍适用；未发布，运营 HTTP 权限全链和真机仍待验收。
