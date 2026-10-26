@@ -881,6 +881,9 @@ def ensure_adapter_readers(h, r):
         native_action = h.private_dir(directory / "native-action") if role == "SOURCE" else None
         if not running:
             extra = ["--extra-delivery-dir", str(native_action), "--extra-secret", "oidc_client_secret"] if native_action else []
+            model_input = directory / "binding-models/input.json"
+            if role == "RECEIVER" and model_input.is_file():
+                extra += ["--model-delivery-file", str(model_input)]
             delivery("reader", "--config", str(config_file), "--role", role_name, "--bootstrap-dir", str(bootstrap),
                      "--bao-url", runtime["OPENBAO_ADDR"], "--agent-bao-url", runtime["OPENBAO_ADDR"],
                      "--root-token-file", str(local / "secrets/openbao_init.json"), *extra)
@@ -1049,7 +1052,7 @@ def ensure_bootstrap_material(h, r):
         h.require(h.read_json(bootstrap_file) == bootstrap, "immutable receiver bootstrap inputs changed")
     else:
         h.write_json(bootstrap_file, bootstrap)
-    receiver_env(h, r, {"RECEIVER_BOOTSTRAP_FILE": str(bootstrap_file), "RECEIVER_ADAPTER_DIRECTORY_FILE": str(directory_file)})
+    receiver_env(h, r, {"RECEIVER_BOOTSTRAP_FILE": str(bootstrap_file), "RECEIVER_ADAPTER_DIRECTORY_FILE": state.get("activeAdapterDirectory", str(directory_file))})
     r.record(receiverBootstrapPrepared=True)
     h.say("isolated-bootstrap-material", status="PREPARED_NOT_EXECUTED")
 
@@ -1061,7 +1064,7 @@ def ensure_binding_admission(h, r):
     projection of those exact references; ALLOWED/PENDING is never ACTIVE.
     """
     local = r.dir / "receiver/apps/deploy/local"
-    directory = r.dir / "receiver/public/adapter-directory.initial.json"
+    directory = Path(r.state.get("activeAdapterDirectory", str(r.dir / "receiver/public/adapter-directory.initial.json")))
     _set_env(h, local / ".env", {"APPLICATION_ADAPTER_DIRECTORY_FILE": str(directory)})
     env = {**os.environ, "KAILO_RUNTIME_DIR": str(local), "COMPOSE_PROJECT_NAME": r.state["project"]}
     h.run(["bash", "./start-core.sh", "--no-build"], cwd=str(local), env=env, log=r.log, timeout=600)
@@ -1179,6 +1182,158 @@ def ensure_seed_material(h, r):
     r.record(receiverSeedPrepared=True)
 
 
+def ensure_receiver_model_delivery(h, r):
+    """Read Core's frozen PENDING projection, then use original native proof delivery."""
+    state, source = r.state, r.state["source"]
+    local = r.dir / "receiver/apps/deploy/local"
+    native = r.dir / "receiver/knowledge"
+    directory = h.private_dir(native / "binding-models")
+    runtime = runtime_environment(h, r)
+    intent = state["adapterIntents"]["RECEIVER"]
+    binding = str(uuid.UUID(intent["bindingId"]))
+    generation = int(intent["generation"])
+    h.require(generation > 0, "receiver model generation missing")
+    db = state["project"] + "-core-db-1"
+    h.require(h.docker("inspect", "--format", '{{index .Config.Labels "com.docker.compose.project"}}', db).strip() == state["project"],
+              "receiver model database does not belong to this run")
+    query = ("BEGIN READ ONLY; SELECT p.model_projection FROM projection.application_runtime p "
+        "JOIN catalog.application_binding b ON b.id=p.binding_id "
+        f"WHERE p.binding_id='{binding}'::uuid AND p.generation={generation} "
+        "AND b.state IN ('PROVISIONING','ACTIVE') AND p.model_state IN ('PENDING','ACTIVE'); COMMIT;")
+    deadline = time.monotonic() + 600
+    while True:
+        raw = h.docker("exec", "-i", db, "psql", "-X", "-qAt", "-v", "ON_ERROR_STOP=1",
+            "-U", runtime["CORE_DB_USER"], "-d", runtime["CORE_DB_NAME"], stdin=query.encode()).strip()
+        if raw:
+            projection = json.loads(raw)
+            break
+        if time.monotonic() >= deadline:
+            raise h.Refused("original receiver workflow has not frozen its model projection; observe the same binding intent")
+        time.sleep(3)
+    h.require(projection["bindingId"] == binding and projection["generation"] == generation
+              and projection["tenantId"] == intent["tenantId"] and projection["gatewayPrincipalId"] == intent["servicePrincipalId"]
+              and projection["nativeScopeRef"] == state["knowledgeObjects"]["knowledgeBaseId"], "original model projection identity differs")
+    models = [{"routeResourceId": route, "nativeModelRef": state["knowledgeObjects"]["models"][role]["nativeModelRef"],
+               "baseUrl": state["knowledgeObjects"]["models"][role]["baseUrl"]} for role, route in state["modelRoutes"].items()]
+    value = {"projection": projection, "models": models}
+    input_file = directory / "input.json"
+    if input_file.is_file():
+        h.require(h.read_json(input_file) == value, "frozen receiver model projection changed")
+    else:
+        h.write_json(input_file, value)
+    recipe = hashlib.sha256((Path(source) / "tools/check.Dockerfile").read_bytes()).hexdigest()
+    image = h.docker("image", "inspect", "--format", "{{.Id}}", f"local/kailo-check:{recipe}").strip()
+    provision_env = h.env_file(directory / "provision.env", {"KNOWLEDGE_MODEL_DELIVERY_INPUT_FILE": str(input_file),
+        "KNOWLEDGE_MODEL_CREDENTIAL_FILE": str(directory / "model-credential.json"),
+        "KNOWLEDGE_ADAPTER_CONFIG_FILE": str(native / "adapter-delivery/adapter.json"),
+        "KNOWLEDGE_NATIVE_ADMIN_SESSION_FILE": str(native / "native.token"),
+        "KNOWLEDGE_NATIVE_ORIGIN": f"http://{state['knowledgeNative']['project']}-app-1:8080",
+        "KNOWLEDGE_DELIVERY_DIRECTORY": str(directory), "KNOWLEDGE_PROVISION_TIMEOUT_SECONDS": "30",
+        "KNOWLEDGE_BAO_TOKEN_TTL": "1h", "KNOWLEDGE_BAO_WRAP_TTL": "5m", "KNOWLEDGE_BAO_URL": runtime["OPENBAO_ADDR"],
+        "KNOWLEDGE_BAO_BOOTSTRAP_FILE": str(local / "secrets/openbao_init.json")})
+    def provision(operation):
+        h.docker("run", "--rm", "--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
+            "--cpus", "0.5", "--memory", "256m", "--memory-swap", "256m", "--pids-limit", "64",
+            "--user", f"{os.getuid()}:{os.getgid()}", "--network", f"{state['project']}_app",
+            "--mount", f"type=bind,src={source},dst=/src,readonly", "--mount", f"type=bind,src={r.dir},dst={r.dir}",
+            "--env-file", str(provision_env), "--entrypoint", "python3", image,
+            "/src/knowledge/fork/deploy/provision.py", operation, log=r.log, timeout=180)
+    if not (directory / "model-credential.json").is_file():
+        provision("model-reader")
+        bao = h.docker("inspect", "--format", "{{.Config.Image}}", state["project"] + "-openbao-1").strip()
+        h.require("@sha256:" in bao, "receiver model Agent image must be immutable")
+        h.docker("run", "--rm", "--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
+            "--cpus", "0.5", "--memory", "128m", "--memory-swap", "128m", "--pids-limit", "64",
+            "--user", f"{os.getuid()}:{os.getgid()}", "--network", f"{state['project']}_app",
+            "--mount", f"type=bind,src={directory},dst={directory}", "--entrypoint", "bao", bao,
+            "agent", "-config=" + str(directory / "model-agent.hcl"), log=r.log, timeout=180)
+    # The native credential endpoint recognizes ownership only after consuming
+    # this exact original projection. Its nonce proof remains authoritative.
+    _set_env(h, native / "native.env", {"KNOWLEDGE_MODEL_DELIVERY_INPUT_FILE": str(input_file)})
+    h.run(["bash", f"{source}/knowledge/fork/deploy/start.sh", "--native-env", str(native / "native.env"),
+        "--platform-model", str(local / ".env"), "--platform-adapter"],
+        env={**os.environ, "KAILO_RUNTIME_DIR": str(local), "COMPOSE_PROJECT_NAME": state["knowledgeNative"]["project"]}, log=r.log)
+    provision("model-delivery")
+    receipts = h.read_json(directory / "model-delivery-receipt.json")
+    h.require(len(receipts) == len(models) and all(row["bindingId"] == binding and row["generation"] == generation for row in receipts),
+              "original native model proof did not cover this generation")
+    entries = h.read_json(r.dir / "receiver/adapter-directory-input.json")
+    targets = [entry for entry in entries["adapters"] if entry["component"] == "knowledge"]
+    h.require(len(targets) == 1, "receiver adapter directory entry ambiguous")
+    targets[0]["modelCredentialDeliveries"] = receipts
+    material = h.write_json(directory / "adapter-directory-input.json", entries)
+    delivered = r.dir / "receiver/public/adapter-directory.models.json"
+    r.node("none", "tools/component-release/adapter-directory.mjs", "--input", str(material), "--out", str(delivered))
+    _set_env(h, local / ".env", {"APPLICATION_ADAPTER_DIRECTORY_FILE": str(delivered)})
+    r.record(activeAdapterDirectory=str(delivered))
+    receiver_env(h, r, {"RECEIVER_ADAPTER_DIRECTORY_FILE": str(delivered)})
+    h.run(["bash", "./start-core.sh", "--no-build"], cwd=str(local),
+        env={**os.environ, "KAILO_RUNTIME_DIR": str(local), "COMPOSE_PROJECT_NAME": state["project"]}, log=r.log, timeout=600)
+    ensure_receiver_links(h, r)
+    r.record(receiverModelProofDelivered=True)
+    h.say("isolated-receiver-model-proof", status="DELIVERED_AWAITING_ORIGINAL_ACTIVATION")
+
+
+def ensure_receiver_native_links(h, r):
+    container = r.state["knowledgeNative"]["project"] + "-app-1"
+    h.require(h.docker("inspect", "--format", '{{index .Config.Labels "com.docker.compose.project"}}', container).strip()
+              == r.state["knowledgeNative"]["project"], "receiver native container owner differs")
+    networks = json.loads(h.docker("inspect", "--format", "{{json .NetworkSettings.Networks}}", container))
+    if r.state["network"] not in networks:
+        h.docker("network", "connect", "--alias", "receiver-weknora", r.state["network"], container)
+    else:
+        h.require("receiver-weknora" in (networks[r.state["network"]].get("Aliases") or []), "receiver native network alias differs")
+
+
+def ensure_receiver_sync(h, r):
+    """Deliver the original native importer only after Resource creation completed."""
+    state = r.state
+    native = r.dir / "receiver/knowledge"
+    local = r.dir / "receiver/apps/deploy/local"
+    bootstrap = h.read_json(r.dir / "receiver/bootstrap.json")
+    h.require(bootstrap.get("setup") == "READY" and bootstrap.get("environmentId") == state["receiverEnvironmentId"],
+              "native importer requires the original READY bootstrap")
+    resources = [row for row in bootstrap["resources"] if row["role"] == "RECEIVER"]
+    h.require(len(resources) == 1 and resources[0]["bindingId"] == state["adapterIntents"]["RECEIVER"]["bindingId"],
+              "native importer Resource belongs to another binding")
+    source_plan = h.read_json(r.dir / "receiver/source-cells/adapter-plan.json")
+    receiver_plan = h.read_json(native / "adapter-plan.json")
+    runtime = runtime_environment(h, r)
+    def version(plan, key):
+        rows = [row for row in plan["actionVersions"] if row["actionKey"] == key]
+        h.require(len(rows) == 1, "native importer action version is ambiguous")
+        return rows[0]["actionVersion"]
+    manifest = h.read_json(Path(state["releaseDir"]) / "manifest.json")
+    actions = [row for row in manifest["actionDefinitions"] if row["actionKey"] in ("knowledge.sync_apply@v3", "knowledge.sync_retire@v3")]
+    h.require(len(actions) == 2 and all(row["meters"] == [] for row in actions),
+              "native importer meter mapping needs an explicit declaration for this candidate")
+    secret = native / "adapter-delivery/oidc_client_secret"
+    values = {"core_pep_url": f"http://{state['project']}-core-bff-1:{runtime['SERVICE_CONTAINER_PORT']}/service/v1/adapter/pep_check",
+        "oidc_token_url": runtime["OIDC_ISSUER"] + "/protocol/openid-connect/token", "oidc_client_id": receiver_plan["clientId"],
+        "oidc_client_secret_file": str(secret), "binding_id": receiver_plan["bindingId"], "receiver_resource_id": resources[0]["resourceId"],
+        "native_tenant_id": state["knowledgeObjects"]["tenantId"], "native_knowledge_base_id": state["knowledgeObjects"]["knowledgeBaseId"],
+        "timeout_ms": 30000, "max_body_bytes": 1048576,
+        "list_action_version": version(source_plan, "file_storage.list@v2"), "read_action_version": version(source_plan, "file_storage.read@v2"),
+        "apply_action_key": "knowledge.sync_apply@v3", "apply_action_version": version(receiver_plan, "knowledge.sync_apply@v3"),
+        "retire_action_key": "knowledge.sync_retire@v3", "retire_action_version": version(receiver_plan, "knowledge.sync_retire@v3"),
+        "usage_measurements": []}
+    original = (Path(state["source"]) / "knowledge/config/config.yaml").read_text()
+    h.require(not re.search(r"^file_storage_sync\s*:", original, re.MULTILINE), "native config already declares importer ownership")
+    rendered = original + "\nfile_storage_sync: " + json.dumps(values, ensure_ascii=False) + "\n"
+    path = native / "file-storage-sync.yaml"
+    if path.is_file():
+        h.require(path.read_text() == rendered, "native importer retained ownership differs")
+    else:
+        h.write_private(path, rendered)
+    _set_env(h, native / "native.env", {"KNOWLEDGE_FILE_STORAGE_SYNC_CONFIG_FILE": str(path),
+        "KNOWLEDGE_FILE_STORAGE_SYNC_OIDC_SECRET_FILE": str(secret)})
+    h.run(["bash", f"{state['source']}/knowledge/fork/deploy/start.sh", "--native-env", str(native / "native.env"),
+        "--platform-model", str(local / ".env"), "--platform-adapter", "--file-storage-sync"],
+        env={**os.environ, "KAILO_RUNTIME_DIR": str(local), "COMPOSE_PROJECT_NAME": state["knowledgeNative"]["project"]}, log=r.log)
+    ensure_receiver_native_links(h, r)
+    r.record(receiverNativeSyncDelivered=True)
+
+
 def drive(r, args, runtime_env, declaration, h):
     declare_native(h, r)
     s = r.state
@@ -1216,10 +1371,16 @@ def drive(r, args, runtime_env, declaration, h):
     ensure_binding_admission(h, r)
     ensure_native_action_delivery(h, r)
     ensure_seed_material(h, r)
+    if not (receiver_dir / "native.done").is_file():
+        receiver(h, r, "native")
+    ensure_receiver_model_delivery(h, r)
+    receiver(h, r, "bootstrap")
+    ensure_receiver_sync(h, r)
+    receiver(h, r, "seed")
     r.record(blockedAfterNative=(
         "receiver execution not complete: original HUMAN binding admission and fixed per-action "
-        "native-action delivery are implemented; native/governed seed, forward adapter, "
-        "native activation/model credential proof, observe/inputs and driver execution remain. "
+        "native-action delivery, native seed, native model proof and bootstrap are implemented; "
+        "governed seed and native importer delivery are implemented; forward observation, inputs and driver execution remain. "
         "Production registration also requires cells@2.0.0 APPROVED in the production Catalog"))
     raise h.Refused("knowledge: isolated native and adapter delivery inputs prepared; receiver execution "
                     f"is not complete (auto-state.json blockedAfterNative; {manifest['componentTypeKey']}@{manifest['version']})")

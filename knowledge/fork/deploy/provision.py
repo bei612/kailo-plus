@@ -303,6 +303,44 @@ def model_input(env):
     return value
 
 
+def model_adapter_paths(env, projection):
+    """Exact same-binding reader scope; never absorb paths from a live policy."""
+    configured = env.get("KNOWLEDGE_ADAPTER_CONFIG_FILE")
+    if not configured:
+        return set()
+    config = json.loads(private_file(configured))
+    validation = config["management"]["validation"]
+    digest = hashlib.sha256(json.dumps(validation["normalizedConfig"], sort_keys=True,
+        separators=(",", ":"), ensure_ascii=False).encode()).hexdigest()
+    if (config["bindingId"] != projection["bindingId"] or config["tenantId"] != projection["tenantId"]
+        or validation["bindingVersion"] != projection["generation"]
+        or validation["servicePrincipalId"] != projection["gatewayPrincipalId"]
+        or validation["nativeScopeRef"] != projection["nativeScopeRef"]
+        or digest != projection["configDigest"]
+        or config["actionTokenAudience"] != projection["serviceSecretRef"]["audience"]):
+        raise ConfigurationError("model reader: adapter binding/generation/authority differs")
+    namespace = "tenants/" + projection["tenantId"]
+    model = projection["serviceSecretRef"]["locator"].split("/")
+    if len(model) != 6 or model[:2] != namespace.split("/") or model[3:] != [
+        "application-model", projection["bindingId"], str(projection["generation"])]:
+        raise ConfigurationError("model reader: exact generation model path required")
+    paths = set()
+    for ref in validation["secretDeliveries"]:
+        parts = ref["locator"].split("/")
+        if (len(parts) != 6 or parts[:2] != model[:2] or parts[3:] != ["application-binding", projection["bindingId"], ref["secretKey"]]
+            or any(not re.fullmatch(r"[A-Za-z0-9_-]+", part) for part in parts)
+            or type(ref["version"]) is not int or ref["version"] <= 0
+            or ref["audience"] != config["actionTokenAudience"]):
+            raise ConfigurationError("model reader: foreign or unbounded binding SecretRef")
+        path = parts[2] + "/data/" + "/".join(parts[3:])
+        if path in paths:
+            raise ConfigurationError("model reader: duplicate binding SecretRef")
+        paths.add(path)
+    if not paths:
+        raise ConfigurationError("model reader: binding SecretRefs missing")
+    return paths
+
+
 def model_reader(env):
     """Register the existing service reader; Agent alone fetches the fixed KV value."""
     value = model_input(env)
@@ -332,13 +370,14 @@ def model_reader(env):
     auth = api.request("GET", "/v1/sys/auth")["data"]
     if auth.get("approle/", {}).get("type") != "approle":
         raise ConfigurationError("model reader: existing AppRole auth required")
-    policy = f'path "{mount}/data/{path}" {{ capabilities = ["read"] }}\n'
+    binding_paths = model_adapter_paths(env, projection)
+    all_paths = binding_paths | {mount + "/data/" + path}
+    for item in all_paths:
+        exact(mounts[item.split("/")[0] + "/"], {"type": "kv", "options": {"version": "2"}}, "model reader KV mount")
+    policy = "".join(f'path "{item}" {{ capabilities = ["read"] }}\n' for item in sorted(all_paths))
+    base_policy = "".join(f'path "{item}" {{ capabilities = ["read"] }}\n' for item in sorted(binding_paths))
     policy_path = "/v1/sys/policies/acl/" + role
-    current = api.request("GET", policy_path, missing=True)
-    if current is None:
-        api.request("PUT", policy_path, {"policy": policy})
-        current = api.request("GET", policy_path)
-    exact(current["data"], {"policy": policy}, "model reader policy")
+    existing_policy = api.request("GET", policy_path, missing=True)
     ttl = required(env, "KNOWLEDGE_BAO_TOKEN_TTL")
     ttl_match = re.fullmatch(r"([1-9][0-9]*)(s|m|h)", ttl)
     if not ttl_match:
@@ -347,12 +386,25 @@ def model_reader(env):
     role_path = "/v1/auth/approle/role/" + role
     wanted = {"bind_secret_id": True, "secret_id_num_uses": 1, "token_policies": [role],
               "token_ttl": ttl, "token_max_ttl": ttl}
-    current = api.request("GET", role_path, missing=True)
-    if current is None:
+    exact_role = {**wanted, "token_ttl": ttl_seconds, "token_max_ttl": ttl_seconds}
+    current_role = api.request("GET", role_path, missing=True)
+    # A combined reader upgrades only the exact already delivered binding
+    # policy, after the existing role has been checked. No unknown capability,
+    # previous generation or unrelated path is retained from live state.
+    if binding_paths:
+        if existing_policy is None or current_role is None or existing_policy["data"].get("policy") not in (base_policy, policy):
+            raise ConfigurationError("model reader: existing binding reader drifted")
+        exact(current_role["data"], exact_role, "model reader role before merge")
+    elif existing_policy is not None:
+        exact(existing_policy["data"], {"policy": policy}, "model reader policy")
+    if current_role is not None:
+        exact(current_role["data"], exact_role, "model reader role")
+    if existing_policy is None or existing_policy["data"].get("policy") != policy:
+        api.request("PUT", policy_path, {"policy": policy})
+    if current_role is None:
         api.request("POST", role_path, wanted)
-        current = api.request("GET", role_path)
-    exact(current["data"], {"bind_secret_id": True, "secret_id_num_uses": 1, "token_policies": [role]}, "model reader role")
-    exact(current["data"], {"token_ttl": ttl_seconds, "token_max_ttl": ttl_seconds}, "model reader TTL")
+    exact(api.request("GET", policy_path)["data"], {"policy": policy}, "model reader policy after delivery")
+    exact(api.request("GET", role_path)["data"], exact_role, "model reader role after delivery")
     role_id = api.request("GET", role_path + "/role-id")["data"]["role_id"]
     directory = delivery_directory(env)
     wrapped = api.request("POST", role_path + "/secret-id", {},
