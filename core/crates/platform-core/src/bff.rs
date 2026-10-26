@@ -441,6 +441,7 @@ pub fn router(state: BffState) -> Router {
                 axum::extract::DefaultBodyLimit::max(crate::feedback::MAX_REQUEST_BYTES),
             ),
         )
+        .exposed_route("/api/v1/tenant/profile", get(crate::tenant_profile::read))
         .exposed_route("/api/v1/platform/feedback", get(crate::feedback::list))
         .exposed_route(
             "/api/v1/platform/feedback/{feedback_id}",

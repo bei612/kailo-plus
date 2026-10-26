@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/tenant_profile_view.schema.json",
+  "title": "TenantProfileView",
+  "description": "DD-158(3)：GET /api/v1/tenant/profile。会话 Tenant 的显示名、图标与版本，全体 ACTIVE 成员可读；本人有 Tenant manage 时给出 updateActionKey（tenant.profile.update），提交仍由 Core 重新准入。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "name",
+    "version"
+  ],
+  "properties": {
+    "name": {
+      "type": "string"
+    },
+    "icon": {
+      "type": "string"
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "updateActionKey": {
+      "type": "string"
+    }
+  }
+}

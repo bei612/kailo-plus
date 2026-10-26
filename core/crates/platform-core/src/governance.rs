@@ -503,6 +503,8 @@ pub enum Semantic {
     /// DD-123：Tenant admin 直接设置本 Tenant 的平台额度；SYNC，派发只写 OpenMeter
     /// entitlement，先落意图，结果不明只对账。
     TenantQuotaSet,
+    /// DD-158(3): display profile CAS, completed in admission.
+    TenantProfileUpdate,
     WorkspaceMemberAdd,
     WorkspaceMemberRevoke,
     TenantMemberRevoke,
@@ -598,6 +600,7 @@ impl Semantic {
             "tenant.restore" => Self::TenantRestore,
             "tenant.delete" => Self::TenantDelete,
             "tenant.quota.set" => Self::TenantQuotaSet,
+            "tenant.profile.update" => Self::TenantProfileUpdate,
             "workspace.member.add" => Self::WorkspaceMemberAdd,
             "workspace.member.revoke" => Self::WorkspaceMemberRevoke,
             "tenant.member.revoke" => Self::TenantMemberRevoke,
@@ -712,6 +715,7 @@ impl Semantic {
     fn completes_in_admission(self) -> bool {
         self.is_capability_contract()
             || self == Self::AgentTeamUpdate
+            || self == Self::TenantProfileUpdate
             || matches!(
                 self,
                 Self::SkillVersionPublish | Self::SkillVersionRetire | Self::SkillDefinitionDisable
@@ -767,6 +771,7 @@ impl Semantic {
                     | Self::ConversationOpen
                     | Self::TenantDelete
                     | Self::TenantQuotaSet
+                    | Self::TenantProfileUpdate
                     | Self::AgentDefinitionCreate
                     | Self::LlmRouteCreate
                     | Self::LlmRouteDisable
@@ -832,6 +837,7 @@ impl Semantic {
                     | Self::TenantSuspend
                     | Self::TenantRestore
                     | Self::TenantQuotaSet
+                    | Self::TenantProfileUpdate
                     | Self::AgentVersionPublish
                     | Self::AgentVersionRetire
                     | Self::AgentInstallationCreate
@@ -907,6 +913,7 @@ pub struct Params {
     pub resource_create: Option<Value>,
     /// tenant.quota.set 的规范化参数（DD-123）：额度项与每期上限
     pub tenant_quota_setting: Option<Value>,
+    pub tenant_profile: Option<Value>,
     /// DD-135(3)：skill.version.create 的一次性上传引用、规范 digest 与能力需求
     pub skill_version_upload: Option<Value>,
     /// DD-131(2)：agent.definition.import 的本会话上传引用、包 digest 与重选的运行配置
@@ -938,6 +945,9 @@ impl Params {
         }
         if let Some(input) = &self.resource_create {
             m.insert("resourceCreate".into(), input.clone());
+        }
+        if let Some(profile) = &self.tenant_profile {
+            m.insert("tenantProfile".into(), profile.clone());
         }
         if let Some(setting) = &self.tenant_quota_setting {
             m.insert("tenantQuotaSetting".into(), setting.clone());
@@ -1111,6 +1121,7 @@ impl Params {
             application_binding_create: v.get("applicationBindingCreate").cloned(),
             resource_create: v.get("resourceCreate").cloned(),
             tenant_quota_setting: v.get("tenantQuotaSetting").cloned(),
+            tenant_profile: v.get("tenantProfile").cloned(),
             skill_version_upload: v.get("skillVersionUpload").cloned(),
             agent_definition_import: v.get("agentDefinitionImport").cloned(),
             agent_definition_export: v.get("agentDefinitionExport").cloned(),
@@ -1269,6 +1280,26 @@ mod workspace_channel_tests {
 }
 
 #[cfg(test)]
+mod tenant_profile_command_tests {
+    use super::*;
+    #[test]
+    fn profile_uses_closed_session_target_and_explicit_confirmation() {
+        let base = json!({"actionKey":"tenant.profile.update","idempotencyKey":Uuid::new_v4(),"resourceVersion":1,"explicitConfirmation":true,"tenantProfile":{"name":"  社区  "}});
+        let command: contracts::ActionCommand=serde_json::from_value(base.clone()).unwrap();
+        let params=parse_command(Semantic::TenantProfileUpdate,&command).unwrap();
+        assert_eq!(params.tenant_profile,Some(json!({"name":"社区"})));
+        assert_eq!(Params::from_json(&params.to_json()),Some(params));
+        assert!(Semantic::TenantProfileUpdate.completes_in_admission());
+        assert!(Semantic::TenantProfileUpdate.serializes_on_tenant());
+        for (key,value) in [("tenantId",json!(Uuid::new_v4())),("workspaceId",json!(Uuid::new_v4())),("explicitConfirmation",json!(false)),("resourceVersion",json!(0)),("name",json!("extra"))] {
+            let mut bad=base.clone();bad[key]=value;
+            assert!(parse_command(Semantic::TenantProfileUpdate,&serde_json::from_value(bad).unwrap()).is_err());
+        }
+        assert!(parse_command(Semantic::TenantQuotaSet,&command).is_err());
+    }
+}
+
+#[cfg(test)]
 mod tenant_quota_command_tests {
     use super::{parse_command, Params, Semantic};
 
@@ -1358,6 +1389,9 @@ fn parse_command(sem: Semantic, cmd: &contracts::ActionCommand) -> Result<Params
         return Err(bad());
     }
     if cmd.workspace_update.is_some() != (sem == Semantic::WorkspaceUpdate) {
+        return Err(bad());
+    }
+    if cmd.tenant_profile.is_some() != (sem == Semantic::TenantProfileUpdate) {
         return Err(bad());
     }
     if cmd.tenant_quota_setting.is_some() != (sem == Semantic::TenantQuotaSet) {
@@ -1492,6 +1526,7 @@ fn parse_command(sem: Semantic, cmd: &contracts::ActionCommand) -> Result<Params
             .map(serde_json::to_value)
             .transpose()
             .map_err(|_| bad())?,
+        tenant_profile: cmd.tenant_profile.as_ref().map(crate::tenant_profile::normalize).transpose()?,
         tenant_quota_setting: cmd
             .tenant_quota_setting
             .as_ref()
@@ -1528,6 +1563,10 @@ fn parse_command(sem: Semantic, cmd: &contracts::ActionCommand) -> Result<Params
             .map(agent_team::normalize_team)
             .transpose()?,
     };
+    if sem == Semantic::TenantProfileUpdate {
+        crate::tenant_profile::validate_params(&p)?;
+        return Ok(p);
+    }
     // DD-135（05 §2.14）：Skill 动作的参数各为闭集，其他动作不得携带上传引用。
     if sem.is_skill() {
         skill_catalog::validate_params(sem, &p)?;
@@ -1984,6 +2023,7 @@ fn parse_command(sem: Semantic, cmd: &contracts::ActionCommand) -> Result<Params
         | Semantic::ApplicationBindingCreate
         | Semantic::ApplicationBindingDisable
         | Semantic::ResourceCreate
+        | Semantic::TenantProfileUpdate
         | Semantic::AgentDefinitionImport
         | Semantic::AgentDefinitionExport
         // DD-135：已在上方按各自闭集校验并返回
@@ -2157,6 +2197,9 @@ async fn resolve_target(
         }
         Semantic::LlmRouteDisable => {
             crate::model_route::disable::target(conn, tenant, def, p, frozen, lock).await
+        }
+        Semantic::TenantProfileUpdate => {
+            crate::tenant_profile::target(conn, tenant, def, p, frozen, lock).await
         }
         Semantic::TenantQuotaSet => {
             crate::tenant_quota::target(conn, tenant, def, p, frozen, lock).await
@@ -3949,6 +3992,7 @@ impl Governance {
             agent_team_export: None,
             agent_team: None,
             tenant_quota_setting: None,
+            tenant_profile: None,
             skill_version_upload: None,
         };
         let mut conn = self.pool.acquire().await?;
@@ -4061,6 +4105,7 @@ impl Governance {
             agent_team_export: None,
             agent_team: None,
             tenant_quota_setting: None,
+            tenant_profile: None,
             skill_version_upload: None,
         };
         let mut conn = self.pool.acquire().await?;
@@ -5634,6 +5679,7 @@ impl Governance {
             || sem == Semantic::AgentDefinitionImport
             || sem == Semantic::AgentDefinitionExport
             || sem == Semantic::WorkspaceJoin
+            || sem == Semantic::TenantProfileUpdate
             || sem.is_application_binding()
             || sem.is_installation_permission()
             || sem.is_capability_contract()
@@ -5670,6 +5716,7 @@ impl Governance {
             || sem == Semantic::AgentDefinitionImport
             || sem == Semantic::AgentDefinitionExport
             || sem == Semantic::WorkspaceJoin
+            || sem == Semantic::TenantProfileUpdate
             || sem == Semantic::WorkspaceUpdate
             || sem == Semantic::WorkspaceDelete
             || sem.is_application_binding()
@@ -5682,6 +5729,7 @@ impl Governance {
                 sem,
                 Semantic::TenantDelete
                     | Semantic::TenantQuotaSet
+            | Semantic::TenantProfileUpdate
                     | Semantic::AgentDefinitionCreate
                     | Semantic::LlmRouteCreate
                     | Semantic::LlmRouteDisable
@@ -5976,6 +6024,11 @@ impl Governance {
                     crate::model_route::disable::prewrite(tx, ae).await?;
                     Ok(None)
                 }
+                Semantic::TenantProfileUpdate => {
+                    crate::tenant_profile::prewrite(tx, ae, def, params).await?;
+                    self.record_local_outcome(tx, ae, def, "TENANT_PROFILE_UPDATED", Vec::new()).await?;
+                    Ok(None)
+                }
                 Semantic::TenantQuotaSet => {
                     crate::tenant_quota::prewrite(self, tx, ae, params).await?;
                     Ok(None)
@@ -6244,6 +6297,7 @@ impl Governance {
             | Semantic::TenantSuspend
             | Semantic::TenantRestore
             | Semantic::TenantQuotaSet
+            | Semantic::TenantProfileUpdate
             | Semantic::SkillDefinitionCreate | Semantic::SkillVersionCreate | Semantic::SkillVersionPublish
             | Semantic::SkillVersionRetire | Semantic::SkillDefinitionDisable
             | Semantic::SkillDefinitionShare | Semantic::SkillDefinitionUnshare
@@ -7918,6 +7972,7 @@ impl Governance {
                 | Semantic::TenantSuspend
                 | Semantic::TenantRestore
                 | Semantic::TenantQuotaSet
+            | Semantic::TenantProfileUpdate
                 | Semantic::SkillDefinitionCreate | Semantic::SkillVersionCreate | Semantic::SkillVersionPublish
                 | Semantic::SkillVersionRetire | Semantic::SkillDefinitionDisable
                 | Semantic::SkillDefinitionShare | Semantic::SkillDefinitionUnshare
