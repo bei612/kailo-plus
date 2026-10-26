@@ -241,7 +241,14 @@ describe("Desktop local checkout in the restored Projects consumer",()=>{
     await click(menuChoice("Clone"));
     await vi.waitFor(()=>expect(ui.textContent).toContain("Local readme"));
     await activateTab(ui,"Files");
-    await vi.waitFor(()=>expect(ui.querySelector('[aria-label="Open file file-0250.txt"]')).not.toBeNull());
+    await vi.waitFor(()=>expect(ui.querySelector('[aria-label^="Show next "]')).not.toBeNull());
+    // Traverse the original paginated list as the user does; file 251 is not
+    // initially mounted, independently of the native eager-preview limit.
+    while (!ui.querySelector('[aria-label="Open file file-0250.txt"]')) {
+      const next=ui.querySelector<HTMLElement>('[aria-label^="Show next "]');
+      expect(next).not.toBeNull();
+      await click(next!);
+    }
     expect(localControls(ui).textContent).toContain("Local");
     await click(ui.querySelector<HTMLElement>('[aria-label="Open file file-0250.txt"]')!);
     await vi.waitFor(()=>expect(ui.querySelector('[data-testid="project-repository-file"]')?.textContent).toContain("Local file 251 before pull"));
