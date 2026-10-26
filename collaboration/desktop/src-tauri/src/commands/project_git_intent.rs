@@ -74,8 +74,11 @@ impl Journal {
         }
         Ok(None)
     }
+    /// Only an exact original send outcome can preserve a known-unsent retry.
     pub fn known_unsent(&self, intent: &Intent) -> Result<bool, WriteError> {
-        let Some(event) = intent.event.as_deref() else { return Ok(false); };
+        let Some(event) = intent.event.as_deref() else {
+            return Ok(false);
+        };
         self.0.query_row(
             "SELECT EXISTS(SELECT 1 FROM publication_evidence WHERE key=?1 AND event=?2 AND phase='EVENT_OUTCOME' AND outcome='NOT_DELIVERED')",
             params![intent.key, event], |row| row.get(0),
@@ -83,11 +86,19 @@ impl Journal {
     }
     pub fn save(&self, intent: &Intent, phase: &str) -> Result<(), WriteError> {
         if let Some(epoch) = &intent.event_publication_epoch {
-            let matches = intent.event.as_deref().and_then(|raw| Event::from_json(raw).ok())
-                .is_some_and(|event| event.verify().is_ok()
-                    && buzz_core_pkg::publication::publication_epoch(&event)
-                        .is_ok_and(|signed| signed.is_some_and(|signed| signed.to_string() == *epoch)));
-            if !matches { return Err(WriteError::at(UNKNOWN, &intent.key)); }
+            let matches = intent
+                .event
+                .as_deref()
+                .and_then(|raw| Event::from_json(raw).ok())
+                .is_some_and(|event| {
+                    event.verify().is_ok()
+                        && buzz_core_pkg::publication::publication_epoch(&event).is_ok_and(
+                            |signed| signed.is_some_and(|signed| signed.to_string() == *epoch),
+                        )
+                });
+            if !matches {
+                return Err(WriteError::at(UNKNOWN, &intent.key));
+            }
         }
         let payload =
             serde_json::to_string(intent).map_err(|_| WriteError::at(UNKNOWN, &intent.key))?;
@@ -196,20 +207,36 @@ fn same_publication_retry(old: &Intent, next: &Intent, phase: &str, known_unsent
         .zip(next.event.as_deref())
         .and_then(|(a, b)| Event::from_json(a).ok().zip(Event::from_json(b).ok()));
     events.is_some_and(|(a, b)| {
-        let epochs = buzz_core_pkg::publication::publication_epoch(&a).ok()
+        let epochs = buzz_core_pkg::publication::publication_epoch(&a)
+            .ok()
             .zip(buzz_core_pkg::publication::publication_epoch(&b).ok());
         let epoch_matches = epochs.is_some_and(|(a, b)| match (a, b) {
-            (None, Some(b)) => known_unsent && old.event_publication_epoch.is_none()
-                && next.event_publication_epoch.as_deref() == Some(b.to_string().as_str()),
-            (Some(a), Some(b)) => a == b
-                && old.event_publication_epoch.as_deref() == Some(a.to_string().as_str())
-                && old.event_publication_epoch == next.event_publication_epoch,
+            (None, Some(b)) => {
+                known_unsent
+                    && old.event_publication_epoch.is_none()
+                    && next.event_publication_epoch.as_deref() == Some(b.to_string().as_str())
+            }
+            (Some(a), Some(b)) => {
+                a == b
+                    && old.event_publication_epoch.as_deref() == Some(a.to_string().as_str())
+                    && old.event_publication_epoch == next.event_publication_epoch
+            }
             _ => false,
         });
-        let payload_tags = |event: &Event| event.tags.iter()
-            .filter(|tag| tag.as_slice().first().is_none_or(|name| name != buzz_core_pkg::publication::PUBLICATION_EPOCH_TAG))
-            .cloned().collect::<Vec<_>>();
-        epoch_matches && a.verify().is_ok()
+        let payload_tags = |event: &Event| {
+            event
+                .tags
+                .iter()
+                .filter(|tag| {
+                    tag.as_slice().first().is_none_or(|name| {
+                        name != buzz_core_pkg::publication::PUBLICATION_EPOCH_TAG
+                    })
+                })
+                .cloned()
+                .collect::<Vec<_>>()
+        };
+        epoch_matches
+            && a.verify().is_ok()
             && b.verify().is_ok()
             && a.kind.as_u16() == 1631
             && b.kind == a.kind

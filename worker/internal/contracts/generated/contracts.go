@@ -8593,6 +8593,9 @@ type ModerationRestrictionView struct {
 type NativeCommunityFacts struct {
 	// 该 Tenant 的 Community host，可能带非默认端口
 	CommunityHost string `json:"communityHost"`
+	// DD-81/160：仅从当前 ACTIVE Community 的可信 NIP-11、实际 ready 的 writer policy 读取的规范 publication
+	// epoch。Native 新签 1631 前冻结并作为唯一 kailo:publication 标签签名；缺失不猜测或回填历史意图。
+	PublicationEpoch *string `json:"publicationEpoch,omitempty"`
 	// 读取上述部署事实时 Core 的 Unix 秒时刻；Native 仅以本次可信读的时刻判断原签事件是否严格超过窗口，不信任 Webview now 或设备跳钟。
 	PublishResultObservedAtUnixSeconds *int64 `json:"publishResultObservedAtUnixSeconds,omitempty"`
 	// DD-81：与 Core 发布对账器同源的 PUBLISH_RESULT_SETTLE_SECONDS 部署事实，必须为正且不小于 Relay 时间漂移窗口；缺失时不得猜测未送达。

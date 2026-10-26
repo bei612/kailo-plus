@@ -26,7 +26,10 @@ fn owner_status_uses_verified_review_and_keeps_original_tags() {
     let (keys, author, request, review) = fixture();
     let event = merged_status(&keys, &request, &review, None, &"b".repeat(40)).unwrap();
     assert_eq!(event.kind.as_u16(), 1631);
-    assert_eq!(publication_epoch(&event).unwrap(), Some(uuid::Uuid::from_u128(42)));
+    assert_eq!(
+        publication_epoch(&event).unwrap(),
+        Some(uuid::Uuid::from_u128(42))
+    );
     assert_eq!(event.pubkey, keys.public_key());
     assert!(event.verify().is_ok());
     assert_eq!(field(&event, "merge-commit"), Some("b".repeat(40).as_str()));
@@ -232,8 +235,15 @@ impl PublicationIo for Io {
             Some(self.community.as_str()),
             "Community must be durable before POST"
         );
-        assert_eq!(frozen.event_publication_epoch.as_deref(), self.epoch.map(|epoch| epoch.to_string()).as_deref());
-        assert_eq!(publication_epoch(event).unwrap(), self.epoch, "signed epoch must be durable before POST");
+        assert_eq!(
+            frozen.event_publication_epoch.as_deref(),
+            self.epoch.map(|epoch| epoch.to_string()).as_deref()
+        );
+        assert_eq!(
+            publication_epoch(event).unwrap(),
+            self.epoch,
+            "signed epoch must be durable before POST"
+        );
         assert_eq!(frozen.event_result.as_deref(), Some("DISPATCHED"));
         self.submitted.lock().unwrap().push(event.clone());
         if self.retire_on_submit {
@@ -262,7 +272,16 @@ impl PublicationIo for Io {
 }
 fn consumer_fixture(path: &Path, outcome: &str) -> (Io, Event) {
     let (keys, _, request, review) = fixture();
-    let event = merged_status_at(&keys, &request, &review, None, &"b".repeat(40), 100, Some(uuid::Uuid::from_u128(42))).unwrap();
+    let event = merged_status_at(
+        &keys,
+        &request,
+        &review,
+        None,
+        &"b".repeat(40),
+        100,
+        Some(uuid::Uuid::from_u128(42)),
+    )
+    .unwrap();
     let frozen = Intent {
         key: uuid::Uuid::new_v4().to_string(),
         request,
@@ -771,11 +790,23 @@ fn trusted_epoch_parse_rejects_noncanonical_or_malformed_values_without_default(
     let base = "https://tenant.example";
     let mut body = json!({"relayUrl":"wss://tenant.example", "publishResultSettleSeconds":901,
         "publishResultObservedAtUnixSeconds":1900000000});
-    assert_eq!(PublicationFacts::parse(&body, base).unwrap().unwrap().epoch, None);
+    assert_eq!(
+        PublicationFacts::parse(&body, base).unwrap().unwrap().epoch,
+        None
+    );
     let epoch = uuid::Uuid::from_u128(42);
     body["publicationEpoch"] = json!(epoch.to_string());
-    assert_eq!(PublicationFacts::parse(&body, base).unwrap().unwrap().epoch, Some(epoch));
-    for value in [json!(null), json!(0), json!(""), json!("not-an-epoch"), json!("00000000-0000-0000-0000-00000000002A")] {
+    assert_eq!(
+        PublicationFacts::parse(&body, base).unwrap().unwrap().epoch,
+        Some(epoch)
+    );
+    for value in [
+        json!(null),
+        json!(0),
+        json!(""),
+        json!("not-an-epoch"),
+        json!("00000000-0000-0000-0000-00000000002A"),
+    ] {
         body["publicationEpoch"] = value;
         assert!(PublicationFacts::parse(&body, base).is_err());
     }
@@ -783,70 +814,158 @@ fn trusted_epoch_parse_rejects_noncanonical_or_malformed_values_without_default(
 
 #[tokio::test]
 async fn epoch_fence_preserves_old_unknown_without_backfill_and_accepts_positive_receipt() {
-    for case in ["missing_signed", "missing_frozen", "changed_epoch", "missing_current", "legacy_negative", "legacy_positive"] {
-        let temp = tempfile::tempdir().unwrap(); let path = temp.path().join("journal.sqlite");
+    for case in [
+        "missing_signed",
+        "missing_frozen",
+        "changed_epoch",
+        "missing_current",
+        "legacy_negative",
+        "legacy_positive",
+    ] {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("journal.sqlite");
         let (mut io, review) = consumer_fixture(&path, "DISPATCHED");
-        if matches!(case, "missing_signed" | "legacy_negative" | "legacy_positive") {
-            io.frozen.event = Some(merged_status_at(&io.keys, &io.frozen.request, &review, None, &"b".repeat(40), 100, None).unwrap().as_json());
+        if matches!(
+            case,
+            "missing_signed" | "legacy_negative" | "legacy_positive"
+        ) {
+            io.frozen.event = Some(
+                merged_status_at(
+                    &io.keys,
+                    &io.frozen.request,
+                    &review,
+                    None,
+                    &"b".repeat(40),
+                    100,
+                    None,
+                )
+                .unwrap()
+                .as_json(),
+            );
             io.frozen.event_publication_epoch = None;
         }
-        if case == "missing_frozen" { io.frozen.event_publication_epoch = None; }
-        if case == "changed_epoch" { io.epoch = Some(uuid::Uuid::from_u128(43)); }
-        if case == "missing_current" { io.epoch = None; }
-        if case == "legacy_negative" { io.frozen.event_result = Some("NOT_DELIVERED".into()); }
-        if case == "legacy_positive" { io.observed = Some(Event::from_json(io.frozen.event.as_ref().unwrap()).unwrap()); }
-        rusqlite::Connection::open(&path).unwrap().execute("UPDATE intent SET payload=?1", [serde_json::to_string(&io.frozen).unwrap()]).unwrap();
+        if case == "missing_frozen" {
+            io.frozen.event_publication_epoch = None;
+        }
+        if case == "changed_epoch" {
+            io.epoch = Some(uuid::Uuid::from_u128(43));
+        }
+        if case == "missing_current" {
+            io.epoch = None;
+        }
+        if case == "legacy_negative" {
+            io.frozen.event_result = Some("NOT_DELIVERED".into());
+        }
+        if case == "legacy_positive" {
+            io.observed = Some(Event::from_json(io.frozen.event.as_ref().unwrap()).unwrap());
+        }
+        rusqlite::Connection::open(&path)
+            .unwrap()
+            .execute(
+                "UPDATE intent SET payload=?1",
+                [serde_json::to_string(&io.frozen).unwrap()],
+            )
+            .unwrap();
         let mut intent = io.frozen.clone();
         let result = ensure_status_with(&io, &path, &mut intent, &review).await;
-        if case == "legacy_positive" { assert!(result.unwrap().is_some()); }
-        else { assert_eq!(result.unwrap_err().code, UNKNOWN, "{case}"); }
+        if case == "legacy_positive" {
+            assert!(result.unwrap().is_some());
+        } else {
+            assert_eq!(result.unwrap_err().code, UNKNOWN, "{case}");
+        }
         assert!(io.submitted.lock().unwrap().is_empty(), "{case}");
-        let saved = Journal::open(&path).unwrap().find(&intent.key, &intent.request).unwrap().unwrap();
+        let saved = Journal::open(&path)
+            .unwrap()
+            .find(&intent.key, &intent.request)
+            .unwrap()
+            .unwrap();
         assert_eq!(saved.event, io.frozen.event, "{case}");
-        assert_eq!(saved.event_publication_epoch, io.frozen.event_publication_epoch, "no backfill: {case}");
+        assert_eq!(
+            saved.event_publication_epoch, io.frozen.event_publication_epoch,
+            "no backfill: {case}"
+        );
     }
 }
 
 #[tokio::test]
 async fn new_signed_attempt_requires_trusted_epoch_and_journal_rejects_epoch_drift() {
     for available in [false, true] {
-        let temp = tempfile::tempdir().unwrap(); let path = temp.path().join("journal.sqlite");
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("journal.sqlite");
         let (mut io, review) = consumer_fixture(&path, "DISPATCHED");
-        io.frozen.event = None; io.frozen.event_result = None;
-        io.frozen.event_community_id = None; io.frozen.event_publication_epoch = None;
-        if !available { io.epoch = None; }
-        rusqlite::Connection::open(&path).unwrap().execute("UPDATE intent SET payload=?1", [serde_json::to_string(&io.frozen).unwrap()]).unwrap();
+        io.frozen.event = None;
+        io.frozen.event_result = None;
+        io.frozen.event_community_id = None;
+        io.frozen.event_publication_epoch = None;
+        if !available {
+            io.epoch = None;
+        }
+        rusqlite::Connection::open(&path)
+            .unwrap()
+            .execute(
+                "UPDATE intent SET payload=?1",
+                [serde_json::to_string(&io.frozen).unwrap()],
+            )
+            .unwrap();
         let mut intent = io.frozen.clone();
         let result = ensure_status_with(&io, &path, &mut intent, &review).await;
         if !available {
             assert_eq!(result.unwrap_err().code, UNKNOWN);
-            assert!(io.submitted.lock().unwrap().is_empty()); continue;
+            assert!(io.submitted.lock().unwrap().is_empty());
+            continue;
         }
         assert!(result.unwrap().is_some());
         let event = Event::from_json(intent.event.as_ref().unwrap()).unwrap();
         event.verify().unwrap();
         assert_eq!(publication_epoch(&event).unwrap(), io.epoch);
         for changed in [None, Some(uuid::Uuid::from_u128(43).to_string())] {
-            let mut copy = intent.clone(); copy.event_publication_epoch = changed;
-            assert!(Journal::open(&path).unwrap().save(&copy, "EVENT_OUTCOME").is_err());
+            let mut copy = intent.clone();
+            copy.event_publication_epoch = changed;
+            assert!(Journal::open(&path)
+                .unwrap()
+                .save(&copy, "EVENT_OUTCOME")
+                .is_err());
         }
     }
 }
 
 #[tokio::test]
 async fn old_explicit_unsent_outcome_keeps_retry_without_rewriting_old_epoch() {
-    let temp = tempfile::tempdir().unwrap(); let path = temp.path().join("journal.sqlite");
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("journal.sqlite");
     let (mut io, review) = consumer_fixture(&path, "NOT_DELIVERED");
-    let old = merged_status_at(&io.keys, &io.frozen.request, &review, None, &"b".repeat(40), 100, None).unwrap();
-    io.frozen.event = Some(old.as_json()); io.frozen.event_publication_epoch = None;
+    let old = merged_status_at(
+        &io.keys,
+        &io.frozen.request,
+        &review,
+        None,
+        &"b".repeat(40),
+        100,
+        None,
+    )
+    .unwrap();
+    io.frozen.event = Some(old.as_json());
+    io.frozen.event_publication_epoch = None;
     let db = rusqlite::Connection::open(&path).unwrap();
-    db.execute("UPDATE intent SET payload=?1", [serde_json::to_string(&io.frozen).unwrap()]).unwrap();
-    Journal::open(&path).unwrap().save(&io.frozen, "EVENT_OUTCOME").unwrap();
+    db.execute(
+        "UPDATE intent SET payload=?1",
+        [serde_json::to_string(&io.frozen).unwrap()],
+    )
+    .unwrap();
+    Journal::open(&path)
+        .unwrap()
+        .save(&io.frozen, "EVENT_OUTCOME")
+        .unwrap();
     io.relay_settled = false;
     let mut intent = io.frozen.clone();
-    ensure_status_with(&io, &path, &mut intent, &review).await.unwrap();
+    ensure_status_with(&io, &path, &mut intent, &review)
+        .await
+        .unwrap();
     assert_eq!(io.submitted.lock().unwrap().len(), 1);
-    assert_eq!(intent.event_publication_epoch, io.epoch.map(|epoch| epoch.to_string()));
+    assert_eq!(
+        intent.event_publication_epoch,
+        io.epoch.map(|epoch| epoch.to_string())
+    );
     let saved: i64 = db.query_row("SELECT count(*) FROM publication_evidence WHERE event=?1 AND phase='EVENT_OUTCOME' AND outcome='NOT_DELIVERED'", [old.as_json()], |row| row.get(0)).unwrap();
     assert_eq!(saved, 1);
 }

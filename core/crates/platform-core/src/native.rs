@@ -96,11 +96,16 @@ pub async fn community(State(state): State<BffState>, headers: HeaderMap) -> Res
 // Retain the original connection facts when the optional writer capability is
 // unavailable; the Native publisher must not invent an epoch in that case.
 async fn publication_epoch(state: &BffState, tenant: uuid::Uuid, host: &str) -> Option<String> {
+    let before: (uuid::Uuid, i32) = sqlx::query_as(
+        "select community_id,version from projection.tenant_buzz_binding where tenant_id=$1 and normalized_host=$2 and state='ACTIVE'",
+    ).bind(tenant).bind(host).fetch_optional(&state.pool).await.ok()??;
     let (client, observed_host) = crate::tenant_lifecycle::control_client(
         &state.memory_service,
         tenant,
         crate::tenant_lifecycle::ProjectionDirection::Establish,
-    ).await.ok()?;
+    )
+    .await
+    .ok()?;
     if observed_host != host {
         return None;
     }
@@ -110,7 +115,7 @@ async fn publication_epoch(state: &BffState, tenant: uuid::Uuid, host: &str) -> 
         .await
         .ok()?;
     let current: bool = sqlx::query_scalar(
-        "select exists(select 1 from projection.tenant_buzz_binding where tenant_id=$1 and normalized_host=$2 and state='ACTIVE')",
-    ).bind(tenant).bind(host).fetch_one(&state.pool).await.ok()?;
+        "select exists(select 1 from projection.tenant_buzz_binding where tenant_id=$1 and normalized_host=$2 and community_id=$3 and version=$4 and state='ACTIVE')",
+    ).bind(tenant).bind(host).bind(before.0).bind(before.1).fetch_one(&state.pool).await.ok()?;
     current.then_some(policy.epoch)
 }
