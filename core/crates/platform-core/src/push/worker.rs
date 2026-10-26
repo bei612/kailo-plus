@@ -383,7 +383,9 @@ async fn scan(
     providers: &Providers,
     tenant: Uuid,
 ) -> Result<(), sqlx::Error> {
-    let Some((lease,since,seen))=super::intent::claim_scan(&state.pool,tenant).await? else {return Ok(())};
+    let Some((lease, since, seen)) = super::intent::claim_scan(&state.pool, tenant).await? else {
+        return Ok(());
+    };
     // Every following await is outside a transaction; a crashed scanner loses its lease.
     let Ok((control, _)) = control_client(state, tenant, ProjectionDirection::Establish).await
     else {
@@ -408,9 +410,14 @@ async fn scan(
         .collect();
     messages.sort_by(|a, b| (a.created_at, &a.id).cmp(&(b.created_at, &b.id)));
     messages.dedup_by(|a, b| a.id == b.id);
-    let targets:Vec<(&str,String)>=["APNS","FCM"].into_iter().filter_map(|p|provider_target(providers,p).map(|t|(p,t))).collect();
+    let targets: Vec<(&str, String)> = ["APNS", "FCM"]
+        .into_iter()
+        .filter_map(|p| provider_target(providers, p).map(|t| (p, t)))
+        .collect();
     for message in &messages {
-        if !super::intent::enqueue(&state.pool,tenant,lease,message,&targets).await? {return Ok(())}
+        if !super::intent::enqueue(&state.pool, tenant, lease, message, &targets).await? {
+            return Ok(());
+        }
     }
     let newest = messages.last().map_or(since, |m| m.created_at as i64);
     let mut at_newest: Vec<String> = messages
@@ -421,7 +428,7 @@ async fn scan(
     if newest == since {
         at_newest.extend(seen)
     }
-    super::intent::checkpoint_scan(&state.pool,tenant,lease,newest,&at_newest).await?;
+    super::intent::checkpoint_scan(&state.pool, tenant, lease, newest, &at_newest).await?;
     Ok(())
 }
 
