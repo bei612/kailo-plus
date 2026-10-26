@@ -122,23 +122,37 @@ void main() {
       unconfirmed: unconfirmed ?? UnconfirmedPublishes(),
     );
 
-    test('forum posts and replies keep their original kinds and retry the same signed event', () async {
-      for (final kind in [EventKind.forumPost, EventKind.forumComment]) {
-        final session = _ScriptedRelaySession([(e) => RelayPublishOutcomeUnknown(e.id, 'timeout'), null]);
-        final send = build(session, nostr.Keys.generate().nsec);
-        Future<void> publish() => send(channelId: _channelId, content: 'Forum body', kind: kind,
-          parentEventId: kind == EventKind.forumComment ? 'b' * 64 : null, mentionPubkeys: ['c' * 64]);
-        await expectLater(publish(), throwsA(isA<RelayPublishOutcomeUnknown>()));
-        await publish();
-        expect(session.published.map((e) => e.kind), [kind, kind]);
-        expect(session.published[0].id, session.published[1].id);
-        expect(session.published[0].sig, session.published[1].sig);
-        expect(session.published[0].getTagValue('p'), 'c' * 64);
-        if (kind == EventKind.forumComment) {
-          expect(session.published[0].threadReference.rootId, 'b' * 64);
+    test(
+      'forum posts and replies keep their original kinds and retry the same signed event',
+      () async {
+        for (final kind in [EventKind.forumPost, EventKind.forumComment]) {
+          final session = _ScriptedRelaySession([
+            (e) => RelayPublishOutcomeUnknown(e.id, 'timeout'),
+            null,
+          ]);
+          final send = build(session, nostr.Keys.generate().nsec);
+          Future<void> publish() => send(
+            channelId: _channelId,
+            content: 'Forum body',
+            kind: kind,
+            parentEventId: kind == EventKind.forumComment ? 'b' * 64 : null,
+            mentionPubkeys: ['c' * 64],
+          );
+          await expectLater(
+            publish(),
+            throwsA(isA<RelayPublishOutcomeUnknown>()),
+          );
+          await publish();
+          expect(session.published.map((e) => e.kind), [kind, kind]);
+          expect(session.published[0].id, session.published[1].id);
+          expect(session.published[0].sig, session.published[1].sig);
+          expect(session.published[0].getTagValue('p'), 'c' * 64);
+          if (kind == EventKind.forumComment) {
+            expect(session.published[0].threadReference.rootId, 'b' * 64);
+          }
         }
-      }
-    });
+      },
+    );
 
     test('a first definite refusal remains a definite refusal', () async {
       final session = _ScriptedRelaySession([
