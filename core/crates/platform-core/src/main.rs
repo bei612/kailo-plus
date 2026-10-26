@@ -341,11 +341,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             roster_reconcile::Config::from_env()?,
         );
 
+        let publish_config = publish_reconcile::Config::from_env()?;
+        let publish_result_settle_seconds = i64::try_from(publish_config.settle.as_secs())
+            .map_err(|_| "PUBLISH_RESULT_SETTLE_SECONDS 超出线格式范围")?;
         // 结果不明的消息发布按 event id 对账成确定结果（DD-81）
         publish_reconcile::spawn(
             service_state.clone(),
             &opentelemetry::global::meter("platform-core"),
-            publish_reconcile::Config::from_env()?,
+            publish_config,
         );
 
         // DD-151: Mobile push. Without configured provider credentials it only converges
@@ -359,6 +362,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         feedback::spawn_cleanup(pool.clone());
 
         let bff_state = bff::BffState {
+            publish_result_settle_seconds,
             memory_service: service_state.clone(),
             platform_info,
             pool: pool.clone(),
