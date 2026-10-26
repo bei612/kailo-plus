@@ -227,3 +227,12 @@ delete/share 有相同要求；312–368 行又要求 adapter 的各动作与该
 `tools/component-release/receiver-run.sh:279` 的 native 阶段先执行这些启动检查，bootstrap 才创建并等待 binding ACTIVE。
 因此“先 delegation 生成 policy”也无法使第一套源 binding 启动。主会话已从原源码复核，负责沿 HUMAN
 componentAction 准入链处理生产者缺口；本自动准入入口保持门禁，不复用 delegation 策略，不用 SQL 或模拟 UUID 补齐。
+
+`e68efa7bf11cc984b81602df049e849ac457efbc` 继续实现目录与 bootstrap 输入生成：首次原生 KB/目录观测固定留存；
+按本次隔离 CoreDB 的项目标签和会话 Catalog Tenant 执行只读查询，取得已 ACTIVE 的原始契约内部 ID
+（公开列表不投递此字段）；bootstrap 会再次核对完整 registration。原生对象只作为 evidence/nativeRef，
+Resource ID 仍由后续真实 `resource.create` 返回。目录沿原 renderer 生成到独立 `receiver/public/`，
+与 Agent 私密输出分开；bootstrap 输入与创建/授权 idempotency 提案在执行前固定，恢复时不允许改写。
+该阶段只准备输入，不启动 adapter、不激活 binding、不执行 bootstrap。
+同规格 GitHub 来源 CI 回执 `checks/github-e68efa7bf11cc984b81602df049e849ac457efbc/receipt.json` 退出 0，
+延续前述 27 项单元检查及语法/路径检查；bootstrap 生成器本身仅完成 Python AST 检查，未在新隔离数据库执行。

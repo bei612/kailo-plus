@@ -1083,17 +1083,17 @@ def drive(r, args, runtime_env, declaration, h):
     ensure_adapter_readers(h, r)
     ensure_bootstrap_material(h, r)
     r.record(blockedAfterNative=(
-        "native-action/bootstrap/seed/inputs/driver not automated yet: (1) source Cells cells@2.0.0 "
-        "native-action requires actual ResultExposurePolicy identities/versions; reader/IdP preparation does not create them. "
-        "Both original adapter deliveries still need binding activation and an adapters[] entry with nativeResources evidence in "
-        "RECEIVER_ADAPTER_DIRECTORY_FILE; (2) WeKnora candidate adapter delivery "
-        "with --platform-adapter --file-storage-sync and the forward adapter "
-        "configuration for the production Worker (Core's isolated conformance identity); (3) bootstrap input "
-        "(receiver-environment-bootstrap.rs prepare: endpoints, resources/preconditions, three isolated session "
-        "token files), seed-knowledge input, observe receiver block and driver input; "
+        "receiver execution not automated yet: (1) Cells native-action needs the real HUMAN "
+        "ResultExposurePolicy producer; original delegation requires an already ACTIVE binding, "
+        "so its policy cannot bootstrap this first source adapter. Fixed SecretRefs, Agent readers "
+        "and isolated IdP clients do not create that business authority. (2) Original adapter-directory "
+        "and immutable bootstrap inputs have been prepared, but adapters/controlled directory activation "
+        "and receiver model credential proof must be coordinated with actual binding creation; "
+        "(3) native/governed seed, forward adapter, observe/inputs and driver inputs/execution remain; "
         "(4) production registration also needs cells@2.0.0 APPROVED in the production Catalog"))
-    raise h.Refused("knowledge: isolated native objects ready; adapter and later receiver "
-                    f"stages are not automated yet (auto-state.json blockedAfterNative; {manifest['componentTypeKey']}@{manifest['version']})")
+    raise h.Refused("knowledge: isolated native and adapter delivery inputs prepared; receiver execution "
+                    f"is not complete (auto-state.json blockedAfterNative; {manifest['componentTypeKey']}@{manifest['version']})")
+
 
 
 def teardown(r, h):
