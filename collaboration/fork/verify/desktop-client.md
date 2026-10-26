@@ -654,3 +654,12 @@ source 相等，原 manifest 仅该产物 source/artifact 两字段 +2/-2，不�
 - Rust 格式化在同镜像 1 CPU、512 MiB memory+swap 容器完成；没有使用宿主工具链。主会话在编译前的 diff 复核指出 trait 实现方法多余可见性，已先修正再编译，本增量没有因此产生编译失败回执。
 - 原始日志位于 CI 节点 `/volumes/data/kailo/verification/dd159-lifecycle/`：`format-preflight.log`、`format-limits.log`、`format.log`、`cargo-preflight.log`、`cargo-limits.log`、`24e3c5f6-cargo.log`。正常应用重启走持久 refresh 成功路径，不触发新登录接管的归档擦除；本次没有新增 UI/TypeScript 修改，不重复此前 Node 检查。
 - 这是源码修复与定向验证，不是全量集成门禁、安装包、部署或 V-SCN-262/263 真机验收。OS 钥匙串、真实 Relay 撤员、离线恢复和 Desktop 操作仍待实际设备走查。
+
+
+### 2026-10-26 DD-160 原生仓库读取接线
+
+从 r10 保留工作中只选择远程读取接线，不带入 Mobile、反馈或 Tenant 资料。固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的 `desktop/src-tauri/src/commands/project_git.rs`、`project_git_file_content.rs`、`project_git_diff.rs` 与 `desktop/src/shared/api/projectGit.ts`；复用已有 `buzz-project-git` 实现和共享 Projects 页面，不另造仓库内容或授权权威。
+
+本机命令只收 30617 坐标与已存在的引用参数，仓库根从当前 Relay 推出；首个 `info/refs` 的 401/403/404 都为不可读。整次调用沿 Core 已有 120 秒预算，git 沿共享 crate 的原限额。每次 git 调用前重验原登录代际、Relay 和设备公钥，在本机新签 NIP-98；私钥不进入 git 参数、环境或文件。HTTP 预检与 git 均禁用重定向，避免认证头跨源。已退出又以相同设备登录也不能恢复旧操作。读取结果在交还页面前重验原 scope。
+
+影响仅为 Desktop 宿主适配、共享 Git 的重定向限制、客户端响应映射与追溯；无公开 schema、数据库或 Workflow 改动。Desktop 新增共享 path crate 依赖，需要由原 SDK 更新锁并验证；本节写入时未编译本增量。分支建删、owner merge、本机检出尚在同批继续实现；未生成新安装包、未部署，V-SCN-264/265 尚未实际设备验收，原发布门禁保留。

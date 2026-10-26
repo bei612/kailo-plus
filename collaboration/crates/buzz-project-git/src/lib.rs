@@ -8,10 +8,9 @@
 //! plumbing, parsers and bounds (64 KiB preview, 2000 patch lines, 250 eager
 //! file previews).
 //!
-//! The only seam is authentication ([`GitAuth`]): Desktop keeps the original
-//! `git-credential-nostr` helper; Core injects a freshly pre-signed NIP-98
+//! The only seam is authentication ([`GitAuth`]): Desktop and Core inject a fresh NIP-98
 //! `Authorization` header per git invocation and never hands a private key to
-//! the git subprocess. The original remote branch operations
+//! the git subprocess (DD-160). The original remote branch operations
 //! (`create_project_remote_branch` / `delete_project_remote_branch`) live in the
 //! `branches` module and the original pull-request merge
 //! (`merge_project_pull_request`) in the `merge` module. Local-checkout, push

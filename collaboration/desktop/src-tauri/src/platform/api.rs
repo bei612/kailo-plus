@@ -122,7 +122,7 @@ fn store() -> &'static SecretStore {
 }
 
 impl NativeSession {
-    pub(super) fn page_generation(&self) -> Result<u64, String> {
+    pub(crate) fn page_generation(&self) -> Result<u64, String> {
         let state = self.state()?;
         if state.access.is_none() {
             return Err(NOT_SIGNED_IN.into());
@@ -130,7 +130,7 @@ impl NativeSession {
         Ok(state.generation)
     }
 
-    pub(super) fn page_generation_matches(&self, generation: u64) -> bool {
+    pub(crate) fn page_generation_matches(&self, generation: u64) -> bool {
         self.state()
             .is_ok_and(|state| state.generation == generation && state.access.is_some())
     }

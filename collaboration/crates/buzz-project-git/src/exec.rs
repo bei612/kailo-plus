@@ -270,6 +270,9 @@ fn configure_git_auth(
         ("credential.helper", String::new()),
         ("core.hooksPath", "/dev/null".to_string()),
         ("core.fsmonitor", "false".to_string()),
+        // An admitted repository belongs to one Relay origin. A redirect may
+        // neither forward its Authorization header nor change that authority.
+        ("http.followRedirects", "false".to_string()),
         ("protocol.allow", "never".to_string()),
         ("protocol.http.allow", "always".to_string()),
         ("protocol.https.allow", "always".to_string()),
@@ -542,6 +545,7 @@ mod tests {
             let authorization = format!("Authorization: Nostr token-{n}");
             assert_eq!(headers, [authorization.as_str(), "Host: community.example"]);
             assert!(config.contains(&entry("credential.helper", "")));
+            assert!(config.contains(&entry("http.followRedirects", "false")));
             assert!(!has_key(&config, "credential.useHttpPath"));
             assert!(removed(&command, "NOSTR_PRIVATE_KEY"));
         }
