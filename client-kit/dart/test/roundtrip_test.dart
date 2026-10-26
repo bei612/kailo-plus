@@ -695,6 +695,7 @@ void main() {
       final value = <String, dynamic>{
         'relayUrl': 'wss://relay.example',
         'communityHost': 'relay.example',
+        if (limit != null) 'publicationEpoch': '00000000-0000-0000-0000-00000000002a',
         if (limit != null) 'relayQueryLimit': limit,
         if (limit != null) 'publishResultSettleSeconds': 901,
         if (limit != null) 'publishResultObservedAtUnixSeconds': 1900000000,

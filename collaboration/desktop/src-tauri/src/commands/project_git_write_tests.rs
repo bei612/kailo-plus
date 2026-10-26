@@ -21,6 +21,7 @@ fn intent() -> Intent {
         event: None,
         event_result: None,
         event_community_id: None,
+        event_publication_epoch: None,
     }
 }
 

@@ -20,6 +20,9 @@ pub(super) struct Intent {
     /// Frozen from the admitted Relay before the first publication side effect.
     #[serde(default)]
     pub event_community_id: Option<String>,
+    /// Epoch from the exact signed attempt, persisted before its first POST.
+    #[serde(default)]
+    pub event_publication_epoch: Option<String>,
 }
 
 pub(super) struct Journal(Connection);
@@ -71,7 +74,21 @@ impl Journal {
         }
         Ok(None)
     }
+    pub fn known_unsent(&self, intent: &Intent) -> Result<bool, WriteError> {
+        let Some(event) = intent.event.as_deref() else { return Ok(false); };
+        self.0.query_row(
+            "SELECT EXISTS(SELECT 1 FROM publication_evidence WHERE key=?1 AND event=?2 AND phase='EVENT_OUTCOME' AND outcome='NOT_DELIVERED')",
+            params![intent.key, event], |row| row.get(0),
+        ).map_err(|_| WriteError::at(UNKNOWN, &intent.key))
+    }
     pub fn save(&self, intent: &Intent, phase: &str) -> Result<(), WriteError> {
+        if let Some(epoch) = &intent.event_publication_epoch {
+            let matches = intent.event.as_deref().and_then(|raw| Event::from_json(raw).ok())
+                .is_some_and(|event| event.verify().is_ok()
+                    && buzz_core_pkg::publication::publication_epoch(&event)
+                        .is_ok_and(|signed| signed.is_some_and(|signed| signed.to_string() == *epoch)));
+            if !matches { return Err(WriteError::at(UNKNOWN, &intent.key)); }
+        }
         let payload =
             serde_json::to_string(intent).map_err(|_| WriteError::at(UNKNOWN, &intent.key))?;
         let pending = intent.result == "DISPATCHED"
@@ -106,6 +123,11 @@ impl Journal {
             {
                 return Err(WriteError::at("IDEMPOTENCY_KEY_REUSED", &intent.key));
             }
+            if frozen.event_publication_epoch != intent.event_publication_epoch
+                && (frozen.event_publication_epoch.is_some() || frozen.event == intent.event)
+            {
+                return Err(WriteError::at(UNKNOWN, &intent.key));
+            }
             if frozen.event_community_id.is_some()
                 && frozen.event_community_id != intent.event_community_id
             {
@@ -113,7 +135,7 @@ impl Journal {
             }
             if frozen.event.is_some()
                 && frozen.event != intent.event
-                && !same_publication_retry(&frozen, intent, phase)
+                && !same_publication_retry(&frozen, intent, phase, self.known_unsent(&frozen)?)
             {
                 return Err(WriteError::at(UNKNOWN, &intent.key));
             }
@@ -161,7 +183,7 @@ impl Journal {
 
 // DD-81 permits a new signed attempt only after the previous attempt is
 // definitely NOT_DELIVERED. Its business payload, signer and merge stay fixed.
-fn same_publication_retry(old: &Intent, next: &Intent, phase: &str) -> bool {
+fn same_publication_retry(old: &Intent, next: &Intent, phase: &str, known_unsent: bool) -> bool {
     if old.event_result.as_deref() != Some("NOT_DELIVERED")
         || next.event_result.as_deref() != Some("DISPATCHED")
         || phase != "EVENT_DISPATCH"
@@ -174,13 +196,26 @@ fn same_publication_retry(old: &Intent, next: &Intent, phase: &str) -> bool {
         .zip(next.event.as_deref())
         .and_then(|(a, b)| Event::from_json(a).ok().zip(Event::from_json(b).ok()));
     events.is_some_and(|(a, b)| {
-        a.verify().is_ok()
+        let epochs = buzz_core_pkg::publication::publication_epoch(&a).ok()
+            .zip(buzz_core_pkg::publication::publication_epoch(&b).ok());
+        let epoch_matches = epochs.is_some_and(|(a, b)| match (a, b) {
+            (None, Some(b)) => known_unsent && old.event_publication_epoch.is_none()
+                && next.event_publication_epoch.as_deref() == Some(b.to_string().as_str()),
+            (Some(a), Some(b)) => a == b
+                && old.event_publication_epoch.as_deref() == Some(a.to_string().as_str())
+                && old.event_publication_epoch == next.event_publication_epoch,
+            _ => false,
+        });
+        let payload_tags = |event: &Event| event.tags.iter()
+            .filter(|tag| tag.as_slice().first().is_none_or(|name| name != buzz_core_pkg::publication::PUBLICATION_EPOCH_TAG))
+            .cloned().collect::<Vec<_>>();
+        epoch_matches && a.verify().is_ok()
             && b.verify().is_ok()
             && a.kind.as_u16() == 1631
             && b.kind == a.kind
             && b.pubkey == a.pubkey
             && b.content == a.content
-            && b.tags == a.tags
+            && payload_tags(&b) == payload_tags(&a)
             && b.created_at >= a.created_at
     })
 }

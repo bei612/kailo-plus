@@ -7,7 +7,7 @@ use super::{
     project_git_remote::RepoScope,
     project_git_write::{Request, WriteError, FAILED, UNKNOWN},
 };
-use buzz_core_pkg::publication::MergedStatusDelivery;
+use buzz_core_pkg::publication::{publication_epoch, MergedStatusDelivery, PUBLICATION_EPOCH_TAG};
 use nostr::{Event, EventBuilder, JsonUtil, Keys, Kind, Tag, Timestamp};
 use serde_json::json;
 use std::path::Path;
@@ -19,6 +19,7 @@ use tauri::{AppHandle, Manager};
 struct PublicationFacts {
     settle_seconds: u64,
     observed_at: u64,
+    epoch: Option<uuid::Uuid>,
 }
 impl PublicationFacts {
     fn parse(body: &serde_json::Value, base: &str) -> Result<Option<Self>, WriteError> {
@@ -28,6 +29,12 @@ impl PublicationFacts {
             .filter(|s| !s.trim().is_empty())
             .ok_or_else(|| WriteError::new(FAILED))?;
         crate::relay::assert_expected_relay_scope(Some(relay), base)?;
+        let epoch = body.get("publicationEpoch").map(|value| {
+            let raw = value.as_str().ok_or_else(|| WriteError::new(FAILED))?;
+            let epoch = uuid::Uuid::parse_str(raw).map_err(|_| WriteError::new(FAILED))?;
+            if epoch.to_string() != raw { return Err(WriteError::new(FAILED)); }
+            Ok(epoch)
+        }).transpose()?;
         let settle = body.get("publishResultSettleSeconds");
         let observed = body.get("publishResultObservedAtUnixSeconds");
         if settle.is_none() && observed.is_none() {
@@ -42,6 +49,7 @@ impl PublicationFacts {
         Ok(Some(Self {
             settle_seconds: positive(settle)?,
             observed_at: positive(observed)?,
+            epoch,
         }))
     }
     fn window_passed(self, event: &Event) -> bool {
@@ -148,6 +156,7 @@ fn merged_status(
         latest,
         commit,
         Timestamp::now().as_secs(),
+        Some(uuid::Uuid::from_u128(42)),
     )
 }
 fn merged_status_at(
@@ -157,6 +166,7 @@ fn merged_status_at(
     latest: Option<&Event>,
     commit: &str,
     now: u64,
+    epoch: Option<uuid::Uuid>,
 ) -> Result<Event, WriteError> {
     let owner = keys.public_key().to_hex();
     if request.repository.split(':').nth(1) != Some(owner.as_str())
@@ -175,11 +185,15 @@ fn merged_status_at(
         tags.push(vec!["p", author.as_str()]);
     }
     tags.extend([vec!["merge-commit", commit], vec!["r", commit]]);
-    let tags = tags
+    let mut tags = tags
         .into_iter()
         .map(Tag::parse)
         .collect::<Result<Vec<_>, _>>()
         .map_err(|_| WriteError::new(FAILED))?;
+    if let Some(epoch) = epoch {
+        tags.push(Tag::parse([PUBLICATION_EPOCH_TAG, epoch.to_string().as_str()])
+            .map_err(|_| WriteError::new(FAILED))?);
+    }
     let time = latest
         .map_or(Ok(now), |e| {
             e.created_at
@@ -311,6 +325,7 @@ async fn ensure_status_with(
     io.keys().map_err(|_| pending())?;
     if let Some(raw) = &intent.event {
         let event = Event::from_json(raw).map_err(|_| pending())?;
+        event.verify().map_err(|_| pending())?;
         match intent.event_result.as_deref() {
             Some("ACCEPTED") => return Ok(Some(event.id.to_hex())),
             Some("REJECTED") => return Ok(None),
@@ -348,10 +363,20 @@ async fn ensure_status_with(
             journal.save(intent, "EVENT_RECONCILIATION")?;
             return Ok(Some(event.id.to_hex()));
         }
-        if intent.event_result.as_deref() != Some("NOT_DELIVERED") {
-            if !proof.settled || !facts.is_some_and(|facts| facts.window_passed(&event)) {
-                return Err(pending());
-            }
+        let known_unsent = intent.event_result.as_deref() == Some("NOT_DELIVERED")
+            && journal.known_unsent(intent)?;
+        let signed_epoch = publication_epoch(&event).map_err(|_| pending())?;
+        let frozen_epoch = intent.event_publication_epoch.as_deref();
+        let eligible = signed_epoch.is_some_and(|epoch| {
+            frozen_epoch == Some(epoch.to_string().as_str())
+                && facts.is_some_and(|facts| facts.epoch == Some(epoch) && facts.window_passed(&event))
+        });
+        // A legacy NOT_DELIVERED string is not writer absence evidence. Only
+        // the exact original EVENT_OUTCOME can retain a known-unsent conclusion.
+        if !known_unsent && (!eligible || !proof.settled) {
+            return Err(pending());
+        }
+        if !known_unsent {
             intent.event_result = Some("NOT_DELIVERED".into());
             journal.save(intent, "EVENT_RECONCILIATION")?;
         }
@@ -373,7 +398,12 @@ async fn ensure_status_with(
         .filter(|e| trusted_status(review, &owner, e))
         .chain(previous_event.iter())
         .max_by_key(|e| (e.created_at, e.id));
-    let now = facts.map_or_else(|| Timestamp::now().as_secs(), |f| f.observed_at);
+    let facts = facts.ok_or_else(pending)?;
+    let epoch = facts.epoch.ok_or_else(pending)?;
+    if intent.event_publication_epoch.as_ref().is_some_and(|old| old != &epoch.to_string()) {
+        return Err(pending());
+    }
+    let now = facts.observed_at;
     let event = merged_status_at(
         &keys,
         &intent.request,
@@ -381,6 +411,7 @@ async fn ensure_status_with(
         latest,
         intent.new.as_deref().ok_or_else(pending)?,
         now,
+        Some(epoch),
     )
     .map_err(|_| pending())?;
     io.readmit(&intent.request).await.map_err(|_| pending())?;
@@ -400,6 +431,7 @@ async fn ensure_status_with(
     io.readmit(&intent.request).await.map_err(|_| pending())?;
     io.keys().map_err(|_| pending())?;
     intent.event_community_id = Some(proof.community_id);
+    intent.event_publication_epoch = Some(epoch.to_string());
     intent.event = Some(event.as_json());
     if proof.accepted {
         intent.event_result = Some("DISPATCHED".into());
