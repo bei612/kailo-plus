@@ -6,7 +6,11 @@ Mobile release 或完整 DD-151 已交付。此前角标证据见 [push-unread](
 
 ## 实际消费者与不变量
 
-`worker::scan` 以短租约获取 Relay cursor，在事务外读取 CONTROL Relay；
+`worker::scan` 以短租约获取 Relay cursor，在事务外通过原 CONTROL NIP-98 客户端
+读取 Relay；核对 ACTIVE binding 的 NIP-11 摘要后，使用原 Buzz
+`relay::query_raw_all` 的 `(created_at DESC, id ASC)` / `until + before_id` 复合游标。
+每个固定时间窗必须完整分页、验签后才入队；同秒超过一页也不省略。页读取失败、
+协议页异常或超过配置的事件总上限时，不推进 cursor、不发送已读到的半页。
 `intent::enqueue` 续租并保存每个事件的设备候选引用，随后短事务提交 cursor。
 失去租约的扫描者不能补写或推进；重读同一事件命中 `(tenant,device,event)` 唯一键。
 消息正文不落该表；注册版本、平台、供应商目标摘要与事件引用在首次意图里冻结。
@@ -23,10 +27,13 @@ CLIENT key、设备登记版本与频道资格。Relay、OpenBao、OAuth 和 pro
 领取；过期不将 UNKNOWN 改成成功或失败。同一尝试的迟到确定响应可以补结论，
 旧租约不能写新尝试。`ACCEPTED` 只代表 provider 接受；回执与按事件 ID 去重的
 未读投影同事务提交，写投影失败只重试已知回执，不再次 POST。撤设备/成员、
-登记换版或 Tenant 删除后，旧回执不能重新建立未读投影。
+登记换版、频道撤员/停用或 Tenant 删除后，旧回执不能重新建立未读投影。
+原 `unread::events` 读取也校验当前 Tenant/member 与 Workspace/Conversation 资格，
+因此撤权前已经记录的消息不会在撤权后的查询中再次贡献角标。
 
-只对明确暂时拒绝或尚未发出通知的失败重试，最多三次，指数退避不低于 60 秒；
-APNs 5xx 不低于 15 分钟，且尊重更长的 Retry-After。所有重试沿原固定到期时间，
+只对明确暂时拒绝或尚未发出通知的失败重试，次数和指数退避由部署策略提供；
+消费者校验 FCM 至少 60 秒、APNs 5xx 至少 15 分钟的 provider 协议底线，
+并尊重更长的 Retry-After。所有重试沿原固定到期时间，
 不重放过期通知。APNs `apns-id` 只是跟踪号，折叠键也不作为幂等证明；FCM v1
 缺少有效成功 message name 的成功响应保守保留 UNKNOWN。普通 404 不等于令牌
 失效，必须有 FCM 的结构化 UNREGISTERED 等证据。
@@ -48,7 +55,7 @@ APNs Delivery Log 的对应查询标识仅在 development 响应提供；当前�
 本地清理步骤，清除发送、角标和 cursor 派生数据。
 
 `token_intent::claim_retirement` 领取超时 PREPARING 或到期 RETIRING；外部 I/O
-前冻结不能绑定的状态，失败按 5 秒到 1 小时上限持久退避重试。它复用既有
+前冻结不能绑定的状态，失败按部署提供的基数和上限持久退避重试。它复用既有
 `secret_store::retire_push_token` 的 CAS=0 fencing、version-1 destroy 和 metadata
 查证；迟到写不能越过已占的 version 1。只有真实 `destroyed=true` 才记退休完成。
 既有 SERVER key 意图带 HUMAN/CONTROL 的不同权威归属，不能伪装成设备 token
@@ -67,10 +74,29 @@ metadata，不把 token 值输出。
 拒绝回退，不能为了回滚删除不明副作用。空隔离库往返与有数据时停止回退都需验证。
 
 仍需实际 provider 凭据/轮换、真机授权/后台接收/点击与匹配 Mobile 包验收。
-继承的 Relay `since + limit=500` 单页扫描在超过一页的突发流量下仍可能遗漏事件；
-这属于触发消费者缺口，本批的租约和幂等检查不能证明其全量读取，仍阻断完整
-DD-151 交付。勿扰、iOS 通知扩展和 Android 原生桥的边界沿原交付账本，不由这批
-Core 回归代替。
+完整 Relay 扫描已经使用原复合游标；当前证据是原客户端对 authenticated scripted
+HTTP 与真实 PG 的组合检查，不是实际部署 Relay、供应商及真机的全链路验收。
+勿扰、iOS 通知扩展和 Android 原生桥的边界沿原交付账本，不由这批 Core 回归代替。
+
+## 部署策略交付
+
+Core 仍通过原环境配置入口接收 `PUSH_POLL_SECONDS` 与 `PUSH_DELIVERY_POLICY`。
+后者的形状在 `contracts/runtime/push_delivery_policy.schema.json`，显式示例在
+`contracts/samples/push_delivery_policy.json`；示例不是默认值，操作者须按部署容量选择。
+`deploy/local/compose.yaml` 要求两者存在，`.env.example` 留空；即使未配置 provider，
+Core 也验证完整策略，否则启动失败，避免令牌退休消费者静默采用另一组阈值。
+
+租约、通知寿命、重试次数/基数、provider/Relay deadline、单页/窗口/批次上限、
+token 准备租约/退休退避、回执提交次数、折叠/设备限速窗口及凭据重读周期全部
+由该对象传入消费者。数值须为正的 32 位整数，窗口事件上限不小于单页上限，
+token 退避上限不小于基数，租约须分别长于 Relay deadline，以及 OAuth+provider
+两次 HTTP 的 deadline 之和。失败有确定的配置错误，不回退到源代码阈值。
+
+扫描页大小同时受经摘要核验的 Relay NIP-11 `max_limit` 约束。窗口超过配置上限
+会保留检查点并记录 `SCAN_BOUND_EXCEEDED`，由运维调整已交付策略后重启继续；
+它不会以跳过事件消除积压。策略变更沿原 Core 发布/重启，不增加热配置权威。
+尚未部署的 `310700` 去掉尝试数固定 3 和 token 准备租约固定 2 分钟约束，改由
+同一策略消费者传入；对已运行迁移的环境不能直接重放变更过的迁移文件。
 
 ## 固定来源检查
 
@@ -107,3 +133,29 @@ preflight、SDK/PG limits 和结果。主日志 SHA-256 为
 零问题、反向检查脚本 `bash -n` 退出 0；原件
 `/volumes/data/kailo/verification/buzz-r10/push-intent-docs-1c14a2067/`。
 这是本批文档检查，不代替集成分支全量设计覆盖门禁。
+
+## 完整扫描、撤频道与运行策略增量
+
+`003f2d958` 的 28 项正向检查与反向检查通过，Clippy 因 APNs send 参数 8/7
+退出 101。将原持久意图的 APNs 请求元数据分组后，固定源码 `2099ce972` 沿上述
+同一 SDK、4 CPU / 16 GiB 与独立 PG 1 CPU / 2 GiB，最终脚本退出 0：
+
+- 全 Core fmt、全迁移与 `310700` 空库回退/再前进通过。
+- push **28/28**，无忽略，包含 11 项发送/登记/扫描真实 PG 检查、1 项既有未读
+  真实 PG 检查，以及策略、载荷与 provider 分类/HTTP 丢响应等检查。
+- 原 `IdentityClient` 以 CONTROL NIP-98 向 scripted HTTP 查询，服务端校验签名、
+  URL、方法、payload SHA 与身份；同秒 1001 条签名事件经原复合游标完整读取，
+  重读不重复入队。第二页失败或超出配置总上限不入队、不推进 cursor。
+- 发送中撤销 Conversation 后，已确定的 provider 接受事实仍保存，但迟到回执
+  不添加未读；撤权前的旧记录也被实际未读查询过滤。设备与 Tenant 边界仍通过。
+- 移除实际频道回执保护，检查因 `2 != 1` 失败；将完整扫描截成单页，检查因
+  `(500, 500) != (1001, 1001)` 失败。另将 SENDING 恢复改为 PREPARED 后，UNKNOWN
+  检查仍实际失败。原生产文件逐字/SHA 恢复后，指定检查重新通过；不是改测试断言。
+- SecretStore 原 push-token HTTP consumer **1/1**；有数据的迁移回退明确拒绝；
+  Core all-targets Clippy `-D warnings` 与 workspace SQLx prepare check 均退出 0。
+
+完整命令、preflight、实际 SDK/PG limits 与终态位于
+`/volumes/data/kailo/verification/buzz-r10/push-intent-2099ce972/`；主日志 SHA-256：
+`e4e6d361a3d2ae6a4fa306209c1965d3d5b9e323e3e8e7090f148e2a8d12e735`。
+实际回读本批容器与独立网络均已清理。失败来源 `003f2d958` 的日志独立保留。
+当前结论为固定源码与隔离依赖检查通过，未打包、未部署、未记发布制品 digest。
