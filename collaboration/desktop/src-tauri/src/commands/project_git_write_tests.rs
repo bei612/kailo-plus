@@ -440,14 +440,47 @@ fn reprepare_conflicts_settle_the_ref_but_network_failures_keep_it_frozen() {
 }
 
 #[test]
-fn durable_claim_itself_refuses_replacement_and_late_terminal_regression(){
-    let temp=tempfile::tempdir().unwrap();let store=Journal::open(&temp.path().join("intent.sqlite")).unwrap();
-    let mut frozen=intent();store.save(&frozen,"DISPATCH").unwrap();let mut replacement=frozen.clone();replacement.new=Some("c".repeat(40));
-    assert_eq!(store.save(&replacement,"DISPATCH").unwrap_err().code,"IDEMPOTENCY_KEY_REUSED");
-    assert_eq!(store.find(&frozen.key,&frozen.request).unwrap().unwrap().new,frozen.new);
-    frozen.result="ACCEPTED".into();frozen.event=Some("original signed event".into());frozen.event_result=Some("ACCEPTED".into());store.save(&frozen,"EVENT_OUTCOME").unwrap();
-    replacement=frozen.clone();replacement.event=Some("new signature".into());assert_eq!(store.save(&replacement,"EVENT_DISPATCH").unwrap_err().code,UNKNOWN);
-    replacement=frozen.clone();replacement.result="DISPATCHED".into();assert!(store.save(&replacement,"DISPATCH").is_err());
-    replacement=frozen.clone();replacement.event_result=Some("DISPATCHED".into());assert!(store.save(&replacement,"EVENT_DISPATCH").is_err());
-    assert_eq!(store.find(&frozen.key,&frozen.request).unwrap().unwrap().event_result,Some("ACCEPTED".into()));
+fn durable_claim_itself_refuses_replacement_and_late_terminal_regression() {
+    let temp = tempfile::tempdir().unwrap();
+    let store = Journal::open(&temp.path().join("intent.sqlite")).unwrap();
+    let mut frozen = intent();
+    store.save(&frozen, "DISPATCH").unwrap();
+    let mut replacement = frozen.clone();
+    replacement.new = Some("c".repeat(40));
+    assert_eq!(
+        store.save(&replacement, "DISPATCH").unwrap_err().code,
+        "IDEMPOTENCY_KEY_REUSED"
+    );
+    assert_eq!(
+        store
+            .find(&frozen.key, &frozen.request)
+            .unwrap()
+            .unwrap()
+            .new,
+        frozen.new
+    );
+    frozen.result = "ACCEPTED".into();
+    frozen.event = Some("original signed event".into());
+    frozen.event_result = Some("ACCEPTED".into());
+    store.save(&frozen, "EVENT_OUTCOME").unwrap();
+    replacement = frozen.clone();
+    replacement.event = Some("new signature".into());
+    assert_eq!(
+        store.save(&replacement, "EVENT_DISPATCH").unwrap_err().code,
+        UNKNOWN
+    );
+    replacement = frozen.clone();
+    replacement.result = "DISPATCHED".into();
+    assert!(store.save(&replacement, "DISPATCH").is_err());
+    replacement = frozen.clone();
+    replacement.event_result = Some("DISPATCHED".into());
+    assert!(store.save(&replacement, "EVENT_DISPATCH").is_err());
+    assert_eq!(
+        store
+            .find(&frozen.key, &frozen.request)
+            .unwrap()
+            .unwrap()
+            .event_result,
+        Some("ACCEPTED".into())
+    );
 }
