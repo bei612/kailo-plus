@@ -143,16 +143,19 @@ class _FigmaHomeScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = context.colors;
-    final community = ref.watch(activeCommunityProvider).value;
-    final tenantProfile = ref
+    final community = ref.watch(activeCommunityProvider).unwrapPrevious().value;
+    final live = ref
         .watch(tenantProfileLiveProvider)
-        .unwrapPrevious()
-        .value;
-    final communityName = tenantProfile?.name.trim() ?? community?.name.trim();
+        .unwrapPrevious();
+    final tenantProfile = live.value;
+    final cleared = live.hasValue && tenantProfile == null;
+    final communityName = cleared
+        ? null
+        : tenantProfile?.name.trim() ?? community?.name.trim();
     final relayUrl = community?.relayUrl;
     final communityIcon = tenantProfile != null
         ? tenantProfile.icon
-        : relayUrl == null
+        : cleared || relayUrl == null
         ? null
         : ref.watch(communityIconProvider(relayUrl)).value;
     final communityEmoji =

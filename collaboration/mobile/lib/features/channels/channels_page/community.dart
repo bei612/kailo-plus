@@ -7,12 +7,12 @@ class _CommunityIndicator extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final activeAsync = ref.watch(activeCommunityProvider);
 
-    final activeCommunity = activeAsync.value;
+    final activeCommunity = activeAsync.unwrapPrevious().value;
+    final live = ref.watch(tenantProfileLiveProvider).unwrapPrevious();
+    final cleared = live.hasValue && live.value == null;
 
     return _CommunityAvatar(
-      name:
-          ref.watch(tenantProfileLiveProvider).unwrapPrevious().value?.name ??
-          activeCommunity?.name,
+      name: cleared ? null : live.value?.name ?? activeCommunity?.name,
       relayUrl: activeCommunity?.relayUrl,
     );
   }
@@ -25,9 +25,12 @@ class _CommunityHeaderTitle extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final name =
-        ref.watch(tenantProfileLiveProvider).unwrapPrevious().value?.name ??
-        ref.watch(activeCommunityProvider).value?.name;
+    final live = ref.watch(tenantProfileLiveProvider).unwrapPrevious();
+    final cleared = live.hasValue && live.value == null;
+    final name = cleared
+        ? null
+        : live.value?.name ??
+            ref.watch(activeCommunityProvider).unwrapPrevious().value?.name;
     final title = name?.trim();
     return SizedBox.expand(
       child: Align(
@@ -35,7 +38,9 @@ class _CommunityHeaderTitle extends ConsumerWidget {
         child: Padding(
           padding: const EdgeInsets.only(left: Grid.xxs),
           child: Text(
-            title == null || title.isEmpty ? 'Community' : title,
+            title == null || title.isEmpty
+                ? _channelText(context, PlatformMessageKey.platformThemeCommunitySample)
+                : title,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: style,
@@ -54,15 +59,17 @@ class _CommunityAvatar extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final trimmedName = name?.trim();
+    final live = ref.watch(tenantProfileLiveProvider).unwrapPrevious();
+    final cleared = live.hasValue && live.value == null;
+    final trimmedName = cleared ? null : name?.trim();
     final initial = trimmedName != null && trimmedName.isNotEmpty
         ? trimmedName.substring(0, 1).toUpperCase()
         : '?';
     final relay = relayUrl;
-    final profile = ref.watch(tenantProfileLiveProvider).unwrapPrevious().value;
+    final profile = live.value;
     final iconUrl = profile != null
         ? profile.icon
-        : relay == null
+        : cleared || relay == null
         ? null
         : ref.watch(communityIconProvider(relay)).value;
     final emoji =
