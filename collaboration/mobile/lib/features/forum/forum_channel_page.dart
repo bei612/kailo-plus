@@ -4,7 +4,6 @@ import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import '../../shared/platform/platform_views.dart';
-import '../../shared/relay/relay.dart';
 import '../../shared/widgets/frosted_app_bar.dart';
 import '../../shared/widgets/frosted_scaffold.dart';
 import '../channels/channel.dart';
@@ -13,7 +12,11 @@ import 'forum_posts_view.dart';
 import 'forum_thread_page.dart';
 
 class ForumChannelPage extends HookConsumerWidget {
-  const ForumChannelPage({super.key, required this.channel, this.initialEventId});
+  const ForumChannelPage({
+    super.key,
+    required this.channel,
+    this.initialEventId,
+  });
   final Channel channel;
   final String? initialEventId;
 
@@ -31,10 +34,17 @@ class ForumChannelPage extends HookConsumerWidget {
       opened.value = target;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!context.mounted) return;
-        Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => ForumThreadPage(
-          channelId: channel.id, postEventId: target, currentPubkey: pubkey,
-          isMember: current.isMember, isArchived: current.isArchived,
-        )));
+        Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => ForumThreadPage(
+              channelId: channel.id,
+              postEventId: target,
+              currentPubkey: pubkey,
+              isMember: current.isMember,
+              isArchived: current.isArchived,
+            ),
+          ),
+        );
       });
       return null;
     }, [channel.id, initialEventId]);

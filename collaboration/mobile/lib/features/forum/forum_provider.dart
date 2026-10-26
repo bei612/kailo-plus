@@ -13,14 +13,27 @@ import 'forum_models.dart';
 
 /// Original forum reads use the current authenticated Relay query. Watching config
 /// retires cached results on a community/key change; queryRelay fences late responses.
-final forumPostsProvider = FutureProvider.autoDispose.family<ForumPostsResponse, String>((ref, channelId) async {
-  ref.watch(relayConfigProvider);
-  final session = ref.read(relaySessionProvider.notifier);
-  final events = await session.queryRelay([NostrFilter(
-    kinds: const [EventKind.forumPost], tags: {'#h': [channelId]}, limit: 50,
-  )]);
-  return ForumPostsResponse.fromEvents(events.where((e) => e.kind == EventKind.forumPost && e.channelId == channelId).toList());
-});
+final forumPostsProvider = FutureProvider.autoDispose
+    .family<ForumPostsResponse, String>((ref, channelId) async {
+      ref.watch(relayConfigProvider);
+      final session = ref.read(relaySessionProvider.notifier);
+      final events = await session.queryRelay([
+        NostrFilter(
+          kinds: const [EventKind.forumPost],
+          tags: {
+            '#h': [channelId],
+          },
+          limit: 50,
+        ),
+      ]);
+      return ForumPostsResponse.fromEvents(
+        events
+            .where(
+              (e) => e.kind == EventKind.forumPost && e.channelId == channelId,
+            )
+            .toList(),
+      );
+    });
 
 /// Resolve a pushed reply by its actual Relay ancestry, then read the original
 /// complete forum thread. IDs from notification data never bypass channel scope.
@@ -34,40 +47,91 @@ Future<ForumThreadResponse> loadForumThread(
   NostrEvent? root;
   for (var depth = 0; depth < 64; depth++) {
     if (!visited.add(id)) throw const FormatException('Cyclic forum ancestry');
-    final events = await query([NostrFilter(kinds: const [EventKind.forumPost, EventKind.forumComment], ids: [id], tags: {'#h': [channelId]}, limit: 1)]);
-    final event = events.where((e) => e.id == id && e.channelId == channelId && (e.kind == EventKind.forumPost || e.kind == EventKind.forumComment)).firstOrNull;
+    final events = await query([
+      NostrFilter(
+        kinds: const [EventKind.forumPost, EventKind.forumComment],
+        ids: [id],
+        tags: {
+          '#h': [channelId],
+        },
+        limit: 1,
+      ),
+    ]);
+    final event = events
+        .where(
+          (e) =>
+              e.id == id &&
+              e.channelId == channelId &&
+              (e.kind == EventKind.forumPost ||
+                  e.kind == EventKind.forumComment),
+        )
+        .firstOrNull;
     if (event == null) throw const FormatException('Forum target unavailable');
-    if (event.kind == EventKind.forumPost) { root = event; break; }
+    if (event.kind == EventKind.forumPost) {
+      root = event;
+      break;
+    }
     final thread = event.threadReference;
     final parent = thread.rootId ?? thread.parentId;
-    if (parent == null) throw const FormatException('Forum reply has no parent');
+    if (parent == null) {
+      throw const FormatException('Forum reply has no parent');
+    }
     id = parent;
   }
-  if (root == null) throw const FormatException('Forum ancestry depth exceeded');
+  if (root == null) {
+    throw const FormatException('Forum ancestry depth exceeded');
+  }
   final replies = <String, NostrEvent>{};
   NostrEvent? cursor;
   for (var page = 0; page < 500; page++) {
-    final events = await query([NostrFilter(
-      kinds: const [EventKind.forumComment],
-      tags: {'#h': [channelId], '#e': [root.id]}, limit: 200,
-      extensions: {'depth_limit': 64, if (cursor != null) 'thread_cursor': cursor.createdAt, if (cursor != null) 'thread_cursor_id': cursor.id},
-    )]);
+    final events = await query([
+      NostrFilter(
+        kinds: const [EventKind.forumComment],
+        tags: {
+          '#h': [channelId],
+          '#e': [root.id],
+        },
+        limit: 200,
+        extensions: {
+          'depth_limit': 64,
+          if (cursor != null) 'thread_cursor': cursor.createdAt,
+          if (cursor != null) 'thread_cursor_id': cursor.id,
+        },
+      ),
+    ]);
     for (final event in events) {
-      if (event.kind == EventKind.forumComment && event.channelId == channelId) replies[event.id] = event;
+      if (event.kind == EventKind.forumComment && event.channelId == channelId) {
+        replies[event.id] = event;
+      }
     }
-    if (events.length < 200) return ForumThreadResponse.fromEvents(root: root, replies: replies.values.toList());
+    if (events.length < 200) {
+      return ForumThreadResponse.fromEvents(
+        root: root,
+        replies: replies.values.toList(),
+      );
+    }
     final last = events.last;
-    if (cursor?.id == last.id) throw const FormatException('Forum cursor did not advance');
+    if (cursor?.id == last.id) {
+      throw const FormatException('Forum cursor did not advance');
+    }
     cursor = last;
   }
   throw const FormatException('Forum thread page safety limit');
 }
 
-final forumThreadProvider = FutureProvider.autoDispose.family<ForumThreadResponse, ({String channelId, String eventId})>((ref, args) async {
-  ref.watch(relayConfigProvider);
-  final session = ref.read(relaySessionProvider.notifier);
-  return loadForumThread((filters) => session.queryRelay(filters), args.channelId, args.eventId);
-});
+final forumThreadProvider = FutureProvider.autoDispose
+    .family<ForumThreadResponse, ({String channelId, String eventId})>((
+      ref,
+      args,
+    ) async {
+      ref.watch(relayConfigProvider);
+      final session = ref.read(relaySessionProvider.notifier);
+      return loadForumThread(
+        (filters) => session.queryRelay(filters),
+        args.channelId,
+        args.eventId,
+      );
+    });
 
 /// A forum event delivery bound to the community where composition began.
 ///
@@ -163,7 +227,9 @@ class ForumEventDelivery {
     required List<List<String>> mediaTags,
   }) async {
     final currentConfig = _container.read(relayConfigProvider);
-    if (_session.credentialGeneration != _generation || currentConfig.baseUrl != _relayUrl || currentConfig.nsec != _nsec) {
+    if (_session.credentialGeneration != _generation ||
+        currentConfig.baseUrl != _relayUrl ||
+        currentConfig.nsec != _nsec) {
       throw StateError(
         'Forum delivery cancelled because the active community changed',
       );
@@ -192,8 +258,18 @@ Future<bool> deleteForumEvent(
     await actions.deleteMessage(channelId: channelId, eventId: eventId);
   } catch (error) {
     if (ref.context.mounted) {
-      ScaffoldMessenger.maybeOf(ref.context)?.showSnackBar(SnackBar(content: Text(forumText(ref.context,
-        error is RelayPublishOutcomeUnknown ? PlatformMessageKey.messagesActionsDeleteUnknown : PlatformMessageKey.messagesActionsDeleteFailed))));
+      ScaffoldMessenger.maybeOf(ref.context)?.showSnackBar(
+        SnackBar(
+          content: Text(
+            forumText(
+              ref.context,
+              error is RelayPublishOutcomeUnknown
+                  ? PlatformMessageKey.messagesActionsDeleteUnknown
+                  : PlatformMessageKey.messagesActionsDeleteFailed,
+            ),
+          ),
+        ),
+      );
     }
     return false;
   }
