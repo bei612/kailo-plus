@@ -492,7 +492,7 @@ async fn message_author(
 ) -> Result<String, Refusal> {
     let filter = json!({"ids": [event_id], "#h": [channel], "limit": 1});
     let page = client
-        .query(&state.http, &[filter])
+        .query(&state.relay_http, &[filter])
         .await
         .map_err(|_| Refusal::Unavailable("被举报消息不可回读".into()))?;
     let found = page
@@ -654,7 +654,7 @@ async fn check(
         Send::Resolve { ids } => {
             let control = control(state, ctx.tenant_id).await?;
             let rows = control
-                .moderation_reports(&state.http, None)
+                .moderation_reports(&state.relay_http, None)
                 .await
                 .map_err(|_| Refusal::Unavailable("Relay 举报队列不可读".into()))?;
             open_reports(&rows, ids)
@@ -961,7 +961,7 @@ async fn send_once(
     signed: Signed,
     client: IdentityClient,
 ) -> Result<(), Refusal> {
-    let delivery = client.deliver_moderation(&state.http, &signed.event).await;
+    let delivery = client.deliver_moderation(&state.relay_http, &signed.event).await;
     let evidence = vec![Evidence::new(EvidenceKind::BuzzEventId, &signed.event_id)];
     let settled = match delivery {
         Delivery::Accepted => Settled::Verified(evidence),
@@ -1094,7 +1094,7 @@ async fn observe_publication(state: &BffState, ae: &Execution) -> Result<Settled
     };
     let observed = if u32::try_from(kind).ok() == Some(wire::KIND_REPORT) {
         control
-            .moderation_reports(&state.http, None)
+            .moderation_reports(&state.relay_http, None)
             .await
             .map(|rows| {
                 let found = rows.iter().any(|row| row.report_event_id == event_id);
@@ -1102,7 +1102,7 @@ async fn observe_publication(state: &BffState, ae: &Execution) -> Result<Settled
             })
     } else {
         control
-            .event_exists(&state.http, &event_id)
+            .event_exists(&state.relay_http, &event_id)
             .await
             .map(|found| (found, true))
     };
@@ -1201,7 +1201,7 @@ async fn drive_restriction(
         Err(_) => return Ok(Settled::Unknown),
     };
     let now = now_secs();
-    let Ok(before) = control.moderation_restricted(&state.http).await else {
+    let Ok(before) = control.moderation_restricted(&state.relay_http).await else {
         return Ok(Settled::Unknown);
     };
     let pending: Vec<&String> = pubkeys
@@ -1220,13 +1220,13 @@ async fn drive_restriction(
         let event = control
             .sign_moderation(mode.kind(), "", &tags)
             .map_err(signing)?;
-        match control.deliver_moderation(&state.http, &event).await {
+        match control.deliver_moderation(&state.relay_http, &event).await {
             Delivery::Accepted => {}
             Delivery::Rejected(why) => tracing::warn!(reason = %why, "Relay 拒绝审核命令"),
             Delivery::Limited(..) | Delivery::Unknown(_) => unknown = true,
         }
     }
-    let Ok(after) = control.moderation_restricted(&state.http).await else {
+    let Ok(after) = control.moderation_restricted(&state.relay_http).await else {
         return Ok(Settled::Unknown);
     };
     let reached = pubkeys
@@ -1291,7 +1291,7 @@ async fn drive_resolution(
     let Ok(control) = control(state, ae.tenant_id).await else {
         return Ok(Settled::Unknown);
     };
-    let Ok(before) = control.moderation_reports(&state.http, None).await else {
+    let Ok(before) = control.moderation_reports(&state.relay_http, None).await else {
         return Ok(Settled::Unknown);
     };
     let pending = match resolution_progress(&before, &ids, status) {
@@ -1311,13 +1311,13 @@ async fn drive_resolution(
         let tags = wire::resolve_tags(id, status, action);
         let kind = wire::KIND_MODERATION_RESOLVE_REPORT;
         let event = control.sign_moderation(kind, "", &tags).map_err(signing)?;
-        match control.deliver_moderation(&state.http, &event).await {
+        match control.deliver_moderation(&state.relay_http, &event).await {
             Delivery::Accepted => {}
             Delivery::Rejected(why) => tracing::warn!(reason = %why, "Relay 拒绝举报处理"),
             Delivery::Limited(..) | Delivery::Unknown(_) => unknown = true,
         }
     }
-    let Ok(after) = control.moderation_reports(&state.http, None).await else {
+    let Ok(after) = control.moderation_reports(&state.relay_http, None).await else {
         return Ok(Settled::Unknown);
     };
     Ok(match resolution_progress(&after, &ids, status) {
@@ -1459,7 +1459,7 @@ pub(crate) async fn inherit_restrictions(
         StatusCode::SERVICE_UNAVAILABLE.into_response()
     };
     let rows = control
-        .moderation_restricted(&state.http)
+        .moderation_restricted(&state.relay_http)
         .await
         .map_err(unavailable)?;
     let wanted = inherited(&rows, &others, now_secs());
@@ -1471,12 +1471,12 @@ pub(crate) async fn inherit_restrictions(
         let event = control
             .sign_moderation(kind, "", &tags)
             .map_err(unavailable)?;
-        if let Delivery::Rejected(why) = control.deliver_moderation(&state.http, &event).await {
+        if let Delivery::Rejected(why) = control.deliver_moderation(&state.relay_http, &event).await {
             tracing::warn!(reason = %why, "Relay 拒绝继承限制命令");
         }
     }
     let after = control
-        .moderation_restricted(&state.http)
+        .moderation_restricted(&state.relay_http)
         .await
         .map_err(unavailable)?;
     if inheritance_commands(&after, pubkey, wanted).is_empty() {

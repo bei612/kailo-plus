@@ -102,7 +102,7 @@ pub(super) async fn fresh(
         collab_bridge::bridge::Scope::Channel(&channel),
     ] {
         let roster = control
-            .roster(&state.http, scope)
+            .roster(&state.relay_http, scope)
             .await
             .map_err(|_| Refusal::Unavailable("Agent roster unavailable".into()))?;
         if !roster.iter().any(|member| member.pubkey == b.agent_pubkey) {

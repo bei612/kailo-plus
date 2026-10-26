@@ -27,6 +27,13 @@ cd "$(dirname "$0")"
 . ./runtime-dir.sh
 (cd ../.. && python3 tools/gen-registry.py --check)
 . "$KAILO_RUNTIME_DIR/.env"
+# 普通 Relay 请求必须有显式有限期限；在取一次性凭据之前拒绝缺失/畸形投递。
+BUZZ_RELAY_HTTP_TIMEOUT_SECONDS="${BUZZ_RELAY_HTTP_TIMEOUT_SECONDS:?缺少 BUZZ_RELAY_HTTP_TIMEOUT_SECONDS}" python3 - <<'PYRELAYTIMEOUT'
+import os, re
+raw = os.environ["BUZZ_RELAY_HTTP_TIMEOUT_SECONDS"]
+if not re.fullmatch(r"[1-9][0-9]*", raw) or int(raw) > 2147483647:
+    raise SystemExit("BUZZ_RELAY_HTTP_TIMEOUT_SECONDS 必须是正的 32 位整数秒")
+PYRELAYTIMEOUT
 : "${OPENBAO_PLATFORM_NAMESPACE:?}" "${OPENBAO_TENANT_PARENT_NAMESPACE:?}" \
   "${OPENBAO_TENANT_PROVISIONER_ROLE_NAME:?}" \
   "${OPENBAO_SECRET_ID_WRAP_TTL:?缺少 .env 中的 OPENBAO_SECRET_ID_WRAP_TTL}"

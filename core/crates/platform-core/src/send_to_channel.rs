@@ -508,7 +508,7 @@ pub(crate) async fn prepare(
         })
     };
     let page = client
-        .query(&state.http, &[filter(&source), filter(&root)])
+        .query(&state.relay_http, &[filter(&source), filter(&root)])
         .await
         .map_err(|error| relay_error_response(&error, None))?;
     let edits: Vec<nostr::Event> = serde_json::from_value(page).map_err(|_| invalid_evidence())?;

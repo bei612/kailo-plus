@@ -114,7 +114,7 @@ async fn query_inner(state: &BffState, headers: &HeaderMap) -> Result<Value, Res
     }
     let value = client
         .query(
-            &state.http,
+            &state.relay_http,
             &[json!({"kinds":[30300],"authors":[client.pubkey_hex()],"limit":cap})],
         )
         .await
@@ -204,7 +204,7 @@ pub(crate) async fn head(
 ) -> Result<(Event, ReminderView), Response> {
     let raw = client
         .query(
-            &state.http,
+            &state.relay_http,
             &[json!({"kinds":[30300],"ids":[id],"authors":[client.pubkey_hex()],"limit":1})],
         )
         .await
@@ -218,7 +218,7 @@ pub(crate) async fn head(
         return Err(StatusCode::BAD_GATEWAY.into_response());
     }
     let reminder = view(client, event).ok_or_else(|| StatusCode::BAD_GATEWAY.into_response())?;
-    let raw = client.query(&state.http, &[json!({"kinds":[30300],"#d":[reminder.id],"authors":[client.pubkey_hex()],"limit":1})])
+    let raw = client.query(&state.relay_http, &[json!({"kinds":[30300],"#d":[reminder.id],"authors":[client.pubkey_hex()],"limit":1})])
         .await.map_err(|e| relay_error_response(&e, None))?;
     let heads: Vec<Event> =
         serde_json::from_value(raw).map_err(|_| StatusCode::BAD_GATEWAY.into_response())?;
@@ -298,7 +298,7 @@ pub(crate) async fn confirm_accepted(
     }
     let raw = client
         .query(
-            &state.http,
+            &state.relay_http,
             &[json!({
                 "ids":[event_id],"kinds":[30300],"authors":[client.pubkey_hex()],"limit":1
             })],

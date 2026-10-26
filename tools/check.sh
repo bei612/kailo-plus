@@ -1331,6 +1331,7 @@ projections = {
     ("worker", "TEMPORAL_ADDRESS"): "${TEMPORAL_ADDRESS}",
     ("worker", "CORE_SERVICE_URL"): "http://core-bff:${SERVICE_CONTAINER_PORT}",
     ("core-bff", "BUZZ_RELAY_WS_URL"): "ws://${BUZZ_RELAY_HOST}:${BUZZ_RELAY_PORT}",
+    ("core-bff", "BUZZ_RELAY_HTTP_TIMEOUT_SECONDS"): "${BUZZ_RELAY_HTTP_TIMEOUT_SECONDS}",
     ("core-bff", "BUZZ_RELAY_TRANSPORT"): "http://${BUZZ_RELAY_HOST}:${BUZZ_RELAY_PORT}",
     ("core-bff", "RELAY_OPERATOR_API_ORIGIN"): "http://${BUZZ_RELAY_HOST}:${BUZZ_RELAY_PORT}",
     ("temporal-db", "POSTGRES_DB"): "${TEMPORAL_DB_NAME}",

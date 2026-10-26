@@ -246,12 +246,12 @@ pub(super) async fn trigger_context(
             // content and message_id is the reacted message, not the reaction.
             let source = match invocation.trigger_target_event_id.as_deref() {
                 Some(target) => control
-                    .reaction_source(&state.http, &invocation.source_event_id, target)
+                    .reaction_source(&state.relay_http, &invocation.source_event_id, target)
                     .await
                     .map_err(|_| unknown())?,
                 None => control
                     .source_message(
-                        &state.http,
+                        &state.relay_http,
                         &invocation.source_event_id,
                         &channel.to_string(),
                         &invocation.root_event_id,
@@ -610,7 +610,7 @@ async fn publish(
     .map_err(|_| unknown())?;
     let transport = reqwest::Url::parse(&state.relay_transport).map_err(|_| unknown())?;
     let nip11 =
-        collab_bridge::limits::fetch_nip11(&state.http, &transport, &binding.normalized_host)
+        collab_bridge::limits::fetch_nip11(&state.relay_http, &transport, &binding.normalized_host)
             .await
             .map_err(|_| unknown())?;
     if nip11.digest != binding.nip11_snapshot_digest {
@@ -786,7 +786,7 @@ async fn publish(
             return Err(error);
         }
     };
-    let outcome = match client.deliver(&state.http, &event, admitted).await {
+    let outcome = match client.deliver(&state.relay_http, &event, admitted).await {
         Delivery::Accepted => Some("ACCEPTED"),
         Delivery::Rejected(_) => Some("REJECTED"),
         Delivery::Limited(_, _) => Some("NOT_DELIVERED"),

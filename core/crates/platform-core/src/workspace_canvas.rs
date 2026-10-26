@@ -565,7 +565,7 @@ async fn deliver(
     let admitted = control
         .admit()
         .map_err(|_| unavailable("Canvas Relay budget unavailable"))?;
-    let ack = match control.deliver(&state.http, event, admitted).await {
+    let ack = match control.deliver(&state.relay_http, event, admitted).await {
         Delivery::Accepted => "ACCEPTED",
         Delivery::Rejected(why) => {
             tracing::warn!(reason = %why, "Relay rejected the Canvas event");
@@ -690,7 +690,7 @@ async fn finish(
     let control = control_client(service, ae.tenant_id, ProjectionDirection::Withdraw).await;
     let observed = match control {
         Ok((control, _)) if control.pubkey_hex() == intent.control_pubkey => control
-            .event_exists(&service.http, &intent.event_id)
+            .event_exists(&service.relay_http, &intent.event_id)
             .await
             .ok(),
         _ => None,
@@ -931,7 +931,7 @@ pub async fn read(
     }
     let filter = json!({"kinds": [KIND_CANVAS], "#h": [scope.channel_id],
         "authors": [control], "limit": 1});
-    let page = match client.query(&state.http, &[filter]).await {
+    let page = match client.query(&state.relay_http, &[filter]).await {
         Ok(page) => page,
         Err(error) => return relay_error_response(&error, None),
     };

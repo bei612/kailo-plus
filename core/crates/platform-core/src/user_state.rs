@@ -309,7 +309,7 @@ pub async fn put_project_preference(
             };
         let rows = match client
             .query(
-                &state.http,
+                &state.relay_http,
                 &[serde_json::json!({"kinds":[kind],"authors":[author],"#d":[slug],"limit":1})],
             )
             .await
@@ -932,7 +932,7 @@ pub(crate) async fn readable_event_ids(
                         })
                     })
                     .collect();
-                let result = client.query(&state.http, &filters).await.map_err(|e| {
+                let result = client.query(&state.relay_http, &filters).await.map_err(|e| {
                     tracing::warn!(error = %e, "查证已读事件可见性失败");
                     web_transport::relay_error_response(&e, None)
                 })?;
