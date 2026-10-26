@@ -13,7 +13,7 @@ import {setLocale} from "../src/i18n";
 import {PlatformProvider} from "../src/react/context";
 import {PulseHostProvider,type PulseHost,type PulseEvent} from "../src/react/pulse/host";
 import {TooltipProvider} from "../src/react/sidebar/tooltip";
-import {ProjectsView,createProjectsGitHost,type ProjectsHost} from "../src/react/projects";
+import {ProjectsView,createProjectsGitHost,createNativeProjectsGitHost,type ProjectsHost} from "../src/react/projects";
 import {loadProjectDirectory} from "../src/react/projects/projectEnumeration";
 import type {ProjectWorkItemTarget} from "../src/react/projects/projectWorkItems";
 import {eventToRepoState,fetchRepoState} from "../src/react/projects/projectRepoState";
@@ -31,7 +31,7 @@ const snapshot:ProjectsGitQueryResponse={view:ProjectsGitQueryRequestView.Snapsh
   latestCommit:{hash:mainHead,shortHash:"1111111",authorName:"Ada",authorEmail:"ada@example.test",timestamp:1_700_000_000,subject:"Initial import"},
   commits:[],contributors:[],files:[{path:"README.md",kind:"file",size:4,previewContent:"# Hi",lastChangedAt:null}]}};
 
-function fixture({refs=true,publish=true}:{refs?:boolean;publish?:boolean}={}){
+function fixture({refs=true,publish=true,native=false}:{refs?:boolean;publish?:boolean;native?:boolean}={}){
   const announcement=event("8",30617,[["d","repo"],["name","Original repo"],["clone","https://example.test/repo.git"]]);
   const rows=[announcement,event("9",30621,[["d","project"],["name","Original project"],["a",repository]]),
     // An older state must lose to the newest replaceable one.
@@ -45,6 +45,16 @@ function fixture({refs=true,publish=true}:{refs?:boolean;publish?:boolean}={}){
   const gitQuery=vi.fn(async(_request:ProjectsGitQueryRequest):Promise<ProjectsGitQueryResponse>=>snapshot);
   const ref=vi.fn(async(request:ProjectsGitRefRequest,_key:string):Promise<ProjectsGitRefResponse>=>({branch:request.branch,commit:request.expectedCommit}));
   const host:ProjectsHost={scopeKey:"tenant:human",query,git:createProjectsGitHost(gitQuery,refs?ref:undefined)};
+  if(native){
+    // Keep the original read fixture; branch writes now traverse the real
+    // Desktop host decoder with only its native command boundary supplied.
+    const nativeGit=createNativeProjectsGitHost(async(command,args)=>{
+      expect(["create_project_remote_branch","delete_project_remote_branch"]).toContain(command);
+      try{return await ref(args.input as ProjectsGitRefRequest,args.idempotencyKey as string);}
+      catch(error){if(error instanceof BffError)throw {code:error.reason,operationId:error.operationId};throw error;}
+    },{expectedRelayUrl:"wss://native.example",expectedSignerPubkey:viewer});
+    host.git={...host.git!,createProjectRemoteBranch:nativeGit.createProjectRemoteBranch,deleteProjectRemoteBranch:nativeGit.deleteProjectRemoteBranch};
+  }
   if(publish)host.publish=vi.fn<NonNullable<ProjectsHost["publish"]>>(async()=>{throw new Error("unexpected publication");});
   return {host,rows,ref,announcement,projectId:`30621:${owner}:project`,repositoryId:`${owner}:repo`};
 }
@@ -145,8 +155,8 @@ describe("Projects Git ref host seam",()=>{
 });
 
 describe("restored branch dialogs",()=>{
-  it("creates a branch from the active branch head and selects it",async()=>{
-    const f=fixture();const success=vi.spyOn(toast,"success").mockImplementation(()=>"ok");
+  it.each([false,true])("creates a branch from the active branch head and selects it (native=%s)",async(native)=>{
+    const f=fixture({native});const success=vi.spyOn(toast,"success").mockImplementation(()=>"ok");
     f.ref.mockImplementation(async request=>{
       f.rows.push(event("5",30618,[["d","repo"],["refs/heads/main",mainHead],["refs/heads/feature",featureHead],[`refs/heads/${request.branch}`,request.expectedCommit]],"",40));
       return {branch:request.branch,commit:request.expectedCommit};
@@ -170,8 +180,8 @@ describe("restored branch dialogs",()=>{
     expect(document.querySelector('[data-testid="project-create-branch-dialog"]')).toBeNull();
   });
 
-  it("deletes the selected branch, keeps an UNKNOWN deletion and re-checks only it",async()=>{
-    const f=fixture();const success=vi.spyOn(toast,"success").mockImplementation(()=>"ok");
+  it.each([false,true])("deletes the selected branch, keeps an UNKNOWN deletion and re-checks only it (native=%s)",async(native)=>{
+    const f=fixture({native});const success=vi.spyOn(toast,"success").mockImplementation(()=>"ok");
     f.ref.mockRejectedValueOnce(new TransportError("lost answer"));
     await mount(f,{repositoryId:f.repositoryId,tab:"files"});
     await vi.waitFor(()=>expect(document.querySelector('[data-testid="project-repository-branch-trigger"]')?.textContent).toBe("main"));
