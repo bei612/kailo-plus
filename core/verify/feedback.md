@@ -87,3 +87,20 @@ Clippy 尚未执行；原件 `feedback-core-check-complete-input.log`。后续�
 随后 Clippy `-D warnings` 拒绝附件读取的六项 tuple（type_complexity），
 整体尚未通过、SQLx 尚未执行；现改为命名 SQLx 行类型，不加 allow 绕过。
 原件 `feedback-c9b6eb253/feedback-core-check-complete-input.log`。
+
+## 固定 Core 终态（2026-10-26）
+
+修复后的固定 `c20e64d8c`，原不可变 check SDK 4 CPU / 16 GiB + 全新独立
+PostgreSQL 1 CPU / 2 GiB，全部检查退出 0：Core workspace fmt；完整迁移；
+反馈与后续未读迁移回退到 `20261030010000` 后再前进；
+`cargo test --locked --manifest-path core/Cargo.toml -p platform-core feedback:: -- --include-ignored`
+**2 passed / 0 failed / 0 ignored**；Core all-target Clippy `-D warnings`；
+workspace SQLx prepare check。
+
+输入检查覆盖正文字符上界、诊断白名单和图片文件头；实际 PostgreSQL 提交链
+覆盖同键重放、不同体冲突、小时限速与 Retry-After、审计不含正文、成员撤销后
+拒绝重放。运营方 fresh Catalog manage 与分拣/附件真实 HTTP 链尚未端到端验收；
+前述共享 UI 检查不替代这项边界，Mobile/打包部署仍未完成。
+原件 `/volumes/data/kailo/verification/buzz-r10/feedback-c20e64d8c/` 中的
+`feedback-core-check-complete-input.log`、`feedback-core-check-result.log` 及
+preflight/limits；SDK、隔离 PG 和网络随脚本清理。
