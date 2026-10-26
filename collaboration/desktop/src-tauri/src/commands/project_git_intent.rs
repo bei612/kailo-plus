@@ -17,6 +17,9 @@ pub(super) struct Intent {
     pub result: String,
     pub event: Option<String>,
     pub event_result: Option<String>,
+    /// Frozen from the admitted Relay before the first publication side effect.
+    #[serde(default)]
+    pub event_community_id: Option<String>,
 }
 
 pub(super) struct Journal(Connection);
@@ -102,6 +105,9 @@ impl Journal {
                 || frozen.author != intent.author
             {
                 return Err(WriteError::at("IDEMPOTENCY_KEY_REUSED", &intent.key));
+            }
+            if frozen.event_community_id.is_some() && frozen.event_community_id != intent.event_community_id {
+                return Err(WriteError::at(UNKNOWN, &intent.key));
             }
             if frozen.event.is_some()
                 && frozen.event != intent.event

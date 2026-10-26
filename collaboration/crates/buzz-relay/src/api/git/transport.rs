@@ -247,7 +247,7 @@ impl axum::extract::FromRequestParts<Arc<AppState>> for GitAuth {
 /// Cascades to the proven NIP-OA owner, matching the NIP-42 gate in
 /// `handlers::auth`: banning a human must also revoke their agents, or the ban
 /// is bypassable by cloning and pushing through an agent key.
-pub(super) async fn deny_banned_git_principal(
+pub(crate) async fn deny_banned_git_principal(
     db: &buzz_db::Db,
     community: buzz_core::CommunityId,
     pubkey: &nostr::PublicKey,
@@ -483,7 +483,7 @@ fn hydrate_error_to_response(owner: &str, repo: &str, err: HydrateError) -> Resp
 /// — so the remediation body leaks nothing, and only the author can rebind
 /// (kind:30617 is keyed by `(author, d)`). A *broken* binding stays generic
 /// even for the author: ambiguity fails closed.
-pub(super) async fn authorize_git_read(
+pub(crate) async fn authorize_git_read(
     db: &buzz_db::Db,
     community: buzz_core::CommunityId,
     caller: &nostr::PublicKey,

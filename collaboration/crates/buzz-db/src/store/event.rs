@@ -424,7 +424,14 @@ pub async fn insert_event(
         crate::observability::WriterOperation::EventWrite,
     )
     .await?;
-    insert_event_on(&mut connection, community_id, event, channel_id).await
+    if event.kind.as_u16() == 1631 {
+        let mut tx = sqlx::Transaction::begin(connection, None).await?;
+        let result = insert_event_on(tx.as_mut(), community_id, event, channel_id).await?;
+        tx.commit().await?;
+        Ok(result)
+    } else {
+        insert_event_on(&mut connection, community_id, event, channel_id).await
+    }
 }
 
 /// Insert a Nostr event in a caller-owned PostgreSQL transaction.
@@ -456,6 +463,8 @@ async fn insert_event_on(
     if is_ephemeral(kind_u32) {
         return Err(DbError::EphemeralEventRejected(kind_u16));
     }
+
+    crate::store::publication::guard_merged_status_write(connection, community_id, event).await?;
 
     let id_bytes = event.id.as_bytes();
     let pubkey_bytes = event.pubkey.to_bytes();
@@ -1295,6 +1304,12 @@ pub(crate) async fn get_event_by_id_including_deleted_with_operation(
     operation: crate::observability::WriterOperation,
 ) -> Result<Option<StoredEvent>> {
     let mut connection = crate::observability::acquire_writer(pool, operation).await?;
+    get_event_by_id_including_deleted_on(&mut connection, community_id, id_bytes).await
+}
+
+pub(crate) async fn get_event_by_id_including_deleted_on(
+    connection: &mut PgConnection, community_id: CommunityId, id_bytes: &[u8],
+) -> Result<Option<StoredEvent>> {
     let row = sqlx::query(
         "SELECT id, pubkey, created_at, kind, tags, content, sig, received_at, channel_id \
          FROM events WHERE community_id = $1 AND id = $2 ORDER BY created_at DESC LIMIT 1",
@@ -1416,6 +1431,8 @@ pub(crate) async fn insert_event_with_thread_metadata_tx(
     if is_ephemeral(kind_u32) {
         return Err(DbError::EphemeralEventRejected(kind_u16));
     }
+
+    crate::store::publication::guard_merged_status_write(tx.as_mut(), community_id, event).await?;
 
     let id_bytes = event.id.as_bytes();
     let pubkey_bytes = event.pubkey.to_bytes();

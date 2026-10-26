@@ -19,17 +19,27 @@ pub async fn submit_signed_event_at_with_keys(
     api_base_url: &str,
     keys: &nostr::Keys,
 ) -> Result<SubmitEventResponse, String> {
+    submit_signed_event_scoped(event, &state.http_client, api_base_url, keys, || Ok(())).await
+}
+
+/// Original submit path with a lifecycle check after rate-limit waiting.
+/// Scoped callers provide the original no-redirect authenticated client.
+pub(crate) async fn submit_signed_event_scoped(
+    event: &nostr::Event, http: &reqwest::Client, api_base_url: &str, keys: &nostr::Keys,
+    check: impl Fn() -> Result<(),String> + Send + Sync,
+) -> Result<SubmitEventResponse,String> {
     if event.pubkey != keys.public_key() {
         return Err("signed event does not match the publishing identity".to_string());
     }
     crate::relay_admission::wait_for_rate_limit().await;
+    check()?;
     let url = format!("{}/events", api_base_url.trim_end_matches('/'));
     let body_bytes = event.as_json().into_bytes();
     crate::egress_guard::assert_no_key_backup_bytes(&body_bytes, "relay event submit")?;
     let auth_header = build_nip98_auth_header_for_keys(keys, &Method::POST, &url, &body_bytes)?;
 
     let response = build_authenticated_relay_request(
-        &state.http_client,
+        http,
         Method::POST,
         &url,
         &auth_header,

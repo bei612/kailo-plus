@@ -82,3 +82,6 @@ pub use reminder::DueReminder;
 pub use usage::UsageMetricsLeader;
 
 use buzz_core::CommunityId;
+
+/// Writer-fenced merged-status delivery observation.
+pub use store::publication;

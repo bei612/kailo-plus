@@ -8,6 +8,7 @@ use super::{
     project_git_write::{Request, WriteError, FAILED, UNKNOWN},
 };
 use nostr::{Event, EventBuilder, JsonUtil, Keys, Kind, Tag, Timestamp};
+use buzz_core_pkg::publication::MergedStatusDelivery;
 use serde_json::json;
 use std::path::Path;
 use tauri::{AppHandle, Manager};
@@ -217,6 +218,7 @@ trait PublicationIo: Sync {
         &self,
         filters: Vec<serde_json::Value>,
     ) -> impl std::future::Future<Output = Result<Vec<Event>, WriteError>> + Send;
+    fn delivery(&self, event:&Event) -> impl std::future::Future<Output=Result<MergedStatusDelivery,WriteError>> + Send;
     fn readmit(
         &self,
         request: &Request,
@@ -238,6 +240,13 @@ impl PublicationIo for NativePublication<'_> {
     async fn query(&self, filters: Vec<serde_json::Value>) -> Result<Vec<Event>, WriteError> {
         query(self.app, self.scope, &filters).await
     }
+    async fn delivery(&self,event:&Event)->Result<MergedStatusDelivery,WriteError> {
+        let (base,keys)=self.scope.check()?;
+        let proof=crate::relay::merged_status_delivery(event,&self.app.state::<crate::app_state::AppState>().media_fetch_client,
+            &base,&keys,||self.scope.check().map(|_|())).await?;
+        self.scope.check()?;
+        Ok(proof)
+    }
     async fn readmit(&self, request: &Request) -> Result<(), WriteError> {
         let path = super::project_git_remote::repository_path(&request.repository)
             .ok_or_else(|| WriteError::new(FAILED))?;
@@ -251,11 +260,12 @@ impl PublicationIo for NativePublication<'_> {
     }
     async fn submit(&self, event: &Event) -> Result<(), String> {
         let (base, keys) = self.scope.check()?;
-        crate::relay::submit_signed_event_at_with_keys(
+        crate::relay::submit_signed_event_scoped(
             event,
-            &self.app.state::<crate::app_state::AppState>(),
+            &self.app.state::<crate::app_state::AppState>().media_fetch_client,
             &base,
             &keys,
+            || self.scope.check().map(|_|()),
         )
         .await
         .map(|_| ())
@@ -293,26 +303,28 @@ async fn ensure_status_with(
     let mut previous_event = None;
     if let Some(raw) = &intent.event {
         let event = Event::from_json(raw).map_err(|_| pending())?;
-        let events=io.query(vec![json!({"ids":[event.id.to_hex()],"authors":[event.pubkey.to_hex()],"kinds":[1631],"limit":1})]).await.map_err(|_|pending())?;
-        io.keys().map_err(|_| pending())?;
-        if events.iter().any(|found| {
-            found.id != event.id
-                || found.pubkey != event.pubkey
-                || found.kind.as_u16() != 1631
-                || found.verify().is_err()
-        }) {
+        // Core observation precedes the writer proof. In particular, an empty
+        // observation made inside the window cannot be reused after it expires.
+        let proof=io.delivery(&event).await.map_err(|_|pending())?;
+        io.keys().map_err(|_|pending())?;
+        if proof.event_id!=event.id.to_hex() || uuid::Uuid::parse_str(&proof.community_id).is_err()
+            || intent.event_community_id.as_ref().is_some_and(|id| id!=&proof.community_id) {
             return Err(pending());
         }
-        if !events.is_empty() {
-            intent.event_result = Some("ACCEPTED".into());
-            journal.save(intent, "EVENT_RECONCILIATION")?;
+        if proof.accepted {
+            intent.event_result=Some("ACCEPTED".into());
+            journal.save(intent,"EVENT_RECONCILIATION")?;
             return Ok(Some(event.id.to_hex()));
         }
-        // A missing ordinary query is NOT proof: this event and its deletion
-        // can both have been soft-deleted. Only the original NOT_DELIVERED
-        // evidence permits rebuilding until the authoritative receipt seam exists.
-        if intent.event_result.as_deref() != Some("NOT_DELIVERED") {
-            return Err(pending());
+        // Historical unknown attempts did not freeze Community ID. The first
+        // empty answer can never establish which old Community received it.
+        if intent.event_community_id.is_none() && intent.event_result.as_deref()!=Some("NOT_DELIVERED") { return Err(pending()); }
+        if intent.event_result.as_deref()!=Some("NOT_DELIVERED") {
+            if !proof.settled || !facts.is_some_and(|facts|facts.window_passed(&event)) {
+                return Err(pending());
+            }
+            intent.event_result=Some("NOT_DELIVERED".into());
+            journal.save(intent,"EVENT_RECONCILIATION")?;
         }
         previous_event = Some(event);
     }
@@ -344,7 +356,22 @@ async fn ensure_status_with(
     .map_err(|_| pending())?;
     io.readmit(&intent.request).await.map_err(|_| pending())?;
     io.keys().map_err(|_| pending())?;
+    let proof=io.delivery(&event).await.map_err(|_|pending())?;
+    io.keys().map_err(|_|pending())?;
+    if proof.event_id!=event.id.to_hex() || uuid::Uuid::parse_str(&proof.community_id).is_err()
+        || intent.event_community_id.as_ref().is_some_and(|id|id!=&proof.community_id)
+        || (!proof.accepted && proof.settled) { return Err(pending()); }
+    io.readmit(&intent.request).await.map_err(|_|pending())?;
+    io.keys().map_err(|_|pending())?;
+    intent.event_community_id=Some(proof.community_id);
     intent.event = Some(event.as_json());
+    if proof.accepted {
+        intent.event_result=Some("DISPATCHED".into());
+        journal.save(intent,"EVENT_DISPATCH")?;
+        intent.event_result=Some("ACCEPTED".into());
+        journal.save(intent,"EVENT_RECONCILIATION")?;
+        return Ok(Some(event.id.to_hex()));
+    }
     submit_status(io, journal, intent, &event).await
 }
 async fn submit_status(
