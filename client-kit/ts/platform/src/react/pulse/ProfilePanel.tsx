@@ -4,7 +4,8 @@ import { AuxiliaryPanel, AuxiliaryPanelBody, AuxiliaryPanelHeader, AuxiliaryPane
 import { useThreadPanelWidth } from "../messages/thread/useThreadPanelWidth";
 import { useEscapeKey } from "../messages/thread/useEscapeKey";
 import { Button } from "../profile/buzz/shared/ui/button";
-import { truncateNpub, usePulseHost, useUserProfileQuery } from "./host";
+import { usePulseHost, useUserProfileQuery } from "./host";
+import { unknownMemberLabel } from "../messages/system/identity";
 import { ProfileSummaryView } from "./ProfileSummaryView";
 import { useProfileWave } from "./profile-direct-message";
 
@@ -25,7 +26,7 @@ export function ProfilePanel({pubkey,onClose}:{pubkey:string;onClose:()=>void}) 
     <AuxiliaryPanelBody className="overflow-y-auto px-4 pb-6" data-testid="user-profile-scroll-body">
       {profile.isPending?<p role="status">{t("platform.loading")}</p>:profile.isError?
         <div role="alert">{t("platform.loadFailed")}<Button variant="ghost" onClick={()=>void profile.refetch()}>{t("platform.retry")}</Button></div>:
-        <ProfileSummaryView displayName={profile.data?.displayName??truncateNpub(pubkey)} profile={profile.data} pubkey={pubkey} copy={host.copy} mediaUrl={host.mediaUrl}
+        <ProfileSummaryView displayName={profile.data?.displayName??unknownMemberLabel(t)} profile={profile.data} pubkey={pubkey} copy={host.copy} mediaUrl={host.mediaUrl}
           messagePending={opening} onMessage={pubkey!==host.pubkey?async()=>{setOpening(true);setProblem(null);try{await host.startDm(pubkey);onClose();}catch(error){setProblem(error instanceof Error?error.message:t("platform.loadFailed"));}finally{setOpening(false);}}:undefined}
           onWave={wave.onWave} wavePending={wave.pending}/>}
       {problem?<p role="alert">{problem}</p>:null}

@@ -8,6 +8,7 @@ import { COLUMN } from '@/components/table/BaseTable';
 import { EditableContext } from '@/components/EditableWrapper';
 import EditBasicMetadata from './EditBasicMetadata';
 import { useValidateViewMutation } from '@/apollo/client/graphql/view.generated';
+import useKailoText from '@/utils/kailoI18n';
 
 export interface Props {
   formNamespace: string;
@@ -26,6 +27,7 @@ const FIELDS_NAME = {
 const FieldEditableTable = makeEditableBaseTable(FieldTable);
 
 export default function EditViewMetadata(props: Props) {
+  const t = useKailoText();
   const {
     formNamespace,
     displayName,
@@ -82,7 +84,7 @@ export default function EditViewMetadata(props: Props) {
 
       <div className="mb-6">
         <Typography.Text className="d-block gray-7 mb-2">
-          Columns ({fields.length})
+          {t('modeling.columnsCount', { count: fields.length })}
         </Typography.Text>
         <FieldEditableTable
           dataSource={fields}

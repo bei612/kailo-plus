@@ -5,6 +5,7 @@ import {
   getChartTypeOptions,
   ChartTypeProperty,
 } from './BasicProperties';
+import { kailoT } from '@/utils/kailoI18n';
 
 export default function DonutProperties(props: PropertiesProps) {
   const { columns, titleMap } = props;
@@ -17,22 +18,26 @@ export default function DonutProperties(props: PropertiesProps) {
           <ChartTypeProperty options={chartTypeOptions} />
         </Col>
         <Col span={12}>
-          <Form.Item className="mb-0" label="Category" name="color">
+          <Form.Item
+            className="mb-0"
+            label={kailoT('home.category')}
+            name="color"
+          >
             <Select
               size="small"
               options={columnOptions}
-              placeholder="Select category"
+              placeholder={kailoT('home.selectCategory')}
             />
           </Form.Item>
         </Col>
       </Row>
       <Row gutter={16}>
         <Col span={12}>
-          <Form.Item className="mb-0" label="Value" name="theta">
+          <Form.Item className="mb-0" label={kailoT('home.value')} name="theta">
             <Select
               size="small"
               options={columnOptions}
-              placeholder="Select value"
+              placeholder={kailoT('home.selectValue')}
             />
           </Form.Item>
         </Col>

@@ -1,0 +1,1585 @@
+// DD-157 (`20` §13, `07` §4.8.7): antd 4 controls drawn to the Kailo control
+// specification, so that the content area reads as a Kailo business page.
+// Imported after overlay.less. Every value is a Kailo token
+// (client-kit/embed/kailo-theme-tokens.css); light/dark follow
+// <html data-kailo-theme>. Scrollbars, selection and the focus ring are the
+// token base layer's and are not restyled here.
+
+@kailo-ease: var(--kailo-ease-standard);
+@kailo-fast: var(--kailo-duration-fast);
+@kailo-focus-shadow: 0 0 0 3px
+  color-mix(in srgb, var(--kailo-color-brand) 15%, transparent);
+@kailo-hover-line: color-mix(
+  in srgb,
+  var(--kailo-color-muted-foreground) 40%,
+  var(--kailo-color-line-strong)
+);
+
+// 0. Theme switch without transitions: the token base layer
+//    (:root[data-kailo-theme-switching]); no rule here uses !important
+//    transitions.
+
+// 1. Page frame. Inside Kailo there is no header of our own.
+:root[data-kailo-embedded] .adm-content {
+  height: 100vh;
+}
+
+.ant-layout,
+.ant-layout-sider,
+.ant-layout-content {
+  background: var(--kailo-color-background);
+}
+
+.kailo-page {
+  padding: 16px 24px 24px;
+}
+
+.kailo-page__title.ant-typography {
+  margin: 0;
+  font-size: 17px;
+  line-height: 24px;
+  font-weight: 600;
+  color: var(--kailo-color-foreground);
+}
+
+.kailo-page__description.ant-typography {
+  max-width: 720px;
+  margin-bottom: 0;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--kailo-color-muted-foreground);
+}
+
+.kailo-text-success {
+  color: var(--kailo-color-success-text) !important;
+}
+.kailo-text-warning {
+  color: var(--kailo-color-warning-text) !important;
+}
+.kailo-text-danger {
+  color: var(--kailo-color-danger-text) !important;
+}
+.kailo-text-muted {
+  color: var(--kailo-color-muted-foreground) !important;
+}
+
+.kailo-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
+  vertical-align: -0.2em;
+
+  svg {
+    display: block;
+  }
+}
+
+// 2. Buttons: 32 high (sm 28, lg 36), radius 8, 13/500, icon 16 gap 6.
+.ant-btn {
+  height: 32px;
+  padding: 0 12px;
+  border-radius: var(--kailo-radius-lg);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 20px;
+  letter-spacing: 0;
+  text-transform: none;
+  text-shadow: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition:
+    background-color @kailo-fast @kailo-ease,
+    border-color @kailo-fast @kailo-ease,
+    color @kailo-fast @kailo-ease,
+    box-shadow @kailo-fast @kailo-ease;
+
+  > .anticon + span,
+  > span + .anticon {
+    margin-left: 0;
+  }
+
+  .anticon {
+    font-size: 16px;
+  }
+
+  // antd's click wave is a ripple; Kailo has none.
+  &::after,
+  [ant-click-animating-without-extra-node='true']::after {
+    display: none;
+  }
+}
+
+.ant-btn-sm {
+  height: 28px;
+  padding: 0 10px;
+  border-radius: var(--kailo-radius-lg);
+}
+
+.ant-btn-lg {
+  height: 36px;
+  padding: 0 16px;
+  font-size: 14px;
+  border-radius: var(--kailo-radius-lg);
+}
+
+.ant-btn-round,
+.ant-btn-circle {
+  border-radius: var(--kailo-radius-lg);
+}
+
+// Secondary (default): surface, 1px line-strong, shadow-xs.
+.ant-btn-default:not(.ant-btn-dangerous),
+.ant-btn-dashed:not(.ant-btn-dangerous) {
+  background: var(--kailo-color-background);
+  border: 1px solid var(--kailo-color-line-strong);
+  color: var(--kailo-color-foreground);
+  box-shadow: var(--kailo-shadow-xs);
+
+  &:hover,
+  &:focus {
+    background: var(--kailo-color-hover);
+    border-color: var(--kailo-color-line-strong);
+    color: var(--kailo-color-foreground);
+  }
+
+  &:active {
+    background: var(--kailo-color-pressed);
+  }
+}
+
+.ant-btn-primary:not(.ant-btn-dangerous) {
+  background: var(--kailo-color-brand);
+  border-color: var(--kailo-color-brand);
+  color: var(--kailo-color-on-brand);
+  box-shadow: var(--kailo-shadow-xs);
+
+  &:hover,
+  &:focus {
+    background: var(--kailo-color-brand-hover);
+    border-color: var(--kailo-color-brand-hover);
+    color: var(--kailo-color-on-brand);
+  }
+
+  &:active {
+    background: var(--kailo-color-brand-pressed);
+    border-color: var(--kailo-color-brand-pressed);
+  }
+}
+
+.ant-btn-text,
+.ant-btn-link {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.ant-btn-text:not(.ant-btn-dangerous) {
+  color: var(--kailo-color-foreground);
+
+  &:hover,
+  &:focus {
+    background: var(--kailo-color-hover);
+    color: var(--kailo-color-foreground);
+  }
+
+  &:active {
+    background: var(--kailo-color-pressed);
+  }
+}
+
+.ant-btn-link:not(.ant-btn-dangerous) {
+  color: var(--kailo-color-brand-text);
+  padding-left: 4px;
+  padding-right: 4px;
+
+  &:hover,
+  &:focus {
+    background: var(--kailo-color-hover);
+    color: var(--kailo-color-brand-text);
+  }
+}
+
+.ant-btn-dangerous.ant-btn-primary {
+  background: var(--kailo-color-danger);
+  border-color: var(--kailo-color-danger);
+  color: #fff;
+
+  &:hover,
+  &:focus {
+    background: color-mix(in srgb, var(--kailo-color-danger) 88%, #000);
+    border-color: color-mix(in srgb, var(--kailo-color-danger) 88%, #000);
+    color: #fff;
+  }
+}
+
+.ant-btn-dangerous:not(.ant-btn-primary) {
+  background: var(--kailo-color-background);
+  border-color: var(--kailo-color-line-strong);
+  color: var(--kailo-color-danger-text);
+
+  &:hover,
+  &:focus {
+    background: var(--kailo-color-danger-soft);
+    border-color: var(--kailo-color-line-strong);
+    color: var(--kailo-color-danger-text);
+  }
+}
+
+.ant-btn-dangerous.ant-btn-text,
+.ant-btn-dangerous.ant-btn-link {
+  background: transparent;
+  border-color: transparent;
+}
+
+// Disabled: the variant's own look at half opacity.
+.ant-btn[disabled],
+.ant-btn[disabled]:hover,
+.ant-btn[disabled]:focus,
+.ant-btn[disabled]:active {
+  opacity: 0.5;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.ant-btn-default[disabled],
+.ant-btn-default[disabled]:hover,
+.ant-btn-dashed[disabled],
+.ant-btn-dashed[disabled]:hover {
+  background: var(--kailo-color-background);
+  border-color: var(--kailo-color-line-strong);
+  color: var(--kailo-color-foreground) !important;
+}
+
+.ant-btn-primary[disabled],
+.ant-btn-primary[disabled]:hover {
+  background: var(--kailo-color-brand);
+  border-color: var(--kailo-color-brand);
+  color: var(--kailo-color-on-brand) !important;
+}
+
+.ant-btn-text[disabled],
+.ant-btn-text[disabled]:hover,
+.ant-btn-link[disabled],
+.ant-btn-link[disabled]:hover {
+  background: transparent;
+  border-color: transparent;
+}
+
+// Full-width text buttons are list rows (settings menu): start-aligned.
+.ant-btn-text.ant-btn-block {
+  justify-content: flex-start;
+}
+
+// Icon buttons: 32×32 (sm 28), radius 8, icon text-muted; hover text.
+.ant-btn-icon-only,
+.kailo-icon-button.ant-btn {
+  width: 32px;
+  min-width: 32px;
+  padding: 0;
+  border-radius: var(--kailo-radius-lg);
+
+  &.ant-btn-sm {
+    width: 28px;
+    min-width: 28px;
+  }
+}
+
+.ant-btn-text.ant-btn-icon-only,
+.kailo-icon-button.ant-btn-text {
+  color: var(--kailo-color-muted-foreground);
+
+  &:hover,
+  &:focus {
+    color: var(--kailo-color-foreground);
+  }
+}
+
+// 3. Inputs, selects, text areas: 34 high, radius 6, 1px line-strong,
+//    surface, 14; hover neutral 300; focus brand line + 3px brand 15%.
+.ant-input,
+.ant-input-affix-wrapper,
+.ant-input-number,
+.ant-picker,
+.ant-select:not(.ant-select-customize-input) .ant-select-selector {
+  border-radius: var(--kailo-radius-md) !important;
+  border-color: var(--kailo-color-line-strong);
+  background-color: var(--kailo-color-background) !important;
+  color: var(--kailo-color-foreground);
+  font-size: 14px;
+  box-shadow: none;
+  transition:
+    border-color @kailo-fast @kailo-ease,
+    box-shadow @kailo-fast @kailo-ease;
+}
+
+input.ant-input,
+.ant-input-affix-wrapper,
+.ant-picker,
+.ant-input-number {
+  min-height: 34px;
+}
+
+.ant-input-affix-wrapper > input.ant-input {
+  min-height: 0;
+  border: 0;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.ant-select-single:not(.ant-select-customize-input) .ant-select-selector {
+  height: 34px;
+  align-items: center;
+
+  .ant-select-selection-search-input {
+    height: 32px;
+  }
+
+  .ant-select-selection-item,
+  .ant-select-selection-placeholder {
+    line-height: 32px;
+  }
+}
+
+.ant-select-multiple:not(.ant-select-customize-input) .ant-select-selector {
+  min-height: 34px;
+}
+
+.ant-select-multiple .ant-select-selection-item {
+  border-radius: var(--kailo-radius-sm);
+  border-color: transparent;
+  background: var(--kailo-color-muted);
+}
+
+.ant-input:hover,
+.ant-input-affix-wrapper:hover,
+.ant-input-number:hover,
+.ant-picker:hover,
+.ant-select:not(.ant-select-disabled):hover .ant-select-selector {
+  border-color: @kailo-hover-line;
+}
+
+.ant-input:focus,
+.ant-input-focused,
+.ant-input-affix-wrapper-focused,
+.ant-input-affix-wrapper:focus,
+.ant-input-number-focused,
+.ant-picker-focused,
+.ant-select-focused:not(.ant-select-disabled):not(.ant-select-customize-input) .ant-select-selector {
+  border-color: var(--kailo-color-brand) !important;
+  box-shadow: @kailo-focus-shadow !important;
+}
+
+.ant-input-affix-wrapper-focused > input.ant-input:focus {
+  box-shadow: none !important;
+}
+
+.ant-form-item-has-error {
+  .ant-input,
+  .ant-input-affix-wrapper,
+  .ant-select:not(.ant-select-customize-input) .ant-select-selector {
+    border-color: var(--kailo-color-danger) !important;
+  }
+}
+
+.ant-form-item-explain-error {
+  color: var(--kailo-color-danger-text);
+  font-size: 12px;
+}
+
+.ant-form-item-label > label {
+  color: var(--kailo-color-foreground);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+// Disabled fields still show their value (e.g. the connection host and
+// port that cannot be edited): muted text on canvas, not half opacity on top
+// of the 35% disabled colour, which left the value unreadable in dark.
+.ant-input[disabled],
+.ant-input-number-disabled,
+.ant-select-disabled .ant-select-selector {
+  color: var(--kailo-color-muted-foreground) !important;
+  background-color: var(--kailo-color-canvas);
+}
+
+// 4. Checkbox 16 radius 4, switch 32×18, radio — checked in brand.
+.ant-checkbox-inner {
+  width: 16px;
+  height: 16px;
+  border-radius: var(--kailo-radius-sm);
+  border-color: var(--kailo-color-line-strong);
+  background-color: var(--kailo-color-background);
+}
+
+.ant-checkbox-checked .ant-checkbox-inner,
+.ant-checkbox-indeterminate .ant-checkbox-inner::after {
+  background-color: var(--kailo-color-brand);
+  border-color: var(--kailo-color-brand);
+}
+
+.ant-radio-inner {
+  border-color: var(--kailo-color-line-strong);
+  background-color: var(--kailo-color-background);
+}
+
+.ant-radio-checked .ant-radio-inner {
+  border-color: var(--kailo-color-brand);
+}
+
+.ant-radio-inner::after {
+  background-color: var(--kailo-color-brand);
+}
+
+.ant-radio-button-wrapper {
+  background: var(--kailo-color-background);
+  border-color: var(--kailo-color-line-strong);
+  color: var(--kailo-color-foreground);
+}
+
+.ant-switch {
+  min-width: 32px;
+  height: 18px;
+  line-height: 18px;
+  background-color: var(--kailo-color-line-strong);
+
+  .ant-switch-handle {
+    top: 2px;
+    left: 2px;
+    width: 14px;
+    height: 14px;
+
+    // The host switch thumb (client-kit switch.tsx): on-brand white in
+    // both themes, so the off state stays visible on a dark track.
+    &::before {
+      background-color: var(--kailo-color-on-brand);
+    }
+  }
+
+  // Kailo switches carry no glyphs in the track.
+  .ant-switch-inner {
+    display: none;
+  }
+
+  &.ant-switch-checked {
+    background-color: var(--kailo-color-brand);
+
+    .ant-switch-handle {
+      left: calc(100% - 16px);
+    }
+  }
+}
+
+// 5. Tabs: 2px brand underline, selected text 600, others muted; 40 high.
+.ant-tabs {
+  color: var(--kailo-color-foreground);
+}
+
+.ant-tabs-top > .ant-tabs-nav,
+.ant-tabs-bottom > .ant-tabs-nav {
+  margin-bottom: 16px;
+
+  &::before {
+    border-bottom-color: var(--kailo-color-border);
+  }
+}
+
+.ant-tabs-tab {
+  padding: 0;
+  height: 40px;
+  font-size: 14px;
+
+  + .ant-tabs-tab {
+    margin-left: 24px;
+  }
+
+  .ant-tabs-tab-btn {
+    color: var(--kailo-color-muted-foreground);
+    font-weight: 500;
+    transition: color @kailo-fast @kailo-ease;
+  }
+
+  &:hover .ant-tabs-tab-btn {
+    color: var(--kailo-color-foreground);
+  }
+
+  &.ant-tabs-tab-active .ant-tabs-tab-btn {
+    color: var(--kailo-color-foreground) !important;
+    font-weight: 600;
+    text-shadow: none;
+  }
+}
+
+.ant-tabs-ink-bar {
+  height: 2px !important;
+  background: var(--kailo-color-brand);
+}
+
+// Card tabs (answer / SQL / chart) take the same underline form.
+.ant-tabs-card > .ant-tabs-nav .ant-tabs-tab {
+  padding: 0 4px;
+  margin: 0;
+  background: transparent !important;
+  border: 0 !important;
+  border-bottom: 2px solid transparent !important;
+  border-radius: 0 !important;
+
+  + .ant-tabs-tab {
+    margin-left: 20px !important;
+  }
+
+  &.ant-tabs-tab-active {
+    border-bottom-color: var(--kailo-color-brand) !important;
+  }
+}
+
+// Segmented control (antd Radio.Group buttons): hover container, surface pill.
+.ant-radio-group-solid,
+.ant-radio-group-outline {
+  .ant-radio-button-wrapper:first-child {
+    border-radius: var(--kailo-radius-md) 0 0 var(--kailo-radius-md);
+  }
+
+  .ant-radio-button-wrapper:last-child {
+    border-radius: 0 var(--kailo-radius-md) var(--kailo-radius-md) 0;
+  }
+}
+
+// 6. Tags and badges: 20 high, radius 4, 12/500, soft background + text.
+.ant-tag {
+  height: 20px;
+  line-height: 18px;
+  padding: 0 6px;
+  border-radius: var(--kailo-radius-sm);
+  border-color: transparent;
+  font-size: 12px;
+  font-weight: 500;
+  background: var(--kailo-color-muted);
+  color: var(--kailo-color-text-secondary);
+}
+
+.ant-tag-success,
+.ant-tag-green {
+  background: var(--kailo-color-success-soft);
+  color: var(--kailo-color-success-text);
+  border-color: transparent;
+}
+
+.ant-tag-error,
+.ant-tag-red {
+  background: var(--kailo-color-danger-soft);
+  color: var(--kailo-color-danger-text);
+  border-color: transparent;
+}
+
+.ant-tag-warning,
+.ant-tag-gold,
+.ant-tag-orange,
+.ant-tag--citrus {
+  background: var(--kailo-color-warning-soft);
+  color: var(--kailo-color-warning-text);
+  border-color: transparent;
+}
+
+.ant-tag-processing,
+.ant-tag-blue,
+.ant-tag-geekblue,
+.ant-tag--geekblue {
+  background: var(--kailo-color-selected);
+  color: var(--kailo-color-selected-foreground);
+  border-color: transparent;
+}
+
+.ant-badge-count {
+  height: 20px;
+  min-width: 20px;
+  line-height: 20px;
+  border-radius: 999px;
+  box-shadow: none;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+// 7. Dialogs: radius 16, shadow-xl, padding 24, no header rule; title
+//    17/24 600; footer right-aligned with the primary last; close is a
+//    32 icon button; scrim black 40% (dark 60%) with a 2px blur.
+.ant-modal-mask {
+  background-color: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(2px);
+}
+
+:root[data-kailo-theme='dark'] .ant-modal-mask {
+  background-color: rgba(0, 0, 0, 0.6);
+}
+
+.ant-modal-content {
+  border-radius: var(--kailo-radius-2xl);
+  background: var(--kailo-color-popover);
+  box-shadow: var(--kailo-shadow-xl);
+  overflow: hidden;
+}
+
+.ant-modal-header {
+  padding: 24px 24px 0;
+  border-bottom: 0;
+  background: transparent;
+  border-radius: var(--kailo-radius-2xl) var(--kailo-radius-2xl) 0 0;
+}
+
+.ant-modal-title {
+  font-size: 17px;
+  line-height: 24px;
+  font-weight: 600;
+  color: var(--kailo-color-foreground);
+}
+
+.ant-modal-body {
+  padding: 16px 24px;
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.ant-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 8px 24px 24px;
+  border-top: 0;
+  background: transparent;
+
+  // Buttons laid out by the footer's own gap; custom footers that wrap them
+  // in a group (hint on the left, actions on the right) keep antd's 8px.
+  > .ant-btn + .ant-btn:not(.ant-dropdown-trigger) {
+    margin-left: 0;
+  }
+
+  > .d-flex {
+    flex: 1;
+    min-width: 0;
+  }
+}
+
+.ant-modal-close {
+  top: 18px;
+  right: 18px;
+  color: var(--kailo-color-muted-foreground);
+
+  .ant-modal-close-x {
+    width: 32px;
+    height: 32px;
+    line-height: 32px;
+    border-radius: var(--kailo-radius-lg);
+    font-size: 16px;
+    transition: background-color @kailo-fast @kailo-ease;
+  }
+
+  &:hover {
+    color: var(--kailo-color-foreground);
+
+    .ant-modal-close-x {
+      background: var(--kailo-color-hover);
+    }
+  }
+}
+
+.ant-modal-confirm {
+  .ant-modal-body {
+    padding: 24px;
+  }
+
+  .ant-modal-confirm-title {
+    font-size: 17px;
+    line-height: 24px;
+    font-weight: 600;
+    color: var(--kailo-color-foreground);
+  }
+
+  .ant-modal-confirm-content {
+    margin-top: 8px;
+    font-size: 14px;
+    line-height: 20px;
+    color: var(--kailo-color-text-secondary);
+  }
+
+  .ant-modal-confirm-btns {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 24px;
+    float: none;
+
+    .ant-btn + .ant-btn {
+      margin-left: 0;
+    }
+  }
+}
+
+.kailo-confirm .ant-modal-confirm-body > .anticon {
+  display: none;
+}
+
+// 8. Drawers: from the right, radius 12 on the left corners, shadow-lg;
+//    title 17/24 600; close 32 icon button.
+.ant-drawer-content-wrapper {
+  box-shadow: var(--kailo-shadow-lg) !important;
+}
+
+.ant-drawer-right .ant-drawer-content-wrapper,
+.ant-drawer-right .ant-drawer-content {
+  border-radius: var(--kailo-radius-xl) 0 0 var(--kailo-radius-xl);
+}
+
+.ant-drawer-content {
+  background: var(--kailo-color-background);
+  overflow: hidden;
+}
+
+.ant-drawer-header {
+  padding: 16px 24px;
+  background: transparent;
+  border-bottom: 1px solid var(--kailo-color-border);
+  border-radius: 0;
+}
+
+.ant-drawer-title {
+  font-size: 17px;
+  line-height: 24px;
+  font-weight: 600;
+  color: var(--kailo-color-foreground);
+}
+
+.ant-drawer-close {
+  width: 32px;
+  height: 32px;
+  margin-right: 8px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--kailo-radius-lg);
+  font-size: 16px;
+  color: var(--kailo-color-muted-foreground);
+
+  &:hover {
+    background: var(--kailo-color-hover);
+    color: var(--kailo-color-foreground);
+  }
+}
+
+.ant-drawer-body {
+  padding: 24px;
+}
+
+.ant-drawer-footer {
+  padding: 16px 24px;
+  border-top: 1px solid var(--kailo-color-border);
+}
+
+// 9. Menus, dropdowns, select lists: popover, radius 12, shadow-md, inset 4;
+//    items 30 high radius 6 13px, icons 16 muted; danger items danger-text.
+.ant-dropdown-menu,
+.ant-select-dropdown,
+.ant-picker-dropdown .ant-picker-panel-container,
+.ant-cascader-menus {
+  padding: 4px;
+  border-radius: var(--kailo-radius-xl);
+  background: var(--kailo-color-popover);
+  box-shadow: var(--kailo-shadow-md);
+}
+
+.ant-dropdown-menu-item,
+.ant-dropdown-menu-submenu-title {
+  min-height: 30px;
+  padding: 5px 8px;
+  border-radius: var(--kailo-radius-md);
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--kailo-color-foreground);
+
+  .anticon,
+  .ant-dropdown-menu-item-icon {
+    font-size: 16px;
+    color: var(--kailo-color-muted-foreground);
+  }
+
+  &:hover,
+  &.ant-dropdown-menu-item-active {
+    background: var(--kailo-color-hover);
+  }
+}
+
+.ant-dropdown-menu-item-danger,
+.ant-dropdown-menu-item.red-5,
+.ant-dropdown-menu-item .red-5,
+.ant-dropdown-menu-item .kailo-text-danger {
+  color: var(--kailo-color-danger-text) !important;
+
+  .anticon,
+  .kailo-icon {
+    color: inherit;
+  }
+
+  &:hover {
+    background: var(--kailo-color-danger-soft) !important;
+    color: var(--kailo-color-danger-text) !important;
+  }
+}
+
+.ant-dropdown-menu-item-divider {
+  margin: 4px 0;
+  background-color: var(--kailo-color-border);
+}
+
+.ant-select-item {
+  min-height: 30px;
+  padding: 5px 8px;
+  border-radius: var(--kailo-radius-md);
+  font-size: 13px;
+  color: var(--kailo-color-foreground);
+}
+
+.ant-select-item-option-active:not(.ant-select-item-option-disabled) {
+  background: var(--kailo-color-hover);
+}
+
+.ant-select-item-option-selected:not(.ant-select-item-option-disabled) {
+  background: var(--kailo-color-selected);
+  color: var(--kailo-color-selected-foreground);
+  font-weight: 500;
+}
+
+.ant-select-item-group {
+  font-size: 11px;
+  line-height: 14px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--kailo-color-muted-foreground);
+}
+
+.ant-popover-inner {
+  border-radius: var(--kailo-radius-xl);
+}
+
+.ant-popover-inner-content {
+  color: var(--kailo-color-foreground);
+}
+
+// 10. Tooltip: neutral 900 (dark 750), white 12, radius 6, no arrow.
+.ant-tooltip-arrow {
+  display: none;
+}
+
+.ant-tooltip-inner {
+  min-height: 0;
+  padding: 4px 8px;
+  border-radius: var(--kailo-radius-md);
+  font-size: 12px;
+  line-height: 16px;
+  background-color: var(--kailo-color-foreground);
+  color: var(--kailo-color-background);
+  box-shadow: none;
+}
+
+:root[data-kailo-theme='dark'] .ant-tooltip-inner {
+  background-color: color-mix(
+    in srgb,
+    var(--kailo-color-foreground) 24%,
+    var(--kailo-color-background)
+  );
+  color: var(--kailo-color-foreground);
+}
+
+// 11. Tables: rows 40 (small 32), 1px line between rows, header muted
+//     12/600 on canvas, hover row, no outer white panel.
+.ant-table-wrapper .ant-table {
+  background: var(--kailo-color-background);
+  color: var(--kailo-color-foreground);
+  border: 1px solid var(--kailo-color-border);
+  border-radius: var(--kailo-radius-xl);
+  overflow: hidden;
+}
+
+.ant-table-thead > tr > th {
+  padding: 10px 12px;
+  background: var(--kailo-color-canvas) !important;
+  color: var(--kailo-color-muted-foreground);
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 600;
+  border-bottom: 1px solid var(--kailo-color-border);
+
+  &::before {
+    display: none;
+  }
+}
+
+.ant-table-tbody > tr > td {
+  padding: 10px 12px;
+  line-height: 20px;
+  background: transparent;
+  border-bottom: 1px solid var(--kailo-color-border);
+}
+
+.ant-table-small {
+  .ant-table-thead > tr > th,
+  .ant-table-tbody > tr > td {
+    padding: 6px 12px;
+  }
+}
+
+.ant-table-tbody > tr.ant-table-row:hover > td,
+.ant-table-tbody > tr > td.ant-table-cell-row-hover {
+  background: var(--kailo-color-hover) !important;
+}
+
+.ant-table-tbody > tr.ant-table-row-selected > td {
+  background: var(--kailo-color-selected);
+}
+
+.ant-table-cell-fix-left,
+.ant-table-cell-fix-right {
+  background: var(--kailo-color-background) !important;
+}
+
+.ant-table-thead .ant-table-cell-fix-left,
+.ant-table-thead .ant-table-cell-fix-right {
+  background: var(--kailo-color-canvas) !important;
+}
+
+.ant-table-placeholder > td,
+.ant-table-tbody > tr.ant-table-placeholder:hover > td {
+  background: var(--kailo-color-background) !important;
+}
+
+.ant-table-expanded-row > .ant-table-cell {
+  background: var(--kailo-color-canvas) !important;
+}
+
+.ant-table-filter-dropdown {
+  background: var(--kailo-color-popover);
+  border-radius: var(--kailo-radius-xl);
+  box-shadow: var(--kailo-shadow-md);
+}
+
+.ant-pagination-item,
+.ant-pagination-prev .ant-pagination-item-link,
+.ant-pagination-next .ant-pagination-item-link {
+  border-radius: var(--kailo-radius-md);
+  background: transparent;
+  border-color: transparent;
+
+  a {
+    color: var(--kailo-color-foreground);
+  }
+
+  &:hover {
+    background: var(--kailo-color-hover);
+  }
+}
+
+.ant-pagination-item-active {
+  background: var(--kailo-color-selected);
+  border-color: transparent;
+
+  a {
+    color: var(--kailo-color-selected-foreground);
+    font-weight: 600;
+  }
+}
+
+// 12. Cards: surface/card, 1px line, radius 12, no shadow.
+.ant-card {
+  background: var(--kailo-color-card);
+  color: var(--kailo-color-card-foreground);
+  border-radius: var(--kailo-radius-xl);
+  box-shadow: none;
+}
+
+.ant-card-bordered {
+  border: 1px solid var(--kailo-color-border);
+}
+
+.ant-card-head {
+  border-bottom: 1px solid var(--kailo-color-border);
+  color: var(--kailo-color-foreground);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.ant-card-hoverable:hover {
+  box-shadow: var(--kailo-shadow-sm);
+  transform: translateY(-1px);
+}
+
+.ant-collapse {
+  background: var(--kailo-color-background);
+  border-color: var(--kailo-color-border);
+  border-radius: var(--kailo-radius-xl);
+
+  > .ant-collapse-item {
+    border-color: var(--kailo-color-border);
+
+    > .ant-collapse-header {
+      color: var(--kailo-color-foreground);
+    }
+
+    &:last-child,
+    &:last-child > .ant-collapse-header {
+      border-radius: 0 0 var(--kailo-radius-xl) var(--kailo-radius-xl);
+    }
+  }
+
+  .ant-collapse-content {
+    background: var(--kailo-color-background);
+    color: var(--kailo-color-foreground);
+    border-top-color: var(--kailo-color-border);
+  }
+}
+
+.ant-collapse-borderless {
+  background: transparent;
+}
+
+// 13. Empty states (Kailo): 64px line illustration in brand, title
+//     17/24 600, description 14 muted, one primary action.
+.kailo-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 32px 16px;
+  text-align: center;
+
+  .kailo-empty__icon {
+    color: var(--kailo-color-brand);
+    margin-bottom: 8px;
+  }
+
+  .kailo-empty__title {
+    font-size: 17px;
+    line-height: 24px;
+    font-weight: 600;
+    color: var(--kailo-color-foreground);
+  }
+
+  .kailo-empty__description {
+    max-width: 420px;
+    font-size: 14px;
+    line-height: 20px;
+    color: var(--kailo-color-muted-foreground);
+  }
+
+  .ant-btn {
+    margin-top: 8px;
+  }
+
+  &.kailo-empty--compact {
+    gap: 4px;
+    padding: 12px 8px;
+
+    .kailo-empty__icon {
+      display: none;
+    }
+
+    .kailo-empty__title {
+      font-size: 13px;
+      line-height: 20px;
+      font-weight: 500;
+      color: var(--kailo-color-muted-foreground);
+    }
+  }
+}
+
+.ant-empty-description {
+  color: var(--kailo-color-muted-foreground);
+}
+
+.ant-empty-img-simple-ellipse {
+  fill: var(--kailo-color-muted);
+}
+
+.ant-empty-img-simple-g {
+  stroke: var(--kailo-color-line-strong);
+}
+
+.ant-empty-img-simple-path {
+  fill: var(--kailo-color-canvas);
+}
+
+// 14. Loading: low-contrast skeleton band, 1.6s linear; the local spinner
+//     is a ring; no white veil over content in dark.
+.ant-skeleton-content .ant-skeleton-title,
+.ant-skeleton-content .ant-skeleton-paragraph > li,
+.ant-skeleton-element .ant-skeleton-button,
+.ant-skeleton-element .ant-skeleton-input,
+.ant-skeleton-element .ant-skeleton-avatar {
+  background: var(--kailo-color-muted);
+  border-radius: var(--kailo-radius-md);
+}
+
+.ant-skeleton-active {
+  .ant-skeleton-content .ant-skeleton-title,
+  .ant-skeleton-content .ant-skeleton-paragraph > li,
+  .ant-skeleton-element .ant-skeleton-button,
+  .ant-skeleton-element .ant-skeleton-input,
+  .ant-skeleton-element .ant-skeleton-avatar {
+    background: linear-gradient(
+      90deg,
+      var(--kailo-color-muted) 25%,
+      var(--kailo-color-hover) 37%,
+      var(--kailo-color-muted) 63%
+    );
+    background-size: 400% 100%;
+    animation-duration: 1.6s;
+    animation-timing-function: linear;
+  }
+}
+
+.ant-spin-container::after {
+  background: var(--kailo-color-background);
+}
+
+.ant-spin-nested-loading > div > .ant-spin {
+  max-height: none;
+}
+
+.ant-spin-dot-item {
+  background-color: var(--kailo-color-brand);
+}
+
+// 15. Alerts: radius 8, soft semantic background and line, text colour.
+.ant-alert {
+  padding: 8px 12px;
+  border-radius: var(--kailo-radius-lg);
+  font-size: 13px;
+  line-height: 20px;
+
+  .ant-alert-message {
+    color: var(--kailo-color-foreground);
+  }
+
+  .ant-alert-description {
+    color: var(--kailo-color-text-secondary);
+  }
+}
+
+.ant-alert-info {
+  background: var(--kailo-color-info-soft);
+  border-color: color-mix(in srgb, var(--kailo-color-info) 30%, transparent);
+
+  .ant-alert-icon {
+    color: var(--kailo-color-info-text);
+  }
+}
+
+.ant-alert-success {
+  background: var(--kailo-color-success-soft);
+  border-color: color-mix(in srgb, var(--kailo-color-success) 30%, transparent);
+
+  .ant-alert-icon {
+    color: var(--kailo-color-success-text);
+  }
+}
+
+.ant-alert-warning {
+  background: var(--kailo-color-warning-soft);
+  border-color: color-mix(in srgb, var(--kailo-color-warning) 30%, transparent);
+
+  .ant-alert-icon {
+    color: var(--kailo-color-warning-text);
+  }
+}
+
+.ant-alert-error {
+  background: var(--kailo-color-danger-soft);
+  border-color: color-mix(in srgb, var(--kailo-color-danger) 30%, transparent);
+
+  .ant-alert-icon {
+    color: var(--kailo-color-danger-text);
+  }
+}
+
+// 16. Business lists (antd Menu / Tree in the list pane): rows 32,
+//     13/500, radius 6, inset 8; hover; selected brand-soft.
+.ant-menu {
+  background: transparent;
+  color: var(--kailo-color-foreground);
+  border-right: 0 !important;
+}
+
+.ant-menu-inline,
+.ant-menu-vertical {
+  border-right: 0;
+
+  .ant-menu-item {
+    height: 32px;
+    line-height: 32px;
+    margin: 0 0 2px !important;
+    padding: 0 8px !important;
+    width: 100%;
+    border-radius: var(--kailo-radius-md);
+    font-size: 13px;
+    font-weight: 500;
+
+    &::after {
+      display: none;
+    }
+
+    .anticon,
+    .kailo-icon {
+      font-size: 16px;
+      color: var(--kailo-color-muted-foreground);
+    }
+
+    &:hover {
+      background: var(--kailo-color-hover);
+      color: var(--kailo-color-foreground);
+    }
+  }
+
+  .ant-menu-item-selected,
+  .ant-menu-item-selected:hover {
+    background: var(--kailo-color-selected) !important;
+    color: var(--kailo-color-selected-foreground) !important;
+
+    .anticon,
+    .kailo-icon,
+    a {
+      color: inherit !important;
+    }
+  }
+}
+
+.ant-tree {
+  background: transparent;
+  color: var(--kailo-color-foreground);
+
+  .ant-tree-node-content-wrapper {
+    border-radius: var(--kailo-radius-md);
+
+    &:hover {
+      background: var(--kailo-color-hover);
+    }
+
+    &.ant-tree-node-selected {
+      background: var(--kailo-color-selected);
+      color: var(--kailo-color-selected-foreground);
+    }
+  }
+}
+
+// 17. Top-level toasts (KailoEmbed.toast declined): popover, radius 12,
+//     shadow-lg, 16 tone icon, title 13/600, description 13 secondary,
+//     stacked bottom right.
+.ant-notification-notice.kailo-toast {
+  width: 360px;
+  padding: 12px 16px;
+  border-radius: var(--kailo-radius-xl);
+  background: var(--kailo-color-popover);
+  box-shadow: var(--kailo-shadow-lg);
+
+  .ant-notification-notice-icon {
+    top: 14px;
+    margin-left: 0;
+    font-size: 16px;
+    line-height: 16px;
+  }
+
+  .ant-notification-notice-message {
+    margin-left: 28px;
+    margin-bottom: 0;
+    padding-right: 24px;
+    font-size: 13px;
+    line-height: 20px;
+    font-weight: 600;
+    color: var(--kailo-color-foreground);
+  }
+
+  .ant-notification-notice-description {
+    margin-left: 28px;
+    margin-top: 2px;
+    font-size: 13px;
+    line-height: 20px;
+    color: var(--kailo-color-text-secondary);
+  }
+
+  .ant-notification-notice-close {
+    top: 12px;
+    right: 12px;
+    color: var(--kailo-color-muted-foreground);
+  }
+
+  .ant-notification-notice-icon-success {
+    color: var(--kailo-color-success);
+  }
+
+  .ant-notification-notice-icon-info {
+    color: var(--kailo-color-info);
+  }
+
+  .ant-notification-notice-icon-warning {
+    color: var(--kailo-color-warning);
+  }
+
+  .ant-notification-notice-icon-error {
+    color: var(--kailo-color-danger);
+  }
+}
+
+// Any antd message left in a third-party path gets the same surface.
+.ant-message-notice-content {
+  padding: 8px 12px;
+  border-radius: var(--kailo-radius-xl);
+  background: var(--kailo-color-popover);
+  color: var(--kailo-color-foreground);
+  box-shadow: var(--kailo-shadow-lg);
+  font-size: 13px;
+}
+
+// 18. Typography inside content: section titles are Title 2 (17/24 600).
+h1.ant-typography,
+h2.ant-typography,
+h3.ant-typography,
+h4.ant-typography,
+h5.ant-typography {
+  color: var(--kailo-color-foreground);
+  font-weight: 600;
+}
+
+h4.ant-typography,
+h5.ant-typography {
+  font-size: 17px;
+  line-height: 24px;
+}
+
+.ant-typography code {
+  background: var(--kailo-color-muted);
+  border-color: var(--kailo-color-border);
+  border-radius: var(--kailo-radius-sm);
+}
+
+.ant-divider {
+  border-top-color: var(--kailo-color-border);
+}
+
+.ant-steps-item-title {
+  color: var(--kailo-color-foreground) !important;
+}
+
+.ant-steps-item-wait .ant-steps-item-icon {
+  background: var(--kailo-color-background);
+  border-color: var(--kailo-color-line-strong);
+}
+
+.ant-upload.ant-upload-drag {
+  background: var(--kailo-color-canvas);
+  border-color: var(--kailo-color-line-strong);
+  border-radius: var(--kailo-radius-xl);
+}
+
+// 19. Small Kailo helpers used by the content components.
+.kailo-text-brand {
+  color: var(--kailo-color-brand-text) !important;
+}
+
+.kailo-section-title {
+  margin: 0;
+  font-size: 17px;
+  line-height: 24px;
+  font-weight: 600;
+  color: var(--kailo-color-foreground);
+}
+
+.kailo-soft-block {
+  padding: 8px 12px;
+  border-radius: var(--kailo-radius-lg);
+  background: var(--kailo-color-canvas);
+  color: var(--kailo-color-text-secondary);
+}
+
+.kailo-tag {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: var(--kailo-radius-sm);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 20px;
+  background: var(--kailo-color-muted);
+  color: var(--kailo-color-text-secondary);
+}
+
+// 20. List pane rows: title shrinks with an ellipsis, trailing marks
+//     (owner avatar, more) stay on the row.
+.ant-tree-title > .adm-treeTitle__title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ant-tree-title > .adm-actionIcon {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+// 21. Detail drawers (400–480): compact tables so names stay readable.
+.ant-drawer .ant-table {
+  font-size: 13px;
+
+  .ant-table-thead > tr > th,
+  .ant-table-tbody > tr > td {
+    padding: 8px;
+  }
+}
+
+// 22. Code editor (ace) in dark: no light active-line band.
+:root[data-kailo-theme='dark'] {
+  .ace_editor .ace_marker-layer .ace_active-line,
+  .ace_editor .ace_gutter-active-line {
+    background: var(--kailo-color-hover);
+  }
+
+  .ace_editor .ace_marker-layer .ace_selection {
+    background: color-mix(in srgb, var(--kailo-color-brand) 35%, transparent);
+  }
+
+  .ace_editor .ace_cursor {
+    color: var(--kailo-color-foreground);
+  }
+}
+
+// 23. Metadata drawer (480, `20` §9 侧滑面板): labels are Caption, section
+//     titles Callout 600, and columns / calculated fields / relationships are
+//     one row per item (MetadataList) — the main line wraps instead of
+//     clipping, details follow as a muted Caption.
+.kailo-metadata-drawer {
+  .ant-typography.gray-7 {
+    font-size: 12px;
+    line-height: 16px;
+    color: var(--kailo-color-muted-foreground);
+  }
+
+  .ant-typography.gray-7.kailo-meta-section__title {
+    font-size: 13px;
+    line-height: 20px;
+    font-weight: 600;
+    color: var(--kailo-color-foreground);
+  }
+}
+
+.kailo-meta-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--kailo-color-border);
+  border-radius: 8px;
+
+  &--plain {
+    border: 0;
+    border-radius: 0;
+  }
+
+  &__group + &__group,
+  & > &__row + &__row {
+    border-top: 1px solid var(--kailo-color-border);
+  }
+
+  &__row {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    min-height: 40px;
+    padding: 10px 12px;
+
+    &--nested {
+      padding-left: 36px;
+      border-top: 1px solid var(--kailo-color-border);
+    }
+  }
+
+  &__icon {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 20px;
+    color: var(--kailo-color-muted-foreground);
+  }
+
+  &__body {
+    flex: 1;
+    min-width: 0;
+  }
+
+  &__line {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  &__main {
+    flex: 1;
+    min-width: 0;
+    font-size: 13px;
+    line-height: 20px;
+    font-weight: 500;
+    color: var(--kailo-color-foreground);
+    overflow-wrap: anywhere;
+  }
+
+  &__arrow {
+    margin: 0 6px;
+    color: var(--kailo-color-muted-foreground);
+    font-weight: 400;
+  }
+
+  &__side {
+    flex: none;
+    max-width: 45%;
+    font-size: 12px;
+    line-height: 20px;
+    color: var(--kailo-color-muted-foreground);
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+    overflow-wrap: anywhere;
+  }
+
+  &__caption {
+    display: flex;
+    flex-wrap: wrap;
+    margin-top: 2px;
+    font-size: 12px;
+    line-height: 16px;
+    color: var(--kailo-color-muted-foreground);
+    overflow-wrap: anywhere;
+  }
+
+  &__part + &__part::before {
+    content: '·';
+    margin: 0 6px;
+  }
+
+  &__code {
+    font-family: var(--kailo-font-mono);
+    font-size: 12px;
+    color: var(--kailo-color-text-secondary);
+    background: none;
+    padding: 0;
+  }
+
+  &__empty {
+    padding: 12px;
+    font-size: 13px;
+    color: var(--kailo-color-muted-foreground);
+  }
+}

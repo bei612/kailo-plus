@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { modelLabel, modelRawName } from '@/kailo/modelLabel';
 import { ref, onMounted, onBeforeUnmount, onUnmounted, computed, watch, nextTick, h, type PropType } from "vue";
 import { storeToRefs } from 'pinia';
 import { useRoute, useRouter } from 'vue-router';
@@ -1103,10 +1104,8 @@ const selectedModelDisplayName = computed(() => {
   return t('input.notConfigured');
 });
 
-const modelDisplayName = (model: ModelConfig) => {
-  const displayName = model.display_name?.trim();
-  return displayName || model.name;
-};
+// DD-157: never show an opaque model identifier as its name.
+const modelDisplayName = (model: ModelConfig) => modelLabel(model, String(locale.value));
 
 const contextWindowTitle = (tokens?: number) => {
   if (isDefaultContextWindow(tokens)) {
@@ -2891,7 +2890,7 @@ defineExpose({
                     </div>
                     <div class="model-option-name-wrap">
                       <span class="model-option-name">{{ modelDisplayName(model) }}</span>
-                      <span v-if="model.display_name" class="model-option-raw-name">{{ model.name }}</span>
+                      <span v-if="modelRawName(model)" class="model-option-raw-name">{{ modelRawName(model) }}</span>
                     </div>
                   </div>
                   <span

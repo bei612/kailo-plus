@@ -3,6 +3,7 @@ import { Form, Input, Radio } from 'antd';
 import { FORM_MODE, REDSHIFT_AUTH_METHOD } from '@/utils/enum';
 import { ERROR_TEXTS } from '@/utils/error';
 import { hostValidator } from '@/utils/validator';
+import { kailoT } from '@/utils/kailoI18n';
 
 interface Props {
   mode?: FORM_MODE;
@@ -13,7 +14,7 @@ function RedshiftPasswordFields(props: { isEditMode: boolean }) {
   return (
     <>
       <Form.Item
-        label="Host"
+        label={kailoT('setup.fieldHost')}
         name="host"
         required
         rules={[
@@ -29,7 +30,7 @@ function RedshiftPasswordFields(props: { isEditMode: boolean }) {
         />
       </Form.Item>
       <Form.Item
-        label="Port"
+        label={kailoT('setup.fieldPort')}
         name="port"
         required
         rules={[
@@ -42,7 +43,7 @@ function RedshiftPasswordFields(props: { isEditMode: boolean }) {
         <Input placeholder="5439" />
       </Form.Item>
       <Form.Item
-        label="Username"
+        label={kailoT('setup.fieldUsername')}
         name="user"
         rules={[
           {
@@ -54,7 +55,7 @@ function RedshiftPasswordFields(props: { isEditMode: boolean }) {
         <Input />
       </Form.Item>
       <Form.Item
-        label="Password"
+        label={kailoT('setup.fieldPassword')}
         name="password"
         required
         rules={[
@@ -64,10 +65,10 @@ function RedshiftPasswordFields(props: { isEditMode: boolean }) {
           },
         ]}
       >
-        <Input.Password placeholder="input password" />
+        <Input.Password placeholder={kailoT('setup.phPassword')} />
       </Form.Item>
       <Form.Item
-        label="Database"
+        label={kailoT('setup.fieldDatabase')}
         name="database"
         required
         rules={[
@@ -88,7 +89,7 @@ function RedshiftIAMFields(props: { isEditMode: boolean }) {
   return (
     <>
       <Form.Item
-        label="Cluster identifier"
+        label={kailoT('setup.fieldClusterIdentifier')}
         name="clusterIdentifier"
         required
         rules={[
@@ -101,9 +102,9 @@ function RedshiftIAMFields(props: { isEditMode: boolean }) {
         <Input placeholder="redshift-cluster-1" disabled={isEditMode} />
       </Form.Item>
       <Form.Item
-        label="Username"
+        label={kailoT('setup.fieldUsername')}
         name="user"
-        extra="The Redshift database username specified in DB user permissions."
+        extra={kailoT('setup.hintRedshiftUser')}
         rules={[
           {
             required: true,
@@ -114,7 +115,7 @@ function RedshiftIAMFields(props: { isEditMode: boolean }) {
         <Input />
       </Form.Item>
       <Form.Item
-        label="Database"
+        label={kailoT('setup.fieldDatabase')}
         name="database"
         required
         rules={[
@@ -127,7 +128,7 @@ function RedshiftIAMFields(props: { isEditMode: boolean }) {
         <Input disabled={isEditMode} />
       </Form.Item>
       <Form.Item
-        label="AWS region"
+        label={kailoT('setup.fieldAwsRegion')}
         name="awsRegion"
         required
         rules={[
@@ -140,7 +141,7 @@ function RedshiftIAMFields(props: { isEditMode: boolean }) {
         <Input placeholder="us-east-1" disabled={isEditMode} />
       </Form.Item>
       <Form.Item
-        label="AWS access key ID"
+        label={kailoT('setup.fieldAwsAccessKey')}
         name="awsAccessKey"
         required
         rules={[
@@ -153,7 +154,7 @@ function RedshiftIAMFields(props: { isEditMode: boolean }) {
         <Input />
       </Form.Item>
       <Form.Item
-        label="AWS secret access key"
+        label={kailoT('setup.fieldAwsSecretKey')}
         name="awsSecretKey"
         required
         rules={[
@@ -205,7 +206,7 @@ export default function RedshiftProperties(props: Props) {
   return (
     <>
       <Form.Item
-        label="Display name"
+        label={kailoT('setup.fieldDisplayName')}
         name="displayName"
         required
         rules={[
@@ -217,13 +218,13 @@ export default function RedshiftProperties(props: Props) {
       >
         <Input />
       </Form.Item>
-      <Form.Item label="Authentication method" name="redshiftType">
+      <Form.Item label={kailoT('setup.fieldAuthMethod')} name="redshiftType">
         <Radio.Group buttonStyle="solid">
           <Radio.Button value={REDSHIFT_AUTH_METHOD.redshift}>
-            Username and password
+            {kailoT('setup.authUsernamePassword')}
           </Radio.Button>
           <Radio.Button value={REDSHIFT_AUTH_METHOD.redshift_iam}>
-            AWS credentials
+            {kailoT('setup.authAwsCredentials')}
           </Radio.Button>
         </Radio.Group>
       </Form.Item>

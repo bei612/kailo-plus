@@ -43,7 +43,7 @@ const generatingNextStates = ProcessStateMachine.getAllNextStates(
 
 const getProcessDot = (processing: boolean) => {
   return processing ? (
-    <StyledBadge color="geekblue" status="processing" />
+    <StyledBadge color="var(--kailo-color-brand)" status="processing" />
   ) : null;
 };
 
@@ -121,7 +121,7 @@ export default function PreparationSteps(
 
 const fileDone = (
   <FileDoneOutlined
-    className="gray-6"
+    className="gray-7"
     style={{ position: 'relative', top: -2, left: 2 }}
   />
 );

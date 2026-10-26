@@ -8,6 +8,7 @@ import { attachLoading } from '@/utils/helper';
 import { getIsFinished } from '@/hooks/useAskPrompt';
 import { AskingTaskStatus } from '@/apollo/client/graphql/__types__';
 import type { PreparedTask, Props } from './index';
+import useKailoText from '@/utils/kailoI18n';
 
 export default function PreparationStatus(
   props: Props & { preparedTask: PreparedTask },
@@ -24,6 +25,7 @@ export default function PreparationStatus(
   const [reRunLoading, setReRunLoading] = useState(false);
   const isProcessing = !getIsFinished(preparedTask.status);
   const { locale } = useRouter();
+  const t = useKailoText();
   const queryText = getQueryPreviewText(locale);
   const queryPending =
     preparedTask.error?.message === 'NATIVE_EXECUTION_UNKNOWN';
@@ -55,14 +57,16 @@ export default function PreparationStatus(
         onClick={onCancel}
         loading={stopLoading}
       >
-        Cancel
+        {t('cancel')}
       </Button>
     );
   } else if (preparedTask.status === AskingTaskStatus.STOPPED) {
     return (
       <Space className="-mr-4">
         <Tag color={queryPending ? 'orange' : 'red'}>
-          {queryPending ? queryText.awaitingVerification : 'Cancelled by user'}
+          {queryPending
+            ? queryText.awaitingVerification
+            : t('home.cancelledByUser')}
         </Tag>
         <Button
           icon={<ReloadOutlined />}
@@ -72,7 +76,7 @@ export default function PreparationStatus(
           onClick={onReRun}
           loading={reRunLoading}
         >
-          {queryPending ? queryText.verifyAndContinue : 'Re-run'}
+          {queryPending ? queryText.verifyAndContinue : t('home.rerun')}
         </Button>
       </Space>
     );
@@ -80,8 +84,8 @@ export default function PreparationStatus(
     const showView = data.view !== null;
     const showSqlPair = !!preparedTask?.candidates[0]?.sqlPair;
     return (
-      <div className="gray-6">
-        {showView || showSqlPair ? '1 step' : '3 steps'}
+      <div className="gray-7">
+        {t('home.stepCount', { count: showView || showSqlPair ? 1 : 3 })}
       </div>
     );
   }

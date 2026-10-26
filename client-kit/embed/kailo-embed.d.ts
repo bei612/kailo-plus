@@ -10,6 +10,8 @@ export interface KailoPresentationState {
   embedded: boolean;
   /** A validated presentation message from the Kailo host has arrived. */
   hostConnected: boolean;
+  /** DD-157: features the Kailo host announced it handles (present once it answered). */
+  hostFeatures?: (KailoEmbedFeature | "files")[];
 }
 
 /** Declared preference key -> BOOLEAN value or ENUM option (design 07 §4.8.2). */
@@ -18,6 +20,77 @@ export type KailoPreferenceValues = Record<string, boolean | string>;
 export interface KailoPresentationChange {
   theme: boolean;
   locale: boolean;
+}
+
+/** DD-157 (07 §4.8.7): what a build opts into with <meta name="kailo-embed-features">. */
+export type KailoEmbedFeature = "page" | "toast" | "confirm" | "shortcuts";
+
+/** Closed icon vocabulary for header actions; Kailo draws them with its own (Lucide) icons. */
+export type KailoActionIcon = "upload" | "plus" | "folder-plus" | "share" | "download" | "rocket" | "refresh"
+  | "settings" | "message-square-plus" | "play" | "trash" | "pencil" | "filter" | "search" | "more";
+
+export interface KailoPageItem {
+  /** Opaque to Kailo (1–256 chars, no control characters); echoed back in navigate. */
+  id: string;
+  /** Display text, 1–80 chars (tabs 1–40). */
+  label: string;
+}
+
+export interface KailoPageAction {
+  id: string;
+  /** 1–40 chars, verb first, Kailo wording (20 §13.8). */
+  label: string;
+  /** primary: at most one, the page's main action; secondary: outline button; menu: in the "more" menu. */
+  variant?: "primary" | "secondary" | "menu";
+  icon?: KailoActionIcon;
+  /**
+   * DD-157: the action needs files the user chooses. Kailo opens its file picker inside the
+   * user's click (a frame never receives the host's user activation) and delivers the files
+   * with the action. accept: same syntax as <input accept>, 1–200 chars.
+   */
+  files?: { accept?: string; multiple?: boolean; directory?: boolean };
+  disabled?: boolean;
+  busy?: boolean;
+}
+
+/** The header Kailo renders for the page (20 §13.2). */
+export interface KailoPage {
+  /** Current page title, 1–120 chars. Kailo adds the product name (云盘/知识库/问数) itself. */
+  title: string;
+  /** Ancestors of the current location, outermost first, at most 8; the title is not repeated. */
+  breadcrumbs?: KailoPageItem[];
+  /** Sections of the product shown as tabs under the header, at most 8. */
+  tabs?: KailoPageItem[];
+  activeTab?: string;
+  /** At most 8, at most one primary. */
+  actions?: KailoPageAction[];
+}
+
+export interface KailoNavigateTarget {
+  kind: "tab" | "breadcrumb";
+  id: string;
+}
+
+/** Files chosen in Kailo's picker; paths are relative paths for a directory pick, else file names. */
+export interface KailoFileSelection {
+  files: File[];
+  paths: string[];
+}
+
+export interface KailoToast {
+  tone?: "success" | "info" | "warning" | "error";
+  /** 1–120 chars. */
+  title: string;
+  /** Up to 280 chars. */
+  description?: string;
+}
+
+export interface KailoConfirm {
+  tone?: "default" | "danger";
+  title: string;
+  description?: string;
+  confirmLabel?: string;
+  cancelLabel?: string;
 }
 
 export interface KailoEmbedRuntime {
@@ -33,6 +106,18 @@ export interface KailoEmbedRuntime {
   /** DD-138: values Kailo supplied for the release's declared settings items. */
   getPreferences(): KailoPreferenceValues;
   onPreferencesChange(listener: (values: KailoPreferenceValues, changed: string[]) => void): () => void;
+  /** DD-157: declared features of this build. */
+  readonly features: readonly KailoEmbedFeature[];
+  /** DD-157: Kailo renders the page header; false when the feature is undeclared or no Kailo frame. Throws on an invalid shape. */
+  setPage(page: KailoPage | null): boolean;
+  /** DD-157: the Kailo host announced this feature; false until it answered. Re-check in onChange. */
+  hostSupports(feature: KailoEmbedFeature | "files"): boolean;
+  onNavigate(listener: (target: KailoNavigateTarget) => void): () => void;
+  onAction(listener: (id: string, selection?: KailoFileSelection) => void): () => void;
+  /** DD-157: shown by Kailo; false at top level (show your own Kailo-styled toast). */
+  toast(toast: KailoToast): boolean;
+  /** DD-157: Kailo's confirmation dialog; null at top level (use your own Kailo-styled dialog). */
+  confirm(options: KailoConfirm): Promise<boolean> | null;
 }
 
 declare global {

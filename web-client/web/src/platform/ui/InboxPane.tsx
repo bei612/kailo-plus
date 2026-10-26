@@ -7,7 +7,7 @@ import {
   getInboxTypeLabel,
   feedPreview,
 } from "@client-kit/platform/inbox";
-import { truncatePubkey } from "@client-kit/platform/format";
+import { unknownMemberLabel } from "@client-kit/platform/react/messages/system/identity";
 import { formatItemTimestamp } from "@client-kit/platform/react/messages/datetime";
 import { useBffClient, useLocale, useT } from "@client-kit/platform/react/context";
 import { BffError } from "@client-kit/platform/transport";
@@ -260,7 +260,7 @@ export function InboxPane({
       presentation: row => {
         const item = row.item;
         if (item.channelId === null || !snapshot) {
-          const sender = truncatePubkey(item.pubkey);
+          const sender = unknownMemberLabel();
           const label = getInboxTypeLabel({item, groupItems: row.items, senderLabel: sender, channelLabel: null}, locale);
           return {senderLabel: sender, timestamp: formatItemTimestamp(row.latestActivityAt), unreadCount: row.unreadCount,
             label: label.text, channel: null,
@@ -270,7 +270,7 @@ export function InboxPane({
         }
         const conversation = snapshot.conversations.find(value => value.channelId === item.channelId);
         const member = (conversation ? snapshot.people.filter(person => conversation.participantPrincipalIds.includes(person.principalId)) : snapshot.members.get(item.channelId))?.find(candidate => candidate.pubkeys.includes(item.pubkey));
-        const sender = member?.displayName || truncatePubkey(item.pubkey);
+        const sender = member?.displayName || unknownMemberLabel();
         const label = getInboxTypeLabel({item, groupItems: row.items, senderLabel: sender,
           channelLabel: snapshot.workspaces.find(workspace => workspace.id === item.channelId)?.name ?? null}, locale);
         const isSenderAgent = snapshot.agentPubkeys.has(item.pubkey);
@@ -312,7 +312,7 @@ export function InboxPane({
           conversation={conversation}
           canInteract={!snapshot.hiddenDm.has(channelId)}
           onOpenAuthor={setProfileTarget} onAuthorScopeUnavailable={closeAuthorScope}
-          senderLabel={members.find(member => member.pubkeys.includes(chosen.item.pubkey))?.displayName || truncatePubkey(chosen.item.pubkey)}
+          senderLabel={members.find(member => member.pubkeys.includes(chosen.item.pubkey))?.displayName || unknownMemberLabel()}
           channelName={snapshot.workspaces.find((workspace) => workspace.id === channelId)?.name ?? snapshot.people.filter(person => person.principalId !== principalId && conversation?.participantPrincipalIds.includes(person.principalId)).map(person=>person.displayName).join(", ")}
           members={members} onBack={onBack}
           onOpen={hiddenDm.isReopenPending(channelId) ? undefined : () => openItem(chosen.item)} /></div>;

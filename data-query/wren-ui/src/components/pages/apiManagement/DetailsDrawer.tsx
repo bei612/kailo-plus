@@ -7,6 +7,8 @@ import CloseCircleOutlined from '@ant-design/icons/CloseCircleOutlined';
 import JsonCodeBlock from '@/components/code/JsonCodeBlock';
 import { ApiHistoryResponse, ApiType } from '@/apollo/client/graphql/__types__';
 import { getApiHistoryText } from '@/utils/language';
+import useKailoText from '@/utils/kailoI18n';
+import { apiTypeLabel } from '@/components/pages/apiManagement/apiTypeLabel';
 
 type Props = DrawerAction<ApiHistoryResponse> & {
   loading?: boolean;
@@ -15,7 +17,9 @@ type Props = DrawerAction<ApiHistoryResponse> & {
 
 export default function DetailsDrawer(props: Props) {
   const { visible, onClose, defaultValue } = props;
-  const text = getApiHistoryText(useRouter().locale);
+  const { locale } = useRouter();
+  const text = getApiHistoryText(locale);
+  const t = useKailoText();
 
   const {
     threadId,
@@ -44,9 +48,8 @@ export default function DetailsDrawer(props: Props) {
   return (
     <Drawer
       visible={visible}
-      className="gray-8"
-      title="API details"
-      width={760}
+      title={t('knowledge.apiDetails')}
+      width={480}
       closable
       destroyOnClose
       onClose={onClose}
@@ -54,38 +57,38 @@ export default function DetailsDrawer(props: Props) {
     >
       <Row className="mb-6">
         <Col span={12}>
-          <Typography.Text className="d-block gray-7 mb-2">
-            API type
+          <Typography.Text type="secondary" className="d-block mb-2">
+            {t('knowledge.apiType')}
           </Typography.Text>
           <div>
-            <Tag className="gray-8">{apiType?.toLowerCase()}</Tag>
+            <Tag>{apiTypeLabel(locale, apiType)}</Tag>
           </div>
         </Col>
         <Col span={12}>
-          <Typography.Text className="d-block gray-7 mb-2">
-            Thread ID
+          <Typography.Text type="secondary" className="d-block mb-2">
+            {t('knowledge.threadId')}
           </Typography.Text>
           <div>{threadId || '-'}</div>
         </Col>
       </Row>
       <Row className="mb-6">
         <Col span={12}>
-          <Typography.Text className="d-block gray-7 mb-2">
-            Created at
+          <Typography.Text type="secondary" className="d-block mb-2">
+            {t('knowledge.createdTime')}
           </Typography.Text>
           <div>{getAbsoluteTime(createdAt)}</div>
         </Col>
         <Col span={12}>
-          <Typography.Text className="d-block gray-7 mb-2">
-            Duration
+          <Typography.Text type="secondary" className="d-block mb-2">
+            {t('knowledge.duration')}
           </Typography.Text>
           <div>{durationMs} ms</div>
         </Col>
       </Row>
       <Row className="mb-6">
         <Col span={12}>
-          <Typography.Text className="d-block gray-7 mb-2">
-            Status code
+          <Typography.Text type="secondary" className="d-block mb-2">
+            {t('knowledge.statusCode')}
           </Typography.Text>
           <div>
             {getStatusTag(statusCode)}
@@ -98,6 +101,7 @@ export default function DetailsDrawer(props: Props) {
               ].includes(apiType) && (
                 <Button
                   size="small"
+                  className="ml-2"
                   loading={props.loading}
                   onClick={() => props.onObserve(defaultValue)}
                 >
@@ -109,36 +113,36 @@ export default function DetailsDrawer(props: Props) {
       </Row>
 
       <div className="mb-6">
-        <Typography.Text className="d-block gray-7 mb-2">
-          Headers
+        <Typography.Text type="secondary" className="d-block mb-2">
+          {t('knowledge.headers')}
         </Typography.Text>
         <JsonCodeBlock
           code={headers}
-          backgroundColor="var(--gray-2)"
+          backgroundColor="var(--kailo-color-canvas)"
           maxHeight="400"
           copyable
         />
       </div>
 
       <div className="mb-6">
-        <Typography.Text className="d-block gray-7 mb-2">
-          Request payload
+        <Typography.Text type="secondary" className="d-block mb-2">
+          {t('knowledge.requestPayload')}
         </Typography.Text>
         <JsonCodeBlock
           code={requestPayload}
-          backgroundColor="var(--gray-2)"
+          backgroundColor="var(--kailo-color-canvas)"
           maxHeight="400"
           copyable
         />
       </div>
 
       <div className="mb-6">
-        <Typography.Text className="d-block gray-7 mb-2">
-          Response payload
+        <Typography.Text type="secondary" className="d-block mb-2">
+          {t('knowledge.responsePayload')}
         </Typography.Text>
         <JsonCodeBlock
           code={responsePayload}
-          backgroundColor="var(--gray-2)"
+          backgroundColor="var(--kailo-color-canvas)"
           maxHeight="400"
           copyable
         />

@@ -2,13 +2,16 @@ import { Row, Col } from 'antd';
 import styled from 'styled-components';
 import { makeIterable } from '@/utils/iteration';
 import EllipsisWrapper from '@/components/EllipsisWrapper';
+import useKailoText from '@/utils/kailoI18n';
 
 const DemoBlock = styled.div`
   user-select: none;
   height: 150px;
+  background: var(--kailo-color-card);
+  border-radius: 12px !important;
   &:hover {
-    border-color: var(--geekblue-6) !important;
-    transition: border-color ease 0.2s;
+    border-color: var(--kailo-color-line-strong) !important;
+    box-shadow: var(--kailo-shadow-sm);
   }
 `;
 
@@ -25,7 +28,7 @@ const DemoTemplate = ({ label, question, onSelect }) => {
         onClick={() => onSelect({ label, question })}
       >
         <div className="d-flex justify-space-between align-center text-sm mb-3">
-          <div className="border border-gray-5 px-2 rounded-pill">{label}</div>
+          <div className="kailo-tag">{label}</div>
         </div>
         <EllipsisWrapper multipleLine={4} text={question} />
       </DemoBlock>
@@ -37,9 +40,10 @@ const DemoColumnIterator = makeIterable(DemoTemplate);
 
 export default function DemoPrompt(props: Props) {
   const { demo, onSelect } = props;
+  const t = useKailoText();
   return (
     <div className="gray-8" style={{ width: 580 }}>
-      <div className="text-center mt-3 mb-2">Try asking...</div>
+      <div className="text-center mt-3 mb-2">{t('tryAsking')}</div>
       <Row gutter={16}>
         <DemoColumnIterator data={demo} onSelect={onSelect} />
       </Row>

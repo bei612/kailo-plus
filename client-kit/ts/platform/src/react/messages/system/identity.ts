@@ -1,9 +1,18 @@
 import type { UserProfileSummary } from "../../pulse/host";
-import { normalizePubkey, truncateNpub } from "../../conversations/pubkey";
+import { normalizePubkey } from "../../conversations/pubkey";
 import type { Translate } from "../../context";
 import { translateCurrent } from "../../../i18n";
 
 export type UserProfileLookup = Record<string, UserProfileSummary>;
+
+/**
+ * DD-141 (.design/20 §1): a person without a resolvable name is shown with
+ * Kailo copy, never a raw protocol key. The key stays available in the
+ * profile popover and profile panel for anyone who needs to verify it.
+ */
+export function unknownMemberLabel(t: Translate = translateCurrent): string {
+  return t("messages.system.unknownMember");
+}
 
 function getResolvedProfile(
   pubkey: string,
@@ -58,12 +67,12 @@ export function resolveUserLabel(input: {
     return safeFallback;
   }
 
-  return truncateNpub(pubkey);
+  return unknownMemberLabel(t);
 }
 
 /**
  * Label for an agent's owner: "you" when the current user owns it, otherwise
- * the owner's display name, NIP-05 handle, or truncated pubkey.
+ * the owner's display name, NIP-05 handle, or the unknown-member label.
  */
 export function formatOwnerLabel(
   ownerPubkey: string | null | undefined,
@@ -87,6 +96,6 @@ export function formatOwnerLabel(
   return (
     owner?.displayName?.trim() ||
     owner?.nip05Handle?.trim() ||
-    truncateNpub(ownerPubkey)
+    unknownMemberLabel(t)
   );
 }

@@ -144,6 +144,68 @@ function modeBlock(selector: string, mode: KailoMode): string {
   return lines.join("\n");
 }
 
+/** DD-157 (20 §13.6): static base layer for pages running kailo-embed.js; values only via tokens. */
+export const EMBED_BASE_LAYER = `/*
+ * DD-157 base layer (.design/20 §13.6): Kailo canvas, scrollbars, selection, focus
+ * ring and theme-switch behaviour for every page that runs kailo-embed.js
+ * (<html data-kailo-runtime>). Zero-specificity where a component may refine it.
+ */
+:root[data-kailo-runtime] {
+  background-color: var(--kailo-color-background);
+  color: var(--kailo-color-foreground);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+:where(:root[data-kailo-runtime]) body {
+  background-color: var(--kailo-color-background);
+}
+:root[data-kailo-runtime] ::selection {
+  background-color: var(--kailo-color-brand-100);
+}
+:root[data-kailo-runtime][data-kailo-theme="dark"] ::selection {
+  background-color: var(--kailo-color-brand-800);
+}
+:where(:root[data-kailo-runtime]) :where(a[href], button, [role="button"], [role="tab"], [role="menuitem"], [role="option"], summary, [tabindex]:not([tabindex="-1"])):focus-visible {
+  outline: 2px solid var(--kailo-color-ring);
+  outline-offset: 2px;
+}
+:root[data-kailo-runtime] ::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+:root[data-kailo-runtime] ::-webkit-scrollbar-track,
+:root[data-kailo-runtime] ::-webkit-scrollbar-corner {
+  background: transparent;
+}
+:root[data-kailo-runtime] ::-webkit-scrollbar-thumb {
+  background-color: hsl(var(--kailo-hsl-muted-foreground) / 0.3);
+  background-clip: content-box;
+  border: 2px solid transparent;
+  border-radius: 9999px;
+}
+:root[data-kailo-runtime] ::-webkit-scrollbar-thumb:hover {
+  background-color: hsl(var(--kailo-hsl-muted-foreground) / 0.5);
+}
+@supports not selector(::-webkit-scrollbar) {
+  :root[data-kailo-runtime] * {
+    scrollbar-color: hsl(var(--kailo-hsl-muted-foreground) / 0.3) transparent;
+    scrollbar-width: thin;
+  }
+}
+:root[data-kailo-theme-switching] *,
+:root[data-kailo-theme-switching] *::before,
+:root[data-kailo-theme-switching] *::after {
+  transition: none !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  :root[data-kailo-runtime] *,
+  :root[data-kailo-runtime] *::before,
+  :root[data-kailo-runtime] *::after {
+    animation-duration: 1ms !important;
+    transition-duration: 1ms !important;
+  }
+}`;
+
 /** The complete distributable stylesheet, byte-for-byte what is committed. */
 export function renderEmbedTokenCss(sources: EmbedTokenSources): string {
   const common = [
@@ -173,6 +235,7 @@ export function renderEmbedTokenCss(sources: EmbedTokenSources): string {
     common,
     modeBlock(":root", "light"),
     modeBlock(":root[data-kailo-theme=\"dark\"]", "dark"),
+    EMBED_BASE_LAYER,
     "",
   ].join("\n");
 }

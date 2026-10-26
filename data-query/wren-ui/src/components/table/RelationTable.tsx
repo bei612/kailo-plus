@@ -3,6 +3,7 @@ import BaseTable, {
   COLUMN,
   ExpandableRows,
 } from '@/components/table/BaseTable';
+import { kailoT } from '@/utils/kailoI18n';
 
 export default function RelationTable(props: Props) {
   const { columns, showExpandable } = props;
@@ -25,14 +26,17 @@ export default function RelationTable(props: Props) {
                 <ExpandableRows
                   data={[
                     {
-                      title: 'From',
+                      title: kailoT('modeling.from'),
                       value: `${record.fromModelDisplayName}.${record.fromColumnDisplayName}`,
                     },
                     {
-                      title: 'To',
+                      title: kailoT('modeling.to'),
                       value: `${record.toModelDisplayName}.${record.toColumnDisplayName}`,
                     },
-                    { title: 'Description', value: record.description || '-' },
+                    {
+                      title: kailoT('modeling.description'),
+                      value: record.description || '-',
+                    },
                   ]}
                 />
               ),

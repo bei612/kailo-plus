@@ -2,6 +2,7 @@ import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import PreparationStatus from './components/pages/home/preparation/PreparationStatus';
 import { AskingTaskStatus } from './apollo/client/graphql/__types__';
+import { kailoText } from './utils/kailoI18n';
 
 let mockLocale = 'zh';
 jest.mock('next/router', () => ({ useRouter: () => ({ locale: mockLocale }) }));
@@ -28,7 +29,7 @@ describe('original Asking stopped controls consume governed query evidence', () 
       const html = renderToStaticMarkup(<PreparationStatus {...props} />);
       expect(html).toContain(pending);
       expect(html).toContain(resume);
-      expect(html).not.toContain('Cancelled by user');
+      expect(html).not.toContain(kailoText(locale, 'home.cancelledByUser'));
       expect(html).not.toContain('ant-spin');
     },
   );
@@ -37,8 +38,9 @@ describe('original Asking stopped controls consume governed query evidence', () 
       data: {},
       preparedTask: { status: AskingTaskStatus.STOPPED },
     };
+    // DD-157: Kailo wording in the page locale (the last one set above).
     const html = renderToStaticMarkup(<PreparationStatus {...props} />);
-    expect(html).toContain('Cancelled by user');
-    expect(html).toContain('Re-run');
+    expect(html).toContain(kailoText(mockLocale, 'home.cancelledByUser'));
+    expect(html).toContain(kailoText(mockLocale, 'home.rerun'));
   });
 });

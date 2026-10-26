@@ -6,6 +6,7 @@ import {
   ChartTypeProperty,
   AxisProperty,
 } from './BasicProperties';
+import { kailoT } from '@/utils/kailoI18n';
 
 export default function StackedBarProperties(props: PropertiesProps) {
   const { columns, titleMap } = props;
@@ -18,11 +19,15 @@ export default function StackedBarProperties(props: PropertiesProps) {
           <ChartTypeProperty options={chartTypeOptions} />
         </Col>
         <Col span={12}>
-          <Form.Item className="mb-0" label="Stack groups" name="color">
+          <Form.Item
+            className="mb-0"
+            label={kailoT('home.stackGroups')}
+            name="color"
+          >
             <Select
               size="small"
               options={columnOptions}
-              placeholder="Select stack groups"
+              placeholder={kailoT('home.selectStackGroups')}
             />
           </Form.Item>
         </Col>

@@ -21,6 +21,73 @@ export interface KailoPresentationState {
   hostConnected: boolean
 }
 
+/** DD-157 (07 §4.8.7): what a build opts into with <meta name="kailo-embed-features">. */
+export type KailoEmbedFeature = 'page' | 'toast' | 'confirm' | 'shortcuts'
+
+/** Closed icon vocabulary for header actions; Kailo draws them with its own (Lucide) icons. */
+export type KailoActionIcon = 'upload' | 'plus' | 'folder-plus' | 'share' | 'download' | 'rocket' | 'refresh'
+  | 'settings' | 'message-square-plus' | 'play' | 'trash' | 'pencil' | 'filter' | 'search' | 'more'
+
+export interface KailoPageItem {
+  id: string
+  label: string
+}
+
+export interface KailoPageAction {
+  id: string
+  label: string
+  variant?: 'primary' | 'secondary' | 'menu'
+  icon?: KailoActionIcon
+  /**
+   * DD-157: the action needs files the user chooses. Kailo opens its file
+   * picker inside the user's click (a frame never receives the host's user
+   * activation) and delivers the files with the action. accept: same syntax as
+   * <input accept>, 1–200 chars of letters, digits and `.+-/*, `.
+   */
+  files?: KailoActionFiles
+  disabled?: boolean
+  busy?: boolean
+}
+
+export interface KailoActionFiles {
+  accept?: string
+  multiple?: boolean
+  directory?: boolean
+}
+
+/** Files chosen in Kailo's picker; paths are relative paths for a directory pick, else file names. */
+export interface KailoFileSelection {
+  files: File[]
+  paths: string[]
+}
+
+export interface KailoPage {
+  title: string
+  breadcrumbs?: KailoPageItem[]
+  tabs?: KailoPageItem[]
+  activeTab?: string
+  actions?: KailoPageAction[]
+}
+
+export interface KailoNavigateTarget {
+  kind: 'tab' | 'breadcrumb'
+  id: string
+}
+
+export interface KailoToast {
+  tone?: 'success' | 'info' | 'warning' | 'error'
+  title: string
+  description?: string
+}
+
+export interface KailoConfirm {
+  tone?: 'default' | 'danger'
+  title: string
+  description?: string
+  confirmLabel?: string
+  cancelLabel?: string
+}
+
 export interface KailoEmbedRuntime {
   readonly version: 1
   getState(): KailoPresentationState
@@ -28,6 +95,18 @@ export interface KailoEmbedRuntime {
   onLocaleChange(listener: (locale: KailoLocale) => void): () => void
   useIdentityLocale(locale: string): boolean
   requestTopLevelSignIn(): boolean
+  /** DD-157: declared features of this build (absent on runtimes before DD-157). */
+  readonly features?: readonly KailoEmbedFeature[]
+  /** DD-157: true = Kailo renders the page header; throws TypeError on an invalid shape. */
+  setPage?(page: KailoPage | null): boolean
+  onNavigate?(listener: (target: KailoNavigateTarget) => void): () => void
+  onAction?(listener: (id: string, selection?: KailoFileSelection) => void): () => void
+  /** DD-157: true = Kailo showed it; false at top level. */
+  toast?(toast: KailoToast): boolean
+  /** DD-157: Kailo's dialog, or null when the page must use its own. */
+  confirm?(options: KailoConfirm): Promise<boolean> | null
+  /** DD-157: the Kailo host announced it handles this feature (false until it answers). */
+  hostSupports?(feature: KailoEmbedFeature): boolean
 }
 
 type RuntimeHost = { KailoEmbed?: unknown }
@@ -104,4 +183,21 @@ export function offerIdentityLocale(runtime: KailoEmbedRuntime | null, locale: s
 /** Silent OIDC needs interaction inside the frame: Kailo signs in at top level. */
 export function requestTopLevelSignIn(runtime: KailoEmbedRuntime | null): boolean {
   return runtime ? runtime.requestTopLevelSignIn() : false
+}
+
+/**
+ * DD-157: Kailo renders this page's header, toasts and confirmations when the
+ * build declared the `page` feature and the page runs inside the Kailo frame.
+ * The component then renders content only (no own title, breadcrumbs or
+ * product navigation).
+ */
+export const HOST_WITHOUT_PAGE_KEY = 'kailo-knowledge-host-without-page'
+
+export function hostRendersPage(runtime: KailoEmbedRuntime | null): boolean {
+  if (!runtime || typeof runtime.setPage !== 'function') return false
+  const features = Array.isArray(runtime.features) ? runtime.features : []
+  if (!features.includes('page') || runtime.getState().embedded !== true) return false
+  // DD-157: an older Kailo answered without drawing headers (remembered for this tab).
+  try { if (window.sessionStorage.getItem(HOST_WITHOUT_PAGE_KEY) === '1') return false } catch { /* storage denied */ }
+  return true
 }

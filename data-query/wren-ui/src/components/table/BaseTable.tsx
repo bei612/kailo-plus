@@ -5,24 +5,32 @@ import SQLCodeBlock from '@/components/code/SQLCodeBlock';
 import { getColumnTypeIcon } from '@/utils/columnType';
 import { ComposeDiagramField, getJoinTypeText } from '@/utils/data';
 import { makeIterable } from '@/utils/iteration';
+import { kailoT } from '@/utils/kailoI18n';
 
+// Titles are getters: read at render, so they follow the Kailo locale.
 export const COLUMN = {
   ALIAS: {
-    title: 'Alias',
+    get title() {
+      return kailoT('modeling.alias');
+    },
     dataIndex: 'displayName',
     key: 'alias',
     ellipsis: true,
     render: (name) => name || '-',
   },
   NAME: {
-    title: 'Name',
+    get title() {
+      return kailoT('modeling.name');
+    },
     dataIndex: 'referenceName',
     key: 'referenceName',
     ellipsis: true,
     render: (name) => name || '-',
   },
   TYPE: {
-    title: 'Type',
+    get title() {
+      return kailoT('modeling.type');
+    },
     dataIndex: 'type',
     render: (type) => {
       return (
@@ -34,7 +42,9 @@ export const COLUMN = {
     },
   },
   EXPRESSION: {
-    title: 'Expression',
+    get title() {
+      return kailoT('modeling.expression');
+    },
     dataIndex: 'expression',
     key: 'expression',
     render: (expression) => {
@@ -46,27 +56,35 @@ export const COLUMN = {
     },
   },
   RELATION_FROM: {
-    title: 'From',
+    get title() {
+      return kailoT('modeling.from');
+    },
     key: 'fromField',
     ellipsis: true,
     render: (relation) =>
       `${relation.fromModelDisplayName}.${relation.fromColumnDisplayName}`,
   },
   RELATION_TO: {
-    title: 'To',
+    get title() {
+      return kailoT('modeling.to');
+    },
     key: 'toField',
     ellipsis: true,
     render: (relation) =>
       `${relation.toModelDisplayName}.${relation.toColumnDisplayName}`,
   },
   RELATION: {
-    title: 'Type',
+    get title() {
+      return kailoT('modeling.type');
+    },
     dataIndex: 'type',
     key: 'joinType',
     render: (joinType) => getJoinTypeText(joinType),
   },
   DESCRIPTION: {
-    title: 'Description',
+    get title() {
+      return kailoT('modeling.description');
+    },
     dataIndex: 'description',
     key: 'description',
     ellipsis: true,
@@ -119,7 +137,7 @@ const ExpandableRowIterator = makeIterable((props) => {
     <>
       {index > 0 && <div className="border-b border-gray-5" />}
       <Row wrap={false} className="py-1 px-2">
-        <Col span={6} className="gray-6">
+        <Col span={6} className="gray-7">
           {title}
         </Col>
         <Col style={{ wordBreak: 'break-word' }}>{value}</Col>

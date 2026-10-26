@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { Form, Input, Radio } from 'antd';
 import { FORM_MODE, ATHENA_AUTH_METHOD } from '@/utils/enum';
 import { ERROR_TEXTS } from '@/utils/error';
+import { kailoT } from '@/utils/kailoI18n';
 
 interface Props {
   mode?: FORM_MODE;
@@ -11,7 +12,7 @@ function AthenaClassicFields() {
   return (
     <>
       <Form.Item
-        label="AWS access key ID"
+        label={kailoT('setup.fieldAwsAccessKey')}
         name="awsAccessKey"
         required
         rules={[
@@ -25,7 +26,7 @@ function AthenaClassicFields() {
       </Form.Item>
 
       <Form.Item
-        label="AWS secret access key"
+        label={kailoT('setup.fieldAwsSecretKey')}
         name="awsSecretKey"
         required
         rules={[
@@ -47,7 +48,7 @@ function AthenaOIDCFields(props: { isEditMode: boolean }) {
   return (
     <>
       <Form.Item
-        label="Web identity token"
+        label={kailoT('setup.fieldWebIdentityToken')}
         name="webIdentityToken"
         required
         rules={[
@@ -58,13 +59,13 @@ function AthenaOIDCFields(props: { isEditMode: boolean }) {
         ]}
       >
         <Input.Password
-          placeholder="OAuth 2.0 access token or OpenID Connect ID token"
+          placeholder={kailoT('setup.phWebIdentityToken')}
           autoComplete="off"
         />
       </Form.Item>
 
       <Form.Item
-        label="AWS role ARN"
+        label={kailoT('setup.fieldAwsRoleArn')}
         name="roleArn"
         required
         rules={[
@@ -81,11 +82,11 @@ function AthenaOIDCFields(props: { isEditMode: boolean }) {
       </Form.Item>
 
       <Form.Item
-        label="Role session name"
+        label={kailoT('setup.fieldRoleSessionName')}
         name="roleSessionName"
-        extra="Optional session name used in AWS STS assume role operation."
+        extra={kailoT('setup.hintRoleSessionName')}
       >
-        <Input placeholder="session name" />
+        <Input placeholder={kailoT('setup.phSessionName')} />
       </Form.Item>
     </>
   );
@@ -126,7 +127,7 @@ export default function AthenaProperties(props: Props) {
   return (
     <>
       <Form.Item
-        label="Display name"
+        label={kailoT('setup.fieldDisplayName')}
         name="displayName"
         required
         rules={[
@@ -141,9 +142,9 @@ export default function AthenaProperties(props: Props) {
 
       {/* Common fields */}
       <Form.Item
-        label="Database (schema)"
+        label={kailoT('setup.fieldDatabaseSchema')}
         name="schema"
-        extra="The Athena database (schema) that contains your tables."
+        extra={kailoT('setup.hintAthenaDatabase')}
         required
         rules={[
           {
@@ -156,15 +157,14 @@ export default function AthenaProperties(props: Props) {
       </Form.Item>
 
       <Form.Item
-        label="S3 staging directory"
+        label={kailoT('setup.fieldS3StagingDir')}
         name="s3StagingDir"
         required
         extra={
           <>
-            The S3 path where Athena stores query results and metadata.
+            {kailoT('setup.hintS3StagingDir')}
             <br />
-            Find this in Athena console under{' '}
-            <b>Settings → Query result location</b>.
+            {kailoT('setup.hintS3StagingDirWhere')}
           </>
         }
         rules={[
@@ -178,7 +178,7 @@ export default function AthenaProperties(props: Props) {
       </Form.Item>
 
       <Form.Item
-        label="AWS region"
+        label={kailoT('setup.fieldAwsRegion')}
         name="awsRegion"
         required
         rules={[
@@ -192,16 +192,16 @@ export default function AthenaProperties(props: Props) {
       </Form.Item>
 
       {/* Authentication method switch */}
-      <Form.Item label="Authentication method" name="athenaAuthType">
+      <Form.Item label={kailoT('setup.fieldAuthMethod')} name="athenaAuthType">
         <Radio.Group buttonStyle="solid">
           <Radio.Button value={ATHENA_AUTH_METHOD.classic}>
-            AWS credentials
+            {kailoT('setup.authAwsCredentials')}
           </Radio.Button>
           <Radio.Button value={ATHENA_AUTH_METHOD.oidc}>
-            OIDC (web identity token)
+            {kailoT('setup.authOidc')}
           </Radio.Button>
           <Radio.Button value={ATHENA_AUTH_METHOD.instance_profile}>
-            Instance Profile
+            {kailoT('setup.authInstanceProfile')}
           </Radio.Button>
         </Radio.Group>
       </Form.Item>
@@ -216,10 +216,7 @@ export default function AthenaProperties(props: Props) {
       )}
 
       {authType === ATHENA_AUTH_METHOD.instance_profile && (
-        <div className="gray-8" style={{ fontStyle: 'italic' }}>
-          We will automatically detect AWS credentials from the Instance Profile
-          role assigned to this compute environment (EC2, ECS, EKS).
-        </div>
+        <div className="gray-7">{kailoT('setup.hintInstanceProfile')}</div>
       )}
     </>
   );

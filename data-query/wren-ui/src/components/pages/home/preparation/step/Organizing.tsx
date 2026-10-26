@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { Typography } from 'antd';
 import MarkdownBlock from '@/components/editor/MarkdownBlock';
 import { Spinner } from '@/components/PageLoading';
+import useKailoText from '@/utils/kailoI18n';
 
 interface Props {
   stream: string;
@@ -12,6 +13,7 @@ interface Props {
 export default function Organizing(props: Props) {
   const $wrapper = useRef<HTMLDivElement>(null);
   const { stream, loading, isAdjustment } = props;
+  const t = useKailoText();
 
   const isDone = stream && !loading;
 
@@ -32,8 +34,8 @@ export default function Organizing(props: Props) {
   }, [isDone]);
 
   const title = isAdjustment
-    ? 'User-provided reasoning steps applied'
-    : 'Organizing thoughts';
+    ? t('home.stepReasoningApplied')
+    : t('home.stepOrganizing');
 
   return (
     <>
@@ -45,8 +47,8 @@ export default function Organizing(props: Props) {
       >
         {loading && !stream ? (
           <div className="d-flex align-center gx-2">
-            Thinking
-            <Spinner className="gray-6" size={12} />
+            {t('home.stepThinking')}
+            <Spinner className="gray-7" size={12} />
           </div>
         ) : (
           <MarkdownBlock content={stream} />

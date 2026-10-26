@@ -3,14 +3,24 @@
 import { watch } from 'vue'
 import { kailoConfig } from './runtime'
 import { productName } from './brand'
-import { connectHost, isEmbedded, kailoEmbed, offerIdentityLocale } from './bridge'
+import { HOST_WITHOUT_PAGE_KEY, connectHost, hostRendersPage, isEmbedded, kailoEmbed, offerIdentityLocale } from './bridge'
 import { setHostTheme } from '@/composables/useTheme'
 
 let embedded = false
+let shell = false
 
 /** Inside the Kailo frame (<html data-kailo-embedded>, set by kailo-embed.js). */
 export function isKailoEmbedded(): boolean {
   return embedded
+}
+
+/**
+ * DD-157: Kailo renders the page header, toasts and confirmations (Kailo mode,
+ * inside the Kailo frame, `page` declared). The app then renders content only:
+ * no product menu, page titles, breadcrumbs or own navigation chrome.
+ */
+export function isKailoShell(): boolean {
+  return shell
 }
 
 type I18nLike = { global: { locale: { value: string } | string } }
@@ -45,6 +55,19 @@ export function installKailo(i18n: I18nLike): void {
     document.documentElement.setAttribute('data-kailo-mode', '')
     const runtime = kailoEmbed()
     if (runtime) {
+      shell = hostRendersPage(runtime)
+      if (shell) document.documentElement.setAttribute('data-kailo-shell', '')
+      // DD-157: the shell decision is read once per document; if the Kailo that
+      // answers does not draw headers, keep our own navigation from the next load.
+      if (shell && typeof runtime.hostSupports === 'function') {
+        const check = () => {
+          if (!runtime.getState().hostConnected || runtime.hostSupports?.('page')) return
+          window.removeEventListener('kailo:presentation', check)
+          try { window.sessionStorage.setItem(HOST_WITHOUT_PAGE_KEY, '1') } catch { return }
+          window.location.reload()
+        }
+        window.addEventListener('kailo:presentation', check)
+      }
       connectHost(runtime, {
         onTheme: theme => setHostTheme(theme),
         onLocale: locale => setI18nLocale(i18n, locale),

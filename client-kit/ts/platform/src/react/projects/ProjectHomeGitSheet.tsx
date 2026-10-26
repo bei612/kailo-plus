@@ -4,7 +4,7 @@
 // the original back/expand navigation. Reviews come from the governed work-item read.
 import * as React from "react";
 import { useUiT } from "../context";
-import { useUsersBatchQuery } from "../pulse/host";
+import { useProjectProfiles } from "./useProjectProfiles";
 import { ProjectCommitDetailPanel } from "./ProjectCommitDetailPanel";
 import { ProjectHomeCommitsPanel } from "./ProjectCommitsPanel";
 import { ProjectHomeCodebasePanel } from "./ProjectHomeCodebasePanel";
@@ -36,7 +36,7 @@ export function ProjectHomeCommitsSheet({ host, project, repository, pullRequest
   const commitDiffQuery = useProjectCommitDiffQuery(host, selectedCommitRepository, selectedCommitHash);
   const people = React.useMemo(() => [...new Set([repository.owner, ...repository.contributors,
     ...pullRequests.flatMap(pullRequest => [pullRequest.author, ...pullRequest.updates.map(update => update.author)])])], [pullRequests, repository]);
-  const profiles = useUsersBatchQuery(people).data?.profiles;
+  const profiles = useProjectProfiles(people).data?.profiles;
   const selectedCommit = selectedCommitResult?.snapshot?.commits.find(commit => commit.hash === selectedCommitHash) ?? null;
   const selectedCommitPullRequest = selectedCommitHash && selectedCommitRepository.id === repository.id
     ? pullRequests.find(pullRequest => pullRequest.commit === selectedCommitHash || pullRequest.initialCommit === selectedCommitHash)

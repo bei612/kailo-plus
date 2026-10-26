@@ -1,10 +1,20 @@
-import { capitalize } from 'lodash';
 import { Form, Row, Col, Select } from 'antd';
 import { ChartType } from '@/apollo/client/graphql/__types__';
+import { kailoT, KailoTextKey } from '@/utils/kailoI18n';
+
+const CHART_TYPE_LABELS: Record<ChartType, KailoTextKey> = {
+  [ChartType.AREA]: 'home.chartTypeArea',
+  [ChartType.BAR]: 'home.chartTypeBar',
+  [ChartType.GROUPED_BAR]: 'home.chartTypeGroupedBar',
+  [ChartType.LINE]: 'home.chartTypeLine',
+  [ChartType.MULTI_LINE]: 'home.chartTypeMultiLine',
+  [ChartType.PIE]: 'home.chartTypePie',
+  [ChartType.STACKED_BAR]: 'home.chartTypeStackedBar',
+};
 
 export const getChartTypeOptions = () => {
   return Object.entries(ChartType).map(([key, value]) => ({
-    label: capitalize(value.replace('_', ' ')),
+    label: kailoT(CHART_TYPE_LABELS[value]),
     value: key,
   }));
 };
@@ -24,8 +34,16 @@ export function ChartTypeProperty(props: {
 }) {
   const { options } = props;
   return (
-    <Form.Item className="mb-0" label="Chart type" name="chartType">
-      <Select size="small" options={options} placeholder="Select chart type" />
+    <Form.Item
+      className="mb-0"
+      label={kailoT('home.chartType')}
+      name="chartType"
+    >
+      <Select
+        size="small"
+        options={options}
+        placeholder={kailoT('home.selectChartType')}
+      />
     </Form.Item>
   );
 }
@@ -37,13 +55,21 @@ export function AxisProperty(props: {
   return (
     <Row gutter={16}>
       <Col span={12}>
-        <Form.Item className="mb-0" label="X-axis" name="xAxis">
-          <Select size="small" options={options} placeholder="Select x-axis" />
+        <Form.Item className="mb-0" label={kailoT('home.xAxis')} name="xAxis">
+          <Select
+            size="small"
+            options={options}
+            placeholder={kailoT('home.selectXAxis')}
+          />
         </Form.Item>
       </Col>
       <Col span={12}>
-        <Form.Item className="mb-0" label="Y-axis" name="yAxis">
-          <Select size="small" options={options} placeholder="Select y-axis" />
+        <Form.Item className="mb-0" label={kailoT('home.yAxis')} name="yAxis">
+          <Select
+            size="small"
+            options={options}
+            placeholder={kailoT('home.selectYAxis')}
+          />
         </Form.Item>
       </Col>
     </Row>

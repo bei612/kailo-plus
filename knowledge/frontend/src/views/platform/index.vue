@@ -1,6 +1,8 @@
 <template>
     <div class="main" ref="dropzone">
-        <Menu></Menu>
+        <!-- DD-157: inside the Kailo shell the product menu is Kailo's header tabs; only the
+             conversation history stays, as the list pane of the Chat tab. -->
+        <Menu v-if="!kailoShell || isChatRoute" :pane="kailoShell"></Menu>
         <div v-if="isRouterAlive" class="platform-route-outlet">
             <RouterView />
         </div>
@@ -10,7 +12,8 @@
         <!-- 全局设置模态框，供所有 platform 子路由使用 -->
         <Settings />
         <!-- 全局命令面板 (⌘K)，随 platform 路由存活 -->
-        <GlobalCommandPalette />
+        <!-- Kailo shell: ⌘K is Kailo's search (the runtime forwards it); no component palette. -->
+        <GlobalCommandPalette v-if="!kailoShell" />
         <!-- 全局右上角"待处理邀请"铃铛。固定定位，z-index 低于抽屉，业务页面
              右侧抽屉弹出时会自然覆盖；仅在有待处理邀请时渲染。 -->
         <!-- Kailo mode: membership comes from Kailo, so there are no native invitations. -->
@@ -24,7 +27,7 @@
 </template>
 <script setup lang="ts">
 import Menu from '@/components/menu.vue'
-import { ref, onMounted, onUnmounted, nextTick, provide, watch } from 'vue';
+import { ref, computed, onMounted, onUnmounted, nextTick, provide, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router'
 import UploadMask from '@/components/upload-mask.vue'
 import Settings from '@/views/settings/Settings.vue'
@@ -33,6 +36,10 @@ import GlobalInvitationBell from '@/components/GlobalInvitationBell.vue'
 import UploadTasksPanel from '@/components/upload-tasks/UploadTasksPanel.vue'
 import NewUserGuide from '@/components/NewUserGuide.vue'
 import { kailoConfig } from '@/kailo/runtime'
+import { isKailoShell } from '@/kailo/setup'
+import { kailoEmbed } from '@/kailo/bridge'
+import { installPageShell } from '@/kailo/page'
+import { useDeploymentCapabilitiesStore } from '@/stores/deploymentCapabilities'
 import { useCommandPaletteStore } from '@/stores/commandPalette'
 import { useChatResourcesStore } from '@/stores/chatResources'
 import { useUIStore } from '@/stores/ui'
@@ -42,13 +49,32 @@ import { useI18n } from 'vue-i18n'
 import { collectDroppedFiles } from './collectDroppedFiles'
 
 const kailoMode = kailoConfig().mode
+const kailoShell = isKailoShell()
 
 const route = useRoute();
 const router = useRouter();
 const commandPaletteStore = useCommandPaletteStore();
 const uiStore = useUIStore();
 let ismask = ref(false)
-const { t } = useI18n();
+const { t, locale } = useI18n();
+
+const isChatRoute = computed(() => CHAT_DROP_ROUTE_NAMES.has(String(route.name || '')));
+
+// DD-157: Kailo renders the page header; publish it for every route change.
+if (kailoShell) {
+    const runtime = kailoEmbed()
+    const capabilities = useDeploymentCapabilitiesStore()
+    if (runtime) {
+        const stop = installPageShell({
+            runtime,
+            router,
+            route,
+            locale: () => locale.value,
+            supports: (capability) => capabilities.isSupported(capability as never),
+        })
+        onUnmounted(stop)
+    }
+}
 
 const isRouterAlive = ref(true)
 const reloadApp = () => {

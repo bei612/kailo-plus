@@ -140,6 +140,25 @@ from Kailo at run time.
 | Kailo → component | `{source: "kailo-host", version: 1, type: "presentation", theme, locale}` on `ready` and on every change |
 | Kailo → component | `{source: "kailo-host", version: 1, type: "preferences", values}` on `ready` (after `presentation`) and on every change of a declared preference (DD-138) |
 
+DD-157 page shell (07 §4.8.7, `.design/20` §13), same version 1 — opt in per build with
+`<meta name="kailo-embed-features" content="page toast confirm shortcuts">` before the runtime:
+
+| Direction | Message |
+|---|---|
+| component → Kailo | `ready` carries `features: [...]` (the declared subset) |
+| component → Kailo | `{type: "page", page: {title, breadcrumbs, tabs, activeTab, actions}}` — `KailoEmbed.setPage()`; Kailo draws the header, the page draws none |
+| component → Kailo | `{type: "toast", toast: {tone, title, description}}` — `KailoEmbed.toast()` |
+| component → Kailo | `{type: "confirm", confirm: {id, tone, title, description, confirmLabel, cancelLabel}}` — `KailoEmbed.confirm()` |
+| component → Kailo | `{type: "shortcut", shortcut: "search"\|"settings"\|"back"\|"forward"}` — sent by the runtime itself |
+| Kailo → component | `{type: "navigate", target: {kind: "tab"\|"breadcrumb", id}}`, `{type: "action", id}` — `onNavigate`, `onAction` |
+| Kailo → component | `{type: "confirm-result", id, confirmed}` |
+| Kailo → component | `presentation` carries `features: [...]` the host handles; `KailoEmbed.hostSupports(name)` and `<html data-kailo-host-features>` reflect it. `setPage` returns `false` once an older host answered without `page` — keep your own header then |
+
+Page, toast and confirm text is display text for the user's own browser: Kailo
+renders it as plain text and never stores, logs or forwards it. The token sheet
+also carries a base layer (canvas, scrollbars, selection, focus ring, theme-switch
+without transitions) for `<html data-kailo-runtime>`.
+
 Both sides post to one exact origin (never `"*"`), check `event.origin` against
 the configured origin and `event.source` against the expected window, and
 ignore any other shape or version.

@@ -1,6 +1,6 @@
 import { ApplicationBindingState, type ApplicationBindingPage, type ApplicationBindingView } from "@client-kit/contracts";
 import { AppWindow, Database, Folder, Library } from "lucide-react";
-import { useEffect } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 import { validBindingPage } from "./application-bindings";
 import { useBffClient, useT, type Translate } from "./context";
 import { useLoad } from "./use-load";
@@ -8,10 +8,31 @@ import { Notice, ReadFailure } from "./ui";
 import { SidebarGroup, SidebarMenu, SidebarMenuButton, SidebarMenuItem } from "./sidebar/sidebar";
 import { SidebarMenuLabel } from "./sidebar/sidebar-menu-label";
 
-type NativeCategory = "files" | "knowledge" | "data";
+export type NativeCategory = "files" | "knowledge" | "data";
+
+/**
+ * DD-157: the product title and category of each discovered entry, so the component
+ * page in either host labels its Kailo header exactly like its sidebar entry.
+ * Display facts only; every launch still re-admits the binding (DD-138).
+ */
+export interface NativeEntryPresentation { title: string; category: NativeCategory | null }
+const entryPresentations = new Map<string, NativeEntryPresentation>();
+const entryListeners = new Set<() => void>();
+function publishEntries(entries: [string, NativeEntryPresentation][]) {
+  let changed = false;
+  for (const [id, value] of entries) {
+    const current = entryPresentations.get(id);
+    if (current?.title !== value.title || current?.category !== value.category) { entryPresentations.set(id, value); changed = true; }
+  }
+  if (changed) for (const listener of [...entryListeners]) listener();
+}
+export function useNativeEntryPresentation(bindingId: string): NativeEntryPresentation | null {
+  return useSyncExternalStore((listener) => { entryListeners.add(listener); return () => entryListeners.delete(listener); },
+    () => entryPresentations.get(bindingId) ?? null, () => null);
+}
 
 // DD-127(4): a native page entry labels itself by its release's presentation category.
-function nativeCategory(binding: ApplicationBindingView): NativeCategory | null {
+export function nativeCategory(binding: ApplicationBindingView): NativeCategory | null {
   const categories: string[] = [...binding.capabilityCategories.map((capability) => capability.category),
     ...(binding.nativePageCategory ? [String(binding.nativePageCategory)] : [])];
   return categories.includes("file_storage") ? "files" : categories.includes("knowledge") ? "knowledge"
@@ -76,6 +97,9 @@ export function NativeApplicationEntries({ scopeKey, workspace, selectedId, onSe
   const selected = entries.find((binding) => binding.bindingId === selectedId);
   const selectedTitle = selected ? nativeEntryTitle(selected, t) : null;
   useEffect(() => { onSelectedTitle?.(selectedTitle); }, [onSelectedTitle, selectedTitle]);
+  useEffect(() => {
+    if (state.status === "ok") publishEntries(state.data.map((binding) => [binding.bindingId, { title: nativeEntryTitle(binding, t), category: nativeCategory(binding) }]));
+  }, [state, t]);
   if (state.status === "ok" && entries.length === 0) return null;
   return <SidebarGroup data-testid="native-application-entries">
     {state.status === "pending" ? <Notice role="status">{t("platform.loading")}</Notice>

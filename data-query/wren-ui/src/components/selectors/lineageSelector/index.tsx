@@ -16,6 +16,7 @@ import {
 } from 'antd/lib/form/context';
 import { DiagramModel } from '@/utils/data';
 import { getNodeTypeIcon } from '@/utils/nodeType';
+import { kailoT } from '@/utils/kailoI18n';
 import { aggregations } from '@/utils/expressionType';
 import { ExpressionName } from '@/apollo/client/graphql/__types__';
 import {
@@ -31,12 +32,12 @@ interface Props {
 }
 
 const Wrapper = styled.div`
-  border: 1px var(--gray-5) solid;
-  border-radius: 4px;
+  border: 1px var(--kailo-color-line-strong) solid;
+  border-radius: 6px;
   overflow-x: auto;
 
   &.adm-error {
-    border-color: var(--red-5);
+    border-color: var(--kailo-color-danger);
   }
 `;
 
@@ -126,10 +127,10 @@ export const getLineageOptions = (data: {
     let invalidTypeMessage = '';
     if (!checkStringFunctionAllowType(expression, value)) {
       isInvalidType = true;
-      invalidTypeMessage = 'Please select a string type field.';
+      invalidTypeMessage = kailoT('modeling.selectStringField');
     } else if (!checkNumberFunctionAllowType(expression, value)) {
       isInvalidType = true;
-      invalidTypeMessage = 'Please select a number type field.';
+      invalidTypeMessage = kailoT('modeling.selectNumberField');
     }
 
     const disabled =
@@ -141,15 +142,13 @@ export const getLineageOptions = (data: {
 
     let title = undefined;
     if (isSourceModelFieldsWithAggregation) {
-      title =
-        "Aggregation functions don't allow selecting from source model fields to prevent unexpected outcomes.";
+      title = kailoT('modeling.aggregationSourceFieldBlocked');
     } else if (isRelationshipWithoutPrimaryKey) {
-      title =
-        'Please set a primary key within this model to use it in a calculated field.';
+      title = kailoT('modeling.relationshipNeedsPrimaryKey');
     } else if (isSourceModelCalculatedField) {
-      title = 'Calculated field from the source model is not supported.';
+      title = kailoT('modeling.sourceCalculatedFieldUnsupported');
     } else if (isInUsedRelationship) {
-      title = 'This relationship is in use.';
+      title = kailoT('modeling.relationshipInUse');
     } else if (isInvalidType) {
       title = invalidTypeMessage;
     }
@@ -181,10 +180,13 @@ export const getLineageOptions = (data: {
   return compact([
     ...fields,
     calculatedFields.length
-      ? { label: 'Calculated fields', options: calculatedFields }
+      ? {
+          label: kailoT('modeling.calculatedFields'),
+          options: calculatedFields,
+        }
       : undefined,
     relationships.length
-      ? { label: 'Relationships', options: relationships }
+      ? { label: kailoT('modeling.relationships'), options: relationships }
       : undefined,
   ]);
 };

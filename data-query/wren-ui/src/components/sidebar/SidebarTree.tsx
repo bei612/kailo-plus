@@ -3,25 +3,31 @@ import { useState } from 'react';
 import styled, { css } from 'styled-components';
 import { Tree, TreeProps } from 'antd';
 
+// DD-157 (20 §13 列表窗格): rows 32 high, 13/500, radius 6, 8 px inner
+// padding and 8 px outer margin; hover = hover token, selected = brand-soft
+// with brand-soft text; group titles are Overline 11/14 600 0.04em muted
+// upper case; icons are single-colour line in muted (selected rows follow
+// the row text).
 const anticonStyle = css`
   [class^='anticon anticon-'] {
-    transition: background-color ease-out 0.12s;
-    border-radius: 2px;
+    transition: background-color var(--kailo-duration-instant)
+      var(--kailo-ease-standard);
+    border-radius: 4px;
     width: 12px;
     height: 12px;
     font-size: 12px;
     vertical-align: middle;
 
     &:hover {
-      background-color: var(--gray-5);
+      background-color: var(--kailo-color-hover);
     }
     &:active {
-      background-color: var(--gray-6);
+      background-color: var(--kailo-color-pressed);
     }
 
     &[disabled] {
       cursor: not-allowed;
-      color: var(--gray-6);
+      color: var(--kailo-color-text-disabled);
       &:hover,
       &:active {
         background-color: transparent;
@@ -36,7 +42,9 @@ const anticonStyle = css`
 const StyledTree = styled(Tree)`
   &.ant-tree {
     background-color: transparent;
-    color: var(--gray-8);
+    color: var(--kailo-color-foreground);
+    font-size: 13px;
+    font-weight: 500;
 
     .ant-tree-indent-unit {
       width: 12px;
@@ -46,7 +54,7 @@ const StyledTree = styled(Tree)`
       display: flex;
       align-items: center;
       line-height: 18px;
-      min-height: 28px;
+      min-height: 32px;
       min-width: 1px;
       padding: 0;
     }
@@ -56,14 +64,26 @@ const StyledTree = styled(Tree)`
       background-color: transparent;
     }
 
+    .ant-tree-iconEle,
+    .ant-tree-switcher {
+      color: var(--kailo-color-muted-foreground);
+    }
+
     .ant-tree-treenode {
-      padding: 0 16px;
+      margin: 0 8px;
+      padding: 0 8px;
+      border-radius: 6px;
       background-color: transparent;
-      transition: background-color ease-out 0.12s;
+      transition: background-color var(--kailo-duration-instant)
+        var(--kailo-ease-standard);
 
       &-selected {
-        color: var(--geekblue-6);
-        background-color: var(--gray-4);
+        color: var(--kailo-color-selected-foreground);
+        background-color: var(--kailo-color-selected);
+
+        .ant-tree-iconEle {
+          color: inherit;
+        }
       }
 
       .ant-tree-switcher {
@@ -90,10 +110,13 @@ const StyledTree = styled(Tree)`
 
       &-treeNode {
         &:hover {
-          background-color: var(--gray-4);
+          background-color: var(--kailo-color-hover);
         }
         &:active {
-          background-color: var(--gray-6);
+          background-color: var(--kailo-color-pressed);
+        }
+        &.ant-tree-treenode-selected:hover {
+          background-color: var(--kailo-color-selected-hover);
         }
 
         .ant-tree-title {
@@ -105,14 +128,18 @@ const StyledTree = styled(Tree)`
         &--relation,
         &--primary {
           margin-left: 4px;
+          color: var(--kailo-color-muted-foreground);
         }
 
         &--group {
-          color: var(--gray-8);
+          color: var(--kailo-color-muted-foreground);
           margin-top: 16px;
 
-          font-size: 14px;
-          font-weight: 500;
+          font-size: 11px;
+          line-height: 14px;
+          font-weight: 600;
+          letter-spacing: 0.04em;
+          text-transform: uppercase;
 
           .ant-tree-switcher-noop {
             display: none;
@@ -124,8 +151,9 @@ const StyledTree = styled(Tree)`
         }
 
         &--empty {
-          color: var(--gray-7);
+          color: var(--kailo-color-muted-foreground);
           font-size: 12px;
+          font-weight: 400;
           .ant-tree-switcher {
             display: none;
           }
@@ -145,9 +173,11 @@ const StyledTree = styled(Tree)`
         }
 
         &--subtitle {
-          color: var(--gray-7);
-          font-size: 12px;
-          font-weight: 500;
+          color: var(--kailo-color-muted-foreground);
+          font-size: 11px;
+          font-weight: 600;
+          letter-spacing: 0.04em;
+          text-transform: uppercase;
           .ant-tree-switcher {
             display: none;
           }
@@ -169,12 +199,14 @@ const StyledTree = styled(Tree)`
 
       &-actionIcon {
         font-size: 14px;
-        border-radius: 2px;
+        border-radius: 4px;
         margin-right: -3px;
+        color: var(--kailo-color-muted-foreground);
         &:not(.adm-actionIcon--disabled) {
           cursor: pointer;
           &:hover {
-            background-color: var(--gray-5);
+            background-color: var(--kailo-color-hover);
+            color: var(--kailo-color-foreground);
           }
         }
         .anticon {
@@ -182,7 +214,7 @@ const StyledTree = styled(Tree)`
           cursor: inherit;
         }
         &--disabled {
-          color: var(--gray-6);
+          color: var(--kailo-color-text-disabled);
           cursor: not-allowed;
         }
       }
@@ -203,22 +235,35 @@ export const sidebarCommonStyle = css`
 `;
 
 export const StyledTreeNodeLink = styled(Link)`
-  display: block;
+  display: flex;
+  align-items: center;
   cursor: pointer;
   user-select: none;
-  margin-top: 16px;
-  padding: 0 16px;
-  line-height: 28px;
-  color: var(--gray-8);
+  margin: 8px 8px 0;
+  padding: 0 8px;
+  min-height: 32px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--kailo-color-foreground);
+  .anticon,
+  .kailo-icon {
+    color: var(--kailo-color-muted-foreground);
+  }
   &:hover {
-    background-color: var(--gray-4);
+    background-color: var(--kailo-color-hover);
+    color: var(--kailo-color-foreground);
   }
   &:active {
-    background-color: var(--gray-6);
+    background-color: var(--kailo-color-pressed);
   }
   &.adm-treeNode--selected {
-    background-color: var(--gray-4);
-    color: var(--geekblue-6);
+    background-color: var(--kailo-color-selected);
+    color: var(--kailo-color-selected-foreground);
+    .anticon,
+    .kailo-icon {
+      color: inherit;
+    }
   }
 `;
 

@@ -2,7 +2,7 @@ import clsx from 'clsx';
 import dynamic from 'next/dynamic';
 import styled from 'styled-components';
 import { useEffect, useMemo, useState } from 'react';
-import { Alert, Form, Button, Skeleton, Modal, message } from 'antd';
+import { Alert, Form, Button, Skeleton } from 'antd';
 import { attachLoading } from '@/utils/helper';
 import ReloadOutlined from '@ant-design/icons/ReloadOutlined';
 import BasicProperties from '@/components/chart/properties/BasicProperties';
@@ -29,6 +29,8 @@ import client from '@/apollo/client';
 import { DASHBOARD_ITEMS } from '@/apollo/client/graphql/dashboard';
 import { runNativeMetadataWrite } from '@/utils/errorHandler';
 import useKailoSession from '@/hooks/useKailoSession';
+import { confirm, notify } from '@/utils/kailoHost';
+import useKailoText from '@/utils/kailoI18n';
 
 const Chart = dynamic(() => import('@/components/chart'), {
   ssr: false,
@@ -43,6 +45,9 @@ const StyledSkeleton = styled(Skeleton)`
 
 const ChartWrapper = styled.div`
   position: relative;
+  background: var(--kailo-color-card);
+  border: 1px solid var(--kailo-color-border);
+  border-radius: 12px;
   padding-top: 0;
   transition: padding-top 0.2s ease-out;
   &.isEditMode {
@@ -54,7 +59,8 @@ const Toolbar = styled.div`
   display: flex;
   justify-content: space-between;
   align-items: center;
-  background-color: var(--gray-3);
+  background-color: var(--kailo-color-canvas);
+  border-bottom: 1px solid var(--kailo-color-border);
   padding: 8px 16px;
   position: absolute;
   top: -72px;
@@ -92,6 +98,7 @@ export default function ChartAnswer(props: AnswerResultProps) {
   const { threadResponse } = props;
   const router = useRouter();
   const text = getQueryPreviewText(router.locale);
+  const t = useKailoText();
   const [regenerating, setRegenerating] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
   const [newValues, setNewValues] = useState(null);
@@ -190,50 +197,56 @@ export default function ChartAnswer(props: AnswerResultProps) {
     form.resetFields();
   };
 
-  const onReload = () => {
-    Modal.confirm({
-      title: 'Are you sure you want to regenerate the chart?',
-      onOk: onRegenerate,
+  const onReload = async () => {
+    const confirmed = await confirm({
+      title: t('home.regenerateChartTitle'),
+      description: t('home.regenerateChartDescription'),
+      confirmLabel: t('home.regenerate'),
     });
+    if (confirmed) onRegenerate();
   };
 
   const onEdit = () => {
     setIsEditMode(!isEditMode);
   };
 
-  const onPin = () => {
-    Modal.confirm({
-      title: 'Are you sure you want to pin this chart to the dashboard?',
-      okText: 'Save',
-      onOk: async () => {
-        await runNativeMetadataWrite({
-          nativeType: 'dashboardItem',
-          locale: router.locale,
-          variables: {
-            data: {
-              // DashboardItemType is compatible with ChartType
-              itemType: chartType as unknown as DashboardItemType,
-              responseId: threadResponse.id,
-            },
-          },
-          submit: (variables, guarded) =>
-            createDashboardItem({
-              variables,
-              ...(guarded ? { context: { nativeWriteGuarded: true } } : {}),
-            }),
-          observe: async (nativeId) => {
-            const response = await client.query({
-              query: DASHBOARD_ITEMS,
-              fetchPolicy: 'no-cache',
-            });
-            return response.data?.dashboardItems?.find(
-              (row) => row.id === nativeId,
-            );
-          },
-        });
-        message.success('Successfully pinned chart to dashboard.');
-      },
+  const onPin = async () => {
+    const confirmed = await confirm({
+      title: t('home.pinChartTitle'),
+      description: t('home.pinChartDescription'),
+      confirmLabel: t('home.pin'),
     });
+    if (!confirmed) return;
+    try {
+      await runNativeMetadataWrite({
+        nativeType: 'dashboardItem',
+        locale: router.locale,
+        variables: {
+          data: {
+            // DashboardItemType is compatible with ChartType
+            itemType: chartType as unknown as DashboardItemType,
+            responseId: threadResponse.id,
+          },
+        },
+        submit: (variables, guarded) =>
+          createDashboardItem({
+            variables,
+            ...(guarded ? { context: { nativeWriteGuarded: true } } : {}),
+          }),
+        observe: async (nativeId) => {
+          const response = await client.query({
+            query: DASHBOARD_ITEMS,
+            fetchPolicy: 'no-cache',
+          });
+          return response.data?.dashboardItems?.find(
+            (row) => row.id === nativeId,
+          );
+        },
+      });
+      notify.success(t('home.pinnedToDashboard'));
+    } catch (error) {
+      console.error(error);
+    }
   };
 
   const onResetAdjustment = () => {
@@ -252,7 +265,7 @@ export default function ChartAnswer(props: AnswerResultProps) {
   const regenerateBtn = (
     <div className="text-center mt-4">
       <Button icon={<ReloadOutlined />} onClick={onReload}>
-        Regenerate
+        {t('home.regenerate')}
       </Button>
     </div>
   );
@@ -325,10 +338,9 @@ export default function ChartAnswer(props: AnswerResultProps) {
             ? query.completed &&
               query.receipt?.data && (
                 <ChartWrapper
-                  className={clsx(
-                    'border border-gray-4 rounded mt-4 pb-3 overflow-hidden',
-                    { isEditMode: isEditMode },
-                  )}
+                  className={clsx('mt-4 pb-3 overflow-hidden', {
+                    isEditMode: isEditMode,
+                  })}
                 >
                   <Toolbar className={clsx({ isEditMode: isEditMode })}>
                     <Form
@@ -351,14 +363,14 @@ export default function ChartAnswer(props: AnswerResultProps) {
                               className="ml-4 mb-2"
                               onClick={onResetAdjustment}
                             >
-                              Reset
+                              {t('home.reset')}
                             </Button>
                             <Button
                               className="ml-4"
                               type="primary"
                               onClick={onAdjustChart}
                             >
-                              Adjust
+                              {t('home.adjust')}
                             </Button>
                           </div>
                         )}

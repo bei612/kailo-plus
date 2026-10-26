@@ -11,6 +11,7 @@ import { getQueryPreviewText } from './utils/language';
 import { getNativeWriteText } from './utils/language';
 import errorHandler, { runNativeMetadataWrite } from './utils/errorHandler';
 import { message } from 'antd';
+import { kailoT, kailoText } from './utils/kailoI18n';
 import { webcrypto } from 'node:crypto';
 import SaveAsViewModal from './components/modals/SaveAsViewModal';
 import ModelDrawer from './components/pages/modeling/ModelDrawer';
@@ -169,6 +170,29 @@ jest.mock('./components/modals/ImportDataSourceSQLModal', () => ({
   default: () => null,
   isSupportSubstitute: () => false,
 }));
+// DD-157: results are announced through Kailo (kailoHost.notify); the
+// top-level fallback is not under test here, so notify forwards to the
+// mocked antd message the assertions below read.
+jest.mock('./utils/kailoHost', () => {
+  const forward =
+    (tone: 'success' | 'warning' | 'error' | 'info') =>
+    (...args: any[]) =>
+      jest
+        .requireMock('antd')
+        .message[tone](...args.filter((arg) => arg !== undefined));
+  return {
+    notify: {
+      success: forward('success'),
+      warning: forward('warning'),
+      error: forward('error'),
+      info: forward('warning'),
+    },
+    confirm: jest.fn(async () => true),
+    confirmDanger: jest.fn(async (_options: any, action: any) => action()),
+    setPage: jest.fn(),
+    hostRendersPage: () => false,
+  };
+});
 jest.mock('antd', () => {
   const React = jest.requireActual('react');
   const field = ({ children }: any) =>
@@ -192,7 +216,13 @@ jest.mock('antd', () => {
     Form,
     Modal: overlay,
     Drawer: (props: any) => {
-      if (props.title === 'API details') mockHistoryDrawer = props;
+      const { kailoText: text } = jest.requireActual('./utils/kailoI18n');
+      if (
+        ['zh-CN', 'en']
+          .map((locale) => text(locale, 'knowledge.apiDetails'))
+          .includes(props.title)
+      )
+        mockHistoryDrawer = props;
       return overlay(props);
     },
     Tag: (props: any) =>
@@ -568,7 +598,10 @@ describe('original API History detail bounded native observation consumers', () 
     );
     renderToStaticMarkup(action.render(pending));
     await mockButtons
-      .findLast((button: any) => button.children?.[1] === ' Details')
+      .findLast(
+        (button: any) =>
+          button.children === kailoText(mockLocale, 'knowledge.details'),
+      )
       .onClick();
     return mockButtons.find(
       (button: any) =>
@@ -762,7 +795,10 @@ describe('original API History detail bounded native observation consumers', () 
     );
     renderToStaticMarkup(action.render(completed));
     await mockButtons
-      .findLast((button: any) => button.children?.[1] === ' Details')
+      .findLast(
+        (button: any) =>
+          button.children === kailoText(mockLocale, 'knowledge.details'),
+      )
       .onClick();
     expect(mockHistoryRead).toHaveBeenCalledTimes(1);
     expect(mockHistoryOpen).not.toHaveBeenCalled();
@@ -1747,9 +1783,14 @@ describe('original saved-view preview controls', () => {
         onClose: close,
       } as any),
     );
-    expect(markup).toContain('Submit');
-    expect(markup).toContain('Preview data');
-    await mockButtons.find((button) => button.children === 'Submit').onClick();
+    expect(markup).toContain(kailoText(mockLocale, 'knowledge.submit'));
+    expect(markup).toContain(getQueryPreviewText(mockLocale).preview);
+    await mockButtons
+      .find(
+        (button) =>
+          button.children === kailoText(mockLocale, 'knowledge.submit'),
+      )
+      .onClick();
     expect(submit).toHaveBeenCalledWith({
       nativeWriteGuarded: true,
       data: {
@@ -1871,8 +1912,10 @@ describe('original saved-view preview controls', () => {
         submit,
         close,
         changed,
-        click: mockButtons.find((button) => button.children === 'Submit')
-          .onClick,
+        click: mockButtons.find(
+          (button) =>
+            button.children === kailoText(mockLocale, 'knowledge.submit'),
+        ).onClick,
       };
     };
     beforeEach(() => {
@@ -1910,7 +1953,10 @@ describe('original saved-view preview controls', () => {
     it('uses both original native dry-run and data preview calls in explicitly unconfigured standalone mode', async () => {
       setup(jest.fn(), false);
       await mockButtons
-        .find((button) => button.children === 'Preview data')
+        .find(
+          (button) =>
+            button.children === getQueryPreviewText(mockLocale).preview,
+        )
         .onClick();
       expect(mockPreview.mock.calls.map(([input]) => input)).toEqual([
         { variables: { data: { sql: mockSqlWatch, limit: 1, dryRun: true } } },
@@ -1990,7 +2036,7 @@ describe('original saved-view preview controls', () => {
       expect(actual.changed).toHaveBeenCalledWith(
         expect.objectContaining({
           code: 'INVALID_SQL_ERROR',
-          shortMessage: 'Invalid SQL syntax',
+          shortMessage: kailoText(mockLocale, 'knowledge.invalidSqlSyntax'),
         }),
       );
       expect(actual.close).not.toHaveBeenCalled();
@@ -3193,7 +3239,7 @@ describe('original native metadata create UNKNOWN and authorized read-back consu
       graphQLErrors: [{ message: 'native validation error' }],
       operation: { operationName: 'CreateView', getContext: () => ({}) },
     } as any);
-    expect(message.error).toHaveBeenCalledWith('Failed to create view.');
+    expect(message.error).toHaveBeenCalledWith(kailoT('setup.errCreateView'));
     expect(message.warning).not.toHaveBeenCalled();
   });
   it.each(['view', 'model'] as const)(
@@ -3226,9 +3272,13 @@ describe('original native metadata create UNKNOWN and authorized read-back consu
             ? createElement(SaveAsViewModal, props)
             : createElement(ModelDrawer, props),
         );
-        const save = mockButtons.find(
-          (button) =>
-            button.children === (nativeType === 'view' ? 'Save' : 'Submit'),
+        const save = mockButtons.find((button) =>
+          (nativeType === 'view'
+            ? ['home.save' as const]
+            : ['modeling.create' as const, 'modeling.save' as const]
+          )
+            .map((key) => kailoText(mockLocale, key))
+            .includes(button.children),
         );
         save.onClick();
         await Promise.resolve();
@@ -3275,7 +3325,9 @@ describe('original native metadata create UNKNOWN and authorized read-back consu
       },
     });
     const click = async () => {
-      const save = mockButtons.find((button) => button.children === 'Save');
+      const save = mockButtons.find(
+        (button) => button.children === kailoText(mockLocale, 'home.save'),
+      );
       save.onClick();
       await Promise.resolve();
       return pending;
@@ -3345,7 +3397,7 @@ describe('original native metadata create UNKNOWN and authorized read-back consu
       await Promise.resolve();
       expect(close).toHaveBeenCalledTimes(1);
       expect(message.success).toHaveBeenCalledWith(
-        'Successfully created view.',
+        kailoText(mockLocale, 'home.viewCreated'),
       );
     });
     it('UNKNOWN leaves the original modal open and a later check retains the same query key before any native INSERT', async () => {

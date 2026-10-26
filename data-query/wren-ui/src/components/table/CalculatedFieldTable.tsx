@@ -3,6 +3,7 @@ import BaseTable, {
   COLUMN,
   ExpandableRows,
 } from '@/components/table/BaseTable';
+import { kailoT } from '@/utils/kailoI18n';
 
 export default function CalculatedFieldTable(props: Props) {
   const { columns, showExpandable } = props;
@@ -22,7 +23,10 @@ export default function CalculatedFieldTable(props: Props) {
               expandedRowRender: (record) => (
                 <ExpandableRows
                   data={[
-                    { title: 'Description', value: record.description || '-' },
+                    {
+                      title: kailoT('modeling.description'),
+                      value: record.description || '-',
+                    },
                   ]}
                 />
               ),

@@ -1,4 +1,5 @@
 import React from 'react';
+import { kailoText } from './utils/kailoI18n';
 import { renderToStaticMarkup } from 'react-dom/server';
 import useAskingStreamTask from './hooks/useAskingStreamTask';
 import useAskPrompt from './hooks/useAskPrompt';
@@ -505,15 +506,17 @@ describe('original GeneralAnswer rendering', () => {
   it('never presents disconnected partial content as completed even when transport loading is false', () => {
     const html = render(false, false);
     expect(html).toContain('Partial or completed original answer');
-    expect(html).not.toContain('For the most accurate semantics');
+    expect(html).not.toContain(kailoText(undefined, 'home.generalAnswerHint'));
   });
   it('preserves the original completion text only with actual done evidence', () => {
-    expect(render(true, false)).toContain('For the most accurate semantics');
+    expect(render(true, false)).toContain(
+      kailoText(undefined, 'home.generalAnswerHint'),
+    );
   });
   it('keeps the original loading icon while current native observation is unresolved', () => {
     const html = render(false, true);
     expect(html).toContain('anticon-loading');
-    expect(html).not.toContain('For the most accurate semantics');
+    expect(html).not.toContain(kailoText(undefined, 'home.generalAnswerHint'));
   });
 
   const promptProps = () => ({
@@ -548,7 +551,7 @@ describe('original GeneralAnswer rendering', () => {
       const html = renderToStaticMarkup(
         React.createElement(Prompt, promptProps()),
       );
-      expect(html).toContain('For the most accurate semantics');
+      expect(html).toContain(kailoText(undefined, 'home.generalAnswerHint'));
     } finally {
       state.mockRestore();
     }
