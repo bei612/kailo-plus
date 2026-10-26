@@ -86,6 +86,7 @@ void main() {
     required String apns,
     String fcm = 'NOT_CONFIGURED',
     bool Function()? isCurrent,
+    FutureOr<PlatformResponse> Function()? readRegistration,
     required FutureOr<PlatformResponse> Function(
       PlatformMethod,
       String,
@@ -106,7 +107,7 @@ void main() {
           return const PlatformResponse(200, _session);
         }
         if (method == PlatformMethod.put) return put(method, path, body);
-        return const PlatformResponse(404, {});
+        return readRegistration == null ? const PlatformResponse(404, {}) : readRegistration();
       },
       deviceKeys: () async => keys,
       appId: () async => 'chat.kailo.mobile',
@@ -365,6 +366,27 @@ void main() {
     expect(bridge.permissionRequests.last, isFalse);
     expect(await h.container.read(pushAuthorizationStatusProvider.future), PushAuthorizationStatus.denied);
     expect(h.calls.where((c) => c.$1 == PlatformMethod.put), hasLength(1));
+  });
+
+  test('a delayed foreground read cannot restore the preference changed by a newer PUT', () async {
+    final delayed = Completer<PlatformResponse>();
+    final entered = Completer<void>();
+    var reads = 0, writes = 0;
+    final h = harness(apns: 'CONFIGURED', readRegistration: () {
+      if (++reads == 1) return const PlatformResponse(404, {});
+      entered.complete();
+      return delayed.future;
+    }, put: (_, _, body) => PlatformResponse(200, view(enabled: (body! as Map)['enabled'] as bool, version: ++writes)));
+    await loaded(h.container);
+    final controller = h.container.read(pushRegistrationProvider.notifier);
+    await controller.setEnabled(true);
+    final refreshing = controller.refresh();
+    await entered.future;
+    await controller.setEnabled(false);
+    delayed.complete(PlatformResponse(200, view(enabled: true, version: 1)));
+    await refreshing;
+    expect(h.container.read(pushRegistrationProvider).version, 2);
+    expect(h.container.read(pushRegistrationProvider).effectiveEnabled, isFalse);
   });
 
   test('a stale version is re-read instead of overwritten', () async {
