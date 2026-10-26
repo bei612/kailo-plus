@@ -255,10 +255,12 @@ mod tests {
         let epoch = Tag::parse([
             crate::publication::PUBLICATION_EPOCH_TAG,
             &uuid::Uuid::new_v4().to_string(),
-        ]).unwrap();
+        ])
+        .unwrap();
         let stamped = EventBuilder::new(Kind::Custom(9002), "")
             .tags([h.clone(), topic.clone(), epoch.clone()])
-            .sign_with_keys(&keys).unwrap();
+            .sign_with_keys(&keys)
+            .unwrap();
         assert_eq!(super::topic_change(&stamped), Some((channel, "")));
         for tags in [
             vec![
@@ -276,9 +278,11 @@ mod tests {
             vec![h.clone(), Tag::parse(["topic", "value", "extra"]).unwrap()],
             vec![Tag::parse(["h", "not-a-channel"]).unwrap(), topic.clone()],
             vec![h.clone(), Tag::parse(["purpose", "value"]).unwrap()],
-            vec![h.clone(), topic.clone(), Tag::parse([
-                crate::publication::PUBLICATION_EPOCH_TAG, "not-an-epoch",
-            ]).unwrap()],
+            vec![
+                h.clone(),
+                topic.clone(),
+                Tag::parse([crate::publication::PUBLICATION_EPOCH_TAG, "not-an-epoch"]).unwrap(),
+            ],
             vec![h.clone(), topic.clone(), epoch.clone(), epoch],
         ] {
             let event = EventBuilder::new(Kind::Custom(9002), "")

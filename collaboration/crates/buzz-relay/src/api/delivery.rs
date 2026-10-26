@@ -402,14 +402,23 @@ async fn readmit_settlement(
     attestor: &bridge::VerifiedBridgeAuth,
     claim: &buzz_core::publication::PublicationClaim,
 ) -> Result<(), Response> {
-    if !state.db.is_community_active(scope.community()).await.map_err(|_| refused())? {
+    if !state
+        .db
+        .is_community_active(scope.community())
+        .await
+        .map_err(|_| refused())?
+    {
         return Err(refused());
     }
     if author.pubkey.to_hex() != claim.pubkey || author.pubkey == attestor.pubkey {
         return Err(refused());
     }
-    let owner = state.db.get_relay_member(scope.community(), &attestor.pubkey.to_hex())
-        .await.map_err(|_| refused())?.ok_or_else(refused)?;
+    let owner = state
+        .db
+        .get_relay_member(scope.community(), &attestor.pubkey.to_hex())
+        .await
+        .map_err(|_| refused())?
+        .ok_or_else(refused)?;
     if owner.role != "owner" {
         return Err(refused());
     }
@@ -420,19 +429,37 @@ async fn readmit_settlement(
             None
         };
         super::relay_members::enforce_relay_membership(
-            state, scope.community(), auth.pubkey.as_bytes(), tag, auth.signed_created_at,
-        ).await.map_err(|_| refused())?;
+            state,
+            scope.community(),
+            auth.pubkey.as_bytes(),
+            tag,
+            auth.signed_created_at,
+        )
+        .await
+        .map_err(|_| refused())?;
         deny_banned_git_principal(
-            &state.db, scope.community(), &auth.pubkey, tag, auth.signed_created_at,
-        ).await.map_err(|_| refused())?;
+            &state.db,
+            scope.community(),
+            &auth.pubkey,
+            tag,
+            auth.signed_created_at,
+        )
+        .await
+        .map_err(|_| refused())?;
     }
     if let Some(channel) = claim.channel_id.as_deref() {
         let channel = uuid::Uuid::parse_str(channel).map_err(|_| refused())?;
-        let record = state.db.get_channel(scope.community(), channel)
-            .await.map_err(|_| refused())?;
+        let record = state
+            .db
+            .get_channel(scope.community(), channel)
+            .await
+            .map_err(|_| refused())?;
         if record.archived_at.is_some()
-            || !state.db.is_member(scope.community(), channel, author.pubkey.as_bytes())
-                .await.map_err(|_| refused())?
+            || !state
+                .db
+                .is_member(scope.community(), channel, author.pubkey.as_bytes())
+                .await
+                .map_err(|_| refused())?
         {
             return Err(refused());
         }
@@ -448,13 +475,17 @@ pub async fn settlement(
     headers: HeaderMap,
     body: Bytes,
 ) -> Result<Response, Response> {
-    let host = headers.get(axum::http::header::HOST)
-        .and_then(|value| value.to_str().ok()).unwrap_or("");
-    let scope = tenant::bind_community(&state.db, host).await.map_err(|_| refused())?;
+    let host = headers
+        .get(axum::http::header::HOST)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("");
+    let scope = tenant::bind_community(&state.db, host)
+        .await
+        .map_err(|_| refused())?;
     let url = bridge::nip98_expected_url(&state.config.relay_url, &scope, "/events/settlement");
-    let author = bridge::verify_bridge_auth_with_options(
-        &headers, "POST", &url, Some(&body), true, true,
-    ).map_err(IntoResponse::into_response)?;
+    let author =
+        bridge::verify_bridge_auth_with_options(&headers, "POST", &url, Some(&body), true, true)
+            .map_err(IntoResponse::into_response)?;
     // Reject ambiguous repeated HTTP fields rather than choosing one proof.
     let mut attestations = headers.get_all("x-kailo-publication-attestation").iter();
     let attestation = attestations.next().ok_or_else(refused)?;
@@ -464,8 +495,14 @@ pub async fn settlement(
     let mut attestor_headers = HeaderMap::new();
     attestor_headers.insert(axum::http::header::AUTHORIZATION, attestation.clone());
     let attestor = bridge::verify_bridge_auth_with_options(
-        &attestor_headers, "POST", &url, Some(&body), true, true,
-    ).map_err(IntoResponse::into_response)?;
+        &attestor_headers,
+        "POST",
+        &url,
+        Some(&body),
+        true,
+        true,
+    )
+    .map_err(IntoResponse::into_response)?;
     let claim: buzz_core::publication::PublicationClaim =
         serde_json::from_slice(&body).map_err(|_| StatusCode::BAD_REQUEST.into_response())?;
     claim.validate().map_err(|_| refused())?;
@@ -478,15 +515,22 @@ pub async fn settlement(
         return Err(refused());
     }
     bridge::enforce_http_admission(&state, &scope, &author.pubkey)
-        .await.map_err(IntoResponse::into_response)?;
+        .await
+        .map_err(IntoResponse::into_response)?;
     for auth in [&author, &attestor] {
         bridge::check_nip98_replay(&state, &scope, auth.event_id_bytes)
-            .await.map_err(IntoResponse::into_response)?;
+            .await
+            .map_err(IntoResponse::into_response)?;
     }
     readmit_settlement(&state, &scope, &headers, &author, &attestor, &claim).await?;
-    let proof = state.db.publication_settlement(scope.community(), &claim)
-        .await.map_err(|_| StatusCode::SERVICE_UNAVAILABLE.into_response())?;
-    let after = tenant::bind_community(&state.db, host).await.map_err(|_| refused())?;
+    let proof = state
+        .db
+        .publication_settlement(scope.community(), &claim)
+        .await
+        .map_err(|_| StatusCode::SERVICE_UNAVAILABLE.into_response())?;
+    let after = tenant::bind_community(&state.db, host)
+        .await
+        .map_err(|_| refused())?;
     if after.community() != scope.community() {
         return Err(refused());
     }

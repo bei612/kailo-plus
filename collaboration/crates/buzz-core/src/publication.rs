@@ -26,7 +26,9 @@ pub fn publication_max_age_seconds(kind: u16) -> Option<u64> {
 pub fn publication_timestamp_settled(kind: u16, created_at: u64, now: i64) -> bool {
     publication_max_age_seconds(kind).is_some_and(|bound| {
         u64::try_from(now).is_ok_and(|now| {
-            created_at.checked_add(bound).is_some_and(|until| now > until)
+            created_at
+                .checked_add(bound)
+                .is_some_and(|until| now > until)
         })
     })
 }
@@ -35,7 +37,9 @@ pub fn publication_timestamp_settled(kind: u16, created_at: u64, now: i64) -> bo
 /// malformed or duplicate tags never acquire proof authority.
 pub fn publication_epoch(event: &Event) -> Result<Option<uuid::Uuid>, &'static str> {
     let mut tags = event.tags.iter().filter(|tag| {
-        tag.as_slice().first().is_some_and(|name| name == PUBLICATION_EPOCH_TAG)
+        tag.as_slice()
+            .first()
+            .is_some_and(|name| name == PUBLICATION_EPOCH_TAG)
     });
     let Some(tag) = tags.next() else {
         return Ok(None);
@@ -79,14 +83,16 @@ impl PublicationClaim {
     pub fn validate(&self) -> Result<(), &'static str> {
         let id = nostr::EventId::from_hex(&self.event_id).map_err(|_| "invalid event id")?;
         let author = PublicKey::from_hex(&self.pubkey).map_err(|_| "invalid event author")?;
-        let canonical_uuid = |text: &str| {
-            uuid::Uuid::parse_str(text).is_ok_and(|id| id.to_string() == text)
-        };
+        let canonical_uuid =
+            |text: &str| uuid::Uuid::parse_str(text).is_ok_and(|id| id.to_string() == text);
         if id.to_hex() != self.event_id
             || author.to_hex() != self.pubkey
             || !canonical_uuid(&self.community_id)
             || !canonical_uuid(&self.epoch)
-            || self.channel_id.as_deref().is_some_and(|id| !canonical_uuid(id))
+            || self
+                .channel_id
+                .as_deref()
+                .is_some_and(|id| !canonical_uuid(id))
             || i64::try_from(self.created_at).is_err()
             || publication_max_age_seconds(self.kind).is_none()
             || !self.non_expiring
@@ -106,11 +112,12 @@ impl PublicationClaim {
             && event.created_at.as_secs() == self.created_at
             && channel.map(|id| id.to_string()) == self.channel_id
             && !event.tags.iter().any(|tag| {
-                tag.as_slice().first().is_some_and(|name| name == "expiration")
+                tag.as_slice()
+                    .first()
+                    .is_some_and(|name| name == "expiration")
             })
-            && publication_epoch(event).is_ok_and(|epoch| {
-                epoch.is_some_and(|epoch| epoch.to_string() == self.epoch)
-            })
+            && publication_epoch(event)
+                .is_ok_and(|epoch| epoch.is_some_and(|epoch| epoch.to_string() == self.epoch))
     }
 }
 
