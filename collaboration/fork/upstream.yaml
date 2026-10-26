@@ -1009,7 +1009,6 @@ remove_paths:
   - mobile/lib/features/channels/huddle_channel_filter.dart
   - mobile/lib/features/channels/message_mention_pubkeys.dart
   - mobile/lib/features/channels/mobile_huddle_controller.dart
-  - mobile/lib/features/forum
   - mobile/lib/features/invites
   - mobile/lib/features/pairing
   - mobile/lib/features/pulse
@@ -1047,7 +1046,6 @@ remove_paths:
   - mobile/test/features/channels/channel_stars
   - mobile/test/features/channels/message_content_custom_emoji_test.dart
   - mobile/test/features/channels/message_mention_pubkeys_test.dart
-  - mobile/test/features/forum
   - mobile/test/features/invites
   - mobile/test/features/pairing
   - mobile/test/features/pulse
