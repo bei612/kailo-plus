@@ -677,3 +677,7 @@ source 相等，原 manifest 仅该产物 source/artifact 两字段 +2/-2，不�
 - 反向验证在同一固定源码的独立导出中临时移除成功提示的身份围栏、把冻结 push 分支替换为 picker 分支、把本机文件按需读取错误接到 remote。原三项 DOM 检查分别在迟到提示、请求 branchName 和文件正文断言失败（3 failed、exit 1）；逐字还原后同三项 3 passed、exit 0。还原 SHA-256：`useProjectLocalCheckout.tsx` 为 `8162889cfc2cfa0bb073bf9a329cc811ddd9f058202904eb6e6731954f11edcb`，`useRepositoryFileContent.ts` 为 `91b91ccf6ab30d6d0589146aeb17fa71b131c31100858467e84cff22ff249dcc`。临时缺陷没有进入 Git 提交。
 
 CI 节点原日志：`/volumes/data/kailo/verification/dd160-checkout-ui/<上述固定SHA>/frontend.log` 及同目录 `frontend-{preflight,limits,exit,oom}.log`；最终 SHA 的 `negative/` 保留 `mutated.log`、`restored.log` 与执行限额/退出记录。正向及反向容器均终态并删除，OOMKilled 均为 false。这里是固定源码的类型、DOM 消费者和生成检查，未构建安装包、未部署、未在 Win11/真实 Desktop 进行 clone/push/pull/断网重启验收，也不代替真实发布后 DD-157 三账号双主题验收或解除发布门禁。
+
+### 同日 DD-160 本机检出收口
+
+本机八命令、按 Community/30617 分区、持久冻结推送意图及第 251 项后的本机文件读取已进入固定集成 Rust 源 `0b9b72ba64c248a239abfb0f5d4ab242c662001c`。原 SDK 全锁检查 Desktop 10 项、共享 Git crate 38 项通过；恢复“待确认推送改用当前 HEAD”的真实缺陷后已有检查失败，逐字恢复后通过。首次分支创建回归失败、锁变化、原始日志和未覆盖的安装包/真机/界面边界保留在[本机检出核验](desktop-project-checkout.md)，不将源码检查算成 V-SCN-264/265 验收。
