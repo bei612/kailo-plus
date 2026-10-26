@@ -177,15 +177,16 @@ export function actionMessage(id: string, selection?: { files: File[]; paths: st
  * never receives the host's user activation). Resolves with the chosen files and their
  * relative paths; nothing is read, stored or uploaded by Kailo.
  */
-export function pickFiles(pick: EmbedFilePick, onPicked: (selection: { files: File[]; paths: string[] }) => void): void {
+export function pickFiles(pick: EmbedFilePick, onPicked: (selection: { files: File[]; paths: string[] }) => void, onTooMany: () => void): void {
   const input = document.createElement("input");
   input.type = "file";
   if (pick.accept) input.accept = pick.accept;
   input.multiple = pick.multiple === true || pick.directory === true;
   if (pick.directory) input.setAttribute("webkitdirectory", "");
   input.addEventListener("change", () => {
-    const files = [...(input.files ?? [])].slice(0, EMBED_MAX_FILES);
+    const files = [...(input.files ?? [])];
     if (!files.length) return;
+    if (files.length > EMBED_MAX_FILES) { onTooMany(); return; }
     onPicked({ files, paths: files.map((file) => file.webkitRelativePath || file.name) });
   }, { once: true });
   input.click();

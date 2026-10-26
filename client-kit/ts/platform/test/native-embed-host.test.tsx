@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createBffClient } from "../src/client";
 import { PlatformProvider } from "../src/react/context";
 import { NATIVE_HANDSHAKE_GRACE_MS, NativeApplicationPage } from "../src/react/native-application-page";
-import { actionMessage, confirmResultMessage, embedMessage, embedRequest, nativeEmbedUrl, navigateMessage, preferencesMessage, presentationMessage } from "../src/react/native-embed-host";
+import { actionMessage, confirmResultMessage, EMBED_MAX_FILES, embedMessage, embedRequest, nativeEmbedUrl, navigateMessage, preferencesMessage, presentationMessage } from "../src/react/native-embed-host";
 import { COMPONENT_PREFERENCES_EVENT, COMPONENT_PREFERENCES_STORAGE_KEY } from "../src/component-preferences";
 import { button, click, render, settle } from "./render";
 
@@ -24,7 +24,7 @@ const spell = { key: "documents.spellcheck", settingsCategory: "DOCUMENTS", valu
   defaultValue: "true", label: text("拼写检查", "Spell checking") };
 
 async function mount(extra: { reauthenticateTopLevel?: () => void; locale?: "en" | "zh-CN"; body?: object } = {}) {
-  const client = createBffClient({ send: async () => ({ status: 200, body: extra.body ?? page }) });
+  const client = createBffClient({ send: async () => ({ status: 200, body: { ...(extra.body ?? page) } }) });
   const host = await render(<PlatformProvider client={client} locale={extra.locale ?? "en"}
     reauthenticateTopLevel={extra.reauthenticateTopLevel}>
     <NativeApplicationPage bindingId={page.bindingId} />
@@ -200,6 +200,64 @@ describe("DD-157 component page shell", () => {
     Object.defineProperty(picker!, "files", { value: [file] });
     await act(async () => { picker!.dispatchEvent(new Event("change")); });
     expect(posted).toHaveBeenLastCalledWith(actionMessage("upload", { files: [file], paths: ["a.pdf"] }), page.origin);
+  });
+
+  async function openUpload(locale: "en" | "zh-CN" = "en") {
+    const descriptor = { ...page };
+    const mounted = await mount({ locale, body: descriptor });
+    await fromFrame(mounted.target, ready);
+    const upload = { title: "Files", actions: [{ id: "upload", label: "Upload", files: { multiple: true } }] };
+    await fromFrame(mounted.target, { source: "kailo-embed", version: 1, type: "page", page: upload });
+    let picker: HTMLInputElement | null = null;
+    const pickerClick = vi.spyOn(HTMLInputElement.prototype, "click").mockImplementation(function (this: HTMLInputElement) { picker = this; });
+    await click(button(mounted.host, "Upload"));
+    pickerClick.mockRestore();
+    mounted.posted.mockClear();
+    const choose = async (count: number) => {
+      Object.defineProperty(picker!, "files", { value: Array.from({ length: count }, (_, i) => new File(["a"], `${i}.txt`)) });
+      await act(async () => { picker!.dispatchEvent(new Event("change")); });
+    };
+    return { ...mounted, descriptor, upload, choose };
+  }
+
+  it.each(["en", "zh-CN"] as const)("rejects the whole oversized selection with a %s message", async (locale) => {
+    toasts.error.mockClear();
+    const { choose, posted } = await openUpload(locale);
+    await choose(EMBED_MAX_FILES + 1);
+    expect(posted).not.toHaveBeenCalled();
+    expect(toasts.error).toHaveBeenCalledWith(locale === "en"
+      ? "Choose up to 1000 files at a time. No files were uploaded."
+      : "每次最多选择 1000 个文件。本次未上传任何文件。", undefined);
+  });
+
+  it.each([0, EMBED_MAX_FILES])("preserves cancellation and the exact %i-file boundary", async (count) => {
+    const { choose, posted } = await openUpload();
+    await choose(count);
+    if (count === 0) expect(posted).not.toHaveBeenCalled();
+    else {
+      expect(posted).toHaveBeenCalledOnce();
+      expect(posted.mock.calls[0]![0].files).toHaveLength(count);
+      expect(posted.mock.calls[0]![0].paths).toHaveLength(count);
+    }
+  });
+
+  it.each(["page", "ready", "auth-required", "load", "generation"])("drops a pending selection after %s changes", async (change) => {
+    const { choose, posted, target, frame, host, descriptor, upload } = await openUpload();
+    if (change === "load") await act(async () => { frame.dispatchEvent(new Event("load")); });
+    else if (change === "generation") {
+      descriptor.projectionGeneration++;
+      await act(async () => { window.dispatchEvent(new Event("focus")); });
+      await settle();
+      expect(host.querySelector("iframe")).not.toBe(frame);
+    } else await fromFrame(target, change === "page"
+      ? { source: "kailo-embed", version: 1, type: "page", page: { ...upload, actions: [{ ...upload.actions[0], disabled: true }] } }
+      : { ...ready, type: change });
+    posted.mockClear();
+    const newTarget = host.querySelector("iframe")!.contentWindow!;
+    const newPosted = newTarget === target ? posted : vi.spyOn(newTarget, "postMessage").mockImplementation(() => {});
+    await choose(1);
+    expect(posted).not.toHaveBeenCalled();
+    expect(newPosted).not.toHaveBeenCalled();
   });
 
   it("does not wait for a header from a page that did not declare one", async () => {
