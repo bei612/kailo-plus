@@ -50,3 +50,9 @@ analyze 全通过；四项实际 Mobile 控制器/表单回归 **4 passed**：�
 会话的即时资料失效通知。当前更改后本端重读资料与既有 session view，其他会话
 下次读取会得到 Core 最新事实，但没有实现跨会话实时广播，不据此声称 V-SCN-261
 “全员即时一致”。没有合并 main 或部署共享服务。
+
+固定 `4d1cfcca0`：迁移往返、Rust 编译和3项定向检查全部通过（含真实 PG
+同版本并发一胜一冲突、清图标与撤权拒绝）；Clippy `-D warnings` 拒绝一处
+`!Option::is_some_and` 的 nonminimal_bool，整体退出101、SQLx未执行。
+`0bc6c74ed` 改为等价 `is_none_or`，不加 allow 绕过。失败原件
+`profile-4d1cfcca0/profile-core-check-complete-input.log` 保留。
