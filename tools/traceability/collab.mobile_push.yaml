@@ -22,9 +22,11 @@ validation:
       ref: core/verify/push-delivery-recovery.md
     - dimension: 上游接缝
       ref: collaboration/fork/verify/mobile-forum-push.md
+    - dimension: 故障与恢复
+      ref: collaboration/fork/verify/mobile-android-push.md
 implementation:
   owners: [team-platform]
-  paths: [core/crates/platform-core/src/push, core/crates/platform-core/src/client_keys.rs, core/crates/platform-core/src/tenant_delete.rs, collaboration/mobile/lib/shared/push, collaboration/mobile/lib/features/forum, collaboration/mobile/lib/features/settings/settings_page/notifications_section.dart, collaboration/mobile/ios/Runner/AppDelegate.swift]
+  paths: [core/crates/platform-core/src/push, core/crates/platform-core/src/client_keys.rs, core/crates/platform-core/src/tenant_delete.rs, collaboration/mobile/lib/shared/push, collaboration/mobile/lib/features/forum, collaboration/mobile/lib/features/settings/settings_page/notifications_section.dart, collaboration/mobile/ios/Runner/AppDelegate.swift, collaboration/mobile/android/app/src/main, collaboration/fork/packaging/mobile.Dockerfile, tools/upstream_manifest.py, tools/release]
   surfaces: [mobile]
   schemas: [contracts/api/push_capability.schema.json, contracts/api/push_registration_request.schema.json, contracts/api/push_registration_view.schema.json, contracts/enums/push_platform.schema.json, contracts/enums/push_registration_state.schema.json, contracts/enums/push_availability.schema.json, contracts/runtime/push_delivery_policy.schema.json]
   migrations: [core/migrations/20261030010000_push_registration.up.sql, core/migrations/20261030010000_push_registration.down.sql, core/migrations/20261031040000_push_unread.up.sql, core/migrations/20261031040000_push_unread.down.sql, core/migrations/20261031070000_push_send_intent.up.sql, core/migrations/20261031070000_push_send_intent.down.sql]
