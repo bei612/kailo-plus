@@ -76,6 +76,44 @@ DERIVED_DESIGN（REQ-24、DD-39/45/75/81，承接上述源码事实）：Web 的
 
 SOURCE_FACT（同一 Buzz commit）：`.references/buzz/crates/buzz-relay/src/handlers/side_effects.rs::validate_standard_deletion_event` 对 kind 5 的目标坐标作者执行本人或真实 agent-owner 校验；`handle_a_tag_deletion` 只删除该坐标时间边界内的版本。`.references/buzz/desktop/src/features/projects/projectDeletion.ts::deleteProject` 读取真实最新 head、构造坐标删除并回读，保留并发更新后的新版本，不连带删除 home Channel 或仓库。该原语义完整保留；Core 只存发布意图、签名事件引用和审计，未知结果按同一意图对账，不能换键重发或根据空目录冒称项目删除成功。Git 内容读取、Issue/PR 与工具授权不因公告写入扩张。
 
+### 本机合并状态的送达证据
+
+SOURCE_FACT（Buzz `779af8886caae1317b4de962082429867ab61503`）：
+`.references/buzz/crates/buzz-db/src/store/event.rs::get_event_by_id_including_deleted_with_operation`
+按 Community 与原 event ID 从 writer 读取，包括软删除行；同文件的
+`get_events_by_ids_on` 过滤 `deleted_at`。
+`.references/buzz/crates/buzz-relay/src/handlers/side_effects.rs::validate_standard_deletion_event`
+以包括已删除行的读取验证原作者，未排除 kind 5 本身。因此，原事件和其删除事件都从
+普通查询消失，不能证明原事件从未送达。
+
+DERIVED_DESIGN（REQ-24、DD-48/75/81/118/160，`ADAPTER_REQUIRED: SS-BUZ-GOVERNANCE`）：
+Desktop 的 1631 结果对账复用上述 writer 事实，经原 Relay HTTP/NIP-98 准入提供
+`POST /events/delivery` 只读接缝。请求限定为本机持久化的原已签 1631：签名与 ID
+有效、正文为空、无 expiration，认证设备公钥、事件作者与 30617 坐标 owner 相同；
+仍须通过原 Git ban 与 live 30617→Channel→当前成员的 `authorize_git_read`，owner 不绕过。
+不接受任意 URL、filter 或其他作者的事件，不返回正文、标签、密钥或删除时间。
+回应只给原事件 ID、该次查证的不可变 Community ID、是否已接受，以及 Relay 自身
+是否已确认该原签事件不能再被接受（settled）；包括软删除的
+匹配 writer 行仍为已接受，不建第二份送达表或审计权威。
+
+查证前后须保持同一个 ACTIVE Community；quiescing、归档、删除、binding 漂移、
+撤权、依赖失败或保留边界不能证明时均拒绝查证，不把拒绝当成缺失。新发送在副作用
+前冻结 Community ID，恢复查证必须匹配；没有旧 Community 证据的历史未知意图不能
+用首次空回应推定未送达。须先从可信 Core 取得已严格超过原签名结算窗的观察时刻，
+再作同范围 writer 缺失查证；不能先读空、再跨过窗口补取时间。Relay 还须沿自身原
+时间漂移配置与同一时钟确认过窗，不以 Core 时钟替代 Relay 时钟。
+
+缺失证明与该原 event ID 的全部原生写入须经过同一 writer 串行屏障。1631 的写入在
+取得该屏障后重验原时间准入；读空持有同一屏障，不能越过仍可提交的旧请求。旧请求
+已持屏障时，查证须等待其提交或回滚；查证先取得屏障且已过窗时，随后到达的旧请求
+须在写入前明确拒绝。仅在上述原生原子边界成立时才给 settled；证据读取超时仍为
+UNKNOWN，不能以“早先通过时间检查”证明旧请求已不在途。
+
+只有同 Community 权威缺失、Relay settled 与 Core 结算窗均成立，才记确定未送达；
+随后同一意图可新签，
+原尝试与证据保留。窗口内、普通查询空、设备时钟跳变或证据不全均保持 UNKNOWN。
+结算窗与观察时刻沿既有原生 Community 事实读取，不能由 WebView 或本机默认值提供。
+
 ### 原生私聊与多设备映射
 
 REQ-24、DD-77/80 的私聊使用 `03` 的 ConversationBuzzBinding。固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的 `.references/buzz/crates/buzz-relay/src/handlers/command_executor.rs::handle_dm_open` 会把认证公钥加入参与者；`.references/buzz/crates/buzz-db/src/store/dm.rs::{open_dm,create_dm,compute_participant_hash}` 以公钥集合去重并建立 private DM。因此 CONTROL 不能直接冒充发起人调用原路径，否则成为私聊成员；也不能把设备公钥数当作人数。
