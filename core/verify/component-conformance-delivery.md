@@ -52,8 +52,30 @@
 - `file-storage/deploy/reconcile.py`：原生管理员令牌在部署期限内重试（首装后容器已 healthy 而原生迁移未完成）；
   `conformance-run.sh` 第 1 阶段对首装后原生配置被拒的情形重启一次原生服务再收敛。
 
-## 5. 验证记录
+## 5. 验证记录（2026-10-24，CI 节点，分支 `feat/adapter-conformance-auto`）
 
-见本批汇报（CI 节点 `~/scratch/adapters/*.log`、运行目录 `run.log`）：`tools/check.sh lint`、`verify`、`security`
-（本节 DD-136(2) 投递断言）在分支上执行的原始结果，以及隔离运行各阶段结果。生产登记、批准、binding 与业务验收须在
-本分支合并、Core/Worker 发布之后执行，不由本文件证明。
+| 范围 | commit | 结果 |
+|---|---|---|
+| `tools/check.sh lint`（cargo fmt/clippy、gofmt/vet、pnpm/web tsc、dart analyze、wren-ui prettier/lint/tsc、buzz web/admin tsc） | `03a1fea9` | 全部 PASS |
+| `tools/check.sh verify`（cargo test、go test、pnpm -r test、web vitest、dart test） | `03a1fea9` | 全部 PASS |
+| `tools/check.sh security` 中 DD-136(2) 投递断言（目录挂载、可写目录/私钥/软链接拒绝、Worker 私有凭据目录） | `03a1fea9` | PASS；同步骤其余 FAIL 为分支工作区没有外层 GitNexus ignore，与本批无关 |
+| `tools/check.sh trace`、`docs` | `03a1fea9` | 追溯一致 PASS、runbook 齐全 PASS；trace 的 FAIL 行均为分支工作区无 `dist/` 发布产物 |
+| `tools/release/test_node.py`（87）、`file-storage/deploy/test_reconcile.py`（19）、`deploy/components/test_native_config.py`（28）、`test_native_model_delivery.py`（16） | `03a1fea9` | 全部 OK |
+| `seed-cells.test.mjs`（4）、`conformance-provider.test.mjs`（6） | `03a1fea9` | 全部通过 |
+
+隔离运行：
+
+- 云盘：`conformance-auto.py run file-storage --no-window` 在全新运行目录 `file-storage-20261024T024850Z-6d11ce` 一次跑完第 0–6
+  阶段（约 12 分钟，中间无人参与），候选写入临时运行目录的候选集合：四个 0644 文件、artifactDigest `79ca81f2…` 一致、identity 的
+  `jwksFile` 在候选目录内；fixture 协议 12 步 + 向量 7 步（计划 26 步，含拒绝探针），identity 43 个上下文。对运行目录内全部
+  凭据文件与运行日志/标准输出做的出现性检查为 0 次。之后 `close` 撤下候选并拆除隔离项目、OpenBao/Agent、provider 与网络。
+- 本批由首次实跑发现并修复：Cells 首装后原生迁移未完成即重启会取消迁移（令牌重试改为按部署期限）；首装后 binding datasource
+  需一次重启才被管理树识别（reconcile 退出 76，start.sh 重启一次）；`--platform-adapter` 的 URL 校验对非空元组恒为真而拒绝一切
+  配置；Agent socket 0755 被要求恰为 0600；隔离 OpenBao 数据卷属 root；隔离受众未替换 Cells MCP transport 受众。
+- 问数：隔离运行第 0–6 阶段跑通（`data-query-20261024T015939Z-a39c5f`），发现并修复 `nativeBindingService.ts` 对 OpenBao
+  `request_id` 的 RFC 4122 版本位误判（validate_binding 随机失败）；该修复需重建 `data-query-ui` 后用新 digest 重跑候选。
+- 知识库：接收部署的 platform、contracts、隔离 ActionToken 身份已自动化；native 起的阶段见 `auto_knowledge.py` 记录的缺口。
+- 生产 adapter 计划：`adapter-converge.py plan file-storage|data-query --state-dir <临时目录>` 以生产只读事实推导出与治理 create
+  同一的 binding 计划（云盘 bindingId `b2cde97d…`、问数 `058bd793…`）。
+
+生产登记、批准、binding、adapter 部署与业务验收须在本分支合并 main、经发布入口发布 Core/Worker 与 `.env` 之后执行（RB-11）。
