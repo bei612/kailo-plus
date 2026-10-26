@@ -2436,8 +2436,10 @@ async fn ingest_event_inner(
     } else if kind_u32 == KIND_DELETION {
         // Standard deletion (kind:5): derive channel from the target event.
         // kind:5 events don't carry an h-tag, so we look up the target event
-        // and use its channel_id. This ensures token-channel, membership, and
-        // archived checks run against the correct channel.
+        // and use its channel_id, including when already soft-deleted (the
+        // same lookup used by author validation). Otherwise a valid repeated
+        // deletion loses a private channel and incorrectly becomes global.
+        // Token-channel, membership and archived checks need the original scope.
         let target_hex = event.tags.iter().find_map(|t| {
             if t.kind().to_string() == "e" {
                 t.content().and_then(|v| {
@@ -2458,7 +2460,7 @@ async fn ingest_event_inner(
                 })?;
                 match state
                     .db
-                    .get_event_by_id_for_event_write(tenant.community(), &target_bytes)
+                    .get_event_by_id_including_deleted_for_event_write(tenant.community(), &target_bytes)
                     .await
                 {
                     Ok(Some(target)) => target.channel_id,

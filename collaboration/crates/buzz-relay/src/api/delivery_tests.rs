@@ -926,3 +926,46 @@ async fn observation_rechecks_durable_ban_even_when_original_membership_is_retai
         assert_eq!(observe_reference(state.clone(), &host, &keys, community, id).await.status(), StatusCode::OK);
     }
 }
+
+
+#[tokio::test]
+#[ignore = "requires isolated migrated BUZZ_TEST_DATABASE_URL and REDIS_URL"]
+async fn repeated_deletion_keeps_private_writer_scope_and_historical_null_is_not_global() {
+    let (state, pool, community, host, keys, channel) = fixture().await;
+    sqlx::query("UPDATE channels SET visibility='private' WHERE community_id=$1 AND id=$2")
+        .bind(community.as_uuid()).bind(channel).execute(&pool).await.unwrap();
+    let original = EventBuilder::new(Kind::Custom(9), "private original")
+        .tags([Tag::parse(["h", &channel.to_string()]).unwrap()]).sign_with_keys(&keys).unwrap();
+    state.db.insert_event(community, &original, Some(channel)).await.unwrap();
+    state.db.soft_delete_event(community, original.id.as_bytes()).await.unwrap();
+    let deletion = EventBuilder::new(Kind::EventDeletion, "")
+        .tags([Tag::event(original.id)]).sign_with_keys(&keys).unwrap();
+    let body = deletion.as_json().into_bytes();
+    let path = format!("/events?community={}", community.as_uuid());
+    let token = auth_with_tags(&keys, &host, &path, &body,
+        vec![Tag::parse(["community", &community.as_uuid().to_string()]).unwrap()]);
+    let response = post_at(state.clone(), &host, &path, &token, body).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let ack: serde_json::Value = serde_json::from_slice(&to_bytes(response.into_body(), 4096).await.unwrap()).unwrap();
+    assert_eq!(ack["accepted"], true);
+    let stored = state.db.get_event_by_id_including_deleted(community, deletion.id.as_bytes()).await.unwrap().unwrap();
+    assert_eq!(stored.channel_id, Some(channel), "actual kind5 ingest must retain the already-deleted target's private channel");
+    assert_eq!(observe_reference(state.clone(), &host, &keys, community, deletion.id).await.status(), StatusCode::OK);
+    let control = Keys::generate();
+    sqlx::query("INSERT INTO relay_members(community_id,pubkey,role) VALUES($1,$2,'owner')")
+        .bind(community.as_uuid()).bind(control.public_key().to_hex()).execute(&pool).await.unwrap();
+    assert_eq!(observe_reference(state.clone(), &host, &control, community, deletion.id).await.status(), StatusCode::NOT_FOUND);
+    // Preserve an actual historical bad writer row; the observation refuses it
+    // instead of silently repairing its scope using today's target lookup.
+    sqlx::query("UPDATE events SET channel_id=NULL WHERE community_id=$1 AND id=$2")
+        .bind(community.as_uuid()).bind(deletion.id.as_bytes().as_slice()).execute(&pool).await.unwrap();
+    for reader in [&keys, &control] {
+        assert_eq!(observe_reference(state.clone(), &host, reader, community, deletion.id).await.status(), StatusCode::NOT_FOUND,
+            "historical NULL scope is not affirmative global evidence");
+    }
+    let deletion_of_deletion = EventBuilder::new(Kind::EventDeletion, "")
+        .tags([Tag::event(deletion.id)]).sign_with_keys(&keys).unwrap();
+    state.db.insert_event(community, &deletion_of_deletion, None).await.unwrap();
+    assert_eq!(observe_reference(state, &host, &control, community, deletion_of_deletion.id).await.status(), StatusCode::NOT_FOUND,
+        "a chain of NULL deletions cannot become a global evidence oracle");
+}
