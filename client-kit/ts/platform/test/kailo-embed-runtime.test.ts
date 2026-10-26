@@ -194,6 +194,12 @@ describe("kailo-embed.js page shell (DD-157)", () => {
     expect(() => embed.setPage({ ...page, activeTab: "missing" })).toThrow(TypeError);
     expect(() => embed.setPage({ ...page, actions: [page.actions[0]!, { ...page.actions[0]!, id: "b" }] })).toThrow(TypeError);
     expect(() => embed.setPage({ title: "x", actions: [{ id: "a", label: "a", icon: "skull" as never }] })).toThrow(TypeError);
+    expect(() => embed.setPage({ title: "x", actions: [{ id: "a", label: "one" }, { id: "a", label: "two" }] })).toThrow(TypeError);
+    for (const control of ["\t", "\n", "\r", "\f", "\v"]) {
+      expect(() => embed.setPage({ ...page, title: `a${control}b` })).toThrow(TypeError);
+      expect(embed.toast({ title: "x", description: `a${control}b` })).toBe(false);
+      expect(embed.confirm({ title: "x", confirmLabel: `a${control}b` })).toBeNull();
+    }
   });
 
   it("stops claiming the header once an older Kailo answers without announcing it", () => {
@@ -225,6 +231,10 @@ describe("kailo-embed.js page shell (DD-157)", () => {
     fromParent({ source: "kailo-host", version: 1, type: "action", id: "upload" });
     fromParent({ source: "kailo-host", version: 1, type: "action", id: "rm -rf" });
     fromParent({ source: "kailo-host", version: 1, type: "action", id: "upload" }, "https://evil.example.test");
+    embed.setPage({ ...page, actions: [{ ...page.actions[0]!, busy: true }] });
+    fromParent({ source: "kailo-host", version: 1, type: "action", id: "upload" });
+    embed.setPage({ ...page, actions: [{ ...page.actions[0]!, disabled: true }] });
+    fromParent({ source: "kailo-host", version: 1, type: "action", id: "upload" });
     expect(navigations).toEqual([{ kind: "tab", id: "home" }, { kind: "breadcrumb", id: "/ws/a" }]);
     expect(actions).toEqual(["upload"]);
   });

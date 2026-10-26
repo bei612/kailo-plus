@@ -161,9 +161,9 @@
 
   function text(value, max, optional) {
     if (value === undefined || value === null || value === "") return optional ? undefined : null;
-    if (typeof value !== "string") return null;
+    if (typeof value !== "string" || CONTROL.test(value)) return null;
     var trimmed = value.replace(/\s+/g, " ").trim();
-    if (!trimmed || trimmed.length > max || CONTROL.test(trimmed)) return null;
+    if (!trimmed || trimmed.length > max) return null;
     return trimmed;
   }
 
@@ -204,7 +204,7 @@
       var label = text(action.label, 40);
       var variant = member(action.variant || "secondary", ACTION_VARIANTS);
       var icon = action.icon === undefined ? undefined : member(action.icon, ACTION_ICONS);
-      if (!id || !label || !variant || icon === null) return null;
+      if (!id || !label || !variant || icon === null || actions.some(function (action) { return action.id === id; })) return null;
       if (variant === "primary") primaries += 1;
       var out = { id: id, label: label, variant: variant };
       if (icon) out.icon = icon;
@@ -370,7 +370,7 @@
     if (data.type === "action") {
       var actionId = opaqueId(data.id);
       var declaredAction = null;
-      if (actionId && currentPage) currentPage.actions.forEach(function (action) { if (action.id === actionId && !action.disabled) declaredAction = action; });
+      if (actionId && currentPage) currentPage.actions.forEach(function (action) { if (action.id === actionId && !action.disabled && !action.busy) declaredAction = action; });
       if (!declaredAction) return;
       if (!declaredAction.files) { if (data.files === undefined) notifyAction(actionId); return; }
       // A Kailo without the file channel delivers the bare action; the page uses its own picker flow.

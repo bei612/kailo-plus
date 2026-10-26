@@ -46,9 +46,9 @@ export type EmbedMessage =
 const CONTROL = /[\u0000-\u001f\u007f]/;
 
 function displayText(value: unknown, max: number): string | null {
-  if (typeof value !== "string") return null;
+  if (typeof value !== "string" || CONTROL.test(value)) return null;
   const text = value.replace(/\s+/g, " ").trim();
-  return text && text.length <= max && !CONTROL.test(text) ? text : null;
+  return text && text.length <= max ? text : null;
 }
 
 function optionalText(value: unknown, max: number): string | undefined | null {

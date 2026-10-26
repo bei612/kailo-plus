@@ -150,6 +150,11 @@ describe("DD-157 component page shell", () => {
     for (const page of [{ title: "" }, { ...header, activeTab: "nope" }, { ...header, tabs: Array.from({ length: 9 }, (_, i) => ({ id: `t${i}`, label: "x" })) },
       { ...header, actions: [header.actions[0], { ...header.actions[0], id: "x" }] }, { title: "a\u0007b" }, { title: "x", actions: [{ id: "a", label: "a", icon: "skull" }] }])
       expect(embedMessage({ source: "kailo-embed", version: 1, type: "page", page })).toBeNull();
+    for (const control of ["\t", "\n", "\r", "\f", "\v"]) {
+      expect(embedMessage({ source: "kailo-embed", version: 1, type: "page", page: { ...header, title: `a${control}b` } })).toBeNull();
+      expect(embedMessage({ source: "kailo-embed", version: 1, type: "toast", toast: { title: "x", description: `a${control}b` } })).toBeNull();
+      expect(embedMessage({ source: "kailo-embed", version: 1, type: "confirm", confirm: { id: "c1", title: "x", confirmLabel: `a${control}b` } })).toBeNull();
+    }
     expect(embedMessage({ source: "kailo-embed", version: 1, type: "toast", toast: { tone: "loud", title: "x" } })).toBeNull();
     expect(embedMessage({ source: "kailo-embed", version: 1, type: "shortcut", shortcut: "quit" })).toBeNull();
     expect(embedMessage({ source: "kailo-embed", version: 1, type: "confirm", confirm: { id: "../x", title: "x" } })).toBeNull();
@@ -166,6 +171,8 @@ describe("DD-157 component page shell", () => {
     expect(frame.className).not.toContain("invisible");
     const bar = host.querySelector('[data-testid="native-page-header"]')!;
     expect(bar.textContent).toContain("个人文件");
+    expect(bar.querySelector('[aria-current="page"]')?.textContent).toContain("季度报告");
+    await fromFrame(target, { source: "kailo-embed", version: 1, type: "page", page: { ...header, title: "无效\n标题" } });
     expect(bar.querySelector('[aria-current="page"]')?.textContent).toContain("季度报告");
     await click(button(host, "上传"));
     expect(posted).toHaveBeenLastCalledWith(actionMessage("upload"), page.origin);
