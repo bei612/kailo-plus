@@ -383,16 +383,7 @@ async fn scan(
     providers: &Providers,
     tenant: Uuid,
 ) -> Result<(), sqlx::Error> {
-    // Start at now, never fan out history when a Tenant first enables push.
-    sqlx::query("insert into projection.push_cursor(tenant_id,since) values($1,extract(epoch from now())::bigint) on conflict do nothing")
-        .bind(tenant).execute(&state.pool).await?;
-    let lease = Uuid::new_v4();
-    let cursor:Option<(i64,Vec<String>)>=sqlx::query_as("update projection.push_cursor set lease_id=$2,lease_until=now()+interval '60 seconds'
-        where tenant_id=$1 and (lease_until is null or lease_until<=now()) returning since,seen_ids")
-        .bind(tenant).bind(lease).fetch_optional(&state.pool).await?;
-    let Some((since, seen)) = cursor else {
-        return Ok(());
-    };
+    let Some((lease,since,seen))=super::intent::claim_scan(&state.pool,tenant).await? else {return Ok(())};
     // Every following await is outside a transaction; a crashed scanner loses its lease.
     let Ok((control, _)) = control_client(state, tenant, ProjectionDirection::Establish).await
     else {
@@ -417,28 +408,9 @@ async fn scan(
         .collect();
     messages.sort_by(|a, b| (a.created_at, &a.id).cmp(&(b.created_at, &b.id)));
     messages.dedup_by(|a, b| a.id == b.id);
+    let targets:Vec<(&str,String)>=["APNS","FCM"].into_iter().filter_map(|p|provider_target(providers,p).map(|t|(p,t))).collect();
     for message in &messages {
-        let mut tx = state.pool.begin().await?;
-        let owned=sqlx::query("update projection.push_cursor set lease_until=now()+interval '60 seconds' where tenant_id=$1 and lease_id=$2 and lease_until>now()")
-            .bind(tenant).bind(lease).execute(&mut *tx).await?.rows_affected();
-        if owned != 1 {
-            return Ok(());
-        }
-        for platform in ["APNS", "FCM"] {
-            let Some(provider) = provider_target(providers, platform) else {
-                continue;
-            };
-            // The immutable Relay IDs are only dispatch references. Current authorization,
-            // preferences and message facts are reread before every provider attempt.
-            sqlx::query("insert into projection.push_send_intent(id,tenant_id,tenant_principal_id,device_pubkey,registration_version,platform,provider_target,event_id,channel_id,root_id,event_created_at,expires_at)
-                select gen_random_uuid(),r.tenant_id,r.tenant_principal_id,r.device_pubkey,r.version,r.platform,$3,$4,$5,$6,$7,
-                least(to_timestamp($7)+interval '1 hour',now()+interval '1 hour') from identity.push_registration r join identity.tenant t on t.id=r.tenant_id
-                where r.tenant_id=$1 and r.platform=$2 and r.state='ACTIVE' and r.enabled and t.state='ACTIVE'
-                and to_timestamp($7)+interval '1 hour'>now() on conflict(tenant_id,device_pubkey,event_id) do nothing")
-                .bind(tenant).bind(platform).bind(provider).bind(&message.id).bind(&message.channel_id)
-                .bind(&message.root_id).bind(message.created_at as i64).execute(&mut *tx).await?;
-        }
-        tx.commit().await?;
+        if !super::intent::enqueue(&state.pool,tenant,lease,message,&targets).await? {return Ok(())}
     }
     let newest = messages.last().map_or(since, |m| m.created_at as i64);
     let mut at_newest: Vec<String> = messages
@@ -449,9 +421,7 @@ async fn scan(
     if newest == since {
         at_newest.extend(seen)
     }
-    sqlx::query("update projection.push_cursor set since=$3,seen_ids=$4,lease_until=null,lease_id=null,updated_at=now()
-        where tenant_id=$1 and lease_id=$2 and lease_until>now()")
-        .bind(tenant).bind(lease).bind(newest).bind(at_newest).execute(&state.pool).await?;
+    super::intent::checkpoint_scan(&state.pool,tenant,lease,newest,&at_newest).await?;
     Ok(())
 }
 
@@ -460,12 +430,6 @@ async fn dispatch(
     providers: &Providers,
     i: &super::intent::Intent,
 ) -> Result<Option<Receipt>, sqlx::Error> {
-    let folded:bool=sqlx::query_scalar("select exists(select 1 from projection.push_send_intent where tenant_id=$1 and device_pubkey=$2 and channel_id=$3 and root_id is not distinct from $4 and state in ('PREPARED','CLAIMED','RETRY') and (event_created_at,event_id)>($5,$6))")
-        .bind(i.tenant_id).bind(&i.device_pubkey).bind(&i.channel_id).bind(&i.root_id).bind(i.event_created_at).bind(&i.event_id).fetch_one(&state.pool).await?;
-    if folded {
-        super::intent::cancel(&state.pool, i, "COLLAPSED").await?;
-        return Ok(None);
-    }
     let registration = load_registrations(state, i.tenant_id)
         .await?
         .into_iter()
