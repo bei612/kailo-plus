@@ -124,7 +124,7 @@ async fn fence_ready(connection: &mut PgConnection) -> Result<bool> {
               AND t.tgenabled IN ('O','A') AND t.tgtype=7 AND NOT t.tgdeferrable
               AND t.tgnargs=0 AND t.tgqual IS NULL AND t.tgconstraint=0
               AND n.nspname='public' AND p.proname='events_publication_guard'
-              AND l.lanname='plpgsql' AND NOT p.prosecdef AND p.proconfig IS NULL
+              AND l.lanname='plpgsql' AND p.provolatile='v' AND NOT p.prosecdef AND p.proconfig IS NULL
               AND btrim(p.prosrc, E' \n\r\t')= $1
           )
         )
@@ -205,6 +205,7 @@ async fn publication_settlement(
             return Err(DbError::InvalidData("publication evidence mismatch".into()));
         }
     }
+    let ready = ready && fence_ready(tx.as_mut()).await?;
     let observed_at = database_now(tx.as_mut()).await?;
     let settled = ready
         && epoch.as_deref() == Some(claim.epoch.as_str())
@@ -257,6 +258,7 @@ pub async fn merged_status_delivery(
     } else {
         None
     };
+    let ready = ready && fence_ready(tx.as_mut()).await?;
     let result = MergedStatusDelivery {
         event_id: event.id.to_hex(),
         community_id: community.as_uuid().to_string(),
@@ -273,6 +275,7 @@ pub async fn merged_status_delivery(
 }
 impl Db {
     /// Narrow writer observation; no event content is returned to the caller.
+    #[buzz_datastore_tracing::datastore_span(name = "merged_status_delivery", system = "postgresql")]
     pub async fn merged_status_delivery(
         &self,
         community: CommunityId,
@@ -674,9 +677,10 @@ mod tests {
         );
         let current_claim = claim(community, &new_event, &current.epoch);
         // A disabled parent or even one actual partition invalidates policy.
+        // Identifiers below come exclusively from PostgreSQL regclass, never caller input.
         for relation in ["public.events".to_string(),sqlx::query_scalar::<_,String>("SELECT relid::regclass::text FROM pg_partition_tree('events') WHERE isleaf LIMIT 1").fetch_one(&pool).await.unwrap()] {
             let mut tx=pool.begin().await.unwrap();
-            sqlx::query(&format!("ALTER TABLE {relation} DISABLE TRIGGER events_publication_fence")).execute(&mut *tx).await.unwrap();
+            sqlx::query(sqlx::AssertSqlSafe(format!("ALTER TABLE {relation} DISABLE TRIGGER events_publication_fence"))).execute(&mut *tx).await.unwrap();
             assert!(!fence_ready(tx.as_mut()).await.unwrap());
             tx.rollback().await.unwrap();
         }
@@ -699,6 +703,11 @@ mod tests {
             .await
             .unwrap()
             .proves_absence_for(&current_claim));
+        let mut tx = pool.begin().await.unwrap();
+        sqlx::query("CREATE OR REPLACE FUNCTION public.events_publication_guard() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NEW; END $$")
+            .execute(&mut *tx).await.unwrap();
+        assert!(!fence_ready(tx.as_mut()).await.unwrap(), "an inert function must not advertise readiness");
+        tx.rollback().await.unwrap();
         let mut tx = pool.begin().await.unwrap();
         sqlx::query("ALTER TABLE communities RENAME COLUMN publication_epoch TO unavailable_epoch")
             .execute(&mut *tx)
