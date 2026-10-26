@@ -163,12 +163,12 @@ class PushRegistrationNotifier extends Notifier<DevicePushState> {
 
   Future<void> _load(PushRegistrationDeps deps) async {
     final epoch = ++_readEpoch;
-    bool current() => _current(deps) && epoch == _readEpoch;
+    bool readIsCurrent() => _current(deps) && epoch == _readEpoch;
     try {
       final nativePlatform = await ref
           .read(pushBridgeProvider)
           .deliveryPlatform();
-      if (!current()) return;
+      if (!readIsCurrent()) return;
       _platform = nativePlatform;
       if (nativePlatform == null) {
         state = state.copyWith(loading: false, available: false);
@@ -178,7 +178,7 @@ class PushRegistrationNotifier extends Notifier<DevicePushState> {
         PlatformMethod.get,
         pushCapabilityPath,
       );
-      if (!current()) return;
+      if (!readIsCurrent()) return;
       final capabilityView = capability.status == 200
           ? PushCapability.fromJson(capability.body! as Map<String, dynamic>)
           : null;
@@ -188,13 +188,13 @@ class PushRegistrationNotifier extends Notifier<DevicePushState> {
               : capabilityView?.fcm) ==
           PushAvailability.CONFIGURED;
       final keys = await deps.deviceKeys();
-      if (!current()) return;
+      if (!readIsCurrent()) return;
       final device = keys.public;
       final current = await deps.send(
         PlatformMethod.get,
         '$pushRegistrationPath?devicePubkey=$device',
       );
-      if (!current()) return;
+      if (!readIsCurrent()) return;
       var next = state.copyWith(
         loading: false,
         available: available,
@@ -213,7 +213,7 @@ class PushRegistrationNotifier extends Notifier<DevicePushState> {
       state = next;
     } catch (error) {
       debugPrint('push: registration read failed: $error');
-      if (current()) state = state.copyWith(loading: false);
+      if (readIsCurrent()) state = state.copyWith(loading: false);
     }
   }
 
