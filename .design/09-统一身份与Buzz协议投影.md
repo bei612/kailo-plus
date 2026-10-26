@@ -160,6 +160,40 @@ binding 与当前资格。Workspace/Community 读取沿原受权身份；私聊�
 只有肯定证据成立才追加 ACCEPTED；普通发布的权威缺失结论仍须另有 DD-81 所要求
 的原 writer 在途屏障、原签名时间与可证保留边界，不能用这个肯定证据接缝代替。
 
+### 普通发布的权威缺失
+
+DERIVED_DESIGN（REQ-24、DD-39/48/75/81/142，SF-BUZ-40，
+`ADAPTER_REQUIRED: SS-BUZ-GOVERNANCE`）：普通发布的缺失证明复用原 writer，
+不建立送达账本。所有适用的非替换事件写入，包括旧二进制、全球事件与 COPY，
+须在数据库内取得与查证相同的 Community/event ID 事务锁，锁后以数据库时钟重新
+检查存储时间窗，持锁至提交。普通事件存储窗为 960 秒，保留原 Relay 自签通知
+在原 floor 允许的重试区间；原 ingest 900 秒准入不变。1631 保留 900 秒边界。
+已存在的同一事件包括软删除行，继续允许原幂等冲突路径。
+
+Community 原记录携带 publication epoch；新发布把该 epoch 作为唯一规范
+`kailo:publication` 标签纳入原事件签名。DISPATCH 同时冻结实际签名时间、是否
+无过期与 epoch，不保存正文或标签。可信 NIP-11 仅在父表及实际分区屏障均有效时
+宣告该 Community 的 epoch、协议版本与存储窗。历史缺少签名 epoch 的意图不补造。
+历史恢复、导入或关闭触发器期间必须关闭写入与缺失查证；重新开放前重新建立屏障
+并轮换 epoch。旧 epoch 的缺失回应不得使原意图重新发送。
+
+原 NIP-98 面增加只读 `POST /events/settlement`，只接受原事件公开头部、冻结
+Community/Channel 与 epoch。原作者签本次请求，Core 的当前 Tenant CONTROL
+另以独立 NIP-98 签名证明这些字段来自原 DISPATCH；两份签名都绑定同一完整 URL、
+方法与正文并执行重放检查。CONTROL 只证明元数据来源，不成为业务 actor、不获得
+私聊参与资格；原作者仍须满足当前成员、Channel 与 kind 的原权限，查证前后均复核。
+没有 Core 证明的客户端声明时间不能绑定到 event ID，因而不能获得缺失结论。
+
+查证使用 writer 的 READ COMMITTED 事务，先取得同一事件锁，再用新的语句快照
+读取包括软删除的行。匹配原事件即已接受；仅当签名 epoch 与当前 epoch 相同、
+屏障有效、原事件无过期、适用非替换 kind 的保留边界成立，且 Relay 数据库时钟已
+严格过窗，才可证明缺失。Core 必须先已严格过窗再发查证，最后在原 scope 锁内
+追加 RECONCILIATION 与封闭的公开送达证明。证明随原审计永久保留，不能因同一
+幂等槽的下一次 DISPATCH 被覆盖；只有带有效证明的新 NOT_DELIVERED 才允许
+新签、清理与终态统计。旧查询空结论不因本接缝启用而获得权威。
+不存事件或不能证明保留边界的 kind、缺历史字段、过期、拒绝、超时、撤权与依赖
+失败继续 UNKNOWN；不得用这类情况伪造缺失。
+
 ### 原生私聊与多设备映射
 
 REQ-24、DD-77/80 的私聊使用 `03` 的 ConversationBuzzBinding。固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的 `.references/buzz/crates/buzz-relay/src/handlers/command_executor.rs::handle_dm_open` 会把认证公钥加入参与者；`.references/buzz/crates/buzz-db/src/store/dm.rs::{open_dm,create_dm,compute_participant_hash}` 以公钥集合去重并建立 private DM。因此 CONTROL 不能直接冒充发起人调用原路径，否则成为私聊成员；也不能把设备公钥数当作人数。
