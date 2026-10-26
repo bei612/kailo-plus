@@ -2460,7 +2460,10 @@ async fn ingest_event_inner(
                 })?;
                 match state
                     .db
-                    .get_event_by_id_including_deleted_for_event_write(tenant.community(), &target_bytes)
+                    .get_event_by_id_including_deleted_for_event_write(
+                        tenant.community(),
+                        &target_bytes,
+                    )
                     .await
                 {
                     Ok(Some(target)) => target.channel_id,

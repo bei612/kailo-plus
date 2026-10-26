@@ -150,35 +150,56 @@ async fn readmit_deletion_scope(
     if stored.event.kind.as_u16() != 5 {
         return Ok(());
     }
-    let targets: Vec<_> = stored.event.tags.iter()
-        .filter(|tag| tag.as_slice().first().is_some_and(|key| key == "e" || key == "a"))
+    let targets: Vec<_> = stored
+        .event
+        .tags
+        .iter()
+        .filter(|tag| {
+            tag.as_slice()
+                .first()
+                .is_some_and(|key| key == "e" || key == "a")
+        })
         .collect();
-    let [target] = targets.as_slice() else { return Err(refused()); };
+    let [target] = targets.as_slice() else {
+        return Err(refused());
+    };
     let tag = target.as_slice();
     let value = tag.get(1).ok_or_else(refused)?;
     if tag[0] == "a" {
         // Core coordinate deletions are its existing public Project/Repository
         // coordinates. Do not expose another gated addressable protocol here.
         let parts: Vec<_> = value.splitn(3, ':').collect();
-        if stored.channel_id.is_some() || parts.len() != 3
+        if stored.channel_id.is_some()
+            || parts.len() != 3
             || !matches!(parts[0], "30617" | "30621")
-            || parts[1] != stored.event.pubkey.to_hex() || parts[2].is_empty()
+            || parts[1] != stored.event.pubkey.to_hex()
+            || parts[2].is_empty()
         {
             return Err(refused());
         }
         return Ok(());
     }
     let id = nostr::EventId::from_hex(value).map_err(|_| refused())?;
-    if id.to_hex() != *value { return Err(refused()); }
-    let original = state.db.get_event_by_id_including_deleted(scope.community(), id.as_bytes())
-        .await.map_err(|_| refused())?.ok_or_else(refused)?;
-    if original.event.id != id || original.event.verify().is_err()
+    if id.to_hex() != *value {
+        return Err(refused());
+    }
+    let original = state
+        .db
+        .get_event_by_id_including_deleted(scope.community(), id.as_bytes())
+        .await
+        .map_err(|_| refused())?
+        .ok_or_else(refused)?;
+    if original.event.id != id
+        || original.event.verify().is_err()
         || original.channel_id != stored.channel_id
     {
         return Err(refused());
     }
     if original.channel_id.is_none()
-        && !matches!(original.event.kind.as_u16(), 1 | 1618 | 1621 | 1630 | 1631 | 1632 | 1633 | 30617 | 30621)
+        && !matches!(
+            original.event.kind.as_u16(),
+            1 | 1618 | 1621 | 1630 | 1631 | 1632 | 1633 | 30617 | 30621
+        )
     {
         // In particular, a historical NULL deletion of another NULL deletion
         // cannot wash a private scope into a Community-global observation.
