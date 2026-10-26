@@ -1095,14 +1095,14 @@ fn unix(at: Option<&str>) -> Option<i64> {
 /// 举报与删除结果不明时只采用肯定查证。普通事件空读、队列空与过窗均不能
 /// 排除已隐藏事件或尚未提交的旧 writer；不由此中止原操作。
 async fn observe_publication(state: &BffState, ae: &Execution) -> Result<Settled, Refusal> {
-    let row: Option<(i32, String, i64)> = sqlx::query_as(
-        "select event_kind, event_id, event_created_at from admission.moderation_publication
+    let row: Option<(i32, String)> = sqlx::query_as(
+        "select event_kind, event_id from admission.moderation_publication
          where action_execution_id = $1",
     )
     .bind(ae.id)
     .fetch_optional(&state.pool)
     .await?;
-    let Some((kind, event_id, _created_at)) = row else {
+    let Some((kind, event_id)) = row else {
         return Err(Refusal::Unavailable("审核事件引用缺失".into()));
     };
     let evidence = vec![Evidence::new(EvidenceKind::BuzzEventId, &event_id)];

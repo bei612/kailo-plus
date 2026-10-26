@@ -27,7 +27,6 @@ use contracts::{ActionCommand, ActionSubmission, EvidenceKind, ReasonCode};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use sqlx::{Postgres, Transaction};
-use std::time::Duration;
 use uuid::Uuid;
 
 use crate::{
@@ -316,7 +315,7 @@ pub(crate) async fn submit(
     deliver(state, &ae, &definition, &control, &event)
         .await
         .map_err(|e| (e, Some(ae.operation_id)))?;
-    finish(&state.memory_service, Some(ctx), ae.id, None)
+    finish(&state.memory_service, Some(ctx), ae.id)
         .await
         .map_err(|e| (e, Some(ae.operation_id)))
 }
@@ -370,7 +369,7 @@ async fn replay(
             .and_then(crate::governance::parse::<ReasonCode>);
         return Err((rejected(reason), operation));
     }
-    finish(&state.memory_service, Some(ctx), ae.id, None)
+    finish(&state.memory_service, Some(ctx), ae.id)
         .await
         .map_err(|e| (e, operation))
 }
@@ -647,7 +646,6 @@ async fn finish(
     service: &ServiceState,
     ctx: Option<&ExecutionContext>,
     id: Uuid,
-    _settle: Option<Duration>,
 ) -> Result<(StatusCode, ActionSubmission), Refusal> {
     let mut tx = service.pool.begin().await?;
     let ae = crate::governance::lock_execution(&mut tx, id).await?;
@@ -754,12 +752,11 @@ fn not_written(ae: &Execution) -> Refusal {
     }
 }
 
-/// Called by the existing publication reconciler tick (DD-81) with its batch and the Relay
-/// timestamp window. It only reads back fixed event IDs; it never signs or delivers.
+/// Called by the existing publication reconciler tick (DD-81) with its batch.
+/// It only reads back fixed event IDs; it never signs or delivers.
 pub(crate) async fn reconcile(
     state: &ServiceState,
     batch: i64,
-    settle: Duration,
 ) -> Result<(), String> {
     let ids: Vec<Uuid> = sqlx::query_scalar(
         "with selected as (
@@ -778,7 +775,7 @@ pub(crate) async fn reconcile(
     .await
     .map_err(|e| e.to_string())?;
     for id in ids {
-        if let Err(error) = finish(state, None, id, Some(settle)).await {
+        if let Err(error) = finish(state, None, id).await {
             tracing::warn!(action_execution_id = %id,
                 reason_code = %crate::governance::wire(&error.reason()),
                 "Canvas event reconciliation incomplete; no re-sign or re-delivery");

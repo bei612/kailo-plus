@@ -106,8 +106,8 @@ pub fn spawn(state: ServiceState, meter: &Meter, cfg: Config) {
             {
                 tracing::warn!(error = %e, "Profile publication reconciliation incomplete");
             }
-            // DD-117: Agent kind:0 publications settle by event ID within the same
-            // Relay drift window; missing/stale Agent profiles are (re)published.
+            // DD-117: Only positive evidence settles unknown Agent profiles. The
+            // configured delay applies only after an explicit non-delivery.
             if let Err(e) = crate::agent_profile::reconcile(
                 &state,
                 cfg.batch,
@@ -118,8 +118,8 @@ pub fn spawn(state: ServiceState, meter: &Meter, cfg: Config) {
             {
                 tracing::warn!(error = %e, "Agent profile projection reconciliation incomplete");
             }
-            // DD-125(4): CONTROL Canvas events settle by event ID within the same window.
-            let canvas = crate::workspace_canvas::reconcile(&state, cfg.batch, cfg.settle);
+            // DD-125(4): CONTROL Canvas events require verified positive evidence.
+            let canvas = crate::workspace_canvas::reconcile(&state, cfg.batch);
             if let Err(e) = canvas.await {
                 tracing::warn!(error = %e, "Canvas publication reconciliation incomplete");
             }
@@ -560,7 +560,7 @@ async fn observe_delivery(state: &ServiceState, p: &Pending) -> Result<bool, &'s
         .map_err(|_| "ACTOR_UNREADABLE")?
     };
     let observation = client
-        .observe_publication(&state.http, &p.event_id, scope.community_id)
+        .observe_publication(&state.relay_http, &p.event_id, scope.community_id)
         .await
         .map_err(|_| "EVENT_UNOBSERVABLE")?;
     let after = current_scope(state, p, target, &scope).await?;
