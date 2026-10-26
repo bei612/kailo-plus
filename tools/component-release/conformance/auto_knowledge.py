@@ -280,9 +280,25 @@ def ensure_action_token(h, r):
         h.say("isolated-identity", action="prepare-action-token", retry=1)
         h.run(["bash", "./start-core.sh", "--prepare-action-token"], cwd=str(local), env=env, log=r.log)
     h.say("isolated-identity", action="restart-core")
-    h.run(["bash", "./start-core.sh", "--no-build"], cwd=str(local), env=env, log=r.log)
+    h.run(["bash", "./start-core.sh", "--no-build"], cwd=str(local), env=env, log=r.log, timeout=600)
     marker.write_text("")
     h.say("isolated-identity", actionToken="READY")
+
+
+def ensure_receiver_links(h, r):
+    """Compose replacement drops manually attached receiver network aliases."""
+    state = r.state
+    for service, aliases in (("core-bff", ["receiver-core", "receiver-driver"]),
+                             ("keycloak", ["receiver-idp"]), ("agentgateway", ["receiver-gateway"])):
+        container = state["project"] + "-" + service + "-1"
+        h.require(h.docker("inspect", "--format", '{{index .Config.Labels "com.docker.compose.project"}}', container).strip() == state["project"],
+                  "receiver network target is not owned by this run")
+        networks = json.loads(h.docker("inspect", "--format", "{{json .NetworkSettings.Networks}}", container))
+        if state["network"] not in networks:
+            options = [item for alias in aliases for item in ("--alias", alias)]
+            h.docker("network", "connect", *options, state["network"], container)
+        else:
+            h.require(set(aliases).issubset(networks[state["network"]].get("Aliases") or []), "receiver network aliases differ from this run")
 
 
 def isolated_token(h, r):
@@ -415,6 +431,78 @@ def runtime_environment(h, r):
         return re.sub(r"\$\{([A-Z][A-Z0-9_]*)\}", lambda m: resolve(m[1], (*seen, key)), values[key])
 
     return {key: resolve(key) for key in values}
+
+
+def ensure_gateway_identity(h, r):
+    """Original Gateway jwtSign/Tool Session delivery, with a run-owned Bao key.
+
+    The one-shot Agent needs CHOWN and DAC_OVERRIDE solely to render the 0600
+    private file as the Gateway's observed uid/gid in its existing private
+    volume. It sees only this role's bootstrap, the public output directory,
+    and that volume; no private key is mounted into Core or copied by Python.
+    """
+    state = r.state
+    local = r.dir / "receiver/apps/deploy/local"
+    if state.get("gatewayIdentity"):
+        h.require(Path(state["gatewayIdentity"]["jwksFile"]).is_file(), "confirmed Gateway public delivery is missing")
+        return
+    runtime = runtime_environment(h, r)
+    project = state["project"]
+    container = project + "-agentgateway-1"
+    h.require(h.docker("inspect", "--format", '{{index .Config.Labels "com.docker.compose.project"}}', container).strip() == project,
+              "Gateway container is not owned by this receiver")
+    owners = {tuple(line.split()) for line in h.docker("top", container, "-eo", "uid,gid").splitlines()[1:] if line.strip()}
+    h.require(len(owners) == 1, "Gateway runtime ownership is ambiguous")
+    owner = next(iter(owners))
+    h.require(len(owner) == 2 and all(value.isdecimal() for value in owner) and int(owner[0]) > 0, "non-root Gateway runtime ownership required")
+    mounts = json.loads(h.docker("inspect", "--format", "{{json .Mounts}}", container))
+    private_root = runtime["AGENTGATEWAY_PROVIDER_SECRET_DIRECTORY"]
+    found = [mount for mount in mounts if mount["Destination"] == private_root]
+    h.require(len(found) == 1 and found[0]["Type"] == "volume" and found[0]["RW"]
+              and found[0]["Name"] == project + "_agentgateway-provider-secrets", "run-owned Gateway private volume required")
+    directory = h.private_dir(r.dir / "receiver/gateway")
+    bootstrap = h.private_dir(directory / "bootstrap")
+    public = h.private_dir(directory / "public", 0o755)
+    input_file = h.write_json(directory / "input.json", {"deployment": str(local), "project": project,
+        "baoUrl": runtime["OPENBAO_ADDR"], "privateRoot": private_root, "gatewayUid": int(owner[0]), "gatewayGid": int(owner[1]),
+        "operatorUid": os.getuid(), "operatorGid": os.getgid()})
+    r.node(project + "_app", "tools/component-release/conformance/receiver-gateway.mjs", "--input", str(input_file))
+    identity = h.read_json(directory / "identity.json")
+    bao_image = h.docker("inspect", "--format", "{{.Config.Image}}", project + "-openbao-1").strip()
+    h.require(re.fullmatch(r"[^\s@]+@sha256:[0-9a-f]{64}", bao_image), "Gateway Agent must use the fixed receiver OpenBao image")
+    h.docker("run", "--rm", "--read-only", "--cap-drop", "ALL", "--cap-add", "CHOWN", "--cap-add", "DAC_OVERRIDE",
+        "--security-opt", "no-new-privileges", "--cpus", "0.5", "--memory", "128m", "--memory-swap", "128m", "--pids-limit", "64",
+        "--user", "0:0", "--network", project + "_app", "--tmpfs", "/tmp:rw,nosuid,nodev,size=16m",
+        "--mount", f"type=bind,src={bootstrap},dst={bootstrap}", "--mount", f"type=bind,src={public},dst={public}",
+        "--mount", f"type=volume,src={found[0]['Name']},dst={private_root}", "--entrypoint", "bao", bao_image,
+        "agent", "-config=" + identity["agentConfig"], log=r.log, timeout=180)
+    keys = h.read_json(identity["jwksFile"])
+    h.require(len(keys.get("keys", [])) == 1 and "d" not in keys["keys"][0] and keys["keys"][0].get("kid") == identity["keyId"],
+              "Gateway Agent did not render its public-only key")
+    values = {"GATEWAY_SERVICE_ISSUER": identity["issuer"], "GATEWAY_SERVICE_AUDIENCE": identity["audience"],
+        "GATEWAY_SERVICE_CALLER_ID": identity["callerId"], "GATEWAY_SERVICE_JWKS_FILE": identity["jwksFile"],
+        "GATEWAY_SERVICE_SIGNING_KEY_FILE": identity["signingKeyFile"], "GATEWAY_SERVICE_KEY_ID": identity["keyId"],
+        "GATEWAY_SERVICE_TOKEN_SECONDS": "30", "GATEWAY_SERVICE_MAX_TOKEN_SECONDS": "40",
+        "AGENT_TOOL_MCP_URL": f"http://{runtime['BFF_SERVICE_NAME']}:{runtime['SERVICE_CONTAINER_PORT']}/service/v1/agent-tools/mcp",
+        "AGENT_TOOL_EXT_MCP_URL": f"http://{runtime['BFF_SERVICE_NAME']}:{runtime['SERVICE_CONTAINER_PORT']}/",
+        "AGENT_TOOL_SESSION_ISSUER": f"https://{project}.invalid/tool-session", "AGENT_TOOL_SESSION_AUDIENCE": project + "-tool-session",
+        "AGENT_TOOL_SESSION_TOKEN_SECONDS": "300", "AGENT_TOOL_GATEWAY_NAME": "receiver-tools"}
+    gateway_config = (local / "model-gateway-config.yaml").read_text()
+    reserved = {int(value) for value in re.findall(r"(?m)^- port: ([0-9]+)$", gateway_config)}
+    reserved.update(int(value) for value in re.findall(r"(?m)^  adminAddr: [^\s]+:([0-9]+)$", gateway_config))
+    reserved.add(int(runtime["AGENTGATEWAY_MODEL_PORT"]))
+    port = next(value for value in range(19000, 19100) if value not in reserved)
+    values["AGENT_TOOL_GATEWAY_URL"] = f"http://agentgateway:{port}/"
+    _set_env(h, local / ".env", values)
+    env = {**os.environ, "KAILO_RUNTIME_DIR": str(local), "COMPOSE_PROJECT_NAME": project, "CHECK_CPUS": "2", "CHECK_MEMORY": "4g"}
+    h.run(["bash", "./start-core.sh", "--no-build"], cwd=str(local), env=env, log=r.log)
+    h.run(h.DOCKER + ["compose", "--project-name", project, "--project-directory", str(local), "--env-file", str(local / ".env"),
+        "-f", str(local / "compose.yaml"), "-f", str(local / "secrets/agentgateway-service.compose.json"),
+        "up", "-d", "--no-build", "--pull", "never", "--no-deps", "--wait", "--wait-timeout", "120", "agentgateway"],
+        env=env, log=r.log, timeout=180)
+    ensure_receiver_links(h, r)
+    r.record(gatewayIdentity=identity)
+    h.say("isolated-gateway-identity", status="DELIVERED")
 
 
 def ensure_knowledge_native(h, r, declaration):
@@ -673,6 +761,8 @@ def drive(r, args, runtime_env, declaration, h):
         ensure_approver(h, r)
         receiver(h, r, "contracts")
     ensure_action_token(h, r)
+    ensure_receiver_links(h, r)
+    ensure_gateway_identity(h, r)
     ensure_sessions(h, r)
     ensure_model_routes(h, r, declaration)
     ensure_knowledge_native(h, r, declaration)
