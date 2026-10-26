@@ -86,11 +86,29 @@ fn deletion_before_target_in_one_page_stays_deleted() {
     let author = Keys::generate();
     let target = message(&author, "chan", "deleted before first sync");
     let deletion = EventBuilder::new(Kind::Custom(5), "")
-        .tag(Tag::parse(["h", "chan"]).unwrap())
         .tag(Tag::parse(["e", &target.id.to_hex()]).unwrap())
         .sign_with_keys(&author).unwrap();
     archive.ingest("chan", &[deletion, target.clone()]).unwrap();
     assert!(!archive.has_event(&target.id.to_hex()).unwrap());
+}
+
+#[test]
+fn target_scoped_reactions_keep_relay_scope_but_explicit_foreign_tags_are_refused() {
+    let archive = store();
+    let author = Keys::generate();
+    let target = message(&author, "chan", "react here");
+    let reaction = EventBuilder::new(Kind::Custom(7), "+")
+        .tag(Tag::parse(["e", &target.id.to_hex()]).unwrap())
+        .sign_with_keys(&author).unwrap();
+    assert_eq!(archive.ingest("chan", &[reaction]).unwrap(), 1);
+    let foreign = EventBuilder::new(Kind::Custom(7), "+")
+        .tag(Tag::parse(["h", "other"]).unwrap())
+        .tag(Tag::parse(["e", &target.id.to_hex()]).unwrap())
+        .sign_with_keys(&author).unwrap();
+    assert_eq!(archive.ingest("chan", &[foreign]).unwrap(), 0);
+    let unscoped_message = EventBuilder::new(Kind::Custom(9), "no channel")
+        .sign_with_keys(&author).unwrap();
+    assert_eq!(archive.ingest("chan", &[unscoped_message]).unwrap(), 0);
 }
 
 #[test]

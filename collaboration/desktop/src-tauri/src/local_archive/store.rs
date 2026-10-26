@@ -120,15 +120,18 @@ impl ArchiveStore {
     }
 
     /// Stores relay-returned events of `channel_id`, sealed. Deletions (5/9005)
-    /// remove the archived copies of the events they target. Events whose `h`
-    /// tag is not this channel are ignored (the relay answer is the only proof).
+    /// remove the archived copies of the events they target. An explicit `h`
+    /// must match. For kind 5/7 without `h`, the authenticated single-channel
+    /// Relay query supplies the channel, just as buzz-core's filter uses the
+    /// persisted target-derived channel_id for these events.
     pub(crate) fn ingest(&self, channel_id: &str, events: &[Event]) -> Result<usize, String> {
         let mut stored = 0;
         for event in events {
+            let has_channel = event.tags.iter().any(|tag| tag.as_slice().first().is_some_and(|s| s == "h"));
             let in_channel = event.tags.iter().any(|tag| {
                 let s = tag.as_slice();
                 s.len() >= 2 && s[0] == "h" && s[1] == channel_id
-            });
+            }) || (!has_channel && matches!(event.kind.as_u16(), 5 | 7));
             if !in_channel || !ARCHIVABLE_KINDS.contains(&event.kind.as_u16()) || event.verify().is_err() {
                 continue;
             }
