@@ -158,3 +158,15 @@ Node/Python/Bash 语法、生产部署路径拒绝、并发锁排他与失败释
 对应目录为 `checks/github-33037a92cb0b6b23bb55b7e015d3543e619355a4`、其 `-2`、`-3` 后缀目录。
 本轮检查容器均已移除，旧 receiver 栈未重启或清理，也未启动新的原生实例。
 本分支仍声明旧知识库镜像，等待匹配源码的新镜像与资源窗口后，才能给出真实 OIDC/目录/模型及 receiver E2E 结论。
+
+后续 `cc9bcee85` 为 bootstrap 声明本次项目限定的 SpiceDB Docker 地址，并把模型探测放在声明模型主机别名的 edge 网络。
+`6813eb7eb8919e75078222f81192eab3762665d8` 继续复用 Cells 原生安装、CLI PAT、REST 用户和 reconcile 入口，
+为 receiver 准备独立源实例及冻结向量要求的三个源目录。目录 UUID 仅作为 Create API 提案；只有后续原生回读确认
+UUID、COLLECTION 类型和所属 workspace 后才记录为事实。重试先读取原生对象；已确认过的对象缺失时拒绝重新造对象。
+这次没有调用 Cells 的模拟 provider，也没有预先给出 Core Resource ID；后者仍须由 bootstrap 的真实 resource.create 返回。
+该入口已接到 native 阶段之后，源 adapter/native-action 的 Core 投递及后续步骤仍明确拒绝。
+
+固定提交 `6813eb7eb` 的同规格 CI GitHub 来源检查退出 0：语法、路径/锁边界、Cells REST v1/v2 路径和
+404/401 拒绝语义、实际冻结向量分类（三个源 Resource 前置条件）及已有 10 个单元测试通过。
+回执 `/volumes/data/kailo/conformance/checks/github-6813eb7eb8919e75078222f81192eab3762665d8/receipt.json`，
+同目录含命令与日志。未启动 source Cells、WeKnora 或新 receiver；以上仍不是原生运行或端到端证据。
