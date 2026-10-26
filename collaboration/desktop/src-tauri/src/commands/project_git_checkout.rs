@@ -23,8 +23,13 @@ static CHECKOUT_LOCK: Mutex<()> = Mutex::new(());
 fn partition(base: &str, coordinate: &str) -> Result<PathBuf, String> {
     let checked = repository_path(coordinate).ok_or(REPO_INVALID_REQUEST)?;
     let digest = Sha256::digest(base.as_bytes());
-    let community = digest.iter().map(|byte| format!("{byte:02x}")).collect::<String>();
-    Ok(PathBuf::from("project-checkouts").join(community).join(checked.trim_start_matches("/git/")))
+    let community = digest
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    Ok(PathBuf::from("project-checkouts")
+        .join(community)
+        .join(checked.trim_start_matches("/git/")))
 }
 
 /// No search of home/global repos, no legacy fallback across Community, and no
@@ -42,12 +47,18 @@ fn checkout_path(app_data: &Path, base: &str, coordinate: &str) -> Result<PathBu
                 if metadata.file_type().is_symlink() || !metadata.is_dir() {
                     return Err(REPO_FAILED.into());
                 }
-                if !path.canonicalize().map_err(|_| REPO_FAILED)?.starts_with(&root) {
+                if !path
+                    .canonicalize()
+                    .map_err(|_| REPO_FAILED)?
+                    .starts_with(&root)
+                {
                     return Err(REPO_FAILED.into());
                 }
             }
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                if index + 1 < components.len() { std::fs::create_dir(&path).map_err(|_| REPO_FAILED)?; }
+                if index + 1 < components.len() {
+                    std::fs::create_dir(&path).map_err(|_| REPO_FAILED)?;
+                }
             }
             Err(_) => return Err(REPO_FAILED.into()),
         }
@@ -56,13 +67,24 @@ fn checkout_path(app_data: &Path, base: &str, coordinate: &str) -> Result<PathBu
 }
 
 fn map_checkout_error(error: &str) -> String {
-    if error == CHECKOUT_OUTCOME_UNKNOWN { error.to_owned() } else { git_error(error) }
+    if error == CHECKOUT_OUTCOME_UNKNOWN {
+        error.to_owned()
+    } else {
+        git_error(error)
+    }
 }
 
 async fn with_checkout<T, F>(
-    app: AppHandle, repository: String, expected_relay_url: String, expected_signer_pubkey: String, work: F,
+    app: AppHandle,
+    repository: String,
+    expected_relay_url: String,
+    expected_signer_pubkey: String,
+    work: F,
 ) -> Result<T, String>
-where T: Send + 'static, F: FnOnce(&Path, &str, &GitAuthConfig) -> Result<T, String> + Send + 'static {
+where
+    T: Send + 'static,
+    F: FnOnce(&Path, &str, &GitAuthConfig) -> Result<T, String> + Send + 'static,
+{
     let started = Instant::now();
     let repo_path = repository_path(&repository).ok_or(REPO_INVALID_REQUEST)?;
     let scope = RepoScope::capture(&app, &expected_relay_url, &expected_signer_pubkey)?;
@@ -78,59 +100,198 @@ where T: Send + 'static, F: FnOnce(&Path, &str, &GitAuthConfig) -> Result<T, Str
         let result = work(&path, &root, &auth).map_err(|error| map_checkout_error(&error));
         task_scope.check()?;
         result
-    }).await.map_err(|_| REPO_FAILED)?;
+    })
+    .await
+    .map_err(|_| REPO_FAILED)?;
     scope.check()?;
     result
 }
 
 #[tauri::command]
-pub async fn clone_project_repository(repository: String, default_branch: Option<String>, expected_relay_url: String, expected_signer_pubkey: String, app: AppHandle) -> Result<ProjectRepoCloneResult, String> {
-    with_checkout(app, repository, expected_relay_url, expected_signer_pubkey, move |path, root, auth| clone_checkout(path, root, default_branch.as_deref(), auth)).await
+pub async fn clone_project_repository(
+    repository: String,
+    default_branch: Option<String>,
+    expected_relay_url: String,
+    expected_signer_pubkey: String,
+    app: AppHandle,
+) -> Result<ProjectRepoCloneResult, String> {
+    with_checkout(
+        app,
+        repository,
+        expected_relay_url,
+        expected_signer_pubkey,
+        move |path, root, auth| clone_checkout(path, root, default_branch.as_deref(), auth),
+    )
+    .await
 }
 
 #[tauri::command]
-pub async fn get_project_repo_sync_status(repository: String, branch_name: Option<String>, base_branch: Option<String>, expected_relay_url: String, expected_signer_pubkey: String, app: AppHandle) -> Result<Option<ProjectRepoSyncStatusInfo>, String> {
-    with_checkout(app, repository, expected_relay_url, expected_signer_pubkey, move |path, root, auth| {
-        if !path.exists() { return Ok(None); }
-        checkout_status(path, root, branch_name.as_deref(), base_branch.as_deref(), auth).map(Some)
-    }).await
+pub async fn get_project_repo_sync_status(
+    repository: String,
+    branch_name: Option<String>,
+    base_branch: Option<String>,
+    expected_relay_url: String,
+    expected_signer_pubkey: String,
+    app: AppHandle,
+) -> Result<Option<ProjectRepoSyncStatusInfo>, String> {
+    with_checkout(
+        app,
+        repository,
+        expected_relay_url,
+        expected_signer_pubkey,
+        move |path, root, auth| {
+            if !path.exists() {
+                return Ok(None);
+            }
+            checkout_status(
+                path,
+                root,
+                branch_name.as_deref(),
+                base_branch.as_deref(),
+                auth,
+            )
+            .map(Some)
+        },
+    )
+    .await
 }
 
 #[tauri::command]
-pub async fn push_project_local_repository(repository: String, branch_name: Option<String>, base_branch: Option<String>, expected_relay_url: String, expected_signer_pubkey: String, app: AppHandle) -> Result<ProjectRepoPushResult, String> {
-    with_checkout(app, repository, expected_relay_url, expected_signer_pubkey, move |path, root, auth| push_checkout(path, root, branch_name.as_deref(), base_branch.as_deref(), auth)).await
+pub async fn push_project_local_repository(
+    repository: String,
+    branch_name: Option<String>,
+    base_branch: Option<String>,
+    expected_relay_url: String,
+    expected_signer_pubkey: String,
+    app: AppHandle,
+) -> Result<ProjectRepoPushResult, String> {
+    with_checkout(
+        app,
+        repository,
+        expected_relay_url,
+        expected_signer_pubkey,
+        move |path, root, auth| {
+            push_checkout(
+                path,
+                root,
+                branch_name.as_deref(),
+                base_branch.as_deref(),
+                auth,
+            )
+        },
+    )
+    .await
 }
 
 #[tauri::command]
-pub async fn pull_project_local_repository(repository: String, branch_name: Option<String>, expected_relay_url: String, expected_signer_pubkey: String, app: AppHandle) -> Result<ProjectRepoPullResult, String> {
-    with_checkout(app, repository, expected_relay_url, expected_signer_pubkey, move |path, root, auth| pull_checkout(path, root, branch_name.as_deref(), auth)).await
+pub async fn pull_project_local_repository(
+    repository: String,
+    branch_name: Option<String>,
+    expected_relay_url: String,
+    expected_signer_pubkey: String,
+    app: AppHandle,
+) -> Result<ProjectRepoPullResult, String> {
+    with_checkout(
+        app,
+        repository,
+        expected_relay_url,
+        expected_signer_pubkey,
+        move |path, root, auth| pull_checkout(path, root, branch_name.as_deref(), auth),
+    )
+    .await
 }
 
 #[tauri::command]
-pub async fn get_project_local_repo_snapshot(repository: String, default_branch: Option<String>, base_branch: Option<String>, expected_relay_url: String, expected_signer_pubkey: String, app: AppHandle) -> Result<Option<ProjectLocalRepoSnapshotInfo>, String> {
-    with_checkout(app, repository, expected_relay_url, expected_signer_pubkey, move |path, root, auth| {
-        if !path.exists() { return Ok(None); }
-        checkout_snapshot(path, root, default_branch.as_deref(), base_branch.as_deref(), auth).map(Some)
-    }).await
+pub async fn get_project_local_repo_snapshot(
+    repository: String,
+    default_branch: Option<String>,
+    base_branch: Option<String>,
+    expected_relay_url: String,
+    expected_signer_pubkey: String,
+    app: AppHandle,
+) -> Result<Option<ProjectLocalRepoSnapshotInfo>, String> {
+    with_checkout(
+        app,
+        repository,
+        expected_relay_url,
+        expected_signer_pubkey,
+        move |path, root, auth| {
+            if !path.exists() {
+                return Ok(None);
+            }
+            checkout_snapshot(
+                path,
+                root,
+                default_branch.as_deref(),
+                base_branch.as_deref(),
+                auth,
+            )
+            .map(Some)
+        },
+    )
+    .await
 }
 
 #[tauri::command]
-pub async fn get_project_local_repo_diff(repository: String, default_branch: Option<String>, base_branch: Option<String>, base_commit: Option<String>, target_commit: Option<String>, expected_relay_url: String, expected_signer_pubkey: String, app: AppHandle) -> Result<Option<buzz_project_git::ProjectRepoDiffInfo>, String> {
-    with_checkout(app, repository, expected_relay_url, expected_signer_pubkey, move |path, root, auth| {
-        if !path.exists() { return Ok(None); }
-        checkout_diff(path, root, default_branch.as_deref(), base_branch.as_deref(), base_commit, target_commit, auth).map(Some)
-    }).await
+#[allow(clippy::too_many_arguments)]
+pub async fn get_project_local_repo_diff(
+    repository: String,
+    default_branch: Option<String>,
+    base_branch: Option<String>,
+    base_commit: Option<String>,
+    target_commit: Option<String>,
+    expected_relay_url: String,
+    expected_signer_pubkey: String,
+    app: AppHandle,
+) -> Result<Option<buzz_project_git::ProjectRepoDiffInfo>, String> {
+    with_checkout(
+        app,
+        repository,
+        expected_relay_url,
+        expected_signer_pubkey,
+        move |path, root, auth| {
+            if !path.exists() {
+                return Ok(None);
+            }
+            checkout_diff(
+                path,
+                root,
+                default_branch.as_deref(),
+                base_branch.as_deref(),
+                base_commit,
+                target_commit,
+                auth,
+            )
+            .map(Some)
+        },
+    )
+    .await
 }
 
 #[tauri::command]
-pub async fn open_project_repository_folder(repository: String, expected_relay_url: String, expected_signer_pubkey: String, app: AppHandle) -> Result<(), String> {
+pub async fn open_project_repository_folder(
+    repository: String,
+    expected_relay_url: String,
+    expected_signer_pubkey: String,
+    app: AppHandle,
+) -> Result<(), String> {
     let opener_app = app.clone();
     // Opening is performed inside the captured scope/lock, not by forwarding an
     // arbitrary frontend path to the OS opener after an awaited lookup.
-    with_checkout(app, repository, expected_relay_url, expected_signer_pubkey, move |path, root, auth| {
-        validate_checkout(path, root, auth)?;
-        opener_app.opener().open_path(path.to_string_lossy(), None::<&str>).map_err(|_| REPO_FAILED.to_owned())
-    }).await
+    with_checkout(
+        app,
+        repository,
+        expected_relay_url,
+        expected_signer_pubkey,
+        move |path, root, auth| {
+            validate_checkout(path, root, auth)?;
+            opener_app
+                .opener()
+                .open_path(path.to_string_lossy(), None::<&str>)
+                .map_err(|_| REPO_FAILED.to_owned())
+        },
+    )
+    .await
 }
 
 #[cfg(test)]

@@ -164,7 +164,10 @@ fn parse_numstat(output: &str) -> Vec<(String, usize, usize)> {
         .collect()
 }
 
-pub(crate) fn empty_tree_ref(repo_dir: &std::path::Path, auth: &GitAuthConfig) -> Result<String, String> {
+pub(crate) fn empty_tree_ref(
+    repo_dir: &std::path::Path,
+    auth: &GitAuthConfig,
+) -> Result<String, String> {
     run_git(
         &["hash-object", "-t", "tree", "/dev/null"],
         Some(repo_dir),
