@@ -494,8 +494,9 @@ def ensure_gateway_identity(h, r):
     port = next(value for value in range(19000, 19100) if value not in reserved)
     values["AGENT_TOOL_GATEWAY_URL"] = f"http://agentgateway:{port}/"
     _set_env(h, local / ".env", values)
-    env = {**os.environ, "KAILO_RUNTIME_DIR": str(local), "COMPOSE_PROJECT_NAME": project, "CHECK_CPUS": "2", "CHECK_MEMORY": "4g"}
-    h.run(["bash", "./start-core.sh", "--no-build"], cwd=str(local), env=env, log=r.log)
+    env = {**os.environ, "KAILO_RUNTIME_DIR": str(local), "COMPOSE_PROJECT_NAME": project, "CHECK_CPUS": "2", "CHECK_MEMORY": "4g",
+           "TMPDIR": str(h.private_dir(Path("/var/lib/kailo-ci/tmp") / f"kr-{r.dir.name.rsplit('-', 1)[-1]}"))}
+    h.run(["bash", "./start-core.sh", "--no-build"], cwd=str(local), env=env, log=r.log, timeout=600)
     h.run(h.DOCKER + ["compose", "--project-name", project, "--project-directory", str(local), "--env-file", str(local / ".env"),
         "-f", str(local / "compose.yaml"), "-f", str(local / "secrets/agentgateway-service.compose.json"),
         "up", "-d", "--no-build", "--pull", "never", "--no-deps", "--wait", "--wait-timeout", "120", "agentgateway"],
