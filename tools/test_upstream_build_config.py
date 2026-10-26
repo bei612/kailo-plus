@@ -45,6 +45,23 @@ class PublicBuildConfig(unittest.TestCase):
             }, clear=True), self.assertRaises(ValueError):
                 manifest.public_build_config_digest(self.artifact())
 
+    def test_optional_arguments_keep_original_name_secret_and_fact_boundaries(self):
+        for changes, expected in [
+            ({"optional_build_args": ["SECRET"], "build_secrets": ["SECRET"]}, "build_secrets"),
+            ({"optional_build_args": ["PLATFORM_DISPLAY_NAME"]}, "重复项"),
+            ({"optional_build_args": ["bad-name"]}, "只登记变量名"),
+            ({"build_facts": {"BUZZ_ANDROID_GOOGLE_SERVICES_JSON": "source_commit"}}, "build_facts"),
+        ]:
+            art = dict(self.artifact(), artifact_digest="none", source_digest="none", **changes)
+            model = dict(evidence_commit="a" * 40, implementation_base_commit="a" * 40,
+                         reference_tree="buzz", artifacts=[art])
+            with self.subTest(changes=changes), patch.object(manifest, "source_files", return_value=["collaboration/mobile/file"]), \
+                    patch.object(os.path, "isdir", return_value=True), \
+                    patch.object(os.path, "isfile", return_value=True), \
+                    patch.object(os.path, "exists", return_value=True):
+                problems = manifest.problems("collaboration/fork/upstream.yaml", model, check_digest=False)
+            self.assertTrue(any(expected in problem for problem in problems), problems)
+
     def test_original_plan_and_record_use_the_same_configuration_bound_source_digest(self):
         art = self.artifact()
         model = {"implementation_base_commit": "a" * 40}
