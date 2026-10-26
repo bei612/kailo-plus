@@ -68,7 +68,7 @@ fn checkout_path(app_data: &Path, base: &str, coordinate: &str) -> Result<PathBu
 }
 
 fn map_checkout_error(error: &str) -> String {
-    if error == CHECKOUT_OUTCOME_UNKNOWN {
+    if matches!(error, CHECKOUT_OUTCOME_UNKNOWN | CHECKOUT_CONFLICT) {
         error.to_owned()
     } else {
         git_error(error)
