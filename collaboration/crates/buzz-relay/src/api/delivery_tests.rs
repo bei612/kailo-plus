@@ -267,13 +267,21 @@ async fn delivery_rechecks_revocation_and_host_binding_after_waiting_for_writer(
         buzz_db::event::insert_event_in_transaction(&mut writer, community, &original, None)
             .await
             .unwrap();
-        let mut request = Box::pin(proof(state, &host, &keys, &original));
-        assert!(
-            tokio::time::timeout(Duration::from_millis(200), &mut request)
-                .await
-                .is_err(),
-            "request must wait behind the uncommitted writer"
-        );
+        let writer_pid:i32=sqlx::query_scalar("SELECT pg_backend_pid()")
+            .fetch_one(&mut *writer).await.unwrap();
+        let request_host=host.clone();
+        let request=tokio::spawn(async move { proof(state,&request_host,&keys,&original).await });
+        // Observe the actual writer wait, not elapsed time: revocation must
+        // happen after the first HTTP admission and before its final readmit.
+        tokio::time::timeout(Duration::from_secs(5),async {
+            loop {
+                let blocked:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE $1=ANY(pg_blocking_pids(pid)) AND wait_event_type='Lock')")
+                    .bind(writer_pid).fetch_one(&pool).await.unwrap();
+                if blocked {break;}
+                assert!(!request.is_finished(),"proof ended before waiting for writer");
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        }).await.expect("HTTP proof must reach the original writer lock");
         match drift {
             "membership" => {
                 sqlx::query("DELETE FROM channel_members WHERE community_id=$1 AND channel_id=$2")
@@ -309,7 +317,7 @@ async fn delivery_rechecks_revocation_and_host_binding_after_waiting_for_writer(
         writer.commit().await.unwrap();
         let response = tokio::time::timeout(Duration::from_secs(5), request)
             .await
-            .unwrap();
+            .unwrap().unwrap();
         assert!(
             !response.status().is_success(),
             "{drift} cannot become absence or delivery proof"
