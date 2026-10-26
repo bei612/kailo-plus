@@ -32,8 +32,9 @@ deployment facts and run-local secrets, stage by stage, without an operator:
              OIDC Admin session; original APIs create this run's KB and exactly scoped MCP endpoint
 
 The source Cells (cells@2.0.0), original adapter plans, fixed tenant SecretRefs,
-Agent readers and isolated IdP clients are prepared next. Native-action policies,
-adapter activation and bootstrap/seed/observe/driver inputs remain. A run records
+Agent readers and isolated IdP clients are prepared next. Original HUMAN binding
+admission produces the exact per-action native delivery references before adapter
+activation. Bootstrap/seed/observe/driver inputs and execution are completed in stages. A run records
 what remains in auto-state.json and stops with an explicit FAILED state instead of an operator step.
 
 Nothing here touches production state; production is only read (its .env keys, its running
@@ -822,6 +823,19 @@ def ensure_adapter_secrets(h, r):
     h.say("isolated-adapter-secrets", status="FIXED_REFERENCES_PREPARED")
 
 
+def adapter_delivery(h, r, *args):
+    """Use the original renderer in the same bounded SDK for every delivery."""
+    source, state = r.state["source"], r.state
+    recipe = hashlib.sha256((Path(source) / "tools/check.Dockerfile").read_bytes()).hexdigest()
+    image = h.docker("image", "inspect", "--format", "{{.Id}}", f"local/kailo-check:{recipe}").strip()
+    h.docker("run", "--rm", "--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
+             "--cpus", "0.5", "--memory", "256m", "--memory-swap", "256m", "--pids-limit", "64",
+             "--user", f"{os.getuid()}:{os.getgid()}", "--network", f"{state['project']}_app",
+             "--mount", f"type=bind,src={source},dst={source},readonly",
+             "--mount", f"type=bind,src={r.dir},dst={r.dir}", "--entrypoint", "python3", image,
+             "-I", f"{source}/deploy/components/adapter-delivery.py", *args, log=r.log, timeout=180)
+
+
 def ensure_adapter_readers(h, r):
     """Original adapter renderer, least-privilege Agent and IdP client delivery.
 
@@ -833,18 +847,10 @@ def ensure_adapter_readers(h, r):
     runtime = runtime_environment(h, r)
     signing = h.read_json(runtime["ACTION_TOKEN_SIGNING_FILE"])
     gateway = state["gatewayIdentity"]
-    tool = f"{source}/deploy/components/adapter-delivery.py"
-    recipe = hashlib.sha256((Path(source) / "tools/check.Dockerfile").read_bytes()).hexdigest()
-    image = h.docker("image", "inspect", "--format", "{{.Id}}", f"local/kailo-check:{recipe}").strip()
     bao_image = h.docker("inspect", "--format", "{{.Config.Image}}", f"{state['project']}-openbao-1").strip()
     h.require("@sha256:" in bao_image, "isolated Agent image must be immutable")
     def delivery(*args):
-        h.docker("run", "--rm", "--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
-                 "--cpus", "0.5", "--memory", "256m", "--memory-swap", "256m", "--pids-limit", "64",
-                 "--user", f"{os.getuid()}:{os.getgid()}", "--network", f"{state['project']}_app",
-                 "--mount", f"type=bind,src={source},dst={source},readonly",
-                 "--mount", f"type=bind,src={r.dir},dst={r.dir}", "--entrypoint", "python3", image,
-                 "-I", tool, *args, log=r.log, timeout=180)
+        adapter_delivery(h, r, *args)
     readers = dict(state.get("adapterReaders", {}))
     for role, component in (("SOURCE", "file-storage"), ("RECEIVER", "knowledge")):
         directory = r.dir / "receiver" / ("source-cells" if role == "SOURCE" else "knowledge")
@@ -1048,6 +1054,131 @@ def ensure_bootstrap_material(h, r):
     h.say("isolated-bootstrap-material", status="PREPARED_NOT_EXECUTED")
 
 
+def ensure_binding_admission(h, r):
+    """Activate the original public directory, then admit the retained HUMAN intents.
+
+    Core alone produces policies in binding prewrite. The adapter delivery is a
+    projection of those exact references; ALLOWED/PENDING is never ACTIVE.
+    """
+    local = r.dir / "receiver/apps/deploy/local"
+    directory = r.dir / "receiver/public/adapter-directory.initial.json"
+    _set_env(h, local / ".env", {"APPLICATION_ADAPTER_DIRECTORY_FILE": str(directory)})
+    env = {**os.environ, "KAILO_RUNTIME_DIR": str(local), "COMPOSE_PROJECT_NAME": r.state["project"]}
+    h.run(["bash", "./start-core.sh", "--no-build"], cwd=str(local), env=env, log=r.log, timeout=600)
+    ensure_receiver_links(h, r)
+    receiver(h, r, "admit")
+    admitted = h.read_json(r.dir / "receiver/bindings-admitted.json")
+    bootstrap = h.read_json(r.dir / "receiver/bootstrap-input.json")
+    h.require(admitted.get("mode") == "CONFORMANCE_ONLY" and admitted.get("setup") == "BINDINGS_ADMITTED"
+              and admitted.get("conformanceExecuted") is False
+              and admitted.get("environmentId") == bootstrap["environmentId"], "real binding admission checkpoint missing")
+    bindings = admitted.get("bindings", [])
+    h.require(len(bindings) == 2 and {row["role"] for row in bindings} == {"SOURCE", "RECEIVER"}, "binding admission roles differ")
+    policies = {}
+    for endpoint in bootstrap["endpoints"]:
+        role = endpoint["role"]
+        binding = next(row for row in bindings if row["role"] == role)
+        h.require(binding["gateState"] == "ALLOWED" and binding["state"] in ("PROVISIONING", "ACTIVE")
+                  and binding["bindingId"] == endpoint["bindingId"] and binding["componentReleaseId"] == endpoint["releaseId"]
+                  and binding["generation"] == endpoint["generation"], "binding admission is not this frozen intent")
+        refs = binding["humanActionPolicies"]
+        expected = {(item["actionKey"], item["version"]) for item in endpoint["manifest"]["actionDefinitions"]}
+        h.require(len(refs) == len(expected) and {(ref["actionKey"], ref["actionVersion"]) for ref in refs} == expected,
+                  "binding fixed HUMAN action set differs")
+        for ref in refs:
+            h.require(ref["componentReleaseId"] == endpoint["releaseId"] and ref["generation"] == endpoint["generation"]
+                      and ref["resultExposurePolicyVersion"] == 1 and uuid.UUID(ref["resultExposurePolicyId"]).int != 0,
+                      "binding fixed HUMAN policy owner differs")
+        policies[role] = refs
+    if r.state.get("humanActionPolicies") is not None:
+        h.require(r.state["humanActionPolicies"] == policies, "confirmed HUMAN policy mapping changed")
+    r.record(humanActionPolicies=policies, bindingsAdmitted=True)
+    h.say("isolated-binding-admission", status="ALLOWED_NOT_ACTIVATION_PROOF")
+
+
+def ensure_native_action_delivery(h, r):
+    """Project actual SOURCE policies into the original Cells native entry."""
+    state, source = r.state, r.state["source"]
+    h.require(state.get("bindingsAdmitted") is True, "native delivery needs original binding admission")
+    local = r.dir / "receiver/apps/deploy/local"
+    directory = r.dir / "receiver/source-cells"
+    cells = h.Run(directory)
+    plan = h.read_json(directory / "adapter-plan.json")
+    facts = state["sourceNative"]
+    runtime = runtime_environment(h, r)
+    db = state["project"] + "-core-db-1"
+    h.require(h.docker("inspect", "--format", '{{index .Config.Labels "com.docker.compose.project"}}', db).strip() == state["project"],
+              "native delivery database is not owned by this receiver")
+    # These are existing governance actions, read from the isolated Core's
+    # migrated catalog. No ActionDefinition, policy or Resource is inserted.
+    query = ("BEGIN READ ONLY; SELECT coalesce(json_object_agg(action_key,version),'{}'::json) "
+             "FROM catalog.action_definition WHERE status='ACTIVE' "
+             "AND action_key IN ('resource.grant_read','resource.revoke_read'); COMMIT;")
+    versions = json.loads(h.docker("exec", "-i", db, "psql", "-X", "-qAt", "-v", "ON_ERROR_STOP=1",
+        "-U", runtime["CORE_DB_USER"], "-d", runtime["CORE_DB_NAME"], stdin=query.encode()).strip())
+    h.require(set(versions) == {"resource.grant_read", "resource.revoke_read"}
+              and all(type(v) is int and v > 0 for v in versions.values()), "original share governance versions missing")
+    if state.get("nativeGovernanceVersions") is not None:
+        h.require(state["nativeGovernanceVersions"] == versions, "native governance action versions changed")
+    r.record(nativeGovernanceVersions=versions)
+    actors = h.write_json(directory / "native-actors.json", [{"principalId": state["sessionIdentities"]["human"]["tenantPrincipalId"],
+        "kind": "HUMAN", "userUuid": facts["actorUuid"]}])
+    sets = {"nativeRootRef": facts["nativeRootRef"], "instanceServiceUuid": facts["serviceUuid"],
+        "bindingGeneration": state["adapterIntents"]["SOURCE"]["generation"],
+        # Original Cells consumers distinguish file promotion, delete task,
+        # and folder sharing; these are their native type discriminators.
+        "writeNativeType": "LEAF", "deleteNativeType": "job", "shareNativeType": "COLLECTION", "cellShareNativeType": "COLLECTION",
+        "grantActionVersion": versions["resource.grant_read"], "revokeActionVersion": versions["resource.revoke_read"]}
+    for action in ("write", "delete", "share"):
+        key = f"file_storage.{action}@v2"
+        declared = [item for item in plan["actionVersions"] if item["actionKey"] == key]
+        h.require(len(declared) == 1, "native action version is ambiguous")
+        refs = [ref for ref in state["humanActionPolicies"]["SOURCE"]
+                if ref["actionKey"] == key and ref["actionVersion"] == declared[0]["actionVersion"]]
+        h.require(len(refs) == 1, "native action lacks its own fixed HUMAN policy")
+        sets[action + "ResultExposurePolicyId"] = refs[0]["resultExposurePolicyId"]
+        sets[action + "ResultExposurePolicyVersion"] = refs[0]["resultExposurePolicyVersion"]
+    options = [part for key, value in sets.items() for part in ("--set", f"{key}={value}")]
+    adapter_delivery(h, r, "config", "--kind", "cells-native", "--plan", str(directory / "adapter-plan.json"),
+        "--template", f"{source}/deploy/components/file-storage-native-action.template.json", "--env-file", str(local / ".env"),
+        "--delivery-dir", str(directory / "native-action"), "--set-json", "actors=" + str(actors),
+        *options, "--out", str(directory / "native-action/native.json"))
+    h.cells_native_env(cells, "kailo-conformance-admin:rw kailo-conformance-service:r kailo-conformance-actor:rw",
+                       "kailo-conformance-service", with_delivery=True)
+    receiver_env(h, r, {"RECEIVER_CELLS_DELIVERY_ENV": str(directory / "delivery.env")})
+    r.record(nativeActionDeliveryPrepared=True)
+    h.say("isolated-native-action", status="FIXED_HUMAN_POLICIES_DELIVERED_NOT_STARTED")
+
+
+def ensure_seed_material(h, r):
+    """Native file intents and later governed seed share one frozen input."""
+    state = r.state
+    directory = r.dir / "receiver/source-cells"
+    cells = h.Run(directory)
+    bootstrap = h.read_json(r.dir / "receiver/bootstrap-input.json")
+    binding = h.read_json(directory / "binding/facts.json")
+    seed = {"requirementsFile": str(directory / "receiver-requirements.json"),
+        "registrationFile": "/src/contracts/adapter/knowledge.v3/registration.json",
+        "cellsOrigin": f"http://{cells.state['project']}-cells-1:8080", "restBasePath": "/v2/",
+        "workspaceSlug": binding["workspaceSlug"], "cellsExternal": cells.state["external"],
+        "adminTokenFile": str(directory / "secrets/admin.pat"), "s3Secret": "gatewaysecret",
+        "sourceFolders": {key: value["path"] for key, value in state["sourceNative"]["folders"].items()},
+        "gatewayOrigin": bootstrap["coreOrigin"] + "/", "humanTokenFile": bootstrap["humanTokenFile"],
+        "bootstrapFile": str(r.dir / "receiver/bootstrap.json"), "admissionFile": str(r.dir / "receiver/bindings-admitted.json"),
+        "weknoraOrigin": "http://receiver-weknora:8080/", "weknoraTokenFile": str(r.dir / "receiver/knowledge/native.token"),
+        "knowledgeBaseId": state["knowledgeObjects"]["knowledgeBaseId"],
+        "sourceText": "Kailo receiver conformance source document.\n", "retiredText": "Kailo receiver conformance retired document.\n",
+        "timeoutMs": 30000, "waitSeconds": 1800,
+        "nativeOut": str(r.dir / "receiver/native-seed.json"), "out": str(r.dir / "receiver/native-facts.json")}
+    path = r.dir / "receiver/seed-input.json"
+    if path.is_file():
+        h.require(h.read_json(path) == seed, "retained receiver seed input changed")
+    else:
+        h.write_json(path, seed)
+    receiver_env(h, r, {"RECEIVER_SEED_FILE": str(path)})
+    r.record(receiverSeedPrepared=True)
+
+
 def drive(r, args, runtime_env, declaration, h):
     declare_native(h, r)
     s = r.state
@@ -1082,15 +1213,14 @@ def drive(r, args, runtime_env, declaration, h):
     ensure_adapter_secrets(h, r)
     ensure_adapter_readers(h, r)
     ensure_bootstrap_material(h, r)
+    ensure_binding_admission(h, r)
+    ensure_native_action_delivery(h, r)
+    ensure_seed_material(h, r)
     r.record(blockedAfterNative=(
-        "receiver execution not automated yet: (1) Cells native-action needs the real HUMAN "
-        "ResultExposurePolicy producer; original delegation requires an already ACTIVE binding, "
-        "so its policy cannot bootstrap this first source adapter. Fixed SecretRefs, Agent readers "
-        "and isolated IdP clients do not create that business authority. (2) Original adapter-directory "
-        "and immutable bootstrap inputs have been prepared, but adapters/controlled directory activation "
-        "and receiver model credential proof must be coordinated with actual binding creation; "
-        "(3) native/governed seed, forward adapter, observe/inputs and driver inputs/execution remain; "
-        "(4) production registration also needs cells@2.0.0 APPROVED in the production Catalog"))
+        "receiver execution not complete: original HUMAN binding admission and fixed per-action "
+        "native-action delivery are implemented; native/governed seed, forward adapter, "
+        "native activation/model credential proof, observe/inputs and driver execution remain. "
+        "Production registration also requires cells@2.0.0 APPROVED in the production Catalog"))
     raise h.Refused("knowledge: isolated native and adapter delivery inputs prepared; receiver execution "
                     f"is not complete (auto-state.json blockedAfterNative; {manifest['componentTypeKey']}@{manifest['version']})")
 

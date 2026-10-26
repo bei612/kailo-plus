@@ -34,7 +34,7 @@
 //   "gatewayOrigin":"http://<isolated authenticated gateway>/", "humanTokenFile":"/abs isolated session",
 //   "bootstrapFile":"/abs receiver-run.sh bootstrap.json (Resource preconditions the isolated Core's
 //                    real resource.create returned, Resource versions after the read grants)",
-//   "resultExposurePolicyId", "resultExposurePolicyVersion", "fileStorageActionVersion",
+//   "admissionFile":"/abs bindings-admitted.json (original fixed per-action HUMAN references)",
 //   "weknoraOrigin":"http://<isolated WeKnora app>/", "weknoraTokenFile":"/abs native OIDC session", "knowledgeBaseId",
 //   (legacy operator input may instead name weknoraApiKeyFile; exactly one is required)
 //   "sourceText":"<fixture UTF-8 text of each source file>" (fixture content; a RECEIVER case
@@ -44,7 +44,7 @@
 //   "nativeOut":"/abs/native-seed.json", "out":"/abs/native-facts.json" }
 
 import { createHash, randomUUID } from 'node:crypto';
-import { constants, closeSync, openSync, writeSync } from 'node:fs';
+import { constants, closeSync, openSync, writeSync, renameSync } from 'node:fs';
 import { lstat, readFile } from 'node:fs/promises';
 import { isAbsolute } from 'node:path';
 import { analyseV2, parseVectors } from './vector-v2.mjs';
@@ -121,20 +121,54 @@ async function main() {
     if (!response.ok) fail(`${method} ${path}: native HTTP ${response.status}`);
     return response.json();
   };
-  // A file created through the Cells gateway with a proposed node UUID that
-  // Cells must acknowledge, and the single published revision Cells lists.
-  const createFile = async (folder, name, text, mediaType) => {
-    const proposed = randomUUID();
-    // Sent to the internal origin, signed for the external host the gateway verifies (cells-s3.mjs).
-    const status = await s3Put({ origin, external, path: `/io/${seed.workspaceSlug}/${folder}/${name}`, body: text,
-      headers: { 'content-type': mediaType, 'x-amz-meta-create-resource-uuid': proposed }, accessKey: admin, secretKey: seed.s3Secret, signal: signal() });
-    if (status !== 200) fail(`PUT ${folder}/${name}: native HTTP ${status}`);
-    const leaf = await cells('GET', `n/node/${proposed}?Flags=WithMetaDefaults`);
-    if (leaf?.Uuid !== proposed || leaf.Type !== 'LEAF') fail(`${folder}/${name}: Cells did not acknowledge the created file`);
-    const versions = await cells('POST', `n/node/${proposed}/versions`, { FilterBy: 'VersionsAll', Offset: 0, Limit: 0, Flags: ['WithMetaNone'] });
+  // Persist a native creation intent before any mutation. An uncertain PUT is
+  // reconciled by its proposed UUID; never replayed when the object is absent.
+  const progressPath = `${seed.nativeOut}.progress`;
+  const seedDigest = createHash('sha256').update(JSON.stringify(seed)).digest('hex');
+  let progress;
+  try { progress = await ownerOnly(progressPath); }
+  catch (error) { if (error.code !== 'ENOENT') throw error; }
+  if (progress && progress.seedDigest !== seedDigest) fail('retained native seed input changed');
+  progress ??= { seedDigest, files: {} };
+  const persist = () => {
+    const next = `${progressPath}.${randomUUID()}`;
+    createOnly(next, progress);
+    renameSync(next, progressPath);
+  };
+  const createFile = async (intentKey, folder, name, text, mediaType) => {
+    const request = { folder, name, mediaType, contentSha256: createHash('sha256').update(text).digest('hex') };
+    let entry = progress.files[intentKey];
+    if (!entry) {
+      entry = progress.files[intentKey] = { request, proposed: randomUUID(), attempted: false };
+      persist();
+    }
+    if (JSON.stringify(entry.request) !== JSON.stringify(request) || !UUID.test(entry.proposed)) fail('retained native file intent changed');
+    const lookup = async () => {
+      const response = await fetch(new URL(`n/node/${entry.proposed}?Flags=WithMetaDefaults`, rest), {
+        redirect: 'manual', signal: signal(), headers: { authorization: `Bearer ${admin}` } });
+      if (response.status === 404) return null;
+      if (!response.ok) fail(`native file lookup HTTP ${response.status}`);
+      return response.json();
+    };
+    let leaf = await lookup();
+    if (!leaf) {
+      if (entry.confirmed || entry.attempted) fail('retained native file is absent after submission; refusing to recreate or replay uncertain PUT');
+      entry.attempted = true;
+      persist();
+      const status = await s3Put({ origin, external, path: `/io/${seed.workspaceSlug}/${folder}/${name}`, body: text,
+        headers: { 'content-type': mediaType, 'x-amz-meta-create-resource-uuid': entry.proposed }, accessKey: admin, secretKey: seed.s3Secret, signal: signal() });
+      if (status !== 200) fail(`PUT ${folder}/${name}: native HTTP ${status}`);
+      leaf = await lookup();
+    }
+    if (leaf?.Uuid !== entry.proposed || leaf.Type !== 'LEAF') fail(`${folder}/${name}: Cells did not acknowledge the created file`);
+    const versions = await cells('POST', `n/node/${entry.proposed}/versions`, { FilterBy: 'VersionsAll', Offset: 0, Limit: 0, Flags: ['WithMetaNone'] });
     const published = (versions.Versions ?? []).filter((version) => version.Draft !== true);
     if (published.length !== 1 || !nonempty(published[0].VersionId)) fail(`${folder}/${name}: Cells lists no single published revision`);
-    return { nativeObjectRef: proposed, nativeRevision: published[0].VersionId, path: `${folder}/${name}` };
+    const confirmed = { nativeObjectRef: leaf.Uuid, nativeRevision: published[0].VersionId, path: `${folder}/${name}` };
+    if (entry.confirmed && JSON.stringify(entry.confirmed) !== JSON.stringify(confirmed)) fail('confirmed native file revision changed');
+    entry.confirmed = confirmed;
+    persist();
+    return confirmed;
   };
   const folderOf = (sourceKey) => {
     const folder = seed.sourceFolders?.[sourceKey];
@@ -148,7 +182,7 @@ async function main() {
       const revision = preconditions.find((entry) => entry.caseKey === item.caseKey && entry.kind === 'source_revision')
         ?? fail(`${item.caseKey}: source_file without source_revision`);
       if (!nonempty(seed.sourceText)) fail('sourceText is required for a source file');
-      const file = await createFile(folderOf(item.sourceKey), item.properties.displayName, seed.sourceText, item.properties.mediaType);
+      const file = await createFile(`${item.caseKey}/${item.key}`, folderOf(item.sourceKey), item.properties.displayName, seed.sourceText, item.properties.mediaType);
       files.push({ caseKey: item.caseKey, fileKey: item.key, revisionKey: revision.key, sourceKey: item.sourceKey,
         displayName: item.properties.displayName, mediaType: item.properties.mediaType, ...file });
     }
@@ -156,19 +190,23 @@ async function main() {
     const retired = [];
     for (const item of retiring) {
       if (!nonempty(seed.retiredText)) fail('retiredText is required for a retiring import configuration');
-      const file = await createFile(folderOf(item.sourceKey), `retired-${randomUUID()}.md`, seed.retiredText, 'text/markdown');
+      const file = await createFile(`${item.caseKey}/${item.key}`, folderOf(item.sourceKey), `retired-${createHash('sha256').update(`${item.caseKey}/${item.key}`).digest('hex').slice(0, 24)}.md`, seed.retiredText, 'text/markdown');
       retired.push({ caseKey: item.caseKey, key: item.key, sourceKey: item.sourceKey, ...file });
     }
-    createOnly(seed.nativeOut, { component: 'knowledge', phase: 'native', files, retired });
+    const record = { component: 'knowledge', phase: 'native', files, retired };
+    let old;
+    try { old = await ownerOnly(seed.nativeOut); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+    if (old && JSON.stringify(old) !== JSON.stringify(record)) fail('confirmed native seed differs');
+    if (!old) createOnly(seed.nativeOut, record);
     process.stdout.write(`${JSON.stringify({ nativeSeed: seed.nativeOut, files: files.length, retired: retired.length })}\n`);
     return;
   }
 
   const native = await ownerOnly(seed.nativeOut);
   if (native.phase !== 'native') fail('native seed record required before the governed phase');
-  const human = await ownerOnly(seed.humanTokenFile, false);
   const gateway = new URL(seed.gatewayOrigin);
   const core = async (method, path, body) => {
+    const human = await ownerOnly(seed.humanTokenFile, false);
     const response = await fetch(new URL(path, gateway), { method, redirect: 'manual', signal: signal(),
       headers: { authorization: `Bearer ${human}`, 'content-type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
     const text = await response.text();
@@ -180,6 +218,23 @@ async function main() {
   if (bootstrap.mode !== 'CONFORMANCE_ONLY' || bootstrap.setup !== 'READY' || !Array.isArray(bootstrap.preconditions)) {
     fail('isolated bootstrap is not READY');
   }
+  const admitted = await ownerOnly(seed.admissionFile);
+  const sources = admitted.bindings?.filter((item) => item.role === 'SOURCE') ?? [];
+  if (admitted.mode !== 'CONFORMANCE_ONLY' || admitted.setup !== 'BINDINGS_ADMITTED'
+    || admitted.environmentId !== bootstrap.environmentId || admitted.inputDigest !== bootstrap.inputDigest
+    || sources.length !== 1 || sources[0].componentReleaseId !== bootstrap.sourceRelease?.releaseId) {
+    fail('source fixed HUMAN admission metadata does not belong to the READY environment');
+  }
+  const source = sources[0];
+  const policyFor = (actionKey) => {
+    const refs = source.humanActionPolicies?.filter((item) => item.actionKey === actionKey) ?? [];
+    if (refs.length !== 1 || refs[0].componentReleaseId !== source.componentReleaseId
+      || refs[0].generation !== source.generation || !UUID.test(refs[0].resultExposurePolicyId ?? '')
+      || !Number.isSafeInteger(refs[0].actionVersion) || refs[0].actionVersion <= 0 || refs[0].resultExposurePolicyVersion !== 1) {
+      fail(`${actionKey}: exact source fixed HUMAN policy is missing`);
+    }
+    return refs[0];
+  };
   // The Resource ids the isolated Core's real resource.create returned.
   const resourceOf = (key) => {
     const at = key.lastIndexOf('/');
@@ -191,10 +246,12 @@ async function main() {
   // Core's own endpoint, idempotent by its key; only COMPLETED is accepted.
   const governed = async (actionKey, resourceId, component, key) => {
     const version = (bootstrap.resources ?? []).find((item) => item.resourceId === resourceId && item.role === 'SOURCE')?.version;
-    if (!Number.isSafeInteger(version)) fail(`source Resource ${resourceId} was not bootstrapped`);
+    if (!Number.isSafeInteger(version) || !(bootstrap.resources ?? []).some((item) => item.resourceId === resourceId
+      && item.role === 'SOURCE' && item.bindingId === source.bindingId)) fail(`source Resource ${resourceId} was not bootstrapped`);
+    const policy = policyFor(actionKey);
     const submitted = await core('POST', 'api/v1/actions', { actionKey, idempotencyKey: key, resourceId, resourceVersion: version,
-      componentAction: { actionVersion: seed.fileStorageActionVersion, ...component,
-        resultExposurePolicyId: seed.resultExposurePolicyId, resultExposurePolicyVersion: seed.resultExposurePolicyVersion } });
+      componentAction: { actionVersion: policy.actionVersion, ...component,
+        resultExposurePolicyId: policy.resultExposurePolicyId, resultExposurePolicyVersion: policy.resultExposurePolicyVersion } });
     const id = submitted.body?.actionExecutionId;
     if (![200, 202].includes(submitted.status) || !UUID.test(id ?? '')) fail(`${actionKey} refused by the isolated Core: HTTP ${submitted.status}`);
     const deadline = Date.now() + seed.waitSeconds * 1000;

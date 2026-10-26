@@ -285,8 +285,7 @@ PY
   ;;
 native)
   record bindings-admitted.json
-  need RECEIVER_CELLS_ENV RECEIVER_CELLS_DELIVERY_ENV RECEIVER_KNOWLEDGE_ENV RECEIVER_SEED_FILE \
-    RECEIVER_FORWARD_ADAPTER_CONFIG RECEIVER_FORWARD_ADAPTER_JWKS
+  need RECEIVER_CELLS_ENV RECEIVER_CELLS_DELIVERY_ENV RECEIVER_KNOWLEDGE_ENV RECEIVER_SEED_FILE
   record contracts.done
   set +e
   node_step none tools/component-release/conformance/vector-requirements.mjs --component knowledge --out "$run/requirements.json" >/dev/null
@@ -298,7 +297,9 @@ native)
   [[ -n $cells && $cells == "$(project_of "$RECEIVER_CELLS_DELIVERY_ENV")" ]] \
     || { echo 'Cells envs must name the same dedicated kailo-cells-conformance* project' >&2; exit 2; }
   start=$src/file-storage/deploy/start.sh
-  bash "$start" "$RECEIVER_CELLS_ENV"
+  if [[ -z $("${docker[@]}" ps -q --filter "label=com.docker.compose.project=$cells" --filter 'label=com.docker.compose.service=cells') ]]; then
+    bash "$start" "$RECEIVER_CELLS_ENV"
+  fi
   node_step "${cells}_cells-ui" tools/component-release/conformance/seed-knowledge.mjs --phase native --seed "$RECEIVER_SEED_FILE"
   bash "$start" --check "$RECEIVER_CELLS_DELIVERY_ENV"
   "${docker[@]}" compose --project-name "$cells" --env-file "$RECEIVER_CELLS_DELIVERY_ENV" \
@@ -308,30 +309,14 @@ native)
   knowledge=$(sed -n 's/^COMPOSE_PROJECT_NAME=\(kailo-knowledge-receiver[a-z0-9_-]*\)$/\1/p' "$RECEIVER_KNOWLEDGE_ENV")
   [[ -n $knowledge ]] || { echo 'WeKnora env must name a dedicated kailo-knowledge-receiver* project' >&2; exit 2; }
   bash "$src/knowledge/fork/deploy/start.sh" --native-env "$RECEIVER_KNOWLEDGE_ENV" --platform-model "$platform/.env" \
-    --platform-adapter --file-storage-sync
+    --platform-adapter
   app=$("${docker[@]}" ps -q --filter "label=com.docker.compose.project=$knowledge" \
     --filter "label=com.docker.compose.service=app" | head -n 1)
   [[ -n $app ]] || { echo 'WeKnora app of the candidate is not running' >&2; exit 2; }
   # The governed seed creates data sources through WeKnora's own API.
-  "${docker[@]}" network connect --alias receiver-weknora "$RECEIVER_NETWORK" "$app"
-  # The forward adapter: same artifact and native instance, configured for the
-  # isolated conformance identity the production Worker signs with.
-  private "$RECEIVER_FORWARD_ADAPTER_CONFIG"
-  (
-    set -a
-    # shellcheck disable=SC1090
-    source "$RECEIVER_KNOWLEDGE_ENV"
-    set +a
-    "${docker[@]}" run -d --name "$RECEIVER_PROJECT-forward-adapter" --restart no --read-only --cap-drop ALL \
-      --security-opt no-new-privileges --cpus "$KNOWLEDGE_ADAPTER_CPUS" --memory "$KNOWLEDGE_ADAPTER_MEMORY" \
-      --memory-swap "$KNOWLEDGE_ADAPTER_MEMORY" -u "$KNOWLEDGE_ADAPTER_UID:$KNOWLEDGE_ADAPTER_GID" \
-      -e ADAPTER_CONFIG_FILE="$RECEIVER_FORWARD_ADAPTER_CONFIG" \
-      -v "$RECEIVER_FORWARD_ADAPTER_CONFIG:$RECEIVER_FORWARD_ADAPTER_CONFIG:ro" \
-      -v "$KNOWLEDGE_ADAPTER_DELIVERY_DIRECTORY:$KNOWLEDGE_ADAPTER_DELIVERY_DIRECTORY:ro" \
-      -v "$RECEIVER_FORWARD_ADAPTER_JWKS:$RECEIVER_FORWARD_ADAPTER_JWKS:ro" \
-      --network "${knowledge}_native_ui" "$KNOWLEDGE_ADAPTER_REPOSITORY@sha256:$KNOWLEDGE_ADAPTER_DIGEST" >/dev/null
-  )
-  "${docker[@]}" network connect --alias knowledge-forward-adapter "$RECEIVER_NETWORK" "$RECEIVER_PROJECT-forward-adapter"
+  if ! "${docker[@]}" inspect --format '{{json .NetworkSettings.Networks}}' "$app" | python3 -c 'import json,sys; n=json.load(sys.stdin); sys.exit(0 if sys.argv[1] in n else 1)' "$RECEIVER_NETWORK"; then
+    "${docker[@]}" network connect --alias receiver-weknora "$RECEIVER_NETWORK" "$app"
+  fi
   touch "$run/native.done"
   ;;
 admit|bootstrap)
@@ -425,8 +410,28 @@ seed)
   node_step "$RECEIVER_NETWORK" tools/component-release/conformance/seed-knowledge.mjs --phase governed --seed "$RECEIVER_SEED_FILE"
   ;;
 inputs)
-  need RECEIVER_OBSERVE_FILE RECEIVER_MANIFEST
+  need RECEIVER_OBSERVE_FILE RECEIVER_MANIFEST RECEIVER_KNOWLEDGE_ENV RECEIVER_FORWARD_ADAPTER_CONFIG RECEIVER_FORWARD_ADAPTER_JWKS
   record receiver-environment.json
+  knowledge=$(sed -n 's/^COMPOSE_PROJECT_NAME=\(kailo-knowledge-receiver[a-z0-9_-]*\)$/\1/p' "$RECEIVER_KNOWLEDGE_ENV")
+  [[ -n $knowledge ]] || { echo 'dedicated receiver native project required' >&2; exit 2; }
+  # The forward adapter: same artifact and native instance, configured for the
+  # isolated conformance identity the production Worker signs with.
+  private "$RECEIVER_FORWARD_ADAPTER_CONFIG"
+  (
+    set -a
+    # shellcheck disable=SC1090
+    source "$RECEIVER_KNOWLEDGE_ENV"
+    set +a
+    "${docker[@]}" run -d --name "$RECEIVER_PROJECT-forward-adapter" --restart no --read-only --cap-drop ALL \
+      --security-opt no-new-privileges --cpus "$KNOWLEDGE_ADAPTER_CPUS" --memory "$KNOWLEDGE_ADAPTER_MEMORY" \
+      --memory-swap "$KNOWLEDGE_ADAPTER_MEMORY" -u "$KNOWLEDGE_ADAPTER_UID:$KNOWLEDGE_ADAPTER_GID" \
+      -e ADAPTER_CONFIG_FILE="$RECEIVER_FORWARD_ADAPTER_CONFIG" \
+      -v "$RECEIVER_FORWARD_ADAPTER_CONFIG:$RECEIVER_FORWARD_ADAPTER_CONFIG:ro" \
+      -v "$KNOWLEDGE_ADAPTER_DELIVERY_DIRECTORY:$KNOWLEDGE_ADAPTER_DELIVERY_DIRECTORY:ro" \
+      -v "$RECEIVER_FORWARD_ADAPTER_JWKS:$RECEIVER_FORWARD_ADAPTER_JWKS:ro" \
+      --network "${knowledge}_native_ui" "$KNOWLEDGE_ADAPTER_REPOSITORY@sha256:$KNOWLEDGE_ADAPTER_DIGEST" >/dev/null
+  )
+  "${docker[@]}" network connect --alias knowledge-forward-adapter "$RECEIVER_NETWORK" "$RECEIVER_PROJECT-forward-adapter"
   node_step "$RECEIVER_NETWORK" tools/component-release/conformance/observe.mjs --run "$RECEIVER_OBSERVE_FILE"
   install -d -m 0700 "$run/inputs"
   node_step none tools/component-release/conformance-inputs.mjs --facts "$run/facts.json" --manifest "$RECEIVER_MANIFEST" \
