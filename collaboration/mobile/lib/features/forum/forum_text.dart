@@ -5,7 +5,9 @@ String forumText(BuildContext context, PlatformMessageKey key) =>
     platformText(key, locale: Localizations.localeOf(context).toLanguageTag());
 
 String forumReplyCount(BuildContext context, int count) => platformText(
-  count == 1 ? PlatformMessageKey.forumReplyOne : PlatformMessageKey.forumReplyMany,
+  count == 1
+      ? PlatformMessageKey.forumReplyOne
+      : PlatformMessageKey.forumReplyMany,
   locale: Localizations.localeOf(context).toLanguageTag(),
   variables: {'count': count},
 );
