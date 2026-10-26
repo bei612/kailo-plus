@@ -335,7 +335,14 @@ async fn delivery_rechecks_revocation_and_host_binding_after_waiting_for_writer(
         let (state, pool, community, host, keys, channel) = fixture().await;
         let original = event(&keys, Timestamp::now().as_secs());
         let mut writer = pool.begin().await.unwrap();
-        buzz_db::event::insert_event_in_transaction(&mut writer, community, &original, None)
+        // Pause the original writer at its shared event fence before INSERT.
+        // The new storage trigger later locks the Community epoch row, so a
+        // writer already past INSERT intentionally serializes host/archive
+        // changes. Holding that row while awaiting such an UPDATE would make
+        // this fixture wait on itself instead of exercising final readmission.
+        sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))")
+            .bind(format!("kailo:1631:{}:{}", community.as_uuid(), original.id))
+            .execute(&mut *writer)
             .await
             .unwrap();
         let writer_pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
