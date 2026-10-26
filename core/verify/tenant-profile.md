@@ -20,3 +20,14 @@ fresh manage 的成员才获得动作键，提交仍重新准入。
 仅 platform-core 新增 emojis 0.9.0、phf 0.13.1、phf_shared 0.13.1、siphasher 1.0.4，
 image 0.25.10复用既有锁定版本。原件 profile-gen-fbfc2584c/{check,result,limits}.log
 位于 /volumes/data/kailo/verification/buzz-r10/；不含编译/运行验证。
+
+固定 `2ff2d7a01` 原 Flutter 3.41.7 不可变镜像，2CPU/4GiB，锁定 pub 依赖、
+analyze 全通过；四项实际 Mobile 控制器/表单回归 **4 passed**：普通成员不可写、
+当前资料版本与明确勾选、结果不明同键重试、确定冲突强制刷新、身份退休忽略晚到
+读写回应。原 formatter 将新测试的长错误对象换行，已收回入库；四文件再次格式
+检查零差异。原件 `/volumes/data/kailo/verification/buzz-r10/flutter-profile-2ff2d7a01/`
+的 check/result/preflight/limits。未覆盖图片图库权限与真机、Core fresh 权限全链。
+
+共享 Web/Desktop 首次固定 `796937f7a` 原 SDK 检查在生产 TypeScript 阶段发现
+新表单引用了不存在的 input 模块；已改为现有 composer/shared/ui/input，保留
+`profile-front-796937f7a/profile-front.log` 失败原件。修复后重跑结果另记。
