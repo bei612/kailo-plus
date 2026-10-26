@@ -63,6 +63,84 @@ fn publication_retry_confirmed(action: &str, event_type: Option<&str>) -> bool {
 /// 成员修改频道原主题（DD-119(9)）。对账按它找这一类发布。
 pub const TOPIC_ACTION: &str = "workspace.channel.topic.publish";
 
+// The retry consumer and its PostgreSQL regression use the same snapshot query.
+const PREVIOUS_PUBLICATION_SQL: &str = r#"select a.operation_id, a.event_id, a.mention_installation_ids, a.mention_pubkeys, a.message_kind, a.parent_event_id, a.edit_event_id, a.delete_event_id, a.send_to_channel_source_event_id,
+                  a.link_preview_snapshot_ids, a.suppress_link_previews, a.reference_mention_pubkeys,
+                  a.addressed_installation_ids,
+                  array(select r.target_id from audit.audit_event r
+                    where r.operation_id=a.operation_id and r.event_type='DISPATCH'
+                      and r.action_key=$3 and r.target_type=$4
+                      and r.workspace_id is not distinct from $5) as target_ids,
+                  (select r.result_code from audit.audit_event r
+                    where r.operation_id = a.operation_id
+                      and r.event_type in ('OUTCOME', 'RECONCILIATION')
+                      and not (r.event_type='RECONCILIATION' and r.result_code='NOT_DELIVERED'
+                               and r.action_key=any($6))
+                    order by r.occurred_at desc, r.id desc limit 1) as result,
+                  (select r.event_type from audit.audit_event r
+                    where r.operation_id = a.operation_id
+                      and r.event_type in ('OUTCOME', 'RECONCILIATION')
+                      and not (r.event_type='RECONCILIATION' and r.result_code='NOT_DELIVERED'
+                               and r.action_key=any($6))
+                    order by r.occurred_at desc, r.id desc limit 1) as result_event_type
+           from admission.publish_attempt a
+           where a.tenant_principal_id = $1 and a.idempotency_key = $2"#;
+
+/// Stable within one operation; identical signed events can belong to distinct intents.
+pub(crate) fn publication_event_key(operation: Uuid, event_id: &str, phase: &str) -> String {
+    format!("message.publish:{event_id}:{operation}:{phase}")
+}
+
+struct PublicationAudit<'a> {
+    ctx: &'a ExecutionContext,
+    target: MessageTarget,
+    operation_id: Uuid,
+    action_key: &'a str,
+    event_id: &'a str,
+    signer_pubkey: Option<&'a str>,
+}
+
+impl<'a> PublicationAudit<'a> {
+    fn entry(&self, event_type: &'static str, result_code: &'static str) -> AuditEntry<'a> {
+        let (ctx, target, operation_id, action_key, event_id, signer_pubkey) = (
+            self.ctx, self.target, self.operation_id, self.action_key, self.event_id, self.signer_pubkey,
+        );
+        AuditEntry {
+            event_key: publication_event_key(operation_id, event_id, event_type),
+            tenant_id: Some(ctx.tenant_id),
+            workspace_id: target.workspace_id(),
+            operation_id,
+            event_type,
+            human_identity_id: Some(ctx.human_identity_id),
+            initiator_principal_id: Some(ctx.tenant_principal_id),
+            actor_principal_id: Some(ctx.tenant_principal_id),
+            action_key,
+            action_version: 1,
+            component_type_key: "buzz",
+            target_type: Some(target.target_type()),
+            target_id: Some(target.id()),
+            // 正文不进审计。摘要也不进：它对正文可做字典攻击，而审计要的是
+            // 「谁在哪里做了什么」，不是「说了什么」（`.design/03` §9）。
+            parameter_hash: "NONE",
+            decision: "ALLOW",
+            result_code,
+            result_exposure: "NONE",
+            evidence_refs: {
+                let mut refs = vec![
+                    Evidence::new(EvidenceKind::BuzzEventId, event_id),
+                    Evidence::new(EvidenceKind::PlatformSessionId, ctx.session_id),
+                ];
+                // DD-142: actor is the owner, the signer is the owned Agent.
+                if let Some(signer) = signer_pubkey {
+                    refs.push(Evidence::new(EvidenceKind::BuzzPubkey, signer));
+                }
+                refs
+            },
+            correlation_id: operation_id,
+        }
+    }
+}
+
 enum Publication {
     Message(PublishRequest),
     Pulse(contracts::PulsePublishRequest),
@@ -2143,30 +2221,13 @@ async fn publish(
         link_preview_snapshot_ids: Vec<Uuid>,
         suppress_link_previews: bool,
     }
-    let previous = match sqlx::query_as::<_, PreviousPublish>(
-        r#"select a.operation_id, a.event_id, a.mention_installation_ids, a.mention_pubkeys, a.message_kind, a.parent_event_id, a.edit_event_id, a.delete_event_id, a.send_to_channel_source_event_id,
-                  a.link_preview_snapshot_ids, a.suppress_link_previews, a.reference_mention_pubkeys,
-                  a.addressed_installation_ids,
-                  array(select r.target_id from audit.audit_event r
-                    where r.operation_id=a.operation_id and r.event_type='DISPATCH'
-                      and r.action_key=$3 and r.target_type=$4
-                      and r.workspace_id is not distinct from $5) as target_ids,
-                  (select r.result_code from audit.audit_event r
-                    where r.operation_id = a.operation_id
-                      and r.event_type in ('OUTCOME', 'RECONCILIATION')
-                    order by r.occurred_at desc, r.id desc limit 1) as result,
-                  (select r.event_type from audit.audit_event r
-                    where r.operation_id = a.operation_id
-                      and r.event_type in ('OUTCOME', 'RECONCILIATION')
-                    order by r.occurred_at desc, r.id desc limit 1) as result_event_type
-           from admission.publish_attempt a
-           where a.tenant_principal_id = $1 and a.idempotency_key = $2"#,
-    )
+    let previous = match sqlx::query_as::<_, PreviousPublish>(PREVIOUS_PUBLICATION_SQL)
     .bind(ctx.tenant_principal_id)
     .bind(idempotency_key)
     .bind(action_key)
     .bind(target.target_type())
     .bind(target.workspace_id())
+    .bind(FILTERED_PUBLICATION_ACTIONS.as_slice())
     .fetch_optional(&state.pool)
     .await
     {
@@ -2768,40 +2829,13 @@ async fn publish(
     };
     let event_id = event.id.to_hex();
     let operation_id = Uuid::new_v4();
-    let entry = |event_type: &'static str, event_key: String, result_code: &'static str| {
-        AuditEntry {
-            event_key,
-            tenant_id: Some(ctx.tenant_id),
-            workspace_id: target.workspace_id(),
-            operation_id,
-            event_type,
-            human_identity_id: Some(ctx.human_identity_id),
-            initiator_principal_id: Some(ctx.tenant_principal_id),
-            actor_principal_id: Some(ctx.tenant_principal_id),
-            action_key,
-            action_version: 1,
-            component_type_key: "buzz",
-            target_type: Some(target.target_type()),
-            target_id: Some(target.id()),
-            // 正文不进审计。摘要也不进：它对正文可做字典攻击，而审计要的是
-            // 「谁在哪里做了什么」，不是「说了什么」（`.design/03` §9）。
-            parameter_hash: "NONE",
-            decision: "ALLOW",
-            result_code,
-            result_exposure: "NONE",
-            evidence_refs: {
-                let mut refs = vec![
-                    Evidence::new(EvidenceKind::BuzzEventId, &event_id),
-                    Evidence::new(EvidenceKind::PlatformSessionId, ctx.session_id),
-                ];
-                // DD-142: actor is the owner, the signer is the owned Agent.
-                if let Some(signer) = signer_pubkey.as_deref() {
-                    refs.push(Evidence::new(EvidenceKind::BuzzPubkey, signer));
-                }
-                refs
-            },
-            correlation_id: operation_id,
-        }
+    let audit = PublicationAudit {
+        ctx: &ctx,
+        target,
+        operation_id,
+        action_key,
+        event_id: &event_id,
+        signer_pubkey: signer_pubkey.as_deref(),
     };
 
     // 没落账就不发：一条发出去却无从关联的消息，正是「成功但不可核验」。
@@ -2898,11 +2932,7 @@ async fn publish(
         }
         append(
             &mut tx,
-            entry(
-                "DISPATCH",
-                format!("message.publish:{event_id}:dispatch"),
-                "DISPATCHED",
-            ),
+            audit.entry("DISPATCH", "DISPATCHED"),
         )
         .await?;
         tx.commit().await?;
@@ -2937,7 +2967,7 @@ async fn publish(
             // 查到它后补记（publish_reconcile）
             if let Err(e) = record(
                 &state,
-                entry("OUTCOME", format!("message.publish:{event_id}"), "ACCEPTED"),
+                audit.entry("OUTCOME", "ACCEPTED"),
             )
             .await
             {
@@ -2956,7 +2986,7 @@ async fn publish(
             tracing::warn!(reason = %why, "Relay 拒绝发布");
             if let Err(e) = record(
                 &state,
-                entry("OUTCOME", format!("message.publish:{event_id}"), "REJECTED"),
+                audit.entry("OUTCOME", "REJECTED"),
             )
             .await
             {
@@ -2972,11 +3002,7 @@ async fn publish(
             tracing::warn!(reason = %why, "Relay 以上界拒绝发布");
             if let Err(e) = record(
                 &state,
-                entry(
-                    "OUTCOME",
-                    format!("message.publish:{event_id}"),
-                    "NOT_DELIVERED",
-                ),
+                audit.entry("OUTCOME", "NOT_DELIVERED"),
             )
             .await
             {
@@ -4611,6 +4637,113 @@ fn relay_media_path(media_ref: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    #[tokio::test]
+    #[ignore = "requires PUBLISH_RECONCILE_TEST_DATABASE_URL pointing at an isolated migrated database"]
+    async fn publication_history_keeps_real_outcomes_and_distinct_operations() {
+        use sqlx::Row;
+        let pool = sqlx::PgPool::connect(&std::env::var("PUBLISH_RECONCILE_TEST_DATABASE_URL").unwrap()).await.unwrap();
+        let mut tx = pool.begin().await.unwrap();
+        let ctx = super::ExecutionContext {
+            human_identity_id: uuid::Uuid::new_v4(),
+            tenant_id: uuid::Uuid::new_v4(),
+            tenant_principal_id: uuid::Uuid::new_v4(),
+            session_id: uuid::Uuid::new_v4(),
+            access_mode: contracts::PlatformSessionAccessMode::Full,
+        };
+        sqlx::query("insert into identity.tenant(id,slug,name,state) values($1,$2,'publication history','ACTIVE')")
+            .bind(ctx.tenant_id).bind(format!("history-{}",ctx.tenant_id)).execute(&mut *tx).await.unwrap();
+        sqlx::query("insert into identity.principal(id,tenant_id,kind,status) values($1,$2,'HUMAN','ACTIVE')")
+            .bind(ctx.tenant_principal_id).bind(ctx.tenant_id).execute(&mut *tx).await.unwrap();
+        for action in super::FILTERED_PUBLICATION_ACTIONS {
+            let target = if action.starts_with("conversation.") {
+                super::MessageTarget::Conversation(uuid::Uuid::new_v4())
+            } else if action == crate::pulse::PUBLISH_ACTION {
+                super::MessageTarget::Pulse(ctx.tenant_id)
+            } else {
+                super::MessageTarget::Workspace(uuid::Uuid::new_v4())
+            };
+            for (real, real_first) in [
+                (Some("ACCEPTED"), true), (Some("ACCEPTED"), false),
+                (Some("REJECTED"), true), (Some("REJECTED"), false),
+                (Some("NOT_DELIVERED"), true), (Some("NOT_DELIVERED"), false),
+                (None, true),
+            ] {
+                let operation = uuid::Uuid::new_v4();
+                let key = uuid::Uuid::new_v4();
+                let id = operation.simple().to_string().repeat(2);
+                sqlx::query("insert into admission.publish_attempt(tenant_principal_id,idempotency_key,operation_id,event_id) values($1,$2,$3,$4)")
+                    .bind(ctx.tenant_principal_id).bind(key).bind(operation).bind(&id).execute(&mut *tx).await.unwrap();
+                let audit = super::PublicationAudit {
+                    ctx: &ctx, target, operation_id: operation, action_key: action,
+                    event_id: &id, signer_pubkey: None,
+                };
+                let mut entries = vec![
+                    (audit.entry("DISPATCH", "DISPATCHED"), 400_i64),
+                    (audit.entry("RECONCILIATION", "NOT_DELIVERED"), if real_first {100} else {200}),
+                ];
+                if let Some(result) = real {
+                    entries.push((audit.entry("OUTCOME", result), if real_first {200} else {100}));
+                }
+                for (mut entry, age) in entries {
+                    if entry.event_type == "RECONCILIATION" {
+                        entry.event_key = format!("message.publish:{id}:reconciled");
+                    }
+                    sqlx::query("insert into audit.audit_event(id,event_key,tenant_id,workspace_id,operation_id,event_type,action_key,action_version,component_type_key,target_type,target_id,parameter_hash,decision,result_code,result_exposure,evidence_refs,correlation_id,occurred_at) values($1,$2,$3,$4,$5,$6,$7,1,'buzz',$8,$9,'NONE','ALLOW',$10,'NONE',$11,$5,now()-make_interval(secs=>$12::bigint))")
+                        .bind(uuid::Uuid::new_v4()).bind(entry.event_key).bind(entry.tenant_id).bind(entry.workspace_id)
+                        .bind(entry.operation_id).bind(entry.event_type).bind(entry.action_key).bind(entry.target_type)
+                        .bind(entry.target_id).bind(entry.result_code).bind(crate::audit::evidence_json(&entry.evidence_refs)).bind(age)
+                        .execute(&mut *tx).await.unwrap();
+                }
+                // This is the retry handler's exact snapshot query, not a
+                // second implementation of its conclusion-selection rule.
+                let row = sqlx::query(super::PREVIOUS_PUBLICATION_SQL)
+                    .bind(ctx.tenant_principal_id).bind(key).bind(action)
+                    .bind(target.target_type()).bind(target.workspace_id())
+                    .bind(super::FILTERED_PUBLICATION_ACTIONS.as_slice())
+                    .fetch_one(&mut *tx).await.unwrap();
+                assert_eq!(row.get::<Option<String>,_>("result").as_deref(), real, "{action}: real_first={real_first}");
+                assert_eq!(row.get::<Option<String>,_>("result_event_type").as_deref(), real.map(|_| "OUTCOME"));
+                assert_eq!(row.get::<Vec<Option<uuid::Uuid>>,_>("target_ids"), vec![Some(target.id())]);
+            }
+        }
+        // Nostr identity need not distinguish two same-second intents. The
+        // actual producer and append path must preserve both operations while
+        // retrying each operation/phase remains idempotent.
+        let id = uuid::Uuid::new_v4().simple().to_string().repeat(2);
+        let target = super::MessageTarget::Workspace(uuid::Uuid::new_v4());
+        for _ in 0..2 {
+            let operation = uuid::Uuid::new_v4();
+            let audit = super::PublicationAudit {
+                ctx: &ctx, target, operation_id: operation, action_key: super::PUBLISH_ACTION,
+                event_id: &id, signer_pubkey: None,
+            };
+            for (phase, result) in [("DISPATCH","DISPATCHED"),("OUTCOME","ACCEPTED"),("RECONCILIATION","ACCEPTED")] {
+                for _ in 0..2 {
+                    crate::audit::append(&mut tx, audit.entry(phase,result)).await.unwrap();
+                }
+            }
+            let count: i64 = sqlx::query_scalar("select count(*) from audit.audit_event where operation_id=$1")
+                .bind(operation).fetch_one(&mut *tx).await.unwrap();
+            assert_eq!(count,3,"same event ID must not erase another operation's audit");
+        }
+        let count: i64 = sqlx::query_scalar("select count(*) from audit.audit_event where evidence_refs @> jsonb_build_array(jsonb_build_object('kind','BUZZ_EVENT_ID','value',$1::text))")
+            .bind(&id).fetch_one(&mut *tx).await.unwrap();
+        assert_eq!(count,6);
+        // A historical collision can already have lost its DISPATCH. Preserve
+        // the existing empty-scope refusal; do not infer scope from this retry.
+        let orphan_key = uuid::Uuid::new_v4();
+        sqlx::query("insert into admission.publish_attempt(tenant_principal_id,idempotency_key,operation_id,event_id) values($1,$2,$3,$4)")
+            .bind(ctx.tenant_principal_id).bind(orphan_key).bind(uuid::Uuid::new_v4()).bind(&id)
+            .execute(&mut *tx).await.unwrap();
+        let row = sqlx::query(super::PREVIOUS_PUBLICATION_SQL)
+            .bind(ctx.tenant_principal_id).bind(orphan_key).bind(super::PUBLISH_ACTION)
+            .bind(target.target_type()).bind(target.workspace_id())
+            .bind(super::FILTERED_PUBLICATION_ACTIONS.as_slice()).fetch_one(&mut *tx).await.unwrap();
+        assert!(row.get::<Vec<Option<uuid::Uuid>>,_>("target_ids").is_empty());
+        assert_eq!(row.get::<Option<String>,_>("result"),None);
+        tx.rollback().await.unwrap();
+    }
+
     #[test]
     fn historical_query_absence_cannot_authorize_a_resigned_message() {
         for action in [

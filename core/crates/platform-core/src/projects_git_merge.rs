@@ -258,11 +258,7 @@ fn status_entry<'a>(
     event_type: &'a str,
     result: &'a str,
 ) -> AuditEntry<'a> {
-    let event_key = match event_type {
-        "DISPATCH" => format!("message.publish:{event_id}:dispatch"),
-        "RECONCILIATION" => format!("message.publish:{event_id}:reconciled"),
-        _ => format!("message.publish:{event_id}"),
-    };
+    let event_key = crate::web_transport::publication_event_key(operation_id, event_id, event_type);
     AuditEntry {
         event_key,
         tenant_id: Some(ctx.tenant_id),
@@ -1128,16 +1124,16 @@ mod tests {
         let op = Uuid::new_v4();
         let id = "f".repeat(64);
         let dispatch = status_entry(&ctx, op, &id, "DISPATCH", "DISPATCHED");
-        let expected = format!("message.publish:{id}:dispatch");
+        let expected = format!("message.publish:{id}:{op}:DISPATCH");
         assert_eq!(dispatch.event_key, expected);
         assert_eq!(dispatch.action_key, PUBLISH_ACTION);
         assert_eq!(dispatch.target_type, Some("TENANT"));
         assert_eq!(dispatch.target_id, Some(ctx.tenant_id));
         assert_eq!(dispatch.workspace_id, None);
         let outcome = status_entry(&ctx, op, &id, "OUTCOME", ACCEPTED);
-        assert_eq!(outcome.event_key, format!("message.publish:{id}"));
+        assert_eq!(outcome.event_key, format!("message.publish:{id}:{op}:OUTCOME"));
         let reconciled = status_entry(&ctx, op, &id, "RECONCILIATION", ACCEPTED);
-        let expected = format!("message.publish:{id}:reconciled");
+        let expected = format!("message.publish:{id}:{op}:RECONCILIATION");
         assert_eq!(reconciled.event_key, expected);
     }
 
