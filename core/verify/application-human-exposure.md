@@ -16,9 +16,20 @@ HUMAN componentAction、PROTOCOL_PEER 测试调用准入及后者 PEP 两相都�
 
 ## 验证状态
 
-原始检查与后续纠偏会在本文件补充固定 SHA、命令、退出码和回执。当前源码阶段提交不等于编译、迁移或端到端通过。
+2026-10-26 固定源码 `6f3d89cfabe795b51bf53d395065e58044ae5e52` 已通过以下原 SDK 检查，最终容器 exit 0、OOMKilled=false。CI 从 GitHub 直接 fetch 固定对象后在 CI 本机归档，没有从开发机上传源码包。详见 [原始回执摘要](application-human-exposure-20261026.json)。
 
-新增原数据库回归使用独占隔离库的既有 `application-execution-base.sql`/dispatch fixture；只暂停 fixture 在 PENDING 阶段以调用实际 Rust producer。覆盖事务回滚、幂等 ID、未 ACTIVE 拒绝、错误 tenant/binding/release/generation/action/version、同 schema 无归属策略拒绝、内容不可变与退役。该夹具不是产品 bootstrap，不证明真实 Catalog 审批或原生执行。
+- `cargo fmt --manifest-path core/Cargo.toml --all --check`；原 `bash tools/gen.sh --check` 四侧一致。
+- `sqlx migrate run` → `revert --target-version 20261029020000` → `run`；新迁移最终编号 `20261031060000`，已与并行分支协调，未部署中间编号。
+- `cargo test --locked --offline --manifest-path core/Cargo.toml -p platform-core application_binding::human_exposure:: -- --include-ignored --nocapture`：2 项通过，其中 1 项实际连接独占 PostgreSQL 调用原 producer 和管理读取 SQL。
+- 同入口 `application_tool_human::`：5 项通过；不把筛选出的 0-test 集成测试程序计入测试数。
+- `cargo clippy --locked --offline --manifest-path core/Cargo.toml -p platform-core --all-targets -- -D warnings`；`cd core && cargo sqlx prepare --check --workspace -- --locked --offline` 均退出 0。
+- 另从固定源码提取 Gateway 原 `TOOL_LIST`，在同迁移库实际 PREPARE/执行/ROLLBACK，退出 0；此项只验证真实 SQL 与表结构，不声称已有 Tool 行、真实 HUMAN 权限或业务调用。
+
+SDK 固定 image 为 `sha256:3007729eb192341a4f004a88e42e1e66c94fc67d763acfc96568bd7311116018`，4 CPU、16 GiB（swap 同限）、512 PIDs、只读 root、cap-drop ALL、no-new-privileges；独立内部网络只连接本批 1 CPU/512 MiB PostgreSQL，使用原固定 postgres digest。生成阶段为同 SDK 1 CPU/2 GiB、无网络。target 是本批独有 `/volumes/data/kailo/conformance/checks/human-exposure-19735ceca/target`，没有复用其他候选的目标缓存。完整 command、容器状态、日志与 SHA-256 保留在 CI `/volumes/data/kailo/conformance/checks/human-exposure-6f3d89cfa/`。完成后仅删除本批明确列出的 9 个 SDK/PG 容器与 1 个网络，`cleanup.json` 保留 docker ps/network 空回读，窗口已交还并行实现。
+
+保留的真实失败：初次原 Dart formatter 退出 255，诊断确认它尝试写只读 `/.dart-tool`，并非业务或连接成功；给其独立可写目录后原脚本通过。早期 CI 归档遗漏 collaboration workspace 依赖/示例目录，PG 缺可写 tmp 且未使用该原镜像的 postgres UID 70，均在运行环境纠正。`19735ceca` 首次完整编译发现新测试 Connection/Acquire::begin 歧义；`84e2ad26d` 编译通过后原数据库约束拒绝夹具 EVALUATING+DISPATCHED，随后将夹具改为真实 EVALUATING/NOT_DISPATCHED 初态及后续 ALLOWED/DISPATCHED，未放宽约束。各次日志保留在相应 `human-exposure-*` 检查目录，不能回写为通过。
+
+新增原数据库回归使用独占隔离库的既有 `application-execution-base.sql`/dispatch fixture；只暂停 fixture 在 PENDING 阶段以调用实际 Rust producer。覆盖事务回滚、幂等 ID、未 ACTIVE 拒绝、错误 tenant/binding/release/generation/action/version、同 schema 无归属策略拒绝、内容不可变/删除禁止/退役后不可恢复，以及 PENDING 仅管理读取固定引用、ACTIVE 后同一引用、跨 Tenant 空读取。该夹具不是产品 bootstrap，不证明真实 Catalog 审批或原生执行。
 
 ## 未闭合项
 

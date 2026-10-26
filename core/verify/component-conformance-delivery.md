@@ -242,3 +242,8 @@ Resource ID 仍由后续真实 `resource.create` 返回。目录沿原 renderer 
 HUMAN 最大暴露边界物化和精确归属消费，见 [Core 实施与验证边界](application-human-exposure.md)。
 该改动解除的是源码中的生产者缺口；自动化尚需读真实 HUMAN 管理元数据并在 binding 准入与
 adapter/native-action 启动之间协调。未跑真实新 receiver，`blockedAfterNative` 仍不能移除。
+
+该 Core 接缝最终在固定 `6f3d89cfabe795b51bf53d395065e58044ae5e52` 完成原 SDK 格式、
+四侧生成一致、迁移往返、实际 PostgreSQL producer/读取回归、原 HUMAN tool 单测、Clippy 与 SQLx，均退出 0。
+这仍不是 receiver 环境的真实 HUMAN HTTP、原生动作、模型投递或 driver 业务验收；需要包含该 Core
+实现的匹配镜像，再沿原运行器完成前述编排。没有移除当前明确拒绝。
