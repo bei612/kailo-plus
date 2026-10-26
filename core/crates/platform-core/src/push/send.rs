@@ -9,6 +9,7 @@ use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 use tokio::sync::Mutex;
 
 /// One provider attempt.
@@ -139,8 +140,8 @@ impl ApnsSender {
     }
 
     pub(crate) fn target(&self) -> String {
-        format!("APNS:{}:{}:{}", self.credential.team_id, self.credential.bundle_id,
-            if self.credential.sandbox { "development" } else { "production" })
+        hex::encode(Sha256::digest(format!("APNS:{}:{}:{}", self.credential.team_id, self.credential.bundle_id,
+            if self.credential.sandbox { "development" } else { "production" }).as_bytes()))
     }
 
     async fn provider_token(&self) -> Result<String, Outcome> {
@@ -244,7 +245,7 @@ impl FcmSender {
     }
 
     pub(crate) fn target(&self) -> String {
-        format!("FCM:{}", self.credential.project_id)
+        hex::encode(Sha256::digest(format!("FCM:{}", self.credential.project_id).as_bytes()))
     }
 
     async fn access_token(&self, http: &reqwest::Client) -> Result<String, Outcome> {

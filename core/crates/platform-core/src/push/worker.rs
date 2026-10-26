@@ -338,7 +338,7 @@ async fn scan(state:&ServiceState,providers:&Providers,tenant:Uuid) -> Result<()
             // preferences and message facts are reread before every provider attempt.
             sqlx::query("insert into projection.push_send_intent(id,tenant_id,tenant_principal_id,device_pubkey,registration_version,platform,provider_target,event_id,channel_id,root_id,event_created_at,expires_at)
                 select gen_random_uuid(),r.tenant_id,r.tenant_principal_id,r.device_pubkey,r.version,r.platform,$3,$4,$5,$6,$7,
-                to_timestamp($7)+interval '1 hour' from identity.push_registration r join identity.tenant t on t.id=r.tenant_id
+                least(to_timestamp($7)+interval '1 hour',now()+interval '1 hour') from identity.push_registration r join identity.tenant t on t.id=r.tenant_id
                 where r.tenant_id=$1 and r.platform=$2 and r.state='ACTIVE' and r.enabled and t.state='ACTIVE'
                 and to_timestamp($7)+interval '1 hour'>now() on conflict(tenant_id,device_pubkey,event_id) do nothing")
                 .bind(tenant).bind(platform).bind(provider).bind(&message.id).bind(&message.channel_id)
