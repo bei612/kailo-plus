@@ -352,18 +352,37 @@ fn files_beyond_eager_previews_are_read_from_the_local_worktree() {
     let (remote, repo) = init(temp.path(), &auth);
     clone_checkout(&repo, &remote, Some("main"), &auth).unwrap();
     for index in 0..=MAX_EAGER_FILE_PREVIEWS {
-        fs::write(repo.join(format!("file-{index:04}.txt")), format!("local {index}")).unwrap();
+        fs::write(
+            repo.join(format!("file-{index:04}.txt")),
+            format!("local {index}"),
+        )
+        .unwrap();
     }
     let last_path = format!("file-{:04}.txt", MAX_EAGER_FILE_PREVIEWS);
     let snapshot = checkout_snapshot(&repo, &remote, Some("main"), None, &auth).unwrap();
     assert_eq!(snapshot.snapshot.files.len(), MAX_EAGER_FILE_PREVIEWS + 1);
-    assert!(snapshot.snapshot.files.iter().find(|file| file.path == last_path).unwrap().preview_content.is_none());
-    assert_eq!(checkout_file_content(&repo, &remote, &last_path, &auth).unwrap().as_deref(), Some(format!("local {}", MAX_EAGER_FILE_PREVIEWS).as_str()));
+    assert!(snapshot
+        .snapshot
+        .files
+        .iter()
+        .find(|file| file.path == last_path)
+        .unwrap()
+        .preview_content
+        .is_none());
+    assert_eq!(
+        checkout_file_content(&repo, &remote, &last_path, &auth)
+            .unwrap()
+            .as_deref(),
+        Some(format!("local {}", MAX_EAGER_FILE_PREVIEWS).as_str())
+    );
     assert!(checkout_file_content(&repo, &remote, "../outside", &auth).is_err());
-    #[cfg(unix)] {
+    #[cfg(unix)]
+    {
         let outside = temp.path().join("private.txt");
         fs::write(&outside, "private").unwrap();
         std::os::unix::fs::symlink(outside, repo.join("link.txt")).unwrap();
-        assert!(checkout_file_content(&repo, &remote, "link.txt", &auth).unwrap().is_none());
+        assert!(checkout_file_content(&repo, &remote, "link.txt", &auth)
+            .unwrap()
+            .is_none());
     }
 }
