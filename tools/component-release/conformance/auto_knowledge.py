@@ -106,6 +106,8 @@ def platform_env(h, r, project):
             else:
                 taken.add(port)
     overrides = {k: "" for k in BLANK}
+    spice_port = keys.get("SPICEDB_HTTP_CONTAINER_PORT", "").strip().strip("'\"")
+    h.require(re.fullmatch(r"[0-9]{2,5}", spice_port), "isolated SpiceDB HTTP container port is missing")
     overrides.update({
         "PUBLIC_HOST": "127.0.0.1", "PUBLIC_BIND_ADDR": "127.0.0.1", "OIDC_HOST": OIDC_HOST,
         "PLATFORM_EDGE_NETWORK": f"{project}-edge",
@@ -115,6 +117,10 @@ def platform_env(h, r, project):
         # The receiver bootstrap refuses a database with the production name,
         # even when it is hosted by a different isolated PostgreSQL instance.
         "CORE_DB_NAME": "receiver_" + project.rsplit("-", 1)[-1],
+        # Docker registers the project-qualified container name on app. The
+        # bootstrap deliberately rejects even a network-isolated service when
+        # its declared origin still equals the production origin string.
+        "SPICEDB_HTTP_URL": f"http://{project}-spicedb-1:{spice_port}",
         "COMPONENT_DIRECTORY_CLIENTS": "knowledge=" + r.state["knowledgeNative"]["directoryClient"],
         "AUTOMATION_WEBHOOK_PUBLIC_BASE_URL": "",
     })
@@ -480,7 +486,8 @@ def ensure_knowledge_native(h, r, declaration):
     # Measure the embedding through this binding's own governed Gateway key.
     # The declaration's dimension is an assertion, never a substituted result.
     # The model listener is intentionally private and has no host port. Read
-    # only this run's delivered key inside a bounded container on its app net.
+    # only this run's delivered key inside a bounded container on its edge net
+    # where Compose declares AGENTGATEWAY_MODEL_HOST as an alias.
     probe = '''import json, sys, urllib.request
 try:
     with open(sys.argv[1]) as stream:
@@ -498,7 +505,7 @@ except Exception:
 '''
     dimension = int(h.docker("run", "--rm", "--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
         "--cpus", "0.5", "--memory", "128m", "--memory-swap", "128m", "--pids-limit", "64",
-        "--user", f"{os.getuid()}:{os.getgid()}", "--network", f"{state['project']}_app",
+        "--user", f"{os.getuid()}:{os.getgid()}", "--network", runtime["PLATFORM_EDGE_NETWORK"],
         "--mount", f"type=bind,src={model_dir / 'credential.json'},dst=/credential.json,readonly",
         "--entrypoint", "python3", check_image, "-I", "-c", probe, "/credential.json", runtime["AGENTGATEWAY_MODEL_BASE_URL"],
         declaration["conformanceModels"]["embedding"]["model"], str(declaration["conformanceModels"]["embedding"]["dimension"]),
