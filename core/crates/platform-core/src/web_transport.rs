@@ -196,9 +196,15 @@ impl PublicationScope {
             && self.target_binding_version == binding.target_version
     }
 
-    pub(crate) fn matches_observation(&self, event_id: &str, observation: &collab_bridge::bridge::PublicationObservation) -> bool {
-        observation.event_id == event_id && observation.community_id == self.community_id
-            && observation.pubkey == self.event_pubkey && observation.kind == self.event_kind
+    pub(crate) fn matches_observation(
+        &self,
+        event_id: &str,
+        observation: &collab_bridge::bridge::PublicationObservation,
+    ) -> bool {
+        observation.event_id == event_id
+            && observation.community_id == self.community_id
+            && observation.pubkey == self.event_pubkey
+            && observation.kind == self.event_kind
             && observation.channel_id == self.event_channel_id
     }
 }
@@ -206,7 +212,10 @@ impl PublicationScope {
 /// Lock only local facts, in a short transaction. No Relay, secret or SpiceDB I/O
 /// may occur while these SHARE locks are held.
 pub(crate) async fn locked_publication_binding(
-    conn: &mut sqlx::PgConnection, tenant: Uuid, actor: Uuid, target: MessageTarget,
+    conn: &mut sqlx::PgConnection,
+    tenant: Uuid,
+    actor: Uuid,
+    target: MessageTarget,
 ) -> Result<Option<PublicationBinding>, sqlx::Error> {
     let tenant_row: Option<(Uuid, String, i32)> = sqlx::query_as(
         "select b.community_id,b.normalized_host,b.version
@@ -217,7 +226,9 @@ pub(crate) async fn locked_publication_binding(
          join identity.human_identity h on h.id=tm.human_identity_id and h.status='ACTIVE'
          where b.tenant_id=$1 and b.state='ACTIVE' for share of b,t,p,tm,h")
         .bind(tenant).bind(actor).fetch_optional(&mut *conn).await?;
-    let Some((community_id, community_host, tenant_version)) = tenant_row else { return Ok(None) };
+    let Some((community_id, community_host, tenant_version)) = tenant_row else {
+        return Ok(None);
+    };
     let target_row: Option<(Uuid, i32)> = match target {
         MessageTarget::Workspace(id) => sqlx::query_as(
             "select b.channel_id,b.version from projection.workspace_buzz_binding b
@@ -236,19 +247,40 @@ pub(crate) async fn locked_publication_binding(
         MessageTarget::Pulse(id) if id == tenant => None,
         MessageTarget::Pulse(_) => return Ok(None),
     };
-    if !matches!(target, MessageTarget::Pulse(_)) && target_row.is_none() { return Ok(None); }
-    Ok(Some(PublicationBinding { community_id, community_host, tenant_version,
-        channel_id: target_row.map(|row| row.0), target_version: target_row.map(|row| row.1) }))
+    if !matches!(target, MessageTarget::Pulse(_)) && target_row.is_none() {
+        return Ok(None);
+    }
+    Ok(Some(PublicationBinding {
+        community_id,
+        community_host,
+        tenant_version,
+        channel_id: target_row.map(|row| row.0),
+        target_version: target_row.map(|row| row.1),
+    }))
 }
 
 pub(crate) async fn locked_publication_scope_matches(
-    conn: &mut sqlx::PgConnection, tenant: Uuid, actor: Uuid, target: MessageTarget, scope: &PublicationScope,
+    conn: &mut sqlx::PgConnection,
+    tenant: Uuid,
+    actor: Uuid,
+    target: MessageTarget,
+    scope: &PublicationScope,
 ) -> Result<bool, sqlx::Error> {
-    let Some(binding) = locked_publication_binding(conn, tenant, actor, target).await? else { return Ok(false); };
-    if !scope.matches_binding(&binding) { return Ok(false); }
+    let Some(binding) = locked_publication_binding(conn, tenant, actor, target).await? else {
+        return Ok(false);
+    };
+    if !scope.matches_binding(&binding) {
+        return Ok(false);
+    }
     if let Some(installation) = scope.signer_installation_id {
-        let MessageTarget::Workspace(workspace) = target else { return Ok(false); };
-        Ok(locked_owned_agent_installation(conn, tenant, actor, workspace, &scope.event_pubkey).await? == Some(installation))
+        let MessageTarget::Workspace(workspace) = target else {
+            return Ok(false);
+        };
+        Ok(
+            locked_owned_agent_installation(conn, tenant, actor, workspace, &scope.event_pubkey)
+                .await?
+                == Some(installation),
+        )
     } else {
         let signer: Option<String> = sqlx::query_scalar("select pubkey from identity.buzz_identity_binding where tenant_id=$1 and principal_id=$2 and kind='HUMAN' and custody='SERVER' and state='ACTIVE' and pubkey=$3 for share")
             .bind(tenant).bind(actor).bind(&scope.event_pubkey).fetch_optional(conn).await?;
@@ -257,18 +289,33 @@ pub(crate) async fn locked_publication_scope_matches(
 }
 
 pub(crate) async fn publication_binding(
-    state: &crate::service_api::ServiceState, tenant: Uuid, actor: Uuid, target: MessageTarget,
+    state: &crate::service_api::ServiceState,
+    tenant: Uuid,
+    actor: Uuid,
+    target: MessageTarget,
 ) -> Result<PublicationBinding, &'static str> {
-    crate::conversations::fresh_discover(state, tenant, actor).await.map_err(|_| "ACTOR_UNREADABLE")?;
-    let mut tx = state.pool.begin().await.map_err(|_| "EVIDENCE_UNREADABLE")?;
-    let binding = locked_publication_binding(&mut tx, tenant, actor, target).await
-        .map_err(|_| "EVIDENCE_UNREADABLE")?.ok_or("SCOPE_UNREADABLE")?;
+    crate::conversations::fresh_discover(state, tenant, actor)
+        .await
+        .map_err(|_| "ACTOR_UNREADABLE")?;
+    let mut tx = state
+        .pool
+        .begin()
+        .await
+        .map_err(|_| "EVIDENCE_UNREADABLE")?;
+    let binding = locked_publication_binding(&mut tx, tenant, actor, target)
+        .await
+        .map_err(|_| "EVIDENCE_UNREADABLE")?
+        .ok_or("SCOPE_UNREADABLE")?;
     tx.commit().await.map_err(|_| "EVIDENCE_UNREADABLE")?;
     Ok(binding)
 }
 
 async fn locked_owned_agent_installation(
-    conn: &mut sqlx::PgConnection, tenant: Uuid, actor: Uuid, workspace: Uuid, author: &str,
+    conn: &mut sqlx::PgConnection,
+    tenant: Uuid,
+    actor: Uuid,
+    workspace: Uuid,
+    author: &str,
 ) -> Result<Option<Uuid>, sqlx::Error> {
     sqlx::query_scalar(
         "select inst.resource_id from identity.buzz_identity_binding a
@@ -284,28 +331,50 @@ async fn locked_owned_agent_installation(
 }
 
 pub(crate) async fn owned_publication_installation(
-    state: &crate::service_api::ServiceState, tenant: Uuid, actor: Uuid, workspace: Uuid, author: &str,
+    state: &crate::service_api::ServiceState,
+    tenant: Uuid,
+    actor: Uuid,
+    workspace: Uuid,
+    author: &str,
 ) -> Result<Uuid, &'static str> {
     let installation = {
         let mut conn = state.pool.acquire().await.map_err(|_| "ACTOR_UNREADABLE")?;
-        locked_owned_agent_installation(&mut conn, tenant, actor, workspace, author).await
-            .map_err(|_| "ACTOR_UNREADABLE")?.ok_or("ACTOR_UNREADABLE")?
+        locked_owned_agent_installation(&mut conn, tenant, actor, workspace, author)
+            .await
+            .map_err(|_| "ACTOR_UNREADABLE")?
+            .ok_or("ACTOR_UNREADABLE")?
     };
-    let proof = state.governance.spicedb.check("resource", &installation.to_string(), "manage", &actor.to_string(),
-        crate::spicedb::Consistency::FullyConsistent).await.map_err(|_| "ACTOR_UNREADABLE")?;
-    if proof.zed_token.is_empty() || !proof.allowed { return Err("ACTOR_UNREADABLE"); }
+    let proof = state
+        .governance
+        .spicedb
+        .check(
+            "resource",
+            &installation.to_string(),
+            "manage",
+            &actor.to_string(),
+            crate::spicedb::Consistency::FullyConsistent,
+        )
+        .await
+        .map_err(|_| "ACTOR_UNREADABLE")?;
+    if proof.zed_token.is_empty() || !proof.allowed {
+        return Err("ACTOR_UNREADABLE");
+    }
     Ok(installation)
 }
 
 /// Mirror the native ingester, using the already verified mutation/reaction
 /// target chain for kind 5/7 (which need not carry h). Global kinds stay global
 /// even when a project operation was admitted through a Workspace.
-fn publication_native_channel(event: &nostr::Event, referenced_channel: Option<Option<Uuid>>) -> Option<Option<Uuid>> {
+fn publication_native_channel(
+    event: &nostr::Event,
+    referenced_channel: Option<Option<Uuid>>,
+) -> Option<Option<Uuid>> {
     match event.kind.as_u16() {
         1 | 1618 | 1621 | 1630..=1633 | 30300 | 30617 | 30621 => Some(None),
         5 | 7 => referenced_channel,
-        9 | 40003 | 45001 | 45003 | 9002 | 41010 | 41012 =>
-            single_event_tag(event, "h").and_then(|channel| Uuid::parse_str(channel).ok()).map(Some),
+        9 | 40003 | 45001 | 45003 | 9002 | 41010 | 41012 => single_event_tag(event, "h")
+            .and_then(|channel| Uuid::parse_str(channel).ok())
+            .map(Some),
         _ => None,
     }
 }
@@ -556,7 +625,7 @@ async fn owned_agent_keys(
     ctx: &ExecutionContext,
     workspace: Uuid,
     author: &nostr::PublicKey,
-) -> Result<Option<nostr::Keys>, Response> {
+) -> Result<Option<(Uuid, nostr::Keys)>, Response> {
     let row: Option<OwnedAgentKeyRow> = sqlx::query_as(
         "select inst.resource_id,a.pubkey,a.private_key_secret_ref,a.private_key_secret_version,
                 a.private_key_secret_audience
@@ -622,7 +691,7 @@ async fn owned_agent_keys(
     };
     crate::server_identity::read_bound_keys(&state.secrets, &reference, &pubkey)
         .await
-        .map(Some)
+        .map(|keys| Some((installation, keys)))
         .map_err(|_| StatusCode::SERVICE_UNAVAILABLE.into_response())
 }
 
@@ -2313,9 +2382,23 @@ async fn publish(
         Err(r) => return r,
     };
 
-    let original_binding = match publication_binding(&state.memory_service, ctx.tenant_id, ctx.tenant_principal_id, target).await {
-        Ok(binding) if binding.community_host == community_host
-            && binding.channel_id.map_or_else(|| binding.tenant_version.to_string(), |id| id.to_string()) == channel_id => binding,
+    let original_binding = match publication_binding(
+        &state.memory_service,
+        ctx.tenant_id,
+        ctx.tenant_principal_id,
+        target,
+    )
+    .await
+    {
+        Ok(binding)
+            if binding.community_host == community_host
+                && binding
+                    .channel_id
+                    .map_or_else(|| binding.tenant_version.to_string(), |id| id.to_string())
+                    == channel_id =>
+        {
+            binding
+        }
         _ => return AdmissionFailure::BindingNotActive.into_response(),
     };
 
@@ -2641,6 +2724,7 @@ async fn publish(
     // Read the original signed event through the already admitted actor, then
     // let Relay recheck native edit ownership at ingestion as well.
     let mut agent_signer: Option<nostr::Keys> = None;
+    let mut agent_installation: Option<Uuid> = None;
     let mutation_target = match edit_event_id.as_deref().or(delete_event_id.as_deref()) {
         Some(id) => {
             let event = match read_message_event(&state, &client, &channel_id, id).await {
@@ -2662,7 +2746,7 @@ async fn publish(
                     }
                     _ => None,
                 };
-                let Some(agent) = owned else {
+                let Some((installation, agent)) = owned else {
                     return error_body(
                         StatusCode::FORBIDDEN,
                         ErrorClass::Denied,
@@ -2671,6 +2755,7 @@ async fn publish(
                     );
                 };
                 agent_signer = Some(agent);
+                agent_installation = Some(installation);
             }
             Some(event)
         }
@@ -2901,21 +2986,48 @@ async fn publish(
         Err(e) => return relay_error_response(&e, None),
     };
 
-    let current_binding = match publication_binding(&state.memory_service, ctx.tenant_id, ctx.tenant_principal_id, target).await {
+    let current_binding = match publication_binding(
+        &state.memory_service,
+        ctx.tenant_id,
+        ctx.tenant_principal_id,
+        target,
+    )
+    .await
+    {
         Ok(binding) if binding == original_binding => binding,
         _ => return AdmissionFailure::BindingNotActive.into_response(),
     };
     let signer_installation_id = if let Some(author) = &signer_pubkey {
-        let MessageTarget::Workspace(workspace) = target else { return AdmissionFailure::Denied.into_response(); };
-        match owned_publication_installation(&state.memory_service, ctx.tenant_id, ctx.tenant_principal_id, workspace, author).await {
-            Ok(id) => Some(id),
-            Err(_) => return AdmissionFailure::Denied.into_response(),
+        let MessageTarget::Workspace(workspace) = target else {
+            return AdmissionFailure::Denied.into_response();
+        };
+        match owned_publication_installation(
+            &state.memory_service,
+            ctx.tenant_id,
+            ctx.tenant_principal_id,
+            workspace,
+            author,
+        )
+        .await
+        {
+            Ok(id) if Some(id) == agent_installation => Some(id),
+            _ => return AdmissionFailure::Denied.into_response(),
         }
-    } else { None };
+    } else {
+        None
+    };
     // Existing validators above read and verify these exact targets before signing.
     let referenced_channel = match &publication {
-        Publication::Reaction(_) | Publication::Message(_) if requested_kind == 5 || requested_kind == 7 => Some(current_binding.channel_id),
-        Publication::Pulse(_) | Publication::Project(_) if requested_kind == 5 || requested_kind == 7 => Some(None),
+        Publication::Reaction(_) | Publication::Message(_)
+            if requested_kind == 5 || requested_kind == 7 =>
+        {
+            Some(current_binding.channel_id)
+        }
+        Publication::Pulse(_) | Publication::Project(_)
+            if requested_kind == 5 || requested_kind == 7 =>
+        {
+            Some(None)
+        }
         _ => None,
     };
 
@@ -3006,9 +3118,13 @@ async fn publish(
         return AdmissionFailure::BindingNotActive.into_response();
     };
     let delivery_scope = PublicationScope {
-        community_id: current_binding.community_id, tenant_binding_version: current_binding.tenant_version,
-        target_channel_id: current_binding.channel_id, target_binding_version: current_binding.target_version,
-        event_pubkey: event.pubkey.to_hex(), event_kind: event.kind.as_u16(), event_channel_id,
+        community_id: current_binding.community_id,
+        tenant_binding_version: current_binding.tenant_version,
+        target_channel_id: current_binding.channel_id,
+        target_binding_version: current_binding.target_version,
+        event_pubkey: event.pubkey.to_hex(),
+        event_kind: event.kind.as_u16(),
+        event_channel_id,
         signer_installation_id,
     };
     let event_id = event.id.to_hex();
@@ -3146,7 +3262,10 @@ async fn publish(
         }
     }
 
-    match client.deliver_scoped(&state.http, &event, delivery_scope.community_id, admitted).await {
+    match client
+        .deliver_scoped(&state.http, &event, delivery_scope.community_id, admitted)
+        .await
+    {
         Delivery::Accepted => {
             // 结果写不进去不改变「已送达」：DISPATCH 已在，兜底对账按 event id
             // 查到它后补记（publish_reconcile）
@@ -4811,15 +4930,30 @@ mod tests {
     #[ignore = "requires PUBLISH_RECONCILE_TEST_DATABASE_URL pointing at an isolated migrated database"]
     async fn publication_scope_postgres_fences_membership_identity_binding_and_dm() {
         use super::*;
-        let pool = sqlx::PgPool::connect(&std::env::var("PUBLISH_RECONCILE_TEST_DATABASE_URL").unwrap()).await.unwrap();
+        let pool =
+            sqlx::PgPool::connect(&std::env::var("PUBLISH_RECONCILE_TEST_DATABASE_URL").unwrap())
+                .await
+                .unwrap();
         let mut tx = pool.begin().await.unwrap();
-        let tenant = Uuid::new_v4(); let actor = Uuid::new_v4(); let human = Uuid::new_v4();
-        let workspace = Uuid::new_v4(); let channel = Uuid::new_v4(); let community = Uuid::new_v4();
-        let control = Uuid::new_v4(); let conversation = Uuid::new_v4(); let dm_channel = Uuid::new_v4();
+        let tenant = Uuid::new_v4();
+        let actor = Uuid::new_v4();
+        let human = Uuid::new_v4();
+        let workspace = Uuid::new_v4();
+        let channel = Uuid::new_v4();
+        let community = Uuid::new_v4();
+        let control = Uuid::new_v4();
+        let conversation = Uuid::new_v4();
+        let dm_channel = Uuid::new_v4();
         let author = nostr::Keys::generate().public_key().to_hex();
-        sqlx::query("insert into identity.tenant(id,slug,name,state) values($1,$2,'scope proof','ACTIVE')")
-            .bind(tenant).bind(tenant.to_string()).execute(&mut *tx).await.unwrap();
-        for (principal, kind) in [(actor,"HUMAN"),(control,"SERVICE")] {
+        sqlx::query(
+            "insert into identity.tenant(id,slug,name,state) values($1,$2,'scope proof','ACTIVE')",
+        )
+        .bind(tenant)
+        .bind(tenant.to_string())
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+        for (principal, kind) in [(actor, "HUMAN"), (control, "SERVICE")] {
             sqlx::query("insert into identity.principal(id,tenant_id,kind,status) values($1,$2,$3,'ACTIVE')")
                 .bind(principal).bind(tenant).bind(kind).execute(&mut *tx).await.unwrap();
         }
@@ -4837,10 +4971,22 @@ mod tests {
             .bind(tenant).bind(community).bind(format!("{tenant}.scope.invalid")).bind(control).execute(&mut *tx).await.unwrap();
         sqlx::query("insert into projection.workspace_buzz_binding(workspace_id,channel_id,state) values($1,$2,'ACTIVE')")
             .bind(workspace).bind(channel).execute(&mut *tx).await.unwrap();
-        let scope = PublicationScope { community_id: community, tenant_binding_version: 1, target_channel_id: Some(channel), target_binding_version: Some(1),
-            event_pubkey: author.clone(), event_kind: 5, event_channel_id: Some(channel), signer_installation_id: None };
+        let scope = PublicationScope {
+            community_id: community,
+            tenant_binding_version: 1,
+            target_channel_id: Some(channel),
+            target_binding_version: Some(1),
+            event_pubkey: author.clone(),
+            event_kind: 5,
+            event_channel_id: Some(channel),
+            signer_installation_id: None,
+        };
         let target = MessageTarget::Workspace(workspace);
-        assert!(locked_publication_scope_matches(&mut tx, tenant, actor, target, &scope).await.unwrap());
+        assert!(
+            locked_publication_scope_matches(&mut tx, tenant, actor, target, &scope)
+                .await
+                .unwrap()
+        );
         for (mutation, id) in [
             ("update identity.tenant set state='SUSPENDED' where id=$1", tenant),
             ("update identity.human_identity set status='DISABLED' where id=$1", human),
@@ -4863,14 +5009,53 @@ mod tests {
         sqlx::query("insert into projection.conversation_buzz_binding(id,tenant_id,channel_id,participant_principal_ids,creator_principal_id,creator_pubkey,operation_id,projected_keys,state) values($1,$2,$3,$4,$5,$6,$7,$8,'ACTIVE')")
             .bind(conversation).bind(tenant).bind(dm_channel).bind(vec![actor,control]).bind(actor).bind(&author).bind(Uuid::new_v4())
             .bind(serde_json::json!([[actor.to_string(), author]])).execute(&mut *tx).await.unwrap();
-        let dm_scope = PublicationScope { target_channel_id: Some(dm_channel), event_channel_id: Some(dm_channel), ..scope.clone() };
-        assert!(locked_publication_scope_matches(&mut tx, tenant, actor, MessageTarget::Conversation(conversation), &dm_scope).await.unwrap());
-        sqlx::query("update projection.conversation_buzz_binding set projected_keys='[]' where id=$1")
-            .bind(conversation).execute(&mut *tx).await.unwrap();
-        assert!(!locked_publication_scope_matches(&mut tx, tenant, actor, MessageTarget::Conversation(conversation), &dm_scope).await.unwrap());
+        let dm_scope = PublicationScope {
+            target_channel_id: Some(dm_channel),
+            event_channel_id: Some(dm_channel),
+            ..scope.clone()
+        };
+        assert!(locked_publication_scope_matches(
+            &mut tx,
+            tenant,
+            actor,
+            MessageTarget::Conversation(conversation),
+            &dm_scope
+        )
+        .await
+        .unwrap());
+        sqlx::query(
+            "update projection.conversation_buzz_binding set projected_keys='[]' where id=$1",
+        )
+        .bind(conversation)
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+        assert!(!locked_publication_scope_matches(
+            &mut tx,
+            tenant,
+            actor,
+            MessageTarget::Conversation(conversation),
+            &dm_scope
+        )
+        .await
+        .unwrap());
         // Tenant-only scope must not invent a native channel or target generation.
-        let global = PublicationScope { target_channel_id: None, target_binding_version: None, event_channel_id: None, event_kind: 1, ..scope };
-        assert!(locked_publication_scope_matches(&mut tx, tenant, actor, MessageTarget::Pulse(tenant), &global).await.unwrap());
+        let global = PublicationScope {
+            target_channel_id: None,
+            target_binding_version: None,
+            event_channel_id: None,
+            event_kind: 1,
+            ..scope
+        };
+        assert!(locked_publication_scope_matches(
+            &mut tx,
+            tenant,
+            actor,
+            MessageTarget::Pulse(tenant),
+            &global
+        )
+        .await
+        .unwrap());
         tx.rollback().await.unwrap();
     }
 
@@ -4878,47 +5063,103 @@ mod tests {
     fn publication_scope_uses_actual_signed_kind_and_native_channel_derivation() {
         use super::*;
         let keys = nostr::Keys::generate();
-        let client = IdentityClient::new(Custody::Server, &keys.secret_key().to_secret_hex(), "http://unused.invalid", "scope.invalid").unwrap();
+        let client = IdentityClient::new(
+            Custody::Server,
+            &keys.secret_key().to_secret_hex(),
+            "http://unused.invalid",
+            "scope.invalid",
+        )
+        .unwrap();
         let channel = Uuid::new_v4();
         for kind in [9, 40003, 45001, 45003, 9002, 41010, 41012] {
-            let event = client.sign(kind, "", &[vec!["h".into(), channel.to_string()]]).unwrap();
-            assert_eq!(publication_native_channel(&event, None), Some(Some(channel)), "{kind}");
+            let event = client
+                .sign(kind, "", &[vec!["h".into(), channel.to_string()]])
+                .unwrap();
+            assert_eq!(
+                publication_native_channel(&event, None),
+                Some(Some(channel)),
+                "{kind}"
+            );
         }
         for kind in [1, 1618, 1621, 1630, 1631, 1632, 1633, 30300, 30617, 30621] {
-            let event = client.sign(kind, "", &[vec!["h".into(), channel.to_string()]]).unwrap();
-            assert_eq!(publication_native_channel(&event, None), Some(None), "global {kind}");
+            let event = client
+                .sign(kind, "", &[vec!["h".into(), channel.to_string()]])
+                .unwrap();
+            assert_eq!(
+                publication_native_channel(&event, None),
+                Some(None),
+                "global {kind}"
+            );
         }
         for kind in [5, 7] {
-            let event = client.sign(kind, "", &[vec!["e".into(), "00".repeat(32)]]).unwrap();
-            assert_eq!(publication_native_channel(&event, Some(Some(channel))), Some(Some(channel)));
+            let event = client
+                .sign(kind, "", &[vec!["e".into(), "00".repeat(32)]])
+                .unwrap();
+            assert_eq!(
+                publication_native_channel(&event, Some(Some(channel))),
+                Some(Some(channel))
+            );
             assert_eq!(publication_native_channel(&event, Some(None)), Some(None));
-            assert_eq!(publication_native_channel(&event, None), None, "unverified target must not freeze scope");
+            assert_eq!(
+                publication_native_channel(&event, None),
+                None,
+                "unverified target must not freeze scope"
+            );
         }
     }
 
     #[test]
     fn publication_scope_rejects_every_mismatched_observation_or_binding_fact() {
         use super::*;
-        let binding = PublicationBinding { community_id: Uuid::new_v4(), community_host: "scope.invalid".into(), tenant_version: 4,
-            channel_id: Some(Uuid::new_v4()), target_version: Some(2) };
-        let scope = PublicationScope { community_id: binding.community_id, tenant_binding_version: 4,
-            target_channel_id: binding.channel_id, target_binding_version: Some(2), event_pubkey: nostr::Keys::generate().public_key().to_hex(),
-            event_kind: 5, event_channel_id: binding.channel_id, signer_installation_id: None };
+        let binding = PublicationBinding {
+            community_id: Uuid::new_v4(),
+            community_host: "scope.invalid".into(),
+            tenant_version: 4,
+            channel_id: Some(Uuid::new_v4()),
+            target_version: Some(2),
+        };
+        let scope = PublicationScope {
+            community_id: binding.community_id,
+            tenant_binding_version: 4,
+            target_channel_id: binding.channel_id,
+            target_binding_version: Some(2),
+            event_pubkey: nostr::Keys::generate().public_key().to_hex(),
+            event_kind: 5,
+            event_channel_id: binding.channel_id,
+            signer_installation_id: None,
+        };
         let id = "01".repeat(32);
-        let observed = collab_bridge::bridge::PublicationObservation { event_id: id.clone(), community_id: scope.community_id,
-            pubkey: scope.event_pubkey.clone(), kind: 5, channel_id: scope.event_channel_id };
+        let observed = collab_bridge::bridge::PublicationObservation {
+            event_id: id.clone(),
+            community_id: scope.community_id,
+            pubkey: scope.event_pubkey.clone(),
+            kind: 5,
+            channel_id: scope.event_channel_id,
+        };
         assert!(scope.matches_observation(&id, &observed));
         for field in 0..5 {
             let mut other = observed.clone();
-            match field { 0 => other.event_id = "02".repeat(32), 1 => other.community_id = Uuid::new_v4(),
-                2 => other.pubkey = nostr::Keys::generate().public_key().to_hex(), 3 => other.kind = 7, _ => other.channel_id = None }
-            assert!(!scope.matches_observation(&id, &other), "observation field {field}");
+            match field {
+                0 => other.event_id = "02".repeat(32),
+                1 => other.community_id = Uuid::new_v4(),
+                2 => other.pubkey = nostr::Keys::generate().public_key().to_hex(),
+                3 => other.kind = 7,
+                _ => other.channel_id = None,
+            }
+            assert!(
+                !scope.matches_observation(&id, &other),
+                "observation field {field}"
+            );
         }
         assert!(scope.matches_binding(&binding));
         for field in 0..4 {
             let mut other = binding.clone();
-            match field { 0 => other.community_id = Uuid::new_v4(), 1 => other.tenant_version += 1,
-                2 => other.channel_id = Some(Uuid::new_v4()), _ => other.target_version = Some(3) }
+            match field {
+                0 => other.community_id = Uuid::new_v4(),
+                1 => other.tenant_version += 1,
+                2 => other.channel_id = Some(Uuid::new_v4()),
+                _ => other.target_version = Some(3),
+            }
             assert!(!scope.matches_binding(&other), "binding field {field}");
         }
     }
