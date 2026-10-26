@@ -6,6 +6,7 @@ import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -42,10 +43,14 @@ internal class AndroidPushBridge(
                 "pushPlatform" -> result.success(if (configured(activity)) "FCM" else null)
                 "notificationAuthorizationStatus" -> result.success(authorizationStatus())
                 "openNotificationSettings" -> {
-                    val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
-                        .putExtra(Settings.EXTRA_APP_PACKAGE, activity.packageName)
-                    activity.startActivity(intent)
-                    result.success(true)
+                    val intent = if (Build.VERSION.SDK_INT >= 26) {
+                        Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                            .putExtra(Settings.EXTRA_APP_PACKAGE, activity.packageName)
+                    } else {
+                        Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+                            .setData(Uri.parse("package:" + activity.packageName))
+                    }
+                    result.success(runCatching { activity.startActivity(intent) }.isSuccess)
                 }
                 "startRegistration" -> {
                     if (!configured(activity)) {
