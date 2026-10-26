@@ -6,8 +6,8 @@
 //!
 //! - `moderation.report.submit`：以本人 Web（SERVER）身份签 kind 1984。签名后、发送前把
 //!   事件 ID 与签名时间随 ALLOWED 一起落库（DD-81 的 DISPATCH）；结果不明只以 CONTROL
-//!   读取 Relay 举报队列按事件 ID 查证：签名时间超出 Relay 漂移窗口仍查不到即确定未送达，
-//!   读取已达单次上界则不下结论。绝不重签重发。
+//!   读取 Relay 举报队列按事件 ID 查证；普通查询或队列缺失不是权威缺失，
+//!   过窗也保持 UNKNOWN。绝不重签重发。
 //! - `moderation.ban/unban/timeout/untimeout`：目标是同 Tenant 非本人、非有效 Tenant
 //!   admin 的 HUMAN Principal；CONTROL 对其全部非 `REVOKED` 公钥签 9040–9043，按 Relay
 //!   限制状态先读→发送→回读。禁言到期时刻在准入时以数据库时钟冻结，冻结参数即目标状态，
@@ -1013,13 +1013,24 @@ async fn settle(
     id: Uuid,
     settled: Settled,
 ) -> Result<(), Refusal> {
+    let mut tx = state.pool.begin().await?;
+    settle_in(&mut tx, def, id, settled).await?;
+    tx.commit().await?;
+    Ok(())
+}
+
+async fn settle_in(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    def: &Definition,
+    id: Uuid,
+    settled: Settled,
+) -> Result<(), Refusal> {
     let (reason, evidence) = match settled {
         Settled::Unknown => return Ok(()),
         Settled::Verified(evidence) => (None, evidence),
         Settled::Aborted(reason, evidence) => (Some(reason), evidence),
     };
-    let mut tx = state.pool.begin().await?;
-    let ae = governance::lock_execution(&mut tx, id).await?;
+    let ae = governance::lock_execution(tx, id).await?;
     if ae.gate_state != "ALLOWED" || ae.dispatch_state != "UNKNOWN" {
         return Ok(());
     }
@@ -1036,33 +1047,33 @@ async fn settle(
     )
     .bind(id)
     .bind(outcome)
-    .execute(&mut *tx)
+    .execute(&mut **tx)
     .await?;
     match reason {
         None => {
-            governance::record_dispatch(&mut tx, id, class, Ok(()), evidence.clone()).await?;
+            governance::record_dispatch(tx, id, class, Ok(()), evidence.clone()).await?;
             let result = outcome_code(&ae.action_key);
+            let phase = if matches!(ae.action_key.as_str(), REPORT_SUBMIT | MESSAGE_DELETE) { "verified-outcome" } else { "outcome" };
             governance::audit(
-                &mut tx, &ae, def, "outcome", "OUTCOME", "ALLOW", result, None, evidence,
+                tx, &ae, def, phase, "OUTCOME", "ALLOW", result, None, evidence,
             )
             .await?;
         }
         Some(reason) => {
             let refused = Err(StatusCode::CONFLICT);
-            governance::record_dispatch(&mut tx, id, class, refused, evidence.clone()).await?;
+            governance::record_dispatch(tx, id, class, refused, evidence.clone()).await?;
             let code = governance::wire(&reason);
             sqlx::query("update admission.action_execution set reason_code = $2 where id = $1")
                 .bind(id)
                 .bind(&code)
-                .execute(&mut *tx)
+                .execute(&mut **tx)
                 .await?;
             governance::audit(
-                &mut tx, &ae, def, "outcome", "OUTCOME", "DENY", &code, None, evidence,
+                tx, &ae, def, "outcome", "OUTCOME", "DENY", &code, None, evidence,
             )
             .await?;
         }
     }
-    tx.commit().await?;
     Ok(())
 }
 
@@ -1075,8 +1086,8 @@ fn unix(at: Option<&str>) -> Option<i64> {
     Some(at.timestamp())
 }
 
-/// 举报与删除结果不明时的只读查证：查到即已送达；签名时间超出 Relay 漂移窗口仍查不到
-/// 即确定未送达；举报读取已达单次上界时不下结论。
+/// 举报与删除结果不明时只采用肯定查证。普通事件空读、队列空与过窗均不能
+/// 排除已隐藏事件或尚未提交的旧 writer；不由此中止原操作。
 async fn observe_publication(state: &BffState, ae: &Execution) -> Result<Settled, Refusal> {
     let row: Option<(i32, String, i64)> = sqlx::query_as(
         "select event_kind, event_id, event_created_at from admission.moderation_publication
@@ -1085,7 +1096,7 @@ async fn observe_publication(state: &BffState, ae: &Execution) -> Result<Settled
     .bind(ae.id)
     .fetch_optional(&state.pool)
     .await?;
-    let Some((kind, event_id, created_at)) = row else {
+    let Some((kind, event_id, _created_at)) = row else {
         return Err(Refusal::Unavailable("审核事件引用缺失".into()));
     };
     let evidence = vec![Evidence::new(EvidenceKind::BuzzEventId, &event_id)];
@@ -1096,31 +1107,20 @@ async fn observe_publication(state: &BffState, ae: &Execution) -> Result<Settled
         control
             .moderation_reports(&state.http, None)
             .await
-            .map(|rows| {
-                let found = rows.iter().any(|row| row.report_event_id == event_id);
-                (found, rows.len() < wire::READ_LIMIT)
-            })
+            .map(|rows| rows.iter().any(|row| row.report_event_id == event_id))
     } else {
         control
             .event_exists(&state.http, &event_id)
             .await
-            .map(|found| (found, true))
     };
-    let Ok((found, complete)) = observed else {
-        return Ok(Settled::Unknown);
-    };
-    if found {
-        return Ok(Settled::Verified(evidence));
+    Ok(publication_observation(observed, evidence))
+}
+
+fn publication_observation(observed: Result<bool, OperatorError>, evidence: Vec<Evidence>) -> Settled {
+    match observed {
+        Ok(true) => Settled::Verified(evidence),
+        Ok(false) | Err(_) => Settled::Unknown,
     }
-    let expired = now_secs() > created_at + wire::RELAY_TIMESTAMP_DRIFT_SECS;
-    if expired && complete {
-        // 同一签名事件已不可能再被 Relay 接受：确定未送达，不重签
-        return Ok(Settled::Aborted(
-            ReasonCode::DependencyUnavailable,
-            evidence,
-        ));
-    }
-    Ok(Settled::Unknown)
 }
 
 /// 对账时重新准入：发起人此刻仍持有该动作的 fresh 授权，状态型命令的目标仍合格。
@@ -1752,4 +1752,31 @@ mod tests {
         let other = "invalid: event timestamp too far";
         assert_eq!(restriction_view(other), None);
     }
+
+    #[tokio::test]
+    #[ignore = "requires PUBLICATION_ABSENCE_TEST_DATABASE_URL pointing at an isolated migrated database"]
+    async fn historical_absence_moderation_readback_preserves_unknown_and_old_audit() {
+        let mut tx = crate::agent_profile::tests::absence_fixture().await;
+        for label in ["report-false","delete-false"] {
+            let id: Uuid = sqlx::query_scalar("select id from absence_fixture where label=$1").bind(label).fetch_one(&mut *tx).await.unwrap();
+            let ae = governance::lock_execution(&mut tx,id).await.unwrap();
+            assert_eq!(ae.dispatch_state,"UNKNOWN");
+            let definition: Definition = sqlx::query_as(&format!("select {} from catalog.action_definition where action_key=$1 and version=1",governance::DEFINITION_COLUMNS)).bind(&ae.action_key).fetch_one(&mut *tx).await.unwrap();
+            for observed in [Ok(false),Err(OperatorError::NotConverged("unavailable".into()))] {
+                settle_in(&mut tx,&definition,id,publication_observation(observed,vec![])).await.unwrap();
+                let current = governance::lock_execution(&mut tx,id).await.unwrap();
+                assert_eq!(current.dispatch_state,"UNKNOWN","{label}: empty or failed reads cannot abort");
+            }
+            let event_id: String = sqlx::query_scalar("select event_id from admission.moderation_publication where action_execution_id=$1 and outcome is null").bind(id).fetch_one(&mut *tx).await.unwrap();
+            settle_in(&mut tx,&definition,id,publication_observation(Ok(true),vec![Evidence::new(EvidenceKind::BuzzEventId,event_id)])).await.unwrap();
+            let current = governance::lock_execution(&mut tx,id).await.unwrap();
+            assert_eq!(current.dispatch_state,"DISPATCHED");
+            let audit: Vec<(String,String)> = sqlx::query_as("select event_type,result_code from audit.audit_event where operation_id=$1 order by event_key").bind(ae.operation_id).fetch_all(&mut *tx).await.unwrap();
+            assert!(audit.contains(&("OUTCOME".into(),"DEPENDENCY_UNAVAILABLE".into())));
+            assert!(audit.contains(&("RECONCILIATION".into(),"UNKNOWN".into())));
+            assert!(audit.contains(&("OUTCOME".into(),outcome_code(&ae.action_key).into())),"positive correction needs its own key");
+        }
+        tx.rollback().await.unwrap();
+    }
+
 }
