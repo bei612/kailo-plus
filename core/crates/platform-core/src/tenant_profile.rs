@@ -363,19 +363,42 @@ mod tests {
                 .unwrap();
         assert!(icon.is_none());
         tx.commit().await.unwrap();
-        async fn competing_write(pool: &sqlx::PgPool, ae: &Execution, def: &Definition, name: &str) -> Result<(), Refusal> {
+        async fn competing_write(
+            pool: &sqlx::PgPool,
+            ae: &Execution,
+            def: &Definition,
+            name: &str,
+        ) -> Result<(), Refusal> {
             let mut tx = pool.begin().await?;
-            let params = Params { tenant_profile: Some(json!({"name":name})), resource_version: Some(3), explicit_confirmation: Some(true), ..Default::default() };
+            let params = Params {
+                tenant_profile: Some(json!({"name":name})),
+                resource_version: Some(3),
+                explicit_confirmation: Some(true),
+                ..Default::default()
+            };
             prewrite(&mut tx, ae, def, &params).await?;
             tx.commit().await?;
             Ok(())
         }
-        let (first, second) = tokio::join!(competing_write(&pool, &ae, &def, "first"), competing_write(&pool, &ae, &def, "second"));
+        let (first, second) = tokio::join!(
+            competing_write(&pool, &ae, &def, "first"),
+            competing_write(&pool, &ae, &def, "second")
+        );
         match (first, second) {
-            (Ok(()), Err(refused)) | (Err(refused), Ok(())) => assert!(matches!(refused, Refusal::Conflict(ReasonCode::TargetStateConflict))),
-            other => panic!("one concurrent request must win and the other must conflict: {other:?}"),
+            (Ok(()), Err(refused)) | (Err(refused), Ok(())) => assert!(matches!(
+                refused,
+                Refusal::Conflict(ReasonCode::TargetStateConflict)
+            )),
+            other => {
+                panic!("one concurrent request must win and the other must conflict: {other:?}")
+            }
         }
-        let (version, name): (i32, String) = sqlx::query_as("select version,name from identity.tenant where id=$1").bind(tenant).fetch_one(&pool).await.unwrap();
+        let (version, name): (i32, String) =
+            sqlx::query_as("select version,name from identity.tenant where id=$1")
+                .bind(tenant)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
         assert_eq!(version, 4);
         assert!(matches!(name.as_str(), "first" | "second"));
         let mut tx = pool.begin().await.unwrap();
