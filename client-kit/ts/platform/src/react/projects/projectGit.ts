@@ -335,6 +335,8 @@ function localStatus(raw: unknown): ProjectRepoSyncStatus | null {
     if (!isRecord(pending) || typeof pending.branch !== "string" || typeof pending.new_commit !== "string" || !COMMIT.test(pending.new_commit)
       || pending.old_commit !== null && (typeof pending.old_commit !== "string" || !COMMIT.test(pending.old_commit))
       || !["retry_same_intent", "unknown", "conflict"].includes(String(pending.outcome))) throw new TransportError("Invalid pending repository push");
+    if (raw.can_pull || raw.can_push && pending.outcome !== "retry_same_intent")
+      throw new TransportError("Inconsistent pending repository push");
     pendingPush = { branch: pending.branch, oldCommit: pending.old_commit as string | null,
       newCommit: pending.new_commit, outcome: pending.outcome as ProjectPendingPush["outcome"] };
   }
@@ -381,7 +383,8 @@ export function createNativeProjectsGitHost(invoke: NativeProjectsGitInvoke, sco
       getProjectRepoSyncStatus: async input => localStatus(await send("get_project_repo_sync_status", localBranch(input))),
       pushProjectLocalRepository: async input => {
         const raw = await send("push_project_local_repository", localBranch(input));
-        if (!isRecord(raw) || raw.pushed !== true || typeof raw.branch !== "string" || typeof raw.commit !== "string" || !COMMIT.test(raw.commit))
+        if (!isRecord(raw) || raw.pushed !== true || typeof raw.branch !== "string" || typeof raw.commit !== "string" || !COMMIT.test(raw.commit)
+          || input.branchName != null && raw.branch !== input.branchName)
           throw new TransportError("Unconfirmed repository push");
         return { branch: raw.branch, commit: raw.commit };
       },

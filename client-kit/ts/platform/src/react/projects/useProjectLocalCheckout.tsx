@@ -14,42 +14,66 @@ import type { Repository } from "./projectModels";
 import { PROJECT_CONTEXT_ACTION_BUTTON_CLASS } from "./projectContextActionStyles";
 import { PROJECT_PICKER_TRIGGER_CLASS } from "./projectPanelStyles";
 import { isOutcomeUnknown } from "../../transport";
+import { useFocusedRefetchInterval } from "./useProjectAppFocus";
 
-export function useProjectLocalCheckout(host: ProjectsHost, repository: Repository, branch: string) {
+export type ProjectCheckoutSource = { source: "remote" | "local"; onChange: (source: "remote" | "local") => void };
+
+export function useProjectLocalCheckout(host: ProjectsHost, repository: Repository, branch: string, selection: ProjectCheckoutSource) {
   const t = useUiT();
   const checkout = host.git?.checkout;
   const queryClient = useQueryClient();
   const owner = JSON.stringify([host.scopeKey, repository.repoAddress]);
-  const [selected, setSelected] = React.useState({ owner, source: "remote" as "remote" | "local" });
-  const source = checkout && selected.owner === owner ? selected.source : "remote";
-  const selectSource = (source: "remote" | "local") => setSelected({ owner, source });
+  const activeOwner = React.useRef<string | null>(owner);
+  activeOwner.current = owner;
+  React.useEffect(() => {
+    activeOwner.current = owner;
+    return () => { activeOwner.current = null; };
+  }, [owner]);
+  const source = checkout ? selection.source : "remote";
+  const selectSource = (source: "remote" | "local") => {
+    if (activeOwner.current === owner) selection.onChange(source);
+  };
+  const refetchInterval = useFocusedRefetchInterval(60_000);
   const ref = { repository: repository.repoAddress, defaultBranch: branch, baseBranch: repository.defaultBranch };
   const branchRef = { repository: repository.repoAddress, branchName: branch, baseBranch: repository.defaultBranch };
   const status = useQuery({
     queryKey: ["project", host.scopeKey, repository.id, "local-status", branch], enabled: Boolean(checkout), retry: 1,
-    queryFn: () => { if (!checkout) throw new Error("Local checkout unavailable"); return checkout.getProjectRepoSyncStatus(branchRef); },
+    staleTime: 10_000, refetchInterval, refetchOnWindowFocus: false,
+    queryFn: ({ signal }) => { signal.throwIfAborted(); if (!checkout || activeOwner.current !== owner) throw new Error("Local checkout unavailable"); return checkout.getProjectRepoSyncStatus(branchRef); },
   });
   const snapshot = useQuery({
     queryKey: ["project", host.scopeKey, repository.id, "local-snapshot", branch], enabled: Boolean(checkout && source === "local"), retry: 1,
-    queryFn: async () => { if (!checkout) throw new Error("Local checkout unavailable"); return (await checkout.getProjectLocalRepoSnapshot(ref))?.snapshot ?? null; },
+    queryFn: async ({ signal }) => { signal.throwIfAborted(); if (!checkout || activeOwner.current !== owner) throw new Error("Local checkout unavailable"); return (await checkout.getProjectLocalRepoSnapshot(ref))?.snapshot ?? null; },
   });
   const mutation = useMutation({
+    mutationKey: ["project-local-checkout", owner],
     retry: false,
+    onMutate: () => ({ owner }),
     mutationFn: async (action: "clone" | "push" | "pull" | "open") => {
-      if (!checkout) throw new Error("Local checkout unavailable");
+      if (!checkout || activeOwner.current !== owner) throw new Error("Local checkout unavailable");
       if (action === "clone") { await checkout.cloneProjectRepository(ref); selectSource("local"); }
       if (action === "push") await checkout.pushProjectLocalRepository({ ...branchRef,
         branchName: status.data?.pendingPush?.branch ?? branchRef.branchName });
       if (action === "pull") await checkout.pullProjectLocalRepository(branchRef);
       if (action === "open") await checkout.openProjectRepositoryFolder({ repository: repository.repoAddress });
     },
-    onError: (error, action) => {
+    onError: (error, action, operation) => {
+      if (operation?.owner !== activeOwner.current) return;
       const reason = typeof error === "string" ? error : error instanceof Error ? error.message : "";
       if (reason === "project_repo_outcome_unknown" || action === "push" && isOutcomeUnknown(error)) toast.info(t("projects.checkout.unknown"));
       else toast.error(t(reason === "project_repo_conflict" ? "projects.checkout.conflict" : "projects.checkout.failed"));
     },
-    onSuccess: (_data, action) => { if (action !== "open") toast.success(t("projects.checkout.completed")); },
-    onSettled: () => queryClient.invalidateQueries({ queryKey: ["project", host.scopeKey, repository.id] }),
+    onSuccess: (_data, action, operation) => {
+      if (operation?.owner !== activeOwner.current) return;
+      if (action !== "open") toast.success(t("projects.checkout.completed"));
+    },
+    onSettled: (_data, _error, _action, operation) => {
+      if (operation?.owner !== activeOwner.current) return;
+      return Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["project", host.scopeKey, repository.id] }),
+        queryClient.invalidateQueries({ queryKey: ["project-repository-file-content", host.scopeKey, repository.id, "local"] }),
+      ]);
+    },
   });
   return { available: Boolean(checkout), source, selectSource, status, snapshot, mutation };
 }

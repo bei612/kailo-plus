@@ -83,8 +83,10 @@ describe("native local checkout host",()=>{
   it("never accepts an unconfirmed push or malformed pending status",async()=>{
     const host=createNativeProjectsGitHost(async()=>({pushed:false,branch:"main",commit:"e".repeat(40)}),scope);
     await expect(host.checkout!.pushProjectLocalRepository({repository,branchName:"main"})).rejects.toThrow();
+    const wrongBranch=createNativeProjectsGitHost(async()=>({pushed:true,branch:"other",commit:"e".repeat(40)}),scope);
+    await expect(wrongBranch.checkout!.pushProjectLocalRepository({repository,branchName:"main"})).rejects.toThrow();
     for(const raw of [{...rawStatus,pending_push:{...rawStatus.pending_push,outcome:"delivered"}},
-      {...rawStatus,can_push:"yes"},{...rawStatus,pending_push:{...rawStatus.pending_push,new_commit:"bad"}}]){
+      {...rawStatus,can_push:"yes"},{...rawStatus,can_pull:true},{...rawStatus,pending_push:{...rawStatus.pending_push,outcome:"unknown"}},{...rawStatus,pending_push:{...rawStatus.pending_push,new_commit:"bad"}}]){
       const malformed=createNativeProjectsGitHost(async()=>raw,scope);
       await expect(malformed.checkout!.getProjectRepoSyncStatus({repository})).rejects.toThrow();
     }

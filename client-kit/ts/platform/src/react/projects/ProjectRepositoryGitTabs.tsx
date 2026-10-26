@@ -37,7 +37,8 @@ import { PROJECT_SECTION_HEADER_CLASS } from "./projectPanelStyles";
 import type { ProjectPullRequest } from "./projectPullRequests.mjs";
 import { projectRepoUnavailablePresentation, projectRepoUnavailableReason } from "./lib/projectRepoAvailability";
 import { useRepositoryFileContentSource } from "./useRepositoryFileContent";
-import { useProjectLocalCheckout } from "./useProjectLocalCheckout";
+import { useProjectLocalCheckout, type ProjectCheckoutSource } from "./useProjectLocalCheckout";
+import { useQueryClient } from "@tanstack/react-query";
 import type { UserProfileLookup } from "../messages/system/identity";
 
 const NO_BRANCHES: Array<{ name: string; commit: string }> = [];
@@ -46,13 +47,17 @@ const NO_BRANCHES: Array<{ name: string; commit: string }> = [];
 export type RepositoryFetchControls = { onFetch: () => void; fetchPending: boolean };
 
 /** ProjectDetailScreen's repository git state, shared by the tab contents and the right panel. */
-export function useRepositoryGitState({ host, repository, pullRequests, commitHash }: {
+export function useRepositoryGitState({ host, repository, pullRequests, commitHash, checkoutSource }: {
   host: ProjectsHost;
   repository: Repository;
   pullRequests: ProjectPullRequest[];
   commitHash: string | null;
+  checkoutSource: ProjectCheckoutSource;
 }) {
   const t = useUiT();
+  const cache = useQueryClient();
+  const lifetime = React.useMemo(() => ({ active: true }), [host.scopeKey, repository.repoAddress]);
+  React.useEffect(() => { lifetime.active = true; return () => { lifetime.active = false; }; }, [lifetime]);
   // Repository refs only serve the Git tabs and the branch picker: no Git seam, no ref read.
   const repoStateQuery = useRepoStateQuery(host, host.git ? repository : null);
   const defaultBranch = resolveProjectDefaultBranch(repository.defaultBranch, repoStateQuery.data);
@@ -72,7 +77,7 @@ export function useRepositoryGitState({ host, repository, pullRequests, commitHa
     tags: NO_BRANCHES,
   });
   const activeBranch = selectedBranch ?? defaultBranch;
-  const localCheckout = useProjectLocalCheckout(host, repository, activeBranch);
+  const localCheckout = useProjectLocalCheckout(host, repository, activeBranch, checkoutSource);
   const remoteSnapshotQuery = useProjectRepoSnapshotQuery(host, repository, activeBranch, null, localCheckout.source === "remote");
   const snapshotQuery = localCheckout.source === "local" ? localCheckout.snapshot : remoteSnapshotQuery;
   const commitDiffQuery = useProjectCommitDiffQuery(host, repository, commitHash, localCheckout.source);
@@ -126,7 +131,11 @@ export function useRepositoryGitState({ host, repository, pullRequests, commitHa
   // Original handleFetchRepo: refetch, then report the classified failure or the refresh.
   const refetchSnapshot = snapshotQuery.refetch, refetchState = repoStateQuery.refetch, refetchLocal = localCheckout.status.refetch;
   const onFetch = React.useCallback(() => {
-    void Promise.all([refetchSnapshot(), refetchState(), ...(host.git?.checkout ? [refetchLocal()] : [])]).then(results => {
+    if (!lifetime.active) return;
+    void Promise.all([refetchSnapshot(), refetchState(), ...(host.git?.checkout ? [refetchLocal()] : [])]).then(async results => {
+      if (!lifetime.active) return;
+      await cache.invalidateQueries({ queryKey: ["project-repository-file-content", host.scopeKey, repository.id] });
+      if (!lifetime.active) return;
       const error = results.find(result => result.error)?.error;
       if (error) {
         const presentation = projectRepoUnavailablePresentation(projectRepoUnavailableReason(error));
@@ -135,7 +144,7 @@ export function useRepositoryGitState({ host, repository, pullRequests, commitHa
       }
       toast.success(t("projects.repository.fetched"));
     });
-  }, [refetchSnapshot, refetchState, refetchLocal, host, t]);
+  }, [refetchSnapshot, refetchState, refetchLocal, host, t, cache, repository.id, lifetime]);
   const fetch: RepositoryFetchControls = { onFetch, fetchPending: snapshotQuery.isFetching || repoStateQuery.isFetching };
   return { activeBranch, activeBranchCommit, branchActions, branchOptions, commitDiffQuery, fetch, fileContentSource, files,
     gitDataState, readmeFile, snapshot, snapshotQuery, sourceControls, unavailableReason, localCheckout };
