@@ -616,13 +616,17 @@ async fn delivery_uses_existing_router_body_bound() {
     );
 }
 
-
 async fn observe_reference(
-    state: Arc<AppState>, host: &str, keys: &Keys, community: CommunityId, id: nostr::EventId,
+    state: Arc<AppState>,
+    host: &str,
+    keys: &Keys,
+    community: CommunityId,
+    id: nostr::EventId,
 ) -> Response {
     let body = serde_json::to_vec(&serde_json::json!({
         "event_id": id.to_hex(), "community_id": community.as_uuid().to_string(),
-    })).unwrap();
+    }))
+    .unwrap();
     let token = auth_at(keys, host, "/events/observation", &body);
     post_at(state, host, "/events/observation", &token, body).await
 }
@@ -631,49 +635,98 @@ async fn observe_reference(
 #[ignore = "requires isolated migrated BUZZ_TEST_DATABASE_URL and REDIS_URL"]
 async fn observation_keeps_original_message_evidence_after_message_and_deletion_are_deleted() {
     let (state, pool, community, host, keys, channel) = fixture().await;
-    let message = EventBuilder::new(Kind::Custom(9), "private message must never enter observation")
-        .tags([Tag::parse(["h", &channel.to_string()]).unwrap()])
-        .sign_with_keys(&keys).unwrap();
+    let message = EventBuilder::new(
+        Kind::Custom(9),
+        "private message must never enter observation",
+    )
+    .tags([Tag::parse(["h", &channel.to_string()]).unwrap()])
+    .sign_with_keys(&keys)
+    .unwrap();
     let raw = message.as_json().into_bytes();
     let path = format!("/events?community={}", community.as_uuid());
-    let token = auth_with_tags(&keys, &host, &path, &raw,
-        vec![Tag::parse(["community", &community.as_uuid().to_string()]).unwrap()]);
+    let token = auth_with_tags(
+        &keys,
+        &host,
+        &path,
+        &raw,
+        vec![Tag::parse(["community", &community.as_uuid().to_string()]).unwrap()],
+    );
     let response = post_at(state.clone(), &host, &path, &token, raw).await;
-    assert_eq!(response.status(), StatusCode::OK, "ordinary scoped message retains original ingest admission");
-    let ack: serde_json::Value = serde_json::from_slice(&to_bytes(response.into_body(), 4096).await.unwrap()).unwrap();
+    assert_eq!(
+        response.status(),
+        StatusCode::OK,
+        "ordinary scoped message retains original ingest admission"
+    );
+    let ack: serde_json::Value =
+        serde_json::from_slice(&to_bytes(response.into_body(), 4096).await.unwrap()).unwrap();
     assert_eq!(ack["accepted"], true);
     assert_eq!(ack["event_id"], message.id.to_hex());
     assert_eq!(ack["community_id"], community.as_uuid().to_string());
     let deletion = EventBuilder::new(Kind::EventDeletion, "")
         .tags([Tag::event(message.id)])
-        .sign_with_keys(&keys).unwrap();
-    state.db.insert_event(community, &deletion, Some(channel)).await.unwrap();
+        .sign_with_keys(&keys)
+        .unwrap();
+    state
+        .db
+        .insert_event(community, &deletion, Some(channel))
+        .await
+        .unwrap();
     for id in [message.id, deletion.id] {
-        state.db.soft_delete_event(community, id.as_bytes()).await.unwrap();
-        assert!(state.db.get_event_by_id(community, id.as_bytes()).await.unwrap().is_none());
+        state
+            .db
+            .soft_delete_event(community, id.as_bytes())
+            .await
+            .unwrap();
+        assert!(state
+            .db
+            .get_event_by_id(community, id.as_bytes())
+            .await
+            .unwrap()
+            .is_none());
     }
     let response = observe_reference(state.clone(), &host, &keys, community, message.id).await;
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(response.headers()["cache-control"], "no-store");
-    let body: serde_json::Value = serde_json::from_slice(&to_bytes(response.into_body(), 4096).await.unwrap()).unwrap();
-    assert_eq!(body, serde_json::json!({
-        "event_id": message.id.to_hex(), "community_id": community.as_uuid().to_string(),
-        "pubkey": keys.public_key().to_hex(), "kind": 9, "channel_id": channel.to_string(),
-    }));
+    let body: serde_json::Value =
+        serde_json::from_slice(&to_bytes(response.into_body(), 4096).await.unwrap()).unwrap();
+    assert_eq!(
+        body,
+        serde_json::json!({
+            "event_id": message.id.to_hex(), "community_id": community.as_uuid().to_string(),
+            "pubkey": keys.public_key().to_hex(), "kind": 9, "channel_id": channel.to_string(),
+        })
+    );
     let response = observe_reference(state.clone(), &host, &keys, community, deletion.id).await;
     assert_eq!(response.status(), StatusCode::OK);
-    let body: serde_json::Value = serde_json::from_slice(&to_bytes(response.into_body(), 4096).await.unwrap()).unwrap();
+    let body: serde_json::Value =
+        serde_json::from_slice(&to_bytes(response.into_body(), 4096).await.unwrap()).unwrap();
     assert_eq!(body["kind"], 5);
-    assert_eq!(body.as_object().unwrap().len(), 5, "no message, tags, deletion state or absence conclusion");
-    let missing = EventBuilder::new(Kind::Custom(9), "not submitted").sign_with_keys(&keys).unwrap();
+    assert_eq!(
+        body.as_object().unwrap().len(),
+        5,
+        "no message, tags, deletion state or absence conclusion"
+    );
+    let missing = EventBuilder::new(Kind::Custom(9), "not submitted")
+        .sign_with_keys(&keys)
+        .unwrap();
     let response = observe_reference(state.clone(), &host, &keys, community, missing.id).await;
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
-    let body: serde_json::Value = serde_json::from_slice(&to_bytes(response.into_body(), 4096).await.unwrap()).unwrap();
+    let body: serde_json::Value =
+        serde_json::from_slice(&to_bytes(response.into_body(), 4096).await.unwrap()).unwrap();
     assert_eq!(body, serde_json::json!({"error":"publication unavailable"}));
     sqlx::query("UPDATE events SET content='tampered' WHERE community_id=$1 AND id=$2")
-        .bind(community.as_uuid()).bind(message.id.as_bytes().as_slice()).execute(&pool).await.unwrap();
-    assert_eq!(observe_reference(state, &host, &keys, community, message.id).await.status(), StatusCode::NOT_FOUND,
-        "an asserted stored ID without the original valid signature is not positive evidence");
+        .bind(community.as_uuid())
+        .bind(message.id.as_bytes().as_slice())
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        observe_reference(state, &host, &keys, community, message.id)
+            .await
+            .status(),
+        StatusCode::NOT_FOUND,
+        "an asserted stored ID without the original valid signature is not positive evidence"
+    );
 }
 
 #[tokio::test]
@@ -681,51 +734,165 @@ async fn observation_keeps_original_message_evidence_after_message_and_deletion_
 async fn observation_preserves_private_channel_membership_and_personal_publication_authorship() {
     let (state, pool, community, host, keys, channel) = fixture().await;
     sqlx::query("UPDATE channels SET visibility='private' WHERE community_id=$1 AND id=$2")
-        .bind(community.as_uuid()).bind(channel).execute(&pool).await.unwrap();
+        .bind(community.as_uuid())
+        .bind(channel)
+        .execute(&pool)
+        .await
+        .unwrap();
     let message = EventBuilder::new(Kind::Custom(9), "private")
         .tags([Tag::parse(["h", &channel.to_string()]).unwrap()])
-        .sign_with_keys(&keys).unwrap();
-    state.db.insert_event(community, &message, Some(channel)).await.unwrap();
+        .sign_with_keys(&keys)
+        .unwrap();
+    state
+        .db
+        .insert_event(community, &message, Some(channel))
+        .await
+        .unwrap();
     let control = Keys::generate();
     sqlx::query("INSERT INTO relay_members(community_id,pubkey,role) VALUES($1,$2,'owner')")
-        .bind(community.as_uuid()).bind(control.public_key().to_hex()).execute(&pool).await.unwrap();
-    assert_eq!(observe_reference(state.clone(), &host, &control, community, message.id).await.status(), StatusCode::NOT_FOUND,
-        "a Community owner never becomes a private conversation participant");
-    assert_eq!(observe_reference(state.clone(), &host, &keys, community, message.id).await.status(), StatusCode::OK);
-    sqlx::query("DELETE FROM channel_members WHERE community_id=$1 AND channel_id=$2 AND pubkey=$3")
-        .bind(community.as_uuid()).bind(channel).bind(keys.public_key().as_bytes().as_slice())
-        .execute(&pool).await.unwrap();
-    assert_eq!(observe_reference(state.clone(), &host, &keys, community, message.id).await.status(), StatusCode::NOT_FOUND,
-        "author identity alone does not retain a revoked channel read");
+        .bind(community.as_uuid())
+        .bind(control.public_key().to_hex())
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        observe_reference(state.clone(), &host, &control, community, message.id)
+            .await
+            .status(),
+        StatusCode::NOT_FOUND,
+        "a Community owner never becomes a private conversation participant"
+    );
+    assert_eq!(
+        observe_reference(state.clone(), &host, &keys, community, message.id)
+            .await
+            .status(),
+        StatusCode::OK
+    );
+    sqlx::query(
+        "DELETE FROM channel_members WHERE community_id=$1 AND channel_id=$2 AND pubkey=$3",
+    )
+    .bind(community.as_uuid())
+    .bind(channel)
+    .bind(keys.public_key().as_bytes().as_slice())
+    .execute(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        observe_reference(state.clone(), &host, &keys, community, message.id)
+            .await
+            .status(),
+        StatusCode::NOT_FOUND,
+        "author identity alone does not retain a revoked channel read"
+    );
     let reminder = EventBuilder::new(Kind::Custom(30300), "encrypted personal reminder")
-        .tags([Tag::parse(["d", "personal"]).unwrap()]).sign_with_keys(&keys).unwrap();
-    state.db.insert_event(community, &reminder, None).await.unwrap();
-    assert_eq!(observe_reference(state.clone(), &host, &keys, community, reminder.id).await.status(), StatusCode::OK);
-    assert_eq!(observe_reference(state.clone(), &host, &control, community, reminder.id).await.status(), StatusCode::NOT_FOUND);
-    let profile = EventBuilder::new(Kind::Metadata, "{}").sign_with_keys(&keys).unwrap();
-    state.db.insert_event(community, &profile, None).await.unwrap();
-    assert_eq!(observe_reference(state, &host, &keys, community, profile.id).await.status(), StatusCode::NOT_FOUND,
-        "the new reader is bounded to existing Core publication kinds");
+        .tags([Tag::parse(["d", "personal"]).unwrap()])
+        .sign_with_keys(&keys)
+        .unwrap();
+    state
+        .db
+        .insert_event(community, &reminder, None)
+        .await
+        .unwrap();
+    assert_eq!(
+        observe_reference(state.clone(), &host, &keys, community, reminder.id)
+            .await
+            .status(),
+        StatusCode::OK
+    );
+    assert_eq!(
+        observe_reference(state.clone(), &host, &control, community, reminder.id)
+            .await
+            .status(),
+        StatusCode::NOT_FOUND
+    );
+    let profile = EventBuilder::new(Kind::Metadata, "{}")
+        .sign_with_keys(&keys)
+        .unwrap();
+    state
+        .db
+        .insert_event(community, &profile, None)
+        .await
+        .unwrap();
+    assert_eq!(
+        observe_reference(state, &host, &keys, community, profile.id)
+            .await
+            .status(),
+        StatusCode::NOT_FOUND,
+        "the new reader is bounded to existing Core publication kinds"
+    );
 }
 
 #[tokio::test]
 #[ignore = "requires isolated migrated BUZZ_TEST_DATABASE_URL and REDIS_URL"]
 async fn observation_binds_request_body_host_community_and_original_nip98_replay() {
     let (state, pool, community, host, keys, _) = fixture().await;
-    let note = EventBuilder::new(Kind::TextNote, "community note").sign_with_keys(&keys).unwrap();
+    let note = EventBuilder::new(Kind::TextNote, "community note")
+        .sign_with_keys(&keys)
+        .unwrap();
     state.db.insert_event(community, &note, None).await.unwrap();
     let body = serde_json::to_vec(&serde_json::json!({"event_id":note.id.to_hex(),"community_id":community.as_uuid().to_string()})).unwrap();
     let token = auth_at(&keys, &host, "/events/observation", &body);
-    assert_eq!(post_at(state.clone(), &host, "/events/observation", &token, body.clone()).await.status(), StatusCode::OK);
-    assert_eq!(post_at(state.clone(), &host, "/events/observation", &token, body.clone()).await.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        post_at(
+            state.clone(),
+            &host,
+            "/events/observation",
+            &token,
+            body.clone()
+        )
+        .await
+        .status(),
+        StatusCode::OK
+    );
+    assert_eq!(
+        post_at(
+            state.clone(),
+            &host,
+            "/events/observation",
+            &token,
+            body.clone()
+        )
+        .await
+        .status(),
+        StatusCode::UNAUTHORIZED
+    );
     let token = auth_at(&keys, &host, "/events/observation", b"different body");
-    assert_eq!(post_at(state.clone(), &host, "/events/observation", &token, body.clone()).await.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        post_at(
+            state.clone(),
+            &host,
+            "/events/observation",
+            &token,
+            body.clone()
+        )
+        .await
+        .status(),
+        StatusCode::UNAUTHORIZED
+    );
     let (_, _, other, _, _, _) = fixture().await;
-    assert_eq!(observe_reference(state.clone(), &host, &keys, other, note.id).await.status(), StatusCode::NOT_FOUND);
+    assert_eq!(
+        observe_reference(state.clone(), &host, &keys, other, note.id)
+            .await
+            .status(),
+        StatusCode::NOT_FOUND
+    );
     let extra = serde_json::to_vec(&serde_json::json!({"event_id":note.id.to_hex(),"community_id":community.as_uuid().to_string(),"content":"forbidden"})).unwrap();
     let token = auth_at(&keys, &host, "/events/observation", &extra);
-    assert_eq!(post_at(state.clone(), &host, "/events/observation", &token, extra).await.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        post_at(state.clone(), &host, "/events/observation", &token, extra)
+            .await
+            .status(),
+        StatusCode::BAD_REQUEST
+    );
     sqlx::query("UPDATE communities SET archived_at=now() WHERE id=$1")
-        .bind(community.as_uuid()).execute(&pool).await.unwrap();
-    assert_eq!(observe_reference(state, &host, &keys, community, note.id).await.status(), StatusCode::NOT_FOUND);
+        .bind(community.as_uuid())
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        observe_reference(state, &host, &keys, community, note.id)
+            .await
+            .status(),
+        StatusCode::NOT_FOUND
+    );
 }

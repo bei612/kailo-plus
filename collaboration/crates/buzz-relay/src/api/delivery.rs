@@ -146,7 +146,12 @@ async fn readmit_observation(
     auth: &bridge::VerifiedBridgeAuth,
     event: &buzz_core::StoredEvent,
 ) -> Result<(), Response> {
-    if !state.db.is_community_active(scope.community()).await.map_err(|_| refused())? {
+    if !state
+        .db
+        .is_community_active(scope.community())
+        .await
+        .map_err(|_| refused())?
+    {
         return Err(refused());
     }
     super::relay_members::enforce_relay_membership(
@@ -155,12 +160,17 @@ async fn readmit_observation(
         auth.pubkey.as_bytes(),
         super::relay_members::extract_auth_tag_header(headers),
         auth.signed_created_at,
-    ).await.map_err(|_| refused())?;
+    )
+    .await
+    .map_err(|_| refused())?;
     // Core-governed channels (including private conversations) require live
     // membership. Never reuse a cached allow or admit CONTROL to a private DM.
     if let Some(channel) = event.channel_id {
-        if !state.db.is_member(scope.community(), channel, auth.pubkey.as_bytes())
-            .await.map_err(|_| refused())?
+        if !state
+            .db
+            .is_member(scope.community(), channel, auth.pubkey.as_bytes())
+            .await
+            .map_err(|_| refused())?
         {
             return Err(refused());
         }
@@ -184,52 +194,85 @@ pub async fn observation(
     headers: HeaderMap,
     body: Bytes,
 ) -> Result<Response, Response> {
-    let host = headers.get(axum::http::header::HOST)
-        .and_then(|v| v.to_str().ok()).unwrap_or("");
-    let scope = tenant::bind_community(&state.db, host).await.map_err(|_| refused())?;
+    let host = headers
+        .get(axum::http::header::HOST)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    let scope = tenant::bind_community(&state.db, host)
+        .await
+        .map_err(|_| refused())?;
     let url = bridge::nip98_expected_url(&state.config.relay_url, &scope, "/events/observation");
-    let auth = bridge::verify_bridge_auth_with_options(&headers, "POST", &url, Some(&body), true, true)
-        .map_err(IntoResponse::into_response)?;
+    let auth =
+        bridge::verify_bridge_auth_with_options(&headers, "POST", &url, Some(&body), true, true)
+            .map_err(IntoResponse::into_response)?;
     bridge::enforce_http_admission(&state, &scope, &auth.pubkey)
-        .await.map_err(IntoResponse::into_response)?;
+        .await
+        .map_err(IntoResponse::into_response)?;
     bridge::check_nip98_replay(&state, &scope, auth.event_id_bytes)
-        .await.map_err(IntoResponse::into_response)?;
-    let request: ObservationRequest = serde_json::from_slice(&body)
-        .map_err(|_| StatusCode::BAD_REQUEST.into_response())?;
+        .await
+        .map_err(IntoResponse::into_response)?;
+    let request: ObservationRequest =
+        serde_json::from_slice(&body).map_err(|_| StatusCode::BAD_REQUEST.into_response())?;
     let id = nostr::EventId::from_hex(&request.event_id).map_err(|_| refused())?;
     let community = uuid::Uuid::parse_str(&request.community_id).map_err(|_| refused())?;
-    if id.to_hex() != request.event_id || community.to_string() != request.community_id
+    if id.to_hex() != request.event_id
+        || community.to_string() != request.community_id
         || community != *scope.community().as_uuid()
     {
         return Err(refused());
     }
     // The existing getter is explicitly a writer read; no replica, ordinary
     // deleted_at filter, or new receipt table can stand in for this fact.
-    let stored = state.db.get_event_by_id_including_deleted(scope.community(), id.as_bytes())
-        .await.map_err(|_| StatusCode::SERVICE_UNAVAILABLE.into_response())?
+    let stored = state
+        .db
+        .get_event_by_id_including_deleted(scope.community(), id.as_bytes())
+        .await
+        .map_err(|_| StatusCode::SERVICE_UNAVAILABLE.into_response())?
         .ok_or_else(refused)?;
     // Only existing Core publication kinds. Private system results, engrams,
     // arbitrary author metadata and other gated protocols are not this API.
-    if !matches!(stored.event.kind.as_u16(),
-        1 | 5 | 7 | 9 | 1618 | 1621 | 1630 | 1631 | 1632 | 1633 | 9002 |
-        30300 | 30617 | 30621 | 40003 | 45001 | 45003)
-        || stored.event.id != id || stored.event.verify().is_err()
+    if !matches!(
+        stored.event.kind.as_u16(),
+        1 | 5
+            | 7
+            | 9
+            | 1618
+            | 1621
+            | 1630
+            | 1631
+            | 1632
+            | 1633
+            | 9002
+            | 30300
+            | 30617
+            | 30621
+            | 40003
+            | 45001
+            | 45003
+    ) || stored.event.id != id
+        || stored.event.verify().is_err()
     {
         return Err(refused());
     }
     readmit_observation(&state, &scope, &headers, &auth, &stored).await?;
-    let after = tenant::bind_community(&state.db, host).await.map_err(|_| refused())?;
+    let after = tenant::bind_community(&state.db, host)
+        .await
+        .map_err(|_| refused())?;
     if after.community() != scope.community() {
         return Err(refused());
     }
     readmit_observation(&state, &scope, &headers, &auth, &stored).await?;
-    Ok(([("cache-control", "no-store")], Json(serde_json::json!({
-        "event_id": stored.event.id.to_hex(),
-        "community_id": community.to_string(),
-        "pubkey": stored.event.pubkey.to_hex(),
-        "kind": stored.event.kind.as_u16(),
-        "channel_id": stored.channel_id.map(|channel| channel.to_string()),
-    }))).into_response())
+    Ok((
+        [("cache-control", "no-store")],
+        Json(serde_json::json!({
+            "event_id": stored.event.id.to_hex(),
+            "community_id": community.to_string(),
+            "pubkey": stored.event.pubkey.to_hex(),
+            "kind": stored.event.kind.as_u16(),
+            "channel_id": stored.channel_id.map(|channel| channel.to_string()),
+        })),
+    )
+        .into_response())
 }
 
 #[cfg(test)]
