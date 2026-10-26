@@ -225,7 +225,9 @@ def problems(path, m, check_digest=True):
                 bad.append(f"{name}: inputs 登记的 {p} 不存在")
         if bdf and not _under(str(bdf), incl):
             bad.append(f"{name}: build_dockerfile 不在 inputs 内，改它不会让产物失效")
-        build_args = _list(a, "build_args")
+        required_args = _list(a, "build_args")
+        optional_args = _list(a, "optional_build_args")
+        build_args = required_args + optional_args
         for x in build_args:
             if not re.fullmatch(r"[A-Z][A-Z0-9_]*", str(x)):
                 bad.append(f"{name}: build_args 只登记变量名（大写字母、数字、下划线），得到 {x!r}")
@@ -662,6 +664,7 @@ def plan(name):
     print(f"dockerfile={q(str(art.get('build_dockerfile') or ''))}")
     print("secrets=(" + " ".join(q(x) for x in _list(art, "build_secrets")) + ")")
     print("build_args=(" + " ".join(q(x) for x in _list(art, "build_args")) + ")")
+    print("optional_build_args=(" + " ".join(q(x) for x in _list(art, "optional_build_args")) + ")")
     facts = art.get("build_facts") or {}
     print("build_facts=(" + " ".join(q(f"{k}={v}") for k, v in facts.items()) + ")")
     print(f"blocked={q(str(art.get('blocked') or ''))}")
