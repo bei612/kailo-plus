@@ -362,7 +362,23 @@ mod tests {
                 .await
                 .unwrap();
         assert!(icon.is_none());
-        params.resource_version = Some(3);
+        tx.commit().await.unwrap();
+        async fn competing_write(pool: &sqlx::PgPool, ae: &Execution, def: &Definition, name: &str) -> Result<(), Refusal> {
+            let mut tx = pool.begin().await?;
+            let params = Params { tenant_profile: Some(json!({"name":name})), resource_version: Some(3), explicit_confirmation: Some(true), ..Default::default() };
+            prewrite(&mut tx, ae, def, &params).await?;
+            tx.commit().await?;
+            Ok(())
+        }
+        let (first, second) = tokio::join!(competing_write(&pool, &ae, &def, "first"), competing_write(&pool, &ae, &def, "second"));
+        assert_eq!(usize::from(first.is_ok()) + usize::from(second.is_ok()), 1);
+        let refused = if first.is_err() { first.unwrap_err() } else { second.unwrap_err() };
+        assert!(matches!(refused, Refusal::Conflict(ReasonCode::TargetStateConflict)));
+        let (version, name): (i32, String) = sqlx::query_as("select version,name from identity.tenant where id=$1").bind(tenant).fetch_one(&pool).await.unwrap();
+        assert_eq!(version, 4);
+        assert!(matches!(name.as_str(), "first" | "second"));
+        let mut tx = pool.begin().await.unwrap();
+        params.resource_version = Some(4);
         sqlx::query(
             "update identity.tenant_membership set state='REVOKED' where tenant_principal_id=$1",
         )
