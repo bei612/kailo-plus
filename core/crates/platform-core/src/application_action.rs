@@ -333,10 +333,18 @@ async fn validate_reference_and_policy(
         return Err(denied());
     }
     crate::application_binding::human_exposure::validate(
-        conn, tenant, f.binding, f.generation, f.application.component_release_id,
-        &f.application.definition.action_key, f.application.definition.version,
-        policy, version, &f.application.declaration,
-    ).await?;
+        conn,
+        tenant,
+        f.binding,
+        f.generation,
+        f.application.component_release_id,
+        &f.application.definition.action_key,
+        f.application.definition.version,
+        policy,
+        version,
+        &f.application.declaration,
+    )
+    .await?;
     Ok(())
 }
 

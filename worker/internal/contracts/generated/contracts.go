@@ -6431,6 +6431,10 @@ type ApplicationBindingView struct {
 	// Active approved binding declares a SERVICE read receiver. Resource discovery and writes
 	// still freshly check the original source share and receiver update permissions.
 	HasReadReceiver *bool `json:"hasReadReceiver,omitempty"`
+	// Core 在已准入绑定事务中冻结的已批准 release 最大暴露边界。固定归属于
+	// binding/release/generation/action/version；不是授权，不能替代 fresh target permission、schema 或
+	// redaction 校验。未 ACTIVE 的绑定仅向 canCreate 管理者提供部署引用，仍不得执行。
+	HumanActionPolicies []ApplicationHumanActionPolicy `json:"humanActionPolicies,omitempty"`
 	// DD-127(4): presentation category the approved NATIVE_PAGE release declares. The sidebar
 	// labels the entry by capabilityCategories ∪ this value; it grants nothing.
 	NativePageCategory *NativePageCategory `json:"nativePageCategory,omitempty"`
@@ -6447,6 +6451,15 @@ type ApplicationBindingView struct {
 type ApplicationBindingCapability struct {
 	Category string `json:"category"`
 	Version  int64  `json:"version"`
+}
+
+type ApplicationHumanActionPolicy struct {
+	ActionKey                   string `json:"actionKey"`
+	ActionVersion               int64  `json:"actionVersion"`
+	ComponentReleaseID          string `json:"componentReleaseId"`
+	Generation                  int64  `json:"generation"`
+	ResultExposurePolicyID      string `json:"resultExposurePolicyId"`
+	ResultExposurePolicyVersion int64  `json:"resultExposurePolicyVersion"`
 }
 
 // DD-138：KAILO_EMBED release 向 Kailo 设置页贡献的一项偏好声明（03

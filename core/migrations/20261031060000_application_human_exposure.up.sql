@@ -25,6 +25,12 @@ ALTER TABLE catalog.result_exposure_policy
 
 CREATE FUNCTION catalog.guard_application_human_exposure() RETURNS trigger AS $$
 BEGIN
+    IF TG_OP='DELETE' THEN
+        IF OLD.application_binding_id IS NOT NULL THEN
+            RAISE EXCEPTION 'HUMAN exposure ownership is retained for frozen executions' USING ERRCODE='restrict_violation';
+        END IF;
+        RETURN OLD;
+    END IF;
     IF TG_OP='UPDATE' THEN
         IF OLD.application_binding_id IS NOT NULL AND OLD.status='RETIRED' AND NEW.status<>'RETIRED' THEN
             RAISE EXCEPTION 'Retired HUMAN exposure cannot be reactivated' USING ERRCODE='check_violation';
@@ -59,5 +65,5 @@ BEGIN
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
-CREATE TRIGGER application_human_exposure_owner BEFORE INSERT OR UPDATE ON catalog.result_exposure_policy
+CREATE TRIGGER application_human_exposure_owner BEFORE INSERT OR UPDATE OR DELETE ON catalog.result_exposure_policy
     FOR EACH ROW EXECUTE FUNCTION catalog.guard_application_human_exposure();

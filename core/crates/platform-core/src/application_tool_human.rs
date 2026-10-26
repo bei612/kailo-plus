@@ -748,19 +748,39 @@ async fn live_execution(
     let (binding, generation): (Uuid, i64) = sqlx::query_as(
         "select component_binding_id,component_projection_generation
          from admission.action_execution where id=$1 and component_binding_kind='APPLICATION'",
-    ).bind(ae.id).fetch_one(&state.pool).await?;
+    )
+    .bind(ae.id)
+    .fetch_one(&state.pool)
+    .await?;
     let mut conn = state.pool.acquire().await?;
     let application = crate::application_catalog::exact_definition_for_binding(
-        &mut conn, binding, generation, &ae.action_key, ae.action_version,
-    ).await?;
+        &mut conn,
+        binding,
+        generation,
+        &ae.action_key,
+        ae.action_version,
+    )
+    .await?;
     let parameters = ae.parameters.as_ref().ok_or_else(denied)?;
     let policy = uuid_text(&parameters["resultExposurePolicyId"])?;
-    let version = parameters["resultExposurePolicyVersion"].as_i64()
-        .and_then(|v| i32::try_from(v).ok()).filter(|v| *v > 0).ok_or_else(denied)?;
+    let version = parameters["resultExposurePolicyVersion"]
+        .as_i64()
+        .and_then(|v| i32::try_from(v).ok())
+        .filter(|v| *v > 0)
+        .ok_or_else(denied)?;
     crate::application_binding::human_exposure::validate(
-        &mut conn, ae.tenant_id, binding, generation, application.component_release_id,
-        &ae.action_key, ae.action_version, policy, version, &application.declaration,
-    ).await?;
+        &mut conn,
+        ae.tenant_id,
+        binding,
+        generation,
+        application.component_release_id,
+        &ae.action_key,
+        ae.action_version,
+        policy,
+        version,
+        &application.declaration,
+    )
+    .await?;
     Ok(ae)
 }
 

@@ -236,3 +236,9 @@ Resource ID 仍由后续真实 `resource.create` 返回。目录沿原 renderer 
 该阶段只准备输入，不启动 adapter、不激活 binding、不执行 bootstrap。
 同规格 GitHub 来源 CI 回执 `checks/github-e68efa7bf11cc984b81602df049e849ac457efbc/receipt.json` 退出 0，
 延续前述 27 项单元检查及语法/路径检查；bootstrap 生成器本身仅完成 Python AST 检查，未在新隔离数据库执行。
+
+
+2026-10-26 Core 生产者后续：按主会话分工，适配器专用分支已沿原 binding 准入事务实现
+HUMAN 最大暴露边界物化和精确归属消费，见 [Core 实施与验证边界](application-human-exposure.md)。
+该改动解除的是源码中的生产者缺口；自动化尚需读真实 HUMAN 管理元数据并在 binding 准入与
+adapter/native-action 启动之间协调。未跑真实新 receiver，`blockedAfterNative` 仍不能移除。

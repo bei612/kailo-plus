@@ -251,9 +251,14 @@ pub(super) async fn revoke(state: &ServiceState, ae: &Execution) -> Result<(), R
     // All new and in-flight HUMAN calls are already fenced by DISABLING.
     // Retire only this binding's policies; another binding or a delegation
     // with an equal output schema is unrelated authority.
-    sqlx::query("update catalog.result_exposure_policy set status='RETIRED'
-        where tenant_id=$1 and application_binding_id=$2 and status='ACTIVE'")
-        .bind(ae.tenant_id).bind(ae.target_id).execute(&mut *tx).await?;
+    sqlx::query(
+        "update catalog.result_exposure_policy set status='RETIRED'
+        where tenant_id=$1 and application_binding_id=$2 and status='ACTIVE'",
+    )
+    .bind(ae.tenant_id)
+    .bind(ae.target_id)
+    .execute(&mut *tx)
+    .await?;
     tx.commit().await?;
     Ok(())
 }

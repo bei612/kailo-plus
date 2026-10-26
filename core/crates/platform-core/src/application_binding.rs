@@ -12,10 +12,10 @@ use crate::governance::{Definition, Execution, Params, Refusal, Target};
 
 #[path = "application_binding_credentials.rs"]
 pub(crate) mod credentials;
-#[path = "application_human_exposure.rs"]
-pub(crate) mod human_exposure;
 #[path = "application_binding_gateway.rs"]
 pub(crate) mod gateway;
+#[path = "application_human_exposure.rs"]
+pub(crate) mod human_exposure;
 #[path = "application_binding_native.rs"]
 pub(crate) mod native;
 #[path = "application_binding_peer.rs"]
@@ -531,7 +531,15 @@ pub(crate) async fn prewrite(
             .bind(collab_bridge::limits::canonical_digest(&manifest)).bind(text(&manifest,"adapterBuildRef")?)
             .bind(ae.id).bind(json!({"handshake":Uuid::new_v4(),"validate_binding":Uuid::new_v4()}))
             .execute(&mut **tx).await?;
-        human_exposure::materialize(tx, ae.tenant_id, request.id, i64::from(version), request.release, &manifest).await?;
+        human_exposure::materialize(
+            tx,
+            ae.tenant_id,
+            request.id,
+            i64::from(version),
+            request.release,
+            &manifest,
+        )
+        .await?;
         Ok(version)
     } else {
         let value = params.to_json();
