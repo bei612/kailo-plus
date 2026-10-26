@@ -41,3 +41,24 @@ Tenant 资料受治理动作与三端消费者仍待收口。当前源码尚未�
 1 CPU / 512 MiB 的生成及 `--check` 均退出 0；39 条实际能力与 20 个封闭
 Workflow kind 参与校验，计数不代表功能验收。日志 `feedback-registry.log` 与
 `feedback-registry-limits.log` 位于 `/volumes/data/kailo/verification/buzz-r10/`。
+
+## 固定共享消费者验证（2026-10-26）
+
+固定 `814650309` 的 Git 导出，原检查 SDK
+`sha256:3007729eb192341a4f004a88e42e1e66c94fc67d763acfc96568bd7311116018`，
+原容器资源 helper 与 CI 代理/容量缓存。`pnpm@10.33.4 install --frozen-lockfile`
+及共享 platform 生产 `tsc --noEmit` 退出 0。首次 1 CPU / 2 GiB 下测试类型检查
+触发 Node 默认约 1 GiB heap OOM（退出 134）；改为 1 CPU / 4 GiB、
+`NODE_OPTIONS=--max-old-space-size=3072` 后发现定向导出缺少现有测试实际引用的
+`client-kit/embed`，退出 2。补齐同一固定 commit 的该目录后，完整
+`tsc --noEmit -p tsconfig.test.json` 退出 0，原 Vitest 执行
+`test/feedback.test.tsx --maxWorkers=1` **4 passed / 0 failed**。
+
+四项实际共享消费者覆盖 Web/Desktop 诊断明文预览与主动勾选、结果不明的相同
+冻结请求重试、中文明确拒绝后保留草稿，以及运营列表读取、按需附件读取和
+所显示版本的 CAS 分拣。未替代 Core fresh authorization/数据库链、
+Web/Desktop 宿主完整类型检查、真实浏览器操作或 Mobile 验收。
+失败原件与最后成功结果分别在
+`/volumes/data/kailo/verification/buzz-r10/feedback-front.log`、
+`feedback-front-retry.log`、`feedback-front-complete-input.log`；相应 limits
+保留资源读回。检查容器已随脚本清理；未部署服务。
