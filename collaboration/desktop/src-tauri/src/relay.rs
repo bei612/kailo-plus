@@ -460,6 +460,9 @@ async fn send_query_request(
 // ── Signed-event submission ─────────────────────────────────────────────────
 
 mod submit;
+mod delivery;
+pub(crate) use delivery::merged_status_delivery;
+pub(crate) use submit::submit_signed_event_scoped;
 #[cfg(test)]
 pub use submit::submit_event_at_with_keys;
 pub use submit::{submit_signed_event_at_with_keys, SubmitEventResponse};

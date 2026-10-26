@@ -319,6 +319,7 @@ fn dispatch(
             result: "DISPATCHED".into(),
             event: None,
             event_result: None,
+            event_community_id: None,
         }
     };
     if intent.request.operation == "MERGE" && prepared.is_none() {

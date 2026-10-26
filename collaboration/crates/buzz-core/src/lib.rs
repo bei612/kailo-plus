@@ -36,6 +36,8 @@ pub mod observer;
 pub mod pairing;
 /// Presence status types shared across crates.
 pub mod presence;
+/// Original publication time admission and metadata-only merged-status delivery evidence.
+pub mod publication;
 /// NIP-PMA owner-encrypted private managed-agent wire codec.
 pub mod private_managed_agent;
 /// Canonical relay runtime identities.

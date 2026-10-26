@@ -2246,10 +2246,8 @@ async fn ingest_event_inner(
     let huddle_creator =
         super::governance::huddle_projection_creator(tenant, state, kind_u32, &event).await?;
 
-    const MAX_TIMESTAMP_DRIFT_SECS: i64 = 900; // ±15 minutes
     let now = chrono::Utc::now().timestamp();
-    let event_ts = event.created_at.as_secs() as i64;
-    if (event_ts - now).abs() > MAX_TIMESTAMP_DRIFT_SECS {
+    if !buzz_core::publication::timestamp_admitted(event.created_at.as_secs(), now) {
         return Err(IngestError::Rejected(
             "invalid: event timestamp too far from server time".into(),
         ));

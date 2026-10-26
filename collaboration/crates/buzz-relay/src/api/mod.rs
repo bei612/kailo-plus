@@ -2,6 +2,8 @@
 
 pub mod admin;
 pub mod bridge;
+/// Metadata-only writer evidence for an original owner-signed merged status.
+pub mod delivery;
 pub mod events;
 pub mod gifs;
 pub mod git;

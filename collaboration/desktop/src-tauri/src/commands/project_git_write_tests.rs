@@ -20,6 +20,7 @@ fn intent() -> Intent {
         result: "DISPATCHED".into(),
         event: None,
         event_result: None,
+        event_community_id: None,
     }
 }
 
