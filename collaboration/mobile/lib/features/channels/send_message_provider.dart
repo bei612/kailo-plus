@@ -60,12 +60,16 @@ class SendMessage {
   Future<void> call({
     required String channelId,
     required String content,
+    int kind = EventKind.streamMessage,
     String? parentEventId,
     String? rootEventId,
     List<String>? mentionPubkeys,
     List<List<String>> mediaTags = const [],
   }) async {
     _ensureDeliveryValid();
+    if (!EventKind.channelMessageEventKinds.contains(kind)) {
+      throw ArgumentError.value(kind, 'kind', 'Not a channel message');
+    }
     // Use explicitly passed pubkeys, or resolve @mentions against
     // channel members to avoid matching the wrong user.
     final explicitMentions =
@@ -94,7 +98,7 @@ class SendMessage {
     final fingerprint = UnconfirmedPublishes.fingerprint(
       relayBaseUrl: _relayBaseUrl,
       pubkey: authorPubkey,
-      kind: EventKind.streamMessage,
+      kind: kind,
       content: content,
       tags: tags,
     );
@@ -117,7 +121,7 @@ class SendMessage {
         await _signedEventRelay.resubmit(previous);
       } else {
         await _signedEventRelay.submit(
-          kind: EventKind.streamMessage,
+          kind: kind,
           content: content,
           tags: tags,
           onSigned: adoptLocal,
@@ -268,7 +272,7 @@ class UnconfirmedPublishes {
   }) {
     if (pubkey == null ||
         event.pubkey.toLowerCase() != pubkey.toLowerCase() ||
-        event.kind != EventKind.streamMessage) {
+        !EventKind.channelMessageEventKinds.contains(event.kind)) {
       return false;
     }
     final key = fingerprint(
