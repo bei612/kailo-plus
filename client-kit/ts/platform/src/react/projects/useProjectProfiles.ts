@@ -22,7 +22,7 @@ import { usePulseHost, useUsersBatchQuery, type UserProfileSummary } from "../pu
 
 export type ProjectIdentityDirectory = {
   members: ReadonlyMap<string, { displayName: string }>;
-  agents: ReadonlyMap<string, { displayName: string | null }>;
+  agents: ReadonlySet<string>;
 };
 
 const HEX_KEY = /^[0-9a-f]{64}$/;
@@ -46,13 +46,14 @@ export function trustedProjectProfiles(
     const claim = claimed?.[pubkey];
     const claimedName = claim?.displayName?.trim() || null;
     const member = directory.members.get(pubkey);
-    const agent = member ? undefined : directory.agents.get(pubkey);
+    const agent = !member && directory.agents.has(pubkey);
     if (member) {
       profiles[pubkey] = { ...EMPTY_PROFILE, ...claim,
         displayName: claimedName || member.displayName.trim() || null, isAgent: false };
     } else if (agent) {
       profiles[pubkey] = { ...EMPTY_PROFILE, ...claim,
-        displayName: claimedName || agent.displayName?.trim() || null, isAgent: true };
+        // DD-117(6): the directory vouches for the identity, never replaces its Relay persona.
+        displayName: claimedName, isAgent: true };
     }
   }
   return profiles;
@@ -89,7 +90,7 @@ export function useProjectIdentityDirectory(enabled = true): {
       retry: false,
     })),
   });
-  if (!client) return { directory: { members: new Map(), agents: new Map() }, isFetching: false };
+  if (!client) return { directory: { members: new Map(), agents: new Set() }, isFetching: false };
   const settled = !members.isPending && !workspaces.isPending && authors.every((query) => !query.isPending);
   const isFetching = members.isFetching || workspaces.isFetching || authors.some((query) => query.isFetching);
   if (!enabled || !settled) return { directory: undefined, isFetching };
@@ -102,16 +103,15 @@ export function useProjectIdentityDirectory(enabled = true): {
         memberMap.set(pubkey, { displayName: typeof person.displayName === "string" ? person.displayName : "" });
     }
   }
-  const agentMap = new Map<string, { displayName: string | null }>();
+  const agentKeys = new Set<string>();
   for (const query of authors) {
     const agents = query.isSuccess ? (query.data as AgentAuthorDirectory | undefined)?.agents : undefined;
     for (const agent of Array.isArray(agents) ? agents : []) {
       const pubkey = typeof agent?.agentPubkey === "string" ? normalizePubkey(agent.agentPubkey) : "";
-      if (HEX_KEY.test(pubkey) && !agentMap.has(pubkey))
-        agentMap.set(pubkey, { displayName: agent.agentDisplayName?.trim() || null });
+      if (HEX_KEY.test(pubkey)) agentKeys.add(pubkey);
     }
   }
-  return { directory: { members: memberMap, agents: agentMap }, isFetching };
+  return { directory: { members: memberMap, agents: agentKeys }, isFetching };
 }
 
 /**

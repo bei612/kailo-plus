@@ -69,18 +69,19 @@ describe("assignment comments read from their tags",()=>{
 describe("Projects identities are vouched by Kailo directories",()=>{
   const claimed={
     [member]:{displayName:"",avatarUrl:"/api/v1/profile/media/member",nip05Handle:null,ownerPubkey:null},
-    [agent]:{displayName:null,avatarUrl:"/api/v1/profile/media/agent",nip05Handle:null,ownerPubkey:null},
+    [agent]:{displayName:"Relay Agent",avatarUrl:"/api/v1/profile/media/agent",nip05Handle:null,ownerPubkey:null},
     [stranger]:{displayName:"Spoofed",avatarUrl:"/api/v1/profile/media/bee",nip05Handle:"spoof@example.test",ownerPubkey:null},
   };
-  const directory={members:new Map([[member,{displayName:"seam-verifier"}]]),agents:new Map([[agent,{displayName:"Research Agent"}]])};
+  const directory={members:new Map([[member,{displayName:"seam-verifier"}]]),agents:new Set([agent])};
   it("keeps a member's own picture with the directory name, an Agent's persona and nothing for a stranger",()=>{
     const profiles=trustedProjectProfiles([member,agent,stranger],claimed,directory);
     expect(profiles[member]).toMatchObject({displayName:"seam-verifier",avatarUrl:"/api/v1/profile/media/member",isAgent:false});
-    expect(profiles[agent]).toMatchObject({displayName:"Research Agent",avatarUrl:"/api/v1/profile/media/agent",isAgent:true});
+    expect(profiles[agent]).toMatchObject({displayName:"Relay Agent",avatarUrl:"/api/v1/profile/media/agent",isAgent:true});
+    expect(trustedProjectProfiles([agent],undefined,directory)[agent]).toMatchObject({displayName:null,avatarUrl:null,isAgent:true});
     expect(profiles[stranger]).toBeUndefined();
   });
   it("vouches for no one when the directories could not be read",()=>{
-    expect(trustedProjectProfiles([member,stranger],claimed,{members:new Map(),agents:new Map()})).toEqual({});
+    expect(trustedProjectProfiles([member,stranger],claimed,{members:new Map(),agents:new Set()})).toEqual({});
   });
 });
 
@@ -92,7 +93,8 @@ async function mount(locale:PlatformLocale){
   const host={scopeKey:"tenant:human",query:vi.fn<ProjectsHost["query"]>(async request=>({pubkey:viewer,limit:20,bindingVersion:3,
     events:rows.filter(row=>kinds[request.view]?.includes(row.kind)&&(!request.coordinates||request.coordinates.includes(row.tags.find(tag=>tag[0]==="a")?.[1]??"")))}))} as ProjectsHost;
   const profileRows=[ev("6",0,member,[],JSON.stringify({display_name:"",picture:"https://relay.test/media/bee.png"})),
-    ev("7",0,stranger,[],JSON.stringify({display_name:"Spoofed",picture:"https://relay.test/media/bee.png"}))];
+    ev("7",0,stranger,[],JSON.stringify({display_name:"Spoofed",picture:"https://relay.test/media/bee.png"})),
+    ev("a",0,agent,[],JSON.stringify({display_name:"Research Agent"}))];
   const pulse:PulseHost={scopeKey:host.scopeKey,pubkey:viewer,query:async request=>profileRows.filter(row=>(request as {authors?:string[]}).authors?.includes(row.pubkey)),
     publish:vi.fn(),copy:vi.fn(),startDm:vi.fn(),mediaUrl:url=>url,renderComposer:()=>null,renderContent:content=><p>{content}</p>};
   const send=vi.fn(async (request:{path:string})=>({status:200,body:
