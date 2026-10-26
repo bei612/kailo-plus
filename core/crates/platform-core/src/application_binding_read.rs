@@ -394,13 +394,13 @@ async fn page(
             .is_some_and(|value| !value.is_empty())
         && crate::capability_registry::action_exposed(CREATE);
     let mut rows: Vec<Value> = sqlx::query_scalar(BINDING_PAGE_SQL)
-    .bind(actor.tenant_id)
-    .bind(query.workspace_id)
-    .bind(offset)
-    .bind(limit)
-    .bind(can_create)
-    .fetch_all(&state.pool)
-    .await?;
+        .bind(actor.tenant_id)
+        .bind(query.workspace_id)
+        .bind(offset)
+        .bind(limit)
+        .bind(can_create)
+        .fetch_all(&state.pool)
+        .await?;
     let disable = crate::governance::active_definition(&state.pool, DISABLE).await?;
     for row in &mut rows {
         if !crate::capability_registry::action_exposed(

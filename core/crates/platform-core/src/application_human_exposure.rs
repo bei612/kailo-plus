@@ -274,13 +274,21 @@ mod tests {
                 .unwrap()
         }
         let before = visible(&mut outer, tenant, false).await;
-        assert!(before.iter().all(|row| row.get("humanActionPolicies").is_none()));
+        assert!(before
+            .iter()
+            .all(|row| row.get("humanActionPolicies").is_none()));
         let management = visible(&mut outer, tenant, true).await;
-        let owned = management.iter().find(|row| row["bindingId"] == json!(binding)).unwrap();
-        assert_eq!(owned["humanActionPolicies"], json!([{
-            "actionKey":key,"actionVersion":1,"componentReleaseId":release,"generation":1,
-            "resultExposurePolicyId":policy,"resultExposurePolicyVersion":1
-        }]));
+        let owned = management
+            .iter()
+            .find(|row| row["bindingId"] == json!(binding))
+            .unwrap();
+        assert_eq!(
+            owned["humanActionPolicies"],
+            json!([{
+                "actionKey":key,"actionVersion":1,"componentReleaseId":release,"generation":1,
+                "resultExposurePolicyId":policy,"resultExposurePolicyVersion":1
+            }])
+        );
         assert!(visible(&mut outer, Uuid::new_v4(), true).await.is_empty());
         assert!(
             materialize(&mut outer, Uuid::new_v4(), binding, 1, release, &manifest)
@@ -340,7 +348,10 @@ mod tests {
         .await
         .unwrap();
         let active = visible(&mut outer, tenant, false).await;
-        let active = active.iter().find(|row| row["bindingId"] == json!(binding)).unwrap();
+        let active = active
+            .iter()
+            .find(|row| row["bindingId"] == json!(binding))
+            .unwrap();
         assert_eq!(active["humanActionPolicies"], owned["humanActionPolicies"]);
         for (t, b, g, r, k, v, p, pv) in [
             (Uuid::new_v4(), binding, 1, release, key, 1, policy, 1),
