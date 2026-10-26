@@ -82,7 +82,7 @@ export function SidebarProfileCard({
           : <span>{tenantProfile.icon}</span>
           : <Building2 className="h-3 w-3" strokeWidth={2} />}
       </span>
-      <span className="truncate">{tenantProfile?.name ?? communityLabel}</span>
+      <span className="truncate">{tenantProfile === null ? translateUi("platform.loadFailed") : tenantProfile?.name ?? communityLabel}</span>
     </span>
   );
 

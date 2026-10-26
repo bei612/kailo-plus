@@ -5,7 +5,7 @@ import { emit } from "@tauri-apps/api/event";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider } from "@tanstack/react-router";
 import { NativeBootstrap } from "@client-kit/platform/react/NativeBootstrap";
-import { useDeviceLocale } from "@client-kit/platform/react/context";
+import { TenantProfileSessionCache, useDeviceLocale } from "@client-kit/platform/react/context";
 import { translate } from "@client-kit/platform/i18n";
 import { type ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ConversationVisibilityProvider } from "@client-kit/platform/react/new-message";
@@ -150,7 +150,7 @@ function CommunityQueryProvider({
   }, [queryClient]);
 
   return (
-    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    <QueryClientProvider client={queryClient}><TenantProfileSessionCache/>{children}</QueryClientProvider>
   );
 }
 

@@ -3,7 +3,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, describe, expect, it } from "vitest";
 import { PlatformSessionAccessMode, type PlatformSessionView, type TenantProfileView } from "@client-kit/contracts";
 import { createBffClient, type BffClient } from "../src/client";
-import { PlatformProvider } from "../src/react/context";
+import { PlatformProvider, TenantProfileSessionCache } from "../src/react/context";
 import { SidebarProfileCard } from "../src/react/sidebar/sidebar-profile-card";
 import { TenantProfileDialog } from "../src/react/tenant-profile/TenantProfileDialog";
 import { watchTenantProfile } from "../src/react/tenant-profile/live";
@@ -18,13 +18,17 @@ const session = (id: string): PlatformSessionView => ({ tenantId: "tenant", tena
 
 function Host({ client, id, cache, desktop = false }: { client: BffClient; id: string; cache: QueryClient; desktop?: boolean }) {
   const [current, setCurrent] = useState(session(id));
-  return <QueryClientProvider client={cache}><PlatformProvider client={client} currentPrincipalId={id}
-    feedbackClient={desktop ? "DESKTOP" : "WEB"} liveTenantProfile locale="en"
-    onTenantProfile={profile => setCurrent(old => ({ ...old, tenantName: profile.name }))}>
+  const [outer] = useState(() => new QueryClient());
+  const contents = <>
     <div data-testid={`session-${id}`}>{current.tenantName}</div>
     <SidebarProfileCard communityLabel="Stale host label" resolvedDisplayName={id} avatar={<span/>} popoverAvatar={<span/>}
       onOpenSettings={() => {}} onSignOut={() => {}}/>
     {id === "admin" ? <TenantProfileDialog open onOpenChange={() => {}}/> : null}
+  </>;
+  return <QueryClientProvider client={desktop ? outer : cache}><PlatformProvider client={client} currentPrincipalId={id}
+    feedbackClient={desktop ? "DESKTOP" : "WEB"} liveTenantProfile locale="en"
+    onTenantProfile={profile => setCurrent(old => ({ ...old, tenantName: profile?.name }))}>
+    {desktop ? <QueryClientProvider client={cache}><TenantProfileSessionCache/>{contents}</QueryClientProvider> : contents}
   </PlatformProvider></QueryClientProvider>;
 }
 
@@ -73,6 +77,48 @@ describe("DD-158 independent online profile consumers", () => {
     const stop = watchTenantProfile(client, profile => seen.push(profile));
     stop(); resolve({ status: 200, body: { name: "Old identity", version: 3, refreshAfterMillis: 5 } });
     await settle(); expect(seen).toEqual([]);
+  });
+
+  it("clears the actual nested Desktop display cache and sidebar after a fresh membership refusal", async () => {
+    let refuse!: (reply: BffReply) => void;
+    let calls = 0;
+    const client = createBffClient({ send: async () => {
+      calls++;
+      if (calls === 1) return { status: 200, body: { name: "Before", icon: "🎉", version: 3, refreshAfterMillis: 5 } };
+      return new Promise<BffReply>(reply => { refuse = reply; });
+    } });
+    const cache = new QueryClient(); cache.setQueryData(["platform", "session"], session("member"));
+    const host = await render(<Host client={client} id="member" cache={cache} desktop/>);
+    await until(() => !!refuse, "pending fresh membership read");
+    await act(async () => refuse({ status: 403, body: {} }));
+    await until(() => !host.querySelector('[data-testid="sidebar-profile-card"]')?.textContent?.includes("Before"), "retired display cleared");
+    expect(host.querySelector('[data-testid="sidebar-profile-card"]')?.textContent).not.toContain("🎉");
+    expect(cache.getQueryData<PlatformSessionView>(["platform", "session"])?.tenantName).toBeUndefined();
+    expect(cache.getQueryData<PlatformSessionView>(["platform", "session"])?.tenantPrincipalId).toBe("member");
+    window.dispatchEvent(new Event("online")); await settle(); expect(calls).toBe(2);
+  });
+
+  it("retries the first unavailable read using the existing query backoff", async () => {
+    let calls = 0;
+    const seen: TenantProfileView[] = [];
+    const client = createBffClient({ send: async () => ++calls === 1
+      ? { status: 503, body: {} } : { status: 200, body: { name: "Recovered", version: 2 } } });
+    stops.push(watchTenantProfile(client, profile => seen.push(profile)));
+    await until(() => seen.length === 1, "first read recovered");
+    expect(calls).toBe(2); expect(seen[0]?.name).toBe("Recovered");
+  });
+
+  it("keeps an online hint that arrives while the first failed request is still in flight", async () => {
+    let reply!: (reply: BffReply) => void;
+    let calls = 0;
+    const seen: TenantProfileView[] = [];
+    const client = createBffClient({ send: async () => {
+      calls++; return calls === 1 ? new Promise<BffReply>(resolve => { reply = resolve; })
+        : { status: 200, body: { name: "Online again", version: 2 } };
+    } });
+    stops.push(watchTenantProfile(client, profile => seen.push(profile)));
+    window.dispatchEvent(new Event("online")); reply({ status: 503, body: {} });
+    await settle(); expect(calls).toBe(2); expect(seen[0]?.name).toBe("Online again");
   });
 
   it("keeps older Core's snapshot without fabricating a background polling interval", async () => {

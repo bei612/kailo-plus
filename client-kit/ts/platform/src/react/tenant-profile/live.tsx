@@ -4,18 +4,18 @@ import { createContext, type ReactNode, useEffect, useRef, useState } from "reac
 import { useQueryClient } from "@tanstack/react-query";
 import type { PlatformSessionView, TenantProfileView } from "@client-kit/contracts";
 import type { BffClient } from "../../client";
-import { BffError, SessionEndedError, TransportError, rateLimitRetryMs } from "../../transport";
+import { BffError, SessionEndedError, TransportError, queryRetryDelay, rateLimitRetryMs } from "../../transport";
 import { useDocumentVisible } from "../projects/useProjectAppFocus";
 
-export const TenantDisplayProfileContext = createContext<TenantProfileView | undefined>(undefined);
+export const TenantDisplayProfileContext = createContext<TenantProfileView | null | undefined>(undefined);
 
 /** One active read per consumer; disposed identities cannot accept late answers. */
-export function watchTenantProfile(client: BffClient, receive: (profile: TenantProfileView) => void) {
-  let disposed = false, reading = false;
+export function watchTenantProfile(client: BffClient, receive: (profile: TenantProfileView) => void, retire?: () => void) {
+  let disposed = false, closed = false, reading = false, onlinePending = false, failures = 0;
   let version: number | undefined, retryMillis: number | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
   const read = async () => {
-    if (disposed || reading) return;
+    if (disposed || closed || reading) return;
     reading = true;
     try {
       const profile = await client.tenantProfile(version);
@@ -32,25 +32,35 @@ export function watchTenantProfile(client: BffClient, receive: (profile: TenantP
       retryMillis = Number.isSafeInteger(retry) && retry! > 0 && retry! <= 0x7fffffff ? retry : undefined;
       if (version !== profile.version) receive(profile);
       version = profile.version;
+      failures = 0;
       if (retryMillis !== undefined) timer = setTimeout(() => void read(), 0);
     } catch (error) {
-      if (disposed || error instanceof SessionEndedError
-        || (error instanceof BffError && [401, 403].includes(error.status))) return;
-      const wait = rateLimitRetryMs(error) ?? retryMillis;
-      if (wait !== undefined) timer = setTimeout(() => void read(), wait);
-    } finally { reading = false; }
+      if (disposed) return;
+      if (error instanceof SessionEndedError || (error instanceof BffError && [401, 403].includes(error.status))) {
+        closed = true; retire?.(); return;
+      }
+      // Before the first valid response there is no server retry fact. Reuse
+      // the existing shared query backoff; a later valid response replaces it.
+      const wait = rateLimitRetryMs(error) ?? retryMillis ?? queryRetryDelay(failures++, error);
+      timer = setTimeout(() => void read(), wait);
+    } finally {
+      reading = false;
+      if (onlinePending && !disposed && !closed) {
+        onlinePending = false; clearTimeout(timer); void read();
+      }
+    }
   };
-  const online = () => { if (!reading) { clearTimeout(timer); void read(); } };
+  const online = () => { if (reading) onlinePending = true; else { clearTimeout(timer); void read(); } };
   window.addEventListener("online", online);
   void read();
   return () => { disposed = true; clearTimeout(timer); window.removeEventListener("online", online); };
 }
 
 export function TenantProfileLive({ client, principalId, onProfile, children }: {
-  client: BffClient; principalId: string; onProfile?: (profile: TenantProfileView) => void; children: ReactNode;
+  client: BffClient; principalId: string; onProfile?: (profile: TenantProfileView | null) => void; children: ReactNode;
 }) {
   const queryClient = useQueryClient();
-  const [profile, setProfile] = useState<TenantProfileView>();
+  const [profile, setProfile] = useState<TenantProfileView | null>();
   const callback = useRef(onProfile); callback.current = onProfile;
   const visible = useDocumentVisible();
   useEffect(() => {
@@ -62,6 +72,11 @@ export function TenantProfileLive({ client, principalId, onProfile, children }: 
       queryClient.setQueriesData<PlatformSessionView>({ queryKey: ["platform", "session"] }, old =>
         old?.tenantPrincipalId === principalId ? { ...old, tenantName: next.name } : old);
       callback.current?.(next);
+    }, () => {
+      setProfile(null);
+      queryClient.setQueriesData<PlatformSessionView>({ queryKey: ["platform", "session"] }, old =>
+        old?.tenantPrincipalId === principalId ? { ...old, tenantName: undefined } : old);
+      callback.current?.(null);
     });
   }, [client, principalId, queryClient, visible]);
   return <TenantDisplayProfileContext.Provider value={profile}>{children}</TenantDisplayProfileContext.Provider>;

@@ -1,9 +1,10 @@
 // 平台页的宿主注入点：宿主给出 BFF 客户端（其传输决定了这是 Web 还是 Desktop）与
 // 当前语言。页面只从这里取依赖，不 import 任一宿主的模块。
 
-import { createContext, Fragment, type ReactNode, useCallback, useContext, useState, useSyncExternalStore } from "react";
+import { createContext, Fragment, type ReactNode, useCallback, useContext, useEffect, useState, useSyncExternalStore } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import type { BffClient } from "../client";
-import type { ReasonCode, TenantProfileView } from "@client-kit/contracts";
+import type { PlatformSessionView, ReasonCode, TenantProfileView } from "@client-kit/contracts";
 import { TenantDisplayProfileContext, TenantProfileLive } from "./tenant-profile/live";
 import type { WriteFailure } from "../transport";
 import {
@@ -60,7 +61,7 @@ export function PlatformProvider({
   openExternalUrl?: (url: string) => void;
   /** Signed-in hosts enable the same admitted profile watch. */
   liveTenantProfile?: boolean;
-  onTenantProfile?: (profile: TenantProfileView) => void;
+  onTenantProfile?: (profile: TenantProfileView | null) => void;
 }) {
   const deviceLocale = useDeviceLocale();
   // A replacement client is a new authenticated transport scope. Reset its
@@ -111,6 +112,19 @@ export function useDocumentTheme() { return usePlatform().documentTheme; }
 export function useCurrentPrincipalId() { return usePlatform().currentPrincipalId; }
 
 export function useTenantDisplayProfile() { return useContext(TenantDisplayProfileContext); }
+
+/** Desktop's CommunityQueryProvider has its own cache beneath NativeBootstrap. */
+export function TenantProfileSessionCache() {
+  const profile = useTenantDisplayProfile(), principalId = useCurrentPrincipalId();
+  const queryClient = useQueryClient();
+  useEffect(() => {
+    if (profile === undefined || !principalId) return;
+    queryClient.setQueriesData<PlatformSessionView>({ queryKey: ["platform", "session"] }, old =>
+      old?.tenantPrincipalId === principalId && old.tenantName !== profile?.name
+        ? { ...old, tenantName: profile?.name } : old);
+  }, [profile, principalId, queryClient]);
+  return null;
+}
 
 export function useClipboardWrite() {
   const { copyText } = usePlatform();
