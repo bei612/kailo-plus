@@ -243,6 +243,7 @@
 //     final tenantInvitationView = tenantInvitationViewFromJson(jsonString);
 //     final tenantMemberJoinPage = tenantMemberJoinPageFromJson(jsonString);
 //     final tenantMemberJoinView = tenantMemberJoinViewFromJson(jsonString);
+//     final tenantProfileView = tenantProfileViewFromJson(jsonString);
 //     final tenantQuotaPage = tenantQuotaPageFromJson(jsonString);
 //     final threadPreferenceRequest = threadPreferenceRequestFromJson(jsonString);
 //     final usageBillingView = usageBillingViewFromJson(jsonString);
@@ -341,6 +342,7 @@
 //     final runtimeProfileDirectory = runtimeProfileDirectoryFromJson(jsonString);
 //     final skillVersionUploadInput = skillVersionUploadInputFromJson(jsonString);
 //     final taskStateReport = taskStateReportFromJson(jsonString);
+//     final tenantProfileInput = tenantProfileInputFromJson(jsonString);
 //     final tenantQuotaSetting = tenantQuotaSettingFromJson(jsonString);
 //     final workflowRef = workflowRefFromJson(jsonString);
 //     final workspaceCanvasSetInput = workspaceCanvasSetInputFromJson(jsonString);
@@ -1889,6 +1891,12 @@ TenantMemberJoinView tenantMemberJoinViewFromJson(String str) =>
 String tenantMemberJoinViewToJson(TenantMemberJoinView data) =>
     json.encode(data.toJson());
 
+TenantProfileView tenantProfileViewFromJson(String str) =>
+    TenantProfileView.fromJson(json.decode(str));
+
+String tenantProfileViewToJson(TenantProfileView data) =>
+    json.encode(data.toJson());
+
 TenantQuotaPage tenantQuotaPageFromJson(String str) =>
     TenantQuotaPage.fromJson(json.decode(str));
 
@@ -2483,6 +2491,12 @@ TaskStateReport taskStateReportFromJson(String str) =>
     TaskStateReport.fromJson(json.decode(str));
 
 String taskStateReportToJson(TaskStateReport data) =>
+    json.encode(data.toJson());
+
+TenantProfileInput tenantProfileInputFromJson(String str) =>
+    TenantProfileInput.fromJson(json.decode(str));
+
+String tenantProfileInputToJson(TenantProfileInput data) =>
     json.encode(data.toJson());
 
 TenantQuotaSetting tenantQuotaSettingFromJson(String str) =>
@@ -17036,6 +17050,9 @@ class ActionCommand {
   ///tenant.suspend / tenant.restore 的目标业务 Tenant；执行 Tenant 仍是会话 Tenant（Platform Catalog）
   final String? tenantId;
 
+  ///仅 tenant.profile.update（DD-158(3)）且必带；其他动作携带即拒绝。
+  final TenantProfileInput? tenantProfile;
+
   ///仅 tenant.quota.set（DD-123）
   final TenantQuotaSetting? tenantQuotaSetting;
 
@@ -17109,6 +17126,7 @@ class ActionCommand {
     this.slug,
     this.sourceEventId,
     this.tenantId,
+    this.tenantProfile,
     this.tenantQuotaSetting,
     this.workspaceCanvas,
     this.workspaceChannel,
@@ -17245,6 +17263,9 @@ class ActionCommand {
     slug: json["slug"],
     sourceEventId: json["sourceEventId"],
     tenantId: json["tenantId"],
+    tenantProfile: json["tenantProfile"] == null
+        ? null
+        : TenantProfileInput.fromJson(json["tenantProfile"]),
     tenantQuotaSetting: json["tenantQuotaSetting"] == null
         ? null
         : TenantQuotaSetting.fromJson(json["tenantQuotaSetting"]),
@@ -17320,6 +17341,7 @@ class ActionCommand {
     "slug": slug,
     "sourceEventId": sourceEventId,
     "tenantId": tenantId,
+    "tenantProfile": tenantProfile?.toJson(),
     "tenantQuotaSetting": tenantQuotaSetting?.toJson(),
     "workspaceCanvas": workspaceCanvas?.toJson(),
     "workspaceChannel": workspaceChannel?.toJson(),
@@ -18629,6 +18651,29 @@ class SkillVersionUploadInput {
     ),
     "uploadId": uploadId,
   });
+}
+
+///仅 tenant.profile.update（DD-158(3)）且必带；其他动作携带即拒绝。
+///
+///仅 tenant.profile.update 且必带（DD-158(3)、05 §2.11）：Tenant 显示名与图标。name 去首尾空白后 1–64 字符；icon
+///是客户端按原版缩到 256 px 的 PNG/JPEG/WebP data URL（≤96 KiB）或单个 emoji；clearIcon=true 清除图标且不得同时给
+///icon。至少给出一项；目标固定为会话 Tenant，按 resourceVersion（读到的 Tenant version）CAS。
+class TenantProfileInput {
+  final bool? clearIcon;
+  final String? icon;
+  final String? name;
+
+  TenantProfileInput({this.clearIcon, this.icon, this.name});
+
+  factory TenantProfileInput.fromJson(Map<String, dynamic> json) =>
+      TenantProfileInput(
+        clearIcon: json["clearIcon"],
+        icon: json["icon"],
+        name: json["name"],
+      );
+
+  Map<String, dynamic> toJson() =>
+      _stripNulls({"clearIcon": clearIcon, "icon": icon, "name": name});
 }
 
 ///仅 tenant.quota.set（DD-123）
@@ -22129,6 +22174,37 @@ class TenantMemberJoinView {
     "displayName": displayName,
     "joinedAt": joinedAt,
     "principalId": principalId,
+  });
+}
+
+///DD-158(3)：GET /api/v1/tenant/profile。会话 Tenant 的显示名、图标与版本，全体 ACTIVE 成员可读；本人有 Tenant
+///manage 时给出 updateActionKey（tenant.profile.update），提交仍由 Core 重新准入。
+class TenantProfileView {
+  final String? icon;
+  final String name;
+  final String? updateActionKey;
+  final int version;
+
+  TenantProfileView({
+    this.icon,
+    required this.name,
+    this.updateActionKey,
+    required this.version,
+  });
+
+  factory TenantProfileView.fromJson(Map<String, dynamic> json) =>
+      TenantProfileView(
+        icon: json["icon"],
+        name: json["name"],
+        updateActionKey: json["updateActionKey"],
+        version: json["version"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "icon": icon,
+    "name": name,
+    "updateActionKey": updateActionKey,
+    "version": version,
   });
 }
 

@@ -730,6 +730,9 @@
 //    tenantMemberJoinView, err := UnmarshalTenantMemberJoinView(bytes)
 //    bytes, err = tenantMemberJoinView.Marshal()
 //
+//    tenantProfileView, err := UnmarshalTenantProfileView(bytes)
+//    bytes, err = tenantProfileView.Marshal()
+//
 //    tenantQuotaPage, err := UnmarshalTenantQuotaPage(bytes)
 //    bytes, err = tenantQuotaPage.Marshal()
 //
@@ -1023,6 +1026,9 @@
 //
 //    taskStateReport, err := UnmarshalTaskStateReport(bytes)
 //    bytes, err = taskStateReport.Marshal()
+//
+//    tenantProfileInput, err := UnmarshalTenantProfileInput(bytes)
+//    bytes, err = tenantProfileInput.Marshal()
 //
 //    tenantQuotaSetting, err := UnmarshalTenantQuotaSetting(bytes)
 //    bytes, err = tenantQuotaSetting.Marshal()
@@ -3626,6 +3632,16 @@ func (r *TenantMemberJoinView) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
+func UnmarshalTenantProfileView(data []byte) (TenantProfileView, error) {
+	var r TenantProfileView
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *TenantProfileView) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
 func UnmarshalTenantQuotaPage(data []byte) (TenantQuotaPage, error) {
 	var r TenantQuotaPage
 	err := json.Unmarshal(data, &r)
@@ -4603,6 +4619,16 @@ func UnmarshalTaskStateReport(data []byte) (TaskStateReport, error) {
 }
 
 func (r *TaskStateReport) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalTenantProfileInput(data []byte) (TenantProfileInput, error) {
+	var r TenantProfileInput
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *TenantProfileInput) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -8718,6 +8744,8 @@ type ActionCommand struct {
 	SourceEventID *string `json:"sourceEventId,omitempty"`
 	// tenant.suspend / tenant.restore 的目标业务 Tenant；执行 Tenant 仍是会话 Tenant（Platform Catalog）
 	TenantID *string `json:"tenantId,omitempty"`
+	// 仅 tenant.profile.update（DD-158(3)）且必带；其他动作携带即拒绝。
+	TenantProfile *TenantProfileInput `json:"tenantProfile,omitempty"`
 	// 仅 tenant.quota.set（DD-123）
 	TenantQuotaSetting *TenantQuotaSetting `json:"tenantQuotaSetting,omitempty"`
 	// 仅 workspace.canvas.set 且必带（DD-125(4)）：目标 Workspace 由 workspaceId 给出，须带
@@ -9103,6 +9131,17 @@ type SkillVersionUploadInput struct {
 	// contract_key@version，去重；须是引用它的 AgentVersion 能力需求的子集。
 	CapabilityRequirements []string `json:"capabilityRequirements"`
 	UploadID               string   `json:"uploadId"`
+}
+
+// 仅 tenant.profile.update（DD-158(3)）且必带；其他动作携带即拒绝。
+//
+// 仅 tenant.profile.update 且必带（DD-158(3)、05 §2.11）：Tenant 显示名与图标。name 去首尾空白后 1–64 字符；icon
+// 是客户端按原版缩到 256 px 的 PNG/JPEG/WebP data URL（≤96 KiB）或单个 emoji；clearIcon=true 清除图标且不得同时给
+// icon。至少给出一项；目标固定为会话 Tenant，按 resourceVersion（读到的 Tenant version）CAS。
+type TenantProfileInput struct {
+	ClearIcon *bool   `json:"clearIcon,omitempty"`
+	Icon      *string `json:"icon,omitempty"`
+	Name      *string `json:"name,omitempty"`
 }
 
 // 仅 tenant.quota.set（DD-123）
@@ -10030,6 +10069,15 @@ type TenantMemberJoinView struct {
 	// TenantMembership 最近一次转入 ACTIVE 的时刻（重新加入覆盖），RFC3339 UTC；不是邀请或创建时间。
 	JoinedAt    string `json:"joinedAt"`
 	PrincipalID string `json:"principalId"`
+}
+
+// DD-158(3)：GET /api/v1/tenant/profile。会话 Tenant 的显示名、图标与版本，全体 ACTIVE 成员可读；本人有 Tenant
+// manage 时给出 updateActionKey（tenant.profile.update），提交仍由 Core 重新准入。
+type TenantProfileView struct {
+	Icon            *string `json:"icon,omitempty"`
+	Name            string  `json:"name"`
+	UpdateActionKey *string `json:"updateActionKey,omitempty"`
+	Version         int64   `json:"version"`
 }
 
 // DD-123: platform quota items of the Tenant read from OpenMeter (the only authority).

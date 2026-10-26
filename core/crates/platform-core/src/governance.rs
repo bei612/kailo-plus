@@ -1285,17 +1285,28 @@ mod tenant_profile_command_tests {
     #[test]
     fn profile_uses_closed_session_target_and_explicit_confirmation() {
         let base = json!({"actionKey":"tenant.profile.update","idempotencyKey":Uuid::new_v4(),"resourceVersion":1,"explicitConfirmation":true,"tenantProfile":{"name":"  社区  "}});
-        let command: contracts::ActionCommand=serde_json::from_value(base.clone()).unwrap();
-        let params=parse_command(Semantic::TenantProfileUpdate,&command).unwrap();
-        assert_eq!(params.tenant_profile,Some(json!({"name":"社区"})));
-        assert_eq!(Params::from_json(&params.to_json()),Some(params));
+        let command: contracts::ActionCommand = serde_json::from_value(base.clone()).unwrap();
+        let params = parse_command(Semantic::TenantProfileUpdate, &command).unwrap();
+        assert_eq!(params.tenant_profile, Some(json!({"name":"社区"})));
+        assert_eq!(Params::from_json(&params.to_json()), Some(params));
         assert!(Semantic::TenantProfileUpdate.completes_in_admission());
         assert!(Semantic::TenantProfileUpdate.serializes_on_tenant());
-        for (key,value) in [("tenantId",json!(Uuid::new_v4())),("workspaceId",json!(Uuid::new_v4())),("explicitConfirmation",json!(false)),("resourceVersion",json!(0)),("name",json!("extra"))] {
-            let mut bad=base.clone();bad[key]=value;
-            assert!(parse_command(Semantic::TenantProfileUpdate,&serde_json::from_value(bad).unwrap()).is_err());
+        for (key, value) in [
+            ("tenantId", json!(Uuid::new_v4())),
+            ("workspaceId", json!(Uuid::new_v4())),
+            ("explicitConfirmation", json!(false)),
+            ("resourceVersion", json!(0)),
+            ("name", json!("extra")),
+        ] {
+            let mut bad = base.clone();
+            bad[key] = value;
+            assert!(parse_command(
+                Semantic::TenantProfileUpdate,
+                &serde_json::from_value(bad).unwrap()
+            )
+            .is_err());
         }
-        assert!(parse_command(Semantic::TenantQuotaSet,&command).is_err());
+        assert!(parse_command(Semantic::TenantQuotaSet, &command).is_err());
     }
 }
 
@@ -1526,7 +1537,11 @@ fn parse_command(sem: Semantic, cmd: &contracts::ActionCommand) -> Result<Params
             .map(serde_json::to_value)
             .transpose()
             .map_err(|_| bad())?,
-        tenant_profile: cmd.tenant_profile.as_ref().map(crate::tenant_profile::normalize).transpose()?,
+        tenant_profile: cmd
+            .tenant_profile
+            .as_ref()
+            .map(crate::tenant_profile::normalize)
+            .transpose()?,
         tenant_quota_setting: cmd
             .tenant_quota_setting
             .as_ref()
@@ -5729,7 +5744,7 @@ impl Governance {
                 sem,
                 Semantic::TenantDelete
                     | Semantic::TenantQuotaSet
-            | Semantic::TenantProfileUpdate
+                    | Semantic::TenantProfileUpdate
                     | Semantic::AgentDefinitionCreate
                     | Semantic::LlmRouteCreate
                     | Semantic::LlmRouteDisable
@@ -6026,7 +6041,8 @@ impl Governance {
                 }
                 Semantic::TenantProfileUpdate => {
                     crate::tenant_profile::prewrite(tx, ae, def, params).await?;
-                    self.record_local_outcome(tx, ae, def, "TENANT_PROFILE_UPDATED", Vec::new()).await?;
+                    self.record_local_outcome(tx, ae, def, "TENANT_PROFILE_UPDATED", Vec::new())
+                        .await?;
                     Ok(None)
                 }
                 Semantic::TenantQuotaSet => {
