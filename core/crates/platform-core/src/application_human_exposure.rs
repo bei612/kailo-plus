@@ -187,6 +187,10 @@ mod tests {
         assert!(materialize(&mut outer, tenant, binding, 1, release, &altered).await.is_err());
         // Possessing the fixed reference while provisioning grants no execution.
         assert!(validate(&mut outer, tenant, binding, 1, release, key, 1, policy, 1, declaration).await.is_err());
+        // Original TEMPORAL admission sets ALLOWED after prewrite, before commit.
+        sqlx::query("update admission.action_execution set gate_state='ALLOWED' where id=(
+            select action_execution_id from projection.application_runtime where binding_id=$1 and generation=1)")
+            .bind(binding).execute(&mut *outer).await.unwrap();
         sqlx::query("update projection.application_runtime set state='ACTIVE',observation=jsonb_build_object(
             'bindingId',binding_id,'nativeScopeRef','isolated-scope','configDigest',repeat('6',64)) where binding_id=$1")
             .bind(binding).execute(&mut *outer).await.unwrap();

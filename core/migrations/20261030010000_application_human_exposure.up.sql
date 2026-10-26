@@ -32,6 +32,9 @@ BEGIN
         RETURN NEW;
     END IF;
     IF NEW.application_binding_id IS NULL THEN RETURN NEW; END IF;
+    -- Original TEMPORAL admission prewrites here, then sets its AE ALLOWED in
+    -- the same transaction. Do not require that later write before prewrite.
+    -- This guard freezes ownership/boundary; it does not replace admission.
     IF NEW.version<>1 OR NEW.status<>'ACTIVE' OR NOT EXISTS (
         SELECT 1 FROM catalog.application_binding b
         JOIN projection.application_runtime runtime ON runtime.binding_id=b.id
@@ -40,7 +43,7 @@ BEGIN
         JOIN catalog.component_release release ON release.id=runtime.component_release_id AND release.status='APPROVED'
           AND runtime.normalized_manifest_digest=release.manifest_digest
         JOIN admission.action_execution ae ON ae.id=runtime.action_execution_id AND ae.tenant_id=b.tenant_id
-          AND ae.target_id=b.id AND ae.gate_state='ALLOWED'
+          AND ae.target_id=b.id
         JOIN LATERAL jsonb_array_elements(release.manifest->'actionDefinitions') action ON true
         WHERE b.id=NEW.application_binding_id AND b.tenant_id=NEW.tenant_id AND b.state='PROVISIONING'
           AND b.component_release_id=release.id AND b.projection_action_execution_id=ae.id

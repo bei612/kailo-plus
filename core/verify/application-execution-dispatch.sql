@@ -149,6 +149,7 @@ BEGIN
    -- Opt-in only for the Rust producer test: let Core materialize before the
    -- fixture activation. Normal dispatch tests retain their original path.
    IF current_setting('kailo.fixture_pending_human_exposure',true)='on' THEN
+     UPDATE admission.action_execution SET gate_state='EVALUATING' WHERE id=create_ae;
      INSERT INTO application_dispatch_fixture VALUES(business_ae,binding,release,workflow,ee);
      CONTINUE;
    END IF;
