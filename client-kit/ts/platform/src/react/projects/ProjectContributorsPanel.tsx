@@ -7,7 +7,7 @@ import * as React from "react";
 import { CircleDot, GitCommitHorizontal, GitPullRequest } from "lucide-react";
 import { useUiT } from "../context";
 import { resolveUserLabel, type UserProfileLookup } from "../messages/system/identity";
-import { useUsersBatchQuery } from "../pulse/host";
+import { useProjectProfiles } from "./useProjectProfiles";
 import {
   contributorKey,
   profileForContributor,
@@ -52,7 +52,7 @@ export function useProjectDetailPeople({ issues, pullRequests, repository }: {
     ]);
     return [...new Set([...repositoryPeople(repository), ...pullRequestPubkeys, ...issuePubkeys])];
   }, [issues, pullRequests, repository]);
-  const profiles = useUsersBatchQuery(peoplePubkeys, { enabled: peoplePubkeys.length > 0 }).data?.profiles;
+  const profiles = useProjectProfiles(peoplePubkeys, { enabled: peoplePubkeys.length > 0 }).data?.profiles;
   const contributorPubkeys = React.useMemo(() => repository ? signedProjectContributorPubkeys({
     contributors: repository.contributors, issues, owner: repository.owner, pullRequests,
   }) : [], [issues, pullRequests, repository]);

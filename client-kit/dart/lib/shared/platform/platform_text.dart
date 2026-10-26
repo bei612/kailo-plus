@@ -715,6 +715,9 @@ enum PlatformMessageKey {
   projectsAssignmentUnassigned,
   projectsAssignmentFailed,
   projectsAssignmentUnknown,
+  projectsAssignmentAssignedTo,
+  projectsAssignmentUnassignedFrom,
+  projectsAssignmentNameSeparator,
   projectsCommentUnknown,
   projectsIssueChooseRepository,
   projectsIssueInRepository,
@@ -6514,6 +6517,15 @@ const _messages = <PlatformMessageKey, (String, String)>{
     'Task assignment outcome unknown. Retry checks the same publication.',
     '任务分配结果不明。重试将核验同一次发布。',
   ),
+  PlatformMessageKey.projectsAssignmentAssignedTo: (
+    'Assigned this task to {name}',
+    '已将此任务分配给{name}',
+  ),
+  PlatformMessageKey.projectsAssignmentUnassignedFrom: (
+    'Unassigned {name} from this task',
+    '已取消{name}对此任务的分配',
+  ),
+  PlatformMessageKey.projectsAssignmentNameSeparator: (', ', '、'),
   PlatformMessageKey.projectsCommentUnknown: (
     'Comment publication outcome unknown. Retry checks the same publication.',
     '评论发布结果不明。重试将核验同一次发布。',

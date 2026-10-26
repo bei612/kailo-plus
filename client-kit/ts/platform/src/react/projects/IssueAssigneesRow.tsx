@@ -17,6 +17,17 @@ import { Input } from "../composer/shared/ui/input";
 import { loadProjectAssignmentHumans } from "./issueAssignments";
 import { useUsersBatchQuery } from "../pulse/host";
 import { PROJECT_CONTEXT_ACTION_BUTTON_CLASS } from "./projectContextActionStyles";
+import { unknownMemberLabel } from "../messages/system/identity";
+import { ASSIGNMENT_UNKNOWN_LABEL } from "./projectAssignmentText";
+
+/**
+ * DD-157(8): the readable name an assignment is written and shown with — the person's own profile
+ * name, else their Kailo member directory name. Never a key: without either the content carries
+ * the catalog's "Unknown member" and readers name the assignee from the event's `p` tag.
+ */
+function assignmentName(profile: UserProfileLookup[string] | undefined, directoryName?: string): string | null {
+  return profile?.displayName?.trim() || profile?.nip05Handle?.trim() || directoryName?.trim() || null;
+}
 
 export function IssueAssigneesRow({ issue, profiles, viewerPubkey, scopeKey, canAssignOthers, pending, recoveryOperation, recoveryAssignee, onAssign, onUnassign,
   contextActions=false,showAssignees=true,showSelfAssignmentState=false,testIdPrefix="project-issue" }: {
@@ -66,7 +77,8 @@ export function IssueAssigneesRow({ issue, profiles, viewerPubkey, scopeKey, can
   return <div className={cn("min-w-0 text-muted-foreground",contextActions?"grid gap-0.5":"flex flex-wrap items-center gap-1.5 text-xs")}>
     {(showAssignees?displayedAssignees:[]).map(pubkey => {
       const profile = profiles?.[normalizePubkey(pubkey)];
-      const label = profile?.displayName?.trim() || profile?.nip05Handle?.trim() || truncateNpub(pubkey);
+      const name = assignmentName(profile, humans?.get(normalizePubkey(pubkey))?.displayName);
+      const label = name ?? unknownMemberLabel(t);
       const canUnassign = viewer !== null && (normalizePubkey(pubkey) === viewer||canAssignOthers&&humans?.has(normalizePubkey(pubkey)));
       const avatar = <UserAvatar accent={profile?.isAgent === true} avatarUrl={profile?.avatarUrl ?? null}
         displayName={label} shape={profile?.isAgent ? "squircle" : "circle"} size="xs"/>;
@@ -76,7 +88,7 @@ export function IssueAssigneesRow({ issue, profiles, viewerPubkey, scopeKey, can
             aria-label={t("projects.assignment.unassignPerson", { name: label })}
             className={cn("group relative inline-flex rounded-full focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring")}
             data-testid={`${testIdPrefix}-unassign-${normalizePubkey(pubkey)}`} disabled={pending||!allowedPending("unassign",normalizePubkey(pubkey))}
-            onClick={()=>void onUnassign(normalizePubkey(pubkey),label)} type="button">
+            onClick={()=>void onUnassign(normalizePubkey(pubkey),name??ASSIGNMENT_UNKNOWN_LABEL)} type="button">
             {avatar}
             <span className={cn("absolute inset-0 flex items-center justify-center bg-background/80 opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100",
               profile?.isAgent ? "rounded-squircle" : "rounded-full")}><X className="h-3 w-3 text-foreground"/></span>
@@ -89,7 +101,7 @@ export function IssueAssigneesRow({ issue, profiles, viewerPubkey, scopeKey, can
       className={cn(contextActions?"h-5 px-1 text-xs text-muted-foreground hover:text-foreground":"h-5 px-0 text-xs text-primary hover:bg-transparent hover:text-primary hover:underline",
         contextActions&&PROJECT_CONTEXT_ACTION_BUTTON_CLASS)}
       data-testid={`${testIdPrefix}-self-assign`} disabled={pending||!allowedPending("assign",viewer!)}
-      onClick={()=>void assign(viewer!,profiles?.[viewer!]?.displayName?.trim()||profiles?.[viewer!]?.nip05Handle?.trim()||truncateNpub(viewer!))}
+      onClick={()=>void assign(viewer!,assignmentName(profiles?.[viewer!],humans?.get(viewer!)?.displayName)??ASSIGNMENT_UNKNOWN_LABEL)}
       size="xs" type="button" variant="ghost">{contextActions?<UserPlus/>:null}{t("projects.assignment.self")}</Button> : null}
     {showSelfAssignmentState&&viewer&&displayedAssignees.includes(viewer)?<Button
       className={cn("h-5 gap-1 px-1 text-xs text-muted-foreground disabled:opacity-100",contextActions&&PROJECT_CONTEXT_ACTION_BUTTON_CLASS)}
@@ -113,10 +125,11 @@ export function IssueAssigneesRow({ issue, profiles, viewerPubkey, scopeKey, can
             :humanQuery.isError?<p role="alert" className="px-3 py-4 text-sm text-muted-foreground">{t("platform.loadFailed")}</p>
             :candidates.length?candidates.map(([pubkey,person])=>{
               const profile=candidateProfiles?.[pubkey];
-              const label=profile?.displayName?.trim()||profile?.nip05Handle?.trim()||person.displayName.trim()||truncateNpub(pubkey);
+              const name=assignmentName(profile,person.displayName);
+              const label=name??unknownMemberLabel(t);
               return <button className="flex w-full min-w-0 items-center gap-3 rounded-lg px-3 py-2 text-left hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
                 data-testid={`project-assignee-result-${pubkey}`} disabled={pending||!allowedPending("assign",pubkey)} key={pubkey}
-                onClick={()=>void assign(pubkey,label)} type="button">
+                onClick={()=>void assign(pubkey,name??ASSIGNMENT_UNKNOWN_LABEL)} type="button">
                 <UserAvatar avatarUrl={profile?.avatarUrl??null} displayName={label} shape="circle" size="xs"/>
                 <span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium text-foreground">{label}</span>
                   <span className="block truncate text-xs text-muted-foreground">{truncateNpub(pubkey)}</span></span>
