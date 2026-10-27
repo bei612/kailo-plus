@@ -286,13 +286,20 @@ export default async function handler(
         });
 
         // Handle client disconnect
-        req.on('close', () => {
+        res.on('close', () => {
           stream.destroy();
           reject(new Error('Client disconnected'));
         });
       });
 
       await streamPromise;
+      const completed = await wrenAIAdaptor.getTextBasedAnswerResult(summaryTask.queryId);
+      if (isGovernedQueryMode() || (await projectService.getCurrentProject()).id !== project.id ||
+          completed?.status !== TextBasedAnswerStatus.SUCCEEDED || completed.error ||
+          completed.completion?.queryId !== summaryTask.queryId || typeof completed.completion.content !== 'string') {
+        throw new ApiError('Original summary completion unavailable', 503);
+      }
+      summary = completed.completion.content;
     }
 
     // Return the combined result

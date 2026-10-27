@@ -238,6 +238,17 @@ async function governedSummary(req: NextApiRequest, res: NextApiResponse) {
       pending();
       return;
     }
+    if (!result.error && result.completion?.queryId === key &&
+        typeof result.completion.content === 'string') {
+      const completed = await history.advanceNativeGeneration(current, {
+        summary: result.completion.content, threadId: originalThreadId,
+        nativeSummary: { doneQueryId: key },
+      }, 200, Date.now() - startTime);
+      if (!completed) throw new NativeQueryRefusal(409, 'QUERY_INTENT_CONFLICT');
+      const disclosed = await native.readHistory(token, completed);
+      res.status(200).json({ id: key, ...disclosed.responsePayload });
+      return;
+    }
     // Native SUCCEEDED means preprocessing, not finished text. The original
     // Python stream is a consuming queue: only one CAS winner may open it.
     if (Object.hasOwn(current.responsePayload ?? {}, 'summary')) {
@@ -280,6 +291,13 @@ async function governedSummary(req: NextApiRequest, res: NextApiResponse) {
         }
         await native.readHistory(token, query);
         if (event?.done === true && event.queryId === key) {
+          const result = await components.wrenAIAdaptor.getTextBasedAnswerResult(key);
+          await native.readHistory(token, query);
+          if (result?.status !== TextBasedAnswerStatus.SUCCEEDED || result.error ||
+              result.completion?.queryId !== key || typeof result.completion.content !== 'string') {
+            break;
+          }
+          summary = result.completion.content;
           const completed = await history.advanceNativeGeneration(
             current,
             {
@@ -465,13 +483,20 @@ export default async function handler(
         });
 
         // Handle client disconnect
-        req.on('close', () => {
+        res.on('close', () => {
           stream.destroy();
           reject(new Error('Client disconnected'));
         });
       });
 
       await streamPromise;
+      const completed = await wrenAIAdaptor.getTextBasedAnswerResult(task.queryId);
+      if (isGovernedQueryMode() || (await projectService.getCurrentProject()).id !== project.id ||
+          completed?.status !== TextBasedAnswerStatus.SUCCEEDED || completed.error ||
+          completed.completion?.queryId !== task.queryId || typeof completed.completion.content !== 'string') {
+        throw new ApiError('Original summary completion unavailable', 503);
+      }
+      summary = completed.completion.content;
     }
 
     // Return the summary with ID and threadId

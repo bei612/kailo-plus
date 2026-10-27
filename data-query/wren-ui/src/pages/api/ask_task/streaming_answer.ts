@@ -63,7 +63,7 @@ export default async function handler(
       nativeHumanToken: req.headers['x-kailo-native-human-token'],
       nativeIdentityScope: req.headers['x-kailo-native-identity-scope'],
     } as unknown as IContext;
-    const authorize = async () => {
+    const authorize = async (expected = response) => {
       // The nested reader selects its mode again after asynchronous work.
       // Retiring a delivery must not turn this governed stream into an
       // independent read, nor may a standalone stream outlive its mode.
@@ -75,14 +75,14 @@ export default async function handler(
       const current = await askingService.getResponse(Number(responseId));
       if (
         !current ||
-        current.threadId !== response.threadId ||
-        current.question !== response.question ||
-        current.sql !== response.sql ||
-        canonical(current.answerDetail) !== canonical(response.answerDetail)
+        current.threadId !== expected.threadId ||
+        current.question !== expected.question ||
+        current.sql !== expected.sql ||
+        canonical(current.answerDetail) !== canonical(expected.answerDetail)
       )
         throw new NativeQueryRefusal(409, 'NATIVE_OBJECT_CHANGED');
       if (bound)
-        await new AskingResolver().authorizeNativeAnswerDetail(response, context, bound);
+        await new AskingResolver().authorizeNativeAnswerDetail(expected, context, bound);
       if (isGovernedQueryMode() !== bound)
         throw new NativeQueryRefusal(412, 'QUERY_ADMISSION_UNAVAILABLE');
     };
@@ -101,6 +101,7 @@ export default async function handler(
         ...response.answerDetail, status: ThreadResponseAnswerStatus.FINISHED, content,
       });
       if (!finished) throw new NativeQueryRefusal(409, 'NATIVE_OBJECT_CHANGED');
+      await authorize(finished);
     };
     const cached = await readCompletion();
     if (cached) {

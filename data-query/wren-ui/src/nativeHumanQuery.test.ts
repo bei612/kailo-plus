@@ -6521,13 +6521,15 @@ describe('native saved-view HUMAN query consumer', () => {
       };
       chartCreate = jest.fn(async (input) => ({ queryId: input.queryId }));
       chartGet = jest.fn(async () => structuredClone(chartResult));
-      summaryStream = jest.fn(async () =>
-        Readable.from([
+      summaryStream = jest.fn(async () => {
+        summaryGet.mockResolvedValue({ status: TextBasedAnswerStatus.SUCCEEDED,
+          completion: { queryId: key, content: 'Original summary' } });
+        return Readable.from([
           'data: {"message":"Original "}\n\n',
           'data: {"message":"summary"}\n\n',
           `data: ${JSON.stringify({ done: true, queryId: key })}\n\n`,
-        ]),
-      );
+        ]);
+      });
       prepareSummary = jest.fn(async (input) => {
         const created = !summaryRow;
         if (created && input.requestPayload.nativeAsk) {
@@ -8208,6 +8210,42 @@ describe('native saved-view HUMAN query consumer', () => {
       },
     );
 
+    it.each(['summary', 'ask', 'stream-ask'])(
+      'recovers the same original complete %s result after the one-shot stream was claimed',
+      async (kind) => {
+        summaryStream.mockRejectedValue(new Error('lost original stream'));
+        const sendOriginal = () => kind === 'summary' ? sendSummary() : sendAsk(undefined, {}, kind === 'stream-ask');
+        const first = await sendOriginal();
+        const firstBody = await first.text();
+        expect(summaryCreate).toHaveBeenCalledTimes(1);
+        expect(summaryStream).toHaveBeenCalledTimes(1);
+        expect(summaryRow.statusCode).toBe(202);
+        expect(firstBody).not.toContain('"summary":"full original answer"');
+        summaryGet.mockResolvedValue({ status: TextBasedAnswerStatus.SUCCEEDED,
+          completion: { queryId: key, content: 'full original answer' } });
+        const recovered = await sendOriginal();
+        const body = await recovered.text();
+        expect(body).toContain('full original answer');
+        expect(summaryRow.statusCode).toBe(200);
+        expect(summaryRow.responsePayload.summary).toBe('full original answer');
+        expect(summaryCreate).toHaveBeenCalledTimes(1);
+        expect(summaryStream).toHaveBeenCalledTimes(1);
+      },
+    );
+    it.each(['summary', 'ask'])(
+      'does not turn a %s native done into a final body without complete original result',
+      async (kind) => {
+        summaryStream.mockResolvedValue(Readable.from([
+          'data: {"message":"tail"}\n\n',
+          `data: ${JSON.stringify({ done: true, queryId: key })}\n\n`,
+        ]));
+        const response = await (kind === 'summary' ? sendSummary() : sendAsk());
+        expect(response.status).toBe(202);
+        expect(summaryRow.statusCode).toBe(202);
+        expect(await response.text()).not.toContain('"summary":"tail"');
+        expect(summaryCreate).toHaveBeenCalledTimes(1);
+      },
+    );
     it('keeps SQL UNKNOWN under its original key without starting summary generation', async () => {
       completed = false;
       expect((await sendSummary()).status).toBe(202);

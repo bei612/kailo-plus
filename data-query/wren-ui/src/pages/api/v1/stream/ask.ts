@@ -1,4 +1,5 @@
 import { NextApiRequest, NextApiResponse } from 'next';
+import { createInterface } from 'readline';
 import { components } from '@/common';
 import { ApiType } from '@server/repositories/apiHistoryRepository';
 import * as Errors from '@/apollo/server/utils/error';
@@ -394,35 +395,32 @@ export default async function handler(
         summaryTask.queryId,
       );
 
-      // Stream the content in real-time
-      const streamPromise = new Promise<void>((resolve, reject) => {
-        stream.on('data', (chunk) => {
-          const chunkString = chunk.toString('utf-8');
-          const match = chunkString.match(/data: {"message":"([\s\S]*?)"}/);
-          if (match && match[1]) {
-            summary += match[1];
-            // Send incremental content updates
-            sendContentBlockDelta(res, match[1]);
-          }
-        });
-
-        stream.on('end', () => {
-          resolve();
-        });
-
-        stream.on('error', (error) => {
-          reject(error);
-        });
-
-        // Handle client disconnect
-        req.on('close', () => {
-          stream.destroy();
-          reject(new Error('Client disconnected'));
-        });
-      });
-
+      const close = () => stream.destroy();
+      res.once('close', close);
+      const lines = createInterface({ input: stream, crlfDelay: Infinity });
       try {
-        await streamPromise;
+        for await (const line of lines) {
+          if (!line) continue;
+          if (isGovernedQueryMode() || !line.startsWith('data: '))
+            throw new ApiError('Original summary observation unavailable', 503);
+          const event = JSON.parse(line.slice(6));
+          if (Object.keys(event).sort().join(',') === 'done,queryId' &&
+              event.done === true && event.queryId === summaryTask.queryId) continue;
+          if (Object.keys(event).join(',') !== 'message' || typeof event.message !== 'string')
+            throw new ApiError('Original summary observation unavailable', 503);
+          summary += event.message;
+          sendContentBlockDelta(res, event.message);
+        }
+        const completed = await wrenAIAdaptor.getTextBasedAnswerResult(summaryTask.queryId);
+        if (isGovernedQueryMode() || (await projectService.getCurrentProject()).id !== project.id ||
+            completed?.status !== TextBasedAnswerStatus.SUCCEEDED || completed.error ||
+            completed.completion?.queryId !== summaryTask.queryId || typeof completed.completion.content !== 'string' ||
+            !completed.completion.content.startsWith(summary)) {
+          throw new ApiError('Original summary completion unavailable', 503);
+        }
+        const remainder = completed.completion.content.slice(summary.length);
+        if (remainder) sendContentBlockDelta(res, remainder);
+        summary = completed.completion.content;
         // Send content block stop
         sendContentBlockStop(res);
       } catch (_streamError) {
@@ -431,6 +429,10 @@ export default async function handler(
           400,
           Errors.GeneralErrorCodes.INTERNAL_SERVER_ERROR,
         );
+      } finally {
+        res.off('close', close);
+        lines.close();
+        stream.destroy();
       }
     }
 
