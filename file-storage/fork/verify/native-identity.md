@@ -4011,3 +4011,68 @@ Core 不可用时仍按已应用快照拒绝非成员并保留管理员。另有
   → `tools/component-release/render.mjs --material native-page --source-commit <部署提交>` → `component_release.register`
   → 另一位平台管理员 `component_release.approve` → `application_binding.create`（新 binding）→ 旧 binding
   `application_binding.disable`。合并前若镜像再变，版本再升，不复用已登记版本。
+
+## 2026-10-27 上传正文读取后再次核验原执行权限
+
+源码基底 `8c5395908aacbc6c4d82a57eb43855b4d66824ee`，本批产品固定
+`afe7a47103feae5bd807d8d282605b20b81056aa`，仅两份原 Go 文件，+62/-3。
+沿 `.design/07` §5.2、REQ-03/11、DD-09/11/87 的原 HUMAN writer 合同：
+
+1. 固定 Cells 上游仍为 `c57f02f4962835447df694c63bd0fd8c22bd7baf`。
+   原 SDK 1 CPU / 512 MiB 运行 `tools/upstream_manifest.py status file-storage`
+   退出 0，参考树 HEAD 与基准相同。上游原 `PutObject`、`PutObjectPart`
+   将请求 reader 交给原 Router；本批不改变其协议、对象路由或原上传页面。
+2. 当前 `nativeUploadWriter.Read` 仅在读取正文前 Fresh，正文读取可阻塞，
+   因此读取期间撤权后返回的字节仍可能交给存储。现在每次 `n > 0` 返回前
+   再调用同一个 `NativeUploadExecution.Fresh`，复核原独立 HUMAN、AE/EE、
+   binding/generation、目标、期限及 PEP；包括同时返回正文与 EOF 的情况。
+   拒绝时返回 `0/error`，不将该批字节交给调用方，也不新增凭据或授权来源。
+3. 已调用的 PutObject、先前交出的字节或未知 ACK 仍可能有副作用。原 Task
+   领取不释放、不改成确定失败、不回填完成，也不重新签发或重新上传。
+   原页面 `uploadNativeFile` 继续只观察同一执行，错误保持
+   `nativeExecutionUnknown`。multipart 的原 `PutObjectPart` 共用该 reader；
+   本轮动态检查是原 S3 PUT，不将这项静态共用关系当作 multipart 全链验收。
+4. 无 schema、API、Action、Workflow、数据库或 UI 变更。服务源码摘要发生变化，
+   原 artifact digest 不证明本候选已发布；完整 release/binding 门禁保持。
+
+CI 只从 GitHub fetch 固定产品提交并归档，9,090 个输入 blob 与该对象逐一相同。
+原 Cells 镜像 `golang@sha256:a688600ca24f8a4d3ca77f95b0dd40704a9fc787c826660eb7ba0b641b8b175d`
+实际 Go 1.26.8；容器 `cells-upload-afe7a4710-go1268` 为 4 CPU / 8 GiB、
+等额 memory+swap、UID 1000、network none，原 container-safety 回读通过。
+预检 MemAvailable 33,739,332 KiB；源码、TMPDIR、日志及原 Cells cache 经
+findmnt 确认为实际 `/dev/sda1` Data，未写入 NVMe bind cache。module cache
+只读，`GOTOOLCHAIN=local GOPROXY=off GOSUMDB=off`，未下载工具链或依赖。
+
+SSH 作业 94969 真实退出 0，原执行命令如下；不运行其他包或 full：
+
+```sh
+go test -mod=readonly -count=1 -v \
+  -run '^TestNativeUploadS3RequiresImmutableVersionAndTaskAcknowledgement$' ./gateway/data/gw
+go vet -mod=readonly ./gateway/data/gw
+```
+
+gofmt 无差异。原 S3、HUMAN cookie、HTTP Fresh、draft middleware 和 Task
+消费者的 15 个子场景通过，包含读取中撤权、正文与 EOF 同次返回、先交出
+6 字节再撤权三个新增场景；保留空/非空上传和原 ACK 不明场景。
+只移除读取后的 Fresh，三个新增场景均在原断言失败，exit 1：旧实现把全部
+12 字节交给原生读取方。逐字恢复生产文件后，同三场景再次通过；同包 vet
+退出 0。运行中 cgroup max/oom/oom_kill 均 0，最终该批容器已删除并回读为空。
+
+原件目录为 `/volumes/data/kailo/conformance/cells-upload-final/afe7a47103feae5bd807d8d282605b20b81056aa-go1268/`：
+
+| 原件 | 结果 | SHA-256 |
+|---|---|---|
+| `positive.log` | 15 子场景通过 | `ce3a70e70aed90f7b5d3e8410a96aef0fa04a29b560e174b64d2db023b791473` |
+| `mutation.log` | 3 子场景失败，exit 1 | `8e8b7c37b12c5abb13552b019f6b8025f64c456d3163049fe263e65a0374e24e` |
+| `restored.log` | 3 子场景通过 | `8bd5bda583ae5c75c416843bc619c8396cac7aeeca8beaba36506bcb61383286` |
+| `vet.log` | exit 0，空输出 | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` |
+
+恢复后生产文件 SHA-256 为 `1c0f7a899788ec3cb317cd87f43afa097c008b54580bbf9750d03535985a6bce`，
+检查文件为 `e768531a559986ff26e63f2bf649e8bc5d243b976b1c0942c2f5f9a08e993d5c`。
+较早作业 30976 使用通用 `3007729e…` SDK，其实际 Go 1.25.14 不满足原锁
+最低 1.26，退出 1，未运行业务断言；失败原件保留在同父目录不带 `-go1268`
+的固定 SHA 子目录，未更改 go.mod/go.sum 绕过。
+
+Core HTTP、原生索引、Job/Version RPC 和对象存储仍为隔离夹具；这不是浏览器、
+真实原生落盘、Mongo、完整 receiver 激活或生产上传验收。本批没有产品构建、
+部署、正式制品摘要更新或放行受治理 binding，旧发布/真实三端边界继续保留。
