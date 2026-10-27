@@ -13360,3 +13360,106 @@ It records fixed inputs, log hashes, actual limits, faults/restoration and clean
 Prior receipts are unchanged. Formal artifacts, release admission, receiver
 activation and real provider/browser acceptance remain separate; no deployment,
 production configuration or source-trust policy changed.
+
+## Original Home answer and chart continuation ownership (2026-10-27)
+
+For **DD-12 / SS-WRN-GOVERNANCE**, the original Home answer/chart generation,
+chart adjustment, SQL-fix continuation and response observation now retain their
+original page owner across asynchronous work. The fixed upstream remains
+WrenAI-ui-0.32.2 `c5f02a0391c87420dba78632dcd86073710deb72`; its original
+mutation-to-response-read interaction is retained. Original upstream status ran
+against read-only metadata in the existing SDK and reported no new upstream
+commit. No reference source was executed or changed.
+
+The original configuration read now fences dispatch and disclosure against the
+captured configured HUMAN scope and binding generation; missing configured facts
+cannot select standalone operation. Page retirement rejects callbacks even when
+they first run after cleanup. Returning to the same thread observes the original
+UNKNOWN key, while each page owner holds its own in-flight request locks. A late
+old completion cannot release the new owner's lock. No native task is canceled,
+no replacement key is minted for uncertainty, and backend admission remains the
+authority.
+
+Installed Apollo selects the latest hook-level completion callback, does not
+await an async callback, and ordinarily normalizes mutation results before a
+consumer can reject them. The original generated operations therefore use
+`no-cache` and consume their exact promises. The response reader performs one
+serial original query at the original one-second cadence, with deduplication
+disabled for that observation; temporary errors only retry this read. It checks
+current configuration and exact response/thread ownership before updating the
+original cache. The SQL-fix submit promise also covers its post-ACK identity
+check, preserves the original mutation rejection, and keeps the original modal
+loading and duplicate-submit protection until that check completes. Valid
+current SQL and answer/chart results still update the original cache.
+
+Before consuming a generation receipt, both original response ID and thread ID
+must match. A completed/ended receipt for a different row, a missing row or a
+missing thread cannot update cache, clear the original key or authorize a new
+intent. The same-key explicit recovery still works after such a response.
+
+Fixed source **`06cf7ce4cf68a6fafc1cee46e7b28da297f74e7a`**, based on
+`a4bc4e96bf1ff9ede2363423a568a55eb12a2563`, passed the complete original
+`src/viewMetadata.test.ts`: **244 / 244**, zero failed/skipped. This includes
+62 added cases, of which 33 use the installed Apollo client, generated GraphQL
+documents, hooks, Link and normalized cache. They cover standalone/governed
+completion, same-instance A→B→A, normal rerender, late writes/reads, same-key
+recovery while an old request remains in flight, temporary read errors, changed
+configuration, malformed row ownership and the original FixSQLModal's actual
+submit/close path. React scheduling and Link responses are scripted; the
+authorization backend and model provider are not replaced with a claimed live
+business run. The unrelated Markdown renderer is omitted while production
+answer/chart/asking terminal helpers remain real. Full original TypeScript and
+relevant Next lint / Prettier checks exited **0**.
+
+Six mutations of the private fixed-source export were actually detected:
+
+| Removed boundary | Actual failed cases | After byte restoration |
+| --- | ---: | ---: |
+| Original asynchronous generation owner guard | 6 | 6 passed |
+| Configuration scope/generation correlation | 13 | 13 passed |
+| Apollo cache-write isolation | 4 | 4 passed |
+| SQL-fix post-ACK configuration wait | 2 | 3 passed |
+| Owner-local original in-flight request locks | 3 | 3 passed |
+| Response/thread match before receipt consumption | 12 | 12 passed |
+
+Each fault exited **1** with actual failed assertions. The SQL wait fault selected
+three cases; its unchanged failure case still passed. Other tests were unselected
+only in these narrow fault/restoration commands. After all byte restorations,
+the complete original file again passed **244 / 244**. No case was skipped to
+obtain either complete-file result.
+
+Earlier failures remain recorded. `c921feff6` stopped before executing tests at a
+browser timer/Node Timeout type mismatch. The first actual Apollo attempts had
+five fixture failures each: missing real asking-status exports, then an unrelated
+Markdown ESM import in the original Jest environment. `735e9e70d` passed its 44
+selected consumers and static checks before the later lock/correlation fixes.
+The first complete file at `8d9f9a8f6` returned **227 passed / 2 failed**: two
+existing unavailable-storage/Web-Crypto fixtures replaced properties on Jest's
+global proxy without changing the bare browser bindings. The diagnostic fixed
+source `f935a854c` proved both preconditions false before calling product code.
+The final fixtures inject unavailability on the actual consumed objects and
+restore them in `finally`; they retain the original storage error, zero native
+write and zero input-persistence requirements. Product refusal was not relaxed.
+Earlier formatter-induced input mismatches are also retained as failures, not
+fixed-source acceptance. Original Jest open-handle notices remain in the logs;
+all terminal runs exited naturally without `--forceExit`.
+
+CI fetched fixed GitHub objects and reused the existing locked Node 18
+installation after comparing `package.json`, `yarn.lock` and `.yarnrc.yml`.
+No dependency copy or installation was needed. The immutable image
+`sha256:f9ab18e354e6855ae56ef2b290dd225c1e51a564f87584b9bd21dd651838830e`
+ran nonroot with **4 CPU / 4 GiB / equal swap**, network disabled and no database.
+Original preflight and actual container-limit checks passed. Source, temporary
+files and logs remained on actual Data `/dev/sda1`. All **618 input Git blobs**
+matched fixed source after restoration. Own check/format/metadata containers
+were removed and their absence was read back.
+
+The terminal receipt is
+`/volumes/data/kailo/verification/buzz-r10/wren-continuation-06cf7ce4c-final/receipt.json`,
+SHA-256 `a552cef0a082ca1c24dc0d5a0da0f42b08c479a31607005d2213f2ba8ff6d785`.
+The unchanged repository copy is [the original Home continuation receipt](home-continuation-receipt.json).
+It records fixed inputs, actual limits, log hashes, original failures,
+fault/restoration counts and cleanup. Prior receipts are unchanged. This is one
+original UI consumer operation batch, not all Wren suites, a real browser/model
+provider run, receiver activation or deployment. No API/schema, production
+configuration, official artifact or source-trust policy changed.
