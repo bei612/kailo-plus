@@ -2147,3 +2147,65 @@ Data 目录 `/volumes/data/kailo/tmp/web-tooltip-shared.zzIWe9/review-discuss.8A
 - apply_patch 精确还原后正式/私有 cmp 0；`60647` exit 0：末版 Web tsc 0、原新增 4/4，共享菜单两语言 2/2，Native 原新增 1/1。没有重复全量/依赖重建。Native 的新增检查执行原 TSX AST/回调、共享 DOM 验证同一菜单；不是 Native Rust、设备或在线 Relay 验收。
 
 全部实际命令、失败原件及冻结输入位于 `/volumes/data/kailo/tmp/web-tooltip-shared.zzIWe9/inbox-header-delete.jMa8l6`。日志 SHA-256：`positive.log` 为 `9e0c09a9ab11cd08e820561b44d54960a11fb897cb46d5c3143c1640e0f6337f`，`positive-corrected.log` 为 `7872b79cef6caa692b782881227371f8d77db95738d8e14c2c11f3ff99983cd4`，`native-original.log` 为 `f71cd02f3b9ec02ac9d84edc07f7bea2447c9049c069463ff84c8c8883e2015a`，`mutation.log` 为 `190bb912a0b7486a4fdfba16ae5abf1a29dd22998bf6bb9b5787cf9423ddba24`，`restored.log` 为 `2422d35e116bcfcf6d58fe3da08256e009dee0953d89606f6c203fb9521b4ce9`。本批不认领线上 SSO/实际删除/full/部署通过；文档与发布由主线集中收口。
+
+### 2026-10-27 Projects 坐标链接与提交详情复制收口
+
+关联 REQ-24、DD-74/118/160(5)，沿 V-SCN-89/93 的原 Projects 读消费者。基准
+`8c5395908aacbc6c4d82a57eb43855b4d66824ee`；产品固定源
+`ebb014ac11838a33e065fc86b65a9fba00099dd2`，最终生成物与补充回归固定源
+`38b68f5beebd5ce3b9635432ed20b00411cb479f`。功能来源为 Buzz
+`779af8886caae1317b4de962082429867ab61503` 的
+`desktop/src/features/projects/ui/ProjectCommitDetailPanel.tsx`、
+`desktop/src/shared/ui/markdown/entityLinks.tsx::useOpenEntityLink` 与
+`desktop/src/shared/useEntityDeepLinks.ts`。原差异台账
+`collaboration/fork/verify/original-diff-inventory.md` 的这三行虽归为共享迁移，
+实际仍有操作缺口，不能从迁移分类推导功能完整。
+
+- 原提交详情标题含 Copy commit link；共享详情以“没有 commit route”为由移除。
+  DD-160 后路由已有 `tab=commits/commitHash`，消息和 OS 消费者却仍只接受 Issue/PR。
+  本批恢复仓库与项目链接，接回仓库详情和项目首页 Commits sheet 的复制按钮；后者
+  传入实际选中提交所属仓库，不借首页默认仓库。同一共享主体服务 Web/Desktop。
+- 每次打开重新用当前 `ProjectsHost` 读取完整有界目录与删除折叠，精确匹配
+  30617/30621 坐标；tooltip 结果不作准入。只把当前目录解析出的 project/repository
+  引用、原 tab 和 commitHash 交给原导航。链接不选择 Tenant、Host、设备身份或
+  clone URL；Git 正文仍经过原 DD-118 宿主读取与 Relay 授权。相同 hash 不合并仓库，
+  已删除、不可读、读取中 bindingVersion 改变或身份退休均不导航。
+- 沿原分享按钮、菜单和令牌呈现；新增“复制提交链接／打开提交”两项中英文词条，
+  Dart 由原 `tools/gen-platform-i18n.py` 生成。没有 API、数据库、权限或发布证明协议
+  变更，没有修改 Composer、普通 publication 对账或生产服务。
+
+验证使用原 SDK
+`sha256:3007729eb192341a4f004a88e42e1e66c94fc67d763acfc96568bd7311116018`，
+Node `v24.21.0`，实际 1 CPU/4 GiB、memory+swap 同限；GitHub 固定对象导出，
+原 container-safety 预检/限额回读，缓存位于 `/volumes/data/kailo/check-cache`，
+解包复用本人 `/var/lib/kailo-ci/tmp/dd160-checkout-ui/source`。无宿主工具链。
+
+1. 首轮 `09346ac0e9248b319be7883da4ffa0c340672823` 的 i18n 生成因两个重复 key
+   退出 1；修为复用原 Repository/Project 词条，保留原失败日志。
+2. `ebb014ac1`：两处 `pnpm install --frozen-lockfile` 均通过；共享生产 tsc、
+   `tsc -p tsconfig.test.json`、Desktop tsc 均 0；原 Vitest 的
+   `project-inbox.test.tsx` 95、`project-git.test.tsx` 16、新增坐标链接 6，合计
+   117/117 通过。i18n 生成与 check 均 0。既有 React act 警告原样保留，不算失败。
+3. `38b68f5be` 只补 Dart 生成物与同 hash 双仓库/删除坐标检查；复用同一锁定依赖，
+   不重复安装。测试类型与 i18n check 均 0，坐标链接 7/7；原 Desktop
+   `node --import ./test-loader.mjs --experimental-strip-types --test src/shared/deep-link.test.mjs`
+   为 11/11。这验证队列逻辑，不代替 Windows OS 实际唤醒。
+4. 同一私有导出临时恢复 `EntityLinkAnchor` 只接受 Issue/PR 的旧分支，实际
+   “详情复制 → 消息链接 → 精确仓库提交/diff”消费者失败，exit 1、1 failed/15 未选；
+   失败在无法找到可交互 repository chip 的断言，不是编译或 OOM。逐字恢复后同一
+   消费者 1/1、15 未选、exit 0。恢复前后 SHA-256 同为
+   `96a47d3c2acbe209ed780e193823c78078712d7378777fa1f42d9206121eb34e`。
+
+原始 runner、日志、exit、limits、OOM 与恢复哈希位于 CI 节点
+`/volumes/data/kailo/verification/projects-inbox/` 的完整 SHA 目录，最后一轮目录
+以 `38b68f5beebd5ce3b9635432ed20b00411cb479f-final` 命名。两次最终容器均 exit 0、
+OOM=false，实查 `projects-inbox-*` 容器不存在。初次 runner 的 negotiation tip
+对象不存在、独立 sparse 树的 upstream status 缺相邻 `.references`，以及使用
+实际路径后读取 `UPDATE_TASKS.json` 权限失败均保留为工具边界；上游工作树 HEAD
+另已只读核对为上述固定 779af，没有修改证据树或权限。Git 全程以 kailo-dev
+提交/push；自动后台 gc 因旧 publication-db-fence 元数据属 root 报权限失败，
+提交和 push 本身成功，没有搬动 Git 元数据。
+
+本批不声称全量 Projects/Inbox 恢复、真实浏览器剪贴板/双主题截图、三账号协作、
+Windows 安装包或部署验收。其他原菜单与设置仍须逐项核对；本轮未执行全局编译、
+后端/Relay 重检查或正式发布。集成后需要按最终同源词条统一生成 Dart。
