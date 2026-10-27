@@ -450,7 +450,7 @@ describe("original Overview unavailable Retry",()=>{
     const gate=new Promise<void>(resolve=>{release=resolve;});
     if(desktop) f.native.mockImplementation(async(command,args)=>{
       if(command==="get_project_repo_snapshot"){
-        if(!retry)throw new Error("repository not found on the relay");
+        if(!retry)throw new Error("project_repo_not_found");
         await gate;
       }
       return nativeRead(command,args);
@@ -470,8 +470,8 @@ describe("original Overview unavailable Retry",()=>{
     const before=reads();retry=true;
     await click(button);
     await vi.waitFor(()=>expect(reads()).toBe(before+1));
-    // The original checking state replaces the unavailable card while the read is pending.
-    expect([...ui.querySelectorAll<HTMLButtonElement>("button")].some(button=>button.textContent?.trim()==="Retry"&&!button.disabled)).toBe(false);
+    // Await the original query observer update: pending must not offer another Retry.
+    await vi.waitFor(()=>expect([...ui.querySelectorAll<HTMLButtonElement>("button")].some(button=>button.textContent?.trim()==="Retry"&&!button.disabled)).toBe(false));
     await act(async()=>release());
     await vi.waitFor(()=>expect(ui.querySelector('[data-testid="project-readme"]')?.textContent).toContain(desktop?"Remote readme":"Readme body text"));
     expect(unavailable()).toBeNull();expect(pulse.publish).not.toHaveBeenCalled();
