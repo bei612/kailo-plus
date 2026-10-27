@@ -4107,12 +4107,22 @@ mod scoped_publication_tests {
         assert_eq!(signed.tags.iter().next(), event.tags.iter().next());
         let project = EventBuilder::new(Kind::from(1630), "original PR")
             .allow_self_tagging()
-            .tags([Tag::parse(["p", &client.pubkey_hex()]).unwrap(),
-                Tag::parse(["a", &format!("30617:{}:repo",client.pubkey_hex())]).unwrap()])
-            .sign_with_keys(&client.keys).unwrap();
+            .tags([
+                Tag::parse(["p", &client.pubkey_hex()]).unwrap(),
+                Tag::parse(["a", &format!("30617:{}:repo", client.pubkey_hex())]).unwrap(),
+            ])
+            .sign_with_keys(&client.keys)
+            .unwrap();
         let bound = client.bind_publication_epoch(&project, &policy).unwrap();
-        assert_eq!(bound.tags.iter().filter(|tag|tag.as_slice()[0] != PUBLICATION_EPOCH_TAG).collect::<Vec<_>>(),
-            project.tags.iter().collect::<Vec<_>>(), "epoch binding must preserve original self-p and all native tags");
+        assert_eq!(
+            bound
+                .tags
+                .iter()
+                .filter(|tag| tag.as_slice()[0] != PUBLICATION_EPOCH_TAG)
+                .collect::<Vec<_>>(),
+            project.tags.iter().collect::<Vec<_>>(),
+            "epoch binding must preserve original self-p and all native tags"
+        );
 
         assert!(client.bind_publication_epoch(&signed, &policy).is_err());
         for field in ["ready", "version", "max_age_seconds", "epoch"] {

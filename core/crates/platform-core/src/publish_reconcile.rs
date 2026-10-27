@@ -76,7 +76,9 @@ pub fn spawn(state: ServiceState, meter: &Meter, cfg: Config) {
     let metrics = Metrics {
         unsettled: meter
             .u64_gauge("platform.publish.unsettled")
-            .with_description("已 DISPATCH 而未确证的发布数；缺失证明仅计本轮 actual policy 确证范围")
+            .with_description(
+                "已 DISPATCH 而未确证的发布数；缺失证明仅计本轮 actual policy 确证范围",
+            )
             .build(),
         oldest_age: meter
             .u64_gauge("platform.publish.unsettled_oldest_age")
@@ -287,7 +289,9 @@ async fn pass(
             settled_window_passed: r.settled,
         };
         let outcome = settle_one(state, &p).await;
-        if outcome == "NOT_DELIVERED" { confirmed_absences.push(p); }
+        if outcome == "NOT_DELIVERED" {
+            confirmed_absences.push(p);
+        }
         metrics
             .reconciled
             .add(1, &[KeyValue::new("outcome", outcome)]);
@@ -308,7 +312,12 @@ async fn pass(
             .as_slice(),
         )
         .bind(FILTERED_PUBLICATION_ACTIONS.as_slice())
-        .bind(confirmed_absences.iter().map(|p|p.operation_id).collect::<Vec<_>>())
+        .bind(
+            confirmed_absences
+                .iter()
+                .map(|p| p.operation_id)
+                .collect::<Vec<_>>(),
+        )
         .fetch_one(&state.pool)
         .await
         .map_err(|e| e.to_string())?;
@@ -333,13 +342,20 @@ async fn pass(
     let mut cleanup_absences = Vec::new();
     for p in &confirmed_absences {
         if candidates.contains(&p.operation_id)
-            && observe_settlement(state,p).await.is_ok_and(|(proof,_)|proof.proves_absence()) {
+            && observe_settlement(state, p)
+                .await
+                .is_ok_and(|(proof, _)| proof.proves_absence())
+        {
             cleanup_absences.push(p.operation_id);
         }
     }
     sqlx::query(REAP_PUBLICATIONS_SQL)
-        .bind(retention).bind(FILTERED_PUBLICATION_ACTIONS.as_slice()).bind(cleanup_absences)
-        .execute(&state.pool).await.map_err(|e|e.to_string())?;
+        .bind(retention)
+        .bind(FILTERED_PUBLICATION_ACTIONS.as_slice())
+        .bind(cleanup_absences)
+        .execute(&state.pool)
+        .await
+        .map_err(|e| e.to_string())?;
     // DD-118 branch push intents keep the same retention. Their reconciliation
     // happens on the retry itself (the ref Relay advertises), never here.
     sqlx::query(
@@ -552,29 +568,53 @@ fn publication_target(p: &Pending) -> Result<MessageTarget, &'static str> {
 
 /// The old operation's immutable audit proof is the only fallback after a
 /// legitimately expired idempotency slot. Never reconstruct scope from a new Host.
-async fn load_scope_value(conn: &mut sqlx::PgConnection, p: &Pending, lock: bool)
-    -> Result<Option<serde_json::Value>,sqlx::Error> {
-    let actor=p.actor_principal_id.ok_or(sqlx::Error::RowNotFound)?;
-    let sql=if lock {
+async fn load_scope_value(
+    conn: &mut sqlx::PgConnection,
+    p: &Pending,
+    lock: bool,
+) -> Result<Option<serde_json::Value>, sqlx::Error> {
+    let actor = p.actor_principal_id.ok_or(sqlx::Error::RowNotFound)?;
+    let sql = if lock {
         "select delivery_scope from admission.publish_attempt where operation_id=$1 and event_id=$2 and tenant_principal_id=$3 for share"
     } else {
         "select delivery_scope from admission.publish_attempt where operation_id=$1 and event_id=$2 and tenant_principal_id=$3"
     };
-    let value:Option<Option<serde_json::Value>>=sqlx::query_scalar(sql).bind(p.operation_id)
-        .bind(&p.event_id).bind(actor).fetch_optional(&mut *conn).await?;
-    if let Some(value)=value.flatten() { return Ok(Some(value)); }
+    let value: Option<Option<serde_json::Value>> = sqlx::query_scalar(sql)
+        .bind(p.operation_id)
+        .bind(&p.event_id)
+        .bind(actor)
+        .fetch_optional(&mut *conn)
+        .await?;
+    if let Some(value) = value.flatten() {
+        return Ok(Some(value));
+    }
     let base="select publication_proof->'scope' from audit.audit_event
       where operation_id=$1 and actor_principal_id=$3 and event_type='RECONCILIATION' and result_code='NOT_DELIVERED'
         and publication_proof->'settlement'->'claim'->>'event_id'=$2
         and audit.publication_absence_proven(publication_proof,evidence_refs)
       order by occurred_at,id limit 1";
-    let query=if lock {format!("{base} for share")} else {base.to_owned()};
-    sqlx::query_scalar(&query).bind(p.operation_id).bind(&p.event_id).bind(actor).fetch_optional(conn).await
+    let query = if lock {
+        format!("{base} for share")
+    } else {
+        base.to_owned()
+    };
+    sqlx::query_scalar(&query)
+        .bind(p.operation_id)
+        .bind(&p.event_id)
+        .bind(actor)
+        .fetch_optional(conn)
+        .await
 }
 
 async fn frozen_scope(state: &ServiceState, p: &Pending) -> Result<PublicationScope, &'static str> {
-    let mut conn=state.pool.acquire().await.map_err(|_|"EVIDENCE_UNREADABLE")?;
-    let value=load_scope_value(&mut conn,p,false).await.map_err(|_|"EVIDENCE_UNREADABLE")?;
+    let mut conn = state
+        .pool
+        .acquire()
+        .await
+        .map_err(|_| "EVIDENCE_UNREADABLE")?;
+    let value = load_scope_value(&mut conn, p, false)
+        .await
+        .map_err(|_| "EVIDENCE_UNREADABLE")?;
     parse_frozen_scope(value)
 }
 
@@ -819,7 +859,7 @@ mod tests {
         let before: (i64, i64) = sqlx::query_as(UNSETTLED_PUBLICATIONS_SQL)
             .bind(FILTERED_PUBLICATION_ACTIONS.as_slice())
             .bind(FILTERED_PUBLICATION_ACTIONS.as_slice())
-        .bind(Vec::<Uuid>::new())
+            .bind(Vec::<Uuid>::new())
             .fetch_one(&mut *tx)
             .await
             .unwrap();
@@ -888,7 +928,7 @@ mod tests {
         let unsettled: (i64, i64) = sqlx::query_as(UNSETTLED_PUBLICATIONS_SQL)
             .bind(FILTERED_PUBLICATION_ACTIONS.as_slice())
             .bind(FILTERED_PUBLICATION_ACTIONS.as_slice())
-        .bind(Vec::<Uuid>::new())
+            .bind(Vec::<Uuid>::new())
             .fetch_one(&mut *tx)
             .await
             .unwrap();
@@ -900,7 +940,7 @@ mod tests {
         sqlx::query(REAP_PUBLICATIONS_SQL)
             .bind(1_i64)
             .bind(FILTERED_PUBLICATION_ACTIONS.as_slice())
-        .bind(Vec::<Uuid>::new())
+            .bind(Vec::<Uuid>::new())
             .execute(&mut *tx)
             .await
             .unwrap();
@@ -933,7 +973,7 @@ mod tests {
         let after: (i64, i64) = sqlx::query_as(UNSETTLED_PUBLICATIONS_SQL)
             .bind(FILTERED_PUBLICATION_ACTIONS.as_slice())
             .bind(FILTERED_PUBLICATION_ACTIONS.as_slice())
-        .bind(Vec::<Uuid>::new())
+            .bind(Vec::<Uuid>::new())
             .fetch_one(&mut *tx)
             .await
             .unwrap();
@@ -941,7 +981,7 @@ mod tests {
         sqlx::query(REAP_PUBLICATIONS_SQL)
             .bind(1_i64)
             .bind(FILTERED_PUBLICATION_ACTIONS.as_slice())
-        .bind(Vec::<Uuid>::new())
+            .bind(Vec::<Uuid>::new())
             .execute(&mut *tx)
             .await
             .unwrap();
@@ -970,7 +1010,7 @@ mod tests {
         sqlx::query(REAP_PUBLICATIONS_SQL)
             .bind(1_i64)
             .bind(FILTERED_PUBLICATION_ACTIONS.as_slice())
-        .bind(Vec::<Uuid>::new())
+            .bind(Vec::<Uuid>::new())
             .execute(&mut *tx)
             .await
             .unwrap();
@@ -1092,44 +1132,93 @@ mod tests {
         let (unsettled, _): (i64, i64) = sqlx::query_as(UNSETTLED_PUBLICATIONS_SQL)
             .bind([crate::pulse::PUBLISH_ACTION])
             .bind(FILTERED_PUBLICATION_ACTIONS.as_slice())
-        .bind(vec![operation])
+            .bind(vec![operation])
             .fetch_one(&mut *tx)
             .await
             .unwrap();
         assert_eq!(unsettled, 0);
-        let (unconfirmed,_):(i64,i64)=sqlx::query_as(UNSETTLED_PUBLICATIONS_SQL)
-            .bind([crate::pulse::PUBLISH_ACTION]).bind(FILTERED_PUBLICATION_ACTIONS.as_slice())
-            .bind(Vec::<Uuid>::new()).fetch_one(&mut *tx).await.unwrap();
-        assert_eq!(unconfirmed,1,"old epoch or unavailable current policy remains pending");
+        let (unconfirmed, _): (i64, i64) = sqlx::query_as(UNSETTLED_PUBLICATIONS_SQL)
+            .bind([crate::pulse::PUBLISH_ACTION])
+            .bind(FILTERED_PUBLICATION_ACTIONS.as_slice())
+            .bind(Vec::<Uuid>::new())
+            .fetch_one(&mut *tx)
+            .await
+            .unwrap();
+        assert_eq!(
+            unconfirmed, 1,
+            "old epoch or unavailable current policy remains pending"
+        );
         // An actually expired historical proof must retain the original same-key
         // slot when the current epoch is different or cannot be observed. Keep
         // the append consumer above real; seed the separate aged fact directly.
-        let aged_operation=Uuid::new_v4();
-        let aged_key=Uuid::new_v4();
+        let aged_operation = Uuid::new_v4();
+        let aged_key = Uuid::new_v4();
         sqlx::query("insert into admission.publish_attempt(tenant_principal_id,idempotency_key,operation_id,event_id,delivery_scope,created_at) values($1,$2,$3,$4,$5,now()-interval '2 days')")
             .bind(actor).bind(aged_key).bind(aged_operation).bind(&id).bind(sqlx::types::Json(&proof.scope)).execute(&mut *tx).await.unwrap();
-        for (event_type,result,stored_proof) in [("DISPATCH","DISPATCHED",None),("RECONCILIATION","NOT_DELIVERED",Some(serde_json::to_value(&proof).unwrap()))] {
+        for (event_type, result, stored_proof) in [
+            ("DISPATCH", "DISPATCHED", None),
+            (
+                "RECONCILIATION",
+                "NOT_DELIVERED",
+                Some(serde_json::to_value(&proof).unwrap()),
+            ),
+        ] {
             sqlx::query("insert into audit.audit_event(id,event_key,tenant_id,operation_id,event_type,actor_principal_id,action_key,action_version,component_type_key,parameter_hash,decision,result_code,result_exposure,evidence_refs,correlation_id,occurred_at,publication_proof) values($1,$2,$3,$4,$5,$6,$7,1,'buzz','NONE','ALLOW',$8,'NONE',jsonb_build_array(jsonb_build_object('kind','BUZZ_EVENT_ID','value',$9::text)),$4,now()-interval '2 days',$10)")
                 .bind(Uuid::new_v4()).bind(format!("aged-proof:{aged_operation}:{event_type}")).bind(tenant).bind(aged_operation).bind(event_type).bind(actor).bind(crate::pulse::PUBLISH_ACTION).bind(result).bind(&id).bind(stored_proof).execute(&mut *tx).await.unwrap();
         }
-        sqlx::query(REAP_PUBLICATIONS_SQL).bind(1_i64).bind(FILTERED_PUBLICATION_ACTIONS.as_slice())
-            .bind(Vec::<Uuid>::new()).execute(&mut *tx).await.unwrap();
-        let retained_old_epoch=sqlx::query(crate::web_transport::PREVIOUS_PUBLICATION_SQL)
-            .bind(actor).bind(aged_key).bind(crate::pulse::PUBLISH_ACTION).bind("TENANT")
-            .bind(None::<Uuid>).bind(FILTERED_PUBLICATION_ACTIONS.as_slice())
-            .fetch_optional(&mut *tx).await.unwrap();
-        assert!(retained_old_epoch.is_some(),"old epoch cannot erase the same-key retry fence");
-        assert!(retained_old_epoch.unwrap().get::<bool,_>("absence_proven"),"proof remains historical evidence, not a fresh epoch observation");
-        let pending=sqlx::query_as::<_,PendingRow>(PENDING_PUBLICATIONS_SQL)
-            .bind(FILTERED_PUBLICATION_ACTIONS.as_slice()).bind(10_i64).bind(960_i64).bind(0_i64)
-            .bind(None::<chrono::DateTime<chrono::Utc>>).bind(None::<Uuid>)
-            .bind(FILTERED_PUBLICATION_ACTIONS.as_slice()).fetch_all(&mut *tx).await.unwrap();
-        assert!(pending.iter().any(|row|row.operation_id==aged_operation),"old proof remains on the fair original positive-reconciliation cursor");
-        sqlx::query(REAP_PUBLICATIONS_SQL).bind(1_i64).bind(FILTERED_PUBLICATION_ACTIONS.as_slice())
-            .bind(vec![aged_operation]).execute(&mut *tx).await.unwrap();
+        sqlx::query(REAP_PUBLICATIONS_SQL)
+            .bind(1_i64)
+            .bind(FILTERED_PUBLICATION_ACTIONS.as_slice())
+            .bind(Vec::<Uuid>::new())
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        let retained_old_epoch = sqlx::query(crate::web_transport::PREVIOUS_PUBLICATION_SQL)
+            .bind(actor)
+            .bind(aged_key)
+            .bind(crate::pulse::PUBLISH_ACTION)
+            .bind("TENANT")
+            .bind(None::<Uuid>)
+            .bind(FILTERED_PUBLICATION_ACTIONS.as_slice())
+            .fetch_optional(&mut *tx)
+            .await
+            .unwrap();
+        assert!(
+            retained_old_epoch.is_some(),
+            "old epoch cannot erase the same-key retry fence"
+        );
+        assert!(
+            retained_old_epoch.unwrap().get::<bool, _>("absence_proven"),
+            "proof remains historical evidence, not a fresh epoch observation"
+        );
+        let pending = sqlx::query_as::<_, PendingRow>(PENDING_PUBLICATIONS_SQL)
+            .bind(FILTERED_PUBLICATION_ACTIONS.as_slice())
+            .bind(10_i64)
+            .bind(960_i64)
+            .bind(0_i64)
+            .bind(None::<chrono::DateTime<chrono::Utc>>)
+            .bind(None::<Uuid>)
+            .bind(FILTERED_PUBLICATION_ACTIONS.as_slice())
+            .fetch_all(&mut *tx)
+            .await
+            .unwrap();
+        assert!(
+            pending.iter().any(|row| row.operation_id == aged_operation),
+            "old proof remains on the fair original positive-reconciliation cursor"
+        );
+        sqlx::query(REAP_PUBLICATIONS_SQL)
+            .bind(1_i64)
+            .bind(FILTERED_PUBLICATION_ACTIONS.as_slice())
+            .bind(vec![aged_operation])
+            .execute(&mut *tx)
+            .await
+            .unwrap();
         let retained_after_fresh:bool=sqlx::query_scalar("select exists(select 1 from admission.publish_attempt where tenant_principal_id=$1 and idempotency_key=$2)")
             .bind(actor).bind(aged_key).fetch_one(&mut *tx).await.unwrap();
-        assert!(!retained_after_fresh,"a freshly reobserved current-epoch absence permits original TTL cleanup");
+        assert!(
+            !retained_after_fresh,
+            "a freshly reobserved current-epoch absence permits original TTL cleanup"
+        );
 
         for fault in [
             "early",
@@ -1186,12 +1275,19 @@ mod tests {
         let retained:serde_json::Value=sqlx::query_scalar("select publication_proof from audit.audit_event where operation_id=$1 and event_type='RECONCILIATION'")
             .bind(operation).fetch_one(&mut *tx).await.unwrap();
         assert_eq!(retained, serde_json::to_value(&proof).unwrap());
-        let recovered = parse_frozen_scope(load_scope_value(&mut tx,&p,true).await.unwrap()).unwrap();
-        assert_eq!(recovered,proof.scope,"expired/replaced slot must not erase the old operation's original scope");
+        let recovered =
+            parse_frozen_scope(load_scope_value(&mut tx, &p, true).await.unwrap()).unwrap();
+        assert_eq!(
+            recovered, proof.scope,
+            "expired/replaced slot must not erase the old operation's original scope"
+        );
         // Positive correction after restore has a distinct append-only key.
-        append(&mut tx,reconciliation_entry(&p,"ACCEPTED")).await.unwrap();
+        append(&mut tx, reconciliation_entry(&p, "ACCEPTED"))
+            .await
+            .unwrap();
         let facts:i64=sqlx::query_scalar("select count(*) from audit.audit_event where operation_id=$1 and event_type='RECONCILIATION'")
-            .bind(operation).fetch_one(&mut *tx).await.unwrap();assert_eq!(facts,2);
+            .bind(operation).fetch_one(&mut *tx).await.unwrap();
+        assert_eq!(facts, 2);
 
         sqlx::query("savepoint proof_down")
             .execute(&mut *tx)
