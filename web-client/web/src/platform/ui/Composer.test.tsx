@@ -482,6 +482,7 @@ it("publishes the explicit human picker identity and retains it with the same UN
   const publish=vi.fn().mockRejectedValue(new TransportError("Unknown"));
   const host=await render(<Composer draftIdentity="pulse-scope" mentionPeople={[{pubkey,displayName:"Alex"}]} onPublish={publish}/>);
   await click(host.querySelector('[aria-label="Mention someone"]') as HTMLButtonElement);
+  await vi.waitFor(()=>expect(host.querySelector('[aria-label="Mention Alex"]')).not.toBeNull());
   await act(async()=>{host.querySelector('[aria-label="Mention Alex"]')!.dispatchEvent(new MouseEvent("mousedown",{bubbles:true}));});
   expect(host.querySelector('[data-testid="message-input"]')?.textContent).toContain("Alex");
   await click(button(host,"platform.send"));
