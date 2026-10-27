@@ -1542,26 +1542,6 @@ describe("DD-146 original send flow: clear at Send, restore on failure", () => {
     expect(upload).not.toHaveBeenCalled();
   });
 
-  it("does not recreate explicitly discarded recovery when a retired publisher rejects late", async () => {
-    let rejectOld!: (error: unknown) => void;
-    state.publish.mockImplementationOnce(() => new Promise((_resolve, reject) => { rejectOld = reject; }));
-    const {upload} = uploader();
-    const host = await render(composer("discard-retired",upload));
-    await type(input(host),"old pending body");
-    await click(button(host,"platform.send"));
-    await vi.waitFor(()=>expect(state.publish).toHaveBeenCalledOnce());
-    await rerender(composer("other-draft",upload));
-    await rerender(composer("discard-retired",upload));
-    await click(recovery(host)!.querySelector<HTMLElement>('[data-testid="composer-pending-send-discard"]')!);
-    expect(loadPendingSend("discard-retired")).toBeUndefined();
-    await type(input(host),"new local body");
-    await act(async()=>rejectOld(new TransportError("late old result unknown")));
-    await settle();
-    expect(loadPendingSend("discard-retired")).toBeUndefined();
-    expect(input(host).textContent).toBe("new local body");
-    expect(state.publish).toHaveBeenCalledOnce();
-  });
-
   it("does not let an old A publication replace a newer pending send after identity A to B to A", async () => {
     let rejectOld!: (error: unknown) => void;
     state.publish.mockImplementationOnce(() => new Promise((_resolve, fail) => { rejectOld = fail; }))

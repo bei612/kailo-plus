@@ -1700,11 +1700,7 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
     if (recovery.record.stage === "unknown") { setProblemNeutral(true); setProblem(t((recovery.record.extras as { uploadUnknown?: boolean } | undefined)?.uploadUnknown ? "platform.uploadFailed" : "platform.sendUnknown", { operation: "" })); }
   }, [recovery, composerIsEmpty, applyPendingSend]);
   const discardRecovery = useCallback(() => {
-    if (draftIdentity && draftKey && isDraftStoreScope(draftIdentity, window.location.origin)) {
-      // Discard retires recovery ownership only; it cannot retract a dispatched publication.
-      claimDraftSend(draftKey);
-      clearPendingSend(draftKey);
-    }
+    if (draftIdentity && draftKey && isDraftStoreScope(draftIdentity, window.location.origin)) clearPendingSend(draftKey);
     setRecovery(null);
   }, [draftIdentity, draftKey]);
 
