@@ -9,6 +9,8 @@ from unittest.mock import AsyncMock, patch
 # This isolated check has no telemetry destination or writable user profile.
 os.environ["HAYSTACK_TELEMETRY_ENABLED"] = "False"
 
+import httpx  # noqa: E402
+import openai  # noqa: E402
 from haystack import Document  # noqa: E402 - telemetry opt-out precedes imports
 from litellm import EmbeddingResponse, ModelResponse  # noqa: E402
 from openai.types.chat import ChatCompletionChunk  # noqa: E402
@@ -197,7 +199,7 @@ class NativeModelStreamTest(unittest.IsolatedAsyncioTestCase):
             fields["stream"] = True
         return constructor(**fields)
 
-    async def run_stream(self, frames, *, error=None, fallback=False):
+    async def run_stream(self, frames, *, error=None, fallback=False, initial_error=None):
         async def stream():
             for frame in frames:
                 yield frame
@@ -207,6 +209,8 @@ class NativeModelStreamTest(unittest.IsolatedAsyncioTestCase):
         provider = generate_components(model_config(fallbacks=fallback))["sql_generation"].llm_provider
         received = []
         remote = AsyncMock(return_value=stream())
+        if initial_error is not None:
+            remote.side_effect = [initial_error, stream()]
         target = patch.object(provider._router, "acompletion", remote) if fallback else patch(
             "src.providers.llm.litellm.acompletion", remote
         )
@@ -216,7 +220,7 @@ class NativeModelStreamTest(unittest.IsolatedAsyncioTestCase):
                     streaming_callback=lambda chunk, query: received.append((chunk, query))
                 )("original question", query_id="original-query")
             finally:
-                self.assertEqual(remote.await_count, 1)
+                self.assertEqual(remote.await_count, 2 if initial_error else 1)
         return result, received
 
     def setUp(self):
@@ -251,7 +255,10 @@ class NativeModelStreamTest(unittest.IsolatedAsyncioTestCase):
                 result, _ = await self.run_stream(frames)
                 self.assertEqual(result["replies"], ["answer"])
                 self.assertEqual(result["meta"][0]["finish_reason"], "stop")
-                self.assertEqual(result["meta"][0]["usage"], {})
+                self.assertEqual(
+                    result["meta"][0]["usage"],
+                    dict(getattr(frames[-1], "usage", None) or {}),
+                )
 
     async def test_choice_frame_usage_and_empty_natural_reply_are_retained(self):
         usage = {"prompt_tokens": 2, "completion_tokens": 0, "total_tokens": 2}
@@ -274,6 +281,41 @@ class NativeModelStreamTest(unittest.IsolatedAsyncioTestCase):
                 frames = [self.frame(ChatCompletionChunk, content="partial", reason=reason)]
                 with self.assertRaisesRegex(RuntimeError, "fixture stream interrupted"):
                     await self.run_stream(frames, error=RuntimeError("fixture stream interrupted"))
+
+    def api_error(self):
+        return openai.APIError(
+            "fixture interrupted response", request=httpx.Request(
+                "POST", "https://gateway.example/v1/chat/completions"
+            ), body=None,
+        )
+
+    async def test_api_error_during_iteration_does_not_regenerate(self):
+        for fallback in (False, True):
+            for reason in (None, "stop"):
+                with self.subTest(fallback=fallback, reason=reason):
+                    frames = [self.frame(ModelResponse, content="partial", reason=reason)]
+                    with self.assertRaises(openai.APIError):
+                        await self.run_stream(frames, error=self.api_error(), fallback=fallback)
+
+    async def test_original_initial_request_retry_is_retained(self):
+        frames = [self.frame(ModelResponse, content="single response", reason="stop")]
+        for fallback in (False, True):
+            with self.subTest(fallback=fallback):
+                result, received = await self.run_stream(
+                    frames, initial_error=self.api_error(), fallback=fallback
+                )
+                self.assertEqual(result["replies"], ["single response"])
+                self.assertEqual([chunk.content for chunk, _ in received], ["single response"])
+
+    async def test_later_choice_without_finish_does_not_reuse_earlier_stop(self):
+        frames = [
+            self.frame(ModelResponse, content="first", reason="stop"),
+            self.frame(ModelResponse, content=" later"),
+            self.frame(ModelResponse, choices=False),
+        ]
+        result, _ = await self.run_stream(frames)
+        self.assertEqual(result["replies"], ["first later"])
+        self.assertIsNone(result["meta"][0]["finish_reason"])
 
     async def test_router_stream_uses_the_same_original_aggregation(self):
         frames = [
