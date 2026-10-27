@@ -71,12 +71,16 @@ describe('original native text-answer result consumers', () => {
             `Basic ${Buffer.from('native-text:fixture-only').toString('base64')}`,
           );
           expect(text).toBe('grant_type=client_credentials');
-          result.end(JSON.stringify({ access_token: 'service', token_type: 'Bearer' }));
+          result.end(
+            JSON.stringify({ access_token: 'service', token_type: 'Bearer' }),
+          );
           return;
         }
         expect(request.url).toBe('/service/v1/adapter/human-action');
         expect(request.headers.authorization).toBe('Bearer service');
-        expect(request.headers['x-kailo-native-human-token']).toBe('verified-human');
+        expect(request.headers['x-kailo-native-human-token']).toBe(
+          'verified-human',
+        );
         expect(JSON.parse(text)).toEqual({
           bindingId: config.bindingId,
           authorizeScope: { permission: 'discover' },
@@ -84,27 +88,35 @@ describe('original native text-answer result consumers', () => {
         scopeRequests++;
         if (revokeAt && scopeRequests >= revokeAt) {
           result.statusCode = 403;
-          result.end(JSON.stringify({ class: 'DENIED', reason: 'PERMISSION_DENIED' }));
+          result.end(
+            JSON.stringify({ class: 'DENIED', reason: 'PERMISSION_DENIED' }),
+          );
           return;
         }
-        result.end(JSON.stringify({ scope: {
-          bindingId: config.bindingId,
-          tenantId: config.tenantId,
-          workspaceId: config.workspaceId,
-          nativeInstanceRef: config.nativeInstanceRef,
-          nativeScopeRef: config.nativeScopeRef,
-          generation: 2,
-          permission: 'discover',
-          checkedRevision: 'current-fixture-revision',
-          ...scopeChanges,
-        } }));
+        result.end(
+          JSON.stringify({
+            scope: {
+              bindingId: config.bindingId,
+              tenantId: config.tenantId,
+              workspaceId: config.workspaceId,
+              nativeInstanceRef: config.nativeInstanceRef,
+              nativeScopeRef: config.nativeScopeRef,
+              generation: 2,
+              permission: 'discover',
+              checkedRevision: 'current-fixture-revision',
+              ...scopeChanges,
+            },
+          }),
+        );
       })().catch((error) => {
         wireErrors.push(error);
         result.statusCode = 500;
         result.end('{}');
       });
     });
-    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    await new Promise<void>((resolve) =>
+      server.listen(0, '127.0.0.1', resolve),
+    );
     const endpoint = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
     config = {
       projectId: 3,
@@ -131,8 +143,12 @@ describe('original native text-answer result consumers', () => {
       responseMaxBytes: 4096,
       requestMaxBytes: 4096,
     };
-    await writeFile(config.serviceClientSecretFile, 'fixture-only', { mode: 0o600 });
-    await writeFile(join(directory, 'query.json'), JSON.stringify(config), { mode: 0o600 });
+    await writeFile(config.serviceClientSecretFile, 'fixture-only', {
+      mode: 0o600,
+    });
+    await writeFile(join(directory, 'query.json'), JSON.stringify(config), {
+      mode: 0o600,
+    });
   });
   afterAll(async () => {
     await new Promise<void>((resolve) => {
@@ -235,7 +251,9 @@ describe('original native text-answer result consumers', () => {
         const result = await invoke([
           Buffer.from('data: {"message":"partial"}\n\n' + suffix),
         ]);
-        expect(native.wrenAIAdaptor.streamTextBasedAnswer).toHaveBeenCalledWith('native-ai-task');
+        expect(native.wrenAIAdaptor.streamTextBasedAnswer).toHaveBeenCalledWith(
+          'native-ai-task',
+        );
         expect(result.flushHeaders).toHaveBeenCalledTimes(1);
         expect(authorize).toHaveBeenCalledTimes(mode === 'close' ? 2 : 3);
         expect(
@@ -277,42 +295,58 @@ describe('original native text-answer result consumers', () => {
     ['generation', undefined],
     ['permission', 'manage'],
     ['checkedRevision', undefined],
-  ])('rejects an incomplete or foreign discover scope: %s', async (field, value) => {
-    scopeChanges = { [field]: value };
-    const error = jest.spyOn(console, 'error').mockImplementation(() => {});
-    try {
-      const result = await invoke([
-        Buffer.from('data: {"message":"private"}\n\n'),
-      ]);
-      expect(native.wrenAIAdaptor.streamTextBasedAnswer).not.toHaveBeenCalled();
-      expect(native.threadResponseRepository.claimNativeAnswer).not.toHaveBeenCalled();
-      expect(result.status).toHaveBeenCalledWith(403);
-      expect(result.flushHeaders).not.toHaveBeenCalled();
-      expect(result.write).not.toHaveBeenCalled();
-      expect(scopeRequests).toBe(1);
-      expect(authorize).not.toHaveBeenCalled();
-    } finally {
-      error.mockRestore();
-    }
-  });
-  it.each([1, 3])('honors real discover refusal at exposure %s without completing the native task', async (at) => {
-    revokeAt = at;
-    const error = jest.spyOn(console, 'error').mockImplementation(() => {});
-    try {
-      const result = await invoke([
-        Buffer.from('data: {"message":"allowed"}\n\ndata: {"done":true,"queryId":"native-ai-task"}\n\n'),
-      ]);
-      expect(native.threadResponseRepository.claimNativeAnswer).not.toHaveBeenCalled();
-      expect(result.write.mock.calls.map(([value]) => value).join('')).toBe(
-        at === 1 ? '' : 'data: {"message":"allowed"}\n\n',
-      );
-      expect(scopeRequests).toBe(at);
-      expect(authorize).toHaveBeenCalledTimes(at - 1);
-      expect(native.wrenAIAdaptor.streamTextBasedAnswer).toHaveBeenCalledTimes(at === 1 ? 0 : 1);
-    } finally {
-      error.mockRestore();
-    }
-  });
+  ])(
+    'rejects an incomplete or foreign discover scope: %s',
+    async (field, value) => {
+      scopeChanges = { [field]: value };
+      const error = jest.spyOn(console, 'error').mockImplementation(() => {});
+      try {
+        const result = await invoke([
+          Buffer.from('data: {"message":"private"}\n\n'),
+        ]);
+        expect(
+          native.wrenAIAdaptor.streamTextBasedAnswer,
+        ).not.toHaveBeenCalled();
+        expect(
+          native.threadResponseRepository.claimNativeAnswer,
+        ).not.toHaveBeenCalled();
+        expect(result.status).toHaveBeenCalledWith(403);
+        expect(result.flushHeaders).not.toHaveBeenCalled();
+        expect(result.write).not.toHaveBeenCalled();
+        expect(scopeRequests).toBe(1);
+        expect(authorize).not.toHaveBeenCalled();
+      } finally {
+        error.mockRestore();
+      }
+    },
+  );
+  it.each([1, 3])(
+    'honors real discover refusal at exposure %s without completing the native task',
+    async (at) => {
+      revokeAt = at;
+      const error = jest.spyOn(console, 'error').mockImplementation(() => {});
+      try {
+        const result = await invoke([
+          Buffer.from(
+            'data: {"message":"allowed"}\n\ndata: {"done":true,"queryId":"native-ai-task"}\n\n',
+          ),
+        ]);
+        expect(
+          native.threadResponseRepository.claimNativeAnswer,
+        ).not.toHaveBeenCalled();
+        expect(result.write.mock.calls.map(([value]) => value).join('')).toBe(
+          at === 1 ? '' : 'data: {"message":"allowed"}\n\n',
+        );
+        expect(scopeRequests).toBe(at);
+        expect(authorize).toHaveBeenCalledTimes(at - 1);
+        expect(
+          native.wrenAIAdaptor.streamTextBasedAnswer,
+        ).toHaveBeenCalledTimes(at === 1 ? 0 : 1);
+      } finally {
+        error.mockRestore();
+      }
+    },
+  );
   it('does not open the original AI stream when current HUMAN disclosure is rejected', async () => {
     authorize.mockRejectedValue(new Error('current Resource revoked'));
     const error = jest.spyOn(console, 'error').mockImplementation(() => {});
@@ -362,7 +396,9 @@ describe('original native text-answer result consumers', () => {
       ]);
       expect(result.write).not.toHaveBeenCalled();
       expect(authorize).toHaveBeenCalledTimes(2);
-      expect(native.threadResponseRepository.claimNativeAnswer).toHaveBeenCalledTimes(1);
+      expect(
+        native.threadResponseRepository.claimNativeAnswer,
+      ).toHaveBeenCalledTimes(1);
     } finally {
       error.mockRestore();
     }
@@ -406,7 +442,9 @@ describe('original native text-answer result consumers', () => {
       } else {
         await expect(read(parent, {}, ctx)).rejects.toThrow();
         expect(scopeRequests).toBe(state === 'missing-history' ? 0 : 1);
-        expect(authorize).toHaveBeenCalledTimes(state === 'missing-history' ? 0 : 1);
+        expect(authorize).toHaveBeenCalledTimes(
+          state === 'missing-history' ? 0 : 1,
+        );
       }
     },
   );
