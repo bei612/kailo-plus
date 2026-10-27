@@ -141,30 +141,72 @@ export default function HomeThread() {
   const [updateThreadResponse, { loading: threadResponseUpdating }] =
     useUpdateThreadResponseMutation({
       onError: (error) => console.error(error),
-      onCompleted: (data) => {
-        if (!answerOwner.active || answerOwnerRef.current !== answerOwner)
-          return;
-        notify.success(t('home.sqlUpdated'));
-        // trigger generate answer after sql statement updated
-        onGenerateThreadResponseAnswer(data.updateThreadResponse.id);
-      },
+
     });
-  const [fetchThreadResponse, threadResponseResult] =
-    useThreadResponseLazyQuery({
-      pollInterval: RESPONSE_POLL_INTERVAL,
-      onCompleted(next) {
-        const nextResponse = next.threadResponse;
-        updateThreadQuery((prev) => ({
-          ...prev,
-          thread: {
-            ...prev.thread,
-            responses: prev.thread.responses.map((response) =>
-              response.id === nextResponse.id ? nextResponse : response,
-            ),
-          },
-        }));
-      },
-    });
+  const [readThreadResponse] = useThreadResponseLazyQuery({ fetchPolicy: 'no-cache' });
+  const responseObservation = useRef<{
+    owner: typeof answerOwner;
+    responseId: number;
+    timer?: ReturnType<typeof setTimeout>;
+    pending?: Promise<void>;
+  } | null>(null);
+  const [observedResponse, setObservedResponse] = useState<{
+    owner: typeof answerOwner;
+    response: ThreadResponse;
+  } | null>(null);
+  const stopThreadResponsePolling = useCallback(() => {
+    const observation = responseObservation.current;
+    if (observation?.owner !== answerOwner) return;
+    responseObservation.current = null;
+    if (observation.timer !== undefined) window.clearTimeout(observation.timer);
+  }, [answerOwner]);
+  const fetchThreadResponse = useCallback((options: { variables: { responseId: number } }) => {
+    if (!answerOwner.active || answerOwnerRef.current !== answerOwner) return;
+    const { responseId } = options.variables;
+    const previous = responseObservation.current;
+    if (previous?.owner === answerOwner && previous.responseId === responseId)
+      return previous.pending;
+    if (previous?.timer !== undefined) window.clearTimeout(previous.timer);
+    const observation: NonNullable<typeof responseObservation.current> = { owner: answerOwner, responseId };
+    responseObservation.current = observation;
+    setObservedResponse(null);
+    const active = () => answerOwner.active && answerOwnerRef.current === answerOwner && responseObservation.current === observation;
+    const observe = async () => {
+      if (!active()) return;
+      try {
+        // Apollo's hook-level completion callback follows its latest render.
+        // Consume this exact read promise instead, with no shared cache/dedup
+        // result standing in for this owner's fresh original response read.
+        const result = await readThreadResponse({
+          variables: { responseId },
+          fetchPolicy: 'no-cache',
+          context: { queryDeduplication: false },
+        });
+        if (!active()) return;
+        const next = result.data?.threadResponse;
+        if (!result.error && next?.id === responseId && next.threadId === threadId) {
+          setObservedResponse({ owner: answerOwner, response: next });
+          updateThreadQuery((prev) => !active() || String(prev.thread?.id) !== String(threadId) ? prev : ({
+            ...prev,
+            thread: { ...prev.thread, responses: prev.thread.responses.map(response => response.id === responseId ? next : response) },
+          }));
+          if (getThreadResponseIsFinished(next)) {
+            responseObservation.current = null;
+            return;
+          }
+        }
+      } catch {
+        // A missing read is not a new generation or terminal failure. Continue
+        // only this original read at its existing interval while still owned.
+      }
+      if (active()) observation.timer = window.setTimeout(() => {
+        observation.timer = undefined;
+        observation.pending = observe();
+      }, RESPONSE_POLL_INTERVAL);
+    };
+    observation.pending = observe();
+    return observation.pending;
+  }, [answerOwner, readThreadResponse, threadId, updateThreadQuery]);
 
   const [generateThreadRecommendationQuestions] =
     useGenerateThreadRecommendationQuestionsMutation({
@@ -206,18 +248,26 @@ export default function HomeThread() {
       })),
     [thread, answerReceipts, chartReceipts],
   );
-  const pollingResponse = useMemo(
-    () => threadResponseResult.data?.threadResponse || null,
-    [threadResponseResult.data],
-  );
+  const pollingResponse = observedResponse?.owner === answerOwner ? observedResponse.response : null;
   const isPollingResponseFinished = useMemo(
     () => getThreadResponseIsFinished(pollingResponse),
     [pollingResponse],
   );
 
   const onFixSQLStatement = async (responseId: number, sql: string) => {
+    if (!answerOwner.active || answerOwnerRef.current !== answerOwner) return;
     await updateThreadResponse({
       variables: { where: { id: responseId }, data: { sql } },
+      fetchPolicy: 'no-cache',
+      onCompleted: (data) => {
+        if (!answerOwner.active || answerOwnerRef.current !== answerOwner || data.updateThreadResponse.id !== responseId || data.updateThreadResponse.threadId !== threadId) return;
+        updateThreadQuery((prev) => !answerOwner.active || answerOwnerRef.current !== answerOwner || String(prev.thread?.id) !== String(threadId) ? prev : ({
+          ...prev,
+          thread: { ...prev.thread, responses: prev.thread.responses.map(response => response.id === responseId ? data.updateThreadResponse : response) },
+        }));
+        notify.success(t('home.sqlUpdated'));
+        onGenerateThreadResponseAnswer(responseId);
+      },
     });
   };
 
@@ -245,17 +295,20 @@ export default function HomeThread() {
         return (
           await generateThreadResponseAnswer({
             variables: { responseId, ...identity },
+            fetchPolicy: 'no-cache',
           })
         ).data?.generateThreadResponseAnswer;
       if (adjustment)
         return (
           await adjustThreadResponseChart({
             variables: { responseId, data: adjustment, ...identity },
+            fetchPolicy: 'no-cache',
           })
         ).data?.adjustThreadResponseChart;
       return (
         await generateThreadResponseChart({
           variables: { responseId, ...identity },
+            fetchPolicy: 'no-cache',
         })
       ).data?.generateThreadResponseChart;
     };
@@ -420,7 +473,7 @@ export default function HomeThread() {
       answerOwner.active = false;
       ++answerGeneration.current;
       askPrompt.onStopPolling();
-      threadResponseResult.stopPolling();
+      stopThreadResponsePolling();
       threadRecommendationQuestionsResult.stopPolling();
       $prompt.current?.close();
     };
@@ -434,8 +487,8 @@ export default function HomeThread() {
   }, [responses]);
 
   useEffect(() => {
-    if (isPollingResponseFinished) {
-      threadResponseResult.stopPolling();
+    if (pollingResponse && isPollingResponseFinished) {
+      stopThreadResponsePolling();
       setShowRecommendedQuestions(true);
     }
   }, [isPollingResponseFinished]);
