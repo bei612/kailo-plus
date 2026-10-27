@@ -16,7 +16,7 @@ export function useComposerPasteHandler(options: {
    */
   bindMentionIdentities?: BindPastedMentionIdentities;
   scrollToBottom: () => void;
-  uploadFile: (file: File) => Promise<unknown>;
+  uploadFiles: (files: File[]) => Promise<unknown>;
 }) {
   const preparation = React.useMemo(() => ({ count: 0 }), [options.owner]);
   const [, refreshPreparation] = React.useReducer(value => value + 1, 0);
@@ -67,10 +67,7 @@ export function useComposerPasteHandler(options: {
                   if (mounted && current.current.owner === captured.owner) refreshPreparation();
                 }
               }
-              for (const file of prepared) {
-                if (!active()) return;
-                await captured.uploadFile(file);
-              }
+              if (active()) await captured.uploadFiles(prepared);
             })();
             return true;
           }

@@ -1393,7 +1393,7 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
     // Original recording context is also partitioned by this BFF actor/scope.
     draftKey: JSON.stringify([workspaceId, draftIdentity, draftKey]),
     editTargetId: editTarget?.id ?? null,
-    media: { pendingImetaRef, queuedAttachmentsRef, uploadFile: uploadVoiceFile },
+    media: { pendingImetaRef, queuedAttachmentsRef, uploadFile: uploadVoiceFile, uploadFiles: attach },
     setEmojiPickerOpen: setIsEmojiPickerOpen,
     setFormattingOpen: setIsFormattingOpen,
   });
@@ -1485,7 +1485,7 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
   }, [richText.editor]);
   const paste = useComposerPasteHandler({ editor: richText.editor, owner, enabled: !disabled && !sending,
     bindMentionIdentities: pasteBinding.bindPastedMentionIdentities,
-    scrollToBottom: scrollAfterPaste, uploadFile: voiceNote.uploadFileWhenIdle,
+    scrollToBottom: scrollAfterPaste, uploadFiles: voiceNote.uploadFilesWhenIdle,
   });
   const draftReady = useRef(false);
   const [loadedDraftOwner, setLoadedDraftOwner] = useState<typeof owner | null>(null);
