@@ -17,6 +17,10 @@ vi.mock("sonner", () => ({toast:{error:(message:string)=>views.toast(message)}})
 (globalThis as {IS_REACT_ACT_ENVIRONMENT?: boolean}).IS_REACT_ACT_ENVIRONMENT = true;
 const draft: DraftState = {content: "private draft", channelId: "scope", selectionStart: 0, selectionEnd: 0,
   createdAt: "2026-10-06T10:00:00Z", updatedAt: "2026-10-06T10:00:00Z", pendingImeta: [], spoileredAttachmentUrls: [], status: "active"};
+function anchorEvents(channel: string, rootId: string, anchorId = rootId) {
+  const root = {id:rootId,pubkey:"c".repeat(64),created_at:1,kind:9,content:"original root",tags:[["h",channel]]};
+  return anchorId === rootId ? [root] : [{...root,id:anchorId,content:"original reply",tags:[["h",channel],["e",rootId,"","root"],["e",rootId,"","reply"]]},root];
+}
 let root: Root; let host: HTMLDivElement;
 beforeEach(() => {localStorage.clear(); host = document.createElement("div"); document.body.append(host); root = createRoot(host);});
 afterEach(async () => {await act(async () => root.unmount()); host.remove(); localStorage.clear();});
@@ -45,13 +49,14 @@ it("uses the existing identity-and-origin draft store and never deletes UNKNOWN 
   expect(host.textContent).toContain("private draft");
 });
 
-it.each([false,true])("restores the existing admitted DM reply draft to its native channel (explicit reply=%s)", async explicit => {
+it.each([[false, false], [true, false], [false, true], [true, true]])("restores the existing admitted DM reply draft (explicit=%s, binding scope=%s)", async (explicit, bindingScope) => {
   const nativeChannel="native-dm", binding="conversation-binding", parent="a".repeat(64), reply="b".repeat(64);
-  const entry={key:`thread:${nativeChannel}:${parent}${explicit ? `:${reply}` : ""}`,draft:{...draft,channelId:nativeChannel}};
+  const scope = bindingScope ? binding : nativeChannel;
+  const entry={key:`thread:${scope}:${parent}${explicit ? `:${reply}` : ""}`,draft:{...draft,channelId:scope}};
   const conversation:ConversationView={id:binding,channelId:nativeChannel,participantPrincipalIds:["alice","peer"],state:ConversationViewState.Active,operationId:"operation",version:1};
   views.items=[conversation];views.error=false;views.loading=false;views.hidden=new Set();views.open.mockClear();
   const cache=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}});
-  const client={workspaceChannel:vi.fn()} as unknown as BffClient;
+  const client={workspaceChannel:vi.fn(), conversationMessages:vi.fn().mockResolvedValue({events: anchorEvents(nativeChannel, parent, explicit ? reply : parent)})} as unknown as BffClient;
   const render=()=>act(async()=>root.render(<PlatformProvider client={client} locale="en"><QueryClientProvider client={cache}><TooltipProvider>
     <InboxDrafts onOpen={views.open} principalId="alice" workspaces={[]} participants={[{principalId:"alice",displayName:"Alice",pubkeys:["c".repeat(64)]},{principalId:"peer",displayName:"Actual peer",pubkeys:["d".repeat(64)]},{principalId:"foreign",displayName:"Unrelated",pubkeys:["e".repeat(64)]}]}
       entries={[entry]} selectedKey={entry.key} onSelect={vi.fn()} onDelete={vi.fn()} showList={false} showDetail renderList={list => list}/>
@@ -64,6 +69,7 @@ it.each([false,true])("restores the existing admitted DM reply draft to its nati
     await vi.waitFor(()=>expect(views.open).toHaveBeenCalled());
     expect(views.open.mock.lastCall).toEqual([nativeChannel, {channelId:nativeChannel,conversation,messageId:explicit?reply:parent,threadRootId:parent}, {key:entry.key,send:false,editEventId:undefined,conversation}]);
     expect(client.workspaceChannel).not.toHaveBeenCalled();
+    expect(client.conversationMessages).toHaveBeenCalledWith(binding, {anchorEventId:explicit ? reply : parent});
     views.items=[];await render();
     expect(host.querySelector<HTMLButtonElement>('button[aria-label="Open draft"]')?.disabled).toBe(true);
     expect(views.open).toHaveBeenCalledTimes(1);
@@ -75,11 +81,17 @@ it("does not open a hidden DM draft or confuse a native channel draft with anoth
   views.items=[{id:channel,channelId:"other-native",participantPrincipalIds:["alice","peer"],state:ConversationViewState.Active,operationId:"op",version:1}];
   views.error=false;views.loading=false;views.hidden=new Set([channel]);views.open.mockClear();views.toast.mockClear();
   const cache=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}});
-  const render=()=>act(async()=>root.render(<PlatformProvider client={{} as BffClient} locale="en"><QueryClientProvider client={cache}><TooltipProvider>
+  const read = vi.fn().mockResolvedValue({events: []});
+  const client={conversationMessages:read} as unknown as BffClient;
+  const render=()=>act(async()=>root.render(<PlatformProvider client={client} locale="en"><QueryClientProvider client={cache}><TooltipProvider>
     <InboxDrafts onOpen={views.open} principalId="alice" workspaces={[]} participants={[]} entries={[entry]} selectedKey={entry.key} onSelect={vi.fn()} onDelete={vi.fn()} showList={false} showDetail renderList={list => list}/>
   </TooltipProvider></QueryClientProvider></PlatformProvider>));
   try {
-    await render();expect(host.querySelector<HTMLButtonElement>('button[aria-label="Open draft"]')?.disabled).toBe(true);
+    await render();
+    await act(async()=>host.querySelector<HTMLButtonElement>('button[aria-label="Open draft"]')!.click());
+    expect(read).toHaveBeenCalledWith(channel, {anchorEventId:parent});
+    expect(views.open).not.toHaveBeenCalled();
+    expect(views.toast).toHaveBeenCalledWith("Destination unavailable");
     views.items=[{...views.items[0]!,id:"correct-binding",channelId:channel}];await render();
     await act(async()=>host.querySelector<HTMLButtonElement>('button[aria-label="Open draft"]')!.click());
     await vi.waitFor(()=>expect(views.toast).toHaveBeenCalledWith("Destination unavailable"));
@@ -125,4 +137,49 @@ it.each(["en", "zh-CN"] as const)("keeps the original three-participant DM sourc
     expect(detail.textContent).not.toContain("Alice");
     expect(detail.textContent).not.toContain("Fourth");
   } finally {cache.clear(); views.items = [];}
+});
+
+it.each(["send", "collision", "nonparticipant", "wrong-channel", "wrong-root", "missing", "revoked", "identity", "generation", "unmount"] as const)("keeps DM thread draft restoration inside the admitted original target (%s)", async scenario => {
+  const scope="binding", native="native", rootId="a".repeat(64), replyId="b".repeat(64);
+  const entry={key:`thread:${scope}:${rootId}:${replyId}`,draft:{...draft,channelId:scope}};
+  const conversation:ConversationView={id:scope,channelId:native,participantPrincipalIds:["alice","peer"],state:ConversationViewState.Active,operationId:"op",version:1};
+  views.items=[conversation]; views.error=false; views.loading=false; views.hidden=new Set(); views.open.mockClear(); views.toast.mockClear();
+  if(scenario==="collision") views.items.push({...conversation,id:"other-binding",channelId:scope});
+  if(scenario==="nonparticipant") views.items=[{...conversation,participantPrincipalIds:["bob","peer"]}];
+  let release!: (page:{events:ReturnType<typeof anchorEvents>})=>void;
+  const read=vi.fn().mockImplementation(async()=>{
+    if(scenario==="revoked") throw new Error("Forbidden");
+    if(["identity","generation","unmount"].includes(scenario)) return new Promise(resolve=>{release=resolve;});
+    return {events:scenario==="missing" ? [] : anchorEvents(scenario==="wrong-channel" ? "foreign" : native,scenario==="wrong-root" ? "d".repeat(64) : rootId,replyId)};
+  });
+  const client={conversationMessages:read,workspaceChannel:vi.fn()} as unknown as BffClient;
+  const cache=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}});
+  const render=(principal="alice")=>act(async()=>root.render(<PlatformProvider client={client} locale="en"><QueryClientProvider client={cache}><TooltipProvider>
+    <InboxDrafts principalId={principal} workspaces={[]} participants={[]} entries={[entry]} selectedKey={entry.key} onSelect={vi.fn()} onDelete={vi.fn()} showList={false} showDetail renderList={list=>list} onOpen={views.open}/>
+  </TooltipProvider></QueryClientProvider></PlatformProvider>));
+  try {
+    await render();
+    const button=host.querySelector<HTMLButtonElement>(`button[aria-label="${scenario==="send" ? "Send message" : "Open draft"}"]`)!;
+    if(scenario==="collision" || scenario==="nonparticipant") {
+      expect(button.disabled).toBe(true); await act(async()=>button.click()); expect(read).not.toHaveBeenCalled(); return;
+    }
+    await act(async()=>button.click());
+    if(scenario==="send") {
+      expect(read).not.toHaveBeenCalled(); expect(views.open).not.toHaveBeenCalled();
+      const dialog=document.querySelector('[role="alertdialog"]')!;
+      await act(async()=>[...dialog.querySelectorAll("button")].find(item=>item.textContent==="Send message")!.click());
+      expect(read).toHaveBeenCalledWith(scope,{anchorEventId:replyId});
+      expect(views.open.mock.lastCall).toEqual([native,{channelId:native,messageId:replyId,threadRootId:rootId,conversation},{key:entry.key,send:true,editEventId:undefined,conversation}]);
+      expect(JSON.stringify(views.open.mock.lastCall)).not.toContain(draft.content);
+    } else {
+      if(scenario==="identity") {await render("bob"); await render("alice");}
+      if(scenario==="generation") {views.items=[{...conversation,version:2}]; await render();}
+      if(scenario==="unmount") await act(async()=>root.render(null));
+      if(release) await act(async()=>release({events:anchorEvents(native,rootId,replyId)}));
+      expect(views.open).not.toHaveBeenCalled();
+      if(!["identity","generation","unmount"].includes(scenario)) expect(views.toast).toHaveBeenCalledWith("Destination unavailable");
+      else expect(views.toast).not.toHaveBeenCalled();
+    }
+    expect(client.workspaceChannel).not.toHaveBeenCalled();
+  } finally {cache.clear();views.items=[];}
 });
