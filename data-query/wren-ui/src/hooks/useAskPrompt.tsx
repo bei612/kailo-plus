@@ -233,7 +233,8 @@ export default function useAskPrompt(threadId?: number) {
     recommendationTask.askingTaskId === taskId &&
     recommendationTask.requestGeneration === requestGeneration.current &&
     recommendationTask.generation === recommendationGeneration.current &&
-    instantRecommendedQuestionsResult.variables?.taskId === recommendationTask.id
+    instantRecommendedQuestionsResult.variables?.taskId ===
+      recommendationTask.id
       ? instantRecommendedQuestionsResult.data?.instantRecommendedQuestions ||
         null
       : null;
@@ -418,7 +419,6 @@ export default function useAskPrompt(threadId?: number) {
   };
 
   const onStopStreaming = () => askingStreamTaskResult.reset();
-
 
   const onStoreThreadQuestions = (questions: string[]) =>
     setThreadQuestions(questions);
