@@ -4136,6 +4136,35 @@ describe('original Home answer and chart operation lifetime', () => {
         expect(entries.size).toBe(0);
       },
     );
+    it.each(operations)(
+      'a returning owner observes the same UNKNOWN %s key while the retired request is still in flight without sharing its lock',
+      async (_name, callback, _mutation, field) => {
+        const oldA = renderPage();
+        const pending = oldA.controls[callback](21, { instruction: 'original adjustment' });
+        await settle();
+        const key = requests[0].variables.idempotencyKey;
+        oldA.retire();
+        const b = renderPage(22);
+        b.retire();
+        const currentA = renderPage();
+        const recovered = currentA.controls[callback](21, { instruction: 'original adjustment' });
+        await settle();
+        expect(requests).toHaveLength(2);
+        expect(requests[1].variables.idempotencyKey).toBe(key);
+        await respond(requests[0], field, row('retired body'));
+        await pending;
+        expect(cacheRow().sql).toBe('cached original');
+        expect([...entries.values()]).toContain(key);
+        await currentA.controls[callback](21, { instruction: 'original adjustment' });
+        expect(requests).toHaveLength(2);
+        await respond(requests[1], field, row('current recovered body'));
+        await recovered;
+        expect(requests[2].name).toBe('ThreadResponse');
+        await respond(requests[2], 'threadResponse', row('current recovered body'));
+        expect(cacheRow().sql).toBe('current recovered body');
+        expect(entries.size).toBe(0);
+      },
+    );
     it('uses fresh original reads instead of a primed default cache and rejects old same-ID results after A-B-A', async () => {
       mockHomeApollo.cache.updateQuery(
         { query: documents.ThreadDocument, variables: { threadId: 11 } },
