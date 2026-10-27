@@ -43,7 +43,7 @@ export function useProjectPullRequestUpdate({ host, projectId, repository, revie
     try {
       const result = await publishProjectPullRequestUpdate(host, projectId, repository, target, viewer, input, owner.controller.signal);
       owner.controller.signal.throwIfAborted();
-      if (result) { cache.setQueryData(["project-home-work-items", host.scopeKey, projectId], result.snapshot); result.complete(); }
+      if (result) { cache.setQueriesData({ queryKey: ["project-work-item-target", host.scopeKey, projectId] }, result.snapshot); result.complete(); }
       toast.success(t(result ? "projects.review.updated" : "projects.review.current"));
     } catch (error) {
       if (!owner.controller.signal.aborted) toast.error(t(isOutcomeUnknown(error) ? "projects.review.unknown" : "projects.review.updateFailed"));
