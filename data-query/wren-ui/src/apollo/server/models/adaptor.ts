@@ -141,6 +141,7 @@ export type AskResult = AskResponse<
   }>,
   AskResultStatus
 > & {
+  completion?: { queryId: string; content: string };
   rephrasedQuestion?: string;
   intentReasoning?: string;
   sqlGenerationReasoning?: string;
@@ -148,6 +149,13 @@ export type AskResult = AskResponse<
   invalidSql?: string;
   traceId?: string;
 };
+
+// A classification status or queue sentinel is not a complete explanation.
+export function generalCompletion(result: AskResult | undefined, queryId: string): string | undefined {
+  return result?.type === AskResultType.GENERAL && result.status === AskResultStatus.FINISHED
+    && !result.error && result.completion?.queryId === queryId
+    && typeof result.completion.content === 'string' ? result.completion.content : undefined;
+}
 
 export enum RecommendationQuestionStatus {
   GENERATING = 'GENERATING',

@@ -74,6 +74,7 @@ export interface AdjustmentTask {
 }
 
 export interface AskingTask {
+  completion?: string;
   type: AskResultType | null;
   status: AskResultStatus;
   candidates: Array<{
@@ -578,6 +579,7 @@ export class AskingResolver {
     ctx: IContext,
   ): Promise<AskingTask> {
     const { taskId } = args;
+    const governed = isGovernedQueryMode();
     const askingService = ctx.askingService;
     await this.authorizeNativeAskingTask(taskId, ctx);
     const askResult = await askingService.getAskingTask(taskId);
@@ -617,6 +619,26 @@ export class AskingResolver {
     }
 
     const task = await this.transformAskingTask(askResult, ctx);
+    if (askResult.type === AskResultType.GENERAL && askResult.status === AskResultStatus.FINISHED && !askResult.error) {
+      const snapshot = canonical(askResult);
+      let complete = askResult.completion;
+      if (!complete) {
+        try {
+          complete = (await ctx.wrenAIAdaptor.getAskResult(taskId)).completion;
+        } catch {
+          // Observe only. Cache loss or a failed read never starts another Ask.
+        }
+      }
+      const current = await askingService.getAskingTask(taskId);
+      if (!current || canonical(current) !== snapshot || isGovernedQueryMode() !== governed)
+        throw new NativeQueryRefusal(409, 'QUERY_REFERENCE_CHANGED');
+      await this.authorizeNativeAskingTask(taskId, ctx);
+      await ctx.nativeProjectCheck?.(askResult.projectId);
+      if (isGovernedQueryMode() !== governed)
+        throw new NativeQueryRefusal(412, 'QUERY_ADMISSION_UNAVAILABLE');
+      if (complete?.queryId === taskId && typeof complete.content === 'string')
+        task.completion = complete.content;
+    }
 
     // telemetry
     const eventName = TelemetryEvent.HOME_ASK_CANDIDATE;

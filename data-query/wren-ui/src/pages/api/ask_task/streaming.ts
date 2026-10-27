@@ -9,6 +9,7 @@ import {
 import { isGovernedQueryMode } from '@/apollo/server/services/nativeQueryMode';
 import { MAX_WAIT_TIME } from '@/apollo/server/utils/apiUtils';
 import { createInterface } from 'readline';
+import { AskResultType, generalCompletion } from '@/apollo/server/models/adaptor';
 
 // Both original planning surfaces expose the same native message/done stream.
 // Their existing task/history reader remains the ownership/evidence authority.
@@ -32,6 +33,31 @@ async function forwardNativeAskingTask(
       ? (await loadQueryDelivery()).responseMaxBytes
       : undefined;
     await authorize();
+    const original = await components.wrenAIAdaptor.getAskResult(queryId);
+    await authorize();
+    let emitted = '';
+    const cached = generalCompletion(original, queryId);
+    if (cached !== undefined) {
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.write(`data: ${JSON.stringify({ message: cached })}\n\n`);
+      res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
+      res.end();
+      return;
+    }
+    const finish = async (nativeDone: boolean) => {
+      const result = await components.wrenAIAdaptor.getAskResult(queryId);
+      await authorize();
+      if (res.destroyed) return;
+      if (original.type === AskResultType.GENERAL || result.type === AskResultType.GENERAL) {
+        const complete = generalCompletion(result, queryId);
+        if (complete === undefined || !complete.startsWith(emitted)) return;
+        const remainder = complete.slice(emitted.length);
+        if (remainder) res.write(`data: ${JSON.stringify({ message: remainder })}\n\n`);
+      } else if (!nativeDone || result.type !== AskResultType.TEXT_TO_SQL) {
+        return;
+      }
+      res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
+    };
     stream = await components.wrenAIAdaptor.getAskStreamingResult(queryId);
     stop = () => stream.destroy();
     res.once('close', stop);
@@ -61,7 +87,7 @@ async function forwardNativeAskingTask(
         event.done === true &&
         event.queryId === queryId
       ) {
-        res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
+        await finish(true);
         res.end();
         return;
       }
@@ -70,9 +96,11 @@ async function forwardNativeAskingTask(
         typeof event.message !== 'string'
       )
         throw new NativeQueryRefusal(503, 'NATIVE_EXECUTION_UNKNOWN');
+      emitted += event.message;
       res.write(`${line}\n\n`);
     }
-    // Native EOF, queue/cache loss or timeout is never completion evidence.
+    // Only an independently retained full GENERAL result can recover an EOF.
+    if (original.type === AskResultType.GENERAL) await finish(false);
     res.end();
   } catch (error) {
     if (!res.headersSent)

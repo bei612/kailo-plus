@@ -66,6 +66,11 @@ class AskResultRequest(BaseModel):
     query_id: str
 
 
+class AskCompletion(BaseModel):
+    query_id: str
+    content: str
+
+
 class _AskResultResponse(BaseModel):
     status: Literal[
         "understanding",
@@ -77,6 +82,7 @@ class _AskResultResponse(BaseModel):
         "failed",
         "stopped",
     ]
+    completion: Optional[AskCompletion] = None
     rephrased_question: Optional[str] = None
     intent_reasoning: Optional[str] = None
     sql_generation_reasoning: Optional[str] = None
@@ -255,19 +261,6 @@ class AskService:
                             user_query = rephrased_question
 
                         if intent == "MISLEADING_QUERY":
-                            asyncio.create_task(
-                                self._pipelines["misleading_assistance"].run(
-                                    query=user_query,
-                                    histories=histories,
-                                    db_schemas=intent_classification_result.get(
-                                        "db_schemas"
-                                    ),
-                                    language=ask_request.configurations.language,
-                                    query_id=ask_request.query_id,
-                                    custom_instruction=ask_request.custom_instruction,
-                                )
-                            )
-
                             self._ask_results[query_id] = AskResultResponse(
                                 status="finished",
                                 type="GENERAL",
@@ -277,11 +270,10 @@ class AskService:
                                 is_followup=True if histories else False,
                                 general_type="MISLEADING_QUERY",
                             )
-                            results["metadata"]["type"] = "MISLEADING_QUERY"
-                            return results
-                        elif intent == "GENERAL":
                             asyncio.create_task(
-                                self._pipelines["data_assistance"].run(
+                                self._generate_general(
+                                    "misleading_assistance",
+                                    self._ask_results[query_id],
                                     query=user_query,
                                     histories=histories,
                                     db_schemas=intent_classification_result.get(
@@ -293,6 +285,9 @@ class AskService:
                                 )
                             )
 
+                            results["metadata"]["type"] = "MISLEADING_QUERY"
+                            return results
+                        elif intent == "GENERAL":
                             self._ask_results[query_id] = AskResultResponse(
                                 status="finished",
                                 type="GENERAL",
@@ -302,18 +297,24 @@ class AskService:
                                 is_followup=True if histories else False,
                                 general_type="DATA_ASSISTANCE",
                             )
-                            results["metadata"]["type"] = "GENERAL"
-                            return results
-                        elif intent == "USER_GUIDE":
                             asyncio.create_task(
-                                self._pipelines["user_guide_assistance"].run(
+                                self._generate_general(
+                                    "data_assistance",
+                                    self._ask_results[query_id],
                                     query=user_query,
+                                    histories=histories,
+                                    db_schemas=intent_classification_result.get(
+                                        "db_schemas"
+                                    ),
                                     language=ask_request.configurations.language,
                                     query_id=ask_request.query_id,
                                     custom_instruction=ask_request.custom_instruction,
                                 )
                             )
 
+                            results["metadata"]["type"] = "GENERAL"
+                            return results
+                        elif intent == "USER_GUIDE":
                             self._ask_results[query_id] = AskResultResponse(
                                 status="finished",
                                 type="GENERAL",
@@ -323,6 +324,17 @@ class AskService:
                                 is_followup=True if histories else False,
                                 general_type="USER_GUIDE",
                             )
+                            asyncio.create_task(
+                                self._generate_general(
+                                    "user_guide_assistance",
+                                    self._ask_results[query_id],
+                                    query=user_query,
+                                    language=ask_request.configurations.language,
+                                    query_id=ask_request.query_id,
+                                    custom_instruction=ask_request.custom_instruction,
+                                )
+                            )
+
                             results["metadata"]["type"] = "GENERAL"
                             return results
                         else:
@@ -642,6 +654,31 @@ class AskService:
             results["metadata"]["type"] = "TEXT_TO_SQL"
             return results
 
+    async def _generate_general(self, pipeline_name, expected, **request):
+        query_id = request["query_id"]
+        try:
+            result = await self._pipelines[pipeline_name].run(**request)
+            generated = result.get(pipeline_name) if isinstance(result, dict) else None
+            replies = generated.get("replies") if isinstance(generated, dict) else None
+            meta = generated.get("meta") if isinstance(generated, dict) else None
+            if (
+                not isinstance(replies, list) or len(replies) != 1
+                or not isinstance(replies[0], str)
+                or not isinstance(meta, list) or len(meta) != 1
+                or not isinstance(meta[0], dict)
+                or meta[0].get("finish_reason") != "stop"
+                or self._ask_results.get(query_id) is not expected
+                or expected.status != "finished" or expected.type != "GENERAL"
+            ):
+                return
+            # Mutate only the same existing cache object, preserving its TTL.
+            expected.completion = AskCompletion(query_id=query_id, content=replies[0])
+            self._pipelines[pipeline_name].retire_streaming_results(query_id)
+        except Exception:
+            # Classification finished is not proof of a finished explanation.
+            # Missing/truncated/failed returns stay unresolved; never generate again.
+            logger.warning("Original general explanation result unavailable")
+
     def stop_ask(
         self,
         stop_ask_request: StopAskRequest,
@@ -692,12 +729,33 @@ class AskService:
                     _pipeline_name = reasoning
 
             if _pipeline_name:
+                expected = self._ask_results.get(query_id)
+                general = expected.type == "GENERAL"
+                emitted = ""
+                if general and expected.completion:
+                    event = SSEEvent(data=SSEEvent.SSEEventMessage(message=expected.completion.content))
+                    yield event.serialize()
+                    if self._ask_results.get(query_id) is expected:
+                        yield f"data: {json.dumps({'done': True, 'queryId': query_id})}\n\n"
+                    return
                 async for chunk in self._pipelines[
                     _pipeline_name
                 ].get_streaming_results(query_id):
+                    if general and self._ask_results.get(query_id) is not expected:
+                        return
                     if chunk is None:
+                        if general:
+                            complete = expected.completion
+                            if not complete or not complete.content.startswith(emitted):
+                                return
+                            remainder = complete.content[len(emitted):]
+                            if remainder:
+                                yield SSEEvent(data=SSEEvent.SSEEventMessage(message=remainder)).serialize()
+                            if self._ask_results.get(query_id) is not expected:
+                                return
                         yield f"data: {json.dumps({'done': True, 'queryId': query_id})}\n\n"
                         return
+                    emitted += chunk
                     event = SSEEvent(
                         data=SSEEvent.SSEEventMessage(message=chunk),
                     )

@@ -199,8 +199,14 @@ export default function useAskPrompt(threadId?: number) {
     [askingTaskResult.data, taskId],
   );
   const askingTaskType = useMemo(() => askingTask?.type, [askingTask?.type]);
-  const askingStreamTask = askingStreamTaskResult.data;
-  const askingStreamCompleted = askingStreamTaskResult.completed;
+  const complete = askingTask?.type === AskingTaskType.GENERAL
+    && askingTask.status === AskingTaskStatus.FINISHED
+    && typeof askingTask.completion === 'string' ? askingTask.completion : undefined;
+  const askingStreamTask = complete ?? askingStreamTaskResult.data;
+  const askingStreamCompleted = complete !== undefined || askingStreamTaskResult.completed;
+  useEffect(() => {
+    if (complete !== undefined) askingStreamTaskResult.reset();
+  }, [taskId, complete]);
   const recommendedQuestions = useMemo(
     () =>
       instantRecommendedQuestionsResult.data?.instantRecommendedQuestions ||
@@ -208,7 +214,7 @@ export default function useAskPrompt(threadId?: number) {
     [instantRecommendedQuestionsResult.data],
   );
 
-  const loading = askingStreamTaskResult.loading;
+  const loading = complete === undefined && askingStreamTaskResult.loading;
 
   const data = useMemo(
     () => ({
