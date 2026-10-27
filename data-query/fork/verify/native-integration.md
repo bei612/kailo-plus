@@ -12774,3 +12774,105 @@ It does not claim actual model/Gateway/Bao/accounting acceptance, complete
 GENERAL / NON_SQL recovery, matching new UI+AI artifacts, receiver activation
 or deployed browser/backend E2E. The prior optional-completion compatibility
 boundary still applies. No CI trust policy or live deployment changed.
+
+
+## GENERAL UI full-result recovery consumers (2026-10-27)
+
+This is the UI verification continuation of the GENERAL producer changes, not
+live provider or receiver acceptance. The product/GraphQL generation baseline is
+`137310df7a25bf57c59fae43cd01d0f0a3d8eee9`; final consumer source is
+`d4416cc408539e7084259b474266c542a7a10d84` on
+`codex/wren-general-ui-20261027`. The increment changes five existing test files
+(+472/-11), with no additional product, authority, dependency lock or UI behavior.
+The independently verified Python lifecycle evidence is recorded separately.
+
+The actual original consumers now cover:
+
+- Actual native HTTP GET normalization of same-query GENERAL completion, including
+  an empty completed body; wrong query, shape, type, status and error are refused.
+- Generated `AskingTaskDocument` against the original GraphQL schema/resolver,
+  including full-result observation after persisted FINISHED classification and
+  fresh HUMAN/project/mode/snapshot checks after the asynchronous GET.
+- Original planning HTTP SSE cached completion, lost-queue EOF, matching suffix,
+  mismatching prefix, unavailable evidence, oversized result and late withdrawal.
+- Original hook recovery from partial/EOF to full GraphQL content, continued
+  polling while full evidence is absent, and retired EventSource callbacks after
+  replacement/closure. This uses the existing React scheduling/EventSource test
+  harness, not an actual browser.
+- Original governed REST JSON/SSE and API History readers: same-key recovery does
+  not start another Ask/SQL/summary; legacy 200 plus `doneQueryId` must independently
+  obtain matching full evidence before disclosure, including a fresh metadata
+  read after that observation. Historical row bytes remain unchanged.
+- Standalone original Ask JSON and SSE, including empty/full/absent/foreign full
+  results and project/mode changes during the existing History write. Earlier
+  authorized SSE bytes are not represented as retractable; the later refusal
+  cannot authorize a successful finish or another model execution.
+
+### Actual bounded execution and restoration
+
+CI fetched the fixed branch from GitHub and reused the existing locked Node 18
+installation. `package.json`, `yarn.lock` and `.yarnrc.yml` matched before source
+refresh. The immutable image was
+`sha256:f9ab18e354e6855ae56ef2b290dd225c1e51a564f87584b9bd21dd651838830e`.
+Original container-safety preflight and Docker limit readback confirmed
+**4 CPU / 4 GiB / equal swap**, network `none`, nonroot process. Source/tmp/logs
+were on actual Data `/dev/sda1`; no dependency tree was copied to NVMe or installed.
+
+At `ceeddcf3b`, the four complete original files (`nativeTaskOwnership`,
+`askingStream`, `nativeTextAnswer`, `nativeRestAskOwnership`) passed **303** tests;
+**7** pre-existing conditional database cases were not run. The original
+`nativeHumanQuery` **run_sql HTTP HUMAN consumer** group passed **170** tests;
+**375** unrelated cases were not selected. Complete TypeScript exited **0**.
+The only subsequent source change was original Prettier wrapping of the exact
+unique-conflict assertion in `nativeRestAskOwnership`; product and other consumer
+bytes were unchanged. At final `d4416cc40`, TypeScript, applicable lint, format
+and that original database collision consumer all exited **0**.
+
+Six actual private-export mutations were detected by original assertions:
+
+| Removed boundary | Failed assertions | Restored selected consumers |
+| --- | ---: | ---: |
+| Native GET exact query match | 1 | 8 |
+| GraphQL fresh disclosure authorization | 1 | 7 |
+| Planning stream full-prefix match | 1 | 9 |
+| Legacy History independent full-result proof | 4 | 5 |
+| Hook adoption of complete GraphQL body | 2 | 2 |
+| Standalone post-History-write authorization | 4 | 12 |
+
+Every mutation exited **1** with actual assertion failures; every selected group
+returned **0** after byte-for-byte restoration. **618 input Git blobs** matched
+final GitHub source after all restorations. Own SDK containers were removed and
+absence was read back. No PostgreSQL or test network was allocated in this batch;
+SQLite consumers do not stand in for new PostgreSQL concurrency acceptance.
+
+### Preserved failures and remaining boundaries
+
+Initial new fixtures had incomplete typed Ask shapes, an inappropriate SQL-only
+helper asserting no explanation stream, and a mode-retirement fixture that
+removed only one of two delivery selectors. Those failures remain in the receipt;
+fixtures now provide actual complete protocol facts and retain refusal assertions.
+The original SQLite collision test's `rejects.toThrow` fluctuated across grouped
+runs. A bounded diagnostic observed actual `SQLITE_CONSTRAINT_UNIQUE`, no History
+row and the original Foreign task. Its assertion now requires the exact SQLite
+or PostgreSQL unique-constraint code and still checks rollback/original task;
+no product transaction was weakened. The complete selected group then passed.
+This does not claim every cause of the earlier fluctuation was reproduced.
+
+The first full `nativeHumanQuery` file run also exposed **8 unrelated existing
+failures** in SQL-pair REST create/preview/saved-view fixtures. They were not
+changed or reclassified as passing; exact names/logs are retained in the receipt.
+This batch therefore does not claim the complete Wren test gate is green.
+
+The original terminal receipt is
+`/volumes/data/kailo/verification/buzz-r10/wren-general-ui-d4416cc40-fault/receipt.json`,
+SHA-256 `123cb1283a9dc72f44f5ce01247cf4af4240fe2564f55f287cba996b623dda69`.
+Its unchanged repository copy is [the UI recovery receipt](general-ui-recovery-receipt.json).
+It links prior failures, exact commands/log hashes, selected counts, actual
+limits, restoration and the complete input manifest. Earlier SQL-answer/provider
+receipts remain unchanged.
+
+Missing/expired native cache, unavailable full proof or authority changes remain
+unresolved/refused without a new Ask. Matching new AI and UI artifacts, official
+release acceptance, complete receiver activation, actual model/Gateway/Bao/usage
+and deployed browser end-to-end verification remain outstanding. No live service,
+production configuration, CI trust or source-admission policy changed.
