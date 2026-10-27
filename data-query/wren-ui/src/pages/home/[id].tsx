@@ -125,9 +125,8 @@ export default function HomeThread() {
   const questionSqlPairModal = useModalAction();
   const adjustReasoningStepsModal = useModalAction();
   const adjustSqlModal = useModalAction();
-  const answerRequests = useRef(new Set<string>());
   const answerGeneration = useRef(0);
-  const answerOwner = useMemo(() => ({ active: true }), [threadId]);
+  const answerOwner = useMemo(() => ({ active: true, requests: new Set<string>() }), [threadId]);
   const answerOwnerRef = useRef(answerOwner);
   answerOwnerRef.current = answerOwner;
   const sqlFix = useMemo(
@@ -383,8 +382,8 @@ export default function HomeThread() {
   ) => {
     if (!answerOwner.active || answerOwnerRef.current !== answerOwner) return;
     const request = `${artifact}.${responseId}`;
-    if (answerRequests.current.has(request)) return;
-    answerRequests.current.add(request);
+    if (answerOwner.requests.has(request)) return;
+    answerOwner.requests.add(request);
     const generation = answerGeneration.current;
     const active = () =>
       answerOwner.active &&
@@ -491,7 +490,7 @@ export default function HomeThread() {
       if (active())
         publishReceipt((current) => ({ ...current, [responseId]: {} }));
     } finally {
-      answerRequests.current.delete(request);
+      answerOwner.requests.delete(request);
     }
   };
 
