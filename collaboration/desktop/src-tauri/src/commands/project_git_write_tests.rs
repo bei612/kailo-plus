@@ -281,7 +281,6 @@ async fn real_native_dispatch_reconciles_a_lost_push_after_restart() {
                 if name.eq_ignore_ascii_case("status") {
                     response = response.status(
                         value
-                            .trim()
                             .split_whitespace()
                             .next()
                             .unwrap()

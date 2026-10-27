@@ -198,9 +198,9 @@ async fn verify_forum_feed_ancestry(
             || parse_thread_markers(&root.tags).resolve().is_some()
             || parent_id != root_id
                 && (![9, 45003].contains(&parent.kind.as_u16())
-                    || !parse_thread_markers(&parent.tags)
+                    || parse_thread_markers(&parent.tags)
                         .resolve()
-                        .is_some_and(|(id, _)| id == root_id))
+                        .is_none_or(|(id, _)| id != root_id))
         {
             return Err("unverifiable Forum ancestry".to_string());
         }
