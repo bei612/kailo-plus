@@ -1,0 +1,54 @@
+{
+  "source_commit": "e70c0ad0b338caa10c4c07676b23e0fa3c1b3ded",
+  "transport": "CI direct fixed GitHub archive",
+  "sdk": "sha256:3007729eb192341a4f004a88e42e1e66c94fc67d763acfc96568bd7311116018",
+  "resources": {
+    "cpus": 1,
+    "memory_gib": 4,
+    "swap_gib": 4
+  },
+  "source_byte_audit": {
+    "checked_files": 3440,
+    "mismatches": []
+  },
+  "actual_resolved_local_packages": [
+    {
+      "host": "/workspace/apps/web-client/web",
+      "installed": "/workspace/apps/web-client/web/node_modules/@client-kit/platform",
+      "checked_source_files": 1025,
+      "mismatches": []
+    },
+    {
+      "host": "/workspace/apps/collaboration/desktop",
+      "installed": "/workspace/apps/collaboration/node_modules/.pnpm/@client-kit+platform@file+..+client-kit+ts+platform_26d4a7c87ea2feb193780e545d362c52/node_modules/@client-kit/platform",
+      "checked_source_files": 1025,
+      "mismatches": []
+    }
+  ],
+  "results": {
+    "catalog_check": 0,
+    "shared_production_types": 0,
+    "shared_test_types": 0,
+    "web_types": 0,
+    "desktop_types": 0,
+    "shared_original_consumers": 23,
+    "web_original_consumers": 74,
+    "native_original_consumers": 18
+  },
+  "dependency_install": "original root pnpm10.33.4, Web npm ci, Native pnpm11.4.0; frozen/offline, fresh Data source; copied file packages checked in actual resolver paths",
+  "oom": false,
+  "cleanup_containers": [],
+  "hashes": {
+    "check.log": "3bddc70dcf0d7a45cba4012fe70d1f9962e28334d87a9ffcb809b70de6feb326",
+    "result.log": "0723e3c2a2bd17db67bb88489291cae7ec594068ebd7833f908f39022cf1d25c",
+    "limits.log": "a0171b066ce4a075b2faf057ab10d9dee9b7a59b37c0861c79a4dcfc29f7ce48",
+    "oom.log": "2ed27c1421e6928dbe13dbfdb5c59e1045b30341fe7ebe05700006bc5ac572c0"
+  },
+  "boundaries": [
+    "Supersedes stale host package scope of 39ab cached run; preserves original result logs",
+    "No repeat faults; original ca477 and Projects fault receipts remain separate",
+    "Existing React act warnings retained",
+    "No full-project gate, build, deployment, browser or device acceptance",
+    "Temporary source/dependency directory may be reused after this receipt; fixed Git object and retained logs remain authority"
+  ]
+}

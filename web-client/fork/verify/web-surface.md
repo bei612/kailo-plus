@@ -6943,3 +6943,31 @@ Node 依赖，不重新安装。原同源词条 check、共享生产/测试、We
 `composer-project-39ab79980/`；`check.log` SHA-256 为
 `bc7f4f51b7197ec6a742893120f4433755e3d77ca4dd8d2372c785bb53c17212`。
 这些合批检查不代替上述实际故障记录、全工程 full、浏览器、安装包或部署验收。
+
+事后范围纠正：npm 与 pnpm 的本地 `file:` 依赖在安装目录中是源码副本。
+39ab 复用的 Web/Desktop 安装副本仍为 ca477 内容，`i18n.ts` SHA-256 均为
+`0131a88647eca6eb002103b1e75a7c47782c74675c132ae4557d9e54a93c8707`，
+与固定 39ab 源码的 `fc245f01ee8632e69f68221666956c3714501799346374280e2d26cf5153465a`
+不符。因此保留该轮命令退出值及直接共享源码检查，但不认领它为最新本地包的
+Web/Desktop 类型或运行消费者集成通过。原 ca477 全新安装的独立结果与 Projects
+ebb/38b 各自结果保持其固定范围，不能用这次缓存合批扩张结论。
+[安装副本核验](composer-project-cache-audit.json) 原件在同 CI 39ab 目录；后续合批
+须由原锁刷新本地包，并在实际模块解析路径逐字核对完整 `src` 与 `profile-assets.ts`。
+
+### 原锁全新安装与真实导入源的最终合批
+
+固定 `e70c0ad0b338caa10c4c07676b23e0fa3c1b3ded`，原 SDK 1 CPU / 4 GiB，
+全新 Data 导出，依次用原根 pnpm 10.33.4、Web `npm ci`、Native pnpm 11.4.0
+锁定并离线安装。由各宿主的实际 `require.resolve` 解析本地平台包路径，逐字比较
+完整 `src` 与 `profile-assets.ts`，两端各 1,025 文件均与该固定源码相同。
+共享生产/测试、Web、Desktop 四项类型、同源词条 check 均退出 0；原共享
+Projects/Git 23、Web Composer/i18n/预览 74、Native send-flow/deep-link 18
+项通过。全部 3,440 个归档输入与 GitHub blob 一致，无 OOM，容器已清理。
+
+[真实安装源合批回执](composer-project-fresh-receipt.json) SHA-256 为
+`e415dc89cc8e3d404b04c898cd0ef91398f7e3d8cab1a0e56b6cc7099a28ca0a`，
+CI 原件在同 verification 根下 `composer-project-fresh-e70c0ad0b/`。
+这取代 39ab 的宿主包合批结论；原故障检出与恢复仍按 ca477、ebb/38b 的各自记录，
+本轮没有重复故障。实际 React act 警告保留，临时 source/依赖目录在回执落盘后
+可以复用；固定 Git 对象、真实解析源比较和原日志是本轮权威。仍无 full、正式
+制品、部署、真实浏览器、安装包或设备验收。
