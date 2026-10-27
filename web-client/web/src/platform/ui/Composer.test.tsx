@@ -1570,18 +1570,22 @@ describe("DD-146 original send flow: clear at Send, restore on failure", () => {
 
   it("keeps a new owner edit UNKNOWN key when the retired owner edit is explicitly rejected", async () => {
     let rejectOld!: (error: unknown) => void;
-    const publish = vi.fn().mockImplementationOnce(() => new Promise((_resolve, reject) => { rejectOld = reject; }))
-      .mockRejectedValue(new TransportError("new edit unknown"));
+    const publish = vi.fn().mockRejectedValueOnce(new TransportError("new edit unknown"))
+      .mockImplementationOnce(() => new Promise((_resolve, reject) => { rejectOld = reject; }))
+      .mockRejectedValue(new TransportError("new edit still unknown"));
     const target = {id:"e".repeat(64),author:"Alice",pubkey:"alice",body:"Original",createdAt:1,time:"",depth:0,tags:[]};
-    const host = await render(<Composer draftIdentity="alice" draftKey="edit-owner" editTarget={target} onPublish={publish}/>);
-    await type(input(host), "old edit");
-    await click(button(host,"platform.send"));
-    await rerender(<Composer draftIdentity="bob" draftKey="edit-owner" editTarget={{...target,pubkey:"bob"}} onPublish={publish}/>);
+    const host = await render(<Composer draftIdentity="bob" draftKey="edit-owner" editTarget={{...target,pubkey:"bob"}} onPublish={publish}/>);
     await type(input(host), "new edit");
     await click(button(host,"platform.send"));
-    await vi.waitFor(() => expect(publish).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() => expect(publish).toHaveBeenCalledOnce());
     await settle();
-    const key = publish.mock.calls[1][2];
+    const key = publish.mock.calls[0][2];
+    await rerender(<Composer draftIdentity="alice" draftKey="edit-owner" editTarget={target} onPublish={publish}/>);
+    await type(input(host), "old edit");
+    await click(button(host,"platform.send"));
+    await vi.waitFor(() => expect(publish).toHaveBeenCalledTimes(2));
+    await rerender(<Composer draftIdentity="bob" draftKey="edit-owner" editTarget={{...target,pubkey:"bob"}} onPublish={publish}/>);
+    expect(input(host).textContent).toBe("new edit");
     await act(async()=>rejectOld(new BffError(403,"rejected",{class:ErrorClass.Denied,reason:ReasonCode.PublishRejected})));
     await click(button(host,"platform.send"));
     expect(publish).toHaveBeenCalledTimes(3);
@@ -1591,6 +1595,7 @@ describe("DD-146 original send flow: clear at Send, restore on failure", () => {
 
   it("restores selected GIF and failed local file across draft visits without uploading", async () => {
     const gif = {slug:"kept-gif",title:"Kept GIF",url:"https://static.klipy.com/kept.gif",previewUrl:"https://static.klipy.com/preview.gif",width:40,height:40,previewWidth:40,previewHeight:40,size:99};
+    vi.stubGlobal("matchMedia", (query:string) => ({matches:false,media:query,addEventListener() {},removeEventListener() {},addListener() {},removeListener() {}}));
     state.gifs = [gif];
     const {upload, uploads} = uploader();
     const host = await render(composer("gif-file", upload));
@@ -1668,10 +1673,11 @@ describe("DD-146 original send flow: clear at Send, restore on failure", () => {
     await attachPending(first);
     await click(button(first, "platform.send"));
     expect(input(first).textContent).toBe("");
-    // The page goes away mid-upload: the local file bytes cannot come back, the message can.
+    // A fresh JS lifetime loses local bytes but retains the persisted message.
     act(() => mounted!.root.unmount());
     mounted!.host.remove();
     mounted = undefined;
+    clearAllDrafts();
     const host = await render(composer("queued-reload", upload));
     await settle();
     expect(state.publish).not.toHaveBeenCalled();

@@ -1267,8 +1267,9 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
     if (!draftIdentity || !draftKey) return () => owner.active;
     claimDraftSend(draftKey);
     const authority = getDraftAuthority(draftKey);
-    const revision = authority.revision;
-    return () => isDraftStoreScope(draftIdentity, window.location.origin) && authority.revision === revision;
+    const sendRevision = authority.revision - authority.authoredRevision;
+    return () => isDraftStoreScope(draftIdentity, window.location.origin) &&
+      getDraftAuthority(draftKey) === authority && authority.revision - authority.authoredRevision === sendRevision;
   };
   const pendingSendOwnerKey = JSON.stringify([window.location.origin, draftIdentity, draftKey]);
   useEffect(() => { owner.active = true; return () => { owner.active = false; }; }, [owner]);
@@ -1596,11 +1597,11 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
     // Normal drafts retain authored text, not the original addressing prefix.
     // A captured publication/UNKNOWN retry retains its exact content and key.
     const content = intent.current ? editorContent : stripImplicitAgentMentionPrefix(editorContent, implicitAgentMentionProvenance.getPrefix());
-    if (!content.trim() && attachments.length === 0 && !intent.current) { clearDraftEntry(draftKey); return; }
     const recovered = loadPendingSend(draftKey);
     if ((recovered?.extras as { restored?: boolean } | undefined)?.restored) {
       savePendingSend(draftKey, { ...recovered!, extras: { ...(recovered!.extras as object), gifs: pendingGifsRef.current } });
     }
+    if (!content.trim() && attachments.length === 0 && !intent.current) { clearDraftEntry(draftKey); return; }
     const previous = loadDraftEntry(draftKey);
     const timestamp = new Date().toISOString();
     saveDraftEntry(draftKey, {
