@@ -56,12 +56,12 @@ function ProjectEntityAnchor({ children, href, link, interactive, asChip, runtim
     fallback: `${link.dtag} · ${link.id.slice(0, 8)}`,
   } : link.type === "repo" ? {
     ariaLabel: link.commitHash ? t("projects.share.openCommit", { id: link.commitHash.slice(0, 8), repository: link.dtag })
-      : t("projects.share.openRepository", { name: link.dtag }),
+      : t("projects.share.openRepository", { repository: link.dtag }),
     footer: t("projects.selection.kind.repository"),
     label: link.commitHash ? `${link.dtag} · ${link.commitHash.slice(0, 8)}` : link.dtag,
     fallback: link.dtag,
   } : {
-    ariaLabel: t("projects.share.openProject", { name: link.dtag }),
+    ariaLabel: t("projects.share.openProject", { project: link.dtag }),
     footer: t("projects.selection.kind.project"), label: link.dtag, fallback: link.dtag,
   };
   const onOpenLink = () => {
