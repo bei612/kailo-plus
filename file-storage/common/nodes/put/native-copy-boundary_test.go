@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -60,7 +61,7 @@ func TestNativeUploadCopyRechecksBeforeOriginalMetadata(t *testing.T) {
 			payload, _ := json.Marshal(claims)
 			token := "fixture." + base64.RawURLEncoding.EncodeToString(payload) + ".fixture"
 			arguments, _ := json.Marshal(map[string]interface{}{"target": map[string]interface{}{"resourceId": resource}, "input": input})
-			revoked := false
+			var revoked atomic.Bool
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
 				if r.URL.Path == "/token" {
@@ -71,7 +72,7 @@ func TestNativeUploadCopyRechecksBeforeOriginalMetadata(t *testing.T) {
 					_ = json.NewEncoder(w).Encode(map[string]interface{}{"nativeExecutionAdmission": map[string]interface{}{"actionToken": token, "argumentsJson": string(arguments), "expiresAt": time.Now().Add(time.Minute).UTC().Format(time.RFC3339Nano)}})
 					return
 				}
-				if r.URL.Path != "/service/v1/adapter/pep_check" || revoked {
+				if r.URL.Path != "/service/v1/adapter/pep_check" || revoked.Load() {
 					w.WriteHeader(http.StatusForbidden)
 					return
 				}
@@ -116,7 +117,7 @@ func TestNativeUploadCopyRechecksBeforeOriginalMetadata(t *testing.T) {
 				backend.copyErr = errors.New("copy acknowledgement lost")
 			}
 			if scenario == "revoked-during-copy" {
-				backend.afterCopy = func() { revoked = true }
+				backend.afterCopy = func() { revoked.Store(true) }
 			}
 			handler := &Handler{metaClient: metadata}
 			handler.Next = backend
