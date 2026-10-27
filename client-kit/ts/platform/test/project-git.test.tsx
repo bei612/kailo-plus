@@ -372,12 +372,16 @@ describe("original repository tag snapshot consumer",()=>{
   it("updates an already-open file preview when tag and branch have the same paths",async()=>{
     const f=fixture();f.gitQuery.mockImplementation(async request=>({...snapshot,snapshot:{...snapshot.snapshot!,files:[
       {path:"README.md",kind:"file",size:24,previewContent:request.targetRef?"Tag inline preview":"Branch inline preview",lastChangedAt:null}]}}));
-    const {ui}=await mount(f,{repositoryId:f.repositoryId,tab:"files"});
+    const {ui,cache}=await mount(f,{repositoryId:f.repositoryId,tab:"files"});
+    // Both production hosts retain inactive queries for five minutes.
+    cache.setQueryDefaults(["project"],{gcTime:5*60*1_000});
+    try {
     await vi.waitFor(()=>expect(ui.querySelector('[data-testid="project-repository-entry-row"]')).not.toBeNull());
     // First visit loads the tag through the original menu. A later cached switch
     // keeps the Files panel mounted; an uncached switch originally returns to its list.
     await pickRepositoryRef("mainfffffff");
     await vi.waitFor(()=>expect(ui.querySelector('[data-testid="project-repository-entry-row"]')).not.toBeNull());
+    await vi.waitFor(()=>expect(cache.getQueryData<{files:Array<{previewContent:string|null}>}>(["project",f.host.scopeKey,f.repositoryId,"repo-snapshot","main","none","none","main",head])?.files[0]?.previewContent).toBe("Tag inline preview"));
     await pickRepositoryRef("main");
     await vi.waitFor(()=>expect(ui.querySelector('[data-testid="project-repository-entry-row"]')).not.toBeNull());
     await click(ui.querySelector<HTMLTableRowElement>('[data-testid="project-repository-entry-row"]')!);
@@ -385,6 +389,7 @@ describe("original repository tag snapshot consumer",()=>{
     await pickRepositoryRef("mainfffffff");
     await vi.waitFor(()=>expect(ui.textContent).toContain("Tag inline preview"));
     expect(ui.textContent).not.toContain("Branch inline preview");
+    } finally { cache.clear(); }
   });
 
   it("keeps a selected tag remote and hides local writes in the real Desktop host consumer",async()=>{
