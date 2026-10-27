@@ -112,6 +112,7 @@ describe('original Ask SSE hook and same-task GraphQL observation', () => {
     NativeEventSource.sources = [];
     Object.defineProperty(global, 'EventSource', {
       configurable: true,
+      writable: true,
       value: NativeEventSource,
     });
     jest.spyOn(console, 'error').mockImplementation(() => {});
@@ -282,17 +283,15 @@ describe('original Ask SSE hook and same-task GraphQL observation', () => {
   });
 
   it('does not auto-retry a constructor/transport failure', () => {
-    const construct = jest.fn();
-    class UnavailableEventSource {
-      constructor() {
-        construct();
-        throw new Error('transport unavailable');
-      }
-    }
+    const construct = jest.fn(() => {
+      throw new Error('transport unavailable');
+    });
     Object.defineProperty(global, 'EventSource', {
       configurable: true,
-      value: UnavailableEventSource,
+      writable: true,
+      value: construct,
     });
+    expect(global.EventSource).toBe(construct);
     const [start] = render(useAskingStreamTask);
     start('native-current');
     start('native-current');
