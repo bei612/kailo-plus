@@ -652,6 +652,7 @@ describe('original native planning HTTP stream and HUMAN task owner', () => {
           ...general(),
           queryId,
           projectId: project.id,
+          question: task.question,
         });
       jest
         .mocked(components.wrenAIAdaptor.getAskResult)
