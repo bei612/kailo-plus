@@ -3244,6 +3244,7 @@ describe('original native metadata create UNKNOWN and authorized read-back consu
         throw new Error();
       },
     });
+    expect(() => sessionStorage.getItem('fixture-check')).toThrow();
     const submit = jest.fn();
     await expect(
       runNativeMetadataWrite({
@@ -3257,6 +3258,7 @@ describe('original native metadata create UNKNOWN and authorized read-back consu
   });
   it('an HTTP insecure-context browser without Web Crypto refuses before any native call or input persistence', async () => {
     Object.defineProperty(global, 'crypto', { configurable: true, value: {} });
+    expect(crypto.subtle).toBeUndefined();
     const submit = jest.fn();
     await expect(
       runNativeMetadataWrite({
