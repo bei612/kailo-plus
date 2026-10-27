@@ -832,7 +832,8 @@ it.each(["draft", "pending", "both", "late"] as const)("preserves the original n
   await mountDm();
   expect(host.querySelector('[data-testid="inbox-composer"]')?.getAttribute("data-draft-key")).toBe(scenario==="late"?conversation.id:conversation.channelId);
   if(scenario==="late") {
-    await act(async()=>savePendingSend(conversation.channelId,{draft:native,stage:"publishing",missingFileNames:[]}));await settle();
+    const originalSend=host.querySelector<HTMLButtonElement>('[data-testid="inbox-send"]')!;
+    await act(async()=>{savePendingSend(conversation.channelId,{draft:native,stage:"publishing",missingFileNames:[]});originalSend.click();});await settle();
     expect(host.querySelector('[data-testid="inbox-composer"]')?.getAttribute("data-draft-key")).toBe(conversation.id);
     expect(host.querySelector<HTMLButtonElement>('[data-testid="inbox-send"]')?.disabled).toBe(true);
     await act(async()=>host.querySelector<HTMLButtonElement>('[data-testid="inbox-send"]')!.click());
@@ -840,4 +841,20 @@ it.each(["draft", "pending", "both", "late"] as const)("preserves the original n
   expect(loadPendingSend(conversation.id)).toEqual(bindingBefore);
   expect(loadDraftEntry(conversation.id)).toEqual(canonical);
   expect(state.dmPublish).not.toHaveBeenCalled();expect(state.publish).not.toHaveBeenCalled();
+});
+
+
+it("retires the selected legacy DM draft owner on an identity switch without copying its UNKNOWN",async()=>{
+  initDraftStore("human",window.location.origin);
+  const pending={draft:{...storedDmDraft(conversation.channelId,"private old identity"),sendIntent:{key:"old-unknown",signature:"old-body"}},stage:"unknown" as const,missingFileNames:[]};
+  savePendingSend(conversation.channelId,pending);
+  state.dmQuery.mockImplementation(async(_id,options)=>({events:options.parentEventId?[rootEvent,reply]:[rootEvent,bounds()]}));
+  await mountDm();
+  expect(host.querySelector('[data-testid="inbox-composer"]')?.getAttribute("data-draft-key")).toBe(conversation.channelId);
+  await act(async()=>root.render(<QueryClientProvider client={query}><TooltipProvider><InboxThreadPane principalId="new-human" workspaceId={conversation.channelId} conversation={{...conversation,participantPrincipalIds:["new-human","peer"]}} rootId={rootId} selectedEventId={replyId} channelName="Peer" members={[]}/></TooltipProvider></QueryClientProvider>));await settle();
+  expect(host.querySelector('[data-testid="inbox-composer"]')?.getAttribute("data-draft-key")).toBe(conversation.id);
+  expect(loadPendingSend(conversation.channelId)).toBeUndefined();
+  expect(state.dmPublish).not.toHaveBeenCalled();
+  initDraftStore("human",window.location.origin);
+  expect(loadPendingSend(conversation.channelId)).toEqual(pending);
 });
