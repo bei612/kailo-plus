@@ -628,7 +628,8 @@ class AskService:
             # every registered child query before it permits a new task ID.
             if not self._is_stopped(query_id, self._ask_results):
                 self._ask_results[query_id] = AskResultResponse(
-                    status="stopped", type="TEXT_TO_SQL",
+                    status="stopped",
+                    type="TEXT_TO_SQL",
                     error=AskError(code="OTHERS", message="NATIVE_EXECUTION_UNKNOWN"),
                     trace_id=trace_id,
                 )
@@ -662,13 +663,16 @@ class AskService:
             replies = generated.get("replies") if isinstance(generated, dict) else None
             meta = generated.get("meta") if isinstance(generated, dict) else None
             if (
-                not isinstance(replies, list) or len(replies) != 1
+                not isinstance(replies, list)
+                or len(replies) != 1
                 or not isinstance(replies[0], str)
-                or not isinstance(meta, list) or len(meta) != 1
+                or not isinstance(meta, list)
+                or len(meta) != 1
                 or not isinstance(meta[0], dict)
                 or meta[0].get("finish_reason") != "stop"
                 or self._ask_results.get(query_id) is not expected
-                or expected.status != "finished" or expected.type != "GENERAL"
+                or expected.status != "finished"
+                or expected.type != "GENERAL"
             ):
                 return
             # Mutate only the same existing cache object, preserving its TTL.
@@ -695,7 +699,9 @@ class AskService:
             logger.exception(
                 f"ask pipeline - OTHERS: {ask_result_request.query_id} is not found"
             )
-            raise HTTPException(status_code=404, detail="Native task evidence unavailable")
+            raise HTTPException(
+                status_code=404, detail="Native task evidence unavailable"
+            )
 
         return result
 
@@ -724,8 +730,7 @@ class AskService:
                 # not a fabricated completion inferred from that phase change.
                 pipeline = self._pipelines.get(reasoning)
                 if pipeline and (
-                    expected.status == "planning"
-                    or query_id in pipeline._user_queues
+                    expected.status == "planning" or query_id in pipeline._user_queues
                 ):
                     _pipeline_name = reasoning
 
@@ -735,7 +740,11 @@ class AskService:
                 if general and expected.completion:
                     if self._ask_results.get(query_id) is not expected:
                         return
-                    event = SSEEvent(data=SSEEvent.SSEEventMessage(message=expected.completion.content))
+                    event = SSEEvent(
+                        data=SSEEvent.SSEEventMessage(
+                            message=expected.completion.content
+                        )
+                    )
                     yield event.serialize()
                     if self._ask_results.get(query_id) is expected:
                         yield f"data: {json.dumps({'done': True, 'queryId': query_id})}\n\n"
@@ -750,9 +759,11 @@ class AskService:
                             complete = expected.completion
                             if not complete or not complete.content.startswith(emitted):
                                 return
-                            remainder = complete.content[len(emitted):]
+                            remainder = complete.content[len(emitted) :]
                             if remainder:
-                                yield SSEEvent(data=SSEEvent.SSEEventMessage(message=remainder)).serialize()
+                                yield SSEEvent(
+                                    data=SSEEvent.SSEEventMessage(message=remainder)
+                                ).serialize()
                             if self._ask_results.get(query_id) is not expected:
                                 return
                         yield f"data: {json.dumps({'done': True, 'queryId': query_id})}\n\n"
