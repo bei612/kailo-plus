@@ -3912,6 +3912,24 @@ describe('original Home answer and chart operation lifetime', () => {
       const later = wake; page.retire(); later(); await settle();
       expect(requests).toHaveLength(2); expect(entries.size).toBe(0);
     });
+    it.each([
+      ['identity', { ...governed, queryScope: 'b'.repeat(64) }],
+      ['generation', { ...governed, nativeBindingGeneration: 3 }],
+      ['mode', standalone],
+    ])('does not disclose a readonly response after its %s configuration changed', async (_change, changed) => {
+      mockHomeApollo.cache.updateQuery({ query: documents.ThreadDocument, variables: { threadId: 11 } }, (data: any) => ({ ...data, thread: { ...data.thread, responses: [row('cached original', 'STREAMING')] } }));
+      renderPage(); initializeResponse(); await settle();
+      expect(requests).toHaveLength(1); mockConfig.mockResolvedValue(changed);
+      await respond(requests[0], 'threadResponse', row('wrong configuration body'));
+      expect(cacheRow().sql).toBe('cached original'); expect(requests).toHaveLength(1);
+    });
+    it('does not generate or populate cache when configuration changes during the original SQL update', async () => {
+      const page = renderPage(); const pending = page.controls.preparation.onFixSQLStatement(21, 'attempt'); await settle();
+      mockConfig.mockResolvedValue({ ...governed, nativeBindingGeneration: 3 });
+      await respond(requests[0], 'updateThreadResponse', row('changed generation SQL')); await pending;
+      expect(requests.map(request => request.name)).toEqual(['UpdateThreadResponse']);
+      expect(cacheRow().sql).toBe('cached original');
+    });
     it('a failed actual SQL mutation neither generates an answer nor refreshes or overwrites the current cache', async () => {
       const page = renderPage(); const pending = page.controls.preparation.onFixSQLStatement(21, 'attempt'); await settle();
       const error = jest.spyOn(console, 'error').mockImplementation(() => {});

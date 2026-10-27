@@ -86,6 +86,14 @@ const getThreadResponseIsFinished = (threadResponse: ThreadResponse) => {
   return isAnswerFinished !== false && isChartFinished !== false;
 };
 
+// Public config correlates an original observation; server admission remains
+// authoritative. A missing governed identity never selects standalone mode.
+function operationConfiguration(config: Awaited<ReturnType<typeof getUserConfig>>) {
+  if (config.nativeBindingConfigured === false && config.queryScope === undefined && config.nativeBindingGeneration === undefined) return 'standalone';
+  if (config.nativeBindingConfigured !== true || !/^[a-f0-9]{64}$/.test(config.queryScope ?? '') || !Number.isSafeInteger(config.nativeBindingGeneration) || config.nativeBindingGeneration <= 0) throw new Error('NATIVE_AUTHENTICATION_REQUIRED');
+  return `${config.queryScope}:${config.nativeBindingGeneration}`;
+}
+
 export default function HomeThread() {
   const $prompt = useRef<ComponentRef<typeof Prompt>>(null);
   const router = useRouter();
@@ -147,6 +155,7 @@ export default function HomeThread() {
   const responseObservation = useRef<{
     owner: typeof answerOwner;
     responseId: number;
+    identity?: string;
     timer?: ReturnType<typeof setTimeout>;
     pending?: Promise<void>;
   } | null>(null);
@@ -174,6 +183,13 @@ export default function HomeThread() {
     const observe = async () => {
       if (!active()) return;
       try {
+        const before = operationConfiguration(await getUserConfig());
+        if (!active()) return;
+        if (observation.identity !== undefined && observation.identity !== before) {
+          responseObservation.current = null;
+          return;
+        }
+        observation.identity = before;
         // Apollo's hook-level completion callback follows its latest render.
         // Consume this exact read promise instead, with no shared cache/dedup
         // result standing in for this owner's fresh original response read.
@@ -182,7 +198,12 @@ export default function HomeThread() {
           fetchPolicy: 'no-cache',
           context: { queryDeduplication: false },
         });
+        const after = operationConfiguration(await getUserConfig());
         if (!active()) return;
+        if (after !== observation.identity) {
+          responseObservation.current = null;
+          return;
+        }
         const next = result.data?.threadResponse;
         if (!result.error && next?.id === responseId && next.threadId === threadId) {
           setObservedResponse({ owner: answerOwner, response: next });
@@ -255,18 +276,27 @@ export default function HomeThread() {
   );
 
   const onFixSQLStatement = async (responseId: number, sql: string) => {
-    if (!answerOwner.active || answerOwnerRef.current !== answerOwner) return;
+    const active = () => answerOwner.active && answerOwnerRef.current === answerOwner;
+    if (!active()) return;
+    const identity = operationConfiguration(await getUserConfig());
+    if (!active()) return;
     await updateThreadResponse({
       variables: { where: { id: responseId }, data: { sql } },
       fetchPolicy: 'no-cache',
-      onCompleted: (data) => {
-        if (!answerOwner.active || answerOwnerRef.current !== answerOwner || data.updateThreadResponse.id !== responseId || data.updateThreadResponse.threadId !== threadId) return;
-        updateThreadQuery((prev) => !answerOwner.active || answerOwnerRef.current !== answerOwner || String(prev.thread?.id) !== String(threadId) ? prev : ({
-          ...prev,
-          thread: { ...prev.thread, responses: prev.thread.responses.map(response => response.id === responseId ? data.updateThreadResponse : response) },
-        }));
-        notify.success(t('home.sqlUpdated'));
-        onGenerateThreadResponseAnswer(responseId);
+      onCompleted: async (data) => {
+        try {
+          const current = operationConfiguration(await getUserConfig());
+          if (!active() || current !== identity || data.updateThreadResponse.id !== responseId || data.updateThreadResponse.threadId !== threadId) return;
+          updateThreadQuery((prev) => !active() || String(prev.thread?.id) !== String(threadId) ? prev : ({
+            ...prev,
+            thread: { ...prev.thread, responses: prev.thread.responses.map(response => response.id === responseId ? data.updateThreadResponse : response) },
+          }));
+          notify.success(t('home.sqlUpdated'));
+          onGenerateThreadResponseAnswer(responseId);
+        } catch {
+          // The write may have committed; losing current read authority is not
+          // permission to generate again or disclose a stale completion.
+        }
       },
     });
   };
@@ -315,27 +345,10 @@ export default function HomeThread() {
     try {
       const config = await getUserConfig();
       if (!active()) return;
-      const { queryScope: scope, nativeBindingGeneration: bindingGeneration } =
-        config;
-      // Missing governed identity is not evidence of an independent instance.
-      // Keep the original query key across retirement; only current readers may
-      // continue its original operation or attach response polling.
-      if (
-        config.nativeBindingConfigured !== false &&
-        (config.nativeBindingConfigured !== true ||
-          !/^[a-f0-9]{64}$/.test(scope ?? '') ||
-          !Number.isSafeInteger(bindingGeneration) ||
-          bindingGeneration <= 0)
-      )
-        return;
-      const sameConfiguration = (
-        current: Awaited<ReturnType<typeof getUserConfig>>,
-      ) =>
-        current.nativeBindingConfigured === config.nativeBindingConfigured &&
-        current.queryScope === scope &&
-        current.nativeBindingGeneration === bindingGeneration;
+      const identity = operationConfiguration(config);
+      const scope = config.queryScope;
+      const sameConfiguration = (current: Awaited<ReturnType<typeof getUserConfig>>) => operationConfiguration(current) === identity;
       if (config.nativeBindingConfigured === false) {
-        if (scope !== undefined || bindingGeneration !== undefined) return;
         await create({});
         const current = await getUserConfig();
         if (!active() || !sameConfiguration(current)) return;
