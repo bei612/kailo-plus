@@ -1,0 +1,173 @@
+{
+  "source_commit": "4babe467ceb5ca4e89b33138e820ce5d3c0916c2",
+  "base_commit": "a7501d688e07f7d3104bf530b403c0bcb7c196ef",
+  "source_transport": "CI directly fetched fixed GitHub object; archive into the previously released Data source",
+  "sdk": "sha256:3007729eb192341a4f004a88e42e1e66c94fc67d763acfc96568bd7311116018",
+  "resources": {
+    "cpus": 1,
+    "memory_bytes": 4294967296,
+    "memory_swap_bytes": 4294967296,
+    "pids_limit": 256,
+    "filesystem": "/dev/sda1 actual Data; existing dependency cache reused without copying"
+  },
+  "commands": {
+    "web_types": "node_modules/.bin/tsc --noEmit",
+    "web_consumers": "node_modules/.bin/vitest run src/platform/ui/Composer.test.tsx --maxWorkers=1",
+    "installed_package": "node /task-tmp/check-local-platform-package.mjs /workspace/apps/web-client/web"
+  },
+  "results": {
+    "web_types_exit": 0,
+    "web_complete_composer_passed": 83,
+    "web_complete_composer_skipped": 0,
+    "installed_package_files": 1039,
+    "installed_package_mismatches": [],
+    "source_byte_audit": {
+      "source": "4babe467ceb5ca4e89b33138e820ce5d3c0916c2",
+      "checked_files": 3454,
+      "mismatches": []
+    },
+    "oom": false,
+    "exit": 0,
+    "cleanup_containers": []
+  },
+  "shared_validation": {
+    "source": "4a45674491ebfa3057dfd309fa29ec1cbd71001c",
+    "production_types_exit": 0,
+    "test_types_exit": 0,
+    "draft_surfaces_passed": 3,
+    "shared_tree": "1085c26a059ee455529a19419cb8e1c5957771f3",
+    "shared_tree_identical_to_final": true,
+    "overall_job_exit": 1,
+    "scope": "These shared steps completed before later Web failures; no final-success claim for that earlier job"
+  },
+  "fault_validation": {
+    "source": "de4a1acde7c80df38fed0afee7d6163aed07897b",
+    "targeted_original_consumers_passed": 19,
+    "targeted_unrelated_cases_not_run": 64,
+    "byte_restored": true,
+    "source_byte_audit": {
+      "source": "de4a1acde7c80df38fed0afee7d6163aed07897b",
+      "checked_files": 3454,
+      "mismatches": []
+    },
+    "faults": [
+      {
+        "fault": "restore-http",
+        "negative": 1,
+        "restored": 0,
+        "source_sha256": "5033d51d9f54bef6996de08da6a29af6226e9c91bc2dffe4e79aecd7b64dbce4",
+        "negative_test_summary": "3 failed | 80 skipped (83)",
+        "negative_log_sha256": "d3c15b053853b62a29f200028130b80bc058b70f3bd5d851d730c9621f3e589a",
+        "restored_test_summary": "3 passed | 80 skipped (83)",
+        "restored_log_sha256": "41241c7ce1b24282404ff30ad542d2474ca4acd3be8ca26bbf1e656382ca4678"
+      },
+      {
+        "fault": "missing-bytes",
+        "negative": 1,
+        "restored": 0,
+        "source_sha256": "5033d51d9f54bef6996de08da6a29af6226e9c91bc2dffe4e79aecd7b64dbce4",
+        "negative_test_summary": "1 failed | 82 skipped (83)",
+        "negative_log_sha256": "2498fb5e0ed0b3c1d38d44cae5a9f00a241ee2b9922a0ead0f960100471696a6",
+        "restored_test_summary": "1 passed | 82 skipped (83)",
+        "restored_log_sha256": "a20fdeeb9b398c4284c920df11e6265a48c48399ec651b9e61c4b99f390399d4"
+      },
+      {
+        "fault": "retired-owner",
+        "negative": 1,
+        "restored": 0,
+        "source_sha256": "5033d51d9f54bef6996de08da6a29af6226e9c91bc2dffe4e79aecd7b64dbce4",
+        "negative_test_summary": "1 failed | 82 skipped (83)",
+        "negative_log_sha256": "bf3d862500f76f7d4ec384aac36d1bb0894f710ceff13a4a5308efd171f7e173",
+        "restored_test_summary": "1 passed | 82 skipped (83)",
+        "restored_log_sha256": "b8ec15e0db990d77013b9baf9448c6de8a8626993dec340c3ab86ed3d1f3d984"
+      },
+      {
+        "fault": "edit-intent",
+        "negative": 1,
+        "restored": 0,
+        "source_sha256": "5033d51d9f54bef6996de08da6a29af6226e9c91bc2dffe4e79aecd7b64dbce4",
+        "negative_test_summary": "1 failed | 82 skipped (83)",
+        "negative_log_sha256": "211b32afacc5e19a7a4735b3ed081e932da7a1c6552a1cd65055c5a9c752c8c1",
+        "restored_test_summary": "1 passed | 82 skipped (83)",
+        "restored_log_sha256": "90b4f77bcbed5d617f81cdf9b422fcf0566103e14f1a7c4fdbdd77b099fab18a"
+      },
+      {
+        "fault": "gif-restore",
+        "negative": 1,
+        "restored": 0,
+        "source_sha256": "5033d51d9f54bef6996de08da6a29af6226e9c91bc2dffe4e79aecd7b64dbce4",
+        "negative_test_summary": "1 failed | 82 skipped (83)",
+        "negative_log_sha256": "b335d099cef9109fa306e062ba1a975f7ca5f5b95bca42c611c73e673ab0d3ab",
+        "restored_test_summary": "1 passed | 82 skipped (83)",
+        "restored_log_sha256": "80d61b74a7bef3f2ece0c44aadc3ca408a550237751c57c66e791a9222ac8f98"
+      }
+    ],
+    "final_source_delta": "After this run, an unsupported discard change was added then reverted; final behavior delta is the existing accepted-timeout cleanup guarded by live owner rather than draft-store presence. The full final 83-case consumer file passed."
+  },
+  "historical_failures": [
+    {
+      "source_prefix": "4a4567449",
+      "exit": 1,
+      "web_passed": 14,
+      "web_failed": 5,
+      "unhandled_errors": 1,
+      "reason": "Authored draft revisions incorrectly invalidated recovery; reload fixture did not reset JS-only files; edit fixture attempted a second send while the original shared lock was held; GIF browser matchMedia missing"
+    },
+    {
+      "source_prefix": "5fa36c1b1",
+      "exit": 1,
+      "web_passed": 19,
+      "unhandled_errors": 1,
+      "reason": "GIF fixture lacked IntersectionObserver; passing assertions were not counted as a passing run"
+    },
+    {
+      "source_prefix": "22cad177d",
+      "exit": 1,
+      "web_passed": 81,
+      "web_failed": 3,
+      "reason": "Accepted timeout cleanup incorrectly required persisted draft scope; the proposed discard-while-publishing UI is unreachable and its change/test were reverted; full-file GIF test needed to await the actual tab"
+    }
+  ],
+  "logs_root": "/volumes/data/kailo/verification/composer-recovery",
+  "hashes": {
+    "4a4567449/check.log": "d2640e45d8faa513fc4d46cb243e0cf1eed42a856e9c642c5bf8e0b29ab9cefe",
+    "4a4567449/result.log": "6ca7b734d004c14fd6058d7c0eed0b14465140a3098e23ec6c52c3b0499c7012",
+    "4a4567449/limits.log": "9cd13fee4527ccd8dd9331726e5b66bda14331b3c23767219568b97d54996df3",
+    "4a4567449/oom.log": "2ed27c1421e6928dbe13dbfdb5c59e1045b30341fe7ebe05700006bc5ac572c0",
+    "4a4567449/preflight.log": "81b5e975650a01f0d4c035fce358cc4c8c319f08e8208919b3d4f277ad2b5bc5",
+    "5fa36c1b1/check.log": "c7ff4ac13d91017f73de11f81b60b625d00859213132db4982959bf114343d34",
+    "5fa36c1b1/result.log": "1cc249c6c4378a6a10ed1dda58dc1ab9b8c460dc13decb1088bab9568810c0f0",
+    "5fa36c1b1/limits.log": "9359e8625f0b76e2420fb3ae07ee86dd0914374f5e4e3b7faf9153f8fc73a147",
+    "5fa36c1b1/oom.log": "2ed27c1421e6928dbe13dbfdb5c59e1045b30341fe7ebe05700006bc5ac572c0",
+    "5fa36c1b1/preflight.log": "fc5c9726ced841403cd2ec06441cafc2d65a8cadf9ec87816f95c0ba95bebc14",
+    "de4a1acde/check.log": "3e1e201830117e067173957e6b9e5d89a1b41e496fb024a104165c343b2d391c",
+    "de4a1acde/result.log": "8f8515b373ee9b39a1b9077a6358ce469e6832159028e0e1b207f4bfc94beb51",
+    "de4a1acde/limits.log": "50e7dd0cb9e9cf8391e4e9a3e1583a98b8288df13efd6a5e4b830fd111993489",
+    "de4a1acde/oom.log": "2ed27c1421e6928dbe13dbfdb5c59e1045b30341fe7ebe05700006bc5ac572c0",
+    "de4a1acde/preflight.log": "4b1336fe04c5e473f7c8eab5fd2a3ba3a03ab2ffd11ecd83db7a3952b1224a61",
+    "de4a1acde/source-audit.json": "263f163982e23b3e1fa283ec8e0a401320eb76beb632f5cabcd5203f47757073",
+    "22cad177d/check.log": "3225aaed2e464cca76695ca1c1d7a2a9fd8f70aad6b21be449e143437e6d58c2",
+    "22cad177d/result.log": "9e862ec412e8aaa83018bdbc137773e7c4ca9606bf65a3c84a042a42384f6b8b",
+    "22cad177d/limits.log": "a5757a52f7b33a76f7286f3928a3e604b550063e062f6f572eb7fb91a7edc973",
+    "22cad177d/oom.log": "2ed27c1421e6928dbe13dbfdb5c59e1045b30341fe7ebe05700006bc5ac572c0",
+    "22cad177d/preflight.log": "4fd99e516fb891f4e34ffdab6d571ba70cd8b407046c58782ddd3a515f06113e",
+    "4babe467c/check.log": "ae23db5af59ba33049e3455450de4bb7d44b28460b09f765b9f97e34bc185daf",
+    "4babe467c/result.log": "9805199ca9f5fa047023ebfd6e7207bc3944656845c3b1d135f72a3d1c8ea566",
+    "4babe467c/limits.log": "7e46a5cb6c9e5f902ab759d26535321124ca648b826828ce769e4acb1886a581",
+    "4babe467c/oom.log": "2ed27c1421e6928dbe13dbfdb5c59e1045b30341fe7ebe05700006bc5ac572c0",
+    "4babe467c/preflight.log": "38d63c0913fa927a50229748ad74be34d541c2909e53dc77354148ba751b164a",
+    "4babe467c/source-audit.json": "eaa07b2bc9e7be162374fe001d7529b1a926ca87984fd68a02d0ac23c8536c7d",
+    "4babe467c/resource-values.log": "0e96774e6b55ce5b6eec4d9d526f496e6d33335d1ef24e7b8bd77c4973285ee7",
+    "4babe467c/storage.log": "19ab0a6393a66aaa578a876ff0a1e1856f30bc33de283abfc1c673db8a9fd1e4",
+    "4babe467c/cleanup.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "boundaries": [
+    "Original React/TipTap/composer consumers with scripted BFF/media responses; not a real browser, native device or production upload acceptance",
+    "An upload may already have stored bytes before cancellation or a lost response; restoration neither retracts those bytes nor publishes unconfirmed descriptors",
+    "File bytes survive only within the existing in-memory identity/relay scope; reload retains filenames and blocks sending until the user explicitly removes or supplies attachments",
+    "Publication UNKNOWN retains its original intent key; no automatic upload or publication is claimed",
+    "React act and linkify initialization warnings remain in original consumer logs; final run has no unhandled test error",
+    "No Native suite, whole Web project, formal artifact, deploy or trust/configuration change in this batch",
+    "The reverted discard candidate is not an implemented feature or acceptance claim"
+  ]
+}
