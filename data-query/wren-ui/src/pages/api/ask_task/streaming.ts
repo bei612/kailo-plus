@@ -35,7 +35,9 @@ async function forwardNativeAskingTask(
     stream = await components.wrenAIAdaptor.getAskStreamingResult(queryId);
     stop = () => stream.destroy();
     res.once('close', stop);
-    timer = setTimeout(stop, MAX_WAIT_TIME);
+    // Preserve each deployment mode's existing stream lifetime; only the
+    // governed path has the platform polling budget.
+    if (governed) timer = setTimeout(stop, MAX_WAIT_TIME);
     res.setHeader('Content-Type', 'text/event-stream');
     res.flushHeaders();
     let bytes = 0;
