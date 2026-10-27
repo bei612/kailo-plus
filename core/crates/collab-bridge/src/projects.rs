@@ -887,53 +887,129 @@ pub fn pull_request_publication_matches(
 }
 
 /// Fixed Buzz pullRequestMutations.ts::projectPullRequestUpdateTags.
-fn pull_request_update_tags(request: &ProjectsPublishRequest, root: &Event, clone: &[String]) -> Result<Vec<Vec<String>>, OperatorError> {
+fn pull_request_update_tags(
+    request: &ProjectsPublishRequest,
+    root: &Event,
+    clone: &[String],
+) -> Result<Vec<Vec<String>>, OperatorError> {
     let (owner, author) = pull_request_status_actors(root)?;
-    let mut tags = vec![vec!["a".into(), comment_repository(root)?], vec!["p".into(), owner.clone()]];
-    if owner != author { tags.push(vec!["p".into(), author.clone()]); }
-    tags.extend([vec!["E".into(), root.id.to_hex()], vec!["P".into(), author],
-        vec!["c".into(), request.commit.clone().ok_or_else(|| invalid("review commit missing"))?]]);
-    let mut clones = vec!["clone".into()]; clones.extend_from_slice(clone); tags.push(clones);
-    if let Some(base) = &request.merge_base { tags.push(vec!["merge-base".into(), base.clone()]); }
+    let mut tags = vec![
+        vec!["a".into(), comment_repository(root)?],
+        vec!["p".into(), owner.clone()],
+    ];
+    if owner != author {
+        tags.push(vec!["p".into(), author.clone()]);
+    }
+    tags.extend([
+        vec!["E".into(), root.id.to_hex()],
+        vec!["P".into(), author],
+        vec![
+            "c".into(),
+            request
+                .commit
+                .clone()
+                .ok_or_else(|| invalid("review commit missing"))?,
+        ],
+    ]);
+    let mut clones = vec!["clone".into()];
+    clones.extend_from_slice(clone);
+    tags.push(clones);
+    if let Some(base) = &request.merge_base {
+        tags.push(vec!["merge-base".into(), base.clone()]);
+    }
     Ok(tags)
 }
 
 /// The author or repository owner updates a review. Neither caller tags nor a
 /// frontend URL are accepted; both immutable root and current repository are signed evidence.
-pub fn pull_request_update_builder(request: &ProjectsPublishRequest, root: &Event, repository: &Event,
-    latest: Option<&Event>, signer: &str, community_host: &str) -> Result<EventBuilder, OperatorError> {
+pub fn pull_request_update_builder(
+    request: &ProjectsPublishRequest,
+    root: &Event,
+    repository: &Event,
+    latest: Option<&Event>,
+    signer: &str,
+    community_host: &str,
+) -> Result<EventBuilder, OperatorError> {
     let (owner, author) = pull_request_status_actors(root)?;
     let coordinate = comment_repository(root)?;
-    let slug = coordinate.splitn(3, ':').nth(2).ok_or_else(|| invalid("review repository missing"))?;
-    if publication_kind(request)? != 1619 || root.verify().is_err()
+    let slug = coordinate
+        .splitn(3, ':')
+        .nth(2)
+        .ok_or_else(|| invalid("review repository missing"))?;
+    if publication_kind(request)? != 1619
+        || root.verify().is_err()
         || request.target_event_id.as_deref() != Some(root.id.to_hex().as_str())
-        || signer != owner && signer != author || repository.kind.as_u16() != 30617
-        || repository.pubkey.to_hex() != owner || repository.tags.identifier() != Some(slug)
-        || repository.verify().is_err() || latest.is_some_and(|event| !pull_request_update_trusted(root,event)) {
+        || signer != owner && signer != author
+        || repository.kind.as_u16() != 30617
+        || repository.pubkey.to_hex() != owner
+        || repository.tags.identifier() != Some(slug)
+        || repository.verify().is_err()
+        || latest.is_some_and(|event| !pull_request_update_trusted(root, event))
+    {
         return Err(invalid("invalid review update evidence"));
     }
-    let mut clone = latest.unwrap_or(root).tags.iter().map(Tag::as_slice).find(|tag|tag.first().is_some_and(|name|name=="clone"))
-        .map(|tag|tag[1..].to_vec()).unwrap_or_default();
-    if clone.is_empty() { clone = repository_clone_urls(repository, community_host, slug); }
-    let tags = pull_request_update_tags(request,root,&clone)?.into_iter().map(Tag::parse)
-        .collect::<Result<Vec<_>,_>>().map_err(|_|invalid("invalid review update tags"))?;
-    let created = latest.map(|event|event.created_at.as_secs().checked_add(1).ok_or_else(||invalid("review update time overflow")))
-        .transpose()?.unwrap_or_default().max(Timestamp::now().as_secs());
-    Ok(EventBuilder::new(nostr::Kind::from(1619), "").tags(tags).allow_self_tagging()
+    let mut clone = latest
+        .unwrap_or(root)
+        .tags
+        .iter()
+        .map(Tag::as_slice)
+        .find(|tag| tag.first().is_some_and(|name| name == "clone"))
+        .map(|tag| tag[1..].to_vec())
+        .unwrap_or_default();
+    if clone.is_empty() {
+        clone = repository_clone_urls(repository, community_host, slug);
+    }
+    let tags = pull_request_update_tags(request, root, &clone)?
+        .into_iter()
+        .map(Tag::parse)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| invalid("invalid review update tags"))?;
+    let created = latest
+        .map(|event| {
+            event
+                .created_at
+                .as_secs()
+                .checked_add(1)
+                .ok_or_else(|| invalid("review update time overflow"))
+        })
+        .transpose()?
+        .unwrap_or_default()
+        .max(Timestamp::now().as_secs());
+    Ok(EventBuilder::new(nostr::Kind::from(1619), "")
+        .tags(tags)
+        .allow_self_tagging()
         .custom_created_at(Timestamp::from_secs(created)))
 }
 
 /// Reconcile the immutable original update; the repository may have changed
 /// since sending. Its clone metadata is frozen in the signed event, not read anew.
-pub fn pull_request_update_matches(request: &ProjectsPublishRequest, root: &Event, event: &Event) -> Result<bool, OperatorError> {
-    if publication_kind(request)? != 1619 || request.target_event_id.as_deref() != Some(root.id.to_hex().as_str())
-        || !pull_request_update_trusted(root,event) || event.content != "" || buzz_core::publication::publication_epoch(event).is_err() {
+pub fn pull_request_update_matches(
+    request: &ProjectsPublishRequest,
+    root: &Event,
+    event: &Event,
+) -> Result<bool, OperatorError> {
+    if publication_kind(request)? != 1619
+        || request.target_event_id.as_deref() != Some(root.id.to_hex().as_str())
+        || !pull_request_update_trusted(root, event)
+        || !event.content.is_empty()
+        || buzz_core::publication::publication_epoch(event).is_err()
+    {
         return Ok(false);
     }
-    let tags=event.tags.iter().map(Tag::as_slice).filter(|tag|tag.first().is_none_or(|name|name!="kailo:publication"))
-        .map(|tag|tag.to_vec()).collect::<Vec<_>>();
-    let Some(clone)=tags.iter().find(|tag|tag.first().is_some_and(|name|name=="clone")) else {return Ok(false)};
-    Ok(tags==pull_request_update_tags(request,root,&clone[1..])?)
+    let tags = event
+        .tags
+        .iter()
+        .map(Tag::as_slice)
+        .filter(|tag| tag.first().is_none_or(|name| name != "kailo:publication"))
+        .map(|tag| tag.to_vec())
+        .collect::<Vec<_>>();
+    let Some(clone) = tags
+        .iter()
+        .find(|tag| tag.first().is_some_and(|name| name == "clone"))
+    else {
+        return Ok(false);
+    };
+    Ok(tags == pull_request_update_tags(request, root, &clone[1..])?)
 }
 
 /// Read-only receipt for the exact persisted publication, not merely a JSON id.
@@ -1023,7 +1099,10 @@ pub fn publication_kind(request: &ProjectsPublishRequest) -> Result<u16, Operato
     // comments only; decisions and line anchors only on review comments.
     let commit_allowed = matches!(
         op,
-        "CREATE_PULL_REQUEST" | "UPDATE_PULL_REQUEST" | "CREATE_PULL_REQUEST_COMMENT" | "APPROVE_PULL_REQUEST"
+        "CREATE_PULL_REQUEST"
+            | "UPDATE_PULL_REQUEST"
+            | "CREATE_PULL_REQUEST_COMMENT"
+            | "APPROVE_PULL_REQUEST"
     );
     let review_comment_fields = request.review_decision.is_some()
         || request.anchor_path.is_some()
@@ -1173,11 +1252,20 @@ pub fn publication_kind(request: &ProjectsPublishRequest) -> Result<u16, Operato
             Ok(1621)
         }
         Some("UPDATE_PULL_REQUEST") => {
-            if !request.target_event_id.as_deref().is_some_and(canonical_event_id)
+            if !request
+                .target_event_id
+                .as_deref()
+                .is_some_and(canonical_event_id)
                 || !request.commit.as_deref().is_some_and(commit_id)
-                || request.merge_base.as_deref().is_some_and(|base| !commit_id(base))
-                || request.workspace_id.is_some() || request.name.is_some()
-                || request.description.is_some() || request.visibility.is_some() {
+                || request
+                    .merge_base
+                    .as_deref()
+                    .is_some_and(|base| !commit_id(base))
+                || request.workspace_id.is_some()
+                || request.name.is_some()
+                || request.description.is_some()
+                || request.visibility.is_some()
+            {
                 return Err(invalid("invalid review update"));
             }
             Ok(1619)
@@ -3459,39 +3547,89 @@ mod tests {
     }
     #[test]
     fn original_review_update_producer_and_immutable_receipt() {
-        let owner=Keys::generate(); let author=Keys::generate(); let stranger=Keys::generate();
-        let coordinate=format!("30617:{}:repo",owner.public_key().to_hex());
-        let repository=EventBuilder::new(nostr::Kind::from(30617), "").tags([
-            Tag::parse(["d","repo"]).unwrap(),Tag::parse(["clone","https://community.test/original.git"]).unwrap()
-        ]).sign_with_keys(&owner).unwrap();
-        let root=EventBuilder::new(nostr::Kind::from(1618), "review").tags([
-            Tag::parse(["a",coordinate.as_str()]).unwrap(),Tag::parse(["c","a".repeat(40).as_str()]).unwrap(),
-            Tag::parse(["clone","https://community.test/root.git"]).unwrap()
-        ]).sign_with_keys(&author).unwrap();
-        let latest=EventBuilder::new(nostr::Kind::from(1619), "").tags([
-            Tag::parse(["E",root.id.to_hex().as_str()]).unwrap(),Tag::parse(["c","b".repeat(40).as_str()]).unwrap(),
-            Tag::parse(["clone","https://community.test/latest.git"]).unwrap()
-        ]).custom_created_at(Timestamp::from_secs(Timestamp::now().as_secs()+10)).sign_with_keys(&owner).unwrap();
-        let request:ProjectsPublishRequest=serde_json::from_value(serde_json::json!({"operation":"UPDATE_PULL_REQUEST",
-            "targetEventId":root.id.to_hex(),"commit":"c".repeat(40),"mergeBase":"a".repeat(40)})).unwrap();
-        assert_eq!(publication_kind(&request).unwrap(),1619);
-        let built=pull_request_update_builder(&request,&root,&repository,Some(&latest),&author.public_key().to_hex(),"community.test")
-            .unwrap().sign_with_keys(&author).unwrap();
-        assert_eq!(built.created_at.as_secs(),latest.created_at.as_secs()+1);
-        assert_eq!(first_tag(&built,"clone"),Some("https://community.test/latest.git"));
-        assert!(pull_request_update_matches(&request,&root,&built).unwrap());
-        let epoch=buzz_core::publication::PUBLICATION_EPOCH_TAG;
-        let with_epoch=EventBuilder::new(nostr::Kind::from(1619), "").tags(built.tags.iter().cloned().chain([
-            Tag::parse([epoch,"11111111-1111-4111-8111-111111111111"]).unwrap()
-        ])).allow_self_tagging().sign_with_keys(&author).unwrap();
-        assert!(pull_request_update_matches(&request,&root,&with_epoch).unwrap());
-        assert!(pull_request_update_builder(&request,&root,&repository,None,&stranger.public_key().to_hex(),"community.test").is_err());
-        let mut changed=request.clone();changed.commit=Some("d".repeat(40));
-        assert!(!pull_request_update_matches(&changed,&root,&built).unwrap());
-        changed=request.clone();changed.body=Some("injected".into());assert!(publication_kind(&changed).is_err());
-        let forged=EventBuilder::new(nostr::Kind::from(1619), "").tags(built.tags.iter().cloned()).allow_self_tagging()
-            .sign_with_keys(&stranger).unwrap();
-        assert!(!pull_request_update_matches(&request,&root,&forged).unwrap());
+        let owner = Keys::generate();
+        let author = Keys::generate();
+        let stranger = Keys::generate();
+        let coordinate = format!("30617:{}:repo", owner.public_key().to_hex());
+        let repository = EventBuilder::new(nostr::Kind::from(30617), "")
+            .tags([
+                Tag::parse(["d", "repo"]).unwrap(),
+                Tag::parse(["clone", "https://community.test/original.git"]).unwrap(),
+            ])
+            .sign_with_keys(&owner)
+            .unwrap();
+        let root = EventBuilder::new(nostr::Kind::from(1618), "review")
+            .tags([
+                Tag::parse(["a", coordinate.as_str()]).unwrap(),
+                Tag::parse(["c", "a".repeat(40).as_str()]).unwrap(),
+                Tag::parse(["clone", "https://community.test/root.git"]).unwrap(),
+            ])
+            .sign_with_keys(&author)
+            .unwrap();
+        let latest = EventBuilder::new(nostr::Kind::from(1619), "")
+            .tags([
+                Tag::parse(["E", root.id.to_hex().as_str()]).unwrap(),
+                Tag::parse(["c", "b".repeat(40).as_str()]).unwrap(),
+                Tag::parse(["clone", "https://community.test/latest.git"]).unwrap(),
+            ])
+            .custom_created_at(Timestamp::from_secs(Timestamp::now().as_secs() + 10))
+            .sign_with_keys(&owner)
+            .unwrap();
+        let request: ProjectsPublishRequest =
+            serde_json::from_value(serde_json::json!({"operation":"UPDATE_PULL_REQUEST",
+            "targetEventId":root.id.to_hex(),"commit":"c".repeat(40),"mergeBase":"a".repeat(40)}))
+            .unwrap();
+        assert_eq!(publication_kind(&request).unwrap(), 1619);
+        let built = pull_request_update_builder(
+            &request,
+            &root,
+            &repository,
+            Some(&latest),
+            &author.public_key().to_hex(),
+            "community.test",
+        )
+        .unwrap()
+        .sign_with_keys(&author)
+        .unwrap();
+        assert_eq!(built.created_at.as_secs(), latest.created_at.as_secs() + 1);
+        assert_eq!(
+            first_tag(&built, "clone"),
+            Some("https://community.test/latest.git")
+        );
+        assert!(pull_request_update_matches(&request, &root, &built).unwrap());
+        let epoch = buzz_core::publication::PUBLICATION_EPOCH_TAG;
+        let with_epoch = EventBuilder::new(nostr::Kind::from(1619), "")
+            .tags(
+                built.tags.iter().cloned().chain([Tag::parse([
+                    epoch,
+                    "11111111-1111-4111-8111-111111111111",
+                ])
+                .unwrap()]),
+            )
+            .allow_self_tagging()
+            .sign_with_keys(&author)
+            .unwrap();
+        assert!(pull_request_update_matches(&request, &root, &with_epoch).unwrap());
+        assert!(pull_request_update_builder(
+            &request,
+            &root,
+            &repository,
+            None,
+            &stranger.public_key().to_hex(),
+            "community.test"
+        )
+        .is_err());
+        let mut changed = request.clone();
+        changed.commit = Some("d".repeat(40));
+        assert!(!pull_request_update_matches(&changed, &root, &built).unwrap());
+        changed = request.clone();
+        changed.body = Some("injected".into());
+        assert!(publication_kind(&changed).is_err());
+        let forged = EventBuilder::new(nostr::Kind::from(1619), "")
+            .tags(built.tags.iter().cloned())
+            .allow_self_tagging()
+            .sign_with_keys(&stranger)
+            .unwrap();
+        assert!(!pull_request_update_matches(&request, &root, &forged).unwrap());
     }
-
 }

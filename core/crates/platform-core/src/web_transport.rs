@@ -2914,12 +2914,26 @@ async fn publish(
     };
     let project_update_evidence = if matches!(&publication, Publication::Project(_)) {
         if requested_kind == 1619 {
-            let Some(root) = project_target.as_ref() else { return StatusCode::BAD_REQUEST.into_response(); };
-            match crate::projects::pull_request_update_evidence(&state,&client,root,&community_host).await {
-                Ok(evidence) => Some(evidence), Err(response) => return response,
+            let Some(root) = project_target.as_ref() else {
+                return StatusCode::BAD_REQUEST.into_response();
+            };
+            match crate::projects::pull_request_update_evidence(
+                &state,
+                &client,
+                root,
+                &community_host,
+            )
+            .await
+            {
+                Ok(evidence) => Some(evidence),
+                Err(response) => return response,
             }
-        } else {None}
-    } else {None};
+        } else {
+            None
+        }
+    } else {
+        None
+    };
     let latest_project_comment = if let Publication::Project(request) = &publication {
         if collab_bridge::projects::is_pull_request_status(request) {
             let Some(pull_request) = project_target.as_ref() else {
@@ -3006,9 +3020,14 @@ async fn publish(
     };
     if let Publication::Project(request) = &publication {
         let builder = if let Some((repository, latest)) = &project_update_evidence {
-            collab_bridge::projects::pull_request_update_builder(request,
-                project_target.as_ref().expect("review target checked"),repository,latest.as_ref(),
-                &keys.public_key().to_hex(),&community_host)
+            collab_bridge::projects::pull_request_update_builder(
+                request,
+                project_target.as_ref().expect("review target checked"),
+                repository,
+                latest.as_ref(),
+                &keys.public_key().to_hex(),
+                &community_host,
+            )
         } else if collab_bridge::projects::is_pull_request_status(request) {
             match project_target.as_ref() {
                 Some(pull_request) => collab_bridge::projects::status_publication_builder(
@@ -3237,9 +3256,15 @@ async fn publish(
             pulse_tags.as_deref().unwrap_or_default(),
         ),
         Publication::Project(request) if project_update_evidence.is_some() => {
-            let (repository, latest) = project_update_evidence.as_ref().expect("update evidence checked");
-            client.sign_project_update(&request,project_target.as_ref().expect("review target checked"),
-                repository,latest.as_ref())
+            let (repository, latest) = project_update_evidence
+                .as_ref()
+                .expect("update evidence checked");
+            client.sign_project_update(
+                &request,
+                project_target.as_ref().expect("review target checked"),
+                repository,
+                latest.as_ref(),
+            )
         }
         Publication::Project(request) => client.sign_project(
             &request,
@@ -5610,7 +5635,9 @@ mod tests {
                 "{kind}"
             );
         }
-        for kind in [1, 1618, 1619, 1621, 1630, 1631, 1632, 1633, 30300, 30617, 30621] {
+        for kind in [
+            1, 1618, 1619, 1621, 1630, 1631, 1632, 1633, 30300, 30617, 30621,
+        ] {
             let event = client
                 .sign(kind, "", &[vec!["h".into(), channel.to_string()]])
                 .unwrap();

@@ -342,6 +342,7 @@ function localStatus(raw: unknown): ProjectRepoSyncStatus | null {
     || ![raw.ahead_count, raw.behind_count].every(v => typeof v === "number" && Number.isSafeInteger(v) && v >= 0)
     || ![raw.can_push, raw.can_pull, raw.has_uncommitted_changes, raw.has_untracked_files].every(v => typeof v === "boolean"))
     throw new TransportError("Invalid local repository status");
+  if (raw.merge_base != null && (typeof raw.merge_base !== "string" || !COMMIT.test(raw.merge_base))) throw new TransportError("Invalid sync merge base");
   let pendingPush: ProjectPendingPush | null = null;
   if (raw.pending_push !== null && raw.pending_push !== undefined) {
     const pending = raw.pending_push;
