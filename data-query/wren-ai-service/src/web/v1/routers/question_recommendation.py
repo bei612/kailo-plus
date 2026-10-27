@@ -48,7 +48,9 @@ async def recommend(
         raise HTTPException(status_code=409, detail="Native task ID already registered")
     service[event_id] = QuestionRecommendation.Event(event_id=event_id)
 
-    _request = QuestionRecommendation.Request(event_id=event_id, **request.model_dump(exclude={"native_task_id"}))
+    _request = QuestionRecommendation.Request(
+        event_id=event_id, **request.model_dump(exclude={"native_task_id"})
+    )
 
     background_tasks.add_task(
         service.recommend,

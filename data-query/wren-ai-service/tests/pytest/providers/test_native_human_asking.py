@@ -879,10 +879,18 @@ class NativeRecommendationTaskIdentity(unittest.IsolatedAsyncioTestCase):
         app.dependency_overrides[get_service_container] = lambda: types.SimpleNamespace(
             question_recommendation=service
         )
-        app.dependency_overrides[get_service_metadata] = lambda: ServiceMetadata({}, "fixture")
+        app.dependency_overrides[get_service_metadata] = lambda: ServiceMetadata(
+            {}, "fixture"
+        )
         task_id = str(uuid4())
-        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://fixture") as client:
-            payload = {"native_task_id": task_id, "mdl": "original-model", "previous_questions": ["Original question"]}
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://fixture"
+        ) as client:
+            payload = {
+                "native_task_id": task_id,
+                "mdl": "original-model",
+                "previous_questions": ["Original question"],
+            }
             response = await client.post("/question-recommendations", json=payload)
             self.assertEqual(response.status_code, 200)
             self.assertEqual(response.json(), {"id": task_id})
@@ -904,7 +912,9 @@ class NativeRecommendationTaskIdentity(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(missing.json()["error"]["code"], "RESOURCE_NOT_FOUND")
             service.recommend.assert_awaited_once()
 
-    async def test_original_standalone_without_reserved_id_still_assigns_a_native_uuid(self):
+    async def test_original_standalone_without_reserved_id_still_assigns_a_native_uuid(
+        self,
+    ):
         from src.web.v1.routers.question_recommendation import router as recommendations
         from src.web.v1.services.question_recommendation import QuestionRecommendation
         from uuid import UUID
@@ -913,10 +923,18 @@ class NativeRecommendationTaskIdentity(unittest.IsolatedAsyncioTestCase):
         service.recommend = AsyncMock()
         app = FastAPI()
         app.include_router(recommendations)
-        app.dependency_overrides[get_service_container] = lambda: types.SimpleNamespace(question_recommendation=service)
-        app.dependency_overrides[get_service_metadata] = lambda: ServiceMetadata({}, "fixture")
-        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://fixture") as client:
-            response = await client.post("/question-recommendations", json={"mdl": "original-model"})
+        app.dependency_overrides[get_service_container] = lambda: types.SimpleNamespace(
+            question_recommendation=service
+        )
+        app.dependency_overrides[get_service_metadata] = lambda: ServiceMetadata(
+            {}, "fixture"
+        )
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://fixture"
+        ) as client:
+            response = await client.post(
+                "/question-recommendations", json={"mdl": "original-model"}
+            )
         self.assertEqual(response.status_code, 200)
         task_id = response.json()["id"]
         self.assertEqual(str(UUID(task_id)), task_id)
