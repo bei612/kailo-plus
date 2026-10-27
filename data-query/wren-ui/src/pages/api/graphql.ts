@@ -51,6 +51,7 @@ const bootstrapServer = async () => {
     instructionRepository,
     apiHistoryRepository,
     askingTaskRepository,
+    threadResponseRepository,
     dashboardItemRefreshJobRepository,
     // adaptors
     wrenEngineAdaptor,
@@ -174,6 +175,7 @@ const bootstrapServer = async () => {
       instructionRepository,
       apiHistoryRepository,
       askingTaskRepository,
+      threadResponseRepository,
       dashboardItemRefreshJobRepository,
       // background trackers
       projectRecommendQuestionBackgroundTracker,

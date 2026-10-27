@@ -20,6 +20,7 @@ import {
   IInstructionRepository,
   IApiHistoryRepository,
   IAskingTaskRepository,
+  IThreadResponseRepository,
   IDashboardItemRefreshJobRepository,
 } from '@server/repositories';
 import {
@@ -89,6 +90,7 @@ export interface IContext {
   instructionRepository: IInstructionRepository;
   apiHistoryRepository: IApiHistoryRepository;
   askingTaskRepository: IAskingTaskRepository;
+  threadResponseRepository: IThreadResponseRepository;
   dashboardItemRefreshJobRepository: IDashboardItemRefreshJobRepository;
 
   // background trackers
