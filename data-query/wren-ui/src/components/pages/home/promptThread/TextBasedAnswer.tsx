@@ -56,16 +56,24 @@ export default function TextBasedAnswer(props: AnswerResultProps) {
   const answerQuery = queryReceiptState(threadResponse.queryReceipt);
   const answerUnknown =
     answerQuery.completed && !threadResponse.answerDetail?.queryId;
-  const { content, error, numRowsUsedInLLM, status } =
+  const { content, error, numRowsUsedInLLM, status, queryId } =
     threadResponse?.answerDetail || {};
 
-  const [textAnswer, setTextAnswer] = useState<string>('');
+  const [textAnswer, setTextAnswer] = useState<{
+    responseId: number;
+    queryId: string | null | undefined;
+    content: string;
+  } | null>(null);
   const adjustResultsDropdown = useDropdown();
 
   const [fetchAnswerStreamingTask, answerStreamTaskResult] =
     useTextBasedAnswerStreamTask();
 
-  const answerStreamTask = answerStreamTaskResult.data;
+  const sameAnswer =
+    answerStreamTaskResult.responseId === id &&
+    answerStreamTaskResult.queryId === queryId;
+  const answerStreamTask = sameAnswer ? answerStreamTaskResult.data : '';
+  const streamCompleted = sameAnswer && answerStreamTaskResult.completed;
 
   const isStreaming = useMemo(
     () => status === ThreadResponseAnswerStatus.STREAMING,
@@ -96,24 +104,20 @@ export default function TextBasedAnswer(props: AnswerResultProps) {
   ]);
 
   useEffect(() => {
-    if (isStreaming) {
-      setTextAnswer(answerStreamTask);
+    setTextAnswer({
+      responseId: id,
+      queryId,
+      content: isStreaming ? answerStreamTask : content,
+    });
+  }, [answerStreamTask, isStreaming, content, id, queryId]);
+
+  useEffect(() => {
+    if (isStreaming && queryId) {
+      fetchAnswerStreamingTask(id, queryId);
     } else {
-      setTextAnswer(content);
-    }
-  }, [answerStreamTask, isStreaming, content]);
-
-  useEffect(() => {
-    if (isStreaming) {
-      fetchAnswerStreamingTask(id);
-    }
-  }, [isStreaming, id]);
-
-  useEffect(() => {
-    return () => {
       answerStreamTaskResult.onReset();
-    };
-  }, []);
+    }
+  }, [isStreaming, id, queryId, fetchAnswerStreamingTask, answerStreamTaskResult.onReset]);
 
   const rowsUsed = useMemo(
     () =>
@@ -160,7 +164,7 @@ export default function TextBasedAnswer(props: AnswerResultProps) {
   const loading = !getIsLoadingFinished(status);
 
   const onRegenerateAnswer = () => {
-    setTextAnswer('');
+    setTextAnswer(null);
     onGenerateTextBasedAnswer(id);
   };
 
@@ -247,8 +251,16 @@ export default function TextBasedAnswer(props: AnswerResultProps) {
       >
         <div className="text-md gray-10 py-4 px-6">
           <div className="text-right mb-4">{adjustAnswerDropdown}</div>
-          <MarkdownBlock content={textAnswer} />
-          {isStreaming && <LoadingOutlined className="kailo-text-brand" spin />}
+          <MarkdownBlock
+            content={
+              textAnswer?.responseId === id && textAnswer?.queryId === queryId
+                ? textAnswer.content
+                : ''
+            }
+          />
+          {isStreaming && !streamCompleted && (
+            <LoadingOutlined className="kailo-text-brand" spin />
+          )}
           {status === ThreadResponseAnswerStatus.INTERRUPTED && (
             <div className="mt-2 text-right">
               <Button
