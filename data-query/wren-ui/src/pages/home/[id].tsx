@@ -250,27 +250,40 @@ export default function HomeThread() {
       ).data?.generateThreadResponseChart;
     };
     try {
-      const scope = (await getUserConfig()).queryScope;
-      if (scope === undefined) {
+      const config = await getUserConfig();
+      if (generation !== answerGeneration.current) return;
+      const { queryScope: scope, nativeBindingGeneration: bindingGeneration } = config;
+      // Missing governed identity is not evidence of an independent instance.
+      // Keep the original query key across retirement; only current readers may
+      // continue its original operation or attach response polling.
+      if (config.nativeBindingConfigured !== false &&
+        (config.nativeBindingConfigured !== true ||
+          !/^[a-f0-9]{64}$/.test(scope ?? '') ||
+          !Number.isSafeInteger(bindingGeneration) || bindingGeneration <= 0)) return;
+      const sameConfiguration = (current: Awaited<ReturnType<typeof getUserConfig>>) =>
+        current.nativeBindingConfigured === config.nativeBindingConfigured &&
+        current.queryScope === scope &&
+        current.nativeBindingGeneration === bindingGeneration;
+      if (config.nativeBindingConfigured === false) {
+        if (scope !== undefined || bindingGeneration !== undefined) return;
         await create({});
+        const current = await getUserConfig();
+        if (generation !== answerGeneration.current || !sameConfiguration(current)) return;
         fetchThreadResponse({ variables: { responseId } });
         return;
       }
-      if (!/^[a-f0-9]{64}$/.test(scope)) return;
       const slot = `kailo.query.${artifact}${adjustment ? '.adjust' : ''}.${scope}.${responseId}`;
       const key = sessionStorage.getItem(slot) || uuidv4();
       sessionStorage.setItem(slot, key);
       while (generation === answerGeneration.current) {
-        if ((await getUserConfig()).queryScope !== scope) return;
+        const beforeDispatch = await getUserConfig();
+        if (generation !== answerGeneration.current || !sameConfiguration(beforeDispatch)) return;
         const response = await create({
           idempotencyKey: key,
           idempotencyScope: scope,
         });
-        if (
-          generation !== answerGeneration.current ||
-          (await getUserConfig()).queryScope !== scope
-        )
-          return;
+        const afterDispatch = await getUserConfig();
+        if (generation !== answerGeneration.current || !sameConfiguration(afterDispatch)) return;
         if (response?.id === responseId)
           updateThreadQuery((previous) => ({
             ...previous,
