@@ -23,14 +23,15 @@ import {
   requestKailoUser,
 } from '@server/services/kailoUserService';
 
-const explanationScope = (history: ApiHistory) => canonical({
-  id: history.id,
-  projectId: history.projectId,
-  apiType: history.apiType,
-  ownerKey: history.ownerKey ?? null,
-  requestPayload: history.requestPayload,
-  responsePayload: history.responsePayload,
-});
+const explanationScope = (history: ApiHistory) =>
+  canonical({
+    id: history.id,
+    projectId: history.projectId,
+    apiType: history.apiType,
+    ownerKey: history.ownerKey ?? null,
+    requestPayload: history.requestPayload,
+    responsePayload: history.responsePayload,
+  });
 
 export default async function handler(
   req: NextApiRequest,
@@ -146,17 +147,25 @@ export default async function handler(
       current.projectId !== project.id ||
       current.governanceBindingId != null ||
       current.requestPayload?.nativeAsk != null ||
-      ![ApiType.GENERATE_SQL, ApiType.STREAM_GENERATE_SQL].includes(current.apiType) ||
+      ![ApiType.GENERATE_SQL, ApiType.STREAM_GENERATE_SQL].includes(
+        current.apiType,
+      ) ||
       current.statusCode !== 400 ||
       current.responsePayload?.code !== 'NON_SQL_QUERY' ||
       current.responsePayload?.explanationQueryId !== req.query.queryId ||
       (original && explanationScope(current) !== original.scope)
     )
       throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
-    if ((await components.projectService.getCurrentProject())?.id !== project.id)
+    if (
+      (await components.projectService.getCurrentProject())?.id !== project.id
+    )
       throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
     await standaloneIdentity();
-    original ??= { id: current.id, projectId: project.id, scope: explanationScope(current) };
+    original ??= {
+      id: current.id,
+      projectId: project.id,
+      scope: explanationScope(current),
+    };
   };
   await streamStandaloneAskingTask(req, res, authorize);
 }

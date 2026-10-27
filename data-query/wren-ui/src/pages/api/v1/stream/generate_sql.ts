@@ -198,9 +198,7 @@ export default async function handler(
       requestPayload: { question, language },
       responsePayload: {
         error: error instanceof Error ? error.message : String(error),
-        ...(explanationQueryId
-          ? { code: error.code, explanationQueryId }
-          : {}),
+        ...(explanationQueryId ? { code: error.code, explanationQueryId } : {}),
       },
       statusCode: explanationQueryId ? error.statusCode : 500,
       durationMs: Date.now() - startTime,
