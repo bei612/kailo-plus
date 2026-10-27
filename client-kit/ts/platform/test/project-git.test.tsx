@@ -369,6 +369,18 @@ describe("original repository tag snapshot consumer",()=>{
     expect(requests(f,ProjectsGitQueryRequestView.FileContent).at(-1)).not.toHaveProperty("targetRef");
   });
 
+  it("updates an already-open file preview when tag and branch have the same paths",async()=>{
+    const f=fixture();f.gitQuery.mockImplementation(async request=>({...snapshot,snapshot:{...snapshot.snapshot!,files:[
+      {path:"README.md",kind:"file",size:24,previewContent:request.targetRef?"Tag inline preview":"Branch inline preview",lastChangedAt:null}]}}));
+    const {ui}=await mount(f,{repositoryId:f.repositoryId,tab:"files"});
+    await vi.waitFor(()=>expect(ui.querySelector('tr[tabindex]')).not.toBeNull());
+    await click(ui.querySelector<HTMLTableRowElement>('tr[tabindex]')!);
+    await vi.waitFor(()=>expect(ui.textContent).toContain("Branch inline preview"));
+    await pickRepositoryRef("mainfffffff");
+    await vi.waitFor(()=>expect(ui.textContent).toContain("Tag inline preview"));
+    expect(ui.textContent).not.toContain("Branch inline preview");
+  });
+
   it("keeps a selected tag remote and hides local writes in the real Desktop host consumer",async()=>{
     const f=nativeFixture("ready");const {ui}=await mount(f,{repositoryId:f.repositoryId,tab:"overview"},true);
     await vi.waitFor(()=>expect(ui.textContent).toContain("Remote readme"));

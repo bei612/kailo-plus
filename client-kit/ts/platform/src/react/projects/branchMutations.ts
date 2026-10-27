@@ -100,7 +100,8 @@ function useProjectRemoteBranchMutation(host: ProjectsHost, project: Repository 
     return () => lifetime.controller.abort();
   }, [lifetime]);
   return useMutation({
-    mutationFn: (request: ProjectsGitRefRequest) => {
+    mutationFn: ({ request, canDispatch }: { request: ProjectsGitRefRequest; canDispatch: () => boolean }) => {
+      if (!canDispatch()) throw new Error(t("projects.branch.refreshSource"));
       if (!project) throw new Error("No project selected.");
       return changeProjectRemoteBranch(host, project, request, lifetime.controller.signal);
     },
@@ -125,6 +126,7 @@ export function useDeleteProjectRemoteBranchMutation(host: ProjectsHost, project
 /** Coordinates branch dialogs and refreshes around the remote mutations. */
 export function useProjectBranchActions(input: {
   host: ProjectsHost;
+  readOnly?: boolean;
   project: Repository | null | undefined;
   activeBranch: string | null;
   activeBranchCommit: string | null;
@@ -141,13 +143,22 @@ export function useProjectBranchActions(input: {
   const retained = useRetainedProjectGitRefIntent(input.host, input.project);
   const createMutation = useCreateProjectRemoteBranchMutation(input.host, input.project, retained.refresh);
   const deleteMutation = useDeleteProjectRemoteBranchMutation(input.host, input.project, retained.refresh);
-  const createBranch = createMutation.mutateAsync;
-  const deleteBranch = deleteMutation.mutateAsync;
+  // Carry the originating selection through React Query's deferred mutationFn;
+  // a retained old callback must not dispatch using the observer's latest host.
+  const owner = React.useMemo(() => ({ active: true }), [input.host, input.project, input.readOnly]);
+  const currentOwner = React.useRef(owner);
+  currentOwner.current = owner;
+  React.useEffect(() => { owner.active = true; return () => { owner.active = false; }; }, [owner]);
+  const canDispatch = React.useCallback(() => owner.active && currentOwner.current === owner && !input.readOnly, [owner, input.readOnly]);
+  React.useEffect(() => { if (input.readOnly) { setCreateOpen(false); setDeleteOpen(false); } }, [input.readOnly]);
+  const createBranch = React.useCallback((request: ProjectsGitRefRequest) => createMutation.mutateAsync({ request, canDispatch }), [createMutation.mutateAsync, canDispatch]);
+  const deleteBranch = React.useCallback((request: ProjectsGitRefRequest) => deleteMutation.mutateAsync({ request, canDispatch }), [deleteMutation.mutateAsync, canDispatch]);
   const retainedCreate = retained.intent?.request.operation === ProjectGitRefOperation.CreateBranch ? retained.intent.request : null;
   const retainedDelete = retained.intent?.request.operation === ProjectGitRefOperation.DeleteBranch ? retained.intent.request : null;
 
   const handleCreate = React.useCallback(
     async (newBranch: string) => {
+      if (!canDispatch()) throw new Error(t("projects.branch.refreshSource"));
       const project = input.project, sourceBranch = input.activeBranch, expectedCommit = input.activeBranchCommit;
       if (!project) throw new Error(t("projects.branch.createFailed"));
       // An unconfirmed creation is re-checked exactly as it was sent.
@@ -157,13 +168,16 @@ export function useProjectBranchActions(input: {
       const request = retainedCreate ?? projectGitRefRequest({ repository: project.repoAddress,
         sourceBranch: sourceBranch!, expectedCommit: expectedCommit!, newBranch });
       const result = await createBranch(request);
+      if (!canDispatch()) return;
       await input.refetchRepoState();
+      if (!canDispatch()) return;
       input.rememberBranch({ name: result.branch, commit: result.commit });
       input.selectBranch(result.branch);
       toast.success(t("projects.branch.created", { branch: result.branch }));
     },
     [
       createBranch,
+      canDispatch,
       input.activeBranch,
       input.activeBranchCommit,
       input.project,
@@ -174,6 +188,7 @@ export function useProjectBranchActions(input: {
     ],
   );
   const handleDelete = React.useCallback(async () => {
+    if (!canDispatch()) throw new Error(t("projects.branch.refreshSource"));
     const project = input.project, branch = input.activeBranch, remote = input.activeRemoteBranch;
     if (!project) throw new Error(t("projects.branch.deleteFailed"));
     if (!retainedDelete && (!branch || !remote || input.deleteBranchReason)) {
@@ -182,12 +197,15 @@ export function useProjectBranchActions(input: {
     const request = retainedDelete ?? projectGitRefRequest({ repository: project.repoAddress, branch: branch!,
       expectedCommit: remote!.commit });
     const result = await deleteBranch(request);
+    if (!canDispatch()) return;
     input.forgetBranch(result.branch);
     input.selectBranch(input.defaultBranch);
     await input.refetchRepoState();
+    if (!canDispatch()) return;
     toast.success(t("projects.branch.deleted", { branch: result.branch }));
   }, [
     deleteBranch,
+    canDispatch,
     input.activeBranch,
     input.activeRemoteBranch,
     input.defaultBranch,
@@ -200,7 +218,7 @@ export function useProjectBranchActions(input: {
   ]);
 
   return {
-    available: Boolean(input.host.git?.createProjectRemoteBranch && input.host.git.deleteProjectRemoteBranch),
+    available: !input.readOnly && Boolean(input.host.git?.createProjectRemoteBranch && input.host.git.deleteProjectRemoteBranch),
     createOpen,
     createPending: createMutation.isPending,
     deleteOpen,

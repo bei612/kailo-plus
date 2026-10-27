@@ -66,7 +66,9 @@ export function useRepositoryFilesNavigation({
   return {
     currentPath,
     openPath,
-    selectedFile,
+    // A ref refresh can retain every path while changing its preview bytes.
+    // Keep the selected path, but always render the current snapshot row.
+    selectedFile: selectedFile ? files.find(file => file.path === selectedFile.path) ?? null : null,
     setSelectedFile,
     setVisibleEntryCount,
     visibleEntryCount,
