@@ -12,11 +12,11 @@ import httpx
 import openai
 from cachetools import TTLCache
 from openai.types.chat import ChatCompletionChunk
-from fastapi import FastAPI
+from fastapi import BackgroundTasks, FastAPI
 from hamilton.async_driver import AsyncDriver
 
 from src.providers.engine.native_identity import NativeQueryPending, native_ask_context
-from src.web.v1.routers.ask import router
+from src.web.v1.routers.ask import ask as create_ask, router
 from src.web.v1.routers.ask_feedbacks import router as feedback_router
 from src.globals import get_service_container, get_service_metadata, ServiceMetadata
 from src.web.v1.services.ask import (
@@ -425,6 +425,182 @@ class NativeGeneralCompletion(unittest.IsolatedAsyncioTestCase):
                     ).status,
                     "stopped",
                 )
+
+    async def test_registered_background_owner_cannot_start_after_expiry_or_replacement(self):
+        for mode in ("expiry", "replacement", "stop"):
+            with self.subTest(mode=mode):
+                service, _, _ = self.service(self.pipelines[0])
+                clock = [0]
+                service._ask_results = TTLCache(maxsize=2, ttl=1, timer=lambda: clock[0])
+                history = AsyncMock(return_value={"formatted_output": {"documents": []}})
+                service._pipelines["historical_question"] = types.SimpleNamespace(run=history)
+                background = BackgroundTasks()
+                request = AskRequest(query="Original", id="a" * 40, project_id="7")
+                response = await create_ask(
+                    request, background,
+                    types.SimpleNamespace(ask_service=service),
+                    ServiceMetadata({}, "fixture"),
+                )
+                original = service._ask_results[response.query_id]
+                replacement = original.model_copy(deep=True)
+                if mode == "expiry":
+                    clock[0] = 2
+                elif mode == "stop":
+                    stop = StopAskRequest(status="stopped")
+                    stop.query_id = response.query_id
+                    service.stop_ask(stop)
+                    replacement = service._ask_results[response.query_id]
+                else:
+                    service._ask_results[response.query_id] = replacement
+                with patch("src.providers.llm.litellm.acompletion", new_callable=AsyncMock) as remote:
+                    await background()
+                history.assert_not_called()
+                remote.assert_not_called()
+                if mode == "expiry":
+                    self.assertNotIn(response.query_id, service._ask_results)
+                else:
+                    self.assertIs(service._ask_results[response.query_id], replacement)
+
+    async def test_classification_lifetime_cannot_revive_or_dispatch_a_retired_query(self):
+        for phase in ("historical_question", "sql_pairs_retrieval", "intent_classification"):
+            for mode in ("expiry", "replacement", "stop"):
+                for outcome in ("return", "error", "pending"):
+                    with self.subTest(phase=phase, mode=mode, outcome=outcome):
+                        service, _, _ = self.service(self.pipelines[0])
+                        clock = [0]
+                        service._ask_results = TTLCache(maxsize=2, ttl=1, timer=lambda: clock[0])
+                        entered, release = asyncio.Event(), asyncio.Event()
+                        calls = []
+
+                        def runner(name):
+                            async def run(**kwargs):
+                                calls.append(name)
+                                if name == phase:
+                                    entered.set()
+                                    await release.wait()
+                                    if outcome == "error":
+                                        raise RuntimeError("old classification failed")
+                                    if outcome == "pending":
+                                        raise NativeQueryPending()
+                                return ({"post_process": {"intent": "GENERAL", "db_schemas": []}}
+                                        if name == "intent_classification" else
+                                        {"formatted_output": {"documents": []}})
+                            return types.SimpleNamespace(run=run)
+
+                        for name in ("historical_question", "sql_pairs_retrieval", "instructions_retrieval", "intent_classification"):
+                            service._pipelines[name] = runner(name)
+                        request = AskRequest(query="Original", id="a" * 40, project_id="7")
+                        request.query_id = "original"
+                        with patch("src.providers.llm.litellm.acompletion", new_callable=AsyncMock) as remote:
+                            pending = asyncio.create_task(service.ask(request))
+                            await asyncio.wait_for(entered.wait(), 2)
+                            original = service._ask_results["original"]
+                            replacement = original.model_copy(deep=True)
+                            if mode == "expiry":
+                                clock[0] = 2
+                            elif mode == "stop":
+                                stop = StopAskRequest(status="stopped")
+                                stop.query_id = "original"
+                                service.stop_ask(stop)
+                                replacement = service._ask_results["original"]
+                            else:
+                                service._ask_results["original"] = replacement
+                            prior_calls = list(calls)
+                            release.set()
+                            await asyncio.wait_for(pending, 2)
+                            await asyncio.sleep(0)
+                        self.assertEqual(calls, prior_calls)
+                        remote.assert_not_called()
+                        if mode == "expiry":
+                            self.assertNotIn("original", service._ask_results)
+                        else:
+                            self.assertIs(service._ask_results["original"], replacement)
+                            self.assertIsNone(replacement.completion)
+
+    async def test_owned_classification_still_dispatches_original_general_provider_once(self):
+        for entry in self.pipelines:
+            with self.subTest(pipeline=entry[1]):
+                service, _, _ = self.service(entry)
+                for name in ("historical_question", "sql_pairs_retrieval", "instructions_retrieval"):
+                    service._pipelines[name] = types.SimpleNamespace(run=AsyncMock(return_value={"formatted_output": {"documents": []}}))
+                service._pipelines["intent_classification"] = types.SimpleNamespace(run=AsyncMock(return_value={"post_process": {"intent": entry[3], "db_schemas": []}}))
+                request = AskRequest(query="Original", id="a" * 40, project_id="7")
+                request.query_id = "original"
+
+                async def stream():
+                    yield self.chunk("owned full", "stop")
+
+                async def completed():
+                    while service._ask_results["original"].completion is None:
+                        await asyncio.sleep(0)
+
+                with patch("src.providers.llm.litellm.acompletion", AsyncMock(return_value=stream())) as remote:
+                    await service.ask(request)
+                    await asyncio.wait_for(completed(), 2)
+                self.assertEqual(remote.await_count, 1)
+                self.assertEqual(service._ask_results["original"].completion.content, "owned full")
+
+    async def test_sql_stages_keep_native_owner_and_original_success_or_pending_semantics(self):
+        phases = ("db_schema_retrieval", "sql_generation_reasoning", "sql_functions_retrieval", "sql_generation", "sql_diagnosis", "sql_correction")
+        for phase in (*phases, "owned"):
+            for mode in (("expiry", "replacement", "stop") if phase != "owned" else ("success",)):
+                with self.subTest(phase=phase, mode=mode):
+                    clock = [0]
+                    service = AskService({}, allow_intent_classification=False, max_sql_correction_retries=1)
+                    service._ask_results = TTLCache(maxsize=2, ttl=1, timer=lambda: clock[0])
+                    entered, release = asyncio.Event(), asyncio.Event()
+                    calls = []
+                    outputs = {
+                        "historical_question": {"formatted_output": {"documents": []}},
+                        "sql_pairs_retrieval": {"formatted_output": {"documents": []}},
+                        "instructions_retrieval": {"formatted_output": {"documents": []}},
+                        "db_schema_retrieval": {"construct_retrieval_results": {"retrieval_results": [{"table_name": "original", "table_ddl": "CREATE TABLE original (id int)"}]}},
+                        "sql_generation_reasoning": {"post_process": "original reasoning"},
+                        "sql_functions_retrieval": [],
+                        "sql_generation": {"post_process": {"valid_generation_result": None, "invalid_generation_result": {"type": "INVALID_SQL", "original_sql": "SELECT wrong", "sql": "SELECT wrong", "error": "invalid"}}},
+                        "sql_diagnosis": {"post_process": {"reasoning": "original correction"}},
+                        "sql_correction": {"post_process": {"valid_generation_result": {"sql": "SELECT 1"}, "invalid_generation_result": None}},
+                    }
+
+                    def runner(name):
+                        async def run(**kwargs):
+                            calls.append(name)
+                            if name == phase:
+                                entered.set()
+                                await release.wait()
+                            return outputs[name]
+                        return types.SimpleNamespace(run=run)
+
+                    service._pipelines = {name: runner(name) for name in outputs}
+                    request = AskRequest(query="Original", id="a" * 40, project_id="7")
+                    request.query_id = "original"
+                    pending = asyncio.create_task(service.ask(request))
+                    if phase != "owned":
+                        await asyncio.wait_for(entered.wait(), 2)
+                        original = service._ask_results["original"]
+                        replacement = original.model_copy(deep=True)
+                        if mode == "expiry":
+                            clock[0] = 2
+                        elif mode == "stop":
+                            stop = StopAskRequest(status="stopped")
+                            stop.query_id = "original"
+                            service.stop_ask(stop)
+                            replacement = service._ask_results["original"]
+                        else:
+                            service._ask_results["original"] = replacement
+                        prior_calls = list(calls)
+                        release.set()
+                    await asyncio.wait_for(pending, 2)
+                    if phase == "owned":
+                        self.assertEqual(service._ask_results["original"].status, "finished")
+                        self.assertEqual(service._ask_results["original"].response[0].sql, "SELECT 1")
+                        self.assertEqual(calls, list(outputs))
+                    else:
+                        self.assertEqual(calls, prior_calls)
+                        if mode == "expiry":
+                            self.assertNotIn("original", service._ask_results)
+                        else:
+                            self.assertIs(service._ask_results["original"], replacement)
 
     async def test_tail_observer_is_not_completed_but_original_result_can_be_reobserved(
         self,

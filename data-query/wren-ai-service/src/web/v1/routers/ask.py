@@ -42,15 +42,15 @@ async def ask(
     if query_id in service_container.ask_service._ask_results:
         raise HTTPException(status_code=409, detail="Native task ID already registered")
     ask_request.query_id = query_id
-    service_container.ask_service._ask_results[query_id] = AskResultResponse(
-        status="understanding",
-    )
+    registered = AskResultResponse(status="understanding")
+    service_container.ask_service._ask_results[query_id] = registered
 
     background_tasks.add_task(
         run_native_ask,
         context,
         service_container.ask_service.ask,
         ask_request,
+        expected_result=registered,
         service_metadata=asdict(service_metadata),
     )
     return AskResponse(query_id=query_id)
