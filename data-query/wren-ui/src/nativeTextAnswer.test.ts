@@ -32,8 +32,13 @@ jest.mock('./common', () => ({
       getResponse: jest.fn(),
       changeThreadResponseAnswerDetailStatus: jest.fn(async () => undefined),
     },
-    wrenAIAdaptor: { streamTextBasedAnswer: jest.fn(), getTextBasedAnswerResult: jest.fn(),
-      createTextBasedAnswer: jest.fn(), ask: jest.fn(), getAskResult: jest.fn() },
+    wrenAIAdaptor: {
+      streamTextBasedAnswer: jest.fn(),
+      getTextBasedAnswerResult: jest.fn(),
+      createTextBasedAnswer: jest.fn(),
+      ask: jest.fn(),
+      getAskResult: jest.fn(),
+    },
     threadResponseRepository: { claimNativeAnswer: jest.fn() },
     apiHistoryRepository: { findOneBy: jest.fn(), createOne: jest.fn() },
     deployService: { getLastDeployment: jest.fn() },
@@ -177,7 +182,9 @@ describe('original native text-answer result consumers', () => {
     scopeChanges = {};
     wireErrors = [];
     jest.clearAllMocks();
-    native.wrenAIAdaptor.getTextBasedAnswerResult.mockReset().mockResolvedValue({ status: 'SUCCEEDED' });
+    native.wrenAIAdaptor.getTextBasedAnswerResult
+      .mockReset()
+      .mockResolvedValue({ status: 'SUCCEEDED' });
     native.askingService.getResponse.mockResolvedValue(response);
     native.apiHistoryRepository.findOneBy.mockResolvedValue(record);
     native.projectService.getCurrentProject.mockResolvedValue({ id: 3 });
@@ -234,7 +241,10 @@ describe('original native text-answer result consumers', () => {
   const completion = (content: string) =>
     native.wrenAIAdaptor.getTextBasedAnswerResult
       .mockResolvedValueOnce({ status: 'SUCCEEDED' })
-      .mockResolvedValue({ status: 'SUCCEEDED', completion: { queryId: 'native-ai-task', content } });
+      .mockResolvedValue({
+        status: 'SUCCEEDED',
+        completion: { queryId: 'native-ai-task', content },
+      });
   it('keeps original UTF-8 streaming and completes only on the exact native task receipt', async () => {
     completion('中文原答案');
     const encoded = Buffer.from(
@@ -489,21 +499,28 @@ describe('original native text-answer result consumers', () => {
   });
   it('does not disclose cached content when source authorization is revoked during the original CAS', async () => {
     native.wrenAIAdaptor.getTextBasedAnswerResult.mockResolvedValue({
-      status: 'SUCCEEDED', completion: { queryId: 'native-ai-task', content: 'private full answer' },
+      status: 'SUCCEEDED',
+      completion: { queryId: 'native-ai-task', content: 'private full answer' },
     });
-    native.threadResponseRepository.claimNativeAnswer.mockImplementation(async (expected, detail) => {
-      const updated = { ...expected, answerDetail: detail };
-      native.askingService.getResponse.mockResolvedValue(updated);
-      revokeAt = scopeRequests + 1;
-      return updated;
-    });
+    native.threadResponseRepository.claimNativeAnswer.mockImplementation(
+      async (expected, detail) => {
+        const updated = { ...expected, answerDetail: detail };
+        native.askingService.getResponse.mockResolvedValue(updated);
+        revokeAt = scopeRequests + 1;
+        return updated;
+      },
+    );
     const error = jest.spyOn(console, 'error').mockImplementation(() => {});
     try {
       const result = await invoke([]);
-      expect(native.threadResponseRepository.claimNativeAnswer).toHaveBeenCalledTimes(1);
+      expect(
+        native.threadResponseRepository.claimNativeAnswer,
+      ).toHaveBeenCalledTimes(1);
       expect(result.write).not.toHaveBeenCalled();
       expect(native.wrenAIAdaptor.streamTextBasedAnswer).not.toHaveBeenCalled();
-    } finally { error.mockRestore(); }
+    } finally {
+      error.mockRestore();
+    }
   });
   it('a concurrent original response change cannot be overwritten with a terminal result', async () => {
     completion('');
@@ -800,9 +817,15 @@ describe('original answer HTTP identity and conditional history writes', () => {
         request,
         response,
         query,
-        { default: request.url?.startsWith('/api/v1/stream/ask') ? streamAskHandler :
-          request.url?.startsWith('/api/v1/ask') ? askHandler :
-          request.url?.startsWith('/api/v1/generate_summary') ? summaryHandler : handler },
+        {
+          default: request.url?.startsWith('/api/v1/stream/ask')
+            ? streamAskHandler
+            : request.url?.startsWith('/api/v1/ask')
+              ? askHandler
+              : request.url?.startsWith('/api/v1/generate_summary')
+                ? summaryHandler
+                : handler,
+        },
         {} as any,
         false,
       );
@@ -845,7 +868,9 @@ describe('original answer HTTP identity and conditional history writes', () => {
       answerDetail: { queryId: 'current', status: 'STREAMING' },
     });
     native.wrenAIAdaptor.streamTextBasedAnswer.mockReset();
-    native.wrenAIAdaptor.getTextBasedAnswerResult.mockReset().mockResolvedValue({ status: 'SUCCEEDED' });
+    native.wrenAIAdaptor.getTextBasedAnswerResult
+      .mockReset()
+      .mockResolvedValue({ status: 'SUCCEEDED' });
     const update = repository.claimNativeAnswer.bind(repository);
     claim = jest
       .spyOn(repository, 'claimNativeAnswer')
@@ -864,7 +889,10 @@ describe('original answer HTTP identity and conditional history writes', () => {
     async (queryId) => {
       native.wrenAIAdaptor.getTextBasedAnswerResult
         .mockResolvedValueOnce({ status: 'SUCCEEDED' })
-        .mockResolvedValue({ status: 'SUCCEEDED', completion: { queryId: 'current', content: 'original answer' } });
+        .mockResolvedValue({
+          status: 'SUCCEEDED',
+          completion: { queryId: 'current', content: 'original answer' },
+        });
       stream([
         'data: {"message":"original answer"}\n\n',
         'data: {"done":true,"queryId":"current"}\n\n',
@@ -924,7 +952,10 @@ describe('original answer HTTP identity and conditional history writes', () => {
   it('original conditional writer rejects a replacement committed after the last read but before done', async () => {
     native.wrenAIAdaptor.getTextBasedAnswerResult
       .mockResolvedValueOnce({ status: 'SUCCEEDED' })
-      .mockResolvedValue({ status: 'SUCCEEDED', completion: { queryId: 'current', content: '' } });
+      .mockResolvedValue({
+        status: 'SUCCEEDED',
+        completion: { queryId: 'current', content: '' },
+      });
     claim.mockRestore();
     const update = repository.claimNativeAnswer.bind(repository);
     claim = jest
@@ -966,93 +997,209 @@ describe('original answer HTTP identity and conditional history writes', () => {
   );
   it('reads the original complete result after remount without consuming the queue again', async () => {
     native.wrenAIAdaptor.getTextBasedAnswerResult.mockResolvedValue({
-      status: 'SUCCEEDED', completion: { queryId: 'current', content: 'head tail' },
+      status: 'SUCCEEDED',
+      completion: { queryId: 'current', content: 'head tail' },
     });
     const response = await get('current');
-    expect(await response.text()).toBe('data: {"message":"head tail"}\n\ndata: {"done":true}\n\n');
+    expect(await response.text()).toBe(
+      'data: {"message":"head tail"}\n\ndata: {"done":true}\n\n',
+    );
     await closed;
-    expect((await stored()).answerDetail).toMatchObject({ status: 'FINISHED', content: 'head tail', queryId: 'current' });
+    expect((await stored()).answerDetail).toMatchObject({
+      status: 'FINISHED',
+      content: 'head tail',
+      queryId: 'current',
+    });
     expect(native.wrenAIAdaptor.streamTextBasedAnswer).not.toHaveBeenCalled();
   });
   it('persists the complete original result after a tail-only stream without declaring that tail complete', async () => {
     native.wrenAIAdaptor.getTextBasedAnswerResult
       .mockResolvedValueOnce({ status: 'SUCCEEDED' })
-      .mockResolvedValue({ status: 'SUCCEEDED', completion: { queryId: 'current', content: 'head tail' } });
-    stream(['data: {"message":"tail"}\n\ndata: {"done":true,"queryId":"current"}\n\n']);
+      .mockResolvedValue({
+        status: 'SUCCEEDED',
+        completion: { queryId: 'current', content: 'head tail' },
+      });
+    stream([
+      'data: {"message":"tail"}\n\ndata: {"done":true,"queryId":"current"}\n\n',
+    ]);
     const response = await get('current');
     expect(await response.text()).toBe('data: {"message":"tail"}\n\n');
     await closed;
-    expect((await stored()).answerDetail).toMatchObject({ status: 'FINISHED', content: 'head tail' });
+    expect((await stored()).answerDetail).toMatchObject({
+      status: 'FINISHED',
+      content: 'head tail',
+    });
   });
   it('does not manufacture completion from a native done without the same-query full result', async () => {
-    stream(['data: {"message":"partial"}\n\ndata: {"done":true,"queryId":"current"}\n\n']);
+    stream([
+      'data: {"message":"partial"}\n\ndata: {"done":true,"queryId":"current"}\n\n',
+    ]);
     const response = await get('current');
     expect(await response.text()).toBe('data: {"message":"partial"}\n\n');
     await closed;
     expect((await stored()).answerDetail.status).toBe('INTERRUPTED');
   });
-  it.each(['STREAMING', 'INTERRUPTED'])('original GraphQL history recovers %s from complete native result without generation', async (status) => {
-    await repository.updateOne(71, { answerDetail: { queryId: 'current', status, content: 'tail' } });
-    native.wrenAIAdaptor.getTextBasedAnswerResult.mockResolvedValue({
-      status: 'SUCCEEDED', completion: { queryId: 'current', content: 'head tail' },
-    });
-    const detail = await new AskingResolver().getThreadResponseNestedResolver().answerDetail(await stored(), {}, native);
-    expect(detail).toEqual({ queryId: 'current', status: 'FINISHED', content: 'head tail' });
-    expect((await stored()).answerDetail).toEqual(detail);
-    expect(native.wrenAIAdaptor.streamTextBasedAnswer).not.toHaveBeenCalled();
-  });
-  it.each(['missing', 'foreign', 'replacement', 'retired-mode'])('original GraphQL recovery retains the native boundary: %s', async (change) => {
-    if (change === 'missing') native.wrenAIAdaptor.getTextBasedAnswerResult.mockRejectedValue(new Error('native cache expired'));
-    else native.wrenAIAdaptor.getTextBasedAnswerResult.mockImplementation(async () => {
-      if (change === 'replacement') await replace();
-      if (change === 'retired-mode') process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = 'unavailable-new-governed-mode';
-      return { status: 'SUCCEEDED', completion: { queryId: change === 'foreign' ? 'other' : 'current', content: 'head tail' } };
-    });
-    const parent = await stored();
-    const read = new AskingResolver().getThreadResponseNestedResolver().answerDetail(parent, {}, native);
-    if (['replacement', 'retired-mode'].includes(change)) await expect(read).rejects.toBeDefined();
-    else expect(await read).toEqual(parent.answerDetail);
-    expect((await stored()).answerDetail.status).toBe('STREAMING');
-    expect(claim).not.toHaveBeenCalled();
-    expect(native.wrenAIAdaptor.streamTextBasedAnswer).not.toHaveBeenCalled();
-  });
+  it.each(['STREAMING', 'INTERRUPTED'])(
+    'original GraphQL history recovers %s from complete native result without generation',
+    async (status) => {
+      await repository.updateOne(71, {
+        answerDetail: { queryId: 'current', status, content: 'tail' },
+      });
+      native.wrenAIAdaptor.getTextBasedAnswerResult.mockResolvedValue({
+        status: 'SUCCEEDED',
+        completion: { queryId: 'current', content: 'head tail' },
+      });
+      const detail = await new AskingResolver()
+        .getThreadResponseNestedResolver()
+        .answerDetail(await stored(), {}, native);
+      expect(detail).toEqual({
+        queryId: 'current',
+        status: 'FINISHED',
+        content: 'head tail',
+      });
+      expect((await stored()).answerDetail).toEqual(detail);
+      expect(native.wrenAIAdaptor.streamTextBasedAnswer).not.toHaveBeenCalled();
+    },
+  );
+  it.each(['missing', 'foreign', 'replacement', 'retired-mode'])(
+    'original GraphQL recovery retains the native boundary: %s',
+    async (change) => {
+      if (change === 'missing')
+        native.wrenAIAdaptor.getTextBasedAnswerResult.mockRejectedValue(
+          new Error('native cache expired'),
+        );
+      else
+        native.wrenAIAdaptor.getTextBasedAnswerResult.mockImplementation(
+          async () => {
+            if (change === 'replacement') await replace();
+            if (change === 'retired-mode')
+              process.env.WREN_PLATFORM_QUERY_CONFIG_FILE =
+                'unavailable-new-governed-mode';
+            return {
+              status: 'SUCCEEDED',
+              completion: {
+                queryId: change === 'foreign' ? 'other' : 'current',
+                content: 'head tail',
+              },
+            };
+          },
+        );
+      const parent = await stored();
+      const read = new AskingResolver()
+        .getThreadResponseNestedResolver()
+        .answerDetail(parent, {}, native);
+      if (['replacement', 'retired-mode'].includes(change))
+        await expect(read).rejects.toBeDefined();
+      else expect(await read).toEqual(parent.answerDetail);
+      expect((await stored()).answerDetail.status).toBe('STREAMING');
+      expect(claim).not.toHaveBeenCalled();
+      expect(native.wrenAIAdaptor.streamTextBasedAnswer).not.toHaveBeenCalled();
+    },
+  );
 
+  it.each(
+    ['generate_summary', 'ask', 'stream/ask'].flatMap((route) => [
+      { route, complete: true },
+      { route, complete: false },
+    ]),
+  )(
+    'standalone original REST $route requires the full same-query result, complete=$complete',
+    async ({ route, complete }) => {
+      native.projectService.getCurrentProject.mockResolvedValue({
+        id: 7,
+        language: 'EN',
+      });
+      native.deployService.getLastDeployment.mockResolvedValue({
+        hash: 'original',
+        manifest: {},
+      });
+      native.queryService.preview.mockResolvedValue({
+        columns: ['value'],
+        data: [[1]],
+      });
+      native.wrenAIAdaptor.ask.mockResolvedValue({ queryId: 'ask-current' });
+      native.wrenAIAdaptor.getAskResult.mockResolvedValue({
+        status: 'FINISHED',
+        type: 'TEXT_TO_SQL',
+        response: [{ sql: 'SELECT 1' }],
+      });
+      native.wrenAIAdaptor.createTextBasedAnswer
+        .mockReset()
+        .mockResolvedValue({ queryId: 'current' });
+      native.apiHistoryRepository.createOne
+        .mockReset()
+        .mockImplementation(async (value) => ({ id: 'history', ...value }));
+      native.wrenAIAdaptor.getTextBasedAnswerResult
+        .mockResolvedValueOnce({ status: 'SUCCEEDED' })
+        .mockResolvedValue({
+          status: 'SUCCEEDED',
+          ...(complete
+            ? { completion: { queryId: 'current', content: 'full original' } }
+            : {}),
+        });
+      stream([
+        'data: {"message":"full "}\n\n',
+        'data: {"message":"original"}\n\n',
+      ]);
+      const response = await fetch(`${origin}/api/v1/${route}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          question: 'Original question',
+          sql: 'SELECT 1',
+        }),
+      });
+      const body = await response.text();
+      await closed;
+      if (route === 'stream/ask') {
+        expect(response.status).toBe(200); // Original SSE headers precede completion.
+        expect(body.includes('"type":"error"')).toBe(!complete);
+        expect(body.includes('"type":"content_block_stop"')).toBe(complete);
+      } else {
+        expect(response.status).toBe(complete ? 200 : 503);
+        if (complete) expect(JSON.parse(body).summary).toBe('full original');
+      }
+      const recorded =
+        native.apiHistoryRepository.createOne.mock.calls.at(-1)[0];
+      if (complete)
+        expect(recorded.responsePayload.summary).toBe('full original');
+      else expect(recorded.statusCode).not.toBe(200);
+      expect(native.wrenAIAdaptor.createTextBasedAnswer).toHaveBeenCalledTimes(
+        1,
+      );
+    },
+  );
   it.each(['generate_summary', 'ask', 'stream/ask'].flatMap((route) => [
-    { route, complete: true }, { route, complete: false },
-  ]))('standalone original REST $route requires the full same-query result, complete=$complete', async ({ route, complete }) => {
-    native.projectService.getCurrentProject.mockResolvedValue({ id: 7, language: 'EN' });
+    { route, change: 'mode' }, { route, change: 'project' },
+  ]))('standalone original REST $route fences $change changed during current-project read', async ({ route, change }) => {
     native.deployService.getLastDeployment.mockResolvedValue({ hash: 'original', manifest: {} });
-    native.queryService.preview.mockResolvedValue({ columns: ['value'], data: [[1]] });
+    native.queryService.preview.mockResolvedValue({ columns: [], data: [] });
     native.wrenAIAdaptor.ask.mockResolvedValue({ queryId: 'ask-current' });
     native.wrenAIAdaptor.getAskResult.mockResolvedValue({ status: 'FINISHED', type: 'TEXT_TO_SQL', response: [{ sql: 'SELECT 1' }] });
     native.wrenAIAdaptor.createTextBasedAnswer.mockReset().mockResolvedValue({ queryId: 'current' });
     native.apiHistoryRepository.createOne.mockReset().mockImplementation(async (value) => ({ id: 'history', ...value }));
-    native.wrenAIAdaptor.getTextBasedAnswerResult
-      .mockResolvedValueOnce({ status: 'SUCCEEDED' })
-      .mockResolvedValue({ status: 'SUCCEEDED', ...(complete ? { completion: { queryId: 'current', content: 'full original' } } : {}) });
-    stream(['data: {"message":"full "}\n\n', 'data: {"message":"original"}\n\n']);
+    native.wrenAIAdaptor.getTextBasedAnswerResult.mockResolvedValue({ status: 'SUCCEEDED', completion: { queryId: 'current', content: 'private full' } });
+    native.projectService.getCurrentProject.mockImplementation(async () => {
+      const hasStarted = native.wrenAIAdaptor.getTextBasedAnswerResult.mock.calls.length > 0;
+      await Promise.resolve();
+      if (hasStarted && change === 'mode') process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = 'new-mode-after-read';
+      return { id: hasStarted && change === 'project' ? 8 : 7, language: 'EN' };
+    });
+    stream(['data: {"message":"private full"}\n\n']);
     const response = await fetch(`${origin}/api/v1/${route}`, {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ question: 'Original question', sql: 'SELECT 1' }),
     });
     const body = await response.text();
     await closed;
-    if (route === 'stream/ask') {
-      expect(response.status).toBe(200); // Original SSE headers precede completion.
-      expect(body.includes('"type":"error"')).toBe(!complete);
-      expect(body.includes('"type":"content_block_stop"')).toBe(complete);
-    } else {
-      expect(response.status).toBe(complete ? 200 : 503);
-      if (complete) expect(JSON.parse(body).summary).toBe('full original');
-    }
-    const recorded = native.apiHistoryRepository.createOne.mock.calls.at(-1)[0];
-    if (complete) expect(recorded.responsePayload.summary).toBe('full original');
-    else expect(recorded.statusCode).not.toBe(200);
+    expect(body).not.toContain('private full');
+    if (route === 'stream/ask') expect(body).toContain('"type":"error"');
+    else expect(response.status).toBe(503);
+    expect(native.apiHistoryRepository.createOne.mock.calls.every(([value]) => value.statusCode !== 200)).toBe(true);
     expect(native.wrenAIAdaptor.createTextBasedAnswer).toHaveBeenCalledTimes(1);
   });
 
 });
-
 
 describe('original answer result HTTP adaptor', () => {
   let server: Server, origin: string;
@@ -1062,29 +1209,50 @@ describe('original answer result HTTP adaptor', () => {
       expect(req.method).toBe('GET');
       expect(req.url).toBe('/v1/sql-answers/original-query');
       res.setHeader('Content-Type', 'application/json');
-      res.end(JSON.stringify({ status: 'succeeded', num_rows_used_in_llm: 2, completion }));
+      res.end(
+        JSON.stringify({
+          status: 'succeeded',
+          num_rows_used_in_llm: 2,
+          completion,
+        }),
+      );
     });
-    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    await new Promise<void>((resolve) =>
+      server.listen(0, '127.0.0.1', resolve),
+    );
     origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   });
-  afterAll(async () => { await new Promise<void>((resolve) => {
-    server.close(() => resolve()); server.closeAllConnections();
-  }); });
+  afterAll(async () => {
+    await new Promise<void>((resolve) => {
+      server.close(() => resolve());
+      server.closeAllConnections();
+    });
+  });
   it.each([
     undefined,
     { query_id: 'foreign-query', content: 'foreign' },
     { query_id: 'original-query', content: 1 },
     { query_id: 'original-query', content: 'incomplete', extra: true },
-  ])('does not create completion from invalid original GET result %j', async (value) => {
-    completion = value;
-    const result = await new WrenAIAdaptor({ wrenAIBaseEndpoint: origin }).getTextBasedAnswerResult('original-query');
-    expect(result.status).toBe('SUCCEEDED');
-    expect(result.completion).toBeUndefined();
-  });
+  ])(
+    'does not create completion from invalid original GET result %j',
+    async (value) => {
+      completion = value;
+      const result = await new WrenAIAdaptor({
+        wrenAIBaseEndpoint: origin,
+      }).getTextBasedAnswerResult('original-query');
+      expect(result.status).toBe('SUCCEEDED');
+      expect(result.completion).toBeUndefined();
+    },
+  );
   it('returns the exact original completed body without treating preprocessing SUCCEEDED itself as done', async () => {
     completion = { query_id: 'original-query', content: '完整原结果' };
-    const result = await new WrenAIAdaptor({ wrenAIBaseEndpoint: origin }).getTextBasedAnswerResult('original-query');
-    expect(result.completion).toEqual({ queryId: 'original-query', content: '完整原结果' });
+    const result = await new WrenAIAdaptor({
+      wrenAIBaseEndpoint: origin,
+    }).getTextBasedAnswerResult('original-query');
+    expect(result.completion).toEqual({
+      queryId: 'original-query',
+      content: '完整原结果',
+    });
     expect(result.numRowsUsedInLLM).toBe(2);
   });
 });

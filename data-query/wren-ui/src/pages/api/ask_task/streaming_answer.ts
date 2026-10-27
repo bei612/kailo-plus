@@ -82,24 +82,37 @@ export default async function handler(
       )
         throw new NativeQueryRefusal(409, 'NATIVE_OBJECT_CHANGED');
       if (bound)
-        await new AskingResolver().authorizeNativeAnswerDetail(expected, context, bound);
+        await new AskingResolver().authorizeNativeAnswerDetail(
+          expected,
+          context,
+          bound,
+        );
       if (isGovernedQueryMode() !== bound)
         throw new NativeQueryRefusal(412, 'QUERY_ADMISSION_UNAVAILABLE');
     };
     await authorize();
     const readCompletion = async () => {
       let observed;
-      try { observed = await wrenAIAdaptor.getTextBasedAnswerResult(queryId); }
-      catch { /* Unavailable result remains unknown. */ }
+      try {
+        observed = await wrenAIAdaptor.getTextBasedAnswerResult(queryId);
+      } catch {
+        /* Unavailable result remains unknown. */
+      }
       await authorize();
-      return observed?.status === TextBasedAnswerStatus.SUCCEEDED && !observed.error &&
+      return observed?.status === TextBasedAnswerStatus.SUCCEEDED &&
+        !observed.error &&
         observed?.completion?.queryId === queryId &&
-        typeof observed.completion.content === 'string' ? observed.completion : undefined;
+        typeof observed.completion.content === 'string'
+        ? observed.completion
+        : undefined;
     };
     const persistCompletion = async (content: string) => {
-      const finished = await components.threadResponseRepository.claimNativeAnswer(response, {
-        ...response.answerDetail, status: ThreadResponseAnswerStatus.FINISHED, content,
-      });
+      const finished =
+        await components.threadResponseRepository.claimNativeAnswer(response, {
+          ...response.answerDetail,
+          status: ThreadResponseAnswerStatus.FINISHED,
+          content,
+        });
       if (!finished) throw new NativeQueryRefusal(409, 'NATIVE_OBJECT_CHANGED');
       await authorize(finished);
     };
@@ -154,7 +167,8 @@ export default async function handler(
           event.queryId === queryId
         ) {
           const complete = await readCompletion();
-          if (!complete) throw new NativeQueryRefusal(503, 'NATIVE_EXECUTION_UNKNOWN');
+          if (!complete)
+            throw new NativeQueryRefusal(503, 'NATIVE_EXECUTION_UNKNOWN');
           await persistCompletion(complete.content);
           completed = true;
           if (!complete.content.startsWith(content)) {
@@ -164,7 +178,8 @@ export default async function handler(
             return;
           }
           const remainder = complete.content.slice(content.length);
-          if (remainder) res.write(`data: ${JSON.stringify({ message: remainder })}\n\n`);
+          if (remainder)
+            res.write(`data: ${JSON.stringify({ message: remainder })}\n\n`);
           res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
           res.end();
           telemetry?.sendEvent(TelemetryEvent.HOME_ANSWER_QUESTION, {

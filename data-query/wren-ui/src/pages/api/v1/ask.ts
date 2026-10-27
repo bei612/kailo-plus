@@ -294,7 +294,8 @@ export default async function handler(
 
       await streamPromise;
       const completed = await wrenAIAdaptor.getTextBasedAnswerResult(summaryTask.queryId);
-      if (isGovernedQueryMode() || (await projectService.getCurrentProject()).id !== project.id ||
+      const currentProject = await projectService.getCurrentProject();
+        if (isGovernedQueryMode() || currentProject.id !== project.id ||
           completed?.status !== TextBasedAnswerStatus.SUCCEEDED || completed.error ||
           completed.completion?.queryId !== summaryTask.queryId || typeof completed.completion.content !== 'string') {
         throw new ApiError('Original summary completion unavailable', 503);
