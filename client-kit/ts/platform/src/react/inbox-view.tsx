@@ -398,6 +398,8 @@ export function InboxView<T extends InboxViewRow>({
               state.setSelectedReminderId(id);
             }}
             needsAction={needsAction ? {
+              status: needsAction.status,
+              refresh: needsAction.refresh,
               items: visibleNeedsAction,
               available: true,
               selectedKey: selectedNeedsActionKey,
@@ -412,6 +414,8 @@ export function InboxView<T extends InboxViewRow>({
               },
             } : undefined}
             componentNotifications={componentNotifications ? {
+              status: componentNotifications.source.status,
+              refresh: componentNotifications.source.refresh,
               items: visibleComponentNotifications,
               isRead: componentNotifications.source.isRead,
               onOpen: componentNotifications.onOpen,
