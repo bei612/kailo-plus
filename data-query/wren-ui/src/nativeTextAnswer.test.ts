@@ -365,11 +365,15 @@ describe('original native text-answer result consumers', () => {
             'data: {"message":"allowed"}\n\ndata: {"done":true,"queryId":"native-ai-task"}\n\n',
           ),
         ]);
-        expect(native.threadResponseRepository.claimNativeAnswer).not.toHaveBeenCalled();
+        expect(
+          native.threadResponseRepository.claimNativeAnswer,
+        ).not.toHaveBeenCalled();
         expect(result.write.mock.calls.map(([value]) => value).join('')).toBe(
           at === 1 ? '' : 'data: {"message":"allowed"}\n\n',
         );
-        expect(native.wrenAIAdaptor.streamTextBasedAnswer).toHaveBeenCalledTimes(at === 1 ? 0 : 1);
+        expect(
+          native.wrenAIAdaptor.streamTextBasedAnswer,
+        ).toHaveBeenCalledTimes(at === 1 ? 0 : 1);
         expect(scopeRequests).toBe(at);
         expect(authorize).toHaveBeenCalledTimes(at);
       } finally {
@@ -386,7 +390,10 @@ describe('original native text-answer result consumers', () => {
           delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
           delete process.env.WREN_PLATFORM_BINDING_CONFIG_FILE;
         } else {
-          process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = join(directory, 'query.json');
+          process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = join(
+            directory,
+            'query.json',
+          );
         }
         yield Buffer.from(
           'data: {"message":"private"}\n\ndata: {"done":true,"queryId":"native-ai-task"}\n\n',
@@ -396,9 +403,15 @@ describe('original native text-answer result consumers', () => {
       try {
         const result = await invoke(frames());
         expect(result.write).not.toHaveBeenCalled();
-        expect(native.threadResponseRepository.claimNativeAnswer).not.toHaveBeenCalled();
-        expect(native.askingService.changeThreadResponseAnswerDetailStatus).not.toHaveBeenCalled();
-        expect(native.wrenAIAdaptor.streamTextBasedAnswer).toHaveBeenCalledTimes(1);
+        expect(
+          native.threadResponseRepository.claimNativeAnswer,
+        ).not.toHaveBeenCalled();
+        expect(
+          native.askingService.changeThreadResponseAnswerDetailStatus,
+        ).not.toHaveBeenCalled();
+        expect(
+          native.wrenAIAdaptor.streamTextBasedAnswer,
+        ).toHaveBeenCalledTimes(1);
         expect(scopeRequests).toBe(governed ? 1 : 0);
         expect(authorize).toHaveBeenCalledTimes(governed ? 1 : 0);
       } finally {
