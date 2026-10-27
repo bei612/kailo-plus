@@ -766,15 +766,15 @@ describe('original native planning HTTP stream and HUMAN task owner', () => {
   it('governed REST explanation rechecks mode after its last real metadata authorization', async () => {
     const originalRead = ModelResolver.prototype.getMDL;
     let afterOpen = 0;
-    const read = jest.spyOn(ModelResolver.prototype, 'getMDL').mockImplementation(
-      async function (...args) {
+    const read = jest
+      .spyOn(ModelResolver.prototype, 'getMDL')
+      .mockImplementation(async function (...args) {
         const result = await originalRead.apply(this, args);
         // readNativeAskHistory performs two real metadata authorizations. This
         // retires the mode after its final reader, before the caller resumes.
         if (nativeStream.mock.calls.length && ++afterOpen === 2) standalone();
         return result;
-      },
-    );
+      });
     try {
       expect(await (await explanation()).text()).toBe('');
       expect(afterOpen).toBe(2);
