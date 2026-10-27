@@ -188,7 +188,7 @@ describe('original native text-answer result consumers', () => {
     else process.env.WREN_PLATFORM_BINDING_CONFIG_FILE = originalBinding;
     expect(wireErrors).toEqual([]);
   });
-  const invoke = async (chunks: Buffer[]) => {
+  const invoke = async (chunks: Iterable<Buffer>) => {
     native.wrenAIAdaptor.streamTextBasedAnswer.mockResolvedValue(
       Readable.from(chunks),
     );
@@ -342,6 +342,65 @@ describe('original native text-answer result consumers', () => {
         expect(
           native.wrenAIAdaptor.streamTextBasedAnswer,
         ).toHaveBeenCalledTimes(at === 1 ? 0 : 1);
+      } finally {
+        error.mockRestore();
+      }
+    },
+  );
+  it.each([1, 3])(
+    'rejects governed answer mode retirement during disclosure %s',
+    async (at) => {
+      let reads = 0;
+      authorize.mockImplementation(async () => {
+        if (++reads === at) {
+          delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+          delete process.env.WREN_PLATFORM_BINDING_CONFIG_FILE;
+        }
+        return record;
+      });
+      const error = jest.spyOn(console, 'error').mockImplementation(() => {});
+      try {
+        const result = await invoke([
+          Buffer.from(
+            'data: {"message":"allowed"}\n\ndata: {"done":true,"queryId":"native-ai-task"}\n\n',
+          ),
+        ]);
+        expect(native.threadResponseRepository.claimNativeAnswer).not.toHaveBeenCalled();
+        expect(result.write.mock.calls.map(([value]) => value).join('')).toBe(
+          at === 1 ? '' : 'data: {"message":"allowed"}\n\n',
+        );
+        expect(native.wrenAIAdaptor.streamTextBasedAnswer).toHaveBeenCalledTimes(at === 1 ? 0 : 1);
+        expect(scopeRequests).toBe(at);
+        expect(authorize).toHaveBeenCalledTimes(at);
+      } finally {
+        error.mockRestore();
+      }
+    },
+  );
+  it.each([false, true])(
+    'rejects answer mode changes before the next frame, originally governed=%s',
+    async (governed) => {
+      if (!governed) delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+      function* frames() {
+        if (governed) {
+          delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+          delete process.env.WREN_PLATFORM_BINDING_CONFIG_FILE;
+        } else {
+          process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = join(directory, 'query.json');
+        }
+        yield Buffer.from(
+          'data: {"message":"private"}\n\ndata: {"done":true,"queryId":"native-ai-task"}\n\n',
+        );
+      }
+      const error = jest.spyOn(console, 'error').mockImplementation(() => {});
+      try {
+        const result = await invoke(frames());
+        expect(result.write).not.toHaveBeenCalled();
+        expect(native.threadResponseRepository.claimNativeAnswer).not.toHaveBeenCalled();
+        expect(native.askingService.changeThreadResponseAnswerDetailStatus).not.toHaveBeenCalled();
+        expect(native.wrenAIAdaptor.streamTextBasedAnswer).toHaveBeenCalledTimes(1);
+        expect(scopeRequests).toBe(governed ? 1 : 0);
+        expect(authorize).toHaveBeenCalledTimes(governed ? 1 : 0);
       } finally {
         error.mockRestore();
       }
