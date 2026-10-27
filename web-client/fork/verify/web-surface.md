@@ -7174,7 +7174,6 @@ CI 原件位于 `/volumes/data/kailo/verification/composer-recovery/` 对应固�
 不等于真实浏览器、设备或生产上传验收；原 React act 与 linkify 警告保留，
 最终没有未处理测试错误。本批未执行 Native 套件、全 Web 项目门禁、制品发布或部署。
 
-
 ### 2026-10-27：普通 GIF 草稿保存、恢复与 Inbox 发送
 
 关联 DD-74、DD-125(5)(11)、DD-146 与 SF-BUZ-56(4)。固定最终源码为
