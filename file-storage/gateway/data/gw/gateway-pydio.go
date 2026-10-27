@@ -36,6 +36,7 @@ import (
 
 	"github.com/pydio/cells/v5/common"
 	cellauth "github.com/pydio/cells/v5/common/auth"
+	"github.com/pydio/cells/v5/common/auth/claim"
 	"github.com/pydio/cells/v5/common/errors"
 	"github.com/pydio/cells/v5/common/nodes"
 	"github.com/pydio/cells/v5/common/nodes/compose"
@@ -354,10 +355,15 @@ func (l *pydioObjects) GetObjectNInfo(ctx context.Context, bucket, object string
 		// MinIO can send HTTP success headers, including a zero-byte response.
 		// Only this request holds the bounded content; there is no result store.
 		var body bytes.Buffer
-		if err := l.GetObject(ctx, bucket, object, startOffset, length, &body, objInfo.ETag, opts); err != nil {
+		var disclose func() error
+		if err := l.getObject(ctx, bucket, object, startOffset, length, &body, objInfo.ETag, opts, &disclose); err != nil {
 			return nil, pydioToMinioError(err, bucket, object)
 		}
-		return minio.NewGetObjectReaderFromReader(bytes.NewReader(body.Bytes()), objInfo, minio.ObjectOptions{}, func() {})
+		if disclose == nil {
+			return nil, pydioToMinioError(errors.WithStack(errors.StatusForbidden), bucket, object)
+		}
+		reader := &nativeDownloadReader{body: bytes.NewReader(body.Bytes()), fresh: disclose}
+		return minio.NewGetObjectReaderFromReader(reader, objInfo, minio.ObjectOptions{}, func() {})
 	}
 
 	pr, pw := io.Pipe()
@@ -382,6 +388,12 @@ func (l *pydioObjects) GetObjectNInfo(ctx context.Context, bucket, object string
 // startOffset indicates the starting read location of the object.
 // length indicates the total length of the object.
 func (l *pydioObjects) GetObject(ctx context.Context, bucket string, key string, startOffset int64, length int64, writer io.Writer, tag string, opts minio.ObjectOptions) error {
+	return l.getObject(ctx, bucket, key, startOffset, length, writer, tag, opts, nil)
+}
+
+// The optional disclosure check stays in this request; it never reopens the
+// object or issues another read execution after its original receipt.
+func (l *pydioObjects) getObject(ctx context.Context, bucket string, key string, startOffset int64, length int64, writer io.Writer, tag string, opts minio.ObjectOptions, disclose *func() error) error {
 
 	// log.Println("[GetObject] From Router", bucket, key, startOffset, length)
 
@@ -405,39 +417,57 @@ func (l *pydioObjects) GetObject(ctx context.Context, bucket string, key string,
 		if startOffset != 0 || opts.VersionID != read.Input["nativeRevision"] {
 			return errors.WithStack(errors.StatusForbidden)
 		}
-		// Resolve every native identity through the original ACL router. A URL
-		// for an old path cannot turn the signed node into a different object.
-		identities := compose.UuidClient()
-		root, rootErr := identities.ReadNode(ctx, &tree.ReadNodeRequest{Node: &tree.Node{Uuid: read.Delivery.NativeRootRef}})
-		admitted, admittedErr := identities.ReadNode(ctx, &tree.ReadNodeRequest{Node: &tree.Node{Uuid: read.Target["nativeRef"].(string)}})
-		member, memberErr := identities.ReadNode(ctx, &tree.ReadNodeRequest{Node: &tree.Node{Uuid: read.Input["nativeObjectRef"].(string)}})
-		target, targetErr := l.Router.ReadNode(ctx, &tree.ReadNodeRequest{Node: &tree.Node{Path: path}})
-		r, a, n, m := root.GetNode(), admitted.GetNode(), target.GetNode(), member.GetNode()
-		if rootErr != nil || admittedErr != nil || targetErr != nil || memberErr != nil || r.GetUuid() != read.Delivery.NativeRootRef || r.GetType() != tree.NodeType_COLLECTION ||
-			a.GetUuid() != read.Target["nativeRef"] || n.GetUuid() != read.Input["nativeObjectRef"] || n.GetType() != tree.NodeType_LEAF || n.GetPath() != path ||
-			m.GetUuid() != n.GetUuid() || m.GetType() != tree.NodeType_LEAF || r.GetPath() == "" || m.GetPath() == "" ||
-			pathutil.Clean(r.GetPath()) != r.GetPath() || pathutil.Clean(a.GetPath()) != a.GetPath() || pathutil.Clean(m.GetPath()) != m.GetPath() || pathutil.Clean(path) != path ||
-			strings.ContainsAny(path+r.GetPath()+a.GetPath()+m.GetPath(), "\\\x00\r\n") || pathutil.Base(path) != read.Input["displayName"] || n.GetStringMeta(common.MetaNamespaceMime) != read.Input["mediaType"] ||
-			(a.GetUuid() != r.GetUuid() && !strings.HasPrefix(a.GetPath(), r.GetPath()+"/")) ||
-			(m.GetUuid() != a.GetUuid() && (a.GetType() != tree.NodeType_COLLECTION || !strings.HasPrefix(m.GetPath(), a.GetPath()+"/"))) {
-			return errors.WithStack(errors.StatusForbidden)
+		// Resolve every frozen identity again at each later disclosure.
+		resolve := func() (*tree.Node, error) {
+			identities := compose.UuidClient()
+			root, rootErr := identities.ReadNode(ctx, &tree.ReadNodeRequest{Node: &tree.Node{Uuid: read.Delivery.NativeRootRef}})
+			admitted, admittedErr := identities.ReadNode(ctx, &tree.ReadNodeRequest{Node: &tree.Node{Uuid: read.Target["nativeRef"].(string)}})
+			member, memberErr := identities.ReadNode(ctx, &tree.ReadNodeRequest{Node: &tree.Node{Uuid: read.Input["nativeObjectRef"].(string)}})
+			target, targetErr := l.Router.ReadNode(ctx, &tree.ReadNodeRequest{Node: &tree.Node{Path: path}})
+			r, a, n, m := root.GetNode(), admitted.GetNode(), target.GetNode(), member.GetNode()
+			if rootErr != nil || admittedErr != nil || targetErr != nil || memberErr != nil || r.GetUuid() != read.Delivery.NativeRootRef || r.GetType() != tree.NodeType_COLLECTION ||
+				a.GetUuid() != read.Target["nativeRef"] || n.GetUuid() != read.Input["nativeObjectRef"] || n.GetType() != tree.NodeType_LEAF || n.GetPath() != path ||
+				m.GetUuid() != n.GetUuid() || m.GetType() != tree.NodeType_LEAF || r.GetPath() == "" || m.GetPath() == "" ||
+				pathutil.Clean(r.GetPath()) != r.GetPath() || pathutil.Clean(a.GetPath()) != a.GetPath() || pathutil.Clean(m.GetPath()) != m.GetPath() || pathutil.Clean(path) != path ||
+				strings.ContainsAny(path+r.GetPath()+a.GetPath()+m.GetPath(), "\\\x00\r\n") || pathutil.Base(path) != read.Input["displayName"] || n.GetStringMeta(common.MetaNamespaceMime) != read.Input["mediaType"] ||
+				(a.GetUuid() != r.GetUuid() && !strings.HasPrefix(a.GetPath(), r.GetPath()+"/")) ||
+				(m.GetUuid() != a.GetUuid() && (a.GetType() != tree.NodeType_COLLECTION || !strings.HasPrefix(m.GetPath(), a.GetPath()+"/"))) {
+				return nil, errors.WithStack(errors.StatusForbidden)
+			}
+			return n, nil
+		}
+		n, err := resolve()
+		if err != nil {
+			return err
+		}
+		fresh := func() error {
+			if _, err := resolve(); err != nil {
+				return err
+			}
+			current, ok := claim.FromContext(ctx)
+			if !ok {
+				return errors.WithStack(errors.StatusForbidden)
+			}
+			_, err := cellauth.ResolveNativeUser(ctx, current.Subject)
+			return err
+		}
+		if disclose != nil {
+			*disclose = func() error {
+				if read.IsHumanSynchronous() {
+					if err := read.ObserveCompletedHumanRead(ctx); err != nil {
+						return err
+					}
+				} else if err := read.Fresh(ctx, "execute"); err != nil {
+					return err
+				}
+				return fresh()
+			}
 		}
 		open := func() (io.ReadCloser, error) {
 			return l.Router.GetObject(ctx, n, &models.GetRequestData{StartOffset: 0, Length: length, VersionId: opts.VersionID})
 		}
 		if read.IsHumanSynchronous() {
-			return jobstore.CopyNativeHumanRead(ctx, read, length, writer, open, func() error {
-				fresh, err := l.Router.ReadNode(ctx, &tree.ReadNodeRequest{Node: &tree.Node{Path: path}})
-				if err != nil || fresh.GetNode().GetUuid() != n.GetUuid() || fresh.GetNode().GetType() != tree.NodeType_LEAF {
-					return errors.WithStack(errors.StatusForbidden)
-				}
-				user, userErr := read.Delivery.User(read.Delivery.TenantID, read.Claims["actor_principal_id"].(string), "HUMAN")
-				if userErr != nil {
-					return userErr
-				}
-				_, err = cellauth.ResolveNativeUser(ctx, user)
-				return err
-			})
+			return jobstore.CopyNativeHumanRead(ctx, read, length, writer, open, fresh)
 		}
 		return jobstore.CopyNativeRead(ctx, read, length, writer, open)
 	}

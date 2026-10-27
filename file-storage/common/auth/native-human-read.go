@@ -210,8 +210,18 @@ func (read *NativeReadExecution) CompleteHumanRead(ctx context.Context, receipt 
 	if err != nil || len(answer) != 2 || answer["operationId"] != read.Claims["operation_id"] || answer["receiptDigest"] != digest {
 		return refused
 	}
-	// Recheck HUMAN membership/binding/resource after durable usage settlement.
-	// This is metadata observation, never a second file read or ticket issuance.
+	return read.ObserveCompletedHumanRead(ctx)
+}
+
+// ObserveCompletedHumanRead reuses the original completed-AE observation for
+// later disclosure of this request's bounded bytes. Core rechecks the current
+// HUMAN, binding, target and result-exposure permission; COMPLETED alone is
+// not authority. This never submits a command or repeats usage settlement.
+func (read *NativeReadExecution) ObserveCompletedHumanRead(ctx context.Context) error {
+	refused := errors.WithStack(errors.StatusForbidden)
+	if !read.IsHumanSynchronous() {
+		return refused
+	}
 	observed, found, err := read.Delivery.HumanAction(ctx, read.humanToken, map[string]interface{}{"idempotencyKey": read.Key})
 	if err != nil || !found || observed["terminalStatus"] != "COMPLETED" || observed["readAdmission"] != nil {
 		return refused
