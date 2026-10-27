@@ -315,7 +315,7 @@ describe('original native planning HTTP stream and HUMAN task owner', () => {
   let server: Server, endpoint: string, task: any, ctx: any, revoked: boolean;
   let history: any, generation: number;
   let nativeStream: jest.Mock;
-  const queryId = randomUUID();
+  const queryId: string = randomUUID();
   const originalDelivery = process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
   const originalBinding = process.env.WREN_PLATFORM_BINDING_CONFIG_FILE;
   const originalComponents = { ...components };
@@ -646,9 +646,7 @@ describe('original native planning HTTP stream and HUMAN task owner', () => {
   it.each(['', 'full result'])(
     'GENERAL GraphQL observes full %j after persisted classification without another Ask',
     async (content) => {
-      components.askingService[
-        'askingTaskTracker'
-      ].getAskingResult.mockResolvedValue({
+      jest.mocked(components.askingService['askingTaskTracker'].getAskingResult).mockResolvedValue({
         ...general(),
         queryId,
         projectId: project.id,
@@ -672,7 +670,7 @@ describe('original native planning HTTP stream and HUMAN task owner', () => {
     'GENERAL GraphQL withholds full result after %s changes during GET',
     async (change) => {
       const tracker = components.askingService['askingTaskTracker'];
-      tracker.getAskingResult.mockImplementation(async () => ({
+      jest.mocked(tracker.getAskingResult).mockImplementation(async () => ({
         ...general(),
         queryId,
         projectId: task.projectId,
@@ -1181,12 +1179,13 @@ describe('original standalone REST explanation HTTP and history consumers', () =
     jest.mocked(loadQueryDelivery).mockClear();
     jest.mocked(bindingServiceCall).mockClear();
     ask = jest.fn(async () => ({ queryId }));
-    stream = jest.fn(async () =>
-      Readable.from([
+    stream = jest.fn(async () => {
+      jest.mocked(components.wrenAIAdaptor.getAskResult).mockResolvedValue({status: AskResultStatus.FINISHED,type:AskResultType.GENERAL,completion:{queryId,content:'Original REST explanation'}});
+      return Readable.from([
         'data: {"message":"Original REST explanation"}\n\n',
         `data: ${JSON.stringify({ done: true, queryId })}\n\n`,
-      ]),
-    );
+      ]);
+    });
     jest
       .mocked(originalHistoryWriter.createOne)
       .mockImplementation((input) => repository.createOne(input));

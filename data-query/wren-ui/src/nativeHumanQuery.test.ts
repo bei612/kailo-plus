@@ -6856,7 +6856,9 @@ describe('native saved-view HUMAN query consumer', () => {
           ).toBe(content);
           expect(askCreate).toHaveBeenCalledTimes(1);
           expect(askStream).toHaveBeenCalledTimes(1);
-          noExecution();
+          expect(direct).not.toHaveBeenCalled();
+          expect(summaryCreate).not.toHaveBeenCalled();
+          expect(calls.mock.calls.every((call) => !call[2].command)).toBe(true);
         },
       );
       it.each(['missing', 'foreign', 'different', 'verified', 'revoked'])(
@@ -6876,7 +6878,7 @@ describe('native saved-view HUMAN query consumer', () => {
           if (mode === 'different') askResult.completion.content = 'different';
           if (mode === 'revoked') {
             askGet.mockImplementation(async () => {
-              revoked = true;
+              calls.mockRejectedValue(new NativeQueryRefusal(403,'QUERY_SCOPE_DENIED'));
               return structuredClone(askResult);
             });
           }
