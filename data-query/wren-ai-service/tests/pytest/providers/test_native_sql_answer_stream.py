@@ -776,7 +776,15 @@ class NativeSqlAnswerStream(unittest.IsolatedAsyncioTestCase):
                         identifier,
                     )
                     self.assertEqual(pipeline._user_queues[identifier].qsize(), 1)
-                    await pipeline.run(
+                    pipeline._pipe.execute.return_value = {name: {
+                        "replies": [identifier], "meta": [{"finish_reason": "stop"}]
+                    }}
+                    expected = ask_module.AskResultResponse(
+                        status="finished", type="GENERAL", general_type=general_type
+                    )
+                    service._ask_results[identifier] = expected
+                    await service._generate_general(
+                        name, expected,
                         query="question",
                         language="Chinese",
                         query_id=identifier,
@@ -785,9 +793,6 @@ class NativeSqlAnswerStream(unittest.IsolatedAsyncioTestCase):
                             if name != "user_guide_assistance"
                             else {}
                         ),
-                    )
-                    service._ask_results[identifier] = types.SimpleNamespace(
-                        type="GENERAL", general_type=general_type
                     )
 
                 async def read(identifier):
@@ -835,8 +840,8 @@ class NativeSqlAnswerStream(unittest.IsolatedAsyncioTestCase):
                     )
                 self.assertEqual(pipeline._user_queues["first"].qsize(), 1)
                 service = ask_module.AskService({name: pipeline})
-                service._ask_results["first"] = types.SimpleNamespace(
-                    type="GENERAL", general_type=general_type
+                service._ask_results["first"] = ask_module.AskResultResponse(
+                    status="finished", type="GENERAL", general_type=general_type
                 )
 
                 async def timeout(awaitable, **kwargs):
