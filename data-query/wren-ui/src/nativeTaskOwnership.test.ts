@@ -17,17 +17,26 @@ import {
 import { components } from './common';
 import planningStreamHandler from './pages/api/ask_task/streaming';
 import explanationStreamHandler from './pages/api/v1/stream_explanation';
-import { ApiHistoryRepository, ApiType } from './apollo/server/repositories/apiHistoryRepository';
+import {
+  ApiHistoryRepository,
+  ApiType,
+} from './apollo/server/repositories/apiHistoryRepository';
 import generateSqlHandler from './pages/api/v1/generate_sql';
 import streamGenerateSqlHandler from './pages/api/v1/stream/generate_sql';
-import { encodeKailoUser, KAILO_USER_HEADER, KAILO_SERVICE_HEADER } from './utils/kailoUser';
+import {
+  encodeKailoUser,
+  KAILO_USER_HEADER,
+  KAILO_SERVICE_HEADER,
+} from './utils/kailoUser';
 import { nativePreviewScope } from './apollo/server/services/nativeHumanQuery';
 import { Readable } from 'stream';
 import { createServer, Server } from 'http';
 import { AddressInfo } from 'net';
 import { apiResolver } from 'next/dist/server/api-utils/node/api-resolver';
 
-jest.mock('./common', () => ({ components: { apiHistoryRepository: { createOne: jest.fn() } } }));
+jest.mock('./common', () => ({
+  components: { apiHistoryRepository: { createOne: jest.fn() } },
+}));
 
 // apiUtils captures the original repository at module initialization. Forward
 // its existing writer to the real test database without changing the product.
@@ -895,18 +904,38 @@ describe('original standalone REST explanation HTTP and history consumers', () =
   const savedQuery = process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
   const savedBinding = process.env.WREN_PLATFORM_BINDING_CONFIG_FILE;
   const user = {
-    key: 'a'.repeat(64), name: 'Original member', username: null,
-    email: null, picture: null, locale: null, admin: false,
+    key: 'a'.repeat(64),
+    name: 'Original member',
+    username: null,
+    email: null,
+    picture: null,
+    locale: null,
+    admin: false,
   };
   const userHeaders = { [KAILO_USER_HEADER]: encodeKailoUser(user) };
   const serviceHeaders = { [KAILO_SERVICE_HEADER]: '1' };
-  const read = (headers: Record<string, string> = userHeaders, method = 'GET') =>
-    fetch(`${origin}/api/v1/stream_explanation?queryId=${queryId}`, { method, headers });
-  const create = async (streaming = false, headers: Record<string, string> = userHeaders) => {
-    const response = await fetch(`${origin}/api/v1/${streaming ? 'stream/' : ''}generate_sql`, {
-      method: 'POST', headers: { ...headers, 'content-type': 'application/json' },
-      body: JSON.stringify({ question: 'What can this original project answer?' }),
+  const read = (
+    headers: Record<string, string> = userHeaders,
+    method = 'GET',
+  ) =>
+    fetch(`${origin}/api/v1/stream_explanation?queryId=${queryId}`, {
+      method,
+      headers,
     });
+  const create = async (
+    streaming = false,
+    headers: Record<string, string> = userHeaders,
+  ) => {
+    const response = await fetch(
+      `${origin}/api/v1/${streaming ? 'stream/' : ''}generate_sql`,
+      {
+        method: 'POST',
+        headers: { ...headers, 'content-type': 'application/json' },
+        body: JSON.stringify({
+          question: 'What can this original project answer?',
+        }),
+      },
+    );
     expect(response.status).toBe(streaming ? 200 : 400);
     expect(await response.text()).toContain(queryId);
     const rows = await repository.findAllBy({ projectId: 7 });
@@ -920,7 +949,15 @@ describe('original standalone REST explanation HTTP and history consumers', () =
     return rows[0];
   };
   beforeAll(async () => {
-    database = knex(postgres ? { client: 'pg', connection: postgres, searchPath: [schema] } : { client: 'better-sqlite3', connection: { filename: ':memory:' }, useNullAsDefault: true });
+    database = knex(
+      postgres
+        ? { client: 'pg', connection: postgres, searchPath: [schema] }
+        : {
+            client: 'better-sqlite3',
+            connection: { filename: ':memory:' },
+            useNullAsDefault: true,
+          },
+    );
     if (postgres) await database.schema.createSchema(schema);
     for (const name of [
       '20240125070643_create_project_table.js',
@@ -930,66 +967,138 @@ describe('original standalone REST explanation HTTP and history consumers', () =
       '20250511000000-create-api-history.js',
       '20261005000000_api_history_governed_query.js',
       '20261021000000_kailo_user_ownership.js',
-    ]) await jest.requireActual(join(process.cwd(), 'migrations', name)).up(database);
-    await database('project').insert([7, 8].map(id => ({ id, type: 'DUCKDB', display_name: `project-${id}`, catalog: 'wren', schema: 'public' })));
+    ])
+      await jest
+        .requireActual(join(process.cwd(), 'migrations', name))
+        .up(database);
+    await database('project').insert(
+      [7, 8].map((id) => ({
+        id,
+        type: 'DUCKDB',
+        display_name: `project-${id}`,
+        catalog: 'wren',
+        schema: 'public',
+      })),
+    );
     repository = new ApiHistoryRepository(database);
     server = createServer((request, response) => {
       const url = new URL(request.url, 'http://fixture.invalid');
-      const handler = url.pathname === '/api/v1/generate_sql' ? generateSqlHandler
-        : url.pathname === '/api/v1/stream/generate_sql' ? streamGenerateSqlHandler : explanationStreamHandler;
-      void apiResolver(request, response, { queryId: url.searchParams.get('queryId') }, { default: handler }, {
-        previewModeId: '', previewModeEncryptionKey: '', previewModeSigningKey: '',
-      }, false);
+      const handler =
+        url.pathname === '/api/v1/generate_sql'
+          ? generateSqlHandler
+          : url.pathname === '/api/v1/stream/generate_sql'
+            ? streamGenerateSqlHandler
+            : explanationStreamHandler;
+      void apiResolver(
+        request,
+        response,
+        { queryId: url.searchParams.get('queryId') },
+        { default: handler },
+        {
+          previewModeId: '',
+          previewModeEncryptionKey: '',
+          previewModeSigningKey: '',
+        },
+        false,
+      );
     });
-    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+    await new Promise<void>((resolve) =>
+      server.listen(0, '127.0.0.1', resolve),
+    );
     origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   });
   beforeEach(async () => {
     delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
     delete process.env.WREN_PLATFORM_BINDING_CONFIG_FILE;
     await database('api_history').del();
-    queryId = randomUUID(); projectId = 7; member = true;
+    queryId = randomUUID();
+    projectId = 7;
+    member = true;
     jest.mocked(loadQueryDelivery).mockClear();
     jest.mocked(bindingServiceCall).mockClear();
     ask = jest.fn(async () => ({ queryId }));
-    stream = jest.fn(async () => Readable.from([
-      'data: {"message":"Original REST explanation"}\n\n',
-      `data: ${JSON.stringify({ done: true, queryId })}\n\n`,
-    ]));
-    jest.mocked(originalHistoryWriter.createOne).mockImplementation(input => repository.createOne(input));
+    stream = jest.fn(async () =>
+      Readable.from([
+        'data: {"message":"Original REST explanation"}\n\n',
+        `data: ${JSON.stringify({ done: true, queryId })}\n\n`,
+      ]),
+    );
+    jest
+      .mocked(originalHistoryWriter.createOne)
+      .mockImplementation((input) => repository.createOne(input));
     Object.assign(components, {
       apiHistoryRepository: repository,
-      projectService: { getCurrentProject: jest.fn(async () => ({ id: projectId, language: 'EN' })) },
-      deployService: { getLastDeployment: jest.fn(async () => ({ hash: 'b'.repeat(40), manifest: {} })) },
-      wrenAIAdaptor: { ask, getAskResult: jest.fn(async () => ({ status: AskResultStatus.FINISHED, type: AskResultType.GENERAL, intentReasoning: 'Original non-SQL explanation' })), getAskStreamingResult: stream },
-      askingTaskRepository: { findOneBy: jest.fn(() => { throw new Error('REST history is not an AskingTask'); }) },
-      kailoMemberDirectory: { access: jest.fn(async () => ({ delivered: true, member, admin: false })) },
+      projectService: {
+        getCurrentProject: jest.fn(async () => ({
+          id: projectId,
+          language: 'EN',
+        })),
+      },
+      deployService: {
+        getLastDeployment: jest.fn(async () => ({
+          hash: 'b'.repeat(40),
+          manifest: {},
+        })),
+      },
+      wrenAIAdaptor: {
+        ask,
+        getAskResult: jest.fn(async () => ({
+          status: AskResultStatus.FINISHED,
+          type: AskResultType.GENERAL,
+          intentReasoning: 'Original non-SQL explanation',
+        })),
+        getAskStreamingResult: stream,
+      },
+      askingTaskRepository: {
+        findOneBy: jest.fn(() => {
+          throw new Error('REST history is not an AskingTask');
+        }),
+      },
+      kailoMemberDirectory: {
+        access: jest.fn(async () => ({
+          delivered: true,
+          member,
+          admin: false,
+        })),
+      },
     });
   });
-  afterEach(() => { jest.restoreAllMocks(); });
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
   afterAll(async () => {
-    if (savedQuery === undefined) delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+    if (savedQuery === undefined)
+      delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
     else process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = savedQuery;
-    if (savedBinding === undefined) delete process.env.WREN_PLATFORM_BINDING_CONFIG_FILE;
+    if (savedBinding === undefined)
+      delete process.env.WREN_PLATFORM_BINDING_CONFIG_FILE;
     else process.env.WREN_PLATFORM_BINDING_CONFIG_FILE = savedBinding;
-    Object.keys(components).forEach(key => delete components[key]);
+    Object.keys(components).forEach((key) => delete components[key]);
     Object.assign(components, savedComponents);
-    await new Promise<void>(resolve => { server.close(() => resolve()); server.closeAllConnections(); });
+    await new Promise<void>((resolve) => {
+      server.close(() => resolve());
+      server.closeAllConnections();
+    });
     if (postgres) await database.schema.dropSchema(schema, true);
     await database.destroy();
   });
-  it.each([false, true])('follows original generate_sql streaming=%s through its real original history to the public explanation wire', async streaming => {
-    const row = await create(streaming);
-    expect(row.ownerKey).toBe(user.key);
-    const response = await read();
-    expect(response.status).toBe(200);
-    expect(await response.text()).toBe('data: {"message":"Original REST explanation"}\n\ndata: {"done":true}\n\n');
-    expect(ask).toHaveBeenCalledTimes(1);
-    expect(stream).toHaveBeenCalledTimes(1);
-    expect(loadQueryDelivery).not.toHaveBeenCalled();
-    expect(bindingServiceCall).not.toHaveBeenCalled();
-    expect(components.askingTaskRepository.findOneBy).not.toHaveBeenCalled();
-  });
+  it.each([false, true])(
+    'follows original generate_sql streaming=%s through its real original history to the public explanation wire',
+    async (streaming) => {
+      const row = await create(streaming);
+      expect(row.ownerKey).toBe(user.key);
+      const response = await read();
+      expect(response.status).toBe(200);
+      expect(await response.text()).toBe(
+        'data: {"message":"Original REST explanation"}\n\ndata: {"done":true}\n\n',
+      );
+      expect(ask).toHaveBeenCalledTimes(1);
+      expect(stream).toHaveBeenCalledTimes(1);
+      expect(loadQueryDelivery).not.toHaveBeenCalled();
+      expect(bindingServiceCall).not.toHaveBeenCalled();
+      expect(components.askingTaskRepository.findOneBy).not.toHaveBeenCalled();
+    },
+  );
   it('preserves native project shared reading without inventing a HUMAN owner for a verified service', async () => {
     const row = await create(true, serviceHeaders);
     expect(row.ownerKey).toBeNull();
@@ -999,48 +1108,130 @@ describe('original standalone REST explanation HTTP and history consumers', () =
   });
   it('keeps the original shared project ACL rather than turning the display owner into a new read ACL', async () => {
     await create();
-    expect(await (await read({ [KAILO_USER_HEADER]: encodeKailoUser({ ...user, key: 'c'.repeat(64) }) })).text()).toContain('"done":true');
+    expect(
+      await (
+        await read({
+          [KAILO_USER_HEADER]: encodeKailoUser({
+            ...user,
+            key: 'c'.repeat(64),
+          }),
+        })
+      ).text(),
+    ).toContain('"done":true');
   });
-  it.each(['EOF', 'foreign-done'])('leaves %s unresolved without another Ask or one-shot read', async failure => {
-    await create();
-    stream.mockResolvedValue(Readable.from(['data: {"message":"partial"}\n\n', ...(failure === 'EOF' ? [] : ['data: {"done":true,"queryId":"foreign"}\n\n'])]));
-    expect(await (await read()).text()).toBe('data: {"message":"partial"}\n\n');
-    expect(stream).toHaveBeenCalledTimes(1);
-    expect(ask).toHaveBeenCalledTimes(1);
-  });
-  it.each(['missing', 'row-id', 'other-project', 'other-query', 'governed', 'not-general', 'duplicate'])('refuses %s original history before consuming native output', async mutation => {
+  it.each(['EOF', 'foreign-done'])(
+    'leaves %s unresolved without another Ask or one-shot read',
+    async (failure) => {
+      await create();
+      stream.mockResolvedValue(
+        Readable.from([
+          'data: {"message":"partial"}\n\n',
+          ...(failure === 'EOF'
+            ? []
+            : ['data: {"done":true,"queryId":"foreign"}\n\n']),
+        ]),
+      );
+      expect(await (await read()).text()).toBe(
+        'data: {"message":"partial"}\n\n',
+      );
+      expect(stream).toHaveBeenCalledTimes(1);
+      expect(ask).toHaveBeenCalledTimes(1);
+    },
+  );
+  it.each([
+    'missing',
+    'row-id',
+    'other-project',
+    'other-query',
+    'governed',
+    'not-general',
+    'duplicate',
+  ])(
+    'refuses %s original history before consuming native output',
+    async (mutation) => {
+      const row = await create();
+      if (mutation === 'row-id') queryId = row.id;
+      if (mutation === 'missing')
+        await database('api_history').where({ id: row.id }).del();
+      if (mutation === 'other-project')
+        await database('api_history')
+          .where({ id: row.id })
+          .update({ project_id: 8 });
+      if (mutation === 'other-query')
+        await repository.updateOne(row.id, {
+          responsePayload: {
+            ...row.responsePayload,
+            explanationQueryId: 'another-task',
+          },
+        });
+      if (mutation === 'governed')
+        await database('api_history')
+          .where({ id: row.id })
+          .update({ governance_binding_id: randomUUID() });
+      if (mutation === 'not-general')
+        await repository.updateOne(row.id, {
+          responsePayload: { error: 'Unknown', explanationQueryId: queryId },
+        });
+      if (mutation === 'duplicate')
+        await repository.createOne({ ...row, id: randomUUID() });
+      expect((await read()).status).toBe(403);
+      expect(stream).not.toHaveBeenCalled();
+      expect(ask).toHaveBeenCalledTimes(1);
+    },
+  );
+  it.each(['anonymous', 'old-token', 'revoked-member'])(
+    'requires original native admission for %s, not an ownerless row or query ID',
+    async (identity) => {
+      await create(true, serviceHeaders);
+      if (identity === 'revoked-member') member = false;
+      const headers: Record<string, string> =
+        identity === 'anonymous'
+          ? {}
+          : identity === 'old-token'
+            ? { authorization: 'Bearer unverified-old-token' }
+            : userHeaders;
+      expect((await read(headers)).status).toBe(
+        identity === 'revoked-member' ? 403 : 401,
+      );
+      expect(stream).not.toHaveBeenCalled();
+    },
+  );
+  it.each([
+    'history-deleted',
+    'query-changed',
+    'project-changed',
+    'request-changed',
+    'governed-mode',
+    'member-revoked',
+  ])('rechecks %s before exposing later stream content', async (mutation) => {
     const row = await create();
-    if (mutation === 'row-id') queryId = row.id;
-    if (mutation === 'missing') await database('api_history').where({ id: row.id }).del();
-    if (mutation === 'other-project') await database('api_history').where({ id: row.id }).update({ project_id: 8 });
-    if (mutation === 'other-query') await repository.updateOne(row.id, { responsePayload: { ...row.responsePayload, explanationQueryId: 'another-task' } });
-    if (mutation === 'governed') await database('api_history').where({ id: row.id }).update({ governance_binding_id: randomUUID() });
-    if (mutation === 'not-general') await repository.updateOne(row.id, { responsePayload: { error: 'Unknown', explanationQueryId: queryId } });
-    if (mutation === 'duplicate') await repository.createOne({ ...row, id: randomUUID() });
-    expect((await read()).status).toBe(403);
-    expect(stream).not.toHaveBeenCalled();
-    expect(ask).toHaveBeenCalledTimes(1);
-  });
-  it.each(['anonymous', 'old-token', 'revoked-member'])('requires original native admission for %s, not an ownerless row or query ID', async identity => {
-    await create(true, serviceHeaders);
-    if (identity === 'revoked-member') member = false;
-    const headers: Record<string, string> = identity === 'anonymous' ? {} : identity === 'old-token' ? { authorization: 'Bearer unverified-old-token' } : userHeaders;
-    expect((await read(headers)).status).toBe(identity === 'revoked-member' ? 403 : 401);
-    expect(stream).not.toHaveBeenCalled();
-  });
-  it.each(['history-deleted', 'query-changed', 'project-changed', 'request-changed', 'governed-mode', 'member-revoked'])('rechecks %s before exposing later stream content', async mutation => {
-    const row = await create();
-    stream.mockResolvedValue(Readable.from((async function* () {
-      yield 'data: {"message":"earlier"}\n\n';
-      if (mutation === 'history-deleted') await database('api_history').where({ id: row.id }).del();
-      if (mutation === 'query-changed') await repository.updateOne(row.id, { responsePayload: { ...row.responsePayload, explanationQueryId: 'another-task' } });
-      if (mutation === 'project-changed') projectId = 8;
-      if (mutation === 'request-changed') await repository.updateOne(row.id, { requestPayload: { question: 'Different source context' } });
-      if (mutation === 'governed-mode') process.env.WREN_PLATFORM_BINDING_CONFIG_FILE = '/fixture/binding.json';
-      if (mutation === 'member-revoked') member = false;
-      yield 'data: {"message":"must remain private"}\n\n';
-      yield `data: ${JSON.stringify({ done: true, queryId })}\n\n`;
-    })()));
+    stream.mockResolvedValue(
+      Readable.from(
+        (async function* () {
+          yield 'data: {"message":"earlier"}\n\n';
+          if (mutation === 'history-deleted')
+            await database('api_history').where({ id: row.id }).del();
+          if (mutation === 'query-changed')
+            await repository.updateOne(row.id, {
+              responsePayload: {
+                ...row.responsePayload,
+                explanationQueryId: 'another-task',
+              },
+            });
+          if (mutation === 'project-changed') projectId = 8;
+          if (mutation === 'request-changed')
+            await repository.updateOne(row.id, {
+              requestPayload: { question: 'Different source context' },
+            });
+          if (mutation === 'governed-mode')
+            process.env.WREN_PLATFORM_BINDING_CONFIG_FILE =
+              '/fixture/binding.json';
+          if (mutation === 'member-revoked') member = false;
+          yield 'data: {"message":"must remain private"}\n\n';
+          yield `data: ${JSON.stringify({ done: true, queryId })}\n\n`;
+        })(),
+      ),
+    );
     const text = await (await read()).text();
     expect(text).not.toContain('must remain private');
     expect(text).not.toContain('"done"');
@@ -1050,19 +1241,24 @@ describe('original standalone REST explanation HTTP and history consumers', () =
   it('rechecks mode after an asynchronous original history lookup before its native GET', async () => {
     await create();
     const original = repository.findStandaloneExplanation.bind(repository);
-    jest.spyOn(repository, 'findStandaloneExplanation').mockImplementation(async (...args) => {
-      const row = await original(...args);
-      process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = '/fixture/query.json';
-      return row;
-    });
+    jest
+      .spyOn(repository, 'findStandaloneExplanation')
+      .mockImplementation(async (...args) => {
+        const row = await original(...args);
+        process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = '/fixture/query.json';
+        return row;
+      });
     expect((await read()).status).toBe(412);
     expect(stream).not.toHaveBeenCalled();
   });
-  it.each(['POST', 'DELETE'])('rejects %s before reading a native queue', async method => {
-    expect((await read(userHeaders, method)).status).toBe(405);
-    expect(stream).not.toHaveBeenCalled();
-    expect(ask).not.toHaveBeenCalled();
-  });
+  it.each(['POST', 'DELETE'])(
+    'rejects %s before reading a native queue',
+    async (method) => {
+      expect((await read(userHeaders, method)).status).toBe(405);
+      expect(stream).not.toHaveBeenCalled();
+      expect(ask).not.toHaveBeenCalled();
+    },
+  );
 });
 
 describe('native reset transaction consumer', () => {
