@@ -8,6 +8,7 @@ import { AskResultStatus, AskResultType } from './apollo/server/models/adaptor';
 import { AskingResolver } from './apollo/server/resolvers/askingResolver';
 import { AdjustmentBackgroundTaskTracker } from './apollo/server/backgrounds/adjustmentBackgroundTracker';
 import { ProjectResolver } from './apollo/server/resolvers/projectResolver';
+import { ModelResolver } from './apollo/server/resolvers/modelResolver';
 import {
   bindingServiceCall,
   loadQueryDelivery,
@@ -761,6 +762,26 @@ describe('original native planning HTTP stream and HUMAN task owner', () => {
     });
     expect(await (await explanation()).text()).toBe('');
     expect(nativeStream).toHaveBeenCalledTimes(1);
+  });
+  it('governed REST explanation rechecks mode after its last real metadata authorization', async () => {
+    const originalRead = ModelResolver.prototype.getMDL;
+    let afterOpen = 0;
+    const read = jest.spyOn(ModelResolver.prototype, 'getMDL').mockImplementation(
+      async function (...args) {
+        const result = await originalRead.apply(this, args);
+        // readNativeAskHistory performs two real metadata authorizations. This
+        // retires the mode after its final reader, before the caller resumes.
+        if (nativeStream.mock.calls.length && ++afterOpen === 2) standalone();
+        return result;
+      },
+    );
+    try {
+      expect(await (await explanation()).text()).toBe('');
+      expect(afterOpen).toBe(2);
+      expect(nativeStream).toHaveBeenCalledTimes(1);
+    } finally {
+      read.mockRestore();
+    }
   });
   it.each([ApiType.GENERATE_SQL, ApiType.STREAM_GENERATE_SQL])(
     'keeps the original %s explanationQueryId stream through its persisted GENERAL history, not a fabricated GraphQL task',
