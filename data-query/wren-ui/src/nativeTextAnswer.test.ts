@@ -205,7 +205,7 @@ describe('original native text-answer result consumers', () => {
         'x-kailo-native-identity-scope': 'a'.repeat(64),
       },
     });
-    const output: any = {
+    const output: any = Object.assign(new EventEmitter(), {
       setHeader: jest.fn(),
       status: jest.fn(),
       write: jest.fn(),
@@ -214,7 +214,7 @@ describe('original native text-answer result consumers', () => {
       flushHeaders: jest.fn(() => {
         output.headersSent = true;
       }),
-    };
+    });
     output.status.mockReturnValue(output);
     await handler(request, output);
     return output;
