@@ -12358,3 +12358,178 @@ This establishes the original five-file exit gate, not the entire Wren test
 inventory or live user acceptance. There was no live IdP/Core/model/SQL backend,
 matching artifact build, receiver activation, CI trust change or deployment.
 The existing release and full deployed-operation gates remain applicable.
+
+## 2026-10-27 — Complete native SQL answer recovery across observations
+
+DD-127(7), DD-133 and SS-WRN-GOVERNANCE / SS-WRN-IDENTITY retain the original
+SQL text-answer task, project ACL, same-query scope and native History.
+Base `83a01b7545db6ced755f62e77d239cfcf1aa14ed`; checked source
+`754a721ad6ec37aa9be1c0a100e002830cc5ed97`.
+The product/test diff is **16 files, +1838/-283**, including a separate original
+Ruff formatting commit for the pre-existing Python consumer file. These line
+counts are not functionality or acceptance percentages.
+
+### Original completed-result authority and consumers
+
+Against Wren `c5f02a0391c87420dba78632dcd86073710deb72`,
+`wren-ai-service/src/pipelines/generation/sql_answer.py::SQLAnswer.run`
+returns the original generator result after putting its queue sentinel.
+`src/providers/llm/litellm.py` returns `{replies, meta}`; `src/utils.py::trace_cost`
+unwraps its instrumentation tuple before `generate_answer` becomes the
+pipeline result. The old `SqlAnswerService` discarded that returned body.
+Its `succeeded` status was written after preprocessing, before generation.
+Meanwhile a second mounted observer could consume only the remaining queue
+tail. Receiving its sentinel did not establish complete answer content.
+
+The existing `SqlAnswerService._sql_answer_results` TTL cache now retains the
+single original returned string only with an actual single `stop` result.
+Truncation, filtering, missing/unknown metadata, lost return, expiry and a
+replaced cache entry cannot manufacture completion or restart generation.
+The original `succeeded` meaning and preprocessing-to-STREAMING consumers
+remain intact. Completion uses the existing cache limits, not a second body
+store or new task authority. After retention, the pipeline removes its indexed
+queue; existing observers keep their original queue object and can consume its
+sentinel. Completed observations read the retained result without consuming
+or regenerating that queue.
+
+The original native GET `/v1/sql-answers/{query_id}` adds optional
+`completion: {query_id, content}`. The existing TypeScript adaptor validates
+that completion against the requested query. Original public SSE
+`{message}` / `{done:true,queryId}` at the AI hop and `{message}` / `{done:true}`
+at the page hop retain their wire shape. **This is an additive native GET
+change, not an unchanged API claim.** New UI consumers require the matching
+new AI producer. An old AI with no completion remains unresolved; the UI is
+not independently accepted against such an image. Matching UI and AI artifacts
+must pass the existing release gate before deployment.
+
+The original `answerDetail` GraphQL consumer and page SSE endpoint fetch that
+same native result, retain original project/HUMAN source disclosure, check
+mode and frozen row before and after asynchronous reads, and use the original
+`claimNativeAnswer` CAS to store complete content. A stale query or changed
+row cannot overwrite its replacement. The actual GraphQL context now supplies
+the already existing thread-response repository. After CAS, current disclosure
+is checked again before exposing the body. A missing native result leaves the
+existing observation unresolved; no SQL preview or Ask is repeated.
+
+The same correction reaches original `generate_summary`, `ask`, and
+`stream/ask` consumers. GOVERNED uses its original History CAS, query/EE
+references and read authorization; an already claimed stream may recover
+through GET and the original complete History. STANDALONE keeps its native
+project ACL and original request lifecycle. Its current-project read is awaited
+before checking mode; `respondWith` reuses the adjacent original
+`beforeResponse` shape after History writes. The original SQL SSE path also
+checks before text exposure and after its final History write.
+
+For a live summary stream, the full result can extend an emitted prefix: its
+remaining suffix is sent before completion. If the observer received only a
+tail, that current content block is not declared successful. The full original
+History can be read using the same key, without another Ask or stream. Cached
+REST stream recovery emits the existing content-block start/delta/stop frames,
+not just a metadata-only message stop. GENERAL / NON_SQL explanation lifecycle
+is unchanged by this batch.
+
+### Fixed-source checks, failures retained and actual fault restoration
+
+Node used the original immutable image
+`sha256:f9ab18e354e6855ae56ef2b290dd225c1e51a564f87584b9bd21dd651838830e`
+(Node 18.20.8, TypeScript 5.2.2, Prettier 3.2.5), limited to 4 CPU / 4 GiB /
+equal swap. Private PostgreSQL was limited to 1 CPU / 2 GiB / equal swap on
+an internal network. The existing Yarn installation was reused after fixed
+package/lock/config comparison. No project dependency install or large cache
+copy occurred. Actual limits were read back and new writes stayed on Data.
+
+Python used original SDK
+`sha256:3007729eb192341a4f004a88e42e1e66c94fc67d763acfc96568bd7311116018`,
+1 CPU / 2 GiB / equal swap, **Python 3.13.5**. This is not acceptance of the
+production Python 3.12 image. The original `.pre-commit-config.yaml` pins Ruff
+0.2.2. That SDK had no pip; this tool prerequisite failure was preserved. Its
+standard library obtained the fixed official PyPI wheel, verified the published
+SHA-256, and extracted the original binary into a Data-only tool directory.
+No host SDK or project/Yarn lock changed. Wheel SHA-256:
+`5e1439c8f407e4f356470e54cdecdca1bd5439a0673792dbe34a2b0a551a2fe3`.
+The first check identified two I001 import blocks. Original `check --fix` and
+`format` corrected them; the full existing Python test file was formatted in
+a separate style commit. Final fixed-source Ruff check and format-check passed.
+
+At fixed `754a721ad`:
+
+- Original complete five-file gate: **295 passed**, natural exit **0**;
+  **6 pre-existing conditional migration cases** were not run in this
+  environment. Their earlier `69bec1c84` PostgreSQL result remains recorded
+  separately and is not claimed as a new execution here.
+- Complete `nativeTextAnswer.test.ts` with private PostgreSQL: **71 passed**,
+  natural exit **0**. These overlap the five-file cases; do not add them as
+  distinct cases.
+- Existing `nativeHumanQuery.test.ts` group
+  `original run_sql HTTP HUMAN consumer`: **163 passed**, exit **0**.
+  Its **375 other cases** were deliberately not selected; this is not the
+  whole large file passing.
+- Original Python `test_native_sql_answer_stream.py`: **20 passed**, exit **0**.
+- Full original TypeScript typecheck, selected original Next lint/Prettier,
+  and pinned Ruff check/format-check: **0**.
+- Removing the original response's post-History `beforeResponse` hook caused
+  **4 assertion failures**; removing the post-CAS disclosure check **1**;
+  writing the old partial content instead of the full result in GraphQL **2**;
+  corrupting the stream's emitted-prefix comparison **2**; removing the SQL
+  GOVERNED mode fences **4**. Each ran the existing relevant original HTTP/PG
+  or REST cases and exited **1** from assertions. Fault selection did not
+  change any positive assertion or skip.
+- Removing the Python natural-finish check caused **3 failing subtest
+  assertions** in the original 20-test file, exit **1**. Actual truncated or
+  unproven provider dictionaries were incorrectly accepted by the altered
+  producer. Restoring the source returned all **20** to pass.
+- All temporarily changed files were restored byte-for-byte. Complete restored
+  Node five-file / PostgreSQL / REST commands again passed **295 / 71 / 163**;
+  restored Python **20**, and Ruff **0**. All commands exited naturally.
+  **617 Node input blobs** and **209 Python/tool-entry input blobs** matched
+  their fixed GitHub source after restoration. Own SDK, private PostgreSQL
+  and networks were removed and absence read back.
+
+Earlier real failures are retained, not relabeled as final-source success:
+
+- `aed6fa9bc`: format passed; typecheck stopped with TS2339 because the real
+  GraphQL context/type omitted the repository needed by recovery. The actual
+  context wiring was corrected. Business / PostgreSQL / REST were not run.
+- `ee333c3e4`: static checks passed; five files had **292 passed, 3 failed,
+  6 original conditional cases unrun**. New GET observation added a fresh
+  authorization before frames; old revocation fixtures still targeted call 3.
+  Their next-frame trigger moved to 4, retaining the no-body/no-write assertions.
+  PostgreSQL / REST were not run after that failure.
+- `e467defd6`: five files **295**, PostgreSQL **71**, and static checks passed;
+  REST had **154 passed, 1 failed**. The actual stream recovery omitted the
+  complete answer's content blocks despite writing History. That product
+  defect, and the separately reviewed live-prefix/tail path, were corrected
+  and covered in the final 163-case group.
+
+Receipt directory:
+`/volumes/data/kailo/verification/buzz-r10/wren-answer-recovery-754a721ad6ec37aa9be1c0a100e002830cc5ed97-check`.
+Its `receipt.json` SHA-256 is
+`f0f7e1b89eb42b47dab91ca1dad33b2f6776116644fe959a7a49703c305e663d`.
+Local handoff: `/tmp/kailo-wren-answer-recovery-754a721ad-receipt.json`.
+The receipt records exact logs, exits, fault counts, official tool artifact,
+failed stages, restored input manifest and resource boundaries. Adjacent
+`wren-answer-recovery-754a721ad6ec37aa9be1c0a100e002830cc5ed97-fault`
+and `wren-answer-recovery-python-754a721ad-final` directories retain the
+Node and Python fault/restoration commands.
+
+### Remaining acceptance boundary
+
+Original Next HTTP/fetch, actual SQLite/PostgreSQL repositories/CAS, GraphQL
+resolver, original adaptor HTTP and existing hook harness were exercised.
+REST governance transport/History fixtures remain explicit boundaries. The
+Python test executes the original pipeline/service/router with dependency,
+provider and TTL substitutes; its real `replies/meta` shape is not a live
+provider/model result or complete deployed UI-to-model acceptance.
+
+An independent fixed-source provider gap remains: `litellm.py::_run` passes
+the last network chunk to `connect_chunks`, whose current implementation reads
+`chunk.choices[0].finish_reason`. A legal usage-only final chunk with empty
+choices can fail that aggregation. Read-only inspection of deployed public
+configuration found no explicit `stream_options` / `include_usage`; that does
+not prove a provider cannot emit the frame. No model retry or provider rewrite
+was added here, and no test substitute is claimed to cover that real boundary.
+
+Expired/restarted native cache or unavailable completion remains UNKNOWN.
+GENERAL / NON_SQL explanation recovery, actual provider execution, matching
+UI+AI artifacts, browser/IdP/Core/source-SQL E2E and receiver acceptance are not
+claimed. CI trust and live services were not changed; no deployment occurred.
