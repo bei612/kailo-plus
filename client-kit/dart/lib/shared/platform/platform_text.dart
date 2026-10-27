@@ -4309,6 +4309,10 @@ enum PlatformMessageKey {
   nativeCommunityFailed,
   nativeConnectFailed,
   nativeSendRejected,
+  platformSendFailed,
+  platformUploadFailed,
+  buzzDismiss,
+  buzzMentionPreparationFailed,
   nativeSendRateLimited,
   nativeSendRateLimitedNoHint,
   nativeSendNotConnected,
@@ -15757,6 +15761,16 @@ const _messages = <PlatformMessageKey, (String, String)>{
   PlatformMessageKey.nativeSendRejected: (
     'Not sent: the server refused this message. Your text is kept.',
     '未发送：服务器拒绝了这条消息。内容已保留。',
+  ),
+  PlatformMessageKey.platformSendFailed: ('Send failed', '发送失败'),
+  PlatformMessageKey.platformUploadFailed: (
+    'Upload failed — the result is unknown. Try again.',
+    '上传失败，结果不明。请重试。',
+  ),
+  PlatformMessageKey.buzzDismiss: ('Dismiss', '关闭'),
+  PlatformMessageKey.buzzMentionPreparationFailed: (
+    'Could not prepare mentions. Please retry.',
+    '无法准备提及对象，请重试。',
   ),
   PlatformMessageKey.nativeSendRateLimited: (
     'Not sent: you are sending too fast. Try again in {seconds} s. Your text is kept.',
