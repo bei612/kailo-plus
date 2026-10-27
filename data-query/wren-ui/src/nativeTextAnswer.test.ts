@@ -1294,7 +1294,9 @@ describe('original answer HTTP identity and conditional history writes', () => {
         // write cannot retire the mode and still take the success-close path.
         expect(response.status).toBe(200);
         expect(body).toContain('"type":"error"');
-        expect(native.apiHistoryRepository.createOne.mock.calls.at(-1)[0].statusCode).toBe(500);
+        expect(
+          native.apiHistoryRepository.createOne.mock.calls.at(-1)[0].statusCode,
+        ).toBe(500);
       } else {
         expect(response.status).toBe(503);
         expect(body).not.toContain('private full');
