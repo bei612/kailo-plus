@@ -38,6 +38,8 @@ async function forwardNativeAskingTask(
     let emitted = '';
     const cached = generalCompletion(original, queryId);
     if (cached !== undefined) {
+      if (responseMaxBytes !== undefined && Buffer.byteLength(JSON.stringify({ message: cached }), 'utf8') > responseMaxBytes)
+        throw new NativeQueryRefusal(503, 'QUERY_EVIDENCE_UNAVAILABLE');
       res.setHeader('Content-Type', 'text/event-stream');
       res.write(`data: ${JSON.stringify({ message: cached })}\n\n`);
       res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
@@ -51,6 +53,8 @@ async function forwardNativeAskingTask(
       if (original.type === AskResultType.GENERAL || result.type === AskResultType.GENERAL) {
         const complete = generalCompletion(result, queryId);
         if (complete === undefined || !complete.startsWith(emitted)) return;
+        if (responseMaxBytes !== undefined && Buffer.byteLength(JSON.stringify({ message: complete }), 'utf8') > responseMaxBytes)
+          throw new NativeQueryRefusal(503, 'QUERY_EVIDENCE_UNAVAILABLE');
         const remainder = complete.slice(emitted.length);
         if (remainder) res.write(`data: ${JSON.stringify({ message: remainder })}\n\n`);
       } else if (!nativeDone || result.type !== AskResultType.TEXT_TO_SQL) {

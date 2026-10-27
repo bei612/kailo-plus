@@ -624,7 +624,9 @@ export class AskingResolver {
       let complete = askResult.completion;
       if (!complete) {
         try {
-          complete = (await ctx.wrenAIAdaptor.getAskResult(taskId)).completion;
+          const observed = await ctx.wrenAIAdaptor.getAskResult(taskId);
+          if (observed?.type === AskResultType.GENERAL && observed.status === AskResultStatus.FINISHED && !observed.error)
+            complete = observed.completion;
         } catch {
           // Observe only. Cache loss or a failed read never starts another Ask.
         }
@@ -632,6 +634,8 @@ export class AskingResolver {
       const current = await askingService.getAskingTask(taskId);
       if (!current || canonical(current) !== snapshot || isGovernedQueryMode() !== governed)
         throw new NativeQueryRefusal(409, 'QUERY_REFERENCE_CHANGED');
+      if (governed && complete && Buffer.byteLength(JSON.stringify(complete), 'utf8') > (await loadQueryDelivery()).responseMaxBytes)
+        throw new NativeQueryRefusal(503, 'QUERY_EVIDENCE_UNAVAILABLE');
       await this.authorizeNativeAskingTask(taskId, ctx);
       await ctx.nativeProjectCheck?.(askResult.projectId);
       if (isGovernedQueryMode() !== governed)
