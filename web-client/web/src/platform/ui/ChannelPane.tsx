@@ -1904,7 +1904,7 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
     await publish
       .then(() => {
         // An accepted send proves the community write-block is lifted (original clearTimeoutState).
-        if (owner.active && draftIdentity && isDraftStoreScope(draftIdentity, window.location.origin)) clearTimeoutState();
+        if (owner.active) clearTimeoutState();
         if (snapshot.cleared) {
           if (draftKey) {
             publishingPendingSends.delete(pendingSendOwnerKey);

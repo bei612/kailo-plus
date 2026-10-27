@@ -1604,6 +1604,7 @@ describe("DD-146 original send flow: clear at Send, restore on failure", () => {
     await type(input(host), "body with GIF");
     await vi.waitFor(()=>expect(host.querySelector('[data-testid="composer-emoji-button"]')?.getAttribute("aria-label")).toBe("Insert emoji or GIF"));
     await click(host.querySelector<HTMLElement>('[data-testid="composer-emoji-button"]')!);
+    await vi.waitFor(()=>expect(document.querySelector('[data-testid="composer-gif-tab"]')).not.toBeNull());
     const tab = document.querySelector<HTMLElement>('[data-testid="composer-gif-tab"]')!;
     await act(async()=>tab.dispatchEvent(new MouseEvent("mousedown",{bubbles:true,button:0})));
     await click(tab);
