@@ -162,7 +162,7 @@ GENERAL 完整回答后继 AI 固定 `68e45b313`、UI 固定 `d4416cc40`：沿�
 原 AI Python 3.12 GENERAL **14/14**、SQL **20/20**，UI 原四文件 **303 通过／7
 条件跳过**、原 REST 选定组 **170 通过／375 未选**，不代表完整 UI 套件通过。
 类型、lint、格式通过。三类停止故障及六类 UI 故障均被检出并逐字恢复；原 UI
-另八项无关失败和旧 SQLite 断言波动保留在证据中。真实模型/Core/IdP、匹配新
+其他失败的后继处理见下文，旧 SQLite 断言波动保留在证据中。真实模型/Core/IdP、匹配新
 UI+AI 制品、部署及浏览器业务尚未验收，详见[原问数记录](data-query/fork/verify/native-integration.md)
 及[UI 回执](data-query/fork/verify/general-ui-recovery-receipt.json)。
 
@@ -172,6 +172,14 @@ UI+AI 制品、部署及浏览器业务尚未验收，详见[原问数记录](da
 3.12 消费者 **18/18**、SQL **20/20**、Ruff 通过；三项实际故障分别触发 **2、9、
 49** 个断言失败，逐字恢复后通过，211 个输入一致。分类及模型外部边界使用夹具，
 不代表真实模型、接收方或部署验收；见[生命周期回执](data-query/fork/verify/ask-lifetime-receipt.json)。
+
+原 `nativeHumanQuery` 整文件后继固定 `53a23b4cc`：补齐当前 scope/generation
+夹具、更新完整原调用参数断言，关闭已完成 HTTP 测试的 keep-alive 连接；产品
+授权、原业务断言和超时未改。此前重跑 **535 通过／9 失败／1 跳过**，修正后
+整文件 **544 通过／1 跳过**，类型、相关 lint 和格式通过；实际去掉 generation
+与重派同一原生事件分别触发 **2、3** 项失败，逐字恢复后整文件再次通过。
+跳过项是原 PostgreSQL 跨项目同名源表删除检查，未投递数据库；该结果不是完整
+Wren 套件或真实服务验收，见[完整消费者回执](data-query/fork/verify/native-human-full-receipt.json)。
 
 前一批 Core 集成固定 `1d0d20b53`：原 SDK 4 CPU / 16 GiB、私有 PG
 1 CPU / 2 GiB，正常主目标 **839 passed / 91 ignored**；显式 Agent/Canvas/审核、
