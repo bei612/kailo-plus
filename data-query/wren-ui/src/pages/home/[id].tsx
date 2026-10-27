@@ -126,7 +126,10 @@ export default function HomeThread() {
   const adjustReasoningStepsModal = useModalAction();
   const adjustSqlModal = useModalAction();
   const answerGeneration = useRef(0);
-  const answerOwner = useMemo(() => ({ active: true, requests: new Set<string>() }), [threadId]);
+  const answerOwner = useMemo(
+    () => ({ active: true, requests: new Set<string>() }),
+    [threadId],
+  );
   const answerOwnerRef = useRef(answerOwner);
   answerOwnerRef.current = answerOwner;
   const sqlFix = useMemo(
