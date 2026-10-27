@@ -10,7 +10,8 @@ from unittest.mock import AsyncMock, patch
 os.environ["HAYSTACK_TELEMETRY_ENABLED"] = "False"
 
 from haystack import Document  # noqa: E402 - telemetry opt-out precedes imports
-from litellm import EmbeddingResponse  # noqa: E402
+from litellm import EmbeddingResponse, ModelResponse  # noqa: E402
+from openai.types.chat import ChatCompletionChunk  # noqa: E402
 
 from src.providers import generate_components  # noqa: E402
 from src.providers.embedder.litellm import LitellmEmbedderProvider  # noqa: E402
@@ -175,6 +176,116 @@ class NativeModelCredentialTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(call.kwargs["api_key"], os.environ["FIXTURE_GATEWAY_KEY"])
             self.assertEqual(call.kwargs["api_base"], "https://gateway.example/v1")
             self.assertEqual(call.kwargs["model"], "openai/fixture-embedding")
+
+
+class NativeModelStreamTest(unittest.IsolatedAsyncioTestCase):
+    """Original provider aggregation; only external completion transport is replaced."""
+
+    def frame(self, constructor, *, content=None, reason=None, usage=None, choices=True):
+        fields = {
+            "id": "fixture-completion",
+            "created": 1,
+            "model": "fixture-model",
+            "object": "chat.completion.chunk",
+            "choices": [
+                {"index": 0, "delta": {"content": content}, "finish_reason": reason}
+            ] if choices else [],
+        }
+        if usage is not None:
+            fields["usage"] = usage
+        if constructor is ModelResponse:
+            fields["stream"] = True
+        return constructor(**fields)
+
+    async def run_stream(self, frames, *, error=None, fallback=False):
+        async def stream():
+            for frame in frames:
+                yield frame
+            if error is not None:
+                raise error
+
+        provider = generate_components(model_config(fallbacks=fallback))["sql_generation"].llm_provider
+        received = []
+        remote = AsyncMock(return_value=stream())
+        target = patch.object(provider._router, "acompletion", remote) if fallback else patch(
+            "src.providers.llm.litellm.acompletion", remote
+        )
+        with target:
+            try:
+                result = await provider.get_generator(
+                    streaming_callback=lambda chunk, query: received.append((chunk, query))
+                )("original question", query_id="original-query")
+            finally:
+                self.assertEqual(remote.await_count, 1)
+        return result, received
+
+    def setUp(self):
+        environment = patch.dict(os.environ, {"FIXTURE_GATEWAY_KEY": "fixture-gateway-key"})
+        environment.start()
+        self.addCleanup(environment.stop)
+
+    async def test_real_chunk_types_keep_content_finish_and_trailing_usage(self):
+        usage = {"prompt_tokens": 7, "completion_tokens": 3, "total_tokens": 10}
+        for constructor in (ModelResponse, ChatCompletionChunk):
+            for reason in ("stop", "length", "content_filter", None):
+                with self.subTest(type=constructor.__name__, reason=reason):
+                    frames = [
+                        self.frame(constructor, content="first "),
+                        self.frame(constructor, content="second"),
+                        self.frame(constructor, reason=reason),
+                        self.frame(constructor, choices=False, usage=usage),
+                    ]
+                    result, received = await self.run_stream(frames)
+                    self.assertEqual(result["replies"], ["first second"])
+                    self.assertEqual(result["meta"], [{
+                        "model": "fixture-model", "index": 0,
+                        "finish_reason": reason, "usage": dict(frames[-1].usage),
+                    }])
+                    self.assertEqual([c.content for c, _ in received], ["first ", "second", ""])
+                    self.assertEqual([q for _, q in received], ["original-query"] * 3)
+
+    async def test_no_usage_or_null_usage_does_not_invent_accounting(self):
+        for constructor in (ModelResponse, ChatCompletionChunk):
+            with self.subTest(type=constructor.__name__):
+                frames = [self.frame(constructor, content="answer", reason="stop")]
+                result, _ = await self.run_stream(frames)
+                self.assertEqual(result["replies"], ["answer"])
+                self.assertEqual(result["meta"][0]["finish_reason"], "stop")
+                self.assertEqual(result["meta"][0]["usage"], {})
+
+    async def test_choice_frame_usage_and_empty_natural_reply_are_retained(self):
+        usage = {"prompt_tokens": 2, "completion_tokens": 0, "total_tokens": 2}
+        frame = self.frame(ChatCompletionChunk, reason="stop", usage=usage)
+        result, _ = await self.run_stream([frame])
+        self.assertEqual(result["replies"], [""])
+        self.assertEqual(result["meta"][0]["finish_reason"], "stop")
+        self.assertEqual(result["meta"][0]["usage"], dict(frame.usage))
+
+    async def test_empty_or_usage_only_stream_has_no_choice_result(self):
+        usage = {"prompt_tokens": 2, "completion_tokens": 0, "total_tokens": 2}
+        for frames in ([], [self.frame(ChatCompletionChunk, choices=False, usage=usage)]):
+            with self.subTest(frame_count=len(frames)):
+                with self.assertRaisesRegex(ValueError, "contained no choices"):
+                    await self.run_stream(frames)
+
+    async def test_interrupted_stream_never_returns_a_completion(self):
+        for reason in (None, "stop"):
+            with self.subTest(reason=reason):
+                frames = [self.frame(ChatCompletionChunk, content="partial", reason=reason)]
+                with self.assertRaisesRegex(RuntimeError, "fixture stream interrupted"):
+                    await self.run_stream(frames, error=RuntimeError("fixture stream interrupted"))
+
+    async def test_router_stream_uses_the_same_original_aggregation(self):
+        frames = [
+            self.frame(ModelResponse, content="fallback answer", reason="stop"),
+            self.frame(ModelResponse, choices=False, usage={
+                "prompt_tokens": 3, "completion_tokens": 2, "total_tokens": 5,
+            }),
+        ]
+        result, _ = await self.run_stream(frames, fallback=True)
+        self.assertEqual(result["replies"], ["fallback answer"])
+        self.assertEqual(result["meta"][0]["finish_reason"], "stop")
+        self.assertEqual(result["meta"][0]["usage"], dict(frames[-1].usage))
 
 
 if __name__ == "__main__":
