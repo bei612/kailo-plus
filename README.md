@@ -52,7 +52,6 @@ Mobile 固定 `419ac2b86` 接回频道及媒体加载失败的同源文案，原
 真机渲染尚未验收，见[Mobile 记录](collaboration/fork/verify/mobile-client.md)。
 这些均已进入候选源码，未构建部署或更新安装包。
 
-
 Cells 固定 `afe7a4710` 修复正文读取阻塞期间撤权后仍向原 S3 存储读者放行字节。
 原 Go 1.26.8 镜像 4 CPU / 8 GiB：15 场景通过，移除读取后 Fresh 的三个反向均
 失败，逐字恢复后通过；格式与同包 vet 通过，原 Task/UNKNOWN 保留。见
