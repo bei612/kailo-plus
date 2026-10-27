@@ -282,12 +282,16 @@ describe('original Ask SSE hook and same-task GraphQL observation', () => {
   });
 
   it('does not auto-retry a constructor/transport failure', () => {
-    const construct = jest.fn(() => {
-      throw new Error('transport unavailable');
-    });
+    const construct = jest.fn();
+    class UnavailableEventSource {
+      constructor() {
+        construct();
+        throw new Error('transport unavailable');
+      }
+    }
     Object.defineProperty(global, 'EventSource', {
       configurable: true,
-      value: construct,
+      value: UnavailableEventSource,
     });
     const [start] = render(useAskingStreamTask);
     start('native-current');
