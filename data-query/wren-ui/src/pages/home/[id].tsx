@@ -130,8 +130,13 @@ export default function HomeThread() {
   const answerOwner = useMemo(() => ({ active: true }), [threadId]);
   const answerOwnerRef = useRef(answerOwner);
   answerOwnerRef.current = answerOwner;
-  const sqlFix = useMemo(() => ({ pending: undefined as Promise<void> | undefined }), [answerOwner]);
-  const [fixingSqlOwner, setFixingSqlOwner] = useState<typeof answerOwner | null>(null);
+  const sqlFix = useMemo(
+    () => ({ pending: undefined as Promise<void> | undefined }),
+    [answerOwner],
+  );
+  const [fixingSqlOwner, setFixingSqlOwner] = useState<
+    typeof answerOwner | null
+  >(null);
   const [answerReceipts, setAnswerReceipts] = useState<Record<number, any>>({});
   const [chartReceipts, setChartReceipts] = useState<Record<number, any>>({});
 
@@ -318,7 +323,10 @@ export default function HomeThread() {
     [pollingResponse],
   );
 
-  const onFixSQLStatement = (responseId: number, sql: string): Promise<void> => {
+  const onFixSQLStatement = (
+    responseId: number,
+    sql: string,
+  ): Promise<void> => {
     const active = () =>
       answerOwner.active && answerOwnerRef.current === answerOwner;
     if (!active()) return Promise.resolve();
@@ -340,7 +348,11 @@ export default function HomeThread() {
           throw new Error('NATIVE_OUTCOME_UNKNOWN');
         const current = operationConfiguration(await getUserConfig());
         if (!active()) return;
-        if (current !== identity || next.id !== responseId || next.threadId !== threadId)
+        if (
+          current !== identity ||
+          next.id !== responseId ||
+          next.threadId !== threadId
+        )
           throw new Error('NATIVE_OUTCOME_UNKNOWN');
         updateThreadQuery((prev) =>
           !active() || String(prev.thread?.id) !== String(threadId)
@@ -611,7 +623,8 @@ export default function HomeThread() {
       onStopAdjustTask: adjustAnswer.onStop,
       onReRunAdjustTask: adjustAnswer.onReRun,
       onFixSQLStatement,
-      fixStatementLoading: threadResponseUpdating || fixingSqlOwner === answerOwner,
+      fixStatementLoading:
+        threadResponseUpdating || fixingSqlOwner === answerOwner,
     },
     onOpenSaveAsViewModal: saveAsViewModal.openModal,
     onSelectRecommendedQuestion: onCreateResponse,

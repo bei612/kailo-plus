@@ -22,6 +22,7 @@ import DetailsDrawer from './components/pages/apiManagement/DetailsDrawer';
 import { ApiType } from './apollo/client/graphql/__types__';
 import { getApiHistoryText } from './utils/language';
 import HomeThread from './pages/home/[id]';
+import { FixSQLModal } from './components/modals/FixSQLModal';
 
 it.each(['zh-CN', 'en'])(
   'renders the original row limit input through the real production Ant Design alias (%s)',
@@ -65,6 +66,7 @@ const mockAdjustChart = jest.fn();
 const mockResponseRead = jest.fn();
 const mockThreadUpdate = jest.fn();
 let mockThreadProvider: any;
+let mockFixModal: any;
 let mockResponseUpdateOptions: any;
 let mockHomeThreadId = '11';
 let mockHomeApollo: any;
@@ -150,6 +152,7 @@ jest.mock('next/navigation', () => ({
 }));
 jest.mock('./hooks/useHomeSidebar', () => () => ({}));
 jest.mock('./hooks/useAskPrompt', () => ({
+  ...jest.requireActual('./hooks/useAskPrompt'),
   __esModule: true,
   default: () => ({
     data: {},
@@ -290,11 +293,15 @@ jest.mock('antd', () => {
       validateFields: async () => mockFormValues ?? { name: 'OriginalView' },
       resetFields: jest.fn(),
       setFieldsValue: jest.fn(),
+      getFieldValue: (name: string) => mockFormValues?.[name],
     },
   ];
   return {
     Form,
-    Modal: overlay,
+    Modal: (props: any) => {
+      if (props.title === jest.requireActual('./utils/kailoI18n').kailoText(mockLocale, 'home.fixSql')) mockFixModal = props;
+      return overlay(props);
+    },
     Drawer: (props: any) => {
       const { kailoText: text } = jest.requireActual('./utils/kailoI18n');
       if (
@@ -4231,7 +4238,9 @@ describe('original Home answer and chart operation lifetime', () => {
       );
       await settle();
       mockConfig.mockResolvedValue({ ...governed, nativeBindingGeneration: 3 });
-      const rejected = expect(pending).rejects.toThrow('NATIVE_OUTCOME_UNKNOWN');
+      const rejected = expect(pending).rejects.toThrow(
+        'NATIVE_OUTCOME_UNKNOWN',
+      );
       await respond(
         requests[0],
         'updateThreadResponse',
@@ -4245,19 +4254,30 @@ describe('original Home answer and chart operation lifetime', () => {
     });
     it('keeps the original SQL submit pending and deduplicated through its post-ACK configuration read', async () => {
       const page = renderPage();
-      const pending = page.controls.preparation.onFixSQLStatement(21, 'current SQL');
+      const pending = page.controls.preparation.onFixSQLStatement(
+        21,
+        'current SQL',
+      );
       let completed = false;
-      pending.then(() => { completed = true; });
+      pending.then(() => {
+        completed = true;
+      });
       await settle();
       let resolveConfig: (value: any) => void;
-      const config = new Promise((resolve) => { resolveConfig = resolve; });
+      const config = new Promise((resolve) => {
+        resolveConfig = resolve;
+      });
       mockConfig.mockReturnValueOnce(config);
       await respond(requests[0], 'updateThreadResponse', row('current SQL'));
       const rerender = renderPage();
       expect(completed).toBe(false);
       expect(rerender.controls.preparation.fixStatementLoading).toBe(true);
-      expect(rerender.controls.preparation.onFixSQLStatement(21, 'second SQL')).toBe(pending);
-      expect(requests.map((request) => request.name)).toEqual(['UpdateThreadResponse']);
+      expect(
+        rerender.controls.preparation.onFixSQLStatement(21, 'second SQL'),
+      ).toBe(pending);
+      expect(requests.map((request) => request.name)).toEqual([
+        'UpdateThreadResponse',
+      ]);
       expect(cacheRow().sql).toBe('cached original');
       resolveConfig(governed);
       await pending;
@@ -4265,8 +4285,59 @@ describe('original Home answer and chart operation lifetime', () => {
       expect(cacheRow().sql).toBe('current SQL');
       expect(completed).toBe(true);
       expect(renderPage().controls.preparation.fixStatementLoading).toBe(false);
-      expect(requests.map((request) => request.name)).toEqual(['UpdateThreadResponse', 'GenerateThreadResponseAnswer']);
+      expect(requests.map((request) => request.name)).toEqual([
+        'UpdateThreadResponse',
+        'GenerateThreadResponseAnswer',
+      ]);
     });
+    it.each(['success', 'failure'])(
+      'the original FixSQLModal waits for the actual SQL continuation and only closes on success (%s)',
+      async (outcome) => {
+        mockConfig.mockResolvedValue(standalone);
+        mockFormValues = { sql: 'fixed SQL' };
+        mockSqlWatch = 'fixed SQL';
+        mockPreview.mockResolvedValue({ data: { previewSql: {} } });
+        const page = renderPage();
+        const close = jest.fn();
+        const pageSlots = hookSlots;
+        hookSlots = [];
+        cursor = 0;
+        renderToStaticMarkup(createElement(FixSQLModal, {
+          visible: true,
+          defaultValue: { sql: 'fixed SQL', responseId: 21 },
+          onSubmit: (sql: string) => page.controls.preparation.onFixSQLStatement(21, sql),
+          onClose: close,
+        }));
+        hookSlots = pageSlots;
+        expect(mockFixModal).toBeDefined();
+        const error = jest.spyOn(console, 'error').mockImplementation(() => {});
+        try {
+          mockFixModal.onOk();
+          await settle();
+          expect(requests.map((request) => request.name)).toEqual(['UpdateThreadResponse']);
+          expect(close).not.toHaveBeenCalled();
+          if (outcome === 'failure') {
+            requests[0].observer.error(new Error('original SQL mutation failure'));
+            await settle();
+            expect(error).toHaveBeenCalled();
+            expect(close).not.toHaveBeenCalled();
+            expect(cacheRow().sql).toBe('cached original');
+            expect(requests).toHaveLength(1);
+          } else {
+            let resolveConfig: (value: any) => void;
+            mockConfig.mockReturnValueOnce(new Promise((resolve) => { resolveConfig = resolve; }));
+            await respond(requests[0], 'updateThreadResponse', row('fixed SQL'));
+            expect(close).not.toHaveBeenCalled();
+            expect(renderPage().controls.preparation.fixStatementLoading).toBe(true);
+            resolveConfig(standalone);
+            await settle();
+            expect(close).toHaveBeenCalledTimes(1);
+            expect(cacheRow().sql).toBe('fixed SQL');
+            expect(requests.map((request) => request.name)).toEqual(['UpdateThreadResponse', 'GenerateThreadResponseAnswer']);
+          }
+        } finally { error.mockRestore(); }
+      },
+    );
     it('a failed actual SQL mutation neither generates an answer nor refreshes or overwrites the current cache', async () => {
       const page = renderPage();
       const pending = page.controls.preparation.onFixSQLStatement(
@@ -4276,7 +4347,9 @@ describe('original Home answer and chart operation lifetime', () => {
       await settle();
       const error = jest.spyOn(console, 'error').mockImplementation(() => {});
       try {
-        const rejected = expect(pending).rejects.toThrow('NATIVE_OUTCOME_UNKNOWN');
+        const rejected = expect(pending).rejects.toThrow(
+          'NATIVE_OUTCOME_UNKNOWN',
+        );
         requests[0].observer.error(new Error('original SQL mutation failure'));
         await rejected;
         await settle();
