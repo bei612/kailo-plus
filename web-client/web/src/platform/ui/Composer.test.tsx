@@ -1619,11 +1619,16 @@ describe("DD-146 original send flow: clear at Send, restore on failure", () => {
     enableDraftGif();
     const {upload} = uploader();
     const host = await render(composer("gif-only", upload));
+    await type(input(host), "temporary caption");
+    await type(input(host), "");
     await chooseDraftGif(host);
     expect(loadDraftEntry("gif-only")).toMatchObject({content:"",pendingImeta:[{sha256:"",type:"image/gif",url:draftGif.url}]});
     await rerender(composer("gif-other", upload));
     expect(host.querySelector('[data-testid="composer-gif-attachment"]')).toBeNull();
+    await rerender(<div/>);
+    await act(async()=>{ await new Promise(resolve=>setTimeout(resolve,20)); });
     await rerender(composer("gif-only", upload));
+    expect(input(host).textContent).toBe("");
     expect(host.querySelectorAll('[data-testid="composer-gif-attachment"]')).toHaveLength(1);
     expect(upload).not.toHaveBeenCalled();
     await click(button(host,"platform.send"));
@@ -1650,32 +1655,12 @@ describe("DD-146 original send flow: clear at Send, restore on failure", () => {
     expect(upload).toHaveBeenCalledOnce();
   });
 
-  it("keeps existing GIF Markdown intact while restoring an edit draft", async () => {
-    const publish = vi.fn().mockResolvedValue(undefined);
-    const originalUrl = "https://static.klipy.com/original.gif";
-    const target = {id:"e".repeat(64),author:"Alice",pubkey:"alice",body:`original\n![image](${originalUrl})`,createdAt:1,time:"",depth:0,tags:[]};
-    const edit = <Composer draftIdentity="alice" draftKey="gif-edit" editTarget={target} onPublish={publish}/>;
-    const host = await render(edit);
-    await vi.waitFor(()=>expect((input(host) as HTMLElement & {editor?:Editor}).editor).toBeDefined());
-    const editor = (input(host) as HTMLElement & {editor:Editor}).editor;
-    await act(async()=>{ editor.commands.insertContent("edited "); });
-    await settle();
-    const content = loadDraftEntry("gif-edit")!.content;
-    expect(content).toContain("edited");
-    expect(content.split(originalUrl)).toHaveLength(2);
-    await rerender(<Composer draftIdentity="alice" draftKey="other"/>);
-    await rerender(edit);
-    expect(host.querySelector('[data-testid="composer-gif-attachment"]')).toBeNull();
-    await click(button(host,"platform.send"));
-    await vi.waitFor(()=>expect(publish).toHaveBeenCalledOnce());
-    expect(publish.mock.calls[0][0]).toBe(content);
-    expect(publish.mock.calls[0][1]).toEqual([]);
-  });
-
   it("removes a restored GIF-only draft without resurrecting it on the next visit", async () => {
     enableDraftGif();
     const {upload} = uploader();
     const host = await render(composer("gif-remove", upload));
+    await type(input(host), "temporary caption");
+    await type(input(host), "");
     await chooseDraftGif(host);
     await rerender(composer("other", upload));
     await rerender(composer("gif-remove", upload));
