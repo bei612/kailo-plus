@@ -96,10 +96,14 @@ async function governedSummary(req: NextApiRequest, res: NextApiResponse) {
       ),
       history,
     );
-    const readCurrentHistory = async (selected: Parameters<typeof native.readHistory>[1]) => {
-      if (!isGovernedQueryMode()) throw new NativeQueryRefusal(412, 'QUERY_ADMISSION_UNAVAILABLE');
+    const readCurrentHistory = async (
+      selected: Parameters<typeof native.readHistory>[1],
+    ) => {
+      if (!isGovernedQueryMode())
+        throw new NativeQueryRefusal(412, 'QUERY_ADMISSION_UNAVAILABLE');
       const visible = await native.readHistory(token, selected);
-      if (!isGovernedQueryMode()) throw new NativeQueryRefusal(412, 'QUERY_ADMISSION_UNAVAILABLE');
+      if (!isGovernedQueryMode())
+        throw new NativeQueryRefusal(412, 'QUERY_ADMISSION_UNAVAILABLE');
       return visible;
     };
     const originalThreadId = threadId || key;
