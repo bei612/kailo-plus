@@ -894,7 +894,7 @@ fn pull_request_update_tags(
 ) -> Result<Vec<Vec<String>>, OperatorError> {
     let (owner, author) = pull_request_status_actors(root)?;
     let mut tags = vec![
-        vec!["a".into(), comment_repository(root)?],
+        vec!["a".into(), comment_repository(root)?.to_owned()],
         vec!["p".into(), owner.clone()],
     ];
     if owner != author {
