@@ -3642,6 +3642,9 @@ describe('native bound-project business consumers', () => {
   });
   it('thread recommendation builds its MDL from the same selected project before original dispatch', async () => {
     const service = asking();
+    service.threadRepository.findOneBy.mockResolvedValue({ id: 81, projectId, questionsStatus: 'NOT_STARTED' });
+    service.threadResponseRepository.findAllBy.mockResolvedValue([{ id: 71, threadId: 81, question: 'original' }]);
+    service.threadRepository.claimRecommendation = jest.fn(async (thread, sourceResponseId, queryId) => ({ ...thread, questionsSourceResponseId: sourceResponseId, queryId, questionsStatus: 'GENERATING' }));
     service.threadRecommendQuestionBackgroundTracker = {
       isExist: jest.fn(() => false),
       addTask: jest.fn(),
@@ -3650,9 +3653,7 @@ describe('native bound-project business consumers', () => {
       makeCurrentModelMDL: jest.fn(async () => ({ manifest: {} })),
     };
     service.wrenAIAdaptor = {
-      generateRecommendationQuestions: jest.fn(async () => ({
-        queryId: 'native-query',
-      })),
+      generateRecommendationQuestions: jest.fn(async ({ queryId }) => ({ queryId })),
     };
     await service.generateThreadRecommendationQuestions(81);
     expect(service.mdlService.makeCurrentModelMDL).toHaveBeenCalledWith({
@@ -3663,10 +3664,12 @@ describe('native bound-project business consumers', () => {
     ).toHaveBeenCalledWith(
       expect.objectContaining({ projectId: String(projectId) }),
     );
-    expect(service.threadRepository.updateOne).toHaveBeenCalledWith(
-      81,
-      expect.objectContaining({ queryId: 'native-query' }),
+    expect(service.threadRepository.claimRecommendation).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 81, projectId, questionsStatus: 'NOT_STARTED' }),
+      71,
+      expect.stringMatching(/^[0-9a-f-]{36}$/),
     );
+    expect(service.threadRepository.updateOne).not.toHaveBeenCalled();
     expect(
       service.threadRecommendQuestionBackgroundTracker.addTask,
     ).toHaveBeenCalledTimes(1);
