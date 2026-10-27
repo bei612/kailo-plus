@@ -13093,3 +13093,75 @@ This proves the bounded original asynchronous consumers, not a live model,
 provider, Core/Gateway/OpenBao/usage chain or deployed browser operation. Matching
 formal artifacts, release admission and receiver activation remain outstanding.
 No production configuration, deployment, source trust or release gate changed.
+
+## Original native HUMAN query file recovery (2026-10-27)
+
+The complete original `nativeHumanQuery.test.ts` file at `17ba0ab2c` failed with
+**535 passed / 9 failed / 1 skipped**. The original log remains at
+`/volumes/data/kailo/verification/buzz-r10/wren-full-human-17ba0ab2caf7553dcffd9aa542152b2af06b7ca2-check/consumers.log`.
+This batch resumes from integrated `851a67a59` and fixes only that existing test
+file at `53a23b4cc62655aaecb6d31d31aa6a88c9361507` (+31/-1). It does not change
+product authorization, query execution, dependencies or timeouts.
+
+The nine failures had three causes:
+
+- Six editor/generated-response/partial-CTE cases omitted the existing
+  `authorizeNativeScope(discover)` response. Their authority fixtures now return
+  the complete matching binding/Tenant/workspace/native scope, generation and
+  checked revision. They assert the requested permission is exactly `discover`,
+  and the SQL editor asserts that generation reaches the original `sqlReference`.
+- One resolver assertion still expected the older argument list. It now checks
+  every actual argument, including absent optional context and
+  `observationOnly=false`; it does not accept arbitrary arguments.
+- REST create/update waited in `finally` for Node 18 keep-alive sockets when
+  closing the original HTTP server. Following the same file's existing cleanup,
+  the fixture now closes connections after the awaited HTTP operations and then
+  awaits server shutdown. Both cases passed their unchanged assertions in
+  **37ms / 10ms**: initial UNKNOWN, same persisted event recovery, original
+  201/200 response, only one dispatch, subsequent 403 on withdrawal, and no
+  governed recovery after configuration removal. No test timeout was increased.
+
+CI fetched that fixed source from GitHub and reused the existing original Yarn
+installation after exact `package.json`, `yarn.lock` and `.yarnrc.yml` comparison.
+The immutable Node 18 image was
+`sha256:f9ab18e354e6855ae56ef2b290dd225c1e51a564f87584b9bd21dd651838830e`.
+Original container-safety preflight and Docker readback confirmed **4 CPU / 4 GiB /
+equal swap**, nonroot and network `none`; source/tmp/logs were on actual Data
+`/dev/sda1`. No dependencies were installed or copied, and no PostgreSQL container
+was allocated.
+
+The complete original file passed **544 / 545**, with **0 failures** and the one
+pre-existing conditional PostgreSQL case unexecuted. Full TypeScript, applicable
+lint and original Prettier check all exited **0**. The exact skipped case is
+`deletes the selected project only when another project has the same source table name`,
+under `native schema deletion in original PostgreSQL model repository`. It requires
+`WREN_QUERY_TEST_DATABASE_URL`; this batch did not provide that environment or
+claim its database result. No new test was skipped or filtered in full-file runs.
+
+Two real mutations of the private fixed-source export were detected:
+
+| Mutation | Failed original tests | Restored selected tests |
+| --- | ---: | ---: |
+| Omit current generation from SQL reference freeze | 2 | 2 |
+| Redispatch an already persisted native SQL-pair event | 3 | 3 |
+
+Both mutations exited **1** with original assertion failures. Byte-for-byte
+restoration returned **0**, and the final complete file again passed **544** with
+only the same conditional PostgreSQL skip. **618 input Git blobs** matched fixed
+GitHub source. Own containers were removed and absence was read back. Original
+negative logs and the nine baseline failures remain available.
+
+The terminal receipt is
+`/volumes/data/kailo/verification/buzz-r10/wren-human-full-53a23b4cc62655aaecb6d31d31aa6a88c9361507-fault/receipt.json`,
+SHA-256 `ee4bbd38dff67a7e99373989577dd7d24a015b0ee21380a5ec568bfeba6f82af`.
+The unchanged repository copy is [the full HUMAN consumer receipt](native-human-full-receipt.json).
+It records exact baseline case names, commands, limits, log hashes, mutations,
+restoration, the conditional skip and the input manifest. Older receipts remain
+unchanged.
+
+This closes the nine recorded failures in this original file within its explicit
+one-skip boundary. Its HTTP/resolver/service consumers use the existing authority
+and AI adaptor fixtures; SQLite checks do not replace PostgreSQL acceptance.
+This is not a complete Wren suite run or live Core/provider/receiver/browser
+acceptance. No publication, deployment, production configuration or source trust
+was changed.
