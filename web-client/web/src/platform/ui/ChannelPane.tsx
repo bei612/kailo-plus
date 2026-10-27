@@ -118,7 +118,7 @@ import { useComposerPasteHandler } from "@client-kit/platform/react/composer/fea
 import { useComposerVoiceNote } from "@client-kit/platform/react/composer/features/messages/ui/useComposerVoiceNote";
 import { partitionMentionIdentitiesByLocalTrust } from "@client-kit/platform/react/composer/features/messages/lib/mentionIdentityTrust";
 import type { ParsedMessageLink } from "@client-kit/platform/react/composer/features/messages/lib/messageLink";
-import { initDraftStore, loadDraftEntry, saveDraftEntry, clearDraftEntry, savePendingSend, loadPendingSend, loadPendingSendFiles, isDraftStoreScope, clearPendingSend, subscribeToStore, type PendingSendStage, type PendingSendState } from "@client-kit/platform/react/composer/features/messages/lib/useDrafts";
+import { initDraftStore, loadDraftEntry, saveDraftEntry, clearDraftEntry, savePendingSend, loadPendingSend, loadPendingSendFiles, isDraftStoreScope, getDraftAuthority, claimDraftSend, clearPendingSend, subscribeToStore, type PendingSendStage, type PendingSendState } from "@client-kit/platform/react/composer/features/messages/lib/useDrafts";
 import { ComposerAttachments, DropZoneOverlay } from "@client-kit/platform/react/composer/features/messages/ui/ComposerAttachments";
 import type { UploadingAttachmentPreview } from "@client-kit/platform/react/composer/features/messages/lib/attachmentPreview";
 import { useComposerAttachmentSpoilers } from "@client-kit/platform/react/composer/features/messages/ui/useComposerAttachmentSpoilers";
@@ -1084,7 +1084,7 @@ type UploadBatch = { remaining: File[]; active: Map<number, File>; canceled: boo
 type SendSnapshot = {
   content: string; pending: Pending[]; gifs: WebGifItem[]; bindings: Map<string, string>; installationIds: string[];
   spoilers: ReadonlySet<string>; intent: { current: { key: string; signature: string } | null };
-  linkPreviews?: LinkPreviewPublication; cleared: boolean;
+  linkPreviews?: LinkPreviewPublication; cleared: boolean; ownsRecovery: () => boolean;
   batches: ReadonlySet<UploadBatch>; remainingFiles: File[]; failed: boolean; uploadUnknown?: boolean;
 };
 /** Draft keys whose cleared send is being published by this page (a revisit shows it as in flight). */
@@ -1261,8 +1261,15 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
   const picker = useRef<HTMLInputElement>(null);
   // 当前发送意图：内容与附件不变时重发沿用同一个键——结果不明之后再点发送，
   // BFF 回答原操作的结论而不是再发一条（DD-81）。确定的结论之后换新键。
-  const intent = useRef<{ key: string; signature: string } | null>(null);
   const owner = useMemo(() => ({ active: true, sending: false }), [workspaceId, draftIdentity, draftKey, editTarget?.id]);
+  const intent = useMemo(() => ({ current: null as { key: string; signature: string } | null }), [owner]);
+  const captureRecoveryAuthority = () => {
+    if (!draftIdentity || !draftKey) return () => owner.active;
+    claimDraftSend(draftKey);
+    const authority = getDraftAuthority(draftKey);
+    const revision = authority.revision;
+    return () => isDraftStoreScope(draftIdentity, window.location.origin) && authority.revision === revision;
+  };
   const pendingSendOwnerKey = JSON.stringify([window.location.origin, draftIdentity, draftKey]);
   useEffect(() => { owner.active = true; return () => { owner.active = false; }; }, [owner]);
   // Files awaiting this owner's real BFF upload receipt are not yet imeta.
@@ -1289,7 +1296,7 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
     replaceRestoredAttachments(items);
     if (!draftIdentity || !draftKey || !isDraftStoreScope(draftIdentity, window.location.origin)) return;
     const record = loadPendingSend(draftKey);
-    if (!items.length) clearPendingSend(draftKey);
+    if (!items.length && pendingGifsRef.current.length === 0) clearPendingSend(draftKey);
     else if (record) savePendingSend(draftKey, { ...record, missingFileNames: items.map(item => item.name) },
       items.flatMap(item => item.file ? [item.file] : []));
   }, [replaceRestoredAttachments, draftIdentity, draftKey]);
@@ -1559,9 +1566,10 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
     setClearedPublishing(0);
     const pendingSend = draftIdentity && draftKey && !editTarget ? loadPendingSend(draftKey) : undefined;
     const files = pendingSend ? loadPendingSendFiles(draftKey!) : [];
-    const extra = pendingSend?.extras as { restored?: boolean; uploadUnknown?: boolean } | undefined;
+    const extra = pendingSend?.extras as { restored?: boolean; uploadUnknown?: boolean; gifs?: WebGifItem[] } | undefined;
     replaceRestoredAttachments([]);
     if (pendingSend && extra?.restored) {
+      setPendingGifs(Array.isArray(extra.gifs) ? extra.gifs : []);
       holdPendingFiles(pendingSend, files);
       setRecovery(null);
     } else {
@@ -1589,6 +1597,10 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
     // A captured publication/UNKNOWN retry retains its exact content and key.
     const content = intent.current ? editorContent : stripImplicitAgentMentionPrefix(editorContent, implicitAgentMentionProvenance.getPrefix());
     if (!content.trim() && attachments.length === 0 && !intent.current) { clearDraftEntry(draftKey); return; }
+    const recovered = loadPendingSend(draftKey);
+    if ((recovered?.extras as { restored?: boolean } | undefined)?.restored) {
+      savePendingSend(draftKey, { ...recovered!, extras: { ...(recovered!.extras as object), gifs: pendingGifsRef.current } });
+    }
     const previous = loadDraftEntry(draftKey);
     const timestamp = new Date().toISOString();
     saveDraftEntry(draftKey, {
@@ -1600,7 +1612,7 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
       mentionRefs: [...humanBindings.current].map(([displayName, pubkey]) => ({displayName, pubkey, ...(knownAgentKeys.has(pubkey) ? {isAgent:true} : {})})),
     });
   }, [draftKey, workspaceId, draftChannelId, owner, loadedDraftOwner, mentionInstallationIds, attachmentActions.spoileredAttachmentUrls, knownAgentKeys, implicitAgentMentionProvenance.getPrefix]);
-  useEffect(() => { persistDraft(richText.getMarkdown(), pending); }, [draftRevision, pending, persistDraft, richText.getMarkdown]);
+  useEffect(() => { persistDraft(richText.getMarkdown(), pending); }, [draftRevision, pending, pendingGifs, persistDraft, richText.getMarkdown]);
 
   // DD-146 pending send: the frozen message as a draft-store record (original
   // saveQueuedAttachmentsForDraft keeps its local files; Kailo keeps only their names).
@@ -1615,7 +1627,7 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
         mentionRefs: [...snapshot.bindings].map(([displayName, pubkey]) => ({displayName, pubkey, ...(knownAgentKeys.has(pubkey) ? {isAgent: true} : {})})) } };
   }, [workspaceId, draftChannelId, draftKey, knownAgentKeys]);
   const persistPendingSend = useCallback((snapshot: SendSnapshot, stage: PendingSendStage) => {
-    if (draftIdentity && draftKey && isDraftStoreScope(draftIdentity, window.location.origin)) savePendingSend(draftKey, pendingSendRecord(snapshot, stage),
+    if (snapshot.ownsRecovery() && draftIdentity && draftKey) savePendingSend(draftKey, pendingSendRecord(snapshot, stage),
       [...new Set([...snapshot.batches].flatMap(batch => [...batch.active.values(), ...batch.remaining]).concat(snapshot.remainingFiles))]);
   }, [draftIdentity, draftKey, pendingSendRecord]);
   persistQueuedRef.current = (snapshot) => persistPendingSend(snapshot, "uploading");
@@ -1632,7 +1644,7 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
     attachmentActions.setSpoileredAttachmentUrls(new Set());
     setMentionInstallationIds([]);
     intent.current = null;
-  }, [richText.setContent, pasteBinding, channelLinks.clearChannels, emojiAutocomplete.clearEmojis, attachmentActions.setSpoileredAttachmentUrls]);
+  }, [intent, richText.setContent, pasteBinding, channelLinks.clearChannels, emojiAutocomplete.clearEmojis, attachmentActions.setSpoileredAttachmentUrls]);
   // Original restoreComposerAfterFailure: the frozen message returns to the composer, its key
   // with it (an UNKNOWN retry stays the same publication). Unconfirmed files
   // return to the original local queue; only an explicit Send uploads them.
@@ -1655,12 +1667,13 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
       if (record.missingFileNames.length) savePendingSend(draftKey, { ...record, extras: { ...(record.extras as object), restored: true } }, files);
       else clearPendingSend(draftKey);
     }
-  }, [richText.setContent, attachmentActions.setSpoileredAttachmentUrls, knownAgentKeys, draftKey, draftIdentity, holdPendingFiles]);
+  }, [intent, richText.setContent, attachmentActions.setSpoileredAttachmentUrls, knownAgentKeys, draftKey, draftIdentity, holdPendingFiles]);
   const composerIsEmpty = useCallback(() => !richText.getMarkdown().trim() && pendingRef.current.length === 0 &&
     pendingGifsRef.current.length === 0 && restoredAttachmentsRef.current.length === 0 && [...activeBatches.current].every(batch => batch.canceled), [richText.getMarkdown]);
   /** Returns whether the message is back in the composer (otherwise it waits as a recovery). */
   const restoreSnapshot = useCallback((snapshot: SendSnapshot, stage: "failed" | "unknown"): boolean => {
     if (!snapshot.cleared) return true;
+    if (!snapshot.ownsRecovery()) return false;
     snapshot.cleared = false;
     const record = pendingSendRecord(snapshot, stage);
     if (owner.active && composerIsEmpty()) {
@@ -1894,7 +1907,7 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
         if (snapshot.cleared) {
           if (draftKey) {
             publishingPendingSends.delete(pendingSendOwnerKey);
-            if (draftIdentity && isDraftStoreScope(draftIdentity, window.location.origin) && loadPendingSend(draftKey)?.draft.sendIntent?.key === key) clearPendingSend(draftKey);
+            if (snapshot.ownsRecovery() && loadPendingSend(draftKey)?.draft.sendIntent?.key === key) clearPendingSend(draftKey);
           }
           if (!owner.active) return;
           onConfirmed?.();
@@ -1971,7 +1984,7 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
         if (!content && pendingRef.current.length === 0 && pendingGifsRef.current.length === 0 && activeBatches.current.size === 0) return;
         snapshot = { content, pending: pendingRef.current, gifs: pendingGifsRef.current,
           bindings: new Map(humanBindings.current), installationIds: mentionInstallationIds, spoilers: new Set(attachmentActions.spoileredAttachmentUrls),
-          intent: { current: intent.current }, linkPreviews: linkPreviewIntent, cleared: true,
+          intent: { current: intent.current }, linkPreviews: linkPreviewIntent, cleared: true, ownsRecovery: captureRecoveryAuthority(),
           batches: new Set(activeBatches.current), remainingFiles: [], failed: false };
         clearComposer();
         setProblem(null);
@@ -2000,7 +2013,7 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
       await pasteBinding.settlePendingMentionBindings();
       if (!owner.active) return;
       await dispatch({ content: richText.getMarkdown().trim(), pending, gifs: pendingGifs, bindings: humanBindings.current,
-        installationIds: mentionInstallationIds, spoilers: attachmentActions.spoileredAttachmentUrls, intent, cleared: false,
+        installationIds: mentionInstallationIds, spoilers: attachmentActions.spoileredAttachmentUrls, intent, cleared: false, ownsRecovery: captureRecoveryAuthority(),
         batches: new Set(), remainingFiles: [], failed: false }, decision);
     } finally {
       owner.sending = false;
