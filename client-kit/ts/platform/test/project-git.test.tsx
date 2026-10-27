@@ -374,6 +374,12 @@ describe("original repository tag snapshot consumer",()=>{
       {path:"README.md",kind:"file",size:24,previewContent:request.targetRef?"Tag inline preview":"Branch inline preview",lastChangedAt:null}]}}));
     const {ui}=await mount(f,{repositoryId:f.repositoryId,tab:"files"});
     await vi.waitFor(()=>expect(ui.querySelector('[data-testid="project-repository-entry-row"]')).not.toBeNull());
+    // First visit loads the tag through the original menu. A later cached switch
+    // keeps the Files panel mounted; an uncached switch originally returns to its list.
+    await pickRepositoryRef("mainfffffff");
+    await vi.waitFor(()=>expect(ui.querySelector('[data-testid="project-repository-entry-row"]')).not.toBeNull());
+    await pickRepositoryRef("main");
+    await vi.waitFor(()=>expect(ui.querySelector('[data-testid="project-repository-entry-row"]')).not.toBeNull());
     await click(ui.querySelector<HTMLTableRowElement>('[data-testid="project-repository-entry-row"]')!);
     await vi.waitFor(()=>expect(ui.textContent).toContain("Branch inline preview"));
     await pickRepositoryRef("mainfffffff");
