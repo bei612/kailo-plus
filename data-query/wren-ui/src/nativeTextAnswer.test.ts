@@ -1,4 +1,9 @@
-import { Readable } from 'stream';
+import { Readable, PassThrough } from 'stream';
+import knex, { Knex } from 'knex';
+import { apiResolver } from 'next/dist/server/api-utils/node/api-resolver';
+import { AskingService } from './apollo/server/services/askingService';
+import { ThreadRepository } from './apollo/server/repositories/threadRepository';
+import { ThreadResponseRepository } from './apollo/server/repositories/threadResponseRepository';
 import { EventEmitter } from 'events';
 import { randomUUID } from 'crypto';
 import { mkdtemp, rm, writeFile } from 'fs/promises';
@@ -278,10 +283,14 @@ describe('original native text-answer result consumers', () => {
     expect(scopeRequests).toBe(0);
     expect(
       native.threadResponseRepository.claimNativeAnswer,
-    ).not.toHaveBeenCalled();
+    ).toHaveBeenCalledWith(response, {
+      ...response.answerDetail,
+      status: 'FINISHED',
+      content: 'original answer',
+    });
     expect(
       native.askingService.changeThreadResponseAnswerDetailStatus,
-    ).toHaveBeenCalledWith(71, 'FINISHED', 'original answer');
+    ).not.toHaveBeenCalled();
     expect(result.write.mock.calls.map(([value]) => value).join('')).toBe(
       'data: {"message":"original answer"}\n\ndata: {"done":true}\n\n',
     );
@@ -665,5 +674,145 @@ describe('original native text-answer result consumers', () => {
     } finally {
       error.mockRestore();
     }
+  });
+});
+
+
+describe('original answer HTTP identity and conditional history writes', () => {
+  const original = process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+  const originalBinding = process.env.WREN_PLATFORM_BINDING_CONFIG_FILE;
+  const native: any = components;
+  const originalRepository = native.threadResponseRepository;
+  const postgres = process.env.WREN_TEST_POSTGRES_URL;
+  const schema = `answer_identity_${randomUUID().replace(/-/g, '')}`;
+  let database: Knex, repository: ThreadResponseRepository, server: Server;
+  let origin: string, projectId: number;
+  let closed: Promise<void>, close: () => void;
+  let reads: Promise<any>[], writes: Promise<any>[];
+  let claim: jest.SpyInstance;
+  const stored = () => repository.findOneBy({ id: 71 });
+  const replace = async () => {
+    await repository.updateOne(71, {
+      answerDetail: { queryId: 'replacement', status: 'STREAMING' },
+    });
+  };
+  const stream = (frames: string[]) => {
+    native.wrenAIAdaptor.streamTextBasedAnswer.mockResolvedValue(
+      Readable.from(frames.map((frame) => Buffer.from(frame))),
+    );
+  };
+  const get = (queryId?: string) => fetch(`${origin}/api/ask_task/streaming_answer?responseId=71${queryId === undefined ? '' : `&queryId=${encodeURIComponent(queryId)}`}`);
+  beforeAll(async () => {
+    database = knex(postgres ? { client: 'pg', connection: postgres, searchPath: [schema] } : { client: 'better-sqlite3', connection: { filename: ':memory:' }, useNullAsDefault: true });
+    if (postgres) await database.schema.createSchema(schema);
+    for (const name of ['20240125070643_create_project_table.js', '20240327030000_create_ask_table.js', '20241207000000_update_thread_response_for_answer.js'])
+      await jest.requireActual(join(process.cwd(), 'migrations', name)).up(database);
+    await database('project').insert([7, 8].map((id) => ({ id, type: 'DUCKDB', display_name: `project-${id}`, catalog: 'wren', schema: 'public' })));
+    await database('thread').insert({ id: 81, project_id: 7 });
+    repository = new ThreadResponseRepository(database);
+    const service = Object.assign(Object.create(AskingService.prototype), {
+      threadResponseRepository: repository,
+      threadRepository: new ThreadRepository(database),
+      projectService: { getCurrentProject: async () => ({ id: projectId }) },
+    });
+    native.askingService.getResponse.mockImplementation((id) => {
+      const read = service.getResponse(id);
+      reads.push(read);
+      return read;
+    });
+    native.threadResponseRepository = repository;
+    server = createServer((request, response) => {
+      response.once('close', () => {
+        setImmediate(() => { void (async () => { await Promise.all(reads); await Promise.all(writes); close(); })(); });
+      });
+      const query = Object.fromEntries(new URL(request.url, 'http://native.invalid').searchParams);
+      void apiResolver(request, response, query, { default: handler }, {} as any, false);
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  });
+  afterAll(async () => {
+    await new Promise<void>((resolve) => { server.close(() => resolve()); server.closeAllConnections(); });
+    native.threadResponseRepository = originalRepository;
+    if (postgres) await database.schema.dropSchemaIfExists(schema, true);
+    await database.destroy();
+    if (original === undefined) delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+    else process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = original;
+    if (originalBinding === undefined) delete process.env.WREN_PLATFORM_BINDING_CONFIG_FILE;
+    else process.env.WREN_PLATFORM_BINDING_CONFIG_FILE = originalBinding;
+  });
+  beforeEach(async () => {
+    delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+    delete process.env.WREN_PLATFORM_BINDING_CONFIG_FILE;
+    projectId = 7;
+    reads = []; writes = [];
+    closed = new Promise<void>((resolve) => { close = resolve; });
+    await database('thread_response').delete();
+    await repository.createOne({ id: 71, threadId: 81, question: 'original', sql: 'SELECT 1', answerDetail: { queryId: 'current', status: 'STREAMING' } });
+    native.wrenAIAdaptor.streamTextBasedAnswer.mockReset();
+    const update = repository.claimNativeAnswer.bind(repository);
+    claim = jest.spyOn(repository, 'claimNativeAnswer').mockImplementation((expected, detail) => {
+      const write = update(expected, detail);
+      writes.push(write);
+      return write;
+    });
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+  });
+  afterEach(() => { jest.restoreAllMocks(); });
+  it.each([undefined, 'current'])('original HTTP completion keeps the frozen query and persists only that answer, correlation=%s', async (queryId) => {
+    stream(['data: {"message":"original answer"}\n\n', 'data: {"done":true,"queryId":"current"}\n\n']);
+    const response = await get(queryId);
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe('data: {"message":"original answer"}\n\ndata: {"done":true}\n\n');
+    await closed;
+    expect((await stored()).answerDetail).toMatchObject({ queryId: 'current', status: 'FINISHED', content: 'original answer' });
+    expect(native.wrenAIAdaptor.streamTextBasedAnswer).toHaveBeenCalledTimes(1);
+  });
+  it('rejects a stale browser query before consuming the replacement queue', async () => {
+    await replace();
+    const response = await get('current');
+    expect(response.status).toBe(409);
+    await response.text(); await closed;
+    expect(native.wrenAIAdaptor.streamTextBasedAnswer).not.toHaveBeenCalled();
+    expect((await stored()).answerDetail).toEqual({ queryId: 'replacement', status: 'STREAMING' });
+  });
+  it.each(['query', 'project'])('refuses the next frame after original %s scope changes without changing the new answer', async (change) => {
+    native.wrenAIAdaptor.streamTextBasedAnswer.mockResolvedValue(Readable.from((async function* () {
+      if (change === 'query') await replace(); else projectId = 8;
+      yield Buffer.from('data: {"message":"stale body"}\n\ndata: {"done":true,"queryId":"current"}\n\n');
+    })()));
+    const response = await get('current');
+    expect(await response.text()).toBe('');
+    await closed;
+    expect((await stored()).answerDetail).toEqual({ queryId: change === 'query' ? 'replacement' : 'current', status: 'STREAMING' });
+    expect(claim).not.toHaveBeenCalled();
+  });
+  it('original conditional writer rejects a replacement committed after the last read but before done', async () => {
+    const update = repository.claimNativeAnswer.bind(repository);
+    claim.mockRestore();
+    claim = jest.spyOn(repository, 'claimNativeAnswer').mockImplementationOnce(async (expected, detail) => {
+      await replace();
+      return update(expected, detail);
+    });
+    stream(['data: {"done":true,"queryId":"current"}\n\n']);
+    const response = await get('current');
+    expect(await response.text()).toBe('');
+    await closed;
+    expect((await stored()).answerDetail).toEqual({ queryId: 'replacement', status: 'STREAMING' });
+  });
+  it.each([false, true])('disconnect preserves only the same original partial answer, replacement=%s', async (replacement) => {
+    const upstream = new PassThrough();
+    native.wrenAIAdaptor.streamTextBasedAnswer.mockResolvedValue(upstream);
+    const response = await get('current');
+    upstream.write('data: {"message":"partial"}\n\n');
+    const reader = response.body.getReader();
+    expect(new TextDecoder().decode((await reader.read()).value)).toContain('partial');
+    if (replacement) await replace();
+    await reader.cancel();
+    await closed;
+    expect((await stored()).answerDetail).toEqual(replacement
+      ? { queryId: 'replacement', status: 'STREAMING' }
+      : { queryId: 'current', status: 'INTERRUPTED', content: 'partial' });
+    expect(upstream.destroyed).toBe(true);
   });
 });
