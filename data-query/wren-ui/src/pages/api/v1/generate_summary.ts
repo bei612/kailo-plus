@@ -253,8 +253,10 @@ async function governedSummary(req: NextApiRequest, res: NextApiResponse) {
         200,
         Date.now() - startTime,
       );
-      if (!completed)
-        throw new NativeQueryRefusal(409, 'QUERY_INTENT_CONFLICT');
+      if (!completed) {
+        pending();
+        return;
+      }
       const disclosed = await native.readHistory(token, completed);
       res.status(200).json({ id: key, ...disclosed.responsePayload });
       return;
