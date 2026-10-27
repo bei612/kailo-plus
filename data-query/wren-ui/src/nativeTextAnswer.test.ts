@@ -1364,3 +1364,34 @@ describe('original answer result HTTP adaptor', () => {
     expect(result.numRowsUsedInLLM).toBe(2);
   });
 });
+
+
+describe('original GENERAL result HTTP adaptor', () => {
+  let server: Server, origin: string, body: any;
+  beforeAll(async () => {
+    server = createServer((req, res) => {
+      expect(req.method).toBe('GET');
+      expect(req.url).toBe('/v1/asks/original-query/result');
+      res.setHeader('Content-Type','application/json');
+      res.end(JSON.stringify(body));
+    });
+    await new Promise<void>((resolve) => server.listen(0,'127.0.0.1',resolve));
+    origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  });
+  afterAll(async () => { await new Promise<void>((resolve) => {server.close(() => resolve());server.closeAllConnections();}); });
+  it.each(['', '完整原结果'])('returns only same-query finished GENERAL full body %j', async (content) => {
+    body = {status:'finished', type:'GENERAL', completion:{query_id:'original-query',content}};
+    const result = await new WrenAIAdaptor({wrenAIBaseEndpoint:origin}).getAskResult('original-query');
+    expect(result.completion).toEqual({queryId:'original-query',content});
+  });
+  it.each(['foreign','extra','generating','error','sql','missing'])('rejects %s completion evidence from actual GET', async (mode) => {
+    body = {status:'finished',type:'GENERAL',completion:{query_id:'original-query',content:'full'}};
+    if(mode === 'foreign') body.completion.query_id = 'foreign';
+    if(mode === 'extra') body.completion.extra = true;
+    if(mode === 'generating') body.status = 'generating';
+    if(mode === 'error') body.error = {code:'OTHER',message:'failed'};
+    if(mode === 'sql') body.type = 'TEXT_TO_SQL';
+    if(mode === 'missing') delete body.completion;
+    expect((await new WrenAIAdaptor({wrenAIBaseEndpoint:origin}).getAskResult('original-query')).completion).toBeUndefined();
+  });
+});
