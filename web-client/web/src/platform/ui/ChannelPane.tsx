@@ -2066,7 +2066,7 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
 
   useComposerAutoSubmit({
     owner, enabled: Boolean(autoSendDraftKey && autoSendDraftKey === draftKey),
-    ready: restoredAttachments.length === 0 && loadedDraftOwner === owner && draftReady.current && !disabled && !sending && !paste.isPreparingAttachments() && uploading === 0 && voiceNote.status === "idle" && mentionVerified && Boolean(richText.getMarkdown().trim() || pending.length),
+    ready: restoredAttachments.length === 0 && loadedDraftOwner === owner && draftReady.current && !disabled && !sending && !paste.isPreparingAttachments() && uploading === 0 && voiceNote.status === "idle" && mentionVerified && Boolean(richText.getMarkdown().trim() || pending.length || pendingGifs.length),
     active: () => owner.active, consume: onAutoSendConsumed,
     beforeSubmit: () => {
       if (!intent.current) return true;
