@@ -3941,8 +3941,8 @@ TestNativeOIDCDirectoryConfigFromEnv、TestParseNativeOIDCDirectory 全部 PASS�
 与按路径给出稳定节点 UUID 的假根目录覆盖：
 交付前登录行为不变；首个快照预开户 + admin/standard + Workspace 角色 + 原生工作区（slug、标签、ADMIN scope、
 根 ACL 指向 `<root>/<id>`、角色 read/write ACL、Workspace ADMIN 的 WRITE 策略、无 ADMIN 的工作区无账号 WRITE）
-+ 其他 issuer 不开户 + Tenant 组改名 + 存储 0600
-+ 交付前开户而不在快照中的账号被锁；同版本不写；Core 503/403、令牌 401、坏 JSON、未知字段、角色值不符、
+以及其他 issuer 不开户、Tenant 组改名、存储 0600，
+以及交付前开户而不在快照中的账号被锁；同版本不写；Core 503/403、令牌 401、坏 JSON、未知字段、角色值不符、
 他 Tenant、他 binding 均不改状态且 503 报告为 Unavailable；降级、撤员加锁结束会话、Workspace 消失后角色 ACL 撤销、
 策略收回为仅管理员而工作区与根保留（再次出现时恢复授权与 WRITE 策略）、
 撤员登录与无令牌解析被拒；登录按快照取显示名/角色且非成员不开户；再加入解锁；“重启”（新路径读同一文件）后
