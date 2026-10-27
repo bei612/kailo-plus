@@ -296,7 +296,18 @@ func AccessListForLockedNodes(ctx context.Context, resolver VirtualPathResolver)
 }
 
 // AccessListFromContextClaims uses package function to compile ACL and Workspaces for a given user ( = list of roles inside the Claims)
-func AccessListFromContextClaims(ctx context.Context) (accessList *AccessList, err error) {
+func AccessListFromContextClaims(ctx context.Context) (*AccessList, error) {
+	return accessListFromContextClaims(ctx, true)
+}
+
+// FreshAccessListFromContextClaims compiles the same native ACL and scope rules
+// without consulting or populating the request/session cache. Callers must
+// supply the current user's roles rather than a saved login role snapshot.
+func FreshAccessListFromContextClaims(ctx context.Context) (*AccessList, error) {
+	return accessListFromContextClaims(ctx, false)
+}
+
+func accessListFromContextClaims(ctx context.Context, useCache bool) (accessList *AccessList, err error) {
 
 	accessList = NewAccessList()
 
@@ -305,9 +316,10 @@ func AccessListFromContextClaims(ctx context.Context) (accessList *AccessList, e
 		log.Logger(ctx).Debug("No Claims in Context, workspaces will be empty - probably anonymous user")
 		return
 	}
-	if cached, ok := newFromCache(ctx, claims.GetUniqueKey()); ok {
-
-		return cached, nil
+	if useCache {
+		if cached, ok := newFromCache(ctx, claims.GetUniqueKey()); ok {
+			return cached, nil
+		}
 	}
 
 	var span trace.Span
@@ -337,8 +349,10 @@ func AccessListFromContextClaims(ctx context.Context) (accessList *AccessList, e
 		return nil, errors.Tag(er, errors.AccessListNotFound)
 	}
 
-	if er := accessList.cache(ctx, claims.GetUniqueKey()); er != nil {
-		log.Logger(ctx).Warn("Could not store ACL to cache: "+er.Error(), zap.Error(err))
+	if useCache {
+		if er := accessList.cache(ctx, claims.GetUniqueKey()); er != nil {
+			log.Logger(ctx).Warn("Could not store ACL to cache: "+er.Error(), zap.Error(err))
+		}
 	}
 	return
 }

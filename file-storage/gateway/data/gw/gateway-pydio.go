@@ -40,6 +40,8 @@ import (
 	"github.com/pydio/cells/v5/common/errors"
 	"github.com/pydio/cells/v5/common/nodes"
 	"github.com/pydio/cells/v5/common/nodes/compose"
+"github.com/pydio/cells/v5/common/nodes/acl"
+"github.com/pydio/cells/v5/common/permissions"
 	"github.com/pydio/cells/v5/common/nodes/models"
 	"github.com/pydio/cells/v5/common/proto/tree"
 	"github.com/pydio/cells/v5/common/runtime"
@@ -418,12 +420,12 @@ func (l *pydioObjects) getObject(ctx context.Context, bucket string, key string,
 			return errors.WithStack(errors.StatusForbidden)
 		}
 		// Resolve every frozen identity again at each later disclosure.
-		resolve := func() (*tree.Node, error) {
+		resolve := func(resolveCtx context.Context) (*tree.Node, error) {
 			identities := compose.UuidClient()
-			root, rootErr := identities.ReadNode(ctx, &tree.ReadNodeRequest{Node: &tree.Node{Uuid: read.Delivery.NativeRootRef}})
-			admitted, admittedErr := identities.ReadNode(ctx, &tree.ReadNodeRequest{Node: &tree.Node{Uuid: read.Target["nativeRef"].(string)}})
-			member, memberErr := identities.ReadNode(ctx, &tree.ReadNodeRequest{Node: &tree.Node{Uuid: read.Input["nativeObjectRef"].(string)}})
-			target, targetErr := l.Router.ReadNode(ctx, &tree.ReadNodeRequest{Node: &tree.Node{Path: path}})
+			root, rootErr := identities.ReadNode(resolveCtx, &tree.ReadNodeRequest{Node: &tree.Node{Uuid: read.Delivery.NativeRootRef}})
+			admitted, admittedErr := identities.ReadNode(resolveCtx, &tree.ReadNodeRequest{Node: &tree.Node{Uuid: read.Target["nativeRef"].(string)}})
+			member, memberErr := identities.ReadNode(resolveCtx, &tree.ReadNodeRequest{Node: &tree.Node{Uuid: read.Input["nativeObjectRef"].(string)}})
+			target, targetErr := l.Router.ReadNode(resolveCtx, &tree.ReadNodeRequest{Node: &tree.Node{Path: path}})
 			r, a, n, m := root.GetNode(), admitted.GetNode(), target.GetNode(), member.GetNode()
 			if rootErr != nil || admittedErr != nil || targetErr != nil || memberErr != nil || r.GetUuid() != read.Delivery.NativeRootRef || r.GetType() != tree.NodeType_COLLECTION ||
 				a.GetUuid() != read.Target["nativeRef"] || n.GetUuid() != read.Input["nativeObjectRef"] || n.GetType() != tree.NodeType_LEAF || n.GetPath() != path ||
@@ -436,19 +438,30 @@ func (l *pydioObjects) getObject(ctx context.Context, bucket string, key string,
 			}
 			return n, nil
 		}
-		n, err := resolve()
+		n, err := resolve(ctx)
 		if err != nil {
 			return err
 		}
 		fresh := func() error {
-			if _, err := resolve(); err != nil {
-				return err
-			}
 			current, ok := claim.FromContext(ctx)
 			if !ok {
 				return errors.WithStack(errors.StatusForbidden)
 			}
-			_, err := cellauth.ResolveNativeUser(ctx, current.Subject)
+			user, err := cellauth.ResolveNativeUser(ctx, current.Subject)
+			if err != nil { return err }
+			roles := make([]string, 0, len(user.Roles))
+			for _, role := range user.Roles {
+				if role.GetUuid() != "" { roles = append(roles, role.GetUuid()) }
+			}
+			if len(roles) == 0 { return errors.WithStack(errors.StatusForbidden) }
+			// Keep the original claims scopes/session; only the roles come from
+			// the current user. Replace even a preset ACL with a freshly compiled
+			// native list before the original UUID/path authorization filters.
+			current.Roles = strings.Join(roles, ",")
+			freshCtx := claim.ToContext(ctx, current)
+			access, err := permissions.FreshAccessListFromContextClaims(freshCtx)
+			if err != nil { return err }
+			_, err = resolve(acl.WithPresetACL(freshCtx, access))
 			return err
 		}
 		if disclose != nil {

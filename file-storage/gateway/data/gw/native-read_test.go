@@ -68,6 +68,27 @@ func (s *nativeReadPolicy) StreamPolicyGroups(_ *idm.ListPolicyGroupsRequest, st
 	return stream.Send(&idm.PolicyGroup{Policies: []*idm.Policy{{ID: "native-read-login", Subjects: []string{"subject:" + s.subject}, Resources: []string{"oidc"}, Actions: []string{"login"}, Effect: idm.PolicyEffect_allow}}})
 }
 
+// These RPC fixtures feed the original AccessList compiler and UUID ACL filter,
+// including a stale preset list deliberately retained by the request context.
+type nativeReadACLs struct {
+	idm.UnimplementedACLServiceServer
+	user, resource string
+	deny bool
+	calls int
+}
+func (s *nativeReadACLs) SearchACL(_ *idm.SearchACLRequest, stream idm.ACLService_SearchACLServer) error {
+	s.calls++
+	if s.deny { return nil }
+	return stream.Send(&idm.SearchACLResponse{ACL: &idm.ACL{RoleID: s.user, NodeID: s.resource, WorkspaceID: s.resource, Action: permissions.AclRead}})
+}
+type nativeReadWorkspaces struct {
+	idm.UnimplementedWorkspaceServiceServer
+	resource string
+}
+func (s *nativeReadWorkspaces) SearchWorkspace(_ *idm.SearchWorkspaceRequest, stream idm.WorkspaceService_SearchWorkspaceServer) error {
+	return stream.Send(&idm.SearchWorkspaceResponse{Workspace: &idm.Workspace{UUID: s.resource, Slug: "read-fixture"}})
+}
+
 type nativeReadRouter struct {
 	nodes.Client
 	size   int64
@@ -188,9 +209,12 @@ func TestGovernedReadCompletesBeforeReturningMinIOReader(t *testing.T) {
 	const node = "00000000-0000-4000-8000-000000000005"
 	const key = "00000000-0000-4000-8000-000000000006"
 	const execution = "00000000-0000-4000-8000-000000000007"
-	grpcclient.RegisterMock(common.ServiceUserGRPC, &idm.UserServiceStub{UserServiceServer: &nativeReadUser{user: &idm.User{Uuid: user, Login: "native-user"}}})
+	grpcclient.RegisterMock(common.ServiceUserGRPC, &idm.UserServiceStub{UserServiceServer: &nativeReadUser{user: &idm.User{Uuid: user, Login: "native-user", Roles: []*idm.Role{{Uuid: user}}}}})
 	grpcclient.RegisterMock(common.ServicePolicyGRPC, &idm.PolicyEngineServiceStub{PolicyEngineServiceServer: &nativeReadPolicy{subject: user}})
 	grpcclient.RegisterMock(common.ServiceDocStoreGRPC, &docstore.DocStoreStub{DocStoreServer: &nativeReadDocuments{}})
+	grpcclient.RegisterMock(common.ServiceRoleGRPC, &idm.RoleServiceStub{RoleServiceServer: &uploadRoles{user: user}})
+	grpcclient.RegisterMock(common.ServiceAclGRPC, &idm.ACLServiceStub{ACLServiceServer: &nativeReadACLs{user: user, resource: resource}})
+	grpcclient.RegisterMock(common.ServiceWorkspaceGRPC, &idm.WorkspaceServiceStub{WorkspaceServiceServer: &nativeReadWorkspaces{resource: resource}})
 	target := map[string]interface{}{"resourceId": resource, "nativeType": "folder", "nativeRef": resource, "nativeInstanceRef": "native-instance", "nativeScopeRef": node}
 	var pepCalls, denyAt atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -349,11 +373,14 @@ func TestNativeHumanDownloadRetainsFreshDisclosureAfterCompletion(t *testing.T) 
 	grpcclient.RegisterMock(common.ServiceAclGRPC, &idm.ACLServiceStub{ACLServiceServer: new(uploadFrontACLs)})
 	grpcclient.RegisterMock(common.ServicePolicyGRPC, &idm.PolicyEngineServiceStub{PolicyEngineServiceServer: &nativeReadPolicy{subject: user}})
 	grpcclient.RegisterMock(common.ServiceDocStoreGRPC, &docstore.DocStoreStub{DocStoreServer: &nativeReadDocuments{}})
-	for _, scenario := range []string{"complete", "empty", "late-human-denied", "late-native-denied", "late-scope-moved", "late-user-unavailable", "before-first-byte"} {
+	for _, scenario := range []string{"complete", "empty", "late-human-denied", "late-native-denied", "late-scope-moved", "late-user-unavailable", "late-user-hidden", "late-user-locked", "late-role-revoked", "late-acl-revoked", "before-first-byte"} {
 		t.Run(scenario, func(t *testing.T) {
 			ctx := config.WithStubStore(context.Background())
 			ctx = claim.ToContext(ctx, claim.Claims{Subject: user, Name: "native-user", SessionID: "read-session", AuthSource: "kailo"})
-			nativeUser := &idm.User{Uuid: user, Login: "native-user"}
+			currentACLs := &nativeReadACLs{user: user, resource: resource}
+			grpcclient.RegisterMock(common.ServiceAclGRPC, &idm.ACLServiceStub{ACLServiceServer: currentACLs})
+			grpcclient.RegisterMock(common.ServiceWorkspaceGRPC, &idm.WorkspaceServiceStub{WorkspaceServiceServer: &nativeReadWorkspaces{resource: resource}})
+			nativeUser := &idm.User{Uuid: user, Login: "native-user", Roles: []*idm.Role{{Uuid: user}}}
 			grpcclient.RegisterMock(common.ServiceUserGRPC, &idm.UserServiceStub{UserServiceServer: &nativeReadUser{user: nativeUser}})
 			treeClient := &nativeReadTree{root: &tree.Node{Uuid: resource, Path: "root", Type: tree.NodeType_COLLECTION}, file: &tree.Node{Uuid: node, Path: "root/file.txt", Type: tree.NodeType_LEAF}}
 			setNativeGatewaySources(nodes.MakeFakeClientsPool(treeClient, nil))
@@ -447,12 +474,16 @@ func TestNativeHumanDownloadRetainsFreshDisclosureAfterCompletion(t *testing.T) 
 				case "late-native-denied": router.denyReads = true
 				case "late-scope-moved": treeClient.file.Path = "foreign/file.txt"
 				case "late-user-unavailable": nativeUser.Login = ""
+				case "late-user-hidden": nativeUser.Attributes = map[string]string{idm.UserAttrHidden: "true"}
+				case "late-user-locked": nativeUser.Attributes = map[string]string{"locks": `["logout"]`}
+				case "late-role-revoked": nativeUser.Roles = nil
+				case "late-acl-revoked": currentACLs.deny = true
 				default: revoked.Store(true)
 				}
 				got, err := io.ReadAll(reader)
 				if err == nil || len(got) != 0 { t.Fatal("revoked download bytes escaped after completed HUMAN read", len(got), err) }
 				calls := observations.Load()
-				revoked.Store(false); router.denyReads = false; treeClient.file.Path = "root/file.txt"; nativeUser.Login = "native-user"
+				revoked.Store(false); router.denyReads = false; treeClient.file.Path = "root/file.txt"; nativeUser.Login = "native-user"; nativeUser.Attributes = nil; nativeUser.Roles = []*idm.Role{{Uuid: user}}; currentACLs.deny = false
 				if n, err := reader.Read(make([]byte, 1)); n != 0 || err == nil || observations.Load() != calls { t.Fatal("refused HUMAN disclosure resumed or polled again") }
 			}
 			if commands.Load() != 1 || receipts.Load() != 1 || peps.Load() != 2 || tasks.puts != 0 { t.Fatal("late disclosure changed read/usage evidence or re-admitted execution") }
