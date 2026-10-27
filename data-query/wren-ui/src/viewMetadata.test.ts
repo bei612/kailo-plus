@@ -4686,8 +4686,12 @@ describe('original Home answer and chart operation lifetime', () => {
       it('an unavailable fresh selection configuration leaves the original result without dispatching or claiming failure', async () => {
         const page = await load();
         const count = requests.length;
-        mockConfig.mockRejectedValue(new Error('original configuration unavailable'));
-        await expect(page.controls.onSelectRecommendedQuestion(select)).resolves.toBeUndefined();
+        mockConfig.mockRejectedValue(
+          new Error('original configuration unavailable'),
+        );
+        await expect(
+          page.controls.onSelectRecommendedQuestion(select),
+        ).resolves.toBeUndefined();
         expect(requests).toHaveLength(count);
         expect(entries.size).toBe(0);
       });
