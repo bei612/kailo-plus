@@ -4639,6 +4639,26 @@ describe('original Home answer and chart operation lifetime', () => {
           ).toHaveLength(2);
         },
       );
+      it('current original generation freezes its returned native task and resumes its completed observation', async () => {
+        const page = renderPage();
+        const pending = page.controls.onGenerateThreadRecommendedQuestions(21);
+        await settle();
+        await respond(requests[0], 'getThreadRecommendationQuestions', task({ queryId: null, sourceResponseId: null, status: 'NOT_STARTED', questions: [] }));
+        expect(requests[1].name).toBe('GenerateThreadRecommendationQuestions');
+        await respond(requests[1], 'generateThreadRecommendationQuestions', task({ status: 'GENERATING', questions: [] }));
+        await pending;
+        const observation = requests[2];
+        expect(observation.name).toBe('GetThreadRecommendationQuestions');
+        await respond(observation, 'getThreadRecommendationQuestions', task());
+        expect(renderPage().controls.recommendedQuestions).toMatchObject({ queryId: nativeId, sourceResponseId: 21, status: 'FINISHED' });
+        expect(requests.filter((request) => request.name === 'GenerateThreadRecommendationQuestions')).toHaveLength(1);
+      });
+      it('a callback first invoked after retirement cannot start even an original recommendation read', async () => {
+        const page = renderPage();
+        page.retire();
+        await page.controls.onGenerateThreadRecommendedQuestions(21);
+        expect(requests).toHaveLength(0);
+      });
       it('lost recommendation selection ACK retains its exact original intent on explicit retry', async () => {
         const page = await load();
         const first = page.controls.onSelectRecommendedQuestion(select);
