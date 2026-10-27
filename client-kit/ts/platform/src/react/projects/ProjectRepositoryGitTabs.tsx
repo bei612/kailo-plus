@@ -191,7 +191,8 @@ export function RepositoryGitContent({ state, repository, projectId, pullRequest
   const selectedCommitPullRequest = commitHash
     ? pullRequests.find(pullRequest => pullRequest.commit === commitHash || pullRequest.initialCommit === commitHash) : undefined;
   if (tab === "overview") return (
-    <ProjectOverviewPanel file={state.readmeFile} fileContentSource={state.fileContentSource} gitDataState={state.gitDataState} hideHeader unavailableReason={unavailableReason} />
+    <ProjectOverviewPanel file={state.readmeFile} fileContentSource={state.fileContentSource} gitDataState={state.gitDataState} hideHeader unavailableReason={unavailableReason}
+      onRetry={state.fetch.onFetch} retryPending={state.fetch.fetchPending} />
   );
   if (tab === "contributors") return snapshotQuery.isLoading
     ? <BuzzLoadingState label={t("projects.contributors.loading")} />

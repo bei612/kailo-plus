@@ -57,13 +57,16 @@ function normalizeReadmeMarkdown(content: string) {
     .trim();
 }
 
-export function ReadmePanel({ file, fileContentSource, gitDataState, hideHeader, unavailableReason }: {
+export function ReadmePanel({ file, fileContentSource, gitDataState, hideHeader, unavailableReason, onRetry, retryPending }: {
   file: ProjectRepoFile | null;
   fileContentSource?: RepositoryFileContentSource;
   gitDataState: GitDataState;
   /** Skip the header rows entirely — the workspace layout renders them itself. */
   hideHeader?: boolean;
   unavailableReason?: ProjectRepoUnavailableReason;
+  /** Original unavailable-state Retry delegates to the repository Fetch. */
+  onRetry?: () => void;
+  retryPending?: boolean;
 }) {
   const t = useUiT();
   const fileContent = useRepositoryFileContent(file, fileContentSource);
@@ -90,7 +93,7 @@ export function ReadmePanel({ file, fileContentSource, gitDataState, hideHeader,
   if (gitDataState === "unavailable") {
     return (
       <section className="overflow-hidden">
-        <ProjectRepositoryUnavailableState reason={unavailableReason} />
+        <ProjectRepositoryUnavailableState reason={unavailableReason} onRetry={onRetry} retryPending={retryPending} />
       </section>
     );
   }
