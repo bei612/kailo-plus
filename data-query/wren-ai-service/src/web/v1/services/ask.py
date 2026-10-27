@@ -251,6 +251,8 @@ class AskService:
                                 configuration=ask_request.configurations,
                             )
                         ).get("post_process", {})
+                        if self._is_stopped(query_id, self._ask_results):
+                            return results
                         intent = intent_classification_result.get("intent")
                         rephrased_question = intent_classification_result.get(
                             "rephrased_question"
@@ -639,16 +641,17 @@ class AskService:
         except Exception as e:
             logger.exception(f"ask pipeline - OTHERS: {e}")
 
-            self._ask_results[query_id] = AskResultResponse(
-                status="failed",
-                type="TEXT_TO_SQL",
-                error=AskError(
-                    code="OTHERS",
-                    message=str(e),
-                ),
-                trace_id=trace_id,
-                is_followup=True if histories else False,
-            )
+            if not self._is_stopped(query_id, self._ask_results):
+                self._ask_results[query_id] = AskResultResponse(
+                    status="failed",
+                    type="TEXT_TO_SQL",
+                    error=AskError(
+                        code="OTHERS",
+                        message=str(e),
+                    ),
+                    trace_id=trace_id,
+                    is_followup=True if histories else False,
+                )
 
             results["metadata"]["error_type"] = "OTHERS"
             results["metadata"]["error_message"] = str(e)
