@@ -6943,3 +6943,64 @@ Node 依赖，不重新安装。原同源词条 check、共享生产/测试、We
 `composer-project-39ab79980/`；`check.log` SHA-256 为
 `bc7f4f51b7197ec6a742893120f4433755e3d77ca4dd8d2372c785bb53c17212`。
 这些合批检查不代替上述实际故障记录、全工程 full、浏览器、安装包或部署验收。
+
+## 2026-10-27 REQ-24 / DD-74 Composer 交互主体共源
+
+比较基准 `e70c0ad0b338caa10c4c07676b23e0fa3c1b3ded`，产品固定
+`4fd9753f618c14275ed2afbc4412ff3691f3b4f7`；32 文件 +1,777/-1,708。
+原功能依据为固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的
+`desktop/src/features/messages/ui/MessageComposer.tsx`、`useMentions.ts`、
+`useDraftPersistSnapshot.ts` 和 `original-diff-inventory.md` 的 Composer 主体差异。
+本批不是仅迁移错误文案：两宿主实际调用同一 editor/controller、内容状态、键盘优先级、
+提及候选与菜单、发送准备和自动发送调度代码。Native 旧模块保留兼容导出，既有公开 props
+及 callers 不变；无 API/schema/Workflow/状态/权限变化。
+
+- `client-kit/ts/platform/src/react/composer/useMessageComposerController.ts` 持有实际
+  Tiptap editor、链接编辑、焦点、回复焦点、spoiler、autocomplete 插入及 form 提交；
+  同一 `composerKeyDown` 保留 address → emoji → channel → mentions → link 的原优先级。
+- 原 Native 完整 `useMentions` 及其候选、粘贴身份绑定、代码上下文、debounce、草稿提及
+  引用实现迁至同目录 `features/messages/lib/`；候选与身份验证由宿主原权威数据供应。
+  `MessageComposerAutocompletes`、picker、focus ownership 也由两个宿主共同消费。
+  持久化的显式草稿引用和实时输入的提及解析分开，避免改变 UNKNOWN 的冻结意图。
+- `useComposerSubmission` 统一读取内容、私聊 Agent 拒绝、空编辑判断、捕获上下文和
+  准备锁；queued 清空编辑器可释放一次，旧发送的迟到 finally 不会解锁下一次准备。
+  Web 保留 BFF intent/queued/pending/UNKNOWN 与上传回执；Native 保留本机签名、
+  原 `useMentionSendFlow`、媒体队列和捕获 thread 的新鲜检查。共享层不创建第二发布权威。
+- 原 Native 完整草稿生命周期迁至 `useComposerDraftLifecycle.ts`，文件队列仍是宿主能力。
+  Web 原草稿编解码与 Native 原生命周期使用同一 restore 调度；两者自动发送使用同一
+  next-task 调度与 owner/active 检查。未新增正文存储。语音、GIF、预览、编辑、删除确认、
+  非成员邀请/仅引用与 Agent 路由仍调用原功能。
+
+原 SDK `sha256:3007729eb192341a4f004a88e42e1e66c94fc67d763acfc96568bd7311116018`，
+实际 1 CPU / 4 GiB（memory+swap 同值）/ pids 256，源码、日志、临时目录在真实 Data。
+固定 GitHub 归档 3,454 个输入逐字核对无差异；两宿主通过原包管理器刷新 file 依赖后，
+各 1,039 个实际解析的共享包 src/profile-assets 文件与同一固定源码逐字一致。
+原冻结锁未变；Web 使用 npm ci，Native 使用 pnpm 11.4.0 frozen/offline。
+
+最终固定源码检查 exit 0：同源 i18n check、共享生产及测试类型、Web 类型、Desktop 类型
+全部通过；共享 controller/autocomplete/draft 12/12、Web 原 Composer/i18n/预览 74/74、
+Native 原 send-flow/draft/auto-submit 28/28。新增 controller 四项覆盖捕获失败与 DM 拒绝、
+queued 迟到完成、StrictMode 消费路由触发一次、异步确认期间 owner 退休。
+原 React act 警告保留，OOM=false，终态后容器实际清理为空。
+
+真实故障反证使用原 Web `Composer.test.tsx` 操作：在隔离导出及实际安装的共享 file 副本
+同时移除 DM Agent 拒绝，原“拒绝发送且保留草稿”断言失败，退出 1；恢复两份源码后
+SHA-256 均为 `fb7ddf4a2fff9cca257092f80d494f5411e097bd054665cc48abaa35bfbd93d4`，
+原 DM 两项及共享 controller 四项再次通过。未修改产品测试断言以放宽结果。
+
+过程失败保留于同根各固定版本目录，不计为通过：`31a2c67c3` Web 类型发现迁移误删
+语音适配变量；`88903b581` 窄 npm install 出现 ERESOLVE，改回原 npm ci，未绕过 peer
+校验；`df978c1e2` Web 66/74 暴露 human isAgent false/undefined 适配及实时提及引用恢复
+问题。`e12860b5a` 修正后原用例 74/74、Native 28/28 及四项类型通过；最终 4fd 再完整
+验证并做上述反证。Native 文件队列、Web 冻结意图和 UNKNOWN 恢复测试均为原消费者。
+
+[回执](composer-body-receipt.json) SHA-256：
+`1278a4282605f6375aa15fe0364730124db1a2765c2f900c8b6affdda3748f82`。
+CI 原件 `/volumes/data/kailo/verification/composer-body/4fd9753f6/`，含 limits、OOM、
+check、negative/restored 原日志及逐字恢复校验；source 复用自己 31a 的导出目录，未使用
+其他批次 source。回执逐项列出日志 digest。
+
+本批完成上述 TS 交互与编排共源；宿主 UI 壳和 BFF/本机发布、上传、身份能力仍有各自
+适配代码，不声称整个 ChannelPane 或 Native MessageComposer 文件合并为一个组件。
+未执行全工程 full、生产构建、正式安装包、部署、真实浏览器或 Windows 设备验收；这些
+边界不能由本次 DOM 消费者通过代替。设计覆盖归属沿用 REQ-24 / DD-74，不另增需求。
