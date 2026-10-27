@@ -6932,3 +6932,12 @@ V-SCN-105/106（DD-39/81/117/120）。本批只做 TypeScript/UI 与 Web 宿主�
 CI 原件位于 `/volumes/data/kailo/verification/phase1-integration/composer-failure-ca477cd66/`。
 未部署、未生成正式包、未执行真实浏览器或设备操作，不把两宿主仍分离的 Composer
 编排逻辑声明为完整共源；本批只闭合该处失败提示的同源消费。
+
+随后根固定 `39ab79980d86640e1d448ae8c4a42ee9ffe6882e` 合入原 Projects 坐标链接与
+提交复制消费者；同一原 SDK 1 CPU / 4 GiB、network none，直接复用原冻结锁的
+Node 依赖，不重新安装。原同源词条 check、共享生产/测试、Web/Desktop 四项类型
+均退出 0；共享坐标/Git 23、Web 原 i18n 5、Native 原 send-flow/deep-link 18
+均通过。原 React act 警告保留，容器无 OOM，终态 0 后清理为空。原件为 CI 同根
+`composer-project-39ab79980/`；`check.log` SHA-256 为
+`bc7f4f51b7197ec6a742893120f4433755e3d77ca4dd8d2372c785bb53c17212`。
+这些合批检查不代替上述实际故障记录、全工程 full、浏览器、安装包或部署验收。

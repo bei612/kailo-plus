@@ -29,6 +29,27 @@ Composer 失败提示固定 `ca477cd66`：Web/Native 共用上传与普通发送
 [输入框验证记录](web-client/fork/verify/web-surface.md)。未部署或完成设备验收，
 两宿主完整 Composer 编排共源仍未完成。
 
+Projects 坐标链接与提交详情复制固定 `38b68f5be`：共享 117 项、补充坐标 7 项、
+Desktop 队列 11 项分别通过，恢复旧拒绝分支会使实际复制到提交/diff 的消费者失败，
+逐字恢复后通过。根固定 `39ab79980` 将本批与上述文案合并：原 SDK 同源词条、
+共享生产/测试及 Web/Desktop 类型全部通过，原共享 23、Web 5、Native 18 项均通过。
+见[原链接消费者记录](core/verify/inbox-project-read.md)。这些是源码消费者检查，
+尚无部署端浏览器剪贴板或 Windows 唤醒验收。
+
+Cells 固定 `afe7a4710` 修复正文读取阻塞期间撤权后仍向原 S3 存储读者放行字节。
+原 Go 1.26.8 镜像 4 CPU / 8 GiB：15 场景通过，移除读取后 Fresh 的三个反向均
+失败，逐字恢复后通过；格式与同包 vet 通过，原 Task/UNKNOWN 保留。见
+[原上传记录](file-storage/fork/verify/native-identity.md)。没有据此认领原生存储落盘、
+真实上传页面、正式组件制品或 binding 激活验收。
+
+Wren 原 Ask 流固定 `6f32bac58`：STANDALONE 只消费同 queryId 的原生完成，
+EOF 不造完成事件；流执行中模式改变会停止旧观察。原 HTTP 65、Hook/SQLite 58
+项、类型、格式和 lint 通过，三次实际故障被检出、逐字恢复后通过。证据见
+[原问数记录](data-query/fork/verify/native-integration.md)。完整五文件集合仍有既有
+失败记录，未称全量 Wren 通过；REST `v1/stream_explanation` 独立模式的同类断流
+缺口仍未闭合，后续继续沿原 API History/project 消费者处理。没有真实模型业务、
+正式制品或部署验收。
+
 前一批 Core 集成固定 `1d0d20b53`：原 SDK 4 CPU / 16 GiB、私有 PG
 1 CPU / 2 GiB，正常主目标 **839 passed / 91 ignored**；显式 Agent/Canvas/审核、
 publication scope/history/reconcile 与 bridge HTTP 共 **26** 项通过。格式、完整
