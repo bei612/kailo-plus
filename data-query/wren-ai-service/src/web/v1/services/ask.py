@@ -703,19 +703,20 @@ class AskService:
         self,
         query_id: str,
     ):
-        if self._ask_results.get(query_id):
+        expected = self._ask_results.get(query_id)
+        if expected is not None:
             _pipeline_name = ""
-            if self._ask_results.get(query_id).type == "GENERAL":
-                if self._ask_results.get(query_id).general_type == "USER_GUIDE":
+            if expected.type == "GENERAL":
+                if expected.general_type == "USER_GUIDE":
                     _pipeline_name = "user_guide_assistance"
-                elif self._ask_results.get(query_id).general_type == "DATA_ASSISTANCE":
+                elif expected.general_type == "DATA_ASSISTANCE":
                     _pipeline_name = "data_assistance"
-                elif self._ask_results.get(query_id).general_type == "MISLEADING_QUERY":
+                elif expected.general_type == "MISLEADING_QUERY":
                     _pipeline_name = "misleading_assistance"
             else:
                 reasoning = (
                     "followup_sql_generation_reasoning"
-                    if self._ask_results.get(query_id).is_followup
+                    if expected.is_followup
                     else "sql_generation_reasoning"
                 )
                 # The task can advance to SQL generation before the browser
@@ -723,16 +724,17 @@ class AskService:
                 # not a fabricated completion inferred from that phase change.
                 pipeline = self._pipelines.get(reasoning)
                 if pipeline and (
-                    self._ask_results.get(query_id).status == "planning"
+                    expected.status == "planning"
                     or query_id in pipeline._user_queues
                 ):
                     _pipeline_name = reasoning
 
             if _pipeline_name:
-                expected = self._ask_results.get(query_id)
                 general = expected.type == "GENERAL"
                 emitted = ""
                 if general and expected.completion:
+                    if self._ask_results.get(query_id) is not expected:
+                        return
                     event = SSEEvent(data=SSEEvent.SSEEventMessage(message=expected.completion.content))
                     yield event.serialize()
                     if self._ask_results.get(query_id) is expected:
