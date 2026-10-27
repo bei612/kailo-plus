@@ -4716,7 +4716,7 @@ sha2 0.11 的 digest Array 不实现 LowerHex。按现有hex依赖改为
 `bc501352c9ab3d0a7ff146e8cb92b3589e3808c3`，1文件+1/-1，diff-check通过。
 热检查最终退出0，原输出：
 
-```
+```text
 Checking buzz-desktop v0.5.23 (/work/collaboration/desktop/src-tauri)
 warning: `buzz-desktop` (lib) generated 2 warnings
 Finished `dev` profile [unoptimized + debuginfo] target(s) in 4.97s
@@ -5138,6 +5138,7 @@ SDK 内故意把默认收起改为展开：英中2项真实失败，退出1；�
 jsdom 的 scrollTo 提示保留，不当作真实浏览器截图。两条新中英文词条由主线程
 与并行 CustomEmoji 合批生成 Dart；本专项不重跑四侧合同或全量检查。
 本批未构建、部署、更新 Windows/Mobile，未增加实际生产就绪完成度。
+
 ## Pulse 原版紧凑输入与实际宿主接线（2026-10-07）
 
 本节相对 `8d3fcd04`，只包含 Pulse 输入的共享布局、现有两端 Composer
@@ -5260,6 +5261,7 @@ Relay 已签名旧集合中的外部公开图片，不把消息路径的限制�
 `shared-strict-mutation-applied.log`、`shared-strict-restored-final.log`。
 最初 source 命令转义错误、过时 Vitest 参数及第一次投递未覆盖实际副本均保留失败日志；
 未将那些运行计入修正后的验证。没有再启动 Native Rust 或安装系统依赖。
+
 ## 原 virtua 补丁的三处依赖锁与发布输入（2026-10-07）
 
 相对 `8d3fcd04`，本次只收口主线抽取原 Timeline 所需的依赖、导出和打包输入，
@@ -5548,7 +5550,6 @@ logout 假映射为这一动作；该完整原生功能本批未恢复。上传/
 Error.message 仍是原错误呈现，不声称任意服务端错误都已有翻译。
 未构建、未部署，未证明摄像头硬件或真实上传发布端到端通过。
 
-
 ### 2026-10-07 固定 main 个人资料批次的真实浏览器预览
 
 本条是已提交代码的实现后证据，不是部署或全功能还原声明。输入为
@@ -5703,6 +5704,7 @@ live authorization/desktop device or Core linked runtime tests.
 Native wrapper 首次执行报缓存 `.bin/tsc` 相对路径缺模块，已改为直接调用同一现有 `node node_modules/typescript/bin/tsc`，不安装工具。Native 最后完整 Projects 输入类型及原 helper/mounted 用例由集中验证 owner 后续回执补充；本段不把未执行当通过。当前仅源码/限定检查证据，没有部署、真实 SSO 双人隐藏 DM 或 Windows 图形验收。Web 消费仍沿现有 Inbox window 取数，不宣称全历史 feed 完整性；其他原 Inbox 分类不在本批。
 
 最后源码复核补了统一末轮 epoch guard：私聊消息页迟到返回后，不再继续用当前 Cookie 发出旧聚合的 Workspace 重查。原 InboxPane 文件新增真实挂载/卸载的延迟页用例；集中复验该文件 13/13，PlatformApp 旧 SidebarProjects fixture 修复后 10/10（`/volumes/data/kailo/tmp/sidebar-projects-20261007.0PJI8t/ui-restored.log`）。Native 当前完整联合输入随后实际命中 Projects 新 `relayClientSession.ts:656` 缺 `RelaySubscriptionFilter.kinds`，由对应 owner 处理；尚不据此宣称 Native types 通过。此前私有 index 的零上下文选择插入偏移在完整 blob 复核时已纠正，以有上下文的原差异重新选入；正式产品源码未受该候选组装问题影响。
+
 ## 2026-10-07 Projects 原版删除纵向（源码候选，未交付运行）
 
 基线 52747b1d49e5c8ad6420a6c39555171f0c155ccb；设计 f5841d82255f03dde3b0f959b20f777a7a37955f。本批仅收口实际删除消费者，不提交未消费的 PROJECT/REPOSITORY 写分支，未引入迁移或项目正文数据库。
