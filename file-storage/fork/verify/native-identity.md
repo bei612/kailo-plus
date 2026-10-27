@@ -4214,6 +4214,15 @@ REQ-03/11、DD-09/11/87、DD-124 的真实 writer、权限与终态边界复核�
    原子性，覆盖单 PUT 与 multipart、短/长/空正文、权限变化、并发新版本、
    ACK 丢失和恢复；若现有协议无此原语，须先依设计变更流程处理。
 
+后续源码核对：`models.PutMeta` 和 `CopyRequestData` 未提供目标版本条件；
+原版本 DAO 未维护可比较并交换的 live 指针。`HeadVersion` 的 head 从已发布
+版本推导，不能作为对象写入的原子条件。`reconcileNativeUpload` 沿原任务记录、
+指定不可变版本和清理回执收敛，记录或版本缺失时保留 UNKNOWN；这些证据仍不能
+证明当前 live 对象和 MIME 属于同一提交。闭合需让相关写入、读取和索引消费共同
+遵循单一权威，关联预期 head、不可变版本和完整正文对应的 MIME，并以原任务的
+精确提交及清理证据对账。这里描述的是待设计及消费路径共同验证的必要条件，
+不是现有实现已具备的跨存储事务，也没有通过真实并发存储演练。
+
 固定上游 `common/nodes/file-mime.go::NewTeeMimeReader`、`TeeMimeReader.Read`
 及 `WrapReaderForMime` 已用只读 `git show` 对上述完整 commit 核验；未执行或
 修改 `.references`。本轮原 `tools/upstream_manifest.py status file-storage`
