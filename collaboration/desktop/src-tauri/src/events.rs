@@ -111,6 +111,7 @@ fn check_pubkey(pubkey: &str) -> Result<(), String> {
 // ── Messages ─────────────────────────────────────────────────────────────────
 
 /// Kind 9 — stream message.
+#[cfg(test)]
 #[allow(clippy::too_many_arguments)]
 pub fn build_message(
     channel_id: Uuid,
@@ -144,6 +145,7 @@ pub fn build_message(
 /// This is intentionally narrower than arbitrary extra tags: callers can add
 /// only `["client", ...]` tags, which are useful for idempotency markers but
 /// cannot forge channel/thread/mention metadata.
+#[cfg(test)]
 #[allow(clippy::too_many_arguments)]
 pub fn build_message_with_client_tags(
     channel_id: Uuid,

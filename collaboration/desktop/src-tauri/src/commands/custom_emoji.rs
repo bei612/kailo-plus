@@ -108,7 +108,7 @@ pub async fn update_custom_emoji(
     ));
     let prefix = format!("emoji:{relay}:{author}:{key}:");
     let pending = super::messages::unconfirmed::existing_mutation(&format!("{prefix}{digest}"))?;
-    let rows = query_relay_at_with_keys(&state, &relay, &[filter.clone()], &keys, None)
+    let rows = query_relay_at_with_keys(&state, &relay, std::slice::from_ref(&filter), &keys, None)
         .await
         .map_err(|error| {
             if pending.is_some() {
