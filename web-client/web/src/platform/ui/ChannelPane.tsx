@@ -1,18 +1,17 @@
+import { useMessageComposerController, useComposerControls, composerKeyDown, useComposerSubmission, useComposerAutoSubmit } from "@client-kit/platform/react/composer/useMessageComposerController";
 import { detectPrefixQuery, selectedMentionLabel, extractMentionPubkeys, mentionMatchCandidates, mentionOccurrences, AmbiguousMentionError } from "@client-kit/platform/react/pulse";
-import { MentionAutocomplete, focusMentionOptionsTrigger, type MentionSuggestion } from "@client-kit/platform/react/composer/features/messages/ui/MentionAutocomplete";
+import { MentionAutocomplete, type MentionSuggestion } from "@client-kit/platform/react/composer/features/messages/ui/MentionAutocomplete";
 import { ChannelAutocomplete } from "@client-kit/platform/react/composer/features/messages/ui/ChannelAutocomplete";
 import { EmojiAutocomplete } from "@client-kit/platform/react/composer/features/messages/ui/EmojiAutocomplete";
 import { useComposerChannelLinkSources } from "@client-kit/platform/react/composer/features/messages/ui/ComposerChannelLinksContext";
 import { useChannelLinks, type ChannelSuggestion } from "@client-kit/platform/react/composer/features/messages/lib/useChannelLinks";
 import { rankMentionCandidates } from "@client-kit/platform/react/composer/features/messages/lib/mentionRanking";
-import { useComposerAutofocus } from "@client-kit/platform/react/composer/features/messages/lib/useComposerAutofocus";
-import { useComposerSpoilerParticles } from "@client-kit/platform/react/composer/features/messages/lib/useComposerSpoilerParticles";
 import { useEmojiAutocomplete, type EmojiSuggestion } from "@client-kit/platform/react/composer/features/messages/lib/useEmojiAutocomplete";
 import { writeTextToClipboard } from "@/shared/lib/clipboard";
 import { useComposerAgentDirectory } from "@client-kit/platform/react/composer/features/messages/ui/useComposerAgentDirectory";
 import { useTeamMentionCandidates } from "@client-kit/platform/react/composer/features/messages/ui/useTeamMentionCandidates";
 import { formatTeamMention, isTeamMentionSuggestion } from "@client-kit/platform/react/composer/features/messages/lib/teamMentionCandidates";
-import { findDmAgentMention, useDmAgentMentionNames } from "@client-kit/platform/react/composer/dmAgentMention";
+import { useDmAgentMentionNames } from "@client-kit/platform/react/composer/dmAgentMention";
 import { ComposerPendingSendRecovery, ComposerQueuedSendPill } from "./ComposerQueuedSendPill";
 import { getPersistentAgentAudienceScope } from "@client-kit/platform/react/composer/features/messages/lib/persistentAgentAudience";
 import { setKeepMentionedAgentsPinned } from "@client-kit/platform/react/composer/features/messages/lib/autoPinMentionedAgentsPreference";
@@ -112,13 +111,11 @@ import { useUiT } from "@client-kit/platform/react/context";
 import { ComposerReplyBanner } from "@client-kit/platform/react/messages";
 import { applyMessageEdits, imetaMediaFromTags, restoreImetaMediaDisplayLabels, stripImetaMediaLines, findSpoileredImetaMediaUrls, canRemoveLinkPreviews, useRemoveLinkPreviewsIntent, type LinkPreviewRemovalEdit } from "@client-kit/platform/react/messages";
 import { ForumComposerSurface } from "@client-kit/platform/react/forum/ForumComposerSurface";
-import { useRichTextEditor, type LinkSelectionInfo } from "@client-kit/platform/react/composer/features/messages/lib/useRichTextEditor";
 import { useComposerPasteHandler } from "@client-kit/platform/react/composer/features/messages/ui/useComposerPasteHandler";
 import { useComposerVoiceNote } from "@client-kit/platform/react/composer/features/messages/ui/useComposerVoiceNote";
 import { MAX_TRACKED_INTENTS, useMentionPasteBinding } from "@client-kit/platform/react/composer/features/messages/lib/mentionPasteBinding";
 import { trimMapToSize } from "@client-kit/platform/react/composer/shared/lib/trimMapToSize";
 import { partitionMentionIdentitiesByLocalTrust } from "@client-kit/platform/react/composer/features/messages/lib/mentionIdentityTrust";
-import { useLinkEditor } from "@client-kit/platform/react/composer/features/messages/lib/useLinkEditor";
 import type { ParsedMessageLink } from "@client-kit/platform/react/composer/features/messages/lib/messageLink";
 import { initDraftStore, loadDraftEntry, saveDraftEntry, clearDraftEntry, savePendingSend, loadPendingSend, clearPendingSend, subscribeToStore, type PendingSendStage, type PendingSendState } from "@client-kit/platform/react/composer/features/messages/lib/useDrafts";
 import { ComposerAttachments, DropZoneOverlay } from "@client-kit/platform/react/composer/features/messages/ui/ComposerAttachments";
@@ -1386,15 +1383,7 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
     [workspaceId, onUpload, owner, queuedAttachmentsRef, finishUpload],
   );
 
-  const [isEmojiPickerOpen, setIsEmojiPickerOpen] = useState(false);
-  const [isFormattingOpen, setIsFormattingOpen] = useState(false);
-  const handleFormattingToggle = useCallback((pressed: boolean) => {
-    if (pressed) setIsEmojiPickerOpen(false);
-    setIsFormattingOpen(pressed);
-  }, []);
-  const pendingImetaRef = useRef<readonly ImetaMedia[]>([]);
-  pendingImetaRef.current = pending.map(asBlob);
-  const uploadVoiceFile = useCallback((file: File) => attach([file]), [attach]);
+  const { isEmojiPickerOpen, setIsEmojiPickerOpen, isFormattingOpen, setIsFormattingOpen, handleFormattingToggle } = useComposerControls();
   const voiceNote = useComposerVoiceNote({
     // Original recording context is also partitioned by this BFF actor/scope.
     draftKey: JSON.stringify([workspaceId, draftIdentity, draftKey]),
@@ -1407,15 +1396,6 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
     for (const file of Array.from(files ?? [])) await voiceNote.uploadFileWhenIdle(file);
   }, [voiceNote.uploadFileWhenIdle]);
   const sendRef = useRef<(decision?: NonMemberDecision) => void>(() => {});
-  const onEditLastOwnMessageRef = useRef(onEditLastOwnMessage);
-  onEditLastOwnMessageRef.current = onEditLastOwnMessage;
-  const editTargetRef = useRef(editTarget);
-  editTargetRef.current = editTarget;
-  const editLinkRef = useRef<(info: LinkSelectionInfo) => void>(() => {});
-  const linkSelectionRef = useRef<(info: LinkSelectionInfo | null) => void>(() => {});
-  const linkShortcutRef = useRef<() => boolean>(() => false);
-  const autocompleteOpenRef = useRef(false);
-  autocompleteOpenRef.current = humanSuggestions.length > 0 || channelLinks.isChannelOpen || emojiAutocomplete.isEmojiAutocompleteOpen;
   const mentionPickerOriginRef = useRef<"inline" | "explicit" | null>(null);
   const syncAddressedAgentsFromTextRef = useRef<(text: string) => void>(() => {});
   const pasteBinding = useMentionPasteBinding({
@@ -1432,7 +1412,17 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
   useEffect(() => () => pasteBinding.clearMentionIntents(), [owner, pasteBinding.clearMentionIntents]);
   const onTypingRef = useRef(onTyping);
   onTypingRef.current = onTyping;
-  const richText = useRichTextEditor({
+  const { richText, linkEditor, composerScrollRef, formRef, focusComposerEnd,
+    applyAutocompleteEdit, handleSubmit, handleCaptureSelection } = useMessageComposerController({
+    links: {
+      openExternal: url => { window.open(url, "_blank", "noopener,noreferrer"); },
+      openMessageLink: link => { if (onOpenMessageLink) onOpenMessageLink(link); else setProblem(t("platform.linkOpenFromChannel")); },
+    },
+    draftKey, autofocusDisabled: disabled || sending || compact,
+    editing: Boolean(editTarget), replyTarget,
+    autocompleteOpen: humanSuggestions.length > 0 || channelLinks.isChannelOpen || emojiAutocomplete.isEmojiAutocompleteOpen,
+    onEditLastOwnMessage, submit: () => sendRef.current(),
+    editor: {
     placeholder: placeholder ?? t("platform.message"), editable: !disabled && !sending,
     restoreFocusOnEnable: () => !compact || Boolean(draft.trim() || pending.length || problem),
     readClipboardText: () => navigator.clipboard.readText(),
@@ -1451,24 +1441,8 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
       setHumanQuery(query?{...query,cursor}:null);
       channelLinks.updateChannelQuery(text, cursor);
       emojiAutocomplete.updateEmojiQuery(text, cursor);
-    }, onSubmit: () => sendRef.current(),
-    onEditLastOwnMessage: () => {
-      if (editTargetRef.current) return false;
-      const handler = onEditLastOwnMessageRef.current;
-      return handler ? handler() : false;
     },
-    isAutocompleteOpen: autocompleteOpenRef,
-    onEditLink: (info) => editLinkRef.current(info),
-    onLinkSelectionChange: (info) => linkSelectionRef.current(info),
-    onLinkShortcut: () => linkShortcutRef.current(),
-  });
-  // Original MessageComposer: focus on mount and on channel/thread (draft key) change. The caret
-  // goes to the end as richText.focus does; the bottom-docked composer needs no scroll.
-  const focusComposerEnd = useCallback(() => { richText.editor?.commands.focus("end", { scrollIntoView: false }); }, [richText.editor]);
-  useComposerAutofocus(focusComposerEnd, draftKey, disabled || sending || compact);
-  // Original composer spoiler particles over `||spoiler||` marks while editing.
-  const composerScrollRef = useRef<HTMLDivElement>(null);
-  useComposerSpoilerParticles(richText.editor, composerScrollRef);
+  }});
   const registerMentionPubkey = useCallback((displayName: string, pubkey: string) => {
     const label=selectedMentionLabel(displayName,pubkey,humanBindings.current);
     pasteBinding.claimMentionIntent(label);
@@ -1499,7 +1473,6 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
   const getDraftMentionRefs = useCallback((content: string) => mentionOccurrences(content, mentionMatchCandidates({selectedMentions: humanBindings.current, memberCandidates: mentionCandidates.map(person => ({...person, isMember: person.notInChannel !== true}))})).flatMap(({candidates}) => candidates.flatMap(candidate => candidate.pubkey ? [{pubkey:candidate.pubkey, displayName:candidate.displayName, isAgent:knownAgentKeys.has(candidate.pubkey)}] : [])), [mentionCandidates, knownAgentKeys]);
   const getMentionDisplayName = useCallback((pubkey: string) => mentionCandidates.find(person => person.pubkey === pubkey)?.displayName, [mentionCandidates]);
   const isInlineMentionSelection = useCallback(() => mentionPickerOriginRef.current === "inline", []);
-  const applyAutocompleteEdit = useCallback((edit: import("@client-kit/platform/react/composer/features/messages/lib/useRichTextEditor").AutocompleteEdit) => richText.replacePlainTextRange(edit.replaceFromOffset, edit.replaceToOffset, edit.insertText, edit.preserveSelection, edit.reassertMentionCaret), [richText.replacePlainTextRange]);
   const applyChannelInsert = useCallback((suggestion: ChannelSuggestion) => {
     const { cursor } = richText.getPlainTextAndCursor();
     applyAutocompleteEdit(channelLinks.insertChannel(suggestion, cursor));
@@ -1557,13 +1530,6 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
     bindMentionIdentities: pasteBinding.bindPastedMentionIdentities,
     scrollToBottom: scrollAfterPaste, uploadFile: voiceNote.uploadFileWhenIdle,
   });
-  const linkEditor = useLinkEditor(richText, {
-    openExternal: (url) => { window.open(url, "_blank", "noopener,noreferrer"); },
-    openMessageLink: (link) => { if (onOpenMessageLink) onOpenMessageLink(link); else setProblem(t("platform.linkOpenFromChannel")); },
-  });
-  editLinkRef.current = linkEditor.openFromClick;
-  linkSelectionRef.current = linkEditor.showFromCursor;
-  linkShortcutRef.current = linkEditor.openFromShortcut;
   const draftReady = useRef(false);
   const [loadedDraftOwner, setLoadedDraftOwner] = useState<typeof owner | null>(null);
   useEffect(() => {
@@ -1976,15 +1942,7 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
         }
       });
   }, [restoreSnapshot, persistPendingSend, linkPreviews.prepareSubmit, workspaceId, onPublish, richText.getMarkdown, richText.setContent, owner, persistDraft, attachmentActions.setSpoileredAttachmentUrls, editTarget, draftKey, onConfirmed, pasteBinding, mentionCandidates, knownAgentKeys, audience.pubkeys, agentDirectory.verify, channelLinks.clearChannels, emojiAutocomplete.clearEmojis, nonMemberFlow, promptNonMembers]);
-  const send = useCallback(async (decision?: NonMemberDecision) => {
-    if (sending || owner.sending || disabled || queuedRef.current || voiceNote.statusRef.current !== "idle" || !mentionVerified) return;
-    if (channelType === "dm" && dmAgentNames.length && findDmAgentMention(richText.getMarkdown(), dmAgentNames)) {
-      setProblemNeutral(false);
-      setProblem(t("dm.agentMentionRefused"));
-      return;
-    }
-    // An edit replaces a published message: it waits for its own uploads and is not cleared.
-    if (editTarget && uploading > 0) return;
+  const prepareSend = async ({ release, decision }: { release: () => void; decision?: NonMemberDecision }) => {
     if (!editTarget) {
       // Original useMentionSendFlow: Send freezes the message and clears the composer before it is
       // published; uploads still in flight hold the frozen message, not the composer (DD-146).
@@ -2017,15 +1975,11 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
         owner.sending = false;
         if (owner.active) setSending(false);
       }
+      release();
       if (!snapshot) return;
       setClearedPublishing((count) => count + 1);
       try { await dispatch(snapshot, decision); }
       finally { if (owner.active) setClearedPublishing((count) => Math.max(0, count - 1)); }
-      return;
-    }
-    if (editTarget && onRequestEmptyEditDelete && !richText.getMarkdown().trim() && pending.length === 0) {
-      if (!intent.current) onRequestEmptyEditDelete(editTarget);
-      else {setProblemNeutral(true);setProblem(t("platform.sendUnknown", {operation: ""}));}
       return;
     }
     owner.sending = true;
@@ -2040,7 +1994,19 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
       owner.sending = false;
       if (owner.active) setSending(false);
     }
-  }, [channelType, dmAgentNames, pending, pendingGifs, linkPreviews.prepareSubmit, mentionInstallationIds, mentionVerified, sending, uploading, disabled, richText.getMarkdown, owner, attachmentActions.spoileredAttachmentUrls, editTarget, pasteBinding, onRequestEmptyEditDelete, voiceNote.statusRef, dispatch, clearComposer, persistPendingSend]);
+  };
+  const { submit: send } = useComposerSubmission<null, NonMemberDecision>({
+    getContent: richText.getMarkdown,
+    hasMedia: () => pendingRef.current.length > 0 || pendingGifsRef.current.length > 0 || activeBatches.current.size > 0,
+    canSubmit: () => owner.active && !sending && !owner.sending && !disabled && !queuedRef.current && voiceNote.statusRef.current === "idle" && mentionVerified && !(editTarget && uploading > 0),
+    isEditing: Boolean(editTarget), isDm: channelType === "dm", dmAgentNames,
+    refuseDmAgent: refused => { if (refused) { setProblemNeutral(false); setProblem(t("dm.agentMentionRefused")); } },
+    requestEmptyEdit: editTarget && onRequestEmptyEditDelete ? () => {
+      if (!intent.current) onRequestEmptyEditDelete(editTarget);
+      else { setProblemNeutral(true); setProblem(t("platform.sendUnknown", { operation: "" })); }
+    } : undefined,
+    capture: () => null, prepare: prepareSend,
+  });
   sendRef.current = send;
   // DD-146: a queued send is released once none of its uploads is in flight — published if each
   // was confirmed, otherwise (failed or canceled) its draft returns with the remaining files.
@@ -2071,39 +2037,33 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
   const composerPreviews = uploadingPreviews.filter(preview => !queuedPreviewIds.has(preview.id));
   const composerUploading = Math.max(0, uploading - queuedPreviews.length);
 
-  const autoSent = useRef<typeof owner | null>(null);
-  useEffect(() => {
-    if (!autoSendDraftKey || autoSendDraftKey !== draftKey || autoSent.current === owner ||
-        loadedDraftOwner !== owner || !draftReady.current || !owner.active || disabled || sending || uploading > 0 || voiceNote.status !== "idle" || !mentionVerified ||
-        (!richText.getMarkdown().trim() && pending.length === 0)) return;
-    autoSent.current = owner;
-    void Promise.resolve().then(() => onAutoSendConsumed?.()).then(() => {
-    if (!owner.active) return;
-    if (intent.current) {
-      // A restored UNKNOWN intent may predate complete draft metadata. Opening
-      // it must not derive a new signature/key and dispatch another effect.
-      setProblemNeutral(true);
-      setProblem(t("platform.sendUnknown", { operation: "" }));
-      return;
-    }
-    sendRef.current();
-    }).catch(() => { if (owner.active) setProblem(t("platform.sendFailed")); });
-  }, [autoSendDraftKey, onAutoSendConsumed, draftKey, owner, loadedDraftOwner, disabled, sending, uploading, voiceNote.status, mentionVerified, pending.length, richText.getMarkdown, send]);
+  useComposerAutoSubmit({
+    owner, enabled: Boolean(autoSendDraftKey && autoSendDraftKey === draftKey),
+    ready: loadedDraftOwner === owner && draftReady.current && !disabled && !sending && uploading === 0 && voiceNote.status === "idle" && mentionVerified && Boolean(richText.getMarkdown().trim() || pending.length),
+    active: () => owner.active, consume: onAutoSendConsumed,
+    beforeSubmit: () => {
+      if (!intent.current) return true;
+      // Restored UNKNOWN retains its exact existing operation; opening a draft
+      // cannot derive another signature or automatically retry it.
+      setProblemNeutral(true); setProblem(t("platform.sendUnknown", { operation: "" }));
+      return false;
+    },
+    submit: send,
+    onError: () => setProblem(t("platform.sendFailed")),
+  });
 
-  // Pinned Buzz MessageComposer.tsx keeps this callback empty; Tiptap owns selection.
-  const handleCaptureSelection = useCallback(() => {}, []);
   const ComposerSurface = surface === "forum" ? ForumComposerSurface : MessageComposerSurface;
   return <ComposerSurface
     {...(surface === "forum" ? { compact, confirmedSendRevision,
       hasComposerContent: Boolean(draft.trim() || pending.length || problem || dragging),
       autocompleteOpen: humanSuggestions.length > 0 || channelLinks.isChannelOpen || emojiAutocomplete.isEmojiAutocompleteOpen,
     } : {})}
-    containerClassName={containerClassName} scrollRef={composerScrollRef}
+    containerClassName={containerClassName} scrollRef={composerScrollRef} formRef={formRef}
     header={<>{composerHeader}<ComposerReplyBanner replyTarget={replyTarget} onCancelReply={sending ? undefined : onCancelReply}
       isEditing={editTarget !== undefined} isEditCancelDisabled={sending} onCancelEdit={onCancelEdit} /></>}
     overlays={<>{linkEditor.card}{linkEditor.dialog}</>}
     formProps={{
-      onSubmit: (event) => { event.preventDefault(); send(); },
+      onSubmit: handleSubmit,
       onPasteCapture: (event) => {
         if (disabled || sending || !event.clipboardData.files.length) return;
         event.preventDefault();
@@ -2113,23 +2073,25 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
       onDragLeave: (event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragging(false); },
       onDrop: (event) => { setDragging(false); if (!disabled && !sending && event.dataTransfer.files.length) { event.preventDefault(); void attachFilesWhenIdle(event.dataTransfer.files); } },
     }}
-    onEditorKeyDown={(event) => {
-      if (handleAlwaysAddressShortcut(event)) return;
-      // Original MessageComposer order: emoji, then channel, then mention suggestions.
-      const emojiResult = emojiAutocomplete.handleEmojiKeyDown(event);
-      if (emojiResult.handled) { if (emojiResult.suggestion) applyEmojiInsert(emojiResult.suggestion); return; }
-      const channelResult = channelLinks.handleChannelKeyDown(event);
-      if (channelResult.handled) { if (channelResult.suggestion) applyChannelInsert(channelResult.suggestion); return; }
-      if (event.key === "Tab" && event.shiftKey && humanSuggestions.length && focusMentionOptionsTrigger(event.currentTarget.closest("form"))) {event.preventDefault(); return;}
-      if(humanSuggestions.length){
-        if(event.key==="Escape"){event.preventDefault();setHumanQuery(null);return;}
-        if(event.key==="ArrowDown"||event.key==="ArrowUp"){event.preventDefault();setHumanIndex(index=>(index+(event.key==="ArrowDown"?1:humanSuggestions.length-1))%humanSuggestions.length);return;}
-        if((event.key==="Enter"||event.key==="Tab")&&humanSuggestions[humanIndex]){event.preventDefault();selectHuman(humanSuggestions[humanIndex]);return;}
-      }
-      if (event.key === "Tab" && !event.shiftKey && linkEditor.isCardOpen) {
-        event.preventDefault(); linkEditor.focusCardFirstControl();
-      }
-    }}
+    onEditorKeyDown={composerKeyDown({
+      alwaysAddress: handleAlwaysAddressShortcut,
+      emoji: emojiAutocomplete.handleEmojiKeyDown, selectEmoji: applyEmojiInsert,
+      channel: channelLinks.handleChannelKeyDown, selectChannel: applyChannelInsert,
+      mentionOpen: humanSuggestions.length > 0,
+      mention: event => {
+        if (!humanSuggestions.length) return { handled: false };
+        if (event.key === "Escape") { event.preventDefault(); setHumanQuery(null); return { handled: true }; }
+        if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+          event.preventDefault(); setHumanIndex(index => (index + (event.key === "ArrowDown" ? 1 : humanSuggestions.length - 1)) % humanSuggestions.length);
+          return { handled: true };
+        }
+        if ((event.key === "Enter" || event.key === "Tab") && humanSuggestions[humanIndex]) {
+          event.preventDefault(); return { handled: true, suggestion: humanSuggestions[humanIndex] };
+        }
+        return { handled: false };
+      },
+      selectMention: selectHuman, linkEditor,
+    })}
     toolbar={{ layoutMode, composerDisabled: disabled || sending, customEmoji,
       addressedAgents: disabled || sending || editTarget ? [] : addressLock.lockedAgents,
       autoPinConfirmationTitle: autoPin.confirmationTitle,
