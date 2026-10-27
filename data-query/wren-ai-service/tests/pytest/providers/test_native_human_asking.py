@@ -24,6 +24,7 @@ from src.web.v1.services.ask import (
     AskRequest,
     AskResultRequest,
     AskResultResponse,
+    StopAskRequest,
 )
 from src.providers.llm.litellm import LitellmLLMProvider
 from src.pipelines.generation.data_assistance import DataAssistance
@@ -355,6 +356,36 @@ class NativeGeneralCompletion(unittest.IsolatedAsyncioTestCase):
                     await asyncio.wait_for(completed(), 2)
                 self.assertEqual(pending.completion.content, "original full")
                 self.assertEqual(remote.await_count, 1)
+
+    async def test_stop_during_classification_keeps_stopped_and_never_generates(self):
+        for intent in ("GENERAL", "MISLEADING_QUERY", "USER_GUIDE", "error"):
+            with self.subTest(intent=intent):
+                service, _, _ = self.service(self.pipelines[0])
+                for name in ("historical_question", "sql_pairs_retrieval", "instructions_retrieval"):
+                    service._pipelines[name] = types.SimpleNamespace(
+                        run=AsyncMock(return_value={"formatted_output": {"documents": []}})
+                    )
+                entered, release = asyncio.Event(), asyncio.Event()
+
+                async def classify(**kwargs):
+                    entered.set()
+                    await release.wait()
+                    if intent == "error":
+                        raise RuntimeError("classification failed after stop")
+                    return {"post_process": {"intent": intent, "db_schemas": []}}
+
+                service._pipelines["intent_classification"] = types.SimpleNamespace(run=classify)
+                generate = AsyncMock()
+                service._generate_general = generate
+                request = AskRequest(query="Original", id="a" * 40, project_id="7")
+                request.query_id = "original"
+                task = asyncio.create_task(service.ask(request))
+                await asyncio.wait_for(entered.wait(), 2)
+                service.stop_ask(StopAskRequest(query_id="original", status="stopped"))
+                release.set()
+                await asyncio.wait_for(task, 2)
+                self.assertEqual(service.get_ask_result(AskResultRequest(query_id="original")).status, "stopped")
+                generate.assert_not_called()
 
     async def test_tail_observer_is_not_completed_but_original_result_can_be_reobserved(
         self,
