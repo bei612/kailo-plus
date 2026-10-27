@@ -81,11 +81,11 @@ export function InboxDrafts({ principalId, workspaces, participants, entries, se
   const open = async (entry: DraftListEntry, send: boolean) => {
     const resolved = destination(entry); const target = draftMessageTarget(entry);
     if (!resolved || !target) return;
+    const draftSnapshot = JSON.stringify(entry.draft);
     const stillCurrent = () => {
       const latest = current.current;
       const saved = latest.entries.find(item => item.key === entry.key);
-      return owner.active && latest.owner === owner && saved?.draft.updatedAt === entry.draft.updatedAt &&
-        saved.draft.channelId === entry.draft.channelId && JSON.stringify(latest.destination(saved)) === JSON.stringify(resolved);
+      return owner.active && latest.owner === owner && Boolean(saved) && JSON.stringify(saved!.draft) === draftSnapshot && JSON.stringify(latest.destination(saved)) === JSON.stringify(resolved);
     };
     try {
       if (resolved.kind === "conversation") {
