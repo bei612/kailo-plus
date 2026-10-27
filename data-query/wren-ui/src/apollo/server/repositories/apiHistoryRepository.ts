@@ -78,6 +78,10 @@ export interface PaginationOptions {
 }
 
 export interface IApiHistoryRepository extends IBasicRepository<ApiHistory> {
+  findStandaloneExplanation(
+    projectId: number,
+    queryId: string,
+  ): Promise<ApiHistory | null>;
   count(
     filter?: Partial<ApiHistory>,
     dateFilter?: { startDate?: Date; endDate?: Date },
@@ -101,6 +105,24 @@ export class ApiHistoryRepository
 
   constructor(knexPg: Knex) {
     super({ knexPg, tableName: 'api_history' });
+  }
+
+  // The public REST explanation ID is stored inside the original error
+  // response; it is not the independently generated API history row UUID.
+  public async findStandaloneExplanation(
+    projectId: number,
+    queryId: string,
+  ): Promise<ApiHistory | null> {
+    const rows = await this.knex(this.tableName)
+      .where({ project_id: projectId, status_code: 400 })
+      .whereNull('governance_binding_id')
+      .whereIn('api_type', [ApiType.GENERATE_SQL, ApiType.STREAM_GENERATE_SQL])
+      .whereJsonPath('response_payload', '$.code', '=', 'NON_SQL_QUERY')
+      .whereJsonPath('response_payload', '$.explanationQueryId', '=', queryId)
+      .limit(2);
+    // Multiple original owners are conflicting evidence, not permission to
+    // pick the first row and consume a one-shot queue.
+    return rows.length === 1 ? this.transformFromDBData(rows[0]) : null;
   }
 
   public async reconcileNativeBinding(

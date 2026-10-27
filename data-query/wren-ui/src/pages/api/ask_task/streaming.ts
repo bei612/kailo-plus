@@ -93,6 +93,14 @@ export async function streamNativeAskingTask(
   return forwardNativeAskingTask(req, res, authorize, true);
 }
 
+export async function streamStandaloneAskingTask(
+  req: NextApiRequest,
+  res: NextApiResponse,
+  authorize: () => Promise<unknown>,
+) {
+  return forwardNativeAskingTask(req, res, authorize, false);
+}
+
 export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse,
