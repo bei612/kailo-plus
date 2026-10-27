@@ -39,10 +39,10 @@ import (
 	"github.com/pydio/cells/v5/common/auth/claim"
 	"github.com/pydio/cells/v5/common/errors"
 	"github.com/pydio/cells/v5/common/nodes"
+	"github.com/pydio/cells/v5/common/nodes/acl"
 	"github.com/pydio/cells/v5/common/nodes/compose"
-"github.com/pydio/cells/v5/common/nodes/acl"
-"github.com/pydio/cells/v5/common/permissions"
 	"github.com/pydio/cells/v5/common/nodes/models"
+	"github.com/pydio/cells/v5/common/permissions"
 	"github.com/pydio/cells/v5/common/proto/tree"
 	"github.com/pydio/cells/v5/common/runtime"
 	"github.com/pydio/cells/v5/common/telemetry/log"
@@ -448,19 +448,27 @@ func (l *pydioObjects) getObject(ctx context.Context, bucket string, key string,
 				return errors.WithStack(errors.StatusForbidden)
 			}
 			user, err := cellauth.ResolveNativeUser(ctx, current.Subject)
-			if err != nil { return err }
+			if err != nil {
+				return err
+			}
 			roles := make([]string, 0, len(user.Roles))
 			for _, role := range user.Roles {
-				if role.GetUuid() != "" { roles = append(roles, role.GetUuid()) }
+				if role.GetUuid() != "" {
+					roles = append(roles, role.GetUuid())
+				}
 			}
-			if len(roles) == 0 { return errors.WithStack(errors.StatusForbidden) }
+			if len(roles) == 0 {
+				return errors.WithStack(errors.StatusForbidden)
+			}
 			// Keep the original claims scopes/session; only the roles come from
 			// the current user. Replace even a preset ACL with a freshly compiled
 			// native list before the original UUID/path authorization filters.
 			current.Roles = strings.Join(roles, ",")
 			freshCtx := claim.ToContext(ctx, current)
 			access, err := permissions.FreshAccessListFromContextClaims(freshCtx)
-			if err != nil { return err }
+			if err != nil {
+				return err
+			}
 			_, err = resolve(acl.WithPresetACL(freshCtx, access))
 			return err
 		}
