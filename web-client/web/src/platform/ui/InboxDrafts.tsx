@@ -85,7 +85,7 @@ export function InboxDrafts({ principalId, workspaces, participants, entries, se
     const stillCurrent = () => {
       const latest = current.current;
       const saved = latest.entries.find(item => item.key === entry.key);
-      return owner.active && latest.owner === owner && Boolean(saved) && JSON.stringify(saved!.draft) === draftSnapshot && JSON.stringify(latest.destination(saved)) === JSON.stringify(resolved);
+      return owner.active && latest.owner === owner && saved !== undefined && JSON.stringify(saved.draft) === draftSnapshot && JSON.stringify(latest.destination(saved)) === JSON.stringify(resolved);
     };
     try {
       if (resolved.kind === "conversation") {
