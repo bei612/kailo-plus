@@ -50,6 +50,13 @@ Web/Desktop 的本地 `file:` 包仍为旧副本，不能作为最新共享包�
 见[原链接消费者记录](core/verify/inbox-project-read.md)。这些是源码消费者检查，
 尚无部署端浏览器剪贴板或 Windows 唤醒验收。
 
+Projects tag 快照后继固定 `2780ea5e4`：原 tag 菜单接入共享仓库读取，同名分支与
+tag 的快照和文件缓存隔离；tag 模式沿原交互强制远程只读，旧分支弹窗回调在派发前
+复核选择归属。原三个消费者文件 **48/48**、四项类型和同源词条通过；五项故障均被
+检出并逐字恢复，两宿主各 1,040 个实际安装源文件一致。原版 tag 页面仍显示当前分支
+徽标，不能据其推断快照来源。三轮夹具失败保留；无真实仓库、浏览器或设备验收，见
+[tag 回执](core/verify/projects-tag-20261027.json)及原消费者记录。
+
 Desktop 审批 Inbox 后继固定 `444fd6175` 补回 HomeView 缺失的 needsAction 接线：
 共享组件和 Web 已有该能力，Desktop 此前没有读取并传入审批源。现在使用同一
 NativeBootstrap 会话的 BFF client 与可信 Principal，消费原 Temporal 审批投影、
