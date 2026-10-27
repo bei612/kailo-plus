@@ -27,7 +27,11 @@ Composer 失败提示固定 `ca477cd66`：Web/Native 共用上传与普通发送
 原 SDK 1 CPU / 4 GiB，Web 74/74、Native 7/7、三消费者类型全部通过；实际恢复
 旧英文诊断拼接断言失败，逐字恢复后通过。Dart 同源生成回填 `0faaf5905`，原件见
 [输入框验证记录](web-client/fork/verify/web-surface.md)。未部署或完成设备验收，
-两宿主完整 Composer 编排共源仍未完成。
+该固定点只统一失败提示。后继 `4fd9753f6` 已让两端共用实际编辑、提及菜单/选择、
+键盘、发送准备、草稿恢复及自动发送调度；原 BFF/CLIENT 的身份、文件、签名、
+原意图与 UNKNOWN 消费留在宿主适配。共享 12、Web 74、Native 28 项与四项类型、
+同源词条检查通过，两宿主各 1,039 个实际安装源文件逐字一致。移除共享 DM Agent
+拒绝后原 Web 消费者失败，逐字恢复后通过；未声称完整页面、视觉或设备验收。
 
 Projects 坐标链接与提交详情复制固定 `38b68f5be`：共享 117 项、补充坐标 7 项、
 Desktop 队列 11 项分别通过，恢复旧拒绝分支会使实际复制到提交/diff 的消费者失败，
@@ -48,10 +52,19 @@ Cells 固定 `afe7a4710` 修复正文读取阻塞期间撤权后仍向原 S3 存
 Wren 原 Ask 流固定 `6f32bac58`：STANDALONE 只消费同 queryId 的原生完成，
 EOF 不造完成事件；流执行中模式改变会停止旧观察。原 HTTP 65、Hook/SQLite 58
 项、类型、格式和 lint 通过，三次实际故障被检出、逐字恢复后通过。证据见
-[原问数记录](data-query/fork/verify/native-integration.md)。完整五文件集合仍有既有
-失败记录，未称全量 Wren 通过；REST `v1/stream_explanation` 独立模式的同类断流
-缺口仍未闭合，后续继续沿原 API History/project 消费者处理。没有真实模型业务、
-正式制品或部署验收。
+[原问数记录](data-query/fork/verify/native-integration.md)。后继 `18a08cffd` 沿原
+API History/current-project 闭合 REST 独立说明流，保留原共享读 ACL 与公开
+message/done wire，并补原流式 SQL 错误丢失的 query 引用。原 HTTP/SQLite 91、
+Hook 27、真实 PG 25 项分别通过，PG 与前者重叠；四项故障和逐字恢复有效，最后
+模式增量 2 项通过。答案流 `8740c95f5` 另修异步期间模式改变的越权，原 30 项及
+移除围栏的四项反向、逐字恢复通过。类型、lint、格式分别通过，未用 fixtures
+冒充真实 SQL/模型业务。根固定 `9240e2625` 曾实际为 13 fail /225 pass /6 未投递
+PG skip，原 90 秒命令因测试后台 tracker 未关闭而退出 124。后继 `69bec1c84`
+仅修原重跑的真实 repository/事务夹具及测试自身资源关闭：原五文件 241 pass /
+6 未投递 PG 条件项、自然退出 0；随后投递两个原 PG 变量，完整任务归属文件
+134 pass /0 skip，覆盖前述六项，两组不相加。四项真实 PG 故障被原断言检出，
+逐字恢复后整组再次通过，类型、lint、格式均 0。没有据此声称全工程 full、正式
+制品、部署或真实 Core/IdP/模型全链验收。
 
 前一批 Core 集成固定 `1d0d20b53`：原 SDK 4 CPU / 16 GiB、私有 PG
 1 CPU / 2 GiB，正常主目标 **839 passed / 91 ignored**；显式 Agent/Canvas/审核、
