@@ -171,6 +171,7 @@ export enum RecommendationQuestionStatus {
 }
 
 export type RecommendationQuestionsInput = {
+  queryId?: string; // Existing UI-reserved native task ID, not authorization.
   // JSON string of the MDL (Model Definition Language)
   manifest: Manifest;
   // Optional list of previous questions

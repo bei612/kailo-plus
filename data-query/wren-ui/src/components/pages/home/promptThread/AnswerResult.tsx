@@ -196,7 +196,7 @@ export default function AnswerResult(props: Props) {
       const debouncedGenerateAnswer = debounce(
         () => {
           onGenerateTextBasedAnswer(id);
-          onGenerateThreadRecommendedQuestions();
+          if (isLastThreadResponse) onGenerateThreadRecommendedQuestions(id);
         },
         250,
         { leading: false, trailing: true },
@@ -209,6 +209,7 @@ export default function AnswerResult(props: Props) {
     }
   }, [
     isBreakdownOnly,
+    isLastThreadResponse,
     askingTask?.status,
     adjustmentTask?.status,
     answerDetail?.status,

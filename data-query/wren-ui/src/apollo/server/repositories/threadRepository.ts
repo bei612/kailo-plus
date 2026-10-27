@@ -22,6 +22,7 @@ export interface Thread {
 
   // recommend question
   queryId?: string; // Query ID
+  questionsSourceResponseId?: number | null;
   questions?: ThreadRecommendationQuestionResult[]; // Recommended questions
   questionsStatus?: string; // Status of the recommended questions
   questionsError?: object; // Error of the recommended questions
@@ -29,6 +30,9 @@ export interface Thread {
 
 export interface IThreadRepository extends IBasicRepository<Thread> {
   listAllTimeDescOrder(projectId: number): Promise<Thread[]>;
+  lockRecommendation(thread: Thread, tx: Knex.Transaction): Promise<Thread | null>;
+  claimRecommendation(thread: Thread, sourceResponseId: number, queryId: string): Promise<Thread | null>;
+  updateRecommendation(thread: Thread, data: Partial<Thread>): Promise<Thread | null>;
 }
 
 export class ThreadRepository
@@ -46,6 +50,47 @@ export class ThreadRepository
       .where(this.transformToDBData({ projectId }))
       .orderBy('created_at', 'desc');
     return threads.map((thread) => this.transformFromDBData(thread));
+  }
+
+  public async lockRecommendation(thread: Thread, tx: Knex.Transaction): Promise<Thread | null> {
+    const row = await tx(this.tableName).where({ id: thread.id, project_id: thread.projectId }).forUpdate().first();
+    return row ? this.transformFromDBData(row) : null;
+  }
+
+  public async claimRecommendation(thread: Thread, sourceResponseId: number, queryId: string): Promise<Thread | null> {
+    // One atomic native-row claim, including NULLs; concurrent callers cannot
+    // both enter AI creation from the same observed original thread.
+    const rows = await this.knex(this.tableName).where({
+      id: thread.id,
+      project_id: thread.projectId,
+      query_id: thread.queryId ?? null,
+      questions_source_response_id: thread.questionsSourceResponseId ?? null,
+      questions_status: thread.questionsStatus ?? null,
+    }).whereExists(
+      this.knex('thread_response as source_response')
+        .select(this.knex.raw('1'))
+        .where('source_response.thread_id', thread.id)
+        .where('source_response.id', sourceResponseId)
+        .where('source_response.id', this.knex('thread_response')
+          .max('id').where('thread_id', thread.id)),
+    ).update(this.transformToDBData({
+      queryId,
+      questionsSourceResponseId: sourceResponseId,
+      questionsStatus: 'GENERATING',
+      questions: [],
+      questionsError: null,
+    })).returning('*');
+    return rows[0] ? this.transformFromDBData(rows[0]) : null;
+  }
+
+  public async updateRecommendation(thread: Thread, data: Partial<Thread>): Promise<Thread | null> {
+    const rows = await this.knex(this.tableName).where({
+      id: thread.id,
+      project_id: thread.projectId,
+      query_id: thread.queryId ?? null,
+      questions_source_response_id: thread.questionsSourceResponseId ?? null,
+    }).update(this.transformToDBData(data)).returning('*');
+    return rows[0] ? this.transformFromDBData(rows[0]) : null;
   }
 
   protected override transformFromDBData = (data: any): Thread => {

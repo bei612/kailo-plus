@@ -863,3 +863,61 @@ class NativeGeneralCompletion(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class NativeRecommendationTaskIdentity(unittest.IsolatedAsyncioTestCase):
+    """The original FastAPI task-ID consumer, not a durable AI task claim."""
+
+    async def test_reserved_native_id_is_used_for_original_background_and_get(self):
+        from src.web.v1.routers.question_recommendation import router as recommendations
+        from src.web.v1.services.question_recommendation import QuestionRecommendation
+
+        service = QuestionRecommendation({})
+        service.recommend = AsyncMock()
+        app = FastAPI()
+        app.include_router(recommendations)
+        app.dependency_overrides[get_service_container] = lambda: types.SimpleNamespace(
+            question_recommendation=service
+        )
+        app.dependency_overrides[get_service_metadata] = lambda: ServiceMetadata({}, "fixture")
+        task_id = str(uuid4())
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://fixture") as client:
+            payload = {"native_task_id": task_id, "mdl": "original-model", "previous_questions": ["Original question"]}
+            response = await client.post("/question-recommendations", json=payload)
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json(), {"id": task_id})
+            service.recommend.assert_awaited_once()
+            request = service.recommend.await_args.args[0]
+            self.assertEqual(request.event_id, task_id)
+            self.assertNotIn("native_task_id", request.model_dump())
+            observed = await client.get(f"/question-recommendations/{task_id}")
+            self.assertEqual(observed.status_code, 200)
+            self.assertEqual(observed.json()["id"], task_id)
+            self.assertEqual(observed.json()["status"], "generating")
+            duplicate = await client.post("/question-recommendations", json=payload)
+            self.assertEqual(duplicate.status_code, 409)
+            service.recommend.assert_awaited_once()
+            # TTL/process-cache absence remains the original missing result;
+            # this is not proof of NOT_STARTED and the UI must not POST again.
+            service._cache.clear()
+            missing = await client.get(f"/question-recommendations/{task_id}")
+            self.assertEqual(missing.json()["error"]["code"], "RESOURCE_NOT_FOUND")
+            service.recommend.assert_awaited_once()
+
+    async def test_original_standalone_without_reserved_id_still_assigns_a_native_uuid(self):
+        from src.web.v1.routers.question_recommendation import router as recommendations
+        from src.web.v1.services.question_recommendation import QuestionRecommendation
+        from uuid import UUID
+
+        service = QuestionRecommendation({})
+        service.recommend = AsyncMock()
+        app = FastAPI()
+        app.include_router(recommendations)
+        app.dependency_overrides[get_service_container] = lambda: types.SimpleNamespace(question_recommendation=service)
+        app.dependency_overrides[get_service_metadata] = lambda: ServiceMetadata({}, "fixture")
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://fixture") as client:
+            response = await client.post("/question-recommendations", json={"mdl": "original-model"})
+        self.assertEqual(response.status_code, 200)
+        task_id = response.json()["id"]
+        self.assertEqual(str(UUID(task_id)), task_id)
+        self.assertEqual(service.recommend.await_args.args[0].event_id, task_id)
