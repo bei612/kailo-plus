@@ -815,3 +815,31 @@ open 1630 / draft 1633 / closed 1632；merged 1631 走 git，不在界面发布�
 真实远程 Git push、安装包/Win11/浏览器上线验收。原 Native CREATE_PULL_REQUEST publisher 缺口
 及普通 Native 不可变 Community 绑定/权威缺失证明也不由本批伪称补齐：本批保留原
 Relay URL/sessionEpoch/本人 key 与 UNKNOWN 原 ID 观察边界，不借用仅 1631 的 proof 端点。
+
+
+### 2026-10-27 同批 Rust producer 终态补充
+
+产品最终固定 `a3957d2afee9aec2c69c105be091258579494732`，相对 Node 固定 b12
+仅增加上述 Node 证据及 Rust 标签坐标的 `.to_owned()` 类型修正；Node 产品/输入没有改变。
+沿同一 SDK300，2 CPU / 16 GiB（swap 同上）/ 1,024 pids，SQLX_OFFLINE、offline/locked，
+复用已有 Data target `/volumes/data/kailo/conformance/cache/publication-negative-core/rust-target`。
+没有复制缓存、在宿主运行工具链或启动 PG。原 SDK 工具链实际为 Rust/Cargo 1.90.0。
+
+- 原 Rust Projects publication roundtrip 1/1、collab-bridge `projects::tests` 19/19、
+  platform-core binary `projects::tests` 9/9、实际签名 kind/native-channel 推导 1/1 通过。
+  四个修改 Rust 文件原 rustfmt check 与两 crate `--all-targets` Clippy `-D warnings` 全 0。
+- 临时删除实际 producer 的作者/owner 拒绝条件，原
+  `original_review_update_producer_and_immutable_receipt` assertion 失败（exit 101）；
+  源码逐字恢复后原消费者 1/1 通过。该反证没有改其他身份/签名校验。
+- 保留 b12 首 Rust 轮 exit 101：contracts roundtrip 已通过，bridge 编译发现借用的 repository
+  坐标使标签向量错误推断为 `Vec<&str>`；a395 修为拥有所有权的同一原坐标。
+  保留 a395 首轮 exit 101：contracts 1 与 bridge 19 已通过，但最小导出漏掉原 platform
+  build.rs 所需 `model-gateway/crates/protos/proto/ext_mcp.proto`。补齐同一 GitHub 对象输入，
+  未改协议或产品，以独立 `a3957d2af-inputs` job 复验，不覆盖失败日志。
+- 最终 `projects-review-update-core/a3957d2af-inputs` exit 0、OOM false，容器回读无残留；
+  2,175 个 GitHub 固定归档输入逐字一致。回执见
+  [Rust 阶段回执](projects-review-update-core-20261027.json)，原日志仍在 CI 对应 job 目录。
+
+此补充闭合前节尚待的 Rust 编译/定向/Clippy，不改变其余边界。主线程独占的数据库/Relay
+kind 1619 时间屏障、epoch 旋转、Core absence 审计迁移尚未纳入这两个固定检查源，必须在
+合批后另行实际 PG/HTTP 验证；不能将本页的 producer 与 Node 通过等同于完整发布或上线验收。
