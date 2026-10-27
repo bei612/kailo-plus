@@ -1433,8 +1433,8 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
       emojiAutocomplete.updateEmojiQuery(text, cursor);
     },
   }});
-  const getDraftMentionRefs = useCallback((content: string) => composerMentions.getDraftMentionRefs(content)
-    .map(ref => ({ ...ref, isAgent: ref.isAgent === true || knownAgentKeys.has(ref.pubkey) })), [composerMentions.getDraftMentionRefs, knownAgentKeys]);
+  const getDraftMentionRefs = useCallback((content: string) => composerMentions.getLiveMentionRefs(content)
+    .map(ref => ({ ...ref, isAgent: ref.isAgent === true || knownAgentKeys.has(ref.pubkey) })), [composerMentions.getLiveMentionRefs, knownAgentKeys]);
   const applyChannelInsert = useCallback((suggestion: ChannelSuggestion) => {
     const { cursor } = richText.getPlainTextAndCursor();
     applyAutocompleteEdit(channelLinks.insertChannel(suggestion, cursor));
@@ -1476,7 +1476,7 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
       }
       return;
     }
-    if (disabled || sending || !mentionCandidates.some(candidate => candidate.pubkey === person.pubkey && candidate.isAgent === person.isAgent)) return;
+    if (disabled || sending || !mentionCandidates.some(candidate => candidate.pubkey === person.pubkey && Boolean(candidate.isAgent) === Boolean(person.isAgent))) return;
     addressLock.selectMentionSuggestion(person);
   };
   const scrollAfterPaste = useCallback(() => {

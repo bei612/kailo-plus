@@ -1,3 +1,4 @@
+import { mentionOccurrences } from "../../../../pulse/mentionOccurrences";
 import * as React from "react";
 import { useUiT } from "@client-kit/platform/react/context";
 import type { MentionSuggestion } from "../ui/MentionAutocomplete";
@@ -12,6 +13,7 @@ import {
   type RegisterMentionPubkey,
 } from "./mentionPasteBinding";
 import {
+  mentionMatchCandidates,
   extractMentionPubkeys,
   AmbiguousMentionError,
   selectedMentionLabel,
@@ -341,6 +343,14 @@ export function useComposerMentions({ candidates: mentionCandidates, profiles, t
       setSelectedNames: setSelectedMentionNames,
     });
   const getDraftMentionRefs = React.useCallback((content: string, fallbackRefs?: readonly import("./useDrafts").DraftMentionRef[], competingDisplayNames?: readonly string[]) => draftRouting.getDraftMentionRefs(content, fallbackRefs, competingDisplayNames).map(ref => ({...ref, ...(selectedAgentKeys.has(ref.pubkey) ? {isAgent: true} : {})})), [draftRouting.getDraftMentionRefs, selectedAgentKeys]);
+  // The live address tray follows every resolved occurrence, including typed
+  // admitted members. Persisted draft refs still retain only explicit/frozen
+  // identities, through the original draft-routing consumer above.
+  const getLiveMentionRefs = React.useCallback((content: string) => mentionOccurrences(content,
+    mentionMatchCandidates({ selectedMentions: mentionMapRef.current, memberCandidates: mentionCandidates }))
+    .flatMap(({ candidates }) => candidates.flatMap(candidate => candidate.pubkey
+      ? [{ pubkey: candidate.pubkey, displayName: candidate.displayName, isAgent: selectedAgentKeys.has(candidate.pubkey) }]
+      : [])), [mentionCandidates, selectedAgentKeys, mentionMapRef]);
   const restoreDraftMentionRefs = React.useCallback((refs: readonly import("./useDrafts").DraftMentionRef[]) => {
     for (const ref of refs) if (ref.isAgent === true) selectedAgentKeys.add(ref.pubkey);
     draftRouting.restoreDraftMentionRefs(refs);
@@ -430,7 +440,7 @@ export function useComposerMentions({ candidates: mentionCandidates, profiles, t
     cancelMentionAutocomplete,
     clearMentions,
     extractMentionPubkeys: extractMentionPubkeysForCurrentMentions,
-    getDraftMentionRefs,
+    getDraftMentionRefs, getLiveMentionRefs,
     getMentionIdentities,
     getMentionDisplayName,
     isInlineMentionSelection,
