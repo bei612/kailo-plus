@@ -89,6 +89,7 @@ export class ThreadRepository
       project_id: thread.projectId,
       query_id: thread.queryId ?? null,
       questions_source_response_id: thread.questionsSourceResponseId ?? null,
+      questions_status: thread.questionsStatus ?? null,
     }).update(this.transformToDBData(data)).returning('*');
     return rows[0] ? this.transformFromDBData(rows[0]) : null;
   }

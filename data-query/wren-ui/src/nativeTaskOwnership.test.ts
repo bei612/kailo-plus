@@ -2881,6 +2881,13 @@ for (const backend of ['sqlite', 'postgres'] as const) {
       expect(await threads.updateRecommendation(old, { questionsStatus: 'FINISHED', questions: [] })).toBeNull();
       expect((await threads.findOneBy({ id: 11 })).queryId).toBe(next.queryId);
     });
+    it('a late generating observation of the same task cannot regress its recorded terminal result', async () => {
+      await service.generateThreadRecommendationQuestions(11, await source());
+      const pending = await threads.findOneBy({ id: 11 });
+      await threads.updateRecommendation(pending, { questionsStatus: 'FINISHED', questions: [] });
+      expect(await threads.updateRecommendation(pending, { questionsStatus: 'GENERATING', questions: [] })).toBeNull();
+      expect((await threads.findOneBy({ id: 11 })).questionsStatus).toBe('FINISHED');
+    });
     it('one selection intent returns one real row concurrently and after ACK loss; another explicit selection creates another row', async () => {
       const recommendation = await finish();
       const rows = await Promise.all([service.createThreadResponse({ recommendation }, 11), service.createThreadResponse({ recommendation }, 11)]);
