@@ -178,8 +178,11 @@ UI+AI 制品、部署及浏览器业务尚未验收，详见[原问数记录](da
 授权、原业务断言和超时未改。此前重跑 **535 通过／9 失败／1 跳过**，修正后
 整文件 **544 通过／1 跳过**，类型、相关 lint 和格式通过；实际去掉 generation
 与重派同一原生事件分别触发 **2、3** 项失败，逐字恢复后整文件再次通过。
-跳过项是原 PostgreSQL 跨项目同名源表删除检查，未投递数据库；该结果不是完整
-Wren 套件或真实服务验收，见[完整消费者回执](data-query/fork/verify/native-human-full-receipt.json)。
+跳过项是原 PostgreSQL 跨项目同名源表删除检查；后继固定 `4152f377f` 在独立
+PostgreSQL 执行整文件 **545/545、无跳过**，移除项目过滤后原断言检出误删两行，
+逐字恢复后通过。其他文件的 PostgreSQL 消费者未在该批执行；这不是完整 Wren
+套件或真实服务验收，见[完整消费者回执](data-query/fork/verify/native-human-full-receipt.json)
+及[独立 PostgreSQL 回执](data-query/fork/verify/native-human-postgres-receipt.json)。
 
 前一批 Core 集成固定 `1d0d20b53`：原 SDK 4 CPU / 16 GiB、私有 PG
 1 CPU / 2 GiB，正常主目标 **839 passed / 91 ignored**；显式 Agent/Canvas/审核、
