@@ -1,0 +1,55 @@
+{
+  "source_commit": "a7501d688e07f7d3104bf530b403c0bcb7c196ef",
+  "sdk": "sha256:3007729eb192341a4f004a88e42e1e66c94fc67d763acfc96568bd7311116018",
+  "source_directory": "/volumes/data/kailo/verification/composer-body/31a2c67c3/source",
+  "source_inputs_checked": 3454,
+  "source_mismatches": [],
+  "installed_platform_source_files_each_host": 1039,
+  "cpu": 1,
+  "memory_bytes": 4294967296,
+  "pids_limit": 256,
+  "positive": {
+    "shared": 15,
+    "web": 83,
+    "native": 28,
+    "typechecks": [
+      "shared-production",
+      "shared-test",
+      "web",
+      "desktop"
+    ],
+    "i18n_check": 0
+  },
+  "negative": {
+    "mutation": "remove snapshot naming; remove read preparation lock; replace original complete batch handoff with serial single-file registration",
+    "exit": [
+      1,
+      1,
+      1
+    ],
+    "restored_web": 7,
+    "restored_controller": 4,
+    "restored_bytes_identical": true
+  },
+  "job_directory": "/volumes/data/kailo/verification/composer-paste/a7501d688",
+  "files_sha256": {
+    "check.log": "2da536ecadf0caace812fad7a7d51f8aa95eb6af9b8f577436a785085b37fa7a",
+    "result.log": "1d8c19ec7469a434f8347974b23d83ccea6c5ce0850b6e1b2191c68872def85b",
+    "limits.log": "41a50716ae4353711e34da313e2e8ecaffc180eeb3e7269a07b69ef0a956bb0d",
+    "preflight.log": "d0653a6c7536298dd51f1befa748bcdfcce4fcf7f2cb2d62b613b8000047c4b3",
+    "oom.log": "2ed27c1421e6928dbe13dbfdb5c59e1045b30341fe7ebe05700006bc5ac572c0",
+    "tmp/negative.log": "2ec6326be9c9edabab39fac4a16cf131dae410f64a9ada9c91ae8eaa3dd69d7f",
+    "tmp/negative-exit.log": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+    "tmp/original.sha256": "4120b006897595d88d035c63ce57be9fd8cf19728173bd10eeefdcdd89be1014",
+    "tmp/restored.sha256": "4120b006897595d88d035c63ce57be9fd8cf19728173bd10eeefdcdd89be1014",
+    "tmp/restored.log": "a54a0978dd6c8353ad54024fa609bde90ef086543ee34ccc2fb20a8fe9d0932d",
+    "tmp/controller-restored.log": "7d2e7eb9de27ccbd89717348b500d94be15b8d83144409febd9255d61eb8b3e2",
+    "tmp/lock-negative.log": "86741f631dfde363ff00dcb784f24e1fa46480b17dfaf75cc0368ee73435a6bf",
+    "tmp/lock-negative-exit.log": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+    "tmp/lock-restored.log": "a7fa4f9ee33342abc9bbd4ad148d211c0a5b5bb8a62fecc729a0a9d97d174e5a",
+    "tmp/batch-negative.log": "8c89370defba80e1d481bd8423085e00b374186c9e27984486b0f0565a131550",
+    "tmp/batch-negative-exit.log": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+    "tmp/batch-restored.log": "29e8f17252e4db079d6c6e1cee874c7ef74d74633c2ccf87f0e64e0e55d56373"
+  },
+  "scope": "original consumers and source-byte verification; no packaging, deployment, real browser or device acceptance"
+}

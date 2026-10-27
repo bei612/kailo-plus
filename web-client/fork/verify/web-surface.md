@@ -7069,3 +7069,58 @@ SHA-256 都是 `553712d3187d831dfe0f8988da7dcad4db9c75661273a98d10e31886926ad420
 无 schema/API/Workflow/i18n 变化，不新增或解除正式发布门禁；未做全工程 full、制品、
 部署、真实浏览器键盘或 Windows 安装验收。此次 Desktop 证据是实际共享包、类型及原
 消费者回归，不把 Web DOM 操作宣称为真机按键验证。
+
+## 2026-10-27 原快照粘贴入口与完整上传批次
+
+关联 REQ-24 / DD-74 / DD-131(7) / DD-143。比较基准
+`83a01b7545db6ced755f62e77d239cfcf1aa14ed`，最终产品与消费者固定
+`a7501d688e07f7d3104bf530b403c0bcb7c196ef`：6 文件 +213/-35。
+固定 Buzz `779af8886caae1317b4de962082429867ab61503` 原链为
+`MessageComposer → useComposerPasteHandler → agentSnapshotClipboard`，粘贴快照会成为
+带原快照文件名的附件；Kailo 已授权差异是不复用剪贴板中其他 scope 的媒体 URL，而是
+校验剪贴板 PNG 包的字节、大小和 SHA，再经目标会话原媒体入口上传。
+
+原 Web `form.onPasteCapture` 抢先处理全部 file，绕开共享命名校验，使快照退化为
+普通 `image.png`。本批移除该抢先入口，Web/Desktop 共用原 paste handler：文件优先、
+原代码块及受信提及正文路径不改；保留 Web 已有多文件粘贴，不重复消费 files/items。
+命名只接受已存在的快照格式校验；无效 hash/HTML 保持普通文件，不接管剪贴板 URL。
+
+共享异步读取捕获原 owner 和上传 callback，读取完成后复核 owner、editor、挂载及
+可写状态；身份/草稿变化后不调用新 scope 的上传能力。每个 owner 的并行快照读取计数
+同时控制 Enter、按钮和自动发送，先完成的读取不能提前解锁。全部字节准备完成后，
+同一任务内把完整文件数组交给原媒体批次，再等待上传回执：Web 用原 `attach(files)`
+先登记 `batch.remaining`，Native 用原 queue/filter/uploadFiles 能力；不另建上传队列。
+共享语音排他检查保留，混合语音附件沿原 voiceOnlyAttachment 提示拒绝。
+
+原 SDK `sha256:3007729eb192341a4f004a88e42e1e66c94fc67d763acfc96568bd7311116018`，
+1 CPU / 4 GiB（memory+swap 同值）/ pids 256，源/临时目录/日志在真实 Data。
+原冻结锁刷新两宿主 file 包，各 1,039 个实际解析源码文件逐字一致；3,454 个固定
+GitHub 归档输入无差异。四项类型（共享生产/测试、Web、Desktop）与同源 i18n check
+全部退出 0，共享 15/15、Web 83/83、Native 原草稿/发送消费者 28/28。
+
+新增七项真实 Web DOM 操作覆盖 agent/team 命名附件、原正文保留及草稿重开后发送、
+伪造 hash 与多文件、仅身份变化/草稿变化期间真实 FileReader 晚到、两个并行读取不
+提前发正文、同一次两文件粘贴首上传挂起时完整冻结批次。原正文、提及、代码块、
+UNKNOWN 与 queued 消费者原样回归；没有以直接调用命名 helper 代替页面粘贴事件。
+
+三项真实故障分别关闭命名、关闭准备锁、把完整批次改回逐个 await 单文件登记，原
+消费者均断言失败退出 1；每次逐字恢复后快照七项通过，末尾共享 controller 四项通过。
+共享 handler 原件及恢复后 SHA-256 均为
+`dbb7742f2d185b8082c0af37259bb196a2f81acb718743068eaf7f295fb28cec`；
+第三次 Web host 文件也由保存的原件逐字恢复，最终归档输入复核无差异。任务最终
+exit 0，OOM=false，容器清理为空；原 React act 警告保留。
+
+初始 `7a746bec7` 的 15/81/28、四项类型与命名反证通过记录保留；其未覆盖字节准备
+和同次多文件晚登记，不能替代最终 a750。后两处经自检及交叉复核实际补齐，再以最终
+固定源码运行上述检查，未仅凭初始通过声明完成。
+
+[回执](composer-paste-receipt.json) SHA-256：
+`559f171c16cad198ef44ba0f556d4f9b7970d02aca7f2c4c062152d9b7c0e92f`。
+CI 原件 `/volumes/data/kailo/verification/composer-paste/a7501d688/`，含三次
+negative/restored、原 check/limits/OOM 与输入回执。审计完成后，自己的旧 source/deps
+目录交后续恢复批复用；本次原日志及回执不覆盖，后续缓存状态不作为本次来源证据。
+
+无 schema/API/Workflow/i18n 或发布权威变化，未部署、未打包、未作真实系统剪贴板或
+Windows 设备验收。交叉复核另确认基线既有 Web 上传失败恢复会遗漏失败文件及自动
+重传，由后续批次修复；本批正面多文件/成功草稿恢复不声称失败、取消或 UNKNOWN
+恢复全部闭合。没有新增或解除正式发布门禁。
