@@ -17,7 +17,7 @@ export function useEntityDeepLinks() {
       if (controller.signal.aborted) return false;
       const parsed = parseEntityLink(href);
       // Invalid/unsupported heads must not wedge subsequent supported links.
-      if (!parsed.ok || (parsed.value.type !== "issue" && parsed.value.type !== "pr")) return true;
+      if (!parsed.ok) return true;
       try {
         await openProjectEntity(host, parsed.value, controller.signal, goProject);
         return true;

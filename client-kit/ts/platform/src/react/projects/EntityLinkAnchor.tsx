@@ -1,5 +1,5 @@
 // Fixed Buzz 779af8886caae1317b4de962082429867ab61503
-// desktop/src/shared/ui/markdown/entityLinks.tsx: Issue/PR presentation and tooltip.
+// desktop/src/shared/ui/markdown/entityLinks.tsx: project/repository/Issue/PR presentation and tooltip.
 // The host supplies its current admitted reader and navigation, never URL identity.
 import * as React from "react";
 import { useUiT } from "../context";
@@ -7,7 +7,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../sid
 import { BuzzInlineLink, BuzzLinkChip } from "../messages/message-link/BuzzLinkChip";
 import { useInlineTooltipPosition } from "../messages/message-link/useInlineTooltipPosition";
 import { parseEntityLink, type ParsedEntityLink } from "./entityLink";
-import { openProjectEntity, readProjectEntity } from "./projectEntityNavigation";
+import { openProjectEntity, readProjectLinkTarget } from "./projectEntityNavigation";
 import type { ProjectsHost } from "./projectEnumeration";
 import type { ProjectWorkItemTarget } from "./projectWorkItems";
 
@@ -22,7 +22,7 @@ export function EntityLinkAnchor({ children, href, interactive = true, asChip = 
   children?: React.ReactNode; href: string; interactive?: boolean; asChip?: boolean; runtime?: EntityLinkRuntime;
 }) {
   const parsed = parseEntityLink(href);
-  if (!parsed.ok || (parsed.value.type !== "issue" && parsed.value.type !== "pr")) {
+  if (!parsed.ok) {
     return <span data-entity-link="">{children ?? href}</span>;
   }
   return <ProjectEntityAnchor key={`${runtime?.host?.scopeKey}:${href}`} href={href} link={parsed.value}
@@ -30,7 +30,7 @@ export function EntityLinkAnchor({ children, href, interactive = true, asChip = 
 }
 
 function ProjectEntityAnchor({ children, href, link, interactive, asChip, runtime }: {
-  children?: React.ReactNode; href: string; link: Extract<ParsedEntityLink, { type: "issue" | "pr" }>;
+  children?: React.ReactNode; href: string; link: ParsedEntityLink;
   interactive: boolean; asChip: boolean; runtime?: EntityLinkRuntime;
 }) {
   const t = useUiT();
@@ -43,15 +43,26 @@ function ProjectEntityAnchor({ children, href, link, interactive, asChip, runtim
     const controller = new AbortController();
     lifetime.controller = controller;
     if (interactive && host) {
-      void readProjectEntity(host, link, controller.signal).then(item => {
-        if (!controller.signal.aborted) setTitle(item.type === "issue" ? item.issue.title : item.pullRequest.title);
+      void readProjectLinkTarget(host, link, controller.signal).then(destination => {
+        if (!controller.signal.aborted) setTitle(destination.title);
       }, () => { if (!controller.signal.aborted) setTitle(null); });
     }
     return () => controller.abort();
   }, [host, href, interactive, lifetime]);
-  const presentation = {
+  const presentation = link.type === "issue" || link.type === "pr" ? {
     ariaLabel: t(link.type === "issue" ? "projects.share.openIssue" : "projects.share.openPr", { id: link.id.slice(0, 8), repository: link.dtag }),
     footer: t(link.type === "issue" ? "projects.share.issue" : "projects.share.pr", { repository: link.dtag }),
+    label: link.dtag,
+    fallback: `${link.dtag} · ${link.id.slice(0, 8)}`,
+  } : link.type === "repo" ? {
+    ariaLabel: link.commitHash ? t("projects.share.openCommit", { id: link.commitHash.slice(0, 8), repository: link.dtag })
+      : t("projects.share.openRepository", { name: link.dtag }),
+    footer: t("projects.selection.kind.repository"),
+    label: link.commitHash ? `${link.dtag} · ${link.commitHash.slice(0, 8)}` : link.dtag,
+    fallback: link.dtag,
+  } : {
+    ariaLabel: t("projects.share.openProject", { name: link.dtag }),
+    footer: t("projects.selection.kind.project"), label: link.dtag, fallback: link.dtag,
   };
   const onOpenLink = () => {
     const signal = lifetime.controller.signal;
@@ -66,12 +77,12 @@ function ProjectEntityAnchor({ children, href, link, interactive, asChip, runtim
   const copyLink = (value:string) => runtime?.copyLink(value);
   const element = asChip ? <BuzzLinkChip copyLink={copyLink} data-buzz-link-kind={link.type}
     href={href} icon={link.type} aria-label={title ? `${presentation.ariaLabel}: ${link.dtag} · ${title}` : presentation.ariaLabel}
-    interactive={openable} onOpenLink={onOpenLink} wrapping>{link.dtag}</BuzzLinkChip>
+    interactive={openable} onOpenLink={onOpenLink} wrapping>{presentation.label}</BuzzLinkChip>
     : <BuzzInlineLink copyLink={copyLink} href={href} title={href}
       aria-label={title ? `${presentation.ariaLabel}: ${title}` : presentation.ariaLabel}
       interactive={openable} onOpenLink={onOpenLink}>{children}</BuzzInlineLink>;
   if (!openable) return element;
-  const context = title === undefined ? `${link.dtag} · ${link.id.slice(0, 8)}` : title;
+  const context = title === undefined ? presentation.fallback : title;
   return <TooltipProvider delayDuration={500} skipDelayDuration={0}><Tooltip>
     <TooltipTrigger asChild onPointerMove={onPointerMove}>{element}</TooltipTrigger>
     <TooltipContent ref={contentRef} className="max-w-72 p-2 text-left" side="top">
