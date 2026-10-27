@@ -18,7 +18,7 @@ async function forwardNativeAskingTask(
   authorize: () => Promise<unknown>,
   governed: boolean,
 ) {
-  res.setHeader('Cache-Control', 'private, no-store');
+  res.setHeader('Cache-Control', 'private, no-store, no-transform');
   let stream;
   let timer: NodeJS.Timeout;
   let stop: () => void;
