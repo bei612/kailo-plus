@@ -5,6 +5,9 @@ import * as Apollo from '@apollo/client';
 const defaultOptions = {} as const;
 export type KailoSessionQueryVariables = Types.Exact<{ [key: string]: never; }>;
 
+
+export type KailoSessionQuery = { __typename?: 'Query', kailoSession: { __typename?: 'KailoSession', isAdmin: boolean, productName: string, identityLocale?: string | null, shareAvailable: boolean, user?: { __typename?: 'KailoUser', name?: string | null, username?: string | null, email?: string | null, picture?: string | null } | null } };
+
 export type KailoShareMembersQueryVariables = Types.Exact<{ [key: string]: never; }>;
 
 
@@ -16,9 +19,6 @@ export type ShareWithMembersMutationVariables = Types.Exact<{
 
 
 export type ShareWithMembersMutation = { __typename?: 'Mutation', shareWithMembers: { __typename?: 'KailoShareResult', notified: number } };
-
-
-export type KailoSessionQuery = { __typename?: 'Query', kailoSession: { __typename?: 'KailoSession', isAdmin: boolean, productName: string, identityLocale?: string | null, shareAvailable: boolean, user?: { __typename?: 'KailoUser', name?: string | null, username?: string | null, email?: string | null, picture?: string | null } | null } };
 
 
 export const KailoSessionDocument = gql`

@@ -102,6 +102,7 @@ export enum ApiType {
 export type AskingTask = {
   __typename?: 'AskingTask';
   candidates: Array<ResultCandidate>;
+  completion?: Maybe<Scalars['String']>;
   error?: Maybe<Error>;
   intentReasoning?: Maybe<Scalars['String']>;
   invalidSql?: Maybe<Scalars['String']>;

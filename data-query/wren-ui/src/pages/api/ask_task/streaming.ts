@@ -9,7 +9,10 @@ import {
 import { isGovernedQueryMode } from '@/apollo/server/services/nativeQueryMode';
 import { MAX_WAIT_TIME } from '@/apollo/server/utils/apiUtils';
 import { createInterface } from 'readline';
-import { AskResultType, generalCompletion } from '@/apollo/server/models/adaptor';
+import {
+  AskResultType,
+  generalCompletion,
+} from '@/apollo/server/models/adaptor';
 
 // Both original planning surfaces expose the same native message/done stream.
 // Their existing task/history reader remains the ownership/evidence authority.
@@ -38,7 +41,11 @@ async function forwardNativeAskingTask(
     let emitted = '';
     const cached = generalCompletion(original, queryId);
     if (cached !== undefined) {
-      if (responseMaxBytes !== undefined && Buffer.byteLength(JSON.stringify({ message: cached }), 'utf8') > responseMaxBytes)
+      if (
+        responseMaxBytes !== undefined &&
+        Buffer.byteLength(JSON.stringify({ message: cached }), 'utf8') >
+          responseMaxBytes
+      )
         throw new NativeQueryRefusal(503, 'QUERY_EVIDENCE_UNAVAILABLE');
       res.setHeader('Content-Type', 'text/event-stream');
       res.write(`data: ${JSON.stringify({ message: cached })}\n\n`);
@@ -50,13 +57,21 @@ async function forwardNativeAskingTask(
       const result = await components.wrenAIAdaptor.getAskResult(queryId);
       await authorize();
       if (res.destroyed) return;
-      if (original.type === AskResultType.GENERAL || result.type === AskResultType.GENERAL) {
+      if (
+        original.type === AskResultType.GENERAL ||
+        result.type === AskResultType.GENERAL
+      ) {
         const complete = generalCompletion(result, queryId);
         if (complete === undefined || !complete.startsWith(emitted)) return;
-        if (responseMaxBytes !== undefined && Buffer.byteLength(JSON.stringify({ message: complete }), 'utf8') > responseMaxBytes)
+        if (
+          responseMaxBytes !== undefined &&
+          Buffer.byteLength(JSON.stringify({ message: complete }), 'utf8') >
+            responseMaxBytes
+        )
           throw new NativeQueryRefusal(503, 'QUERY_EVIDENCE_UNAVAILABLE');
         const remainder = complete.slice(emitted.length);
-        if (remainder) res.write(`data: ${JSON.stringify({ message: remainder })}\n\n`);
+        if (remainder)
+          res.write(`data: ${JSON.stringify({ message: remainder })}\n\n`);
       } else if (!nativeDone || result.type !== AskResultType.TEXT_TO_SQL) {
         return;
       }

@@ -619,22 +619,39 @@ export class AskingResolver {
     }
 
     const task = await this.transformAskingTask(askResult, ctx);
-    if (askResult.type === AskResultType.GENERAL && askResult.status === AskResultStatus.FINISHED && !askResult.error) {
+    if (
+      askResult.type === AskResultType.GENERAL &&
+      askResult.status === AskResultStatus.FINISHED &&
+      !askResult.error
+    ) {
       const snapshot = canonical(askResult);
       let complete = askResult.completion;
       if (!complete) {
         try {
           const observed = await ctx.wrenAIAdaptor.getAskResult(taskId);
-          if (observed?.type === AskResultType.GENERAL && observed.status === AskResultStatus.FINISHED && !observed.error)
+          if (
+            observed?.type === AskResultType.GENERAL &&
+            observed.status === AskResultStatus.FINISHED &&
+            !observed.error
+          )
             complete = observed.completion;
         } catch {
           // Observe only. Cache loss or a failed read never starts another Ask.
         }
       }
       const current = await askingService.getAskingTask(taskId);
-      if (!current || canonical(current) !== snapshot || isGovernedQueryMode() !== governed)
+      if (
+        !current ||
+        canonical(current) !== snapshot ||
+        isGovernedQueryMode() !== governed
+      )
         throw new NativeQueryRefusal(409, 'QUERY_REFERENCE_CHANGED');
-      if (governed && complete && Buffer.byteLength(JSON.stringify(complete), 'utf8') > (await loadQueryDelivery()).responseMaxBytes)
+      if (
+        governed &&
+        complete &&
+        Buffer.byteLength(JSON.stringify(complete), 'utf8') >
+          (await loadQueryDelivery()).responseMaxBytes
+      )
         throw new NativeQueryRefusal(503, 'QUERY_EVIDENCE_UNAVAILABLE');
       await this.authorizeNativeAskingTask(taskId, ctx);
       await ctx.nativeProjectCheck?.(askResult.projectId);

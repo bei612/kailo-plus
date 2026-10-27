@@ -975,11 +975,16 @@ export class WrenAIAdaptor implements IWrenAIAdaptor {
 
     return {
       type: body?.type,
-      ...(status === AskResultStatus.FINISHED && !error && body?.type === AskResultType.GENERAL
-        && body?.completion && typeof body.completion === 'object'
-        && Object.keys(body.completion).sort().join(',') === 'content,query_id'
-        && body.completion.query_id === queryId && typeof body.completion.content === 'string'
-        ? { completion: { queryId, content: body.completion.content } } : {}),
+      ...(status === AskResultStatus.FINISHED &&
+      !error &&
+      body?.type === AskResultType.GENERAL &&
+      body?.completion &&
+      typeof body.completion === 'object' &&
+      Object.keys(body.completion).sort().join(',') === 'content,query_id' &&
+      body.completion.query_id === queryId &&
+      typeof body.completion.content === 'string'
+        ? { completion: { queryId, content: body.completion.content } }
+        : {}),
       status: status as AskResultStatus,
       error,
       response: candidates,
