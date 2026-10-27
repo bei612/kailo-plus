@@ -311,3 +311,33 @@ CI 在
 `/volumes/data/kailo/verification/phase1-integration/observation-85c26ebcd-check/receipt.json`，
 原字节元数据与日志摘要已加入上面的 writer 回执集合。上述仍是固定原消费者与
 数据库证据，不代表真实三账号、Core→Relay 部署全链或完整权威缺失证明。
+
+
+## 2026-10-27：Core 普通发布权威缺失证据与恢复隔离
+
+固定产品源码 `1894d2784fdd4272a0caaaea746e77ea0389ce5b`，先行设计为 `design-authority@3635890d5fde0dad94ec29e0c1f49d99ae67dd09`。本批接续上面的肯定观察，不把旧普通查询为空的历史 NOT_DELIVERED 改写成新通过记录。
+
+### 原消费者与持久事实
+
+- 新普通发布只对共享 `publication_max_age_seconds` 支持的实际 kind 读取原可信 NIP-11 ready policy，再由原作者将唯一 epoch tag 加入最终事件签名；保留实际 created_at、正文及全部原生 tags，包括合法 self-p。原 DISPATCH 短事务同时冻结已有八项范围与可选 publication 时间/非过期/policy；不存正文、tags、凭据或签名。未支持、可替换、不存储的种类保持原签名行为和 publication 缺省，不强加新 policy 依赖。
+- 原对账先查肯定观察，严格经过实际事件的共享时间窗后，才以原 HUMAN 或 ACTIVE Installation 的原 AGENT 作者及当前 Tenant CONTROL 双 NIP-98 请求 `/events/settlement`。两份证明绑定同一 URL、方法、正文和 Community；CONTROL 不替代原作者。响应逐项匹配冻结 claim，accepted 优先；否定必须同时满足 `!accepted && settled` 和完整时间/epoch 事实，拒绝或不可观察仍为 UNKNOWN。
+- 新迁移 `20261101040000` 增加原审计可空 `publication_proof`，窄 append 入口在原 RECONCILIATION 同事务保存封闭 scope/settlement 元数据，并锁定当前授权与绑定。EvidenceRef 仍只存稳定引用。数据库约束拒绝缺项、额外字段、早于窗口、错 epoch/scope/kind 或有过期语义的否定证明；已有 proof 时 down 明确拒绝。
+- 重签必须重新读取当前可信 policy 并匹配原证明 epoch 与全部绑定；恢复轮换 epoch 后原 proof 仍是不可改写的历史事实，不能单凭 JSON 合法性重签。原 pending 游标继续公平遍历这类操作，metrics 仅扣除本轮实际确证的范围。过期清理只接受该游标批次中再次实际观察 policy/scope/settlement 的操作；无观察保留原同键槽，避免清槽后绕过恢复隔离。原槽合法过期或被后继尝试替换后，只从原不可变 proof 恢复原范围，继续允许旧事件的肯定纠正，不从新 Host 补造范围。
+
+### 实际定向验证
+
+源码从 GitHub 固定对象导出，沿原 SDK `sha256:3007729eb192341a4f004a88e42e1e66c94fc67d763acfc96568bd7311116018`，SDK 4 CPU / 16 GiB、私有 PostgreSQL 1 CPU / 2 GiB，memory 与 swap 同限。发现旧 `/volumes/data/kailo/check-cache` 实为 NVMe 根盘 bind 后，只读复制原 Core target 至真实 `/dev/sda1` Data 专属目录，原缓存不改；target 与 TMPDIR 均使用真实 Data，没有安装新 Rustup 工具链。
+
+| 原消费者/门禁 | 实际结果 |
+|---|---|
+| bridge scoped publication | 5/5，真实 HTTP fixture 验证 policy、双签名、严格返回值及保留原 tags |
+| BFF scope/history | 6/6，包含真实 PG 同事务冻结 publication、授权失效与旧历史边界 |
+| 重签 epoch 隔离 | 1/1，恢复 epoch 或绑定变化都拒绝原否定证明授权的新签名 |
+| 原 reconciliation | 4/4，包含真实 PG 审计 append、不可变证据、pending/metrics/reaper；两天前的过期记录在缺当前确证时保留同键槽，fresh 集合才允许原 TTL 清理 |
+| 迁移与静态检查 | 完整 up、新迁移空库 down/up、相关 all-target Clippy `-D warnings`、四个 Rust 文件的原 rustfmt 均退出 0；已有 proof 的 down 在实际 PG 被拒绝 |
+
+五次故障只在 CI 私有导出发生：去掉 self-p 保留、破坏 CONTROL attestation header、绕过重签的当前 epoch 比较、使原 audit append 丢失 proof、绕过 reaper 的本轮确证集合。五项均由原消费者断言发现并退出 101；最后一项实际检出原同键槽被错误删除。逐字恢复后 HTTP 5 项、reconcile 4 项与重签 1 项再次通过，最终格式通过；四个 Rust 文件与两个迁移均与固定 GitHub blob 逐字相同。SDK 无 OOM，SDK/PG/私有网络已清理并回读为空，未启停共享服务。
+
+原回执位于 CI `/volumes/data/kailo/verification/buzz-r10/publication-negative-1894d2784fdd4272a0caaaea746e77ea0389ce5b-r2-data/receipt.json`，SHA-256 为 `7b6efc9bd58c761f7fea2471911ffce830d6fc265ac187ba18e89f1ca592fa3c`，保存各阶段退出码、断言结果、实际限额与日志摘要。前置固定 `5d6195a97` 的 16 项和迁移已通过，但 Clippy 的 nonminimal_bool 失败，原日志保留；修复后才取得本节完整结果。一次 formatter 命令误抄完整 SHA，在 Git 对象核对时早停，未执行 SDK；使用实际对象 SHA 后格式检查通过，不计作消费者失败或通过。
+
+本批是原 bridge HTTP fixture 与实际 PostgreSQL 消费者证据，不是已部署 Core→Relay 全链验收；未运行新的全工程 full、发布、部署或真实三端操作。历史缺元数据、unsupported/replaceable/nonstored kind 的否定结论仍 UNKNOWN，不宣称完整 DD-81 全部完成。固定 1894 不包含随后合入的新 NativeFacts 字段及 `native.rs` policy producer；其最终集成编译必须另记，不能借本批结果外推。
