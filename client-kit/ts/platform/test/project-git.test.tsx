@@ -440,3 +440,64 @@ describe("original repository tag snapshot consumer",()=>{
     expect(projectTagTarget({name:"release/v1.0",commit:head})).toEqual({targetRef:"refs/tags/release/v1.0",targetCommit:head});
   });
 });
+
+describe("original Overview unavailable Retry",()=>{
+  for(const desktop of [false,true]) it(`retries the actual repository read and restores its README (desktop=${desktop})`,async()=>{
+    const f=nativeFixture();
+    const nativeRead=f.native.getMockImplementation()!;
+    let retry=false;
+    let release!:()=>void;
+    const gate=new Promise<void>(resolve=>{release=resolve;});
+    if(desktop) f.native.mockImplementation(async(command,args)=>{
+      if(command==="get_project_repo_snapshot"){
+        if(!retry)throw new Error("repository not found on the relay");
+        await gate;
+      }
+      return nativeRead(command,args);
+    });
+    else {
+      f.host.git=createProjectsGitHost(f.gitQuery);
+      f.gitQuery.mockImplementation(async()=>{
+        if(!retry)throw new BffError(404,"POST /api/v1/projects/git/query → 404",{class:ErrorClass.Unknown,reason:ReasonCode.TargetNotFound});
+        await gate;return snapshot;
+      });
+    }
+    const {ui,pulse}=await mount(f,{repositoryId:f.repositoryId,tab:"overview"});
+    const unavailable=()=>ui.querySelector<HTMLElement>('[data-testid="project-repository-unavailable"]');
+    await vi.waitFor(()=>expect(unavailable()?.textContent).toContain("Repository not initialized"),{timeout:3000});
+    const button=namedButton(unavailable()!,"Retry");expect(button).toBeDefined();
+    const reads=()=>desktop?f.native.mock.calls.filter(([command])=>command==="get_project_repo_snapshot").length:requests(f,ProjectsGitQueryRequestView.Snapshot).length;
+    const before=reads();retry=true;
+    await click(button);
+    await vi.waitFor(()=>expect(reads()).toBe(before+1));
+    // The original checking state replaces the unavailable card while the read is pending.
+    expect([...ui.querySelectorAll<HTMLButtonElement>("button")].some(button=>button.textContent?.trim()==="Retry"&&!button.disabled)).toBe(false);
+    await act(async()=>release());
+    await vi.waitFor(()=>expect(ui.querySelector('[data-testid="project-readme"]')?.textContent).toContain(desktop?"Remote readme":"Readme body text"));
+    expect(unavailable()).toBeNull();expect(pulse.publish).not.toHaveBeenCalled();
+    expect(f.native.mock.calls.some(([command])=>/^(clone_|push_|pull_|create_|delete_)/.test(command))).toBe(false);
+    if(desktop)expect(f.native.mock.calls.filter(([command])=>command==="get_project_repo_snapshot").at(-1)?.[1]).toMatchObject({repository,expectedRelayUrl:"wss://native.example",expectedSignerPubkey:viewer});
+    else expect(requests(f,ProjectsGitQueryRequestView.Snapshot).at(-1)).toEqual({view:ProjectsGitQueryRequestView.Snapshot,repository,defaultBranch:"main",baseBranch:"main"});
+  });
+
+  it("retires an in-flight Overview retry when the host identity changes",async()=>{
+    const f=fixture();let retry=false;let release!:(value:ProjectsGitQueryResponse)=>void;
+    f.gitQuery.mockImplementation(async()=>{
+      if(!retry)throw new BffError(404,"POST /api/v1/projects/git/query → 404",{class:ErrorClass.Unknown,reason:ReasonCode.TargetNotFound});
+      return new Promise(resolve=>{release=resolve;});
+    });
+    const mounted=await mount(f,{repositoryId:f.repositoryId,tab:"overview"});
+    await vi.waitFor(()=>expect(mounted.ui.querySelector('[data-testid="project-repository-unavailable"]')?.textContent).toContain("Repository not initialized"),{timeout:3000});
+    retry=true;await click(namedButton(mounted.ui.querySelector('[data-testid="project-repository-unavailable"]')!,"Retry"));
+    await vi.waitFor(()=>expect(release).toBeTypeOf("function"));
+    const next=fixture();next.host.scopeKey="tenant:next-human";
+    next.gitQuery.mockResolvedValue({...snapshot,snapshot:{...snapshot.snapshot!,files:[{...snapshot.snapshot!.files[0]!,previewContent:"New identity README"}]}});
+    await mounted.switchHost(next.host);
+    await vi.waitFor(()=>expect(mounted.ui.textContent).toContain("New identity README"));
+    const success=vi.spyOn(toast,"success");success.mockClear();
+    await act(async()=>release({...snapshot,snapshot:{...snapshot.snapshot!,files:[{...snapshot.snapshot!.files[0]!,previewContent:"Retired identity README"}]}}));
+    expect(mounted.ui.textContent).toContain("New identity README");
+    expect(mounted.ui.textContent).not.toContain("Retired identity README");expect(success).not.toHaveBeenCalled();
+    expect(next.gitQuery).toHaveBeenCalledTimes(1);
+  });
+});
