@@ -3,6 +3,7 @@ import { act, useState, type ReactNode } from "react";
 import { getLocale, setLocale } from "../src/i18n";
 import { InboxDetailHeader, InboxEmptyDetail, InboxEmptyList, InboxLayout, InboxListHeader, InboxMessageRowSurface, InboxRowActionButton, InboxReopenStatus, useInboxDraftSelection, useInboxFocusHighlight } from "../src/react/inbox-surface";
 import { TooltipProvider } from "../src/react/sidebar/tooltip";
+import { InboxRow } from "../src/react/inbox-row";
 import { InboxDetailMessages } from "../src/react/inbox-detail-messages";
 import type { TimelineMessage } from "../src/react/messages";
 import { click, render, settle } from "./render";
@@ -315,4 +316,27 @@ describe("original shared Inbox presentation", () => {
     await click(host.querySelector<HTMLButtonElement>("[data-testid=home-inbox-context-title]")!);
     expect(back).toHaveBeenCalledOnce(); expect(open).toHaveBeenCalledOnce();
   });
+});
+
+
+it("keeps actual message profile title and avatar clicks separate from row selection", async () => {
+  const select = vi.fn(), profile = vi.fn(), mark = vi.fn();
+  const ui = await render(<TooltipProvider><InboxRow id="message" selected={false} read={false}
+    sender={<button onClick={profile}>Real profile title</button>}
+    avatar={<button onClick={profile}>Real profile avatar</button>}
+    timestamp="now" label="Mention" channel="admitted" preview={<span>Actual message preview</span>}
+    actions={<InboxRowActionButton label="mark" onClick={mark}>mark</InboxRowActionButton>}
+    openLabel="Select admitted message" onSelect={select} /></TooltipProvider>);
+  const buttons = [...ui.querySelectorAll("button")];
+  await click(buttons.find(button => button.textContent === "Real profile title")!);
+  await click(buttons.find(button => button.textContent === "Real profile avatar")!);
+  expect(profile).toHaveBeenCalledTimes(2);
+  expect(select).not.toHaveBeenCalled();
+  await click(ui.querySelector<HTMLButtonElement>("button[aria-label=mark]")!);
+  expect(mark).toHaveBeenCalledOnce();
+  expect(select).not.toHaveBeenCalled();
+  await click([...ui.querySelectorAll("span")].find(span => span.textContent === "Actual message preview")!);
+  expect(select).toHaveBeenCalledOnce();
+  await click(ui.querySelector<HTMLButtonElement>('button[aria-label="Select admitted message"]')!);
+  expect(select).toHaveBeenCalledTimes(2);
 });
