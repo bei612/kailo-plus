@@ -1,0 +1,644 @@
+{
+  "schema": "kailo.wren-original-followup-verification.v1",
+  "recorded_at": "2026-10-27T13:06:31.162194+00:00",
+  "source": {
+    "fixed": "24222a5aee7ec2685b9b6b55f53c5df7e161bb2d",
+    "base": "ffbc46fdced32d3e676fb8d6eaffe2f6e799627f",
+    "branch": "codex/wren-followup-observation-20261027",
+    "transport": "CI GitHub fixed fetch/archive, no local source transfer"
+  },
+  "authority": [
+    "DD-12",
+    "SS-WRN-GOVERNANCE"
+  ],
+  "upstream": {
+    "commit": "c5f02a0391c87420dba78632dcd86073710deb72",
+    "status_source": "ba13d63dfbc81b85a3d04c3e255e9610b55e091f",
+    "exit": 0,
+    "result": "No new commits; reference HEAD equals frozen baseline"
+  },
+  "images": {
+    "node18": "sha256:f9ab18e354e6855ae56ef2b290dd225c1e51a564f87584b9bd21dd651838830e",
+    "python312": "sha256:662fc7a76c259b140355f5b66a083a6ebb1a4403464359ba115b8956431fe182",
+    "postgres": "sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea"
+  },
+  "resources": {
+    "node": {
+      "cpuPeriod": 0,
+      "cpuQuota": 0,
+      "memory": 4294967296,
+      "nanoCpus": 4000000000,
+      "running": false,
+      "status": "created",
+      "swap": 4294967296
+    },
+    "postgres": {
+      "cpuPeriod": 0,
+      "cpuQuota": 0,
+      "memory": 2147483648,
+      "nanoCpus": 1000000000,
+      "running": false,
+      "status": "created",
+      "swap": 2147483648
+    },
+    "python": {
+      "cpuPeriod": 0,
+      "cpuQuota": 0,
+      "memory": 4294967296,
+      "nanoCpus": 2000000000,
+      "running": false,
+      "status": "created",
+      "swap": 4294967296
+    }
+  },
+  "storage": "/dev/sda1 /volumes/data xfs",
+  "dependency_inputs": "Original Node18 Yarn installation reused only after package.json/yarn.lock/.yarnrc.yml byte comparison; Python image pyproject and actual versions compared to frozen lock. No dependency install or copy.",
+  "results": {
+    "native_sqlite": 15,
+    "native_postgres": 15,
+    "adaptor_http": 3,
+    "home_complete_file": 259,
+    "python_original_fastapi": 2,
+    "types": 0,
+    "lint": 0,
+    "format": 0,
+    "ruff_check": 0,
+    "ruff_format": 0
+  },
+  "normal_test_summaries": {
+    "original-task-consumers": [
+      "Tests:       152 skipped, 33 passed, 185 total"
+    ],
+    "original-scope-consumers": [
+      "Tests:       285 skipped, 7 passed, 292 total"
+    ],
+    "original-home-consumers": [
+      "Tests:       259 passed, 259 total"
+    ]
+  },
+  "negative": [
+    {
+      "mutation": "latest-source",
+      "actual_assertion_failures": 2,
+      "restored_passed": 2,
+      "fault_exit": 1,
+      "restore_exit": 0
+    },
+    {
+      "mutation": "terminal-status",
+      "actual_assertion_failures": 2,
+      "restored_passed": 2,
+      "fault_exit": 1,
+      "restore_exit": 0
+    },
+    {
+      "mutation": "selection-unique",
+      "actual_assertion_failures": 2,
+      "restored_passed": 2,
+      "fault_exit": 1,
+      "restore_exit": 0
+    },
+    {
+      "mutation": "selection-receipt",
+      "actual_assertion_failures": 4,
+      "restored_passed": 5,
+      "fault_exit": 1,
+      "restore_exit": 0
+    },
+    {
+      "mutation": "retired-entry",
+      "actual_assertion_failures": 1,
+      "restored_passed": 1,
+      "fault_exit": 1,
+      "restore_exit": 0
+    }
+  ],
+  "python_negative": {
+    "reserved-id": {
+      "exit": 1,
+      "assertion_failures": 1,
+      "errors": 0,
+      "restored_exit": 0
+    },
+    "same-process-duplicate": {
+      "exit": 1,
+      "assertion_failures": 1,
+      "errors": 0,
+      "restored_exit": 0
+    },
+    "restored_sha256": "7e686606837f4c2714171c773196107a13dd87901114e1c73d76a838d48189ee"
+  },
+  "input": {
+    "node_git_blobs": 619,
+    "python_git_blobs": 209,
+    "mismatches": 0,
+    "node_manifest_sha256": "eef0343c1796b0c30a568a653daea8dd696fe686d3203283e9daec8d5b3692bb",
+    "python_manifest_sha256": "da92a3eba947eb999652578ceed2e0c98ac4e122ea54427bc1ac53bb8b285a4a",
+    "node_manifest_path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-24222a5aee7ec2685b9b6b55f53c5df7e161bb2d-final/input-manifest.json",
+    "python_manifest_path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-python-24222a5ae-fault/input-manifest.json"
+  },
+  "earlier_run": {
+    "source": "3b1679abf081093e279896a1b51d9f1880efa010",
+    "task_http_passed": 29,
+    "home_passed": 256,
+    "types_exit": 0,
+    "lint_exit": 1,
+    "reason": "Unused RecommendationQuestionsInput import left after original dispatch refactor; removed without lowering lint. Later format/fault stages did not execute."
+  },
+  "boundaries": [
+    "Original SQLite and isolated PostgreSQL repositories/transactions/migrations, original adaptor HTTP, real ApolloClient/Link/cache/hooks and FastAPI route/cache consumers. HTTP bodies, models and React scheduling are scripted; no live provider/browser/receiver acceptance.",
+    "The original AI cache is process-local. Compose has one service and Python starts workers=1, but restart, TTL eviction and multi-instance routing do not provide durable deduplication or absence evidence. DB reservation before an unentered AI POST remains UNKNOWN; this batch does not claim full crash/restart convergence.",
+    "Historical missing source/start facts are not backfilled. New producer marks native NOT_STARTED; uncorrelated old tasks cannot authorize new dispatch or display as the current source.",
+    "GraphQL mutation return, nullable native source/receipt fields and the original schema migration require matching UI/AI deployment. Original standalone requests without native_task_id remain supported. No deployment, trust change or new task ledger."
+  ],
+  "cleanup": {
+    "own_containers_absent": true,
+    "own_postgres_network_absent": true
+  },
+  "logs": {
+    "wren-followup-24222a5aee7ec2685b9b6b55f53c5df7e161bb2d-final": [
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-24222a5aee7ec2685b9b6b55f53c5df7e161bb2d-final/check.exit",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-24222a5aee7ec2685b9b6b55f53c5df7e161bb2d-final/cleanup.log",
+        "sha256": "f668bb6a60ac98367601ce803d20d34ecb786b0feb31f4cdd039b5fec8b41820"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-24222a5aee7ec2685b9b6b55f53c5df7e161bb2d-final/complete.log",
+        "sha256": "1fb216e673e4a7ae252b4a9345653f079e489a921429ed3df30420a707ae00ff"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-24222a5aee7ec2685b9b6b55f53c5df7e161bb2d-final/fault-latest-source.exit",
+        "sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-24222a5aee7ec2685b9b6b55f53c5df7e161bb2d-final/fault-latest-source.log",
+        "sha256": "daebeb08b4dd731a747ed1467f5778980367a9b66c587ecc24747653c54b1d31"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-24222a5aee7ec2685b9b6b55f53c5df7e161bb2d-final/fault-results.json",
+        "sha256": "d73c3c2e1ed9d7569b858dcdf70fde1fd59e1693d57fd4077fe25401fdc73770"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-24222a5aee7ec2685b9b6b55f53c5df7e161bb2d-final/fault-retired-entry.exit",
+        "sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-24222a5aee7ec2685b9b6b55f53c5df7e161bb2d-final/fault-retired-entry.log",
+        "sha256": "642e2439674a32db4ea5fae5aed15ef53ae0bd05aff15813ee5bed95e0816fb3"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-24222a5aee7ec2685b9b6b55f53c5df7e161bb2d-final/fault-selection-receipt.exit",
+        "sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-24222a5aee7ec2685b9b6b55f53c5df7e161bb2d-final/fault-selection-receipt.log",
+        "sha256": "15294dadebb2ab9708d5e21ba2da35e4d1de291034bf1d8c321fd3f52c8bb32d"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-24222a5aee7ec2685b9b6b55f53c5df7e161bb2d-final/fault-selection-unique.exit",
+        "sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-24222a5aee7ec2685b9b6b55f53c5df7e161bb2d-final/fault-selection-unique.log",
+        "sha256": "5197c87025733d519eba0a922ba6f8cd40b68dac1ce8ba03df54e65a0f3778be"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-24222a5aee7ec2685b9b6b55f53c5df7e161bb2d-final/fault-terminal-status.exit",
+        "sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-24222a5aee7ec2685b9b6b55f53c5df7e161bb2d-final/fault-terminal-status.log",
+        "sha256": "fb5c8ae640f46156602ab3a3806532446f9560e72a32e8c12d99a0e30fe5d87a"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-24222a5aee7ec2685b9b6b55f53c5df7e161bb2d-final/final-state.json",
+        "sha256": "da370431c97655394454b701b2b25331448a888e11daefbea43b04663f35559e"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-24222a5aee7ec2685b9b6b55f53c5df7e161bb2d-final/format.exit",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-24222a5aee7ec2685b9b6b55f53c5df7e161bb2d-final/format.log",
+        "sha256": "17aa973d3f004560237d9a95171210b0671deff23d61628eecf7322ff5938f20"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-24222a5aee7ec2685b9b6b55f53c5df7e161bb2d-final/input-manifest.json",
+        "sha256": "eef0343c1796b0c30a568a653daea8dd696fe686d3203283e9daec8d5b3692bb"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-24222a5aee7ec2685b9b6b55f53c5df7e161bb2d-final/limits.log",
+        "sha256": "83552774e6d0227dd84cbeaf918a8fb026d00dee9bd8cc12e72fb428944ebd05"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-24222a5aee7ec2685b9b6b55f53c5df7e161bb2d-final/lint.exit",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-24222a5aee7ec2685b9b6b55f53c5df7e161bb2d-final/lint.log",
+        "sha256": "9f6ac1417a1fb3d8c8d6551b62726b54a8545079ed74fe6eb00db0cac12b57bc"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-24222a5aee7ec2685b9b6b55f53c5df7e161bb2d-final/original-home-consumers.exit",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-24222a5aee7ec2685b9b6b55f53c5df7e161bb2d-final/original-home-consumers.log",
+        "sha256": "463277c7ca92bb33fc05fb6cf7b49513702aafa36cee9f76869e2ecf8ccaf9fb"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-24222a5aee7ec2685b9b6b55f53c5df7e161bb2d-final/original-scope-consumers.exit",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-24222a5aee7ec2685b9b6b55f53c5df7e161bb2d-final/original-scope-consumers.log",
+        "sha256": "d60dd78e33328cebed4a4a777d67ac8bd65b974d7d0c7d1ccce8e986e343d177"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-24222a5aee7ec2685b9b6b55f53c5df7e161bb2d-final/original-task-consumers.exit",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-24222a5aee7ec2685b9b6b55f53c5df7e161bb2d-final/original-task-consumers.log",
+        "sha256": "c50457af34094e373c44901bbb2544df0461ac1da9ea762ee598b340f4dbe44f"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-24222a5aee7ec2685b9b6b55f53c5df7e161bb2d-final/pg-image.log",
+        "sha256": "629fcfe34d0defbb56564751db7a58388f8eeefacf5ad700aacf8ce0d3b9a501"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-24222a5aee7ec2685b9b6b55f53c5df7e161bb2d-final/pg-limits.log",
+        "sha256": "29632c55b1ed9c8513930122ac6a7be89807c36c8e2cf003c8b839e5c13ec858"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-24222a5aee7ec2685b9b6b55f53c5df7e161bb2d-final/preflight.log",
+        "sha256": "b58bee879b1ad51a2d8e8dfc80c322b6f2489067d66334f37ee56143f647d1a7"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-24222a5aee7ec2685b9b6b55f53c5df7e161bb2d-final/restored-latest-source.exit",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-24222a5aee7ec2685b9b6b55f53c5df7e161bb2d-final/restored-latest-source.log",
+        "sha256": "bec3651292b5e1a054d1537c9f62a8dd2c37a5fd5ead5405d1b11caa334f6a8d"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-24222a5aee7ec2685b9b6b55f53c5df7e161bb2d-final/restored-retired-entry.exit",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-24222a5aee7ec2685b9b6b55f53c5df7e161bb2d-final/restored-retired-entry.log",
+        "sha256": "690c12975c514e0ba7ea8795734caf8cdd0f03805d12269762a8a5eaa3bcc7e3"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-24222a5aee7ec2685b9b6b55f53c5df7e161bb2d-final/restored-selection-receipt.exit",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-24222a5aee7ec2685b9b6b55f53c5df7e161bb2d-final/restored-selection-receipt.log",
+        "sha256": "39f9e146f468b89f50397002bfc8436c6a3642221bfe655be5b59cc2a88276da"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-24222a5aee7ec2685b9b6b55f53c5df7e161bb2d-final/restored-selection-unique.exit",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-24222a5aee7ec2685b9b6b55f53c5df7e161bb2d-final/restored-selection-unique.log",
+        "sha256": "51513c12d78deeb7886e00115cb4b4fabdf41e143a5d7f5a3df9954ffc64b293"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-24222a5aee7ec2685b9b6b55f53c5df7e161bb2d-final/restored-terminal-status.exit",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-24222a5aee7ec2685b9b6b55f53c5df7e161bb2d-final/restored-terminal-status.log",
+        "sha256": "838d495f9a1e1b7b0bfd9875bc43c7cf451d20199f7cf54fac14d6b43a4d0a59"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-24222a5aee7ec2685b9b6b55f53c5df7e161bb2d-final/types.exit",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-24222a5aee7ec2685b9b6b55f53c5df7e161bb2d-final/types.log",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    ],
+    "wren-followup-python-24222a5ae-fault": [
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-python-24222a5ae-fault/check.log",
+        "sha256": "281abbff14c02f8c1029b3f0da572b94f8702dbe3dc5f5bdda4aa4a90dfb392d"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-python-24222a5ae-fault/fault-reserved-id.exit",
+        "sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-python-24222a5ae-fault/fault-reserved-id.log",
+        "sha256": "8fbb8dd598375f9a21165bc2d0b5117b2187faef53ba5644e7b33bf7ea23adfc"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-python-24222a5ae-fault/fault-results.json",
+        "sha256": "de70e38d392527442e349a0612ebebd5e0dae81e6d4bcbcb619fdeb931bac714"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-python-24222a5ae-fault/fault-same-process-duplicate.exit",
+        "sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-python-24222a5ae-fault/fault-same-process-duplicate.log",
+        "sha256": "9fb5af0c3f7aca58f3b49f9de8e6c841ce1b58d00ef784cbbdbd324329f301c8"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-python-24222a5ae-fault/input-manifest.json",
+        "sha256": "da92a3eba947eb999652578ceed2e0c98ac4e122ea54427bc1ac53bb8b285a4a"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-python-24222a5ae-fault/limits.log",
+        "sha256": "afa661f7551c781d69ec3ae70e9b889d3b15cc95ad648188ae9d0b65bd34ae62"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-python-24222a5ae-fault/preflight.log",
+        "sha256": "0d32f57c4d8d7391b000573c7653b62b4978e1a5ccf6b008bc51eccc9f980e79"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-python-24222a5ae-fault/pyproject.exit",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-python-24222a5ae-fault/pyproject.log",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-python-24222a5ae-fault/recommendations.exit",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-python-24222a5ae-fault/recommendations.log",
+        "sha256": "dda55b02159ede02bcd6bdaaffc7505e657e3b886549cac7e4fb8128110c743b"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-python-24222a5ae-fault/restored-reserved-id.exit",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-python-24222a5ae-fault/restored-reserved-id.log",
+        "sha256": "c3ff4365f196d8e39f060e997f6fe2cbb4dc8550fcc05b067f4f45beaefeaea2"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-python-24222a5ae-fault/restored-same-process-duplicate.exit",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-python-24222a5ae-fault/restored-same-process-duplicate.log",
+        "sha256": "735a907a3ad20451c6c8b1b92582fef2d16a063e758d4ab8f9c54ef15f23fe89"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-python-24222a5ae-fault/result.log",
+        "sha256": "bcb33b7e838dd95f79b88fa2abe73346c6262f32fb95f4f3aa791bbb60b9a1cd"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-python-24222a5ae-fault/ruff-check.exit",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-python-24222a5ae-fault/ruff-check.log",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-python-24222a5ae-fault/ruff-format.exit",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-python-24222a5ae-fault/ruff-format.log",
+        "sha256": "3bc53bf3e981a98a34a852e175bf9b77af841edea74fca595d9aedcbaf9a4938"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-python-24222a5ae-fault/ruff-version.exit",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-python-24222a5ae-fault/ruff-version.log",
+        "sha256": "8bd8b87d0110f3dade5cfac8fe42372d8d7909ec71e3ca52dc299843c552f535"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-python-24222a5ae-fault/versions.exit",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-python-24222a5ae-fault/versions.log",
+        "sha256": "541a8831f414079c14361f5a5661bf2b8fcf436feb7814d88dbc802e130ee6e8"
+      }
+    ],
+    "wren-followup-3b1679abf081093e279896a1b51d9f1880efa010-check": [
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-3b1679abf081093e279896a1b51d9f1880efa010-check/check.exit",
+        "sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-3b1679abf081093e279896a1b51d9f1880efa010-check/complete.log",
+        "sha256": "1e072c08397417b0d25acf4719508a87389bc88b7069b17b775a77ed8ceb9ab0"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-3b1679abf081093e279896a1b51d9f1880efa010-check/final-state.json",
+        "sha256": "1cfc748631a89e5e64eb63ba5251c100fd9a4b921f5d854bfbb321413ad2222b"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-3b1679abf081093e279896a1b51d9f1880efa010-check/limits.log",
+        "sha256": "d3a34b79c31ab174d18cee626343235b41289e38e486aced7ba3f3ce4bdcb0de"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-3b1679abf081093e279896a1b51d9f1880efa010-check/lint.exit",
+        "sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-3b1679abf081093e279896a1b51d9f1880efa010-check/lint.log",
+        "sha256": "f075d735e8a8e57d0d5ed4feadea495938c6f3befc7b4ab414cc7677b37072fc"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-3b1679abf081093e279896a1b51d9f1880efa010-check/original-home-consumers.exit",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-3b1679abf081093e279896a1b51d9f1880efa010-check/original-home-consumers.log",
+        "sha256": "cc3e9f8cd3b2082f45a8795d201e45bb5edd589b73bb67ab70dd66a0c489acf0"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-3b1679abf081093e279896a1b51d9f1880efa010-check/original-scope-consumers.exit",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-3b1679abf081093e279896a1b51d9f1880efa010-check/original-scope-consumers.log",
+        "sha256": "225b30a867f786ff42c7e25b343e10d41a37af1d611ef4228cda4be0de03df32"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-3b1679abf081093e279896a1b51d9f1880efa010-check/original-task-consumers.exit",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-3b1679abf081093e279896a1b51d9f1880efa010-check/original-task-consumers.log",
+        "sha256": "cd23da96d5beb22c01cdb58aad2c05540ff1dcddaea9228961034d88b1685510"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-3b1679abf081093e279896a1b51d9f1880efa010-check/pg-image.log",
+        "sha256": "629fcfe34d0defbb56564751db7a58388f8eeefacf5ad700aacf8ce0d3b9a501"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-3b1679abf081093e279896a1b51d9f1880efa010-check/pg-limits.log",
+        "sha256": "29632c55b1ed9c8513930122ac6a7be89807c36c8e2cf003c8b839e5c13ec858"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-3b1679abf081093e279896a1b51d9f1880efa010-check/preflight.log",
+        "sha256": "15e1effa8d0b6041bbaa2b9a05ed50e914a14b038468ac220dcbb4e2a7b1246a"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-3b1679abf081093e279896a1b51d9f1880efa010-check/types.exit",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-3b1679abf081093e279896a1b51d9f1880efa010-check/types.log",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    ]
+  },
+  "rollback_stop_condition": {
+    "source": "f08dd82dc1edaeabc0f940aa09f8d20a52a808f2",
+    "only_changes_from_main_verification": [
+      "data-query/wren-ui/migrations/20261027000000_thread_recommendation_source.js",
+      "data-query/wren-ui/src/nativeTaskOwnership.test.ts"
+    ],
+    "normal": {
+      "sqlite": 3,
+      "postgres": 3,
+      "passed": 6,
+      "unselected": 183
+    },
+    "fault": {
+      "removed": "migration rollback stop condition",
+      "actual_assertion_failures": 2,
+      "exit": 1,
+      "restored_passed": 6,
+      "restore_exit": 0
+    },
+    "lint_exit": 0,
+    "format_exit": 0,
+    "input_git_blobs": 619,
+    "mismatches": 0,
+    "manifest_sha256": "d62f2a61de01295b2b8de8e0962246a1cf7a55a3c4878b426fba182cb691513e",
+    "container_terminal_state": {
+      "Status": "exited",
+      "Running": false,
+      "Paused": false,
+      "Restarting": false,
+      "OOMKilled": false,
+      "Dead": false,
+      "Pid": 0,
+      "ExitCode": 0,
+      "Error": "",
+      "StartedAt": "2026-10-27T13:23:08.379496211Z",
+      "FinishedAt": "2026-10-27T13:24:23.248795422Z"
+    },
+    "boundaries": "Stop release/downgrade when retained source or selection facts exist; requires migration maintenance with old writers stopped. No business evidence is deleted/backfilled and no online rollback under concurrent writers is claimed.",
+    "cleanup": "All own containers and private PG network absent",
+    "logs": [
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-rollback-f08dd82dc1edaeabc0f940aa09f8d20a52a808f2-check/check.exit",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-rollback-f08dd82dc1edaeabc0f940aa09f8d20a52a808f2-check/complete.log",
+        "sha256": "d7eeab1fe09a4f04ec6baceec713de0cbfc88cf3c207fb33f3ca7d947824a08e"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-rollback-f08dd82dc1edaeabc0f940aa09f8d20a52a808f2-check/fault-results.json",
+        "sha256": "5674b18b92c89e384c10d56501bae90cf9719af755df72cc6d66a759f45c3633"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-rollback-f08dd82dc1edaeabc0f940aa09f8d20a52a808f2-check/fault-rollback.exit",
+        "sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-rollback-f08dd82dc1edaeabc0f940aa09f8d20a52a808f2-check/fault-rollback.log",
+        "sha256": "1331519f2ae02aa630bb8988e207b9e24e9c4f8b02a9e8818d04e16902a687f5"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-rollback-f08dd82dc1edaeabc0f940aa09f8d20a52a808f2-check/final-state.json",
+        "sha256": "6816d27722d12eedc6b08dd6d791ecd1d2ee65ebaf22c53a8e0ee0adaac9b9f7"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-rollback-f08dd82dc1edaeabc0f940aa09f8d20a52a808f2-check/format.exit",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-rollback-f08dd82dc1edaeabc0f940aa09f8d20a52a808f2-check/format.log",
+        "sha256": "17aa973d3f004560237d9a95171210b0671deff23d61628eecf7322ff5938f20"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-rollback-f08dd82dc1edaeabc0f940aa09f8d20a52a808f2-check/input-manifest.json",
+        "sha256": "d62f2a61de01295b2b8de8e0962246a1cf7a55a3c4878b426fba182cb691513e"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-rollback-f08dd82dc1edaeabc0f940aa09f8d20a52a808f2-check/limits.log",
+        "sha256": "f24597eff3aef366ea6a5821bf17344077aa4ff6444a5feae32a2fe52c68ea4c"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-rollback-f08dd82dc1edaeabc0f940aa09f8d20a52a808f2-check/lint.exit",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-rollback-f08dd82dc1edaeabc0f940aa09f8d20a52a808f2-check/lint.log",
+        "sha256": "9f6ac1417a1fb3d8c8d6551b62726b54a8545079ed74fe6eb00db0cac12b57bc"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-rollback-f08dd82dc1edaeabc0f940aa09f8d20a52a808f2-check/pg-image.log",
+        "sha256": "629fcfe34d0defbb56564751db7a58388f8eeefacf5ad700aacf8ce0d3b9a501"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-rollback-f08dd82dc1edaeabc0f940aa09f8d20a52a808f2-check/pg-limits.log",
+        "sha256": "29632c55b1ed9c8513930122ac6a7be89807c36c8e2cf003c8b839e5c13ec858"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-rollback-f08dd82dc1edaeabc0f940aa09f8d20a52a808f2-check/preflight.log",
+        "sha256": "6071ea4ef5ae6af9fd81fc65ca326a8c7666a1664e80f35df7e6accf9ece5fc9"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-rollback-f08dd82dc1edaeabc0f940aa09f8d20a52a808f2-check/restored-rollback.exit",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-rollback-f08dd82dc1edaeabc0f940aa09f8d20a52a808f2-check/restored-rollback.log",
+        "sha256": "5df00f47a40e29a21f4788f8b143b29e3c82998ee97fd9a9840c21c5e2c4952d"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-rollback-f08dd82dc1edaeabc0f940aa09f8d20a52a808f2-check/rollback-consumers.exit",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-followup-rollback-f08dd82dc1edaeabc0f940aa09f8d20a52a808f2-check/rollback-consumers.log",
+        "sha256": "efd7233fa42f98b2100bd228b93216980451c4dc0d6e2d0680161a65e4c6bfbd"
+      }
+    ],
+    "resources": {
+      "node": {
+        "cpuPeriod": 0,
+        "cpuQuota": 0,
+        "memory": 4294967296,
+        "nanoCpus": 4000000000,
+        "running": false,
+        "status": "created",
+        "swap": 4294967296
+      },
+      "postgres": {
+        "cpuPeriod": 0,
+        "cpuQuota": 0,
+        "memory": 2147483648,
+        "nanoCpus": 1000000000,
+        "running": false,
+        "status": "created",
+        "swap": 2147483648
+      }
+    }
+  }
+}

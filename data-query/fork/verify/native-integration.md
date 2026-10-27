@@ -13463,3 +13463,124 @@ fault/restoration counts and cleanup. Prior receipts are unchanged. This is one
 original UI consumer operation batch, not all Wren suites, a real browser/model
 provider run, receiver activation or deployment. No API/schema, production
 configuration, official artifact or source-trust policy changed.
+
+### Original thread follow-up recommendations retain their native task and selection
+
+DD-12 and `SS-WRN-GOVERNANCE`: the existing Home answer continuation now reads
+and creates its original thread recommendation with an exact source response
+and native query ID. The original Thread row reserves the query ID before AI
+HTTP; one conditional database statement matches the previous task and the
+actual latest response. Concurrent actions reuse that task. The existing
+background tracker conditionally updates that same task/status, releases its
+in-flight read after failure, and cannot overwrite a replacement task or regress
+an already terminal observation. Historical missing source/start facts are not
+backfilled; only the original new-thread producer records `NOT_STARTED`.
+
+The original AI route accepts the reserved native ID and returns it through the
+original GET. Its existing process cache refuses a duplicate ID within that
+process. This does **not** provide persistent or cross-process AI deduplication.
+The frozen Compose source declares one AI service and the original Python entry
+starts one worker; neither fact proves live routing or restart continuity. If UI
+reservation commits but POST never enters AI, or AI restarts/evicts its cache,
+the original DB task remains UNKNOWN. Reattaching its original tracker does not
+prove absence, does not authorize another POST, and does not close this crash
+window. Durable AI acceptance/absence and its bounded reconciliation remain
+unverified and unfinished.
+
+The Home consumer uses the installed Apollo client and original generated
+operations with exact per-call promises. Serial original reads check owner,
+current configuration, thread, source and query ID before displaying a result.
+A callback first entered after retirement cannot create or observe for the new
+page owner; A→B→A and temporary read failures retain the original task. Selecting
+a recommendation sends its frozen index/query/source plus one explicit intent
+key, with the question and SQL resolved by the original server result. The
+original Thread lock and unique `(thread_id, recommendation_intent_key)` prevent
+concurrent/lost-ACK retries from inserting another ThreadResponse. Separate
+explicit selections use separate keys. A wrong or missing response receipt does
+not clear the browser intent or update Apollo cache. Current standalone and
+governed operations remain supported; no new task ledger or preference exists.
+
+The original GraphQL generation was run in the locked Node image. The thread
+recommendation mutation now returns the correlated task instead of a Boolean;
+nullable native source/receipt fields and the original schema migration require
+matching UI/AI rollout. Ordinary original requests without `native_task_id`
+remain compatible. No rollout or official artifact was performed.
+
+Fixed **`24222a5aee7ec2685b9b6b55f53c5df7e161bb2d`**, based on
+`ffbc46fdced32d3e676fb8d6eaffe2f6e799627f`, passed:
+
+- The original `nativeTaskOwnership.test.ts` recommendation groups: **33 passed**,
+  comprising **15 SQLite, 15 isolated PostgreSQL and 3 original adaptor HTTP**
+  consumers; **152 other cases were not selected**.
+- The related original `nativeProjectScope.test.ts` consumers: **7 passed**,
+  **285 not selected**. These are targeted results, not complete-file results.
+- The complete original `viewMetadata.test.ts`: **259 / 259**, no failures/skips,
+  including real Apollo Link/cache/hooks and the original Home operation.
+- Complete original TypeScript, relevant Next lint and Prettier: **exit 0**.
+- Original FastAPI `NativeRecommendationTaskIdentity`: **2 / 2**, original locked
+  Python dependency checks and Ruff check/format: **exit 0**. The route/background
+  boundary is scripted; no model supplier or live business deployment is claimed.
+
+Actual private-export mutations were detected and restored byte for byte:
+
+| Removed boundary | Actual assertion failures | Restored cases passed |
+| --- | ---: | ---: |
+| Database latest-source condition | 2 | 2 |
+| Same-task terminal-status comparison | 2 | 2 |
+| Original selection-intent unique constraint | 2 | 2 |
+| Selected response receipt correlation | 4 | 5 |
+| Retired Home callback guard | 1 | 1 |
+| AI reserved native ID | 1 | 2 |
+| AI same-process duplicate rejection | 1 | 2 |
+
+Every fault exited **1** due to original consumer assertions, not test startup or
+compilation failure. The selection receipt group also retained its unaffected
+wrong-thread refusal. All restored commands exited **0**. The earlier fixed
+`3b1679abf081093e279896a1b51d9f1880efa010` passed its original 29 task/HTTP cases,
+Home 256 and TypeScript, then stopped at lint's unused service import. Format
+and faults were not executed in that failed run. Its logs remain unchanged;
+removing the unused import did not weaken lint. Original Jest open-handle
+notices remain recorded and runs exited naturally without `--forceExit`.
+
+CI fetched fixed objects directly from GitHub. Original upstream status at
+`ba13d63dfbc81b85a3d04c3e255e9610b55e091f` confirmed the frozen Wren reference
+`c5f02a0391c87420dba78632dcd86073710deb72` with no new commits. Existing Node
+installation was reused only after comparing all three dependency inputs;
+Python image metadata and installed versions matched its original lock.
+Node used immutable image
+`sha256:f9ab18e354e6855ae56ef2b290dd225c1e51a564f87584b9bd21dd651838830e`,
+**4 CPU / 4 GiB**, with private PostgreSQL **1 CPU / 2 GiB** on an internal
+network. Python used
+`sha256:662fc7a76c259b140355f5b66a083a6ebb1a4403464359ba115b8956431fe182`,
+**2 CPU / 4 GiB**, no network. Swap matched memory. Original preflight and actual
+container-limit checks passed; source/tmp/logs stayed on actual Data `/dev/sda1`.
+All **619 Node input blobs and 209 AI input blobs** matched their fixed Git
+objects after restoration. Own containers and private PG network were removed,
+and their absence was read back. No shared business database, provider, receiver,
+production secret/configuration, deployment or source-trust policy was changed.
+
+The subsequent fixed **`f08dd82dc1edaeabc0f940aa09f8d20a52a808f2`** changes only
+the original migration and its original consumer file relative to `24222a5ae`.
+Downgrade now stops if any native source or selected-response intent facts
+exist; it never deletes those facts to allow an old writer to repeat them. This
+is a maintenance/release stop condition with writers stopped, not an online
+rollback guarantee under concurrent writers. Original empty-fact down/up still
+preserves native rows. The targeted SQLite/PostgreSQL group passed **6 / 6**
+(**183 other cases unselected**), relevant lint and format exited **0**.
+Removing the actual stop condition caused **2 failed original UNKNOWN refusal
+assertions**; byte restoration passed all **6**. All **619** fixed input blobs
+matched after restoration and the private containers/network were removed.
+The already passed Home/Python/full type checks were not rerun for these two
+migration-only files and are attributed to their earlier fixed source above.
+
+The combined receipt is
+`/volumes/data/kailo/verification/buzz-r10/wren-followup-rollback-f08dd82dc1edaeabc0f940aa09f8d20a52a808f2-check/receipt.json`,
+SHA-256 `6261cb9c50811bf0f2851ebc788a4698ab134ba1cba812c63d5e4b0d59533602`.
+The unchanged repository copy is [the thread recommendation receipt](thread-recommendation-receipt.json).
+It keeps the first failing run, main fixed-source verification, distinct rollback
+phase, limits, original log hashes, input manifests and cleanup. Prior receipts,
+including `home-continuation-receipt.json`, are unchanged. These are original
+source consumers with scripted model/HTTP boundaries; they are not full Wren,
+real browser/provider, Core admission or live receiver acceptance. Existing
+thread resolver registration and its server-side authorization lifecycle were
+not expanded or claimed as freshly verified by this batch.
