@@ -409,7 +409,7 @@ function MessageComposerImpl({
   const { submit: submitMessage, isPreparing: isSubmitLocked, locked: isSubmitLockedRef } = useComposerSubmission({
     getContent: syncComposerContentFromEditor,
     hasMedia: () => media.pendingImetaRef.current.length > 0 || media.queuedAttachmentsRef.current.length > 0,
-    canSubmit: () => !disabledRef.current && voiceNote.statusRef.current === "idle" && !isSendingRef.current && !isUploadingRef.current && !mentionSendFlow.isPreparingMentionSend,
+    canSubmit: () => !disabledRef.current && !paste.isPreparingAttachments() && voiceNote.statusRef.current === "idle" && !isSendingRef.current && !isUploadingRef.current && !mentionSendFlow.isPreparingMentionSend,
     isEditing: Boolean(editTarget), isDm: channelType === "dm",
     dmAgentNames: dmAgentNamesRef.current, refuseDmAgent: setDmAgentRefusal,
     requestEmptyEdit: editTarget && onRequestEmptyEditDelete ? () => onRequestEmptyEditDelete(editTarget) : undefined,
@@ -446,11 +446,19 @@ function MessageComposerImpl({
     },
   });
   submitMessageRef.current = submitMessage;
+  const pasteOwner = React.useMemo(() => ({}), [session, channelId, effectiveDraftKey, editTarget?.id]);
+  const paste = useComposerPasteHandler({
+    editor: richText.editor,
+    owner: pasteOwner, enabled: !composerDisabled && !isSubmitLocked && !isSending,
+    bindMentionIdentities: mentions.bindPastedMentionIdentities,
+    scrollToBottom: scrollComposerToBottom,
+    uploadFile: voiceNote.uploadFileWhenIdle,
+  });
   const autoSubmitOwner = React.useRef({ draftKey: effectiveDraftKey });
   const autoSubmitEnabled = React.useRef(autoSubmitDraftKey !== null && autoSubmitDraftKey === effectiveDraftKey);
   const mounted = React.useRef(true);
   React.useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
-  useComposerAutoSubmit({ owner: autoSubmitOwner.current, enabled: autoSubmitEnabled.current, ready: true,
+  useComposerAutoSubmit({ owner: autoSubmitOwner.current, enabled: autoSubmitEnabled.current, ready: !paste.isPreparingAttachments(),
     active: () => mounted.current && effectiveDraftKeyRef.current === autoSubmitOwner.current.draftKey, consume: onAutoSubmitComplete, submit: submitMessage });
   const handleEditorKeyDown = composerKeyDown({
     alwaysAddress: handleAlwaysAddressShortcut,
@@ -461,16 +469,9 @@ function MessageComposerImpl({
     selectMention: selectMentionSuggestion, linkEditor,
     cancelEdit: editTarget && !isSubmitLocked && !isSending ? onCancelEdit : undefined,
   });
-  const pasteOwner = React.useMemo(() => ({}), [session, channelId, effectiveDraftKey, editTarget?.id]);
-  useComposerPasteHandler({
-    editor: richText.editor,
-    owner: pasteOwner, enabled: !composerDisabled && !isSubmitLocked && !isSending,
-    bindMentionIdentities: mentions.bindPastedMentionIdentities,
-    scrollToBottom: scrollComposerToBottom,
-    uploadFile: voiceNote.uploadFileWhenIdle,
-  });
   const sendDisabled =
     composerDisabled ||
+    paste.isPreparingAttachments() ||
     media.isUploading ||
     voiceNote.status !== "idle" ||
     mentionSendFlow.isPreparingMentionSend ||

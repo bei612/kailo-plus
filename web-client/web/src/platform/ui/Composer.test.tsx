@@ -532,6 +532,39 @@ it("does not trust snapshot HTML naming when bytes mismatch and keeps every ordi
   expect(host.querySelector('[data-testid="message-input"]')?.textContent).toBe("");
 });
 
+it("waits for every snapshot byte reader before Enter, then preserves the original queued upload send", async () => {
+  const Reader = FileReader;
+  const reads: {release:()=>void;finished:Promise<void>}[] = [];
+  vi.stubGlobal("FileReader", class extends Reader {
+    override readAsArrayBuffer(blob: Blob) {
+      reads.push({release:()=>super.readAsArrayBuffer(blob),finished:new Promise(resolve=>this.addEventListener("loadend",()=>resolve(),{once:true}))});
+    }
+  });
+  const receipts: ((value: {sha256:string;size:number;type:string;url:string})=>void)[] = [];
+  const upload = vi.fn(() => new Promise<{sha256:string;size:number;type:string;url:string}>(resolve=>receipts.push(resolve)));
+  const publish = vi.fn().mockResolvedValue({});
+  const host = await render(<Composer workspaceId="snapshot-workspace" draftIdentity="alice" draftKey="paste-read-lock" onUpload={upload} onPublish={publish}/>);
+  await type(host.querySelector<HTMLElement>('[data-testid="message-input"]')!,"Send together");
+  for (const name of ["First.agent.png","Second.team.png"]) {
+    await act(async()=>paste(host,"Snapshot",snapshotHtml(name),[new File([snapshotBytes],"image.png",{type:"image/png"})]));
+  }
+  expect(reads).toHaveLength(2);
+  const enter = async () => {await act(async()=>{host.querySelector('[data-testid="message-input"]')!.dispatchEvent(new KeyboardEvent("keydown",{key:"Enter",bubbles:true,cancelable:true}));});};
+  await enter();expect(publish).not.toHaveBeenCalled();expect(button(host,"platform.send").disabled).toBe(true);
+  await act(async()=>{reads[0].release();await reads[0].finished;});
+  await vi.waitFor(()=>expect(upload).toHaveBeenCalledTimes(1));
+  await enter();expect(publish).not.toHaveBeenCalled();expect(button(host,"platform.send").disabled).toBe(true);
+  await act(async()=>{reads[1].release();await reads[1].finished;});
+  await vi.waitFor(()=>expect(upload).toHaveBeenCalledTimes(2));
+  expect(button(host,"platform.send").disabled).toBe(false);
+  await click(button(host,"platform.send"));
+  expect(publish).not.toHaveBeenCalled();
+  await act(async()=>{for (const receipt of receipts) receipt({sha256:snapshotHash,size:snapshotBytes.length,type:"image/png",url:`https://relay.invalid/media/${snapshotHash}.png`});});
+  await vi.waitFor(()=>expect(publish).toHaveBeenCalledOnce());
+  expect(publish.mock.calls[0][0]).toBe("Send together");
+  expect(publish.mock.calls[0][1].map((file: {filename:string})=>file.filename)).toEqual(["First.agent.png","Second.team.png"]);
+});
+
 it.each(["identity", "draft"])("retires an asynchronous snapshot paste when the %s changes before its byte read completes", async changed => {
   const upload = vi.fn();
   const Reader = FileReader;

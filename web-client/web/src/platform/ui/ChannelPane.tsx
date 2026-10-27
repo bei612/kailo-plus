@@ -1483,7 +1483,7 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
     const view = richText.editor?.view;
     if (view) view.dispatch(view.state.tr.scrollIntoView());
   }, [richText.editor]);
-  useComposerPasteHandler({ editor: richText.editor, owner, enabled: !disabled && !sending,
+  const paste = useComposerPasteHandler({ editor: richText.editor, owner, enabled: !disabled && !sending,
     bindMentionIdentities: pasteBinding.bindPastedMentionIdentities,
     scrollToBottom: scrollAfterPaste, uploadFile: voiceNote.uploadFileWhenIdle,
   });
@@ -1954,7 +1954,7 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
   const { submit: send } = useComposerSubmission<null, NonMemberDecision>({
     getContent: richText.getMarkdown,
     hasMedia: () => pendingRef.current.length > 0 || pendingGifsRef.current.length > 0 || activeBatches.current.size > 0,
-    canSubmit: () => owner.active && !sending && !owner.sending && !disabled && !queuedRef.current && voiceNote.statusRef.current === "idle" && mentionVerified && !(editTarget && uploading > 0),
+    canSubmit: () => owner.active && !sending && !owner.sending && !disabled && !queuedRef.current && !paste.isPreparingAttachments() && voiceNote.statusRef.current === "idle" && mentionVerified && !(editTarget && uploading > 0),
     isEditing: Boolean(editTarget), isDm: channelType === "dm", dmAgentNames,
     refuseDmAgent: refused => { if (refused) { setProblemNeutral(false); setProblem(t("dm.agentMentionRefused")); } },
     requestEmptyEdit: editTarget && onRequestEmptyEditDelete ? () => {
@@ -1995,7 +1995,7 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
 
   useComposerAutoSubmit({
     owner, enabled: Boolean(autoSendDraftKey && autoSendDraftKey === draftKey),
-    ready: loadedDraftOwner === owner && draftReady.current && !disabled && !sending && uploading === 0 && voiceNote.status === "idle" && mentionVerified && Boolean(richText.getMarkdown().trim() || pending.length),
+    ready: loadedDraftOwner === owner && draftReady.current && !disabled && !sending && !paste.isPreparingAttachments() && uploading === 0 && voiceNote.status === "idle" && mentionVerified && Boolean(richText.getMarkdown().trim() || pending.length),
     active: () => owner.active, consume: onAutoSendConsumed,
     beforeSubmit: () => {
       if (!intent.current) return true;
@@ -2056,7 +2056,7 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
       onOpenMentionPicker: mentionPeople || workspaceId ? openPeople : undefined,
       onPaperclip: () => { if (!voiceNote.hasAttachmentRef.current) picker.current?.click(); },
       onFinishVoiceNote: () => void voiceNote.finish(), onVoiceNote: voiceNote.toggle,
-      sendDisabled: disabled || sending || queued !== null || voiceNote.status !== "idle" || !mentionVerified || (!(editTarget && onRequestEmptyEditDelete) && !draft.trim() && pending.length === 0 && pendingGifs.length === 0),
+      sendDisabled: disabled || sending || queued !== null || paste.isPreparingAttachments() || voiceNote.status !== "idle" || !mentionVerified || (!(editTarget && onRequestEmptyEditDelete) && !draft.trim() && pending.length === 0 && pendingGifs.length === 0),
       gifs: gifOption,
     }}>
       {dragging ? <DropZoneOverlay /> : null}

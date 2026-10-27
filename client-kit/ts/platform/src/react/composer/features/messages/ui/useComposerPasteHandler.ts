@@ -18,8 +18,10 @@ export function useComposerPasteHandler(options: {
   scrollToBottom: () => void;
   uploadFile: (file: File) => Promise<unknown>;
 }) {
-  const current = React.useRef(options);
-  current.current = options;
+  const preparation = React.useMemo(() => ({ count: 0 }), [options.owner]);
+  const [, refreshPreparation] = React.useReducer(value => value + 1, 0);
+  const current = React.useRef({ ...options, preparation });
+  current.current = { ...options, preparation };
   const bindMentionIdentitiesRef = React.useRef(options.bindMentionIdentities);
   bindMentionIdentitiesRef.current = options.bindMentionIdentities;
   React.useEffect(() => {
@@ -43,18 +45,31 @@ export function useComposerPasteHandler(options: {
           if (files.length) {
             event.preventDefault();
             const html = event.clipboardData?.getData("text/html") ?? "";
-            const active = () => mounted && current.current.owner === captured.owner && current.current.enabled && editor.isEditable;
+            const active = () => mounted && current.current.owner === captured.owner && current.current.editor === editor && current.current.enabled && editor.isEditable;
+            const snapshot = html.includes(SNAPSHOT_CLIPBOARD_ATTRIBUTE);
+            if (snapshot) { captured.preparation.count++; refreshPreparation(); }
             // DD-131(7)/143: verify the copied package before naming it. Keep
             // the original destination through asynchronous byte reads; never
             // route a completed paste to the next actor or draft's callback.
             void (async () => {
-              for (const file of files) {
+              const prepared: File[] = [];
+              try {
+                for (const file of files) {
+                  if (!active()) return;
+                  const named = snapshot ? await restoreSnapshotPaste(html, file).catch(() => null) : null;
+                  prepared.push(named ?? file);
+                }
+              } finally {
+                // The original media host takes over before the next await.
+                // Web can still queue a send while that upload is in flight.
+                if (snapshot) {
+                  captured.preparation.count--;
+                  if (mounted && current.current.owner === captured.owner) refreshPreparation();
+                }
+              }
+              for (const file of prepared) {
                 if (!active()) return;
-                const named = html.includes(SNAPSHOT_CLIPBOARD_ATTRIBUTE)
-                  ? await restoreSnapshotPaste(html, file).catch(() => null)
-                  : null;
-                if (!active()) return;
-                await captured.uploadFile(named ?? file);
+                await captured.uploadFile(file);
               }
             })();
             return true;
@@ -102,4 +117,5 @@ export function useComposerPasteHandler(options: {
     });
     return () => { mounted = false; };
   }, [options.editor, options.scrollToBottom]);
+  return { isPreparingAttachments: () => preparation.count > 0 };
 }
