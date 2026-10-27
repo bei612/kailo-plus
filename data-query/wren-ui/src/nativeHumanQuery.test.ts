@@ -1400,6 +1400,9 @@ describe('original SQL-pair durable native write consumer', () => {
         for (const field of Object.keys(components))
           if (!(field in previousComponents)) delete components[field];
         Object.assign(components, previousComponents);
+        // Every request above has completed; close Node 18 keep-alive sockets
+        // before awaiting teardown so a failed assertion is not hidden by it.
+        server.closeAllConnections();
         await new Promise<void>((resolve, reject) =>
           server.close((error) => (error ? reject(error) : resolve())),
         );
@@ -2282,6 +2285,17 @@ describe('native saved-view HUMAN query consumer', () => {
         { findOneBy: history } as any,
       );
       calls.mockImplementation(async (_config, _operation, request) => {
+        if (request.authorizeScope) {
+          expect(request.authorizeScope).toEqual({ permission: 'discover' });
+          return {
+            scope: {
+              ...config,
+              generation: 2,
+              permission: 'discover',
+              checkedRevision: 'fresh-scope-fact',
+            },
+          };
+        }
         const resolved = request.resolveResource as any;
         if (resolved)
           return {
@@ -2319,7 +2333,7 @@ describe('native saved-view HUMAN query consumer', () => {
         undefined,
         undefined,
       );
-      expect(native.sqlReference).toHaveBeenCalledWith(binding, draft);
+      expect(native.sqlReference).toHaveBeenCalledWith(binding, draft, 2);
       const command = calls.mock.calls.find((call) => call[2].command)?.[2]
         .command as any;
       expect(command.componentAction).toEqual({
@@ -2722,6 +2736,11 @@ describe('native saved-view HUMAN query consumer', () => {
         10,
         scope,
         true,
+        undefined,
+        undefined,
+        undefined,
+        false,
+        undefined,
       );
       await expect(
         new ModelResolver().previewSql(
@@ -5483,6 +5502,17 @@ describe('native saved-view HUMAN query consumer', () => {
       );
       calls.mockImplementation(async (_config, _operation, input, token) => {
         expect(token).toBe('verified-native-token');
+        if (input.authorizeScope) {
+          expect(input.authorizeScope).toEqual({ permission: 'discover' });
+          return {
+            scope: {
+              ...config,
+              generation: 2,
+              permission: 'discover',
+              checkedRevision: 'fresh-scope-fact',
+            },
+          };
+        }
         const payload = input as any;
         if (payload.resolveResource)
           return {
