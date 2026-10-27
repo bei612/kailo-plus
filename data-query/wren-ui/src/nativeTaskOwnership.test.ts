@@ -1452,17 +1452,9 @@ describe('bound asking rerun with original repository transactions', () => {
       expect((await stored()).queryId).toBe(queryId);
       expect((await stored()).detail.nativeScope).toEqual(nativeScope);
     });
+    let atPost: { input: any; transport: any; persisted: any[] };
     adaptor.ask.mockImplementation(async (input, transport) => {
-      expect(authorizeNative).toHaveBeenCalledWith(input.queryId);
-      expect((await stored()).queryId).toBe(input.queryId);
-      expect(input.nativeHumanToken).toBeUndefined();
-      expect(transport).toMatchObject({
-        humanToken: 'fixture-human-token',
-        projectId: 7,
-      });
-      expect(JSON.stringify(await repository.findAll())).not.toContain(
-        'fixture-human-token',
-      );
+      atPost = { input, transport, persisted: await repository.findAll() };
       throw new Error('lost create ACK');
     });
     try {
@@ -1473,6 +1465,18 @@ describe('bound asking rerun with original repository transactions', () => {
         authorizeNative,
         nativeHumanToken: 'fixture-human-token',
       });
+      // Assertions live outside the adapter: an assertion thrown inside POST
+      // would be caught by the product's intentional UNKNOWN handling.
+      expect(authorizeNative).toHaveBeenCalledWith(atPost.input.queryId);
+      expect(atPost.persisted[0].queryId).toBe(atPost.input.queryId);
+      expect(atPost.input.nativeHumanToken).toBeUndefined();
+      expect(atPost.transport).toMatchObject({
+        humanToken: 'fixture-human-token',
+        projectId: 7,
+      });
+      expect(JSON.stringify(atPost.persisted)).not.toContain(
+        'fixture-human-token',
+      );
       expect(result.queryId).toBe((await stored()).queryId);
       expect(result.queryId).toMatch(/^[a-f0-9-]{36}$/);
       await tracker.pollTasks();
