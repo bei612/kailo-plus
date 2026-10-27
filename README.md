@@ -122,7 +122,7 @@ Cells 固定 `afe7a4710` 修复正文读取阻塞期间撤权后仍向原 S3 存
 浏览器、存储和 Core/IdP 部署全链，详见同一原生操作记录。
 
 Cells 原上传的源码复核另发现未闭合边界：原 MIME 探测异步写节点，受管 finish
-可能先读取空 MIME；从冻结 draft 复制到 live 的目标写入也未证明与并发版本和 MIME
+存在先读取空 MIME 的时序；从冻结 draft 复制到 live 的目标写入也未证明与并发版本和 MIME
 的原子条件。该风险尚未在真实对象存储中动态复现，不能据此宣称已发生事故；
 受管 FILE_STORAGE 的 release/binding 继续受原门禁约束。具体时序与所需验证见
 [原上传记录](file-storage/fork/verify/native-identity.md)。
