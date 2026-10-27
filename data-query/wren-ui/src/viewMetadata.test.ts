@@ -3854,7 +3854,13 @@ describe('original Home answer and chart operation lifetime', () => {
   );
   it('leaving an UNKNOWN observation wait stops further mutation calls and preserves the original key', async () => {
     mockGenerateAnswer.mockResolvedValue({
-      data: { generateThreadResponseAnswer: { id: 21, threadId: 11, queryReceipt: {} } },
+      data: {
+        generateThreadResponseAnswer: {
+          id: 21,
+          threadId: 11,
+          queryReceipt: {},
+        },
+      },
     });
     const page = mount();
     const pending = page.controls.onGenerateTextBasedAnswer(21);
@@ -4196,36 +4202,70 @@ describe('original Home answer and chart operation lifetime', () => {
         expect(entries.size).toBe(0);
       },
     );
-    it.each(operations.flatMap((operation) =>
-      ['wrong-id', 'wrong-thread', 'missing-thread', 'missing-row', 'wrong-ended'].map((corruption) => ({ name: operation[0], callback: operation[1], field: operation[3], corruption })),
-    ))(
+    it.each(
+      operations.flatMap((operation) =>
+        [
+          'wrong-id',
+          'wrong-thread',
+          'missing-thread',
+          'missing-row',
+          'wrong-ended',
+        ].map((corruption) => ({
+          name: operation[0],
+          callback: operation[1],
+          field: operation[3],
+          corruption,
+        })),
+      ),
+    )(
       'does not settle the original $name key or disclose an uncorrelated native receipt ($corruption)',
       async ({ callback, field, corruption }) => {
         const page = renderPage();
-        const pending = page.controls[callback](21, { instruction: 'original adjustment' });
+        const pending = page.controls[callback](21, {
+          instruction: 'original adjustment',
+        });
         await settle();
         const key = requests[0].variables.idempotencyKey;
-        const wrong = corruption === 'missing-row' ? null : {
-          ...row('uncorrelated body'),
-          ...(corruption === 'wrong-id' || corruption === 'wrong-ended' ? { id: 99 } : {}),
-          ...(corruption === 'wrong-thread' ? { threadId: 22 } : {}),
-          ...(corruption === 'missing-thread' ? { threadId: null } : {}),
-          ...(corruption === 'wrong-ended' ? {
-            queryReceipt: { ...completion().queryReceipt, terminalStatus: 'FAILED' },
-            chartQueryReceipt: { ...completion().chartQueryReceipt, terminalStatus: 'FAILED' },
-          } : {}),
-        };
+        const wrong =
+          corruption === 'missing-row'
+            ? null
+            : {
+                ...row('uncorrelated body'),
+                ...(corruption === 'wrong-id' || corruption === 'wrong-ended'
+                  ? { id: 99 }
+                  : {}),
+                ...(corruption === 'wrong-thread' ? { threadId: 22 } : {}),
+                ...(corruption === 'missing-thread' ? { threadId: null } : {}),
+                ...(corruption === 'wrong-ended'
+                  ? {
+                      queryReceipt: {
+                        ...completion().queryReceipt,
+                        terminalStatus: 'FAILED',
+                      },
+                      chartQueryReceipt: {
+                        ...completion().chartQueryReceipt,
+                        terminalStatus: 'FAILED',
+                      },
+                    }
+                  : {}),
+              };
         await respond(requests[0], field, wrong);
         await pending;
         expect(requests).toHaveLength(1);
         expect(cacheRow().sql).toBe('cached original');
         expect([...entries.values()]).toContain(key);
-        const recovered = page.controls[callback](21, { instruction: 'original adjustment' });
+        const recovered = page.controls[callback](21, {
+          instruction: 'original adjustment',
+        });
         await settle();
         expect(requests[1].variables.idempotencyKey).toBe(key);
         await respond(requests[1], field, row('current correlated body'));
         await recovered;
-        await respond(requests[2], 'threadResponse', row('current correlated body'));
+        await respond(
+          requests[2],
+          'threadResponse',
+          row('current correlated body'),
+        );
         expect(cacheRow().sql).toBe('current correlated body');
         expect(entries.size).toBe(0);
       },
