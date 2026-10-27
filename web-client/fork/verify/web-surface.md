@@ -7032,3 +7032,40 @@ check、negative/restored 原日志及逐字恢复校验；source 复用自己 3
 适配代码，不声称整个 ChannelPane 或 Native MessageComposer 文件合并为一个组件。
 未执行全工程 full、生产构建、正式安装包、部署、真实浏览器或 Windows 设备验收；这些
 边界不能由本次 DOM 消费者通过代替。设计覆盖归属沿用 REQ-24 / DD-74，不另增需求。
+
+## 2026-10-27 原 Escape 退出编辑与草稿恢复
+
+关联 REQ-24 / DD-74，基准 `3a2c960e492c545bfee2b2284fb2349a98664dde`，
+产品固定 `3f2f966cfea60c2cee1568925815cfd81e6a0041`：4 文件 +72/-1。
+固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的
+`desktop/src/features/messages/ui/MessageComposer.tsx:773` 在补全菜单处理后允许 Escape
+取消编辑；当前共享 `composerKeyDown` 缺少此分支，导致两宿主原取消按钮虽可用，
+键盘入口不能退出编辑。该缺口由实际源码确认后实现，未改变编辑或草稿领域语义。
+
+共享键盘主体恢复该分支，两宿主传入既有 `onCancelEdit`。Native 使用原取消按钮的
+`isSubmitLocked || isSending`，Web 使用原按钮的 `sending` 锁；没有新增发布或删除
+调用。提及、emoji、频道补全先消费按键，编辑取消仅在未被消费且当前操作可用时执行。
+原草稿 store、已上传媒体回执、BFF/CLIENT 发布及 UNKNOWN 冻结意图保持原消费者。
+
+原 SDK `sha256:3007729eb192341a4f004a88e42e1e66c94fc67d763acfc96568bd7311116018`，
+1 CPU / 4 GiB（memory+swap 同值）/ pids 256，实际 Data 源码与日志；复用已结束的
+Composer 自己依赖目录，保留此前所有回执。按原锁刷新两宿主本地 file 包，实际解析的
+共享包各 1,039 文件逐字一致，固定 GitHub 归档 3,454 个输入无差异。
+
+同源 i18n、共享生产/测试、Web/Desktop 四项类型均退出 0；共享 12/12、Web 76/76、
+Native 原 send-flow/draft/auto-submit 28/28。新增两个原 Web Composer DOM 消费者
+实际触发 Escape：取消编辑恢复原正文和已上传附件，不发布、不重复上传；补全菜单先
+关闭而不退出编辑，保存中拒绝取消，保存完成后恢复取消。原 UNKNOWN 用例未改断言。
+
+在隔离固定导出及实际 Web 安装包同时移除共享 Escape 分支，原恢复草稿操作断言失败
+退出 1。逐字恢复后两项 Escape 消费者及共享 controller 四项通过；原件与恢复文件
+SHA-256 都是 `553712d3187d831dfe0f8988da7dcad4db9c75661273a98d10e31886926ad420`。
+整个检查最终 exit 0，OOM=false，容器清理为空；原 React act 警告保留。
+
+[回执](composer-escape-receipt.json) SHA-256 为
+`22cb218ea097cf4c0832eb44a25081d1b1b65dc9d7143f8b5b73ba5ef0f7b4fa`。
+原 limits、check、negative/restored 与 byte audit 证据在 CI
+`/volumes/data/kailo/verification/composer-escape/3f2f966cf/`。
+无 schema/API/Workflow/i18n 变化，不新增或解除正式发布门禁；未做全工程 full、制品、
+部署、真实浏览器键盘或 Windows 安装验收。此次 Desktop 证据是实际共享包、类型及原
+消费者回归，不把 Web DOM 操作宣称为真机按键验证。
