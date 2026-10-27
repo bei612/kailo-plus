@@ -1265,6 +1265,7 @@ impl IdentityClient {
                 .map_err(|error| OperatorError::Sign(error.to_string()))?,
         );
         EventBuilder::new(event.kind, &event.content)
+            .allow_self_tagging()
             .tags(tags)
             .custom_created_at(event.created_at)
             .sign_with_keys(&self.keys)
@@ -1318,7 +1319,7 @@ impl IdentityClient {
         let value: Value =
             serde_json::from_str(&text).map_err(|error| OperatorError::Sign(error.to_string()))?;
         // Option fields must be explicitly present, including channel_id=null.
-        if !value.as_object().is_some_and(|v| v.len() == 4)
+        if value.as_object().is_none_or(|v| v.len() != 4)
             || !value
                 .get("claim")
                 .and_then(Value::as_object)
@@ -4104,6 +4105,15 @@ mod scoped_publication_tests {
             policy.epoch
         );
         assert_eq!(signed.tags.iter().next(), event.tags.iter().next());
+        let project = EventBuilder::new(Kind::from(1630), "original PR")
+            .allow_self_tagging()
+            .tags([Tag::parse(["p", &client.pubkey_hex()]).unwrap(),
+                Tag::parse(["a", &format!("30617:{}:repo",client.pubkey_hex())]).unwrap()])
+            .sign_with_keys(&client.keys).unwrap();
+        let bound = client.bind_publication_epoch(&project, &policy).unwrap();
+        assert_eq!(bound.tags.iter().filter(|tag|tag.as_slice()[0] != PUBLICATION_EPOCH_TAG).collect::<Vec<_>>(),
+            project.tags.iter().collect::<Vec<_>>(), "epoch binding must preserve original self-p and all native tags");
+
         assert!(client.bind_publication_epoch(&signed, &policy).is_err());
         for field in ["ready", "version", "max_age_seconds", "epoch"] {
             let mut bad = serde_json::to_value(&policy).unwrap();
