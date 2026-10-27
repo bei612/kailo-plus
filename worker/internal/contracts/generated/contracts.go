@@ -9586,11 +9586,13 @@ type ProjectsGitRefResponse struct {
 // CLIENT signer, never supplied by this request. Creation resolves the home Channel from an
 // admitted Workspace; metadata is transient and remains Relay-owned. DELETE selects a real
 // signed current announcement; it does not delete its channel or repositories.
-// CREATE_PULL_REQUEST publishes the original NIP-34 1618 review for a branch already on the
-// repository (DD-118); the push itself is not part of this request. APPROVE_PULL_REQUEST
-// and the request-changes / inline-line variants of CREATE_PULL_REQUEST_COMMENT publish the
-// original labeled kind-1 review comments (desktop
-// pullRequestReviews.ts::submitProjectPullRequestReview,
+// UPDATE_PULL_REQUEST publishes the original kind-1619 head update for the named immutable
+// 1618 root, only as its author or repository owner; it carries commit and optional
+// mergeBase, never a caller author, tags or clone URL. CREATE_PULL_REQUEST publishes the
+// original NIP-34 1618 review for a branch already on the repository (DD-118); the push
+// itself is not part of this request. APPROVE_PULL_REQUEST and the request-changes /
+// inline-line variants of CREATE_PULL_REQUEST_COMMENT publish the original labeled kind-1
+// review comments (desktop pullRequestReviews.ts::submitProjectPullRequestReview,
 // hooks.ts::createProjectPullRequestComment) against the named review head; they introduce
 // no new Nostr kind (DD-118(5)). ATTACH_REPOSITORY (original useAttachProjectRepository /
 // useAddProjectRepository) republishes the signer's current 30621 head named by
@@ -9630,15 +9632,16 @@ type ProjectsPublishRequest struct {
 	// announcement (AddProjectRepositoryDialog Clone URL). Only metadata: Kailo reads
 	// repository content through the 30617 coordinate (DD-118) and never fetches this URL.
 	CloneURL *string `json:"cloneUrl,omitempty"`
-	// Original `c`. CREATE_PULL_REQUEST: compare branch head read from the trusted repository
-	// state. APPROVE_PULL_REQUEST and CREATE_PULL_REQUEST_COMMENT with reviewDecision or an
-	// anchor: the review head the reviewer looked at; the consumer refuses with
-	// TARGET_STATE_CONFLICT unless it is still the review's current trusted head. Required by
-	// those review comments and refused on ordinary comments.
+	// Original `c`. UPDATE_PULL_REQUEST: the already-pushed head frozen by this update intent.
+	// CREATE_PULL_REQUEST: compare branch head read from the trusted repository state.
+	// APPROVE_PULL_REQUEST and CREATE_PULL_REQUEST_COMMENT with reviewDecision or an anchor:
+	// the review head the reviewer looked at; the consumer refuses with TARGET_STATE_CONFLICT
+	// unless it is still the review's current trusted head. Required by those review comments
+	// and refused on ordinary comments.
 	Commit      *string  `json:"commit,omitempty"`
 	Description *string  `json:"description,omitempty"`
 	Mentions    []string `json:"mentions,omitempty"`
-	// Original 1618 `merge-base`, when known.
+	// Original 1618/1619 `merge-base`, when known.
 	MergeBase *string                     `json:"mergeBase,omitempty"`
 	Name      *string                     `json:"name,omitempty"`
 	Operation ProjectPublicationOperation `json:"operation"`
@@ -13041,6 +13044,7 @@ const (
 	SelfUnassignIssue                 ProjectPublicationOperation = "SELF_UNASSIGN_ISSUE"
 	SetPullRequestStatus              ProjectPublicationOperation = "SET_PULL_REQUEST_STATUS"
 	UnassignIssue                     ProjectPublicationOperation = "UNASSIGN_ISSUE"
+	UpdatePullRequest                 ProjectPublicationOperation = "UPDATE_PULL_REQUEST"
 )
 
 // Original pullRequestReviews.ts lifecycle states the UI may publish (NIP-34
