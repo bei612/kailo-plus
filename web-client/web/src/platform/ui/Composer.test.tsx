@@ -1498,11 +1498,12 @@ describe("DD-146 original send flow: clear at Send, restore on failure", () => {
     clearAllDrafts();
     host = await render(composer("retained-revisit", upload));
     expect(input(host).textContent).toBe("needs file");
-    expect(host.querySelector('[data-testid="composer-queued-media-attachment"]')?.textContent).toContain("one.txt");
-    expect(button(host,"platform.send").disabled).toBe(true);
     await act(async()=>{input(host).dispatchEvent(new KeyboardEvent("keydown",{key:"Enter",bubbles:true,cancelable:true}));});
+    await settle();
     expect(upload).toHaveBeenCalledTimes(1);
     expect(state.publish).not.toHaveBeenCalled();
+    expect(host.querySelector('[data-testid="composer-queued-media-attachment"]')?.textContent).toContain("one.txt");
+    expect(button(host,"platform.send").disabled).toBe(true);
   });
 
   it("does not lend recovered File bytes to another identity with the same draft key", async () => {
@@ -1595,6 +1596,7 @@ describe("DD-146 original send flow: clear at Send, restore on failure", () => {
 
   it("restores selected GIF and failed local file across draft visits without uploading", async () => {
     const gif = {slug:"kept-gif",title:"Kept GIF",url:"https://static.klipy.com/kept.gif",previewUrl:"https://static.klipy.com/preview.gif",width:40,height:40,previewWidth:40,previewHeight:40,size:99};
+    vi.stubGlobal("IntersectionObserver", class { observe() {} unobserve() {} disconnect() {} });
     vi.stubGlobal("matchMedia", (query:string) => ({matches:false,media:query,addEventListener() {},removeEventListener() {},addListener() {},removeListener() {}}));
     state.gifs = [gif];
     const {upload, uploads} = uploader();
