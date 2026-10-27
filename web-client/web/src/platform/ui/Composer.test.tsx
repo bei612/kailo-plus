@@ -1677,6 +1677,12 @@ describe("DD-146 original send flow: clear at Send, restore on failure", () => {
       expect(loadDraftEntry(key)).toBeUndefined();
       expect(host.querySelector('[data-testid="composer-gif-attachment"]')).toBeNull();
     } else {
+      if (outcome === "rejected" && recovery(host)) {
+        expect(recovery(host)!.dataset.stage).toBe("failed");
+        expect(loadPendingSend(key)?.extras).toMatchObject({gifs:[expect.objectContaining({url:draftGif.url})]});
+        await click(recovery(host)!.querySelector<HTMLElement>('[data-testid="composer-pending-send-restore"]')!);
+        await settle();
+      }
       expect(host.querySelectorAll('[data-testid="composer-gif-attachment"]')).toHaveLength(1);
       expect(loadDraftEntry(key)?.pendingImeta).toEqual([expect.objectContaining({sha256:"",url:draftGif.url})]);
       if (outcome === "rejected") expect(loadDraftEntry(key)?.sendIntent).toBeUndefined();
