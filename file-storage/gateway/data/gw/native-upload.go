@@ -144,6 +144,15 @@ func (w *nativeUploadWriter) Read(buffer []byte) (int, error) {
 	if int64(n) > w.remaining {
 		return 0, errors.WithStack(errors.StatusConflict)
 	}
+	// Reading the request body may block after the pre-read admission. Check
+	// the same execution again before handing any newly received bytes to the
+	// native store, including a final read that returns bytes with EOF. Earlier
+	// writes remain uncertain; refusal does not release this claimed step.
+	if n > 0 {
+		if freshErr := w.execution.Fresh(w.ctx); freshErr != nil {
+			return 0, freshErr
+		}
+	}
 	w.remaining -= int64(n)
 	if err == io.EOF && w.remaining != 0 {
 		return n, io.ErrUnexpectedEOF
