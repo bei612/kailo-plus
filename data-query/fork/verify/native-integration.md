@@ -12138,3 +12138,120 @@ accepted.
 证据目录为 CI `/volumes/data/kailo/conformance/wren-text-answer/<上述固定源码>-check/`，保留 consumers/types/lint/format、fault、restored 原日志及各自 exit。最终 compact 回执为该最终目录的 `text-answer-receipt.json`，SHA-256 `e73407d76e27a692f3f6566fc8280a22fc6436c77514255face9f24e29f7b9b6`；本机副本 `/tmp/kailo-wren-text-answer-8740c95f5-receipt.json`。
 
 边界：HTTP 服务是完整协议夹具，现有 `NativeHumanQuery.readHistory` spy 仍隔离下游 SQL 回执，原生仓储和 AI 流也是测试依赖；这证明原消费代码与 scope/模式拒绝行为，不证明真实 Core/IdP 签发、真实 SQL/模型业务、receiver 激活或已部署制品验收。源码仍固定原上游 `c5f02a0391c87420dba78632dcd86073710deb72`；本批原 SDK upstream status 实际退出 0，未更改上游信任或生产配置。
+
+## 2026-10-27 REST explanation completion and original API History scope
+
+This closes the concrete REST follow-up recorded above, under DD-127(7) and
+DD-133. Base: `e70c0ad0b338caa10c4c07676b23e0fa3c1b3ded`. Production source:
+`18a08cffdf4b2d3444533768b133cf8aa9b4ff10`; final test-only delta:
+`f735dab7b742667cda3ac469d316fe8d7439f009`. The four production files are
+byte-identical between those two commits.
+
+The fixed official Wren source `c5f02a0391c87420dba78632dcd86073710deb72`,
+`wren-ui/openapi.yaml` `/stream_explanation`, specifies message frames followed
+by the one-key `{done:true}` frame. The actual original AI producer
+`get_ask_streaming_result` supplies `{done:true,queryId}` only after its queue
+completion sentinel. The REST route now uses the existing decoder, checks that
+native ID, and emits the original public shape. EOF, malformed or foreign
+completion, and authorization loss close unresolved. No new Ask, one-shot queue
+reopen or automatic replay was introduced.
+
+The original nonstream `generate_sql` producer already persisted its public
+`NON_SQL_QUERY` code and `explanationQueryId` in ApiHistory. The streaming
+producer sent these fields to the caller but persisted only error text with
+status 500. It now persists the same existing public fields and actual 400
+status for that specific error. Other errors retain their previous behavior.
+No new schema, public wire or platform copy of question/SQL/history was added.
+
+`ApiHistoryRepository.findStandaloneExplanation` resolves the actual current
+project's ungoverned GENERATE_SQL/STREAM_GENERATE_SQL error row by that exact
+persisted query reference. A history row UUID is not the native query ID. Zero
+or conflicting rows are refused; the two-row limit detects ambiguity rather
+than truncating a history search. Each exposed frame rechecks the fixed row,
+project, original request/response and mode. Old streaming rows without the
+persisted reference remain unattributable; current project context is never
+used to fabricate or backfill their provenance. AskingTaskRepo is not used as
+the REST authority.
+
+DD-127(7) keeps original native project shared-read ACL. A different admitted
+HUMAN may read that project's original history; no owner/admin-only restriction
+was invented. HUMAN and native SERVICE remain separate middleware-verified
+issuer/audience/instance identities. A missing owner does not grant access and
+is not replaced with a fabricated SERVICE owner. Missing identity, a raw old
+token, revoked original member or foreign project fails admission. Standalone
+reads only its original local native facts, without Core or platform delivery;
+its original lifetime is retained. GOVERNED retains per-frame HUMAN/source
+checks and its delivered limits, with mode checked before and after original
+asynchronous authorization. Neither direction may change mode midstream.
+
+### REST fixed-source consumers and fault restoration
+
+The existing Node 18/Yarn recipe and installed immutable Yarn 4.5.3 dependencies
+were reused without installation or lock changes. Node image:
+`sha256:f9ab18e354e6855ae56ef2b290dd225c1e51a564f87584b9bd21dd651838830e`;
+actual Node 18.20.8, TypeScript 5.2.2 and Prettier 3.2.5. Main checks used
+4 CPU / 4 GiB, with equal swap, and private PostgreSQL 1 CPU / 2 GiB with equal
+swap on an isolated internal network. New source, temporary files and outputs
+stayed on actual Data; the old NVMe cache was not changed.
+
+At fixed `18a08cffd`:
+
+- Original Next HTTP/task ownership and new REST SQLite consumers: **91 passed**,
+  **39 not selected**. Both original SQL producers persist into actual ApiHistory
+  before the real explanation HTTP consumer reads it.
+- Original browser hook: **27 passed**. The same REST cases on real private
+  PostgreSQL: **25 passed**, **105 not selected**. These 25 overlap SQLite cases;
+  they are not additional distinct features or tests.
+- Complete `tsc --noEmit --pretty false`, original Next lint and Prettier: **0**.
+- Actual private-snapshot faults: raw native public completion caused **2**
+  failures; fabricated EOF completion **1**; removing repository and consumer
+  project checks on real PostgreSQL **1**; dropping the streaming producer's
+  persisted query reference **5**. Each command exited **1** from assertions.
+  Byte-for-byte restoration then passed **91 SQLite + 25 PostgreSQL + 27 hook**
+  and format again.
+
+An extra initial mode-fault probe at that same source did **not** detect the
+removed local fences: the original metadata queryScope reader already refused
+retirement before a chunk. Its test exited 0 and the expected-failure wrapper
+exited 1. This failed probe is retained and is not counted as valid fault proof.
+The final test-only delta `f735dab7b` places retirement immediately after the
+last actual `ModelResolver.getMDL` returns; it calls the real metadata readers,
+without substituting successful authorization. In the original governed REST
+HTTP consumer, **2 mode cases passed**; removing the local fences then produced
+**1 assertion failure / 1 pass**, exposing a message after retirement. Source
+was restored byte-for-byte and **2 passed** again. Full types, two-file lint and
+format passed at this final source, using 1 CPU / 4 GiB with equal swap and no
+network. These two cases overlap prior coverage; the main suites were not
+rerun or relabeled as a new full result.
+
+Main evidence directory:
+`/volumes/data/kailo/verification/buzz-r10/wren-rest-explanation-18a08cffdf4b2d3444533768b133cf8aa9b4ff10-check`.
+Its `receipt.json` SHA-256:
+`42c9b23810b6b55eb29ab9f9e646a2fe5f383cd68ea0b4c63830d1955679b7d0`.
+Local handoff: `/tmp/kailo-wren-rest-explanation-18a08cffd-receipt.json`.
+All **617** inputs match the fixed GitHub blobs. Because the later test-only
+candidate had already been formatted, this audit reads the test file from its
+actual execution-time pre-fault backup; the other inputs are unchanged original
+execution files. The receipt and input manifest explicitly identify those paths.
+
+Final mode-delta directory:
+`/volumes/data/kailo/verification/buzz-r10/wren-rest-explanation-f735dab7b742667cda3ac469d316fe8d7439f009-mode-fault`.
+Its `receipt.json` SHA-256:
+`45dbe30537d5efce7143c1eb66f0ed5876b3ebd248c47e5928b4bb74795b3049`.
+Local handoff: `/tmp/kailo-wren-rest-mode-f735dab7b-receipt.json`.
+All **617** current execution inputs match this fixed GitHub source. Individual
+logs retain command exits, assertion details and restoration results. Both
+check containers, private PostgreSQL and their network were removed, with
+absence read back.
+
+The prior five-file baseline remains historical evidence: **18 failed / 164
+passed / 6 skipped**, followed by the earlier two fixture fixes. This batch
+does not change or reclassify the remaining **13 rerun + 3 text-answer** fixture
+failures; parallel fixes have their own fixed-source evidence. Unselected tests
+are not passes, and these narrow checks do not establish all Wren tests green.
+Middleware-verified headers and the AI stream are explicit fixtures here;
+HTTP, SQLite and PostgreSQL consumers are real. No live IdP/model/SQL backend,
+matching component artifact, receiver activation or final user acceptance was
+performed. The matching data-query-ui build and deployed operation still require
+the existing release/source admission gates; no CI trust or production state
+was changed.
