@@ -407,10 +407,6 @@ fn extract_page_offset(raw: &Value, limit: Option<i64>) -> Option<i64> {
     page.checked_sub(1)?.checked_mul(per_page)
 }
 
-/// Default and maximum row budget for a channel-window request. The budget
-/// counts row events only; summary/bounds overlays and the aux closure never
-/// consume it (docs/bridge-channel-window.md).
-
 /// Aux closure kinds: reactions, deletions (NIP-09 + NIP-29), edits.
 const WINDOW_AUX_KINDS: [u32; 4] = [
     buzz_core::kind::KIND_DELETION,
