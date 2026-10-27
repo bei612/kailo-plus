@@ -13000,3 +13000,96 @@ unresolved/refused without a new Ask. Matching new AI and UI artifacts, official
 release acceptance, complete receiver activation, actual model/Gateway/Bao/usage
 and deployed browser end-to-end verification remain outstanding. No live service,
 production configuration, CI trust or source-admission policy changed.
+
+## Original Ask ownership across asynchronous stages (2026-10-27)
+
+SS-WRN-GOVERNANCE and DD-12 require the original native instance/project/task
+identity and its real execution evidence to remain authoritative. The preceding
+GENERAL completion checks did not protect the earlier Ask classification and
+shared SQL state machine: after an awaited stage, an expired or replaced native
+cache entry could be recreated, dispatch a later stage, or overwrite the current
+entry with a terminal result. The original FastAPI background task had the same
+risk between registration and its eventual start.
+
+The implementation starts from `f4bc1b96df2fb4484e4db41b96fb6ab5d61b9e3f`.
+Product `08e7688eb66a2ae9f88609a48df5f0c63f6e3193` and original Ruff formatting
+`f457c447d161ed670914ae2150ad44494520a098` change only the existing Ask router,
+AskService and native asking consumer. The router passes its registered object
+through the original BackgroundTasks/run_native_ask path as an internal argument,
+not a client-controlled request property. AskService advances only its own current
+cache object. It checks exact object identity and stopped state after the existing
+awaits, before downstream dispatch, and before success/error/pending state writes.
+Each owned original state transition updates the captured object. This also covers
+the shared original SQL planning/generation/correction path; no new query,
+execution authority, cache, queue or storage model was introduced.
+
+The normal state transitions retain their existing TTL update behavior. This
+change prevents revival or later dispatch after expiry/replacement; it does not
+claim that the entire original lifecycle has an immutable TTL. Existing owned
+NativeQueryPending handling is preserved. A refused continuation does not cancel
+or roll back provider/database work that already started, and does not establish
+that such work never executed. The prior GENERAL entry/output ownership guards
+remain in place.
+
+### Actual original consumers and fault evidence
+
+CI fetched fixed `f457c447d` from GitHub and used the original immutable Python
+3.12 image
+`sha256:662fc7a76c259b140355f5b66a083a6ebb1a4403464359ba115b8956431fe182`.
+Container-safety preflight and Docker readback confirmed **2 CPU / 4 GiB / equal
+swap**, nonroot, read-only root filesystem, network `none`. Source/tmp/logs were on
+actual Data `/dev/sda1`; no PostgreSQL container or test network was allocated.
+The image pyproject and installed LiteLLM/OpenAI/Haystack/backoff/Pydantic/Langfuse
+versions matched the existing project/Poetry lock. No dependency was installed.
+
+The original upstream metadata command ran in SDK300 and exited **0**: the fixed
+reference checkout remained `c5f02a0391c8`, with no newer checkout commit. This is
+metadata evidence, not a build or execution of reference contents.
+
+At final fixed source, the complete original native asking file passed **18**
+tests and the original SQL-answer streaming file passed **20**; none were skipped.
+Original Ruff check and format check passed. The new original consumer cases use:
+
+- The real Ask router and BackgroundTasks, with expiry, equal-value replacement
+  and stop between registration and execution; no history/model stage starts.
+- The original AskService and TTLCache with a controlled clock across history,
+  retrieval and classification awaits: 27 retirement/return/error/pending
+  combinations preserve absence or the exact replacement and dispatch no next
+  stage.
+- All three original GENERAL Hamilton pipelines and the real LiteLLM provider,
+  with scripted completion chunks: the owned classification path dispatches once
+  and retains the complete result.
+- The same AskService SQL state machine across six original awaited stages and
+  three retirement conditions (18 combinations), plus the owned correction/success
+  path. Stage outputs are fixtures, not a live database query acceptance claim.
+
+Three actual mutations of the private export were checked by those original
+consumers:
+
+| Removed boundary | Assertion failures | Restored original asking tests |
+| --- | ---: | ---: |
+| Router registered-object argument | 2 | 18 |
+| Classification await ownership guard | 9 | 18 |
+| Shared exact current-object requirement | 49 | 18 |
+
+Each mutation exited **1**, with assertion failures and no test errors; each
+byte-for-byte restoration returned **0**. Final full asking **18** and SQL-answer
+**20** passed again. All **211 input Git blobs** matched fixed GitHub source after
+restoration. Own containers were removed and absence was read back.
+
+The first product source's Ruff format check exited **1**; that log is retained.
+The pinned formatter's output was committed before the successful fixed-source
+checks. Intentional negative logs are also preserved, rather than overwritten
+with their restored results.
+
+The original receipt is
+`/volumes/data/kailo/verification/buzz-r10/wren-ask-lifetime-f457c447d-fault/receipt.json`,
+SHA-256 `6d3d9865400fb9099d9200a17f37aa3a1c866805b3cbf73669bca777499fcc10`.
+Its unchanged repository copy is [the Ask lifetime receipt](ask-lifetime-receipt.json).
+It retains exact command/log hashes, actual limits, negative/restoration results
+and the input manifest. Earlier receipts remain unchanged.
+
+This proves the bounded original asynchronous consumers, not a live model,
+provider, Core/Gateway/OpenBao/usage chain or deployed browser operation. Matching
+formal artifacts, release admission and receiver activation remain outstanding.
+No production configuration, deployment, source trust or release gate changed.
