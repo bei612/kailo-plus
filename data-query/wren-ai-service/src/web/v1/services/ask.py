@@ -184,13 +184,27 @@ class AskService:
         use_dry_plan = ask_request.use_dry_plan
         allow_dry_plan_fallback = ask_request.allow_dry_plan_fallback
 
+        expected: Optional[AskResultResponse] = kwargs.get("expected_result")
+        if expected is not None and self._ask_results.get(query_id) is not expected:
+            return results
+
+        def owns_result():
+            # Only this invocation's current native cache object may advance.
+            # Expiry/replacement is missing authority, not permission to recreate
+            # the old task or dispatch another stage under its query ID.
+            return (
+                expected is not None
+                and self._ask_results.get(query_id) is expected
+                and expected.status != "stopped"
+            )
+
         try:
             user_query = ask_request.query
 
             # ask status can be understanding, searching, generating, finished, failed, stopped
             # we will need to handle business logic for each status
             if not self._is_stopped(query_id, self._ask_results):
-                self._ask_results[query_id] = AskResultResponse(
+                self._ask_results[query_id] = expected = AskResultResponse(
                     status="understanding",
                     trace_id=trace_id,
                     is_followup=True if histories else False,
@@ -200,6 +214,9 @@ class AskService:
                     query=user_query,
                     project_id=ask_request.project_id,
                 )
+
+                if not owns_result():
+                    return results
 
                 # we only return top 1 result
                 historical_question_result = historical_question.get(
@@ -232,6 +249,9 @@ class AskService:
                         ),
                     )
 
+                    if not owns_result():
+                        return results
+
                     # Extract results from completed tasks
                     sql_samples = sql_samples_task["formatted_output"].get(
                         "documents", []
@@ -251,7 +271,7 @@ class AskService:
                                 configuration=ask_request.configurations,
                             )
                         ).get("post_process", {})
-                        if self._is_stopped(query_id, self._ask_results):
+                        if not owns_result():
                             return results
                         intent = intent_classification_result.get("intent")
                         rephrased_question = intent_classification_result.get(
@@ -263,7 +283,7 @@ class AskService:
                             user_query = rephrased_question
 
                         if intent == "MISLEADING_QUERY":
-                            self._ask_results[query_id] = AskResultResponse(
+                            self._ask_results[query_id] = expected = AskResultResponse(
                                 status="finished",
                                 type="GENERAL",
                                 rephrased_question=rephrased_question,
@@ -290,7 +310,7 @@ class AskService:
                             results["metadata"]["type"] = "MISLEADING_QUERY"
                             return results
                         elif intent == "GENERAL":
-                            self._ask_results[query_id] = AskResultResponse(
+                            self._ask_results[query_id] = expected = AskResultResponse(
                                 status="finished",
                                 type="GENERAL",
                                 rephrased_question=rephrased_question,
@@ -317,7 +337,7 @@ class AskService:
                             results["metadata"]["type"] = "GENERAL"
                             return results
                         elif intent == "USER_GUIDE":
-                            self._ask_results[query_id] = AskResultResponse(
+                            self._ask_results[query_id] = expected = AskResultResponse(
                                 status="finished",
                                 type="GENERAL",
                                 rephrased_question=rephrased_question,
@@ -340,7 +360,7 @@ class AskService:
                             results["metadata"]["type"] = "GENERAL"
                             return results
                         else:
-                            self._ask_results[query_id] = AskResultResponse(
+                            self._ask_results[query_id] = expected = AskResultResponse(
                                 status="understanding",
                                 type="TEXT_TO_SQL",
                                 rephrased_question=rephrased_question,
@@ -348,8 +368,8 @@ class AskService:
                                 trace_id=trace_id,
                                 is_followup=True if histories else False,
                             )
-            if not self._is_stopped(query_id, self._ask_results) and not api_results:
-                self._ask_results[query_id] = AskResultResponse(
+            if owns_result() and not api_results:
+                self._ask_results[query_id] = expected = AskResultResponse(
                     status="searching",
                     type="TEXT_TO_SQL",
                     rephrased_question=rephrased_question,
@@ -364,6 +384,8 @@ class AskService:
                     project_id=ask_request.project_id,
                     enable_column_pruning=enable_column_pruning,
                 )
+                if not owns_result():
+                    return results
                 _retrieval_result = retrieval_result.get(
                     "construct_retrieval_results", {}
                 )
@@ -373,8 +395,8 @@ class AskService:
 
                 if not documents:
                     logger.exception(f"ask pipeline - NO_RELEVANT_DATA: {user_query}")
-                    if not self._is_stopped(query_id, self._ask_results):
-                        self._ask_results[query_id] = AskResultResponse(
+                    if owns_result():
+                        self._ask_results[query_id] = expected = AskResultResponse(
                             status="failed",
                             type="TEXT_TO_SQL",
                             error=AskError(
@@ -391,11 +413,11 @@ class AskService:
                     return results
 
             if (
-                not self._is_stopped(query_id, self._ask_results)
+                owns_result()
                 and not api_results
                 and allow_sql_generation_reasoning
             ):
-                self._ask_results[query_id] = AskResultResponse(
+                self._ask_results[query_id] = expected = AskResultResponse(
                     status="planning",
                     type="TEXT_TO_SQL",
                     rephrased_question=rephrased_question,
@@ -429,7 +451,10 @@ class AskService:
                         )
                     ).get("post_process", {})
 
-                self._ask_results[query_id] = AskResultResponse(
+                if not owns_result():
+                    return results
+
+                self._ask_results[query_id] = expected = AskResultResponse(
                     status="planning",
                     type="TEXT_TO_SQL",
                     rephrased_question=rephrased_question,
@@ -440,8 +465,8 @@ class AskService:
                     is_followup=True if histories else False,
                 )
 
-            if not self._is_stopped(query_id, self._ask_results) and not api_results:
-                self._ask_results[query_id] = AskResultResponse(
+            if owns_result() and not api_results:
+                self._ask_results[query_id] = expected = AskResultResponse(
                     status="generating",
                     type="TEXT_TO_SQL",
                     rephrased_question=rephrased_question,
@@ -460,6 +485,9 @@ class AskService:
                     )
                 else:
                     sql_functions = []
+
+                if not owns_result():
+                    return results
 
                 has_calculated_field = _retrieval_result.get(
                     "has_calculated_field", False
@@ -503,6 +531,9 @@ class AskService:
                         allow_dry_plan_fallback=allow_dry_plan_fallback,
                     )
 
+                if not owns_result():
+                    return results
+
                 if sql_valid_result := text_to_sql_generation_results["post_process"][
                     "valid_generation_result"
                 ]:
@@ -526,7 +557,7 @@ class AskService:
                         error_message = failed_dry_run_result["error"]
                         current_sql_correction_retries += 1
 
-                        self._ask_results[query_id] = AskResultResponse(
+                        self._ask_results[query_id] = expected = AskResultResponse(
                             status="correcting",
                             type="TEXT_TO_SQL",
                             rephrased_question=rephrased_question,
@@ -551,6 +582,9 @@ class AskService:
                                 "post_process"
                             ].get("reasoning")
 
+                        if not owns_result():
+                            return results
+
                         sql_correction_results = await self._pipelines[
                             "sql_correction"
                         ].run(
@@ -567,6 +601,9 @@ class AskService:
                             allow_dry_plan_fallback=allow_dry_plan_fallback,
                             sql_functions=sql_functions,
                         )
+
+                        if not owns_result():
+                            return results
 
                         if valid_generation_result := sql_correction_results[
                             "post_process"
@@ -586,8 +623,8 @@ class AskService:
                         ]
 
             if api_results:
-                if not self._is_stopped(query_id, self._ask_results):
-                    self._ask_results[query_id] = AskResultResponse(
+                if owns_result():
+                    self._ask_results[query_id] = expected = AskResultResponse(
                         status="finished",
                         type="TEXT_TO_SQL",
                         response=api_results,
@@ -602,8 +639,8 @@ class AskService:
                 results["metadata"]["type"] = "TEXT_TO_SQL"
             else:
                 logger.exception(f"ask pipeline - NO_RELEVANT_SQL: {user_query}")
-                if not self._is_stopped(query_id, self._ask_results):
-                    self._ask_results[query_id] = AskResultResponse(
+                if owns_result():
+                    self._ask_results[query_id] = expected = AskResultResponse(
                         status="failed",
                         type="TEXT_TO_SQL",
                         error=AskError(
@@ -628,8 +665,8 @@ class AskService:
             # Do not turn that query into FAILED (or correct/re-dispatch SQL).
             # Stop/rerun remains the original user operation; the UI re-observes
             # every registered child query before it permits a new task ID.
-            if not self._is_stopped(query_id, self._ask_results):
-                self._ask_results[query_id] = AskResultResponse(
+            if owns_result():
+                self._ask_results[query_id] = expected = AskResultResponse(
                     status="stopped",
                     type="TEXT_TO_SQL",
                     error=AskError(code="OTHERS", message="NATIVE_EXECUTION_UNKNOWN"),
@@ -641,8 +678,8 @@ class AskService:
         except Exception as e:
             logger.exception(f"ask pipeline - OTHERS: {e}")
 
-            if not self._is_stopped(query_id, self._ask_results):
-                self._ask_results[query_id] = AskResultResponse(
+            if owns_result():
+                self._ask_results[query_id] = expected = AskResultResponse(
                     status="failed",
                     type="TEXT_TO_SQL",
                     error=AskError(
