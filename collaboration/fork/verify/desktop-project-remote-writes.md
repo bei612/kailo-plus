@@ -127,3 +127,76 @@ Rust 合同及 Core 联合结果由合批单独记录，不用三侧结果替代
 回 ACTIVE。本版本生产 1631 INSERT 均进入已验证 guard，替换写入不接受该 kind。
 这是固定代码范围的结论；屏障位于 Rust 写者，部署时全部在线 writer 必须使用匹配
 实现，不外推旧 Relay 混跑、手工 SQL、恢复或外部分区维护期间仍能证明缺失。
+
+## Native 1631 publication epoch（2026-10-27）
+
+本批依设计 `3635890d5` 的 09 / 03 与 DD-81、DD-160、V-SCN-265，
+从 `dd8a36849bdc988f8ff1b76d6e046cc42cfb833e` 实现，epoch 行为检查固定
+`b45627e9b354bbb9689928bfa0fdf3673baa4acb`，最终产品为
+`91a82526b086116cd6d6ae4e421d1cf32d4d1898`。上文只靠 Community 与过窗的
+历史缺失判定不能外推到新 epoch 合同；旧没有 signed epoch 的未知意图保留 UNKNOWN，
+仍可消费原冻结 Community 的肯定证据，不能从后来部署事实回填旧 epoch。
+
+原 `native/community` 合同新增可选 `publicationEpoch`，Core 经原 CONTROL client
+实际读取 ready 的 NIP-11 publication policy，使用既有 budget 和有限期限 Relay client，
+并在等待前后核对同一 ACTIVE binding 的 Community、Host 与版本。不可用则不返回该
+可选字段，不提供默认 epoch。Native 经内部 Core 会话读取事实，不接受 Webview 自报；
+唯一 `kailo:publication` 标签在原 1631 签名前加入，已签事件、Community 与 epoch
+在发送前冻结进原 SQLite journal，没有新增表、授权动作或偏好权威。
+
+原 journal 的 EVENT_OUTCOME / NOT_DELIVERED 才能确认一次确切尝试未被接受。
+旧字符串 NOT_DELIVERED 或查询产生的 reconciliation 不授予重签权；缺原 Community
+时也不能采用当前 Host 的肯定回应。已冻结 Community 的旧已签无 epoch 尝试，
+若有原明确未接受的 OUTCOME，可在同一业务意图下产生新的 epoch 签名，原签事件与证据仍追加保留。新 negative proof 要求已签、冻结、
+当前可信 epoch 一致，并继续满足原 Core 时间窗、Relay settled 与 Community；
+ACK 仍须精确匹配 event ID 和 Community。
+
+原工具 SDK `sha256:3007729eb192341a4f004a88e42e1e66c94fc67d763acfc96568bd7311116018`，
+1 CPU / 2 GiB：原生成在 `d59b4ec2d` 补齐输入后退出 0，输出回填为 `c531428da`。
+固定 `c531428da4b668f3647878e17c51ddc1ae867ece` 的四侧原生成 check、
+原 compatibility 检查（547 schema、3 historical schema）、TypeScript 类型检查，
+以及 Rust、TypeScript、Go、Dart 各自原 native facts roundtrip 均退出 0，覆盖 epoch
+存在与旧响应缺省。Dart 原解析锁 SHA-256 为
+`d0690a2bc70d95e2d5ecd3312b60d2e6f2caa87105066533d7e00721b3feebde`。
+后续至 `b45627e9b` 只修改 Native publication 及其测试两文件；最终产品的 lint
+修正同样不改变这批合同输入。
+首次生成因导出遗漏共享 i18n 输入而退出 1，补齐 GitHub 输入后原生成通过；失败保留。
+
+原 Native SDK `sha256:df8a3475e3e32ecf5ac79f9c12763b8ce5d4f91a75c25007fd9bfa5b282fc081`，
+2 CPU / 16 GiB memory 与 memory+swap，固定 `b45627e9b`：原 publication 消费者
+15 passed、0 failed、0 ignored；原 git-write 消费者 9 passed、0 failed、0 ignored。
+实际 loopback HTTP、设备签名与 SQLite 原消费者继续覆盖提交/回执/重启边界。
+临时去掉签名 epoch 标签、临时允许仅凭旧 NOT_DELIVERED 字符串重签，两项原消费者
+分别真实断言失败、exit 101；逐字恢复后各 1 passed、exit 0。没有用模拟 policy
+生成器替代真实生产读取，也没有把这些受控 HTTP 用例称为在线 Core/Relay 验收。
+
+本批首轮 Clippy 因 ENOSPC 退出 101，OOMKilled=false；不是 lint 已通过。
+实际 `findmnt` 发现逻辑 `/volumes/data/kailo/check-cache` 是 NVMe 的 bind mount，
+前文仅按路径称缓存位于 Data 的描述不足以证明物理归属。本轮 source 与日志在真实
+Data；后续 Clippy 使用独立 Data target 与 compiler TMPDIR，原共享缓存不迁移、不清空。
+
+Data 首轮 Clippy 实际检查到 Native 后报告 lib 6 项、lib test 10 项 lint，退出 101；
+两种目标合计涉及 12 处诊断。保留该失败后修正 slice 借用、等价布尔式和测试中多余
+trim。两个旧消息构造器只由 cfg(test) 的 platform/e2e 和 messages 测试调用，因此
+限制到 cfg(test)，原测试仍保留。Tauri update_profile 的既有 8 个 IPC 参数不变，
+仅以带理由的局部 expect 接受参数数目的样式例外；没有关闭鉴权、验签或 -D warnings。
+
+最终 `91a82526b` 在同一原 Native SDK、2 CPU / 16 GiB、独立 Data target/TMPDIR：
+原 messages **9/9**、local_archive/store **15/15**、真实 Git HTTP 丢 ACK/重启
+消费者 **1/1**，均 0 ignored；`cargo clippy --offline --locked --lib --tests -- -D warnings`
+与前后原格式检查全部退出 0，OOMKilled=false。epoch 的 intent/publication/
+publication_tests/project_git_write 四文件与已验 `b45627e9b` 完全相同，因此没有重复
+原 15 项 epoch 测试或两项故障注入。没有执行需要在线平台的 ignored E2E。
+
+CI 原件位于 `/volumes/data/kailo/conformance/checks/` 的
+`native-epoch-wire-c531428da`、`native-epoch-b45627e9b`、
+`native-epoch-clippy-b45627e9b` 与 `native-epoch-lint-91a82526b` 等独立目录；
+固定源、实际限额、日志摘要、失败与恢复结果见
+[native-publication-epoch-receipt.json](native-publication-epoch-receipt.json)。
+四侧输入 3,521 文件、原 Native 输入 3,059 文件均与相应 GitHub 对象逐字一致，
+两个故障恢复文件也逐字一致。最终容器已实际清理，未占用 PG 或创建业务服务。
+
+Core native/community 的可信 policy 读取与新生成 Rust 字段需由根集成分支同 bridge
+一起编译和验收；本批 Native 与合同检查不替代该证据。没有部署匹配产物、生成安装包、
+执行 Win11 或真机操作，也不把历史缺 epoch/Community 的 UNKNOWN 称为完整 DD-81
+交付或可自动重签。
