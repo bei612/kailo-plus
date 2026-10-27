@@ -696,6 +696,9 @@ export const typeDefs = gql`
   }
 
   type RecommendedQuestionsTask {
+    queryId: String
+    threadId: Int
+    sourceResponseId: Int
     status: RecommendedQuestionsTaskStatus!
     questions: [ResultQuestion!]!
     error: Error
@@ -708,7 +711,15 @@ export const typeDefs = gql`
     taskId: String
   }
 
+  input ThreadRecommendationSelectionInput {
+    idempotencyKey: String!
+    queryId: String!
+    sourceResponseId: Int!
+    index: Int!
+  }
+
   input CreateThreadResponseInput {
+    recommendation: ThreadRecommendationSelectionInput
     question: String
     sql: String
     taskId: String
@@ -819,6 +830,10 @@ export const typeDefs = gql`
   }
 
   type ThreadResponse {
+    recommendationIntentKey: String
+    recommendationQueryId: String
+    recommendationSourceResponseId: Int
+    recommendationIndex: Int
     id: Int!
     threadId: Int!
     question: String!
@@ -1365,7 +1380,7 @@ export const typeDefs = gql`
     saveLearningRecord(data: SaveLearningRecordInput!): LearningRecord!
 
     # Recommendation questions
-    generateThreadRecommendationQuestions(threadId: Int!): Boolean!
+    generateThreadRecommendationQuestions(threadId: Int!, sourceResponseId: Int): RecommendedQuestionsTask!
     generateProjectRecommendationQuestions: Boolean!
     createInstantRecommendedQuestions(
       data: InstantRecommendedQuestionsInput!

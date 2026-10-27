@@ -68,6 +68,10 @@ export interface ThreadResponseAdjustment {
 }
 
 export interface ThreadResponse {
+  recommendationIntentKey?: string | null;
+  recommendationQueryId?: string | null;
+  recommendationSourceResponseId?: number | null;
+  recommendationIndex?: number | null;
   id: number; // ID
   askingTaskId?: number; // Reference to asking_task.id
   viewId?: number; // View ID, if the response is from a view

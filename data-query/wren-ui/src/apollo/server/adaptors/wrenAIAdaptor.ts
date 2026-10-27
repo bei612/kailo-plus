@@ -462,6 +462,7 @@ export class WrenAIAdaptor implements IWrenAIAdaptor {
     input: RecommendationQuestionsInput,
   ): Promise<AsyncQueryResponse> {
     const body = {
+      ...(input.queryId ? { native_task_id: input.queryId } : {}),
       mdl: JSON.stringify(input.manifest),
       previous_questions: input.previousQuestions,
       project_id: input.projectId,
@@ -478,6 +479,8 @@ export class WrenAIAdaptor implements IWrenAIAdaptor {
         `${this.wrenAIBaseEndpoint}/v1/question-recommendations`,
         body,
       );
+      if (input.queryId && res.data?.id !== input.queryId)
+        throw new Error('Recommendation task acknowledgement unavailable');
       logger.info(
         `Wren AI: Generating recommendation questions, queryId: ${res.data.id}`,
       );

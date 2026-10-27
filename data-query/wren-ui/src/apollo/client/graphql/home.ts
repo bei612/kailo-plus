@@ -140,6 +140,9 @@ const COMMON_RESPONSE = gql`
 
 const COMMON_RECOMMENDED_QUESTIONS_TASK = gql`
   fragment CommonRecommendedQuestionsTask on RecommendedQuestionsTask {
+    queryId
+    threadId
+    sourceResponseId
     status
     questions {
       question
@@ -245,6 +248,10 @@ export const CREATE_THREAD_RESPONSE = gql`
     $data: CreateThreadResponseInput!
   ) {
     createThreadResponse(threadId: $threadId, data: $data) {
+    recommendationIntentKey
+    recommendationQueryId
+    recommendationSourceResponseId
+    recommendationIndex
       ...CommonResponse
     }
   }
@@ -363,9 +370,12 @@ export const GENERATE_PROJECT_RECOMMENDATION_QUESTIONS = gql`
 `;
 
 export const GENERATE_THREAD_RECOMMENDATION_QUESTIONS = gql`
-  mutation GenerateThreadRecommendationQuestions($threadId: Int!) {
-    generateThreadRecommendationQuestions(threadId: $threadId)
+  mutation GenerateThreadRecommendationQuestions($threadId: Int!, $sourceResponseId: Int) {
+    generateThreadRecommendationQuestions(threadId: $threadId, sourceResponseId: $sourceResponseId) {
+      ...CommonRecommendedQuestionsTask
+    }
   }
+  ${COMMON_RECOMMENDED_QUESTIONS_TASK}
 `;
 
 export const GENERATE_THREAD_RESPONSE_ANSWER = gql`
