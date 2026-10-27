@@ -446,18 +446,27 @@ export default function HomeThread() {
         });
         const afterDispatch = await getUserConfig();
         if (!active() || !sameConfiguration(afterDispatch)) return;
-        if (response?.id === responseId)
-          updateThreadQuery((previous) => ({
-            ...previous,
-            thread: {
-              ...previous.thread,
-              responses: previous.thread.responses.map((current) =>
-                current.id === responseId
-                  ? { ...current, ...response }
-                  : current,
-              ),
-            },
-          }));
+        if (response?.id !== responseId || response.threadId !== threadId) {
+          // A receipt for another native row cannot settle this frozen intent.
+          // Keep the exact key for an explicit observation of the original task.
+          publishReceipt((current) => ({ ...current, [responseId]: {} }));
+          return;
+        }
+        updateThreadQuery((previous) =>
+          !active() || String(previous.thread?.id) !== String(threadId)
+            ? previous
+            : {
+                ...previous,
+                thread: {
+                  ...previous.thread,
+                  responses: previous.thread.responses.map((current) =>
+                    current.id === responseId
+                      ? { ...current, ...response }
+                      : current,
+                  ),
+                },
+              },
+        );
         const receipt =
           artifact === 'answer'
             ? response?.queryReceipt
