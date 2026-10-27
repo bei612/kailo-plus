@@ -193,7 +193,7 @@ export function RepositoryGitContent({ state, repository, projectId, pullRequest
     : <ContributorsPanel activityCounts={contributorActivityCounts} contributorPubkeys={contributorPubkeys}
       contributorPubkeysByGitIdentity={contributorPubkeysByGitIdentity} profiles={profiles} repoContributors={snapshot?.contributors ?? []} />;
   if (tab === "activity") return repositoryUnavailableState ?? (commitHash ? (
-    <ProjectCommitDetailPanel commit={snapshot?.commits.find(commit => commit.hash === commitHash) ?? null} commitHash={commitHash}
+    <ProjectCommitDetailPanel project={repository} commit={snapshot?.commits.find(commit => commit.hash === commitHash) ?? null} commitHash={commitHash}
       diff={state.commitDiffQuery.data} diffError={state.commitDiffQuery.error} diffLoading={state.commitDiffQuery.isLoading}
       originAgentName={selectedCommitPullRequest?.originAgentName} originChannelId={selectedCommitPullRequest?.channelId} />
   ) : (

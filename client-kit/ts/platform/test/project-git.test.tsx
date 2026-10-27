@@ -11,7 +11,7 @@ import {setLocale} from "../src/i18n";
 import {PlatformProvider} from "../src/react/context";
 import {PulseHostProvider,type PulseHost,type PulseEvent} from "../src/react/pulse/host";
 import {TooltipProvider} from "../src/react/sidebar/tooltip";
-import {ProjectsView,createProjectsGitHost,createNativeProjectsGitHost,type ProjectsHost} from "../src/react/projects";
+import {ProjectsView,EntityLinkAnchor,createProjectsGitHost,createNativeProjectsGitHost,type ProjectsHost} from "../src/react/projects";
 import type {ProjectWorkItemTarget} from "../src/react/projects/projectWorkItems";
 import {BffError} from "../src/transport";
 import {render,click} from "./render";
@@ -49,21 +49,25 @@ async function mount(f:ReturnType<typeof fixture>,target:ProjectWorkItemTarget,i
   const cache=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}});
   const pulse:PulseHost={scopeKey:f.host.scopeKey,pubkey:viewer,query:async()=>[],publish:vi.fn(),copy:vi.fn(),startDm:vi.fn(),mediaUrl:url=>url,
     renderComposer:()=>null,renderContent:content=><p data-testid="rendered-content">{content}</p>};
+  let showLink!:(href:string)=>void;
   let changeHost!:(host:ProjectsHost)=>void;
   let changeTarget!:(target:ProjectWorkItemTarget)=>void;
   const opened=vi.fn((_id:string|null,next?:ProjectWorkItemTarget)=>{if(interactive&&next)changeTarget(next);});
   const client=createBffClient({send:async()=>({status:200,body:{items:[]}})});
   function Surface(){
-    const [host,setHost]=useState(f.host),[currentTarget,setTarget]=useState(target);
+    const [host,setHost]=useState(f.host),[currentTarget,setTarget]=useState(target),[href,setHref]=useState<string|null>(null);
+    showLink=setHref;
     changeHost=setHost;changeTarget=setTarget;
     return <><div id="app-top-chrome-content"/><PlatformProvider client={client} locale="en">
       <QueryClientProvider client={cache}><TooltipProvider>
-        <ProjectsView host={host} selectedProjectId={f.projectId} workItemTarget={currentTarget} onSelectedProjectChange={opened}
-          renderWorkItems={children=><PulseHostProvider host={{...pulse,scopeKey:host.scopeKey}}>{children}</PulseHostProvider>}/>
+        {href ? <EntityLinkAnchor href={href} runtime={{host,copyLink:vi.fn(),onError:vi.fn(),onOpen:async(id,next)=>{
+          opened(id,next);setHref(null);setTarget(next);
+        }}}/> : <ProjectsView host={host} selectedProjectId={f.projectId} workItemTarget={currentTarget} onSelectedProjectChange={opened}
+          renderWorkItems={children=><PulseHostProvider host={{...pulse,scopeKey:host.scopeKey}}>{children}</PulseHostProvider>}/> }
       </TooltipProvider></QueryClientProvider></PlatformProvider></>;
   }
   const ui=await render(<Surface/>);
-  return {ui,opened,cache,switchHost:async(host:ProjectsHost)=>{await act(async()=>changeHost(host));}};
+  return {ui,opened,cache,pulse,showLink:async(href:string)=>{await act(async()=>showLink(href));},switchHost:async(host:ProjectsHost)=>{await act(async()=>changeHost(host));}};
 }
 
 const requests=(f:ReturnType<typeof fixture>,view:ProjectsGitQueryRequestView)=>f.gitQuery.mock.calls.map(([request])=>request).filter(request=>request.view===view);
@@ -129,6 +133,25 @@ describe("restored repository workspace Git tabs",()=>{
     await vi.waitFor(()=>expect(ui.querySelector('[data-testid="project-activity-feed-item"]')?.textContent).toContain("Initial import"));
     await click([...ui.querySelectorAll<HTMLButtonElement>('[data-testid="project-activity-feed-item"] button')].find(button=>button.textContent==="Initial import")!);
     expect(opened).toHaveBeenLastCalledWith(f.projectId,{repositoryId:f.repositoryId,tab:"commits",commitHash:commit.hash});
+  });
+
+  it("copies the original commit detail link and reopens that exact repository commit through the shared message consumer",async()=>{
+    const f=fixture();
+    const mounted=await mount(f,{repositoryId:f.repositoryId,tab:"commits",commitHash:commit.hash});
+    const {ui,pulse,opened}=mounted;
+    await vi.waitFor(()=>expect(ui.querySelector('[data-testid="project-commit-copy-link"]')).not.toBeNull());
+    vi.mocked(pulse.copy).mockResolvedValue(undefined);
+    await click(ui.querySelector<HTMLElement>('[data-testid="project-commit-copy-link"]')!);
+    const href=`buzz://repo?owner=${owner}&d=repo&tab=commits&commit=${commit.hash}`;
+    expect(pulse.copy).toHaveBeenCalledExactlyOnceWith(href);
+    await mounted.showLink(href);
+    await vi.waitFor(()=>expect(ui.querySelector('[data-buzz-link-kind="repo"]')?.getAttribute("aria-label")).toContain("Original repo"));
+    f.gitQuery.mockClear();
+    await click(ui.querySelector<HTMLElement>('[data-buzz-link-kind="repo"]')!);
+    await vi.waitFor(()=>expect(ui.querySelector('[data-testid="project-diff-files"]')).not.toBeNull());
+    expect(opened).toHaveBeenCalledExactlyOnceWith(f.projectId,{repositoryId:f.repositoryId,tab:"commits",commitHash:commit.hash});
+    expect(requests(f,ProjectsGitQueryRequestView.Diff)).toContainEqual({view:ProjectsGitQueryRequestView.Diff,repository,defaultBranch:"main",targetCommit:commit.hash});
+    expect(pulse.publish).not.toHaveBeenCalled();
   });
 
   it("renders a commit detail with the original diff UI",async()=>{

@@ -1,7 +1,6 @@
 // Buzz 779af8886caae1317b4de962082429867ab61503
 // desktop/src/features/projects/ui/ProjectCommitDetailPanel.tsx. Same header, meta rows, commit
-// body, "Discussed in" search and full-bleed Files changed. The copy-link button is not rendered:
-// `buzz://repo?tab=commits` links have no route in this host yet.
+// body, "Discussed in" search, commit share link and full-bleed Files changed.
 import { Calendar, GitCommitHorizontal, Hash, UserRound } from "lucide-react";
 import { getLocale } from "../../i18n";
 import { useUiT } from "../context";
@@ -13,6 +12,9 @@ import { ProjectOriginReference } from "./ProjectOriginReference";
 import { ProjectDiffFilesPanel } from "./ProjectPullRequestFilesChangedPanel";
 import { ProjectRichContent } from "./ProjectRichContent";
 import type { ProjectRepoCommit, ProjectRepoDiff } from "./projectGit";
+import { ShareLinkButton } from "./ShareLinkButton";
+import { commitShareLink } from "./projectShareLinks";
+import type { Repository } from "./projectModels";
 import { PROJECT_DETAIL_READING_COLUMN_CLASS } from "./projectPanelStyles";
 
 function commitDateLabel(timestamp: number) {
@@ -30,7 +32,8 @@ export function commitDiscussionQuery(commit: { hash: string; shortHash?: string
  * Detail view for a single commit: title and meta header, then collapsible
  * description and the commit-vs-parent diff.
  */
-export function ProjectCommitDetailPanel({ commit, commitHash, diff, diffError, diffLoading, originAgentName, originChannelId }: {
+export function ProjectCommitDetailPanel({ commit, commitHash, diff, diffError, diffLoading, originAgentName, originChannelId, project }: {
+  project: Repository;
   commit: ProjectRepoCommit | null;
   commitHash: string;
   diff: ProjectRepoDiff | null | undefined;
@@ -45,7 +48,11 @@ export function ProjectCommitDetailPanel({ commit, commitHash, diff, diffError, 
     <div className="flex w-full flex-1 flex-col overflow-hidden" data-project-detail-panel data-testid="project-commit-detail">
       <div className={PROJECT_DETAIL_READING_COLUMN_CLASS}>
         <header className="space-y-1 px-6 pb-3 pt-5">
-          <h3 className="line-clamp-2 text-lg font-semibold leading-6 text-foreground">{commit?.subject ?? shortHash}</h3>
+          <h3 className="line-clamp-2 text-lg font-semibold leading-6 text-foreground">{commit?.subject ?? shortHash}{" "}
+            <ShareLinkButton className="ml-0.5 inline-flex h-auto w-auto align-middle hover:bg-transparent"
+              label={t("projects.share.copyCommit")} link={commitShareLink(project, commit?.hash ?? commitHash)}
+              testId="project-commit-copy-link"/>
+          </h3>
           <p className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-muted-foreground">
             <span>{t("projects.git.committedLabel")}</span>
             {commit ? (

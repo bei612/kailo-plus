@@ -50,7 +50,7 @@ export function ProjectHomeCommitsSheet({ host, project, repository, pullRequest
   React.useEffect(() => () => onDetailChange(null), [onDetailChange]);
 
   return selectedCommitHash ? (
-    <ProjectCommitDetailPanel commit={selectedCommit} commitHash={selectedCommitHash} diff={commitDiffQuery.data} diffError={commitDiffQuery.error}
+    <ProjectCommitDetailPanel project={selectedCommitRepository} commit={selectedCommit} commitHash={selectedCommitHash} diff={commitDiffQuery.data} diffError={commitDiffQuery.error}
       diffLoading={commitDiffQuery.isLoading} originAgentName={selectedCommitPullRequest?.originAgentName}
       originChannelId={selectedCommitPullRequest?.channelId} />
   ) : (
