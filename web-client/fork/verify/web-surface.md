@@ -7243,7 +7243,7 @@ Windows 或 Mobile 设备验收；未新增或解除正式发布门禁。
 **当前实现的实际失败**：固定 `c11dda60c283a5e5e3757aebe0464c1e487a9ebf` 的
 原受限 Web Composer 检查中，新增编辑消费者将正文
 `original\n![image](https://static.klipy.com/original.gif)` 交给实际 Composer，
-编辑器插入 `edited ` 后读到的草稿正文为 `original\nedited `，不含图片 URL；
+编辑器插入 `edited\u0020` 后读到的草稿正文为 `original\nedited\u0020`（末尾为空格），不含图片 URL；
 该断言实际失败。原日志在
 `/volumes/data/kailo/verification/composer-gif-draft/c11dda60c/check.log`，
 摘要及整批 86/88、exit 1 保留在 [GIF 草稿回执](composer-gif-draft-receipt.json)。
