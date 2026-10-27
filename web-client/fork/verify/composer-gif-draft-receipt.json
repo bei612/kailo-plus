@@ -1,0 +1,140 @@
+{
+  "source_commit": "4ba32ff102e7fff83f35d5cf15da8abe3213b61b",
+  "product_commit": "cb1d6b5a875ab28a444cf784f4123b60d025f8b5",
+  "base_commit": "a4bc4e96bf1ff9ede2363423a568a55eb12a2563",
+  "sdk": "sha256:3007729eb192341a4f004a88e42e1e66c94fc67d763acfc96568bd7311116018",
+  "source_directory": "/volumes/data/kailo/verification/composer-body/31a2c67c3/source",
+  "source_inputs_checked": 3456,
+  "source_mismatches": [],
+  "installed_platform_source_files": {
+    "web": 1040,
+    "desktop": 1040
+  },
+  "limits": {
+    "cpu": 1,
+    "memory_bytes": 4294967296,
+    "memory_swap_bytes": 4294967296,
+    "pids": 256
+  },
+  "positive": {
+    "web_composer": 91,
+    "web_tsc": 0,
+    "desktop_gif_api": 10,
+    "desktop_tsc": 0,
+    "i18n_check": 0,
+    "shared_gif_picker": 8,
+    "shared_prod_tsc": 0,
+    "shared_test_tsc": 0
+  },
+  "shared_checks_source": "cb1d6b5a875ab28a444cf784f4123b60d025f8b5",
+  "shared_source_unchanged_in_final": true,
+  "negative": [
+    {
+      "mutation": "persist",
+      "exit": 1,
+      "log_sha256": "b3985f4850e8328b0bcba4c36ce10a157e74a3367305e8ad1006622194f64453",
+      "source_commit": "eec8b00a24952815e9614e85397f2ef075ff40e6"
+    },
+    {
+      "mutation": "restore",
+      "exit": 1,
+      "log_sha256": "78e0a3085d364ccc0ebf828ef3288e217524b23aa32a420d8426ca96c97554ad",
+      "source_commit": "eec8b00a24952815e9614e85397f2ef075ff40e6"
+    },
+    {
+      "mutation": "remove pending GIFs from original auto-submit readiness",
+      "source_commit": "4ba32ff102e7fff83f35d5cf15da8abe3213b61b",
+      "exit": 1,
+      "log_sha256": "8660ba9665c51b3f231f518903935d28c0e23fc7220ac168387b3ab4d82b1843"
+    }
+  ],
+  "restored": {
+    "eec8_web_gif_cases": 4,
+    "eec8_unselected_original_cases": 83,
+    "final_web_gif_auto_cases": 4,
+    "final_unselected_original_cases": 87,
+    "source_bytes_identical": true
+  },
+  "failure_history": [
+    {
+      "source": "cb1d6b5a875ab28a444cf784f4123b60d025f8b5",
+      "web_passed": 85,
+      "web_failed": 3,
+      "exit": 1,
+      "cause": "New empty-editor GIF fixtures clicked during initialization; edit fixture assumed a GIF picker despite the original edit-mode capability being absent.",
+      "log_sha256": "a5debfe69eb486a2f30c8aae9366d58987fcd2ef94e4d3931800be4c18f5c31c"
+    },
+    {
+      "source": "c11dda60c283a5e5e3757aebe0464c1e487a9ebf",
+      "web_passed": 86,
+      "web_failed": 2,
+      "exit": 1,
+      "cause": "One new empty-editor picker fixture still raced initialization; the attempted external-GIF edit test exposed pre-existing TipTap image loss, unrelated to the hashless draft-media change.",
+      "log_sha256": "42106c224d99604fdf7b45591c7f22b6bb53890539d3b958d94bd5d97ae0dfc8"
+    },
+    {
+      "source": "de40e881256863d9452633aebd2ee21de56ebddf",
+      "web_passed": 86,
+      "web_failed": 1,
+      "exit": 1,
+      "cause": "The existing human picker test dispatched to a null asynchronous candidate. The final test waits for the actual candidate and retains original pubkey and UNKNOWN-key assertions.",
+      "log_sha256": "76f1f36b29f436d894a89ce3ec9c8b81231d2b9641b69d80e369f15f51071b92"
+    },
+    {
+      "source": "3efb37eb78454b99a3f8d5fe6fc9576057bd2776",
+      "web_passed": 90,
+      "web_failed": 1,
+      "exit": 1,
+      "cause": "New rejection fixture required immediate inline restoration; original scheduling may offer failed recovery. Final consumer uses its real Restore control and still checks GIF, content, cleared intent, one publication and zero uploads.",
+      "log_sha256": "02f55bd8af4baf9c09d7d5813bd9cc78ae7ce54e2b6506fb8a0c165a03b5e537"
+    }
+  ],
+  "job_directory": "/volumes/data/kailo/verification/composer-gif-draft/4ba32ff10",
+  "files_sha256": {
+    "eec8b00a2": {
+      "runner.sh": "e0dd6363438e702a875c3c7f8f74a289fd7f914239f5f2a873aadbd36cfbb03b",
+      "check.log": "ce5218a5e8cb56de2cc151a8983685343743eb039708a692b612ea9749dd49a9",
+      "result.log": "4d7c1e877fcbdd5b282d885f439eb050edfec59fa991be3c757734c413fca2b1",
+      "limits.log": "b507d6cfcb3f6c6b732468fdee4b1641dca3d1ead0324d2b9d9f3a27c178b6bb",
+      "prearchive-preflight.log": "a654be8ccbbcbdbd918e4059912e2851ca1ed16009256231b77e136ceceed2ef",
+      "preflight.log": "d08fa98df7722b5c85339c67b60f3644cee4bb3296d4b326e43ee4d5e82e657b",
+      "oom.log": "2ed27c1421e6928dbe13dbfdb5c59e1045b30341fe7ebe05700006bc5ac572c0",
+      "host-config.json": "0573b40560bd53dd5bae9ee7ca6d6a5ddd1e8e961ce7e9e97a5444a88e137f17",
+      "tmp/original.sha256": "cf861e7286eb96b149ec72e7ad843547eca4e9bea1ff210bc03cc0bd366beda8",
+      "tmp/restored.sha256": "cf861e7286eb96b149ec72e7ad843547eca4e9bea1ff210bc03cc0bd366beda8",
+      "tmp/restored.log": "b92b9eaa3214159d00eed69e2911b6c1672c198b81ce21d19ae3d0585720307b",
+      "tmp/negative-persist.log": "b3985f4850e8328b0bcba4c36ce10a157e74a3367305e8ad1006622194f64453",
+      "tmp/negative-persist-exit.log": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+      "tmp/negative-restore.log": "78e0a3085d364ccc0ebf828ef3288e217524b23aa32a420d8426ca96c97554ad",
+      "tmp/negative-restore-exit.log": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865"
+    },
+    "4ba32ff10": {
+      "runner.sh": "b6133e47cb9f7f47d0ef48b51912f94b2eba3efce81c81597b46c84f9fb4edf4",
+      "check.log": "a6b4c559f81280e98ec37f8c01d8215f07069ad8a37961b7bbb9ff9fc0fda00e",
+      "result.log": "932fc0f778d9d7516bbd395e5a249daf9830678a697b99f542c58a40b5ebc147",
+      "limits.log": "d194f86b305cdadec35db797db24ac06073305e81f49cf54dfcd11083d4aee38",
+      "prearchive-preflight.log": "971b59945b23633b07fb4ee331da4394e6c444e178dd3a47e08478f4ee252be6",
+      "preflight.log": "5fa892fdb60b68ad64990403b82849275a444b5815b9652f4dcdac0d2ae15902",
+      "oom.log": "2ed27c1421e6928dbe13dbfdb5c59e1045b30341fe7ebe05700006bc5ac572c0",
+      "host-config.json": "1e8850b47a410e84e83c92c1d8c21040665a24a5bdbfd4801908fe9ba5b198b8",
+      "tmp/original.sha256": "2882736ab34e64ff13d9d37136c57424f8a73db86e66020d2559de9bec219450",
+      "tmp/restored.sha256": "2882736ab34e64ff13d9d37136c57424f8a73db86e66020d2559de9bec219450",
+      "tmp/restored.log": "3192a1e3316946537d6a1a80888a19cf1d8ba689dff3c88ede157e11af0c9d58",
+      "tmp/negative-auto.log": "8660ba9665c51b3f231f518903935d28c0e23fc7220ac168387b3ab4d82b1843",
+      "tmp/negative-auto-exit.log": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865"
+    }
+  },
+  "remaining": [
+    "Historical selected GIFs that never reached the old draft store cannot be reconstructed.",
+    "Existing external GIF editing loses image Markdown during original TipTap hydration and is not fixed or counted as covered here.",
+    "Tests use original React/TipTap consumers with scripted BFF; no deployed browser, native device, installation, or full release validation."
+  ],
+  "additional_product_commits": [
+    "5db269a53e7fa1664896f2909b355ecdce86f7b9"
+  ],
+  "native_checks_source": "eec8b00a24952815e9614e85397f2ef075ff40e6",
+  "shared_native_source_unchanged_in_final": true,
+  "prior_receipt_sha256": "bd62e11086e33c090ce46622ea8943f7e578158d60f5047e10046d6670d4e92c",
+  "prior_job_directory": "/volumes/data/kailo/verification/composer-gif-draft/eec8b00a2",
+  "navigation_scope": "Original autoSendDraftKey/onAutoSendConsumed consumer: GIF-only unsent sends once after consumption and clears; rejected restores; UNKNOWN consumes but never auto-retries and explicit Send retains key; active original upload blocks until acknowledgement. Full PlatformApp router not mounted."
+}

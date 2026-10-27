@@ -7173,3 +7173,64 @@ CI 原件位于 `/volumes/data/kailo/verification/composer-recovery/` 对应固�
 这些检查使用原 React/TipTap/发送消费者和脚本化 BFF、媒体回执，
 不等于真实浏览器、设备或生产上传验收；原 React act 与 linkify 警告保留，
 最终没有未处理测试错误。本批未执行 Native 套件、全 Web 项目门禁、制品发布或部署。
+
+
+### 2026-10-27：普通 GIF 草稿保存、恢复与 Inbox 发送
+
+关联 DD-74、DD-125(5)(11)、DD-146 与 SF-BUZ-56(4)。固定最终源码为
+`4ba32ff102e7fff83f35d5cf15da8abe3213b61b`，比较基准
+`a4bc4e96bf1ff9ede2363423a568a55eb12a2563`；源码及消费者 7 文件 +259/-35。
+原 Buzz `779af8886caae1317b4de962082429867ab61503` 的
+`ComposerEmojiPicker.handleGifSelect` 通过 `klipyGifAttachment` 将所选 GIF 存为
+无哈希的 `image/gif` pendingImeta，草稿生命周期保存同一结构。
+此前 Web 只保留 React pendingGifs，未发送就切换草稿会丢失 GIF，纯 GIF 草稿也不会落盘。
+
+现将既有 Native `gifAttachment/klipyGifFilename` 原样移到共享独立子路径，两宿主
+消费同一转换。Web 正常草稿写入原 pendingImeta，恢复时只拆出空哈希且 MIME 为
+image/gif 的原标记；有哈希的真实文件仍是确认附件，即使 URL 相同也不合并或删除。
+GIF 仍只沿原正文 Markdown 发送，不上传、不生成 imeta；缺字节文件名继续由原
+pendingSend 恢复占位处理。原 UNKNOWN extras 与幂等键不迁移、不换键。
+选择器的来源准入、分享上报、Relay/BFF 及本机签名路径均未改变。
+
+交叉复核另发现原 autoSendDraftKey 就绪条件遗漏 pendingGifs：纯 GIF 从 Inbox
+草稿菜单恢复后不会发送。现同一就绪表达式纳入 GIF，恢复状态变化使原 shared
+useComposerAutoSubmit 的 ready effect 重新判断。仍先消费一次导航引用，再走原发送；
+UNKNOWN 只呈现原提示，明确 Send 才沿原键重试。原未决上传继续阻止自动发送。
+Forum 与 edit 的原 GIF 选择能力均未开放，本批不增加这两种入口。
+
+原 SDK `sha256:3007729eb192341a4f004a88e42e1e66c94fc67d763acfc96568bd7311116018`，
+实际限额 1 CPU / 4 GiB 内存及同额 memory+swap / pids 256，使用原实际 Data
+源码与日志目录。最终 Web 类型检查与完整 Composer 91/91 退出 0；其中新增八项
+覆盖实际 picker→空正文草稿→卸载重挂→发送、混合文件、移除、身份切换/UNKNOWN，
+以及原导航消费后的成功清空、明确拒绝恢复、UNKNOWN 不自动重发、上传待回执。
+拒绝时原恢复条若出现，消费者实际点击 Restore 后再核对 GIF、空正文及已清除意图。
+导航测试消费真实 Composer 的 autoSendDraftKey/onAutoSendConsumed 接缝，
+未挂载完整 PlatformApp 路由，不称真实浏览器导航验收。
+
+共享生产/测试类型及 GIF picker 8/8 在固定 `cb1d6b5a8` 通过；Desktop 类型与原
+GIF API 10/10 在 `eec8b00a2` 通过。这两处源码与最终固定树逐字相同，未重复运行。
+两宿主按原冻结锁刷新 file 包，最终各 1,040 个实际解析源码文件逐字一致；
+3,456 个最终 GitHub 归档输入无差异，容器已清理。
+
+三项真实故障均保留：在 `eec8b00a2` 去掉 GIF 持久化或恢复，各导致四个原消费者
+失败退出 1，逐字还原后四项通过；在最终固定点去掉 GIF 自动发送就绪条件，原导航
+消费者实际三项失败退出 1，逐字还原后四项通过。没有以辅助函数检查替代原用户操作。
+首次失败原件逐项保留，不记为整批成功：
+
+- `cb1d6b5a8`：85/88，两项初始 GIF picker 未完成选择，一项错误假设 edit 有 picker。
+- `c11dda60c`：86/88，一项初始 picker 仍未选择，一项揭露既有外链 GIF 编辑丢图。
+- `de40e8812`：86/87，旧成员候选未就绪就点击；仅补等待真实候选，原身份/key断言保留。
+- `3efb37eb7`：90/91，新拒绝用例错误要求立即内联恢复；改用实际存在的原恢复入口。
+
+原 React act/linkify 警告保留，最后检查没有未处理错误。
+
+[完整回执](composer-gif-draft-receipt.json) SHA-256：
+`b7af9b3a3022aa1e0e1e1e3003962f9316e85fbbe10ee51d11b46a144dc5e9b4`。
+原件位于 `/volumes/data/kailo/verification/composer-gif-draft/` 下各固定源码目录；
+此前 eec8 完整检查及输入回执仍独立保留，后续仅复用其已释放 source/deps。
+
+剩余边界：历史从未保存的 GIF 无法补造。实测原 Web 编辑外链 GIF 时，正文图片在
+原 TipTap hydration 中丢失；当前 Native 与固定上游也仅按 imeta 标签构造编辑附件，
+但本轮未运行 Native 编辑消费者，不据此声称其真实结果。该旧编辑问题未由本批修复，
+也未计入 GIF 草稿验收。没有 schema/API/Workflow 变化、新发布权威、安装包、部署、
+Windows 或 Mobile 设备验收；未新增或解除正式发布门禁。
