@@ -7,6 +7,7 @@ import {
   AskHistory,
   AskResult,
   AskResultStatus,
+  AskResultType,
   AsyncQueryResponse,
   RecommendationQuestionsInput,
   RecommendationQuestionsResult,
@@ -361,7 +362,7 @@ export class WrenAIAdaptor implements IWrenAIAdaptor {
       const res = await axios.get(
         `${this.wrenAIBaseEndpoint}/v1/asks/${queryId}/result`,
       );
-      return this.transformAskResult(res.data);
+      return this.transformAskResult(res.data, queryId);
     } catch (err: any) {
       logger.debug(
         `Got error when getting ask result: ${getAIServiceError(err)}`,
@@ -963,7 +964,7 @@ export class WrenAIAdaptor implements IWrenAIAdaptor {
     }
   }
 
-  private transformAskResult(body: any): AskResult {
+  private transformAskResult(body: any, queryId: string): AskResult {
     const { status, error } = this.transformStatusAndError(body);
     const candidates = (body?.response || []).map((candidate: any) => ({
       type: candidate?.type?.toUpperCase() as AskCandidateType,
@@ -974,6 +975,11 @@ export class WrenAIAdaptor implements IWrenAIAdaptor {
 
     return {
       type: body?.type,
+      ...(status === AskResultStatus.FINISHED && !error && body?.type === AskResultType.GENERAL
+        && body?.completion && typeof body.completion === 'object'
+        && Object.keys(body.completion).sort().join(',') === 'content,query_id'
+        && body.completion.query_id === queryId && typeof body.completion.content === 'string'
+        ? { completion: { queryId, content: body.completion.content } } : {}),
       status: status as AskResultStatus,
       error,
       response: candidates,

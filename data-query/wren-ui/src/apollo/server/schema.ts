@@ -664,6 +664,7 @@ export const typeDefs = gql`
   }
 
   type AskingTask {
+    completion: String
     status: AskingTaskStatus!
     type: AskingTaskType
     error: Error

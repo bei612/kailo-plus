@@ -58,6 +58,7 @@ const COMMON_CHART_DETAIL = gql`
 
 const COMMON_ASKING_TASK = gql`
   fragment CommonAskingTask on AskingTask {
+    completion
     status
     type
     candidates {

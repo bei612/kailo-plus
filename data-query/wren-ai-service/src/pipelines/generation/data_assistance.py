@@ -120,27 +120,30 @@ class DataAssistance(BasicPipeline):
         self._user_queues[query_id].put_nowait(chunk.content)
 
     async def get_streaming_results(self, query_id):
-        async def _get_streaming_results(query_id):
-            return await self._user_queues[query_id].get()
-
         if query_id not in self._user_queues:
             self._user_queues[
                 query_id
             ] = asyncio.Queue()  # Ensure the user's queue exists
+        queue = self._user_queues[query_id]
         while True:
             try:
                 # Wait for an item from the user's queue
                 result = await asyncio.wait_for(
-                    _get_streaming_results(query_id), timeout=120
+                    queue.get(), timeout=120
                 )
                 if result is None:
-                    del self._user_queues[query_id]
+                    if self._user_queues.get(query_id) is queue:
+                        del self._user_queues[query_id]
                     yield None
                     break
                 if result:
                     yield result
             except TimeoutError:
                 break
+
+    def retire_streaming_results(self, query_id):
+        # Existing waiters retain their queue and can still receive its sentinel.
+        self._user_queues.pop(query_id, None)
 
     @observe(name="Data Assistance")
     async def run(

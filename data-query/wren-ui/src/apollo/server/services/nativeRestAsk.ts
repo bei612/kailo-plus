@@ -11,6 +11,7 @@ import {
   AskResult,
   AskResultStatus,
   AskResultType,
+  generalCompletion,
   TextBasedAnswerStatus,
   WrenAILanguage,
 } from '../models/adaptor';
@@ -223,6 +224,13 @@ export async function readNativeAskHistory(
       result.queryReference
     )
       throw unavailable();
+    if (result.completionQueryId !== selected.id) {
+      // Historical doneQueryId may only describe a consumed queue tail. Keep
+      // its body unchanged; only the same original full GET can confirm it.
+      const complete = generalCompletion(await components.wrenAIAdaptor.getAskResult(selected.id), selected.id);
+      if (complete === undefined || complete !== selected.responsePayload.explanation)
+        throw unavailable();
+    }
   } else {
     const source = result.queryReference;
     if (
@@ -269,7 +277,10 @@ export async function readNativeAskHistory(
     canonical(current.responsePayload) !== canonical(selected.responsePayload)
   )
     throw unavailable();
-  if (sqlOnly) await metadata(ctx, proof.metadataReference);
+  if (sqlOnly || selected.responsePayload.type === 'NON_SQL_QUERY')
+    await metadata(ctx, proof.metadataReference);
+  if (!isGovernedQueryMode())
+    throw new NativeQueryRefusal(412, 'QUERY_ADMISSION_UNAVAILABLE');
   const { nativeAsk: _requestProof, ...requestPayload } =
     current.requestPayload;
   const { nativeAsk: _resultProof, ...responsePayload } =
@@ -482,6 +493,7 @@ export async function governedRestAsk(
         : []);
     const visibleHistories = [];
     const authorize = async () => {
+      requireSummaryMode();
       await metadata(ctx, metadataReference);
       visibleHistories.length = 0;
       for (const source of histories) {
@@ -509,6 +521,7 @@ export async function governedRestAsk(
           : await native.readHistory(token, previous);
         visibleHistories.push({ ...previous, ...visible });
       }
+      requireSummaryMode();
     };
     await authorize();
     const prepared = await history.prepareNativeGeneration({
@@ -580,7 +593,8 @@ export async function governedRestAsk(
     // after settlement; do not reopen the non-replayable stream or create AI.
     if (
       current.statusCode === 202 &&
-      current.responsePayload.nativeAsk.doneQueryId === key
+      current.responsePayload.nativeAsk.doneQueryId === key &&
+      (current.responsePayload.type !== 'NON_SQL_QUERY' || current.responsePayload.nativeAsk.completionQueryId === key)
     ) {
       if (!(await settledQueries())) return;
       if (!(await advance(current.responsePayload, 200))) {
@@ -591,8 +605,7 @@ export async function governedRestAsk(
     if (current.statusCode === 200) {
       if (!(await settledQueries())) return;
       const visible = await readNativeAskHistory(ctx, config, native, current);
-      if (!sqlOnly && visible.responsePayload.type !== 'NON_SQL_QUERY')
-        requireSummaryMode();
+      requireSummaryMode();
       if (streaming) {
         res.setHeader('Content-Type', 'text/event-stream');
         res.flushHeaders();
@@ -1065,6 +1078,33 @@ export async function governedRestAsk(
         return;
       }
     }
+    const completeGeneral = async (emitted?: string): Promise<boolean> => {
+      const result = await components.wrenAIAdaptor.getAskResult(key);
+      await authorize();
+      const complete = generalCompletion(result, key);
+      if (complete === undefined) return false;
+      if (!(await advance({
+        ...current.responsePayload,
+        type: 'NON_SQL_QUERY', explanation: complete,
+        nativeAsk: { ...current.responsePayload.nativeAsk, doneQueryId: key, completionQueryId: key },
+      }, 202))) { pending(); return true; }
+      if (!(await settledQueries())) return true;
+      await authorize();
+      if (!(await advance(current.responsePayload, 200))) { pending(); return true; }
+      const visible = await readNativeAskHistory(ctx, config, native, current);
+      requireSummaryMode();
+      if (emitted !== undefined && streaming && !complete.startsWith(emitted)) {
+        // Durable full History is available, but this observer only saw a tail.
+        pending(); return true;
+      }
+      if (emitted === undefined) block(EventType.CONTENT_BLOCK_START, ContentBlockContentType.EXPLANATION);
+      const remainder = emitted === undefined ? complete : complete.slice(emitted.length);
+      if (remainder) block(EventType.CONTENT_BLOCK_DELTA, remainder);
+      block(EventType.CONTENT_BLOCK_STOP);
+      respond(200, { id: key, ...visible.responsePayload });
+      return true;
+    };
+    if (general && await completeGeneral()) return;
     if (current.responsePayload.nativeAsk.streamClaimed) {
       pending();
       return;
@@ -1121,6 +1161,10 @@ export async function governedRestAsk(
           await authorize();
           if (query) await readSummaryHistory(query);
           if (event.done === true && event.queryId === key) {
+            if (general) {
+              if (!(await completeGeneral(text))) pending();
+              return;
+            }
             const emitted = text;
             if (!general) {
               const result =
@@ -1200,6 +1244,7 @@ export async function governedRestAsk(
           block(EventType.CONTENT_BLOCK_DELTA, event.message);
         }
       }
+      if (general && await completeGeneral(text)) return;
       pending();
     } finally {
       clearTimeout(timer);
