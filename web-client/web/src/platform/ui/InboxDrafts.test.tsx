@@ -139,7 +139,7 @@ it.each(["en", "zh-CN"] as const)("keeps the original three-participant DM sourc
   } finally {cache.clear(); views.items = [];}
 });
 
-it.each(["send", "collision", "nonparticipant", "wrong-channel", "wrong-root", "missing", "revoked", "identity", "generation", "unmount"] as const)("keeps DM thread draft restoration inside the admitted original target (%s)", async scenario => {
+it.each(["send", "collision", "nonparticipant", "wrong-channel", "wrong-root", "missing", "revoked", "identity", "generation", "draft-changed", "intent-changed", "unmount"] as const)("keeps DM thread draft restoration inside the admitted original target (%s)", async scenario => {
   const scope="binding", native="native", rootId="a".repeat(64), replyId="b".repeat(64);
   const entry={key:`thread:${scope}:${rootId}:${replyId}`,draft:{...draft,channelId:scope}};
   const conversation:ConversationView={id:scope,channelId:native,participantPrincipalIds:["alice","peer"],state:ConversationViewState.Active,operationId:"op",version:1};
@@ -149,7 +149,7 @@ it.each(["send", "collision", "nonparticipant", "wrong-channel", "wrong-root", "
   let release!: (page:{events:ReturnType<typeof anchorEvents>})=>void;
   const read=vi.fn().mockImplementation(async()=>{
     if(scenario==="revoked") throw new Error("Forbidden");
-    if(["identity","generation","unmount"].includes(scenario)) return new Promise(resolve=>{release=resolve;});
+    if(["identity","generation","draft-changed","intent-changed","unmount"].includes(scenario)) return new Promise(resolve=>{release=resolve;});
     return {events:scenario==="missing" ? [] : anchorEvents(scenario==="wrong-channel" ? "foreign" : native,scenario==="wrong-root" ? "d".repeat(64) : rootId,replyId)};
   });
   const client={conversationMessages:read,workspaceChannel:vi.fn()} as unknown as BffClient;
@@ -174,10 +174,12 @@ it.each(["send", "collision", "nonparticipant", "wrong-channel", "wrong-root", "
     } else {
       if(scenario==="identity") {await render("bob"); await render("alice");}
       if(scenario==="generation") {views.items=[{...conversation,version:2}]; await render();}
+      if(scenario==="draft-changed") {entry.draft={...entry.draft,content:"new text at the same timestamp"}; await render();}
+      if(scenario==="intent-changed") {entry.draft={...entry.draft,sendIntent:{key:"new-frozen-key",signature:"new-frozen-body"}}; await render();}
       if(scenario==="unmount") await act(async()=>root.render(null));
       if(release) await act(async()=>release({events:anchorEvents(native,rootId,replyId)}));
       expect(views.open).not.toHaveBeenCalled();
-      if(!["identity","generation","unmount"].includes(scenario)) expect(views.toast).toHaveBeenCalledWith("Destination unavailable");
+      if(!["identity","generation","draft-changed","intent-changed","unmount"].includes(scenario)) expect(views.toast).toHaveBeenCalledWith("Destination unavailable");
       else expect(views.toast).not.toHaveBeenCalled();
     }
     expect(client.workspaceChannel).not.toHaveBeenCalled();
