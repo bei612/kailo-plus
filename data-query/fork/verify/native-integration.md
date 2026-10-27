@@ -13298,3 +13298,66 @@ This completes these original file checks, not all Wren suites or live
 Core/provider/receiver/browser acceptance. Formal artifacts, release admission and
 receiver activation remain separate. No production configuration, deployment,
 shared business database or source trust changed.
+
+
+## Instant recommendation observation retirement (2026-10-27)
+
+For **DD-12 / SS-WRN-GOVERNANCE**, the original `useAskPrompt` recommendation
+creation/read chain now follows the original question's observation lifetime.
+Previously a recommendation creation ACK arriving after Close could restart
+polling, and Apollo data for an old recommendation task could enter the new
+question's recommendation selection surface. The original question generation
+and a local recommendation observation generation reject retired ACKs. Current
+results also require the original Apollo query variables to match the accepted
+recommendation task. Close, a new question, rerun or another observed question
+stops the old recommendation poll; unmount retires its pending ACK. No native
+asking task is canceled or reissued by this fix, and no API, schema or backend
+authorization contract changes.
+
+Fixed source **`14f1243af891f884373fde04a15e980a0171b7fc`**, based on
+`5a1184525d7941067d81384f504d9fd431fe39c3`, passed the complete original
+`src/askingStream.test.tsx`: **50 / 50**, zero skipped/failed. This includes eight
+new original-hook cases covering Close, recommendation-only stop, new-question
+and unmount late ACKs; close/reopen of the same query with an old poll result;
+and unchanged current successful, empty and failed recommendation results.
+Complete original TypeScript checking and relevant Next lint / Prettier checks
+also exited **0**. Tests substitute React scheduling and GraphQL responses; this
+is not an actual browser, Apollo network or model-provider test.
+
+CI fetched the fixed GitHub source, compared the original dependency locks and
+reused the existing installation without copying or installing dependencies.
+The original Node 18 image
+`sha256:f9ab18e354e6855ae56ef2b290dd225c1e51a564f87584b9bd21dd651838830e`
+ran nonroot with **4 CPU / 4 GiB / equal swap**, network disabled, no database.
+Original container-safety preflight and actual limit readback passed. Source,
+tmp and logs stayed on actual Data `/dev/sda1`. Original upstream status ran in
+the existing SDK with read-only reference metadata: WrenAI-ui-0.32.2 remained at
+its fixed `c5f02a0391c8` baseline, with no new upstream commit.
+
+Two mutations of the private fixed-source export were actually detected:
+
+| Removed boundary | Actual failing cases | After byte restoration |
+| --- | ---: | ---: |
+| Post-create retired question/recommendation ACK rejection | 5 | 5 selected passed |
+| Current recommendation query-variable match | 1 | Full original file, 50 passed |
+
+Both negative runs exited **1**. Their commands selected only relevant cases,
+leaving 45 / 49 other tests unselected respectively; this does not describe the
+complete normal/restored file result. Original bytes were restored after each
+mutation, and all **618 input Git blobs** matched fixed source after completion.
+Own Node/metadata containers were removed and absence read back.
+
+The earlier `7976a7509` run applied original Prettier formatting before its
+50 tests and static checks passed. Its final fixed-input comparison correctly
+failed because formatting changed input bytes; it is retained as **exit 1**,
+not fixed-source acceptance. Exact formatting was committed before the final
+fixed run. Logs for both runs remain in the original verification directory.
+
+The terminal receipt is
+`/volumes/data/kailo/verification/buzz-r10/wren-recommend-14f1243af-check/receipt.json`,
+SHA-256 `7f40c885e55d200be8bab2932c917fbb04a40782b27717f575162a87cb870c09`.
+The unchanged repository copy is [the recommendation observation receipt](recommendation-observation-receipt.json).
+It records fixed inputs, log hashes, actual limits, faults/restoration and cleanup.
+Prior receipts are unchanged. Formal artifacts, release admission, receiver
+activation and real provider/browser acceptance remain separate; no deployment,
+production configuration or source-trust policy changed.
