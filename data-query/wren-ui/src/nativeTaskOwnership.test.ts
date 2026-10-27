@@ -622,8 +622,10 @@ describe('original native planning HTTP stream and HUMAN task owner', () => {
         .mockResolvedValueOnce(general() as any)
         .mockImplementation(async () => {
           if (change === 'revoked') revoked = true;
-          if (change === 'mode')
+          if (change === 'mode') {
             delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+            delete process.env.WREN_PLATFORM_BINDING_CONFIG_FILE;
+          }
           if (change === 'project') task.projectId = 8;
           const result = general(
             change === 'missing'
@@ -701,8 +703,10 @@ describe('original native planning HTTP stream and HUMAN task owner', () => {
         .mockImplementation(async () => {
           if (change === 'revoked') revoked = true;
           if (change === 'project') task.projectId = 8;
-          if (change === 'mode')
+          if (change === 'mode') {
             delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+            delete process.env.WREN_PLATFORM_BINDING_CONFIG_FILE;
+          }
           if (change === 'snapshot') task.question = 'changed';
           return general(
             change === 'oversize' ? 'x'.repeat(5000) : 'private full',
