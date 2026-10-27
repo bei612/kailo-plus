@@ -4,7 +4,6 @@ import type { Knex } from 'knex';
 import {
   AskResultStatus,
   RecommendationQuestionsResult,
-  RecommendationQuestionsInput,
   RecommendationQuestion,
   WrenAIError,
   RecommendationQuestionStatus,
