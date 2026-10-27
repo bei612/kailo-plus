@@ -12775,7 +12775,6 @@ GENERAL / NON_SQL recovery, matching new UI+AI artifacts, receiver activation
 or deployed browser/backend E2E. The prior optional-completion compatibility
 boundary still applies. No CI trust policy or live deployment changed.
 
-
 ## GENERAL UI full-result recovery consumers (2026-10-27)
 
 This is the UI verification continuation of the GENERAL producer changes, not
