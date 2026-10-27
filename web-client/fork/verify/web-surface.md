@@ -7234,3 +7234,50 @@ GIF API 10/10 在 `eec8b00a2` 通过。这两处源码与最终固定树逐字�
 但本轮未运行 Native 编辑消费者，不据此声称其真实结果。该旧编辑问题未由本批修复，
 也未计入 GIF 草稿验收。没有 schema/API/Workflow 变化、新发布权威、安装包、部署、
 Windows 或 Mobile 设备验收；未新增或解除正式发布门禁。
+
+
+### 2026-10-27：外链 GIF 编辑丢图的固定上游对照（未修复）
+
+本次仅补充上一节已暴露问题的来源边界，关联 DD-74、DD-125 与 SF-BUZ-56(4)。
+没有新增编辑器节点、Markdown 源文界面、附件元数据、权限或发送行为。
+普通 GIF 草稿保存与 Inbox 发送的已通过证据不变，不扩记为 GIF 编辑已通过。
+
+**当前实现的实际失败**：固定 `c11dda60c283a5e5e3757aebe0464c1e487a9ebf` 的
+原受限 Web Composer 检查中，新增编辑消费者将正文
+`original\n![image](https://static.klipy.com/original.gif)` 交给实际 Composer，
+编辑器插入 `edited ` 后读到的草稿正文为 `original\nedited `，不含图片 URL；
+该断言实际失败。原日志在
+`/volumes/data/kailo/verification/composer-gif-draft/c11dda60c/check.log`，
+摘要及整批 86/88、exit 1 保留在 [GIF 草稿回执](composer-gif-draft-receipt.json)。
+本次没有重跑该失败、设备或生产浏览器检查。
+
+当前 Web `ChannelPane.tsx` 的 edit hydration，以及 Desktop
+`features/messages/ui/MessageComposer.tsx` 的 `hydratedEdit` 分支，均仅从
+`editTarget.tags` 经 `imetaMediaFromTags` 提取已知附件，再把剩余正文交给共源
+`useRichTextEditor.setContent`。外链 GIF 原本不带 imeta，因此不在这些编辑附件中。
+共源 TipTap 配置保留 custom emoji、Buzz 链接等原节点，但没有普通 image 节点。
+这里对 Desktop 的结论是源码路径核验，没有把 Web 失败算作 Native 实测。
+
+**固定官方版本的只读分析**：对照 Buzz
+`779af8886caae1317b4de962082429867ab61503` 的以下原文件，未执行或修改 `.references`：
+
+- `desktop/src/features/messages/lib/draftMentionRefs.ts::buildMessageComposerEditTarget`
+  仅以 `imetaMediaFromTags(message.tags)` 填充 `editTarget.imetaMedia`。
+- `desktop/src/features/messages/ui/MessageComposer.tsx` 的 editTarget effect 只对这些
+  附件调用 `restoreImetaMediaDisplayLabels` / `stripImetaMediaLines`，随后调用原
+  `richText.setContent(editableBody)`，没有从外链 GIF 正文补回附件的分支。
+- `desktop/src/features/messages/lib/imetaMediaMarkdown.ts::buildImetaTags` 明确过滤
+  空 sha256 的外部内容，GIF 只在 Markdown 正文中；这不是缺失了本应存在的本地媒体标签。
+- `desktop/src/features/messages/lib/useRichTextEditor.ts` 的原 extensions 列表包含
+  StarterKit、Link、custom emoji、Buzz 链接、提及及 Markdown，没有普通 image 节点；
+  原 `setContent` 仍调用该编辑器的 Markdown 导入。
+
+这些固定源码显示上游具有相同丢失条件，未找到可直接恢复的原外链 GIF 编辑呈现与
+往返序列化实现；没有执行上游编辑消费者，不能将这一分析写成上游实测失败。
+先前“显示 Markdown 源文节点”的候选没有原交互依据，未实施、未提交为产品。
+也不通过猜测 URL 对应的 MIME、size、hash 等元数据来伪造已确认附件。
+
+剩余交付义务仍是外链 GIF 编辑不丢正文且保持原发送/UNKNOWN 边界；本轮仅记录事实，
+未解除该缺口。采取超出固定原版的编辑呈现前需要明确产品承载依据，不能把任意
+新界面当作原版恢复。没有新 SDK 作业、依赖安装、部署或发布门禁变化；根统一执行
+本次文档合批检查。
