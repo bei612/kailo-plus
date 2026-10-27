@@ -485,7 +485,10 @@ describe('original native planning HTTP stream and HUMAN task owner', () => {
           structuredClone(deployment),
         ),
       },
-      wrenAIAdaptor: { getAskStreamingResult: nativeStream },
+      wrenAIAdaptor: {
+        getAskStreamingResult: nativeStream,
+        getAskResult: jest.fn(async () => ({ status: AskResultStatus.FINISHED, type: AskResultType.TEXT_TO_SQL })),
+      },
       telemetry: { sendEvent: jest.fn() },
       apiHistoryRepository: {
         findOneBy: jest.fn(async (where) =>
@@ -553,6 +556,59 @@ describe('original native planning HTTP stream and HUMAN task owner', () => {
       server.close(() => resolve());
       server.closeAllConnections();
     });
+  });
+  const general = (content?: string) => ({
+    status: AskResultStatus.FINISHED, type: AskResultType.GENERAL,
+    ...(content === undefined ? {} : { completion: { queryId, content } }),
+  });
+  it.each(['', '完整原答案'])('GENERAL cached HTTP returns exact full body %j without reopening a stream', async (content) => {
+    jest.mocked(components.wrenAIAdaptor.getAskResult).mockResolvedValue(general(content) as any);
+    const response = await send();
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe(`data: ${JSON.stringify({message: content})}\n\ndata: {"done":true}\n\n`);
+    expect(nativeStream).not.toHaveBeenCalled();
+  });
+  it.each([true, false])('GENERAL HTTP repairs only the matching full suffix after done=%s', async (done) => {
+    jest.mocked(components.wrenAIAdaptor.getAskResult).mockResolvedValueOnce(general() as any).mockResolvedValue(general('head tail') as any);
+    nativeStream.mockResolvedValue(Readable.from(['data: {"message":"head"}\n\n', ...(done ? [`data: ${JSON.stringify({done: true, queryId})}\n\n`] : [])]));
+    const response = await send();
+    expect(await response.text()).toBe('data: {"message":"head"}\n\ndata: {"message":" tail"}\n\ndata: {"done":true}\n\n');
+    expect(nativeStream).toHaveBeenCalledTimes(1);
+  });
+  it.each(['missing','foreign','prefix','oversize','revoked','mode','project'])('GENERAL HTTP refuses %s full evidence after a partial stream', async (change) => {
+    jest.mocked(components.wrenAIAdaptor.getAskResult).mockResolvedValueOnce(general() as any).mockImplementation(async () => {
+      if(change === 'revoked') revoked = true;
+      if(change === 'mode') delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+      if(change === 'project') task.projectId = 8;
+      const result = general(change === 'missing' ? undefined : change === 'prefix' ? 'different' : change === 'oversize' ? 'head' + 'x'.repeat(5000) : 'head tail');
+      if(change === 'foreign') result.completion.queryId = 'foreign';
+      return result as any;
+    });
+    nativeStream.mockResolvedValue(Readable.from(['data: {"message":"head"}\n\n', `data: ${JSON.stringify({done: true, queryId})}\n\n`]));
+    const response = await send();
+    expect(await response.text()).toBe('data: {"message":"head"}\n\n');
+    expect(nativeStream).toHaveBeenCalledTimes(1);
+  });
+  it.each(['', 'full result'])('GENERAL GraphQL observes full %j after persisted classification without another Ask', async (content) => {
+    components.askingService['askingTaskTracker'].getAskingResult.mockResolvedValue({ ...general(), queryId, projectId: project.id });
+    jest.mocked(components.wrenAIAdaptor.getAskResult).mockResolvedValue(general(content) as any);
+    const output = await new AskingResolver().getAskingTask(null, {taskId: queryId}, ctx);
+    expect(output.completion).toBe(content);
+    expect(components.wrenAIAdaptor.getAskResult).toHaveBeenCalledWith(queryId);
+    expect(nativeStream).not.toHaveBeenCalled();
+  });
+  it.each(['revoked','project','mode','snapshot','oversize'])('GENERAL GraphQL withholds full result after %s changes during GET', async (change) => {
+    const tracker = components.askingService['askingTaskTracker'];
+    tracker.getAskingResult.mockImplementation(async () => ({ ...general(), queryId, projectId: task.projectId, question: task.question }));
+    jest.mocked(components.wrenAIAdaptor.getAskResult).mockImplementation(async () => {
+      if(change === 'revoked') revoked = true;
+      if(change === 'project') task.projectId = 8;
+      if(change === 'mode') delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+      if(change === 'snapshot') task.question = 'changed';
+      return general(change === 'oversize' ? 'x'.repeat(5000) : 'private full') as any;
+    });
+    await expect(new AskingResolver().getAskingTask(null, {taskId: queryId}, ctx)).rejects.toThrow();
+    expect(nativeStream).not.toHaveBeenCalled();
   });
   it('keeps the original message/done stream after real native task ownership and fresh captured MDL authorization', async () => {
     const response = await send();
