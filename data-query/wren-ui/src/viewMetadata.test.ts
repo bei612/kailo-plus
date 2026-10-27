@@ -3238,38 +3238,45 @@ describe('original native metadata create UNKNOWN and authorized read-back consu
     },
   );
   it('unavailable original intent storage refuses before a native write', async () => {
-    Object.defineProperty(global, 'sessionStorage', {
-      configurable: true,
-      get: () => {
-        throw new Error();
-      },
-    });
-    expect(() => sessionStorage.getItem('fixture-check')).toThrow();
+    // Mutate the actual browser object consumed by the module. Replacing a
+    // property on Jest's global proxy did not replace its bare global binding.
+    const unavailable = jest.spyOn(sessionStorage, 'getItem').mockImplementation(() => { throw new Error('storage unavailable'); });
     const submit = jest.fn();
-    await expect(
-      runNativeMetadataWrite({
-        nativeType: 'view',
-        variables: {},
-        submit,
-        observe: jest.fn(),
-      }),
-    ).rejects.toThrow(getNativeWriteText().storageError);
-    expect(submit).not.toHaveBeenCalled();
+    try {
+      expect(() => sessionStorage.getItem('fixture-check')).toThrow('storage unavailable');
+      await expect(
+        runNativeMetadataWrite({
+          nativeType: 'view',
+          variables: {},
+          submit,
+          observe: jest.fn(),
+        }),
+      ).rejects.toThrow(getNativeWriteText().storageError);
+      expect(submit).not.toHaveBeenCalled();
+      expect(entries.size).toBe(0);
+    } finally { unavailable.mockRestore(); }
   });
   it('an HTTP insecure-context browser without Web Crypto refuses before any native call or input persistence', async () => {
-    Object.defineProperty(global, 'crypto', { configurable: true, value: {} });
-    expect(crypto.subtle).toBeUndefined();
+    const browserCrypto = crypto;
+    const previous = Object.getOwnPropertyDescriptor(browserCrypto, 'subtle');
+    Object.defineProperty(browserCrypto, 'subtle', { configurable: true, value: undefined });
     const submit = jest.fn();
-    await expect(
-      runNativeMetadataWrite({
-        nativeType: 'view',
-        variables: { data: { sql: 'private SQL' } },
-        submit,
-        observe: jest.fn(),
-      }),
-    ).rejects.toThrow(getNativeWriteText().storageError);
-    expect(submit).not.toHaveBeenCalled();
-    expect(entries.size).toBe(0);
+    try {
+      expect(crypto.subtle).toBeUndefined();
+      await expect(
+        runNativeMetadataWrite({
+          nativeType: 'view',
+          variables: { data: { sql: 'private SQL' } },
+          submit,
+          observe: jest.fn(),
+        }),
+      ).rejects.toThrow(getNativeWriteText().storageError);
+      expect(submit).not.toHaveBeenCalled();
+      expect(entries.size).toBe(0);
+    } finally {
+      if (previous) Object.defineProperty(browserCrypto, 'subtle', previous);
+      else Reflect.deleteProperty(browserCrypto, 'subtle');
+    }
   });
   it('only an explicit server refusal before entering native CRUD permits a later original submission', async () => {
     const denied = {
