@@ -106,6 +106,9 @@ export default function HomeThread() {
   const adjustSqlModal = useModalAction();
   const answerRequests = useRef(new Set<string>());
   const answerGeneration = useRef(0);
+  const answerOwner = useMemo(() => ({ active: true }), [threadId]);
+  const answerOwnerRef = useRef(answerOwner);
+  answerOwnerRef.current = answerOwner;
   const [answerReceipts, setAnswerReceipts] = useState<Record<number, any>>({});
   const [chartReceipts, setChartReceipts] = useState<Record<number, any>>({});
 
@@ -139,6 +142,7 @@ export default function HomeThread() {
     useUpdateThreadResponseMutation({
       onError: (error) => console.error(error),
       onCompleted: (data) => {
+        if (!answerOwner.active || answerOwnerRef.current !== answerOwner) return;
         notify.success(t('home.sqlUpdated'));
         // trigger generate answer after sql statement updated
         onGenerateThreadResponseAnswer(data.updateThreadResponse.id);
@@ -221,10 +225,12 @@ export default function HomeThread() {
     artifact: 'answer' | 'chart',
     adjustment?: AdjustThreadResponseChartInput,
   ) => {
+    if (!answerOwner.active || answerOwnerRef.current !== answerOwner) return;
     const request = `${artifact}.${responseId}`;
     if (answerRequests.current.has(request)) return;
     answerRequests.current.add(request);
     const generation = answerGeneration.current;
+    const active = () => answerOwner.active && answerOwnerRef.current === answerOwner && generation === answerGeneration.current;
     const publishReceipt =
       artifact === 'answer' ? setAnswerReceipts : setChartReceipts;
     const create = async (identity: {
@@ -251,7 +257,7 @@ export default function HomeThread() {
     };
     try {
       const config = await getUserConfig();
-      if (generation !== answerGeneration.current) return;
+      if (!active()) return;
       const { queryScope: scope, nativeBindingGeneration: bindingGeneration } =
         config;
       // Missing governed identity is not evidence of an independent instance.
@@ -276,7 +282,7 @@ export default function HomeThread() {
         await create({});
         const current = await getUserConfig();
         if (
-          generation !== answerGeneration.current ||
+          !active() ||
           !sameConfiguration(current)
         )
           return;
@@ -286,10 +292,10 @@ export default function HomeThread() {
       const slot = `kailo.query.${artifact}${adjustment ? '.adjust' : ''}.${scope}.${responseId}`;
       const key = sessionStorage.getItem(slot) || uuidv4();
       sessionStorage.setItem(slot, key);
-      while (generation === answerGeneration.current) {
+      while (active()) {
         const beforeDispatch = await getUserConfig();
         if (
-          generation !== answerGeneration.current ||
+          !active() ||
           !sameConfiguration(beforeDispatch)
         )
           return;
@@ -299,7 +305,7 @@ export default function HomeThread() {
         });
         const afterDispatch = await getUserConfig();
         if (
-          generation !== answerGeneration.current ||
+          !active() ||
           !sameConfiguration(afterDispatch)
         )
           return;
@@ -347,7 +353,7 @@ export default function HomeThread() {
       }
     } catch {
       // A lost transport/storage acknowledgement cannot authorize another key.
-      if (generation === answerGeneration.current)
+      if (active())
         publishReceipt((current) => ({ ...current, [responseId]: {} }));
     } finally {
       answerRequests.current.delete(request);
@@ -413,11 +419,13 @@ export default function HomeThread() {
 
   // stop all requests when change thread
   useEffect(() => {
+    answerOwner.active = true;
     if (threadId !== null) {
       fetchThreadRecommendationQuestions({ variables: { threadId } });
       setShowRecommendedQuestions(true);
     }
     return () => {
+      answerOwner.active = false;
       ++answerGeneration.current;
       askPrompt.onStopPolling();
       threadResponseResult.stopPolling();
