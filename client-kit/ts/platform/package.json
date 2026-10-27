@@ -286,6 +286,7 @@
     "./react/composer/features/messages/ui/MessageComposerAutocompletes": "./src/react/composer/features/messages/ui/MessageComposerAutocompletes.tsx",
     "./react/composer/features/messages/ui/useComposerMentionPicker": "./src/react/composer/features/messages/ui/useComposerMentionPicker.ts",
     "./react/composer/features/messages/lib/useComposerFocusOwnership": "./src/react/composer/features/messages/lib/useComposerFocusOwnership.ts",
+    "./react/composer/messageComposerAutoSubmit": "./src/react/composer/messageComposerAutoSubmit.ts",
     "./react/composer/dmAgentMention": "./src/react/composer/dmAgentMention.ts",
     "./react/composer/features/messages/lib/channelLink": "./src/react/composer/features/messages/lib/channelLink.ts",
     "./react/composer/features/messages/lib/codeBlockExtensions": "./src/react/composer/features/messages/lib/codeBlockExtensions.ts",
