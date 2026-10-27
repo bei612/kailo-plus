@@ -12358,3 +12358,127 @@ This establishes the original five-file exit gate, not the entire Wren test
 inventory or live user acceptance. There was no live IdP/Core/model/SQL backend,
 matching artifact build, receiver activation, CI trust change or deployment.
 The existing release and full deployed-operation gates remain applicable.
+
+
+## 2026-10-27 — Answer query identity, queued callbacks and conditional close
+
+DD-127(7), DD-133 and SS-WRN-GOVERNANCE / SS-WRN-IDENTITY retain the original
+Wren text-answer operation. Base `3a2c960e492c545bfee2b2284fb2349a98664dde`;
+checked product source `460552945ef9e7857d8124fd889865f262aa45b7`.
+The five changed implementation/test paths are three product consumers and
+two existing test files, +657/-88. This is neither a new generation API nor
+platform storage of answer content.
+
+### Original consumer and concrete correction
+
+Fixed upstream `c5f02a0391c87420dba78632dcd86073710deb72` supplies
+`wren-ui/src/hooks/useTextBasedAnswerStreamTask.tsx`,
+`src/components/pages/home/promptThread/TextBasedAnswer.tsx` and
+`src/pages/api/ask_task/streaming_answer.ts`. Its hook correlates only the
+response row, accepts queued callbacks from closed EventSources, and its page
+starts observation on response/status changes without the native answer query.
+A new query on the same still-STREAMING response can therefore retain the old
+stream or text. The original standalone completion/status writer is also
+unconditional on the answer query frozen when observation began.
+
+The page and hook now follow the original response ID plus
+`answerDetail.queryId`. A current-source fence rejects queued old messages,
+done frames and errors. The page suppresses old-identity content before its
+effects run. Exact public `{message}` and `{done:true}` frames are retained;
+malformed data and disconnects remain unresolved. Same-identity renders,
+locale changes, reset and selection of an already observed identity do not
+reopen its one-shot queue within the same mounted hook. Only the matching
+actual done receipt stops that answer's streaming indicator; authoritative
+history continues to determine its status. The original regenerate action
+is unchanged and is never invoked automatically.
+
+The optional original GET `queryId` parameter is correlation, not permission.
+The endpoint still uses original `AskingService.getResponse`, current project,
+native admission and, in GOVERNED, the existing fresh source/history reader.
+It compares the original response/query snapshot at exposure and retains the
+before/after deployment-mode fence. Calls omitting the optional parameter
+still freeze the original row. Both modes now use the existing
+`ThreadResponseRepository.claimNativeAnswer` conditional writer for completion.
+Standalone interruption uses that same snapshot/CAS; a late old disconnect
+cannot alter the replacement answer. GOVERNED disconnect remains unresolved.
+
+Actual HTTP checks found an additional same-lifecycle defect: listening to
+`IncomingMessage.close` after asynchronous row reads misses a request that
+already completed. Fixed source `0b4d3c030` passed format/types/lint, but the
+five-file run exited **1**, with **260 passed, 2 failed, 6 original conditional
+cases not run**. Cancelling the response reader left the original row STREAMING
+and could leave the upstream alive after replacement. PostgreSQL was not run
+after that failure. Commit `460552945` observes `ServerResponse.close` instead.
+Its completed guard precedes normal `res.end`; successful completion stays
+FINISHED, and cancellation retains the original authorization/CAS fence.
+The failed source and original logs are preserved in the receipt.
+
+### Actual verification and fault restoration
+
+The original immutable Node image was
+`sha256:f9ab18e354e6855ae56ef2b290dd225c1e51a564f87584b9bd21dd651838830e`
+(Node 18.20.8, TypeScript 5.2.2, Prettier 3.2.5). Its limits were
+4 CPU / 4 GiB / equal swap, with private PostgreSQL 1 CPU / 2 GiB / equal swap.
+Actual limits were read back. The existing installation was reused after
+package/lock/configuration comparison; no dependency installation or cache
+copy occurred. New execution writes were on actual Data.
+
+- Original complete five files: **262 passed**, natural exit **0**. Their
+  **6 existing PostgreSQL-conditional rerun cases** were not selected by this
+  environment; their earlier complete `69bec1c84` PostgreSQL result remains
+  recorded above and is not represented as a new run here.
+- Complete `nativeTextAnswer.test.ts` against private PostgreSQL: **38 passed**,
+  natural exit **0**, including all eight new actual HTTP/repository cases.
+  This overlaps the first command and is not 38 additional distinct cases.
+- Full `tsc --noEmit --pretty false`, original Next lint and Prettier: **0**.
+- Removing the actual EventSource identity fence caused **1 assertion failure**;
+  removing the page's pre-effect render identity guard caused **1**. Each
+  deliberately selected the corresponding original hook/page case.
+- Removing the fresh row's answer-query comparison caused **2 assertion
+  failures** in the eight-case actual HTTP/PostgreSQL group. Removing the
+  original repository's `answer_detail` CAS predicate caused **1** in that
+  group. These are failed assertions with exit **1**, not synthetic exit codes;
+  other cases outside the deliberate fault selection were not run in those
+  fault commands.
+- After restoring all four temporarily altered product files byte-for-byte,
+  the complete five files again passed **262**, and the complete PostgreSQL
+  answer file **38**, naturally exiting **0**. All **617** exported GitHub
+  input blobs matched the fixed source after restoration. The SDK, private
+  PostgreSQL and private networks were removed and absence read back.
+
+The hook/page use the existing React scheduling harness; the endpoint cases
+use real Next `apiResolver`, HTTP/fetch, original service/repository consumers,
+original migrations and actual SQLite/PostgreSQL writes. The current-project
+provider and native AI byte stream are explicit fixtures. Existing governed
+policy/provider fixtures remain boundaries. This is not browser E2E, live
+IdP/Core/model/SQL execution, a matching artifact or receiver acceptance.
+
+Receipt directory:
+`/volumes/data/kailo/verification/buzz-r10/wren-answer-460552945ef9e7857d8124fd889865f262aa45b7-check`.
+Its `receipt.json` SHA-256 is
+`54cdebb6d67a63284c7b975928431059a1998eee53af3a5735677ab90727db40`;
+local handoff `/tmp/kailo-wren-answer-460552945-receipt.json`.
+Fault/restoration logs are in the adjacent `wren-answer-460552945ef9e7857d8124fd889865f262aa45b7-fault`
+directory. Initial failures are in `wren-answer-0b4d3c0304a16379cb90e5d40c668b98a9943e9f-check`.
+The receipt records exact logs, hashes, exits and the restored input manifest.
+
+### Remaining complete-answer recovery boundary
+
+The attempt set belongs to one mounted hook; it is not durable global queue
+ownership. Original `wren-ai-service/src/pipelines/generation/sql_answer.py`
+`get_streaming_results` removes chunks through `asyncio.Queue.get` and deletes
+the queue on its final sentinel. The original service's streaming consumer
+exposes that sentinel as done. A new page mount or another session can still
+consume only the remaining tail and receive done. In GOVERNED, a disconnected
+partial observation does not become an authoritative complete answer. This
+cross-mount complete-content gap is not closed by this batch.
+
+The existing native `SqlAnswerResultResponse.succeeded` currently reflects
+preprocessing before answer generation; it is not full-answer evidence.
+Recovery must use the original generator's completed result and original
+`answerDetail` authority, retaining fresh GOVERNED admission and conditional
+writes. It must not regenerate automatically, persist a new Core body copy,
+or call partial content complete. The current Pages Router has no configured
+React StrictMode wrapper; locale rerender is covered, while a future change
+to that mounting lifecycle requires its own verification. No deployment,
+release approval, CI source-trust change or complete Wren acceptance is asserted.
