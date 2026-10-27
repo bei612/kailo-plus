@@ -1,6 +1,7 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, useState } from "react";
 import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import ts from "typescript";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ApprovalDecision, ApprovalStatus, type ApprovalView } from "@client-kit/contracts";
@@ -119,8 +120,8 @@ describe("original Needs action filter over Temporal approvals", () => {
 
 // Execute the actual Native HomeView source/prop binding, keeping its unrelated
 // Relay feed and Tauri media adapters out of this approval HTTP consumer.
-const nativeSource = ts.createSourceFile("HomeView.tsx", readFileSync(new URL(
-  "../../../../collaboration/desktop/src/features/home/ui/HomeView.tsx", import.meta.url), "utf8"),
+const nativeSource = ts.createSourceFile("HomeView.tsx", readFileSync(resolve(
+  process.cwd(), "../../../collaboration/desktop/src/features/home/ui/HomeView.tsx"), "utf8"),
   ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
 const nativeBindings: string[] = [];
 let nativeApprovalProp = "null";
