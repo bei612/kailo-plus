@@ -1,0 +1,1456 @@
+{
+  "schema": "kailo.wren-native-ask-lifetime-verification.v1",
+  "recorded_at": "2026-10-27T07:20:46.727080+00:00",
+  "source": {
+    "base": "f4bc1b96df2fb4484e4db41b96fb6ab5d61b9e3f",
+    "product": "08e7688eb66a2ae9f88609a48df5f0c63f6e3193",
+    "fixed": "f457c447d161ed670914ae2150ad44494520a098",
+    "branch": "codex/wren-ask-lifetime-20261027",
+    "transport": "CI fetch from GitHub, fixed git archive; no local source copy"
+  },
+  "authority": [
+    "SS-WRN-GOVERNANCE",
+    "DD-12"
+  ],
+  "image": "sha256:662fc7a76c259b140355f5b66a083a6ebb1a4403464359ba115b8956431fe182",
+  "resources": {
+    "cpus": 2,
+    "memory_bytes": 4294967296,
+    "memory_swap_bytes": 4294967296,
+    "network": "none",
+    "readonly_rootfs": true,
+    "nonroot_user": "1000:1000",
+    "postgres": false
+  },
+  "storage": "/dev/sda1 /volumes/data xfs",
+  "commands": {
+    "general": "/app/.venv/bin/python -B -m unittest discover -s tests/pytest/providers -p test_native_human_asking.py -v",
+    "sql_answer": "/app/.venv/bin/python -B tests/pytest/providers/test_native_sql_answer_stream.py -v",
+    "ruff": "/tools/ruff-0.2.2/bin/ruff check and format --check --config pyproject.toml (service ask, router ask, original native asking consumer)"
+  },
+  "results": {
+    "general": {
+      "passed": 18,
+      "skipped": 0
+    },
+    "sql_answer": {
+      "passed": 20,
+      "skipped": 0
+    },
+    "ruff_check": 0,
+    "ruff_format": 0,
+    "image_pyproject_match": true,
+    "installed_dependency_versions_match_poetry_lock": true,
+    "upstream_status": "fixed upstream c5f02a0391c8, no newer checkout commit; SDK300 metadata exit 0"
+  },
+  "new_coverage": {
+    "registered_background_start": 3,
+    "history_retrieval_classification_lifecycle": 27,
+    "owned_general_original_hamilton_pipeline_variants": 3,
+    "sql_shared_state_machine_retirement": 18,
+    "sql_shared_state_machine_owned_success": 1
+  },
+  "faults": {
+    "registration": {
+      "exit": 1,
+      "assertion_failures": 2,
+      "errors": 0
+    },
+    "classification": {
+      "exit": 1,
+      "assertion_failures": 9,
+      "errors": 0
+    },
+    "ownership": {
+      "exit": 1,
+      "assertion_failures": 49,
+      "errors": 0
+    },
+    "restored_sha256": {
+      "src/web/v1/services/ask.py": "4d94c3601875b268f98447d6bd47ecb2b685b058d20d98013735190f08f78d0c",
+      "src/web/v1/routers/ask.py": "6e9f360083e1f0e849d6ed2946df6c77ef187a73117f8c34e6f75fca996edc80"
+    }
+  },
+  "restoration": {
+    "all_three_faults_original_18_consumers_pass": true,
+    "final_general": 18,
+    "final_sql_answer": 20,
+    "input_blobs": 211,
+    "input_mismatches": 0,
+    "manifest_sha256": "995c4deef272f2c3b20b6c5937e40acbc9951396da315bd86b3fa96ab6793eb5",
+    "manifest": [
+      {
+        "path": "data-query/fork/upstream.yaml",
+        "git_blob": "6a463a3e8a711b98ab3868b4ea4dc0e856b041ee",
+        "sha256": "4352d4ad9c606d685588b88f82d9195d3b0a6f07262df3b7e83ccb3f913885ba"
+      },
+      {
+        "path": "data-query/wren-ai-service/.dockerignore",
+        "git_blob": "4f5a28804bbd0262722278308e166668dbe417bb",
+        "sha256": "2deaa5410e1d4ee27e423325d038857ea7d744b579dd071ac3a90b181f3ee2d8"
+      },
+      {
+        "path": "data-query/wren-ai-service/.pre-commit-config.yaml",
+        "git_blob": "9639e9b4916723d849ccba9140ff43d1c1056fb3",
+        "sha256": "ddba9ec66749b63c513ac62db87c0af285d7a5c8a6a50ecfaf7e88d08c791e87"
+      },
+      {
+        "path": "data-query/wren-ai-service/CONTRIBUTING.md",
+        "git_blob": "cc498cbaeace1ef0877845ce9e68426f7429a77d",
+        "sha256": "659354230cd21961e665c556ca36d423aef15228132cd74a415fddb1dfe48b3e"
+      },
+      {
+        "path": "data-query/wren-ai-service/Justfile",
+        "git_blob": "94fcb5a7600f1b3eb22196fb9f5807bd28519835",
+        "sha256": "81f42e4cf80472d81660917567c8be426ee9006dd5ad489be0d4a8f31b5339da"
+      },
+      {
+        "path": "data-query/wren-ai-service/README.md",
+        "git_blob": "b4dc9924eb54e5ca5f2a267c36b61391c9211ec9",
+        "sha256": "4754693dce3eca0d784c82ccb37679145d2ce36fd099f28700327c66b364add7"
+      },
+      {
+        "path": "data-query/wren-ai-service/docker/Dockerfile",
+        "git_blob": "fe5b44694c4c6e29408b9ebcfeda47dd36cfb1b8",
+        "sha256": "67f97b77e44389e12ccc2e157b13b5bf8f8968c56b0df76b5adaaa6e9373668b"
+      },
+      {
+        "path": "data-query/wren-ai-service/docs/code_design.md",
+        "git_blob": "7675d56ae1853ee4ef925b269343b4d6bcafbb49",
+        "sha256": "4ee6290508494da6e7bc32ea50e6f1b8540564c72eb8fd1b5220cef4d91dc5f8"
+      },
+      {
+        "path": "data-query/wren-ai-service/docs/config_examples/README.md",
+        "git_blob": "260ab9587e2bcbacdda5bf5e8fd0f0153320897f",
+        "sha256": "8b5c4d2a93983631b5147e3594b4bbd79a82aedb51222bb35bb9703e6c7ec1e2"
+      },
+      {
+        "path": "data-query/wren-ai-service/docs/config_examples/config.anthropic.yaml",
+        "git_blob": "cc7ebe2d89fbaadfe74325528fb48576111d9873",
+        "sha256": "3deeb77520f0c0d8ad0cf0ad34d4d5b49e9d0edcf01dc9bc870b0742dbc6705d"
+      },
+      {
+        "path": "data-query/wren-ai-service/docs/config_examples/config.azure.yaml",
+        "git_blob": "604f7b157b2e114d5596107de9f564d9010c0cb9",
+        "sha256": "7e6823a1e4deb00d24aa8b6a83f8aacc3f423a3921889255ab1fa75faf91751d"
+      },
+      {
+        "path": "data-query/wren-ai-service/docs/config_examples/config.bedrock.yaml",
+        "git_blob": "7e3ac8f2117671884bf6ab064ee4841361557da9",
+        "sha256": "8bcfb5abe4e89195dc6828641f98a224dedfcd9f756866e2665b4c020a9265fd"
+      },
+      {
+        "path": "data-query/wren-ai-service/docs/config_examples/config.deepseek.yaml",
+        "git_blob": "899254474c3fb71c1f3340baf53306cee3448f7b",
+        "sha256": "78ae3e049be9e2c3f72238a4afaa49715e9e6b7fa594b2254ecc314aef1af414"
+      },
+      {
+        "path": "data-query/wren-ai-service/docs/config_examples/config.google_ai_studio.yaml",
+        "git_blob": "3cb6db70e07451ea2022a68064bf8010d5038464",
+        "sha256": "2649a6847d5059d363b3d36926b35fd8dec222c99d73e9d87b58d69a48358f99"
+      },
+      {
+        "path": "data-query/wren-ai-service/docs/config_examples/config.google_vertexai.yaml",
+        "git_blob": "262231d19fa322439e2e6e49af56a2db6a0ef634",
+        "sha256": "67673b0974e337f8ec50e03c12af0ae372bbe3fcdc1c08a0b59a36a478eea503"
+      },
+      {
+        "path": "data-query/wren-ai-service/docs/config_examples/config.grok.yaml",
+        "git_blob": "1fe3ac6c91fc100daae8035996d6299aa4d1f88f",
+        "sha256": "97c83757d90da9bbc34b2df052b5c507929a50a54265e0de1bcba92b3efbf3f8"
+      },
+      {
+        "path": "data-query/wren-ai-service/docs/config_examples/config.groq.yaml",
+        "git_blob": "886c6ad786a0d6efdea9306ef2d7c0624187b637",
+        "sha256": "a2ff875954f41727d6137a90767d5b9161471390a1695f2af10c5b27d271544a"
+      },
+      {
+        "path": "data-query/wren-ai-service/docs/config_examples/config.lm_studio.yaml",
+        "git_blob": "2c486caaa8467b7181eede950b8779365e4a67cb",
+        "sha256": "dedd8b636e3493db5863abf483b7a662ada04673f977375a61f1f38424ca7168"
+      },
+      {
+        "path": "data-query/wren-ai-service/docs/config_examples/config.ollama.yaml",
+        "git_blob": "2a5f99064a3a0ad02599b9528f61ac69e03e2c8e",
+        "sha256": "4e1db5a81fb93b817a1002a90c9ffd06565882be642df75d2497ba79ff698c76"
+      },
+      {
+        "path": "data-query/wren-ai-service/docs/config_examples/config.open_router.yaml",
+        "git_blob": "347388dc8bce34dc6d7f08d39c5468cce73b9785",
+        "sha256": "614c96e320ebaef7ec76d15770918b47d7879448fbad76cb4732883db412a502"
+      },
+      {
+        "path": "data-query/wren-ai-service/docs/config_examples/config.qwen3.yaml",
+        "git_blob": "e321448c1a9cadc9c17e5a65eadce54d0f74a7a0",
+        "sha256": "8169fae1e125364a9595fe5702d2deb952f1037e38e7b0cf84e179f94471f75e"
+      },
+      {
+        "path": "data-query/wren-ai-service/docs/config_examples/config.zhipu.yaml",
+        "git_blob": "c7c72ead1a5f742748c151d84eaf019beffc2d80",
+        "sha256": "7ab143bafd73ce105d692158d734a0313b48af4c24356f2ef1d362545dc837a6"
+      },
+      {
+        "path": "data-query/wren-ai-service/docs/configuration.md",
+        "git_blob": "c88c39ce8d6bac7ca15d78a793f67d92f3234567",
+        "sha256": "ba0d434f82bfa7de6a16d65ef75311e1fc5e675a0e391640dddee8897b91a692"
+      },
+      {
+        "path": "data-query/wren-ai-service/docs/imgs/shallow_trace_example.png",
+        "git_blob": "c228e99d45deefd70e777e2f464a59e34dd922ff",
+        "sha256": "4d2ff037a302600b1b4c454a5eabf2c3578b2cbb0a504b41042eac9d9c7eaa05"
+      },
+      {
+        "path": "data-query/wren-ai-service/entrypoint.sh",
+        "git_blob": "b8eb6761d7a194f4d4c42d202377c68c1b6d6fe2",
+        "sha256": "e39f5d98a13ea2d659c4b012c3c9b55717fb24f8ff0628dd045c6f5ea2ef3937"
+      },
+      {
+        "path": "data-query/wren-ai-service/eval/.gitignore",
+        "git_blob": "65cbde796a7c6c80e6e08a540dd4dbb4a9284146",
+        "sha256": "bb6882cc9774fb44b35bf820671624610fd26254697df0a1ce3882f78569e22e"
+      },
+      {
+        "path": "data-query/wren-ai-service/eval/README.md",
+        "git_blob": "92b653a7468afbaefd7ce171ba924f6ef3ca130c",
+        "sha256": "e55aa48c62090477a4c585dc9ec8e3dd091eec3bdb8a747364b2bfee8a8926b2"
+      },
+      {
+        "path": "data-query/wren-ai-service/eval/__init__.py",
+        "git_blob": "b9850d58cf88774052fda55df5abb0db172fd3a9",
+        "sha256": "139bddfeb1c29c50ef7870b8f6cf83d2b408413eb2d92305112050d999fa465f"
+      },
+      {
+        "path": "data-query/wren-ai-service/eval/add_samples_to_toml.py",
+        "git_blob": "b52c12bbe6d74e9d46eb0bdcf154e6db2e37cd43",
+        "sha256": "4c89b8437dcc271cb8163b86772374ea8a26ee44718a3d82f074b401a51f4b9e"
+      },
+      {
+        "path": "data-query/wren-ai-service/eval/data_curation/__init__.py",
+        "git_blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "path": "data-query/wren-ai-service/eval/data_curation/app.py",
+        "git_blob": "615442abf16f382b468ee1e8dc2331c3cc21b16a",
+        "sha256": "29d305260e29126c4f14ffe93d570192192db2055af7329863d9f09413d80a46"
+      },
+      {
+        "path": "data-query/wren-ai-service/eval/data_curation/utils.py",
+        "git_blob": "1dc6aa76a113329e410ddeca2e7a2d76e1b4c46e",
+        "sha256": "31eb62dad618c2f6e42e16c5bd1949c29f9660c81f50dc6ac72f288e882221ac"
+      },
+      {
+        "path": "data-query/wren-ai-service/eval/dataset/.gitignore",
+        "git_blob": "c96a04f008ee21e260b28f7701595ed59e2839e3",
+        "sha256": "5c89a8a9c5af258d02d0bfd3582c75963bea53baa1f5f5132662b80020a63452"
+      },
+      {
+        "path": "data-query/wren-ai-service/eval/dspy_modules/__init__.py",
+        "git_blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "path": "data-query/wren-ai-service/eval/dspy_modules/ask_generation.py",
+        "git_blob": "c21db886345568ca9240f14e06b00fae5b59d96b",
+        "sha256": "f50f24dfc0e07502266e8b3fb0f6216ce1a273db1d55e2123fd4f7435a2ddab9"
+      },
+      {
+        "path": "data-query/wren-ai-service/eval/dspy_modules/prompt_optimizer.py",
+        "git_blob": "47a68ec2555e5e9876e5fabf282884384e210a30",
+        "sha256": "db1e1708c6603c97e84ceeca30aa20055b7724c130216d8ce63f7359970f4020"
+      },
+      {
+        "path": "data-query/wren-ai-service/eval/evaluation.py",
+        "git_blob": "07b0c4bd08f44deab2587295b0edb992e88965cb",
+        "sha256": "1643eda68e39da292861d96262190944c745deacd7d29f7185eccae464647f84"
+      },
+      {
+        "path": "data-query/wren-ai-service/eval/mdl_to_csv.py",
+        "git_blob": "c6a75088362778563bf9a6669a9f8d595c242231",
+        "sha256": "962ac55a251a1658b33b9e7bb1ac06ea929ac304e905c819639e96ccc775b25e"
+      },
+      {
+        "path": "data-query/wren-ai-service/eval/metrics/__init__.py",
+        "git_blob": "084c97be25ad1d6bce79ad85e446c33f66f2506f",
+        "sha256": "20f4e0cd16fdd367b95162c8075d7bfb766855582828f50d9bf425cc286e208d"
+      },
+      {
+        "path": "data-query/wren-ai-service/eval/metrics/accuracy.py",
+        "git_blob": "61bcfb916025cbd2b3ef3931b579123bd1f16547",
+        "sha256": "fd0eb0b681778088fb8343974dd7c414c2fb23b7a6f7e73a18740b7bf245e2ff"
+      },
+      {
+        "path": "data-query/wren-ai-service/eval/metrics/answer_relevancy.py",
+        "git_blob": "c1e16258e1ce676dca38b4a1aba592e922ca43bc",
+        "sha256": "db5daa6a7441437ddd13447c36f651fcbc07c713706a114edf9db8f27b30b437"
+      },
+      {
+        "path": "data-query/wren-ai-service/eval/metrics/context_precision.py",
+        "git_blob": "539ae1227111195912a755faf28dbab97a01cc0b",
+        "sha256": "12392b04e60d64fcfcbc7972449e62f48a2af05900a7f24f76fb23f4a5a110fe"
+      },
+      {
+        "path": "data-query/wren-ai-service/eval/metrics/context_recall.py",
+        "git_blob": "07cb9f54471e48a6703a79b48c516e573d4eab79",
+        "sha256": "b2c7c3f7b7536d53279af7b18e95a113309e6e986c44a9e7666d18e42539d6ea"
+      },
+      {
+        "path": "data-query/wren-ai-service/eval/metrics/context_relevancy.py",
+        "git_blob": "c459960f68d31d21e4e3600e6d064ede027c2598",
+        "sha256": "63edae92cdb65ddee53c92479de4e8e590fb697deaec2def9af1453428067298"
+      },
+      {
+        "path": "data-query/wren-ai-service/eval/metrics/faithfulness.py",
+        "git_blob": "ff17e0eaf8d576b946299a811264fca2d0455339",
+        "sha256": "9e6a46239b1abbe26c509d8f119b959ef1f4019963a6fc838a9f3d8c65cf025e"
+      },
+      {
+        "path": "data-query/wren-ai-service/eval/metrics/llm/__init__.py",
+        "git_blob": "2871666a7c5df48fed665b857a87399110cd9ef7",
+        "sha256": "080b76bcab26f536a1999bc24248b22bd095906ca52a222b700b42ae356f0ccb"
+      },
+      {
+        "path": "data-query/wren-ai-service/eval/metrics/spider/__init__.py",
+        "git_blob": "84673fa4b6a5d048e6108780d4c8764920c8be00",
+        "sha256": "00b0e5fc4b3e863ad4b0590549127b53801cb1cf74c1dd80cee007ef454f73a9"
+      },
+      {
+        "path": "data-query/wren-ai-service/eval/metrics/spider/exact_match.py",
+        "git_blob": "a6d61434ce51e6f1eeac03188643706a7f3fe2b3",
+        "sha256": "61405cb7166aadcaa6ee4f208ca15f2ef46ba1878f52606a483167173dac2c71"
+      },
+      {
+        "path": "data-query/wren-ai-service/eval/metrics/spider/exec_match.py",
+        "git_blob": "a00cb77e2e40bb5c6c6c3627f516860f9c9296ce",
+        "sha256": "45c8018d2421ff42c426fb8f39ee5f62d2ee00d4a3a5b2f8cdb65682c486913e"
+      },
+      {
+        "path": "data-query/wren-ai-service/eval/metrics/spider/process_sql.py",
+        "git_blob": "0a0e6beb335403784934f300eedfe4939424b271",
+        "sha256": "cda387cde30d5f7a47947109865af0bbe3231baf2ec138229bc94d25d9f0b132"
+      },
+      {
+        "path": "data-query/wren-ai-service/eval/optimized/.gitignore",
+        "git_blob": "a6c57f5fb2ffba0a6af4278619c2983394d237cc",
+        "sha256": "287bad6f22bffb15536a90b21696aa8b6d3df035ada653e9a730124d1ef7bc32"
+      },
+      {
+        "path": "data-query/wren-ai-service/eval/pipelines.py",
+        "git_blob": "c8c6738025a8b1a54a11c85a4eee2366faf1f47d",
+        "sha256": "eea8a42812e5c314a39401b6f9d21db9e24d647c91d567657de7f10c6161da44"
+      },
+      {
+        "path": "data-query/wren-ai-service/eval/prediction.py",
+        "git_blob": "b640a41f52a946bbe09dcd8e2b9f2d61a68d8da0",
+        "sha256": "3cef551c5c0a7c24bd097ef7ab14e0a7faee382905074f53e1aa2f248cf03459"
+      },
+      {
+        "path": "data-query/wren-ai-service/eval/preparation.py",
+        "git_blob": "c176472379ec8330809118891dc073b45713474e",
+        "sha256": "b7cafa2f9484b496aea9a117bd1a1efe9b41854971b180d8ce20f40973091210"
+      },
+      {
+        "path": "data-query/wren-ai-service/eval/utils.py",
+        "git_blob": "c59f883774fe8bdd59f9051b96c55f9437d27e57",
+        "sha256": "5ea2338410624a63e6a57403fcaea393b0b40099b22ae2df1886c4d9d8e85972"
+      },
+      {
+        "path": "data-query/wren-ai-service/poetry.lock",
+        "git_blob": "509d355af39d66656ff8ad5b3178d7df315ecb2a",
+        "sha256": "803742f8fd832b21eac5db758b6841ccb43ada47e267b98b4aa3b0551d48588e"
+      },
+      {
+        "path": "data-query/wren-ai-service/pyproject.toml",
+        "git_blob": "457e9a23cdd7794612870762a619a8a3705129b9",
+        "sha256": "c7b6c85b126a844b591fa396286c8ef9e38e1496bac039f952b367130823533d"
+      },
+      {
+        "path": "data-query/wren-ai-service/ruff.toml",
+        "git_blob": "b365289b9864f98e1d9b19896657cf6f2118d3e4",
+        "sha256": "3a00371c15ec5a8bdb749b01886e019dd393343fe6f7fc8e73e1a6b1206c2378"
+      },
+      {
+        "path": "data-query/wren-ai-service/src/__init__.py",
+        "git_blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "path": "data-query/wren-ai-service/src/__main__.py",
+        "git_blob": "ab8ca4a3b0ac18b5e34b6b2a7dcb7e92c9d4700a",
+        "sha256": "196692f81590bcfe1138d6a0ce2d8baa78d7e3794f14d01c49dfb2a34f096675"
+      },
+      {
+        "path": "data-query/wren-ai-service/src/config.py",
+        "git_blob": "aedb62883af9d23591e1d723a8ccb1c7a1b8ef87",
+        "sha256": "a65e430a2b1a38a871a3d5b74a382c4ffd5e0b0d21860809d79ac066a6fcebef"
+      },
+      {
+        "path": "data-query/wren-ai-service/src/core/__init__.py",
+        "git_blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "path": "data-query/wren-ai-service/src/core/engine.py",
+        "git_blob": "163135e02d5081c37351a22be4ae89eee86ac775",
+        "sha256": "3c06c37eab0205e3dc15c2e45cb2a3a8f112fb09eb5599c8a8178394835d110d"
+      },
+      {
+        "path": "data-query/wren-ai-service/src/core/pipeline.py",
+        "git_blob": "02a477845cdbbfa9b21c34b26c62058c023b40d9",
+        "sha256": "df8f594376bb52288c762d8503e69e66b5ab6e075670e0f0d3186c5f1ecfd566"
+      },
+      {
+        "path": "data-query/wren-ai-service/src/core/provider.py",
+        "git_blob": "4246dd4908a20b6efc32647a20b3cbe5251b3909",
+        "sha256": "7ec7c98a815cbdc6c6764ac884b39a2c017c1e3d56db093cc3b86aa94c27652d"
+      },
+      {
+        "path": "data-query/wren-ai-service/src/force_deploy.py",
+        "git_blob": "cb79ba04b14541dee87b4dece17dee801707821c",
+        "sha256": "4fab47fdd12ee6087d0b0fd981b50a82a695190b24c321185033711dca95e689"
+      },
+      {
+        "path": "data-query/wren-ai-service/src/force_update_config.py",
+        "git_blob": "0a3d7feba9d0cb8a75c9873e24ded6d9575069b3",
+        "sha256": "baf014192a2d9a4b1302bbcfa2da34fac097adfa6aace1807634b4058a6c411f"
+      },
+      {
+        "path": "data-query/wren-ai-service/src/globals.py",
+        "git_blob": "d6c40e05b4cdc7aaf9a75e0633c117f9abf96983",
+        "sha256": "dcab991777d1217dfbd443cf9f8255e45cef30d4bbc0fb51ce2b7f83e993ca1a"
+      },
+      {
+        "path": "data-query/wren-ai-service/src/pipelines/__init__.py",
+        "git_blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "path": "data-query/wren-ai-service/src/pipelines/common.py",
+        "git_blob": "f6114d63b157bac9c94a9bee317f35a4c6076be1",
+        "sha256": "5c1b01e80f856761b22a1667986d5e71ba627305bee3598a746af74bf2997b61"
+      },
+      {
+        "path": "data-query/wren-ai-service/src/pipelines/generation/__init__.py",
+        "git_blob": "891077a283b8eab35759b17435e26018c11cdc9e",
+        "sha256": "d4cdbacb6fe98dd9206761a175453a317d0c9ef8cba556942a507bc4173b4ce2"
+      },
+      {
+        "path": "data-query/wren-ai-service/src/pipelines/generation/chart_adjustment.py",
+        "git_blob": "2e4e7ba8a3e58b392cf459b8ab6ccdcd762999ab",
+        "sha256": "b4c02fefa37a25652c159298cc9189a5aba1760d2055f003844faf0350955239"
+      },
+      {
+        "path": "data-query/wren-ai-service/src/pipelines/generation/chart_generation.py",
+        "git_blob": "6daca5ec1778face66917fb4593e512b2e3142db",
+        "sha256": "3022cfb8e24e662d84cab407116332908d686ebe9b1fd22233be9460fbd29476"
+      },
+      {
+        "path": "data-query/wren-ai-service/src/pipelines/generation/data_assistance.py",
+        "git_blob": "08c47a9131d66fc94b51863c4378a8c74a8c021a",
+        "sha256": "7035184380eacb77b499465027b4da4cbdfae265cfb41c69a523cb5de21a7cc3"
+      },
+      {
+        "path": "data-query/wren-ai-service/src/pipelines/generation/followup_sql_generation.py",
+        "git_blob": "5f889ff00c1918d93f46f9be9130f43577491fdb",
+        "sha256": "240c74d7348d783df0dd0dcac880404731a7cd8bd4ab8854c9ca621c05fb3b7b"
+      },
+      {
+        "path": "data-query/wren-ai-service/src/pipelines/generation/followup_sql_generation_reasoning.py",
+        "git_blob": "fd43f5e6d2e5fdb3a0c517ce3d8e2f49c69bd860",
+        "sha256": "18f5473ff2b72cc0d6bca21e48dd38cb87e2e9a21596850ccd1dd5e309eeef91"
+      },
+      {
+        "path": "data-query/wren-ai-service/src/pipelines/generation/intent_classification.py",
+        "git_blob": "4d6cd313cdfa8cfc767a8b0b6ff29e640a6741f2",
+        "sha256": "3edd27128259d338d1d96c301c597de7f430216721dd598e0765e6da3443c215"
+      },
+      {
+        "path": "data-query/wren-ai-service/src/pipelines/generation/misleading_assistance.py",
+        "git_blob": "d0d4d5538f189a43d43c7b942dae5634474918a5",
+        "sha256": "67d84cdae09426ba48eca3709064d6d4c3f57f460b0e3a0f59cbc1acb36d3d82"
+      },
+      {
+        "path": "data-query/wren-ai-service/src/pipelines/generation/question_recommendation.py",
+        "git_blob": "a6e7c17b02bf4e8d662990af9519bebcb5aecfa5",
+        "sha256": "dd689fdcc939365a0127e13215b297e4c526c3ba4f35f69dafceb4f9345273a2"
+      },
+      {
+        "path": "data-query/wren-ai-service/src/pipelines/generation/relationship_recommendation.py",
+        "git_blob": "e0d0bed6753183fa45db0cefd06f3b0593774ccf",
+        "sha256": "a90e876fb5efe2e069d279bb4ed2d3e914b92580d0848d236ff118c41dbb104f"
+      },
+      {
+        "path": "data-query/wren-ai-service/src/pipelines/generation/semantics_description.py",
+        "git_blob": "acc5fc8594fa0c7f35d8386be1a50f1d63ace9ec",
+        "sha256": "dfd745d5dd978335e0ef9d717d60e2a635ad20bea66d51aa22d8d2d8f43c52ff"
+      },
+      {
+        "path": "data-query/wren-ai-service/src/pipelines/generation/sql_answer.py",
+        "git_blob": "7a7eb0e633a68c7a1435442086778bd3e83be16d",
+        "sha256": "d85a0d3c601cf7910b5d42541ee3f8c88db3f1f22dc933c9d799ed9299800c14"
+      },
+      {
+        "path": "data-query/wren-ai-service/src/pipelines/generation/sql_correction.py",
+        "git_blob": "86b9091f1515673384f97d9a1f74ff0be214e620",
+        "sha256": "800e8e4c161ccbe7b35de7cbeabc9005175d39eb35c565ef4d23df2ca7f92b11"
+      },
+      {
+        "path": "data-query/wren-ai-service/src/pipelines/generation/sql_diagnosis.py",
+        "git_blob": "3f22b9d512ba03cb52bb4b82504c2492235df5d2",
+        "sha256": "025c8e8ffd062359fcd1595ee9d8e41637ee864b637328ad67dd27c96080807e"
+      },
+      {
+        "path": "data-query/wren-ai-service/src/pipelines/generation/sql_generation.py",
+        "git_blob": "27d3bc5eab3354638e1e6718b1f60a86762cb7da",
+        "sha256": "cc815b846780828e72f1df89edbe94f30182acb0d1316863aec1b934534319f1"
+      },
+      {
+        "path": "data-query/wren-ai-service/src/pipelines/generation/sql_generation_reasoning.py",
+        "git_blob": "13dc6f662a7b8afdd30f2f565e51c52faad22e03",
+        "sha256": "e1aa2b95b5b06a017b0e9e8c6d8fbc17dbaa9307ab29c68b3d22a02c5d0e63cd"
+      },
+      {
+        "path": "data-query/wren-ai-service/src/pipelines/generation/sql_question.py",
+        "git_blob": "81f3d3e62b7637454880b9018347ae0bebd74d55",
+        "sha256": "4a97c1ae34950dc36af90a939461700b2faecafc215846ce377537f7b6b55a44"
+      },
+      {
+        "path": "data-query/wren-ai-service/src/pipelines/generation/sql_regeneration.py",
+        "git_blob": "0dbf2fd8088c0b1d6adad977c42ad37551e8e7e7",
+        "sha256": "99bb8cc9be087110970731170b5da7ede27834dbd97136deb59f8be43fe46aaa"
+      },
+      {
+        "path": "data-query/wren-ai-service/src/pipelines/generation/sql_tables_extraction.py",
+        "git_blob": "7060e750b32e223db5f2cb82394aa63daf16d4a3",
+        "sha256": "95d076bcd74fe23af4c1c135de39b9b10a2dcc080824c061e5a1618ffd46c11f"
+      },
+      {
+        "path": "data-query/wren-ai-service/src/pipelines/generation/user_guide_assistance.py",
+        "git_blob": "aa79c6078f0d56c9c948b672e13bd47dd16ef7eb",
+        "sha256": "4172f329a4bdb94e636152f8e7a4f0044b3d31d868def117fa9901dce04f9395"
+      },
+      {
+        "path": "data-query/wren-ai-service/src/pipelines/generation/utils/chart.py",
+        "git_blob": "5d06b949a9cc769f9fe59d7449bbf9d166d7f44e",
+        "sha256": "1247a2a3dd06563121dceb1c9073e8e25bfc9e9d7f178202f2e2c4a1c59049f1"
+      },
+      {
+        "path": "data-query/wren-ai-service/src/pipelines/generation/utils/sql.py",
+        "git_blob": "de98c441c34a99ae92a9b06653c3cb926459617d",
+        "sha256": "e3d107c817433875a5cac889f0f2c6effc8835d4f90c67bb5b2ad7277b9cad35"
+      },
+      {
+        "path": "data-query/wren-ai-service/src/pipelines/generation/utils/vega-lite-schema-v5.json",
+        "git_blob": "83fe66bda5bbccbcc3a4d2e94cce8594cb5cc044",
+        "sha256": "d9d424aa15b55673813b9e814bbc9145fcab825eb892e836bc9a5a0d2ee37dee"
+      },
+      {
+        "path": "data-query/wren-ai-service/src/pipelines/indexing/__init__.py",
+        "git_blob": "0ee3d3c08fefaf2855766c38b3a377cc505b85e2",
+        "sha256": "03572fd95f6864c70ff261986e0b1b5ab2503dd2ee965c4eb10df0e2ad874dcb"
+      },
+      {
+        "path": "data-query/wren-ai-service/src/pipelines/indexing/db_schema.py",
+        "git_blob": "394d087b4600ede2b01418c6f7986e6ec596ad7d",
+        "sha256": "2a827df9a0fb23666102133456de5daead6861673fc1a91a04849ab83bad3971"
+      },
+      {
+        "path": "data-query/wren-ai-service/src/pipelines/indexing/historical_question.py",
+        "git_blob": "ff30d91f0f8663e75562c9d7d7d3729529616d89",
+        "sha256": "4260c38a018d3c465684bd7bd33ad9763ee192d2db7efb38771f01d67c82a03b"
+      },
+      {
+        "path": "data-query/wren-ai-service/src/pipelines/indexing/instructions.py",
+        "git_blob": "b23f3cf2ab37cc92d2c26d90ed4e803127b2bb3e",
+        "sha256": "d6eb3011f7bf88ea224c2cd47dcce7ec07385dd032d44291b1aaf7dda940e421"
+      },
+      {
+        "path": "data-query/wren-ai-service/src/pipelines/indexing/project_meta.py",
+        "git_blob": "2ee4a08074b930882341999714566e468c8fde5d",
+        "sha256": "d7cd3cbcb11f599dc7148b2693973b8c0809a19ddf79de1fb19c86ab8d490731"
+      },
+      {
+        "path": "data-query/wren-ai-service/src/pipelines/indexing/sql_pairs.py",
+        "git_blob": "a92fb36df1259fcbf72375748b65c42964b51bbf",
+        "sha256": "8c79cd6641823857732fd11a046958f39e1b412473ef3d0e2df5917064a63d4f"
+      },
+      {
+        "path": "data-query/wren-ai-service/src/pipelines/indexing/table_description.py",
+        "git_blob": "6da100868fd414b7513a90f1b49af235986eccdf",
+        "sha256": "4050ecbee9546a440b63bb00d172095fb793bc13dce79fd44e70ffb16c927efe"
+      },
+      {
+        "path": "data-query/wren-ai-service/src/pipelines/indexing/utils/helper.py",
+        "git_blob": "3829324a0a28ca11158004c57cc64e5f3156790b",
+        "sha256": "1597cbe4dfe8f97ada794381f0fcde7efc30abf476f3292f71a94750b7b5a42d"
+      },
+      {
+        "path": "data-query/wren-ai-service/src/pipelines/retrieval/__init__.py",
+        "git_blob": "01d4429299c6e613c2c225739045baed5d69d164",
+        "sha256": "32e54367f86013c0c25a51382dedfe6082753a202b615b482fb976e5f36a7bf9"
+      },
+      {
+        "path": "data-query/wren-ai-service/src/pipelines/retrieval/db_schema_retrieval.py",
+        "git_blob": "6c8dd7bbe3a91094096ba9505779e4d364cbbe40",
+        "sha256": "ed263efe56c02aaaff5af23549e4406f91cc02b88bf4dbc0cb96521b365d21af"
+      },
+      {
+        "path": "data-query/wren-ai-service/src/pipelines/retrieval/historical_question_retrieval.py",
+        "git_blob": "0dcbc839ab8e98dea3e71becbedd29fac8b590e6",
+        "sha256": "e19c92a34f8ad90b8e659c3463784c4793e35497f2ab4f1e2ba263d337aed8d1"
+      },
+      {
+        "path": "data-query/wren-ai-service/src/pipelines/retrieval/instructions.py",
+        "git_blob": "86c17e93def47475058597bd83e017d718ed9b39",
+        "sha256": "309dc9539b34812bf1528d0dbc4567ccde1a06fb7d0560403626fd4d1891def8"
+      },
+      {
+        "path": "data-query/wren-ai-service/src/pipelines/retrieval/preprocess_sql_data.py",
+        "git_blob": "e6dadd32d0b5f5de975463cad66cdb7001b26864",
+        "sha256": "c09deb6d38b8d435e55e3ce3f2de246c796ce75b696a8769e218bfa0123a14ff"
+      },
+      {
+        "path": "data-query/wren-ai-service/src/pipelines/retrieval/sql_executor.py",
+        "git_blob": "b41151469ff98e17d0e54274434a79cdf913dfd2",
+        "sha256": "16c7df8a8209674cf2db97926c8595ebdacc4eb3ce8fdbbc52c77685d6de3312"
+      },
+      {
+        "path": "data-query/wren-ai-service/src/pipelines/retrieval/sql_functions.py",
+        "git_blob": "016aa9b1e62b118ac6e31480c572095f002afd5e",
+        "sha256": "e83fa2558d1a6487aed65b5d68876c4d44b1819b3b025b5b17f2f0f5370ae4ed"
+      },
+      {
+        "path": "data-query/wren-ai-service/src/pipelines/retrieval/sql_pairs_retrieval.py",
+        "git_blob": "3fe44f32eb683b1a73e39a3551577dd07720f09d",
+        "sha256": "a80a2b89f0db9848f3fc04dd63fcd680b59e072171e624a919e4dfee1ece3669"
+      },
+      {
+        "path": "data-query/wren-ai-service/src/providers/__init__.py",
+        "git_blob": "c839c062cab30819261615164740b6f60c22f3cc",
+        "sha256": "c5cbde358c0ab10638dd8edb18c305a5d56cccb0b0484a689eac0360a30435c1"
+      },
+      {
+        "path": "data-query/wren-ai-service/src/providers/document_store/__init__.py",
+        "git_blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "path": "data-query/wren-ai-service/src/providers/document_store/qdrant.py",
+        "git_blob": "b90961c4563a0c5c596273ae14d414be3f584e96",
+        "sha256": "134e143e8925c4ef1e80829d74397f046ac58ad0fe2696d830c3d8c8886cf592"
+      },
+      {
+        "path": "data-query/wren-ai-service/src/providers/embedder/__init__.py",
+        "git_blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "path": "data-query/wren-ai-service/src/providers/embedder/litellm.py",
+        "git_blob": "bf706245cd669b2d0b43c4d779162b9009b4cdb6",
+        "sha256": "77e293caa5ee4cb643e795835e3fea3cfde597251919c27586b273e5c44a8bc3"
+      },
+      {
+        "path": "data-query/wren-ai-service/src/providers/engine/__init__.py",
+        "git_blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "path": "data-query/wren-ai-service/src/providers/engine/native_identity.py",
+        "git_blob": "e85abb7e4c2d19213bfa9a64171c5405746db864",
+        "sha256": "1a76e0657e9cea78ab14671e5786d4b95d5e81d59f9b8072624cc9ed0e22e3c1"
+      },
+      {
+        "path": "data-query/wren-ai-service/src/providers/engine/wren.py",
+        "git_blob": "8a132774dc83d9667a60adec2ee562e12c24a92b",
+        "sha256": "ffffd82177ea26bcb67a4d109426db3d67dca76ff88d993f5e6d803d8a4e3faf"
+      },
+      {
+        "path": "data-query/wren-ai-service/src/providers/llm/__init__.py",
+        "git_blob": "a81baafecc493205851888b8e15b0049de9d850e",
+        "sha256": "b63fb0bc2693e9ce4f9ede88f05d269ee16e5a1481ce853c33a54259df978bcb"
+      },
+      {
+        "path": "data-query/wren-ai-service/src/providers/llm/litellm.py",
+        "git_blob": "caccc0dac3212242ef6289648758b6f06d26e2b6",
+        "sha256": "9f80aff60b4e0b8978f84e7c6e401a6ec48ec0ba5fedef4807ef194a0ced0030"
+      },
+      {
+        "path": "data-query/wren-ai-service/src/providers/loader.py",
+        "git_blob": "acba5c6d31f5f9559c7413f96dc0a79739bdd226",
+        "sha256": "277163d193bf4f156d1d919fd609ada1050031040dd3af35dac1516f1182b768"
+      },
+      {
+        "path": "data-query/wren-ai-service/src/providers/native_model_delivery.py",
+        "git_blob": "574375efc5299b26f4748d9496e5dfb7a6c28531",
+        "sha256": "abda686a272b1155fbb34086dbafc0c40eae203ab1589ca3e5958210e278d8f8"
+      },
+      {
+        "path": "data-query/wren-ai-service/src/utils.py",
+        "git_blob": "d368080c3cdae3988d1cf7274ac16800922b9afd",
+        "sha256": "cf80663e239d78be6cf2c19658f7bbc88a61620e49fdc8ac95a7b3be0d7b868b"
+      },
+      {
+        "path": "data-query/wren-ai-service/src/web/__init__.py",
+        "git_blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "path": "data-query/wren-ai-service/src/web/development.py",
+        "git_blob": "6f092247d85c02bb15ee0aaa60be795275c416b5",
+        "sha256": "e799d84eaf441c5ba492d368f0ebabe8c86ea7bbecb7e1bf1b63f5423437302d"
+      },
+      {
+        "path": "data-query/wren-ai-service/src/web/v1/__init__.py",
+        "git_blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "path": "data-query/wren-ai-service/src/web/v1/routers/__init__.py",
+        "git_blob": "cf2075699245f9e7611195f5d046d3b82def9a27",
+        "sha256": "9ba30f073ace9aaf517249512b43a0c1af231ab746f9cb37c1c2cebcb6d3462e"
+      },
+      {
+        "path": "data-query/wren-ai-service/src/web/v1/routers/ask.py",
+        "git_blob": "0e5e0b7be7ca6248775321c300a83b3e2f9d0e8b",
+        "sha256": "6e9f360083e1f0e849d6ed2946df6c77ef187a73117f8c34e6f75fca996edc80"
+      },
+      {
+        "path": "data-query/wren-ai-service/src/web/v1/routers/ask_feedbacks.py",
+        "git_blob": "4aed2cbdb8204b208ff33b4dfde3461f881d8b6f",
+        "sha256": "9c080923f24adef0d59adaae5601250d21addb53ec862ae494cfa92afdc33cd0"
+      },
+      {
+        "path": "data-query/wren-ai-service/src/web/v1/routers/chart.py",
+        "git_blob": "3b395618d025b10fe3771fb207657e05ece50551",
+        "sha256": "1381498f638e856fc3d40fd6e2a06755d80b65ec596bd2cc8f959b6118c80570"
+      },
+      {
+        "path": "data-query/wren-ai-service/src/web/v1/routers/chart_adjustment.py",
+        "git_blob": "ddf7ebfcd4a0794246f61bb540505428534b8874",
+        "sha256": "c14e26156f6d605006878cebb99e27b72d21f815f9e95bd88f3f0c37e7f28b7a"
+      },
+      {
+        "path": "data-query/wren-ai-service/src/web/v1/routers/instructions.py",
+        "git_blob": "5fc1f4918eeee80a2cb58c845ef926894d4db980",
+        "sha256": "4d931b140e360d50309d30e521c747691c2bd8a12815da568dc070028dad78cf"
+      },
+      {
+        "path": "data-query/wren-ai-service/src/web/v1/routers/question_recommendation.py",
+        "git_blob": "f029804996895027a77b51f5b98aec184315fb96",
+        "sha256": "a5c11c5c2f448585a2d2209f7d9f626b5e21ef07119ab2260bf8bdb271321edf"
+      },
+      {
+        "path": "data-query/wren-ai-service/src/web/v1/routers/relationship_recommendation.py",
+        "git_blob": "384b856eb1dc82aaefb610bb9ed4558c2bdf4dd6",
+        "sha256": "033eb68d158e76a17b5fce0d8f5506c9821e8aa3b3d39d56fb15fab8c8f62b44"
+      },
+      {
+        "path": "data-query/wren-ai-service/src/web/v1/routers/semantics_description.py",
+        "git_blob": "16727bdd6cc5036555d3bda848f51249f45f60f5",
+        "sha256": "397ea1b0705f35297afc372109549ef6736ddead220d00c76bfbb73cfdbdec71"
+      },
+      {
+        "path": "data-query/wren-ai-service/src/web/v1/routers/semantics_preparation.py",
+        "git_blob": "03702573a19951d2cc2ef3f25c236eb41fa1be94",
+        "sha256": "869548d21ab1fbd12b856afaa0cac299db81ae27d1f05b83fd8bd2dc072d35c2"
+      },
+      {
+        "path": "data-query/wren-ai-service/src/web/v1/routers/sql_answers.py",
+        "git_blob": "f07dd6d1a979ce1c15b4cd8e7904297c0759428c",
+        "sha256": "00480da96b5a6a7e7db886d4d1c9622b3387060067d117e8c2f7cc17f5e3c3e4"
+      },
+      {
+        "path": "data-query/wren-ai-service/src/web/v1/routers/sql_corrections.py",
+        "git_blob": "b74be58bcf3d376df3711a0d7804d3ce7695d908",
+        "sha256": "c8256fba866494ac84cb9784ccbb7e85ef874b825637ae91ea6da179e3aa5c1f"
+      },
+      {
+        "path": "data-query/wren-ai-service/src/web/v1/routers/sql_pairs.py",
+        "git_blob": "ecbf533a38d147ba4af9591fbe46b073c4a32e35",
+        "sha256": "15c9c27c7eda20ee4f7e1881fd956109a3b36a901fb06b06106d4c6aec8fb4fb"
+      },
+      {
+        "path": "data-query/wren-ai-service/src/web/v1/routers/sql_question.py",
+        "git_blob": "a66e5fc7526cbba294ecf5ede3b67ca57cfa575f",
+        "sha256": "1c23b2cabcc0addfd612a89c50daaab95585ed422ced736c0c4c2ff741506807"
+      },
+      {
+        "path": "data-query/wren-ai-service/src/web/v1/services/__init__.py",
+        "git_blob": "5c76e4f3fbd0874d457e2ca84e8a0c95f9c82dd4",
+        "sha256": "ef3230a460e0fbbd988cf20da4676d62ce59bd0295eb5ec487da4b66aa4a90b2"
+      },
+      {
+        "path": "data-query/wren-ai-service/src/web/v1/services/ask.py",
+        "git_blob": "862d2286e3218f58035f74f667282056dcc33410",
+        "sha256": "4d94c3601875b268f98447d6bd47ecb2b685b058d20d98013735190f08f78d0c"
+      },
+      {
+        "path": "data-query/wren-ai-service/src/web/v1/services/ask_feedback.py",
+        "git_blob": "3ce0f668e67510e09738eac84f2ebd49c6d487ec",
+        "sha256": "fa67024b83aa8f95ee4860f0c3082d0cf5fecce0d8a616f4b470444bda57fbe1"
+      },
+      {
+        "path": "data-query/wren-ai-service/src/web/v1/services/chart.py",
+        "git_blob": "2e908696fc0557952abc83d420ae2d8559e9c055",
+        "sha256": "02da3c43ba6186207310c437996f41b437de6250093c18d60421c2eaf40ba84f"
+      },
+      {
+        "path": "data-query/wren-ai-service/src/web/v1/services/chart_adjustment.py",
+        "git_blob": "231dc6a38cbb8629ef4ed5e1fda7756742898c55",
+        "sha256": "fb7fa203a4bd01b5d9abdd40c14af45c6efaf46150aba3c2f0a00a9cae90f9cf"
+      },
+      {
+        "path": "data-query/wren-ai-service/src/web/v1/services/instructions.py",
+        "git_blob": "8a825938d2fd969de29909f19b2ede3763e2e735",
+        "sha256": "0025e2b2e7f68ca600d4c46886e11b0a303bab1c7052007b003605eb116c2f42"
+      },
+      {
+        "path": "data-query/wren-ai-service/src/web/v1/services/question_recommendation.py",
+        "git_blob": "24df1e3e62ad5193941c16a9f9cfd066dc9e832c",
+        "sha256": "3ca9d9bcc4b72e31a893d0d53a3d8714923376d3e5a6b50f35a8bd0d1a1e71df"
+      },
+      {
+        "path": "data-query/wren-ai-service/src/web/v1/services/relationship_recommendation.py",
+        "git_blob": "25c0bc58201e35935fc2ae5f54675cadabcd2a3c",
+        "sha256": "008f258a7bf3889f4a33ce19e4cf509f1500d144b4254f226d542b90e6801efb"
+      },
+      {
+        "path": "data-query/wren-ai-service/src/web/v1/services/semantics_description.py",
+        "git_blob": "85bf14b188f721cfd9b91611bc287eebd105a8b5",
+        "sha256": "a0bf6537e0ecf98450544dcb9ca69bceffe3c69871236f21afd0bc3ef5406449"
+      },
+      {
+        "path": "data-query/wren-ai-service/src/web/v1/services/semantics_preparation.py",
+        "git_blob": "a580bb32f8ef1a20f9188c71e826bd275b3ca0b7",
+        "sha256": "b3600c5b562fb5dc843c4f246c6b4a82c2c0ea58f0b3a5d7f9eb134b3f4ff76e"
+      },
+      {
+        "path": "data-query/wren-ai-service/src/web/v1/services/sql_answer.py",
+        "git_blob": "e35d0917930fdf371ef33d313cd56221bac703c5",
+        "sha256": "a2541c6aec67a3e7acc995f3a7ffe97a5ee348b65ba211fb8140426408697dc9"
+      },
+      {
+        "path": "data-query/wren-ai-service/src/web/v1/services/sql_corrections.py",
+        "git_blob": "116330ec576320bbe711f87d0be15f81354b01ce",
+        "sha256": "831d5af348b491345b07095823a49e45455459503449dfe0794dfb79cb726830"
+      },
+      {
+        "path": "data-query/wren-ai-service/src/web/v1/services/sql_pairs.py",
+        "git_blob": "441f69dd0de79c06053ed775fa96433549fc7061",
+        "sha256": "b45915bb3e0106eff4b549af342caa9321cb81fbaf976f6c24b864db4bf17faa"
+      },
+      {
+        "path": "data-query/wren-ai-service/src/web/v1/services/sql_question.py",
+        "git_blob": "1fa934d43583f4446a8724d996897e2ebf503af9",
+        "sha256": "3f583bcfcb6a04cac66a5121e66b81c94d0cb47c8d70d43389d729cb31f3a8b3"
+      },
+      {
+        "path": "data-query/wren-ai-service/tests/__init__.py",
+        "git_blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "path": "data-query/wren-ai-service/tests/data/book_2_mdl.json",
+        "git_blob": "ccf6f40ecea0fb6945a0459a10a45ea516f8f625",
+        "sha256": "4497294b01b9388d96374ea994cb903c0e72c69831268dca24d76b3f16314a7f"
+      },
+      {
+        "path": "data-query/wren-ai-service/tests/data/config.test.yaml",
+        "git_blob": "65613d2c83d17e997c0ca03292abf970286c703b",
+        "sha256": "9d82fffca0a7f87e6637b3d70447f5c81bb23e19a7287ac1823313d9a4fe7d09"
+      },
+      {
+        "path": "data-query/wren-ai-service/tests/data/mock_pyproject.toml",
+        "git_blob": "c47f06063334988103510c8f98bee67cba905cd3",
+        "sha256": "c6ed934a8778172c29d872b3b07c1773137227ad7c60124b7e77b2e7a856696f"
+      },
+      {
+        "path": "data-query/wren-ai-service/tests/data/pairs.json",
+        "git_blob": "5f5ab0967ce8cf0bddac955e5855e775ca50742a",
+        "sha256": "65d58e23f7cd75f0d7ef585d0a55f90accf58c4a38177f2d32ffed74b6fb711e"
+      },
+      {
+        "path": "data-query/wren-ai-service/tests/locust/__init__.py",
+        "git_blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "path": "data-query/wren-ai-service/tests/locust/config_users.json",
+        "git_blob": "f4c93cd9d3f812fdb1fce5c3c3ea592462cd6792",
+        "sha256": "6647f589c2cf749ebe0dc1e04f34653e5855ec57a32a460434542c3007db0113"
+      },
+      {
+        "path": "data-query/wren-ai-service/tests/locust/locust.conf",
+        "git_blob": "7ef8cd391a63104c73874dc08e37cf9548218e0b",
+        "sha256": "2c4c2e3e1d11f7b11be2914f4a90ab936dd78c173e3f0ce487d7f3fb5785f12a"
+      },
+      {
+        "path": "data-query/wren-ai-service/tests/locust/locust_script.py",
+        "git_blob": "b68afdfaf9d887b7d60a29757963a7aff2440fcd",
+        "sha256": "64bd87d1dde6407f7dc92419648ae726ccb0582f2df6d22331f780d17365dd25"
+      },
+      {
+        "path": "data-query/wren-ai-service/tests/locust/locustfile.py",
+        "git_blob": "71b6292dd60176e1e1d4da838b6bfbbfece9a9db",
+        "sha256": "b8fb36a8816fe791b024a66a6fef60c9e47cb76480189f44033edd7671961add"
+      },
+      {
+        "path": "data-query/wren-ai-service/tests/pytest/__init__.py",
+        "git_blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "path": "data-query/wren-ai-service/tests/pytest/eval/__init__.py",
+        "git_blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "path": "data-query/wren-ai-service/tests/pytest/eval/test_metrics.py",
+        "git_blob": "180d9d6cccb2cd16e617a0e5a038d8ec2b99ffef",
+        "sha256": "2098a5b1eb677fdae96ec7652bda147e6a812be3b1f533313f83cca4dd4eb2f2"
+      },
+      {
+        "path": "data-query/wren-ai-service/tests/pytest/pipelines/__init__.py",
+        "git_blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "path": "data-query/wren-ai-service/tests/pytest/pipelines/generation/__init__.py",
+        "git_blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "path": "data-query/wren-ai-service/tests/pytest/pipelines/generation/test_ask.py",
+        "git_blob": "303b4c0eede9256ab9429ae05ffa935fafa7fc98",
+        "sha256": "48ce7e10cb2255bdd7fc31fc39bb50c2e830e1b69fd3bb37b9970f2a644f0796"
+      },
+      {
+        "path": "data-query/wren-ai-service/tests/pytest/pipelines/generation/test_semantics_enrichment.py",
+        "git_blob": "e7180fa418f057aa099bfa8c09001057349f1df2",
+        "sha256": "7c3140a0644548741ed427ac22ebea2fd255c92b20593eb310d3f1a7306482b4"
+      },
+      {
+        "path": "data-query/wren-ai-service/tests/pytest/pipelines/indexing/__init__.py",
+        "git_blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "path": "data-query/wren-ai-service/tests/pytest/pipelines/indexing/test_db_schema.py",
+        "git_blob": "20bd8ac682a1d1fbdd5824e93d355fd34b16d04b",
+        "sha256": "fb11540c323e1593a726237ff083d9d65bb542412832c440e08c706325f84eb1"
+      },
+      {
+        "path": "data-query/wren-ai-service/tests/pytest/pipelines/indexing/test_helper.py",
+        "git_blob": "708ace529ccba878decd59e8d20a9ae21bea05e7",
+        "sha256": "cb2f10e9235392c26f8f0aac1b352fdfed209b95a4044a749c9cca71534519a1"
+      },
+      {
+        "path": "data-query/wren-ai-service/tests/pytest/pipelines/indexing/test_historical_questions.py",
+        "git_blob": "6425b80a8ec1c4ad63acd44b2e17e3aa293a8879",
+        "sha256": "3bf3ee0e46a6c9c69593c4a8f3d5a4f8d1046d9eed6d6ab3e1c9e09312164c1f"
+      },
+      {
+        "path": "data-query/wren-ai-service/tests/pytest/pipelines/indexing/test_indexing.py",
+        "git_blob": "ba8c2ff4a3230688234b65fe291b90af12b06ce5",
+        "sha256": "093e3449889f460071e74a4a218d70def18991f211f2758524968edd4fda1d5b"
+      },
+      {
+        "path": "data-query/wren-ai-service/tests/pytest/pipelines/indexing/test_instructions.py",
+        "git_blob": "25bd8c48cdaf1a097ba5227188635de97b31774b",
+        "sha256": "5681d3169a87b73da2178ccce4327f2b08dd336710af4dcaddcdf761232dff5d"
+      },
+      {
+        "path": "data-query/wren-ai-service/tests/pytest/pipelines/indexing/test_sql_pairs.py",
+        "git_blob": "3436a64c59f7e4d0de5e470ea5802c32e7b9ccd3",
+        "sha256": "098ba864a9f2ae8ceb8fea9d59d10ce4f4dd573c025ac64be98fd4583d05d0ac"
+      },
+      {
+        "path": "data-query/wren-ai-service/tests/pytest/pipelines/indexing/test_table_description.py",
+        "git_blob": "7def966fdb2e6fb10475d4aa7d951d5ac080d8a4",
+        "sha256": "e4c9379345dbee87926153c9e90a592a9d8e80bb5d36a54d54259dfc00f98345"
+      },
+      {
+        "path": "data-query/wren-ai-service/tests/pytest/pipelines/retrieval/__init__.py",
+        "git_blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "path": "data-query/wren-ai-service/tests/pytest/pipelines/retrieval/sql_function.py",
+        "git_blob": "433e04f680fa79a6d9a76bbba72b38e2918c333d",
+        "sha256": "e72ecba4c85116832d0f7c0696356bb79594cc55c3664b6da543163fc6243bcb"
+      },
+      {
+        "path": "data-query/wren-ai-service/tests/pytest/providers/__init__.py",
+        "git_blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "path": "data-query/wren-ai-service/tests/pytest/providers/test_loader.py",
+        "git_blob": "334b61b37b612154ea3a9f4aa718c2188f837d8a",
+        "sha256": "72b62b5e68fc21f34e765b70f626d64aa610ff2551c86685a0f8c1e42d74b711"
+      },
+      {
+        "path": "data-query/wren-ai-service/tests/pytest/providers/test_native_human_asking.py",
+        "git_blob": "b3c878a2873135f2fd99ec0b8e6455087e54e873",
+        "sha256": "d14f09c30e061bbb2b177021e23d8056d93528d27267bf358705c3b1340649dd"
+      },
+      {
+        "path": "data-query/wren-ai-service/tests/pytest/providers/test_native_identity.py",
+        "git_blob": "9f48f45a0308dbfc1af54de42011f884255567a3",
+        "sha256": "0c3e715e4559e799b6fe612d2824385614756b8085b15416958b02e32823e5e9"
+      },
+      {
+        "path": "data-query/wren-ai-service/tests/pytest/providers/test_native_model_credentials.py",
+        "git_blob": "fc4295bc79bfc3221c048a66aa2a72384f4861fe",
+        "sha256": "773b5bd548beb0440859f394b3131c593d3d5279dbf24f7901e366736b057447"
+      },
+      {
+        "path": "data-query/wren-ai-service/tests/pytest/providers/test_native_model_delivery.py",
+        "git_blob": "420f62f3756b46099a43a940b3d1f7b1b38ae7ff",
+        "sha256": "88de54c5a85e1d7a9f7d3ca792a8b246599261c7a30df7a7522e4fbe5409e8e0"
+      },
+      {
+        "path": "data-query/wren-ai-service/tests/pytest/providers/test_native_sql_answer_stream.py",
+        "git_blob": "ff1df68d918bb713b5a6c0f4cc6aa8282b661f09",
+        "sha256": "fd096ba3919f15b1c5f118034fb41b2a985ff3874c900070a184ea9903af2196"
+      },
+      {
+        "path": "data-query/wren-ai-service/tests/pytest/providers/test_providers.py",
+        "git_blob": "b2302315aa1266be09a678a48afe240c25edff11",
+        "sha256": "043a91493f200436465f1ca0b54b211094d52aa9d8ffbdaa208500f4210bf1af"
+      },
+      {
+        "path": "data-query/wren-ai-service/tests/pytest/services/__init__.py",
+        "git_blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "path": "data-query/wren-ai-service/tests/pytest/services/mocks.py",
+        "git_blob": "a6ce06d32336f4a7214da4b025e5dab44ecb2810",
+        "sha256": "03dbc4a7e36df24c6f43a22dcd6964e0c3e2f23c2dd2bd604fbd001bbd50194f"
+      },
+      {
+        "path": "data-query/wren-ai-service/tests/pytest/services/test_ask.py",
+        "git_blob": "d479ac955019fe6ff87561c6df4fb3e78a616784",
+        "sha256": "645c40c75958daa31c7d229b70dbea1afd95c4589f67c37e06b981acd64a3e35"
+      },
+      {
+        "path": "data-query/wren-ai-service/tests/pytest/services/test_deployment_evidence.py",
+        "git_blob": "8fd72bce3d0173f2b1abb3d34dee585c71b89e99",
+        "sha256": "4cc568a1d4a2cbfb800efb80f1ad2c4809022baa83bcd339559aa3488d6c66f8"
+      },
+      {
+        "path": "data-query/wren-ai-service/tests/pytest/services/test_instructions.py",
+        "git_blob": "21fbdf9692896ec02671e8841af3cc743aaf72fe",
+        "sha256": "d1f12a91c785e4548ecd66dbb119e1fcb2dbfc0afd88d94c40eb68ad1f829dc5"
+      },
+      {
+        "path": "data-query/wren-ai-service/tests/pytest/services/test_relationship_recommendation.py",
+        "git_blob": "65672afde68dd8aedec99c76e8f75217e091bc5a",
+        "sha256": "f4d03445fcf77a9f1b30c4a5a75e196e95435ec9a2d65e6e238e84d6b8b180da"
+      },
+      {
+        "path": "data-query/wren-ai-service/tests/pytest/services/test_semantics_description.py",
+        "git_blob": "4b85ed914fd6e751431305a5c5e5a470f9d4b09f",
+        "sha256": "85bf4d73535e2feec2206b894cb41b53718f352b6c19e0926d5cf0f5dd8b8e02"
+      },
+      {
+        "path": "data-query/wren-ai-service/tests/pytest/services/test_sql_pairs.py",
+        "git_blob": "dc0d7c5b1752a5f766b80d78bef3fedcf51c682b",
+        "sha256": "47fcb86bd7b01467c6f922a26b6c63911088eb21094e015a629f06287997f6e4"
+      },
+      {
+        "path": "data-query/wren-ai-service/tests/pytest/test_config.py",
+        "git_blob": "70e3ddace30c3c4a32074aa5e8776c2cc8a749d1",
+        "sha256": "fd8bd6561b172abf75622807325862ad18c50818a4201fe17a864f821be54bc7"
+      },
+      {
+        "path": "data-query/wren-ai-service/tests/pytest/test_main.py",
+        "git_blob": "e853316d5a25fbc80562ea655f3390e4c3bdc736",
+        "sha256": "cdc3f1ca7c796472da536ceef389fb5fd8a8c98edd547359611afab6000d7705"
+      },
+      {
+        "path": "data-query/wren-ai-service/tests/pytest/test_usecases.py",
+        "git_blob": "44f312d4b5243568c465d6c50601210e5f91c4dc",
+        "sha256": "37ab6a3d46d42401564a4d396521cde1e6b2ebcefc278195c95a580942618afc"
+      },
+      {
+        "path": "data-query/wren-ai-service/tests/pytest/test_utils.py",
+        "git_blob": "55a3304f829e92304cb899b3eea7f95d71cb4359",
+        "sha256": "a39f4980206fcac70c4947bcef52860f4d0fdd394f21773bb0c4d7a4601d3aab"
+      },
+      {
+        "path": "data-query/wren-ai-service/tools/.env.example",
+        "git_blob": "a5d5c4de2115846a22250bca05957081c8ae499f",
+        "sha256": "be68d198191da2448eeec8fd48b81b0c386a20cd7da2a8d0e7982f2a9262d8a4"
+      },
+      {
+        "path": "data-query/wren-ai-service/tools/config/.env.dev.example",
+        "git_blob": "a0f011c6b0f33379e2413873d81da74f60a5dca8",
+        "sha256": "147e9a932c4ac9c829ce5b9507eb9d9e58f3cd8ab527a608e0befc0c6da1c571"
+      },
+      {
+        "path": "data-query/wren-ai-service/tools/config/config.example.yaml",
+        "git_blob": "74b0174e5a57c1cbe8d9f199b6a2be909aaadec5",
+        "sha256": "f75cd576bdbaf0b94c542efa629ca19af953696cc55a103717f4118cafd6657c"
+      },
+      {
+        "path": "data-query/wren-ai-service/tools/config/config.full.yaml",
+        "git_blob": "8fc543403e4ace34d876878512b051ebe6fc2e1c",
+        "sha256": "342a953c3f4a8e8264ba716d5c537fa4c5c918efa82ee051a60726ffa3859694"
+      },
+      {
+        "path": "data-query/wren-ai-service/tools/dev/.env",
+        "git_blob": "7cc3c1573ee4f9367eea1ff4e1482ff4bc6268a3",
+        "sha256": "aceb808d767199b397f071476a494182b87e699e8787f9be81b72554a0563824"
+      },
+      {
+        "path": "data-query/wren-ai-service/tools/dev/config.properties.example",
+        "git_blob": "de1c28af93d6a595ce59af818638ad149b86a59b",
+        "sha256": "cc292c76c731c2afcd4b517cbdd707ae11f97af0f57e785617573bd2ae99d2f4"
+      },
+      {
+        "path": "data-query/wren-ai-service/tools/dev/docker-compose-dev.yaml",
+        "git_blob": "bf8b41a8a3493420e25832fc6b243fdd72b7fc1e",
+        "sha256": "451b6b9509ef3ea35145be1153083f5f7b54ee6be0efd682b8bccab5a2ee356c"
+      },
+      {
+        "path": "data-query/wren-ai-service/tools/mdl_to_str.py",
+        "git_blob": "d7561e7381c3f5313b6624f284e4e5ef33e96b58",
+        "sha256": "eaec9bd843747c946d61f133650b09212f4896c4e34003e2dc22791cc2d0a2f9"
+      },
+      {
+        "path": "data-query/wren-ai-service/tools/run_sql.py",
+        "git_blob": "2ed78664462ba5a2c27b0b0aa3222d3bdbf892f2",
+        "sha256": "e02671638f192324e58b04c9328d8df5c066eeb350660e928b6bac77c76a02f7"
+      },
+      {
+        "path": "tools/container-safety.sh",
+        "git_blob": "506fba9031f891f154fb64d7b9e94739e7e8e6bb",
+        "sha256": "2397941d54f7b2b7c60c4fd7beae4f8e9d87e7f8171920734f92ed566607934a"
+      },
+      {
+        "path": "tools/upstream_manifest.py",
+        "git_blob": "66993a61567ac51a2b88adf6736c02a09f66ed36",
+        "sha256": "e45fde47c992a6adc09941a2d5f9c43ab4229d367f26e417e04843f426ea828f"
+      }
+    ]
+  },
+  "preserved_failures": [
+    "Initial 08e Ruff format check exit 1; original formatter applied, committed f457; subsequent check exit 0.",
+    "Each intentional fault exits 1 with original assertion failures; logs retained."
+  ],
+  "limits": [
+    "Actual original router/BackgroundTasks/AskService and existing TTLCache fake timer are exercised; external classifier/retrieval/SQL stages are fixtures.",
+    "Positive GENERAL uses original three Hamilton pipelines and real LiteLLM provider with scripted ChatCompletionChunk HTTP boundary; no live model or deployed provider evidence.",
+    "SQL state-machine fixture is not live database query acceptance. Existing owned NativeQueryPending semantics remain tested.",
+    "Current owned state transitions retain the original TTL update policy. Expired/replaced/stopped ownership cannot resume or dispatch a later stage. Already started provider/database work is not claimed cancelled or rolled back.",
+    "No official artifact publication, receiver activation, live Core/Gateway/OpenBao/usage or deployed browser acceptance; no production configuration or source-trust changes."
+  ],
+  "cleanup": {
+    "own_container_absent": true,
+    "private_network_or_database_allocated": false
+  },
+  "logs": {
+    "wren-ask-lifetime-08e7688eb-format": [
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-ask-lifetime-08e7688eb-format/check.log",
+        "sha256": "a8910bb5fd884bd272c4ff05f1e3f2c0b4eee5f11547e28e529e99fda08bd061"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-ask-lifetime-08e7688eb-format/format-fix.exit",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-ask-lifetime-08e7688eb-format/format-fix.log",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-ask-lifetime-08e7688eb-format/format.exit",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-ask-lifetime-08e7688eb-format/format.log",
+        "sha256": "878d50bf4ab752ab41ae942ac518b87e744d994b21bb15dca142ed7a470b3b3a"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-ask-lifetime-08e7688eb-format/initial-format.exit",
+        "sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-ask-lifetime-08e7688eb-format/initial-format.log",
+        "sha256": "069ae4acdcbaa4175149874e6b256151b3911267b3a53227e4ac2dfb454b941e"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-ask-lifetime-08e7688eb-format/initial-ruff.exit",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-ask-lifetime-08e7688eb-format/initial-ruff.log",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-ask-lifetime-08e7688eb-format/limits.log",
+        "sha256": "e57779ee1f49ca738d516353cbbe78830af77d2b76f2970fb9c8de354767d6ce"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-ask-lifetime-08e7688eb-format/preflight.log",
+        "sha256": "8eddb16fc325bead73614cf6a3e0b20965cbbee309e52d30d909e9f040d22408"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-ask-lifetime-08e7688eb-format/pyproject.exit",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-ask-lifetime-08e7688eb-format/pyproject.log",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-ask-lifetime-08e7688eb-format/result.log",
+        "sha256": "d61f200e4a7016c83a39cbc9818d059b3b97904a9ba1c0c8494df5d502054378"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-ask-lifetime-08e7688eb-format/ruff-version.exit",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-ask-lifetime-08e7688eb-format/ruff-version.log",
+        "sha256": "8bd8b87d0110f3dade5cfac8fe42372d8d7909ec71e3ca52dc299843c552f535"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-ask-lifetime-08e7688eb-format/versions.exit",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-ask-lifetime-08e7688eb-format/versions.log",
+        "sha256": "541a8831f414079c14361f5a5661bf2b8fcf436feb7814d88dbc802e130ee6e8"
+      }
+    ],
+    "wren-ask-lifetime-08e7688eb-metadata": [
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-ask-lifetime-08e7688eb-metadata/check.log",
+        "sha256": "6160422a1f33b332c2f8d68338bcb9f724d461144ec0a7509cda65eaf38c9e6b"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-ask-lifetime-08e7688eb-metadata/limits.log",
+        "sha256": "56e7a3f04264efbd932ab9bd21d7aaa22283bba641c171bf9a61e13dc4084fc8"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-ask-lifetime-08e7688eb-metadata/preflight.log",
+        "sha256": "37251eabe2ed07638e612bd00d4198686d28c0f7bf96f03468216a3e9a3726db"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-ask-lifetime-08e7688eb-metadata/result.log",
+        "sha256": "d61f200e4a7016c83a39cbc9818d059b3b97904a9ba1c0c8494df5d502054378"
+      }
+    ],
+    "wren-ask-lifetime-f457c447d-check": [
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-ask-lifetime-f457c447d-check/check.log",
+        "sha256": "5e79eba011deca2dd04faf946f5d502e5245207525f832db5cd5d958706003ee"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-ask-lifetime-f457c447d-check/general.exit",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-ask-lifetime-f457c447d-check/general.log",
+        "sha256": "d9f390a514a01abd5508e9c9da422996915a0f34a25452556805a8683547bf92"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-ask-lifetime-f457c447d-check/limits.log",
+        "sha256": "dd453ffbde7731bcff0c967992a915e312c117a2427061ee876b9476e3fcb84c"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-ask-lifetime-f457c447d-check/preflight.log",
+        "sha256": "b0901aeeec24f309fe111128a1d8992a2d59a54c20ddba8fa55bbe200453d670"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-ask-lifetime-f457c447d-check/pyproject.exit",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-ask-lifetime-f457c447d-check/pyproject.log",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-ask-lifetime-f457c447d-check/result.log",
+        "sha256": "fcc8992842612ffd4a64194fbec93d97683be3c182abfc7115af83df7803dfd3"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-ask-lifetime-f457c447d-check/ruff-check.exit",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-ask-lifetime-f457c447d-check/ruff-check.log",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-ask-lifetime-f457c447d-check/ruff-format.exit",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-ask-lifetime-f457c447d-check/ruff-format.log",
+        "sha256": "eee76f865de5a9f2456950f710ae5d5f9b5bd0ea02aa54f614c5eed6642a0bfd"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-ask-lifetime-f457c447d-check/ruff-version.exit",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-ask-lifetime-f457c447d-check/ruff-version.log",
+        "sha256": "8bd8b87d0110f3dade5cfac8fe42372d8d7909ec71e3ca52dc299843c552f535"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-ask-lifetime-f457c447d-check/sql-answer.exit",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-ask-lifetime-f457c447d-check/sql-answer.log",
+        "sha256": "61d42c3c24b21eb1d5f7e1b89d26ba310d310e5dc96906dd3d8a1b2799ea428d"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-ask-lifetime-f457c447d-check/versions.exit",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-ask-lifetime-f457c447d-check/versions.log",
+        "sha256": "541a8831f414079c14361f5a5661bf2b8fcf436feb7814d88dbc802e130ee6e8"
+      }
+    ],
+    "wren-ask-lifetime-f457c447d-fault": [
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-ask-lifetime-f457c447d-fault/check.log",
+        "sha256": "5e79eba011deca2dd04faf946f5d502e5245207525f832db5cd5d958706003ee"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-ask-lifetime-f457c447d-fault/cleanup.log",
+        "sha256": "086fd31a4a0a6c0b6922d1243833842d3768dcf62992c621046afa5f77dd4535"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-ask-lifetime-f457c447d-fault/fault-classification.exit",
+        "sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-ask-lifetime-f457c447d-fault/fault-classification.log",
+        "sha256": "b08f03cbffa470a592b93925114de99bd096eae7cc5cb0dbfa7098f80e6db91b"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-ask-lifetime-f457c447d-fault/fault-ownership.exit",
+        "sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-ask-lifetime-f457c447d-fault/fault-ownership.log",
+        "sha256": "b88c2b2fe6ccb522183b605f86a735f4ecc29e7286bec3a069f9f8f59c6678a5"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-ask-lifetime-f457c447d-fault/fault-registration.exit",
+        "sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-ask-lifetime-f457c447d-fault/fault-registration.log",
+        "sha256": "c76dcbd7bcdf9435982beb393ea1cca7e4d35f5376d7a7710d5a0c02780f552a"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-ask-lifetime-f457c447d-fault/fault-results.json",
+        "sha256": "00e8a3e620cdb5902a20fffc85d18bf7e06e240783f3b3b15a6c033c65acbdd9"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-ask-lifetime-f457c447d-fault/general.exit",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-ask-lifetime-f457c447d-fault/general.log",
+        "sha256": "25098e6af4141ebb3b5f66e87be320c87a9c3746aa56075b1d9fd90e75def347"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-ask-lifetime-f457c447d-fault/input-manifest.json",
+        "sha256": "995c4deef272f2c3b20b6c5937e40acbc9951396da315bd86b3fa96ab6793eb5"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-ask-lifetime-f457c447d-fault/limits.log",
+        "sha256": "85aee3d9b27efd65b8f57974afbd063e4a9bb172b2d2f4bcc781cbc72409e998"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-ask-lifetime-f457c447d-fault/preflight.log",
+        "sha256": "0287ebf52e85f72c2515f71d4f03efce2813d4bd2d87f33cdd5dc72e4925f802"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-ask-lifetime-f457c447d-fault/pyproject.exit",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-ask-lifetime-f457c447d-fault/pyproject.log",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-ask-lifetime-f457c447d-fault/restored-classification.exit",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-ask-lifetime-f457c447d-fault/restored-classification.log",
+        "sha256": "db29b1d4beb94634f65105d1c60dcdaf6975dd681266eb6c11f7f3c2fe657df9"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-ask-lifetime-f457c447d-fault/restored-ownership.exit",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-ask-lifetime-f457c447d-fault/restored-ownership.log",
+        "sha256": "2a2b1d29d43f8ce2799afd35f6765169b808ec365358a16ccd348cb2e8465421"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-ask-lifetime-f457c447d-fault/restored-registration.exit",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-ask-lifetime-f457c447d-fault/restored-registration.log",
+        "sha256": "44423c9a98b1049e9ab38fb99401f2ed8ba914842ffe444506a317776f9471f7"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-ask-lifetime-f457c447d-fault/result.log",
+        "sha256": "fcc8992842612ffd4a64194fbec93d97683be3c182abfc7115af83df7803dfd3"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-ask-lifetime-f457c447d-fault/ruff-check.exit",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-ask-lifetime-f457c447d-fault/ruff-check.log",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-ask-lifetime-f457c447d-fault/ruff-format.exit",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-ask-lifetime-f457c447d-fault/ruff-format.log",
+        "sha256": "eee76f865de5a9f2456950f710ae5d5f9b5bd0ea02aa54f614c5eed6642a0bfd"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-ask-lifetime-f457c447d-fault/ruff-version.exit",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-ask-lifetime-f457c447d-fault/ruff-version.log",
+        "sha256": "8bd8b87d0110f3dade5cfac8fe42372d8d7909ec71e3ca52dc299843c552f535"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-ask-lifetime-f457c447d-fault/sql-answer.exit",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-ask-lifetime-f457c447d-fault/sql-answer.log",
+        "sha256": "869eb0a1d5499aba6c7f00a0eba412f3ba27b5c0a23e00d186f5af80b8a0797a"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-ask-lifetime-f457c447d-fault/versions.exit",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-ask-lifetime-f457c447d-fault/versions.log",
+        "sha256": "541a8831f414079c14361f5a5661bf2b8fcf436feb7814d88dbc802e130ee6e8"
+      }
+    ]
+  }
+}
