@@ -1049,6 +1049,14 @@ impl IdentityClient {
             .map_err(|error| OperatorError::Sign(error.to_string()))
     }
 
+    /// Original 1619 update, using the same admitted identity and signing key.
+    pub fn sign_project_update(&self, request: &contracts::ProjectsPublishRequest,
+        root: &Event, repository: &Event, latest: Option<&Event>) -> Result<Event, OperatorError> {
+        crate::projects::pull_request_update_builder(request, root, repository, latest,
+            &self.pubkey_hex(), &self.community_host)?.sign_with_keys(&self.keys)
+            .map_err(|error| OperatorError::Sign(error.to_string()))
+    }
+
     /// DD-118 merge: the original 1631 of `pull_request`.
     ///
     /// Signed by this identity only when it owns the review's repository.
