@@ -19,14 +19,22 @@ exports.down = async function (knex) {
   // Downgrade must never discard the original UNKNOWN task/selection identity.
   // Stop release while any producer has written these facts; do not backfill,
   // delete native rows, or authorize an older writer to blindly repeat them.
-  const task = await knex('thread').whereNotNull('questions_source_response_id').first('id');
-  const selection = await knex('thread_response').where((query) => {
-    query.whereNotNull('recommendation_intent_key')
-      .orWhereNotNull('recommendation_query_id')
-      .orWhereNotNull('recommendation_source_response_id')
-      .orWhereNotNull('recommendation_index');
-  }).first('id');
-  if (task || selection) throw new Error('Refuse recommendation rollback while native source or selection facts exist');
+  const task = await knex('thread')
+    .whereNotNull('questions_source_response_id')
+    .first('id');
+  const selection = await knex('thread_response')
+    .where((query) => {
+      query
+        .whereNotNull('recommendation_intent_key')
+        .orWhereNotNull('recommendation_query_id')
+        .orWhereNotNull('recommendation_source_response_id')
+        .orWhereNotNull('recommendation_index');
+    })
+    .first('id');
+  if (task || selection)
+    throw new Error(
+      'Refuse recommendation rollback while native source or selection facts exist',
+    );
   await knex.schema.alterTable('thread_response', (table) => {
     table.dropUnique(
       ['thread_id', 'recommendation_intent_key'],
