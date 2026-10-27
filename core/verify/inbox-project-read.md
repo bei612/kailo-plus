@@ -2209,3 +2209,62 @@ OOM=false，实查 `projects-inbox-*` 容器不存在。初次 runner 的 negoti
 本批不声称全量 Projects/Inbox 恢复、真实浏览器剪贴板/双主题截图、三账号协作、
 Windows 安装包或部署验收。其他原菜单与设置仍须逐项核对；本轮未执行全局编译、
 后端/Relay 重检查或正式发布。集成后需要按最终同源词条统一生成 Dart。
+
+## 2026-10-27 Desktop Needs action 宿主漏接恢复
+
+关联 `REQ-24`、`DD-74/75/125(5)`、`SS-BUZ-GOVERNANCE`。比较基线为
+`be347ecc2d1c98d7b1fd31bbc79e44458c140586`，产品提交
+`2230c0f07a169de2a88643511064ac3f59c5ac12`，最终检查源码
+`444fd617576d29e756e0aa8005316ae5dfb291cb`。两份源码文件合计 +122/-2，
+其中产品只改 Desktop `features/home/ui/HomeView.tsx`，其余为事后消费者证据。
+
+固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的
+`desktop/src/features/home/ui/InboxFilterMenu.tsx`、`lib/inbox.ts::buildInboxItems`
+和 `useFeedItemState.ts` 保留 Needs action 筛选、待处理项与本机完成标记。
+DD-125(5) 已把 DD-106 关闭的原 workflow 46010–46012 来源改为 Temporal
+ApprovalProjection。当前共享 `inbox/needs-action.tsx` 与 Web 的
+`InboxPane` 已有此恢复，不能再用旧缺项记录声称整个来源未实现；实际缺口是
+Desktop HomeView 未调用共享 source，也未向 InboxView 传 `needsAction`。
+组件通知虽可能让该筛选出现，不能代替本人审批项。
+
+本批在 Desktop 复用 `NativeSession.client` 与 PlatformProvider 从同一
+`client.session()` 取得的 `tenantPrincipalId`（`useCurrentPrincipalId`），
+未就绪时不查询、不提供审批项；向同一 InboxView 传入共享源并接回原刷新。
+读取仍为 BFF 的 pending/initiated approvals；详情、确认决定、回读与 UNKNOWN
+处理仍为原 ApprovalPanel，已读标记只写本机。没有新 API、schema、状态、权限、
+workflow producer 或 Relay 发布。没有把设备公钥当 Principal，也没有新建审批 UI。
+
+原 SDK `sha256:3007729eb192341a4f004a88e42e1e66c94fc67d763acfc96568bd7311116018`，
+1 CPU / 4 GiB、memory+swap 同为 4 GiB、pids 256；实际限额回读已保存。
+源码取 GitHub 固定归档，复用已交接的 Data source；安装缓存沿原
+`/volumes/data/kailo/check-cache`，未复制整份依赖到 NVMe，未运行宿主工具链。
+
+- 产品点 `2230c0f07`：共享生产/测试类型 0，原 Inbox surface 22 项及
+  auto-selection 14 项通过。新增 suite 因 Vitest 改写文件 URL 未能载入，整体 1；
+  不计新增消费者通过。
+- `a5036aef0` 修正读取位置，新增两项仍失败：测试只识别 JSX opening，遗漏了
+  实际 HomeView 的 self-closing 元素；原三项通过。`444fd6175` 修正测试节点读取，
+  全部 Needs action 5 项和测试类型通过，产品接线未再变化。
+- `444fd6175` 首轮 Web 安装源 1,039 文件及 Web 类型 0；Desktop 实装核验发现
+  `useDrafts.ts` 旧副本，整体退出 1，未执行的 Desktop 检查不算通过。
+  随后保持同一固定源码，用原 `npm ci --offline` 和 Native
+  `pnpm 11.4.0 install --frozen-lockfile --offline --filter buzz` 顺序刷新。
+  两宿主实际解析出的共享包各 1,039 文件逐字一致；Web/Desktop 类型 0，原
+  Native `features/home/lib/inbox.test.mjs` 23/23，最终作业退出 0、OOM=false。
+- 反证在独立导出临时将 HomeView 的真实 `needsAction` prop 改为 null；实际
+  Native 接线表达式到共享 DOM 的审批项断言失败，exit 1。逐字恢复后 Needs action
+  5/5、exit 0；恢复哈希相同。它执行真实绑定、共享列表/详情、BFF 决定与刷新，
+  不是把 hook 返回值当业务成功。身份用例验证未就绪不读、旧读取晚到不进入新身份、
+  旧 refresh 不刷新新 Principal；已选详情退休另由现有 provider 卸载源码复核支撑。
+
+完整输入审计 3,454 项与 GitHub 固定对象逐字一致。原失败日志与最终日志、限额、
+OOM、故障和恢复原件保留在 CI
+`/volumes/data/kailo/verification/inbox-needs-action/`，最终目录 `444fd6175-fresh`。
+[回执](inbox-needs-action-native-20261027.json) SHA-256：
+`84adf5d425153ed274ad4256a2014dbdf87838e50a535c80d99b35756a6702bf`。
+所有本批容器已退出并清理；source 后续可复用，历史日志/回执保留。
+Git 后台 gc 仍因旧 worktree 元数据权限失败，提交与 push 本身成功；未动 Git 元数据。
+
+本批未挂载完整 HomeView/NativeBootstrap、未跑真实 Temporal/Relay、未安装 Desktop
+或更新 Mobile，也未发布 Web/服务。原管理面授权和 UNKNOWN 消费没有被本批重写；
+这些定向结果不代表完整 Inbox、跨设备、三账号双主题或生产验收。
