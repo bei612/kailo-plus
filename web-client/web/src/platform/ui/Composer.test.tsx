@@ -281,6 +281,7 @@ const state = vi.hoisted(() => ({
   more: vi.fn(),
   publish: vi.fn(),
   upload: vi.fn(),
+  gifs: [] as {slug:string;title:string;url:string;previewUrl:string;width:number;height:number;previewWidth:number;previewHeight:number;size:number}[],
   principal: "human-a",
   // DD-125(8): Workspace roster, Tenant participant directory, role projection and actions.
   members: vi.fn(),
@@ -293,6 +294,9 @@ const state = vi.hoisted(() => ({
 vi.mock("@/platform/bff-client", async () => ({
   BffError: (await vi.importActual<typeof import("@client-kit/platform/transport")>("@client-kit/platform/transport")).BffError,
   bff: {
+    gifCapability: async () => ({available:state.gifs.length > 0,imageOrigins:["https://static.klipy.com"]}),
+    gifSearch: async () => ({gifs:state.gifs}),
+    gifShare: async () => undefined,
     session: async () => ({tenantPrincipalId:state.principal}),
     profile: async () => ({pubkey:"d".repeat(64)}),
     members: (...args: unknown[]) => state.members(...args),
@@ -360,6 +364,7 @@ beforeEach(() => {
     getClientRects: { configurable: true, value: () => [] },
     getBoundingClientRect: { configurable: true, value: () => new DOMRect() },
   });
+  state.gifs = [];
   localStorage.clear();
   clearAllDrafts();
   resetPersistentAgentAudienceStore();
@@ -1534,6 +1539,83 @@ describe("DD-146 original send flow: clear at Send, restore on failure", () => {
     expect(loadPendingSend("shared-local-key")).toBeUndefined();
     expect(loadDraftEntry("shared-local-key")?.content).toBe("bob owns this draft");
     expect(upload).not.toHaveBeenCalled();
+  });
+
+  it("does not let an old A publication replace a newer pending send after identity A to B to A", async () => {
+    let rejectOld!: (error: unknown) => void;
+    state.publish.mockImplementationOnce(() => new Promise((_resolve, fail) => { rejectOld = fail; }))
+      .mockRejectedValueOnce(new TransportError("new A receipt unknown"));
+    const {upload} = uploader();
+    const host = await render(composer("aba", upload));
+    await type(input(host), "old A");
+    await click(button(host,"platform.send"));
+    await vi.waitFor(() => expect(state.publish).toHaveBeenCalledOnce());
+    await rerender(<Composer workspaceId="workspace-a" draftIdentity="bob" draftKey="aba" onUpload={upload}/>);
+    await rerender(composer("aba", upload));
+    await type(input(host), "new A");
+    await click(button(host,"platform.send"));
+    await vi.waitFor(() => expect(state.publish).toHaveBeenCalledTimes(2));
+    await settle();
+    const newerDraft = loadDraftEntry("aba");
+    const newerPending = loadPendingSend("aba");
+    await act(async()=>rejectOld(new TransportError("old A late receipt")));
+    await settle();
+    expect(input(host).textContent).toBe("new A");
+    expect(loadDraftEntry("aba")).toEqual(newerDraft);
+    expect(loadPendingSend("aba")).toEqual(newerPending);
+    await click(button(host,"platform.send"));
+    await vi.waitFor(() => expect(state.publish).toHaveBeenCalledTimes(3));
+    expect(state.publish.mock.calls[2][3]).toBe(state.publish.mock.calls[1][3]);
+  });
+
+  it("keeps a new owner edit UNKNOWN key when the retired owner edit is explicitly rejected", async () => {
+    let rejectOld!: (error: unknown) => void;
+    const publish = vi.fn().mockImplementationOnce(() => new Promise((_resolve, reject) => { rejectOld = reject; }))
+      .mockRejectedValue(new TransportError("new edit unknown"));
+    const target = {id:"e".repeat(64),author:"Alice",pubkey:"alice",body:"Original",createdAt:1,time:"",depth:0,tags:[]};
+    const host = await render(<Composer draftIdentity="alice" draftKey="edit-owner" editTarget={target} onPublish={publish}/>);
+    await type(input(host), "old edit");
+    await click(button(host,"platform.send"));
+    await rerender(<Composer draftIdentity="bob" draftKey="edit-owner" editTarget={{...target,pubkey:"bob"}} onPublish={publish}/>);
+    await type(input(host), "new edit");
+    await click(button(host,"platform.send"));
+    await vi.waitFor(() => expect(publish).toHaveBeenCalledTimes(2));
+    await settle();
+    const key = publish.mock.calls[1][2];
+    await act(async()=>rejectOld(new BffError(403,"rejected",{class:ErrorClass.Denied,reason:ReasonCode.PublishRejected})));
+    await click(button(host,"platform.send"));
+    expect(publish).toHaveBeenCalledTimes(3);
+    expect(publish.mock.calls[2][2]).toBe(key);
+    expect(input(host).textContent).toBe("new edit");
+  });
+
+  it("restores selected GIF and failed local file across draft visits without uploading", async () => {
+    const gif = {slug:"kept-gif",title:"Kept GIF",url:"https://static.klipy.com/kept.gif",previewUrl:"https://static.klipy.com/preview.gif",width:40,height:40,previewWidth:40,previewHeight:40,size:99};
+    state.gifs = [gif];
+    const {upload, uploads} = uploader();
+    const host = await render(composer("gif-file", upload));
+    await type(input(host), "body with GIF");
+    await vi.waitFor(()=>expect(host.querySelector('[data-testid="composer-emoji-button"]')?.getAttribute("aria-label")).toBe("Insert emoji or GIF"));
+    await click(host.querySelector<HTMLElement>('[data-testid="composer-emoji-button"]')!);
+    const tab = document.querySelector<HTMLElement>('[data-testid="composer-gif-tab"]')!;
+    await act(async()=>tab.dispatchEvent(new MouseEvent("mousedown",{bubbles:true,button:0})));
+    await click(tab);
+    await vi.waitFor(()=>expect(document.querySelector('[data-testid="klipy-gif-grid"] button')).not.toBeNull());
+    await click(document.querySelector<HTMLElement>('[data-testid="klipy-gif-grid"] button')!);
+    await attachPending(host);
+    await click(button(host,"platform.send"));
+    await act(async()=>uploads[0]!.reject(new TransportError("file receipt unknown")));
+    await settle();
+    await rerender(composer("other-gif-draft", upload));
+    await rerender(composer("gif-file", upload));
+    expect(host.querySelectorAll('[data-testid="composer-gif-attachment"]')).toHaveLength(1);
+    expect(upload).toHaveBeenCalledOnce();
+    await click(button(host,"platform.send"));
+    await vi.waitFor(()=>expect(uploads).toHaveLength(2));
+    await act(async()=>uploads[1]!.resolve(descriptor));
+    await vi.waitFor(()=>expect(state.publish).toHaveBeenCalledOnce());
+    expect(state.publish.mock.calls[0][1]).toContain(gif.url);
+    expect(state.publish.mock.calls[0][2]).toEqual([expect.objectContaining({sha256:descriptor.sha256})]);
   });
 
   it("keeps a failed send as a recovery when the composer has moved on", async () => {
