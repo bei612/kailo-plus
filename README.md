@@ -236,6 +236,13 @@ Wren 推荐问题观察后继固定 `14f1243af`：关闭、切换或重跑问题
 失败，逐字恢复后通过。固定输入和失败记录见[推荐观察回执](data-query/fork/verify/recommendation-observation-receipt.json)；
 GraphQL、浏览器和模型供应方仍为夹具或未验收，不代表真实业务全链。
 
+Wren Home 续接固定 `06cf7ce4c`：切换线程后退役旧回答、图表和 SQL 修改续接，
+查询与回执在更新缓存或结束原意图前复核当前身份、线程及问题；错误回执保留
+原 UNKNOWN 键。原完整消费者 **244/244**、类型及相关 lint/格式通过，六类实际
+故障均被检出并逐字恢复，618 个输入一致。此前失败和 Jest 未关闭句柄提示保留；
+Apollo 链与原弹窗由测试驱动，未完成真实浏览器、模型供应方或部署验收。见
+[Home 续接回执](data-query/fork/verify/home-continuation-receipt.json)及原问数记录。
+
 前一批 Core 集成固定 `1d0d20b53`：原 SDK 4 CPU / 16 GiB、私有 PG
 1 CPU / 2 GiB，正常主目标 **839 passed / 91 ignored**；显式 Agent/Canvas/审核、
 publication scope/history/reconcile 与 bridge HTTP 共 **26** 项通过。格式、完整
