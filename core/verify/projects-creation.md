@@ -775,3 +775,43 @@ open 1630 / draft 1633 / closed 1632；merged 1631 走 git，不在界面发布�
   Desktop 以本人 CLIENT 签名走同一头部与审阅人校验。结果不明保留同一意图（只存摘要与引用，不存正文）。
 - 未执行：本机不编译、不跑测试；Rust fmt/clippy/test、vitest、Dart 生成核对与业务验收待 CI 与部署。
 - 仍未恢复：请求审阅人（review-request）、更新 revision（1619）与 managed-agent owner 代签。
+
+
+## 2026-10-27 原 Review 更新与 push 后续：共享/Native 消费者阶段
+
+固定比较点 `7fa9b164a3c5db20d50f1e6c4802dd1451812687`，产品固定
+`b12c94e42de5e936d3d5c6ab411591c63ac304eb`。依据 DD-118、DD-160、DD-81 与固定 Buzz
+`779af8886caae1317b4de962082429867ab61503` 的
+`pullRequestMutations.ts::publishProjectPullRequestUpdate`、
+`ProjectDetailScreen::handleUpdatePullRequest`、`ProjectWorkspaceTabs` 原 Update review 按钮及
+`repoSyncHooks::usePushProjectLocalRepositoryMutation`。不是新增 Review 状态或 Git 推送权威。
+
+- 原 kind 1619 空正文与 a/p/E/P/c/clone/可选 merge-base 标签、作者或 repository owner、
+  最新可信 update 的 clone 元数据与单调时间由原 producer 恢复；合同新增专用
+  `UPDATE_PULL_REQUEST`，不借用其他操作，不接受前端自定标签/owner/clone。
+- Web/Desktop 共用原按钮、分支与 clone 关联及持久意图；UNKNOWN 保留原 commit、merge-base、
+  key 与已签 event ID，Review 状态后来关闭仍可核对原意图。已确认后从原
+  `project-work-item-target` 查询族刷新实际 Review。身份/仓库 owner 退休阻止晚到 continuation。
+- Native 原成功 push 只调用一次，其实际 branch/commit/merge-base 驱动独立 Review 更新；
+  更新失败不重新执行 push。Native 本人签名仍走原 `publishProjectIntent` 与原 ID 观察，
+  不由 Core SERVER 代签，不从普通 query 空结果制造 NOT_DELIVERED。
+- `tools/gen.sh` 四侧生成与校验、原 i18n 生成/校验已执行。最终原 Node SDK
+  `sha256:3007729eb192341a4f004a88e42e1e66c94fc67d763acfc96568bd7311116018`，
+  1 CPU / 4 GiB（swap 同上）/ 256 pids，实际 Data 源及原缓存；shared Projects 57/57、
+  Native projectsTransport 27/27、shared production/test 与 Web/Desktop 四项 tsc 全 0，
+  原 TypeScript/Go/Dart Projects publication roundtrip 全 0。
+- 三次真实故障分别移除 UNKNOWN 原意图复用、push 后更新 continuation、Native 作者/owner
+  拒绝，均由原消费者 assertion 检出（exit 1）；逐字还原后对应原组通过。
+  两 host 各 1,042 个实装 platform 文件及 2 个 contracts 文件逐字一致；
+  GitHub 固定归档 3,463 个输入零差异。原始日志位于
+  `/volumes/data/kailo/verification/projects-review-update/b12c94e42/`，结果 exit 0、OOM false，
+  容器实际清理。机器回执见 [Node 阶段回执](projects-review-update-node-20261027.json)。
+- 保留首轮 `f1a0e742f` test types 失败（未到 DOM/宿主/反证），第二轮 `2f8e2fed4`
+  56 pass / 1 fail：实际 UI 揭穿更新写入旧缓存族，最终 b12 修正；不将失败轮当最终通过。
+- 只读交叉复核覆盖共享意图、afterPush、Native 与 Core producer/receipt 增量；没有用源码复核
+  代替 SDK、浏览器或设备验收。localStorage 加进程内 Set 不是跨 tab 原子发送占位。
+
+本阶段不含 Rust producer 编译/Clippy、主线程独占的数据库/Relay 1619 guard 与实际 PG 证明、
+真实远程 Git push、安装包/Win11/浏览器上线验收。原 Native CREATE_PULL_REQUEST publisher 缺口
+及普通 Native 不可变 Community 绑定/权威缺失证明也不由本批伪称补齐：本批保留原
+Relay URL/sessionEpoch/本人 key 与 UNKNOWN 原 ID 观察边界，不借用仅 1631 的 proof 端点。

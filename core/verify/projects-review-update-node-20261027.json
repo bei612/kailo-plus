@@ -1,0 +1,112 @@
+{
+  "source_commit": "b12c94e42de5e936d3d5c6ab411591c63ac304eb",
+  "comparison_base": "7fa9b164a3c5db20d50f1e6c4802dd1451812687",
+  "upstream_commit": "779af8886caae1317b4de962082429867ab61503",
+  "sdk_image": "sha256:3007729eb192341a4f004a88e42e1e66c94fc67d763acfc96568bd7311116018",
+  "resources": {
+    "cpus": 1,
+    "memory_bytes": 4294967296,
+    "memory_swap_bytes": 4294967296,
+    "pids": 256
+  },
+  "source_inputs_checked": 3463,
+  "source_mismatches": [],
+  "installed_local_packages": [
+    {
+      "host": "/workspace/apps/web-client/web",
+      "installed": "/workspace/apps/web-client/web/node_modules/@client-kit/platform",
+      "checked_source_files": 1042,
+      "mismatches": []
+    },
+    {
+      "host": "/workspace/apps/web-client/web",
+      "contracts_installed": "/workspace/apps/web-client/web/node_modules/@client-kit/contracts/src",
+      "checked_contract_files": 2,
+      "mismatches": []
+    },
+    {
+      "host": "/workspace/apps/collaboration/desktop",
+      "installed": "/workspace/apps/collaboration/node_modules/.pnpm/@client-kit+platform@file+..+client-kit+ts+platform_26d4a7c87ea2feb193780e545d362c52/node_modules/@client-kit/platform",
+      "checked_source_files": 1042,
+      "mismatches": []
+    },
+    {
+      "host": "/workspace/apps/collaboration/desktop",
+      "contracts_installed": "/workspace/apps/collaboration/node_modules/.pnpm/@client-kit+contracts@file+..+client-kit+ts+contracts/node_modules/@client-kit/contracts/src",
+      "checked_contract_files": 2,
+      "mismatches": []
+    }
+  ],
+  "positive": {
+    "shared_projects": 57,
+    "native_projects_transport": 27,
+    "platform_production_tsc": 0,
+    "platform_test_tsc": 0,
+    "web_tsc": 0,
+    "desktop_tsc": 0,
+    "four_side_generation_check": 0,
+    "i18n_check": 0,
+    "typescript_go_dart_publication_roundtrip": 0
+  },
+  "negative": {
+    "intent": {
+      "exit": 1,
+      "restored_source_sha256": "c3dd3e27bb037eff63980d1edff8f89ae5e729d7f3647187052de3e64e24f29c",
+      "restored_log": "tmp/restored-intent.log"
+    },
+    "push": {
+      "exit": 1,
+      "restored_source_sha256": "806bb1ded48e28940b071881b1ca045e1d9dd843abbe177ef4a1ecaa1f2f851b",
+      "restored_log": "tmp/restored-push.log"
+    },
+    "native": {
+      "exit": 1,
+      "restored_source_sha256": "ce583325d64e31227b2d21ea29248e6b0d4635c3be6b67d876648bff637c7969",
+      "restored_log": "tmp/restored-native.log"
+    }
+  },
+  "failure_history": [
+    {
+      "source_commit": "f1a0e742f8a9dd3d1b29666d815cf7796e892fd8",
+      "exit": 2,
+      "reason": "New test fixture type errors before DOM/host/negative checks.",
+      "log_sha256": "de5531cd51f67726f50a710dfee4eab2e3b2e02864aeecdfec662e7db6901314"
+    },
+    {
+      "source_commit": "2f8e2fed407c629b4f088036058d79c852e2cb0d",
+      "exit": 1,
+      "reason": "Shared consumers 56 passed and 1 failed: actual review update wrote obsolete cache key; production cache corrected in final b12.",
+      "log_sha256": "3528aed96cc9f6196c9e141d073f064eed50aea1f126a99e397cfa617539e751"
+    }
+  ],
+  "job_directory": "/volumes/data/kailo/verification/projects-review-update/b12c94e42",
+  "files_sha256": {
+    "runner.sh": "8a93e9d4aeac2252ed68c8c60e3a46d086eece61cdde5e6a34a36a96dd7e2fff",
+    "check.log": "fd802d795d033c7045e86849dfa69b0b94f08d54938c4ff6d2ed65fc76c2d225",
+    "result.log": "6f20cf4d0f702494be6dc721c1bcc9af6bcf23e82a5a49bd7bbf64825e24e094",
+    "limits.log": "9073f5d62f5caf27428efc4a978ec3e04e6603d37dc2d1bea03017d6edee134d",
+    "prearchive-preflight.log": "080ff6b5fbfba518052f0c5a7894089014031d3b117fab6131a14301df05fa63",
+    "preflight.log": "8344ef3c53a0eec9722f9564f5cad2ccf9d44513baba9c9663cb677724956035",
+    "oom.log": "2ed27c1421e6928dbe13dbfdb5c59e1045b30341fe7ebe05700006bc5ac572c0",
+    "host-config.json": "bb7f8a3b66fe26888a620d34a0714c81b3f99069aef32d522e4773a7b5dff746",
+    "tmp/fault-intent-exit.log": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+    "tmp/fault-intent.log": "f924d75bfd4e0135adda30be3e58c46b0de29c985b8bcd6058dc0779cc5a77d1",
+    "tmp/restored-intent.sha256": "daad99252efcb7ea4a8d37f2151bd9e1a87dc1d0cd897b46285495ae7bdb72c4",
+    "tmp/restored-intent.log": "7a1233f9434f467ae5055ff8ab1ced50aed0c6481a8899a55eb80aad115ec736",
+    "tmp/fault-push-exit.log": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+    "tmp/fault-push.log": "7a250e4f0bf41707e6ea90c3494f81b5723e87fcec3dae9b92635fb16f6d9a20",
+    "tmp/restored-push.sha256": "4dd069e3e7fb20fb9fce600734af6b3d9c23ed717c06665d9ded0020b1d49afa",
+    "tmp/restored-push.log": "4c0be704dd020fa264b62d7df2513f67185f8026d97fa4c5759a85bedc313b0d",
+    "tmp/fault-native-exit.log": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+    "tmp/fault-native.log": "b0e2de5efe7a9a24fb53f861d3b84ec23d0988a1dfa5f70a37152acb0494f491",
+    "tmp/restored-native.sha256": "d3eb11adb3a6c53ce6c0cb42141d5f903ab92829259d54e06d4a26a5a35a677d",
+    "tmp/restored-native.log": "ab7251898147aa287e9ae583c808ae8d7319fc4267739f5a0ced04e796f3f654"
+  },
+  "boundaries": [
+    "Node production consumers use scripted BFF/native IPC, no installed GUI/device/real Git push or deployment acceptance.",
+    "Rust producer and database/Relay proof guards are separate pending checks, not included in this Node receipt.",
+    "Process-local intent set and localStorage are not a cross-tab atomic publication claim.",
+    "Existing Native create-review and immutable Community negative proof remain outside this update chain.",
+    "Source cache reusable after receipt; raw logs and receipt retained."
+  ]
+}
