@@ -238,13 +238,23 @@ async function governedSummary(req: NextApiRequest, res: NextApiResponse) {
       pending();
       return;
     }
-    if (!result.error && result.completion?.queryId === key &&
-        typeof result.completion.content === 'string') {
-      const completed = await history.advanceNativeGeneration(current, {
-        summary: result.completion.content, threadId: originalThreadId,
-        nativeSummary: { doneQueryId: key },
-      }, 200, Date.now() - startTime);
-      if (!completed) throw new NativeQueryRefusal(409, 'QUERY_INTENT_CONFLICT');
+    if (
+      !result.error &&
+      result.completion?.queryId === key &&
+      typeof result.completion.content === 'string'
+    ) {
+      const completed = await history.advanceNativeGeneration(
+        current,
+        {
+          summary: result.completion.content,
+          threadId: originalThreadId,
+          nativeSummary: { doneQueryId: key },
+        },
+        200,
+        Date.now() - startTime,
+      );
+      if (!completed)
+        throw new NativeQueryRefusal(409, 'QUERY_INTENT_CONFLICT');
       const disclosed = await native.readHistory(token, completed);
       res.status(200).json({ id: key, ...disclosed.responsePayload });
       return;
@@ -291,10 +301,15 @@ async function governedSummary(req: NextApiRequest, res: NextApiResponse) {
         }
         await native.readHistory(token, query);
         if (event?.done === true && event.queryId === key) {
-          const result = await components.wrenAIAdaptor.getTextBasedAnswerResult(key);
+          const result =
+            await components.wrenAIAdaptor.getTextBasedAnswerResult(key);
           await native.readHistory(token, query);
-          if (result?.status !== TextBasedAnswerStatus.SUCCEEDED || result.error ||
-              result.completion?.queryId !== key || typeof result.completion.content !== 'string') {
+          if (
+            result?.status !== TextBasedAnswerStatus.SUCCEEDED ||
+            result.error ||
+            result.completion?.queryId !== key ||
+            typeof result.completion.content !== 'string'
+          ) {
             break;
           }
           summary = result.completion.content;
@@ -490,11 +505,18 @@ export default async function handler(
       });
 
       await streamPromise;
-      const completed = await wrenAIAdaptor.getTextBasedAnswerResult(task.queryId);
+      const completed = await wrenAIAdaptor.getTextBasedAnswerResult(
+        task.queryId,
+      );
       const currentProject = await projectService.getCurrentProject();
-        if (isGovernedQueryMode() || currentProject.id !== project.id ||
-          completed?.status !== TextBasedAnswerStatus.SUCCEEDED || completed.error ||
-          completed.completion?.queryId !== task.queryId || typeof completed.completion.content !== 'string') {
+      if (
+        isGovernedQueryMode() ||
+        currentProject.id !== project.id ||
+        completed?.status !== TextBasedAnswerStatus.SUCCEEDED ||
+        completed.error ||
+        completed.completion?.queryId !== task.queryId ||
+        typeof completed.completion.content !== 'string'
+      ) {
         throw new ApiError('Original summary completion unavailable', 503);
       }
       summary = completed.completion.content;
