@@ -1208,7 +1208,11 @@ async fn settlement_fixture() -> SettlementFixture {
     tx.commit().await.unwrap();
     let (dm, _) = state
         .db
-        .open_dm(community, &[peer.as_bytes()], author.public_key().as_bytes())
+        .open_dm(
+            community,
+            &[peer.as_bytes()],
+            author.public_key().as_bytes(),
+        )
         .await
         .unwrap();
     assert_eq!(dm.channel_type.as_str(), "dm");
