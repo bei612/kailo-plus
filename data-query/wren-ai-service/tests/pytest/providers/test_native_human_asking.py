@@ -402,6 +402,21 @@ class NativeGeneralCompletion(unittest.IsolatedAsyncioTestCase):
                 )
                 generate.assert_not_called()
 
+    async def test_stopped_queued_general_task_does_not_call_actual_provider(self):
+        for entry in self.pipelines:
+            with self.subTest(pipeline=entry[1]):
+                service, _, expected = self.service(entry)
+                task = asyncio.create_task(
+                    service._generate_general(entry[1], expected, **self.request(entry[1]))
+                )
+                stop = StopAskRequest(status="stopped")
+                stop.query_id = "original"
+                service.stop_ask(stop)
+                with patch("src.providers.llm.litellm.acompletion", new_callable=AsyncMock) as remote:
+                    await task
+                remote.assert_not_called()
+                self.assertEqual(service.get_ask_result(AskResultRequest(query_id="original")).status, "stopped")
+
     async def test_tail_observer_is_not_completed_but_original_result_can_be_reobserved(
         self,
     ):

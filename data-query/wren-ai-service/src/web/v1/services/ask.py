@@ -660,6 +660,12 @@ class AskService:
 
     async def _generate_general(self, pipeline_name, expected, **request):
         query_id = request["query_id"]
+        if (
+            self._ask_results.get(query_id) is not expected
+            or expected.status != "finished"
+            or expected.type != "GENERAL"
+        ):
+            return
         try:
             result = await self._pipelines[pipeline_name].run(**request)
             generated = result.get(pipeline_name) if isinstance(result, dict) else None
