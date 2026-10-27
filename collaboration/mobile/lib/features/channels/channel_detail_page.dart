@@ -371,7 +371,7 @@ class ChannelDetailPage extends HookConsumerWidget {
                       ),
                       child: Center(
                         child: Text(
-                          'Failed to load messages',
+                          platformText(PlatformMessageKey.timelineLoadError, locale: Localizations.localeOf(context).toLanguageTag()),
                           style: context.textTheme.bodyMedium?.copyWith(
                             color: context.colors.error,
                           ),

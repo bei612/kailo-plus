@@ -6,20 +6,20 @@ class _ErrorView extends StatelessWidget {
 
   const _ErrorView({required this.error, required this.onRetry});
 
-  static String _userMessage(Object error) {
+  static String _userMessage(BuildContext context, Object error) {
     if (error is RelayException) {
       if (error.statusCode == 401) {
-        return 'Not authorized. Check your API token.';
+        return _channelText(context, PlatformMessageKey.channelsLoadUnauthorized);
       }
       if (error.statusCode == 403) {
-        return 'Access denied.';
+        return _channelText(context, PlatformMessageKey.channelsLoadDenied);
       }
-      return 'Server error (${error.statusCode}). Try again later.';
+      return _channelText(context, PlatformMessageKey.channelsLoadServerError, variables: {'status': error.statusCode});
     }
     if (error is SocketException) {
-      return 'Could not reach the relay server.';
+      return _channelText(context, PlatformMessageKey.channelsLoadUnreachable);
     }
-    return 'Something went wrong. Check your connection.';
+    return _channelText(context, PlatformMessageKey.channelsLoadConnectionError);
   }
 
   @override
@@ -37,12 +37,12 @@ class _ErrorView extends StatelessWidget {
             ),
             const SizedBox(height: Grid.xs),
             Text(
-              'Could not load channels',
+              _channelText(context, PlatformMessageKey.channelsLoadFailed),
               style: context.textTheme.titleMedium,
             ),
             const SizedBox(height: Grid.xxs),
             Text(
-              _userMessage(error),
+              _userMessage(context, error),
               style: context.textTheme.bodySmall?.copyWith(
                 color: context.colors.onSurfaceVariant,
               ),
@@ -54,7 +54,7 @@ class _ErrorView extends StatelessWidget {
             FilledButton.icon(
               onPressed: onRetry,
               icon: const Icon(LucideIcons.refreshCw),
-              label: const Text('Retry'),
+              label: Text(_channelText(context, PlatformMessageKey.timelineRetry)),
             ),
           ],
         ),
