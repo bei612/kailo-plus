@@ -1014,14 +1014,33 @@ export async function governedRestAsk(
         // Recover the original full native result even when a previous page
         // already consumed the one-shot stream. This is GET-only observation;
         // summaryStarted and the original query/History scope remain frozen.
-        if (!(await advance({
-          ...current.responsePayload,
-          summary: complete.content,
-          nativeAsk: { ...current.responsePayload.nativeAsk, doneQueryId: key },
-        }, 202))) { pending(); return; }
+        if (
+          !(await advance(
+            {
+              ...current.responsePayload,
+              summary: complete.content,
+              nativeAsk: {
+                ...current.responsePayload.nativeAsk,
+                doneQueryId: key,
+              },
+            },
+            202,
+          ))
+        ) {
+          pending();
+          return;
+        }
         if (!(await settledQueries())) return;
-        if (!(await advance(current.responsePayload, 200))) { pending(); return; }
-        const visible = await readNativeAskHistory(ctx, config, native, current);
+        if (!(await advance(current.responsePayload, 200))) {
+          pending();
+          return;
+        }
+        const visible = await readNativeAskHistory(
+          ctx,
+          config,
+          native,
+          current,
+        );
         respond(200, { id: key, ...visible.responsePayload });
         return;
       }
@@ -1083,12 +1102,18 @@ export async function governedRestAsk(
           if (query) await native.readHistory(token, query);
           if (event.done === true && event.queryId === key) {
             if (!general) {
-              const result = await components.wrenAIAdaptor.getTextBasedAnswerResult(key);
+              const result =
+                await components.wrenAIAdaptor.getTextBasedAnswerResult(key);
               await authorize();
               await native.readHistory(token, query);
-              if (result?.status !== TextBasedAnswerStatus.SUCCEEDED || result.error ||
-                  result.completion?.queryId !== key || typeof result.completion.content !== 'string') {
-                pending(); return;
+              if (
+                result?.status !== TextBasedAnswerStatus.SUCCEEDED ||
+                result.error ||
+                result.completion?.queryId !== key ||
+                typeof result.completion.content !== 'string'
+              ) {
+                pending();
+                return;
               }
               // Never persist the text assembled from a possibly consumed tail.
               text = result.completion.content;

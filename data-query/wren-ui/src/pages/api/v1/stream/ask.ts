@@ -401,7 +401,8 @@ export default async function handler(
       try {
         for await (const line of lines) {
           if (!line) continue;
-          if (isGovernedQueryMode() || !line.startsWith('data: '))
+          const currentProject = await projectService.getCurrentProject();
+          if (isGovernedQueryMode() || currentProject.id !== project.id || !line.startsWith('data: '))
             throw new ApiError('Original summary observation unavailable', 503);
           const event = JSON.parse(line.slice(6));
           if (Object.keys(event).sort().join(',') === 'done,queryId' &&
@@ -412,7 +413,8 @@ export default async function handler(
           sendContentBlockDelta(res, event.message);
         }
         const completed = await wrenAIAdaptor.getTextBasedAnswerResult(summaryTask.queryId);
-        if (isGovernedQueryMode() || (await projectService.getCurrentProject()).id !== project.id ||
+        const currentProject = await projectService.getCurrentProject();
+        if (isGovernedQueryMode() || currentProject.id !== project.id ||
             completed?.status !== TextBasedAnswerStatus.SUCCEEDED || completed.error ||
             completed.completion?.queryId !== summaryTask.queryId || typeof completed.completion.content !== 'string' ||
             !completed.completion.content.startsWith(summary)) {
