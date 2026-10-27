@@ -59,6 +59,21 @@ describe("coordinate link original consumers", () => {
     expect(opened).not.toHaveBeenCalled();
   });
 
+  it("keeps the repository coordinate when the same commit is linked from two repositories", async () => {
+    const f = fixture(), opened = vi.fn(async () => {});
+    const second = `30617:${owner}:second`;
+    f.rows.push({ ...f.rows[0]!, id: "7".repeat(64), tags: [["d", "second"], ["name", "Second repository"], ["clone", "https://example.test/second.git"]] });
+    f.rows[1]!.tags.push(["a", second]);
+    for (const dtag of ["repo", "second"]) {
+      await openProjectEntity(f.host, { type: "repo", owner, dtag, tab: "commits", commitHash: hash }, new AbortController().signal, opened);
+      expect(opened).toHaveBeenLastCalledWith(project, { repositoryId: `${owner}:${dtag}`, tab: "commits", commitHash: hash });
+    }
+    f.rows.push({ id: "6".repeat(64), pubkey: owner, kind: 5, created_at: 21, content: "", tags: [["a", second]] });
+    opened.mockClear();
+    await expect(openProjectEntity(f.host, { type: "repo", owner, dtag: "second", tab: "commits", commitHash: hash }, new AbortController().signal, opened)).rejects.toThrow("unavailable");
+    expect(opened).not.toHaveBeenCalled();
+  });
+
   it.each(["repo", "project"] as const)("does not navigate a warm %s link after fresh access is refused", async type => {
     const f = fixture(), opened = vi.fn(async () => {}), failed = vi.fn();
     const view = await render(<PlatformProvider client={client} locale="en"><EntityLinkAnchor

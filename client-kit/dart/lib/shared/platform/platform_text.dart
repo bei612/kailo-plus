@@ -613,6 +613,8 @@ enum PlatformMessageKey {
   projectsInboxOpenTask,
   projectsInboxOpenReview,
   projectsListTasks,
+  projectsShareCopyCommit,
+  projectsShareOpenCommit,
   projectsShareCopyTask,
   projectsShareCopyReview,
   projectsShareOpenIssue,
@@ -6380,6 +6382,11 @@ const _messages = <PlatformMessageKey, (String, String)>{
   PlatformMessageKey.projectsInboxOpenTask: ('Open task', '打开任务'),
   PlatformMessageKey.projectsInboxOpenReview: ('Open review', '打开审阅'),
   PlatformMessageKey.projectsListTasks: ('Tasks', '任务'),
+  PlatformMessageKey.projectsShareCopyCommit: ('Copy commit link', '复制提交链接'),
+  PlatformMessageKey.projectsShareOpenCommit: (
+    'Open commit {id} in repository {repository}',
+    '打开仓库 {repository} 的提交 {id}',
+  ),
   PlatformMessageKey.projectsShareCopyTask: ('Copy task link', '复制任务链接'),
   PlatformMessageKey.projectsShareCopyReview: ('Copy review link', '复制审阅链接'),
   PlatformMessageKey.projectsShareOpenIssue: (
