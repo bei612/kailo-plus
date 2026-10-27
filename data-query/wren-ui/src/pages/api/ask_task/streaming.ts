@@ -136,6 +136,8 @@ export default async function handler(
       throw new NativeQueryRefusal(412, 'QUERY_ADMISSION_UNAVAILABLE');
     if (!(await components.askingService.getAskingTask(req.query.queryId as string)))
       throw new NativeQueryRefusal(404, 'NATIVE_OBJECT_UNAVAILABLE');
+    if (isGovernedQueryMode())
+      throw new NativeQueryRefusal(412, 'QUERY_ADMISSION_UNAVAILABLE');
   };
   await forwardNativeAskingTask(req, res, authorize, false);
 }

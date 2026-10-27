@@ -590,6 +590,19 @@ describe('original native planning HTTP stream and HUMAN task owner', () => {
     expect((await send()).status).toBe(404);
     expect(nativeStream).not.toHaveBeenCalled();
   });
+  it('standalone mode is rechecked after the original task lookup before consuming its one-shot queue', async () => {
+    standalone();
+    const read = jest.spyOn(components.askingService, 'getAskingTask').mockImplementation(async () => {
+      process.env.WREN_PLATFORM_BINDING_CONFIG_FILE = '/fixture/binding.json';
+      return { queryId } as any;
+    });
+    try {
+      expect((await send()).status).toBe(412);
+      expect(nativeStream).not.toHaveBeenCalled();
+    } finally {
+      read.mockRestore();
+    }
+  });
   it('standalone observation stops if governed delivery appears while the native request is in flight', async () => {
     standalone();
     nativeStream.mockImplementation(async () => {
