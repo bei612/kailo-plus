@@ -4076,3 +4076,102 @@ gofmt 无差异。原 S3、HUMAN cookie、HTTP Fresh、draft middleware 和 Task
 Core HTTP、原生索引、Job/Version RPC 和对象存储仍为隔离夹具；这不是浏览器、
 真实原生落盘、Mongo、完整 receiver 激活或生产上传验收。本批没有产品构建、
 部署、正式制品摘要更新或放行受治理 binding，旧发布/真实三端边界继续保留。
+
+## 2026-10-27 已完成读取后的下载正文仍消费当前权限
+
+源码基底 `3a2c960e492c545bfee2b2284fb2349a98664dde`，产品固定
+`8c74f37c898414ba31179b025fd13aa454aa910d`。本批沿原 `.design/07` §5.2、
+REQ-03/11、DD-87 收口原 MinIO 下载 reader，不新增 Action、Task、账本、
+API 或上传/下载页面。原 SDK metadata status 退出 0，Cells 固定上游仍为
+`c57f02f4962835447df694c63bd0fd8c22bd7baf`；参考源码仅只读。
+
+原 `GetObjectNInfo` 对受治理读取先完成原生读取、计量/Task ACK 和最后核验，
+随后将 `bytes.Reader` 直接交给 MinIO。慢下载在该交接后撤权，剩余缓冲正文
+仍可读出。本批为这一个原 reader 增加交付前检查：
+
+1. 有剩余正文的每次非空 `Read`，先消费原执行权限，再检查当前原生用户、
+   ACL 和冻结 UUID/path/root。HUMAN 同步读取调用原 `HumanAction` 的同一
+   `idempotencyKey` 观察入口，要求原 `COMPLETED`、完全相同的输入且无新
+   `readAdmission`；不发送第二条 command、不重读对象、不提交第二份 receipt。
+   原 Core `application_native_human` 观察路径仍经
+   `fresh_execution_with_sources` / `application_action::fresh_execution`，
+   核当前 binding/generation、目标、策略和权限，已有 receipt 不重复领取 quota。
+   以上 Core 路径为固定源核对，本批 HTTP fixture 不冒充真实 Core 运行。
+2. 原 Task/EE 读取继续消费既有 `NativeReadExecution.Fresh`，完成、ACK 不明、
+   版本不匹配等原边界保留。晚拒绝只阻止尚未交出的字节，不撤回先前正文，
+   不将已确认的读取/计量/Task 完成事实改写为未执行或可重试。
+3. 原 `acl.NewAccessListHandler` 会保留 preset ACL，普通
+   `AccessListFromContextClaims` 另有 session cache。新增的
+   `FreshAccessListFromContextClaims` 复用同一个原编译函数，但不读写该 cache；
+   原默认调用仍保持缓存行为。下载从 `ResolveNativeUser` 的当前角色构造
+   本次 claims 副本，保留原 scope/session，实走原 Role/ACL/Workspace RPC，
+   再将新列表交给原 UUID/path ACL 过滤器；不是使用历史 preset 当 fresh。
+   原用户隐藏、logout lock、角色撤销和 ACL 撤销均拒绝后续正文。
+4. 首次拒绝在该 reader 内保持，不因稍后权限恢复而继续输出或反复查询。
+   零长调用及已读尽 EOF 不再查询。正文仍受原 `maxResponseBytes` 上限；
+   每次允许的非空调用推进正文，不新增后台轮询或新的超时配置。
+
+CI 从 GitHub fetch 固定产品 SHA 并归档，9,091 个 blob 在检查前和两次故障
+逐字恢复后均匹配。实际 Go 1.26.8 镜像仍为
+`sha256:a688600ca24f8a4d3ca77f95b0dd40704a9fc787c826660eb7ba0b641b8b175d`。
+SSH 作业 9409 / `cells-stream-8c74f37c8-check` 真实退出 0；原
+container-safety 回读 4 CPU、8 GiB、等额 memory+swap、UID 1000、network none。
+预检 MemAvailable 33,169,088 KiB，source/tmp/原 Go cache 均在 `/dev/sda1`，
+module cache 只读，`GOTOOLCHAIN=local GOPROXY=off GOSUMDB=off`。
+未下载工具链或依赖，未使用 NVMe bind cache 作为 Data 盘。
+
+原消费者定向执行：
+
+```sh
+go test -mod=readonly -count=1 -v \
+  -run '^(TestGovernedReadCompletesBeforeReturningMinIOReader|TestNativeHumanDownloadRetainsFreshDisclosureAfterCompletion|TestIndependentReadKeepsStreamingAndClosesSource)$' ./gateway/data/gw
+go test -mod=readonly -count=1 -v -run '^TestNativeHumanRead' ./common/auth
+go vet -mod=readonly ./gateway/data/gw ./common/auth
+```
+
+gateway 三个原目标通过：Task HUMAN/AGENT 的 read/export、空/非空正文与
+七种交接条件共 56 子例；HUMAN 同步路径 12 子例；独立流两个原内联场景。
+HUMAN 使用原加密 cookie、当前 native user、原 admission/receipt/MinIO reader；
+撤权后仍严格保持 1 command、1 receipt、2 次完成前 PEP、0 个 Task。
+12 子例包含真实原 ACL 编译器/RPC 夹具的撤销与 claims scope 缩窄，
+另保留 fake router 拒绝作为单独路由错误场景，不混称 RPC 权限证据。
+auth 三个原目标及 19 子例通过，gofmt 无差异，两包 vet 退出 0。
+
+两组真实反向均失败于业务断言，而非编译或 fixture 错误：移除正文交付前
+`fresh` 后，9 个撤权/交接子例全部 FAIL、exit 1；逐字恢复后 12/12 通过。
+另将新 ACL 列表替换回原 stale preset，ACL 撤销与 claims scope 两例均
+FAIL、exit 1；逐字恢复后 2/2 通过。恢复后的晚拒绝场景也检查原命令/receipt/Task 次数，
+不以重签或重复读取修复结果。cgroup max/oom/oom_kill 全为 0；容器清理后
+`docker ps -a` 按本批名称回读为空。
+
+原件目录：
+`/volumes/data/kailo/conformance/cells-native-stream/8c74f37c898414ba31179b025fd13aa454aa910d-check/`。
+
+| 原件 | 结果 | SHA-256 |
+|---|---|---|
+| `gateway.log` | 68 子例、3 顶层目标通过 | `8d76a06f2884c499a93c9186f769331ec4c3eb14c2b8ce321e95ceee29363463` |
+| `auth.log` | 19 子例、3 顶层目标通过 | `4c39e99cfa9e22bc94a0592bfb7c354a24f01090c2db8eb6e8fa5881836bc1c7` |
+| `mutation.log` | 9 子例 FAIL，exit 1 | `065808a333c82ab956db9cd2c343bcd8ef41edf5e531b1412d7f7c41dd32b045` |
+| `restored.log` | 12 子例 PASS | `c19e69a21a1b0ae0bdc1f9ce010dadae9315eb61a5a3a00dd363ca2d3c31ad19` |
+| `acl-mutation.log` | 2 子例 FAIL，exit 1 | `477bdd90075854c3e9c0b66b5b5d1f68388101191159da4729e7959cdf58b793` |
+| `acl-restored.log` | 2 子例 PASS | `447114eedd5d0c3bf8080a3bd1883fabb05ca20abfeb649559b5692a18c0c627` |
+| `vet.log` | exit 0，空输出 | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` |
+
+共用权限包另以同一固定产品、原镜像和实际 Data cache，在 1 CPU / 2 GiB
+等额 memory+swap、network none 下执行
+`go vet -mod=readonly ./common/permissions`；SSH 作业 82008 退出 0，
+没有重跑上述消费者。原件在同父目录
+`8c74f37c898414ba31179b025fd13aa454aa910d-permissions/`，
+`permissions-vet.log` 为空，SHA-256 为
+`e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`。
+
+早先固定 `f4b45143770f24ddd7a21f13b84da2821b2d13ff` 作业 71987 退出 1：
+新增 ACL fixture 未按原 action 查询过滤，错误将 read ACL 返回给原前端
+参数查询，触发 `FlattenedFrontValues` panic。该失败原件保留在同父目录的
+`f4b45143770f24ddd7a21f13b84da2821b2d13ff-check/`；后继只修 fixture 查询
+匹配，不修改生产权限行为迎合测试，也未将首轮记为通过。
+
+Core/IdP HTTP、原生用户/角色/ACL/Workspace/索引/Task RPC、对象正文仍是
+隔离夹具；这不是浏览器慢下载、真实 Mongo/对象存储、完整 receiver 或正式
+制品验收。原同步读取已确认事实与晚交付拒绝分别记录，不声称已交出的正文
+可以撤回。没有部署、digest 更新、生产 binding 激活或 CI 信任变更。
