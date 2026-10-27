@@ -292,9 +292,6 @@ export default async function handler(
         durationMs: Date.now() - startTime,
       });
 
-      const currentProject = await projectService.getCurrentProject();
-      if (isGovernedQueryMode() || currentProject.id !== project.id)
-        throw new ApiError('Original summary observation unavailable', 503);
       endStream(res, newThreadId, startTime);
       return;
     }
@@ -475,6 +472,9 @@ export default async function handler(
       durationMs: Date.now() - startTime,
     });
 
+    const currentProject = await projectService.getCurrentProject();
+    if (isGovernedQueryMode() || currentProject.id !== project.id)
+      throw new ApiError('Original summary observation unavailable', 503);
     endStream(res, newThreadId, startTime);
   } catch (error) {
     logger.error('Error in stream ask API:', error);

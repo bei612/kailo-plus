@@ -1235,7 +1235,7 @@ describe('original answer HTTP identity and conditional history writes', () => {
   );
 
   it.each(
-    ['generate_summary', 'ask'].flatMap((route) => [
+    ['generate_summary', 'ask', 'stream/ask'].flatMap((route) => [
       { route, change: 'mode' },
       { route, change: 'project' },
     ]),
@@ -1289,8 +1289,16 @@ describe('original answer HTTP identity and conditional history writes', () => {
       const body = await response.text();
       await closed;
       expect(written).toBe(true);
-      expect(response.status).toBe(503);
-      expect(body).not.toContain('private full');
+      if (route === 'stream/ask') {
+        // Earlier text was authorized at its exposure. The later History
+        // write cannot retire the mode and still take the success-close path.
+        expect(response.status).toBe(200);
+        expect(body).toContain('"type":"error"');
+        expect(native.apiHistoryRepository.createOne.mock.calls.at(-1)[0].statusCode).toBe(500);
+      } else {
+        expect(response.status).toBe(503);
+        expect(body).not.toContain('private full');
+      }
       expect(native.wrenAIAdaptor.createTextBasedAnswer).toHaveBeenCalledTimes(
         1,
       );
