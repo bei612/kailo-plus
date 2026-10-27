@@ -1,18 +1,19 @@
+import { useComposerMentions } from "@client-kit/platform/react/composer/features/messages/lib/useComposerMentions";
+import { isMentionCodeContext } from "@client-kit/platform/react/composer/features/messages/lib/mentionCodeContext";
 import { useComposerDraftRestore } from "@client-kit/platform/react/composer/useComposerDraftLifecycle";
 import { useComposerContentState } from "@client-kit/platform/react/composer/useComposerContentState";
 import { useMessageComposerController, useComposerControls, composerKeyDown, useComposerSubmission, useComposerAutoSubmit } from "@client-kit/platform/react/composer/useMessageComposerController";
-import { detectPrefixQuery, selectedMentionLabel, extractMentionPubkeys, mentionMatchCandidates, mentionOccurrences, AmbiguousMentionError } from "@client-kit/platform/react/pulse";
+import { extractMentionPubkeys, mentionMatchCandidates, mentionOccurrences, AmbiguousMentionError } from "@client-kit/platform/react/pulse";
 import { MentionAutocomplete, type MentionSuggestion } from "@client-kit/platform/react/composer/features/messages/ui/MentionAutocomplete";
 import { ChannelAutocomplete } from "@client-kit/platform/react/composer/features/messages/ui/ChannelAutocomplete";
 import { EmojiAutocomplete } from "@client-kit/platform/react/composer/features/messages/ui/EmojiAutocomplete";
 import { useComposerChannelLinkSources } from "@client-kit/platform/react/composer/features/messages/ui/ComposerChannelLinksContext";
 import { useChannelLinks, type ChannelSuggestion } from "@client-kit/platform/react/composer/features/messages/lib/useChannelLinks";
-import { rankMentionCandidates } from "@client-kit/platform/react/composer/features/messages/lib/mentionRanking";
 import { useEmojiAutocomplete, type EmojiSuggestion } from "@client-kit/platform/react/composer/features/messages/lib/useEmojiAutocomplete";
 import { writeTextToClipboard } from "@/shared/lib/clipboard";
 import { useComposerAgentDirectory } from "@client-kit/platform/react/composer/features/messages/ui/useComposerAgentDirectory";
 import { useTeamMentionCandidates } from "@client-kit/platform/react/composer/features/messages/ui/useTeamMentionCandidates";
-import { formatTeamMention, isTeamMentionSuggestion } from "@client-kit/platform/react/composer/features/messages/lib/teamMentionCandidates";
+import { isTeamMentionSuggestion } from "@client-kit/platform/react/composer/features/messages/lib/teamMentionCandidates";
 import { useDmAgentMentionNames } from "@client-kit/platform/react/composer/dmAgentMention";
 import { ComposerPendingSendRecovery, ComposerQueuedSendPill } from "./ComposerQueuedSendPill";
 import { getPersistentAgentAudienceScope } from "@client-kit/platform/react/composer/features/messages/lib/persistentAgentAudience";
@@ -32,7 +33,6 @@ import { stripImplicitAgentMentionPrefix } from "@client-kit/platform/react/comp
 import { PublishRestrictionKind, ReasonCode, WebMessageType, type ReadMarkRequest, type ConversationView, type ConversationParticipant, type WorkspaceMemberView } from "@client-kit/contracts";
 import { useBffCustomEmojiPalette } from "@client-kit/platform/react/custom-emoji";
 import { ConversationPreparationPending, useConversationInvalidation } from "@client-kit/platform/react/new-message";
-import { useMentionSelection } from "@client-kit/platform/react/use-mention-selection";
 import { isOutcomeUnknown, TransportError } from "@client-kit/platform/transport";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { lazy, Suspense, useCallback, useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -115,8 +115,6 @@ import { applyMessageEdits, imetaMediaFromTags, restoreImetaMediaDisplayLabels, 
 import { ForumComposerSurface } from "@client-kit/platform/react/forum/ForumComposerSurface";
 import { useComposerPasteHandler } from "@client-kit/platform/react/composer/features/messages/ui/useComposerPasteHandler";
 import { useComposerVoiceNote } from "@client-kit/platform/react/composer/features/messages/ui/useComposerVoiceNote";
-import { MAX_TRACKED_INTENTS, useMentionPasteBinding } from "@client-kit/platform/react/composer/features/messages/lib/mentionPasteBinding";
-import { trimMapToSize } from "@client-kit/platform/react/composer/shared/lib/trimMapToSize";
 import { partitionMentionIdentitiesByLocalTrust } from "@client-kit/platform/react/composer/features/messages/lib/mentionIdentityTrust";
 import type { ParsedMessageLink } from "@client-kit/platform/react/composer/features/messages/lib/messageLink";
 import { initDraftStore, loadDraftEntry, saveDraftEntry, clearDraftEntry, savePendingSend, loadPendingSend, clearPendingSend, subscribeToStore, type PendingSendStage, type PendingSendState } from "@client-kit/platform/react/composer/features/messages/lib/useDrafts";
@@ -1093,8 +1091,6 @@ const publishingPendingSends = new Set<string>();
  * 一次发送意图的幂等键（UUID v4）。不用 crypto.randomUUID：它只在安全上下文中
  * 存在，而 getRandomValues 在任何上下文都可用。
  */
-/** Original useMentions MENTION_SUGGESTION_LIMIT. */
-const MENTION_SUGGESTION_LIMIT = 50;
 
 function newIntentKey(): string {
   const b = crypto.getRandomValues(new Uint8Array(16));
@@ -1154,11 +1150,9 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
 }) {
   const customEmoji = useBffCustomEmojiPalette(bff);
   const [confirmedSendRevision, setConfirmedSendRevision] = useState(0);
-  const [humanQuery, setHumanQuery] = useState<{query:string;startIndex:number;cursor:number}|null>(null);
   const humanBindings = useRef(new Map<string,string>());
   const mentionPeopleRef = useRef(mentionPeople);
   mentionPeopleRef.current = mentionPeople;
-  const [humanNames,setHumanNames] = useState<string[]>([]);
   const agentDirectory = useComposerAgentDirectory(bff, {workspaceId, principalId: draftIdentity}, workspaceId !== undefined && channelType !== "dm" && !editTarget);
   const agentPeople = useMemo(() => agentDirectory.data?.agents.map(agent => ({pubkey: agent.pubkey, displayName: agent.displayName, avatarUrl: agent.avatarUrl, isAgent: true})) ?? [], [agentDirectory.data]);
   // DD-125(8): only a Workspace channel's new message or thread reply looks outside the channel.
@@ -1175,7 +1169,6 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
   // inserts ordinary mentions of the members' Installations in this channel (never a team identity).
   const teamMentions = useTeamMentionCandidates(bff, {principal: draftIdentity, workspaceId}, agentDirectory.data?.agents,
     workspaceId !== undefined && channelType !== "dm" && !editTarget);
-  const autocompleteCandidates = useMemo<MentionSuggestion[]>(() => [...mentionCandidates, ...teamMentions], [mentionCandidates, teamMentions]);
   const knownAgentKeys = useMemo(() => new Set<string>(), [workspaceId, draftIdentity, draftKey]);
   const knownAgentInstallations = useMemo(() => new Map<string,string>(), [workspaceId, draftIdentity, draftKey]);
   for (const agent of agentPeople) knownAgentKeys.add(agent.pubkey);
@@ -1185,11 +1178,18 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
     ? getPersistentAgentAudienceScope({ownerPubkey: agentDirectory.data.ownerPubkey, channelId: agentDirectory.data.channelId, composerKey: draftKey}) : null;
   const implicitAgentMentionProvenance = useImplicitAgentMentionProvenance(audienceScope);
   const {audience, keepMentionedAgentsPinned} = useThreadAgentAudience({isAgentPubkey, rootTags: audienceContext?.rootTags ?? [], scope: audienceScope});
-  // Original useMentions ranking (exact > prefix > word > pubkey) and suggestion limit.
-  const humanSuggestions = useMemo(()=>humanQuery===null ? [] : rankMentionCandidates(autocompleteCandidates, humanQuery.query)
-    .slice(0, MENTION_SUGGESTION_LIMIT).map(({candidate})=>candidate),[autocompleteCandidates,humanQuery]);
-  const {mentionSelectedIndex:humanIndex,setMentionSelectedIndex:setHumanIndex}=useMentionSelection(humanSuggestions);
-  useEffect(() => { if (nonMemberFlow && humanQuery !== null) setOutsideDirectoryWanted(true); }, [nonMemberFlow, humanQuery]);
+  const composerMentions = useComposerMentions({
+    candidates: useMemo(() => mentionCandidates.map(person => ({ ...person, isMember: person.notInChannel !== true,
+      role: person.role === "admin" ? "admin" as const : null })), [mentionCandidates]),
+    teams: teamMentions, scope: JSON.stringify([workspaceId, draftIdentity, draftKey]), selectedMentions: humanBindings,
+    verifyMentionIdentities: async records => partitionMentionIdentitiesByLocalTrust(records,
+      pubkey => mentionPeopleRef.current?.filter(person => person.pubkey.toLowerCase() === pubkey).map(person => person.displayName) ?? []).trusted,
+  });
+  const { suggestions: humanSuggestions, knownNames: humanNames, mentionSelectedIndex: humanIndex,
+    setMentionSelectedIndex: setHumanIndex, pasteBinding, registerMentionPubkey, insertMention,
+    openMentionPicker, getMentionDisplayName, isInlineMentionSelection } = composerMentions;
+  const humanQuery = composerMentions.mentionQuery === null ? null : { query: composerMentions.mentionQuery, startIndex: composerMentions.mentionStartIndex };
+  useEffect(() => { if (nonMemberFlow && humanQuery !== null) setOutsideDirectoryWanted(true); }, [nonMemberFlow, composerMentions.mentionQuery]);
   // Original MessageComposer `#channel` and `:shortcode` autocompletes (shared with Desktop).
   const channelLinks = useChannelLinks(useComposerChannelLinkSources());
   const emojiAutocomplete = useEmojiAutocomplete();
@@ -1385,6 +1385,9 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
   );
 
   const { isEmojiPickerOpen, setIsEmojiPickerOpen, isFormattingOpen, setIsFormattingOpen, handleFormattingToggle } = useComposerControls();
+  const pendingImetaRef = useRef<readonly ImetaMedia[]>([]);
+  pendingImetaRef.current = pending.map(asBlob);
+  const uploadVoiceFile = useCallback((file: File) => attach([file]), [attach]);
   const voiceNote = useComposerVoiceNote({
     // Original recording context is also partitioned by this BFF actor/scope.
     draftKey: JSON.stringify([workspaceId, draftIdentity, draftKey]),
@@ -1397,19 +1400,7 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
     for (const file of Array.from(files ?? [])) await voiceNote.uploadFileWhenIdle(file);
   }, [voiceNote.uploadFileWhenIdle]);
   const sendRef = useRef<(decision?: NonMemberDecision) => void>(() => {});
-  const mentionPickerOriginRef = useRef<"inline" | "explicit" | null>(null);
   const syncAddressedAgentsFromTextRef = useRef<(text: string) => void>(() => {});
-  const pasteBinding = useMentionPasteBinding({
-    registerVerifiedMentionPubkey: (label, pubkey) => {
-      if (!owner.active) return;
-      humanBindings.current.set(label, pubkey);
-      trimMapToSize(humanBindings.current, MAX_TRACKED_INTENTS);
-      setHumanNames([...humanBindings.current.keys()]);
-    },
-    verifyMentionIdentities: async (records) => partitionMentionIdentitiesByLocalTrust(records,
-      (pubkey) => mentionPeopleRef.current?.filter(person => person.pubkey.toLowerCase() === pubkey)
-        .map(person => person.displayName) ?? []).trusted,
-  });
   useEffect(() => () => pasteBinding.clearMentionIntents(), [owner, pasteBinding.clearMentionIntents]);
   const onTypingRef = useRef(onTyping);
   onTypingRef.current = onTyping;
@@ -1436,44 +1427,20 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
       setDraft(text); setPreviewContent(linkPreviewContent);
       if (!editTarget && text.trim().length > 0) onTypingRef.current?.();
       if (!sending && !editTarget) syncAddressedAgentsFromTextRef.current(text);
-      const query=detectPrefixQuery("@",text,cursor,autocompleteCandidates.map(person=>person.displayName.toLowerCase()));
-      if (query) mentionPickerOriginRef.current = "inline";
-      else if (mentionPickerOriginRef.current === "inline") mentionPickerOriginRef.current = null;
-      setHumanQuery(query?{...query,cursor}:null);
+      composerMentions.updateMentionQuery(text, cursor);
       channelLinks.updateChannelQuery(text, cursor);
       emojiAutocomplete.updateEmojiQuery(text, cursor);
     },
   }});
-  const registerMentionPubkey = useCallback((displayName: string, pubkey: string) => {
-    const label=selectedMentionLabel(displayName,pubkey,humanBindings.current);
-    pasteBinding.claimMentionIntent(label);
-    humanBindings.current.set(label,pubkey);
-    trimMapToSize(humanBindings.current, MAX_TRACKED_INTENTS);
-    setHumanNames(current => current.includes(label) ? current : [...current, label]);
-    return label;
-  }, [pasteBinding.claimMentionIntent]);
-  const insertMention = useCallback((person: MentionSuggestion, cursor: number) => {
-    const label = registerMentionPubkey(person.displayName, person.pubkey);
-    // 与原 useMentions.insertMention 一致：替换到选择时的实时光标。用 Enter 选候选时编辑器已先
-    // splitBlock，旧 query 光标会把那次分段留在 @提及后面（消息变成 "@Agent\n\n 正文"）。
-    const edit = {replaceFromOffset: humanQuery?.startIndex ?? cursor, replaceToOffset: cursor, insertText: "@" + label + " "};
-    setHumanQuery(null);setHumanIndex(0);
-    return edit;
-  }, [registerMentionPubkey, humanQuery, setHumanIndex]);
-  const openMentionPicker = useCallback((cursor: number, preference?: "preserve") => {
-    mentionPickerOriginRef.current = "explicit";
-    setHumanQuery(current => preference === "preserve" && current ? {...current, startIndex: cursor} : {query:"", startIndex:cursor, cursor});
-  }, []);
   const openPeople=useCallback(()=>{
-    if (humanQuery) {setHumanQuery(null); richText.editor?.commands.focus(); return;}
+    if (humanQuery) {composerMentions.cancelMentionAutocomplete(); richText.editor?.commands.focus(); return;}
     const position=richText.getPlainTextAndCursor();
     openMentionPicker(position.cursor);
     setHumanIndex(Math.max(0, mentionCandidates.findIndex(person => person.isAgent)));
     richText.editor?.commands.focus();
   }, [humanQuery, richText.getPlainTextAndCursor, richText.editor, openMentionPicker, mentionCandidates, setHumanIndex]);
-  const getDraftMentionRefs = useCallback((content: string) => mentionOccurrences(content, mentionMatchCandidates({selectedMentions: humanBindings.current, memberCandidates: mentionCandidates.map(person => ({...person, isMember: person.notInChannel !== true}))})).flatMap(({candidates}) => candidates.flatMap(candidate => candidate.pubkey ? [{pubkey:candidate.pubkey, displayName:candidate.displayName, isAgent:knownAgentKeys.has(candidate.pubkey)}] : [])), [mentionCandidates, knownAgentKeys]);
-  const getMentionDisplayName = useCallback((pubkey: string) => mentionCandidates.find(person => person.pubkey === pubkey)?.displayName, [mentionCandidates]);
-  const isInlineMentionSelection = useCallback(() => mentionPickerOriginRef.current === "inline", []);
+  const getDraftMentionRefs = useCallback((content: string) => composerMentions.getDraftMentionRefs(content)
+    .map(ref => ({ ...ref, isAgent: ref.isAgent === true || knownAgentKeys.has(ref.pubkey) })), [composerMentions.getDraftMentionRefs, knownAgentKeys]);
   const applyChannelInsert = useCallback((suggestion: ChannelSuggestion) => {
     const { cursor } = richText.getPlainTextAndCursor();
     applyAutocompleteEdit(channelLinks.insertChannel(suggestion, cursor));
@@ -1505,19 +1472,11 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
   const handleAlwaysAddressShortcut = useAlwaysAddressShortcut({enabled: Boolean(audienceScope && !editTarget), lockedAgent:addressLock.lockedAgents[0],
     mentions:{getDefaultAgentSuggestion, isMentionOpen:humanQuery !== null && humanSuggestions.length > 0, mentionSelectedIndex:humanIndex, suggestions:humanSuggestions},
     onOpenPicker:openPeople, onToggle:addressLock.toggleAlwaysAddressAgent});
-  // Original useMentions.insertMention team branch: each member label is bound to its exact
-  // Installation key, then `Team(@A @B) ` is inserted; publication derives the agent mentions.
-  const insertTeamMention = (team: MentionSuggestion) => {
-    const members = team.teamMembers ?? [];
-    if (members.length === 0 || members.some(member => !member.pubkey || !knownAgentKeys.has(member.pubkey))) return;
-    const labels = members.map(member => ({displayName: registerMentionPubkey(member.displayName, member.pubkey!)}));
-    const {cursor} = richText.getPlainTextAndCursor();
-    applyAutocompleteEdit({replaceFromOffset: humanQuery?.startIndex ?? cursor, replaceToOffset: cursor, insertText: formatTeamMention(team.displayName, labels)});
-    setHumanQuery(null); setHumanIndex(0);
-  };
   const selectHuman = (person: MentionSuggestion) => {
     if (isTeamMentionSuggestion(person)) {
-      if (!disabled && !sending && teamMentions.some(team => team.teamId === person.teamId)) insertTeamMention(person);
+      if (!disabled && !sending && teamMentions.some(team => team.teamId === person.teamId)) {
+        applyAutocompleteEdit(composerMentions.insertMention(person, richText.getPlainTextAndCursor().cursor));
+      }
       return;
     }
     if (disabled || sending || !mentionCandidates.some(candidate => candidate.pubkey === person.pubkey && candidate.isAgent === person.isAgent)) return;
@@ -1552,7 +1511,7 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
     pasteBinding.clearMentionIntents();
     humanBindings.current = new Map((saved?.mentionRefs ?? []).map(ref => [ref.displayName, ref.pubkey]));
     for (const ref of saved?.mentionRefs ?? []) if (ref.isAgent === true) knownAgentKeys.add(ref.pubkey);
-    setHumanNames([...humanBindings.current.keys()]);setHumanQuery(null);
+    composerMentions.refreshSelectedNames();composerMentions.cancelMentionAutocomplete();
     channelLinks.clearChannels(); emojiAutocomplete.clearEmojis();
     setSending(false);
     setUploading(0);
@@ -1624,7 +1583,7 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
     setDraft("");
     setPreviewContent("");
     pasteBinding.clearMentionIntents();
-    humanBindings.current = new Map(); setHumanNames([]); setHumanQuery(null);
+    humanBindings.current = new Map(); composerMentions.refreshSelectedNames(); composerMentions.cancelMentionAutocomplete();
     channelLinks.clearChannels(); emojiAutocomplete.clearEmojis();
     setPending([]);
     setPendingGifs([]);
@@ -1648,7 +1607,7 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
     setMentionInstallationIds(saved.mentionInstallationIds ?? []);
     humanBindings.current = new Map((saved.mentionRefs ?? []).map(ref => [ref.displayName, ref.pubkey]));
     for (const ref of saved.mentionRefs ?? []) if (ref.isAgent === true) knownAgentKeys.add(ref.pubkey);
-    setHumanNames([...humanBindings.current.keys()]);
+    composerMentions.refreshSelectedNames();
     if (draftKey) clearPendingSend(draftKey);
     if (files.length) void attach(files);
   }, [richText.setContent, attachmentActions.setSpoileredAttachmentUrls, knownAgentKeys, draftKey, attach]);
@@ -1904,7 +1863,7 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
           setDraft("");
           setPreviewContent("");
           pasteBinding.clearMentionIntents();
-          humanBindings.current.clear();setHumanNames([]);setHumanQuery(null);
+          humanBindings.current.clear();composerMentions.refreshSelectedNames();composerMentions.cancelMentionAutocomplete();
           channelLinks.clearChannels(); emojiAutocomplete.clearEmojis();
         }
         setPending((current) => current.filter((p) => !pending.includes(p)));
@@ -2078,18 +2037,7 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
       emoji: emojiAutocomplete.handleEmojiKeyDown, selectEmoji: applyEmojiInsert,
       channel: channelLinks.handleChannelKeyDown, selectChannel: applyChannelInsert,
       mentionOpen: humanSuggestions.length > 0,
-      mention: event => {
-        if (!humanSuggestions.length) return { handled: false };
-        if (event.key === "Escape") { event.preventDefault(); setHumanQuery(null); return { handled: true }; }
-        if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-          event.preventDefault(); setHumanIndex(index => (index + (event.key === "ArrowDown" ? 1 : humanSuggestions.length - 1)) % humanSuggestions.length);
-          return { handled: true };
-        }
-        if ((event.key === "Enter" || event.key === "Tab") && humanSuggestions[humanIndex]) {
-          event.preventDefault(); return { handled: true, suggestion: humanSuggestions[humanIndex] };
-        }
-        return { handled: false };
-      },
+      mention: event => composerMentions.handleMentionKeyDown(event, { isCodeContext: () => isMentionCodeContext(richText.editor) }),
       selectMention: selectHuman, linkEditor,
     })}
     toolbar={{ layoutMode, composerDisabled: disabled || sending, customEmoji,
@@ -2135,7 +2083,7 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
         onOptionsRevealComplete={autoPin.completeOptionsReveal}
         position={autocompleteBelow ? "below" : "above"}
         composerOwnsFocus={!disabled&&!sending&&humanQuery!==null}
-        onSelect={selectHuman} onDismiss={()=>setHumanQuery(null)}/>:null}
+        onSelect={selectHuman} onDismiss={()=>composerMentions.cancelMentionAutocomplete()}/>:null}
       </div>
       <output aria-live="polite" className="sr-only" data-testid="composer-address-lock-status">{addressLock.announcement}</output>
       {!mentionVerified ? (
