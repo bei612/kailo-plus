@@ -1,12 +1,13 @@
+import { MessageComposerAutocompletes } from "@client-kit/platform/react/composer/features/messages/ui/MessageComposerAutocompletes";
+import { useComposerMentionPicker } from "@client-kit/platform/react/composer/features/messages/ui/useComposerMentionPicker";
+import { useComposerFocusOwnership } from "@client-kit/platform/react/composer/features/messages/lib/useComposerFocusOwnership";
 import { useComposerMentions } from "@client-kit/platform/react/composer/features/messages/lib/useComposerMentions";
 import { isMentionCodeContext } from "@client-kit/platform/react/composer/features/messages/lib/mentionCodeContext";
 import { useComposerDraftRestore } from "@client-kit/platform/react/composer/useComposerDraftLifecycle";
 import { useComposerContentState } from "@client-kit/platform/react/composer/useComposerContentState";
 import { useMessageComposerController, useComposerControls, composerKeyDown, useComposerSubmission, useComposerAutoSubmit } from "@client-kit/platform/react/composer/useMessageComposerController";
 import { extractMentionPubkeys, mentionMatchCandidates, mentionOccurrences, AmbiguousMentionError } from "@client-kit/platform/react/pulse";
-import { MentionAutocomplete, type MentionSuggestion } from "@client-kit/platform/react/composer/features/messages/ui/MentionAutocomplete";
-import { ChannelAutocomplete } from "@client-kit/platform/react/composer/features/messages/ui/ChannelAutocomplete";
-import { EmojiAutocomplete } from "@client-kit/platform/react/composer/features/messages/ui/EmojiAutocomplete";
+import { type MentionSuggestion } from "@client-kit/platform/react/composer/features/messages/ui/MentionAutocomplete";
 import { useComposerChannelLinkSources } from "@client-kit/platform/react/composer/features/messages/ui/ComposerChannelLinksContext";
 import { useChannelLinks, type ChannelSuggestion } from "@client-kit/platform/react/composer/features/messages/lib/useChannelLinks";
 import { useEmojiAutocomplete, type EmojiSuggestion } from "@client-kit/platform/react/composer/features/messages/lib/useEmojiAutocomplete";
@@ -1186,7 +1187,7 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
       pubkey => mentionPeopleRef.current?.filter(person => person.pubkey.toLowerCase() === pubkey).map(person => person.displayName) ?? []).trusted,
   });
   const { suggestions: humanSuggestions, knownNames: humanNames, mentionSelectedIndex: humanIndex,
-    setMentionSelectedIndex: setHumanIndex, pasteBinding, registerMentionPubkey, insertMention,
+    pasteBinding, registerMentionPubkey, insertMention,
     openMentionPicker, getMentionDisplayName, isInlineMentionSelection } = composerMentions;
   const humanQuery = composerMentions.mentionQuery === null ? null : { query: composerMentions.mentionQuery, startIndex: composerMentions.mentionStartIndex };
   useEffect(() => { if (nonMemberFlow && humanQuery !== null) setOutsideDirectoryWanted(true); }, [nonMemberFlow, composerMentions.mentionQuery]);
@@ -1432,13 +1433,6 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
       emojiAutocomplete.updateEmojiQuery(text, cursor);
     },
   }});
-  const openPeople=useCallback(()=>{
-    if (humanQuery) {composerMentions.cancelMentionAutocomplete(); richText.editor?.commands.focus(); return;}
-    const position=richText.getPlainTextAndCursor();
-    openMentionPicker(position.cursor);
-    setHumanIndex(Math.max(0, mentionCandidates.findIndex(person => person.isAgent)));
-    richText.editor?.commands.focus();
-  }, [humanQuery, richText.getPlainTextAndCursor, richText.editor, openMentionPicker, mentionCandidates, setHumanIndex]);
   const getDraftMentionRefs = useCallback((content: string) => composerMentions.getDraftMentionRefs(content)
     .map(ref => ({ ...ref, isAgent: ref.isAgent === true || knownAgentKeys.has(ref.pubkey) })), [composerMentions.getDraftMentionRefs, knownAgentKeys]);
   const applyChannelInsert = useCallback((suggestion: ChannelSuggestion) => {
@@ -1452,6 +1446,9 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
   const addressPulse = useAddressMentionPulse();
   const autoPin = useAutoPinMentionedAgents({audienceScope, enabled:keepMentionedAgentsPinned, getDisplayName:getMentionDisplayName,
     onPulse:addressPulse.pulseOne, onTurnOff:() => setKeepMentionedAgentsPinned(false), onTurnOn:() => setKeepMentionedAgentsPinned(true)});
+  const mentionPicker = useComposerMentionPicker({ mentions: composerMentions, richText, onTurnOffAutoPinConfirmation: autoPin.turnOffConfirmation });
+  const openPeople = mentionPicker.openMentionSettings;
+  const composerOwnsFocus = useComposerFocusOwnership(formRef);
   const addressLock = useAgentAddressLockPicker({audience, audienceScope, applyAutocompleteEdit, richText,
     onImplicitPrefixInserted: implicitAgentMentionProvenance.add,
     onImplicitPrefixRemoved: implicitAgentMentionProvenance.remove,
@@ -2045,7 +2042,7 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
       autoPinConfirmationTitle: autoPin.confirmationTitle,
       onAutoPinConfirmationDismiss: autoPin.dismissConfirmation,
       onAutoPinConfirmationHoverChange: autoPin.setConfirmationHovered,
-      onAutoPinConfirmationTurnOff: () => {openMentionPicker(richText.getPlainTextAndCursor().cursor); autoPin.turnOffConfirmation(); richText.editor?.commands.focus();},
+      onAutoPinConfirmationTurnOff: mentionPicker.turnOff,
       onRemoveAddressedAgent: removeAddressedAgent,
       pulseVersionByPubkey: addressPulse.pulseVersionByPubkey,
       shakeVersionByPubkey: addressPulse.shakeVersionByPubkey,
@@ -2068,22 +2065,19 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
     }}>
       {dragging ? <DropZoneOverlay /> : null}
       <div className={surface === "forum" ? undefined : "relative"}>
-      <EmojiAutocomplete position={autocompleteBelow ? "below" : "above"} composerOwnsFocus={!disabled && !sending}
-        onSelect={applyEmojiInsert} selectedIndex={emojiAutocomplete.emojiSelectedIndex}
-        suggestions={emojiAutocomplete.isEmojiAutocompleteOpen ? emojiAutocomplete.emojiSuggestions : []} />
-      <ChannelAutocomplete position={autocompleteBelow ? "below" : "above"} composerOwnsFocus={!disabled && !sending}
-        onSelect={applyChannelInsert} selectedIndex={channelLinks.channelSelectedIndex}
-        suggestions={channelLinks.isChannelOpen ? channelLinks.channelSuggestions : []} />
-      {mentionPeople || workspaceId ?<MentionAutocomplete suggestions={humanSuggestions} selectedIndex={humanIndex}
-        lockedAgentPubkeys={audienceScope ? addressLock.lockedAgentPubkeys : undefined}
-        onToggleAlwaysAddressAgent={audienceScope ? suggestion => addressLock.toggleAlwaysAddressAgent(suggestion, {preserveMention: true}) : undefined}
+      <MessageComposerAutocompletes
+        position={autocompleteBelow ? "below" : "above"}
+        composerOwnsFocus={composerOwnsFocus && !disabled && !sending}
+        emojiAutocomplete={emojiAutocomplete} channelLinks={channelLinks} mentions={composerMentions}
+        onEmojiSelect={applyEmojiInsert} onChannelSelect={applyChannelInsert} onMentionSelect={selectHuman}
+        audienceControlsEnabled={Boolean(audienceScope && !editTarget)}
+        lockedAgentPubkeys={addressLock.lockedAgentPubkeys}
+        onToggleAlwaysAddressAgent={suggestion => addressLock.toggleAlwaysAddressAgent(suggestion, {preserveMention: true})}
         keepMentionedAgentsPinned={keepMentionedAgentsPinned}
-        onKeepMentionedAgentsPinnedChange={audienceScope ? setKeepMentionedAgentsPinned : undefined}
+        onKeepMentionedAgentsPinnedChange={setKeepMentionedAgentsPinned}
         openOptionsRequest={autoPin.openOptionsRequest}
         onOptionsRevealComplete={autoPin.completeOptionsReveal}
-        position={autocompleteBelow ? "below" : "above"}
-        composerOwnsFocus={!disabled&&!sending&&humanQuery!==null}
-        onSelect={selectHuman} onDismiss={()=>composerMentions.cancelMentionAutocomplete()}/>:null}
+      />
       </div>
       <output aria-live="polite" className="sr-only" data-testid="composer-address-lock-status">{addressLock.announcement}</output>
       {!mentionVerified ? (
