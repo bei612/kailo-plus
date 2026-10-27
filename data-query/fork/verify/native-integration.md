@@ -12122,3 +12122,19 @@ acceptance was produced in this batch. Rebuilding and accepting the matching
 Wren instance remains subject to the existing release/source admission gate;
 this entry does not assert that all readonly query operations or DD-127 are
 accepted.
+
+### 原答案结果消费者授权夹具与运行模式闭合
+
+本批从已推送 `e70c0ad0b338caa10c4c07676b23e0fa3c1b3ded` 独立开发，仅修改 `wren-ui/src/nativeTextAnswer.test.ts` 和原 `wren-ui/src/pages/api/ask_task/streaming_answer.ts`，固定最终源码 `8740c95f5c49388cd1e6ab5d03998346ad1cfb1d`。原五文件基线中的三项答案失败，均在进入原结果消费者前因旧 `loadQueryDelivery` mock 缺少 `serviceClientSecretFile` 等现行投递字段而失败。本批移除该配置 mock，用真实配置加载器、临时配置/假秘密文件、完整 HTTP scope 响应驱动原 `bindingServiceCall`、`authorizeNativeScope` 与原答案/Chart 消费者；校验 service 与 HUMAN 凭据的独立传递、完整 binding/Tenant/Workspace/native scope/generation/revision/permission，不以跳过授权恢复旧预期。
+
+固定 `0bae79735ccad1f4c7adc74e088794b52ae2086e` 的原单文件消费者实际 26/26 通过，原全量 `tsc --noEmit --pretty false`、单文件 Next lint、Prettier 均为 0。将独立 CI 快照中 `ApiHistoryResolver.nativeHistory` 的真实 discover 授权调用替换为静态 generation 后，10 个 scope 回归实际断言失败、命令退出 1（其余 16 个仅在该定向反证未选择）；逐字恢复后整文件 26/26 再次通过。该批只修旧夹具，保留原故障日志。
+
+进一步核对原答案流发现真实产品缺口：处理器冻结了初始 governed 模式，但异步嵌套 reader 再次读取当前模式；移除投递配置后，后续 reader 可能改走独立模式，已打开的独立流也可能在治理模式出现后继续。最终产品在同一个原 fresh 授权接缝前后校验模式仍等于初始值；首个流建立、每次结果暴露、完成回执写入前沿原接缝调用，漂移拒绝，不降级到另一模式。本批不撤回已输出字节，不将缺完成回执改为确定失败或授权重跑。
+
+固定最终源码 `8740c95f5c49388cd1e6ab5d03998346ad1cfb1d` 经 GitHub fetch/archive 到 CI 独立快照，原单文件消费者 30/30 通过，原全量 TypeScript、两文件 Next lint、Prettier 均为 0。删除两处模式校验后，四个新增回归实际断言失败、命令退出 1（另 26 个在定向反证未选择）；逐字恢复后整文件 30/30 再次通过。原有三项失败已恢复实际执行；本批未运行五文件全量，也未宣称其余任务归属失败已修复。
+
+两批均使用原不可变 Node18 镜像 `sha256:f9ab18e354e6855ae56ef2b290dd225c1e51a564f87584b9bd21dd651838830e`（Node 18.20.8、TypeScript 5.2.2、Prettier 3.2.5）；实际限制为 4 CPU、4 GiB 内存及相同 swap 上限、512 pids、network none。既有 Yarn4.5.3 immutable 安装以只读 node_modules 复用，先逐字比较 package.json/yarn.lock/.yarnrc.yml，未安装依赖。源码、临时目录和日志位于真实 `/dev/sda1` Data；两批恢复后各 618 个 Git 输入 blob 精确匹配、memory.events 的 OOM 计数均为零，容器删除后实际回读为空。格式准备单独使用原镜像 1 CPU/512 MiB，输出先入库再执行固定源验证。
+
+证据目录为 CI `/volumes/data/kailo/conformance/wren-text-answer/<上述固定源码>-check/`，保留 consumers/types/lint/format、fault、restored 原日志及各自 exit。最终 compact 回执为该最终目录的 `text-answer-receipt.json`，SHA-256 `e73407d76e27a692f3f6566fc8280a22fc6436c77514255face9f24e29f7b9b6`；本机副本 `/tmp/kailo-wren-text-answer-8740c95f5-receipt.json`。
+
+边界：HTTP 服务是完整协议夹具，现有 `NativeHumanQuery.readHistory` spy 仍隔离下游 SQL 回执，原生仓储和 AI 流也是测试依赖；这证明原消费代码与 scope/模式拒绝行为，不证明真实 Core/IdP 签发、真实 SQL/模型业务、receiver 激活或已部署制品验收。源码仍固定原上游 `c5f02a0391c87420dba78632dcd86073710deb72`；本批原 SDK upstream status 实际退出 0，未更改上游信任或生产配置。
