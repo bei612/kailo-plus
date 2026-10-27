@@ -1169,70 +1169,133 @@ describe('original answer HTTP identity and conditional history writes', () => {
       );
     },
   );
-  it.each(['generate_summary', 'ask', 'stream/ask'].flatMap((route) => [
-    { route, change: 'mode' }, { route, change: 'project' },
-  ]))('standalone original REST $route fences $change changed during current-project read', async ({ route, change }) => {
-    native.deployService.getLastDeployment.mockResolvedValue({ hash: 'original', manifest: {} });
-    native.queryService.preview.mockResolvedValue({ columns: [], data: [] });
-    native.wrenAIAdaptor.ask.mockResolvedValue({ queryId: 'ask-current' });
-    native.wrenAIAdaptor.getAskResult.mockResolvedValue({ status: 'FINISHED', type: 'TEXT_TO_SQL', response: [{ sql: 'SELECT 1' }] });
-    native.wrenAIAdaptor.createTextBasedAnswer.mockReset().mockResolvedValue({ queryId: 'current' });
-    native.apiHistoryRepository.createOne.mockReset().mockImplementation(async (value) => ({ id: 'history', ...value }));
-    native.wrenAIAdaptor.getTextBasedAnswerResult.mockResolvedValue({ status: 'SUCCEEDED', completion: { queryId: 'current', content: 'private full' } });
-    native.projectService.getCurrentProject.mockImplementation(async () => {
-      const hasStarted = native.wrenAIAdaptor.getTextBasedAnswerResult.mock.calls.length > 0;
-      await Promise.resolve();
-      if (hasStarted && change === 'mode') process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = 'new-mode-after-read';
-      return { id: hasStarted && change === 'project' ? 8 : 7, language: 'EN' };
-    });
-    stream(['data: {"message":"private full"}\n\n']);
-    const response = await fetch(`${origin}/api/v1/${route}`, {
-      method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ question: 'Original question', sql: 'SELECT 1' }),
-    });
-    const body = await response.text();
-    await closed;
-    expect(body).not.toContain('private full');
-    if (route === 'stream/ask') expect(body).toContain('"type":"error"');
-    else expect(response.status).toBe(503);
-    expect(native.apiHistoryRepository.createOne.mock.calls.every(([value]) => value.statusCode !== 200)).toBe(true);
-    expect(native.wrenAIAdaptor.createTextBasedAnswer).toHaveBeenCalledTimes(1);
-  });
-
-  it.each(['generate_summary', 'ask'].flatMap((route) => [
-    { route, change: 'mode' }, { route, change: 'project' },
-  ]))('standalone $route does not expose completion after $change changes in original History write', async ({ route, change }) => {
-    let written = false;
-    native.projectService.getCurrentProject.mockImplementation(async () => ({
-      id: written && change === 'project' ? 8 : 7, language: 'EN',
-    }));
-    native.deployService.getLastDeployment.mockResolvedValue({ hash: 'original', manifest: {} });
-    native.queryService.preview.mockResolvedValue({ columns: [], data: [] });
-    native.wrenAIAdaptor.ask.mockResolvedValue({ queryId: 'ask-current' });
-    native.wrenAIAdaptor.getAskResult.mockResolvedValue({ status: 'FINISHED', type: 'TEXT_TO_SQL', response: [{ sql: 'SELECT 1' }] });
-    native.wrenAIAdaptor.createTextBasedAnswer.mockReset().mockResolvedValue({ queryId: 'current' });
-    native.wrenAIAdaptor.getTextBasedAnswerResult.mockResolvedValue({ status: 'SUCCEEDED', completion: { queryId: 'current', content: 'private full' } });
-    native.apiHistoryRepository.createOne.mockReset().mockImplementation(async (value) => {
-      if (value.statusCode === 200) {
+  it.each(
+    ['generate_summary', 'ask', 'stream/ask'].flatMap((route) => [
+      { route, change: 'mode' },
+      { route, change: 'project' },
+    ]),
+  )(
+    'standalone original REST $route fences $change changed during current-project read',
+    async ({ route, change }) => {
+      native.deployService.getLastDeployment.mockResolvedValue({
+        hash: 'original',
+        manifest: {},
+      });
+      native.queryService.preview.mockResolvedValue({ columns: [], data: [] });
+      native.wrenAIAdaptor.ask.mockResolvedValue({ queryId: 'ask-current' });
+      native.wrenAIAdaptor.getAskResult.mockResolvedValue({
+        status: 'FINISHED',
+        type: 'TEXT_TO_SQL',
+        response: [{ sql: 'SELECT 1' }],
+      });
+      native.wrenAIAdaptor.createTextBasedAnswer
+        .mockReset()
+        .mockResolvedValue({ queryId: 'current' });
+      native.apiHistoryRepository.createOne
+        .mockReset()
+        .mockImplementation(async (value) => ({ id: 'history', ...value }));
+      native.wrenAIAdaptor.getTextBasedAnswerResult.mockResolvedValue({
+        status: 'SUCCEEDED',
+        completion: { queryId: 'current', content: 'private full' },
+      });
+      native.projectService.getCurrentProject.mockImplementation(async () => {
+        const hasStarted =
+          native.wrenAIAdaptor.getTextBasedAnswerResult.mock.calls.length > 0;
         await Promise.resolve();
-        written = true;
-        if (change === 'mode') process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = 'new-mode-after-history-write';
-      }
-      return { id: 'history', ...value };
-    });
-    stream(['data: {"message":"private full"}\n\n']);
-    const response = await fetch(`${origin}/api/v1/${route}`, {
-      method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ question: 'Original question', sql: 'SELECT 1' }),
-    });
-    const body = await response.text();
-    await closed;
-    expect(written).toBe(true);
-    expect(response.status).toBe(503);
-    expect(body).not.toContain('private full');
-    expect(native.wrenAIAdaptor.createTextBasedAnswer).toHaveBeenCalledTimes(1);
-  });
+        if (hasStarted && change === 'mode')
+          process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = 'new-mode-after-read';
+        return {
+          id: hasStarted && change === 'project' ? 8 : 7,
+          language: 'EN',
+        };
+      });
+      stream(['data: {"message":"private full"}\n\n']);
+      const response = await fetch(`${origin}/api/v1/${route}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          question: 'Original question',
+          sql: 'SELECT 1',
+        }),
+      });
+      const body = await response.text();
+      await closed;
+      expect(body).not.toContain('private full');
+      if (route === 'stream/ask') expect(body).toContain('"type":"error"');
+      else expect(response.status).toBe(503);
+      expect(
+        native.apiHistoryRepository.createOne.mock.calls.every(
+          ([value]) => value.statusCode !== 200,
+        ),
+      ).toBe(true);
+      expect(native.wrenAIAdaptor.createTextBasedAnswer).toHaveBeenCalledTimes(
+        1,
+      );
+    },
+  );
 
+  it.each(
+    ['generate_summary', 'ask'].flatMap((route) => [
+      { route, change: 'mode' },
+      { route, change: 'project' },
+    ]),
+  )(
+    'standalone $route does not expose completion after $change changes in original History write',
+    async ({ route, change }) => {
+      let written = false;
+      native.projectService.getCurrentProject.mockImplementation(async () => ({
+        id: written && change === 'project' ? 8 : 7,
+        language: 'EN',
+      }));
+      native.deployService.getLastDeployment.mockResolvedValue({
+        hash: 'original',
+        manifest: {},
+      });
+      native.queryService.preview.mockResolvedValue({ columns: [], data: [] });
+      native.wrenAIAdaptor.ask.mockResolvedValue({ queryId: 'ask-current' });
+      native.wrenAIAdaptor.getAskResult.mockResolvedValue({
+        status: 'FINISHED',
+        type: 'TEXT_TO_SQL',
+        response: [{ sql: 'SELECT 1' }],
+      });
+      native.wrenAIAdaptor.createTextBasedAnswer
+        .mockReset()
+        .mockResolvedValue({ queryId: 'current' });
+      native.wrenAIAdaptor.getTextBasedAnswerResult.mockResolvedValue({
+        status: 'SUCCEEDED',
+        completion: { queryId: 'current', content: 'private full' },
+      });
+      native.apiHistoryRepository.createOne
+        .mockReset()
+        .mockImplementation(async (value) => {
+          if (value.statusCode === 200) {
+            await Promise.resolve();
+            written = true;
+            if (change === 'mode')
+              process.env.WREN_PLATFORM_QUERY_CONFIG_FILE =
+                'new-mode-after-history-write';
+          }
+          return { id: 'history', ...value };
+        });
+      stream(['data: {"message":"private full"}\n\n']);
+      const response = await fetch(`${origin}/api/v1/${route}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          question: 'Original question',
+          sql: 'SELECT 1',
+        }),
+      });
+      const body = await response.text();
+      await closed;
+      expect(written).toBe(true);
+      expect(response.status).toBe(503);
+      expect(body).not.toContain('private full');
+      expect(native.wrenAIAdaptor.createTextBasedAnswer).toHaveBeenCalledTimes(
+        1,
+      );
+    },
+  );
 });
 
 describe('original answer result HTTP adaptor', () => {
