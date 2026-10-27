@@ -573,17 +573,24 @@ describe('original native planning HTTP stream and HUMAN task owner', () => {
     { done: true, queryId, message: 'not a completion' },
     { done: 'true', queryId },
     { done: true },
-  ])('standalone Ask keeps interrupted or invalid completion %j unresolved and never reopens the native task', async (completion) => {
-    standalone();
-    nativeStream.mockResolvedValue(Readable.from([
-      'data: {"message":"partial"}\n\n',
-      ...(completion === undefined ? [] : [`data: ${JSON.stringify(completion)}\n\n`]),
-    ]));
-    const response = await send();
-    expect(await response.text()).toBe('data: {"message":"partial"}\n\n');
-    expect(nativeStream).toHaveBeenCalledTimes(1);
-    expect(loadQueryDelivery).not.toHaveBeenCalled();
-  });
+  ])(
+    'standalone Ask keeps interrupted or invalid completion %j unresolved and never reopens the native task',
+    async (completion) => {
+      standalone();
+      nativeStream.mockResolvedValue(
+        Readable.from([
+          'data: {"message":"partial"}\n\n',
+          ...(completion === undefined
+            ? []
+            : [`data: ${JSON.stringify(completion)}\n\n`]),
+        ]),
+      );
+      const response = await send();
+      expect(await response.text()).toBe('data: {"message":"partial"}\n\n');
+      expect(nativeStream).toHaveBeenCalledTimes(1);
+      expect(loadQueryDelivery).not.toHaveBeenCalled();
+    },
+  );
   it('standalone Ask refuses another project task before consuming its native queue', async () => {
     standalone();
     task.projectId++;
@@ -592,10 +599,12 @@ describe('original native planning HTTP stream and HUMAN task owner', () => {
   });
   it('standalone mode is rechecked after the original task lookup before consuming its one-shot queue', async () => {
     standalone();
-    const read = jest.spyOn(components.askingService, 'getAskingTask').mockImplementation(async () => {
-      process.env.WREN_PLATFORM_BINDING_CONFIG_FILE = '/fixture/binding.json';
-      return { queryId } as any;
-    });
+    const read = jest
+      .spyOn(components.askingService, 'getAskingTask')
+      .mockImplementation(async () => {
+        process.env.WREN_PLATFORM_BINDING_CONFIG_FILE = '/fixture/binding.json';
+        return { queryId } as any;
+      });
     try {
       expect((await send()).status).toBe(412);
       expect(nativeStream).not.toHaveBeenCalled();
@@ -616,11 +625,14 @@ describe('original native planning HTTP stream and HUMAN task owner', () => {
     expect(nativeStream).toHaveBeenCalledTimes(1);
     expect(loadQueryDelivery).not.toHaveBeenCalled();
   });
-  it.each(['POST', 'DELETE'])('standalone stream rejects %s without a native read', async method => {
-    standalone();
-    expect((await send({}, method)).status).toBe(405);
-    expect(nativeStream).not.toHaveBeenCalled();
-  });
+  it.each(['POST', 'DELETE'])(
+    'standalone stream rejects %s without a native read',
+    async (method) => {
+      standalone();
+      expect((await send({}, method)).status).toBe(405);
+      expect(nativeStream).not.toHaveBeenCalled();
+    },
+  );
   it.each([
     'foreign-user',
     'foreign-binding',
