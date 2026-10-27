@@ -776,15 +776,19 @@ class NativeSqlAnswerStream(unittest.IsolatedAsyncioTestCase):
                         identifier,
                     )
                     self.assertEqual(pipeline._user_queues[identifier].qsize(), 1)
-                    pipeline._pipe.execute.return_value = {name: {
-                        "replies": [identifier], "meta": [{"finish_reason": "stop"}]
-                    }}
+                    pipeline._pipe.execute.return_value = {
+                        name: {
+                            "replies": [identifier],
+                            "meta": [{"finish_reason": "stop"}],
+                        }
+                    }
                     expected = ask_module.AskResultResponse(
                         status="finished", type="GENERAL", general_type=general_type
                     )
                     service._ask_results[identifier] = expected
                     await service._generate_general(
-                        name, expected,
+                        name,
+                        expected,
                         query="question",
                         language="Chinese",
                         query_id=identifier,

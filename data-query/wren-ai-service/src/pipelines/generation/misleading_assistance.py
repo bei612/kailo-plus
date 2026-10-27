@@ -128,9 +128,7 @@ class MisleadingAssistance(BasicPipeline):
         while True:
             try:
                 # Wait for an item from the user's queue
-                result = await asyncio.wait_for(
-                    queue.get(), timeout=120
-                )
+                result = await asyncio.wait_for(queue.get(), timeout=120)
                 if result is None:
                     if self._user_queues.get(query_id) is queue:
                         del self._user_queues[query_id]
