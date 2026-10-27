@@ -87,7 +87,7 @@ async function mount() {
 }
 
 describe("original Needs action filter over Temporal approvals", () => {
-  it("shows both approval kinds in All with the action-required label and keeps done marks local", async () => {
+  it.each(["title", "avatar"] as const)("opens approval from its non-profile %s and keeps done marks local", async slot => {
     requests.length = 0;
     const ui = await mount();
     const pendingRow = () => ui.querySelector('[data-testid="home-inbox-item-approval:approval-wait:decide"]');
@@ -96,7 +96,9 @@ describe("original Needs action filter over Temporal approvals", () => {
     expect(pendingRow()?.querySelector("[data-inbox-type-label]")?.className).toContain("text-amber-600/80");
     expect(pendingRow()?.textContent).toContain("A workflow is waiting for approval.");
 
-    await click(pendingRow()!.querySelector<HTMLButtonElement>("button[aria-label]")!);
+    const target = slot === "title" ? pendingRow()!.querySelector<HTMLElement>("span.text-sm.font-semibold")!
+      : pendingRow()!.querySelector("svg")!.parentElement!;
+    await click(target);
     await vi.waitFor(() => expect(ui.querySelector('[data-testid="home-inbox-needs-action-detail"]')?.textContent).toContain("Approve"));
     expect(requests.some((request) => request.path === "/api/v1/approvals/approval-wait")).toBe(true);
     // Selecting marks the item done on this device only; no read write leaves the browser.
