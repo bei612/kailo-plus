@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, type ReactNode } from "react";
+import { act, useState, type ReactNode } from "react";
 import {QueryClient, QueryClientProvider} from "@tanstack/react-query";
 import { createRoot, type Root } from "react-dom/client";
 import { BffError, TransportError } from "@client-kit/platform/transport";
@@ -680,6 +680,67 @@ it("does not automatically retry an UNKNOWN intent created while navigation cons
   expect(state.publish).toHaveBeenCalledTimes(1);
   expect(loadDraftEntry("workspace-a")?.sendIntent).toEqual(intent);
   expect(host.textContent).toContain("platform.sendUnknown");
+});
+
+it("Escape cancels the real edit and restores the existing text and uploaded attachment draft without publishing", async () => {
+  const publish = vi.fn();
+  const canceled = vi.fn();
+  const descriptor = {sha256:"a".repeat(64),size:4,type:"text/plain",url:"media:kept"};
+  const upload = vi.fn().mockResolvedValue(descriptor);
+  const target = {id:"e".repeat(64),author:"Alice",pubkey:"alice",body:"Published text",createdAt:1,time:"",depth:0,tags:[]};
+  function Host() {
+    const [editing, setEditing] = useState(false);
+    return <><button onClick={() => setEditing(true)}>Edit existing</button>
+      <Composer workspaceId="escape-workspace" draftIdentity="alice" draftKey={editing ? `edit:${target.id}` : "escape-draft"}
+        editTarget={editing ? target : undefined} onUpload={upload} onPublish={publish}
+        onCancelEdit={() => {canceled(); setEditing(false);}} /></>;
+  }
+  const host = await render(<Host />);
+  await type(host.querySelector<HTMLElement>('[data-testid="message-input"]')!, "Unsent draft");
+  const picker = host.querySelector<HTMLInputElement>('[data-testid="attach-input"]')!;
+  await act(async () => {
+    Object.defineProperty(picker,"files",{configurable:true,value:[new File(["kept"],"kept.txt",{type:"text/plain"})]});
+    picker.dispatchEvent(new Event("change",{bubbles:true}));
+  });
+  await settle();
+  expect(loadDraftEntry("escape-draft")?.pendingImeta[0]).toMatchObject({...descriptor,filename:"kept.txt"});
+  await click(button(host,"Edit existing"));
+  await settle();
+  expect(host.querySelector('[data-testid="message-input"]')?.textContent).toBe("Published text");
+  await type(host.querySelector<HTMLElement>('[data-testid="message-input"]')!, "Discard this edit");
+  await act(async () => host.querySelector('[data-testid="message-input"]')!.dispatchEvent(
+    new KeyboardEvent("keydown",{key:"Escape",bubbles:true,cancelable:true})));
+  await settle();
+  expect(canceled).toHaveBeenCalledOnce();
+  expect(host.querySelector('[data-testid="message-input"]')?.textContent).toBe("Unsent draft");
+  expect(host.textContent).toContain("kept.txt");
+  expect(loadDraftEntry("escape-draft")?.pendingImeta[0]).toMatchObject({...descriptor,filename:"kept.txt"});
+  expect(upload).toHaveBeenCalledOnce();
+  expect(publish).not.toHaveBeenCalled();
+});
+
+it("Escape dismisses mention autocomplete before canceling an edit, and cannot cancel an in-flight save", async () => {
+  let release!: (value: object) => void;
+  const publish = vi.fn(() => new Promise<object>(resolve => {release=resolve;}));
+  const canceled = vi.fn();
+  const target = {id:"f".repeat(64),author:"Alice",pubkey:"alice",body:"Original",createdAt:1,time:"",depth:0,tags:[]};
+  const host = await render(<Composer draftIdentity="alice" draftKey="escape-edit" editTarget={target}
+    mentionPeople={[{pubkey:"b".repeat(64),displayName:"Bob"}]} onPublish={publish} onCancelEdit={canceled} />);
+  const input = () => host.querySelector<HTMLElement>('[data-testid="message-input"]')!;
+  await type(input(),"@Bo");
+  await vi.waitFor(() => expect(host.querySelector('[data-mention-suggestion-index]')).not.toBeNull());
+  await act(async () => input().dispatchEvent(new KeyboardEvent("keydown",{key:"Escape",bubbles:true,cancelable:true})));
+  expect(canceled).not.toHaveBeenCalled();
+  expect(host.querySelector('[data-mention-suggestion-index]')).toBeNull();
+  await type(input(),"Changed body");
+  await click(button(host,"platform.send"));
+  expect(publish).toHaveBeenCalledOnce();
+  await act(async () => input().dispatchEvent(new KeyboardEvent("keydown",{key:"Escape",bubbles:true,cancelable:true})));
+  expect(canceled).not.toHaveBeenCalled();
+  await act(async () => release({}));
+  await settle();
+  await act(async () => input().dispatchEvent(new KeyboardEvent("keydown",{key:"Escape",bubbles:true,cancelable:true})));
+  expect(canceled).toHaveBeenCalledOnce();
 });
 
 it("restores an original edit body and never changes an unresolved edit's key for changed content", async () => {

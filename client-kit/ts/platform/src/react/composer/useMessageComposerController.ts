@@ -74,6 +74,7 @@ export function composerKeyDown<E, C, M>(options: {
   mention: (event: React.KeyboardEvent<HTMLDivElement>) => { handled: boolean; suggestion?: M | null };
   selectMention: (suggestion: M) => void;
   linkEditor: Pick<ReturnType<typeof useLinkEditor>, "isCardOpen" | "focusCardFirstControl">;
+  cancelEdit?: () => void;
 }) {
   return (event: React.KeyboardEvent<HTMLDivElement>) => {
     if (options.alwaysAddress(event)) return;
@@ -89,6 +90,13 @@ export function composerKeyDown<E, C, M>(options: {
     if (event.key === "Tab" && !event.shiftKey && options.linkEditor.isCardOpen) {
       event.preventDefault();
       if (!options.linkEditor.focusCardFirstControl()) requestAnimationFrame(options.linkEditor.focusCardFirstControl);
+      return;
+    }
+    // Original Buzz Escape leaves edit mode only after autocomplete has had
+    // its chance to dismiss. Hosts omit the action while saving is locked.
+    if (event.key === "Escape" && options.cancelEdit) {
+      event.preventDefault();
+      options.cancelEdit();
     }
   };
 }
