@@ -292,7 +292,10 @@ export default async function handler(
         durationMs: Date.now() - startTime,
       });
 
-      endStream(res, newThreadId, startTime);
+      const currentProject = await projectService.getCurrentProject();
+    if (isGovernedQueryMode() || currentProject.id !== project.id)
+      throw new ApiError('Original summary observation unavailable', 503);
+    endStream(res, newThreadId, startTime);
       return;
     }
 
