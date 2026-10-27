@@ -2419,3 +2419,60 @@ UNKNOWN 原意图/Idempotency-Key、Composer 授权与发布链没有替换。
 `a025e09a8-authority`，首失败在 `422f7c783`。交叉源码复核未发现新增阻断。
 这里的 DOM 消费者使用原组件/草稿存储及脚本化 BFF 返回，未将其称为真实浏览器、
 Desktop 安装包、原生设备或部署验收；本批未重跑 Native 类型/全局构建，未部署或改 CI 信任。
+
+## 2026-10-27：Inbox 普通 DM 新草稿与旧意图所有者
+
+关联 DD-74、REQ-24、DD-146。固定 Buzz
+`779af8886caae1317b4de962082429867ab61503` 的 `InboxDetailPane` 普通 DM composer
+使用原 channel 草稿键，与完整 DM 页面共用草稿。基线
+`5a1184525d7941067d81384f504d9fd431fe39c3` 的 Web 宿主却分成两个键：
+`InboxPane` 给 `InboxThreadPane` 传 native channel ID，后者保存该短键；
+`PlatformApp` 的完整会话页给 `ChannelPane` 传 Conversation binding ID，保存 binding 短键。
+没有 parent 的 native 短键草稿无法从 `InboxDrafts` 证明原绑定，所以该入口仍拒绝，不能简单
+对两个 UUID 做 OR 匹配，也不能靠当前仅有一个同名会话猜来源。
+
+本批仅恢复新普通 DM 草稿的完整写入、持久化、重新打开及原发布操作：
+当前上下文准入成立后，沿原 `initDraftStore` 初始化本人 origin 范围；存在旧 native draft
+或 pending-send 时固定保留原 key 与 owner，包括只有待上传文件名/UNKNOWN 的记录。
+只有旧记录均不存在时，选择完整会话页已经使用的 binding key。
+初始化期间保留原 disabled Composer，不先给一个猜测的键，也不把未完成显示为失败。
+选定后不随记录变化切 key、搬移正文、合并意图或删除旧记录。
+
+两个短键是同一个普通 DM 草稿的宿主命名空间分裂。binding owner 遇到旧 native 记录晚到，
+以及 native owner 遇到 binding pending/sendIntent 已存在或晚到，均拒绝新派发并保留双方记录；
+原 onPublish 在实际派发前再次直接读原 store，React 尚未重绘的旧按钮也不能绕过。
+身份变化退休当前 owner，不能把另一身份的旧 UNKNOWN 搬入新身份。
+独立 `thread:<scope>:<root>[:reply]` 是有明确目标和独立 key 的原线程意图，本批不把它们
+扩成同会话全局锁。实际 Drafts 线程导航是 `PlatformApp` → `ChannelPane` →
+`ChannelThreadPane`；唯一生产 `InboxThreadPane` 调用者不传 restoreDraftKey，已有相关
+props 用例不被宣称为这条真实路由。本批未改上一批线程归属证明。
+
+历史 native 无 parent 草稿仍保留原 Inbox 的恢复路径；未增加其来源证明、自动迁移或
+Drafts 打开权限。双侧未决冲突保持明确不可发送，不把拒绝状态宣称为历史数据已全部恢复。
+新 binding 草稿使用上一批已恢复的原 Drafts 普通会话目的地与确认发送入口；没有增加
+草稿格式、平台实体、权限或第二发布权威。
+
+原 SDK 固定 `sha256:3007729eb192341a4f004a88e42e1e66c94fc67d763acfc96568bd7311116018`，
+1 CPU / 4 GiB / swap 同额 / pids 256，实际 Data 源与日志，原资源预检/限额校验。
+所有检查容器均已终态清理，旧日志保留。
+
+- 首批 `ba584a42598af85c7cdef798060589a9887f371c`：Web tsc 0，消费者 53/55；
+  两项新夹具分别把 HTML 传给原 Markdown 编辑器、漏掉 store 规范化的 mentionRefs 默认值，
+  实际退出 1。修正输入/完整期望值，没有放宽正文、key 或 UNKNOWN 断言。
+- `c8d69f0d0d29a0ef8395fa6e748c32684b590698`：完整原文件 55/55；恢复旧 native 新草稿键、
+  移除 binding→native 晚到保护分别实际退出 1；逐字还原后 55/55。该固定源缺反向保护，
+  不能把它的通过数当作反向冲突验收。
+- 最终 `6086f71a3002314ca8135e181231cdcaab9ea11a`：原文件 57/57，Web tsc 与 i18n check 0；
+  独立移除 native→binding pending/sendIntent 保护后原消费者实际退出 1，逐字恢复后 57/57。
+- 新主链用例实际挂载原共享 Composer，输入、原 store 落盘、重开和原 conversation publisher
+  派发均被验证。冲突用例调用原 Inbox onPublish，检查发布适配器零调用、旧记录完整保留，
+  包括写记录与点击旧按钮发生在同一个 act、React 尚未重绘的窗口。
+- 原 Web npm ci 已执行；实际安装的 file 包 1039 个 src/profile-assets 文件逐字一致。
+  最终 GitHub 固定归档 3455 个输入逐字一致。回执见
+  [inbox-dm-owner-20261027.json](inbox-dm-owner-20261027.json)，SHA-256
+  `2573708ec4b2d9715638f41c53927f01a309edafcf4275f1ae8f9b2d8b1f8f9e`。
+
+CI Data 原日志在 `verification/inbox-dm-owner/{ba584a425,c8d69f0d0,6086f71a3}`。
+有界交叉复核已核对真实调用链与两个普通短键的对称门控。本批仅 Web 宿主改动，测试中的
+BFF 返回和 publisher 是脚本化适配器；未认领真实 HTTP 服务、完整 PlatformApp 挂载、
+Desktop/Mobile、打包、部署或真实设备验收。
