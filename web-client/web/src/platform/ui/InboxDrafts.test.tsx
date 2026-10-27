@@ -22,7 +22,7 @@ function anchorEvents(channel: string, rootId: string, anchorId = rootId) {
   return anchorId === rootId ? [root] : [{...root,id:anchorId,content:"original reply",tags:[["h",channel],["e",rootId,"","root"],["e",rootId,"","reply"]]},root];
 }
 let root: Root; let host: HTMLDivElement;
-beforeEach(() => {localStorage.clear(); host = document.createElement("div"); document.body.append(host); root = createRoot(host);});
+beforeEach(() => {localStorage.clear(); initDraftStore("alice", window.location.origin); host = document.createElement("div"); document.body.append(host); root = createRoot(host);});
 afterEach(async () => {await act(async () => root.unmount()); host.remove(); localStorage.clear();});
 function Store({identity}: {identity: string}) {const store = useInboxDrafts(identity); return <><output>{store.entries.map((item) => item.draft.content).join("|")}</output><button onClick={() => store.remove("scope")}>delete</button></>;}
 it("resolves only existing draft namespaces belonging to the stored destination", () => {
@@ -53,6 +53,7 @@ it.each([[false, false], [true, false], [false, true], [true, true]])("restores 
   const nativeChannel="native-dm", binding="conversation-binding", parent="a".repeat(64), reply="b".repeat(64);
   const scope = bindingScope ? binding : nativeChannel;
   const entry={key:`thread:${scope}:${parent}${explicit ? `:${reply}` : ""}`,draft:{...draft,channelId:scope}};
+  saveDraftEntry(entry.key, entry.draft);
   const conversation:ConversationView={id:binding,channelId:nativeChannel,participantPrincipalIds:["alice","peer"],state:ConversationViewState.Active,operationId:"operation",version:1};
   views.items=[conversation];views.error=false;views.loading=false;views.hidden=new Set();views.open.mockClear();
   const cache=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}});
@@ -78,6 +79,7 @@ it.each([[false, false], [true, false], [false, true], [true, true]])("restores 
 
 it("does not open a hidden DM draft or confuse a native channel draft with another binding ID", async()=>{
   const channel="native-dm", parent="a".repeat(64), entry={key:`thread:${channel}:${parent}`,draft:{...draft,channelId:channel}};
+  saveDraftEntry(entry.key, entry.draft);
   views.items=[{id:channel,channelId:"other-native",participantPrincipalIds:["alice","peer"],state:ConversationViewState.Active,operationId:"op",version:1}];
   views.error=false;views.loading=false;views.hidden=new Set([channel]);views.open.mockClear();views.toast.mockClear();
   const cache=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}});
@@ -101,6 +103,7 @@ it("does not open a hidden DM draft or confuse a native channel draft with anoth
 
 it("uses the original confirmation then opens the admitted DM composer with only its saved draft reference", async()=>{
   const entry={key:"conversation-binding",draft:{...draft,channelId:"conversation-binding"}};
+  saveDraftEntry(entry.key, entry.draft);
   const conversation:ConversationView={id:entry.key,channelId:"native-dm",participantPrincipalIds:["alice","peer"],state:ConversationViewState.Active,operationId:"operation",version:1};
   views.items=[conversation]; views.error=false; views.loading=false; views.hidden=new Set(); views.open.mockClear();
   const cache=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}});
@@ -120,6 +123,7 @@ it("uses the original confirmation then opens the admitted DM composer with only
 
 it.each(["en", "zh-CN"] as const)("keeps the original three-participant DM source preview in the actual Web draft surfaces (%s)", async locale => {
   const entry = {key: "conversation-binding", draft: {...draft, channelId: "conversation-binding"}};
+  saveDraftEntry(entry.key, entry.draft);
   const people = ["Alice", "First", "Second", "Third", "Fourth", "Fourth"].map((displayName, index) => ({principalId: `person-${index}`, displayName, pubkeys: [(index + 1).toString(16).repeat(64)]}));
   views.items = [{id: entry.draft.channelId, channelId: "native-dm", participantPrincipalIds: people.map(person => person.principalId), state: ConversationViewState.Active, operationId: "operation", version: 1}];
   views.error = false; views.loading = false;
@@ -139,9 +143,10 @@ it.each(["en", "zh-CN"] as const)("keeps the original three-participant DM sourc
   } finally {cache.clear(); views.items = [];}
 });
 
-it.each(["send", "collision", "nonparticipant", "wrong-channel", "wrong-root", "missing", "revoked", "identity", "generation", "draft-changed", "intent-changed", "unmount"] as const)("keeps DM thread draft restoration inside the admitted original target (%s)", async scenario => {
+it.each(["send", "collision", "nonparticipant", "wrong-channel", "wrong-root", "missing", "revoked", "identity", "generation", "draft-changed", "intent-changed", "stored-changed", "unmount"] as const)("keeps DM thread draft restoration inside the admitted original target (%s)", async scenario => {
   const scope="binding", native="native", rootId="a".repeat(64), replyId="b".repeat(64);
   const entry={key:`thread:${scope}:${rootId}:${replyId}`,draft:{...draft,channelId:scope}};
+  saveDraftEntry(entry.key, entry.draft);
   const conversation:ConversationView={id:scope,channelId:native,participantPrincipalIds:["alice","peer"],state:ConversationViewState.Active,operationId:"op",version:1};
   views.items=[conversation]; views.error=false; views.loading=false; views.hidden=new Set(); views.open.mockClear(); views.toast.mockClear();
   if(scenario==="collision") views.items.push({...conversation,id:"other-binding",channelId:scope});
@@ -149,7 +154,7 @@ it.each(["send", "collision", "nonparticipant", "wrong-channel", "wrong-root", "
   let release!: (page:{events:ReturnType<typeof anchorEvents>})=>void;
   const read=vi.fn().mockImplementation(async()=>{
     if(scenario==="revoked") throw new Error("Forbidden");
-    if(["identity","generation","draft-changed","intent-changed","unmount"].includes(scenario)) return new Promise(resolve=>{release=resolve;});
+    if(["identity","generation","draft-changed","intent-changed","stored-changed","unmount"].includes(scenario)) return new Promise(resolve=>{release=resolve;});
     return {events:scenario==="missing" ? [] : anchorEvents(scenario==="wrong-channel" ? "foreign" : native,scenario==="wrong-root" ? "d".repeat(64) : rootId,replyId)};
   });
   const client={conversationMessages:read,workspaceChannel:vi.fn()} as unknown as BffClient;
@@ -176,10 +181,11 @@ it.each(["send", "collision", "nonparticipant", "wrong-channel", "wrong-root", "
       if(scenario==="generation") {views.items=[{...conversation,version:2}]; await render();}
       if(scenario==="draft-changed") {entry.draft={...entry.draft,content:"new text at the same timestamp"}; await render();}
       if(scenario==="intent-changed") {entry.draft={...entry.draft,sendIntent:{key:"new-frozen-key",signature:"new-frozen-body"}}; await render();}
+      if(scenario==="stored-changed") saveDraftEntry(entry.key,{...entry.draft,content:"persisted change before React render"});
       if(scenario==="unmount") await act(async()=>root.render(null));
       if(release) await act(async()=>release({events:anchorEvents(native,rootId,replyId)}));
       expect(views.open).not.toHaveBeenCalled();
-      if(!["identity","generation","draft-changed","intent-changed","unmount"].includes(scenario)) expect(views.toast).toHaveBeenCalledWith("Destination unavailable");
+      if(!["identity","generation","draft-changed","intent-changed","stored-changed","unmount"].includes(scenario)) expect(views.toast).toHaveBeenCalledWith("Destination unavailable");
       else expect(views.toast).not.toHaveBeenCalled();
     }
     expect(client.workspaceChannel).not.toHaveBeenCalled();

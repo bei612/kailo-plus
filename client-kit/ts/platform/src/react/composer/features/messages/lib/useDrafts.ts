@@ -386,7 +386,7 @@ export function clearDraftEntry(draftKey: string): void {
  * selection offsets, timestamps, attachment metadata, spoiler state, and
  * status — is treated as a distinct record that must not be discarded.
  */
-function draftStatesEqual(a: DraftState, b: DraftState): boolean {
+export function draftStatesEqual(a: DraftState, b: DraftState): boolean {
   if (
     a.content !== b.content ||
     a.selectionStart !== b.selectionStart ||
