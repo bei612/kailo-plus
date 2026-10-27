@@ -13299,7 +13299,6 @@ Core/provider/receiver/browser acceptance. Formal artifacts, release admission a
 receiver activation remain separate. No production configuration, deployment,
 shared business database or source trust changed.
 
-
 ## Instant recommendation observation retirement (2026-10-27)
 
 For **DD-12 / SS-WRN-GOVERNANCE**, the original `useAskPrompt` recommendation
