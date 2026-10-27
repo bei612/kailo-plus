@@ -363,3 +363,22 @@ Clippy 与原 workspace SQLx prepare check 全部退出 0。2,083 个归档输�
 这解除新 `NativeCommunityFacts` 可选字段与 `native.rs` 可信 epoch producer 的
 合批编译缺口，不等于真实 native bootstrap HTTP 端点、OpenBao/IdP、Core→Relay
 部署全链、最新全工程 full、正式制品或三端设备验收。
+
+### 同批文档与发布追溯的实际终态
+
+固定 `8c5395908aacbc6c4d82a57eb43855b4d66824ee`、设计
+`3635890d5fde0dad94ec29e0c1f49d99ae67dd09`，原 SDK 1 CPU / 2 GiB 完整
+`tools/check-docs.sh` 与原 runbook 检查退出 0，包含 393 引用、96 实体、160 DD、
+30 SS、260 场景及 22 篇设计文档。CI 原件为
+`/volumes/data/kailo/verification/phase1-integration/docs-8c5395908-publication-epoch-final/`；
+`check.log` SHA-256 为 `03f4422191c9a0390edb62a376ae8bc866676ea78ccba401d25b9bb5adf0afd0`。
+
+同源原 `step_trace` 在只读挂载 CI 原发布证明库后退出 1：`collab.feedback`、
+`collab.mobile_push`、`collab.tenant_profile` 的 `release.artifacts` 缺正式 digest。
+42 能力、20 个封闭 Workflow kind 一致性及原四个构建期拒绝条件通过；本轮未再报
+Core/Worker SBOM 缺失，不再将旧导出缺文件当作当前失败原因。CI 原件为同根
+`trace-8c5395908-publication-epoch-r2/`；`check.log` SHA-256 为
+`7643d06ca5cf0a4ec4a042caf075860a1b160074545eb25076e750730c8a05a7`。
+首轮容器因只读源码父目录内没有 `dist` 挂载点而在启动前退出 128，原失败保留；
+只建立空挂载点后运行原检查，未生成制品或改写其摘要。上述结果不代替 full、
+supply/seam 或发布验收；三个正式制品缺口保持原状态。

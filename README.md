@@ -12,7 +12,7 @@ DD-124/136 一致性投递、DD-159 本地归档、DD-151 持久推送与 Mobile
 DD-158 反馈和跨会话社区资料，以及 DD-160 原生仓库写入。已提交并推送不代表
 合并 main、产物或部署。下列检查分别对应固定源码，不合并认作最新整树 full。
 
-最新产品集成固定 `3cfa10e5f`：普通 writer 缺失证明、Core 原 DISPATCH/永久审计
+最新 Core 产品合批固定 `3cfa10e5f`：普通 writer 缺失证明、Core 原 DISPATCH/永久审计
 消费及 Native epoch 生产者已合入。原 SDK 4 CPU / 16 GiB、独立 PG 1 CPU /
 2 GiB，正常 Core **840 passed / 93 ignored**；显式 Agent 5、Canvas 4、审核 6、
 scope 5、history 1、reconcile 4、bridge HTTP 5、push retirement 1 共 **31** 项
@@ -21,6 +21,13 @@ workspace SQLx prepare check 全部退出 0；2,083 个实际输入与 GitHub �
 逐字一致。Native 新生成字段及可信 policy helper 已在该合批编译，但未作部署端点
 或真实三端验收；见[最终合批回执](core/verify/phase1-integration-publication-final-20261027.json)。
 显式专项与正常目标存在重叠，不相加；ignored 不算通过，这仍不是全工程 full。
+
+Composer 失败提示固定 `ca477cd66`：Web/Native 共用上传与普通发送错误文案，
+原 Native 关闭按钮和后台上传提示支持中文；原草稿恢复与 UNKNOWN 分类保留。
+原 SDK 1 CPU / 4 GiB，Web 74/74、Native 7/7、三消费者类型全部通过；实际恢复
+旧英文诊断拼接断言失败，逐字恢复后通过。Dart 同源生成回填 `0faaf5905`，原件见
+[输入框验证记录](web-client/fork/verify/web-surface.md)。未部署或完成设备验收，
+两宿主完整 Composer 编排共源仍未完成。
 
 前一批 Core 集成固定 `1d0d20b53`：原 SDK 4 CPU / 16 GiB、私有 PG
 1 CPU / 2 GiB，正常主目标 **839 passed / 91 ignored**；显式 Agent/Canvas/审核、
@@ -114,6 +121,13 @@ Android FCM 原生批也已进入候选：固定 `76a879c21` 的 Flutter 消费�
 通过，配置变化不能复用旧阶段产物。debug APK 不是签名 release，尚无设备/供应商
 投递或 iOS 编译证据，Core tag 已由上述 push 联合检查覆盖；见
 [Android 证据](collaboration/fork/verify/mobile-android-push.md)。
+
+固定 `8c5395908` 与设计 `3635890d5` 的原 SDK 1 CPU / 2 GiB 完整文档门禁
+退出 0。随后同源执行原 `step_trace` 并只读挂载原 CI 发布证明库，退出 1：
+反馈、Mobile 推送、社区资料三项仍缺正式制品 digest；本轮未再报 Core/Worker
+发布 SBOM 缺失。CI 原件在 `/volumes/data/kailo/verification/phase1-integration/` 下的
+`docs-8c5395908-publication-epoch-final/` 与
+`trace-8c5395908-publication-epoch-r2/`。该结果不等于最新 full 或发布通过。
 
 固定 `d6469e936` 与设计 `bb41415a5` 的原 SDK 1 CPU / 2 GiB 文档门禁全部
 退出 0：393 引用、96 实体、160 DD、30 SS、260 场景及设计 22 篇均闭合，

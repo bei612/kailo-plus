@@ -6906,3 +6906,29 @@ V-SCN-105/106（DD-39/81/117/120）。本批只做 TypeScript/UI 与 Web 宿主�
   引用待生成）；BFF 路由、部署与业务验收均未进行。只读取首页 50 条（未做“加载更多”），关闭类别的角标扣减只覆盖已加载
   条目。Desktop（`collaboration/desktop`）复用同一共享组件，新增属性均为可选，未接入组件通知源、组件搜索源与
   `/applications/$bindingId` 的 `path` 参数。
+
+## 2026-10-27 原 Composer 失败提示共源与中文默认修复
+
+关联 `REQ-08/24`、`DD-74/75`。固定 Buzz
+`779af8886caae1317b4de962082429867ab61503` 的
+`desktop/src/features/messages/ui/MessageComposer.tsx` 原上传错误栏与关闭操作仍保留；
+此前 Kailo Native 原位遗留 `Upload failed`、`Dismiss`、后台上传 toast 与普通发送
+错误的英文拼接。本批把 Web 已有 `platform.uploadFailed`、`platform.sendFailed`
+逐字迁至共享 `platformMessages`，两宿主消费同一来源；原 Native 错误栏、关闭按钮、
+后台上传及提及准备错误的缺省提示读取共享中英文文案，不再在普通发送失败中展示原始传输诊断。
+原 Relay 拒绝、限流、确定未发送、UNKNOWN 分类和原草稿恢复路径不改。
+
+源码固定 `ca477cd66d509e7d7760136b9964bc3aa2e796e1`，Dart 同源生成回填为
+`0faaf59051d9eab530d42f635529f7bdb8096484`；无 API/schema/Workflow/权限变化。
+原 SDK `3007729e…`，实际 1 CPU / 4 GiB、memory+swap 同值，源码、临时目录均为
+真实 Data 实盘。原生成与 `--check`、共享生产/测试类型、Web 类型、Desktop 类型
+均退出 0；Web 原 Composer/i18n/预览三个文件 74/74，Native 原 send-flow 7/7。
+实际恢复旧英文及原诊断拼接后，原双语消费者断言失败退出 1；逐字恢复后 Native
+7/7 再次通过。3,439 个 GitHub 归档输入核对，唯一预期差异是 Dart 生成物，且与
+0fa 的 Git blob 相同。容器无 OOM、清理后为空；原 Web React `act` 警告保留。
+
+[原回执](composer-failure-receipt.json) SHA-256 为
+`ac6fe615e79d1c1a4de8c3fc8ddb7038a971f0a64af14e050679e0c15005077d`；
+CI 原件位于 `/volumes/data/kailo/verification/phase1-integration/composer-failure-ca477cd66/`。
+未部署、未生成正式包、未执行真实浏览器或设备操作，不把两宿主仍分离的 Composer
+编排逻辑声明为完整共源；本批只闭合该处失败提示的同源消费。
