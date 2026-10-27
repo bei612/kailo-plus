@@ -7,8 +7,8 @@
 // useOptimisticProjectBranches, useProjectRepositoryRefSelection, projectBranchManagementState,
 // useProjectBranchActions, handleFetchRepo) lives in useRepositoryGitState so that the tab contents
 // and the original repository right panel (branch picker, Fetch, details) read the same state.
-// Create/delete appear only when the host offers ref writes. Local checkouts, tags and
-// clone/pull/push are Desktop-local and not part of this shared remote read.
+// Create/delete appear only when the host offers ref writes. Original tags select remote
+// immutable snapshots; local checkout writes are unavailable while a tag is selected.
 import { Files as FilesIcon, GitCommitHorizontal } from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
@@ -68,21 +68,22 @@ export function useRepositoryGitState({ host, repository, pullRequests, commitHa
     projectId: repository.id,
     referencedBranches,
   });
-  const { activeBranch: selectedBranch, selectBranch } = useProjectRepositoryRefSelection({
+  const { activeBranch: selectedBranch, selectBranch, selectedTag, selectTag } = useProjectRepositoryRefSelection({
     branchOptions,
     defaultBranch,
     projectAvailable: true,
     projectPending: false,
-    repositoryId: repository.id,
-    tags: NO_BRANCHES,
+    repositoryId: JSON.stringify([host.scopeKey, repository.id]),
+    tags: repoStateQuery.data?.tags ?? NO_BRANCHES,
   });
   const activeBranch = selectedBranch ?? defaultBranch;
-  const localCheckout = useProjectLocalCheckout(host, repository, activeBranch, checkoutSource);
-  const remoteSnapshotQuery = useProjectRepoSnapshotQuery(host, repository, activeBranch, null, localCheckout.source === "remote");
+  const activeTag = repoStateQuery.data?.tags.find(tag => tag.name === selectedTag) ?? null;
+  const localCheckout = useProjectLocalCheckout(host, repository, activeBranch, checkoutSource, selectedTag !== null);
+  const remoteSnapshotQuery = useProjectRepoSnapshotQuery(host, repository, activeBranch, null, localCheckout.source === "remote" && (!selectedTag || Boolean(activeTag)), activeTag);
   const snapshotQuery = localCheckout.source === "local" ? localCheckout.snapshot : remoteSnapshotQuery;
   const commitDiffQuery = useProjectCommitDiffQuery(host, repository, commitHash, localCheckout.source);
-  const fileContentSource = useRepositoryFileContentSource({ activeBranch, host, pullRequest: null, repository, source: localCheckout.source });
-  const snapshot = snapshotQuery.data ?? null;
+  const fileContentSource = useRepositoryFileContentSource({ activeBranch, host, pullRequest: null, repository, source: localCheckout.source, activeTag });
+  const snapshot = selectedTag && !activeTag ? null : snapshotQuery.data ?? null;
   const files = React.useMemo(() => snapshot?.files ?? [], [snapshot]);
   const readmeFile = React.useMemo(() => findReadmeFile(files), [files]);
   const gitDataState: GitDataState = snapshot ? (files.length === 0 ? "empty" : "available") : snapshotQuery.isLoading ? "checking" : "unavailable";
@@ -114,8 +115,11 @@ export function useRepositoryGitState({ host, repository, pullRequests, commitHa
   const sourceControls: RepoBranchHeaderControls = {
     branch: activeBranch,
     branchOptions,
+    selectedTag,
+    tagOptions: repoStateQuery.data?.tags ?? NO_BRANCHES,
+    onTagChange: tag => { selectTag(tag); checkoutSource.onChange("remote"); },
     onBranchChange: selectBranch,
-    ...(branchActions.available ? {
+    ...(branchActions.available && !selectedTag ? {
       onCreateBranch: () => branchActions.setCreateOpen(true),
       createBranchDisabled: branchActions.createPending || otherRetained(branchActions.retainedCreate)
         || (!branchActions.retainedCreate && !activeBranchCommit),
@@ -146,7 +150,7 @@ export function useRepositoryGitState({ host, repository, pullRequests, commitHa
     });
   }, [refetchSnapshot, refetchState, refetchLocal, host, t, cache, repository.id, lifetime]);
   const fetch: RepositoryFetchControls = { onFetch, fetchPending: snapshotQuery.isFetching || repoStateQuery.isFetching };
-  return { activeBranch, activeBranchCommit, branchActions, branchOptions, commitDiffQuery, fetch, fileContentSource, files,
+  return { activeBranch, selectedTag, activeBranchCommit, branchActions, branchOptions, commitDiffQuery, fetch, fileContentSource, files,
     gitDataState, readmeFile, snapshot, snapshotQuery, sourceControls, unavailableReason, localCheckout };
 }
 

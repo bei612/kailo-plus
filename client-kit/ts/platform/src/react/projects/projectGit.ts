@@ -79,6 +79,19 @@ export type ProjectRepoRefInput = {
   targetCommit?: string | null;
 };
 
+/** Original 30618 tag selection, bounded by ProjectsGitQueryRequest and the shared git ref reader.
+ * Reject malformed published refs instead of letting clean_target_ref drop them and read HEAD.
+ */
+export function projectTagTarget(tag: { name: string; commit: string }) {
+  const name = tag.name;
+  const targetRef = `refs/tags/${name}`;
+  if (!name || name.trim() !== name || name.startsWith("-") || name.startsWith("/") || name.endsWith("/")
+    || name.startsWith("refs/heads/") || name.includes("..") || !/^[A-Za-z0-9/_.-]+$/.test(name)
+    || targetRef.length > 255 || !/^[0-9a-f]{40}([0-9a-f]{24})?$/.test(tag.commit))
+    throw new Error("Invalid repository tag");
+  return { targetRef, targetCommit: tag.commit };
+}
+
 /** Original ProjectRepoBranchResult without its English message: the branch and its head. */
 export type ProjectRepoBranchResult = { branch: string; commit: string };
 

@@ -1,9 +1,8 @@
 // Fixed Buzz 779af8886caae1317b4de962082429867ab61503
 // desktop/src/features/projects/ui/ProjectRepositorySource.tsx::RepositoryBranchDropdown and the
 // branch part of RepoSourceHeaderControls. Same picker, Create branch… / Delete <branch> items and
-// disabled-reason line. The local source toggle, clone/fetch/pull/push and tag snapshots are not
-// restored (this host has no local checkout and no tag-addressed snapshot read), so no tag options
-// are passed. A missing create/delete handler hides that item, as in the original.
+// disabled-reason line and tag snapshots. Desktop local controls live in useProjectLocalCheckout.
+// A selected tag hides branch writes, as in the original.
 import { ChevronDown, GitBranch, Plus, Tag, Trash2 } from "lucide-react";
 import { useUiT } from "../context";
 import { Button } from "../profile/buzz/shared/ui/button";
