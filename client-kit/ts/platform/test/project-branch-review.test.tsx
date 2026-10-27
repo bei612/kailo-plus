@@ -70,12 +70,15 @@ async function mount(f:ReturnType<typeof fixture>,target:ProjectWorkItemTarget){
   const pulse:PulseHost={scopeKey:f.host.scopeKey,pubkey:viewer,query:async()=>[],publish:vi.fn(),copy:vi.fn(),startDm:vi.fn(),mediaUrl:url=>url,
     renderComposer:()=>null,renderContent:content=><p>{content}</p>};
   const opened=vi.fn();
-  const ui=await render(<><div id="app-top-chrome-content"/><PlatformProvider client={createBffClient({send:async()=>({status:200,body:{items:[]}})})} locale="en">
+  const content=<><div id="app-top-chrome-content"/><PlatformProvider client={createBffClient({send:async()=>({status:200,body:{items:[]}})})} locale="en">
     <QueryClientProvider client={cache}><TooltipProvider>
       <ProjectsView host={f.host} selectedProjectId={f.projectId} workItemTarget={target} onSelectedProjectChange={opened}
         renderWorkItems={children=><PulseHostProvider host={pulse}>{children}</PulseHostProvider>}/>
-    </TooltipProvider></QueryClientProvider></PlatformProvider></>);
-  return {ui,opened};
+    </TooltipProvider></QueryClientProvider></PlatformProvider></>;
+  let setVisible!:(visible:boolean)=>void;
+  function Lifetime(){const [visible,set]=useState(true);setVisible=set;return visible?content:null;}
+  const ui=await render(<Lifetime/>);
+  return {ui,opened,unmount:async()=>{await act(async()=>setVisible(false));}};
 }
 const button=(root:ParentNode,label:string)=>Array.from(root.querySelectorAll<HTMLButtonElement>("button")).find(entry=>entry.textContent?.trim()===label||entry.getAttribute("aria-label")===label);
 const menuEntry=(label:string)=>Array.from(document.querySelectorAll<HTMLElement>('[role="menuitem"],[role="menuitemradio"]')).find(entry=>entry.textContent?.trim()===label);
@@ -328,13 +331,13 @@ describe("original review update",()=>{
     });
   }
   it("publishes the original Update review button and confirms the new head before clearing its key",async()=>{
-    const f=reviewFixture();accept(f);const mounted=await mount(f,{repositoryId:f.repositoryId,view:"overview"});
+    const f=reviewFixture();accept(f);const mounted=await mount(f,{repositoryId:f.repositoryId,tab:"overview"});
     await vi.waitFor(()=>expect(button(document,"Update review")).toBeDefined());
     await click(button(document,"Update review")!);
     await vi.waitFor(()=>expect(button(document,"Update review")).toBeUndefined());
     expect(f.host.publish).toHaveBeenCalledTimes(1);
     expect(vi.mocked(f.host.publish!).mock.calls[0]?.[0]).toEqual({operation:"UPDATE_PULL_REQUEST",targetEventId:f.root.id,commit:mainHead});
-    expect(updateIntents()).toEqual([]);await mounted.ui.unmount();
+    expect(updateIntents()).toEqual([]);await mounted.unmount();
   });
   it("retains UNKNOWN commit and original key across a changed remote head without signing a new intent",async()=>{
     const f=reviewFixture(),repo=await currentRepository(f),signal=new AbortController().signal;
@@ -349,6 +352,24 @@ describe("original review update",()=>{
     expect(vi.mocked(f.host.publish!).mock.calls[0]?.slice(0,3)).toEqual([first[0],first[1],true]);
     expect(result?.pullRequest.commit).toBe(mainHead);result?.complete();expect(updateIntents()).toEqual([]);
   });
+  it("keeps the original update recovery action when its review closes after a lost ACK",async()=>{
+    const f=reviewFixture();accept(f);const publish=f.host.publish!;
+    f.host.publish=vi.fn(async(...args:Parameters<typeof publish>)=>{await publish(...args);throw new TransportError("lost ACK");});
+    const first=await mount(f,{repositoryId:f.repositoryId,tab:"overview"});
+    await vi.waitFor(()=>expect(button(document,"Update review")).toBeDefined());
+    await click(button(document,"Update review")!);
+    await vi.waitFor(()=>expect(button(document,"Update review")?.disabled).toBe(false));
+    expect(f.host.publish).toHaveBeenCalledTimes(1);const key=vi.mocked(f.host.publish).mock.calls[0]![1];
+    await first.unmount();
+    f.rows.push(event("4",1632,[["e",f.root.id,"","root"],["a",repository]],"",80));
+    f.host.publish=vi.fn(async(_request,retryKey,observe)=>{expect(retryKey).toBe(key);expect(observe).toBe(true);return {eventId:"3".repeat(64)};});
+    const next=await mount(f,{repositoryId:f.repositoryId,tab:"overview"});
+    await vi.waitFor(()=>expect(button(document,"Update review")).toBeDefined());
+    await click(button(document,"Update review")!);
+    await vi.waitFor(()=>expect(updateIntents()).toEqual([]));
+    expect(f.host.publish).toHaveBeenCalledTimes(1);expect(button(document,"Update review")).toBeUndefined();
+    await next.unmount();
+  });
   it("pushes once and uses the original pushed branch, commit and merge base for its review continuation",async()=>{
     const f=reviewFixture();accept(f);
     const push=vi.fn(async()=>({branch:"main",commit:mainHead,mergeBase:olderHead}));
@@ -356,23 +377,23 @@ describe("original review update",()=>{
       getProjectLocalRepoSnapshot:vi.fn(),getProjectLocalRepoDiff:vi.fn(),getProjectLocalRepoFileContent:vi.fn(),
       getProjectRepoSyncStatus:async()=>({localPath:"/local/repo",localBranch:"main",localBranches:["main"],localHead:mainHead,remoteBranch:"main",remoteHead:olderHead,
         mergeBase:olderHead,aheadCount:1,behindCount:0,hasUncommittedChanges:false,hasUntrackedFiles:false,canPush:true,canPull:false,pushBlockReason:null,pullBlockReason:null,pendingPush:null})};
-    const mounted=await mount(f,{repositoryId:f.repositoryId,view:"overview"});
+    const mounted=await mount(f,{repositoryId:f.repositoryId,tab:"overview"});
     await vi.waitFor(()=>expect(Array.from(document.querySelectorAll("button")).some(node=>node.textContent?.startsWith("Push"))).toBe(true));
     await click(Array.from(document.querySelectorAll<HTMLButtonElement>("button")).find(node=>node.textContent?.startsWith("Push"))!);
     await vi.waitFor(()=>expect(updateIntents()).toEqual([]));
     await vi.waitFor(()=>expect(f.host.publish).toHaveBeenCalledTimes(1));
     expect(push).toHaveBeenCalledTimes(1);
     expect(vi.mocked(f.host.publish!).mock.calls[0]?.[0]).toEqual({operation:"UPDATE_PULL_REQUEST",targetEventId:f.root.id,commit:mainHead,mergeBase:olderHead});
-    await mounted.ui.unmount();
+    await mounted.unmount();
   });
   it("does not dispatch an update after its repository owner is unmounted during the fresh read",async()=>{
-    const f=reviewFixture();accept(f);const mounted=await mount(f,{repositoryId:f.repositoryId,view:"overview"});
+    const f=reviewFixture();accept(f);const mounted=await mount(f,{repositoryId:f.repositoryId,tab:"overview"});
     await vi.waitFor(()=>expect(button(document,"Update review")).toBeDefined());
     let release!:(value:Awaited<ReturnType<ProjectsHost["query"]>>)=>void;
     const original=f.host.query;let paused=false;
-    f.host.query=vi.fn(async request=>{const result=await original(request);if(!paused&&request.view==="PROJECTS"){paused=true;return new Promise(resolve=>{release=resolve;});}return result;});
+    f.host.query=vi.fn<ProjectsHost["query"]>(async request=>{const result=await original(request);if(!paused&&request.view==="PROJECTS"){paused=true;return new Promise<Awaited<ReturnType<ProjectsHost["query"]>>>(resolve=>{release=resolve;});}return result;});
     await click(button(document,"Update review")!);await vi.waitFor(()=>expect(release).toBeDefined());
-    await mounted.ui.unmount();await act(async()=>release(await original({view:"PROJECTS"} as Parameters<ProjectsHost["query"]>[0])));
+    await mounted.unmount();await act(async()=>release(await original({view:"PROJECTS"} as Parameters<ProjectsHost["query"]>[0])));
     expect(f.host.publish).not.toHaveBeenCalled();expect(updateIntents()).toEqual([]);
   });
 });
