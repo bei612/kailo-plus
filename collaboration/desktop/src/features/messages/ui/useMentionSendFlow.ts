@@ -1,4 +1,5 @@
 import * as React from "react";
+import { resolveLocale, translate } from "@client-kit/platform/i18n";
 import { ConversationPreparationPending } from "@client-kit/platform/react/new-message";
 import { isOutcomeUnknown } from "@client-kit/platform/transport";
 import { buildAgentAddressMentionTags } from "@client-kit/platform/react/messages";
@@ -293,11 +294,9 @@ export function useMentionSendFlow({
                 settleUpload();
               }
             },
-            onError: (error) => {
+            onError: () => {
               restoreComposerAfterFailure();
-              toast.error(
-                `Upload failed: ${getErrorMessage(error, "Unknown error")}`,
-              );
+              toast.error(translate(resolveLocale(), "platform.uploadFailed"));
               settleUpload();
             },
             onCancel: () => {
@@ -453,7 +452,7 @@ export function useMentionSendFlow({
         await completeSend(draft);
       } catch (error) {
         toast.error(
-          getErrorMessage(error, "Could not prepare mentions. Please retry."),
+          getErrorMessage(error, translate(resolveLocale(), "buzz.mentionPreparationFailed")),
         );
       } finally {
         if (!sendPromoted) {

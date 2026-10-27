@@ -8,11 +8,12 @@ import {
   uniqueNormalizedPubkeys,
 } from "./useMentionSendFlow.helpers.ts";
 
-test("formatMessageSendError preserves the publication failure", () => {
-  assert.equal(
-    formatMessageSendError(new Error("relay rejected voice note")),
-    "Message failed to send: relay rejected voice note",
-  );
+test("formatMessageSendError localizes failures without displaying transport diagnostics", () => {
+  for (const [locale, expected] of [["en", "Send failed"], ["zh-CN", "发送失败"]]) {
+    assert.equal(formatMessageSendError(new Error("relay rejected voice note"), locale), expected);
+    assert.equal(formatMessageSendError("untranslated transport failure", locale), expected);
+    assert.equal(formatMessageSendError({}, locale), expected);
+  }
 });
 
 test("Native real send flow verifies addressed Agent recipients before publishing and restores rejected drafts", async () => {

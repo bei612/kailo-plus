@@ -4850,6 +4850,16 @@ export const platformMessages = {
     en: "Not sent: the server refused this message. Your text is kept.",
     "zh-CN": "未发送：服务器拒绝了这条消息。内容已保留。",
   },
+  "platform.sendFailed": { en: "Send failed", "zh-CN": "发送失败" },
+  "platform.uploadFailed": {
+    en: "Upload failed — the result is unknown. Try again.",
+    "zh-CN": "上传失败，结果不明。请重试。",
+  },
+  "buzz.dismiss": { en: "Dismiss", "zh-CN": "关闭" },
+  "buzz.mentionPreparationFailed": {
+    en: "Could not prepare mentions. Please retry.",
+    "zh-CN": "无法准备提及对象，请重试。",
+  },
   "native.send.rateLimited": {
     en: "Not sent: you are sending too fast. Try again in {seconds} s. Your text is kept.",
     "zh-CN": "未发送：发送过于频繁，请 {seconds} 秒后再试。内容已保留。",
