@@ -2951,6 +2951,28 @@ for (const backend of ['sqlite', 'postgres'] as const) {
       expect(adaptor.generateRecommendationQuestions).not.toHaveBeenCalled();
       expect((await threads.findOneBy({ id: 11 })).queryId).toBeNull();
     });
+    it('a current project change during model preparation cannot claim or dispatch the old thread', async () => {
+      const id = await source();
+      service.mdlService.makeCurrentModelMDL.mockImplementationOnce(async () => {
+        projectId = 8;
+        return { manifest: 'old-model' };
+      });
+      await expect(service.generateThreadRecommendationQuestions(11, id)).rejects.toThrow('not found');
+      expect(adaptor.generateRecommendationQuestions).not.toHaveBeenCalled();
+      expect((await threads.findOneBy({ id: 11 })).queryId).toBeNull();
+    });
+    it('a project change after reservation refuses AI dispatch and retains the original UNKNOWN claim', async () => {
+      const id = await source();
+      const claim = threads.claimRecommendation.bind(threads);
+      jest.spyOn(threads, 'claimRecommendation').mockImplementationOnce(async (...args) => {
+        const reserved = await claim(...args);
+        projectId = 8;
+        return reserved;
+      });
+      await expect(service.generateThreadRecommendationQuestions(11, id)).rejects.toThrow('NATIVE_EXECUTION_UNKNOWN');
+      expect(adaptor.generateRecommendationQuestions).not.toHaveBeenCalled();
+      expect(await threads.findOneBy({ id: 11 })).toMatchObject({ queryId: expect.any(String), questionsSourceResponseId: id, questionsStatus: 'GENERATING' });
+    });
     it('legacy missing source/start facts do not create a replacement task', async () => {
       await threads.updateOne(11, { questionsStatus: null });
       await expect(

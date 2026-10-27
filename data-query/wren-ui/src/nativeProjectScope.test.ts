@@ -3692,7 +3692,7 @@ describe('native bound-project business consumers', () => {
     expect(
       service.threadRecommendQuestionBackgroundTracker.addTask,
     ).toHaveBeenCalledTimes(1);
-    expect(ctx.projectService.getCurrentProject).toHaveBeenCalledTimes(1);
+    expect(ctx.projectService.getCurrentProject).toHaveBeenCalledTimes(4);
   });
   it('instant recommendations retain the native current-project retrieval scope', async () => {
     const service = asking();
