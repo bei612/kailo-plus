@@ -60,6 +60,15 @@ Core 范围冻结与新消费者已进入上述最终集成，但未做真实部
 UNKNOWN。详情与原回执见
 [writer 证据](core/verify/projects-publication-receipt.md)。
 
+普通 writer 缺失接缝已进入后继集成：设计 `3635890d5`，原 DB 固定 `3d013ef8f`
+的真实 PG **10** 项、常规 DB **128** 项与 Clippy 通过。Relay 固定 `1fde2756a`
+的真实双人私聊专项 **4** 项、原治理 **8** 项、all-target Clippy 及故障恢复后
+delivery/observation/settlement **16/16** 通过；4 项已包含在 16 项中。两次实际
+移除 owner 证明或最终成员复核均断言失败、逐字恢复通过。固定输入与失败历史见
+[普通缺失查证证据](core/verify/projects-publication-receipt.md)。Core/Native 的新签名
+epoch 与永久审计证明消费仍按独立候选收口，未据 server 接缝宣称完整 DD-81、
+最新 full、正式制品或部署完成。
+
 较早 `06712387a` 的真实 `pg_notify` 删除反向与恢复通过仍独立保留于
 [原联合回执](core/verify/phase1-integration-core-20261026.json)，不改写旧失败或忽略项。
 

@@ -253,6 +253,58 @@ Relay 最后另补真实 Pulse note/like/unlike：为保持私聊历史 NULL sco
 生产分支，原消费者收到 404 而非 200、实际断言失败 exit 101；逐字恢复后
 12/12 再通过。该批无 OOM、容器与网络已清理。
 
+## 普通 writer 缺失查证与真实私聊准入
+
+设计固定 `3635890d5fde0dad94ec29e0c1f49d99ae67dd09`，普通存储屏障的独立
+固定源码与 10 项真实 PG、128 项常规 DB 结果见
+[数据库屏障证据](../../collaboration/fork/verify/publication-db-fence.md)。旧入口的
+900 秒检查不能单独证明迟到请求无法提交；本批复用实际 writer 事务锁、数据库
+时间、包括软删除的保留行与签名 Community epoch，不增加送达账本。
+
+Relay 集成固定 `1fde2756a4a27d226e7a5ca801312a0c832fea51`。原路由新增只读
+`POST /events/settlement`，原作者与当前 CONTROL owner 分别签名同一 URL、方法、
+正文和唯一 Community 标签，并分别执行重放检查。owner 只证明 Core 元数据来源，
+不代替原作者的当前 Channel 资格；查证后重新核验 Host、Community、成员和 ban。
+NIP-11 只有在实际父表及全部分区屏障有效时才宣告 publication policy。
+原 pure-topic 只增加唯一规范 epoch 元数据标签，其余管理/未知标签仍拒绝。
+
+最终使用原 Native SDK
+`sha256:df8a3475e3e32ecf5ac79f9c12763b8ce5d4f91a75c25007fd9bfa5b282fc081`，
+实际 Rust/Cargo 1.95、2 CPU / 8 GiB；独立 PG 1 CPU / 2 GiB、Redis
+0.5 CPU / 128 MiB，memory 与 swap 同限，无生产凭据或数据库投递。
+源码仍由 CI 从 GitHub 固定对象归档。先前原 SDK
+`sha256:3007729eb192341a4f004a88e42e1e66c94fc67d763acfc96568bd7311116018`
+的结果分别保留，不将两种镜像混作一次检查。
+
+- 原 `Db::open_dm` 实际建立双人 private DM，作者与另一成员为参与者，CONTROL
+  不在参与者中。新 settlement 消费者 4 项通过，覆盖独立 owner 证明、两份重放、
+  软删除、旧 epoch、禁用实际 trigger 的 NIP-11、待 writer 期间撤员后的拒绝。
+- Relay all-target Clippy `-D warnings`、前后 rustfmt、原恢复脚本 Bash 语法
+  全部退出 0；原治理消费者 8 项通过。Clippy 检出的既有孤立 doc 注释与四处
+  等价布尔表达式已修正，没有放宽 owner、TTL 或准入。
+- 实际移除当前 owner attestor 检查，原合法 admin 的证明被错误接受，原断言以
+  200 不等于 404 失败 101；逐字恢复后该原消费者通过。随后仅移除查证后的成员
+  复核，真实待锁撤员消费者同样以 200 不等于 404 失败 101；逐字恢复后原
+  delivery/observation/settlement **16/16** 全部通过。上述 4 项已包含在 16 项中。
+- 3,115 个固定归档输入在执行和故障恢复后与 GitHub 原对象逐字相同。最终 SDK
+  未 OOM，全部六批容器和独立网络实际清理回读均为空。
+
+原始回执为[六批固定来源与失败记录](publication-settlement-receipt.json)，SHA-256
+`f0b0819d37888b7b4e48324a55edd148daeb441fb67deca925fea603c347847d`。
+CI 原件位于
+`/volumes/data/kailo/verification/phase1-integration/settlement-1fde2756a-data-check-receipt.json`。
+首批旧并发 fixture 在 INSERT 后持 Community 行锁、又等待自身才能释放的 Host
+更新，实际锁链已保存，明确终止为 137，非 OOM；现暂停在同一原事件屏障的 INSERT
+之前验证范围漂移，真实 INSERT 的提交/回滚及私聊撤员消费者保持。另两批格式失败、
+原 SDK 的 ENOSPC 和最终修正前五项 Clippy 错误均保留为失败，不改写为通过。
+现存 check-cache 实际绑定 NVMe；最终只把本批 target 复制至真实 Data 专属目录，
+原共享缓存和 mount 未修改或重置，TMPDIR 也位于该 Data 目录。
+
+这是 Relay/DB 原接缝与隔离消费者验收。Core 新签名范围、永久审计证明及跨 epoch
+重试/保留期清理、Native 新 epoch 生产消费仍按各自固定后继候选验证，不由本批
+代替。恢复脚本仅检查语法，未执行真实恢复；没有最新全工程 full、正式制品、部署
+或三端实际业务验收，不宣称整个 DD-81 已完成。
+
 该原回执 SHA-256 为
 `c8b371317f8c83a42b8912480d89b98fdfac41cfe9a89e55ea19cf1390680a30`，
 CI 在
