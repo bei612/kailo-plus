@@ -1,0 +1,140 @@
+{
+  "source_commit": "3cfa10e5f17b8784304026323e62cec00644eec2",
+  "source_transport": "CI direct GitHub fixed-object archive",
+  "source_byte_audit": {
+    "fixed_source": "3cfa10e5f17b8784304026323e62cec00644eec2",
+    "checked_files": 2083,
+    "mismatches": []
+  },
+  "job": "/volumes/data/kailo/verification/buzz-r10/publication-final-3cfa10e5f17b8784304026323e62cec00644eec2-r2-data",
+  "sdk_image": "sha256:3007729eb192341a4f004a88e42e1e66c94fc67d763acfc96568bd7311116018",
+  "sdk": {
+    "cpus": 4.0,
+    "memory": 17179869184,
+    "memory_swap": 17179869184,
+    "state": {
+      "Status": "exited",
+      "Running": false,
+      "Paused": false,
+      "Restarting": false,
+      "OOMKilled": false,
+      "Dead": false,
+      "Pid": 0,
+      "ExitCode": 0,
+      "Error": "",
+      "StartedAt": "2026-10-27T00:45:50.217721335Z",
+      "FinishedAt": "2026-10-27T00:47:42.8847034Z"
+    }
+  },
+  "postgres": {
+    "cpus": 1,
+    "memory": 2147483648,
+    "memory_swap": 2147483648,
+    "scope": "private disposable migrated database"
+  },
+  "steps": {
+    "fmt": 0,
+    "migrations-up": 0,
+    "migration-proof-down": 0,
+    "migration-proof-up": 0,
+    "core-normal": 0,
+    "agent_profile-consumers": 0,
+    "workspace_canvas-consumers": 0,
+    "moderation-consumers": 0,
+    "publication-scope-pg": 0,
+    "publication-history-pg": 0,
+    "publication-reconcile-pg": 0,
+    "bridge-scoped-http": 0,
+    "push-retirement-pg-http": 0,
+    "clippy": 0,
+    "sqlx-check": 0
+  },
+  "test_results": {
+    "core-normal": [
+      "test result: ok. 840 passed; 0 failed; 93 ignored; 0 measured; 0 filtered out; finished in 1.54s"
+    ],
+    "agent_profile-consumers": [
+      "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 928 filtered out; finished in 0.17s"
+    ],
+    "workspace_canvas-consumers": [
+      "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 929 filtered out; finished in 0.09s"
+    ],
+    "moderation-consumers": [
+      "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 927 filtered out; finished in 0.09s"
+    ],
+    "publication-scope-pg": [
+      "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 928 filtered out; finished in 0.20s"
+    ],
+    "publication-history-pg": [
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 932 filtered out; finished in 0.09s"
+    ],
+    "publication-reconcile-pg": [
+      "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 929 filtered out; finished in 0.10s"
+    ],
+    "bridge-scoped-http": [
+      "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 74 filtered out; finished in 0.02s",
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 9 filtered out; finished in 0.00s",
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s"
+    ],
+    "push-retirement-pg-http": [
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 932 filtered out; finished in 0.18s"
+    ]
+  },
+  "scope": "Core normal binary target including integrated NativeFacts and native.rs policy producer; original Agent/Canvas/moderation/scope/history/reconcile, bridge HTTP and push retirement PG+HTTP consumers; Core/bridge all-target Clippy; complete migrations and 040000 empty down/up; original SQLx workspace prepare --check. No repeat faults, Relay or four-side consumer checks.",
+  "boundaries": [
+    "840 passed, 93 ignored normal tests; ignored tests are not executions. Explicit focused modules contain both actual PG and pure tests.",
+    "31 focused assertions passed: Agent5 Canvas4 moderation6 scope5 history1 reconcile4 bridge5 push retirement1.",
+    "DATABASE_URL and three original explicit test URLs point only at this isolated migrated PG; no live production/Bao/IdP services are assumed.",
+    "native.rs and new contract field compile passed; this is not an actual deployed native bootstrap HTTP acceptance.",
+    "No formal artifact, deployment or full-project release gate; source checked is exactly 3cfa, later docs not borrowed as a new full check."
+  ],
+  "prior_snapshot_failure": {
+    "source": "3cfa10e5f17b8784304026323e62cec00644eec2",
+    "job": "/volumes/data/kailo/verification/buzz-r10/publication-final-3cfa10e5f17b8784304026323e62cec00644eec2-r1-data",
+    "result": "839 passed / 1 failed / 93 ignored; missing archived deploy/local/protocol-peers/conformance/protocol-peer-reference.json caused ENOENT in existing test; unchanged fixed GitHub fixture added to archive, no product/test change",
+    "log_sha256": "dabc5951599fa99001f2be5ea1714257d9cde1432d260517d4858b831440a4d7"
+  },
+  "cleanup_containers": [],
+  "cleanup_networks": [],
+  "hashes": {
+    "agent_profile-consumers.exit": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+    "agent_profile-consumers.log": "0342e9d6090ca27d23733185d3e946c67b7f21d4cbba2ee0d8798da1849234ae",
+    "bridge-scoped-http.exit": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+    "bridge-scoped-http.log": "09540553dba2e9c4235d550921a6b86a07ea83bbab880a7fb999218dd6847b1d",
+    "clippy.exit": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+    "clippy.log": "1239bbb40e58c9af79d61f0578d9b7ef97dea68a850a9523058981b98e23ea9b",
+    "core-normal.exit": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+    "core-normal.log": "1c736a5c2caeab323a3ff82faf99156b60b0429e4138bad20c53a15d846eb488",
+    "final-inspect.json": "0d19cd2a201908644c6b08ab24a20e98cd5c33957977833f997577c3c0163810",
+    "fmt.exit": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+    "fmt.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "migration-proof-down.exit": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+    "migration-proof-down.log": "b18fde176797534edacd67272fad990ca65d76c9bce7134b0ffcea1c71bf7087",
+    "migration-proof-up.exit": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+    "migration-proof-up.log": "2dd9d1aa87803a4ab74dabffca8e6d3998c3af677ba3471e9b99beba65e57bfa",
+    "migrations-up.exit": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+    "migrations-up.log": "08017da8e3fc15716781582fea6446b82cea38c7041dab589b28a69977e07aea",
+    "moderation-consumers.exit": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+    "moderation-consumers.log": "b96a6e6c2821261c2642f987cc0e133e147f6f0d828950b9ce9c4ac24fc7db5d",
+    "publication-history-pg.exit": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+    "publication-history-pg.log": "c91282331282b0facd970d3b022c1e06adc2e6b8a9099c8a4b1f570e134574a6",
+    "publication-negative-check-complete-input.log": "bdc8dd2a0ba4c6f10ccdd713810df088c384dc443efda0b73b2ed4edec102cdb",
+    "publication-negative-check-limits.log": "a23f5f9b296648a9a127151ee973cdde99d297a9b8967d2322aaa802258e7308",
+    "publication-negative-check-preflight.log": "d998b9cccb63453df02089540055be30561ccf4dc1803f03875f5e47e833ec0f",
+    "publication-negative-check-result.log": "a1375703304d042d9ed29c79d1ec2533af02b5a3316361dea2b29a622323567e",
+    "publication-negative-pg-limits.log": "1f96f9dc99dafaae84966704665815d9b60f1b11063d7117863f86250e4bc96e",
+    "publication-reconcile-pg.exit": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+    "publication-reconcile-pg.log": "a84bf693872075795ccffb5daf9331d16e5900767a8217d032e7a94dd6979a26",
+    "publication-scope-pg.exit": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+    "publication-scope-pg.log": "d92cb095533ce9c2750d8a2834b5840a1ceb702eb7dc14ab87cc3f050088e31c",
+    "push-retirement-pg-http.exit": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+    "push-retirement-pg-http.log": "31d950933c387d94ed980fdae40d5478b126911e20b208e39e1e5027d8c0ce55",
+    "restored-source-sha256.log": "9016e39e68115aca08e94ce28c73350420838442860e6a0049e6a0691fc03778",
+    "source-byte-audit.json": "096d5261fa4ba4ea9ae07c8aef15c0d0229de3328629103af1c8d17dfb2bb90d",
+    "source-path.log": "68bad6a36dd2ea61bd6ebbb769d2f25bfc951fe9f19b8acb71788b1b545f7a02",
+    "sqlx-check.exit": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+    "sqlx-check.log": "ffd473b983d0c41b5cc915db3ff1d85d61d6673fc217d91f0a143a2587141b94",
+    "workspace_canvas-consumers.exit": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+    "workspace_canvas-consumers.log": "82698f1195e46d23cd424c90e6ee75a3d8df1a13e234e67ca77d00960f928846"
+  }
+}

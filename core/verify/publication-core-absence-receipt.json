@@ -1,0 +1,177 @@
+{
+  "source_commit": "1894d2784fdd4272a0caaaea746e77ea0389ce5b",
+  "source_transport": "direct GitHub fixed-object archive",
+  "job": "/volumes/data/kailo/verification/buzz-r10/publication-negative-1894d2784fdd4272a0caaaea746e77ea0389ce5b-r2-data",
+  "sdk_image": "sha256:3007729eb192341a4f004a88e42e1e66c94fc67d763acfc96568bd7311116018",
+  "sdk": {
+    "cpus": 4.0,
+    "memory": 17179869184,
+    "memory_swap": 17179869184,
+    "state": {
+      "Status": "exited",
+      "Running": false,
+      "Paused": false,
+      "Restarting": false,
+      "OOMKilled": false,
+      "Dead": false,
+      "Pid": 0,
+      "ExitCode": 0,
+      "Error": "",
+      "StartedAt": "2026-10-27T00:31:27.26420279Z",
+      "FinishedAt": "2026-10-27T00:38:51.500525511Z"
+    }
+  },
+  "postgres": {
+    "cpus": 1,
+    "memory": 2147483648,
+    "memory_swap": 2147483648,
+    "scope": "private migrated PostgreSQL; no shared service changed"
+  },
+  "steps": {
+    "fmt": 0,
+    "migrate-up": 0,
+    "migrate-down-empty": 0,
+    "migrate-up-again": 0,
+    "publication-http": 0,
+    "publication-freeze": 0,
+    "publication-retry-epoch": 0,
+    "publication-reconcile": 0,
+    "clippy": 0,
+    "fault-self-p": 101,
+    "fault-attestation": 101,
+    "restore-http": 0,
+    "fault-retry-epoch": 101,
+    "fault-audit-proof": 101,
+    "fault-reaper-epoch": 101,
+    "restore-reconcile": 0,
+    "restore-retry": 0,
+    "final-fmt": 0
+  },
+  "test_results": {
+    "publication-http": [
+      "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 74 filtered out; finished in 0.04s",
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 9 filtered out; finished in 0.00s",
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s"
+    ],
+    "publication-freeze": [
+      "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 927 filtered out; finished in 0.26s"
+    ],
+    "publication-retry-epoch": [
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 932 filtered out; finished in 0.00s"
+    ],
+    "publication-reconcile": [
+      "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 929 filtered out; finished in 0.13s"
+    ],
+    "fault-self-p": [
+      "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 78 filtered out; finished in 0.00s"
+    ],
+    "fault-attestation": [
+      "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 78 filtered out; finished in 0.00s"
+    ],
+    "restore-http": [
+      "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 74 filtered out; finished in 0.04s",
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 9 filtered out; finished in 0.00s",
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s"
+    ],
+    "fault-retry-epoch": [
+      "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 932 filtered out; finished in 0.00s"
+    ],
+    "fault-audit-proof": [
+      "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 932 filtered out; finished in 0.04s"
+    ],
+    "fault-reaper-epoch": [
+      "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 932 filtered out; finished in 0.05s"
+    ],
+    "restore-reconcile": [
+      "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 929 filtered out; finished in 0.10s"
+    ],
+    "restore-retry": [
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 932 filtered out; finished in 0.00s"
+    ]
+  },
+  "negative_assertions": {
+    "self-p": {
+      "exit": 101,
+      "result": "existing actual consumer failed; source restored byte-identically"
+    },
+    "attestation": {
+      "exit": 101,
+      "result": "existing actual consumer failed; source restored byte-identically"
+    },
+    "retry-epoch": {
+      "exit": 101,
+      "result": "existing actual consumer failed; source restored byte-identically"
+    },
+    "audit-proof": {
+      "exit": 101,
+      "result": "existing actual consumer failed; source restored byte-identically"
+    },
+    "reaper-epoch": {
+      "exit": 101,
+      "result": "existing actual consumer failed; source restored byte-identically"
+    }
+  },
+  "restoration": "four Rust and two migration files cmp-identical with fixed GitHub blobs; HTTP5 + reconcile4 + retry1 passed after faults; final fmt passed",
+  "cache": "read-only copy of original 35 GiB Core target to actual /dev/sda1 Data dedicated target; original shared cache unchanged; Data TMPDIR; no Rustup installation",
+  "cleanup_containers": [],
+  "cleanup_networks": [],
+  "prior_attempt": {
+    "source_commit": "5d6195a97bd17f49c2f233c19a28cef1908229aa",
+    "job": "/volumes/data/kailo/verification/buzz-r10/publication-negative-5d6195a97bd17f49c2f233c19a28cef1908229aa-r1",
+    "result": "16 focused tests and migration down/up passed; Clippy failed nonminimal_bool; no fault checks then",
+    "log_sha256": "d6b403f5f6b63f6003843014efbdb577317fcc7f0fa11b016d2d174e6e36d1c6"
+  },
+  "precheck_failure": "Initial format invocation mistyped full 1486 SHA; git object validation stopped before any SDK/test. Correct actual SHA invocation passed.",
+  "limitations": [
+    "Not full Core/workspace tests, release, deployment or live Core-to-Relay end-to-end.",
+    "Fixed source excludes later NativeFacts generation/native.rs policy producer; final integrated compile remains separate.",
+    "Unsupported/replaceable/nonstored events and historical missing metadata remain UNKNOWN for negative proof.",
+    "HTTP fixtures prove bridge request/response consumers; PostgreSQL proves original BFF/audit/pending/reaper consumers; not a deployed cross-service transaction."
+  ],
+  "hashes": {
+    "clippy.exit": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+    "clippy.log": "e6ae75b6a8520cbace78655ac9b8d795f44379d0b0ae65ee43b0238fd5c1bb21",
+    "fault-attestation.exit": "39b8dc3fc8b44765c8e6f1adee04c5b465e555ab791cc42d0d9e810d5b64297c",
+    "fault-attestation.log": "8b77ad6ee9def1483efed5b2da1ea9f8c011ccec4517087e641e0f7a66b42919",
+    "fault-audit-proof.exit": "39b8dc3fc8b44765c8e6f1adee04c5b465e555ab791cc42d0d9e810d5b64297c",
+    "fault-audit-proof.log": "c1b400eb92ffd6ed5037305593df375688816761d627405d888368a438f9f4ce",
+    "fault-reaper-epoch.exit": "39b8dc3fc8b44765c8e6f1adee04c5b465e555ab791cc42d0d9e810d5b64297c",
+    "fault-reaper-epoch.log": "2a53302df79f79a36bd0cb265fc1479abc302a7d623984a364abdcbb9c8cd105",
+    "fault-retry-epoch.exit": "39b8dc3fc8b44765c8e6f1adee04c5b465e555ab791cc42d0d9e810d5b64297c",
+    "fault-retry-epoch.log": "ab6a653aed90274461f3b018c57426c384c42a98fef578e17ebfbc6818e9560f",
+    "fault-self-p.exit": "39b8dc3fc8b44765c8e6f1adee04c5b465e555ab791cc42d0d9e810d5b64297c",
+    "fault-self-p.log": "4ceb88e5a14131ad359ea761a498c722f752d7a7ccb65524b532f897e4372737",
+    "final-fmt.exit": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+    "final-fmt.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "final-inspect.json": "177faa51984770578bf8cf53c3ba961cc18d5863d8f05d78ee0205be510c72d3",
+    "fmt.exit": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+    "fmt.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "migrate-down-empty.exit": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+    "migrate-down-empty.log": "c9c3ad049618bf835f793dc93e6902ffc8d2aa9001d828d63330109250735c01",
+    "migrate-up-again.exit": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+    "migrate-up-again.log": "b54c07a39df097d2169c2b17cd8507c41682e4e4cf7a7ad6bfdb0ef19c0819af",
+    "migrate-up.exit": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+    "migrate-up.log": "10e36e2f6a2cf4dceff4cc41822430c2ba3304a0747a465ba607602894786eac",
+    "publication-freeze.exit": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+    "publication-freeze.log": "d8f7d6eb97c8747d3260faf52ebfca0e16ada3293200f8b1bc72a01d9aea4834",
+    "publication-http.exit": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+    "publication-http.log": "eaccd75329bdc501f9c943341c690532a6213f152e571709255f68af07489165",
+    "publication-negative-check-complete-input.log": "237abb1a6a679df5b5a7e7e0d866a95c28d5e2a3ed200918233f19b78832d9df",
+    "publication-negative-check-limits.log": "0bb7719287b1031ab94fbd7736956b92dd05c7e606c757ffff758a9d698f473c",
+    "publication-negative-check-preflight.log": "2301de05c24393f7495f1e07cc2d629fa38a65e4b996ae13bab78d5b4b5239f2",
+    "publication-negative-check-result.log": "0dee9dd4cd0458e53a49a2e3ccdf80725f613ab71cb16121c75558733096239a",
+    "publication-negative-pg-limits.log": "98ecb1caeb65d43237123506833f8b023f85b8b7eddc73ecb99432c33b41734d",
+    "publication-reconcile.exit": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+    "publication-reconcile.log": "4c525aa2e0d362da68db91eb066e934f16a6c3a9fc34f8545acc9eaf8a98b235",
+    "publication-retry-epoch.exit": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+    "publication-retry-epoch.log": "fac8d463a7bf080137ac643741a12171faaa040b62962075db3598e66c96e529",
+    "restore-http.exit": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+    "restore-http.log": "3f0d80acd68eb88172b5e989bb12068efafac276bab8d576da0ad420ee9f7f2b",
+    "restore-reconcile.exit": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+    "restore-reconcile.log": "a07a15339f1e1c226a396ac42dc7ce9e2fcd109e1e5d5f47776fd98fbd775e92",
+    "restore-retry.exit": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+    "restore-retry.log": "feaab9f80dc6ca0a1e0742c126558cee1289ec81604097cda132f61718f8e2b5",
+    "restored-source-sha256.log": "fe765a2ad9c6424a8f7b09326fbd33dd12d79f67027210a6696c9bbb725025c2",
+    "source-path.log": "6fff617a4986fee62227a5c2f95cd4e37602112c339bc42ffb68cb4fb26a5144"
+  }
+}

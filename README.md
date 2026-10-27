@@ -4,7 +4,7 @@
 
 产品语义与可行性结论由相邻的 [`.design`](../.design/README.md) 唯一定义；本目录只回答如何把已经冻结的设计安全地变成可运行系统。实施文档不得重定义 Tenant、Workspace、Resource、Action、Workflow、权限、状态或能力结论。
 
-## 当前集成与验收边界（2026-10-26）
+## 当前集成与验收边界（2026-10-27）
 
 候选分支 `codex/phase1-integration-20261026` 从主线
 `ebc23eb293942ed9721cb56d2b76ee871f91bc40` 集成 DD-157 组件外壳、
@@ -12,7 +12,17 @@ DD-124/136 一致性投递、DD-159 本地归档、DD-151 持久推送与 Mobile
 DD-158 反馈和跨会话社区资料，以及 DD-160 原生仓库写入。已提交并推送不代表
 合并 main、产物或部署。下列检查分别对应固定源码，不合并认作最新整树 full。
 
-本批最终 Core 集成固定 `1d0d20b53`：原 SDK 4 CPU / 16 GiB、私有 PG
+最新产品集成固定 `3cfa10e5f`：普通 writer 缺失证明、Core 原 DISPATCH/永久审计
+消费及 Native epoch 生产者已合入。原 SDK 4 CPU / 16 GiB、独立 PG 1 CPU /
+2 GiB，正常 Core **840 passed / 93 ignored**；显式 Agent 5、Canvas 4、审核 6、
+scope 5、history 1、reconcile 4、bridge HTTP 5、push retirement 1 共 **31** 项
+通过。格式、完整迁移、新证明迁移空库往返、Core/bridge all-target Clippy 与
+workspace SQLx prepare check 全部退出 0；2,083 个实际输入与 GitHub 固定对象
+逐字一致。Native 新生成字段及可信 policy helper 已在该合批编译，但未作部署端点
+或真实三端验收；见[最终合批回执](core/verify/phase1-integration-publication-final-20261027.json)。
+显式专项与正常目标存在重叠，不相加；ignored 不算通过，这仍不是全工程 full。
+
+前一批 Core 集成固定 `1d0d20b53`：原 SDK 4 CPU / 16 GiB、私有 PG
 1 CPU / 2 GiB，正常主目标 **839 passed / 91 ignored**；显式 Agent/Canvas/审核、
 publication scope/history/reconcile 与 bridge HTTP 共 **26** 项通过。格式、完整
 迁移及两新迁移空库往返、Core/bridge all-target Clippy、原 workspace SQLx check
@@ -65,9 +75,11 @@ UNKNOWN。详情与原回执见
 的真实双人私聊专项 **4** 项、原治理 **8** 项、all-target Clippy 及故障恢复后
 delivery/observation/settlement **16/16** 通过；4 项已包含在 16 项中。两次实际
 移除 owner 证明或最终成员复核均断言失败、逐字恢复通过。固定输入与失败历史见
-[普通缺失查证证据](core/verify/projects-publication-receipt.md)。Core/Native 的新签名
-epoch 与永久审计证明消费仍按独立候选收口，未据 server 接缝宣称完整 DD-81、
-最新 full、正式制品或部署完成。
+[普通缺失查证证据](core/verify/projects-publication-receipt.md)。Core 固定 `1894d2784`
+的 16 项与五次实际故障/恢复通过；Native 固定来源的 epoch 15 项、Git-write 9 项、
+两项故障/恢复，以及后继 25 项与 Clippy 通过，四侧生成和兼容通过。产品已进入上述
+最新合批；历史缺 epoch/Community、替换或不存事件的种类仍不能伪造缺失。没有据此
+宣称完整 DD-81、最新 full、正式制品或部署完成。
 
 较早 `06712387a` 的真实 `pg_notify` 删除反向与恢复通过仍独立保留于
 [原联合回执](core/verify/phase1-integration-core-20261026.json)，不改写旧失败或忽略项。
@@ -129,7 +141,8 @@ markdownlint 无问题。原件在 CI
 `RECONCILIATION/NOT_DELIVERED` 不再授权重签，也不再触发幂等记录清理或从未决
 扫描/度量消失。肯定证据追加幂等修正，旧审计保留；重试先过滤错误历史结论，保留期
 从有效终态计算，审计键包含 operation。上述真实 PG 与反向已验证这些边界，历史
-缺失 DISPATCH 的范围不补造。普通消息的完整 writer 缺失查证仍未闭合。
+缺失 DISPATCH 的范围不补造。后继已对新冻结 epoch 的适用非替换事件接通原 writer
+缺失查证；历史不全、替换或不存事件的范围保持 UNKNOWN，真实部署全链仍未验收。
 
 上一批发布源 `dc2d6ca18bb5c355ebb3e96609f0f591532479cf` 的八个运行发布阶段完成，
 pin 为 `ebc23eb293942ed9721cb56d2b76ee871f91bc40`，但 journal 业务验收明确为

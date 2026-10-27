@@ -340,3 +340,26 @@ CI 在
 原回执位于 CI `/volumes/data/kailo/verification/buzz-r10/publication-negative-1894d2784fdd4272a0caaaea746e77ea0389ce5b-r2-data/receipt.json`，SHA-256 为 `7b6efc9bd58c761f7fea2471911ffce830d6fc265ac187ba18e89f1ca592fa3c`，保存各阶段退出码、断言结果、实际限额与日志摘要。前置固定 `5d6195a97` 的 16 项和迁移已通过，但 Clippy 的 nonminimal_bool 失败，原日志保留；修复后才取得本节完整结果。一次 formatter 命令误抄完整 SHA，在 Git 对象核对时早停，未执行 SDK；使用实际对象 SHA 后格式检查通过，不计作消费者失败或通过。
 
 本批是原 bridge HTTP fixture 与实际 PostgreSQL 消费者证据，不是已部署 Core→Relay 全链验收；未运行新的全工程 full、发布、部署或真实三端操作。历史缺元数据、unsupported/replaceable/nonstored kind 的否定结论仍 UNKNOWN，不宣称完整 DD-81 全部完成。固定 1894 不包含随后合入的新 NativeFacts 字段及 `native.rs` policy producer；其最终集成编译必须另记，不能借本批结果外推。
+
+### 最终产品合批与 Native 字段同编译
+
+固定 `3cfa10e5f17b8784304026323e62cec00644eec2` 已同时包含 Relay/DB、Core 与
+Native 生产者、四侧生成字段。原 SDK 4 CPU / 16 GiB、独立 PG 1 CPU / 2 GiB，
+target 和 TMPDIR 使用上述真实 Data 专属目录，原缓存不修改。正常 Core
+840 passed / 93 ignored，显式 Agent 5、Canvas 4、审核 6、scope 5、history 1、
+reconcile 4、bridge HTTP 5 与 push retirement 1 共 31 项全部通过；部分专项与
+正常目标重叠，不相加。格式、完整迁移、040000 空库 down/up、Core/bridge all-target
+Clippy 与原 workspace SQLx prepare check 全部退出 0。2,083 个归档输入含 SQLx
+缓存与固定 GitHub blob 逐字一致；SDK/PG/私有网络已清理，无 OOM。
+
+[最终合批回执](phase1-integration-publication-final-20261027.json) SHA-256 为
+`0e45a5a7ea7cac5f37ceaab815e360c256a6df7e9c68510d432054950bfe309e`；CI 原件位于
+`/volumes/data/kailo/verification/buzz-r10/publication-final-3cfa10e5f17b8784304026323e62cec00644eec2-r2-data/receipt.json`。
+前一导出遗漏原公开 conformance fixture，正常目标为 839 passed / 1 failed /
+93 ignored，失败为该原文件 ENOENT；只补同一 GitHub 对象输入后重验通过，未改产品
+或测试，原失败保留。上述 1894 的五故障与恢复摘要另保存为
+[原 Core 否定证明回执](publication-core-absence-receipt.json)，原 SHA-256 不变。
+
+这解除新 `NativeCommunityFacts` 可选字段与 `native.rs` 可信 epoch producer 的
+合批编译缺口，不等于真实 native bootstrap HTTP 端点、OpenBao/IdP、Core→Relay
+部署全链、最新全工程 full、正式制品或三端设备验收。
