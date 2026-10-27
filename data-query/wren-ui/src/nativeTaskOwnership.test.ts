@@ -701,7 +701,7 @@ describe('original native planning HTTP stream and HUMAN task owner', () => {
     );
     expect(result.id).toBe(queryId);
     const payload = ctx.askingService.createAskingTask.mock.calls[0][1];
-    expect(payload.nativeScope).toEqual(proof);
+    expect(payload.nativeScope).toEqual({ ...proof, generation });
     await expect(payload.authorizeNative(queryId)).resolves.toMatchObject({
       queryId,
     });
