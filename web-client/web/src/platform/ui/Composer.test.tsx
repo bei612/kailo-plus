@@ -1638,9 +1638,10 @@ describe("DD-146 original send flow: clear at Send, restore on failure", () => {
     expect(state.publish.mock.calls[0][2]).toEqual([]);
   });
 
-  it.each(["unsent", "unknown"] as const)("consumes Inbox navigation for a GIF-only %s draft without duplicate publication", async (outcome) => {
+  it.each(["unsent", "unknown", "rejected"] as const)("consumes Inbox navigation for a GIF-only %s draft without duplicate publication", async (outcome) => {
     enableDraftGif();
     if (outcome === "unknown") state.publish.mockRejectedValue(new TransportError("GIF receipt unknown"));
+    if (outcome === "rejected") state.publish.mockRejectedValue(new BffError(403,"rejected",{class:ErrorClass.Denied,reason:ReasonCode.PublishRejected}));
     const {upload} = uploader();
     const key = `gif-navigation-${outcome}`;
     const consume = vi.fn(async()=>{});
@@ -1671,6 +1672,15 @@ describe("DD-146 original send flow: clear at Send, restore on failure", () => {
     }
     expect(state.publish.mock.calls[0][1]).toBe(`![image](${draftGif.url})`);
     expect(state.publish.mock.calls[0][2]).toEqual([]);
+    await settle();
+    if (outcome === "unsent") {
+      expect(loadDraftEntry(key)).toBeUndefined();
+      expect(host.querySelector('[data-testid="composer-gif-attachment"]')).toBeNull();
+    } else {
+      expect(host.querySelectorAll('[data-testid="composer-gif-attachment"]')).toHaveLength(1);
+      expect(loadDraftEntry(key)?.pendingImeta).toEqual([expect.objectContaining({sha256:"",url:draftGif.url})]);
+      if (outcome === "rejected") expect(loadDraftEntry(key)?.sendIntent).toBeUndefined();
+    }
     await rerender(auto);
     await settle();
     expect(consume).toHaveBeenCalledOnce();
@@ -1681,6 +1691,27 @@ describe("DD-146 original send flow: clear at Send, restore on failure", () => {
       expect(state.publish.mock.calls[1].slice(1,4)).toEqual(state.publish.mock.calls[0].slice(1,4));
     }
     expect(upload).not.toHaveBeenCalled();
+  });
+
+  it("holds GIF navigation while an original attachment upload is pending", async () => {
+    enableDraftGif();
+    const {upload,uploads} = uploader();
+    const consume = vi.fn(async()=>{});
+    const host = await render(composer("gif-upload-navigation", upload));
+    await type(input(host), "caption");
+    await chooseDraftGif(host);
+    await attachPending(host);
+    await rerender(<Composer workspaceId="workspace-a" draftIdentity="alice" draftKey="gif-upload-navigation"
+      autoSendDraftKey="gif-upload-navigation" onAutoSendConsumed={consume} onUpload={upload}/>);
+    await settle();
+    expect(consume).not.toHaveBeenCalled();
+    expect(state.publish).not.toHaveBeenCalled();
+    await act(async()=>uploads[0]!.resolve(descriptor));
+    await vi.waitFor(()=>expect(state.publish).toHaveBeenCalledOnce());
+    expect(consume).toHaveBeenCalledOnce();
+    expect(state.publish.mock.calls[0][1]).toBe(`caption\n![image](${draftGif.url})`);
+    expect(state.publish.mock.calls[0][2]).toEqual([expect.objectContaining({sha256:descriptor.sha256})]);
+    expect(upload).toHaveBeenCalledOnce();
   });
 
   it("restores a confirmed file and selected GIF as distinct outgoing media", async () => {
