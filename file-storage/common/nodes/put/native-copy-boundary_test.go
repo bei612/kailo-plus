@@ -36,8 +36,8 @@ func (p *copyMetadataProbe) ExtractAndPut(_ context.Context, _ *tree.Node, _ *id
 
 type copyBoundaryBackend struct {
 	*nodes.HandlerMock
-	calls int
-	copyErr error
+	calls     int
+	copyErr   error
 	afterCopy func()
 }
 
@@ -79,34 +79,62 @@ func TestNativeUploadCopyRechecksBeforeOriginalMetadata(t *testing.T) {
 			}))
 			defer server.Close()
 			secret := filepath.Join(t.TempDir(), "secret")
-			if err := os.WriteFile(secret, []byte("fixture-only"), 0600); err != nil { t.Fatal(err) }
+			if err := os.WriteFile(secret, []byte("fixture-only"), 0600); err != nil {
+				t.Fatal(err)
+			}
 			ctx := config.WithStubStore(context.Background())
 			ctx = claim.ToContext(ctx, claim.Claims{Subject: user, Name: "copy-user", SessionID: "native-session", AuthSource: "kailo"})
 			delivery := map[string]interface{}{"bindingId": binding, "tenantId": binding, "nativeInstanceRef": "instance", "nativeScopeRef": resource, "nativeRootRef": resource, "instanceServiceUuid": binding, "corePepUrl": server.URL + "/service/v1/adapter/pep_check", "oidcTokenUrl": server.URL + "/token", "clientId": "native-binding", "clientSecretFile": secret, "clientSecretMaxBytes": 128, "maxResponseBytes": 65536, "requestTimeout": "2s", "draftUploads": map[string]interface{}{}, "actors": []map[string]interface{}{{"principalId": principal, "kind": "HUMAN", "userUuid": user}}, "write": map[string]interface{}{"nativeJobId": "native-write", "actionVersion": 1, "resultExposurePolicyId": policy, "resultExposurePolicyVersion": 1}}
-			if err := config.Set(ctx, delivery, "services", common.ServiceRestNamespace_+"n", "platform"); err != nil { t.Fatal(err) }
-			if err := config.Set(ctx, base64.StdEncoding.EncodeToString(make([]byte, 64)), "frontend", "session", "secureKey"); err != nil { t.Fatal(err) }
-			if err := config.Set(ctx, []map[string]interface{}{{"id": "kailo", "type": "kailo-oidc", "config": map[string]interface{}{"issuer": "https://identity.invalid", "clientId": "native", "users": []map[string]interface{}{{"subject": principal, "userUuid": user}}}}}, "services", "pydio.web.oauth", "connectors"); err != nil { t.Fatal(err) }
+			if err := config.Set(ctx, delivery, "services", common.ServiceRestNamespace_+"n", "platform"); err != nil {
+				t.Fatal(err)
+			}
+			if err := config.Set(ctx, base64.StdEncoding.EncodeToString(make([]byte, 64)), "frontend", "session", "secureKey"); err != nil {
+				t.Fatal(err)
+			}
+			if err := config.Set(ctx, []map[string]interface{}{{"id": "kailo", "type": "kailo-oidc", "config": map[string]interface{}{"issuer": "https://identity.invalid", "clientId": "native", "users": []map[string]interface{}{{"subject": principal, "userUuid": user}}}}}, "services", "pydio.web.oauth", "connectors"); err != nil {
+				t.Fatal(err)
+			}
 			request := httptest.NewRequest(http.MethodPut, "http://native.invalid/io/live/file", nil).WithContext(ctx)
 			cookies := httptest.NewRecorder()
-			if err := auth.SaveNativeHumanToken(request, cookies, "human", "https://identity.invalid", principal, "native", user, "native-session", time.Now().Add(time.Minute)); err != nil { t.Fatal(err) }
-			for _, cookie := range cookies.Result().Cookies() { request.AddCookie(cookie) }
-			for name, value := range map[string]string{"X-Kailo-Action-Execution": ae, "X-Kailo-External-Execution": ee, "X-Kailo-Native-Upload": intent, "Idempotency-Key": key} { request.Header.Set(name, value) }
+			if err := auth.SaveNativeHumanToken(request, cookies, "human", "https://identity.invalid", principal, "native", user, "native-session", time.Now().Add(time.Minute)); err != nil {
+				t.Fatal(err)
+			}
+			for _, cookie := range cookies.Result().Cookies() {
+				request.AddCookie(cookie)
+			}
+			for name, value := range map[string]string{"X-Kailo-Action-Execution": ae, "X-Kailo-External-Execution": ee, "X-Kailo-Native-Upload": intent, "Idempotency-Key": key} {
+				request.Header.Set(name, value)
+			}
 			if scenario != "independent" && scenario != "independent-copy-error" {
-				if err := auth.PrepareNativeHumanUpload(request); err != nil { t.Fatal(err) }
+				if err := auth.PrepareNativeHumanUpload(request); err != nil {
+					t.Fatal(err)
+				}
 			}
 			metadata := &copyMetadataProbe{}
 			backend := &copyBoundaryBackend{HandlerMock: nodes.NewHandlerMock()}
-			if scenario == "copy-ack-lost" || scenario == "independent-copy-error" { backend.copyErr = errors.New("copy acknowledgement lost") }
-			if scenario == "revoked-during-copy" { backend.afterCopy = func() { revoked = true } }
+			if scenario == "copy-ack-lost" || scenario == "independent-copy-error" {
+				backend.copyErr = errors.New("copy acknowledgement lost")
+			}
+			if scenario == "revoked-during-copy" {
+				backend.afterCopy = func() { revoked = true }
+			}
 			handler := &Handler{metaClient: metadata}
 			handler.Next = backend
 			info, err := handler.CopyObject(request.Context(), &tree.Node{Uuid: node}, &tree.Node{Uuid: node}, &models.CopyRequestData{SrcVersionId: intent})
-			if backend.calls != 1 || info.ETag != "copied" { t.Fatal("original copy did not run once", backend.calls, info) }
+			if backend.calls != 1 || info.ETag != "copied" {
+				t.Fatal("original copy did not run once", backend.calls, info)
+			}
 			if scenario == "revoked-during-copy" || scenario == "copy-ack-lost" {
-				if err == nil || metadata.calls != 0 { t.Fatal("uncertain or revoked copy reached metadata", err, metadata.calls) }
+				if err == nil || metadata.calls != 0 {
+					t.Fatal("uncertain or revoked copy reached metadata", err, metadata.calls)
+				}
 			} else if scenario == "independent-copy-error" {
-				if err == nil || metadata.calls != 1 { t.Fatal("independent copy behavior changed", err, metadata.calls) }
-			} else if err != nil || metadata.calls != 1 { t.Fatal("allowed original copy lost metadata", err, metadata.calls) }
+				if err == nil || metadata.calls != 1 {
+					t.Fatal("independent copy behavior changed", err, metadata.calls)
+				}
+			} else if err != nil || metadata.calls != 1 {
+				t.Fatal("allowed original copy lost metadata", err, metadata.calls)
+			}
 		})
 	}
 }
