@@ -646,11 +646,13 @@ describe('original native planning HTTP stream and HUMAN task owner', () => {
   it.each(['', 'full result'])(
     'GENERAL GraphQL observes full %j after persisted classification without another Ask',
     async (content) => {
-      jest.mocked(components.askingService['askingTaskTracker'].getAskingResult).mockResolvedValue({
-        ...general(),
-        queryId,
-        projectId: project.id,
-      });
+      jest
+        .mocked(components.askingService['askingTaskTracker'].getAskingResult)
+        .mockResolvedValue({
+          ...general(),
+          queryId,
+          projectId: project.id,
+        });
       jest
         .mocked(components.wrenAIAdaptor.getAskResult)
         .mockResolvedValue(general(content) as any);
@@ -1180,7 +1182,13 @@ describe('original standalone REST explanation HTTP and history consumers', () =
     jest.mocked(bindingServiceCall).mockClear();
     ask = jest.fn(async () => ({ queryId }));
     stream = jest.fn(async () => {
-      jest.mocked(components.wrenAIAdaptor.getAskResult).mockResolvedValue({status: AskResultStatus.FINISHED,type:AskResultType.GENERAL,completion:{queryId,content:'Original REST explanation'}});
+      jest
+        .mocked(components.wrenAIAdaptor.getAskResult)
+        .mockResolvedValue({
+          status: AskResultStatus.FINISHED,
+          type: AskResultType.GENERAL,
+          completion: { queryId, content: 'Original REST explanation' },
+        });
       return Readable.from([
         'data: {"message":"Original REST explanation"}\n\n',
         `data: ${JSON.stringify({ done: true, queryId })}\n\n`,

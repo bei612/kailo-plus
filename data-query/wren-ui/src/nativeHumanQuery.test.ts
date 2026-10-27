@@ -6878,7 +6878,9 @@ describe('native saved-view HUMAN query consumer', () => {
           if (mode === 'different') askResult.completion.content = 'different';
           if (mode === 'revoked') {
             askGet.mockImplementation(async () => {
-              calls.mockRejectedValue(new NativeQueryRefusal(403,'QUERY_SCOPE_DENIED'));
+              calls.mockRejectedValue(
+                new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED'),
+              );
               return structuredClone(askResult);
             });
           }
