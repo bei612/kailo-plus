@@ -657,7 +657,7 @@ export class AskingService implements IAskingService {
       throw new NativeQueryRefusal(409, 'NATIVE_RECOMMENDATION_BUSY');
 
     const { manifest } = await this.mdlService.makeCurrentModelMDL(project);
-    await this.currentThread(threadId, project);
+    await this.currentThread(threadId);
     const queryId = randomUUID();
     const claimed = await this.threadRepository.claimRecommendation(
       thread,
@@ -665,7 +665,7 @@ export class AskingService implements IAskingService {
       queryId,
     );
     if (!claimed) {
-      const current = await this.currentThread(threadId, project);
+      const current = await this.currentThread(threadId);
       const latest = (
         await this.threadResponseRepository.findAllBy({ threadId })
       ).sort((a, b) => b.id - a.id)[0];
@@ -682,6 +682,7 @@ export class AskingService implements IAskingService {
     // ACK, UI restart or repeated original action only observes this same ID.
     this.threadRecommendQuestionBackgroundTracker.addTask(claimed);
     try {
+      await this.currentThread(threadId);
       const result = await this.wrenAIAdaptor.generateRecommendationQuestions({
         manifest,
         previousQuestions: responses
@@ -695,7 +696,7 @@ export class AskingService implements IAskingService {
     } catch {
       throw new NativeQueryRefusal(503, 'NATIVE_EXECUTION_UNKNOWN');
     }
-    await this.currentThread(threadId, project);
+    await this.currentThread(threadId);
     return this.recommendationResult(claimed);
   }
 
