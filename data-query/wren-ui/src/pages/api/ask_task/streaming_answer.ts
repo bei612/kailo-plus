@@ -92,7 +92,9 @@ export default async function handler(
     let closed = false;
     let completed = false;
     let content = '';
-    req.on('close', () => {
+    // IncomingMessage may already be complete before the async row reads.
+    // The response close event owns this live SSE transport.
+    res.on('close', () => {
       closed = true;
       stream.destroy();
       if (!bound && !completed)
