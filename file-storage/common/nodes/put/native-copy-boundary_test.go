@@ -17,17 +17,38 @@ import (
 	"github.com/pydio/cells/v5/common"
 	"github.com/pydio/cells/v5/common/auth"
 	"github.com/pydio/cells/v5/common/auth/claim"
+	grpcclient "github.com/pydio/cells/v5/common/client/grpc"
 	"github.com/pydio/cells/v5/common/config"
 	"github.com/pydio/cells/v5/common/nodes"
 	"github.com/pydio/cells/v5/common/nodes/models"
 	"github.com/pydio/cells/v5/common/proto/idm"
 	"github.com/pydio/cells/v5/common/proto/tree"
+	"github.com/pydio/cells/v5/common/utils/cache/gocache"
+	cachehelper "github.com/pydio/cells/v5/common/utils/cache/helper"
 	"github.com/pydio/cells/v5/idm/meta"
 )
 
 type copyMetadataProbe struct {
 	meta.UserMetaClient
 	calls int
+}
+
+type copyNativeUser struct {
+	idm.UnimplementedUserServiceServer
+	user *idm.User
+}
+
+func (s *copyNativeUser) SearchOne(context.Context, *idm.SearchUserRequest) (*idm.SearchUserResponse, error) {
+	return &idm.SearchUserResponse{User: s.user}, nil
+}
+
+type copyNativePolicy struct {
+	idm.UnimplementedPolicyEngineServiceServer
+	subject string
+}
+
+func (s *copyNativePolicy) StreamPolicyGroups(_ *idm.ListPolicyGroupsRequest, stream idm.PolicyEngineService_StreamPolicyGroupsServer) error {
+	return stream.Send(&idm.PolicyGroup{Policies: []*idm.Policy{{ID: "native-copy-login", Subjects: []string{"subject:" + s.subject}, Resources: []string{"oidc"}, Actions: []string{"login"}, Effect: idm.PolicyEffect_allow}}})
 }
 
 func (p *copyMetadataProbe) ExtractAndPut(_ context.Context, _ *tree.Node, _ *idm.Workspace, _ map[string]string, _ meta.ExtractionSource) (*idm.UpdateUserMetaResponse, error) {
@@ -53,9 +74,13 @@ func (b *copyBoundaryBackend) CopyObject(_ context.Context, _, _ *tree.Node, _ *
 // Exercise the original put handler with the original native HUMAN admission;
 // only its HTTP authority and byte-copy backend are isolated test fixtures.
 func TestNativeUploadCopyRechecksBeforeOriginalMetadata(t *testing.T) {
+	cachehelper.SetStaticResolver("pm://", &gocache.URLOpener{})
+	user, principal := uuid.New(), uuid.New()
 	for _, scenario := range []string{"allowed", "revoked-during-copy", "copy-ack-lost", "independent", "independent-copy-error"} {
 		t.Run(scenario, func(t *testing.T) {
-			binding, ae, ee, key, intent, node, user, principal, resource, operation, policy := uuid.New(), uuid.New(), uuid.New(), uuid.New(), uuid.New(), uuid.New(), uuid.New(), uuid.New(), uuid.New(), uuid.New(), uuid.New()
+			binding, ae, ee, key, intent, node, resource, operation, policy := uuid.New(), uuid.New(), uuid.New(), uuid.New(), uuid.New(), uuid.New(), uuid.New(), uuid.New(), uuid.New()
+			grpcclient.RegisterMock(common.ServiceUserGRPC, &idm.UserServiceStub{UserServiceServer: &copyNativeUser{user: &idm.User{Uuid: user, Login: "copy-user"}}})
+			grpcclient.RegisterMock(common.ServicePolicyGRPC, &idm.PolicyEngineServiceStub{PolicyEngineServiceServer: &copyNativePolicy{subject: user}})
 			input := map[string]interface{}{"resourceId": resource, "nativeIntentId": intent, "nativeNodeId": node, "nativeDeadline": float64(time.Now().Add(time.Hour).Unix()), "contentLength": float64(12), "multipart": false}
 			claims := map[string]interface{}{"tenant_id": binding, "action_execution_id": ae, "external_execution_id": ee, "idempotency_key": key, "operation_id": operation, "actor_principal_id": principal, "initiating_human_principal_id": principal, "action_key": "file_storage.write@v2", "action_definition_version": float64(1), "target_type": "RESOURCE", "target_id": resource, "result_exposure_policy_id": policy, "result_exposure_policy_version": float64(1)}
 			payload, _ := json.Marshal(claims)
