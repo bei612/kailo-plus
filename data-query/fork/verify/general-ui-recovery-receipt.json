@@ -1,0 +1,447 @@
+{
+  "source_commit": "d4416cc408539e7084259b474266c542a7a10d84",
+  "consumer_source_commit": "ceeddcf3b6225f9f5a08491df4b7f62c766d55a4",
+  "base_commit": "137310df7a25bf57c59fae43cd01d0f0a3d8eee9",
+  "branch": "codex/wren-general-ui-20261027",
+  "image": "sha256:f9ab18e354e6855ae56ef2b290dd225c1e51a564f87584b9bd21dd651838830e",
+  "node_image_expected": "sha256:f9ab18e354e6855ae56ef2b290dd225c1e51a564f87584b9bd21dd651838830e",
+  "limits": {
+    "NanoCpus": 4000000000,
+    "Memory": 4294967296,
+    "MemorySwap": 4294967296,
+    "PidsLimit": 512,
+    "NetworkMode": "none"
+  },
+  "checks": {
+    "consumers": {
+      "exit": 0,
+      "log": "/volumes/data/kailo/verification/buzz-r10/wren-general-ui-ceeddcf3b-check/consumers.log",
+      "sha256": "6611c45f691b20abf750283540feb46117ac1d97d388335025729a6f86df693a",
+      "summaries": [
+        "Test Suites: 4 passed, 4 total",
+        "Tests:       7 skipped, 303 passed, 310 total",
+        "Time:        23.432 s, estimated 29 s",
+        "Ran all test suites matching /src\\/nativeTaskOwnership.test.ts|src\\/askingStream.test.tsx|src\\/nativeTextAnswer.test.ts|src\\/nativeRestAskOwnership.test.ts/i."
+      ]
+    },
+    "rest-consumers": {
+      "exit": 0,
+      "log": "/volumes/data/kailo/verification/buzz-r10/wren-general-ui-ceeddcf3b-check/rest-consumers.log",
+      "sha256": "49815e337b9f4738c6aebcc698b0cfca7b18f33e05939104e2b97bb7428d1310",
+      "summaries": [
+        "Test Suites: 1 passed, 1 total",
+        "Tests:       375 skipped, 170 passed, 545 total",
+        "Time:        12.671 s, estimated 13 s",
+        "Ran all test suites matching /src\\/nativeHumanQuery.test.ts/i with tests matching \"original run_sql HTTP HUMAN consumer\"."
+      ]
+    },
+    "types": {
+      "exit": 0,
+      "log": "/volumes/data/kailo/verification/buzz-r10/wren-general-ui-ceeddcf3b-check/types.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "summaries": []
+    },
+    "format": {
+      "exit": 1,
+      "log": "/volumes/data/kailo/verification/buzz-r10/wren-general-ui-ceeddcf3b-check/format.log",
+      "sha256": "849eaef35ea0684a57c589b5e5d94afb232871c27d930bca57736cf00d26f5d9",
+      "summaries": []
+    },
+    "lint": {
+      "exit": 1,
+      "log": "/volumes/data/kailo/verification/buzz-r10/wren-general-ui-ceeddcf3b-check/lint.log",
+      "sha256": "42850d34d4855dfde4112641bfe249ed996f2364cc9b328d8c8678d2fdd01949",
+      "summaries": []
+    },
+    "final/versions": {
+      "exit": 0,
+      "log": "/volumes/data/kailo/verification/buzz-r10/wren-general-ui-d4416cc40-fault/versions.log",
+      "sha256": "cf42baaa06159cf2b208a9a0c4780703d7f7a5913c5b31f977c6b4ecfdc88679",
+      "summaries": []
+    },
+    "final/types": {
+      "exit": 0,
+      "log": "/volumes/data/kailo/verification/buzz-r10/wren-general-ui-d4416cc40-fault/types.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "summaries": []
+    },
+    "final/format": {
+      "exit": 0,
+      "log": "/volumes/data/kailo/verification/buzz-r10/wren-general-ui-d4416cc40-fault/format.log",
+      "sha256": "17aa973d3f004560237d9a95171210b0671deff23d61628eecf7322ff5938f20",
+      "summaries": []
+    },
+    "final/lint": {
+      "exit": 0,
+      "log": "/volumes/data/kailo/verification/buzz-r10/wren-general-ui-d4416cc40-fault/lint.log",
+      "sha256": "9f6ac1417a1fb3d8c8d6551b62726b54a8545079ed74fe6eb00db0cac12b57bc",
+      "summaries": []
+    },
+    "final/collision": {
+      "exit": 0,
+      "log": "/volumes/data/kailo/verification/buzz-r10/wren-general-ui-d4416cc40-fault/collision.log",
+      "sha256": "9cb3cc8ad7993a123af1b69e192d5bc5d7506b52f417e828bdb19f2d4a0fff87",
+      "summaries": [
+        "Test Suites: 1 passed, 1 total",
+        "Tests:       24 skipped, 1 passed, 25 total",
+        "Time:        7.883 s",
+        "Ran all test suites matching /src\\/nativeRestAskOwnership.test.ts/i with tests matching \"rolls back the history when the original query_id\"."
+      ]
+    },
+    "fault-exact-query": {
+      "exit": 1,
+      "log": "/volumes/data/kailo/verification/buzz-r10/wren-general-ui-d4416cc40-fault/fault-exact-query.log",
+      "sha256": "e3f7989dba6e695de4fb60144a659a14406d922c446b6cceb40a71a73cc0512b",
+      "summaries": [
+        "Test Suites: 1 failed, 1 total",
+        "Tests:       1 failed, 83 skipped, 7 passed, 91 total",
+        "Time:        9.183 s",
+        "Ran all test suites matching /src\\/nativeTextAnswer.test.ts/i with tests matching \"original GENERAL result HTTP adaptor\"."
+      ]
+    },
+    "restored-exact-query": {
+      "exit": 0,
+      "log": "/volumes/data/kailo/verification/buzz-r10/wren-general-ui-d4416cc40-fault/restored-exact-query.log",
+      "sha256": "e3ae2ae2cc90a33e927fd79b5a192ca027440246be5e84ca595a5be1e3d756e7",
+      "summaries": [
+        "Test Suites: 1 passed, 1 total",
+        "Tests:       83 skipped, 8 passed, 91 total",
+        "Time:        8.568 s, estimated 10 s",
+        "Ran all test suites matching /src\\/nativeTextAnswer.test.ts/i with tests matching \"original GENERAL result HTTP adaptor\"."
+      ]
+    },
+    "fault-fresh-disclosure": {
+      "exit": 1,
+      "log": "/volumes/data/kailo/verification/buzz-r10/wren-general-ui-d4416cc40-fault/fault-fresh-disclosure.log",
+      "sha256": "74aabc74e795648692a4e507497e585af27a9e78648851aab38fe8520ca60dda",
+      "summaries": [
+        "Test Suites: 1 failed, 1 total",
+        "Tests:       1 failed, 145 skipped, 6 passed, 152 total",
+        "Time:        9.098 s, estimated 11 s",
+        "Ran all test suites matching /src\\/nativeTaskOwnership.test.ts/i with tests matching \"GENERAL GraphQL\"."
+      ]
+    },
+    "restored-fresh-disclosure": {
+      "exit": 0,
+      "log": "/volumes/data/kailo/verification/buzz-r10/wren-general-ui-d4416cc40-fault/restored-fresh-disclosure.log",
+      "sha256": "6e03fa2f6c295cfcb79bdaed6f384f85cfc647a154c8ff24d7b565d5970b7537",
+      "summaries": [
+        "Test Suites: 1 passed, 1 total",
+        "Tests:       145 skipped, 7 passed, 152 total",
+        "Time:        9.165 s, estimated 10 s",
+        "Ran all test suites matching /src\\/nativeTaskOwnership.test.ts/i with tests matching \"GENERAL GraphQL\"."
+      ]
+    },
+    "fault-partial-prefix": {
+      "exit": 1,
+      "log": "/volumes/data/kailo/verification/buzz-r10/wren-general-ui-d4416cc40-fault/fault-partial-prefix.log",
+      "sha256": "d311f88d3932482ce3e05dcf8f322a636fffae3c7a90577b7dcdeb40ae2f32c9",
+      "summaries": [
+        "Test Suites: 1 failed, 1 total",
+        "Tests:       1 failed, 143 skipped, 8 passed, 152 total",
+        "Time:        8.102 s, estimated 10 s",
+        "Ran all test suites matching /src\\/nativeTaskOwnership.test.ts/i with tests matching \"GENERAL HTTP\"."
+      ]
+    },
+    "restored-partial-prefix": {
+      "exit": 0,
+      "log": "/volumes/data/kailo/verification/buzz-r10/wren-general-ui-d4416cc40-fault/restored-partial-prefix.log",
+      "sha256": "832a584c40245e22aef7b3e3120ccf99b46468b918a0b7e5d0fb2af8f770c12e",
+      "summaries": [
+        "Test Suites: 1 passed, 1 total",
+        "Tests:       143 skipped, 9 passed, 152 total",
+        "Time:        8.794 s, estimated 9 s",
+        "Ran all test suites matching /src\\/nativeTaskOwnership.test.ts/i with tests matching \"GENERAL HTTP\"."
+      ]
+    },
+    "fault-legacy-history": {
+      "exit": 1,
+      "log": "/volumes/data/kailo/verification/buzz-r10/wren-general-ui-d4416cc40-fault/fault-legacy-history.log",
+      "sha256": "7c23113922b2a390a950a757dd339f39765376ab4ba07d15cc9bffb4634ad86f",
+      "summaries": [
+        "Test Suites: 1 failed, 1 total",
+        "Tests:       4 failed, 540 skipped, 1 passed, 545 total",
+        "Time:        9.884 s, estimated 13 s",
+        "Ran all test suites matching /src\\/nativeHumanQuery.test.ts/i with tests matching \"GENERAL legacy History\"."
+      ]
+    },
+    "restored-legacy-history": {
+      "exit": 0,
+      "log": "/volumes/data/kailo/verification/buzz-r10/wren-general-ui-d4416cc40-fault/restored-legacy-history.log",
+      "sha256": "2a4bcd4e5640cc6cda7933e135bae48a97c49710e6bf88657afc6e726f36cc70",
+      "summaries": [
+        "Test Suites: 1 passed, 1 total",
+        "Tests:       540 skipped, 5 passed, 545 total",
+        "Time:        10.095 s",
+        "Ran all test suites matching /src\\/nativeHumanQuery.test.ts/i with tests matching \"GENERAL legacy History\"."
+      ]
+    },
+    "fault-hook-recovery": {
+      "exit": 1,
+      "log": "/volumes/data/kailo/verification/buzz-r10/wren-general-ui-d4416cc40-fault/fault-hook-recovery.log",
+      "sha256": "42c7f30a603057f180ea9358e7fed7a892aeae42acccc96a768dcd9c800f32e1",
+      "summaries": [
+        "Test Suites: 1 failed, 1 total",
+        "Tests:       2 failed, 40 skipped, 42 total",
+        "Time:        15.811 s",
+        "Ran all test suites matching /src\\/askingStream.test.tsx/i with tests matching \"GENERAL polling recovers\"."
+      ]
+    },
+    "restored-hook-recovery": {
+      "exit": 0,
+      "log": "/volumes/data/kailo/verification/buzz-r10/wren-general-ui-d4416cc40-fault/restored-hook-recovery.log",
+      "sha256": "1f973877b7bc0ffbd35cb5f237475b5266915637acb42afd7049bf630ca4ae1d",
+      "summaries": [
+        "Test Suites: 1 passed, 1 total",
+        "Tests:       40 skipped, 2 passed, 42 total",
+        "Time:        15.661 s, estimated 16 s",
+        "Ran all test suites matching /src\\/askingStream.test.tsx/i with tests matching \"GENERAL polling recovers\"."
+      ]
+    },
+    "fault-standalone-history": {
+      "exit": 1,
+      "log": "/volumes/data/kailo/verification/buzz-r10/wren-general-ui-d4416cc40-fault/fault-standalone-history.log",
+      "sha256": "5939a4cb298348af47debfb7486d9f4a6e0ab5cd15d2cbed80aa6a2cd07a164a",
+      "summaries": [
+        "Test Suites: 1 failed, 1 total",
+        "Tests:       4 failed, 79 skipped, 8 passed, 91 total",
+        "Time:        8.749 s, estimated 9 s",
+        "Ran all test suites matching /src\\/nativeTextAnswer.test.ts/i with tests matching \"standalone GENERAL\"."
+      ]
+    },
+    "restored-standalone-history": {
+      "exit": 0,
+      "log": "/volumes/data/kailo/verification/buzz-r10/wren-general-ui-d4416cc40-fault/restored-standalone-history.log",
+      "sha256": "ee38d6024ced793065c5b15005ff50e60f765205509f9d3af25cec4c7b6a53b5",
+      "summaries": [
+        "Test Suites: 1 passed, 1 total",
+        "Tests:       79 skipped, 12 passed, 91 total",
+        "Time:        8.711 s, estimated 9 s",
+        "Ran all test suites matching /src\\/nativeTextAnswer.test.ts/i with tests matching \"standalone GENERAL\"."
+      ]
+    }
+  },
+  "prior_failures": [
+    {
+      "source": "54129ad3a",
+      "checks": {
+        "versions": {
+          "exit": 0,
+          "log": "/volumes/data/kailo/verification/buzz-r10/wren-general-ui-54129ad3a-check/versions.log",
+          "sha256": "cf42baaa06159cf2b208a9a0c4780703d7f7a5913c5b31f977c6b4ecfdc88679",
+          "summaries": []
+        },
+        "consumers": {
+          "exit": 1,
+          "log": "/volumes/data/kailo/verification/buzz-r10/wren-general-ui-54129ad3a-check/consumers.log",
+          "sha256": "c4aeac3762d576820c7c080f8e59c05eb5c6e5533135ed39d274c24a2eb39bc6",
+          "summaries": [
+            "Test Suites: 2 failed, 3 passed, 5 total",
+            "Tests:       11 failed, 2 skipped, 678 passed, 691 total",
+            "Time:        89.329 s",
+            "Ran all test suites matching /src\\/nativeTaskOwnership.test.ts|src\\/askingStream.test.tsx|src\\/nativeHumanQuery.test.ts|src\\/nativeTextAnswer.test.ts|src\\/nativeRestAskOwnership.test.ts/i."
+          ]
+        }
+      }
+    },
+    {
+      "source": "14f148a96",
+      "checks": {
+        "versions": {
+          "exit": 0,
+          "log": "/volumes/data/kailo/verification/buzz-r10/wren-general-ui-14f148a96-check/versions.log",
+          "sha256": "cf42baaa06159cf2b208a9a0c4780703d7f7a5913c5b31f977c6b4ecfdc88679",
+          "summaries": []
+        },
+        "consumers": {
+          "exit": 1,
+          "log": "/volumes/data/kailo/verification/buzz-r10/wren-general-ui-14f148a96-check/consumers.log",
+          "sha256": "0d7bf1aa8b18ba6da7b96fceff5c8ea02c8dac84256dc64342fa19e7ba50312b",
+          "summaries": [
+            "Test Suites: 1 failed, 3 passed, 4 total",
+            "Tests:       1 skipped, 157 passed, 158 total",
+            "Time:        52.281 s, estimated 64 s",
+            "Ran all test suites matching /src\\/nativeTaskOwnership.test.ts|src\\/askingStream.test.tsx|src\\/nativeTextAnswer.test.ts|src\\/nativeRestAskOwnership.test.ts/i."
+          ]
+        }
+      }
+    },
+    {
+      "source": "fee27a5f8",
+      "checks": {
+        "versions": {
+          "exit": 0,
+          "log": "/volumes/data/kailo/verification/buzz-r10/wren-general-ui-fee27a5f8-check/versions.log",
+          "sha256": "cf42baaa06159cf2b208a9a0c4780703d7f7a5913c5b31f977c6b4ecfdc88679",
+          "summaries": []
+        },
+        "consumers": {
+          "exit": 1,
+          "log": "/volumes/data/kailo/verification/buzz-r10/wren-general-ui-fee27a5f8-check/consumers.log",
+          "sha256": "94747633a63cb0796607371e6c558cf499b9889045a01a8d67e4efa6b56fd0c2",
+          "summaries": [
+            "Test Suites: 2 failed, 2 passed, 4 total",
+            "Tests:       1 failed, 1 skipped, 156 passed, 158 total",
+            "Time:        21.52 s, estimated 52 s",
+            "Ran all test suites matching /src\\/nativeTaskOwnership.test.ts|src\\/askingStream.test.tsx|src\\/nativeTextAnswer.test.ts|src\\/nativeRestAskOwnership.test.ts/i."
+          ]
+        },
+        "rest-consumers": {
+          "exit": 0,
+          "log": "/volumes/data/kailo/verification/buzz-r10/wren-general-ui-fee27a5f8-check/rest-consumers.log",
+          "sha256": "fc9c0b2de720f41f9c9e8c76a58f2026a9b56b1ca48eb67e1ed16057a73b7de7",
+          "summaries": [
+            "Test Suites: 1 passed, 1 total",
+            "Tests:       375 skipped, 170 passed, 545 total",
+            "Time:        13.003 s, estimated 25 s",
+            "Ran all test suites matching /src\\/nativeHumanQuery.test.ts/i with tests matching \"original run_sql HTTP HUMAN consumer\"."
+          ]
+        },
+        "types": {
+          "exit": 2,
+          "log": "/volumes/data/kailo/verification/buzz-r10/wren-general-ui-fee27a5f8-check/types.log",
+          "sha256": "c42578095d2f64fcdb440d3dfcf16a3ec1b42e10f485fab09678c936ffe56cb4",
+          "summaries": []
+        },
+        "format": {
+          "exit": 1,
+          "log": "/volumes/data/kailo/verification/buzz-r10/wren-general-ui-fee27a5f8-check/format.log",
+          "sha256": "f6eb394847f718ff46e0ebe5d74ddea675ed582967c3461883e374baab0ef144",
+          "summaries": []
+        },
+        "lint": {
+          "exit": 1,
+          "log": "/volumes/data/kailo/verification/buzz-r10/wren-general-ui-fee27a5f8-check/lint.log",
+          "sha256": "570aabd38c81539ed915c876f25c3a640b131ec72c599ad5f94d07312a5df0cd",
+          "summaries": []
+        }
+      }
+    },
+    {
+      "source": "7c1567617",
+      "checks": {
+        "versions": {
+          "exit": 0,
+          "log": "/volumes/data/kailo/verification/buzz-r10/wren-general-ui-7c1567617-check/versions.log",
+          "sha256": "cf42baaa06159cf2b208a9a0c4780703d7f7a5913c5b31f977c6b4ecfdc88679",
+          "summaries": []
+        },
+        "consumers": {
+          "exit": 1,
+          "log": "/volumes/data/kailo/verification/buzz-r10/wren-general-ui-7c1567617-check/consumers.log",
+          "sha256": "f2c9ccd25bf2c6773c420effd46c45fec99fcb468c58f7703c8f5d75ddcc4f32",
+          "summaries": [
+            "Test Suites: 1 failed, 3 passed, 4 total",
+            "Tests:       2 failed, 7 skipped, 301 passed, 310 total",
+            "Time:        74.58 s",
+            "Ran all test suites matching /src\\/nativeTaskOwnership.test.ts|src\\/askingStream.test.tsx|src\\/nativeTextAnswer.test.ts|src\\/nativeRestAskOwnership.test.ts/i."
+          ]
+        },
+        "rest-consumers": {
+          "exit": 0,
+          "log": "/volumes/data/kailo/verification/buzz-r10/wren-general-ui-7c1567617-check/rest-consumers.log",
+          "sha256": "59252e7036cb92a5ff32409cdaf857781b53d97e72e53c1e831859d3cd50333b",
+          "summaries": [
+            "Test Suites: 1 passed, 1 total",
+            "Tests:       375 skipped, 170 passed, 545 total",
+            "Time:        12.566 s, estimated 13 s",
+            "Ran all test suites matching /src\\/nativeHumanQuery.test.ts/i with tests matching \"original run_sql HTTP HUMAN consumer\"."
+          ]
+        },
+        "types": {
+          "exit": 0,
+          "log": "/volumes/data/kailo/verification/buzz-r10/wren-general-ui-7c1567617-check/types.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "summaries": []
+        },
+        "format": {
+          "exit": 0,
+          "log": "/volumes/data/kailo/verification/buzz-r10/wren-general-ui-7c1567617-check/format.log",
+          "sha256": "17aa973d3f004560237d9a95171210b0671deff23d61628eecf7322ff5938f20",
+          "summaries": []
+        },
+        "lint": {
+          "exit": 0,
+          "log": "/volumes/data/kailo/verification/buzz-r10/wren-general-ui-7c1567617-check/lint.log",
+          "sha256": "9f6ac1417a1fb3d8c8d6551b62726b54a8545079ed74fe6eb00db0cac12b57bc",
+          "summaries": []
+        }
+      }
+    },
+    {
+      "source": "6bfa657bc",
+      "checks": {
+        "versions": {
+          "exit": 0,
+          "log": "/volumes/data/kailo/verification/buzz-r10/wren-general-ui-6bfa657bc-check/versions.log",
+          "sha256": "cf42baaa06159cf2b208a9a0c4780703d7f7a5913c5b31f977c6b4ecfdc88679",
+          "summaries": []
+        },
+        "consumers": {
+          "exit": 1,
+          "log": "/volumes/data/kailo/verification/buzz-r10/wren-general-ui-6bfa657bc-check/consumers.log",
+          "sha256": "4f3d9e0882395cbb77c997aaf23b27448ccee7234d9ac66fc2a3634ca4fa8d79",
+          "summaries": [
+            "Test Suites: 1 failed, 3 passed, 4 total",
+            "Tests:       1 failed, 7 skipped, 302 passed, 310 total",
+            "Time:        22.8 s, estimated 75 s",
+            "Ran all test suites matching /src\\/nativeTaskOwnership.test.ts|src\\/askingStream.test.tsx|src\\/nativeTextAnswer.test.ts|src\\/nativeRestAskOwnership.test.ts/i."
+          ]
+        },
+        "rest-consumers": {
+          "exit": 0,
+          "log": "/volumes/data/kailo/verification/buzz-r10/wren-general-ui-6bfa657bc-check/rest-consumers.log",
+          "sha256": "111f8230d5b7a86e9a9ded4e1ae859bf0928f3db4f911f7b5ba74d776efb558c",
+          "summaries": [
+            "Test Suites: 1 passed, 1 total",
+            "Tests:       375 skipped, 170 passed, 545 total",
+            "Time:        12.595 s, estimated 13 s",
+            "Ran all test suites matching /src\\/nativeHumanQuery.test.ts/i with tests matching \"original run_sql HTTP HUMAN consumer\"."
+          ]
+        },
+        "types": {
+          "exit": 0,
+          "log": "/volumes/data/kailo/verification/buzz-r10/wren-general-ui-6bfa657bc-check/types.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "summaries": []
+        },
+        "format": {
+          "exit": 0,
+          "log": "/volumes/data/kailo/verification/buzz-r10/wren-general-ui-6bfa657bc-check/format.log",
+          "sha256": "17aa973d3f004560237d9a95171210b0671deff23d61628eecf7322ff5938f20",
+          "summaries": []
+        },
+        "lint": {
+          "exit": 0,
+          "log": "/volumes/data/kailo/verification/buzz-r10/wren-general-ui-6bfa657bc-check/lint.log",
+          "sha256": "9f6ac1417a1fb3d8c8d6551b62726b54a8545079ed74fe6eb00db0cac12b57bc",
+          "summaries": []
+        }
+      }
+    }
+  ],
+  "fixed_input_count": 618,
+  "fixed_input_manifest": "/volumes/data/kailo/verification/buzz-r10/wren-general-ui-d4416cc40-fault/fixed-inputs.json",
+  "fixed_input_manifest_sha256": "cec34317fb8c6943b0a5c18758c1f00a8b1583a7aedaee9faaf822e41d3cd42d",
+  "between_consumer_and_final": "Only original Prettier wrapping of the database unique-conflict assertion changed. Product, other fixtures, generated documents and locks are byte-identical; final collision consumer and all six restored groups run on final GitHub source.",
+  "coverage": "Four complete original files303 passed/7 pre-existing conditional cases skipped; original run_sql HTTP HUMAN group170 passed/375 unrelated cases not selected. Final complete TypeScript, changed-scope lint and format pass. Six product fault injections each fail assertions, every affected file restored byte-for-byte and each selected consumer passes afterwards.",
+  "changes": "Five existing test files only. Real Next HTTP handlers, original generated AskingTaskDocument/schema/resolver, original HTTP adaptor GET, existing hook scheduler/EventSource harness, REST History and actual SQLite repository are exercised. Explicit model/authorization/network fixtures remain; no live model/Core/Bao/provider/browser/PG business acceptance.",
+  "original_full_file_failures": [
+    "original SQL-pair durable native write consumer \u203a keeps the original REST create response and recovers lost ACK through the same persisted native event",
+    "native saved-view HUMAN query consumer \u203a submits the original SQL editor with its exact query/dry-run action and policy (false)",
+    "native saved-view HUMAN query consumer \u203a submits the original SQL editor with its exact query/dry-run action and policy (true)",
+    "native saved-view HUMAN query consumer \u203a routes the actual SQL resolver through current HUMAN scope and never direct QueryService.preview",
+    "native saved-view HUMAN query consumer \u203a original Asking saved-view preview consumer \u203a does not reuse a generated response SQL key for an edited native response",
+    "native saved-view HUMAN query consumer \u203a original Asking saved-view preview consumer \u203a the original default generated response uses its own native SQL/history admission without a saved view (completed=false)",
+    "native saved-view HUMAN query consumer \u203a original Asking saved-view preview consumer \u203a the original default generated response uses its own native SQL/history admission without a saved view (completed=true)",
+    "native saved-view HUMAN query consumer \u203a original Asking saved-view preview consumer \u203a authorizes the original partial CTE as its own frozen SQL, never as a saved-view query"
+  ],
+  "sqlite_diagnostic": {
+    "path": "/volumes/data/kailo/verification/buzz-r10/wren-general-ui-6bfa657bc-collision-diagnostic/diagnostic.log",
+    "sha256": "eac7b82aa3b8e0ae7e2f1e4efe06d459593c0dca99f264d52855103ca0418ff7",
+    "note": "Original toThrow assertion fluctuated in multi-suite execution. Isolated actual rejection was SqliteError/SQLITE_CONSTRAINT_UNIQUE with original row absent and Foreign task retained. Final assertion requires exact SQLite/PG unique code and retains rollback/task checks. No claim that every cause of the prior fluctuation was reproduced."
+  },
+  "compatibility": "Optional same-query GENERAL completion is required to recover full body. FINISHED classification or old doneQueryId alone is insufficient. Cache expiry, missing/cross-query/full-prefix mismatch and authority change remain unresolved/refused without new Ask/SQL. New matching AI/UI artifacts are still required.",
+  "remaining": "No release/artifact registration, receiver activation, live provider/model/Gateway/accounting E2E or browser deployment. Original unrelated eight nativeHumanQuery full-file failures and seven conditional cases remain explicitly unverified. Root owns independent Python lifecycle evidence.",
+  "cleanup": "Own final SDK removed after natural exit; no PG/network allocated; source/dependency cache retained for handoff; no shared service/config/trust modified."
+}
