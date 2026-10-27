@@ -128,7 +128,7 @@ let nativeApprovalProp = "null";
 function visitNative(node: ts.Node) {
   if (ts.isVariableDeclaration(node) && ["principalId", "needsAction"].includes(node.name.getText(nativeSource)))
     nativeBindings.push(`const ${node.getText(nativeSource)};`);
-  if (ts.isJsxOpeningElement(node) && node.tagName.getText(nativeSource) === "InboxView") {
+  if ((ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) && node.tagName.getText(nativeSource) === "InboxView") {
     for (const attribute of node.attributes.properties)
       if (ts.isJsxAttribute(attribute) && attribute.name.getText(nativeSource) === "needsAction"
         && attribute.initializer && ts.isJsxExpression(attribute.initializer))
