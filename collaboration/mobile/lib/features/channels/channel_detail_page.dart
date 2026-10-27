@@ -371,7 +371,12 @@ class ChannelDetailPage extends HookConsumerWidget {
                       ),
                       child: Center(
                         child: Text(
-                          platformText(PlatformMessageKey.timelineLoadError, locale: Localizations.localeOf(context).toLanguageTag()),
+                          platformText(
+                            PlatformMessageKey.timelineLoadError,
+                            locale: Localizations.localeOf(
+                              context,
+                            ).toLanguageTag(),
+                          ),
                           style: context.textTheme.bodyMedium?.copyWith(
                             color: context.colors.error,
                           ),

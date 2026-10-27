@@ -9,17 +9,27 @@ class _ErrorView extends StatelessWidget {
   static String _userMessage(BuildContext context, Object error) {
     if (error is RelayException) {
       if (error.statusCode == 401) {
-        return _channelText(context, PlatformMessageKey.channelsLoadUnauthorized);
+        return _channelText(
+          context,
+          PlatformMessageKey.channelsLoadUnauthorized,
+        );
       }
       if (error.statusCode == 403) {
         return _channelText(context, PlatformMessageKey.channelsLoadDenied);
       }
-      return _channelText(context, PlatformMessageKey.channelsLoadServerError, variables: {'status': error.statusCode});
+      return _channelText(
+        context,
+        PlatformMessageKey.channelsLoadServerError,
+        variables: {'status': error.statusCode},
+      );
     }
     if (error is SocketException) {
       return _channelText(context, PlatformMessageKey.channelsLoadUnreachable);
     }
-    return _channelText(context, PlatformMessageKey.channelsLoadConnectionError);
+    return _channelText(
+      context,
+      PlatformMessageKey.channelsLoadConnectionError,
+    );
   }
 
   @override
@@ -54,7 +64,9 @@ class _ErrorView extends StatelessWidget {
             FilledButton.icon(
               onPressed: onRetry,
               icon: const Icon(LucideIcons.refreshCw),
-              label: Text(_channelText(context, PlatformMessageKey.timelineRetry)),
+              label: Text(
+                _channelText(context, PlatformMessageKey.timelineRetry),
+              ),
             ),
           ],
         ),

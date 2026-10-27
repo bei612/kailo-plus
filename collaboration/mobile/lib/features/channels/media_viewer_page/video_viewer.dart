@@ -265,7 +265,12 @@ class MediaVideoViewerPage extends HookConsumerWidget {
                         builder: (context, snapshot) {
                           if (error.value != null || snapshot.hasError) {
                             return _MediaLoadFailure(
-                              message: platformText(PlatformMessageKey.mediaVideoLoadFailed, locale: Localizations.localeOf(context).toLanguageTag()),
+                              message: platformText(
+                                PlatformMessageKey.mediaVideoLoadFailed,
+                                locale: Localizations.localeOf(
+                                  context,
+                                ).toLanguageTag(),
+                              ),
                               icon: LucideIcons.videoOff,
                             );
                           }

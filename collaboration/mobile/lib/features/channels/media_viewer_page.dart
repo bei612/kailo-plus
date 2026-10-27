@@ -593,7 +593,14 @@ class MediaImageViewerPage extends HookConsumerWidget {
                                           semanticLabel: image.semanticLabel,
                                           errorBuilder: (_, _, _) =>
                                               _MediaLoadFailure(
-                                                message: platformText(PlatformMessageKey.mediaImageLoadFailed, locale: Localizations.localeOf(context).toLanguageTag()),
+                                                message: platformText(
+                                                  PlatformMessageKey
+                                                      .mediaImageLoadFailed,
+                                                  locale:
+                                                      Localizations.localeOf(
+                                                        context,
+                                                      ).toLanguageTag(),
+                                                ),
                                                 icon: LucideIcons.imageOff,
                                               ),
                                         ),

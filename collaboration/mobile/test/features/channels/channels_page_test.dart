@@ -767,7 +767,9 @@ void main() {
   });
 
   for (final chinese in [false, true]) {
-    testWidgets('shows localized channel failure and retries ($chinese)', (tester) async {
+    testWidgets('shows localized channel failure and retries ($chinese)', (
+      tester,
+    ) async {
       final notifier = _ErrorNotifier(testChannels);
       await tester.pumpWidget(
         buildTestable(
@@ -780,14 +782,27 @@ void main() {
       await tester.pump(const Duration(seconds: 3));
       await tester.pump();
 
-      expect(find.text(chinese ? '无法加载频道' : 'Could not load channels'), findsOneWidget);
-      expect(find.text(chinese ? '加载出错，请检查网络连接。' : 'Something went wrong. Check your connection.'), findsOneWidget);
+      expect(
+        find.text(chinese ? '无法加载频道' : 'Could not load channels'),
+        findsOneWidget,
+      );
+      expect(
+        find.text(
+          chinese
+              ? '加载出错，请检查网络连接。'
+              : 'Something went wrong. Check your connection.',
+        ),
+        findsOneWidget,
+      );
       expect(find.text('Connection refused'), findsNothing);
       await tester.tap(find.text(chinese ? '重试' : 'Retry'));
       await tester.pumpAndSettle();
       expect(notifier.refreshes, 1);
       expect(find.text('general'), findsOneWidget);
-      expect(find.text(chinese ? '无法加载频道' : 'Could not load channels'), findsNothing);
+      expect(
+        find.text(chinese ? '无法加载频道' : 'Could not load channels'),
+        findsNothing,
+      );
     });
   }
 
