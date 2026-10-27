@@ -316,7 +316,7 @@ export type ProjectPendingPush = {
 };
 export type ProjectRepoSyncStatus = {
   localPath: string | null; localBranch: string | null; localBranches: string[];
-  localHead: string | null; remoteBranch: string | null; remoteHead: string | null;
+  localHead: string | null; remoteBranch: string | null; remoteHead: string | null; mergeBase?: string | null;
   aheadCount: number; behindCount: number; hasUncommittedChanges: boolean; hasUntrackedFiles: boolean;
   canPush: boolean; canPull: boolean; pushBlockReason: string | null; pullBlockReason: string | null;
   pendingPush: ProjectPendingPush | null;
@@ -328,7 +328,7 @@ type CheckoutBranch = { repository: string; branchName?: string | null; baseBran
 export type ProjectsCheckoutHost = {
   cloneProjectRepository(input: CheckoutRef): Promise<{ path: string; cloned: boolean }>;
   getProjectRepoSyncStatus(input: CheckoutBranch): Promise<ProjectRepoSyncStatus | null>;
-  pushProjectLocalRepository(input: CheckoutBranch): Promise<{ branch: string; commit: string }>;
+  pushProjectLocalRepository(input: CheckoutBranch): Promise<{ branch: string; commit: string; mergeBase?: string | null }>;
   pullProjectLocalRepository(input: CheckoutBranch): Promise<void>;
   getProjectLocalRepoSnapshot(input: CheckoutRef): Promise<{ path: string; snapshot: ProjectRepoSnapshot } | null>;
   getProjectLocalRepoDiff(input: CheckoutRef & { baseCommit?: string | null; targetCommit?: string | null }): Promise<ProjectRepoDiff | null>;
@@ -355,7 +355,7 @@ function localStatus(raw: unknown): ProjectRepoSyncStatus | null {
   }
   return { localPath: nullableString(raw.local_path), localBranch: nullableString(raw.local_branch),
     localBranches: raw.local_branches as string[], localHead: nullableString(raw.local_head), remoteBranch: nullableString(raw.remote_branch),
-    remoteHead: nullableString(raw.remote_head), aheadCount: raw.ahead_count as number, behindCount: raw.behind_count as number,
+    remoteHead: nullableString(raw.remote_head), mergeBase: nullableString(raw.merge_base), aheadCount: raw.ahead_count as number, behindCount: raw.behind_count as number,
     hasUncommittedChanges: raw.has_uncommitted_changes as boolean, hasUntrackedFiles: raw.has_untracked_files as boolean,
     canPush: raw.can_push as boolean, canPull: raw.can_pull as boolean,
     pushBlockReason: nullableString(raw.push_block_reason), pullBlockReason: nullableString(raw.pull_block_reason), pendingPush };
@@ -436,7 +436,8 @@ export function createNativeProjectsGitHost(invoke: NativeProjectsGitInvoke, sco
         if (!isRecord(raw) || raw.pushed !== true || typeof raw.branch !== "string" || typeof raw.commit !== "string" || !COMMIT.test(raw.commit)
           || input.branchName != null && raw.branch !== input.branchName)
           throw new TransportError("Unconfirmed repository push");
-        return { branch: raw.branch, commit: raw.commit };
+        if (raw.merge_base != null && (typeof raw.merge_base !== "string" || !COMMIT.test(raw.merge_base))) throw new TransportError("Invalid push merge base");
+        return { branch: raw.branch, commit: raw.commit, mergeBase: nullableString(raw.merge_base) };
       },
       pullProjectLocalRepository: async input => {
         const raw = await send("pull_project_local_repository", { repository: input.repository, branchName: input.branchName ?? null });

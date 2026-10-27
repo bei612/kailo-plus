@@ -108,6 +108,15 @@ describe("native local checkout host",()=>{
       await expect(malformed.checkout!.getProjectRepoSyncStatus({repository})).rejects.toThrow();
     }
   });
+  it("preserves the original native push and sync merge base for the review update",async()=>{
+    const mergeBase="a".repeat(40), pushed="e".repeat(40);
+    const invoke=vi.fn(async(command:string)=>command==="get_project_repo_sync_status"?{...rawStatus,merge_base:mergeBase}:{pushed:true,branch:"main",commit:pushed,merge_base:mergeBase});
+    const host=createNativeProjectsGitHost(invoke,scope);
+    await expect(host.checkout!.getProjectRepoSyncStatus({repository})).resolves.toMatchObject({mergeBase});
+    await expect(host.checkout!.pushProjectLocalRepository({repository,branchName:"main"})).resolves.toEqual({branch:"main",commit:pushed,mergeBase});
+    const invalid=createNativeProjectsGitHost(async()=>({pushed:true,branch:"main",commit:pushed,merge_base:"invalid"}),scope);
+    await expect(invalid.checkout!.pushProjectLocalRepository({repository,branchName:"main"})).rejects.toThrow();
+  });
   it("keeps native write uncertainty and conflicts distinguishable",async()=>{
     for(const code of ["project_repo_outcome_unknown","project_repo_conflict"]){
       const host=createNativeProjectsGitHost(async()=>{throw code;},scope);
