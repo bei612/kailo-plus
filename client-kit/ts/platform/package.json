@@ -273,6 +273,8 @@
     "./react/sidebar/channelSortPreference": "./src/react/sidebar/channelSortPreference.ts",
     "./react/sidebar/useChannelSortPreference": "./src/react/sidebar/useChannelSortPreference.ts",
     "./react/sidebar/normalizeRelayUrl": "./src/react/sidebar/normalizeRelayUrl.ts",
+    "./react/composer/useComposerContentState": "./src/react/composer/useComposerContentState.ts",
+    "./react/composer/useComposerDraftLifecycle": "./src/react/composer/useComposerDraftLifecycle.ts",
     "./react/composer/useMessageComposerController": "./src/react/composer/useMessageComposerController.ts",
     "./react/composer/dmAgentMention": "./src/react/composer/dmAgentMention.ts",
     "./react/composer/features/messages/lib/channelLink": "./src/react/composer/features/messages/lib/channelLink.ts",

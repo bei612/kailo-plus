@@ -1,3 +1,5 @@
+import { useComposerDraftRestore } from "@client-kit/platform/react/composer/useComposerDraftLifecycle";
+import { useComposerContentState } from "@client-kit/platform/react/composer/useComposerContentState";
 import { useMessageComposerController, useComposerControls, composerKeyDown, useComposerSubmission, useComposerAutoSubmit } from "@client-kit/platform/react/composer/useMessageComposerController";
 import { detectPrefixQuery, selectedMentionLabel, extractMentionPubkeys, mentionMatchCandidates, mentionOccurrences, AmbiguousMentionError } from "@client-kit/platform/react/pulse";
 import { MentionAutocomplete, type MentionSuggestion } from "@client-kit/platform/react/composer/features/messages/ui/MentionAutocomplete";
@@ -1191,8 +1193,7 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
   // Original MessageComposer `#channel` and `:shortcode` autocompletes (shared with Desktop).
   const channelLinks = useChannelLinks(useComposerChannelLinkSources());
   const emojiAutocomplete = useEmojiAutocomplete();
-  const [draft, setDraft] = useState("");
-  const [draftRevision, setDraftRevision] = useState(0);
+  const { content: draft, revision: draftRevision, setComposerContent: setDraft } = useComposerContentState();
   // DD-125(5) original composer link previews (BFF fetch host) and GIF chips. Only new STREAM
   // messages carry them; an edit names neither (original edit mode turns previews off).
   const [previewContent, setPreviewContent] = useState("");
@@ -1432,7 +1433,7 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
     agentMentionNames:humanNames.filter(name => knownAgentKeys.has(humanBindings.current.get(name) ?? "")),
     getMentionIdentities:()=>[...humanBindings.current].map(([label,pubkey])=>({label,pubkey})),
     onUpdate: ({ text, cursor, linkPreviewContent }) => {
-      setDraft(text); setDraftRevision((value) => value + 1); setPreviewContent(linkPreviewContent);
+      setDraft(text); setPreviewContent(linkPreviewContent);
       if (!editTarget && text.trim().length > 0) onTypingRef.current?.();
       if (!sending && !editTarget) syncAddressedAgentsFromTextRef.current(text);
       const query=detectPrefixQuery("@",text,cursor,autocompleteCandidates.map(person=>person.displayName.toLowerCase()));
@@ -1532,8 +1533,7 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
   });
   const draftReady = useRef(false);
   const [loadedDraftOwner, setLoadedDraftOwner] = useState<typeof owner | null>(null);
-  useEffect(() => {
-    if (!richText.editor) return;
+  useComposerDraftRestore({ owner, ready: richText.editor !== null, restore: () => {
     if (draftIdentity && draftKey) initDraftStore(draftIdentity, window.location.origin);
     const saved = draftIdentity && draftKey ? loadDraftEntry(draftKey) : undefined;
     const editableMedia = editTarget ? restoreImetaMediaDisplayLabels(editTarget.body, imetaMediaFromTags(editTarget.tags)) : [];
@@ -1580,7 +1580,7 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
     draftReady.current = Boolean(draftIdentity && draftKey);
     setLoadedDraftOwner(owner);
     return () => { draftReady.current = false; };
-  }, [draftIdentity, draftKey, richText.editor, richText.setContent, owner]);
+  }});
   useEffect(() => {
     if (loadedDraftOwner === owner && !editTarget) addressLock.restoreAddressedAgentMentions();
   }, [loadedDraftOwner, owner, editTarget, audienceScope, addressLock.restoreAddressedAgentMentions]);
