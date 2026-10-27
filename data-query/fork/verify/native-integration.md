@@ -12107,6 +12107,15 @@ counts, exits and fault assertions. Local handoff copy:
 `/tmp/kailo-wren-readonly-6f32bac58-receipt.json`. The check container was removed
 and absence read back after completion.
 
+The independent REST endpoint
+`pages/api/v1/stream_explanation.ts` remains a concrete follow-up: its STANDALONE
+branch still forwards raw native frames and manufactures `done` on EOF; only
+its GOVERNED branch uses the existing shared decoder. This batch fixes the
+browser's `/api/ask_task/streaming` operation, not both standalone endpoints.
+The REST follow-up must retain its original API History/project ownership and
+external wire contract; an AskingTask repository lookup cannot substitute for
+that authority.
+
 These are fixed-source HTTP/hook/SQLite checks. No matching component artifact,
 real LLM/SQL backend, deployed receiver chain, or final independent-page user
 acceptance was produced in this batch. Rebuilding and accepting the matching
