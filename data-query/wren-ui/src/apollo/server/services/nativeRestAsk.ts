@@ -1,6 +1,7 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import { StringDecoder } from 'string_decoder';
 import { components } from '@/common';
+import { isGovernedQueryMode } from './nativeQueryMode';
 import { ApiHistory, ApiType } from '../repositories/apiHistoryRepository';
 import { ModelResolver } from '../resolvers/modelResolver';
 import { AskingResolver } from '../resolvers/askingResolver';
@@ -288,6 +289,9 @@ export async function governedRestAsk(
   res.setHeader('Cache-Control', 'private, no-store');
   let streamStarted = false;
   let currentState = StateType.SQL_GENERATION_START;
+    const requireSummaryMode = () => {
+      if (!isGovernedQueryMode()) throw new NativeQueryRefusal(412, 'QUERY_ADMISSION_UNAVAILABLE');
+    };
   const block = (type: EventType, value?: string) => {
     if (!streaming || !streamStarted) return;
     sendSSEEvent(res, {
@@ -586,6 +590,7 @@ export async function governedRestAsk(
     if (current.statusCode === 200) {
       if (!(await settledQueries())) return;
       const visible = await readNativeAskHistory(ctx, config, native, current);
+      if (!sqlOnly && visible.responsePayload.type !== 'NON_SQL_QUERY') requireSummaryMode();
       if (streaming) {
         res.setHeader('Content-Type', 'text/event-stream');
         res.flushHeaders();
@@ -880,6 +885,12 @@ export async function governedRestAsk(
       return;
     }
     const general = askResult.type === AskResultType.GENERAL;
+    const readSummaryHistory = async (selected: ApiHistory) => {
+      requireSummaryMode();
+      const visible = await native.readHistory(token, selected);
+      requireSummaryMode();
+      return visible;
+    };
     let query: ApiHistory;
     let disclosedData: Record<string, unknown>;
     if (!general) {
@@ -917,7 +928,7 @@ export async function governedRestAsk(
         governanceState: 'SUCCEEDED',
       });
       if (!query || query.id === key) throw unavailable();
-      disclosedData = (await native.readHistory(token, query)).responsePayload;
+      disclosedData = (await readSummaryHistory(query)).responsePayload;
       const queryReference = {
         historyId: query.id,
         key: query.governanceKey,
@@ -949,7 +960,7 @@ export async function governedRestAsk(
           return;
         }
         await authorize();
-        await native.readHistory(token, query);
+        await readSummaryHistory(query);
         try {
           const task = await components.wrenAIAdaptor.createTextBasedAnswer({
             queryId: key,
@@ -977,7 +988,7 @@ export async function governedRestAsk(
         return;
       }
       await authorize();
-      await native.readHistory(token, query);
+      await readSummaryHistory(query);
       if (summaryResult?.status === TextBasedAnswerStatus.FAILED) {
         if (
           !(await advance(
@@ -1041,6 +1052,10 @@ export async function governedRestAsk(
           native,
           current,
         );
+        requireSummaryMode();
+        block(EventType.CONTENT_BLOCK_START, ContentBlockContentType.SUMMARY_GENERATION);
+        block(EventType.CONTENT_BLOCK_DELTA, visible.responsePayload.summary);
+        block(EventType.CONTENT_BLOCK_STOP);
         respond(200, { id: key, ...visible.responsePayload });
         return;
       }
@@ -1065,7 +1080,7 @@ export async function governedRestAsk(
       return;
     }
     await authorize();
-    if (query) await native.readHistory(token, query);
+    if (query) await readSummaryHistory(query);
     const stream = general
       ? await components.wrenAIAdaptor.getAskStreamingResult(key)
       : await components.wrenAIAdaptor.streamTextBasedAnswer(key);
@@ -1099,13 +1114,13 @@ export async function governedRestAsk(
           if (!line) continue;
           const event = JSON.parse(line.slice(5).trim());
           await authorize();
-          if (query) await native.readHistory(token, query);
+          if (query) await readSummaryHistory(query);
           if (event.done === true && event.queryId === key) {
             if (!general) {
               const result =
                 await components.wrenAIAdaptor.getTextBasedAnswerResult(key);
               await authorize();
-              await native.readHistory(token, query);
+              await readSummaryHistory(query);
               if (
                 result?.status !== TextBasedAnswerStatus.SUCCEEDED ||
                 result.error ||
@@ -1145,6 +1160,7 @@ export async function governedRestAsk(
               native,
               current,
             );
+            if (!general) requireSummaryMode();
             block(EventType.CONTENT_BLOCK_STOP);
             respond(200, { id: key, ...visible.responsePayload });
             return;

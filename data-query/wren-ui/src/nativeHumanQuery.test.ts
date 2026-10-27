@@ -8239,6 +8239,37 @@ describe('native saved-view HUMAN query consumer', () => {
         expect(summaryStream).toHaveBeenCalledTimes(1);
       },
     );
+    it.each(['summary', 'ask', 'stream-ask'].flatMap((kind) => [
+      { kind, at: 'result' }, { kind, at: 'history' },
+    ]))('rejects GOV $kind mode retirement during complete $at observation', async ({ kind, at }) => {
+      summaryGet.mockImplementation(async () => {
+        if (at === 'result') {
+          delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+          delete process.env.WREN_PLATFORM_BINDING_CONFIG_FILE;
+        }
+        return { status: TextBasedAnswerStatus.SUCCEEDED,
+          completion: { queryId: key, content: 'private full completion' } };
+      });
+      if (at === 'history') {
+        const write = advanceSummary.getMockImplementation();
+        advanceSummary.mockImplementation(async (...args) => {
+          const value = await write(...args);
+          if (args[2] === 200) {
+            delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+            delete process.env.WREN_PLATFORM_BINDING_CONFIG_FILE;
+          }
+          return value;
+        });
+      }
+      const response = await (kind === 'summary' ? sendSummary() : sendAsk(undefined, {}, kind === 'stream-ask'));
+      const body = await response.text();
+      expect(body).not.toContain('private full completion');
+      if (kind === 'stream-ask') {
+        expect(body).toContain('"type":"error"');
+      } else expect(response.status).toBe(412);
+      expect(summaryCreate).toHaveBeenCalledTimes(1);
+      expect(summaryStream).not.toHaveBeenCalled();
+    });
     it.each(['summary', 'ask'])(
       'does not turn a %s native done into a final body without complete original result',
       async (kind) => {
