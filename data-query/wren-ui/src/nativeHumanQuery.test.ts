@@ -8244,8 +8244,10 @@ describe('native saved-view HUMAN query consumer', () => {
       async (shape) => {
         const observed = shape === 'prefix' ? 'Original ' : 'summary';
         summaryStream.mockImplementation(async () => {
-          summaryGet.mockResolvedValue({ status: TextBasedAnswerStatus.SUCCEEDED,
-            completion: { queryId: key, content: 'Original summary' } });
+          summaryGet.mockResolvedValue({
+            status: TextBasedAnswerStatus.SUCCEEDED,
+            completion: { queryId: key, content: 'Original summary' },
+          });
           return Readable.from([
             `data: ${JSON.stringify({ message: observed })}\n\n`,
             `data: ${JSON.stringify({ done: true, queryId: key })}\n\n`,
@@ -8253,11 +8255,23 @@ describe('native saved-view HUMAN query consumer', () => {
         });
         const response = await sendAsk(undefined, {}, true);
         const body = await response.text();
-        const frames = body.split('\n\n').filter((part) => part.startsWith('data: ')).map((part) => JSON.parse(part.slice(6)));
-        const content = frames.filter((part) => part.type === 'content_block_delta').map((part) => part.delta.text).join('');
-        expect(content).toBe(shape === 'prefix' ? 'Original summary' : 'summary');
-        expect(frames.some((part) => part.type === 'content_block_stop')).toBe(shape === 'prefix');
-        expect(frames.some((part) => part.type === 'message_stop')).toBe(shape === 'prefix');
+        const frames = body
+          .split('\n\n')
+          .filter((part) => part.startsWith('data: '))
+          .map((part) => JSON.parse(part.slice(6)));
+        const content = frames
+          .filter((part) => part.type === 'content_block_delta')
+          .map((part) => part.delta.text)
+          .join('');
+        expect(content).toBe(
+          shape === 'prefix' ? 'Original summary' : 'summary',
+        );
+        expect(frames.some((part) => part.type === 'content_block_stop')).toBe(
+          shape === 'prefix',
+        );
+        expect(frames.some((part) => part.type === 'message_stop')).toBe(
+          shape === 'prefix',
+        );
         expect(summaryRow.statusCode).toBe(200);
         expect(summaryRow.responsePayload.summary).toBe('Original summary');
         const recovered = await sendAsk(undefined, {}, true);

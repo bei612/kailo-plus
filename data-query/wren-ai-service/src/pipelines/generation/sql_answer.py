@@ -129,6 +129,7 @@ class SQLAnswer(BasicPipeline):
 
         async def _get_streaming_results(query_id):
             return await queue.get()
+
         while True:
             try:
                 # Wait for an item from the user's queue
