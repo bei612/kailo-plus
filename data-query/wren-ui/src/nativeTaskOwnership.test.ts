@@ -3130,6 +3130,25 @@ for (const backend of ['sqlite', 'postgres'] as const) {
       ).rejects.toThrow('NATIVE_OBJECT_CHANGED');
       expect(await responses.findAllBy({ threadId: 11 })).toHaveLength(2);
     });
+    it('recommendation migration refuses rollback of an actual UNKNOWN native task without deleting its facts', async () => {
+      const id = await source();
+      adaptor.generateRecommendationQuestions.mockRejectedValueOnce(new Error('lost native ACK'));
+      await expect(service.generateThreadRecommendationQuestions(11, id)).rejects.toThrow('NATIVE_EXECUTION_UNKNOWN');
+      const original = await threads.findOneBy({ id: 11 });
+      await expect(migration().down(db)).rejects.toThrow('Refuse recommendation rollback');
+      expect(await threads.findOneBy({ id: 11 })).toEqual(original);
+      expect(await db.schema.hasColumn('thread_response', 'recommendation_intent_key')).toBe(true);
+      expect(await responses.findAllBy({ threadId: 11 })).toHaveLength(1);
+    });
+    it('recommendation migration refuses rollback while a selected response retains its original intent', async () => {
+      const selection = await finish();
+      const row = await service.createThreadResponse({ threadId: 11, recommendation: selection });
+      // The selected response is independently retained if the Thread pointer is retired.
+      await db('thread').where({ id: 11 }).update({ questions_source_response_id: null });
+      await expect(migration().down(db)).rejects.toThrow('Refuse recommendation rollback');
+      expect(await responses.findOneBy({ id: row.id })).toMatchObject({ recommendationIntentKey: selection.idempotencyKey });
+      expect(await db.schema.hasColumn('thread', 'questions_source_response_id')).toBe(true);
+    });
     it('migration down/up preserves original data and leaves historical source facts absent', async () => {
       await migration().down(db);
       expect(
