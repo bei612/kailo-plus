@@ -451,7 +451,7 @@ fn publication_native_channel(
     referenced_channel: Option<Option<Uuid>>,
 ) -> Option<Option<Uuid>> {
     match event.kind.as_u16() {
-        1 | 1618 | 1621 | 1630..=1633 | 30300 | 30617 | 30621 => Some(None),
+        1 | 1618 | 1619 | 1621 | 1630..=1633 | 30300 | 30617 | 30621 => Some(None),
         5 | 7 => referenced_channel,
         9 | 40003 | 45001 | 45003 | 9002 | 41010 | 41012 => single_event_tag(event, "h")
             .and_then(|channel| Uuid::parse_str(channel).ok())
@@ -1360,7 +1360,7 @@ pub(crate) async fn publish_project(
         // NIP-34 issues and reviews, like deletion, are Community-global
         // (is_global_only_kind). A repository's buzz-channel metadata must not
         // silently become a Workspace grant.
-        Ok(1 | 5 | 1618 | 1621 | 1630 | 1632 | 1633) => MessageTarget::Pulse(ctx.tenant_id),
+        Ok(1 | 5 | 1618 | 1619 | 1621 | 1630 | 1632 | 1633) => MessageTarget::Pulse(ctx.tenant_id),
         // The original project member patch names no Channel; binding a
         // repository or adding a project channel admits that Workspace below.
         Ok(30621) if collab_bridge::projects::is_repository_attachment(&request) => {
@@ -2639,7 +2639,7 @@ async fn publish(
         match p.result.as_deref() {
             Some("ACCEPTED") => {
                 if let Publication::Project(request) = &publication {
-                    if matches!(requested_kind, 1 | 1618 | 1621 | 1630 | 1632 | 1633) {
+                    if matches!(requested_kind, 1 | 1618 | 1619 | 1621 | 1630 | 1632 | 1633) {
                         if let Err(response) = crate::projects::confirm_accepted_issue_publication(
                             &state,
                             &ctx,
@@ -2912,6 +2912,14 @@ async fn publish(
     } else {
         None
     };
+    let project_update_evidence = if matches!(&publication, Publication::Project(_)) {
+        if requested_kind == 1619 {
+            let Some(root) = project_target.as_ref() else { return StatusCode::BAD_REQUEST.into_response(); };
+            match crate::projects::pull_request_update_evidence(&state,&client,root,&community_host).await {
+                Ok(evidence) => Some(evidence), Err(response) => return response,
+            }
+        } else {None}
+    } else {None};
     let latest_project_comment = if let Publication::Project(request) = &publication {
         if collab_bridge::projects::is_pull_request_status(request) {
             let Some(pull_request) = project_target.as_ref() else {
@@ -2997,7 +3005,11 @@ async fn publish(
         None
     };
     if let Publication::Project(request) = &publication {
-        let builder = if collab_bridge::projects::is_pull_request_status(request) {
+        let builder = if let Some((repository, latest)) = &project_update_evidence {
+            collab_bridge::projects::pull_request_update_builder(request,
+                project_target.as_ref().expect("review target checked"),repository,latest.as_ref(),
+                &keys.public_key().to_hex(),&community_host)
+        } else if collab_bridge::projects::is_pull_request_status(request) {
             match project_target.as_ref() {
                 Some(pull_request) => collab_bridge::projects::status_publication_builder(
                     request,
@@ -3224,6 +3236,11 @@ async fn publish(
             &content,
             pulse_tags.as_deref().unwrap_or_default(),
         ),
+        Publication::Project(request) if project_update_evidence.is_some() => {
+            let (repository, latest) = project_update_evidence.as_ref().expect("update evidence checked");
+            client.sign_project_update(&request,project_target.as_ref().expect("review target checked"),
+                repository,latest.as_ref())
+        }
         Publication::Project(request) => client.sign_project(
             &request,
             project_target.as_ref(),
@@ -5593,7 +5610,7 @@ mod tests {
                 "{kind}"
             );
         }
-        for kind in [1, 1618, 1621, 1630, 1631, 1632, 1633, 30300, 30617, 30621] {
+        for kind in [1, 1618, 1619, 1621, 1630, 1631, 1632, 1633, 30300, 30617, 30621] {
             let event = client
                 .sign(kind, "", &[vec!["h".into(), channel.to_string()]])
                 .unwrap();
