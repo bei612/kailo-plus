@@ -16,6 +16,7 @@ export function InboxRow({
   actionRequired = false,
   sender,
   avatar,
+  profileTriggers = true,
   timestamp,
   unread,
   label,
@@ -33,6 +34,8 @@ export function InboxRow({
   actionRequired?: boolean;
   sender: ReactNode;
   avatar?: ReactNode;
+  /** Only real host profile controls stop the original row-content selection. */
+  profileTriggers?: boolean;
   timestamp: string;
   unread?: ReactNode;
   label: string;
@@ -84,7 +87,7 @@ export function InboxRow({
           {avatar ? (
             <div
               className="relative shrink-0"
-              data-inbox-profile-trigger="true"
+              data-inbox-profile-trigger={profileTriggers ? "true" : undefined}
             >
               {avatar}
             </div>
@@ -93,7 +96,7 @@ export function InboxRow({
             <div className="flex min-w-0 items-start gap-2">
               <span
                 className="flex min-w-0 flex-1 items-start leading-4"
-                data-inbox-profile-trigger="true"
+                data-inbox-profile-trigger={profileTriggers ? "true" : undefined}
               >
                 {sender}
               </span>
