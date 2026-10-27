@@ -164,9 +164,17 @@ export default function useAskPrompt(threadId?: number) {
   const [threadQuestions, setThreadQuestions] = useState<string[]>([]);
   const [taskId, setTaskId] = useState<string | null>(null);
   const requestGeneration = useRef(0);
+  const recommendationGeneration = useRef(0);
+  const [recommendationTask, setRecommendationTask] = useState<{
+    id: string;
+    askingTaskId: string;
+    generation: number;
+    requestGeneration: number;
+  } | null>(null);
   useEffect(
     () => () => {
       ++requestGeneration.current;
+      ++recommendationGeneration.current;
     },
     [],
   );
@@ -189,7 +197,14 @@ export default function useAskPrompt(threadId?: number) {
   const [fetchInstantRecommendedQuestions, instantRecommendedQuestionsResult] =
     useInstantRecommendedQuestionsLazyQuery({
       pollInterval: 1000,
+      fetchPolicy: 'no-cache',
     });
+
+  const onStopRecommend = () => {
+    ++recommendationGeneration.current;
+    setRecommendationTask(null);
+    instantRecommendedQuestionsResult.stopPolling();
+  };
 
   const askingTask = useMemo(
     () =>
@@ -211,12 +226,17 @@ export default function useAskPrompt(threadId?: number) {
   useEffect(() => {
     if (complete !== undefined) askingStreamTaskResult.reset();
   }, [taskId, complete]);
-  const recommendedQuestions = useMemo(
-    () =>
-      instantRecommendedQuestionsResult.data?.instantRecommendedQuestions ||
-      null,
-    [instantRecommendedQuestionsResult.data],
-  );
+  // Apollo's variables identify this observation; old data must not become
+  // recommendations for a new question, including reopening the same query.
+  const recommendedQuestions =
+    recommendationTask &&
+    recommendationTask.askingTaskId === taskId &&
+    recommendationTask.requestGeneration === requestGeneration.current &&
+    recommendationTask.generation === recommendationGeneration.current &&
+    instantRecommendedQuestionsResult.variables?.taskId === recommendationTask.id
+      ? instantRecommendedQuestionsResult.data?.instantRecommendedQuestions ||
+        null
+      : null;
 
   const loading = complete === undefined && askingStreamTaskResult.loading;
 
@@ -238,6 +258,11 @@ export default function useAskPrompt(threadId?: number) {
   );
 
   const startRecommendedQuestions = useCallback(async () => {
+    const generation = ++recommendationGeneration.current;
+    const request = requestGeneration.current;
+    const askingTaskId = taskId;
+    setRecommendationTask(null);
+    instantRecommendedQuestionsResult.stopPolling();
     const previousQuestions = [
       // slice the last 5 questions in threadQuestions
       ...uniq(threadQuestions).slice(-5),
@@ -246,10 +271,20 @@ export default function useAskPrompt(threadId?: number) {
     const response = await createInstantRecommendedQuestions({
       variables: { data: { previousQuestions } },
     });
-    fetchInstantRecommendedQuestions({
-      variables: { taskId: response.data.createInstantRecommendedQuestions.id },
+    if (
+      recommendationGeneration.current !== generation ||
+      requestGeneration.current !== request
+    )
+      return;
+    const id = response.data.createInstantRecommendedQuestions.id;
+    setRecommendationTask({
+      id,
+      askingTaskId,
+      generation,
+      requestGeneration: request,
     });
-  }, [originalQuestion]);
+    await fetchInstantRecommendedQuestions({ variables: { taskId: id } });
+  }, [originalQuestion, threadQuestions, taskId]);
 
   const checkFetchAskingStreamTask = useCallback(
     (task: AskingTask) => {
@@ -290,7 +325,7 @@ export default function useAskPrompt(threadId?: number) {
   useEffect(() => {
     // handle instant recommended questions
     if (isNeedRecommendedQuestions(askingTask)) {
-      startRecommendedQuestions();
+      startRecommendedQuestions().catch((error) => console.error(error));
     }
   }, [askingTask?.queryId, askingTask?.type]);
 
@@ -318,6 +353,7 @@ export default function useAskPrompt(threadId?: number) {
 
   const onReRun = async (threadResponse: ThreadResponse) => {
     const generation = ++requestGeneration.current;
+    onStopRecommend();
     setTaskId(null);
     askingStreamTaskResult.reset();
     setOriginalQuestion(threadResponse.question);
@@ -345,6 +381,7 @@ export default function useAskPrompt(threadId?: number) {
 
   const onSubmit = async (value) => {
     const generation = ++requestGeneration.current;
+    onStopRecommend();
     setTaskId(null);
     askingStreamTaskResult.reset();
     setOriginalQuestion(value);
@@ -364,6 +401,7 @@ export default function useAskPrompt(threadId?: number) {
 
   const onFetching = async (queryId: string) => {
     ++requestGeneration.current;
+    onStopRecommend();
     if (queryId !== taskId) askingStreamTaskResult.reset();
     setTaskId(queryId);
     await fetchAskingTask({
@@ -373,6 +411,7 @@ export default function useAskPrompt(threadId?: number) {
 
   const onStopPolling = () => {
     ++requestGeneration.current;
+    onStopRecommend();
     setTaskId(null);
     askingTaskResult.stopPolling();
     askingStreamTaskResult.reset();
@@ -380,7 +419,6 @@ export default function useAskPrompt(threadId?: number) {
 
   const onStopStreaming = () => askingStreamTaskResult.reset();
 
-  const onStopRecommend = () => instantRecommendedQuestionsResult.stopPolling();
 
   const onStoreThreadQuestions = (questions: string[]) =>
     setThreadQuestions(questions);
