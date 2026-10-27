@@ -24,9 +24,10 @@ The following screens were opened and their viewport screenshots inspected:
 - Knowledge library view showing an existing library.
 - Cells home and its existing Personal Files listing.
 
-These observations prove the listed rendered states and read navigation only.
-No message, draft, upload, download, document edit, knowledge import, model query,
-multi-user interaction or revocation was executed. Existing component entry
+These initial observations prove the listed rendered states and read navigation
+only. During that initial pass no message, draft, upload, download, document edit,
+knowledge import, model query, multi-user interaction or revocation was executed.
+The later single query below is separately recorded. Existing component entry
 visibility does not establish current candidate binding or release conformance.
 The browser reported an avatar HTTP 404, blocked cross-origin autofocusing,
 `Failed Loading UploaderModel` / `Failed to fetch`, and `Cannot find user` while
@@ -50,3 +51,32 @@ existing application data and are not copied into the repository. SHA-256:
 No deployment, artifact update or full check was performed. The browser-only
 readback cannot establish source parity, device acceptance, visual-system parity,
 or production readiness.
+
+## Subsequent single Wren query
+
+Using a fresh isolated browser and the existing verification account, the same
+running deployment received the single question `订单总数是多少？`. The original
+question page showed its preparation steps, model candidates and SQL generation,
+then displayed an answer of **36,000** and a `total_orders` result row of
+**36000**. The original SQL tab displayed
+`SELECT COUNT("order_id") AS "total_orders" FROM "public_orders"`. This is the
+result shown by the deployed application, not an independent database count or
+proof of every policy, quota, audit or model-provider boundary. The operation
+created a question/history item; the operator did not delete it or submit another.
+
+Refreshing the host page returned to the modeling view rather than the question.
+After manually opening the original question tab and the same history item, the
+answer, result row and SQL tab were visible again. That proves this observed
+readback; it does not prove automatic restoration of the embedded route or the
+absence of any server-side repeated work. No new candidate was built or deployed.
+The browser was closed. The same private Data evidence directory contains the
+screenshots and snapshots below, which were opened and inspected where applicable:
+
+| Evidence | SHA-256 |
+| --- | --- |
+| wren-query.png | `33467da28427be04d241188ebaf10142008537765a28de850f83bb0401340d52` |
+| wren-reload.png | `40e35de8c836bc6217618afd69a946e410bd32217f33177323096a8e0d74d953` |
+| wren-reopened.png | `e8eb50d017677d16719e74072639e17e55550510ef7248c6be162ebfb566f964` |
+| wren-sql.png | `9ca695dfdf1d1cf4ac35ff6f59a3b6157768a9ab84fff231e997838b54223a19` |
+| wren-query-final.txt | `35aad36fd786ce801bf8366388104435dd6c1232ef45611e27411031480ae473` |
+| wren-query-terminal.txt | `6df295c8d0ebae1c13c66fa9bc547ec458670641fbaf0408dfd6046d9a8a6332` |
