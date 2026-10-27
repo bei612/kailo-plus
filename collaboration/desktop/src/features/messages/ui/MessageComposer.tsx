@@ -452,7 +452,7 @@ function MessageComposerImpl({
     owner: pasteOwner, enabled: !composerDisabled && !isSubmitLocked && !isSending,
     bindMentionIdentities: mentions.bindPastedMentionIdentities,
     scrollToBottom: scrollComposerToBottom,
-    uploadFile: voiceNote.uploadFileWhenIdle,
+    uploadFiles: voiceNote.uploadFilesWhenIdle,
   });
   const autoSubmitOwner = React.useRef({ draftKey: effectiveDraftKey });
   const autoSubmitEnabled = React.useRef(autoSubmitDraftKey !== null && autoSubmitDraftKey === effectiveDraftKey);

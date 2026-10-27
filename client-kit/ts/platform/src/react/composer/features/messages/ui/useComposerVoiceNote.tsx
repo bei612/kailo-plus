@@ -28,6 +28,8 @@ export function useComposerVoiceNote({
     /** Real queued Native files or Web files awaiting the BFF upload receipt. */
     queuedAttachmentsRef: React.RefObject<readonly { file: File }[]>;
     uploadFile: (file: File) => Promise<unknown>;
+    /** Admit the entire original file batch before any upload awaits a receipt. */
+    uploadFiles?: (files: File[]) => void | Promise<unknown>;
   };
   setEmojiPickerOpen: (open: boolean) => void;
   setFormattingOpen: (open: boolean) => void;
@@ -144,6 +146,15 @@ export function useComposerVoiceNote({
     },
     [acceptsNewAttachment, media.uploadFile],
   );
+  const uploadFilesWhenIdle = React.useCallback(async (files: File[]) => {
+    if (!acceptsNewAttachment()) return;
+    if (files.length > 1 && files.some(isVoiceNoteFile)) {
+      toast.error(translateUi("buzz.voiceOnlyAttachment"));
+      return;
+    }
+    if (media.uploadFiles) await media.uploadFiles(files);
+    else await Promise.all(files.map(file => media.uploadFile(file)));
+  }, [acceptsNewAttachment, media.uploadFiles, media.uploadFile, translateUi]);
   return {
     ...recorder,
     acceptsAttachment: recorder.status === "idle" && !hasAttachment,
@@ -165,5 +176,6 @@ export function useComposerVoiceNote({
     finish,
     toggle,
     uploadFileWhenIdle,
+    uploadFilesWhenIdle,
   };
 }

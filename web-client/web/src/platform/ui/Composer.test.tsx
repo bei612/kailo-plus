@@ -565,6 +565,32 @@ it("waits for every snapshot byte reader before Enter, then preserves the origin
   expect(publish.mock.calls[0][1].map((file: {filename:string})=>file.filename)).toEqual(["First.agent.png","Second.team.png"]);
 });
 
+it("freezes every file from one snapshot paste in the original queued batch before the first upload receipt", async () => {
+  const receipts: ((value: {sha256:string;size:number;type:string;url:string})=>void)[] = [];
+  const upload = vi.fn((_file:File) => new Promise<{sha256:string;size:number;type:string;url:string}>(resolve=>receipts.push(resolve)));
+  const publish = vi.fn().mockResolvedValue({});
+  const host = await render(<Composer workspaceId="snapshot-workspace" draftIdentity="alice" draftKey="paste-one-batch" onUpload={upload} onPublish={publish}/>);
+  await type(host.querySelector<HTMLElement>('[data-testid="message-input"]')!,"Both files");
+  await act(async()=>paste(host,"Writer",snapshotHtml("Writer.agent.png"),[
+    new File([snapshotBytes],"image.png",{type:"image/png"}),new File(["notes"],"notes.txt",{type:"text/plain"}),
+  ]));
+  await vi.waitFor(()=>expect(upload).toHaveBeenCalledTimes(1));
+  expect(button(host,"platform.send").disabled).toBe(false);
+  await click(button(host,"platform.send"));
+  expect(publish).not.toHaveBeenCalled();
+  expect(loadPendingSend("paste-one-batch")?.missingFileNames).toEqual(["Writer.agent.png","notes.txt"]);
+  await act(async()=>receipts[0]({sha256:snapshotHash,size:snapshotBytes.length,type:"image/png",url:`https://relay.invalid/media/${snapshotHash}.png`}));
+  await vi.waitFor(()=>expect(upload).toHaveBeenCalledTimes(2));
+  expect(upload.mock.calls[1][0].name).toBe("notes.txt");
+  expect(publish).not.toHaveBeenCalled();
+  await act(async()=>receipts[1]({sha256:"b".repeat(64),size:5,type:"text/plain",url:`https://relay.invalid/media/${"b".repeat(64)}.txt`}));
+  await vi.waitFor(()=>expect(publish).toHaveBeenCalledOnce());
+  expect(publish.mock.calls[0][0]).toBe("Both files");
+  expect(publish.mock.calls[0][1].map((file:{filename:string})=>file.filename)).toEqual(["Writer.agent.png","notes.txt"]);
+  expect(host.querySelector('[data-testid="message-input"]')?.textContent).toBe("");
+  expect(loadDraftEntry("paste-one-batch")?.pendingImeta ?? []).toEqual([]);
+});
+
 it.each(["identity", "draft"])("retires an asynchronous snapshot paste when the %s changes before its byte read completes", async changed => {
   const upload = vi.fn();
   const Reader = FileReader;
