@@ -547,6 +547,67 @@ describe('original native planning HTTP stream and HUMAN task owner', () => {
       jest.mocked(bindingServiceCall).mock.calls.length,
     ).toBeGreaterThanOrEqual(6);
   });
+  const standalone = () => {
+    delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+    delete process.env.WREN_PLATFORM_BINDING_CONFIG_FILE;
+    jest.mocked(loadQueryDelivery).mockClear();
+    jest.mocked(bindingServiceCall).mockClear();
+  };
+  it('standalone Ask consumes the native query-bound completion in the original browser wire shape without loading platform delivery', async () => {
+    standalone();
+    const response = await send();
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe(
+      'data: {"message":"原生思考"}\n\ndata: {"done":true}\n\n',
+    );
+    expect(nativeStream).toHaveBeenCalledTimes(1);
+    expect(nativeStream).toHaveBeenCalledWith(queryId);
+    expect(loadQueryDelivery).not.toHaveBeenCalled();
+    expect(bindingServiceCall).not.toHaveBeenCalled();
+  });
+  it.each([
+    undefined,
+    null,
+    [],
+    { done: true, queryId: 'foreign' },
+    { done: true, queryId, message: 'not a completion' },
+    { done: 'true', queryId },
+    { done: true },
+  ])('standalone Ask keeps interrupted or invalid completion %j unresolved and never reopens the native task', async (completion) => {
+    standalone();
+    nativeStream.mockResolvedValue(Readable.from([
+      'data: {"message":"partial"}\n\n',
+      ...(completion === undefined ? [] : [`data: ${JSON.stringify(completion)}\n\n`]),
+    ]));
+    const response = await send();
+    expect(await response.text()).toBe('data: {"message":"partial"}\n\n');
+    expect(nativeStream).toHaveBeenCalledTimes(1);
+    expect(loadQueryDelivery).not.toHaveBeenCalled();
+  });
+  it('standalone Ask refuses another project task before consuming its native queue', async () => {
+    standalone();
+    task.projectId++;
+    expect((await send()).status).toBe(404);
+    expect(nativeStream).not.toHaveBeenCalled();
+  });
+  it('standalone observation stops if governed delivery appears while the native request is in flight', async () => {
+    standalone();
+    nativeStream.mockImplementation(async () => {
+      process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = '/fixture/query.json';
+      return Readable.from([
+        'data: {"message":"no longer independently authorized"}\n\n',
+        `data: ${JSON.stringify({ done: true, queryId })}\n\n`,
+      ]);
+    });
+    expect(await (await send()).text()).toBe('');
+    expect(nativeStream).toHaveBeenCalledTimes(1);
+    expect(loadQueryDelivery).not.toHaveBeenCalled();
+  });
+  it.each(['POST', 'DELETE'])('standalone stream rejects %s without a native read', async method => {
+    standalone();
+    expect((await send({}, method)).status).toBe(405);
+    expect(nativeStream).not.toHaveBeenCalled();
+  });
   it.each([
     'foreign-user',
     'foreign-binding',

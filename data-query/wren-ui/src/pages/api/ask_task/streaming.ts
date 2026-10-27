@@ -10,14 +10,13 @@ import { isGovernedQueryMode } from '@/apollo/server/services/nativeQueryMode';
 import { MAX_WAIT_TIME } from '@/apollo/server/utils/apiUtils';
 import { createInterface } from 'readline';
 
-const { wrenAIAdaptor } = components;
-
 // Both original planning surfaces expose the same native message/done stream.
 // Their existing task/history reader remains the ownership/evidence authority.
-export async function streamNativeAskingTask(
+async function forwardNativeAskingTask(
   req: NextApiRequest,
   res: NextApiResponse,
   authorize: () => Promise<unknown>,
+  governed: boolean,
 ) {
   res.setHeader('Cache-Control', 'private, no-store');
   let stream;
@@ -29,7 +28,9 @@ export async function streamNativeAskingTask(
     const queryId = req.query.queryId;
     if (typeof queryId !== 'string' || !queryId)
       throw new NativeQueryRefusal(400, 'INVALID_QUERY_PARAMETERS');
-    const config = await loadQueryDelivery();
+    const responseMaxBytes = governed
+      ? (await loadQueryDelivery()).responseMaxBytes
+      : undefined;
     await authorize();
     stream = await components.wrenAIAdaptor.getAskStreamingResult(queryId);
     stop = () => stream.destroy();
@@ -44,14 +45,20 @@ export async function streamNativeAskingTask(
     })) {
       if (!line) continue;
       bytes += Buffer.byteLength(line, 'utf8');
-      if (bytes > config.responseMaxBytes)
+      if (responseMaxBytes !== undefined && bytes > responseMaxBytes)
         throw new NativeQueryRefusal(503, 'QUERY_EVIDENCE_UNAVAILABLE');
       if (!line.startsWith('data:'))
         throw new NativeQueryRefusal(503, 'NATIVE_EXECUTION_UNKNOWN');
       const event = JSON.parse(line.slice(5).trim());
+      if (!event || typeof event !== 'object' || Array.isArray(event))
+        throw new NativeQueryRefusal(503, 'NATIVE_EXECUTION_UNKNOWN');
       await authorize();
       if (res.destroyed) return;
-      if (event.done === true && event.queryId === queryId) {
+      if (
+        Object.keys(event).length === 2 &&
+        event.done === true &&
+        event.queryId === queryId
+      ) {
         res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
         res.end();
         return;
@@ -74,6 +81,14 @@ export async function streamNativeAskingTask(
     if (stop) res.off('close', stop);
     stream?.destroy();
   }
+}
+
+export async function streamNativeAskingTask(
+  req: NextApiRequest,
+  res: NextApiResponse,
+  authorize: () => Promise<unknown>,
+) {
+  return forwardNativeAskingTask(req, res, authorize, true);
 }
 
 export default async function handler(
@@ -113,31 +128,14 @@ export default async function handler(
     }
     return;
   }
-  res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache, no-transform');
-  res.setHeader('Connection', 'keep-alive');
-  res.flushHeaders();
-
-  const { queryId } = req.query;
-  try {
-    const stream = await wrenAIAdaptor.getAskStreamingResult(queryId as string);
-
-    stream.on('data', (chunk) => {
-      // pass the chunk directly to the client
-      res.write(chunk);
-    });
-
-    stream.on('end', () => {
-      res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
-      res.end();
-    });
-
-    // destroy the stream if the client closes the connection
-    req.on('close', () => {
-      stream.destroy();
-    });
-  } catch (error) {
-    console.error(error);
-    res.status(500).end();
-  }
+  // Standalone uses the same actual native completion receipt, without
+  // selecting platform governance from a browser token or loading its delivery.
+  // The original project/task reader remains the native ownership boundary.
+  const authorize = async () => {
+    if (isGovernedQueryMode())
+      throw new NativeQueryRefusal(412, 'QUERY_ADMISSION_UNAVAILABLE');
+    if (!(await components.askingService.getAskingTask(req.query.queryId as string)))
+      throw new NativeQueryRefusal(404, 'NATIVE_OBJECT_UNAVAILABLE');
+  };
+  await forwardNativeAskingTask(req, res, authorize, false);
 }
