@@ -205,6 +205,12 @@ PostgreSQL 执行整文件 **545/545、无跳过**，移除项目过滤后原断
 [HUMAN PostgreSQL 回执](data-query/fork/verify/native-human-postgres-receipt.json)及
 [四文件 PostgreSQL 回执](data-query/fork/verify/four-consumers-postgres-receipt.json)。
 
+Wren 推荐问题观察后继固定 `14f1243af`：关闭、切换或重跑问题后退役旧推荐轮询，
+迟到的创建回执和旧查询结果不能进入当前问题；不取消或重发原问数任务。原 Hook
+消费者 **50/50**、完整类型及相关 lint/格式通过；两项实际故障分别检出 5、1 项
+失败，逐字恢复后通过。固定输入和失败记录见[推荐观察回执](data-query/fork/verify/recommendation-observation-receipt.json)；
+GraphQL、浏览器和模型供应方仍为夹具或未验收，不代表真实业务全链。
+
 前一批 Core 集成固定 `1d0d20b53`：原 SDK 4 CPU / 16 GiB、私有 PG
 1 CPU / 2 GiB，正常主目标 **839 passed / 91 ignored**；显式 Agent/Canvas/审核、
 publication scope/history/reconcile 与 bridge HTTP 共 **26** 项通过。格式、完整
