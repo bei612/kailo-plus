@@ -1638,6 +1638,51 @@ describe("DD-146 original send flow: clear at Send, restore on failure", () => {
     expect(state.publish.mock.calls[0][2]).toEqual([]);
   });
 
+  it.each(["unsent", "unknown"] as const)("consumes Inbox navigation for a GIF-only %s draft without duplicate publication", async (outcome) => {
+    enableDraftGif();
+    if (outcome === "unknown") state.publish.mockRejectedValue(new TransportError("GIF receipt unknown"));
+    const {upload} = uploader();
+    const key = `gif-navigation-${outcome}`;
+    const consume = vi.fn(async()=>{});
+    const host = await render(composer(key, upload));
+    await type(input(host), "temporary caption");
+    await type(input(host), "");
+    await chooseDraftGif(host);
+    expect(loadDraftEntry(key)?.content).toBe("");
+    if (outcome === "unknown") {
+      await click(button(host,"platform.send"));
+      await vi.waitFor(()=>expect(state.publish).toHaveBeenCalledOnce());
+      await settle();
+    }
+    const originalKey = outcome === "unknown" ? state.publish.mock.calls[0][3] : undefined;
+    await rerender(<div/>);
+    await act(async()=>{ await new Promise(resolve=>setTimeout(resolve,20)); });
+    const auto = <Composer workspaceId="workspace-a" draftIdentity="alice" draftKey={key}
+      autoSendDraftKey={key} onAutoSendConsumed={consume} onUpload={upload}/>;
+    await rerender(auto);
+    await vi.waitFor(()=>expect(consume).toHaveBeenCalledOnce());
+    if (outcome === "unknown") {
+      await vi.waitFor(()=>expect(host.textContent).toContain("platform.sendUnknown"));
+      expect(state.publish).toHaveBeenCalledOnce();
+      expect(loadDraftEntry(key)?.sendIntent?.key).toBe(originalKey);
+    } else {
+      await vi.waitFor(()=>expect(state.publish).toHaveBeenCalledOnce());
+      expect(consume.mock.invocationCallOrder[0]).toBeLessThan(state.publish.mock.invocationCallOrder[0]!);
+    }
+    expect(state.publish.mock.calls[0][1]).toBe(`![image](${draftGif.url})`);
+    expect(state.publish.mock.calls[0][2]).toEqual([]);
+    await rerender(auto);
+    await settle();
+    expect(consume).toHaveBeenCalledOnce();
+    expect(state.publish).toHaveBeenCalledOnce();
+    if (outcome === "unknown") {
+      await click(button(host,"platform.send"));
+      await vi.waitFor(()=>expect(state.publish).toHaveBeenCalledTimes(2));
+      expect(state.publish.mock.calls[1].slice(1,4)).toEqual(state.publish.mock.calls[0].slice(1,4));
+    }
+    expect(upload).not.toHaveBeenCalled();
+  });
+
   it("restores a confirmed file and selected GIF as distinct outgoing media", async () => {
     enableDraftGif();
     const {upload,uploads} = uploader();
