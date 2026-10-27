@@ -142,7 +142,8 @@ export default function HomeThread() {
     useUpdateThreadResponseMutation({
       onError: (error) => console.error(error),
       onCompleted: (data) => {
-        if (!answerOwner.active || answerOwnerRef.current !== answerOwner) return;
+        if (!answerOwner.active || answerOwnerRef.current !== answerOwner)
+          return;
         notify.success(t('home.sqlUpdated'));
         // trigger generate answer after sql statement updated
         onGenerateThreadResponseAnswer(data.updateThreadResponse.id);
@@ -230,7 +231,10 @@ export default function HomeThread() {
     if (answerRequests.current.has(request)) return;
     answerRequests.current.add(request);
     const generation = answerGeneration.current;
-    const active = () => answerOwner.active && answerOwnerRef.current === answerOwner && generation === answerGeneration.current;
+    const active = () =>
+      answerOwner.active &&
+      answerOwnerRef.current === answerOwner &&
+      generation === answerGeneration.current;
     const publishReceipt =
       artifact === 'answer' ? setAnswerReceipts : setChartReceipts;
     const create = async (identity: {
@@ -281,11 +285,7 @@ export default function HomeThread() {
         if (scope !== undefined || bindingGeneration !== undefined) return;
         await create({});
         const current = await getUserConfig();
-        if (
-          !active() ||
-          !sameConfiguration(current)
-        )
-          return;
+        if (!active() || !sameConfiguration(current)) return;
         fetchThreadResponse({ variables: { responseId } });
         return;
       }
@@ -294,21 +294,13 @@ export default function HomeThread() {
       sessionStorage.setItem(slot, key);
       while (active()) {
         const beforeDispatch = await getUserConfig();
-        if (
-          !active() ||
-          !sameConfiguration(beforeDispatch)
-        )
-          return;
+        if (!active() || !sameConfiguration(beforeDispatch)) return;
         const response = await create({
           idempotencyKey: key,
           idempotencyScope: scope,
         });
         const afterDispatch = await getUserConfig();
-        if (
-          !active() ||
-          !sameConfiguration(afterDispatch)
-        )
-          return;
+        if (!active() || !sameConfiguration(afterDispatch)) return;
         if (response?.id === responseId)
           updateThreadQuery((previous) => ({
             ...previous,
