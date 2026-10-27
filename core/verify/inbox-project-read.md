@@ -2476,3 +2476,74 @@ CI Data 原日志在 `verification/inbox-dm-owner/{ba584a425,c8d69f0d0,6086f71a3
 有界交叉复核已核对真实调用链与两个普通短键的对称门控。本批仅 Web 宿主改动，测试中的
 BFF 返回和 publisher 是脚本化适配器；未认领真实 HTTP 服务、完整 PlatformApp 挂载、
 Desktop/Mobile、打包、部署或真实设备验收。
+
+## 原 Projects tag 快照与只读操作恢复（2026-10-27）
+
+本批依据 DD-118(2)、DD-160(5)、V-REQ-24 与 SF-BUZ-49。比较基线为
+`e7213abffce6970b137a93cdfb361197c2cb468e`；冻结官方 Buzz
+`779af8886caae1317b4de962082429867ab61503` 的
+`desktop/src/features/projects/ui/ProjectDetailScreen.tsx`、
+`useProjectRepositoryRefSelection`、`ProjectRepositorySource` 和原 snapshot/file consumer
+已有 30618 tag 选择、remote 强制及 tag 模式只读限制。当前共享主体此前把 tags 置为空数组，
+丢弃 selectedTag，snapshot key 固定 no-tag、文件读取不携带 tag，导致两宿主均无法执行原操作。
+
+本批消费已准入 30618 tag，保持原菜单和 tag/branch 名称分区；共享 snapshot 与懒加载文件
+都携带同一 refs/tags/name、宣布的 commit，缓存包含 host scope、repository、tag 与 commit。
+无效 tag 不退回 HEAD；tag 消失期间不展示其他引用快照。沿现有 BFF/Native typed Git capability，
+没有新增 HTTP、契约或权限；后端原 Git fetch 与 commit 比对仍是实际读取约束。
+`projectTagTarget` 镜像现有 `clean_target_ref` 的字符/规范化及已有合同长度边界；原后端
+normalizer 本来不排除重复斜杠、`.lock` 或分量点号，这些原样送给 Git 拒绝，不伪称新增完整
+Git ref 校验，也不错误读取 HEAD。
+
+原 Desktop tag 强制 remote，隐藏 clone/push/pull 与 branch 建删；旧选择回调也不能改回 local。
+branch 原 mutation 在实际派发前再次核验捕获的 host/project/只读 owner，涵盖 React Query
+异步 onMutate 期间切换 tag/身份、旧弹窗回调；已派发的结果保持原 UNKNOWN/同一意图对账，
+没有清除 pendingPush 或创建第二业务 key。已有文件预览按选中 path 从当前快照取行，
+避免同路径缓存切换后继续显示上一引用的 inline bytes。首次未缓存切换仍遵循原加载/文件列表行为。
+
+原版 tag 视图的 ActivityPanel 与页面上下文仍沿 activeBranch；本批按原呈现保留，不能把
+该徽标或上下文字段当作 tag 快照来源证明。本批没有新增 Agent 上下文合同或推断 Agent 写权限。
+
+固定检查源码为 `2780ea5e4c9778f390ac8e6566c0820bcb2321b9`。产品/消费者范围为 10 文件
++217/-42；其中后续三次夹具修正没有修改产品。原 SDK 为
+`sha256:3007729eb192341a4f004a88e42e1e66c94fc67d763acfc96568bd7311116018`，
+实际 Data source/log，1 CPU、4 GiB、swap 同额、pids 256，执行原资源预检和容器实际限额回读。
+
+保留三轮真实失败，均不是通过的验收结果：
+
+- `a537a4dd623f3c4bb02979f67c48c1c2adb4707e`：shared 两项 tsc/i18n 0，46/48，exit 1。
+  新夹具未等实际 file row，并把 commit header 当 file row 点击。
+- `6a153d9531b4bdf7fc0710bebd6e5658078fff71`：47/48，exit 1。
+  新夹具误以为首次未缓存 tag 切换仍保持打开的文件，而原 loading surface 会回到列表。
+- `24f6b4bbe7a516cadea7cb48fd6f365b2c93183b`：47/48，exit 1。
+  预访问 tag 的夹具仍使用测试 gcTime=0，缓存立即回收。最终仅此消费者改为两宿主实际
+  5 分钟寿命，先断言真实 tag 缓存已加载，finally 清理，没有放宽正文/旧内容断言。
+
+原始日志在 CI Data `verification/projects-tag/{a537a4dd6,6a153d953,24f6b4bbe,2780ea5e4}`。
+
+最终原消费者结果与故障反证：
+
+- `project-git.test.tsx` 22 项、`project-branch-review.test.tsx` 15 项、
+  `project-git-native.test.ts` 11 项，共 48/48。新增 6 项 tag、2 项延迟 branch mutation；
+  其余原读取、原 review/merge 与 UNKNOWN 消费者未移除。
+- 六项 tag 消费实际挂载原 ProjectsView，覆盖同名 tag/branch、snapshot/懒加载 file、
+  缓存 inline preview、Native local→tag readonly、坏 tag 不回退、旧身份晚到响应。
+  两项写围栏消费原 useProjectBranchActions 和真实 QueryClient 的异步 onMutate，
+  确认 tag 切换后旧创建/删除提交不派发。不是完整浏览器弹窗生命周期验收。
+- 五项独立变异分别移除 tag 菜单、懒加载 tag 目标、local readonly、实际 mutation 派发前
+  owner 检查、当前快照预览行；原消费者均实际 AssertionError/exit 1，逐字恢复 SHA 相同。
+  还原后 tag 六项、branch/preview 三项分别通过；不使用仅实现镜像的断言充当反证。
+
+原 frozen pnpm/npm 安装、shared production/test/Web/Desktop 四项 tsc、原 i18n check
+均 exit 0；容器实际终态 exit 0、OOM=false，随后回读容器已不存在。两宿主通过实际
+require.resolve 核对安装的 `@client-kit/platform` src/profile-assets，各 1040 文件逐字一致；
+最终 GitHub 归档 3456 输入与实际检查 source 逐字一致。回执见
+[projects-tag-20261027.json](projects-tag-20261027.json)，SHA-256
+`a38f75bd80eb95e38ce0eb1fe2a275c85f4b22e475d6ac2e1a79f9e7fb9aa05d`。
+检查日志中的既有 React act 警告与 npm config 警告保留，未隐藏或把失败退出改为成功。
+
+上述为共享真实 UI/hook + 脚本化 BFF/Native Git transport 和类型检查；没有跑真实
+repository/Relay 权限环境、完整浏览器/Windows 设备、构建、部署或 Mobile 验收。
+没有修改草稿、发布签名、UNKNOWN 结果或服务器写协议。旧历史数据不补造；本批只恢复
+可信现有 tag 的原读取/只读交互，不声明完成所有 Projects 操作或一期发布。
+归档审计完成后 source 缓存可复用，原日志/回执继续保留。
