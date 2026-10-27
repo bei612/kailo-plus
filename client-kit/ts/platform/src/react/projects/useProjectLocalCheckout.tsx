@@ -18,7 +18,7 @@ import { useFocusedRefetchInterval } from "./useProjectAppFocus";
 
 export type ProjectCheckoutSource = { source: "remote" | "local"; onChange: (source: "remote" | "local") => void };
 
-export function useProjectLocalCheckout(host: ProjectsHost, repository: Repository, branch: string, selection: ProjectCheckoutSource) {
+export function useProjectLocalCheckout(host: ProjectsHost, repository: Repository, branch: string, selection: ProjectCheckoutSource, readOnly = false) {
   const t = useUiT();
   const checkout = host.git?.checkout;
   const queryClient = useQueryClient();
@@ -29,9 +29,11 @@ export function useProjectLocalCheckout(host: ProjectsHost, repository: Reposito
     activeOwner.current = owner;
     return () => { activeOwner.current = null; };
   }, [owner]);
-  const source = checkout ? selection.source : "remote";
+  const readOnlyRef = React.useRef(readOnly);
+  readOnlyRef.current = readOnly;
+  const source = checkout && !readOnly ? selection.source : "remote";
   const selectSource = (source: "remote" | "local") => {
-    if (activeOwner.current === owner) selection.onChange(source);
+    if (activeOwner.current === owner && (!readOnlyRef.current || source === "remote")) selection.onChange(source);
   };
   const refetchInterval = useFocusedRefetchInterval(60_000);
   const ref = { repository: repository.repoAddress, defaultBranch: branch, baseBranch: repository.defaultBranch };
@@ -51,6 +53,7 @@ export function useProjectLocalCheckout(host: ProjectsHost, repository: Reposito
     onMutate: () => ({ owner }),
     mutationFn: async (action: "clone" | "push" | "pull" | "open") => {
       if (!checkout || activeOwner.current !== owner) throw new Error("Local checkout unavailable");
+      if (readOnlyRef.current && action !== "open") throw new Error("Local checkout unavailable");
       if (action === "clone") { await checkout.cloneProjectRepository(ref); selectSource("local"); }
       if (action === "push") await checkout.pushProjectLocalRepository({ ...branchRef,
         branchName: status.data?.pendingPush?.branch ?? branchRef.branchName });
@@ -75,7 +78,7 @@ export function useProjectLocalCheckout(host: ProjectsHost, repository: Reposito
       ]);
     },
   });
-  return { available: Boolean(checkout), source, selectSource, status, snapshot, mutation };
+  return { available: Boolean(checkout), readOnly, source, selectSource, status, snapshot, mutation };
 }
 
 export type ProjectLocalCheckoutState = ReturnType<typeof useProjectLocalCheckout>;
@@ -102,17 +105,17 @@ export function ProjectLocalCheckoutControls({ state }: { state: ProjectLocalChe
       <DropdownMenuContent align="start">
         <DropdownMenuRadioGroup value={state.source} onValueChange={value => state.selectSource(value === "local" ? "local" : "remote")}>
           <DropdownMenuRadioItem value="remote"><Cloud className="h-4 w-4"/>{t("projects.checkout.remote")}</DropdownMenuRadioItem>
-          <DropdownMenuRadioItem value="local" disabled={!local}><HardDrive className="h-4 w-4"/>{t("projects.checkout.local")}</DropdownMenuRadioItem>
+          <DropdownMenuRadioItem value="local" disabled={!local || state.readOnly}><HardDrive className="h-4 w-4"/>{t("projects.checkout.local")}</DropdownMenuRadioItem>
         </DropdownMenuRadioGroup>
-        {cloneAvailable ? <DropdownMenuItem disabled={busy} onSelect={() => run("clone")}><DownloadCloud className="h-4 w-4"/>{t("projects.checkout.clone")}</DropdownMenuItem> : null}
+        {cloneAvailable && !state.readOnly ? <DropdownMenuItem disabled={busy} onSelect={() => run("clone")}><DownloadCloud className="h-4 w-4"/>{t("projects.checkout.clone")}</DropdownMenuItem> : null}
       </DropdownMenuContent>
     </DropdownMenu>
     {state.status.error ? <p className="text-xs text-destructive" role="alert">{t("projects.checkout.failed")}</p> : null}
     {pending ? <p className="break-all text-xs text-muted-foreground" role="status">{t(pending.outcome === "conflict" ? "projects.checkout.conflict" : "projects.checkout.unknown")} {pending.branch} · {pending.newCommit.slice(0, 7)}</p> : null}
     {local ? <>
-      {status?.canPull && !pending ? <Button className={actionClass} disabled={busy} onClick={() => run("pull")} size="sm" type="button" variant="ghost">
+      {!state.readOnly && status?.canPull && !pending ? <Button className={actionClass} disabled={busy} onClick={() => run("pull")} size="sm" type="button" variant="ghost">
         <DownloadCloud className="h-3.5 w-3.5"/>{t("projects.checkout.pull")} {status?.behindCount ? status.behindCount : ""}
-      </Button> : status?.canPush ? <Button className={actionClass} disabled={busy} onClick={() => run("push")} size="sm" type="button" variant="ghost">
+      </Button> : !state.readOnly && status?.canPush ? <Button className={actionClass} disabled={busy} onClick={() => run("push")} size="sm" type="button" variant="ghost">
         {state.mutation.isPending && state.mutation.variables === "push" ? <Loader2 className="h-3.5 w-3.5 animate-spin"/> : <UploadCloud className="h-3.5 w-3.5"/>}
         {t(pending ? "projects.checkout.retry" : "projects.checkout.push")} {status?.aheadCount ? status.aheadCount : ""}
       </Button> : null}

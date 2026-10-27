@@ -8,17 +8,17 @@ import { useQueries, useQuery } from "@tanstack/react-query";
 import type { ProjectsHost } from "./projectEnumeration";
 import type { Repository } from "./projectModels";
 import type { ProjectPullRequest } from "./projectPullRequests.mjs";
-import type { ProjectRepoSnapshot } from "./projectGit";
+import { projectTagTarget, type ProjectRepoSnapshot } from "./projectGit";
 
 type PullRequestRef = Pick<ProjectPullRequest, "id" | "commit"> | null | undefined;
 
 export function useProjectRepoSnapshotQuery(host: ProjectsHost, project: Repository | null | undefined,
-  branchName?: string | null, pullRequest?: PullRequestRef, enabled = true) {
+  branchName?: string | null, pullRequest?: PullRequestRef, enabled = true, tag?: { name: string; commit: string } | null) {
   const selectedBranch = branchName ?? project?.defaultBranch ?? null;
   return useQuery({
     enabled: Boolean(enabled && host.git && project),
     queryKey: ["project", host.scopeKey, project?.id ?? "none", "repo-snapshot", selectedBranch ?? "default",
-      pullRequest?.id ?? "none", pullRequest?.commit ?? "none", "no-tag", "no-tag-commit"],
+      pullRequest?.id ?? "none", pullRequest?.commit ?? "none", tag?.name ?? "no-tag", tag?.commit ?? "no-tag-commit"],
     queryFn: () => {
       if (!project || !host.git) throw new Error("No project selected.");
       return host.git.getProjectRepoSnapshot({
@@ -27,6 +27,7 @@ export function useProjectRepoSnapshotQuery(host: ProjectsHost, project: Reposit
         baseBranch: project.defaultBranch,
         targetCommit: pullRequest?.commit ?? null,
         targetRef: pullRequest ? `refs/nostr/${pullRequest.id}` : null,
+        ...(tag ? projectTagTarget(tag) : {}),
       });
     },
     staleTime: 30_000,
