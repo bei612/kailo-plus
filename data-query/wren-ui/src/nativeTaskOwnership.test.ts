@@ -1204,6 +1204,8 @@ describe('original standalone REST explanation HTTP and history consumers', () =
           status: AskResultStatus.FINISHED,
           type: AskResultType.GENERAL,
           completion: { queryId, content: 'Original REST explanation' },
+          response: [],
+          error: null,
         });
       return Readable.from([
         'data: {"message":"Original REST explanation"}\n\n',
