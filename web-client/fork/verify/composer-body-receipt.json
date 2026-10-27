@@ -1,0 +1,45 @@
+{
+  "source_commit": "4fd9753f618c14275ed2afbc4412ff3691f3b4f7",
+  "sdk": "sha256:3007729eb192341a4f004a88e42e1e66c94fc67d763acfc96568bd7311116018",
+  "source_directory": "/volumes/data/kailo/verification/composer-body/31a2c67c3/source",
+  "source_inputs_checked": 3454,
+  "source_mismatches": [],
+  "installed_platform_source_files_each_host": 1039,
+  "cpu": 1,
+  "memory_bytes": 4294967296,
+  "pids_limit": 256,
+  "positive": {
+    "shared": 12,
+    "web": 74,
+    "native": 28,
+    "typechecks": [
+      "shared-production",
+      "shared-test",
+      "web",
+      "desktop"
+    ],
+    "i18n_check": 0
+  },
+  "negative": {
+    "mutation": "remove DM Agent refusal in original shared controller and installed Web file dependency",
+    "exit": 1,
+    "restored_web": 2,
+    "restored_controller": 4,
+    "restored_bytes_identical": true
+  },
+  "job_directory": "/volumes/data/kailo/verification/composer-body/4fd9753f6",
+  "files_sha256": {
+    "check.log": "20a99be424024a2fed883f62afd9a37c2c2abb752cae38b8fa7b23299405a99a",
+    "result.log": "07348efd479d0209aa78e1669a1804af2a0034640a3f856590355fae4ffd7c95",
+    "limits.log": "807ff367b0ee7e636a7a2a361ef095c528d7c0421f7fa2ae602117cdb5cb64b6",
+    "preflight.log": "e4ad346f6dda350803eb027640437088982622dbb15a0eb47b66aea1265ef78b",
+    "oom.log": "2ed27c1421e6928dbe13dbfdb5c59e1045b30341fe7ebe05700006bc5ac572c0",
+    "tmp/negative.log": "a538e4237f6cf8cbb4e6ca8c99e1cfb142f12b3a4503392d13300c783de6db70",
+    "tmp/negative-exit.log": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+    "tmp/original.sha256": "109c35179c9e03f46722feb8c4e53aa266bd2c893f58cb4c56739577950f7c30",
+    "tmp/restored.sha256": "109c35179c9e03f46722feb8c4e53aa266bd2c893f58cb4c56739577950f7c30",
+    "tmp/restored.log": "7e88639e3746f2d681db59385de97617469b952667731049bb6963334d9dae6b",
+    "tmp/controller-restored.log": "ec230a598d1eed0d4ed51d9c609ce7ab80d178e7c15c3e2c86fb68f187112d8a"
+  },
+  "scope": "original consumers and source-byte verification; no packaging, deployment, real browser or device acceptance"
+}
