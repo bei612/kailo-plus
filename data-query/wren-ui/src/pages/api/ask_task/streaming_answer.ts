@@ -56,10 +56,17 @@ export default async function handler(
       nativeIdentityScope: req.headers['x-kailo-native-identity-scope'],
     } as unknown as IContext;
     const authorize = async () => {
+      // The nested reader selects its mode again after asynchronous work.
+      // Retiring a delivery must not turn this governed stream into an
+      // independent read, nor may a standalone stream outlive its mode.
+      if (isGovernedQueryMode() !== bound)
+        throw new NativeQueryRefusal(412, 'QUERY_ADMISSION_UNAVAILABLE');
       if (bound)
         await new AskingResolver()
           .getThreadResponseNestedResolver()
           .answerDetail(response, {}, context);
+      if (isGovernedQueryMode() !== bound)
+        throw new NativeQueryRefusal(412, 'QUERY_ADMISSION_UNAVAILABLE');
     };
     await authorize();
     const stream = await wrenAIAdaptor.streamTextBasedAnswer(queryId);
