@@ -664,7 +664,9 @@ describe('original native planning HTTP stream and HUMAN task owner', () => {
         .mockResolvedValue(general(content) as any);
       const graphql = new ApolloServer({
         typeDefs,
-        resolvers: { Query: { askingTask: new AskingResolver().getAskingTask } },
+        resolvers: {
+          Query: { askingTask: new AskingResolver().getAskingTask },
+        },
         context: () => ctx,
       });
       try {
@@ -1198,15 +1200,13 @@ describe('original standalone REST explanation HTTP and history consumers', () =
     jest.mocked(bindingServiceCall).mockClear();
     ask = jest.fn(async () => ({ queryId }));
     stream = jest.fn(async () => {
-      jest
-        .mocked(components.wrenAIAdaptor.getAskResult)
-        .mockResolvedValue({
-          status: AskResultStatus.FINISHED,
-          type: AskResultType.GENERAL,
-          completion: { queryId, content: 'Original REST explanation' },
-          response: [],
-          error: null,
-        });
+      jest.mocked(components.wrenAIAdaptor.getAskResult).mockResolvedValue({
+        status: AskResultStatus.FINISHED,
+        type: AskResultType.GENERAL,
+        completion: { queryId, content: 'Original REST explanation' },
+        response: [],
+        error: null,
+      });
       return Readable.from([
         'data: {"message":"Original REST explanation"}\n\n',
         `data: ${JSON.stringify({ done: true, queryId })}\n\n`,
