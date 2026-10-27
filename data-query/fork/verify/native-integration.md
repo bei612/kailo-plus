@@ -12255,3 +12255,106 @@ matching component artifact, receiver activation or final user acceptance was
 performed. The matching data-query-ui build and deployed operation still require
 the existing release/source admission gates; no CI trust or production state
 was changed.
+
+## 2026-10-27 complete five-file exit gate and original rerun transactions
+
+This follow-up closes the remaining 13 rerun fixture failures recorded above,
+under DD-127/DD-133. Base: `9240e26252c6ead3d967c6fc6b7beede57e9139f`.
+Final tested source: `69bec1c847b40c351ee02049ecb1fe00db8382b7`. Only
+`nativeTaskOwnership.test.ts` and `nativeQueryMode.test.ts` changed; production
+code, dependencies, schema and API/Workflow contracts are byte-identical to
+the base. No authorization, row lock, UNKNOWN or rerun rule was relaxed.
+
+The complete original five-file command at the base actually reproduced
+**13 failed / 225 passed / 6 skipped**. All failures were in bound rerun cases:
+the old array repository omitted `NativeAskingScope.generation`, the project
+row and its binding fence, and returned `{}` as a transaction. The original
+`lockNativeBinding` therefore correctly rejected these fixtures before their
+intended assertions. The other four files passed. The command then stayed
+alive because `nativeQueryMode`'s real `common` import initialized upstream
+background intervals; the original bounded command exited **124**. Both the
+assertion failure and process-lifecycle failure remain recorded, rather than
+being relabeled as passed or excluded.
+
+The 13 original cases and two adjacent bound ACK cases now use the original
+Knex migrations, actual project/thread/response rows and AskingTaskRepository
+in SQLite and PostgreSQL. Generation is explicit. `forUpdate`, project/task
+locks, conditional updates, commit and rollback are original implementations.
+The locked-row race commits changed row evidence between the initial read and
+the real transaction; it no longer substitutes a `lockQuery` return value.
+The original assertions still cover refusal to rerun active/unknown/finished
+queries, one new native query ID on the same explicitly retryable task row, lost ACK
+without a second POST, fresh owner/status checks, admission refusal and late
+observation against a replacement query. Async fixtures wait until the actual
+provider read is in flight instead of relying on an in-memory immediate read.
+POST assertions now run outside the adapter callback, so the intentional
+UNKNOWN error handler cannot swallow an assertion failure.
+
+Three additional original consumers cover a committed project binding fence,
+`registerNativeQuery`'s persisted execution-key set at rerun, and two concurrent
+reruns sharing the same task. The execution-key case proves the local captured
+checkpoint check; its admission callback is explicit fixture input, not proof
+that a live Core execution settled. The existing provider/admission fixtures
+remain visible boundaries; real repository transactions are not mocked.
+
+The mode fixture returns the actual initialized `common` object. A temporary
+call-through spy records only interval handles created by that initialization;
+its teardown clears those handles and destroys its own original Knex pool.
+The original resolver and initialization run unchanged. No `forceExit`, hidden
+`unref`, new skip, test deletion or filtering of the complete gate was used.
+
+### Complete checks, actual faults and restored source
+
+The existing Node 18/Yarn installation was reused after exact package/lock/
+configuration and unchanged local shared-source comparison. No dependency
+installation or large cache copy occurred. All new writes remained on actual
+Data, without clearing the older NVMe cache. The immutable original Node image
+was `sha256:f9ab18e354e6855ae56ef2b290dd225c1e51a564f87584b9bd21dd651838830e`
+(Node 18.20.8, TypeScript 5.2.2, Prettier 3.2.5). The check container had
+4 CPU / 4 GiB and equal swap; isolated PostgreSQL had 1 CPU / 2 GiB and equal
+swap on a private internal network. Actual limits were read back.
+
+At the final fixed source:
+
+- Original complete `nativeTaskOwnership`, `nativeAskingQuery`, `nativeQueryMode`,
+  `askingStream` and `nativeTextAnswer`: **5 suites passed, 241 passed** and
+  **6 original database-conditional cases not run in that command**. It exited
+  naturally with **0**, without the base's outstanding tracker handles.
+- The complete `nativeTaskOwnership` file was then run with both original
+  `WREN_TEST_POSTGRES_URL` and `WREN_QUERY_TEST_DATABASE_URL` supplied to private
+  PostgreSQL: **134 passed / 0 skipped**, including all six migration/cascade
+  cases omitted by the first command. These overlap the first run; do not sum
+  241 and 134 as distinct tests. No case in the five-file gate remains unrun.
+- Full `tsc --noEmit --pretty false`, original Next lint and Prettier: **0**.
+- In the private execution snapshot, removing the rerun status exclusion caused
+  **11 assertion failures**; removing the registered execution-set comparison
+  **1**; using the earlier snapshot instead of the locked current row **2**;
+  ignoring the original project binding fence **1**. Each fault ran the actual
+  18-case PostgreSQL rerun group and exited **1** from assertions. The other
+  116 cases were not selected for those deliberate fault probes.
+- After byte-for-byte restoration of both temporarily altered product files,
+  the complete five files again passed **241** and the complete PostgreSQL file
+  **134**, naturally exiting **0**. All **617** actual GitHub input blobs were
+  checked against the final source after restoration. Containers, private
+  PostgreSQL and the private network were removed and absence read back.
+
+The first corrected fixed source `f392be495` had already passed the same
+positive/static commands. The final test-only change moves POST assertions
+outside UNKNOWN handling; its checks and faults above are separate actual
+results. The base failure, first corrected result and final result are all
+preserved in the receipt, not collapsed into one latest-tree claim.
+
+Evidence directory:
+`/volumes/data/kailo/verification/buzz-r10/wren-rerun-69bec1c847b40c351ee02049ecb1fe00db8382b7-check`.
+`receipt.json` SHA-256:
+`f5cf182d783375cc2e79ee31def619c53209fe3e73d4f41b9697da806687b0d3`.
+Local handoff: `/tmp/kailo-wren-rerun-69bec1c84-receipt.json`.
+The base failure remains under
+`/volumes/data/kailo/verification/buzz-r10/wren-rerun-9240e26252c6ead3d967c6fc6b7beede57e9139f-baseline`.
+The receipt links exact command logs, exits, counts, fixed input manifest and
+restoration evidence.
+
+This establishes the original five-file exit gate, not the entire Wren test
+inventory or live user acceptance. There was no live IdP/Core/model/SQL backend,
+matching artifact build, receiver activation, CI trust change or deployment.
+The existing release and full deployed-operation gates remain applicable.
