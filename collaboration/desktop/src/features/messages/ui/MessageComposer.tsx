@@ -459,6 +459,7 @@ function MessageComposerImpl({
     mentionOpen: mentions.isMentionOpen,
     mention: event => mentions.handleMentionKeyDown(event, { isCodeContext: () => isMentionCodeContext(richText.editor) }),
     selectMention: selectMentionSuggestion, linkEditor,
+    cancelEdit: editTarget && !isSubmitLocked && !isSending ? onCancelEdit : undefined,
   });
   useComposerPasteHandler({
     editor: richText.editor,

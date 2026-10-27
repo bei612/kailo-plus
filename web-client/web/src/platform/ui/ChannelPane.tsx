@@ -2036,6 +2036,7 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
       mentionOpen: humanSuggestions.length > 0,
       mention: event => composerMentions.handleMentionKeyDown(event, { isCodeContext: () => isMentionCodeContext(richText.editor) }),
       selectMention: selectHuman, linkEditor,
+      cancelEdit: editTarget && !sending ? onCancelEdit : undefined,
     })}
     toolbar={{ layoutMode, composerDisabled: disabled || sending, customEmoji,
       addressedAgents: disabled || sending || editTarget ? [] : addressLock.lockedAgents,
