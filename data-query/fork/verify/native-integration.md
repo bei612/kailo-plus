@@ -12883,3 +12883,19 @@ claimed as a passing run. CI logs and receipt are at
 receipt SHA-256 `4e1c4bf6922e3635d4b4e79e45c309647d5068b0e891818b1790f5c42d2604d9`.
 These are scripted classification and model boundaries, not live integration,
 UI acceptance, a release artifact or a deployment.
+
+Cross-review also identified the separate interval after the explanation task
+was queued and before it first ran. Fixed source
+`68e45b31393bd8f4e85e15dd6c19a2e86880f4e3` checks the same cache object and
+GENERAL/finished state at the original generator entry, before `pipeline.run`;
+the original post-return check remains. Three real Hamilton pipelines and the
+real LiteLLM provider were queued, stopped before yielding, and then awaited;
+the substituted remote transport was not called. Removing the entry guard
+caused **3 assertion failures**, and byte restoration returned GENERAL to
+**14/14** and SQL to **20/20**. Ruff and format-check passed, **209** input
+blobs matched, and the container exited 0 without OOM and was removed. The
+original image, limits and substituted boundaries remain as documented above.
+CI receipt `wren-general-recovery-68e45b313-fault-queued/receipt.json` under
+the same verification directory has SHA-256
+`3ea22194e5af29c53afa32c6ca754694b132f0ae233e87ea7b92c860693dd379`.
+This does not assert cancellation of a model request already dispatched.
