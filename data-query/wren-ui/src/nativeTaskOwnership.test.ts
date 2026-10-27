@@ -625,6 +625,31 @@ describe('original native planning HTTP stream and HUMAN task owner', () => {
     expect(nativeStream).toHaveBeenCalledTimes(1);
     expect(loadQueryDelivery).not.toHaveBeenCalled();
   });
+  it.each(['before-chunk', 'during-authorization'])(
+    'governed stream refuses mode retirement %s instead of exposing its original task as standalone',
+    async (when) => {
+      if (when === 'before-chunk') {
+        nativeStream.mockImplementation(async () => {
+          standalone();
+          return Readable.from([
+            'data: {"message":"private governed reasoning"}\n\n',
+            `data: ${JSON.stringify({ done: true, queryId })}\n\n`,
+          ]);
+        });
+      } else {
+        jest
+          .mocked(components.askingTaskRepository.findOneBy)
+          .mockImplementation(async (where) => {
+            // The resolver's second original task read follows its actual
+            // captured-MDL/source checks. Retire only after the native GET.
+            if (nativeStream.mock.calls.length && 'id' in where) standalone();
+            return structuredClone(task);
+          });
+      }
+      expect(await (await send()).text()).toBe('');
+      expect(nativeStream).toHaveBeenCalledTimes(1);
+    },
+  );
   it.each(['POST', 'DELETE'])(
     'standalone stream rejects %s without a native read',
     async (method) => {
