@@ -137,6 +137,13 @@ Cells 原上传的源码复核另发现未闭合边界：原 MIME 探测异步�
 受管 FILE_STORAGE 的 release/binding 继续受原门禁约束。具体时序与所需验证见
 [原上传记录](file-storage/fork/verify/native-identity.md)。
 
+受管上传复制边界后继固定 `c0f7d9b1f`：原对象复制失败时不继续写元数据，复制
+成功后写元数据前重新核验同一执行；已发生的复制保持原 UNKNOWN 对账。原 put
+handler **5/5**、S3 原消费者 **15 个子例**及格式/vet 通过，两项故障均被检出并
+逐字恢复；验证中的对象存储与部分 RPC 为隔离替身。这只闭合上述复制后副作用边界，
+不解除 MIME/live head 原子性与 FILE_STORAGE 正式发布门禁，见
+[复制边界回执](file-storage/fork/verify/native-copy-boundary-receipt.json)。
+
 Wren 原 Ask 流固定 `6f32bac58`：STANDALONE 只消费同 queryId 的原生完成，
 EOF 不造完成事件；流执行中模式改变会停止旧观察。原 HTTP 65、Hook/SQLite 58
 项、类型、格式和 lint 通过，三次实际故障被检出、逐字恢复后通过。证据见
