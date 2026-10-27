@@ -1594,6 +1594,119 @@ describe("DD-146 original send flow: clear at Send, restore on failure", () => {
     expect(input(host).textContent).toBe("new edit");
   });
 
+  const draftGif = {slug:"draft-gif",title:"Draft GIF",url:"https://static.klipy.com/draft.gif",previewUrl:"https://static.klipy.com/draft-preview.gif",width:40,height:30,previewWidth:40,previewHeight:30,size:99};
+  function enableDraftGif() {
+    vi.stubGlobal("IntersectionObserver", class { observe() {} unobserve() {} disconnect() {} });
+    vi.stubGlobal("matchMedia", (query:string) => ({matches:false,media:query,addEventListener() {},removeEventListener() {},addListener() {},removeListener() {}}));
+    state.gifs = [draftGif];
+  }
+  async function chooseDraftGif(host: HTMLElement) {
+    await vi.waitFor(()=>expect(host.querySelector('[data-testid="composer-emoji-button"]')?.getAttribute("aria-label")).toBe("Insert emoji or GIF"));
+    await click(host.querySelector<HTMLElement>('[data-testid="composer-emoji-button"]')!);
+    await vi.waitFor(()=>expect(document.querySelector('[data-testid="composer-gif-tab"]')).not.toBeNull());
+    const tab = document.querySelector<HTMLElement>('[data-testid="composer-gif-tab"]')!;
+    await act(async()=>tab.dispatchEvent(new MouseEvent("mousedown",{bubbles:true,button:0})));
+    await click(tab);
+    await vi.waitFor(()=>expect(document.querySelector('[data-testid="klipy-gif-grid"] button')).not.toBeNull());
+    await click(document.querySelector<HTMLElement>('[data-testid="klipy-gif-grid"] button')!);
+    await settle();
+  }
+
+  it("persists a GIF-only unsent draft, restores it on return and sends one Markdown image without upload", async () => {
+    enableDraftGif();
+    const {upload} = uploader();
+    const host = await render(composer("gif-only", upload));
+    await chooseDraftGif(host);
+    expect(loadDraftEntry("gif-only")).toMatchObject({content:"",pendingImeta:[{sha256:"",type:"image/gif",url:draftGif.url}]});
+    await rerender(composer("gif-other", upload));
+    expect(host.querySelector('[data-testid="composer-gif-attachment"]')).toBeNull();
+    await rerender(composer("gif-only", upload));
+    expect(host.querySelectorAll('[data-testid="composer-gif-attachment"]')).toHaveLength(1);
+    expect(upload).not.toHaveBeenCalled();
+    await click(button(host,"platform.send"));
+    await vi.waitFor(()=>expect(state.publish).toHaveBeenCalledOnce());
+    expect(state.publish.mock.calls[0][1]).toBe(`![image](${draftGif.url})`);
+    expect(state.publish.mock.calls[0][2]).toEqual([]);
+  });
+
+  it("restores a confirmed file and selected GIF as distinct outgoing media", async () => {
+    enableDraftGif();
+    const {upload,uploads} = uploader();
+    const host = await render(composer("gif-mixed", upload));
+    await type(input(host), "mixed");
+    await attachPending(host);
+    await act(async()=>uploads[0]!.resolve(descriptor));
+    await chooseDraftGif(host);
+    expect(loadDraftEntry("gif-mixed")?.pendingImeta).toHaveLength(2);
+    await rerender(composer("other", upload));
+    await rerender(composer("gif-mixed", upload));
+    await click(button(host,"platform.send"));
+    await vi.waitFor(()=>expect(state.publish).toHaveBeenCalledOnce());
+    expect(state.publish.mock.calls[0][1]).toBe(`mixed\n![image](${draftGif.url})`);
+    expect(state.publish.mock.calls[0][2]).toEqual([expect.objectContaining({sha256:descriptor.sha256})]);
+    expect(upload).toHaveBeenCalledOnce();
+  });
+
+  it("restores selected edit GIFs without re-adding the image already present in the edited body", async () => {
+    enableDraftGif();
+    const publish = vi.fn().mockResolvedValue(undefined);
+    const original = "original\n![image](https://static.klipy.com/original.gif)";
+    const target = {id:"e".repeat(64),author:"Alice",pubkey:"alice",body:original,createdAt:1,time:"",depth:0,tags:[]};
+    const edit = <Composer draftIdentity="alice" draftKey="gif-edit" editTarget={target} onPublish={publish}/>;
+    const host = await render(edit);
+    await chooseDraftGif(host);
+    await rerender(<Composer draftIdentity="alice" draftKey="other"/>);
+    await rerender(edit);
+    expect(host.querySelectorAll('[data-testid="composer-gif-attachment"]')).toHaveLength(1);
+    await click(button(host,"platform.send"));
+    await vi.waitFor(()=>expect(publish).toHaveBeenCalledOnce());
+    expect(publish.mock.calls[0][0]).toBe(`${original}\n![image](${draftGif.url})`);
+    expect(publish.mock.calls[0][1]).toEqual([]);
+  });
+
+  it("removes a restored GIF-only draft without resurrecting it on the next visit", async () => {
+    enableDraftGif();
+    const {upload} = uploader();
+    const host = await render(composer("gif-remove", upload));
+    await chooseDraftGif(host);
+    await rerender(composer("other", upload));
+    await rerender(composer("gif-remove", upload));
+    await click(host.querySelector<HTMLElement>('[data-testid="composer-gif-attachment"] button')!);
+    await settle();
+    expect(loadDraftEntry("gif-remove")).toBeUndefined();
+    await rerender(composer("other", upload));
+    await rerender(composer("gif-remove", upload));
+    expect(host.querySelector('[data-testid="composer-gif-attachment"]')).toBeNull();
+    expect(state.publish).not.toHaveBeenCalled();
+    expect(upload).not.toHaveBeenCalled();
+  });
+
+  it("keeps an unsent GIF in its identity draft and preserves the UNKNOWN key on return", async () => {
+    enableDraftGif();
+    state.publish.mockRejectedValue(new TransportError("lost GIF response"));
+    const {upload} = uploader();
+    const identityComposer = (identity:string) => <Composer workspaceId="workspace-a" draftIdentity={identity} draftKey="gif-identity" onUpload={upload}/>;
+    const host = await render(identityComposer("alice"));
+    await type(input(host), "authored");
+    await chooseDraftGif(host);
+    await rerender(identityComposer("bob"));
+    expect(host.querySelector('[data-testid="composer-gif-attachment"]')).toBeNull();
+    expect(input(host).textContent).toBe("");
+    await rerender(identityComposer("alice"));
+    expect(host.querySelectorAll('[data-testid="composer-gif-attachment"]')).toHaveLength(1);
+    await click(button(host,"platform.send"));
+    await vi.waitFor(()=>expect(state.publish).toHaveBeenCalledOnce());
+    await settle();
+    const first = state.publish.mock.calls[0];
+    expect(first[1]).toBe(`authored\n![image](${draftGif.url})`);
+    await rerender(composer("other-unknown", upload));
+    await rerender(identityComposer("alice"));
+    await click(button(host,"platform.send"));
+    await vi.waitFor(()=>expect(state.publish).toHaveBeenCalledTimes(2));
+    expect(state.publish.mock.calls[1].slice(1,4)).toEqual(first.slice(1,4));
+    expect(upload).not.toHaveBeenCalled();
+  });
+
   it("restores selected GIF and failed local file across draft visits without uploading", async () => {
     const gif = {slug:"kept-gif",title:"Kept GIF",url:"https://static.klipy.com/kept.gif",previewUrl:"https://static.klipy.com/preview.gif",width:40,height:40,previewWidth:40,previewHeight:40,size:99};
     vi.stubGlobal("IntersectionObserver", class { observe() {} unobserve() {} disconnect() {} });

@@ -105,6 +105,7 @@
     "./react/notifications/foregroundReady": "./src/react/notifications/foregroundReady.ts",
     "./react/link-preview": "./src/react/link-preview/index.ts",
     "./react/gifs": "./src/react/gifs/index.ts",
+    "./react/gifs/draftMedia": "./src/react/gifs/draftMedia.ts",
     "./linkPreview": "./src/react/link-preview/linkPreview.ts",
     "./linkPreviewSnapshot": "./src/react/link-preview/linkPreviewSnapshot.ts",
     "./linkPreviewStylePreference": "./src/react/link-preview/linkPreviewStylePreference.ts",

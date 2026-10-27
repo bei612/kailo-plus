@@ -60,7 +60,7 @@ import {
 } from "@/platform/bff-client";
 import { useGifCapability } from "@/platform/gif-capability";
 import { ComposerLinkPreviewCards, ComposerLinkPreviewPreparing, useComposerLinkPreviews, type PrepareLinkPreview } from "@client-kit/platform/react/link-preview";
-import { ComposerGifAttachments, withGifLines } from "@client-kit/platform/react/gifs";
+import { ComposerGifAttachments, withGifLines, gifAttachment, splitDraftGifMedia } from "@client-kit/platform/react/gifs";
 import type { WebGifItem } from "@client-kit/contracts";
 import { useTypingBroadcast } from "./useTypingBroadcast";
 import { platformQueries } from "@/platform/ui/queries";
@@ -1538,8 +1538,9 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
     richText.setContent(content);
     setDraft(content);
     setPreviewContent(content);
-    setPendingGifs([]);
-    setPending((saved?.pendingImeta ?? editableMedia).map(({ uploaded, ...descriptor }) => ({
+    const restoredMedia = splitDraftGifMedia(saved?.pendingImeta ?? editableMedia);
+    setPendingGifs(restoredMedia.gifs);
+    setPending(restoredMedia.attachments.map(({ uploaded, ...descriptor }) => ({
       name: descriptor.filename ?? descriptor.sha256,
       receivedAt: uploaded,
       descriptor,
@@ -1601,13 +1602,13 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
     if ((recovered?.extras as { restored?: boolean } | undefined)?.restored) {
       savePendingSend(draftKey, { ...recovered!, extras: { ...(recovered!.extras as object), gifs: pendingGifsRef.current } });
     }
-    if (!content.trim() && attachments.length === 0 && !intent.current) { clearDraftEntry(draftKey); return; }
+    if (!content.trim() && attachments.length === 0 && pendingGifsRef.current.length === 0 && !intent.current) { clearDraftEntry(draftKey); return; }
     const previous = loadDraftEntry(draftKey);
     const timestamp = new Date().toISOString();
     saveDraftEntry(draftKey, {
       content, channelId: workspaceId ?? draftChannelId ?? draftKey, selectionStart: content.length, selectionEnd: content.length,
       createdAt: previous?.createdAt ?? timestamp, updatedAt: timestamp, status: "active",
-      pendingImeta: attachments.map(asBlob),
+      pendingImeta: [...attachments.map(asBlob), ...pendingGifsRef.current.map(gifAttachment)],
       spoileredAttachmentUrls: [...attachmentActions.spoileredAttachmentUrls], ...(intent.current ? { sendIntent: intent.current } : {}),
       mentionInstallationIds: installationIds,
       mentionRefs: [...humanBindings.current].map(([displayName, pubkey]) => ({displayName, pubkey, ...(knownAgentKeys.has(pubkey) ? {isAgent:true} : {})})),

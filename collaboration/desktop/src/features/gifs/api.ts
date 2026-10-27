@@ -5,7 +5,7 @@
 // whose original and preview come from a registered https origin (the same set the Web reads from
 // the BFF GIF capability view); an unregistered poster is dropped (platform-core gifs.rs normalize).
 import type { WebGifItem } from "@client-kit/contracts";
-import type { ImetaMedia } from "@/features/messages/lib/imetaMediaMarkdown";
+export { gifAttachment, klipyGifFilename } from "@client-kit/platform/react/gifs/draftMedia";
 
 /** The Relay-relative KLIPY endpoints the Relay advertised (native `get_relay_gif_descriptor`). */
 export type RelayGifDescriptor = { searchPath: string; sharePath: string };
@@ -87,33 +87,6 @@ export function normalizeRelayGifs(page: unknown, origins: readonly string[]): W
     });
   }
   return gifs;
-}
-
-/** Original `klipyGifFilename`. */
-export function klipyGifFilename(slug: string): string {
-  const safeSlug = slug
-    .toLowerCase()
-    .replace(/[^a-z0-9-]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 80);
-  return `${safeSlug || "klipy-gif"}.gif`;
-}
-
-/**
- * Original `klipyGifAttachment`: externally hosted media. The empty hash keeps it out of imeta
- * (`buildImetaTags` drops hash-less entries); `buildOutgoingMessage` appends `![image](url)`.
- */
-export function gifAttachment(gif: WebGifItem): ImetaMedia {
-  return {
-    dim: `${gif.width}x${gif.height}`,
-    displayLabel: gif.title,
-    filename: klipyGifFilename(gif.slug),
-    sha256: "",
-    size: gif.size,
-    type: "image/gif",
-    uploaded: 0,
-    url: gif.url,
-  };
 }
 
 type CustomerIdStorage = Pick<Storage, "getItem" | "setItem">;
