@@ -248,7 +248,7 @@ it.each(["en","zh-CN"] as const)("Web unsupported microphone state keeps the ori
   expect(host.querySelector('[data-testid="voice-note-recorder"]')).toBeNull();
 });
 
-function paste(host: HTMLElement, text: string, html: string) {
+function paste(host: HTMLElement, text: string, html: string, files: File[] = []) {
   // jsdom has no system pasteboard; only the browser event payload is supplied.
   class PasteData {
     values = new Map<string, string>();
@@ -268,6 +268,8 @@ function paste(host: HTMLElement, text: string, html: string) {
   vi.stubGlobal("ClipboardEvent", PasteEvent);
   const data = new PasteData();
   data.setData("text/plain", text); data.setData("text/html", html);
+  data.files = files;
+  data.items = files.map(file => ({kind:"file",type:file.type,getAsFile:()=>file}) as DataTransferItem);
   const input = host.querySelector<HTMLElement>('[data-testid="message-input"]')!;
   input.dispatchEvent(new PasteEvent("paste", { bubbles: true, cancelable: true, clipboardData: data }));
 }
@@ -485,6 +487,68 @@ it("publishes the explicit human picker identity and retains it with the same UN
   await settle();
   expect(publish.mock.calls[1]?.[2]).toEqual(publish.mock.calls[0]?.[2]);
   expect(publish.mock.calls[1]?.[4]).toEqual([pubkey]);
+});
+
+const snapshotBytes = new Uint8Array([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a,1,2,3]);
+const snapshotHash = "7f47b756761a46e6d4a4d96f0d8a4448f8449235009d1f3ad1493f5c773c19e8";
+function snapshotHtml(filename: string, sha256 = snapshotHash) {
+  return `<a data-buzz-agent-snapshot="${encodeURIComponent(JSON.stringify({version:1,displayName:"Writer",filename,
+    sha256,size:snapshotBytes.length,type:"image/png"}))}">Writer</a>`;
+}
+
+it.each(["agent", "team"])("pastes a copied %s snapshot through the shared handler and restores its named attachment draft", async kind => {
+  const filename = `Writer.${kind}.png`;
+  const descriptor = {sha256:snapshotHash,size:snapshotBytes.length,type:"image/png",url:`https://relay.invalid/media/${snapshotHash}.png`};
+  const upload = vi.fn().mockResolvedValue(descriptor);
+  const publish = vi.fn().mockResolvedValue({});
+  const props = {workspaceId:"snapshot-workspace",draftIdentity:"alice",draftKey:`paste-${kind}`,onUpload:upload,onPublish:publish};
+  let host = await render(<Composer {...props} />);
+  await type(host.querySelector<HTMLElement>('[data-testid="message-input"]')!, "Keep authored text");
+  await act(async () => paste(host,"Writer",snapshotHtml(filename),[new File([snapshotBytes],"image.png",{type:"image/png"})]));
+  await vi.waitFor(() => expect(upload).toHaveBeenCalledOnce());
+  await settle();
+  expect(upload.mock.calls[0][0].name).toBe(filename);
+  expect(host.querySelector('[data-testid="message-input"]')?.textContent).toBe("Keep authored text");
+  expect(loadDraftEntry(props.draftKey)?.pendingImeta[0]).toMatchObject({...descriptor,filename});
+  expect(publish).not.toHaveBeenCalled();
+  await act(async () => {mounted!.root.unmount();mounted!.host.remove();mounted!.queryClient.clear();mounted=undefined;});
+  host = await render(<Composer {...props} />);
+  expect(host.querySelector('[data-testid="message-input"]')?.textContent).toBe("Keep authored text");
+  expect(loadDraftEntry(props.draftKey)?.pendingImeta[0].filename).toBe(filename);
+  expect(upload).toHaveBeenCalledOnce();
+  await click(button(host,"platform.send"));
+  expect(publish).toHaveBeenCalledOnce();
+  expect(publish.mock.calls[0][0]).toBe("Keep authored text");
+  expect(publish.mock.calls[0][1][0]).toMatchObject({...descriptor,filename});
+});
+
+it("does not trust snapshot HTML naming when bytes mismatch and keeps every ordinary pasted file", async () => {
+  const upload = vi.fn(async (file: File) => ({sha256:snapshotHash,size:file.size,type:file.type,url:`https://relay.invalid/media/${snapshotHash}.png`}));
+  const host = await render(<Composer draftIdentity="alice" draftKey="paste-untrusted" workspaceId="snapshot-workspace" onUpload={upload}/>);
+  const files = [new File([snapshotBytes],"ordinary.png",{type:"image/png"}),new File(["two"],"second.txt",{type:"text/plain"})];
+  await act(async () => paste(host,"Writer",snapshotHtml("Forged.agent.png","0".repeat(64)),files));
+  await vi.waitFor(() => expect(upload).toHaveBeenCalledTimes(2));
+  expect(upload.mock.calls.map(([file])=>file.name)).toEqual(["ordinary.png","second.txt"]);
+  expect(host.querySelector('[data-testid="message-input"]')?.textContent).toBe("");
+});
+
+it.each(["identity", "draft"])("retires an asynchronous snapshot paste when the %s changes before its byte read completes", async changed => {
+  const upload = vi.fn();
+  const Reader = FileReader;
+  let release!: () => void;
+  vi.stubGlobal("FileReader", class extends Reader {
+    override readAsArrayBuffer(blob: Blob) {release=()=>super.readAsArrayBuffer(blob);}
+  });
+  const host = await render(<Composer draftIdentity="alice" draftKey="before" workspaceId="snapshot-workspace" onUpload={upload}/>);
+  await act(async () => paste(host,"Writer",snapshotHtml("Writer.agent.png"),[new File([snapshotBytes],"image.png",{type:"image/png"})]));
+  expect(release).toBeTypeOf("function");
+  expect(upload).not.toHaveBeenCalled();
+  await rerender(<Composer draftIdentity={changed === "identity" ? "bob" : "alice"} draftKey="after" workspaceId="snapshot-workspace" onUpload={upload}/>);
+  await act(async () => {release();await new Promise(resolve=>setTimeout(resolve,30));});
+  await settle();
+  expect(upload).not.toHaveBeenCalled();
+  expect(loadDraftEntry("after")?.pendingImeta ?? []).toEqual([]);
+  expect(host.querySelector('[data-testid="message-input"]')?.textContent).toBe("");
 });
 
 it("pastes original Markdown with the exact copied same-name identity and settles before immediate send", async () => {

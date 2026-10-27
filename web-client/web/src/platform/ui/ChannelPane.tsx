@@ -1483,7 +1483,7 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
     const view = richText.editor?.view;
     if (view) view.dispatch(view.state.tr.scrollIntoView());
   }, [richText.editor]);
-  useComposerPasteHandler({ editor: richText.editor,
+  useComposerPasteHandler({ editor: richText.editor, owner, enabled: !disabled && !sending,
     bindMentionIdentities: pasteBinding.bindPastedMentionIdentities,
     scrollToBottom: scrollAfterPaste, uploadFile: voiceNote.uploadFileWhenIdle,
   });
@@ -2020,11 +2020,6 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
     overlays={<>{linkEditor.card}{linkEditor.dialog}</>}
     formProps={{
       onSubmit: handleSubmit,
-      onPasteCapture: (event) => {
-        if (disabled || sending || !event.clipboardData.files.length) return;
-        event.preventDefault();
-        void attachFilesWhenIdle(event.clipboardData.files);
-      },
       onDragOver: (event) => { if (!disabled && !sending && voiceNote.acceptsAttachment && event.dataTransfer.types.includes("Files")) { event.preventDefault(); setDragging(true); } },
       onDragLeave: (event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragging(false); },
       onDrop: (event) => { setDragging(false); if (!disabled && !sending && event.dataTransfer.files.length) { event.preventDefault(); void attachFilesWhenIdle(event.dataTransfer.files); } },

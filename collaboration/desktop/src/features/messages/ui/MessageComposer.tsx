@@ -461,8 +461,10 @@ function MessageComposerImpl({
     selectMention: selectMentionSuggestion, linkEditor,
     cancelEdit: editTarget && !isSubmitLocked && !isSending ? onCancelEdit : undefined,
   });
+  const pasteOwner = React.useMemo(() => ({}), [session, channelId, effectiveDraftKey, editTarget?.id]);
   useComposerPasteHandler({
     editor: richText.editor,
+    owner: pasteOwner, enabled: !composerDisabled && !isSubmitLocked && !isSending,
     bindMentionIdentities: mentions.bindPastedMentionIdentities,
     scrollToBottom: scrollComposerToBottom,
     uploadFile: voiceNote.uploadFileWhenIdle,
