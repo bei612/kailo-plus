@@ -514,6 +514,11 @@ export default async function handler(
       requestPayload: req.body,
       threadId: newThreadId,
       headers: req.headers as Record<string, string>,
+      beforeResponse: async () => {
+        const currentProject = await projectService.getCurrentProject();
+        if (isGovernedQueryMode() || currentProject.id !== project.id)
+          throw new ApiError('Original summary observation unavailable', 503);
+      },
     });
   } catch (error) {
     await handleApiError({
