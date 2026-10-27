@@ -135,8 +135,8 @@ wire 与预处理 succeeded 含义保留，必须匹配发布 UI 与 AI 制品�
 分别通过；71 与前组重叠，6 个既有条件迁移项本批未执行，REST 另 375 项未选。
 类型、lint、格式通过；Node 五类及 Python 一类实际故障被检出，逐字恢复后全部
 复验通过，617 与 209 个输入一致。Python SDK 为 3.13.5，未冒充生产 3.12 或真实
-模型验收。该批未覆盖 provider usage-only 尾帧，后继修复见下段；GENERAL/NON_SQL
-产品恢复、匹配制品及部署全链仍未验收，详细命令、失败与恢复证据见上述问数记录。
+模型验收。该批未覆盖 provider usage-only 尾帧及 GENERAL/NON_SQL，后继修复见下文；
+匹配制品及部署全链仍未验收，详细命令、失败与恢复证据见上述问数记录。
 
 原 provider 后继固定 `18332ca3f` 修复合法 usage-only 尾帧触发的 choices 越界，
 正文与结束原因取同一响应的原 choice，用量保留原帧事实；空流不制造完成。
@@ -146,7 +146,18 @@ wire 与预处理 succeeded 含义保留，必须匹配发布 UI 与 AI 制品�
 10 个实际异常，伪造 stop 和恢复流消费重试分别触发 7、4 个断言失败，逐字恢复后
 全部复验通过，209 个源码输入一致。provider 仅替换远端模型传输，SQL 20 项仍有
 其原框架/provider/TTL 替身，不等于真实模型或部署全链。此修改影响该 provider
-全部流式调用方，GENERAL/NON_SQL 产品恢复未由此交付；匹配 UI 与 AI 制品门禁保留。
+全部流式调用方，GENERAL/NON_SQL 后继恢复见下段；匹配 UI 与 AI 制品门禁保留。
+
+GENERAL 完整回答后继 AI 固定 `68e45b313`、UI 固定 `d4416cc40`：沿原 Ask 缓存
+保留同 query 且自然 stop 的完整说明，原 GraphQL、页面与独立 JSON/SSE 观察使用
+完整结果并复核当前身份、模式与前缀；不另发 Ask。分类期间停止或回答任务已排队
+但尚未运行时，不再覆盖停止状态或派发模型；已发出的模型请求不据此声称可撤回。
+原 AI Python 3.12 GENERAL **14/14**、SQL **20/20**，UI 原四文件 **303 通过／7
+条件跳过**、原 REST 选定组 **170 通过／375 未选**，不代表完整 UI 套件通过。
+类型、lint、格式通过。三类停止故障及六类 UI 故障均被检出并逐字恢复；原 UI
+另八项无关失败和旧 SQLite 断言波动保留在证据中。真实模型/Core/IdP、匹配新
+UI+AI 制品、部署及浏览器业务尚未验收，详见[原问数记录](data-query/fork/verify/native-integration.md)
+及[UI 回执](data-query/fork/verify/general-ui-recovery-receipt.json)。
 
 前一批 Core 集成固定 `1d0d20b53`：原 SDK 4 CPU / 16 GiB、私有 PG
 1 CPU / 2 GiB，正常主目标 **839 passed / 91 ignored**；显式 Agent/Canvas/审核、
