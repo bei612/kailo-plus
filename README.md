@@ -117,8 +117,18 @@ wire 与预处理 succeeded 含义保留，必须匹配发布 UI 与 AI 制品�
 分别通过；71 与前组重叠，6 个既有条件迁移项本批未执行，REST 另 375 项未选。
 类型、lint、格式通过；Node 五类及 Python 一类实际故障被检出，逐字恢复后全部
 复验通过，617 与 209 个输入一致。Python SDK 为 3.13.5，未冒充生产 3.12 或真实
-模型验收。GENERAL/NON_SQL、provider usage-only 尾帧兼容、匹配制品及部署全链
-仍未验收，详细命令、失败与恢复证据见上述问数记录。
+模型验收。该批未覆盖 provider usage-only 尾帧，后继修复见下段；GENERAL/NON_SQL
+产品恢复、匹配制品及部署全链仍未验收，详细命令、失败与恢复证据见上述问数记录。
+
+原 provider 后继固定 `18332ca3f` 修复合法 usage-only 尾帧触发的 choices 越界，
+正文与结束原因取同一响应的原 choice，用量保留原帧事实；空流不制造完成。
+原 APIError 重试收窄到获取响应，开始消费后不重发模型，避免同 query 混合多轮
+正文与用量。原 AI 镜像 Python **3.12.0** 及匹配锁的真实 LiteLLM/OpenAI 依赖中，
+原 provider **19/19**、SQL 答案 **20/20**、Ruff/格式通过；恢复旧末帧访问触发
+10 个实际异常，伪造 stop 和恢复流消费重试分别触发 7、4 个断言失败，逐字恢复后
+全部复验通过，209 个源码输入一致。provider 仅替换远端模型传输，SQL 20 项仍有
+其原框架/provider/TTL 替身，不等于真实模型或部署全链。此修改影响该 provider
+全部流式调用方，GENERAL/NON_SQL 产品恢复未由此交付；匹配 UI 与 AI 制品门禁保留。
 
 前一批 Core 集成固定 `1d0d20b53`：原 SDK 4 CPU / 16 GiB、私有 PG
 1 CPU / 2 GiB，正常主目标 **839 passed / 91 ignored**；显式 Agent/Canvas/审核、
