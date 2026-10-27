@@ -18,7 +18,12 @@ fn stores_only_ciphertext_and_reopens_the_exact_event() {
     let author = Keys::generate();
     archive.subscribe("chan", &[9], 1).unwrap();
     let event = message(&author, "chan", "top secret plan");
-    assert_eq!(archive.ingest("chan", std::slice::from_ref(&event)).unwrap(), 1);
+    assert_eq!(
+        archive
+            .ingest("chan", std::slice::from_ref(&event))
+            .unwrap(),
+        1
+    );
     let sealed: String = archive
         .conn
         .query_row("SELECT sealed FROM archived_event", [], |row| row.get(0))
@@ -55,7 +60,9 @@ fn large_events_round_trip_through_ordered_chunks() {
     let author = Keys::generate();
     let body = "长".repeat(50_000);
     let event = message(&author, "chan", &body);
-    archive.ingest("chan", std::slice::from_ref(&event)).unwrap();
+    archive
+        .ingest("chan", std::slice::from_ref(&event))
+        .unwrap();
     assert_eq!(archive.read("chan", 1).unwrap(), vec![event]);
 }
 
@@ -65,7 +72,9 @@ fn authenticated_chunks_from_different_events_cannot_be_spliced() {
     let author = Keys::generate();
     let first = message(&author, "chan", &"a".repeat(150_000));
     let second = message(&author, "chan", &"b".repeat(150_000));
-    archive.ingest("chan", std::slice::from_ref(&first)).unwrap();
+    archive
+        .ingest("chan", std::slice::from_ref(&first))
+        .unwrap();
     let first_sealed = archive.seal(&first.as_json()).unwrap();
     let second_sealed = archive.seal(&second.as_json()).unwrap();
     let mut chunks: Vec<&str> = first_sealed.split('.').collect();
@@ -97,7 +106,9 @@ fn deletions_remove_the_archived_target() {
     let archive = store();
     let author = Keys::generate();
     let target = message(&author, "chan", "oops");
-    archive.ingest("chan", std::slice::from_ref(&target)).unwrap();
+    archive
+        .ingest("chan", std::slice::from_ref(&target))
+        .unwrap();
     let deletion = EventBuilder::new(Kind::Custom(9005), "")
         .tag(Tag::parse(["h", "chan"]).unwrap())
         .tag(Tag::parse(["e", &target.id.to_hex()]).unwrap())
@@ -107,7 +118,12 @@ fn deletions_remove_the_archived_target() {
     assert!(!archive.has_event(&target.id.to_hex()).unwrap());
     // A descending history page or an interrupted retry may replay the older
     // target after the delete. It must never resurrect the local copy.
-    assert_eq!(archive.ingest("chan", std::slice::from_ref(&target)).unwrap(), 0);
+    assert_eq!(
+        archive
+            .ingest("chan", std::slice::from_ref(&target))
+            .unwrap(),
+        0
+    );
     assert!(!archive.has_event(&target.id.to_hex()).unwrap());
 }
 
