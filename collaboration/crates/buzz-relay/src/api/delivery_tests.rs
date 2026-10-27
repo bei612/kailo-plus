@@ -1183,8 +1183,9 @@ struct SettlementFixture {
 }
 
 async fn settlement_fixture() -> SettlementFixture {
-    let (state, pool, community, host, author, channel) = fixture().await;
+    let (state, pool, community, host, author, _stream_channel) = fixture().await;
     let controller = Keys::generate();
+    let peer = Keys::generate().public_key();
     let mut tx = pool.begin().await.unwrap();
     sqlx::query("UPDATE relay_members SET role='member' WHERE community_id=$1 AND pubkey=$2")
         .bind(community.as_uuid())
@@ -1198,7 +1199,20 @@ async fn settlement_fixture() -> SettlementFixture {
         .execute(&mut *tx)
         .await
         .unwrap();
+    sqlx::query("INSERT INTO relay_members(community_id,pubkey,role) VALUES($1,$2,'member')")
+        .bind(community.as_uuid())
+        .bind(peer.to_hex())
+        .execute(&mut *tx)
+        .await
+        .unwrap();
     tx.commit().await.unwrap();
+    let (dm, _) = state
+        .db
+        .open_dm(community, &[peer.as_bytes()], author.public_key().as_bytes())
+        .await
+        .unwrap();
+    assert_eq!(dm.channel_type.as_str(), "dm");
+    assert_eq!(dm.visibility.as_str(), "private");
     SettlementFixture {
         state,
         pool,
@@ -1206,7 +1220,7 @@ async fn settlement_fixture() -> SettlementFixture {
         host,
         author,
         controller,
-        channel,
+        channel: dm.id,
     }
 }
 
