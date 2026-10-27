@@ -446,12 +446,12 @@ function MessageComposerImpl({
     },
   });
   submitMessageRef.current = submitMessage;
-  const autoSubmitOwner = React.useRef({});
+  const autoSubmitOwner = React.useRef({ draftKey: effectiveDraftKey });
   const autoSubmitEnabled = React.useRef(autoSubmitDraftKey !== null && autoSubmitDraftKey === effectiveDraftKey);
   const mounted = React.useRef(true);
   React.useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   useComposerAutoSubmit({ owner: autoSubmitOwner.current, enabled: autoSubmitEnabled.current, ready: true,
-    active: () => mounted.current, consume: onAutoSubmitComplete, submit: submitMessage });
+    active: () => mounted.current && effectiveDraftKeyRef.current === autoSubmitOwner.current.draftKey, consume: onAutoSubmitComplete, submit: submitMessage });
   const handleEditorKeyDown = composerKeyDown({
     alwaysAddress: handleAlwaysAddressShortcut,
     emoji: emojiAutocomplete.handleEmojiKeyDown, selectEmoji: applyEmojiInsert,
