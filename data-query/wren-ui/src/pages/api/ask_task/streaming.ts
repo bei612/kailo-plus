@@ -117,8 +117,16 @@ export default async function handler(
         nativeIdentityScope: req.headers['x-kailo-native-identity-scope'],
       } as unknown as IContext;
       const resolver = new AskingResolver();
-      const authorize = () =>
-        resolver.authorizeNativeAskingTask(queryId, context);
+      const authorize = async () => {
+        // A stream admitted under governance cannot become standalone while
+        // its original asynchronous task/source checks are in flight.
+        if (!isGovernedQueryMode())
+          throw new NativeQueryRefusal(412, 'QUERY_ADMISSION_UNAVAILABLE');
+        const current = await resolver.authorizeNativeAskingTask(queryId, context);
+        if (!isGovernedQueryMode())
+          throw new NativeQueryRefusal(412, 'QUERY_ADMISSION_UNAVAILABLE');
+        return current;
+      };
       await authorize();
       if (!(await components.askingService.getAskingTask(queryId)))
         throw new NativeQueryRefusal(404, 'NATIVE_OBJECT_UNAVAILABLE');
