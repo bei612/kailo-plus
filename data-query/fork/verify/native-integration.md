@@ -12533,3 +12533,121 @@ Expired/restarted native cache or unavailable completion remains UNKNOWN.
 GENERAL / NON_SQL explanation recovery, actual provider execution, matching
 UI+AI artifacts, browser/IdP/Core/source-SQL E2E and receiver acceptance are not
 claimed. CI trust and live services were not changed; no deployment occurred.
+
+## 2026-10-27 — Original provider usage tails and consumed-stream retry
+
+DD-127 / DD-133 and SS-WRN-GOVERNANCE continue the original SQL-answer
+completion chain. Base `afa04ba8272d1b8e37c54756944ee5426ab037b3`; final fixed
+source `18332ca3f33856dc8db395d24b9bcdcd8870492f` contains product commits
+`3e31b4bc3`, `15d9ca32e` and original formatter output `18332ca3f`.
+The diff is **3 files, +249/-17**, including formatting of the existing provider
+test file. Counts do not measure feature completion.
+
+### Original provider defect and bounded correction
+
+Fixed upstream Wren `c5f02a0391c87420dba78632dcd86073710deb72` and the previous
+Kailo provider both decoded nonempty `choices` into original `StreamingChunk`
+objects, but `connect_chunks` subsequently accessed `choices[0]` on the last
+network frame. A legitimate final usage-only frame has `choices=[]`, causing
+`IndexError` after content was already streamed. A completely empty iterator
+also left the original final `chunk` uninitialized.
+
+The same `providers/llm/litellm.py` loop and
+`providers/llm/__init__.py::connect_chunks` now retain model/index/finish reason
+from the last already decoded choice. Content remains the original concatenated
+chunks; usage remains the actual final response frame's usage. A missing or
+null usage becomes the original empty dictionary; any SDK-provided usage,
+including zero-valued accounting, is preserved. No usage is estimated from
+text. A usage-only trailing frame does not replace choice metadata or trigger
+a content callback. No-choice streams fail explicitly without inventing a
+reply or `stop`. A later choice with no finish reason does not reuse an earlier
+`stop`; `length`, `content_filter` and absent finish reason retain their actual
+values, so the existing SQL-answer completion gate still refuses them.
+
+Review also found that the original `_run` backoff covered the entire stream.
+An actual `openai.APIError` after a partial or stop frame could re-dispatch the
+model under the same query, mixing earlier callbacks with a later attempt's
+returned content and usage. The existing decorator now wraps only original
+response acquisition in `_complete`. Its initial APIError policy remains
+unchanged (3 tries / 60 seconds); after iteration starts, APIError propagates
+without a new acquisition or successful returned result. Direct and Router
+request arguments and the existing internal Router policies are unchanged.
+There is no new retry, task, persistence store, aggregation channel or success
+state. This changes the shared provider's streaming behavior for all its
+callers; it does **not** implement GENERAL / NON_SQL product recovery.
+
+### Actual Python 3.12 consumers and fault restoration
+
+The earlier bare artifact digest `fa633e320...` was not locally resolvable.
+The existing immutable AI image
+`sha256:662fc7a76c259b140355f5b66a083a6ebb1a4403464359ba115b8956431fe182`
+provided `/app/.venv/bin/python`, actually **Python 3.12.0**. Its public
+`pyproject.toml` matched the fixed source byte-for-byte; installed LiteLLM
+**1.79.3**, OpenAI **1.109.1**, Haystack **2.7.0**, backoff **2.2.1**, Pydantic
+**2.12.4** and Langfuse **2.60.10** matched the current Poetry lock. No image pull,
+new artifact build or dependency installation occurred. Fixed GitHub source was
+mounted over the original dependencies; this does not turn the existing image
+into a newly released artifact.
+
+Original resource preflight and actual limit readback preceded execution:
+**2 CPU / 4 GiB / equal swap**, network `none`, read-only container root,
+nonroot test process, actual Data source/tmp/logs. Only this isolated test's
+Haystack telemetry was disabled. The original Ruff **0.2.2** binary from the
+previous verified Data tool directory consumed the current source's existing
+`pyproject.toml`; no formatter policy or project lock changed.
+
+At fixed `18332ca3f`, the original provider file's **19 tests passed** (the prior
+10 plus 9 streaming consumers), natural exit **0**. Actual LiteLLM `ModelResponse`
+and OpenAI `ChatCompletionChunk` objects pass through the original provider,
+Router construction, chunk conversion, aggregation and post-processing. Only
+remote completion transport is replaced. Cases cover real stop/length/filter/
+absent finish metadata, content plus usage-only tails, null or actual usage,
+empty natural replies, empty/usage-only streams, interrupted responses, direct
+and Router APIError after partial/stop, and the unchanged initial acquisition
+retry. No SDK-provided usage was removed to satisfy an empty-dictionary fixture.
+
+The original `test_native_sql_answer_stream.py` also passed **20/20** in this
+same Python 3.12 runtime. Its framework/provider/TTL dependency substitutes
+remain explicit; it is not a live model or full deployed UI-to-model test.
+Original pinned Ruff check and format-check both exited **0**.
+
+Actual mutations in the private fixed-source export were detected:
+
+- Restoring raw `chunk.choices[0]` finish access produced **10 errors**, exit
+  **1**, including the real usage-only-tail `IndexError`; these are errors,
+  not relabeled assertion failures.
+- Replacing the actual finish reason with fabricated `stop` produced
+  **7 assertion failures**, exit **1**.
+- Moving the original backoff back around `_run` produced **4 assertion
+  failures**, exit **1**: direct/Router partial and stop APIError paths attempted
+  multiple acquisitions instead of one.
+
+Both product files were restored byte-for-byte after each mutation. Final
+restored provider **19/19**, original SQL-answer **20/20**, Ruff and format all
+returned **0**. **209 input Git blobs** matched the final GitHub source after
+restoration. The own containers were removed and absence read back; no business
+service, PostgreSQL or network was started or stopped.
+
+Prerequisite failures remain recorded: initial `3e31` metadata inspection exited
+2 because the nonroot process could not read the image root's public pyproject;
+`15d9` then matched its read-only Docker-exported copy but Ruff's parent-directory
+search hit that same unreadable file (exit 2). Neither ran consumers. Explicitly
+passing the actual source pyproject resolved the search; original format-check
+then identified one test file (exit 1), whose pinned formatter output was
+committed before the successful fixed-source consumer run.
+
+CI evidence:
+`/volumes/data/kailo/verification/buzz-r10/wren-provider-tail-18332ca3f-check`.
+`receipt.json` SHA-256:
+`1e5a23af790c489480a0a01b660b28b8f3fcb0f8b9b7abc489f5496e20b7b6f2`.
+Local handoff: `/tmp/kailo-wren-provider-tail-18332ca3f-receipt.json`.
+The receipt links exact logs/exits, mutation counts, input manifest, prior
+failures and actual resource/cleanup facts. SDK command scripts are retained
+in the same directory.
+
+This resolves the previously recorded usage-only-tail source defect and verifies
+the original provider's response shapes in its Python 3.12 dependency runtime.
+It does not claim actual model/Gateway/Bao/accounting acceptance, complete
+GENERAL / NON_SQL recovery, matching new UI+AI artifacts, receiver activation
+or deployed browser/backend E2E. The prior optional-completion compatibility
+boundary still applies. No CI trust policy or live deployment changed.
