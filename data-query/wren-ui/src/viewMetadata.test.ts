@@ -65,6 +65,8 @@ const mockAdjustChart = jest.fn();
 const mockResponseRead = jest.fn();
 const mockThreadUpdate = jest.fn();
 let mockThreadProvider: any;
+let mockResponseUpdateOptions: any;
+let mockHomeThreadId = '11';
 jest.mock('./apollo/client/graphql/home.generated', () => ({
   useGetNativeSqlLazyQuery: (options: any) => {
     mockNativeSqlOptions.push(options);
@@ -75,7 +77,10 @@ jest.mock('./apollo/client/graphql/home.generated', () => ({
   },
   useThreadQuery: () => ({ data: {}, updateQuery: mockThreadUpdate }),
   useCreateThreadResponseMutation: () => [jest.fn()],
-  useUpdateThreadResponseMutation: () => [jest.fn(), {}],
+  useUpdateThreadResponseMutation: (options: any) => {
+    mockResponseUpdateOptions = options;
+    return [jest.fn(), {}];
+  },
   useThreadResponseLazyQuery: () => [
     mockResponseRead,
     { stopPolling: jest.fn() },
@@ -93,7 +98,7 @@ jest.mock('./apollo/client', () => ({
   __esModule: true,
   default: { query: (...args: any[]) => mockViewRead(...args) },
 }));
-jest.mock('next/navigation', () => ({ useParams: () => ({ id: '11' }) }));
+jest.mock('next/navigation', () => ({ useParams: () => ({ id: mockHomeThreadId }) }));
 jest.mock('./hooks/useHomeSidebar', () => () => ({}));
 jest.mock('./hooks/useAskPrompt', () => ({
   __esModule: true,
@@ -3534,6 +3539,7 @@ describe('original Home answer and chart operation lifetime', () => {
     entries.clear();
     mockButtons = [];
     mockNativeSqlOptions = [];
+    mockHomeThreadId = '11';
     mockPreviewResult = { reset: jest.fn() };
     mockConfig.mockReset().mockResolvedValue(governed);
     mockResponseRead.mockReset().mockResolvedValue({});
@@ -3562,7 +3568,7 @@ describe('original Home answer and chart operation lifetime', () => {
     effect = jest
       .spyOn(jest.requireActual('react'), 'useEffect')
       .mockImplementation((callback: any, deps: any[]) => {
-        if (deps?.length === 1 && deps[0] === 11) threadEffect = callback;
+        if (deps?.length === 1 && deps[0] === Number(mockHomeThreadId)) threadEffect = callback;
       });
   });
   afterEach(() => {
@@ -3756,4 +3762,44 @@ describe('original Home answer and chart operation lifetime', () => {
     expect(mockResponseRead).not.toHaveBeenCalled();
     expect([...entries]).toEqual(before);
   });
+  it.each(operations)('retires a previously captured %s action before its first invocation after close', async (_name, callback, mutation) => {
+    const old = mount(); old.retire();
+    await old.controls[callback](21, {});
+    expect(mockConfig).not.toHaveBeenCalled();
+    expect(mutation).not.toHaveBeenCalled();
+    expect(mockResponseRead).not.toHaveBeenCalled();
+  });
+  it('keeps normal rerenders active but retires original SQL-update callbacks across same-instance A to B to A', async () => {
+    // Preserve the original page's useRef/useMemo slots across SSR renders;
+    // only React scheduling is substituted, not its production callbacks.
+    const React = jest.requireActual('react');
+    const slots: any[] = []; let cursor = 0;
+    const ref = jest.spyOn(React, 'useRef').mockImplementation((initial: any) => {
+      const index = cursor++; return slots[index] ?? (slots[index] = { current: initial });
+    });
+    const memo = jest.spyOn(React, 'useMemo').mockImplementation((factory: () => any, deps: any[]) => {
+      const index = cursor++; const prior = slots[index];
+      if (!prior || !deps || deps.length !== prior.deps?.length || deps.some((value, i) => !Object.is(value, prior.deps[i])))
+        slots[index] = { deps, value: factory() };
+      return slots[index].value;
+    });
+    const renderPage = () => { cursor = 0; return mount(); };
+    try {
+      const oldA = renderPage(); const oldUpdate = mockResponseUpdateOptions.onCompleted;
+      const rerenderedA = renderPage();
+      await rerenderedA.controls.onGenerateTextBasedAnswer(21);
+      expect(mockGenerateAnswer).toHaveBeenCalledTimes(1);
+      oldA.retire(); mockHomeThreadId = '22'; const b = renderPage(); b.retire();
+      mockHomeThreadId = '11'; const currentA = renderPage();
+      mockGenerateAnswer.mockClear(); mockConfig.mockClear(); mockResponseRead.mockClear();
+      oldUpdate({ updateThreadResponse: { id: 21 } }); await flush();
+      expect(mockGenerateAnswer).not.toHaveBeenCalled(); expect(mockConfig).not.toHaveBeenCalled();
+      await oldA.controls.onGenerateTextBasedAnswer(21);
+      expect(mockGenerateAnswer).not.toHaveBeenCalled();
+      mockResponseUpdateOptions.onCompleted({ updateThreadResponse: { id: 21 } }); await flush();
+      expect(mockGenerateAnswer).toHaveBeenCalledTimes(1);
+      expect(mockResponseRead).toHaveBeenCalledTimes(1); currentA.retire();
+    } finally { ref.mockRestore(); memo.mockRestore(); }
+  });
+
 });
