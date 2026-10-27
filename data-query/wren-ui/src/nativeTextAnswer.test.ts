@@ -1,8 +1,14 @@
 import { Readable } from 'stream';
 import { EventEmitter } from 'events';
+import { randomUUID } from 'crypto';
+import { mkdtemp, rm, writeFile } from 'fs/promises';
+import { createServer, Server } from 'http';
+import { AddressInfo } from 'net';
+import { tmpdir } from 'os';
+import { join } from 'path';
 import handler from './pages/api/ask_task/streaming_answer';
 import { NativeHumanQuery } from './apollo/server/services/nativeHumanQuery';
-import { loadQueryDelivery } from './apollo/server/services/nativeQueryAdmission';
+import { NativeQueryDelivery } from './apollo/server/services/nativeQueryAdmission';
 import { TextBasedAnswerBackgroundTracker } from './apollo/server/backgrounds/textBasedAnswerBackgroundTracker';
 import { components } from './common';
 import { AskingResolver } from './apollo/server/resolvers/askingResolver';
@@ -23,13 +29,16 @@ jest.mock('./common', () => ({
     projectService: { getCurrentProject: jest.fn() },
   },
 }));
-jest.mock('./apollo/server/services/nativeQueryAdmission', () => ({
-  ...jest.requireActual('./apollo/server/services/nativeQueryAdmission'),
-  loadQueryDelivery: jest.fn(),
-}));
-
 describe('original native text-answer result consumers', () => {
   const original = process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+  const originalBinding = process.env.WREN_PLATFORM_BINDING_CONFIG_FILE;
+  let server: Server;
+  let directory: string;
+  let config: NativeQueryDelivery;
+  let scopeRequests: number;
+  let revokeAt: number;
+  let scopeChanges: Record<string, unknown>;
+  let wireErrors: unknown[];
   const response: any = {
     id: 71,
     threadId: 81,
@@ -48,21 +57,107 @@ describe('original native text-answer result consumers', () => {
     responsePayload: { columns: [], data: [] },
   };
   let authorize: jest.SpyInstance;
+  beforeAll(async () => {
+    directory = await mkdtemp(join(tmpdir(), 'native-text-answer-'));
+    server = createServer((request, result) => {
+      void (async () => {
+        const body: Buffer[] = [];
+        for await (const chunk of request) body.push(Buffer.from(chunk));
+        const text = Buffer.concat(body).toString('utf8');
+        result.setHeader('content-type', 'application/json');
+        expect(request.method).toBe('POST');
+        if (request.url === '/token') {
+          expect(request.headers.authorization).toBe(
+            `Basic ${Buffer.from('native-text:fixture-only').toString('base64')}`,
+          );
+          expect(text).toBe('grant_type=client_credentials');
+          result.end(JSON.stringify({ access_token: 'service', token_type: 'Bearer' }));
+          return;
+        }
+        expect(request.url).toBe('/service/v1/adapter/human-action');
+        expect(request.headers.authorization).toBe('Bearer service');
+        expect(request.headers['x-kailo-native-human-token']).toBe('verified-human');
+        expect(JSON.parse(text)).toEqual({
+          bindingId: config.bindingId,
+          authorizeScope: { permission: 'discover' },
+        });
+        scopeRequests++;
+        if (revokeAt && scopeRequests >= revokeAt) {
+          result.statusCode = 403;
+          result.end(JSON.stringify({ class: 'DENIED', reason: 'PERMISSION_DENIED' }));
+          return;
+        }
+        result.end(JSON.stringify({ scope: {
+          bindingId: config.bindingId,
+          tenantId: config.tenantId,
+          workspaceId: config.workspaceId,
+          nativeInstanceRef: config.nativeInstanceRef,
+          nativeScopeRef: config.nativeScopeRef,
+          generation: 2,
+          permission: 'discover',
+          checkedRevision: 'current-fixture-revision',
+          ...scopeChanges,
+        } }));
+      })().catch((error) => {
+        wireErrors.push(error);
+        result.statusCode = 500;
+        result.end('{}');
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const endpoint = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    config = {
+      projectId: 3,
+      bindingId: randomUUID(),
+      tenantId: randomUUID(),
+      workspaceId: randomUUID(),
+      nativeInstanceRef: 'fixture-instance',
+      nativeScopeRef: '3',
+      projectConnectionDigest: 'b'.repeat(64),
+      actionTokenIssuer: 'https://core.invalid',
+      actionTokenAudience: 'native-text',
+      actionTokenJwksFile: join(directory, 'action-jwks.json'),
+      serviceTokenUrl: `${endpoint}/token`,
+      serviceClientId: 'native-text',
+      serviceClientSecretFile: join(directory, 'service-secret'),
+      corePepUrl: `${endpoint}/service/v1/adapter/pep_check`,
+      gatewayIssuer: 'urn:kailo:gateway:fixture',
+      gatewayAudience: 'native-text',
+      gatewayCallerId: 'fixture-gateway',
+      gatewayJwksFile: join(directory, 'gateway-jwks.json'),
+      gatewayMaxTokenSeconds: 60,
+      mcpAuthority: 'native.invalid',
+      requestTimeoutMs: 2000,
+      responseMaxBytes: 4096,
+      requestMaxBytes: 4096,
+    };
+    await writeFile(config.serviceClientSecretFile, 'fixture-only', { mode: 0o600 });
+    await writeFile(join(directory, 'query.json'), JSON.stringify(config), { mode: 0o600 });
+  });
+  afterAll(async () => {
+    await new Promise<void>((resolve) => {
+      server.close(() => resolve());
+      server.closeAllConnections();
+    });
+    await rm(directory, { recursive: true, force: true });
+  });
   beforeEach(() => {
-    process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = 'controlled-delivery';
+    process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = join(directory, 'query.json');
+    delete process.env.WREN_PLATFORM_BINDING_CONFIG_FILE;
+    scopeRequests = 0;
+    revokeAt = 0;
+    scopeChanges = {};
+    wireErrors = [];
     jest.clearAllMocks();
     native.askingService.getResponse.mockResolvedValue(response);
     native.apiHistoryRepository.findOneBy.mockResolvedValue(record);
     native.projectService.getCurrentProject.mockResolvedValue({ id: 3 });
-    jest.mocked(loadQueryDelivery).mockResolvedValue({
-      projectId: 3,
-      bindingId: 'fixture-binding',
-      nativeInstanceRef: 'fixture-instance',
-      nativeScopeRef: '3',
-    } as any);
     native.threadResponseRepository.claimNativeAnswer.mockImplementation(
       async (expected, detail) => ({ ...expected, answerDetail: detail }),
     );
+    // This suite isolates the original answer/chart consumers from the SQL
+    // receipt reader. Discover authorization above uses the original delivery
+    // loader, binding transport and scope validator, not an authority mock.
     authorize = jest
       .spyOn(NativeHumanQuery.prototype, 'readHistory')
       .mockResolvedValue(record);
@@ -72,6 +167,10 @@ describe('original native text-answer result consumers', () => {
     if (original === undefined)
       delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
     else process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = original;
+    if (originalBinding === undefined)
+      delete process.env.WREN_PLATFORM_BINDING_CONFIG_FILE;
+    else process.env.WREN_PLATFORM_BINDING_CONFIG_FILE = originalBinding;
+    expect(wireErrors).toEqual([]);
   });
   const invoke = async (chunks: Buffer[]) => {
     native.wrenAIAdaptor.streamTextBasedAnswer.mockResolvedValue(
@@ -119,6 +218,7 @@ describe('original native text-answer result consumers', () => {
       content: '中文原答案',
     });
     expect(authorize).toHaveBeenCalledTimes(3);
+    expect(scopeRequests).toBe(3);
     expect(authorize.mock.calls[0]).toEqual(['verified-human', record]);
   });
   it.each(['close', 'foreign-id', 'unknown-enum'])(
@@ -135,6 +235,9 @@ describe('original native text-answer result consumers', () => {
         const result = await invoke([
           Buffer.from('data: {"message":"partial"}\n\n' + suffix),
         ]);
+        expect(native.wrenAIAdaptor.streamTextBasedAnswer).toHaveBeenCalledWith('native-ai-task');
+        expect(result.flushHeaders).toHaveBeenCalledTimes(1);
+        expect(authorize).toHaveBeenCalledTimes(mode === 'close' ? 2 : 3);
         expect(
           native.threadResponseRepository.claimNativeAnswer,
         ).not.toHaveBeenCalled();
@@ -154,6 +257,7 @@ describe('original native text-answer result consumers', () => {
       ),
     ]);
     expect(authorize).not.toHaveBeenCalled();
+    expect(scopeRequests).toBe(0);
     expect(
       native.threadResponseRepository.claimNativeAnswer,
     ).not.toHaveBeenCalled();
@@ -163,6 +267,51 @@ describe('original native text-answer result consumers', () => {
     expect(result.write.mock.calls.map(([value]) => value).join('')).toBe(
       'data: {"message":"original answer"}\n\ndata: {"done":true}\n\n',
     );
+  });
+  it.each<[string, unknown]>([
+    ['bindingId', 'another-binding'],
+    ['tenantId', 'another-tenant'],
+    ['workspaceId', 'another-workspace'],
+    ['nativeInstanceRef', 'another-instance'],
+    ['nativeScopeRef', '4'],
+    ['generation', undefined],
+    ['permission', 'manage'],
+    ['checkedRevision', undefined],
+  ])('rejects an incomplete or foreign discover scope: %s', async (field, value) => {
+    scopeChanges = { [field]: value };
+    const error = jest.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const result = await invoke([
+        Buffer.from('data: {"message":"private"}\n\n'),
+      ]);
+      expect(native.wrenAIAdaptor.streamTextBasedAnswer).not.toHaveBeenCalled();
+      expect(native.threadResponseRepository.claimNativeAnswer).not.toHaveBeenCalled();
+      expect(result.status).toHaveBeenCalledWith(403);
+      expect(result.flushHeaders).not.toHaveBeenCalled();
+      expect(result.write).not.toHaveBeenCalled();
+      expect(scopeRequests).toBe(1);
+      expect(authorize).not.toHaveBeenCalled();
+    } finally {
+      error.mockRestore();
+    }
+  });
+  it.each([1, 3])('honors real discover refusal at exposure %s without completing the native task', async (at) => {
+    revokeAt = at;
+    const error = jest.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const result = await invoke([
+        Buffer.from('data: {"message":"allowed"}\n\ndata: {"done":true,"queryId":"native-ai-task"}\n\n'),
+      ]);
+      expect(native.threadResponseRepository.claimNativeAnswer).not.toHaveBeenCalled();
+      expect(result.write.mock.calls.map(([value]) => value).join('')).toBe(
+        at === 1 ? '' : 'data: {"message":"allowed"}\n\n',
+      );
+      expect(scopeRequests).toBe(at);
+      expect(authorize).toHaveBeenCalledTimes(at - 1);
+      expect(native.wrenAIAdaptor.streamTextBasedAnswer).toHaveBeenCalledTimes(at === 1 ? 0 : 1);
+    } finally {
+      error.mockRestore();
+    }
   });
   it('does not open the original AI stream when current HUMAN disclosure is rejected', async () => {
     authorize.mockRejectedValue(new Error('current Resource revoked'));
@@ -174,6 +323,8 @@ describe('original native text-answer result consumers', () => {
       expect(native.wrenAIAdaptor.streamTextBasedAnswer).not.toHaveBeenCalled();
       expect(result.flushHeaders).not.toHaveBeenCalled();
       expect(result.write).not.toHaveBeenCalled();
+      expect(scopeRequests).toBe(1);
+      expect(authorize).toHaveBeenCalledTimes(1);
     } finally {
       error.mockRestore();
     }
@@ -196,6 +347,8 @@ describe('original native text-answer result consumers', () => {
       expect(
         native.threadResponseRepository.claimNativeAnswer,
       ).not.toHaveBeenCalled();
+      expect(scopeRequests).toBe(3);
+      expect(authorize).toHaveBeenCalledTimes(3);
     } finally {
       error.mockRestore();
     }
@@ -208,6 +361,8 @@ describe('original native text-answer result consumers', () => {
         Buffer.from('data: {"done":true,"queryId":"native-ai-task"}\n\n'),
       ]);
       expect(result.write).not.toHaveBeenCalled();
+      expect(authorize).toHaveBeenCalledTimes(2);
+      expect(native.threadResponseRepository.claimNativeAnswer).toHaveBeenCalledTimes(1);
     } finally {
       error.mockRestore();
     }
@@ -244,10 +399,15 @@ describe('original native text-answer result consumers', () => {
       if (state === 'allowed') {
         expect(await read(parent, {}, ctx)).toEqual(parent.chartDetail);
         expect(authorize).toHaveBeenCalledWith('verified-human', record);
+        expect(scopeRequests).toBe(1);
       } else if (state === 'empty') {
         expect(await read(parent, {}, ctx)).toBeNull();
         expect(authorize).not.toHaveBeenCalled();
-      } else await expect(read(parent, {}, ctx)).rejects.toThrow();
+      } else {
+        await expect(read(parent, {}, ctx)).rejects.toThrow();
+        expect(scopeRequests).toBe(state === 'missing-history' ? 0 : 1);
+        expect(authorize).toHaveBeenCalledTimes(state === 'missing-history' ? 0 : 1);
+      }
     },
   );
   it.each([false, true])(
