@@ -4,23 +4,24 @@
 import * as React from "react";
 import { Clock, ExternalLink, MailOpen } from "lucide-react";
 import { useT } from "./context";
+import { Button, Notice } from "./ui";
 import { InboxRow } from "./inbox-row";
 import { InboxListHeader, InboxEmptyList, InboxRowActionButton, InboxReopenStatus, type InboxFilter } from "./inbox-surface";
 import { VirtualizedList } from "./forum/VirtualizedList";
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from "./sidebar/context-menu";
 import { RemindersPanel, useReminderHost, useRemindLater, useRemindersQuery, useReminderSources, buildInboxListRows, isDue, ReminderInboxRow } from "./reminders";
-import { NeedsActionInboxRow, needsActionSortAt, type NeedsActionItem } from "./inbox/needs-action";
-import { ComponentNotificationInboxRow, componentNotificationSortAt, type ComponentNotificationItem } from "./inbox/component-notifications";
+import { NeedsActionInboxRow, needsActionSortAt, type NeedsActionItem, type NeedsActionSource } from "./inbox/needs-action";
+import { ComponentNotificationInboxRow, componentNotificationSortAt, type ComponentNotificationItem, type ComponentNotificationSource } from "./inbox/component-notifications";
 
 /** DD-125(5) approval items shown with the feed rows (the host's InboxView owns selection). */
-export type InboxListNeedsAction = {
+export type InboxListNeedsAction = Pick<NeedsActionSource, "status" | "refresh"> & {
   items: readonly NeedsActionItem[]; available: boolean; selectedKey: string | null;
   isDone: (item: NeedsActionItem) => boolean; setDone: (item: NeedsActionItem, done: boolean) => void;
   onSelect: (item: NeedsActionItem) => void;
 };
 
 /** DD-138(4), 07 §4.8.3: component notifications of the current filter (the host owns read and open). */
-export type InboxListComponentNotifications = {
+export type InboxListComponentNotifications = Pick<ComponentNotificationSource, "status" | "refresh"> & {
   items: readonly ComponentNotificationItem[];
   isRead: (item: ComponentNotificationItem) => boolean;
   onOpen: (item: ComponentNotificationItem) => void;
@@ -77,6 +78,15 @@ export function InboxListPane<T extends ListItem>({
   ...components.map((item): Row => (
     { key: `component:${item.notificationId}`, kind: "component", component: item, sortAt: componentNotificationSortAt(item) }))]
     .sort((left, right) => right.sortAt - left.sortAt);
+  // Original Inbox read failures offer an explicit retry. Each admitted source
+  // keeps its own state: one failure must neither erase another source's rows
+  // nor turn a partial/unknown result into a complete empty Inbox.
+  const visibleSources = [
+    ...(needsAction && (filter === "all" || filter === "needs_action") ? [needsAction] : []),
+    ...(componentNotifications && (filter === "all" || filter === "mention" || filter === "needs_action") ? [componentNotifications] : []),
+  ];
+  const unavailableSources = visibleSources.filter(source => source.status === "unavailable");
+  const incomplete = visibleSources.some(source => source.status !== "ready");
   const unreadItems = items.filter(item => !isRead(item));
   const undoneApprovals = approvals.filter(item => !needsAction?.isDone(item));
   const unreadComponents = components.filter(item => !componentNotifications?.isRead(item));
@@ -99,6 +109,10 @@ export function InboxListPane<T extends ListItem>({
       <RemindersPanel pubkey={reminderHost.pubkey} onSelectReminder={onSelectReminder} selectedReminderId={selectedReminderId} presentation="inbox-list" />
     </div> : filter === "drafts" ? <div className="-mt-13 flex min-h-0 flex-1 flex-col overflow-hidden pt-13" data-testid="home-inbox-drafts">{draftList}</div>
       : <div className="-mt-13 min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain pt-13" data-testid="home-inbox-list" ref={scrollRef}>
+        {incomplete ? <Notice role="status">
+          <p>{t(unavailableSources.length ? "platform.loadFailed" : "platform.loading")}</p>
+          {unavailableSources.length ? <Button onClick={() => { for (const source of unavailableSources) source.refresh(); }}>{t("platform.retry")}</Button> : null}
+        </Notice> : null}
         {rows.length ? <VirtualizedList estimateSize={96} getItemKey={row => row.key} items={rows} scrollRef={scrollRef} renderItem={entry => {
           if (entry.kind === "reminder") return <ReminderInboxRow reminder={entry.reminder} source={reminderSources.get(entry.reminder.id)} selected={selectedReminderId === entry.reminder.id} onSelect={() => onSelectReminder(entry.reminder.id)} />;
           if (entry.kind === "component") {
@@ -145,7 +159,7 @@ export function InboxListPane<T extends ListItem>({
               {hasChannel ? <><ContextMenuSeparator /><ContextMenuItem disabled={reopening.pending} onSelect={open}><ExternalLink className="h-4 w-4" />{openLabel}</ContextMenuItem></> : null}
               {canRemind ? <ContextMenuItem onSelect={remind}><Clock className="h-4 w-4" />{reminderLabel}</ContextMenuItem> : null}
             </ContextMenuContent></ContextMenu>;
-        }} /> : <InboxEmptyList filter={filter} unreadOnly={unreadOnly} />}
+        }} /> : incomplete ? null : <InboxEmptyList filter={filter} unreadOnly={unreadOnly} />}
       </div>}
   </section>;
 }
