@@ -139,7 +139,9 @@ export function InboxThreadPane({ principalId, workspaceId, channelId, conversat
   const activeDmDraft = dmDraft?.owner === dmDraftOwner ? dmDraft : null;
   const dmDraftAvailable = () => !conversation || Boolean(activeDmDraft &&
     isDraftStoreScope(principalId, window.location.origin) &&
-    (activeDmDraft.key !== conversation.id || workspaceId === conversation.id || !hasLegacyDmDraft()));
+    (activeDmDraft.key !== conversation.id || workspaceId === conversation.id || !hasLegacyDmDraft()) &&
+    (activeDmDraft.key !== workspaceId || workspaceId === conversation.id ||
+      (!loadPendingSend(conversation.id) && !loadDraftEntry(conversation.id)?.sendIntent)));
   const canReply = supportsInlineReply && canUseContext && dmDraftAvailable();
   const canManage = Boolean(canUseContext && ownProfile.isSuccess && !ownProfile.isFetching && ownProfile.data?.pubkey);
   const canEdit = (message: TimelineMessage) => canManage && (message.kind === 9 || (forum && (message.kind === 45001 || message.kind === 45003))) && !message.pending && message.signerPubkey === ownProfile.data?.pubkey;
