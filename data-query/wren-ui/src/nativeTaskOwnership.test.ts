@@ -3142,7 +3142,7 @@ for (const backend of ['sqlite', 'postgres'] as const) {
     });
     it('recommendation migration refuses rollback while a selected response retains its original intent', async () => {
       const selection = await finish();
-      const row = await service.createThreadResponse({ threadId: 11, recommendation: selection });
+      const row = await service.createThreadResponse({ recommendation: selection }, 11);
       // The selected response is independently retained if the Thread pointer is retired.
       await db('thread').where({ id: 11 }).update({ questions_source_response_id: null });
       await expect(migration().down(db)).rejects.toThrow('Refuse recommendation rollback');
