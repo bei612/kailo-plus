@@ -203,6 +203,7 @@ export enum TextBasedAnswerStatus {
 
 export interface TextBasedAnswerResult {
   status: TextBasedAnswerStatus;
+  completion?: { queryId: string; content: string };
   numRowsUsedInLLM?: number;
   error?: WrenAIError;
 }

@@ -7,6 +7,7 @@ import {
   ChartAdjustmentOption,
   ChartStatus,
   AskFeedbackStatus,
+  TextBasedAnswerStatus,
 } from '@server/models/adaptor';
 import { Thread } from '../repositories/threadRepository';
 import {
@@ -1509,6 +1510,44 @@ export class AskingResolver {
   /**
    * Nested resolvers
    */
+  public async authorizeNativeAnswerDetail(
+    parent: ThreadResponse, ctx: IContext, bound = isGovernedQueryMode(),
+  ) {
+    if (isGovernedQueryMode() !== bound)
+      throw new NativeQueryRefusal(412, 'QUERY_ADMISSION_UNAVAILABLE');
+      if (bound) {
+        if (!parent.answerDetail.queryHistoryId) {
+          if (parent.answerDetail.queryId || parent.answerDetail.content)
+            throw new NativeQueryRefusal(
+              503,
+              'QUERY_TERMINAL_EVIDENCE_REQUIRED',
+            );
+        } else {
+          const history = await ctx.apiHistoryRepository.findOneBy({
+            id: parent.answerDetail.queryHistoryId,
+          });
+          if (!history || history.requestPayload?.sql !== parent.sql)
+            throw new NativeQueryRefusal(409, 'NATIVE_OBJECT_CHANGED');
+          // Original GraphQL answer bodies and the stream share the already
+          // implemented same-AE/current-HUMAN history disclosure consumer.
+          await new ApiHistoryResolver()
+            .getApiHistoryNestedResolver()
+            .responsePayload(history, {}, ctx);
+
+        }
+      }
+
+    const current = await ctx.askingService.getResponse(parent.id);
+    const intent = (value: ThreadResponse) => ({
+      id: value.id, threadId: value.threadId, question: value.question,
+      sql: value.sql, answerDetail: value.answerDetail,
+    });
+    if (!current || canonical(intent(current)) !== canonical(intent(parent)))
+      throw new NativeQueryRefusal(409, 'NATIVE_OBJECT_CHANGED');
+    if (isGovernedQueryMode() !== bound)
+      throw new NativeQueryRefusal(412, 'QUERY_ADMISSION_UNAVAILABLE');
+  }
+
   public getThreadResponseNestedResolver = () => ({
     chartDetail: async (parent: ThreadResponse, _args: any, ctx: IContext) => {
       if (!parent.chartDetail) return null;
@@ -1558,37 +1597,30 @@ export class AskingResolver {
     },
     answerDetail: async (parent: ThreadResponse, _args: any, ctx: IContext) => {
       if (!parent?.answerDetail) return null;
-      if (isGovernedQueryMode()) {
-        if (!parent.answerDetail.queryHistoryId) {
-          if (parent.answerDetail.queryId || parent.answerDetail.content)
-            throw new NativeQueryRefusal(
-              503,
-              'QUERY_TERMINAL_EVIDENCE_REQUIRED',
-            );
-        } else {
-          const history = await ctx.apiHistoryRepository.findOneBy({
-            id: parent.answerDetail.queryHistoryId,
+      const bound = isGovernedQueryMode();
+      await this.authorizeNativeAnswerDetail(parent, ctx, bound);
+      const detail = parent.answerDetail;
+      if (detail.queryId && [
+        ThreadResponseAnswerStatus.STREAMING,
+        ThreadResponseAnswerStatus.INTERRUPTED,
+      ].includes(detail.status as ThreadResponseAnswerStatus)) {
+        let observed;
+        try {
+          observed = await ctx.wrenAIAdaptor.getTextBasedAnswerResult(detail.queryId);
+        } catch {
+          // Missing/expired native result does not authorize a new generation.
+        }
+        await this.authorizeNativeAnswerDetail(parent, ctx, bound);
+        const complete = observed?.completion;
+        if (observed?.status === TextBasedAnswerStatus.SUCCEEDED && !observed.error &&
+          complete?.queryId === detail.queryId && typeof complete.content === 'string') {
+          const updated = await ctx.threadResponseRepository.claimNativeAnswer(parent, {
+            ...detail, status: ThreadResponseAnswerStatus.FINISHED,
+            content: complete.content,
           });
-          if (!history || history.requestPayload?.sql !== parent.sql)
-            throw new NativeQueryRefusal(409, 'NATIVE_OBJECT_CHANGED');
-          // Original GraphQL answer bodies and the stream share the already
-          // implemented same-AE/current-HUMAN history disclosure consumer.
-          await new ApiHistoryResolver()
-            .getApiHistoryNestedResolver()
-            .responsePayload(history, {}, ctx);
-          const current = await ctx.askingService.getResponse(parent.id);
-          const intent = (value: ThreadResponse) => ({
-            id: value.id,
-            threadId: value.threadId,
-            question: value.question,
-            sql: value.sql,
-            answerDetail: value.answerDetail,
-          });
-          if (
-            !current ||
-            canonical(intent(current)) !== canonical(intent(parent))
-          )
-            throw new NativeQueryRefusal(409, 'NATIVE_OBJECT_CHANGED');
+          if (!updated) throw new NativeQueryRefusal(409, 'NATIVE_OBJECT_CHANGED');
+          await this.authorizeNativeAnswerDetail(updated, ctx, bound);
+          parent = updated;
         }
       }
 

@@ -553,7 +553,7 @@ export class WrenAIAdaptor implements IWrenAIAdaptor {
       const res = await axios.get(
         `${this.wrenAIBaseEndpoint}/v1/sql-answers/${queryId}`,
       );
-      return this.transformTextBasedAnswerResult(res.data);
+      return this.transformTextBasedAnswerResult(res.data, queryId);
     } catch (err: any) {
       logger.debug(
         `Got error when getting text-based answer result: ${getAIServiceError(err)}`,
@@ -890,10 +890,16 @@ export class WrenAIAdaptor implements IWrenAIAdaptor {
     };
   }
 
-  private transformTextBasedAnswerResult(body: any): TextBasedAnswerResult {
+  private transformTextBasedAnswerResult(body: any, queryId: string): TextBasedAnswerResult {
     const { status, error } = this.transformStatusAndError(body);
+    const completed = body.completion;
     return {
       status: status as TextBasedAnswerStatus,
+      completion:
+        status === TextBasedAnswerStatus.SUCCEEDED && !error &&
+        completed && Object.keys(completed).sort().join(',') === 'content,query_id' &&
+        completed.query_id === queryId && typeof completed.content === 'string'
+          ? { queryId, content: completed.content } : undefined,
       numRowsUsedInLLM: body.num_rows_used_in_llm,
       error,
     };

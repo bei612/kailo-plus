@@ -1,5 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { components } from '@/common';
+import { TextBasedAnswerStatus } from '@/apollo/server/models/adaptor';
 import { ThreadResponseAnswerStatus } from '@/apollo/server/services/askingService';
 import { TelemetryEvent } from '@/apollo/server/telemetry/telemetry';
 import { AskingResolver } from '@/apollo/server/resolvers/askingResolver';
@@ -81,13 +82,35 @@ export default async function handler(
       )
         throw new NativeQueryRefusal(409, 'NATIVE_OBJECT_CHANGED');
       if (bound)
-        await new AskingResolver()
-          .getThreadResponseNestedResolver()
-          .answerDetail(response, {}, context);
+        await new AskingResolver().authorizeNativeAnswerDetail(response, context, bound);
       if (isGovernedQueryMode() !== bound)
         throw new NativeQueryRefusal(412, 'QUERY_ADMISSION_UNAVAILABLE');
     };
     await authorize();
+    const readCompletion = async () => {
+      let observed;
+      try { observed = await wrenAIAdaptor.getTextBasedAnswerResult(queryId); }
+      catch { /* Unavailable result remains unknown. */ }
+      await authorize();
+      return observed?.status === TextBasedAnswerStatus.SUCCEEDED && !observed.error &&
+        observed?.completion?.queryId === queryId &&
+        typeof observed.completion.content === 'string' ? observed.completion : undefined;
+    };
+    const persistCompletion = async (content: string) => {
+      const finished = await components.threadResponseRepository.claimNativeAnswer(response, {
+        ...response.answerDetail, status: ThreadResponseAnswerStatus.FINISHED, content,
+      });
+      if (!finished) throw new NativeQueryRefusal(409, 'NATIVE_OBJECT_CHANGED');
+    };
+    const cached = await readCompletion();
+    if (cached) {
+      await persistCompletion(cached.content);
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.setHeader('Cache-Control', 'no-cache, no-transform');
+      res.write(`data: ${JSON.stringify({ message: cached.content })}\n\n`);
+      res.end(`data: ${JSON.stringify({ done: true })}\n\n`);
+      return;
+    }
     const stream = await wrenAIAdaptor.streamTextBasedAnswer(queryId);
     let closed = false;
     let completed = false;
@@ -129,20 +152,18 @@ export default async function handler(
           event.done === true &&
           event.queryId === queryId
         ) {
-          // The same original conditional writer protects both modes. A late
-          // completion/close cannot update a replacement answer on this row.
-          const finished =
-            await components.threadResponseRepository.claimNativeAnswer(
-              response,
-              {
-                ...response.answerDetail,
-                status: ThreadResponseAnswerStatus.FINISHED,
-                content,
-              },
-            );
-          if (!finished)
-            throw new NativeQueryRefusal(409, 'NATIVE_OBJECT_CHANGED');
+          const complete = await readCompletion();
+          if (!complete) throw new NativeQueryRefusal(503, 'NATIVE_EXECUTION_UNKNOWN');
+          await persistCompletion(complete.content);
           completed = true;
+          if (!complete.content.startsWith(content)) {
+            // The native one-shot queue may have supplied only a tail. History
+            // now owns the complete answer; never label this partial stream done.
+            res.end();
+            return;
+          }
+          const remainder = complete.content.slice(content.length);
+          if (remainder) res.write(`data: ${JSON.stringify({ message: remainder })}\n\n`);
           res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
           res.end();
           telemetry?.sendEvent(TelemetryEvent.HOME_ANSWER_QUESTION, {
@@ -158,8 +179,13 @@ export default async function handler(
         content += event.message;
         res.write(`${line}\n\n`);
       }
-      // HTTP close without the original generator's completion receipt
-      // remains indeterminate. It never produces a fake FINISHED/done.
+      // Queue EOF is not terminal evidence. The original read-only result can
+      // independently recover full content without consuming or resubmitting.
+      const complete = await readCompletion();
+      if (complete) {
+        await persistCompletion(complete.content);
+        completed = true;
+      }
       res.end();
     } finally {
       stream.destroy();
