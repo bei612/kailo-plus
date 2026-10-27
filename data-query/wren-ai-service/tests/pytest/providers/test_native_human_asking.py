@@ -389,7 +389,9 @@ class NativeGeneralCompletion(unittest.IsolatedAsyncioTestCase):
                 request.query_id = "original"
                 task = asyncio.create_task(service.ask(request))
                 await asyncio.wait_for(entered.wait(), 2)
-                service.stop_ask(StopAskRequest(query_id="original", status="stopped"))
+                stop = StopAskRequest(status="stopped")
+                stop.query_id = "original"
+                service.stop_ask(stop)
                 release.set()
                 await asyncio.wait_for(task, 2)
                 self.assertEqual(
