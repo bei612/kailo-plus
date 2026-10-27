@@ -357,7 +357,8 @@ describe('original native text-answer result consumers', () => {
       }
     },
   );
-  it.each([1, 3])(
+  // The completed-result GET adds one fresh disclosure before the first frame.
+  it.each([1, 4])(
     'honors real discover refusal at exposure %s without completing the native task',
     async (at) => {
       revokeAt = at;
@@ -384,7 +385,7 @@ describe('original native text-answer result consumers', () => {
       }
     },
   );
-  it.each([1, 3])(
+  it.each([1, 4])(
     'rejects governed answer mode retirement during disclosure %s',
     async (at) => {
       let reads = 0;
@@ -449,8 +450,8 @@ describe('original native text-answer result consumers', () => {
         expect(
           native.wrenAIAdaptor.streamTextBasedAnswer,
         ).toHaveBeenCalledTimes(1);
-        expect(scopeRequests).toBe(governed ? 1 : 0);
-        expect(authorize).toHaveBeenCalledTimes(governed ? 1 : 0);
+        expect(scopeRequests).toBe(governed ? 2 : 0);
+        expect(authorize).toHaveBeenCalledTimes(governed ? 2 : 0);
       } finally {
         error.mockRestore();
       }
