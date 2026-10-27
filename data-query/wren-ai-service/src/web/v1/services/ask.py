@@ -412,11 +412,7 @@ class AskService:
                     results["metadata"]["type"] = "TEXT_TO_SQL"
                     return results
 
-            if (
-                owns_result()
-                and not api_results
-                and allow_sql_generation_reasoning
-            ):
+            if owns_result() and not api_results and allow_sql_generation_reasoning:
                 self._ask_results[query_id] = expected = AskResultResponse(
                     status="planning",
                     type="TEXT_TO_SQL",
