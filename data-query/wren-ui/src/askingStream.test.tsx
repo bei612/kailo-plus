@@ -550,28 +550,38 @@ describe('original Ask SSE hook and same-task GraphQL observation', () => {
     expect(NativeEventSource.sources).toHaveLength(1);
   });
 
-  it.each(['', '完整原结果'])('GENERAL polling recovers full %j after EOF and retires queued stream callbacks', async (content) => {
-    const source = await observeGeneral();
-    source.message({message:'partial'});
-    source.error();
-    expect(render(() => useAskPrompt()).data.askingStreamCompleted).toBe(false);
-    mockAskingResult.data = {askingTask: {...mockAskingResult.data.askingTask, completion: content}};
-    const recovered = render(() => useAskPrompt());
-    expect(recovered.data.askingStreamTask).toBe(content);
-    expect(recovered.data.askingStreamCompleted).toBe(true);
-    expect(recovered.loading).toBe(false);
-    expect(mockAskingResult.stopPolling).toHaveBeenCalledTimes(1);
-    source.message({message:'late'});
-    expect(render(() => useAskPrompt()).data.askingStreamTask).toBe(content);
-    expect(mockCreate).not.toHaveBeenCalled();
-    expect(mockRerun).not.toHaveBeenCalled();
-    expect(NativeEventSource.sources).toHaveLength(1);
-    await render(() => useAskPrompt()).onFetching('next-native');
-    const next = render(() => useAskPrompt());
-    expect(next.data.askingTask).toBeNull();
-    expect(next.data.askingStreamTask).toBe('');
-    expect(next.data.askingStreamCompleted).toBe(false);
-  });
+  it.each(['', '完整原结果'])(
+    'GENERAL polling recovers full %j after EOF and retires queued stream callbacks',
+    async (content) => {
+      const source = await observeGeneral();
+      source.message({ message: 'partial' });
+      source.error();
+      expect(render(() => useAskPrompt()).data.askingStreamCompleted).toBe(
+        false,
+      );
+      mockAskingResult.data = {
+        askingTask: {
+          ...mockAskingResult.data.askingTask,
+          completion: content,
+        },
+      };
+      const recovered = render(() => useAskPrompt());
+      expect(recovered.data.askingStreamTask).toBe(content);
+      expect(recovered.data.askingStreamCompleted).toBe(true);
+      expect(recovered.loading).toBe(false);
+      expect(mockAskingResult.stopPolling).toHaveBeenCalledTimes(1);
+      source.message({ message: 'late' });
+      expect(render(() => useAskPrompt()).data.askingStreamTask).toBe(content);
+      expect(mockCreate).not.toHaveBeenCalled();
+      expect(mockRerun).not.toHaveBeenCalled();
+      expect(NativeEventSource.sources).toHaveLength(1);
+      await render(() => useAskPrompt()).onFetching('next-native');
+      const next = render(() => useAskPrompt());
+      expect(next.data.askingTask).toBeNull();
+      expect(next.data.askingStreamTask).toBe('');
+      expect(next.data.askingStreamCompleted).toBe(false);
+    },
+  );
   it('stops finished GENERAL polling only after native done, not after intent classification', async () => {
     const source = await observeGeneral();
     expect(mockAskingResult.stopPolling).not.toHaveBeenCalled();

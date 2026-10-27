@@ -6491,8 +6491,11 @@ describe('native saved-view HUMAN query consumer', () => {
       askStream = jest.fn(async () => {
         // The provider retains the independently complete same-query result;
         // the queue done frame itself cannot manufacture this receipt.
-        askResult = { ...askResult, status: AskResultStatus.FINISHED,
-          completion: { queryId: key, content: 'Original explanation' } };
+        askResult = {
+          ...askResult,
+          status: AskResultStatus.FINISHED,
+          completion: { queryId: key, content: 'Original explanation' },
+        };
         return Readable.from([
           'data: {"message":"Original explanation"}\n\n',
           `data: ${JSON.stringify({ done: true, queryId: key })}\n\n`,
@@ -6822,49 +6825,79 @@ describe('native saved-view HUMAN query consumer', () => {
           await graphql.stop();
         }
       };
-      it.each(['', '完整原结果'])('GENERAL REST recovers full %j after lost queue and preserves the original query', async (content) => {
-        askResult = {status: AskResultStatus.GENERATING, type: AskResultType.GENERAL};
-        askStream.mockResolvedValue(Readable.from(['data: {"message":"partial"}\n\n']));
-        const first = await sendAsk();
-        expect(first.status).toBe(202);
-        expect(summaryRow.statusCode).toBe(202);
-        askResult = {status: AskResultStatus.FINISHED, type: AskResultType.GENERAL, completion: {queryId:key, content}};
-        const recovered = await sendAsk();
-        expect(recovered.status).toBe(200);
-        expect((await recovered.json()).explanation).toBe(content);
-        expect(summaryRow.responsePayload.nativeAsk.completionQueryId).toBe(key);
-        const history = await readGenerationHistory();
-        expect(history.errors).toBeUndefined();
-        expect(history.data.apiHistory.items[0].responsePayload.explanation).toBe(content);
-        expect(askCreate).toHaveBeenCalledTimes(1);
-        expect(askStream).toHaveBeenCalledTimes(1);
-        noExecution();
-      });
-      it.each(['missing','foreign','different','verified','revoked'])('GENERAL legacy History with only doneQueryId requires full evidence: %s', async (mode) => {
-        askResult = {status:AskResultStatus.FINISHED, type:AskResultType.GENERAL, completion:{queryId:key, content:'Original explanation'}};
-        expect((await sendAsk()).status).toBe(200);
-        delete summaryRow.responsePayload.nativeAsk.completionQueryId;
-        // Preserve the historical row bytes; its old done alone is insufficient.
-        const previous = structuredClone(summaryRow);
-        if(mode === 'missing') delete askResult.completion;
-        if(mode === 'foreign') askResult.completion.queryId = 'foreign';
-        if(mode === 'different') askResult.completion.content = 'different';
-        if(mode === 'revoked') {
-          askGet.mockImplementation(async () => { revoked = true; return structuredClone(askResult); });
-        }
-        const history = await readGenerationHistory();
-        if(mode === 'verified') {
+      it.each(['', '完整原结果'])(
+        'GENERAL REST recovers full %j after lost queue and preserves the original query',
+        async (content) => {
+          askResult = {
+            status: AskResultStatus.GENERATING,
+            type: AskResultType.GENERAL,
+          };
+          askStream.mockResolvedValue(
+            Readable.from(['data: {"message":"partial"}\n\n']),
+          );
+          const first = await sendAsk();
+          expect(first.status).toBe(202);
+          expect(summaryRow.statusCode).toBe(202);
+          askResult = {
+            status: AskResultStatus.FINISHED,
+            type: AskResultType.GENERAL,
+            completion: { queryId: key, content },
+          };
+          const recovered = await sendAsk();
+          expect(recovered.status).toBe(200);
+          expect((await recovered.json()).explanation).toBe(content);
+          expect(summaryRow.responsePayload.nativeAsk.completionQueryId).toBe(
+            key,
+          );
+          const history = await readGenerationHistory();
           expect(history.errors).toBeUndefined();
-          expect(history.data.apiHistory.items[0].responsePayload.explanation).toBe('Original explanation');
-        } else {
-          expect(history.errors).toBeDefined();
-          expect(history.data?.apiHistory?.items?.[0]?.responsePayload).toBeFalsy();
-        }
-        expect(summaryRow).toEqual(previous);
-        expect(askCreate).toHaveBeenCalledTimes(1);
-        expect(askStream).not.toHaveBeenCalled();
-        noExecution();
-      });
+          expect(
+            history.data.apiHistory.items[0].responsePayload.explanation,
+          ).toBe(content);
+          expect(askCreate).toHaveBeenCalledTimes(1);
+          expect(askStream).toHaveBeenCalledTimes(1);
+          noExecution();
+        },
+      );
+      it.each(['missing', 'foreign', 'different', 'verified', 'revoked'])(
+        'GENERAL legacy History with only doneQueryId requires full evidence: %s',
+        async (mode) => {
+          askResult = {
+            status: AskResultStatus.FINISHED,
+            type: AskResultType.GENERAL,
+            completion: { queryId: key, content: 'Original explanation' },
+          };
+          expect((await sendAsk()).status).toBe(200);
+          delete summaryRow.responsePayload.nativeAsk.completionQueryId;
+          // Preserve the historical row bytes; its old done alone is insufficient.
+          const previous = structuredClone(summaryRow);
+          if (mode === 'missing') delete askResult.completion;
+          if (mode === 'foreign') askResult.completion.queryId = 'foreign';
+          if (mode === 'different') askResult.completion.content = 'different';
+          if (mode === 'revoked') {
+            askGet.mockImplementation(async () => {
+              revoked = true;
+              return structuredClone(askResult);
+            });
+          }
+          const history = await readGenerationHistory();
+          if (mode === 'verified') {
+            expect(history.errors).toBeUndefined();
+            expect(
+              history.data.apiHistory.items[0].responsePayload.explanation,
+            ).toBe('Original explanation');
+          } else {
+            expect(history.errors).toBeDefined();
+            expect(
+              history.data?.apiHistory?.items?.[0]?.responsePayload,
+            ).toBeFalsy();
+          }
+          expect(summaryRow).toEqual(previous);
+          expect(askCreate).toHaveBeenCalledTimes(1);
+          expect(askStream).not.toHaveBeenCalled();
+          noExecution();
+        },
+      );
       it.each([false, true])(
         'retains the original SQL response/SSE and finished task without executing SQL or summary (stream=%s)',
         async (streaming) => {
@@ -7599,10 +7632,13 @@ describe('native saved-view HUMAN query consumer', () => {
           `data: ${JSON.stringify({ done: true, queryId: key })}\n\n`,
         ]),
       );
-      askGet.mockImplementationOnce(async () => structuredClone(askResult)).mockResolvedValue({
-        status: AskResultStatus.FINISHED, type: AskResultType.GENERAL,
-        completion: {queryId: key, content: '中文回答'},
-      });
+      askGet
+        .mockImplementationOnce(async () => structuredClone(askResult))
+        .mockResolvedValue({
+          status: AskResultStatus.FINISHED,
+          type: AskResultType.GENERAL,
+          completion: { queryId: key, content: '中文回答' },
+        });
       const response = await sendAsk();
       expect(response.status).toBe(200);
       expect((await response.json()).explanation).toBe('中文回答');
