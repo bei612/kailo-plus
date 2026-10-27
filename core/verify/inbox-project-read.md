@@ -2547,3 +2547,54 @@ repository/Relay 权限环境、完整浏览器/Windows 设备、构建、部署
 没有修改草稿、发布签名、UNKNOWN 结果或服务器写协议。旧历史数据不补造；本批只恢复
 可信现有 tag 的原读取/只读交互，不声明完成所有 Projects 操作或一期发布。
 归档审计完成后 source 缓存可复用，原日志/回执继续保留。
+
+## 原 Overview 仓库不可读页 Retry 恢复（2026-10-27）
+
+关联 V-REQ-24、DD-118(2)、DD-160(5)。本批基线
+`9abf16c08d64045252dc4e9c43be9a1bff303006`，固定检查源码
+`a7279228e87b6cf789547f8d2b4689d53217937e`，3 文件 +68/-3。
+固定官方 Buzz `779af8886caae1317b4de962082429867ab61503` 的
+`desktop/src/features/projects/ui/ProjectReadmePanel.tsx` 在仓库 unavailable 分支把
+`sourceControls.onFetch/fetchPending` 交给原 `ProjectRepositoryUnavailableState`。
+当前共享 Files/Commits 已消费同一个 `state.fetch`，Overview 却只传 reason，用户读失败后
+缺原错误页的 Retry。此为当前调用链确认的漏接，不依据旧差异清单猜测。
+
+共享 ReadmePanel 新增可选 onRetry/retryPending 透传，RepositoryGitContent 的 Overview
+绑定原 state.fetch；Web/Desktop 消费同一主体。没有新按钮样式、文案、读取预算、自动重试
+策略或授权；仍是原 30617 坐标和当前 BFF/Native scope。原 fetch 刷新 snapshot/30618、
+Native 同步状态与文件缓存；旧身份 lifetime 退休后不发提示，不把旧回执显示给新身份。
+本批不增加请求写入、草稿迁移、签名、UNKNOWN 重签或任何第二权威。
+
+原受限 SDK 为
+`sha256:3007729eb192341a4f004a88e42e1e66c94fc67d763acfc96568bd7311116018`，
+1 CPU / 4 GiB / swap 同额 / pids 256，输入、临时文件和日志在实际 Data；先原资源预检，
+再回读实际 Docker 限额。没有与其他重型 SDK 并发，也没有修改共享服务或发布门禁。
+
+首轮 `47b7ce365ce68b4ba1d2d4fd1420161d99836d6b`：shared production/test tsc 与
+原 i18n check 0，原文件 23/25，exit 1。两个新夹具分别过早在 Query observer 重绘前断言
+pending、给 Native 非正式错误字符串而被原 adapter 正确映射为网络失败。
+后继仅修测试等待与原生产 `project_repo_not_found` 错误码，未改变产品错误分类或放宽断言。
+原失败日志保留在 CI Data `verification/projects-overview-retry/47b7ce365`。
+
+最终原 `project-git.test.tsx` 完整 25/25；新增三项分别经真实共享 ProjectsView 和两种
+原 host decoder，执行原读取失败→点击原 Retry→恢复 README、pending 不再有可用 Retry、
+坐标及 Native scope 入参保持、零发布/本机写命令，以及旧身份请求晚到不污染新正文/提示。
+独立移除 ReadmePanel 的原 Retry 透传，该组实际失败/exit 1（缺失入口被检出）；逐字还原 SHA 一致后
+原三项通过。不重复此前无关 review/merge 或完整全局 SDK。
+
+独立 worktree 中原 `upstream_manifest.py status` 报相邻 `.references` 不存在，未把其 exit 0
+当作来源比较成功；固定只读 `/volumes/kailo/.references/buzz` 的 HEAD 实查为上述 779af，
+本批对照的是该固定原文件，没有修改来源记录或只读上游。
+
+最终 frozen pnpm/npm、shared production/test/Web/Desktop 四项 tsc、i18n check 均 0；
+作业真实 exit 0、OOM=false，回读无遗留检查容器。两宿主实际 require.resolve 的共享
+file 包各 1040 个 src/profile-assets 文件逐字一致；GitHub 固定归档 3456 输入与检查源
+逐字一致。日志中的 React act/npm config 原警告保留，没有把警告或失败隐藏。
+回执见 [projects-overview-retry-20261027.json](projects-overview-retry-20261027.json)，
+SHA-256 `cf53af4c9599fd54ed9417f0759d02d59eb2114a30c6b7a96d32454d4162df23`。
+原完整日志位于 CI Data `verification/projects-overview-retry/a7279228e`。
+
+这不是实际 Relay/Git 服务、浏览器设备、Windows 安装、Mobile、打包或部署验收；
+测试只在 transport 边界提供脚本化返回，真实 UI、decoder、查询与重试调用链被执行。
+本批只恢复仓库 snapshot unavailable 页的原重试，不声称补齐所有 Git/README 异常分支。
+固定审计完成后 source 缓存释放可复用，原日志/回执保持。
