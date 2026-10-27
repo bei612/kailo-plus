@@ -12019,7 +12019,6 @@ These are source checks, not an image or business acceptance: `data-query-ui`
 must be rebuilt from the merged commit and the independent instance re-accepted
 (ask → result, Models(n), diagram) before the 58095 page is fixed.
 
-
 ## 2026-10-27 — Original standalone Ask completion and stream mode retirement
 
 Fixed product source: `6f32bac584b707f7b814462304012248d7b373f0`, based on
