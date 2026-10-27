@@ -12774,3 +12774,80 @@ It does not claim actual model/Gateway/Bao/accounting acceptance, complete
 GENERAL / NON_SQL recovery, matching new UI+AI artifacts, receiver activation
 or deployed browser/backend E2E. The prior optional-completion compatibility
 boundary still applies. No CI trust policy or live deployment changed.
+
+## 2026-10-27 — GENERAL native completion producer, Python evidence
+
+DD-127 / DD-133 and SS-WRN-GOVERNANCE retain the original Ask task and
+three assistance pipelines. Python checked source is
+`4b58d29c224532fc6d96c5bebb05c80be3c8a3fe`, based on
+`a050a7cc8807f760e5b97ec8d847f797de268d60`. UI consumers in this source are a
+separate, not-yet-accepted stage; this section establishes only the AI producer.
+
+Fixed upstream Wren `c5f02a0391c87420dba78632dcd86073710deb72` and the old
+Kailo Ask service discarded the returned original `data_assistance`,
+`misleading_assistance` and `user_guide_assistance` results. GENERAL `finished`
+meant classification was finished, while a background generator was still
+running. Queue sentinels could therefore appear after a truncated reply, and
+another observer could consume only a tail. Neither established a full answer.
+
+The original Ask TTL cache now retains the same-query complete string only
+after the actual pipeline returns one reply with one natural `stop` result.
+The same cache object must still be current and GENERAL/finished; completion
+does not reset its original TTL. Expiry, stop, replacement, truncation, filter,
+missing finish metadata and a lost return do not manufacture completion or
+start another generation. Native GET adds optional
+`completion: {query_id, content}`; the meaning of classification `finished`
+and existing SSE wire are retained. This is an additive API change requiring
+matching UI and AI releases, not independent new-UI acceptance against old AI.
+
+Each original pipeline retires its indexed queue only after retaining its
+result; existing waiters retain their queue object and sentinel. A subsequent
+observation reads the full original cache result without another model request.
+An active observer may extend a matching prefix with the missing suffix; a
+tail-only observation is not given a successful done frame. The original task
+can be observed again for its complete result. No Core body store, second task,
+new retry or persistent completion ledger was introduced.
+
+The immutable original AI image
+`sha256:662fc7a76c259b140355f5b66a083a6ebb1a4403464359ba115b8956431fe182`
+provided Python **3.12.0**, real Hamilton AsyncDriver, FastAPI, PromptBuilder,
+LiteLLM and TTLCache. Its public pyproject matched the source, and installed
+LiteLLM 1.79.3, OpenAI 1.109.1, Haystack 2.7.0, backoff 2.2.1, Pydantic 2.12.4
+and Langfuse 2.60.10 matched the Poetry lock. No dependencies or image were
+installed. Original resource preflight and limit readback established 2 CPU,
+4 GiB memory/equal swap, pids 256, nonroot, read-only root and network none;
+new source, temporary files and logs stayed on actual Data storage.
+
+Original commands used `/app/.venv/bin/python -B -m unittest discover -s
+tests/pytest/providers -p test_native_human_asking.py -v` and
+`/app/.venv/bin/python -B tests/pytest/providers/test_native_sql_answer_stream.py
+-v`. The former passed **12/12**, including seven new GENERAL consumer methods
+with three-pipeline and failure subcases; the latter passed **20/20**. Original
+Ruff 0.2.2 check and format-check passed. GENERAL executes the real pipeline,
+provider, API and cache code, replacing only remote model transport and the
+classification/retrieval boundaries. SQL20 retains its previously documented
+framework/provider/TTL substitutes; it does not become a live model test.
+
+Three actual product mutations were detected by the original GENERAL consumers:
+removing natural-stop validation caused **1 assertion failure**; removing cache
+ownership caused **3**; removing the emitted-prefix fence caused **3**. Each
+command exited 1, with no test errors. Each mutation was restored byte-for-byte
+and all 12 tests passed again; final full 12/20 checks passed. All **209 input
+Git blobs** matched the fixed source after restoration. The container exited
+0, OOM=false, and its absence was read back after cleanup.
+
+The earlier 4c718 Python format attempt failed before consumers; its original
+logs remain. 137310 corrected statement layout; 9637 updated original stream
+fixtures to consume actual completion evidence, and 4b58 committed the pinned
+formatter output before running consumers. These stages are not relabeled as
+earlier passing business checks.
+
+CI positive and fault/restoration directories are respectively
+`/volumes/data/kailo/verification/buzz-r10/wren-general-recovery-4b58d29c2-check-root`
+and `wren-general-recovery-4b58d29c2-fault-root` under the same parent.
+The latter's `receipt.json` SHA-256 is
+`2f07efc00214288507ddd1e71612099fff79dfaedbe28bd8ad1d4003a646bbc2`;
+local handoff is `/tmp/kailo-wren-general-python-4b58d29c2-receipt.json`.
+It records input audit, exact log hashes, actual resource limits and failures.
+UI/REST/GraphQL consumer acceptance, real model/Core/IdP operations, matching
+artifacts and deployment are not established by these Python results.
