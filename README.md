@@ -12,6 +12,11 @@ DD-124/136 一致性投递、DD-159 本地归档、DD-151 持久推送与 Mobile
 DD-158 反馈和跨会话社区资料，以及 DD-160 原生仓库写入。已提交并推送不代表
 合并 main、产物或部署。下列检查分别对应固定源码，不合并认作最新整树 full。
 
+2026-10-27 对现有线上版本进行了正常 SSO 后的只读浏览器回读，实际查看频道、
+Inbox、问数建模、知识库和云盘列表。页面显示不等于这些业务全链完成；头像 404、
+云盘上传器加载失败等浏览器错误仍保留。候选未部署，截图、运行容器 build-info
+及未操作范围见[线上只读回读](core/verify/web-readback-20261027.md)。
+
 最新 Core 产品合批固定 `3cfa10e5f`：普通 writer 缺失证明、Core 原 DISPATCH/永久审计
 消费及 Native epoch 生产者已合入。原 SDK 4 CPU / 16 GiB、独立 PG 1 CPU /
 2 GiB，正常 Core **840 passed / 93 ignored**；显式 Agent 5、Canvas 4、审核 6、
@@ -115,6 +120,12 @@ Cells 固定 `afe7a4710` 修复正文读取阻塞期间撤权后仍向原 S3 存
 认证 19 子例、格式及三包 vet 通过；移除逐次复核的 9 项和恢复旧 ACL 的 2 项
 反例均被检出，逐字恢复后通过。9,091 个固定输入逐字一致。该批仍未覆盖真实
 浏览器、存储和 Core/IdP 部署全链，详见同一原生操作记录。
+
+Cells 原上传的源码复核另发现未闭合边界：原 MIME 探测异步写节点，受管 finish
+可能先读取空 MIME；从冻结 draft 复制到 live 的目标写入也未证明与并发版本和 MIME
+的原子条件。该风险尚未在真实对象存储中动态复现，不能据此宣称已发生事故；
+受管 FILE_STORAGE 的 release/binding 继续受原门禁约束。具体时序与所需验证见
+[原上传记录](file-storage/fork/verify/native-identity.md)。
 
 Wren 原 Ask 流固定 `6f32bac58`：STANDALONE 只消费同 queryId 的原生完成，
 EOF 不造完成事件；流执行中模式改变会停止旧观察。原 HTTP 65、Hook/SQLite 58
