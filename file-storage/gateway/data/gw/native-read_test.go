@@ -77,9 +77,22 @@ type nativeReadACLs struct {
 	calls          int
 }
 
-func (s *nativeReadACLs) SearchACL(_ *idm.SearchACLRequest, stream idm.ACLService_SearchACLServer) error {
+func (s *nativeReadACLs) SearchACL(req *idm.SearchACLRequest, stream idm.ACLService_SearchACLServer) error {
 	s.calls++
-	if s.deny {
+	var readAction, currentRole bool
+	for _, raw := range req.GetQuery().GetSubQueries() {
+		query := new(idm.ACLSingleQuery)
+		if err := raw.UnmarshalTo(query); err != nil {
+			return err
+		}
+		for _, action := range query.Actions {
+			readAction = readAction || action.Name == permissions.AclRead.Name
+		}
+		for _, role := range query.RoleIDs {
+			currentRole = currentRole || role == s.user
+		}
+	}
+	if s.deny || !readAction || !currentRole {
 		return nil
 	}
 	return stream.Send(&idm.SearchACLResponse{ACL: &idm.ACL{RoleID: s.user, NodeID: s.resource, WorkspaceID: s.resource, Action: permissions.AclRead}})
