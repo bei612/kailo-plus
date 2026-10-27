@@ -878,8 +878,8 @@ describe('original answer HTTP identity and conditional history writes', () => {
     },
   );
   it('original conditional writer rejects a replacement committed after the last read but before done', async () => {
-    const update = repository.claimNativeAnswer.bind(repository);
     claim.mockRestore();
+    const update = repository.claimNativeAnswer.bind(repository);
     claim = jest
       .spyOn(repository, 'claimNativeAnswer')
       .mockImplementationOnce(async (expected, detail) => {
