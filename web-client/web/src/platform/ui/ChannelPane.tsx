@@ -118,7 +118,7 @@ import { useComposerPasteHandler } from "@client-kit/platform/react/composer/fea
 import { useComposerVoiceNote } from "@client-kit/platform/react/composer/features/messages/ui/useComposerVoiceNote";
 import { partitionMentionIdentitiesByLocalTrust } from "@client-kit/platform/react/composer/features/messages/lib/mentionIdentityTrust";
 import type { ParsedMessageLink } from "@client-kit/platform/react/composer/features/messages/lib/messageLink";
-import { initDraftStore, loadDraftEntry, saveDraftEntry, clearDraftEntry, savePendingSend, loadPendingSend, clearPendingSend, subscribeToStore, type PendingSendStage, type PendingSendState } from "@client-kit/platform/react/composer/features/messages/lib/useDrafts";
+import { initDraftStore, loadDraftEntry, saveDraftEntry, clearDraftEntry, savePendingSend, loadPendingSend, loadPendingSendFiles, isDraftStoreScope, clearPendingSend, subscribeToStore, type PendingSendStage, type PendingSendState } from "@client-kit/platform/react/composer/features/messages/lib/useDrafts";
 import { ComposerAttachments, DropZoneOverlay } from "@client-kit/platform/react/composer/features/messages/ui/ComposerAttachments";
 import type { UploadingAttachmentPreview } from "@client-kit/platform/react/composer/features/messages/lib/attachmentPreview";
 import { useComposerAttachmentSpoilers } from "@client-kit/platform/react/composer/features/messages/ui/useComposerAttachmentSpoilers";
@@ -1075,6 +1075,8 @@ export function ChannelPane({
   );
 }
 
+type RestoredAttachment = { id: number; name: string; file?: File };
+
 type Pending = { name: string; descriptor: MediaDescriptor; receivedAt: number };
 /** One attach() call: its files upload one after another; a queued send owns the batches in flight at Send. */
 type UploadBatch = { remaining: File[]; active: Map<number, File>; canceled: boolean };
@@ -1083,7 +1085,7 @@ type SendSnapshot = {
   content: string; pending: Pending[]; gifs: WebGifItem[]; bindings: Map<string, string>; installationIds: string[];
   spoilers: ReadonlySet<string>; intent: { current: { key: string; signature: string } | null };
   linkPreviews?: LinkPreviewPublication; cleared: boolean;
-  batches: ReadonlySet<UploadBatch>; remainingFiles: File[]; failed: boolean;
+  batches: ReadonlySet<UploadBatch>; remainingFiles: File[]; failed: boolean; uploadUnknown?: boolean;
 };
 /** Draft keys whose cleared send is being published by this page (a revisit shows it as in flight). */
 const publishingPendingSends = new Set<string>();
@@ -1261,9 +1263,36 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
   // BFF 回答原操作的结论而不是再发一条（DD-81）。确定的结论之后换新键。
   const intent = useRef<{ key: string; signature: string } | null>(null);
   const owner = useMemo(() => ({ active: true, sending: false }), [workspaceId, draftIdentity, draftKey, editTarget?.id]);
+  const pendingSendOwnerKey = JSON.stringify([window.location.origin, draftIdentity, draftKey]);
   useEffect(() => { owner.active = true; return () => { owner.active = false; }; }, [owner]);
   // Files awaiting this owner's real BFF upload receipt are not yet imeta.
   const queuedAttachmentsRef = useMemo(() => ({ current: [] as { file: File }[] }), [owner]);
+  const [restoredAttachments, setRestoredAttachments] = useState<RestoredAttachment[]>([]);
+  const restoredAttachmentsRef = useRef<RestoredAttachment[]>([]);
+  const replaceRestoredAttachments = useCallback((items: RestoredAttachment[]) => {
+    const previous = new Set(restoredAttachmentsRef.current.flatMap(item => item.file ? [item.file] : []));
+    queuedAttachmentsRef.current = queuedAttachmentsRef.current.filter(item => !previous.has(item.file));
+    queuedAttachmentsRef.current.push(...items.flatMap(item => item.file ? [{ file: item.file }] : []));
+    restoredAttachmentsRef.current = items;
+    setRestoredAttachments(items);
+  }, [queuedAttachmentsRef]);
+  const holdPendingFiles = useCallback((record: PendingSendState, files: File[]) => {
+    const available = [...files];
+    replaceRestoredAttachments(record.missingFileNames.map(name => {
+      const index = available.findIndex(file => file.name === name);
+      const file = index < 0 ? undefined : available.splice(index, 1)[0];
+      return { id: nextUploadPreviewId.current++, name, file };
+    }));
+  }, [replaceRestoredAttachments]);
+  const removeRestoredAttachment = useCallback((id: number) => {
+    const items = restoredAttachmentsRef.current.filter(item => item.id !== id);
+    replaceRestoredAttachments(items);
+    if (!draftIdentity || !draftKey || !isDraftStoreScope(draftIdentity, window.location.origin)) return;
+    const record = loadPendingSend(draftKey);
+    if (!items.length) clearPendingSend(draftKey);
+    else if (record) savePendingSend(draftKey, { ...record, missingFileNames: items.map(item => item.name) },
+      items.flatMap(item => item.file ? [item.file] : []));
+  }, [replaceRestoredAttachments, draftIdentity, draftKey]);
   const asBlob = (entry: Pending): ImetaMedia => ({ ...entry.descriptor, uploaded: entry.receivedAt });
   const removeAttachment = useCallback((url: string) => {
     setPending((items) => items.filter((item) => item.descriptor.url !== url));
@@ -1362,7 +1391,11 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
           // Original cancelUpload: a canceled file raises no problem and never becomes imeta.
           if (upload.signal.aborted) continue;
           const target = queuedRef.current?.batches.has(batch) ? queuedRef.current : null;
-          if (target) target.failed = true;
+          if (target) {
+            target.failed = true;
+            target.uploadUnknown ||= isOutcomeUnknown(e);
+            target.remainingFiles.push(file);
+          }
           setProblemNeutral(e instanceof ConversationPreparationPending || isOutcomeUnknown(e));
           // 413 是 BFF 侧先行设定的上界，是确定的拒绝；其余是结果不明
           setProblem(
@@ -1525,8 +1558,18 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
     setQueued(null);
     setClearedPublishing(0);
     const pendingSend = draftIdentity && draftKey && !editTarget ? loadPendingSend(draftKey) : undefined;
-    setRecovery(pendingSend ? { files: [], record: { ...pendingSend, stage: publishingPendingSends.has(draftKey!) ? "publishing"
-      : pendingSend.stage === "publishing" ? "unknown" : pendingSend.stage === "uploading" ? "failed" : pendingSend.stage } } : null);
+    const files = pendingSend ? loadPendingSendFiles(draftKey!) : [];
+    const extra = pendingSend?.extras as { restored?: boolean; uploadUnknown?: boolean } | undefined;
+    replaceRestoredAttachments([]);
+    if (pendingSend && extra?.restored) {
+      holdPendingFiles(pendingSend, files);
+      setRecovery(null);
+    } else {
+      setRecovery(pendingSend ? { files, record: { ...pendingSend,
+        extras: { ...(pendingSend.extras as object), ...(pendingSend.stage === "uploading" ? { uploadUnknown: true } : {}) },
+        stage: publishingPendingSends.has(pendingSendOwnerKey) ? "publishing"
+          : pendingSend.stage === "publishing" || pendingSend.stage === "uploading" ? "unknown" : pendingSend.stage } } : null);
+    }
     setIsEmojiPickerOpen(false);
     setProblem(null);
     setProblemNeutral(false);
@@ -1563,8 +1606,8 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
   // saveQueuedAttachmentsForDraft keeps its local files; Kailo keeps only their names).
   const pendingSendRecord = useCallback((snapshot: SendSnapshot, stage: PendingSendStage): PendingSendState => {
     const timestamp = new Date().toISOString();
-    return { stage, extras: { gifs: snapshot.gifs },
-      missingFileNames: [...snapshot.batches].flatMap(batch => [...batch.active.values(), ...batch.remaining]).concat(snapshot.remainingFiles).map(file => file.name),
+    return { stage, extras: { gifs: snapshot.gifs, uploadUnknown: snapshot.uploadUnknown === true },
+      missingFileNames: [...new Set([...snapshot.batches].flatMap(batch => [...batch.active.values(), ...batch.remaining]).concat(snapshot.remainingFiles))].map(file => file.name),
       draft: { content: snapshot.content, channelId: workspaceId ?? draftChannelId ?? draftKey ?? "", selectionStart: snapshot.content.length,
         selectionEnd: snapshot.content.length, createdAt: timestamp, updatedAt: timestamp, status: "active",
         pendingImeta: snapshot.pending.map(asBlob), spoileredAttachmentUrls: [...snapshot.spoilers],
@@ -1572,7 +1615,8 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
         mentionRefs: [...snapshot.bindings].map(([displayName, pubkey]) => ({displayName, pubkey, ...(knownAgentKeys.has(pubkey) ? {isAgent: true} : {})})) } };
   }, [workspaceId, draftChannelId, draftKey, knownAgentKeys]);
   const persistPendingSend = useCallback((snapshot: SendSnapshot, stage: PendingSendStage) => {
-    if (draftIdentity && draftKey) savePendingSend(draftKey, pendingSendRecord(snapshot, stage));
+    if (draftIdentity && draftKey && isDraftStoreScope(draftIdentity, window.location.origin)) savePendingSend(draftKey, pendingSendRecord(snapshot, stage),
+      [...new Set([...snapshot.batches].flatMap(batch => [...batch.active.values(), ...batch.remaining]).concat(snapshot.remainingFiles))]);
   }, [draftIdentity, draftKey, pendingSendRecord]);
   persistQueuedRef.current = (snapshot) => persistPendingSend(snapshot, "uploading");
   const clearComposer = useCallback(() => {
@@ -1590,7 +1634,8 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
     intent.current = null;
   }, [richText.setContent, pasteBinding, channelLinks.clearChannels, emojiAutocomplete.clearEmojis, attachmentActions.setSpoileredAttachmentUrls]);
   // Original restoreComposerAfterFailure: the frozen message returns to the composer, its key
-  // with it (an UNKNOWN retry stays the same publication), and its canceled files upload again.
+  // with it (an UNKNOWN retry stays the same publication). Unconfirmed files
+  // return to the original local queue; only an explicit Send uploads them.
   const applyPendingSend = useCallback(({ record, files }: { record: PendingSendState; files: File[] }) => {
     const { draft: saved } = record;
     richText.setContent(saved.content);
@@ -1605,11 +1650,14 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
     humanBindings.current = new Map((saved.mentionRefs ?? []).map(ref => [ref.displayName, ref.pubkey]));
     for (const ref of saved.mentionRefs ?? []) if (ref.isAgent === true) knownAgentKeys.add(ref.pubkey);
     composerMentions.refreshSelectedNames();
-    if (draftKey) clearPendingSend(draftKey);
-    if (files.length) void attach(files);
-  }, [richText.setContent, attachmentActions.setSpoileredAttachmentUrls, knownAgentKeys, draftKey, attach]);
+    holdPendingFiles(record, files);
+    if (draftIdentity && draftKey && isDraftStoreScope(draftIdentity, window.location.origin)) {
+      if (record.missingFileNames.length) savePendingSend(draftKey, { ...record, extras: { ...(record.extras as object), restored: true } }, files);
+      else clearPendingSend(draftKey);
+    }
+  }, [richText.setContent, attachmentActions.setSpoileredAttachmentUrls, knownAgentKeys, draftKey, draftIdentity, holdPendingFiles]);
   const composerIsEmpty = useCallback(() => !richText.getMarkdown().trim() && pendingRef.current.length === 0 &&
-    pendingGifsRef.current.length === 0 && [...activeBatches.current].every(batch => batch.canceled), [richText.getMarkdown]);
+    pendingGifsRef.current.length === 0 && restoredAttachmentsRef.current.length === 0 && [...activeBatches.current].every(batch => batch.canceled), [richText.getMarkdown]);
   /** Returns whether the message is back in the composer (otherwise it waits as a recovery). */
   const restoreSnapshot = useCallback((snapshot: SendSnapshot, stage: "failed" | "unknown"): boolean => {
     if (!snapshot.cleared) return true;
@@ -1619,7 +1667,7 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
       applyPendingSend({ record, files: snapshot.remainingFiles });
       return true;
     }
-    if (draftIdentity && draftKey) savePendingSend(draftKey, record);
+    if (draftIdentity && draftKey && isDraftStoreScope(draftIdentity, window.location.origin)) savePendingSend(draftKey, record, snapshot.remainingFiles);
     if (owner.active) setRecovery({ record, files: snapshot.remainingFiles });
     return false;
   }, [owner, composerIsEmpty, pendingSendRecord, applyPendingSend, draftIdentity, draftKey]);
@@ -1629,18 +1677,18 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
     const record = loadPendingSend(draftKey);
     if (!record) return null;
     return record.stage === current.record.stage && record.draft.updatedAt === current.record.draft.updatedAt ? current
-      : { ...current, record: { ...record, stage: record.stage === "uploading" ? "failed" : record.stage } };
+      : { ...current, record: { ...record, stage: record.stage === "uploading" ? "unknown" : record.stage } };
   })) : undefined, [draftKey]);
   const restoreRecovery = useCallback(() => {
     if (!recovery || !composerIsEmpty()) return;
     applyPendingSend(recovery);
     setRecovery(null);
-    if (recovery.record.stage === "unknown") { setProblemNeutral(true); setProblem(t("platform.sendUnknown", { operation: "" })); }
+    if (recovery.record.stage === "unknown") { setProblemNeutral(true); setProblem(t((recovery.record.extras as { uploadUnknown?: boolean } | undefined)?.uploadUnknown ? "platform.uploadFailed" : "platform.sendUnknown", { operation: "" })); }
   }, [recovery, composerIsEmpty, applyPendingSend]);
   const discardRecovery = useCallback(() => {
-    if (draftKey) clearPendingSend(draftKey);
+    if (draftIdentity && draftKey && isDraftStoreScope(draftIdentity, window.location.origin)) clearPendingSend(draftKey);
     setRecovery(null);
-  }, [draftKey]);
+  }, [draftIdentity, draftKey]);
 
   // DD-125(8) original non-member prompt. The draft is never cleared by it: Cancel keeps it,
   // "Invite" publishes only after every invited membership is ACTIVE, and "send without
@@ -1818,7 +1866,7 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
       // Persisted before dispatch: a reload during publication finds this key, never a new one.
       snapshot.installationIds = selectedInstallationIds;
       persistPendingSend(snapshot, "publishing");
-      if (draftKey) publishingPendingSends.add(draftKey);
+      if (draftKey) publishingPendingSends.add(pendingSendOwnerKey);
     } else {
       setMentionInstallationIds(selectedInstallationIds);
       persistDraft(content, pending, selectedInstallationIds);
@@ -1842,11 +1890,11 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
     await publish
       .then(() => {
         // An accepted send proves the community write-block is lifted (original clearTimeoutState).
-        clearTimeoutState();
+        if (owner.active && draftIdentity && isDraftStoreScope(draftIdentity, window.location.origin)) clearTimeoutState();
         if (snapshot.cleared) {
           if (draftKey) {
-            publishingPendingSends.delete(draftKey);
-            if (loadPendingSend(draftKey)?.draft.sendIntent?.key === key) clearPendingSend(draftKey);
+            publishingPendingSends.delete(pendingSendOwnerKey);
+            if (draftIdentity && isDraftStoreScope(draftIdentity, window.location.origin) && loadPendingSend(draftKey)?.draft.sendIntent?.key === key) clearPendingSend(draftKey);
           }
           if (!owner.active) return;
           onConfirmed?.();
@@ -1873,7 +1921,7 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
         setConfirmedSendRevision((revision) => revision + 1);
       })
       .catch((e: unknown) => {
-        if (snapshot.cleared && draftKey) publishingPendingSends.delete(draftKey);
+        if (snapshot.cleared && draftKey) publishingPendingSends.delete(pendingSendOwnerKey);
         // A definite rejection ends this intent; any other outcome keeps its key for the same retry.
         if (e instanceof BffError && e.reason === ReasonCode.PublishRejected) intent.current = null;
         restore(isOutcomeUnknown(e) ? "unknown" : "failed");
@@ -1897,7 +1945,7 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
           setProblem(t("platform.sendFailed"));
         }
       });
-  }, [restoreSnapshot, persistPendingSend, linkPreviews.prepareSubmit, workspaceId, onPublish, richText.getMarkdown, richText.setContent, owner, persistDraft, attachmentActions.setSpoileredAttachmentUrls, editTarget, draftKey, onConfirmed, pasteBinding, mentionCandidates, knownAgentKeys, audience.pubkeys, agentDirectory.verify, channelLinks.clearChannels, emojiAutocomplete.clearEmojis, nonMemberFlow, promptNonMembers]);
+  }, [restoreSnapshot, persistPendingSend, linkPreviews.prepareSubmit, workspaceId, onPublish, richText.getMarkdown, richText.setContent, owner, persistDraft, attachmentActions.setSpoileredAttachmentUrls, editTarget, draftKey, draftIdentity, pendingSendOwnerKey, onConfirmed, pasteBinding, mentionCandidates, knownAgentKeys, audience.pubkeys, agentDirectory.verify, channelLinks.clearChannels, emojiAutocomplete.clearEmojis, nonMemberFlow, promptNonMembers]);
   const prepareSend = async ({ release, decision }: { release: () => void; decision?: NonMemberDecision }) => {
     if (!editTarget) {
       // Original useMentionSendFlow: Send freezes the message and clears the composer before it is
@@ -1911,6 +1959,14 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
         // Previews belong to the text being cleared; they are prepared before it goes.
         const linkPreviewIntent = await linkPreviews.prepareSubmit();
         if (!owner.active) return;
+        // Only this explicit Send moves restored local files back to the
+        // original upload batch. Restore/refresh/auto-submit never call attach.
+        const local = restoredAttachmentsRef.current;
+        if (local.some(item => !item.file) || (local.length > 0 && intent.current)) return;
+        if (local.length) {
+          replaceRestoredAttachments([]);
+          void attach(local.map(item => item.file!));
+        }
         const content = richText.getMarkdown().trim();
         if (!content && pendingRef.current.length === 0 && pendingGifsRef.current.length === 0 && activeBatches.current.size === 0) return;
         snapshot = { content, pending: pendingRef.current, gifs: pendingGifsRef.current,
@@ -1953,8 +2009,8 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
   };
   const { submit: send } = useComposerSubmission<null, NonMemberDecision>({
     getContent: richText.getMarkdown,
-    hasMedia: () => pendingRef.current.length > 0 || pendingGifsRef.current.length > 0 || activeBatches.current.size > 0,
-    canSubmit: () => owner.active && !sending && !owner.sending && !disabled && !queuedRef.current && !paste.isPreparingAttachments() && voiceNote.statusRef.current === "idle" && mentionVerified && !(editTarget && uploading > 0),
+    hasMedia: () => pendingRef.current.length > 0 || pendingGifsRef.current.length > 0 || activeBatches.current.size > 0 || restoredAttachmentsRef.current.length > 0,
+    canSubmit: () => !restoredAttachmentsRef.current.some(item => !item.file) && !(restoredAttachmentsRef.current.length > 0 && intent.current) && owner.active && !sending && !owner.sending && !disabled && !queuedRef.current && !paste.isPreparingAttachments() && voiceNote.statusRef.current === "idle" && mentionVerified && !(editTarget && uploading > 0),
     isEditing: Boolean(editTarget), isDm: channelType === "dm", dmAgentNames,
     refuseDmAgent: refused => { if (refused) { setProblemNeutral(false); setProblem(t("dm.agentMentionRefused")); } },
     requestEmptyEdit: editTarget && onRequestEmptyEditDelete ? () => {
@@ -1972,7 +2028,7 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
     if (!snapshot || queued !== snapshot || [...snapshot.batches].some(batch => !batch.canceled && activeBatches.current.has(batch))) return;
     queuedRef.current = null;
     setQueued(null);
-    if (snapshot.failed) { restoreSnapshot(snapshot, "failed"); return; }
+    if (snapshot.failed) { restoreSnapshot(snapshot, snapshot.uploadUnknown ? "unknown" : "failed"); return; }
     // Its publication is not shown in the timeline before the Relay confirms it; the pill says it is on its way.
     setClearedPublishing((count) => count + 1);
     void dispatch(snapshot).finally(() => { if (owner.active) setClearedPublishing((count) => Math.max(0, count - 1)); });
@@ -1995,7 +2051,7 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
 
   useComposerAutoSubmit({
     owner, enabled: Boolean(autoSendDraftKey && autoSendDraftKey === draftKey),
-    ready: loadedDraftOwner === owner && draftReady.current && !disabled && !sending && !paste.isPreparingAttachments() && uploading === 0 && voiceNote.status === "idle" && mentionVerified && Boolean(richText.getMarkdown().trim() || pending.length),
+    ready: restoredAttachments.length === 0 && loadedDraftOwner === owner && draftReady.current && !disabled && !sending && !paste.isPreparingAttachments() && uploading === 0 && voiceNote.status === "idle" && mentionVerified && Boolean(richText.getMarkdown().trim() || pending.length),
     active: () => owner.active, consume: onAutoSendConsumed,
     beforeSubmit: () => {
       if (!intent.current) return true;
@@ -2056,7 +2112,7 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
       onOpenMentionPicker: mentionPeople || workspaceId ? openPeople : undefined,
       onPaperclip: () => { if (!voiceNote.hasAttachmentRef.current) picker.current?.click(); },
       onFinishVoiceNote: () => void voiceNote.finish(), onVoiceNote: voiceNote.toggle,
-      sendDisabled: disabled || sending || queued !== null || paste.isPreparingAttachments() || voiceNote.status !== "idle" || !mentionVerified || (!(editTarget && onRequestEmptyEditDelete) && !draft.trim() && pending.length === 0 && pendingGifs.length === 0),
+      sendDisabled: restoredAttachments.some(item => !item.file) || (restoredAttachments.length > 0 && intent.current !== null) || disabled || sending || queued !== null || paste.isPreparingAttachments() || voiceNote.status !== "idle" || !mentionVerified || (!(editTarget && onRequestEmptyEditDelete) && !draft.trim() && pending.length === 0 && pendingGifs.length === 0 && restoredAttachments.length === 0),
       gifs: gifOption,
     }}>
       {dragging ? <DropZoneOverlay /> : null}
@@ -2079,6 +2135,9 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
       {!mentionVerified ? (
         <div role="alert">{t("platform.mentionAgentsUnavailable")}</div>
       ) : null}
+      {restoredAttachments.some(item => !item.file) ? <div role="status" className="text-xs text-muted-foreground">
+        {t("platform.pendingSendMissingFiles", { count: restoredAttachments.filter(item => !item.file).length })}
+      </div> : null}
       {problem ? (
         <div className={problemNeutral ? "text-xs text-muted-foreground" : "text-xs text-destructive"} role={problemNeutral ? "status" : "alert"}>
           {problem}
@@ -2086,8 +2145,9 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
       ) : null}
       {queued ? <ComposerQueuedSendPill previews={queuedPreviews} onCancel={cancelQueuedSend} />
         : clearedPublishing > 0 ? <ComposerPendingSendRecovery stage="publishing" missingFiles={0} canRestore={false} onRestore={() => {}} onDiscard={() => {}} /> : null}
-      {recovery ? <ComposerPendingSendRecovery stage={recovery.record.stage} missingFiles={recovery.record.missingFileNames.length}
-        canRestore={!draft.trim() && pending.length === 0 && pendingGifs.length === 0 && composerUploading === 0}
+      {recovery ? <ComposerPendingSendRecovery stage={recovery.record.stage} missingFiles={Math.max(0, recovery.record.missingFileNames.length - recovery.files.length)}
+        canRestore={!draft.trim() && pending.length === 0 && pendingGifs.length === 0 && restoredAttachments.length === 0 && composerUploading === 0}
+        uploadUnknown={(recovery.record.extras as { uploadUnknown?: boolean } | undefined)?.uploadUnknown === true}
         onRestore={restoreRecovery} onDiscard={discardRecovery} /> : null}
       <ComposerLinkPreviewPreparing previews={linkPreviews} />
       <ComposerLinkPreviewCards previews={linkPreviews} resolveMedia={resolvePreviewMedia} />
@@ -2095,6 +2155,8 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
       <ComposerAttachments attachments={pending.map(asBlob)} resolveMediaUrl={resolveMediaUrl}
         fetchMediaBytes={fetchMediaBytes} AudioAttachment={BffAudioAttachment} isUploading={composerUploading > 0} uploadingCount={composerUploading}
         uploadingPreviews={composerPreviews} onCancelUpload={cancelUpload}
+        queuedPreviews={restoredAttachments.map(item => ({ id: item.id, filename: item.name, type: item.file?.type }))}
+        onRemoveQueued={removeRestoredAttachment}
         onRemove={attachmentActions.handleRemoveAttachment} onEditSave={attachmentActions.handleAttachmentEditSave}
         onRevert={attachmentActions.handleAttachmentRevert} onToggleSpoiler={attachmentActions.handleToggleAttachmentSpoiler}
         spoileredUrls={attachmentActions.spoileredAttachmentUrls}

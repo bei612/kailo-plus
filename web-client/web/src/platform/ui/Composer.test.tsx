@@ -1404,6 +1404,9 @@ describe("DD-146 original send flow: clear at Send, restore on failure", () => {
     expect(host.textContent).toContain("platform.uploadTooLarge");
     expect(pill(host)).toBeNull();
     expect(recovery(host)).toBeNull();
+    expect(upload).toHaveBeenCalledTimes(1);
+    expect(host.querySelector('[data-testid="composer-queued-media-attachment"]')?.textContent).toContain("one.txt");
+    expect(loadPendingSend("queued-fail")?.missingFileNames).toEqual(["one.txt"]);
   });
 
   it("Cancel restores the draft and its canceled file without publishing", async () => {
@@ -1417,11 +1420,120 @@ describe("DD-146 original send flow: clear at Send, restore on failure", () => {
     expect(uploads[0]!.options!.signal!.aborted).toBe(true);
     expect(input(host).textContent).toBe("maybe later");
     // Original restoreQueuedAttachments: the canceled local file is back in the composer.
-    expect(upload).toHaveBeenCalledTimes(2);
-    expect(uploads[1]!.file.name).toBe("one.txt");
+    expect(upload).toHaveBeenCalledTimes(1);
+    expect(host.querySelector('[data-testid="composer-queued-media-attachment"]')?.textContent).toContain("one.txt");
     await act(async () => uploads[0]!.resolve(descriptor));
     await settle();
     expect(state.publish).not.toHaveBeenCalled();
+  });
+
+  it.each(["failure", "unknown", "cancel"])("retains the original local attachment after %s without upload until explicit Send", async outcome => {
+    const {upload, uploads} = uploader();
+    const key = `retained-${outcome}`;
+    const host = await render(composer(key, upload));
+    await type(input(host), "keep body and file");
+    await attachPending(host);
+    await click(button(host, "platform.send"));
+    if (outcome === "cancel") await click(host.querySelector<HTMLElement>('[data-testid="composer-queued-send-cancel"]')!);
+    else await act(async () => uploads[0]!.reject(outcome === "unknown" ? new TransportError("lost upload receipt") : new BffError(413, "too large")));
+    await settle(); await settle();
+    expect(input(host).textContent).toBe("keep body and file");
+    expect(upload).toHaveBeenCalledTimes(1);
+    expect(state.publish).not.toHaveBeenCalled();
+    expect(loadPendingSend(key)?.stage).toBe(outcome === "unknown" ? "unknown" : "failed");
+    expect(loadPendingSend(key)?.missingFileNames).toEqual(["one.txt"]);
+    expect(host.querySelector('[data-testid="composer-queued-media-attachment"]')?.textContent).toContain("one.txt");
+    await click(button(host, "platform.send"));
+    await vi.waitFor(() => expect(upload).toHaveBeenCalledTimes(2));
+    expect(uploads[1]!.file).toBe(uploads[0]!.file);
+    expect(state.publish).not.toHaveBeenCalled();
+    await act(async () => uploads[1]!.resolve(descriptor));
+    await vi.waitFor(() => expect(state.publish).toHaveBeenCalledOnce());
+    expect(state.publish.mock.calls[0][1]).toBe("keep body and file");
+    expect(state.publish.mock.calls[0][2]).toEqual([expect.objectContaining({sha256:descriptor.sha256,filename:"one.txt"})]);
+  });
+
+  it("keeps confirmed media and freezes a failed batch file until explicit Send", async () => {
+    const {upload, uploads} = uploader();
+    const host = await render(composer("partial-batch", upload));
+    await type(input(host), "both stay");
+    await act(async () => paste(host, "", "", [new File(["one"],"one.txt"),new File(["two"],"two.txt")]));
+    await click(button(host, "platform.send"));
+    await act(async () => uploads[0]!.resolve(descriptor));
+    await vi.waitFor(() => expect(uploads).toHaveLength(2));
+    await act(async () => uploads[1]!.reject(new TransportError("lost second receipt")));
+    await settle(); await settle();
+    expect(upload).toHaveBeenCalledTimes(2);
+    expect(state.publish).not.toHaveBeenCalled();
+    expect(loadDraftEntry("partial-batch")?.pendingImeta[0]).toMatchObject({sha256:descriptor.sha256,filename:"one.txt"});
+    expect(loadPendingSend("partial-batch")?.missingFileNames).toEqual(["two.txt"]);
+    await click(button(host, "platform.send"));
+    await vi.waitFor(() => expect(uploads).toHaveLength(3));
+    expect(uploads[2]!.file.name).toBe("two.txt");
+    await act(async () => uploads[2]!.resolve({...descriptor,sha256:"b".repeat(64),url:"media:two"}));
+    await vi.waitFor(() => expect(state.publish).toHaveBeenCalledOnce());
+    expect(state.publish.mock.calls[0][2].map((file:{filename:string})=>file.filename)).toEqual(["one.txt","two.txt"]);
+  });
+
+  it("retains files in the same draft scope but a reload with missing bytes cannot send only the body", async () => {
+    const {upload, uploads} = uploader();
+    let host = await render(composer("retained-revisit", upload));
+    await type(input(host), "needs file");
+    await attachPending(host);
+    await click(button(host, "platform.send"));
+    await act(async () => uploads[0]!.reject(new TransportError("upload unknown")));
+    await settle();
+    await rerender(composer("another-draft", upload));
+    await rerender(composer("retained-revisit", upload));
+    expect(upload).toHaveBeenCalledTimes(1);
+    expect(input(host).textContent).toBe("needs file");
+    expect(button(host,"platform.send").disabled).toBe(false);
+    await act(async()=>{mounted!.root.unmount();mounted!.host.remove();mounted!.queryClient.clear();mounted=undefined;});
+    // Same persisted names, but File bytes do not survive a fresh JS lifetime.
+    clearAllDrafts();
+    host = await render(composer("retained-revisit", upload));
+    expect(input(host).textContent).toBe("needs file");
+    expect(host.querySelector('[data-testid="composer-queued-media-attachment"]')?.textContent).toContain("one.txt");
+    expect(button(host,"platform.send").disabled).toBe(true);
+    await act(async()=>{input(host).dispatchEvent(new KeyboardEvent("keydown",{key:"Enter",bubbles:true,cancelable:true}));});
+    expect(upload).toHaveBeenCalledTimes(1);
+    expect(state.publish).not.toHaveBeenCalled();
+  });
+
+  it("does not lend recovered File bytes to another identity with the same draft key", async () => {
+    const {upload, uploads} = uploader();
+    const host = await render(composer("retained-identity", upload));
+    await type(input(host), "alice file");
+    await attachPending(host);
+    await click(button(host,"platform.send"));
+    await act(async()=>uploads[0]!.reject(new TransportError("lost receipt")));
+    await settle();
+    await rerender(<Composer workspaceId="workspace-a" draftIdentity="bob" draftKey="retained-identity" onUpload={upload}/>);
+    expect(input(host).textContent).toBe("");
+    expect(host.querySelector('[data-testid="composer-queued-media-attachment"]')).toBeNull();
+    await rerender(composer("retained-identity",upload));
+    expect(input(host).textContent).toBe("alice file");
+    expect(button(host,"platform.send").disabled).toBe(true);
+    expect(upload).toHaveBeenCalledTimes(1);
+    expect(state.publish).not.toHaveBeenCalled();
+  });
+
+  it("does not write an old publication recovery into a later identity's draft store", async () => {
+    let reject!: (error: unknown) => void;
+    state.publish.mockImplementationOnce(() => new Promise((_resolve, fail) => { reject = fail; }));
+    const {upload} = uploader();
+    const host = await render(composer("shared-local-key", upload));
+    await type(input(host), "alice pending");
+    await click(button(host,"platform.send"));
+    await vi.waitFor(() => expect(state.publish).toHaveBeenCalledOnce());
+    await rerender(<Composer workspaceId="workspace-a" draftIdentity="bob" draftKey="shared-local-key" onUpload={upload}/>);
+    await type(input(host), "bob owns this draft");
+    await act(async()=>reject(new TransportError("alice late receipt unknown")));
+    await settle();
+    expect(input(host).textContent).toBe("bob owns this draft");
+    expect(loadPendingSend("shared-local-key")).toBeUndefined();
+    expect(loadDraftEntry("shared-local-key")?.content).toBe("bob owns this draft");
+    expect(upload).not.toHaveBeenCalled();
   });
 
   it("keeps a failed send as a recovery when the composer has moved on", async () => {
@@ -1482,7 +1594,7 @@ describe("DD-146 original send flow: clear at Send, restore on failure", () => {
     await settle();
     expect(state.publish).not.toHaveBeenCalled();
     expect(input(host).textContent).toBe("");
-    expect(recovery(host)!.dataset.stage).toBe("failed");
+    expect(recovery(host)!.dataset.stage).toBe("unknown");
     expect(recovery(host)!.textContent).toContain("platform.pendingSendMissingFiles");
     await click(recovery(host)!.querySelector<HTMLElement>('[data-testid="composer-pending-send-restore"]')!);
     await settle();

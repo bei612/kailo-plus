@@ -187,6 +187,7 @@ export function initDraftStore(pubkey: string, relayUrl = "", discardAttachments
   if (currentPubkey !== pubkey || currentRelayScope !== relayScope) {
     _memCache = null;
     resetDraftAuthorities();
+    pendingSendFiles.clear();
   }
   currentPubkey = pubkey;
   currentRelayScope = relayScope;
@@ -201,6 +202,7 @@ export function initDraftStore(pubkey: string, relayUrl = "", discardAttachments
  */
 export function clearAllDrafts(): void {
   resetDraftAuthorities();
+  pendingSendFiles.clear();
   currentPubkey = "";
   currentRelayScope = "";
   _memCache = null;
@@ -545,6 +547,18 @@ export type PendingSendState = {
   extras?: unknown;
 };
 
+// Original saveQueuedAttachmentsForDraft semantics, attached to the existing
+// pending-send record in this identity/relay scope. File bytes are never JSON.
+const pendingSendFiles = new Map<string, readonly File[]>();
+
+export function isDraftStoreScope(pubkey: string, relayUrl: string): boolean {
+  return currentPubkey === pubkey && currentRelayScope === canonicalizeRelayScope(relayUrl);
+}
+
+export function loadPendingSendFiles(draftKey: string): File[] {
+  return loadPendingSend(draftKey) ? [...(pendingSendFiles.get(draftKey) ?? [])] : [];
+}
+
 const PENDING_SEND_STAGES: readonly PendingSendStage[] = ["uploading", "publishing", "failed", "unknown"];
 
 function pendingSendStorageKey(): string {
@@ -576,7 +590,10 @@ function writePendingSends(sends: Record<string, PendingSendState>): void {
   notifySubscribers();
 }
 
-export function savePendingSend(draftKey: string, state: PendingSendState): void {
+export function savePendingSend(draftKey: string, state: PendingSendState, files?: readonly File[]): void {
+  if (!currentPubkey) return;
+  if (files !== undefined) pendingSendFiles.set(draftKey, [...files]);
+  if (!state.missingFileNames.length) pendingSendFiles.delete(draftKey);
   writePendingSends({ ...readPendingSends(), [draftKey]: state });
 }
 
@@ -585,6 +602,7 @@ export function loadPendingSend(draftKey: string): PendingSendState | undefined 
 }
 
 export function clearPendingSend(draftKey: string): void {
+  pendingSendFiles.delete(draftKey);
   const sends = readPendingSends();
   if (!(draftKey in sends)) return;
   delete sends[draftKey];
