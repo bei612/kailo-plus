@@ -241,29 +241,31 @@ class NativeSqlAnswerStream(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(caught.exception.status_code, 404)
         self.assertEqual(service._ask_feedback_results, {})
 
-    def pipeline(self):
+    def pipeline(self, content="first"):
         pipeline = object.__new__(pipeline_module.SQLAnswer)
         pipeline._user_queues = {}
         pipeline._components = {}
-        pipeline._pipe = types.SimpleNamespace(execute=AsyncMock(return_value={"generate_answer": "native-provider-result"}))
+        pipeline._pipe = types.SimpleNamespace(execute=AsyncMock(return_value={"generate_answer": {"replies": [content], "meta": [{"finish_reason": "stop"}]}}))
         return pipeline
 
     def service(self, pipeline, ids):
         service = service_module.SqlAnswerService({"sql_answer": pipeline})
         for identifier in ids:
-            service._sql_answer_results[identifier] = types.SimpleNamespace(status="succeeded")
+            service._sql_answer_results[identifier] = service_module.SqlAnswerResultResponse(status="succeeded")
         return service
 
     async def test_original_producer_and_service_emit_exact_native_completion_after_provider_returns(self):
-        pipeline = self.pipeline()
+        pipeline = self.pipeline("<DONE>")
         pipeline._streaming_callback(types.SimpleNamespace(content="<DONE>", meta={"finish_reason": "stop"}), "first")
         # Model text/finish hints cannot settle the original task before the provider returns.
         self.assertEqual(pipeline._user_queues["first"].qsize(), 1)
-        await pipeline.run("question", "SQL", {}, "Chinese", query_id="first")
-        events = [event async for event in self.service(pipeline, ["first"]).get_sql_answer_streaming_result("first")]
+        service = self.service(pipeline, ["first"])
+        await service._generate_answer(query="question", sql="SQL", sql_data={}, language="Chinese", query_id="first")
+        events = [event async for event in service.get_sql_answer_streaming_result("first")]
         self.assertEqual([json.loads(event.removeprefix("data: ")) for event in events], [
             {"message": "<DONE>"}, {"done": True, "queryId": "first"},
         ])
+        # Completed reads use the original retained result, not queue consumption.
         self.assertNotIn("first", pipeline._user_queues)
 
     async def test_original_timeout_has_no_completion_receipt(self):
@@ -286,15 +288,101 @@ class NativeSqlAnswerStream(unittest.IsolatedAsyncioTestCase):
 
     async def test_two_original_native_tasks_do_not_share_chunk_state(self):
         pipeline = self.pipeline()
+        service = self.service(pipeline, ["first", "second"])
         for identifier in ["first", "second"]:
             pipeline._streaming_callback(types.SimpleNamespace(content=identifier, meta={}), identifier)
-            await pipeline.run("question", "SQL", {}, "Chinese", query_id=identifier)
-        service = self.service(pipeline, ["first", "second"])
+            pipeline._pipe.execute.return_value = {"generate_answer": {"replies": [identifier], "meta": [{"finish_reason": "stop"}]}}
+            await service._generate_answer(query="question", sql="SQL", sql_data={}, language="Chinese", query_id=identifier)
         async def read(identifier):
             return [json.loads(event.removeprefix("data: ")) async for event in service.get_sql_answer_streaming_result(identifier)]
         first, second = await asyncio.gather(read("first"), read("second"))
         self.assertEqual(first, [{"message": "first"}, {"done": True, "queryId": "first"}])
         self.assertEqual(second, [{"message": "second"}, {"done": True, "queryId": "second"}])
+
+    async def test_original_generation_retains_full_result_across_mounts_without_restarting(self):
+        pipeline = self.pipeline("head tail")
+        release = asyncio.Future()
+        pipeline._pipe.execute = AsyncMock(side_effect=lambda *args, **kwargs: release)
+        async def provider(*args, **kwargs):
+            return await release
+        pipeline._pipe.execute.side_effect = provider
+        service = service_module.SqlAnswerService({
+            "sql_answer": pipeline,
+            "preprocess_sql_data": types.SimpleNamespace(run=lambda **kwargs: {
+                "preprocess": {"num_rows_used_in_llm": 1, "sql_data": {}}
+            }),
+        })
+        request = service_module.SqlAnswerRequest(
+            query_id="first", query="question", sql="SELECT 1", sql_data={},
+            request_from="ui", custom_instruction=None,
+            configurations=types.SimpleNamespace(language="Chinese", show_current_time=lambda: "fixed"),
+        )
+        tasks = []
+        create_task = asyncio.create_task
+        def record_task(coroutine):
+            task = create_task(coroutine)
+            tasks.append(task)
+            return task
+        with patch.object(service_module.asyncio, "create_task", record_task):
+            await service.sql_answer(request)
+        await asyncio.sleep(0)
+        ready = service.get_sql_answer_result(types.SimpleNamespace(query_id="first"))
+        self.assertEqual(ready.status, "succeeded")
+        self.assertIsNone(ready.completion)
+        pipeline._streaming_callback(types.SimpleNamespace(content="head "), "first")
+        first_mount = service.get_sql_answer_streaming_result("first")
+        self.assertEqual(json.loads((await anext(first_mount)).removeprefix("data: ")), {"message": "head "})
+        await first_mount.aclose()
+        second_mount = service.get_sql_answer_streaming_result("first")
+        pipeline._streaming_callback(types.SimpleNamespace(content="tail"), "first")
+        self.assertEqual(json.loads((await anext(second_mount)).removeprefix("data: ")), {"message": "tail"})
+        release.set_result({"generate_answer": {"replies": ["head tail"], "meta": [{"finish_reason": "stop"}]}})
+        await tasks[0]
+        # The second observer only saw a tail, so it must not receive done.
+        self.assertEqual([part async for part in second_mount], [])
+        final = service.get_sql_answer_result(types.SimpleNamespace(query_id="first"))
+        self.assertEqual(final.completion.model_dump(), {"query_id": "first", "content": "head tail"})
+        for _ in range(2):
+            frames = [json.loads(part.removeprefix("data: ")) async for part in service.get_sql_answer_streaming_result("first")]
+            self.assertEqual(frames, [{"message": "head tail"}, {"done": True, "queryId": "first"}])
+        pipeline._pipe.execute.assert_awaited_once()
+        self.assertEqual(len(tasks), 1)
+
+    async def test_original_incomplete_provider_results_never_become_full_answers(self):
+        for value in [
+            {"replies": ["partial"], "meta": [{"finish_reason": "length"}]},
+            {"replies": ["partial"], "meta": [{"finish_reason": "content_filter"}]},
+            {"replies": ["partial"], "meta": [{}]},
+            {"replies": ["one", "two"], "meta": [{"finish_reason": "stop"}]},
+            "native-provider-result",
+        ]:
+            with self.subTest(result=value):
+                pipeline = self.pipeline()
+                pipeline._pipe.execute.return_value = {"generate_answer": value}
+                service = self.service(pipeline, ["first"])
+                pipeline._streaming_callback(types.SimpleNamespace(content="partial"), "first")
+                await service._generate_answer(query="question", sql="SQL", sql_data={}, language="Chinese", query_id="first")
+                self.assertIsNone(service.get_sql_answer_result(types.SimpleNamespace(query_id="first")).completion)
+                frames = [json.loads(part.removeprefix("data: ")) async for part in service.get_sql_answer_streaming_result("first")]
+                self.assertEqual(frames, [{"message": "partial"}])
+                pipeline._pipe.execute.assert_awaited_once()
+
+    async def test_old_generation_does_not_restore_expired_or_replaced_result_cache(self):
+        for replacement in [False, True]:
+            pipeline = self.pipeline()
+            service = self.service(pipeline, ["first"])
+            async def provider(*args, **kwargs):
+                service._sql_answer_results.pop("first")
+                if replacement:
+                    service._sql_answer_results["first"] = service_module.SqlAnswerResultResponse(status="succeeded")
+                return {"generate_answer": {"replies": ["old"], "meta": [{"finish_reason": "stop"}]}}
+            pipeline._pipe.execute.side_effect = provider
+            await service._generate_answer(query="question", sql="SQL", sql_data={}, language="Chinese", query_id="first")
+            if replacement:
+                self.assertIsNone(service.get_sql_answer_result(types.SimpleNamespace(query_id="first")).completion)
+            else:
+                with self.assertRaises(HTTPException):
+                    service.get_sql_answer_result(types.SimpleNamespace(query_id="first"))
 
     async def test_original_missing_ai_task_is_not_a_fabricated_failed_terminal(self):
         service = self.service(self.pipeline(), [])

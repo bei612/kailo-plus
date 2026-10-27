@@ -165,6 +165,7 @@ class SqlAnswerService:
                     "completion": SqlAnswerCompletion(query_id=query_id, content=replies[0]),
                 }
             )
+            self._pipelines["sql_answer"].retire_streaming_results(query_id)
         except Exception:
             # A lost provider result is not proof of failure and must not
             # resubmit the original generation. Cache expiry remains UNKNOWN.
