@@ -7069,3 +7069,52 @@ SHA-256 都是 `553712d3187d831dfe0f8988da7dcad4db9c75661273a98d10e31886926ad420
 无 schema/API/Workflow/i18n 变化，不新增或解除正式发布门禁；未做全工程 full、制品、
 部署、真实浏览器键盘或 Windows 安装验收。此次 Desktop 证据是实际共享包、类型及原
 消费者回归，不把 Web DOM 操作宣称为真机按键验证。
+
+### 2026-10-27：原上传失败恢复与发送所有者收口
+
+本批固定实现与完整消费者输入为
+`4babe467ceb5ca4e89b33138e820ce5d3c0916c2`，基于原粘贴批
+`a7501d688e07f7d3104bf530b403c0bcb7c196ef`。原 Buzz
+`779af8886caae1317b4de962082429867ab61503` 的
+`useMentionSendFlow.restoreComposerAfterFailure` 与
+`useMediaUpload.restoreQueuedAttachments` 先恢复本地 File 队列，恢复本身不发上传请求。
+此前 Web 的失败分支只标记失败，随后从 active 移除 File；取消恢复则直接调用 attach，
+既会丢失败文件，也会在恢复时重发上传。
+
+现在沿原 pendingSend、草稿和 queuedPreviews 保留未确认文件名与同身份/Relay
+作用域内的 File 引用；失败、上传 UNKNOWN、取消恢复均不调用上传 HTTP。
+只有原明确 Send 才把仍有字节的文件交回原批量 attach，收到全部真实上传回执后才发布。
+刷新或切身份失去 File 字节时仍显示原文件名，Enter 与发送按钮阻止缺附件正文发送；
+用户可沿原附件移除入口明确移除占位。成功附件、正文、提及和原 publication UNKNOWN
+意图仍保留，已发出的上传可能留下未引用对象，本批不声称撤回这些字节。
+GIF 从原 pendingSend extras 恢复，并同步恢复后用户的 GIF 编辑，跨草稿重开不会丢失。
+
+发送快照沿原 DraftAuthority 对象及发送代次判定恢复和清理归属：普通编辑不会夺走
+旧发送的待恢复记录，新的发送或身份作用域重置会使旧回调失效。
+编辑 intent 按原 owner 保存，旧编辑的明确拒绝不能清空新 owner 的 UNKNOWN 重试键。
+当前 owner 的成功发送仍清除原社区 timeout，即使该输入框没有持久化 draftKey。
+未增加上传服务、持久队列、业务对象或重新签名入口。
+
+原 SDK `sha256:3007729eb192341a4f004a88e42e1e66c94fc67d763acfc96568bd7311116018`
+在 CI 实际 Data 盘执行，限额实际回读为 1 CPU、4 GiB 内存及同额 swap、256 pids。
+源码只从 GitHub 固定对象解包，复用已释放原依赖，不复制到 NVMe。
+最终 Web 类型检查与完整 `Composer.test.tsx` 的 83/83 项通过，无过滤或跳过；
+实际安装的共享 file 包 1039 文件、归档源码 3454 文件均逐字匹配，容器清理回读为空。
+共享生产/测试类型及原 draft-surfaces 3 项在 `4a4567449` 已完成，
+其共享源码树与最终固定对象一致；不把该早期随后失败的整项作业记为通过。
+
+`de4a1acde7c80df38fed0afee7d6163aed07897b` 上另有原恢复目标 19 项通过，
+五个真实故障分别恢复自动上传、删除缺字节占位、取消旧 owner 检查、共享编辑 intent、
+清空恢复 GIF；原消费者分别实际失败 3/1/1/1/1 项，各逐字还原后通过。
+完整检查后来检出的 timeout 兼容问题已修正，最终 83 项包括该原消费者。
+`4a4567449`、`5fa36c1b1`、`22cad177d` 的失败与浏览器夹具异常日志均保留。
+曾提出的“publishing 期间 Discard”场景在原 UI 没有可点击入口，追加提交已普通 revert；
+不将其源码审查或未完成用例计为功能与验收。
+
+[本批独立回执](composer-upload-recovery-receipt.json) SHA-256：
+`775b94c5d9befb0054d5679c17a27fbaed2b76178ce0d5d3a9d68b1fac2529f3`。
+CI 原件位于 `/volumes/data/kailo/verification/composer-recovery/` 对应固定源码子目录。
+原 `composer-failure-receipt.json` 保持逐字不变。
+这些检查使用原 React/TipTap/发送消费者和脚本化 BFF、媒体回执，
+不等于真实浏览器、设备或生产上传验收；原 React act 与 linkify 警告保留，
+最终没有未处理测试错误。本批未执行 Native 套件、全 Web 项目门禁、制品发布或部署。
