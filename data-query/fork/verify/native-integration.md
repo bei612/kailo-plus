@@ -12018,3 +12018,99 @@ by `yarn install --immutable` through the proxy, checks with `--network none`,
 These are source checks, not an image or business acceptance: `data-query-ui`
 must be rebuilt from the merged commit and the independent instance re-accepted
 (ask → result, Models(n), diagram) before the 58095 page is fixed.
+
+
+## 2026-10-27 — Original standalone Ask completion and stream mode retirement
+
+Fixed product source: `6f32bac584b707f7b814462304012248d7b373f0`, based on
+`8c5395908aacbc6c4d82a57eb43855b4d66824ee`. The fixed upstream Wren source
+remains `c5f02a0391c87420dba78632dcd86073710deb72`; its
+`wren-ui/src/pages/api/ask_task/streaming.ts` forwards native chunks and emits
+`{done:true}` on EOF. The current original AI producer,
+`wren-ai-service/src/web/v1/services/ask.py::get_ask_streaming_result`, instead
+emits `{done:true,queryId}` only for the original pipeline queue's completion
+sentinel. Its `queryId` is the same native task passed to that queue; absent
+queue/cache evidence does not emit completion.
+
+The current browser consumer `useAskingStreamTask` accepts only the one-key
+`{done:true}` browser message. The STANDALONE route therefore had two real
+faults: forwarding the native completion made the browser close unresolved;
+EOF without native completion incorrectly manufactured success. The route now
+shares the existing governed message decoder, validates the exact native task
+completion and emits the original browser shape. It reads the original
+persisted task/project through `AskingService.getAskingTask` before opening the
+native stream and before each exposed frame. It does not create another Ask,
+SQL execution or task, reopen an interrupted queue, or rebuild historical MDL
+from the current project.
+
+DD-127(7) deployment mode stays independent of request tokens. STANDALONE loads
+no platform delivery and keeps its original stream lifetime. GOVERNED keeps
+its existing delivered byte budget, timeout and per-frame HUMAN/source checks.
+An in-flight stream cannot change modes: standalone checks mode before/after
+its original task read; the governed route's authorization closure checks mode
+before/after the original asynchronous resolver. This also prevents that
+resolver's standalone early return from exposing old governed reasoning after
+both delivery environment entries are retired. Invalid, foreign or extra-field
+completion, native EOF and authorization/mode changes never emit `done`.
+
+### Fixed-source checks and actual failures
+
+The existing `~/kailo-acceptance/ops/wren/ui-run.sh` Node 18/Yarn recipe was used
+with explicit 4 CPU / 4 GiB memory and equal swap limits. Image:
+`sha256:f9ab18e354e6855ae56ef2b290dd225c1e51a564f87584b9bd21dd651838830e`.
+Dependencies were installed with original Yarn 4.5.3 `install --immutable`;
+checks used `--network none`. Source, temporary files and the copied original
+Yarn cache were on actual Data under
+`/volumes/data/kailo/conformance/cache/wren-readonly-chain`; the old NVMe bind
+cache was not cleared or written. All **617** exported GitHub input blobs
+(`wren-ui`, `client-kit/adapter`, `client-kit/embed`) matched the final fixed
+commit after the checks and fault restoration.
+
+- Original `nativeTaskOwnership.test.ts` HTTP/task-owner describes: **65 passed**;
+  the other **39** tests were explicitly not selected, not counted as passes.
+- Original `askingStream.test.tsx` and `nativeAskingQuery.test.ts`: **58 passed**,
+  covering the browser hook/GeneralAnswer and original SQLite task/SQL receipt
+  consumers. These are original consumers, not a new query implementation.
+- Prettier, original Next lint and complete `tsc --noEmit --pretty false`: **0**.
+  The original GraphQL fixture now compares its actual binding generation.
+  The browser fault fixture uses a writable `EventSource` property and asserts
+  replacement identity: the old non-writable fixture never installed its
+  failing constructor. The Python delivery test explicitly retains the current
+  `NODE_ENV` beside `PATH`, satisfying `NodeJS.ProcessEnv` without inheriting
+  credentials or substituting a default environment.
+- In the private fixed-source snapshot, forwarding raw native completion caused
+  **1 assertion failure**; manufacturing completion on EOF caused **1 assertion
+  failure**; removing the governed authorization mode fences caused **2 assertion
+  failures**, including retirement during the resolver's final original task
+  read. Each command exited **1** from assertions. After byte-for-byte source
+  restoration, **65 + 58 passed**, and format passed again.
+
+The broader five-file check is **not green**. Its first candidate run recorded
+**17 failed / 151 passed / 6 skipped**, with the hook suite additionally blocked
+by an omitted `client-kit/embed` input. After exporting that exact shared input,
+fixed base `8c5395908` reproduced **18 failed / 164 passed / 6 skipped**. The
+base assertion run completed but its original background trackers kept handles
+open; the bounded command exited **124**. No `forceExit` was used to label it
+successful. This batch fixes the generation comparison and browser constructor
+fixture above. The remaining **13** acknowledged-task rerun fixtures lack the
+current project-row transaction/provenance setup, and **3** text-answer fixtures
+lack the current authorization setup; these failures remain recorded for the
+next whole-suite check. Their production locks/authorization were not relaxed.
+Earlier candidate, constructor-diagnostic and partial-check logs are retained;
+the final narrow result does not replace their failed outcomes.
+
+Evidence directory:
+`/volumes/data/kailo/verification/buzz-r10/wren-readonly-6f32bac584b707f7b814462304012248d7b373f0-check-r2`.
+Its `receipt.json` SHA-256 is
+`da8b627548633b6d59deb805dc4502264f13e4851e819b1d93409c1b16884a40`;
+`fixed-inputs.json` records all input blobs, and individual command logs preserve
+counts, exits and fault assertions. Local handoff copy:
+`/tmp/kailo-wren-readonly-6f32bac58-receipt.json`. The check container was removed
+and absence read back after completion.
+
+These are fixed-source HTTP/hook/SQLite checks. No matching component artifact,
+real LLM/SQL backend, deployed receiver chain, or final independent-page user
+acceptance was produced in this batch. Rebuilding and accepting the matching
+Wren instance remains subject to the existing release/source admission gate;
+this entry does not assert that all readonly query operations or DD-127 are
+accepted.
