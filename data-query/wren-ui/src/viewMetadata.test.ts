@@ -4656,8 +4656,10 @@ describe('original Home answer and chart operation lifetime', () => {
       it('a callback first invoked after retirement cannot start even an original recommendation read', async () => {
         const page = renderPage();
         page.retire();
-        await page.controls.onGenerateThreadRecommendedQuestions(21);
+        const pending = page.controls.onGenerateThreadRecommendedQuestions(21);
+        await settle();
         expect(requests).toHaveLength(0);
+        await pending;
       });
       it('lost recommendation selection ACK retains its exact original intent on explicit retry', async () => {
         const page = await load();
