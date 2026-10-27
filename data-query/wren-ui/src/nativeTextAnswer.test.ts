@@ -38,6 +38,7 @@ jest.mock('./common', () => ({
       createTextBasedAnswer: jest.fn(),
       ask: jest.fn(),
       getAskResult: jest.fn(),
+      getAskStreamingResult: jest.fn(),
     },
     threadResponseRepository: { claimNativeAnswer: jest.fn() },
     apiHistoryRepository: { findOneBy: jest.fn(), createOne: jest.fn() },
@@ -1097,6 +1098,54 @@ describe('original answer HTTP identity and conditional history writes', () => {
       expect(native.wrenAIAdaptor.streamTextBasedAnswer).not.toHaveBeenCalled();
     },
   );
+
+  it.each(['ask', 'stream/ask'].flatMap((route) =>
+    ['full', 'empty', 'missing', 'foreign', 'post-history-mode', 'post-history-project'].map((scenario) => ({route, scenario})),
+  ))('standalone GENERAL $route consumes full GET and retains disclosure boundary: $scenario', async ({route, scenario}) => {
+    let written = false;
+    native.projectService.getCurrentProject.mockImplementation(async () => ({id: written && scenario === 'post-history-project' ? 8 : 7, language:'EN'}));
+    native.deployService.getLastDeployment.mockResolvedValue({hash:'original',manifest:{}});
+    native.wrenAIAdaptor.ask.mockReset().mockResolvedValue({queryId:'general-current'});
+    native.wrenAIAdaptor.createTextBasedAnswer.mockReset();
+    native.queryService.preview.mockReset();
+    const content = scenario === 'empty' ? '' : '完整原结果';
+    const classified = {status:'FINISHED',type:'GENERAL'};
+    native.wrenAIAdaptor.getAskResult.mockReset().mockResolvedValueOnce(classified).mockResolvedValue({
+      ...classified, ...(scenario === 'missing' ? {} : {completion:{queryId:scenario === 'foreign' ? 'foreign':'general-current',content}}),
+    });
+    native.wrenAIAdaptor.getAskStreamingResult.mockReset().mockResolvedValue(Readable.from([
+      `data: ${JSON.stringify({message:content})}\n\n`,
+      'data: {"done":true,"queryId":"general-current"}\n\n',
+    ]));
+    native.apiHistoryRepository.createOne.mockReset().mockImplementation(async (value) => {
+      if(value.statusCode === 200) {
+        written = true;
+        if(scenario === 'post-history-mode') process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = 'new-mode-after-history-write';
+      }
+      return {id:'history',...value};
+    });
+    const response = await fetch(`${origin}/api/v1/${route}`, {method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({question:'Original GENERAL question'})});
+    const body = await response.text();
+    await closed;
+    if(scenario === 'full' || scenario === 'empty') {
+      expect(response.status).toBe(200);
+      expect(written).toBe(true);
+      if(route === 'ask') expect(JSON.parse(body).explanation).toBe(content);
+      else {expect(body).toContain('message_stop');expect(body).not.toContain('"type":"error"');}
+      expect(native.apiHistoryRepository.createOne.mock.calls.find(([v]) => v.statusCode === 200)[0].responsePayload.explanation).toBe(content);
+    } else if(route === 'ask') {
+      expect(response.status).toBe(503);
+      expect(body).not.toContain(content);
+    } else {
+      expect(body).toContain('"type":"error"');
+      // An error is not a successful message_stop even if earlier text was sent.
+      expect(native.apiHistoryRepository.createOne.mock.calls.at(-1)[0].statusCode).not.toBe(200);
+    }
+    expect(native.wrenAIAdaptor.ask).toHaveBeenCalledTimes(1);
+    expect(native.wrenAIAdaptor.getAskStreamingResult).toHaveBeenCalledTimes(1);
+    expect(native.wrenAIAdaptor.createTextBasedAnswer).not.toHaveBeenCalled();
+    expect(native.queryService.preview).not.toHaveBeenCalled();
+  });
 
   it.each(
     ['generate_summary', 'ask', 'stream/ask'].flatMap((route) => [
