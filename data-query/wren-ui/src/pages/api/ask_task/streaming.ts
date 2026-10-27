@@ -122,7 +122,10 @@ export default async function handler(
         // its original asynchronous task/source checks are in flight.
         if (!isGovernedQueryMode())
           throw new NativeQueryRefusal(412, 'QUERY_ADMISSION_UNAVAILABLE');
-        const current = await resolver.authorizeNativeAskingTask(queryId, context);
+        const current = await resolver.authorizeNativeAskingTask(
+          queryId,
+          context,
+        );
         if (!isGovernedQueryMode())
           throw new NativeQueryRefusal(412, 'QUERY_ADMISSION_UNAVAILABLE');
         return current;

@@ -35,7 +35,12 @@ const python = (args: string[]) =>
     execFile(
       process.env.WREN_TEST_PYTHON || 'python3',
       ['-I', ...args],
-      { env: { PATH: process.env.PATH } },
+      {
+        env: {
+          PATH: process.env.PATH,
+          NODE_ENV: process.env.NODE_ENV,
+        },
+      },
       (error, stdout, stderr) => {
         if (error) reject(new Error(stderr));
         else resolve(stdout);
