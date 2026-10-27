@@ -162,7 +162,7 @@ function MessageComposerImpl({
     channelType !== "dm" && channelId !== null && workspace !== undefined && !editTarget);
   const mentions = useMentions(channelId, profiles, admittedPeople, agents, session.devicePubkey, outsidePeople, teamMentions);
   for (const ref of mentions.getDraftMentionRefs(contentRef.current)) if (ref.isAgent === true) knownAgentKeys.add(ref.pubkey);
-  const getAgentDraftMentionRefs = React.useCallback((content: string) => mentions.getDraftMentionRefs(content).map(ref => ({...ref, isAgent: ref.isAgent === true || knownAgentKeys.has(ref.pubkey)})), [mentions.getDraftMentionRefs, knownAgentKeys]);
+  const getAgentDraftMentionRefs = React.useCallback((content: string) => mentions.getLiveMentionRefs(content).map(ref => ({...ref, isAgent: ref.isAgent === true || knownAgentKeys.has(ref.pubkey)})), [mentions.getLiveMentionRefs, knownAgentKeys]);
   const agentMentions = {...mentions, getDraftMentionRefs: getAgentDraftMentionRefs};
   const verifyMentionRecipients = React.useCallback(async (pubkeys: readonly string[]) => {
     const selected = pubkeys.filter(pubkey => knownAgentKeys.has(pubkey) || audience.pubkeys.includes(pubkey));
