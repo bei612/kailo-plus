@@ -4,6 +4,7 @@ import { join } from 'path';
 import { AskingService } from './apollo/server/services/askingService';
 import { AskingTaskTracker } from './apollo/server/services/askingTaskTracker';
 import { AskingTaskRepository } from './apollo/server/repositories/askingTaskRepository';
+import { lockNativeBinding } from './apollo/server/repositories/projectRepository';
 import { AskResultStatus, AskResultType } from './apollo/server/models/adaptor';
 import { AskingResolver } from './apollo/server/resolvers/askingResolver';
 import { AdjustmentBackgroundTaskTracker } from './apollo/server/backgrounds/adjustmentBackgroundTracker';
@@ -1351,6 +1352,497 @@ describe('native reset transaction consumer', () => {
   );
 });
 
+describe('bound asking rerun with original repository transactions', () => {
+  let database: Knex, repository: any, adaptor: any, tracker: any;
+  let responses: any;
+  const postgres = process.env.WREN_TEST_POSTGRES_URL;
+  const schema = `asking_rerun_${randomUUID().replace(/-/g, '')}`;
+  const stored = async () => (await repository.findAll())[0];
+  beforeAll(async () => {
+    database = knex(postgres
+      ? { client: 'pg', connection: postgres, searchPath: [schema] }
+      : { client: 'better-sqlite3', connection: { filename: ':memory:' }, useNullAsDefault: true });
+    if (postgres) await database.schema.createSchema(schema);
+    for (const name of [
+      '20240125070643_create_project_table.js',
+      '20240327030000_create_ask_table.js',
+      '20250509000000_create_asking_task.js',
+      '20250509000001_add_task_id_to_thread.js',
+      '20250511000000-create-api-history.js',
+      '20261005000000_api_history_governed_query.js',
+      '20261007000000_asking_task_project.js',
+      '20261011000000_native_binding_fence.js',
+    ]) await jest.requireActual(join(process.cwd(), 'migrations', name)).up(database);
+    await database('project').insert({ id: 7, type: 'DUCKDB', display_name: 'original', catalog: 'wren', schema: 'public' });
+    await database('thread').insert({ id: 11, project_id: 7 });
+    await database('thread_response').insert({ id: 21, thread_id: 11 });
+  });
+  afterAll(async () => {
+    if (postgres) await database.schema.dropSchemaIfExists(schema, true);
+    await database.destroy();
+  });
+  beforeEach(async () => {
+    await database('asking_task').delete();
+    await database('project').where({ id: 7 }).update({ native_binding_fences: null });
+    repository = new AskingTaskRepository(database);
+    // Observe the original methods without replacing locks, commits or writes.
+    for (const method of ['commit', 'rollback', 'updateQuery'] as const) jest.spyOn(repository, method);
+    adaptor = {
+      ask: jest.fn(async ({ queryId }) => ({ queryId })),
+      getAskResult: jest.fn(async () => ({ status: AskResultStatus.FINISHED, response: [{ sql: 'SELECT 1' }], error: null })),
+    };
+    responses = { findOneBy: jest.fn(), updateOne: jest.fn() };
+    tracker = new AskingTaskTracker({ wrenAIAdaptor: adaptor, askingTaskRepository: repository,
+      threadResponseRepository: responses, viewRepository: { findOneBy: jest.fn() } as any });
+    // Poll explicitly; timers are unrelated to the row-lock/dispatch assertions.
+    tracker.stopPolling();
+  });
+  afterEach(() => { tracker.stopPolling(); jest.restoreAllMocks(); });
+  // Commit a competing writer after the initial snapshot, before the original
+  // transaction opens. The production project/task row locks remain untouched.
+  const replaceBeforeTransaction = (row: any) => {
+    const begin = repository.transaction.bind(repository);
+    jest.spyOn(repository, 'transaction').mockImplementationOnce(async () => {
+      await database('asking_task').where({ id: row.id }).update({ detail: JSON.stringify(row.detail) });
+      return begin();
+    });
+  };
+  it('bound original Asking commits the exact HUMAN owner before POST, freshly authorizes it and observes after lost ACK', async () => {
+    const original = process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+    process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = 'controlled-delivery';
+    const nativeScope = {
+      bindingId: randomUUID(),
+      generation: 1,
+      identityScope: 'a'.repeat(64),
+      metadataReference: { hash: 'b'.repeat(40), digest: 'c'.repeat(64) },
+    };
+    const authorizeNative = jest.fn(async (queryId) => {
+      expect(await repository.findAll()).toHaveLength(1);
+      expect((await stored()).queryId).toBe(queryId);
+      expect((await stored()).detail.nativeScope).toEqual(nativeScope);
+    });
+    adaptor.ask.mockImplementation(async (input, transport) => {
+      expect(authorizeNative).toHaveBeenCalledWith(input.queryId);
+      expect((await stored()).queryId).toBe(input.queryId);
+      expect(input.nativeHumanToken).toBeUndefined();
+      expect(transport).toMatchObject({
+        humanToken: 'fixture-human-token',
+        projectId: 7,
+      });
+      expect(JSON.stringify(await repository.findAll())).not.toContain('fixture-human-token');
+      throw new Error('lost create ACK');
+    });
+    try {
+      const result = await tracker.createAskingTask({
+        query: 'Original',
+        projectId: 7,
+        nativeScope,
+        authorizeNative,
+        nativeHumanToken: 'fixture-human-token',
+      });
+      expect(result.queryId).toBe((await stored()).queryId);
+      expect(result.queryId).toMatch(/^[a-f0-9-]{36}$/);
+      await tracker.pollTasks();
+      expect((await stored()).detail.nativeScope).toEqual(nativeScope);
+      expect((await stored()).detail.status).toBe(AskResultStatus.FINISHED);
+      expect(adaptor.ask).toHaveBeenCalledTimes(1);
+    } finally {
+      if (original === undefined)
+        delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+      else process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = original;
+    }
+  });
+
+  it('a changed bound owner before POST persists the known admission failure without dispatch', async () => {
+    const original = process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+    process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = 'controlled-delivery';
+    let finishObservation: (result: unknown) => void;
+    let observationStarted: () => void;
+    const started = new Promise<void>((resolve) => { observationStarted = resolve; });
+    const observation = new Promise((resolve) => {
+      finishObservation = resolve;
+    });
+    adaptor.getAskResult.mockImplementation(() => { observationStarted(); return observation; });
+    let polling: Promise<void>;
+    try {
+      await expect(
+        tracker.createAskingTask({
+          query: 'Original',
+          projectId: 7,
+          nativeScope: {
+            bindingId: randomUUID(),
+      generation: 1,
+            identityScope: 'a'.repeat(64),
+            metadataReference: { hash: 'b'.repeat(40), digest: 'c'.repeat(64) },
+          },
+          nativeHumanToken: 'fixture-human-token',
+          authorizeNative: async (queryId) => {
+            await tracker.getAskingResult(queryId);
+            polling = tracker.pollTasks();
+            await started;
+            throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
+          },
+        }),
+      ).rejects.toMatchObject({ status: 403 });
+      expect(await repository.findAll()).toHaveLength(1);
+      expect((await stored()).detail.status).toBe(AskResultStatus.FAILED);
+      expect((await stored()).detail.error.message).toBe('QUERY_SCOPE_DENIED');
+      expect((await tracker.getAskingResultById((await stored()).id)).status).toBe(
+        AskResultStatus.FAILED,
+      );
+      expect(tracker.trackedTasks.size).toBe(0);
+      expect(tracker.trackedTasksById.size).toBe(0);
+      finishObservation({
+        status: AskResultStatus.FINISHED,
+        response: [],
+        error: null,
+      });
+      await polling;
+      expect((await stored()).detail.status).toBe(AskResultStatus.FAILED);
+      expect(adaptor.ask).not.toHaveBeenCalled();
+    } finally {
+      if (original === undefined)
+        delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+      else process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = original;
+    }
+  });
+  it.each([
+    AskResultStatus.UNDERSTANDING,
+    AskResultStatus.SEARCHING,
+    AskResultStatus.PLANNING,
+    AskResultStatus.GENERATING,
+    AskResultStatus.CORRECTING,
+    AskResultStatus.FINISHED,
+    'FUTURE_NATIVE_STATUS',
+    undefined,
+  ])('does not redispatch a bound %s task under rerun', async (status) => {
+    const original = process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+    process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = 'controlled-delivery';
+    const nativeScope = {
+      bindingId: randomUUID(),
+      generation: 1,
+      identityScope: 'a'.repeat(64),
+      metadataReference: { hash: 'b'.repeat(40), digest: 'c'.repeat(64) },
+    };
+    await repository.createOne({
+      id: 9,
+      projectId: 7,
+      queryId: 'original',
+      threadResponseId: 21,
+      detail: { status, nativeScope },
+    });
+    try {
+      await expect(
+        tracker.createAskingTask({
+          query: 'Original',
+          projectId: 7,
+          rerunFromCancelled: true,
+          previousTaskId: 9,
+          threadResponseId: 21,
+          nativeScope,
+          authorizeNative: jest.fn(),
+          nativeHumanToken: 'fixture-human-token',
+        }),
+      ).rejects.toMatchObject({ status: 409 });
+      expect((await stored()).queryId).toBe('original');
+      expect(repository.updateQuery).not.toHaveBeenCalled();
+      expect(repository.rollback).toHaveBeenCalledTimes(1);
+      expect(adaptor.ask).not.toHaveBeenCalled();
+    } finally {
+      if (original === undefined)
+        delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+      else process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = original;
+    }
+  });
+  it.each([AskResultStatus.FAILED, AskResultStatus.STOPPED])(
+    'reruns the original bound %s task once and retains unknown POST acknowledgement',
+    async (status) => {
+      const original = process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+      process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = 'controlled-delivery';
+      const nativeScope = {
+        bindingId: randomUUID(),
+      generation: 1,
+        identityScope: 'a'.repeat(64),
+        metadataReference: { hash: 'b'.repeat(40), digest: 'c'.repeat(64) },
+      };
+      await repository.createOne({
+        id: 9,
+        projectId: 7,
+        queryId: 'original',
+        threadResponseId: 21,
+        detail: { status, nativeScope },
+      });
+      const authorizeNative = jest.fn(async (queryId) => {
+        expect(repository.commit).toHaveBeenCalledTimes(1);
+        expect((await stored()).queryId).toBe(queryId);
+      });
+      adaptor.ask.mockRejectedValue(new Error('lost POST ACK'));
+      try {
+        const result = await tracker.createAskingTask({
+          query: 'Original',
+          projectId: 7,
+          rerunFromCancelled: true,
+          previousTaskId: 9,
+          threadResponseId: 21,
+          nativeScope,
+          authorizeNative,
+          nativeHumanToken: 'fixture-human-token',
+        });
+        expect(result.queryId).not.toBe('original');
+        expect(await repository.findAll()).toHaveLength(1);
+        expect((await stored()).detail).toEqual({
+          status: AskResultStatus.UNDERSTANDING,
+          nativeScope,
+        });
+        expect(adaptor.ask).toHaveBeenCalledTimes(1);
+        expect(authorizeNative).toHaveBeenCalledWith(result.queryId);
+        await expect(
+          tracker.createAskingTask({
+            query: 'Original',
+            projectId: 7,
+            rerunFromCancelled: true,
+            previousTaskId: 9,
+            threadResponseId: 21,
+            nativeScope,
+            authorizeNative,
+            nativeHumanToken: 'fixture-human-token',
+          }),
+        ).rejects.toMatchObject({ status: 409 });
+        expect(adaptor.ask).toHaveBeenCalledTimes(1);
+      } finally {
+        if (original === undefined)
+          delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+        else process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = original;
+      }
+    },
+  );
+  it('checks the locked rerun owner and status instead of the earlier row snapshot', async () => {
+    const original = process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+    process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = 'controlled-delivery';
+    const nativeScope = {
+      bindingId: randomUUID(),
+      generation: 1,
+      identityScope: 'a'.repeat(64),
+      metadataReference: { hash: 'b'.repeat(40), digest: 'c'.repeat(64) },
+    };
+    const row = {
+      id: 9,
+      projectId: 7,
+      queryId: 'original',
+      threadResponseId: 21,
+      detail: { status: AskResultStatus.STOPPED, nativeScope },
+    };
+    await repository.createOne(row);
+    const input = {
+      query: 'Original',
+      projectId: 7,
+      rerunFromCancelled: true,
+      previousTaskId: 9,
+      threadResponseId: 21,
+      nativeScope,
+      authorizeNative: jest.fn(),
+      nativeHumanToken: 'fixture-human-token',
+    };
+    try {
+      replaceBeforeTransaction({
+        ...row,
+        detail: { status: AskResultStatus.UNDERSTANDING, nativeScope },
+      });
+      await expect(tracker.createAskingTask(input)).rejects.toMatchObject({
+        status: 409,
+      });
+      replaceBeforeTransaction({
+        ...row,
+        detail: {
+          ...row.detail,
+          nativeScope: { ...nativeScope, identityScope: 'd'.repeat(64) },
+        },
+      });
+      await expect(tracker.createAskingTask(input)).rejects.toMatchObject({
+        status: 403,
+      });
+      expect(repository.updateQuery).not.toHaveBeenCalled();
+      expect(adaptor.ask).not.toHaveBeenCalled();
+    } finally {
+      if (original === undefined)
+        delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+      else process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = original;
+    }
+  });
+  it('clears old query caches and persists a rerun admission refusal on the existing task', async () => {
+    const original = process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+    process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = 'controlled-delivery';
+    const nativeScope = {
+      bindingId: randomUUID(),
+      generation: 1,
+      identityScope: 'a'.repeat(64),
+      metadataReference: { hash: 'b'.repeat(40), digest: 'c'.repeat(64) },
+    };
+    await repository.createOne({
+      id: 9,
+      projectId: 7,
+      queryId: 'original',
+      threadResponseId: 21,
+      detail: { status: AskResultStatus.STOPPED, nativeScope },
+    });
+    const stale = {
+      queryId: 'original',
+      taskId: 9,
+      projectId: 7,
+      result: (await stored()).detail,
+    };
+    tracker.trackedTasks.set('original', stale);
+    tracker.trackedTasksById.set(9, stale);
+    try {
+      await expect(
+        tracker.createAskingTask({
+          query: 'Original',
+          projectId: 7,
+          rerunFromCancelled: true,
+          previousTaskId: 9,
+          threadResponseId: 21,
+          nativeScope,
+          nativeHumanToken: 'fixture-human-token',
+          authorizeNative: async () => {
+            throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
+          },
+        }),
+      ).rejects.toMatchObject({ status: 403 });
+      expect(tracker.trackedTasks.has('original')).toBe(false);
+      expect(tracker.trackedTasksById.has(9)).toBe(false);
+      expect(await tracker.getAskingResultById(9)).toMatchObject({
+        status: AskResultStatus.FAILED,
+        nativeScope,
+        error: { message: 'QUERY_SCOPE_DENIED' },
+      });
+      expect(await repository.findAll()).toHaveLength(1);
+      expect(adaptor.ask).not.toHaveBeenCalled();
+    } finally {
+      if (original === undefined)
+        delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+      else process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = original;
+    }
+  });
+  it('an old in-flight observation cannot overwrite the replacement query after a bound rerun', async () => {
+    const original = process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+    process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = 'controlled-delivery';
+    const nativeScope = {
+      bindingId: randomUUID(),
+      generation: 1,
+      identityScope: 'a'.repeat(64),
+      metadataReference: { hash: 'b'.repeat(40), digest: 'c'.repeat(64) },
+    };
+    await repository.createOne({
+      id: 9,
+      projectId: 7,
+      queryId: 'original',
+      threadResponseId: 21,
+      detail: { status: AskResultStatus.UNDERSTANDING, nativeScope },
+    });
+    let finishObservation: (result: unknown) => void;
+    let observationStarted: () => void;
+    const started = new Promise<void>((resolve) => { observationStarted = resolve; });
+    adaptor.getAskResult.mockImplementation(() => {
+      observationStarted();
+      return new Promise((resolve) => { finishObservation = resolve; });
+    });
+    try {
+      await tracker.getAskingResult('original');
+      const polling = tracker.pollTasks();
+      await started;
+      await repository.updateQuery(9, 'original', 7, {
+        detail: { status: AskResultStatus.STOPPED, nativeScope },
+      });
+      repository.updateQuery.mockClear();
+      adaptor.ask.mockImplementation(async ({ queryId }) => ({ queryId }));
+      const result = await tracker.createAskingTask({
+        query: 'Original',
+        projectId: 7,
+        rerunFromCancelled: true,
+        previousTaskId: 9,
+        threadResponseId: 21,
+        nativeScope,
+        authorizeNative: jest.fn(),
+        nativeHumanToken: 'fixture-human-token',
+      });
+      finishObservation({
+        status: AskResultStatus.FINISHED,
+        response: [{ sql: 'old result' }],
+        error: null,
+      });
+      await polling;
+      expect((await stored()).queryId).toBe(result.queryId);
+      expect((await stored()).detail.status).toBe(AskResultStatus.UNDERSTANDING);
+      expect(repository.updateQuery).toHaveBeenCalledTimes(1);
+      expect(responses.updateOne).not.toHaveBeenCalled();
+      expect(adaptor.ask).toHaveBeenCalledTimes(1);
+    } finally {
+      if (original === undefined)
+        delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+      else process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = original;
+    }
+  });
+
+  it('refuses a retired binding generation using the original project-row fence', async () => {
+    const saved = process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+    process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = 'controlled-delivery';
+    const nativeScope = { bindingId: randomUUID(), generation: 1, identityScope: 'a'.repeat(64), metadataReference: { hash: 'b'.repeat(40), digest: 'c'.repeat(64) } };
+    try {
+      await repository.createOne({ id: 9, projectId: 7, queryId: 'original', threadResponseId: 21, detail: { status: AskResultStatus.STOPPED, nativeScope } });
+      await database.transaction((tx) => lockNativeBinding(tx, 7, nativeScope, true));
+      await expect(tracker.createAskingTask({ query: 'Original', projectId: 7, previousTaskId: 9, threadResponseId: 21, rerunFromCancelled: true, nativeScope, authorizeNative: jest.fn(), nativeHumanToken: 'fixture-human-token' })).rejects.toThrow('NATIVE_BINDING_CLOSED');
+      expect((await stored()).queryId).toBe('original');
+      expect(adaptor.ask).not.toHaveBeenCalled();
+    } finally {
+      if (saved === undefined) delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+      else process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = saved;
+    }
+  });
+
+  it('keeps the original registered execution set until the rerun has its exact settled references', async () => {
+    const saved = process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+    process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = 'controlled-delivery';
+    const nativeScope = { bindingId: randomUUID(), generation: 1, identityScope: 'a'.repeat(64), metadataReference: { hash: 'b'.repeat(40), digest: 'c'.repeat(64) } };
+    try {
+      await repository.createOne({ id: 9, projectId: 7, queryId: 'original', threadResponseId: 21, detail: { status: AskResultStatus.UNDERSTANDING, nativeScope } });
+      expect(await repository.registerNativeQuery('original', 7, nativeScope, 'original-execution')).not.toBeNull();
+      await repository.updateQuery(9, 'original', 7, { detail: { status: AskResultStatus.STOPPED, nativeScope } });
+      const input = { query: 'Original', projectId: 7, previousTaskId: 9, threadResponseId: 21, rerunFromCancelled: true, nativeScope, authorizeNative: jest.fn(), nativeHumanToken: 'fixture-human-token' };
+      await expect(tracker.createAskingTask(input)).rejects.toMatchObject({ status: 409, code: 'NATIVE_EXECUTION_UNKNOWN' });
+      expect((await stored()).detail.nativeQueries).toEqual(['original-execution']);
+      expect(adaptor.ask).not.toHaveBeenCalled();
+      const result = await tracker.createAskingTask({ ...input, nativePreviousQueries: ['original-execution'] });
+      expect((await stored()).queryId).toBe(result.queryId);
+      expect((await stored()).detail.nativeScope).toEqual(nativeScope);
+      expect(adaptor.ask).toHaveBeenCalledTimes(1);
+    } finally {
+      if (saved === undefined) delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+      else process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = saved;
+    }
+  });
+
+  it('serializes competing reruns of one persisted task without a replacement POST', async () => {
+    const saved = process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+    process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = 'controlled-delivery';
+    const nativeScope = { bindingId: randomUUID(), generation: 1, identityScope: 'a'.repeat(64), metadataReference: { hash: 'b'.repeat(40), digest: 'c'.repeat(64) } };
+    try {
+      await repository.createOne({ id: 9, projectId: 7, queryId: 'original', threadResponseId: 21, detail: { status: AskResultStatus.STOPPED, nativeScope } });
+      const input = { query: 'Original', projectId: 7, previousTaskId: 9, threadResponseId: 21, rerunFromCancelled: true, nativeScope, authorizeNative: jest.fn(), nativeHumanToken: 'fixture-human-token' };
+      adaptor.ask.mockRejectedValue(new Error('lost POST ACK'));
+      const results = await Promise.allSettled([tracker.createAskingTask(input), tracker.createAskingTask(input)]);
+      expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+      const rejected = results.find((result) => result.status === 'rejected') as PromiseRejectedResult;
+      expect(rejected.reason).toMatchObject({ status: 409 });
+      expect(adaptor.ask).toHaveBeenCalledTimes(1);
+      expect(await repository.findAll()).toHaveLength(1);
+      expect((await stored()).detail).toEqual({ status: AskResultStatus.UNDERSTANDING, nativeScope });
+    } finally {
+      if (saved === undefined) delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+      else process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = saved;
+    }
+  });
+});
+
 describe('acknowledged native asking task persistence and observation', () => {
   let rows: any[],
     repository: any,
@@ -1432,367 +1924,6 @@ describe('acknowledged native asking task persistence and observation', () => {
     expect(adaptor.getAskResult).not.toHaveBeenCalled();
   });
 
-  it('bound original Asking commits the exact HUMAN owner before POST, freshly authorizes it and observes after lost ACK', async () => {
-    const original = process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
-    process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = 'controlled-delivery';
-    const nativeScope = {
-      bindingId: randomUUID(),
-      identityScope: 'a'.repeat(64),
-      metadataReference: { hash: 'b'.repeat(40), digest: 'c'.repeat(64) },
-    };
-    const authorizeNative = jest.fn(async (queryId) => {
-      expect(rows).toHaveLength(1);
-      expect(rows[0].queryId).toBe(queryId);
-      expect(rows[0].detail.nativeScope).toEqual(nativeScope);
-    });
-    adaptor.ask.mockImplementation(async (input, transport) => {
-      expect(authorizeNative).toHaveBeenCalledWith(input.queryId);
-      expect(rows[0].queryId).toBe(input.queryId);
-      expect(input.nativeHumanToken).toBeUndefined();
-      expect(transport).toMatchObject({
-        humanToken: 'fixture-human-token',
-        projectId: 7,
-      });
-      expect(JSON.stringify(rows)).not.toContain('fixture-human-token');
-      throw new Error('lost create ACK');
-    });
-    try {
-      const result = await tracker.createAskingTask({
-        query: 'Original',
-        projectId: 7,
-        nativeScope,
-        authorizeNative,
-        nativeHumanToken: 'fixture-human-token',
-      });
-      expect(result.queryId).toBe(rows[0].queryId);
-      expect(result.queryId).toMatch(/^[a-f0-9-]{36}$/);
-      repository.lockQuery.mockResolvedValue(rows[0]);
-      await tracker.pollTasks();
-      expect(rows[0].detail.nativeScope).toEqual(nativeScope);
-      expect(rows[0].detail.status).toBe(AskResultStatus.FINISHED);
-      expect(adaptor.ask).toHaveBeenCalledTimes(1);
-    } finally {
-      if (original === undefined)
-        delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
-      else process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = original;
-    }
-  });
-
-  it('a changed bound owner before POST persists the known admission failure without dispatch', async () => {
-    const original = process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
-    process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = 'controlled-delivery';
-    let finishObservation: (result: unknown) => void;
-    const observation = new Promise((resolve) => {
-      finishObservation = resolve;
-    });
-    adaptor.getAskResult.mockReturnValue(observation);
-    let polling: Promise<void>;
-    try {
-      await expect(
-        tracker.createAskingTask({
-          query: 'Original',
-          projectId: 7,
-          nativeScope: {
-            bindingId: randomUUID(),
-            identityScope: 'a'.repeat(64),
-            metadataReference: { hash: 'b'.repeat(40), digest: 'c'.repeat(64) },
-          },
-          nativeHumanToken: 'fixture-human-token',
-          authorizeNative: async (queryId) => {
-            await tracker.getAskingResult(queryId);
-            polling = tracker.pollTasks();
-            throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
-          },
-        }),
-      ).rejects.toMatchObject({ status: 403 });
-      expect(rows).toHaveLength(1);
-      expect(rows[0].detail.status).toBe(AskResultStatus.FAILED);
-      expect(rows[0].detail.error.message).toBe('QUERY_SCOPE_DENIED');
-      expect((await tracker.getAskingResultById(1)).status).toBe(
-        AskResultStatus.FAILED,
-      );
-      expect(tracker.trackedTasks.size).toBe(0);
-      expect(tracker.trackedTasksById.size).toBe(0);
-      finishObservation({
-        status: AskResultStatus.FINISHED,
-        response: [],
-        error: null,
-      });
-      await polling;
-      expect(rows[0].detail.status).toBe(AskResultStatus.FAILED);
-      expect(adaptor.ask).not.toHaveBeenCalled();
-    } finally {
-      if (original === undefined)
-        delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
-      else process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = original;
-    }
-  });
-  it.each([
-    AskResultStatus.UNDERSTANDING,
-    AskResultStatus.SEARCHING,
-    AskResultStatus.PLANNING,
-    AskResultStatus.GENERATING,
-    AskResultStatus.CORRECTING,
-    AskResultStatus.FINISHED,
-    'FUTURE_NATIVE_STATUS',
-    undefined,
-  ])('does not redispatch a bound %s task under rerun', async (status) => {
-    const original = process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
-    process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = 'controlled-delivery';
-    const nativeScope = {
-      bindingId: randomUUID(),
-      identityScope: 'a'.repeat(64),
-      metadataReference: { hash: 'b'.repeat(40), digest: 'c'.repeat(64) },
-    };
-    rows.push({
-      id: 9,
-      projectId: 7,
-      queryId: 'original',
-      threadResponseId: 21,
-      detail: { status, nativeScope },
-    });
-    try {
-      await expect(
-        tracker.createAskingTask({
-          query: 'Original',
-          projectId: 7,
-          rerunFromCancelled: true,
-          previousTaskId: 9,
-          threadResponseId: 21,
-          nativeScope,
-          authorizeNative: jest.fn(),
-          nativeHumanToken: 'fixture-human-token',
-        }),
-      ).rejects.toMatchObject({ status: 409 });
-      expect(rows[0].queryId).toBe('original');
-      expect(repository.updateQuery).not.toHaveBeenCalled();
-      expect(repository.rollback).toHaveBeenCalledTimes(1);
-      expect(adaptor.ask).not.toHaveBeenCalled();
-    } finally {
-      if (original === undefined)
-        delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
-      else process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = original;
-    }
-  });
-  it.each([AskResultStatus.FAILED, AskResultStatus.STOPPED])(
-    'reruns the original bound %s task once and retains unknown POST acknowledgement',
-    async (status) => {
-      const original = process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
-      process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = 'controlled-delivery';
-      const nativeScope = {
-        bindingId: randomUUID(),
-        identityScope: 'a'.repeat(64),
-        metadataReference: { hash: 'b'.repeat(40), digest: 'c'.repeat(64) },
-      };
-      rows.push({
-        id: 9,
-        projectId: 7,
-        queryId: 'original',
-        threadResponseId: 21,
-        detail: { status, nativeScope },
-      });
-      const authorizeNative = jest.fn(async (queryId) => {
-        expect(repository.commit).toHaveBeenCalledTimes(1);
-        expect(rows[0].queryId).toBe(queryId);
-      });
-      adaptor.ask.mockRejectedValue(new Error('lost POST ACK'));
-      try {
-        const result = await tracker.createAskingTask({
-          query: 'Original',
-          projectId: 7,
-          rerunFromCancelled: true,
-          previousTaskId: 9,
-          threadResponseId: 21,
-          nativeScope,
-          authorizeNative,
-          nativeHumanToken: 'fixture-human-token',
-        });
-        expect(result.queryId).not.toBe('original');
-        expect(rows).toHaveLength(1);
-        expect(rows[0].detail).toEqual({
-          status: AskResultStatus.UNDERSTANDING,
-          nativeScope,
-        });
-        expect(adaptor.ask).toHaveBeenCalledTimes(1);
-        expect(authorizeNative).toHaveBeenCalledWith(result.queryId);
-        await expect(
-          tracker.createAskingTask({
-            query: 'Original',
-            projectId: 7,
-            rerunFromCancelled: true,
-            previousTaskId: 9,
-            threadResponseId: 21,
-            nativeScope,
-            authorizeNative,
-            nativeHumanToken: 'fixture-human-token',
-          }),
-        ).rejects.toMatchObject({ status: 409 });
-        expect(adaptor.ask).toHaveBeenCalledTimes(1);
-      } finally {
-        if (original === undefined)
-          delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
-        else process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = original;
-      }
-    },
-  );
-  it('checks the locked rerun owner and status instead of the earlier row snapshot', async () => {
-    const original = process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
-    process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = 'controlled-delivery';
-    const nativeScope = {
-      bindingId: randomUUID(),
-      identityScope: 'a'.repeat(64),
-      metadataReference: { hash: 'b'.repeat(40), digest: 'c'.repeat(64) },
-    };
-    const row = {
-      id: 9,
-      projectId: 7,
-      queryId: 'original',
-      threadResponseId: 21,
-      detail: { status: AskResultStatus.STOPPED, nativeScope },
-    };
-    rows.push(row);
-    const input = {
-      query: 'Original',
-      projectId: 7,
-      rerunFromCancelled: true,
-      previousTaskId: 9,
-      threadResponseId: 21,
-      nativeScope,
-      authorizeNative: jest.fn(),
-      nativeHumanToken: 'fixture-human-token',
-    };
-    try {
-      repository.lockQuery.mockResolvedValueOnce({
-        ...row,
-        detail: { status: AskResultStatus.UNDERSTANDING, nativeScope },
-      });
-      await expect(tracker.createAskingTask(input)).rejects.toMatchObject({
-        status: 409,
-      });
-      repository.lockQuery.mockResolvedValueOnce({
-        ...row,
-        detail: {
-          ...row.detail,
-          nativeScope: { ...nativeScope, identityScope: 'd'.repeat(64) },
-        },
-      });
-      await expect(tracker.createAskingTask(input)).rejects.toMatchObject({
-        status: 403,
-      });
-      expect(repository.updateQuery).not.toHaveBeenCalled();
-      expect(adaptor.ask).not.toHaveBeenCalled();
-    } finally {
-      if (original === undefined)
-        delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
-      else process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = original;
-    }
-  });
-  it('clears old query caches and persists a rerun admission refusal on the existing task', async () => {
-    const original = process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
-    process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = 'controlled-delivery';
-    const nativeScope = {
-      bindingId: randomUUID(),
-      identityScope: 'a'.repeat(64),
-      metadataReference: { hash: 'b'.repeat(40), digest: 'c'.repeat(64) },
-    };
-    rows.push({
-      id: 9,
-      projectId: 7,
-      queryId: 'original',
-      threadResponseId: 21,
-      detail: { status: AskResultStatus.STOPPED, nativeScope },
-    });
-    const stale = {
-      queryId: 'original',
-      taskId: 9,
-      projectId: 7,
-      result: rows[0].detail,
-    };
-    tracker.trackedTasks.set('original', stale);
-    tracker.trackedTasksById.set(9, stale);
-    try {
-      await expect(
-        tracker.createAskingTask({
-          query: 'Original',
-          projectId: 7,
-          rerunFromCancelled: true,
-          previousTaskId: 9,
-          threadResponseId: 21,
-          nativeScope,
-          nativeHumanToken: 'fixture-human-token',
-          authorizeNative: async () => {
-            throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
-          },
-        }),
-      ).rejects.toMatchObject({ status: 403 });
-      expect(tracker.trackedTasks.has('original')).toBe(false);
-      expect(tracker.trackedTasksById.has(9)).toBe(false);
-      expect(await tracker.getAskingResultById(9)).toMatchObject({
-        status: AskResultStatus.FAILED,
-        nativeScope,
-        error: { message: 'QUERY_SCOPE_DENIED' },
-      });
-      expect(rows).toHaveLength(1);
-      expect(adaptor.ask).not.toHaveBeenCalled();
-    } finally {
-      if (original === undefined)
-        delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
-      else process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = original;
-    }
-  });
-  it('an old in-flight observation cannot overwrite the replacement query after a bound rerun', async () => {
-    const original = process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
-    process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = 'controlled-delivery';
-    const nativeScope = {
-      bindingId: randomUUID(),
-      identityScope: 'a'.repeat(64),
-      metadataReference: { hash: 'b'.repeat(40), digest: 'c'.repeat(64) },
-    };
-    rows.push({
-      id: 9,
-      projectId: 7,
-      queryId: 'original',
-      threadResponseId: 21,
-      detail: { status: AskResultStatus.UNDERSTANDING, nativeScope },
-    });
-    let finishObservation: (result: unknown) => void;
-    adaptor.getAskResult.mockReturnValue(
-      new Promise((resolve) => {
-        finishObservation = resolve;
-      }),
-    );
-    try {
-      await tracker.getAskingResult('original');
-      const polling = tracker.pollTasks();
-      rows[0].detail.status = AskResultStatus.STOPPED;
-      adaptor.ask.mockImplementation(async ({ queryId }) => ({ queryId }));
-      const result = await tracker.createAskingTask({
-        query: 'Original',
-        projectId: 7,
-        rerunFromCancelled: true,
-        previousTaskId: 9,
-        threadResponseId: 21,
-        nativeScope,
-        authorizeNative: jest.fn(),
-        nativeHumanToken: 'fixture-human-token',
-      });
-      finishObservation({
-        status: AskResultStatus.FINISHED,
-        response: [{ sql: 'old result' }],
-        error: null,
-      });
-      await polling;
-      expect(rows[0].queryId).toBe(result.queryId);
-      expect(rows[0].detail.status).toBe(AskResultStatus.UNDERSTANDING);
-      expect(repository.updateQuery).toHaveBeenCalledTimes(1);
-      expect(responses.updateOne).not.toHaveBeenCalled();
-      expect(adaptor.ask).toHaveBeenCalledTimes(1);
-    } finally {
-      if (original === undefined)
-        delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
-      else process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = original;
-    }
-  });
   it('reattaches the persisted native ID after restart and observes without asking again', async () => {
     rows.push({
       id: 9,

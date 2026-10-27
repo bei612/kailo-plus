@@ -16,6 +16,26 @@ import {
 } from './apollo/server/services/nativeQueryMode';
 import { governedMetadataDelivery } from './apollo/server/services/nativeGovernedMetadata';
 
+// Resolver imports initialize the real singleton, including upstream trackers
+// with no stop method. Own those actual interval handles in this test and close
+// its original pool; do not replace the resolver, repository or admission.
+jest.mock('./common', () => {
+  const intervals = jest.spyOn(global, 'setInterval');
+  try {
+    const actual = jest.requireActual('./common');
+    const handles = intervals.mock.results
+      .filter((result) => result.type === 'return')
+      .map((result) => result.value);
+    afterAll(async () => {
+      for (const handle of handles) clearInterval(handle);
+      await actual.components.knex.destroy();
+    });
+    return actual;
+  } finally {
+    intervals.mockRestore();
+  }
+});
+
 jest.mock('./apollo/server/services/nativeQueryAdmission', () => ({
   ...jest.requireActual('./apollo/server/services/nativeQueryAdmission'),
   bindingServiceCall: jest.fn(),
