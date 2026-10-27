@@ -711,6 +711,82 @@ describe('original Ask SSE hook and same-task GraphQL observation', () => {
     },
   );
 
+  const observeRecommendation = async (queryId = 'recommendation-owner') => {
+    await render(() => useAskPrompt()).onFetching(queryId);
+    mockAskingResult.data = {
+      askingTask: {
+        queryId,
+        status: AskingTaskStatus.FINISHED,
+        type: AskingTaskType.MISLEADING_QUERY,
+      },
+    };
+    render(() => useAskPrompt());
+    await Promise.resolve();
+  };
+
+  it.each(['close', 'recommend-only', 'new-question', 'unmount'])(
+    'never starts a late recommendation read after %s retires it',
+    async (retirement) => {
+      let ack: (response: any) => void;
+      mockRecommend.mockReturnValue(new Promise((resolve) => { ack = resolve; }));
+      await observeRecommendation();
+      const prompt = render(() => useAskPrompt());
+      if (retirement === 'close') prompt.onStopPolling();
+      if (retirement === 'recommend-only') prompt.onStopRecommend();
+      if (retirement === 'new-question') {
+        mockCreate.mockResolvedValue({ data: { createAskingTask: { id: 'next-question' } } });
+        await prompt.onSubmit('next question');
+      }
+      if (retirement === 'unmount') slots.forEach((slot) => slot.cleanup?.());
+      ack!({ data: { createInstantRecommendedQuestions: { id: 'retired-recommendation' } } });
+      await Promise.resolve();
+      expect(mockFetchRecommend).not.toHaveBeenCalled();
+      expect(render(() => useAskPrompt()).data.recommendedQuestions).toBeNull();
+      expect(mockCancel).not.toHaveBeenCalled();
+      expect(mockRecommend).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it.each([
+    { status: 'FINISHED', questions: [{ question: 'current suggestion', sql: 'select 1' }] },
+    { status: 'FINISHED', questions: [] },
+    { status: 'FAILED', questions: [], error: { message: 'original failure' } },
+  ])('keeps the current recommendation result unchanged: %j', async (result) => {
+    await observeRecommendation();
+    mockRecommendedResult.variables = { taskId: 'original-recommendation' };
+    mockRecommendedResult.data = { instantRecommendedQuestions: result };
+    expect(render(() => useAskPrompt()).data.recommendedQuestions).toBe(result);
+    expect(mockFetchRecommend).toHaveBeenCalledTimes(1);
+    expect(mockRecommendedResult.stopPolling).toHaveBeenCalled();
+    render(() => useAskPrompt()).onStopRecommend();
+    expect(render(() => useAskPrompt()).data.recommendedQuestions).toBeNull();
+  });
+
+  it('keeps old polling results and late ACKs out of a reopened identical question', async () => {
+    let oldAck: (response: any) => void;
+    mockRecommend.mockReturnValueOnce(new Promise((resolve) => { oldAck = resolve; }));
+    await observeRecommendation('same-original-question');
+    render(() => useAskPrompt()).onStopPolling();
+    render(() => useAskPrompt());
+    await observeRecommendation('same-original-question');
+    mockRecommendedResult.variables = { taskId: 'old-recommendation' };
+    mockRecommendedResult.data = { instantRecommendedQuestions: {
+      status: 'FINISHED', questions: [{ question: 'old answer', sql: 'select old' }],
+    } };
+    expect(render(() => useAskPrompt()).data.recommendedQuestions).toBeNull();
+    oldAck!({ data: { createInstantRecommendedQuestions: { id: 'old-recommendation' } } });
+    await Promise.resolve();
+    expect(mockFetchRecommend.mock.calls).toEqual([
+      [{ variables: { taskId: 'original-recommendation' } }],
+    ]);
+    mockRecommendedResult.variables = { taskId: 'original-recommendation' };
+    const current = { status: 'FINISHED', questions: [{ question: 'current answer', sql: 'select current' }] };
+    mockRecommendedResult.data = { instantRecommendedQuestions: current };
+    expect(render(() => useAskPrompt()).data.recommendedQuestions).toBe(current);
+    expect(mockCreate).not.toHaveBeenCalled();
+    expect(mockCancel).not.toHaveBeenCalled();
+  });
+
   it('discards current stream callbacks and old polling data after Close without canceling the native task', async () => {
     const source = await observeGeneral();
     source.message({ message: 'old answer' });
