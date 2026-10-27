@@ -180,9 +180,12 @@ UI+AI 制品、部署及浏览器业务尚未验收，详见[原问数记录](da
 与重派同一原生事件分别触发 **2、3** 项失败，逐字恢复后整文件再次通过。
 跳过项是原 PostgreSQL 跨项目同名源表删除检查；后继固定 `4152f377f` 在独立
 PostgreSQL 执行整文件 **545/545、无跳过**，移除项目过滤后原断言检出误删两行，
-逐字恢复后通过。其他文件的 PostgreSQL 消费者未在该批执行；这不是完整 Wren
-套件或真实服务验收，见[完整消费者回执](data-query/fork/verify/native-human-full-receipt.json)
-及[独立 PostgreSQL 回执](data-query/fork/verify/native-human-postgres-receipt.json)。
+逐字恢复后通过。后继固定 `aea3abe07` 的原四文件以独立 PostgreSQL 同时投递两个
+原数据库变量，**310/310、无跳过**；首次绑定条件更新和关闭 generation 两项
+实际故障分别检出 2、1 个断言失败，逐字恢复后原 PG 消费者通过。这不是完整 Wren
+套件或真实服务验收，见[完整消费者回执](data-query/fork/verify/native-human-full-receipt.json)、
+[HUMAN PostgreSQL 回执](data-query/fork/verify/native-human-postgres-receipt.json)及
+[四文件 PostgreSQL 回执](data-query/fork/verify/four-consumers-postgres-receipt.json)。
 
 前一批 Core 集成固定 `1d0d20b53`：原 SDK 4 CPU / 16 GiB、私有 PG
 1 CPU / 2 GiB，正常主目标 **839 passed / 91 ignored**；显式 Agent/Canvas/审核、
