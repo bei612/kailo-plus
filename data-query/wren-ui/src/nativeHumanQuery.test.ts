@@ -8239,37 +8239,74 @@ describe('native saved-view HUMAN query consumer', () => {
         expect(summaryStream).toHaveBeenCalledTimes(1);
       },
     );
-    it.each(['summary', 'ask', 'stream-ask'].flatMap((kind) => [
-      { kind, at: 'result' }, { kind, at: 'history' },
-    ]))('rejects GOV $kind mode retirement during complete $at observation', async ({ kind, at }) => {
-      summaryGet.mockImplementation(async () => {
-        if (at === 'result') {
-          delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
-          delete process.env.WREN_PLATFORM_BINDING_CONFIG_FILE;
-        }
-        return { status: TextBasedAnswerStatus.SUCCEEDED,
-          completion: { queryId: key, content: 'private full completion' } };
-      });
-      if (at === 'history') {
-        const write = advanceSummary.getMockImplementation();
-        advanceSummary.mockImplementation(async (...args) => {
-          const value = await write(...args);
-          if (args[2] === 200) {
+    it.each(['prefix', 'tail'])(
+      'original SQL stream summary completes only an actual full body after receiving a %s',
+      async (shape) => {
+        const observed = shape === 'prefix' ? 'Original ' : 'summary';
+        summaryStream.mockImplementation(async () => {
+          summaryGet.mockResolvedValue({ status: TextBasedAnswerStatus.SUCCEEDED,
+            completion: { queryId: key, content: 'Original summary' } });
+          return Readable.from([
+            `data: ${JSON.stringify({ message: observed })}\n\n`,
+            `data: ${JSON.stringify({ done: true, queryId: key })}\n\n`,
+          ]);
+        });
+        const response = await sendAsk(undefined, {}, true);
+        const body = await response.text();
+        const frames = body.split('\n\n').filter((part) => part.startsWith('data: ')).map((part) => JSON.parse(part.slice(6)));
+        const content = frames.filter((part) => part.type === 'content_block_delta').map((part) => part.delta.text).join('');
+        expect(content).toBe(shape === 'prefix' ? 'Original summary' : 'summary');
+        expect(frames.some((part) => part.type === 'content_block_stop')).toBe(shape === 'prefix');
+        expect(frames.some((part) => part.type === 'message_stop')).toBe(shape === 'prefix');
+        expect(summaryRow.statusCode).toBe(200);
+        expect(summaryRow.responsePayload.summary).toBe('Original summary');
+        const recovered = await sendAsk(undefined, {}, true);
+        expect(await recovered.text()).toContain('Original summary');
+        expect(summaryCreate).toHaveBeenCalledTimes(1);
+        expect(summaryStream).toHaveBeenCalledTimes(1);
+      },
+    );
+    it.each(
+      ['summary', 'ask', 'stream-ask'].flatMap((kind) => [
+        { kind, at: 'result' },
+        { kind, at: 'history' },
+      ]),
+    )(
+      'rejects GOV $kind mode retirement during complete $at observation',
+      async ({ kind, at }) => {
+        summaryGet.mockImplementation(async () => {
+          if (at === 'result') {
             delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
             delete process.env.WREN_PLATFORM_BINDING_CONFIG_FILE;
           }
-          return value;
+          return {
+            status: TextBasedAnswerStatus.SUCCEEDED,
+            completion: { queryId: key, content: 'private full completion' },
+          };
         });
-      }
-      const response = await (kind === 'summary' ? sendSummary() : sendAsk(undefined, {}, kind === 'stream-ask'));
-      const body = await response.text();
-      expect(body).not.toContain('private full completion');
-      if (kind === 'stream-ask') {
-        expect(body).toContain('"type":"error"');
-      } else expect(response.status).toBe(412);
-      expect(summaryCreate).toHaveBeenCalledTimes(1);
-      expect(summaryStream).not.toHaveBeenCalled();
-    });
+        if (at === 'history') {
+          const write = advanceSummary.getMockImplementation();
+          advanceSummary.mockImplementation(async (...args) => {
+            const value = await write(...args);
+            if (args[2] === 200) {
+              delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+              delete process.env.WREN_PLATFORM_BINDING_CONFIG_FILE;
+            }
+            return value;
+          });
+        }
+        const response = await (kind === 'summary'
+          ? sendSummary()
+          : sendAsk(undefined, {}, kind === 'stream-ask'));
+        const body = await response.text();
+        expect(body).not.toContain('private full completion');
+        if (kind === 'stream-ask') {
+          expect(body).toContain('"type":"error"');
+        } else expect(response.status).toBe(412);
+        expect(summaryCreate).toHaveBeenCalledTimes(1);
+        expect(summaryStream).not.toHaveBeenCalled();
+      },
+    );
     it.each(['summary', 'ask'])(
       'does not turn a %s native done into a final body without complete original result',
       async (kind) => {

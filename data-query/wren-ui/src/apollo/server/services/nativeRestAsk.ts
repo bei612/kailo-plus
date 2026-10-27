@@ -289,9 +289,10 @@ export async function governedRestAsk(
   res.setHeader('Cache-Control', 'private, no-store');
   let streamStarted = false;
   let currentState = StateType.SQL_GENERATION_START;
-    const requireSummaryMode = () => {
-      if (!isGovernedQueryMode()) throw new NativeQueryRefusal(412, 'QUERY_ADMISSION_UNAVAILABLE');
-    };
+  const requireSummaryMode = () => {
+    if (!isGovernedQueryMode())
+      throw new NativeQueryRefusal(412, 'QUERY_ADMISSION_UNAVAILABLE');
+  };
   const block = (type: EventType, value?: string) => {
     if (!streaming || !streamStarted) return;
     sendSSEEvent(res, {
@@ -590,7 +591,8 @@ export async function governedRestAsk(
     if (current.statusCode === 200) {
       if (!(await settledQueries())) return;
       const visible = await readNativeAskHistory(ctx, config, native, current);
-      if (!sqlOnly && visible.responsePayload.type !== 'NON_SQL_QUERY') requireSummaryMode();
+      if (!sqlOnly && visible.responsePayload.type !== 'NON_SQL_QUERY')
+        requireSummaryMode();
       if (streaming) {
         res.setHeader('Content-Type', 'text/event-stream');
         res.flushHeaders();
@@ -1053,7 +1055,10 @@ export async function governedRestAsk(
           current,
         );
         requireSummaryMode();
-        block(EventType.CONTENT_BLOCK_START, ContentBlockContentType.SUMMARY_GENERATION);
+        block(
+          EventType.CONTENT_BLOCK_START,
+          ContentBlockContentType.SUMMARY_GENERATION,
+        );
         block(EventType.CONTENT_BLOCK_DELTA, visible.responsePayload.summary);
         block(EventType.CONTENT_BLOCK_STOP);
         respond(200, { id: key, ...visible.responsePayload });
@@ -1116,6 +1121,7 @@ export async function governedRestAsk(
           await authorize();
           if (query) await readSummaryHistory(query);
           if (event.done === true && event.queryId === key) {
+            const emitted = text;
             if (!general) {
               const result =
                 await components.wrenAIAdaptor.getTextBasedAnswerResult(key);
@@ -1160,7 +1166,20 @@ export async function governedRestAsk(
               native,
               current,
             );
-            if (!general) requireSummaryMode();
+            if (!general) {
+              requireSummaryMode();
+              if (streaming) {
+                if (!text.startsWith(emitted)) {
+                  // This transport saw only a tail. The original completed
+                  // History is now readable on the same key, but this partial
+                  // content block cannot be announced as a successful answer.
+                  pending();
+                  return;
+                }
+                const remainder = text.slice(emitted.length);
+                if (remainder) block(EventType.CONTENT_BLOCK_DELTA, remainder);
+              }
+            }
             block(EventType.CONTENT_BLOCK_STOP);
             respond(200, { id: key, ...visible.responsePayload });
             return;
