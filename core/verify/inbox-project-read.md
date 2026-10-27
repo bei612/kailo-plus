@@ -2268,3 +2268,56 @@ Git 后台 gc 仍因旧 worktree 元数据权限失败，提交与 push 本身�
 本批未挂载完整 HomeView/NativeBootstrap、未跑真实 Temporal/Relay、未安装 Desktop
 或更新 Mobile，也未发布 Web/服务。原管理面授权和 UNKNOWN 消费没有被本批重写；
 这些定向结果不代表完整 Inbox、跨设备、三账号双主题或生产验收。
+
+## 2026-10-27 Inbox 读取失败后的显式重试恢复
+
+关联 `REQ-24`、`DD-74/125(5)/138(4)`、`SS-BUZ-GOVERNANCE`。基线
+`dfdb6e4ff9b28ec8a3a20a1829c4f32b85e62af9`；产品
+`fb16b046588e5e1736e4bb80eadefba629be8977`；检查固定点
+`94081207686c375ec530d348967e662206ac4dee`。源码 3 文件 +136/-5，其中产品
+2 文件 +23/-5，新增消费者 113 行。
+
+固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的
+`desktop/src/features/home/ui/HomeView.tsx` 在 feed 读取失败时显示 unavailable
+与显式 `onRefresh`。现有审批源与组件通知源已分别返回 `loading/ready/unavailable`
+及 `refresh`，但 InboxView 向 ListPane 只传条目，丢失读取状态：失败在当前
+筛选没有其他条目时被显示成完整空列表，且没有原重试操作。这是当前源码缺口，
+不是根据旧未验收记录重做已恢复的审批决定链。
+
+本批共享 InboxView 透传两源的原状态与刷新；ListPane 只组合当前筛选的来源：
+审批在 all/needs_action，组件通知在 all/mention/needs_action。读取未完成或失败
+时不宣称完整空，失败显示已有错误词条与 Retry；明确重试只刷新失败来源。
+另一来源已准入的条目照常保留。项目、线程、Agent、草稿与提醒分支不因无关来源
+失败而被挡住。无新 API、业务状态、权限、审批决定、通知或 Relay 发布；未改
+既有源查询与 UNKNOWN 规则，没有新增词条。
+
+固定 GitHub 源码在原 SDK
+`sha256:3007729eb192341a4f004a88e42e1e66c94fc67d763acfc96568bd7311116018`
+执行：1 CPU / 4 GiB，memory+swap 4 GiB、pids 256，实际 HostConfig 已回读。
+容量输入复用已交接的 Data source，依赖缓存沿原专属目录，无宿主工具链。
+
+- 原 Vitest 新重试消费者 5/5、Inbox surface 22/22；共享生产/测试、Web、Desktop
+  四项类型检查与同源 i18n check 全部 0。实际使用原 BFF client 与 query hooks，
+  覆盖 all/needs_action 中任一来源 HTTP 503 后保留另一来源、显式重试恢复、
+  不额外刷新成功来源；双源 pending/403 不报空，成功读回空才出现空列表。
+  中英文使用同源词条。没有重复上一批审批决定或 Native 消息管理检查。
+- Web 原 `npm ci --offline` 与 Native 原 `pnpm 11.4.0 install --frozen-lockfile
+  --offline --filter buzz` 顺序完成，两宿主实际解析包各 1,039 个共享源码文件
+  逐字一致；本批没有借用上批安装包的通过结果。
+- 真实反证把共享实现改回“只有 loading 算未完整，失败不算”：双源拒绝后的错误
+  呈现断言失败，exit 1、1 failed。按固定原件逐字恢复后新 5 项全部通过、exit 0，
+  恢复前后 SHA-256 相同；最终作业 exit 0、OOM=false，容器已清理。
+- 首次 runner 因故障注入字符串的 shell 引号解析退出 2，在容器创建之前失败；
+  坏 runner 与语法错误记录保留，修正并经 `bash -n` 后才执行上述 SDK。
+  没有为此改变产品、依赖锁或检查断言。既有 React act 警告保留，不计作失败。
+
+完整输入审计 3,455 项与固定 GitHub 树逐字一致。原件目录为 CI
+`/volumes/data/kailo/verification/inbox-retry/940812076`；
+[回执](inbox-source-retry-20261027.json) SHA-256：
+`66962d082181cbbf2d863266dc3539ef019226036bc6846be5fe5a22310cbb5b`。
+source 可在回执之后复用，日志、限额、故障与恢复记录保留。
+Git 后台 gc 的旧 worktree 权限错误仍保留，提交/push 成功，未修改 Git 元数据。
+
+一次有界交叉复核未发现新增阻断。mention/其他筛选及旧 refresh 的边界另按实际
+源码复核，不冒称新增 SDK 场景已覆盖；没有完整宿主/引导挂载、真实 BFF/Temporal
+服务、设备、双主题截图、部署或全工程 full 验收。

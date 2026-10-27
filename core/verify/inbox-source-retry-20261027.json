@@ -1,0 +1,55 @@
+{
+  "source_commit": "94081207686c375ec530d348967e662206ac4dee",
+  "product_commit": "fb16b046588e5e1736e4bb80eadefba629be8977",
+  "base_commit": "dfdb6e4ff9b28ec8a3a20a1829c4f32b85e62af9",
+  "sdk": "sha256:3007729eb192341a4f004a88e42e1e66c94fc67d763acfc96568bd7311116018",
+  "source_directory": "/volumes/data/kailo/verification/composer-body/31a2c67c3/source",
+  "source_inputs_checked": 3455,
+  "source_mismatches": [],
+  "installed_platform_source_files_each_host": 1039,
+  "cpu": 1,
+  "memory_bytes": 4294967296,
+  "pids_limit": 256,
+  "positive": {
+    "source_retry": 5,
+    "inbox_surface": 22,
+    "typechecks": [
+      "shared-production",
+      "shared-test",
+      "web",
+      "desktop"
+    ],
+    "i18n_check": 0
+  },
+  "negative": {
+    "mutation": "only treat loading as incomplete, restoring false empty state on read failure",
+    "exit": 1,
+    "restored_source_retry": 5,
+    "restored_bytes_identical": true
+  },
+  "failure_history": [
+    {
+      "source": "94081207686c375ec530d348967e662206ac4dee",
+      "exit": 2,
+      "reason": "runner shell quoting syntax before container creation; broken runner preserved and corrected; no source changes"
+    }
+  ],
+  "job_directory": "/volumes/data/kailo/verification/inbox-retry/940812076",
+  "files_sha256": {
+    "runner.sh": "fd3203f7ecc3b8186fd914d48eeb5c9cb723f079006f00329e26a3474565ac51",
+    "runner-syntax-failure.sh": "201e4c21c6b15a415a92977625c562e4b6b502c18c889d57bf40174a51b2c383",
+    "runner-syntax-failure.log": "de66acfd8dfdea1675890f40d94f1b47011440b5d07ebcffcce62c5fa38575bc",
+    "check.log": "d0f32556d50af0091fa6dc5d1f21d5c6b6498e4450257390d31b4dd796b8993b",
+    "result.log": "e7024e752256a9bcd3865c5a2cd8f92d3b5cb7dc355699cee719cb0659e358f6",
+    "limits.log": "653d7d0e54d09c6585b25ec4ae066ecab1d1d0c84d92e5860af87d710504a274",
+    "preflight.log": "bae8dd5e30e2f6b7b22fe6eda908d06f403c08842d8e0bbf98d91fe194970490",
+    "oom.log": "2ed27c1421e6928dbe13dbfdb5c59e1045b30341fe7ebe05700006bc5ac572c0",
+    "host-config.json": "e009ffc6bfa3d6578a42bc03af708d1c9d5ea78ca4babc28d53ae22fe68633b4",
+    "tmp/negative.log": "e67110585463355ee436973dfe4dfe20d50001e18d1d9544a4fa19a1e0087af0",
+    "tmp/negative-exit.log": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+    "tmp/original.sha256": "d7615180b970242c96c1e305ef8402dcd1912e0ea2e383b75510dccd2aee79e2",
+    "tmp/restored.sha256": "d7615180b970242c96c1e305ef8402dcd1912e0ea2e383b75510dccd2aee79e2",
+    "tmp/restored.log": "237fc69b9c264e8d5a6ca5009e7b6c16e066ce560e9eb6eeef52656f57a50d7d"
+  },
+  "scope": "original shared Inbox with real query hooks and scripted BFF read refusal/retry; all and needs_action filters; not complete host/bootstrap mount, packaging, deployment, real browser or device acceptance"
+}
