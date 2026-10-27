@@ -14,6 +14,7 @@ import {TooltipProvider} from "../src/react/sidebar/tooltip";
 import {ProjectsView,EntityLinkAnchor,createProjectsGitHost,createNativeProjectsGitHost,type ProjectsHost} from "../src/react/projects";
 import type {ProjectWorkItemTarget} from "../src/react/projects/projectWorkItems";
 import {BffError} from "../src/transport";
+import {projectTagTarget} from "../src/react/projects/projectGit";
 import {render,click} from "./render";
 
 const viewer="a".repeat(64),owner="b".repeat(64),repository=`30617:${owner}:repo`,head="f".repeat(40);
@@ -33,16 +34,17 @@ const diff:ProjectsGitQueryResponse={view:ProjectsGitQueryRequestView.Diff,diff:
 function fixture(git=true){
   const review=event("2",1618,[["a",repository],["subject","Original review"],["p",viewer],["c",head],["branch-name","feature"],["target-branch","release"]],"Review body");
   const rows=[event("8",30617,[["d","repo"],["name","Original repo"],["clone","https://example.test/repo.git"]]),
-    event("9",30621,[["d","project"],["name","Original project"],["a",repository]]),review];
-  const kinds:Record<string,number[]>={PROJECTS:[30621],REPOSITORIES:[30617],DELETIONS:[5],WORK_ITEMS:[1618,1621],WORK_ITEM_ACTIVITY:[1,1619,1630,1631,1632,1633]};
+    event("9",30621,[["d","project"],["name","Original project"],["a",repository]]),review,
+    event("7",30618,[["d","repo"],["HEAD","ref: refs/heads/main"],["refs/heads/main",commit.hash],["refs/tags/main",head]])];
+  const kinds:Record<string,number[]>={PROJECTS:[30621],REPOSITORIES:[30617],DELETIONS:[5],WORK_ITEMS:[1618,1621],WORK_ITEM_ACTIVITY:[1,1619,1630,1631,1632,1633],REPOSITORY_STATES:[30618]};
   const query=vi.fn<ProjectsHost["query"]>(async request=>({pubkey:viewer,limit:20,bindingVersion:3,
-    events:rows.filter(row=>kinds[request.view]?.includes(row.kind)&&(!request.coordinates||request.coordinates.includes(row.tags.find(tag=>tag[0]==="a")?.[1]??""))
+    events:rows.filter(row=>kinds[request.view]?.includes(row.kind)&&(!request.coordinates||request.coordinates.includes(row.kind===30618?repository:row.tags.find(tag=>tag[0]==="a")?.[1]??""))
       &&(request.since===undefined||row.created_at>=request.since)&&(request.until===undefined||row.created_at<=request.until))}));
   const gitQuery=vi.fn(async(request:ProjectsGitQueryRequest):Promise<ProjectsGitQueryResponse>=>
     request.view===ProjectsGitQueryRequestView.Snapshot?snapshot:request.view===ProjectsGitQueryRequestView.Diff?diff
       :{view:ProjectsGitQueryRequestView.FileContent,content:"Plan line one"});
   const host:ProjectsHost={scopeKey:"tenant:human",query,...(git?{git:createProjectsGitHost(gitQuery)}:{})};
-  return {host,gitQuery,review,projectId:`30621:${owner}:project`,repositoryId:`${owner}:repo`};
+  return {host,gitQuery,review,rows,projectId:`30621:${owner}:project`,repositoryId:`${owner}:repo`};
 }
 
 async function mount(f:ReturnType<typeof fixture>,target:ProjectWorkItemTarget,interactive=false){
@@ -333,5 +335,85 @@ describe("Desktop local checkout in the restored Projects consumer",()=>{
     await click([...ui.querySelectorAll<HTMLButtonElement>('[data-testid="project-activity-feed-item"] button')].find(button=>button.textContent==="Initial import")!);
     await vi.waitFor(()=>expect(f.native.mock.calls.some(([command])=>command==="get_project_local_repo_diff")).toBe(true));
     expect(f.native.mock.calls.some(([command])=>command==="get_project_repo_diff")).toBe(false);
+  });
+});
+
+
+// Original tag menu -> remote snapshot / lazy file reader, through the actual shared ProjectsView.
+async function pickRepositoryRef(value: string) {
+  const trigger=document.querySelector<HTMLButtonElement>('[data-testid="project-repository-branch-trigger"]')!;
+  await act(async()=>{trigger.focus();trigger.dispatchEvent(new KeyboardEvent("keydown",{key:"Enter",bubbles:true,cancelable:true}));});
+  await vi.waitFor(()=>expect(document.querySelector('[role="menu"]')).not.toBeNull());
+  const choice=[...document.querySelectorAll<HTMLElement>('[role="menuitemradio"]')].find(item=>item.textContent?.trim()===value)!;
+  expect(choice).toBeDefined();await click(choice);
+}
+
+describe("original repository tag snapshot consumer",()=>{
+  it("separates a tag from its same-named branch and reads the selected tag's lazy file",async()=>{
+    const f=fixture();
+    f.gitQuery.mockImplementation(async request=>request.view===ProjectsGitQueryRequestView.FileContent
+      ? {view:ProjectsGitQueryRequestView.FileContent,content:request.targetRef?"Frozen tag file":"Current branch file"}
+      : {...snapshot,snapshot:{...snapshot.snapshot!,files:[{path:"README.md",kind:"file",size:24,previewContent:null,lastChangedAt:null}]}});
+    const {ui}=await mount(f,{repositoryId:f.repositoryId,tab:"files"});
+    await vi.waitFor(()=>expect(ui.querySelector('[data-testid="project-repository-branch-trigger"]')).not.toBeNull());
+    await pickRepositoryRef("mainfffffff");
+    await vi.waitFor(()=>expect(requests(f,ProjectsGitQueryRequestView.Snapshot).some(request=>request.targetRef==="refs/tags/main"&&request.targetCommit===head)).toBe(true));
+    const openReadme=async()=>{const row=[...ui.querySelectorAll<HTMLTableRowElement>('tr[tabindex]')].find(row=>row.textContent?.includes("README.md"))!;expect(row).toBeDefined();await click(row);};
+    await openReadme();
+    await vi.waitFor(()=>expect(ui.textContent).toContain("Frozen tag file"));
+    expect(requests(f,ProjectsGitQueryRequestView.FileContent).at(-1)).toMatchObject({repository,targetRef:"refs/tags/main",targetCommit:head,path:"README.md"});
+    await click(namedButton(ui,"Files"));
+    await pickRepositoryRef("main");
+    await openReadme();
+    await vi.waitFor(()=>expect(ui.textContent).toContain("Current branch file"));
+    expect(requests(f,ProjectsGitQueryRequestView.FileContent).at(-1)).not.toHaveProperty("targetRef");
+  });
+
+  it("keeps a selected tag remote and hides local writes in the real Desktop host consumer",async()=>{
+    const f=nativeFixture("ready");const {ui}=await mount(f,{repositoryId:f.repositoryId,tab:"overview"},true);
+    await vi.waitFor(()=>expect(ui.textContent).toContain("Remote readme"));
+    await selectLocal(ui);await vi.waitFor(()=>expect(ui.textContent).toContain("Local readme"));
+    await pickRepositoryRef("mainfffffff");
+    await vi.waitFor(()=>expect(f.native.mock.calls.some(([command,args])=>command==="get_project_repo_snapshot"&&args.targetRef==="refs/tags/main"&&args.targetCommit===head)).toBe(true));
+    await vi.waitFor(()=>expect(ui.textContent).toContain("Remote readme"));
+    expect(ui.textContent).not.toContain("Local readme");
+    expect([...localControls(ui).querySelectorAll("button")].some(button=>/^(Pull|Push)/.test(button.textContent?.trim()??""))).toBe(false);
+    await checkoutMenu(ui);expect(menuChoice("Local").hasAttribute("data-disabled")).toBe(true);
+    expect(menuChoice("Clone")).toBeUndefined();
+    await act(async()=>document.dispatchEvent(new KeyboardEvent("keydown",{key:"Escape",bubbles:true})));
+    expect(f.native.mock.calls.some(([command])=>["clone_project_repository","push_project_local_repository","pull_project_local_repository"].includes(command))).toBe(false);
+  });
+
+  it("does not dispatch a malformed published tag as HEAD",async()=>{
+    const f=fixture();f.rows.find(row=>row.kind===30618)!.tags.push(["refs/tags/broken", "not-a-commit"]);
+    const {ui}=await mount(f,{repositoryId:f.repositoryId,tab:"files"});
+    await vi.waitFor(()=>expect(ui.querySelector('[data-testid="project-repository-branch-trigger"]')).not.toBeNull());
+    const before=f.gitQuery.mock.calls.length;
+    await pickRepositoryRef("brokennot-a-c");
+    await vi.waitFor(()=>expect(ui.querySelector('[data-testid="project-repository-unavailable"]')).not.toBeNull(),{timeout:3000});
+    expect(f.gitQuery).toHaveBeenCalledTimes(before);
+    expect(ui.textContent).not.toContain("Readme body text");
+  });
+
+  it("does not carry a chosen tag into another host identity",async()=>{
+    const f=fixture();let finishOld!:(value:ProjectsGitQueryResponse)=>void;
+    f.gitQuery.mockImplementation(async request=>request.targetRef?new Promise(resolve=>{finishOld=resolve;}):snapshot);
+    const mounted=await mount(f,{repositoryId:f.repositoryId,tab:"files"});
+    await vi.waitFor(()=>expect(mounted.ui.querySelector('[data-testid="project-repository-branch-trigger"]')).not.toBeNull());
+    await pickRepositoryRef("mainfffffff");
+    await vi.waitFor(()=>expect(requests(f,ProjectsGitQueryRequestView.Snapshot).some(request=>request.targetRef)).toBe(true));
+    const next=fixture();next.host.scopeKey="tenant:other-human";
+    await mounted.switchHost(next.host);
+    await vi.waitFor(()=>expect(next.gitQuery).toHaveBeenCalled());
+    expect(requests(next,ProjectsGitQueryRequestView.Snapshot).every(request=>!request.targetRef&&!request.targetCommit)).toBe(true);
+    await act(async()=>finishOld({...snapshot,snapshot:{...snapshot.snapshot!,files:[{path:"OLD-IDENTITY.txt",kind:"file",size:1,previewContent:"old",lastChangedAt:null}]}}));
+    expect(mounted.ui.textContent).not.toContain("OLD-IDENTITY.txt");
+    expect(mounted.ui.querySelector('[data-testid="project-repository-branch-trigger"]')?.textContent).toBe("main");
+  });
+
+  it("rejects refs that the original git normalizer would silently discard",()=>{
+    for(const name of ["../main"," refs/tags/main","refs/heads/main","bad name","-option","/absolute","trailing/","x".repeat(256)])
+      expect(()=>projectTagTarget({name,commit:head})).toThrow();
+    expect(projectTagTarget({name:"release/v1.0",commit:head})).toEqual({targetRef:"refs/tags/release/v1.0",targetCommit:head});
   });
 });
