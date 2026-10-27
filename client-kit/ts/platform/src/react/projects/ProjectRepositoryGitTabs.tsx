@@ -97,6 +97,7 @@ export function useRepositoryGitState({ host, repository, pullRequests, commitHa
     snapshotCommit: snapshot?.latestCommit?.hash,
   });
   const branchActions = useProjectBranchActions({
+    readOnly: selectedTag !== null,
     activeBranch,
     activeBranchCommit,
     activeRemoteBranch,

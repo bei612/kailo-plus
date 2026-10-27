@@ -3,7 +3,7 @@
 // ProjectBranchDialogs.tsx) and Create review (CreatePullRequestDialog.tsx,
 // pullRequestMutations.ts::publishProjectPullRequest) through the Projects host seams.
 import {afterEach,beforeEach,describe,expect,it,vi} from "vitest";
-import {act} from "react";
+import {act,useState} from "react";
 import {QueryClient,QueryClientProvider} from "@tanstack/react-query";
 import {toast} from "sonner";
 import {ErrorClass,ProjectGitRefOperation,ProjectsGitQueryRequestView,ReasonCode,
@@ -17,7 +17,7 @@ import {ProjectsView,createProjectsGitHost,createNativeProjectsGitHost,type Proj
 import {loadProjectDirectory} from "../src/react/projects/projectEnumeration";
 import type {ProjectWorkItemTarget} from "../src/react/projects/projectWorkItems";
 import {eventToRepoState,fetchRepoState} from "../src/react/projects/projectRepoState";
-import {changeProjectRemoteBranch,readProjectGitRefIntent} from "../src/react/projects/branchMutations";
+import {changeProjectRemoteBranch,readProjectGitRefIntent,useProjectBranchActions} from "../src/react/projects/branchMutations";
 import {projectBranchErrorMessage} from "../src/react/projects/lib/projectBranchErrors";
 import {publishProjectPullRequest} from "../src/react/projects/pullRequestMutations";
 import {BffError,TransportError} from "../src/transport";
@@ -275,5 +275,32 @@ describe("restored Create review",()=>{
     expect(publish.mock.calls[1]?.[3]?.eventId).toBe("c".repeat(64));
     expect(result.pullRequest.title).toBe("Add feature");
     result.complete();expect(reviewIntents()).toEqual([]);
+  });
+});
+
+
+describe("original branch continuation in a tag selection",()=>{
+  it.each(["create","delete"] as const)("retires a deferred %s callback before the host write and preserves old intent storage",async operation=>{
+    const f=fixture();const repo=await currentRepository(f);let actions!:ReturnType<typeof useProjectBranchActions>;
+    let selectTag!:(value:boolean)=>void;let release!:()=>void;let entered=false;
+    const cache=new QueryClient({defaultOptions:{queries:{retry:false},mutations:{onMutate:async()=>{entered=true;await new Promise<void>(resolve=>{release=resolve;});}}}});
+    function Consumer(){const [tag,setTag]=useState(false);selectTag=setTag;
+      actions=useProjectBranchActions({host:f.host,project:repo,readOnly:tag,activeBranch:"feature",activeBranchCommit:featureHead,
+        activeRemoteBranch:{name:"feature",commit:featureHead},defaultBranch:"main",deleteBranchReason:null,refetchRepoState:async()=>{},
+        rememberBranch:vi.fn(),forgetBranch:vi.fn(),selectBranch:vi.fn()});return null;}
+    await render(<QueryClientProvider client={cache}><Consumer/></QueryClientProvider>);
+    const old=operation==="create"?()=>actions.handleCreate("new-branch"):actions.handleDelete;
+    // Capture the actual old closure before the controlled selection changes.
+    const captured=operation==="create"?actions.handleCreate:()=>old();
+    const pending=operation==="create"?captured("new-branch"):old();
+    const rejected=expect(pending).rejects.toThrow();
+    await vi.waitFor(()=>expect(entered).toBe(true));
+    await act(async()=>selectTag(true));
+    await act(async()=>release());await rejected;
+    expect(f.ref).not.toHaveBeenCalled();expect(refIntents()).toEqual([]);
+    expect(actions.available).toBe(false);
+    await act(async()=>selectTag(false));
+    await expect(captured("new-branch")).rejects.toThrow();
+    expect(f.ref).not.toHaveBeenCalled();
   });
 });
