@@ -536,18 +536,23 @@ it.each(["identity", "draft"])("retires an asynchronous snapshot paste when the 
   const upload = vi.fn();
   const Reader = FileReader;
   let release!: () => void;
+  let readFinished!: Promise<void>;
   vi.stubGlobal("FileReader", class extends Reader {
-    override readAsArrayBuffer(blob: Blob) {release=()=>super.readAsArrayBuffer(blob);}
+    override readAsArrayBuffer(blob: Blob) {
+      readFinished = new Promise(resolve => this.addEventListener("loadend",()=>resolve(),{once:true}));
+      release=()=>super.readAsArrayBuffer(blob);
+    }
   });
   const host = await render(<Composer draftIdentity="alice" draftKey="before" workspaceId="snapshot-workspace" onUpload={upload}/>);
   await act(async () => paste(host,"Writer",snapshotHtml("Writer.agent.png"),[new File([snapshotBytes],"image.png",{type:"image/png"})]));
   expect(release).toBeTypeOf("function");
   expect(upload).not.toHaveBeenCalled();
-  await rerender(<Composer draftIdentity={changed === "identity" ? "bob" : "alice"} draftKey="after" workspaceId="snapshot-workspace" onUpload={upload}/>);
-  await act(async () => {release();await new Promise(resolve=>setTimeout(resolve,30));});
+  const nextDraft = changed === "identity" ? "before" : "after";
+  await rerender(<Composer draftIdentity={changed === "identity" ? "bob" : "alice"} draftKey={nextDraft} workspaceId="snapshot-workspace" onUpload={upload}/>);
+  await act(async () => {release();await readFinished;});
   await settle();
   expect(upload).not.toHaveBeenCalled();
-  expect(loadDraftEntry("after")?.pendingImeta ?? []).toEqual([]);
+  expect(loadDraftEntry(nextDraft)?.pendingImeta ?? []).toEqual([]);
   expect(host.querySelector('[data-testid="message-input"]')?.textContent).toBe("");
 });
 
