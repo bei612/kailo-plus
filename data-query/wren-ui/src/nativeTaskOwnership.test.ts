@@ -2779,95 +2779,203 @@ databaseTests(
 // DD-12 / SS-WRN-GOVERNANCE: the existing recommendation and response rows,
 // through their real repositories. PostgreSQL is explicit, never a live DB.
 for (const backend of ['sqlite', 'postgres'] as const) {
-  const suite = backend === 'postgres' && !process.env.WREN_TEST_POSTGRES_URL ? describe.skip : describe;
+  const suite =
+    backend === 'postgres' && !process.env.WREN_TEST_POSTGRES_URL
+      ? describe.skip
+      : describe;
   suite(`original thread recommendation transactions (${backend})`, () => {
-    let db: Knex, threads: ThreadRepository, responses: ThreadResponseRepository;
+    let db: Knex,
+      threads: ThreadRepository,
+      responses: ThreadResponseRepository;
     let service: any, adaptor: any, tracker: any, projectId: number;
     const schema = `recommendation_${randomUUID().replace(/-/g, '')}`;
-    const migration = () => jest.requireActual(join(process.cwd(), 'migrations', '20261027000000_thread_recommendation_source.js'));
+    const migration = () =>
+      jest.requireActual(
+        join(
+          process.cwd(),
+          'migrations',
+          '20261027000000_thread_recommendation_source.js',
+        ),
+      );
     beforeAll(async () => {
-      db = knex(backend === 'postgres' ? {
-        client: 'pg', connection: process.env.WREN_TEST_POSTGRES_URL, searchPath: [schema],
-      } : { client: 'better-sqlite3', connection: { filename: ':memory:' }, useNullAsDefault: true });
+      db = knex(
+        backend === 'postgres'
+          ? {
+              client: 'pg',
+              connection: process.env.WREN_TEST_POSTGRES_URL,
+              searchPath: [schema],
+            }
+          : {
+              client: 'better-sqlite3',
+              connection: { filename: ':memory:' },
+              useNullAsDefault: true,
+            },
+      );
       if (backend === 'postgres') await db.schema.createSchema(schema);
-      for (const name of ['20240327030000_create_ask_table.js', '20241107171828_update_thread_table.js', '20241207000000_update_thread_response_for_answer.js'])
-        await jest.requireActual(join(process.cwd(), 'migrations', name)).up(db);
+      for (const name of [
+        '20240327030000_create_ask_table.js',
+        '20241107171828_update_thread_table.js',
+        '20241207000000_update_thread_response_for_answer.js',
+      ])
+        await jest
+          .requireActual(join(process.cwd(), 'migrations', name))
+          .up(db);
       await migration().up(db);
       threads = new ThreadRepository(db);
       responses = new ThreadResponseRepository(db);
     });
     afterAll(async () => {
-      if (backend === 'postgres') await db.schema.dropSchemaIfExists(schema, true);
+      if (backend === 'postgres')
+        await db.schema.dropSchemaIfExists(schema, true);
       await db.destroy();
     });
     beforeEach(async () => {
       await db('thread_response').delete();
       await db('thread').delete();
-      await threads.createOne({ id: 11, projectId: 7, questionsStatus: 'NOT_STARTED' });
+      await threads.createOne({
+        id: 11,
+        projectId: 7,
+        questionsStatus: 'NOT_STARTED',
+      });
       // Explicit IDs stay below the native sequence used by subsequent INSERTs.
-      await responses.createOne({ threadId: 11, question: 'Original question', sql: 'select 1' });
+      await responses.createOne({
+        threadId: 11,
+        question: 'Original question',
+        sql: 'select 1',
+      });
       projectId = 7;
-      adaptor = { generateRecommendationQuestions: jest.fn(async ({ queryId }) => ({ queryId })) };
+      adaptor = {
+        generateRecommendationQuestions: jest.fn(async ({ queryId }) => ({
+          queryId,
+        })),
+      };
       tracker = { addTask: jest.fn() };
       service = Object.assign(Object.create(AskingService.prototype), {
-        projectService: { getCurrentProject: jest.fn(async () => ({ id: projectId })) },
-        mdlService: { makeCurrentModelMDL: jest.fn(async () => ({ manifest: 'original-model' })) },
-        threadRepository: threads, threadResponseRepository: responses,
-        threadRecommendQuestionBackgroundTracker: tracker, wrenAIAdaptor: adaptor,
+        projectService: {
+          getCurrentProject: jest.fn(async () => ({ id: projectId })),
+        },
+        mdlService: {
+          makeCurrentModelMDL: jest.fn(async () => ({
+            manifest: 'original-model',
+          })),
+        },
+        threadRepository: threads,
+        threadResponseRepository: responses,
+        threadRecommendQuestionBackgroundTracker: tracker,
+        wrenAIAdaptor: adaptor,
       });
     });
     afterEach(() => jest.restoreAllMocks());
-    const source = async () => (await responses.findAllBy({ threadId: 11 })).sort((a, b) => b.id - a.id)[0].id;
+    const source = async () =>
+      (await responses.findAllBy({ threadId: 11 })).sort(
+        (a, b) => b.id - a.id,
+      )[0].id;
     const finish = async () => {
-      const task = await service.generateThreadRecommendationQuestions(11, await source());
+      const task = await service.generateThreadRecommendationQuestions(
+        11,
+        await source(),
+      );
       const original = await threads.findOneBy({ id: 11 });
-      await threads.updateRecommendation(original, { questionsStatus: 'FINISHED', questions: [
-        { question: 'Original follow-up', sql: 'select 2', category: 'same project' },
-      ] });
-      return { queryId: task.queryId, sourceResponseId: task.sourceResponseId, index: 0, idempotencyKey: randomUUID() };
+      await threads.updateRecommendation(original, {
+        questionsStatus: 'FINISHED',
+        questions: [
+          {
+            question: 'Original follow-up',
+            sql: 'select 2',
+            category: 'same project',
+          },
+        ],
+      });
+      return {
+        queryId: task.queryId,
+        sourceResponseId: task.sourceResponseId,
+        index: 0,
+        idempotencyKey: randomUUID(),
+      };
     };
     it('atomically claims one original task before HTTP and concurrent original actions only observe that task', async () => {
       const id = await source();
-      adaptor.generateRecommendationQuestions.mockImplementation(async ({ queryId }) => {
-        expect(await threads.findOneBy({ id: 11 })).toMatchObject({ queryId, questionsSourceResponseId: id, questionsStatus: 'GENERATING' });
-        return { queryId };
-      });
-      const tasks = await Promise.all([service.generateThreadRecommendationQuestions(11, id), service.generateThreadRecommendationQuestions(11, id)]);
+      adaptor.generateRecommendationQuestions.mockImplementation(
+        async ({ queryId }) => {
+          expect(await threads.findOneBy({ id: 11 })).toMatchObject({
+            queryId,
+            questionsSourceResponseId: id,
+            questionsStatus: 'GENERATING',
+          });
+          return { queryId };
+        },
+      );
+      const tasks = await Promise.all([
+        service.generateThreadRecommendationQuestions(11, id),
+        service.generateThreadRecommendationQuestions(11, id),
+      ]);
       expect(tasks[0].queryId).toBe(tasks[1].queryId);
       expect(adaptor.generateRecommendationQuestions).toHaveBeenCalledTimes(1);
     });
     it('lost creation ACK and a restarted original observer preserve the frozen task without POST', async () => {
       const id = await source();
-      adaptor.generateRecommendationQuestions.mockRejectedValueOnce(new Error('lost ACK'));
-      await expect(service.generateThreadRecommendationQuestions(11, id)).rejects.toThrow('NATIVE_EXECUTION_UNKNOWN');
+      adaptor.generateRecommendationQuestions.mockRejectedValueOnce(
+        new Error('lost ACK'),
+      );
+      await expect(
+        service.generateThreadRecommendationQuestions(11, id),
+      ).rejects.toThrow('NATIVE_EXECUTION_UNKNOWN');
       const original = await threads.findOneBy({ id: 11 });
       tracker.addTask.mockClear();
-      expect(await service.getThreadRecommendationQuestions(11)).toMatchObject({ queryId: original.queryId, sourceResponseId: id, status: 'GENERATING' });
-      expect(await service.generateThreadRecommendationQuestions(11, id)).toMatchObject({ queryId: original.queryId });
+      expect(await service.getThreadRecommendationQuestions(11)).toMatchObject({
+        queryId: original.queryId,
+        sourceResponseId: id,
+        status: 'GENERATING',
+      });
+      expect(
+        await service.generateThreadRecommendationQuestions(11, id),
+      ).toMatchObject({ queryId: original.queryId });
       expect(adaptor.generateRecommendationQuestions).toHaveBeenCalledTimes(1);
       expect(tracker.addTask).toHaveBeenCalled();
     });
     it('a new response committed after model loading but before CAS prevents old-source dispatch', async () => {
       const id = await source();
-      service.mdlService.makeCurrentModelMDL.mockImplementationOnce(async () => {
-        await responses.createOne({ threadId: 11, question: 'New question', sql: 'select 3' });
-        return { manifest: 'original-model' };
-      });
-      await expect(service.generateThreadRecommendationQuestions(11, id)).rejects.toThrow('NATIVE_OBJECT_CHANGED');
+      service.mdlService.makeCurrentModelMDL.mockImplementationOnce(
+        async () => {
+          await responses.createOne({
+            threadId: 11,
+            question: 'New question',
+            sql: 'select 3',
+          });
+          return { manifest: 'original-model' };
+        },
+      );
+      await expect(
+        service.generateThreadRecommendationQuestions(11, id),
+      ).rejects.toThrow('NATIVE_OBJECT_CHANGED');
       expect(adaptor.generateRecommendationQuestions).not.toHaveBeenCalled();
       expect((await threads.findOneBy({ id: 11 })).queryId).toBeNull();
     });
     it('legacy missing source/start facts do not create a replacement task', async () => {
       await threads.updateOne(11, { questionsStatus: null });
-      await expect(service.generateThreadRecommendationQuestions(11, await source())).rejects.toThrow('NATIVE_EXECUTION_UNKNOWN');
+      await expect(
+        service.generateThreadRecommendationQuestions(11, await source()),
+      ).rejects.toThrow('NATIVE_EXECUTION_UNKNOWN');
       expect(adaptor.generateRecommendationQuestions).not.toHaveBeenCalled();
     });
     it('a newer question cannot replace UNKNOWN but can claim after an actual terminal result', async () => {
-      const old = await service.generateThreadRecommendationQuestions(11, await source());
-      await responses.createOne({ threadId: 11, question: 'New', sql: 'select 3' });
+      const old = await service.generateThreadRecommendationQuestions(
+        11,
+        await source(),
+      );
+      await responses.createOne({
+        threadId: 11,
+        question: 'New',
+        sql: 'select 3',
+      });
       const id = await source();
-      await expect(service.generateThreadRecommendationQuestions(11, id)).rejects.toThrow('NATIVE_RECOMMENDATION_BUSY');
-      await threads.updateRecommendation(await threads.findOneBy({ id: 11 }), { questionsStatus: 'FINISHED', questions: [] });
+      await expect(
+        service.generateThreadRecommendationQuestions(11, id),
+      ).rejects.toThrow('NATIVE_RECOMMENDATION_BUSY');
+      await threads.updateRecommendation(await threads.findOneBy({ id: 11 }), {
+        questionsStatus: 'FINISHED',
+        questions: [],
+      });
       const next = await service.generateThreadRecommendationQuestions(11, id);
       expect(next.queryId).not.toBe(old.queryId);
       expect(next.sourceResponseId).toBe(id);
@@ -2876,120 +2984,261 @@ for (const backend of ['sqlite', 'postgres'] as const) {
     it('old tracker writes cannot overwrite the newly claimed original task', async () => {
       await finish();
       const old = await threads.findOneBy({ id: 11 });
-      await responses.createOne({ threadId: 11, question: 'New', sql: 'select 3' });
-      const next = await service.generateThreadRecommendationQuestions(11, await source());
-      expect(await threads.updateRecommendation(old, { questionsStatus: 'FINISHED', questions: [] })).toBeNull();
+      await responses.createOne({
+        threadId: 11,
+        question: 'New',
+        sql: 'select 3',
+      });
+      const next = await service.generateThreadRecommendationQuestions(
+        11,
+        await source(),
+      );
+      expect(
+        await threads.updateRecommendation(old, {
+          questionsStatus: 'FINISHED',
+          questions: [],
+        }),
+      ).toBeNull();
       expect((await threads.findOneBy({ id: 11 })).queryId).toBe(next.queryId);
     });
     it('a late generating observation of the same task cannot regress its recorded terminal result', async () => {
       await service.generateThreadRecommendationQuestions(11, await source());
       const pending = await threads.findOneBy({ id: 11 });
-      await threads.updateRecommendation(pending, { questionsStatus: 'FINISHED', questions: [] });
-      expect(await threads.updateRecommendation(pending, { questionsStatus: 'GENERATING', questions: [] })).toBeNull();
-      expect((await threads.findOneBy({ id: 11 })).questionsStatus).toBe('FINISHED');
+      await threads.updateRecommendation(pending, {
+        questionsStatus: 'FINISHED',
+        questions: [],
+      });
+      expect(
+        await threads.updateRecommendation(pending, {
+          questionsStatus: 'GENERATING',
+          questions: [],
+        }),
+      ).toBeNull();
+      expect((await threads.findOneBy({ id: 11 })).questionsStatus).toBe(
+        'FINISHED',
+      );
     });
     it('one selection intent returns one real row concurrently and after ACK loss; another explicit selection creates another row', async () => {
       const recommendation = await finish();
-      const rows = await Promise.all([service.createThreadResponse({ recommendation }, 11), service.createThreadResponse({ recommendation }, 11)]);
+      const rows = await Promise.all([
+        service.createThreadResponse({ recommendation }, 11),
+        service.createThreadResponse({ recommendation }, 11),
+      ]);
       expect(rows[0].id).toBe(rows[1].id);
-      expect(rows[0]).toMatchObject({ question: 'Original follow-up', sql: 'select 2', recommendationIntentKey: recommendation.idempotencyKey });
-      expect((await service.createThreadResponse({ recommendation }, 11)).id).toBe(rows[0].id);
-      const distinct = await service.createThreadResponse({ recommendation: { ...recommendation, idempotencyKey: randomUUID() } }, 11);
+      expect(rows[0]).toMatchObject({
+        question: 'Original follow-up',
+        sql: 'select 2',
+        recommendationIntentKey: recommendation.idempotencyKey,
+      });
+      expect(
+        (await service.createThreadResponse({ recommendation }, 11)).id,
+      ).toBe(rows[0].id);
+      const distinct = await service.createThreadResponse(
+        { recommendation: { ...recommendation, idempotencyKey: randomUUID() } },
+        11,
+      );
       expect(distinct.id).not.toBe(rows[0].id);
       expect(await responses.findAllBy({ threadId: 11 })).toHaveLength(3);
     });
     it('the native uniqueness constraint rejects a duplicate intent even outside the serialized service writer', async () => {
       const recommendation = await finish();
-      const original = await service.createThreadResponse({ recommendation }, 11);
-      await expect(responses.createOne({ threadId: 11, question: 'duplicate', recommendationIntentKey: original.recommendationIntentKey })).rejects.toThrow();
+      const original = await service.createThreadResponse(
+        { recommendation },
+        11,
+      );
+      await expect(
+        responses.createOne({
+          threadId: 11,
+          question: 'duplicate',
+          recommendationIntentKey: original.recommendationIntentKey,
+        }),
+      ).rejects.toThrow();
       expect(await responses.findAllBy({ threadId: 11 })).toHaveLength(2);
     });
     it('same intent with changed selection, caller SQL, or foreign project cannot reuse or insert a response', async () => {
       const recommendation = await finish();
       await service.createThreadResponse({ recommendation }, 11);
-      await expect(service.createThreadResponse({ recommendation: { ...recommendation, index: 1 } }, 11)).rejects.toThrow('NATIVE_OBJECT_CHANGED');
-      await expect(service.createThreadResponse({ recommendation, sql: 'select secret' }, 11)).rejects.toThrow('NATIVE_OBJECT_CHANGED');
+      await expect(
+        service.createThreadResponse(
+          { recommendation: { ...recommendation, index: 1 } },
+          11,
+        ),
+      ).rejects.toThrow('NATIVE_OBJECT_CHANGED');
+      await expect(
+        service.createThreadResponse(
+          { recommendation, sql: 'select secret' },
+          11,
+        ),
+      ).rejects.toThrow('NATIVE_OBJECT_CHANGED');
       projectId = 8;
-      await expect(service.createThreadResponse({ recommendation }, 11)).rejects.toThrow('not found');
+      await expect(
+        service.createThreadResponse({ recommendation }, 11),
+      ).rejects.toThrow('not found');
       expect(await responses.findAllBy({ threadId: 11 })).toHaveLength(2);
     });
     it('acknowledged row remains recoverable after the thread moves to a new recommendation; a new old-source intent is refused', async () => {
       const recommendation = await finish();
-      const original = await service.createThreadResponse({ recommendation }, 11);
+      const original = await service.createThreadResponse(
+        { recommendation },
+        11,
+      );
       await service.generateThreadRecommendationQuestions(11, await source());
-      expect((await service.createThreadResponse({ recommendation }, 11)).id).toBe(original.id);
-      await expect(service.createThreadResponse({ recommendation: { ...recommendation, idempotencyKey: randomUUID() } }, 11)).rejects.toThrow('NATIVE_OBJECT_CHANGED');
+      expect(
+        (await service.createThreadResponse({ recommendation }, 11)).id,
+      ).toBe(original.id);
+      await expect(
+        service.createThreadResponse(
+          {
+            recommendation: { ...recommendation, idempotencyKey: randomUUID() },
+          },
+          11,
+        ),
+      ).rejects.toThrow('NATIVE_OBJECT_CHANGED');
       expect(await responses.findAllBy({ threadId: 11 })).toHaveLength(2);
     });
     it('migration down/up preserves original data and leaves historical source facts absent', async () => {
       await migration().down(db);
-      expect(await db.schema.hasColumn('thread_response', 'recommendation_intent_key')).toBe(false);
+      expect(
+        await db.schema.hasColumn(
+          'thread_response',
+          'recommendation_intent_key',
+        ),
+      ).toBe(false);
       await migration().up(db);
-      expect((await threads.findOneBy({ id: 11 })).questionsSourceResponseId).toBeNull();
+      expect(
+        (await threads.findOneBy({ id: 11 })).questionsSourceResponseId,
+      ).toBeNull();
       expect(await responses.findAllBy({ threadId: 11 })).toHaveLength(1);
     });
     it('the original tracker retries a failed GET and never commits a late result into a replacement task', async () => {
       await service.generateThreadRecommendationQuestions(11, await source());
       let tick: () => void;
-      jest.spyOn(global, 'setInterval').mockImplementation(((callback: () => void) => { tick = callback; return 1; }) as any);
+      jest.spyOn(global, 'setInterval').mockImplementation(((
+        callback: () => void,
+      ) => {
+        tick = callback;
+        return 1;
+      }) as any);
       let resolveRead: (value: any) => void;
-      const read = jest.fn().mockRejectedValueOnce(new Error('AI temporarily unavailable')).mockImplementationOnce(() => new Promise((resolve) => { resolveRead = resolve; }));
-      const realTracker = new ThreadRecommendQuestionBackgroundTracker({ telemetry: { sendEvent: jest.fn() } as any, wrenAIAdaptor: { getRecommendationQuestionsResult: read } as any, threadRepository: threads });
+      const read = jest
+        .fn()
+        .mockRejectedValueOnce(new Error('AI temporarily unavailable'))
+        .mockImplementationOnce(
+          () =>
+            new Promise((resolve) => {
+              resolveRead = resolve;
+            }),
+        );
+      const realTracker = new ThreadRecommendQuestionBackgroundTracker({
+        telemetry: { sendEvent: jest.fn() } as any,
+        wrenAIAdaptor: { getRecommendationQuestionsResult: read } as any,
+        threadRepository: threads,
+      });
       await realTracker.initialize();
       const until = async (ready: () => boolean) => {
-        for (let i = 0; i < 1000 && !ready(); i++) await new Promise<void>((resolve) => setTimeout(resolve, 1));
+        for (let i = 0; i < 1000 && !ready(); i++)
+          await new Promise<void>((resolve) => setTimeout(resolve, 1));
         expect(ready()).toBe(true);
       };
-      tick(); await until(() => (realTracker as any).runningJobs.size === 0);
-      tick(); await until(() => read.mock.calls.length === 2);
+      tick();
+      await until(() => (realTracker as any).runningJobs.size === 0);
+      tick();
+      await until(() => read.mock.calls.length === 2);
       expect(read).toHaveBeenCalledTimes(2);
       const original = await threads.findOneBy({ id: 11 });
       const nextId = randomUUID();
       await threads.updateOne(11, { queryId: nextId });
       realTracker.addTask(await threads.findOneBy({ id: 11 }));
-      resolveRead({ status: 'FINISHED', response: { questions: [] }, error: null });
+      resolveRead({
+        status: 'FINISHED',
+        response: { questions: [] },
+        error: null,
+      });
       await until(() => (realTracker as any).runningJobs.size === 0);
       expect((await threads.findOneBy({ id: 11 })).queryId).toBe(nextId);
-      expect((await threads.findOneBy({ id: 11 })).questionsStatus).toBe('GENERATING');
+      expect((await threads.findOneBy({ id: 11 })).questionsStatus).toBe(
+        'GENERATING',
+      );
       expect(realTracker.getTasks()[11].queryId).toBe(nextId);
       expect(original.queryId).not.toBe(nextId);
     });
   });
 }
 
-
 describe('original recommendation adaptor HTTP correlation', () => {
-  let server: Server, adaptor: WrenAIAdaptor, origin: string, ack: any, observed: any;
+  let server: Server,
+    adaptor: WrenAIAdaptor,
+    origin: string,
+    ack: any,
+    observed: any;
   const queryId = randomUUID();
   beforeAll(async () => {
     server = createServer(async (request, response) => {
       const chunks: Buffer[] = [];
       for await (const chunk of request) chunks.push(Buffer.from(chunk));
-      observed = chunks.length ? JSON.parse(Buffer.concat(chunks).toString()) : null;
+      observed = chunks.length
+        ? JSON.parse(Buffer.concat(chunks).toString())
+        : null;
       response.setHeader('content-type', 'application/json');
       response.end(JSON.stringify(ack));
     });
-    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    await new Promise<void>((resolve) =>
+      server.listen(0, '127.0.0.1', resolve),
+    );
     origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
     adaptor = new WrenAIAdaptor({ wrenAIBaseEndpoint: origin });
   });
-  afterAll(async () => { server.closeAllConnections(); await new Promise<void>((resolve) => server.close(() => resolve())); });
+  afterAll(async () => {
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  });
   it('reserved native ID is sent unchanged and standalone omission preserves the original shape', async () => {
     ack = { id: queryId };
-    const input = { manifest: {} as any, previousQuestions: ['original'], projectId: '7' };
-    expect(await adaptor.generateRecommendationQuestions({ ...input, queryId })).toEqual({ queryId });
-    expect(observed).toMatchObject({ native_task_id: queryId, previous_questions: ['original'], project_id: '7' });
+    const input = {
+      manifest: {} as any,
+      previousQuestions: ['original'],
+      projectId: '7',
+    };
+    expect(
+      await adaptor.generateRecommendationQuestions({ ...input, queryId }),
+    ).toEqual({ queryId });
+    expect(observed).toMatchObject({
+      native_task_id: queryId,
+      previous_questions: ['original'],
+      project_id: '7',
+    });
     await adaptor.generateRecommendationQuestions(input);
     expect(observed).not.toHaveProperty('native_task_id');
   });
   it('a different task acknowledgement is a dependency error, never the new native task', async () => {
     ack = { id: randomUUID() };
-    await expect(adaptor.generateRecommendationQuestions({ manifest: {} as any, previousQuestions: [], projectId: '7', queryId })).rejects.toThrow('acknowledgement unavailable');
+    await expect(
+      adaptor.generateRecommendationQuestions({
+        manifest: {} as any,
+        previousQuestions: [],
+        projectId: '7',
+        queryId,
+      }),
+    ).rejects.toThrow('acknowledgement unavailable');
   });
   it('missing cache evidence remains unavailable while a matching finished empty result is valid', async () => {
-    ack = { id: queryId, status: 'failed', response: { questions: [] }, error: { code: 'RESOURCE_NOT_FOUND' } };
-    await expect(adaptor.getRecommendationQuestionsResult(queryId)).rejects.toThrow('evidence unavailable');
-    ack = { id: queryId, status: 'finished', response: { questions: [] }, error: null };
-    expect(await adaptor.getRecommendationQuestionsResult(queryId)).toMatchObject({ status: 'FINISHED', response: { questions: [] } });
+    ack = {
+      id: queryId,
+      status: 'failed',
+      response: { questions: [] },
+      error: { code: 'RESOURCE_NOT_FOUND' },
+    };
+    await expect(
+      adaptor.getRecommendationQuestionsResult(queryId),
+    ).rejects.toThrow('evidence unavailable');
+    ack = {
+      id: queryId,
+      status: 'finished',
+      response: { questions: [] },
+      error: null,
+    };
+    expect(
+      await adaptor.getRecommendationQuestionsResult(queryId),
+    ).toMatchObject({ status: 'FINISHED', response: { questions: [] } });
   });
 });

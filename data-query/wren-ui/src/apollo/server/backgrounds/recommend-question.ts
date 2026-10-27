@@ -213,80 +213,101 @@ export class ThreadRecommendQuestionBackgroundTracker {
         // mark the job as running
         this.runningJobs.add(runningKey);
         try {
-          const current = await this.threadRepository.findOneBy({ id: thread.id, projectId: thread.projectId });
-          if (!current || current.queryId !== thread.queryId || current.questionsSourceResponseId !== thread.questionsSourceResponseId) {
-            if (this.tasks[this.taskKey(thread)] === thread) delete this.tasks[this.taskKey(thread)];
-            if (current?.queryId && !isFinalized(current.questionsStatus as RecommendationQuestionStatus)) this.addTask(current);
-            return;
-          }
-
-        // get the latest result from AI service
-
-        const result =
-          await this.wrenAIAdaptor.getRecommendationQuestionsResult(
-            thread.queryId,
-          );
-
-        // check if status change
-        if (
-          thread.questionsStatus === result.status &&
-          result.response?.questions.length === (thread.questions || []).length
-        ) {
-          // mark the job as finished
-          this.logger.debug(
-            `${loggerPrefix}job ${this.taskKey(thread)} status not changed, returning question count: ${result.response?.questions.length || 0}`,
-          );
-          return;
-        }
-
-        // update database
-        if (
-          result.status !== thread.questionsStatus ||
-          result.response?.questions.length !== (thread.questions || []).length
-        ) {
-          this.logger.debug(
-            `${loggerPrefix}job ${this.taskKey(thread)} have changes, returning question count: ${result.response?.questions.length || 0}, updating`,
-          );
-          const updated = await this.threadRepository.updateRecommendation(thread, {
-            questionsStatus: result.status.toUpperCase(),
-            questions: result.response?.questions,
-            questionsError: result.error,
+          const current = await this.threadRepository.findOneBy({
+            id: thread.id,
+            projectId: thread.projectId,
           });
-          if (!updated) {
-            if (this.tasks[this.taskKey(thread)] === thread) delete this.tasks[this.taskKey(thread)];
+          if (
+            !current ||
+            current.queryId !== thread.queryId ||
+            current.questionsSourceResponseId !==
+              thread.questionsSourceResponseId
+          ) {
+            if (this.tasks[this.taskKey(thread)] === thread)
+              delete this.tasks[this.taskKey(thread)];
+            if (
+              current?.queryId &&
+              !isFinalized(
+                current.questionsStatus as RecommendationQuestionStatus,
+              )
+            )
+              this.addTask(current);
             return;
           }
-          thread.questionsStatus = result.status;
-          thread.questions = result.response?.questions;
-        }
 
-        // remove the task from tracker if it is finalized
-        if (isFinalized(result.status)) {
-          const eventProperties = {
-            thread_id: thread.id,
-            status: result.status,
-            questions: thread.questions,
-            error: result.error,
-          };
-          if (result.status === RecommendationQuestionStatus.FINISHED) {
-            this.telemetry.sendEvent(
-              TelemetryEvent.HOME_GENERATE_THREAD_RECOMMENDATION_QUESTIONS,
-              eventProperties,
+          // get the latest result from AI service
+
+          const result =
+            await this.wrenAIAdaptor.getRecommendationQuestionsResult(
+              thread.queryId,
             );
-          } else {
-            this.telemetry.sendEvent(
-              TelemetryEvent.HOME_GENERATE_THREAD_RECOMMENDATION_QUESTIONS,
-              eventProperties,
-              WrenService.AI,
-              false,
+
+          // check if status change
+          if (
+            thread.questionsStatus === result.status &&
+            result.response?.questions.length ===
+              (thread.questions || []).length
+          ) {
+            // mark the job as finished
+            this.logger.debug(
+              `${loggerPrefix}job ${this.taskKey(thread)} status not changed, returning question count: ${result.response?.questions.length || 0}`,
             );
+            return;
           }
-          this.logger.debug(
-            `${loggerPrefix}job ${this.taskKey(thread)} is finalized, removing`,
-          );
-          if (this.tasks[this.taskKey(thread)] === thread) delete this.tasks[this.taskKey(thread)];
-        }
 
+          // update database
+          if (
+            result.status !== thread.questionsStatus ||
+            result.response?.questions.length !==
+              (thread.questions || []).length
+          ) {
+            this.logger.debug(
+              `${loggerPrefix}job ${this.taskKey(thread)} have changes, returning question count: ${result.response?.questions.length || 0}, updating`,
+            );
+            const updated = await this.threadRepository.updateRecommendation(
+              thread,
+              {
+                questionsStatus: result.status.toUpperCase(),
+                questions: result.response?.questions,
+                questionsError: result.error,
+              },
+            );
+            if (!updated) {
+              if (this.tasks[this.taskKey(thread)] === thread)
+                delete this.tasks[this.taskKey(thread)];
+              return;
+            }
+            thread.questionsStatus = result.status;
+            thread.questions = result.response?.questions;
+          }
+
+          // remove the task from tracker if it is finalized
+          if (isFinalized(result.status)) {
+            const eventProperties = {
+              thread_id: thread.id,
+              status: result.status,
+              questions: thread.questions,
+              error: result.error,
+            };
+            if (result.status === RecommendationQuestionStatus.FINISHED) {
+              this.telemetry.sendEvent(
+                TelemetryEvent.HOME_GENERATE_THREAD_RECOMMENDATION_QUESTIONS,
+                eventProperties,
+              );
+            } else {
+              this.telemetry.sendEvent(
+                TelemetryEvent.HOME_GENERATE_THREAD_RECOMMENDATION_QUESTIONS,
+                eventProperties,
+                WrenService.AI,
+                false,
+              );
+            }
+            this.logger.debug(
+              `${loggerPrefix}job ${this.taskKey(thread)} is finalized, removing`,
+            );
+            if (this.tasks[this.taskKey(thread)] === thread)
+              delete this.tasks[this.taskKey(thread)];
+          }
         } finally {
           // Failed reads are UNKNOWN, not a reason to suppress all later reads.
           this.runningJobs.delete(runningKey);
@@ -307,7 +328,11 @@ export class ThreadRecommendQuestionBackgroundTracker {
 
   public addTask(thread: Thread) {
     const previous = this.tasks[this.taskKey(thread)];
-    if (previous?.queryId === thread.queryId && previous?.questionsSourceResponseId === thread.questionsSourceResponseId) return;
+    if (
+      previous?.queryId === thread.queryId &&
+      previous?.questionsSourceResponseId === thread.questionsSourceResponseId
+    )
+      return;
     this.tasks[this.taskKey(thread)] = thread;
   }
 

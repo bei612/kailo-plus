@@ -481,7 +481,10 @@ export class AskingResolver {
     args: { threadId: number; sourceResponseId?: number },
     ctx: IContext,
   ): Promise<ThreadRecommendQuestionResult> {
-    return ctx.askingService.generateThreadRecommendationQuestions(args.threadId, args.sourceResponseId);
+    return ctx.askingService.generateThreadRecommendationQuestions(
+      args.threadId,
+      args.sourceResponseId,
+    );
   }
 
   public async getThreadRecommendationQuestions(
@@ -845,7 +848,12 @@ export class AskingResolver {
     args: {
       threadId: number;
       data: {
-        recommendation?: { queryId: string; sourceResponseId: number; index: number; idempotencyKey: string };
+        recommendation?: {
+          queryId: string;
+          sourceResponseId: number;
+          index: number;
+          idempotencyKey: string;
+        };
         question?: string;
         taskId?: string;
         // if we use recommendation questions, sql will be provided
@@ -855,7 +863,8 @@ export class AskingResolver {
     ctx: IContext,
   ): Promise<ThreadResponse> {
     const { threadId, data } = args;
-    if (data.taskId && data.recommendation) throw new Error('Conflicting original task sources');
+    if (data.taskId && data.recommendation)
+      throw new Error('Conflicting original task sources');
 
     const askingService = ctx.askingService;
     const eventName = TelemetryEvent.HOME_ASK_FOLLOWUP_QUESTION;

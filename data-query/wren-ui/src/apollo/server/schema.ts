@@ -1380,7 +1380,10 @@ export const typeDefs = gql`
     saveLearningRecord(data: SaveLearningRecordInput!): LearningRecord!
 
     # Recommendation questions
-    generateThreadRecommendationQuestions(threadId: Int!, sourceResponseId: Int): RecommendedQuestionsTask!
+    generateThreadRecommendationQuestions(
+      threadId: Int!
+      sourceResponseId: Int
+    ): RecommendedQuestionsTask!
     generateProjectRecommendationQuestions: Boolean!
     createInstantRecommendedQuestions(
       data: InstantRecommendedQuestionsInput!

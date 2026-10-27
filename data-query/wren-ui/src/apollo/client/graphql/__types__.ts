@@ -244,6 +244,7 @@ export type CreateThreadInput = {
 
 export type CreateThreadResponseInput = {
   question?: InputMaybe<Scalars['String']>;
+  recommendation?: InputMaybe<ThreadRecommendationSelectionInput>;
   sql?: InputMaybe<Scalars['String']>;
   taskId?: InputMaybe<Scalars['String']>;
 };
@@ -753,7 +754,7 @@ export type Mutation = {
   deploy: Scalars['JSON'];
   generateProjectRecommendationQuestions: Scalars['Boolean'];
   generateQuestion: Scalars['String'];
-  generateThreadRecommendationQuestions: Scalars['Boolean'];
+  generateThreadRecommendationQuestions: RecommendedQuestionsTask;
   generateThreadResponseAnswer: ThreadResponse;
   generateThreadResponseBreakdown: ThreadResponse;
   generateThreadResponseChart: ThreadResponse;
@@ -925,6 +926,7 @@ export type MutationGenerateQuestionArgs = {
 
 
 export type MutationGenerateThreadRecommendationQuestionsArgs = {
+  sourceResponseId?: InputMaybe<Scalars['Int']>;
   threadId: Scalars['Int'];
 };
 
@@ -1314,8 +1316,11 @@ export type RecommendRelations = {
 export type RecommendedQuestionsTask = {
   __typename?: 'RecommendedQuestionsTask';
   error?: Maybe<Error>;
+  queryId?: Maybe<Scalars['String']>;
   questions: Array<ResultQuestion>;
+  sourceResponseId?: Maybe<Scalars['Int']>;
   status: RecommendedQuestionsTaskStatus;
+  threadId?: Maybe<Scalars['Int']>;
 };
 
 export enum RecommendedQuestionsTaskStatus {
@@ -1502,6 +1507,13 @@ export type Thread = {
   summary: Scalars['String'];
 };
 
+export type ThreadRecommendationSelectionInput = {
+  idempotencyKey: Scalars['String'];
+  index: Scalars['Int'];
+  queryId: Scalars['String'];
+  sourceResponseId: Scalars['Int'];
+};
+
 export type ThreadResponse = {
   __typename?: 'ThreadResponse';
   adjustment?: Maybe<ThreadResponseAdjustment>;
@@ -1514,6 +1526,10 @@ export type ThreadResponse = {
   id: Scalars['Int'];
   queryReceipt?: Maybe<Scalars['JSON']>;
   question: Scalars['String'];
+  recommendationIndex?: Maybe<Scalars['Int']>;
+  recommendationIntentKey?: Maybe<Scalars['String']>;
+  recommendationQueryId?: Maybe<Scalars['String']>;
+  recommendationSourceResponseId?: Maybe<Scalars['Int']>;
   sql?: Maybe<Scalars['String']>;
   threadId: Scalars['Int'];
   view?: Maybe<ViewInfo>;
