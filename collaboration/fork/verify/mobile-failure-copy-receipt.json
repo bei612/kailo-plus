@@ -1,0 +1,52 @@
+{
+  "sourceCommit": "419ac2b86d1d829f39e19cb03541faa1bfd35044",
+  "baselineCommit": "3a2c960e492c545bfee2b2284fb2349a98664dde",
+  "upstreamCommit": "779af8886caae1317b4de962082429867ab61503",
+  "image": "ghcr.io/cirruslabs/flutter:3.41.7@sha256:644e3cea0a8440ce75804b67ceab77b16a87b39d9e9d89b07aceca7a98af1aa3",
+  "cpus": 2,
+  "memoryBytes": 4294967296,
+  "network": "none",
+  "sourceInputsChecked": 684,
+  "sourceMismatches": [],
+  "checks": {
+    "i18nGenerate": 0,
+    "i18nCheck": 0,
+    "format": 0,
+    "lockedOfflinePub": 0,
+    "analyze": 0,
+    "originalThreeFiles": {
+      "passed": 146,
+      "failed": 0
+    },
+    "restoreEnglishMutation": {
+      "exit": 1,
+      "failed": 1
+    },
+    "restoredBilingualRetry": {
+      "passed": 2,
+      "failed": 0
+    }
+  },
+  "oomKilled": false,
+  "logRoot": "/volumes/data/kailo/verification/phase1-integration/mobile-errors-419ac2b86-check",
+  "logSha256": {
+    "check.log": "12ec6b92df9d3c218a05754abe16a9e2f122960c75964d70cbf269c3ed8e4884",
+    "preflight.log": "d37699fe18df9d43965ef9f491fae71fee5b0db40f5727066e60d56b879f57ea",
+    "limits.log": "addaf52e321ddfa11d0329bd2f37357b476849063126d2c05dfea006f89340bf",
+    "storage.log": "19ab0a6393a66aaa578a876ff0a1e1856f30bc33de283abfc1c673db8a9fd1e4",
+    "result.log": "81cc2de33dd5976ae0c65f9b9eac088dcfca603113d4dc8bedfc8f761f9767a3",
+    "oom.log": "2ed27c1421e6928dbe13dbfdb5c59e1045b30341fe7ebe05700006bc5ac572c0",
+    "negative.log": "465692201d83f935645bf8b5cb33a5ef74c2a2eff130b3cacb0262d15c1d2a75"
+  },
+  "priorFailure": {
+    "commit": "2bcebd381629d8eece30a5576c86223b6283e862",
+    "passed": 144,
+    "failed": 2,
+    "cause": "test tap before original SkeletonReveal animation completed; original retry consumer corrected to wait"
+  },
+  "limits": [
+    "Widget/consumer checks only; not real device, APK, signed release or live Relay acceptance.",
+    "Media viewer copy is statically checked; original message_media tests classify attachments and do not prove localized image/video failure rendering.",
+    "No deployment or new full-project gate."
+  ]
+}

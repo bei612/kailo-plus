@@ -43,6 +43,16 @@ Web/Desktop 的本地 `file:` 包仍为旧副本，不能作为最新共享包�
 见[原链接消费者记录](core/verify/inbox-project-read.md)。这些是源码消费者检查，
 尚无部署端浏览器剪贴板或 Windows 唤醒验收。
 
+共享输入框后继固定 `3f2f966cf` 已恢复原 Escape 取消编辑，先由自动补全消费按键，
+保存中保留原锁。实际 Web 操作恢复原正文及已上传附件草稿，不再次上传或发布；
+共享 12、Web 76、Native 28 项与四项类型通过，移除 Escape 分支的反例失败、
+逐字恢复通过。见[原消费者回执](web-client/fork/verify/composer-escape-receipt.json)。
+Mobile 固定 `419ac2b86` 接回频道及媒体加载失败的同源文案，原三文件 146 项通过，
+中英文错误页重试恢复频道成立；英文硬编码反例失败、还原通过。媒体失败文案的
+真机渲染尚未验收，见[Mobile 记录](collaboration/fork/verify/mobile-client.md)。
+这些均已进入候选源码，未构建部署或更新安装包。
+
+
 Cells 固定 `afe7a4710` 修复正文读取阻塞期间撤权后仍向原 S3 存储读者放行字节。
 原 Go 1.26.8 镜像 4 CPU / 8 GiB：15 场景通过，移除读取后 Fresh 的三个反向均
 失败，逐字恢复后通过；格式与同包 vet 通过，原 Task/UNKNOWN 保留。见
