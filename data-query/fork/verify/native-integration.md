@@ -13165,3 +13165,60 @@ and AI adaptor fixtures; SQLite checks do not replace PostgreSQL acceptance.
 This is not a complete Wren suite run or live Core/provider/receiver/browser
 acceptance. No publication, deployment, production configuration or source trust
 was changed.
+
+## Original native HUMAN PostgreSQL consumer completion (2026-10-27)
+
+At integrated fixed source `4152f377fe3ff37b4091103883a919006d24ce41`, the complete
+original `nativeHumanQuery.test.ts` file passed **545 / 545, with no failures or
+skips**, using a new isolated PostgreSQL instance. This completes the preceding
+batch's one conditional case without changing product code, the test, its timeout
+or its assertions. Earlier **544 passed / 1 skipped** receipts remain unchanged.
+
+The original test
+`deletes the selected project only when another project has the same source table name`
+received `WREN_QUERY_TEST_DATABASE_URL` pointing only at the new private database.
+It ran the original `20240125071855_create_model_table.js` migration in a randomly
+named schema and used the real `ModelRepository`: selected project `orders` was
+deleted exactly once, another project's `orders` and the selected project's
+`customers` remained, and an empty source list deleted zero rows. The test then
+dropped its schema and closed its database connection.
+
+Source came from GitHub at that fixed commit. The original Node 18 image
+`sha256:f9ab18e354e6855ae56ef2b290dd225c1e51a564f87584b9bd21dd651838830e`
+ran at **4 CPU / 4 GiB / equal swap**, nonroot. The existing PostgreSQL image
+`sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea`
+ran in a separate container at **1 CPU / 2 GiB / equal swap**, with a new internal
+network, no published port and a 1 GiB PGDATA tmpfs. Container-safety preflight and
+actual limit readback passed. Source/tmp/logs remained on actual Data `/dev/sda1`;
+original locked dependencies were reused without installation or copying.
+Random disposable credentials were supplied only to these containers and are not
+stored in the repository receipt. No shared business database was used.
+
+The exact full-file command was
+`node node_modules/jest/bin/jest.js --runInBand src/nativeHumanQuery.test.ts`.
+`WREN_TEST_POSTGRES_URL` is not consumed by this file: it selects database groups
+in `nativeTaskOwnership`, `nativeRestAskOwnership` and `nativeTextAnswer`, which
+this batch neither ran nor claims. The original file's authority/provider fixtures
+remain fixtures; enabling its database case does not turn those into live Core
+or model-provider acceptance.
+
+An actual private-export mutation removed the existing project filter from
+`ModelRepository.deleteAllBySourceTableNames`. The original PG consumer failed
+with **expected 1 deleted row / received 2**, exit **1**. After byte-for-byte
+restoration, the same original PG group passed **1 / 1**. The **544 other cases**
+were not selected for these targeted negative/restoration runs; all **545** had
+already passed in the complete fixed-source run. **618 input Git blobs** matched
+the fixed commit after restoration. The test SDK, PostgreSQL container and own
+internal network were removed and absence was read back.
+
+The terminal receipt is
+`/volumes/data/kailo/verification/buzz-r10/wren-human-pg-4152f377fe3ff37b4091103883a919006d24ce41-check/receipt.json`,
+SHA-256 `a61fd945a73f60ba3469563bfa87bdb55ebb9c66622ed7bc01f3beb6f01f563f`.
+Its unchanged repository copy is [the HUMAN PostgreSQL receipt](native-human-postgres-receipt.json).
+It retains exact inputs, commands, image/limit evidence, log hashes, the real
+negative result and restoration. The UI source is unchanged from the previous
+full TypeScript/lint/format check; those checks were not redundantly rerun.
+
+Formal artifacts, release admission, receiver activation and deployed end-to-end
+business acceptance remain separate. No production configuration, deployment,
+source trust or business authority changed.
