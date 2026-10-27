@@ -1601,6 +1601,9 @@ describe("DD-146 original send flow: clear at Send, restore on failure", () => {
     state.gifs = [draftGif];
   }
   async function chooseDraftGif(host: HTMLElement) {
+    await vi.waitFor(()=>expect((input(host) as HTMLElement & {editor?:Editor}).editor).toBeDefined());
+    await act(async()=>input(host).focus());
+    await settle();
     await vi.waitFor(()=>expect(host.querySelector('[data-testid="composer-emoji-button"]')?.getAttribute("aria-label")).toBe("Insert emoji or GIF"));
     await click(host.querySelector<HTMLElement>('[data-testid="composer-emoji-button"]')!);
     await vi.waitFor(()=>expect(document.querySelector('[data-testid="composer-gif-tab"]')).not.toBeNull());
@@ -1647,20 +1650,25 @@ describe("DD-146 original send flow: clear at Send, restore on failure", () => {
     expect(upload).toHaveBeenCalledOnce();
   });
 
-  it("restores selected edit GIFs without re-adding the image already present in the edited body", async () => {
-    enableDraftGif();
+  it("keeps existing GIF Markdown intact while restoring an edit draft", async () => {
     const publish = vi.fn().mockResolvedValue(undefined);
-    const original = "original\n![image](https://static.klipy.com/original.gif)";
-    const target = {id:"e".repeat(64),author:"Alice",pubkey:"alice",body:original,createdAt:1,time:"",depth:0,tags:[]};
+    const originalUrl = "https://static.klipy.com/original.gif";
+    const target = {id:"e".repeat(64),author:"Alice",pubkey:"alice",body:`original\n![image](${originalUrl})`,createdAt:1,time:"",depth:0,tags:[]};
     const edit = <Composer draftIdentity="alice" draftKey="gif-edit" editTarget={target} onPublish={publish}/>;
     const host = await render(edit);
-    await chooseDraftGif(host);
+    await vi.waitFor(()=>expect((input(host) as HTMLElement & {editor?:Editor}).editor).toBeDefined());
+    const editor = (input(host) as HTMLElement & {editor:Editor}).editor;
+    await act(async()=>{ editor.commands.insertContent("edited "); });
+    await settle();
+    const content = loadDraftEntry("gif-edit")!.content;
+    expect(content).toContain("edited");
+    expect(content.split(originalUrl)).toHaveLength(2);
     await rerender(<Composer draftIdentity="alice" draftKey="other"/>);
     await rerender(edit);
-    expect(host.querySelectorAll('[data-testid="composer-gif-attachment"]')).toHaveLength(1);
+    expect(host.querySelector('[data-testid="composer-gif-attachment"]')).toBeNull();
     await click(button(host,"platform.send"));
     await vi.waitFor(()=>expect(publish).toHaveBeenCalledOnce());
-    expect(publish.mock.calls[0][0]).toBe(`${original}\n![image](${draftGif.url})`);
+    expect(publish.mock.calls[0][0]).toBe(content);
     expect(publish.mock.calls[0][1]).toEqual([]);
   });
 
