@@ -2321,3 +2321,51 @@ Git 后台 gc 的旧 worktree 权限错误仍保留，提交/push 成功，未�
 一次有界交叉复核未发现新增阻断。mention/其他筛选及旧 refresh 的边界另按实际
 源码复核，不冒称新增 SDK 场景已覆盖；没有完整宿主/引导挂载、真实 BFF/Temporal
 服务、设备、双主题截图、部署或全工程 full 验收。
+
+## 2026-10-27 Inbox 非资料标题与头像的打开操作
+
+关联 `REQ-24`、`DD-74/125(5)/138(4)`、`SS-BUZ-GOVERNANCE`。基线
+`f4bc1b96df2fb4484e4db41b96fb6ab5d61b9e3f`，产品
+`ae929d82147664717049be30b252d7a785cef204`，检查源码
+`213c213d5f197ba0c61cfbf8b962f512aeeac18d`；源码 6 文件 +39/-8，
+其中产品 3 文件 +7/-4。
+
+固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的
+`desktop/src/features/home/ui/InboxListPane.tsx::handleRowContentClick` 在点击
+真实资料入口时保留 popover，其余内容选择当前行。当前共享 InboxRow 无条件给
+sender/avatar 容器加 `data-inbox-profile-trigger`，点击命中后直接返回；
+NeedsActionInboxRow 的动作标题/Shield 图标、ComponentNotificationInboxRow 的
+来源文字/头像只是展示，没有资料入口，因而这些常用点击区域无法打开详情或通知。
+这是当前消费者缺口，不涉及此前已撤销的不可达 Discard 候选。
+
+共享行增加显式 `profileTriggers`，默认保留原普通消息资料入口；上述两类
+非资料消费者明确关闭该排除，标题、图标与头像回到同一原 `onSelect`。
+审批仍读取原详情、只在本机标记已读；通知仍经宿主原打开/标记已读路径。
+普通消息资料点击不触发行选择，行菜单动作仍独立，键盘用的整行按钮保留。
+没有新增事件、API、权限、审批决定、发布或其他页面能力；两宿主共用同一主体。
+
+GitHub 固定源在原 SDK
+`sha256:3007729eb192341a4f004a88e42e1e66c94fc67d763acfc96568bd7311116018`
+执行，1 CPU / 4 GiB、memory+swap 4 GiB、pids 256，实际限额已回读。沿已交接
+Data source 与原缓存，未使用宿主工具链或复制整份依赖到 NVMe。
+
+- 原三个消费者文件按本批操作选择 5 项，5/5 通过，39 项未选不计通过。
+  审批标题/图标分别打开共享详情并读取原审批、写本机 done；组件通知标题/头像
+  分别进入原 path 并提交原通知 read；普通消息真实 profile 与 mark 点击不误选行，
+  预览点击和整行按钮仍选择行。没有重复审批决定链或后台验证。
+- 共享生产/测试及 Web/Desktop 四项类型、同源 i18n check 均 0。Web 原
+  `npm ci --offline`、Native 原 `pnpm 11.4.0 install --frozen-lockfile --offline
+  --filter buzz` 顺序完成；两宿主实际解析包各 1,039 源文件逐字一致。
+- 反证在独立导出把两个容器恢复为无条件 profile 排除；真实审批标题点击后的
+  详情断言失败，exit 1、1 failed。按固定原件逐字恢复后同批 5/5 通过、39 未选、
+  exit 0，恢复前后 SHA-256 一致。最终作业 exit 0、OOM=false，容器已清理。
+- 3,455 个输入与固定 GitHub 归档逐字一致。既有 React act/npm 配置警告原样
+  保留；Git 后台 gc 仍报旧 worktree 权限错误，但产品、消费者提交与 push 成功，
+  未修改 Git 元数据。
+
+原件目录为 CI `/volumes/data/kailo/verification/inbox-row-open/213c213d5`。
+[回执](inbox-row-open-20261027.json) SHA-256：
+`480dad2c4498a699de8774caddef144640eb9f31dcd75f556cfe1a6ece3fe9df`。
+Data source 已无检查消费者，可后续复用；历史日志、限额、故障和恢复原件保留。
+这些是原共享 DOM 与脚本化 BFF 消费者，不是完整宿主/Bootstrap、真实服务授权、
+双主题截图、Windows 安装包、Mobile 或部署验收；没有声明全工程 full。

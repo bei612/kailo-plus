@@ -1,0 +1,47 @@
+{
+  "source_commit": "213c213d5f197ba0c61cfbf8b962f512aeeac18d",
+  "product_commit": "ae929d82147664717049be30b252d7a785cef204",
+  "base_commit": "f4bc1b96df2fb4484e4db41b96fb6ab5d61b9e3f",
+  "sdk": "sha256:3007729eb192341a4f004a88e42e1e66c94fc67d763acfc96568bd7311116018",
+  "source_directory": "/volumes/data/kailo/verification/composer-body/31a2c67c3/source",
+  "source_inputs_checked": 3455,
+  "source_mismatches": [],
+  "installed_platform_source_files_each_host": 1039,
+  "cpu": 1,
+  "memory_bytes": 4294967296,
+  "pids_limit": 256,
+  "positive": {
+    "row_open": 5,
+    "unselected": 39,
+    "typechecks": [
+      "shared-production",
+      "shared-test",
+      "web",
+      "desktop"
+    ],
+    "i18n_check": 0
+  },
+  "negative": {
+    "mutation": "restore unconditional profile exclusion for non-profile title/avatar",
+    "exit": 1,
+    "restored_row_open": 5,
+    "restored_bytes_identical": true
+  },
+  "failure_history": [],
+  "job_directory": "/volumes/data/kailo/verification/inbox-row-open/213c213d5",
+  "files_sha256": {
+    "runner.sh": "1e814fe3af5ea891c69ef4bd5f8442cc406724ada519082f85a42aab290ee068",
+    "check.log": "9adba320f69dd559297c09445e7b18287cdd52b81da34abe02cf55756db4eccd",
+    "result.log": "9a4b20ab62ff5c64b2291494ef946b97bf8e63d92c4d4dbc7e6232af6e012d43",
+    "limits.log": "40a5215614239de0665901135e0112293962ccc72f5593606ec3c4be9ddcb5d0",
+    "preflight.log": "014d00472aeaf69bed2a30dd72a6d8f535fae1de943354d079de45b5f9743898",
+    "oom.log": "2ed27c1421e6928dbe13dbfdb5c59e1045b30341fe7ebe05700006bc5ac572c0",
+    "host-config.json": "991431a750c4197f7fa56a53b464c02ba8d360278004983dc482131b59bfc629",
+    "tmp/negative.log": "1bc19f5ab9fc7b29c5eef407f4dd6a4de3d67420ff683345a2fc8360a1da139f",
+    "tmp/negative-exit.log": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+    "tmp/original.sha256": "ea612b178938a481350f45a1f231e7c02c02b48713f54e0580324ef3aa34b936",
+    "tmp/restored.sha256": "ea612b178938a481350f45a1f231e7c02c02b48713f54e0580324ef3aa34b936",
+    "tmp/restored.log": "afa0400a85e69eb9f3a9bbf2de3e6b45ac91b1590cbfd04b8edda9462183d24a"
+  },
+  "scope": "original shared Inbox title/avatar clicks and actual query hooks with scripted BFF detail/read; real profile slot exclusion; not complete host/bootstrap mount, packaging, deployment, real browser or device acceptance"
+}
