@@ -780,7 +780,7 @@ void main() {
       // Preserve the original reconnect grace window before showing the error.
       await tester.pump();
       await tester.pump(const Duration(seconds: 3));
-      await tester.pump();
+      await tester.pumpAndSettle();
 
       expect(
         find.text(chinese ? '无法加载频道' : 'Could not load channels'),
