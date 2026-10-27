@@ -795,7 +795,7 @@ it("restores the original Inbox detail ChannelMembersBar for a DM context, with 
 });
 
 function storedDmDraft(scope:string, text=scope):DraftState {
-  return {channelId:scope,content:text,createdAt:"2026-10-27T00:00:00Z",updatedAt:"2026-10-27T00:00:00Z",selectionStart:text.length,selectionEnd:text.length,pendingImeta:[],spoileredAttachmentUrls:[],status:"active"};
+  return {channelId:scope,content:text,createdAt:"2026-10-27T00:00:00Z",updatedAt:"2026-10-27T00:00:00Z",selectionStart:text.length,selectionEnd:text.length,pendingImeta:[],spoileredAttachmentUrls:[],mentionRefs:[],status:"active"};
 }
 it("persists a new Inbox DM draft through the real shared editor under the full-conversation key",async()=>{
   state.realComposer=true;
@@ -804,7 +804,7 @@ it("persists a new Inbox DM draft through the real shared editor under the full-
   await mountDm();
   const input=host.querySelector<HTMLElement>('[data-testid="message-input"]')! as HTMLElement & {editor:import("@tiptap/core").Editor};
   expect(input).not.toBeNull();
-  await act(async()=>{input.editor.commands.setContent("<p>saved from the Inbox DM</p>",{emitUpdate:true});});await settle();
+  await act(async()=>{input.editor.commands.setContent("saved from the Inbox DM",{emitUpdate:true});});await settle();
   const saved=loadDraftEntry(conversation.id)!;
   expect(saved?.content).toBe("saved from the Inbox DM");
   expect(saved.channelId).toBe(conversation.id);

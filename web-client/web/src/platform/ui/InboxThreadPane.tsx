@@ -273,7 +273,7 @@ export function InboxThreadPane({ principalId, workspaceId, channelId, conversat
           throw error;
         }
       }} /> : null}
-    <div hidden={Boolean(editTarget)}>{conversation && !dmDraftAvailable() ? <p role="status">{t("inbox.replyUnavailable")}</p> : null}{(!conversation || activeDmDraft) ? <Composer key={replyId ?? "default"} containerClassName="px-4 pb-4 sm:px-4" workspaceId={conversation ? undefined : workspaceId} draftChannelId={activeDmDraft?.scope ?? workspaceId} draftIdentity={principalId} draftKey={activeDmDraft?.key ?? restoreDraftKey ?? `thread:${workspaceId}:${anchorRoot}${replyId ? `:${replyId}` : ""}`} autoSendDraftKey={autoSendDraftKey} disabled={!canReply || Boolean(editTarget) || deleteDialog.pending || Boolean(deleteDialog.unresolvedMessageId)}
+    <div hidden={Boolean(editTarget)}>{activeDmDraft && !dmDraftAvailable() ? <p role="status">{t("inbox.replyUnavailable")}</p> : null}<Composer key={replyId ?? "default"} containerClassName="px-4 pb-4 sm:px-4" workspaceId={conversation ? undefined : workspaceId} draftChannelId={activeDmDraft?.scope ?? workspaceId} draftIdentity={principalId} draftKey={conversation ? activeDmDraft?.key : restoreDraftKey ?? `thread:${workspaceId}:${anchorRoot}${replyId ? `:${replyId}` : ""}`} autoSendDraftKey={autoSendDraftKey} disabled={!canReply || Boolean(editTarget) || deleteDialog.pending || Boolean(deleteDialog.unresolvedMessageId)}
       channelType={conversation ? "dm" : forum ? "forum" : undefined}
       audienceContext={conversation || !messages.find(event => event.id === anchorRoot) ? null : {type: "thread", rootTags: messages.find(event => event.id === anchorRoot)!.tags}}
       mentionPeople={mentionPeopleFromMembers(members)}
@@ -312,6 +312,6 @@ export function InboxThreadPane({ principalId, workspaceId, channelId, conversat
           if (unknown && !isOutcomeUnknown(error)) throw new TransportError("Inbox reply still has an unresolved intent.");
           throw error;
         }
-      }} /> : null}</div></div>} />
+      }} /></div></div>} />
   </BffVideoReviewProvider>;
 }
