@@ -4175,3 +4175,48 @@ Core/IdP HTTP、原生用户/角色/ACL/Workspace/索引/Task RPC、对象正文
 隔离夹具；这不是浏览器慢下载、真实 Mongo/对象存储、完整 receiver 或正式
 制品验收。原同步读取已确认事实与晚交付拒绝分别记录，不声称已交出的正文
 可以撤回。没有部署、digest 更新、生产 binding 激活或 CI 信任变更。
+
+## 2026-10-27 受管原上传的 MIME 与 live 版本边界
+
+固定实现树 `5a1184525d7941067d81384f504d9fd431fe39c3`，原 Cells 上游
+`c57f02f4962835447df694c63bd0fd8c22bd7baf`。沿 `.design/07` §5.2、
+REQ-03/11、DD-09/11/87、DD-124 的真实 writer、权限与终态边界复核；本节是
+源码风险和发布阻断证据，不是产品修复、已复现的生产事故或业务验收。
+
+1. 原 `frontend/assets/gui.ajax/res/js/core/http/PydioApi.js::uploadNativeFile`
+   的 multipart 明确携带 `application/octet-stream`；原
+   `common/nodes/put/handler-put.go::PutObject` 和
+   `MultipartPutObjectPart` 对无类型或默认类型调用原
+   `common/nodes/file-mime.go::WrapReaderForMime`。后者在后台 goroutine
+   识别正文，达到 8,192 字节或读取结束/出错即触发原 MIME 回调；即使读取
+   出错，回调也会调用 `CoreMetaSet` 写默认类型。
+2. `common/nodes/client.go::CoreMetaSet` 通过原 `CreateNode` 的
+   `UpdateIfExists` 按 node UUID 写元数据，没有预期当前 head/version 的条件。
+   原受管 S3 `gateway/data/gw/native-upload.go::finish` 在原 draft 已落库后
+   立即 `ReadNode`，空 MIME 直接拒绝，然后复制同一 draft 至 live；它没有等待
+   上述后台 MIME 写入。未知类型首传因此存在以下未闭合时序：后台回写尚未可见
+   时 finish 拒绝，或者正文错误/授权变化后旧回调仍尝试写节点 MIME。这是由
+   原调用顺序得出的风险，尚未在真实对象存储或部署环境动态复现。
+3. 同一 finish 中的 `router.CopyObject(... SrcVersionId)` 固定来源 revision，
+   `common/nodes/core/handler-exec.go::CopyObject` 对其原 GET 使用 `If-Match`
+   并核对源对象；但随后到 live 目标的 `destClient.PutObject` 路径没有传入目标
+   head/version 的条件。`data/versions/dao/bolt/bolt.go::ReserveDraftUpload`
+   仅拒绝重复的 revision ID；`PublishDraftUpload` 事务核对对应 reservation 和
+   新 revision。Mongo 的对应操作也按原 reservation/revision 事务处理；这些
+   不能单独证明 live 对象、索引 MIME 和其他并发版本在同一原子条件下提交。
+   `scheduler/jobs/native-upload.go::NativeUploadStepRecord` 固定原步骤、路径、
+   upload ID、长度和 ETag，但当前没有固定 MIME 或预期 live head。
+4. 因此不能以等待回调、读取当前 MIME、补默认类型或重新执行上传来证明这次
+   特定版本成功；亦不能只为此新建第二账本。受管 FILE_STORAGE 的匹配 release
+   和 binding 原本尚未通过激活验收，继续保持该发布门禁；该路径的 UNKNOWN
+   仍只观察同一原任务。独立 Cells 原生入口、既有数据及其他组件不因这项
+   源码发现被删除或停止。闭合需要在原任务、版本与实际对象写入间证明条件
+   原子性，覆盖单 PUT 与 multipart、短/长/空正文、权限变化、并发新版本、
+   ACK 丢失和恢复；若现有协议无此原语，须先依设计变更流程处理。
+
+固定上游 `common/nodes/file-mime.go::NewTeeMimeReader`、`TeeMimeReader.Read`
+及 `WrapReaderForMime` 已用只读 `git show` 对上述完整 commit 核验；未执行或
+修改 `.references`。本轮原 `tools/upstream_manifest.py status file-storage`
+在原 SDK 容器 1 CPU / 512 MiB、network none、只读参考树执行，退出 0：参考树
+HEAD 即该基准；原容器已删除。未运行新业务消费者、未改产品、契约、数据库、
+制品或运行配置；既有定向通过记录及完整上传/正式发布门禁均不因此改变。
