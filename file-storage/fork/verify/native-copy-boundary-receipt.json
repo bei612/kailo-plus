@@ -1,0 +1,39 @@
+{
+  "source": "c0f7d9b1fc455d75a6c9aa849e44c4ffd6bd9f96",
+  "inputs_matched_before_and_after": 9092,
+  "node_upstream": "c57f02f4962835447df694c63bd0fd8c22bd7baf",
+  "sdk": "golang@sha256:a688600ca24f8a4d3ca77f95b0dd40704a9fc787c826660eb7ba0b641b8b175d",
+  "limits": "4 CPU, 8 GiB memory and equal memory+swap, pids 512, network none, nonroot",
+  "results": "actual put.Handler consumer 5/5; original S3 gateway 15 subcases; gofmt and vet for two packages exit 0",
+  "faults": {
+    "fresh": "exit 1; revoked-during-copy assertion fails; 5/5 after restoration",
+    "copy_error": "exit 1; copy-ack-lost assertion fails; 5/5 after restoration"
+  },
+  "cleanup": "no matching own containers",
+  "logs_sha256": {
+    "c0f7d9b1f-check/consumer.log": "b61843e2119092e8146d2cdfb864177c55fafc2f99c26b51209cc37048539d8f",
+    "c0f7d9b1f-check/gateway.log": "b5fe48568ecf702a26aa99ebc54a348841fbb357d3b1c596217dc1f41374b53b",
+    "c0f7d9b1f-check/inputs.json": "fe7ac4ee28468fe113054387805ed0d8c4759208106523be879e5cdf9a945d7b",
+    "c0f7d9b1f-check/inspect.json": "4e06db36aff4011a625698f1f153c79a1306798a131ca2a0fd19c867746cd98d",
+    "c0f7d9b1f-check/limits.log": "7c91b699b7b640ed0ceddc6d6a1781b90e88e83fd09a62962994776bc2abadf0",
+    "c0f7d9b1f-check/preflight.log": "e3d005313c7e7e662d3ed49ba4424bdcb56d6f5e0893ccaf34810972831aced0",
+    "c0f7d9b1f-check/result.log": "8638aa62a98891ce249b25b7957d7a72f2a6a16647eddc58d6aafe75a5c98804",
+    "c0f7d9b1f-check/storage.log": "39955c65f4877f3fab878b66ab1ae29af0674d6256911f1468013b9e5b1d04df",
+    "c0f7d9b1f-check/version.log": "7e35a947feee25f89c2649aa041942db786be35c3d6c484ab2ba2da849e3dc00",
+    "c0f7d9b1f-check/vet.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "c0f7d9b1f-fault/fault-copyerror.exit": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+    "c0f7d9b1f-fault/fault-copyerror.log": "3798c0b1a4ba1958ef3f8aac9d8a3574877daa83c35e66fdcbfe12fdc470215c",
+    "c0f7d9b1f-fault/fault-fresh.exit": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+    "c0f7d9b1f-fault/fault-fresh.log": "98c61da3b2d969586758e57b7a258bb98a6722d478a723c9e5a49ad8fa849d38",
+    "c0f7d9b1f-fault/inputs.json": "fe7ac4ee28468fe113054387805ed0d8c4759208106523be879e5cdf9a945d7b",
+    "c0f7d9b1f-fault/inspect.json": "739e9f66185243bcec5dcd2c7737c13e125ab2175e880bfddd41ff1b1e11e5bd",
+    "c0f7d9b1f-fault/limits.log": "222dc05b42a90410ba61a77a312f043a7321fa7d3b2849abbbd7e0a045b225f1",
+    "c0f7d9b1f-fault/preflight.log": "85b88c2b5bf43291a1b6ad89b300eb247c15b183dd78cd17d953cbf7ddd8095e",
+    "c0f7d9b1f-fault/restored-copyerror.log": "08869b2aca418eb7ce37c71e80931a69d2147f462cc35343f97e4a2089f9ef9e",
+    "c0f7d9b1f-fault/restored-fresh.log": "3f631f9685fc9360dc0b0adb5318f00b9b14156d60eece16c27e5c0507fa4c8f",
+    "c0f7d9b1f-fault/result.log": "6ec3a6ee5bdcd431c4dafff904d46ce6e0f94ba1aa4e68850351c3f833df2839",
+    "c0f7d9b1f-fault/storage.log": "39955c65f4877f3fab878b66ab1ae29af0674d6256911f1468013b9e5b1d04df",
+    "c0f7d9b1f-fault/version.log": "7e35a947feee25f89c2649aa041942db786be35c3d6c484ab2ba2da849e3dc00"
+  },
+  "scope": "Original handler with real HUMAN cookie and fresh HTTP client, but isolated authority/copy/metadata fixtures. Original gateway uses its documented storage/RPC fixtures. No real object storage, receiver, artifact or deployment acceptance. MIME/live version atomicity remains a release gate."
+}

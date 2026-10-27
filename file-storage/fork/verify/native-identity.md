@@ -4220,3 +4220,36 @@ REQ-03/11、DD-09/11/87、DD-124 的真实 writer、权限与终态边界复核�
 在原 SDK 容器 1 CPU / 512 MiB、network none、只读参考树执行，退出 0：参考树
 HEAD 即该基准；原容器已删除。未运行新业务消费者、未改产品、契约、数据库、
 制品或运行配置；既有定向通过记录及完整上传/正式发布门禁均不因此改变。
+
+### 受管复制后的元数据副作用
+
+固定源码 `c0f7d9b1fc455d75a6c9aa849e44c4ffd6bd9f96`，基于
+`a4bc4e96bf1ff9ede2363423a568a55eb12a2563`。按 REQ-03/11、DD-09/11/87，
+原 `common/nodes/put/handler-put.go::CopyObject` 在下游复制返回错误后，仍会
+调用原 `ExtractAndPut`，可能在复制结果不明时另行写入元数据；复制调用期间
+撤权时，该副作用也先于上层下一次 Fresh。受管非 move 复制现在先保留复制错误，
+成功后在原元数据调用前对同一 `NativeUploadExecution` 重新 Fresh。已发生的
+复制不可撤回，拒绝后不补造失败终态、不重放；独立 Cells 的原成功及错误路径、
+受管 move 路径不改。新检查不证明复制目标的原子 head 或 MIME 归属，上一节的
+完整上传/正式发布阻断保持。
+
+原 Go 1.26.8 镜像
+`golang@sha256:a688600ca24f8a4d3ca77f95b0dd40704a9fc787c826660eb7ba0b641b8b175d`
+在 4 CPU / 8 GiB / 等额 swap、pids 512、nonroot、network none 下运行：
+原 `put.Handler.CopyObject` 消费者 **5/5**，包括真实 HUMAN cookie 和原 Fresh
+HTTP 消费、复制期间撤权、复制 ACK 丢失及独立 Cells 成功/错误对照；原 S3 网关
+上传 **15 子例**通过。两包 vet 和 gofmt 退出 0。Core HTTP、复制后端及元数据
+接收均为隔离夹具，不是实际 Core、对象存储或浏览器全链。
+原 `tools/upstream_manifest.py status file-storage` 在 1 CPU / 512 MiB 的原 SDK
+对只读参考树执行退出 0，固定上游仍为 `c57f02f4962835447df694c63bd0fd8c22bd7baf`。
+
+两次实际修改生产文件：移除 Fresh 时原撤权子例断言失败；移除复制错误返回时
+原 ACK 丢失子例断言失败，均 exit 1。各次逐字恢复后原 **5/5** 通过；恢复后
+**9,092** 个输入 Git blob 与固定源码一致，相关容器已删除并回读为空。前轮
+`12d5b235f` 原测试因缺失真实 session 所需 User/Policy RPC 夹具在认证前失败，
+日志保留；仅补原 RPC 和线程安全撤权夹具后重跑，未放宽生产认证。
+
+CI 回执位于 `/volumes/data/kailo/conformance/cells-copy-boundary/c0f7d9b1f-fault/receipt.json`，
+SHA-256 `8365de28200953365a06e2d25c85d271c50fde0f83f23d4c2477899147745a2b`；
+仓库原样副本为[复制边界回执](native-copy-boundary-receipt.json)。未构建制品、
+部署或激活 binding，也未把定向检查称为全仓门禁或真实组件业务验收。
