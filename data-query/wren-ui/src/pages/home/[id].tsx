@@ -88,9 +88,22 @@ const getThreadResponseIsFinished = (threadResponse: ThreadResponse) => {
 
 // Public config correlates an original observation; server admission remains
 // authoritative. A missing governed identity never selects standalone mode.
-function operationConfiguration(config: Awaited<ReturnType<typeof getUserConfig>>) {
-  if (config.nativeBindingConfigured === false && config.queryScope === undefined && config.nativeBindingGeneration === undefined) return 'standalone';
-  if (config.nativeBindingConfigured !== true || !/^[a-f0-9]{64}$/.test(config.queryScope ?? '') || !Number.isSafeInteger(config.nativeBindingGeneration) || config.nativeBindingGeneration <= 0) throw new Error('NATIVE_AUTHENTICATION_REQUIRED');
+function operationConfiguration(
+  config: Awaited<ReturnType<typeof getUserConfig>>,
+) {
+  if (
+    config.nativeBindingConfigured === false &&
+    config.queryScope === undefined &&
+    config.nativeBindingGeneration === undefined
+  )
+    return 'standalone';
+  if (
+    config.nativeBindingConfigured !== true ||
+    !/^[a-f0-9]{64}$/.test(config.queryScope ?? '') ||
+    !Number.isSafeInteger(config.nativeBindingGeneration) ||
+    config.nativeBindingGeneration <= 0
+  )
+    throw new Error('NATIVE_AUTHENTICATION_REQUIRED');
   return `${config.queryScope}:${config.nativeBindingGeneration}`;
 }
 
@@ -117,6 +130,8 @@ export default function HomeThread() {
   const answerOwner = useMemo(() => ({ active: true }), [threadId]);
   const answerOwnerRef = useRef(answerOwner);
   answerOwnerRef.current = answerOwner;
+  const sqlFix = useMemo(() => ({ pending: undefined as Promise<void> | undefined }), [answerOwner]);
+  const [fixingSqlOwner, setFixingSqlOwner] = useState<typeof answerOwner | null>(null);
   const [answerReceipts, setAnswerReceipts] = useState<Record<number, any>>({});
   const [chartReceipts, setChartReceipts] = useState<Record<number, any>>({});
 
@@ -149,14 +164,15 @@ export default function HomeThread() {
   const [updateThreadResponse, { loading: threadResponseUpdating }] =
     useUpdateThreadResponseMutation({
       onError: (error) => console.error(error),
-
     });
-  const [readThreadResponse] = useThreadResponseLazyQuery({ fetchPolicy: 'no-cache' });
+  const [readThreadResponse] = useThreadResponseLazyQuery({
+    fetchPolicy: 'no-cache',
+  });
   const responseObservation = useRef<{
     owner: typeof answerOwner;
     responseId: number;
     identity?: string;
-    timer?: ReturnType<typeof setTimeout>;
+    timer?: number;
     pending?: Promise<void>;
   } | null>(null);
   const [observedResponse, setObservedResponse] = useState<{
@@ -169,65 +185,91 @@ export default function HomeThread() {
     responseObservation.current = null;
     if (observation.timer !== undefined) window.clearTimeout(observation.timer);
   }, [answerOwner]);
-  const fetchThreadResponse = useCallback((options: { variables: { responseId: number } }) => {
-    if (!answerOwner.active || answerOwnerRef.current !== answerOwner) return;
-    const { responseId } = options.variables;
-    const previous = responseObservation.current;
-    if (previous?.owner === answerOwner && previous.responseId === responseId)
-      return previous.pending;
-    if (previous?.timer !== undefined) window.clearTimeout(previous.timer);
-    const observation: NonNullable<typeof responseObservation.current> = { owner: answerOwner, responseId };
-    responseObservation.current = observation;
-    setObservedResponse(null);
-    const active = () => answerOwner.active && answerOwnerRef.current === answerOwner && responseObservation.current === observation;
-    const observe = async () => {
-      if (!active()) return;
-      try {
-        const before = operationConfiguration(await getUserConfig());
+  const fetchThreadResponse = useCallback(
+    (options: { variables: { responseId: number } }) => {
+      if (!answerOwner.active || answerOwnerRef.current !== answerOwner) return;
+      const { responseId } = options.variables;
+      const previous = responseObservation.current;
+      if (previous?.owner === answerOwner && previous.responseId === responseId)
+        return previous.pending;
+      if (previous?.timer !== undefined) window.clearTimeout(previous.timer);
+      const observation: NonNullable<typeof responseObservation.current> = {
+        owner: answerOwner,
+        responseId,
+      };
+      responseObservation.current = observation;
+      setObservedResponse(null);
+      const active = () =>
+        answerOwner.active &&
+        answerOwnerRef.current === answerOwner &&
+        responseObservation.current === observation;
+      const observe = async () => {
         if (!active()) return;
-        if (observation.identity !== undefined && observation.identity !== before) {
-          responseObservation.current = null;
-          return;
-        }
-        observation.identity = before;
-        // Apollo's hook-level completion callback follows its latest render.
-        // Consume this exact read promise instead, with no shared cache/dedup
-        // result standing in for this owner's fresh original response read.
-        const result = await readThreadResponse({
-          variables: { responseId },
-          fetchPolicy: 'no-cache',
-          context: { queryDeduplication: false },
-        });
-        const after = operationConfiguration(await getUserConfig());
-        if (!active()) return;
-        if (after !== observation.identity) {
-          responseObservation.current = null;
-          return;
-        }
-        const next = result.data?.threadResponse;
-        if (!result.error && next?.id === responseId && next.threadId === threadId) {
-          setObservedResponse({ owner: answerOwner, response: next });
-          updateThreadQuery((prev) => !active() || String(prev.thread?.id) !== String(threadId) ? prev : ({
-            ...prev,
-            thread: { ...prev.thread, responses: prev.thread.responses.map(response => response.id === responseId ? next : response) },
-          }));
-          if (getThreadResponseIsFinished(next)) {
+        try {
+          const before = operationConfiguration(await getUserConfig());
+          if (!active()) return;
+          if (
+            observation.identity !== undefined &&
+            observation.identity !== before
+          ) {
             responseObservation.current = null;
             return;
           }
+          observation.identity = before;
+          // Apollo's hook-level completion callback follows its latest render.
+          // Consume this exact read promise instead, with no shared cache/dedup
+          // result standing in for this owner's fresh original response read.
+          const result = await readThreadResponse({
+            variables: { responseId },
+            fetchPolicy: 'no-cache',
+            context: { queryDeduplication: false },
+          });
+          const after = operationConfiguration(await getUserConfig());
+          if (!active()) return;
+          if (after !== observation.identity) {
+            responseObservation.current = null;
+            return;
+          }
+          const next = result.data?.threadResponse;
+          if (
+            !result.error &&
+            next?.id === responseId &&
+            next.threadId === threadId
+          ) {
+            setObservedResponse({ owner: answerOwner, response: next });
+            updateThreadQuery((prev) =>
+              !active() || String(prev.thread?.id) !== String(threadId)
+                ? prev
+                : {
+                    ...prev,
+                    thread: {
+                      ...prev.thread,
+                      responses: prev.thread.responses.map((response) =>
+                        response.id === responseId ? next : response,
+                      ),
+                    },
+                  },
+            );
+            if (getThreadResponseIsFinished(next)) {
+              responseObservation.current = null;
+              return;
+            }
+          }
+        } catch {
+          // A missing read is not a new generation or terminal failure. Continue
+          // only this original read at its existing interval while still owned.
         }
-      } catch {
-        // A missing read is not a new generation or terminal failure. Continue
-        // only this original read at its existing interval while still owned.
-      }
-      if (active()) observation.timer = window.setTimeout(() => {
-        observation.timer = undefined;
-        observation.pending = observe();
-      }, RESPONSE_POLL_INTERVAL);
-    };
-    observation.pending = observe();
-    return observation.pending;
-  }, [answerOwner, readThreadResponse, threadId, updateThreadQuery]);
+        if (active())
+          observation.timer = window.setTimeout(() => {
+            observation.timer = undefined;
+            observation.pending = observe();
+          }, RESPONSE_POLL_INTERVAL);
+      };
+      observation.pending = observe();
+      return observation.pending;
+    },
+    [answerOwner, readThreadResponse, threadId, updateThreadQuery],
+  );
 
   const [generateThreadRecommendationQuestions] =
     useGenerateThreadRecommendationQuestionsMutation({
@@ -269,36 +311,59 @@ export default function HomeThread() {
       })),
     [thread, answerReceipts, chartReceipts],
   );
-  const pollingResponse = observedResponse?.owner === answerOwner ? observedResponse.response : null;
+  const pollingResponse =
+    observedResponse?.owner === answerOwner ? observedResponse.response : null;
   const isPollingResponseFinished = useMemo(
     () => getThreadResponseIsFinished(pollingResponse),
     [pollingResponse],
   );
 
-  const onFixSQLStatement = async (responseId: number, sql: string) => {
-    const active = () => answerOwner.active && answerOwnerRef.current === answerOwner;
-    if (!active()) return;
-    const identity = operationConfiguration(await getUserConfig());
-    if (!active()) return;
-    await updateThreadResponse({
-      variables: { where: { id: responseId }, data: { sql } },
-      fetchPolicy: 'no-cache',
-      onCompleted: async (data) => {
-        try {
-          const current = operationConfiguration(await getUserConfig());
-          if (!active() || current !== identity || data.updateThreadResponse.id !== responseId || data.updateThreadResponse.threadId !== threadId) return;
-          updateThreadQuery((prev) => !active() || String(prev.thread?.id) !== String(threadId) ? prev : ({
-            ...prev,
-            thread: { ...prev.thread, responses: prev.thread.responses.map(response => response.id === responseId ? data.updateThreadResponse : response) },
-          }));
-          notify.success(t('home.sqlUpdated'));
-          onGenerateThreadResponseAnswer(responseId);
-        } catch {
-          // The write may have committed; losing current read authority is not
-          // permission to generate again or disclose a stale completion.
-        }
-      },
-    });
+  const onFixSQLStatement = (responseId: number, sql: string): Promise<void> => {
+    const active = () =>
+      answerOwner.active && answerOwnerRef.current === answerOwner;
+    if (!active()) return Promise.resolve();
+    if (sqlFix.pending) return sqlFix.pending;
+    setFixingSqlOwner(answerOwner);
+    const run = async () => {
+      try {
+        const identity = operationConfiguration(await getUserConfig());
+        if (!active()) return;
+        // Apollo does not await async completion callbacks. Keep the original
+        // modal's submit promise pending through the current-identity read.
+        const result = await updateThreadResponse({
+          variables: { where: { id: responseId }, data: { sql } },
+          fetchPolicy: 'no-cache',
+        });
+        if (!active()) return;
+        const next = result.data?.updateThreadResponse;
+        if (result.errors?.length || !next)
+          throw new Error('NATIVE_OUTCOME_UNKNOWN');
+        const current = operationConfiguration(await getUserConfig());
+        if (!active()) return;
+        if (current !== identity || next.id !== responseId || next.threadId !== threadId)
+          throw new Error('NATIVE_OUTCOME_UNKNOWN');
+        updateThreadQuery((prev) =>
+          !active() || String(prev.thread?.id) !== String(threadId)
+            ? prev
+            : {
+                ...prev,
+                thread: {
+                  ...prev.thread,
+                  responses: prev.thread.responses.map((response) =>
+                    response.id === responseId ? next : response,
+                  ),
+                },
+              },
+        );
+        notify.success(t('home.sqlUpdated'));
+        onGenerateThreadResponseAnswer(responseId);
+      } finally {
+        sqlFix.pending = undefined;
+        if (active()) setFixingSqlOwner(null);
+      }
+    };
+    sqlFix.pending = run();
+    return sqlFix.pending;
   };
 
   const generateResponseArtifact = async (
@@ -338,7 +403,7 @@ export default function HomeThread() {
       return (
         await generateThreadResponseChart({
           variables: { responseId, ...identity },
-            fetchPolicy: 'no-cache',
+          fetchPolicy: 'no-cache',
         })
       ).data?.generateThreadResponseChart;
     };
@@ -347,7 +412,9 @@ export default function HomeThread() {
       if (!active()) return;
       const identity = operationConfiguration(config);
       const scope = config.queryScope;
-      const sameConfiguration = (current: Awaited<ReturnType<typeof getUserConfig>>) => operationConfiguration(current) === identity;
+      const sameConfiguration = (
+        current: Awaited<ReturnType<typeof getUserConfig>>,
+      ) => operationConfiguration(current) === identity;
       if (config.nativeBindingConfigured === false) {
         await create({});
         const current = await getUserConfig();
@@ -544,7 +611,7 @@ export default function HomeThread() {
       onStopAdjustTask: adjustAnswer.onStop,
       onReRunAdjustTask: adjustAnswer.onReRun,
       onFixSQLStatement,
-      fixStatementLoading: threadResponseUpdating,
+      fixStatementLoading: threadResponseUpdating || fixingSqlOwner === answerOwner,
     },
     onOpenSaveAsViewModal: saveAsViewModal.openModal,
     onSelectRecommendedQuestion: onCreateResponse,
