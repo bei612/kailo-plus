@@ -227,8 +227,14 @@ export async function readNativeAskHistory(
     if (result.completionQueryId !== selected.id) {
       // Historical doneQueryId may only describe a consumed queue tail. Keep
       // its body unchanged; only the same original full GET can confirm it.
-      const complete = generalCompletion(await components.wrenAIAdaptor.getAskResult(selected.id), selected.id);
-      if (complete === undefined || complete !== selected.responsePayload.explanation)
+      const complete = generalCompletion(
+        await components.wrenAIAdaptor.getAskResult(selected.id),
+        selected.id,
+      );
+      if (
+        complete === undefined ||
+        complete !== selected.responsePayload.explanation
+      )
         throw unavailable();
     }
   } else {
@@ -594,7 +600,8 @@ export async function governedRestAsk(
     if (
       current.statusCode === 202 &&
       current.responsePayload.nativeAsk.doneQueryId === key &&
-      (current.responsePayload.type !== 'NON_SQL_QUERY' || current.responsePayload.nativeAsk.completionQueryId === key)
+      (current.responsePayload.type !== 'NON_SQL_QUERY' ||
+        current.responsePayload.nativeAsk.completionQueryId === key)
     ) {
       if (!(await settledQueries())) return;
       if (!(await advance(current.responsePayload, 200))) {
@@ -1083,28 +1090,50 @@ export async function governedRestAsk(
       await authorize();
       const complete = generalCompletion(result, key);
       if (complete === undefined) return false;
-      if (!(await advance({
-        ...current.responsePayload,
-        type: 'NON_SQL_QUERY', explanation: complete,
-        nativeAsk: { ...current.responsePayload.nativeAsk, doneQueryId: key, completionQueryId: key },
-      }, 202))) { pending(); return true; }
+      if (
+        !(await advance(
+          {
+            ...current.responsePayload,
+            type: 'NON_SQL_QUERY',
+            explanation: complete,
+            nativeAsk: {
+              ...current.responsePayload.nativeAsk,
+              doneQueryId: key,
+              completionQueryId: key,
+            },
+          },
+          202,
+        ))
+      ) {
+        pending();
+        return true;
+      }
       if (!(await settledQueries())) return true;
       await authorize();
-      if (!(await advance(current.responsePayload, 200))) { pending(); return true; }
+      if (!(await advance(current.responsePayload, 200))) {
+        pending();
+        return true;
+      }
       const visible = await readNativeAskHistory(ctx, config, native, current);
       requireSummaryMode();
       if (emitted !== undefined && streaming && !complete.startsWith(emitted)) {
         // Durable full History is available, but this observer only saw a tail.
-        pending(); return true;
+        pending();
+        return true;
       }
-      if (emitted === undefined) block(EventType.CONTENT_BLOCK_START, ContentBlockContentType.EXPLANATION);
-      const remainder = emitted === undefined ? complete : complete.slice(emitted.length);
+      if (emitted === undefined)
+        block(
+          EventType.CONTENT_BLOCK_START,
+          ContentBlockContentType.EXPLANATION,
+        );
+      const remainder =
+        emitted === undefined ? complete : complete.slice(emitted.length);
       if (remainder) block(EventType.CONTENT_BLOCK_DELTA, remainder);
       block(EventType.CONTENT_BLOCK_STOP);
       respond(200, { id: key, ...visible.responsePayload });
       return true;
     };
-    if (general && await completeGeneral()) return;
+    if (general && (await completeGeneral())) return;
     if (current.responsePayload.nativeAsk.streamClaimed) {
       pending();
       return;
@@ -1244,7 +1273,7 @@ export async function governedRestAsk(
           block(EventType.CONTENT_BLOCK_DELTA, event.message);
         }
       }
-      if (general && await completeGeneral(text)) return;
+      if (general && (await completeGeneral(text))) return;
       pending();
     } finally {
       clearTimeout(timer);

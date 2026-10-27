@@ -245,18 +245,23 @@ class NativeGeneralCompletion(unittest.IsolatedAsyncioTestCase):
                 service._ask_results["original"] = expected
                 async def stream():
                     yield self.chunk("old")
-                    if mode == "expiry": clock[0] = 2
-                    else: service._ask_results["original"] = AskResultResponse(status="stopped" if mode == "stop" else "understanding")
+                    if mode == "expiry":
+                        clock[0] = 2
+                    else:
+                        service._ask_results["original"] = AskResultResponse(status="stopped" if mode == "stop" else "understanding")
                     yield self.chunk(" result", "stop")
                 with patch("src.providers.llm.litellm.acompletion", AsyncMock(return_value=stream())):
                     await service._generate_general("data_assistance", expected, **self.request("data_assistance"))
                 self.assertIsNone(expected.completion)
-                if mode == "expiry": self.assertNotIn("original", service._ask_results)
-                else: self.assertIsNone(service._ask_results["original"].completion)
+                if mode == "expiry":
+                    self.assertNotIn("original", service._ask_results)
+                else:
+                    self.assertIsNone(service._ask_results["original"].completion)
 
     async def test_native_fastapi_get_exposes_only_optional_same_task_completion(self):
         service, _, expected = self.service(self.pipelines[0])
-        app = FastAPI(); app.include_router(router)
+        app = FastAPI()
+        app.include_router(router)
         app.dependency_overrides[get_service_container] = lambda: types.SimpleNamespace(ask_service=service)
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://fixture") as client:
             before = await client.get("/asks/original/result")

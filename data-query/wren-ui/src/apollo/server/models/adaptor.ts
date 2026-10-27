@@ -151,10 +151,17 @@ export type AskResult = AskResponse<
 };
 
 // A classification status or queue sentinel is not a complete explanation.
-export function generalCompletion(result: AskResult | undefined, queryId: string): string | undefined {
-  return result?.type === AskResultType.GENERAL && result.status === AskResultStatus.FINISHED
-    && !result.error && result.completion?.queryId === queryId
-    && typeof result.completion.content === 'string' ? result.completion.content : undefined;
+export function generalCompletion(
+  result: AskResult | undefined,
+  queryId: string,
+): string | undefined {
+  return result?.type === AskResultType.GENERAL &&
+    result.status === AskResultStatus.FINISHED &&
+    !result.error &&
+    result.completion?.queryId === queryId &&
+    typeof result.completion.content === 'string'
+    ? result.completion.content
+    : undefined;
 }
 
 export enum RecommendationQuestionStatus {

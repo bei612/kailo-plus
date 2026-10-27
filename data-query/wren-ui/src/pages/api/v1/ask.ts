@@ -144,11 +144,16 @@ export default async function handler(
       const authorize = async () => {
         const currentProject = await projectService.getCurrentProject();
         if (isGovernedQueryMode() || currentProject.id !== project.id)
-          throw new ApiError('Original explanation observation unavailable', 503);
+          throw new ApiError(
+            'Original explanation observation unavailable',
+            503,
+          );
       };
       let explanation = generalCompletion(askResult, askTask.queryId);
       if (explanation === undefined) {
-        const stream = await wrenAIAdaptor.getAskStreamingResult(askTask.queryId);
+        const stream = await wrenAIAdaptor.getAskStreamingResult(
+          askTask.queryId,
+        );
         const close = () => stream.destroy();
         res.once('close', close);
         const lines = createInterface({ input: stream, crlfDelay: Infinity });
@@ -156,19 +161,40 @@ export default async function handler(
           for await (const line of lines) {
             if (!line) continue;
             await authorize();
-            if (!line.startsWith('data:')) throw new ApiError('Original explanation observation unavailable', 503);
+            if (!line.startsWith('data:'))
+              throw new ApiError(
+                'Original explanation observation unavailable',
+                503,
+              );
             const event = JSON.parse(line.slice(5).trim());
-            if (Object.keys(event).sort().join(',') === 'done,queryId' && event.done === true && event.queryId === askTask.queryId) break;
-            if (Object.keys(event).join(',') !== 'message' || typeof event.message !== 'string')
-              throw new ApiError('Original explanation observation unavailable', 503);
+            if (
+              Object.keys(event).sort().join(',') === 'done,queryId' &&
+              event.done === true &&
+              event.queryId === askTask.queryId
+            )
+              break;
+            if (
+              Object.keys(event).join(',') !== 'message' ||
+              typeof event.message !== 'string'
+            )
+              throw new ApiError(
+                'Original explanation observation unavailable',
+                503,
+              );
           }
-          explanation = generalCompletion(await wrenAIAdaptor.getAskResult(askTask.queryId), askTask.queryId);
+          explanation = generalCompletion(
+            await wrenAIAdaptor.getAskResult(askTask.queryId),
+            askTask.queryId,
+          );
         } finally {
-          lines.close(); res.off('close', close); stream.destroy();
+          lines.close();
+          res.off('close', close);
+          stream.destroy();
         }
       }
       await authorize();
-      if (explanation === undefined) throw new ApiError('Original explanation completion unavailable', 503);
+      if (explanation === undefined)
+        throw new ApiError('Original explanation completion unavailable', 503);
 
       // Return the explanation result
       await respondWith({

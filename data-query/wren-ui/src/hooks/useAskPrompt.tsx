@@ -199,11 +199,15 @@ export default function useAskPrompt(threadId?: number) {
     [askingTaskResult.data, taskId],
   );
   const askingTaskType = useMemo(() => askingTask?.type, [askingTask?.type]);
-  const complete = askingTask?.type === AskingTaskType.GENERAL
-    && askingTask.status === AskingTaskStatus.FINISHED
-    && typeof askingTask.completion === 'string' ? askingTask.completion : undefined;
+  const complete =
+    askingTask?.type === AskingTaskType.GENERAL &&
+    askingTask.status === AskingTaskStatus.FINISHED &&
+    typeof askingTask.completion === 'string'
+      ? askingTask.completion
+      : undefined;
   const askingStreamTask = complete ?? askingStreamTaskResult.data;
-  const askingStreamCompleted = complete !== undefined || askingStreamTaskResult.completed;
+  const askingStreamCompleted =
+    complete !== undefined || askingStreamTaskResult.completed;
   useEffect(() => {
     if (complete !== undefined) askingStreamTaskResult.reset();
   }, [taskId, complete]);
