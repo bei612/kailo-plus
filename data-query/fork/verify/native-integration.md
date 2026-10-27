@@ -12851,3 +12851,35 @@ local handoff is `/tmp/kailo-wren-general-python-4b58d29c2-receipt.json`.
 It records input audit, exact log hashes, actual resource limits and failures.
 UI/REST/GraphQL consumer acceptance, real model/Core/IdP operations, matching
 artifacts and deployment are not established by these Python results.
+
+### Stop during original intent classification
+
+DD-127 / DD-133 and SS-WRN-GOVERNANCE: while the original classification
+pipeline was awaiting its result, the original stop operation could set the
+task to `stopped`, then the resumed classification overwrote it and launched
+one of the three GENERAL generators. A classification exception could also
+overwrite the stopped task with `failed`. The existing Ask service now checks
+the original stopped state after classification and preserves it on exception.
+The API and task identity are unchanged; stopping an already dispatched model
+request remains subject to the original pipeline behavior.
+
+Fixed source `02ab6ac7deec8df77f57c1f964597fabe811ea6a` was checked in the
+same original Python 3.12 AI image and resource limits described above. The
+actual Ask consumer held classification in flight, invoked the original stop
+method, and released it for GENERAL, MISLEADING_QUERY, USER_GUIDE and an
+exception. It verified the stopped state and no explanation dispatch. GENERAL
+**13/13** and SQL **20/20** passed; Ruff check and format-check passed.
+Removing the post-classification stop guard produced **3 assertion failures**;
+removing the exception guard produced **1**. Each was restored byte-for-byte
+and all 13 tests passed again. The three prior completion faults also remained
+detectable and restored successfully. All **209** fixed input blobs matched;
+the container exited 0, was not OOM-killed, and was removed.
+
+The earlier `6b3aaa0e5` fault run exited 1 after restoration because the test
+passed `query_id` to `BaseRequest` construction instead of using its original
+setter; it stopped a different cache key. That failure is retained and is not
+claimed as a passing run. CI logs and receipt are at
+`/volumes/data/kailo/verification/buzz-r10/wren-general-recovery-02ab6ac7d-fault-stop/`;
+receipt SHA-256 `4e1c4bf6922e3635d4b4e79e45c309647d5068b0e891818b1790f5c42d2604d9`.
+These are scripted classification and model boundaries, not live integration,
+UI acceptance, a release artifact or a deployment.
