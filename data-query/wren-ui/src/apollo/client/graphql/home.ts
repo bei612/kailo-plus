@@ -248,10 +248,10 @@ export const CREATE_THREAD_RESPONSE = gql`
     $data: CreateThreadResponseInput!
   ) {
     createThreadResponse(threadId: $threadId, data: $data) {
-    recommendationIntentKey
-    recommendationQueryId
-    recommendationSourceResponseId
-    recommendationIndex
+      recommendationIntentKey
+      recommendationQueryId
+      recommendationSourceResponseId
+      recommendationIndex
       ...CommonResponse
     }
   }
@@ -370,8 +370,14 @@ export const GENERATE_PROJECT_RECOMMENDATION_QUESTIONS = gql`
 `;
 
 export const GENERATE_THREAD_RECOMMENDATION_QUESTIONS = gql`
-  mutation GenerateThreadRecommendationQuestions($threadId: Int!, $sourceResponseId: Int) {
-    generateThreadRecommendationQuestions(threadId: $threadId, sourceResponseId: $sourceResponseId) {
+  mutation GenerateThreadRecommendationQuestions(
+    $threadId: Int!
+    $sourceResponseId: Int
+  ) {
+    generateThreadRecommendationQuestions(
+      threadId: $threadId
+      sourceResponseId: $sourceResponseId
+    ) {
       ...CommonRecommendedQuestionsTask
     }
   }

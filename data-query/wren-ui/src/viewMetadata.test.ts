@@ -84,9 +84,16 @@ jest.mock('./apollo/client/graphql/home.generated', () => ({
     data: mockHomeThreadData,
     updateQuery: mockThreadUpdate,
   }),
-  useCreateThreadResponseMutation: (options: any) => mockHomeApollo
-    ? jest.requireActual('@apollo/client').useMutation(jest.requireActual('./apollo/client/graphql/home.generated').CreateThreadResponseDocument, { ...options, client: mockHomeApollo })
-    : [jest.fn()],
+  useCreateThreadResponseMutation: (options: any) =>
+    mockHomeApollo
+      ? jest
+          .requireActual('@apollo/client')
+          .useMutation(
+            jest.requireActual('./apollo/client/graphql/home.generated')
+              .CreateThreadResponseDocument,
+            { ...options, client: mockHomeApollo },
+          )
+      : [jest.fn()],
   useUpdateThreadResponseMutation: (options: any) => {
     mockResponseUpdateOptions = options;
     return mockHomeApollo
@@ -109,12 +116,26 @@ jest.mock('./apollo/client/graphql/home.generated', () => ({
             { ...options, client: mockHomeApollo },
           )
       : [mockResponseRead, { stopPolling: jest.fn() }],
-  useGenerateThreadRecommendationQuestionsMutation: (options: any) => mockHomeApollo
-    ? jest.requireActual('@apollo/client').useMutation(jest.requireActual('./apollo/client/graphql/home.generated').GenerateThreadRecommendationQuestionsDocument, { ...options, client: mockHomeApollo })
-    : [jest.fn()],
-  useGetThreadRecommendationQuestionsLazyQuery: (options: any) => mockHomeApollo
-    ? jest.requireActual('@apollo/client').useLazyQuery(jest.requireActual('./apollo/client/graphql/home.generated').GetThreadRecommendationQuestionsDocument, { ...options, client: mockHomeApollo })
-    : [jest.fn(), { stopPolling: jest.fn() }],
+  useGenerateThreadRecommendationQuestionsMutation: (options: any) =>
+    mockHomeApollo
+      ? jest
+          .requireActual('@apollo/client')
+          .useMutation(
+            jest.requireActual('./apollo/client/graphql/home.generated')
+              .GenerateThreadRecommendationQuestionsDocument,
+            { ...options, client: mockHomeApollo },
+          )
+      : [jest.fn()],
+  useGetThreadRecommendationQuestionsLazyQuery: (options: any) =>
+    mockHomeApollo
+      ? jest
+          .requireActual('@apollo/client')
+          .useLazyQuery(
+            jest.requireActual('./apollo/client/graphql/home.generated')
+              .GetThreadRecommendationQuestionsDocument,
+            { ...options, client: mockHomeApollo },
+          )
+      : [jest.fn(), { stopPolling: jest.fn() }],
   useGenerateThreadResponseAnswerMutation: (options: any) =>
     mockHomeApollo
       ? jest
@@ -4535,8 +4556,21 @@ describe('original Home answer and chart operation lifetime', () => {
     describe('original recommendation observation and selection', () => {
       const nativeId = 'b7cd9000-68dc-47fb-87ee-451633b9a000';
       const task = (extra: any = {}) => ({
-        __typename: 'RecommendedQuestionsTask', queryId: nativeId, threadId: 11, sourceResponseId: 21,
-        status: 'FINISHED', questions: [{ __typename: 'ResultQuestion', question: 'Follow-up', sql: 'select 2', category: 'original' }], error: null, ...extra,
+        __typename: 'RecommendedQuestionsTask',
+        queryId: nativeId,
+        threadId: 11,
+        sourceResponseId: 21,
+        status: 'FINISHED',
+        questions: [
+          {
+            __typename: 'ResultQuestion',
+            question: 'Follow-up',
+            sql: 'select 2',
+            category: 'original',
+          },
+        ],
+        error: null,
+        ...extra,
       });
       const load = async () => {
         const page = renderPage();
@@ -4548,33 +4582,61 @@ describe('original Home answer and chart operation lifetime', () => {
         await pending;
         // The final observe resumes this same native task and never POSTs it.
         const last = requests[requests.length - 1];
-        if (last !== read) await respond(last, 'getThreadRecommendationQuestions', task());
-        expect(requests.some((request) => request.name === 'GenerateThreadRecommendationQuestions')).toBe(false);
+        if (last !== read)
+          await respond(last, 'getThreadRecommendationQuestions', task());
+        expect(
+          requests.some(
+            (request) =>
+              request.name === 'GenerateThreadRecommendationQuestions',
+          ),
+        ).toBe(false);
         return renderPage();
       };
       const select = { question: 'Follow-up', sql: 'select 2' };
       const selectedRow = (request: any, extra: any = {}) => ({
-        ...row('select 2'), id: 31, question: 'Follow-up',
-        recommendationIntentKey: request.variables.data.recommendation.idempotencyKey,
-        recommendationQueryId: nativeId, recommendationSourceResponseId: 21, recommendationIndex: 0,
+        ...row('select 2'),
+        id: 31,
+        question: 'Follow-up',
+        recommendationIntentKey:
+          request.variables.data.recommendation.idempotencyKey,
+        recommendationQueryId: nativeId,
+        recommendationSourceResponseId: 21,
+        recommendationIndex: 0,
         ...extra,
       });
       it.each(['standalone', 'governed'])(
         'reopens the exact native recommendation and creates only a reference-bound follow-up (%s)',
         async (mode) => {
-          mockConfig.mockResolvedValue(mode === 'standalone' ? standalone : governed);
+          mockConfig.mockResolvedValue(
+            mode === 'standalone' ? standalone : governed,
+          );
           const page = await load();
-          expect(page.controls.recommendedQuestions).toMatchObject({ queryId: nativeId, sourceResponseId: 21 });
+          expect(page.controls.recommendedQuestions).toMatchObject({
+            queryId: nativeId,
+            sourceResponseId: 21,
+          });
           const pending = page.controls.onSelectRecommendedQuestion(select);
           await settle();
           const request = requests[requests.length - 1];
           expect(request.name).toBe('CreateThreadResponse');
-          expect(request.variables.data).toEqual({ recommendation: { queryId: nativeId, sourceResponseId: 21, index: 0, idempotencyKey: expect.any(String) } });
+          expect(request.variables.data).toEqual({
+            recommendation: {
+              queryId: nativeId,
+              sourceResponseId: 21,
+              index: 0,
+              idempotencyKey: expect.any(String),
+            },
+          });
           expect(entries.size).toBe(1);
           await respond(request, 'createThreadResponse', selectedRow(request));
           await pending;
           expect(entries.size).toBe(0);
-          expect(mockHomeApollo.cache.readQuery({ query: documents.ThreadDocument, variables: { threadId: 11 } }).thread.responses).toHaveLength(2);
+          expect(
+            mockHomeApollo.cache.readQuery({
+              query: documents.ThreadDocument,
+              variables: { threadId: 11 },
+            }).thread.responses,
+          ).toHaveLength(2);
         },
       );
       it('lost recommendation selection ACK retains its exact original intent on explicit retry', async () => {
@@ -4594,27 +4656,46 @@ describe('original Home answer and chart operation lifetime', () => {
           await respond(next, 'createThreadResponse', selectedRow(next));
           await retry;
           expect(entries.size).toBe(0);
-        } finally { error.mockRestore(); }
+        } finally {
+          error.mockRestore();
+        }
       });
       it.each([
-        { recommendationQueryId: 'foreign' }, { recommendationSourceResponseId: 99 },
-        { recommendationIndex: 1 }, { recommendationIntentKey: 'foreign' }, { threadId: 22 },
-      ])('a mismatched selection receipt cannot clear UNKNOWN or populate the current thread: %j', async (extra) => {
-        const page = await load();
-        const pending = page.controls.onSelectRecommendedQuestion(select);
-        await settle();
-        const request = requests[requests.length - 1];
-        await respond(request, 'createThreadResponse', selectedRow(request, extra));
-        await pending;
-        expect(entries.size).toBe(1);
-        expect(mockHomeApollo.cache.readQuery({ query: documents.ThreadDocument, variables: { threadId: 11 } }).thread.responses).toHaveLength(1);
-      });
+        { recommendationQueryId: 'foreign' },
+        { recommendationSourceResponseId: 99 },
+        { recommendationIndex: 1 },
+        { recommendationIntentKey: 'foreign' },
+        { threadId: 22 },
+      ])(
+        'a mismatched selection receipt cannot clear UNKNOWN or populate the current thread: %j',
+        async (extra) => {
+          const page = await load();
+          const pending = page.controls.onSelectRecommendedQuestion(select);
+          await settle();
+          const request = requests[requests.length - 1];
+          await respond(
+            request,
+            'createThreadResponse',
+            selectedRow(request, extra),
+          );
+          await pending;
+          expect(entries.size).toBe(1);
+          expect(
+            mockHomeApollo.cache.readQuery({
+              query: documents.ThreadDocument,
+              variables: { threadId: 11 },
+            }).thread.responses,
+          ).toHaveLength(1);
+        },
+      );
       it('old recommendation read across A-B-A cannot disclose questions or restart a native mutation', async () => {
         const old = renderPage();
         const pending = old.controls.onGenerateThreadRecommendedQuestions(21);
         await settle();
         const request = requests[0];
-        old.retire(); renderPage(22).retire(); renderPage();
+        old.retire();
+        renderPage(22).retire();
+        renderPage();
         await respond(request, 'getThreadRecommendationQuestions', task());
         await pending;
         expect(renderPage().controls.recommendedQuestions).toBeNull();
@@ -4624,20 +4705,44 @@ describe('original Home answer and chart operation lifetime', () => {
         const page = renderPage();
         const pending = page.controls.onGenerateThreadRecommendedQuestions(21);
         await settle();
-        await respond(requests[0], 'getThreadRecommendationQuestions', task({ sourceResponseId: 20 }));
+        await respond(
+          requests[0],
+          'getThreadRecommendationQuestions',
+          task({ sourceResponseId: 20 }),
+        );
         expect(requests[1].name).toBe('GenerateThreadRecommendationQuestions');
-        expect(requests[1].variables).toEqual({ threadId: 11, sourceResponseId: 21 });
-        await respond(requests[1], 'generateThreadRecommendationQuestions', task({ sourceResponseId: 20 }));
+        expect(requests[1].variables).toEqual({
+          threadId: 11,
+          sourceResponseId: 21,
+        });
+        await respond(
+          requests[1],
+          'generateThreadRecommendationQuestions',
+          task({ sourceResponseId: 20 }),
+        );
         await pending;
         expect(renderPage().controls.recommendedQuestions).toBeNull();
-        expect(requests.filter((request) => request.name === 'GenerateThreadRecommendationQuestions')).toHaveLength(1);
-        if (requests[2]) await respond(requests[2], 'getThreadRecommendationQuestions', task({ sourceResponseId: 20 }));
+        expect(
+          requests.filter(
+            (request) =>
+              request.name === 'GenerateThreadRecommendationQuestions',
+          ),
+        ).toHaveLength(1);
+        if (requests[2])
+          await respond(
+            requests[2],
+            'getThreadRecommendationQuestions',
+            task({ sourceResponseId: 20 }),
+          );
       });
       it('configuration change after reading an original result prevents selection and disclosure', async () => {
         const page = renderPage();
         const pending = page.controls.onGenerateThreadRecommendedQuestions(21);
         await settle();
-        mockConfig.mockResolvedValue({ ...governed, queryScope: 'b'.repeat(64) });
+        mockConfig.mockResolvedValue({
+          ...governed,
+          queryScope: 'b'.repeat(64),
+        });
         await respond(requests[0], 'getThreadRecommendationQuestions', task());
         await pending;
         expect(renderPage().controls.recommendedQuestions).toBeNull();
@@ -4649,11 +4754,18 @@ describe('original Home answer and chart operation lifetime', () => {
         const pending = old.controls.onSelectRecommendedQuestion(select);
         await settle();
         const request = requests[requests.length - 1];
-        old.retire(); renderPage(22).retire(); renderPage();
+        old.retire();
+        renderPage(22).retire();
+        renderPage();
         await respond(request, 'createThreadResponse', selectedRow(request));
         await pending;
         expect(entries.size).toBe(1);
-        expect(mockHomeApollo.cache.readQuery({ query: documents.ThreadDocument, variables: { threadId: 11 } }).thread.responses).toHaveLength(1);
+        expect(
+          mockHomeApollo.cache.readQuery({
+            query: documents.ThreadDocument,
+            variables: { threadId: 11 },
+          }).thread.responses,
+        ).toHaveLength(1);
       });
     });
   });

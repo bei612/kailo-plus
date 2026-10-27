@@ -269,21 +269,27 @@ export default function HomeThread() {
       onError: (error) => console.error(error),
     });
 
-  const [readThreadRecommendations] = useGetThreadRecommendationQuestionsLazyQuery({
-    fetchPolicy: 'no-cache',
-  });
-  const recommendationSource = data?.thread?.id === threadId
-    ? Math.max(0, ...data.thread.responses.map((response) => response.id)) || null
-    : null;
-  const recommendationOwner = useMemo(() => ({
-    active: true,
-    source: recommendationSource,
-    queryId: undefined as string | undefined,
-    identity: undefined as string | undefined,
-    attempted: false,
-    pending: undefined as Promise<void> | undefined,
-    timer: undefined as number | undefined,
-  }), [answerOwner, recommendationSource]);
+  const [readThreadRecommendations] =
+    useGetThreadRecommendationQuestionsLazyQuery({
+      fetchPolicy: 'no-cache',
+    });
+  const recommendationSource =
+    data?.thread?.id === threadId
+      ? Math.max(0, ...data.thread.responses.map((response) => response.id)) ||
+        null
+      : null;
+  const recommendationOwner = useMemo(
+    () => ({
+      active: true,
+      source: recommendationSource,
+      queryId: undefined as string | undefined,
+      identity: undefined as string | undefined,
+      attempted: false,
+      pending: undefined as Promise<void> | undefined,
+      timer: undefined as number | undefined,
+    }),
+    [answerOwner, recommendationSource],
+  );
   const recommendationOwnerRef = useRef(recommendationOwner);
   recommendationOwnerRef.current = recommendationOwner;
   const [observedRecommendations, setObservedRecommendations] = useState<{
@@ -291,12 +297,17 @@ export default function HomeThread() {
     task: RecommendedQuestionsTask;
   } | null>(null);
   const recommendationActive = () =>
-    answerOwner.active && answerOwnerRef.current === answerOwner &&
-    recommendationOwner.active && recommendationOwnerRef.current === recommendationOwner;
+    answerOwner.active &&
+    answerOwnerRef.current === answerOwner &&
+    recommendationOwner.active &&
+    recommendationOwnerRef.current === recommendationOwner;
   const recommendationConfiguration = async () => {
     const identity = operationConfiguration(await getUserConfig());
     if (!recommendationActive()) return false;
-    if (recommendationOwner.identity !== undefined && recommendationOwner.identity !== identity) {
+    if (
+      recommendationOwner.identity !== undefined &&
+      recommendationOwner.identity !== identity
+    ) {
       recommendationOwner.active = false;
       setObservedRecommendations(null);
       return false;
@@ -304,26 +315,39 @@ export default function HomeThread() {
     recommendationOwner.identity = identity;
     return true;
   };
-  const acceptRecommendation = (task: RecommendedQuestionsTask | undefined | null) => {
-    if (!recommendationActive() || !task?.queryId ||
-        task.threadId !== threadId || task.sourceResponseId !== recommendationOwner.source ||
-        !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(task.queryId) ||
-        (recommendationOwner.queryId !== undefined && recommendationOwner.queryId !== task.queryId)) return false;
+  const acceptRecommendation = (
+    task: RecommendedQuestionsTask | undefined | null,
+  ) => {
+    if (
+      !recommendationActive() ||
+      !task?.queryId ||
+      task.threadId !== threadId ||
+      task.sourceResponseId !== recommendationOwner.source ||
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(
+        task.queryId,
+      ) ||
+      (recommendationOwner.queryId !== undefined &&
+        recommendationOwner.queryId !== task.queryId)
+    )
+      return false;
     recommendationOwner.queryId = task.queryId;
     setObservedRecommendations({ owner: recommendationOwner, task });
     return true;
   };
   const observeRecommendations = () => {
-    if (!recommendationActive() || recommendationOwner.source === null) return Promise.resolve();
+    if (!recommendationActive() || recommendationOwner.source === null)
+      return Promise.resolve();
     if (recommendationOwner.pending) return recommendationOwner.pending;
-    if (recommendationOwner.timer !== undefined) window.clearTimeout(recommendationOwner.timer);
+    if (recommendationOwner.timer !== undefined)
+      window.clearTimeout(recommendationOwner.timer);
     recommendationOwner.timer = undefined;
     let terminal = false;
     const pending = (async () => {
       try {
         if (!(await recommendationConfiguration())) return;
         const result = await readThreadRecommendations({
-          variables: { threadId }, fetchPolicy: 'no-cache',
+          variables: { threadId },
+          fetchPolicy: 'no-cache',
           context: { queryDeduplication: false },
         });
         if (!(await recommendationConfiguration())) return;
@@ -350,7 +374,8 @@ export default function HomeThread() {
     void observeRecommendations();
     return () => {
       recommendationOwner.active = false;
-      if (recommendationOwner.timer !== undefined) window.clearTimeout(recommendationOwner.timer);
+      if (recommendationOwner.timer !== undefined)
+        window.clearTimeout(recommendationOwner.timer);
     };
   }, [recommendationOwner]);
 
@@ -586,15 +611,24 @@ export default function HomeThread() {
     await generateResponseArtifact(responseId, 'chart', data);
   };
 
-  const onGenerateThreadRecommendedQuestions = async (sourceResponseId: number) => {
-    if (!recommendationActive() || sourceResponseId !== recommendationOwner.source || recommendationOwner.attempted) return;
+  const onGenerateThreadRecommendedQuestions = async (
+    sourceResponseId: number,
+  ) => {
+    if (
+      !recommendationActive() ||
+      sourceResponseId !== recommendationOwner.source ||
+      recommendationOwner.attempted
+    )
+      return;
     recommendationOwner.attempted = true;
     try {
       if (!(await recommendationConfiguration())) return;
       await observeRecommendations();
-      if (!(await recommendationConfiguration()) || recommendationOwner.queryId) return;
+      if (!(await recommendationConfiguration()) || recommendationOwner.queryId)
+        return;
       const result = await generateThreadRecommendationQuestions({
-        variables: { threadId, sourceResponseId }, fetchPolicy: 'no-cache',
+        variables: { threadId, sourceResponseId },
+        fetchPolicy: 'no-cache',
       });
       if (!(await recommendationConfiguration())) return;
       acceptRecommendation(result.data?.generateThreadRecommendationQuestions);
@@ -673,44 +707,90 @@ export default function HomeThread() {
     }
   }, [isPollingResponseFinished]);
 
-  const recommendedQuestions = recommendationActive() && observedRecommendations?.owner === recommendationOwner
-    ? observedRecommendations.task : null;
+  const recommendedQuestions =
+    recommendationActive() &&
+    observedRecommendations?.owner === recommendationOwner
+      ? observedRecommendations.task
+      : null;
 
-  const onCreateResponse = async (payload: CreateThreadResponseInput, selectionActive?: () => boolean, selectionIdentity?: string, confirmed?: () => void) => {
-    const active = () => answerOwner.active && answerOwnerRef.current === answerOwner && (!selectionActive || selectionActive());
+  const onCreateResponse = async (
+    payload: CreateThreadResponseInput,
+    selectionActive?: () => boolean,
+    selectionIdentity?: string,
+    confirmed?: () => void,
+  ) => {
+    const active = () =>
+      answerOwner.active &&
+      answerOwnerRef.current === answerOwner &&
+      (!selectionActive || selectionActive());
     if (!active() || thread?.id !== threadId) return;
     try {
       const identity = operationConfiguration(await getUserConfig());
-      if (!active() || (selectionIdentity !== undefined && identity !== selectionIdentity)) return;
+      if (
+        !active() ||
+        (selectionIdentity !== undefined && identity !== selectionIdentity)
+      )
+        return;
       askPrompt.onStopPolling();
       const result = await createThreadResponse({
-        variables: { threadId, data: payload }, fetchPolicy: 'no-cache',
+        variables: { threadId, data: payload },
+        fetchPolicy: 'no-cache',
       });
       const after = operationConfiguration(await getUserConfig());
       if (!active() || after !== identity) return;
       const next = result.data?.createThreadResponse;
       if (result.errors?.length || !next || next.threadId !== threadId) return;
       const selection = payload.recommendation;
-      if (selection && (next.recommendationIntentKey !== selection.idempotencyKey ||
-          next.recommendationQueryId !== selection.queryId || next.recommendationSourceResponseId !== selection.sourceResponseId ||
-          next.recommendationIndex !== selection.index)) return;
+      if (
+        selection &&
+        (next.recommendationIntentKey !== selection.idempotencyKey ||
+          next.recommendationQueryId !== selection.queryId ||
+          next.recommendationSourceResponseId !== selection.sourceResponseId ||
+          next.recommendationIndex !== selection.index)
+      )
+        return;
       confirmed?.();
-      updateThreadQuery((prev) => !active() || prev.thread?.id !== threadId ? prev : ({
-        ...prev,
-        thread: { ...prev.thread, responses: prev.thread.responses.some((response) => response.id === next.id)
-          ? prev.thread.responses.map((response) => response.id === next.id ? next : response)
-          : [...prev.thread.responses, next] },
-      }));
+      updateThreadQuery((prev) =>
+        !active() || prev.thread?.id !== threadId
+          ? prev
+          : {
+              ...prev,
+              thread: {
+                ...prev.thread,
+                responses: prev.thread.responses.some(
+                  (response) => response.id === next.id,
+                )
+                  ? prev.thread.responses.map((response) =>
+                      response.id === next.id ? next : response,
+                    )
+                  : [...prev.thread.responses, next],
+              },
+            },
+      );
       setShowRecommendedQuestions(false);
     } catch (error) {
       console.error(error);
     }
   };
-  const onSelectRecommendedQuestion = async (payload: CreateThreadResponseInput) => {
-    if (!recommendationActive() || recommendedQuestions?.status !== RecommendedQuestionsTaskStatus.FINISHED) return;
+  const onSelectRecommendedQuestion = async (
+    payload: CreateThreadResponseInput,
+  ) => {
+    if (
+      !recommendationActive() ||
+      recommendedQuestions?.status !== RecommendedQuestionsTaskStatus.FINISHED
+    )
+      return;
     const task = recommendedQuestions;
-    const index = task.questions.findIndex((question) => question.question === payload.question && question.sql === payload.sql);
-    if (index < 0 || !task.queryId || task.sourceResponseId !== recommendationOwner.source) return;
+    const index = task.questions.findIndex(
+      (question) =>
+        question.question === payload.question && question.sql === payload.sql,
+    );
+    if (
+      index < 0 ||
+      !task.queryId ||
+      task.sourceResponseId !== recommendationOwner.source
+    )
+      return;
     if (!(await recommendationConfiguration())) return;
     // Select the frozen native result, not caller-provided SQL. Repeating this
     // original selection after an unknown ACK returns the same native row.
@@ -718,11 +798,22 @@ export default function HomeThread() {
     try {
       const key = sessionStorage.getItem(slot) || uuidv4();
       sessionStorage.setItem(slot, key);
-      await onCreateResponse({ recommendation: {
-        queryId: task.queryId, sourceResponseId: task.sourceResponseId, index, idempotencyKey: key,
-      } }, recommendationActive, recommendationOwner.identity, () => {
-        if (sessionStorage.getItem(slot) === key) sessionStorage.removeItem(slot);
-      });
+      await onCreateResponse(
+        {
+          recommendation: {
+            queryId: task.queryId,
+            sourceResponseId: task.sourceResponseId,
+            index,
+            idempotencyKey: key,
+          },
+        },
+        recommendationActive,
+        recommendationOwner.identity,
+        () => {
+          if (sessionStorage.getItem(slot) === key)
+            sessionStorage.removeItem(slot);
+        },
+      );
     } catch {
       // Storage failure prevents dispatch; an unknown ACK retains this exact
       // intent. A confirmed selection can be followed by a distinct explicit one.

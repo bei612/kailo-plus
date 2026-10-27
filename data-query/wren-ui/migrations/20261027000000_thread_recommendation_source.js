@@ -9,12 +9,18 @@ exports.up = async function (knex) {
     table.string('recommendation_intent_key').nullable();
     table.integer('recommendation_source_response_id').nullable();
     table.integer('recommendation_index').nullable();
-    table.unique(['thread_id', 'recommendation_intent_key'], 'thread_response_recommendation_intent_unique');
+    table.unique(
+      ['thread_id', 'recommendation_intent_key'],
+      'thread_response_recommendation_intent_unique',
+    );
   });
 };
 exports.down = async function (knex) {
   await knex.schema.alterTable('thread_response', (table) => {
-    table.dropUnique(['thread_id', 'recommendation_intent_key'], 'thread_response_recommendation_intent_unique');
+    table.dropUnique(
+      ['thread_id', 'recommendation_intent_key'],
+      'thread_response_recommendation_intent_unique',
+    );
     table.dropColumn('recommendation_intent_key');
     table.dropColumn('recommendation_index');
     table.dropColumn('recommendation_source_response_id');
