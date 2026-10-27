@@ -167,9 +167,7 @@ export default function HomeThread() {
     },
   });
   const [updateThreadResponse, { loading: threadResponseUpdating }] =
-    useUpdateThreadResponseMutation({
-      onError: (error) => console.error(error),
-    });
+    useUpdateThreadResponseMutation();
   const [readThreadResponse] = useThreadResponseLazyQuery({
     fetchPolicy: 'no-cache',
   });
