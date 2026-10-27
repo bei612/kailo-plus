@@ -13222,3 +13222,79 @@ full TypeScript/lint/format check; those checks were not redundantly rerun.
 Formal artifacts, release admission, receiver activation and deployed end-to-end
 business acceptance remain separate. No production configuration, deployment,
 source trust or business authority changed.
+
+## Original four consumer files with PostgreSQL (2026-10-27)
+
+At integrated fixed source `aea3abe0750f8caaf7c46c898d88f1a9b0efbb3c`, the original
+`nativeTaskOwnership`, `nativeRestAskOwnership`, `nativeTextAnswer` and
+`askingStream` files passed **4 suites / 310 tests, no failures or skips**. The
+normal command selected all four complete files, without test-name filtering.
+This closes their earlier seven PostgreSQL conditional skips; no product or test
+code changed. Earlier SQLite/conditional results remain recorded as originally run.
+
+Both original environment inputs were needed: `WREN_TEST_POSTGRES_URL` selects
+PostgreSQL for the repository/HTTP groups and the delayed project-fence writer
+case; `WREN_QUERY_TEST_DATABASE_URL` enables six task migration/conditional-binding
+cases. Both pointed only to the same newly created private PG instance. The five
+original groups used separate random UUID-suffixed schemas and `searchPath`:
+`rest_explanation`, `asking_rerun`, `native_binding`, `answer_identity` and
+`task_evidence`. Each ran its original migrations and schema/connection cleanup;
+Jest used `--runInBand`. `askingStream` does not need PG but remained in the original
+four-file invocation.
+
+The seven previously skipped cases now exercised real PostgreSQL behavior:
+
+- Refusal of unprovable legacy rows without deletion or invented ownership.
+- Backfill from matching original thread evidence and required ownership for new rows.
+- Concurrent first binding, foreign-project rejection and stale-query rejection.
+- Transaction rollback of speculative native rows after a refused binding.
+- Empty-evidence migration rollback followed by forward migration.
+- Preservation of running/unknown evidence across native cascades and cleanup only
+  after an observed terminal result.
+- Serialization of a delayed native writer against the original project fence.
+
+Other original repository/HTTP cases also used their existing PostgreSQL path,
+rather than SQLite. Their external authority/provider fixtures remain fixtures.
+
+CI fetched the fixed GitHub source and reused the original locked installation
+following exact `package.json`, `yarn.lock` and `.yarnrc.yml` comparison. The Node
+18 image was
+`sha256:f9ab18e354e6855ae56ef2b290dd225c1e51a564f87584b9bd21dd651838830e`,
+at **4 CPU / 4 GiB / equal swap**, nonroot. The existing PG image was
+`sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea`,
+at **1 CPU / 2 GiB / equal swap**, with a 1 GiB PGDATA tmpfs. Normal and negative
+runs each created a fresh private database/internal network with no published
+port. Original container-safety preflight and limit readback passed. Source/tmp/
+logs were on actual Data `/dev/sda1`; no dependency installation or copy occurred.
+Disposable credential values were not retained in repository evidence.
+
+Two actual mutations of the private fixed-source export were detected by the
+original PG consumers:
+
+| Removed protection | Actual failures | Restored original PG cases |
+| --- | ---: | ---: |
+| First-binding conditional update | 2 | 6 |
+| Closed generation rejection | 1 | 1 |
+
+Without the conditional update, both competing first bindings were accepted
+instead of one, and the speculative transaction resolved instead of rejecting.
+Without the closed-generation refusal, the delayed writer resolved instead of
+rejecting with `NATIVE_BINDING_CLOSED`. Both mutations exited **1**; byte-for-byte
+restoration returned **0**. The targeted mutation/restoration commands left
+**146 / 24** other tests unselected respectively; this is separate from the full
+four-file **310 / 310** result. All **618 input Git blobs** matched fixed source
+after restoration. Own SDK/PG containers and internal network were removed and
+absence was read back.
+
+The terminal receipt is
+`/volumes/data/kailo/verification/buzz-r10/wren-four-pg-aea3abe0750f8caaf7c46c898d88f1a9b0efbb3c-fault/receipt.json`,
+SHA-256 `d40193a7f6e4f395443e7fc1513ebfce7032070b7ecc7f59ca86dd2ad0a173d1`.
+The unchanged repository copy is [the four-file PG receipt](four-consumers-postgres-receipt.json).
+It includes exact seven case names, inputs, command/log hashes, limits, schema
+selection, negative/restoration evidence and cleanup. No source changed after the
+previous type/lint/format checks, so those were not redundantly rerun.
+
+This completes these original file checks, not all Wren suites or live
+Core/provider/receiver/browser acceptance. Formal artifacts, release admission and
+receiver activation remain separate. No production configuration, deployment,
+shared business database or source trust changed.
