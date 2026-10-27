@@ -2369,3 +2369,53 @@ Data source 与原缓存，未使用宿主工具链或复制整份依赖到 NVMe
 Data source 已无检查消费者，可后续复用；历史日志、限额、故障和恢复原件保留。
 这些是原共享 DOM 与脚本化 BFF 消费者，不是完整宿主/Bootstrap、真实服务授权、
 双主题截图、Windows 安装包、Mobile 或部署验收；没有声明全工程 full。
+
+## 2026-10-27：Web DM 线程草稿的原目的地恢复
+
+本批依据 DD-74、REQ-24 以及 DD-146 保留的草稿/未知发送语义。
+固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的
+`DraftsPanel.tsx::openDraftEntry/sendDraftEntry` 从原草稿目的地打开线程并传原 autoSend key；
+`original-diff-inventory.md` 已把该界面主体归为共享迁移，不能因此漏掉宿主真实草稿。
+本批基线 `4152f377fe3ff37b4091103883a919006d24ce41` 的实际缺口是：
+`PlatformApp` 把 Conversation binding ID 传给 `ChannelThreadPane`，后者保存
+`thread:<bindingID>:<root>:<reply>`；`InboxDrafts.destination` 却只把回复草稿 scope
+与 native channel ID 匹配。因此 Web DM 内写下的合法线程回复在 Inbox 草稿里不能打开或发送。
+
+修复沿已有共享 DraftSurface、Web 宿主适配、原草稿存储与导航，不新增平台状态、权限或发布出口。
+当前 ACTIVE 且包含本人的 Conversation 可按 binding/native ID 成为唯一候选；
+两个会话跨 ID 命中或与 Workspace 冲突都拒绝，不按名称、顺序或 ID 碰撞概率猜测。
+裸 ID 只产生候选：所有 DM 线程打开/确认发送均通过原
+`conversationMessages({anchorEventId})` 读取保存的回复，前端核保存的 root/anchor、原 `h`
+与线程关系，缺失、跨 scope、根不匹配或拒绝均不导航。
+原 Core `read_message_event` 验签及核精确 ID/单一 channel，`read_inbox_anchor`
+验证根/父回复闭包；消息 handler 返回前重做 `read_target.admit`、`same_admission`
+与 actor key 比较（Conversation/tenant binding version），这部分为已有源码事实，
+本批未重复执行 Core/Relay 验证。
+
+等待期间冻结完整 DraftState 和目的地，通过原 `draftStatesEqual` 比较 React 输入与
+`loadDraftEntry` 实际持久记录，同时核原 `getDraftAuthority` 对象/修订号、store 身份、
+组件 owner 及当前候选。删除、同毫秒修改、删除后同字节重建、身份 A→B→A 或会话版本变化
+使旧回调退休；不会把旧确认变成新草稿的 autoSend。
+仅导出原 equality helper，不复制字段清单。普通/编辑草稿匹配规则保持原样；
+UNKNOWN 原意图/Idempotency-Key、Composer 授权与发布链没有替换。
+
+固定验收源码 `a025e09a866eec76bb045da3891f6f99b5a309de` 已推送。
+原 SDK `sha256:3007729eb192341a4f004a88e42e1e66c94fc67d763acfc96568bd7311116018`，
+1 CPU / 4 GiB / swap 同额 / pids 256，原 resource preflight 与 limits 核验，
+源码/临时文件/日志均在实际 Data 盘，复用原缓存，容器已终态清理。
+
+- 原共享 DraftSurface 3/3；Web InboxDrafts 整文件 26/26；Web tsc 与同源 i18n check 均为 0。
+- Web 原 `npm ci --offline` 完成，实际解析 file 包的 1039 个 src/profile-assets 文件逐字一致。
+- 恢复旧 native-only 回复匹配：9 项真实断言失败，exit 1；移除组件 owner 围栏：2 项失败，exit 1。
+- 单独移除原 authority 对象/修订号检查、保留其他保护：删除后重建与 store 身份 ABA 两项失败，
+  其余 24 项未选；逐字恢复后原整文件 26/26。主批恢复也为 26/26。
+- 首批 `422f7c783c6bd2032e252b4aebc1e3ae66e5c0ce` 的 shared 3/3 与实装核验通过，
+  Web tsc 因 `loadDraftEntry` 可为 undefined 报 TS2345、exit 2；失败原日志保留，未算作通过。
+- 最终 GitHub 固定归档 3455 个输入逐字一致。回执见
+  [inbox-dm-draft-20261027.json](inbox-dm-draft-20261027.json)，SHA-256
+  `62e92c240fd7cd8f95620f4f12a0f2bf964d3c961578ec7ab4765dea80d754ed`。
+
+原日志目录为 CI Data `verification/inbox-dm-draft/a025e09a8` 与
+`a025e09a8-authority`，首失败在 `422f7c783`。交叉源码复核未发现新增阻断。
+这里的 DOM 消费者使用原组件/草稿存储及脚本化 BFF 返回，未将其称为真实浏览器、
+Desktop 安装包、原生设备或部署验收；本批未重跑 Native 类型/全局构建，未部署或改 CI 信任。
