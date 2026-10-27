@@ -1,6 +1,6 @@
 // Fixed Buzz 779af8886caae1317b4de962082429867ab61503
 // desktop/src/features/projects/pullRequestMutations.ts::publishProjectPullRequest and
-// useMergeProjectPullRequestMutation (update is not restored), with
+// useMergeProjectPullRequestMutation (updates live in pullRequestUpdates.ts), with
 // desktop/src/shared/api/projectGit.ts::ProjectPullRequestMergeError/parseProjectPullRequestMergeError.
 // DD-118: the original kind-1618 review is published as CREATE_PULL_REQUEST through the governed
 // Projects publication host, with the same retained-intent rule as the other publications: an

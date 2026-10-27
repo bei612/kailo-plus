@@ -14,6 +14,8 @@ import {PlatformProvider} from "../src/react/context";
 import {PulseHostProvider,type PulseHost,type PulseEvent} from "../src/react/pulse/host";
 import {TooltipProvider} from "../src/react/sidebar/tooltip";
 import {ProjectsView,createProjectsGitHost,createNativeProjectsGitHost,type ProjectsHost} from "../src/react/projects";
+import {publishProjectPullRequestUpdate,readProjectPullRequestUpdateIntent,buildProjectPullRequestUpdate} from "../src/react/projects/pullRequestUpdates";
+import {loadProjectWorkItems} from "../src/react/projects/projectWorkItems";
 import {loadProjectDirectory} from "../src/react/projects/projectEnumeration";
 import type {ProjectWorkItemTarget} from "../src/react/projects/projectWorkItems";
 import {eventToRepoState,fetchRepoState} from "../src/react/projects/projectRepoState";
@@ -302,5 +304,75 @@ describe("original branch continuation in a tag selection",()=>{
     await act(async()=>selectTag(false));
     await expect(captured("new-branch")).rejects.toThrow();
     expect(f.ref).not.toHaveBeenCalled();
+  });
+});
+
+
+describe("original review update",()=>{
+  const updateIntents=()=>[...Array(localStorage.length)].map((_,i)=>localStorage.key(i)).filter(key=>key?.startsWith('["project-pull-request-update"'));
+  function reviewFixture(){
+    const f=fixture();
+    const root={...event("2",1618,[["a",repository],["subject","Original branch review"],["branch-name","main"],
+      ["target-branch","release"],["c",olderHead],["clone","https://example.test/repo.git"]]),pubkey:viewer};
+    f.rows.push(root);return {...f,root};
+  }
+  function accept(f:ReturnType<typeof reviewFixture>){
+    f.host.publish=vi.fn(async(request,_key,_observe,observation)=>{
+      expect(request.operation).toBe("UPDATE_PULL_REQUEST");
+      const repo=await currentRepository(f);
+      const before=await loadProjectWorkItems(f.host,new AbortController().signal,f.projectId);
+      const item=before.items.find(item=>item.type==="pull-request"&&item.pullRequest.id===f.root.id)!;
+      if(item.type!=="pull-request")throw new Error("Missing review");
+      const update={...event("3",1619,buildProjectPullRequestUpdate(repo,item.pullRequest,request.commit!,request.mergeBase??null).tags,"",60),pubkey:viewer};
+      observation?.onPrepared?.(update.id);f.rows.push(update);return {eventId:update.id};
+    });
+  }
+  it("publishes the original Update review button and confirms the new head before clearing its key",async()=>{
+    const f=reviewFixture();accept(f);const mounted=await mount(f,{repositoryId:f.repositoryId,view:"overview"});
+    await vi.waitFor(()=>expect(button(document,"Update review")).toBeDefined());
+    await click(button(document,"Update review")!);
+    await vi.waitFor(()=>expect(button(document,"Update review")).toBeUndefined());
+    expect(f.host.publish).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(f.host.publish!).mock.calls[0]?.[0]).toEqual({operation:"UPDATE_PULL_REQUEST",targetEventId:f.root.id,commit:mainHead});
+    expect(updateIntents()).toEqual([]);await mounted.ui.unmount();
+  });
+  it("retains UNKNOWN commit and original key across a changed remote head without signing a new intent",async()=>{
+    const f=reviewFixture(),repo=await currentRepository(f),signal=new AbortController().signal;
+    const before=await loadProjectWorkItems(f.host,signal,f.projectId),item=before.items.find(item=>item.type==="pull-request")!;
+    if(item.type!=="pull-request")throw new Error("Missing review");
+    f.host.publish=vi.fn(async()=>{throw new TransportError("lost ACK");});
+    await expect(publishProjectPullRequestUpdate(f.host,f.projectId,repo,item.pullRequest,viewer,{commit:mainHead,mergeBase:olderHead},signal)).rejects.toThrow();
+    const first=vi.mocked(f.host.publish).mock.calls[0]!;
+    expect(readProjectPullRequestUpdateIntent(f.host,f.projectId,repo,item.pullRequest,viewer)?.commit).toBe(mainHead);
+    accept(f);
+    const result=await publishProjectPullRequestUpdate(f.host,f.projectId,repo,item.pullRequest,viewer,{commit:featureHead,mergeBase:null},signal);
+    expect(vi.mocked(f.host.publish!).mock.calls[0]?.slice(0,3)).toEqual([first[0],first[1],true]);
+    expect(result?.pullRequest.commit).toBe(mainHead);result?.complete();expect(updateIntents()).toEqual([]);
+  });
+  it("pushes once and uses the original pushed branch, commit and merge base for its review continuation",async()=>{
+    const f=reviewFixture();accept(f);
+    const push=vi.fn(async()=>({branch:"main",commit:mainHead,mergeBase:olderHead}));
+    f.host.git!.checkout={pushProjectLocalRepository:push,cloneProjectRepository:vi.fn(),pullProjectLocalRepository:vi.fn(),openProjectRepositoryFolder:vi.fn(),
+      getProjectLocalRepoSnapshot:vi.fn(),getProjectLocalRepoDiff:vi.fn(),getProjectLocalRepoFileContent:vi.fn(),
+      getProjectRepoSyncStatus:async()=>({localPath:"/local/repo",localBranch:"main",localBranches:["main"],localHead:mainHead,remoteBranch:"main",remoteHead:olderHead,
+        mergeBase:olderHead,aheadCount:1,behindCount:0,hasUncommittedChanges:false,hasUntrackedFiles:false,canPush:true,canPull:false,pushBlockReason:null,pullBlockReason:null,pendingPush:null})};
+    const mounted=await mount(f,{repositoryId:f.repositoryId,view:"overview"});
+    await vi.waitFor(()=>expect(Array.from(document.querySelectorAll("button")).some(node=>node.textContent?.startsWith("Push"))).toBe(true));
+    await click(Array.from(document.querySelectorAll<HTMLButtonElement>("button")).find(node=>node.textContent?.startsWith("Push"))!);
+    await vi.waitFor(()=>expect(updateIntents()).toEqual([]));
+    await vi.waitFor(()=>expect(f.host.publish).toHaveBeenCalledTimes(1));
+    expect(push).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(f.host.publish!).mock.calls[0]?.[0]).toEqual({operation:"UPDATE_PULL_REQUEST",targetEventId:f.root.id,commit:mainHead,mergeBase:olderHead});
+    await mounted.ui.unmount();
+  });
+  it("does not dispatch an update after its repository owner is unmounted during the fresh read",async()=>{
+    const f=reviewFixture();accept(f);const mounted=await mount(f,{repositoryId:f.repositoryId,view:"overview"});
+    await vi.waitFor(()=>expect(button(document,"Update review")).toBeDefined());
+    let release!:(value:Awaited<ReturnType<ProjectsHost["query"]>>)=>void;
+    const original=f.host.query;let paused=false;
+    f.host.query=vi.fn(async request=>{const result=await original(request);if(!paused&&request.view==="PROJECTS"){paused=true;return new Promise(resolve=>{release=resolve;});}return result;});
+    await click(button(document,"Update review")!);await vi.waitFor(()=>expect(release).toBeDefined());
+    await mounted.ui.unmount();await act(async()=>release(await original({view:"PROJECTS"} as Parameters<ProjectsHost["query"]>[0])));
+    expect(f.host.publish).not.toHaveBeenCalled();expect(updateIntents()).toEqual([]);
   });
 });

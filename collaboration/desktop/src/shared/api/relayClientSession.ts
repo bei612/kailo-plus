@@ -678,7 +678,7 @@ export class RelayClient {
     observeOnly = false,
     observation?: {eventId?: string; onPrepared: (eventId: string) => void},
   ): Promise<RelayEvent> {
-    return this.publishReplaceableIntent("project", key, expectedRelayUrl, [1,5,30621,30617,1621,1630,1632,1633], create, observeOnly, observation);
+    return this.publishReplaceableIntent("project", key, expectedRelayUrl, [1,5,30621,30617,1619,1621,1630,1632,1633], create, observeOnly, observation);
   }
 
   async publishReplaceableIntent(

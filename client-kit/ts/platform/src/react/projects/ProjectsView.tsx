@@ -226,7 +226,7 @@ function RepositoryWorkspace({host,snapshot,project,repository,panel,renderWorkI
   const items=useMemo(()=>snapshot.items.filter(item=>item.repository.id===repository.id),[snapshot,repository.id]);
   const issues=useMemo(()=>items.flatMap(item=>item.type==="issue"?[item.issue]:[]),[items]);
   const pullRequests=useMemo(()=>items.flatMap(item=>item.type==="pull-request"?[item.pullRequest]:[]),[items]);
-  const git=useRepositoryGitState({host,repository,pullRequests,commitHash,checkoutSource});
+  const git=useRepositoryGitState({host,repository,pullRequests,commitHash,checkoutSource,projectId:project.id,viewer:snapshot.viewerPubkey});
   const open=(next:ProjectWorkItemTarget)=>{void Promise.resolve().then(()=>{if(!lifetime.controller.signal.aborted)return onOpen(next);})
     .catch(()=>{if(!lifetime.controller.signal.aborted)setNavigationFailed(true);});};
   const onCreateTask=host.publish?()=>setCreateOpen(true):undefined;
@@ -299,6 +299,7 @@ function RepositoryWorkspaceTabs({host,project,repository,items,issues,pullReque
       contributorActivityCounts={people.contributorActivityCounts} contributorPubkeys={people.contributorPubkeys}/>;
   return <WorkspaceTabs tab={tab} onTabChange={onTabChange} onBack={onBack} git={Boolean(host.git)} channels={discussions}
     onCreateTask={tab==="issues"?onCreateTask:undefined} onCreatePullRequest={tab==="prs"?onCreatePullRequest:undefined}
+    updateReviewAction={git.updateReviewAction}
     detailSelected={tab==="activity"&&Boolean(commitHash)}
     sectionHeader={isProjectGitWorkspaceTab(tab)?repositoryGitSectionHeader(tab,git,commitHash,t):undefined}>
     {projectWorkspaceTabNeedsGit(tab)&&!host.git?<ProjectPanelState error title={t("projects.unavailable")}/>:content}

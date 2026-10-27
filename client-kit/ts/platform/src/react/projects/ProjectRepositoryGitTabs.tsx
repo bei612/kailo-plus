@@ -37,6 +37,7 @@ import { PROJECT_SECTION_HEADER_CLASS } from "./projectPanelStyles";
 import type { ProjectPullRequest } from "./projectPullRequests.mjs";
 import { projectRepoUnavailablePresentation, projectRepoUnavailableReason } from "./lib/projectRepoAvailability";
 import { useRepositoryFileContentSource } from "./useRepositoryFileContent";
+import { useProjectPullRequestUpdate } from "./useProjectPullRequestUpdate";
 import { useProjectLocalCheckout, type ProjectCheckoutSource } from "./useProjectLocalCheckout";
 import { useQueryClient } from "@tanstack/react-query";
 import type { UserProfileLookup } from "../messages/system/identity";
@@ -47,12 +48,13 @@ const NO_BRANCHES: Array<{ name: string; commit: string }> = [];
 export type RepositoryFetchControls = { onFetch: () => void; fetchPending: boolean };
 
 /** ProjectDetailScreen's repository git state, shared by the tab contents and the right panel. */
-export function useRepositoryGitState({ host, repository, pullRequests, commitHash, checkoutSource }: {
+export function useRepositoryGitState({ host, repository, pullRequests, commitHash, checkoutSource, projectId, viewer }: {
   host: ProjectsHost;
   repository: Repository;
   pullRequests: ProjectPullRequest[];
   commitHash: string | null;
   checkoutSource: ProjectCheckoutSource;
+  projectId?: string; viewer?: string;
 }) {
   const t = useUiT();
   const cache = useQueryClient();
@@ -78,7 +80,8 @@ export function useRepositoryGitState({ host, repository, pullRequests, commitHa
   });
   const activeBranch = selectedBranch ?? defaultBranch;
   const activeTag = repoStateQuery.data?.tags.find(tag => tag.name === selectedTag) ?? null;
-  const localCheckout = useProjectLocalCheckout(host, repository, activeBranch, checkoutSource, selectedTag !== null);
+  const reviewUpdate = useProjectPullRequestUpdate({ host, projectId, repository, reviews: pullRequests, viewer, branch: activeBranch, readOnly: selectedTag !== null });
+  const localCheckout = useProjectLocalCheckout(host, repository, activeBranch, checkoutSource, selectedTag !== null, reviewUpdate.afterPush);
   const remoteSnapshotQuery = useProjectRepoSnapshotQuery(host, repository, activeBranch, null, localCheckout.source === "remote" && (!selectedTag || Boolean(activeTag)), activeTag);
   const snapshotQuery = localCheckout.source === "local" ? localCheckout.snapshot : remoteSnapshotQuery;
   const commitDiffQuery = useProjectCommitDiffQuery(host, repository, commitHash, localCheckout.source);
@@ -151,7 +154,8 @@ export function useRepositoryGitState({ host, repository, pullRequests, commitHa
     });
   }, [refetchSnapshot, refetchState, refetchLocal, host, t, cache, repository.id, lifetime]);
   const fetch: RepositoryFetchControls = { onFetch, fetchPending: snapshotQuery.isFetching || repoStateQuery.isFetching };
-  return { activeBranch, selectedTag, activeBranchCommit, branchActions, branchOptions, commitDiffQuery, fetch, fileContentSource, files,
+  const updateReviewAction = reviewUpdate.action(localCheckout.available ? localCheckout.status.data?.remoteHead ?? null : activeRemoteBranch?.commit ?? null, localCheckout.status.data?.mergeBase ?? null);
+  return { updateReviewAction, activeBranch, selectedTag, activeBranchCommit, branchActions, branchOptions, commitDiffQuery, fetch, fileContentSource, files,
     gitDataState, readmeFile, snapshot, snapshotQuery, sourceControls, unavailableReason, localCheckout };
 }
 

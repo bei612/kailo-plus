@@ -18,7 +18,7 @@ import { useFocusedRefetchInterval } from "./useProjectAppFocus";
 
 export type ProjectCheckoutSource = { source: "remote" | "local"; onChange: (source: "remote" | "local") => void };
 
-export function useProjectLocalCheckout(host: ProjectsHost, repository: Repository, branch: string, selection: ProjectCheckoutSource, readOnly = false) {
+export function useProjectLocalCheckout(host: ProjectsHost, repository: Repository, branch: string, selection: ProjectCheckoutSource, readOnly = false, afterPush?: (result: { branch: string; commit: string; mergeBase?: string | null }) => Promise<void>) {
   const t = useUiT();
   const checkout = host.git?.checkout;
   const queryClient = useQueryClient();
@@ -55,8 +55,10 @@ export function useProjectLocalCheckout(host: ProjectsHost, repository: Reposito
       if (!checkout || activeOwner.current !== owner) throw new Error("Local checkout unavailable");
       if (readOnlyRef.current && action !== "open") throw new Error("Local checkout unavailable");
       if (action === "clone") { await checkout.cloneProjectRepository(ref); selectSource("local"); }
-      if (action === "push") await checkout.pushProjectLocalRepository({ ...branchRef,
-        branchName: status.data?.pendingPush?.branch ?? branchRef.branchName });
+      if (action === "push") {
+        const result = await checkout.pushProjectLocalRepository({ ...branchRef, branchName: status.data?.pendingPush?.branch ?? branchRef.branchName });
+        if (activeOwner.current === owner && !readOnlyRef.current) await afterPush?.(result);
+      }
       if (action === "pull") await checkout.pullProjectLocalRepository(branchRef);
       if (action === "open") await checkout.openProjectRepositoryFolder({ repository: repository.repoAddress });
     },
