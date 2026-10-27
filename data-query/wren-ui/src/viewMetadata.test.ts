@@ -76,7 +76,10 @@ jest.mock('./apollo/client/graphql/home.generated', () => ({
   useThreadQuery: () => ({ data: {}, updateQuery: mockThreadUpdate }),
   useCreateThreadResponseMutation: () => [jest.fn()],
   useUpdateThreadResponseMutation: () => [jest.fn(), {}],
-  useThreadResponseLazyQuery: () => [mockResponseRead, { stopPolling: jest.fn() }],
+  useThreadResponseLazyQuery: () => [
+    mockResponseRead,
+    { stopPolling: jest.fn() },
+  ],
   useGenerateThreadRecommendationQuestionsMutation: () => [jest.fn()],
   useGetThreadRecommendationQuestionsLazyQuery: () => [
     jest.fn(),
@@ -3470,151 +3473,287 @@ describe('original native metadata create UNKNOWN and authorized read-back consu
   });
 });
 
-
 describe('original Home answer and chart operation lifetime', () => {
   const scope = 'a'.repeat(64);
-  const governed = { nativeBindingConfigured: true, queryScope: scope, nativeBindingGeneration: 2 };
+  const governed = {
+    nativeBindingConfigured: true,
+    queryScope: scope,
+    nativeBindingGeneration: 2,
+  };
   const standalone = { nativeBindingConfigured: false };
-  const originalStorage = Object.getOwnPropertyDescriptor(global, 'sessionStorage');
+  const originalStorage = Object.getOwnPropertyDescriptor(
+    global,
+    'sessionStorage',
+  );
   const originalWindow = Object.getOwnPropertyDescriptor(global, 'window');
   const entries = new Map<string, string>();
   let effect: jest.SpyInstance;
   let threadEffect: () => () => void;
   let wake: () => void;
-  const flush = async () => { for (let i = 0; i < 12; i++) await Promise.resolve(); };
-  const completion = () => ({ id: 21,
-    queryReceipt: { terminalStatus: 'COMPLETED', submission: { gateState: 'ALLOWED', dispatchState: 'DISPATCHED' } },
-    chartQueryReceipt: { terminalStatus: 'COMPLETED', submission: { gateState: 'ALLOWED', dispatchState: 'DISPATCHED' } },
-    answerDetail: { queryId: 'original-answer' }, chartDetail: { queryId: 'original-chart' },
+  const flush = async () => {
+    for (let i = 0; i < 12; i++) await Promise.resolve();
+  };
+  const completion = () => ({
+    id: 21,
+    queryReceipt: {
+      terminalStatus: 'COMPLETED',
+      submission: { gateState: 'ALLOWED', dispatchState: 'DISPATCHED' },
+    },
+    chartQueryReceipt: {
+      terminalStatus: 'COMPLETED',
+      submission: { gateState: 'ALLOWED', dispatchState: 'DISPATCHED' },
+    },
+    answerDetail: { queryId: 'original-answer' },
+    chartDetail: { queryId: 'original-chart' },
   });
   const operations = [
-    ['answer', 'onGenerateTextBasedAnswer', mockGenerateAnswer, 'generateThreadResponseAnswer'],
-    ['chart', 'onGenerateChartAnswer', mockGenerateChart, 'generateThreadResponseChart'],
-    ['adjust', 'onAdjustChartAnswer', mockAdjustChart, 'adjustThreadResponseChart'],
+    [
+      'answer',
+      'onGenerateTextBasedAnswer',
+      mockGenerateAnswer,
+      'generateThreadResponseAnswer',
+    ],
+    [
+      'chart',
+      'onGenerateChartAnswer',
+      mockGenerateChart,
+      'generateThreadResponseChart',
+    ],
+    [
+      'adjust',
+      'onAdjustChartAnswer',
+      mockAdjustChart,
+      'adjustThreadResponseChart',
+    ],
   ] as const;
   const mount = () => {
     renderToStaticMarkup(createElement(HomeThread));
     return { controls: mockThreadProvider, retire: threadEffect() };
   };
   beforeEach(() => {
-    entries.clear(); mockButtons = []; mockNativeSqlOptions = [];
+    entries.clear();
+    mockButtons = [];
+    mockNativeSqlOptions = [];
     mockPreviewResult = { reset: jest.fn() };
     mockConfig.mockReset().mockResolvedValue(governed);
     mockResponseRead.mockReset().mockResolvedValue({});
     mockThreadUpdate.mockReset();
     for (const [, , mutation, field] of operations)
-      mutation.mockReset().mockResolvedValue({ data: { [field]: completion() } });
-    Object.defineProperty(global, 'sessionStorage', { configurable: true, value: {
-      getItem: (key: string) => entries.get(key) ?? null,
-      setItem: (key: string, value: string) => entries.set(key, value),
-      removeItem: (key: string) => entries.delete(key),
-    } });
-    Object.defineProperty(global, 'window', { configurable: true, value: {
-      setTimeout: (callback: () => void) => { wake = callback; return 1; },
-    } });
-    effect = jest.spyOn(jest.requireActual('react'), 'useEffect').mockImplementation((callback: any, deps: any[]) => {
-      if (deps?.length === 1 && deps[0] === 11) threadEffect = callback;
+      mutation
+        .mockReset()
+        .mockResolvedValue({ data: { [field]: completion() } });
+    Object.defineProperty(global, 'sessionStorage', {
+      configurable: true,
+      value: {
+        getItem: (key: string) => entries.get(key) ?? null,
+        setItem: (key: string, value: string) => entries.set(key, value),
+        removeItem: (key: string) => entries.delete(key),
+      },
     });
+    Object.defineProperty(global, 'window', {
+      configurable: true,
+      value: {
+        setTimeout: (callback: () => void) => {
+          wake = callback;
+          return 1;
+        },
+      },
+    });
+    effect = jest
+      .spyOn(jest.requireActual('react'), 'useEffect')
+      .mockImplementation((callback: any, deps: any[]) => {
+        if (deps?.length === 1 && deps[0] === 11) threadEffect = callback;
+      });
   });
   afterEach(() => {
     effect.mockRestore();
-    if (originalStorage) Object.defineProperty(global, 'sessionStorage', originalStorage); else delete global.sessionStorage;
-    if (originalWindow) Object.defineProperty(global, 'window', originalWindow); else delete global.window;
+    if (originalStorage)
+      Object.defineProperty(global, 'sessionStorage', originalStorage);
+    else delete global.sessionStorage;
+    if (originalWindow) Object.defineProperty(global, 'window', originalWindow);
+    else delete global.window;
   });
-  it.each(operations)('keeps current %s generation and response observation working in both original modes', async (_name, callback, mutation) => {
-    for (const config of [standalone, governed]) {
-      mockConfig.mockResolvedValue(config); mutation.mockClear(); mockResponseRead.mockClear();
+  it.each(operations)(
+    'keeps current %s generation and response observation working in both original modes',
+    async (_name, callback, mutation) => {
+      for (const config of [standalone, governed]) {
+        mockConfig.mockResolvedValue(config);
+        mutation.mockClear();
+        mockResponseRead.mockClear();
+        const page = mount();
+        await page.controls[callback](21, {
+          instruction: 'original chart change',
+        });
+        expect(mutation).toHaveBeenCalledTimes(1);
+        expect(mockResponseRead).toHaveBeenCalledWith({
+          variables: { responseId: 21 },
+        });
+        expect(entries.size).toBe(0);
+        page.retire();
+      }
+    },
+  );
+  it.each(operations)(
+    'does not dispatch retired %s after the initial original config read in either mode',
+    async (_name, callback, mutation) => {
+      for (const config of [standalone, governed]) {
+        let resolve: (config: any) => void;
+        mockConfig.mockReset().mockReturnValue(
+          new Promise((done) => {
+            resolve = done;
+          }),
+        );
+        mutation.mockClear();
+        mockResponseRead.mockClear();
+        const page = mount();
+        const pending = page.controls[callback](21, {});
+        page.retire();
+        resolve!(config);
+        await pending;
+        expect(mutation).not.toHaveBeenCalled();
+        expect(mockResponseRead).not.toHaveBeenCalled();
+        expect(entries.size).toBe(0);
+      }
+    },
+  );
+  it.each(operations)(
+    'does not dispatch retired %s after its governed pre-dispatch read and keeps its original key',
+    async (_name, callback, mutation) => {
+      let resolve: (config: any) => void;
+      mockConfig.mockResolvedValueOnce(governed).mockReturnValueOnce(
+        new Promise((done) => {
+          resolve = done;
+        }),
+      );
       const page = mount();
-      await page.controls[callback](21, { instruction: 'original chart change' });
-      expect(mutation).toHaveBeenCalledTimes(1);
-      expect(mockResponseRead).toHaveBeenCalledWith({ variables: { responseId: 21 } });
-      expect(entries.size).toBe(0);
+      const pending = page.controls[callback](21, {});
+      await flush();
+      const before = [...entries];
+      expect(before).toHaveLength(1);
       page.retire();
-    }
-  });
-  it.each(operations)('does not dispatch retired %s after the initial original config read in either mode', async (_name, callback, mutation) => {
-    for (const config of [standalone, governed]) {
-      let resolve: (config: any) => void;
-      mockConfig.mockReset().mockReturnValue(new Promise(done => { resolve = done; }));
-      mutation.mockClear(); mockResponseRead.mockClear();
-      const page = mount(); const pending = page.controls[callback](21, {});
-      page.retire(); resolve!(config); await pending;
-      expect(mutation).not.toHaveBeenCalled(); expect(mockResponseRead).not.toHaveBeenCalled();
-      expect(entries.size).toBe(0);
-    }
-  });
-  it.each(operations)('does not dispatch retired %s after its governed pre-dispatch read and keeps its original key', async (_name, callback, mutation) => {
-    let resolve: (config: any) => void;
-    mockConfig.mockResolvedValueOnce(governed).mockReturnValueOnce(new Promise(done => { resolve = done; }));
-    const page = mount(); const pending = page.controls[callback](21, {});
-    await flush(); const before = [...entries]; expect(before).toHaveLength(1);
-    page.retire(); resolve!(governed); await pending;
-    expect(mutation).not.toHaveBeenCalled(); expect(mockResponseRead).not.toHaveBeenCalled();
-    expect([...entries]).toEqual(before);
-  });
-  it.each(operations)('does not restart %s polling when retirement occurs during its post-dispatch config read', async (_name, callback, mutation) => {
-    for (const config of [standalone, governed]) {
-      let resolve: (config: any) => void;
-      mockConfig.mockReset().mockResolvedValueOnce(config);
-      if (config.nativeBindingConfigured) mockConfig.mockResolvedValueOnce(config);
-      mockConfig.mockReturnValueOnce(new Promise(done => { resolve = done; }));
-      mutation.mockClear(); mockResponseRead.mockClear(); mockThreadUpdate.mockClear();
-      const page = mount(); const pending = page.controls[callback](21, {});
-      await flush(); const before = [...entries];
-      expect(mutation).toHaveBeenCalledTimes(1);
-      page.retire(); resolve!(config); await pending;
-      expect(mockResponseRead).not.toHaveBeenCalled(); expect(mockThreadUpdate).not.toHaveBeenCalled();
+      resolve!(governed);
+      await pending;
+      expect(mutation).not.toHaveBeenCalled();
+      expect(mockResponseRead).not.toHaveBeenCalled();
       expect([...entries]).toEqual(before);
-    }
-  });
+    },
+  );
+  it.each(operations)(
+    'does not restart %s polling when retirement occurs during its post-dispatch config read',
+    async (_name, callback, mutation) => {
+      for (const config of [standalone, governed]) {
+        let resolve: (config: any) => void;
+        mockConfig.mockReset().mockResolvedValueOnce(config);
+        if (config.nativeBindingConfigured)
+          mockConfig.mockResolvedValueOnce(config);
+        mockConfig.mockReturnValueOnce(
+          new Promise((done) => {
+            resolve = done;
+          }),
+        );
+        mutation.mockClear();
+        mockResponseRead.mockClear();
+        mockThreadUpdate.mockClear();
+        const page = mount();
+        const pending = page.controls[callback](21, {});
+        await flush();
+        const before = [...entries];
+        expect(mutation).toHaveBeenCalledTimes(1);
+        page.retire();
+        resolve!(config);
+        await pending;
+        expect(mockResponseRead).not.toHaveBeenCalled();
+        expect(mockThreadUpdate).not.toHaveBeenCalled();
+        expect([...entries]).toEqual(before);
+      }
+    },
+  );
   it.each([
     ['identity', { ...governed, queryScope: 'b'.repeat(64) }],
     ['binding generation', { ...governed, nativeBindingGeneration: 3 }],
     ['mode', standalone],
     ['missing governed identity', { nativeBindingConfigured: true }],
-  ])('refuses %s changes at dispatch and disclosure without replacing the UNKNOWN key', async (_change, changed) => {
-    for (const phase of ['before', 'after']) {
-      mockConfig.mockReset().mockResolvedValueOnce(governed);
-      if (phase === 'after') mockConfig.mockResolvedValueOnce(governed);
-      mockConfig.mockResolvedValue(changed);
-      mockGenerateAnswer.mockClear(); mockThreadUpdate.mockClear(); mockResponseRead.mockClear();
-      const page = mount(); await page.controls.onGenerateTextBasedAnswer(21);
-      expect(mockGenerateAnswer).toHaveBeenCalledTimes(phase === 'after' ? 1 : 0);
-      expect(mockThreadUpdate).not.toHaveBeenCalled(); expect(mockResponseRead).not.toHaveBeenCalled();
-      expect(entries.size).toBe(1);
+  ])(
+    'refuses %s changes at dispatch and disclosure without replacing the UNKNOWN key',
+    async (_change, changed) => {
+      for (const phase of ['before', 'after']) {
+        mockConfig.mockReset().mockResolvedValueOnce(governed);
+        if (phase === 'after') mockConfig.mockResolvedValueOnce(governed);
+        mockConfig.mockResolvedValue(changed);
+        mockGenerateAnswer.mockClear();
+        mockThreadUpdate.mockClear();
+        mockResponseRead.mockClear();
+        const page = mount();
+        await page.controls.onGenerateTextBasedAnswer(21);
+        expect(mockGenerateAnswer).toHaveBeenCalledTimes(
+          phase === 'after' ? 1 : 0,
+        );
+        expect(mockThreadUpdate).not.toHaveBeenCalled();
+        expect(mockResponseRead).not.toHaveBeenCalled();
+        expect(entries.size).toBe(1);
+        page.retire();
+      }
+    },
+  );
+  it.each([
+    {},
+    { nativeBindingConfigured: true },
+    { ...governed, nativeBindingGeneration: 0 },
+    { ...governed, queryScope: '' },
+    { ...standalone, queryScope: scope },
+  ])(
+    'never treats incomplete initial config as independent generation: %j',
+    async (config) => {
+      mockConfig.mockResolvedValue(config);
+      const page = mount();
+      await page.controls.onGenerateTextBasedAnswer(21);
+      expect(mockGenerateAnswer).not.toHaveBeenCalled();
+      expect(mockResponseRead).not.toHaveBeenCalled();
+      expect(entries.size).toBe(0);
       page.retire();
-    }
-  });
-  it.each([{}, { nativeBindingConfigured: true }, { ...governed, nativeBindingGeneration: 0 },
-    { ...governed, queryScope: '' }, { ...standalone, queryScope: scope }])('never treats incomplete initial config as independent generation: %j', async config => {
-    mockConfig.mockResolvedValue(config); const page = mount();
-    await page.controls.onGenerateTextBasedAnswer(21);
-    expect(mockGenerateAnswer).not.toHaveBeenCalled(); expect(mockResponseRead).not.toHaveBeenCalled();
-    expect(entries.size).toBe(0); page.retire();
-  });
+    },
+  );
   it('does not attach standalone response polling after the instance becomes governed', async () => {
     mockConfig.mockResolvedValueOnce(standalone).mockResolvedValue(governed);
-    const page = mount(); await page.controls.onGenerateTextBasedAnswer(21);
+    const page = mount();
+    await page.controls.onGenerateTextBasedAnswer(21);
     expect(mockGenerateAnswer).toHaveBeenCalledTimes(1);
-    expect(mockResponseRead).not.toHaveBeenCalled(); page.retire();
+    expect(mockResponseRead).not.toHaveBeenCalled();
+    page.retire();
   });
-  it.each(operations)('a disconnected %s keeps its exact UNKNOWN key on explicit original-page recovery', async (_name, callback, mutation) => {
-    mutation.mockRejectedValueOnce(new Error('lost native response'));
-    const first = mount(); await first.controls[callback](21, {});
-    expect(entries.size).toBe(1); const original = mutation.mock.calls[0][0];
-    first.retire(); const reopened = mount(); await reopened.controls[callback](21, {});
-    expect(mutation).toHaveBeenCalledTimes(2);
-    expect(mutation.mock.calls[1][0]).toEqual(original);
-    expect(mockResponseRead).toHaveBeenCalledTimes(1); expect(entries.size).toBe(0);
-    reopened.retire();
-  });
+  it.each(operations)(
+    'a disconnected %s keeps its exact UNKNOWN key on explicit original-page recovery',
+    async (_name, callback, mutation) => {
+      mutation.mockRejectedValueOnce(new Error('lost native response'));
+      const first = mount();
+      await first.controls[callback](21, {});
+      expect(entries.size).toBe(1);
+      const original = mutation.mock.calls[0][0];
+      first.retire();
+      const reopened = mount();
+      await reopened.controls[callback](21, {});
+      expect(mutation).toHaveBeenCalledTimes(2);
+      expect(mutation.mock.calls[1][0]).toEqual(original);
+      expect(mockResponseRead).toHaveBeenCalledTimes(1);
+      expect(entries.size).toBe(0);
+      reopened.retire();
+    },
+  );
   it('leaving an UNKNOWN observation wait stops further mutation calls and preserves the original key', async () => {
-    mockGenerateAnswer.mockResolvedValue({ data: { generateThreadResponseAnswer: { id: 21, queryReceipt: {} } } });
-    const page = mount(); const pending = page.controls.onGenerateTextBasedAnswer(21);
-    await flush(); expect(mockGenerateAnswer).toHaveBeenCalledTimes(1);
-    const before = [...entries]; expect(before).toHaveLength(1);
-    page.retire(); wake(); await pending;
+    mockGenerateAnswer.mockResolvedValue({
+      data: { generateThreadResponseAnswer: { id: 21, queryReceipt: {} } },
+    });
+    const page = mount();
+    const pending = page.controls.onGenerateTextBasedAnswer(21);
+    await flush();
     expect(mockGenerateAnswer).toHaveBeenCalledTimes(1);
-    expect(mockResponseRead).not.toHaveBeenCalled(); expect([...entries]).toEqual(before);
+    const before = [...entries];
+    expect(before).toHaveLength(1);
+    page.retire();
+    wake();
+    await pending;
+    expect(mockGenerateAnswer).toHaveBeenCalledTimes(1);
+    expect(mockResponseRead).not.toHaveBeenCalled();
+    expect([...entries]).toEqual(before);
   });
 });

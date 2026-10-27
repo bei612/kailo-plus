@@ -252,15 +252,22 @@ export default function HomeThread() {
     try {
       const config = await getUserConfig();
       if (generation !== answerGeneration.current) return;
-      const { queryScope: scope, nativeBindingGeneration: bindingGeneration } = config;
+      const { queryScope: scope, nativeBindingGeneration: bindingGeneration } =
+        config;
       // Missing governed identity is not evidence of an independent instance.
       // Keep the original query key across retirement; only current readers may
       // continue its original operation or attach response polling.
-      if (config.nativeBindingConfigured !== false &&
+      if (
+        config.nativeBindingConfigured !== false &&
         (config.nativeBindingConfigured !== true ||
           !/^[a-f0-9]{64}$/.test(scope ?? '') ||
-          !Number.isSafeInteger(bindingGeneration) || bindingGeneration <= 0)) return;
-      const sameConfiguration = (current: Awaited<ReturnType<typeof getUserConfig>>) =>
+          !Number.isSafeInteger(bindingGeneration) ||
+          bindingGeneration <= 0)
+      )
+        return;
+      const sameConfiguration = (
+        current: Awaited<ReturnType<typeof getUserConfig>>,
+      ) =>
         current.nativeBindingConfigured === config.nativeBindingConfigured &&
         current.queryScope === scope &&
         current.nativeBindingGeneration === bindingGeneration;
@@ -268,7 +275,11 @@ export default function HomeThread() {
         if (scope !== undefined || bindingGeneration !== undefined) return;
         await create({});
         const current = await getUserConfig();
-        if (generation !== answerGeneration.current || !sameConfiguration(current)) return;
+        if (
+          generation !== answerGeneration.current ||
+          !sameConfiguration(current)
+        )
+          return;
         fetchThreadResponse({ variables: { responseId } });
         return;
       }
@@ -277,13 +288,21 @@ export default function HomeThread() {
       sessionStorage.setItem(slot, key);
       while (generation === answerGeneration.current) {
         const beforeDispatch = await getUserConfig();
-        if (generation !== answerGeneration.current || !sameConfiguration(beforeDispatch)) return;
+        if (
+          generation !== answerGeneration.current ||
+          !sameConfiguration(beforeDispatch)
+        )
+          return;
         const response = await create({
           idempotencyKey: key,
           idempotencyScope: scope,
         });
         const afterDispatch = await getUserConfig();
-        if (generation !== answerGeneration.current || !sameConfiguration(afterDispatch)) return;
+        if (
+          generation !== answerGeneration.current ||
+          !sameConfiguration(afterDispatch)
+        )
+          return;
         if (response?.id === responseId)
           updateThreadQuery((previous) => ({
             ...previous,
