@@ -358,11 +358,11 @@ describe("original repository tag snapshot consumer",()=>{
     await vi.waitFor(()=>expect(ui.querySelector('[data-testid="project-repository-branch-trigger"]')).not.toBeNull());
     await pickRepositoryRef("mainfffffff");
     await vi.waitFor(()=>expect(requests(f,ProjectsGitQueryRequestView.Snapshot).some(request=>request.targetRef==="refs/tags/main"&&request.targetCommit===head)).toBe(true));
-    const openReadme=async()=>{const row=[...ui.querySelectorAll<HTMLTableRowElement>('tr[tabindex]')].find(row=>row.textContent?.includes("README.md"))!;expect(row).toBeDefined();await click(row);};
+    const openReadme=async()=>{await vi.waitFor(()=>expect(ui.querySelector('[data-testid="project-repository-entry-row"]')).not.toBeNull());const row=[...ui.querySelectorAll<HTMLTableRowElement>('[data-testid="project-repository-entry-row"]')].find(row=>row.textContent?.includes("README.md"))!;expect(row).toBeDefined();await click(row);};
     await openReadme();
     await vi.waitFor(()=>expect(ui.textContent).toContain("Frozen tag file"));
     expect(requests(f,ProjectsGitQueryRequestView.FileContent).at(-1)).toMatchObject({repository,targetRef:"refs/tags/main",targetCommit:head,path:"README.md"});
-    await click(namedButton(ui,"Files"));
+    await click(namedButton(ui.querySelector('[data-testid="project-repository-file"]')!,"Files"));
     await pickRepositoryRef("main");
     await openReadme();
     await vi.waitFor(()=>expect(ui.textContent).toContain("Current branch file"));
@@ -373,8 +373,8 @@ describe("original repository tag snapshot consumer",()=>{
     const f=fixture();f.gitQuery.mockImplementation(async request=>({...snapshot,snapshot:{...snapshot.snapshot!,files:[
       {path:"README.md",kind:"file",size:24,previewContent:request.targetRef?"Tag inline preview":"Branch inline preview",lastChangedAt:null}]}}));
     const {ui}=await mount(f,{repositoryId:f.repositoryId,tab:"files"});
-    await vi.waitFor(()=>expect(ui.querySelector('tr[tabindex]')).not.toBeNull());
-    await click(ui.querySelector<HTMLTableRowElement>('tr[tabindex]')!);
+    await vi.waitFor(()=>expect(ui.querySelector('[data-testid="project-repository-entry-row"]')).not.toBeNull());
+    await click(ui.querySelector<HTMLTableRowElement>('[data-testid="project-repository-entry-row"]')!);
     await vi.waitFor(()=>expect(ui.textContent).toContain("Branch inline preview"));
     await pickRepositoryRef("mainfffffff");
     await vi.waitFor(()=>expect(ui.textContent).toContain("Tag inline preview"));
