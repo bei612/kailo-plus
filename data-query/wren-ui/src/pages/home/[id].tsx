@@ -791,11 +791,11 @@ export default function HomeThread() {
       task.sourceResponseId !== recommendationOwner.source
     )
       return;
-    if (!(await recommendationConfiguration())) return;
     // Select the frozen native result, not caller-provided SQL. Repeating this
     // original selection after an unknown ACK returns the same native row.
-    const slot = `kailo.query.recommendation.select.${recommendationOwner.identity}.${threadId}.${task.queryId}.${index}`;
     try {
+      if (!(await recommendationConfiguration())) return;
+      const slot = `kailo.query.recommendation.select.${recommendationOwner.identity}.${threadId}.${task.queryId}.${index}`;
       const key = sessionStorage.getItem(slot) || uuidv4();
       sessionStorage.setItem(slot, key);
       await onCreateResponse(

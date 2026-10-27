@@ -4643,15 +4643,37 @@ describe('original Home answer and chart operation lifetime', () => {
         const page = renderPage();
         const pending = page.controls.onGenerateThreadRecommendedQuestions(21);
         await settle();
-        await respond(requests[0], 'getThreadRecommendationQuestions', task({ queryId: null, sourceResponseId: null, status: 'NOT_STARTED', questions: [] }));
+        await respond(
+          requests[0],
+          'getThreadRecommendationQuestions',
+          task({
+            queryId: null,
+            sourceResponseId: null,
+            status: 'NOT_STARTED',
+            questions: [],
+          }),
+        );
         expect(requests[1].name).toBe('GenerateThreadRecommendationQuestions');
-        await respond(requests[1], 'generateThreadRecommendationQuestions', task({ status: 'GENERATING', questions: [] }));
+        await respond(
+          requests[1],
+          'generateThreadRecommendationQuestions',
+          task({ status: 'GENERATING', questions: [] }),
+        );
         await pending;
         const observation = requests[2];
         expect(observation.name).toBe('GetThreadRecommendationQuestions');
         await respond(observation, 'getThreadRecommendationQuestions', task());
-        expect(renderPage().controls.recommendedQuestions).toMatchObject({ queryId: nativeId, sourceResponseId: 21, status: 'FINISHED' });
-        expect(requests.filter((request) => request.name === 'GenerateThreadRecommendationQuestions')).toHaveLength(1);
+        expect(renderPage().controls.recommendedQuestions).toMatchObject({
+          queryId: nativeId,
+          sourceResponseId: 21,
+          status: 'FINISHED',
+        });
+        expect(
+          requests.filter(
+            (request) =>
+              request.name === 'GenerateThreadRecommendationQuestions',
+          ),
+        ).toHaveLength(1);
       });
       it('a callback first invoked after retirement cannot start even an original recommendation read', async () => {
         const page = renderPage();
@@ -4660,6 +4682,14 @@ describe('original Home answer and chart operation lifetime', () => {
         await settle();
         expect(requests).toHaveLength(0);
         await pending;
+      });
+      it('an unavailable fresh selection configuration leaves the original result without dispatching or claiming failure', async () => {
+        const page = await load();
+        const count = requests.length;
+        mockConfig.mockRejectedValue(new Error('original configuration unavailable'));
+        await expect(page.controls.onSelectRecommendedQuestion(select)).resolves.toBeUndefined();
+        expect(requests).toHaveLength(count);
+        expect(entries.size).toBe(0);
       });
       it('lost recommendation selection ACK retains its exact original intent on explicit retry', async () => {
         const page = await load();
