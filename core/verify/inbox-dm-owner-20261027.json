@@ -1,0 +1,85 @@
+{
+  "source_commit": "6086f71a3002314ca8135e181231cdcaab9ea11a",
+  "base_commit": "5a1184525d7941067d81384f504d9fd431fe39c3",
+  "sdk": "sha256:3007729eb192341a4f004a88e42e1e66c94fc67d763acfc96568bd7311116018",
+  "source_directory": "/volumes/data/kailo/verification/composer-body/31a2c67c3/source",
+  "source_inputs_checked": 3455,
+  "source_mismatches": [],
+  "installed_platform_source_files_web": 1039,
+  "cpu": 1,
+  "memory_bytes": 4294967296,
+  "pids_limit": 256,
+  "positive": {
+    "web_inbox_thread_pane": 57,
+    "web_tsc": 0,
+    "i18n_check": 0
+  },
+  "negative": [
+    {
+      "source": "c8d69f0d0d29a0ef8395fa6e748c32684b590698",
+      "mutation": "restore native key for new DM drafts",
+      "exit": 1
+    },
+    {
+      "source": "c8d69f0d0d29a0ef8395fa6e748c32684b590698",
+      "mutation": "remove late native-record refusal from selected binding owner",
+      "exit": 1
+    },
+    {
+      "source": "6086f71a3002314ca8135e181231cdcaab9ea11a",
+      "mutation": "remove sibling binding pending/sendIntent refusal from selected native owner",
+      "exit": 1
+    }
+  ],
+  "restored": {
+    "c8d69f0d0_web_inbox_thread_pane": 55,
+    "6086f71a3_web_inbox_thread_pane": 57,
+    "source_bytes_identical": true
+  },
+  "failure_history": [
+    {
+      "source": "ba584a42598af85c7cdef798060589a9887f371c",
+      "exit": 1,
+      "web_tsc": 0,
+      "passed": 53,
+      "failed": 2,
+      "cause": "New fixtures passed HTML to the original Markdown editor and omitted the store-normalized mentionRefs default; fixed fixtures retain exact body/record assertions.",
+      "log_sha256": "70a954bb26db9afa626fab7de7a384241bdbcc11e334a0fa96bc95db8dc4810e"
+    }
+  ],
+  "job_directory": "/volumes/data/kailo/verification/inbox-dm-owner/6086f71a3",
+  "prior_job_directory": "/volumes/data/kailo/verification/inbox-dm-owner/c8d69f0d0",
+  "files_sha256": {
+    "c8d69f0d0": {
+      "runner.sh": "a61c4cfb41357d936ced72084e0b9ec3ce1ac761586b3fed0b986c3206438357",
+      "check.log": "410c776a89072a5218b30343bb6c870434e43a09292c6818e5bbf5f70bcb95aa",
+      "result.log": "297aab0b4b6ae87a6d80a90dc03779827e1b1f2cf2ef22837aa306ed2a7b0480",
+      "limits.log": "0716206ba6d4ec449fc3cec6db193e5326e6116f53ee87164bfde4cb4458fc1f",
+      "preflight.log": "3bf074c512f922fb355063c9fc98b00aa18a509ae8e4a7d5f25c5477595b2160",
+      "oom.log": "2ed27c1421e6928dbe13dbfdb5c59e1045b30341fe7ebe05700006bc5ac572c0",
+      "host-config.json": "c46c6f27a7c7a206733adf65533802b85f8cfa2b713753633e86e9fee8ba5c12",
+      "tmp/original.sha256": "433f9b6489458f81b0dbf32cc465e3948cc9bf033efd1a0adcf74c79ec7a8431",
+      "tmp/restored.sha256": "433f9b6489458f81b0dbf32cc465e3948cc9bf033efd1a0adcf74c79ec7a8431",
+      "tmp/restored.log": "bd86ba93ffb22b464fd35549c373dbc6e658952c1c1e24f66767be4dd0face63",
+      "tmp/negative-mapping.log": "5c680b3f19c1376604873354f44dfd0d9f7303a38e4175a8859f02500570b032",
+      "tmp/negative-mapping-exit.log": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+      "tmp/negative-late.log": "1173e515ebf3212daa314d60154e8fc3456bd12d8e08b31b8bb08274dfaa456a",
+      "tmp/negative-late-exit.log": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865"
+    },
+    "6086f71a3": {
+      "runner.sh": "ee6d919eb5e3211ec2e98e6def77b3c7b24237b993cb61ad1ab73ad767d2c486",
+      "check.log": "270a48212e383a911e4d0cb80f5305618d1f150eb782b9437159f13a2cef90a9",
+      "result.log": "51e96da1d5d448cfd289e428a436d33d5c97e247e7a56055bdc573dcf8ece9cd",
+      "limits.log": "5f4ce7b96252a31c4a0dbbe1ec645bd4b663f3b9425c4e36633f16649665e98c",
+      "preflight.log": "de530985dfdd6239b307a3fa07db257bab7469c21ce563659062d82382ad6140",
+      "oom.log": "2ed27c1421e6928dbe13dbfdb5c59e1045b30341fe7ebe05700006bc5ac572c0",
+      "host-config.json": "3aadbbdfb146274306520f64bd378fb48f33c9f10fff7f91c4e4c940f94a00e5",
+      "tmp/original.sha256": "700227dcfb4991b6ae56dc9d67738dbe42ae96682e29ac89f2b8d4f575e1e484",
+      "tmp/restored.sha256": "700227dcfb4991b6ae56dc9d67738dbe42ae96682e29ac89f2b8d4f575e1e484",
+      "tmp/restored.log": "f380503827f6c98f3e5c08bc58e5b433ed88d5967d53f3b24082da6e5a54c7b4",
+      "tmp/negative-reverse.log": "285dab123bab08028f361c25f060c518edc738a21d6e61d53ac9ac503dd3a2ff",
+      "tmp/negative-reverse-exit.log": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865"
+    }
+  },
+  "scope": "Existing InboxThreadPane file: original shared Composer input/persistence/reopen/dispatch exercised in one new case; other host DOM consumers use the original publisher callbacks with scripted BFF. Only ordinary DM native/binding alias keys are coordinated, independent thread keys remain independent. No historical provenance migration, native device/build, deployed browser, or full PlatformApp route mount claimed."
+}
