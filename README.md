@@ -43,6 +43,16 @@ Web/Desktop 的本地 `file:` 包仍为旧副本，不能作为最新共享包�
 见[原链接消费者记录](core/verify/inbox-project-read.md)。这些是源码消费者检查，
 尚无部署端浏览器剪贴板或 Windows 唤醒验收。
 
+Desktop 审批 Inbox 后继固定 `444fd6175` 补回 HomeView 缺失的 needsAction 接线：
+共享组件和 Web 已有该能力，Desktop 此前没有读取并传入审批源。现在使用同一
+NativeBootstrap 会话的 BFF client 与可信 Principal，消费原 Temporal 审批投影、
+共享决定界面和刷新；身份未就绪不查询，不从设备公钥推断身份。
+原新增审批消费者 **5/5**、Native Inbox **23/23**、共享测试及 Web/Desktop 类型
+通过；两端各 1,039 个实装共享文件一致。移除实际 needsAction prop 后消费者断言
+失败，逐字恢复后 5/5 通过。前两轮源码读取夹具失败与后续 Desktop 旧 file 包被拦
+均保留，未算通过。新增检查执行真实 HomeView 接线表达式及共享 DOM/BFF 消费者，
+未运行完整 NativeBootstrap、Windows 安装或设备审批。详细原件见上述 Inbox 记录。
+
 共享输入框后继固定 `3f2f966cf` 已恢复原 Escape 取消编辑，先由自动补全消费按键，
 保存中保留原锁。实际 Web 操作恢复原正文及已上传附件草稿，不再次上传或发布；
 共享 12、Web 76、Native 28 项与四项类型通过，移除 Escape 分支的反例失败、
