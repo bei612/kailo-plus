@@ -1,3 +1,4 @@
+import { scheduleSettleGatedAutoSubmit } from "./messageComposerAutoSubmit";
 // REQ-24 / DD-74: the original Buzz MessageComposer editor and interaction
 // owner, consumed by both hosts. Publication and file receipts stay in hosts.
 import * as React from "react";
@@ -176,7 +177,7 @@ export function useComposerAutoSubmit(options: {
     if (!options.enabled || !options.ready || attempted.current === options.owner) return;
     const owner = options.owner;
     let canceled = false;
-    const timer = window.setTimeout(() => {
+    const cancel = scheduleSettleGatedAutoSubmit({ submit: () => {
       if (canceled || !options.active() || latest.current.owner !== owner) return;
       attempted.current = owner;
       void Promise.resolve().then(() => options.consume?.()).then(() => {
@@ -184,7 +185,7 @@ export function useComposerAutoSubmit(options: {
           return latest.current.submit();
         }
       }).catch(() => { if (options.active() && latest.current.owner === owner) options.onError?.(); });
-    }, 0);
-    return () => { canceled = true; window.clearTimeout(timer); };
+    }});
+    return () => { canceled = true; cancel(); };
   }, [options.owner, options.enabled, options.ready]);
 }
