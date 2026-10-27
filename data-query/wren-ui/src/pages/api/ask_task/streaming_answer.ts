@@ -4,7 +4,10 @@ import { ThreadResponseAnswerStatus } from '@/apollo/server/services/askingServi
 import { TelemetryEvent } from '@/apollo/server/telemetry/telemetry';
 import { AskingResolver } from '@/apollo/server/resolvers/askingResolver';
 import { IContext } from '@/apollo/server/types';
-import { canonical, NativeQueryRefusal } from '@/apollo/server/services/nativeQueryAdmission';
+import {
+  canonical,
+  NativeQueryRefusal,
+} from '@/apollo/server/services/nativeQueryAdmission';
 import { isGovernedQueryMode } from '@/apollo/server/services/nativeQueryMode';
 import { createInterface } from 'readline';
 
@@ -24,7 +27,8 @@ export default async function handler(
     typeof responseId !== 'string' ||
     !Number.isSafeInteger(Number(responseId)) ||
     Number(responseId) <= 0 ||
-    (expectedQueryId !== undefined && (typeof expectedQueryId !== 'string' || !expectedQueryId))
+    (expectedQueryId !== undefined &&
+      (typeof expectedQueryId !== 'string' || !expectedQueryId))
   ) {
     res.status(400).json({ error: 'responseId is required' });
     return;
@@ -93,10 +97,13 @@ export default async function handler(
       stream.destroy();
       if (!bound && !completed)
         void authorize()
-          .then(() => components.threadResponseRepository.claimNativeAnswer(
-            response,
-            { ...response.answerDetail, status: ThreadResponseAnswerStatus.INTERRUPTED, content },
-          ))
+          .then(() =>
+            components.threadResponseRepository.claimNativeAnswer(response, {
+              ...response.answerDetail,
+              status: ThreadResponseAnswerStatus.INTERRUPTED,
+              content,
+            }),
+          )
           .catch((error) => console.error(error));
     });
     res.setHeader('Content-Type', 'text/event-stream');
@@ -117,14 +124,20 @@ export default async function handler(
         if (closed) return;
         if (
           Object.keys(event).sort().join(',') === 'done,queryId' &&
-          event.done === true && event.queryId === queryId
+          event.done === true &&
+          event.queryId === queryId
         ) {
           // The same original conditional writer protects both modes. A late
           // completion/close cannot update a replacement answer on this row.
-          const finished = await components.threadResponseRepository.claimNativeAnswer(
-            response,
-            { ...response.answerDetail, status: ThreadResponseAnswerStatus.FINISHED, content },
-          );
+          const finished =
+            await components.threadResponseRepository.claimNativeAnswer(
+              response,
+              {
+                ...response.answerDetail,
+                status: ThreadResponseAnswerStatus.FINISHED,
+                content,
+              },
+            );
           if (!finished)
             throw new NativeQueryRefusal(409, 'NATIVE_OBJECT_CHANGED');
           completed = true;

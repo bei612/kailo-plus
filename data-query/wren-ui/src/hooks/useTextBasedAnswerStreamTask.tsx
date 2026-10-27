@@ -83,10 +83,7 @@ export default function useTextBasedAnswerStreamTask() {
           if (keys.length === 1 && value.done === true) {
             stop();
             setCompleted(true);
-          } else if (
-            keys.length === 1 &&
-            typeof value.message === 'string'
-          ) {
+          } else if (keys.length === 1 && typeof value.message === 'string') {
             setData((state) => state + value.message);
           } else {
             stop();

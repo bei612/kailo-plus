@@ -117,7 +117,13 @@ export default function TextBasedAnswer(props: AnswerResultProps) {
     } else {
       answerStreamTaskResult.onReset();
     }
-  }, [isStreaming, id, queryId, fetchAnswerStreamingTask, answerStreamTaskResult.onReset]);
+  }, [
+    isStreaming,
+    id,
+    queryId,
+    fetchAnswerStreamingTask,
+    answerStreamTaskResult.onReset,
+  ]);
 
   const rowsUsed = useMemo(
     () =>
