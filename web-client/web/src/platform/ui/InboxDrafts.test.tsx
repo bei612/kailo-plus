@@ -8,7 +8,7 @@ import type { BffClient } from "@client-kit/platform/client";
 import { TooltipProvider } from "@client-kit/platform/react/sidebar/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { draftMessageTarget, useInboxDrafts, InboxDrafts } from "./InboxDrafts";
-import { initDraftStore, saveDraftEntry, loadDraftEntry, type DraftState } from "@client-kit/platform/react/composer/features/messages/lib/useDrafts";
+import { initDraftStore, saveDraftEntry, loadDraftEntry, deleteDraftEntry, type DraftState } from "@client-kit/platform/react/composer/features/messages/lib/useDrafts";
 
 const views = vi.hoisted(()=>({items:[] as ConversationView[], error:false, loading:false, hidden:new Set<string>(), open:vi.fn(), toast:vi.fn()}));
 vi.mock("@client-kit/platform/react/new-message", async importOriginal => ({...await importOriginal<typeof import("@client-kit/platform/react/new-message")>(),
@@ -143,7 +143,7 @@ it.each(["en", "zh-CN"] as const)("keeps the original three-participant DM sourc
   } finally {cache.clear(); views.items = [];}
 });
 
-it.each(["send", "collision", "nonparticipant", "wrong-channel", "wrong-root", "missing", "revoked", "identity", "generation", "draft-changed", "intent-changed", "stored-changed", "unmount"] as const)("keeps DM thread draft restoration inside the admitted original target (%s)", async scenario => {
+it.each(["send", "collision", "nonparticipant", "wrong-channel", "wrong-root", "missing", "revoked", "identity", "generation", "draft-changed", "intent-changed", "stored-changed", "deleted", "recreated", "store-identity", "unmount"] as const)("keeps DM thread draft restoration inside the admitted original target (%s)", async scenario => {
   const scope="binding", native="native", rootId="a".repeat(64), replyId="b".repeat(64);
   const entry={key:`thread:${scope}:${rootId}:${replyId}`,draft:{...draft,channelId:scope}};
   saveDraftEntry(entry.key, entry.draft);
@@ -154,7 +154,7 @@ it.each(["send", "collision", "nonparticipant", "wrong-channel", "wrong-root", "
   let release!: (page:{events:ReturnType<typeof anchorEvents>})=>void;
   const read=vi.fn().mockImplementation(async()=>{
     if(scenario==="revoked") throw new Error("Forbidden");
-    if(["identity","generation","draft-changed","intent-changed","stored-changed","unmount"].includes(scenario)) return new Promise(resolve=>{release=resolve;});
+    if(["identity","generation","draft-changed","intent-changed","stored-changed","deleted","recreated","store-identity","unmount"].includes(scenario)) return new Promise(resolve=>{release=resolve;});
     return {events:scenario==="missing" ? [] : anchorEvents(scenario==="wrong-channel" ? "foreign" : native,scenario==="wrong-root" ? "d".repeat(64) : rootId,replyId)};
   });
   const client={conversationMessages:read,workspaceChannel:vi.fn()} as unknown as BffClient;
@@ -182,10 +182,13 @@ it.each(["send", "collision", "nonparticipant", "wrong-channel", "wrong-root", "
       if(scenario==="draft-changed") {entry.draft={...entry.draft,content:"new text at the same timestamp"}; await render();}
       if(scenario==="intent-changed") {entry.draft={...entry.draft,sendIntent:{key:"new-frozen-key",signature:"new-frozen-body"}}; await render();}
       if(scenario==="stored-changed") saveDraftEntry(entry.key,{...entry.draft,content:"persisted change before React render"});
+      if(scenario==="deleted" || scenario==="recreated") deleteDraftEntry(entry.key);
+      if(scenario==="recreated") saveDraftEntry(entry.key,entry.draft);
+      if(scenario==="store-identity") {initDraftStore("bob",window.location.origin); initDraftStore("alice",window.location.origin);}
       if(scenario==="unmount") await act(async()=>root.render(null));
       if(release) await act(async()=>release({events:anchorEvents(native,rootId,replyId)}));
       expect(views.open).not.toHaveBeenCalled();
-      if(!["identity","generation","draft-changed","intent-changed","stored-changed","unmount"].includes(scenario)) expect(views.toast).toHaveBeenCalledWith("Destination unavailable");
+      if(!["identity","generation","draft-changed","intent-changed","stored-changed","deleted","recreated","store-identity","unmount"].includes(scenario)) expect(views.toast).toHaveBeenCalledWith("Destination unavailable");
       else expect(views.toast).not.toHaveBeenCalled();
     }
     expect(client.workspaceChannel).not.toHaveBeenCalled();

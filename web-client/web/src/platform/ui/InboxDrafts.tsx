@@ -2,7 +2,7 @@ import { WorkspaceChannelCreateChannelType, ConversationViewState, WebMessageTyp
 import { useBffClient, useT } from "@client-kit/platform/react/context";
 import { useConversations, useConversationVisibilityHost } from "@client-kit/platform/react/new-message";
 import { DraftDetailSurface, DraftListSurface, type DraftListEntry, type DraftSurfaceItem } from "@client-kit/platform/react/draft-surfaces";
-import { initDraftStore, getActiveDraftEntries, useDraftsSnapshot, deleteDraftEntry, loadDraftEntry, draftStatesEqual, isDraftStoreScope, type DraftState } from "@client-kit/platform/react/composer/features/messages/lib/useDrafts";
+import { initDraftStore, getActiveDraftEntries, useDraftsSnapshot, deleteDraftEntry, loadDraftEntry, getDraftAuthority, draftStatesEqual, isDraftStoreScope, type DraftState } from "@client-kit/platform/react/composer/features/messages/lib/useDrafts";
 import { formatItemTimestamp } from "@client-kit/platform/react/messages/datetime";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
@@ -82,12 +82,16 @@ export function InboxDrafts({ principalId, workspaces, participants, entries, se
     const resolved = destination(entry); const target = draftMessageTarget(entry);
     if (!resolved || !target) return;
     const draftSnapshot = JSON.parse(JSON.stringify(entry.draft)) as DraftState;
+    const destinationSnapshot = JSON.stringify(resolved);
+    const authority = getDraftAuthority(entry.key);
+    const revision = authority.revision;
     const stillCurrent = () => {
       const latest = current.current;
       const saved = latest.entries.find(item => item.key === entry.key);
       const stored = isDraftStoreScope(principalId, window.location.origin) ? loadDraftEntry(entry.key) : null;
-      return owner.active && latest.owner === owner && saved !== undefined && stored !== null && draftStatesEqual(saved.draft, draftSnapshot) &&
-        draftStatesEqual(stored, draftSnapshot) && JSON.stringify(latest.destination(saved)) === JSON.stringify(resolved);
+      return owner.active && latest.owner === owner && saved !== undefined && stored != null &&
+        getDraftAuthority(entry.key) === authority && authority.revision === revision && draftStatesEqual(saved.draft, draftSnapshot) &&
+        draftStatesEqual(stored, draftSnapshot) && JSON.stringify(latest.destination(saved)) === destinationSnapshot;
     };
     try {
       if (resolved.kind === "conversation") {
