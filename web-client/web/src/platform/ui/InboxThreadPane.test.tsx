@@ -837,7 +837,11 @@ it.each(["draft", "pending", "both", "late"] as const)("preserves the original n
     expect(host.querySelector('[data-testid="inbox-composer"]')?.getAttribute("data-draft-key")).toBe(conversation.id);
     expect(host.querySelector<HTMLButtonElement>('[data-testid="inbox-send"]')?.disabled).toBe(true);
     await act(async()=>host.querySelector<HTMLButtonElement>('[data-testid="inbox-send"]')!.click());
-  } else expect(loadPendingSend(conversation.channelId)).toEqual(nativeBefore);
+  } else {
+    expect(loadPendingSend(conversation.channelId)).toEqual(nativeBefore);
+    expect(host.querySelector<HTMLButtonElement>('[data-testid="inbox-send"]')?.disabled).toBe(true);
+    await act(async()=>host.querySelector<HTMLButtonElement>('[data-testid="inbox-send"]')!.click());
+  }
   expect(loadPendingSend(conversation.id)).toEqual(bindingBefore);
   expect(loadDraftEntry(conversation.id)).toEqual(canonical);
   expect(state.dmPublish).not.toHaveBeenCalled();expect(state.publish).not.toHaveBeenCalled();
@@ -848,6 +852,8 @@ it("retires the selected legacy DM draft owner on an identity switch without cop
   initDraftStore("human",window.location.origin);
   const pending={draft:{...storedDmDraft(conversation.channelId,"private old identity"),sendIntent:{key:"old-unknown",signature:"old-body"}},stage:"unknown" as const,missingFileNames:[]};
   savePendingSend(conversation.channelId,pending);
+  const sibling={...pending,draft:{...pending.draft,channelId:conversation.id,sendIntent:{key:"other-unknown",signature:"other-body"}}};
+  savePendingSend(conversation.id,sibling);
   state.dmQuery.mockImplementation(async(_id,options)=>({events:options.parentEventId?[rootEvent,reply]:[rootEvent,bounds()]}));
   await mountDm();
   expect(host.querySelector('[data-testid="inbox-composer"]')?.getAttribute("data-draft-key")).toBe(conversation.channelId);
@@ -857,4 +863,23 @@ it("retires the selected legacy DM draft owner on an identity switch without cop
   expect(state.dmPublish).not.toHaveBeenCalled();
   initDraftStore("human",window.location.origin);
   expect(loadPendingSend(conversation.channelId)).toEqual(pending);
+  expect(loadPendingSend(conversation.id)).toEqual(sibling);
+});
+
+it.each(["draft","unknown"] as const)("refuses a late binding UNKNOWN before a selected native owner can send (%s)",async stage=>{
+  initDraftStore("human",window.location.origin);
+  const native=storedDmDraft(conversation.channelId,"original native draft");
+  if(stage==="draft")saveDraftEntry(conversation.channelId,native);
+  else savePendingSend(conversation.channelId,{draft:{...native,sendIntent:{key:"native-unknown",signature:"native-body"}},stage:"unknown",missingFileNames:[]});
+  state.dmQuery.mockImplementation(async(_id,options)=>({events:options.parentEventId?[rootEvent,reply]:[rootEvent,bounds()]}));
+  await mountDm();
+  expect(host.querySelector('[data-testid="inbox-composer"]')?.getAttribute("data-draft-key")).toBe(conversation.channelId);
+  const send=host.querySelector<HTMLButtonElement>('[data-testid="inbox-send"]')!;
+  expect(send.disabled).toBe(false);
+  const pending={draft:{...storedDmDraft(conversation.id,"other frozen body"),sendIntent:{key:"binding-unknown",signature:"binding-body"}},stage:"unknown" as const,missingFileNames:[]};
+  await act(async()=>{savePendingSend(conversation.id,pending);send.click();});await settle();
+  expect(state.dmPublish).not.toHaveBeenCalled();expect(state.publish).not.toHaveBeenCalled();
+  expect(send.disabled).toBe(true);
+  expect(loadPendingSend(conversation.id)).toEqual(pending);
+  expect(host.querySelector('[data-testid="inbox-composer"]')?.getAttribute("data-draft-key")).toBe(conversation.channelId);
 });
