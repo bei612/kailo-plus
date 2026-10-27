@@ -57,6 +57,12 @@ tag 的快照和文件缓存隔离；tag 模式沿原交互强制远程只读，
 徽标，不能据其推断快照来源。三轮夹具失败保留；无真实仓库、浏览器或设备验收，见
 [tag 回执](core/verify/projects-tag-20261027.json)及原消费者记录。
 
+Projects Overview 重试后继固定 `a7279228e`：仓库不可读页接回原 Fetch 重试和
+等待状态，Web/Desktop 共用原调用。原文件 **25/25**、四项类型及同源词条通过；
+移除重试接线后实际断言失败，逐字恢复后通过，两宿主各 1,040 个安装源文件一致。
+首轮夹具失败保留；真实 Git 服务、浏览器、设备及部署尚未验收，见
+[重试回执](core/verify/projects-overview-retry-20261027.json)及原消费者记录。
+
 Desktop 审批 Inbox 后继固定 `444fd6175` 补回 HomeView 缺失的 needsAction 接线：
 共享组件和 Web 已有该能力，Desktop 此前没有读取并传入审批源。现在使用同一
 NativeBootstrap 会话的 BFF client 与可信 Principal，消费原 Temporal 审批投影、
