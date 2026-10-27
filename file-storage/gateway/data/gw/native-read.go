@@ -9,8 +9,8 @@ import (
 // not keep disclosing it after the original authority is revoked. Earlier
 // disclosed bytes and the completed native receipt remain historical facts.
 type nativeDownloadReader struct {
-	body *bytes.Reader
-	fresh func() error
+	body    *bytes.Reader
+	fresh   func() error
 	failure error
 }
 

@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
-	"encoding/hex"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -15,9 +15,9 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"time"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	minio "github.com/minio/minio/cmd"
 	"github.com/pydio/cells/v5/common"
@@ -73,33 +73,40 @@ func (s *nativeReadPolicy) StreamPolicyGroups(_ *idm.ListPolicyGroupsRequest, st
 type nativeReadACLs struct {
 	idm.UnimplementedACLServiceServer
 	user, resource string
-	deny bool
-	calls int
+	deny           bool
+	calls          int
 }
+
 func (s *nativeReadACLs) SearchACL(_ *idm.SearchACLRequest, stream idm.ACLService_SearchACLServer) error {
 	s.calls++
-	if s.deny { return nil }
+	if s.deny {
+		return nil
+	}
 	return stream.Send(&idm.SearchACLResponse{ACL: &idm.ACL{RoleID: s.user, NodeID: s.resource, WorkspaceID: s.resource, Action: permissions.AclRead}})
 }
+
 type nativeReadWorkspaces struct {
 	idm.UnimplementedWorkspaceServiceServer
 	resource string
 }
+
 func (s *nativeReadWorkspaces) SearchWorkspace(_ *idm.SearchWorkspaceRequest, stream idm.WorkspaceService_SearchWorkspaceServer) error {
 	return stream.Send(&idm.SearchWorkspaceResponse{Workspace: &idm.Workspace{UUID: s.resource, Slug: "read-fixture"}})
 }
 
 type nativeReadRouter struct {
 	nodes.Client
-	size   int64
-	body   []byte
-	closed chan struct{}
-	uuid   string
+	size      int64
+	body      []byte
+	closed    chan struct{}
+	uuid      string
 	denyReads bool
 }
 
 func (r *nativeReadRouter) ReadNode(context.Context, *tree.ReadNodeRequest, ...grpc.CallOption) (*tree.ReadNodeResponse, error) {
-	if r.denyReads { return nil, errors.WithStack(errors.StatusForbidden) }
+	if r.denyReads {
+		return nil, errors.WithStack(errors.StatusForbidden)
+	}
 	n := &tree.Node{Uuid: r.uuid, Type: tree.NodeType_LEAF, Path: "root/file.txt", Size: r.size}
 	n.MustSetMeta(common.MetaNamespaceMime, "text/plain")
 	return &tree.ReadNodeResponse{Node: n}, nil
@@ -301,24 +308,41 @@ func TestGovernedReadCompletesBeforeReturningMinIOReader(t *testing.T) {
 							}
 							if strings.HasPrefix(scenario, "late-") && size > 0 {
 								prefix := make([]byte, 6)
-								if n, err := reader.Read(prefix); n != len(prefix) || err != nil { t.Fatal("admitted prefix failed", n, err) }
+								if n, err := reader.Read(prefix); n != len(prefix) || err != nil {
+									t.Fatal("admitted prefix failed", n, err)
+								}
 								switch scenario {
-								case "late-PEP-denied": denyAt.Store(pepCalls.Load()+1)
-								case "late-native-denied": router.denyReads = true
-								case "late-scope-moved": treeClient.file.Path = "foreign/file.txt"
+								case "late-PEP-denied":
+									denyAt.Store(pepCalls.Load() + 1)
+								case "late-native-denied":
+									router.denyReads = true
+								case "late-scope-moved":
+									treeClient.file.Path = "foreign/file.txt"
 								}
 								body, readErr := io.ReadAll(reader)
-								if readErr == nil || len(body) != 0 { t.Fatal("revoked download bytes escaped after completed Task", len(body), readErr) }
+								if readErr == nil || len(body) != 0 {
+									t.Fatal("revoked download bytes escaped after completed Task", len(body), readErr)
+								}
 								calls := pepCalls.Load()
-								denyAt.Store(0); router.denyReads = false; treeClient.file.Path = "root/file.txt"
-								if n, err := reader.Read(prefix); n != 0 || err == nil || pepCalls.Load() != calls { t.Fatal("refused download resumed or polled again") }
+								denyAt.Store(0)
+								router.denyReads = false
+								treeClient.file.Path = "root/file.txt"
+								if n, err := reader.Read(prefix); n != 0 || err == nil || pepCalls.Load() != calls {
+									t.Fatal("refused download resumed or polled again")
+								}
 							} else {
 								body, readErr := io.ReadAll(reader)
-								if readErr != nil || !bytes.Equal(body, router.body) { t.Fatal("governed bytes changed", readErr) }
+								if readErr != nil || !bytes.Equal(body, router.body) {
+									t.Fatal("governed bytes changed", readErr)
+								}
 								calls := pepCalls.Load()
-								if n, err := reader.Read(make([]byte, 1)); n != 0 || err != io.EOF || pepCalls.Load() != calls { t.Fatal("EOF repeated disclosure authority") }
+								if n, err := reader.Read(make([]byte, 1)); n != 0 || err != io.EOF || pepCalls.Load() != calls {
+									t.Fatal("EOF repeated disclosure authority")
+								}
 							}
-							if jobs.puts != 3 { t.Fatal("late disclosure repeated native Task writes") }
+							if jobs.puts != 3 {
+								t.Fatal("late disclosure repeated native Task writes")
+							}
 						} else if err == nil || reader != nil {
 							t.Fatal("governed rejection returned a success reader before the original read completed")
 						}
@@ -373,10 +397,16 @@ func TestNativeHumanDownloadRetainsFreshDisclosureAfterCompletion(t *testing.T) 
 	grpcclient.RegisterMock(common.ServiceAclGRPC, &idm.ACLServiceStub{ACLServiceServer: new(uploadFrontACLs)})
 	grpcclient.RegisterMock(common.ServicePolicyGRPC, &idm.PolicyEngineServiceStub{PolicyEngineServiceServer: &nativeReadPolicy{subject: user}})
 	grpcclient.RegisterMock(common.ServiceDocStoreGRPC, &docstore.DocStoreStub{DocStoreServer: &nativeReadDocuments{}})
-	for _, scenario := range []string{"complete", "empty", "late-human-denied", "late-native-denied", "late-scope-moved", "late-user-unavailable", "late-user-hidden", "late-user-locked", "late-role-revoked", "late-acl-revoked", "before-first-byte"} {
+	for _, scenario := range []string{"complete", "empty", "late-human-denied", "late-native-denied", "late-scope-moved", "late-user-unavailable", "late-user-hidden", "late-user-locked", "late-role-revoked", "late-acl-revoked", "before-first-byte", "claims-scope-denied"} {
 		t.Run(scenario, func(t *testing.T) {
 			ctx := config.WithStubStore(context.Background())
 			ctx = claim.ToContext(ctx, claim.Claims{Subject: user, Name: "native-user", SessionID: "read-session", AuthSource: "kailo"})
+			if scenario == "claims-scope-denied" {
+				current, _ := claim.FromContext(ctx)
+				current.ProvidesScopes = true
+				current.Scopes = []string{"node:foreign:read"}
+				ctx = claim.ToContext(ctx, current)
+			}
 			currentACLs := &nativeReadACLs{user: user, resource: resource}
 			grpcclient.RegisterMock(common.ServiceAclGRPC, &idm.ACLServiceStub{ACLServiceServer: currentACLs})
 			grpcclient.RegisterMock(common.ServiceWorkspaceGRPC, &idm.WorkspaceServiceStub{WorkspaceServiceServer: &nativeReadWorkspaces{resource: resource}})
@@ -389,7 +419,9 @@ func TestNativeHumanDownloadRetainsFreshDisclosureAfterCompletion(t *testing.T) 
 			access.Flatten(ctx)
 			if err := access.LoadWorkspaces(ctx, func(context.Context, []string) ([]*idm.Workspace, error) {
 				return []*idm.Workspace{{UUID: resource, Slug: "read-fixture"}}, nil
-			}); err != nil { t.Fatal(err) }
+			}); err != nil {
+				t.Fatal(err)
+			}
 			ctx = acl.WithPresetACL(ctx, access)
 			tasks := &nativeReadJobs{}
 			grpcclient.RegisterMock(common.ServiceJobsGRPC, tasks)
@@ -405,88 +437,179 @@ func TestNativeHumanDownloadRetainsFreshDisclosureAfterCompletion(t *testing.T) 
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
 				if r.URL.Path == "/token" {
-					json.NewEncoder(w).Encode(map[string]interface{}{"access_token": "service", "token_type": "Bearer", "expires_in": 60}); return
+					json.NewEncoder(w).Encode(map[string]interface{}{"access_token": "service", "token_type": "Bearer", "expires_in": 60})
+					return
 				}
 				var raw map[string]interface{}
-				if r.Header.Get("Authorization") != "Bearer service" || json.NewDecoder(r.Body).Decode(&raw) != nil { t.Error("binding transport bypassed"); w.WriteHeader(403); return }
+				if r.Header.Get("Authorization") != "Bearer service" || json.NewDecoder(r.Body).Decode(&raw) != nil {
+					t.Error("binding transport bypassed")
+					w.WriteHeader(403)
+					return
+				}
 				target := map[string]interface{}{"resourceId": resource, "nativeType": "folder", "nativeRef": resource, "nativeInstanceRef": "instance", "nativeScopeRef": resource}
 				if r.URL.Path == "/service/v1/adapter/pep_check" {
 					peps.Add(1)
-					if receipts.Load() != 0 || raw["actionToken"] != token || raw["argumentsJson"] != string(arguments) { t.Error("completed read was re-admitted or original PEP proof changed"); w.WriteHeader(403); return }
-					json.NewEncoder(w).Encode(map[string]interface{}{"actionExecutionId": execution, "operationId": key, "authorizationMinZedToken": "fresh", "targetResource": target}); return
+					if receipts.Load() != 0 || raw["actionToken"] != token || raw["argumentsJson"] != string(arguments) {
+						t.Error("completed read was re-admitted or original PEP proof changed")
+						w.WriteHeader(403)
+						return
+					}
+					json.NewEncoder(w).Encode(map[string]interface{}{"actionExecutionId": execution, "operationId": key, "authorizationMinZedToken": "fresh", "targetResource": target})
+					return
 				}
-				if r.URL.Path != "/service/v1/adapter/human-action" || raw["bindingId"] != binding { t.Error("original HUMAN transport bypassed"); w.WriteHeader(403); return }
+				if r.URL.Path != "/service/v1/adapter/human-action" || raw["bindingId"] != binding {
+					t.Error("original HUMAN transport bypassed")
+					w.WriteHeader(403)
+					return
+				}
 				if receipt, ok := raw["readReceipt"]; ok {
-					if r.Header.Get("X-Kailo-Native-Human-Token") != "" { t.Error("service receipt acquired HUMAN authority") }
+					if r.Header.Get("X-Kailo-Native-Human-Token") != "" {
+						t.Error("service receipt acquired HUMAN authority")
+					}
 					receipts.Add(1)
 					encoded, _ := json.Marshal(receipt)
 					digest := sha256.Sum256(encoded)
-					json.NewEncoder(w).Encode(map[string]interface{}{"operationId": key, "receiptDigest": hex.EncodeToString(digest[:])}); return
+					json.NewEncoder(w).Encode(map[string]interface{}{"operationId": key, "receiptDigest": hex.EncodeToString(digest[:])})
+					return
 				}
-				if r.Header.Get("X-Kailo-Native-Human-Token") != "human" { t.Error("independent HUMAN missing"); w.WriteHeader(403); return }
-				if raw["resolveResource"] != nil { target["resourceVersion"] = 1; json.NewEncoder(w).Encode(map[string]interface{}{"resource": target}); return }
+				if r.Header.Get("X-Kailo-Native-Human-Token") != "human" {
+					t.Error("independent HUMAN missing")
+					w.WriteHeader(403)
+					return
+				}
+				if raw["resolveResource"] != nil {
+					target["resourceVersion"] = 1
+					json.NewEncoder(w).Encode(map[string]interface{}{"resource": target})
+					return
+				}
 				if raw["command"] != nil {
 					commands.Add(1)
-					if receipts.Load() != 0 { t.Error("second read command after completion") }
-					json.NewEncoder(w).Encode(map[string]interface{}{"readAdmission": map[string]interface{}{"actionToken": token, "argumentsJson": string(arguments), "expiresAt": time.Now().Add(time.Minute).Unix()}}); return
+					if receipts.Load() != 0 {
+						t.Error("second read command after completion")
+					}
+					json.NewEncoder(w).Encode(map[string]interface{}{"readAdmission": map[string]interface{}{"actionToken": token, "argumentsJson": string(arguments), "expiresAt": time.Now().Add(time.Minute).Unix()}})
+					return
 				}
 				observations.Add(1)
-				if raw["idempotencyKey"] != key || receipts.Load() != 1 { t.Error("disclosure did not observe the single original receipt"); w.WriteHeader(403); return }
-				if revoked.Load() { w.WriteHeader(403); return }
+				if raw["idempotencyKey"] != key || receipts.Load() != 1 {
+					t.Error("disclosure did not observe the single original receipt")
+					w.WriteHeader(403)
+					return
+				}
+				if revoked.Load() {
+					w.WriteHeader(403)
+					return
+				}
 				json.NewEncoder(w).Encode(map[string]interface{}{"terminalStatus": "COMPLETED", "inputReference": input})
 			}))
 			defer server.Close()
 			secret := filepath.Join(t.TempDir(), "secret")
-			if err := os.WriteFile(secret, []byte("fixture-only"), 0600); err != nil { t.Fatal(err) }
+			if err := os.WriteFile(secret, []byte("fixture-only"), 0600); err != nil {
+				t.Fatal(err)
+			}
 			delivery := map[string]interface{}{"bindingId": binding, "tenantId": binding, "nativeInstanceRef": "instance", "nativeScopeRef": resource, "nativeRootRef": resource,
 				"instanceServiceUuid": binding, "corePepUrl": server.URL + "/service/v1/adapter/pep_check", "oidcTokenUrl": server.URL + "/token", "clientId": "native-binding", "clientSecretFile": secret,
 				"clientSecretMaxBytes": 128, "maxResponseBytes": 65536, "requestTimeout": "2s", "actors": []map[string]interface{}{{"principalId": principal, "kind": "HUMAN", "userUuid": user}},
 				"read": map[string]interface{}{"nativeJobId": "existing-read-job", "usageMeasurements": []interface{}{}, "human": map[string]interface{}{"receiptPollInterval": "10ms",
 					"actions": map[string]interface{}{"file_storage.read@v2": map[string]interface{}{"actionVersion": 1, "nativeType": "folder", "resultExposurePolicyId": resource, "resultExposurePolicyVersion": 1}}}}}
-			if err := config.Set(ctx, delivery, "services", common.ServiceRestNamespace_+"n", "platform"); err != nil { t.Fatal(err) }
+			if err := config.Set(ctx, delivery, "services", common.ServiceRestNamespace_+"n", "platform"); err != nil {
+				t.Fatal(err)
+			}
 			config.Set(ctx, base64.StdEncoding.EncodeToString(bytes.Repeat([]byte("x"), 64)), "frontend", "session", "secureKey")
 			config.Set(ctx, []map[string]interface{}{{"id": "kailo", "type": "kailo-oidc", "config": map[string]interface{}{"issuer": "https://identity.invalid", "clientId": "native", "users": []map[string]interface{}{{"subject": principal, "userUuid": user}}}}}, "services", "pydio.web.oauth", "connectors")
 			request := httptest.NewRequest(http.MethodGet, "http://native.invalid/io/root/file.txt?versionId=original-version", nil).WithContext(ctx)
 			cookies := httptest.NewRecorder()
-			if err := cellauth.SaveNativeHumanToken(request, cookies, "human", "https://identity.invalid", principal, "native", user, "read-session", time.Now().Add(time.Minute)); err != nil { t.Fatal(err) }
-			for _, cookie := range cookies.Result().Cookies() { request.AddCookie(cookie) }
-			request.Header.Set("Idempotency-Key", key); request.Header.Set("X-Kailo-Native-Read", "file_storage.read@v2")
-			if err := cellauth.PrepareNativeHumanRead(request); err != nil { t.Fatal(err) }
-			body := []byte("actual bytes"); if scenario == "empty" { body = nil }
+			if err := cellauth.SaveNativeHumanToken(request, cookies, "human", "https://identity.invalid", principal, "native", user, "read-session", time.Now().Add(time.Minute)); err != nil {
+				t.Fatal(err)
+			}
+			for _, cookie := range cookies.Result().Cookies() {
+				request.AddCookie(cookie)
+			}
+			request.Header.Set("Idempotency-Key", key)
+			request.Header.Set("X-Kailo-Native-Read", "file_storage.read@v2")
+			if err := cellauth.PrepareNativeHumanRead(request); err != nil {
+				t.Fatal(err)
+			}
+			body := []byte("actual bytes")
+			if scenario == "empty" {
+				body = nil
+			}
 			router := &nativeReadRouter{size: int64(len(body)), body: body, uuid: node, closed: make(chan struct{})}
 			gateway := &pydioObjects{Router: router}
 			reader, err := gateway.GetObjectNInfo(request.Context(), "io", "root/file.txt", nil, nil, minio.LockType(0), minio.ObjectOptions{VersionID: "original-version"})
-			if err != nil || reader == nil { t.Fatal("original synchronous read not admitted", err) }
+			if scenario == "claims-scope-denied" {
+				if err == nil || reader != nil || receipts.Load() != 0 {
+					t.Fatal("fresh ACL compilation broadened original claims scope")
+				}
+				return
+			}
+			if err != nil || reader == nil {
+				t.Fatal("original synchronous read not admitted", err)
+			}
 			defer reader.Close()
-			if commands.Load() != 1 || receipts.Load() != 1 || observations.Load() != 1 || peps.Load() != 2 || tasks.puts != 0 { t.Fatal("unexpected pre-disclosure authority or receipt count") }
-			select { case <-router.closed: default: t.Fatal("native source not closed before HTTP disclosure") }
-			if n, err := reader.Read(nil); n != 0 || (err != nil && err != io.EOF) || observations.Load() != 1 { t.Fatal("zero-length read polled authority", err) }
+			if commands.Load() != 1 || receipts.Load() != 1 || observations.Load() != 1 || peps.Load() != 2 || tasks.puts != 0 {
+				t.Fatal("unexpected pre-disclosure authority or receipt count")
+			}
+			select {
+			case <-router.closed:
+			default:
+				t.Fatal("native source not closed before HTTP disclosure")
+			}
+			if n, err := reader.Read(nil); n != 0 || (err != nil && err != io.EOF) || observations.Load() != 1 {
+				t.Fatal("zero-length read polled authority", err)
+			}
 			if scenario == "complete" || scenario == "empty" {
 				got, err := io.ReadAll(reader)
-				if err != nil || !bytes.Equal(got, body) { t.Fatal("authorized completed read changed", err) }
+				if err != nil || !bytes.Equal(got, body) {
+					t.Fatal("authorized completed read changed", err)
+				}
 				calls := observations.Load()
-				if n, err := reader.Read(make([]byte, 1)); n != 0 || err != io.EOF || observations.Load() != calls { t.Fatal("EOF polled authority again") }
+				if n, err := reader.Read(make([]byte, 1)); n != 0 || err != io.EOF || observations.Load() != calls {
+					t.Fatal("EOF polled authority again")
+				}
 			} else {
 				if scenario != "before-first-byte" {
-					if n, err := reader.Read(make([]byte, 6)); n != 6 || err != nil { t.Fatal("admitted prefix refused", n, err) }
+					if n, err := reader.Read(make([]byte, 6)); n != 6 || err != nil {
+						t.Fatal("admitted prefix refused", n, err)
+					}
 				}
 				switch scenario {
-				case "late-native-denied": router.denyReads = true
-				case "late-scope-moved": treeClient.file.Path = "foreign/file.txt"
-				case "late-user-unavailable": nativeUser.Login = ""
-				case "late-user-hidden": nativeUser.Attributes = map[string]string{idm.UserAttrHidden: "true"}
-				case "late-user-locked": nativeUser.Attributes = map[string]string{"locks": `["logout"]`}
-				case "late-role-revoked": nativeUser.Roles = nil
-				case "late-acl-revoked": currentACLs.deny = true
-				default: revoked.Store(true)
+				case "late-native-denied":
+					router.denyReads = true
+				case "late-scope-moved":
+					treeClient.file.Path = "foreign/file.txt"
+				case "late-user-unavailable":
+					nativeUser.Login = ""
+				case "late-user-hidden":
+					nativeUser.Attributes = map[string]string{idm.UserAttrHidden: "true"}
+				case "late-user-locked":
+					nativeUser.Attributes = map[string]string{"locks": `["logout"]`}
+				case "late-role-revoked":
+					nativeUser.Roles = nil
+				case "late-acl-revoked":
+					currentACLs.deny = true
+				default:
+					revoked.Store(true)
 				}
 				got, err := io.ReadAll(reader)
-				if err == nil || len(got) != 0 { t.Fatal("revoked download bytes escaped after completed HUMAN read", len(got), err) }
+				if err == nil || len(got) != 0 {
+					t.Fatal("revoked download bytes escaped after completed HUMAN read", len(got), err)
+				}
 				calls := observations.Load()
-				revoked.Store(false); router.denyReads = false; treeClient.file.Path = "root/file.txt"; nativeUser.Login = "native-user"; nativeUser.Attributes = nil; nativeUser.Roles = []*idm.Role{{Uuid: user}}; currentACLs.deny = false
-				if n, err := reader.Read(make([]byte, 1)); n != 0 || err == nil || observations.Load() != calls { t.Fatal("refused HUMAN disclosure resumed or polled again") }
+				revoked.Store(false)
+				router.denyReads = false
+				treeClient.file.Path = "root/file.txt"
+				nativeUser.Login = "native-user"
+				nativeUser.Attributes = nil
+				nativeUser.Roles = []*idm.Role{{Uuid: user}}
+				currentACLs.deny = false
+				if n, err := reader.Read(make([]byte, 1)); n != 0 || err == nil || observations.Load() != calls {
+					t.Fatal("refused HUMAN disclosure resumed or polled again")
+				}
 			}
-			if commands.Load() != 1 || receipts.Load() != 1 || peps.Load() != 2 || tasks.puts != 0 { t.Fatal("late disclosure changed read/usage evidence or re-admitted execution") }
+			if commands.Load() != 1 || receipts.Load() != 1 || peps.Load() != 2 || tasks.puts != 0 {
+				t.Fatal("late disclosure changed read/usage evidence or re-admitted execution")
+			}
 		})
 	}
 }
