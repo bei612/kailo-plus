@@ -1,0 +1,82 @@
+{
+  "source_commit": "a7279228e87b6cf789547f8d2b4689d53217937e",
+  "comparison_base": "9abf16c08d64045252dc4e9c43be9a1bff303006",
+  "upstream_commit": "779af8886caae1317b4de962082429867ab61503",
+  "requirements": [
+    "REQ-24",
+    "DD-118",
+    "DD-160"
+  ],
+  "sdk_image": "sha256:3007729eb192341a4f004a88e42e1e66c94fc67d763acfc96568bd7311116018",
+  "resources": {
+    "cpus": 1,
+    "memory_bytes": 4294967296,
+    "memory_swap_bytes": 4294967296,
+    "pids": 256
+  },
+  "source_inputs_checked": 3456,
+  "source_mismatches": [],
+  "installed_platform_packages": [
+    {
+      "host": "/workspace/apps/web-client/web",
+      "installed": "/workspace/apps/web-client/web/node_modules/@client-kit/platform",
+      "checked_source_files": 1040,
+      "mismatches": []
+    },
+    {
+      "host": "/workspace/apps/collaboration/desktop",
+      "installed": "/workspace/apps/collaboration/node_modules/.pnpm/@client-kit+platform@file+..+client-kit+ts+platform_26d4a7c87ea2feb193780e545d362c52/node_modules/@client-kit/platform",
+      "checked_source_files": 1040,
+      "mismatches": []
+    }
+  ],
+  "positive": {
+    "project_git": 25,
+    "total": 25,
+    "platform_production_tsc": 0,
+    "platform_test_tsc": 0,
+    "web_tsc": 0,
+    "desktop_tsc": 0,
+    "i18n_check": 0
+  },
+  "negative": {
+    "mutation": "Remove original Overview unavailable Retry callback wiring",
+    "exit": 1
+  },
+  "restored": {
+    "overview_retry_consumers": 3,
+    "source_bytes_identical": true
+  },
+  "failure_history": [
+    {
+      "source_commit": "47b7ce365ce68b4ba1d2d4fd1420161d99836d6b",
+      "exit": 1,
+      "passed": 23,
+      "failed": 2,
+      "reason": "New Web fixture asserted pending before the original query observer rendered; Native fixture used an unstructured error rather than the production project_repo_not_found code. Product unchanged in final fix.",
+      "log_sha256": "ff2e6e076aa61db242be65eac1900baf9d27518787f97de317407d1a4ed88595"
+    }
+  ],
+  "job_directory": "/volumes/data/kailo/verification/projects-overview-retry/a7279228e",
+  "files_sha256": {
+    "runner.sh": "fd0ff3e02058b80c75f7778b84fe03ba1029ab6630245595c47f56ab3f901b2e",
+    "check.log": "6d74946cd4f6d5affa20403cc4b8396ed6f0c1dc040ca13da9956b948e13a85e",
+    "result.log": "7c8f7b81af69ef11f8c1058f93e3618fe9f0a5662bbac1e359b85a5b2d06880b",
+    "limits.log": "74a73ee84ff30c5387b399a884353e3a0706313bb498a6ef626e99245bd78226",
+    "prearchive-preflight.log": "045df3e82e094119af7f511994e88b1d4f92beb70fa0e77d86f98b8f79e7c4ff",
+    "preflight.log": "c7d4a1fdad2a5785d46c4dd7dd9a0c02ca35cd90e665037efb11c60cc60c0515",
+    "oom.log": "2ed27c1421e6928dbe13dbfdb5c59e1045b30341fe7ebe05700006bc5ac572c0",
+    "host-config.json": "a50b5e344252f43032256a3ee24796594519acb0e55c4e2f3c749069398d7b15",
+    "tmp/original.sha256": "75d31359408fad9ca32bf6c09ae853f1d3d936d9b8466ebf1c47628e24aafd3c",
+    "tmp/restored.sha256": "75d31359408fad9ca32bf6c09ae853f1d3d936d9b8466ebf1c47628e24aafd3c",
+    "tmp/restored.log": "0c9c8de7a885160515e080c40c48bb6294fe7a91fe260be3e0d617bb0507cebe",
+    "tmp/negative.log": "da54daa05d8b74f0d860274f36f2da622b3ba14ddc885645dd2217e0ef942d96",
+    "tmp/negative-exit.log": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865"
+  },
+  "boundaries": [
+    "Real shared ProjectsView with scripted BFF/native Git transport; no real repository/Relay authorization deployment or GUI device acceptance.",
+    "Three new Overview cases cover explicit retry through each host decoder and a retired identity late response; original shared fetch semantics unchanged.",
+    "No schema/API/write/publication intent changes; no build, deployment, Mobile or Windows acceptance.",
+    "Source cache is reusable after this receipt; archived logs remain fixed evidence."
+  ]
+}
