@@ -35,6 +35,9 @@ import { Readable } from 'stream';
 import { createServer, Server } from 'http';
 import { AddressInfo } from 'net';
 import { apiResolver } from 'next/dist/server/api-utils/node/api-resolver';
+import { ApolloServer } from 'apollo-server-micro';
+import { typeDefs } from './apollo/server/schema';
+import { AskingTaskDocument } from './apollo/client/graphql/home.generated';
 
 jest.mock('./common', () => ({
   components: { apiHistoryRepository: { createOne: jest.fn() } },
@@ -659,12 +662,22 @@ describe('original native planning HTTP stream and HUMAN task owner', () => {
       jest
         .mocked(components.wrenAIAdaptor.getAskResult)
         .mockResolvedValue(general(content) as any);
-      const output = await new AskingResolver().getAskingTask(
-        null,
-        { taskId: queryId },
-        ctx,
-      );
-      expect(output.completion).toBe(content);
+      const graphql = new ApolloServer({
+        typeDefs,
+        resolvers: { Query: { askingTask: new AskingResolver().getAskingTask } },
+        context: () => ctx,
+      });
+      try {
+        const output = await graphql.executeOperation({
+          query: AskingTaskDocument,
+          variables: { taskId: queryId },
+        });
+        expect(output.errors).toBeUndefined();
+        expect(output.data.askingTask.completion).toBe(content);
+        expect(output.data.askingTask.queryId).toBe(queryId);
+      } finally {
+        await graphql.stop();
+      }
       expect(components.wrenAIAdaptor.getAskResult).toHaveBeenCalledWith(
         queryId,
       );
