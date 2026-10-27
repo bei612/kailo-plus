@@ -563,6 +563,8 @@ describe('original native planning HTTP stream and HUMAN task owner', () => {
   const general = (content?: string) => ({
     status: AskResultStatus.FINISHED,
     type: AskResultType.GENERAL,
+    response: [],
+    error: null,
     ...(content === undefined ? {} : { completion: { queryId, content } }),
   });
   it.each(['', '完整原答案'])(
