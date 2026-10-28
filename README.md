@@ -262,6 +262,13 @@ Wren Home 续接固定 `06cf7ce4c`：切换线程后退役旧回答、图表和 
 Apollo 链与原弹窗由测试驱动，未完成真实浏览器、模型供应方或部署验收。见
 [Home 续接回执](data-query/fork/verify/home-continuation-receipt.json)及原问数记录。
 
+Wren 线程推荐问题后继固定 `24222a5ae`：推荐任务冻结原问题来源和 query ID，
+选择操作使用独立 intent key，并在原 Thread/Response 事务中校验来源、线程、索引和
+重复提交。原 Home **259/259**、Native task SQLite/PostgreSQL 各 15、Adaptor HTTP
+3、类型/lint/格式通过；五类故障均检出并逐字恢复。AI 进程缓存丢失、占位后请求未
+进入 AI 以及真实部署仍保持 UNKNOWN，未宣称崩溃恢复或生产验收，见
+[线程推荐回执](data-query/fork/verify/thread-recommendation-receipt.json)。
+
 前一批 Core 集成固定 `1d0d20b53`：原 SDK 4 CPU / 16 GiB、私有 PG
 1 CPU / 2 GiB，正常主目标 **839 passed / 91 ignored**；显式 Agent/Canvas/审核、
 publication scope/history/reconcile 与 bridge HTTP 共 **26** 项通过。格式、完整
