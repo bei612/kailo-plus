@@ -1936,7 +1936,7 @@ BEGIN
     IF NEW.kind = 1631 THEN
         max_age := 900;
         lock_prefix := 'kailo:1631:';
-    ELSIF NEW.kind IN (1,5,7,9,1618,1621,1630,1632,1633,9002,40003,45001,45003) THEN
+    ELSIF NEW.kind IN (1,5,7,9,1618,1619,1621,1630,1632,1633,9002,40003,45001,45003) THEN
         max_age := 960;
         lock_prefix := 'kailo:publication:';
     ELSE

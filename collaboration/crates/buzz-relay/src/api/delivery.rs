@@ -233,7 +233,7 @@ async fn readmit_deletion_scope(
     if original.channel_id.is_none()
         && !matches!(
             original.event.kind.as_u16(),
-            1 | 1618 | 1621 | 1630 | 1631 | 1632 | 1633 | 30617 | 30621
+            1 | 1618 | 1619 | 1621 | 1630 | 1631 | 1632 | 1633 | 30617 | 30621
         )
     {
         // In particular, a historical NULL deletion of another NULL deletion
@@ -354,6 +354,7 @@ pub async fn observation(
             | 7
             | 9
             | 1618
+            | 1619
             | 1621
             | 1630
             | 1631

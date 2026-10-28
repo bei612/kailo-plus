@@ -12,7 +12,7 @@ use nostr::Event;
 use sqlx::{PgConnection, PgPool};
 
 const FENCE_MIGRATION: &str =
-    include_str!("../../../../migrations/0048_publication_writer_fence.sql");
+    include_str!("../../../../migrations/0049_publication_review_update_fence.sql");
 
 async fn lock_id(
     connection: &mut PgConnection,
@@ -552,7 +552,7 @@ mod tests {
         let mut conn = pool.acquire().await.unwrap();
         let now = database_now(&mut conn).await.unwrap() as u64;
         for kind in [
-            1, 5, 7, 9, 1618, 1621, 1630, 1631, 1632, 1633, 9002, 40003, 45001, 45003,
+            1, 5, 7, 9, 1618, 1619, 1621, 1630, 1631, 1632, 1633, 9002, 40003, 45001, 45003,
         ] {
             let limit = publication_max_age_seconds(kind).unwrap();
             let fresh = publication(&keys, kind, now, Some(&policy.epoch));

@@ -15,7 +15,7 @@ pub const PUBLICATION_EPOCH_TAG: &str = "kailo:publication";
 pub fn publication_max_age_seconds(kind: u16) -> Option<u64> {
     match kind {
         1631 => Some(MAX_TIMESTAMP_DRIFT_SECS),
-        1 | 5 | 7 | 9 | 1618 | 1621 | 1630 | 1632 | 1633 | 9002 | 40003 | 45001 | 45003 => {
+        1 | 5 | 7 | 9 | 1618 | 1619 | 1621 | 1630 | 1632 | 1633 | 9002 | 40003 | 45001 | 45003 => {
             Some(960)
         }
         _ => None,
