@@ -26,7 +26,6 @@ import '../channels/date_formatters.dart';
 import '../channels/direct_messages.dart';
 import '../../shared/profile/user_cache_provider.dart';
 import '../../shared/profile/user_profile.dart';
-import '../../shared/utils/string_utils.dart';
 import '../../shared/widgets/avatar_image.dart';
 import '../profile/user_profile_sheet.dart';
 import 'recent_searches_provider.dart';

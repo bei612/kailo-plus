@@ -588,7 +588,8 @@ Future<_NonMemberMentionResolution> _resolveNonMemberMentions(
   final pending = {for (final pubkey in nonMembers) pubkey.toLowerCase()};
   final humans = [
     for (final candidate in selectedMentions)
-      if (!candidate.isAgent && pending.contains(candidate.pubkey.toLowerCase()))
+      if (!candidate.isAgent &&
+          pending.contains(candidate.pubkey.toLowerCase()))
         candidate,
   ];
   // Agents outside the channel are never invited as members; they only lose the p-tag.
