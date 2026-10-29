@@ -1212,8 +1212,12 @@ const gotopage = async (path: string) => {
     getIcon(path)
 }
 
+// DD-157: `new URL('/src/assets/img/…', import.meta.url)` is an absolute path Vite leaves
+// untouched at build time, so production menu icons (and the Kailo mono icon masks, which
+// then paint as solid squares) 404. Resolve through the build's own asset graph instead.
+const MENU_IMAGES = import.meta.glob('../assets/img/*.{svg,png}', { eager: true, query: '?url', import: 'default' }) as Record<string, string>;
 const getImgSrc = (url: string) => {
-    return new URL(`/src/assets/img/${url}`, import.meta.url).href;
+    return MENU_IMAGES[`../assets/img/${url}`] ?? new URL(`../assets/img/${url}`, import.meta.url).href;
 }
 
 const mouseenteMenu = (path: string) => {
