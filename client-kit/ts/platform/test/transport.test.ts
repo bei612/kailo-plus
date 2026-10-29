@@ -417,7 +417,8 @@ describe("desktop-invoke", () => {
   });
 
   it("DD-142：发布意图的幂等键作为唯一额外请求头交给 Rust 侧，其余请求不带", async () => {
-    const invoke = vi.fn(async () => ({ status: 200, body: { eventId: "e", operationId: "o" } }));
+    const invoke = vi.fn(async (_command: string, _args?: Record<string, unknown>) =>
+      ({ status: 200, body: { eventId: "e", operationId: "o" } }));
     const client = createBffClient(createInvokeTransport(invoke, { onSessionEnded: () => {} }));
     const key = "3e4f5a6b-7c8d-4e9f-8a1b-2c3d4e5f6a7b";
     await client.deleteWorkspaceMessage("ws", { content: "", deleteEventId: "a".repeat(64) }, key);
