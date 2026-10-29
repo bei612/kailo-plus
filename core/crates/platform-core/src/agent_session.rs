@@ -225,8 +225,15 @@ pub(crate) async fn birth(
     let observed = runtime
         .start_thread(projection, scope.owner(), &tool_config)
         .await;
-    bind_birth_receipt(&state.pool, invocation_id, &scope, memory_state, memory_event, &observed)
-        .await?;
+    bind_birth_receipt(
+        &state.pool,
+        invocation_id,
+        &scope,
+        memory_state,
+        memory_event,
+        &observed,
+    )
+    .await?;
     hold.commit().await.map_err(|_| RuntimeError::Unknown)?;
     if let Ok(thread) = &observed {
         runtime
@@ -1233,7 +1240,9 @@ mod birth_fence_tests {
         // governance::lock_execution, agent_invocation::recheck) proceeds.
         let mut pep = pool.begin().await.unwrap();
         fenced(&mut pep).await;
-        crate::governance::lock_execution(&mut pep, ae).await.unwrap();
+        crate::governance::lock_execution(&mut pep, ae)
+            .await
+            .unwrap();
         sqlx::query("select id from catalog.agent_invocation where id=$1 for update")
             .bind(invocation)
             .fetch_one(&mut *pep)
@@ -1249,10 +1258,14 @@ mod birth_fence_tests {
         // Counter-example: had the lifecycle locks spanned the native call (the
         // old birth), the same PEP lock could only end in a lock timeout.
         let mut lifecycle = pool.begin().await.unwrap();
-        crate::governance::lock_execution(&mut lifecycle, ae).await.unwrap();
+        crate::governance::lock_execution(&mut lifecycle, ae)
+            .await
+            .unwrap();
         let mut blocked = pool.begin().await.unwrap();
         fenced(&mut blocked).await;
-        assert!(crate::governance::lock_execution(&mut blocked, ae).await.is_err());
+        assert!(crate::governance::lock_execution(&mut blocked, ae)
+            .await
+            .is_err());
         blocked.rollback().await.unwrap();
         lifecycle.rollback().await.unwrap();
 
@@ -1262,23 +1275,52 @@ mod birth_fence_tests {
         let thread = Uuid::new_v4().to_string();
         tokio::time::timeout(
             Duration::from_secs(5),
-            bind_birth_receipt(&pool, invocation, &scope, "ABSENT", None, &Ok(thread.clone())),
+            bind_birth_receipt(
+                &pool,
+                invocation,
+                &scope,
+                "ABSENT",
+                None,
+                &Ok(thread.clone()),
+            ),
         )
         .await
         .unwrap()
         .unwrap();
-        bind_birth_receipt(&pool, invocation, &scope, "ABSENT", None, &Ok(thread.clone()))
-            .await
-            .unwrap();
+        bind_birth_receipt(
+            &pool,
+            invocation,
+            &scope,
+            "ABSENT",
+            None,
+            &Ok(thread.clone()),
+        )
+        .await
+        .unwrap();
         assert!(matches!(
-            bind_birth_receipt(&pool, invocation, &scope, "ABSENT", None, &Ok(Uuid::new_v4().to_string())).await,
+            bind_birth_receipt(
+                &pool,
+                invocation,
+                &scope,
+                "ABSENT",
+                None,
+                &Ok(Uuid::new_v4().to_string())
+            )
+            .await,
             Err(RuntimeError::Unknown)
         ));
         // Another generation's scope never adopts this native ID.
         scope.projection_generation += 1;
-        assert!(bind_birth_receipt(&pool, invocation, &scope, "ABSENT", None, &Ok(thread.clone()))
-            .await
-            .is_err());
+        assert!(bind_birth_receipt(
+            &pool,
+            invocation,
+            &scope,
+            "ABSENT",
+            None,
+            &Ok(thread.clone())
+        )
+        .await
+        .is_err());
         scope.projection_generation -= 1;
 
         // A failed thread/start still records UNKNOWN, never a guessed thread
@@ -1292,9 +1334,16 @@ mod birth_fence_tests {
             .await
             .unwrap();
         reset.commit().await.unwrap();
-        bind_birth_receipt(&pool, invocation, &scope, "ABSENT", None, &Err(RuntimeError::Unknown))
-            .await
-            .unwrap();
+        bind_birth_receipt(
+            &pool,
+            invocation,
+            &scope,
+            "ABSENT",
+            None,
+            &Err(RuntimeError::Unknown),
+        )
+        .await
+        .unwrap();
         let recorded: (String, Option<String>) = sqlx::query_as(
             "select status,runtime_thread_id from catalog.agent_session
              where workspace_id=$1 and root_event_id=$2 and installation_resource_id=$3",
@@ -1307,15 +1356,17 @@ mod birth_fence_tests {
         .unwrap();
         assert_eq!(recorded, ("UNKNOWN".into(), None));
         // Leave the private Tenant terminal and out of every reconciliation scan.
-        sqlx::query("update catalog.agent_session set status='ACTIVE',runtime_thread_id=$4
-            where workspace_id=$1 and root_event_id=$2 and installation_resource_id=$3")
-            .bind(scope.workspace_id)
-            .bind(&scope.root_event_id)
-            .bind(scope.installation_resource_id)
-            .bind(&thread)
-            .execute(&pool)
-            .await
-            .unwrap();
+        sqlx::query(
+            "update catalog.agent_session set status='ACTIVE',runtime_thread_id=$4
+            where workspace_id=$1 and root_event_id=$2 and installation_resource_id=$3",
+        )
+        .bind(scope.workspace_id)
+        .bind(&scope.root_event_id)
+        .bind(scope.installation_resource_id)
+        .bind(&thread)
+        .execute(&pool)
+        .await
+        .unwrap();
         // Revocation is not held back by the holder fence; the next fenced
         // lifecycle read (prepare_dispatch before turn/start) sees it and refuses.
         let mut revoke = pool.begin().await.unwrap();
