@@ -33,8 +33,7 @@ impl Policy {
     pub(super) fn from_env() -> Result<Self, String> {
         let path = std::env::var("PUSH_DELIVERY_POLICY_FILE")
             .map_err(|_| "缺少 PUSH_DELIVERY_POLICY_FILE")?;
-        let raw = std::fs::read_to_string(&path)
-            .map_err(|_| "PUSH_DELIVERY_POLICY_FILE 不可读")?;
+        let raw = std::fs::read_to_string(&path).map_err(|_| "PUSH_DELIVERY_POLICY_FILE 不可读")?;
         Self::parse(&raw)
     }
 
