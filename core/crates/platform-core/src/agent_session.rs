@@ -1190,11 +1190,34 @@ mod birth_fence_tests {
         // Tenant in the disposable database; nothing is shared with other cases.
         let mut setup = pool.begin().await.unwrap();
         let tenant = crate::agent_task::receipt_tests::fixture(&mut setup).await;
-        let (invocation, ae, tenant_id, workspace): (Uuid, Uuid, Uuid, Uuid) = sqlx::query_as(
-            "select id,action_execution_id,tenant_id,workspace_id from catalog.agent_invocation
-             where tenant_id=$1 and source_event_id=repeat('1',64)",
+        // A new CREATED Invocation on the fixture's PENDING root (no thread yet).
+        let (invocation, ae): (Uuid, Uuid) = sqlx::query_as(
+            "with source as (select * from catalog.agent_invocation
+               where tenant_id=$1 and source_event_id=repeat('1',64)),
+             a as (insert into admission.action_execution(id,operation_id,tenant_id,workspace_id,
+               action_key,action_version,initiator_principal_id,actor_principal_id,target_id,
+               parameter_hash,gate_state,dispatch_state,correlation_id)
+               select gen_random_uuid(),gen_random_uuid(),e.tenant_id,e.workspace_id,e.action_key,
+                 e.action_version,e.initiator_principal_id,e.actor_principal_id,e.target_id,
+                 e.parameter_hash,e.gate_state,e.dispatch_state,gen_random_uuid()
+               from admission.action_execution e join source on source.action_execution_id=e.id
+               returning id)
+             insert into catalog.agent_invocation(id,tenant_id,workspace_id,root_event_id,
+               source_event_id,installation_resource_id,agent_version_asset_id,projection_generation,
+               action_execution_id,workflow_id,status)
+             select gen_random_uuid(),source.tenant_id,source.workspace_id,repeat('c',64),
+               repeat('5',64),source.installation_resource_id,source.agent_version_asset_id,
+               source.projection_generation,a.id,'birth-fence:'||a.id,'CREATED'
+             from source, a returning id,action_execution_id",
         )
         .bind(tenant)
+        .fetch_one(&mut *setup)
+        .await
+        .unwrap();
+        let (tenant_id, workspace): (Uuid, Uuid) = sqlx::query_as(
+            "select tenant_id,workspace_id from catalog.agent_invocation where id=$1",
+        )
+        .bind(invocation)
         .fetch_one(&mut *setup)
         .await
         .unwrap();
@@ -1269,104 +1292,51 @@ mod birth_fence_tests {
         blocked.rollback().await.unwrap();
         lifecycle.rollback().await.unwrap();
 
-        // The native call's own receipt binds under AE→Session locks while the
-        // holder fence is still held; a concurrent observer's identical bind
-        // is accepted, a different thread is a contradiction.
-        let thread = Uuid::new_v4().to_string();
+        // A failed thread/start records UNKNOWN, never a guessed thread; the
+        // receipt binds under AE→Session locks while the holder fence is held.
         tokio::time::timeout(
             Duration::from_secs(5),
-            bind_birth_receipt(
-                &pool,
-                invocation,
-                &scope,
-                "ABSENT",
-                None,
-                &Ok(thread.clone()),
-            ),
+            bind_birth_receipt(&pool, invocation, &scope, "ABSENT", None, &Err(RuntimeError::Unknown)),
         )
         .await
         .unwrap()
         .unwrap();
-        bind_birth_receipt(
-            &pool,
-            invocation,
-            &scope,
-            "ABSENT",
-            None,
-            &Ok(thread.clone()),
-        )
-        .await
-        .unwrap();
-        assert!(matches!(
-            bind_birth_receipt(
-                &pool,
-                invocation,
-                &scope,
-                "ABSENT",
-                None,
-                &Ok(Uuid::new_v4().to_string())
-            )
-            .await,
-            Err(RuntimeError::Unknown)
-        ));
-        // Another generation's scope never adopts this native ID.
-        scope.projection_generation += 1;
-        assert!(bind_birth_receipt(
-            &pool,
-            invocation,
-            &scope,
-            "ABSENT",
-            None,
-            &Ok(thread.clone())
-        )
-        .await
-        .is_err());
-        scope.projection_generation -= 1;
-
-        // A failed thread/start still records UNKNOWN, never a guessed thread
-        // (the holder fence is still held, as during birth).
-        let mut reset = pool.begin().await.unwrap();
-        sqlx::query(starting)
+        let read = "select status,runtime_thread_id from catalog.agent_session
+             where workspace_id=$1 and root_event_id=$2 and installation_resource_id=$3";
+        let recorded: (String, Option<String>) = sqlx::query_as(read)
             .bind(scope.workspace_id)
             .bind(&scope.root_event_id)
             .bind(scope.installation_resource_id)
-            .execute(&mut *reset)
+            .fetch_one(&pool)
             .await
             .unwrap();
-        reset.commit().await.unwrap();
-        bind_birth_receipt(
-            &pool,
-            invocation,
-            &scope,
-            "ABSENT",
-            None,
-            &Err(RuntimeError::Unknown),
-        )
-        .await
-        .unwrap();
-        let recorded: (String, Option<String>) = sqlx::query_as(
-            "select status,runtime_thread_id from catalog.agent_session
-             where workspace_id=$1 and root_event_id=$2 and installation_resource_id=$3",
-        )
-        .bind(scope.workspace_id)
-        .bind(&scope.root_event_id)
-        .bind(scope.installation_resource_id)
-        .fetch_one(&pool)
-        .await
-        .unwrap();
         assert_eq!(recorded, ("UNKNOWN".into(), None));
-        // Leave the private Tenant terminal and out of every reconciliation scan.
-        sqlx::query(
-            "update catalog.agent_session set status='ACTIVE',runtime_thread_id=$4
-            where workspace_id=$1 and root_event_id=$2 and installation_resource_id=$3",
-        )
-        .bind(scope.workspace_id)
-        .bind(&scope.root_event_id)
-        .bind(scope.installation_resource_id)
-        .bind(&thread)
-        .execute(&pool)
-        .await
-        .unwrap();
+        // The observer later binds the native thread; this birth's identical
+        // receipt is accepted, a different thread or generation is refused.
+        let thread = Uuid::new_v4().to_string();
+        bind_birth_receipt(&pool, invocation, &scope, "ABSENT", None, &Ok(thread.clone()))
+            .await
+            .unwrap();
+        bind_birth_receipt(&pool, invocation, &scope, "ABSENT", None, &Ok(thread.clone()))
+            .await
+            .unwrap();
+        assert!(matches!(
+            bind_birth_receipt(&pool, invocation, &scope, "ABSENT", None, &Ok(Uuid::new_v4().to_string())).await,
+            Err(RuntimeError::Unknown)
+        ));
+        scope.projection_generation += 1;
+        assert!(bind_birth_receipt(&pool, invocation, &scope, "ABSENT", None, &Ok(thread.clone()))
+            .await
+            .is_err());
+        scope.projection_generation -= 1;
+        let recorded: (String, Option<String>) = sqlx::query_as(read)
+            .bind(scope.workspace_id)
+            .bind(&scope.root_event_id)
+            .bind(scope.installation_resource_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(recorded, ("ACTIVE".into(), Some(thread)));
         // Revocation is not held back by the holder fence; the next fenced
         // lifecycle read (prepare_dispatch before turn/start) sees it and refuses.
         let mut revoke = pool.begin().await.unwrap();
