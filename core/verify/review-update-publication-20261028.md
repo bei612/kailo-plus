@@ -13,3 +13,11 @@ toolchain 在无网络容器内未命中缓存，停在 rustup 下载阶段，�
 本批未部署、未改变既有 `0048` 文件、未接入 Projects 1619 producer；producer、真实
 Relay/PG、旧 writer 和正式发布仍需后续联合验证。失败日志保留在 CI Data
 `/volumes/data/kailo/verification/publication-db-fence/732b649d8fe5926d6432e859099f0b57df05946d-1619/`。
+
+源码复核进一步固定了 producer 缺口：`core/crates/collab-bridge/src/projects.rs::publication_kind`
+当前只把既有 `ProjectsPublishRequest` 操作映射到已登记的创建、评论、状态和绑定种类，
+没有 1619 更新操作；`core/crates/collab-bridge/src/bridge.rs::IdentityClient::sign_project`
+也只为 1618、状态种类、kind 1 及其余既有分支构造签名事件，没有调用
+`buzz_sdk::builders::build_git_pr_update`。因此目前的 1619 支持只证明读取、Relay
+允许、writer fence 和 absence-proof 边界，不能证明 Projects 页面或 BFF 能产生合法
+review-update；补齐 producer 前不得开放该动作入口。
