@@ -63,11 +63,14 @@ Projects Overview 重试后继固定 `a7279228e`：仓库不可读页接回原 F
 首轮夹具失败保留；真实 Git 服务、浏览器、设备及部署尚未验收，见
 [重试回执](core/verify/projects-overview-retry-20261027.json)及原消费者记录。
 
-Projects review-update publication kind `1619` 已在候选固定 `732b649d8` 接入既有
-writer fence、Relay 观测和 absence-proof 名单；Core/Relay 相关检查、迁移 up/down、
-Core 933 项单元、clippy 与 SQLx check 退出 0。原 buzz-db PostgreSQL 套件因受限无网络
-容器未缓存 Rust 1.95 而停在 toolchain 下载，未计为通过；Projects 1619 producer、
-真实 PostgreSQL/Relay、旧 writer 和部署仍未验收，见[1619 门禁记录](core/verify/review-update-publication-20261028.md)。
+Projects review-update publication kind `1619` 先在候选固定 `732b649d8` 接入既有
+writer fence、Relay 观测和 absence-proof 名单，随后在当前集成树恢复了完整的
+`UPDATE_PULL_REQUEST` producer、原生 push continuation、四语言生成和来源级消费者回执。
+Core/Relay 相关检查、迁移 up/down、Core 933 项单元、clippy 与 SQLx check 退出 0；原
+buzz-db PostgreSQL 套件因受限无网络容器未缓存 Rust 1.95 而停在 toolchain 下载，未计为
+通过。真实 PostgreSQL/Relay、旧 writer、浏览器、设备、正式制品和部署仍未验收，见
+[1619 门禁记录](core/verify/review-update-publication-20261028.md)和
+[producer 消费者回执](core/verify/projects-review-update-node-20261027.json)。
 
 Desktop 审批 Inbox 后继固定 `444fd6175` 补回 HomeView 缺失的 needsAction 接线：
 共享组件和 Web 已有该能力，Desktop 此前没有读取并传入审批源。现在使用同一
