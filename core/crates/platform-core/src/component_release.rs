@@ -2351,8 +2351,18 @@ fn validate_probe_input(
     if matches.next().is_some() {
         return Err(bad());
     }
-    let documents: BTreeMap<String, Value> =
-        serde_json::from_value(contract["schemas"].clone()).map_err(|_| bad())?;
+    // catalog.capability_contract.schema_documents is stored as the ordered
+    // [{digest, schema}] list (capability_contract.rs); index it by digest.
+    let mut documents = BTreeMap::new();
+    for entry in contract["schemas"].as_array().ok_or_else(bad)? {
+        let schema = entry.get("schema").ok_or_else(bad)?;
+        if documents
+            .insert(text(entry, "digest")?.to_owned(), schema.clone())
+            .is_some()
+        {
+            return Err(bad());
+        }
+    }
     let schema = documents
         .get(text(declared, "inputSchemaDigest")?)
         .ok_or_else(bad)?;
@@ -4428,7 +4438,7 @@ mod report_tests {
         let digest = collab_bridge::limits::canonical_digest(&schema);
         let contracts = vec![json!({"content":{"operationContracts":[{
             "contractKey":"knowledge.read@v1","inputSchemaDigest":digest
-        }]},"schemas":{(digest):schema}})];
+        }]},"schemas":[{"digest":digest,"schema":schema}]})];
         let reference = json!({"resourceId":Uuid::new_v4(),"nativeObjectRef":"native-observed-document",
             "nativeRevision":"native-observed-revision","displayName":"document","mediaType":"text/plain"});
         let mut request = json!({"actionKey":"knowledge.read@v1","arguments":{"input":{}}});
