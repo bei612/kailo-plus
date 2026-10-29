@@ -423,8 +423,9 @@ class _SortMenu extends StatelessWidget {
       ),
       onSelected: (value) async {
         final next = _sortChoice(value);
-        if (next != null)
+        if (next != null) {
           await _runSortWrite(context, groupKey, next, const []);
+        }
       },
       itemBuilder: (menuContext) =>
           _sortMenuItems(menuContext, mode, showDivider: false),
