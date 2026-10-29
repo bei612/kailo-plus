@@ -86,6 +86,10 @@ overlays:
 # 无空白与引号，只允许 ${NAME} 引用。入口只报告键与动作，不输出值。
 env:
   set:
+    # 普通 Relay HTTP 总期限（秒，含响应正文），与流、媒体、Push/Memory 预算独立
+    BUZZ_RELAY_HTTP_TIMEOUT_SECONDS: "30"
+    # DD-151 推送轮询间隔（秒）
+    PUSH_POLL_SECONDS: "15"
     # DD-133(3)(6)：组件专属 client 与其 07 §4.7.5 back-channel 接收端（云盘、知识库、问数）
     NATIVE_OIDC_CLIENTS: kailo-cells-native-browser=http://192.168.0.193:58092/auth/kailo/backchannel-logout,kailo-knowledge-native=http://192.168.0.193:58094/api/v1/auth/oidc/backchannel-logout,platform-local-wren-native-browser=http://192.168.0.193:58095/oauth/backchannel-logout
     # DD-133(4)、07 §4.7.4：三个组件部署单元的成员目录 client（由上方 idp 段声明、凭据写入运行目录

@@ -625,7 +625,9 @@ services:
       PUSH_FCM_CREDENTIAL_LOCATOR: ${PUSH_FCM_CREDENTIAL_LOCATOR:-}
       PUSH_FCM_CREDENTIAL_VERSION: ${PUSH_FCM_CREDENTIAL_VERSION:-}
       PUSH_POLL_SECONDS: ${PUSH_POLL_SECONDS:?必须显式提供，禁止硬编码}
-      PUSH_DELIVERY_POLICY: ${PUSH_DELIVERY_POLICY:?必须按 contracts/runtime/push_delivery_policy.schema.json 显式投递}
+      # DD-151 推送运维策略：仓库声明的 JSON（deploy/local/push-delivery-policy.json），经 configs 只读挂载；
+      # .env 只承载单行标量，不放 JSON。
+      PUSH_DELIVERY_POLICY_FILE: /etc/kailo/push-delivery-policy.json
       # 设备持钥证明允许的时钟偏差：截获的证明最多还能用这么久（DD-79）
       BFF_CLIENT_KEY_PROOF_WINDOW_SECONDS: ${BFF_CLIENT_KEY_PROOF_WINDOW_SECONDS:?必须显式提供，禁止硬编码}
       # 部署显示名（DD-111）：BFF 的公开平台信息与 Web 静态入口投影自同一个值；缺失即拒绝启动
@@ -789,6 +791,9 @@ services:
       # 经附加组 OPENBAO_AUDIT_READER_GID 读取；不挂完整 device 所在的 raft 数据目录。
       OPENBAO_AUDIT_LOG_FILE: /openbao/audit-observed/audit.log
       OPENBAO_AUDIT_LOG_MAX_BYTES: ${OPENBAO_AUDIT_LOG_MAX_BYTES:?必须显式提供 audit 观察副本读取上界}
+    configs:
+      - source: push_delivery_policy
+        target: /etc/kailo/push-delivery-policy.json
     group_add: ["${OPENBAO_AUDIT_READER_GID:?必须显式提供 audit 观察副本属组}"]
     volumes:
       - type: bind
@@ -1296,6 +1301,8 @@ secrets:
     file: ${KAILO_RUNTIME_DIR:-.}/secrets/core_db_password
 
 configs:
+  push_delivery_policy:
+    file: ./push-delivery-policy.json
   # 唯一原生去重配置由 .env 投影，API 与 sink 共用真正的 YAML bool/整数。
   # 启用与 driver 是既定要求，不以可关闭开关绕过；两阶段索引严格分库。
   openmeter_usage_config:

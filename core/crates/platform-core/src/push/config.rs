@@ -27,6 +27,17 @@ pub(crate) struct Policy {
     pub relay_read_timeout_seconds: i32,
 }
 impl Policy {
+    /// DD-151 deployment policy: the JSON file named by `PUSH_DELIVERY_POLICY_FILE` (a
+    /// repository-declared Compose config, not an .env value — .env only carries single-line
+    /// shell-safe scalars). Missing or invalid refuses, no built-in defaults.
+    pub(super) fn from_env() -> Result<Self, String> {
+        let path = std::env::var("PUSH_DELIVERY_POLICY_FILE")
+            .map_err(|_| "缺少 PUSH_DELIVERY_POLICY_FILE")?;
+        let raw = std::fs::read_to_string(&path)
+            .map_err(|_| "PUSH_DELIVERY_POLICY_FILE 不可读")?;
+        Self::parse(&raw)
+    }
+
     pub(super) fn parse(raw: &str) -> Result<Self, String> {
         let value: serde_json::Value =
             serde_json::from_str(raw).map_err(|_| "PUSH_DELIVERY_POLICY 必须为完整 JSON 对象")?;

@@ -40,9 +40,7 @@ impl Config {
         if seconds <= 0 {
             return Err("PUSH_POLL_SECONDS 必须为正整数".into());
         }
-        let policy = super::config::Policy::parse(
-            &std::env::var("PUSH_DELIVERY_POLICY").map_err(|_| "缺少 PUSH_DELIVERY_POLICY")?,
-        )?;
+        let policy = super::config::Policy::from_env()?;
         Ok(Self {
             interval: Duration::from_secs(seconds as u64),
             policy,
