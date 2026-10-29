@@ -279,6 +279,8 @@ class ChannelData {
   final String? topic;
   final bool isArchived;
   final List<String> participantPubkeys;
+  final int? ttlSeconds;
+  final DateTime? ttlDeadline;
 
   const ChannelData({
     required this.id,
@@ -289,6 +291,8 @@ class ChannelData {
     this.topic,
     this.isArchived = false,
     this.participantPubkeys = const [],
+    this.ttlSeconds,
+    this.ttlDeadline,
   });
 
   factory ChannelData.fromEvent(NostrEvent event) {
@@ -311,6 +315,8 @@ class ChannelData {
     // archived — anything else (missing tag, "false", unexpected value) means
     // active.
     final isArchived = event.getTagValue('archived') == 'true';
+    final ttlRaw = event.getTagValue('ttl');
+    final ttlDeadlineRaw = event.getTagValue('ttl_deadline');
     return ChannelData(
       id: id,
       name: name,
@@ -319,6 +325,10 @@ class ChannelData {
       description: description,
       topic: topic,
       isArchived: isArchived,
+      ttlSeconds: ttlRaw != null ? int.tryParse(ttlRaw) : null,
+      ttlDeadline: ttlDeadlineRaw != null
+          ? DateTime.tryParse(ttlDeadlineRaw)
+          : null,
       participantPubkeys: [
         for (final tag in event.tags)
           if (tag.length >= 2 && tag.first == 'p') tag[1],

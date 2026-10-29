@@ -35,6 +35,13 @@ class _FakeBridge implements PushBridge {
 
   @override
   Future<MessageDeepLink?> takePendingOpen() async => null;
+
+  final presentations = <List<PushPresentationCommunity>>[];
+
+  @override
+  Future<void> syncPresentation(
+    List<PushPresentationCommunity> communities,
+  ) async => presentations.add(communities);
 }
 
 const _session = {
@@ -69,6 +76,7 @@ void main() {
     required String apns,
     required PlatformResponse Function(PlatformMethod, String, Object?) put,
     _FakeBridge? bridge,
+    String? relayUrl = 'wss://relay.example.test',
   }) {
     final calls = <(PlatformMethod, String, Object?)>[];
     final deps = PushRegistrationDeps(
@@ -87,6 +95,7 @@ void main() {
       appId: () async => 'chat.kailo.mobile',
       apiUri: (path) => Uri.parse('https://native.example.test$path'),
       locale: () => 'zh-CN',
+      relayUrl: () => relayUrl,
     );
     final container = ProviderContainer(
       overrides: [
@@ -176,6 +185,61 @@ void main() {
       expect(h.calls.where((c) => c.$1 == PlatformMethod.put), hasLength(1));
     },
   );
+
+  test(
+    'turning on lets the notification extension read through this device only',
+    () async {
+      final bridge = _FakeBridge();
+      final h = harness(
+        apns: 'CONFIGURED',
+        bridge: bridge,
+        put: (_, _, _) => PlatformResponse(200, view(enabled: true, version: 1)),
+      );
+      await loaded(h.container);
+      // Nothing registered yet: the extension is given nothing.
+      expect(bridge.presentations.last, isEmpty);
+      await h.container
+          .read(pushRegistrationProvider.notifier)
+          .setEnabled(true);
+      expect(bridge.presentations.last, [
+        PushPresentationCommunity(
+          tenantId: '00000000-0000-4000-8000-000000000003',
+          relayUrl: 'wss://relay.example.test',
+          devicePubkey: keys.public,
+          deviceSecret: keys.secret,
+        ),
+      ]);
+      final native = bridge.presentations.last.single.toNative();
+      expect(native['id'], '00000000-0000-4000-8000-000000000003');
+      expect(native['policies'], isEmpty);
+      expect(native.values.whereType<String>(), isNot(contains(keys.secret)));
+    },
+  );
+
+  test('turning off, or no Relay connection, removes the extension key', () async {
+    final bridge = _FakeBridge();
+    final h = harness(
+      apns: 'CONFIGURED',
+      bridge: bridge,
+      put: (_, _, _) => PlatformResponse(200, view(enabled: false, version: 2)),
+    );
+    await loaded(h.container);
+    await h.container.read(pushRegistrationProvider.notifier).setEnabled(false);
+    expect(bridge.presentations.last, isEmpty);
+
+    final offline = _FakeBridge();
+    final h2 = harness(
+      apns: 'CONFIGURED',
+      bridge: offline,
+      relayUrl: null,
+      put: (_, _, _) => PlatformResponse(200, view(enabled: true, version: 1)),
+    );
+    await loaded(h2.container);
+    await h2.container
+        .read(pushRegistrationProvider.notifier)
+        .setEnabled(true);
+    expect(offline.presentations, everyElement(isEmpty));
+  });
 
   test('a stale version is re-read instead of overwritten', () async {
     final h = harness(

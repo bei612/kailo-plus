@@ -32,6 +32,51 @@ abstract interface class PushBridge {
   /// Notification taps, cold start included (see [takePendingOpen]).
   Stream<MessageDeepLink> get opened;
   Future<MessageDeepLink?> takePendingOpen();
+
+  /// DD-151(4): hands the notification extension what it needs to read a pushed message
+  /// through this device's own Relay identity — the Tenant's Relay and this device's key
+  /// (shared Keychain group). An empty list removes both.
+  Future<void> syncPresentation(List<PushPresentationCommunity> communities);
+}
+
+/// One Tenant connection the notification extension may read through.
+@immutable
+class PushPresentationCommunity {
+  const PushPresentationCommunity({
+    required this.tenantId,
+    required this.relayUrl,
+    required this.devicePubkey,
+    required this.deviceSecret,
+  });
+
+  final String tenantId;
+  final String relayUrl;
+  final String devicePubkey;
+  final String deviceSecret;
+
+  /// The native `PushLeaseCommunity` shape; Kailo resolves by id, so no lease policies.
+  Map<String, Object?> toNative() => {
+    'id': tenantId,
+    'name': 'Kailo',
+    'relayUrl': relayUrl,
+    'pubkey': devicePubkey,
+    'policies': const <Object?>[],
+  };
+
+  @override
+  bool operator ==(Object other) =>
+      other is PushPresentationCommunity &&
+      other.tenantId == tenantId &&
+      other.relayUrl == relayUrl &&
+      other.devicePubkey == devicePubkey &&
+      other.deviceSecret == deviceSecret;
+
+  @override
+  int get hashCode => Object.hash(tenantId, relayUrl, devicePubkey, deviceSecret);
+
+  @override
+  String toString() =>
+      'PushPresentationCommunity($tenantId, $relayUrl, $devicePubkey)';
 }
 
 /// Navigation arguments the native side sends for a tap: ids only.
@@ -130,6 +175,24 @@ class MethodChannelPushBridge implements PushBridge {
       return pushNotificationLink(arguments);
     } on MissingPluginException {
       return null;
+    }
+  }
+
+  @override
+  Future<void> syncPresentation(
+    List<PushPresentationCommunity> communities,
+  ) async {
+    try {
+      await _channel.invokeMethod<void>('syncPushSnapshot', {
+        'section': 'communities',
+        'communities': [for (final c in communities) c.toNative()],
+        'signingKeys': {for (final c in communities) c.tenantId: c.deviceSecret},
+      });
+    } on MissingPluginException {
+      // Flutter tests and non-Runner embeddings do not install the native bridge.
+    } on PlatformException catch (error) {
+      // Presentation is optional: the notification keeps the fixed system text.
+      debugPrint('push: presentation sync failed: ${error.code}');
     }
   }
 }

@@ -16,6 +16,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 
 import 'package:client_kit/shared/contracts/contracts.dart';
 import 'package:client_kit/shared/platform/platform_text.dart';
+import '../auth/auth_provider.dart';
 import '../platform/platform_api.dart';
 import '../platform/platform_config.dart';
 import '../platform/platform_device.dart';
@@ -84,6 +85,7 @@ class PushRegistrationDeps {
     required this.appId,
     required this.apiUri,
     required this.locale,
+    this.relayUrl = _noRelay,
   });
 
   final Future<PlatformResponse> Function(
@@ -98,7 +100,12 @@ class PushRegistrationDeps {
 
   /// `en` or `zh-CN`: the language of the fixed system text Core sends.
   final String Function() locale;
+
+  /// The Tenant Relay this device is connected to (DD-75), for the notification extension.
+  final String? Function() relayUrl;
 }
+
+String? _noRelay() => null;
 
 final pushRegistrationDepsProvider = Provider<PushRegistrationDeps?>((ref) {
   final config = ref.watch(platformConfigProvider);
@@ -117,6 +124,7 @@ final pushRegistrationDepsProvider = Provider<PushRegistrationDeps?>((ref) {
             'en'
         ? 'en'
         : 'zh-CN',
+    relayUrl: () => ref.read(authProvider).value?.community?.relayUrl,
   );
 });
 
@@ -127,6 +135,8 @@ class PushRegistrationNotifier extends Notifier<DevicePushState> {
   DevicePushState build() {
     final deps = ref.watch(pushRegistrationDepsProvider);
     if (deps == null) {
+      // Signed out of the platform: the extension must not keep this device's key.
+      unawaited(ref.read(pushBridgeProvider).syncPresentation(const []));
       return const DevicePushState(loading: false);
     }
     unawaited(_load(deps));
@@ -168,6 +178,7 @@ class PushRegistrationNotifier extends Notifier<DevicePushState> {
         );
       }
       state = next;
+      await _syncPresentation(deps, keys, active: next.effectiveEnabled);
     } catch (error) {
       debugPrint('push: registration read failed: $error');
       if (ref.mounted) state = state.copyWith(loading: false);
@@ -272,6 +283,12 @@ class PushRegistrationNotifier extends Notifier<DevicePushState> {
           devicePubkey: view.devicePubkey,
           outcome: PushRegistrationOutcome.none,
         );
+        await _syncPresentation(
+          deps,
+          keys,
+          active: state.effectiveEnabled,
+          tenantId: session.tenantId,
+        );
         return;
       }
       if (response.status == 409) {
@@ -286,6 +303,45 @@ class PushRegistrationNotifier extends Notifier<DevicePushState> {
       if (!ref.mounted) return;
       state = state.copyWith(outcome: PushRegistrationOutcome.notConfirmed);
       unawaited(refresh());
+    }
+  }
+
+  /// DD-151(4): while this device's notifications are on, the notification extension may
+  /// read a pushed message through this device's own Relay identity; otherwise it is given
+  /// nothing (the native side removes the shared key). Presentation only: failures leave the
+  /// fixed system text and never affect the registration.
+  Future<void> _syncPresentation(
+    PushRegistrationDeps deps,
+    nostr.Keys keys, {
+    required bool active,
+    String? tenantId,
+  }) async {
+    final bridge = ref.read(pushBridgeProvider);
+    final relay = deps.relayUrl();
+    if (!active || relay == null || relay.isEmpty) {
+      await bridge.syncPresentation(const []);
+      return;
+    }
+    try {
+      var tenant = tenantId;
+      if (tenant == null) {
+        final current = await deps.send(PlatformMethod.get, '/api/v1/session');
+        if (current.status != 200) return;
+        tenant = PlatformSessionView.fromJson(
+          current.body! as Map<String, dynamic>,
+        ).tenantId;
+      }
+      if (!ref.mounted) return;
+      await bridge.syncPresentation([
+        PushPresentationCommunity(
+          tenantId: tenant.toLowerCase(),
+          relayUrl: relay,
+          devicePubkey: keys.public,
+          deviceSecret: keys.secret,
+        ),
+      ]);
+    } catch (error) {
+      debugPrint('push: presentation sync skipped: $error');
     }
   }
 }

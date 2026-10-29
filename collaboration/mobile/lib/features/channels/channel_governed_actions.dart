@@ -2,7 +2,8 @@
 // members and manage-channel sheets (Buzz 779af8886caae1317b4de962082429867ab61503
 // mobile/lib/features/channels/channel_management_provider.dart::ChannelActions.{updateChannel,
 // joinChannel,leaveChannel,archiveChannel,unarchiveChannel,addMembers,removeMember,
-// changeMemberRole}). Mobile's native key cannot change a channel or its roster (DD-80), so every
+// changeMemberRole} and mobile/lib/features/channels/channel_metadata_updates.dart's 9002
+// name/about tags, now `workspace.update`). Mobile's native key cannot change a channel or its roster (DD-80), so every
 // entry is an existing governed ActionCommand sent through the BFF, the same flow as client-kit's
 // channel-management-actions.ts and roles.tsx useMemberAction:
 //

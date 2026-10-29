@@ -46,6 +46,17 @@ public struct BuzzPushResolution: Decodable, Equatable, Sendable {
 /// Resolves the content used to mutate a generic Buzz push notification.
 public protocol BuzzPushNotificationResolving {
   func resolve(completion: @escaping (BuzzPushResolution?) -> Void)
+  /// DD-151(4): resolve exactly the message a Kailo push named.
+  func resolve(kailo target: KailoPushTarget, completion: @escaping (BuzzPushResolution?) -> Void)
+}
+
+extension BuzzPushNotificationResolving {
+  public func resolve(
+    kailo target: KailoPushTarget,
+    completion: @escaping (BuzzPushResolution?) -> Void
+  ) {
+    completion(nil)
+  }
 }
 
 /// Reads configured Buzz communities and resolves their newest unread event.
@@ -113,6 +124,53 @@ public final class BuzzPushNotificationResolver: BuzzPushNotificationResolving {
       }
       self.resolvePresentation(event: newest.0, community: newest.1, completion: completion)
     }
+  }
+
+  /// DD-151(4): read the one event a Kailo push named, from the Tenant's Relay, signed as this
+  /// device (NIP-98 with the device CLIENT key the app shares through the Keychain group).
+  /// Any failure — no community for the Tenant, no key, transport, an event that is not the
+  /// named one — yields `nil`, and the extension keeps the fixed system text.
+  public func resolve(
+    kailo target: KailoPushTarget,
+    completion: @escaping (BuzzPushResolution?) -> Void
+  ) {
+    guard
+      let community = loadCommunities().first(where: { $0.id.lowercased() == target.tenantID }),
+      community.pubkey?.isEmpty == false,
+      let privateKey = loadPrivateKey(community.id),
+      let relayURL = community.relayURL,
+      let url = URL(string: "/query", relativeTo: relayURL),
+      let body = try? JSONSerialization.data(withJSONObject: target.queryFilters)
+    else {
+      completion(nil)
+      return
+    }
+    var request = URLRequest(url: url)
+    request.httpMethod = "POST"
+    request.httpBody = body
+    request.timeoutInterval = 8
+    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    guard
+      let auth = try? NostrHTTPAuth.authorizationHeader(
+        url: url, method: "POST", body: body, privateKeyHex: privateKey
+      )
+    else {
+      completion(nil)
+      return
+    }
+    request.setValue(auth, forHTTPHeaderField: "Authorization")
+    session.dataTask(with: request) { [self] data, response, _ in
+      guard let response = response as? HTTPURLResponse, (200..<300).contains(response.statusCode),
+        let data,
+        data.count <= Self.maximumPresentationResponseBytes,
+        let events = try? JSONDecoder().decode([VerifiedNostrEvent].self, from: data),
+        let event = events.first(where: { target.matches($0, channelTag: Self.tagValue("h", in: $0)) })
+      else {
+        completion(nil)
+        return
+      }
+      resolvePresentation(event: event, community: community, completion: completion)
+    }.resume()
   }
 
   private func query(

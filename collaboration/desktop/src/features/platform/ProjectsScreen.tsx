@@ -1,5 +1,5 @@
 import {lazy,Suspense,useCallback,useEffect,useMemo} from "react";
-import {ProjectsView,mergeSelectionDiscussDraft,type ProjectsHost,type ProjectWorkItemTarget,type ProjectAgentChatHost,type ProjectAgentConversationEvent} from "@client-kit/platform/react/projects";
+import {ProjectsView,createNativeProjectsGitHost,mergeSelectionDiscussDraft,type ProjectsHost,type ProjectWorkItemTarget,type ProjectAgentChatHost,type ProjectAgentConversationEvent} from "@client-kit/platform/react/projects";
 import {PulseScreen} from "./PulseScreen";
 import {useUiT} from "@client-kit/platform/react/context";
 import {relayClient} from "@/shared/api/relayClient";
@@ -11,7 +11,7 @@ import {WorkspaceChannelCreateChannelType,WorkspaceMembershipState,type Workspac
 import {loadChannelDirectory} from "@client-kit/platform/react/channel-browser/loadChannelDirectory";
 import {getIdentity} from "@/shared/api/tauriIdentity";
 import {getChannels} from "@/shared/api/tauriChannels";
-import {getThreadReplies} from "@/shared/api/tauri";
+import {getThreadReplies,invokeTauri} from "@/shared/api/tauri";
 import {getEventById} from "@/shared/api/tauriEvents";
 import {sendChannelMessage} from "@/shared/api/tauriMessages";
 import type {RelayEvent,ThreadCursor} from "@/shared/api/types";
@@ -66,7 +66,11 @@ export function useProjectsHost(){
     const scopeKey=`${session.facts.communityHost}:${session.devicePubkey}`;
     return {scopeKey,publish:createProjectsPublisher(scopeKey,session.facts.relayUrl,session.devicePubkey,()=>scope.active,session.client,limit),
       completePublication:(key,eventId)=>{check();relayClient.completeProjectIntent(`${scopeKey}:${key}`,session.facts.relayUrl,eventId);},
-      query:createProjectsQuery(session.devicePubkey,()=>scope.active,limit)};
+      query:createProjectsQuery(session.devicePubkey,()=>scope.active,limit),
+      // DD-160: original remote repository reads, signed in process by this device (no sidecar).
+      git:createNativeProjectsGitHost(async(command,args)=>{
+        check();const value=await invokeTauri<unknown>(command,args);check();return value;
+      },{expectedRelayUrl:session.facts.relayUrl,expectedSignerPubkey:session.devicePubkey})};
   },[session,scope,limit]);
   return host;
 }

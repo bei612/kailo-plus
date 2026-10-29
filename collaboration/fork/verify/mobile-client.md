@@ -436,3 +436,28 @@ cursor、期望 null 却得到 100、期望 false 却得到 true。原件为
 输出 `+3: All tests passed!`，实际退出 0。未将反证破坏留在正式源码或候选中。
 私有 HEAD 加本批独立 hunk 的原 `npx --offline markdownlint-cli2` selected 检查
 退出 0（`docs-selected.log`）；正式文件的继承 dirty 不混入本批提交范围。
+
+## DD-151 Mobile 推送：角标与通知扩展取正文（2026-10-24）
+
+范围：`V-SCN-249`、`V-SCN-250` 的推送链。r9 交付设备登记、Core 判定与 APNs/FCM 投递；
+本批补上设计要求的未读角标，以及 iOS 通知扩展经本设备身份读取正文。
+
+- 角标：Core 为每位收件人记住已推送的消息（`projection.push_unread`，派生投影），
+  以 `read_contexts` 的现行已读位置扣除（回复以线程与所在频道两个位置中较新的为准），
+  数字放入 APNs `aps.badge` 与 FCM `android.notification.notification_count`，上限 999。
+  载荷仍只有 ID 与本地化固定文案，不含正文。App 前台时图标数字沿用原有的本机未读计算。
+- 通知扩展：推送只给 `kailo_push` 的 Tenant、频道与事件 ID。扩展用 App 经共享
+  Keychain 交给它的本设备 CLIENT 私钥，以 NIP-98 向该 Tenant 的 Relay 只读查询这一条事件，
+  核对 ID、签名与 `h` 标签后替换为发送者与正文预览；无连接、无钥匙、超时或不匹配时保留固定文案。
+  推送开关关闭、未连接 Relay 或退出平台时，App 清空交给扩展的连接与钥匙。
+- 测试：Core 角标计数、已读位置解析、载荷不含正文的单测；Flutter 推送登记测试覆盖
+  开启时交付本设备连接、关闭或无 Relay 时清空；Swift 侧新增 `KailoPushTargetTests`。
+
+未验证与阻塞：
+
+- 阻塞于外部凭据：真机 APNs/FCM 投递需要 Apple/Google 开发者账号。`V-SCN-249`、`V-SCN-250`
+  的端到端验收（真机收到推送、角标、扩展替换正文、令牌失效与密钥轮换）在拿到凭据前无法进行；
+  代码与桩测试照常完成。
+- Swift 代码（通知扩展、BuzzPushKit）在 Linux CI 上无法编译，`KailoPushTargetTests` 需在
+  macOS/Xcode 上运行。
+- Android 客户端尚未接入 FCM（原版也没有），Core 侧 FCM 发送已就绪。

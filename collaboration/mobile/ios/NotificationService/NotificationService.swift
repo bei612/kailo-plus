@@ -70,7 +70,18 @@ final class NotificationService: UNNotificationServiceExtension {
     cleanUserInfo.removeValue(forKey: BuzzPushNavigationTarget.userInfoKey)
     content.userInfo = cleanUserInfo
 
-    resolver.resolve { [weak self] resolution in
+    // DD-151(4): a Kailo push names exactly one message by id; the extension reads it through
+    // this device's own Relay identity. Without it, or on any failure or timeout, the fixed
+    // localized text Core sent stays (`bestAttemptContent`).
+    let kailoTarget = KailoPushTarget.decodeIfPresent(from: request.content.userInfo)
+    let resolve: (@escaping (BuzzPushResolution?) -> Void) -> Void
+    if let kailoTarget {
+      resolve = { [resolver] completion in resolver.resolve(kailo: kailoTarget, completion: completion) }
+    } else {
+      resolve = { [resolver] completion in resolver.resolve(completion: completion) }
+    }
+
+    resolve { [weak self] resolution in
       guard let self else { return }
       if let resolution {
         content.title = resolution.title
@@ -81,7 +92,8 @@ final class NotificationService: UNNotificationServiceExtension {
         if let threadIdentifier = resolution.threadIdentifier {
           content.threadIdentifier = threadIdentifier
         }
-        if let navigationTarget = resolution.navigationTarget {
+        // A Kailo tap is routed from `kailo_push` itself (AppDelegate); no second target.
+        if kailoTarget == nil, let navigationTarget = resolution.navigationTarget {
           var userInfo = content.userInfo
           userInfo[BuzzPushNavigationTarget.userInfoKey] = navigationTarget.userInfoValue
           content.userInfo = userInfo
