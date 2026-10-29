@@ -85,6 +85,7 @@ import {projectsOverviewContext} from "./projectsOverviewContext";
 import {useProjectsScrollIndicator} from "./useProjectsScrollIndicator";
 import {ProjectDetailUnavailableState} from "./ProjectDetailUnavailableState";
 import {hasAuthoritativeHomeBinding} from "./lib/projectHomeSelection";
+import {useProjectTerminalContext} from "./projectTerminal";
 import {ProjectDetailPanelLayout,ProjectRightPanelControls,useProjectRepositoryPanel,type ProjectChatPanelWidth,type ProjectRepositoryPanelState} from "./ProjectDetailRightPanel";
 import {ProjectRepositoryContextPanel} from "./ProjectRepositoryActionsPanel";
 import {ProjectBranchActionDialogs} from "./ProjectBranchActionDialogs";
@@ -219,6 +220,9 @@ function RepositoryWorkspace({host,snapshot,project,repository,panel,renderWorkI
   checkoutSource:import("./useProjectLocalCheckout").ProjectCheckoutSource;
 }) {
   const t=useUiT();const cache=useQueryClient();const [createOpen,setCreateOpen]=useState(false);const [creating,setCreating]=useState(false);
+  // Original ProjectDetailScreen useTerminalContextOverride (DD-161): the project channel while shown.
+  const terminalChannelId=repository.channelId??project.projectChannelId??null;
+  useProjectTerminalContext(useMemo(()=>terminalChannelId?{channelId:terminalChannelId,channelName:repository.name||project.name}:null,[terminalChannelId,repository.name,project.name]));
   const [createReviewOpen,setCreateReviewOpen]=useState(false);
   // Original "Create review" (DD-118): only with the governed publication and the repository Git seam.
   const canCreateReview=Boolean(host.publish&&host.git);

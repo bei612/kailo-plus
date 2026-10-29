@@ -366,11 +366,7 @@ fn launch_terminal_at(path: &Path) -> Result<(), String> {
 #[cfg(target_os = "linux")]
 fn launch_terminal_at(path: &Path) -> Result<(), String> {
     for command in ["x-terminal-emulator", "gnome-terminal", "konsole", "xterm"] {
-        if terminal_command(command)
-            .current_dir(path)
-            .spawn()
-            .is_ok()
-        {
+        if terminal_command(command).current_dir(path).spawn().is_ok() {
             return Ok(());
         }
     }

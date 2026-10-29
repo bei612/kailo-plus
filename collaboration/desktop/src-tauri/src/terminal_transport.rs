@@ -74,6 +74,8 @@ impl FramePublisher {
         }
     }
 
+    // Read by the transport tests; the original reader was a Buzz-only consumer.
+    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn applied_viewport(&self) -> Viewport {
         self.applied
     }

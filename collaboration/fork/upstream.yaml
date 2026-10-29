@@ -108,7 +108,6 @@ remove_paths:
   - desktop/scripts/tauri-command.mjs
   - desktop/scripts/verify-macos-entitlements.sh
   - desktop/src-tauri/assets
-  - desktop/src-tauri/crates
   - desktop/src-tauri/resources
   - desktop/src-tauri/src/app_state_pending_channels.rs
   - desktop/src-tauri/src/archive
@@ -220,9 +219,6 @@ remove_paths:
   - desktop/src-tauri/src/team_catalog.rs
   - desktop/src-tauri/src/team_catalog_tests.rs
   - desktop/src-tauri/src/templates
-  - desktop/src-tauri/src/terminal_runtime
-  - desktop/src-tauri/src/terminal_runtime.rs
-  - desktop/src-tauri/src/terminal_transport.rs
   - desktop/src-tauri/tauri.windows.conf.json
   - desktop/src-tauri/tests/fixtures
   - desktop/src-tauri/tests/rodio_mixer_diagnostic.rs
@@ -234,7 +230,6 @@ remove_paths:
   # Top 30 #3（2026-10-20，源码候选，未验收）：原根错误边界已迁入
   # client-kit/ts/platform/src/react/root-error-boundary.tsx，Desktop main.tsx 与 Web 共用同一主体（文案本地化）。
   - desktop/src/app/RootErrorBoundary.tsx
-  - desktop/src/app/TerminalContextOverrideContext.tsx
   - desktop/src/app/communityViewTransition.test.mjs
   - desktop/src/app/communityViewTransition.ts
   - desktop/src/app/huddleBackingChannelStorage.test.mjs
@@ -258,7 +253,6 @@ remove_paths:
   - desktop/src/app/useCommunityNavigationTransitions.ts
   - desktop/src/app/useHuddlePresentation.ts
   - desktop/src/app/useLiveHomeFeedActions.ts
-  - desktop/src/app/useTerminalContext.ts
   - desktop/src/features-manifest.d.ts
   - desktop/src/features/agent-memory
   - desktop/src/features/agents
@@ -730,7 +724,15 @@ remove_paths:
   # client-kit/ts/platform/src/react/sidebar/sidebar-loading-skeleton.tsx，Desktop AppSidebar 与 Web 共用。
   - desktop/src/features/sidebar/ui/sidebarLoadingSkeleton.tsx
   - desktop/src/features/sidebar/useDmSidebarMetadata.ts
-  - desktop/src/features/terminal
+  # DD-161: the Buzz Term wordmark/honeycomb splash is Buzz visual identity (DD-141); the terminal itself is restored.
+  - desktop/src/features/terminal/terminalBanner.test.mjs
+  - desktop/src/features/terminal/terminalBanner.ts
+  - desktop/src/features/terminal/terminalBannerColor.test.mjs
+  - desktop/src/features/terminal/terminalBannerColor.ts
+  - desktop/src/features/terminal/terminalBannerPainter.test.mjs
+  - desktop/src/features/terminal/terminalBannerPainter.ts
+  - desktop/src/features/terminal/terminalBannerWave.test.mjs
+  - desktop/src/features/terminal/terminalBannerWave.ts
   # DD-120（2026-10-16，源码候选，未验收）：types、hooks（到期计时、120 s 兜底、DD-81 发布意图）、
   # UserStatusLookupContext 与 ui/{StatusEmoji,UserNameIndicators,SetStatusDialog} 迁入
   # client-kit/ts/platform/src/react/user-status；原路径仍不存在。
@@ -814,25 +816,19 @@ remove_paths:
   - desktop/src/shared/lib/remarkCustomEmoji.ts
   - desktop/src/shared/lib/url.ts
   - desktop/src/shared/lib/useNow.ts
-  - desktop/src/shared/styles/globals/terminal.css
   - desktop/src/shared/styles/globals/tooltipSemantics.test.mjs
   - desktop/src/shared/theme/communityThemeSync.test.mjs
   - desktop/src/shared/theme/communityThemeSync.ts
-  - desktop/src/shared/theme/terminal-palette.test.mjs
-  - desktop/src/shared/theme/terminal-palette.ts
   - desktop/src/shared/ui/AnimatedCount.tsx
   - desktop/src/shared/ui/PortalledScrollArea.tsx
   - desktop/src/shared/ui/Shimmer.tsx
   - desktop/src/shared/ui/SimpleImageLightbox.tsx
-  - desktop/src/shared/ui/TerminalPanelIcon.tsx
   - desktop/src/shared/ui/TopChromeBackdrop.tsx
   - desktop/src/shared/ui/alert.tsx
   - desktop/src/shared/ui/animatedCountParts.test.mjs
   - desktop/src/shared/ui/animatedCountParts.ts
   - desktop/src/shared/ui/assets/drawer-panel-closed-state.svg
   - desktop/src/shared/ui/assets/drawer-panel-open-state.svg
-  - desktop/src/shared/ui/assets/terminal-closed-state.svg
-  - desktop/src/shared/ui/assets/terminal-open-state.svg
   - desktop/src/shared/ui/assets/terminal.svg
   - desktop/src/shared/ui/buzz-logo/buzz-logo-animation.css
   - desktop/src/shared/ui/buzz-logo/BuzzMark.tsx

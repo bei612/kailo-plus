@@ -1,6 +1,7 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "@client-kit/platform/styles.css";
+@import "./globals/terminal.css";
 
 @config "../../../tailwind.config.js";
 /* The shared package is ignored by Tailwind automatic discovery (ADR-09). */

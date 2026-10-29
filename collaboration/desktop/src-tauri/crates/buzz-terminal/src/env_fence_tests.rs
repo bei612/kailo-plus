@@ -326,24 +326,19 @@ fn child_shell_is_the_resolved_shell_not_the_inherited_one() {
     );
 }
 
-/// Guards the duplication of `RESERVED_ENV_KEYS` above. If the desktop crate
-/// grows a new secret, this points at the file to update.
+/// Kailo (DD-161(3)): the desktop crate has no managed agents (DD-26), so the
+/// original cross-check against `managed_agents/reserved_env_keys.rs` becomes a
+/// check against the identity key the Kailo desktop itself reads from its
+/// environment (`app_state.rs`). If that file starts reading another
+/// credential-like key, this points at SECRET_KEYS above.
 #[test]
 fn reserved_keys_are_covered() {
-    // The list lives in its own file because `build.rs` `include!`s the same
-    // source (see `managed_agents/reserved_env_keys.rs`); read it there rather
-    // than through the module that includes it.
-    let source = include_str!("../../../src/managed_agents/reserved_env_keys.rs");
+    let source = include_str!("../../../src/app_state.rs");
     let declared: Vec<&str> = source
-        .lines()
-        .skip_while(|line| !line.contains("RESERVED_ENV_KEYS"))
-        .take_while(|line| !line.trim_start().starts_with("];"))
-        .filter_map(|line| line.trim().strip_prefix('"'))
-        .filter_map(|line| line.split('"').next())
+        .split("env::var(\"")
+        .skip(1)
+        .filter_map(|rest| rest.split('"').next())
         .filter(|key| {
-            // Only identity/credential keys are in scope here: the rest of
-            // RESERVED_ENV_KEYS guards agent-config override, which cannot
-            // apply to a child that inherits nothing.
             key.contains("PRIVATE_KEY")
                 || key.contains("AUTH_TAG")
                 || key.contains("API_TOKEN")
@@ -351,11 +346,14 @@ fn reserved_keys_are_covered() {
         })
         .collect();
 
-    assert!(!declared.is_empty(), "failed to parse RESERVED_ENV_KEYS");
+    assert!(
+        !declared.is_empty(),
+        "failed to find the identity key in app_state.rs"
+    );
     for key in declared {
         assert!(
             SECRET_KEYS.contains(&key),
-            "{key} is a credential in RESERVED_ENV_KEYS but is not covered by \
+            "{key} is a credential the desktop reads but is not covered by \
              this crate's SECRET_KEYS; add it here"
         );
     }

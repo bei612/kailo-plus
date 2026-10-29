@@ -3,12 +3,13 @@
 // useProjectPanelWidths, useProjectRepositoryPanel and ProjectRightPanelControls.
 // Repository and chat modes: the chat mode is the project Agent conversation (DD-130), shown
 // only when the host supplies the governed chat transport. The terminal toggle opens the
-// Desktop-local Buzz Term and has no governed consumer here.
+// Desktop-local terminal (DD-161) through the host's ProjectTerminalHost; Web has none.
 import * as React from "react";
 import { MessageCircle } from "lucide-react";
 import { useUiT } from "../context";
 import { Button } from "../profile/buzz/shared/ui/button";
 import { DrawerPanelIcon } from "../sidebar/DrawerPanelIcon";
+import { ProjectTerminalToggle } from "./projectTerminal";
 import { useOptionalSidebar } from "../sidebar/sidebar";
 import { cn } from "../profile/buzz/shared/lib/cn";
 import { useThreadPanelWidth } from "../messages/thread/useThreadPanelWidth";
@@ -134,6 +135,7 @@ export function ProjectRightPanelControls({ collapsed, mode = "repository", onCo
   const repositoryOpen = !collapsed && (!changeMode || mode === "repository");
   return (
     <div className="flex items-center gap-0.5">
+      <ProjectTerminalToggle />
       {changeMode ? <ProjectChatPanelControl collapsed={collapsed} mode={mode} onCollapse={onCollapse} onExpand={onExpand}
         onModeChange={changeMode} /> : null}
       <Button

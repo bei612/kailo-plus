@@ -79,7 +79,15 @@ fn external_terminal_never_inherits_identity_or_credentials() {
     ] {
         assert!(secret_bearing_env(name), "{name} must be removed");
     }
-    for name in ["PATH", "HOME", "LANG", "DISPLAY", "TERM", "SHELL", "XDG_RUNTIME_DIR"] {
+    for name in [
+        "PATH",
+        "HOME",
+        "LANG",
+        "DISPLAY",
+        "TERM",
+        "SHELL",
+        "XDG_RUNTIME_DIR",
+    ] {
         assert!(!secret_bearing_env(name), "{name} must be kept");
     }
 }
