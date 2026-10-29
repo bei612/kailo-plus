@@ -29,6 +29,7 @@ import (
 	"github.com/pydio/cells/v5/common"
 	"github.com/pydio/cells/v5/common/client/commons/idmc"
 	"github.com/pydio/cells/v5/common/errors"
+	"github.com/pydio/cells/v5/common/nodes"
 	"github.com/pydio/cells/v5/common/permissions"
 	"github.com/pydio/cells/v5/common/proto/idm"
 	service "github.com/pydio/cells/v5/common/proto/service"
@@ -122,4 +123,29 @@ func FindRecycleForSource(ctx context.Context, source *tree.Node, ancestors []*t
 		err = errors.WithStack(errors.RecycleNotFound)
 	}
 	return
+}
+
+// recycleTarget resolves the recycle bin of a source as the "to" branch of the move, for the
+// permission check of a delete-to-recycle (acceptance batch 5).
+//
+// The recycle bin is found among the source's own ancestors, so it is expressed in the
+// workspace of the source: the "in" branch turns its datasource path back into that
+// workspace's path, and resolving that path as "to" must land exactly on the same recycle
+// bin. The original code converted it through the not-yet-resolved "to" branch and ignored
+// the error; once that error was honoured every move to the recycle bin failed with
+// "branch info root missing". A recycle bin that does not round-trip through the source
+// workspace is refused rather than checked against another node.
+func recycleTarget(ctx context.Context, inputFilter, outputFilter nodes.FilterFunc, recycle *tree.Node) (context.Context, *tree.Node, error) {
+	_, inWorkspace, err := outputFilter(ctx, recycle, "in")
+	if err != nil {
+		return ctx, nil, err
+	}
+	targetCtx, target, err := inputFilter(ctx, inWorkspace, "to")
+	if err != nil {
+		return ctx, nil, err
+	}
+	if target == nil || strings.Trim(target.GetPath(), "/") != strings.Trim(recycle.GetPath(), "/") {
+		return ctx, nil, errors.WithMessage(errors.RecycleNotFound, "recycle bin is outside the source workspace")
+	}
+	return targetCtx, target, nil
 }
