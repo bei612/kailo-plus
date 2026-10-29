@@ -21,8 +21,8 @@ const onDelete = () => {};
 function Row({ row }) {
   const actions = useManagedMessageActions(row, ME, { onEdit, onDelete });
   return React.createElement("li", { "data-id": row.id },
-    actions.onEdit ? React.createElement("button", null, "Edit") : null,
-    actions.onDelete ? React.createElement("button", null, "Delete") : null);
+    actions.onEdit ? React.createElement("button", { type: "button" }, "Edit") : null,
+    actions.onDelete ? React.createElement("button", { type: "button" }, "Delete") : null);
 }
 
 async function render(channelType, ownedAgentPubkeys, rows) {
