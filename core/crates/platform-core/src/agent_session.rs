@@ -1296,7 +1296,14 @@ mod birth_fence_tests {
         // receipt binds under AE→Session locks while the holder fence is held.
         tokio::time::timeout(
             Duration::from_secs(5),
-            bind_birth_receipt(&pool, invocation, &scope, "ABSENT", None, &Err(RuntimeError::Unknown)),
+            bind_birth_receipt(
+                &pool,
+                invocation,
+                &scope,
+                "ABSENT",
+                None,
+                &Err(RuntimeError::Unknown),
+            ),
         )
         .await
         .unwrap()
@@ -1314,20 +1321,49 @@ mod birth_fence_tests {
         // The observer later binds the native thread; this birth's identical
         // receipt is accepted, a different thread or generation is refused.
         let thread = Uuid::new_v4().to_string();
-        bind_birth_receipt(&pool, invocation, &scope, "ABSENT", None, &Ok(thread.clone()))
-            .await
-            .unwrap();
-        bind_birth_receipt(&pool, invocation, &scope, "ABSENT", None, &Ok(thread.clone()))
-            .await
-            .unwrap();
+        bind_birth_receipt(
+            &pool,
+            invocation,
+            &scope,
+            "ABSENT",
+            None,
+            &Ok(thread.clone()),
+        )
+        .await
+        .unwrap();
+        bind_birth_receipt(
+            &pool,
+            invocation,
+            &scope,
+            "ABSENT",
+            None,
+            &Ok(thread.clone()),
+        )
+        .await
+        .unwrap();
         assert!(matches!(
-            bind_birth_receipt(&pool, invocation, &scope, "ABSENT", None, &Ok(Uuid::new_v4().to_string())).await,
+            bind_birth_receipt(
+                &pool,
+                invocation,
+                &scope,
+                "ABSENT",
+                None,
+                &Ok(Uuid::new_v4().to_string())
+            )
+            .await,
             Err(RuntimeError::Unknown)
         ));
         scope.projection_generation += 1;
-        assert!(bind_birth_receipt(&pool, invocation, &scope, "ABSENT", None, &Ok(thread.clone()))
-            .await
-            .is_err());
+        assert!(bind_birth_receipt(
+            &pool,
+            invocation,
+            &scope,
+            "ABSENT",
+            None,
+            &Ok(thread.clone())
+        )
+        .await
+        .is_err());
         scope.projection_generation -= 1;
         let recorded: (String, Option<String>) = sqlx::query_as(read)
             .bind(scope.workspace_id)
