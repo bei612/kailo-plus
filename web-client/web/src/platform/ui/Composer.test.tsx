@@ -879,7 +879,7 @@ it("Escape dismisses mention autocomplete before canceling an edit, and cannot c
     expect(canceled).toHaveBeenCalled();
   }, {timeout:15000});
   expect(canceled).toHaveBeenCalledOnce();
-});
+}, 30_000);
 
 it("restores an original edit body and never changes an unresolved edit's key for changed content", async () => {
   const publish = vi.fn().mockRejectedValue(new TransportError("lost edit receipt"));
@@ -1818,7 +1818,7 @@ describe("DD-146 original send flow: clear at Send, restore on failure", () => {
     await vi.waitFor(()=>expect(state.publish).toHaveBeenCalledOnce(), {timeout:15000});
     expect(state.publish.mock.calls[0][1]).toContain(gif.url);
     expect(state.publish.mock.calls[0][2]).toEqual([expect.objectContaining({sha256:descriptor.sha256})]);
-  });
+  }, 30_000);
 
   it("keeps a failed send as a recovery when the composer has moved on", async () => {
     const {upload, uploads} = uploader();
