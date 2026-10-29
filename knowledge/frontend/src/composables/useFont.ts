@@ -4,6 +4,7 @@ import {
   savePreference,
   migratePreferencesIntoUser,
 } from './preferenceStorage'
+import { isKailoMode } from '@/kailo/runtime'
 
 // Font options are filtered by host platform. A Windows user selecting
 // "PingFang SC" in a cross-platform list would see Microsoft YaHei anyway
@@ -209,18 +210,39 @@ const lastApplied: { sans: string; mono: string; scale: string } = {
   scale: '',
 }
 
+/**
+ * The inline font stacks to set on <html>; '' leaves the variable to the stylesheet.
+ * In Kailo mode the default ("system") is not a user choice: the Kailo token overlay
+ * maps --app-font-family / --app-font-family-mono to --kailo-font-sans / -mono, and an
+ * inline stack on <html> would override it (acceptance batch 5: the knowledge page
+ * rendered in the native -apple-system stack instead of Inter). A font the user picked
+ * explicitly is still applied.
+ */
+export function fontStacks(sans: FontKey, mono: MonoFontKey, kailoMode: boolean): { sans: string; mono: string } {
+  const sansStack = SANS_STACKS[sans] ?? SANS_STACKS[DEFAULT_SANS]
+  const monoStack = MONO_STACKS[mono] ?? MONO_STACKS[DEFAULT_MONO]
+  return {
+    sans: kailoMode && sans === DEFAULT_SANS ? '' : sansStack,
+    mono: kailoMode && mono === DEFAULT_MONO ? '' : monoStack,
+  }
+}
+
+function setOrClear(root: HTMLElement, name: string, value: string) {
+  if (value) root.style.setProperty(name, value)
+  else root.style.removeProperty(name)
+}
+
 function applyFont() {
   const root = document.documentElement
   if (!root) return
-  const sansStack = SANS_STACKS[currentSans.value] ?? SANS_STACKS[DEFAULT_SANS]
-  const monoStack = MONO_STACKS[currentMono.value] ?? MONO_STACKS[DEFAULT_MONO]
+  const { sans: sansStack, mono: monoStack } = fontStacks(currentSans.value, currentMono.value, isKailoMode())
   const scale = String(FONT_SCALES[currentSize.value] ?? FONT_SCALES[DEFAULT_SIZE])
   if (lastApplied.sans !== sansStack) {
-    root.style.setProperty('--app-font-family', sansStack)
+    setOrClear(root, '--app-font-family', sansStack)
     lastApplied.sans = sansStack
   }
   if (lastApplied.mono !== monoStack) {
-    root.style.setProperty('--app-font-family-mono', monoStack)
+    setOrClear(root, '--app-font-family-mono', monoStack)
     lastApplied.mono = monoStack
   }
   if (lastApplied.scale !== scale) {
