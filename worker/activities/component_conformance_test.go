@@ -882,3 +882,42 @@ func TestConformanceCandidatesAreSelectedByDigest(t *testing.T) {
 		}
 	}
 }
+
+// Core's permission-denied replay (component_release.rs prewrite) repeats the
+// substituted request under another actor: no contract key, INPUT bindings
+// only. The frozen plan must validate; an EXPECTED binding or a capture
+// without a contract key must not.
+func TestComponentConformancePlanAcceptsDeniedReplayInputBindings(t *testing.T) {
+	candidate, _ := conformanceCandidateForTest(t, func(w http.ResponseWriter, r *http.Request) { t.Error("validation made an external request") })
+	var read, denied generated.ComponentConformanceStep
+	if err := json.Unmarshal([]byte(`{"caseKey":"file_storage:2:native_file","stepKey":"read","operation":"execute",
+		"contractKey":"file_storage.read@v2","idempotencyKey":"read","requestJson":"{}","expectedResponseJson":"{}","expectedHttpStatus":200,
+		"bindings":[{"source":"CAPTURE","key":"published_revision","side":"INPUT","pointer":"/nativeRevision"}]}`), &read); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal([]byte(`{"caseKey":"file_storage:2:native_file","stepKey":"permission-denied:read","operation":"execute",
+		"idempotencyKey":"read","requestJson":"{}","expectedResponseJson":"{}","expectedHttpStatus":403,
+		"bindings":[{"source":"CAPTURE","key":"published_revision","side":"INPUT","pointer":"/nativeRevision"}]}`), &denied); err != nil {
+		t.Fatal(err)
+	}
+	freeze := func(steps ...generated.ComponentConformanceStep) generated.ComponentConformancePlan {
+		plan := generated.ComponentConformancePlan{
+			ActionExecutionID: uuid.NewString(), OperationID: uuid.NewString(), ComponentReleaseID: uuid.NewString(),
+			WorkflowID: uuid.NewString(), ArtifactDigest: candidate.configuration.ArtifactDigest,
+			ContractDigests: []string{candidate.configuration.ArtifactDigest}, SuiteDigest: candidate.configuration.ArtifactDigest,
+			Steps: steps,
+		}
+		encoded, _ := json.Marshal(plan)
+		plan.PlanDigest, _ = conformanceJSONDigest(encoded)
+		return plan
+	}
+	if err := candidate.validatePlan(freeze(read, denied)); err != nil {
+		t.Fatalf("Core's denied replay refused: %v", err)
+	}
+	expected := denied
+	expected.Bindings = append([]generated.CapabilityVectorBinding(nil), denied.Bindings...)
+	expected.Bindings[0].Side = generated.Expected
+	if candidate.validatePlan(freeze(read, expected)) == nil {
+		t.Fatal("EXPECTED binding without a contract key accepted")
+	}
+}

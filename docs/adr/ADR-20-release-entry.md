@@ -299,6 +299,8 @@ DD-133(3)、`.design/07` §4.7.3/§4.7.5）只能经管理 API 收敛。此前�
   因此内容变化（peer 声明、binding 归属事实、组件候选的增删）在下一次读取即生效，不重建 Core。入口只记录挂载形态摘要（`.env` 键与三个
   运行目录位置，发布 journal 目录的 `deliveries.json`），形态与上次经 `restart`（core-bff）启动入口生效的不同时把 core-bff 加入部署目标
   （并入 §9 的 `converge_plan` 替换对象，backup 随之覆盖 core-db），回读成功后才记下；相同不重建。plan 列出运行体状态与投递是否待生效。
+  Worker 的挂载叠加只由 start-core.sh 生成，因此 `services.worker.command` 与 core-bff 同为该启动入口；同一次 deploy 中同一命令只执行一次，
+  其后的 worker 只回读（2026-10-29：单独 `compose up worker` 曾丢掉候选集合挂载，Worker 读不到一致性候选）。
 - **校验**：`model.peer_delivery` 在 plan 即拒绝不合规的声明——端点不是 operated 运行体、`artifactDigest` 不等于其固定 digest、
   binding 归属事实或一致性环境不符合契约、期望应答未记录、`.env` 键与渲染位置不一致；拒绝时不改动现场。
 - **期望应答**：一致性环境的 `initializeResultJson`/`listResultJson` 由 `deploy/local/protocol-peers/record-conformance.py` 在 CI 节点

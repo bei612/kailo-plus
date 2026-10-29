@@ -122,6 +122,14 @@ def recorded_artifact(source, component, name):
     return digest
 
 
+def _upstream_artifacts(source, component):
+    spec = importlib.util.spec_from_file_location("conformance_upstream_manifest", Path(source) / "tools/upstream_manifest.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    record = module.load(Path(source) / component / "fork/upstream.yaml")
+    return [a for a in record.get("artifacts") or [] if isinstance(a, dict) and a.get("kind") == "image"]
+
+
 def secret_text(length, alphabet=string.ascii_letters + string.digits):
     return "".join(secrets.choice(alphabet) for _ in range(length))
 
@@ -734,6 +742,15 @@ def cmd_run(args):
     r.record(component=args.component, source=str(source), commit=args.commit, runtime=str(Path(args.runtime).resolve()),
              nodeImage=node_image(source), state="RUNNING")
     say("run", component=args.component, run=str(r.dir))
+    # Every recorded image of the component is digest-pinned and started with --pull never by the
+    # native entries; make them present locally (from the declared registry) before any stage.
+    pulled = 0
+    for name in [a.get("name") for a in (_upstream_artifacts(source, args.component))]:
+        ref = f"{declaration['registry']}/{name}@{recorded_artifact(source, args.component, name)}"
+        if not exists("image", ref):
+            docker("pull", "--quiet", ref)
+            pulled += 1
+    say("images", component=args.component, pulled=pulled)
     try:
         staged = drive(r, args, runtime_env, declaration)
         if args.no_install:
