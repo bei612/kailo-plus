@@ -337,7 +337,7 @@ async fn open_target_stream(state: BffState, target: StreamTarget, headers: Head
             .min(i64::from(collab_bridge::bridge::BRIDGE_WINDOW_MAX_LIMIT));
         match client
             .query(
-                &state.http,
+                &state.relay_http,
                 &[channel_window_filter(
                     scope.channel_id(),
                     &contracts::WebMessageType::Stream,
@@ -480,7 +480,7 @@ impl Readmission {
         };
         let Ok(page) = client
             .query(
-                &self.state.http,
+                &self.state.relay_http,
                 &[serde_json::json!({
                     "ids":[event.id.to_hex()], "#h":[self.scope.channel_id()], "limit":1
                 })],

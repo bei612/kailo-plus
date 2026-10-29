@@ -1,4 +1,4 @@
-import { useUiT } from "../context";
+import { useUiT, useTenantDisplayProfile } from "../context";
 // Extracted from Buzz 779af8886caae1317b4de962082429867ab61503 desktop/src; host authority remains outside this presentation module.
 // desktop/src/features/sidebar/ui/SidebarProfileCard.tsx: the self presence badge on the avatar and
 // the status line that swaps with the community label on hover are restored for DD-120 when the
@@ -46,6 +46,7 @@ export function SidebarProfileCard({
   onClearUserStatus,
 }: SidebarProfileCardProps) {
   const translateUi = useUiT();
+  const tenantProfile = useTenantDisplayProfile();
   const resolvedDisplayName = requestedDisplayName.trim() || translateUi("buzz.currentIdentity");
   const [profilePopoverOpen, setProfilePopoverOpen] = React.useState(false);
   const profileCardRef = React.useRef<HTMLDivElement | null>(null);
@@ -76,9 +77,12 @@ export function SidebarProfileCard({
         aria-hidden="true"
         className="flex w-3.5 shrink-0 items-center justify-center"
       >
-        <Building2 className="h-3 w-3" strokeWidth={2} />
+        {tenantProfile?.icon ? tenantProfile.icon.startsWith("data:image/")
+          ? <img src={tenantProfile.icon} alt="" className="h-3.5 w-3.5 rounded object-cover" />
+          : <span>{tenantProfile.icon}</span>
+          : <Building2 className="h-3 w-3" strokeWidth={2} />}
       </span>
-      <span className="truncate">{communityLabel}</span>
+      <span className="truncate">{tenantProfile === null ? translateUi("platform.loadFailed") : tenantProfile?.name ?? communityLabel}</span>
     </span>
   );
 

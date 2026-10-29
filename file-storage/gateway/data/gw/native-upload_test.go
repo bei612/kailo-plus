@@ -14,6 +14,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -290,6 +291,7 @@ type uploadByteStore struct {
 	root, node *tree.Node
 	storage    *uploadObjectStore
 	writes     int
+	readBytes  int
 	partial    bool
 }
 
@@ -303,6 +305,7 @@ func (s *uploadByteStore) ReadNode(_ context.Context, request *tree.ReadNodeRequ
 func (s *uploadByteStore) PutObject(ctx context.Context, node *tree.Node, reader io.Reader, data *models.PutRequestData) (models.ObjectInfo, error) {
 	s.writes++
 	body, err := io.ReadAll(reader)
+	s.readBytes += len(body)
 	if err != nil {
 		return models.ObjectInfo{}, err
 	}
@@ -318,6 +321,35 @@ func (s *uploadByteStore) CopyObject(ctx context.Context, from, to *tree.Node, _
 	return s.storage.CopyObject(ctx, "versions", from.Uuid, "live", to.Uuid, nil, nil, nil)
 }
 
+// Revoke only after the writer's pre-read admission has succeeded and the
+// request body has been read. No timing or test-only authorization hook is
+// needed: the following real HTTP Fresh must observe this revocation.
+type uploadRevokingReader struct {
+	reader  io.Reader
+	revoked *atomic.Bool
+	withEOF bool
+	prefix  int
+}
+
+func (r *uploadRevokingReader) Read(p []byte) (int, error) {
+	if r.prefix > 0 {
+		if len(p) > r.prefix {
+			p = p[:r.prefix]
+		}
+		n, err := r.reader.Read(p)
+		r.prefix -= n
+		return n, err
+	}
+	n, err := r.reader.Read(p)
+	if n > 0 {
+		r.revoked.Store(true)
+		if r.withEOF {
+			err = io.EOF
+		}
+	}
+	return n, err
+}
+
 func TestNativeUploadS3RequiresImmutableVersionAndTaskAcknowledgement(t *testing.T) {
 	cachehelper.SetStaticResolver("pm://", &gocache.URLOpener{})
 	// The original policy provider caches its service projection. These are
@@ -327,7 +359,11 @@ func TestNativeUploadS3RequiresImmutableVersionAndTaskAcknowledgement(t *testing
 	grpcclient.RegisterMock(common.ServiceRoleGRPC, &idm.RoleServiceStub{RoleServiceServer: &uploadRoles{user: user}})
 	grpcclient.RegisterMock(common.ServiceAclGRPC, &idm.ACLServiceStub{ACLServiceServer: new(uploadFrontACLs)})
 	for _, size := range []int{0, 12} {
-		for _, scenario := range []string{"complete", "partial-bytes", "publication-plan-ACK-lost", "version-ACK-lost", "task-ACK-lost", "fresh-revoked"} {
+		for _, scenario := range []string{"complete", "partial-bytes", "publication-plan-ACK-lost", "version-ACK-lost", "task-ACK-lost", "fresh-revoked", "body-read-revoked", "body-read-EOF-revoked", "body-prefix-revoked"} {
+			bodyRevocation := scenario == "body-read-revoked" || scenario == "body-read-EOF-revoked" || scenario == "body-prefix-revoked"
+			if size == 0 && bodyRevocation {
+				continue
+			}
 			t.Run(fmt.Sprintf("%d/%s", size, scenario), func(t *testing.T) {
 				ctx := config.WithStubStore(context.Background())
 				resource, nodeID, binding, ae, ee, intent, key, operation, policy := uuid.New(), uuid.New(), uuid.New(), uuid.New(), uuid.New(), uuid.New(), uuid.New(), uuid.New(), uuid.New()
@@ -364,6 +400,7 @@ func TestNativeUploadS3RequiresImmutableVersionAndTaskAcknowledgement(t *testing
 				token := "fixture." + base64.RawURLEncoding.EncodeToString(payload) + ".fixture"
 				arguments, _ := json.Marshal(map[string]interface{}{"target": map[string]interface{}{"resourceId": resource}, "input": input})
 				peps := 0
+				var bodyRevoked atomic.Bool
 				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					w.Header().Set("Content-Type", "application/json")
 					if r.URL.Path == "/token" {
@@ -385,7 +422,7 @@ func TestNativeUploadS3RequiresImmutableVersionAndTaskAcknowledgement(t *testing
 						return
 					}
 					peps++
-					if scenario == "fresh-revoked" && versions.stores >= 2 {
+					if bodyRevoked.Load() || (scenario == "fresh-revoked" && versions.stores >= 2) {
 						w.WriteHeader(403)
 						return
 					}
@@ -435,7 +472,15 @@ func TestNativeUploadS3RequiresImmutableVersionAndTaskAcknowledgement(t *testing
 				live, _ := pool.GetDataSourceInfo("live")
 				ctx = nodes.WithBranchInfo(request.Context(), "in", nodes.BranchInfo{LoadedSource: live, Workspace: &idm.Workspace{UUID: resource, Slug: "live", RootUUIDs: []string{resource}}})
 				body := bytes.Repeat([]byte("b"), size)
-				reader, err := hash.NewReader(bytes.NewReader(body), int64(size), "", "", int64(size))
+				var bodyReader io.Reader = bytes.NewReader(body)
+				prefixBytes := 0
+				if scenario == "body-prefix-revoked" {
+					prefixBytes = size / 2
+				}
+				if bodyRevocation {
+					bodyReader = &uploadRevokingReader{reader: bodyReader, revoked: &bodyRevoked, withEOF: scenario == "body-read-EOF-revoked", prefix: prefixBytes}
+				}
+				reader, err := hash.NewReader(bodyReader, int64(size), "", "", int64(size))
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -444,6 +489,11 @@ func TestNativeUploadS3RequiresImmutableVersionAndTaskAcknowledgement(t *testing
 				if scenario != "complete" {
 					if err == nil {
 						t.Fatal("uncertain upload returned S3 success")
+					}
+					if bodyRevocation {
+						if !bodyRevoked.Load() || backing.writes != 1 || backing.readBytes != prefixBytes || len(storage.Buckets["versions"]) != 0 || tasks.puts != 1 || tasks.task.Status != jobs.TaskStatus_Running {
+							t.Fatal("revoked body bytes reached native storage or claimed step was released", bodyRevoked.Load(), backing.writes, backing.readBytes, tasks.puts, tasks.task.Status)
+						}
 					}
 					if scenario == "publication-plan-ACK-lost" && (tasks.puts != 2 || versions.stores != 1 || len(storage.Buckets["versions"]) != 1) {
 						t.Fatal("immutable copy preceded its original durable plan ACK", tasks.puts, versions.stores, len(storage.Buckets["versions"]))

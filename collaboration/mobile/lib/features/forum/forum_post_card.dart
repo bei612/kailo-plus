@@ -1,5 +1,6 @@
-import 'package:client_kit/shared/platform/platform_text.dart';
+// Restored from Buzz 779af8886c; platform identity, delivery and i18n seams below.
 import 'package:flutter/material.dart';
+import 'package:client_kit/shared/platform/platform_text.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -141,7 +142,10 @@ class ForumPostCard extends HookConsumerWidget {
                 ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: Grid.xxl),
                   child: Text(
-                    formatRelativeTime(post.createdAt),
+                    formatRelativeTime(
+                      post.createdAt,
+                      locale: Localizations.localeOf(context).toLanguageTag(),
+                    ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: messageTimestampTextStyle.copyWith(
@@ -221,9 +225,10 @@ class ForumPostCard extends HookConsumerWidget {
                     ),
                     const SizedBox(width: Grid.half),
                     Text(
-                      forumText(context, PlatformMessageKey.forumLastReply, {
-                        'time': formatRelativeTime(summary.lastReplyAt!),
-                      }),
+                      formatRelativeTime(
+                        summary.lastReplyAt!,
+                        locale: Localizations.localeOf(context).toLanguageTag(),
+                      ),
                       style: context.textTheme.labelSmall?.copyWith(
                         color: context.colors.onSurfaceVariant,
                       ),
@@ -299,11 +304,7 @@ class ForumPostCard extends HookConsumerWidget {
     showBuzzDialog<void>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: Text(
-          forumText(context, PlatformMessageKey.forumDeleteTitle, {
-            'label': forumText(context, PlatformMessageKey.forumDeletePost),
-          }),
-        ),
+        title: Text(forumText(context, PlatformMessageKey.forumDeletePost)),
         content: Text(
           forumText(context, PlatformMessageKey.forumDeleteDescription),
         ),

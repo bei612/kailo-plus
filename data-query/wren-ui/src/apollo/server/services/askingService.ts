@@ -4,7 +4,6 @@ import type { Knex } from 'knex';
 import {
   AskResultStatus,
   RecommendationQuestionsResult,
-  RecommendationQuestionsInput,
   RecommendationQuestion,
   WrenAIError,
   RecommendationQuestionStatus,
@@ -84,6 +83,12 @@ export interface AskingTaskInput {
 }
 
 export interface AskingDetailTaskInput {
+  recommendation?: {
+    queryId: string;
+    sourceResponseId: number;
+    index: number;
+    idempotencyKey: string;
+  };
   question?: string;
   sql?: string;
   trackedAskingResult?: TrackedAskingResult;
@@ -103,6 +108,9 @@ export enum RecommendQuestionResultStatus {
 }
 
 export interface ThreadRecommendQuestionResult {
+  threadId?: number;
+  sourceResponseId?: number | null;
+  queryId?: string | null;
   status: RecommendQuestionResultStatus;
   questions: RecommendationQuestion[];
   error?: WrenAIError;
@@ -270,7 +278,10 @@ export interface IAskingService {
   getInstantRecommendedQuestions(
     queryId: string,
   ): Promise<RecommendationQuestionsResult>;
-  generateThreadRecommendationQuestions(threadId: number): Promise<void>;
+  generateThreadRecommendationQuestions(
+    threadId: number,
+    sourceResponseId?: number,
+  ): Promise<ThreadRecommendQuestionResult>;
   getThreadRecommendationQuestions(
     threadId: number,
   ): Promise<ThreadRecommendQuestionResult>;
@@ -586,68 +597,107 @@ export class AskingService implements IAskingService {
     return task;
   }
 
+  private recommendationResult(thread: Thread): ThreadRecommendQuestionResult {
+    return {
+      threadId: thread.id,
+      sourceResponseId: thread.questionsSourceResponseId ?? null,
+      queryId: thread.queryId ?? null,
+      status:
+        thread.queryId && RecommendQuestionResultStatus[thread.questionsStatus]
+          ? RecommendQuestionResultStatus[thread.questionsStatus]
+          : RecommendQuestionResultStatus.NOT_STARTED,
+      questions: thread.queryId ? thread.questions || [] : [],
+      error: thread.queryId ? (thread.questionsError as WrenAIError) : null,
+    };
+  }
+
   public async getThreadRecommendationQuestions(
     threadId: number,
   ): Promise<ThreadRecommendQuestionResult> {
     const thread = await this.currentThread(threadId);
-
-    // handle not started
-    const res: ThreadRecommendQuestionResult = {
-      status: RecommendQuestionResultStatus.NOT_STARTED,
-      questions: [],
-      error: null,
-    };
-    if (thread.queryId && thread.questionsStatus) {
-      res.status = RecommendQuestionResultStatus[thread.questionsStatus]
-        ? RecommendQuestionResultStatus[thread.questionsStatus]
-        : res.status;
-      res.questions = thread.questions || [];
-      res.error = thread.questionsError as WrenAIError;
-    }
-    return res;
+    if (
+      thread.queryId &&
+      thread.questionsStatus === RecommendationQuestionStatus.GENERATING
+    )
+      this.threadRecommendQuestionBackgroundTracker.addTask(thread);
+    return this.recommendationResult(thread);
   }
 
   public async generateThreadRecommendationQuestions(
     threadId: number,
-  ): Promise<void> {
+    sourceResponseId?: number,
+  ): Promise<ThreadRecommendQuestionResult> {
     const project = await this.projectService.getCurrentProject();
     const thread = await this.currentThread(threadId, project);
-
-    if (this.threadRecommendQuestionBackgroundTracker.isExist(thread)) {
-      logger.debug(
-        `thread "${threadId}" recommended questions are generating, skip the current request`,
-      );
-      return;
+    const responses = (
+      await this.threadResponseRepository.findAllBy({ threadId })
+    ).sort((a, b) => b.id - a.id);
+    const source = sourceResponseId ?? responses[0]?.id;
+    // A recommendation is for the actual latest original question, not a
+    // caller-selected native row from another thread or an older answer.
+    if (!Number.isSafeInteger(source) || source !== responses[0]?.id)
+      throw new NativeQueryRefusal(409, 'NATIVE_OBJECT_CHANGED');
+    if (thread.questionsSourceResponseId === source && thread.queryId) {
+      if (thread.questionsStatus === RecommendationQuestionStatus.GENERATING)
+        this.threadRecommendQuestionBackgroundTracker.addTask(thread);
+      return this.recommendationResult(thread);
     }
+    if (
+      !thread.queryId &&
+      thread.questionsStatus !== RecommendQuestionResultStatus.NOT_STARTED
+    )
+      throw new NativeQueryRefusal(503, 'NATIVE_EXECUTION_UNKNOWN');
+    if (
+      thread.queryId &&
+      ![
+        RecommendationQuestionStatus.FINISHED,
+        RecommendationQuestionStatus.FAILED,
+      ].includes(thread.questionsStatus as RecommendationQuestionStatus)
+    )
+      throw new NativeQueryRefusal(409, 'NATIVE_RECOMMENDATION_BUSY');
 
     const { manifest } = await this.mdlService.makeCurrentModelMDL(project);
-
-    const threadResponses = await this.threadResponseRepository.findAllBy({
-      threadId,
-    });
-    // descending order and get the latest 5
-    const slicedThreadResponses = threadResponses
-      .sort((a, b) => b.id - a.id)
-      .slice(0, 5);
-    const questions = slicedThreadResponses.map(({ question }) => question);
-    const recommendQuestionData: RecommendationQuestionsInput = {
-      manifest,
-      previousQuestions: questions,
-      ...this.getThreadRecommendationQuestionsConfig(project),
-    };
-
-    const result = await this.wrenAIAdaptor.generateRecommendationQuestions(
-      recommendQuestionData,
+    await this.currentThread(threadId);
+    const queryId = randomUUID();
+    const claimed = await this.threadRepository.claimRecommendation(
+      thread,
+      source,
+      queryId,
     );
-    // reset thread recommended questions
-    const updatedThread = await this.threadRepository.updateOne(threadId, {
-      queryId: result.queryId,
-      questionsStatus: RecommendationQuestionStatus.GENERATING,
-      questions: [],
-      questionsError: null,
-    });
-    this.threadRecommendQuestionBackgroundTracker.addTask(updatedThread);
-    return;
+    if (!claimed) {
+      const current = await this.currentThread(threadId);
+      const latest = (
+        await this.threadResponseRepository.findAllBy({ threadId })
+      ).sort((a, b) => b.id - a.id)[0];
+      if (latest?.id !== source)
+        throw new NativeQueryRefusal(409, 'NATIVE_OBJECT_CHANGED');
+      if (current.questionsSourceResponseId === source && current.queryId) {
+        if (current.questionsStatus === RecommendationQuestionStatus.GENERATING)
+          this.threadRecommendQuestionBackgroundTracker.addTask(current);
+        return this.recommendationResult(current);
+      }
+      throw new NativeQueryRefusal(409, 'NATIVE_RECOMMENDATION_BUSY');
+    }
+    // Persist the existing native task ID before any AI HTTP side effect. A lost
+    // ACK, UI restart or repeated original action only observes this same ID.
+    this.threadRecommendQuestionBackgroundTracker.addTask(claimed);
+    try {
+      await this.currentThread(threadId);
+      const result = await this.wrenAIAdaptor.generateRecommendationQuestions({
+        manifest,
+        previousQuestions: responses
+          .slice(0, 5)
+          .map(({ question }) => question),
+        queryId,
+        ...this.getThreadRecommendationQuestionsConfig(project),
+      });
+      if (result.queryId !== queryId)
+        throw new Error('Native task ACK mismatch');
+    } catch {
+      throw new NativeQueryRefusal(503, 'NATIVE_EXECUTION_UNKNOWN');
+    }
+    await this.currentThread(threadId);
+    return this.recommendationResult(claimed);
   }
 
   public async initialize() {
@@ -810,6 +860,7 @@ export class AskingService implements IAskingService {
         {
           projectId: project.id,
           summary: input.question,
+          questionsStatus: RecommendQuestionResultStatus.NOT_STARTED,
           // DD-133 §3: recorded only when the Kailo user is known.
           ...(input.ownerKey ? { ownerKey: input.ownerKey } : {}),
         },
@@ -892,12 +943,108 @@ export class AskingService implements IAskingService {
     await this.threadRepository.deleteOne(threadId);
   }
 
+  private async createRecommendedResponse(
+    selection: {
+      queryId: string;
+      sourceResponseId: number;
+      index: number;
+      idempotencyKey: string;
+    },
+    thread: Thread,
+  ): Promise<ThreadResponse> {
+    const uuid =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+    if (
+      !uuid.test(selection.queryId) ||
+      !uuid.test(selection.idempotencyKey) ||
+      !Number.isSafeInteger(selection.sourceResponseId) ||
+      selection.sourceResponseId <= 0 ||
+      !Number.isSafeInteger(selection.index) ||
+      selection.index < 0
+    )
+      throw new NativeQueryRefusal(400, 'NATIVE_OBJECT_CHANGED');
+    const where = {
+      threadId: thread.id,
+      recommendationIntentKey: selection.idempotencyKey,
+    };
+    const matches = (response: ThreadResponse) =>
+      response.recommendationSourceResponseId === selection.sourceResponseId &&
+      response.recommendationQueryId === selection.queryId &&
+      response.recommendationIndex === selection.index;
+    const existing = await this.threadResponseRepository.findOneBy(where);
+    if (existing) {
+      if (!matches(existing))
+        throw new NativeQueryRefusal(409, 'NATIVE_OBJECT_CHANGED');
+      await this.currentThread(thread.id);
+      return existing;
+    }
+    const tx = await this.threadRepository.transaction();
+    try {
+      // Serialize against another selection and the original recommendation
+      // claim. The unique native-row intent also guards concurrent INSERTs.
+      const current = await this.threadRepository.lockRecommendation(
+        thread,
+        tx,
+      );
+      const repeated = await this.threadResponseRepository.findOneBy(where, {
+        tx,
+      });
+      if (repeated) {
+        if (!matches(repeated))
+          throw new NativeQueryRefusal(409, 'NATIVE_OBJECT_CHANGED');
+        await this.threadRepository.commit(tx);
+        await this.currentThread(thread.id);
+        return repeated;
+      }
+      if (
+        !current ||
+        current.queryId !== selection.queryId ||
+        current.questionsSourceResponseId !== selection.sourceResponseId ||
+        current.questionsStatus !== RecommendationQuestionStatus.FINISHED
+      )
+        throw new NativeQueryRefusal(409, 'NATIVE_OBJECT_CHANGED');
+      const selected = current.questions?.[selection.index];
+      if (
+        !selected ||
+        typeof selected.question !== 'string' ||
+        typeof selected.sql !== 'string'
+      )
+        throw new NativeQueryRefusal(409, 'NATIVE_OBJECT_CHANGED');
+      const response = await this.threadResponseRepository.createOne(
+        {
+          ...where,
+          recommendationQueryId: selection.queryId,
+          recommendationSourceResponseId: selection.sourceResponseId,
+          recommendationIndex: selection.index,
+          question: selected.question,
+          sql: selected.sql,
+        },
+        { tx },
+      );
+      await this.threadRepository.commit(tx);
+      await this.currentThread(thread.id);
+      return response;
+    } catch (error) {
+      if (!tx.isCompleted()) await this.threadRepository.rollback(tx);
+      throw error;
+    }
+  }
+
   public async createThreadResponse(
     input: AskingDetailTaskInput,
     threadId: number,
   ): Promise<ThreadResponse> {
     const project = await this.projectService.getCurrentProject();
     const thread = await this.currentThread(threadId, project);
+    if (input.recommendation) {
+      if (
+        input.trackedAskingResult ||
+        input.question !== undefined ||
+        input.sql !== undefined
+      )
+        throw new NativeQueryRefusal(400, 'NATIVE_OBJECT_CHANGED');
+      return this.createRecommendedResponse(input.recommendation, thread);
+    }
     const tracked = input.trackedAskingResult;
     if (tracked && (!tracked.taskId || !tracked.queryId))
       throw new Error('Asking task not found');

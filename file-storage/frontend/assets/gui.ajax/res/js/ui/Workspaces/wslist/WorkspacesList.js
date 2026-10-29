@@ -310,6 +310,9 @@ class WorkspacesList extends React.Component{
 
 
         const messages = pydio.MessageHash;
+        // DD-157 (20 §13.8): the location group is named 位置 in Kailo mode.
+        const kailo = typeof window !== 'undefined' && window.KailoCells
+        const locationsTitle = kailo && kailo.kailoMode && kailo.kailoMode() && kailo.text ? kailo.text('locations') : messages[468]
 
         const createClick = function(event){
             const target = event.target;
@@ -491,7 +494,7 @@ class WorkspacesList extends React.Component{
                 {showWorkspacesSection &&
                     <Entries
                         {...entriesProps}
-                        title={messages[468]}
+                        title={locationsTitle}
                         entries={entries}
                         listSettings={listSettings}
                         showOwner={!cellsSortingMixed}
@@ -502,7 +505,7 @@ class WorkspacesList extends React.Component{
                 }
                 <Entries
                     {...entriesProps}
-                    title={messages[merge?468:469]}
+                    title={merge?locationsTitle:messages[469]}
                     entries={merge?[...entries, ...sharedEntries]:sharedEntries}
                     listSettings={showWorkspacesSection?null:listSettings}
                     showOwner={!cellsSortingMixed}

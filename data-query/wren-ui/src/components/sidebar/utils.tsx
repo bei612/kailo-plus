@@ -4,7 +4,8 @@ import { DataNode } from 'antd/lib/tree';
 import { getColumnTypeIcon } from '@/utils/columnType';
 import { PrimaryKeyIcon, RelationshipIcon } from '@/utils/icons';
 import { ComposeDiagramField } from '@/utils/data';
-import { assign, isEmpty, snakeCase, lowerCase } from 'lodash';
+import { assign, isEmpty, snakeCase } from 'lodash';
+import { kailoT } from '@/utils/kailoI18n';
 import GroupTreeTitle, { ActionType } from './modeling/GroupTreeTitle';
 import { getJoinTypeText } from '@/utils/data';
 import { NODE_TYPE } from '@/utils/enum';
@@ -24,7 +25,10 @@ const ColumnNode = ({ title, relation, primary }) => {
         </span>
       )}
       {primary && (
-        <span className="adm-treeNode--primary" title="Primary Key">
+        <span
+          className="adm-treeNode--primary"
+          title={kailoT('modeling.primaryKey')}
+        >
           <PrimaryKeyIcon />
         </span>
       )}
@@ -90,6 +94,8 @@ interface GroupSet {
   appendSlot?: React.ReactNode;
   children?: DataNode[];
   actions: ActionType[];
+  /** Shown when the group has no items (e.g. 暂无视图). */
+  emptyText?: string;
 }
 
 export const createTreeGroupNode =
@@ -101,11 +107,12 @@ export const createTreeGroupNode =
       actions,
       children = [],
       appendSlot,
+      emptyText,
     } = assign(sourceData, updatedData);
 
     const emptyChildren = [
       {
-        title: `No ${lowerCase(groupName)}`,
+        title: emptyText || kailoT('modeling.noItems'),
         key: `${groupKey}-empty`,
         selectable: false,
         className: 'adm-treeNode adm-treeNode--empty adm-treeNode--selectNode',
@@ -132,17 +139,27 @@ export const createTreeGroupNode =
     ];
   };
 
+// Small text/icon button in a group title (新建, 刷新): no upper case.
 export const GroupActionButton = styled(Button)`
   font-size: 12px;
-  height: auto;
+  font-weight: 500;
+  letter-spacing: normal;
+  text-transform: none;
+  height: 24px;
+  padding: 0 6px;
+  border-radius: 6px;
+  border-color: transparent;
+  box-shadow: none;
   background: transparent;
-  color: var(--gray-8);
+  color: var(--kailo-color-muted-foreground);
   &:hover {
-    background-color: transparent;
+    background-color: var(--kailo-color-hover);
+    border-color: transparent;
+    color: var(--kailo-color-foreground);
   }
   &:focus {
-    border-color: var(--gray-5);
+    border-color: transparent;
     background: transparent;
-    color: var(--gray-8);
+    color: var(--kailo-color-foreground);
   }
 `;

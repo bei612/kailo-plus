@@ -36,8 +36,9 @@ export function ComposerQueuedSendPill({ previews, onCancel }: {
 }
 
 /** A pending send this composer no longer holds: never resent by itself, restored or discarded by the user. */
-export function ComposerPendingSendRecovery({ stage, missingFiles, canRestore, onRestore, onDiscard }: {
+export function ComposerPendingSendRecovery({ stage, missingFiles, canRestore, onRestore, onDiscard, uploadUnknown = false }: {
   stage: PendingSendStage;
+  uploadUnknown?: boolean;
   missingFiles: number;
   canRestore: boolean;
   onRestore: () => void;
@@ -52,7 +53,7 @@ export function ComposerPendingSendRecovery({ stage, missingFiles, canRestore, o
   const tone = stage === "unknown" ? "bg-warning-soft text-warning-text" : "bg-danger-soft text-danger-text";
   return <div className={`mx-auto mb-2 flex w-fit max-w-full flex-wrap items-center justify-center gap-2 rounded-lg py-1 pr-1 pl-3 text-xs ${tone}`} role="status"
     aria-live="polite" data-testid="composer-pending-send" data-stage={stage}>
-    <span>{t(stage === "unknown" ? "platform.pendingSendUnknown" : "platform.pendingSendFailed")}</span>
+    <span>{t(uploadUnknown ? "platform.uploadFailed" : stage === "unknown" ? "platform.pendingSendUnknown" : "platform.pendingSendFailed")}</span>
     {missingFiles > 0 ? <span>{t("platform.pendingSendMissingFiles", { count: missingFiles })}</span> : null}
     {canRestore ? null : <span>{t("platform.pendingSendRestoreBlocked")}</span>}
     <Button type="button" size="sm" variant="ghost" disabled={!canRestore} onClick={onRestore} data-testid="composer-pending-send-restore">

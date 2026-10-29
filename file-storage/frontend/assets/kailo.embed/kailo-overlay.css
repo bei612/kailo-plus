@@ -97,16 +97,18 @@ body.react-mui-context,
 .icomoon-cells-clear-minus:before {
     font-family: "Material Design Icons" !important;
 }
+/* !important: the native icon sheet loads later with the same specificity
+ * (its content won while the font switched, leaving an empty glyph). */
 .icomoon-cells:before {
-    content: "\F0B9C"; /* folder-account-outline */
+    content: "\F0B9C" !important; /* folder-account-outline */
 }
 .icomoon-cells-full-plus:before,
 .icomoon-cells-clear-plus:before {
-    content: "\F0B9D"; /* folder-plus-outline */
+    content: "\F0B9D" !important; /* folder-plus-outline */
 }
 .icomoon-cells-full-minus:before,
 .icomoon-cells-clear-minus:before {
-    content: "\F0B9E"; /* folder-remove-outline */
+    content: "\F0B9E" !important; /* folder-remove-outline */
 }
 
 /* DD-141: no upstream wallpaper. The home header sits on a quiet Kailo brand
@@ -137,4 +139,469 @@ body.react-mui-context,
 
 [data-kailo-theme="dark"] .react-mui-context [class*="MuiPaper-elevation"] {
     box-shadow: var(--kailo-shadow-md) !important;
+}
+
+/* ======================================================================
+ * DD-157 integrated interaction (07 §4.8.7, 20 §13): the native page is a
+ * Kailo business page. Everything below uses Kailo roles only.
+ * ====================================================================== */
+
+/* Theme switch: the native re-render outlasts the runtime's one-frame
+ * marker (kailo-cells.js keeps data-kailo-cells-theme-switching for it). */
+:root[data-kailo-cells-theme-switching] *,
+:root[data-kailo-cells-theme-switching] *::before,
+:root[data-kailo-cells-theme-switching] *::after {
+    transition: none !important;
+    animation: none !important;
+}
+
+/* No missing-glyph boxes while the icon font loads (spec §3 加载). */
+:root[data-kailo-runtime]:not([data-kailo-icons-ready]) .mdi::before,
+:root[data-kailo-runtime]:not([data-kailo-icons-ready]) [class^="mdi-"]::before,
+:root[data-kailo-runtime]:not([data-kailo-icons-ready]) [class*=" mdi-"]::before,
+:root[data-kailo-runtime]:not([data-kailo-icons-ready]) [class*="icomoon-"]::before {
+    visibility: hidden;
+}
+
+/* Page surface: no tinted canvas behind the panes, no aura in a frame. */
+:root[data-kailo-page-hosted] #orbit_content,
+:root[data-kailo-page-hosted] #background-imager {
+    background-image: none !important;
+}
+
+/* ---- List pane (spec §2): location tree / favorites ------------------- */
+.kailo-list-pane {
+    background: var(--kailo-color-background) !important;
+    color: var(--kailo-color-foreground) !important;
+    border-right: 1px solid var(--kailo-color-border);
+    border-radius: 0 !important;
+}
+
+.kailo-list-pane-title,
+:root[data-kailo-runtime] .user-workspaces-list .workspaces-list-section-title,
+:root[data-kailo-runtime] .user-workspaces-list > div > div:first-child > div[style*="text-transform"] {
+    font-size: 11px !important;
+    line-height: 14px !important;
+    font-weight: 600 !important;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--kailo-color-muted-foreground) !important;
+}
+
+.kailo-list-pane-title {
+    padding: 16px 16px 8px;
+}
+
+:root[data-kailo-runtime] .workspace-entry {
+    min-height: 32px;
+    box-sizing: border-box;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--kailo-color-foreground);
+}
+
+:root[data-kailo-runtime] .workspace-entry:hover {
+    background-color: var(--kailo-color-hover);
+}
+
+:root[data-kailo-runtime] .workspace-entry .workspace-label {
+    font-size: 13px;
+    line-height: 20px;
+}
+
+/* Monochrome line icons in navigation (spec §4 图标). */
+:root[data-kailo-runtime] .workspace-entry .mdi,
+:root[data-kailo-runtime] .kailo-list-pane .mdi {
+    color: var(--kailo-color-muted-foreground);
+}
+
+/* ---- Files list (spec §3 列表/表格): 40px rows, selected = brand-soft --- */
+:root[data-kailo-runtime] .react-mui-context.mui3-token .material-list .material-list-entry.selected,
+:root[data-kailo-runtime] .react-mui-context.mui3-token .modern-list .modern-list-entry.selected {
+    background-color: var(--kailo-color-selected) !important;
+    color: var(--kailo-color-selected-foreground) !important;
+}
+
+:root[data-kailo-runtime] .react-mui-context.mui3-token .material-list .material-list-entry.selected .material-list-line-2,
+:root[data-kailo-runtime] .react-mui-context.mui3-token .material-list .material-list-entry.selected .material-list-line-2 .overlay-icon-span,
+:root[data-kailo-runtime] .react-mui-context.mui3-token .modern-list .modern-list-entry.selected .material-list-line-2,
+:root[data-kailo-runtime] .react-mui-context.mui3-token .material-list.table-mode .material-list-entry.selected-dark span.cell,
+:root[data-kailo-runtime] .react-mui-context.mui3-token .modern-list.table-mode .modern-list-entry.selected-dark span.cell {
+    color: var(--kailo-color-muted-foreground) !important;
+}
+
+:root[data-kailo-runtime] .react-mui-context.mui3-token .material-list.table-mode .material-list-entry.selected-dark span.cell.cell-ajxp_label,
+:root[data-kailo-runtime] .react-mui-context.mui3-token .modern-list.table-mode .modern-list-entry.selected-dark span.cell.cell-ajxp_label,
+:root[data-kailo-runtime] .react-mui-context.mui3-token .material-list.table-mode .material-list-entry.selected-dark .mimefont,
+:root[data-kailo-runtime] .react-mui-context.mui3-token .modern-list.table-mode .modern-list-entry.selected-dark .mimefont {
+    color: var(--kailo-color-selected-foreground) !important;
+}
+
+:root[data-kailo-runtime] .react-mui-context.mui3-token .material-list.files-list.material-list-grid .material-list-entry.selected,
+:root[data-kailo-runtime] .react-mui-context.mui3-token .modern-list.files-list.material-list-grid .modern-list-entry.selected {
+    background: var(--kailo-color-selected) !important;
+    box-shadow: inset 0 0 0 1px var(--kailo-color-brand-line) !important;
+}
+
+/* One line per file: name 14/500, date and size as a 12px muted column. */
+:root[data-kailo-runtime] .main-files-list:not(.material-list-grid):not(.table-mode) .material-list-entry {
+    min-height: 40px;
+    height: 40px;
+    border-bottom: 1px solid var(--kailo-color-border) !important;
+    box-sizing: border-box;
+}
+
+:root[data-kailo-runtime] .main-files-list:not(.material-list-grid):not(.table-mode) .material-list-entry .material-list-icon {
+    width: 40px;
+    min-width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 4px 0 8px;
+}
+
+:root[data-kailo-runtime] .main-files-list:not(.material-list-grid):not(.table-mode) .material-list-entry .material-list-icon .mimefont-container {
+    width: 28px !important;
+    height: 28px !important;
+    min-width: 28px;
+    line-height: 28px !important;
+    margin: 0 !important;
+    border-radius: 6px !important;
+    background-color: transparent !important;
+}
+
+:root[data-kailo-runtime] .main-files-list:not(.material-list-grid):not(.table-mode) .material-list-entry .material-list-icon .mimefont {
+    font-size: 20px !important;
+    line-height: 28px !important;
+}
+
+:root[data-kailo-runtime] .main-files-list:not(.material-list-grid):not(.table-mode) .material-list-entry .material-list-text {
+    display: flex !important;
+    flex-direction: row;
+    align-items: center;
+    height: 40px !important;
+    padding: 0 8px 0 0 !important;
+    overflow: hidden;
+}
+
+:root[data-kailo-runtime] .main-files-list:not(.material-list-grid):not(.table-mode) .material-list-entry .material-list-line-1 {
+    flex: 1;
+    min-width: 0;
+    font-size: 14px !important;
+    line-height: 20px !important;
+    font-weight: 500 !important;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+:root[data-kailo-runtime] .main-files-list:not(.material-list-grid):not(.table-mode) .material-list-entry .material-list-line-2 {
+    flex: none;
+    margin-left: 16px;
+    font-size: 12px !important;
+    line-height: 16px !important;
+    color: var(--kailo-color-muted-foreground);
+    white-space: nowrap;
+}
+
+:root[data-kailo-runtime] .main-files-list:not(.material-list-grid):not(.table-mode) .material-list-entry .material-list-line-3 {
+    display: none;
+}
+
+:root[data-kailo-runtime] .main-files-list .material-list-entry:hover:not(.selected) {
+    background-color: var(--kailo-color-hover) !important;
+}
+
+/* ---- Buttons and icon buttons (spec §3) ------------------------------- */
+:root[data-kailo-runtime] .react-mui-context button {
+    text-transform: none !important;
+    letter-spacing: 0 !important;
+}
+
+:root[data-kailo-runtime] .react-mui-context button[style*="border-radius: 50%"] {
+    border-radius: 8px !important;
+}
+
+/* ---- Avatars: rounded squares, neutral initials (spec §3 头像) ---------- */
+:root[data-kailo-runtime] .react-mui-context .user-avatar,
+:root[data-kailo-runtime] .react-mui-context .mui-avatar,
+:root[data-kailo-runtime] .react-mui-context .MuiAvatar-root {
+    border-radius: 28% !important;
+}
+
+/* ---- Menus and context menus (spec §3 菜单) ---------------------------- */
+:root[data-kailo-runtime] .react-mui-context [role="menu"] {
+    background-color: var(--kailo-color-popover) !important;
+    color: var(--kailo-color-popover-foreground) !important;
+    padding: 4px !important;
+}
+
+:root[data-kailo-runtime] .react-mui-context [role="menuitem"] {
+    min-height: 30px !important;
+    line-height: 30px !important;
+    font-size: 13px !important;
+    border-radius: 6px;
+}
+
+:root[data-kailo-runtime] .react-mui-context [role="menuitem"]:hover {
+    background-color: var(--kailo-color-hover) !important;
+}
+
+:root[data-kailo-runtime] .react-mui-context [role="menuitem"] .mdi {
+    color: var(--kailo-color-muted-foreground) !important;
+    font-size: 16px !important;
+}
+
+/* ---- Dialogs (spec §3 对话框) ------------------------------------------ */
+:root[data-kailo-runtime] .react-mui-context [role="dialog"] {
+    border-radius: var(--kailo-radius-2xl, 16px) !important;
+    box-shadow: var(--kailo-shadow-xl) !important;
+}
+
+/* ---- Side panels (spec §2 详情侧板): flat, no floating window --------- */
+:root[data-kailo-runtime] .react-mui-context .info-panel-card,
+:root[data-kailo-runtime] .react-mui-context .detail-panel-card {
+    box-shadow: none !important;
+}
+
+/* ---- Files list rows: inline row actions, quiet folder glyphs --------- */
+:root[data-kailo-runtime] .main-files-list:not(.material-list-grid):not(.table-mode) .material-list-entry {
+    display: flex !important;
+    align-items: center;
+}
+
+:root[data-kailo-runtime] .main-files-list:not(.material-list-grid):not(.table-mode) .material-list-entry .material-list-actions {
+    position: static !important;
+    display: flex;
+    align-items: center;
+    height: 40px;
+    margin: 0 8px 0 0 !important;
+    padding: 0 !important;
+}
+
+:root[data-kailo-runtime] .main-files-list .material-list-entry .material-list-actions button {
+    margin: 0 !important;
+    width: 28px !important;
+    height: 28px !important;
+    padding: 5px !important;
+    border-radius: 8px !important;
+}
+
+:root[data-kailo-runtime] .main-files-list .material-list-entry .overlay-icon-span,
+:root[data-kailo-runtime] .main-files-list .material-list-entry .material-list-actions .mdi {
+    font-size: 16px !important;
+    color: var(--kailo-color-muted-foreground) !important;
+}
+
+:root[data-kailo-runtime] .main-files-list .material-list-entry .metadata_chunk {
+    font-size: 12px !important;
+    color: var(--kailo-color-muted-foreground) !important;
+}
+
+:root[data-kailo-runtime] .main-files-list .material-list-entry.ajxp_node_collection .mimefont,
+:root[data-kailo-runtime] .workspace-entry .mdi-folder,
+:root[data-kailo-runtime] .workspace-entry [class*="mdi-folder"] {
+    color: var(--kailo-color-muted-foreground) !important;
+}
+
+/* ---- List pane group titles: Overline 11/14 600 muted uppercase -------- */
+:root[data-kailo-runtime] .user-workspaces-list .section-title {
+    font-size: 11px !important;
+    line-height: 14px !important;
+    font-weight: 600 !important;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--kailo-color-muted-foreground) !important;
+    padding-top: 16px !important;
+    padding-bottom: 6px !important;
+}
+
+:root[data-kailo-runtime] .user-workspaces-list .section-title .mdi {
+    font-size: 11px !important;
+}
+
+/* ---- No circular buttons (spec §3 图标按钮) ----------------------------- */
+:root[data-kailo-runtime] .react-mui-context div[style*="border-radius: 50%"]:has(> button) {
+    border-radius: 8px !important;
+    box-shadow: var(--kailo-shadow-sm) !important;
+}
+
+/* ---- Dialog title and scrim (spec §3 对话框) ---------------------------- */
+:root[data-kailo-runtime] .react-mui-context [role="dialog"] h3 {
+    font-size: 17px !important;
+    line-height: 24px !important;
+    font-weight: 600 !important;
+    color: var(--kailo-color-foreground) !important;
+}
+
+:root[data-kailo-runtime] div[style*="background-color: rgba(0, 0, 0, 0.54)"][style*="position: fixed"] {
+    background-color: rgb(0 0 0 / 40%) !important;
+    backdrop-filter: blur(2px);
+}
+
+:root[data-kailo-runtime][data-kailo-theme="dark"] div[style*="background-color: rgba(0, 0, 0, 0.54)"][style*="position: fixed"] {
+    background-color: rgb(0 0 0 / 60%) !important;
+}
+
+/* ---- Upload dialog: brand line icon, no Material blue ------------------ */
+:root[data-kailo-runtime] .drop-transfer-list {
+    color: var(--kailo-color-muted-foreground) !important;
+    font-size: 14px !important;
+}
+
+:root[data-kailo-runtime] .drop-transfer-list > div {
+    font-size: 14px !important;
+    font-weight: 400 !important;
+    line-height: 20px !important;
+}
+
+:root[data-kailo-runtime] .drop-transfer-list .mdi-cloud-upload::before {
+    content: "";
+    display: inline-block;
+    width: 64px;
+    height: 64px;
+    margin-bottom: 16px;
+    background-color: var(--kailo-color-brand);
+    -webkit-mask: var(--kailo-cells-upload-icon) center / contain no-repeat;
+    mask: var(--kailo-cells-upload-icon) center / contain no-repeat;
+}
+
+:root[data-kailo-runtime] .drop-transfer-list a,
+:root[data-kailo-runtime] .drop-transfer-list a:hover {
+    color: var(--kailo-color-brand-text, var(--kailo-color-brand)) !important;
+    font-weight: 500;
+}
+
+:root[data-kailo-runtime] .transparent-dropzone.active .drop-transfer-list {
+    color: var(--kailo-color-foreground) !important;
+}
+
+/* ---- Drag to upload (spec §4 拖拽上传): the content area is the target --
+ * kailo-cells.js draws .kailo-drop-overlay over the files list while files
+ * are dragged over the page; the native orange tint is not used. */
+:root {
+    --kailo-cells-upload-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 3v12'/%3E%3Cpath d='m17 8-5-5-5 5'/%3E%3Cpath d='M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4'/%3E%3C/svg%3E");
+}
+
+:root[data-kailo-runtime] .main-files-list.droppable-active {
+    background-color: var(--kailo-color-background) !important;
+}
+
+.kailo-drop-overlay {
+    position: fixed;
+    z-index: 1500;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    box-sizing: border-box;
+    border: 2px dashed var(--kailo-color-brand);
+    border-radius: 12px;
+    background-color: color-mix(in srgb, var(--kailo-color-selected) 60%, transparent);
+    color: var(--kailo-color-selected-foreground);
+    font-family: var(--kailo-font-sans);
+    font-size: 14px;
+    line-height: 20px;
+    font-weight: 500;
+    pointer-events: none;
+}
+
+.kailo-drop-overlay-icon {
+    width: 40px;
+    height: 40px;
+    background-color: var(--kailo-color-brand);
+    -webkit-mask: var(--kailo-cells-upload-icon) center / contain no-repeat;
+    mask: var(--kailo-cells-upload-icon) center / contain no-repeat;
+}
+
+:root[data-kailo-runtime] .main-files-list .material-list-entry.droppable-active {
+    background-color: var(--kailo-color-selected) !important;
+    box-shadow: inset 0 0 0 1px var(--kailo-color-brand);
+}
+
+/* ---- Home: page surface, Kailo search field ---------------------------- */
+:root[data-kailo-runtime] .home-center-paper {
+    background-color: var(--kailo-color-background) !important;
+}
+
+:root[data-kailo-runtime] .home-search-form {
+    background-color: var(--kailo-color-background) !important;
+    border: 1px solid var(--kailo-color-line-strong, var(--kailo-color-input)) !important;
+    border-radius: 8px !important;
+    box-shadow: var(--kailo-shadow-xs) !important;
+}
+
+/* ---- Document editor shell (editor.onlyoffice) ------------------------- */
+.kailo-onlyoffice-legal {
+    background-color: var(--kailo-color-background);
+    border-top: 1px solid var(--kailo-color-border);
+    color: var(--kailo-color-muted-foreground);
+    line-height: 16px;
+}
+
+.kailo-onlyoffice-legal a {
+    color: var(--kailo-color-muted-foreground);
+    text-decoration: none;
+}
+
+.kailo-onlyoffice-legal a:hover {
+    color: var(--kailo-color-foreground);
+    text-decoration: underline;
+}
+
+.kailo-onlyoffice-actions {
+    display: flex;
+    gap: 8px;
+    padding: 8px 16px;
+    background-color: var(--kailo-color-background);
+    border-bottom: 1px solid var(--kailo-color-border);
+}
+
+.kailo-onlyoffice-actions button {
+    height: 32px;
+    padding: 0 12px;
+    border-radius: 8px;
+    border: 1px solid var(--kailo-color-line-strong, var(--kailo-color-input));
+    background-color: var(--kailo-color-background);
+    box-shadow: var(--kailo-shadow-xs);
+    color: var(--kailo-color-foreground);
+    font: 500 13px/20px var(--kailo-font-sans);
+    cursor: pointer;
+}
+
+.kailo-onlyoffice-actions button:hover:not(:disabled) {
+    background-color: var(--kailo-color-hover);
+}
+
+.kailo-onlyoffice-actions button:disabled {
+    opacity: 0.5;
+    cursor: default;
+}
+
+/* Inline error (spec §3 错误): danger mark, 14/600 title. */
+.kailo-inline-error {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 16px;
+    font: 600 14px/20px var(--kailo-font-sans);
+    color: var(--kailo-color-foreground);
+    background-color: var(--kailo-color-background);
+}
+
+.kailo-inline-error::before {
+    content: "";
+    width: 16px;
+    height: 16px;
+    flex: none;
+    border-radius: 50%;
+    border: 1.5px solid var(--kailo-color-danger);
+    box-sizing: border-box;
+}
+
+/* Home header band: no dimming layer over the (removed) wallpaper. */
+:root[data-kailo-runtime] .user-dashboard-template .desktop-container > div:first-child {
+    background-color: transparent !important;
 }

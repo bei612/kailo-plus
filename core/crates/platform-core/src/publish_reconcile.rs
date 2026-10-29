@@ -5,9 +5,10 @@
 //! 去 Relay 查，把它收敛成确定的结果并以 RECONCILIATION 追加：
 //!
 //! - Relay 存着这条事件：已送达；
-//! - 查不到，且签名时间已超出 Relay 的时间漂移窗口：这条事件再也不可能被接受
-//!   （`SF-BUZ-40`），确定未送达；
-//! - 查不到而仍在窗口内：继续等，不猜。
+//! - 普通事件查询为空：仍未知，过窗也不证明从未送达。软删除会隐藏
+//!   原事件及其删除事件，早先通过时间检查的 writer 也可能尚未提交。
+//!   只有冻结epoch、双身份查证及writer屏障证明可追加确定未送达；
+//! - 依赖不可读或证据不足：继续等，不猜。
 //!
 //! 不重发：DISPATCH 之后用户可能已经重新发了一条，自动重发会造出重复消息
 //! （`DD-48`「无 native 结论不自动重放」）。
@@ -27,19 +28,15 @@ use crate::audit::{append, AuditEntry};
 use crate::service_api::ServiceState;
 use crate::tenant_lifecycle::{control_client, ProjectionDirection};
 use crate::web_transport::{
+    owned_publication_installation, publication_binding, MessageTarget, PublicationScope,
     CONVERSATION_HIDE_ACTION, CONVERSATION_PUBLISH_ACTION, CONVERSATION_REOPEN_ACTION,
-    PUBLISH_ACTION, TOPIC_ACTION,
+    FILTERED_PUBLICATION_ACTIONS, PUBLISH_ACTION, TOPIC_ACTION,
 };
-
-/// Community-global project publications the reconciler settles: NIP-34
-/// issues, reviews and their lifecycle, the DD-118 merged status (1631)
-/// included.
-const COMMUNITY_PROJECT_KINDS: [i32; 8] = [1, 5, 1618, 1621, 1630, 1631, 1632, 1633];
 
 pub struct Config {
     pub interval: Duration,
-    /// DISPATCH 之后至少等这么久仍查不到，才判定未送达。必须不小于 Relay 的
-    /// 时间漂移窗口（`07` §1）
+    /// DISPATCH 之后的诊断结算窗，必须不小于 Relay 的时间漂移窗口（`07` §1）。
+    /// 普通查询空不据此判定未送达；原生 writer 查证另需原签名时间与范围事实。
     pub settle: Duration,
     pub batch: i64,
     /// 幂等记录在其操作有结论之后再保留这么久：够用户在界面上重试，也不让它
@@ -79,7 +76,9 @@ pub fn spawn(state: ServiceState, meter: &Meter, cfg: Config) {
     let metrics = Metrics {
         unsettled: meter
             .u64_gauge("platform.publish.unsettled")
-            .with_description("已 DISPATCH 而没有确定结果的消息发布数")
+            .with_description(
+                "已 DISPATCH 而未确证的发布数；缺失证明仅计本轮 actual policy 确证范围",
+            )
             .build(),
         oldest_age: meter
             .u64_gauge("platform.publish.unsettled_oldest_age")
@@ -97,6 +96,7 @@ pub fn spawn(state: ServiceState, meter: &Meter, cfg: Config) {
         // Scheduling cursor only; audit remains the publication authority. An
         // unobservable replaceable profile must not starve later intents.
         let mut profile_cursor = None;
+        let mut agent_profile_cursor = None;
         // Same scheduling-only cursor for message publications: a DISPATCH that
         // can never settle (missing evidence, unobservable replaceable event)
         // stays unsettled and counted, but must not starve later intents.
@@ -108,13 +108,20 @@ pub fn spawn(state: ServiceState, meter: &Meter, cfg: Config) {
             {
                 tracing::warn!(error = %e, "Profile publication reconciliation incomplete");
             }
-            // DD-117: Agent kind:0 publications settle by event ID within the same
-            // Relay drift window; missing/stale Agent profiles are (re)published.
-            if let Err(e) = crate::agent_profile::reconcile(&state, cfg.batch, cfg.settle).await {
+            // DD-117: Only positive evidence settles unknown Agent profiles. The
+            // configured delay applies only after an explicit non-delivery.
+            if let Err(e) = crate::agent_profile::reconcile(
+                &state,
+                cfg.batch,
+                cfg.settle,
+                &mut agent_profile_cursor,
+            )
+            .await
+            {
                 tracing::warn!(error = %e, "Agent profile projection reconciliation incomplete");
             }
-            // DD-125(4): CONTROL Canvas events settle by event ID within the same window.
-            let canvas = crate::workspace_canvas::reconcile(&state, cfg.batch, cfg.settle);
+            // DD-125(4): CONTROL Canvas events require verified positive evidence.
+            let canvas = crate::workspace_canvas::reconcile(&state, cfg.batch);
             if let Err(e) = canvas.await {
                 tracing::warn!(error = %e, "Canvas publication reconciliation incomplete");
             }
@@ -165,16 +172,8 @@ struct PendingRow {
     settled: bool,
 }
 
-async fn pass(
-    state: &ServiceState,
-    metrics: &Metrics,
-    cfg: &Config,
-    cursor: &mut Option<(chrono::DateTime<chrono::Utc>, Uuid)>,
-) -> Result<(), String> {
-    let min_age = i64::try_from(cfg.interval.as_secs()).unwrap_or(i64::MAX);
-    let settle = i64::try_from(cfg.settle.as_secs()).unwrap_or(i64::MAX);
-    let rows = sqlx::query_as::<_, PendingRow>(
-        r#"select d.operation_id, d.occurred_at, d.tenant_id, d.workspace_id,
+// Shared by the production scan, metrics, retention and isolated SQL regressions.
+const PENDING_PUBLICATIONS_SQL: &str = r#"select d.operation_id, d.occurred_at, d.tenant_id, d.workspace_id,
                   d.human_identity_id, d.initiator_principal_id, d.actor_principal_id,
                   d.target_id, d.action_key, d.target_type, d.evidence_refs,
                   (select e->>'value' from jsonb_array_elements(d.evidence_refs) e
@@ -187,36 +186,70 @@ async fn pass(
              and not exists (
                  select 1 from audit.audit_event o
                  where o.operation_id = d.operation_id
-                   and o.event_type in ('OUTCOME', 'RECONCILIATION'))
+                   and o.event_type in ('OUTCOME', 'RECONCILIATION')
+                   and not (o.event_type='RECONCILIATION' and o.result_code='NOT_DELIVERED'
+                            and (o.action_key=any($7) or o.publication_proof is not null)))
              and ($5::timestamptz is null or (d.occurred_at, d.operation_id) > ($5, $6))
            order by d.occurred_at, d.operation_id
-           limit $2"#,
-    )
-    .bind(
-        [
-            PUBLISH_ACTION,
-            TOPIC_ACTION,
-            crate::pulse::PUBLISH_ACTION,
-            crate::projects::PUBLISH_ACTION,
-            crate::reminders::PUBLISH_ACTION,
-            CONVERSATION_PUBLISH_ACTION,
-            CONVERSATION_HIDE_ACTION,
-            CONVERSATION_REOPEN_ACTION,
-        ]
-        .as_slice(),
-    )
-    .bind(cfg.batch)
-    .bind(settle)
-    .bind(min_age)
-    .bind(cursor.map(|c| c.0))
-    .bind(cursor.map(|c| c.1))
-    .fetch_all(&state.pool)
-    .await
-    .map_err(|e| e.to_string())?;
+           limit $2"#;
+
+const UNSETTLED_PUBLICATIONS_SQL: &str = r#"select count(*),
+                  coalesce(extract(epoch from now() - min(d.occurred_at))::bigint, 0)
+           from audit.audit_event d
+           join identity.tenant t on t.id = d.tenant_id
+           where d.event_type = 'DISPATCH' and d.action_key = any($1)
+             and not exists (
+                 select 1 from audit.audit_event o
+                 where o.operation_id = d.operation_id
+                   and o.event_type in ('OUTCOME', 'RECONCILIATION')
+                   and not (o.event_type='RECONCILIATION' and o.result_code='NOT_DELIVERED'
+                            and (o.action_key=any($2) or o.publication_proof is not null) and not (o.operation_id=any($3) and audit.publication_absence_proven(o.publication_proof,o.evidence_refs))))"#;
+
+const REAP_PUBLICATIONS_SQL: &str = "delete from admission.publish_attempt a
+         where a.created_at < now() - make_interval(secs => $1::bigint)
+           and (select max(r.occurred_at) from audit.audit_event r
+                       where r.operation_id = a.operation_id
+                         and r.event_type in ('OUTCOME', 'RECONCILIATION')
+                         and not (r.event_type='RECONCILIATION' and r.result_code='NOT_DELIVERED'
+                                  and (r.action_key=any($2) or r.publication_proof is not null) and not (r.operation_id=any($3) and audit.publication_absence_proven(r.publication_proof,r.evidence_refs))))
+               < now() - make_interval(secs => $1::bigint)";
+
+async fn pass(
+    state: &ServiceState,
+    metrics: &Metrics,
+    cfg: &Config,
+    cursor: &mut Option<(chrono::DateTime<chrono::Utc>, Uuid)>,
+) -> Result<(), String> {
+    let min_age = i64::try_from(cfg.interval.as_secs()).unwrap_or(i64::MAX);
+    let settle = i64::try_from(cfg.settle.as_secs()).unwrap_or(i64::MAX);
+    let rows = sqlx::query_as::<_, PendingRow>(PENDING_PUBLICATIONS_SQL)
+        .bind(
+            [
+                PUBLISH_ACTION,
+                TOPIC_ACTION,
+                crate::pulse::PUBLISH_ACTION,
+                crate::projects::PUBLISH_ACTION,
+                crate::reminders::PUBLISH_ACTION,
+                CONVERSATION_PUBLISH_ACTION,
+                CONVERSATION_HIDE_ACTION,
+                CONVERSATION_REOPEN_ACTION,
+            ]
+            .as_slice(),
+        )
+        .bind(cfg.batch)
+        .bind(settle)
+        .bind(min_age)
+        .bind(cursor.map(|c| c.0))
+        .bind(cursor.map(|c| c.1))
+        .bind(FILTERED_PUBLICATION_ACTIONS.as_slice())
+        .fetch_all(&state.pool)
+        .await
+        .map_err(|e| e.to_string())?;
 
     if rows.is_empty() {
         *cursor = None;
     }
+    let mut confirmed_absences = Vec::new();
     for r in rows {
         *cursor = Some((r.occurred_at, r.operation_id));
         let Some(event_id) = r.event_id else {
@@ -256,54 +289,73 @@ async fn pass(
             settled_window_passed: r.settled,
         };
         let outcome = settle_one(state, &p).await;
+        if outcome == "NOT_DELIVERED" {
+            confirmed_absences.push(p);
+        }
         metrics
             .reconciled
             .add(1, &[KeyValue::new("outcome", outcome)]);
     }
 
-    let (n, age): (i64, i64) = sqlx::query_as(
-        r#"select count(*),
-                  coalesce(extract(epoch from now() - min(d.occurred_at))::bigint, 0)
-           from audit.audit_event d
-           join identity.tenant t on t.id = d.tenant_id
-           where d.event_type = 'DISPATCH' and d.action_key = any($1)
-             and not exists (
-                 select 1 from audit.audit_event o
-                 where o.operation_id = d.operation_id
-                   and o.event_type in ('OUTCOME', 'RECONCILIATION'))"#,
-    )
-    .bind(
-        [
-            PUBLISH_ACTION,
-            TOPIC_ACTION,
-            crate::pulse::PUBLISH_ACTION,
-            crate::projects::PUBLISH_ACTION,
-            crate::reminders::PUBLISH_ACTION,
-            CONVERSATION_PUBLISH_ACTION,
-            CONVERSATION_HIDE_ACTION,
-            CONVERSATION_REOPEN_ACTION,
-        ]
-        .as_slice(),
-    )
-    .fetch_one(&state.pool)
-    .await
-    .map_err(|e| e.to_string())?;
+    let (n, age): (i64, i64) = sqlx::query_as(UNSETTLED_PUBLICATIONS_SQL)
+        .bind(
+            [
+                PUBLISH_ACTION,
+                TOPIC_ACTION,
+                crate::pulse::PUBLISH_ACTION,
+                crate::projects::PUBLISH_ACTION,
+                crate::reminders::PUBLISH_ACTION,
+                CONVERSATION_PUBLISH_ACTION,
+                CONVERSATION_HIDE_ACTION,
+                CONVERSATION_REOPEN_ACTION,
+            ]
+            .as_slice(),
+        )
+        .bind(FILTERED_PUBLICATION_ACTIONS.as_slice())
+        .bind(
+            confirmed_absences
+                .iter()
+                .map(|p| p.operation_id)
+                .collect::<Vec<_>>(),
+        )
+        .fetch_one(&state.pool)
+        .await
+        .map_err(|e| e.to_string())?;
     metrics.unsettled.record(n.max(0) as u64, &[]);
     metrics.oldest_age.record(age.max(0) as u64, &[]);
 
-    // 已有结论且超过保留期的幂等记录不再有用：同一个键再来，按新的发送意图处理
+    // A proof's JSON validity is historical, never current epoch authority.
+    // Only this original cursor batch can authorize absence cleanup; each expired
+    // slot receives another actual writer/policy/scope observation immediately
+    // before the short delete, without holding a DB connection over HTTP.
     let retention = i64::try_from(cfg.idempotency_retention.as_secs()).unwrap_or(i64::MAX);
-    sqlx::query!(
-        "delete from admission.publish_attempt a
-         where a.created_at < now() - make_interval(secs => $1::bigint)
-           and exists (select 1 from audit.audit_event r
-                       where r.operation_id = a.operation_id
-                         and r.event_type in ('OUTCOME', 'RECONCILIATION'))",
-        retention
-    )
-    .execute(&state.pool)
-    .await
-    .map_err(|e| e.to_string())?;
+    let candidates: Vec<Uuid> = sqlx::query_scalar(
+        "select a.operation_id from admission.publish_attempt a where a.operation_id=any($1)
+           and a.created_at < now()-make_interval(secs=>$2::bigint)
+           and (select max(r.occurred_at) from audit.audit_event r where r.operation_id=a.operation_id
+             and r.event_type in ('OUTCOME','RECONCILIATION')
+             and (r.result_code<>'NOT_DELIVERED' or r.event_type='OUTCOME'
+               or audit.publication_absence_proven(r.publication_proof,r.evidence_refs)))
+             < now()-make_interval(secs=>$2::bigint)")
+        .bind(confirmed_absences.iter().map(|p|p.operation_id).collect::<Vec<_>>()).bind(retention)
+        .fetch_all(&state.pool).await.map_err(|e|e.to_string())?;
+    let mut cleanup_absences = Vec::new();
+    for p in &confirmed_absences {
+        if candidates.contains(&p.operation_id)
+            && observe_settlement(state, p)
+                .await
+                .is_ok_and(|(proof, _)| proof.proves_absence())
+        {
+            cleanup_absences.push(p.operation_id);
+        }
+    }
+    sqlx::query(REAP_PUBLICATIONS_SQL)
+        .bind(retention)
+        .bind(FILTERED_PUBLICATION_ACTIONS.as_slice())
+        .bind(cleanup_absences)
+        .execute(&state.pool)
+        .await
+        .map_err(|e| e.to_string())?;
     // DD-118 branch push intents keep the same retention. Their reconciliation
     // happens on the retry itself (the ref Relay advertises), never here.
     sqlx::query(
@@ -321,14 +373,110 @@ async fn pass(
 }
 
 async fn settle_one(state: &ServiceState, p: &Pending) -> &'static str {
-    let result_code = match observe_delivery(state, p).await {
-        Ok(true) => "ACCEPTED",
-        Ok(false) if p.settled_window_passed => "NOT_DELIVERED",
-        Ok(false) => return "PENDING",
-        Err(reason) => return reason,
-    };
-    let entry = AuditEntry {
-        event_key: format!("message.publish:{}:reconciled", p.event_id),
+    // Positive writer observation is always first, including for old attempts.
+    if observe_delivery(state, p).await == Ok(true) {
+        return write_reconciliation(state, p, "ACCEPTED").await;
+    }
+    if !p.settled_window_passed {
+        return "PENDING";
+    }
+    match observe_settlement(state, p).await {
+        Ok((proof, _)) if proof.settlement.accepted => {
+            write_reconciliation(state, p, "ACCEPTED").await
+        }
+        Ok((proof, control)) if proof.proves_absence() => {
+            write_reconciliation_with_proof(state, p, "NOT_DELIVERED", Some((&proof, &control)))
+                .await
+        }
+        Ok(_) => "EVENT_UNOBSERVABLE",
+        Err(reason) => reason,
+    }
+}
+
+/// Ordinary query absence is never an authoritative non-delivery receipt.
+/// All observations in this reconciler use filtered event queries. Keep their
+/// absence out of the terminal audit even after the diagnostic settle window.
+#[cfg(test)]
+fn reconciliation_result(
+    settled: bool,
+    observed: Result<bool, &'static str>,
+) -> Result<&'static str, &'static str> {
+    match observed {
+        Ok(true) => Ok("ACCEPTED"),
+        Ok(false) if settled => Err("EVENT_UNOBSERVABLE"),
+        Ok(false) => Err("PENDING"),
+        Err(reason) => Err(reason),
+    }
+}
+
+async fn write_reconciliation(
+    state: &ServiceState,
+    p: &Pending,
+    result_code: &'static str,
+) -> &'static str {
+    write_reconciliation_with_proof(state, p, result_code, None).await
+}
+
+async fn write_reconciliation_with_proof(
+    state: &ServiceState,
+    p: &Pending,
+    result_code: &'static str,
+    proof: Option<(&crate::audit::PublicationProof, &str)>,
+) -> &'static str {
+    let written = async {
+        let mut tx = state.pool.begin().await?;
+        // Local revocation/binding changes after the HTTP/fresh-authorization
+        // recheck cannot race a new ACCEPTED audit row. No external I/O here.
+        if result_code == "ACCEPTED" || proof.is_some() {
+            let actor = p.actor_principal_id.ok_or(sqlx::Error::RowNotFound)?;
+            let target = publication_target(p).map_err(|_| sqlx::Error::RowNotFound)?;
+            let scope = parse_frozen_scope(load_scope_value(&mut tx,p,true).await?)
+                .map_err(|_|sqlx::Error::RowNotFound)?;
+            if proof.is_some_and(|(proof, _)|proof.scope != scope) {
+                return Err(sqlx::Error::RowNotFound);
+            }
+            if !crate::web_transport::locked_publication_scope_matches(&mut tx, p.tenant_id, actor, target, &scope).await? {
+                return Err(sqlx::Error::RowNotFound);
+            }
+        }
+        if let Some((proof, control_pubkey)) = proof {
+            let current: Option<String> = sqlx::query_scalar(
+                "select i.pubkey from projection.tenant_buzz_binding b
+                 join identity.buzz_identity_binding i on i.tenant_id=b.tenant_id and i.principal_id=b.control_service_principal_id
+                 join identity.principal p on p.id=i.principal_id and p.tenant_id=i.tenant_id and p.kind='SERVICE' and p.status='ACTIVE'
+                 where b.tenant_id=$1 and b.state='ACTIVE' and i.kind='CONTROL' and i.state='ACTIVE' and i.custody='SERVER' and i.pubkey=$2 for share of b,i,p")
+                .bind(p.tenant_id).bind(control_pubkey).fetch_optional(&mut *tx).await?;
+            if current.is_none() { return Err(sqlx::Error::RowNotFound); }
+            crate::audit::append_publication_proof(&mut tx, reconciliation_entry(p, result_code), proof).await?;
+        } else {
+            if result_code == "NOT_DELIVERED" { return Err(sqlx::Error::RowNotFound); }
+            append(&mut tx, reconciliation_entry(p, result_code)).await?;
+        }
+        tx.commit().await
+    }
+    .await;
+    match written {
+        Ok(()) => result_code,
+        Err(e) => {
+            tracing::warn!(error = %e, "对账结果审计未写入");
+            "WRITE_FAILED"
+        }
+    }
+}
+
+fn reconciliation_entry<'a>(p: &'a Pending, result_code: &'a str) -> AuditEntry<'a> {
+    AuditEntry {
+        // The legacy key may already hold a false absence conclusion. A
+        // positive observation appends a distinct, idempotent correction.
+        event_key: crate::web_transport::publication_event_key(
+            p.operation_id,
+            &p.event_id,
+            if result_code == "NOT_DELIVERED" {
+                "RECONCILIATION:PROVED_ABSENCE"
+            } else {
+                "RECONCILIATION"
+            },
+        ),
         tenant_id: Some(p.tenant_id),
         workspace_id: p.workspace_id,
         operation_id: p.operation_id,
@@ -347,43 +495,203 @@ async fn settle_one(state: &ServiceState, p: &Pending) -> &'static str {
         result_exposure: "NONE",
         evidence_refs: p.evidence_refs.clone(),
         correlation_id: p.operation_id,
-    };
-    let written = async {
-        let mut tx = state.pool.begin().await?;
-        append(&mut tx, entry).await?;
-        tx.commit().await
-    }
-    .await;
-    match written {
-        Ok(()) => result_code,
-        Err(e) => {
-            tracing::warn!(error = %e, "对账结果审计未写入");
-            "WRITE_FAILED"
-        }
     }
 }
 
-async fn observe_delivery(state: &ServiceState, p: &Pending) -> Result<bool, &'static str> {
-    if matches!(
+/// Retry after an epoch transition can only recover positive evidence for the
+/// same retained attempt. It never re-signs or turns a failed observation into absence.
+pub(crate) async fn reconcile_retry_positive(state: &ServiceState, operation: Uuid) -> bool {
+    let row: Result<Option<PendingRow>,_> = sqlx::query_as(
+        "select operation_id,occurred_at,tenant_id,workspace_id,human_identity_id,
+          initiator_principal_id,actor_principal_id,target_id,action_key,target_type,evidence_refs,
+          (select e->>'value' from jsonb_array_elements(evidence_refs) e where e->>'kind'='BUZZ_EVENT_ID') as event_id,
+          false as settled from audit.audit_event where operation_id=$1 and event_type='DISPATCH'")
+        .bind(operation).fetch_optional(&state.pool).await;
+    let Ok(Some(row)) = row else {
+        return false;
+    };
+    let Some(event_id) = row.event_id else {
+        return false;
+    };
+    let p = Pending {
+        operation_id: row.operation_id,
+        tenant_id: row.tenant_id,
+        workspace_id: row.workspace_id,
+        human_identity_id: row.human_identity_id,
+        initiator_principal_id: row.initiator_principal_id,
+        actor_principal_id: row.actor_principal_id,
+        target_id: row.target_id,
+        action_key: row.action_key,
+        target_type: row.target_type,
+        evidence_refs: row
+            .evidence_refs
+            .as_array()
+            .map(|refs| refs.iter().filter_map(Evidence::parse).collect())
+            .unwrap_or_default(),
+        event_id,
+        settled_window_passed: false,
+    };
+    observe_delivery(state, &p).await == Ok(true)
+        && write_reconciliation(state, &p, "ACCEPTED").await == "ACCEPTED"
+}
+
+fn publication_target(p: &Pending) -> Result<MessageTarget, &'static str> {
+    match (
         p.action_key.as_str(),
-        crate::pulse::PUBLISH_ACTION
-            | crate::projects::PUBLISH_ACTION
-            | crate::reminders::PUBLISH_ACTION
+        p.target_type.as_deref(),
+        p.target_id,
+        p.workspace_id,
     ) {
-        let community_scope = p.target_type.as_deref() == Some("TENANT")
-            && p.target_id == Some(p.tenant_id)
-            && p.workspace_id.is_none();
-        let project_home_scope = p.action_key == crate::projects::PUBLISH_ACTION
-            && p.target_type.as_deref() == Some("CHANNEL")
-            && p.workspace_id.is_some()
-            && p.target_id == p.workspace_id;
-        if !community_scope && !project_home_scope {
-            return Err("EVIDENCE_MISSING");
+        (
+            PUBLISH_ACTION | TOPIC_ACTION | crate::projects::PUBLISH_ACTION,
+            Some("CHANNEL"),
+            Some(target),
+            Some(workspace),
+        ) if target == workspace => Ok(MessageTarget::Workspace(workspace)),
+        (
+            CONVERSATION_PUBLISH_ACTION | CONVERSATION_HIDE_ACTION | CONVERSATION_REOPEN_ACTION,
+            Some("CONVERSATION"),
+            Some(id),
+            None,
+        ) => Ok(MessageTarget::Conversation(id)),
+        (
+            crate::pulse::PUBLISH_ACTION
+            | crate::projects::PUBLISH_ACTION
+            | crate::reminders::PUBLISH_ACTION,
+            Some("TENANT"),
+            Some(tenant),
+            None,
+        ) if tenant == p.tenant_id => Ok(MessageTarget::Pulse(tenant)),
+        _ => Err("EVIDENCE_MISSING"),
+    }
+}
+
+/// The old operation's immutable audit proof is the only fallback after a
+/// legitimately expired idempotency slot. Never reconstruct scope from a new Host.
+async fn load_scope_value(
+    conn: &mut sqlx::PgConnection,
+    p: &Pending,
+    lock: bool,
+) -> Result<Option<serde_json::Value>, sqlx::Error> {
+    let actor = p.actor_principal_id.ok_or(sqlx::Error::RowNotFound)?;
+    let sql = if lock {
+        "select delivery_scope from admission.publish_attempt where operation_id=$1 and event_id=$2 and tenant_principal_id=$3 for share"
+    } else {
+        "select delivery_scope from admission.publish_attempt where operation_id=$1 and event_id=$2 and tenant_principal_id=$3"
+    };
+    let value: Option<Option<serde_json::Value>> = sqlx::query_scalar(sql)
+        .bind(p.operation_id)
+        .bind(&p.event_id)
+        .bind(actor)
+        .fetch_optional(&mut *conn)
+        .await?;
+    if let Some(value) = value.flatten() {
+        return Ok(Some(value));
+    }
+    let base="select publication_proof->'scope' from audit.audit_event
+      where operation_id=$1 and actor_principal_id=$3 and event_type='RECONCILIATION' and result_code='NOT_DELIVERED'
+        and publication_proof->'settlement'->'claim'->>'event_id'=$2
+        and audit.publication_absence_proven(publication_proof,evidence_refs)
+      order by occurred_at,id limit 1";
+    let query = if lock {
+        format!("{base} for share")
+    } else {
+        base.to_owned()
+    };
+    sqlx::query_scalar(&query)
+        .bind(p.operation_id)
+        .bind(&p.event_id)
+        .bind(actor)
+        .fetch_optional(conn)
+        .await
+}
+
+async fn frozen_scope(state: &ServiceState, p: &Pending) -> Result<PublicationScope, &'static str> {
+    let mut conn = state
+        .pool
+        .acquire()
+        .await
+        .map_err(|_| "EVIDENCE_UNREADABLE")?;
+    let value = load_scope_value(&mut conn, p, false)
+        .await
+        .map_err(|_| "EVIDENCE_UNREADABLE")?;
+    parse_frozen_scope(value)
+}
+
+fn parse_frozen_scope(value: Option<serde_json::Value>) -> Result<PublicationScope, &'static str> {
+    let value = value.ok_or("EVIDENCE_MISSING")?;
+    if !value.as_object().is_some_and(|object| {
+        (object.len() == 8 || (object.len() == 9 && object.contains_key("publication")))
+            && [
+                "target_channel_id",
+                "target_binding_version",
+                "event_channel_id",
+                "signer_installation_id",
+            ]
+            .iter()
+            .all(|key| object.contains_key(*key))
+    }) {
+        return Err("EVIDENCE_INVALID");
+    }
+    serde_json::from_value(value).map_err(|_| "EVIDENCE_INVALID")
+}
+
+async fn current_scope(
+    state: &ServiceState,
+    p: &Pending,
+    target: MessageTarget,
+    scope: &PublicationScope,
+) -> Result<crate::web_transport::PublicationBinding, &'static str> {
+    let actor = p.actor_principal_id.ok_or("EVIDENCE_MISSING")?;
+    let binding = publication_binding(state, p.tenant_id, actor, target).await?;
+    if !scope.matches_binding(&binding) {
+        return Err("SCOPE_CHANGED");
+    }
+    if let Some(installation) = scope.signer_installation_id {
+        let MessageTarget::Workspace(workspace) = target else {
+            return Err("EVIDENCE_INVALID");
+        };
+        if !matches!(scope.event_kind, 5 | 40003)
+            || p.action_key != PUBLISH_ACTION
+            || owned_publication_installation(
+                state,
+                p.tenant_id,
+                actor,
+                workspace,
+                &scope.event_pubkey,
+            )
+            .await?
+                != installation
+        {
+            return Err("ACTOR_UNREADABLE");
         }
-        let actor = p.actor_principal_id.ok_or("EVIDENCE_MISSING")?;
-        let before = crate::pulse::admit_actor(state, p.tenant_id, actor)
+    } else {
+        let author: Option<String> = sqlx::query_scalar("select pubkey from identity.buzz_identity_binding where tenant_id=$1 and principal_id=$2 and kind='HUMAN' and custody='SERVER' and state='ACTIVE'")
+            .bind(p.tenant_id).bind(actor).fetch_optional(&state.pool).await.map_err(|_| "ACTOR_UNREADABLE")?;
+        if author.as_deref() != Some(&scope.event_pubkey) {
+            return Err("ACTOR_UNREADABLE");
+        }
+    }
+    Ok(binding)
+}
+
+async fn observe_delivery(state: &ServiceState, p: &Pending) -> Result<bool, &'static str> {
+    let target = publication_target(p)?;
+    let scope = frozen_scope(state, p).await?;
+    let before = current_scope(state, p, target, &scope).await?;
+    let actor = p.actor_principal_id.ok_or("EVIDENCE_MISSING")?;
+    // An owner may read metadata for an owned Agent's edit/delete through the
+    // Workspace CONTROL identity; the original signer and Installation remain
+    // frozen and checked. Private conversations never use CONTROL.
+    let client = if scope.signer_installation_id.is_some() {
+        let (client, host) = control_client(state, p.tenant_id, ProjectionDirection::Establish)
             .await
-            .map_err(|_| "ACTOR_UNREADABLE")?;
+            .map_err(|_| "CONTROL_UNREADABLE")?;
+        if host != before.community_host {
+            return Err("SCOPE_CHANGED");
+        }
+        client
+    } else {
         let keys = crate::web_transport::server_actor_keys(
             &state.pool,
             &state.secrets,
@@ -392,217 +700,633 @@ async fn observe_delivery(state: &ServiceState, p: &Pending) -> Result<bool, &'s
         )
         .await
         .map_err(|_| "ACTOR_UNREADABLE")?;
-        let client = collab_bridge::bridge::IdentityClient::new(
+        if keys.public_key().to_hex() != scope.event_pubkey {
+            return Err("ACTOR_UNREADABLE");
+        }
+        collab_bridge::bridge::IdentityClient::new(
             collab_bridge::bridge::Custody::Server,
             &keys.secret_key().to_secret_hex(),
             &state.relay_transport,
             &before.community_host,
         )
-        .map_err(|_| "ACTOR_UNREADABLE")?;
-        let exists = if p.action_key == crate::reminders::PUBLISH_ACTION {
-            let kind: Option<i32> = sqlx::query_scalar(
-                "select message_kind from admission.publish_attempt where operation_id=$1 and event_id=$2 and tenant_principal_id=$3",
-            ).bind(p.operation_id).bind(&p.event_id).bind(actor).fetch_optional(&state.pool)
-                .await.map_err(|_| "EVIDENCE_UNREADABLE")?;
-            if kind != Some(collab_bridge::bridge::KIND_EVENT_REMINDER as i32) {
-                return Err("EVIDENCE_MISSING");
-            }
-            let page = client
-                .query(
-                    &state.http,
-                    &[serde_json::json!({
-                        "ids":[p.event_id], "authors":[keys.public_key().to_hex()],
-                        "kinds":[collab_bridge::bridge::KIND_EVENT_REMINDER]
-                    })],
-                )
-                .await
-                .map_err(|_| "QUERY_FAILED")?;
-            let events: Vec<nostr::Event> =
-                serde_json::from_value(page).map_err(|_| "EVIDENCE_INVALID")?;
-            if events.iter().any(|e| {
-                e.id.to_hex() != p.event_id
-                    || e.pubkey != keys.public_key()
-                    || e.kind.as_u16() != collab_bridge::bridge::KIND_EVENT_REMINDER as u16
-                    || e.verify().is_err()
-            }) {
-                return Err("EVIDENCE_INVALID");
-            }
-            !events.is_empty()
-        } else if p.action_key == crate::projects::PUBLISH_ACTION {
-            // The original DISPATCH, actor and immutable event reference must
-            // select the same publication attempt before trusting its kind.
-            let kind: i32 = sqlx::query_scalar(
-                "select message_kind from admission.publish_attempt
-                 where operation_id=$1 and event_id=$2 and tenant_principal_id=$3",
-            )
-            .bind(p.operation_id)
-            .bind(&p.event_id)
-            .bind(actor)
-            .fetch_optional(&state.pool)
+        .map_err(|_| "ACTOR_UNREADABLE")?
+    };
+    let observation = client
+        .observe_publication(&state.relay_http, &p.event_id, scope.community_id)
+        .await
+        .map_err(|_| "EVENT_UNOBSERVABLE")?;
+    let after = current_scope(state, p, target, &scope).await?;
+    if before != after {
+        return Err("SCOPE_CHANGED");
+    }
+    if !scope.matches_observation(&p.event_id, &observation) {
+        return Err("EVIDENCE_INVALID");
+    }
+    // This is only positive writer evidence. 404, denial, purge, unsupported
+    // ephemeral commands (41010/41012), timeout and host changes stay UNKNOWN.
+    Ok(true)
+}
+
+/// Only a frozen signed epoch and elapsed original-event window can enter the
+/// dual-authenticated settlement path. No external call runs in a DB transaction.
+async fn observe_settlement(
+    state: &ServiceState,
+    p: &Pending,
+) -> Result<(crate::audit::PublicationProof, String), &'static str> {
+    let scope = frozen_scope(state, p).await?;
+    let claim = scope.claim(&p.event_id).ok_or("EVIDENCE_MISSING")?;
+    let now: i64 =
+        sqlx::query_scalar("select floor(extract(epoch from clock_timestamp()))::bigint")
+            .fetch_one(&state.pool)
             .await
-            .map_err(|_| "EVIDENCE_UNREADABLE")?
-            .ok_or("EVIDENCE_MISSING")?;
-            if (community_scope && !COMMUNITY_PROJECT_KINDS.contains(&kind))
-                || (project_home_scope && !matches!(kind, 30617 | 30621))
-            {
-                return Err("EVIDENCE_MISSING");
-            }
-            let page = client
-                .query(
-                    &state.http,
-                    &[serde_json::json!({"ids":[p.event_id], "kinds":[kind]})],
-                )
-                .await
-                .map_err(|_| "QUERY_FAILED")?;
-            collab_bridge::projects::publication_observed(
-                page,
-                &p.event_id,
-                &keys.public_key().to_hex(),
-                kind,
-            )
-            .map_err(|_| "EVIDENCE_INVALID")?
-        } else {
-            client
-                .event_exists(&state.http, &p.event_id)
-                .await
-                .map_err(|_| "QUERY_FAILED")?
+            .map_err(|_| "EVIDENCE_UNREADABLE")?;
+    if !collab_bridge::bridge::publication_timestamp_settled(claim.kind, claim.created_at, now) {
+        return Err("PENDING");
+    }
+    let target = publication_target(p)?;
+    let before = current_scope(state, p, target, &scope).await?;
+    let actor = p.actor_principal_id.ok_or("EVIDENCE_MISSING")?;
+    let keys = if let Some(installation) = scope.signer_installation_id {
+        let MessageTarget::Workspace(workspace) = target else {
+            return Err("ACTOR_UNREADABLE");
         };
-        let after = crate::pulse::admit_actor(state, p.tenant_id, actor)
-            .await
-            .map_err(|_| "ACTOR_UNREADABLE")?;
-        let current = crate::web_transport::server_actor_keys(
-            &state.pool,
-            &state.secrets,
+        crate::web_transport::publication_agent_keys(
+            state,
             p.tenant_id,
             actor,
+            workspace,
+            &scope.event_pubkey,
+            installation,
         )
-        .await
-        .map_err(|_| "ACTOR_UNREADABLE")?;
-        if before != after || keys.public_key() != current.public_key() {
-            return Err("ACTOR_UNREADABLE");
-        }
-        // Parameterized replaceable announcements can disappear after a newer
-        // head or an accepted coordinate tombstone. An absent event is not
-        // proof the original mutation was never delivered, even after expiry.
-        if p.action_key == crate::projects::PUBLISH_ACTION && !exists {
-            return Err("PROJECT_EVENT_UNOBSERVABLE");
-        }
-        if p.action_key == crate::reminders::PUBLISH_ACTION && !exists {
-            // A newer 30300 head or expiration may have removed this exact event.
-            // Neither proves non-delivery; never replay an unknown reminder.
-            return Err("REMINDER_EVENT_UNOBSERVABLE");
-        }
-        return Ok(exists);
-    }
-    // DD-119(9)：成员主题命令（严格 h+topic 的 9002）随事件事务存储，CONTROL 按原
-    // event ID 查得到它；查不到并过了结算窗口才是未送达，结果不明时从不另签
-    if p.action_key == TOPIC_ACTION {
-        if p.target_type.as_deref() != Some("CHANNEL")
-            || p.workspace_id.is_none()
-            || p.target_id != p.workspace_id
-        {
-            return Err("EVIDENCE_MISSING");
-        }
-        let (control, _) = control_client(state, p.tenant_id, ProjectionDirection::Establish)
-            .await
-            .map_err(|_| "CONTROL_UNREADABLE")?;
-        return control
-            .event_exists(&state.http, &p.event_id)
-            .await
-            .map_err(|_| "QUERY_FAILED");
-    }
-    if p.action_key == PUBLISH_ACTION {
-        if p.target_type.as_deref() != Some("CHANNEL")
-            || p.workspace_id.is_none()
-            || p.target_id != p.workspace_id
-        {
-            return Err("EVIDENCE_MISSING");
-        }
-        let (control, _) = control_client(state, p.tenant_id, ProjectionDirection::Establish)
-            .await
-            .map_err(|_| "CONTROL_UNREADABLE")?;
-        if control
-            .event_exists(&state.http, &p.event_id)
-            .await
-            .map_err(|_| "QUERY_FAILED")?
-        {
-            return Ok(true);
-        }
-        // Relay queries hide soft-deleted events. The Relay only stores a kind:5
-        // deletion whose e-target already exists (validate_standard_deletion_event
-        // reads including deleted), so an accepted deletion of this exact id
-        // proves it was delivered. Without this, a message the author deleted
-        // inside the settle window is judged NOT_DELIVERED and the same key
-        // re-signs a duplicate.
-        let page = control
-            .query(
-                &state.http,
-                &[serde_json::json!({
-                    "kinds": [collab_bridge::bridge::KIND_DELETION],
-                    "#e": [p.event_id],
-                })],
-            )
-            .await
-            .map_err(|_| "QUERY_FAILED")?;
-        let deletions: Vec<nostr::Event> =
-            serde_json::from_value(page).map_err(|_| "EVIDENCE_INVALID")?;
-        return Ok(deletions.iter().any(|deletion| {
-            u32::from(deletion.kind.as_u16()) == collab_bridge::bridge::KIND_DELETION
-                && deletion.verify().is_ok()
-                && deletion.tags.iter().map(nostr::Tag::as_slice).any(|tag| {
-                    tag.first().map(String::as_str) == Some("e") && tag.get(1) == Some(&p.event_id)
-                })
-        }));
-    }
-    if ![
-        CONVERSATION_PUBLISH_ACTION,
-        CONVERSATION_HIDE_ACTION,
-        CONVERSATION_REOPEN_ACTION,
-    ]
-    .contains(&p.action_key.as_str())
-        || p.target_type.as_deref() != Some("CONVERSATION")
-        || p.workspace_id.is_some()
-    {
-        return Err("EVIDENCE_MISSING");
-    }
-    let (Some(conversation), Some(actor)) = (p.target_id, p.actor_principal_id) else {
-        return Err("EVIDENCE_MISSING");
-    };
-    // CONTROL never joins a private conversation. Query only with its original
-    // human actor's currently authorized SERVER identity; denial is not absence.
-    let before =
-        crate::conversations::admit_reconciliation(state, p.tenant_id, actor, conversation)
-            .await
-            .map_err(|_| "PARTICIPANT_UNREADABLE")?;
-    let keys =
+        .await?
+    } else {
         crate::web_transport::server_actor_keys(&state.pool, &state.secrets, p.tenant_id, actor)
             .await
-            .map_err(|_| "PARTICIPANT_UNREADABLE")?;
-    let client = collab_bridge::bridge::IdentityClient::new(
+            .map_err(|_| "ACTOR_UNREADABLE")?
+    };
+    if keys.public_key().to_hex() != scope.event_pubkey {
+        return Err("ACTOR_UNREADABLE");
+    }
+    let author = collab_bridge::bridge::IdentityClient::new(
         collab_bridge::bridge::Custody::Server,
         &keys.secret_key().to_secret_hex(),
         &state.relay_transport,
         &before.community_host,
     )
-    .map_err(|_| "PARTICIPANT_UNREADABLE")?;
-    let exists = client
-        .event_exists(&state.http, &p.event_id)
+    .map_err(|_| "ACTOR_UNREADABLE")?;
+    let (control, host) = control_client(state, p.tenant_id, ProjectionDirection::Establish)
         .await
-        .map_err(|_| "QUERY_FAILED")?;
-    let after = crate::conversations::admit_reconciliation(state, p.tenant_id, actor, conversation)
-        .await
-        .map_err(|_| "PARTICIPANT_UNREADABLE")?;
-    let current_keys =
-        crate::web_transport::server_actor_keys(&state.pool, &state.secrets, p.tenant_id, actor)
-            .await
-            .map_err(|_| "PARTICIPANT_UNREADABLE")?;
-    if before.binding_version != after.binding_version
-        || before.tenant_binding_version != after.tenant_binding_version
-        || before.channel_id != after.channel_id
-        || before.community_host != after.community_host
-        || keys.public_key() != current_keys.public_key()
-    {
-        return Err("PARTICIPANT_UNREADABLE");
+        .map_err(|_| "CONTROL_UNREADABLE")?;
+    if host != before.community_host {
+        return Err("SCOPE_CHANGED");
     }
-    Ok(exists)
+    let policy = author
+        .publication_policy(&state.relay_http)
+        .await
+        .map_err(|_| "EVIDENCE_UNREADABLE")?;
+    if scope
+        .publication
+        .as_ref()
+        .is_none_or(|window| window.policy != policy)
+    {
+        return Err("PUBLICATION_EPOCH_CHANGED");
+    }
+    let settlement = author
+        .settle_publication(&state.relay_http, &control, &claim)
+        .await
+        .map_err(|_| "EVENT_UNOBSERVABLE")?;
+    if before != current_scope(state, p, target, &scope).await? {
+        return Err("SCOPE_CHANGED");
+    }
+    Ok((
+        crate::audit::PublicationProof { scope, settlement },
+        control.pubkey_hex(),
+    ))
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn historical_or_partial_scope_never_uses_current_host_or_kind_defaults() {
+        assert_eq!(super::parse_frozen_scope(None), Err("EVIDENCE_MISSING"));
+        assert_eq!(
+            super::parse_frozen_scope(Some(serde_json::json!({"message_kind":9}))),
+            Err("EVIDENCE_INVALID")
+        );
+        let scope = super::PublicationScope {
+            community_id: uuid::Uuid::new_v4(),
+            tenant_binding_version: 1,
+            target_channel_id: None,
+            target_binding_version: None,
+            event_pubkey: nostr::Keys::generate().public_key().to_hex(),
+            event_kind: 1,
+            event_channel_id: None,
+            signer_installation_id: None,
+            publication: None,
+        };
+        let complete = serde_json::to_value(&scope).unwrap();
+        assert_eq!(
+            super::parse_frozen_scope(Some(complete.clone())).unwrap(),
+            scope
+        );
+        for key in complete.as_object().unwrap().keys() {
+            let mut partial = complete.clone();
+            partial.as_object_mut().unwrap().remove(key);
+            assert_eq!(
+                super::parse_frozen_scope(Some(partial)),
+                Err("EVIDENCE_INVALID"),
+                "{key}"
+            );
+        }
+    }
+
+    use super::*;
+
+    #[tokio::test]
+    #[ignore = "requires PUBLISH_RECONCILE_TEST_DATABASE_URL pointing at an isolated migrated database"]
+    async fn historical_absence_remains_pending_and_retained_until_positive_correction() {
+        let pool =
+            sqlx::PgPool::connect(&std::env::var("PUBLISH_RECONCILE_TEST_DATABASE_URL").unwrap())
+                .await
+                .unwrap();
+        let mut tx = pool.begin().await.unwrap();
+        let tenant = Uuid::new_v4();
+        let principal = Uuid::new_v4();
+        sqlx::query("insert into identity.tenant(id,slug,name,state) values($1,$2,'publication fixture','ACTIVE')")
+            .bind(tenant).bind(format!("publication-{tenant}")).execute(&mut *tx).await.unwrap();
+        sqlx::query("insert into identity.principal(id,tenant_id,kind,status) values($1,$2,'HUMAN','ACTIVE')")
+            .bind(principal).bind(tenant).execute(&mut *tx).await.unwrap();
+        let before: (i64, i64) = sqlx::query_as(UNSETTLED_PUBLICATIONS_SQL)
+            .bind(FILTERED_PUBLICATION_ACTIONS.as_slice())
+            .bind(FILTERED_PUBLICATION_ACTIONS.as_slice())
+            .bind(Vec::<Uuid>::new())
+            .fetch_one(&mut *tx)
+            .await
+            .unwrap();
+        let mut attempts = Vec::new();
+        for action in FILTERED_PUBLICATION_ACTIONS {
+            let operation = Uuid::new_v4();
+            let event_id = operation.simple().to_string().repeat(2);
+            sqlx::query("insert into admission.publish_attempt(tenant_principal_id,idempotency_key,operation_id,event_id,created_at) values($1,$2,$3,$4,now()-interval '2 days')")
+                .bind(principal).bind(Uuid::new_v4()).bind(operation).bind(&event_id)
+                .execute(&mut *tx).await.unwrap();
+            // Historical rows are inserted as historical facts, never updated.
+            for (event_type, result, key) in [
+                (
+                    "DISPATCH",
+                    "DISPATCHED",
+                    format!("publication-fixture:{operation}"),
+                ),
+                (
+                    "RECONCILIATION",
+                    "NOT_DELIVERED",
+                    format!("message.publish:{event_id}:reconciled"),
+                ),
+            ] {
+                sqlx::query("insert into audit.audit_event(id,event_key,tenant_id,operation_id,event_type,actor_principal_id,action_key,action_version,component_type_key,parameter_hash,decision,result_code,result_exposure,evidence_refs,correlation_id,occurred_at) values($1,$2,$3,$4,$5,$6,$7,1,'buzz','NONE','ALLOW',$8,'NONE',jsonb_build_array(jsonb_build_object('kind','BUZZ_EVENT_ID','value',$9::text)),$4,now()-interval '2 days')")
+                    .bind(Uuid::new_v4()).bind(key).bind(tenant).bind(operation).bind(event_type)
+                    .bind(principal).bind(action).bind(result).bind(&event_id)
+                    .execute(&mut *tx).await.unwrap();
+            }
+            attempts.push(Pending {
+                operation_id: operation,
+                tenant_id: tenant,
+                workspace_id: None,
+                human_identity_id: None,
+                initiator_principal_id: Some(principal),
+                actor_principal_id: Some(principal),
+                target_id: None,
+                action_key: action.into(),
+                target_type: None,
+                evidence_refs: vec![Evidence::new(
+                    contracts::EvidenceKind::BuzzEventId,
+                    &event_id,
+                )],
+                event_id,
+                settled_window_passed: true,
+            });
+        }
+        let pending = sqlx::query_as::<_, PendingRow>(PENDING_PUBLICATIONS_SQL)
+            .bind(FILTERED_PUBLICATION_ACTIONS.as_slice())
+            .bind(10000_i64)
+            .bind(900_i64)
+            .bind(1_i64)
+            .bind(None::<chrono::DateTime<chrono::Utc>>)
+            .bind(None::<Uuid>)
+            .bind(FILTERED_PUBLICATION_ACTIONS.as_slice())
+            .fetch_all(&mut *tx)
+            .await
+            .unwrap();
+        for attempt in &attempts {
+            assert!(
+                pending
+                    .iter()
+                    .any(|row| row.operation_id == attempt.operation_id),
+                "historical absence must remain eligible for positive observation"
+            );
+        }
+        let unsettled: (i64, i64) = sqlx::query_as(UNSETTLED_PUBLICATIONS_SQL)
+            .bind(FILTERED_PUBLICATION_ACTIONS.as_slice())
+            .bind(FILTERED_PUBLICATION_ACTIONS.as_slice())
+            .bind(Vec::<Uuid>::new())
+            .fetch_one(&mut *tx)
+            .await
+            .unwrap();
+        assert_eq!(unsettled.0, before.0 + 6);
+        assert!(
+            unsettled.1 >= 172800,
+            "oldest unresolved intent remains visible"
+        );
+        sqlx::query(REAP_PUBLICATIONS_SQL)
+            .bind(1_i64)
+            .bind(FILTERED_PUBLICATION_ACTIONS.as_slice())
+            .bind(Vec::<Uuid>::new())
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        let retained: i64 = sqlx::query_scalar(
+            "select count(*) from admission.publish_attempt where tenant_principal_id=$1",
+        )
+        .bind(principal)
+        .fetch_one(&mut *tx)
+        .await
+        .unwrap();
+        assert_eq!(
+            retained, 6,
+            "TTL cannot discard an unresolved idempotency key"
+        );
+
+        // Exercise the production audit constructor and append path. The old
+        // false conclusion survives, and repeated positive evidence adds once.
+        for _ in 0..2 {
+            append(&mut tx, reconciliation_entry(&attempts[0], "ACCEPTED"))
+                .await
+                .unwrap();
+        }
+        let conclusions: Vec<String> = sqlx::query_scalar("select result_code from audit.audit_event where operation_id=$1 and event_type='RECONCILIATION' order by occurred_at,id")
+            .bind(attempts[0].operation_id).fetch_all(&mut *tx).await.unwrap();
+        assert_eq!(conclusions, ["NOT_DELIVERED", "ACCEPTED"]);
+        let mut definite = reconciliation_entry(&attempts[1], "NOT_DELIVERED");
+        definite.event_type = "OUTCOME";
+        definite.event_key = format!("publication-fixture:{}:limited", attempts[1].operation_id);
+        append(&mut tx, definite).await.unwrap();
+        let after: (i64, i64) = sqlx::query_as(UNSETTLED_PUBLICATIONS_SQL)
+            .bind(FILTERED_PUBLICATION_ACTIONS.as_slice())
+            .bind(FILTERED_PUBLICATION_ACTIONS.as_slice())
+            .bind(Vec::<Uuid>::new())
+            .fetch_one(&mut *tx)
+            .await
+            .unwrap();
+        assert_eq!(after.0, before.0 + 4);
+        sqlx::query(REAP_PUBLICATIONS_SQL)
+            .bind(1_i64)
+            .bind(FILTERED_PUBLICATION_ACTIONS.as_slice())
+            .bind(Vec::<Uuid>::new())
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        let retained: i64 = sqlx::query_scalar(
+            "select count(*) from admission.publish_attempt where tenant_principal_id=$1",
+        )
+        .bind(principal)
+        .fetch_one(&mut *tx)
+        .await
+        .unwrap();
+        assert_eq!(
+            retained, 6,
+            "a fresh correction or LIMIT starts a complete terminal retention window"
+        );
+        // Insert immutable historical terminal facts, never move an audit
+        // timestamp backwards. An older real outcome must not override the
+        // fresh positive correction when calculating the retention age.
+        for index in [0_usize, 2, 3] {
+            let attempt = &attempts[index];
+            sqlx::query("insert into audit.audit_event(id,event_key,tenant_id,operation_id,event_type,action_key,action_version,component_type_key,parameter_hash,decision,result_code,result_exposure,correlation_id,occurred_at) values($1,$2,$3,$4,'OUTCOME',$5,1,'buzz','NONE','ALLOW',$6,'NONE',$4,now()-interval '60 seconds')")
+                .bind(Uuid::new_v4()).bind(format!("publication-fixture:{}:historical", attempt.operation_id))
+                .bind(tenant).bind(attempt.operation_id).bind(&attempt.action_key)
+                .bind(if index == 3 { "NOT_DELIVERED" } else { "ACCEPTED" })
+                .execute(&mut *tx).await.unwrap();
+        }
+        sqlx::query(REAP_PUBLICATIONS_SQL)
+            .bind(1_i64)
+            .bind(FILTERED_PUBLICATION_ACTIONS.as_slice())
+            .bind(Vec::<Uuid>::new())
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        let retained: Vec<Uuid> = sqlx::query_scalar(
+            "select operation_id from admission.publish_attempt where tenant_principal_id=$1",
+        )
+        .bind(principal)
+        .fetch_all(&mut *tx)
+        .await
+        .unwrap();
+        assert_eq!(retained.len(), 4);
+        for index in [0_usize, 1, 4, 5] {
+            assert!(
+                retained.contains(&attempts[index].operation_id),
+                "latest real terminal window or UNKNOWN must remain protected"
+            );
+        }
+        tx.rollback().await.unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore = "requires PUBLISH_RECONCILE_TEST_DATABASE_URL pointing at an isolated migrated database"]
+    async fn publication_proof_append_and_original_consumers_preserve_old_attempt() {
+        use crate::web_transport::PublicationWindow;
+        use collab_bridge::bridge::{
+            PublicationPolicy, PublicationSettlement, PUBLICATION_POLICY_VERSION,
+        };
+        use sqlx::Row;
+        let pool =
+            sqlx::PgPool::connect(&std::env::var("PUBLISH_RECONCILE_TEST_DATABASE_URL").unwrap())
+                .await
+                .unwrap();
+        let mut tx = pool.begin().await.unwrap();
+        let tenant = Uuid::new_v4();
+        let actor = Uuid::new_v4();
+        let operation = Uuid::new_v4();
+        let idem = Uuid::new_v4();
+        sqlx::query("insert into identity.tenant(id,slug,name,state) values($1,$2,'proof fixture','ACTIVE')")
+            .bind(tenant).bind(format!("proof-{tenant}")).execute(&mut *tx).await.unwrap();
+        sqlx::query("insert into identity.principal(id,tenant_id,kind,status) values($1,$2,'HUMAN','ACTIVE')")
+            .bind(actor).bind(tenant).execute(&mut *tx).await.unwrap();
+        let scope = PublicationScope {
+            community_id: Uuid::new_v4(),
+            tenant_binding_version: 1,
+            target_channel_id: None,
+            target_binding_version: None,
+            event_pubkey: nostr::Keys::generate().public_key().to_hex(),
+            event_kind: 1,
+            event_channel_id: None,
+            signer_installation_id: None,
+            publication: Some(PublicationWindow {
+                created_at: 100,
+                non_expiring: true,
+                policy: PublicationPolicy {
+                    version: PUBLICATION_POLICY_VERSION,
+                    epoch: Uuid::new_v4().to_string(),
+                    max_age_seconds: 960,
+                    ready: true,
+                },
+            }),
+        };
+        let id = "ab".repeat(32);
+        let p = Pending {
+            operation_id: operation,
+            tenant_id: tenant,
+            workspace_id: None,
+            human_identity_id: None,
+            initiator_principal_id: Some(actor),
+            actor_principal_id: Some(actor),
+            target_id: Some(tenant),
+            action_key: crate::pulse::PUBLISH_ACTION.into(),
+            target_type: Some("TENANT".into()),
+            evidence_refs: vec![Evidence::new(contracts::EvidenceKind::BuzzEventId, &id)],
+            event_id: id.clone(),
+            settled_window_passed: true,
+        };
+        let proof = crate::audit::PublicationProof {
+            settlement: PublicationSettlement {
+                claim: scope.claim(&id).unwrap(),
+                accepted: false,
+                settled: true,
+                observed_at: 1061,
+            },
+            scope,
+        };
+        sqlx::query("insert into admission.publish_attempt(tenant_principal_id,idempotency_key,operation_id,event_id,delivery_scope,created_at) values($1,$2,$3,$4,$5,now()-interval '2 days')")
+            .bind(actor).bind(idem).bind(operation).bind(&id).bind(sqlx::types::Json(&proof.scope)).execute(&mut *tx).await.unwrap();
+        let mut dispatch = reconciliation_entry(&p, "DISPATCHED");
+        dispatch.event_type = "DISPATCH";
+        dispatch.event_key = format!("proof-fixture:{operation}:dispatch");
+        append(&mut tx, dispatch).await.unwrap();
+        for _ in 0..2 {
+            crate::audit::append_publication_proof(
+                &mut tx,
+                reconciliation_entry(&p, "NOT_DELIVERED"),
+                &proof,
+            )
+            .await
+            .unwrap();
+        }
+        let (count,valid):(i64,bool)=sqlx::query_as("select count(*),bool_and(audit.publication_absence_proven(publication_proof,evidence_refs)) from audit.audit_event where operation_id=$1 and event_type='RECONCILIATION'")
+            .bind(operation).fetch_one(&mut *tx).await.unwrap();
+        assert_eq!((count, valid), (1, true));
+        let previous = sqlx::query(crate::web_transport::PREVIOUS_PUBLICATION_SQL)
+            .bind(actor)
+            .bind(idem)
+            .bind(crate::pulse::PUBLISH_ACTION)
+            .bind("TENANT")
+            .bind(None::<Uuid>)
+            .bind(FILTERED_PUBLICATION_ACTIONS.as_slice())
+            .fetch_one(&mut *tx)
+            .await
+            .unwrap();
+        assert_eq!(
+            previous.get::<Option<String>, _>("result").as_deref(),
+            Some("NOT_DELIVERED")
+        );
+        assert!(previous.get::<bool, _>("absence_proven"));
+        let (unsettled, _): (i64, i64) = sqlx::query_as(UNSETTLED_PUBLICATIONS_SQL)
+            .bind([crate::pulse::PUBLISH_ACTION])
+            .bind(FILTERED_PUBLICATION_ACTIONS.as_slice())
+            .bind(vec![operation])
+            .fetch_one(&mut *tx)
+            .await
+            .unwrap();
+        assert_eq!(unsettled, 0);
+        let (unconfirmed, _): (i64, i64) = sqlx::query_as(UNSETTLED_PUBLICATIONS_SQL)
+            .bind([crate::pulse::PUBLISH_ACTION])
+            .bind(FILTERED_PUBLICATION_ACTIONS.as_slice())
+            .bind(Vec::<Uuid>::new())
+            .fetch_one(&mut *tx)
+            .await
+            .unwrap();
+        assert_eq!(
+            unconfirmed, 1,
+            "old epoch or unavailable current policy remains pending"
+        );
+        // An actually expired historical proof must retain the original same-key
+        // slot when the current epoch is different or cannot be observed. Keep
+        // the append consumer above real; seed the separate aged fact directly.
+        let aged_operation = Uuid::new_v4();
+        let aged_key = Uuid::new_v4();
+        sqlx::query("insert into admission.publish_attempt(tenant_principal_id,idempotency_key,operation_id,event_id,delivery_scope,created_at) values($1,$2,$3,$4,$5,now()-interval '2 days')")
+            .bind(actor).bind(aged_key).bind(aged_operation).bind(&id).bind(sqlx::types::Json(&proof.scope)).execute(&mut *tx).await.unwrap();
+        for (event_type, result, stored_proof) in [
+            ("DISPATCH", "DISPATCHED", None),
+            (
+                "RECONCILIATION",
+                "NOT_DELIVERED",
+                Some(serde_json::to_value(&proof).unwrap()),
+            ),
+        ] {
+            sqlx::query("insert into audit.audit_event(id,event_key,tenant_id,operation_id,event_type,actor_principal_id,action_key,action_version,component_type_key,parameter_hash,decision,result_code,result_exposure,evidence_refs,correlation_id,occurred_at,publication_proof) values($1,$2,$3,$4,$5,$6,$7,1,'buzz','NONE','ALLOW',$8,'NONE',jsonb_build_array(jsonb_build_object('kind','BUZZ_EVENT_ID','value',$9::text)),$4,now()-interval '2 days',$10)")
+                .bind(Uuid::new_v4()).bind(format!("aged-proof:{aged_operation}:{event_type}")).bind(tenant).bind(aged_operation).bind(event_type).bind(actor).bind(crate::pulse::PUBLISH_ACTION).bind(result).bind(&id).bind(stored_proof).execute(&mut *tx).await.unwrap();
+        }
+        sqlx::query(REAP_PUBLICATIONS_SQL)
+            .bind(1_i64)
+            .bind(FILTERED_PUBLICATION_ACTIONS.as_slice())
+            .bind(Vec::<Uuid>::new())
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        let retained_old_epoch = sqlx::query(crate::web_transport::PREVIOUS_PUBLICATION_SQL)
+            .bind(actor)
+            .bind(aged_key)
+            .bind(crate::pulse::PUBLISH_ACTION)
+            .bind("TENANT")
+            .bind(None::<Uuid>)
+            .bind(FILTERED_PUBLICATION_ACTIONS.as_slice())
+            .fetch_optional(&mut *tx)
+            .await
+            .unwrap();
+        assert!(
+            retained_old_epoch.is_some(),
+            "old epoch cannot erase the same-key retry fence"
+        );
+        assert!(
+            retained_old_epoch.unwrap().get::<bool, _>("absence_proven"),
+            "proof remains historical evidence, not a fresh epoch observation"
+        );
+        let pending = sqlx::query_as::<_, PendingRow>(PENDING_PUBLICATIONS_SQL)
+            .bind(FILTERED_PUBLICATION_ACTIONS.as_slice())
+            .bind(10_i64)
+            .bind(960_i64)
+            .bind(0_i64)
+            .bind(None::<chrono::DateTime<chrono::Utc>>)
+            .bind(None::<Uuid>)
+            .bind(FILTERED_PUBLICATION_ACTIONS.as_slice())
+            .fetch_all(&mut *tx)
+            .await
+            .unwrap();
+        assert!(
+            pending.iter().any(|row| row.operation_id == aged_operation),
+            "old proof remains on the fair original positive-reconciliation cursor"
+        );
+        sqlx::query(REAP_PUBLICATIONS_SQL)
+            .bind(1_i64)
+            .bind(FILTERED_PUBLICATION_ACTIONS.as_slice())
+            .bind(vec![aged_operation])
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        let retained_after_fresh:bool=sqlx::query_scalar("select exists(select 1 from admission.publish_attempt where tenant_principal_id=$1 and idempotency_key=$2)")
+            .bind(actor).bind(aged_key).fetch_one(&mut *tx).await.unwrap();
+        assert!(
+            !retained_after_fresh,
+            "a freshly reobserved current-epoch absence permits original TTL cleanup"
+        );
+
+        for fault in [
+            "early",
+            "epoch",
+            "scope",
+            "kind",
+            "expiration",
+            "extra",
+            "missing",
+        ] {
+            let mut value = serde_json::to_value(&proof).unwrap();
+            match fault {
+                "early" => value["settlement"]["observed_at"] = 1060.into(),
+                "epoch" => {
+                    value["settlement"]["claim"]["epoch"] = Uuid::new_v4().to_string().into()
+                }
+                "scope" => {
+                    value["settlement"]["claim"]["community_id"] = Uuid::new_v4().to_string().into()
+                }
+                "kind" => value["settlement"]["claim"]["kind"] = 41012.into(),
+                "expiration" => value["settlement"]["claim"]["non_expiring"] = false.into(),
+                "extra" => value["content"] = "not proof".into(),
+                _ => {
+                    value["scope"]
+                        .as_object_mut()
+                        .unwrap()
+                        .remove("publication");
+                }
+            }
+            let valid: bool = sqlx::query_scalar("select audit.publication_absence_proven($1,$2)")
+                .bind(&value)
+                .bind(crate::audit::evidence_json(&p.evidence_refs))
+                .fetch_one(&mut *tx)
+                .await
+                .unwrap();
+            assert!(!valid, "{fault}");
+            if let Ok(invalid) = serde_json::from_value::<crate::audit::PublicationProof>(value) {
+                assert!(
+                    crate::audit::append_publication_proof(
+                        &mut tx,
+                        reconciliation_entry(&p, "NOT_DELIVERED"),
+                        &invalid
+                    )
+                    .await
+                    .is_err(),
+                    "{fault}"
+                );
+            }
+        }
+        // A later signed attempt may replace only its slot, never the proof that
+        // authorized it. Query/history does not join against mutable slot scope.
+        sqlx::query("update admission.publish_attempt set operation_id=$2,event_id=$3,delivery_scope=null where operation_id=$1")
+            .bind(operation).bind(Uuid::new_v4()).bind("cd".repeat(32)).execute(&mut *tx).await.unwrap();
+        let retained:serde_json::Value=sqlx::query_scalar("select publication_proof from audit.audit_event where operation_id=$1 and event_type='RECONCILIATION'")
+            .bind(operation).fetch_one(&mut *tx).await.unwrap();
+        assert_eq!(retained, serde_json::to_value(&proof).unwrap());
+        let recovered =
+            parse_frozen_scope(load_scope_value(&mut tx, &p, true).await.unwrap()).unwrap();
+        assert_eq!(
+            recovered, proof.scope,
+            "expired/replaced slot must not erase the old operation's original scope"
+        );
+        // Positive correction after restore has a distinct append-only key.
+        append(&mut tx, reconciliation_entry(&p, "ACCEPTED"))
+            .await
+            .unwrap();
+        let facts:i64=sqlx::query_scalar("select count(*) from audit.audit_event where operation_id=$1 and event_type='RECONCILIATION'")
+            .bind(operation).fetch_one(&mut *tx).await.unwrap();
+        assert_eq!(facts, 2);
+
+        sqlx::query("savepoint proof_down")
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        let error = sqlx::raw_sql(include_str!(
+            "../../../migrations/20261101040000_publication_proof.down.sql"
+        ))
+        .execute(&mut *tx)
+        .await
+        .unwrap_err();
+        assert!(error.to_string().contains("preserve immutable audit"));
+        sqlx::query("rollback to savepoint proof_down")
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        tx.rollback().await.unwrap();
+    }
+
+    #[test]
+    fn ordinary_query_absence_never_authorizes_a_new_publication() {
+        for settled in [false, true] {
+            assert_eq!(
+                reconciliation_result(settled, Ok(false)),
+                Err(if settled {
+                    "EVENT_UNOBSERVABLE"
+                } else {
+                    "PENDING"
+                }),
+                "deleted events, deleted deletions and delayed writers remain unresolved"
+            );
+            assert_eq!(
+                reconciliation_result(settled, Ok(true)),
+                Ok("ACCEPTED"),
+                "positive delivery evidence still settles"
+            );
+            for reason in ["QUERY_FAILED", "EVIDENCE_MISSING", "PARTICIPANT_UNREADABLE"] {
+                assert_eq!(reconciliation_result(settled, Err(reason)), Err(reason));
+            }
+        }
+    }
 }

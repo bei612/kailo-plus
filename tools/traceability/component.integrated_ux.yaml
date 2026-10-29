@@ -1,0 +1,69 @@
+capability_id: component.integrated_ux
+title: 组件一体化交互：组件页外壳与交互由 Kailo 提供，组件只渲染内容区；控件、文案与嵌入接缝按 Kailo 设计系统统一
+stage: EXT-BASE
+status: in_progress
+# 分支源码已在 CI 节点以本地构建产物 + 路由替换截图核验（~/kailo-acceptance/integrated-ux/），
+# 组件产物（file-storage、knowledge-native-ui、data-query-ui、document-editor）与 Web/Desktop 尚未重建发布。
+exposure: none
+
+design:
+  requirements: [V-REQ-17, V-REQ-24]
+  decisions: [DD-157]
+  facts: []
+  seams: []
+  blockers: []
+  entities: [FrontendPresentationContract]
+
+validation:
+  scenarios: [V-SCN-256, V-SCN-257, V-SCN-258, V-SCN-259]
+  evidence:
+    - dimension: 安全边界
+      ref: client-kit/ts/platform/test/kailo-embed-runtime.test.ts
+    - dimension: 安全边界
+      ref: client-kit/ts/platform/test/native-embed-host.test.tsx
+    - dimension: 呈现
+      ref: client-kit/ts/platform/test/embed-tokens.test.ts
+    - dimension: 呈现
+      ref: file-storage/frontend/assets/kailo.embed/kailo-cells.test.js
+    - dimension: 呈现
+      ref: knowledge/frontend/src/kailo/shell.test.ts
+    - dimension: 呈现
+      ref: data-query/wren-ui/src/kailoShell.test.ts
+
+implementation:
+  owners: [team-platform, team-capabilities]
+  paths:
+    - client-kit/embed/kailo-embed.js
+    - client-kit/embed/kailo-embed.d.ts
+    - client-kit/embed/kailo-theme-tokens.css
+    - client-kit/ts/platform/src/theme/embed-tokens.ts
+    - client-kit/ts/platform/src/react/native-embed-host.ts
+    - client-kit/ts/platform/src/react/native-application-page.tsx
+    - client-kit/ts/platform/src/react/native-application-entries.tsx
+    - client-kit/ts/platform/src/react/native-page-shell.tsx
+    - client-kit/ts/platform/src/styles/kailo-shell.css
+    - client-kit/ts/platform/src/styles/kailo-components.css
+    - web-client/web/src/platform/ui/PlatformApp.tsx
+    - collaboration/desktop/src/app/routes/applications.$bindingId.tsx
+    - file-storage/frontend/web/kailo-embed.go
+    - file-storage/frontend/assets/kailo.embed/kailo-cells.js
+    - file-storage/frontend/assets/kailo.embed/kailo-overlay.css
+    - document-editor/fork/packaging/kailo-themes.py
+    - knowledge/frontend/src/kailo/page.ts
+    - knowledge/frontend/src/kailo/tdesign-shell.ts
+    - knowledge/frontend/src/kailo/kailo-theme-overlay.css
+    - data-query/wren-ui/src/utils/kailoHost.ts
+    - data-query/wren-ui/src/hooks/useKailoPage.ts
+    - data-query/wren-ui/src/styles/kailo/controls.less
+  surfaces: [web, desktop]
+  schemas: []
+  migrations: []
+
+runtime:
+  routes: []
+  actions: []
+  workflow_kinds: []
+
+release:
+  artifacts: []
+  gate: blocked_until_seams_closed

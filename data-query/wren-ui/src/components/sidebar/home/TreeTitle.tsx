@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import styled from 'styled-components';
 import { Dropdown, Menu } from 'antd';
-import EditOutlined from '@ant-design/icons/EditOutlined';
-import MoreOutlined from '@ant-design/icons/MoreOutlined';
+import { MoreHorizontalIcon, PencilIcon } from '@/components/kailo/KailoIcons';
+import useKailoText from '@/utils/kailoI18n';
 import LabelTitle from '@/components/sidebar/LabelTitle';
 import TreeTitleInput from '@/components/sidebar/home/TreeTitleInput';
 import { DeleteThreadModal } from '@/components/modals/DeleteModal';
@@ -15,7 +15,22 @@ const MENU_ITEM_KEYS = {
 
 const StyledMenu = styled(Menu)`
   a:hover {
-    color: white;
+    color: inherit;
+  }
+`;
+
+const MoreButton = styled.span`
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  color: var(--kailo-color-muted-foreground);
+  cursor: pointer;
+  &:hover {
+    background-color: var(--kailo-color-pressed);
+    color: var(--kailo-color-foreground);
   }
 `;
 
@@ -30,6 +45,7 @@ interface TreeTitleProps {
 
 export default function TreeTitle(props: TreeTitleProps) {
   const { id, onDelete, onRename, owner, canManage = true } = props;
+  const t = useKailoText();
   // DD-133 §3: the thread's Kailo creator, as avatar with the name on hover.
   const ownerMark = owner ? (
     <KailoUser user={owner} size={16} showName={false} className="mr-1" />
@@ -76,8 +92,8 @@ export default function TreeTitle(props: TreeTitleProps) {
                   {
                     label: (
                       <>
-                        <EditOutlined className="mr-2" />
-                        Rename
+                        <PencilIcon className="mr-2" />
+                        {t('home.rename')}
                       </>
                     ),
                     key: MENU_ITEM_KEYS.RENAME,
@@ -88,7 +104,12 @@ export default function TreeTitle(props: TreeTitleProps) {
                   },
                   {
                     label: (
-                      <DeleteThreadModal onConfirm={() => onDeleteData(id)} />
+                      <DeleteThreadModal
+                        name={
+                          title.length > 40 ? `${title.slice(0, 39)}…` : title
+                        }
+                        onConfirm={() => onDeleteData(id)}
+                      />
                     ),
                     key: MENU_ITEM_KEYS.DELETE,
                     onClick: ({ domEvent }) => {
@@ -99,7 +120,13 @@ export default function TreeTitle(props: TreeTitleProps) {
               />
             }
           >
-            <MoreOutlined onClick={(event) => event.stopPropagation()} />
+            <MoreButton
+              role="button"
+              aria-label={t('home.moreActions')}
+              onClick={(event) => event.stopPropagation()}
+            >
+              <MoreHorizontalIcon />
+            </MoreButton>
           </Dropdown>
         </>
       }

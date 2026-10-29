@@ -257,7 +257,7 @@ pub(crate) async fn query(
         Err(r) => return r,
     };
     let filter = json!({"kinds": [KIND_PRESENCE_UPDATE], "authors": &bound});
-    let rows = match client.query(&state.http, &[filter]).await {
+    let rows = match client.query(&state.relay_http, &[filter]).await {
         Ok(rows) => rows,
         Err(error) => return relay_error_response(&error, None),
     };

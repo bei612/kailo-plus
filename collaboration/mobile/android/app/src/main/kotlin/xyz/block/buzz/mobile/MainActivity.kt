@@ -9,6 +9,7 @@ import android.graphics.ImageDecoder
 import android.media.MediaExtractor
 import android.media.MediaMetadataRetriever
 import android.media.MediaMuxer
+import android.content.Intent
 import android.os.Build
 import androidx.annotation.RequiresApi
 import io.flutter.embedding.android.FlutterFragmentActivity
@@ -80,9 +81,25 @@ internal object AndroidImageProcessor {
 
 class MainActivity : FlutterFragmentActivity() {
     private var mediaUploadChannel: MethodChannel? = null
+    private var pushBridge: AndroidPushBridge? = null
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        pushBridge?.opened(intent)
+    }
+
+    override fun onDestroy() {
+        pushBridge?.dispose()
+        pushBridge = null
+        super.onDestroy()
+    }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        pushBridge = AndroidPushBridge(this, flutterEngine.dartExecutor.binaryMessenger).also {
+            it.opened(intent)
+        }
 
         mediaUploadChannel = MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,

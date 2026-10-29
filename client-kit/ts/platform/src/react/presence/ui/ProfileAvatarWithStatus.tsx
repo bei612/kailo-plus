@@ -11,6 +11,9 @@ import {
 import { getPresenceLabelKey, type PresenceStatus } from "../lib/presence";
 import { PresenceDot } from "./PresenceBadge";
 
+/** DD-141 §5: human avatar corner radius as a share of its size. */
+const HUMAN_AVATAR_RADIUS_RATIO = 0.28;
+
 export type ProfileAvatarStatusGeometry = {
   dotSize: number;
   cutoutSize: number;
@@ -105,6 +108,8 @@ export function ProfileAvatarWithStatus({
       badgeBox={badgeBox}
       className={cn("inline-flex", className)}
       clipTestId={testId ? `${testId}-mask` : undefined}
+      // DD-141 §5: human avatars are rounded squares (28%), not circles.
+      cornerRadius={shape === "squircle" ? undefined : size * HUMAN_AVATAR_RADIUS_RATIO}
       curve={STATUS_DOT_MASK_CURVE}
       cutout={cutout}
       shape={shape}

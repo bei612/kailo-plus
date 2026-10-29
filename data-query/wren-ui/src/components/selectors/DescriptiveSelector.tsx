@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Select, SelectProps, Space, Typography } from 'antd';
 import styled from 'styled-components';
 import { omit } from 'lodash';
+import { kailoT } from '@/utils/kailoI18n';
 
 interface Props extends SelectProps {
   listHeight?: number;
@@ -19,8 +20,8 @@ const DescribeBox = styled.div`
 
   .describeBox {
     &-codeBlock {
-      background: var(--gray-3);
-      border-radius: 4px;
+      background: var(--kailo-color-muted);
+      border-radius: 6px;
       padding: 6px 8px;
     }
   }
@@ -31,13 +32,13 @@ const defaultDescriptiveContentRender = (content: Record<string, any>) => {
     <Space style={{ width: '100%' }} size={[0, 16]} direction="vertical">
       <div>
         <div style={{ marginBottom: 4 }}>
-          <b>Description</b>
+          <b>{kailoT('modeling.description')}</b>
         </div>
         {content?.description || '-'}
       </div>
       <div>
         <div style={{ marginBottom: 4 }}>
-          <b>Example</b>
+          <b>{kailoT('modeling.example')}</b>
         </div>
         {content?.example ? (
           <div className="describeBox-codeBlock">{content?.example}</div>
@@ -75,7 +76,7 @@ export default function DescriptiveSelector(props: Props) {
         <div
           style={{
             width: '100%',
-            borderLeft: '1px solid var(--gray-3)',
+            borderLeft: '1px solid var(--kailo-color-border)',
             margin: '-4px 0',
             minWidth: 0,
           }}
@@ -85,7 +86,7 @@ export default function DescriptiveSelector(props: Props) {
             ellipsis
             style={{
               padding: '8px 16px',
-              borderBottom: '1px solid var(--gray-3)',
+              borderBottom: '1px solid var(--kailo-color-border)',
             }}
           >
             {currentOption?.label || currentOption?.value}

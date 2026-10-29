@@ -12018,3 +12018,1569 @@ by `yarn install --immutable` through the proxy, checks with `--network none`,
 These are source checks, not an image or business acceptance: `data-query-ui`
 must be rebuilt from the merged commit and the independent instance re-accepted
 (ask → result, Models(n), diagram) before the 58095 page is fixed.
+
+## 2026-10-27 — Original standalone Ask completion and stream mode retirement
+
+Fixed product source: `6f32bac584b707f7b814462304012248d7b373f0`, based on
+`8c5395908aacbc6c4d82a57eb43855b4d66824ee`. The fixed upstream Wren source
+remains `c5f02a0391c87420dba78632dcd86073710deb72`; its
+`wren-ui/src/pages/api/ask_task/streaming.ts` forwards native chunks and emits
+`{done:true}` on EOF. The current original AI producer,
+`wren-ai-service/src/web/v1/services/ask.py::get_ask_streaming_result`, instead
+emits `{done:true,queryId}` only for the original pipeline queue's completion
+sentinel. Its `queryId` is the same native task passed to that queue; absent
+queue/cache evidence does not emit completion.
+
+The current browser consumer `useAskingStreamTask` accepts only the one-key
+`{done:true}` browser message. The STANDALONE route therefore had two real
+faults: forwarding the native completion made the browser close unresolved;
+EOF without native completion incorrectly manufactured success. The route now
+shares the existing governed message decoder, validates the exact native task
+completion and emits the original browser shape. It reads the original
+persisted task/project through `AskingService.getAskingTask` before opening the
+native stream and before each exposed frame. It does not create another Ask,
+SQL execution or task, reopen an interrupted queue, or rebuild historical MDL
+from the current project.
+
+DD-127(7) deployment mode stays independent of request tokens. STANDALONE loads
+no platform delivery and keeps its original stream lifetime. GOVERNED keeps
+its existing delivered byte budget, timeout and per-frame HUMAN/source checks.
+An in-flight stream cannot change modes: standalone checks mode before/after
+its original task read; the governed route's authorization closure checks mode
+before/after the original asynchronous resolver. This also prevents that
+resolver's standalone early return from exposing old governed reasoning after
+both delivery environment entries are retired. Invalid, foreign or extra-field
+completion, native EOF and authorization/mode changes never emit `done`.
+
+### Fixed-source checks and actual failures
+
+The existing `~/kailo-acceptance/ops/wren/ui-run.sh` Node 18/Yarn recipe was used
+with explicit 4 CPU / 4 GiB memory and equal swap limits. Image:
+`sha256:f9ab18e354e6855ae56ef2b290dd225c1e51a564f87584b9bd21dd651838830e`.
+Dependencies were installed with original Yarn 4.5.3 `install --immutable`;
+checks used `--network none`. Source, temporary files and the copied original
+Yarn cache were on actual Data under
+`/volumes/data/kailo/conformance/cache/wren-readonly-chain`; the old NVMe bind
+cache was not cleared or written. All **617** exported GitHub input blobs
+(`wren-ui`, `client-kit/adapter`, `client-kit/embed`) matched the final fixed
+commit after the checks and fault restoration.
+
+- Original `nativeTaskOwnership.test.ts` HTTP/task-owner describes: **65 passed**;
+  the other **39** tests were explicitly not selected, not counted as passes.
+- Original `askingStream.test.tsx` and `nativeAskingQuery.test.ts`: **58 passed**,
+  covering the browser hook/GeneralAnswer and original SQLite task/SQL receipt
+  consumers. These are original consumers, not a new query implementation.
+- Prettier, original Next lint and complete `tsc --noEmit --pretty false`: **0**.
+  The original GraphQL fixture now compares its actual binding generation.
+  The browser fault fixture uses a writable `EventSource` property and asserts
+  replacement identity: the old non-writable fixture never installed its
+  failing constructor. The Python delivery test explicitly retains the current
+  `NODE_ENV` beside `PATH`, satisfying `NodeJS.ProcessEnv` without inheriting
+  credentials or substituting a default environment.
+- In the private fixed-source snapshot, forwarding raw native completion caused
+  **1 assertion failure**; manufacturing completion on EOF caused **1 assertion
+  failure**; removing the governed authorization mode fences caused **2 assertion
+  failures**, including retirement during the resolver's final original task
+  read. Each command exited **1** from assertions. After byte-for-byte source
+  restoration, **65 + 58 passed**, and format passed again.
+
+The broader five-file check is **not green**. Its first candidate run recorded
+**17 failed / 151 passed / 6 skipped**, with the hook suite additionally blocked
+by an omitted `client-kit/embed` input. After exporting that exact shared input,
+fixed base `8c5395908` reproduced **18 failed / 164 passed / 6 skipped**. The
+base assertion run completed but its original background trackers kept handles
+open; the bounded command exited **124**. No `forceExit` was used to label it
+successful. This batch fixes the generation comparison and browser constructor
+fixture above. The remaining **13** acknowledged-task rerun fixtures lack the
+current project-row transaction/provenance setup, and **3** text-answer fixtures
+lack the current authorization setup; these failures remain recorded for the
+next whole-suite check. Their production locks/authorization were not relaxed.
+Earlier candidate, constructor-diagnostic and partial-check logs are retained;
+the final narrow result does not replace their failed outcomes.
+
+Evidence directory:
+`/volumes/data/kailo/verification/buzz-r10/wren-readonly-6f32bac584b707f7b814462304012248d7b373f0-check-r2`.
+Its `receipt.json` SHA-256 is
+`da8b627548633b6d59deb805dc4502264f13e4851e819b1d93409c1b16884a40`;
+`fixed-inputs.json` records all input blobs, and individual command logs preserve
+counts, exits and fault assertions. Local handoff copy:
+`/tmp/kailo-wren-readonly-6f32bac58-receipt.json`. The check container was removed
+and absence read back after completion.
+
+The independent REST endpoint
+`pages/api/v1/stream_explanation.ts` remains a concrete follow-up: its STANDALONE
+branch still forwards raw native frames and manufactures `done` on EOF; only
+its GOVERNED branch uses the existing shared decoder. This batch fixes the
+browser's `/api/ask_task/streaming` operation, not both standalone endpoints.
+The REST follow-up must retain its original API History/project ownership and
+external wire contract; an AskingTask repository lookup cannot substitute for
+that authority.
+
+These are fixed-source HTTP/hook/SQLite checks. No matching component artifact,
+real LLM/SQL backend, deployed receiver chain, or final independent-page user
+acceptance was produced in this batch. Rebuilding and accepting the matching
+Wren instance remains subject to the existing release/source admission gate;
+this entry does not assert that all readonly query operations or DD-127 are
+accepted.
+
+### 原答案结果消费者授权夹具与运行模式闭合
+
+本批从已推送 `e70c0ad0b338caa10c4c07676b23e0fa3c1b3ded` 独立开发，仅修改 `wren-ui/src/nativeTextAnswer.test.ts` 和原 `wren-ui/src/pages/api/ask_task/streaming_answer.ts`，固定最终源码 `8740c95f5c49388cd1e6ab5d03998346ad1cfb1d`。原五文件基线中的三项答案失败，均在进入原结果消费者前因旧 `loadQueryDelivery` mock 缺少 `serviceClientSecretFile` 等现行投递字段而失败。本批移除该配置 mock，用真实配置加载器、临时配置/假秘密文件、完整 HTTP scope 响应驱动原 `bindingServiceCall`、`authorizeNativeScope` 与原答案/Chart 消费者；校验 service 与 HUMAN 凭据的独立传递、完整 binding/Tenant/Workspace/native scope/generation/revision/permission，不以跳过授权恢复旧预期。
+
+固定 `0bae79735ccad1f4c7adc74e088794b52ae2086e` 的原单文件消费者实际 26/26 通过，原全量 `tsc --noEmit --pretty false`、单文件 Next lint、Prettier 均为 0。将独立 CI 快照中 `ApiHistoryResolver.nativeHistory` 的真实 discover 授权调用替换为静态 generation 后，10 个 scope 回归实际断言失败、命令退出 1（其余 16 个仅在该定向反证未选择）；逐字恢复后整文件 26/26 再次通过。该批只修旧夹具，保留原故障日志。
+
+进一步核对原答案流发现真实产品缺口：处理器冻结了初始 governed 模式，但异步嵌套 reader 再次读取当前模式；移除投递配置后，后续 reader 可能改走独立模式，已打开的独立流也可能在治理模式出现后继续。最终产品在同一个原 fresh 授权接缝前后校验模式仍等于初始值；首个流建立、每次结果暴露、完成回执写入前沿原接缝调用，漂移拒绝，不降级到另一模式。本批不撤回已输出字节，不将缺完成回执改为确定失败或授权重跑。
+
+固定最终源码 `8740c95f5c49388cd1e6ab5d03998346ad1cfb1d` 经 GitHub fetch/archive 到 CI 独立快照，原单文件消费者 30/30 通过，原全量 TypeScript、两文件 Next lint、Prettier 均为 0。删除两处模式校验后，四个新增回归实际断言失败、命令退出 1（另 26 个在定向反证未选择）；逐字恢复后整文件 30/30 再次通过。原有三项失败已恢复实际执行；本批未运行五文件全量，也未宣称其余任务归属失败已修复。
+
+两批均使用原不可变 Node18 镜像 `sha256:f9ab18e354e6855ae56ef2b290dd225c1e51a564f87584b9bd21dd651838830e`（Node 18.20.8、TypeScript 5.2.2、Prettier 3.2.5）；实际限制为 4 CPU、4 GiB 内存及相同 swap 上限、512 pids、network none。既有 Yarn4.5.3 immutable 安装以只读 node_modules 复用，先逐字比较 package.json/yarn.lock/.yarnrc.yml，未安装依赖。源码、临时目录和日志位于真实 `/dev/sda1` Data；两批恢复后各 618 个 Git 输入 blob 精确匹配、memory.events 的 OOM 计数均为零，容器删除后实际回读为空。格式准备单独使用原镜像 1 CPU/512 MiB，输出先入库再执行固定源验证。
+
+证据目录为 CI `/volumes/data/kailo/conformance/wren-text-answer/<上述固定源码>-check/`，保留 consumers/types/lint/format、fault、restored 原日志及各自 exit。最终 compact 回执为该最终目录的 `text-answer-receipt.json`，SHA-256 `e73407d76e27a692f3f6566fc8280a22fc6436c77514255face9f24e29f7b9b6`；本机副本 `/tmp/kailo-wren-text-answer-8740c95f5-receipt.json`。
+
+边界：HTTP 服务是完整协议夹具，现有 `NativeHumanQuery.readHistory` spy 仍隔离下游 SQL 回执，原生仓储和 AI 流也是测试依赖；这证明原消费代码与 scope/模式拒绝行为，不证明真实 Core/IdP 签发、真实 SQL/模型业务、receiver 激活或已部署制品验收。源码仍固定原上游 `c5f02a0391c87420dba78632dcd86073710deb72`；本批原 SDK upstream status 实际退出 0，未更改上游信任或生产配置。
+
+## 2026-10-27 REST explanation completion and original API History scope
+
+This closes the concrete REST follow-up recorded above, under DD-127(7) and
+DD-133. Base: `e70c0ad0b338caa10c4c07676b23e0fa3c1b3ded`. Production source:
+`18a08cffdf4b2d3444533768b133cf8aa9b4ff10`; final test-only delta:
+`f735dab7b742667cda3ac469d316fe8d7439f009`. The four production files are
+byte-identical between those two commits.
+
+The fixed official Wren source `c5f02a0391c87420dba78632dcd86073710deb72`,
+`wren-ui/openapi.yaml` `/stream_explanation`, specifies message frames followed
+by the one-key `{done:true}` frame. The actual original AI producer
+`get_ask_streaming_result` supplies `{done:true,queryId}` only after its queue
+completion sentinel. The REST route now uses the existing decoder, checks that
+native ID, and emits the original public shape. EOF, malformed or foreign
+completion, and authorization loss close unresolved. No new Ask, one-shot queue
+reopen or automatic replay was introduced.
+
+The original nonstream `generate_sql` producer already persisted its public
+`NON_SQL_QUERY` code and `explanationQueryId` in ApiHistory. The streaming
+producer sent these fields to the caller but persisted only error text with
+status 500. It now persists the same existing public fields and actual 400
+status for that specific error. Other errors retain their previous behavior.
+No new schema, public wire or platform copy of question/SQL/history was added.
+
+`ApiHistoryRepository.findStandaloneExplanation` resolves the actual current
+project's ungoverned GENERATE_SQL/STREAM_GENERATE_SQL error row by that exact
+persisted query reference. A history row UUID is not the native query ID. Zero
+or conflicting rows are refused; the two-row limit detects ambiguity rather
+than truncating a history search. Each exposed frame rechecks the fixed row,
+project, original request/response and mode. Old streaming rows without the
+persisted reference remain unattributable; current project context is never
+used to fabricate or backfill their provenance. AskingTaskRepo is not used as
+the REST authority.
+
+DD-127(7) keeps original native project shared-read ACL. A different admitted
+HUMAN may read that project's original history; no owner/admin-only restriction
+was invented. HUMAN and native SERVICE remain separate middleware-verified
+issuer/audience/instance identities. A missing owner does not grant access and
+is not replaced with a fabricated SERVICE owner. Missing identity, a raw old
+token, revoked original member or foreign project fails admission. Standalone
+reads only its original local native facts, without Core or platform delivery;
+its original lifetime is retained. GOVERNED retains per-frame HUMAN/source
+checks and its delivered limits, with mode checked before and after original
+asynchronous authorization. Neither direction may change mode midstream.
+
+### REST fixed-source consumers and fault restoration
+
+The existing Node 18/Yarn recipe and installed immutable Yarn 4.5.3 dependencies
+were reused without installation or lock changes. Node image:
+`sha256:f9ab18e354e6855ae56ef2b290dd225c1e51a564f87584b9bd21dd651838830e`;
+actual Node 18.20.8, TypeScript 5.2.2 and Prettier 3.2.5. Main checks used
+4 CPU / 4 GiB, with equal swap, and private PostgreSQL 1 CPU / 2 GiB with equal
+swap on an isolated internal network. New source, temporary files and outputs
+stayed on actual Data; the old NVMe cache was not changed.
+
+At fixed `18a08cffd`:
+
+- Original Next HTTP/task ownership and new REST SQLite consumers: **91 passed**,
+  **39 not selected**. Both original SQL producers persist into actual ApiHistory
+  before the real explanation HTTP consumer reads it.
+- Original browser hook: **27 passed**. The same REST cases on real private
+  PostgreSQL: **25 passed**, **105 not selected**. These 25 overlap SQLite cases;
+  they are not additional distinct features or tests.
+- Complete `tsc --noEmit --pretty false`, original Next lint and Prettier: **0**.
+- Actual private-snapshot faults: raw native public completion caused **2**
+  failures; fabricated EOF completion **1**; removing repository and consumer
+  project checks on real PostgreSQL **1**; dropping the streaming producer's
+  persisted query reference **5**. Each command exited **1** from assertions.
+  Byte-for-byte restoration then passed **91 SQLite + 25 PostgreSQL + 27 hook**
+  and format again.
+
+An extra initial mode-fault probe at that same source did **not** detect the
+removed local fences: the original metadata queryScope reader already refused
+retirement before a chunk. Its test exited 0 and the expected-failure wrapper
+exited 1. This failed probe is retained and is not counted as valid fault proof.
+The final test-only delta `f735dab7b` places retirement immediately after the
+last actual `ModelResolver.getMDL` returns; it calls the real metadata readers,
+without substituting successful authorization. In the original governed REST
+HTTP consumer, **2 mode cases passed**; removing the local fences then produced
+**1 assertion failure / 1 pass**, exposing a message after retirement. Source
+was restored byte-for-byte and **2 passed** again. Full types, two-file lint and
+format passed at this final source, using 1 CPU / 4 GiB with equal swap and no
+network. These two cases overlap prior coverage; the main suites were not
+rerun or relabeled as a new full result.
+
+Main evidence directory:
+`/volumes/data/kailo/verification/buzz-r10/wren-rest-explanation-18a08cffdf4b2d3444533768b133cf8aa9b4ff10-check`.
+Its `receipt.json` SHA-256:
+`42c9b23810b6b55eb29ab9f9e646a2fe5f383cd68ea0b4c63830d1955679b7d0`.
+Local handoff: `/tmp/kailo-wren-rest-explanation-18a08cffd-receipt.json`.
+All **617** inputs match the fixed GitHub blobs. Because the later test-only
+candidate had already been formatted, this audit reads the test file from its
+actual execution-time pre-fault backup; the other inputs are unchanged original
+execution files. The receipt and input manifest explicitly identify those paths.
+
+Final mode-delta directory:
+`/volumes/data/kailo/verification/buzz-r10/wren-rest-explanation-f735dab7b742667cda3ac469d316fe8d7439f009-mode-fault`.
+Its `receipt.json` SHA-256:
+`45dbe30537d5efce7143c1eb66f0ed5876b3ebd248c47e5928b4bb74795b3049`.
+Local handoff: `/tmp/kailo-wren-rest-mode-f735dab7b-receipt.json`.
+All **617** current execution inputs match this fixed GitHub source. Individual
+logs retain command exits, assertion details and restoration results. Both
+check containers, private PostgreSQL and their network were removed, with
+absence read back.
+
+The prior five-file baseline remains historical evidence: **18 failed / 164
+passed / 6 skipped**, followed by the earlier two fixture fixes. This batch
+does not change or reclassify the remaining **13 rerun + 3 text-answer** fixture
+failures; parallel fixes have their own fixed-source evidence. Unselected tests
+are not passes, and these narrow checks do not establish all Wren tests green.
+Middleware-verified headers and the AI stream are explicit fixtures here;
+HTTP, SQLite and PostgreSQL consumers are real. No live IdP/model/SQL backend,
+matching component artifact, receiver activation or final user acceptance was
+performed. The matching data-query-ui build and deployed operation still require
+the existing release/source admission gates; no CI trust or production state
+was changed.
+
+## 2026-10-27 complete five-file exit gate and original rerun transactions
+
+This follow-up closes the remaining 13 rerun fixture failures recorded above,
+under DD-127/DD-133. Base: `9240e26252c6ead3d967c6fc6b7beede57e9139f`.
+Final tested source: `69bec1c847b40c351ee02049ecb1fe00db8382b7`. Only
+`nativeTaskOwnership.test.ts` and `nativeQueryMode.test.ts` changed; production
+code, dependencies, schema and API/Workflow contracts are byte-identical to
+the base. No authorization, row lock, UNKNOWN or rerun rule was relaxed.
+
+The complete original five-file command at the base actually reproduced
+**13 failed / 225 passed / 6 skipped**. All failures were in bound rerun cases:
+the old array repository omitted `NativeAskingScope.generation`, the project
+row and its binding fence, and returned `{}` as a transaction. The original
+`lockNativeBinding` therefore correctly rejected these fixtures before their
+intended assertions. The other four files passed. The command then stayed
+alive because `nativeQueryMode`'s real `common` import initialized upstream
+background intervals; the original bounded command exited **124**. Both the
+assertion failure and process-lifecycle failure remain recorded, rather than
+being relabeled as passed or excluded.
+
+The 13 original cases and two adjacent bound ACK cases now use the original
+Knex migrations, actual project/thread/response rows and AskingTaskRepository
+in SQLite and PostgreSQL. Generation is explicit. `forUpdate`, project/task
+locks, conditional updates, commit and rollback are original implementations.
+The locked-row race commits changed row evidence between the initial read and
+the real transaction; it no longer substitutes a `lockQuery` return value.
+The original assertions still cover refusal to rerun active/unknown/finished
+queries, one new native query ID on the same explicitly retryable task row, lost ACK
+without a second POST, fresh owner/status checks, admission refusal and late
+observation against a replacement query. Async fixtures wait until the actual
+provider read is in flight instead of relying on an in-memory immediate read.
+POST assertions now run outside the adapter callback, so the intentional
+UNKNOWN error handler cannot swallow an assertion failure.
+
+Three additional original consumers cover a committed project binding fence,
+`registerNativeQuery`'s persisted execution-key set at rerun, and two concurrent
+reruns sharing the same task. The execution-key case proves the local captured
+checkpoint check; its admission callback is explicit fixture input, not proof
+that a live Core execution settled. The existing provider/admission fixtures
+remain visible boundaries; real repository transactions are not mocked.
+
+The mode fixture returns the actual initialized `common` object. A temporary
+call-through spy records only interval handles created by that initialization;
+its teardown clears those handles and destroys its own original Knex pool.
+The original resolver and initialization run unchanged. No `forceExit`, hidden
+`unref`, new skip, test deletion or filtering of the complete gate was used.
+
+### Complete checks, actual faults and restored source
+
+The existing Node 18/Yarn installation was reused after exact package/lock/
+configuration and unchanged local shared-source comparison. No dependency
+installation or large cache copy occurred. All new writes remained on actual
+Data, without clearing the older NVMe cache. The immutable original Node image
+was `sha256:f9ab18e354e6855ae56ef2b290dd225c1e51a564f87584b9bd21dd651838830e`
+(Node 18.20.8, TypeScript 5.2.2, Prettier 3.2.5). The check container had
+4 CPU / 4 GiB and equal swap; isolated PostgreSQL had 1 CPU / 2 GiB and equal
+swap on a private internal network. Actual limits were read back.
+
+At the final fixed source:
+
+- Original complete `nativeTaskOwnership`, `nativeAskingQuery`, `nativeQueryMode`,
+  `askingStream` and `nativeTextAnswer`: **5 suites passed, 241 passed** and
+  **6 original database-conditional cases not run in that command**. It exited
+  naturally with **0**, without the base's outstanding tracker handles.
+- The complete `nativeTaskOwnership` file was then run with both original
+  `WREN_TEST_POSTGRES_URL` and `WREN_QUERY_TEST_DATABASE_URL` supplied to private
+  PostgreSQL: **134 passed / 0 skipped**, including all six migration/cascade
+  cases omitted by the first command. These overlap the first run; do not sum
+  241 and 134 as distinct tests. No case in the five-file gate remains unrun.
+- Full `tsc --noEmit --pretty false`, original Next lint and Prettier: **0**.
+- In the private execution snapshot, removing the rerun status exclusion caused
+  **11 assertion failures**; removing the registered execution-set comparison
+  **1**; using the earlier snapshot instead of the locked current row **2**;
+  ignoring the original project binding fence **1**. Each fault ran the actual
+  18-case PostgreSQL rerun group and exited **1** from assertions. The other
+  116 cases were not selected for those deliberate fault probes.
+- After byte-for-byte restoration of both temporarily altered product files,
+  the complete five files again passed **241** and the complete PostgreSQL file
+  **134**, naturally exiting **0**. All **617** actual GitHub input blobs were
+  checked against the final source after restoration. Containers, private
+  PostgreSQL and the private network were removed and absence read back.
+
+The first corrected fixed source `f392be495` had already passed the same
+positive/static commands. The final test-only change moves POST assertions
+outside UNKNOWN handling; its checks and faults above are separate actual
+results. The base failure, first corrected result and final result are all
+preserved in the receipt, not collapsed into one latest-tree claim.
+
+Evidence directory:
+`/volumes/data/kailo/verification/buzz-r10/wren-rerun-69bec1c847b40c351ee02049ecb1fe00db8382b7-check`.
+`receipt.json` SHA-256:
+`f5cf182d783375cc2e79ee31def619c53209fe3e73d4f41b9697da806687b0d3`.
+Local handoff: `/tmp/kailo-wren-rerun-69bec1c84-receipt.json`.
+The base failure remains under
+`/volumes/data/kailo/verification/buzz-r10/wren-rerun-9240e26252c6ead3d967c6fc6b7beede57e9139f-baseline`.
+The receipt links exact command logs, exits, counts, fixed input manifest and
+restoration evidence.
+
+This establishes the original five-file exit gate, not the entire Wren test
+inventory or live user acceptance. There was no live IdP/Core/model/SQL backend,
+matching artifact build, receiver activation, CI trust change or deployment.
+The existing release and full deployed-operation gates remain applicable.
+
+## 2026-10-27 — Answer query identity, queued callbacks and conditional close
+
+DD-127(7), DD-133 and SS-WRN-GOVERNANCE / SS-WRN-IDENTITY retain the original
+Wren text-answer operation. Base `3a2c960e492c545bfee2b2284fb2349a98664dde`;
+checked product source `460552945ef9e7857d8124fd889865f262aa45b7`.
+The five changed implementation/test paths are three product consumers and
+two existing test files, +657/-88. This is neither a new generation API nor
+platform storage of answer content.
+
+### Original consumer and concrete correction
+
+Fixed upstream `c5f02a0391c87420dba78632dcd86073710deb72` supplies
+`wren-ui/src/hooks/useTextBasedAnswerStreamTask.tsx`,
+`src/components/pages/home/promptThread/TextBasedAnswer.tsx` and
+`src/pages/api/ask_task/streaming_answer.ts`. Its hook correlates only the
+response row, accepts queued callbacks from closed EventSources, and its page
+starts observation on response/status changes without the native answer query.
+A new query on the same still-STREAMING response can therefore retain the old
+stream or text. The original standalone completion/status writer is also
+unconditional on the answer query frozen when observation began.
+
+The page and hook now follow the original response ID plus
+`answerDetail.queryId`. A current-source fence rejects queued old messages,
+done frames and errors. The page suppresses old-identity content before its
+effects run. Exact public `{message}` and `{done:true}` frames are retained;
+malformed data and disconnects remain unresolved. Same-identity renders,
+locale changes, reset and selection of an already observed identity do not
+reopen its one-shot queue within the same mounted hook. Only the matching
+actual done receipt stops that answer's streaming indicator; authoritative
+history continues to determine its status. The original regenerate action
+is unchanged and is never invoked automatically.
+
+The optional original GET `queryId` parameter is correlation, not permission.
+The endpoint still uses original `AskingService.getResponse`, current project,
+native admission and, in GOVERNED, the existing fresh source/history reader.
+It compares the original response/query snapshot at exposure and retains the
+before/after deployment-mode fence. Calls omitting the optional parameter
+still freeze the original row. Both modes now use the existing
+`ThreadResponseRepository.claimNativeAnswer` conditional writer for completion.
+Standalone interruption uses that same snapshot/CAS; a late old disconnect
+cannot alter the replacement answer. GOVERNED disconnect remains unresolved.
+
+Actual HTTP checks found an additional same-lifecycle defect: listening to
+`IncomingMessage.close` after asynchronous row reads misses a request that
+already completed. Fixed source `0b4d3c030` passed format/types/lint, but the
+five-file run exited **1**, with **260 passed, 2 failed, 6 original conditional
+cases not run**. Cancelling the response reader left the original row STREAMING
+and could leave the upstream alive after replacement. PostgreSQL was not run
+after that failure. Commit `460552945` observes `ServerResponse.close` instead.
+Its completed guard precedes normal `res.end`; successful completion stays
+FINISHED, and cancellation retains the original authorization/CAS fence.
+The failed source and original logs are preserved in the receipt.
+
+### Actual verification and fault restoration
+
+The original immutable Node image was
+`sha256:f9ab18e354e6855ae56ef2b290dd225c1e51a564f87584b9bd21dd651838830e`
+(Node 18.20.8, TypeScript 5.2.2, Prettier 3.2.5). Its limits were
+4 CPU / 4 GiB / equal swap, with private PostgreSQL 1 CPU / 2 GiB / equal swap.
+Actual limits were read back. The existing installation was reused after
+package/lock/configuration comparison; no dependency installation or cache
+copy occurred. New execution writes were on actual Data.
+
+- Original complete five files: **262 passed**, natural exit **0**. Their
+  **6 existing PostgreSQL-conditional rerun cases** were not selected by this
+  environment; their earlier complete `69bec1c84` PostgreSQL result remains
+  recorded above and is not represented as a new run here.
+- Complete `nativeTextAnswer.test.ts` against private PostgreSQL: **38 passed**,
+  natural exit **0**, including all eight new actual HTTP/repository cases.
+  This overlaps the first command and is not 38 additional distinct cases.
+- Full `tsc --noEmit --pretty false`, original Next lint and Prettier: **0**.
+- Removing the actual EventSource identity fence caused **1 assertion failure**;
+  removing the page's pre-effect render identity guard caused **1**. Each
+  deliberately selected the corresponding original hook/page case.
+- Removing the fresh row's answer-query comparison caused **2 assertion
+  failures** in the eight-case actual HTTP/PostgreSQL group. Removing the
+  original repository's `answer_detail` CAS predicate caused **1** in that
+  group. These are failed assertions with exit **1**, not synthetic exit codes;
+  other cases outside the deliberate fault selection were not run in those
+  fault commands.
+- After restoring all four temporarily altered product files byte-for-byte,
+  the complete five files again passed **262**, and the complete PostgreSQL
+  answer file **38**, naturally exiting **0**. All **617** exported GitHub
+  input blobs matched the fixed source after restoration. The SDK, private
+  PostgreSQL and private networks were removed and absence read back.
+
+The hook/page use the existing React scheduling harness; the endpoint cases
+use real Next `apiResolver`, HTTP/fetch, original service/repository consumers,
+original migrations and actual SQLite/PostgreSQL writes. The current-project
+provider and native AI byte stream are explicit fixtures. Existing governed
+policy/provider fixtures remain boundaries. This is not browser E2E, live
+IdP/Core/model/SQL execution, a matching artifact or receiver acceptance.
+
+Receipt directory:
+`/volumes/data/kailo/verification/buzz-r10/wren-answer-460552945ef9e7857d8124fd889865f262aa45b7-check`.
+Its `receipt.json` SHA-256 is
+`54cdebb6d67a63284c7b975928431059a1998eee53af3a5735677ab90727db40`;
+local handoff `/tmp/kailo-wren-answer-460552945-receipt.json`.
+Fault/restoration logs are in the adjacent `wren-answer-460552945ef9e7857d8124fd889865f262aa45b7-fault`
+directory. Initial failures are in `wren-answer-0b4d3c0304a16379cb90e5d40c668b98a9943e9f-check`.
+The receipt records exact logs, hashes, exits and the restored input manifest.
+
+### Remaining complete-answer recovery boundary
+
+The attempt set belongs to one mounted hook; it is not durable global queue
+ownership. Original `wren-ai-service/src/pipelines/generation/sql_answer.py`
+`get_streaming_results` removes chunks through `asyncio.Queue.get` and deletes
+the queue on its final sentinel. The original service's streaming consumer
+exposes that sentinel as done. A new page mount or another session can still
+consume only the remaining tail and receive done. In GOVERNED, a disconnected
+partial observation does not become an authoritative complete answer. This
+cross-mount complete-content gap is not closed by this batch.
+
+The existing native `SqlAnswerResultResponse.succeeded` currently reflects
+preprocessing before answer generation; it is not full-answer evidence.
+Recovery must use the original generator's completed result and original
+`answerDetail` authority, retaining fresh GOVERNED admission and conditional
+writes. It must not regenerate automatically, persist a new Core body copy,
+or call partial content complete. The current Pages Router has no configured
+React StrictMode wrapper; locale rerender is covered, while a future change
+to that mounting lifecycle requires its own verification. No deployment,
+release approval, CI source-trust change or complete Wren acceptance is asserted.
+
+## 2026-10-27 — Complete native SQL answer recovery across observations
+
+DD-127(7), DD-133 and SS-WRN-GOVERNANCE / SS-WRN-IDENTITY retain the original
+SQL text-answer task, project ACL, same-query scope and native History.
+Base `83a01b7545db6ced755f62e77d239cfcf1aa14ed`; checked source
+`754a721ad6ec37aa9be1c0a100e002830cc5ed97`.
+The product/test diff is **16 files, +1838/-283**, including a separate original
+Ruff formatting commit for the pre-existing Python consumer file. These line
+counts are not functionality or acceptance percentages.
+
+### Original completed-result authority and consumers
+
+Against Wren `c5f02a0391c87420dba78632dcd86073710deb72`,
+`wren-ai-service/src/pipelines/generation/sql_answer.py::SQLAnswer.run`
+returns the original generator result after putting its queue sentinel.
+`src/providers/llm/litellm.py` returns `{replies, meta}`; `src/utils.py::trace_cost`
+unwraps its instrumentation tuple before `generate_answer` becomes the
+pipeline result. The old `SqlAnswerService` discarded that returned body.
+Its `succeeded` status was written after preprocessing, before generation.
+Meanwhile a second mounted observer could consume only the remaining queue
+tail. Receiving its sentinel did not establish complete answer content.
+
+The existing `SqlAnswerService._sql_answer_results` TTL cache now retains the
+single original returned string only with an actual single `stop` result.
+Truncation, filtering, missing/unknown metadata, lost return, expiry and a
+replaced cache entry cannot manufacture completion or restart generation.
+The original `succeeded` meaning and preprocessing-to-STREAMING consumers
+remain intact. Completion uses the existing cache limits, not a second body
+store or new task authority. After retention, the pipeline removes its indexed
+queue; existing observers keep their original queue object and can consume its
+sentinel. Completed observations read the retained result without consuming
+or regenerating that queue.
+
+The original native GET `/v1/sql-answers/{query_id}` adds optional
+`completion: {query_id, content}`. The existing TypeScript adaptor validates
+that completion against the requested query. Original public SSE
+`{message}` / `{done:true,queryId}` at the AI hop and `{message}` / `{done:true}`
+at the page hop retain their wire shape. **This is an additive native GET
+change, not an unchanged API claim.** New UI consumers require the matching
+new AI producer. An old AI with no completion remains unresolved; the UI is
+not independently accepted against such an image. Matching UI and AI artifacts
+must pass the existing release gate before deployment.
+
+The original `answerDetail` GraphQL consumer and page SSE endpoint fetch that
+same native result, retain original project/HUMAN source disclosure, check
+mode and frozen row before and after asynchronous reads, and use the original
+`claimNativeAnswer` CAS to store complete content. A stale query or changed
+row cannot overwrite its replacement. The actual GraphQL context now supplies
+the already existing thread-response repository. After CAS, current disclosure
+is checked again before exposing the body. A missing native result leaves the
+existing observation unresolved; no SQL preview or Ask is repeated.
+
+The same correction reaches original `generate_summary`, `ask`, and
+`stream/ask` consumers. GOVERNED uses its original History CAS, query/EE
+references and read authorization; an already claimed stream may recover
+through GET and the original complete History. STANDALONE keeps its native
+project ACL and original request lifecycle. Its current-project read is awaited
+before checking mode; `respondWith` reuses the adjacent original
+`beforeResponse` shape after History writes. The original SQL SSE path also
+checks before text exposure and after its final History write.
+
+For a live summary stream, the full result can extend an emitted prefix: its
+remaining suffix is sent before completion. If the observer received only a
+tail, that current content block is not declared successful. The full original
+History can be read using the same key, without another Ask or stream. Cached
+REST stream recovery emits the existing content-block start/delta/stop frames,
+not just a metadata-only message stop. GENERAL / NON_SQL explanation lifecycle
+is unchanged by this batch.
+
+### Fixed-source checks, failures retained and actual fault restoration
+
+Node used the original immutable image
+`sha256:f9ab18e354e6855ae56ef2b290dd225c1e51a564f87584b9bd21dd651838830e`
+(Node 18.20.8, TypeScript 5.2.2, Prettier 3.2.5), limited to 4 CPU / 4 GiB /
+equal swap. Private PostgreSQL was limited to 1 CPU / 2 GiB / equal swap on
+an internal network. The existing Yarn installation was reused after fixed
+package/lock/config comparison. No project dependency install or large cache
+copy occurred. Actual limits were read back and new writes stayed on Data.
+
+Python used original SDK
+`sha256:3007729eb192341a4f004a88e42e1e66c94fc67d763acfc96568bd7311116018`,
+1 CPU / 2 GiB / equal swap, **Python 3.13.5**. This is not acceptance of the
+production Python 3.12 image. The original `.pre-commit-config.yaml` pins Ruff
+0.2.2. That SDK had no pip; this tool prerequisite failure was preserved. Its
+standard library obtained the fixed official PyPI wheel, verified the published
+SHA-256, and extracted the original binary into a Data-only tool directory.
+No host SDK or project/Yarn lock changed. Wheel SHA-256:
+`5e1439c8f407e4f356470e54cdecdca1bd5439a0673792dbe34a2b0a551a2fe3`.
+The first check identified two I001 import blocks. Original `check --fix` and
+`format` corrected them; the full existing Python test file was formatted in
+a separate style commit. Final fixed-source Ruff check and format-check passed.
+
+At fixed `754a721ad`:
+
+- Original complete five-file gate: **295 passed**, natural exit **0**;
+  **6 pre-existing conditional migration cases** were not run in this
+  environment. Their earlier `69bec1c84` PostgreSQL result remains recorded
+  separately and is not claimed as a new execution here.
+- Complete `nativeTextAnswer.test.ts` with private PostgreSQL: **71 passed**,
+  natural exit **0**. These overlap the five-file cases; do not add them as
+  distinct cases.
+- Existing `nativeHumanQuery.test.ts` group
+  `original run_sql HTTP HUMAN consumer`: **163 passed**, exit **0**.
+  Its **375 other cases** were deliberately not selected; this is not the
+  whole large file passing.
+- Original Python `test_native_sql_answer_stream.py`: **20 passed**, exit **0**.
+- Full original TypeScript typecheck, selected original Next lint/Prettier,
+  and pinned Ruff check/format-check: **0**.
+- Removing the original response's post-History `beforeResponse` hook caused
+  **4 assertion failures**; removing the post-CAS disclosure check **1**;
+  writing the old partial content instead of the full result in GraphQL **2**;
+  corrupting the stream's emitted-prefix comparison **2**; removing the SQL
+  GOVERNED mode fences **4**. Each ran the existing relevant original HTTP/PG
+  or REST cases and exited **1** from assertions. Fault selection did not
+  change any positive assertion or skip.
+- Removing the Python natural-finish check caused **3 failing subtest
+  assertions** in the original 20-test file, exit **1**. Actual truncated or
+  unproven provider dictionaries were incorrectly accepted by the altered
+  producer. Restoring the source returned all **20** to pass.
+- All temporarily changed files were restored byte-for-byte. Complete restored
+  Node five-file / PostgreSQL / REST commands again passed **295 / 71 / 163**;
+  restored Python **20**, and Ruff **0**. All commands exited naturally.
+  **617 Node input blobs** and **209 Python/tool-entry input blobs** matched
+  their fixed GitHub source after restoration. Own SDK, private PostgreSQL
+  and networks were removed and absence read back.
+
+Earlier real failures are retained, not relabeled as final-source success:
+
+- `aed6fa9bc`: format passed; typecheck stopped with TS2339 because the real
+  GraphQL context/type omitted the repository needed by recovery. The actual
+  context wiring was corrected. Business / PostgreSQL / REST were not run.
+- `ee333c3e4`: static checks passed; five files had **292 passed, 3 failed,
+  6 original conditional cases unrun**. New GET observation added a fresh
+  authorization before frames; old revocation fixtures still targeted call 3.
+  Their next-frame trigger moved to 4, retaining the no-body/no-write assertions.
+  PostgreSQL / REST were not run after that failure.
+- `e467defd6`: five files **295**, PostgreSQL **71**, and static checks passed;
+  REST had **154 passed, 1 failed**. The actual stream recovery omitted the
+  complete answer's content blocks despite writing History. That product
+  defect, and the separately reviewed live-prefix/tail path, were corrected
+  and covered in the final 163-case group.
+
+Receipt directory:
+`/volumes/data/kailo/verification/buzz-r10/wren-answer-recovery-754a721ad6ec37aa9be1c0a100e002830cc5ed97-check`.
+Its `receipt.json` SHA-256 is
+`f0f7e1b89eb42b47dab91ca1dad33b2f6776116644fe959a7a49703c305e663d`.
+Local handoff: `/tmp/kailo-wren-answer-recovery-754a721ad-receipt.json`.
+The receipt records exact logs, exits, fault counts, official tool artifact,
+failed stages, restored input manifest and resource boundaries. Adjacent
+`wren-answer-recovery-754a721ad6ec37aa9be1c0a100e002830cc5ed97-fault`
+and `wren-answer-recovery-python-754a721ad-final` directories retain the
+Node and Python fault/restoration commands.
+
+### Remaining acceptance boundary
+
+Original Next HTTP/fetch, actual SQLite/PostgreSQL repositories/CAS, GraphQL
+resolver, original adaptor HTTP and existing hook harness were exercised.
+REST governance transport/History fixtures remain explicit boundaries. The
+Python test executes the original pipeline/service/router with dependency,
+provider and TTL substitutes; its real `replies/meta` shape is not a live
+provider/model result or complete deployed UI-to-model acceptance.
+
+An independent fixed-source provider gap remains: `litellm.py::_run` passes
+the last network chunk to `connect_chunks`, whose current implementation reads
+`chunk.choices[0].finish_reason`. A legal usage-only final chunk with empty
+choices can fail that aggregation. Read-only inspection of deployed public
+configuration found no explicit `stream_options` / `include_usage`; that does
+not prove a provider cannot emit the frame. No model retry or provider rewrite
+was added here, and no test substitute is claimed to cover that real boundary.
+
+Expired/restarted native cache or unavailable completion remains UNKNOWN.
+GENERAL / NON_SQL explanation recovery, actual provider execution, matching
+UI+AI artifacts, browser/IdP/Core/source-SQL E2E and receiver acceptance are not
+claimed. CI trust and live services were not changed; no deployment occurred.
+
+## 2026-10-27 — Original provider usage tails and consumed-stream retry
+
+DD-127 / DD-133 and SS-WRN-GOVERNANCE continue the original SQL-answer
+completion chain. Base `afa04ba8272d1b8e37c54756944ee5426ab037b3`; final fixed
+source `18332ca3f33856dc8db395d24b9bcdcd8870492f` contains product commits
+`3e31b4bc3`, `15d9ca32e` and original formatter output `18332ca3f`.
+The diff is **3 files, +249/-17**, including formatting of the existing provider
+test file. Counts do not measure feature completion.
+
+### Original provider defect and bounded correction
+
+Fixed upstream Wren `c5f02a0391c87420dba78632dcd86073710deb72` and the previous
+Kailo provider both decoded nonempty `choices` into original `StreamingChunk`
+objects, but `connect_chunks` subsequently accessed `choices[0]` on the last
+network frame. A legitimate final usage-only frame has `choices=[]`, causing
+`IndexError` after content was already streamed. A completely empty iterator
+also left the original final `chunk` uninitialized.
+
+The same `providers/llm/litellm.py` loop and
+`providers/llm/__init__.py::connect_chunks` now retain model/index/finish reason
+from the last already decoded choice. Content remains the original concatenated
+chunks; usage remains the actual final response frame's usage. A missing or
+null usage becomes the original empty dictionary; any SDK-provided usage,
+including zero-valued accounting, is preserved. No usage is estimated from
+text. A usage-only trailing frame does not replace choice metadata or trigger
+a content callback. No-choice streams fail explicitly without inventing a
+reply or `stop`. A later choice with no finish reason does not reuse an earlier
+`stop`; `length`, `content_filter` and absent finish reason retain their actual
+values, so the existing SQL-answer completion gate still refuses them.
+
+Review also found that the original `_run` backoff covered the entire stream.
+An actual `openai.APIError` after a partial or stop frame could re-dispatch the
+model under the same query, mixing earlier callbacks with a later attempt's
+returned content and usage. The existing decorator now wraps only original
+response acquisition in `_complete`. Its initial APIError policy remains
+unchanged (3 tries / 60 seconds); after iteration starts, APIError propagates
+without a new acquisition or successful returned result. Direct and Router
+request arguments and the existing internal Router policies are unchanged.
+There is no new retry, task, persistence store, aggregation channel or success
+state. This changes the shared provider's streaming behavior for all its
+callers; it does **not** implement GENERAL / NON_SQL product recovery.
+
+### Actual Python 3.12 consumers and fault restoration
+
+The earlier bare artifact digest `fa633e320...` was not locally resolvable.
+The existing immutable AI image
+`sha256:662fc7a76c259b140355f5b66a083a6ebb1a4403464359ba115b8956431fe182`
+provided `/app/.venv/bin/python`, actually **Python 3.12.0**. Its public
+`pyproject.toml` matched the fixed source byte-for-byte; installed LiteLLM
+**1.79.3**, OpenAI **1.109.1**, Haystack **2.7.0**, backoff **2.2.1**, Pydantic
+**2.12.4** and Langfuse **2.60.10** matched the current Poetry lock. No image pull,
+new artifact build or dependency installation occurred. Fixed GitHub source was
+mounted over the original dependencies; this does not turn the existing image
+into a newly released artifact.
+
+Original resource preflight and actual limit readback preceded execution:
+**2 CPU / 4 GiB / equal swap**, network `none`, read-only container root,
+nonroot test process, actual Data source/tmp/logs. Only this isolated test's
+Haystack telemetry was disabled. The original Ruff **0.2.2** binary from the
+previous verified Data tool directory consumed the current source's existing
+`pyproject.toml`; no formatter policy or project lock changed.
+
+At fixed `18332ca3f`, the original provider file's **19 tests passed** (the prior
+10 plus 9 streaming consumers), natural exit **0**. Actual LiteLLM `ModelResponse`
+and OpenAI `ChatCompletionChunk` objects pass through the original provider,
+Router construction, chunk conversion, aggregation and post-processing. Only
+remote completion transport is replaced. Cases cover real stop/length/filter/
+absent finish metadata, content plus usage-only tails, null or actual usage,
+empty natural replies, empty/usage-only streams, interrupted responses, direct
+and Router APIError after partial/stop, and the unchanged initial acquisition
+retry. No SDK-provided usage was removed to satisfy an empty-dictionary fixture.
+
+The original `test_native_sql_answer_stream.py` also passed **20/20** in this
+same Python 3.12 runtime. Its framework/provider/TTL dependency substitutes
+remain explicit; it is not a live model or full deployed UI-to-model test.
+Original pinned Ruff check and format-check both exited **0**.
+
+Actual mutations in the private fixed-source export were detected:
+
+- Restoring raw `chunk.choices[0]` finish access produced **10 errors**, exit
+  **1**, including the real usage-only-tail `IndexError`; these are errors,
+  not relabeled assertion failures.
+- Replacing the actual finish reason with fabricated `stop` produced
+  **7 assertion failures**, exit **1**.
+- Moving the original backoff back around `_run` produced **4 assertion
+  failures**, exit **1**: direct/Router partial and stop APIError paths attempted
+  multiple acquisitions instead of one.
+
+Both product files were restored byte-for-byte after each mutation. Final
+restored provider **19/19**, original SQL-answer **20/20**, Ruff and format all
+returned **0**. **209 input Git blobs** matched the final GitHub source after
+restoration. The own containers were removed and absence read back; no business
+service, PostgreSQL or network was started or stopped.
+
+Prerequisite failures remain recorded: initial `3e31` metadata inspection exited
+2 because the nonroot process could not read the image root's public pyproject;
+`15d9` then matched its read-only Docker-exported copy but Ruff's parent-directory
+search hit that same unreadable file (exit 2). Neither ran consumers. Explicitly
+passing the actual source pyproject resolved the search; original format-check
+then identified one test file (exit 1), whose pinned formatter output was
+committed before the successful fixed-source consumer run.
+
+CI evidence:
+`/volumes/data/kailo/verification/buzz-r10/wren-provider-tail-18332ca3f-check`.
+`receipt.json` SHA-256:
+`1e5a23af790c489480a0a01b660b28b8f3fcb0f8b9b7abc489f5496e20b7b6f2`.
+Local handoff: `/tmp/kailo-wren-provider-tail-18332ca3f-receipt.json`.
+The receipt links exact logs/exits, mutation counts, input manifest, prior
+failures and actual resource/cleanup facts. SDK command scripts are retained
+in the same directory.
+
+This resolves the previously recorded usage-only-tail source defect and verifies
+the original provider's response shapes in its Python 3.12 dependency runtime.
+It does not claim actual model/Gateway/Bao/accounting acceptance, complete
+GENERAL / NON_SQL recovery, matching new UI+AI artifacts, receiver activation
+or deployed browser/backend E2E. The prior optional-completion compatibility
+boundary still applies. No CI trust policy or live deployment changed.
+
+## 2026-10-27 — GENERAL native completion producer, Python evidence
+
+DD-127 / DD-133 and SS-WRN-GOVERNANCE retain the original Ask task and
+three assistance pipelines. Python checked source is
+`4b58d29c224532fc6d96c5bebb05c80be3c8a3fe`, based on
+`a050a7cc8807f760e5b97ec8d847f797de268d60`. UI consumers in this source are a
+separate, not-yet-accepted stage; this section establishes only the AI producer.
+
+Fixed upstream Wren `c5f02a0391c87420dba78632dcd86073710deb72` and the old
+Kailo Ask service discarded the returned original `data_assistance`,
+`misleading_assistance` and `user_guide_assistance` results. GENERAL `finished`
+meant classification was finished, while a background generator was still
+running. Queue sentinels could therefore appear after a truncated reply, and
+another observer could consume only a tail. Neither established a full answer.
+
+The original Ask TTL cache now retains the same-query complete string only
+after the actual pipeline returns one reply with one natural `stop` result.
+The same cache object must still be current and GENERAL/finished; completion
+does not reset its original TTL. Expiry, stop, replacement, truncation, filter,
+missing finish metadata and a lost return do not manufacture completion or
+start another generation. Native GET adds optional
+`completion: {query_id, content}`; the meaning of classification `finished`
+and existing SSE wire are retained. This is an additive API change requiring
+matching UI and AI releases, not independent new-UI acceptance against old AI.
+
+Each original pipeline retires its indexed queue only after retaining its
+result; existing waiters retain their queue object and sentinel. A subsequent
+observation reads the full original cache result without another model request.
+An active observer may extend a matching prefix with the missing suffix; a
+tail-only observation is not given a successful done frame. The original task
+can be observed again for its complete result. No Core body store, second task,
+new retry or persistent completion ledger was introduced.
+
+The immutable original AI image
+`sha256:662fc7a76c259b140355f5b66a083a6ebb1a4403464359ba115b8956431fe182`
+provided Python **3.12.0**, real Hamilton AsyncDriver, FastAPI, PromptBuilder,
+LiteLLM and TTLCache. Its public pyproject matched the source, and installed
+LiteLLM 1.79.3, OpenAI 1.109.1, Haystack 2.7.0, backoff 2.2.1, Pydantic 2.12.4
+and Langfuse 2.60.10 matched the Poetry lock. No dependencies or image were
+installed. Original resource preflight and limit readback established 2 CPU,
+4 GiB memory/equal swap, pids 256, nonroot, read-only root and network none;
+new source, temporary files and logs stayed on actual Data storage.
+
+Original commands used `/app/.venv/bin/python -B -m unittest discover -s
+tests/pytest/providers -p test_native_human_asking.py -v` and
+`/app/.venv/bin/python -B tests/pytest/providers/test_native_sql_answer_stream.py
+-v`. The former passed **12/12**, including seven new GENERAL consumer methods
+with three-pipeline and failure subcases; the latter passed **20/20**. Original
+Ruff 0.2.2 check and format-check passed. GENERAL executes the real pipeline,
+provider, API and cache code, replacing only remote model transport and the
+classification/retrieval boundaries. SQL20 retains its previously documented
+framework/provider/TTL substitutes; it does not become a live model test.
+
+Three actual product mutations were detected by the original GENERAL consumers:
+removing natural-stop validation caused **1 assertion failure**; removing cache
+ownership caused **3**; removing the emitted-prefix fence caused **3**. Each
+command exited 1, with no test errors. Each mutation was restored byte-for-byte
+and all 12 tests passed again; final full 12/20 checks passed. All **209 input
+Git blobs** matched the fixed source after restoration. The container exited
+0, OOM=false, and its absence was read back after cleanup.
+
+The earlier 4c718 Python format attempt failed before consumers; its original
+logs remain. 137310 corrected statement layout; 9637 updated original stream
+fixtures to consume actual completion evidence, and 4b58 committed the pinned
+formatter output before running consumers. These stages are not relabeled as
+earlier passing business checks.
+
+CI positive and fault/restoration directories are respectively
+`/volumes/data/kailo/verification/buzz-r10/wren-general-recovery-4b58d29c2-check-root`
+and `wren-general-recovery-4b58d29c2-fault-root` under the same parent.
+The latter's `receipt.json` SHA-256 is
+`2f07efc00214288507ddd1e71612099fff79dfaedbe28bd8ad1d4003a646bbc2`;
+local handoff is `/tmp/kailo-wren-general-python-4b58d29c2-receipt.json`.
+It records input audit, exact log hashes, actual resource limits and failures.
+UI/REST/GraphQL consumer acceptance, real model/Core/IdP operations, matching
+artifacts and deployment are not established by these Python results.
+
+### Stop during original intent classification
+
+DD-127 / DD-133 and SS-WRN-GOVERNANCE: while the original classification
+pipeline was awaiting its result, the original stop operation could set the
+task to `stopped`, then the resumed classification overwrote it and launched
+one of the three GENERAL generators. A classification exception could also
+overwrite the stopped task with `failed`. The existing Ask service now checks
+the original stopped state after classification and preserves it on exception.
+The API and task identity are unchanged; stopping an already dispatched model
+request remains subject to the original pipeline behavior.
+
+Fixed source `02ab6ac7deec8df77f57c1f964597fabe811ea6a` was checked in the
+same original Python 3.12 AI image and resource limits described above. The
+actual Ask consumer held classification in flight, invoked the original stop
+method, and released it for GENERAL, MISLEADING_QUERY, USER_GUIDE and an
+exception. It verified the stopped state and no explanation dispatch. GENERAL
+**13/13** and SQL **20/20** passed; Ruff check and format-check passed.
+Removing the post-classification stop guard produced **3 assertion failures**;
+removing the exception guard produced **1**. Each was restored byte-for-byte
+and all 13 tests passed again. The three prior completion faults also remained
+detectable and restored successfully. All **209** fixed input blobs matched;
+the container exited 0, was not OOM-killed, and was removed.
+
+The earlier `6b3aaa0e5` fault run exited 1 after restoration because the test
+passed `query_id` to `BaseRequest` construction instead of using its original
+setter; it stopped a different cache key. That failure is retained and is not
+claimed as a passing run. CI logs and receipt are at
+`/volumes/data/kailo/verification/buzz-r10/wren-general-recovery-02ab6ac7d-fault-stop/`;
+receipt SHA-256 `4e1c4bf6922e3635d4b4e79e45c309647d5068b0e891818b1790f5c42d2604d9`.
+These are scripted classification and model boundaries, not live integration,
+UI acceptance, a release artifact or a deployment.
+
+Cross-review also identified the separate interval after the explanation task
+was queued and before it first ran. Fixed source
+`68e45b31393bd8f4e85e15dd6c19a2e86880f4e3` checks the same cache object and
+GENERAL/finished state at the original generator entry, before `pipeline.run`;
+the original post-return check remains. Three real Hamilton pipelines and the
+real LiteLLM provider were queued, stopped before yielding, and then awaited;
+the substituted remote transport was not called. Removing the entry guard
+caused **3 assertion failures**, and byte restoration returned GENERAL to
+**14/14** and SQL to **20/20**. Ruff and format-check passed, **209** input
+blobs matched, and the container exited 0 without OOM and was removed. The
+original image, limits and substituted boundaries remain as documented above.
+CI receipt `wren-general-recovery-68e45b313-fault-queued/receipt.json` under
+the same verification directory has SHA-256
+`3ea22194e5af29c53afa32c6ca754694b132f0ae233e87ea7b92c860693dd379`.
+This does not assert cancellation of a model request already dispatched.
+
+## GENERAL UI full-result recovery consumers (2026-10-27)
+
+This is the UI verification continuation of the GENERAL producer changes, not
+live provider or receiver acceptance. The product/GraphQL generation baseline is
+`137310df7a25bf57c59fae43cd01d0f0a3d8eee9`; final consumer source is
+`d4416cc408539e7084259b474266c542a7a10d84` on
+`codex/wren-general-ui-20261027`. The increment changes five existing test files
+(+472/-11), with no additional product, authority, dependency lock or UI behavior.
+The independently verified Python lifecycle evidence is recorded separately.
+
+The actual original consumers now cover:
+
+- Actual native HTTP GET normalization of same-query GENERAL completion, including
+  an empty completed body; wrong query, shape, type, status and error are refused.
+- Generated `AskingTaskDocument` against the original GraphQL schema/resolver,
+  including full-result observation after persisted FINISHED classification and
+  fresh HUMAN/project/mode/snapshot checks after the asynchronous GET.
+- Original planning HTTP SSE cached completion, lost-queue EOF, matching suffix,
+  mismatching prefix, unavailable evidence, oversized result and late withdrawal.
+- Original hook recovery from partial/EOF to full GraphQL content, continued
+  polling while full evidence is absent, and retired EventSource callbacks after
+  replacement/closure. This uses the existing React scheduling/EventSource test
+  harness, not an actual browser.
+- Original governed REST JSON/SSE and API History readers: same-key recovery does
+  not start another Ask/SQL/summary; legacy 200 plus `doneQueryId` must independently
+  obtain matching full evidence before disclosure, including a fresh metadata
+  read after that observation. Historical row bytes remain unchanged.
+- Standalone original Ask JSON and SSE, including empty/full/absent/foreign full
+  results and project/mode changes during the existing History write. Earlier
+  authorized SSE bytes are not represented as retractable; the later refusal
+  cannot authorize a successful finish or another model execution.
+
+### Actual bounded execution and restoration
+
+CI fetched the fixed branch from GitHub and reused the existing locked Node 18
+installation. `package.json`, `yarn.lock` and `.yarnrc.yml` matched before source
+refresh. The immutable image was
+`sha256:f9ab18e354e6855ae56ef2b290dd225c1e51a564f87584b9bd21dd651838830e`.
+Original container-safety preflight and Docker limit readback confirmed
+**4 CPU / 4 GiB / equal swap**, network `none`, nonroot process. Source/tmp/logs
+were on actual Data `/dev/sda1`; no dependency tree was copied to NVMe or installed.
+
+At `ceeddcf3b`, the four complete original files (`nativeTaskOwnership`,
+`askingStream`, `nativeTextAnswer`, `nativeRestAskOwnership`) passed **303** tests;
+**7** pre-existing conditional database cases were not run. The original
+`nativeHumanQuery` **run_sql HTTP HUMAN consumer** group passed **170** tests;
+**375** unrelated cases were not selected. Complete TypeScript exited **0**.
+The only subsequent source change was original Prettier wrapping of the exact
+unique-conflict assertion in `nativeRestAskOwnership`; product and other consumer
+bytes were unchanged. At final `d4416cc40`, TypeScript, applicable lint, format
+and that original database collision consumer all exited **0**.
+
+Six actual private-export mutations were detected by original assertions:
+
+| Removed boundary | Failed assertions | Restored selected consumers |
+| --- | ---: | ---: |
+| Native GET exact query match | 1 | 8 |
+| GraphQL fresh disclosure authorization | 1 | 7 |
+| Planning stream full-prefix match | 1 | 9 |
+| Legacy History independent full-result proof | 4 | 5 |
+| Hook adoption of complete GraphQL body | 2 | 2 |
+| Standalone post-History-write authorization | 4 | 12 |
+
+Every mutation exited **1** with actual assertion failures; every selected group
+returned **0** after byte-for-byte restoration. **618 input Git blobs** matched
+final GitHub source after all restorations. Own SDK containers were removed and
+absence was read back. No PostgreSQL or test network was allocated in this batch;
+SQLite consumers do not stand in for new PostgreSQL concurrency acceptance.
+
+### Preserved failures and remaining boundaries
+
+Initial new fixtures had incomplete typed Ask shapes, an inappropriate SQL-only
+helper asserting no explanation stream, and a mode-retirement fixture that
+removed only one of two delivery selectors. Those failures remain in the receipt;
+fixtures now provide actual complete protocol facts and retain refusal assertions.
+The original SQLite collision test's `rejects.toThrow` fluctuated across grouped
+runs. A bounded diagnostic observed actual `SQLITE_CONSTRAINT_UNIQUE`, no History
+row and the original Foreign task. Its assertion now requires the exact SQLite
+or PostgreSQL unique-constraint code and still checks rollback/original task;
+no product transaction was weakened. The complete selected group then passed.
+This does not claim every cause of the earlier fluctuation was reproduced.
+
+The first full `nativeHumanQuery` file run also exposed **8 unrelated existing
+failures** in SQL-pair REST create/preview/saved-view fixtures. They were not
+changed or reclassified as passing; exact names/logs are retained in the receipt.
+This batch therefore does not claim the complete Wren test gate is green.
+
+The original terminal receipt is
+`/volumes/data/kailo/verification/buzz-r10/wren-general-ui-d4416cc40-fault/receipt.json`,
+SHA-256 `123cb1283a9dc72f44f5ce01247cf4af4240fe2564f55f287cba996b623dda69`.
+Its unchanged repository copy is [the UI recovery receipt](general-ui-recovery-receipt.json).
+It links prior failures, exact commands/log hashes, selected counts, actual
+limits, restoration and the complete input manifest. Earlier SQL-answer/provider
+receipts remain unchanged.
+
+Missing/expired native cache, unavailable full proof or authority changes remain
+unresolved/refused without a new Ask. Matching new AI and UI artifacts, official
+release acceptance, complete receiver activation, actual model/Gateway/Bao/usage
+and deployed browser end-to-end verification remain outstanding. No live service,
+production configuration, CI trust or source-admission policy changed.
+
+## Original Ask ownership across asynchronous stages (2026-10-27)
+
+SS-WRN-GOVERNANCE and DD-12 require the original native instance/project/task
+identity and its real execution evidence to remain authoritative. The preceding
+GENERAL completion checks did not protect the earlier Ask classification and
+shared SQL state machine: after an awaited stage, an expired or replaced native
+cache entry could be recreated, dispatch a later stage, or overwrite the current
+entry with a terminal result. The original FastAPI background task had the same
+risk between registration and its eventual start.
+
+The implementation starts from `f4bc1b96df2fb4484e4db41b96fb6ab5d61b9e3f`.
+Product `08e7688eb66a2ae9f88609a48df5f0c63f6e3193` and original Ruff formatting
+`f457c447d161ed670914ae2150ad44494520a098` change only the existing Ask router,
+AskService and native asking consumer. The router passes its registered object
+through the original BackgroundTasks/run_native_ask path as an internal argument,
+not a client-controlled request property. AskService advances only its own current
+cache object. It checks exact object identity and stopped state after the existing
+awaits, before downstream dispatch, and before success/error/pending state writes.
+Each owned original state transition updates the captured object. This also covers
+the shared original SQL planning/generation/correction path; no new query,
+execution authority, cache, queue or storage model was introduced.
+
+The normal state transitions retain their existing TTL update behavior. This
+change prevents revival or later dispatch after expiry/replacement; it does not
+claim that the entire original lifecycle has an immutable TTL. Existing owned
+NativeQueryPending handling is preserved. A refused continuation does not cancel
+or roll back provider/database work that already started, and does not establish
+that such work never executed. The prior GENERAL entry/output ownership guards
+remain in place.
+
+### Actual original consumers and fault evidence
+
+CI fetched fixed `f457c447d` from GitHub and used the original immutable Python
+3.12 image
+`sha256:662fc7a76c259b140355f5b66a083a6ebb1a4403464359ba115b8956431fe182`.
+Container-safety preflight and Docker readback confirmed **2 CPU / 4 GiB / equal
+swap**, nonroot, read-only root filesystem, network `none`. Source/tmp/logs were on
+actual Data `/dev/sda1`; no PostgreSQL container or test network was allocated.
+The image pyproject and installed LiteLLM/OpenAI/Haystack/backoff/Pydantic/Langfuse
+versions matched the existing project/Poetry lock. No dependency was installed.
+
+The original upstream metadata command ran in SDK300 and exited **0**: the fixed
+reference checkout remained `c5f02a0391c8`, with no newer checkout commit. This is
+metadata evidence, not a build or execution of reference contents.
+
+At final fixed source, the complete original native asking file passed **18**
+tests and the original SQL-answer streaming file passed **20**; none were skipped.
+Original Ruff check and format check passed. The new original consumer cases use:
+
+- The real Ask router and BackgroundTasks, with expiry, equal-value replacement
+  and stop between registration and execution; no history/model stage starts.
+- The original AskService and TTLCache with a controlled clock across history,
+  retrieval and classification awaits: 27 retirement/return/error/pending
+  combinations preserve absence or the exact replacement and dispatch no next
+  stage.
+- All three original GENERAL Hamilton pipelines and the real LiteLLM provider,
+  with scripted completion chunks: the owned classification path dispatches once
+  and retains the complete result.
+- The same AskService SQL state machine across six original awaited stages and
+  three retirement conditions (18 combinations), plus the owned correction/success
+  path. Stage outputs are fixtures, not a live database query acceptance claim.
+
+Three actual mutations of the private export were checked by those original
+consumers:
+
+| Removed boundary | Assertion failures | Restored original asking tests |
+| --- | ---: | ---: |
+| Router registered-object argument | 2 | 18 |
+| Classification await ownership guard | 9 | 18 |
+| Shared exact current-object requirement | 49 | 18 |
+
+Each mutation exited **1**, with assertion failures and no test errors; each
+byte-for-byte restoration returned **0**. Final full asking **18** and SQL-answer
+**20** passed again. All **211 input Git blobs** matched fixed GitHub source after
+restoration. Own containers were removed and absence was read back.
+
+The first product source's Ruff format check exited **1**; that log is retained.
+The pinned formatter's output was committed before the successful fixed-source
+checks. Intentional negative logs are also preserved, rather than overwritten
+with their restored results.
+
+The original receipt is
+`/volumes/data/kailo/verification/buzz-r10/wren-ask-lifetime-f457c447d-fault/receipt.json`,
+SHA-256 `6d3d9865400fb9099d9200a17f37aa3a1c866805b3cbf73669bca777499fcc10`.
+Its unchanged repository copy is [the Ask lifetime receipt](ask-lifetime-receipt.json).
+It retains exact command/log hashes, actual limits, negative/restoration results
+and the input manifest. Earlier receipts remain unchanged.
+
+This proves the bounded original asynchronous consumers, not a live model,
+provider, Core/Gateway/OpenBao/usage chain or deployed browser operation. Matching
+formal artifacts, release admission and receiver activation remain outstanding.
+No production configuration, deployment, source trust or release gate changed.
+
+## Original native HUMAN query file recovery (2026-10-27)
+
+The complete original `nativeHumanQuery.test.ts` file at `17ba0ab2c` failed with
+**535 passed / 9 failed / 1 skipped**. The original log remains at
+`/volumes/data/kailo/verification/buzz-r10/wren-full-human-17ba0ab2caf7553dcffd9aa542152b2af06b7ca2-check/consumers.log`.
+This batch resumes from integrated `851a67a59` and fixes only that existing test
+file at `53a23b4cc62655aaecb6d31d31aa6a88c9361507` (+31/-1). It does not change
+product authorization, query execution, dependencies or timeouts.
+
+The nine failures had three causes:
+
+- Six editor/generated-response/partial-CTE cases omitted the existing
+  `authorizeNativeScope(discover)` response. Their authority fixtures now return
+  the complete matching binding/Tenant/workspace/native scope, generation and
+  checked revision. They assert the requested permission is exactly `discover`,
+  and the SQL editor asserts that generation reaches the original `sqlReference`.
+- One resolver assertion still expected the older argument list. It now checks
+  every actual argument, including absent optional context and
+  `observationOnly=false`; it does not accept arbitrary arguments.
+- REST create/update waited in `finally` for Node 18 keep-alive sockets when
+  closing the original HTTP server. Following the same file's existing cleanup,
+  the fixture now closes connections after the awaited HTTP operations and then
+  awaits server shutdown. Both cases passed their unchanged assertions in
+  **37ms / 10ms**: initial UNKNOWN, same persisted event recovery, original
+  201/200 response, only one dispatch, subsequent 403 on withdrawal, and no
+  governed recovery after configuration removal. No test timeout was increased.
+
+CI fetched that fixed source from GitHub and reused the existing original Yarn
+installation after exact `package.json`, `yarn.lock` and `.yarnrc.yml` comparison.
+The immutable Node 18 image was
+`sha256:f9ab18e354e6855ae56ef2b290dd225c1e51a564f87584b9bd21dd651838830e`.
+Original container-safety preflight and Docker readback confirmed **4 CPU / 4 GiB /
+equal swap**, nonroot and network `none`; source/tmp/logs were on actual Data
+`/dev/sda1`. No dependencies were installed or copied, and no PostgreSQL container
+was allocated.
+
+The complete original file passed **544 / 545**, with **0 failures** and the one
+pre-existing conditional PostgreSQL case unexecuted. Full TypeScript, applicable
+lint and original Prettier check all exited **0**. The exact skipped case is
+`deletes the selected project only when another project has the same source table name`,
+under `native schema deletion in original PostgreSQL model repository`. It requires
+`WREN_QUERY_TEST_DATABASE_URL`; this batch did not provide that environment or
+claim its database result. No new test was skipped or filtered in full-file runs.
+
+Two real mutations of the private fixed-source export were detected:
+
+| Mutation | Failed original tests | Restored selected tests |
+| --- | ---: | ---: |
+| Omit current generation from SQL reference freeze | 2 | 2 |
+| Redispatch an already persisted native SQL-pair event | 3 | 3 |
+
+Both mutations exited **1** with original assertion failures. Byte-for-byte
+restoration returned **0**, and the final complete file again passed **544** with
+only the same conditional PostgreSQL skip. **618 input Git blobs** matched fixed
+GitHub source. Own containers were removed and absence was read back. Original
+negative logs and the nine baseline failures remain available.
+
+The terminal receipt is
+`/volumes/data/kailo/verification/buzz-r10/wren-human-full-53a23b4cc62655aaecb6d31d31aa6a88c9361507-fault/receipt.json`,
+SHA-256 `ee4bbd38dff67a7e99373989577dd7d24a015b0ee21380a5ec568bfeba6f82af`.
+The unchanged repository copy is [the full HUMAN consumer receipt](native-human-full-receipt.json).
+It records exact baseline case names, commands, limits, log hashes, mutations,
+restoration, the conditional skip and the input manifest. Older receipts remain
+unchanged.
+
+This closes the nine recorded failures in this original file within its explicit
+one-skip boundary. Its HTTP/resolver/service consumers use the existing authority
+and AI adaptor fixtures; SQLite checks do not replace PostgreSQL acceptance.
+This is not a complete Wren suite run or live Core/provider/receiver/browser
+acceptance. No publication, deployment, production configuration or source trust
+was changed.
+
+## Original native HUMAN PostgreSQL consumer completion (2026-10-27)
+
+At integrated fixed source `4152f377fe3ff37b4091103883a919006d24ce41`, the complete
+original `nativeHumanQuery.test.ts` file passed **545 / 545, with no failures or
+skips**, using a new isolated PostgreSQL instance. This completes the preceding
+batch's one conditional case without changing product code, the test, its timeout
+or its assertions. Earlier **544 passed / 1 skipped** receipts remain unchanged.
+
+The original test
+`deletes the selected project only when another project has the same source table name`
+received `WREN_QUERY_TEST_DATABASE_URL` pointing only at the new private database.
+It ran the original `20240125071855_create_model_table.js` migration in a randomly
+named schema and used the real `ModelRepository`: selected project `orders` was
+deleted exactly once, another project's `orders` and the selected project's
+`customers` remained, and an empty source list deleted zero rows. The test then
+dropped its schema and closed its database connection.
+
+Source came from GitHub at that fixed commit. The original Node 18 image
+`sha256:f9ab18e354e6855ae56ef2b290dd225c1e51a564f87584b9bd21dd651838830e`
+ran at **4 CPU / 4 GiB / equal swap**, nonroot. The existing PostgreSQL image
+`sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea`
+ran in a separate container at **1 CPU / 2 GiB / equal swap**, with a new internal
+network, no published port and a 1 GiB PGDATA tmpfs. Container-safety preflight and
+actual limit readback passed. Source/tmp/logs remained on actual Data `/dev/sda1`;
+original locked dependencies were reused without installation or copying.
+Random disposable credentials were supplied only to these containers and are not
+stored in the repository receipt. No shared business database was used.
+
+The exact full-file command was
+`node node_modules/jest/bin/jest.js --runInBand src/nativeHumanQuery.test.ts`.
+`WREN_TEST_POSTGRES_URL` is not consumed by this file: it selects database groups
+in `nativeTaskOwnership`, `nativeRestAskOwnership` and `nativeTextAnswer`, which
+this batch neither ran nor claims. The original file's authority/provider fixtures
+remain fixtures; enabling its database case does not turn those into live Core
+or model-provider acceptance.
+
+An actual private-export mutation removed the existing project filter from
+`ModelRepository.deleteAllBySourceTableNames`. The original PG consumer failed
+with **expected 1 deleted row / received 2**, exit **1**. After byte-for-byte
+restoration, the same original PG group passed **1 / 1**. The **544 other cases**
+were not selected for these targeted negative/restoration runs; all **545** had
+already passed in the complete fixed-source run. **618 input Git blobs** matched
+the fixed commit after restoration. The test SDK, PostgreSQL container and own
+internal network were removed and absence was read back.
+
+The terminal receipt is
+`/volumes/data/kailo/verification/buzz-r10/wren-human-pg-4152f377fe3ff37b4091103883a919006d24ce41-check/receipt.json`,
+SHA-256 `a61fd945a73f60ba3469563bfa87bdb55ebb9c66622ed7bc01f3beb6f01f563f`.
+Its unchanged repository copy is [the HUMAN PostgreSQL receipt](native-human-postgres-receipt.json).
+It retains exact inputs, commands, image/limit evidence, log hashes, the real
+negative result and restoration. The UI source is unchanged from the previous
+full TypeScript/lint/format check; those checks were not redundantly rerun.
+
+Formal artifacts, release admission, receiver activation and deployed end-to-end
+business acceptance remain separate. No production configuration, deployment,
+source trust or business authority changed.
+
+## Original four consumer files with PostgreSQL (2026-10-27)
+
+At integrated fixed source `aea3abe0750f8caaf7c46c898d88f1a9b0efbb3c`, the original
+`nativeTaskOwnership`, `nativeRestAskOwnership`, `nativeTextAnswer` and
+`askingStream` files passed **4 suites / 310 tests, no failures or skips**. The
+normal command selected all four complete files, without test-name filtering.
+This closes their earlier seven PostgreSQL conditional skips; no product or test
+code changed. Earlier SQLite/conditional results remain recorded as originally run.
+
+Both original environment inputs were needed: `WREN_TEST_POSTGRES_URL` selects
+PostgreSQL for the repository/HTTP groups and the delayed project-fence writer
+case; `WREN_QUERY_TEST_DATABASE_URL` enables six task migration/conditional-binding
+cases. Both pointed only to the same newly created private PG instance. The five
+original groups used separate random UUID-suffixed schemas and `searchPath`:
+`rest_explanation`, `asking_rerun`, `native_binding`, `answer_identity` and
+`task_evidence`. Each ran its original migrations and schema/connection cleanup;
+Jest used `--runInBand`. `askingStream` does not need PG but remained in the original
+four-file invocation.
+
+The seven previously skipped cases now exercised real PostgreSQL behavior:
+
+- Refusal of unprovable legacy rows without deletion or invented ownership.
+- Backfill from matching original thread evidence and required ownership for new rows.
+- Concurrent first binding, foreign-project rejection and stale-query rejection.
+- Transaction rollback of speculative native rows after a refused binding.
+- Empty-evidence migration rollback followed by forward migration.
+- Preservation of running/unknown evidence across native cascades and cleanup only
+  after an observed terminal result.
+- Serialization of a delayed native writer against the original project fence.
+
+Other original repository/HTTP cases also used their existing PostgreSQL path,
+rather than SQLite. Their external authority/provider fixtures remain fixtures.
+
+CI fetched the fixed GitHub source and reused the original locked installation
+following exact `package.json`, `yarn.lock` and `.yarnrc.yml` comparison. The Node
+18 image was
+`sha256:f9ab18e354e6855ae56ef2b290dd225c1e51a564f87584b9bd21dd651838830e`,
+at **4 CPU / 4 GiB / equal swap**, nonroot. The existing PG image was
+`sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea`,
+at **1 CPU / 2 GiB / equal swap**, with a 1 GiB PGDATA tmpfs. Normal and negative
+runs each created a fresh private database/internal network with no published
+port. Original container-safety preflight and limit readback passed. Source/tmp/
+logs were on actual Data `/dev/sda1`; no dependency installation or copy occurred.
+Disposable credential values were not retained in repository evidence.
+
+Two actual mutations of the private fixed-source export were detected by the
+original PG consumers:
+
+| Removed protection | Actual failures | Restored original PG cases |
+| --- | ---: | ---: |
+| First-binding conditional update | 2 | 6 |
+| Closed generation rejection | 1 | 1 |
+
+Without the conditional update, both competing first bindings were accepted
+instead of one, and the speculative transaction resolved instead of rejecting.
+Without the closed-generation refusal, the delayed writer resolved instead of
+rejecting with `NATIVE_BINDING_CLOSED`. Both mutations exited **1**; byte-for-byte
+restoration returned **0**. The targeted mutation/restoration commands left
+**146 / 24** other tests unselected respectively; this is separate from the full
+four-file **310 / 310** result. All **618 input Git blobs** matched fixed source
+after restoration. Own SDK/PG containers and internal network were removed and
+absence was read back.
+
+The terminal receipt is
+`/volumes/data/kailo/verification/buzz-r10/wren-four-pg-aea3abe0750f8caaf7c46c898d88f1a9b0efbb3c-fault/receipt.json`,
+SHA-256 `d40193a7f6e4f395443e7fc1513ebfce7032070b7ecc7f59ca86dd2ad0a173d1`.
+The unchanged repository copy is [the four-file PG receipt](four-consumers-postgres-receipt.json).
+It includes exact seven case names, inputs, command/log hashes, limits, schema
+selection, negative/restoration evidence and cleanup. No source changed after the
+previous type/lint/format checks, so those were not redundantly rerun.
+
+This completes these original file checks, not all Wren suites or live
+Core/provider/receiver/browser acceptance. Formal artifacts, release admission and
+receiver activation remain separate. No production configuration, deployment,
+shared business database or source trust changed.
+
+## Instant recommendation observation retirement (2026-10-27)
+
+For **DD-12 / SS-WRN-GOVERNANCE**, the original `useAskPrompt` recommendation
+creation/read chain now follows the original question's observation lifetime.
+Previously a recommendation creation ACK arriving after Close could restart
+polling, and Apollo data for an old recommendation task could enter the new
+question's recommendation selection surface. The original question generation
+and a local recommendation observation generation reject retired ACKs. Current
+results also require the original Apollo query variables to match the accepted
+recommendation task. Close, a new question, rerun or another observed question
+stops the old recommendation poll; unmount retires its pending ACK. No native
+asking task is canceled or reissued by this fix, and no API, schema or backend
+authorization contract changes.
+
+Fixed source **`14f1243af891f884373fde04a15e980a0171b7fc`**, based on
+`5a1184525d7941067d81384f504d9fd431fe39c3`, passed the complete original
+`src/askingStream.test.tsx`: **50 / 50**, zero skipped/failed. This includes eight
+new original-hook cases covering Close, recommendation-only stop, new-question
+and unmount late ACKs; close/reopen of the same query with an old poll result;
+and unchanged current successful, empty and failed recommendation results.
+Complete original TypeScript checking and relevant Next lint / Prettier checks
+also exited **0**. Tests substitute React scheduling and GraphQL responses; this
+is not an actual browser, Apollo network or model-provider test.
+
+CI fetched the fixed GitHub source, compared the original dependency locks and
+reused the existing installation without copying or installing dependencies.
+The original Node 18 image
+`sha256:f9ab18e354e6855ae56ef2b290dd225c1e51a564f87584b9bd21dd651838830e`
+ran nonroot with **4 CPU / 4 GiB / equal swap**, network disabled, no database.
+Original container-safety preflight and actual limit readback passed. Source,
+tmp and logs stayed on actual Data `/dev/sda1`. Original upstream status ran in
+the existing SDK with read-only reference metadata: WrenAI-ui-0.32.2 remained at
+its fixed `c5f02a0391c8` baseline, with no new upstream commit.
+
+Two mutations of the private fixed-source export were actually detected:
+
+| Removed boundary | Actual failing cases | After byte restoration |
+| --- | ---: | ---: |
+| Post-create retired question/recommendation ACK rejection | 5 | 5 selected passed |
+| Current recommendation query-variable match | 1 | Full original file, 50 passed |
+
+Both negative runs exited **1**. Their commands selected only relevant cases,
+leaving 45 / 49 other tests unselected respectively; this does not describe the
+complete normal/restored file result. Original bytes were restored after each
+mutation, and all **618 input Git blobs** matched fixed source after completion.
+Own Node/metadata containers were removed and absence read back.
+
+The earlier `7976a7509` run applied original Prettier formatting before its
+50 tests and static checks passed. Its final fixed-input comparison correctly
+failed because formatting changed input bytes; it is retained as **exit 1**,
+not fixed-source acceptance. Exact formatting was committed before the final
+fixed run. Logs for both runs remain in the original verification directory.
+
+The terminal receipt is
+`/volumes/data/kailo/verification/buzz-r10/wren-recommend-14f1243af-check/receipt.json`,
+SHA-256 `7f40c885e55d200be8bab2932c917fbb04a40782b27717f575162a87cb870c09`.
+The unchanged repository copy is [the recommendation observation receipt](recommendation-observation-receipt.json).
+It records fixed inputs, log hashes, actual limits, faults/restoration and cleanup.
+Prior receipts are unchanged. Formal artifacts, release admission, receiver
+activation and real provider/browser acceptance remain separate; no deployment,
+production configuration or source-trust policy changed.
+
+## Original Home answer and chart continuation ownership (2026-10-27)
+
+For **DD-12 / SS-WRN-GOVERNANCE**, the original Home answer/chart generation,
+chart adjustment, SQL-fix continuation and response observation now retain their
+original page owner across asynchronous work. The fixed upstream remains
+WrenAI-ui-0.32.2 `c5f02a0391c87420dba78632dcd86073710deb72`; its original
+mutation-to-response-read interaction is retained. Original upstream status ran
+against read-only metadata in the existing SDK and reported no new upstream
+commit. No reference source was executed or changed.
+
+The original configuration read now fences dispatch and disclosure against the
+captured configured HUMAN scope and binding generation; missing configured facts
+cannot select standalone operation. Page retirement rejects callbacks even when
+they first run after cleanup. Returning to the same thread observes the original
+UNKNOWN key, while each page owner holds its own in-flight request locks. A late
+old completion cannot release the new owner's lock. No native task is canceled,
+no replacement key is minted for uncertainty, and backend admission remains the
+authority.
+
+Installed Apollo selects the latest hook-level completion callback, does not
+await an async callback, and ordinarily normalizes mutation results before a
+consumer can reject them. The original generated operations therefore use
+`no-cache` and consume their exact promises. The response reader performs one
+serial original query at the original one-second cadence, with deduplication
+disabled for that observation; temporary errors only retry this read. It checks
+current configuration and exact response/thread ownership before updating the
+original cache. The SQL-fix submit promise also covers its post-ACK identity
+check, preserves the original mutation rejection, and keeps the original modal
+loading and duplicate-submit protection until that check completes. Valid
+current SQL and answer/chart results still update the original cache.
+
+Before consuming a generation receipt, both original response ID and thread ID
+must match. A completed/ended receipt for a different row, a missing row or a
+missing thread cannot update cache, clear the original key or authorize a new
+intent. The same-key explicit recovery still works after such a response.
+
+Fixed source **`06cf7ce4cf68a6fafc1cee46e7b28da297f74e7a`**, based on
+`a4bc4e96bf1ff9ede2363423a568a55eb12a2563`, passed the complete original
+`src/viewMetadata.test.ts`: **244 / 244**, zero failed/skipped. This includes
+62 added cases, of which 33 use the installed Apollo client, generated GraphQL
+documents, hooks, Link and normalized cache. They cover standalone/governed
+completion, same-instance A→B→A, normal rerender, late writes/reads, same-key
+recovery while an old request remains in flight, temporary read errors, changed
+configuration, malformed row ownership and the original FixSQLModal's actual
+submit/close path. React scheduling and Link responses are scripted; the
+authorization backend and model provider are not replaced with a claimed live
+business run. The unrelated Markdown renderer is omitted while production
+answer/chart/asking terminal helpers remain real. Full original TypeScript and
+relevant Next lint / Prettier checks exited **0**.
+
+Six mutations of the private fixed-source export were actually detected:
+
+| Removed boundary | Actual failed cases | After byte restoration |
+| --- | ---: | ---: |
+| Original asynchronous generation owner guard | 6 | 6 passed |
+| Configuration scope/generation correlation | 13 | 13 passed |
+| Apollo cache-write isolation | 4 | 4 passed |
+| SQL-fix post-ACK configuration wait | 2 | 3 passed |
+| Owner-local original in-flight request locks | 3 | 3 passed |
+| Response/thread match before receipt consumption | 12 | 12 passed |
+
+Each fault exited **1** with actual failed assertions. The SQL wait fault selected
+three cases; its unchanged failure case still passed. Other tests were unselected
+only in these narrow fault/restoration commands. After all byte restorations,
+the complete original file again passed **244 / 244**. No case was skipped to
+obtain either complete-file result.
+
+Earlier failures remain recorded. `c921feff6` stopped before executing tests at a
+browser timer/Node Timeout type mismatch. The first actual Apollo attempts had
+five fixture failures each: missing real asking-status exports, then an unrelated
+Markdown ESM import in the original Jest environment. `735e9e70d` passed its 44
+selected consumers and static checks before the later lock/correlation fixes.
+The first complete file at `8d9f9a8f6` returned **227 passed / 2 failed**: two
+existing unavailable-storage/Web-Crypto fixtures replaced properties on Jest's
+global proxy without changing the bare browser bindings. The diagnostic fixed
+source `f935a854c` proved both preconditions false before calling product code.
+The final fixtures inject unavailability on the actual consumed objects and
+restore them in `finally`; they retain the original storage error, zero native
+write and zero input-persistence requirements. Product refusal was not relaxed.
+Earlier formatter-induced input mismatches are also retained as failures, not
+fixed-source acceptance. Original Jest open-handle notices remain in the logs;
+all terminal runs exited naturally without `--forceExit`.
+
+CI fetched fixed GitHub objects and reused the existing locked Node 18
+installation after comparing `package.json`, `yarn.lock` and `.yarnrc.yml`.
+No dependency copy or installation was needed. The immutable image
+`sha256:f9ab18e354e6855ae56ef2b290dd225c1e51a564f87584b9bd21dd651838830e`
+ran nonroot with **4 CPU / 4 GiB / equal swap**, network disabled and no database.
+Original preflight and actual container-limit checks passed. Source, temporary
+files and logs remained on actual Data `/dev/sda1`. All **618 input Git blobs**
+matched fixed source after restoration. Own check/format/metadata containers
+were removed and their absence was read back.
+
+The terminal receipt is
+`/volumes/data/kailo/verification/buzz-r10/wren-continuation-06cf7ce4c-final/receipt.json`,
+SHA-256 `a552cef0a082ca1c24dc0d5a0da0f42b08c479a31607005d2213f2ba8ff6d785`.
+The unchanged repository copy is [the original Home continuation receipt](home-continuation-receipt.json).
+It records fixed inputs, actual limits, log hashes, original failures,
+fault/restoration counts and cleanup. Prior receipts are unchanged. This is one
+original UI consumer operation batch, not all Wren suites, a real browser/model
+provider run, receiver activation or deployment. No API/schema, production
+configuration, official artifact or source-trust policy changed.
+
+### Original thread follow-up recommendations retain their native task and selection
+
+DD-12 and `SS-WRN-GOVERNANCE`: the existing Home answer continuation now reads
+and creates its original thread recommendation with an exact source response
+and native query ID. The original Thread row reserves the query ID before AI
+HTTP; one conditional database statement matches the previous task and the
+actual latest response. Concurrent actions reuse that task. The existing
+background tracker conditionally updates that same task/status, releases its
+in-flight read after failure, and cannot overwrite a replacement task or regress
+an already terminal observation. Historical missing source/start facts are not
+backfilled; only the original new-thread producer records `NOT_STARTED`.
+
+The original AI route accepts the reserved native ID and returns it through the
+original GET. Its existing process cache refuses a duplicate ID within that
+process. This does **not** provide persistent or cross-process AI deduplication.
+The frozen Compose source declares one AI service and the original Python entry
+starts one worker; neither fact proves live routing or restart continuity. If UI
+reservation commits but POST never enters AI, or AI restarts/evicts its cache,
+the original DB task remains UNKNOWN. Reattaching its original tracker does not
+prove absence, does not authorize another POST, and does not close this crash
+window. Durable AI acceptance/absence and its bounded reconciliation remain
+unverified and unfinished.
+
+The Home consumer uses the installed Apollo client and original generated
+operations with exact per-call promises. Serial original reads check owner,
+current configuration, thread, source and query ID before displaying a result.
+A callback first entered after retirement cannot create or observe for the new
+page owner; A→B→A and temporary read failures retain the original task. Selecting
+a recommendation sends its frozen index/query/source plus one explicit intent
+key, with the question and SQL resolved by the original server result. The
+original Thread lock and unique `(thread_id, recommendation_intent_key)` prevent
+concurrent/lost-ACK retries from inserting another ThreadResponse. Separate
+explicit selections use separate keys. A wrong or missing response receipt does
+not clear the browser intent or update Apollo cache. Current standalone and
+governed operations remain supported; no new task ledger or preference exists.
+
+The original GraphQL generation was run in the locked Node image. The thread
+recommendation mutation now returns the correlated task instead of a Boolean;
+nullable native source/receipt fields and the original schema migration require
+matching UI/AI rollout. Ordinary original requests without `native_task_id`
+remain compatible. No rollout or official artifact was performed.
+
+Fixed **`24222a5aee7ec2685b9b6b55f53c5df7e161bb2d`**, based on
+`ffbc46fdced32d3e676fb8d6eaffe2f6e799627f`, passed:
+
+- The original `nativeTaskOwnership.test.ts` recommendation groups: **33 passed**,
+  comprising **15 SQLite, 15 isolated PostgreSQL and 3 original adaptor HTTP**
+  consumers; **152 other cases were not selected**.
+- The related original `nativeProjectScope.test.ts` consumers: **7 passed**,
+  **285 not selected**. These are targeted results, not complete-file results.
+- The complete original `viewMetadata.test.ts`: **259 / 259**, no failures/skips,
+  including real Apollo Link/cache/hooks and the original Home operation.
+- Complete original TypeScript, relevant Next lint and Prettier: **exit 0**.
+- Original FastAPI `NativeRecommendationTaskIdentity`: **2 / 2**, original locked
+  Python dependency checks and Ruff check/format: **exit 0**. The route/background
+  boundary is scripted; no model supplier or live business deployment is claimed.
+
+Actual private-export mutations were detected and restored byte for byte:
+
+| Removed boundary | Actual assertion failures | Restored cases passed |
+| --- | ---: | ---: |
+| Database latest-source condition | 2 | 2 |
+| Same-task terminal-status comparison | 2 | 2 |
+| Original selection-intent unique constraint | 2 | 2 |
+| Selected response receipt correlation | 4 | 5 |
+| Retired Home callback guard | 1 | 1 |
+| AI reserved native ID | 1 | 2 |
+| AI same-process duplicate rejection | 1 | 2 |
+
+Every fault exited **1** due to original consumer assertions, not test startup or
+compilation failure. The selection receipt group also retained its unaffected
+wrong-thread refusal. All restored commands exited **0**. The earlier fixed
+`3b1679abf081093e279896a1b51d9f1880efa010` passed its original 29 task/HTTP cases,
+Home 256 and TypeScript, then stopped at lint's unused service import. Format
+and faults were not executed in that failed run. Its logs remain unchanged;
+removing the unused import did not weaken lint. Original Jest open-handle
+notices remain recorded and runs exited naturally without `--forceExit`.
+
+CI fetched fixed objects directly from GitHub. Original upstream status at
+`ba13d63dfbc81b85a3d04c3e255e9610b55e091f` confirmed the frozen Wren reference
+`c5f02a0391c87420dba78632dcd86073710deb72` with no new commits. Existing Node
+installation was reused only after comparing all three dependency inputs;
+Python image metadata and installed versions matched its original lock.
+Node used immutable image
+`sha256:f9ab18e354e6855ae56ef2b290dd225c1e51a564f87584b9bd21dd651838830e`,
+**4 CPU / 4 GiB**, with private PostgreSQL **1 CPU / 2 GiB** on an internal
+network. Python used
+`sha256:662fc7a76c259b140355f5b66a083a6ebb1a4403464359ba115b8956431fe182`,
+**2 CPU / 4 GiB**, no network. Swap matched memory. Original preflight and actual
+container-limit checks passed; source/tmp/logs stayed on actual Data `/dev/sda1`.
+All **619 Node input blobs and 209 AI input blobs** matched their fixed Git
+objects after restoration. Own containers and private PG network were removed,
+and their absence was read back. No shared business database, provider, receiver,
+production secret/configuration, deployment or source-trust policy was changed.
+
+The subsequent fixed **`f08dd82dc1edaeabc0f940aa09f8d20a52a808f2`** changes only
+the original migration and its original consumer file relative to `24222a5ae`.
+Downgrade now stops if any native source or selected-response intent facts
+exist; it never deletes those facts to allow an old writer to repeat them. This
+is a maintenance/release stop condition with writers stopped, not an online
+rollback guarantee under concurrent writers. Original empty-fact down/up still
+preserves native rows. The targeted SQLite/PostgreSQL group passed **6 / 6**
+(**183 other cases unselected**), relevant lint and format exited **0**.
+Removing the actual stop condition caused **2 failed original UNKNOWN refusal
+assertions**; byte restoration passed all **6**. All **619** fixed input blobs
+matched after restoration and the private containers/network were removed.
+The already passed Home/Python/full type checks were not rerun for these two
+migration-only files and are attributed to their earlier fixed source above.
+
+The combined receipt is
+`/volumes/data/kailo/verification/buzz-r10/wren-followup-rollback-f08dd82dc1edaeabc0f940aa09f8d20a52a808f2-check/receipt.json`,
+SHA-256 `6261cb9c50811bf0f2851ebc788a4698ab134ba1cba812c63d5e4b0d59533602`.
+The unchanged repository copy is [the thread recommendation receipt](thread-recommendation-receipt.json).
+It keeps the first failing run, main fixed-source verification, distinct rollback
+phase, limits, original log hashes, input manifests and cleanup. Prior receipts,
+including `home-continuation-receipt.json`, are unchanged. These are original
+source consumers with scripted model/HTTP boundaries; they are not full Wren,
+real browser/provider, Core admission or live receiver acceptance. Existing
+thread resolver registration and its server-side authorization lifecycle were
+not expanded or claimed as freshly verified by this batch.

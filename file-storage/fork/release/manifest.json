@@ -77,7 +77,18 @@
       "typeKey": "file_storage.space",
       "capabilityCategory": "file_storage",
       "capabilityContractVersion": 2,
-      "incrementalContracts": [],
+      "incrementalContracts": [
+        {
+          "contractKey": "file_storage.space@v2",
+          "role": "NATIVE_INTERNAL",
+          "engine": "NATIVE",
+          "stableKeyRule": "Cells node UUID inside the binding workspace root; unchanged by rename or move and unique within the Resource.",
+          "revisionRule": "Cells NodeVersions head version id (a content revision, not mtime); file_storage.list_revisions@v2 lists it and file_storage.read@v2 reads by it.",
+          "deleteSemantics": "Deletion is observable: the node UUID leaves file_storage.list@v2; recycle bin and version retention stay native to Cells.",
+          "reconciliationTrigger": "Receivers re-list and re-read through the SOURCE read edge; native delete jobs are observed by ComponentTaskWorkflow, never by a platform cursor.",
+          "readinessSemantics": "A node is ready once its head version is committed in NodeVersions; an upload in progress is not a new revision."
+        }
+      ],
       "llmGatewayContract": "NOT_USED",
       "transferFormats": [],
       "tenantDeleteActionKey": "NONE",

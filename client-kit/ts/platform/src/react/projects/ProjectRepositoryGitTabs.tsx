@@ -7,8 +7,8 @@
 // useOptimisticProjectBranches, useProjectRepositoryRefSelection, projectBranchManagementState,
 // useProjectBranchActions, handleFetchRepo) lives in useRepositoryGitState so that the tab contents
 // and the original repository right panel (branch picker, Fetch, details) read the same state.
-// Create/delete appear only when the host offers ref writes. Local checkouts, tags and
-// clone/pull/push are Desktop-local and not part of this shared remote read.
+// Create/delete appear only when the host offers ref writes. Original tags select remote
+// immutable snapshots; local checkout writes are unavailable while a tag is selected.
 import { Files as FilesIcon, GitCommitHorizontal } from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
@@ -37,6 +37,9 @@ import { PROJECT_SECTION_HEADER_CLASS } from "./projectPanelStyles";
 import type { ProjectPullRequest } from "./projectPullRequests.mjs";
 import { projectRepoUnavailablePresentation, projectRepoUnavailableReason } from "./lib/projectRepoAvailability";
 import { useRepositoryFileContentSource } from "./useRepositoryFileContent";
+import { useProjectPullRequestUpdate } from "./useProjectPullRequestUpdate";
+import { useProjectLocalCheckout, type ProjectCheckoutSource } from "./useProjectLocalCheckout";
+import { useQueryClient } from "@tanstack/react-query";
 import type { UserProfileLookup } from "../messages/system/identity";
 
 const NO_BRANCHES: Array<{ name: string; commit: string }> = [];
@@ -45,13 +48,18 @@ const NO_BRANCHES: Array<{ name: string; commit: string }> = [];
 export type RepositoryFetchControls = { onFetch: () => void; fetchPending: boolean };
 
 /** ProjectDetailScreen's repository git state, shared by the tab contents and the right panel. */
-export function useRepositoryGitState({ host, repository, pullRequests, commitHash }: {
+export function useRepositoryGitState({ host, repository, pullRequests, commitHash, checkoutSource, projectId, viewer }: {
   host: ProjectsHost;
   repository: Repository;
   pullRequests: ProjectPullRequest[];
   commitHash: string | null;
+  checkoutSource: ProjectCheckoutSource;
+  projectId?: string; viewer?: string;
 }) {
   const t = useUiT();
+  const cache = useQueryClient();
+  const lifetime = React.useMemo(() => ({ active: true }), [host.scopeKey, repository.repoAddress]);
+  React.useEffect(() => { lifetime.active = true; return () => { lifetime.active = false; }; }, [lifetime]);
   // Repository refs only serve the Git tabs and the branch picker: no Git seam, no ref read.
   const repoStateQuery = useRepoStateQuery(host, host.git ? repository : null);
   const defaultBranch = resolveProjectDefaultBranch(repository.defaultBranch, repoStateQuery.data);
@@ -62,19 +70,23 @@ export function useRepositoryGitState({ host, repository, pullRequests, commitHa
     projectId: repository.id,
     referencedBranches,
   });
-  const { activeBranch: selectedBranch, selectBranch } = useProjectRepositoryRefSelection({
+  const { activeBranch: selectedBranch, selectBranch, selectedTag, selectTag } = useProjectRepositoryRefSelection({
     branchOptions,
     defaultBranch,
     projectAvailable: true,
     projectPending: false,
-    repositoryId: repository.id,
-    tags: NO_BRANCHES,
+    repositoryId: JSON.stringify([host.scopeKey, repository.id]),
+    tags: repoStateQuery.data?.tags ?? NO_BRANCHES,
   });
   const activeBranch = selectedBranch ?? defaultBranch;
-  const snapshotQuery = useProjectRepoSnapshotQuery(host, repository, activeBranch, null, true);
-  const commitDiffQuery = useProjectCommitDiffQuery(host, repository, commitHash);
-  const fileContentSource = useRepositoryFileContentSource({ activeBranch, host, pullRequest: null, repository });
-  const snapshot = snapshotQuery.data ?? null;
+  const activeTag = repoStateQuery.data?.tags.find(tag => tag.name === selectedTag) ?? null;
+  const reviewUpdate = useProjectPullRequestUpdate({ host, projectId, repository, reviews: pullRequests, viewer, branch: activeBranch, readOnly: selectedTag !== null });
+  const localCheckout = useProjectLocalCheckout(host, repository, activeBranch, checkoutSource, selectedTag !== null, reviewUpdate.afterPush);
+  const remoteSnapshotQuery = useProjectRepoSnapshotQuery(host, repository, activeBranch, null, localCheckout.source === "remote" && (!selectedTag || Boolean(activeTag)), activeTag);
+  const snapshotQuery = localCheckout.source === "local" ? localCheckout.snapshot : remoteSnapshotQuery;
+  const commitDiffQuery = useProjectCommitDiffQuery(host, repository, commitHash, localCheckout.source);
+  const fileContentSource = useRepositoryFileContentSource({ activeBranch, host, pullRequest: null, repository, source: localCheckout.source, activeTag });
+  const snapshot = selectedTag && !activeTag ? null : snapshotQuery.data ?? null;
   const files = React.useMemo(() => snapshot?.files ?? [], [snapshot]);
   const readmeFile = React.useMemo(() => findReadmeFile(files), [files]);
   const gitDataState: GitDataState = snapshot ? (files.length === 0 ? "empty" : "available") : snapshotQuery.isLoading ? "checking" : "unavailable";
@@ -88,6 +100,7 @@ export function useRepositoryGitState({ host, repository, pullRequests, commitHa
     snapshotCommit: snapshot?.latestCommit?.hash,
   });
   const branchActions = useProjectBranchActions({
+    readOnly: selectedTag !== null,
     activeBranch,
     activeBranchCommit,
     activeRemoteBranch,
@@ -106,8 +119,11 @@ export function useRepositoryGitState({ host, repository, pullRequests, commitHa
   const sourceControls: RepoBranchHeaderControls = {
     branch: activeBranch,
     branchOptions,
+    selectedTag,
+    tagOptions: repoStateQuery.data?.tags ?? NO_BRANCHES,
+    onTagChange: tag => { selectTag(tag); checkoutSource.onChange("remote"); },
     onBranchChange: selectBranch,
-    ...(branchActions.available ? {
+    ...(branchActions.available && !selectedTag ? {
       onCreateBranch: () => branchActions.setCreateOpen(true),
       createBranchDisabled: branchActions.createPending || otherRetained(branchActions.retainedCreate)
         || (!branchActions.retainedCreate && !activeBranchCommit),
@@ -121,9 +137,13 @@ export function useRepositoryGitState({ host, repository, pullRequests, commitHa
     } : {}),
   };
   // Original handleFetchRepo: refetch, then report the classified failure or the refresh.
-  const refetchSnapshot = snapshotQuery.refetch, refetchState = repoStateQuery.refetch;
+  const refetchSnapshot = snapshotQuery.refetch, refetchState = repoStateQuery.refetch, refetchLocal = localCheckout.status.refetch;
   const onFetch = React.useCallback(() => {
-    void Promise.all([refetchSnapshot(), refetchState()]).then(results => {
+    if (!lifetime.active) return;
+    void Promise.all([refetchSnapshot(), refetchState(), ...(host.git?.checkout ? [refetchLocal()] : [])]).then(async results => {
+      if (!lifetime.active) return;
+      await cache.invalidateQueries({ queryKey: ["project-repository-file-content", host.scopeKey, repository.id] });
+      if (!lifetime.active) return;
       const error = results.find(result => result.error)?.error;
       if (error) {
         const presentation = projectRepoUnavailablePresentation(projectRepoUnavailableReason(error));
@@ -132,10 +152,11 @@ export function useRepositoryGitState({ host, repository, pullRequests, commitHa
       }
       toast.success(t("projects.repository.fetched"));
     });
-  }, [refetchSnapshot, refetchState, t]);
+  }, [refetchSnapshot, refetchState, refetchLocal, host, t, cache, repository.id, lifetime]);
   const fetch: RepositoryFetchControls = { onFetch, fetchPending: snapshotQuery.isFetching || repoStateQuery.isFetching };
-  return { activeBranch, activeBranchCommit, branchActions, branchOptions, commitDiffQuery, fetch, fileContentSource, files,
-    gitDataState, readmeFile, snapshot, snapshotQuery, sourceControls, unavailableReason };
+  const updateReviewAction = reviewUpdate.action(localCheckout.available ? localCheckout.status.data?.remoteHead ?? null : activeRemoteBranch?.commit ?? null, localCheckout.status.data?.mergeBase ?? null);
+  return { updateReviewAction, activeBranch, selectedTag, activeBranchCommit, branchActions, branchOptions, commitDiffQuery, fetch, fileContentSource, files,
+    gitDataState, readmeFile, snapshot, snapshotQuery, sourceControls, unavailableReason, localCheckout };
 }
 
 export type RepositoryGitState = ReturnType<typeof useRepositoryGitState>;
@@ -174,14 +195,15 @@ export function RepositoryGitContent({ state, repository, projectId, pullRequest
   const selectedCommitPullRequest = commitHash
     ? pullRequests.find(pullRequest => pullRequest.commit === commitHash || pullRequest.initialCommit === commitHash) : undefined;
   if (tab === "overview") return (
-    <ProjectOverviewPanel file={state.readmeFile} fileContentSource={state.fileContentSource} gitDataState={state.gitDataState} hideHeader unavailableReason={unavailableReason} />
+    <ProjectOverviewPanel file={state.readmeFile} fileContentSource={state.fileContentSource} gitDataState={state.gitDataState} hideHeader unavailableReason={unavailableReason}
+      onRetry={state.fetch.onFetch} retryPending={state.fetch.fetchPending} />
   );
   if (tab === "contributors") return snapshotQuery.isLoading
     ? <BuzzLoadingState label={t("projects.contributors.loading")} />
     : <ContributorsPanel activityCounts={contributorActivityCounts} contributorPubkeys={contributorPubkeys}
       contributorPubkeysByGitIdentity={contributorPubkeysByGitIdentity} profiles={profiles} repoContributors={snapshot?.contributors ?? []} />;
   if (tab === "activity") return repositoryUnavailableState ?? (commitHash ? (
-    <ProjectCommitDetailPanel commit={snapshot?.commits.find(commit => commit.hash === commitHash) ?? null} commitHash={commitHash}
+    <ProjectCommitDetailPanel project={repository} commit={snapshot?.commits.find(commit => commit.hash === commitHash) ?? null} commitHash={commitHash}
       diff={state.commitDiffQuery.data} diffError={state.commitDiffQuery.error} diffLoading={state.commitDiffQuery.isLoading}
       originAgentName={selectedCommitPullRequest?.originAgentName} originChannelId={selectedCommitPullRequest?.channelId} />
   ) : (

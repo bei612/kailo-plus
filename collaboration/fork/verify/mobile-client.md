@@ -436,3 +436,48 @@ cursor、期望 null 却得到 100、期望 false 却得到 true。原件为
 输出 `+3: All tests passed!`，实际退出 0。未将反证破坏留在正式源码或候选中。
 私有 HEAD 加本批独立 hunk 的原 `npx --offline markdownlint-cli2` selected 检查
 退出 0（`docs-selected.log`）；正式文件的继承 dirty 不混入本批提交范围。
+
+## 原频道与媒体读取失败文案同源（2026-10-27）
+
+固定检查源码 `419ac2b86d1d829f39e19cb03541faa1bfd35044`，比较基准
+`3a2c960e492c545bfee2b2284fb2349a98664dde`。权威为 REQ-08、DD-53/74；
+固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的
+`mobile/lib/features/channels/channels_page/badges.dart::_ErrorView`（本树已拆到
+`channels_page/error_view.dart`）、`channel_detail_page.dart::ChannelDetailPage`、
+`media_viewer_page.dart::MediaImageViewerPage` 和
+`media_viewer_page/video_viewer.dart::MediaVideoViewerPage` 为原消费者。
+
+TS 目录增加八条原失败文案及中文，原生成器投影至 Dart；频道消息失败与 Retry
+复用既有词条。401 的旧 API token 指导改为当前原生登录指导；401/403/其他状态、
+SocketException 与未知错误分支保持，原状态码只作为词条变量，底层错误正文不展示。
+只替换原 Text 内容及 import，不增加界面、重试机制、网络请求或第二翻译权威。
+媒体读取、HTTP 鉴权、缓冲、当前身份与失败状态均沿原实现；API、schema、迁移和
+Workflow 不变。中文从当前 Localizations 读取，语言切换无需重建业务状态。
+
+原 Flutter 3.41.7 / Dart 3.11.5 固定镜像，2 CPU / 4 GiB、swap 同上限、network
+none；原 preflight 与实际限额已回读。源码、临时写入和日志在实际 `/dev/sda1`
+的 `/volumes/data`；复用原 Flutter pub 缓存，未升级依赖或在宿主执行 SDK。
+原 `gen-platform-i18n.py` 生成及 `--check`、五个改动 Dart 文件格式、
+`flutter pub get --offline --enforce-lockfile`、同五路径 `flutter analyze --no-pub`
+均退出 0。原 `channels_page_test.dart`、`channel_detail_page_test.dart`、
+`message_media_test.dart` 完整运行 **146 passed / 0 failed**。
+
+原频道组件检查覆盖中英文错误标题、通用提示、真实 Retry 点击后频道恢复。
+在独立源码中将同源标题恢复为硬编码英文，原中文操作断言实际失败（exit 1，
+找不到“无法加载频道”）；逐字恢复后同两条中英文操作再次通过。最终 684 份
+导出输入与固定 GitHub 对象逐字一致，OOM=false，运行容器已删除。
+[原始回执](mobile-failure-copy-receipt.json) SHA-256 为
+`9c172a0a103dec286dab279f7f54e9df67df2faebba06fa4dc644173b88d5c7f`。
+CI 原件位于 `/volumes/data/kailo/verification/phase1-integration/` 下
+`mobile-errors-419ac2b86-check/`；完整命令输出、反例及 SHA 均在回执所列文件。
+
+首轮 `2bcebd381629d8eece30a5576c86223b6283e862` 实际 144 pass / 2 fail：
+测试在原 SkeletonReveal 淡入尚未结束时点击，尚被 IgnorePointer 拦截；沿原动画
+完成后点击，保留同一恢复频道断言，未改产品逻辑。失败原件保留于同根
+`mobile-errors-2bcebd381-check/`，不将其记为成功。
+格式准备阶段因未安装依赖提示无法读取 flutter_lints；随后锁定离线安装后的
+原格式与 analyze 均通过，未忽略静态错误。
+
+这些是原组件与消费者验证；`message_media_test.dart` 验证附件分类，不证明图片/
+视频失败界面的双语渲染。媒体文案本批只有静态检查和源码复核，真实设备截图、
+三端全量文案验收、签名安装包、部署及全工程 full 仍未完成。

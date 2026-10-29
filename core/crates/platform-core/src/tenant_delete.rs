@@ -2081,6 +2081,10 @@ async fn finish(state: &ServiceState, deletion: &Delete) -> Result<(), sqlx::Err
         "update identity.push_registration set state='REVOKED',enabled=false,token_digest=null,token_secret_locator=null,token_secret_version=null,token_secret_audience=null,version=version+1,updated_at=now() where tenant_id=$1 and state<>'REVOKED'",
         // DD-151(4)：角标投影只是派生状态，随 Tenant 清除。
         "delete from projection.push_unread where tenant_id = $1",
+        "delete from projection.push_send_intent where tenant_id = $1",
+        "delete from projection.push_cursor where tenant_id = $1",
+        "delete from projection.push_delivery_window where tenant_id = $1",
+        "update admission.push_token_intent set state='RETIRED',updated_at=now() where tenant_id=$1",
         // DD-158: private feedback and its embedded attachment leave with the Tenant.
         "delete from support.feedback_submission where tenant_id = $1",
         "delete from identity.collaboration_user_state where tenant_principal_id in (select id from identity.principal where tenant_id = $1)",

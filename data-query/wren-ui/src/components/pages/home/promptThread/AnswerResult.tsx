@@ -3,9 +3,9 @@ import { isEmpty, debounce } from 'lodash';
 import clsx from 'clsx';
 import { Button, Typography, Tabs, Tag, Tooltip } from 'antd';
 import styled from 'styled-components';
-import CheckCircleFilled from '@ant-design/icons/CheckCircleFilled';
-import CodeFilled from '@ant-design/icons/CodeFilled';
-import PieChartFilled from '@ant-design/icons/PieChartFilled';
+import CheckCircleOutlined from '@ant-design/icons/CheckCircleOutlined';
+import CodeOutlined from '@ant-design/icons/CodeOutlined';
+import PieChartOutlined from '@ant-design/icons/PieChartOutlined';
 import MessageOutlined from '@ant-design/icons/MessageOutlined';
 import ShareAltOutlined from '@ant-design/icons/ShareAltOutlined';
 import { RobotSVG } from '@/utils/svgs';
@@ -24,6 +24,7 @@ import TextBasedAnswer, {
 import ChartAnswer from '@/components/pages/home/promptThread/ChartAnswer';
 import Preparation from '@/components/pages/home/preparation';
 import useKailoSession from '@/hooks/useKailoSession';
+import useKailoText, { KailoTextKey } from '@/utils/kailoI18n';
 import {
   AskingTaskStatus,
   ThreadResponse,
@@ -35,74 +36,34 @@ import {
 
 const { Title, Text } = Typography;
 
-const adjustmentType = {
-  [ThreadResponseAdjustmentType.APPLY_SQL]: 'User-provided SQL applied',
-  [ThreadResponseAdjustmentType.REASONING]: 'Reasoning steps adjusted',
+const adjustmentType: Record<ThreadResponseAdjustmentType, KailoTextKey> = {
+  [ThreadResponseAdjustmentType.APPLY_SQL]: 'home.adjustmentAppliedSql',
+  [ThreadResponseAdjustmentType.REASONING]: 'home.adjustmentReasoning',
 };
 
-const knowledgeTooltip = (
-  <>Store this answer as a Question-SQL pair to improve SQL generation.</>
-);
-
+// DD-157 (20 §13 标签页): line tabs, 2px brand underline, selected text
+// 600, unselected muted; single-colour line icons.
 const StyledTabs = styled(Tabs)`
   .ant-tabs-nav {
     margin-bottom: 0;
   }
 
-  .ant-tabs-content-holder {
-    border-left: 1px var(--gray-4) solid;
-    border-right: 1px var(--gray-4) solid;
-    border-bottom: 1px var(--gray-4) solid;
-  }
-
   .ant-tabs-tab {
-    .ant-typography {
-      color: var(--gray-6);
-    }
+    padding: 10px 0;
 
-    [aria-label='check-circle'] {
-      color: var(--gray-5);
-    }
-
-    [aria-label='code'] {
-      color: var(--gray-5);
-    }
-
-    [aria-label='pie-chart'] {
-      color: var(--gray-5);
+    .ant-typography,
+    .anticon {
+      color: var(--kailo-color-muted-foreground);
     }
 
     &.ant-tabs-tab-active {
       .ant-typography {
-        color: var(--gray-8);
+        color: var(--kailo-color-foreground);
+        font-weight: 600;
       }
-
-      [aria-label='check-circle'] {
-        color: var(--green-5);
+      .anticon {
+        color: var(--kailo-color-foreground);
       }
-
-      [aria-label='code'] {
-        color: var(--geekblue-5);
-      }
-
-      [aria-label='pie-chart'] {
-        color: var(--gold-6);
-      }
-
-      .adm-beta-tag {
-        background-color: var(--geekblue-2);
-        color: var(--geekblue-5);
-      }
-    }
-
-    .adm-beta-tag {
-      padding: 0 4px;
-      line-height: 18px;
-      margin: 0 0 0 6px;
-      border-radius: 2px;
-      background-color: var(--gray-5);
-      color: white;
-      border: none;
     }
   }
 `;
@@ -119,11 +80,12 @@ const QuestionTitle = (props) => {
   const { question, className } = props;
   return (
     <Title
-      className={clsx('d-flex bg-gray-1 rounded mt-0', className)}
+      className={clsx('d-flex mt-0', className)}
       level={4}
+      style={{ fontSize: 17, lineHeight: '24px', fontWeight: 600 }}
     >
-      <MessageOutlined className="geekblue-5 mt-1 mr-3" />
-      <Text className="text-medium gray-8">{question}</Text>
+      <MessageOutlined className="gray-7 mt-1 mr-3" />
+      <Text className="gray-10">{question}</Text>
     </Title>
   );
 };
@@ -148,16 +110,16 @@ const AdjustmentInformation = (props: {
   adjustment: ThreadResponseAdjustment;
 }) => {
   const { adjustment } = props;
+  const t = useKailoText();
+  const typeKey = adjustmentType[adjustment.type];
 
   return (
-    <div className="rounded bg-gray-3 gray-6 py-2 px-3 mb-2">
+    <div className="kailo-soft-block gray-7 py-2 px-3 mb-2">
       <div className="d-flex align-center gx-2">
         <ShareAltOutlined className="gray-7" />
         <div className="flex-grow-1 gray-7">
-          Adjusted answer
-          <Tag className="gray-6 border border-gray-5 bg-gray-3 ml-3 text-medium">
-            {adjustmentType[adjustment.type]}
-          </Tag>
+          {t('home.adjustedAnswer')}
+          <Tag className="ml-3">{typeKey ? t(typeKey) : adjustment.type}</Tag>
         </div>
       </div>
     </div>
@@ -179,6 +141,7 @@ export default function AnswerResult(props: Props) {
   const { threadResponse, isLastThreadResponse, isOpeningQuestion } = props;
   // DD-133 §3: knowledge and views are Kailo Tenant admin changes.
   const { isAdmin } = useKailoSession();
+  const t = useKailoText();
 
   const {
     onOpenSaveAsViewModal,
@@ -233,7 +196,7 @@ export default function AnswerResult(props: Props) {
       const debouncedGenerateAnswer = debounce(
         () => {
           onGenerateTextBasedAnswer(id);
-          onGenerateThreadRecommendedQuestions();
+          if (isLastThreadResponse) onGenerateThreadRecommendedQuestions(id);
         },
         250,
         { leading: false, trailing: true },
@@ -246,6 +209,7 @@ export default function AnswerResult(props: Props) {
     }
   }, [
     isBreakdownOnly,
+    isLastThreadResponse,
     askingTask?.status,
     adjustmentTask?.status,
     answerDetail?.status,
@@ -285,14 +249,14 @@ export default function AnswerResult(props: Props) {
       />
       {showAnswerTabs && (
         <>
-          <StyledTabs type="card" size="small" onTabClick={onTabClick}>
+          <StyledTabs size="small" onTabClick={onTabClick}>
             {!isBreakdownOnly && (
               <Tabs.TabPane
                 key={ANSWER_TAB_KEYS.ANSWER}
                 tab={
                   <div className="select-none">
-                    <CheckCircleFilled className="mr-2" />
-                    <Text>Answer</Text>
+                    <CheckCircleOutlined className="mr-2" />
+                    <Text>{t('home.tabAnswer')}</Text>
                   </div>
                 }
               >
@@ -303,8 +267,8 @@ export default function AnswerResult(props: Props) {
               key={ANSWER_TAB_KEYS.VIEW_SQL}
               tab={
                 <div className="select-none">
-                  <CodeFilled className="mr-2" />
-                  <Text>View SQL</Text>
+                  <CodeOutlined className="mr-2" />
+                  <Text>{t('home.tabViewSql')}</Text>
                 </div>
               }
             >
@@ -314,10 +278,8 @@ export default function AnswerResult(props: Props) {
               key="chart"
               tab={
                 <div className="select-none">
-                  <PieChartFilled className="mr-2" />
-                  <Text>
-                    Chart<Tag className="adm-beta-tag">Beta</Tag>
-                  </Text>
+                  <PieChartOutlined className="mr-2" />
+                  <Text>{t('home.tabChart')}</Text>
                 </div>
               }
             >
@@ -329,7 +291,7 @@ export default function AnswerResult(props: Props) {
               <Tooltip
                 overlayInnerStyle={{ width: 'max-content' }}
                 placement="topLeft"
-                title={knowledgeTooltip}
+                title={t('home.saveToKnowledgeHint')}
               >
                 <Button
                   type="link"
@@ -348,7 +310,7 @@ export default function AnswerResult(props: Props) {
                 >
                   <div className="d-flex align-center">
                     <RobotSVG className="mr-2" />
-                    Save to knowledge
+                    {t('home.saveToKnowledge')}
                   </div>
                 </Button>
               </Tooltip>

@@ -8,17 +8,17 @@ import { useQueries, useQuery } from "@tanstack/react-query";
 import type { ProjectsHost } from "./projectEnumeration";
 import type { Repository } from "./projectModels";
 import type { ProjectPullRequest } from "./projectPullRequests.mjs";
-import type { ProjectRepoSnapshot } from "./projectGit";
+import { projectTagTarget, type ProjectRepoSnapshot } from "./projectGit";
 
 type PullRequestRef = Pick<ProjectPullRequest, "id" | "commit"> | null | undefined;
 
 export function useProjectRepoSnapshotQuery(host: ProjectsHost, project: Repository | null | undefined,
-  branchName?: string | null, pullRequest?: PullRequestRef, enabled = true) {
+  branchName?: string | null, pullRequest?: PullRequestRef, enabled = true, tag?: { name: string; commit: string } | null) {
   const selectedBranch = branchName ?? project?.defaultBranch ?? null;
   return useQuery({
     enabled: Boolean(enabled && host.git && project),
     queryKey: ["project", host.scopeKey, project?.id ?? "none", "repo-snapshot", selectedBranch ?? "default",
-      pullRequest?.id ?? "none", pullRequest?.commit ?? "none", "no-tag", "no-tag-commit"],
+      pullRequest?.id ?? "none", pullRequest?.commit ?? "none", tag?.name ?? "no-tag", tag?.commit ?? "no-tag-commit"],
     queryFn: () => {
       if (!project || !host.git) throw new Error("No project selected.");
       return host.git.getProjectRepoSnapshot({
@@ -27,6 +27,7 @@ export function useProjectRepoSnapshotQuery(host: ProjectsHost, project: Reposit
         baseBranch: project.defaultBranch,
         targetCommit: pullRequest?.commit ?? null,
         targetRef: pullRequest ? `refs/nostr/${pullRequest.id}` : null,
+        ...(tag ? projectTagTarget(tag) : {}),
       });
     },
     staleTime: 30_000,
@@ -58,12 +59,20 @@ export function useProjectRepoDiffQuery(host: ProjectsHost, project: Repository 
 }
 
 /** Diff of a single commit against its parent, for the commit detail view. */
-export function useProjectCommitDiffQuery(host: ProjectsHost, project: Repository | null | undefined, commitHash: string | null) {
+export function useProjectCommitDiffQuery(host: ProjectsHost, project: Repository | null | undefined, commitHash: string | null, source: "remote" | "local" = "remote") {
   return useQuery({
     enabled: Boolean(host.git && project && commitHash),
-    queryKey: ["project", host.scopeKey, project?.id ?? "none", "commit-diff", "remote", commitHash ?? "none"],
+    queryKey: ["project", host.scopeKey, project?.id ?? "none", "commit-diff", source, commitHash ?? "none"],
     queryFn: () => {
       if (!project || !commitHash || !host.git) return Promise.reject(new Error("No commit selected."));
+      if (source === "local") {
+        const checkout = host.git.checkout;
+        if (!checkout) return Promise.reject(new Error("Local checkout unavailable"));
+        return checkout.getProjectLocalRepoDiff({ repository: project.repoAddress, targetCommit: commitHash }).then(diff => {
+          if (!diff) throw new Error("Local checkout unavailable");
+          return diff;
+        });
+      }
       // Passing only the target commit makes the backend diff it against its parent.
       return host.git.getProjectRepoDiff({ repository: project.repoAddress, defaultBranch: project.defaultBranch, targetCommit: commitHash });
     },

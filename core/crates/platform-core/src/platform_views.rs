@@ -231,7 +231,10 @@ pub async fn discoverable_workspaces(
     };
     let mut items = Vec::with_capacity(rows.len());
     for row in &rows {
-        let event = match control.channel_metadata(&state.http, &row.channel_id).await {
+        let event = match control
+            .channel_metadata(&state.relay_http, &row.channel_id)
+            .await
+        {
             Ok(Some(event)) => event,
             _ => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
         };

@@ -5,6 +5,7 @@ import BaseTable, {
   ExpandableRows,
 } from '@/components/table/BaseTable';
 import NestedFieldTable from '@/components/table/NestedFieldTable';
+import { kailoT } from '@/utils/kailoI18n';
 
 export default function FieldTable(props: Props) {
   const { columns, showExpandable, expandable } = props;
@@ -23,7 +24,7 @@ export default function FieldTable(props: Props) {
                     <ExpandableRows
                       data={[
                         {
-                          title: 'Description',
+                          title: kailoT('modeling.description'),
                           value: record.description || '-',
                         },
                       ]}
@@ -31,11 +32,13 @@ export default function FieldTable(props: Props) {
                         record.nestedFields && (
                           <div>
                             <Row wrap={false} className="py-1 px-2">
-                              <Col span={6} className="gray-6">
-                                Nested columns
+                              <Col span={6} className="gray-7">
+                                {kailoT('modeling.nestedColumns')}
                               </Col>
                               <Col style={{ wordBreak: 'break-word' }}>
-                                {record.nestedFields.length} column(s)
+                                {kailoT('modeling.columnCount', {
+                                  count: record.nestedFields.length,
+                                })}
                               </Col>
                             </Row>
                             <NestedFieldTable

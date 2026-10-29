@@ -1,14 +1,24 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 import type { ApplicationNativePage } from "@client-kit/contracts";
 import { useBffClient, useNativeAuthenticationHost, useT, useTopLevelReauthentication } from "./context";
-import { embedRequest, preferencesMessage, presentationMessage, useEmbedPresentation } from "./native-embed-host";
+import {
+  actionMessage, confirmResultMessage, EMBED_MAX_FILES, embedMessage, navigateMessage, pickFiles, preferencesMessage, presentationMessage, replayShortcut,
+  useEmbedPresentation, type EmbedConfirm, type EmbedFeature, type EmbedPage,
+} from "./native-embed-host";
+import { useNativeEntryPresentation } from "./native-application-entries";
+import { NativeConfirmDialog, NativePageFrame, NativePageHeader, NativePageSkeleton } from "./native-page-shell";
+import { isMacPlatform } from "../keyboard-platform";
 import { nativeDeepLinkUrl } from "./native-deep-link";
 import { preferenceValues } from "../component-preferences";
 import { useStoredComponentPreferences } from "./component-preferences";
-import { Button, Notice, ReadFailure } from "./ui";
+import { Button, ReadFailure } from "./ui";
 
 /** How long a page may take to complete the wire v1 handshake before it is treated as a DD-127 page. */
 export const NATIVE_HANDSHAKE_GRACE_MS = 8000;
+
+/** DD-157 (07 §4.8.7): at most this many component toasts per window, identical ones merged. */
+export const NATIVE_TOAST_LIMIT = { count: 5, windowMs: 10_000, duplicateMs: 3_000 };
 
 export function validNativePage(page: ApplicationNativePage, bindingId: string): boolean {
   try {
@@ -38,6 +48,7 @@ export function validNativePage(page: ApplicationNativePage, bindingId: string):
  * location inside the descriptor origin; a path leaving it is ignored.
  */
 export function NativeApplicationPage({ bindingId, onBack, title, path }: { bindingId: string; onBack?: () => void; title?: string; path?: string }) {
+  const entry = useNativeEntryPresentation(bindingId);
   const client = useBffClient();
   const authenticateNative = useNativeAuthenticationHost();
   const reauthenticate = useTopLevelReauthentication();
@@ -97,31 +108,97 @@ export function NativeApplicationPage({ bindingId, onBack, title, path }: { bind
   if (page && frameKey && launch.current?.key !== frameKey)
     launch.current = { key: frameKey, src: nativeDeepLinkUrl(page, path, presentation) };
   const frame = useRef<HTMLIFrameElement>(null);
+  const currentFrameKey = useRef(frameKey);
+  currentFrameKey.current = frameKey;
+  const documentRevision = useRef(0);
   const latest = useRef(presentation);
   latest.current = presentation;
-  const [embedded, setEmbedded] = useState<{ key: string; authRequired: boolean } | null>(null);
+  const [embedded, setEmbedded] = useState<{ key: string; authRequired: boolean; features: EmbedFeature[] } | null>(null);
   const connected = embedded !== null && embedded.key === frameKey;
+  const features = connected ? embedded.features : [];
+  // DD-157: the component's own header, drawn by Kailo; reset with every document.
+  const [header, setHeader] = useState<{ key: string; page: EmbedPage | null } | null>(null);
+  const embedPage = header && header.key === frameKey ? header.page : null;
+  const headerArrived = header !== null && header.key === frameKey;
+  const [confirm, setConfirm] = useState<EmbedConfirm | null>(null);
+  const confirming = useRef<EmbedConfirm | null>(null);
+  const toasts = useRef<{ at: number; text: string }[]>([]);
   const origin = page?.origin ?? null;
-  const post = useCallback(() => {
+  const postToFrame = useCallback((message: object) => {
     const target = frame.current?.contentWindow;
     // Exact target origin: if the frame is mid-redirect (IdP), nothing is delivered.
-    if (target && origin) target.postMessage(presentationMessage(latest.current), origin);
+    if (target && origin) target.postMessage(message, origin);
   }, [origin]);
+  const post = useCallback(() => { postToFrame(presentationMessage(latest.current)); }, [postToFrame]);
+  const showToast = useCallback((tone: "success" | "info" | "warning" | "error", text: string, description?: string) => {
+    const now = Date.now();
+    const key = `${tone}\u0000${text}\u0000${description ?? ""}`;
+    toasts.current = toasts.current.filter((item) => now - item.at < NATIVE_TOAST_LIMIT.windowMs);
+    if (toasts.current.length >= NATIVE_TOAST_LIMIT.count
+      || toasts.current.some((item) => item.text === key && now - item.at < NATIVE_TOAST_LIMIT.duplicateMs)) return;
+    toasts.current.push({ at: now, text: key });
+    const show = tone === "success" ? toast.success : tone === "warning" ? toast.warning : tone === "error" ? toast.error : toast.info;
+    show(text, description ? { description } : undefined);
+  }, []);
   useEffect(() => {
     if (!origin || !frameKey) return;
     const receive = (event: MessageEvent) => {
       if (event.origin !== origin || !frame.current || event.source !== frame.current.contentWindow) return;
-      const request = embedRequest(event.data);
-      if (request === "ready") {
-        setEmbedded({ key: frameKey, authRequired: false });
+      const message = embedMessage(event.data);
+      if (!message) return;
+      // A picker belongs to the document and page declaration at the user's click.
+      if (message.type === "ready" || message.type === "auth-required" || message.type === "page") ++documentRevision.current;
+      if (message.type === "ready") {
+        setEmbedded({ key: frameKey, authRequired: false, features: message.features });
         post();
-      } else if (request === "auth-required") {
-        setEmbedded({ key: frameKey, authRequired: true });
+      } else if (message.type === "auth-required") {
+        setEmbedded((current) => ({ key: frameKey, authRequired: true, features: current?.key === frameKey ? current.features : [] }));
+      } else if (message.type === "page") {
+        setHeader({ key: frameKey, page: message.page });
+      } else if (message.type === "toast") {
+        showToast(message.toast.tone, message.toast.title, message.toast.description);
+      } else if (message.type === "confirm") {
+        // One Kailo dialog at a time; a second request is declined, never queued behind the first.
+        if (confirming.current) { postToFrame(confirmResultMessage(message.confirm.id, false)); return; }
+        confirming.current = message.confirm;
+        setConfirm(message.confirm);
+      } else if (message.type === "shortcut") {
+        replayShortcut(message.shortcut, isMacPlatform());
       }
     };
     window.addEventListener("message", receive);
     return () => window.removeEventListener("message", receive);
-  }, [origin, frameKey, post]);
+  }, [origin, frameKey, post, postToFrame, showToast]);
+  const activate = (id: string) => {
+    const action = connected && features.includes("page") ? embedPage?.actions.find((item) => item.id === id) : null;
+    const element = frame.current;
+    const target = element?.contentWindow;
+    if (!action || action.disabled || action.busy || !element || !target || !origin) return;
+    if (!action.files) { target.postMessage(actionMessage(id), origin); return; }
+    const revision = documentRevision.current;
+    const requestScope = scope.current;
+    const current = () => element.isConnected && frame.current === element && element.contentWindow === target
+      && currentFrameKey.current === frameKey && scope.current === requestScope && documentRevision.current === revision;
+    // Open synchronously inside the click. Never resolve a delayed selection through a mutable frame ref.
+    pickFiles(action.files, (selection) => {
+      if (current()) target.postMessage(actionMessage(id, selection), origin);
+    }, () => {
+      if (current()) showToast("error", t("platform.nativePage.tooManyFiles", { count: EMBED_MAX_FILES }));
+    });
+  };
+  // A new document (or another binding) starts without an open confirmation.
+  useEffect(() => {
+    confirming.current = null;
+    setConfirm(null);
+  }, [frameKey]);
+  const finishConfirm = (confirmed: boolean) => {
+    const current = confirming.current;
+    confirming.current = null;
+    setConfirm(null);
+    if (current) postToFrame(confirmResultMessage(current.id, confirmed));
+    // Keyboard focus goes back to where the user was: inside the component (07 §4.8.7).
+    window.setTimeout(() => frame.current?.focus(), 0);
+  };
   useEffect(() => { if (connected) post(); }, [connected, post, presentation.theme, presentation.locale]);
   // DD-138: every declared preference of this page with its effective value,
   // posted after `ready` and whenever Kailo settings change one of them.
@@ -169,26 +246,35 @@ export function NativeApplicationPage({ bindingId, onBack, title, path }: { bind
     const timer = window.setTimeout(() => setGraceOver(true), NATIVE_HANDSHAKE_GRACE_MS);
     return () => window.clearTimeout(timer);
   }, [frameKey]);
-  const awaitingHandshake = page !== null && !connected && !graceOver;
+  // DD-157: a page that declared `page` stays behind Kailo's skeleton until its first
+  // header (its content is ready), so the first paint is never a half-built frame.
+  const awaitingHeader = connected && features.includes("page") && !headerArrived && !graceOver && !embedded?.authRequired;
+  const awaitingHandshake = page !== null && ((!connected && !graceOver) || awaitingHeader);
   const unhandshaked = page !== null && !connected && graceOver;
-  return <section className="flex h-full min-h-0 flex-1 flex-col gap-3" data-testid="native-application-page">
-    {onBack ? <div><Button onClick={onBack}>{t("platform.back")}</Button></div> : null}
-    {unhandshaked ? <div className="flex flex-wrap items-center gap-2">
+  const productTitle = entry?.title ?? title ?? "";
+  return <section className="flex h-full min-h-0 flex-1 flex-col bg-background" data-testid="native-application-page">
+    {/* DD-138(3)/DD-157: the Kailo page header; Back only where opened from a list. */}
+    {onBack ? <div className="px-5 pt-3"><Button onClick={onBack}>{t("platform.back")}</Button></div> : null}
+    <NativePageHeader productTitle={productTitle} category={entry?.category ?? null}
+      page={connected && features.includes("page") ? embedPage : null}
+      onNavigate={(kind, id) => postToFrame(navigateMessage(kind, id))} onAction={activate} />
+    {unhandshaked ? <div className="flex flex-wrap items-center gap-2 px-5 py-3">
       <Button disabled={loading || authenticationPending} onClick={() => signInToService(page.url)}>{t("bindings.signInNative")}</Button>
       <p className="text-sm text-muted-foreground">{t("bindings.nativeBoundary")}</p></div> : null}
-    {authenticationError ? <ReadFailure error={authenticationError} onRetry={() => setAuthenticationError(undefined)} /> : null}
+    {authenticationError ? <div className="px-5 py-3"><ReadFailure error={authenticationError} onRetry={() => setAuthenticationError(undefined)} /></div> : null}
     {page && connected && embedded?.authRequired ? <div role="alert" className="mx-auto mt-12 flex w-full max-w-md flex-col items-center gap-4 rounded-xl border border-border bg-card px-6 py-8 text-center text-sm text-foreground shadow-xs">
       <span>{t("bindings.embedSignInRequired")}</span>
       <Button disabled={authenticationPending} onClick={() => signInAgain(page.url)}>{t("bindings.embedSignIn")}</Button></div> : null}
-    {page && frameKey && launch.current ? <div className="relative flex min-h-0 w-full flex-1 flex-col">
-      <iframe key={frameKey} ref={frame}
-        className={`min-h-0 w-full flex-1 border-0${awaitingHandshake ? " invisible" : ""}`} title={title ?? t("bindings.nativeTitle")}
+    {page && frameKey && launch.current ? <NativePageFrame>
+      <iframe key={frameKey} ref={frame} onLoad={() => { ++documentRevision.current; }}
+        className={`min-h-0 w-full flex-1 border-0 bg-background ${presentation.theme === "dark" ? "[color-scheme:dark]" : "[color-scheme:light]"}${awaitingHandshake ? " invisible" : ""}`}
+        title={productTitle || title || t("bindings.nativeTitle")}
         src={launch.current.src} sandbox="allow-scripts allow-same-origin allow-forms allow-downloads allow-popups allow-popups-to-escape-sandbox"
         referrerPolicy="no-referrer" />
-      {awaitingHandshake ? <div className="absolute inset-0 flex items-center justify-center" data-testid="native-page-loading">
-        <Notice role="status">{t("platform.loading")}</Notice></div> : null}
-    </div>
-      : loading ? <Notice role="status">{t("platform.loading")}</Notice>
-      : <ReadFailure error={error} onRetry={() => { void reload(true); }} />}
+      {awaitingHandshake ? <div role="status" aria-label={t("platform.loading")} data-testid="native-page-loading"><NativePageSkeleton /></div> : null}
+    </NativePageFrame>
+      : loading ? <NativePageFrame><div role="status" aria-label={t("platform.loading")} data-testid="native-page-loading"><NativePageSkeleton /></div></NativePageFrame>
+      : <div className="px-5 py-4"><ReadFailure error={error} onRetry={() => { void reload(true); }} /></div>}
+    <NativeConfirmDialog confirm={confirm} onDone={finishConfirm} />
   </section>;
 }

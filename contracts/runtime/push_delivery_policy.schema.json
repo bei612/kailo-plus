@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "runtime/push_delivery_policy.schema.json",
+  "title": "PushDeliveryPolicy",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "leaseSeconds",
+    "notificationTtlSeconds",
+    "maxAttempts",
+    "retryBaseSeconds",
+    "apnsRetryFloorSeconds",
+    "providerTimeoutSeconds",
+    "scanPageSize",
+    "scanEventBound",
+    "dispatchBatchSize",
+    "retirementBatchSize",
+    "tokenPrepareLeaseSeconds",
+    "tokenRetryBaseSeconds",
+    "tokenRetryMaxSeconds",
+    "receiptCommitAttempts",
+    "collapseSeconds",
+    "deviceWindowSeconds",
+    "deviceAttemptLimit",
+    "credentialTtlSeconds",
+    "relayReadTimeoutSeconds"
+  ],
+  "properties": {
+    "leaseSeconds": {
+      "type": "integer"
+    },
+    "notificationTtlSeconds": {
+      "type": "integer"
+    },
+    "maxAttempts": {
+      "type": "integer"
+    },
+    "retryBaseSeconds": {
+      "type": "integer",
+      "description": "FCM documented quota retry floor; deployments may choose a longer delay."
+    },
+    "apnsRetryFloorSeconds": {
+      "type": "integer",
+      "description": "APNs documented 5xx retry floor; deployments may choose a longer delay."
+    },
+    "providerTimeoutSeconds": {
+      "type": "integer"
+    },
+    "scanPageSize": {
+      "type": "integer"
+    },
+    "scanEventBound": {
+      "type": "integer"
+    },
+    "dispatchBatchSize": {
+      "type": "integer"
+    },
+    "retirementBatchSize": {
+      "type": "integer"
+    },
+    "tokenPrepareLeaseSeconds": {
+      "type": "integer"
+    },
+    "tokenRetryBaseSeconds": {
+      "type": "integer"
+    },
+    "tokenRetryMaxSeconds": {
+      "type": "integer"
+    },
+    "receiptCommitAttempts": {
+      "type": "integer"
+    },
+    "collapseSeconds": {
+      "type": "integer"
+    },
+    "deviceWindowSeconds": {
+      "type": "integer"
+    },
+    "deviceAttemptLimit": {
+      "type": "integer"
+    },
+    "credentialTtlSeconds": {
+      "type": "integer"
+    },
+    "relayReadTimeoutSeconds": {
+      "type": "integer"
+    }
+  }
+}

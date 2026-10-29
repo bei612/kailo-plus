@@ -18,7 +18,12 @@ fn stores_only_ciphertext_and_reopens_the_exact_event() {
     let author = Keys::generate();
     archive.subscribe("chan", &[9], 1).unwrap();
     let event = message(&author, "chan", "top secret plan");
-    assert_eq!(archive.ingest("chan", &[event.clone()]).unwrap(), 1);
+    assert_eq!(
+        archive
+            .ingest("chan", std::slice::from_ref(&event))
+            .unwrap(),
+        1
+    );
     let sealed: String = archive
         .conn
         .query_row("SELECT sealed FROM archived_event", [], |row| row.get(0))
@@ -55,7 +60,9 @@ fn large_events_round_trip_through_ordered_chunks() {
     let author = Keys::generate();
     let body = "长".repeat(50_000);
     let event = message(&author, "chan", &body);
-    archive.ingest("chan", &[event.clone()]).unwrap();
+    archive
+        .ingest("chan", std::slice::from_ref(&event))
+        .unwrap();
     assert_eq!(archive.read("chan", 1).unwrap(), vec![event]);
 }
 
@@ -65,7 +72,9 @@ fn authenticated_chunks_from_different_events_cannot_be_spliced() {
     let author = Keys::generate();
     let first = message(&author, "chan", &"a".repeat(150_000));
     let second = message(&author, "chan", &"b".repeat(150_000));
-    archive.ingest("chan", &[first.clone()]).unwrap();
+    archive
+        .ingest("chan", std::slice::from_ref(&first))
+        .unwrap();
     let first_sealed = archive.seal(&first.as_json()).unwrap();
     let second_sealed = archive.seal(&second.as_json()).unwrap();
     let mut chunks: Vec<&str> = first_sealed.split('.').collect();
@@ -97,7 +106,9 @@ fn deletions_remove_the_archived_target() {
     let archive = store();
     let author = Keys::generate();
     let target = message(&author, "chan", "oops");
-    archive.ingest("chan", &[target.clone()]).unwrap();
+    archive
+        .ingest("chan", std::slice::from_ref(&target))
+        .unwrap();
     let deletion = EventBuilder::new(Kind::Custom(9005), "")
         .tag(Tag::parse(["h", "chan"]).unwrap())
         .tag(Tag::parse(["e", &target.id.to_hex()]).unwrap())
@@ -107,7 +118,12 @@ fn deletions_remove_the_archived_target() {
     assert!(!archive.has_event(&target.id.to_hex()).unwrap());
     // A descending history page or an interrupted retry may replay the older
     // target after the delete. It must never resurrect the local copy.
-    assert_eq!(archive.ingest("chan", &[target.clone()]).unwrap(), 0);
+    assert_eq!(
+        archive
+            .ingest("chan", std::slice::from_ref(&target))
+            .unwrap(),
+        0
+    );
     assert!(!archive.has_event(&target.id.to_hex()).unwrap());
 }
 
@@ -226,4 +242,57 @@ fn record_sync_keeps_the_cursor_monotonic() {
         (sub.cursor, sub.last_result.as_str(), sub.last_sync_at),
         (50, "retry", Some(11))
     );
+}
+
+#[test]
+fn changing_kinds_rebuilds_history_but_identical_subscriptions_keep_the_cursor() {
+    let archive = store();
+    archive.subscribe("chan", &[9], 1).unwrap();
+    archive
+        .ingest("chan", &[message(&Keys::generate(), "chan", "old")])
+        .unwrap();
+    archive.record_sync("chan", "ok", Some(100), 2).unwrap();
+    archive.save_page("chan", 20, "page-id", 100).unwrap();
+    archive.subscribe("chan", &[9, 9], 3).unwrap();
+    assert_eq!(archive.subscription("chan").unwrap().unwrap().cursor, 100);
+    assert!(archive.page_cursor("chan").unwrap().is_some());
+    archive.subscribe("chan", &[9, 7], 4).unwrap();
+    let sub = archive.subscription("chan").unwrap().unwrap();
+    assert_eq!(
+        (sub.cursor, sub.event_count, sub.last_result.as_str()),
+        (0, 0, "never")
+    );
+    assert!(archive.page_cursor("chan").unwrap().is_none());
+}
+
+#[test]
+fn removed_ciphertext_is_not_left_readable_in_the_live_database_free_pages() {
+    let file = tempfile::NamedTempFile::new().unwrap();
+    let archive =
+        ArchiveStore::open(Connection::open(file.path()).unwrap(), Keys::generate()).unwrap();
+    archive.subscribe("chan", &[9], 1).unwrap();
+    archive
+        .ingest(
+            "chan",
+            &[message(
+                &Keys::generate(),
+                "chan",
+                &"sensitive".repeat(1000),
+            )],
+        )
+        .unwrap();
+    let sealed: String = archive
+        .conn
+        .query_row("SELECT sealed FROM archived_event", [], |r| r.get(0))
+        .unwrap();
+    let needle = &sealed.as_bytes()[100..200];
+    assert!(std::fs::read(file.path())
+        .unwrap()
+        .windows(needle.len())
+        .any(|w| w == needle));
+    archive.unsubscribe("chan").unwrap();
+    assert!(!std::fs::read(file.path())
+        .unwrap()
+        .windows(needle.len())
+        .any(|w| w == needle));
 }

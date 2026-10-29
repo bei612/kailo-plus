@@ -46,28 +46,4 @@ abstract final class NostrFilters {
   /// Agent profiles (kind:10100).
   static NostrFilter agentProfiles() =>
       const NostrFilter(kinds: [10100], limit: 100);
-
-  /// Top-level forum posts (kind:45001) in a channel.
-  static NostrFilter forumPosts(
-    String channelId, {
-    int limit = 50,
-    int? until,
-  }) => NostrFilter(
-    kinds: [EventKind.forumPost],
-    tags: {
-      '#h': [channelId],
-    },
-    limit: limit,
-    until: until,
-  );
-
-  /// Replies in a forum thread (root event id + channel scope).
-  static NostrFilter forumThread(String rootId, String channelId) =>
-      NostrFilter(
-        kinds: [EventKind.streamMessage, EventKind.forumComment],
-        tags: {
-          '#e': [rootId],
-          '#h': [channelId],
-        },
-      );
 }

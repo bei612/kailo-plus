@@ -180,6 +180,14 @@ export default async function handler(
   } catch (error) {
     logger.error('Error in stream generate SQL API:', error);
 
+    // Keep the same public task reference sent below. Without it the original
+    // history cannot authorize the follow-up explanation stream.
+    const explanationQueryId =
+      error instanceof ApiError &&
+      error.code === Errors.GeneralErrorCodes.NON_SQL_QUERY &&
+      typeof error.additionalData?.explanationQueryId === 'string'
+        ? error.additionalData.explanationQueryId
+        : undefined;
     // Log the error
     await apiHistoryRepository.createOne({
       id: uuidv4(),
@@ -190,8 +198,9 @@ export default async function handler(
       requestPayload: { question, language },
       responsePayload: {
         error: error instanceof Error ? error.message : String(error),
+        ...(explanationQueryId ? { code: error.code, explanationQueryId } : {}),
       },
-      statusCode: 500,
+      statusCode: explanationQueryId ? error.statusCode : 500,
       durationMs: Date.now() - startTime,
     });
 

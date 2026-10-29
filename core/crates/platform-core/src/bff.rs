@@ -33,6 +33,9 @@ pub struct BffState {
     /// 部署配置下发的公开平台信息（DD-111），启动时校验，运行期不变
     pub platform_info: std::sync::Arc<contracts::PlatformInfo>,
     pub pool: PgPool,
+    /// Transactional PostgreSQL notifications are invalidation hints only;
+    /// profile reads always re-admit and read the authoritative Tenant row.
+    pub tenant_profile_updates: tokio::sync::broadcast::Sender<Uuid>,
     /// 设备公钥登记等用户动作要启动 ComponentTaskWorkflow（DD-79）
     pub temporal: std::sync::Arc<crate::temporal::TemporalClient>,
     /// 语义命令的准入、审批与派发（.design/05 §1）
@@ -47,11 +50,15 @@ pub struct BffState {
     pub client_key_recheck_millis: i64,
     /// 原生端直连 Relay 的地址模板，含 `{host}` 占位（Community host）。
     pub relay_native_url_template: String,
+    /// DD-81: the same validated configuration used by the publication reconciler.
+    pub publish_result_settle_seconds: i64,
     /// PlatformSession 的有效期。它是部署事实，不是常量——不同部署对「多久要
     /// 重新过一次 OIDC」的要求不同。
     pub session_ttl_seconds: i64,
     pub secrets: std::sync::Arc<secret_store::SecretStore>,
     pub http: reqwest::Client,
+    /// Finite ordinary Relay requests; media and independently budgeted work use `http`.
+    pub relay_http: reqwest::Client,
     /// Relay 的网络地址；Community host 另从 binding 取（SF-BUZ-32）
     pub relay_transport: String,
     /// 历史查询的单页上界。NIP-11 声明的 1000 是 Relay 的上限，不是平台该放行

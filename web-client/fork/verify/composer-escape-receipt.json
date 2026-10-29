@@ -1,0 +1,45 @@
+{
+  "source_commit": "3f2f966cfea60c2cee1568925815cfd81e6a0041",
+  "sdk": "sha256:3007729eb192341a4f004a88e42e1e66c94fc67d763acfc96568bd7311116018",
+  "source_directory": "/volumes/data/kailo/verification/composer-body/31a2c67c3/source",
+  "source_inputs_checked": 3454,
+  "source_mismatches": [],
+  "installed_platform_source_files_each_host": 1039,
+  "cpu": 1,
+  "memory_bytes": 4294967296,
+  "pids_limit": 256,
+  "positive": {
+    "shared": 12,
+    "web": 76,
+    "native": 28,
+    "typechecks": [
+      "shared-production",
+      "shared-test",
+      "web",
+      "desktop"
+    ],
+    "i18n_check": 0
+  },
+  "negative": {
+    "mutation": "remove Escape edit cancellation in original shared keyboard controller and installed Web file dependency",
+    "exit": 1,
+    "restored_web": 2,
+    "restored_controller": 4,
+    "restored_bytes_identical": true
+  },
+  "job_directory": "/volumes/data/kailo/verification/composer-escape/3f2f966cf",
+  "files_sha256": {
+    "check.log": "5d2e62026d845e0befefb3ddd5bb6a1e98660dfa265d81bd26e9a8b7cff193bb",
+    "result.log": "38f4f0f7e5c73202ed39c07b81acf4eac6248503a5327151c67ae7b3c1b6f0ee",
+    "limits.log": "a96a080ad4b393a54f87da691ffba8494008d9f755ffcefc58b3df46ea089f61",
+    "preflight.log": "dfc44e76c19d63d2ef3a34d72d2c9f4320a3fc6ea9418e4c413927fb020b807c",
+    "oom.log": "2ed27c1421e6928dbe13dbfdb5c59e1045b30341fe7ebe05700006bc5ac572c0",
+    "tmp/negative.log": "95980c1f1379f3cd5566394aafbc1f31e6530e4fd32a68922fdb3f236e9bd8df",
+    "tmp/negative-exit.log": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+    "tmp/original.sha256": "9a827a86af87de167ade821b43b2af558ac46ceac2c7366d7af1e04be25fb4d3",
+    "tmp/restored.sha256": "9a827a86af87de167ade821b43b2af558ac46ceac2c7366d7af1e04be25fb4d3",
+    "tmp/restored.log": "8fc42db015ead655954c0cdddad128e372ef2ae5c0951b0f47b06117749c1da2",
+    "tmp/controller-restored.log": "789cb668ef2afddaa843c5250d01cc7db53330e0588f596a89286f166663a115"
+  },
+  "scope": "original consumers and source-byte verification; no packaging, deployment, real browser or device acceptance"
+}

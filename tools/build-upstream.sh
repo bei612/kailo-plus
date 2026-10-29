@@ -52,6 +52,17 @@ for a in "${build_args[@]}"; do
   arg_args+=(--build-arg "$a=${!a}")
 done
 
+# Optional public SDK configuration: absence keeps the corresponding client feature unavailable.
+# Required release parameters above retain their original fail-closed behavior.
+for a in "${optional_build_args[@]}"; do
+  [ -n "${!a:-}" ] || continue
+  if [ -z "$(printf '%s' "${!a}" | tr -d '[:space:]')" ]; then
+    echo "拒绝构建：$artifact 的可选发布配置 $a 只含空白" >&2
+    exit 2
+  fi
+  arg_args+=(--build-arg "$a=${!a}")
+done
+
 # 构建事实（来源记录 build_facts）：本次构建自身的事实，不是部署配置，因此由这里从
 # 冻结的源码树与构建时刻推出；源码树不干净时拒绝，不以未提交内容冒充某个 commit。
 # 循环变量带 fact_ 前缀：$kind 是本产物的类型（image/安装包），不能被覆盖。

@@ -5,7 +5,8 @@ import { useT } from "../context";
 import { Button } from "../profile/buzz/shared/ui/button";
 import { UserAvatar } from "../messages/UserAvatar";
 import { resolveUserLabel } from "../messages/system/identity";
-import { useUsersBatchQuery } from "../pulse/host";
+import { useProjectProfiles } from "./useProjectProfiles";
+import { projectIssueAssignmentPubkeys } from "./projectAssignmentText";
 import { ProjectIssueDetail } from "./ProjectIssueDetail";
 import { ProjectPullRequestDetail } from "./ProjectPullRequestDetail";
 import type { ProjectInboxWorkItem } from "./projectWorkItems";
@@ -19,8 +20,8 @@ export function ProjectInboxDetail({workItem,onBack,onOpenProject,host}:{workIte
   const openLabel=t(workItem.type==="issue"?"projects.inbox.openTask":"projects.inbox.openReview");
   const item=workItem.type==="issue"?workItem.issue:workItem.pullRequest;
   const keys=[...new Set([item.author,...item.comments.map(comment=>comment.author),
-    ...(workItem.type==="issue"?workItem.issue.assignees:[...workItem.pullRequest.reviewers,...workItem.pullRequest.updates.map(update=>update.author)])])];
-  const query=useUsersBatchQuery(keys);
+    ...(workItem.type==="issue"?[...workItem.issue.assignees,...projectIssueAssignmentPubkeys(workItem.issue)]:[...workItem.pullRequest.reviewers,...workItem.pullRequest.updates.map(update=>update.author)])])];
+  const query=useProjectProfiles(keys);
   const profiles=query.data?.profiles;
   const authorLabel=resolveUserLabel({pubkey:item.author,profiles});
   const author=profiles?.[item.author];

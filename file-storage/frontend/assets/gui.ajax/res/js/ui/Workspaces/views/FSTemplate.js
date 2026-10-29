@@ -24,6 +24,7 @@ import {debounce} from 'lodash'
 const {withSearch, emptyDataModel} = Pydio.requireLib('hoc')
 const {PromptValidators} = Pydio.requireLib('boot')
 import Action from 'pydio/model/action'
+import PydioDataModel from 'pydio/model/data-model'
 import {muiThemeable} from 'material-ui/styles'
 import {MainFilesListV2} from './MainFilesListV2'
 import MainFilesList from './MainFilesList'
@@ -61,10 +62,15 @@ class FSTemplate extends React.Component {
         const uPref = (k, v) => {
             return pydio.user ? pydio.user.getLayoutPreference(k, v) : v
         }
+        // DD-157 (20 §13.3): in Kailo mode the space chat is a docked side panel,
+        // never a floating window with window controls.
+        const kailo = typeof window !== 'undefined' && window.KailoCells
+        const kailoMode = !!(kailo && kailo.kailoMode && kailo.kailoMode())
         return {
             infoPanelOpen: uPref('FSTemplate.infoPanelOpen', true), // open by default
             chatOpen: uPref('FSTemplate.chatOpen', false), // closed by default
-            chatDetached: uPref('FSTemplate.chatDetached', true), // detached by default
+            chatDetached: kailoMode ? false : uPref('FSTemplate.chatDetached', true), // detached by default
+            kailoMode,
         }
     }
 
@@ -130,6 +136,19 @@ class FSTemplate extends React.Component {
             this.setState(this.stateFromPrefs())
         }
         pydio.getController().updateGuiActions(this.getPydioActions());
+        // DD-157: Kailo's header opens the native share dialog for one node; the
+        // app bar follows when Kailo's answer changes who draws the header.
+        const kailo = window.KailoCells
+        if(kailo && kailo.onPageHosted) {
+            this._stopPageHosted = kailo.onPageHosted(() => this.forceUpdate())
+        }
+        if(kailo && kailo.setShareOpener) {
+            kailo.setShareOpener((node) => {
+                const selection = new PydioDataModel(true)
+                selection.setSelectedNodes([node])
+                pydio.UI.openComponentInModal('ShareDialog', 'CompositeDialog', {pydio, selection})
+            })
+        }
         pydio.observe('context_changed', this._ctxObserver)
         pydio.observe('set_layout_preference', this._prefObserver)
         pydio.observe('reload_layout_preferences', this._reloadPrefObserver)
@@ -137,6 +156,9 @@ class FSTemplate extends React.Component {
 
     componentWillUnmount(){
         const {pydio} = this.props;
+        if(this._stopPageHosted) {
+            this._stopPageHosted()
+        }
         pydio.stopObserving('context_changed', this._ctxObserver)
         pydio.stopObserving('set_layout_preference', this._prefObserver)
         pydio.stopObserving('reload_layout_preferences', this._reloadPrefObserver)
@@ -410,7 +432,7 @@ class FSTemplate extends React.Component {
             rightAdditionalTemplates = [{
                 COMPONENT: "PydioWorkspaces.CellChatInfoCard",
                 WEIGHT: -600,
-                PROPS: {onRequestDetachPanel: () => this.toggleAndStore('chatDetached')}
+                PROPS: {onRequestDetachPanel: this.state.kailoMode ? undefined : () => this.toggleAndStore('chatDetached')}
             }];
         }
 
@@ -525,7 +547,7 @@ class FSTemplate extends React.Component {
                         parentWidth={parentWidth}
                     />
                 </div>
-                {showChatTab && chatOpen && chatDetached &&
+                {showChatTab && chatOpen && chatDetached && !this.state.kailoMode &&
                     <CellChatDetached
                         pydio={pydio}
                         onRequestClose={()=> this.toggleRightPanel('chat')}

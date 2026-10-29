@@ -114,6 +114,15 @@ pub fn build_nip98_auth_header_for_keys(
     url: &str,
     body: &[u8],
 ) -> Result<String, String> {
+    build_nip98_publication_auth(keys, method, url, body, None)
+}
+fn build_nip98_publication_auth(
+    keys: &Keys,
+    method: &Method,
+    url: &str,
+    body: &[u8],
+    community: Option<&str>,
+) -> Result<String, String> {
     let payload_hash = hex::encode(Sha256::digest(body));
 
     // Nonce ensures unique event IDs even for identical requests in the same second.
@@ -121,7 +130,7 @@ pub fn build_nip98_auth_header_for_keys(
     // body produce identical NIP-98 event hashes and trigger relay replay detection.
     let nonce_hex = uuid::Uuid::new_v4().to_string();
 
-    let tags = vec![
+    let mut tags = vec![
         Tag::parse(vec!["u", url]).map_err(|error| format!("url tag failed: {error}"))?,
         Tag::parse(vec!["method", method.as_str()])
             .map_err(|error| format!("method tag failed: {error}"))?,
@@ -130,6 +139,16 @@ pub fn build_nip98_auth_header_for_keys(
         Tag::parse(vec!["nonce", &nonce_hex])
             .map_err(|error| format!("nonce tag failed: {error}"))?,
     ];
+
+    if let Some(community) = community {
+        let id = uuid::Uuid::parse_str(community).map_err(|_| "invalid publication community")?;
+        if id.to_string() != community {
+            return Err("invalid publication community".into());
+        }
+        tags.push(
+            Tag::parse(["community", community]).map_err(|_| "invalid publication community")?,
+        );
+    }
 
     let event = EventBuilder::new(Kind::HttpAuth, "")
         .tags(tags)
@@ -459,9 +478,12 @@ async fn send_query_request(
 
 // ── Signed-event submission ─────────────────────────────────────────────────
 
+mod delivery;
 mod submit;
+pub(crate) use delivery::merged_status_delivery;
 #[cfg(test)]
 pub use submit::submit_event_at_with_keys;
+pub(crate) use submit::submit_signed_event_scoped;
 pub use submit::{submit_signed_event_at_with_keys, SubmitEventResponse};
 
 // ── Tests ───────────────────────────────────────────────────────────────────

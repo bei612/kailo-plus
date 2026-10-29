@@ -3,9 +3,10 @@
 // Contributors (DD-118) when the host offers Git reads; Channels when it offers the discussion
 // search. The Tasks/Reviews headers carry the original Create task / Create review actions when the
 // caller has the writer; Channels/Contributors keep their original section headers.
-import { CircleDot, GitPullRequest, Hash, Users } from "lucide-react";
+import { CircleDot, GitPullRequest, Hash, Users, RefreshCw } from "lucide-react";
 import type { ReactNode } from "react";
 import { useUiT } from "../context";
+import { Button } from "../profile/buzz/shared/ui/button";
 import { Tabs, TabsContent } from "../profile/buzz/shared/ui/tabs";
 import { ProjectTabsList } from "./ProjectWorkspaceTabList";
 import { ProjectSectionHeader } from "./ProjectSectionHeader";
@@ -22,13 +23,14 @@ export function projectWorkspaceTabNeedsGit(tab: ProjectWorkspaceTab) {
   return isProjectGitWorkspaceTab(tab) || tab === "contributors";
 }
 
-export function WorkspaceTabs({ tab, onTabChange, onBack, onCreateTask, onCreatePullRequest, git = false, channels = false, detailSelected = false, sectionHeader, children }: {
+export function WorkspaceTabs({ tab, onTabChange, onBack, onCreateTask, onCreatePullRequest, updateReviewAction, git = false, channels = false, detailSelected = false, sectionHeader, children }: {
   tab: ProjectWorkspaceTab;
   onTabChange: (tab: ProjectWorkspaceTab) => void;
   onBack: () => void;
   onCreateTask?: () => void;
   /** Original "Create review" header action (DD-118); absent without the review writer. */
   onCreatePullRequest?: () => void;
+  updateReviewAction?: { onClick: () => void; pending: boolean };
   /** The host offers DD-118 Git reads, so the original Git tabs exist. */
   git?: boolean;
   /** The host offers the discussion search, so the original Channels tab exists. */
@@ -56,7 +58,9 @@ export function WorkspaceTabs({ tab, onTabChange, onBack, onCreateTask, onCreate
       else if (git && (value === "overview" || value === "files" || value === "activity" || value === "contributors")) onTabChange(value);
     }}>
     {!detailSelected ? <div className="sticky top-0 z-30 -mx-4 flex h-13 min-w-0 items-center gap-1 px-4 bg-background/80 backdrop-blur-md supports-backdrop-filter:bg-background/70 dark:bg-background/70 dark:backdrop-blur-xl dark:supports-backdrop-filter:bg-background/55"
-      data-testid="project-workspace-tab-menu"><ProjectTabsList onBack={onBack} git={git} channels={channels}/></div> : null}
+      data-testid="project-workspace-tab-menu"><ProjectTabsList onBack={onBack} git={git} channels={channels}/>
+      {updateReviewAction ? <Button className="ml-auto shrink-0 gap-1.5" size="sm" variant="outline" disabled={updateReviewAction.pending}
+        onClick={updateReviewAction.onClick} title={t("projects.review.updateTitle")}><RefreshCw className="size-3.5"/>{t(updateReviewAction.pending ? "projects.review.updating" : "projects.review.update")}</Button> : null}</div> : null}
     <div className="-mx-4 flex flex-1 flex-col [&_[data-project-detail-panel]]:rounded-none [&_[data-project-detail-panel]]:border-0" data-testid="project-workspace-panel">
       {header}
       {gitTab ? <TabsContent className={tab === "files" ? "m-0" : "m-0 min-h-0 flex-1 flex-col data-[state=active]:flex"} value={tab}>

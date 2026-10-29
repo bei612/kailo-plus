@@ -3,6 +3,7 @@ import { isEmpty } from 'lodash';
 import { Modal, Form, Select } from 'antd';
 import { ModalAction } from '@/hooks/useModalAction';
 import { ERROR_TEXTS } from '@/utils/error';
+import useKailoText from '@/utils/kailoI18n';
 import CombineFieldSelector from '@/components/selectors/CombineFieldSelector';
 import { JOIN_TYPE, FORM_MODE, convertIdentifierToObject } from '@/utils/enum';
 import { getJoinTypeText } from '@/utils/data';
@@ -53,6 +54,7 @@ export default function RelationModal(props: Props) {
     isRecommendMode,
   } = props;
   const [form] = Form.useForm();
+  const t = useKailoText();
 
   // only suitable use for modeling page
   const isUpdateMode = formMode === FORM_MODE.EDIT;
@@ -95,10 +97,15 @@ export default function RelationModal(props: Props) {
 
   return (
     <Modal
-      title={`${isEmpty(defaultValue) ? 'Add' : 'Update'} relationship`}
-      width={750}
+      title={
+        isEmpty(defaultValue)
+          ? t('modeling.addRelationship')
+          : t('modeling.editRelationship')
+      }
+      width={640}
       visible={visible}
-      okText="Submit"
+      okText={t('modeling.save')}
+      cancelText={t('cancel')}
       onOk={submit}
       onCancel={onClose}
       confirmLoading={loading}
@@ -109,7 +116,7 @@ export default function RelationModal(props: Props) {
     >
       <Form form={form} preserve={false} layout="vertical">
         <Form.Item
-          label="From"
+          label={t('modeling.from')}
           name={FormFieldKey.FROM_FIELD}
           required
           rules={[
@@ -132,7 +139,7 @@ export default function RelationModal(props: Props) {
           />
         </Form.Item>
         <Form.Item
-          label="To"
+          label={t('modeling.to')}
           name={FormFieldKey.TO_FIELD}
           required
           rules={[
@@ -154,7 +161,7 @@ export default function RelationModal(props: Props) {
           />
         </Form.Item>
         <Form.Item
-          label="Type"
+          label={t('modeling.type')}
           name={FormFieldKey.TYPE}
           required
           rules={[
@@ -167,7 +174,7 @@ export default function RelationModal(props: Props) {
           <Select
             data-testid="relationship-form__type-select"
             options={relationTypeOptions}
-            placeholder="Select a relationship type"
+            placeholder={t('modeling.selectRelationshipType')}
           />
         </Form.Item>
       </Form>

@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:hooks_riverpod/misc.dart';
@@ -23,6 +24,7 @@ import 'package:buzz/shared/widgets/skeleton.dart';
 void main() {
   Widget buildTestable({
     required List<Override> overrides,
+    Locale locale = const Locale('en'),
     double keyboardInset = 0,
     bool disableAnimations = false,
     double bottomPadding = 0,
@@ -46,6 +48,9 @@ void main() {
         ...overrides,
       ],
       child: MaterialApp(
+        locale: locale,
+        supportedLocales: const [Locale('en'), Locale('zh', 'CN')],
+        localizationsDelegates: GlobalMaterialLocalizations.delegates,
         theme: AppTheme.light(topSectionGradient: topSectionGradient),
         builder: (context, child) => MediaQuery(
           data: MediaQuery.of(context).copyWith(
@@ -761,23 +766,45 @@ void main() {
     );
   });
 
-  testWidgets('shows error view with retry button', (tester) async {
-    await tester.pumpWidget(
-      buildTestable(
-        overrides: [channelsProvider.overrideWith(() => _ErrorNotifier())],
-      ),
-    );
-    // The error view is gated on a grace timer in ChannelsPage to absorb
-    // transient AsyncError frames during relay reconnect. Pump once to mount
-    // and schedule the timer, advance the fake clock past the grace window,
-    // then pump again to flush the setState the timer triggered.
-    await tester.pump();
-    await tester.pump(const Duration(seconds: 3));
-    await tester.pump();
+  for (final chinese in [false, true]) {
+    testWidgets('shows localized channel failure and retries ($chinese)', (
+      tester,
+    ) async {
+      final notifier = _ErrorNotifier(testChannels);
+      await tester.pumpWidget(
+        buildTestable(
+          locale: chinese ? const Locale('zh', 'CN') : const Locale('en'),
+          overrides: [channelsProvider.overrideWith(() => notifier)],
+        ),
+      );
+      // Preserve the original reconnect grace window before showing the error.
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 3));
+      await tester.pumpAndSettle();
 
-    expect(find.text('Could not load channels'), findsOneWidget);
-    expect(find.text('Retry'), findsOneWidget);
-  });
+      expect(
+        find.text(chinese ? '无法加载频道' : 'Could not load channels'),
+        findsOneWidget,
+      );
+      expect(
+        find.text(
+          chinese
+              ? '加载出错，请检查网络连接。'
+              : 'Something went wrong. Check your connection.',
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('Connection refused'), findsNothing);
+      await tester.tap(find.text(chinese ? '重试' : 'Retry'));
+      await tester.pumpAndSettle();
+      expect(notifier.refreshes, 1);
+      expect(find.text('general'), findsOneWidget);
+      expect(
+        find.text(chinese ? '无法加载频道' : 'Could not load channels'),
+        findsNothing,
+      );
+    });
+  }
 
   testWidgets('bolds and clears unread channel labels', (tester) async {
     final channels = [
@@ -1034,8 +1061,18 @@ class _FakeNotifier extends ChannelsNotifier {
 }
 
 class _ErrorNotifier extends ChannelsNotifier {
+  final List<Channel> recovered;
+  int refreshes = 0;
+  _ErrorNotifier(this.recovered);
+
   @override
   Future<List<Channel>> build() => Future.error('Connection refused');
+
+  @override
+  Future<void> refresh() async {
+    refreshes++;
+    state = AsyncData(recovered);
+  }
 }
 
 class _LoadingNotifier extends ChannelsNotifier {

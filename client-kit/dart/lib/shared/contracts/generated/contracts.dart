@@ -8448,6 +8448,11 @@ class ApplicationBindingView {
   ///still freshly check the original source share and receiver update permissions.
   final bool? hasReadReceiver;
 
+  ///Core 在已准入绑定事务中冻结的已批准 release 最大暴露边界。固定归属于
+  ///binding/release/generation/action/version；不是授权，不能替代 fresh target permission、schema 或
+  ///redaction 校验。未 ACTIVE 的绑定仅向 canCreate 管理者提供部署引用，仍不得执行。
+  final List<ApplicationHumanActionPolicy>? humanActionPolicies;
+
   ///DD-127(4): presentation category the approved NATIVE_PAGE release declares. The sidebar
   ///labels the entry by capabilityCategories ∪ this value; it grants nothing.
   final NativePageCategory? nativePageCategory;
@@ -8470,6 +8475,7 @@ class ApplicationBindingView {
     required this.componentTypeKey,
     this.hasNativePage,
     this.hasReadReceiver,
+    this.humanActionPolicies,
     this.nativePageCategory,
     this.preferences,
     required this.state,
@@ -8492,6 +8498,13 @@ class ApplicationBindingView {
         componentTypeKey: json["componentTypeKey"],
         hasNativePage: json["hasNativePage"],
         hasReadReceiver: json["hasReadReceiver"],
+        humanActionPolicies: json["humanActionPolicies"] == null
+            ? null
+            : List<ApplicationHumanActionPolicy>.from(
+                json["humanActionPolicies"]!.map(
+                  (x) => ApplicationHumanActionPolicy.fromJson(x),
+                ),
+              ),
         nativePageCategory: json["nativePageCategory"] == null
             ? null
             : nativePageCategoryValues.map[json["nativePageCategory"]]!,
@@ -8519,6 +8532,9 @@ class ApplicationBindingView {
     "componentTypeKey": componentTypeKey,
     "hasNativePage": hasNativePage,
     "hasReadReceiver": hasReadReceiver,
+    "humanActionPolicies": humanActionPolicies == null
+        ? null
+        : List<dynamic>.from(humanActionPolicies!.map((x) => x.toJson())),
     "nativePageCategory": nativePageCategoryValues.reverse[nativePageCategory],
     "preferences": preferences == null
         ? null
@@ -8544,6 +8560,43 @@ class ApplicationBindingCapability {
 
   Map<String, dynamic> toJson() =>
       _stripNulls({"category": category, "version": version});
+}
+
+class ApplicationHumanActionPolicy {
+  final String actionKey;
+  final int actionVersion;
+  final String componentReleaseId;
+  final int generation;
+  final String resultExposurePolicyId;
+  final int resultExposurePolicyVersion;
+
+  ApplicationHumanActionPolicy({
+    required this.actionKey,
+    required this.actionVersion,
+    required this.componentReleaseId,
+    required this.generation,
+    required this.resultExposurePolicyId,
+    required this.resultExposurePolicyVersion,
+  });
+
+  factory ApplicationHumanActionPolicy.fromJson(Map<String, dynamic> json) =>
+      ApplicationHumanActionPolicy(
+        actionKey: json["actionKey"],
+        actionVersion: json["actionVersion"],
+        componentReleaseId: json["componentReleaseId"],
+        generation: json["generation"],
+        resultExposurePolicyId: json["resultExposurePolicyId"],
+        resultExposurePolicyVersion: json["resultExposurePolicyVersion"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "actionKey": actionKey,
+    "actionVersion": actionVersion,
+    "componentReleaseId": componentReleaseId,
+    "generation": generation,
+    "resultExposurePolicyId": resultExposurePolicyId,
+    "resultExposurePolicyVersion": resultExposurePolicyVersion,
+  });
 }
 
 ///DD-127(4): presentation category the approved NATIVE_PAGE release declares. The sidebar
@@ -16745,6 +16798,16 @@ class NativeCommunityFacts {
   ///该 Tenant 的 Community host，可能带非默认端口
   final String communityHost;
 
+  ///DD-81/160：仅从当前 ACTIVE Community 的可信 NIP-11、实际 ready 的 writer policy 读取的规范 publication
+  ///epoch。Native 新签 1631 前冻结并作为唯一 kailo:publication 标签签名；缺失不猜测或回填历史意图。
+  final String? publicationEpoch;
+
+  ///读取上述部署事实时 Core 的 Unix 秒时刻；Native 仅以本次可信读的时刻判断原签事件是否严格超过窗口，不信任 Webview now 或设备跳钟。
+  final int? publishResultObservedAtUnixSeconds;
+
+  ///DD-81：与 Core 发布对账器同源的 PUBLISH_RESULT_SETTLE_SECONDS 部署事实，必须为正且不小于 Relay 时间漂移窗口；缺失时不得猜测未送达。
+  final int? publishResultSettleSeconds;
+
   ///当前固定 Relay NIP-11 的 max_limit；旧客户端忽略，新 Pulse 消费者缺失时不猜测上限。
   final int? relayQueryLimit;
 
@@ -16753,6 +16816,9 @@ class NativeCommunityFacts {
 
   NativeCommunityFacts({
     required this.communityHost,
+    this.publicationEpoch,
+    this.publishResultObservedAtUnixSeconds,
+    this.publishResultSettleSeconds,
     this.relayQueryLimit,
     required this.relayUrl,
   });
@@ -16760,12 +16826,19 @@ class NativeCommunityFacts {
   factory NativeCommunityFacts.fromJson(Map<String, dynamic> json) =>
       NativeCommunityFacts(
         communityHost: json["communityHost"],
+        publicationEpoch: json["publicationEpoch"],
+        publishResultObservedAtUnixSeconds:
+            json["publishResultObservedAtUnixSeconds"],
+        publishResultSettleSeconds: json["publishResultSettleSeconds"],
         relayQueryLimit: json["relayQueryLimit"],
         relayUrl: json["relayUrl"],
       );
 
   Map<String, dynamic> toJson() => _stripNulls({
     "communityHost": communityHost,
+    "publicationEpoch": publicationEpoch,
+    "publishResultObservedAtUnixSeconds": publishResultObservedAtUnixSeconds,
+    "publishResultSettleSeconds": publishResultSettleSeconds,
     "relayQueryLimit": relayQueryLimit,
     "relayUrl": relayUrl,
   });
@@ -20172,11 +20245,13 @@ class ProjectsGitRefResponse {
 ///CLIENT signer, never supplied by this request. Creation resolves the home Channel from an
 ///admitted Workspace; metadata is transient and remains Relay-owned. DELETE selects a real
 ///signed current announcement; it does not delete its channel or repositories.
-///CREATE_PULL_REQUEST publishes the original NIP-34 1618 review for a branch already on the
-///repository (DD-118); the push itself is not part of this request. APPROVE_PULL_REQUEST
-///and the request-changes / inline-line variants of CREATE_PULL_REQUEST_COMMENT publish the
-///original labeled kind-1 review comments (desktop
-///pullRequestReviews.ts::submitProjectPullRequestReview,
+///UPDATE_PULL_REQUEST publishes the original kind-1619 head update for the named immutable
+///1618 root, only as its author or repository owner; it carries commit and optional
+///mergeBase, never a caller author, tags or clone URL. CREATE_PULL_REQUEST publishes the
+///original NIP-34 1618 review for a branch already on the repository (DD-118); the push
+///itself is not part of this request. APPROVE_PULL_REQUEST and the request-changes /
+///inline-line variants of CREATE_PULL_REQUEST_COMMENT publish the original labeled kind-1
+///review comments (desktop pullRequestReviews.ts::submitProjectPullRequestReview,
 ///hooks.ts::createProjectPullRequestComment) against the named review head; they introduce
 ///no new Nostr kind (DD-118(5)). ATTACH_REPOSITORY (original useAttachProjectRepository /
 ///useAddProjectRepository) republishes the signer's current 30621 head named by
@@ -20224,16 +20299,17 @@ class ProjectsPublishRequest {
   ///repository content through the 30617 coordinate (DD-118) and never fetches this URL.
   final String? cloneUrl;
 
-  ///Original `c`. CREATE_PULL_REQUEST: compare branch head read from the trusted repository
-  ///state. APPROVE_PULL_REQUEST and CREATE_PULL_REQUEST_COMMENT with reviewDecision or an
-  ///anchor: the review head the reviewer looked at; the consumer refuses with
-  ///TARGET_STATE_CONFLICT unless it is still the review's current trusted head. Required by
-  ///those review comments and refused on ordinary comments.
+  ///Original `c`. UPDATE_PULL_REQUEST: the already-pushed head frozen by this update intent.
+  ///CREATE_PULL_REQUEST: compare branch head read from the trusted repository state.
+  ///APPROVE_PULL_REQUEST and CREATE_PULL_REQUEST_COMMENT with reviewDecision or an anchor:
+  ///the review head the reviewer looked at; the consumer refuses with TARGET_STATE_CONFLICT
+  ///unless it is still the review's current trusted head. Required by those review comments
+  ///and refused on ordinary comments.
   final String? commit;
   final String? description;
   final List<String>? mentions;
 
-  ///Original 1618 `merge-base`, when known.
+  ///Original 1618/1619 `merge-base`, when known.
   final String? mergeBase;
   final String? name;
   final ProjectPublicationOperation operation;
@@ -20498,6 +20574,7 @@ enum ProjectPublicationOperation {
   SELF_UNASSIGN_ISSUE,
   SET_PULL_REQUEST_STATUS,
   UNASSIGN_ISSUE,
+  UPDATE_PULL_REQUEST,
 }
 
 final projectPublicationOperationValues = EnumValues({
@@ -20520,6 +20597,7 @@ final projectPublicationOperationValues = EnumValues({
   "SET_PULL_REQUEST_STATUS":
       ProjectPublicationOperation.SET_PULL_REQUEST_STATUS,
   "UNASSIGN_ISSUE": ProjectPublicationOperation.UNASSIGN_ISSUE,
+  "UPDATE_PULL_REQUEST": ProjectPublicationOperation.UPDATE_PULL_REQUEST,
 });
 
 ///Original pullRequestReviews.ts lifecycle states the UI may publish (NIP-34
@@ -22182,12 +22260,17 @@ class TenantMemberJoinView {
 class TenantProfileView {
   final String? icon;
   final String name;
+
+  ///BFF_STREAM_RETRY_MILLIS 部署事实；在线资料读取中断后再次读取前的等待。afterVersion
+  ///查询只等待有限的再准入时间，回应前重新校验本人会话与成员资格。
+  final int? refreshAfterMillis;
   final String? updateActionKey;
   final int version;
 
   TenantProfileView({
     this.icon,
     required this.name,
+    this.refreshAfterMillis,
     this.updateActionKey,
     required this.version,
   });
@@ -22196,6 +22279,7 @@ class TenantProfileView {
       TenantProfileView(
         icon: json["icon"],
         name: json["name"],
+        refreshAfterMillis: json["refreshAfterMillis"],
         updateActionKey: json["updateActionKey"],
         version: json["version"],
       );
@@ -22203,6 +22287,7 @@ class TenantProfileView {
   Map<String, dynamic> toJson() => _stripNulls({
     "icon": icon,
     "name": name,
+    "refreshAfterMillis": refreshAfterMillis,
     "updateActionKey": updateActionKey,
     "version": version,
   });

@@ -1,6 +1,10 @@
+import { useMessageComposerController, useComposerControls, composerKeyDown, useComposerSubmission, useComposerAutoSubmit } from "@client-kit/platform/react/composer/useMessageComposerController";
+import { readTextFromSystemClipboard } from "@/shared/api/tauriMedia";
+import { openUrl } from "@tauri-apps/plugin-opener";
+import { useAppNavigation } from "@/app/navigation/useAppNavigation";
 import * as React from "react";
 import { useBffClient, useUiT } from "@client-kit/platform/react/context";
-import { findDmAgentMention, useDmAgentMentionNames } from "@client-kit/platform/react/composer/dmAgentMention";
+import { useDmAgentMentionNames } from "@client-kit/platform/react/composer/dmAgentMention";
 import { useNativeSession } from "@/features/platform/activeCommunity";
 import { nativeApplicationWorkspace, useWorkspaceChannelDirectory } from "@/features/channels/hooks";
 import { useComposerAgentDirectory } from "@client-kit/platform/react/composer/features/messages/ui/useComposerAgentDirectory";
@@ -13,7 +17,6 @@ import { useAddressMentionPulse } from "@client-kit/platform/react/composer/feat
 import { useAutoPinMentionedAgents } from "@client-kit/platform/react/composer/features/messages/ui/useAutoPinMentionedAgents";
 import { useAlwaysAddressShortcut } from "@client-kit/platform/react/composer/features/messages/ui/useAlwaysAddressShortcut";
 import { useImplicitAgentMentionProvenance } from "@client-kit/platform/react/composer/features/messages/ui/useImplicitAgentMentionProvenance";
-import { focusMentionOptionsTrigger } from "@client-kit/platform/react/composer/features/messages/ui/MentionAutocomplete";
 import { NonMemberMentionDialog, inviteAndAwaitActive, nonMemberInvitePrincipals, outsideMentionPeople, resolveNonMemberInviteAdmission,
   useTenantMentionDirectory, type NonMemberInvitePrincipal } from "@client-kit/platform/react/non-member-mentions";
 import type { NonMemberMentionOptions } from "./useMentionSendFlow.types";
@@ -26,7 +29,6 @@ import {
   useChannelLinks,
   type ChannelSuggestion,
 } from "@/features/messages/lib/useChannelLinks";
-import { useComposerAutofocus } from "@/features/messages/lib/useComposerAutofocus";
 import { useDrafts } from "@/features/messages/lib/useDrafts";
 import { resolveSentDraftKey } from "@/features/messages/ui/draftSubmitKey";
 import {
@@ -43,13 +45,6 @@ import {
 import { useComposerFocusOwnership } from "@/features/messages/lib/useComposerFocusOwnership";
 import { isMentionCodeContext } from "@/features/messages/lib/mentionCodeContext";
 import { useMentions } from "@/features/messages/lib/useMentions";
-import {
-  type AutocompleteEdit,
-  type LinkSelectionInfo,
-  useRichTextEditor,
-} from "@/features/messages/lib/useRichTextEditor";
-import { useLinkEditor } from "@/features/messages/lib/useLinkEditor";
-import { useComposerSpoilerParticles } from "@/features/messages/lib/useComposerSpoilerParticles";
 import { cn } from "@/shared/lib/cn";
 import { ComposerReplyBanner } from "./ComposerReplyBanner";
 import { ComposerAttachments, DropZoneOverlay } from "./ComposerAttachments";
@@ -64,7 +59,6 @@ import { useComposerPasteHandler } from "./useComposerPasteHandler";
 import { useDraftPersistLifecycle } from "./useDraftPersistSnapshot";
 import { prepareBackgroundLinkPreviews } from "@/features/messages/lib/linkPreviewPreparationStore";
 import { useComposerLinkPreviews } from "./useComposerLinkPreviews";
-import { scheduleSettleGatedAutoSubmit } from "./messageComposerAutoSubmit";
 import type { MessageComposerProps } from "./MessageComposer.types";
 import { useTypingBroadcast } from "@/features/messages/useTypingBroadcast";
 function MessageComposerImpl({
@@ -118,12 +112,8 @@ function MessageComposerImpl({
     getLiveCandidates: getLiveLinkPreviewCandidates,
     getReadyTags: getReadyLinkPreviewTags,
   } = useComposerLinkPreviews(previewContent);
-  const [isEmojiPickerOpen, setIsEmojiPickerOpen] = React.useState(false);
-  const [isFormattingOpen, setIsFormattingOpen] = React.useState(false);
-  const handleFormattingToggle = React.useCallback((pressed: boolean) => {
-    if (pressed) setIsEmojiPickerOpen(false);
-    setIsFormattingOpen(pressed);
-  }, []);
+  const { isEmojiPickerOpen, setIsEmojiPickerOpen, isFormattingOpen, setIsFormattingOpen, handleFormattingToggle } = useComposerControls();
+  const { goChannel } = useAppNavigation();
   const drafts = useDrafts();
   const notifyTyping = useTypingBroadcast(channelId, typingParentEventId, typingRootEventId);
   const effectiveDraftKey = editTarget ? null : (draftKey ?? channelId);
@@ -172,7 +162,7 @@ function MessageComposerImpl({
     channelType !== "dm" && channelId !== null && workspace !== undefined && !editTarget);
   const mentions = useMentions(channelId, profiles, admittedPeople, agents, session.devicePubkey, outsidePeople, teamMentions);
   for (const ref of mentions.getDraftMentionRefs(contentRef.current)) if (ref.isAgent === true) knownAgentKeys.add(ref.pubkey);
-  const getAgentDraftMentionRefs = React.useCallback((content: string) => mentions.getDraftMentionRefs(content).map(ref => ({...ref, isAgent: ref.isAgent === true || knownAgentKeys.has(ref.pubkey)})), [mentions.getDraftMentionRefs, knownAgentKeys]);
+  const getAgentDraftMentionRefs = React.useCallback((content: string) => mentions.getLiveMentionRefs(content).map(ref => ({...ref, isAgent: ref.isAgent === true || knownAgentKeys.has(ref.pubkey)})), [mentions.getLiveMentionRefs, knownAgentKeys]);
   const agentMentions = {...mentions, getDraftMentionRefs: getAgentDraftMentionRefs};
   const verifyMentionRecipients = React.useCallback(async (pubkeys: readonly string[]) => {
     const selected = pubkeys.filter(pubkey => knownAgentKeys.has(pubkey) || audience.pubkeys.includes(pubkey));
@@ -254,11 +244,7 @@ function MessageComposerImpl({
   const disabledRef = React.useRef(disabled);
   const isSendingRef = React.useRef(isSending);
   const isUploadingRef = React.useRef(media.isUploading);
-  const isSubmitLockedRef = React.useRef(false);
-  const [isSubmitLocked, setIsSubmitLocked] = React.useState(false);
   const onSendRef = React.useRef(onSend);
-  const onEditLastOwnMessageRef = React.useRef(onEditLastOwnMessage);
-  onEditLastOwnMessageRef.current = onEditLastOwnMessage;
   const editTargetRef = React.useRef(editTarget);
   editTargetRef.current = editTarget;
   disabledRef.current = disabled;
@@ -271,16 +257,6 @@ function MessageComposerImpl({
     channelLinks.isChannelOpen ||
     emojiAutocomplete.isEmojiAutocompleteOpen;
   const submitMessageRef = React.useRef<() => void>(() => {});
-  const composerScrollRef = React.useRef<HTMLDivElement>(null);
-  const formRef = React.useRef<HTMLFormElement>(null);
-  const composerOwnsFocus = useComposerFocusOwnership(formRef);
-  const onEditLinkRef = React.useRef<
-    ((info: LinkSelectionInfo) => void) | null
-  >(null);
-  const onLinkSelectionChangeRef = React.useRef<
-    ((info: LinkSelectionInfo | null) => void) | null
-  >(null);
-  const onLinkShortcutRef = React.useRef<(() => boolean) | null>(null);
   const scrollComposerToBottom = React.useCallback(() => {
     window.requestAnimationFrame(() => {
       const scrollElement = composerScrollRef.current;
@@ -293,7 +269,14 @@ function MessageComposerImpl({
     (replyTarget
       ? `Reply to ${replyTarget.author} in #${channelName}`
       : `Message #${channelName}`);
-  const richText = useRichTextEditor({
+  const { richText, linkEditor, composerScrollRef, formRef,
+    applyAutocompleteEdit, handleSubmit, handleCaptureSelection } = useMessageComposerController({
+    links: { openExternal: url => void openUrl(url), openMessageLink: link => void goChannel(link.channelId, { messageId: link.messageId, threadRootId: link.threadRootId }) },
+    draftKey: effectiveDraftKey, autofocusDisabled: composerDisabled || compact,
+    editing: Boolean(editTarget), replyTarget,
+    autocompleteOpen: isAutocompleteOpenRef.current,
+    onEditLastOwnMessage, submit: () => submitMessageRef.current(),
+    editor: { readClipboardText: readTextFromSystemClipboard,
     customEmoji,
     placeholder: computedPlaceholder,
     editable: !composerDisabled,
@@ -303,16 +286,6 @@ function MessageComposerImpl({
     channelNames: channelLinks.knownChannelNames,
     messageLinkChannels: channelLinks.channels,
     getMentionIdentities: mentions.getMentionIdentities,
-    onSubmit: () => submitMessageRef.current(),
-    onEditLastOwnMessage: () => {
-      if (editTargetRef.current) return false;
-      const handler = onEditLastOwnMessageRef.current;
-      return handler ? handler() : false;
-    },
-    isAutocompleteOpen: isAutocompleteOpenRef,
-    onEditLink: (info) => onEditLinkRef.current?.(info),
-    onLinkSelectionChange: (info) => onLinkSelectionChangeRef.current?.(info),
-    onLinkShortcut: () => onLinkShortcutRef.current?.() ?? false,
     onUpdate: ({ cursor, linkPreviewContent, text }) => {
       trackAuthoredContent(text);
       contentRef.current = text;
@@ -326,8 +299,8 @@ function MessageComposerImpl({
         notifyTyping();
       }
     },
-  });
-  const linkEditor = useLinkEditor(richText);
+  }});
+  const composerOwnsFocus = useComposerFocusOwnership(formRef);
   // Original edit hydration: retain attachment labels/spoilers and edit only
   // the body. The ordinary composer stays mounted with its own draft owner.
   const hydratedEdit = React.useRef<string | null>(null);
@@ -349,10 +322,6 @@ function MessageComposerImpl({
     contentRef.current = markdown;
     return markdown;
   };
-  onEditLinkRef.current = linkEditor.openFromClick;
-  onLinkSelectionChangeRef.current = linkEditor.showFromCursor;
-  onLinkShortcutRef.current = linkEditor.openFromShortcut;
-  useComposerSpoilerParticles(richText.editor, composerScrollRef);
   const nonMemberMentions: NonMemberMentionOptions | undefined = nonMemberWorkspaceId === undefined ? undefined : {
     memberPubkeys,
     isAgentPubkey: pubkey => knownAgentKeys.has(pubkey) || isAgentPubkey(pubkey),
@@ -391,23 +360,6 @@ function MessageComposerImpl({
     setSpoileredAttachmentUrls,
     nonMemberMentions,
   });
-  React.useEffect(() => {
-    if (!replyTarget || composerDisabled) return;
-    richText.focusPreserve();
-  }, [composerDisabled, replyTarget, richText.focusPreserve]);
-  useComposerAutofocus(richText.focus, effectiveDraftKey, composerDisabled || compact);
-  const applyAutocompleteEdit = React.useCallback(
-    (edit: AutocompleteEdit) => {
-      richText.replacePlainTextRange(
-        edit.replaceFromOffset,
-        edit.replaceToOffset,
-        edit.insertText,
-        edit.preserveSelection,
-        edit.reassertMentionCaret,
-      );
-    },
-    [richText.replacePlainTextRange],
-  );
   const addressPulse = useAddressMentionPulse();
   const autoPin = useAutoPinMentionedAgents({ audienceScope, enabled: keepMentionedAgentsPinned,
     getDisplayName: mentions.getMentionDisplayName, onPulse: addressPulse.pulseOne,
@@ -454,45 +406,21 @@ function MessageComposerImpl({
     mentions: {...mentions, getDefaultAgentSuggestion}, onOpenPicker: mentionPicker.openMentionPicker,
     onToggle: addressLock.toggleAlwaysAddressAgent,
   });
-  const submitMessage = React.useCallback(async () => {
-    const trimmed = syncComposerContentFromEditor().trim();
-    // DD-144: Kailo DMs never admit Agents; refuse an Agent mention before sending, draft kept.
-    if (channelType === "dm" && dmAgentNamesRef.current.length && findDmAgentMention(trimmed, dmAgentNamesRef.current)) {
-      setDmAgentRefusal(true);
-      return;
-    }
-    setDmAgentRefusal(false);
-    // Normal send
-    const currentPendingImeta = media.pendingImetaRef.current;
-    const currentQueuedAttachments = media.queuedAttachmentsRef.current;
-    const hasMedia =
-      currentPendingImeta.length > 0 || currentQueuedAttachments.length > 0;
-    if (
-      (!trimmed && !hasMedia && !(editTarget && onRequestEmptyEditDelete)) ||
-      disabledRef.current ||
-      voiceNote.statusRef.current !== "idle" ||
-      isSendingRef.current ||
-      isSubmitLockedRef.current ||
-      isUploadingRef.current ||
-      mentionSendFlow.isPreparingMentionSend
-    ) {
-      return;
-    }
-    if (!trimmed && !hasMedia && editTarget && onRequestEmptyEditDelete) {
-      onRequestEmptyEditDelete(editTarget);
-      return;
-    }
-    const capturedThreadContext = onCaptureSendContext?.() ?? null;
-    if (
-      capturedThreadContext !== null &&
-      !capturedThreadContext.parentEventId
-    ) {
-      return;
-    }
-    isSubmitLockedRef.current = true;
-    setIsSubmitLocked(true);
-    onPreparingMentionSendChange?.(true);
-    try {
+  const { submit: submitMessage, isPreparing: isSubmitLocked, locked: isSubmitLockedRef } = useComposerSubmission({
+    getContent: syncComposerContentFromEditor,
+    hasMedia: () => media.pendingImetaRef.current.length > 0 || media.queuedAttachmentsRef.current.length > 0,
+    canSubmit: () => !disabledRef.current && !paste.isPreparingAttachments() && voiceNote.statusRef.current === "idle" && !isSendingRef.current && !isUploadingRef.current && !mentionSendFlow.isPreparingMentionSend,
+    isEditing: Boolean(editTarget), isDm: channelType === "dm",
+    dmAgentNames: dmAgentNamesRef.current, refuseDmAgent: setDmAgentRefusal,
+    requestEmptyEdit: editTarget && onRequestEmptyEditDelete ? () => onRequestEmptyEditDelete(editTarget) : undefined,
+    capture: () => {
+      const context = onCaptureSendContext?.() ?? null;
+      return context !== null && !context.parentEventId ? undefined : context;
+    },
+    onPreparingChange: onPreparingMentionSendChange,
+    prepare: async ({ content: trimmed, context: capturedThreadContext }) => {
+      const currentPendingImeta = media.pendingImetaRef.current;
+      const currentQueuedAttachments = media.queuedAttachmentsRef.current;
       const preparedLinkPreviews = getReadyLinkPreviewTags().some(
         (tag) => tag[1] === "none",
       )
@@ -515,132 +443,41 @@ function MessageComposerImpl({
         spoileredAttachmentUrls,
         trimmed,
       });
-    } finally {
-      isSubmitLockedRef.current = false;
-      setIsSubmitLocked(false);
-      onPreparingMentionSendChange?.(false);
-    }
-  }, [
-    channelType,
-    channelId,
-    drafts.loadDraft,
-    getLiveLinkPreviewCandidates,
-    getReadyLinkPreviewTags,
-    media.pendingImetaRef,
-    media.queuedAttachmentsRef,
-    mentionSendFlow.isPreparingMentionSend,
-    mentionSendFlow.sendMessageWithMentionFlow,
-    spoileredAttachmentUrls,
-    syncComposerContentFromEditor,
-    onCaptureSendContext,
-    onPreparingMentionSendChange,
-    effectiveDraftKey,
-    voiceNote.statusRef,
-    editTarget,
-    onRequestEmptyEditDelete,
-    audience.pubkeys,
-    verifyMentionRecipients,
-  ]);
-
+    },
+  });
   submitMessageRef.current = submitMessage;
-  // Draft auto-submit runs once after persisted editor state loads.
-  const onAutoSubmitCompleteRef = React.useRef(onAutoSubmitComplete);
-  onAutoSubmitCompleteRef.current = onAutoSubmitComplete;
-  // biome-ignore lint/correctness/useExhaustiveDependencies: intentionally fires once on mount only
-  React.useEffect(() => {
-    if (
-      autoSubmitDraftKey === null ||
-      autoSubmitDraftKey !== effectiveDraftKey
-    ) {
-      return;
-    }
-    // Clear the trigger BEFORE firing so any navigation from the send cannot
-    // loop back with the param still present.
-    onAutoSubmitCompleteRef.current?.();
-    return scheduleSettleGatedAutoSubmit({
-      submit: () => submitMessageRef.current(),
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // mount-only
-  const handleSubmit = React.useCallback(
-    (event: React.FormEvent<HTMLFormElement>) => {
-      event.preventDefault();
-      void submitMessage();
-    },
-    [submitMessage],
-  );
-  // Tiptap handles formatting shortcuts (⌘B, ⌘I, etc.) natively.
-  // Plain Enter → submit is now handled inside the Tiptap `submitOnEnter`
-  // extension (fires before ProseMirror's splitBlock). This wrapper only
-  // handles autocomplete arrow/enter keys and the link card's Tab.
-  const handleEditorKeyDown = React.useCallback(
-    (event: React.KeyboardEvent<HTMLDivElement>) => {
-      if (handleAlwaysAddressShortcut(event)) return;
-      // Let autocomplete handle keys first
-      const emojiResult = emojiAutocomplete.handleEmojiKeyDown(event);
-      if (emojiResult.handled) {
-        if (emojiResult.suggestion) {
-          applyEmojiInsert(emojiResult.suggestion);
-        }
-        return;
-      }
-      const channelResult = channelLinks.handleChannelKeyDown(event);
-      if (channelResult.handled) {
-        if (channelResult.suggestion) {
-          applyChannelInsert(channelResult.suggestion);
-        }
-        return;
-      }
-      if (event.key === "Tab" && event.shiftKey && mentions.isMentionOpen && focusMentionOptionsTrigger(formRef.current)) {
-        event.preventDefault();
-        return;
-      }
-      const { handled, suggestion } = mentions.handleMentionKeyDown(event, {
-        isCodeContext: () => isMentionCodeContext(richText.editor),
-      });
-      if (handled) {
-        if (suggestion) {
-          selectMentionSuggestion(suggestion);
-        }
-        return;
-      }
-      if (event.key === "Tab" && !event.shiftKey && linkEditor.isCardOpen) {
-        event.preventDefault();
-        if (!linkEditor.focusCardFirstControl()) {
-          requestAnimationFrame(linkEditor.focusCardFirstControl);
-        }
-        return;
-      }
-    },
-    [
-      handleAlwaysAddressShortcut,
-      emojiAutocomplete.handleEmojiKeyDown,
-      applyEmojiInsert,
-      channelLinks.handleChannelKeyDown,
-      applyChannelInsert,
-      mentions.handleMentionKeyDown,
-      richText.editor,
-      selectMentionSuggestion,
-      linkEditor.isCardOpen,
-      linkEditor.focusCardFirstControl,
-    ],
-  );
-  useComposerPasteHandler({
+  const pasteOwner = React.useMemo(() => ({}), [session, channelId, effectiveDraftKey, editTarget?.id]);
+  const paste = useComposerPasteHandler({
     editor: richText.editor,
+    owner: pasteOwner, enabled: !composerDisabled && !isSubmitLocked && !isSending,
     bindMentionIdentities: mentions.bindPastedMentionIdentities,
     scrollToBottom: scrollComposerToBottom,
-    uploadFile: voiceNote.uploadFileWhenIdle,
+    uploadFiles: voiceNote.uploadFilesWhenIdle,
+  });
+  const autoSubmitOwner = React.useRef({ draftKey: effectiveDraftKey });
+  const autoSubmitEnabled = React.useRef(autoSubmitDraftKey !== null && autoSubmitDraftKey === effectiveDraftKey);
+  const mounted = React.useRef(true);
+  React.useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  useComposerAutoSubmit({ owner: autoSubmitOwner.current, enabled: autoSubmitEnabled.current, ready: !paste.isPreparingAttachments(),
+    active: () => mounted.current && effectiveDraftKeyRef.current === autoSubmitOwner.current.draftKey, consume: onAutoSubmitComplete, submit: submitMessage });
+  const handleEditorKeyDown = composerKeyDown({
+    alwaysAddress: handleAlwaysAddressShortcut,
+    emoji: emojiAutocomplete.handleEmojiKeyDown, selectEmoji: applyEmojiInsert,
+    channel: channelLinks.handleChannelKeyDown, selectChannel: applyChannelInsert,
+    mentionOpen: mentions.isMentionOpen,
+    mention: event => mentions.handleMentionKeyDown(event, { isCodeContext: () => isMentionCodeContext(richText.editor) }),
+    selectMention: selectMentionSuggestion, linkEditor,
+    cancelEdit: editTarget && !isSubmitLocked && !isSending ? onCancelEdit : undefined,
   });
   const sendDisabled =
     composerDisabled ||
+    paste.isPreparingAttachments() ||
     media.isUploading ||
     voiceNote.status !== "idle" ||
     mentionSendFlow.isPreparingMentionSend ||
     (!(editTarget && onRequestEmptyEditDelete) && isContentEmpty &&
       media.pendingImeta.length === 0 &&
       media.queuedAttachments.length === 0);
-  // Pinned Buzz MessageComposer.tsx keeps this callback empty; Tiptap owns selection.
-  const handleCaptureSelection = React.useCallback(() => {}, []);
   const handlePaperclipClick = React.useCallback(() => {
     if (!voiceNote.hasAttachmentRef.current) void media.handlePaperclip();
   }, [media.handlePaperclip, voiceNote.hasAttachmentRef]);
@@ -725,13 +562,13 @@ function MessageComposerImpl({
             <output aria-live="polite" className="sr-only" data-testid="composer-address-lock-status">{addressLock.announcement}</output>
             {media.uploadState.status === "error" ? (
               <div className="mb-2 rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive">
-                Upload failed: {media.uploadState.message}
+                {translateUi("platform.uploadFailed")}
                 <button
                   className="ml-2 underline"
                   onClick={() => media.setUploadState({ status: "idle" })}
                   type="button"
                 >
-                  Dismiss
+                  {translateUi("buzz.dismiss")}
                 </button>
               </div>
             ) : null}

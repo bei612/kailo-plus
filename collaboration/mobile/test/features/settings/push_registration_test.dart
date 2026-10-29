@@ -1,10 +1,13 @@
 import 'dart:async';
 
 import 'package:buzz/shared/deeplink/deep_link.dart';
+import 'package:client_kit/shared/contracts/contracts.dart';
 import 'package:buzz/shared/platform/platform_api.dart';
 import 'package:buzz/shared/push/push_bridge.dart';
 import 'package:buzz/shared/push/push_registration.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/widgets.dart';
+import 'package:buzz/shared/relay/app_lifecycle_provider.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:nostr/nostr.dart' as nostr;
 
@@ -13,17 +16,24 @@ class _FakeBridge implements PushBridge {
   final _opened = StreamController<MessageDeepLink>.broadcast();
   int registrations = 0;
   String token = 'ab' * 32;
+  PushPlatform? platform = PushPlatform.APNS;
+  final permissionRequests = <bool>[];
+  PushAuthorizationStatus permission = PushAuthorizationStatus.authorized;
+  @override
+  Future<PushPlatform?> deliveryPlatform() async => platform;
+  @override
+  Stream<void> get authorizationChanges => const Stream.empty();
 
   @override
-  Future<PushAuthorizationStatus?> authorizationStatus() async =>
-      PushAuthorizationStatus.authorized;
+  Future<PushAuthorizationStatus?> authorizationStatus() async => permission;
 
   @override
   Future<bool> openNotificationSettings() async => true;
 
   @override
-  Future<void> startRegistration() async {
+  Future<void> startRegistration({bool requestPermission = true}) async {
     registrations++;
+    permissionRequests.add(requestPermission);
     scheduleMicrotask(() => _tokens.add(token));
   }
 
@@ -35,6 +45,12 @@ class _FakeBridge implements PushBridge {
 
   @override
   Future<MessageDeepLink?> takePendingOpen() async => null;
+}
+
+class _Lifecycle extends AppLifecycleNotifier {
+  @override
+  AppLifecycleState build() => AppLifecycleState.resumed;
+  void change(AppLifecycleState value) => state = value;
 }
 
 const _session = {
@@ -67,21 +83,32 @@ void main() {
   ({ProviderContainer container, List<(PlatformMethod, String, Object?)> calls})
   harness({
     required String apns,
-    required PlatformResponse Function(PlatformMethod, String, Object?) put,
+    String fcm = 'NOT_CONFIGURED',
+    bool Function()? isCurrent,
+    FutureOr<PlatformResponse> Function()? readRegistration,
+    required FutureOr<PlatformResponse> Function(
+      PlatformMethod,
+      String,
+      Object?,
+    )
+    put,
     _FakeBridge? bridge,
   }) {
     final calls = <(PlatformMethod, String, Object?)>[];
     final deps = PushRegistrationDeps(
+      isCurrent: isCurrent ?? () => true,
       send: (method, path, {body}) async {
         calls.add((method, path, body));
         if (path == pushCapabilityPath) {
-          return PlatformResponse(200, {'apns': apns, 'fcm': 'NOT_CONFIGURED'});
+          return PlatformResponse(200, {'apns': apns, 'fcm': fcm});
         }
         if (path == '/api/v1/session') {
           return const PlatformResponse(200, _session);
         }
         if (method == PlatformMethod.put) return put(method, path, body);
-        return const PlatformResponse(404, {});
+        return readRegistration == null
+            ? const PlatformResponse(404, {})
+            : readRegistration();
       },
       deviceKeys: () async => keys,
       appId: () async => 'chat.kailo.mobile',
@@ -90,6 +117,7 @@ void main() {
     );
     final container = ProviderContainer(
       overrides: [
+        appLifecycleProvider.overrideWith(_Lifecycle.new),
         pushRegistrationDepsProvider.overrideWithValue(deps),
         pushBridgeProvider.overrideWithValue(bridge ?? _FakeBridge()),
       ],
@@ -119,6 +147,84 @@ void main() {
       );
       final state = await loaded(h.container);
       expect(state.available, isFalse);
+      await h.container
+          .read(pushRegistrationProvider.notifier)
+          .setEnabled(true);
+      expect(h.calls.where((c) => c.$1 == PlatformMethod.put), isEmpty);
+    },
+  );
+
+  test(
+    'Android uses only the configured native FCM SDK and matching Core capability',
+    () async {
+      final bridge = _FakeBridge()..platform = PushPlatform.FCM;
+      Object? sent;
+      final h = harness(
+        apns: 'NOT_CONFIGURED',
+        fcm: 'CONFIGURED',
+        bridge: bridge,
+        put: (_, _, body) {
+          sent = body;
+          return PlatformResponse(200, {
+            ...view(enabled: true, version: 1),
+            'platform': 'FCM',
+          });
+        },
+      );
+      expect((await loaded(h.container)).available, isTrue);
+      await h.container
+          .read(pushRegistrationProvider.notifier)
+          .setEnabled(true);
+      expect((sent! as Map)['platform'], 'FCM');
+      expect(
+        h.container.read(pushRegistrationProvider).effectiveEnabled,
+        isTrue,
+      );
+    },
+  );
+
+  test(
+    'missing native Firebase configuration stays unavailable even when Core FCM is configured',
+    () async {
+      final bridge = _FakeBridge()..platform = null;
+      final h = harness(
+        apns: 'CONFIGURED',
+        fcm: 'CONFIGURED',
+        bridge: bridge,
+        put: (_, _, _) => fail('no PUT'),
+      );
+      expect((await loaded(h.container)).available, isFalse);
+      await h.container
+          .read(pushRegistrationProvider.notifier)
+          .setEnabled(true);
+      expect(bridge.registrations, 0);
+      expect(h.calls, isEmpty);
+    },
+  );
+
+  test(
+    'an Android artifact cannot borrow configured APNs capability',
+    () async {
+      final h = harness(
+        apns: 'CONFIGURED',
+        bridge: _FakeBridge()..platform = PushPlatform.FCM,
+        put: (_, _, _) => fail('no PUT'),
+      );
+      expect((await loaded(h.container)).available, isFalse);
+    },
+  );
+
+  test(
+    'a replaced NativeSession cannot submit a token captured by the old login',
+    () async {
+      var current = true;
+      final h = harness(
+        apns: 'CONFIGURED',
+        isCurrent: () => current,
+        put: (_, _, _) => fail('old login PUT'),
+      );
+      await loaded(h.container);
+      current = false;
       await h.container
           .read(pushRegistrationProvider.notifier)
           .setEnabled(true);
@@ -177,6 +283,145 @@ void main() {
     },
   );
 
+  test(
+    'FCM rotation during the first PUT is registered afterwards with the returned CAS version',
+    () async {
+      final bridge = _FakeBridge()..platform = PushPlatform.FCM;
+      final entered = Completer<void>();
+      final firstResponse = Completer<PlatformResponse>();
+      var writes = 0;
+      final h = harness(
+        apns: 'NOT_CONFIGURED',
+        fcm: 'CONFIGURED',
+        bridge: bridge,
+        put: (_, _, body) {
+          writes++;
+          if (writes == 1) {
+            entered.complete();
+            return firstResponse.future;
+          }
+          return PlatformResponse(200, {
+            ...view(enabled: true, version: 2),
+            'platform': 'FCM',
+          });
+        },
+      );
+      await loaded(h.container);
+      final controller = h.container.read(pushRegistrationProvider.notifier);
+      final enabling = controller.setEnabled(true);
+      await entered.future;
+      await controller.tokenChanged('rotated-fcm-token');
+      expect(writes, 1);
+      firstResponse.complete(
+        PlatformResponse(200, {
+          ...view(enabled: true, version: 1),
+          'platform': 'FCM',
+        }),
+      );
+      await enabling;
+      for (
+        var i = 0;
+        i < 20 && h.container.read(pushRegistrationProvider).version != 2;
+        i++
+      ) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      final puts = h.calls.where((c) => c.$1 == PlatformMethod.put).toList();
+      expect(puts, hasLength(2));
+      expect((puts[1].$3! as Map)['token'], 'rotated-fcm-token');
+      expect((puts[1].$3! as Map)['expectedVersion'], 1);
+      expect((puts[1].$3! as Map)['platform'], 'FCM');
+    },
+  );
+
+  test('switching off does not prompt for OS display permission', () async {
+    final bridge = _FakeBridge();
+    final h = harness(
+      apns: 'CONFIGURED',
+      bridge: bridge,
+      put: (_, _, _) => PlatformResponse(200, view(enabled: false, version: 1)),
+    );
+    await loaded(h.container);
+    await h.container.read(pushRegistrationProvider.notifier).setEnabled(false);
+    expect(bridge.permissionRequests, [false]);
+  });
+
+  test(
+    'foreground resume rereads OS settings and refreshes an enabled FCM token without prompting',
+    () async {
+      final bridge = _FakeBridge()..platform = PushPlatform.FCM;
+      final h = harness(
+        apns: 'NOT_CONFIGURED',
+        fcm: 'CONFIGURED',
+        bridge: bridge,
+        put: (_, _, _) => PlatformResponse(200, {
+          ...view(enabled: true, version: 1),
+          'platform': 'FCM',
+        }),
+      );
+      await loaded(h.container);
+      await h.container
+          .read(pushRegistrationProvider.notifier)
+          .setEnabled(true);
+      h.container.read(pushTokenRefreshProvider);
+      expect(
+        await h.container.read(pushAuthorizationStatusProvider.future),
+        PushAuthorizationStatus.authorized,
+      );
+      await Future<void>.delayed(Duration.zero);
+      final before = bridge.registrations;
+      final lifecycle =
+          h.container.read(appLifecycleProvider.notifier) as _Lifecycle;
+      lifecycle.change(AppLifecycleState.paused);
+      bridge.permission = PushAuthorizationStatus.denied;
+      lifecycle.change(AppLifecycleState.resumed);
+      for (var i = 0; i < 20 && bridge.registrations == before; i++) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      expect(bridge.registrations, before + 1);
+      expect(bridge.permissionRequests.last, isFalse);
+      expect(
+        await h.container.read(pushAuthorizationStatusProvider.future),
+        PushAuthorizationStatus.denied,
+      );
+      expect(h.calls.where((c) => c.$1 == PlatformMethod.put), hasLength(1));
+    },
+  );
+
+  test(
+    'a delayed foreground read cannot restore the preference changed by a newer PUT',
+    () async {
+      final delayed = Completer<PlatformResponse>();
+      final entered = Completer<void>();
+      var reads = 0, writes = 0;
+      final h = harness(
+        apns: 'CONFIGURED',
+        readRegistration: () {
+          if (++reads == 1) return const PlatformResponse(404, {});
+          entered.complete();
+          return delayed.future;
+        },
+        put: (_, _, body) => PlatformResponse(
+          200,
+          view(enabled: (body! as Map)['enabled'] as bool, version: ++writes),
+        ),
+      );
+      await loaded(h.container);
+      final controller = h.container.read(pushRegistrationProvider.notifier);
+      await controller.setEnabled(true);
+      final refreshing = controller.refresh();
+      await entered.future;
+      await controller.setEnabled(false);
+      delayed.complete(PlatformResponse(200, view(enabled: true, version: 1)));
+      await refreshing;
+      expect(h.container.read(pushRegistrationProvider).version, 2);
+      expect(
+        h.container.read(pushRegistrationProvider).effectiveEnabled,
+        isFalse,
+      );
+    },
+  );
+
   test('a stale version is re-read instead of overwritten', () async {
     final h = harness(
       apns: 'CONFIGURED',
@@ -203,6 +448,77 @@ void main() {
       PushRegistrationOutcome.notConfirmed,
     );
   });
+
+  for (final pendingAt in ['read', 'write']) {
+    test(
+      'identity change retires a late registration $pendingAt result',
+      () async {
+        final late = Completer<PlatformResponse>();
+        final entered = Completer<void>();
+        final bridge = _FakeBridge();
+        final otherKeys = nostr.Keys.generate();
+        PushRegistrationDeps deps(nostr.Keys identity, {required bool old}) =>
+            PushRegistrationDeps(
+              isCurrent: () => true,
+              send: (method, path, {body}) async {
+                if (path == pushCapabilityPath) {
+                  return const PlatformResponse(200, {
+                    'apns': 'CONFIGURED',
+                    'fcm': 'NOT_CONFIGURED',
+                  });
+                }
+                if (path == '/api/v1/session') {
+                  return const PlatformResponse(200, _session);
+                }
+                final writing = method == PlatformMethod.put;
+                if (old &&
+                    ((pendingAt == 'write' && writing) ||
+                        (pendingAt == 'read' && !writing))) {
+                  if (!entered.isCompleted) {
+                    entered.complete();
+                  }
+                  return late.future;
+                }
+                return const PlatformResponse(404, {});
+              },
+              deviceKeys: () async => identity,
+              appId: () async => 'chat.kailo.mobile',
+              apiUri: (path) => Uri.parse('https://native.example.test$path'),
+              locale: () => 'en',
+            );
+        final original = deps(keys, old: true);
+        final replacement = deps(otherKeys, old: false);
+        final container = ProviderContainer(
+          overrides: [
+            pushRegistrationDepsProvider.overrideWithValue(original),
+            pushBridgeProvider.overrideWithValue(bridge),
+          ],
+        );
+        addTearDown(container.dispose);
+        container.read(pushRegistrationProvider);
+        Future<void>? pending;
+        if (pendingAt == 'write') {
+          await loaded(container);
+          pending = container
+              .read(pushRegistrationProvider.notifier)
+              .setEnabled(true);
+        }
+        await entered.future;
+        container.updateOverrides([
+          pushRegistrationDepsProvider.overrideWithValue(replacement),
+          pushBridgeProvider.overrideWithValue(bridge),
+        ]);
+        await loaded(container);
+        late.complete(PlatformResponse(200, view(enabled: true, version: 99)));
+        await pending;
+        await Future<void>.delayed(Duration.zero);
+        final current = container.read(pushRegistrationProvider);
+        expect(current.devicePubkey, otherKeys.public);
+        expect(current.version, 0);
+        expect(current.effectiveEnabled, isFalse);
+      },
+    );
+  }
 
   test('notification taps carry ids only into the deep-link pipeline', () {
     expect(

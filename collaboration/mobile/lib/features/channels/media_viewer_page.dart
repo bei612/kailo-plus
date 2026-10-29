@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:client_kit/shared/platform/platform_text.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart';
@@ -591,8 +592,15 @@ class MediaImageViewerPage extends HookConsumerWidget {
                                           fit: BoxFit.contain,
                                           semanticLabel: image.semanticLabel,
                                           errorBuilder: (_, _, _) =>
-                                              const _MediaLoadFailure(
-                                                message: 'Failed to load image',
+                                              _MediaLoadFailure(
+                                                message: platformText(
+                                                  PlatformMessageKey
+                                                      .mediaImageLoadFailed,
+                                                  locale:
+                                                      Localizations.localeOf(
+                                                        context,
+                                                      ).toLanguageTag(),
+                                                ),
                                                 icon: LucideIcons.imageOff,
                                               ),
                                         ),

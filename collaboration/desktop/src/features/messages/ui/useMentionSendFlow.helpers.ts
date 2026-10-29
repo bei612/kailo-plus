@@ -114,10 +114,10 @@ export function getErrorMessage(error: unknown, fallback: string) {
   return fallback;
 }
 
-export function formatMessageSendError(error: unknown) {
+export function formatMessageSendError(error: unknown, locale = resolveLocale()) {
   return (
-    relayPublishFailureText(error) ??
-    `Message failed to send: ${getErrorMessage(error, "Unknown error")}`
+    relayPublishFailureText(error, locale) ??
+    translate(locale, "platform.sendFailed")
   );
 }
 

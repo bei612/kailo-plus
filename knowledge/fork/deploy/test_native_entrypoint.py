@@ -189,6 +189,43 @@ class NativeEntrypointTests(unittest.TestCase):
                 else:
                     self.assertFalse(calls.exists())
 
+    def test_private_receiver_overlays_require_explicit_complete_delivery(self):
+        root = Path(self.directory.name)
+        (root / "start.sh").write_bytes(Path(__file__).with_name("start.sh").read_bytes())
+        recorder = root / "docker"
+        recorder.write_text("#!/usr/bin/env python3\nimport json,os,sys\nwith open(os.environ['CALLS'], 'a') as f: f.write(json.dumps(sys.argv[1:])+'\\n')\n")
+        recorder.chmod(0o700)
+        calls = root / "calls"
+        env = {**os.environ, "PATH": str(root) + os.pathsep + os.environ["PATH"], "CALLS": str(calls)}
+        forward = "KNOWLEDGE_CONFORMANCE_FORWARD_DELIVERY_DIR=/runtime/forward\n"
+        worker = "KNOWLEDGE_ADAPTER_WORKER_DELIVERY_DIR=/runtime/worker\n"
+        both = ["--platform-adapter", "--file-storage-sync"]
+        for content, flags, code, overlays in (
+            ("", both, 0, []),
+            (worker, ["--platform-adapter"], 0, ["adapter-worker"]),
+            (forward + worker, both, 0, ["adapter-worker", "conformance-forward"]),
+            (worker, [], 78, []),
+            (forward, ["--platform-adapter"], 78, []),
+            (forward, ["--file-storage-sync"], 78, []),
+            (forward + forward, both, 78, []),
+            (worker + worker, both, 78, []),
+            ("KNOWLEDGE_CONFORMANCE_FORWARD_DELIVERY_DIR=\n", both, 78, []),
+            ("KNOWLEDGE_ADAPTER_WORKER_DELIVERY_DIR=relative\n", both, 78, []),
+        ):
+            with self.subTest(content=content, flags=flags):
+                (root / ".env").write_text(content)
+                result = subprocess.run(["bash", str(root / "start.sh"), "--validate", *flags],
+                                        env=env, capture_output=True)
+                self.assertEqual(result.returncode, code, result.stderr)
+                if code:
+                    self.assertFalse(calls.exists())
+                    continue
+                operations = [json.loads(line) for line in calls.read_text().splitlines()]
+                self.assertEqual(len(operations), 1)
+                for overlay in ("adapter-worker", "conformance-forward"):
+                    self.assertEqual(str(root / ("compose." + overlay + ".yaml")) in operations[0], overlay in overlays)
+                calls.unlink()
+
     def test_aes_is_exactly_32_bytes_not_trimmed_or_hex_decoded(self):
         file = Path(self.env["SYSTEM_AES_KEY_FILE"])
         for raw in (b"A" * 31, b"A" * 33, b"ab" * 32, b"A" * 32 + b"\n"):
@@ -815,6 +852,57 @@ class NativeProvisioningTests(unittest.TestCase):
                         self.assertIn(".Data.data.value | toJSON", rendered)
                         self.assertNotIn("synthetic-operator", rendered + output.getvalue())
                         self.assertEqual((root/"model-agent.hcl").stat().st_mode & 0o777, 0o600)
+
+    def test_model_reader_merges_only_frozen_same_binding_paths_and_rejects_drift(self):
+        for failure in (None, "foreign-binding", "foreign-generation", "wildcard", "policy", "role"):
+            with self.subTest(failure=failure), self.model_delivery_fixture() as (env, value, _material, root):
+                projection = value["projection"]
+                projection["configDigest"] = hashlib.sha256(b"{}").hexdigest()
+                binding, tenant = projection["bindingId"], projection["tenantId"]
+                refs = [{"secretKey": key, "locator": f"tenants/{tenant}/kv/application-binding/{binding}/{key}",
+                    "version": 1, "audience": "native-fixture"} for key in ("native_mcp_bearer", "oidc_client_secret")]
+                config = {"bindingId": binding, "tenantId": tenant, "actionTokenAudience": "native-fixture",
+                    "management": {"validation": {"bindingVersion": 1, "servicePrincipalId": projection["gatewayPrincipalId"],
+                        "nativeScopeRef": projection["nativeScopeRef"], "normalizedConfig": {}, "secretDeliveries": refs}}}
+                if failure == "foreign-binding": config["bindingId"] = "88888888-8888-4888-8888-888888888888"
+                if failure == "foreign-generation": config["management"]["validation"]["bindingVersion"] = 2
+                if failure == "wildcard": refs[0]["locator"] = f"tenants/{tenant}/kv/application-binding/{binding}/*"
+                for name, content in (("adapter", config), ("input", value), ("operator", {"root_token": "synthetic-operator"})):
+                    (root/name).write_text(json.dumps(content)); (root/name).chmod(0o600)
+                env.update(KNOWLEDGE_ADAPTER_CONFIG_FILE=str(root/"adapter"), KNOWLEDGE_BAO_BOOTSTRAP_FILE=str(root/"operator"),
+                    KNOWLEDGE_BAO_TOKEN_TTL="60s", KNOWLEDGE_BAO_WRAP_TTL="60s")
+                base = ''.join(f'path "kv/data/application-binding/{binding}/{key}" {{ capabilities = ["read"] }}\n'
+                    for key in ("native_mcp_bearer", "oidc_client_secret"))
+                stored = {"policy": base + ('path "kv/data/foreign/*" { capabilities = ["write"] }\n' if failure == "policy" else '')}
+
+                def response(path):
+                    method, _, headers, raw = received[-1]
+                    self.assertEqual(headers["X-Vault-Namespace"], "tenants/" + tenant)
+                    self.assertNotIn("/data/", path)
+                    if path == "/v1/sys/mounts": data = {"kv/": {"type": "kv", "options": {"version": "2"}}}
+                    elif path == "/v1/sys/auth": data = {"approle/": {"type": "approle"}}
+                    elif path == "/v1/sys/policies/acl/native-reader":
+                        if method == "PUT": stored.update(json.loads(raw))
+                        data = stored
+                    elif path == "/v1/auth/approle/role/native-reader":
+                        data = {"bind_secret_id": True, "secret_id_num_uses": 1, "token_policies": ["foreign" if failure == "role" else "native-reader"],
+                            "token_ttl": 60, "token_max_ttl": 60}
+                    elif path.endswith("/role-id"): data = {"role_id": "synthetic-role"}
+                    elif path.endswith("/secret-id"): return 200, {}, b'{"wrap_info":{"token":"synthetic-wrap"}}'
+                    else: self.fail("unexpected reader endpoint")
+                    return 200, {}, json.dumps({"data": data}).encode()
+
+                with self.native_http(response) as (origin, received), redirect_stdout(io.StringIO()):
+                    env["KNOWLEDGE_BAO_URL"] = origin
+                    if failure:
+                        with self.assertRaises(provision.ConfigurationError): provision.model_reader(env)
+                        self.assertTrue(all(row[0] == "GET" for row in received))
+                    else:
+                        provision.model_reader(env)
+                        combined = base + f'path "kv/data/application-model/{binding}/1" {{ capabilities = ["read"] }}\n'
+                        self.assertEqual(stored["policy"], combined)
+                        provision.model_reader(env)
+                        self.assertEqual(len([row for row in received if row[0] == "PUT"]), 1)
 
     @contextmanager
     def native_http(self, response):

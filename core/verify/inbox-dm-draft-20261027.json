@@ -1,0 +1,86 @@
+{
+  "source_commit": "a025e09a866eec76bb045da3891f6f99b5a309de",
+  "base_commit": "4152f377fe3ff37b4091103883a919006d24ce41",
+  "sdk": "sha256:3007729eb192341a4f004a88e42e1e66c94fc67d763acfc96568bd7311116018",
+  "source_directory": "/volumes/data/kailo/verification/composer-body/31a2c67c3/source",
+  "source_inputs_checked": 3455,
+  "source_mismatches": [],
+  "installed_platform_source_files_web": 1039,
+  "cpu": 1,
+  "memory_bytes": 4294967296,
+  "pids_limit": 256,
+  "positive": {
+    "shared_draft_surface": 3,
+    "web_inbox_drafts": 26,
+    "web_tsc": 0,
+    "i18n_check": 0
+  },
+  "negative": [
+    {
+      "mutation": "restore native-only reply destination matching",
+      "exit": 1,
+      "failed": 9
+    },
+    {
+      "mutation": "remove component owner lifetime equality",
+      "exit": 1,
+      "failed": 2
+    },
+    {
+      "mutation": "remove original draft authority handle and revision equality",
+      "exit": 1,
+      "selected": 2,
+      "unselected": 24
+    }
+  ],
+  "restored": {
+    "main_web_inbox_drafts": 26,
+    "authority_followup_web_inbox_drafts": 26,
+    "source_bytes_identical": true
+  },
+  "failure_history": [
+    {
+      "source": "422f7c783c6bd2032e252b4aebc1e3ae66e5c0ce",
+      "exit": 2,
+      "stage": "Web tsc TS2345: loadDraftEntry can be undefined",
+      "shared_draft_surface": 3,
+      "installed_platform_source_files_web": 1039,
+      "log_sha256": "b1b103fd0241b0080e241d5e8d44e6e6377846d23a989396dff30730d741953f"
+    }
+  ],
+  "job_directory": "/volumes/data/kailo/verification/inbox-dm-draft/a025e09a8",
+  "authority_job_directory": "/volumes/data/kailo/verification/inbox-dm-draft/a025e09a8-authority",
+  "files_sha256": {
+    "a025e09a8": {
+      "runner.sh": "77a9a3a46252981238dcff1dadff95c257d46f3b05f3af4507aad5068bcd1b48",
+      "check.log": "4cf118f6489822328fd9dafe43785882512ac1293d10c9a0bafcc93ef263e6a0",
+      "result.log": "60e18a94e47c679786b561d6cfc1537f8b68fc077d15dbacade581feed316683",
+      "limits.log": "80a2d597dac90f32bc5c1eca00acd94c072272e81bbec00f7a5dd0a15fcd33e0",
+      "preflight.log": "1c230a3a16f731d9f12b0c5de79f38beed00aa8cc64c2151743a26cadde0ba78",
+      "oom.log": "2ed27c1421e6928dbe13dbfdb5c59e1045b30341fe7ebe05700006bc5ac572c0",
+      "host-config.json": "33e95a9eda1e760f466b3e562798531724b4a637ce8b6d0571febd6dbf3c6b25",
+      "tmp/original.sha256": "950694ae2df0f814c45fe7e6fac7898940b7b810b27890113245c3d8d24c3a3c",
+      "tmp/restored.sha256": "950694ae2df0f814c45fe7e6fac7898940b7b810b27890113245c3d8d24c3a3c",
+      "tmp/restored.log": "aee8e3d814f52a1d058b5b64c11831423c828078e3ef82c4126fc13234918bc1",
+      "tmp/negative-mapping.log": "8f5a00ee294396347bfd25fe6b2cb1266c53eb31380726d7f4f92de9355ddd40",
+      "tmp/negative-mapping-exit.log": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+      "tmp/negative-lifetime.log": "6c6dad61757493ac213263478ecb631784b3852a5053c86b870dcf4b887ecf35",
+      "tmp/negative-lifetime-exit.log": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865"
+    },
+    "a025e09a8-authority": {
+      "runner.sh": "0b32b1de6d2832ba0f03d88b9d02659af8f3cd7e0ce3a0cc84ea451d4dfc4d4d",
+      "check.log": "88df348cfe4d4503d5178b6700514959080ff0418a369ae5d451fbd9ffcde84f",
+      "result.log": "60e18a94e47c679786b561d6cfc1537f8b68fc077d15dbacade581feed316683",
+      "limits.log": "9f17693611dd9e3a6377e66e8da54f0fcacd9187ac231c3a18a9923c7a6df322",
+      "preflight.log": "aced1c73cb49e2fcdf0cec490933240f45a4e867bd43752166afd47695625aeb",
+      "oom.log": "2ed27c1421e6928dbe13dbfdb5c59e1045b30341fe7ebe05700006bc5ac572c0",
+      "host-config.json": "eb23ea7049b28d092095a1cd791fc59757510e0384c73f33488fb5943d0b7276",
+      "tmp/original.sha256": "950694ae2df0f814c45fe7e6fac7898940b7b810b27890113245c3d8d24c3a3c",
+      "tmp/restored.sha256": "950694ae2df0f814c45fe7e6fac7898940b7b810b27890113245c3d8d24c3a3c",
+      "tmp/restored.log": "6860e6a42d931f6b1b1efaa72840a4674b94167d7b8dafebb8022fbe2b61e517",
+      "tmp/negative-authority.log": "0b4bbe43954bbe5806569ce02d227be8f24989f8f71fa8a9d33ec61896e002e5",
+      "tmp/negative-authority-exit.log": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865"
+    }
+  },
+  "scope": "Existing Web InboxDrafts and shared draft surfaces with scoped storage and scripted BFF anchor reads; core signature/ancestry/fresh admission behavior reviewed in source, not re-executed in this batch. Desktop product behavior unchanged, no Native typecheck or device/package/deployment/real-browser acceptance claimed."
+}

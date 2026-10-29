@@ -18,7 +18,7 @@ export function kailoPreferences(runtime) {
     try {
         const values = runtime && typeof runtime.getPreferences === 'function' ? runtime.getPreferences() : null;
         return values && typeof values === 'object' && !Array.isArray(values) ? values : {};
-    } catch (_) {
+    } catch {
         return {};
     }
 }
@@ -64,7 +64,7 @@ export function kailoPresentation(runtime) {
             theme: state.theme === 'dark' ? 'dark' : 'light',
             locale: state.locale === 'zh-CN' ? 'zh-CN' : 'en-US',
         };
-    } catch (_) {
+    } catch {
         return null;
     }
 }

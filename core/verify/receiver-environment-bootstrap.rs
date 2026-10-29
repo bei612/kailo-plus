@@ -513,6 +513,129 @@ async fn approve_read_grant(
     Ok(())
 }
 
+fn fixed_policy_metadata(binding: &Value, input: &Value, endpoint: &Value) -> Result<(), Error> {
+    if binding["bindingId"] != endpoint["bindingId"]
+        || binding["tenantId"] != input["tenantId"]
+        || binding["componentReleaseId"] != endpoint["releaseId"]
+        || !matches!(binding["state"].as_str(), Some("PROVISIONING" | "ACTIVE"))
+        || (binding["state"] == "ACTIVE"
+            && binding["activeProjectionGeneration"] != endpoint["generation"])
+    {
+        return Err("HUMAN binding metadata differs or is no longer deployable".into());
+    }
+    let declarations = endpoint["manifest"]["actionDefinitions"]
+        .as_array()
+        .ok_or("release actions missing")?;
+    let policies = binding["humanActionPolicies"]
+        .as_array()
+        .ok_or("Core fixed HUMAN policy producer has not delivered references")?;
+    if policies.len() != declarations.len() || policies.is_empty() {
+        return Err("Core fixed HUMAN policy set differs from the approved release".into());
+    }
+    let mut seen = BTreeSet::new();
+    let mut policy_ids = BTreeSet::new();
+    for policy in policies {
+        exact(
+            policy,
+            &[
+                "actionKey",
+                "actionVersion",
+                "componentReleaseId",
+                "generation",
+                "resultExposurePolicyId",
+                "resultExposurePolicyVersion",
+            ],
+        )?;
+        let key = required(policy, "actionKey")?;
+        let version = policy["actionVersion"]
+            .as_i64()
+            .filter(|v| *v > 0)
+            .ok_or("invalid fixed action version")?;
+        let policy_id = id(policy, "resultExposurePolicyId")?;
+        if !policy_ids.insert(policy_id)
+            || !seen.insert((key, version))
+            || policy["componentReleaseId"] != endpoint["releaseId"]
+            || policy["generation"] != endpoint["generation"]
+            || policy["resultExposurePolicyVersion"] != 1
+            || !declarations
+                .iter()
+                .any(|d| d["actionKey"] == key && d["version"] == version)
+        {
+            return Err(
+                "fixed HUMAN policy does not belong to this exact release/generation/action".into(),
+            );
+        }
+    }
+    Ok(())
+}
+
+async fn admitted_binding_metadata(
+    http: &reqwest::Client,
+    input: &Value,
+    _token: &str,
+    endpoint: &Value,
+) -> Result<Value, Error> {
+    // The runner renews the same original session files while workflows run.
+    // Re-authenticate their identity before each new business submission/read.
+    let fresh = authenticated_session(
+        http,
+        input,
+        "humanTokenFile",
+        "tenantId",
+        "humanIdentityId",
+        "humanPrincipalId",
+    )
+    .await?;
+    let token = fresh.as_str();
+    let mut offset = 0_u64;
+    let deadline = tokio::time::Instant::now()
+        + Duration::from_secs(input["actionWaitSeconds"].as_u64().unwrap());
+    loop {
+        if tokio::time::Instant::now() >= deadline {
+            return Err("original HUMAN binding discovery exceeded its configured deadline".into());
+        }
+        let response = http
+            .get(format!(
+                "{}api/v1/application-bindings?offset={offset}",
+                required(input, "coreOrigin")?
+            ))
+            .bearer_auth(token)
+            .send()
+            .await?;
+        if !response.status().is_success() {
+            return Err("original HUMAN binding discovery refused".into());
+        }
+        let page: Value = response.json().await?;
+        if page["canCreate"] != true {
+            return Err("original fresh binding management authority refused".into());
+        }
+        let rows = page["bindings"]
+            .as_array()
+            .ok_or("binding metadata page missing")?;
+        if let Some(binding) = rows
+            .iter()
+            .find(|row| row["bindingId"] == endpoint["bindingId"])
+        {
+            fixed_policy_metadata(binding, input, endpoint)?;
+            return Ok(binding.clone());
+        }
+        match page.get("nextOffset") {
+            Some(next) => {
+                let next = next
+                    .as_u64()
+                    .filter(|next| *next > offset)
+                    .ok_or("binding metadata pagination did not advance")?;
+                offset = next;
+            }
+            None => {
+                return Err(
+                    "admitted binding is absent from original HUMAN management scope".into(),
+                )
+            }
+        }
+    }
+}
+
 /// Only the original action endpoint may create the business AE/Operation and
 /// dispatch Temporal. Existing intent (including UNKNOWN) is observed, not sent
 /// again. A transport error after first submission only polls that same key.
@@ -523,6 +646,35 @@ async fn execute_action(
     token: &str,
     command: &Value,
 ) -> Result<(ActionFact, bool), Error> {
+    execute_action_until(conn, http, input, token, command, false).await
+}
+
+/// Admission and completion consume the same original key. Admission makes
+/// the real fixed policy available for native deployment; it is not ACTIVE,
+/// a successful workflow or permission to execute a business action.
+async fn execute_action_until(
+    conn: &mut PgConnection,
+    http: &reqwest::Client,
+    input: &Value,
+    _token: &str,
+    command: &Value,
+    admission_only: bool,
+) -> Result<(ActionFact, bool), Error> {
+    // The runner renews the same original session files while workflows run.
+    // Re-authenticate their identity before each new business submission/read.
+    let fresh = authenticated_session(
+        http,
+        input,
+        "humanTokenFile",
+        "tenantId",
+        "humanIdentityId",
+        "humanPrincipalId",
+    )
+    .await?;
+    let token = fresh.as_str();
+    if admission_only && command["actionKey"] != "application_binding.create" {
+        return Err("only original binding creation has a deployment admission checkpoint".into());
+    }
     let (terminal_stage, expected_result) = match required(command, "actionKey")? {
         "application_binding.create" => ("binding:terminal", "SUCCEEDED"),
         "resource.create" => ("resource:terminal", "SUCCEEDED"),
@@ -556,10 +708,13 @@ async fn execute_action(
     loop {
         if let Some(action) = fact {
             action_matches(&action, command, actor)?;
-            if matches!(action.gate_state.as_str(), "DENIED" | "REVOKED")
+            if matches!(action.gate_state.as_str(), "DENIED" | "REVOKED" | "EXPIRED")
                 || action.dispatch_state == "ABORTED"
             {
                 return Err("original action admission denied".into());
+            }
+            if admission_only && action.gate_state == "ALLOWED" {
+                return Ok((action, submitted));
             }
             if submitted
                 && action.action_key == "resource.grant_read"
@@ -579,7 +734,16 @@ async fn execute_action(
                 .await?;
                 if ready {
                     owner_decision_attempted = true;
-                    approve_read_grant(http, input, token, &action).await?;
+                    let owner = authenticated_session(
+                        http,
+                        input,
+                        "humanTokenFile",
+                        "tenantId",
+                        "humanIdentityId",
+                        "humanPrincipalId",
+                    )
+                    .await?;
+                    approve_read_grant(http, input, &owner, &action).await?;
                 }
             }
             let terminal: Option<String> = sqlx::query_scalar("select result_code from audit.audit_event
@@ -632,6 +796,11 @@ async fn bootstrap_native_receiver_environment() -> Result<(), Error> {
     let input = prepare(serde_json::from_slice(&private_file(&std::env::var(
         "APPLICATION_RECEIVER_BOOTSTRAP_FILE",
     )?)?)?)?;
+    let phase =
+        std::env::var("APPLICATION_RECEIVER_BOOTSTRAP_PHASE").unwrap_or_else(|_| "ready".into());
+    if !matches!(phase.as_str(), "admit" | "ready") {
+        return Err("receiver bootstrap phase must be admit or ready".into());
+    }
     if std::env::var("SPICEDB_HTTP_URL")?.trim_end_matches('/')
         != required(&input, "spiceDbOrigin")?.trim_end_matches('/')
     {
@@ -769,6 +938,35 @@ async fn bootstrap_native_receiver_environment() -> Result<(), Error> {
         .map_err(|_| "original declaration writer refused fixture")?;
     }
     tx.commit().await?;
+
+    if phase == "admit" {
+        let mut admissions = Vec::new();
+        for endpoint in endpoints {
+            let command = json!({"actionKey":"application_binding.create",
+                "idempotencyKey":endpoint["bindingIdempotencyKey"],"explicitConfirmation":true,
+                "applicationBindingCreate":binding_request(endpoint)?});
+            let (action, _) =
+                execute_action_until(&mut conn, &http, &input, &token, &command, true).await?;
+            if action.target_id != id(endpoint, "bindingId")? {
+                return Err("admitted binding target differs from its fixed command".into());
+            }
+            let binding = admitted_binding_metadata(&http, &input, &token, endpoint).await?;
+            admissions.push(
+                json!({"role":endpoint["role"],"bindingId":endpoint["bindingId"],
+                "componentReleaseId":endpoint["releaseId"],"generation":endpoint["generation"],
+                "actionExecutionId":action.id,"operationId":action.operation_id,
+                "gateState":action.gate_state,"dispatchState":action.dispatch_state,
+                "state":binding["state"],"humanActionPolicies":binding["humanActionPolicies"]}),
+            );
+        }
+        println!(
+            "{}",
+            json!({"mode":"CONFORMANCE_ONLY","environmentId":input["environmentId"],
+            "inputDigest":input["inputDigest"],"setup":"BINDINGS_ADMITTED","conformanceExecuted":false,
+            "bindings":admissions})
+        );
+        return Ok(());
+    }
 
     for endpoint in endpoints {
         let command = json!({"actionKey":"application_binding.create",
@@ -1158,4 +1356,51 @@ async fn receiver_owner_approval_uses_original_http_decision_and_refuses_unknown
     );
     assert_eq!(state.2.load(Ordering::SeqCst), 4);
     server.abort();
+}
+
+#[test]
+fn admitted_policy_metadata_requires_exact_original_ownership() {
+    let tenant = Uuid::new_v4();
+    let binding = Uuid::new_v4();
+    let release = Uuid::new_v4();
+    let input = json!({"tenantId":tenant});
+    let endpoint = json!({"bindingId":binding,"releaseId":release,"generation":1,
+        "manifest":{"actionDefinitions":[{"actionKey":"file_storage.write@v2","version":2}]}});
+    let original = json!({"bindingId":binding,"tenantId":tenant,"componentReleaseId":release,
+        "state":"PROVISIONING","humanActionPolicies":[{"actionKey":"file_storage.write@v2","actionVersion":2,
+            "componentReleaseId":release,"generation":1,"resultExposurePolicyId":Uuid::new_v4(),"resultExposurePolicyVersion":1}]});
+    fixed_policy_metadata(&original, &input, &endpoint).unwrap();
+    for field in ["bindingId", "tenantId", "componentReleaseId"] {
+        let mut wrong = original.clone();
+        wrong[field] = json!(Uuid::new_v4());
+        assert!(fixed_policy_metadata(&wrong, &input, &endpoint).is_err());
+    }
+    for state in ["ERROR", "DISABLING", "DISABLED", "UNKNOWN"] {
+        let mut wrong = original.clone();
+        wrong["state"] = json!(state);
+        assert!(fixed_policy_metadata(&wrong, &input, &endpoint).is_err());
+    }
+    let mut active = original.clone();
+    active["state"] = json!("ACTIVE");
+    active["activeProjectionGeneration"] = json!(1);
+    fixed_policy_metadata(&active, &input, &endpoint).unwrap();
+    active["activeProjectionGeneration"] = json!(2);
+    assert!(fixed_policy_metadata(&active, &input, &endpoint).is_err());
+    for (field, value) in [
+        ("generation", json!(2)),
+        ("componentReleaseId", json!(Uuid::new_v4())),
+        ("actionKey", json!("other")),
+        ("actionVersion", json!(1)),
+        ("resultExposurePolicyVersion", json!(2)),
+    ] {
+        let mut wrong = original.clone();
+        wrong["humanActionPolicies"][0][field] = value;
+        assert!(fixed_policy_metadata(&wrong, &input, &endpoint).is_err());
+    }
+    let mut missing = original.clone();
+    missing
+        .as_object_mut()
+        .unwrap()
+        .remove("humanActionPolicies");
+    assert!(fixed_policy_metadata(&missing, &input, &endpoint).is_err());
 }

@@ -6561,6 +6561,10 @@ type ApplicationBindingView struct {
 	// Active approved binding declares a SERVICE read receiver. Resource discovery and writes
 	// still freshly check the original source share and receiver update permissions.
 	HasReadReceiver *bool `json:"hasReadReceiver,omitempty"`
+	// Core 在已准入绑定事务中冻结的已批准 release 最大暴露边界。固定归属于
+	// binding/release/generation/action/version；不是授权，不能替代 fresh target permission、schema 或
+	// redaction 校验。未 ACTIVE 的绑定仅向 canCreate 管理者提供部署引用，仍不得执行。
+	HumanActionPolicies []ApplicationHumanActionPolicy `json:"humanActionPolicies,omitempty"`
 	// DD-127(4): presentation category the approved NATIVE_PAGE release declares. The sidebar
 	// labels the entry by capabilityCategories ∪ this value; it grants nothing.
 	NativePageCategory *NativePageCategory `json:"nativePageCategory,omitempty"`
@@ -6577,6 +6581,15 @@ type ApplicationBindingView struct {
 type ApplicationBindingCapability struct {
 	Category string `json:"category"`
 	Version  int64  `json:"version"`
+}
+
+type ApplicationHumanActionPolicy struct {
+	ActionKey                   string `json:"actionKey"`
+	ActionVersion               int64  `json:"actionVersion"`
+	ComponentReleaseID          string `json:"componentReleaseId"`
+	Generation                  int64  `json:"generation"`
+	ResultExposurePolicyID      string `json:"resultExposurePolicyId"`
+	ResultExposurePolicyVersion int64  `json:"resultExposurePolicyVersion"`
 }
 
 // DD-138：KAILO_EMBED release 向 Kailo 设置页贡献的一项偏好声明（03
@@ -8580,6 +8593,13 @@ type ModerationRestrictionView struct {
 type NativeCommunityFacts struct {
 	// 该 Tenant 的 Community host，可能带非默认端口
 	CommunityHost string `json:"communityHost"`
+	// DD-81/160：仅从当前 ACTIVE Community 的可信 NIP-11、实际 ready 的 writer policy 读取的规范 publication
+	// epoch。Native 新签 1631 前冻结并作为唯一 kailo:publication 标签签名；缺失不猜测或回填历史意图。
+	PublicationEpoch *string `json:"publicationEpoch,omitempty"`
+	// 读取上述部署事实时 Core 的 Unix 秒时刻；Native 仅以本次可信读的时刻判断原签事件是否严格超过窗口，不信任 Webview now 或设备跳钟。
+	PublishResultObservedAtUnixSeconds *int64 `json:"publishResultObservedAtUnixSeconds,omitempty"`
+	// DD-81：与 Core 发布对账器同源的 PUBLISH_RESULT_SETTLE_SECONDS 部署事实，必须为正且不小于 Relay 时间漂移窗口；缺失时不得猜测未送达。
+	PublishResultSettleSeconds *int64 `json:"publishResultSettleSeconds,omitempty"`
 	// 当前固定 Relay NIP-11 的 max_limit；旧客户端忽略，新 Pulse 消费者缺失时不猜测上限。
 	RelayQueryLimit *int64 `json:"relayQueryLimit,omitempty"`
 	// 原生端直连的 Relay 地址
@@ -9566,11 +9586,13 @@ type ProjectsGitRefResponse struct {
 // CLIENT signer, never supplied by this request. Creation resolves the home Channel from an
 // admitted Workspace; metadata is transient and remains Relay-owned. DELETE selects a real
 // signed current announcement; it does not delete its channel or repositories.
-// CREATE_PULL_REQUEST publishes the original NIP-34 1618 review for a branch already on the
-// repository (DD-118); the push itself is not part of this request. APPROVE_PULL_REQUEST
-// and the request-changes / inline-line variants of CREATE_PULL_REQUEST_COMMENT publish the
-// original labeled kind-1 review comments (desktop
-// pullRequestReviews.ts::submitProjectPullRequestReview,
+// UPDATE_PULL_REQUEST publishes the original kind-1619 head update for the named immutable
+// 1618 root, only as its author or repository owner; it carries commit and optional
+// mergeBase, never a caller author, tags or clone URL. CREATE_PULL_REQUEST publishes the
+// original NIP-34 1618 review for a branch already on the repository (DD-118); the push
+// itself is not part of this request. APPROVE_PULL_REQUEST and the request-changes /
+// inline-line variants of CREATE_PULL_REQUEST_COMMENT publish the original labeled kind-1
+// review comments (desktop pullRequestReviews.ts::submitProjectPullRequestReview,
 // hooks.ts::createProjectPullRequestComment) against the named review head; they introduce
 // no new Nostr kind (DD-118(5)). ATTACH_REPOSITORY (original useAttachProjectRepository /
 // useAddProjectRepository) republishes the signer's current 30621 head named by
@@ -9610,15 +9632,16 @@ type ProjectsPublishRequest struct {
 	// announcement (AddProjectRepositoryDialog Clone URL). Only metadata: Kailo reads
 	// repository content through the 30617 coordinate (DD-118) and never fetches this URL.
 	CloneURL *string `json:"cloneUrl,omitempty"`
-	// Original `c`. CREATE_PULL_REQUEST: compare branch head read from the trusted repository
-	// state. APPROVE_PULL_REQUEST and CREATE_PULL_REQUEST_COMMENT with reviewDecision or an
-	// anchor: the review head the reviewer looked at; the consumer refuses with
-	// TARGET_STATE_CONFLICT unless it is still the review's current trusted head. Required by
-	// those review comments and refused on ordinary comments.
+	// Original `c`. UPDATE_PULL_REQUEST: the already-pushed head frozen by this update intent.
+	// CREATE_PULL_REQUEST: compare branch head read from the trusted repository state.
+	// APPROVE_PULL_REQUEST and CREATE_PULL_REQUEST_COMMENT with reviewDecision or an anchor:
+	// the review head the reviewer looked at; the consumer refuses with TARGET_STATE_CONFLICT
+	// unless it is still the review's current trusted head. Required by those review comments
+	// and refused on ordinary comments.
 	Commit      *string  `json:"commit,omitempty"`
 	Description *string  `json:"description,omitempty"`
 	Mentions    []string `json:"mentions,omitempty"`
-	// Original 1618 `merge-base`, when known.
+	// Original 1618/1619 `merge-base`, when known.
 	MergeBase *string                     `json:"mergeBase,omitempty"`
 	Name      *string                     `json:"name,omitempty"`
 	Operation ProjectPublicationOperation `json:"operation"`
@@ -10074,10 +10097,13 @@ type TenantMemberJoinView struct {
 // DD-158(3)：GET /api/v1/tenant/profile。会话 Tenant 的显示名、图标与版本，全体 ACTIVE 成员可读；本人有 Tenant
 // manage 时给出 updateActionKey（tenant.profile.update），提交仍由 Core 重新准入。
 type TenantProfileView struct {
-	Icon            *string `json:"icon,omitempty"`
-	Name            string  `json:"name"`
-	UpdateActionKey *string `json:"updateActionKey,omitempty"`
-	Version         int64   `json:"version"`
+	Icon *string `json:"icon,omitempty"`
+	Name string  `json:"name"`
+	// BFF_STREAM_RETRY_MILLIS 部署事实；在线资料读取中断后再次读取前的等待。afterVersion
+	// 查询只等待有限的再准入时间，回应前重新校验本人会话与成员资格。
+	RefreshAfterMillis *int64  `json:"refreshAfterMillis,omitempty"`
+	UpdateActionKey    *string `json:"updateActionKey,omitempty"`
+	Version            int64   `json:"version"`
 }
 
 // DD-123: platform quota items of the Tenant read from OpenMeter (the only authority).
@@ -13018,6 +13044,7 @@ const (
 	SelfUnassignIssue                 ProjectPublicationOperation = "SELF_UNASSIGN_ISSUE"
 	SetPullRequestStatus              ProjectPublicationOperation = "SET_PULL_REQUEST_STATUS"
 	UnassignIssue                     ProjectPublicationOperation = "UNASSIGN_ISSUE"
+	UpdatePullRequest                 ProjectPublicationOperation = "UPDATE_PULL_REQUEST"
 )
 
 // Original pullRequestReviews.ts lifecycle states the UI may publish (NIP-34

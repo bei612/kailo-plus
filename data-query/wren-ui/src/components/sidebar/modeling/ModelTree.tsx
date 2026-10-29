@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
-import { message } from 'antd';
+import { notify } from '@/utils/kailoHost';
+import useKailoText, { kailoT } from '@/utils/kailoI18n';
+import { PlusIcon, RefreshIcon } from '@/components/kailo/KailoIcons';
 import { DataNode } from 'antd/es/tree';
 import { DiagramModel } from '@/utils/data';
 import { getNodeTypeIcon } from '@/utils/nodeType';
@@ -10,9 +12,7 @@ import {
 } from '@/components/sidebar/utils';
 import useModalAction from '@/hooks/useModalAction';
 import LabelTitle from '@/components/sidebar/LabelTitle';
-import PlusOutlined from '@ant-design/icons/PlusOutlined';
 import WarningOutlined from '@ant-design/icons/WarningOutlined';
-import ReloadOutlined from '@ant-design/icons/ReloadOutlined';
 import { StyledSidebarTree } from '@/components/sidebar/Modeling';
 import SchemaChangeModal from '@/components/modals/SchemaChangeModal';
 import {
@@ -45,6 +45,7 @@ const getHasSchemaChange = (schemaChange: SchemaChange) => {
 
 export default function ModelTree(props: Props) {
   const { onOpenModelDrawer, models } = props;
+  const t = useKailoText();
 
   const schemaChangeModal = useModalAction();
   const [triggerDataSourceDetection, { loading: isDetecting }] =
@@ -52,9 +53,9 @@ export default function ModelTree(props: Props) {
       onError: (error) => console.error(error),
       onCompleted: async (data) => {
         if (data.triggerDataSourceDetection) {
-          message.warning('Schema change detected.');
+          notify.warning(kailoT('modeling.schemaChangeDetected'));
         } else {
-          message.success('There is no schema change.');
+          notify.success(kailoT('modeling.noSchemaChange'));
         }
         await refetchSchemaChange();
       },
@@ -65,9 +66,9 @@ export default function ModelTree(props: Props) {
       onCompleted: async (_, options) => {
         const { type } = options.variables?.where;
         if (type === SchemaChangeType.DELETED_TABLES) {
-          message.success('Source table deleted resolved successfully.');
+          notify.success(kailoT('modeling.deletedTablesResolved'));
         } else if (type === SchemaChangeType.DELETED_COLUMNS) {
-          message.success('Source column deleted resolved successfully.');
+          notify.success(kailoT('modeling.deletedColumnsResolved'));
         }
 
         const { data, error } = await refetchSchemaChange();
@@ -102,22 +103,38 @@ export default function ModelTree(props: Props) {
   };
 
   const getModelGroupNode = createTreeGroupNode({
-    groupName: 'Models',
+    groupName: t('modeling.models'),
     groupKey: 'models',
+    emptyText: t('modeling.noModels'),
     actions: [
       {
         key: 'trigger-schema-detection',
         disabled: isDetecting,
-        icon: () => (
-          <ReloadOutlined
-            spin={isDetecting}
+        render: ({ key, disabled }) => (
+          <span
+            key={key}
+            role="button"
+            aria-label={t('modeling.detectSchemaChange')}
+            className={`adm-actionIcon d-inline-flex ${
+              disabled ? 'adm-actionIcon--disabled' : ''
+            }`}
             title={
               schemaChangeData?.schemaChange.lastSchemaChangeTime
-                ? `Last refresh ${getRelativeTime(schemaChangeData?.schemaChange.lastSchemaChangeTime)}`
-                : ''
+                ? t('modeling.lastRefresh', {
+                    time: getRelativeTime(
+                      schemaChangeData?.schemaChange.lastSchemaChangeTime,
+                    ),
+                  })
+                : t('modeling.detectSchemaChange')
             }
-            onClick={() => triggerDataSourceDetection()}
-          />
+            onClick={() => !disabled && triggerDataSourceDetection()}
+          >
+            <RefreshIcon
+              size={14}
+              className={isDetecting ? 'anticon-spin' : undefined}
+              style={{ padding: 3 }}
+            />
+          </span>
         ),
       },
       {
@@ -126,11 +143,11 @@ export default function ModelTree(props: Props) {
           <GroupActionButton
             data-guideid="add-model"
             data-testid="add-model"
-            icon={<PlusOutlined />}
+            icon={<PlusIcon size={14} className="mr-1" />}
             size="small"
             onClick={() => onOpenModelDrawer()}
           >
-            New
+            {t('newThread')}
           </GroupActionButton>
         ),
       },
@@ -146,8 +163,8 @@ export default function ModelTree(props: Props) {
         appendSlot: hasSchemaChange && (
           <span className="adm-actionIcon mx-2" onClick={onOpenSchemaChange}>
             <WarningOutlined
-              className="orange-5"
-              title="Review schema change impacts"
+              style={{ color: 'var(--kailo-color-warning-text)' }}
+              title={t('modeling.reviewSchemaChange')}
             />
           </span>
         ),

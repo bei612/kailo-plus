@@ -1,21 +1,24 @@
+// Restored from Buzz 779af8886c; platform identity, delivery and i18n seams below.
 import 'dart:async';
 
-import 'package:client_kit/shared/platform/platform_text.dart';
 import 'package:flutter/material.dart';
+import 'package:client_kit/shared/platform/platform_text.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../shared/theme/theme.dart';
+import '../../shared/read_state/read_state_provider.dart';
+import '../../shared/read_state/deferred_read_state_update.dart';
 import '../../shared/widgets/buzz_loading_indicator.dart';
 import '../../shared/widgets/frosted_app_bar.dart';
 import '../../shared/widgets/bee_refresh_indicator.dart';
 import '../channels/channel.dart';
 import '../channels/compose_bar.dart';
 import 'forum_models.dart';
+import 'forum_text.dart';
 import 'forum_post_card.dart';
 import 'forum_provider.dart';
-import 'forum_text.dart';
 import 'forum_thread_page.dart';
 
 /// Main forum view — replaces the old _ForumPlaceholder.
@@ -34,7 +37,24 @@ class ForumPostsView extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final postsAsync = ref.watch(forumPostsProvider(channel.id));
+    final postsAsync = ref
+        .watch(forumPostsProvider(channel.id))
+        .unwrapPrevious();
+    final readState = ref.watch(readStateProvider);
+    final posts = postsAsync.asData?.value.posts;
+    final newestAt = posts?.fold<int>(
+      0,
+      (at, post) => post.createdAt > at ? post.createdAt : at,
+    );
+    useEffect(() {
+      if (!readState.isReady || newestAt == null || newestAt == 0) return null;
+      return deferReadStateUpdate(
+        context,
+        () => ref
+            .read(readStateProvider.notifier)
+            .markContextRead(channel.id, newestAt),
+      );
+    }, [channel.id, newestAt, readState.isReady]);
     final isComposing = useState(false);
     // A queued attachment can finish after this view is popped. Capture the
     // app-level provider container instead of retaining the route's WidgetRef.
@@ -61,15 +81,12 @@ class ForumPostsView extends HookConsumerWidget {
                 ? FloatingActionButton(
                     heroTag: 'forum-fab',
                     onPressed: () => isComposing.value = true,
-                    tooltip: forumText(
-                      context,
-                      PlatformMessageKey.forumNewPost,
-                    ),
+                    tooltip: forumText(context, PlatformMessageKey.forumStart),
                     shape: const CircleBorder(),
                     child: const Icon(LucideIcons.plus),
                   )
                 : null,
-            body: postsAsync.when(
+            body: postsAsync.unwrapPrevious().when(
               loading: () => Padding(
                 padding: EdgeInsets.only(top: frostedAppBarHeight(context)),
                 child: Center(
@@ -77,7 +94,7 @@ class ForumPostsView extends HookConsumerWidget {
                     size: 44,
                     semanticLabel: forumText(
                       context,
-                      PlatformMessageKey.forumLoadingPosts,
+                      PlatformMessageKey.platformLoading,
                     ),
                   ),
                 ),
@@ -86,7 +103,7 @@ class ForumPostsView extends HookConsumerWidget {
                 padding: EdgeInsets.only(top: frostedAppBarHeight(context)),
                 child: Center(
                   child: Text(
-                    forumText(context, PlatformMessageKey.forumLoadFailed),
+                    forumText(context, PlatformMessageKey.platformLoadFailed),
                     style: context.textTheme.bodyMedium?.copyWith(
                       color: context.colors.error,
                     ),
@@ -123,17 +140,11 @@ class ForumPostsView extends HookConsumerWidget {
                         currentPubkey: currentPubkey,
                         onTap: () => _openThread(context, post),
                         onDelete: (eventId) async {
-                          try {
-                            await deleteForumEvent(
-                              ref,
-                              channelId: channel.id,
-                              eventId: eventId,
-                            );
-                          } catch (error) {
-                            if (context.mounted) {
-                              showForumDeleteFailure(context, error);
-                            }
-                          }
+                          await deleteForumEvent(
+                            ref,
+                            channelId: channel.id,
+                            eventId: eventId,
+                          );
                         },
                       );
                     },
@@ -151,7 +162,10 @@ class ForumPostsView extends HookConsumerWidget {
               child: IconButton(
                 onPressed: () => isComposing.value = false,
                 icon: const Icon(LucideIcons.x, size: 18),
-                tooltip: forumText(context, PlatformMessageKey.forumDismiss),
+                tooltip: forumText(
+                  context,
+                  PlatformMessageKey.tenantProfileClose,
+                ),
                 visualDensity: VisualDensity.compact,
               ),
             ),
@@ -225,14 +239,11 @@ class _EmptyState extends StatelessWidget {
             ),
             const SizedBox(height: Grid.half),
             Text(
-              forumText(
-                context,
-                isArchived
-                    ? PlatformMessageKey.forumArchived
-                    : isMember
-                    ? PlatformMessageKey.forumEmptyHint
-                    : PlatformMessageKey.forumJoin,
-              ),
+              isArchived
+                  ? forumText(context, PlatformMessageKey.forumArchived)
+                  : isMember
+                  ? forumText(context, PlatformMessageKey.forumEmptyHint)
+                  : forumText(context, PlatformMessageKey.forumJoin),
               style: context.textTheme.bodySmall?.copyWith(
                 color: context.colors.onSurfaceVariant,
               ),

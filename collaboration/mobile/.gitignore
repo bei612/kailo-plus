@@ -47,3 +47,6 @@ app.*.map.json
 # Local environment config (contains keys)
 .env.json
 
+
+# Firebase public deployment configuration is supplied to the native SDK per build.
+android/app/google-services.json

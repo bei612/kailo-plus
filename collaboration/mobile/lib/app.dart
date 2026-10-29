@@ -22,6 +22,7 @@ import 'shared/deeplink/pending_deep_link_provider.dart';
 import 'shared/platform/platform_display_name.dart';
 import 'shared/platform/platform_link.dart';
 import 'shared/platform/platform_locale.dart';
+import 'shared/platform/tenant_profile_live.dart';
 import 'shared/push/push_registration.dart';
 import 'shared/relay/relay.dart';
 import 'shared/theme/theme.dart';
@@ -77,6 +78,7 @@ class App extends HookConsumerWidget {
       ref.watch(userStatusCacheProvider);
       // DD-151: keep this device's push token current with Core.
       ref.watch(pushTokenRefreshProvider);
+      ref.watch(tenantProfileLiveProvider);
     }
 
     // Start listening for buzz:// links immediately (even pre-auth) so a

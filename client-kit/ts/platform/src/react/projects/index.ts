@@ -23,7 +23,7 @@ export { buildProjectRelatedChannelPatchTemplate } from "./projectChannelCreatio
 export { eventToRepository } from "./projectModels";
 export {useProjectSidebarMembership} from "./useProjectSidebarMembership";
 export { loadProjects, enumerateProjectEvents, type ProjectsHost, type ProjectsPage } from "./projectEnumeration";
-export { createProjectsGitHost, type ProjectsGitHost, type ProjectRepoSnapshot, type ProjectRepoDiff,
+export { createProjectsGitHost, createNativeProjectsGitHost, type NativeProjectsGitScope, type NativeProjectsGitInvoke, type ProjectsGitHost, type ProjectRepoSnapshot, type ProjectRepoDiff,
   type ProjectRepoBranchResult, type CreateProjectRemoteBranchInput, type DeleteProjectRemoteBranchInput,
   type MergeProjectPullRequestInput, type ProjectRepoMergeResult } from "./projectGit";
 export { SidebarProjectsSection, type SidebarProjectChannel, type SidebarProjectMembership } from "../sidebar/SidebarProjectsSection";
@@ -31,3 +31,5 @@ export type { ProjectAgentChatHost } from "./projectAgentChatHost";
 export type { ProjectAgentConversationEvent, ProjectAgentSendRequest } from "./lib/projectAgentConversation";
 export type { ProjectConversationRenderProps, ProjectDiscussionHost } from "./DiscussionChannels";
 export { ProjectChannelRequestDialog, ProjectChannelRequestDetails } from "./ProjectChannelRequestDialog";
+
+export {buildProjectPullRequestUpdate,canPublishProjectPullRequestUpdate,nextProjectPullRequestUpdateCreatedAt,projectPullRequestUpdateMatches} from "./pullRequestUpdates";

@@ -103,6 +103,16 @@ pub fn create_remote_branch_blocking(
     new_branch: &str,
     auth: &GitAuthConfig,
 ) -> Result<ProjectRepoBranchResult, RemoteBranchError> {
+    // Git treats an already advertised identical ref as "up to date" without
+    // sending an update; in that case an empty force-with-lease is not checked.
+    // Refuse a pre-existing destination before constructing a create push. The
+    // lease below still protects a concurrent create at a different commit.
+    if remote_branch_commit(clone_url, new_branch, auth)
+        .map_err(before_push)?
+        .is_some()
+    {
+        return Err(before_push("The branch already exists.".to_owned()));
+    }
     let temp_dir =
         tempfile::tempdir().map_err(|error| before_push(format!("create temp dir: {error}")))?;
     let repo_dir = temp_dir.path().join("repo.git");
@@ -401,11 +411,16 @@ mod tests {
             remote_branch_commit(remote_path, "feature/demo", &auth),
             Ok(Some(commit.clone()))
         );
-        // The empty lease refuses to overwrite the branch it just created.
+        // Identical refs can bypass git's empty lease as "up to date"; the
+        // explicit observation must refuse this create before starting push.
         let again =
             create_remote_branch_blocking(remote_path, "main", &commit, "feature/demo", &auth)
                 .expect_err("existing branch is not overwritten");
-        assert!(again.pushed);
+        assert!(!again.pushed);
+        assert_eq!(
+            remote_branch_commit(remote_path, "feature/demo", &auth),
+            Ok(Some(commit.clone()))
+        );
 
         delete_remote_branch_blocking(remote_path, "feature/demo", &commit, &auth)
             .expect("delete remote branch");

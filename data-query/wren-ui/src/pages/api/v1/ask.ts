@@ -1,4 +1,5 @@
 import { NextApiRequest, NextApiResponse } from 'next';
+import { createInterface } from 'readline';
 import { components } from '@/common';
 import { ApiType } from '@server/repositories/apiHistoryRepository';
 import * as Errors from '@/apollo/server/utils/error';
@@ -19,6 +20,7 @@ import {
   TextBasedAnswerResult,
   TextBasedAnswerStatus,
   AskResultType,
+  generalCompletion,
   WrenAIError,
 } from '@/apollo/server/models/adaptor';
 import { getLogger } from '@server/utils';
@@ -139,36 +141,60 @@ export default async function handler(
 
     // Check for general type response (explanation streaming)
     if (askResult.type === AskResultType.GENERAL) {
-      // Stream the explanation content
-      let explanation = '';
-      const stream = await wrenAIAdaptor.getAskStreamingResult(askTask.queryId);
-
-      // Collect the streamed content
-      const streamPromise = new Promise<void>((resolve, reject) => {
-        stream.on('data', (chunk) => {
-          const chunkString = chunk.toString('utf-8');
-          const match = chunkString.match(/data: {"message":"([\s\S]*?)"}/);
-          if (match && match[1]) {
-            explanation += match[1];
+      const authorize = async () => {
+        const currentProject = await projectService.getCurrentProject();
+        if (isGovernedQueryMode() || currentProject.id !== project.id)
+          throw new ApiError(
+            'Original explanation observation unavailable',
+            503,
+          );
+      };
+      let explanation = generalCompletion(askResult, askTask.queryId);
+      if (explanation === undefined) {
+        const stream = await wrenAIAdaptor.getAskStreamingResult(
+          askTask.queryId,
+        );
+        const close = () => stream.destroy();
+        res.once('close', close);
+        const lines = createInterface({ input: stream, crlfDelay: Infinity });
+        try {
+          for await (const line of lines) {
+            if (!line) continue;
+            await authorize();
+            if (!line.startsWith('data:'))
+              throw new ApiError(
+                'Original explanation observation unavailable',
+                503,
+              );
+            const event = JSON.parse(line.slice(5).trim());
+            if (
+              Object.keys(event).sort().join(',') === 'done,queryId' &&
+              event.done === true &&
+              event.queryId === askTask.queryId
+            )
+              break;
+            if (
+              Object.keys(event).join(',') !== 'message' ||
+              typeof event.message !== 'string'
+            )
+              throw new ApiError(
+                'Original explanation observation unavailable',
+                503,
+              );
           }
-        });
-
-        stream.on('end', () => {
-          resolve();
-        });
-
-        stream.on('error', (error) => {
-          reject(error);
-        });
-
-        // Handle client disconnect
-        req.on('close', () => {
+          explanation = generalCompletion(
+            await wrenAIAdaptor.getAskResult(askTask.queryId),
+            askTask.queryId,
+          );
+        } finally {
+          lines.close();
+          res.off('close', close);
           stream.destroy();
-          reject(new Error('Client disconnected'));
-        });
-      });
-
-      await streamPromise;
+        }
+      }
+      await authorize();
+      if (explanation === undefined)
+        throw new ApiError('Original explanation completion unavailable', 503);
 
       // Return the explanation result
       await respondWith({
@@ -185,6 +211,7 @@ export default async function handler(
         requestPayload: req.body,
         threadId: newThreadId,
         headers: req.headers as Record<string, string>,
+        beforeResponse: authorize,
       });
       return;
     }
@@ -286,13 +313,28 @@ export default async function handler(
         });
 
         // Handle client disconnect
-        req.on('close', () => {
+        res.on('close', () => {
           stream.destroy();
           reject(new Error('Client disconnected'));
         });
       });
 
       await streamPromise;
+      const completed = await wrenAIAdaptor.getTextBasedAnswerResult(
+        summaryTask.queryId,
+      );
+      const currentProject = await projectService.getCurrentProject();
+      if (
+        isGovernedQueryMode() ||
+        currentProject.id !== project.id ||
+        completed?.status !== TextBasedAnswerStatus.SUCCEEDED ||
+        completed.error ||
+        completed.completion?.queryId !== summaryTask.queryId ||
+        typeof completed.completion.content !== 'string'
+      ) {
+        throw new ApiError('Original summary completion unavailable', 503);
+      }
+      summary = completed.completion.content;
     }
 
     // Return the combined result
@@ -310,6 +352,11 @@ export default async function handler(
       requestPayload: req.body,
       threadId: newThreadId,
       headers: req.headers as Record<string, string>,
+      beforeResponse: async () => {
+        const currentProject = await projectService.getCurrentProject();
+        if (isGovernedQueryMode() || currentProject.id !== project.id)
+          throw new ApiError('Original summary observation unavailable', 503);
+      },
     });
   } catch (error) {
     await handleApiError({

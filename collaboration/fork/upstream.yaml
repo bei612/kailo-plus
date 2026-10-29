@@ -1097,8 +1097,8 @@ artifacts:
     # 安装包显示名由发布配置注入（DD-111），不写在源码里
     build_args: [PLATFORM_DISPLAY_NAME]
     blocked: Win11 x64 unsigned 测试安装包已生成；代码签名、Win11 安装运行与业务验收未完成
-    source_digest: sha256:d6e2a1496affe170ed15152f5a89196351ed9e2dada9055fa458063007abb361
-    artifact_digest: sha256:841e6c2179fbccbc4cdd1075a958c70d8e322848fa6bcc1837f7ce691c23f90d
+    source_digest: sha256:1e96dfffe0bb928f3553df237cdf24734e5531a20cddc0b112bfa3a8b9e383f7
+    artifact_digest: sha256:6f4f9242b327e5255469fd87c9cb9de8e9ed8b5cac33572733c7e346a260b580
   # Android release APK（ADR-06 客户端发布单元按端分离：应用商店包，带平台签名）。
   # 阻断：release 签名所需的 upload keystore 未提供。上游 release 构建缺 keystore 即失败，
   # 不以 debug 证书冒充 release；profile/debug APK 只是测试构建，不登记为发布产物。
@@ -1109,6 +1109,8 @@ artifacts:
     inputs: [collaboration/mobile/, client-kit/dart/, collaboration/fork/packaging/mobile.Dockerfile, collaboration/fork/packaging/mobile.Dockerfile.dockerignore]
     build_secrets: [BUZZ_ANDROID_UPLOAD_KEYSTORE, BUZZ_ANDROID_UPLOAD_KEYSTORE_PASSWORD, BUZZ_ANDROID_UPLOAD_KEY_ALIAS, BUZZ_ANDROID_UPLOAD_KEY_PASSWORD]
     build_args: [PLATFORM_DISPLAY_NAME]
+    optional_build_args: [BUZZ_ANDROID_GOOGLE_SERVICES_JSON]
+    build_config_digest: none
     blocked: release 签名 upload keystore 未提供（ADR-06 按端分离的 Mobile 发布链）
     source_digest: none
     artifact_digest: none

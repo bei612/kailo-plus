@@ -12,7 +12,7 @@ use crate::types::{
 /// Bound eager content without truncating the repository tree.
 pub const MAX_EAGER_FILE_PREVIEWS: usize = 250;
 
-fn parse_latest_commit(output: &str) -> Option<ProjectRepoCommitInfo> {
+pub(crate) fn parse_latest_commit(output: &str) -> Option<ProjectRepoCommitInfo> {
     let line = output.lines().next()?;
     let mut parts = line.split('\0');
     let hash = parts.next()?.to_string();
@@ -41,7 +41,7 @@ pub(crate) fn first_output_line(output: &str) -> Option<String> {
         .map(str::to_string)
 }
 
-fn parse_commits(output: &str) -> Vec<ProjectRepoCommitInfo> {
+pub(crate) fn parse_commits(output: &str) -> Vec<ProjectRepoCommitInfo> {
     output
         .lines()
         .filter_map(parse_latest_commit)
@@ -49,7 +49,7 @@ fn parse_commits(output: &str) -> Vec<ProjectRepoCommitInfo> {
         .collect()
 }
 
-fn parse_contributors(output: &str) -> Vec<ProjectRepoContributorInfo> {
+pub(crate) fn parse_contributors(output: &str) -> Vec<ProjectRepoContributorInfo> {
     let mut contributors: std::collections::HashMap<String, ProjectRepoContributorInfo> =
         std::collections::HashMap::new();
 
@@ -96,7 +96,7 @@ fn parse_contributors(output: &str) -> Vec<ProjectRepoContributorInfo> {
     contributors
 }
 
-fn parse_latest_commit_by_path(
+pub(crate) fn parse_latest_commit_by_path(
     output: &str,
 ) -> std::collections::HashMap<String, ProjectRepoCommitInfo> {
     let mut current_commit = None;
@@ -125,7 +125,7 @@ fn normalize_branch_name(branch: &str) -> &str {
         .unwrap_or_else(|| branch.trim())
 }
 
-fn branch_activity_range(
+pub(crate) fn branch_activity_range(
     repo_dir: &std::path::Path,
     auth: &GitAuthConfig,
     branch_name: Option<&str>,

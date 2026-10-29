@@ -119,14 +119,17 @@ class SQLAnswer(BasicPipeline):
         # Put the chunk content into the user's queue
         self._user_queues[query_id].put_nowait(chunk.content)
 
-    async def get_streaming_results(self, query_id):
-        async def _get_streaming_results(query_id):
-            return await self._user_queues[query_id].get()
+    def retire_streaming_results(self, query_id):
+        # Existing observers retain their queue reference; future readers use
+        # the service's bounded completed result, not a new generation.
+        self._user_queues.pop(query_id, None)
 
-        if query_id not in self._user_queues:
-            self._user_queues[
-                query_id
-            ] = asyncio.Queue()  # Ensure the user's queue exists
+    async def get_streaming_results(self, query_id):
+        queue = self._user_queues.setdefault(query_id, asyncio.Queue())
+
+        async def _get_streaming_results(query_id):
+            return await queue.get()
+
         while True:
             try:
                 # Wait for an item from the user's queue
@@ -134,7 +137,8 @@ class SQLAnswer(BasicPipeline):
                     _get_streaming_results(query_id), timeout=120
                 )
                 if result is None:
-                    del self._user_queues[query_id]
+                    if self._user_queues.get(query_id) is queue:
+                        del self._user_queues[query_id]
                     yield None
                     break
                 if result:

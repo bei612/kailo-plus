@@ -6,6 +6,7 @@ import 'package:buzz/shared/platform/platform_views.dart';
 import 'package:buzz/shared/relay/relay.dart';
 import 'package:buzz/shared/theme/theme.dart';
 import 'package:flutter/material.dart';
+import 'package:client_kit/shared/platform/platform_text.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -70,10 +71,26 @@ void main() {
     expect(find.text('Device key'), findsOneWidget);
     expect(find.text('Sign out'), findsOneWidget);
     expect(find.text('v0.16.0 (432)'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('push-notifications-unavailable')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('push-notifications-enabled')),
+      findsNothing,
+    );
+    expect(
+      find.text(
+        platformText(
+          PlatformMessageKey.platformSettingsPushUnavailable,
+          locale: 'en',
+        ),
+      ),
+      findsOneWidget,
+    );
     // 上游在这里有的入口，一期不交付：一律不生成
     for (final gone in [
       'Invite to community',
-      'Push notifications',
       'Send identity to desktop',
       'Remove community',
       'Edit',
@@ -106,6 +123,19 @@ void main() {
       for (final label in ['组织', '外观', '主题', '本机', '服务器连接', '设备密钥', '退出']) {
         expect(find.text(label), findsWidgets, reason: label);
       }
+      expect(
+        find.byKey(const ValueKey('push-notifications-unavailable')),
+        findsOneWidget,
+      );
+      expect(
+        find.text(
+          platformText(
+            PlatformMessageKey.platformSettingsPushUnavailable,
+            locale: 'zh-CN',
+          ),
+        ),
+        findsOneWidget,
+      );
       expect(find.text('Appearance'), findsNothing);
       expect(find.text('Device key'), findsNothing);
       await tester.tap(find.text('退出'));

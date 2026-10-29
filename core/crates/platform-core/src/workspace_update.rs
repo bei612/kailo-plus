@@ -447,7 +447,7 @@ async fn converge(
     let client = control_client(state, ae.tenant_id, ProjectionDirection::Establish);
     let (control, _) = client.await?;
     let sent = sent_before(&state.pool, &ae).await.map_err(unavailable)?;
-    let read = control.converge_channel_metadata(&state.http, &channel, &target, sent);
+    let read = control.converge_channel_metadata(&state.relay_http, &channel, &target, sent);
     let edit = match read.await.map_err(relay_unavailable)? {
         ChannelMetadataStep::Converged(_) => return run.commit(name).await,
         ChannelMetadataStep::Refused(reason) => {
@@ -484,7 +484,7 @@ async fn converge(
     let dispatch = format!("{stage}:dispatch");
     run.record(&dispatch, "DISPATCH", "DISPATCHED", evidence.clone())
         .await?;
-    let result = match control.deliver(&state.http, &edit, admitted).await {
+    let result = match control.deliver(&state.relay_http, &edit, admitted).await {
         Delivery::Accepted => "ACCEPTED",
         Delivery::Rejected(why) => {
             tracing::warn!(reason = %why, "Relay 拒绝 Channel 元数据编辑");
@@ -504,7 +504,7 @@ async fn converge(
         return Err(conflict());
     }
     // 判据是回读，不是 event ID：读不到或仍不一致都只是结果不明
-    let readback = control.converge_channel_metadata(&state.http, &channel, &target, true);
+    let readback = control.converge_channel_metadata(&state.relay_http, &channel, &target, true);
     match readback.await {
         Ok(ChannelMetadataStep::Converged(_)) => run.commit(name).await,
         Ok(_) => Ok(Convergence::Pending),

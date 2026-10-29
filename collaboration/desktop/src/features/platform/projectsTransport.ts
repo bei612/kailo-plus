@@ -5,7 +5,7 @@ import {relayClient} from "@/shared/api/relayClient";
 import {signRelayEvent} from "@/shared/api/tauri";
 import {classifyRelayPublishFailure,RelayPublishNotSentError} from "@/shared/api/relayPublishOutcome";
 import type {BffClient} from "@client-kit/platform/client";
-import {buildProjectBootstrapTemplates,buildProjectPatchTemplate,buildProjectRelatedChannelPatchTemplate,buildRepositoryChannelBindingTemplate,eventToRepository,buildGitIssueTags,buildProjectCommentTags,buildProjectIssueAssignment,buildProjectPullRequestApproval,buildProjectPullRequestStatus,canReviewProjectPullRequest,loadProjectAssignmentHumans,eventToProjectIssue,eventToProjectPullRequest,nextProjectIssueCommentCreatedAt,nextProjectPullRequestReviewCreatedAt,nextProjectPullRequestStatusCreatedAt,normalizeProjectPullRequestCommentAnchor,enumerateProjectEvents,type ProjectsHost} from "@client-kit/platform/react/projects";
+import {projectPullRequestUpdateMatches,buildProjectPullRequestUpdate,canPublishProjectPullRequestUpdate,nextProjectPullRequestUpdateCreatedAt,buildProjectBootstrapTemplates,buildProjectPatchTemplate,buildProjectRelatedChannelPatchTemplate,buildRepositoryChannelBindingTemplate,eventToRepository,buildGitIssueTags,buildProjectCommentTags,buildProjectIssueAssignment,buildProjectPullRequestApproval,buildProjectPullRequestStatus,canReviewProjectPullRequest,loadProjectAssignmentHumans,eventToProjectIssue,eventToProjectPullRequest,nextProjectIssueCommentCreatedAt,nextProjectPullRequestReviewCreatedAt,nextProjectPullRequestStatusCreatedAt,normalizeProjectPullRequestCommentAnchor,enumerateProjectEvents,type ProjectsHost} from "@client-kit/platform/react/projects";
 import {ProjectsQueryRequestView} from "@client-kit/contracts";
 
 // The existing Native typed query, next to its publication consumer. Generic
@@ -65,6 +65,44 @@ export function createProjectsPublisher(scopeKey:string,relayUrl:string,viewer:s
         return eventToProjectPullRequest(root,lifecycle.filter(event=>event.kind===1619),comments,lifecycle.filter(event=>event.kind!==1619));
       };
       const reviewCommit=/^[0-9a-f]{40}([0-9a-f]{24})?$/;
+      if(request.operation==="UPDATE_PULL_REQUEST"){
+        if(!request.targetEventId||!/^[0-9a-f]{64}$/.test(request.targetEventId)||!request.commit||!reviewCommit.test(request.commit)
+          ||request.mergeBase!==undefined&&!reviewCommit.test(request.mergeBase)
+          ||Object.keys(request).some(name=>!["operation","targetEventId","commit","mergeBase"].includes(name))
+          ||!Number.isSafeInteger(relayQueryLimit)||relayQueryLimit<1)throw new Error("Invalid review update");
+        const readTarget=async()=>{
+          const [root]=await relayClient.fetchEvents({ids:[request.targetEventId!],kinds:[1618],limit:1});check();
+          if(!root||root.id!==request.targetEventId||root.kind!==1618||!verifyEvent(root))throw new Error("Review unavailable");
+          const address=root.tags.find(tag=>tag[0]==="a")?.[1];
+          const [kind,owner,...parts]=address?.split(":")??[];const slug=parts.join(":");
+          if(kind!=="30617"||!owner||!/^[0-9a-f]{64}$/.test(owner)||!slug)throw new Error("Repository unavailable");
+          const [repo]=await relayClient.fetchEvents({kinds:[30617],authors:[owner],"#d":[slug],limit:1});check();
+          if(!repo||repo.kind!==30617||repo.pubkey!==owner||!verifyEvent(repo)||!repo.tags.some(tag=>tag[0]==="d"&&tag[1]===slug))throw new Error("Repository unavailable");
+          const repository=eventToRepository(repo,relayUrl);
+          if(!repository||repository.repoAddress!==address)throw new Error("Repository unavailable");
+          const current=await readReview(root,owner,false);check();
+          if(!canPublishProjectPullRequestUpdate(viewer,repository,current))throw new Error("Review update denied");
+          return {root,repository,current};
+        };
+        const target=await readTarget();
+        const template=buildProjectPullRequestUpdate(target.repository,target.current,request.commit,request.mergeBase??null);
+        enteredPublication=true;
+        const event=await relayClient.publishProjectIntent(`${scopeKey}:${key}`,relayUrl,async()=>{
+          try{
+            const fresh=await readTarget();
+            if(fresh.root.id!==target.root.id||fresh.repository.repoAddress!==target.repository.repoAddress)throw new Error("Review changed");
+            const freshTemplate=buildProjectPullRequestUpdate(fresh.repository,fresh.current,request.commit!,request.mergeBase??null);
+            if(JSON.stringify(freshTemplate)!==JSON.stringify(template))throw new Error("Review metadata changed");
+            const signed=await signRelayEvent({...template,createdAt:nextProjectPullRequestUpdateCreatedAt(fresh.current,Math.floor(Date.now()/1_000))});check();
+            if(signed.pubkey!==viewer||!verifyEvent(signed))throw new Error("Review update signing identity changed");
+            return signed;
+          }catch(error){throw new RelayPublishNotSentError(error instanceof Error?error.message:String(error));}
+        },observeOnly,observation);
+        check();
+        if(event.pubkey!==viewer||!verifyEvent(event)
+          ||!projectPullRequestUpdateMatches(target.repository,target.current,request.commit,request.mergeBase??null,event))throw new TransportError("Review update receipt mismatch");
+        return {eventId:event.id};
+      }
       if(request.operation==="APPROVE_PULL_REQUEST"){
         // Fixed pullRequestReviews.ts::submitProjectPullRequestReview("approve"); CLIENT signs.
         if(!request.targetEventId||!/^[0-9a-f]{64}$/.test(request.targetEventId)||!request.commit||!reviewCommit.test(request.commit)

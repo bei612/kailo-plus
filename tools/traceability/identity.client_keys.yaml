@@ -6,14 +6,14 @@ exposure: end_user
 
 design:
   requirements: [V-REQ-01, V-REQ-08, V-REQ-19]
-  decisions: [DD-77, DD-78, DD-79, DD-151]
+  decisions: [DD-77, DD-78, DD-79]
   facts: [SF-AGW-22, SF-AGW-24, SF-BUZ-26, SF-BUZ-06, SF-BUZ-42]
   seams: [SS-AGW-OIDC]
   blockers: []
-  entities: [BuzzIdentityBinding, PlatformSession, TenantMembership, WorkflowRef, PushRegistration]
+  entities: [BuzzIdentityBinding, PlatformSession, TenantMembership, WorkflowRef]
 
 validation:
-  scenarios: [V-SCN-63, V-SCN-64, V-SCN-249, V-SCN-250]
+  scenarios: [V-SCN-63, V-SCN-64]
   evidence:
     - dimension: 上游接缝
       ref: core/verify/native-identity.md
@@ -23,8 +23,6 @@ validation:
       ref: docs/runbooks/RB-02-secret-rotation-and-revocation.md
     - dimension: 端到端场景
       ref: web-client/fork/verify/web-surface.md
-    - dimension: 端到端场景
-      ref: core/verify/push-unread.md
     - dimension: Workflow 重放
       ref: worker/replay-tests/testdata/component_task_identity_register_history.json
 
@@ -32,24 +30,24 @@ implementation:
   owners: [team-platform]
   # server_keys 与 platform_bootstrap 是共享身份投影的内部调用方；本条 shipped
   # 只覆盖 runtime.routes 中的客户端公钥入口，不声明用户可达的托管身份轮换。
-  paths: [core/crates/platform-core/src/client_keys.rs, core/crates/platform-core/src/identity_projection.rs, core/crates/platform-core/src/membership_projection.rs, core/crates/platform-core/src/server_keys.rs, core/crates/platform-core/src/platform_bootstrap.rs, core/crates/platform-core/src/stream.rs, core/crates/platform-core/src/push, worker/workflows/component_task.go, deploy/local/model-gateway-config.yaml, client-kit/ts/platform, web-client]
+  paths: [core/crates/platform-core/src/client_keys.rs, core/crates/platform-core/src/identity_projection.rs, core/crates/platform-core/src/membership_projection.rs, core/crates/platform-core/src/server_keys.rs, core/crates/platform-core/src/platform_bootstrap.rs, core/crates/platform-core/src/stream.rs, worker/workflows/component_task.go, deploy/local/model-gateway-config.yaml, client-kit/ts/platform, web-client]
   surfaces: [web]
-  schemas: [contracts/enums/workflow_kind.schema.json, contracts/enums/reason_code.schema.json, contracts/api/client_key.schema.json, contracts/api/client_key_status.schema.json, contracts/api/native_community.schema.json, contracts/api/push_capability.schema.json, contracts/api/push_registration_request.schema.json, contracts/api/push_registration_view.schema.json, contracts/enums/push_platform.schema.json, contracts/enums/push_registration_state.schema.json, contracts/enums/push_availability.schema.json]
-  migrations: [core/migrations/20260923040000_buzz_identity_multi_binding.up.sql, core/migrations/20260923050000_workflow_kind_buzz_identity.up.sql, core/migrations/20260928100000_identity_rerun_catalog.up.sql, core/migrations/20261030010000_push_registration.up.sql, core/migrations/20261031040000_push_unread.up.sql]
+  schemas: [contracts/enums/workflow_kind.schema.json, contracts/enums/reason_code.schema.json, contracts/api/client_key.schema.json, contracts/api/client_key_status.schema.json, contracts/api/native_community.schema.json]
+  migrations: [core/migrations/20260923040000_buzz_identity_multi_binding.up.sql, core/migrations/20260923050000_workflow_kind_buzz_identity.up.sql, core/migrations/20260928100000_identity_rerun_catalog.up.sql]
 
 runtime:
-  routes: ["/api/v1/identity/client-keys", "/api/v1/identity/client-keys/{pubkey}", "/api/v1/native/community", "/api/v1/push/capability", "/api/v1/push/registration"]
+  routes: ["/api/v1/identity/client-keys", "/api/v1/identity/client-keys/{pubkey}", "/api/v1/native/community"]
   workflow_kinds: [BUZZ_IDENTITY_PROJECTION]
 
 release:
   # 仅记录本批已构建候选；full、部署及业务验收尚未通过。
   artifacts:
     - name: core
-      digest: sha256:a6c37cbf2ea58b4c983f9bd2bb7a5dca5c94fcb674c5a35ee6d4b901794f1a17
+      digest: sha256:b67df6197490144b7f602e0d4e4519f36fba3ab58703b99c817ec62c73de4efa
     - name: worker
-      digest: sha256:05d868dc23c303d58e7320e1a5f463bc919d02097e9e9eba2971df7b366d30d5
+      digest: sha256:b9ba6a3b3d6df2d02b261b6ef08617648d2e1484074c1bef0dd55f1119afa5c9
     - name: model-gateway
-      digest: sha256:8e97360b5b627e0e70d01c195e309f3bb53765d97c39efbe103d85a5e175cb0f
+      digest: sha256:e0f93f69d617baa38cd9c35b60f9328e065c6cd081ef50dc6757be465ebe1e80
     - name: web-client
-      digest: sha256:c0f470e5053510c0899aae6e311502b5498d98ead4301a362c82650cfc133042
+      digest: sha256:86effa5e9adb4b720712e075bafd8df0769d4789b2fabdcb0d225eac929f918f
   gate: blocked_until_seams_closed

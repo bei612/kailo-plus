@@ -7,13 +7,22 @@
 # 用法（CI 节点，ubuntu）：
 #   kailo-ci submit <commit> fetch            # 先准备 /volumes/kailo/ci/sources/<commit>/apps
 #   component-deploy.sh <file-storage|knowledge|data-query|document-editor> <commit> [--check] [--adapter]
+#   component-deploy.sh <file-storage|knowledge|data-query> <commit> --conformance
+#   component-deploy.sh <file-storage|knowledge|data-query> <commit> --conformance-close=<运行目录>
+#     --conformance        DD-136(5)：以本发布树对该组件的 REMOTE_ADAPTER 候选执行无人值守的 07 §8A 隔离运行
+#                          （tools/component-release/conformance-auto.py）：隔离原生实例、隔离 OpenBao/Agent、suite
+#                          PEP provider；原生凭据由运行器经隔离实例的原生 API/CLI 生成，只在运行目录 0600 文件或隔离
+#                          OpenBao 中。成功后把候选写入运行目录 COMPONENT_CONFORMANCE_DIR/<artifactDigest>/（DD-136(2)，
+#                          Core 按次读取，不重建）并把生产 Worker 接入该次运行的专用网络（登记窗口）。
+#     --conformance-close  该 release 的 component_release.register 到达终态后：撤下候选、断开 Worker、删除隔离环境
 #     --check    只做配置与镜像校验（各组件原 --check/--validate/config --quiet），不启动
 #     --adapter  另起 adapter（Cells: 组件专属 OpenBao Agent + start.sh --platform-adapter；
 #                WeKnora: start.sh --platform-adapter；Wren: tenants/<tenantId> 组件专属
 #                OpenBao Agent（compose.adapter-agent.yaml）+ query-governance.yaml overlay，
 #                平台 namespace 的 ActionToken/Gateway 公钥取平台 Agent 已渲染的只读文件）。
-#                需要 binding 计划、adapter 配置（Wren: config --kind data-query）与
-#                adapter-delivery.py reader 已完成。
+#                DD-136(6)：云盘与问数由 adapter-converge.py 按 deploy/components/adapters.json 的声明幂等推导
+#                release 与 binding 计划、adapter 配置、Tenant namespace 只读 AppRole/一次性 secret-id、
+#                交付目录条目，binding 存在后声明其 adapter IdP client；不创建 binding、不写 binding secret。
 # 受控 env 默认：Cells cells/deploy.env、WeKnora knowledge/native.env、Wren
 # data-query/native.env、DocumentServer document-editor/native.env（均在
 # /volumes/data/kailo/components 下，0600）；平台 .env 只读取
@@ -30,13 +39,21 @@ commit=${2:?commit}
 shift 2
 check=false
 adapter=false
+conformance=false
+conformance_close=
 for option in "$@"; do
   case "$option" in
     --check) check=true ;;
     --adapter) adapter=true ;;
+    --conformance) conformance=true ;;
+    --conformance-close=/*) conformance_close=${option#--conformance-close=} ;;
     *) echo "未知参数 $option" >&2; exit 2 ;;
   esac
 done
+if "$conformance" || [ -n "$conformance_close" ]; then
+  case "$component" in file-storage|knowledge|data-query) ;; *) echo "$component 没有 REMOTE_ADAPTER 候选" >&2; exit 2 ;; esac
+  { "$check" || "$adapter" || { "$conformance" && [ -n "$conformance_close" ]; }; } && { echo '--conformance/--conformance-close 是独立步骤' >&2; exit 2; }
+fi
 [[ $commit =~ ^[0-9a-f]{40}$ ]] || { echo '必须是 40 位完整 commit' >&2; exit 2; }
 S=/volumes/kailo/ci/sources/$commit/apps
 [ -d "$S/deploy/local" ] || { echo "缺少固定发布树 $S（先 kailo-ci submit $commit fetch）" >&2; exit 2; }
@@ -50,7 +67,15 @@ KAILO_RUNTIME_DIR=$(python3 -I -B "$S/tools/release/node.py" runtime --commit "$
 . "$S/deploy/local/runtime-dir.sh"
 R=$KAILO_RUNTIME_DIR
 D=(sudo -n --preserve-env=KAILO_RUNTIME_DIR docker)
+# DD-136(5)：隔离一致性运行与登记窗口（不触碰生产 Core 状态、数据库、OpenBao 或 binding）。
+if "$conformance"; then
+  exec python3 -I -B "$S/tools/component-release/conformance-auto.py" run "$component" --source "$S" --commit "$commit" --runtime "$R"
+fi
+if [ -n "$conformance_close" ]; then
+  exec python3 -I -B "$S/tools/component-release/conformance-auto.py" close "$conformance_close" --runtime "$R"
+fi
 stamp=$(date -u +%Y%m%dT%H%M%SZ)
+converge=$S/deploy/components/adapter-converge.py
 backup_root=${COMPONENT_BACKUP_ROOT:-/volumes/data/kailo/backups/components}
 before=$("${D[@]}" ps --format '{{.ID}} {{.Names}} {{.Image}} {{.Status}}' | sort -k2)
 
@@ -123,7 +148,11 @@ case "$component" in
     directory_secret "$ENV" CELLS file-storage
     if "$check"; then
       bash "$here/start.sh" --check "$ENV"
-      if "$adapter"; then ensure_image "$(env_value "$ENV" CELLS_ADAPTER_IMAGE)"; bash "$here/start.sh" --check --platform-adapter "$ENV"; fi
+      if "$adapter"; then
+        ensure_image "$(env_value "$ENV" CELLS_ADAPTER_IMAGE)"
+        python3 -I -B "$converge" plan file-storage --source "$S" --commit "$commit" --runtime "$R"
+        [ ! -f "$(env_value "$ENV" CELLS_ADAPTER_CONFIG_FILE)" ] || bash "$here/start.sh" --check --platform-adapter "$ENV"
+      fi
       exit 0
     fi
     echo "== 1. 备份 Cells 数据库（数据目录原地保留）"
@@ -131,7 +160,9 @@ case "$component" in
     echo "== 2. Cells（同一 Compose 项目原地替换）"
     bash "$here/start.sh" "$ENV"
     if "$adapter"; then
-      echo "== 3. 组件专属 OpenBao Agent"
+      echo "== 3. adapter 声明式投递（DD-136(6)）：release/binding 计划、adapter 配置、Tenant namespace 只读 AppRole 与一次性 secret-id、交付目录条目"
+      python3 -I -B "$converge" deliver file-storage --source "$S" --commit "$commit" --runtime "$R"
+      echo "== 3a. 组件专属 OpenBao Agent"
       ensure_image "$(env_value "$ENV" ADAPTER_AGENT_IMAGE)"
       ensure_image "$(env_value "$ENV" CELLS_ADAPTER_IMAGE)"
       agent=("${D[@]}" compose --env-file "$ENV" -f "$S/deploy/components/compose.adapter-agent.yaml")
@@ -144,6 +175,8 @@ case "$component" in
       [ -S "$delivery/bao.sock" ] || { echo 'Agent socket 未出现；查看 Agent 日志（不含 secret）' >&2; exit 1; }
       echo "== 4. Cells adapter"
       bash "$here/start.sh" --platform-adapter "$ENV"
+      echo "== 5. binding 的 adapter IdP client（binding 已创建且 Agent 已渲染凭据时声明，否则 PENDING）"
+      python3 -I -B "$converge" client file-storage --source "$S" --commit "$commit" --runtime "$R"
     fi
     readback_project=$project
     frame_headers "$(env_value "$ENV" CELLS_EXTERNAL)/"
@@ -241,6 +274,14 @@ case "$component" in
         docker compose -f "$S/deploy/components/compose.adapter-agent.yaml")
       "${agent[@]}" config --quiet
       ensure_image "$(wren_value WREN_QUERY_OPENBAO_IMAGE)"
+      # DD-136(6)：release 与 binding 计划、adapter 记录与 query.json/binding.json、Tenant namespace 只读 AppRole 与
+      # 一次性 secret-id、交付目录条目由 adapter-converge.py 按 adapters.json 声明与原生只读事实幂等推导；--check 只推导计划。
+      if "$check"; then
+        python3 -I -B "$converge" plan data-query --source "$S" --commit "$commit" --runtime "$R"
+      else
+        echo "== 0a. adapter 声明式投递（DD-136(6)）"
+        python3 -I -B "$converge" deliver data-query --source "$S" --commit "$commit" --runtime "$R"
+      fi
       # 只核对受控投递的路径/身份/引用一致，不读取 secret 值、不打印内容。
       names=(WREN_QUERY_DELIVERY_DIR WREN_QUERY_AGENT_BOOTSTRAP_DIR WREN_QUERY_AGENT_UID WREN_QUERY_AGENT_GID
         WREN_QUERY_AGENT_PROJECT WREN_COMPOSE_PROJECT_NAME WREN_QUERY_ACTION_JWKS_FILE GATEWAY_SERVICE_JWKS_FILE
@@ -252,6 +293,9 @@ case "$component" in
           *) values+=("$name=$(wren_value "$name")") ;;
         esac
       done
+      if "$check" && [ ! -f "$delivery/query.json" ]; then
+        echo "Wren 治理投递尚未渲染（--check 只推导计划）"
+      else
       env "${values[@]}" python3 -I - <<'PYWREN'
 import json, os, re, stat, sys
 from pathlib import Path
@@ -332,6 +376,7 @@ except (OSError, ValueError, KeyError, TypeError, IndexError):
     refuse("受控文件缺失或格式不符")
 print(f"Wren 治理投递校验通过：平台公钥 2 份只读文件 + {namespace} Agent（{len(destinations)} 个模板、api_proxy socket）；不声明 binding 已激活")
 PYWREN
+      fi
     fi
     "${compose[@]}" config --quiet
     while read -r image; do ensure_image "$image"; done < <("${compose[@]}" config --images | sort -u)
@@ -375,6 +420,8 @@ PYWREN
         || { echo 'wren-ui 缺少治理投递挂载' >&2; exit 1; }
       "${D[@]}" inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$ui" | grep -E '^WREN_PLATFORM_(QUERY|BINDING)_CONFIG_FILE=' \
         || { echo 'wren-ui 缺少治理投递环境' >&2; exit 1; }
+      echo "== binding 的 adapter IdP client（binding 已创建且 Agent 已渲染凭据时声明，否则 PENDING）"
+      python3 -I -B "$converge" client data-query --source "$S" --commit "$commit" --runtime "$R"
     fi
     ;;
   document-editor)

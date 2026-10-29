@@ -9,6 +9,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../shared/community/community_icon_provider.dart';
 import '../../shared/community/community_provider.dart';
+import '../../shared/platform/tenant_profile_live.dart';
 import 'package:client_kit/shared/platform/platform_text.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/widgets/avatar_image.dart';

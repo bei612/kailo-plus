@@ -143,12 +143,24 @@ class _FigmaHomeScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = context.colors;
-    final community = ref.watch(activeCommunityProvider).value;
-    final communityName = community?.name.trim();
+    final community = ref.watch(activeCommunityProvider).unwrapPrevious().value;
+    final live = ref.watch(tenantProfileLiveProvider).unwrapPrevious();
+    final tenantProfile = live.value;
+    final cleared = live.hasValue && tenantProfile == null;
+    final communityName = cleared
+        ? null
+        : tenantProfile?.name.trim() ?? community?.name.trim();
     final relayUrl = community?.relayUrl;
-    final communityIcon = relayUrl == null
+    final communityIcon = tenantProfile != null
+        ? tenantProfile.icon
+        : cleared || relayUrl == null
         ? null
         : ref.watch(communityIconProvider(relayUrl)).value;
+    final communityEmoji =
+        tenantProfile?.icon != null &&
+            !tenantProfile!.icon!.startsWith('data:image/')
+        ? tenantProfile.icon
+        : null;
     final suppliedGradient = context.appColors.topSectionGradient;
     final backgroundGradient =
         suppliedGradient ??
@@ -180,13 +192,14 @@ class _FigmaHomeScreen extends ConsumerWidget {
                 children: [
                   AvatarImage(
                     key: const ValueKey('theme-preview-community-icon'),
-                    imageUrl: communityIcon,
+                    imageUrl: communityEmoji == null ? communityIcon : null,
                     radius: 20,
                     backgroundColor: scheme.primaryContainer,
                     fallback: Text(
-                      communityName == null || communityName.isEmpty
-                          ? '?'
-                          : communityName.substring(0, 1).toUpperCase(),
+                      communityEmoji ??
+                          (communityName == null || communityName.isEmpty
+                              ? '?'
+                              : communityName.substring(0, 1).toUpperCase()),
                       style: context.textTheme.labelMedium?.copyWith(
                         color: scheme.onPrimaryContainer,
                         fontWeight: FontWeight.w600,

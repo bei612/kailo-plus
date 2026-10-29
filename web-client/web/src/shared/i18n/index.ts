@@ -41,10 +41,6 @@ const messages = {
   "platform.pendingSendRestore": { en: "Restore", "zh-CN": "恢复" },
   "platform.pendingSendRestoreBlocked": { en: "Send or clear the current draft to restore it.", "zh-CN": "发送或清空当前草稿后即可恢复。" },
   "platform.pendingSendDiscard": { en: "Discard", "zh-CN": "丢弃" },
-  "platform.uploadFailed": {
-    en: "Upload failed — the result is unknown. Try again.",
-    "zh-CN": "上传失败，结果不明。请重试。",
-  },
   "platform.uploadTooLarge": { en: "That file is too large.", "zh-CN": "文件过大。" },
   "platform.newMessages": { en: "New", "zh-CN": "新消息" },
   "platform.star": { en: "Star this workspace", "zh-CN": "收藏此工作区" },
@@ -52,7 +48,6 @@ const messages = {
     en: "Mute this workspace (no unread count in the tab title)",
     "zh-CN": "静音此工作区（标签页标题不显示未读数）",
   },
-  "platform.sendFailed": { en: "Send failed", "zh-CN": "发送失败" },
   "platform.sendRejected": { en: "The message was rejected", "zh-CN": "消息被拒绝" },
   "platform.message": { en: "Message", "zh-CN": "消息" },
   "platform.send": { en: "Send", "zh-CN": "发送" },

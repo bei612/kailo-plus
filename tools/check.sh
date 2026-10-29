@@ -232,7 +232,8 @@ sys.exit(1 if kept or (sys.argv[1] != "0" and total == 0) else 0)' "$1"
 #   用构建镜像同一 Node 18（检查镜像 /opt/node18）运行，锁定的 yarn 4.5.3 在 Node 24 下遇下载超时会崩溃。
 # - collaboration/web、admin-web：镜像构建为 `tsc && vite build`。
 # knowledge/frontend（vite build）、file-storage 前端（build.sh 的 webpack）与 document-editor
-# （grunt 打包，jshint 未注册）的镜像构建不含 lint 或类型门禁，此处不另立判定。
+# （grunt 打包，jshint 未注册）的镜像构建不含 lint 或类型门禁，此处不另立判定；前两者的
+# Kailo 集成测试在第 2 步 verify_component_frontends（DD-157）。
 lint_wren_ui() {
   local ui=data-query/wren-ui
   populated "$ui/src" || return 0
@@ -342,6 +343,50 @@ step_lint() {
   return 0
 }
 
+# DD-157：组件前端的 Kailo 集成测试并入 verify（镜像构建本身不跑测试）。
+# - knowledge/frontend：与其 Dockerfile builder 同一 Node 24 与 package-lock，`npm ci` 后跑
+#   vue-tsc --build 与全部 node:test 测试（tsx --test）。
+# - file-storage/frontend/assets：Kailo 自有的嵌入层（kailo.embed、editor.onlyoffice）
+#   跑 vitest 与 eslint（KailoTheme 依赖 gui.ajax 自身的包，不在根锁内，随 gui.ajax 构建验证）；固定 pnpm 版本与 pnpm-lock.yaml 安装。其余上游插件测试不在本门禁内。
+verify_component_frontends() {
+  local kn=knowledge/frontend cells=file-storage/frontend/assets manager tooling
+  if populated "$kn/src"; then
+    ran=1
+    if component_lint_deps "$kn" package.json package-lock.json -- node_modules -- \
+         npm ci --no-audit --no-fund --ignore-scripts; then
+      (cd "$kn" && diag node_modules/.bin/vue-tsc --build) \
+        && pass "knowledge/frontend vue-tsc --build" || fail "knowledge/frontend vue-tsc --build"
+      (cd "$kn" && diag node_modules/.bin/tsx --test) \
+        && pass "knowledge/frontend tsx --test" || fail "knowledge/frontend tsx --test"
+      rm -f -- "$kn/node_modules"
+    else
+      fail "knowledge/frontend 依赖安装失败，测试无法执行"
+    fi
+  fi
+  if populated "$cells/kailo.embed"; then
+    ran=1
+    manager=$(node -p "require('./$cells/package.json').packageManager.split('+')[0]") || { fail "$cells packageManager 无法读取"; return 0; }
+    if [[ ! "$manager" =~ ^pnpm@[0-9]+\.[0-9]+\.[0-9]+$ ]]; then fail "$cells/package.json 的 packageManager 不是固定 pnpm 版本"; return 0; fi
+    tooling="$HOME/tooling/$manager"
+    [ -x "$tooling/node_modules/.bin/pnpm" ] \
+      || diag npm install --prefix "$tooling" --no-audit --no-fund "$manager" \
+      || { fail "安装 $manager 失败"; return 0; }
+    if component_lint_deps "$cells" package.json pnpm-lock.yaml -- node_modules -- \
+         "$tooling/node_modules/.bin/pnpm" install --frozen-lockfile --ignore-scripts; then
+      (cd "$cells" && diag node_modules/.bin/vitest run kailo.embed editor.onlyoffice) \
+        && pass "file-storage 嵌入层 vitest" || fail "file-storage 嵌入层 vitest"
+      (cd "$cells" && diag node_modules/.bin/eslint kailo.embed editor.onlyoffice/res/js \
+           gui.ajax/res/js/ui/ReactUI/KailoTheme.js gui.ajax/res/js/ui/ReactUI/KailoTheme.test.js \
+           gui.ajax/res/js/core/model/nativeCell.js action.share/res/js/dialog/links/nativeRevoke.js \
+           access.settings/res/js/AdminComponents/board/kailo-admin-dashboard.test.js) \
+        && pass "file-storage 嵌入层 eslint" || fail "file-storage 嵌入层 eslint"
+      rm -f -- "$cells/node_modules"
+    else
+      fail "file-storage 前端依赖安装失败，测试无法执行"
+    fi
+  fi
+}
+
 step_verify()   { hdr "2/10 受影响范围的验证"
   local ran=0
   if populated core && have cargo; then ran=1
@@ -354,6 +399,7 @@ step_verify()   { hdr "2/10 受影响范围的验证"
     (cd web-client/web && npm test) && pass "web-client vitest" || fail "web-client vitest"; fi
   if populated client-kit/dart/test && have dart; then ran=1
     (cd client-kit/dart && diag dart test) && pass "dart test" || fail "dart test"; fi
+  have node && verify_component_frontends
   [ "$ran" -eq 0 ] && skip "尚无可验证范围"
   return 0
 }
@@ -1030,7 +1076,9 @@ fi
 '''
 with tempfile.TemporaryDirectory() as temporary:
     location = pathlib.Path(temporary)
-    directory = location / "adapters.json"
+    public_folder = location / "public-delivery"
+    public_folder.mkdir(mode=0o755)
+    directory = public_folder / "adapters.json"
     public = location / "public.json"
     public_doc = {"keys": [{"kty": "EC", "crv": "P-256", "alg": "ES256",
         "kid": "fixture", "x": "A" * 43, "y": "A" * 43}]}
@@ -1038,8 +1086,7 @@ with tempfile.TemporaryDirectory() as temporary:
     delivery = {"adapters": [{"nativeHumanIdentities": [{"jwksFile": str(public)},
         {"jwksFile": str(public)}]}]}
     directory.write_text(json.dumps(delivery), encoding="utf-8")
-    conformance_names = ("COMPONENT_CONFORMANCE_ENVIRONMENT_FILE", "COMPONENT_CONFORMANCE_FIXTURE_FILE",
-                         "COMPONENT_CONFORMANCE_IDENTITY_FILE")
+    conformance_names = ("COMPONENT_CONFORMANCE_DIR", "COMPONENT_CONFORMANCE_WORKER_DIR")
     base_env = {k: v for k, v in os.environ.items()
                 if k not in ("APPLICATION_ADAPTER_DIRECTORY_FILE", *conformance_names)}
     base_env["TMPDIR"] = temporary
@@ -1054,14 +1101,18 @@ with tempfile.TemporaryDirectory() as temporary:
     assert absent.returncode == 0 and absent.stdout == "", "零业务组件不能强制或生成目录投递"
     directory.write_text('{"adapters":[]}', encoding="utf-8")
     empty = adapter_produce(directory)
-    assert empty.returncode == 0 and len(json.loads(empty.stdout)["services"]["core-bff"]["volumes"]) == 1
+    assert empty.returncode == 0, empty.stderr
+    empty_core = json.loads(empty.stdout)["services"]["core-bff"]
+    # DD-136(2): the adapter directory's folder is mounted, so an atomic
+    # replacement by the release/component entry reaches the running Core.
+    assert [m["source"] for m in empty_core["volumes"]] == [str(public_folder)]
     directory.write_text(json.dumps(delivery), encoding="utf-8")
     original = adapter_produce(directory)
     assert original.returncode == 0, original.stderr
     core_delivery = json.loads(original.stdout)["services"]["core-bff"]
     assert core_delivery["environment"] == {"APPLICATION_ADAPTER_DIRECTORY_FILE": str(directory)}
     mounts = core_delivery["volumes"]
-    assert len(mounts) == 2 and {mount["source"] for mount in mounts} == {str(directory), str(public)}
+    assert len(mounts) == 2 and {mount["source"] for mount in mounts} == {str(public_folder), str(public)}
     assert all(mount["target"] == mount["source"] and mount["read_only"] is True
         and mount["bind"]["create_host_path"] is False for mount in mounts)
     linked = location / "linked.json"
@@ -1079,81 +1130,76 @@ with tempfile.TemporaryDirectory() as temporary:
         assert refused.returncode != 0 and "fixture-private" not in refused.stdout + refused.stderr
     public.write_text(json.dumps(public_doc), encoding="utf-8")
     assert adapter_produce(directory).returncode == 0
-    candidate = location / "candidate.json"
-    fixture = location / "fixture.json"
-    identity = location / "identity.json"
-    candidate.write_text(json.dumps({"artifactDigest": "fixture-artifact", "adapterBaseUrl": "fixture"}), encoding="utf-8")
-    fixture.write_text(json.dumps({"artifactDigest": "fixture-artifact", "steps": []}), encoding="utf-8")
-    identity.write_text(json.dumps({"artifactDigest": "fixture-artifact", "jwksFile": str(public)}), encoding="utf-8")
-    supplied = dict(zip(conformance_names, map(str, (candidate, fixture, identity))))
+    # DD-136(2): the conformance candidate set is one read-only directory for
+    # Core and Worker; receiver credentials a separate owner-only directory for
+    # the Worker alone. Candidates come and go without this entry.
+    candidates = location / "conformance"
+    candidates.mkdir(mode=0o755)
+    candidates.chmod(0o755)
+    private = location / "conformance-worker"
+    private.mkdir(mode=0o700)
+    supplied = {conformance_names[0]: str(candidates)}
     conformance = adapter_produce(supplied=supplied)
     assert conformance.returncode == 0, conformance.stderr
     services = json.loads(conformance.stdout)["services"]
     assert services["core-bff"]["environment"] == supplied
-    assert {m["source"] for m in services["core-bff"]["volumes"]} == set(supplied.values()) | {str(public)}
-    assert services["worker"]["environment"] == {conformance_names[0]: str(candidate)}
-    assert services["worker"]["volumes"] == [{"type": "bind", "source": str(candidate),
-        "target": str(candidate), "read_only": True, "bind": {"create_host_path": False}}]
-    combined = adapter_produce(directory, supplied)
-    assert combined.returncode == 0 and len(json.loads(combined.stdout)["services"]["core-bff"]["volumes"]) == 5
-    receiver_secret = location / "receiver-secret"
-    receiver_secret.write_text("isolated-receiver-credential", encoding="utf-8")
-    receiver_secret.chmod(0o600)
-    receiver = {"bindingId": "c1a3a3ee-ffaf-4929-919c-20be3f0e8c11", "generation": 1,
-        "coreBaseUrl": "http://isolated-core", "oidcTokenUrl": "http://isolated-idp/token",
-        "oidcClientId": "isolated-receiver", "oidcClientSecretFile": str(receiver_secret)}
-    def receiver_produce(authorities):
-        candidate.write_text(json.dumps({"artifactDigest": "fixture-artifact", "adapterBaseUrl": "fixture",
-            "nativeReadAuthorities": authorities}), encoding="utf-8")
-        result = adapter_produce(supplied=supplied)
-        assert "isolated-receiver-credential" not in result.stdout + result.stderr
-        return result
-    # Sharing the same explicitly delivered credential file is valid; only
-    # ambiguous binding/generation authority is refused, not file reuse.
-    receivers = receiver_produce([receiver, receiver | {"generation": 2}])
+    assert [m["source"] for m in services["core-bff"]["volumes"]] == [str(candidates)]
+    assert services["worker"]["environment"] == supplied
+    assert services["worker"]["volumes"] == [{"type": "bind", "source": str(candidates),
+        "target": str(candidates), "read_only": True, "bind": {"create_host_path": False}}]
+    label = services["worker"]["labels"]["kailo.component-conformance.delivery"]
+    both = supplied | {conformance_names[1]: str(private)}
+    receivers = adapter_produce(supplied=both)
     assert receivers.returncode == 0, receivers.stderr
     receiver_services = json.loads(receivers.stdout)["services"]
-    assert {m["source"] for m in receiver_services["worker"]["volumes"]} == {str(candidate), str(receiver_secret)}
+    assert receiver_services["worker"]["environment"] == both
+    assert {m["source"] for m in receiver_services["worker"]["volumes"]} == {str(candidates), str(private)}
     assert all(m["source"] == m["target"] and m["read_only"] and not m["bind"]["create_host_path"]
         for m in receiver_services["worker"]["volumes"])
-    assert str(receiver_secret) not in {m["source"] for m in receiver_services["core-bff"]["volumes"]}
-    assert receiver_produce([receiver, receiver]).returncode != 0
-    for authorities in (None, {}, [None], [receiver | {"unexpected": True}]):
-        assert receiver_produce(authorities).returncode != 0
-    for key, value in (("bindingId", "not-uuid"), ("bindingId", "00000000-0000-0000-0000-000000000000"),
-                       ("generation", 0), ("generation", True), ("generation", "1"), ("generation", 1.5),
-                       ("coreBaseUrl", "http://isolated-core/path"), ("coreBaseUrl", "http://isolated-core?query"),
-                       ("oidcTokenUrl", "http://user@isolated-idp/token"), ("oidcTokenUrl", "relative"),
-                       ("oidcClientId", " "), ("oidcClientSecretFile", str(location / "absent-secret")),
-                       ("oidcClientSecretFile", str(location)), ("oidcClientSecretFile", str(linked)),
-                       ("oidcClientSecretFile", str(candidate))):
-        assert receiver_produce([receiver | {key: value}]).returncode != 0, key
-    for key in receiver:
-        assert receiver_produce([{k: v for k, v in receiver.items() if k != key}]).returncode != 0
-    receiver_secret.chmod(0o644)
-    assert receiver_produce([receiver]).returncode != 0
-    receiver_secret.chmod(0o600)
-    receiver_secret.write_text(" \n", encoding="utf-8")
-    assert receiver_produce([receiver]).returncode != 0
-    receiver_secret.write_text("isolated-receiver-credential", encoding="utf-8")
-    assert receiver_produce([receiver]).returncode == 0
-    candidate.write_text(json.dumps({"artifactDigest": "fixture-artifact", "adapterBaseUrl": "fixture"}), encoding="utf-8")
-    for missing in conformance_names:
-        assert adapter_produce(supplied={k: v for k, v in supplied.items() if k != missing}).returncode != 0
-    fixture.write_text(json.dumps({"artifactDigest": "different", "steps": []}), encoding="utf-8")
-    assert adapter_produce(supplied=supplied).returncode != 0, "不同候选 artifact 不得混合投递"
-    fixture.write_text(json.dumps({"artifactDigest": "fixture-artifact", "steps": []}), encoding="utf-8")
-    public.write_text(json.dumps({"keys": [public_doc["keys"][0] | {"d": "fixture-private"}]}), encoding="utf-8")
-    assert adapter_produce(supplied=supplied).returncode != 0, "隔离身份也不能把私钥当公钥投递"
-    public.write_text(json.dumps(public_doc), encoding="utf-8")
-    assert adapter_produce(supplied=supplied).returncode == 0
-    candidate.write_text(json.dumps({"artifactDigest": "fixture-artifact", "mcpUrl": "fixture"}), encoding="utf-8")
-    assert adapter_produce(supplied={conformance_names[0]: str(candidate)}).returncode == 0
-    assert adapter_produce(supplied=supplied).returncode != 0
+    assert str(private) not in {m["source"] for m in receiver_services["core-bff"]["volumes"]}
+    assert receiver_services["worker"]["labels"]["kailo.component-conformance.delivery"] != label
+    # A candidate appearing later changes nothing in the delivery itself.
+    (candidates / ("a" * 64)).mkdir()
+    again = adapter_produce(supplied=supplied)
+    assert json.loads(again.stdout)["services"]["worker"]["labels"]["kailo.component-conformance.delivery"] == label
+    combined = adapter_produce(directory, both)
+    assert combined.returncode == 0 and {m["source"] for m in json.loads(combined.stdout)["services"]["core-bff"]["volumes"]} \
+        == {str(public_folder), str(public), str(candidates)}
+    # A private directory is exposed through a public ancestor even if it is
+    # not itself listed as a Core mount. Equal and nested paths are refused too.
+    for folder in (location, private, private / "public"):
+        folder.mkdir(mode=0o755, exist_ok=True)
+        overlapping = folder / "overlapping-adapters.json"
+        overlapping.write_text(json.dumps(delivery), encoding="utf-8")
+        assert adapter_produce(overlapping, both).returncode != 0, "Core 的目录挂载不得包含或进入 Worker 私有目录"
+        overlapping.unlink()
+    private_public = private / "public.json"
+    private_public.write_text(json.dumps(public_doc), encoding="utf-8")
+    directory.write_text(json.dumps({"adapters": [{"nativeHumanIdentities": [{"jwksFile": str(private_public)}]}]}), encoding="utf-8")
+    assert adapter_produce(directory, both).returncode != 0, "Core 公钥挂载也不得来自 Worker 私有目录"
+    directory.write_text(json.dumps(delivery), encoding="utf-8")
+    linked_dir = location / "linked-conformance"
+    linked_dir.symlink_to(candidates)
+    nested = candidates / "worker"
+    nested.mkdir(mode=0o700)
+    for bad_supply in ({conformance_names[1]: str(private)},
+                       {conformance_names[0]: "relative"}, {conformance_names[0]: "/"},
+                       {conformance_names[0]: str(location / "absent")}, {conformance_names[0]: str(linked_dir)},
+                       {conformance_names[0]: str(directory)},
+                       supplied | {conformance_names[1]: str(candidates)},
+                       supplied | {conformance_names[1]: str(nested)}):
+        assert adapter_produce(supplied=bad_supply).returncode != 0, bad_supply
+    private.chmod(0o750)
+    assert adapter_produce(supplied=both).returncode != 0, "Worker 私有凭据目录必须 owner-only"
+    private.chmod(0o700)
+    candidates.chmod(0o777)
+    assert adapter_produce(supplied=supplied).returncode != 0, "候选目录不得组/其他可写"
+    candidates.chmod(0o755)
+    assert adapter_produce(supplied=both).returncode == 0
     assert 'compose up -d --no-deps --force-recreate --no-build worker' in starter
     assert '"${adapter_compose[@]}"' in starter[starter.index("compose() {"):]
     assert "adapter_config" in starter[starter.index("cleanup_start_core()"):starter.index("trap cleanup_start_core EXIT")]
-print("  \033[32mPASS\033[0m Application/conformance 原投递：可缺席、精确只读文件、公钥去重、坏路径/歧义/私钥/混合 artifact/半份配置拒绝、Core 与 Worker 分离及 receiver 私有凭据精确投递")
+print("  \033[32mPASS\033[0m Application/conformance 投递（DD-136(2)）：可缺席、交付目录所在文件夹与候选集合目录只读挂载、公钥去重、坏路径/歧义/私钥/可写目录拒绝、Core 与 Worker 分离及 receiver 私有凭据目录只给 Worker")
 action_start = starter.index("action_token_compose=()")
 action_end = starter.index("# DD-94/98:", action_start)
 action_program = "set -eu\nprepare_action_token=${ACTION_TOKEN_TEST_PREPARE:-false}\n" + starter[cleanup_start:cleanup_end] + starter[action_start:action_end] + '''
@@ -1285,6 +1331,7 @@ projections = {
     ("worker", "TEMPORAL_ADDRESS"): "${TEMPORAL_ADDRESS}",
     ("worker", "CORE_SERVICE_URL"): "http://core-bff:${SERVICE_CONTAINER_PORT}",
     ("core-bff", "BUZZ_RELAY_WS_URL"): "ws://${BUZZ_RELAY_HOST}:${BUZZ_RELAY_PORT}",
+    ("core-bff", "BUZZ_RELAY_HTTP_TIMEOUT_SECONDS"): "${BUZZ_RELAY_HTTP_TIMEOUT_SECONDS}",
     ("core-bff", "BUZZ_RELAY_TRANSPORT"): "http://${BUZZ_RELAY_HOST}:${BUZZ_RELAY_PORT}",
     ("core-bff", "RELAY_OPERATOR_API_ORIGIN"): "http://${BUZZ_RELAY_HOST}:${BUZZ_RELAY_PORT}",
     ("temporal-db", "POSTGRES_DB"): "${TEMPORAL_DB_NAME}",

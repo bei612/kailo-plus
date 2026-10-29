@@ -1,6 +1,7 @@
 import { Modal, Form } from 'antd';
 import { ModalAction } from '@/hooks/useModalAction';
 import { NODE_TYPE } from '@/utils/enum';
+import useKailoText from '@/utils/kailoI18n';
 import { EditableContext } from '@/components/EditableWrapper';
 import EditModelMetadata, {
   Props as EditModelProps,
@@ -24,6 +25,7 @@ export default function EditMetadataModal(props: Props) {
   const { nodeType } = defaultValue || {};
 
   const [form] = Form.useForm();
+  const t = useKailoText();
 
   const submit = async () => {
     form
@@ -39,10 +41,11 @@ export default function EditMetadataModal(props: Props) {
 
   return (
     <Modal
-      title="Edit metadata"
-      width={800}
+      title={t('modeling.editMetadata')}
+      width={840}
       visible={visible}
-      okText="Submit"
+      okText={t('modeling.save')}
+      cancelText={t('cancel')}
       onOk={submit}
       onCancel={onClose}
       confirmLoading={loading}

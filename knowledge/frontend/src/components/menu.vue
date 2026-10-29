@@ -1,7 +1,9 @@
 <template>
-    <div class="aside_box" :class="{ 'aside_box--collapsed': uiStore.sidebarCollapsed }">
+    <div class="aside_box" :class="{ 'aside_box--collapsed': collapsed, 'aside_box--pane': pane }">
         <!-- 展开时：Logo + 搜索/折叠按钮同行 -->
-        <div class="logo_row" v-if="!uiStore.sidebarCollapsed">
+        <!-- DD-157 pane mode (inside the Kailo shell): only the conversation list remains;
+             logo, search, collapse, space switcher, product entries and user menu are Kailo's. -->
+        <div class="logo_row" v-if="!collapsed && !pane">
             <!-- White-label (DD-133 §1): Kailo logo + product name; hidden inside the Kailo frame. -->
             <div v-if="!kailoEmbedded" class="logo_box" @click="router.push('/platform/knowledge-bases')" style="cursor: pointer;">
                 <img class="logo" :src="BRAND_LOGO_URL" alt="">
@@ -9,7 +11,8 @@
             </div>
             <div v-else class="logo_box"></div>
             <div class="logo_actions">
-                <t-tooltip placement="bottom">
+                <!-- Kailo mode: search is Kailo's (⌘K, DD-138(5)); no component search entry. -->
+                <t-tooltip v-if="!kailoMode" placement="bottom">
                     <template #content>
                         <span class="cmdk-tip">
                             <span class="cmdk-tip-label">{{ t('menu.search') }}</span>
@@ -32,7 +35,7 @@
             </div>
         </div>
         <!-- 折叠时：展开按钮 -->
-        <t-tooltip v-else :content="t('menu.expandSidebar')" placement="right">
+        <t-tooltip v-else-if="!pane" :content="t('menu.expandSidebar')" placement="right">
             <div class="menu_item sidebar-toggle-item" @click="uiStore.toggleSidebar">
                 <div class="menu_item-box">
                     <div class="menu_icon">
@@ -52,16 +55,16 @@
         </t-tooltip>
 
         <!-- 空间选择器：仅在用户可切换空间时显示 -->
-        <TenantSelector v-if="canAccessAllTenants && !uiStore.sidebarCollapsed" />
+        <TenantSelector v-if="canAccessAllTenants && !collapsed && !pane" />
 
         <!-- 折叠时右侧拖拽展开手柄 -->
-        <div v-if="uiStore.sidebarCollapsed" class="sidebar-drag-handle" @mousedown="onDragHandleMouseDown" />
+        <div v-if="collapsed" class="sidebar-drag-handle" @mousedown="onDragHandleMouseDown" />
 
         <!-- 上半部分：新对话吸顶 + 知识库/智能体/共享空间/历史会话随滚动一起滚走 -->
         <div class="menu_top" ref="scrollContainer" @scroll="handleScroll">
             <!-- 全局搜索入口：点击打开命令面板（⌘K）。展开态移至顶部 logo_row 的图标按钮；
                  折叠态在此处保留为图标项 + 深色 tooltip。 -->
-            <div class="menu_box menu_box--cmdk" v-if="uiStore.sidebarCollapsed">
+            <div class="menu_box menu_box--cmdk" v-if="collapsed && !kailoMode">
                 <t-tooltip placement="right">
                     <template #content>
                         <span class="cmdk-tip">
@@ -78,19 +81,22 @@
                     </div>
                 </t-tooltip>
             </div>
-            <div class="menu_box" :class="{ 'menu_box--sticky': item.children && !uiStore.sidebarCollapsed }"
-                v-for="(item, index) in topMenuItems" :key="index">
-                <t-tooltip :content="item.title" placement="right" :disabled="!uiStore.sidebarCollapsed">
+            <div class="menu_box" :class="{ 'menu_box--sticky': item.children && !collapsed }"
+                v-for="(item, index) in (pane ? [] : topMenuItems)" :key="index">
+                <t-tooltip :content="item.title" placement="right" :disabled="!collapsed">
                     <div @click="handleMenuClick(item.path)" @mouseenter="mouseenteMenu(item.path)"
                         @mouseleave="mouseleaveMenu(item.path)" :data-guide="`nav-${item.path}`"
                         :class="['menu_item', item.childrenPath && item.childrenPath == currentpath ? 'menu_item_c_active' : isMenuItemActive(item.path) ? 'menu_item_active' : '']">
                         <div class="menu_item-box">
                             <div class="menu_icon">
-                                <img class="icon"
+                                <!-- Kailo mode: one-colour line icons following the row text colour (20 §13.9). -->
+                                <span v-if="kailoMode" class="icon kailo-mono-icon" aria-hidden="true"
+                                    :style="{ '--kailo-icon': `url(${getImgSrc(monoIcon(item.icon))})` }"></span>
+                                <img v-else class="icon"
                                     :src="getImgSrc(item.icon == 'zhishiku' ? knowledgeIcon : item.icon == 'agent' ? agentIcon : item.icon == 'artifact' ? artifactIcon : item.icon == 'organization' ? organizationIcon : item.icon == 'logout' ? logoutIcon : item.icon == 'setting' ? settingIcon : prefixIcon)"
                                     alt="">
                             </div>
-                            <template v-if="!uiStore.sidebarCollapsed">
+                            <template v-if="!collapsed">
                                 <span class="menu_title" :title="item.title">{{ item.title }}</span>
                                 <!-- Kailo mode: no native join requests; reminders are Kailo's (DD-138(4), 07 §4.8.3). -->
                                 <span v-if="!kailoMode && item.path === 'organizations' && orgStore.totalPendingJoinRequestCount > 0"
@@ -104,7 +110,7 @@
             </div>
 
             <!-- 历史会话：按来源筛选后统一按日期分组展示 -->
-            <div class="submenu" v-if="!uiStore.sidebarCollapsed">
+            <div class="submenu" v-if="!collapsed">
                 <!-- Stable, always-mounted source filter: reserving its row here
                      (instead of embedding it in the first date group, which
                      appears/disappears while a bucket loads) prevents the
@@ -175,7 +181,7 @@
         </div>
 
         <!-- 批量管理底部操作条：固定在侧栏底部、用户头像上方 -->
-        <div v-if="batchMode && !uiStore.sidebarCollapsed" class="batch-inline-footer">
+        <div v-if="batchMode && !collapsed" class="batch-inline-footer">
             <div class="batch-footer-left">
                 <t-checkbox :checked="isAllBatchSelected" :indeterminate="isBatchIndeterminate"
                     @change="toggleBatchSelectAll">
@@ -194,7 +200,7 @@
         </div>
 
         <!-- 下半部分：用户菜单 -->
-        <div class="menu_bottom">
+        <div v-if="!pane" class="menu_bottom">
             <UserMenu />
         </div>
 
@@ -265,6 +271,17 @@ import { getSystemInfo } from '@/api/system';
 import { BRAND_LOGO_URL, productName } from '@/kailo/brand';
 import { kailoConfig } from '@/kailo/runtime';
 import { isKailoEmbedded } from '@/kailo/setup';
+
+const props = withDefaults(defineProps<{
+    /** DD-157: render only the conversation list pane (Kailo shell, Chat tab). */
+    pane?: boolean
+}>(), { pane: false });
+const collapsed = computed(() => !props.pane && uiStore.sidebarCollapsed);
+const MONO_ICONS: Record<string, string> = {
+    zhishiku: 'zhishiku.svg', agent: 'agent.svg', artifact: 'artifact.svg', organization: 'organization.svg',
+    logout: 'logout.svg', setting: 'setting.svg',
+};
+const monoIcon = (icon: string) => MONO_ICONS[icon] || 'prefixIcon.svg';
 
 const chatResources = useChatResourcesStore();
 // Platform logos reused from IMChannelsOverviewPanel — keeps the session list

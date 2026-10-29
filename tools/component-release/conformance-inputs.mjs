@@ -3,9 +3,10 @@
 // for a REMOTE_ADAPTER ComponentRelease that registers existing native
 // references (implements[] non-empty, DD-98; .design/07 §8A, REQ-22, DD-76):
 //
-//   COMPONENT_CONFORMANCE_FIXTURE_FILE      contracts/domain/component_conformance_fixture.schema.json
-//   COMPONENT_CONFORMANCE_IDENTITY_FILE     contracts/domain/component_conformance_identity.schema.json
-//   COMPONENT_CONFORMANCE_ENVIRONMENT_FILE  contracts/domain/component_conformance_environment.schema.json
+//   fixture.json      contracts/domain/component_conformance_fixture.schema.json
+//   identity.json     contracts/domain/component_conformance_identity.schema.json
+//   environment.json  contracts/domain/component_conformance_environment.schema.json
+// installed together as the candidate <COMPONENT_CONFORMANCE_DIR>/<artifactDigest>/ (DD-136(2)).
 //
 // This is an assembler and pre-delivery checker, not a suite runner, a PEP or a
 // source of passing results. Every native expectation (handshake, binding

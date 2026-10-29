@@ -1258,12 +1258,12 @@ async fn source_message(
     // NIP-25 target must still be the frozen reacted message.
     let source = match invocation.trigger_target_event_id.as_deref() {
         Some(target) => client
-            .reaction_source(&state.http, &invocation.source_event_id, target)
+            .reaction_source(&state.relay_http, &invocation.source_event_id, target)
             .await
             .map_err(|_| RuntimeError::Unavailable)?,
         None => client
             .source_message(
-                &state.http,
+                &state.relay_http,
                 &invocation.source_event_id,
                 &channel.to_string(),
                 &invocation.root_event_id,
@@ -1280,7 +1280,7 @@ async fn source_message(
     {
         let messages = client
             .thread_context(
-                &state.http,
+                &state.relay_http,
                 &channel.to_string(),
                 &invocation.root_event_id,
                 &invocation.source_event_id,
@@ -3023,7 +3023,7 @@ async fn publish_reply(
     .map_err(|_| unknown())?;
     let transport = reqwest::Url::parse(&state.relay_transport).map_err(|_| unknown())?;
     let nip11 =
-        collab_bridge::limits::fetch_nip11(&state.http, &transport, &binding.normalized_host)
+        collab_bridge::limits::fetch_nip11(&state.relay_http, &transport, &binding.normalized_host)
             .await
             .map_err(|_| unknown())?;
     if nip11.digest != binding.nip11_snapshot_digest {
@@ -3126,7 +3126,7 @@ async fn publish_reply(
     };
     // Keep the same DB fences through the one external call. Neither native
     // rejection nor an HTTP timeout causes a new ID, turn or body replay.
-    let outcome = match client.deliver(&state.http, &event, admitted).await {
+    let outcome = match client.deliver(&state.relay_http, &event, admitted).await {
         Delivery::Accepted => Some("ACCEPTED"),
         Delivery::Rejected(_) => Some("REJECTED"),
         Delivery::Limited(_, _) => Some("NOT_DELIVERED"),
@@ -3363,7 +3363,7 @@ async fn reconcile_reply(
         };
         control
             .workflow_step_result_exists(
-                &state.http,
+                &state.relay_http,
                 event_id,
                 &intent.agent_pubkey,
                 &intent.channel_id.to_string(),
@@ -3389,7 +3389,7 @@ async fn reconcile_reply(
         };
         control
             .reaction_exists(
-                &state.http,
+                &state.relay_http,
                 event_id,
                 &intent.agent_pubkey,
                 // Same target the reaction was signed for (post_message).
@@ -3415,7 +3415,7 @@ async fn reconcile_reply(
         };
         control
             .channel_topic_exists(
-                &state.http,
+                &state.relay_http,
                 event_id,
                 &intent.agent_pubkey,
                 intent.channel_id,
@@ -3425,7 +3425,7 @@ async fn reconcile_reply(
     } else {
         control
             .channel_result_exists(
-                &state.http,
+                &state.relay_http,
                 event_id,
                 &intent.agent_pubkey,
                 &intent.channel_id.to_string(),

@@ -1,56 +1,117 @@
-import { useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 type TextBasedAnswerStreamTaskReturn = [
-  (responseId: number) => void,
+  (responseId: number, queryId: string) => void,
   {
+    responseId: number | null;
+    queryId: string | null;
     data: string;
     loading: boolean;
+    completed: boolean;
     onReset: () => void;
   },
 ];
 
 export default function useTextBasedAnswerStreamTask() {
   const eventSourceRef = useRef<EventSource | null>(null);
-  const [loading, setLoading] = useState<boolean>(false);
-  const [data, setData] = useState<string>('');
+  const activeKey = useRef<string | null>(null);
+  const attempted = useRef(new Set<string>());
+  const [identity, setIdentity] = useState<{
+    responseId: number;
+    queryId: string;
+  } | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [completed, setCompleted] = useState(false);
+  const [data, setData] = useState('');
 
-  const onReset = () => {
-    if (eventSourceRef.current) {
-      eventSourceRef.current?.close();
-      eventSourceRef.current = null;
-    }
+  const closeStream = useCallback(() => {
+    const source = eventSourceRef.current;
+    eventSourceRef.current = null;
+    source?.close();
+  }, []);
+
+  const onReset = useCallback(() => {
+    closeStream();
+    activeKey.current = null;
+    setIdentity(null);
+    setLoading(false);
+    setCompleted(false);
     setData('');
-  };
+  }, [closeStream]);
 
-  const fetchAnswerStreamingTask = (responseId: number) => {
-    setLoading(true);
-    onReset();
+  useEffect(() => closeStream, [closeStream]);
 
-    const eventSource = new EventSource(
-      `/api/ask_task/streaming_answer?responseId=${responseId}`,
-    );
+  const fetchAnswerStreamingTask = useCallback(
+    (responseId: number, queryId: string) => {
+      if (!Number.isSafeInteger(responseId) || responseId <= 0 || !queryId)
+        return;
+      const key = JSON.stringify([responseId, queryId]);
+      if (activeKey.current === key) return;
+      onReset();
+      activeKey.current = key;
+      setIdentity({ responseId, queryId });
+      // The original native queue is consumed once. A render, locale change,
+      // reset or earlier response selection cannot replay that same queue.
+      if (attempted.current.has(key)) return;
+      attempted.current.add(key);
+      setLoading(true);
 
-    eventSource.onmessage = (event) => {
-      const eventData = JSON.parse(event.data);
-      if (eventData.done) {
-        eventSource.close();
+      let eventSource: EventSource;
+      try {
+        eventSource = new EventSource(
+          `/api/ask_task/streaming_answer?responseId=${responseId}&queryId=${encodeURIComponent(queryId)}`,
+        );
+      } catch (error) {
+        console.error(error);
         setLoading(false);
-      } else {
-        setData((state) => state + (eventData?.message || ''));
+        return;
       }
-    };
-
-    eventSource.onerror = (error) => {
-      console.error(error);
-      eventSource.close();
-      setLoading(false);
-    };
-
-    eventSourceRef.current = eventSource;
-  };
+      eventSourceRef.current = eventSource;
+      const stop = () => {
+        closeStream();
+        setLoading(false);
+      };
+      eventSource.onmessage = (event) => {
+        if (eventSourceRef.current !== eventSource) return;
+        try {
+          const value = JSON.parse(event.data);
+          if (!value || typeof value !== 'object' || Array.isArray(value)) {
+            stop();
+            return;
+          }
+          const keys = Object.keys(value);
+          if (keys.length === 1 && value.done === true) {
+            stop();
+            setCompleted(true);
+          } else if (keys.length === 1 && typeof value.message === 'string') {
+            setData((state) => state + value.message);
+          } else {
+            stop();
+          }
+        } catch (error) {
+          console.error(error);
+          stop();
+        }
+      };
+      eventSource.onerror = (error) => {
+        if (eventSourceRef.current !== eventSource) return;
+        console.error(error);
+        stop();
+        // Transport closure is not proof of a finished answer.
+      };
+    },
+    [closeStream, onReset],
+  );
 
   return [
     fetchAnswerStreamingTask,
-    { data, loading, onReset },
+    {
+      responseId: identity?.responseId ?? null,
+      queryId: identity?.queryId ?? null,
+      data,
+      loading,
+      completed,
+      onReset,
+    },
   ] as TextBasedAnswerStreamTaskReturn;
 }

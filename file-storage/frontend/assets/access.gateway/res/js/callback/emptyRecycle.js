@@ -26,9 +26,12 @@ export default function (pydio) {
     const {MessageHash} = pydio;
     return function(){
 
+        const kailo = window.KailoCells
         pydio.UI.openComponentInModal('PydioReactUI', 'ConfirmDialog', {
             message:MessageHash[177],
             dialogTitleId: 220,
+            // DD-157: shown by Kailo inside a Kailo frame.
+            kailoConfirm: kailo && kailo.namedConfirm ? kailo.namedConfirm('empty-recycle') : undefined,
             validCallback:()=>{
                 const slug = pydio.user.getActiveRepositoryObject().getSlug();
                 const deleteRequest = new RestDeleteNodesRequest();

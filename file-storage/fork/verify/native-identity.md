@@ -3941,8 +3941,8 @@ TestNativeOIDCDirectoryConfigFromEnv、TestParseNativeOIDCDirectory 全部 PASS�
 与按路径给出稳定节点 UUID 的假根目录覆盖：
 交付前登录行为不变；首个快照预开户 + admin/standard + Workspace 角色 + 原生工作区（slug、标签、ADMIN scope、
 根 ACL 指向 `<root>/<id>`、角色 read/write ACL、Workspace ADMIN 的 WRITE 策略、无 ADMIN 的工作区无账号 WRITE）
-+ 其他 issuer 不开户 + Tenant 组改名 + 存储 0600
-+ 交付前开户而不在快照中的账号被锁；同版本不写；Core 503/403、令牌 401、坏 JSON、未知字段、角色值不符、
+以及其他 issuer 不开户、Tenant 组改名、存储 0600，
+以及交付前开户而不在快照中的账号被锁；同版本不写；Core 503/403、令牌 401、坏 JSON、未知字段、角色值不符、
 他 Tenant、他 binding 均不改状态且 503 报告为 Unavailable；降级、撤员加锁结束会话、Workspace 消失后角色 ACL 撤销、
 策略收回为仅管理员而工作区与根保留（再次出现时恢复授权与 WRITE 策略）、
 撤员登录与无令牌解析被拒；登录按快照取显示名/角色且非成员不开户；再加入解锁；“重启”（新路径读同一文件）后
@@ -4011,3 +4011,254 @@ Core 不可用时仍按已应用快照拒绝非成员并保留管理员。另有
   → `tools/component-release/render.mjs --material native-page --source-commit <部署提交>` → `component_release.register`
   → 另一位平台管理员 `component_release.approve` → `application_binding.create`（新 binding）→ 旧 binding
   `application_binding.disable`。合并前若镜像再变，版本再升，不复用已登记版本。
+
+## 2026-10-27 上传正文读取后再次核验原执行权限
+
+源码基底 `8c5395908aacbc6c4d82a57eb43855b4d66824ee`，本批产品固定
+`afe7a47103feae5bd807d8d282605b20b81056aa`，仅两份原 Go 文件，+62/-3。
+沿 `.design/07` §5.2、REQ-03/11、DD-09/11/87 的原 HUMAN writer 合同：
+
+1. 固定 Cells 上游仍为 `c57f02f4962835447df694c63bd0fd8c22bd7baf`。
+   原 SDK 1 CPU / 512 MiB 运行 `tools/upstream_manifest.py status file-storage`
+   退出 0，参考树 HEAD 与基准相同。上游原 `PutObject`、`PutObjectPart`
+   将请求 reader 交给原 Router；本批不改变其协议、对象路由或原上传页面。
+2. 当前 `nativeUploadWriter.Read` 仅在读取正文前 Fresh，正文读取可阻塞，
+   因此读取期间撤权后返回的字节仍可能交给存储。现在每次 `n > 0` 返回前
+   再调用同一个 `NativeUploadExecution.Fresh`，复核原独立 HUMAN、AE/EE、
+   binding/generation、目标、期限及 PEP；包括同时返回正文与 EOF 的情况。
+   拒绝时返回 `0/error`，不将该批字节交给调用方，也不新增凭据或授权来源。
+3. 已调用的 PutObject、先前交出的字节或未知 ACK 仍可能有副作用。原 Task
+   领取不释放、不改成确定失败、不回填完成，也不重新签发或重新上传。
+   原页面 `uploadNativeFile` 继续只观察同一执行，错误保持
+   `nativeExecutionUnknown`。multipart 的原 `PutObjectPart` 共用该 reader；
+   本轮动态检查是原 S3 PUT，不将这项静态共用关系当作 multipart 全链验收。
+4. 无 schema、API、Action、Workflow、数据库或 UI 变更。服务源码摘要发生变化，
+   原 artifact digest 不证明本候选已发布；完整 release/binding 门禁保持。
+
+CI 只从 GitHub fetch 固定产品提交并归档，9,090 个输入 blob 与该对象逐一相同。
+原 Cells 镜像 `golang@sha256:a688600ca24f8a4d3ca77f95b0dd40704a9fc787c826660eb7ba0b641b8b175d`
+实际 Go 1.26.8；容器 `cells-upload-afe7a4710-go1268` 为 4 CPU / 8 GiB、
+等额 memory+swap、UID 1000、network none，原 container-safety 回读通过。
+预检 MemAvailable 33,739,332 KiB；源码、TMPDIR、日志及原 Cells cache 经
+findmnt 确认为实际 `/dev/sda1` Data，未写入 NVMe bind cache。module cache
+只读，`GOTOOLCHAIN=local GOPROXY=off GOSUMDB=off`，未下载工具链或依赖。
+
+SSH 作业 94969 真实退出 0，原执行命令如下；不运行其他包或 full：
+
+```sh
+go test -mod=readonly -count=1 -v \
+  -run '^TestNativeUploadS3RequiresImmutableVersionAndTaskAcknowledgement$' ./gateway/data/gw
+go vet -mod=readonly ./gateway/data/gw
+```
+
+gofmt 无差异。原 S3、HUMAN cookie、HTTP Fresh、draft middleware 和 Task
+消费者的 15 个子场景通过，包含读取中撤权、正文与 EOF 同次返回、先交出
+6 字节再撤权三个新增场景；保留空/非空上传和原 ACK 不明场景。
+只移除读取后的 Fresh，三个新增场景均在原断言失败，exit 1：旧实现把全部
+12 字节交给原生读取方。逐字恢复生产文件后，同三场景再次通过；同包 vet
+退出 0。运行中 cgroup max/oom/oom_kill 均 0，最终该批容器已删除并回读为空。
+
+原件目录为 `/volumes/data/kailo/conformance/cells-upload-final/afe7a47103feae5bd807d8d282605b20b81056aa-go1268/`：
+
+| 原件 | 结果 | SHA-256 |
+|---|---|---|
+| `positive.log` | 15 子场景通过 | `ce3a70e70aed90f7b5d3e8410a96aef0fa04a29b560e174b64d2db023b791473` |
+| `mutation.log` | 3 子场景失败，exit 1 | `8e8b7c37b12c5abb13552b019f6b8025f64c456d3163049fe263e65a0374e24e` |
+| `restored.log` | 3 子场景通过 | `8bd5bda583ae5c75c416843bc619c8396cac7aeeca8beaba36506bcb61383286` |
+| `vet.log` | exit 0，空输出 | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` |
+
+恢复后生产文件 SHA-256 为 `1c0f7a899788ec3cb317cd87f43afa097c008b54580bbf9750d03535985a6bce`，
+检查文件为 `e768531a559986ff26e63f2bf649e8bc5d243b976b1c0942c2f5f9a08e993d5c`。
+较早作业 30976 使用通用 `3007729e…` SDK，其实际 Go 1.25.14 不满足原锁
+最低 1.26，退出 1，未运行业务断言；失败原件保留在同父目录不带 `-go1268`
+的固定 SHA 子目录，未更改 go.mod/go.sum 绕过。
+
+Core HTTP、原生索引、Job/Version RPC 和对象存储仍为隔离夹具；这不是浏览器、
+真实原生落盘、Mongo、完整 receiver 激活或生产上传验收。本批没有产品构建、
+部署、正式制品摘要更新或放行受治理 binding，旧发布/真实三端边界继续保留。
+
+## 2026-10-27 已完成读取后的下载正文仍消费当前权限
+
+源码基底 `3a2c960e492c545bfee2b2284fb2349a98664dde`，产品固定
+`8c74f37c898414ba31179b025fd13aa454aa910d`。本批沿原 `.design/07` §5.2、
+REQ-03/11、DD-87 收口原 MinIO 下载 reader，不新增 Action、Task、账本、
+API 或上传/下载页面。原 SDK metadata status 退出 0，Cells 固定上游仍为
+`c57f02f4962835447df694c63bd0fd8c22bd7baf`；参考源码仅只读。
+
+原 `GetObjectNInfo` 对受治理读取先完成原生读取、计量/Task ACK 和最后核验，
+随后将 `bytes.Reader` 直接交给 MinIO。慢下载在该交接后撤权，剩余缓冲正文
+仍可读出。本批为这一个原 reader 增加交付前检查：
+
+1. 有剩余正文的每次非空 `Read`，先消费原执行权限，再检查当前原生用户、
+   ACL 和冻结 UUID/path/root。HUMAN 同步读取调用原 `HumanAction` 的同一
+   `idempotencyKey` 观察入口，要求原 `COMPLETED`、完全相同的输入且无新
+   `readAdmission`；不发送第二条 command、不重读对象、不提交第二份 receipt。
+   原 Core `application_native_human` 观察路径仍经
+   `fresh_execution_with_sources` / `application_action::fresh_execution`，
+   核当前 binding/generation、目标、策略和权限，已有 receipt 不重复领取 quota。
+   以上 Core 路径为固定源核对，本批 HTTP fixture 不冒充真实 Core 运行。
+2. 原 Task/EE 读取继续消费既有 `NativeReadExecution.Fresh`，完成、ACK 不明、
+   版本不匹配等原边界保留。晚拒绝只阻止尚未交出的字节，不撤回先前正文，
+   不将已确认的读取/计量/Task 完成事实改写为未执行或可重试。
+3. 原 `acl.NewAccessListHandler` 会保留 preset ACL，普通
+   `AccessListFromContextClaims` 另有 session cache。新增的
+   `FreshAccessListFromContextClaims` 复用同一个原编译函数，但不读写该 cache；
+   原默认调用仍保持缓存行为。下载从 `ResolveNativeUser` 的当前角色构造
+   本次 claims 副本，保留原 scope/session，实走原 Role/ACL/Workspace RPC，
+   再将新列表交给原 UUID/path ACL 过滤器；不是使用历史 preset 当 fresh。
+   原用户隐藏、logout lock、角色撤销和 ACL 撤销均拒绝后续正文。
+4. 首次拒绝在该 reader 内保持，不因稍后权限恢复而继续输出或反复查询。
+   零长调用及已读尽 EOF 不再查询。正文仍受原 `maxResponseBytes` 上限；
+   每次允许的非空调用推进正文，不新增后台轮询或新的超时配置。
+
+CI 从 GitHub fetch 固定产品 SHA 并归档，9,091 个 blob 在检查前和两次故障
+逐字恢复后均匹配。实际 Go 1.26.8 镜像仍为
+`sha256:a688600ca24f8a4d3ca77f95b0dd40704a9fc787c826660eb7ba0b641b8b175d`。
+SSH 作业 9409 / `cells-stream-8c74f37c8-check` 真实退出 0；原
+container-safety 回读 4 CPU、8 GiB、等额 memory+swap、UID 1000、network none。
+预检 MemAvailable 33,169,088 KiB，source/tmp/原 Go cache 均在 `/dev/sda1`，
+module cache 只读，`GOTOOLCHAIN=local GOPROXY=off GOSUMDB=off`。
+未下载工具链或依赖，未使用 NVMe bind cache 作为 Data 盘。
+
+原消费者定向执行：
+
+```sh
+go test -mod=readonly -count=1 -v \
+  -run '^(TestGovernedReadCompletesBeforeReturningMinIOReader|TestNativeHumanDownloadRetainsFreshDisclosureAfterCompletion|TestIndependentReadKeepsStreamingAndClosesSource)$' ./gateway/data/gw
+go test -mod=readonly -count=1 -v -run '^TestNativeHumanRead' ./common/auth
+go vet -mod=readonly ./gateway/data/gw ./common/auth
+```
+
+gateway 三个原目标通过：Task HUMAN/AGENT 的 read/export、空/非空正文与
+七种交接条件共 56 子例；HUMAN 同步路径 12 子例；独立流两个原内联场景。
+HUMAN 使用原加密 cookie、当前 native user、原 admission/receipt/MinIO reader；
+撤权后仍严格保持 1 command、1 receipt、2 次完成前 PEP、0 个 Task。
+12 子例包含真实原 ACL 编译器/RPC 夹具的撤销与 claims scope 缩窄，
+另保留 fake router 拒绝作为单独路由错误场景，不混称 RPC 权限证据。
+auth 三个原目标及 19 子例通过，gofmt 无差异，两包 vet 退出 0。
+
+两组真实反向均失败于业务断言，而非编译或 fixture 错误：移除正文交付前
+`fresh` 后，9 个撤权/交接子例全部 FAIL、exit 1；逐字恢复后 12/12 通过。
+另将新 ACL 列表替换回原 stale preset，ACL 撤销与 claims scope 两例均
+FAIL、exit 1；逐字恢复后 2/2 通过。恢复后的晚拒绝场景也检查原命令/receipt/Task 次数，
+不以重签或重复读取修复结果。cgroup max/oom/oom_kill 全为 0；容器清理后
+`docker ps -a` 按本批名称回读为空。
+
+原件目录：
+`/volumes/data/kailo/conformance/cells-native-stream/8c74f37c898414ba31179b025fd13aa454aa910d-check/`。
+
+| 原件 | 结果 | SHA-256 |
+|---|---|---|
+| `gateway.log` | 68 子例、3 顶层目标通过 | `8d76a06f2884c499a93c9186f769331ec4c3eb14c2b8ce321e95ceee29363463` |
+| `auth.log` | 19 子例、3 顶层目标通过 | `4c39e99cfa9e22bc94a0592bfb7c354a24f01090c2db8eb6e8fa5881836bc1c7` |
+| `mutation.log` | 9 子例 FAIL，exit 1 | `065808a333c82ab956db9cd2c343bcd8ef41edf5e531b1412d7f7c41dd32b045` |
+| `restored.log` | 12 子例 PASS | `c19e69a21a1b0ae0bdc1f9ce010dadae9315eb61a5a3a00dd363ca2d3c31ad19` |
+| `acl-mutation.log` | 2 子例 FAIL，exit 1 | `477bdd90075854c3e9c0b66b5b5d1f68388101191159da4729e7959cdf58b793` |
+| `acl-restored.log` | 2 子例 PASS | `447114eedd5d0c3bf8080a3bd1883fabb05ca20abfeb649559b5692a18c0c627` |
+| `vet.log` | exit 0，空输出 | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` |
+
+共用权限包另以同一固定产品、原镜像和实际 Data cache，在 1 CPU / 2 GiB
+等额 memory+swap、network none 下执行
+`go vet -mod=readonly ./common/permissions`；SSH 作业 82008 退出 0，
+没有重跑上述消费者。原件在同父目录
+`8c74f37c898414ba31179b025fd13aa454aa910d-permissions/`，
+`permissions-vet.log` 为空，SHA-256 为
+`e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`。
+
+早先固定 `f4b45143770f24ddd7a21f13b84da2821b2d13ff` 作业 71987 退出 1：
+新增 ACL fixture 未按原 action 查询过滤，错误将 read ACL 返回给原前端
+参数查询，触发 `FlattenedFrontValues` panic。该失败原件保留在同父目录的
+`f4b45143770f24ddd7a21f13b84da2821b2d13ff-check/`；后继只修 fixture 查询
+匹配，不修改生产权限行为迎合测试，也未将首轮记为通过。
+
+Core/IdP HTTP、原生用户/角色/ACL/Workspace/索引/Task RPC、对象正文仍是
+隔离夹具；这不是浏览器慢下载、真实 Mongo/对象存储、完整 receiver 或正式
+制品验收。原同步读取已确认事实与晚交付拒绝分别记录，不声称已交出的正文
+可以撤回。没有部署、digest 更新、生产 binding 激活或 CI 信任变更。
+
+## 2026-10-27 受管原上传的 MIME 与 live 版本边界
+
+固定实现树 `5a1184525d7941067d81384f504d9fd431fe39c3`，原 Cells 上游
+`c57f02f4962835447df694c63bd0fd8c22bd7baf`。沿 `.design/07` §5.2、
+REQ-03/11、DD-09/11/87、DD-124 的真实 writer、权限与终态边界复核；本节是
+源码风险和发布阻断证据，不是产品修复、已复现的生产事故或业务验收。
+
+1. 原 `frontend/assets/gui.ajax/res/js/core/http/PydioApi.js::uploadNativeFile`
+   的 multipart 明确携带 `application/octet-stream`；原
+   `common/nodes/put/handler-put.go::PutObject` 和
+   `MultipartPutObjectPart` 对无类型或默认类型调用原
+   `common/nodes/file-mime.go::WrapReaderForMime`。后者在后台 goroutine
+   识别正文，达到 8,192 字节或读取结束/出错即触发原 MIME 回调；即使读取
+   出错，回调也会调用 `CoreMetaSet` 写默认类型。
+2. `common/nodes/client.go::CoreMetaSet` 通过原 `CreateNode` 的
+   `UpdateIfExists` 按 node UUID 写元数据，没有预期当前 head/version 的条件。
+   原受管 S3 `gateway/data/gw/native-upload.go::finish` 在原 draft 已落库后
+   立即 `ReadNode`，空 MIME 直接拒绝，然后复制同一 draft 至 live；它没有等待
+   上述后台 MIME 写入。未知类型首传因此存在以下未闭合时序：后台回写尚未可见
+   时 finish 拒绝，或者正文错误/授权变化后旧回调仍尝试写节点 MIME。这是由
+   原调用顺序得出的风险，尚未在真实对象存储或部署环境动态复现。
+3. 同一 finish 中的 `router.CopyObject(... SrcVersionId)` 固定来源 revision，
+   `common/nodes/core/handler-exec.go::CopyObject` 对其原 GET 使用 `If-Match`
+   并核对源对象；但随后到 live 目标的 `destClient.PutObject` 路径没有传入目标
+   head/version 的条件。`data/versions/dao/bolt/bolt.go::ReserveDraftUpload`
+   仅拒绝重复的 revision ID；`PublishDraftUpload` 事务核对对应 reservation 和
+   新 revision。Mongo 的对应操作也按原 reservation/revision 事务处理；这些
+   不能单独证明 live 对象、索引 MIME 和其他并发版本在同一原子条件下提交。
+   `scheduler/jobs/native-upload.go::NativeUploadStepRecord` 固定原步骤、路径、
+   upload ID、长度和 ETag，但当前没有固定 MIME 或预期 live head。
+4. 因此不能以等待回调、读取当前 MIME、补默认类型或重新执行上传来证明这次
+   特定版本成功；亦不能只为此新建第二账本。受管 FILE_STORAGE 的匹配 release
+   和 binding 原本尚未通过激活验收，继续保持该发布门禁；该路径的 UNKNOWN
+   仍只观察同一原任务。独立 Cells 原生入口、既有数据及其他组件不因这项
+   源码发现被删除或停止。闭合需要在原任务、版本与实际对象写入间证明条件
+   原子性，覆盖单 PUT 与 multipart、短/长/空正文、权限变化、并发新版本、
+   ACK 丢失和恢复；若现有协议无此原语，须先依设计变更流程处理。
+
+后续源码核对：`models.PutMeta` 和 `CopyRequestData` 未提供目标版本条件；
+原版本 DAO 未维护可比较并交换的 live 指针。`HeadVersion` 的 head 从已发布
+版本推导，不能作为对象写入的原子条件。`reconcileNativeUpload` 沿原任务记录、
+指定不可变版本和清理回执收敛，记录或版本缺失时保留 UNKNOWN；这些证据仍不能
+证明当前 live 对象和 MIME 属于同一提交。闭合需让相关写入、读取和索引消费共同
+遵循单一权威，关联预期 head、不可变版本和完整正文对应的 MIME，并以原任务的
+精确提交及清理证据对账。这里描述的是待设计及消费路径共同验证的必要条件，
+不是现有实现已具备的跨存储事务，也没有通过真实并发存储演练。
+
+固定上游 `common/nodes/file-mime.go::NewTeeMimeReader`、`TeeMimeReader.Read`
+及 `WrapReaderForMime` 已用只读 `git show` 对上述完整 commit 核验；未执行或
+修改 `.references`。本轮原 `tools/upstream_manifest.py status file-storage`
+在原 SDK 容器 1 CPU / 512 MiB、network none、只读参考树执行，退出 0：参考树
+HEAD 即该基准；原容器已删除。未运行新业务消费者、未改产品、契约、数据库、
+制品或运行配置；既有定向通过记录及完整上传/正式发布门禁均不因此改变。
+
+### 受管复制后的元数据副作用
+
+固定源码 `c0f7d9b1fc455d75a6c9aa849e44c4ffd6bd9f96`，基于
+`a4bc4e96bf1ff9ede2363423a568a55eb12a2563`。按 REQ-03/11、DD-09/11/87，
+原 `common/nodes/put/handler-put.go::CopyObject` 在下游复制返回错误后，仍会
+调用原 `ExtractAndPut`，可能在复制结果不明时另行写入元数据；复制调用期间
+撤权时，该副作用也先于上层下一次 Fresh。受管非 move 复制现在先保留复制错误，
+成功后在原元数据调用前对同一 `NativeUploadExecution` 重新 Fresh。已发生的
+复制不可撤回，拒绝后不补造失败终态、不重放；独立 Cells 的原成功及错误路径、
+受管 move 路径不改。新检查不证明复制目标的原子 head 或 MIME 归属，上一节的
+完整上传/正式发布阻断保持。
+
+原 Go 1.26.8 镜像
+`golang@sha256:a688600ca24f8a4d3ca77f95b0dd40704a9fc787c826660eb7ba0b641b8b175d`
+在 4 CPU / 8 GiB / 等额 swap、pids 512、nonroot、network none 下运行：
+原 `put.Handler.CopyObject` 消费者 **5/5**，包括真实 HUMAN cookie 和原 Fresh
+HTTP 消费、复制期间撤权、复制 ACK 丢失及独立 Cells 成功/错误对照；原 S3 网关
+上传 **15 子例**通过。两包 vet 和 gofmt 退出 0。Core HTTP、复制后端及元数据
+接收均为隔离夹具，不是实际 Core、对象存储或浏览器全链。
+原 `tools/upstream_manifest.py status file-storage` 在 1 CPU / 512 MiB 的原 SDK
+对只读参考树执行退出 0，固定上游仍为 `c57f02f4962835447df694c63bd0fd8c22bd7baf`。
+
+两次实际修改生产文件：移除 Fresh 时原撤权子例断言失败；移除复制错误返回时
+原 ACK 丢失子例断言失败，均 exit 1。各次逐字恢复后原 **5/5** 通过；恢复后
+**9,092** 个输入 Git blob 与固定源码一致，相关容器已删除并回读为空。前轮
+`12d5b235f` 原测试因缺失真实 session 所需 User/Policy RPC 夹具在认证前失败，
+日志保留；仅补原 RPC 和线程安全撤权夹具后重跑，未放宽生产认证。
+
+CI 回执位于 `/volumes/data/kailo/conformance/cells-copy-boundary/c0f7d9b1f-fault/receipt.json`，
+SHA-256 `8365de28200953365a06e2d25c85d271c50fde0f83f23d4c2477899147745a2b`；
+仓库原样副本为[复制边界回执](native-copy-boundary-receipt.json)。未构建制品、
+部署或激活 binding，也未把定向检查称为全仓门禁或真实组件业务验收。

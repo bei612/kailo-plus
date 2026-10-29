@@ -43,6 +43,9 @@ pub struct RelayInfo {
     /// NIP-PL executor descriptor. Present only when push delivery is configured.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub push: Option<serde_json::Value>,
+    /// Actual Community writer-fence readiness and signed publication epoch.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub publication_policy: Option<buzz_core::publication::PublicationPolicy>,
     /// URL of the relay software repository.
     pub software: String,
     /// Relay software version string.
@@ -208,6 +211,7 @@ impl RelayInfo {
             supported_nips,
             supported_extensions: Some(supported_extensions),
             push: None,
+            publication_policy: None,
             software: "https://github.com/block/buzz".to_string(),
             version: env!("CARGO_PKG_VERSION").to_string(),
             limitation: Some(relay_limitation(max_message_length)),
@@ -293,6 +297,15 @@ pub(crate) async fn nip11_document(state: &crate::state::AppState, raw_host: &st
         admin_api.as_deref(),
         state.config.klipy.as_ref().map(|_| "klipy"),
     );
+    // This capability comes from the current writer schema and every actual
+    // partition, never merely from a new binary or a compile-time flag.
+    if let Ok(scope) = crate::tenant::bind_community(&state.db, raw_host).await {
+        if let Ok(policy) = state.db.publication_policy(scope.community()).await {
+            if policy.ready {
+                info.publication_policy = Some(policy);
+            }
+        }
+    }
     let tenant_host = if state.config.push_enabled {
         crate::tenant::bind_community(&state.db, raw_host)
             .await

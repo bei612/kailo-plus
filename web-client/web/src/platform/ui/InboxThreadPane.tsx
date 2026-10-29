@@ -23,6 +23,7 @@ import { Composer, mentionPeopleFromMembers } from "./ChannelPane";
 import { useWorkspaceThread } from "./useWorkspaceThread";
 import { MessageAuthorAvatar, MessageAuthorIdentity, useMessageAuthorLabels, type MessageAuthor } from "./MessageAuthorProfile";
 import { useMessageReactions } from "./useMessageReactions";
+import { initDraftStore, isDraftStoreScope, loadDraftEntry, loadPendingSend, useDraftsSnapshot } from "@client-kit/platform/react/composer/features/messages/lib/useDrafts";
 import { BffVideoReviewProvider } from "@/features/chat/ui/BffVideoReview";
 
 export function InboxThreadPane({ principalId, workspaceId, channelId, conversation, forum = false, canInteract = true, rootId, selectedEventId, selectionItemId, channelName, senderLabel, members, onBack, onOpen, autoSendDraftKey, restoreDraftKey, replyTargetEventId, onOpenAuthor, onAuthorScopeUnavailable, onPublicationPendingChange, unreadBoundaryEventId, reopen, workspaceVisibility, isDark = false, workflows }: {
@@ -122,7 +123,26 @@ export function InboxThreadPane({ principalId, workspaceId, channelId, conversat
   const canUseContext = canInteract && !unavailable && !interrupted && thread.isSuccess && (conversation && parentId === null || hasReplyParent) && (conversation
     ? conversation.state === "ACTIVE" && conversation.channelId === workspaceId && conversation.participantPrincipalIds.includes(principalId)
     : members.some((member) => member.principalId === principalId && "state" in member && member.state === WorkspaceMembershipState.Active));
-  const canReply = supportsInlineReply && canUseContext;
+  // Keep legacy native-key recovery (including pending-only/UNKNOWN) intact.
+  // Only a new DM draft joins the binding key already used by the full DM page.
+  // Latch once per owner: later record changes must never retarget its editor.
+  useDraftsSnapshot();
+  const dmDraftOwner = useMemo(() => ({}), [principalId, workspaceId, conversation?.id, restoreDraftKey]);
+  const [dmDraft, setDmDraft] = useState<{ owner: object; key: string; scope: string } | null>(null);
+  const hasLegacyDmDraft = () => Boolean(loadDraftEntry(workspaceId) || loadPendingSend(workspaceId));
+  useEffect(() => {
+    if (!conversation || !canUseContext || dmDraft?.owner === dmDraftOwner) return;
+    initDraftStore(principalId, window.location.origin);
+    const key = restoreDraftKey ?? (hasLegacyDmDraft() ? workspaceId : conversation.id);
+    setDmDraft({owner: dmDraftOwner, key, scope: key === conversation.id ? conversation.id : workspaceId});
+  }, [dmDraftOwner, dmDraft, canUseContext, principalId, workspaceId, conversation, restoreDraftKey]);
+  const activeDmDraft = dmDraft?.owner === dmDraftOwner ? dmDraft : null;
+  const dmDraftAvailable = () => !conversation || Boolean(activeDmDraft &&
+    isDraftStoreScope(principalId, window.location.origin) &&
+    (activeDmDraft.key !== conversation.id || workspaceId === conversation.id || !hasLegacyDmDraft()) &&
+    (activeDmDraft.key !== workspaceId || workspaceId === conversation.id ||
+      (!loadPendingSend(conversation.id) && !loadDraftEntry(conversation.id)?.sendIntent)));
+  const canReply = supportsInlineReply && canUseContext && dmDraftAvailable();
   const canManage = Boolean(canUseContext && ownProfile.isSuccess && !ownProfile.isFetching && ownProfile.data?.pubkey);
   const canEdit = (message: TimelineMessage) => canManage && (message.kind === 9 || (forum && (message.kind === 45001 || message.kind === 45003))) && !message.pending && message.signerPubkey === ownProfile.data?.pubkey;
   const deleteDialog = useMessageDeleteDialog(JSON.stringify([principalId, ownProfile.data?.pubkey, conversation?.id ?? workspaceId]),
@@ -255,7 +275,7 @@ export function InboxThreadPane({ principalId, workspaceId, channelId, conversat
           throw error;
         }
       }} /> : null}
-    <div hidden={Boolean(editTarget)}><Composer key={replyId ?? "default"} containerClassName="px-4 pb-4 sm:px-4" workspaceId={conversation ? undefined : workspaceId} draftChannelId={workspaceId} draftIdentity={principalId} draftKey={restoreDraftKey ?? (conversation ? workspaceId : `thread:${workspaceId}:${anchorRoot}${replyId ? `:${replyId}` : ""}`)} autoSendDraftKey={autoSendDraftKey} disabled={!canReply || Boolean(editTarget) || deleteDialog.pending || Boolean(deleteDialog.unresolvedMessageId)}
+    <div hidden={Boolean(editTarget)}>{activeDmDraft && !dmDraftAvailable() ? <p role="status">{t("inbox.replyUnavailable")}</p> : null}<Composer key={replyId ?? "default"} containerClassName="px-4 pb-4 sm:px-4" workspaceId={conversation ? undefined : workspaceId} draftChannelId={activeDmDraft?.scope ?? workspaceId} draftIdentity={principalId} draftKey={conversation ? activeDmDraft?.key : restoreDraftKey ?? `thread:${workspaceId}:${anchorRoot}${replyId ? `:${replyId}` : ""}`} autoSendDraftKey={autoSendDraftKey} disabled={!canReply || Boolean(editTarget) || deleteDialog.pending || Boolean(deleteDialog.unresolvedMessageId)}
       channelType={conversation ? "dm" : forum ? "forum" : undefined}
       audienceContext={conversation || !messages.find(event => event.id === anchorRoot) ? null : {type: "thread", rootTags: messages.find(event => event.id === anchorRoot)!.tags}}
       mentionPeople={mentionPeopleFromMembers(members)}
@@ -267,7 +287,7 @@ export function InboxThreadPane({ principalId, workspaceId, channelId, conversat
       placeholder={!supportsInlineReply ? t("inbox.replyUnsupported") : conversation ? t("composer.dmPlaceholder",{name:directMessageSender}) : channelName ? t("inbox.replyToChannelThread",{channel:channelName}) : t("inbox.replyToThread")} linkPreviewTarget={conversation ? { conversationId: conversation.id } : { workspaceId }}
       onPublish={async (content, attachments, idempotencyKey, installations, mentionPubkeys, linkPreviews) => {
         if (!publicationOwner.active || publicationOwnerRef.current !== publicationOwner) throw new Error(t("inbox.replyUnavailable"));
-        if (!canReply || deleteDialog.pending || deleteDialog.unresolvedMessageId || (!conversation && !parentId)) throw new Error("Inbox reply parent is unavailable.");
+        if (!canReply || !dmDraftAvailable() || deleteDialog.pending || deleteDialog.unresolvedMessageId || (!conversation && !parentId)) throw new Error("Inbox reply parent is unavailable.");
         const prior = publication.current;
         if (prior && (prior.edit || prior.key !== idempotencyKey || prior.parent !== parentId)) throw new TransportError("Inbox reply still has an unresolved intent.");
         publication.current = {key:idempotencyKey, parent:parentId, unknown:prior?.unknown ?? false};

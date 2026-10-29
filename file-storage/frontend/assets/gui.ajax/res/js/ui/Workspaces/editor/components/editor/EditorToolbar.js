@@ -50,7 +50,19 @@ class EditorToolbar extends React.Component {
     render() {
         const {title, className, style, display, node} = this.props
         let mainStyle =  {}, innerStyle = {}, spanStyle;
-        if (display === "fixed") {
+        const kailo = window.KailoCells && window.KailoCells.kailoMode && window.KailoCells.kailoMode()
+        if (display === "fixed" && kailo) {
+            // DD-157 (20 §13.6): the Kailo page surface, not a dark grey bar.
+            mainStyle = {
+                position:'relative',
+                backgroundColor: 'var(--kailo-color-background)',
+                borderBottom: '1px solid var(--kailo-color-border)',
+                boxShadow: 'none',
+                ...style
+            }
+            innerStyle = {color: "var(--kailo-color-muted-foreground)", fill: "var(--kailo-color-muted-foreground)"}
+            spanStyle = {color: "var(--kailo-color-foreground)", fontSize: 15, fontWeight: 600}
+        } else if (display === "fixed") {
             mainStyle = {
                 position:'relative',
                 backgroundColor: '#424242',

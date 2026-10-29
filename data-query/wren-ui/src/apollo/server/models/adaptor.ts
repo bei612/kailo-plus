@@ -141,6 +141,7 @@ export type AskResult = AskResponse<
   }>,
   AskResultStatus
 > & {
+  completion?: { queryId: string; content: string };
   rephrasedQuestion?: string;
   intentReasoning?: string;
   sqlGenerationReasoning?: string;
@@ -149,6 +150,20 @@ export type AskResult = AskResponse<
   traceId?: string;
 };
 
+// A classification status or queue sentinel is not a complete explanation.
+export function generalCompletion(
+  result: AskResult | undefined,
+  queryId: string,
+): string | undefined {
+  return result?.type === AskResultType.GENERAL &&
+    result.status === AskResultStatus.FINISHED &&
+    !result.error &&
+    result.completion?.queryId === queryId &&
+    typeof result.completion.content === 'string'
+    ? result.completion.content
+    : undefined;
+}
+
 export enum RecommendationQuestionStatus {
   GENERATING = 'GENERATING',
   FINISHED = 'FINISHED',
@@ -156,6 +171,7 @@ export enum RecommendationQuestionStatus {
 }
 
 export type RecommendationQuestionsInput = {
+  queryId?: string; // Existing UI-reserved native task ID, not authorization.
   // JSON string of the MDL (Model Definition Language)
   manifest: Manifest;
   // Optional list of previous questions
@@ -203,6 +219,7 @@ export enum TextBasedAnswerStatus {
 
 export interface TextBasedAnswerResult {
   status: TextBasedAnswerStatus;
+  completion?: { queryId: string; content: string };
   numRowsUsedInLLM?: number;
   error?: WrenAIError;
 }

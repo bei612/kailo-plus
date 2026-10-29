@@ -708,6 +708,11 @@ export function useMediaUpload({
     };
   }, []);
 
+  const uploadFileBatch = React.useCallback((files: File[]) => {
+    queueFiles(files.filter(shouldQueueFile));
+    uploadFiles(files.filter((file) => !shouldQueueFile(file)));
+  }, [queueFiles, shouldQueueFile, uploadFiles]);
+
   const handlePaste = React.useCallback(
     async (event: {
       clipboardData: DataTransfer;
@@ -724,10 +729,9 @@ export function useMediaUpload({
 
       event.preventDefault();
 
-      queueFiles(mediaFiles.filter(shouldQueueFile));
-      uploadFiles(mediaFiles.filter((file) => !shouldQueueFile(file)));
+      uploadFileBatch(mediaFiles);
     },
-    [queueFiles, shouldQueueFile, uploadFiles],
+    [uploadFileBatch],
   );
 
   /** Upload a File directly — used by Tiptap's editorProps.handlePaste. */
@@ -912,6 +916,7 @@ export function useMediaUpload({
       toggleQueuedAttachmentSpoiler,
       uploadEditedAttachment,
       uploadFile,
+      uploadFiles: uploadFileBatch,
       uploadingCount,
       uploadingPreviews,
       uploadState,
@@ -939,6 +944,7 @@ export function useMediaUpload({
       toggleQueuedAttachmentSpoiler,
       uploadEditedAttachment,
       uploadFile,
+      uploadFileBatch,
       uploadingCount,
       uploadingPreviews,
       uploadState,

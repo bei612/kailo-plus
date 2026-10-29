@@ -1,0 +1,380 @@
+{
+  "design": [
+    "DD-151",
+    "V-SCN-249"
+  ],
+  "sourceTransport": "CI direct GitHub fetch and immutable object archive; no local source upload",
+  "sdkImage": "sha256:3007729eb192341a4f004a88e42e1e66c94fc67d763acfc96568bd7311116018",
+  "jobs": [
+    {
+      "sourceCommit": "0c5efc4c24f9191309ff0b8793f1cb8429d3c25d",
+      "job": "/volumes/data/kailo/conformance/checks/push-retirement-0c5efc4c2",
+      "sourceProof": {
+        "checkedArchiveFiles": 3286,
+        "changed": []
+      },
+      "steps": {
+        "attach": 101,
+        "check": 101,
+        "clippy": 101,
+        "fmt": 0,
+        "migrations-up": 0,
+        "receipt-negative": 101,
+        "receipt-restored": 0,
+        "retirement-pg-http": 0,
+        "revoke-negative": 101,
+        "revoke-restored": 0
+      },
+      "logs": {
+        "check.log": {
+          "sha256": "b74d0c19bc96a791204a010f8051c9294a911b8006a805355a833796d3a06617",
+          "bytes": 15473
+        },
+        "clippy.log": {
+          "sha256": "c40a5f28112655966a48b3b56ba1528853aac6a76e181fe9ba8f43332fdecade",
+          "bytes": 1370
+        },
+        "fmt.log": {
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "bytes": 0
+        },
+        "migrations-up.log": {
+          "sha256": "57f4c1f281eb70fed8650e189cd99f5f7f3a8d1ebe62305a5af005db7c29efed",
+          "bytes": 11551
+        },
+        "pg-limits.log": {
+          "sha256": "14d27d0aa3fb9c5cc5fc5e15a8911ad3822885b4856e3189e77dd612365b9dac",
+          "bytes": 186
+        },
+        "preflight.log": {
+          "sha256": "c844a168ca11cddbc95a0aa0585ad289e83fbe6f783403d640788f34398015a0",
+          "bytes": 595
+        },
+        "receipt-negative.log": {
+          "sha256": "71224bb563abff97546ab5822d262db0ed534321bc87de8e8603e2c7a50dcee9",
+          "bytes": 1205
+        },
+        "receipt-restored.log": {
+          "sha256": "61ba4bcfaa980219c879080cee8ceb052ccfecc2396e2ba9c6e04d8fd080923b",
+          "bytes": 481
+        },
+        "retirement-pg-http.log": {
+          "sha256": "8adb59648e85e99dc8a62f984f9c95a78bbd1da089997e35d82ff69ace745da3",
+          "bytes": 1022
+        },
+        "revoke-negative.log": {
+          "sha256": "cf58dbbb97f1b306b0ca2524b5a965f3d7f7e5d66896a5ec48ec2b8fb2f783b8",
+          "bytes": 1203
+        },
+        "revoke-restored.log": {
+          "sha256": "d23485993a531b9471227977f5a9ce03f4e6cc25e1d1c43915dc7bf36b3da56a",
+          "bytes": 481
+        },
+        "sdk-limits.log": {
+          "sha256": "758a690b5739e203ec82b2d35934d42da0b77a1a17d07ed19ba7be720439ffbf",
+          "bytes": 189
+        }
+      },
+      "testResults": {
+        "receipt-negative.log": [
+          "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 930 filtered out; finished in 0.14s"
+        ],
+        "receipt-restored.log": [
+          "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 930 filtered out; finished in 0.16s"
+        ],
+        "retirement-pg-http.log": [
+          "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 930 filtered out; finished in 0.16s"
+        ],
+        "revoke-negative.log": [
+          "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 930 filtered out; finished in 0.13s"
+        ],
+        "revoke-restored.log": [
+          "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 930 filtered out; finished in 0.16s"
+        ]
+      },
+      "sdk": {
+        "image": "sha256:3007729eb192341a4f004a88e42e1e66c94fc67d763acfc96568bd7311116018",
+        "memory": 17179869184,
+        "swap": 17179869184,
+        "nanoCpus": 4000000000,
+        "state": {
+          "Dead": false,
+          "Error": "",
+          "ExitCode": 101,
+          "FinishedAt": "2026-10-26T22:59:04.363990914Z",
+          "OOMKilled": false,
+          "Paused": false,
+          "Pid": 0,
+          "Restarting": false,
+          "Running": false,
+          "StartedAt": "2026-10-26T22:56:30.798383028Z",
+          "Status": "exited"
+        }
+      },
+      "pg": {
+        "image": "sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea",
+        "memory": 2147483648,
+        "swap": 2147483648,
+        "nanoCpus": 1000000000,
+        "state": {
+          "Dead": false,
+          "Error": "",
+          "ExitCode": 0,
+          "FinishedAt": "0001-01-01T00:00:00Z",
+          "OOMKilled": false,
+          "Paused": false,
+          "Pid": 3979165,
+          "Restarting": false,
+          "Running": true,
+          "StartedAt": "2026-10-26T22:56:29.523349449Z",
+          "Status": "running"
+        }
+      },
+      "cleanup": {
+        "containers": [],
+        "networks": []
+      },
+      "observedFailure": "all-target Clippy type_complexity in test tuple; fixed by named tuple alias in 2b991a896",
+      "negativeMutations": [
+        "Remove original worker token_intent::retire call: actual original consumer assertion BOUND versus RETIRING fails with exit 101; exact-byte restore then 1/1 pass.",
+        "Ignore original SecretStore retirement error: actual consumer assertion RETIRED versus RETIRING fails with exit 101; exact-byte restore then 1/1 pass."
+      ]
+    },
+    {
+      "sourceCommit": "2b991a896d726525a9f0b296052e00a575da54e5",
+      "job": "/volumes/data/kailo/conformance/checks/push-retirement-2b991a896",
+      "sourceProof": {
+        "checkedArchiveFiles": 3286,
+        "changed": []
+      },
+      "steps": {
+        "attach": 0,
+        "check": 0,
+        "clippy": 0,
+        "fmt-final": 0,
+        "fmt": 0,
+        "migrations-up": 0,
+        "retirement-pg-http": 0
+      },
+      "logs": {
+        "check.log": {
+          "sha256": "b7cf92226b8b9f2b6f8dae938d01093a3aa6139f286e2b43e22fad6cbcee5a2b",
+          "bytes": 13587
+        },
+        "clippy.log": {
+          "sha256": "fed64a2e6dae3c6452712de92547a1f6dcc5d66b0747330941011691f9f14ab5",
+          "bytes": 692
+        },
+        "fmt-final.log": {
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "bytes": 0
+        },
+        "fmt.log": {
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "bytes": 0
+        },
+        "migrations-up.log": {
+          "sha256": "dbc1f1e2fddc8deb87f42b613a00465fb149ed50c63034ad747f1a3c7faf6115",
+          "bytes": 11554
+        },
+        "pg-limits.log": {
+          "sha256": "33c64175afc879f2e657499961aa04eb6d0122678046c59fca0d88294a642b35",
+          "bytes": 186
+        },
+        "preflight.log": {
+          "sha256": "1fa0e054ff69db239704c8b78dff11a2d3da9bb11aaffc68f0d155275fc5a8ae",
+          "bytes": 595
+        },
+        "retirement-pg-http.log": {
+          "sha256": "8b0eec731804c0a5fa2aa240e8e99436e50f90ce76e22bdc159d99b05cc74891",
+          "bytes": 1022
+        },
+        "sdk-limits.log": {
+          "sha256": "1e1229fa21aa793ed8e90baf99e7856cc2303b5bf3f08298e8faa364ed1d83d6",
+          "bytes": 189
+        }
+      },
+      "testResults": {
+        "retirement-pg-http.log": [
+          "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 930 filtered out; finished in 0.16s"
+        ]
+      },
+      "sdk": {
+        "image": "sha256:3007729eb192341a4f004a88e42e1e66c94fc67d763acfc96568bd7311116018",
+        "memory": 17179869184,
+        "swap": 17179869184,
+        "nanoCpus": 4000000000,
+        "state": {
+          "Dead": false,
+          "Error": "",
+          "ExitCode": 0,
+          "FinishedAt": "2026-10-26T23:02:04.516886701Z",
+          "OOMKilled": false,
+          "Paused": false,
+          "Pid": 0,
+          "Restarting": false,
+          "Running": false,
+          "StartedAt": "2026-10-26T23:00:45.593703251Z",
+          "Status": "exited"
+        }
+      },
+      "pg": {
+        "image": "sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea",
+        "memory": 2147483648,
+        "swap": 2147483648,
+        "nanoCpus": 1000000000,
+        "state": {
+          "Dead": false,
+          "Error": "",
+          "ExitCode": 0,
+          "FinishedAt": "0001-01-01T00:00:00Z",
+          "OOMKilled": false,
+          "Paused": false,
+          "Pid": 4035930,
+          "Restarting": false,
+          "Running": true,
+          "StartedAt": "2026-10-26T23:00:44.293704454Z",
+          "Status": "running"
+        }
+      },
+      "cleanup": {
+        "containers": [],
+        "networks": []
+      }
+    },
+    {
+      "sourceCommit": "11ad2fff18d57604eda738471e98aedb1d212992",
+      "designCommit": "c4d338bce1c97d0dfde18da42e66a9064f12668c",
+      "job": "/volumes/data/kailo/conformance/checks/push-retirement-11ad2fff1",
+      "sourceProof": {
+        "checkedArchiveFiles": 96876,
+        "changed": []
+      },
+      "designProof": {
+        "checkedArchiveFiles": 24,
+        "changed": []
+      },
+      "steps": {
+        "attach": 0,
+        "check": 0,
+        "clippy": 0,
+        "docs": 0,
+        "evidence-json": 0,
+        "evidence-markdown": 0,
+        "fmt-final": 0,
+        "fmt": 0,
+        "migrations-up": 0,
+        "retirement-pg-http": 0,
+        "runbooks": 0
+      },
+      "logs": {
+        "check.log": {
+          "sha256": "cf6a2439d3d0c5f1c8051df7f99dd05ccde8cda53952d32bd61523c98d09486a",
+          "bytes": 25835
+        },
+        "clippy.log": {
+          "sha256": "c1e2ef5bbea5edbcd56e44b2da428063861823cbe97eefe4c574ad60183aa0dc",
+          "bytes": 692
+        },
+        "docs.log": {
+          "sha256": "914b5740e06cadc02edb2d51c332f5fca66dfb6e4c16e1cfd276bdb9be698fe1",
+          "bytes": 607
+        },
+        "evidence-json.log": {
+          "sha256": "d9409496792e9ceb44845c2259ba11390faffb12a639f3713084b4a9d13ee298",
+          "bytes": 11124
+        },
+        "evidence-markdown.log": {
+          "sha256": "4f65eb90be111e5abdc4dfb99ed7c5bcbf2de664460a66be3d42b6ba26f3d32c",
+          "bytes": 338
+        },
+        "fmt-final.log": {
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "bytes": 0
+        },
+        "fmt.log": {
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "bytes": 0
+        },
+        "migrations-up.log": {
+          "sha256": "18159d51781342ece1525b9fce02926d8d475e0e29d29d60e60132effd4e0a8c",
+          "bytes": 11549
+        },
+        "pg-limits.log": {
+          "sha256": "b0f5fe86a5a6bcf230f0e3cfc76981467a11a64f7eb2cbd91998ce289feaf1a1",
+          "bytes": 186
+        },
+        "preflight.log": {
+          "sha256": "c78b49817a6f4f4caeb376933c5f880e04ed48eb5b9781d8ab7099485a9243e3",
+          "bytes": 595
+        },
+        "retirement-pg-http.log": {
+          "sha256": "7d54fc6d01afde04815b0e26769bb71f0995f8236c8de310e542553d75ffe96a",
+          "bytes": 1022
+        },
+        "runbooks.log": {
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "bytes": 0
+        },
+        "sdk-limits.log": {
+          "sha256": "01d87b748930853f2b4c2f84e90c225b0e764ea77daeef4000c5eca04010cb98",
+          "bytes": 189
+        }
+      },
+      "testResults": {
+        "retirement-pg-http.log": [
+          "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 930 filtered out; finished in 0.16s"
+        ]
+      },
+      "scope": "Integrated source: original retirement PG/HTTP test explicitly included, fresh migrations, Core all-target Clippy and fmt, original docs and runbooks gates, both changed evidence Markdown and new receipt JSON. No mutation rerun or unrelated suite.",
+      "sdk": {
+        "image": "sha256:3007729eb192341a4f004a88e42e1e66c94fc67d763acfc96568bd7311116018",
+        "memory": 17179869184,
+        "swap": 17179869184,
+        "nanoCpus": 4000000000,
+        "state": {
+          "Dead": false,
+          "Error": "",
+          "ExitCode": 0,
+          "FinishedAt": "2026-10-26T23:18:30.997543805Z",
+          "OOMKilled": false,
+          "Paused": false,
+          "Pid": 0,
+          "Restarting": false,
+          "Running": false,
+          "StartedAt": "2026-10-26T23:16:44.546208907Z",
+          "Status": "exited"
+        }
+      },
+      "pg": {
+        "image": "sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea",
+        "memory": 2147483648,
+        "swap": 2147483648,
+        "nanoCpus": 1000000000,
+        "state": {
+          "Dead": false,
+          "Error": "",
+          "ExitCode": 0,
+          "FinishedAt": "0001-01-01T00:00:00Z",
+          "OOMKilled": false,
+          "Paused": false,
+          "Pid": 40246,
+          "Restarting": false,
+          "Running": true,
+          "StartedAt": "2026-10-26T23:16:43.27596297Z",
+          "Status": "running"
+        }
+      },
+      "cleanup": {
+        "containers": [],
+        "networks": []
+      }
+    }
+  ],
+  "boundaries": [
+    "Real isolated PostgreSQL with all migrations and original Core sweep, token intent and SecretStore HTTP consumers. HTTP peer is scripted OpenBao, not deployed OpenBao or APNs/FCM.",
+    "Exactly one ignored test explicitly invoked with PUSH_TEST_DATABASE_URL; three revocation causes and one authorized control. No early return or production environment copied.",
+    "No original 31-test suite, full workspace tests, SQLx checks, artifact build, deployment or device exercise repeated.",
+    "DND remains unimplemented without a design-approved authority; device notification enabled and online/away/offline do not establish DND."
+  ]
+}

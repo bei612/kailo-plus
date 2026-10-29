@@ -196,9 +196,9 @@
                 {{ t('memorySettings.openDocument') }}
               </t-button>
               <t-popconfirm
-                theme="danger"
+                theme="warning"
                 :content="t('memorySettings.stopTrackingDocumentConfirm')"
-                :confirm-btn="{ content: t('memorySettings.stopTrackingDocument'), theme: 'danger' }"
+                :confirm-btn="{ content: t('memorySettings.stopTrackingDocument'), theme: 'primary' }"
                 :cancel-btn="t('common.cancel')"
                 placement="left"
                 @confirm="handleStopTrackingDocument(doc)"
@@ -242,9 +242,9 @@
                 {{ t('memorySettings.promoteTopic') }}
               </t-button>
               <t-popconfirm
-                theme="danger"
+                theme="warning"
                 :content="t('memorySettings.dismissTopicConfirm')"
-                :confirm-btn="{ content: t('memorySettings.dismissTopic'), theme: 'danger' }"
+                :confirm-btn="{ content: t('memorySettings.dismissTopic'), theme: 'primary' }"
                 :cancel-btn="t('common.cancel')"
                 placement="left"
                 @confirm="handleDismissTopic(topic)"

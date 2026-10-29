@@ -1,0 +1,180 @@
+{
+  "sourceCommit": "1d0d20b5336f7f3cb124ee33bdc2972263444d6b",
+  "sourceTransport": "CI direct GitHub fetch and fixed-object archive; no local source upload",
+  "job": "/volumes/data/kailo/conformance/checks/publication-integrated-1d0d20b53",
+  "sdkImage": "sha256:3007729eb192341a4f004a88e42e1e66c94fc67d763acfc96568bd7311116018",
+  "sourceProof": {
+    "fixedSource": "1d0d20b5336f7f3cb124ee33bdc2972263444d6b",
+    "checkedArchiveFiles": 3284,
+    "changed": []
+  },
+  "steps": {
+    "agent_profile-consumers": 0,
+    "attach": 0,
+    "bridge-scoped-http": 0,
+    "check": 0,
+    "clippy": 0,
+    "core-normal": 0,
+    "fmt": 0,
+    "migration-two-down": 0,
+    "migration-two-up": 0,
+    "migrations-up": 0,
+    "moderation-consumers": 0,
+    "publication-history-pg": 0,
+    "publication-reconcile-pg": 0,
+    "publication-scope-pg": 0,
+    "sqlx-check": 0,
+    "workspace_canvas-consumers": 0
+  },
+  "tests": {
+    "agent_profile-consumers.log": [
+      "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 925 filtered out; finished in 0.16s"
+    ],
+    "bridge-scoped-http.log": [
+      "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 74 filtered out; finished in 0.01s",
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 9 filtered out; finished in 0.00s",
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s"
+    ],
+    "core-normal.log": [
+      "test result: ok. 839 passed; 0 failed; 91 ignored; 0 measured; 0 filtered out; finished in 1.55s"
+    ],
+    "moderation-consumers.log": [
+      "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 924 filtered out; finished in 0.09s"
+    ],
+    "publication-history-pg.log": [
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 929 filtered out; finished in 0.08s"
+    ],
+    "publication-reconcile-pg.log": [
+      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 927 filtered out; finished in 0.06s"
+    ],
+    "publication-scope-pg.log": [
+      "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 925 filtered out; finished in 0.17s"
+    ],
+    "workspace_canvas-consumers.log": [
+      "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 926 filtered out; finished in 0.09s"
+    ]
+  },
+  "logs": {
+    "agent_profile-consumers.log": {
+      "sha256": "a2d1c7955f92cbb02cea9cf1de5be93c576cce6a0b0148740409f525f7218643",
+      "bytes": 709
+    },
+    "bridge-scoped-http.log": {
+      "sha256": "b4b10f5ba3a6b8a266f37add1675a094a6ef4b93f8d06b165ff0ff336306b080",
+      "bytes": 1206
+    },
+    "check.log": {
+      "sha256": "93da914e547186a1be8d024ed74bb5968b6bca71625a335df7caf102ad4ca314",
+      "bytes": 128782
+    },
+    "clippy.log": {
+      "sha256": "ee3bdcb021f8915978eead3ab4af1beb2c181223fbf9cd3312eb7739b1fb07aa",
+      "bytes": 692
+    },
+    "core-normal.log": {
+      "sha256": "0c5fa9bb308277bf6ed9db95c8e869f90d27a30c0877b497dc9a7bdc1691268a",
+      "bytes": 99724
+    },
+    "fmt.log": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "migration-two-down.log": {
+      "sha256": "74e866c7bb0cca913b67a9d0f86720313465edffad581820ff12cb06992ffeb4",
+      "bytes": 10181
+    },
+    "migration-two-up.log": {
+      "sha256": "dc4706ce7c91cd6b677e3dfa5580af7f7c12824025b5c9d77e2268c565ceaf03",
+      "bytes": 143
+    },
+    "migrations-up.log": {
+      "sha256": "f3583a18b7ecb110edd2bfd4d52d2985ee9fd7071911b401abd92a8d0b64390e",
+      "bytes": 11551
+    },
+    "moderation-consumers.log": {
+      "sha256": "daa90a9278ead7bfb75657cde64a390f732e6f4822a62fac3caea5a1280838bf",
+      "bytes": 845
+    },
+    "pg-limits.log": {
+      "sha256": "8f8d3d95b8c8ce31c82cd23c6f8f0fb33fa78929c27f3b06921f6ec4401c6a27",
+      "bytes": 193
+    },
+    "preflight.log": {
+      "sha256": "cb542a0fc9903a4d241fe10e5ea7f4c0e8383dd3f14ce0d11d12102820a6274c",
+      "bytes": 595
+    },
+    "publication-history-pg.log": {
+      "sha256": "c08e2999374c0bb207ef5b5c51a7f7425e20abbbaffd9b3c2c08850e20dac0e0",
+      "bytes": 383
+    },
+    "publication-reconcile-pg.log": {
+      "sha256": "b4212a40c1b2ae0261e0d8447d89d082a006803664b037b7f963e9c71acc5026",
+      "bytes": 601
+    },
+    "publication-scope-pg.log": {
+      "sha256": "a6528c04ed383390a21e686fc09d70566048f00c93da939fdc609f5a1bc6dd59",
+      "bytes": 810
+    },
+    "sdk-limits.log": {
+      "sha256": "1812859407103cf028bb9736094afc824ecbaab858f902d134a805130447acd9",
+      "bytes": 196
+    },
+    "sqlx-check.log": {
+      "sha256": "6763ea7a58f50e93c89c4d3b4027bca1fb317e972650affd7262656707b0e33e",
+      "bytes": 443
+    },
+    "workspace_canvas-consumers.log": {
+      "sha256": "1bc0e5681ad25d23224ec49e7addccb7a7319431bf2033c2d7dad1807be8d154",
+      "bytes": 684
+    }
+  },
+  "scope": "Core main binary normal tests; exact Agent/Canvas/Moderation, publication scope/history/reconciler consumers with isolated PG; two scoped bridge HTTP tests; Core/bridge all-target Clippy; complete migrations and two new empty-database down/up; original workspace SQLx prepare check. No mutation tests repeated, no broad workspace tests or deployment.",
+  "boundaries": [
+    "Normal Core target has 91 ignored tests; ignored results are not executions. Only named PG consumers are explicitly included.",
+    "Bridge integration targets report 9 and 3 filtered tests; those are not executed.",
+    "DATABASE_URL points only to this disposable migrated PG, so normal main-target optional DATABASE_URL consumers execute their PG paths; live tests/common integration targets are not invoked.",
+    "No production environment, private credential, or production identity was copied into this receipt."
+  ],
+  "sdk": {
+    "image": "sha256:3007729eb192341a4f004a88e42e1e66c94fc67d763acfc96568bd7311116018",
+    "memory": 17179869184,
+    "swap": 17179869184,
+    "nanoCpus": 4000000000,
+    "state": {
+      "Dead": false,
+      "Error": "",
+      "ExitCode": 0,
+      "FinishedAt": "2026-10-26T22:32:51.657748239Z",
+      "OOMKilled": false,
+      "Paused": false,
+      "Pid": 0,
+      "Restarting": false,
+      "Running": false,
+      "StartedAt": "2026-10-26T22:29:55.339139482Z",
+      "Status": "exited"
+    }
+  },
+  "pg": {
+    "image": "sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea",
+    "memory": 2147483648,
+    "swap": 2147483648,
+    "nanoCpus": 1000000000,
+    "state": {
+      "Dead": false,
+      "Error": "",
+      "ExitCode": 0,
+      "FinishedAt": "0001-01-01T00:00:00Z",
+      "OOMKilled": false,
+      "Paused": false,
+      "Pid": 3644342,
+      "Restarting": false,
+      "Running": true,
+      "StartedAt": "2026-10-26T22:29:54.073583656Z",
+      "Status": "running"
+    }
+  },
+  "cleanup": {
+    "containers": [],
+    "networks": []
+  }
+}

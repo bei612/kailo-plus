@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:client_kit/shared/platform/platform_text.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:buzz/features/channels/channel.dart';
+import 'package:buzz/features/channels/channel_detail_page.dart';
+import 'package:buzz/features/channels/channel_management_provider.dart';
+import 'package:buzz/shared/push/push_bridge.dart';
 import 'package:buzz/features/forum/forum_models.dart';
 import 'package:buzz/features/forum/forum_post_card.dart';
 import 'package:buzz/features/forum/forum_posts_view.dart';
@@ -15,6 +19,11 @@ import 'package:buzz/shared/relay/relay.dart';
 import 'package:buzz/shared/theme/theme.dart';
 import 'package:buzz/shared/widgets/avatar_image.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:buzz/shared/platform/platform_api.dart';
+import 'package:buzz/shared/platform/platform_oidc.dart';
+import 'package:http/testing.dart';
+import 'package:http/http.dart' as http;
+import '../../shared/platform/platform_test_support.dart';
 
 const _channelId = 'forum-channel';
 
@@ -118,6 +127,7 @@ late SharedPreferences _testPrefs;
 Widget _buildThreadPage({
   required ForumThreadResponse threadResponse,
   String postEventId = 'post1',
+  bool viaChannel = false,
   String? currentPubkey = 'self',
   bool isMember = true,
   bool isArchived = false,
@@ -139,19 +149,30 @@ Widget _buildThreadPage({
         eventId: postEventId,
       )).overrideWith((ref) async => threadResponse),
       savedPrefsProvider.overrideWithValue(_testPrefs),
+      channelDetailsProvider(
+        _channelId,
+      ).overrideWith((ref) async => ChannelDetails.fromChannel(_forumChannel)),
+      forumPostsProvider(
+        _channelId,
+      ).overrideWith((ref) async => const ForumPostsResponse(posts: [])),
     ],
     child: MaterialApp(
       theme: AppTheme.light(),
       home: Builder(
         builder: (context) => MediaQuery(
           data: MediaQuery.of(context).copyWith(textScaler: textScaler),
-          child: ForumThreadPage(
-            channelId: _channelId,
-            postEventId: postEventId,
-            currentPubkey: currentPubkey,
-            isMember: isMember,
-            isArchived: isArchived,
-          ),
+          child: viaChannel
+              ? ChannelDetailPage(
+                  channel: _forumChannel,
+                  initialMessageId: postEventId,
+                )
+              : ForumThreadPage(
+                  channelId: _channelId,
+                  postEventId: postEventId,
+                  currentPubkey: currentPubkey,
+                  isMember: isMember,
+                  isArchived: isArchived,
+                ),
         ),
       ),
     ),
@@ -187,6 +208,69 @@ void main() {
       ),
     );
   });
+
+  test(
+    'captured forum draft cannot cross an adopted login with the same relay key',
+    () async {
+      final native = NativeSession(
+        client: MockClient((_) async => http.Response('', 500)),
+        refreshStore: MemoryRefreshStore(),
+      );
+      await native.adopt(const OidcTokens(accessToken: 'first-fixture'));
+      final container = ProviderContainer(
+        overrides: [nativeSessionProvider.overrideWithValue(native)],
+      );
+      addTearDown(container.dispose);
+      final delivery = ForumEventDelivery.capture(container);
+      await native.adopt(const OidcTokens(accessToken: 'next-fixture'));
+      await expectLater(
+        delivery.createPost(channelId: _channelId, content: 'Old draft'),
+        throwsStateError,
+      );
+    },
+  );
+
+  testWidgets(
+    'content-free push reply opens the actual forum thread at a distant comment',
+    (tester) async {
+      final id = 'a' * 64;
+      final link = pushNotificationLink({
+        'channelId': _channelId,
+        'eventId': id,
+      });
+      expect(link, isNotNull);
+      final replies = List.generate(
+        80,
+        (i) => ThreadReply(
+          eventId: i == 70 ? id : 'r$i',
+          pubkey: 'alice',
+          content: 'Forum reply $i',
+          kind: 45003,
+          createdAt: 2000 + i,
+          channelId: _channelId,
+          tags: const [],
+          depth: 1,
+        ),
+      );
+      await tester.pumpWidget(
+        _buildThreadPage(
+          viaChannel: true,
+          postEventId: link!.messageId,
+          threadResponse: ForumThreadResponse(
+            post: _makePost(content: 'Full original root'),
+            replies: replies,
+            totalReplies: replies.length,
+          ),
+          isMember: false,
+          users: const {'alice': _aliceProfile},
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(ForumThreadPage), findsOneWidget);
+      expect(find.text('Forum reply 70'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   group('ForumPostCard', () {
     testWidgets('renders author name and content', (tester) async {
@@ -479,7 +563,7 @@ void main() {
       // Confirmation dialog appears.
       expect(
         find.text(
-          'This will permanently delete this content and cannot be undone.',
+          platformText(PlatformMessageKey.forumDeleteDescription, locale: 'en'),
         ),
         findsOneWidget,
       );
@@ -535,7 +619,12 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byType(FloatingActionButton), findsOneWidget);
-      expect(find.byTooltip('New post'), findsOneWidget);
+      expect(
+        find.byTooltip(
+          platformText(PlatformMessageKey.forumStart, locale: 'en'),
+        ),
+        findsOneWidget,
+      );
     });
 
     testWidgets('hides FAB for non-members', (tester) async {
@@ -813,7 +902,12 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('Reply to this post...'), findsOneWidget);
+      expect(
+        find.text(
+          platformText(PlatformMessageKey.forumReplyPlaceholder, locale: 'en'),
+        ),
+        findsOneWidget,
+      );
     });
 
     testWidgets('renders media previews for forum posts', (tester) async {
@@ -909,7 +1003,12 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('Reply to this post...'), findsNothing);
+      expect(
+        find.text(
+          platformText(PlatformMessageKey.forumReplyPlaceholder, locale: 'en'),
+        ),
+        findsNothing,
+      );
     });
 
     testWidgets('shows 3-dot in app bar for own post', (tester) async {
@@ -925,7 +1024,12 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.byTooltip('Post actions'), findsOneWidget);
+      expect(
+        find.byTooltip(
+          platformText(PlatformMessageKey.messagesActionsLabel, locale: 'en'),
+        ),
+        findsOneWidget,
+      );
     });
 
     testWidgets('hides 3-dot in app bar for others post', (tester) async {
@@ -941,7 +1045,12 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.byTooltip('Post actions'), findsNothing);
+      expect(
+        find.byTooltip(
+          platformText(PlatformMessageKey.messagesActionsLabel, locale: 'en'),
+        ),
+        findsNothing,
+      );
     });
   });
 }

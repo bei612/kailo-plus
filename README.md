@@ -4,7 +4,409 @@
 
 产品语义与可行性结论由相邻的 [`.design`](../.design/README.md) 唯一定义；本目录只回答如何把已经冻结的设计安全地变成可运行系统。实施文档不得重定义 Tenant、Workspace、Resource、Action、Workflow、权限、状态或能力结论。
 
-## 当前使用与恢复范围（2026-10-09）
+## 当前集成与验收边界（2026-10-27）
+
+候选分支 `codex/phase1-integration-20261026` 从主线
+`ebc23eb293942ed9721cb56d2b76ee871f91bc40` 集成 DD-157 组件外壳、
+DD-124/136 一致性投递、DD-159 本地归档、DD-151 持久推送与 Mobile 论坛消费者、
+DD-158 反馈和跨会话社区资料，以及 DD-160 原生仓库写入。已提交并推送不代表
+合并 main、产物或部署。下列检查分别对应固定源码，不合并认作最新整树 full。
+
+2026-10-27 对现有线上版本进行了正常 SSO 后的只读浏览器回读，实际查看频道、
+Inbox、问数建模、知识库和云盘列表。页面显示不等于这些业务全链完成；头像 404、
+云盘上传器加载失败等浏览器错误仍保留。候选未部署，截图、运行容器 build-info
+及未操作范围见[线上回读](core/verify/web-readback-20261027.md)。后续在线上使用
+核验账户提交一次订单计数问题，页面回答及结果表均显示 36,000；刷新回建模页后，
+手动从原历史重开可见同一答案与 SQL。该次未独立核对数据库或全治理链，候选未部署。
+
+最新 Core 产品合批固定 `3cfa10e5f`：普通 writer 缺失证明、Core 原 DISPATCH/永久审计
+消费及 Native epoch 生产者已合入。原 SDK 4 CPU / 16 GiB、独立 PG 1 CPU /
+2 GiB，正常 Core **840 passed / 93 ignored**；显式 Agent 5、Canvas 4、审核 6、
+scope 5、history 1、reconcile 4、bridge HTTP 5、push retirement 1 共 **31** 项
+通过。格式、完整迁移、新证明迁移空库往返、Core/bridge all-target Clippy 与
+workspace SQLx prepare check 全部退出 0；2,083 个实际输入与 GitHub 固定对象
+逐字一致。Native 新生成字段及可信 policy helper 已在该合批编译，但未作部署端点
+或真实三端验收；见[最终合批回执](core/verify/phase1-integration-publication-final-20261027.json)。
+显式专项与正常目标存在重叠，不相加；ignored 不算通过，这仍不是全工程 full。
+
+Composer 失败提示固定 `ca477cd66`：Web/Native 共用上传与普通发送错误文案，
+原 Native 关闭按钮和后台上传提示支持中文；原草稿恢复与 UNKNOWN 分类保留。
+原 SDK 1 CPU / 4 GiB，Web 74/74、Native 7/7、三消费者类型全部通过；实际恢复
+旧英文诊断拼接断言失败，逐字恢复后通过。Dart 同源生成回填 `0faaf5905`，原件见
+[输入框验证记录](web-client/fork/verify/web-surface.md)。未部署或完成设备验收，
+该固定点只统一失败提示。后继 `4fd9753f6` 已让两端共用实际编辑、提及菜单/选择、
+键盘、发送准备、草稿恢复及自动发送调度；原 BFF/CLIENT 的身份、文件、签名、
+原意图与 UNKNOWN 消费留在宿主适配。共享 12、Web 74、Native 28 项与四项类型、
+同源词条检查通过，两宿主各 1,039 个实际安装源文件逐字一致。移除共享 DM Agent
+拒绝后原 Web 消费者失败，逐字恢复后通过；未声称完整页面、视觉或设备验收。
+
+Projects 坐标链接与提交详情复制固定 `38b68f5be`：共享 117 项、补充坐标 7 项、
+Desktop 队列 11 项分别通过，恢复旧拒绝分支会使实际复制到提交/diff 的消费者失败，
+逐字恢复后通过。根固定 `39ab79980` 的缓存合批命令虽退出 0，但事后发现
+Web/Desktop 的本地 `file:` 包仍为旧副本，不能作为最新共享包的宿主集成验收；
+原直接共享源码 23 项及同源词条结果另保留，宿主结果须以真实安装源核验为准。
+后继固定 `e70c0ad0b` 按原锁重新安装，实际解析路径中两宿主各 1,025 份共享包
+源码逐字一致；四项类型、原共享 23、Web 74、Native 18 项与同源词条均通过。
+见[原链接消费者记录](core/verify/inbox-project-read.md)。这些是源码消费者检查，
+尚无部署端浏览器剪贴板或 Windows 唤醒验收。
+
+Projects tag 快照后继固定 `2780ea5e4`：原 tag 菜单接入共享仓库读取，同名分支与
+tag 的快照和文件缓存隔离；tag 模式沿原交互强制远程只读，旧分支弹窗回调在派发前
+复核选择归属。原三个消费者文件 **48/48**、四项类型和同源词条通过；五项故障均被
+检出并逐字恢复，两宿主各 1,040 个实际安装源文件一致。原版 tag 页面仍显示当前分支
+徽标，不能据其推断快照来源。三轮夹具失败保留；无真实仓库、浏览器或设备验收，见
+[tag 回执](core/verify/projects-tag-20261027.json)及原消费者记录。
+
+Projects Overview 重试后继固定 `a7279228e`：仓库不可读页接回原 Fetch 重试和
+等待状态，Web/Desktop 共用原调用。原文件 **25/25**、四项类型及同源词条通过；
+移除重试接线后实际断言失败，逐字恢复后通过，两宿主各 1,040 个安装源文件一致。
+首轮夹具失败保留；真实 Git 服务、浏览器、设备及部署尚未验收，见
+[重试回执](core/verify/projects-overview-retry-20261027.json)及原消费者记录。
+
+Projects review-update publication kind `1619` 先在候选固定 `732b649d8` 接入既有
+writer fence、Relay 观测和 absence-proof 名单，随后在当前集成树恢复了完整的
+`UPDATE_PULL_REQUEST` producer、原生 push continuation、四语言生成和来源级消费者回执。
+Core/Relay 相关检查、迁移 up/down、Core 933 项单元、clippy 与 SQLx check 退出 0；原
+buzz-db PostgreSQL 套件因受限无网络容器未缓存 Rust 1.95 而停在 toolchain 下载，未计为
+通过。真实 PostgreSQL/Relay、旧 writer、浏览器、设备、正式制品和部署仍未验收，见
+[1619 门禁记录](core/verify/review-update-publication-20261028.md)和
+[producer 消费者回执](core/verify/projects-review-update-node-20261027.json)。
+
+Desktop 审批 Inbox 后继固定 `444fd6175` 补回 HomeView 缺失的 needsAction 接线：
+共享组件和 Web 已有该能力，Desktop 此前没有读取并传入审批源。现在使用同一
+NativeBootstrap 会话的 BFF client 与可信 Principal，消费原 Temporal 审批投影、
+共享决定界面和刷新；身份未就绪不查询，不从设备公钥推断身份。
+原新增审批消费者 **5/5**、Native Inbox **23/23**、共享测试及 Web/Desktop 类型
+通过；两端各 1,039 个实装共享文件一致。移除实际 needsAction prop 后消费者断言
+失败，逐字恢复后 5/5 通过。前两轮源码读取夹具失败与后续 Desktop 旧 file 包被拦
+均保留，未算通过。新增检查执行真实 HomeView 接线表达式及共享 DOM/BFF 消费者，
+未运行完整 NativeBootstrap、Windows 安装或设备审批。详细原件见上述 Inbox 记录。
+
+共享 Inbox 后继固定 `940812076` 恢复审批和组件通知读取失败时的原显式重试。
+当前筛选涉及的来源尚未读完或失败时不显示完整空列表，保留其他已准入条目，
+Retry 只刷新失败来源。新消费者 **5/5**、原列表 **22/22**、四项类型及同源词条
+检查通过，3,455 个源码输入和两宿主各 1,039 个实装共享文件一致；恢复旧假空行为
+后断言失败，逐字还原后 5/5 通过。见
+[重试回执](core/verify/inbox-source-retry-20261027.json)。实际覆盖 all/needs_action
+的中英文读失败与恢复，未据此认领完整宿主、真实服务、设备、截图或部署验收。
+
+Inbox 行点击后继固定 `213c213d5`：审批和组件通知的普通标题、头像点击重新打开
+原详情或原生页面；普通消息的真实个人资料入口及行操作继续独立处理。原点击
+消费者 **5/5**（39 未选）、四项类型和同源词条检查通过；恢复旧拦截导致实际
+标题点击断言失败，逐字恢复后通过。3,455 输入和两宿主各 1,039 个实装文件
+一致；见[点击回执](core/verify/inbox-row-open-20261027.json)。无浏览器、设备
+或部署验收。
+
+Web 私聊线程草稿后继固定 `a025e09a8`：Inbox 可识别原会话绑定范围的线程草稿，
+打开或发送前通过原会话冷定位检查已保存的根和回复归属，并复核当前身份、会话
+和持久草稿；删除重建或切换身份后的旧异步操作停止。原 Web 草稿消费者 **26/26**、
+共享草稿 **3/3**、Web 类型及同源词条通过；三项故障均由原消费者检出，逐字恢复
+后通过，3,455 个输入及 1,039 个 Web 实装共享文件一致。首轮类型失败保留；未作
+真实浏览器、在线服务或设备验收。见[草稿回执](core/verify/inbox-dm-draft-20261027.json)。
+
+普通私聊草稿后继固定 `6086f71a3`：Inbox 新草稿与会话页使用同一绑定键；旧频道键
+的草稿及未决发送保留原 owner，不搬移或覆盖。两种普通草稿键之间存在未决发送时
+拒绝另一侧新派发，独立线程不加全会话锁。原 InboxThreadPane 消费者 **57/57**、
+Web 类型及同源词条通过；反向未决保护故障由实际点击消费者检出，逐字恢复后
+通过。旧无来源证明的频道键草稿仍不能从 Drafts 猜测打开；未作真实浏览器或部署
+验收，见[原消费者记录](core/verify/inbox-project-read.md)及
+[草稿 owner 回执](core/verify/inbox-dm-owner-20261027.json)。
+
+共享输入框后继固定 `3f2f966cf` 已恢复原 Escape 取消编辑，先由自动补全消费按键，
+保存中保留原锁。实际 Web 操作恢复原正文及已上传附件草稿，不再次上传或发布；
+共享 12、Web 76、Native 28 项与四项类型通过，移除 Escape 分支的反例失败、
+逐字恢复通过。见[原消费者回执](web-client/fork/verify/composer-escape-receipt.json)。
+Mobile 固定 `419ac2b86` 接回频道及媒体加载失败的同源文案，原三文件 146 项通过，
+中英文错误页重试恢复频道成立；英文硬编码反例失败、还原通过。媒体失败文案的
+真机渲染尚未验收，见[Mobile 记录](collaboration/fork/verify/mobile-client.md)。
+这些均已进入候选源码，未构建部署或更新安装包。
+
+快照粘贴固定 `a7501d688` 恢复两端共享的原附件命名校验，异步字节读取期间阻止
+提前发送，身份或草稿改变后停止旧回调；同次多文件在首个上传等待前完整登记到
+原批次。共享 15、Web 83、Native 28 项、四项类型及同源词条检查通过，命名、准备锁、
+完整批次三项故障被检出，逐字恢复后通过；3,454 个源码输入和两宿主各 1,039 个
+安装源文件一致。见[粘贴回执](web-client/fork/verify/composer-paste-receipt.json)。
+该固定点尚未修复 Web 上传失败恢复丢文件及恢复时自动重传，修复见下段；本批未作
+系统剪贴板、设备、完整失败恢复或部署验收。
+
+附件恢复后继固定 `4babe467c` 沿原 pendingSend、草稿和附件预览保留未确认文件，
+失败、UNKNOWN、取消后只恢复本地状态，由明确发送再上传；刷新丢失字节时保留
+文件名并阻止漏附件发送。原草稿所有者隔离旧回调，恢复 GIF 及后续编辑保留，旧编辑
+拒绝不清空新 UNKNOWN 意图。原完整 Composer **83/83**、Web 类型通过，3,454 个
+源码输入和 1,039 个实装共享文件逐字一致；此前五类真实故障均被检出并逐字恢复。
+共享类型及三项草稿检查使用共享树相同的早期固定点，不把其后失败的整项作业记为
+通过。曾追加的 Discard 候选因原 UI 无该操作路径已普通撤销，未认领为交付。
+见[附件恢复回执](web-client/fork/verify/composer-upload-recovery-receipt.json)及
+[原消费者记录](web-client/fork/verify/web-surface.md)。本批未重跑 Native 套件，
+没有真实浏览器上传、设备、正式制品或部署验收。
+
+GIF 草稿后继固定 `4ba32ff10` 将未发送 GIF 保存在原共享草稿媒体中，恢复后交还
+原发送链；纯 GIF 草稿也能进入 Inbox 原自动发送，UNKNOWN 不自动重发并保留原键。
+原 Web **91/91**、共享 GIF **8/8**、Native GIF API **10/10** 及相关类型检查
+通过；三项故障被原消费者检出，逐字恢复后通过。3,456 个输入与两宿主各 1,040 个
+实际安装共享源文件一致。既有外链 GIF 编辑丢图尚未修复，历史未保存内容无法恢复；
+论坛原入口没有 GIF 选择器。本批未部署或完成浏览器及设备验收，见
+[GIF 草稿回执](web-client/fork/verify/composer-gif-draft-receipt.json)及原消费者记录。
+
+Cells 固定 `afe7a4710` 修复正文读取阻塞期间撤权后仍向原 S3 存储读者放行字节。
+原 Go 1.26.8 镜像 4 CPU / 8 GiB：15 场景通过，移除读取后 Fresh 的三个反向均
+失败，逐字恢复后通过；格式与同包 vet 通过，原 Task/UNKNOWN 保留。见
+[原上传记录](file-storage/fork/verify/native-identity.md)。没有据此认领原生存储落盘、
+真实上传页面、正式组件制品或 binding 激活验收。
+
+后继下载固定 `8c74f37c8` 在原 MinIO 正文交付入口逐次复核当前权限，拒绝后不再
+输出后续字节；原已完成读取及计量不重复执行。当前用户、角色与原生 ACL 使用
+原查询链重新读取，避免旧 preset/session ACL 缓存继续授权。原下载 68 子例、
+认证 19 子例、格式及三包 vet 通过；移除逐次复核的 9 项和恢复旧 ACL 的 2 项
+反例均被检出，逐字恢复后通过。9,091 个固定输入逐字一致。该批仍未覆盖真实
+浏览器、存储和 Core/IdP 部署全链，详见同一原生操作记录。
+
+Cells 原上传的源码复核另发现未闭合边界：原 MIME 探测异步写节点，受管 finish
+存在先读取空 MIME 的时序；从冻结 draft 复制到 live 的目标写入也未证明与并发版本和 MIME
+的原子条件。该风险尚未在真实对象存储中动态复现，不能据此宣称已发生事故；
+受管 FILE_STORAGE 的 release/binding 继续受原门禁约束。具体时序与所需验证见
+[原上传记录](file-storage/fork/verify/native-identity.md)。
+
+受管上传复制边界后继固定 `c0f7d9b1f`：原对象复制失败时不继续写元数据，复制
+成功后写元数据前重新核验同一执行；已发生的复制保持原 UNKNOWN 对账。原 put
+handler **5/5**、S3 原消费者 **15 个子例**及格式/vet 通过，两项故障均被检出并
+逐字恢复；验证中的对象存储与部分 RPC 为隔离替身。这只闭合上述复制后副作用边界，
+不解除 MIME/live head 原子性与 FILE_STORAGE 正式发布门禁，见
+[复制边界回执](file-storage/fork/verify/native-copy-boundary-receipt.json)。
+
+Wren 原 Ask 流固定 `6f32bac58`：STANDALONE 只消费同 queryId 的原生完成，
+EOF 不造完成事件；流执行中模式改变会停止旧观察。原 HTTP 65、Hook/SQLite 58
+项、类型、格式和 lint 通过，三次实际故障被检出、逐字恢复后通过。证据见
+[原问数记录](data-query/fork/verify/native-integration.md)。后继 `18a08cffd` 沿原
+API History/current-project 闭合 REST 独立说明流，保留原共享读 ACL 与公开
+message/done wire，并补原流式 SQL 错误丢失的 query 引用。原 HTTP/SQLite 91、
+Hook 27、真实 PG 25 项分别通过，PG 与前者重叠；四项故障和逐字恢复有效，最后
+模式增量 2 项通过。答案流 `8740c95f5` 另修异步期间模式改变的越权，原 30 项及
+移除围栏的四项反向、逐字恢复通过。类型、lint、格式分别通过，未用 fixtures
+冒充真实 SQL/模型业务。根固定 `9240e2625` 曾实际为 13 fail /225 pass /6 未投递
+PG skip，原 90 秒命令因测试后台 tracker 未关闭而退出 124。后继 `69bec1c84`
+仅修原重跑的真实 repository/事务夹具及测试自身资源关闭：原五文件 241 pass /
+6 未投递 PG 条件项、自然退出 0；随后投递两个原 PG 变量，完整任务归属文件
+134 pass /0 skip，覆盖前述六项，两组不相加。四项真实 PG 故障被原断言检出，
+逐字恢复后整组再次通过，类型、lint、格式均 0。没有据此声称全工程 full、正式
+制品、部署或真实 Core/IdP/模型全链验收。
+
+回答流后继固定 `460552945` 按原 response/query 隔离旧回调与正文，完成写入使用
+原 answerDetail 条件更新；真实 HTTP 断线检查检出的请求 close 漏接已改为响应
+close。原五文件 262 项通过，6 个原重跑 PG 条件项本批未执行；原完整回答文件
+实际 PG 38 项通过，与前者重叠、不相加。四项故障均被真实断言检出，逐字恢复后
+两组再次通过；类型、lint、格式通过，617 个输入逐字一致。该固定点跨页面重新挂载
+仍会消费剩余半段流，完整答案恢复见下段；预处理 succeeded 或尾段 done 不构成
+完整正文证明。失败历史、原命令与边界见上述问数记录，未据此认领部署或业务验收。
+
+完整 SQL 答案恢复后继固定 `754a721ad` 保留原生成器真实 stop 的完整结果，沿原
+有界缓存及同 query GET 恢复；GraphQL、页面流和原 REST summary 在当前权限复核后
+用原条件更新保存完整正文，不重复 Ask。native GET 新增可选 completion，原 SSE
+wire 与预处理 succeeded 含义保留，必须匹配发布 UI 与 AI 制品；旧 AI 缺字段不算
+完成。原五文件 **295**、实际 PostgreSQL **71**、REST 原组 **163**、Python **20**
+分别通过；71 与前组重叠，6 个既有条件迁移项本批未执行，REST 另 375 项未选。
+类型、lint、格式通过；Node 五类及 Python 一类实际故障被检出，逐字恢复后全部
+复验通过，617 与 209 个输入一致。Python SDK 为 3.13.5，未冒充生产 3.12 或真实
+模型验收。该批未覆盖 provider usage-only 尾帧及 GENERAL/NON_SQL，后继修复见下文；
+匹配制品及部署全链仍未验收，详细命令、失败与恢复证据见上述问数记录。
+
+原 provider 后继固定 `18332ca3f` 修复合法 usage-only 尾帧触发的 choices 越界，
+正文与结束原因取同一响应的原 choice，用量保留原帧事实；空流不制造完成。
+原 APIError 重试收窄到获取响应，开始消费后不重发模型，避免同 query 混合多轮
+正文与用量。原 AI 镜像 Python **3.12.0** 及匹配锁的真实 LiteLLM/OpenAI 依赖中，
+原 provider **19/19**、SQL 答案 **20/20**、Ruff/格式通过；恢复旧末帧访问触发
+10 个实际异常，伪造 stop 和恢复流消费重试分别触发 7、4 个断言失败，逐字恢复后
+全部复验通过，209 个源码输入一致。provider 仅替换远端模型传输，SQL 20 项仍有
+其原框架/provider/TTL 替身，不等于真实模型或部署全链。此修改影响该 provider
+全部流式调用方，GENERAL/NON_SQL 后继恢复见下段；匹配 UI 与 AI 制品门禁保留。
+
+GENERAL 完整回答后继 AI 固定 `68e45b313`、UI 固定 `d4416cc40`：沿原 Ask 缓存
+保留同 query 且自然 stop 的完整说明，原 GraphQL、页面与独立 JSON/SSE 观察使用
+完整结果并复核当前身份、模式与前缀；不另发 Ask。分类期间停止或回答任务已排队
+但尚未运行时，不再覆盖停止状态或派发模型；已发出的模型请求不据此声称可撤回。
+原 AI Python 3.12 GENERAL **14/14**、SQL **20/20**，UI 原四文件 **303 通过／7
+条件跳过**、原 REST 选定组 **170 通过／375 未选**，不代表完整 UI 套件通过。
+类型、lint、格式通过。三类停止故障及六类 UI 故障均被检出并逐字恢复；原 UI
+其他失败的后继处理见下文，旧 SQLite 断言波动保留在证据中。真实模型/Core/IdP、匹配新
+UI+AI 制品、部署及浏览器业务尚未验收，详见[原问数记录](data-query/fork/verify/native-integration.md)
+及[UI 回执](data-query/fork/verify/general-ui-recovery-receipt.json)。
+
+原 Ask 生命周期后继固定 `f457c447d`：HTTP 注册的原缓存对象随后台任务传递，
+异步阶段、原 SQL 状态推进和异常回写均检查该调用仍拥有当前任务；过期、停止或
+对象替换不会复活旧任务或继续派发。正常状态推进保留原 TTL 更新策略。原 Python
+3.12 消费者 **18/18**、SQL **20/20**、Ruff 通过；三项实际故障分别触发 **2、9、
+49** 个断言失败，逐字恢复后通过，211 个输入一致。分类及模型外部边界使用夹具，
+不代表真实模型、接收方或部署验收；见[生命周期回执](data-query/fork/verify/ask-lifetime-receipt.json)。
+
+原 `nativeHumanQuery` 整文件后继固定 `53a23b4cc`：补齐当前 scope/generation
+夹具、更新完整原调用参数断言，关闭已完成 HTTP 测试的 keep-alive 连接；产品
+授权、原业务断言和超时未改。此前重跑 **535 通过／9 失败／1 跳过**，修正后
+整文件 **544 通过／1 跳过**，类型、相关 lint 和格式通过；实际去掉 generation
+与重派同一原生事件分别触发 **2、3** 项失败，逐字恢复后整文件再次通过。
+跳过项是原 PostgreSQL 跨项目同名源表删除检查；后继固定 `4152f377f` 在独立
+PostgreSQL 执行整文件 **545/545、无跳过**，移除项目过滤后原断言检出误删两行，
+逐字恢复后通过。后继固定 `aea3abe07` 的原四文件以独立 PostgreSQL 同时投递两个
+原数据库变量，**310/310、无跳过**；首次绑定条件更新和关闭 generation 两项
+实际故障分别检出 2、1 个断言失败，逐字恢复后原 PG 消费者通过。这不是完整 Wren
+套件或真实服务验收，见[完整消费者回执](data-query/fork/verify/native-human-full-receipt.json)、
+[HUMAN PostgreSQL 回执](data-query/fork/verify/native-human-postgres-receipt.json)及
+[四文件 PostgreSQL 回执](data-query/fork/verify/four-consumers-postgres-receipt.json)。
+
+Wren 推荐问题观察后继固定 `14f1243af`：关闭、切换或重跑问题后退役旧推荐轮询，
+迟到的创建回执和旧查询结果不能进入当前问题；不取消或重发原问数任务。原 Hook
+消费者 **50/50**、完整类型及相关 lint/格式通过；两项实际故障分别检出 5、1 项
+失败，逐字恢复后通过。固定输入和失败记录见[推荐观察回执](data-query/fork/verify/recommendation-observation-receipt.json)；
+GraphQL、浏览器和模型供应方仍为夹具或未验收，不代表真实业务全链。
+
+Wren Home 续接固定 `06cf7ce4c`：切换线程后退役旧回答、图表和 SQL 修改续接，
+查询与回执在更新缓存或结束原意图前复核当前身份、线程及问题；错误回执保留
+原 UNKNOWN 键。原完整消费者 **244/244**、类型及相关 lint/格式通过，六类实际
+故障均被检出并逐字恢复，618 个输入一致。此前失败和 Jest 未关闭句柄提示保留；
+Apollo 链与原弹窗由测试驱动，未完成真实浏览器、模型供应方或部署验收。见
+[Home 续接回执](data-query/fork/verify/home-continuation-receipt.json)及原问数记录。
+
+Wren 线程推荐问题后继固定 `24222a5ae`：推荐任务冻结原问题来源和 query ID，
+选择操作使用独立 intent key，并在原 Thread/Response 事务中校验来源、线程、索引和
+重复提交。原 Home **259/259**、Native task SQLite/PostgreSQL 各 15、Adaptor HTTP
+3、类型/lint/格式通过；五类故障均检出并逐字恢复。AI 进程缓存丢失、占位后请求未
+进入 AI 以及真实部署仍保持 UNKNOWN，未宣称崩溃恢复或生产验收，见
+[线程推荐回执](data-query/fork/verify/thread-recommendation-receipt.json)。
+
+前一批 Core 集成固定 `1d0d20b53`：原 SDK 4 CPU / 16 GiB、私有 PG
+1 CPU / 2 GiB，正常主目标 **839 passed / 91 ignored**；显式 Agent/Canvas/审核、
+publication scope/history/reconcile 与 bridge HTTP 共 **26** 项通过。格式、完整
+迁移及两新迁移空库往返、Core/bridge all-target Clippy、原 workspace SQLx check
+全部退出 0，3,284 份归档输入与固定 GitHub 字节相同，含 SQLx 缓存；见
+[最终集成回执](core/verify/phase1-integration-publication-20261026.json)。ignored
+与 live 环境早返不算业务验收，这不是最新全工程 full 或部署。
+
+较早的 Core 联合检查从 `697cfe263` 开始，原 SQLx prepare 仅删除一份废弃缓存，
+入库为 `b19846236` 后 2,070 份源文件/缓存逐一匹配，最终 prepare check 退出 0。
+原 SDK 4 CPU / 16 GiB 与私有 PG 1 CPU / 2 GiB：格式、完整迁移及 `310700`
+回退/重进、Clippy all-targets `-D warnings` 全部通过。正常 workspace harness
+**1043 passed / 87 ignored**；显式真实 PG 的 publication **2**、history **1**、
+push **31**、profile **2**、feedback **2**、HUMAN policy **2** 均通过。
+四项故障分别检出 TTL 丢未知意图、历史结论错误选择、旧结论重签与不同 operation
+审计碰撞，逐字恢复后通过。正常测试中的 live 环境早返不计 E2E，SecretStore
+仅对 scripted HTTP，receiver bootstrap 未执行真实接收方完整激活；详见
+[最新联合回执](core/verify/phase1-integration-core-dd81-20261026.json)。
+
+共享发布肯定证据检查固定 `438baa968`：原 SDK 2 CPU / 4 GiB，collab-bridge
+**74+9+3=86** 项、check、Clippy 与格式检查通过。实际关闭 `Event::verify` 后
+原 HTTP 消费者断言失败（exit 101），按最终 GitHub 原件逐字恢复后 3 项通过。
+该批未运行 PG 或真实 Relay；原查询与响应体读取的 deadline 缺口仍保留。
+最新集成 `ff6109005` 的原 `platform-core` binary 检查 **835 passed / 0 failed /
+85 ignored**，4 CPU / 16 GiB；未投递 PG/live 环境，环境早返不算集成通过，
+没有重跑迁移、SQLx、Clippy 或 workspace full。两次先前命令/快照失败原样保留。
+固定来源、回执摘要及未覆盖范围见[发布证据增量](core/verify/projects-publication-receipt.md)。
+
+普通 Relay HTTP 的有限期限已在后续候选接线：固定 `fc219c4c9` 的 Core
+正常目标 **837 passed / 85 ignored**、all-target Clippy、配置检查均通过；
+移除期限会使真实停滞正文消费者断言失败，逐字恢复通过。显式配置缺失拒绝启动，
+媒体、Push/Memory、长连接与组件任务保留各自原预算。详见
+[原消费者及期限证据](core/verify/projects-publication-receipt.md)。
+
+Agent 资料、Canvas 和审核另三处空读假阴性已修复，并精确恢复能证明来自旧错误
+分支的历史业务终态，保留原审计与真实 LIMIT/拒绝。固定 `a05502296` 的原模块
+**15** 项（含 **3** 项真实 PG）通过，三种破坏各断言失败后恢复通过；迁移往返、
+Clippy 与格式通过。仍不等于权威缺失证明，见
+[历史纠正证据](core/verify/publication-absence-correction.md)。
+
+Relay 新增只返回五项引用的 writer 肯定观察，原事件及删除事件软删后仍可查证。
+固定 `63590d878` 的实际 HTTP/PG/Redis **11/11** 通过；ban、私聊重复删除范围、
+历史 NULL scope 三项实际故障均被检出并逐字恢复。后续 `85c26ebcd` 保留合法
+Pulse unlike 的全球目标链，**12/12** 通过，移除该路径断言失败、恢复后 12/12。
+Core 范围冻结与新消费者已进入上述最终集成，但未做真实部署全链；缺失或拒绝仍
+UNKNOWN。详情与原回执见
+[writer 证据](core/verify/projects-publication-receipt.md)。
+
+普通 writer 缺失接缝已进入后继集成：设计 `3635890d5`，原 DB 固定 `3d013ef8f`
+的真实 PG **10** 项、常规 DB **128** 项与 Clippy 通过。Relay 固定 `1fde2756a`
+的真实双人私聊专项 **4** 项、原治理 **8** 项、all-target Clippy 及故障恢复后
+delivery/observation/settlement **16/16** 通过；4 项已包含在 16 项中。两次实际
+移除 owner 证明或最终成员复核均断言失败、逐字恢复通过。固定输入与失败历史见
+[普通缺失查证证据](core/verify/projects-publication-receipt.md)。Core 固定 `1894d2784`
+的 16 项与五次实际故障/恢复通过；Native 固定来源的 epoch 15 项、Git-write 9 项、
+两项故障/恢复，以及后继 25 项与 Clippy 通过，四侧生成和兼容通过。产品已进入上述
+最新合批；历史缺 epoch/Community、替换或不存事件的种类仍不能伪造缺失。没有据此
+宣称完整 DD-81、最新 full、正式制品或部署完成。
+
+较早 `06712387a` 的真实 `pg_notify` 删除反向与恢复通过仍独立保留于
+[原联合回执](core/verify/phase1-integration-core-20261026.json)，不改写旧失败或忽略项。
+
+固定 `3cd4d1e00` 的原四侧合同、同源 Mobile 词条、能力注册表生成/check 全部
+退出 0，42 能力、20 封闭 Workflow kind。同源 Web/Desktop 资料表单与 live
+消费者 **10/10**、共享生产/测试类型与两宿主类型检查通过；三处实际缓存、撤权、
+恢复网络故障均被检出，逐字恢复后 10/10 再次通过。Core 有界等待仍 fresh 核验身份，
+缓存不成为权限权威。Mobile 资料固定 `f23d2de52` 原消费者 **11/11**；固定
+`8047b742d` 原论坛/通知定位 **76/76**，反向可检出深回复未滚到目标。详情见
+[资料证据](core/verify/tenant-profile.md)与
+[Mobile 论坛证据](collaboration/fork/verify/mobile-forum-push.md)。
+
+DD-159 原 Desktop SDK 在 `24e3c5f61` 的归档、原生会话、工作区检查分别
+21、18、2 项通过；故意关闭安全删除能检出数据库残留，恢复后通过。HUMAN 内容
+策略已在 binding 准入事务固定归属，接收方完整激活与实际业务仍未验收。
+
+DD-160 原生投递核验已进入候选：writer 包括软删除行，全部原 1631 写者与缺失
+证明共享事务屏障，锁后重验原时间窗；NIP-98 完整 URL 与标签共同固定不可变
+Community，原 ACK 也须匹配 journal。Native 固定 `f8cb31cf1` 的 publication
+消费者 **11/11**，Relay 固定 `d5c4667f4` 的实际 HTTP/PG/Redis **6/6**；
+旧 Community 缺失、ACK 异常和 Host 改绑等反向均检出，恢复通过。合批四侧
+生成/check 在 `65f82f0b8` 原 SDK 1 CPU / 2 GiB 退出 0，生成物已回读提交。
+固定合批 `01f332f3a` 的 TS 类型与 **74** 项、Go **57** 个顶层及 **50** 个子用例、
+Dart **75** 项通过；漏掉真实 Dart 输出字段会断言失败，恢复后 75 项通过。
+Core 编译结果另计。详细固定源码与失败边界见
+[Native 发布证据](collaboration/fork/verify/desktop-project-remote-writes.md)。
+
+Android FCM 原生批也已进入候选：固定 `76a879c21` 的 Flutter 消费者 **28/28**，
+固定 `d096d4a50` 的原 Android SDK 构建 debug APK、原生 **2/2**、官方公开配置
+处理均通过，故障检出后逐字恢复通过。原配置/发布工具 **4+92** 项与两项反向
+通过，配置变化不能复用旧阶段产物。debug APK 不是签名 release，尚无设备/供应商
+投递或 iOS 编译证据，Core tag 已由上述 push 联合检查覆盖；见
+[Android 证据](collaboration/fork/verify/mobile-android-push.md)。
+
+固定 `8c5395908` 与设计 `3635890d5` 的原 SDK 1 CPU / 2 GiB 完整文档门禁
+退出 0。随后同源执行原 `step_trace` 并只读挂载原 CI 发布证明库，退出 1：
+反馈、Mobile 推送、社区资料三项仍缺正式制品 digest；本轮未再报 Core/Worker
+发布 SBOM 缺失。CI 原件在 `/volumes/data/kailo/verification/phase1-integration/` 下的
+`docs-8c5395908-publication-epoch-final/` 与
+`trace-8c5395908-publication-epoch-r2/`。该结果不等于最新 full 或发布通过。
+
+固定 `d6469e936` 与设计 `bb41415a5` 的原 SDK 1 CPU / 2 GiB 文档门禁全部
+退出 0：393 引用、96 实体、160 DD、30 SS、260 场景及设计 22 篇均闭合，
+markdownlint 无问题。原件在 CI
+`/volumes/data/kailo/verification/phase1-integration/docs-d6469e936/`，不含源码编译。
+
+随后固定 `ff6109005482332eb8c3a19857fd23d2153938fd` 与同一设计 pin 的原
+文档门禁亦退出 0；CI 原件为上述 verification 根下
+`docs-ff6109005-final-docs-r2/`。这是该固定源码的 docs 结果，不把旧源检查外推为
+最新 full；本次两份文档追加后的门禁另按其提交记录。
+
+较早固定源码 `a52203970` 已通过原 `docs`、`migrate`、`lint`、`contract`、
+`verify`、`replay`、`trace` 七步；Rust 主目标 809 项、平台 TS 1979 项、Web 726
+项与发布工具 87 项通过，仅适用于该固定源码。它不代替后续新增范围的完整门禁。
+当前仍缺最新 full、supply/seam、匹配制品摘要及真实三端/多账号/多 Agent 验收。
+反馈、推送、资料等追溯中的空 artifact 列表保持原样，不以源码 SHA 冒充制品摘要。
+
+固定 `b19846236` 在已准备 SDK 中执行原 `step_trace`：文档与注册表通过，整体
+退出 1。反馈、推送、资料三条仍缺制品 digest；Git 源码导出还缺 Core/Worker
+对应 `dist/` 发布 SBOM。原件在 CI
+`/volumes/data/kailo/verification/phase1-integration/docs-b19846236-trace-r2/`。
+没有据此声明最新 trace/full 通过，正式制品与配套输入仍须沿原 CI 交付。
+
+后续 Core 发布对账修复已进入候选：普通查询空不再产生确定未送达；旧错误的
+`RECONCILIATION/NOT_DELIVERED` 不再授权重签，也不再触发幂等记录清理或从未决
+扫描/度量消失。肯定证据追加幂等修正，旧审计保留；重试先过滤错误历史结论，保留期
+从有效终态计算，审计键包含 operation。上述真实 PG 与反向已验证这些边界，历史
+缺失 DISPATCH 的范围不补造。后继已对新冻结 epoch 的适用非替换事件接通原 writer
+缺失查证；历史不全、替换或不存事件的范围保持 UNKNOWN，真实部署全链仍未验收。
+
+上一批发布源 `dc2d6ca18bb5c355ebb3e96609f0f591532479cf` 的八个运行发布阶段完成，
+pin 为 `ebc23eb293942ed9721cb56d2b76ee871f91bc40`，但 journal 业务验收明确为
+`NOT_RUN`。本候选未部署、未更新 Win11/Mobile 包；组件仍须与宿主匹配发布后，
+用实际三账号业务和中英文、明暗主题关键状态逐项验收。平台仍未生产就绪。
+
+## 历史使用与恢复范围（2026-10-09）
 
 - 2026-10-09 15:43 UTC：仅 Web 更新为固定
   `4c099a5f9b508f7df47b9fc923fe37ab7375aa70` 的共享 Profile 修复。

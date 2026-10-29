@@ -15,6 +15,8 @@ design:
 validation:
   scenarios: [V-SCN-126, V-SCN-127, V-SCN-128, V-SCN-129, V-SCN-130]
   evidence:
+    - dimension: 故障与恢复
+      ref: core/verify/publication-absence-correction.md
     - dimension: 领域规则
       ref: core/crates/platform-core/src/moderation.rs
     - dimension: 安全边界
@@ -31,7 +33,7 @@ implementation:
   paths: [core/crates/platform-core/src/moderation.rs, core/crates/platform-core/src/moderation_read.rs, core/crates/platform-core/src/identity_projection.rs, core/crates/platform-core/src/web_transport.rs, core/crates/platform-core/src/governance_api.rs, core/crates/platform-core/src/governance_reconcile.rs, core/crates/collab-bridge/src/moderation.rs, core/crates/collab-bridge/src/bridge.rs, client-kit/ts/platform/src/react/moderation, client-kit/ts/platform/src/moderation.ts, client-kit/ts/platform/src/react/messages/MessageActionBarSurface.tsx, client-kit/ts/platform/src/react/channel-members.tsx, client-kit/ts/platform/src/react/settings-surface.tsx, web-client, collaboration/desktop/src/shared/api/relayPublishOutcome.ts, collaboration/desktop/src/features/messages/hooks.ts, collaboration/desktop/src/features/channels/ui/ChannelPane.tsx, collaboration/desktop/src/features/settings/ui/SettingsPanels.tsx]
   surfaces: [web, desktop]
   schemas: [contracts/api/action_command.schema.json, contracts/domain/error.schema.json, contracts/api/moderation_access_view.schema.json, contracts/api/moderation_report_page.schema.json, contracts/api/moderation_audit_page.schema.json, contracts/api/moderation_restriction_page.schema.json, contracts/enums/moderation_report_type.schema.json, contracts/enums/moderation_report_status.schema.json, contracts/enums/moderation_report_target_kind.schema.json, contracts/enums/moderation_resolution_status.schema.json, contracts/enums/moderation_resolution_action.schema.json, contracts/enums/moderation_timeout_duration.schema.json, contracts/enums/publish_restriction_kind.schema.json]
-  migrations: [core/migrations/20261019113000_moderation_actions.up.sql, core/migrations/20261019113000_moderation_actions.down.sql]
+  migrations: [core/migrations/20261019113000_moderation_actions.up.sql, core/migrations/20261019113000_moderation_actions.down.sql, core/migrations/20261101010000_publication_absence_correction.up.sql, core/migrations/20261101010000_publication_absence_correction.down.sql]
 
 runtime:
   routes: ["/api/v1/actions", "/api/v1/moderation/access", "/api/v1/moderation/reports", "/api/v1/moderation/audit", "/api/v1/moderation/restricted"]
@@ -41,7 +43,7 @@ release:
   # 仅记录既有已构建候选；本能力的构建、full、部署及业务验收尚未通过。
   artifacts:
     - name: core
-      digest: sha256:a6c37cbf2ea58b4c983f9bd2bb7a5dca5c94fcb674c5a35ee6d4b901794f1a17
+      digest: sha256:b67df6197490144b7f602e0d4e4519f36fba3ab58703b99c817ec62c73de4efa
     - name: web-client
-      digest: sha256:c0f470e5053510c0899aae6e311502b5498d98ead4301a362c82650cfc133042
+      digest: sha256:86effa5e9adb4b720712e075bafd8df0769d4789b2fabdcb0d225eac929f918f
   gate: blocked_until_seams_closed

@@ -9,6 +9,7 @@ import { COLUMN } from '@/components/table/BaseTable';
 import { EditableContext } from '@/components/EditableWrapper';
 import EditBasicMetadata from './EditBasicMetadata';
 import NestedFieldTable from '@/components/table/NestedFieldTable';
+import useKailoText from '@/utils/kailoI18n';
 
 export interface Props {
   formNamespace: string;
@@ -37,6 +38,7 @@ const CalculatedFieldEditableTable =
 const RelationshipEditableTable = makeEditableBaseTable(RelationTable);
 
 export default function EditModelMetadata(props: Props) {
+  const t = useKailoText();
   const {
     formNamespace,
     displayName,
@@ -85,7 +87,7 @@ export default function EditModelMetadata(props: Props) {
 
       <div className="mb-6">
         <Typography.Text className="d-block gray-7 mb-2">
-          Columns ({fields.length})
+          {t('modeling.columnsCount', { count: fields.length })}
         </Typography.Text>
         <FieldEditableTable
           dataSource={fields}
@@ -120,7 +122,9 @@ export default function EditModelMetadata(props: Props) {
       {!!calculatedFields.length && (
         <div className="mb-6">
           <Typography.Text className="d-block gray-7 mb-2">
-            Calculated fields ({calculatedFields.length})
+            {t('modeling.calculatedFieldsCount', {
+              count: calculatedFields.length,
+            })}
           </Typography.Text>
           <CalculatedFieldEditableTable
             dataSource={calculatedFields}
@@ -137,7 +141,9 @@ export default function EditModelMetadata(props: Props) {
       {!!relationFields.length && (
         <div className="mb-6">
           <Typography.Text className="d-block gray-7 mb-2">
-            Relationships ({relationFields.length})
+            {t('modeling.relationshipsCount', {
+              count: relationFields.length,
+            })}
           </Typography.Text>
           <RelationshipEditableTable
             dataSource={relationFields}

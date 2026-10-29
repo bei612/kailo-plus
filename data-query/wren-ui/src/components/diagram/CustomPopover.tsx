@@ -22,7 +22,12 @@ const CustomPopoverCol = (props: {
   const { title, children, code, span = 24, marginBottom = 8 } = props;
   return (
     <Col span={span}>
-      <div className="gray-7 mb-0">{title}</div>
+      <div
+        className="mb-0"
+        style={{ fontSize: 12, color: 'var(--kailo-color-muted-foreground)' }}
+      >
+        {title}
+      </div>
       <div style={{ marginBottom }}>
         <Typography.Text code={code}>{children}</Typography.Text>
       </div>

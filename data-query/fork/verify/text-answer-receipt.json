@@ -1,0 +1,146 @@
+{
+  "base": "e70c0ad0b338caa10c4c07676b23e0fa3c1b3ded",
+  "branch": "codex/wren-text-answer-20261027",
+  "image": "sha256:f9ab18e354e6855ae56ef2b290dd225c1e51a564f87584b9bd21dd651838830e",
+  "runtime": {
+    "node": "18.20.8",
+    "typescript": "5.2.2",
+    "prettier": "3.2.5"
+  },
+  "limits": {
+    "cpus": 4,
+    "memoryBytes": 4294967296,
+    "memorySwapBytes": 4294967296,
+    "pids": 512,
+    "network": "none"
+  },
+  "sourceTransport": "GitHub fixed commit fetch and archive on CI",
+  "dependencyReuse": "unchanged package.json, yarn.lock and .yarnrc.yml; existing immutable Yarn install bound read-only",
+  "storage": "/volumes/data on /dev/sda1; independent snapshots and temporary directories",
+  "runs": [
+    {
+      "source": "0bae79735ccad1f4c7adc74e088794b52ae2086e",
+      "evidenceDirectory": "/volumes/data/kailo/conformance/wren-text-answer/0bae79735ccad1f4c7adc74e088794b52ae2086e-check",
+      "normal": {
+        "passed": 26,
+        "skipped": 0
+      },
+      "fault": {
+        "log": "fault-discover.log",
+        "failed": 10,
+        "unselected": 16,
+        "exit": 1
+      },
+      "restored": {
+        "passed": 26,
+        "skipped": 0,
+        "gitBlobsMatched": 618
+      },
+      "exits": {
+        "check": 0,
+        "consumers": 0,
+        "fault-discover": 1,
+        "format": 0,
+        "lint": 0,
+        "restored": 0,
+        "types": 0,
+        "versions": 0
+      },
+      "memoryEvents": {
+        "low": "0",
+        "high": "0",
+        "max": "0",
+        "oom": "0",
+        "oom_kill": "0",
+        "oom_group_kill": "0"
+      },
+      "remainingContainers": [],
+      "evidenceSha256": {
+        "check.exit": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+        "consumers.exit": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+        "consumers.log": "d2d9eb220e3390ee02b0844b80419852b2f34e5950220728081f7729ba1ba3bf",
+        "container-state.json": "87bb0cbeb4e0aebab93cc2e07ebc40025a5ef34d132d1ca66919fe28f97ffd2f",
+        "fault-discover.exit": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+        "fault-discover.log": "630921615cc2192ad8acf3d9175672d361bfadbca0d1ecc45d03384caefcd0e0",
+        "format.exit": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+        "format.log": "17aa973d3f004560237d9a95171210b0671deff23d61628eecf7322ff5938f20",
+        "input-verification.json": "69c1ceb131f7cec882897440af3c3689f74f89dcaeff36f4c2d09a226cd86450",
+        "limits.log": "b7714d6c8f9aadc4cdc7e39748e30e2f88a987dfa5a6c57a40e4bc1ccc1d98c8",
+        "lint.exit": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+        "lint.log": "03a52e2742a512fd0d6e3602e84627a5c8ad163a72c8b18fe33f29b055c62b89",
+        "preflight.log": "56ab6a6aff862446d6ca8f78cd3074c7b5bb71ceb19072911af0a0f0b9b81b14",
+        "restored.exit": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+        "restored.log": "3a04ca851fd90d7009342371fea98af938e478b9ca2ab21a99c91fb2e02412ab",
+        "types.exit": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+        "types.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "versions.exit": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+        "versions.log": "02123f9f9b5e2c5a1098db72e93fa851e90ff6ecd1a32696eea63af0cd1ddd63"
+      }
+    },
+    {
+      "source": "8740c95f5c49388cd1e6ab5d03998346ad1cfb1d",
+      "evidenceDirectory": "/volumes/data/kailo/conformance/wren-text-answer/8740c95f5c49388cd1e6ab5d03998346ad1cfb1d-check",
+      "normal": {
+        "passed": 30,
+        "skipped": 0
+      },
+      "fault": {
+        "log": "fault-mode.log",
+        "failed": 4,
+        "unselected": 26,
+        "exit": 1
+      },
+      "restored": {
+        "passed": 30,
+        "skipped": 0,
+        "gitBlobsMatched": 618
+      },
+      "exits": {
+        "check": 0,
+        "consumers": 0,
+        "fault-mode": 1,
+        "format": 0,
+        "lint": 0,
+        "restored": 0,
+        "types": 0,
+        "versions": 0
+      },
+      "memoryEvents": {
+        "low": "0",
+        "high": "0",
+        "max": "0",
+        "oom": "0",
+        "oom_kill": "0",
+        "oom_group_kill": "0"
+      },
+      "remainingContainers": [],
+      "evidenceSha256": {
+        "check.exit": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+        "consumers.exit": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+        "consumers.log": "2fac7faf8ea847b270ec27e7dffe6716f6c7c8f64e626d86f1baaa90005131ba",
+        "container-state.json": "8ebd56a4225eb843fa77fce78627f35987f18d310818c0100398508ac5c3807b",
+        "fault-mode.exit": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+        "fault-mode.log": "016d6c7e6cc41bfff82daa975a3e3d887d2be09b048c88c6e1a33523590aec1b",
+        "format.exit": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+        "format.log": "17aa973d3f004560237d9a95171210b0671deff23d61628eecf7322ff5938f20",
+        "input-verification.json": "e03aa9a430bb2a1b8597af09557a490ddce3eb5d7850fe735540b88331d88de0",
+        "limits.log": "612a7e65f348b57a7728f5973a53fd97e7836cb73b7b28fa1533148d074663d4",
+        "lint.exit": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+        "lint.log": "03a52e2742a512fd0d6e3602e84627a5c8ad163a72c8b18fe33f29b055c62b89",
+        "preflight.log": "f6e67be31146d29e43357282942076055ce899079df196c5af55670322c11bb0",
+        "restored.exit": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+        "restored.log": "a3893b3c8ae7465718b8772d41c27e8c117118f6c0408faf61ae413b2b9b4893",
+        "types.exit": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+        "types.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "versions.exit": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+        "versions.log": "02123f9f9b5e2c5a1098db72e93fa851e90ff6ecd1a32696eea63af0cd1ddd63"
+      }
+    }
+  ],
+  "boundaries": [
+    "Original handler, scope validator, binding service HTTP client and current config loader execute; local HTTP fixture supplies complete protocol facts.",
+    "Existing downstream NativeHumanQuery.readHistory spy remains; SQL receipts, Core/IdP, native repositories and AI streaming are isolated fixtures.",
+    "No live model, SQL execution, receiver activation, complete five-file Wren suite or deployed product acceptance is claimed.",
+    "Already disclosed bytes are not recalled; stopping completion does not authorize rerunning an unknown task."
+  ]
+}

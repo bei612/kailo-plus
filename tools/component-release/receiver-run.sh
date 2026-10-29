@@ -15,6 +15,9 @@
 #              and the release provenance of that Core digest gives isolatedCoreBuildId.
 #   contracts  second Catalog admin, then capability-contract-activate.mjs for file_storage@2 and
 #              every contract the candidate implements, in the isolated Catalog only
+#   admit      original HUMAN application_binding.create admission, then its original management
+#              page's PENDING generation humanActionPolicies -> bindings-admitted.json. These
+#              references permit deployment configuration, never business execution or a PASS.
 #   native     vector-requirements gate; the APPROVED source release's Cells instance; source files
 #              through its native entry (seed-knowledge --phase native) before its native-action
 #              delivery; its delivered adapter; the WeKnora candidate (native + receiver adapter for
@@ -69,8 +72,8 @@
 set -euo pipefail
 run_env=${1:-}
 stage=${2:-}
-case "$stage" in platform|contracts|native|bootstrap|seed|inputs|driver|down) ;; *)
-  echo 'usage: receiver-run.sh /abs/receiver.env platform|contracts|native|bootstrap|seed|inputs|driver|down' >&2; exit 2 ;; esac
+case "$stage" in platform|contracts|admit|native|bootstrap|seed|inputs|driver|down) ;; *)
+  echo 'usage: receiver-run.sh /abs/receiver.env platform|contracts|admit|native|bootstrap|seed|inputs|driver|down' >&2; exit 2 ;; esac
 [[ $run_env == /* && -f $run_env && ! -L $run_env && $(stat -c '%a' -- "$run_env") == 600 ]] \
   || { echo 'receiver.env must be an absolute 0600 regular file' >&2; exit 2; }
 set -a
@@ -94,7 +97,7 @@ platform=$run/apps/deploy/local
 export KAILO_RUNTIME_DIR=$platform
 read -r -a docker <<<"${RECEIVER_DOCKER:-sudo -n docker}"
 need() { for name in "$@"; do [[ -n ${!name:-} ]] || { echo "receiver.env: $name required for $stage" >&2; exit 2; }; done; }
-record() { [[ -s $run/$1 ]] || { echo "missing $run/$1: run the earlier stage first" >&2; exit 2; }; }
+record() { [[ -f $run/$1 && ! -L $run/$1 && ( $1 == *.done || -s $run/$1 ) ]] || { echo "missing $run/$1: run the earlier stage first" >&2; exit 2; }; }
 private() { [[ $1 == /* && -f $1 && ! -L $1 && $(stat -c '%a' -- "$1") =~ ^[46]00$ ]] || { echo "$1 must be an absolute owner-only file" >&2; exit 2; }; }
 compose() { (cd "$platform" && "${docker[@]}" compose --env-file .env -f compose.yaml "$@"); }
 container_of() { compose ps -q "$1" | head -n 1; }
@@ -107,11 +110,12 @@ print(json.dumps(json.loads(lines[-1])))'; }
 node_step() { # node_step <network> <script> [args...]; inputs are mounted at their absolute paths
   local network=$1
   shift
-  local mounts=() file
+  local mounts=() aliases=() file
+  [[ ${1:-} != tools/component-release/conformance/observe.mjs ]] || aliases+=(--network-alias knowledge-forward-provider)
   for file in ${RECEIVER_MOUNTS:-}; do mounts+=(-v "$file:$file:ro"); done
   "${docker[@]}" run --rm --read-only --cap-drop ALL --security-opt no-new-privileges --cpus 1 --memory 768m --memory-swap 768m \
     --pids-limit 256 --tmpfs /tmp:rw,nosuid,nodev,size=64m -u "$(id -u):$(id -g)" -e HOME=/tmp \
-    -v "$src:/src:ro" -v "$run:$run" "${mounts[@]}" -w /src --network "$network" "$RECEIVER_NODE_IMAGE" node "$@"
+    -v "$src:/src:ro" -v "$run:$run" "${mounts[@]}" -w /src --network "$network" "${aliases[@]}" "$RECEIVER_NODE_IMAGE" node "$@"
 }
 
 # One ignored Core test entry in the fixed check image, inside the isolated
@@ -125,7 +129,8 @@ core_test() { # core_test <test name> <detach:true|false> <NAME=value lines on s
   image=$("${docker[@]}" image inspect --format '{{.Id}}' "local/kailo-check:$recipe") \
     || { echo 'fixed check image of this release tree is missing; prepare it through the existing check entry' >&2; exit 2; }
   install -d -m 0700 "$cache" "$cache/home" "$cache/cargo-registry" "$cache/cargo-git"
-  local args=(run --pull=never --cpus "${CHECK_CPUS:-4}" --memory "${CHECK_MEMORY:-8g}" --memory-swap "${CHECK_MEMORY:-8g}"
+  local args=(run --pull=never --read-only --cap-drop ALL --security-opt no-new-privileges
+    --pids-limit 512 --tmpfs /tmp:rw,nosuid,nodev,size=128m --cpus "${CHECK_CPUS:-4}" --memory "${CHECK_MEMORY:-8g}" --memory-swap "${CHECK_MEMORY:-8g}"
     --user "$(id -u):$(id -g)" --network "container:$core" --workdir /workspace/apps
     --mount "type=bind,src=$src,dst=/workspace/apps,readonly" --mount "type=bind,src=$cache,dst=/cache"
     --mount "type=bind,src=$cache/cargo-registry,dst=/usr/local/cargo/registry"
@@ -152,8 +157,26 @@ core_env() {
 refresh_sessions() {
   need RECEIVER_SESSION_COMMAND
   [[ $RECEIVER_SESSION_COMMAND == /* && -x $RECEIVER_SESSION_COMMAND ]] || { echo 'RECEIVER_SESSION_COMMAND must be an absolute executable' >&2; exit 2; }
-  "$RECEIVER_SESSION_COMMAND"
+  flock "$run/session-refresh.lock" "$RECEIVER_SESSION_COMMAND"
 }
+
+session_refresh_loop() {
+  local elapsed=0 interval=${RECEIVER_SESSION_SECONDS:-120}
+  [[ $interval =~ ^[1-9][0-9]*$ ]] || { echo 'invalid isolated session renewal interval' >&2; return 2; }
+  trap 'exit 0' TERM INT
+  # Short sleeps let the scoped stage drain promptly without orphaning a refresh.
+  while sleep 1; do
+    elapsed=$((elapsed + 1))
+    if ((elapsed >= interval)); then refresh_sessions || return 1; elapsed=0; fi
+  done
+}
+
+scoped_session_refresh() {
+  session_refresh_loop &
+  stage_refresher=$!
+  trap 'kill "$stage_refresher" 2>/dev/null || true; wait "$stage_refresher" 2>/dev/null || true' EXIT
+}
+
 
 case "$stage" in
 platform)
@@ -172,6 +195,9 @@ platform)
     [[ $(basename -- "$entry") == local ]] || ln -s "$entry" "$run/apps/deploy/$(basename -- "$entry")"
   done
   cp -a "$src/deploy/local" "$platform"
+  # The release tree's design snapshot sits beside apps/ (CI fetch); start-core.sh's registry
+  # check reads it at ../.design from the staged apps/.
+  [[ ! -d $src/../.design ]] || ln -s "$(realpath -e -- "$src/../.design")" "$run/.design"
   rm -rf -- "$platform/.env" "$platform/secrets" "$platform/data"
   install -m 0600 "$RECEIVER_PLATFORM_ENV" "$platform/.env"
   python3 -I - "$platform/compose.yaml" "$RECEIVER_PROJECT" <<'PY'
@@ -180,7 +206,19 @@ path, project = sys.argv[1:3]
 text = open(path, encoding='utf-8').read()
 if text.count('\nname: platform-local\n') != 1:
     sys.exit('staged compose.yaml has no single platform-local project name')
-open(path, 'w', encoding='utf-8').write(text.replace('\nname: platform-local\n', f'\nname: {project}\n'))
+text = text.replace('\nname: platform-local\n', f'\nname: {project}\n')
+# The isolated IdP is published on loopback only, and its issuer
+# http://<OIDC_HOST>:<KEYCLOAK_PORT> must be the same address for the host browser
+# flows (OIDC_HOST *.localhost resolves to loopback) and for containers (the
+# compose network alias OIDC_HOST). Production publishes the container port
+# itself (8080); the isolated copy cannot, so Keycloak listens on KEYCLOAK_PORT.
+published = '${KEYCLOAK_PORT:?必须显式提供，禁止硬编码}:8080"'
+listen = '      KC_HTTP_ENABLED: "true"\n'
+if text.count(published) != 1 or text.count(listen) != 1:
+    sys.exit('staged compose.yaml keycloak listener is not the expected shape')
+text = text.replace(published, '${KEYCLOAK_PORT:?必须显式提供，禁止硬编码}:${KEYCLOAK_PORT}"')
+text = text.replace(listen, listen + '      KC_HTTP_PORT: ${KEYCLOAK_PORT}\n')
+open(path, 'w', encoding='utf-8').write(text)
 PY
   python3 -I - "$platform/.env" "$RECEIVER_PROJECT" <<'PY'
 import re, socket, sys
@@ -226,21 +264,26 @@ if len(subjects) != 1 or 'sha256:' + subjects[0]['digest']['sha256'] != pin or n
     sys.exit('core provenance does not name the pinned production Core image and its build id')
 json.dump({'isolatedCoreBuildId': build, 'coreImage': pin}, open(out, 'x', encoding='utf-8'))
 PY
-  edge=$RECEIVER_PROJECT-edge
-  "${docker[@]}" network inspect "$edge" >/dev/null 2>&1 \
-    || "${docker[@]}" network create --label kailo.receiver="$RECEIVER_PROJECT" "$edge" >/dev/null
+  # The edge network ($RECEIVER_PROJECT-edge) is created by the staged compose project itself.
   "${docker[@]}" network inspect "$RECEIVER_NETWORK" >/dev/null 2>&1 \
     || "${docker[@]}" network create --internal --label kailo.receiver="$RECEIVER_PROJECT" "$RECEIVER_NETWORK" >/dev/null
+  # The core-observed/ OpenBao audit device writes into data/secret-store-audit (owner 100,
+  # reader group, setgid); without it no audit device comes up and secret-store-init.sh
+  # refuses (production prepares it once with the same command).
+  install -d -m 0700 "$platform/data"
+  (cd "$platform" && ./secret-store-audit-dir.sh --prepare)
   (cd "$platform" && ./init-local.sh --isolated-receiver="$RECEIVER_PROJECT")
   # The production Worker reaches the isolated Core service API, its IdP and
   # (later) the driver only through the dedicated network.
   "${docker[@]}" network connect --alias receiver-core --alias receiver-driver "$RECEIVER_NETWORK" "$(container_of core-bff)"
   "${docker[@]}" network connect --alias receiver-idp "$RECEIVER_NETWORK" "$(container_of keycloak)"
   "${docker[@]}" network connect --alias receiver-gateway "$RECEIVER_NETWORK" "$(container_of agentgateway)"
+  touch "$run/platform.done"
   echo "isolated platform $RECEIVER_PROJECT ready (CONFORMANCE_ONLY; not production)"
   ;;
 contracts)
   need RECEIVER_FLOW_NODE RECEIVER_PLAYWRIGHT_PACKAGE RECEIVER_ACCOUNTS_DIR RECEIVER_MANIFEST
+  record platform.done
   record core-build.json
   port=$(sed -n 's/^AGENTGATEWAY_PORT=//p' "$platform/.env")
   flow=(env KAILO_WEB="http://127.0.0.1:$port" KAILO_DEPLOY_DIR="$platform" KAILO_FLOW_ACCOUNTS_DIR="$RECEIVER_ACCOUNTS_DIR"
@@ -260,8 +303,8 @@ PY
   touch "$run/contracts.done"
   ;;
 native)
-  need RECEIVER_CELLS_ENV RECEIVER_CELLS_DELIVERY_ENV RECEIVER_KNOWLEDGE_ENV RECEIVER_SEED_FILE \
-    RECEIVER_FORWARD_ADAPTER_CONFIG RECEIVER_FORWARD_ADAPTER_JWKS
+  record bindings-admitted.json
+  need RECEIVER_CELLS_ENV RECEIVER_CELLS_DELIVERY_ENV RECEIVER_KNOWLEDGE_ENV RECEIVER_SEED_FILE
   record contracts.done
   set +e
   node_step none tools/component-release/conformance/vector-requirements.mjs --component knowledge --out "$run/requirements.json" >/dev/null
@@ -273,7 +316,9 @@ native)
   [[ -n $cells && $cells == "$(project_of "$RECEIVER_CELLS_DELIVERY_ENV")" ]] \
     || { echo 'Cells envs must name the same dedicated kailo-cells-conformance* project' >&2; exit 2; }
   start=$src/file-storage/deploy/start.sh
-  bash "$start" "$RECEIVER_CELLS_ENV"
+  if [[ -z $("${docker[@]}" ps -q --filter "label=com.docker.compose.project=$cells" --filter 'label=com.docker.compose.service=cells') ]]; then
+    bash "$start" "$RECEIVER_CELLS_ENV"
+  fi
   node_step "${cells}_cells-ui" tools/component-release/conformance/seed-knowledge.mjs --phase native --seed "$RECEIVER_SEED_FILE"
   bash "$start" --check "$RECEIVER_CELLS_DELIVERY_ENV"
   "${docker[@]}" compose --project-name "$cells" --env-file "$RECEIVER_CELLS_DELIVERY_ENV" \
@@ -283,12 +328,115 @@ native)
   knowledge=$(sed -n 's/^COMPOSE_PROJECT_NAME=\(kailo-knowledge-receiver[a-z0-9_-]*\)$/\1/p' "$RECEIVER_KNOWLEDGE_ENV")
   [[ -n $knowledge ]] || { echo 'WeKnora env must name a dedicated kailo-knowledge-receiver* project' >&2; exit 2; }
   bash "$src/knowledge/fork/deploy/start.sh" --native-env "$RECEIVER_KNOWLEDGE_ENV" --platform-model "$platform/.env" \
-    --platform-adapter --file-storage-sync
+    --platform-adapter
   app=$("${docker[@]}" ps -q --filter "label=com.docker.compose.project=$knowledge" \
     --filter "label=com.docker.compose.service=app" | head -n 1)
   [[ -n $app ]] || { echo 'WeKnora app of the candidate is not running' >&2; exit 2; }
   # The governed seed creates data sources through WeKnora's own API.
-  "${docker[@]}" network connect --alias receiver-weknora "$RECEIVER_NETWORK" "$app"
+  if ! "${docker[@]}" inspect --format '{{json .NetworkSettings.Networks}}' "$app" | python3 -c 'import json,sys; n=json.load(sys.stdin); sys.exit(0 if sys.argv[1] in n else 1)' "$RECEIVER_NETWORK"; then
+    "${docker[@]}" network connect --alias receiver-weknora "$RECEIVER_NETWORK" "$app"
+  fi
+  touch "$run/native.done"
+  ;;
+admit|bootstrap)
+  need RECEIVER_BOOTSTRAP_FILE RECEIVER_ADAPTER_DIRECTORY_FILE
+  if [[ $stage == admit ]]; then record contracts.done; phase=admit; output=bindings-admitted; expected=BINDINGS_ADMITTED
+  else record native.done; phase=ready; output=bootstrap; expected=READY; fi
+  private "$RECEIVER_BOOTSTRAP_FILE"
+  refresh_sessions
+  scoped_session_refresh
+  # The bootstrap accepts only the database whose comment fixes this exact input.
+  marker=$(python3 -I - "$RECEIVER_BOOTSTRAP_FILE" <<'PY'
+import hashlib, json, re, sys
+value = json.load(open(sys.argv[1], encoding='utf-8'))
+environment = value.get('environmentId', '')
+if not re.fullmatch(r'[0-9a-f-]{36}', environment):
+    sys.exit('bootstrap input has no environmentId')
+canonical = json.dumps(value, sort_keys=True, separators=(',', ':'), ensure_ascii=False)
+print(f"KAILO_CONFORMANCE_ONLY:{environment}:{hashlib.sha256(canonical.encode()).hexdigest()}")
+PY
+)
+  IFS= read -r url < "$platform/secrets/core-db-url.env"
+  python3 -I - "$marker" 3<<<"${url#DATABASE_URL=}" <<'PY' | "${docker[@]}" exec -i "$(container_of core-db)" sh -ec 'IFS= read -r user; IFS= read -r db; exec psql -v ON_ERROR_STOP=1 -U "$user" -d "$db" -q'
+import os, sys
+from urllib.parse import unquote, urlsplit
+url, marker = os.fdopen(3).read().strip(), sys.argv[1]
+parts = urlsplit(url)
+user, db = unquote(parts.username or ''), parts.path.lstrip('/')
+if not user or not db or "'" in marker:
+    sys.exit('isolated database URL incomplete')
+print(user)
+print(db)
+quoted = db.replace('"', '""')
+print("BEGIN; SELECT pg_advisory_xact_lock(hashtextextended('receiver-marker:'||current_database(),0));")
+print("DO $$ DECLARE old text; BEGIN SELECT shobj_description(oid,'pg_database') INTO old "
+      "FROM pg_database WHERE datname=current_database(); "
+      f"IF old IS NOT NULL AND old<>'{marker}' THEN RAISE EXCEPTION 'receiver input marker differs'; END IF; END $$;")
+print(f'COMMENT ON DATABASE "{quoted}" IS \'{marker}\'; COMMIT;')
+PY
+  { core_env; printf 'APPLICATION_RECEIVER_BOOTSTRAP_FILE=%s\nAPPLICATION_RECEIVER_BOOTSTRAP_PHASE=%s\n' "$RECEIVER_BOOTSTRAP_FILE" "$phase"; } \
+    | core_test application_binding::read_grant::receiver_environment_bootstrap::bootstrap_native_receiver_environment false \
+    > "$run/$output.log"
+  kill -0 "$stage_refresher" || { echo 'isolated session renewal stopped during bootstrap' >&2; exit 2; }
+  json_line < "$run/$output.log" > "$run/$output.json.next"
+  chmod 0600 "$run/$output.json.next"
+  python3 -I - "$run/$output.json.next" "$run/$output.json" "$expected" <<'PYRECORD'
+import json, os, stat, sys
+from pathlib import Path
+pending, final, expected = Path(sys.argv[1]), Path(sys.argv[2]), sys.argv[3]
+value = json.loads(pending.read_text())
+if value.get('mode') != 'CONFORMANCE_ONLY' or value.get('setup') != expected or value.get('conformanceExecuted') is not False:
+    sys.exit('original bootstrap did not emit the required deployment checkpoint')
+def frozen(record):
+    record = json.loads(json.dumps(record))
+    if expected == 'BINDINGS_ADMITTED':
+        for binding in record['bindings']:
+            # Runtime progress can advance; identities, action intents and all
+            # fixed policy references can never be replaced during recovery.
+            binding.pop('state', None)
+            binding.pop('dispatchState', None)
+    return record
+if final.exists() or final.is_symlink():
+    mode = final.lstat().st_mode
+    if not stat.S_ISREG(mode) or mode & 0o077 or frozen(json.loads(final.read_text())) != frozen(value):
+        sys.exit('retained bootstrap checkpoint differs; inspect original intents, never replace them')
+os.replace(pending, final)
+PYRECORD
+  if [[ $stage == admit ]]; then
+    echo "binding admission checkpoint ready: $run/bindings-admitted.json (not ACTIVE or conformance PASS)"
+    exit 0
+  fi
+  python3 -I - "$run/bootstrap.json" "$run/core-build.json" "$run/receiver-environment.json" <<'PY'
+import json, os, sys
+bootstrap, build, out = (json.load(open(sys.argv[1])), json.load(open(sys.argv[2])), sys.argv[3])
+source = bootstrap['sourceRelease']
+environment = {'isolatedCoreBuildId': build['isolatedCoreBuildId'], 'sourceReleaseId': source['releaseId'],
+               'sourceArtifactDigest': source['artifactDigest'], 'sourceManifestDigest': source['manifestDigest']}
+if os.path.lexists(out):
+    import stat
+    info = os.lstat(out)
+    if not stat.S_ISREG(info.st_mode) or info.st_mode & 0o077 or json.load(open(out)) != environment:
+        sys.exit('retained receiver environment differs')
+else:
+    fd = os.open(out, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, 'w') as handle:
+        json.dump(environment, handle, indent=2)
+PY
+  echo "bootstrap READY: $run/bootstrap.json, receiver environment $run/receiver-environment.json"
+  ;;
+seed)
+  need RECEIVER_SEED_FILE
+  record bootstrap.json
+  refresh_sessions
+  scoped_session_refresh
+  node_step "$RECEIVER_NETWORK" tools/component-release/conformance/seed-knowledge.mjs --phase governed --seed "$RECEIVER_SEED_FILE"
+  kill -0 "$stage_refresher" || { echo 'isolated session renewal stopped during seed' >&2; exit 2; }
+  ;;
+inputs)
+  need RECEIVER_OBSERVE_FILE RECEIVER_MANIFEST RECEIVER_KNOWLEDGE_ENV RECEIVER_FORWARD_ADAPTER_CONFIG RECEIVER_FORWARD_ADAPTER_JWKS RECEIVER_FORWARD_ADAPTER_DELIVERY_DIR
+  record receiver-environment.json
+  knowledge=$(sed -n 's/^COMPOSE_PROJECT_NAME=\(kailo-knowledge-receiver[a-z0-9_-]*\)$/\1/p' "$RECEIVER_KNOWLEDGE_ENV")
+  [[ -n $knowledge ]] || { echo 'dedicated receiver native project required' >&2; exit 2; }
   # The forward adapter: same artifact and native instance, configured for the
   # isolated conformance identity the production Worker signs with.
   private "$RECEIVER_FORWARD_ADAPTER_CONFIG"
@@ -302,88 +450,38 @@ native)
       --memory-swap "$KNOWLEDGE_ADAPTER_MEMORY" -u "$KNOWLEDGE_ADAPTER_UID:$KNOWLEDGE_ADAPTER_GID" \
       -e ADAPTER_CONFIG_FILE="$RECEIVER_FORWARD_ADAPTER_CONFIG" \
       -v "$RECEIVER_FORWARD_ADAPTER_CONFIG:$RECEIVER_FORWARD_ADAPTER_CONFIG:ro" \
-      -v "$KNOWLEDGE_ADAPTER_DELIVERY_DIRECTORY:$KNOWLEDGE_ADAPTER_DELIVERY_DIRECTORY:ro" \
-      -v "$RECEIVER_FORWARD_ADAPTER_JWKS:$RECEIVER_FORWARD_ADAPTER_JWKS:ro" \
+      -v "$RECEIVER_FORWARD_ADAPTER_DELIVERY_DIR:$RECEIVER_FORWARD_ADAPTER_DELIVERY_DIR:ro" \
       --network "${knowledge}_native_ui" "$KNOWLEDGE_ADAPTER_REPOSITORY@sha256:$KNOWLEDGE_ADAPTER_DIGEST" >/dev/null
   )
   "${docker[@]}" network connect --alias knowledge-forward-adapter "$RECEIVER_NETWORK" "$RECEIVER_PROJECT-forward-adapter"
-  touch "$run/native.done"
-  ;;
-bootstrap)
-  need RECEIVER_BOOTSTRAP_FILE RECEIVER_ADAPTER_DIRECTORY_FILE
-  record native.done
-  private "$RECEIVER_BOOTSTRAP_FILE"
-  refresh_sessions
-  # The bootstrap accepts only the database whose comment fixes this exact input.
-  marker=$(python3 -I - "$RECEIVER_BOOTSTRAP_FILE" <<'PY'
-import hashlib, json, re, sys
-value = json.load(open(sys.argv[1], encoding='utf-8'))
-environment = value.get('environmentId', '')
-if not re.fullmatch(r'[0-9a-f-]{36}', environment):
-    sys.exit('bootstrap input has no environmentId')
-canonical = json.dumps(value, sort_keys=True, separators=(',', ':'), ensure_ascii=False)
-print(f"KAILO_CONFORMANCE_ONLY:{environment}:{hashlib.sha256(canonical.encode()).hexdigest()}")
-PY
-)
-  IFS= read -r url < "$platform/secrets/core-db-url.env"
-  python3 -I - "${url#DATABASE_URL=}" "$marker" <<'PY' | "${docker[@]}" exec -i "$(container_of core-db)" sh -ec 'IFS= read -r user; IFS= read -r db; exec psql -v ON_ERROR_STOP=1 -U "$user" -d "$db" -q'
-import sys
-from urllib.parse import unquote, urlsplit
-url, marker = sys.argv[1:3]
-parts = urlsplit(url)
-user, db = unquote(parts.username or ''), parts.path.lstrip('/')
-if not user or not db or "'" in marker:
-    sys.exit('isolated database URL incomplete')
-print(user)
-print(db)
-print(f'COMMENT ON DATABASE "{db}" IS \'{marker}\';')
-PY
-  core_env | core_test application_binding::read_grant::receiver_environment_bootstrap::bootstrap_native_receiver_environment false \
-    > "$run/bootstrap.log"
-  json_line < "$run/bootstrap.log" > "$run/bootstrap.json.next"
-  chmod 0600 "$run/bootstrap.json.next"
-  mv "$run/bootstrap.json.next" "$run/bootstrap.json"
-  python3 -I - "$run/bootstrap.json" "$run/core-build.json" "$run/receiver-environment.json" <<'PY'
-import json, os, sys
-bootstrap, build, out = (json.load(open(sys.argv[1])), json.load(open(sys.argv[2])), sys.argv[3])
-source = bootstrap['sourceRelease']
-environment = {'isolatedCoreBuildId': build['isolatedCoreBuildId'], 'sourceReleaseId': source['releaseId'],
-               'sourceArtifactDigest': source['artifactDigest'], 'sourceManifestDigest': source['manifestDigest']}
-fd = os.open(out, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-with os.fdopen(fd, 'w') as handle:
-    json.dump(environment, handle, indent=2)
-PY
-  echo "bootstrap READY: $run/bootstrap.json, receiver environment $run/receiver-environment.json"
-  ;;
-seed)
-  need RECEIVER_SEED_FILE
-  record bootstrap.json
-  refresh_sessions
-  node_step "$RECEIVER_NETWORK" tools/component-release/conformance/seed-knowledge.mjs --phase governed --seed "$RECEIVER_SEED_FILE"
-  ;;
-inputs)
-  need RECEIVER_OBSERVE_FILE RECEIVER_MANIFEST
-  record receiver-environment.json
-  node_step "$RECEIVER_NETWORK" tools/component-release/conformance/observe.mjs --run "$RECEIVER_OBSERVE_FILE"
+  if [[ ! -f $run/facts.json ]]; then
+    node_step "$RECEIVER_NETWORK" tools/component-release/conformance/observe.mjs --run "$RECEIVER_OBSERVE_FILE"
+  fi
   install -d -m 0700 "$run/inputs"
   node_step none tools/component-release/conformance-inputs.mjs --facts "$run/facts.json" --manifest "$RECEIVER_MANIFEST" \
     --out "$run/inputs"
   cat <<EOF
 Isolated receiver conformance inputs ready (no production state changed):
-  COMPONENT_CONFORMANCE_FIXTURE_FILE=$run/inputs/fixture.json
-  COMPONENT_CONFORMANCE_IDENTITY_FILE=$run/inputs/identity.json
-  COMPONENT_CONFORMANCE_ENVIRONMENT_FILE=$run/inputs/environment.json
+  $run/inputs/fixture.json, identity.json, environment.json
+form the candidate <COMPONENT_CONFORMANCE_DIR>/<artifactDigest>/ (DD-136(2)).
 EOF
   ;;
 driver)
-  need RECEIVER_DRIVER_FILE RECEIVER_ADAPTER_DIRECTORY_FILE
+  need RECEIVER_DRIVER_FILE RECEIVER_ADAPTER_DIRECTORY_FILE RECEIVER_FORWARD_PROVIDER_FILE
   record inputs/identity.json
   private "$RECEIVER_DRIVER_FILE"
+  private "$RECEIVER_FORWARD_PROVIDER_FILE"
   refresh_sessions
+  "${docker[@]}" run --detach --name "$RECEIVER_PROJECT-forward-provider" --restart no --read-only --cap-drop ALL \
+    --security-opt no-new-privileges --cpus 0.5 --memory 256m --memory-swap 256m --pids-limit 128 \
+    --tmpfs /tmp:rw,nosuid,nodev,size=32m -u "$(id -u):$(id -g)" -e HOME=/tmp \
+    -e "CONFORMANCE_PROVIDER_CONFIG_FILE=$RECEIVER_FORWARD_PROVIDER_FILE" -v "$src:/src:ro" -v "$run:$run:ro" \
+    -w /src --network "$RECEIVER_NETWORK" --network-alias knowledge-forward-provider \
+    "$RECEIVER_NODE_IMAGE" node tools/component-release/conformance-provider.mjs >/dev/null
   { core_env; printf 'APPLICATION_RECEIVER_DRIVER_FILE=%s\n' "$RECEIVER_DRIVER_FILE"; } \
     | core_test application_binding::read_grant::receiver_action_driver::serve_isolated_receiver_actions true >/dev/null
   # Isolated sessions expire; the operator's refresher keeps the same files fresh.
-  (while sleep "${RECEIVER_SESSION_SECONDS:-120}"; do "$RECEIVER_SESSION_COMMAND" || exit 1; done) &
+  session_refresh_loop &
   echo $! > "$run/session-refresher.pid"
   cat <<EOF
 Receiver driver running in $RECEIVER_PROJECT-driver (receiverActionBaseUrl alias receiver-driver on $RECEIVER_NETWORK).
@@ -394,14 +492,16 @@ EOF
   ;;
 down)
   if [[ -s $run/session-refresher.pid ]]; then kill "$(cat "$run/session-refresher.pid")" 2>/dev/null || true; rm -f "$run/session-refresher.pid"; fi
-  "${docker[@]}" rm -f "$RECEIVER_PROJECT-driver" "$RECEIVER_PROJECT-forward-adapter" >/dev/null 2>&1 || true
+  "${docker[@]}" rm -f "$RECEIVER_PROJECT-driver" "$RECEIVER_PROJECT-forward-adapter" "$RECEIVER_PROJECT-forward-provider" >/dev/null 2>&1 || true
   if [[ -n ${RECEIVER_KNOWLEDGE_ENV:-} ]]; then
     knowledge=$(sed -n 's/^COMPOSE_PROJECT_NAME=\(kailo-knowledge-receiver[a-z0-9_-]*\)$/\1/p' "$RECEIVER_KNOWLEDGE_ENV")
-    [[ -z $knowledge ]] || "${docker[@]}" compose --project-name "$knowledge" down --volumes --remove-orphans
+    [[ -z $knowledge ]] || "${docker[@]}" compose --project-name "$knowledge" --env-file "$RECEIVER_KNOWLEDGE_ENV" \
+      -f "$src/knowledge/fork/deploy/compose.yaml" down --volumes --remove-orphans
   fi
   if [[ -n ${RECEIVER_CELLS_ENV:-} ]]; then
     cells=$(sed -n 's/^CELLS_COMPOSE_PROJECT=\(kailo-cells-conformance[a-z0-9_-]*\)$/\1/p' "$RECEIVER_CELLS_ENV")
-    [[ -z $cells ]] || "${docker[@]}" compose --project-name "$cells" down --volumes --remove-orphans
+    [[ -z $cells ]] || "${docker[@]}" compose --project-name "$cells" --env-file "$RECEIVER_CELLS_ENV" \
+      -f "$src/file-storage/deploy/compose.yaml" down --volumes --remove-orphans
   fi
   if [[ -f $platform/compose.yaml ]]; then
     [[ $(sed -n 's/^name: //p' "$platform/compose.yaml") == "$RECEIVER_PROJECT" ]] \

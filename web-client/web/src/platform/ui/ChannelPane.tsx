@@ -1,18 +1,21 @@
-import { detectPrefixQuery, selectedMentionLabel, extractMentionPubkeys, mentionMatchCandidates, mentionOccurrences, AmbiguousMentionError } from "@client-kit/platform/react/pulse";
-import { MentionAutocomplete, focusMentionOptionsTrigger, type MentionSuggestion } from "@client-kit/platform/react/composer/features/messages/ui/MentionAutocomplete";
-import { ChannelAutocomplete } from "@client-kit/platform/react/composer/features/messages/ui/ChannelAutocomplete";
-import { EmojiAutocomplete } from "@client-kit/platform/react/composer/features/messages/ui/EmojiAutocomplete";
+import { MessageComposerAutocompletes } from "@client-kit/platform/react/composer/features/messages/ui/MessageComposerAutocompletes";
+import { useComposerMentionPicker } from "@client-kit/platform/react/composer/features/messages/ui/useComposerMentionPicker";
+import { useComposerFocusOwnership } from "@client-kit/platform/react/composer/features/messages/lib/useComposerFocusOwnership";
+import { useComposerMentions } from "@client-kit/platform/react/composer/features/messages/lib/useComposerMentions";
+import { isMentionCodeContext } from "@client-kit/platform/react/composer/features/messages/lib/mentionCodeContext";
+import { useComposerDraftRestore } from "@client-kit/platform/react/composer/useComposerDraftLifecycle";
+import { useComposerContentState } from "@client-kit/platform/react/composer/useComposerContentState";
+import { useMessageComposerController, useComposerControls, composerKeyDown, useComposerSubmission, useComposerAutoSubmit } from "@client-kit/platform/react/composer/useMessageComposerController";
+import { extractMentionPubkeys, mentionMatchCandidates, mentionOccurrences, AmbiguousMentionError } from "@client-kit/platform/react/pulse";
+import { type MentionSuggestion } from "@client-kit/platform/react/composer/features/messages/ui/MentionAutocomplete";
 import { useComposerChannelLinkSources } from "@client-kit/platform/react/composer/features/messages/ui/ComposerChannelLinksContext";
 import { useChannelLinks, type ChannelSuggestion } from "@client-kit/platform/react/composer/features/messages/lib/useChannelLinks";
-import { rankMentionCandidates } from "@client-kit/platform/react/composer/features/messages/lib/mentionRanking";
-import { useComposerAutofocus } from "@client-kit/platform/react/composer/features/messages/lib/useComposerAutofocus";
-import { useComposerSpoilerParticles } from "@client-kit/platform/react/composer/features/messages/lib/useComposerSpoilerParticles";
 import { useEmojiAutocomplete, type EmojiSuggestion } from "@client-kit/platform/react/composer/features/messages/lib/useEmojiAutocomplete";
 import { writeTextToClipboard } from "@/shared/lib/clipboard";
 import { useComposerAgentDirectory } from "@client-kit/platform/react/composer/features/messages/ui/useComposerAgentDirectory";
 import { useTeamMentionCandidates } from "@client-kit/platform/react/composer/features/messages/ui/useTeamMentionCandidates";
-import { formatTeamMention, isTeamMentionSuggestion } from "@client-kit/platform/react/composer/features/messages/lib/teamMentionCandidates";
-import { findDmAgentMention, useDmAgentMentionNames } from "@client-kit/platform/react/composer/dmAgentMention";
+import { isTeamMentionSuggestion } from "@client-kit/platform/react/composer/features/messages/lib/teamMentionCandidates";
+import { useDmAgentMentionNames } from "@client-kit/platform/react/composer/dmAgentMention";
 import { ComposerPendingSendRecovery, ComposerQueuedSendPill } from "./ComposerQueuedSendPill";
 import { getPersistentAgentAudienceScope } from "@client-kit/platform/react/composer/features/messages/lib/persistentAgentAudience";
 import { setKeepMentionedAgentsPinned } from "@client-kit/platform/react/composer/features/messages/lib/autoPinMentionedAgentsPreference";
@@ -31,7 +34,6 @@ import { stripImplicitAgentMentionPrefix } from "@client-kit/platform/react/comp
 import { PublishRestrictionKind, ReasonCode, WebMessageType, type ReadMarkRequest, type ConversationView, type ConversationParticipant, type WorkspaceMemberView } from "@client-kit/contracts";
 import { useBffCustomEmojiPalette } from "@client-kit/platform/react/custom-emoji";
 import { ConversationPreparationPending, useConversationInvalidation } from "@client-kit/platform/react/new-message";
-import { useMentionSelection } from "@client-kit/platform/react/use-mention-selection";
 import { isOutcomeUnknown, TransportError } from "@client-kit/platform/transport";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { lazy, Suspense, useCallback, useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -58,7 +60,7 @@ import {
 } from "@/platform/bff-client";
 import { useGifCapability } from "@/platform/gif-capability";
 import { ComposerLinkPreviewCards, ComposerLinkPreviewPreparing, useComposerLinkPreviews, type PrepareLinkPreview } from "@client-kit/platform/react/link-preview";
-import { ComposerGifAttachments, withGifLines } from "@client-kit/platform/react/gifs";
+import { ComposerGifAttachments, withGifLines, gifAttachment, splitDraftGifMedia } from "@client-kit/platform/react/gifs";
 import type { WebGifItem } from "@client-kit/contracts";
 import { useTypingBroadcast } from "./useTypingBroadcast";
 import { platformQueries } from "@/platform/ui/queries";
@@ -83,7 +85,7 @@ import { useChannelWindow } from "./useChannelWindow";
 // DD-125(6): original ChannelComposerActivityAccessory (working Agents + typing) over the shared signal.
 import { ChannelComposerActivityAccessory, useChannelAgentActivity, type BotActivityAgent } from "@client-kit/platform/react/agent-activity";
 import { loadWorkspaceAgents } from "@client-kit/platform/react/agent-installation-view";
-import { truncateNpub } from "@client-kit/platform/react/conversations/pubkey";
+import { unknownMemberLabel } from "@client-kit/platform/react/messages/system/identity";
 import { ComposerDockBackdrop } from "@client-kit/platform/react/thread/ComposerDockBackdrop";
 import { useMessageReactions } from "./useMessageReactions";
 import { BffAudioAttachment } from "@/features/chat/ui/BffAudioAttachment";
@@ -112,15 +114,11 @@ import { useUiT } from "@client-kit/platform/react/context";
 import { ComposerReplyBanner } from "@client-kit/platform/react/messages";
 import { applyMessageEdits, imetaMediaFromTags, restoreImetaMediaDisplayLabels, stripImetaMediaLines, findSpoileredImetaMediaUrls, canRemoveLinkPreviews, useRemoveLinkPreviewsIntent, type LinkPreviewRemovalEdit } from "@client-kit/platform/react/messages";
 import { ForumComposerSurface } from "@client-kit/platform/react/forum/ForumComposerSurface";
-import { useRichTextEditor, type LinkSelectionInfo } from "@client-kit/platform/react/composer/features/messages/lib/useRichTextEditor";
 import { useComposerPasteHandler } from "@client-kit/platform/react/composer/features/messages/ui/useComposerPasteHandler";
 import { useComposerVoiceNote } from "@client-kit/platform/react/composer/features/messages/ui/useComposerVoiceNote";
-import { MAX_TRACKED_INTENTS, useMentionPasteBinding } from "@client-kit/platform/react/composer/features/messages/lib/mentionPasteBinding";
-import { trimMapToSize } from "@client-kit/platform/react/composer/shared/lib/trimMapToSize";
 import { partitionMentionIdentitiesByLocalTrust } from "@client-kit/platform/react/composer/features/messages/lib/mentionIdentityTrust";
-import { useLinkEditor } from "@client-kit/platform/react/composer/features/messages/lib/useLinkEditor";
 import type { ParsedMessageLink } from "@client-kit/platform/react/composer/features/messages/lib/messageLink";
-import { initDraftStore, loadDraftEntry, saveDraftEntry, clearDraftEntry, savePendingSend, loadPendingSend, clearPendingSend, subscribeToStore, type PendingSendStage, type PendingSendState } from "@client-kit/platform/react/composer/features/messages/lib/useDrafts";
+import { initDraftStore, loadDraftEntry, saveDraftEntry, clearDraftEntry, savePendingSend, loadPendingSend, loadPendingSendFiles, isDraftStoreScope, getDraftAuthority, claimDraftSend, clearPendingSend, subscribeToStore, type PendingSendStage, type PendingSendState } from "@client-kit/platform/react/composer/features/messages/lib/useDrafts";
 import { ComposerAttachments, DropZoneOverlay } from "@client-kit/platform/react/composer/features/messages/ui/ComposerAttachments";
 import type { UploadingAttachmentPreview } from "@client-kit/platform/react/composer/features/messages/lib/attachmentPreview";
 import { useComposerAttachmentSpoilers } from "@client-kit/platform/react/composer/features/messages/ui/useComposerAttachmentSpoilers";
@@ -438,9 +436,9 @@ export function ChannelPane({
   const { openAgentActivity } = agentActivityPanel.opener;
   const workingAgents = useMemo<BotActivityAgent[]>(() => (readableAgents ?? []).flatMap((row) => row.agentPubkey ? [{
     pubkey: row.agentPubkey,
-    name: row.agentDisplayName?.trim() || (typingAgents.data?.agents.find((agent) => agent.installation.resourceId === row.resourceId)?.displayName ?? truncateNpub(row.agentPubkey)),
+    name: row.agentDisplayName?.trim() || (typingAgents.data?.agents.find((agent) => agent.installation.resourceId === row.resourceId)?.displayName ?? unknownMemberLabel(uiT)),
     ...(row.canAudit === true ? { auditInstallationId: row.resourceId } : {}),
-  }] : []), [readableAgents, typingAgents.data]);
+  }] : []), [readableAgents, typingAgents.data, uiT]);
   const humanTypingEntries = window.typing.filter(entry => !mine.has(entry.pubkey)
     && entry.pubkey !== ownProfile.data?.pubkey && !agentTypingPubkeys.has(entry.pubkey)
     && !agentActivity.agentPubkeys.has(entry.pubkey.toLowerCase()));
@@ -1077,6 +1075,8 @@ export function ChannelPane({
   );
 }
 
+type RestoredAttachment = { id: number; name: string; file?: File };
+
 type Pending = { name: string; descriptor: MediaDescriptor; receivedAt: number };
 /** One attach() call: its files upload one after another; a queued send owns the batches in flight at Send. */
 type UploadBatch = { remaining: File[]; active: Map<number, File>; canceled: boolean };
@@ -1084,8 +1084,8 @@ type UploadBatch = { remaining: File[]; active: Map<number, File>; canceled: boo
 type SendSnapshot = {
   content: string; pending: Pending[]; gifs: WebGifItem[]; bindings: Map<string, string>; installationIds: string[];
   spoilers: ReadonlySet<string>; intent: { current: { key: string; signature: string } | null };
-  linkPreviews?: LinkPreviewPublication; cleared: boolean;
-  batches: ReadonlySet<UploadBatch>; remainingFiles: File[]; failed: boolean;
+  linkPreviews?: LinkPreviewPublication; cleared: boolean; ownsRecovery: () => boolean;
+  batches: ReadonlySet<UploadBatch>; remainingFiles: File[]; failed: boolean; uploadUnknown?: boolean;
 };
 /** Draft keys whose cleared send is being published by this page (a revisit shows it as in flight). */
 const publishingPendingSends = new Set<string>();
@@ -1094,8 +1094,6 @@ const publishingPendingSends = new Set<string>();
  * 一次发送意图的幂等键（UUID v4）。不用 crypto.randomUUID：它只在安全上下文中
  * 存在，而 getRandomValues 在任何上下文都可用。
  */
-/** Original useMentions MENTION_SUGGESTION_LIMIT. */
-const MENTION_SUGGESTION_LIMIT = 50;
 
 function newIntentKey(): string {
   const b = crypto.getRandomValues(new Uint8Array(16));
@@ -1155,11 +1153,9 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
 }) {
   const customEmoji = useBffCustomEmojiPalette(bff);
   const [confirmedSendRevision, setConfirmedSendRevision] = useState(0);
-  const [humanQuery, setHumanQuery] = useState<{query:string;startIndex:number;cursor:number}|null>(null);
   const humanBindings = useRef(new Map<string,string>());
   const mentionPeopleRef = useRef(mentionPeople);
   mentionPeopleRef.current = mentionPeople;
-  const [humanNames,setHumanNames] = useState<string[]>([]);
   const agentDirectory = useComposerAgentDirectory(bff, {workspaceId, principalId: draftIdentity}, workspaceId !== undefined && channelType !== "dm" && !editTarget);
   const agentPeople = useMemo(() => agentDirectory.data?.agents.map(agent => ({pubkey: agent.pubkey, displayName: agent.displayName, avatarUrl: agent.avatarUrl, isAgent: true})) ?? [], [agentDirectory.data]);
   // DD-125(8): only a Workspace channel's new message or thread reply looks outside the channel.
@@ -1176,7 +1172,6 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
   // inserts ordinary mentions of the members' Installations in this channel (never a team identity).
   const teamMentions = useTeamMentionCandidates(bff, {principal: draftIdentity, workspaceId}, agentDirectory.data?.agents,
     workspaceId !== undefined && channelType !== "dm" && !editTarget);
-  const autocompleteCandidates = useMemo<MentionSuggestion[]>(() => [...mentionCandidates, ...teamMentions], [mentionCandidates, teamMentions]);
   const knownAgentKeys = useMemo(() => new Set<string>(), [workspaceId, draftIdentity, draftKey]);
   const knownAgentInstallations = useMemo(() => new Map<string,string>(), [workspaceId, draftIdentity, draftKey]);
   for (const agent of agentPeople) knownAgentKeys.add(agent.pubkey);
@@ -1186,16 +1181,22 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
     ? getPersistentAgentAudienceScope({ownerPubkey: agentDirectory.data.ownerPubkey, channelId: agentDirectory.data.channelId, composerKey: draftKey}) : null;
   const implicitAgentMentionProvenance = useImplicitAgentMentionProvenance(audienceScope);
   const {audience, keepMentionedAgentsPinned} = useThreadAgentAudience({isAgentPubkey, rootTags: audienceContext?.rootTags ?? [], scope: audienceScope});
-  // Original useMentions ranking (exact > prefix > word > pubkey) and suggestion limit.
-  const humanSuggestions = useMemo(()=>humanQuery===null ? [] : rankMentionCandidates(autocompleteCandidates, humanQuery.query)
-    .slice(0, MENTION_SUGGESTION_LIMIT).map(({candidate})=>candidate),[autocompleteCandidates,humanQuery]);
-  const {mentionSelectedIndex:humanIndex,setMentionSelectedIndex:setHumanIndex}=useMentionSelection(humanSuggestions);
-  useEffect(() => { if (nonMemberFlow && humanQuery !== null) setOutsideDirectoryWanted(true); }, [nonMemberFlow, humanQuery]);
+  const composerMentions = useComposerMentions({
+    candidates: useMemo(() => mentionCandidates.map(person => ({ ...person, isMember: person.notInChannel !== true,
+      role: person.role === "admin" ? "admin" as const : null })), [mentionCandidates]),
+    teams: teamMentions, scope: JSON.stringify([workspaceId, draftIdentity, draftKey]), selectedMentions: humanBindings,
+    verifyMentionIdentities: async records => partitionMentionIdentitiesByLocalTrust(records,
+      pubkey => mentionPeopleRef.current?.filter(person => person.pubkey.toLowerCase() === pubkey).map(person => person.displayName) ?? []).trusted,
+  });
+  const { suggestions: humanSuggestions, knownNames: humanNames, mentionSelectedIndex: humanIndex,
+    pasteBinding, registerMentionPubkey, insertMention,
+    openMentionPicker, getMentionDisplayName, isInlineMentionSelection } = composerMentions;
+  const humanQuery = composerMentions.mentionQuery === null ? null : { query: composerMentions.mentionQuery, startIndex: composerMentions.mentionStartIndex };
+  useEffect(() => { if (nonMemberFlow && humanQuery !== null) setOutsideDirectoryWanted(true); }, [nonMemberFlow, composerMentions.mentionQuery]);
   // Original MessageComposer `#channel` and `:shortcode` autocompletes (shared with Desktop).
   const channelLinks = useChannelLinks(useComposerChannelLinkSources());
   const emojiAutocomplete = useEmojiAutocomplete();
-  const [draft, setDraft] = useState("");
-  const [draftRevision, setDraftRevision] = useState(0);
+  const { content: draft, revision: draftRevision, setComposerContent: setDraft } = useComposerContentState();
   // DD-125(5) original composer link previews (BFF fetch host) and GIF chips. Only new STREAM
   // messages carry them; an edit names neither (original edit mode turns previews off).
   const [previewContent, setPreviewContent] = useState("");
@@ -1260,11 +1261,46 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
   const picker = useRef<HTMLInputElement>(null);
   // 当前发送意图：内容与附件不变时重发沿用同一个键——结果不明之后再点发送，
   // BFF 回答原操作的结论而不是再发一条（DD-81）。确定的结论之后换新键。
-  const intent = useRef<{ key: string; signature: string } | null>(null);
   const owner = useMemo(() => ({ active: true, sending: false }), [workspaceId, draftIdentity, draftKey, editTarget?.id]);
+  const intent = useMemo(() => ({ current: null as { key: string; signature: string } | null }), [owner]);
+  const captureRecoveryAuthority = () => {
+    if (!draftIdentity || !draftKey) return () => owner.active;
+    claimDraftSend(draftKey);
+    const authority = getDraftAuthority(draftKey);
+    const sendRevision = authority.revision - authority.authoredRevision;
+    return () => isDraftStoreScope(draftIdentity, window.location.origin) &&
+      getDraftAuthority(draftKey) === authority && authority.revision - authority.authoredRevision === sendRevision;
+  };
+  const pendingSendOwnerKey = JSON.stringify([window.location.origin, draftIdentity, draftKey]);
   useEffect(() => { owner.active = true; return () => { owner.active = false; }; }, [owner]);
   // Files awaiting this owner's real BFF upload receipt are not yet imeta.
   const queuedAttachmentsRef = useMemo(() => ({ current: [] as { file: File }[] }), [owner]);
+  const [restoredAttachments, setRestoredAttachments] = useState<RestoredAttachment[]>([]);
+  const restoredAttachmentsRef = useRef<RestoredAttachment[]>([]);
+  const replaceRestoredAttachments = useCallback((items: RestoredAttachment[]) => {
+    const previous = new Set(restoredAttachmentsRef.current.flatMap(item => item.file ? [item.file] : []));
+    queuedAttachmentsRef.current = queuedAttachmentsRef.current.filter(item => !previous.has(item.file));
+    queuedAttachmentsRef.current.push(...items.flatMap(item => item.file ? [{ file: item.file }] : []));
+    restoredAttachmentsRef.current = items;
+    setRestoredAttachments(items);
+  }, [queuedAttachmentsRef]);
+  const holdPendingFiles = useCallback((record: PendingSendState, files: File[]) => {
+    const available = [...files];
+    replaceRestoredAttachments(record.missingFileNames.map(name => {
+      const index = available.findIndex(file => file.name === name);
+      const file = index < 0 ? undefined : available.splice(index, 1)[0];
+      return { id: nextUploadPreviewId.current++, name, file };
+    }));
+  }, [replaceRestoredAttachments]);
+  const removeRestoredAttachment = useCallback((id: number) => {
+    const items = restoredAttachmentsRef.current.filter(item => item.id !== id);
+    replaceRestoredAttachments(items);
+    if (!draftIdentity || !draftKey || !isDraftStoreScope(draftIdentity, window.location.origin)) return;
+    const record = loadPendingSend(draftKey);
+    if (!items.length && pendingGifsRef.current.length === 0) clearPendingSend(draftKey);
+    else if (record) savePendingSend(draftKey, { ...record, missingFileNames: items.map(item => item.name) },
+      items.flatMap(item => item.file ? [item.file] : []));
+  }, [replaceRestoredAttachments, draftIdentity, draftKey]);
   const asBlob = (entry: Pending): ImetaMedia => ({ ...entry.descriptor, uploaded: entry.receivedAt });
   const removeAttachment = useCallback((url: string) => {
     setPending((items) => items.filter((item) => item.descriptor.url !== url));
@@ -1363,7 +1399,11 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
           // Original cancelUpload: a canceled file raises no problem and never becomes imeta.
           if (upload.signal.aborted) continue;
           const target = queuedRef.current?.batches.has(batch) ? queuedRef.current : null;
-          if (target) target.failed = true;
+          if (target) {
+            target.failed = true;
+            target.uploadUnknown ||= isOutcomeUnknown(e);
+            target.remainingFiles.push(file);
+          }
           setProblemNeutral(e instanceof ConversationPreparationPending || isOutcomeUnknown(e));
           // 413 是 BFF 侧先行设定的上界，是确定的拒绝；其余是结果不明
           setProblem(
@@ -1386,12 +1426,7 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
     [workspaceId, onUpload, owner, queuedAttachmentsRef, finishUpload],
   );
 
-  const [isEmojiPickerOpen, setIsEmojiPickerOpen] = useState(false);
-  const [isFormattingOpen, setIsFormattingOpen] = useState(false);
-  const handleFormattingToggle = useCallback((pressed: boolean) => {
-    if (pressed) setIsEmojiPickerOpen(false);
-    setIsFormattingOpen(pressed);
-  }, []);
+  const { isEmojiPickerOpen, setIsEmojiPickerOpen, isFormattingOpen, setIsFormattingOpen, handleFormattingToggle } = useComposerControls();
   const pendingImetaRef = useRef<readonly ImetaMedia[]>([]);
   pendingImetaRef.current = pending.map(asBlob);
   const uploadVoiceFile = useCallback((file: File) => attach([file]), [attach]);
@@ -1399,7 +1434,7 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
     // Original recording context is also partitioned by this BFF actor/scope.
     draftKey: JSON.stringify([workspaceId, draftIdentity, draftKey]),
     editTargetId: editTarget?.id ?? null,
-    media: { pendingImetaRef, queuedAttachmentsRef, uploadFile: uploadVoiceFile },
+    media: { pendingImetaRef, queuedAttachmentsRef, uploadFile: uploadVoiceFile, uploadFiles: attach },
     setEmojiPickerOpen: setIsEmojiPickerOpen,
     setFormattingOpen: setIsFormattingOpen,
   });
@@ -1407,32 +1442,21 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
     for (const file of Array.from(files ?? [])) await voiceNote.uploadFileWhenIdle(file);
   }, [voiceNote.uploadFileWhenIdle]);
   const sendRef = useRef<(decision?: NonMemberDecision) => void>(() => {});
-  const onEditLastOwnMessageRef = useRef(onEditLastOwnMessage);
-  onEditLastOwnMessageRef.current = onEditLastOwnMessage;
-  const editTargetRef = useRef(editTarget);
-  editTargetRef.current = editTarget;
-  const editLinkRef = useRef<(info: LinkSelectionInfo) => void>(() => {});
-  const linkSelectionRef = useRef<(info: LinkSelectionInfo | null) => void>(() => {});
-  const linkShortcutRef = useRef<() => boolean>(() => false);
-  const autocompleteOpenRef = useRef(false);
-  autocompleteOpenRef.current = humanSuggestions.length > 0 || channelLinks.isChannelOpen || emojiAutocomplete.isEmojiAutocompleteOpen;
-  const mentionPickerOriginRef = useRef<"inline" | "explicit" | null>(null);
   const syncAddressedAgentsFromTextRef = useRef<(text: string) => void>(() => {});
-  const pasteBinding = useMentionPasteBinding({
-    registerVerifiedMentionPubkey: (label, pubkey) => {
-      if (!owner.active) return;
-      humanBindings.current.set(label, pubkey);
-      trimMapToSize(humanBindings.current, MAX_TRACKED_INTENTS);
-      setHumanNames([...humanBindings.current.keys()]);
-    },
-    verifyMentionIdentities: async (records) => partitionMentionIdentitiesByLocalTrust(records,
-      (pubkey) => mentionPeopleRef.current?.filter(person => person.pubkey.toLowerCase() === pubkey)
-        .map(person => person.displayName) ?? []).trusted,
-  });
   useEffect(() => () => pasteBinding.clearMentionIntents(), [owner, pasteBinding.clearMentionIntents]);
   const onTypingRef = useRef(onTyping);
   onTypingRef.current = onTyping;
-  const richText = useRichTextEditor({
+  const { richText, linkEditor, composerScrollRef, formRef, focusComposerEnd,
+    applyAutocompleteEdit, handleSubmit, handleCaptureSelection } = useMessageComposerController({
+    links: {
+      openExternal: url => { window.open(url, "_blank", "noopener,noreferrer"); },
+      openMessageLink: link => { if (onOpenMessageLink) onOpenMessageLink(link); else setProblem(t("platform.linkOpenFromChannel")); },
+    },
+    draftKey, autofocusDisabled: disabled || sending || compact,
+    editing: Boolean(editTarget), replyTarget,
+    autocompleteOpen: humanSuggestions.length > 0 || channelLinks.isChannelOpen || emojiAutocomplete.isEmojiAutocompleteOpen,
+    onEditLastOwnMessage, submit: () => sendRef.current(),
+    editor: {
     placeholder: placeholder ?? t("platform.message"), editable: !disabled && !sending,
     restoreFocusOnEnable: () => !compact || Boolean(draft.trim() || pending.length || problem),
     readClipboardText: () => navigator.clipboard.readText(),
@@ -1442,64 +1466,16 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
     agentMentionNames:humanNames.filter(name => knownAgentKeys.has(humanBindings.current.get(name) ?? "")),
     getMentionIdentities:()=>[...humanBindings.current].map(([label,pubkey])=>({label,pubkey})),
     onUpdate: ({ text, cursor, linkPreviewContent }) => {
-      setDraft(text); setDraftRevision((value) => value + 1); setPreviewContent(linkPreviewContent);
+      setDraft(text); setPreviewContent(linkPreviewContent);
       if (!editTarget && text.trim().length > 0) onTypingRef.current?.();
       if (!sending && !editTarget) syncAddressedAgentsFromTextRef.current(text);
-      const query=detectPrefixQuery("@",text,cursor,autocompleteCandidates.map(person=>person.displayName.toLowerCase()));
-      if (query) mentionPickerOriginRef.current = "inline";
-      else if (mentionPickerOriginRef.current === "inline") mentionPickerOriginRef.current = null;
-      setHumanQuery(query?{...query,cursor}:null);
+      composerMentions.updateMentionQuery(text, cursor);
       channelLinks.updateChannelQuery(text, cursor);
       emojiAutocomplete.updateEmojiQuery(text, cursor);
-    }, onSubmit: () => sendRef.current(),
-    onEditLastOwnMessage: () => {
-      if (editTargetRef.current) return false;
-      const handler = onEditLastOwnMessageRef.current;
-      return handler ? handler() : false;
     },
-    isAutocompleteOpen: autocompleteOpenRef,
-    onEditLink: (info) => editLinkRef.current(info),
-    onLinkSelectionChange: (info) => linkSelectionRef.current(info),
-    onLinkShortcut: () => linkShortcutRef.current(),
-  });
-  // Original MessageComposer: focus on mount and on channel/thread (draft key) change. The caret
-  // goes to the end as richText.focus does; the bottom-docked composer needs no scroll.
-  const focusComposerEnd = useCallback(() => { richText.editor?.commands.focus("end", { scrollIntoView: false }); }, [richText.editor]);
-  useComposerAutofocus(focusComposerEnd, draftKey, disabled || sending || compact);
-  // Original composer spoiler particles over `||spoiler||` marks while editing.
-  const composerScrollRef = useRef<HTMLDivElement>(null);
-  useComposerSpoilerParticles(richText.editor, composerScrollRef);
-  const registerMentionPubkey = useCallback((displayName: string, pubkey: string) => {
-    const label=selectedMentionLabel(displayName,pubkey,humanBindings.current);
-    pasteBinding.claimMentionIntent(label);
-    humanBindings.current.set(label,pubkey);
-    trimMapToSize(humanBindings.current, MAX_TRACKED_INTENTS);
-    setHumanNames(current => current.includes(label) ? current : [...current, label]);
-    return label;
-  }, [pasteBinding.claimMentionIntent]);
-  const insertMention = useCallback((person: MentionSuggestion, cursor: number) => {
-    const label = registerMentionPubkey(person.displayName, person.pubkey);
-    // 与原 useMentions.insertMention 一致：替换到选择时的实时光标。用 Enter 选候选时编辑器已先
-    // splitBlock，旧 query 光标会把那次分段留在 @提及后面（消息变成 "@Agent\n\n 正文"）。
-    const edit = {replaceFromOffset: humanQuery?.startIndex ?? cursor, replaceToOffset: cursor, insertText: "@" + label + " "};
-    setHumanQuery(null);setHumanIndex(0);
-    return edit;
-  }, [registerMentionPubkey, humanQuery, setHumanIndex]);
-  const openMentionPicker = useCallback((cursor: number, preference?: "preserve") => {
-    mentionPickerOriginRef.current = "explicit";
-    setHumanQuery(current => preference === "preserve" && current ? {...current, startIndex: cursor} : {query:"", startIndex:cursor, cursor});
-  }, []);
-  const openPeople=useCallback(()=>{
-    if (humanQuery) {setHumanQuery(null); richText.editor?.commands.focus(); return;}
-    const position=richText.getPlainTextAndCursor();
-    openMentionPicker(position.cursor);
-    setHumanIndex(Math.max(0, mentionCandidates.findIndex(person => person.isAgent)));
-    richText.editor?.commands.focus();
-  }, [humanQuery, richText.getPlainTextAndCursor, richText.editor, openMentionPicker, mentionCandidates, setHumanIndex]);
-  const getDraftMentionRefs = useCallback((content: string) => mentionOccurrences(content, mentionMatchCandidates({selectedMentions: humanBindings.current, memberCandidates: mentionCandidates.map(person => ({...person, isMember: person.notInChannel !== true}))})).flatMap(({candidates}) => candidates.flatMap(candidate => candidate.pubkey ? [{pubkey:candidate.pubkey, displayName:candidate.displayName, isAgent:knownAgentKeys.has(candidate.pubkey)}] : [])), [mentionCandidates, knownAgentKeys]);
-  const getMentionDisplayName = useCallback((pubkey: string) => mentionCandidates.find(person => person.pubkey === pubkey)?.displayName, [mentionCandidates]);
-  const isInlineMentionSelection = useCallback(() => mentionPickerOriginRef.current === "inline", []);
-  const applyAutocompleteEdit = useCallback((edit: import("@client-kit/platform/react/composer/features/messages/lib/useRichTextEditor").AutocompleteEdit) => richText.replacePlainTextRange(edit.replaceFromOffset, edit.replaceToOffset, edit.insertText, edit.preserveSelection, edit.reassertMentionCaret), [richText.replacePlainTextRange]);
+  }});
+  const getDraftMentionRefs = useCallback((content: string) => composerMentions.getLiveMentionRefs(content)
+    .map(ref => ({ ...ref, isAgent: ref.isAgent === true || knownAgentKeys.has(ref.pubkey) })), [composerMentions.getLiveMentionRefs, knownAgentKeys]);
   const applyChannelInsert = useCallback((suggestion: ChannelSuggestion) => {
     const { cursor } = richText.getPlainTextAndCursor();
     applyAutocompleteEdit(channelLinks.insertChannel(suggestion, cursor));
@@ -1511,6 +1487,9 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
   const addressPulse = useAddressMentionPulse();
   const autoPin = useAutoPinMentionedAgents({audienceScope, enabled:keepMentionedAgentsPinned, getDisplayName:getMentionDisplayName,
     onPulse:addressPulse.pulseOne, onTurnOff:() => setKeepMentionedAgentsPinned(false), onTurnOn:() => setKeepMentionedAgentsPinned(true)});
+  const mentionPicker = useComposerMentionPicker({ mentions: composerMentions, richText, onTurnOffAutoPinConfirmation: autoPin.turnOffConfirmation });
+  const openPeople = mentionPicker.openMentionSettings;
+  const composerOwnsFocus = useComposerFocusOwnership(formRef);
   const addressLock = useAgentAddressLockPicker({audience, audienceScope, applyAutocompleteEdit, richText,
     onImplicitPrefixInserted: implicitAgentMentionProvenance.add,
     onImplicitPrefixRemoved: implicitAgentMentionProvenance.remove,
@@ -1531,43 +1510,27 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
   const handleAlwaysAddressShortcut = useAlwaysAddressShortcut({enabled: Boolean(audienceScope && !editTarget), lockedAgent:addressLock.lockedAgents[0],
     mentions:{getDefaultAgentSuggestion, isMentionOpen:humanQuery !== null && humanSuggestions.length > 0, mentionSelectedIndex:humanIndex, suggestions:humanSuggestions},
     onOpenPicker:openPeople, onToggle:addressLock.toggleAlwaysAddressAgent});
-  // Original useMentions.insertMention team branch: each member label is bound to its exact
-  // Installation key, then `Team(@A @B) ` is inserted; publication derives the agent mentions.
-  const insertTeamMention = (team: MentionSuggestion) => {
-    const members = team.teamMembers ?? [];
-    if (members.length === 0 || members.some(member => !member.pubkey || !knownAgentKeys.has(member.pubkey))) return;
-    const labels = members.map(member => ({displayName: registerMentionPubkey(member.displayName, member.pubkey!)}));
-    const {cursor} = richText.getPlainTextAndCursor();
-    applyAutocompleteEdit({replaceFromOffset: humanQuery?.startIndex ?? cursor, replaceToOffset: cursor, insertText: formatTeamMention(team.displayName, labels)});
-    setHumanQuery(null); setHumanIndex(0);
-  };
   const selectHuman = (person: MentionSuggestion) => {
     if (isTeamMentionSuggestion(person)) {
-      if (!disabled && !sending && teamMentions.some(team => team.teamId === person.teamId)) insertTeamMention(person);
+      if (!disabled && !sending && teamMentions.some(team => team.teamId === person.teamId)) {
+        applyAutocompleteEdit(composerMentions.insertMention(person, richText.getPlainTextAndCursor().cursor));
+      }
       return;
     }
-    if (disabled || sending || !mentionCandidates.some(candidate => candidate.pubkey === person.pubkey && candidate.isAgent === person.isAgent)) return;
+    if (disabled || sending || !mentionCandidates.some(candidate => candidate.pubkey === person.pubkey && Boolean(candidate.isAgent) === Boolean(person.isAgent))) return;
     addressLock.selectMentionSuggestion(person);
   };
   const scrollAfterPaste = useCallback(() => {
     const view = richText.editor?.view;
     if (view) view.dispatch(view.state.tr.scrollIntoView());
   }, [richText.editor]);
-  useComposerPasteHandler({ editor: richText.editor,
+  const paste = useComposerPasteHandler({ editor: richText.editor, owner, enabled: !disabled && !sending,
     bindMentionIdentities: pasteBinding.bindPastedMentionIdentities,
-    scrollToBottom: scrollAfterPaste, uploadFile: voiceNote.uploadFileWhenIdle,
+    scrollToBottom: scrollAfterPaste, uploadFiles: voiceNote.uploadFilesWhenIdle,
   });
-  const linkEditor = useLinkEditor(richText, {
-    openExternal: (url) => { window.open(url, "_blank", "noopener,noreferrer"); },
-    openMessageLink: (link) => { if (onOpenMessageLink) onOpenMessageLink(link); else setProblem(t("platform.linkOpenFromChannel")); },
-  });
-  editLinkRef.current = linkEditor.openFromClick;
-  linkSelectionRef.current = linkEditor.showFromCursor;
-  linkShortcutRef.current = linkEditor.openFromShortcut;
   const draftReady = useRef(false);
   const [loadedDraftOwner, setLoadedDraftOwner] = useState<typeof owner | null>(null);
-  useEffect(() => {
-    if (!richText.editor) return;
+  useComposerDraftRestore({ owner, ready: richText.editor !== null, restore: () => {
     if (draftIdentity && draftKey) initDraftStore(draftIdentity, window.location.origin);
     const saved = draftIdentity && draftKey ? loadDraftEntry(draftKey) : undefined;
     const editableMedia = editTarget ? restoreImetaMediaDisplayLabels(editTarget.body, imetaMediaFromTags(editTarget.tags)) : [];
@@ -1575,8 +1538,9 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
     richText.setContent(content);
     setDraft(content);
     setPreviewContent(content);
-    setPendingGifs([]);
-    setPending((saved?.pendingImeta ?? editableMedia).map(({ uploaded, ...descriptor }) => ({
+    const restoredMedia = splitDraftGifMedia(saved?.pendingImeta ?? editableMedia);
+    setPendingGifs(restoredMedia.gifs);
+    setPending(restoredMedia.attachments.map(({ uploaded, ...descriptor }) => ({
       name: descriptor.filename ?? descriptor.sha256,
       receivedAt: uploaded,
       descriptor,
@@ -1586,7 +1550,7 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
     pasteBinding.clearMentionIntents();
     humanBindings.current = new Map((saved?.mentionRefs ?? []).map(ref => [ref.displayName, ref.pubkey]));
     for (const ref of saved?.mentionRefs ?? []) if (ref.isAgent === true) knownAgentKeys.add(ref.pubkey);
-    setHumanNames([...humanBindings.current.keys()]);setHumanQuery(null);
+    composerMentions.refreshSelectedNames();composerMentions.cancelMentionAutocomplete();
     channelLinks.clearChannels(); emojiAutocomplete.clearEmojis();
     setSending(false);
     setUploading(0);
@@ -1603,8 +1567,19 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
     setQueued(null);
     setClearedPublishing(0);
     const pendingSend = draftIdentity && draftKey && !editTarget ? loadPendingSend(draftKey) : undefined;
-    setRecovery(pendingSend ? { files: [], record: { ...pendingSend, stage: publishingPendingSends.has(draftKey!) ? "publishing"
-      : pendingSend.stage === "publishing" ? "unknown" : pendingSend.stage === "uploading" ? "failed" : pendingSend.stage } } : null);
+    const files = pendingSend ? loadPendingSendFiles(draftKey!) : [];
+    const extra = pendingSend?.extras as { restored?: boolean; uploadUnknown?: boolean; gifs?: WebGifItem[] } | undefined;
+    replaceRestoredAttachments([]);
+    if (pendingSend && extra?.restored) {
+      setPendingGifs(Array.isArray(extra.gifs) ? extra.gifs : []);
+      holdPendingFiles(pendingSend, files);
+      setRecovery(null);
+    } else {
+      setRecovery(pendingSend ? { files, record: { ...pendingSend,
+        extras: { ...(pendingSend.extras as object), ...(pendingSend.stage === "uploading" ? { uploadUnknown: true } : {}) },
+        stage: publishingPendingSends.has(pendingSendOwnerKey) ? "publishing"
+          : pendingSend.stage === "publishing" || pendingSend.stage === "uploading" ? "unknown" : pendingSend.stage } } : null);
+    }
     setIsEmojiPickerOpen(false);
     setProblem(null);
     setProblemNeutral(false);
@@ -1614,7 +1589,7 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
     draftReady.current = Boolean(draftIdentity && draftKey);
     setLoadedDraftOwner(owner);
     return () => { draftReady.current = false; };
-  }, [draftIdentity, draftKey, richText.editor, richText.setContent, owner]);
+  }});
   useEffect(() => {
     if (loadedDraftOwner === owner && !editTarget) addressLock.restoreAddressedAgentMentions();
   }, [loadedDraftOwner, owner, editTarget, audienceScope, addressLock.restoreAddressedAgentMentions]);
@@ -1623,26 +1598,30 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
     // Normal drafts retain authored text, not the original addressing prefix.
     // A captured publication/UNKNOWN retry retains its exact content and key.
     const content = intent.current ? editorContent : stripImplicitAgentMentionPrefix(editorContent, implicitAgentMentionProvenance.getPrefix());
-    if (!content.trim() && attachments.length === 0 && !intent.current) { clearDraftEntry(draftKey); return; }
+    const recovered = loadPendingSend(draftKey);
+    if ((recovered?.extras as { restored?: boolean } | undefined)?.restored) {
+      savePendingSend(draftKey, { ...recovered!, extras: { ...(recovered!.extras as object), gifs: pendingGifsRef.current } });
+    }
+    if (!content.trim() && attachments.length === 0 && pendingGifsRef.current.length === 0 && !intent.current) { clearDraftEntry(draftKey); return; }
     const previous = loadDraftEntry(draftKey);
     const timestamp = new Date().toISOString();
     saveDraftEntry(draftKey, {
       content, channelId: workspaceId ?? draftChannelId ?? draftKey, selectionStart: content.length, selectionEnd: content.length,
       createdAt: previous?.createdAt ?? timestamp, updatedAt: timestamp, status: "active",
-      pendingImeta: attachments.map(asBlob),
+      pendingImeta: [...attachments.map(asBlob), ...pendingGifsRef.current.map(gifAttachment)],
       spoileredAttachmentUrls: [...attachmentActions.spoileredAttachmentUrls], ...(intent.current ? { sendIntent: intent.current } : {}),
       mentionInstallationIds: installationIds,
       mentionRefs: [...humanBindings.current].map(([displayName, pubkey]) => ({displayName, pubkey, ...(knownAgentKeys.has(pubkey) ? {isAgent:true} : {})})),
     });
   }, [draftKey, workspaceId, draftChannelId, owner, loadedDraftOwner, mentionInstallationIds, attachmentActions.spoileredAttachmentUrls, knownAgentKeys, implicitAgentMentionProvenance.getPrefix]);
-  useEffect(() => { persistDraft(richText.getMarkdown(), pending); }, [draftRevision, pending, persistDraft, richText.getMarkdown]);
+  useEffect(() => { persistDraft(richText.getMarkdown(), pending); }, [draftRevision, pending, pendingGifs, persistDraft, richText.getMarkdown]);
 
   // DD-146 pending send: the frozen message as a draft-store record (original
   // saveQueuedAttachmentsForDraft keeps its local files; Kailo keeps only their names).
   const pendingSendRecord = useCallback((snapshot: SendSnapshot, stage: PendingSendStage): PendingSendState => {
     const timestamp = new Date().toISOString();
-    return { stage, extras: { gifs: snapshot.gifs },
-      missingFileNames: [...snapshot.batches].flatMap(batch => [...batch.active.values(), ...batch.remaining]).concat(snapshot.remainingFiles).map(file => file.name),
+    return { stage, extras: { gifs: snapshot.gifs, uploadUnknown: snapshot.uploadUnknown === true },
+      missingFileNames: [...new Set([...snapshot.batches].flatMap(batch => [...batch.active.values(), ...batch.remaining]).concat(snapshot.remainingFiles))].map(file => file.name),
       draft: { content: snapshot.content, channelId: workspaceId ?? draftChannelId ?? draftKey ?? "", selectionStart: snapshot.content.length,
         selectionEnd: snapshot.content.length, createdAt: timestamp, updatedAt: timestamp, status: "active",
         pendingImeta: snapshot.pending.map(asBlob), spoileredAttachmentUrls: [...snapshot.spoilers],
@@ -1650,7 +1629,8 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
         mentionRefs: [...snapshot.bindings].map(([displayName, pubkey]) => ({displayName, pubkey, ...(knownAgentKeys.has(pubkey) ? {isAgent: true} : {})})) } };
   }, [workspaceId, draftChannelId, draftKey, knownAgentKeys]);
   const persistPendingSend = useCallback((snapshot: SendSnapshot, stage: PendingSendStage) => {
-    if (draftIdentity && draftKey) savePendingSend(draftKey, pendingSendRecord(snapshot, stage));
+    if (snapshot.ownsRecovery() && draftIdentity && draftKey) savePendingSend(draftKey, pendingSendRecord(snapshot, stage),
+      [...new Set([...snapshot.batches].flatMap(batch => [...batch.active.values(), ...batch.remaining]).concat(snapshot.remainingFiles))]);
   }, [draftIdentity, draftKey, pendingSendRecord]);
   persistQueuedRef.current = (snapshot) => persistPendingSend(snapshot, "uploading");
   const clearComposer = useCallback(() => {
@@ -1658,7 +1638,7 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
     setDraft("");
     setPreviewContent("");
     pasteBinding.clearMentionIntents();
-    humanBindings.current = new Map(); setHumanNames([]); setHumanQuery(null);
+    humanBindings.current = new Map(); composerMentions.refreshSelectedNames(); composerMentions.cancelMentionAutocomplete();
     channelLinks.clearChannels(); emojiAutocomplete.clearEmojis();
     setPending([]);
     setPendingGifs([]);
@@ -1666,9 +1646,10 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
     attachmentActions.setSpoileredAttachmentUrls(new Set());
     setMentionInstallationIds([]);
     intent.current = null;
-  }, [richText.setContent, pasteBinding, channelLinks.clearChannels, emojiAutocomplete.clearEmojis, attachmentActions.setSpoileredAttachmentUrls]);
+  }, [intent, richText.setContent, pasteBinding, channelLinks.clearChannels, emojiAutocomplete.clearEmojis, attachmentActions.setSpoileredAttachmentUrls]);
   // Original restoreComposerAfterFailure: the frozen message returns to the composer, its key
-  // with it (an UNKNOWN retry stays the same publication), and its canceled files upload again.
+  // with it (an UNKNOWN retry stays the same publication). Unconfirmed files
+  // return to the original local queue; only an explicit Send uploads them.
   const applyPendingSend = useCallback(({ record, files }: { record: PendingSendState; files: File[] }) => {
     const { draft: saved } = record;
     richText.setContent(saved.content);
@@ -1682,22 +1663,26 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
     setMentionInstallationIds(saved.mentionInstallationIds ?? []);
     humanBindings.current = new Map((saved.mentionRefs ?? []).map(ref => [ref.displayName, ref.pubkey]));
     for (const ref of saved.mentionRefs ?? []) if (ref.isAgent === true) knownAgentKeys.add(ref.pubkey);
-    setHumanNames([...humanBindings.current.keys()]);
-    if (draftKey) clearPendingSend(draftKey);
-    if (files.length) void attach(files);
-  }, [richText.setContent, attachmentActions.setSpoileredAttachmentUrls, knownAgentKeys, draftKey, attach]);
+    composerMentions.refreshSelectedNames();
+    holdPendingFiles(record, files);
+    if (draftIdentity && draftKey && isDraftStoreScope(draftIdentity, window.location.origin)) {
+      if (record.missingFileNames.length) savePendingSend(draftKey, { ...record, extras: { ...(record.extras as object), restored: true } }, files);
+      else clearPendingSend(draftKey);
+    }
+  }, [intent, richText.setContent, attachmentActions.setSpoileredAttachmentUrls, knownAgentKeys, draftKey, draftIdentity, holdPendingFiles]);
   const composerIsEmpty = useCallback(() => !richText.getMarkdown().trim() && pendingRef.current.length === 0 &&
-    pendingGifsRef.current.length === 0 && [...activeBatches.current].every(batch => batch.canceled), [richText.getMarkdown]);
+    pendingGifsRef.current.length === 0 && restoredAttachmentsRef.current.length === 0 && [...activeBatches.current].every(batch => batch.canceled), [richText.getMarkdown]);
   /** Returns whether the message is back in the composer (otherwise it waits as a recovery). */
   const restoreSnapshot = useCallback((snapshot: SendSnapshot, stage: "failed" | "unknown"): boolean => {
     if (!snapshot.cleared) return true;
+    if (!snapshot.ownsRecovery()) return false;
     snapshot.cleared = false;
     const record = pendingSendRecord(snapshot, stage);
     if (owner.active && composerIsEmpty()) {
       applyPendingSend({ record, files: snapshot.remainingFiles });
       return true;
     }
-    if (draftIdentity && draftKey) savePendingSend(draftKey, record);
+    if (draftIdentity && draftKey && isDraftStoreScope(draftIdentity, window.location.origin)) savePendingSend(draftKey, record, snapshot.remainingFiles);
     if (owner.active) setRecovery({ record, files: snapshot.remainingFiles });
     return false;
   }, [owner, composerIsEmpty, pendingSendRecord, applyPendingSend, draftIdentity, draftKey]);
@@ -1707,18 +1692,18 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
     const record = loadPendingSend(draftKey);
     if (!record) return null;
     return record.stage === current.record.stage && record.draft.updatedAt === current.record.draft.updatedAt ? current
-      : { ...current, record: { ...record, stage: record.stage === "uploading" ? "failed" : record.stage } };
+      : { ...current, record: { ...record, stage: record.stage === "uploading" ? "unknown" : record.stage } };
   })) : undefined, [draftKey]);
   const restoreRecovery = useCallback(() => {
     if (!recovery || !composerIsEmpty()) return;
     applyPendingSend(recovery);
     setRecovery(null);
-    if (recovery.record.stage === "unknown") { setProblemNeutral(true); setProblem(t("platform.sendUnknown", { operation: "" })); }
+    if (recovery.record.stage === "unknown") { setProblemNeutral(true); setProblem(t((recovery.record.extras as { uploadUnknown?: boolean } | undefined)?.uploadUnknown ? "platform.uploadFailed" : "platform.sendUnknown", { operation: "" })); }
   }, [recovery, composerIsEmpty, applyPendingSend]);
   const discardRecovery = useCallback(() => {
-    if (draftKey) clearPendingSend(draftKey);
+    if (draftIdentity && draftKey && isDraftStoreScope(draftIdentity, window.location.origin)) clearPendingSend(draftKey);
     setRecovery(null);
-  }, [draftKey]);
+  }, [draftIdentity, draftKey]);
 
   // DD-125(8) original non-member prompt. The draft is never cleared by it: Cancel keeps it,
   // "Invite" publishes only after every invited membership is ACTIVE, and "send without
@@ -1737,7 +1722,7 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
       await resolveNonMemberInviteAdmission(bff, nonMemberMentionWorkspaceId, principals.map(principal => principal.principalId));
     if (!owner.active) return;
     const names = pubkeys.map(pubkey => getMentionDisplayName(pubkey)
-      ?? directory.find(person => person.pubkeys.some(key => key.toLowerCase() === pubkey))?.displayName ?? truncateNpub(pubkey));
+      ?? directory.find(person => person.pubkeys.some(key => key.toLowerCase() === pubkey))?.displayName ?? unknownMemberLabel());
     setNonMemberError(null);
     setNonMemberPrompt({owner, workspaceId: nonMemberMentionWorkspaceId, pubkeys, principals, names, canInvite});
   }, [nonMemberMentionWorkspaceId, queryClient, draftIdentity, owner, getMentionDisplayName]);
@@ -1896,7 +1881,7 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
       // Persisted before dispatch: a reload during publication finds this key, never a new one.
       snapshot.installationIds = selectedInstallationIds;
       persistPendingSend(snapshot, "publishing");
-      if (draftKey) publishingPendingSends.add(draftKey);
+      if (draftKey) publishingPendingSends.add(pendingSendOwnerKey);
     } else {
       setMentionInstallationIds(selectedInstallationIds);
       persistDraft(content, pending, selectedInstallationIds);
@@ -1920,11 +1905,11 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
     await publish
       .then(() => {
         // An accepted send proves the community write-block is lifted (original clearTimeoutState).
-        clearTimeoutState();
+        if (owner.active) clearTimeoutState();
         if (snapshot.cleared) {
           if (draftKey) {
-            publishingPendingSends.delete(draftKey);
-            if (loadPendingSend(draftKey)?.draft.sendIntent?.key === key) clearPendingSend(draftKey);
+            publishingPendingSends.delete(pendingSendOwnerKey);
+            if (snapshot.ownsRecovery() && loadPendingSend(draftKey)?.draft.sendIntent?.key === key) clearPendingSend(draftKey);
           }
           if (!owner.active) return;
           onConfirmed?.();
@@ -1938,7 +1923,7 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
           setDraft("");
           setPreviewContent("");
           pasteBinding.clearMentionIntents();
-          humanBindings.current.clear();setHumanNames([]);setHumanQuery(null);
+          humanBindings.current.clear();composerMentions.refreshSelectedNames();composerMentions.cancelMentionAutocomplete();
           channelLinks.clearChannels(); emojiAutocomplete.clearEmojis();
         }
         setPending((current) => current.filter((p) => !pending.includes(p)));
@@ -1951,7 +1936,7 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
         setConfirmedSendRevision((revision) => revision + 1);
       })
       .catch((e: unknown) => {
-        if (snapshot.cleared && draftKey) publishingPendingSends.delete(draftKey);
+        if (snapshot.cleared && draftKey) publishingPendingSends.delete(pendingSendOwnerKey);
         // A definite rejection ends this intent; any other outcome keeps its key for the same retry.
         if (e instanceof BffError && e.reason === ReasonCode.PublishRejected) intent.current = null;
         restore(isOutcomeUnknown(e) ? "unknown" : "failed");
@@ -1975,16 +1960,8 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
           setProblem(t("platform.sendFailed"));
         }
       });
-  }, [restoreSnapshot, persistPendingSend, linkPreviews.prepareSubmit, workspaceId, onPublish, richText.getMarkdown, richText.setContent, owner, persistDraft, attachmentActions.setSpoileredAttachmentUrls, editTarget, draftKey, onConfirmed, pasteBinding, mentionCandidates, knownAgentKeys, audience.pubkeys, agentDirectory.verify, channelLinks.clearChannels, emojiAutocomplete.clearEmojis, nonMemberFlow, promptNonMembers]);
-  const send = useCallback(async (decision?: NonMemberDecision) => {
-    if (sending || owner.sending || disabled || queuedRef.current || voiceNote.statusRef.current !== "idle" || !mentionVerified) return;
-    if (channelType === "dm" && dmAgentNames.length && findDmAgentMention(richText.getMarkdown(), dmAgentNames)) {
-      setProblemNeutral(false);
-      setProblem(t("dm.agentMentionRefused"));
-      return;
-    }
-    // An edit replaces a published message: it waits for its own uploads and is not cleared.
-    if (editTarget && uploading > 0) return;
+  }, [restoreSnapshot, persistPendingSend, linkPreviews.prepareSubmit, workspaceId, onPublish, richText.getMarkdown, richText.setContent, owner, persistDraft, attachmentActions.setSpoileredAttachmentUrls, editTarget, draftKey, draftIdentity, pendingSendOwnerKey, onConfirmed, pasteBinding, mentionCandidates, knownAgentKeys, audience.pubkeys, agentDirectory.verify, channelLinks.clearChannels, emojiAutocomplete.clearEmojis, nonMemberFlow, promptNonMembers]);
+  const prepareSend = async ({ release, decision }: { release: () => void; decision?: NonMemberDecision }) => {
     if (!editTarget) {
       // Original useMentionSendFlow: Send freezes the message and clears the composer before it is
       // published; uploads still in flight hold the frozen message, not the composer (DD-146).
@@ -1997,11 +1974,19 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
         // Previews belong to the text being cleared; they are prepared before it goes.
         const linkPreviewIntent = await linkPreviews.prepareSubmit();
         if (!owner.active) return;
+        // Only this explicit Send moves restored local files back to the
+        // original upload batch. Restore/refresh/auto-submit never call attach.
+        const local = restoredAttachmentsRef.current;
+        if (local.some(item => !item.file) || (local.length > 0 && intent.current)) return;
+        if (local.length) {
+          replaceRestoredAttachments([]);
+          void attach(local.map(item => item.file!));
+        }
         const content = richText.getMarkdown().trim();
         if (!content && pendingRef.current.length === 0 && pendingGifsRef.current.length === 0 && activeBatches.current.size === 0) return;
         snapshot = { content, pending: pendingRef.current, gifs: pendingGifsRef.current,
           bindings: new Map(humanBindings.current), installationIds: mentionInstallationIds, spoilers: new Set(attachmentActions.spoileredAttachmentUrls),
-          intent: { current: intent.current }, linkPreviews: linkPreviewIntent, cleared: true,
+          intent: { current: intent.current }, linkPreviews: linkPreviewIntent, cleared: true, ownsRecovery: captureRecoveryAuthority(),
           batches: new Set(activeBatches.current), remainingFiles: [], failed: false };
         clearComposer();
         setProblem(null);
@@ -2017,15 +2002,11 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
         owner.sending = false;
         if (owner.active) setSending(false);
       }
+      release();
       if (!snapshot) return;
       setClearedPublishing((count) => count + 1);
       try { await dispatch(snapshot, decision); }
       finally { if (owner.active) setClearedPublishing((count) => Math.max(0, count - 1)); }
-      return;
-    }
-    if (editTarget && onRequestEmptyEditDelete && !richText.getMarkdown().trim() && pending.length === 0) {
-      if (!intent.current) onRequestEmptyEditDelete(editTarget);
-      else {setProblemNeutral(true);setProblem(t("platform.sendUnknown", {operation: ""}));}
       return;
     }
     owner.sending = true;
@@ -2034,13 +2015,25 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
       await pasteBinding.settlePendingMentionBindings();
       if (!owner.active) return;
       await dispatch({ content: richText.getMarkdown().trim(), pending, gifs: pendingGifs, bindings: humanBindings.current,
-        installationIds: mentionInstallationIds, spoilers: attachmentActions.spoileredAttachmentUrls, intent, cleared: false,
+        installationIds: mentionInstallationIds, spoilers: attachmentActions.spoileredAttachmentUrls, intent, cleared: false, ownsRecovery: captureRecoveryAuthority(),
         batches: new Set(), remainingFiles: [], failed: false }, decision);
     } finally {
       owner.sending = false;
       if (owner.active) setSending(false);
     }
-  }, [channelType, dmAgentNames, pending, pendingGifs, linkPreviews.prepareSubmit, mentionInstallationIds, mentionVerified, sending, uploading, disabled, richText.getMarkdown, owner, attachmentActions.spoileredAttachmentUrls, editTarget, pasteBinding, onRequestEmptyEditDelete, voiceNote.statusRef, dispatch, clearComposer, persistPendingSend]);
+  };
+  const { submit: send } = useComposerSubmission<null, NonMemberDecision>({
+    getContent: richText.getMarkdown,
+    hasMedia: () => pendingRef.current.length > 0 || pendingGifsRef.current.length > 0 || activeBatches.current.size > 0 || restoredAttachmentsRef.current.length > 0,
+    canSubmit: () => !restoredAttachmentsRef.current.some(item => !item.file) && !(restoredAttachmentsRef.current.length > 0 && intent.current) && owner.active && !sending && !owner.sending && !disabled && !queuedRef.current && !paste.isPreparingAttachments() && voiceNote.statusRef.current === "idle" && mentionVerified && !(editTarget && uploading > 0),
+    isEditing: Boolean(editTarget), isDm: channelType === "dm", dmAgentNames,
+    refuseDmAgent: refused => { if (refused) { setProblemNeutral(false); setProblem(t("dm.agentMentionRefused")); } },
+    requestEmptyEdit: editTarget && onRequestEmptyEditDelete ? () => {
+      if (!intent.current) onRequestEmptyEditDelete(editTarget);
+      else { setProblemNeutral(true); setProblem(t("platform.sendUnknown", { operation: "" })); }
+    } : undefined,
+    capture: () => null, prepare: prepareSend,
+  });
   sendRef.current = send;
   // DD-146: a queued send is released once none of its uploads is in flight — published if each
   // was confirmed, otherwise (failed or canceled) its draft returns with the remaining files.
@@ -2050,7 +2043,7 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
     if (!snapshot || queued !== snapshot || [...snapshot.batches].some(batch => !batch.canceled && activeBatches.current.has(batch))) return;
     queuedRef.current = null;
     setQueued(null);
-    if (snapshot.failed) { restoreSnapshot(snapshot, "failed"); return; }
+    if (snapshot.failed) { restoreSnapshot(snapshot, snapshot.uploadUnknown ? "unknown" : "failed"); return; }
     // Its publication is not shown in the timeline before the Relay confirms it; the pill says it is on its way.
     setClearedPublishing((count) => count + 1);
     void dispatch(snapshot).finally(() => { if (owner.active) setClearedPublishing((count) => Math.max(0, count - 1)); });
@@ -2071,71 +2064,52 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
   const composerPreviews = uploadingPreviews.filter(preview => !queuedPreviewIds.has(preview.id));
   const composerUploading = Math.max(0, uploading - queuedPreviews.length);
 
-  const autoSent = useRef<typeof owner | null>(null);
-  useEffect(() => {
-    if (!autoSendDraftKey || autoSendDraftKey !== draftKey || autoSent.current === owner ||
-        loadedDraftOwner !== owner || !draftReady.current || !owner.active || disabled || sending || uploading > 0 || voiceNote.status !== "idle" || !mentionVerified ||
-        (!richText.getMarkdown().trim() && pending.length === 0)) return;
-    autoSent.current = owner;
-    void Promise.resolve().then(() => onAutoSendConsumed?.()).then(() => {
-    if (!owner.active) return;
-    if (intent.current) {
-      // A restored UNKNOWN intent may predate complete draft metadata. Opening
-      // it must not derive a new signature/key and dispatch another effect.
-      setProblemNeutral(true);
-      setProblem(t("platform.sendUnknown", { operation: "" }));
-      return;
-    }
-    sendRef.current();
-    }).catch(() => { if (owner.active) setProblem(t("platform.sendFailed")); });
-  }, [autoSendDraftKey, onAutoSendConsumed, draftKey, owner, loadedDraftOwner, disabled, sending, uploading, voiceNote.status, mentionVerified, pending.length, richText.getMarkdown, send]);
+  useComposerAutoSubmit({
+    owner, enabled: Boolean(autoSendDraftKey && autoSendDraftKey === draftKey),
+    ready: restoredAttachments.length === 0 && loadedDraftOwner === owner && draftReady.current && !disabled && !sending && !paste.isPreparingAttachments() && uploading === 0 && voiceNote.status === "idle" && mentionVerified && Boolean(richText.getMarkdown().trim() || pending.length || pendingGifs.length),
+    active: () => owner.active, consume: onAutoSendConsumed,
+    beforeSubmit: () => {
+      if (!intent.current) return true;
+      // Restored UNKNOWN retains its exact existing operation; opening a draft
+      // cannot derive another signature or automatically retry it.
+      setProblemNeutral(true); setProblem(t("platform.sendUnknown", { operation: "" }));
+      return false;
+    },
+    submit: send,
+    onError: () => setProblem(t("platform.sendFailed")),
+  });
 
-  // Pinned Buzz MessageComposer.tsx keeps this callback empty; Tiptap owns selection.
-  const handleCaptureSelection = useCallback(() => {}, []);
   const ComposerSurface = surface === "forum" ? ForumComposerSurface : MessageComposerSurface;
   return <ComposerSurface
     {...(surface === "forum" ? { compact, confirmedSendRevision,
       hasComposerContent: Boolean(draft.trim() || pending.length || problem || dragging),
       autocompleteOpen: humanSuggestions.length > 0 || channelLinks.isChannelOpen || emojiAutocomplete.isEmojiAutocompleteOpen,
     } : {})}
-    containerClassName={containerClassName} scrollRef={composerScrollRef}
+    containerClassName={containerClassName} scrollRef={composerScrollRef} formRef={formRef}
     header={<>{composerHeader}<ComposerReplyBanner replyTarget={replyTarget} onCancelReply={sending ? undefined : onCancelReply}
       isEditing={editTarget !== undefined} isEditCancelDisabled={sending} onCancelEdit={onCancelEdit} /></>}
     overlays={<>{linkEditor.card}{linkEditor.dialog}</>}
     formProps={{
-      onSubmit: (event) => { event.preventDefault(); send(); },
-      onPasteCapture: (event) => {
-        if (disabled || sending || !event.clipboardData.files.length) return;
-        event.preventDefault();
-        void attachFilesWhenIdle(event.clipboardData.files);
-      },
+      onSubmit: handleSubmit,
       onDragOver: (event) => { if (!disabled && !sending && voiceNote.acceptsAttachment && event.dataTransfer.types.includes("Files")) { event.preventDefault(); setDragging(true); } },
       onDragLeave: (event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragging(false); },
       onDrop: (event) => { setDragging(false); if (!disabled && !sending && event.dataTransfer.files.length) { event.preventDefault(); void attachFilesWhenIdle(event.dataTransfer.files); } },
     }}
-    onEditorKeyDown={(event) => {
-      if (handleAlwaysAddressShortcut(event)) return;
-      // Original MessageComposer order: emoji, then channel, then mention suggestions.
-      const emojiResult = emojiAutocomplete.handleEmojiKeyDown(event);
-      if (emojiResult.handled) { if (emojiResult.suggestion) applyEmojiInsert(emojiResult.suggestion); return; }
-      const channelResult = channelLinks.handleChannelKeyDown(event);
-      if (channelResult.handled) { if (channelResult.suggestion) applyChannelInsert(channelResult.suggestion); return; }
-      if (event.key === "Tab" && event.shiftKey && humanSuggestions.length && focusMentionOptionsTrigger(event.currentTarget.closest("form"))) {event.preventDefault(); return;}
-      if(humanSuggestions.length){
-        if(event.key==="Escape"){event.preventDefault();setHumanQuery(null);return;}
-        if(event.key==="ArrowDown"||event.key==="ArrowUp"){event.preventDefault();setHumanIndex(index=>(index+(event.key==="ArrowDown"?1:humanSuggestions.length-1))%humanSuggestions.length);return;}
-        if((event.key==="Enter"||event.key==="Tab")&&humanSuggestions[humanIndex]){event.preventDefault();selectHuman(humanSuggestions[humanIndex]);return;}
-      }
-      if (event.key === "Tab" && !event.shiftKey && linkEditor.isCardOpen) {
-        event.preventDefault(); linkEditor.focusCardFirstControl();
-      }
-    }}
+    onEditorKeyDown={composerKeyDown({
+      alwaysAddress: handleAlwaysAddressShortcut,
+      emoji: emojiAutocomplete.handleEmojiKeyDown, selectEmoji: applyEmojiInsert,
+      channel: channelLinks.handleChannelKeyDown, selectChannel: applyChannelInsert,
+      mentionOpen: humanSuggestions.length > 0,
+      mention: event => composerMentions.handleMentionKeyDown(event, { isCodeContext: () => isMentionCodeContext(richText.editor) }),
+      selectMention: selectHuman, linkEditor,
+      cancelEdit: editTarget && !sending ? onCancelEdit : undefined,
+    })}
     toolbar={{ layoutMode, composerDisabled: disabled || sending, customEmoji,
       addressedAgents: disabled || sending || editTarget ? [] : addressLock.lockedAgents,
       autoPinConfirmationTitle: autoPin.confirmationTitle,
       onAutoPinConfirmationDismiss: autoPin.dismissConfirmation,
       onAutoPinConfirmationHoverChange: autoPin.setConfirmationHovered,
-      onAutoPinConfirmationTurnOff: () => {openMentionPicker(richText.getPlainTextAndCursor().cursor); autoPin.turnOffConfirmation(); richText.editor?.commands.focus();},
+      onAutoPinConfirmationTurnOff: mentionPicker.turnOff,
       onRemoveAddressedAgent: removeAddressedAgent,
       pulseVersionByPubkey: addressPulse.pulseVersionByPubkey,
       shakeVersionByPubkey: addressPulse.shakeVersionByPubkey,
@@ -2153,32 +2127,32 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
       onOpenMentionPicker: mentionPeople || workspaceId ? openPeople : undefined,
       onPaperclip: () => { if (!voiceNote.hasAttachmentRef.current) picker.current?.click(); },
       onFinishVoiceNote: () => void voiceNote.finish(), onVoiceNote: voiceNote.toggle,
-      sendDisabled: disabled || sending || queued !== null || voiceNote.status !== "idle" || !mentionVerified || (!(editTarget && onRequestEmptyEditDelete) && !draft.trim() && pending.length === 0 && pendingGifs.length === 0),
+      sendDisabled: restoredAttachments.some(item => !item.file) || (restoredAttachments.length > 0 && intent.current !== null) || disabled || sending || queued !== null || paste.isPreparingAttachments() || voiceNote.status !== "idle" || !mentionVerified || (!(editTarget && onRequestEmptyEditDelete) && !draft.trim() && pending.length === 0 && pendingGifs.length === 0 && restoredAttachments.length === 0),
       gifs: gifOption,
     }}>
       {dragging ? <DropZoneOverlay /> : null}
       <div className={surface === "forum" ? undefined : "relative"}>
-      <EmojiAutocomplete position={autocompleteBelow ? "below" : "above"} composerOwnsFocus={!disabled && !sending}
-        onSelect={applyEmojiInsert} selectedIndex={emojiAutocomplete.emojiSelectedIndex}
-        suggestions={emojiAutocomplete.isEmojiAutocompleteOpen ? emojiAutocomplete.emojiSuggestions : []} />
-      <ChannelAutocomplete position={autocompleteBelow ? "below" : "above"} composerOwnsFocus={!disabled && !sending}
-        onSelect={applyChannelInsert} selectedIndex={channelLinks.channelSelectedIndex}
-        suggestions={channelLinks.isChannelOpen ? channelLinks.channelSuggestions : []} />
-      {mentionPeople || workspaceId ?<MentionAutocomplete suggestions={humanSuggestions} selectedIndex={humanIndex}
-        lockedAgentPubkeys={audienceScope ? addressLock.lockedAgentPubkeys : undefined}
-        onToggleAlwaysAddressAgent={audienceScope ? suggestion => addressLock.toggleAlwaysAddressAgent(suggestion, {preserveMention: true}) : undefined}
+      <MessageComposerAutocompletes
+        position={autocompleteBelow ? "below" : "above"}
+        composerOwnsFocus={composerOwnsFocus && !disabled && !sending}
+        emojiAutocomplete={emojiAutocomplete} channelLinks={channelLinks} mentions={composerMentions}
+        onEmojiSelect={applyEmojiInsert} onChannelSelect={applyChannelInsert} onMentionSelect={selectHuman}
+        audienceControlsEnabled={Boolean(audienceScope && !editTarget)}
+        lockedAgentPubkeys={addressLock.lockedAgentPubkeys}
+        onToggleAlwaysAddressAgent={suggestion => addressLock.toggleAlwaysAddressAgent(suggestion, {preserveMention: true})}
         keepMentionedAgentsPinned={keepMentionedAgentsPinned}
-        onKeepMentionedAgentsPinnedChange={audienceScope ? setKeepMentionedAgentsPinned : undefined}
+        onKeepMentionedAgentsPinnedChange={setKeepMentionedAgentsPinned}
         openOptionsRequest={autoPin.openOptionsRequest}
         onOptionsRevealComplete={autoPin.completeOptionsReveal}
-        position={autocompleteBelow ? "below" : "above"}
-        composerOwnsFocus={!disabled&&!sending&&humanQuery!==null}
-        onSelect={selectHuman} onDismiss={()=>setHumanQuery(null)}/>:null}
+      />
       </div>
       <output aria-live="polite" className="sr-only" data-testid="composer-address-lock-status">{addressLock.announcement}</output>
       {!mentionVerified ? (
         <div role="alert">{t("platform.mentionAgentsUnavailable")}</div>
       ) : null}
+      {restoredAttachments.some(item => !item.file) ? <div role="status" className="text-xs text-muted-foreground">
+        {t("platform.pendingSendMissingFiles", { count: restoredAttachments.filter(item => !item.file).length })}
+      </div> : null}
       {problem ? (
         <div className={problemNeutral ? "text-xs text-muted-foreground" : "text-xs text-destructive"} role={problemNeutral ? "status" : "alert"}>
           {problem}
@@ -2186,8 +2160,9 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
       ) : null}
       {queued ? <ComposerQueuedSendPill previews={queuedPreviews} onCancel={cancelQueuedSend} />
         : clearedPublishing > 0 ? <ComposerPendingSendRecovery stage="publishing" missingFiles={0} canRestore={false} onRestore={() => {}} onDiscard={() => {}} /> : null}
-      {recovery ? <ComposerPendingSendRecovery stage={recovery.record.stage} missingFiles={recovery.record.missingFileNames.length}
-        canRestore={!draft.trim() && pending.length === 0 && pendingGifs.length === 0 && composerUploading === 0}
+      {recovery ? <ComposerPendingSendRecovery stage={recovery.record.stage} missingFiles={Math.max(0, recovery.record.missingFileNames.length - recovery.files.length)}
+        canRestore={!draft.trim() && pending.length === 0 && pendingGifs.length === 0 && restoredAttachments.length === 0 && composerUploading === 0}
+        uploadUnknown={(recovery.record.extras as { uploadUnknown?: boolean } | undefined)?.uploadUnknown === true}
         onRestore={restoreRecovery} onDiscard={discardRecovery} /> : null}
       <ComposerLinkPreviewPreparing previews={linkPreviews} />
       <ComposerLinkPreviewCards previews={linkPreviews} resolveMedia={resolvePreviewMedia} />
@@ -2195,6 +2170,8 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
       <ComposerAttachments attachments={pending.map(asBlob)} resolveMediaUrl={resolveMediaUrl}
         fetchMediaBytes={fetchMediaBytes} AudioAttachment={BffAudioAttachment} isUploading={composerUploading > 0} uploadingCount={composerUploading}
         uploadingPreviews={composerPreviews} onCancelUpload={cancelUpload}
+        queuedPreviews={restoredAttachments.map(item => ({ id: item.id, filename: item.name, type: item.file?.type }))}
+        onRemoveQueued={removeRestoredAttachment}
         onRemove={attachmentActions.handleRemoveAttachment} onEditSave={attachmentActions.handleAttachmentEditSave}
         onRevert={attachmentActions.handleAttachmentRevert} onToggleSpoiler={attachmentActions.handleToggleAttachmentSpoiler}
         spoileredUrls={attachmentActions.spoileredAttachmentUrls}

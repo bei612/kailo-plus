@@ -2,7 +2,7 @@ import uuid
 from dataclasses import asdict
 from typing import Literal, Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel
 
 from src.globals import (
@@ -17,6 +17,7 @@ router = APIRouter()
 
 
 class PostRequest(BaseRequest):
+    native_task_id: Optional[uuid.UUID] = None
     mdl: str
     previous_questions: list[str] = []
     max_questions: int = 5
@@ -39,11 +40,17 @@ async def recommend(
     service_container: ServiceContainer = Depends(get_service_container),
     service_metadata: ServiceMetadata = Depends(get_service_metadata),
 ) -> PostResponse:
-    event_id = str(uuid.uuid4())
+    # The existing UI native task row reserves this ID before dispatch, as for
+    # /asks and /sql-answers. It identifies an event, never authorizes a query.
+    event_id = str(request.native_task_id or uuid.uuid4())
     service = service_container.question_recommendation
+    if event_id in service._cache:
+        raise HTTPException(status_code=409, detail="Native task ID already registered")
     service[event_id] = QuestionRecommendation.Event(event_id=event_id)
 
-    _request = QuestionRecommendation.Request(event_id=event_id, **request.model_dump())
+    _request = QuestionRecommendation.Request(
+        event_id=event_id, **request.model_dump(exclude={"native_task_id"})
+    )
 
     background_tasks.add_task(
         service.recommend,

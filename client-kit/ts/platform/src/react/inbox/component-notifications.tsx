@@ -192,7 +192,7 @@ export function ComponentNotificationInboxRow({ item, read, onOpen, onMarkRead }
   const view = componentNotificationPresentation(item, locale, t);
   const sender = view.actor ?? view.source ?? view.category;
   const label = [view.category, view.source].filter(Boolean).join(" · ");
-  return <InboxRow id={`component-${item.notificationId}`} selected={false} read={read}
+  return <InboxRow profileTriggers={false} id={`component-${item.notificationId}`} selected={false} read={read}
     actionRequired={item.category === ComponentNotificationCategory.AccessRequested}
     sender={<span className="block max-w-full truncate rounded text-sm font-semibold leading-4 text-foreground">{sender}</span>}
     avatar={view.actor

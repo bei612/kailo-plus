@@ -6920,7 +6920,7 @@ export default {
     generatingSummary: '生成摘要中...',
     documentSummary: '摘要',
     detailSectionMeta: '基本信息',
-    confirmDeleteDocument: '确认删除文档"{fileName}"，删除后将无法恢复',
+    confirmDeleteDocument: '删除文档“{fileName}”？删除后将无法恢复。',
     confirmDelete: '删除',
     viewModeGrid: '卡片视图',
     viewModeList: '列表视图',

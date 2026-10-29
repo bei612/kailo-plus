@@ -7,6 +7,7 @@ import {
   ChartAdjustmentOption,
   ChartStatus,
   AskFeedbackStatus,
+  TextBasedAnswerStatus,
 } from '@server/models/adaptor';
 import { Thread } from '../repositories/threadRepository';
 import {
@@ -73,6 +74,7 @@ export interface AdjustmentTask {
 }
 
 export interface AskingTask {
+  completion?: string;
   type: AskResultType | null;
   status: AskResultStatus;
   candidates: Array<{
@@ -476,13 +478,13 @@ export class AskingResolver {
 
   public async generateThreadRecommendationQuestions(
     _root: any,
-    args: { threadId: number },
+    args: { threadId: number; sourceResponseId?: number },
     ctx: IContext,
-  ): Promise<boolean> {
-    const { threadId } = args;
-    const askingService = ctx.askingService;
-    await askingService.generateThreadRecommendationQuestions(threadId);
-    return true;
+  ): Promise<ThreadRecommendQuestionResult> {
+    return ctx.askingService.generateThreadRecommendationQuestions(
+      args.threadId,
+      args.sourceResponseId,
+    );
   }
 
   public async getThreadRecommendationQuestions(
@@ -577,6 +579,7 @@ export class AskingResolver {
     ctx: IContext,
   ): Promise<AskingTask> {
     const { taskId } = args;
+    const governed = isGovernedQueryMode();
     const askingService = ctx.askingService;
     await this.authorizeNativeAskingTask(taskId, ctx);
     const askResult = await askingService.getAskingTask(taskId);
@@ -616,6 +619,47 @@ export class AskingResolver {
     }
 
     const task = await this.transformAskingTask(askResult, ctx);
+    if (
+      askResult.type === AskResultType.GENERAL &&
+      askResult.status === AskResultStatus.FINISHED &&
+      !askResult.error
+    ) {
+      const snapshot = canonical(askResult);
+      let complete = askResult.completion;
+      if (!complete) {
+        try {
+          const observed = await ctx.wrenAIAdaptor.getAskResult(taskId);
+          if (
+            observed?.type === AskResultType.GENERAL &&
+            observed.status === AskResultStatus.FINISHED &&
+            !observed.error
+          )
+            complete = observed.completion;
+        } catch {
+          // Observe only. Cache loss or a failed read never starts another Ask.
+        }
+      }
+      const current = await askingService.getAskingTask(taskId);
+      if (
+        !current ||
+        canonical(current) !== snapshot ||
+        isGovernedQueryMode() !== governed
+      )
+        throw new NativeQueryRefusal(409, 'QUERY_REFERENCE_CHANGED');
+      if (
+        governed &&
+        complete &&
+        Buffer.byteLength(JSON.stringify(complete), 'utf8') >
+          (await loadQueryDelivery()).responseMaxBytes
+      )
+        throw new NativeQueryRefusal(503, 'QUERY_EVIDENCE_UNAVAILABLE');
+      await this.authorizeNativeAskingTask(taskId, ctx);
+      await ctx.nativeProjectCheck?.(askResult.projectId);
+      if (isGovernedQueryMode() !== governed)
+        throw new NativeQueryRefusal(412, 'QUERY_ADMISSION_UNAVAILABLE');
+      if (complete?.queryId === taskId && typeof complete.content === 'string')
+        task.completion = complete.content;
+    }
 
     // telemetry
     const eventName = TelemetryEvent.HOME_ASK_CANDIDATE;
@@ -804,6 +848,12 @@ export class AskingResolver {
     args: {
       threadId: number;
       data: {
+        recommendation?: {
+          queryId: string;
+          sourceResponseId: number;
+          index: number;
+          idempotencyKey: string;
+        };
         question?: string;
         taskId?: string;
         // if we use recommendation questions, sql will be provided
@@ -813,6 +863,8 @@ export class AskingResolver {
     ctx: IContext,
   ): Promise<ThreadResponse> {
     const { threadId, data } = args;
+    if (data.taskId && data.recommendation)
+      throw new Error('Conflicting original task sources');
 
     const askingService = ctx.askingService;
     const eventName = TelemetryEvent.HOME_ASK_FOLLOWUP_QUESTION;
@@ -1509,6 +1561,45 @@ export class AskingResolver {
   /**
    * Nested resolvers
    */
+  public async authorizeNativeAnswerDetail(
+    parent: ThreadResponse,
+    ctx: IContext,
+    bound = isGovernedQueryMode(),
+  ) {
+    if (isGovernedQueryMode() !== bound)
+      throw new NativeQueryRefusal(412, 'QUERY_ADMISSION_UNAVAILABLE');
+    if (bound) {
+      if (!parent.answerDetail.queryHistoryId) {
+        if (parent.answerDetail.queryId || parent.answerDetail.content)
+          throw new NativeQueryRefusal(503, 'QUERY_TERMINAL_EVIDENCE_REQUIRED');
+      } else {
+        const history = await ctx.apiHistoryRepository.findOneBy({
+          id: parent.answerDetail.queryHistoryId,
+        });
+        if (!history || history.requestPayload?.sql !== parent.sql)
+          throw new NativeQueryRefusal(409, 'NATIVE_OBJECT_CHANGED');
+        // Original GraphQL answer bodies and the stream share the already
+        // implemented same-AE/current-HUMAN history disclosure consumer.
+        await new ApiHistoryResolver()
+          .getApiHistoryNestedResolver()
+          .responsePayload(history, {}, ctx);
+      }
+    }
+
+    const current = await ctx.askingService.getResponse(parent.id);
+    const intent = (value: ThreadResponse) => ({
+      id: value.id,
+      threadId: value.threadId,
+      question: value.question,
+      sql: value.sql,
+      answerDetail: value.answerDetail,
+    });
+    if (!current || canonical(intent(current)) !== canonical(intent(parent)))
+      throw new NativeQueryRefusal(409, 'NATIVE_OBJECT_CHANGED');
+    if (isGovernedQueryMode() !== bound)
+      throw new NativeQueryRefusal(412, 'QUERY_ADMISSION_UNAVAILABLE');
+  }
+
   public getThreadResponseNestedResolver = () => ({
     chartDetail: async (parent: ThreadResponse, _args: any, ctx: IContext) => {
       if (!parent.chartDetail) return null;
@@ -1558,37 +1649,44 @@ export class AskingResolver {
     },
     answerDetail: async (parent: ThreadResponse, _args: any, ctx: IContext) => {
       if (!parent?.answerDetail) return null;
-      if (isGovernedQueryMode()) {
-        if (!parent.answerDetail.queryHistoryId) {
-          if (parent.answerDetail.queryId || parent.answerDetail.content)
-            throw new NativeQueryRefusal(
-              503,
-              'QUERY_TERMINAL_EVIDENCE_REQUIRED',
-            );
-        } else {
-          const history = await ctx.apiHistoryRepository.findOneBy({
-            id: parent.answerDetail.queryHistoryId,
-          });
-          if (!history || history.requestPayload?.sql !== parent.sql)
+      const bound = isGovernedQueryMode();
+      await this.authorizeNativeAnswerDetail(parent, ctx, bound);
+      const detail = parent.answerDetail;
+      if (
+        detail.queryId &&
+        [
+          ThreadResponseAnswerStatus.STREAMING,
+          ThreadResponseAnswerStatus.INTERRUPTED,
+        ].includes(detail.status as ThreadResponseAnswerStatus)
+      ) {
+        let observed;
+        try {
+          observed = await ctx.wrenAIAdaptor.getTextBasedAnswerResult(
+            detail.queryId,
+          );
+        } catch {
+          // Missing/expired native result does not authorize a new generation.
+        }
+        await this.authorizeNativeAnswerDetail(parent, ctx, bound);
+        const complete = observed?.completion;
+        if (
+          observed?.status === TextBasedAnswerStatus.SUCCEEDED &&
+          !observed.error &&
+          complete?.queryId === detail.queryId &&
+          typeof complete.content === 'string'
+        ) {
+          const updated = await ctx.threadResponseRepository.claimNativeAnswer(
+            parent,
+            {
+              ...detail,
+              status: ThreadResponseAnswerStatus.FINISHED,
+              content: complete.content,
+            },
+          );
+          if (!updated)
             throw new NativeQueryRefusal(409, 'NATIVE_OBJECT_CHANGED');
-          // Original GraphQL answer bodies and the stream share the already
-          // implemented same-AE/current-HUMAN history disclosure consumer.
-          await new ApiHistoryResolver()
-            .getApiHistoryNestedResolver()
-            .responsePayload(history, {}, ctx);
-          const current = await ctx.askingService.getResponse(parent.id);
-          const intent = (value: ThreadResponse) => ({
-            id: value.id,
-            threadId: value.threadId,
-            question: value.question,
-            sql: value.sql,
-            answerDetail: value.answerDetail,
-          });
-          if (
-            !current ||
-            canonical(intent(current)) !== canonical(intent(parent))
-          )
-            throw new NativeQueryRefusal(409, 'NATIVE_OBJECT_CHANGED');
+          await this.authorizeNativeAnswerDetail(updated, ctx, bound);
+          parent = updated;
         }
       }
 

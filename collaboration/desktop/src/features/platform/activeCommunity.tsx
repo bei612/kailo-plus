@@ -11,6 +11,7 @@ import {
   useMemo,
 } from "react";
 import type { NativeSession } from "@client-kit/platform/react/NativeBootstrap";
+import { useTenantDisplayProfile } from "@client-kit/platform/react/context";
 
 export type Community = {
   /** Community host（Relay 按连接的 Host 绑定 Community） */
@@ -38,9 +39,10 @@ export function ActiveCommunityProvider({
   session: NativeSession;
   children: ReactNode;
 }) {
+  const profile = useTenantDisplayProfile();
   const value = useMemo(
-    () => ({ community: communityFromSession(session), session }),
-    [session],
+    () => ({ community: { ...communityFromSession(session), name: profile === null ? "" : profile?.name ?? session.facts.communityHost }, session }),
+    [session, profile],
   );
   // 窗口标题是部署的显示名（DD-111）：来自 BFF 的公开平台信息，读不到时保持空标题，
   // 不写任何产品名。

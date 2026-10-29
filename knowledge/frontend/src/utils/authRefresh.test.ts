@@ -435,6 +435,8 @@ test('original auth store invalidates old requests even when a new login has ide
     '@/stores/editorResources': { useEditorResourcesStore: () => ({ invalidate() {} }) },
     '@/stores/organization': { useOrganizationStore: () => ({ clearState() {} }) },
     '@/utils/authRefresh': authRefresh,
+    // DD-138: the store reads the Kailo mode (invitation reminders); native visit here.
+    '@/kailo/runtime': { kailoConfig: () => ({ mode: false, displayName: '', origins: [], logoutUrl: '' }) },
   })
   const auth = module.useAuthStore()
   auth.setToken('same-second-access')

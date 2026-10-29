@@ -41,6 +41,10 @@ impl From<&str> for ProfileUpdateError {
 
 /// Original Buzz metadata writer with the captured CLIENT signer/relay scope.
 /// The native Relay remains the profile authority, never Core or CONTROL.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "preserve the existing Tauri IPC parameter contract"
+)]
 #[tauri::command]
 pub async fn update_profile(
     idempotency_key: String,
@@ -63,7 +67,9 @@ pub async fn update_profile(
     assert_expected_relay_scope(Some(&expected_relay_url), &relay)?;
     assert_expected_signer(Some(&expected_signer_pubkey), &author)?;
     let filter = serde_json::json!({"kinds":[0], "authors":[author], "limit":1});
-    let prior = query_relay_at_with_keys(&state, &relay, &[filter.clone()], &keys, None).await?;
+    let prior =
+        query_relay_at_with_keys(&state, &relay, std::slice::from_ref(&filter), &keys, None)
+            .await?;
     if prior.len() > 1
         || prior.iter().any(|event| {
             event.pubkey != keys.public_key()

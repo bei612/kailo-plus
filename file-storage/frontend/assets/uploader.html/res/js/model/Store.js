@@ -456,22 +456,28 @@ class Store extends Observable{
      * @param targetNode
      * @returns {Promise<Session>}
      */
-    handleFolderPickerResult(files, targetNode){
+    handleFolderPickerResult(files, targetNode, relativePaths = null){
 
         return this.initSession(Pydio.getInstance().user.activeRepository, targetNode).then(session => {
             this.pushSession(session);
             let mPaths = {};
             for (let i=0; i<files.length; i++) {
                 const file = files[i];
+                // Kailo (07 §4.8.7): a folder chosen in Kailo's picker arrives with its relative
+                // paths beside the files, a structured clone does not keep webkitRelativePath.
+                const relativePath = (relativePaths && relativePaths[i]) || file['webkitRelativePath'];
                 let mPath = '/' + PathUtils.getBasename(file.name);
-                if (files[i]['webkitRelativePath']) {
-                    mPath = '/' + files[i]['webkitRelativePath'];
-                    const folderPath = PathUtils.getDirname(mPath);
-                    // Make sure the first level is registered
-                    if(folderPath !== '/'){
-                        mPaths[PathUtils.getDirname(folderPath)] = 'FOLDER';
+                if (relativePath) {
+                    mPath = '/' + relativePath;
+                    // Register every ancestor, outermost first, so that each level becomes
+                    // its own folder whatever order the files come in.
+                    const ancestors = [];
+                    for (let folderPath = PathUtils.getDirname(mPath); folderPath; folderPath = PathUtils.getDirname(folderPath)) {
+                        ancestors.unshift(folderPath);
                     }
-                    mPaths[folderPath] = 'FOLDER';
+                    ancestors.forEach(folderPath => {
+                        mPaths[folderPath] = 'FOLDER';
+                    });
                 }
                 mPaths[mPath] = file;
             }

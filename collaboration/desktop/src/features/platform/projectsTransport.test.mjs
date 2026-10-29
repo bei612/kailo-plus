@@ -330,3 +330,48 @@ test("Native announcement changes refuse another owner's head, mixed fields and 
   await assert.rejects(announcementPublisher()({operation:"CREATE_REPOSITORY",workspaceId:otherChannel,name:"Mobile",cloneUrl:"http://relay.example/mobile.git"},"http-clone",false,observation()));
   assert.equal(signed,0);assert.equal(published,0);
 });
+
+const updateRoot=finalizeEvent({kind:1618,created_at:2,content:"Original PR",tags:[["a",`30617:${repo.pubkey}:repo`],["c","a".repeat(40)],
+  ["clone","https://projects.test/original.git"],["branch-name","feature"],["target-branch","main"]]},key);
+const updateRequest=()=>({operation:"UPDATE_PULL_REQUEST",targetEventId:updateRoot.id,commit:"b".repeat(40),mergeBase:"a".repeat(40)});
+function updateReads(history=[]){
+  relayClient.fetchEvents=async filter=>{
+    reads++;
+    if(filter.ids&&filter.kinds[0]===1618)return [updateRoot];
+    if(filter.kinds[0]===30617)return [headEvent];
+    if(filter.ids)return delivered?[delivered]:[];
+    return history.filter(event=>filter.kinds.includes(event.kind)&&(!filter.authors||filter.authors.includes(event.pubkey))
+      &&(filter.since===undefined||event.created_at>=filter.since)&&(filter.until===undefined||event.created_at<=filter.until))
+      .sort((a,b)=>b.created_at-a.created_at||b.id.localeCompare(a.id)).slice(0,filter.limit);
+  };
+}
+test("Native original review update preserves latest clone metadata and original author/owner timestamp order",async()=>{
+  const latest=finalizeEvent({kind:1619,created_at:Math.floor(Date.now()/1000)+7,content:"",tags:[["E",updateRoot.id],["c","c".repeat(40)],["clone","https://projects.test/moved.git"]]},ownerKey);
+  updateReads([latest]);
+  const result=await publisher()(updateRequest(),"update",false,observation());
+  assert.equal(result.eventId,delivered.id);assert.equal(delivered.kind,1619);assert.equal(delivered.created_at,latest.created_at+1);
+  assert.deepEqual(delivered.tags,[["a",`30617:${repo.pubkey}:repo`],["p",repo.pubkey],["p",viewer],["E",updateRoot.id],["P",viewer],
+    ["c","b".repeat(40)],["clone","https://projects.test/moved.git"],["merge-base","a".repeat(40)]]);
+  assert.equal(signed,1);assert.equal(published,1);assert.equal(admissions,0);
+});
+test("Native review update lost ACK and restart observe the original 1619 without changing key or signing again",async()=>{
+  updateReads();loseAck=true;
+  await assert.rejects(publisher()(updateRequest(),"update-unknown",false,observation()),/unknown/i);
+  const first=delivered;relayClient.unconfirmedEvents.clear();loseAck=false;updateReads();
+  assert.equal((await publisher()(updateRequest(),"update-unknown",true,observation())).eventId,first.id);
+  await assert.rejects(publisher()({...updateRequest(),commit:"c".repeat(40)},"update-unknown",true,observation()),/unknown|mismatch/i);
+  assert.equal(signed,1);assert.equal(published,1);
+});
+test("Native review update refuses other devices, malformed root, extra tags and retired owner before signing",async()=>{
+  updateReads();signingKey=new Uint8Array(32).fill(9);
+  await assert.rejects(publisher(getPublicKey(signingKey))(updateRequest(),"stranger-update",false,observation()));
+  signingKey=key;updateReads();
+  await assert.rejects(publisher()({...updateRequest(),body:"injected"},"mixed-update",false,observation()));
+  const original=relayClient.fetchEvents;
+  relayClient.fetchEvents=async filter=>filter.ids&&filter.kinds[0]===1618?[{...JSON.parse(JSON.stringify(updateRoot)),content:"forged"}]:original(filter);
+  await assert.rejects(publisher()(updateRequest(),"forged-update",false,observation()));
+  updateReads();const read=relayClient.fetchEvents;
+  relayClient.fetchEvents=async filter=>{const rows=await read(filter);if(filter.kinds[0]===1619)active=false;return rows;};
+  await assert.rejects(publisher()(updateRequest(),"retired-update",false,observation()));
+  assert.equal(signed,0);assert.equal(published,0);
+});

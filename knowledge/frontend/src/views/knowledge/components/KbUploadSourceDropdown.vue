@@ -17,7 +17,7 @@
       @change="(e) => handleFilesChange(e, true)"
     />
 
-    <t-tooltip :content="tooltipText" placement="top">
+    <t-tooltip v-if="!triggerHidden" :content="tooltipText" placement="top">
       <t-dropdown
         :options="dropdownOptions"
         trigger="click"
@@ -65,6 +65,8 @@ import { ref, computed, h } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { MessagePlugin, Icon as TIcon } from 'tdesign-vue-next'
 import { filterUploadFiles } from '../utils/uploadSources'
+import { setRelativePath } from '@/views/platform/collectDroppedFiles'
+import type { KailoFileSelection } from '@/kailo/bridge'
 
 const props = withDefaults(defineProps<{
   acceptFileTypes?: string
@@ -75,7 +77,10 @@ const props = withDefaults(defineProps<{
   dataGuide?: string
   tooltip?: string
   placement?: 'top' | 'bottom' | 'bottom-right' | 'bottom-left'
+  /** DD-157: the entries are Kailo header actions; keep inputs and dialogs, hide the trigger. */
+  triggerHidden?: boolean
 }>(), {
+  triggerHidden: false,
   acceptFileTypes: '',
   supportedFileTypes: () => [],
   includeManual: false,
@@ -166,23 +171,23 @@ const notifyFilterResult = (result: ReturnType<typeof filterUploadFiles>, emptyA
   return true
 }
 
-const handleFilesChange = (event: Event, fromFolder: boolean) => {
-  const input = event.target as HTMLInputElement
-  const files = input.files
-  if (!files || files.length === 0) return
-
+/** Filters the chosen files like the native inputs do and hands the rest to the upload flow. */
+const acceptChosenFiles = (files: FileList | File[], fromFolder: boolean) => {
+  if (files.length === 0) return
   const result = filterUploadFiles(files, {
     supportedFileTypes: props.supportedFileTypes,
     fromFolder,
     multiFile: files.length > 1,
   })
-
-  if (!notifyFilterResult(result, 'knowledgeBase.allFilesSkippedNoEngine')) {
-    input.value = ''
-    return
-  }
-
+  if (!notifyFilterResult(result, 'knowledgeBase.allFilesSkippedNoEngine')) return
   emit('files', result.validFiles)
+}
+
+const handleFilesChange = (event: Event, fromFolder: boolean) => {
+  const input = event.target as HTMLInputElement
+  const files = input.files
+  if (!files || files.length === 0) return
+  acceptChosenFiles(files, fromFolder)
   input.value = ''
 }
 
@@ -213,7 +218,30 @@ const openUrlDialog = () => {
   urlDialogVisible.value = true
 }
 
-defineExpose({ openUrlDialog })
+/**
+ * Runs one entry of the source menu from Kailo's page header (DD-157). The
+ * upload entries are file actions: Kailo opened the system picker inside the
+ * user's click and passes the chosen files here (07 §4.8.7 file selection
+ * channel); a folder pick carries each file's relative path, which a
+ * structured-cloned File does not keep, so it is restored for the folder
+ * mapping of the upload flow.
+ */
+const runAction = (value: 'upload' | 'uploadFolder' | 'importURL' | 'manualCreate', selection?: KailoFileSelection) => {
+  if ((value === 'upload' || value === 'uploadFolder') && selection) {
+    const fromFolder = value === 'uploadFolder'
+    if (fromFolder) {
+      selection.files.forEach((file, index) => {
+        const path = selection.paths[index]
+        if (path && path !== file.name && !file.webkitRelativePath) setRelativePath(file, path)
+      })
+    }
+    acceptChosenFiles(selection.files, fromFolder)
+    return
+  }
+  handleActionSelect({ value })
+}
+
+defineExpose({ openUrlDialog, runAction })
 </script>
 
 <style lang="less" scoped>

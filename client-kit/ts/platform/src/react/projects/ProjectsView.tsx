@@ -34,7 +34,9 @@ import {loadProjectWorkItems,resolveProjectWorkItemTarget,type ProjectWorkItemTa
 import {ProjectsIssuesList} from "./ProjectsIssuesList";
 import {ProjectsPullRequestsList} from "./ProjectsPullRequestsList";
 import {matchesProjectsSearch} from "./lib/projectsSearch";
-import {usePulseHost,useUsersBatchQuery} from "../pulse/host";
+import {usePulseHost} from "../pulse/host";
+import {useProjectProfiles} from "./useProjectProfiles";
+import {projectIssueAssignmentPubkeys} from "./projectAssignmentText";
 import {ProjectIssueDetail} from "./ProjectIssueDetail";
 import {ProjectPullRequestDetail} from "./ProjectPullRequestDetail";
 import {ProjectPanelState} from "./ProjectPanelState";
@@ -140,6 +142,9 @@ function ProjectRepositoryPage(props:ProjectsViewProps) {
   const onOpen=props.onSelectedProjectChange;
   const t=useUiT();const cache=useQueryClient();
   const panel=useProjectRepositoryPanel(target.repositoryId??"");
+  // Keep source selection in the page, above the permission/read loading gate.
+  // The page is keyed by host.scopeKey, so another identity starts remote.
+  const [checkoutSelection,setCheckoutSelection]=useState<{repository:string;source:"remote"|"local"}|null>(null);
   const chatAvailable=Boolean(useProjectAgentChatHost()&&props.renderWorkItems);
   const lifetime=useMemo(()=>({controller:new AbortController()}),[host]);
   useEffect(()=>{if(lifetime.controller.signal.aborted)lifetime.controller=new AbortController();return()=>lifetime.controller.abort();},[lifetime]);
@@ -186,6 +191,8 @@ function ProjectRepositoryPage(props:ProjectsViewProps) {
     {navigationFailed?<p role="alert">{t("platform.loadFailed")}</p>:null}
     {selected?(props.renderWorkItems?props.renderWorkItems(detail,snapshot.viewerPubkey):detail):
       <RepositoryWorkspace host={host} snapshot={snapshot} project={project} repository={repository} panel={panel} renderWorkItems={props.renderWorkItems}
+        checkoutSource={{source:checkoutSelection?.repository===repository.repoAddress?checkoutSelection.source:"remote",
+          onChange:source=>setCheckoutSelection({repository:repository.repoAddress,source})}}
         tab={tab} onBack={()=>navigate(project.id)} onTabChange={next=>navigate(project.id,{repositoryId:repository.id,tab:urlTab(next)})}
         commitHash={commitHash} filePath={tab==="files"?target.filePath:undefined}
         onSelectCommit={hash=>navigate(project.id,{repositoryId:repository.id,tab:"commits",...(hash?{commitHash:hash}:{})})}
@@ -201,12 +208,13 @@ type WorkItemsSnapshot=Awaited<ReturnType<typeof loadProjectWorkItems>>;
  * and the WorkspaceTabs content. Profiles and discussion reads come from the work-item host, so the
  * tab content renders inside `renderWorkItems`; the rail and its management actions do not need it.
  */
-function RepositoryWorkspace({host,snapshot,project,repository,panel,renderWorkItems,tab,onBack,onTabChange,onOpen,commitHash,filePath,onSelectCommit,onRepositoryChange,onDiscussInChannel}:{
+function RepositoryWorkspace({host,snapshot,project,repository,panel,renderWorkItems,tab,onBack,onTabChange,onOpen,commitHash,filePath,onSelectCommit,onRepositoryChange,onDiscussInChannel,checkoutSource}:{
   host:ProjectsHost;snapshot:WorkItemsSnapshot;project:Project;repository:Project["repositories"][number];panel:ProjectRepositoryPanelState;
   renderWorkItems:ProjectsViewProps["renderWorkItems"];tab:ProjectWorkspaceTab;
   onBack:()=>void;onTabChange:(tab:ProjectWorkspaceTab)=>void;onOpen:(target:ProjectWorkItemTarget)=>void|Promise<void>;
   commitHash:string|null;filePath?:string;onSelectCommit:(hash:string|null)=>void;onRepositoryChange:(repositoryId:string)=>void;
   onDiscussInChannel?:ProjectDiscussInChannel;
+  checkoutSource:import("./useProjectLocalCheckout").ProjectCheckoutSource;
 }) {
   const t=useUiT();const cache=useQueryClient();const [createOpen,setCreateOpen]=useState(false);const [creating,setCreating]=useState(false);
   const [createReviewOpen,setCreateReviewOpen]=useState(false);
@@ -218,7 +226,7 @@ function RepositoryWorkspace({host,snapshot,project,repository,panel,renderWorkI
   const items=useMemo(()=>snapshot.items.filter(item=>item.repository.id===repository.id),[snapshot,repository.id]);
   const issues=useMemo(()=>items.flatMap(item=>item.type==="issue"?[item.issue]:[]),[items]);
   const pullRequests=useMemo(()=>items.flatMap(item=>item.type==="pull-request"?[item.pullRequest]:[]),[items]);
-  const git=useRepositoryGitState({host,repository,pullRequests,commitHash});
+  const git=useRepositoryGitState({host,repository,pullRequests,commitHash,checkoutSource,projectId:project.id,viewer:snapshot.viewerPubkey});
   const open=(next:ProjectWorkItemTarget)=>{void Promise.resolve().then(()=>{if(!lifetime.controller.signal.aborted)return onOpen(next);})
     .catch(()=>{if(!lifetime.controller.signal.aborted)setNavigationFailed(true);});};
   const onCreateTask=host.publish?()=>setCreateOpen(true):undefined;
@@ -226,9 +234,9 @@ function RepositoryWorkspace({host,snapshot,project,repository,panel,renderWorkI
   // DD-130: the original Project chat mode, with the repository page context.
   const chatHost=useProjectAgentChatHost();
   const agentPageContext=useMemo(()=>buildProjectDetailAgentContext({activeTab:tab,branch:host.git?git.activeBranch:null,
-    file:tab==="files"&&filePath?{kind:"file",path:filePath}:null,project,repository,source:"remote",
+    file:tab==="files"&&filePath?{kind:"file",path:filePath}:null,project,repository,source:git.localCheckout.source,
     viewLabels:{overview:t("projects.home.overview"),...Object.fromEntries(Object.entries(workspaceTabTitle).map(([key,value])=>[key,t(value)]))},
-    workItems:[commitHash?{hash:commitHash}:null,null,null]}),[commitHash,filePath,git.activeBranch,host.git,project,repository,t,tab]);
+    workItems:[commitHash?{hash:commitHash}:null,null,null]}),[commitHash,filePath,git.activeBranch,git.localCheckout.source,host.git,project,repository,t,tab]);
   const chatPanel=chatHost&&renderWorkItems?(width:ProjectChatPanelWidth)=>renderWorkItems(<ProjectAgentChatPanel canResetWidth={width.canReset}
     constrainToAvailableSpace={false} context={panel.agentContext(agentPageContext)} onClose={panel.collapse} onResetWidth={width.onResetWidth}
     onResizeStart={width.onResizeStart} widthPx={width.widthPx}/>,snapshot.viewerPubkey):undefined;
@@ -243,7 +251,7 @@ function RepositoryWorkspace({host,snapshot,project,repository,panel,renderWorkI
     <ProjectDetailPanelLayout state={panel} chatPanel={chatPanel} resetKey={`${repository.id}:${tab}`} panel={<ProjectRepositoryContextPanel activeTab={tab} fetch={host.git?git.fetch:undefined} host={host}
       identityPubkey={snapshot.viewerPubkey} issues={issues} onCreatePullRequest={onCreatePullRequest} onCreateTask={onCreateTask}
       onRepositoryChange={onRepositoryChange} project={project} projects={snapshot.projects} pullRequests={pullRequests} repository={repository}
-      snapshot={host.git?git.snapshot:undefined} sourceControls={host.git?git.sourceControls:undefined}
+      snapshot={host.git?git.snapshot:undefined} sourceControls={host.git?git.sourceControls:undefined} localCheckout={git.localCheckout}
       selectionActions={{onChatWithAgent:chatPanel?items=>panel.openSelectionChat(agentPageContext,items):undefined,onDiscussInChannel,scopeKey:host.scopeKey}}
       widthPx={panel.width.widthPx} onResizeStart={panel.width.onResizeStart} canResetWidth={panel.width.canReset} onResetWidth={panel.width.onResetWidth}/>}>
       {navigationFailed?<p role="alert">{t("platform.loadFailed")}</p>:null}
@@ -291,6 +299,7 @@ function RepositoryWorkspaceTabs({host,project,repository,items,issues,pullReque
       contributorActivityCounts={people.contributorActivityCounts} contributorPubkeys={people.contributorPubkeys}/>;
   return <WorkspaceTabs tab={tab} onTabChange={onTabChange} onBack={onBack} git={Boolean(host.git)} channels={discussions}
     onCreateTask={tab==="issues"?onCreateTask:undefined} onCreatePullRequest={tab==="prs"?onCreatePullRequest:undefined}
+    updateReviewAction={git.updateReviewAction}
     detailSelected={tab==="activity"&&Boolean(commitHash)}
     sectionHeader={isProjectGitWorkspaceTab(tab)?repositoryGitSectionHeader(tab,git,commitHash,t):undefined}>
     {projectWorkspaceTabNeedsGit(tab)&&!host.git?<ProjectPanelState error title={t("projects.unavailable")}/>:content}
@@ -330,7 +339,7 @@ function ProjectWorkItemDetail({workItem,host,onOpen,onDiscussInChannel}:{workIt
     viewLabels:{issues:t("projects.list.tasks"),prs:t("projects.list.reviews")},
     workItems:[null,workItem.type==="issue"?workItem.issue:null,workItem.type==="pull-request"?workItem.pullRequest:null]}):undefined,[chatHost,t,workItem]);
   const channelId=workItem.repository.channelId??workItem.project.projectChannelId;
-  const profiles=useUsersBatchQuery([item.author,...item.comments.map(comment=>comment.author),...(workItem.type==="issue"?workItem.issue.assignees:[...workItem.pullRequest.reviewers,...workItem.pullRequest.updates.map(update=>update.author)])]).data?.profiles;
+  const profiles=useProjectProfiles([item.author,...item.comments.map(comment=>comment.author),...(workItem.type==="issue"?[...workItem.issue.assignees,...projectIssueAssignmentPubkeys(workItem.issue)]:[...workItem.pullRequest.reviewers,...workItem.pullRequest.updates.map(update=>update.author)])]).data?.profiles;
   return workItem.type==="issue"?<>
     <ProjectIssueDetail issue={workItem.issue} profiles={profiles} publication={{host,projectId:workItem.project.id,repository:workItem.repository}}
       contextPanel={{channelId,onCreateTask:host.publish&&onOpen?()=>setCreateOpen(true):undefined,onDiscussInChannel,agentContext}}/>
@@ -384,7 +393,7 @@ function ProjectWorkItemsList({host,query,filter,search,sort,view,onOpen,renderW
 
 function ProjectWorkItemsContent({items,filter,view,search,onOpen}:{items:ProjectInboxWorkItem[];filter:"issues"|"prs";view:ProjectsViewMode;search:string;onOpen:(project:Project,repository:Project["repositories"][number],target:{id:string})=>void}) {
   const t=useUiT();
-  const profiles=useUsersBatchQuery(items.map(item=>item.type==="issue"?item.issue.author:item.pullRequest.author)).data?.profiles;
+  const profiles=useProjectProfiles(items.map(item=>item.type==="issue"?item.issue.author:item.pullRequest.author)).data?.profiles;
   const common={profiles,viewMode:view,embedded:view==="list",onOpen};
   // One block child inside the work-item host's flex row.
   return <div className="min-w-0 flex-1">{filter==="issues"?<ProjectsIssuesList {...common} issues={items.filter(item=>item.type==="issue")} emptyMessage={search.trim()?t("projects.list.tasksNoMatch"):undefined}/>:
@@ -439,7 +448,7 @@ function ProjectsActivityBody({snapshot,search,onOpenProject,onOpen}:{snapshot:P
   const now=useNow(600_000);
   const digest=useMemo(()=>buildProjectsActivityDigest({issues,nowSeconds:Math.floor(now/1_000),projects,pullRequests,summaries,t}),[issues,now,projects,pullRequests,summaries,t]);
   const pubkeys=useMemo(()=>projectsActivityPubkeys({issues,projects,pullRequests}),[issues,projects,pullRequests]);
-  const profiles=useUsersBatchQuery(pubkeys,{enabled:pubkeys.length>0}).data?.profiles;
+  const profiles=useProjectProfiles(pubkeys,{enabled:pubkeys.length>0}).data?.profiles;
   // The work-item host wraps its children in a flex row (for its profile
   // panel); keep the original stacked intro + timeline as one block child.
   return <div className="min-w-0 flex-1">
@@ -488,7 +497,7 @@ function ProjectsOverviewProjectItemsWithActivity({visible,viewerPubkey,view,sum
   // Identity-stable people arrays keep memoized cards from re-rendering.
   const peopleByProject=useMemo(()=>new Map(visible.map(project=>[project.id,projectPeople(project,summaries[project.id])])),[summaries,visible]);
   const pubkeys=useMemo(()=>[...new Set([...peopleByProject.values()].flat())],[peopleByProject]);
-  const profiles=useUsersBatchQuery(pubkeys,{enabled:pubkeys.length>0}).data?.profiles;
+  const profiles=useProjectProfiles(pubkeys,{enabled:pubkeys.length>0}).data?.profiles;
   // One block child inside the work-item host's flex row.
   return <div className="min-w-0 flex-1"><ProjectsOverviewProjectItems visible={visible} viewerPubkey={viewerPubkey} view={view} renderRow={renderRow}
     activityFor={project=>({people:peopleByProject.get(project.id)??[],profiles,summary:summaries[project.id]})}/></div>;
@@ -540,7 +549,7 @@ function ProjectsOverviewRepositoryItems({visible,viewerPubkey,view,summaries,pr
 function ProjectsOverviewRepositoryItemsWithActivity(props:Omit<ComponentProps<typeof ProjectsOverviewRepositoryItems>,"profiles"|"canCopyLink">&{summaries:Record<string,ProjectActivitySummary>}) {
   const pubkeys=useMemo(()=>[...new Set(props.visible.flatMap(({repository})=>[repository.owner,...repository.contributors,
     ...(props.summaries[repository.repoAddress]?.participantPubkeys??[])].map(normalizePubkey)))],[props.visible,props.summaries]);
-  const profiles=useUsersBatchQuery(pubkeys,{enabled:pubkeys.length>0}).data?.profiles;
+  const profiles=useProjectProfiles(pubkeys,{enabled:pubkeys.length>0}).data?.profiles;
   return <ProjectsOverviewRepositoryItems {...props} profiles={profiles} canCopyLink/>;
 }
 
@@ -557,7 +566,7 @@ function ProjectsOverviewContextRailContent({snapshot,projectReadModels,filter,o
   const summaries=useMemo(()=>projectActivitySummaries(snapshot.events,projects),[snapshot,projects]);
   const repositorySummaries=useMemo(()=>repositoryActivitySummaries(snapshot.events,directoryRepositories(projectReadModels).map(row=>row.repository)),[snapshot,projectReadModels]);
   const people=useMemo(()=>projectsOverviewContext({filter,issues,projectReadModels,projects,pullRequests,repositorySummaries,summaries}).people,[filter,issues,projectReadModels,projects,pullRequests,repositorySummaries,summaries]);
-  const profiles=useUsersBatchQuery(people,{enabled:people.length>0}).data?.profiles;
+  const profiles=useProjectProfiles(people,{enabled:people.length>0}).data?.profiles;
   return <div className="min-w-0 flex-1"><ProjectsOverviewContextPanel filter={filter} issues={issues} projectReadModels={projectReadModels} projects={projects} pullRequests={pullRequests}
     repositorySummaries={repositorySummaries} summaries={summaries} profiles={profiles} onSelectSection={onSelectSection} onCreateIssue={onCreateIssue} onCreatePullRequest={onCreatePullRequest} onCreateProject={onCreateProject}
     onAddChannel={onAddChannel} onAddRepository={onAddRepository} canCreateTarget={canCreateTarget}

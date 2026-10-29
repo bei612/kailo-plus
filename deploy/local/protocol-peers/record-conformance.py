@@ -3,7 +3,7 @@
 
 The PROTOCOL_PEER arm of the original ComponentTask conformance (component_release_peer.rs) compares,
 by exact JSON value, what Core's MCP client receives through an AgentGateway route with the
-`initializeResultJson` / `listResultJson` of COMPONENT_CONFORMANCE_ENVIRONMENT_FILE. The Gateway does
+`initializeResultJson` / `listResultJson` of the peer's conformance candidate (DD-136(2)). The Gateway does
 not forward tools/list verbatim (it rebuilds the result and adds cache hints), so the expectation is
 recorded through the same Gateway build instead of being typed in or taken from the peer directly:
 

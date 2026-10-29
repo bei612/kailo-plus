@@ -43,7 +43,7 @@ export function tokenColor(value) {
             return color
         }
         return Color(v)
-    } catch (e) {
+    } catch {
         return null
     }
 }
@@ -85,7 +85,7 @@ export function readKailoTokens(element = document.documentElement) {
         out['--font-sans'] = font
     }
     // DD-141 roles (complete colors) when the sheet carries them.
-    ;['selected', 'selected-foreground', 'brand-hover', 'success', 'warning-text', 'info'].forEach((name) => {
+    ;['selected', 'selected-foreground', 'brand-hover', 'success', 'warning-text', 'info', 'hover'].forEach((name) => {
         const v = read('--kailo-color-' + name)
         if (v) {
             out['--' + name] = v
@@ -134,6 +134,11 @@ export function kailoScheme(tokens, dark) {
     const primaryContainer = t('--selected') || background.mix(primary, dark ? 0.24 : 0.14)
     const onPrimaryContainer = t('--selected-foreground') || foreground
     const errorContainer = background.mix(destructive, dark ? 0.24 : 0.14)
+    // DD-157 (20 §13.6): selected rows/entries use the Kailo selected role
+    // (brand-soft), hover the Kailo hover role.
+    const selected = t('--selected')
+    const selectedForeground = t('--selected-foreground')
+    const hover = t('--hover')
 
     const colors = {
         'primary': css(primary),
@@ -142,8 +147,8 @@ export function kailoScheme(tokens, dark) {
         'on-primary-container': css(onPrimaryContainer),
         'secondary': css(mutedForeground),
         'on-secondary': css(background),
-        'secondary-container': css(accent),
-        'on-secondary-container': css(accentForeground),
+        'secondary-container': css(selected || accent),
+        'on-secondary-container': css(selected && selectedForeground ? selectedForeground : accentForeground),
         'tertiary': css(primary),
         'on-tertiary': css(primaryForeground),
         'tertiary-container': css(primaryContainer),
@@ -175,7 +180,7 @@ export function kailoScheme(tokens, dark) {
         'inline-tags-border': css(border),
         'mimefont-background': css(accent.fade(0.4)),
         'mimefont-color': css(accentForeground),
-        'hover-background': dark ? 'rgba(255,255,255,.06)' : 'rgba(0,0,0,.05)',
+        'hover-background': hover ? css(hover) : dark ? 'rgba(255,255,255,.06)' : 'rgba(0,0,0,.05)',
     }
     const radius = tokenRadius(tokens['--radius'])
     colors['paper-border-radius'] = Math.round(radius * 1.2) + 'px'

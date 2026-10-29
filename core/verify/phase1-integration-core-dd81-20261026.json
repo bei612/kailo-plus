@@ -1,0 +1,224 @@
+{
+  "completed_at": "2026-10-26T20:59:24.957374+00:00",
+  "job": "/volumes/data/kailo/conformance/checks/integration-core-697cfe263",
+  "initial_source_commit": "697cfe2633aed81b39ab6b5ddc922e03244ee0a7",
+  "final_source_commit": "b19846236202fcd10afb36075b55d3317a3f00e4",
+  "design_commit": "bb41415a5241ce31564f9da01272ee6b82158c60",
+  "source_provenance": "Direct CI GitHub fixed commits; readonly existing object alternates. No local source archive transferred.",
+  "final_tree_comparison": {
+    "source_commit": "b19846236202fcd10afb36075b55d3317a3f00e4",
+    "compared_files": 2070,
+    "errors": [],
+    "verified_at": "2026-10-26T20:58:13.601041+00:00"
+  },
+  "sqlx_generated_diff": [
+    {
+      "path": "core/.sqlx/query-c6e725520ea57d49f4dd1ad106650e3ea06fb913ec263b0ead5594734e8ce499.json",
+      "before": "c6507e7f75584230232728f3a45eb78b868260d2c7b641679797a1ff4f15a0df",
+      "after": null
+    }
+  ],
+  "stages": {
+    "application-base-fixture": 0,
+    "attach": 0,
+    "check": 0,
+    "clippy": 0,
+    "core-normal": 0,
+    "feedback-pg": 0,
+    "fmt": 0,
+    "human-exposure-pg": 0,
+    "migration-700-down": 0,
+    "migration-700-up": 0,
+    "migrations-up": 0,
+    "profile-pg": 0,
+    "publication-history-negative": 101,
+    "publication-history-pg": 0,
+    "publication-history-restored": 0,
+    "publication-operation-key-negative": 101,
+    "publication-operation-key-restored": 0,
+    "publication-pg": 0,
+    "publication-retry-negative": 101,
+    "publication-retry-restored": 0,
+    "publication-ttl-negative": 101,
+    "publication-ttl-restored": 0,
+    "push-pg": 0,
+    "sqlx-check": 0,
+    "sqlx-refresh": 0
+  },
+  "suites": {
+    "core-normal": {
+      "passed": 1043,
+      "failed": 0,
+      "ignored": 87
+    },
+    "publication-pg": {
+      "passed": 2,
+      "failed": 0,
+      "ignored": 0
+    },
+    "publication-history-pg": {
+      "passed": 1,
+      "failed": 0,
+      "ignored": 0
+    },
+    "push-pg": {
+      "passed": 31,
+      "failed": 0,
+      "ignored": 0
+    },
+    "profile-pg": {
+      "passed": 2,
+      "failed": 0,
+      "ignored": 0
+    },
+    "feedback-pg": {
+      "passed": 2,
+      "failed": 0,
+      "ignored": 0
+    },
+    "human-exposure-pg": {
+      "passed": 2,
+      "failed": 0,
+      "ignored": 0
+    }
+  },
+  "limits": {
+    "sdk": {
+      "name": "/kailo-joint-697cfe263-sdk",
+      "state": {
+        "Dead": false,
+        "Error": "",
+        "ExitCode": 0,
+        "FinishedAt": "2026-10-26T20:58:26.907519844Z",
+        "OOMKilled": false,
+        "Paused": false,
+        "Pid": 0,
+        "Restarting": false,
+        "Running": false,
+        "StartedAt": "2026-10-26T20:51:50.38465649Z",
+        "Status": "exited"
+      },
+      "image": "sha256:3007729eb192341a4f004a88e42e1e66c94fc67d763acfc96568bd7311116018",
+      "memory": 17179869184,
+      "swap": 17179869184,
+      "nanoCpus": 4000000000
+    },
+    "pg": {
+      "name": "/kailo-joint-697cfe263-pg",
+      "state": {
+        "Dead": false,
+        "Error": "",
+        "ExitCode": 0,
+        "FinishedAt": "0001-01-01T00:00:00Z",
+        "OOMKilled": false,
+        "Paused": false,
+        "Pid": 2370994,
+        "Restarting": false,
+        "Running": true,
+        "StartedAt": "2026-10-26T20:51:49.090817981Z",
+        "Status": "running"
+      },
+      "image": "sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea",
+      "memory": 2147483648,
+      "swap": 2147483648,
+      "nanoCpus": 1000000000
+    }
+  },
+  "cleanup": {
+    "cleanup-containers.txt": "",
+    "cleanup-networks.txt": ""
+  },
+  "limitations": [
+    "Normal workspace includes live-environment tests that return early without common env; their harness ok is not live E2E evidence.",
+    "Actual isolated-PG targeted suites have required database variables configured; no live receiver stack or production identity used.",
+    "Historical operations missing original DISPATCH remain fail closed; authoritative ordinary-event absence and complete DD81 closure remain unimplemented.",
+    "SQLx refresh removed one stale cached query; root committed deletion as b198 before final source comparison and prepare check.",
+    "Initial final-cache fetch used missing origin remote and failed; retained cache-commit-fetch.log. Explicit GitHub retry succeeded in cache-commit-fetch-2.log."
+  ],
+  "artifacts": {
+    "application-base-fixture.exit": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+    "application-base-fixture.log": "b8d91234df6dc7522f3996b7a41d8cc59cbdb5628003cd4487e4072093a85952",
+    "attach.exit": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+    "cache-commit-fetch-2.log": "65107e91535aaa13fac2cd37da5ed3cac42c5761c4bb6ed2197aac2c3808f170",
+    "cache-commit-fetch.log": "957411debe9b623d7541c14c850461934da857e7170f92b1b4596e6d9decca86",
+    "check-command.sh": "b9d14de1a74ae531a82e81a94e7cbf5c083b5dfa2975f7ff634e0b6cdfb5139c",
+    "check.exit": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+    "check.log": "6cea095b176557e05b92d52bec18519f00cb524999e2280bd35006ff29c65a2a",
+    "clippy.exit": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+    "clippy.log": "e37615c6c114eba59e1a511d873a97ff5009e95142369a0a86ac781a344220f8",
+    "core-normal.exit": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+    "core-normal.log": "3b75ff99f09475d9916d56730b6a08f4f3d8d0303f4841956c9c065b4449b7a9",
+    "feedback-pg.exit": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+    "feedback-pg.log": "c75e97825f17909f3fbb8b7807e6368feeaa4983c202176dc0272cb79551eb84",
+    "fetch.log": "4886f031374e50d46dff6974a0f83650f7f65d59a53c9578c3bb07f9db3bac0f",
+    "final-tree-comparison.json": "f612dc50c8266695c167e5b35193d4799e475242f633221a4e81d3314d31145c",
+    "fmt.exit": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+    "fmt.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "human-exposure-pg.exit": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+    "human-exposure-pg.log": "d6517340abb820128793e7c6122713449fc9d8b80063554a3baa947e2c744a8c",
+    "kailo-joint-697cfe263-pg-final-inspect.json": "95f1177fdda2708054a597229982c70c81284ccdd6e7af33be90d41d8c7c6173",
+    "kailo-joint-697cfe263-sdk-final-inspect.json": "de3d90c3a8ee8236525a2e629af4a3822cda6e4edc7e1dded03a2badbab0d131",
+    "launch.sh": "ff2d095060701cc674138bdfad0fe010d6841b7dcad834992bef31fe53b0ba02",
+    "migration-700-down.exit": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+    "migration-700-down.log": "68f15568fe1482e8bfc355aef0a63ce0c91171a293b618d772065a80295de0e2",
+    "migration-700-up.exit": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+    "migration-700-up.log": "285f35581d82d0f425abbd16b922c450675853f2875543b63ff505ff9c46f7bd",
+    "migrations-up.exit": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+    "migrations-up.log": "dd5825d1a92ebf8940947d3ceee99aebd982e4e9e3541b4fcaab59cf29920523",
+    "pg-limits.log": "b1079a714092bbdbb9ecd111e8a3adf2490ea8c6323bae84de71feb719aff29a",
+    "preflight.log": "2206cb0d2889b28a13528eaba8e54cf94926a802fb633e55e11ff0e66a1cda2e",
+    "profile-pg.exit": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+    "profile-pg.log": "3ca3632a73a192263a955c8f19910ce6270d51b7e370440508930d34c544fe9f",
+    "publication-history-negative.exit": "39b8dc3fc8b44765c8e6f1adee04c5b465e555ab791cc42d0d9e810d5b64297c",
+    "publication-history-negative.log": "bf97360f474769397cbe63f871e8df4644380a7d9eab4b81f495623d55b155bc",
+    "publication-history-pg.exit": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+    "publication-history-pg.log": "b30323a4a371f8f69debded6a59515af9933fbf6c3cfde3b2e1ccef672433855",
+    "publication-history-restored.exit": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+    "publication-history-restored.log": "819365d70e43deb2190f2cd6afcda005a2031e980103690c5fb825f82bfa21d1",
+    "publication-operation-key-negative.exit": "39b8dc3fc8b44765c8e6f1adee04c5b465e555ab791cc42d0d9e810d5b64297c",
+    "publication-operation-key-negative.log": "6c9bfe0d91ee269e847b096efa7acf49fb524c1d0bd4b9f7588e906eb7160372",
+    "publication-operation-key-restored.exit": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+    "publication-operation-key-restored.log": "4267488a76eb4ed20f68f2e5508688b136af49dd2841e7a02d52a03ea1401057",
+    "publication-pg.exit": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+    "publication-pg.log": "f6d537406ebef396652306a95c8491ce6ed9b5a5a3d5cf7785e68d28ff797c12",
+    "publication-retry-negative.exit": "39b8dc3fc8b44765c8e6f1adee04c5b465e555ab791cc42d0d9e810d5b64297c",
+    "publication-retry-negative.log": "d3fa87c1d651306b533e14434877aa3880e38f6a01340aeddecc6693f8c59075",
+    "publication-retry-restored.exit": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+    "publication-retry-restored.log": "a469c40630da3749372ea10a1e10a07adf965d5a8bf2541663d9e47486a2cf7a",
+    "publication-ttl-negative.exit": "39b8dc3fc8b44765c8e6f1adee04c5b465e555ab791cc42d0d9e810d5b64297c",
+    "publication-ttl-negative.log": "9ac72287ad1984613ce66814028f7036845bfeba9521da62c6d108af0480c108",
+    "publication-ttl-restored.exit": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+    "publication-ttl-restored.log": "90417d3da4655d50618af4dfac8568aedfb52b9db33cb405c735a9e68c82a9eb",
+    "push-pg.exit": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+    "push-pg.log": "03eece3d2d2987831d638d9fc5e110eaa5dd5a46531abb82bbf27758928a44cf",
+    "sdk-limits.log": "1278ed29ddc73ab13dd0966b5759a3e9d192bc091f02227f4c78ebea241429d6",
+    "sqlx-check.exit": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+    "sqlx-check.log": "940b46ef382718c8b62bc9cdd8804d8548e026dec041def827cb6bd3fbf0099d",
+    "sqlx-diff.json": "5114bf97202447f4cb34f1e7e374425dc5a70f55af1fad0b7117772ff53283bd",
+    "sqlx-refresh.exit": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+    "sqlx-refresh.log": "15730a576fe53d1a564bc68889417e0d8c51de1f201d70258094fad35ea8cd88"
+  },
+  "selected_normal_consumers": [
+    [
+      "application_binding::read_grant::receiver_environment_bootstrap::admitted_policy_metadata_requires_exact_original_ownership",
+      "ok"
+    ],
+    [
+      "application_binding::read_grant::receiver_environment_bootstrap::retained_receiver_setup_action_requires_exact_actor_and_command",
+      "ok"
+    ],
+    [
+      "application_binding::read_grant::receiver_environment_bootstrap::receiver_owner_approval_uses_original_http_decision_and_refuses_unknown",
+      "ok"
+    ],
+    [
+      "tests::push_token_orphan_fences_late_write_and_proves_lost_destroy_response",
+      "ok"
+    ]
+  ],
+  "full_receipt": {
+    "path": "/volumes/data/kailo/conformance/checks/integration-core-697cfe263/joint-receipt.json",
+    "sha256": "2768fea7257ad96e331baa601777d334d2d3b8571ff5151535a2f972bb0417b8",
+    "summary_note": "Only individual harness names omitted; original full receipt and hashed logs remain authoritative. PostgreSQL inspect state precedes the separately verified cleanup."
+  }
+}

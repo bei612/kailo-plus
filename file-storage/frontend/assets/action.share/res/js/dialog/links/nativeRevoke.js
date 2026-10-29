@@ -52,7 +52,7 @@ export default async function nativeRevoke(pydio, id) {
                 ? 'action.delete.awaiting-admission' : 'action.delete.unknown']);
         }
         return null;
-    } catch (error) {
+    } catch {
         pydio.UI.displayMessage('INFO', pydio.MessageHash['action.delete.unknown']);
         return null;
     }

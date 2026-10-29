@@ -16,13 +16,17 @@ import { normalizePubkey } from "../conversations/pubkey";
 import { UserAvatar } from "../messages/UserAvatar";
 import { ProfileAuthorName } from "./ProjectProfileIdentity";
 import { ProjectRichContent } from "./ProjectRichContent";
+import { projectAssignmentText } from "./projectAssignmentText";
 
 const COLLAPSED_COMMENT_COUNT = 3;
 
 export function ProjectIssueCommentTimeline({
+  candidates,
   comments,
   profiles,
 }: {
+  /** DD-157(8): the task's people, the only identities a legacy shortened label resolves to. */
+  candidates?: readonly string[];
   comments: ProjectIssue["comments"];
   profiles?: UserProfileLookup;
 }) {
@@ -103,6 +107,13 @@ export function ProjectIssueCommentTimeline({
           profiles,
           pubkey: comment.author,
         });
+        // DD-157(8): an assignment reads from its tags, never the stored label text.
+        const assignmentText = projectAssignmentText(
+          comment,
+          t,
+          (pubkey) => resolveUserLabel({ profiles, pubkey }),
+          candidates ?? comments.map((entry) => entry.author),
+        );
         return (
           <div
             className="flex min-h-10 min-w-0 items-start gap-2 py-2.5 text-sm text-muted-foreground"
@@ -144,11 +155,20 @@ export function ProjectIssueCommentTimeline({
                   {relativeTime(comment.createdAt)}
                 </span>
               </div>
-              <ProjectRichContent
-                className="mt-1 text-sm text-foreground/90"
-                content={comment.content}
-                tags={comment.tags}
-              />
+              {assignmentText !== null ? (
+                <p
+                  className="mt-1 text-sm text-foreground/90"
+                  data-testid="project-issue-assignment-text"
+                >
+                  {assignmentText}
+                </p>
+              ) : (
+                <ProjectRichContent
+                  className="mt-1 text-sm text-foreground/90"
+                  content={comment.content}
+                  tags={comment.tags}
+                />
+              )}
             </div>
           </div>
         );

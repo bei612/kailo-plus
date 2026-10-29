@@ -1400,6 +1400,9 @@ describe('original SQL-pair durable native write consumer', () => {
         for (const field of Object.keys(components))
           if (!(field in previousComponents)) delete components[field];
         Object.assign(components, previousComponents);
+        // Every request above has completed; close Node 18 keep-alive sockets
+        // before awaiting teardown so a failed assertion is not hidden by it.
+        server.closeAllConnections();
         await new Promise<void>((resolve, reject) =>
           server.close((error) => (error ? reject(error) : resolve())),
         );
@@ -2282,6 +2285,17 @@ describe('native saved-view HUMAN query consumer', () => {
         { findOneBy: history } as any,
       );
       calls.mockImplementation(async (_config, _operation, request) => {
+        if (request.authorizeScope) {
+          expect(request.authorizeScope).toEqual({ permission: 'discover' });
+          return {
+            scope: {
+              ...config,
+              generation: 2,
+              permission: 'discover',
+              checkedRevision: 'fresh-scope-fact',
+            },
+          };
+        }
         const resolved = request.resolveResource as any;
         if (resolved)
           return {
@@ -2319,7 +2333,7 @@ describe('native saved-view HUMAN query consumer', () => {
         undefined,
         undefined,
       );
-      expect(native.sqlReference).toHaveBeenCalledWith(binding, draft);
+      expect(native.sqlReference).toHaveBeenCalledWith(binding, draft, 2);
       const command = calls.mock.calls.find((call) => call[2].command)?.[2]
         .command as any;
       expect(command.componentAction).toEqual({
@@ -2722,6 +2736,11 @@ describe('native saved-view HUMAN query consumer', () => {
         10,
         scope,
         true,
+        undefined,
+        undefined,
+        undefined,
+        false,
+        undefined,
       );
       await expect(
         new ModelResolver().previewSql(
@@ -5483,6 +5502,17 @@ describe('native saved-view HUMAN query consumer', () => {
       );
       calls.mockImplementation(async (_config, _operation, input, token) => {
         expect(token).toBe('verified-native-token');
+        if (input.authorizeScope) {
+          expect(input.authorizeScope).toEqual({ permission: 'discover' });
+          return {
+            scope: {
+              ...config,
+              generation: 2,
+              permission: 'discover',
+              checkedRevision: 'fresh-scope-fact',
+            },
+          };
+        }
         const payload = input as any;
         if (payload.resolveResource)
           return {
@@ -6488,12 +6518,19 @@ describe('native saved-view HUMAN query consumer', () => {
       };
       askCreate = jest.fn(async (input) => ({ queryId: input.queryId }));
       askGet = jest.fn(async () => structuredClone(askResult));
-      askStream = jest.fn(async () =>
-        Readable.from([
+      askStream = jest.fn(async () => {
+        // The provider retains the independently complete same-query result;
+        // the queue done frame itself cannot manufacture this receipt.
+        askResult = {
+          ...askResult,
+          status: AskResultStatus.FINISHED,
+          completion: { queryId: key, content: 'Original explanation' },
+        };
+        return Readable.from([
           'data: {"message":"Original explanation"}\n\n',
           `data: ${JSON.stringify({ done: true, queryId: key })}\n\n`,
-        ]),
-      );
+        ]);
+      });
       direct = jest.fn(async () => ({ columns: [], data: [] }));
       prepared = jest.fn(async (input) => {
         row ??= input;
@@ -6521,13 +6558,17 @@ describe('native saved-view HUMAN query consumer', () => {
       };
       chartCreate = jest.fn(async (input) => ({ queryId: input.queryId }));
       chartGet = jest.fn(async () => structuredClone(chartResult));
-      summaryStream = jest.fn(async () =>
-        Readable.from([
+      summaryStream = jest.fn(async () => {
+        summaryGet.mockResolvedValue({
+          status: TextBasedAnswerStatus.SUCCEEDED,
+          completion: { queryId: key, content: 'Original summary' },
+        });
+        return Readable.from([
           'data: {"message":"Original "}\n\n',
           'data: {"message":"summary"}\n\n',
           `data: ${JSON.stringify({ done: true, queryId: key })}\n\n`,
-        ]),
-      );
+        ]);
+      });
       prepareSummary = jest.fn(async (input) => {
         const created = !summaryRow;
         if (created && input.requestPayload.nativeAsk) {
@@ -6814,6 +6855,83 @@ describe('native saved-view HUMAN query consumer', () => {
           await graphql.stop();
         }
       };
+      it.each(['', '完整原结果'])(
+        'GENERAL REST recovers full %j after lost queue and preserves the original query',
+        async (content) => {
+          askResult = {
+            status: AskResultStatus.GENERATING,
+            type: AskResultType.GENERAL,
+          };
+          askStream.mockResolvedValue(
+            Readable.from(['data: {"message":"partial"}\n\n']),
+          );
+          const first = await sendAsk();
+          expect(first.status).toBe(202);
+          expect(summaryRow.statusCode).toBe(202);
+          askResult = {
+            status: AskResultStatus.FINISHED,
+            type: AskResultType.GENERAL,
+            completion: { queryId: key, content },
+          };
+          const recovered = await sendAsk();
+          expect(recovered.status).toBe(200);
+          expect((await recovered.json()).explanation).toBe(content);
+          expect(summaryRow.responsePayload.nativeAsk.completionQueryId).toBe(
+            key,
+          );
+          const history = await readGenerationHistory();
+          expect(history.errors).toBeUndefined();
+          expect(
+            history.data.apiHistory.items[0].responsePayload.explanation,
+          ).toBe(content);
+          expect(askCreate).toHaveBeenCalledTimes(1);
+          expect(askStream).toHaveBeenCalledTimes(1);
+          expect(direct).not.toHaveBeenCalled();
+          expect(summaryCreate).not.toHaveBeenCalled();
+          expect(calls.mock.calls.every((call) => !call[2].command)).toBe(true);
+        },
+      );
+      it.each(['missing', 'foreign', 'different', 'verified', 'revoked'])(
+        'GENERAL legacy History with only doneQueryId requires full evidence: %s',
+        async (mode) => {
+          askResult = {
+            status: AskResultStatus.FINISHED,
+            type: AskResultType.GENERAL,
+            completion: { queryId: key, content: 'Original explanation' },
+          };
+          expect((await sendAsk()).status).toBe(200);
+          delete summaryRow.responsePayload.nativeAsk.completionQueryId;
+          // Preserve the historical row bytes; its old done alone is insufficient.
+          const previous = structuredClone(summaryRow);
+          if (mode === 'missing') delete askResult.completion;
+          if (mode === 'foreign') askResult.completion.queryId = 'foreign';
+          if (mode === 'different') askResult.completion.content = 'different';
+          if (mode === 'revoked') {
+            askGet.mockImplementation(async () => {
+              calls.mockRejectedValue(
+                new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED'),
+              );
+              return structuredClone(askResult);
+            });
+          }
+          const history = await readGenerationHistory();
+          if (mode === 'verified') {
+            expect(history.errors).toBeUndefined();
+            expect(
+              history.data.apiHistory.items[0].responsePayload.explanation,
+            ).toBe('Original explanation');
+          } else {
+            expect(history.errors).toBeDefined();
+            expect(
+              history.data?.apiHistory?.items?.[0]?.responsePayload,
+            ).toBeFalsy();
+          }
+          expect(summaryRow).toEqual(previous);
+          expect(askCreate).toHaveBeenCalledTimes(1);
+          expect(askStream).not.toHaveBeenCalled();
+          noExecution();
+        },
+      );
       it.each([false, true])(
         'retains the original SQL response/SSE and finished task without executing SQL or summary (stream=%s)',
         async (streaming) => {
@@ -7548,6 +7666,13 @@ describe('native saved-view HUMAN query consumer', () => {
           `data: ${JSON.stringify({ done: true, queryId: key })}\n\n`,
         ]),
       );
+      askGet
+        .mockImplementationOnce(async () => structuredClone(askResult))
+        .mockResolvedValue({
+          status: AskResultStatus.FINISHED,
+          type: AskResultType.GENERAL,
+          completion: { queryId: key, content: '中文回答' },
+        });
       const response = await sendAsk();
       expect(response.status).toBe(200);
       expect((await response.json()).explanation).toBe('中文回答');
@@ -8208,6 +8333,131 @@ describe('native saved-view HUMAN query consumer', () => {
       },
     );
 
+    it.each(['summary', 'ask', 'stream-ask'])(
+      'recovers the same original complete %s result after the one-shot stream was claimed',
+      async (kind) => {
+        summaryStream.mockRejectedValue(new Error('lost original stream'));
+        const sendOriginal = () =>
+          kind === 'summary'
+            ? sendSummary()
+            : sendAsk(undefined, {}, kind === 'stream-ask');
+        const first = await sendOriginal();
+        const firstBody = await first.text();
+        expect(summaryCreate).toHaveBeenCalledTimes(1);
+        expect(summaryStream).toHaveBeenCalledTimes(1);
+        expect(summaryRow.statusCode).toBe(202);
+        expect(firstBody).not.toContain('"summary":"full original answer"');
+        summaryGet.mockResolvedValue({
+          status: TextBasedAnswerStatus.SUCCEEDED,
+          completion: { queryId: key, content: 'full original answer' },
+        });
+        const recovered = await sendOriginal();
+        const body = await recovered.text();
+        expect(body).toContain('full original answer');
+        expect(summaryRow.statusCode).toBe(200);
+        expect(summaryRow.responsePayload.summary).toBe('full original answer');
+        expect(summaryCreate).toHaveBeenCalledTimes(1);
+        expect(summaryStream).toHaveBeenCalledTimes(1);
+      },
+    );
+    it.each(['prefix', 'tail'])(
+      'original SQL stream summary completes only an actual full body after receiving a %s',
+      async (shape) => {
+        const observed = shape === 'prefix' ? 'Original ' : 'summary';
+        summaryStream.mockImplementation(async () => {
+          summaryGet.mockResolvedValue({
+            status: TextBasedAnswerStatus.SUCCEEDED,
+            completion: { queryId: key, content: 'Original summary' },
+          });
+          return Readable.from([
+            `data: ${JSON.stringify({ message: observed })}\n\n`,
+            `data: ${JSON.stringify({ done: true, queryId: key })}\n\n`,
+          ]);
+        });
+        const response = await sendAsk(undefined, {}, true);
+        const body = await response.text();
+        const frames = body
+          .split('\n\n')
+          .filter((part) => part.startsWith('data: '))
+          .map((part) => JSON.parse(part.slice(6)));
+        const content = frames
+          .filter((part) => part.type === 'content_block_delta')
+          .map((part) => part.delta.text)
+          .join('');
+        expect(content).toBe(
+          shape === 'prefix' ? 'Original summary' : 'summary',
+        );
+        expect(frames.some((part) => part.type === 'content_block_stop')).toBe(
+          shape === 'prefix',
+        );
+        expect(frames.some((part) => part.type === 'message_stop')).toBe(
+          shape === 'prefix',
+        );
+        expect(summaryRow.statusCode).toBe(200);
+        expect(summaryRow.responsePayload.summary).toBe('Original summary');
+        const recovered = await sendAsk(undefined, {}, true);
+        expect(await recovered.text()).toContain('Original summary');
+        expect(summaryCreate).toHaveBeenCalledTimes(1);
+        expect(summaryStream).toHaveBeenCalledTimes(1);
+      },
+    );
+    it.each(
+      ['summary', 'ask', 'stream-ask'].flatMap((kind) => [
+        { kind, at: 'result' },
+        { kind, at: 'history' },
+      ]),
+    )(
+      'rejects GOV $kind mode retirement during complete $at observation',
+      async ({ kind, at }) => {
+        summaryGet.mockImplementation(async () => {
+          if (at === 'result') {
+            delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+            delete process.env.WREN_PLATFORM_BINDING_CONFIG_FILE;
+          }
+          return {
+            status: TextBasedAnswerStatus.SUCCEEDED,
+            completion: { queryId: key, content: 'private full completion' },
+          };
+        });
+        if (at === 'history') {
+          const write = advanceSummary.getMockImplementation();
+          advanceSummary.mockImplementation(async (...args) => {
+            const value = await write(...args);
+            if (args[2] === 200) {
+              delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+              delete process.env.WREN_PLATFORM_BINDING_CONFIG_FILE;
+            }
+            return value;
+          });
+        }
+        const response = await (kind === 'summary'
+          ? sendSummary()
+          : sendAsk(undefined, {}, kind === 'stream-ask'));
+        const body = await response.text();
+        expect(body).not.toContain('private full completion');
+        if (kind === 'stream-ask') {
+          expect(body).toContain('"type":"error"');
+        } else expect(response.status).toBe(412);
+        expect(summaryCreate).toHaveBeenCalledTimes(1);
+        expect(summaryStream).not.toHaveBeenCalled();
+      },
+    );
+    it.each(['summary', 'ask'])(
+      'does not turn a %s native done into a final body without complete original result',
+      async (kind) => {
+        summaryStream.mockResolvedValue(
+          Readable.from([
+            'data: {"message":"tail"}\n\n',
+            `data: ${JSON.stringify({ done: true, queryId: key })}\n\n`,
+          ]),
+        );
+        const response = await (kind === 'summary' ? sendSummary() : sendAsk());
+        expect(response.status).toBe(202);
+        expect(summaryRow.statusCode).toBe(202);
+        expect(await response.text()).not.toContain('"summary":"tail"');
+        expect(summaryCreate).toHaveBeenCalledTimes(1);
+      },
+    );
     it('keeps SQL UNKNOWN under its original key without starting summary generation', async () => {
       completed = false;
       expect((await sendSummary()).status).toBe(202);

@@ -183,15 +183,19 @@ def connect_chunks(chunk: Any, chunks: List[StreamingChunk]) -> ChatMessage:
     """
     Connects the streaming chunks into a single ChatMessage.
     """
+    # Usage-only trailing frames have no choices. Choice metadata belongs to
+    # the last content/finish frame already decoded by build_chunk.
+    if not chunks:
+        raise ValueError("The completion stream contained no choices")
     complete_response = ChatMessage.from_assistant(
         "".join([chunk.content for chunk in chunks])
     )
     complete_response.meta.update(
         {
-            "model": chunk.model,
-            "index": 0,
-            "finish_reason": chunk.choices[0].finish_reason,
-            "usage": dict(chunk.usage) if hasattr(chunk, "usage") else {},
+            "model": chunks[-1].meta["model"],
+            "index": chunks[-1].meta["index"],
+            "finish_reason": chunks[-1].meta["finish_reason"],
+            "usage": dict(getattr(chunk, "usage", None) or {}),
         }
     )
     return complete_response

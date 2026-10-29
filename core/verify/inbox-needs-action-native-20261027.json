@@ -1,0 +1,67 @@
+{
+  "source_commit": "444fd617576d29e756e0aa8005316ae5dfb291cb",
+  "product_commit": "2230c0f07a169de2a88643511064ac3f59c5ac12",
+  "base_commit": "be347ecc2d1c98d7b1fd31bbc79e44458c140586",
+  "sdk": "sha256:3007729eb192341a4f004a88e42e1e66c94fc67d763acfc96568bd7311116018",
+  "source_directory": "/volumes/data/kailo/verification/composer-body/31a2c67c3/source",
+  "source_inputs_checked": 3454,
+  "source_mismatches": [],
+  "installed_platform_source_files_each_host": 1039,
+  "cpu": 1,
+  "memory_bytes": 4294967296,
+  "pids_limit": 256,
+  "positive": {
+    "needs_action": 5,
+    "native_inbox": 23,
+    "shared_inbox_surface_at_product_commit": 22,
+    "shared_auto_selection_at_product_commit": 14,
+    "typechecks": [
+      "shared-production-at-product-commit",
+      "shared-test-at-final-commit",
+      "web",
+      "desktop"
+    ],
+    "i18n_check": 0
+  },
+  "negative": {
+    "mutation": "remove actual Desktop InboxView needsAction prop",
+    "exit": 1,
+    "restored_needs_action": 5,
+    "restored_bytes_identical": true
+  },
+  "failure_history": [
+    {
+      "source": "2230c0f07a169de2a88643511064ac3f59c5ac12",
+      "exit": 1,
+      "reason": "test file URL rewritten by Vitest; new suite did not execute"
+    },
+    {
+      "source": "a5036aef0777168eef8e43913fe5479f89348ed1",
+      "exit": 1,
+      "reason": "test AST ignored actual self-closing JSX; original three passed, new two failed"
+    },
+    {
+      "source": "444fd617576d29e756e0aa8005316ae5dfb291cb",
+      "exit": 1,
+      "reason": "Desktop installed platform useDrafts.ts stale; Web installed source and typecheck passed; refreshed with original frozen pnpm"
+    }
+  ],
+  "job_directory": "/volumes/data/kailo/verification/inbox-needs-action/444fd6175-fresh",
+  "files_sha256": {
+    "runner.sh": "6762e708dec94b485c435e2eb6785dbd426f12893214f97a542bc1fcc77f0f8f",
+    "check.log": "844d4c4540dafa07f42abc531873971a5a5334297ef957ea309cd508f256746f",
+    "result.log": "eb9121abe888bf373c6520a1fbf9524eb24fc9893638fde6f7fa28a8e9b01c30",
+    "limits.log": "814872e9e0bf6817a62f0d2fa87189cf03b1500224d90c1877d8cdb020728bba",
+    "preflight.log": "740f83ed37f0f261a483476ad1ed340d553ff6c143babaf83c38092dc0fc7b64",
+    "oom.log": "2ed27c1421e6928dbe13dbfdb5c59e1045b30341fe7ebe05700006bc5ac572c0",
+    "host-config.json": "6b9f8047f61aaa9a24aae19cf3afa26b4e2c6b3bd56317862430c6a3807209d0",
+    "tmp/negative.log": "70b26ade43883e9d56105778e00cbae4650ce0503b4f64909bf8ec12c688b6ee",
+    "tmp/negative-exit.log": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+    "tmp/original.sha256": "5d2ca1dce839eb814075496fa5c49ddd42fc9f425a031c281e16f1f10b8da39c",
+    "tmp/restored.sha256": "5d2ca1dce839eb814075496fa5c49ddd42fc9f425a031c281e16f1f10b8da39c",
+    "tmp/restored.log": "b6a82f226aa94e576d7a0c2353e9a2b056806f077e34cb08902ada5a8d25a12e"
+  },
+  "prior_check_sha256": "05e009dd1d6400588d98e0554686f12463a1500537f22eec01f6fdaa2dbe5c72",
+  "first_check_sha256": "b6b4e8f58344f3b9e4df5fe56360d358f2b78926d4ea6a72c3a1d3d7901421a5",
+  "scope": "actual Native HomeView binding expressions + shared DOM and scripted BFF decisions; original Native inbox tests; not complete HomeView/bootstrap mount, packaging, deployment, real browser or device acceptance"
+}

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, type ReactNode } from "react";
+import { act, useState, type ReactNode } from "react";
 import {QueryClient, QueryClientProvider} from "@tanstack/react-query";
 import { createRoot, type Root } from "react-dom/client";
 import { BffError, TransportError } from "@client-kit/platform/transport";
@@ -248,7 +248,7 @@ it.each(["en","zh-CN"] as const)("Web unsupported microphone state keeps the ori
   expect(host.querySelector('[data-testid="voice-note-recorder"]')).toBeNull();
 });
 
-function paste(host: HTMLElement, text: string, html: string) {
+function paste(host: HTMLElement, text: string, html: string, files: File[] = []) {
   // jsdom has no system pasteboard; only the browser event payload is supplied.
   class PasteData {
     values = new Map<string, string>();
@@ -268,6 +268,8 @@ function paste(host: HTMLElement, text: string, html: string) {
   vi.stubGlobal("ClipboardEvent", PasteEvent);
   const data = new PasteData();
   data.setData("text/plain", text); data.setData("text/html", html);
+  data.files = files;
+  data.items = files.map(file => ({kind:"file",type:file.type,getAsFile:()=>file}) as DataTransferItem);
   const input = host.querySelector<HTMLElement>('[data-testid="message-input"]')!;
   input.dispatchEvent(new PasteEvent("paste", { bubbles: true, cancelable: true, clipboardData: data }));
 }
@@ -279,6 +281,7 @@ const state = vi.hoisted(() => ({
   more: vi.fn(),
   publish: vi.fn(),
   upload: vi.fn(),
+  gifs: [] as {slug:string;title:string;url:string;previewUrl:string;width:number;height:number;previewWidth:number;previewHeight:number;size:number}[],
   principal: "human-a",
   // DD-125(8): Workspace roster, Tenant participant directory, role projection and actions.
   members: vi.fn(),
@@ -291,6 +294,9 @@ const state = vi.hoisted(() => ({
 vi.mock("@/platform/bff-client", async () => ({
   BffError: (await vi.importActual<typeof import("@client-kit/platform/transport")>("@client-kit/platform/transport")).BffError,
   bff: {
+    gifCapability: async () => ({available:state.gifs.length > 0,imageOrigins:["https://static.klipy.com"]}),
+    gifSearch: async () => ({gifs:state.gifs}),
+    gifShare: async () => undefined,
     session: async () => ({tenantPrincipalId:state.principal}),
     profile: async () => ({pubkey:"d".repeat(64)}),
     members: (...args: unknown[]) => state.members(...args),
@@ -358,6 +364,7 @@ beforeEach(() => {
     getClientRects: { configurable: true, value: () => [] },
     getBoundingClientRect: { configurable: true, value: () => new DOMRect() },
   });
+  state.gifs = [];
   localStorage.clear();
   clearAllDrafts();
   resetPersistentAgentAudienceStore();
@@ -475,6 +482,7 @@ it("publishes the explicit human picker identity and retains it with the same UN
   const publish=vi.fn().mockRejectedValue(new TransportError("Unknown"));
   const host=await render(<Composer draftIdentity="pulse-scope" mentionPeople={[{pubkey,displayName:"Alex"}]} onPublish={publish}/>);
   await click(host.querySelector('[aria-label="Mention someone"]') as HTMLButtonElement);
+  await vi.waitFor(()=>expect(host.querySelector('[aria-label="Mention Alex"]')).not.toBeNull());
   await act(async()=>{host.querySelector('[aria-label="Mention Alex"]')!.dispatchEvent(new MouseEvent("mousedown",{bubbles:true}));});
   expect(host.querySelector('[data-testid="message-input"]')?.textContent).toContain("Alex");
   await click(button(host,"platform.send"));
@@ -485,6 +493,132 @@ it("publishes the explicit human picker identity and retains it with the same UN
   await settle();
   expect(publish.mock.calls[1]?.[2]).toEqual(publish.mock.calls[0]?.[2]);
   expect(publish.mock.calls[1]?.[4]).toEqual([pubkey]);
+});
+
+const snapshotBytes = new Uint8Array([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a,1,2,3]);
+const snapshotHash = "7f47b756761a46e6d4a4d96f0d8a4448f8449235009d1f3ad1493f5c773c19e8";
+function snapshotHtml(filename: string, sha256 = snapshotHash) {
+  return `<a data-buzz-agent-snapshot="${encodeURIComponent(JSON.stringify({version:1,displayName:"Writer",filename,
+    sha256,size:snapshotBytes.length,type:"image/png"}))}">Writer</a>`;
+}
+
+it.each(["agent", "team"])("pastes a copied %s snapshot through the shared handler and restores its named attachment draft", async kind => {
+  const filename = `Writer.${kind}.png`;
+  const descriptor = {sha256:snapshotHash,size:snapshotBytes.length,type:"image/png",url:`https://relay.invalid/media/${snapshotHash}.png`};
+  const upload = vi.fn().mockResolvedValue(descriptor);
+  const publish = vi.fn().mockResolvedValue({});
+  const props = {workspaceId:"snapshot-workspace",draftIdentity:"alice",draftKey:`paste-${kind}`,onUpload:upload,onPublish:publish};
+  let host = await render(<Composer {...props} />);
+  await type(host.querySelector<HTMLElement>('[data-testid="message-input"]')!, "Keep authored text");
+  await act(async () => paste(host,"Writer",snapshotHtml(filename),[new File([snapshotBytes],"image.png",{type:"image/png"})]));
+  await vi.waitFor(() => expect(upload).toHaveBeenCalledOnce());
+  await settle();
+  expect(upload.mock.calls[0][0].name).toBe(filename);
+  expect(host.querySelector('[data-testid="message-input"]')?.textContent).toBe("Keep authored text");
+  expect(loadDraftEntry(props.draftKey)?.pendingImeta[0]).toMatchObject({...descriptor,filename});
+  expect(publish).not.toHaveBeenCalled();
+  await act(async () => {mounted!.root.unmount();mounted!.host.remove();mounted!.queryClient.clear();mounted=undefined;});
+  host = await render(<Composer {...props} />);
+  expect(host.querySelector('[data-testid="message-input"]')?.textContent).toBe("Keep authored text");
+  expect(loadDraftEntry(props.draftKey)?.pendingImeta[0].filename).toBe(filename);
+  expect(upload).toHaveBeenCalledOnce();
+  await click(button(host,"platform.send"));
+  expect(publish).toHaveBeenCalledOnce();
+  expect(publish.mock.calls[0][0]).toBe("Keep authored text");
+  expect(publish.mock.calls[0][1][0]).toMatchObject({...descriptor,filename});
+});
+
+it("does not trust snapshot HTML naming when bytes mismatch and keeps every ordinary pasted file", async () => {
+  const upload = vi.fn(async (file: File) => ({sha256:snapshotHash,size:file.size,type:file.type,url:`https://relay.invalid/media/${snapshotHash}.png`}));
+  const host = await render(<Composer draftIdentity="alice" draftKey="paste-untrusted" workspaceId="snapshot-workspace" onUpload={upload}/>);
+  const files = [new File([snapshotBytes],"ordinary.png",{type:"image/png"}),new File(["two"],"second.txt",{type:"text/plain"})];
+  await act(async () => paste(host,"Writer",snapshotHtml("Forged.agent.png","0".repeat(64)),files));
+  await vi.waitFor(() => expect(upload).toHaveBeenCalledTimes(2));
+  expect(upload.mock.calls.map(([file])=>file.name)).toEqual(["ordinary.png","second.txt"]);
+  expect(host.querySelector('[data-testid="message-input"]')?.textContent).toBe("");
+});
+
+it("waits for every snapshot byte reader before Enter, then preserves the original queued upload send", async () => {
+  const Reader = FileReader;
+  const reads: {release:()=>void;finished:Promise<void>}[] = [];
+  vi.stubGlobal("FileReader", class extends Reader {
+    override readAsArrayBuffer(blob: Blob) {
+      reads.push({release:()=>super.readAsArrayBuffer(blob),finished:new Promise(resolve=>this.addEventListener("loadend",()=>resolve(),{once:true}))});
+    }
+  });
+  const receipts: ((value: {sha256:string;size:number;type:string;url:string})=>void)[] = [];
+  const upload = vi.fn(() => new Promise<{sha256:string;size:number;type:string;url:string}>(resolve=>receipts.push(resolve)));
+  const publish = vi.fn().mockResolvedValue({});
+  const host = await render(<Composer workspaceId="snapshot-workspace" draftIdentity="alice" draftKey="paste-read-lock" onUpload={upload} onPublish={publish}/>);
+  await type(host.querySelector<HTMLElement>('[data-testid="message-input"]')!,"Send together");
+  for (const name of ["First.agent.png","Second.team.png"]) {
+    await act(async()=>paste(host,"Snapshot",snapshotHtml(name),[new File([snapshotBytes],"image.png",{type:"image/png"})]));
+  }
+  expect(reads).toHaveLength(2);
+  const enter = async () => {await act(async()=>{host.querySelector('[data-testid="message-input"]')!.dispatchEvent(new KeyboardEvent("keydown",{key:"Enter",bubbles:true,cancelable:true}));});};
+  await enter();expect(publish).not.toHaveBeenCalled();expect(button(host,"platform.send").disabled).toBe(true);
+  await act(async()=>{reads[0].release();await reads[0].finished;});
+  await vi.waitFor(()=>expect(upload).toHaveBeenCalledTimes(1));
+  await enter();expect(publish).not.toHaveBeenCalled();expect(button(host,"platform.send").disabled).toBe(true);
+  await act(async()=>{reads[1].release();await reads[1].finished;});
+  await vi.waitFor(()=>expect(upload).toHaveBeenCalledTimes(2));
+  expect(button(host,"platform.send").disabled).toBe(false);
+  await click(button(host,"platform.send"));
+  expect(publish).not.toHaveBeenCalled();
+  await act(async()=>{for (const receipt of receipts) receipt({sha256:snapshotHash,size:snapshotBytes.length,type:"image/png",url:`https://relay.invalid/media/${snapshotHash}.png`});});
+  await vi.waitFor(()=>expect(publish).toHaveBeenCalledOnce());
+  expect(publish.mock.calls[0][0]).toBe("Send together");
+  expect(publish.mock.calls[0][1].map((file: {filename:string})=>file.filename)).toEqual(["First.agent.png","Second.team.png"]);
+});
+
+it("freezes every file from one snapshot paste in the original queued batch before the first upload receipt", async () => {
+  const receipts: ((value: {sha256:string;size:number;type:string;url:string})=>void)[] = [];
+  const upload = vi.fn((_file:File) => new Promise<{sha256:string;size:number;type:string;url:string}>(resolve=>receipts.push(resolve)));
+  const publish = vi.fn().mockResolvedValue({});
+  const host = await render(<Composer workspaceId="snapshot-workspace" draftIdentity="alice" draftKey="paste-one-batch" onUpload={upload} onPublish={publish}/>);
+  await type(host.querySelector<HTMLElement>('[data-testid="message-input"]')!,"Both files");
+  await act(async()=>paste(host,"Writer",snapshotHtml("Writer.agent.png"),[
+    new File([snapshotBytes],"image.png",{type:"image/png"}),new File(["notes"],"notes.txt",{type:"text/plain"}),
+  ]));
+  await vi.waitFor(()=>expect(upload).toHaveBeenCalledTimes(1));
+  expect(button(host,"platform.send").disabled).toBe(false);
+  await click(button(host,"platform.send"));
+  expect(publish).not.toHaveBeenCalled();
+  expect(loadPendingSend("paste-one-batch")?.missingFileNames).toEqual(["Writer.agent.png","notes.txt"]);
+  await act(async()=>receipts[0]({sha256:snapshotHash,size:snapshotBytes.length,type:"image/png",url:`https://relay.invalid/media/${snapshotHash}.png`}));
+  await vi.waitFor(()=>expect(upload).toHaveBeenCalledTimes(2));
+  expect(upload.mock.calls[1][0].name).toBe("notes.txt");
+  expect(publish).not.toHaveBeenCalled();
+  await act(async()=>receipts[1]({sha256:"b".repeat(64),size:5,type:"text/plain",url:`https://relay.invalid/media/${"b".repeat(64)}.txt`}));
+  await vi.waitFor(()=>expect(publish).toHaveBeenCalledOnce());
+  expect(publish.mock.calls[0][0]).toBe("Both files");
+  expect(publish.mock.calls[0][1].map((file:{filename:string})=>file.filename)).toEqual(["Writer.agent.png","notes.txt"]);
+  expect(host.querySelector('[data-testid="message-input"]')?.textContent).toBe("");
+  expect(loadDraftEntry("paste-one-batch")?.pendingImeta ?? []).toEqual([]);
+});
+
+it.each(["identity", "draft"])("retires an asynchronous snapshot paste when the %s changes before its byte read completes", async changed => {
+  const upload = vi.fn();
+  const Reader = FileReader;
+  let release!: () => void;
+  let readFinished!: Promise<void>;
+  vi.stubGlobal("FileReader", class extends Reader {
+    override readAsArrayBuffer(blob: Blob) {
+      readFinished = new Promise(resolve => this.addEventListener("loadend",()=>resolve(),{once:true}));
+      release=()=>super.readAsArrayBuffer(blob);
+    }
+  });
+  const host = await render(<Composer draftIdentity="alice" draftKey="before" workspaceId="snapshot-workspace" onUpload={upload}/>);
+  await act(async () => paste(host,"Writer",snapshotHtml("Writer.agent.png"),[new File([snapshotBytes],"image.png",{type:"image/png"})]));
+  expect(release).toBeTypeOf("function");
+  expect(upload).not.toHaveBeenCalled();
+  const nextDraft = changed === "identity" ? "before" : "after";
+  await rerender(<Composer draftIdentity={changed === "identity" ? "bob" : "alice"} draftKey={nextDraft} workspaceId="snapshot-workspace" onUpload={upload}/>);
+  await act(async () => {release();await readFinished;});
+  await settle();
+  expect(upload).not.toHaveBeenCalled();
+  expect(loadDraftEntry(nextDraft)?.pendingImeta ?? []).toEqual([]);
+  expect(host.querySelector('[data-testid="message-input"]')?.textContent).toBe("");
 });
 
 it("pastes original Markdown with the exact copied same-name identity and settles before immediate send", async () => {
@@ -680,6 +814,67 @@ it("does not automatically retry an UNKNOWN intent created while navigation cons
   expect(state.publish).toHaveBeenCalledTimes(1);
   expect(loadDraftEntry("workspace-a")?.sendIntent).toEqual(intent);
   expect(host.textContent).toContain("platform.sendUnknown");
+});
+
+it("Escape cancels the real edit and restores the existing text and uploaded attachment draft without publishing", async () => {
+  const publish = vi.fn();
+  const canceled = vi.fn();
+  const descriptor = {sha256:"a".repeat(64),size:4,type:"text/plain",url:"media:kept"};
+  const upload = vi.fn().mockResolvedValue(descriptor);
+  const target = {id:"e".repeat(64),author:"Alice",pubkey:"alice",body:"Published text",createdAt:1,time:"",depth:0,tags:[]};
+  function Host() {
+    const [editing, setEditing] = useState(false);
+    return <><button onClick={() => setEditing(true)}>Edit existing</button>
+      <Composer workspaceId="escape-workspace" draftIdentity="alice" draftKey={editing ? `edit:${target.id}` : "escape-draft"}
+        editTarget={editing ? target : undefined} onUpload={upload} onPublish={publish}
+        onCancelEdit={() => {canceled(); setEditing(false);}} /></>;
+  }
+  const host = await render(<Host />);
+  await type(host.querySelector<HTMLElement>('[data-testid="message-input"]')!, "Unsent draft");
+  const picker = host.querySelector<HTMLInputElement>('[data-testid="attach-input"]')!;
+  await act(async () => {
+    Object.defineProperty(picker,"files",{configurable:true,value:[new File(["kept"],"kept.txt",{type:"text/plain"})]});
+    picker.dispatchEvent(new Event("change",{bubbles:true}));
+  });
+  await settle();
+  expect(loadDraftEntry("escape-draft")?.pendingImeta[0]).toMatchObject({...descriptor,filename:"kept.txt"});
+  await click(button(host,"Edit existing"));
+  await settle();
+  expect(host.querySelector('[data-testid="message-input"]')?.textContent).toBe("Published text");
+  await type(host.querySelector<HTMLElement>('[data-testid="message-input"]')!, "Discard this edit");
+  await act(async () => host.querySelector('[data-testid="message-input"]')!.dispatchEvent(
+    new KeyboardEvent("keydown",{key:"Escape",bubbles:true,cancelable:true})));
+  await settle();
+  expect(canceled).toHaveBeenCalledOnce();
+  expect(host.querySelector('[data-testid="message-input"]')?.textContent).toBe("Unsent draft");
+  expect(host.textContent).toContain("kept.txt");
+  expect(loadDraftEntry("escape-draft")?.pendingImeta[0]).toMatchObject({...descriptor,filename:"kept.txt"});
+  expect(upload).toHaveBeenCalledOnce();
+  expect(publish).not.toHaveBeenCalled();
+});
+
+it("Escape dismisses mention autocomplete before canceling an edit, and cannot cancel an in-flight save", async () => {
+  let release!: (value: object) => void;
+  const publish = vi.fn(() => new Promise<object>(resolve => {release=resolve;}));
+  const canceled = vi.fn();
+  const target = {id:"f".repeat(64),author:"Alice",pubkey:"alice",body:"Original",createdAt:1,time:"",depth:0,tags:[]};
+  const host = await render(<Composer draftIdentity="alice" draftKey="escape-edit" editTarget={target}
+    mentionPeople={[{pubkey:"b".repeat(64),displayName:"Bob"}]} onPublish={publish} onCancelEdit={canceled} />);
+  const input = () => host.querySelector<HTMLElement>('[data-testid="message-input"]')!;
+  await type(input(),"@Bo");
+  await vi.waitFor(() => expect(host.querySelector('[data-mention-suggestion-index]')).not.toBeNull());
+  await act(async () => input().dispatchEvent(new KeyboardEvent("keydown",{key:"Escape",bubbles:true,cancelable:true})));
+  expect(canceled).not.toHaveBeenCalled();
+  expect(host.querySelector('[data-mention-suggestion-index]')).toBeNull();
+  await type(input(),"Changed body");
+  await click(button(host,"platform.send"));
+  expect(publish).toHaveBeenCalledOnce();
+  await act(async () => input().dispatchEvent(new KeyboardEvent("keydown",{key:"Escape",bubbles:true,cancelable:true})));
+  expect(canceled).not.toHaveBeenCalled();
+  await act(async () => release({}));
+  await settle();
+  await act(async () => input().dispatchEvent(new KeyboardEvent("keydown",{key:"Escape",bubbles:true,cancelable:true})));
+  expect(canceled).toHaveBeenCalledOnce();
 });
 
 it("restores an original edit body and never changes an unresolved edit's key for changed content", async () => {
@@ -1215,6 +1410,9 @@ describe("DD-146 original send flow: clear at Send, restore on failure", () => {
     expect(host.textContent).toContain("platform.uploadTooLarge");
     expect(pill(host)).toBeNull();
     expect(recovery(host)).toBeNull();
+    expect(upload).toHaveBeenCalledTimes(1);
+    expect(host.querySelector('[data-testid="composer-queued-media-attachment"]')?.textContent).toContain("one.txt");
+    expect(loadPendingSend("queued-fail")?.missingFileNames).toEqual(["one.txt"]);
   });
 
   it("Cancel restores the draft and its canceled file without publishing", async () => {
@@ -1228,11 +1426,393 @@ describe("DD-146 original send flow: clear at Send, restore on failure", () => {
     expect(uploads[0]!.options!.signal!.aborted).toBe(true);
     expect(input(host).textContent).toBe("maybe later");
     // Original restoreQueuedAttachments: the canceled local file is back in the composer.
-    expect(upload).toHaveBeenCalledTimes(2);
-    expect(uploads[1]!.file.name).toBe("one.txt");
+    expect(upload).toHaveBeenCalledTimes(1);
+    expect(host.querySelector('[data-testid="composer-queued-media-attachment"]')?.textContent).toContain("one.txt");
     await act(async () => uploads[0]!.resolve(descriptor));
     await settle();
     expect(state.publish).not.toHaveBeenCalled();
+  });
+
+  it.each(["failure", "unknown", "cancel"])("retains the original local attachment after %s without upload until explicit Send", async outcome => {
+    const {upload, uploads} = uploader();
+    const key = `retained-${outcome}`;
+    const host = await render(composer(key, upload));
+    await type(input(host), "keep body and file");
+    await attachPending(host);
+    await click(button(host, "platform.send"));
+    if (outcome === "cancel") await click(host.querySelector<HTMLElement>('[data-testid="composer-queued-send-cancel"]')!);
+    else await act(async () => uploads[0]!.reject(outcome === "unknown" ? new TransportError("lost upload receipt") : new BffError(413, "too large")));
+    await settle(); await settle();
+    expect(input(host).textContent).toBe("keep body and file");
+    expect(upload).toHaveBeenCalledTimes(1);
+    expect(state.publish).not.toHaveBeenCalled();
+    expect(loadPendingSend(key)?.stage).toBe(outcome === "unknown" ? "unknown" : "failed");
+    expect(loadPendingSend(key)?.missingFileNames).toEqual(["one.txt"]);
+    expect(host.querySelector('[data-testid="composer-queued-media-attachment"]')?.textContent).toContain("one.txt");
+    await click(button(host, "platform.send"));
+    await vi.waitFor(() => expect(upload).toHaveBeenCalledTimes(2));
+    expect(uploads[1]!.file).toBe(uploads[0]!.file);
+    expect(state.publish).not.toHaveBeenCalled();
+    await act(async () => uploads[1]!.resolve(descriptor));
+    await vi.waitFor(() => expect(state.publish).toHaveBeenCalledOnce());
+    expect(state.publish.mock.calls[0][1]).toBe("keep body and file");
+    expect(state.publish.mock.calls[0][2]).toEqual([expect.objectContaining({sha256:descriptor.sha256,filename:"one.txt"})]);
+  });
+
+  it("keeps confirmed media and freezes a failed batch file until explicit Send", async () => {
+    const {upload, uploads} = uploader();
+    const host = await render(composer("partial-batch", upload));
+    await type(input(host), "both stay");
+    await act(async () => paste(host, "", "", [new File(["one"],"one.txt"),new File(["two"],"two.txt")]));
+    await click(button(host, "platform.send"));
+    await act(async () => uploads[0]!.resolve(descriptor));
+    await vi.waitFor(() => expect(uploads).toHaveLength(2));
+    await act(async () => uploads[1]!.reject(new TransportError("lost second receipt")));
+    await settle(); await settle();
+    expect(upload).toHaveBeenCalledTimes(2);
+    expect(state.publish).not.toHaveBeenCalled();
+    expect(loadDraftEntry("partial-batch")?.pendingImeta[0]).toMatchObject({sha256:descriptor.sha256,filename:"one.txt"});
+    expect(loadPendingSend("partial-batch")?.missingFileNames).toEqual(["two.txt"]);
+    await click(button(host, "platform.send"));
+    await vi.waitFor(() => expect(uploads).toHaveLength(3));
+    expect(uploads[2]!.file.name).toBe("two.txt");
+    await act(async () => uploads[2]!.resolve({...descriptor,sha256:"b".repeat(64),url:"media:two"}));
+    await vi.waitFor(() => expect(state.publish).toHaveBeenCalledOnce());
+    expect(state.publish.mock.calls[0][2].map((file:{filename:string})=>file.filename)).toEqual(["one.txt","two.txt"]);
+  });
+
+  it("retains files in the same draft scope but a reload with missing bytes cannot send only the body", async () => {
+    const {upload, uploads} = uploader();
+    let host = await render(composer("retained-revisit", upload));
+    await type(input(host), "needs file");
+    await attachPending(host);
+    await click(button(host, "platform.send"));
+    await act(async () => uploads[0]!.reject(new TransportError("upload unknown")));
+    await settle();
+    await rerender(composer("another-draft", upload));
+    await rerender(composer("retained-revisit", upload));
+    expect(upload).toHaveBeenCalledTimes(1);
+    expect(input(host).textContent).toBe("needs file");
+    expect(button(host,"platform.send").disabled).toBe(false);
+    await act(async()=>{mounted!.root.unmount();mounted!.host.remove();mounted!.queryClient.clear();mounted=undefined;});
+    // Same persisted names, but File bytes do not survive a fresh JS lifetime.
+    clearAllDrafts();
+    host = await render(composer("retained-revisit", upload));
+    expect(input(host).textContent).toBe("needs file");
+    await act(async()=>{input(host).dispatchEvent(new KeyboardEvent("keydown",{key:"Enter",bubbles:true,cancelable:true}));});
+    await settle();
+    expect(upload).toHaveBeenCalledTimes(1);
+    expect(state.publish).not.toHaveBeenCalled();
+    expect(host.querySelector('[data-testid="composer-queued-media-attachment"]')?.textContent).toContain("one.txt");
+    expect(button(host,"platform.send").disabled).toBe(true);
+  });
+
+  it("does not lend recovered File bytes to another identity with the same draft key", async () => {
+    const {upload, uploads} = uploader();
+    const host = await render(composer("retained-identity", upload));
+    await type(input(host), "alice file");
+    await attachPending(host);
+    await click(button(host,"platform.send"));
+    await act(async()=>uploads[0]!.reject(new TransportError("lost receipt")));
+    await settle();
+    await rerender(<Composer workspaceId="workspace-a" draftIdentity="bob" draftKey="retained-identity" onUpload={upload}/>);
+    expect(input(host).textContent).toBe("");
+    expect(host.querySelector('[data-testid="composer-queued-media-attachment"]')).toBeNull();
+    await rerender(composer("retained-identity",upload));
+    expect(input(host).textContent).toBe("alice file");
+    expect(button(host,"platform.send").disabled).toBe(true);
+    expect(upload).toHaveBeenCalledTimes(1);
+    expect(state.publish).not.toHaveBeenCalled();
+  });
+
+  it("does not write an old publication recovery into a later identity's draft store", async () => {
+    let reject!: (error: unknown) => void;
+    state.publish.mockImplementationOnce(() => new Promise((_resolve, fail) => { reject = fail; }));
+    const {upload} = uploader();
+    const host = await render(composer("shared-local-key", upload));
+    await type(input(host), "alice pending");
+    await click(button(host,"platform.send"));
+    await vi.waitFor(() => expect(state.publish).toHaveBeenCalledOnce());
+    await rerender(<Composer workspaceId="workspace-a" draftIdentity="bob" draftKey="shared-local-key" onUpload={upload}/>);
+    await type(input(host), "bob owns this draft");
+    await act(async()=>reject(new TransportError("alice late receipt unknown")));
+    await settle();
+    expect(input(host).textContent).toBe("bob owns this draft");
+    expect(loadPendingSend("shared-local-key")).toBeUndefined();
+    expect(loadDraftEntry("shared-local-key")?.content).toBe("bob owns this draft");
+    expect(upload).not.toHaveBeenCalled();
+  });
+
+  it("does not let an old A publication replace a newer pending send after identity A to B to A", async () => {
+    let rejectOld!: (error: unknown) => void;
+    state.publish.mockImplementationOnce(() => new Promise((_resolve, fail) => { rejectOld = fail; }))
+      .mockRejectedValueOnce(new TransportError("new A receipt unknown"));
+    const {upload} = uploader();
+    const host = await render(composer("aba", upload));
+    await type(input(host), "old A");
+    await click(button(host,"platform.send"));
+    await vi.waitFor(() => expect(state.publish).toHaveBeenCalledOnce());
+    await rerender(<Composer workspaceId="workspace-a" draftIdentity="bob" draftKey="aba" onUpload={upload}/>);
+    await rerender(composer("aba", upload));
+    await type(input(host), "new A");
+    await click(button(host,"platform.send"));
+    await vi.waitFor(() => expect(state.publish).toHaveBeenCalledTimes(2));
+    await settle();
+    const newerDraft = loadDraftEntry("aba");
+    const newerPending = loadPendingSend("aba");
+    await act(async()=>rejectOld(new TransportError("old A late receipt")));
+    await settle();
+    expect(input(host).textContent).toBe("new A");
+    expect(loadDraftEntry("aba")).toEqual(newerDraft);
+    expect(loadPendingSend("aba")).toEqual(newerPending);
+    await click(button(host,"platform.send"));
+    await vi.waitFor(() => expect(state.publish).toHaveBeenCalledTimes(3));
+    expect(state.publish.mock.calls[2][3]).toBe(state.publish.mock.calls[1][3]);
+  });
+
+  it("keeps a new owner edit UNKNOWN key when the retired owner edit is explicitly rejected", async () => {
+    let rejectOld!: (error: unknown) => void;
+    const publish = vi.fn().mockRejectedValueOnce(new TransportError("new edit unknown"))
+      .mockImplementationOnce(() => new Promise((_resolve, reject) => { rejectOld = reject; }))
+      .mockRejectedValue(new TransportError("new edit still unknown"));
+    const target = {id:"e".repeat(64),author:"Alice",pubkey:"alice",body:"Original",createdAt:1,time:"",depth:0,tags:[]};
+    const host = await render(<Composer draftIdentity="bob" draftKey="edit-owner" editTarget={{...target,pubkey:"bob"}} onPublish={publish}/>);
+    await type(input(host), "new edit");
+    await click(button(host,"platform.send"));
+    await vi.waitFor(() => expect(publish).toHaveBeenCalledOnce());
+    await settle();
+    const key = publish.mock.calls[0][2];
+    await rerender(<Composer draftIdentity="alice" draftKey="edit-owner" editTarget={target} onPublish={publish}/>);
+    await type(input(host), "old edit");
+    await click(button(host,"platform.send"));
+    await vi.waitFor(() => expect(publish).toHaveBeenCalledTimes(2));
+    await rerender(<Composer draftIdentity="bob" draftKey="edit-owner" editTarget={{...target,pubkey:"bob"}} onPublish={publish}/>);
+    expect(input(host).textContent).toBe("new edit");
+    await act(async()=>rejectOld(new BffError(403,"rejected",{class:ErrorClass.Denied,reason:ReasonCode.PublishRejected})));
+    await click(button(host,"platform.send"));
+    expect(publish).toHaveBeenCalledTimes(3);
+    expect(publish.mock.calls[2][2]).toBe(key);
+    expect(input(host).textContent).toBe("new edit");
+  });
+
+  const draftGif = {slug:"draft-gif",title:"Draft GIF",url:"https://static.klipy.com/draft.gif",previewUrl:"https://static.klipy.com/draft-preview.gif",width:40,height:30,previewWidth:40,previewHeight:30,size:99};
+  function enableDraftGif() {
+    vi.stubGlobal("IntersectionObserver", class { observe() {} unobserve() {} disconnect() {} });
+    vi.stubGlobal("matchMedia", (query:string) => ({matches:false,media:query,addEventListener() {},removeEventListener() {},addListener() {},removeListener() {}}));
+    state.gifs = [draftGif];
+  }
+  async function chooseDraftGif(host: HTMLElement) {
+    await vi.waitFor(()=>expect((input(host) as HTMLElement & {editor?:Editor}).editor).toBeDefined());
+    await act(async()=>input(host).focus());
+    await settle();
+    await vi.waitFor(()=>expect(host.querySelector('[data-testid="composer-emoji-button"]')?.getAttribute("aria-label")).toBe("Insert emoji or GIF"));
+    await click(host.querySelector<HTMLElement>('[data-testid="composer-emoji-button"]')!);
+    await vi.waitFor(()=>expect(document.querySelector('[data-testid="composer-gif-tab"]')).not.toBeNull());
+    const tab = document.querySelector<HTMLElement>('[data-testid="composer-gif-tab"]')!;
+    await act(async()=>tab.dispatchEvent(new MouseEvent("mousedown",{bubbles:true,button:0})));
+    await click(tab);
+    await vi.waitFor(()=>expect(document.querySelector('[data-testid="klipy-gif-grid"] button')).not.toBeNull());
+    await click(document.querySelector<HTMLElement>('[data-testid="klipy-gif-grid"] button')!);
+    await settle();
+  }
+
+  it("persists a GIF-only unsent draft, restores it on return and sends one Markdown image without upload", async () => {
+    enableDraftGif();
+    const {upload} = uploader();
+    const host = await render(composer("gif-only", upload));
+    await type(input(host), "temporary caption");
+    await type(input(host), "");
+    await chooseDraftGif(host);
+    expect(loadDraftEntry("gif-only")).toMatchObject({content:"",pendingImeta:[{sha256:"",type:"image/gif",url:draftGif.url}]});
+    await rerender(composer("gif-other", upload));
+    expect(host.querySelector('[data-testid="composer-gif-attachment"]')).toBeNull();
+    await rerender(<div/>);
+    await act(async()=>{ await new Promise(resolve=>setTimeout(resolve,20)); });
+    await rerender(composer("gif-only", upload));
+    expect(input(host).textContent).toBe("");
+    expect(host.querySelectorAll('[data-testid="composer-gif-attachment"]')).toHaveLength(1);
+    expect(upload).not.toHaveBeenCalled();
+    await click(button(host,"platform.send"));
+    await vi.waitFor(()=>expect(state.publish).toHaveBeenCalledOnce());
+    expect(state.publish.mock.calls[0][1]).toBe(`![image](${draftGif.url})`);
+    expect(state.publish.mock.calls[0][2]).toEqual([]);
+  });
+
+  it.each(["unsent", "unknown", "rejected"] as const)("consumes Inbox navigation for a GIF-only %s draft without duplicate publication", async (outcome) => {
+    enableDraftGif();
+    if (outcome === "unknown") state.publish.mockRejectedValue(new TransportError("GIF receipt unknown"));
+    if (outcome === "rejected") state.publish.mockRejectedValue(new BffError(403,"rejected",{class:ErrorClass.Denied,reason:ReasonCode.PublishRejected}));
+    const {upload} = uploader();
+    const key = `gif-navigation-${outcome}`;
+    const consume = vi.fn(async()=>{});
+    const host = await render(composer(key, upload));
+    await type(input(host), "temporary caption");
+    await type(input(host), "");
+    await chooseDraftGif(host);
+    expect(loadDraftEntry(key)?.content).toBe("");
+    if (outcome === "unknown") {
+      await click(button(host,"platform.send"));
+      await vi.waitFor(()=>expect(state.publish).toHaveBeenCalledOnce());
+      await settle();
+    }
+    const originalKey = outcome === "unknown" ? state.publish.mock.calls[0][3] : undefined;
+    await rerender(<div/>);
+    await act(async()=>{ await new Promise(resolve=>setTimeout(resolve,20)); });
+    const auto = <Composer workspaceId="workspace-a" draftIdentity="alice" draftKey={key}
+      autoSendDraftKey={key} onAutoSendConsumed={consume} onUpload={upload}/>;
+    await rerender(auto);
+    await vi.waitFor(()=>expect(consume).toHaveBeenCalledOnce());
+    if (outcome === "unknown") {
+      await vi.waitFor(()=>expect(host.textContent).toContain("platform.sendUnknown"));
+      expect(state.publish).toHaveBeenCalledOnce();
+      expect(loadDraftEntry(key)?.sendIntent?.key).toBe(originalKey);
+    } else {
+      await vi.waitFor(()=>expect(state.publish).toHaveBeenCalledOnce());
+      expect(consume.mock.invocationCallOrder[0]).toBeLessThan(state.publish.mock.invocationCallOrder[0]!);
+    }
+    expect(state.publish.mock.calls[0][1]).toBe(`![image](${draftGif.url})`);
+    expect(state.publish.mock.calls[0][2]).toEqual([]);
+    await settle();
+    if (outcome === "unsent") {
+      expect(loadDraftEntry(key)).toBeUndefined();
+      expect(host.querySelector('[data-testid="composer-gif-attachment"]')).toBeNull();
+    } else {
+      if (outcome === "rejected" && recovery(host)) {
+        expect(recovery(host)!.dataset.stage).toBe("failed");
+        expect(loadPendingSend(key)?.extras).toMatchObject({gifs:[expect.objectContaining({url:draftGif.url})]});
+        await click(recovery(host)!.querySelector<HTMLElement>('[data-testid="composer-pending-send-restore"]')!);
+        await settle();
+      }
+      expect(host.querySelectorAll('[data-testid="composer-gif-attachment"]')).toHaveLength(1);
+      expect(loadDraftEntry(key)?.pendingImeta).toEqual([expect.objectContaining({sha256:"",url:draftGif.url})]);
+      if (outcome === "rejected") expect(loadDraftEntry(key)?.sendIntent).toBeUndefined();
+    }
+    await rerender(auto);
+    await settle();
+    expect(consume).toHaveBeenCalledOnce();
+    expect(state.publish).toHaveBeenCalledOnce();
+    if (outcome === "unknown") {
+      await click(button(host,"platform.send"));
+      await vi.waitFor(()=>expect(state.publish).toHaveBeenCalledTimes(2));
+      expect(state.publish.mock.calls[1].slice(1,4)).toEqual(state.publish.mock.calls[0].slice(1,4));
+    }
+    expect(upload).not.toHaveBeenCalled();
+  });
+
+  it("holds GIF navigation while an original attachment upload is pending", async () => {
+    enableDraftGif();
+    const {upload,uploads} = uploader();
+    const consume = vi.fn(async()=>{});
+    const host = await render(composer("gif-upload-navigation", upload));
+    await type(input(host), "caption");
+    await chooseDraftGif(host);
+    await attachPending(host);
+    await rerender(<Composer workspaceId="workspace-a" draftIdentity="alice" draftKey="gif-upload-navigation"
+      autoSendDraftKey="gif-upload-navigation" onAutoSendConsumed={consume} onUpload={upload}/>);
+    await settle();
+    expect(consume).not.toHaveBeenCalled();
+    expect(state.publish).not.toHaveBeenCalled();
+    await act(async()=>uploads[0]!.resolve(descriptor));
+    await vi.waitFor(()=>expect(state.publish).toHaveBeenCalledOnce());
+    expect(consume).toHaveBeenCalledOnce();
+    expect(state.publish.mock.calls[0][1]).toBe(`caption\n![image](${draftGif.url})`);
+    expect(state.publish.mock.calls[0][2]).toEqual([expect.objectContaining({sha256:descriptor.sha256})]);
+    expect(upload).toHaveBeenCalledOnce();
+  });
+
+  it("restores a confirmed file and selected GIF as distinct outgoing media", async () => {
+    enableDraftGif();
+    const {upload,uploads} = uploader();
+    const host = await render(composer("gif-mixed", upload));
+    await type(input(host), "mixed");
+    await attachPending(host);
+    await act(async()=>uploads[0]!.resolve(descriptor));
+    await chooseDraftGif(host);
+    expect(loadDraftEntry("gif-mixed")?.pendingImeta).toHaveLength(2);
+    await rerender(composer("other", upload));
+    await rerender(composer("gif-mixed", upload));
+    await click(button(host,"platform.send"));
+    await vi.waitFor(()=>expect(state.publish).toHaveBeenCalledOnce());
+    expect(state.publish.mock.calls[0][1]).toBe(`mixed\n![image](${draftGif.url})`);
+    expect(state.publish.mock.calls[0][2]).toEqual([expect.objectContaining({sha256:descriptor.sha256})]);
+    expect(upload).toHaveBeenCalledOnce();
+  });
+
+  it("removes a restored GIF-only draft without resurrecting it on the next visit", async () => {
+    enableDraftGif();
+    const {upload} = uploader();
+    const host = await render(composer("gif-remove", upload));
+    await type(input(host), "temporary caption");
+    await type(input(host), "");
+    await chooseDraftGif(host);
+    await rerender(composer("other", upload));
+    await rerender(composer("gif-remove", upload));
+    await click(host.querySelector<HTMLElement>('[data-testid="composer-gif-attachment"] button')!);
+    await settle();
+    expect(loadDraftEntry("gif-remove")).toBeUndefined();
+    await rerender(composer("other", upload));
+    await rerender(composer("gif-remove", upload));
+    expect(host.querySelector('[data-testid="composer-gif-attachment"]')).toBeNull();
+    expect(state.publish).not.toHaveBeenCalled();
+    expect(upload).not.toHaveBeenCalled();
+  });
+
+  it("keeps an unsent GIF in its identity draft and preserves the UNKNOWN key on return", async () => {
+    enableDraftGif();
+    state.publish.mockRejectedValue(new TransportError("lost GIF response"));
+    const {upload} = uploader();
+    const identityComposer = (identity:string) => <Composer workspaceId="workspace-a" draftIdentity={identity} draftKey="gif-identity" onUpload={upload}/>;
+    const host = await render(identityComposer("alice"));
+    await type(input(host), "authored");
+    await chooseDraftGif(host);
+    await rerender(identityComposer("bob"));
+    expect(host.querySelector('[data-testid="composer-gif-attachment"]')).toBeNull();
+    expect(input(host).textContent).toBe("");
+    await rerender(identityComposer("alice"));
+    expect(host.querySelectorAll('[data-testid="composer-gif-attachment"]')).toHaveLength(1);
+    await click(button(host,"platform.send"));
+    await vi.waitFor(()=>expect(state.publish).toHaveBeenCalledOnce());
+    await settle();
+    const first = state.publish.mock.calls[0];
+    expect(first[1]).toBe(`authored\n![image](${draftGif.url})`);
+    await rerender(composer("other-unknown", upload));
+    await rerender(identityComposer("alice"));
+    await click(button(host,"platform.send"));
+    await vi.waitFor(()=>expect(state.publish).toHaveBeenCalledTimes(2));
+    expect(state.publish.mock.calls[1].slice(1,4)).toEqual(first.slice(1,4));
+    expect(upload).not.toHaveBeenCalled();
+  });
+
+  it("restores selected GIF and failed local file across draft visits without uploading", async () => {
+    const gif = {slug:"kept-gif",title:"Kept GIF",url:"https://static.klipy.com/kept.gif",previewUrl:"https://static.klipy.com/preview.gif",width:40,height:40,previewWidth:40,previewHeight:40,size:99};
+    vi.stubGlobal("IntersectionObserver", class { observe() {} unobserve() {} disconnect() {} });
+    vi.stubGlobal("matchMedia", (query:string) => ({matches:false,media:query,addEventListener() {},removeEventListener() {},addListener() {},removeListener() {}}));
+    state.gifs = [gif];
+    const {upload, uploads} = uploader();
+    const host = await render(composer("gif-file", upload));
+    await type(input(host), "body with GIF");
+    await vi.waitFor(()=>expect(host.querySelector('[data-testid="composer-emoji-button"]')?.getAttribute("aria-label")).toBe("Insert emoji or GIF"));
+    await click(host.querySelector<HTMLElement>('[data-testid="composer-emoji-button"]')!);
+    await vi.waitFor(()=>expect(document.querySelector('[data-testid="composer-gif-tab"]')).not.toBeNull());
+    const tab = document.querySelector<HTMLElement>('[data-testid="composer-gif-tab"]')!;
+    await act(async()=>tab.dispatchEvent(new MouseEvent("mousedown",{bubbles:true,button:0})));
+    await click(tab);
+    await vi.waitFor(()=>expect(document.querySelector('[data-testid="klipy-gif-grid"] button')).not.toBeNull());
+    await click(document.querySelector<HTMLElement>('[data-testid="klipy-gif-grid"] button')!);
+    await attachPending(host);
+    await click(button(host,"platform.send"));
+    await act(async()=>uploads[0]!.reject(new TransportError("file receipt unknown")));
+    await settle();
+    await rerender(composer("other-gif-draft", upload));
+    await rerender(composer("gif-file", upload));
+    expect(host.querySelectorAll('[data-testid="composer-gif-attachment"]')).toHaveLength(1);
+    expect(upload).toHaveBeenCalledOnce();
+    await click(button(host,"platform.send"));
+    await vi.waitFor(()=>expect(uploads).toHaveLength(2));
+    await act(async()=>uploads[1]!.resolve(descriptor));
+    await vi.waitFor(()=>expect(state.publish).toHaveBeenCalledOnce());
+    expect(state.publish.mock.calls[0][1]).toContain(gif.url);
+    expect(state.publish.mock.calls[0][2]).toEqual([expect.objectContaining({sha256:descriptor.sha256})]);
   });
 
   it("keeps a failed send as a recovery when the composer has moved on", async () => {
@@ -1285,15 +1865,16 @@ describe("DD-146 original send flow: clear at Send, restore on failure", () => {
     await attachPending(first);
     await click(button(first, "platform.send"));
     expect(input(first).textContent).toBe("");
-    // The page goes away mid-upload: the local file bytes cannot come back, the message can.
+    // A fresh JS lifetime loses local bytes but retains the persisted message.
     act(() => mounted!.root.unmount());
     mounted!.host.remove();
     mounted = undefined;
+    clearAllDrafts();
     const host = await render(composer("queued-reload", upload));
     await settle();
     expect(state.publish).not.toHaveBeenCalled();
     expect(input(host).textContent).toBe("");
-    expect(recovery(host)!.dataset.stage).toBe("failed");
+    expect(recovery(host)!.dataset.stage).toBe("unknown");
     expect(recovery(host)!.textContent).toContain("platform.pendingSendMissingFiles");
     await click(recovery(host)!.querySelector<HTMLElement>('[data-testid="composer-pending-send-restore"]')!);
     await settle();

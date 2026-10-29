@@ -1,0 +1,12 @@
+{
+  "source": "39ab79980d86640e1d448ae8c4a42ee9ffe6882e",
+  "audit": "post-check discovery of copied local file packages",
+  "hashes": {
+    "fixed_39ab_source": "fc245f01ee8632e69f68221666956c3714501799346374280e2d26cf5153465a",
+    "cached_web_copy": "0131a88647eca6eb002103b1e75a7c47782c74675c132ae4557d9e54a93c8707",
+    "cached_native_copy": "0131a88647eca6eb002103b1e75a7c47782c74675c132ae4557d9e54a93c8707"
+  },
+  "web_matches": false,
+  "native_matches": false,
+  "scope": "39ab host commands exited0 but stale local package copies cannot prove merged source integration; direct shared-source checks remain separate"
+}

@@ -1,7 +1,8 @@
 import { GraphQLError } from 'graphql';
 import { ErrorResponse } from '@apollo/client/link/error';
 import { ApolloError } from '@apollo/client';
-import { message } from 'antd';
+import { notify } from './kailoHost';
+import { kailoT } from './kailoI18n';
 import { getUserConfig } from './env';
 import { getNativeWriteText } from './language';
 import { signInOwnedByHost } from './kailoEmbed';
@@ -67,7 +68,7 @@ export const runNativeMetadataWrite = async ({
     };
   };
   const identity = await readScope().catch((error) => {
-    message.error(text.scopeError);
+    notify.error(text.scopeError);
     throw error;
   });
   if (identity === undefined) {
@@ -113,11 +114,11 @@ export const runNativeMetadataWrite = async ({
       );
     }
   } catch {
-    message.error(text.storageError);
+    notify.error(text.storageError);
     throw new Error(text.storageError);
   }
   const unknown = () => {
-    message.warning(text.unknown);
+    notify.warning(text.unknown);
     return new Error('NATIVE_EXECUTION_UNKNOWN');
   };
   const referenceMatches = (reference: any) =>
@@ -160,7 +161,7 @@ export const runNativeMetadataWrite = async ({
     if (!(await sameIdentity())) throw new Error(text.scopeError);
   } catch (error) {
     sessionStorage.removeItem(slot);
-    message.error(text.scopeError);
+    notify.error(text.scopeError);
     throw error;
   }
   try {
@@ -220,40 +221,19 @@ export const ERROR_CODES = {
   NO_CHART: 'NO_CHART',
 };
 
-/**
- * Replace the token %{s} in the message with the detail message.
- * For example:
- *
- *  Input: ('Failed to update %{data source}.')
- *  Output: Failed to update data source.
- *
- *  Input: ('Failed to update %{data source}.', 'The data source is not found.')
- *  Output: Failed to update - The data source is not found.
- *
- * @param message The default message with replace token %{s}.
- * @param detailMessage The detail message.
- * @returns string
- */
-const replaceMessage = (message: string, detailMessage?: string) => {
-  const regex = /\%\{.+\}/;
-  const textWithoutTokenRegex = /(?<=\%\{).+(?=\})/;
-  const matchText = message.match(textWithoutTokenRegex);
-  if (matchText === null) {
-    console.warn('Replace token not found in message:', message);
-    return message;
-  }
-  return detailMessage
-    ? message.replace(regex, `- ${detailMessage}`)
-    : message.replace(regex, matchText[0]);
-};
-
+// DD-157 (20 §13.8): one Kailo toast per failed action, in the Kailo
+// locale; the reason is the description where the server gives one.
 abstract class ErrorHandler {
   public handle(error: GraphQLError) {
     const errorMessage = this.getErrorMessage(error);
-    if (errorMessage) message.error(errorMessage);
+    if (errorMessage) notify.error(errorMessage, this.getErrorDetail(error));
   }
 
   abstract getErrorMessage(error: GraphQLError): string | null;
+
+  public getErrorDetail(_error: GraphQLError): string | undefined {
+    return undefined;
+  }
 }
 
 const errorHandlers = new Map<string, ErrorHandler>();
@@ -262,7 +242,7 @@ class SaveTablesErrorHandler extends ErrorHandler {
   public getErrorMessage(error: GraphQLError) {
     switch (error.extensions?.code) {
       default:
-        return 'Failed to create model(s).';
+        return kailoT('setup.errSaveTables');
     }
   }
 }
@@ -271,7 +251,7 @@ class SaveRelationsErrorHandler extends ErrorHandler {
   public getErrorMessage(error: GraphQLError) {
     switch (error.extensions?.code) {
       default:
-        return 'Failed to define relations.';
+        return kailoT('setup.errSaveRelations');
     }
   }
 }
@@ -280,7 +260,7 @@ class CreateAskingTaskErrorHandler extends ErrorHandler {
   public getErrorMessage(error: GraphQLError) {
     switch (error.extensions?.code) {
       default:
-        return 'Failed to create asking task.';
+        return kailoT('setup.errCreateAskingTask');
     }
   }
 }
@@ -289,7 +269,7 @@ class CreateThreadErrorHandler extends ErrorHandler {
   public getErrorMessage(error: GraphQLError) {
     switch (error.extensions?.code) {
       default:
-        return 'Failed to create thread.';
+        return kailoT('setup.errCreateThread');
     }
   }
 }
@@ -298,7 +278,7 @@ class UpdateThreadErrorHandler extends ErrorHandler {
   public getErrorMessage(error: GraphQLError) {
     switch (error.extensions?.code) {
       default:
-        return 'Failed to update thread.';
+        return kailoT('setup.errUpdateThread');
     }
   }
 }
@@ -307,7 +287,7 @@ class DeleteThreadErrorHandler extends ErrorHandler {
   public getErrorMessage(error: GraphQLError) {
     switch (error.extensions?.code) {
       default:
-        return 'Failed to delete thread.';
+        return kailoT('setup.errDeleteThread');
     }
   }
 }
@@ -316,7 +296,7 @@ class CreateThreadResponseErrorHandler extends ErrorHandler {
   public getErrorMessage(error: GraphQLError) {
     switch (error.extensions?.code) {
       default:
-        return 'Failed to create thread response.';
+        return kailoT('setup.errCreateThreadResponse');
     }
   }
 }
@@ -325,7 +305,7 @@ class UpdateThreadResponseErrorHandler extends ErrorHandler {
   public getErrorMessage(error: GraphQLError) {
     switch (error.extensions?.code) {
       default:
-        return 'Failed to update thread response.';
+        return kailoT('setup.errUpdateThreadResponse');
     }
   }
 }
@@ -334,7 +314,7 @@ class GenerateThreadResponseAnswerErrorHandler extends ErrorHandler {
   public getErrorMessage(error: GraphQLError) {
     switch (error.extensions?.code) {
       default:
-        return 'Failed to generate thread response answer.';
+        return kailoT('setup.errGenerateThreadResponseAnswer');
     }
   }
 }
@@ -343,7 +323,7 @@ class AdjustThreadResponseErrorHandler extends ErrorHandler {
   public getErrorMessage(error: GraphQLError) {
     switch (error.extensions?.code) {
       default:
-        return 'Failed to adjust thread response answer.';
+        return kailoT('setup.errAdjustThreadResponse');
     }
   }
 }
@@ -352,7 +332,7 @@ class CreateViewErrorHandler extends ErrorHandler {
   public getErrorMessage(error: GraphQLError) {
     switch (error.extensions?.code) {
       default:
-        return 'Failed to create view.';
+        return kailoT('setup.errCreateView');
     }
   }
 }
@@ -361,11 +341,12 @@ class UpdateDataSourceErrorHandler extends ErrorHandler {
   public getErrorMessage(error: GraphQLError) {
     switch (error.extensions?.code) {
       default:
-        return replaceMessage(
-          `Failed to update %{data source}.`,
-          error.message,
-        );
+        return kailoT('setup.errUpdateDataSource');
     }
+  }
+
+  public getErrorDetail(error: GraphQLError) {
+    return error.message || undefined;
   }
 }
 
@@ -373,7 +354,7 @@ class CreateModelErrorHandler extends ErrorHandler {
   public getErrorMessage(error: GraphQLError) {
     switch (error.extensions?.code) {
       default:
-        return 'Failed to create model.';
+        return kailoT('setup.errCreateModel');
     }
   }
 }
@@ -382,7 +363,7 @@ class UpdateModelErrorHandler extends ErrorHandler {
   public getErrorMessage(error: GraphQLError) {
     switch (error.extensions?.code) {
       default:
-        return 'Failed to update model.';
+        return kailoT('setup.errUpdateModel');
     }
   }
 }
@@ -391,7 +372,7 @@ class DeleteModelErrorHandler extends ErrorHandler {
   public getErrorMessage(error: GraphQLError) {
     switch (error.extensions?.code) {
       default:
-        return 'Failed to delete model.';
+        return kailoT('setup.errDeleteModel');
     }
   }
 }
@@ -400,7 +381,7 @@ class UpdateModelMetadataErrorHandler extends ErrorHandler {
   public getErrorMessage(error: GraphQLError) {
     switch (error.extensions?.code) {
       default:
-        return 'Failed to update model metadata.';
+        return kailoT('setup.errUpdateModelMetadata');
     }
   }
 }
@@ -409,7 +390,7 @@ class CreateCalculatedFieldErrorHandler extends ErrorHandler {
   public getErrorMessage(error: GraphQLError) {
     switch (error.extensions?.code) {
       default:
-        return 'Failed to create calculated field.';
+        return kailoT('setup.errCreateCalculatedField');
     }
   }
 }
@@ -418,7 +399,7 @@ class UpdateCalculatedFieldErrorHandler extends ErrorHandler {
   public getErrorMessage(error: GraphQLError) {
     switch (error.extensions?.code) {
       default:
-        return 'Failed to update calculated field.';
+        return kailoT('setup.errUpdateCalculatedField');
     }
   }
 }
@@ -427,7 +408,7 @@ class DeleteCalculatedFieldErrorHandler extends ErrorHandler {
   public getErrorMessage(error: GraphQLError) {
     switch (error.extensions?.code) {
       default:
-        return 'Failed to delete calculated field.';
+        return kailoT('setup.errDeleteCalculatedField');
     }
   }
 }
@@ -436,7 +417,7 @@ class CreateRelationshipErrorHandler extends ErrorHandler {
   public getErrorMessage(error: GraphQLError) {
     switch (error.extensions?.code) {
       default:
-        return 'Failed to create relationship.';
+        return kailoT('setup.errCreateRelationship');
     }
   }
 }
@@ -445,7 +426,7 @@ class UpdateRelationshipErrorHandler extends ErrorHandler {
   public getErrorMessage(error: GraphQLError) {
     switch (error.extensions?.code) {
       default:
-        return 'Failed to update relationship.';
+        return kailoT('setup.errUpdateRelationship');
     }
   }
 }
@@ -454,7 +435,7 @@ class DeleteRelationshipErrorHandler extends ErrorHandler {
   public getErrorMessage(error: GraphQLError) {
     switch (error.extensions?.code) {
       default:
-        return 'Failed to delete relationship.';
+        return kailoT('setup.errDeleteRelationship');
     }
   }
 }
@@ -463,7 +444,7 @@ class UpdateViewMetadataErrorHandler extends ErrorHandler {
   public getErrorMessage(error: GraphQLError) {
     switch (error.extensions?.code) {
       default:
-        return 'Failed to update view metadata.';
+        return kailoT('setup.errUpdateViewMetadata');
     }
   }
 }
@@ -472,7 +453,7 @@ class TriggerDataSourceDetectionErrorHandler extends ErrorHandler {
   public getErrorMessage(error: GraphQLError) {
     switch (error.extensions?.code) {
       default:
-        return 'Failed to scan data source.';
+        return kailoT('setup.errTriggerDataSourceDetection');
     }
   }
 }
@@ -481,7 +462,7 @@ class ResolveSchemaChangeErrorHandler extends ErrorHandler {
   public getErrorMessage(error: GraphQLError) {
     switch (error.extensions?.code) {
       default:
-        return 'Failed to resolve schema change.';
+        return kailoT('setup.errResolveSchemaChange');
     }
   }
 }
@@ -490,7 +471,7 @@ class CreateDashboardItemErrorHandler extends ErrorHandler {
   public getErrorMessage(error: GraphQLError) {
     switch (error.extensions?.code) {
       default:
-        return 'Failed to create dashboard item.';
+        return kailoT('setup.errCreateDashboardItem');
     }
   }
 }
@@ -499,7 +480,7 @@ class UpdateDashboardItemErrorHandler extends ErrorHandler {
   public getErrorMessage(error: GraphQLError) {
     switch (error.extensions?.code) {
       default:
-        return 'Failed to update dashboard item.';
+        return kailoT('setup.errUpdateDashboardItem');
     }
   }
 }
@@ -508,7 +489,7 @@ class UpdateDashboardItemLayoutsErrorHandler extends ErrorHandler {
   public getErrorMessage(error: GraphQLError) {
     switch (error.extensions?.code) {
       default:
-        return 'Failed to update dashboard item layouts.';
+        return kailoT('setup.errUpdateDashboardItemLayouts');
     }
   }
 }
@@ -517,7 +498,7 @@ class DeleteDashboardItemErrorHandler extends ErrorHandler {
   public getErrorMessage(error: GraphQLError) {
     switch (error.extensions?.code) {
       default:
-        return 'Failed to delete dashboard item.';
+        return kailoT('setup.errDeleteDashboardItem');
     }
   }
 }
@@ -526,7 +507,7 @@ class SetDashboardScheduleErrorHandler extends ErrorHandler {
   public getErrorMessage(error: GraphQLError) {
     switch (error.extensions?.code) {
       default:
-        return 'Failed to set dashboard schedule.';
+        return kailoT('setup.errSetDashboardSchedule');
     }
   }
 }
@@ -535,7 +516,7 @@ class CreateSqlPairErrorHandler extends ErrorHandler {
   public getErrorMessage(error: GraphQLError) {
     switch (error.extensions?.code) {
       default:
-        return 'Failed to create question-sql pair.';
+        return kailoT('setup.errCreateSqlPair');
     }
   }
 }
@@ -544,7 +525,7 @@ class UpdateSqlPairErrorHandler extends ErrorHandler {
   public getErrorMessage(error: GraphQLError) {
     switch (error.extensions?.code) {
       default:
-        return 'Failed to update question-sql pair.';
+        return kailoT('setup.errUpdateSqlPair');
     }
   }
 }
@@ -553,7 +534,7 @@ class DeleteSqlPairErrorHandler extends ErrorHandler {
   public getErrorMessage(error: GraphQLError) {
     switch (error.extensions?.code) {
       default:
-        return 'Failed to delete question-sql pair.';
+        return kailoT('setup.errDeleteSqlPair');
     }
   }
 }
@@ -562,7 +543,7 @@ class CreateInstructionErrorHandler extends ErrorHandler {
   public getErrorMessage(error: GraphQLError) {
     switch (error.extensions?.code) {
       default:
-        return 'Failed to create instruction.';
+        return kailoT('setup.errCreateInstruction');
     }
   }
 }
@@ -571,7 +552,7 @@ class UpdateInstructionErrorHandler extends ErrorHandler {
   public getErrorMessage(error: GraphQLError) {
     switch (error.extensions?.code) {
       default:
-        return 'Failed to update instruction.';
+        return kailoT('setup.errUpdateInstruction');
     }
   }
 }
@@ -580,7 +561,7 @@ class DeleteInstructionErrorHandler extends ErrorHandler {
   public getErrorMessage(error: GraphQLError) {
     switch (error.extensions?.code) {
       default:
-        return 'Failed to delete instruction.';
+        return kailoT('setup.errDeleteInstruction');
     }
   }
 }
@@ -687,14 +668,12 @@ const errorHandler = (error: ErrorResponse) => {
         ? undefined
         : document.documentElement.lang,
     );
-    message.warning(sqlPair ? text.unresolved : text.unknown);
+    notify.warning(sqlPair ? text.unresolved : text.unknown);
     return;
   }
   // networkError
   if (error.networkError) {
-    message.error(
-      'No internet. Please check your network connection and try again.',
-    );
+    notify.error(kailoT('setup.errNetwork'), kailoT('setup.errNetworkHint'));
   }
 
   if (error.graphQLErrors) {

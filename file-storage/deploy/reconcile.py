@@ -152,6 +152,14 @@ DISABLED_ACTIONS = (
 )
 
 
+# Exit code of a refusal that one native service restart resolves (start.sh restarts once).
+RESTART_REQUIRED = 76
+
+
+class RestartRequired(Exception):
+    pass
+
+
 class Refused(Exception):
     pass
 
@@ -297,14 +305,24 @@ class Cli:
             return 1, ""
         return result.returncode, result.stdout.decode("utf-8", "replace")
 
-    def token(self, login, seconds):
-        code, out = self.run(["admin", "user", "token", "-u", login, "-e", f"{seconds}s", "-q"], 180)
-        candidates = [line.strip() for line in out.splitlines() if TOKEN.fullmatch(line.strip())]
-        require(code == 0 and len(candidates) == 1, "native admin token could not be minted")
-        return candidates[0]
+    def token(self, login, seconds, deadline=None):
+        # Right after a first install the container is healthy while the native
+        # post-configure run still migrates its services and the identity service
+        # does not answer the CLI yet; retry until the deployment deadline.
+        while True:
+            code, out = self.run(["admin", "user", "token", "-u", login, "-e", f"{seconds}s", "-q"], 180)
+            candidates = [line.strip() for line in out.splitlines() if TOKEN.fullmatch(line.strip())]
+            if code == 0 and len(candidates) == 1:
+                return candidates[0]
+            if deadline is None or time.monotonic() >= deadline:
+                raise Refused("native admin token could not be minted")
+            time.sleep(10)
 
     def mkdir(self, path, login):
-        code, _ = self.run(["admin", "file", "mkdir", "--path", path, "--user", login], 180)
+        """True when created or present; False to retry; "unserved" when the datasource is unknown."""
+        code, out = self.run(["admin", "file", "mkdir", "--path", path, "--user", login], 180)
+        if "Could not find DataSource" in out:
+            return "unserved"
         return code == 0
 
 
@@ -486,7 +504,19 @@ def ensure_root(native, cli, s, deadline, changes):
     existed = admin_stat(native, path) is not None
     # The native mkdir only creates a missing folder and refuses a file; a
     # just-created datasource needs its sync/index services first.
-    while not cli.mkdir(path, s["admin"]):
+    unserved_since = None
+    while True:
+        made = cli.mkdir(path, s["admin"])
+        if made is True:
+            break
+        # A datasource created by the entrypoint of the first post-install start is not
+        # served by the admin tree until the next start; one restart resolves it.
+        if made == "unserved":
+            unserved_since = unserved_since or time.monotonic()
+            if time.monotonic() - unserved_since > 60 or time.monotonic() >= deadline:
+                raise RestartRequired("binding datasource is not served before a restart")
+        else:
+            unserved_since = None
         require(time.monotonic() < deadline, "binding root folder could not be ensured before the deadline")
         time.sleep(5)
     if not existed:
@@ -618,8 +648,11 @@ def main(argv):
         require(len(argv) >= 4 and argv[0] == "--container" and argv[2] == "--", "usage: reconcile.py --container <id> -- <docker argv...>")
         deadline = time.monotonic() + s["timeout"]
         cli = Cli(argv[3:], argv[1])
-        native = Native(s["rest"], cli.token(s["admin"], s["timeout"] + 120))
+        native = Native(s["rest"], cli.token(s["admin"], s["timeout"] + 120, deadline))
         facts, changes = reconcile(s, native, cli, deadline)
+    except RestartRequired as error:
+        print(f"Cells declarative configuration needs one native restart: {error}", file=sys.stderr)
+        return RESTART_REQUIRED
     except Refused as error:
         print(f"Cells declarative configuration refused: {error}", file=sys.stderr)
         return 2

@@ -9,13 +9,16 @@ library;
 
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:nostr/nostr.dart' as nostr;
 import 'package:package_info_plus/package_info_plus.dart';
 
 import 'package:client_kit/shared/contracts/contracts.dart';
 import 'package:client_kit/shared/platform/platform_text.dart';
+import '../auth/auth_provider.dart';
+import '../relay/relay_provider.dart';
+import '../relay/app_lifecycle_provider.dart';
 import '../platform/platform_api.dart';
 import '../platform/platform_config.dart';
 import '../platform/platform_device.dart';
@@ -26,7 +29,7 @@ import 'push_bridge.dart';
 const pushRegistrationPath = '/api/v1/push/registration';
 const pushCapabilityPath = '/api/v1/push/capability';
 
-/// How long to wait for APNs to hand back a token after asking for one.
+/// How long to wait for the native provider to hand back a token after asking for one.
 const _tokenTimeout = Duration(seconds: 20);
 
 enum PushRegistrationOutcome { none, saving, failed, notConfirmed }
@@ -45,7 +48,7 @@ class DevicePushState {
 
   final bool loading;
 
-  /// The deployment configured APNs credentials (DD-151(2)).
+  /// Both the artifact SDK and its matching deployment provider are configured (DD-151(2)).
   final bool available;
   final String? devicePubkey;
   final bool enabled;
@@ -84,6 +87,7 @@ class PushRegistrationDeps {
     required this.appId,
     required this.apiUri,
     required this.locale,
+    required this.isCurrent,
   });
 
   final Future<PlatformResponse> Function(
@@ -98,13 +102,24 @@ class PushRegistrationDeps {
 
   /// `en` or `zh-CN`: the language of the fixed system text Core sends.
   final String Function() locale;
+  final bool Function() isCurrent;
 }
 
 final pushRegistrationDepsProvider = Provider<PushRegistrationDeps?>((ref) {
   final config = ref.watch(platformConfigProvider);
-  if (config == null) return null;
+  final identity = ref.watch(
+    authProvider.select((a) => (a.value?.status, a.value?.community?.id)),
+  );
+  final pubkey = ref.watch(myPubkeyProvider);
+  if (config == null ||
+      identity.$1 != AuthStatus.authenticated ||
+      pubkey == null) {
+    return null;
+  }
   final session = ref.read(nativeSessionProvider);
+  final generation = session.credentialGeneration;
   return PushRegistrationDeps(
+    isCurrent: () => session.credentialGeneration == generation,
     send: (method, path, {body}) =>
         session.send(config, method, path, body: body),
     deviceKeys: () => ensureDeviceKeys(ref.read(deviceKeyStoreProvider)),
@@ -122,9 +137,16 @@ final pushRegistrationDepsProvider = Provider<PushRegistrationDeps?>((ref) {
 
 class PushRegistrationNotifier extends Notifier<DevicePushState> {
   String? _lastToken;
+  PushPlatform? _platform;
+  String? _pendingToken;
+  int _readEpoch = 0;
 
   @override
   DevicePushState build() {
+    _readEpoch++;
+    _lastToken = null;
+    _platform = null;
+    _pendingToken = null;
     final deps = ref.watch(pushRegistrationDepsProvider);
     if (deps == null) {
       return const DevicePushState(loading: false);
@@ -133,25 +155,45 @@ class PushRegistrationNotifier extends Notifier<DevicePushState> {
     return const DevicePushState();
   }
 
+  bool _current(PushRegistrationDeps deps) =>
+      ref.mounted &&
+      deps.isCurrent() &&
+      identical(ref.read(pushRegistrationDepsProvider), deps);
+
   Future<void> _load(PushRegistrationDeps deps) async {
+    final epoch = ++_readEpoch;
+    bool readIsCurrent() => _current(deps) && epoch == _readEpoch;
     try {
+      final nativePlatform = await ref
+          .read(pushBridgeProvider)
+          .deliveryPlatform();
+      if (!readIsCurrent()) return;
+      _platform = nativePlatform;
+      if (nativePlatform == null) {
+        state = state.copyWith(loading: false, available: false);
+        return;
+      }
       final capability = await deps.send(
         PlatformMethod.get,
         pushCapabilityPath,
       );
+      if (!readIsCurrent()) return;
+      final capabilityView = capability.status == 200
+          ? PushCapability.fromJson(capability.body! as Map<String, dynamic>)
+          : null;
       final available =
-          capability.status == 200 &&
-          PushCapability.fromJson(
-                capability.body! as Map<String, dynamic>,
-              ).apns ==
-              PushAvailability.CONFIGURED;
+          (nativePlatform == PushPlatform.APNS
+              ? capabilityView?.apns
+              : capabilityView?.fcm) ==
+          PushAvailability.CONFIGURED;
       final keys = await deps.deviceKeys();
+      if (!readIsCurrent()) return;
       final device = keys.public;
       final current = await deps.send(
         PlatformMethod.get,
         '$pushRegistrationPath?devicePubkey=$device',
       );
-      if (!ref.mounted) return;
+      if (!readIsCurrent()) return;
       var next = state.copyWith(
         loading: false,
         available: available,
@@ -170,7 +212,7 @@ class PushRegistrationNotifier extends Notifier<DevicePushState> {
       state = next;
     } catch (error) {
       debugPrint('push: registration read failed: $error');
-      if (ref.mounted) state = state.copyWith(loading: false);
+      if (readIsCurrent()) state = state.copyWith(loading: false);
     }
   }
 
@@ -181,8 +223,8 @@ class PushRegistrationNotifier extends Notifier<DevicePushState> {
     if (deps != null) await _load(deps);
   }
 
-  /// Turn notifications on or off for this device. Turning on asks iOS for permission and
-  /// APNs for a token first; the token is sent once, to Core, with the device-key proof.
+  /// Turn notifications on or off for this device. Turning on asks the OS for permission and
+  /// the native provider for a token first; the token is sent once, to Core, with the device-key proof.
   Future<void> setEnabled(bool enabled) async {
     final deps = ref.read(pushRegistrationDepsProvider);
     if (deps == null ||
@@ -190,33 +232,38 @@ class PushRegistrationNotifier extends Notifier<DevicePushState> {
         state.outcome == PushRegistrationOutcome.saving) {
       return;
     }
+    _readEpoch++;
     state = state.copyWith(outcome: PushRegistrationOutcome.saving);
     final bridge = ref.read(pushBridgeProvider);
     final String token;
     try {
       final next = bridge.tokens.first.timeout(_tokenTimeout);
-      await bridge.startRegistration();
-      token = await next;
+      final results = await Future.wait<Object?>([
+        bridge.startRegistration(requestPermission: enabled),
+        next,
+      ], eagerError: true);
+      token = results[1]! as String;
     } catch (_) {
-      if (ref.mounted) {
+      if (_current(deps)) {
         state = state.copyWith(outcome: PushRegistrationOutcome.failed);
       }
       return;
     }
-    if (!ref.mounted) return;
+    if (!_current(deps)) return;
     await _put(deps, token: token, enabled: enabled);
   }
 
-  /// APNs may rotate the token; re-register the same switch state with the new one.
+  /// APNs/FCM may rotate the token; re-register the same switch state with the new one.
   Future<void> tokenChanged(String token) async {
     final deps = ref.read(pushRegistrationDepsProvider);
-    if (deps == null ||
-        !state.available ||
-        state.registrationState == null ||
-        state.outcome == PushRegistrationOutcome.saving ||
-        token == _lastToken) {
+    if (deps == null || !state.available || token == _lastToken) {
       return;
     }
+    if (state.outcome == PushRegistrationOutcome.saving) {
+      _pendingToken = token;
+      return;
+    }
+    if (state.registrationState == null) return;
     await _put(deps, token: token, enabled: state.enabled);
   }
 
@@ -225,9 +272,15 @@ class PushRegistrationNotifier extends Notifier<DevicePushState> {
     required String token,
     required bool enabled,
   }) async {
+    if (!_current(deps)) return;
+    final platform = _platform;
+    if (platform == null) return;
+    final version = state.version;
+    _readEpoch++;
+    state = state.copyWith(outcome: PushRegistrationOutcome.saving);
     try {
       final current = await deps.send(PlatformMethod.get, '/api/v1/session');
-      if (!ref.mounted) return;
+      if (!_current(deps)) return;
       if (current.status != 200) {
         state = state.copyWith(outcome: PushRegistrationOutcome.failed);
         return;
@@ -236,6 +289,7 @@ class PushRegistrationNotifier extends Notifier<DevicePushState> {
         current.body! as Map<String, dynamic>,
       );
       final keys = await deps.deviceKeys();
+      if (!_current(deps)) return;
       final proof = nostr.Event.from(
         kind: 27235,
         content: '',
@@ -246,20 +300,22 @@ class PushRegistrationNotifier extends Notifier<DevicePushState> {
         ],
         secretKey: keys.secret,
       );
+      final appId = await deps.appId();
+      if (!_current(deps)) return;
       final response = await deps.send(
         PlatformMethod.put,
         pushRegistrationPath,
         body: {
           'proof': proof.toMap(),
-          'platform': 'APNS',
-          'appId': await deps.appId(),
+          'platform': platform.name,
+          'appId': appId,
           'token': token,
           'locale': deps.locale(),
           'enabled': enabled,
-          'expectedVersion': state.version,
+          'expectedVersion': version,
         },
       );
-      if (!ref.mounted) return;
+      if (!_current(deps)) return;
       if (response.status == 200) {
         final view = PushRegistrationView.fromJson(
           response.body! as Map<String, dynamic>,
@@ -278,14 +334,23 @@ class PushRegistrationNotifier extends Notifier<DevicePushState> {
         // Another write of this device's preference won: read it back, do not overwrite.
         await refresh();
       }
-      if (ref.mounted) {
+      if (_current(deps)) {
         state = state.copyWith(outcome: PushRegistrationOutcome.failed);
       }
     } catch (_) {
       // Transport loss: the write may or may not have landed. Re-read before any retry.
-      if (!ref.mounted) return;
+      if (!_current(deps)) return;
       state = state.copyWith(outcome: PushRegistrationOutcome.notConfirmed);
       unawaited(refresh());
+    } finally {
+      if (_current(deps) &&
+          state.outcome != PushRegistrationOutcome.notConfirmed) {
+        final pending = _pendingToken;
+        _pendingToken = null;
+        if (pending != null && pending != _lastToken) {
+          unawaited(tokenChanged(pending));
+        }
+      }
     }
   }
 }
@@ -295,9 +360,11 @@ final pushRegistrationProvider =
       PushRegistrationNotifier.new,
     );
 
-/// Keeps an enabled registration's APNs token current: on launch it asks APNs again (tokens
+/// Keeps an enabled registration's provider token current: on launch it asks the native provider again (tokens
 /// can change across restores and reinstalls) and re-registers a changed token.
 final pushTokenRefreshProvider = Provider<void>((ref) {
+  final deps = ref.watch(pushRegistrationDepsProvider);
+  if (deps == null) return;
   final bridge = ref.watch(pushBridgeProvider);
   final subscription = bridge.tokens.listen(
     (token) => unawaited(
@@ -309,9 +376,25 @@ final pushTokenRefreshProvider = Provider<void>((ref) {
   ref.listen<DevicePushState>(pushRegistrationProvider, (_, next) {
     if (!asked && !next.loading && next.available && next.effectiveEnabled) {
       asked = true;
-      unawaited(bridge.startRegistration());
+      unawaited(
+        bridge
+            .startRegistration(requestPermission: false)
+            .catchError((Object _) {}),
+      );
     }
   }, fireImmediately: true);
+  ref.listen(appLifecycleProvider, (_, next) {
+    if (next != AppLifecycleState.resumed || !deps.isCurrent()) return;
+    ref.invalidate(pushAuthorizationStatusProvider);
+    // A permission dialog can resume while the original PUT is still pending.
+    // Do not race its CAS version with another read or token request.
+    if (ref.read(pushRegistrationProvider).outcome ==
+        PushRegistrationOutcome.saving) {
+      return;
+    }
+    asked = false;
+    unawaited(ref.read(pushRegistrationProvider.notifier).refresh());
+  });
 });
 
 /// Notification taps (warm and cold start) go into the existing deep-link pipeline.

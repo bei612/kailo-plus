@@ -26,7 +26,19 @@ import * as ReactRedux from 'react-redux'
 
 import * as MUI from 'material-ui'
 import * as MUIStyle from 'material-ui/styles'
+import EnhancedButton from 'material-ui/internal/EnhancedButton'
 import Color from 'color'
+
+// DD-157 (20 §13.6): no Material ink ripple in Kailo mode, for every native
+// button, icon button, list and menu item (they all render EnhancedButton).
+if (window.KailoCells && window.KailoCells.kailoMode && window.KailoCells.kailoMode()) {
+    [EnhancedButton, MUI.IconButton].forEach((Component) => {
+        if (Component && Component.defaultProps) {
+            Component.defaultProps.disableTouchRipple = true
+            Component.defaultProps.disableFocusRipple = true
+        }
+    })
+}
 const materialFull = {...MUI, Color, MUIStyle}
 
 import * as ReactDND from 'react-dnd'

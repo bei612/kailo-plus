@@ -258,11 +258,7 @@ fn status_entry<'a>(
     event_type: &'a str,
     result: &'a str,
 ) -> AuditEntry<'a> {
-    let event_key = match event_type {
-        "DISPATCH" => format!("message.publish:{event_id}:dispatch"),
-        "RECONCILIATION" => format!("message.publish:{event_id}:reconciled"),
-        _ => format!("message.publish:{event_id}"),
-    };
+    let event_key = crate::web_transport::publication_event_key(operation_id, event_id, event_type);
     AuditEntry {
         event_key,
         tenant_id: Some(ctx.tenant_id),
@@ -443,7 +439,7 @@ async fn read_review(
     let id = merge.pull_request_event_id.as_str();
     let filter = json!({"ids": [id], "kinds": [1618], "limit": 1});
     let page = client
-        .query(&state.http, &[filter])
+        .query(&state.relay_http, &[filter])
         .await
         .map_err(|error| relay_error_response(&error, None))?;
     let events: Vec<nostr::Event> =
@@ -815,7 +811,10 @@ async fn publish_status(
             return Err(pending());
         }
     }
-    match client.deliver(&call.state.http, &event, admitted).await {
+    match client
+        .deliver(&call.state.relay_http, &event, admitted)
+        .await
+    {
         Delivery::Accepted => {
             record_status(call, operation, &event_id, "OUTCOME", ACCEPTED).await;
             Ok(Some(event_id))
@@ -846,7 +845,7 @@ async fn observe_status(
     let id = attempt.operation_id;
     let event_id = attempt.event_id.as_str();
     let filter = json!({"ids": [event_id], "authors": [call.signer], "kinds": [1631]});
-    let page = call.client.query(&call.state.http, &[filter]).await;
+    let page = call.client.query(&call.state.relay_http, &[filter]).await;
     let page = page.map_err(|_| unknown(id))?;
     let observed = publication_observed(page, event_id, &call.signer, 1631);
     if !matches!(observed, Ok(true)) {
@@ -921,7 +920,7 @@ async fn merge_inner(
     let client = Arc::new(community_client(state, &keys, &before.community_host)?);
     // Relay decides with the person's own identity before anything is recorded.
     client
-        .git_info_refs(&state.http, &merge.repo_path)
+        .git_info_refs(&state.relay_http, &merge.repo_path)
         .await
         .map_err(|error| info_refs_error(&error))?;
     let clone_url = client
@@ -1128,16 +1127,19 @@ mod tests {
         let op = Uuid::new_v4();
         let id = "f".repeat(64);
         let dispatch = status_entry(&ctx, op, &id, "DISPATCH", "DISPATCHED");
-        let expected = format!("message.publish:{id}:dispatch");
+        let expected = format!("message.publish:{id}:{op}:DISPATCH");
         assert_eq!(dispatch.event_key, expected);
         assert_eq!(dispatch.action_key, PUBLISH_ACTION);
         assert_eq!(dispatch.target_type, Some("TENANT"));
         assert_eq!(dispatch.target_id, Some(ctx.tenant_id));
         assert_eq!(dispatch.workspace_id, None);
         let outcome = status_entry(&ctx, op, &id, "OUTCOME", ACCEPTED);
-        assert_eq!(outcome.event_key, format!("message.publish:{id}"));
+        assert_eq!(
+            outcome.event_key,
+            format!("message.publish:{id}:{op}:OUTCOME")
+        );
         let reconciled = status_entry(&ctx, op, &id, "RECONCILIATION", ACCEPTED);
-        let expected = format!("message.publish:{id}:reconciled");
+        let expected = format!("message.publish:{id}:{op}:RECONCILIATION");
         assert_eq!(reconciled.event_key, expected);
     }
 

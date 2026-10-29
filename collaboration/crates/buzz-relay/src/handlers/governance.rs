@@ -373,7 +373,7 @@ pub(crate) fn huddle_projection_tags(event: &Event) -> Result<Option<&str>, &'st
     if single_tag_value(event, "h").is_none()
         || single_tag_value(event, "visibility") != Some("private")
         || single_tag_value(event, "channel_type") != Some("stream")
-        || !ttl.is_some_and(|ttl| ttl > 0)
+        || ttl.is_none_or(|ttl| ttl <= 0)
     {
         return Err("a Huddle projection is an h-tagged private stream with a TTL");
     }
@@ -413,7 +413,7 @@ pub(crate) async fn huddle_projection_creator(
         .get_relay_member(tenant.community(), &event.pubkey.to_hex())
         .await
         .map_err(lookup)?;
-    if !signer.is_some_and(|member| member.role == "owner") {
+    if signer.is_none_or(|member| member.role != "owner") {
         return Err(IngestError::Rejected(
             "restricted: a Huddle projection is reserved to the community owner".into(),
         ));
@@ -423,7 +423,7 @@ pub(crate) async fn huddle_projection_creator(
         .get_relay_member(tenant.community(), &creator)
         .await
         .map_err(lookup)?;
-    if !member.is_some_and(|member| member.role != "owner") {
+    if member.is_none_or(|member| member.role == "owner") {
         return Err(refused("the Huddle creator must be a relay member"));
     }
     hex::decode(&creator)
@@ -452,7 +452,7 @@ pub(crate) async fn owner_manages_huddle(
         .db
         .get_relay_member(tenant.community(), &event.pubkey.to_hex())
         .await?;
-    if !signer.is_some_and(|member| member.role == "owner") {
+    if signer.is_none_or(|member| member.role != "owner") {
         return Ok(false);
     }
     is_huddle_projection(state, tenant, channel)

@@ -1,6 +1,10 @@
 import React from 'react';
+import { kailoText } from './utils/kailoI18n';
 import { renderToStaticMarkup } from 'react-dom/server';
 import useAskingStreamTask from './hooks/useAskingStreamTask';
+import useTextBasedAnswerStreamTask from './hooks/useTextBasedAnswerStreamTask';
+import TextBasedAnswer from './components/pages/home/promptThread/TextBasedAnswer';
+import LoadingOutlined from '@ant-design/icons/LoadingOutlined';
 import useAskPrompt from './hooks/useAskPrompt';
 import PromptResult from './components/pages/home/prompt/Result';
 import Prompt from './components/pages/home/prompt';
@@ -8,8 +12,25 @@ import { PROCESS_STATE } from './utils/enum';
 import {
   AskingTaskStatus,
   AskingTaskType,
+  ThreadResponseAnswerStatus,
 } from './apollo/client/graphql/__types__';
 
+let mockLocale = 'zh-CN';
+const mockGenerateAnswer = jest.fn();
+const mockPreview = jest.fn();
+jest.mock('next/router', () => ({ useRouter: () => ({ locale: mockLocale }) }));
+jest.mock('./components/pages/home/promptThread/store', () => ({
+  __esModule: true,
+  default: () => ({ onGenerateTextBasedAnswer: mockGenerateAnswer }),
+}));
+jest.mock('./hooks/useGovernedPreview', () => ({
+  __esModule: true,
+  default: () => ({ completed: false, preview: mockPreview }),
+}));
+jest.mock('./components/dataPreview/PreviewData', () => () => null);
+jest.mock('./components/diagram/CustomDropdown', () => ({
+  AdjustAnswerDropdown: ({ children }: any) => children,
+}));
 const mockCreate = jest.fn();
 const mockCancel = jest.fn();
 const mockRerun = jest.fn();
@@ -19,6 +40,7 @@ const mockFetchRecommend = jest.fn();
 let mockAskingResult: any;
 let mockRecommendedResult: any;
 jest.mock('./apollo/client/graphql/home.generated', () => ({
+  usePreviewDataMutation: () => [mockPreview, {}],
   useCreateAskingTaskMutation: () => [mockCreate, {}],
   useCancelAskingTaskMutation: () => [mockCancel, {}],
   useRerunAskingTaskMutation: () => [mockRerun, {}],
@@ -54,6 +76,9 @@ jest.mock('./components/pages/home/RecommendedQuestions', () => ({
   getRecommendedQuestionProps: () => ({ show: false }),
 }));
 jest.mock('antd', () => ({
+  Skeleton: ({ children }: any) => children,
+  Alert: () => null,
+  Typography: { Text: ({ children }: any) => children },
   Button: ({ children }: any) =>
     jest.requireActual('react').createElement('button', null, children),
 }));
@@ -109,8 +134,12 @@ describe('original Ask SSE hook and same-task GraphQL observation', () => {
     cursor = 0;
     pendingEffects = [];
     NativeEventSource.sources = [];
+    mockLocale = 'zh-CN';
+    mockGenerateAnswer.mockReset();
+    mockPreview.mockReset();
     Object.defineProperty(global, 'EventSource', {
       configurable: true,
+      writable: true,
       value: NativeEventSource,
     });
     jest.spyOn(console, 'error').mockImplementation(() => {});
@@ -286,8 +315,10 @@ describe('original Ask SSE hook and same-task GraphQL observation', () => {
     });
     Object.defineProperty(global, 'EventSource', {
       configurable: true,
+      writable: true,
       value: construct,
     });
+    expect(global.EventSource).toBe(construct);
     const [start] = render(useAskingStreamTask);
     start('native-current');
     start('native-current');
@@ -296,6 +327,197 @@ describe('original Ask SSE hook and same-task GraphQL observation', () => {
       loading: true,
       completed: false,
     });
+  });
+
+  it('answer hook fences old queued frames while a new native query owns the same response', () => {
+    render(useTextBasedAnswerStreamTask)[0](71, 'old-query');
+    const old = NativeEventSource.sources[0];
+    old.message({ message: 'old text' });
+    render(useTextBasedAnswerStreamTask)[0](71, 'new/query?scope=current');
+    const next = NativeEventSource.sources[1];
+    expect(next.url).toBe(
+      '/api/ask_task/streaming_answer?responseId=71&queryId=new%2Fquery%3Fscope%3Dcurrent',
+    );
+    next.message({ message: 'new text' });
+    old.message({ message: 'late old text' });
+    old.message({ done: true });
+    old.error();
+    expect(render(useTextBasedAnswerStreamTask)[1]).toMatchObject({
+      responseId: 71,
+      queryId: 'new/query?scope=current',
+      data: 'new text',
+      loading: true,
+      completed: false,
+    });
+    expect(old.close).toHaveBeenCalledTimes(1);
+    next.message({ done: true });
+    next.message({ message: 'after done' });
+    expect(render(useTextBasedAnswerStreamTask)[1]).toMatchObject({
+      data: 'new text',
+      loading: false,
+      completed: true,
+    });
+    expect(next.close).toHaveBeenCalledTimes(1);
+  });
+
+  it('answer hook never reopens an observed native queue on render, reset or a previous response selection', () => {
+    render(useTextBasedAnswerStreamTask)[0](71, 'first');
+    const first = NativeEventSource.sources[0];
+    first.message({ message: 'partial' });
+    first.error();
+    render(useTextBasedAnswerStreamTask)[0](71, 'first');
+    expect(render(useTextBasedAnswerStreamTask)[1]).toMatchObject({
+      data: 'partial',
+      completed: false,
+    });
+    render(useTextBasedAnswerStreamTask)[1].onReset();
+    render(useTextBasedAnswerStreamTask)[0](71, 'first');
+    expect(NativeEventSource.sources).toHaveLength(1);
+    render(useTextBasedAnswerStreamTask)[0](72, 'second');
+    const second = NativeEventSource.sources[1];
+    render(useTextBasedAnswerStreamTask)[0](71, 'first');
+    second.message({ message: 'late second' });
+    expect(render(useTextBasedAnswerStreamTask)[1]).toMatchObject({
+      responseId: 71,
+      queryId: 'first',
+      data: '',
+      completed: false,
+    });
+    expect(NativeEventSource.sources).toHaveLength(2);
+    expect(second.close).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    null,
+    [],
+    { done: 'true' },
+    { done: true, queryId: 'other' },
+    { done: true, message: 'mixed' },
+    { message: 42 },
+    { unknown: 'future' },
+  ])(
+    'answer hook rejects malformed public frame %j without success or reopening',
+    (frame) => {
+      render(useTextBasedAnswerStreamTask)[0](71, 'current');
+      const source = NativeEventSource.sources[0];
+      source.message(frame);
+      expect(render(useTextBasedAnswerStreamTask)[1]).toMatchObject({
+        data: '',
+        loading: false,
+        completed: false,
+      });
+      expect(source.close).toHaveBeenCalledTimes(1);
+      render(useTextBasedAnswerStreamTask)[0](71, 'current');
+      expect(NativeEventSource.sources).toHaveLength(1);
+    },
+  );
+
+  it('answer hook closes invalid JSON and discards callbacks after unmount', () => {
+    render(useTextBasedAnswerStreamTask)[0](71, 'first');
+    NativeEventSource.sources[0].onmessage?.({ data: '{' });
+    expect(render(useTextBasedAnswerStreamTask)[1].completed).toBe(false);
+    render(useTextBasedAnswerStreamTask)[0](72, 'second');
+    const source = NativeEventSource.sources[1];
+    slots.forEach((slot) => slot.cleanup?.());
+    source.message({ message: 'after unmount' });
+    source.message({ done: true });
+    expect(render(useTextBasedAnswerStreamTask)[1]).toMatchObject({
+      data: '',
+      completed: false,
+    });
+    expect(source.close).toHaveBeenCalledTimes(1);
+  });
+
+  it('answer hook keeps constructor failure unresolved without retrying it', () => {
+    const construct = jest.fn(() => {
+      throw new Error('transport unavailable');
+    });
+    Object.defineProperty(global, 'EventSource', {
+      configurable: true,
+      writable: true,
+      value: construct,
+    });
+    render(useTextBasedAnswerStreamTask)[0](71, 'current');
+    render(useTextBasedAnswerStreamTask)[0](71, 'current');
+    expect(render(useTextBasedAnswerStreamTask)[1]).toMatchObject({
+      loading: false,
+      completed: false,
+    });
+    expect(construct).toHaveBeenCalledTimes(1);
+  });
+
+  const findElement = (node: any, type: any): any => {
+    if (!React.isValidElement(node)) return undefined;
+    if (node.type === type) return node;
+    for (const child of React.Children.toArray((node.props as any).children)) {
+      const found = findElement(child, type);
+      if (found) return found;
+    }
+    return undefined;
+  };
+  const displayedAnswer = (node: any) =>
+    findElement(node, jest.requireMock('./components/editor/MarkdownBlock'))
+      ?.props.content;
+  const answerProps = (queryId: string, id = 71): any => ({
+    threadResponse: {
+      id,
+      question: 'Original',
+      sql: 'SELECT 1',
+      answerDetail: { queryId, status: ThreadResponseAnswerStatus.STREAMING },
+    },
+    isLastThreadResponse: false,
+    onInitPreviewDone: jest.fn(),
+  });
+  it('original answer page follows queryId replacements without showing old text before effects, and locale changes do not reopen', () => {
+    let props = answerProps('first');
+    const page = () => render(() => TextBasedAnswer(props));
+    page();
+    const old = NativeEventSource.sources[0];
+    old.message({ message: 'old text' });
+    page();
+    expect(displayedAnswer(page())).toBe('old text');
+    props = answerProps('second');
+    expect(displayedAnswer(page())).toBe('');
+    const next = NativeEventSource.sources[1];
+    next.message({ message: 'new text' });
+    old.message({ message: 'old queued text' });
+    old.message({ done: true });
+    page();
+    expect(displayedAnswer(page())).toBe('new text');
+    mockLocale = 'en';
+    page();
+    page();
+    expect(NativeEventSource.sources).toHaveLength(2);
+    expect(mockGenerateAnswer).not.toHaveBeenCalled();
+    expect(mockPreview).not.toHaveBeenCalled();
+    props = answerProps('third', 72);
+    expect(displayedAnswer(page())).toBe('');
+    expect(NativeEventSource.sources[2].url).toContain(
+      'responseId=72&queryId=third',
+    );
+  });
+
+  it('original answer page keeps a disconnected partial answer unresolved until original history changes', () => {
+    const props = answerProps('current');
+    const page = () => render(() => TextBasedAnswer(props));
+    page();
+    const source = NativeEventSource.sources[0];
+    source.message({ message: 'partial' });
+    source.error();
+    page();
+    const partial = page();
+    expect(displayedAnswer(partial)).toBe('partial');
+    expect(findElement(partial, LoadingOutlined)).toBeDefined();
+    expect(mockGenerateAnswer).not.toHaveBeenCalled();
+    props.threadResponse.answerDetail = {
+      queryId: 'current',
+      status: ThreadResponseAnswerStatus.FINISHED,
+      content: 'original persisted answer',
+    };
+    page();
+    expect(displayedAnswer(page())).toBe('original persisted answer');
+    expect(findElement(page(), LoadingOutlined)).toBeUndefined();
+    expect(NativeEventSource.sources).toHaveLength(1);
   });
 
   const observeGeneral = async () => {
@@ -328,6 +550,38 @@ describe('original Ask SSE hook and same-task GraphQL observation', () => {
     expect(NativeEventSource.sources).toHaveLength(1);
   });
 
+  it.each(['', '完整原结果'])(
+    'GENERAL polling recovers full %j after EOF and retires queued stream callbacks',
+    async (content) => {
+      const source = await observeGeneral();
+      source.message({ message: 'partial' });
+      source.error();
+      expect(render(() => useAskPrompt()).data.askingStreamCompleted).toBe(
+        false,
+      );
+      mockAskingResult.data = {
+        askingTask: {
+          ...mockAskingResult.data.askingTask,
+          completion: content,
+        },
+      };
+      const recovered = render(() => useAskPrompt());
+      expect(recovered.data.askingStreamTask).toBe(content);
+      expect(recovered.data.askingStreamCompleted).toBe(true);
+      expect(recovered.loading).toBe(false);
+      expect(mockAskingResult.stopPolling).toHaveBeenCalledTimes(1);
+      source.message({ message: 'late' });
+      expect(render(() => useAskPrompt()).data.askingStreamTask).toBe(content);
+      expect(mockCreate).not.toHaveBeenCalled();
+      expect(mockRerun).not.toHaveBeenCalled();
+      expect(NativeEventSource.sources).toHaveLength(1);
+      await render(() => useAskPrompt()).onFetching('next-native');
+      const next = render(() => useAskPrompt());
+      expect(next.data.askingTask).toBeNull();
+      expect(next.data.askingStreamTask).toBe('');
+      expect(next.data.askingStreamCompleted).toBe(false);
+    },
+  );
   it('stops finished GENERAL polling only after native done, not after intent classification', async () => {
     const source = await observeGeneral();
     expect(mockAskingResult.stopPolling).not.toHaveBeenCalled();
@@ -457,6 +711,114 @@ describe('original Ask SSE hook and same-task GraphQL observation', () => {
     },
   );
 
+  const observeRecommendation = async (queryId = 'recommendation-owner') => {
+    await render(() => useAskPrompt()).onFetching(queryId);
+    mockAskingResult.data = {
+      askingTask: {
+        queryId,
+        status: AskingTaskStatus.FINISHED,
+        type: AskingTaskType.MISLEADING_QUERY,
+      },
+    };
+    render(() => useAskPrompt());
+    await Promise.resolve();
+  };
+
+  it.each(['close', 'recommend-only', 'new-question', 'unmount'])(
+    'never starts a late recommendation read after %s retires it',
+    async (retirement) => {
+      let ack: (response: any) => void;
+      mockRecommend.mockReturnValue(
+        new Promise((resolve) => {
+          ack = resolve;
+        }),
+      );
+      await observeRecommendation();
+      const prompt = render(() => useAskPrompt());
+      if (retirement === 'close') prompt.onStopPolling();
+      if (retirement === 'recommend-only') prompt.onStopRecommend();
+      if (retirement === 'new-question') {
+        mockCreate.mockResolvedValue({
+          data: { createAskingTask: { id: 'next-question' } },
+        });
+        await prompt.onSubmit('next question');
+      }
+      if (retirement === 'unmount') slots.forEach((slot) => slot.cleanup?.());
+      ack!({
+        data: {
+          createInstantRecommendedQuestions: { id: 'retired-recommendation' },
+        },
+      });
+      await Promise.resolve();
+      expect(mockFetchRecommend).not.toHaveBeenCalled();
+      expect(render(() => useAskPrompt()).data.recommendedQuestions).toBeNull();
+      expect(mockCancel).not.toHaveBeenCalled();
+      expect(mockRecommend).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it.each([
+    {
+      status: 'FINISHED',
+      questions: [{ question: 'current suggestion', sql: 'select 1' }],
+    },
+    { status: 'FINISHED', questions: [] },
+    { status: 'FAILED', questions: [], error: { message: 'original failure' } },
+  ])(
+    'keeps the current recommendation result unchanged: %j',
+    async (result) => {
+      await observeRecommendation();
+      mockRecommendedResult.variables = { taskId: 'original-recommendation' };
+      mockRecommendedResult.data = { instantRecommendedQuestions: result };
+      expect(render(() => useAskPrompt()).data.recommendedQuestions).toBe(
+        result,
+      );
+      expect(mockFetchRecommend).toHaveBeenCalledTimes(1);
+      expect(mockRecommendedResult.stopPolling).toHaveBeenCalled();
+      render(() => useAskPrompt()).onStopRecommend();
+      expect(render(() => useAskPrompt()).data.recommendedQuestions).toBeNull();
+    },
+  );
+
+  it('keeps old polling results and late ACKs out of a reopened identical question', async () => {
+    let oldAck: (response: any) => void;
+    mockRecommend.mockReturnValueOnce(
+      new Promise((resolve) => {
+        oldAck = resolve;
+      }),
+    );
+    await observeRecommendation('same-original-question');
+    render(() => useAskPrompt()).onStopPolling();
+    render(() => useAskPrompt());
+    await observeRecommendation('same-original-question');
+    mockRecommendedResult.variables = { taskId: 'old-recommendation' };
+    mockRecommendedResult.data = {
+      instantRecommendedQuestions: {
+        status: 'FINISHED',
+        questions: [{ question: 'old answer', sql: 'select old' }],
+      },
+    };
+    expect(render(() => useAskPrompt()).data.recommendedQuestions).toBeNull();
+    oldAck!({
+      data: { createInstantRecommendedQuestions: { id: 'old-recommendation' } },
+    });
+    await Promise.resolve();
+    expect(mockFetchRecommend.mock.calls).toEqual([
+      [{ variables: { taskId: 'original-recommendation' } }],
+    ]);
+    mockRecommendedResult.variables = { taskId: 'original-recommendation' };
+    const current = {
+      status: 'FINISHED',
+      questions: [{ question: 'current answer', sql: 'select current' }],
+    };
+    mockRecommendedResult.data = { instantRecommendedQuestions: current };
+    expect(render(() => useAskPrompt()).data.recommendedQuestions).toBe(
+      current,
+    );
+    expect(mockCreate).not.toHaveBeenCalled();
+    expect(mockCancel).not.toHaveBeenCalled();
+  });
+
   it('discards current stream callbacks and old polling data after Close without canceling the native task', async () => {
     const source = await observeGeneral();
     source.message({ message: 'old answer' });
@@ -505,15 +867,17 @@ describe('original GeneralAnswer rendering', () => {
   it('never presents disconnected partial content as completed even when transport loading is false', () => {
     const html = render(false, false);
     expect(html).toContain('Partial or completed original answer');
-    expect(html).not.toContain('For the most accurate semantics');
+    expect(html).not.toContain(kailoText(undefined, 'home.generalAnswerHint'));
   });
   it('preserves the original completion text only with actual done evidence', () => {
-    expect(render(true, false)).toContain('For the most accurate semantics');
+    expect(render(true, false)).toContain(
+      kailoText(undefined, 'home.generalAnswerHint'),
+    );
   });
   it('keeps the original loading icon while current native observation is unresolved', () => {
     const html = render(false, true);
     expect(html).toContain('anticon-loading');
-    expect(html).not.toContain('For the most accurate semantics');
+    expect(html).not.toContain(kailoText(undefined, 'home.generalAnswerHint'));
   });
 
   const promptProps = () => ({
@@ -548,7 +912,7 @@ describe('original GeneralAnswer rendering', () => {
       const html = renderToStaticMarkup(
         React.createElement(Prompt, promptProps()),
       );
-      expect(html).toContain('For the most accurate semantics');
+      expect(html).toContain(kailoText(undefined, 'home.generalAnswerHint'));
     } finally {
       state.mockRestore();
     }

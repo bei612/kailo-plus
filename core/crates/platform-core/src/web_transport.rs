@@ -45,8 +45,135 @@ pub const PUBLISH_ACTION: &str = "workspace.message.publish";
 pub const CONVERSATION_PUBLISH_ACTION: &str = "conversation.message.publish";
 pub const CONVERSATION_HIDE_ACTION: &str = "conversation.hide";
 pub const CONVERSATION_REOPEN_ACTION: &str = "conversation.reopen";
+
+pub(crate) const FILTERED_PUBLICATION_ACTIONS: [&str; 6] = [
+    PUBLISH_ACTION,
+    CONVERSATION_PUBLISH_ACTION,
+    CONVERSATION_HIDE_ACTION,
+    CONVERSATION_REOPEN_ACTION,
+    TOPIC_ACTION,
+    crate::pulse::PUBLISH_ACTION,
+];
+
+fn publication_retry_confirmed(
+    action: &str,
+    event_type: Option<&str>,
+    absence_proven: bool,
+) -> bool {
+    // Historical reconciliation used filtered Relay queries. Preserve those
+    // audit rows, but never let their NOT_DELIVERED authorize a new signature.
+    !FILTERED_PUBLICATION_ACTIONS.contains(&action)
+        || event_type == Some("OUTCOME")
+        || absence_proven
+}
+fn publication_retry_scope_matches(
+    proof: Option<&crate::audit::PublicationProof>,
+    binding: &PublicationBinding,
+    policy: &collab_bridge::bridge::PublicationPolicy,
+) -> bool {
+    proof.is_some_and(|proof| {
+        proof.proves_absence()
+            && proof.scope.matches_binding(binding)
+            && proof
+                .scope
+                .publication
+                .as_ref()
+                .is_some_and(|window| window.policy == *policy)
+    })
+}
+
 /// 成员修改频道原主题（DD-119(9)）。对账按它找这一类发布。
 pub const TOPIC_ACTION: &str = "workspace.channel.topic.publish";
+
+// The retry consumer and its PostgreSQL regression use the same snapshot query.
+pub(crate) const PREVIOUS_PUBLICATION_SQL: &str = r#"select a.operation_id, a.event_id, a.mention_installation_ids, a.mention_pubkeys, a.message_kind, a.parent_event_id, a.edit_event_id, a.delete_event_id, a.send_to_channel_source_event_id,
+                  a.link_preview_snapshot_ids, a.suppress_link_previews, a.reference_mention_pubkeys,
+                  a.addressed_installation_ids,
+                  array(select r.target_id from audit.audit_event r
+                    where r.operation_id=a.operation_id and r.event_type='DISPATCH'
+                      and r.action_key=$3 and r.target_type=$4
+                      and r.workspace_id is not distinct from $5) as target_ids,
+                  (select r.result_code from audit.audit_event r
+                    where r.operation_id = a.operation_id
+                      and r.event_type in ('OUTCOME', 'RECONCILIATION')
+                      and not (r.event_type='RECONCILIATION' and r.result_code='NOT_DELIVERED'
+                               and r.action_key=any($6) and not audit.publication_absence_proven(r.publication_proof,r.evidence_refs))
+                    order by r.occurred_at desc, r.id desc limit 1) as result,
+                  (select r.event_type from audit.audit_event r
+                    where r.operation_id = a.operation_id
+                      and r.event_type in ('OUTCOME', 'RECONCILIATION')
+                      and not (r.event_type='RECONCILIATION' and r.result_code='NOT_DELIVERED'
+                               and r.action_key=any($6) and not audit.publication_absence_proven(r.publication_proof,r.evidence_refs))
+                    order by r.occurred_at desc, r.id desc limit 1) as result_event_type,
+                  exists(select 1 from audit.audit_event r where r.operation_id=a.operation_id
+                    and r.event_type='RECONCILIATION' and r.result_code='NOT_DELIVERED'
+                    and audit.publication_absence_proven(r.publication_proof,r.evidence_refs)) as absence_proven,
+                  (select r.publication_proof from audit.audit_event r where r.operation_id=a.operation_id
+                    and r.event_type='RECONCILIATION' and r.result_code='NOT_DELIVERED'
+                    and audit.publication_absence_proven(r.publication_proof,r.evidence_refs)
+                    order by r.occurred_at desc,r.id desc limit 1) as absence_proof
+           from admission.publish_attempt a
+           where a.tenant_principal_id = $1 and a.idempotency_key = $2"#;
+
+/// Stable within one operation; identical signed events can belong to distinct intents.
+pub(crate) fn publication_event_key(operation: Uuid, event_id: &str, phase: &str) -> String {
+    format!("message.publish:{event_id}:{operation}:{phase}")
+}
+
+struct PublicationAudit<'a> {
+    ctx: &'a ExecutionContext,
+    target: MessageTarget,
+    operation_id: Uuid,
+    action_key: &'a str,
+    event_id: &'a str,
+    signer_pubkey: Option<&'a str>,
+}
+
+impl<'a> PublicationAudit<'a> {
+    fn entry(&self, event_type: &'static str, result_code: &'static str) -> AuditEntry<'a> {
+        let (ctx, target, operation_id, action_key, event_id, signer_pubkey) = (
+            self.ctx,
+            self.target,
+            self.operation_id,
+            self.action_key,
+            self.event_id,
+            self.signer_pubkey,
+        );
+        AuditEntry {
+            event_key: publication_event_key(operation_id, event_id, event_type),
+            tenant_id: Some(ctx.tenant_id),
+            workspace_id: target.workspace_id(),
+            operation_id,
+            event_type,
+            human_identity_id: Some(ctx.human_identity_id),
+            initiator_principal_id: Some(ctx.tenant_principal_id),
+            actor_principal_id: Some(ctx.tenant_principal_id),
+            action_key,
+            action_version: 1,
+            component_type_key: "buzz",
+            target_type: Some(target.target_type()),
+            target_id: Some(target.id()),
+            // 正文不进审计。摘要也不进：它对正文可做字典攻击，而审计要的是
+            // 「谁在哪里做了什么」，不是「说了什么」（`.design/03` §9）。
+            parameter_hash: "NONE",
+            decision: "ALLOW",
+            result_code,
+            result_exposure: "NONE",
+            evidence_refs: {
+                let mut refs = vec![
+                    Evidence::new(EvidenceKind::BuzzEventId, event_id),
+                    Evidence::new(EvidenceKind::PlatformSessionId, ctx.session_id),
+                ];
+                // DD-142: actor is the owner, the signer is the owned Agent.
+                if let Some(signer) = signer_pubkey {
+                    refs.push(Evidence::new(EvidenceKind::BuzzPubkey, signer));
+                }
+                refs
+            },
+            correlation_id: operation_id,
+        }
+    }
+}
 
 enum Publication {
     Message(PublishRequest),
@@ -60,10 +187,277 @@ enum Publication {
 }
 
 #[derive(Clone, Copy)]
-enum MessageTarget {
+pub(crate) enum MessageTarget {
     Workspace(Uuid),
     Conversation(Uuid),
     Pulse(Uuid),
+}
+
+/// Immutable metadata for this exact signed event, committed with DISPATCH.
+/// Old attempts remain NULL: current bindings cannot reconstruct past scope.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct PublicationScope {
+    pub community_id: Uuid,
+    pub tenant_binding_version: i32,
+    pub target_channel_id: Option<Uuid>,
+    pub target_binding_version: Option<i32>,
+    pub event_pubkey: String,
+    pub event_kind: u16,
+    pub event_channel_id: Option<Uuid>,
+    pub signer_installation_id: Option<Uuid>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub publication: Option<PublicationWindow>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct PublicationWindow {
+    pub created_at: u64,
+    pub non_expiring: bool,
+    pub policy: collab_bridge::bridge::PublicationPolicy,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct PublicationBinding {
+    pub community_id: Uuid,
+    pub community_host: String,
+    pub tenant_version: i32,
+    pub channel_id: Option<Uuid>,
+    pub target_version: Option<i32>,
+}
+
+impl PublicationScope {
+    pub(crate) fn claim(&self, event_id: &str) -> Option<collab_bridge::bridge::PublicationClaim> {
+        let window = self.publication.as_ref()?;
+        if !collab_bridge::bridge::valid_publication_policy(&window.policy) {
+            return None;
+        }
+        let claim = collab_bridge::bridge::PublicationClaim {
+            event_id: event_id.to_owned(),
+            community_id: self.community_id.to_string(),
+            pubkey: self.event_pubkey.clone(),
+            kind: self.event_kind,
+            channel_id: self.event_channel_id.map(|id| id.to_string()),
+            created_at: window.created_at,
+            non_expiring: window.non_expiring,
+            epoch: window.policy.epoch.clone(),
+        };
+        claim.validate().ok()?;
+        Some(claim)
+    }
+
+    pub(crate) fn matches_binding(&self, binding: &PublicationBinding) -> bool {
+        self.community_id == binding.community_id
+            && self.tenant_binding_version == binding.tenant_version
+            && self.target_channel_id == binding.channel_id
+            && self.target_binding_version == binding.target_version
+    }
+
+    pub(crate) fn matches_observation(
+        &self,
+        event_id: &str,
+        observation: &collab_bridge::bridge::PublicationObservation,
+    ) -> bool {
+        observation.event_id == event_id
+            && observation.community_id == self.community_id
+            && observation.pubkey == self.event_pubkey
+            && observation.kind == self.event_kind
+            && observation.channel_id == self.event_channel_id
+    }
+}
+
+/// The BFF winner stores the actual scope and DISPATCH together, before any
+/// external send. No caller may persist a different scope for this same attempt.
+async fn persist_publication_dispatch(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    audit: &PublicationAudit<'_>,
+    scope: &PublicationScope,
+) -> Result<(), sqlx::Error> {
+    let written = sqlx::query(
+        "update admission.publish_attempt set delivery_scope=$4
+        where tenant_principal_id=$1 and operation_id=$2 and event_id=$3
+          and (delivery_scope is null or delivery_scope=$4)",
+    )
+    .bind(audit.ctx.tenant_principal_id)
+    .bind(audit.operation_id)
+    .bind(audit.event_id)
+    .bind(sqlx::types::Json(scope))
+    .execute(&mut **tx)
+    .await?
+    .rows_affected();
+    if written != 1 {
+        return Err(sqlx::Error::RowNotFound);
+    }
+    append(tx, audit.entry("DISPATCH", "DISPATCHED")).await
+}
+
+/// Lock only local facts, in a short transaction. No Relay, secret or SpiceDB I/O
+/// may occur while these SHARE locks are held.
+pub(crate) async fn locked_publication_binding(
+    conn: &mut sqlx::PgConnection,
+    tenant: Uuid,
+    actor: Uuid,
+    target: MessageTarget,
+) -> Result<Option<PublicationBinding>, sqlx::Error> {
+    let tenant_row: Option<(Uuid, String, i32)> = sqlx::query_as(
+        "select b.community_id,b.normalized_host,b.version
+         from projection.tenant_buzz_binding b
+         join identity.tenant t on t.id=b.tenant_id and t.state='ACTIVE'
+         join identity.principal p on p.tenant_id=t.id and p.id=$2 and p.kind='HUMAN' and p.status='ACTIVE'
+         join identity.tenant_membership tm on tm.tenant_id=t.id and tm.tenant_principal_id=p.id and tm.state='ACTIVE'
+         join identity.human_identity h on h.id=tm.human_identity_id and h.status='ACTIVE'
+         where b.tenant_id=$1 and b.state='ACTIVE' for share of b,t,p,tm,h")
+        .bind(tenant).bind(actor).fetch_optional(&mut *conn).await?;
+    let Some((community_id, community_host, tenant_version)) = tenant_row else {
+        return Ok(None);
+    };
+    let target_row: Option<(Uuid, i32)> = match target {
+        MessageTarget::Workspace(id) => sqlx::query_as(
+            "select b.channel_id,b.version from projection.workspace_buzz_binding b
+             join identity.workspace w on w.id=b.workspace_id and w.tenant_id=$1 and w.state='ACTIVE'
+             join identity.workspace_membership m on m.workspace_id=w.id and m.tenant_principal_id=$2 and m.state='ACTIVE'
+             where b.workspace_id=$3 and b.state='ACTIVE' for share of b,w,m")
+            .bind(tenant).bind(actor).bind(id).fetch_optional(&mut *conn).await?,
+        MessageTarget::Conversation(id) => sqlx::query_as(
+            "select c.channel_id,c.version from projection.conversation_buzz_binding c
+             join identity.buzz_identity_binding i on i.tenant_id=c.tenant_id and i.principal_id=$2
+               and i.kind='HUMAN' and i.state='ACTIVE' and i.custody='SERVER'
+             where c.tenant_id=$1 and c.id=$3 and c.state='ACTIVE' and $2=ANY(c.participant_principal_ids)
+               and c.projected_keys @> jsonb_build_array(jsonb_build_array(i.principal_id::text,i.pubkey))
+             for share of c,i")
+            .bind(tenant).bind(actor).bind(id).fetch_optional(&mut *conn).await?,
+        MessageTarget::Pulse(id) if id == tenant => None,
+        MessageTarget::Pulse(_) => return Ok(None),
+    };
+    if !matches!(target, MessageTarget::Pulse(_)) && target_row.is_none() {
+        return Ok(None);
+    }
+    Ok(Some(PublicationBinding {
+        community_id,
+        community_host,
+        tenant_version,
+        channel_id: target_row.map(|row| row.0),
+        target_version: target_row.map(|row| row.1),
+    }))
+}
+
+pub(crate) async fn locked_publication_scope_matches(
+    conn: &mut sqlx::PgConnection,
+    tenant: Uuid,
+    actor: Uuid,
+    target: MessageTarget,
+    scope: &PublicationScope,
+) -> Result<bool, sqlx::Error> {
+    let Some(binding) = locked_publication_binding(conn, tenant, actor, target).await? else {
+        return Ok(false);
+    };
+    if !scope.matches_binding(&binding) {
+        return Ok(false);
+    }
+    if let Some(installation) = scope.signer_installation_id {
+        let MessageTarget::Workspace(workspace) = target else {
+            return Ok(false);
+        };
+        Ok(
+            locked_owned_agent_installation(conn, tenant, actor, workspace, &scope.event_pubkey)
+                .await?
+                == Some(installation),
+        )
+    } else {
+        let signer: Option<String> = sqlx::query_scalar("select pubkey from identity.buzz_identity_binding where tenant_id=$1 and principal_id=$2 and kind='HUMAN' and custody='SERVER' and state='ACTIVE' and pubkey=$3 for share")
+            .bind(tenant).bind(actor).bind(&scope.event_pubkey).fetch_optional(conn).await?;
+        Ok(signer.is_some())
+    }
+}
+
+pub(crate) async fn publication_binding(
+    state: &crate::service_api::ServiceState,
+    tenant: Uuid,
+    actor: Uuid,
+    target: MessageTarget,
+) -> Result<PublicationBinding, &'static str> {
+    crate::conversations::fresh_discover(state, tenant, actor)
+        .await
+        .map_err(|_| "ACTOR_UNREADABLE")?;
+    let mut tx = state
+        .pool
+        .begin()
+        .await
+        .map_err(|_| "EVIDENCE_UNREADABLE")?;
+    let binding = locked_publication_binding(&mut tx, tenant, actor, target)
+        .await
+        .map_err(|_| "EVIDENCE_UNREADABLE")?
+        .ok_or("SCOPE_UNREADABLE")?;
+    tx.commit().await.map_err(|_| "EVIDENCE_UNREADABLE")?;
+    Ok(binding)
+}
+
+async fn locked_owned_agent_installation(
+    conn: &mut sqlx::PgConnection,
+    tenant: Uuid,
+    actor: Uuid,
+    workspace: Uuid,
+    author: &str,
+) -> Result<Option<Uuid>, sqlx::Error> {
+    let query = format!("{OWNED_AGENT_KEY_SQL} for share of a,inst,r,cb,ap");
+    let row: Option<OwnedAgentKeyRow> = sqlx::query_as(&query)
+        .bind(tenant)
+        .bind(author)
+        .bind(workspace)
+        .bind(actor)
+        .fetch_optional(conn)
+        .await?;
+    Ok(row.map(|row| row.0))
+}
+
+pub(crate) async fn owned_publication_installation(
+    state: &crate::service_api::ServiceState,
+    tenant: Uuid,
+    actor: Uuid,
+    workspace: Uuid,
+    author: &str,
+) -> Result<Uuid, &'static str> {
+    let installation = {
+        let mut conn = state.pool.acquire().await.map_err(|_| "ACTOR_UNREADABLE")?;
+        locked_owned_agent_installation(&mut conn, tenant, actor, workspace, author)
+            .await
+            .map_err(|_| "ACTOR_UNREADABLE")?
+            .ok_or("ACTOR_UNREADABLE")?
+    };
+    let proof = state
+        .governance
+        .spicedb
+        .check(
+            "resource",
+            &installation.to_string(),
+            "manage",
+            &actor.to_string(),
+            crate::spicedb::Consistency::FullyConsistent,
+        )
+        .await
+        .map_err(|_| "ACTOR_UNREADABLE")?;
+    if proof.zed_token.is_empty() || !proof.allowed {
+        return Err("ACTOR_UNREADABLE");
+    }
+    Ok(installation)
+}
+
+/// Mirror the native ingester, using the already verified mutation/reaction
+/// target chain for kind 5/7 (which need not carry h). Global kinds stay global
+/// even when a project operation was admitted through a Workspace.
+fn publication_native_channel(
+    event: &nostr::Event,
+    referenced_channel: Option<Option<Uuid>>,
+) -> Option<Option<Uuid>> {
+    match event.kind.as_u16() {
+        1 | 1618 | 1619 | 1621 | 1630..=1633 | 30300 | 30617 | 30621 => Some(None),
+        5 | 7 => referenced_channel,
+        9 | 40003 | 45001 | 45003 | 9002 | 41010 | 41012 => single_event_tag(event, "h")
+            .and_then(|channel| Uuid::parse_str(channel).ok())
+            .map(Some),
+        _ => None,
+    }
 }
 
 impl MessageTarget {
@@ -204,7 +598,7 @@ async fn reaction_tags(
     if kind == KIND_DELETION as u16 {
         let page = client
             .query(
-                &state.http,
+                &state.relay_http,
                 &[serde_json::json!({
                     "ids":[id],"kinds":[KIND_REACTION],"authors":[client.pubkey_hex()],"limit":1
                 })],
@@ -232,7 +626,7 @@ async fn read_reaction_message(
 ) -> Result<(), Response> {
     let page = client
         .query(
-            &state.http,
+            &state.relay_http,
             &[serde_json::json!({"ids":[id],"#h":[channel],"limit":1})],
         )
         .await
@@ -303,6 +697,21 @@ fn valid_deletion_request(request: &PublishRequest) -> bool {
 /// Installation, Agent public key and the key's SecretRef parts (locator, version, audience).
 type OwnedAgentKeyRow = (Uuid, String, Option<String>, Option<i32>, Option<String>);
 
+const OWNED_AGENT_KEY_SQL: &str =
+    "select inst.resource_id,a.pubkey,a.private_key_secret_ref,a.private_key_secret_version,
+                a.private_key_secret_audience
+         from identity.buzz_identity_binding a
+         join catalog.agent_installation inst on inst.agent_principal_id=a.principal_id
+           and inst.workspace_id=$3 and inst.state='ACTIVE'
+         join identity.principal ap on ap.id=a.principal_id and ap.tenant_id=a.tenant_id
+           and ap.kind='AGENT' and ap.status='ACTIVE'
+         join catalog.resource r on r.id=inst.resource_id and r.tenant_id=a.tenant_id
+           and r.type_key='agent.installation' and r.state='ACTIVE' and r.owner_principal_id=$4
+         join catalog.channel_agent_binding cb on cb.installation_resource_id=inst.resource_id
+           and cb.workspace_id=$3 and cb.status='ACTIVE'
+         where a.tenant_id=$1 and a.pubkey=$2 and a.kind='AGENT' and a.custody='SERVER'
+           and a.state='ACTIVE' and a.private_key_secret_status='ACTIVE'";
+
 /// DD-142: the SERVER keys of an AGENT author in this Workspace channel when the caller
 /// owns its ACTIVE Installation (Core owner fact and fresh SpiceDB `manage`), the
 /// Installation is bound to the channel, and the key reference is the Installation's
@@ -312,27 +721,15 @@ async fn owned_agent_keys(
     ctx: &ExecutionContext,
     workspace: Uuid,
     author: &nostr::PublicKey,
-) -> Result<Option<nostr::Keys>, Response> {
-    let row: Option<OwnedAgentKeyRow> = sqlx::query_as(
-        "select inst.resource_id,a.pubkey,a.private_key_secret_ref,a.private_key_secret_version,
-                a.private_key_secret_audience
-         from identity.buzz_identity_binding a
-         join catalog.agent_installation inst on inst.agent_principal_id=a.principal_id
-           and inst.workspace_id=$3
-         join catalog.resource r on r.id=inst.resource_id and r.tenant_id=a.tenant_id
-           and r.type_key='agent.installation' and r.state='ACTIVE' and r.owner_principal_id=$4
-         join catalog.channel_agent_binding cb on cb.installation_resource_id=inst.resource_id
-           and cb.workspace_id=$3 and cb.status='ACTIVE'
-         where a.tenant_id=$1 and a.pubkey=$2 and a.kind='AGENT' and a.custody='SERVER'
-           and a.state='ACTIVE' and a.private_key_secret_status='ACTIVE'",
-    )
-    .bind(ctx.tenant_id)
-    .bind(author.to_hex())
-    .bind(workspace)
-    .bind(ctx.tenant_principal_id)
-    .fetch_optional(&state.pool)
-    .await
-    .map_err(crate::service_api::unavailable)?;
+) -> Result<Option<(Uuid, nostr::Keys)>, Response> {
+    let row: Option<OwnedAgentKeyRow> = sqlx::query_as(OWNED_AGENT_KEY_SQL)
+        .bind(ctx.tenant_id)
+        .bind(author.to_hex())
+        .bind(workspace)
+        .bind(ctx.tenant_principal_id)
+        .fetch_optional(&state.pool)
+        .await
+        .map_err(crate::service_api::unavailable)?;
     let Some((installation, pubkey, locator, version, audience)) = row else {
         return Ok(None);
     };
@@ -378,8 +775,60 @@ async fn owned_agent_keys(
     };
     crate::server_identity::read_bound_keys(&state.secrets, &reference, &pubkey)
         .await
-        .map(Some)
+        .map(|keys| Some((installation, keys)))
         .map_err(|_| StatusCode::SERVICE_UNAVAILABLE.into_response())
+}
+
+/// Reconciliation authenticates the original Agent author, never its owner or
+/// CONTROL, and only after the same current Installation/SecretRef checks.
+pub(crate) async fn publication_agent_keys(
+    state: &crate::service_api::ServiceState,
+    tenant: Uuid,
+    actor: Uuid,
+    workspace: Uuid,
+    author: &str,
+    expected_installation: Uuid,
+) -> Result<nostr::Keys, &'static str> {
+    if owned_publication_installation(state, tenant, actor, workspace, author).await?
+        != expected_installation
+    {
+        return Err("ACTOR_UNREADABLE");
+    }
+    let row: Option<OwnedAgentKeyRow> = sqlx::query_as(OWNED_AGENT_KEY_SQL)
+        .bind(tenant)
+        .bind(author)
+        .bind(workspace)
+        .bind(actor)
+        .fetch_optional(&state.pool)
+        .await
+        .map_err(|_| "ACTOR_UNREADABLE")?;
+    let Some((installation, pubkey, Some(locator), Some(version), Some(audience))) = row else {
+        return Err("ACTOR_UNREADABLE");
+    };
+    let version = u32::try_from(version)
+        .ok()
+        .filter(|v| *v > 0)
+        .ok_or("ACTOR_UNREADABLE")?;
+    if installation != expected_installation
+        || audience != state.secret_audience
+        || locator
+            != state
+                .secrets
+                .tenant_locator(tenant, &format!("buzz-agent/installation/{installation}"))
+    {
+        return Err("ACTOR_UNREADABLE");
+    }
+    crate::server_identity::read_bound_keys(
+        &state.secrets,
+        &SecretRef {
+            locator,
+            version,
+            audience,
+        },
+        &pubkey,
+    )
+    .await
+    .map_err(|_| "ACTOR_UNREADABLE")
 }
 
 fn mutation_target_matches(
@@ -911,7 +1360,7 @@ pub(crate) async fn publish_project(
         // NIP-34 issues and reviews, like deletion, are Community-global
         // (is_global_only_kind). A repository's buzz-channel metadata must not
         // silently become a Workspace grant.
-        Ok(1 | 5 | 1618 | 1621 | 1630 | 1632 | 1633) => MessageTarget::Pulse(ctx.tenant_id),
+        Ok(1 | 5 | 1618 | 1619 | 1621 | 1630 | 1632 | 1633) => MessageTarget::Pulse(ctx.tenant_id),
         // The original project member patch names no Channel; binding a
         // repository or adding a project channel admits that Workspace below.
         Ok(30621) if collab_bridge::projects::is_repository_attachment(&request) => {
@@ -1076,7 +1525,7 @@ pub async fn conversation_visibility(
         return StatusCode::SERVICE_UNAVAILABLE.into_response();
     };
     let viewer = keys.public_key().to_hex();
-    let events = match client.query(&state.http, &[serde_json::json!({"kinds":[30622],"authors":[author],"#p":[viewer],"#d":[viewer],"limit":1})]).await {
+    let events = match client.query(&state.relay_http, &[serde_json::json!({"kinds":[30622],"authors":[author],"#p":[viewer],"#d":[viewer],"limit":1})]).await {
         Ok(events) => events,
         Err(e) => return relay_error_response(&e, None),
     };
@@ -1326,7 +1775,7 @@ pub async fn query_channel(
         Err(response) => return response,
     };
     let event = match client
-        .channel_metadata(&state.http, &scope.channel_id)
+        .channel_metadata(&state.relay_http, &scope.channel_id)
         .await
     {
         Ok(Some(event)) => event,
@@ -1558,7 +2007,7 @@ pub(crate) async fn read_message_event(
 ) -> Result<nostr::Event, Response> {
     let response = client
         .query(
-            &state.http,
+            &state.relay_http,
             &[serde_json::json!({"ids":[id], "#h":[channel], "limit":1})],
         )
         .await
@@ -1647,7 +2096,7 @@ pub(crate) async fn query_inbox_mentions(
             filter["since"] = serde_json::json!(since);
         }
         let value = client
-            .query(&state.http, &[filter])
+            .query(&state.relay_http, &[filter])
             .await
             .map_err(|error| relay_error_response(&error, None))?;
         let rows = value.as_array().ok_or_else(invalid_message_evidence)?;
@@ -1779,7 +2228,7 @@ async fn verify_inbox_ancestors(
             return Err(StatusCode::PAYLOAD_TOO_LARGE.into_response());
         }
         let page = client
-            .query(&state.http, &[filter])
+            .query(&state.relay_http, &[filter])
             .await
             .map_err(|error| relay_error_response(&error, None))?;
         let rows = page.as_array().ok_or_else(invalid_message_evidence)?;
@@ -2069,6 +2518,26 @@ async fn publish(
         Err(r) => return r,
     };
 
+    let original_binding = match publication_binding(
+        &state.memory_service,
+        ctx.tenant_id,
+        ctx.tenant_principal_id,
+        target,
+    )
+    .await
+    {
+        Ok(binding)
+            if binding.community_host == community_host
+                && binding
+                    .channel_id
+                    .map_or_else(|| binding.tenant_version.to_string(), |id| id.to_string())
+                    == channel_id =>
+        {
+            binding
+        }
+        _ => return AdmissionFailure::BindingNotActive.into_response(),
+    };
+
     let mention_ids = match mention_targets(match &publication {
         Publication::Message(req) => req.mention_installation_ids.as_deref(),
         Publication::Hide
@@ -2114,6 +2583,9 @@ async fn publish(
         operation_id: Uuid,
         event_id: String,
         result: Option<String>,
+        result_event_type: Option<String>,
+        absence_proven: bool,
+        absence_proof: Option<serde_json::Value>,
         mention_installation_ids: Vec<Uuid>,
         addressed_installation_ids: Vec<Uuid>,
         mention_pubkeys: Vec<String>,
@@ -2127,28 +2599,15 @@ async fn publish(
         link_preview_snapshot_ids: Vec<Uuid>,
         suppress_link_previews: bool,
     }
-    let previous = match sqlx::query_as::<_, PreviousPublish>(
-        r#"select a.operation_id, a.event_id, a.mention_installation_ids, a.mention_pubkeys, a.message_kind, a.parent_event_id, a.edit_event_id, a.delete_event_id, a.send_to_channel_source_event_id,
-                  a.link_preview_snapshot_ids, a.suppress_link_previews, a.reference_mention_pubkeys,
-                  a.addressed_installation_ids,
-                  array(select r.target_id from audit.audit_event r
-                    where r.operation_id=a.operation_id and r.event_type='DISPATCH'
-                      and r.action_key=$3 and r.target_type=$4
-                      and r.workspace_id is not distinct from $5) as target_ids,
-                  (select r.result_code from audit.audit_event r
-                    where r.operation_id = a.operation_id
-                      and r.event_type in ('OUTCOME', 'RECONCILIATION')
-                    order by r.occurred_at desc limit 1) as result
-           from admission.publish_attempt a
-           where a.tenant_principal_id = $1 and a.idempotency_key = $2"#,
-    )
-    .bind(ctx.tenant_principal_id)
-    .bind(idempotency_key)
-    .bind(action_key)
-    .bind(target.target_type())
-    .bind(target.workspace_id())
-    .fetch_optional(&state.pool)
-    .await
+    let previous = match sqlx::query_as::<_, PreviousPublish>(PREVIOUS_PUBLICATION_SQL)
+        .bind(ctx.tenant_principal_id)
+        .bind(idempotency_key)
+        .bind(action_key)
+        .bind(target.target_type())
+        .bind(target.workspace_id())
+        .bind(FILTERED_PUBLICATION_ACTIONS.as_slice())
+        .fetch_optional(&state.pool)
+        .await
     {
         Ok(p) => p,
         Err(e) => {
@@ -2180,7 +2639,7 @@ async fn publish(
         match p.result.as_deref() {
             Some("ACCEPTED") => {
                 if let Publication::Project(request) = &publication {
-                    if matches!(requested_kind, 1 | 1618 | 1621 | 1630 | 1632 | 1633) {
+                    if matches!(requested_kind, 1 | 1618 | 1619 | 1621 | 1630 | 1632 | 1633) {
                         if let Err(response) = crate::projects::confirm_accepted_issue_publication(
                             &state,
                             &ctx,
@@ -2225,7 +2684,12 @@ async fn publish(
                     Some(p.operation_id),
                 );
             }
-            Some("NOT_DELIVERED") => {}
+            Some("NOT_DELIVERED")
+                if publication_retry_confirmed(
+                    action_key,
+                    p.result_event_type.as_deref(),
+                    p.absence_proven,
+                ) => {}
             // 还没有结论：仍是那一次的结果不明，不能再发一条
             _ => {
                 return error_body(
@@ -2402,6 +2866,7 @@ async fn publish(
     // Read the original signed event through the already admitted actor, then
     // let Relay recheck native edit ownership at ingestion as well.
     let mut agent_signer: Option<nostr::Keys> = None;
+    let mut agent_installation: Option<Uuid> = None;
     let mutation_target = match edit_event_id.as_deref().or(delete_event_id.as_deref()) {
         Some(id) => {
             let event = match read_message_event(&state, &client, &channel_id, id).await {
@@ -2423,7 +2888,7 @@ async fn publish(
                     }
                     _ => None,
                 };
-                let Some(agent) = owned else {
+                let Some((installation, agent)) = owned else {
                     return error_body(
                         StatusCode::FORBIDDEN,
                         ErrorClass::Denied,
@@ -2432,6 +2897,7 @@ async fn publish(
                     );
                 };
                 agent_signer = Some(agent);
+                agent_installation = Some(installation);
             }
             Some(event)
         }
@@ -2442,6 +2908,28 @@ async fn publish(
         match crate::projects::publication_target(&state, &client, request).await {
             Ok(target) => target,
             Err(response) => return response,
+        }
+    } else {
+        None
+    };
+    let project_update_evidence = if matches!(&publication, Publication::Project(_)) {
+        if requested_kind == 1619 {
+            let Some(root) = project_target.as_ref() else {
+                return StatusCode::BAD_REQUEST.into_response();
+            };
+            match crate::projects::pull_request_update_evidence(
+                &state,
+                &client,
+                root,
+                &community_host,
+            )
+            .await
+            {
+                Ok(evidence) => Some(evidence),
+                Err(response) => return response,
+            }
+        } else {
+            None
         }
     } else {
         None
@@ -2531,7 +3019,16 @@ async fn publish(
         None
     };
     if let Publication::Project(request) = &publication {
-        let builder = if collab_bridge::projects::is_pull_request_status(request) {
+        let builder = if let Some((repository, latest)) = &project_update_evidence {
+            collab_bridge::projects::pull_request_update_builder(
+                request,
+                project_target.as_ref().expect("review target checked"),
+                repository,
+                latest.as_ref(),
+                &keys.public_key().to_hex(),
+                &community_host,
+            )
+        } else if collab_bridge::projects::is_pull_request_status(request) {
             match project_target.as_ref() {
                 Some(pull_request) => collab_bridge::projects::status_publication_builder(
                     request,
@@ -2662,6 +3159,51 @@ async fn publish(
         Err(e) => return relay_error_response(&e, None),
     };
 
+    let current_binding = match publication_binding(
+        &state.memory_service,
+        ctx.tenant_id,
+        ctx.tenant_principal_id,
+        target,
+    )
+    .await
+    {
+        Ok(binding) if binding == original_binding => binding,
+        _ => return AdmissionFailure::BindingNotActive.into_response(),
+    };
+    let signer_installation_id = if let Some(author) = &signer_pubkey {
+        let MessageTarget::Workspace(workspace) = target else {
+            return AdmissionFailure::Denied.into_response();
+        };
+        match owned_publication_installation(
+            &state.memory_service,
+            ctx.tenant_id,
+            ctx.tenant_principal_id,
+            workspace,
+            author,
+        )
+        .await
+        {
+            Ok(id) if Some(id) == agent_installation => Some(id),
+            _ => return AdmissionFailure::Denied.into_response(),
+        }
+    } else {
+        None
+    };
+    // Existing validators above read and verify these exact targets before signing.
+    let referenced_channel = match &publication {
+        Publication::Reaction(_) | Publication::Message(_)
+            if requested_kind == 5 || requested_kind == 7 =>
+        {
+            Some(current_binding.channel_id)
+        }
+        Publication::Pulse(_) | Publication::Project(_)
+            if requested_kind == 5 || requested_kind == 7 =>
+        {
+            Some(None)
+        }
+        _ => None,
+    };
+
     // 先签名：event id 在签完时就确定。把它连同 actor、scope、operation 落进
     // DISPATCH 审计之后才发送——之后无论结果如何，这条消息动作都可关联
     // （Stage 1 退出门禁），结果不明时也有一个能去 Relay 查证的键（DD-81）。
@@ -2713,6 +3255,17 @@ async fn publish(
             &content,
             pulse_tags.as_deref().unwrap_or_default(),
         ),
+        Publication::Project(request) if project_update_evidence.is_some() => {
+            let (repository, latest) = project_update_evidence
+                .as_ref()
+                .expect("update evidence checked");
+            client.sign_project_update(
+                &request,
+                project_target.as_ref().expect("review target checked"),
+                repository,
+                latest.as_ref(),
+            )
+        }
         Publication::Project(request) => client.sign_project(
             &request,
             project_target.as_ref(),
@@ -2738,49 +3291,111 @@ async fn publish(
         Publication::Hide => client.sign(41012, "", &[vec!["h".into(), channel_id.clone()]]),
         Publication::Reopen => client.sign(41010, "", &[vec!["h".into(), channel_id.clone()]]),
     };
-    let event = match signed {
+    let mut event = match signed {
         Ok(e) => e,
         Err(e) => {
             tracing::warn!(error = %e, "签名失败");
             return StatusCode::SERVICE_UNAVAILABLE.into_response();
         }
     };
+    // Fresh actual writer readiness is required before producing an epoch-bound
+    // event. A stale/unsupported policy cannot be replaced by a Core default.
+    let publication_policy =
+        if collab_bridge::bridge::publication_max_age_seconds(event.kind.as_u16()).is_some() {
+            Some(match client.publication_policy(&state.relay_http).await {
+                Ok(policy) => policy,
+                Err(error) => {
+                    return previous.as_ref().map_or_else(
+                        || relay_error_response(&error, None),
+                        |p| {
+                            error_body(
+                                StatusCode::SERVICE_UNAVAILABLE,
+                                ErrorClass::Unknown,
+                                ReasonCode::PublishResultUnknown,
+                                Some(p.operation_id),
+                            )
+                        },
+                    )
+                }
+            })
+        } else {
+            None
+        };
+
+    if let Some(previous) = previous
+        .as_ref()
+        .filter(|p| p.result_event_type.as_deref() == Some("RECONCILIATION"))
+    {
+        let proof = previous
+            .absence_proof
+            .clone()
+            .and_then(|v| serde_json::from_value::<crate::audit::PublicationProof>(v).ok());
+        if publication_policy.as_ref().is_none_or(|policy| {
+            !publication_retry_scope_matches(proof.as_ref(), &current_binding, policy)
+        }) {
+            // Restore/import rotates the actual writer epoch. A valid historical
+            // proof is retained but cannot authorize a signature in the new epoch.
+            if crate::publish_reconcile::reconcile_retry_positive(
+                &state.memory_service,
+                previous.operation_id,
+            )
+            .await
+            {
+                return (
+                    StatusCode::OK,
+                    Json(PublishResponse {
+                        event_id: previous.event_id.clone(),
+                        operation_id: previous.operation_id,
+                    }),
+                )
+                    .into_response();
+            }
+            return error_body(
+                StatusCode::SERVICE_UNAVAILABLE,
+                ErrorClass::Unknown,
+                ReasonCode::PublishResultUnknown,
+                Some(previous.operation_id),
+            );
+        }
+    }
+
+    if let Some(policy) = &publication_policy {
+        event = match client.bind_publication_epoch(&event, policy) {
+            Ok(event) => event,
+            Err(error) => return relay_error_response(&error, None),
+        };
+    }
+    let Some(event_channel_id) = publication_native_channel(&event, referenced_channel) else {
+        return AdmissionFailure::BindingNotActive.into_response();
+    };
+    let delivery_scope = PublicationScope {
+        community_id: current_binding.community_id,
+        tenant_binding_version: current_binding.tenant_version,
+        target_channel_id: current_binding.channel_id,
+        target_binding_version: current_binding.target_version,
+        event_pubkey: event.pubkey.to_hex(),
+        event_kind: event.kind.as_u16(),
+        event_channel_id,
+        signer_installation_id,
+        publication: publication_policy.map(|policy| PublicationWindow {
+            created_at: event.created_at.as_secs(),
+            non_expiring: !event.tags.iter().any(|tag| {
+                tag.as_slice()
+                    .first()
+                    .is_some_and(|name| name == "expiration")
+            }),
+            policy,
+        }),
+    };
     let event_id = event.id.to_hex();
     let operation_id = Uuid::new_v4();
-    let entry = |event_type: &'static str, event_key: String, result_code: &'static str| {
-        AuditEntry {
-            event_key,
-            tenant_id: Some(ctx.tenant_id),
-            workspace_id: target.workspace_id(),
-            operation_id,
-            event_type,
-            human_identity_id: Some(ctx.human_identity_id),
-            initiator_principal_id: Some(ctx.tenant_principal_id),
-            actor_principal_id: Some(ctx.tenant_principal_id),
-            action_key,
-            action_version: 1,
-            component_type_key: "buzz",
-            target_type: Some(target.target_type()),
-            target_id: Some(target.id()),
-            // 正文不进审计。摘要也不进：它对正文可做字典攻击，而审计要的是
-            // 「谁在哪里做了什么」，不是「说了什么」（`.design/03` §9）。
-            parameter_hash: "NONE",
-            decision: "ALLOW",
-            result_code,
-            result_exposure: "NONE",
-            evidence_refs: {
-                let mut refs = vec![
-                    Evidence::new(EvidenceKind::BuzzEventId, &event_id),
-                    Evidence::new(EvidenceKind::PlatformSessionId, ctx.session_id),
-                ];
-                // DD-142: actor is the owner, the signer is the owned Agent.
-                if let Some(signer) = signer_pubkey.as_deref() {
-                    refs.push(Evidence::new(EvidenceKind::BuzzPubkey, signer));
-                }
-                refs
-            },
-            correlation_id: operation_id,
-        }
+    let audit = PublicationAudit {
+        ctx: &ctx,
+        target,
+        operation_id,
+        action_key,
+        event_id: &event_id,
+        signer_pubkey: signer_pubkey.as_deref(),
     };
 
     // 没落账就不发：一条发出去却无从关联的消息，正是「成功但不可核验」。
@@ -2792,21 +3407,23 @@ async fn publish(
     }
     let dispatched: Result<Claim, sqlx::Error> = async {
         let mut tx = state.pool.begin().await?;
+        if !locked_publication_scope_matches(&mut tx, ctx.tenant_id, ctx.tenant_principal_id, target, &delivery_scope).await? {
+            return Ok(Claim::TargetMismatch);
+        }
+        let session: Option<Uuid> = sqlx::query_scalar("select id from identity.platform_session where id=$1 and status='ACTIVE' and expires_at>now() for share")
+            .bind(ctx.session_id).fetch_optional(&mut *tx).await?;
+        if session.is_none() { return Ok(Claim::TargetMismatch); }
         let claimed = match &previous {
             // 上一次确定未送达：把这个键改指向新的一次，条件是它仍指向上一次
-            Some(p) => sqlx::query!(
+            Some(p) => sqlx::query(
                 "update admission.publish_attempt
-                 set operation_id = $3, event_id = $4, created_at = now()
-                 where tenant_principal_id = $1 and idempotency_key = $2 and operation_id = $5",
-                ctx.tenant_principal_id,
-                idempotency_key,
-                operation_id,
-                event_id,
-                p.operation_id,
-            )
-            .execute(&mut *tx)
-            .await?
-            .rows_affected(),
+                 set operation_id=$3,event_id=$4,created_at=now(),delivery_scope=null
+                 where tenant_principal_id=$1 and idempotency_key=$2 and operation_id=$5
+                   and not exists(select 1 from audit.audit_event where operation_id=$5
+                     and event_type in ('OUTCOME','RECONCILIATION') and result_code='ACCEPTED')")
+            .bind(ctx.tenant_principal_id).bind(idempotency_key).bind(operation_id).bind(&event_id)
+            .bind(p.operation_id)
+            .execute(&mut *tx).await?.rows_affected(),
             None => sqlx::query(
                 "insert into admission.publish_attempt
                      (tenant_principal_id, idempotency_key, operation_id, event_id, mention_installation_ids, message_kind, parent_event_id, edit_event_id, delete_event_id, mention_pubkeys, send_to_channel_source_event_id,
@@ -2875,15 +3492,7 @@ async fn publish(
                 && frozen.suppress_link_previews == suppress_previews
                 { Claim::Pending } else { Claim::TargetMismatch });
         }
-        append(
-            &mut tx,
-            entry(
-                "DISPATCH",
-                format!("message.publish:{event_id}:dispatch"),
-                "DISPATCHED",
-            ),
-        )
-        .await?;
+        persist_publication_dispatch(&mut tx, &audit, &delivery_scope).await?;
         tx.commit().await?;
         Ok(Claim::Acquired)
     }
@@ -2910,16 +3519,19 @@ async fn publish(
         }
     }
 
-    match client.deliver(&state.http, &event, admitted).await {
+    match client
+        .deliver_scoped(
+            &state.relay_http,
+            &event,
+            delivery_scope.community_id,
+            admitted,
+        )
+        .await
+    {
         Delivery::Accepted => {
             // 结果写不进去不改变「已送达」：DISPATCH 已在，兜底对账按 event id
             // 查到它后补记（publish_reconcile）
-            if let Err(e) = record(
-                &state,
-                entry("OUTCOME", format!("message.publish:{event_id}"), "ACCEPTED"),
-            )
-            .await
-            {
+            if let Err(e) = record(&state, audit.entry("OUTCOME", "ACCEPTED")).await {
                 tracing::warn!(error = %e, "发布结果审计未写入，留给对账");
             }
             (
@@ -2933,12 +3545,7 @@ async fn publish(
         }
         Delivery::Rejected(why) => {
             tracing::warn!(reason = %why, "Relay 拒绝发布");
-            if let Err(e) = record(
-                &state,
-                entry("OUTCOME", format!("message.publish:{event_id}"), "REJECTED"),
-            )
-            .await
-            {
+            if let Err(e) = record(&state, audit.entry("OUTCOME", "REJECTED")).await {
                 tracing::warn!(error = %e, "发布结果审计未写入，留给对账");
             }
             // DD-125(2)：社区禁言/封禁的拒绝带结构化 restriction（V-SCN-129）
@@ -2949,16 +3556,7 @@ async fn publish(
         // REJECTED；回应是 LIMIT，不是 DENIED（`apps/06` §4）。
         Delivery::Limited(kind, why) => {
             tracing::warn!(reason = %why, "Relay 以上界拒绝发布");
-            if let Err(e) = record(
-                &state,
-                entry(
-                    "OUTCOME",
-                    format!("message.publish:{event_id}"),
-                    "NOT_DELIVERED",
-                ),
-            )
-            .await
-            {
+            if let Err(e) = record(&state, audit.entry("OUTCOME", "NOT_DELIVERED")).await {
                 tracing::warn!(error = %e, "发布结果审计未写入，留给对账");
             }
             limit_response(kind, None, Some(operation_id))
@@ -3137,7 +3735,7 @@ pub(crate) async fn community_limits(
     })?;
     let doc = state
         .relay_nip11
-        .get(&state.http, community_host)
+        .get(&state.relay_http, community_host)
         .await
         .map_err(|e| {
             tracing::warn!(error = %e, host = %community_host, "运行期读取 NIP-11 失败");
@@ -3482,7 +4080,7 @@ async fn read_message_authors(
     for ids in event_ids.chunks(cap) {
         let value = client
             .query(
-                &state.http,
+                &state.relay_http,
                 &[serde_json::json!({
                     "ids":ids, "#h":[admitted.channel_id()], "limit":ids.len()
                 })],
@@ -3762,7 +4360,7 @@ async fn query_messages_for(
             "#e": [root.id.to_hex()], "authors": [root.pubkey.to_hex()], "limit": 1,
         }));
     }
-    match client.query(&state.http, &filters).await {
+    match client.query(&state.relay_http, &filters).await {
         Ok(events) => {
             let events = match serde_json::from_value(events) {
                 Ok(events) => events,
@@ -3904,7 +4502,7 @@ pub async fn query_workspace_activity(
                 channel_window_filter(&scope.channel_id, message_type, cap, None)
             })
             .collect();
-        let events: Vec<nostr::Event> = match client.query(&state.http, &filters).await {
+        let events: Vec<nostr::Event> = match client.query(&state.relay_http, &filters).await {
             Ok(value) => match serde_json::from_value(value) {
                 Ok(events) => events,
                 Err(_) => return invalid_message_evidence(),
@@ -4590,6 +5188,794 @@ fn relay_media_path(media_ref: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    #[tokio::test]
+    #[ignore = "requires PUBLISH_RECONCILE_TEST_DATABASE_URL pointing at an isolated migrated database"]
+    async fn publication_scope_owned_agent_rejects_disabled_installation_or_principal() {
+        use super::*;
+        let pool =
+            sqlx::PgPool::connect(&std::env::var("PUBLISH_RECONCILE_TEST_DATABASE_URL").unwrap())
+                .await
+                .unwrap();
+        let mut tx = pool.begin().await.unwrap();
+        // Reuse the original Installation lifecycle's migrated fixture shape;
+        // no temporary authority tables or relaxed business constraints.
+        sqlx::raw_sql(r#"CREATE TEMP TABLE owned_scope_fixture(tenant uuid,workspace uuid,human uuid,agent uuid,installation uuid) ON COMMIT DROP;
+        DO $$ DECLARE
+          tenant uuid:=gen_random_uuid(); workspace uuid:=gen_random_uuid();
+          human uuid:=gen_random_uuid(); human_identity uuid:=gen_random_uuid(); agent uuid:=gen_random_uuid();
+          definition uuid:=gen_random_uuid(); installation uuid:=gen_random_uuid(); route uuid:=gen_random_uuid(); version uuid:=gen_random_uuid();
+        BEGIN
+          INSERT INTO identity.tenant(id,slug,name,state) VALUES(tenant,tenant::text,'owner scope fixture','ACTIVE');
+          INSERT INTO identity.workspace(id,tenant_id,slug,name,state) VALUES(workspace,tenant,workspace::text,'owner scope fixture','ACTIVE');
+          INSERT INTO identity.principal(id,tenant_id,kind,status) VALUES(human,tenant,'HUMAN','ACTIVE'),(agent,tenant,'AGENT','ACTIVE');
+          INSERT INTO identity.human_identity(id,display_name,status) VALUES(human_identity,'owner scope fixture','ACTIVE');
+          INSERT INTO identity.tenant_membership(id,tenant_id,human_identity_id,tenant_principal_id,state) VALUES(gen_random_uuid(),tenant,human_identity,human,'ACTIVE');
+          INSERT INTO catalog.resource(id,tenant_id,type_key,home_workspace_id,owner_principal_id,component_type_key,native_id,state,version) VALUES
+            (definition,tenant,'agent.definition',NULL,human,'core',definition::text,'PROVISIONING',1),
+            (route,tenant,'llm_route',workspace,human,'core',route::text,'PROVISIONING',1),
+            (installation,tenant,'agent.installation',workspace,human,'core',installation::text,'PROVISIONING',1);
+          INSERT INTO catalog.agent_definition(resource_id,stable_slug,display_name,status) VALUES(definition,definition::text,'owner scope fixture','PROVISIONING');
+          INSERT INTO catalog.asset(id,tenant_id,resource_id,type_key,owner_principal_id,native_ref,state,version) VALUES
+            (version,tenant,definition,'agent.version',human,version::text,'DRAFT',1);
+          INSERT INTO catalog.agent_version(asset_id,agent_resource_id,ordinal,content,config_hash,state) VALUES
+            (version,definition,1,jsonb_build_object('runtimeProfileKey','fixture','modelRouteResourceId',route),repeat('a',64),'DRAFT');
+          INSERT INTO catalog.agent_installation(resource_id,workspace_id,agent_resource_id,pinned_version_asset_id,agent_principal_id,runtime_isolation_ref,state)
+            VALUES(installation,workspace,definition,version,agent,'fixture:'||installation,'PROVISIONING');
+          INSERT INTO catalog.agent_runtime_projection(installation_resource_id,generation,agent_version_asset_id,runtime_profile_key,model_route_resource_id,gateway_resource_ids,effective_fields,config_hash,state) VALUES
+            (installation,1,version,'fixture',route,ARRAY[route],jsonb_build_array(jsonb_build_object('fieldKey','runtimeProfileKey','requestedValueHash',repeat('a',64),'effectiveValueHash',repeat('a',64),'reasonCode',NULL)),repeat('a',64),'ACTIVE');
+          UPDATE catalog.agent_installation SET state='ACTIVE',active_projection_generation=1 WHERE resource_id=installation;
+          UPDATE catalog.resource SET state='ACTIVE' WHERE id=installation;
+          INSERT INTO catalog.channel_agent_binding(workspace_id,installation_resource_id,triggers,status) VALUES(workspace,installation,ARRAY['MENTION'],'ACTIVE');
+          INSERT INTO owned_scope_fixture VALUES(tenant,workspace,human,agent,installation);
+        END $$;"#).execute(&mut *tx).await.unwrap();
+        let (tenant, workspace, human, agent, installation): (Uuid, Uuid, Uuid, Uuid, Uuid) =
+            sqlx::query_as(
+                "select tenant,workspace,human,agent,installation from owned_scope_fixture",
+            )
+            .fetch_one(&mut *tx)
+            .await
+            .unwrap();
+        let author = nostr::Keys::generate().public_key().to_hex();
+        sqlx::query("insert into identity.buzz_identity_binding(tenant_id,principal_id,pubkey,custody,kind,state,private_key_secret_ref,private_key_secret_version,private_key_secret_audience,private_key_secret_status) values($1,$2,$3,'SERVER','AGENT','ACTIVE','fixture/agent',1,'fixture','ACTIVE')")
+            .bind(tenant).bind(agent).bind(&author).execute(&mut *tx).await.unwrap();
+        assert_eq!(
+            locked_owned_agent_installation(&mut tx, tenant, human, workspace, &author)
+                .await
+                .unwrap(),
+            Some(installation)
+        );
+        for (mutation, id) in [
+            (
+                "update catalog.agent_installation set state='DISABLED' where resource_id=$1",
+                installation,
+            ),
+            (
+                "update catalog.agent_installation set state='ERROR' where resource_id=$1",
+                installation,
+            ),
+            (
+                "update catalog.agent_installation set state='DRAINING' where resource_id=$1",
+                installation,
+            ),
+            (
+                "update identity.principal set status='DISABLED' where id=$1",
+                agent,
+            ),
+        ] {
+            sqlx::query("savepoint owner_fault")
+                .execute(&mut *tx)
+                .await
+                .unwrap();
+            sqlx::query(mutation)
+                .bind(id)
+                .execute(&mut *tx)
+                .await
+                .unwrap();
+            assert_eq!(
+                locked_owned_agent_installation(&mut tx, tenant, human, workspace, &author)
+                    .await
+                    .unwrap(),
+                None,
+                "{mutation}"
+            );
+            // Key acquisition and reconciliation share this exact eligibility SQL.
+            let key: Option<OwnedAgentKeyRow> = sqlx::query_as(OWNED_AGENT_KEY_SQL)
+                .bind(tenant)
+                .bind(&author)
+                .bind(workspace)
+                .bind(human)
+                .fetch_optional(&mut *tx)
+                .await
+                .unwrap();
+            assert!(key.is_none(), "key selection must deny {mutation}");
+            sqlx::query("rollback to savepoint owner_fault")
+                .execute(&mut *tx)
+                .await
+                .unwrap();
+            assert_eq!(
+                locked_owned_agent_installation(&mut tx, tenant, human, workspace, &author)
+                    .await
+                    .unwrap(),
+                Some(installation)
+            );
+        }
+        tx.rollback().await.unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore = "requires PUBLISH_RECONCILE_TEST_DATABASE_URL pointing at an isolated migrated database"]
+    async fn publication_scope_dispatch_is_atomic_and_blocks_destructive_rollback() {
+        use super::*;
+        let pool =
+            sqlx::PgPool::connect(&std::env::var("PUBLISH_RECONCILE_TEST_DATABASE_URL").unwrap())
+                .await
+                .unwrap();
+        let mut tx = pool.begin().await.unwrap();
+        let ctx = ExecutionContext {
+            tenant_id: Uuid::new_v4(),
+            tenant_principal_id: Uuid::new_v4(),
+            human_identity_id: Uuid::new_v4(),
+            session_id: Uuid::new_v4(),
+            access_mode: contracts::PlatformSessionAccessMode::Full,
+        };
+        sqlx::query("insert into identity.tenant(id,slug,name,state) values($1,$2,'dispatch scope','ACTIVE')")
+            .bind(ctx.tenant_id).bind(ctx.tenant_id.to_string()).execute(&mut *tx).await.unwrap();
+        sqlx::query("insert into identity.principal(id,tenant_id,kind,status) values($1,$2,'HUMAN','ACTIVE')")
+            .bind(ctx.tenant_principal_id).bind(ctx.tenant_id).execute(&mut *tx).await.unwrap();
+        let event_id = "ab".repeat(32);
+        let operation_id = Uuid::new_v4();
+        let scope = PublicationScope {
+            community_id: Uuid::new_v4(),
+            tenant_binding_version: 4,
+            target_channel_id: Some(Uuid::new_v4()),
+            target_binding_version: Some(2),
+            event_pubkey: nostr::Keys::generate().public_key().to_hex(),
+            event_kind: 41012,
+            event_channel_id: None,
+            signer_installation_id: None,
+            publication: None,
+        };
+        let scope = PublicationScope {
+            event_channel_id: scope.target_channel_id,
+            ..scope
+        };
+        let audit = PublicationAudit {
+            ctx: &ctx,
+            target: MessageTarget::Conversation(Uuid::new_v4()),
+            operation_id,
+            action_key: CONVERSATION_HIDE_ACTION,
+            event_id: &event_id,
+            signer_pubkey: None,
+        };
+        // The original idempotency row deliberately still has its old default
+        // message_kind=9. Only the actual-event scope records Hide's 41012.
+        sqlx::query("insert into admission.publish_attempt(tenant_principal_id,idempotency_key,operation_id,event_id) values($1,$2,$3,$4)")
+            .bind(ctx.tenant_principal_id).bind(Uuid::new_v4()).bind(operation_id).bind(&event_id).execute(&mut *tx).await.unwrap();
+        sqlx::raw_sql("create function pg_temp.reject_scope_dispatch() returns trigger language plpgsql as $$ begin raise exception 'injected original DISPATCH write failure'; end $$;
+            create trigger reject_scope_dispatch before insert on audit.audit_event for each row execute function pg_temp.reject_scope_dispatch();")
+            .execute(&mut *tx).await.unwrap();
+        sqlx::query("savepoint failed_dispatch")
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        assert!(persist_publication_dispatch(&mut tx, &audit, &scope)
+            .await
+            .is_err());
+        sqlx::query("rollback to savepoint failed_dispatch")
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        let frozen: Option<serde_json::Value> = sqlx::query_scalar(
+            "select delivery_scope from admission.publish_attempt where operation_id=$1",
+        )
+        .bind(operation_id)
+        .fetch_one(&mut *tx)
+        .await
+        .unwrap();
+        assert!(
+            frozen.is_none(),
+            "failed DISPATCH must not leave a frozen scope alone"
+        );
+        let count: i64 =
+            sqlx::query_scalar("select count(*) from audit.audit_event where operation_id=$1")
+                .bind(operation_id)
+                .fetch_one(&mut *tx)
+                .await
+                .unwrap();
+        assert_eq!(count, 0);
+        sqlx::query("drop trigger reject_scope_dispatch on audit.audit_event")
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        persist_publication_dispatch(&mut tx, &audit, &scope)
+            .await
+            .unwrap();
+        persist_publication_dispatch(&mut tx, &audit, &scope)
+            .await
+            .unwrap();
+        let (actual, count, actor, target, kind): (serde_json::Value, i64, Uuid, Uuid, i32) = sqlx::query_as(
+            "select p.delivery_scope,(select count(*) from audit.audit_event where operation_id=p.operation_id),a.actor_principal_id,a.target_id,p.message_kind
+             from admission.publish_attempt p join audit.audit_event a on a.operation_id=p.operation_id and a.event_type='DISPATCH'
+             where p.operation_id=$1")
+            .bind(operation_id).fetch_one(&mut *tx).await.unwrap();
+        assert_eq!(
+            serde_json::from_value::<PublicationScope>(actual).unwrap(),
+            scope
+        );
+        assert_eq!(
+            (count, actor, target, kind),
+            (1, ctx.tenant_principal_id, audit.target.id(), 9)
+        );
+        // The same original BFF DISPATCH writer also persists the signed window,
+        // not just the earlier eight-field scope. Unsupported Hide above stays old-shaped.
+        let stored_operation = Uuid::new_v4();
+        let stored_id = "cd".repeat(32);
+        let stored_scope = PublicationScope {
+            event_kind: 9,
+            publication: Some(PublicationWindow {
+                created_at: 100,
+                non_expiring: true,
+                policy: collab_bridge::bridge::PublicationPolicy {
+                    version: collab_bridge::bridge::PUBLICATION_POLICY_VERSION,
+                    epoch: Uuid::new_v4().to_string(),
+                    max_age_seconds: 960,
+                    ready: true,
+                },
+            }),
+            ..scope.clone()
+        };
+        let stored_audit = PublicationAudit {
+            operation_id: stored_operation,
+            event_id: &stored_id,
+            action_key: CONVERSATION_PUBLISH_ACTION,
+            ..audit
+        };
+        sqlx::query("insert into admission.publish_attempt(tenant_principal_id,idempotency_key,operation_id,event_id) values($1,$2,$3,$4)")
+            .bind(ctx.tenant_principal_id).bind(Uuid::new_v4()).bind(stored_operation).bind(&stored_id).execute(&mut *tx).await.unwrap();
+        persist_publication_dispatch(&mut tx, &stored_audit, &stored_scope)
+            .await
+            .unwrap();
+        let (window, dispatches): (serde_json::Value, i64) = sqlx::query_as(
+            "select a.delivery_scope,(select count(*) from audit.audit_event e where e.operation_id=a.operation_id and e.event_type='DISPATCH') from admission.publish_attempt a where a.operation_id=$1")
+            .bind(stored_operation).fetch_one(&mut *tx).await.unwrap();
+        assert_eq!(window, serde_json::to_value(&stored_scope).unwrap());
+        assert_eq!(dispatches, 1);
+
+        let mut changed = scope.clone();
+        changed.community_id = Uuid::new_v4();
+        assert!(matches!(
+            persist_publication_dispatch(&mut tx, &audit, &changed).await,
+            Err(sqlx::Error::RowNotFound)
+        ));
+        sqlx::query("savepoint unsafe_down")
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        let error = sqlx::raw_sql(include_str!(
+            "../../../migrations/20261101020000_publish_delivery_scope.down.sql"
+        ))
+        .execute(&mut *tx)
+        .await
+        .unwrap_err();
+        assert!(
+            error.to_string().contains("while frozen attempts exist"),
+            "{error}"
+        );
+        sqlx::query("rollback to savepoint unsafe_down")
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        let still_frozen: serde_json::Value = sqlx::query_scalar(
+            "select delivery_scope from admission.publish_attempt where operation_id=$1",
+        )
+        .bind(operation_id)
+        .fetch_one(&mut *tx)
+        .await
+        .unwrap();
+        assert_eq!(
+            serde_json::from_value::<PublicationScope>(still_frozen).unwrap(),
+            scope
+        );
+        tx.rollback().await.unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore = "requires PUBLISH_RECONCILE_TEST_DATABASE_URL pointing at an isolated migrated database"]
+    async fn publication_scope_postgres_fences_membership_identity_binding_and_dm() {
+        use super::*;
+        let pool =
+            sqlx::PgPool::connect(&std::env::var("PUBLISH_RECONCILE_TEST_DATABASE_URL").unwrap())
+                .await
+                .unwrap();
+        let mut tx = pool.begin().await.unwrap();
+        let tenant = Uuid::new_v4();
+        let actor = Uuid::new_v4();
+        let human = Uuid::new_v4();
+        let workspace = Uuid::new_v4();
+        let channel = Uuid::new_v4();
+        let community = Uuid::new_v4();
+        let control = Uuid::new_v4();
+        let conversation = Uuid::new_v4();
+        let dm_channel = Uuid::new_v4();
+        let author = nostr::Keys::generate().public_key().to_hex();
+        sqlx::query(
+            "insert into identity.tenant(id,slug,name,state) values($1,$2,'scope proof','ACTIVE')",
+        )
+        .bind(tenant)
+        .bind(tenant.to_string())
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+        for (principal, kind) in [(actor, "HUMAN"), (control, "SERVICE")] {
+            sqlx::query("insert into identity.principal(id,tenant_id,kind,status) values($1,$2,$3,'ACTIVE')")
+                .bind(principal).bind(tenant).bind(kind).execute(&mut *tx).await.unwrap();
+        }
+        sqlx::query("insert into identity.human_identity(id,display_name,status) values($1,'scope proof','ACTIVE')")
+            .bind(human).execute(&mut *tx).await.unwrap();
+        sqlx::query("insert into identity.tenant_membership(id,tenant_id,human_identity_id,tenant_principal_id,state) values($1,$2,$3,$4,'ACTIVE')")
+            .bind(Uuid::new_v4()).bind(tenant).bind(human).bind(actor).execute(&mut *tx).await.unwrap();
+        sqlx::query("insert into identity.workspace(id,tenant_id,slug,name,state) values($1,$2,'scope','scope','ACTIVE')")
+            .bind(workspace).bind(tenant).execute(&mut *tx).await.unwrap();
+        sqlx::query("insert into identity.workspace_membership(id,workspace_id,tenant_principal_id,state) values($1,$2,$3,'ACTIVE')")
+            .bind(Uuid::new_v4()).bind(workspace).bind(actor).execute(&mut *tx).await.unwrap();
+        sqlx::query("insert into identity.buzz_identity_binding(tenant_id,principal_id,pubkey,custody,kind,state,private_key_secret_ref,private_key_secret_version,private_key_secret_audience,private_key_secret_status) values($1,$2,$3,'SERVER','HUMAN','ACTIVE','fixture/scope',1,'fixture','ACTIVE')")
+            .bind(tenant).bind(actor).bind(&author).execute(&mut *tx).await.unwrap();
+        sqlx::query("insert into projection.tenant_buzz_binding(tenant_id,community_id,normalized_host,control_service_principal_id,require_relay_membership,allow_nip_oa_auth,pubkey_allowlist_enabled,nip11_snapshot_digest,nip11_observed_at,state) values($1,$2,$3,$4,true,false,true,'fixture',now(),'ACTIVE')")
+            .bind(tenant).bind(community).bind(format!("{tenant}.scope.invalid")).bind(control).execute(&mut *tx).await.unwrap();
+        sqlx::query("insert into projection.workspace_buzz_binding(workspace_id,channel_id,state) values($1,$2,'ACTIVE')")
+            .bind(workspace).bind(channel).execute(&mut *tx).await.unwrap();
+        let scope = PublicationScope {
+            community_id: community,
+            tenant_binding_version: 1,
+            target_channel_id: Some(channel),
+            target_binding_version: Some(1),
+            event_pubkey: author.clone(),
+            event_kind: 5,
+            event_channel_id: Some(channel),
+            signer_installation_id: None,
+            publication: None,
+        };
+        let target = MessageTarget::Workspace(workspace);
+        assert!(
+            locked_publication_scope_matches(&mut tx, tenant, actor, target, &scope)
+                .await
+                .unwrap()
+        );
+        for (mutation, id) in [
+            ("update identity.tenant set state='SUSPENDED' where id=$1", tenant),
+            ("update identity.human_identity set status='DISABLED' where id=$1", human),
+            ("update identity.principal set status='DISABLED' where id=$1", actor),
+            ("update identity.tenant_membership set state='REVOKING' where tenant_principal_id=$1", actor),
+            ("update identity.workspace set state='SUSPENDED' where id=$1", workspace),
+            ("update identity.workspace_membership set state='REVOKING' where workspace_id=$1", workspace),
+            ("update projection.tenant_buzz_binding set state='RECONCILING' where tenant_id=$1", tenant),
+            ("update projection.tenant_buzz_binding set version=version+1,normalized_host='changed.scope.invalid' where tenant_id=$1", tenant),
+            ("update projection.workspace_buzz_binding set version=version+1 where workspace_id=$1", workspace),
+            ("update projection.workspace_buzz_binding set channel_id=gen_random_uuid() where workspace_id=$1", workspace),
+            ("update identity.buzz_identity_binding set state='REVOKING' where principal_id=$1", actor),
+        ] {
+            sqlx::query("savepoint scope_fault").execute(&mut *tx).await.unwrap();
+            sqlx::query(mutation).bind(id).execute(&mut *tx).await.unwrap();
+            assert!(!locked_publication_scope_matches(&mut tx, tenant, actor, target, &scope).await.unwrap(), "{mutation}");
+            sqlx::query("rollback to savepoint scope_fault").execute(&mut *tx).await.unwrap();
+            assert!(locked_publication_scope_matches(&mut tx, tenant, actor, target, &scope).await.unwrap());
+        }
+        sqlx::query("insert into projection.conversation_buzz_binding(id,tenant_id,channel_id,participant_principal_ids,creator_principal_id,creator_pubkey,operation_id,projected_keys,state) values($1,$2,$3,$4,$5,$6,$7,$8,'ACTIVE')")
+            .bind(conversation).bind(tenant).bind(dm_channel).bind(vec![actor,control]).bind(actor).bind(&author).bind(Uuid::new_v4())
+            .bind(serde_json::json!([[actor.to_string(), author]])).execute(&mut *tx).await.unwrap();
+        let dm_scope = PublicationScope {
+            target_channel_id: Some(dm_channel),
+            event_channel_id: Some(dm_channel),
+            ..scope.clone()
+        };
+        assert!(locked_publication_scope_matches(
+            &mut tx,
+            tenant,
+            actor,
+            MessageTarget::Conversation(conversation),
+            &dm_scope
+        )
+        .await
+        .unwrap());
+        sqlx::query(
+            "update projection.conversation_buzz_binding set projected_keys='[]' where id=$1",
+        )
+        .bind(conversation)
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+        assert!(!locked_publication_scope_matches(
+            &mut tx,
+            tenant,
+            actor,
+            MessageTarget::Conversation(conversation),
+            &dm_scope
+        )
+        .await
+        .unwrap());
+        // Tenant-only scope must not invent a native channel or target generation.
+        let global = PublicationScope {
+            target_channel_id: None,
+            target_binding_version: None,
+            event_channel_id: None,
+            event_kind: 1,
+            ..scope
+        };
+        assert!(locked_publication_scope_matches(
+            &mut tx,
+            tenant,
+            actor,
+            MessageTarget::Pulse(tenant),
+            &global
+        )
+        .await
+        .unwrap());
+        tx.rollback().await.unwrap();
+    }
+
+    #[test]
+    fn publication_scope_uses_actual_signed_kind_and_native_channel_derivation() {
+        use super::*;
+        let keys = nostr::Keys::generate();
+        let client = IdentityClient::new(
+            Custody::Server,
+            &keys.secret_key().to_secret_hex(),
+            "http://unused.invalid",
+            "scope.invalid",
+        )
+        .unwrap();
+        let channel = Uuid::new_v4();
+        for kind in [9, 40003, 45001, 45003, 9002, 41010, 41012] {
+            let event = client
+                .sign(kind, "", &[vec!["h".into(), channel.to_string()]])
+                .unwrap();
+            assert_eq!(
+                publication_native_channel(&event, None),
+                Some(Some(channel)),
+                "{kind}"
+            );
+        }
+        for kind in [
+            1, 1618, 1619, 1621, 1630, 1631, 1632, 1633, 30300, 30617, 30621,
+        ] {
+            let event = client
+                .sign(kind, "", &[vec!["h".into(), channel.to_string()]])
+                .unwrap();
+            assert_eq!(
+                publication_native_channel(&event, None),
+                Some(None),
+                "global {kind}"
+            );
+        }
+        for kind in [5, 7] {
+            let event = client
+                .sign(kind, "", &[vec!["e".into(), "00".repeat(32)]])
+                .unwrap();
+            assert_eq!(
+                publication_native_channel(&event, Some(Some(channel))),
+                Some(Some(channel))
+            );
+            assert_eq!(publication_native_channel(&event, Some(None)), Some(None));
+            assert_eq!(
+                publication_native_channel(&event, None),
+                None,
+                "unverified target must not freeze scope"
+            );
+        }
+    }
+
+    #[test]
+    fn proved_absence_cannot_authorize_retry_after_epoch_or_binding_change() {
+        use collab_bridge::bridge::{
+            PublicationPolicy, PublicationSettlement, PUBLICATION_POLICY_VERSION,
+        };
+        let binding = PublicationBinding {
+            community_id: Uuid::new_v4(),
+            community_host: "publication.platform.test".into(),
+            tenant_version: 1,
+            channel_id: None,
+            target_version: None,
+        };
+        let policy = PublicationPolicy {
+            version: PUBLICATION_POLICY_VERSION,
+            epoch: Uuid::new_v4().to_string(),
+            max_age_seconds: 960,
+            ready: true,
+        };
+        let scope = PublicationScope {
+            community_id: binding.community_id,
+            tenant_binding_version: 1,
+            target_channel_id: None,
+            target_binding_version: None,
+            event_pubkey: nostr::Keys::generate().public_key().to_hex(),
+            event_kind: 1,
+            event_channel_id: None,
+            signer_installation_id: None,
+            publication: Some(PublicationWindow {
+                created_at: 100,
+                non_expiring: true,
+                policy: policy.clone(),
+            }),
+        };
+        let proof = crate::audit::PublicationProof {
+            settlement: PublicationSettlement {
+                claim: scope.claim(&"ab".repeat(32)).unwrap(),
+                accepted: false,
+                settled: true,
+                observed_at: 1061,
+            },
+            scope,
+        };
+        assert!(publication_retry_scope_matches(
+            Some(&proof),
+            &binding,
+            &policy
+        ));
+        let mut restored = policy.clone();
+        restored.epoch = Uuid::new_v4().to_string();
+        assert!(!publication_retry_scope_matches(
+            Some(&proof),
+            &binding,
+            &restored
+        ));
+        assert!(!publication_retry_scope_matches(None, &binding, &policy));
+        let mut rebound = binding.clone();
+        rebound.tenant_version += 1;
+        assert!(!publication_retry_scope_matches(
+            Some(&proof),
+            &rebound,
+            &policy
+        ));
+        assert!(
+            proof.proves_absence(),
+            "historical proof remains immutable and valid for its old epoch"
+        );
+    }
+
+    #[test]
+    fn publication_scope_rejects_every_mismatched_observation_or_binding_fact() {
+        use super::*;
+        let binding = PublicationBinding {
+            community_id: Uuid::new_v4(),
+            community_host: "scope.invalid".into(),
+            tenant_version: 4,
+            channel_id: Some(Uuid::new_v4()),
+            target_version: Some(2),
+        };
+        let scope = PublicationScope {
+            community_id: binding.community_id,
+            tenant_binding_version: 4,
+            target_channel_id: binding.channel_id,
+            target_binding_version: Some(2),
+            event_pubkey: nostr::Keys::generate().public_key().to_hex(),
+            event_kind: 5,
+            event_channel_id: binding.channel_id,
+            signer_installation_id: None,
+            publication: None,
+        };
+        let id = "01".repeat(32);
+        let observed = collab_bridge::bridge::PublicationObservation {
+            event_id: id.clone(),
+            community_id: scope.community_id,
+            pubkey: scope.event_pubkey.clone(),
+            kind: 5,
+            channel_id: scope.event_channel_id,
+        };
+        assert!(scope.matches_observation(&id, &observed));
+        for field in 0..5 {
+            let mut other = observed.clone();
+            match field {
+                0 => other.event_id = "02".repeat(32),
+                1 => other.community_id = Uuid::new_v4(),
+                2 => other.pubkey = nostr::Keys::generate().public_key().to_hex(),
+                3 => other.kind = 7,
+                _ => other.channel_id = None,
+            }
+            assert!(
+                !scope.matches_observation(&id, &other),
+                "observation field {field}"
+            );
+        }
+        assert!(scope.matches_binding(&binding));
+        for field in 0..4 {
+            let mut other = binding.clone();
+            match field {
+                0 => other.community_id = Uuid::new_v4(),
+                1 => other.tenant_version += 1,
+                2 => other.channel_id = Some(Uuid::new_v4()),
+                _ => other.target_version = Some(3),
+            }
+            assert!(!scope.matches_binding(&other), "binding field {field}");
+        }
+    }
+
+    #[tokio::test]
+    #[ignore = "requires PUBLISH_RECONCILE_TEST_DATABASE_URL pointing at an isolated migrated database"]
+    async fn publication_history_keeps_real_outcomes_and_distinct_operations() {
+        use sqlx::Row;
+        let pool =
+            sqlx::PgPool::connect(&std::env::var("PUBLISH_RECONCILE_TEST_DATABASE_URL").unwrap())
+                .await
+                .unwrap();
+        let mut tx = pool.begin().await.unwrap();
+        let ctx = super::ExecutionContext {
+            human_identity_id: uuid::Uuid::new_v4(),
+            tenant_id: uuid::Uuid::new_v4(),
+            tenant_principal_id: uuid::Uuid::new_v4(),
+            session_id: uuid::Uuid::new_v4(),
+            access_mode: contracts::PlatformSessionAccessMode::Full,
+        };
+        sqlx::query("insert into identity.tenant(id,slug,name,state) values($1,$2,'publication history','ACTIVE')")
+            .bind(ctx.tenant_id).bind(format!("history-{}",ctx.tenant_id)).execute(&mut *tx).await.unwrap();
+        sqlx::query("insert into identity.principal(id,tenant_id,kind,status) values($1,$2,'HUMAN','ACTIVE')")
+            .bind(ctx.tenant_principal_id).bind(ctx.tenant_id).execute(&mut *tx).await.unwrap();
+        for action in super::FILTERED_PUBLICATION_ACTIONS {
+            let target = if action.starts_with("conversation.") {
+                super::MessageTarget::Conversation(uuid::Uuid::new_v4())
+            } else if action == crate::pulse::PUBLISH_ACTION {
+                super::MessageTarget::Pulse(ctx.tenant_id)
+            } else {
+                super::MessageTarget::Workspace(uuid::Uuid::new_v4())
+            };
+            for (real, real_first) in [
+                (Some("ACCEPTED"), true),
+                (Some("ACCEPTED"), false),
+                (Some("REJECTED"), true),
+                (Some("REJECTED"), false),
+                (Some("NOT_DELIVERED"), true),
+                (Some("NOT_DELIVERED"), false),
+                (None, true),
+            ] {
+                let operation = uuid::Uuid::new_v4();
+                let key = uuid::Uuid::new_v4();
+                let id = operation.simple().to_string().repeat(2);
+                sqlx::query("insert into admission.publish_attempt(tenant_principal_id,idempotency_key,operation_id,event_id) values($1,$2,$3,$4)")
+                    .bind(ctx.tenant_principal_id).bind(key).bind(operation).bind(&id).execute(&mut *tx).await.unwrap();
+                let audit = super::PublicationAudit {
+                    ctx: &ctx,
+                    target,
+                    operation_id: operation,
+                    action_key: action,
+                    event_id: &id,
+                    signer_pubkey: None,
+                };
+                let mut entries = vec![
+                    (audit.entry("DISPATCH", "DISPATCHED"), 400_i64),
+                    (
+                        audit.entry("RECONCILIATION", "NOT_DELIVERED"),
+                        if real_first { 100 } else { 200 },
+                    ),
+                ];
+                if let Some(result) = real {
+                    entries.push((
+                        audit.entry("OUTCOME", result),
+                        if real_first { 200 } else { 100 },
+                    ));
+                }
+                for (mut entry, age) in entries {
+                    if entry.event_type == "RECONCILIATION" {
+                        entry.event_key = format!("message.publish:{id}:reconciled");
+                    }
+                    sqlx::query("insert into audit.audit_event(id,event_key,tenant_id,workspace_id,operation_id,event_type,action_key,action_version,component_type_key,target_type,target_id,parameter_hash,decision,result_code,result_exposure,evidence_refs,correlation_id,occurred_at) values($1,$2,$3,$4,$5,$6,$7,1,'buzz',$8,$9,'NONE','ALLOW',$10,'NONE',$11,$5,now()-make_interval(secs=>$12::bigint))")
+                        .bind(uuid::Uuid::new_v4()).bind(entry.event_key).bind(entry.tenant_id).bind(entry.workspace_id)
+                        .bind(entry.operation_id).bind(entry.event_type).bind(entry.action_key).bind(entry.target_type)
+                        .bind(entry.target_id).bind(entry.result_code).bind(crate::audit::evidence_json(&entry.evidence_refs)).bind(age)
+                        .execute(&mut *tx).await.unwrap();
+                }
+                // This is the retry handler's exact snapshot query, not a
+                // second implementation of its conclusion-selection rule.
+                let row = sqlx::query(super::PREVIOUS_PUBLICATION_SQL)
+                    .bind(ctx.tenant_principal_id)
+                    .bind(key)
+                    .bind(action)
+                    .bind(target.target_type())
+                    .bind(target.workspace_id())
+                    .bind(super::FILTERED_PUBLICATION_ACTIONS.as_slice())
+                    .fetch_one(&mut *tx)
+                    .await
+                    .unwrap();
+                assert_eq!(
+                    row.get::<Option<String>, _>("result").as_deref(),
+                    real,
+                    "{action}: real_first={real_first}"
+                );
+                assert_eq!(
+                    row.get::<Option<String>, _>("result_event_type").as_deref(),
+                    real.map(|_| "OUTCOME")
+                );
+                assert_eq!(
+                    row.get::<Vec<Option<uuid::Uuid>>, _>("target_ids"),
+                    vec![Some(target.id())]
+                );
+            }
+        }
+        // Nostr identity need not distinguish two same-second intents. The
+        // actual producer and append path must preserve both operations while
+        // retrying each operation/phase remains idempotent.
+        let id = uuid::Uuid::new_v4().simple().to_string().repeat(2);
+        let target = super::MessageTarget::Workspace(uuid::Uuid::new_v4());
+        for _ in 0..2 {
+            let operation = uuid::Uuid::new_v4();
+            let audit = super::PublicationAudit {
+                ctx: &ctx,
+                target,
+                operation_id: operation,
+                action_key: super::PUBLISH_ACTION,
+                event_id: &id,
+                signer_pubkey: None,
+            };
+            for (phase, result) in [
+                ("DISPATCH", "DISPATCHED"),
+                ("OUTCOME", "ACCEPTED"),
+                ("RECONCILIATION", "ACCEPTED"),
+            ] {
+                for _ in 0..2 {
+                    crate::audit::append(&mut tx, audit.entry(phase, result))
+                        .await
+                        .unwrap();
+                }
+            }
+            let count: i64 =
+                sqlx::query_scalar("select count(*) from audit.audit_event where operation_id=$1")
+                    .bind(operation)
+                    .fetch_one(&mut *tx)
+                    .await
+                    .unwrap();
+            assert_eq!(
+                count, 3,
+                "same event ID must not erase another operation's audit"
+            );
+        }
+        let count: i64 = sqlx::query_scalar("select count(*) from audit.audit_event where evidence_refs @> jsonb_build_array(jsonb_build_object('kind','BUZZ_EVENT_ID','value',$1::text))")
+            .bind(&id).fetch_one(&mut *tx).await.unwrap();
+        assert_eq!(count, 6);
+        // A historical collision can already have lost its DISPATCH. Preserve
+        // the existing empty-scope refusal; do not infer scope from this retry.
+        let orphan_key = uuid::Uuid::new_v4();
+        sqlx::query("insert into admission.publish_attempt(tenant_principal_id,idempotency_key,operation_id,event_id) values($1,$2,$3,$4)")
+            .bind(ctx.tenant_principal_id).bind(orphan_key).bind(uuid::Uuid::new_v4()).bind(&id)
+            .execute(&mut *tx).await.unwrap();
+        let row = sqlx::query(super::PREVIOUS_PUBLICATION_SQL)
+            .bind(ctx.tenant_principal_id)
+            .bind(orphan_key)
+            .bind(super::PUBLISH_ACTION)
+            .bind(target.target_type())
+            .bind(target.workspace_id())
+            .bind(super::FILTERED_PUBLICATION_ACTIONS.as_slice())
+            .fetch_one(&mut *tx)
+            .await
+            .unwrap();
+        assert!(row
+            .get::<Vec<Option<uuid::Uuid>>, _>("target_ids")
+            .is_empty());
+        assert_eq!(row.get::<Option<String>, _>("result"), None);
+        tx.rollback().await.unwrap();
+    }
+
+    #[test]
+    fn historical_query_absence_cannot_authorize_a_resigned_message() {
+        for action in [
+            super::PUBLISH_ACTION,
+            super::CONVERSATION_PUBLISH_ACTION,
+            super::CONVERSATION_HIDE_ACTION,
+            super::CONVERSATION_REOPEN_ACTION,
+            super::TOPIC_ACTION,
+            crate::pulse::PUBLISH_ACTION,
+        ] {
+            assert!(!super::publication_retry_confirmed(
+                action,
+                Some("RECONCILIATION"),
+                false
+            ));
+            assert!(!super::publication_retry_confirmed(action, None, false));
+            assert!(super::publication_retry_confirmed(
+                action,
+                Some("OUTCOME"),
+                false
+            ));
+        }
+    }
+
     #[test]
     fn batched_window_split_attributes_rows_and_target_scoped_actions_to_one_channel() {
         let keys = nostr::Keys::generate();

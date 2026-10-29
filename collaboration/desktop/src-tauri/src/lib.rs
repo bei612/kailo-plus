@@ -187,6 +187,9 @@ pub fn run() {
                 std::process::exit(1);
             }
             local_archive::erase_previous_identity(&app_handle, &state)?;
+            app_handle
+                .state::<platform::api::NativeSession>()
+                .set_archive(Box::new(local_archive::SessionArchive(app_handle.clone())))?;
 
             // Start the localhost media streaming proxy. The port is stored in
             // AppState and exposed to the frontend via `get_media_proxy_port`.
@@ -250,6 +253,20 @@ pub fn run() {
             get_nsec,
             get_presence,
             get_os_idle_seconds,
+            create_project_remote_branch,
+            delete_project_remote_branch,
+            merge_project_pull_request,
+            get_project_repo_snapshot,
+            get_project_repo_file_content,
+            get_project_repo_diff,
+            clone_project_repository,
+            get_project_repo_sync_status,
+            push_project_local_repository,
+            pull_project_local_repository,
+            get_project_local_repo_snapshot,
+            get_project_local_repo_diff,
+            get_project_local_repo_file_content,
+            open_project_repository_folder,
             local_archive::local_archive_status,
             local_archive::local_archive_subscribe,
             local_archive::local_archive_unsubscribe,

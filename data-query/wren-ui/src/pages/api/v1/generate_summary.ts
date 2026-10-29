@@ -96,6 +96,16 @@ async function governedSummary(req: NextApiRequest, res: NextApiResponse) {
       ),
       history,
     );
+    const readCurrentHistory = async (
+      selected: Parameters<typeof native.readHistory>[1],
+    ) => {
+      if (!isGovernedQueryMode())
+        throw new NativeQueryRefusal(412, 'QUERY_ADMISSION_UNAVAILABLE');
+      const visible = await native.readHistory(token, selected);
+      if (!isGovernedQueryMode())
+        throw new NativeQueryRefusal(412, 'QUERY_ADMISSION_UNAVAILABLE');
+      return visible;
+    };
     const originalThreadId = threadId || key;
     const receipt = await native.previewSql(
       token,
@@ -134,7 +144,7 @@ async function governedSummary(req: NextApiRequest, res: NextApiResponse) {
     });
     if (!query || query.id === key)
       throw new NativeQueryRefusal(503, 'QUERY_EVIDENCE_UNAVAILABLE');
-    const visible = await native.readHistory(token, query);
+    const visible = await readCurrentHistory(query);
     const originalLanguage =
       language || WrenAILanguage[project.language] || WrenAILanguage.EN;
     const prepared = await history.prepareNativeGeneration({
@@ -171,7 +181,7 @@ async function governedSummary(req: NextApiRequest, res: NextApiResponse) {
     if (!prepared) throw new NativeQueryRefusal(409, 'QUERY_INTENT_CONFLICT');
     let current = prepared.record;
     if (current.statusCode === 200) {
-      const result = await native.readHistory(token, current);
+      const result = await readCurrentHistory(current);
       res.status(200).json({ id: current.id, ...result.responsePayload });
       return;
     }
@@ -189,7 +199,7 @@ async function governedSummary(req: NextApiRequest, res: NextApiResponse) {
     if (prepared.created) {
       // This is the sole original history INSERT winner. A missing ACK never
       // authorizes POST again; both this request and re-entry observe fixed ID.
-      await native.readHistory(token, query);
+      await readCurrentHistory(query);
       try {
         const task = await components.wrenAIAdaptor.createTextBasedAnswer({
           queryId: key,
@@ -215,7 +225,7 @@ async function governedSummary(req: NextApiRequest, res: NextApiResponse) {
       pending();
       return;
     }
-    await native.readHistory(token, query);
+    await readCurrentHistory(query);
     if (result.status === TextBasedAnswerStatus.FAILED) {
       current = await history.advanceNativeGeneration(
         current,
@@ -236,6 +246,29 @@ async function governedSummary(req: NextApiRequest, res: NextApiResponse) {
     }
     if (result.status !== TextBasedAnswerStatus.SUCCEEDED) {
       pending();
+      return;
+    }
+    if (
+      !result.error &&
+      result.completion?.queryId === key &&
+      typeof result.completion.content === 'string'
+    ) {
+      const completed = await history.advanceNativeGeneration(
+        current,
+        {
+          summary: result.completion.content,
+          threadId: originalThreadId,
+          nativeSummary: { doneQueryId: key },
+        },
+        200,
+        Date.now() - startTime,
+      );
+      if (!completed) {
+        pending();
+        return;
+      }
+      const disclosed = await readCurrentHistory(completed);
+      res.status(200).json({ id: key, ...disclosed.responsePayload });
       return;
     }
     // Native SUCCEEDED means preprocessing, not finished text. The original
@@ -278,8 +311,20 @@ async function governedSummary(req: NextApiRequest, res: NextApiResponse) {
         } catch {
           throw new NativeQueryRefusal(503, 'QUERY_EVIDENCE_UNAVAILABLE');
         }
-        await native.readHistory(token, query);
+        await readCurrentHistory(query);
         if (event?.done === true && event.queryId === key) {
+          const result =
+            await components.wrenAIAdaptor.getTextBasedAnswerResult(key);
+          await readCurrentHistory(query);
+          if (
+            result?.status !== TextBasedAnswerStatus.SUCCEEDED ||
+            result.error ||
+            result.completion?.queryId !== key ||
+            typeof result.completion.content !== 'string'
+          ) {
+            break;
+          }
+          summary = result.completion.content;
           const completed = await history.advanceNativeGeneration(
             current,
             {
@@ -322,7 +367,7 @@ async function governedSummary(req: NextApiRequest, res: NextApiResponse) {
       pending();
       return;
     }
-    const disclosed = await native.readHistory(token, current);
+    const disclosed = await readCurrentHistory(current);
     res.status(200).json({ id: key, ...disclosed.responsePayload });
   } catch (error) {
     res.status(error instanceof NativeQueryRefusal ? error.status : 503).json({
@@ -465,13 +510,28 @@ export default async function handler(
         });
 
         // Handle client disconnect
-        req.on('close', () => {
+        res.on('close', () => {
           stream.destroy();
           reject(new Error('Client disconnected'));
         });
       });
 
       await streamPromise;
+      const completed = await wrenAIAdaptor.getTextBasedAnswerResult(
+        task.queryId,
+      );
+      const currentProject = await projectService.getCurrentProject();
+      if (
+        isGovernedQueryMode() ||
+        currentProject.id !== project.id ||
+        completed?.status !== TextBasedAnswerStatus.SUCCEEDED ||
+        completed.error ||
+        completed.completion?.queryId !== task.queryId ||
+        typeof completed.completion.content !== 'string'
+      ) {
+        throw new ApiError('Original summary completion unavailable', 503);
+      }
+      summary = completed.completion.content;
     }
 
     // Return the summary with ID and threadId
@@ -488,6 +548,11 @@ export default async function handler(
       requestPayload: req.body,
       threadId: newThreadId,
       headers: req.headers as Record<string, string>,
+      beforeResponse: async () => {
+        const currentProject = await projectService.getCurrentProject();
+        if (isGovernedQueryMode() || currentProject.id !== project.id)
+          throw new ApiError('Original summary observation unavailable', 503);
+      },
     });
   } catch (error) {
     await handleApiError({

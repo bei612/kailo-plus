@@ -96,8 +96,7 @@ textarea.ant-input::placeholder {
   color: var(--kailo-color-muted-foreground);
 }
 
-.ant-btn[disabled],
-.ant-btn[disabled]:hover,
+// Buttons keep their variant at half opacity (controls.less, DD-157).
 .ant-input[disabled],
 .ant-select-disabled .ant-select-selector,
 .ant-menu-item-disabled,
@@ -108,13 +107,6 @@ textarea.ant-input::placeholder {
 .ant-modal-mask,
 .ant-drawer-mask {
   background-color: color-mix(in srgb, #000 45%, transparent);
-}
-
-.ant-modal-content,
-.ant-modal-header,
-.ant-drawer-content,
-.ant-drawer-header {
-  border-radius: var(--kailo-radius-lg);
 }
 
 .ant-btn-primary {
@@ -180,7 +172,7 @@ code,
 // 5. Dark theme: surfaces that antd and the original styles hard-code.
 :root[data-kailo-theme='dark'] {
   .ant-switch {
-    background-color: var(--kailo-color-border);
+    background-color: var(--kailo-color-input);
   }
 
   .ant-switch-checked {

@@ -368,6 +368,7 @@ export const respondWith = async ({
   headers,
   requestPayload,
   startTime,
+  beforeResponse,
 }: {
   res: NextApiResponse;
   statusCode: number;
@@ -378,6 +379,7 @@ export const respondWith = async ({
   requestPayload?: Record<string, any>;
   threadId?: string;
   headers?: Record<string, string>;
+  beforeResponse?: () => Promise<void>;
 }) => {
   const durationMs = startTime ? Date.now() - startTime : undefined;
   const responseId = uuidv4();
@@ -393,6 +395,7 @@ export const respondWith = async ({
     durationMs,
   });
 
+  await beforeResponse?.();
   return res.status(statusCode).json({
     id: responseId,
     ...responsePayload,

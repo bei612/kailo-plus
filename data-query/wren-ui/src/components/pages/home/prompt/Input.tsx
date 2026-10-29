@@ -2,9 +2,10 @@ import { useEffect, useRef, useState } from 'react';
 import { Input, Button } from 'antd';
 import styled from 'styled-components';
 import { attachLoading } from '@/utils/helper';
+import useKailoText from '@/utils/kailoI18n';
 
 const PromptButton = styled(Button)`
-  min-width: 72px;
+  min-width: 64px;
 `;
 
 interface Props {
@@ -18,6 +19,7 @@ interface Props {
 
 export default function PromptInput(props: Props) {
   const { onAsk, isProcessing, question, inputProps } = props;
+  const t = useKailoText();
   const $promptInput = useRef<HTMLTextAreaElement>(null);
   const [inputValue, setInputValue] = useState('');
   const [innerLoading, setInnerLoading] = useState(false);
@@ -73,7 +75,7 @@ export default function PromptInput(props: Props) {
         onClick={handleAsk}
         disabled={isDisabled}
       >
-        Ask
+        {t('home.ask')}
       </PromptButton>
     </>
   );

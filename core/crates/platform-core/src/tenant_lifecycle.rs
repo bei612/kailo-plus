@@ -117,7 +117,7 @@ pub async fn provision_tenant_buzz(
         Err(r) => return r,
     };
     let community = match operator
-        .provision_community(&state.http, &host, &control_pubkey)
+        .provision_community(&state.relay_http, &host, &control_pubkey)
         .await
     {
         Ok(v) => v,
@@ -997,7 +997,7 @@ async fn fetch_nip11_document(
     host: &str,
 ) -> Result<serde_json::Value, String> {
     let r = state
-        .http
+        .relay_http
         .get(format!("{}/info", state.relay_transport))
         .header(reqwest::header::HOST, host)
         .send()
@@ -1503,7 +1503,7 @@ pub async fn provision_workspace_buzz(
         Err(status) => return status.into_response(),
     };
     if let Err(e) = control
-        .ensure_channel(&state.http, &channel, &name, metadata.as_ref())
+        .ensure_channel(&state.relay_http, &channel, &name, metadata.as_ref())
         .await
     {
         tracing::warn!(error = %e, "建立 Channel 失败");
@@ -1513,7 +1513,10 @@ pub async fn provision_workspace_buzz(
     // 不在其 roster 上就不绑定。
     // 快照是 best-effort 发布的，读到旧值时按结果不明交给重试（SF-BUZ-34）。
     let me = control.pubkey_hex();
-    match control.roster(&state.http, Scope::Channel(&channel)).await {
+    match control
+        .roster(&state.relay_http, Scope::Channel(&channel))
+        .await
+    {
         Ok(roster) if roster.iter().any(|e| e.pubkey == me) => {}
         Ok(_) => {
             tracing::warn!(workspace = %req.workspace_id, "CONTROL 不在该 Channel 的 roster 上");
@@ -1621,7 +1624,7 @@ pub async fn converge_workspace_channel_archive(
         }
     }
     match control
-        .converge_channel_archived(&state.http, &channel_id.to_string(), req.archived)
+        .converge_channel_archived(&state.relay_http, &channel_id.to_string(), req.archived)
         .await
     {
         Ok(true) => match crate::automation::converge_scope_schedules(
@@ -1798,7 +1801,7 @@ pub(crate) async fn converge_channel_roster(
     let current = read_roster(state, control, scope).await?;
     for (pubkey, presence) in &roster_plan(&current, &want, &tolerated, &control_pubkey) {
         if let Err(e) = control
-            .converge(&state.http, scope, pubkey, *presence)
+            .converge(&state.relay_http, scope, pubkey, *presence)
             .await
         {
             tracing::info!(workspace = %workspace_id, error = %e, "Channel roster 未收敛，等待重试");
@@ -1854,7 +1857,7 @@ async fn read_roster(
     scope: Scope<'_>,
 ) -> Result<HashSet<String>, Response> {
     control
-        .roster(&state.http, scope)
+        .roster(&state.relay_http, scope)
         .await
         .map(|r| r.into_iter().map(|e| e.pubkey).collect())
         .map_err(|e| {
@@ -2110,10 +2113,12 @@ pub async fn converge_tenant_community_archive(
         }
     }
     let sent = if req.archived {
-        operator.archive_community(&state.http, &host, &owner).await
+        operator
+            .archive_community(&state.relay_http, &host, &owner)
+            .await
     } else {
         operator
-            .unarchive_community(&state.http, &host, &owner)
+            .unarchive_community(&state.relay_http, &host, &owner)
             .await
     };
     match sent {
@@ -2161,7 +2166,7 @@ async fn community_archived(
     host: &str,
 ) -> Result<Option<bool>, Response> {
     let rows = operator
-        .list_owned_communities(&state.http, owner)
+        .list_owned_communities(&state.relay_http, owner)
         .await
         .map_err(|e| {
             tracing::warn!(error = %e, "operator 列表回读失败");
@@ -2322,7 +2327,7 @@ async fn reconcile_relay_roster(state: &ServiceState, tenant_id: Uuid) -> Result
     let current = read_roster(state, &control, Scope::Relay).await?;
     for (pubkey, presence) in &roster_plan(&current, &want, &tolerated, &control_pubkey) {
         if let Err(e) = control
-            .converge(&state.http, Scope::Relay, pubkey, *presence)
+            .converge(&state.relay_http, Scope::Relay, pubkey, *presence)
             .await
         {
             tracing::info!(tenant = %tenant_id, error = %e, "relay roster 未收敛，等待重试");

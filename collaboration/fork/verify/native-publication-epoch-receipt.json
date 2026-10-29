@@ -1,0 +1,305 @@
+{
+  "purpose": "DD-81/DD-160/V-SCN-265 Native 1631 signed publication epoch",
+  "productSource": "91a82526b086116cd6d6ae4e421d1cf32d4d1898",
+  "sourceOrigin": "CI GitHub fixed objects; no local source upload",
+  "jobs": [
+    {
+      "directory": "/volumes/data/kailo/conformance/checks/native-epoch-generate-d59b4ec2d",
+      "exitFiles": {
+        "check.exit": "1"
+      },
+      "sha256": {
+        "check.log": "289a2ba71428dd1a8a37dc5edb984ced6481ca9240a7d418b775ad2b7dd0959d"
+      },
+      "source-commit.txt": "d59b4ec2da95b63ad38618941dd5756d399f2497",
+      "limits.log": "容器限额 kailo-native-epoch-generate-d59b4ec2d: {\"cpuPeriod\": 0, \"cpuQuota\": 0, \"memory\": 2147483648, \"nanoCpus\": 1000000000, \"running\": false, \"status\": \"created\", \"swap\": 2147483648}"
+    },
+    {
+      "directory": "/volumes/data/kailo/conformance/checks/native-epoch-generate-d59b4ec2d-complete",
+      "exitFiles": {
+        "check.exit": "0"
+      },
+      "sha256": {
+        "check.log": "116de519c95bea69fb545d5690b9f7b73a9d1028b10130c4a2d93bd624458198"
+      },
+      "source-commit.txt": "d59b4ec2da95b63ad38618941dd5756d399f2497",
+      "limits.log": "容器限额 kailo-native-epoch-generate-d59b4ec2d-complete: {\"cpuPeriod\": 0, \"cpuQuota\": 0, \"memory\": 2147483648, \"nanoCpus\": 1000000000, \"running\": false, \"status\": \"created\", \"swap\": 2147483648}"
+    },
+    {
+      "directory": "/volumes/data/kailo/conformance/checks/native-epoch-wire-c531428da",
+      "exitFiles": {
+        "changed-fmt.exit": "0",
+        "check.exit": "0",
+        "compatibility.exit": "0",
+        "dart-dependencies.exit": "0",
+        "dart-wire.exit": "0",
+        "go-wire.exit": "0",
+        "rust-wire.exit": "0",
+        "ts-dependencies.exit": "0",
+        "ts-types.exit": "0",
+        "ts-wire.exit": "0"
+      },
+      "sha256": {
+        "check.log": "1794f6812e98fb741c99e71b44904ad4d517eee334d0d6a11ccb4f3f886f1ae9",
+        "check-command.sh": "2aad97deda37d61f757f83870fd0c1b6e50b329168738d058812ae099a202e24",
+        "dart-pubspec.lock": "d0690a2bc70d95e2d5ecd3312b60d2e6f2caa87105066533d7e00721b3feebde"
+      },
+      "source-commit.txt": "c531428da4b668f3647878e17c51ddc1ae867ece",
+      "input-byte-proof.json": {
+        "source": "c531428da4b668f3647878e17c51ddc1ae867ece",
+        "trackedFilesCompared": 3521,
+        "orderedInputSha256": "56b5ab1371ca68f1df35d8a6148c78f77680d3470b7e754cf8ba31e623f441bd",
+        "mismatches": []
+      },
+      "final-state.json": {
+        "Status": "exited",
+        "Running": false,
+        "Paused": false,
+        "Restarting": false,
+        "OOMKilled": false,
+        "Dead": false,
+        "Pid": 0,
+        "ExitCode": 0,
+        "Error": "",
+        "StartedAt": "2026-10-26T23:40:20.147274758Z",
+        "FinishedAt": "2026-10-26T23:41:26.392718539Z"
+      },
+      "limits.log": "容器限额 kailo-native-epoch-wire-c531428da: {\"cpuPeriod\": 0, \"cpuQuota\": 0, \"memory\": 2147483648, \"nanoCpus\": 1000000000, \"running\": false, \"status\": \"created\", \"swap\": 2147483648}",
+      "cleanupEmpty": true
+    },
+    {
+      "directory": "/volumes/data/kailo/conformance/checks/native-epoch-format-b021d69bc",
+      "exitFiles": {
+        "check.exit": "0"
+      },
+      "sha256": {
+        "check.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "source-commit.txt": "b021d69bc2c8dfdd64fe57c7d80e8d4306807655",
+      "limits.log": "容器限额 kailo-native-epoch-format-b021d69bc: {\"cpuPeriod\": 0, \"cpuQuota\": 0, \"memory\": 536870912, \"nanoCpus\": 1000000000, \"running\": false, \"status\": \"created\", \"swap\": 536870912}"
+    },
+    {
+      "directory": "/volumes/data/kailo/conformance/checks/native-epoch-b45627e9b",
+      "exitFiles": {
+        "check.exit": "101",
+        "clippy.exit": "101",
+        "epoch-negative.exit": "101",
+        "epoch-restored.exit": "0",
+        "fmt.exit": "0",
+        "git-write.exit": "0",
+        "history-negative.exit": "101",
+        "history-restored.exit": "0",
+        "publication.exit": "0"
+      },
+      "sha256": {
+        "check.log": "3895a278415ad186e401675c7f9f1d3de7eb053852cc589c20876ccc2bc3b273",
+        "check-command.sh": "c539cc70c07eda25969ee18fb8d26c0ba6b1021a40201dcced64288dcea1fd3d",
+        "publication.original": "82798023af0e00d6bd30a15e6d71c59bb05b5b6e2c3d27d432e44853b72b05e8",
+        "epoch-negative.log": "32b454b14a36073578097122638787057f5215333c6b09e043c89719c6f13c13",
+        "history-negative.log": "319fa09fcb3160349c2b54286947cc57946b93f78887fa8cf745d0d72d9e4f6c",
+        "clippy.log": "cf13067ed9e65fdb8de8a0669f6c83600aec4710cd8e42238dd7f8d359de3495"
+      },
+      "source-commit.txt": "b45627e9b354bbb9689928bfa0fdf3673baa4acb",
+      "input-byte-proof.json": {
+        "source": "b45627e9b354bbb9689928bfa0fdf3673baa4acb",
+        "trackedFilesCompared": 3059,
+        "orderedInputSha256": "1cdea557143ead7917a46d455cdb089ac208af8f637278fb4e0439f6d0f68b1e",
+        "mismatches": [],
+        "publicationRestoreByteEqual": true
+      },
+      "final-inspect.json": {
+        "name": "/kailo-native-epoch-b45627e9b",
+        "state": {
+          "Dead": false,
+          "Error": "",
+          "ExitCode": 101,
+          "FinishedAt": "2026-10-26T23:54:16.973201886Z",
+          "OOMKilled": false,
+          "Paused": false,
+          "Pid": 0,
+          "Restarting": false,
+          "Running": false,
+          "StartedAt": "2026-10-26T23:51:42.379711293Z",
+          "Status": "exited"
+        },
+        "image": "sha256:df8a3475e3e32ecf5ac79f9c12763b8ce5d4f91a75c25007fd9bfa5b282fc081",
+        "memory": 17179869184,
+        "swap": 17179869184,
+        "nanoCpus": 2000000000
+      },
+      "limits.log": "容器限额 kailo-native-epoch-b45627e9b: {\"cpuPeriod\": 0, \"cpuQuota\": 0, \"memory\": 17179869184, \"nanoCpus\": 2000000000, \"running\": false, \"status\": \"created\", \"swap\": 17179869184}",
+      "cleanupEmpty": true
+    },
+    {
+      "directory": "/volumes/data/kailo/conformance/checks/native-epoch-clippy-b45627e9b",
+      "exitFiles": {
+        "check.exit": "101",
+        "clippy.exit": "101"
+      },
+      "sha256": {
+        "check.log": "355566d1c84eb8e81f71ab65bd1a63b1b9ce933d961cc32dcacb6020315082a1",
+        "check-command.sh": "6b19925cb1efb800719963b5de5ddce2a255503043e2d67f7ab7d1552ab14d25",
+        "clippy.log": "eb9549f756a77d020823405051dc756919c512a31df387bf52a846b063c21ded"
+      },
+      "source-commit.txt": "b45627e9b354bbb9689928bfa0fdf3673baa4acb",
+      "final-inspect.json": {
+        "name": "/kailo-native-epoch-clippy-b45627e9b",
+        "state": {
+          "Dead": false,
+          "Error": "",
+          "ExitCode": 101,
+          "FinishedAt": "2026-10-27T00:14:16.096083272Z",
+          "OOMKilled": false,
+          "Paused": false,
+          "Pid": 0,
+          "Restarting": false,
+          "Running": false,
+          "StartedAt": "2026-10-27T00:13:25.26106162Z",
+          "Status": "exited"
+        },
+        "image": "sha256:df8a3475e3e32ecf5ac79f9c12763b8ce5d4f91a75c25007fd9bfa5b282fc081",
+        "memory": 17179869184,
+        "swap": 17179869184,
+        "nanoCpus": 2000000000
+      },
+      "limits.log": "容器限额 kailo-native-epoch-clippy-b45627e9b: {\"cpuPeriod\": 0, \"cpuQuota\": 0, \"memory\": 17179869184, \"nanoCpus\": 2000000000, \"running\": false, \"status\": \"created\", \"swap\": 17179869184}",
+      "cleanupEmpty": true
+    },
+    {
+      "directory": "/volumes/data/kailo/conformance/checks/native-epoch-format-b7ea0afff",
+      "exitFiles": {
+        "check.exit": "0"
+      },
+      "sha256": {
+        "check.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "source-commit.txt": "b7ea0afff28f9a688cc2a6900ed9660e194e799e",
+      "limits.log": "容器限额 kailo-native-epoch-format-b7ea0afff: {\"cpuPeriod\": 0, \"cpuQuota\": 0, \"memory\": 536870912, \"nanoCpus\": 1000000000, \"running\": false, \"status\": \"created\", \"swap\": 536870912}"
+    },
+    {
+      "directory": "/volumes/data/kailo/conformance/checks/native-epoch-lint-91a82526b",
+      "exitFiles": {
+        "archive.exit": "0",
+        "check.exit": "0",
+        "clippy.exit": "0",
+        "fmt-final.exit": "0",
+        "fmt.exit": "0",
+        "git-http.exit": "0",
+        "messages.exit": "0"
+      },
+      "sha256": {
+        "check.log": "ce7f41556f2ba464f1f9e91b3f1a4eb6f1900525c6bd6fb924ecd8f8660415fc",
+        "check-command.sh": "61237a52cd029899af496f994388789a8d0950cccc402afe5efe180be9db8ca9",
+        "clippy.log": "9f209013dd5456453a5d4b7020e1e0507340b03acb6d3b642a2b90271ad5693f"
+      },
+      "source-commit.txt": "91a82526b086116cd6d6ae4e421d1cf32d4d1898",
+      "input-byte-proof.json": {
+        "source": "91a82526b086116cd6d6ae4e421d1cf32d4d1898",
+        "trackedFilesCompared": 3059,
+        "orderedInputSha256": "f69682c932a8233559e97e0546d1a8493afe191d72ef9cca9089b6c040fc401b",
+        "mismatches": []
+      },
+      "final-inspect.json": {
+        "name": "/kailo-native-epoch-lint-91a82526b",
+        "state": {
+          "Dead": false,
+          "Error": "",
+          "ExitCode": 0,
+          "FinishedAt": "2026-10-27T00:42:21.027053642Z",
+          "OOMKilled": false,
+          "Paused": false,
+          "Pid": 0,
+          "Restarting": false,
+          "Running": false,
+          "StartedAt": "2026-10-27T00:39:56.426157834Z",
+          "Status": "exited"
+        },
+        "image": "sha256:df8a3475e3e32ecf5ac79f9c12763b8ce5d4f91a75c25007fd9bfa5b282fc081",
+        "memory": 17179869184,
+        "swap": 17179869184,
+        "nanoCpus": 2000000000
+      },
+      "limits.log": "容器限额 kailo-native-epoch-lint-91a82526b: {\"cpuPeriod\": 0, \"cpuQuota\": 0, \"memory\": 17179869184, \"nanoCpus\": 2000000000, \"running\": false, \"status\": \"created\", \"swap\": 17179869184}",
+      "cleanupEmpty": true
+    }
+  ],
+  "boundaries": [
+    "Core native/community helper needs integrated compile with bridge publication_policy; not proved by Native or contract checks",
+    "No online deployment, installer, real device or production Relay acceptance",
+    "No negative proof for historical event missing signed/frozen epoch or original Community",
+    "Clippy first attempt failed ENOSPC; preserved, not a pass",
+    "First Data Clippy reported lib 6/lib test 10 lint failures. Equivalent fixes at b7ea0afff plus original formatter 91a82526b passed scoped consumers and Clippy; original failures retained."
+  ],
+  "sdkImages": {
+    "generationAndWire": "sha256:3007729eb192341a4f004a88e42e1e66c94fc67d763acfc96568bd7311116018",
+    "native": "sha256:df8a3475e3e32ecf5ac79f9c12763b8ce5d4f91a75c25007fd9bfa5b282fc081"
+  },
+  "nativeConsumerResults": {
+    "publication": {
+      "passed": 15,
+      "failed": 0,
+      "ignored": 0,
+      "filtered": 481
+    },
+    "gitWrite": {
+      "passed": 9,
+      "failed": 0,
+      "ignored": 0,
+      "filtered": 487
+    },
+    "epochTagRemoval": {
+      "exit": 101,
+      "failed": 1,
+      "restoredPassed": 1
+    },
+    "unprovenNegativeRetry": {
+      "exit": 101,
+      "failed": 1,
+      "restoredPassed": 1
+    }
+  },
+  "storageCorrection": {
+    "sharedTargetActualFilesystem": "/dev/nvme0n1p3",
+    "sharedTargetBind": "/var/lib/kailo-ci-nvme/check-cache",
+    "clippyRetryTarget": "/volumes/data/kailo/conformance/native-epoch-clippy-target",
+    "clippyRetryActualFilesystem": "/dev/sda1",
+    "sharedCacheModified": false,
+    "copiedGiB": 5.3
+  },
+  "wireSourceToProductDifference": [
+    "collaboration/desktop/src-tauri/src/commands/custom_emoji.rs",
+    "collaboration/desktop/src-tauri/src/commands/messages.rs",
+    "collaboration/desktop/src-tauri/src/commands/profile.rs",
+    "collaboration/desktop/src-tauri/src/commands/project_git_publication.rs",
+    "collaboration/desktop/src-tauri/src/commands/project_git_publication_tests.rs",
+    "collaboration/desktop/src-tauri/src/commands/project_git_write_tests.rs",
+    "collaboration/desktop/src-tauri/src/events.rs",
+    "collaboration/desktop/src-tauri/src/local_archive/store_tests.rs"
+  ],
+  "designAuthority": "3635890d5fde0dad94ec29e0c1f49d99ae67dd09",
+  "lintFixConsumerResults": {
+    "messages": {
+      "passed": 9,
+      "failed": 0,
+      "ignored": 0
+    },
+    "archive": {
+      "passed": 15,
+      "failed": 0,
+      "ignored": 0
+    },
+    "gitHttp": {
+      "passed": 1,
+      "failed": 0,
+      "ignored": 0
+    },
+    "clippyExit": 0,
+    "formatExit": 0
+  },
+  "publicationFilesUnchangedSinceBehaviorTests": [
+    "collaboration/desktop/src-tauri/src/commands/project_git_intent.rs",
+    "collaboration/desktop/src-tauri/src/commands/project_git_publication.rs",
+    "collaboration/desktop/src-tauri/src/commands/project_git_publication_tests.rs",
+    "collaboration/desktop/src-tauri/src/commands/project_git_write.rs"
+  ]
+}

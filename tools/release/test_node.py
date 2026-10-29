@@ -385,14 +385,16 @@ class OperatedAndPeerDelivery(unittest.TestCase):
 
     def decl(self, **override):
         env = {"set": {"APPLICATION_ADAPTER_DIRECTORY_FILE": "${KAILO_RUNTIME_DIR}/data/protocol-peers/adapter-directory.json",
-                       "COMPONENT_CONFORMANCE_ENVIRONMENT_FILE":
-                           "${KAILO_RUNTIME_DIR}/data/protocol-peers/conformance-environment.json"},
-               "unset": ["COMPONENT_CONFORMANCE_FIXTURE_FILE", "COMPONENT_CONFORMANCE_IDENTITY_FILE"]}
+                       "COMPONENT_CONFORMANCE_DIR": "${KAILO_RUNTIME_DIR}/data/conformance",
+                       "COMPONENT_CONFORMANCE_WORKER_DIR": "${KAILO_RUNTIME_DIR}/data/conformance-worker"},
+               "unset": ["COMPONENT_CONFORMANCE_ENVIRONMENT_FILE", "COMPONENT_CONFORMANCE_FIXTURE_FILE",
+                         "COMPONENT_CONFORMANCE_IDENTITY_FILE"]}
         value = {"units": {}, "services": {"core-bff": {"command": ["./start-core.sh", "--no-build"]}},
                  "migrations": {}, "order": {}, "node": {}, "env": env, "operated": ["protocol-peer-reference"],
                  "delivery": {"protocol_peers": {"directory": os.path.join(self.tmp.name, "directory.json"),
                                                  "conformance": os.path.join(self.tmp.name, "conformance.json"),
-                                                 "runtime": "data/protocol-peers", "restart": "core-bff"}}}
+                                                 "runtime": "data/protocol-peers", "candidates": "data/conformance",
+                                                 "worker": "data/conformance-worker", "restart": "core-bff"}}}
         value.update(override)
         return value
 
@@ -418,7 +420,14 @@ class OperatedAndPeerDelivery(unittest.TestCase):
                                   "nativeScopeRef": "default", "configDigest": "c" * 64,
                                   "isolationMode": "DEDICATED_INSTANCE"}]
         self.write()
-        self.assertNotEqual(self.model.peer_delivery(self.decl(), self.services)["digest"], first["digest"])
+        second = self.model.peer_delivery(self.decl(), self.services)
+        self.assertNotEqual(second["digest"], first["digest"])
+        # DD-136(2): content changes are read per use; only the mount shape restarts Core.
+        self.assertEqual(second["shape"], first["shape"])
+        decl = self.decl()
+        decl["delivery"]["protocol_peers"]["candidates"] = "data/conformance-2"
+        decl["env"]["set"]["COMPONENT_CONFORMANCE_DIR"] = "${KAILO_RUNTIME_DIR}/data/conformance-2"
+        self.assertNotEqual(self.model.peer_delivery(decl, self.services)["shape"], first["shape"])
 
     def test_endpoint_must_be_an_operated_runtime_with_the_pinned_digest(self):
         self.write({"protocolPeers": [dict(self.peer, mcpUrl="http://vendor.example/mcp")]},
@@ -454,11 +463,24 @@ class OperatedAndPeerDelivery(unittest.TestCase):
         decl["env"]["set"]["APPLICATION_ADAPTER_DIRECTORY_FILE"] = "/elsewhere/adapter-directory.json"
         self.refused("APPLICATION_ADAPTER_DIRECTORY_FILE", decl)
         decl = self.decl()
-        decl["env"]["unset"] = ["COMPONENT_CONFORMANCE_FIXTURE_FILE"]
+        decl["env"]["unset"] = ["COMPONENT_CONFORMANCE_FIXTURE_FILE", "COMPONENT_CONFORMANCE_IDENTITY_FILE"]
         self.refused("env.unset", decl)
+        decl = self.decl()
+        decl["env"]["set"]["COMPONENT_CONFORMANCE_DIR"] = "${KAILO_RUNTIME_DIR}/data/protocol-peers"
+        self.refused("COMPONENT_CONFORMANCE_DIR", decl)
+        decl = self.decl()
+        decl["env"]["set"].pop("COMPONENT_CONFORMANCE_WORKER_DIR")
+        self.refused("COMPONENT_CONFORMANCE_WORKER_DIR", decl)
         decl = self.decl()
         decl["delivery"]["protocol_peers"]["runtime"] = "../outside"
         self.refused("runtime", decl)
+        for key, value in (("candidates", "data/protocol-peers"), ("worker", "data/conformance/worker")):
+            decl = self.decl()
+            decl["delivery"]["protocol_peers"][key] = value
+            self.refused("互不包含", decl)
+        decl = self.decl()
+        decl["delivery"]["protocol_peers"].pop("worker")
+        self.refused("delivery.protocol_peers", decl)
         self.assertIsNone(self.model.peer_delivery(self.decl(delivery={}), self.services))
 
     def test_rendered_directory_keeps_component_adapters_and_refuses_collisions(self):
@@ -510,15 +532,38 @@ class DeliveryRendering(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             release, folder = self.release(tmp)
             model = release.model
+            digest = release.delivery["conformance"]["artifactDigest"]
+            candidates = os.path.join(release.runtime, release.delivery["candidates"])
+            worker = os.path.join(release.runtime, release.delivery["worker"])
+            # A REMOTE_ADAPTER candidate of the component entry, a stale peer
+            # candidate of an earlier declaration and the single-candidate file.
+            component = os.path.join(candidates, "b" * 64)
+            stale = os.path.join(candidates, "c" * 64)
+            for path in (component, stale):
+                os.makedirs(path)
+            for name in ("environment.json", "fixture.json", "identity.json"):
+                with open(os.path.join(component, name), "w", encoding="utf-8") as stream:
+                    json.dump({"artifactDigest": "b" * 64, "adapterBaseUrl": "http://x/"}, stream)
+            with open(os.path.join(stale, "environment.json"), "w", encoding="utf-8") as stream:
+                json.dump({"artifactDigest": "c" * 64, "mcpUrl": "http://old/mcp"}, stream)
+            with open(os.path.join(folder, model.LEGACY_PEER_CONFORMANCE_FILE), "w", encoding="utf-8") as stream:
+                stream.write("{}")
             self.assertEqual(sorted(release.write_deliveries()),
-                             sorted([model.PEER_CONFORMANCE_FILE, model.PEER_DIRECTORY_FILE]))
+                             sorted([model.PEER_DIRECTORY_FILE, f"conformance/{digest}", f"-conformance/{'c' * 64}",
+                                     f"-{model.LEGACY_PEER_CONFORMANCE_FILE}"]))
             self.assertEqual(release.write_deliveries(), [])
+            self.assertEqual(sorted(os.listdir(candidates)), sorted([digest, "b" * 64]))
+            self.assertEqual(sorted(os.listdir(component)), ["environment.json", "fixture.json", "identity.json"])
             with open(os.path.join(folder, model.PEER_DIRECTORY_FILE), encoding="utf-8") as stream:
                 directory = json.load(stream)
             self.assertEqual(directory["adapters"], [{"adapterServiceRef": "knowledge-adapter"}])
             self.assertEqual(directory["protocolPeers"], release.delivery["peers"])
-            for name in (model.PEER_DIRECTORY_FILE, model.PEER_CONFORMANCE_FILE):
-                self.assertEqual(stat.S_IMODE(os.stat(os.path.join(folder, name)).st_mode), 0o644)
+            with open(os.path.join(candidates, digest, "environment.json"), encoding="utf-8") as stream:
+                self.assertEqual(json.load(stream), release.delivery["conformance"])
+            for path in (os.path.join(folder, model.PEER_DIRECTORY_FILE), os.path.join(candidates, digest, "environment.json")):
+                self.assertEqual(stat.S_IMODE(os.stat(path).st_mode), 0o644)
+            for path, mode in ((candidates, 0o755), (os.path.join(candidates, digest), 0o755), (worker, 0o700)):
+                self.assertEqual(stat.S_IMODE(os.stat(path).st_mode), mode)
             self.assertTrue(release.delivery_pending())
             self.assertTrue(any("尚未" in p for p in release.delivery_problems()))
             release.record_delivery()
@@ -1648,6 +1693,92 @@ class LongRunningContainers(unittest.TestCase):
 
     def test_nothing_running_reads_nothing(self):
         self.assertEqual(node.long_running({}, ()), {})
+
+
+class PublicClientBuildConfig(unittest.TestCase):
+    def test_node_returns_only_digests_of_exact_ci_environment_inputs(self):
+        values = node.public_build_config_values({"environment": {
+            "PLATFORM_DISPLAY_NAME": "Test", "UNRELATED": "not-selected",
+        }}, ["PLATFORM_DISPLAY_NAME", "BUZZ_ANDROID_GOOGLE_SERVICES_JSON"])
+        self.assertEqual(set(values), {"PLATFORM_DISPLAY_NAME", "BUZZ_ANDROID_GOOGLE_SERVICES_JSON"})
+        self.assertIsNone(values["BUZZ_ANDROID_GOOGLE_SERVICES_JSON"])
+        self.assertRegex(values["PLATFORM_DISPLAY_NAME"], r"^[0-9a-f]{64}$")
+        self.assertNotIn("Test", json.dumps(values))
+        with self.assertRaises(node.NodeError):
+            node.public_build_config_values({"environment": {}}, ["bad-name"])
+
+    def test_remote_and_original_builder_configuration_identities_agree(self):
+        from unittest.mock import patch
+        orch = _orchestrator()
+        artifact = {"build_args": ["PLATFORM_DISPLAY_NAME"], "optional_build_args": ["BUZZ_ANDROID_GOOGLE_SERVICES_JSON"]}
+        environment = {"PLATFORM_DISPLAY_NAME": "Test", "BUZZ_ANDROID_GOOGLE_SERVICES_JSON": "{}"}
+        values = node.public_build_config_values({"environment": environment}, artifact["build_args"] + artifact["optional_build_args"])
+        with patch.dict(os.environ, environment, clear=True):
+            self.assertEqual(orch.model.um.public_build_config_digest(artifact),
+                             orch.model.um.public_build_config_digest(artifact, values))
+
+    def test_record_accepts_exact_configuration_and_rejects_post_plan_change(self):
+        orch = _orchestrator()
+        source, artifact, config = ("sha256:" + c * 64 for c in "abc")
+        unit = dict(key=source, build_config_digest=config)
+        basic = f"+    source_digest: {source}\n+    artifact_digest: {artifact}\n"
+        self.assertEqual(orch.upstream_build_values("mobile", basic, unit, {"build_config_digest": config})["build_config_digest"], config)
+        changed = basic + f"+    build_config_digest: {config}\n"
+        self.assertEqual(orch.upstream_build_values("mobile", changed, unit, {"build_config_digest": "none"})["artifact_digest"], artifact)
+        with self.assertRaises(orch.ReleaseError):
+            orch.upstream_build_values("mobile", basic, unit, {"build_config_digest": "none"})
+        with self.assertRaises(orch.ReleaseError):
+            orch.upstream_build_values("mobile", basic + f"+    build_config_digest: {source}\n", unit, {})
+        with self.assertRaises(orch.ReleaseError):
+            orch.upstream_build_values("mobile", changed + f"+    source_digest: {source}\n", unit, {})
+
+
+class PublicConfigResume(unittest.TestCase):
+    def test_actual_run_rejects_changed_inputs_before_overwriting_completed_stage_journal(self):
+        import copy
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        orch = _orchestrator()
+        old = dict(units={"mobile-client": dict(build_config_digest="sha256:" + "a" * 64, key="sha256:" + "b" * 64)})
+        new = dict(units={"mobile-client": dict(build_config_digest="sha256:" + "c" * 64, key="sha256:" + "d" * 64)},
+                   env={"missing_required": []})
+        for stage in ("build", "record", "pin", "check", "deploy", "in_flight"):
+            with self.subTest(stage=stage):
+                data = dict(plan=copy.deepcopy(old), stages={} if stage == "in_flight" else {stage: {"state": "done"}},
+                            builds={"mobile-client": {"state": "UNKNOWN"}} if stage == "in_flight" else {})
+                before = copy.deepcopy(data)
+                release = orch.Release.__new__(orch.Release)
+                release.root, release.node, release.decl, release.source = ".", None, {}, "a" * 40
+                release.args = SimpleNamespace(until="pin", dry_run=False)
+                effects = []
+                release.note = ""
+                release.state = SimpleNamespace(data=data, path="unused-journal", lock=lambda: None,
+                    mark=lambda name, state, **details: data["stages"].update({name: {"state": state}}),
+                    done=lambda name: (data["stages"].get(name) or {}).get("state") == "done")
+                release.build = lambda plan: effects.append("build")
+                release.record = lambda plan: effects.append("record")
+                release.pin = lambda plan: effects.append("pin")
+                with patch.object(orch, "compute_plan", return_value=new), \
+                        patch.object(orch, "render_plan"), self.assertRaises(orch.ReleaseError):
+                    release.run()
+                self.assertEqual(data, before)
+                self.assertEqual(effects, [])
+
+    def test_read_only_replanning_and_unchanged_resume_keep_working(self):
+        import copy
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        orch = _orchestrator()
+        old = dict(units={"mobile-client": dict(build_config_digest="sha256:" + "a" * 64, key="sha256:" + "b" * 64)})
+        new = dict(units={"mobile-client": dict(build_config_digest="sha256:" + "c" * 64, key="sha256:" + "d" * 64)})
+        for initial, next_plan in ((dict(plan=copy.deepcopy(old), stages={"plan": {"state": "done"}}, builds={}), new),
+                                  (dict(plan=copy.deepcopy(old), stages={"record": {"state": "done"}}, builds={}), old)):
+            release = orch.Release.__new__(orch.Release)
+            release.root, release.node, release.decl, release.source = ".", None, {}, "a" * 40
+            release.state = SimpleNamespace(data=initial, mark=lambda *a, **k: None)
+            with patch.object(orch, "compute_plan", return_value=next_plan):
+                self.assertEqual(release.plan(), next_plan)
+                self.assertEqual(release.state.data["plan"], next_plan)
 
 
 if __name__ == "__main__":

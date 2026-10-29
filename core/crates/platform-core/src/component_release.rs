@@ -1135,12 +1135,12 @@ fn validate_declarations(release: &Registration, contracts: &[Value]) -> Result<
 /// The fixed cases below retain the wire semantics of 07 §5.2/§8A; they are not
 /// an extensible assertion language or a second workflow scheduler.
 fn protocol_fixture(registration: &Registration) -> Result<Value, Refusal> {
-    let path = std::env::var("COMPONENT_CONFORMANCE_FIXTURE_FILE")
-        .ok()
-        .filter(|value| !value.trim().is_empty())
-        .ok_or(Refusal::Blocked(ReasonCode::CapabilityBlocked))?;
-    let bytes = std::fs::read(path)
-        .map_err(|_| Refusal::Unavailable("isolated conformance fixture unavailable".into()))?;
+    // DD-136(2): the candidate of this release's adapter digest, never a
+    // deployment-wide "current" fixture.
+    let bytes = crate::component_conformance_delivery::read(
+        &registration.adapter_digest,
+        crate::component_conformance_delivery::FIXTURE,
+    )?;
     let fixture: Value = serde_json::from_slice(&bytes).map_err(|_| bad())?;
     validate_protocol_fixture(registration, fixture)
 }

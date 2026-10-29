@@ -775,3 +775,71 @@ open 1630 / draft 1633 / closed 1632；merged 1631 走 git，不在界面发布�
   Desktop 以本人 CLIENT 签名走同一头部与审阅人校验。结果不明保留同一意图（只存摘要与引用，不存正文）。
 - 未执行：本机不编译、不跑测试；Rust fmt/clippy/test、vitest、Dart 生成核对与业务验收待 CI 与部署。
 - 仍未恢复：请求审阅人（review-request）、更新 revision（1619）与 managed-agent owner 代签。
+
+
+## 2026-10-27 原 Review 更新与 push 后续：共享/Native 消费者阶段
+
+固定比较点 `7fa9b164a3c5db20d50f1e6c4802dd1451812687`，产品固定
+`b12c94e42de5e936d3d5c6ab411591c63ac304eb`。依据 DD-118、DD-160、DD-81 与固定 Buzz
+`779af8886caae1317b4de962082429867ab61503` 的
+`pullRequestMutations.ts::publishProjectPullRequestUpdate`、
+`ProjectDetailScreen::handleUpdatePullRequest`、`ProjectWorkspaceTabs` 原 Update review 按钮及
+`repoSyncHooks::usePushProjectLocalRepositoryMutation`。不是新增 Review 状态或 Git 推送权威。
+
+- 原 kind 1619 空正文与 a/p/E/P/c/clone/可选 merge-base 标签、作者或 repository owner、
+  最新可信 update 的 clone 元数据与单调时间由原 producer 恢复；合同新增专用
+  `UPDATE_PULL_REQUEST`，不借用其他操作，不接受前端自定标签/owner/clone。
+- Web/Desktop 共用原按钮、分支与 clone 关联及持久意图；UNKNOWN 保留原 commit、merge-base、
+  key 与已签 event ID，Review 状态后来关闭仍可核对原意图。已确认后从原
+  `project-work-item-target` 查询族刷新实际 Review。身份/仓库 owner 退休阻止晚到 continuation。
+- Native 原成功 push 只调用一次，其实际 branch/commit/merge-base 驱动独立 Review 更新；
+  更新失败不重新执行 push。Native 本人签名仍走原 `publishProjectIntent` 与原 ID 观察，
+  不由 Core SERVER 代签，不从普通 query 空结果制造 NOT_DELIVERED。
+- `tools/gen.sh` 四侧生成与校验、原 i18n 生成/校验已执行。最终原 Node SDK
+  `sha256:3007729eb192341a4f004a88e42e1e66c94fc67d763acfc96568bd7311116018`，
+  1 CPU / 4 GiB（swap 同上）/ 256 pids，实际 Data 源及原缓存；shared Projects 57/57、
+  Native projectsTransport 27/27、shared production/test 与 Web/Desktop 四项 tsc 全 0，
+  原 TypeScript/Go/Dart Projects publication roundtrip 全 0。
+- 三次真实故障分别移除 UNKNOWN 原意图复用、push 后更新 continuation、Native 作者/owner
+  拒绝，均由原消费者 assertion 检出（exit 1）；逐字还原后对应原组通过。
+  两 host 各 1,042 个实装 platform 文件及 2 个 contracts 文件逐字一致；
+  GitHub 固定归档 3,463 个输入零差异。原始日志位于
+  `/volumes/data/kailo/verification/projects-review-update/b12c94e42/`，结果 exit 0、OOM false，
+  容器实际清理。机器回执见 [Node 阶段回执](projects-review-update-node-20261027.json)。
+- 保留首轮 `f1a0e742f` test types 失败（未到 DOM/宿主/反证），第二轮 `2f8e2fed4`
+  56 pass / 1 fail：实际 UI 揭穿更新写入旧缓存族，最终 b12 修正；不将失败轮当最终通过。
+- 只读交叉复核覆盖共享意图、afterPush、Native 与 Core producer/receipt 增量；没有用源码复核
+  代替 SDK、浏览器或设备验收。localStorage 加进程内 Set 不是跨 tab 原子发送占位。
+
+本阶段不含 Rust producer 编译/Clippy、主线程独占的数据库/Relay 1619 guard 与实际 PG 证明、
+真实远程 Git push、安装包/Win11/浏览器上线验收。原 Native CREATE_PULL_REQUEST publisher 缺口
+及普通 Native 不可变 Community 绑定/权威缺失证明也不由本批伪称补齐：本批保留原
+Relay URL/sessionEpoch/本人 key 与 UNKNOWN 原 ID 观察边界，不借用仅 1631 的 proof 端点。
+
+
+### 2026-10-27 同批 Rust producer 终态补充
+
+产品最终固定 `a3957d2afee9aec2c69c105be091258579494732`，相对 Node 固定 b12
+仅增加上述 Node 证据及 Rust 标签坐标的 `.to_owned()` 类型修正；Node 产品/输入没有改变。
+沿同一 SDK300，2 CPU / 16 GiB（swap 同上）/ 1,024 pids，SQLX_OFFLINE、offline/locked，
+复用已有 Data target `/volumes/data/kailo/conformance/cache/publication-negative-core/rust-target`。
+没有复制缓存、在宿主运行工具链或启动 PG。原 SDK 工具链实际为 Rust/Cargo 1.90.0。
+
+- 原 Rust Projects publication roundtrip 1/1、collab-bridge `projects::tests` 19/19、
+  platform-core binary `projects::tests` 9/9、实际签名 kind/native-channel 推导 1/1 通过。
+  四个修改 Rust 文件原 rustfmt check 与两 crate `--all-targets` Clippy `-D warnings` 全 0。
+- 临时删除实际 producer 的作者/owner 拒绝条件，原
+  `original_review_update_producer_and_immutable_receipt` assertion 失败（exit 101）；
+  源码逐字恢复后原消费者 1/1 通过。该反证没有改其他身份/签名校验。
+- 保留 b12 首 Rust 轮 exit 101：contracts roundtrip 已通过，bridge 编译发现借用的 repository
+  坐标使标签向量错误推断为 `Vec<&str>`；a395 修为拥有所有权的同一原坐标。
+  保留 a395 首轮 exit 101：contracts 1 与 bridge 19 已通过，但最小导出漏掉原 platform
+  build.rs 所需 `model-gateway/crates/protos/proto/ext_mcp.proto`。补齐同一 GitHub 对象输入，
+  未改协议或产品，以独立 `a3957d2af-inputs` job 复验，不覆盖失败日志。
+- 最终 `projects-review-update-core/a3957d2af-inputs` exit 0、OOM false，容器回读无残留；
+  2,175 个 GitHub 固定归档输入逐字一致。回执见
+  [Rust 阶段回执](projects-review-update-core-20261027.json)，原日志仍在 CI 对应 job 目录。
+
+此补充闭合前节尚待的 Rust 编译/定向/Clippy，不改变其余边界。主线程独占的数据库/Relay
+kind 1619 时间屏障、epoch 旋转、Core absence 审计迁移尚未纳入这两个固定检查源，必须在
+合批后另行实际 PG/HTTP 验证；不能将本页的 producer 与 Node 通过等同于完整发布或上线验收。

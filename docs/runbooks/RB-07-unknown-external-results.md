@@ -8,7 +8,7 @@
 
 | 组件与调用 | 幂等键 | 查询接缝 | 结果不明时谁来收敛 |
 |---|---|---|---|
-| Buzz Relay：BFF 代签的消息发布 | 已签事件的 event id；调用方的幂等键（同键重发回答原结论，不再签发） | `/query` 按 `ids` 查（`IdentityClient::event_exists`） | `publish_reconcile` 对账作业，超出时间漂移窗口仍查不到即确定未送达（`DD-81`、`SF-BUZ-40`） |
+| Buzz Relay：BFF 代签的消息发布 | 已签事件的 event id；调用方的幂等键（UNKNOWN 时同键仍回答原操作，不再签发） | `/query` 按 `ids` 查（`IdentityClient::event_exists`） | `publish_reconcile` 只用原事件/专用肯定证据追加接受；普通查询空过窗仍 UNKNOWN，Core 值班负责人登记并持续核查（`DD-81`、`SF-BUZ-40`） |
 | Buzz Relay：roster 管理事件（9000/9001/9030/9031） | (scope, pubkey, 目标存在性) | roster 快照（kind 13534 / 39002） | 发起它的 Workflow：每次发送后重读 roster，拒绝与未收敛都按「未收敛」按轮重试（RB-03） |
 | Buzz Relay：建 Channel（9007） | Channel id = Workspace id | 该 Channel 的 roster 上有 CONTROL | `WORKSPACE_LIFECYCLE` 的重试：重发同一 id 由 Relay 判为已存在 |
 | Buzz Relay：operator 建 Community | (host, owner) | 同一请求重发：同 owner 幂等成功，不同 owner 被拒 | `TENANT_LIFECYCLE` 的重试 |
@@ -17,6 +17,8 @@
 | Temporal：任务取消请求 | 控制 ActionExecution ID 是固定 `RequestId` 与 `Reason`；首次 run ID 在 RPC 前冻结 | 固定执行链的 History，匹配 `WorkflowExecutionCancelRequested.Cause` 与 Core identity | `governance_reconcile` 先取肯定证据；无事件时仅在原执行仍 OPEN 且首次 run 未变时重发同一请求。原执行已关闭而无肯定证据保持 UNKNOWN，由 Core 值班负责人按操作号处理 |
 | OpenBao：KV v2 写入 | 无（每次写产生新版本） | 写入响应中的版本号 | 结果不明即当作未写：重试产生新版本，binding 只钉响应里拿到的版本；多出的版本不被引用 |
 | OpenBao：业务 Tenant 遗留身份 SecretRef 归位（DD-85） | ActionExecution ID 导出的独立目标 locator，KV v2 `cas=0` 首次写入 | 只读目标 metadata 的版本 1，再读钉定版本并核对派生 pubkey | `SECRET_REF_REHOME` Workflow 的 `COPY_UNKNOWN` 只查目标；不可查证时保留旧 binding 与运维告警，不追加新版本 |
+| APNs/FCM 通知（DD-151） | 本地 intent UUID 与冻结的 `(Tenant,device,event,registration version,provider target digest)`；不宣称 provider 幂等 | 同一请求的明确响应；生产 API 无按我方 ID 查询全部接受事实的接缝 | Core 将发送租约丢失/不明响应持久为 UNKNOWN，不自动重发；Core 值班负责人按 intent UUID 登记。只有同尝试的确定响应可收敛，apns-id/collapse 不是送达证明 |
+| OpenBao 设备推送 token（DD-151） | 外部写前持久的独占 version-1 SecretRef，CAS=0 | 原 `retire_push_token` 查询 metadata 的 version 1 / destroyed | 原 Core token 意图消费者冻结超时写者，持久退避，查证销毁后退休；不丢弃孤儿引用 |
 
 ## 触发信号
 
@@ -35,13 +37,30 @@
 
 ## 可执行步骤
 
-1. **消息发布**：取操作号，按 RB-06 的 SQL 看结论。窗口内等待；超出窗口加一个周期仍无结论时按 RB-06 第 2 步定位。结论为 `NOT_DELIVERED` 时告知用户重新发送（同一个幂等键此时允许重新发送）；为 `ACCEPTED` 时消息已在频道里。
+1. **消息发布**：取原操作号，按 RB-06 的 SQL 区分原始审计与有效终态。普通 `/query` 空不是未送达证明：窗口内记 `PENDING`，过窗记 `EVENT_UNOBSERVABLE`，都保持 UNKNOWN。超过窗口加一个周期仍未决时按 RB-06 第 2 步定位，登记 Tenant、operation/event ID、原动作与 scope、最近观察及时间、Core 值班负责人和下次核查时间；不改库、不换键、不重签。`ACCEPTED` 证明原发送被接受，不保证消息未被删除或此刻可见。六类历史 `RECONCILIATION/NOT_DELIVERED` 按 RB-06 列表保留但排除于终态、重试授权与保留期清理；只有同次发送的明确 `OUTCOME/NOT_DELIVERED` 才允许用户经原入口、同键重新发起并重新准入。没有肯定证据时保留未决登记，不能凭超时关闭。
 2. **roster 与 SpiceDB**：不需要针对单个调用的动作。恢复组件可达，Workflow 下一轮以查询判定并继续（RB-03）。
 3. **Workflow Start**：发起方以同一入口、同一 ActionExecution 重试，Core 以同一 workflow ID 调 Start；已存在即视为已启动（`DD-48`）。兜底对账会把 Start 结果不明的 `PENDING_START` 观察成 `RUNNING` 或按 retention 判定（RB-05）。
 4. **任务取消**：按操作号查控制 ActionExecution 的原动作 ID、冻结的 `cancel_first_run_id` 与审计证据；在 Temporal 同一执行链的 History 查 Cause 等于该控制 ID 且 Identity 为 `platform-core` 的取消请求事件。查到则按已接受请求处理，原 Workflow 的终态仍单独看 TaskProjection；查不到、history 已过 retention 或依赖不可达都不能判定为未发出。原执行仍 OPEN 时恢复 Core 对账；已关闭而没有肯定证据时保持 UNKNOWN，登记操作号、原 Workflow ID、首次 run ID、最近核查时间、值班负责人及下一次核查时间，不直接改库、不再发送取消请求。只有找到肯定证据或通过正式纠错决策记录确定结论，才能关闭登记。
 5. **Channel 与 Community 建立**：由 Tenant/Workspace 生命周期 Workflow 的重试收敛；不需要人工动作。
 6. **普通 OpenBao 写入**：确认引用它的 binding 钉的是响应中的版本；此规则不适用于 DD-85 的身份归位，不能拿它覆盖下一步。
 7. **DD-85 身份归位**：以操作号在 `admission.secret_ref_rehome` 查询 `state`、`workflow_id`、`target_locator`、原 binding 版本与冻结旧消费者引用；只向有权限的值班人员展示 locator，不输出 secret。`COPY_UNKNOWN` 只用目标 metadata 与版本 1 的派生公钥判定；目标读不到或版本不符时保持原状态并登记责任人与下次核查时间，不重写、不改库。`COPIED` 检查发起者是否仍有 Tenant manage、目标版本是否可读；`SWITCHED` 按冻结清单逐项检查 ActionExecution 与 Temporal 终态，不能以 Core 投影单独证明终态。修复依赖可达性后由同一固定 Workflow 继续；只有旧版本的 OpenBao metadata 明确标 `destroyed=true`，才可把这次归位视为 `RETIRED`。
+8. **DD-151 推送**：观察 `platform.push.checkpoints{state="UNKNOWN"}`，使用只读数据库权限按下面的稳定意图号检查；此自动派生投递不伪造 Governed Action。`ACCEPTED` 仅表示 provider 接受，不能说明手机已显示。没有生产查询接缝的 UNKNOWN 保留原态，登记 Tenant、intent UUID、事件 ID、最近核查时间、Core 值班负责人及下次核查时间，不换请求、不把普通读取或折叠键当作回执。设备 token 回收则恢复 OpenBao 可达性，由原退休消费者继续 fencing/destroy/metadata 查证；禁止手工删除意图来消除告警。
+
+```sql
+SELECT id, tenant_id, event_id, platform, state, attempts,
+       provider_reference, result_code, created_at, updated_at
+FROM projection.push_send_intent
+WHERE state = 'UNKNOWN'
+ORDER BY created_at LIMIT 100;
+
+SELECT tenant_id, device_pubkey, state, failures, next_attempt_at, updated_at
+FROM admission.push_token_intent
+WHERE state IN ('PREPARING','RETIRING')
+ORDER BY created_at LIMIT 100;
+```
+
+这些查询不读消息正文或 token。实现与已验证/未发布边界见
+[推送恢复证据](../../core/verify/push-delivery-recovery.md)。
 
 ## 不可执行的动作
 
@@ -52,16 +71,23 @@
 
 ## 完成判据
 
-- 每个被调查的结果不明都得到了来自查询接缝的结论，或在其等待窗口内；
-- 相关度量（`platform.publish.unsettled`、`platform.workflow_ref.*` 中的 `UNKNOWN`/`NOT_FOUND`）回到事件前读数，或非零部分都有结论与登记。
+- 每个被调查的结果不明有该组件接缝支持的有效结论，或明确保持 UNKNOWN 并登记证据边界、责任人与下次核查时间；等待窗口经过本身不是结论；
+- 相关度量（`platform.publish.unsettled`、`platform.workflow_ref.*` 中的 `UNKNOWN`/`NOT_FOUND`）回到事件前读数，或非零部分有有效结论或明确的未决登记。
 
 ## 演练记录
 
-2026-09-23，本地拓扑：
+2026-09-23，本地拓扑（以下是当时记录；消息普通查询空判失败的判据已被替代，不是当前验收）：
 
-1. **消息发布结果不明，端到端**（`core/verify/drill-publish-unknown.sh`，演练时把 settle 窗口临时调为 90 秒，演练后还原为 960）：停掉 Relay 后经 BFF 发布，得到 `503 {"class":"UNKNOWN","reason":"PUBLISH_RESULT_UNKNOWN","operationId":"164eb3db-…"}`，审计 `DISPATCH/DISPATCHED`；恢复 Relay 后一个对账周期内仍只有 DISPATCH（窗口内不下结论）；窗口过后追加 `RECONCILIATION/NOT_DELIVERED`。真实浏览器走查中同一情形的界面显示「Delivery not confirmed yet … Reference: <操作号>」，草稿保留、消息不进列表。
+1. **消息发布结果不明，端到端**（[废弃脚本的固定历史原件](https://github.com/bei612/kailo-plus/blob/ebc23eb293942ed9721cb56d2b76ee871f91bc40/core/verify/drill-publish-unknown.sh)，当时临时把 settle 窗口改为 90 秒，随后还原为 960；这些操作不得在当前环境重演）：停掉 Relay 后经 BFF 发布，得到 `503 {"class":"UNKNOWN","reason":"PUBLISH_RESULT_UNKNOWN","operationId":"164eb3db-…"}`，审计 `DISPATCH/DISPATCHED`；恢复 Relay 后一个对账周期内仍只有 DISPATCH（窗口内不下结论）；窗口过后追加 `RECONCILIATION/NOT_DELIVERED`。真实浏览器走查中同一情形的界面显示「Delivery not confirmed yet … Reference: <操作号>」，草稿保留、消息不进列表。
    演练中发现并修正：走查夹具拆除后，它留下的 DISPATCH 因 Tenant 已删、CONTROL 身份已不在而永远无法查询，会让 `platform.publish.unsettled` 永不归零。对账与度量改为只看 Tenant 仍在的发布——产品里 Tenant 不会被物理删除，被删的只有核验夹具。
 2. **Temporal Start 与 Workflow 投影结果不明**：见 RB-05 演练记录第 1 条（Start 结果不明的 NotFound 在窗口内不改状态、窗口外记 UNKNOWN）。
 3. **roster 结果不明**：见 RB-03 演练记录（Relay 停机期间撤权 Workflow 按轮等待，恢复后以 roster 查询闭合）。
 4. **审查中发现并修正（非演练产出）**：为 HUMAN 建立 SERVER 托管身份时，OpenBao 写入的依赖不可用曾被报成确定的拒绝（403 → Worker 的 `ADMISSION_DENIED`，不可重试），一次 OpenBao 的短暂不可用就会让成员建立永久失败。现按写入错误分类：locator 与 audience 不符仍是拒绝，其余（不可达、登录失败）是依赖不可用（503，Activity 重试）。与读取路径的既有分类一致；由 `run-integration.sh` 的回归覆盖，未单独演练。
 5. **同键重发不重复**（真实浏览器走查「发布结果不明」一步，2026-09-23）：Relay 停机时发送得到「待确认」与操作号 `26521357-…`；Relay 恢复后原样再点发送，界面回答同一个操作号、仍待确认，频道中没有出现第二条。集成用例 `resend_with_same_key_does_not_publish_twice` 证明两次都成功时只有一条消息、一次 DISPATCH；把 Core 改为忽略幂等键后该用例当场失败。
+
+2026-10-26 运维订正：上面第 1 项的 `RECONCILIATION/NOT_DELIVERED` 是历史错误判据的实际产物，
+不删除历史审计，也不据此重签。旧脚本仅以该错误终态为目标，且包含宿主 Cargo、停止共享 Relay
+和缩短 settle 窗口的操作，现已从当前工程移除；固定原件仅供追溯，不是可执行运维入口。
+当前验收复用 RB-06 所列原 PostgreSQL 回归及 `core/verify/run-integration.sh` 已有 live 对账用例，
+按 `07` §2.1 在原受限 SDK 与隔离验证资源中运行，保留当次真实结果及部署边界。
+本次只订正文档、移除废弃脚本，未执行旧演练、停止服务或新增业务通过记录。

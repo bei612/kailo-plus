@@ -1,0 +1,138 @@
+{
+  "source_commit": "2780ea5e4c9778f390ac8e6566c0820bcb2321b9",
+  "comparison_base": "e7213abffce6970b137a93cdfb361197c2cb468e",
+  "upstream_commit": "779af8886caae1317b4de962082429867ab61503",
+  "requirements": [
+    "REQ-24",
+    "DD-118",
+    "DD-160"
+  ],
+  "sdk_image": "sha256:3007729eb192341a4f004a88e42e1e66c94fc67d763acfc96568bd7311116018",
+  "resources": {
+    "cpus": 1,
+    "memory_bytes": 4294967296,
+    "memory_swap_bytes": 4294967296,
+    "pids": 256
+  },
+  "source_inputs_checked": 3456,
+  "source_mismatches": [],
+  "installed_platform_packages": [
+    {
+      "host": "/workspace/apps/web-client/web",
+      "installed": "/workspace/apps/web-client/web/node_modules/@client-kit/platform",
+      "checked_source_files": 1040,
+      "mismatches": []
+    },
+    {
+      "host": "/workspace/apps/collaboration/desktop",
+      "installed": "/workspace/apps/collaboration/node_modules/.pnpm/@client-kit+platform@file+..+client-kit+ts+platform_26d4a7c87ea2feb193780e545d362c52/node_modules/@client-kit/platform",
+      "checked_source_files": 1040,
+      "mismatches": []
+    }
+  ],
+  "positive": {
+    "project_git": 22,
+    "project_branch_review": 15,
+    "project_git_native": 11,
+    "total": 48,
+    "platform_production_tsc": 0,
+    "platform_test_tsc": 0,
+    "web_tsc": 0,
+    "desktop_tsc": 0,
+    "i18n_check": 0
+  },
+  "negative": [
+    {
+      "mutation": "menu",
+      "exit": 1,
+      "log_sha256": "5cac9edcef9bd759fc78ed65b745ca76ac89128192c9d788cc57e19a2b0bc2c5"
+    },
+    {
+      "mutation": "file",
+      "exit": 1,
+      "log_sha256": "feafc77e71d76671ef282424327f7e87eafad920b19dbe46ded69a7a0be55e2d"
+    },
+    {
+      "mutation": "readonly",
+      "exit": 1,
+      "log_sha256": "fd8ada489402b763699f3b604be75e849823cc7c24f446dfecd98fb1751cb32f"
+    },
+    {
+      "mutation": "owner",
+      "exit": 1,
+      "log_sha256": "802b712d6a07e085703ccb522ea176a73fc26aa84442456240698fb3686c994f"
+    },
+    {
+      "mutation": "preview",
+      "exit": 1,
+      "log_sha256": "f905de7a1fa9c4d2481688a27ef36310c8537a22dcd99f6e6adddffb53a3c45b"
+    }
+  ],
+  "restored": {
+    "tag_consumers": 6,
+    "branch_and_preview_consumers": 3,
+    "source_bytes_identical": true
+  },
+  "failure_history": [
+    {
+      "source_commit": "a537a4dd623f3c4bb02979f67c48c1c2adb4707e",
+      "exit": 1,
+      "passed": 46,
+      "failed": 2,
+      "reason": "New navigation fixtures did not await the actual file row and clicked the commit header row instead of the file row.",
+      "check_log_sha256": "0c7ca2ed2e3738b4b4bd040370bf52526195f5b0175a6d2637c4e6fd51195e42"
+    },
+    {
+      "source_commit": "6a153d9531b4bdf7fc0710bebd6e5658078fff71",
+      "exit": 1,
+      "passed": 47,
+      "failed": 1,
+      "reason": "New preview fixture expected an uncached tag switch to retain the open file, but the original loading surface returns to its list. Final consumer first loads the tag via its actual menu, then tests the cached switch.",
+      "check_log_sha256": "09be8538e88b55f82465e020babec418fc978bd1a2e23475419546d26b4e8e99"
+    },
+    {
+      "source_commit": "24f6b4bbe7a516cadea7cb48fd6f365b2c93183b",
+      "exit": 1,
+      "passed": 47,
+      "failed": 1,
+      "reason": "The new cached-preview fixture still used test gcTime=0, unlike both production hosts gcTime=5 minutes. Final fixture uses their actual lifetime and asserts the loaded tag cache before the switch.",
+      "check_log_sha256": "2622accff9e46e9da1ae2a22aad294e30946624656f858445e8ac73b25e462a3"
+    }
+  ],
+  "job_directory": "/volumes/data/kailo/verification/projects-tag/2780ea5e4",
+  "files_sha256": {
+    "runner.sh": "333e8955389d29691a585cd0b169dd6b6d720a48a00d45a48b236e84e3c95469",
+    "check.log": "7e656f89f230b4f086452f23b312338a593ed22db8169d785e333afd7c82943d",
+    "result.log": "b164a4b9323e7f864e71d5dda0063dbdded56eb08dcccc15fd1defda7b3b99dd",
+    "limits.log": "adfadeab01c2db9361c0c0af30c513068f511954645cacc988baa3d0df860eff",
+    "prearchive-preflight.log": "37032e01f1b6e57e9108946edafe275267e7ce8d48c41529f2bd905aad98d18e",
+    "preflight.log": "8b6d0fafe79ce0e287e9acb8d5542ce8a15bd773221db05069ec9fbabe39ed0a",
+    "oom.log": "2ed27c1421e6928dbe13dbfdb5c59e1045b30341fe7ebe05700006bc5ac572c0",
+    "host-config.json": "a3a03b92e90b4686e497cd8ada56e8dd735c932abcddcff41a5cf62714bd6a4f",
+    "tmp/original.sha256": "75992ff512939e466e74f175a3950b58797e0fa9ac6fd75a3e560fb4ad00991f",
+    "tmp/restored.sha256": "75992ff512939e466e74f175a3950b58797e0fa9ac6fd75a3e560fb4ad00991f",
+    "tmp/restored.log": "fc57203e3434c5db895b7bb0d47545b12c91ad24292385b243875fc7b8897253",
+    "tmp/restored-owner-preview.log": "4ecd39f8440a227c979106cca86fb0a779cf42a6eb95050ea56965ffbaff3ffd",
+    "tmp/negative-menu.log": "5cac9edcef9bd759fc78ed65b745ca76ac89128192c9d788cc57e19a2b0bc2c5",
+    "tmp/negative-menu-exit.log": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+    "tmp/negative-file.log": "feafc77e71d76671ef282424327f7e87eafad920b19dbe46ded69a7a0be55e2d",
+    "tmp/negative-file-exit.log": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+    "tmp/negative-readonly.log": "fd8ada489402b763699f3b604be75e849823cc7c24f446dfecd98fb1751cb32f",
+    "tmp/negative-readonly-exit.log": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+    "tmp/negative-owner.log": "802b712d6a07e085703ccb522ea176a73fc26aa84442456240698fb3686c994f",
+    "tmp/negative-owner-exit.log": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+    "tmp/negative-preview.log": "f905de7a1fa9c4d2481688a27ef36310c8537a22dcd99f6e6adddffb53a3c45b",
+    "tmp/negative-preview-exit.log": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+    "tmp/owner.original.sha256": "52b4af4d4d67c2687693ca6d03920c020daa02c27fe3238f354dc2a533b28820",
+    "tmp/owner.restored.sha256": "52b4af4d4d67c2687693ca6d03920c020daa02c27fe3238f354dc2a533b28820",
+    "tmp/preview.original.sha256": "609ce756a04956aae67fb57b5c58c4a7f2e4a44cbbbb3ec9b62973bcdab6c246",
+    "tmp/preview.restored.sha256": "609ce756a04956aae67fb57b5c58c4a7f2e4a44cbbbb3ec9b62973bcdab6c246"
+  },
+  "boundaries": [
+    "Real shared ProjectsView with scripted BFF/native Git transport; no real repository/Relay authorization deployment or GUI device acceptance.",
+    "Deferred branch owner checks use the original hook and actual QueryClient onMutate scheduling; not a complete dialog/router browser acceptance.",
+    "Upstream tag view retains active-branch badges/context; preserved, not asserted as tag-origin evidence.",
+    "No schema/API/publication intent changes; no new Agent contract; no build, deployment, Mobile or Windows acceptance.",
+    "Source cache is reusable after this receipt; archived logs remain fixed evidence."
+  ]
+}

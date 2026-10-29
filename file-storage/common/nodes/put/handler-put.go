@@ -412,6 +412,17 @@ func (m *Handler) MultipartAbort(ctx context.Context, target *tree.Node, uploadI
 func (m *Handler) CopyObject(ctx context.Context, from *tree.Node, to *tree.Node, requestData *models.CopyRequestData) (models.ObjectInfo, error) {
 	oi, er := m.Next.CopyObject(ctx, from, to, requestData)
 	if !requestData.IsMove() {
+		if upload := auth.NativeUploadFromContext(ctx); upload != nil {
+			// The copy may already have changed storage even if its result was
+			// lost. Never continue to a separate metadata write on an unknown
+			// result or after the same execution lost fresh authorization.
+			if er != nil {
+				return oi, er
+			}
+			if err := upload.Fresh(ctx); err != nil {
+				return oi, err
+			}
+		}
 		ctxWs := nodes.GetContextWorkspaceOrNil(ctx, "to")
 		if _, err := m.getMetaClient().ExtractAndPut(ctx, to, ctxWs, nil, meta.ExtractNone); err != nil {
 			return models.ObjectInfo{}, err

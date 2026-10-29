@@ -11,6 +11,7 @@ import { getQueryPreviewText } from './utils/language';
 import { getNativeWriteText } from './utils/language';
 import errorHandler, { runNativeMetadataWrite } from './utils/errorHandler';
 import { message } from 'antd';
+import { kailoT, kailoText } from './utils/kailoI18n';
 import { webcrypto } from 'node:crypto';
 import SaveAsViewModal from './components/modals/SaveAsViewModal';
 import ModelDrawer from './components/pages/modeling/ModelDrawer';
@@ -21,6 +22,7 @@ import DetailsDrawer from './components/pages/apiManagement/DetailsDrawer';
 import { ApiType } from './apollo/client/graphql/__types__';
 import { getApiHistoryText } from './utils/language';
 import HomeThread from './pages/home/[id]';
+import { FixSQLModal } from './components/modals/FixSQLModal';
 
 it.each(['zh-CN', 'en'])(
   'renders the original row limit input through the real production Ant Design alias (%s)',
@@ -58,6 +60,18 @@ const mockNativeSqlRead = jest.fn();
 const mockCreateView = jest.fn();
 const mockViewRead = jest.fn();
 let mockNativeSqlOptions: any[];
+const mockGenerateAnswer = jest.fn();
+const mockGenerateChart = jest.fn();
+const mockAdjustChart = jest.fn();
+const mockResponseRead = jest.fn();
+const mockThreadUpdate = jest.fn();
+let mockThreadProvider: any;
+let mockFixModal: any;
+let mockResponseUpdateOptions: any;
+let mockHomeThreadId = '11';
+let mockHomeApollo: any;
+let mockHomeThreadData: any = {};
+const mockFixSQL = jest.fn();
 jest.mock('./apollo/client/graphql/home.generated', () => ({
   useGetNativeSqlLazyQuery: (options: any) => {
     mockNativeSqlOptions.push(options);
@@ -66,40 +80,136 @@ jest.mock('./apollo/client/graphql/home.generated', () => ({
       { data: { nativeSql: 'old shared Apollo cache' } },
     ];
   },
-  useThreadQuery: () => ({ data: {}, updateQuery: jest.fn() }),
-  useCreateThreadResponseMutation: () => [jest.fn()],
-  useUpdateThreadResponseMutation: () => [jest.fn(), {}],
-  useThreadResponseLazyQuery: () => [jest.fn(), { stopPolling: jest.fn() }],
-  useGenerateThreadRecommendationQuestionsMutation: () => [jest.fn()],
-  useGetThreadRecommendationQuestionsLazyQuery: () => [
-    jest.fn(),
-    { stopPolling: jest.fn() },
-  ],
-  useGenerateThreadResponseAnswerMutation: () => [jest.fn()],
-  useGenerateThreadResponseChartMutation: () => [jest.fn()],
-  useAdjustThreadResponseChartMutation: () => [jest.fn()],
+  useThreadQuery: () => ({
+    data: mockHomeThreadData,
+    updateQuery: mockThreadUpdate,
+  }),
+  useCreateThreadResponseMutation: (options: any) =>
+    mockHomeApollo
+      ? jest
+          .requireActual('@apollo/client')
+          .useMutation(
+            jest.requireActual('./apollo/client/graphql/home.generated')
+              .CreateThreadResponseDocument,
+            { ...options, client: mockHomeApollo },
+          )
+      : [jest.fn()],
+  useUpdateThreadResponseMutation: (options: any) => {
+    mockResponseUpdateOptions = options;
+    return mockHomeApollo
+      ? jest
+          .requireActual('@apollo/client')
+          .useMutation(
+            jest.requireActual('./apollo/client/graphql/home.generated')
+              .UpdateThreadResponseDocument,
+            { ...options, client: mockHomeApollo },
+          )
+      : [mockFixSQL, {}];
+  },
+  useThreadResponseLazyQuery: (options: any) =>
+    mockHomeApollo
+      ? jest
+          .requireActual('@apollo/client')
+          .useLazyQuery(
+            jest.requireActual('./apollo/client/graphql/home.generated')
+              .ThreadResponseDocument,
+            { ...options, client: mockHomeApollo },
+          )
+      : [mockResponseRead, { stopPolling: jest.fn() }],
+  useGenerateThreadRecommendationQuestionsMutation: (options: any) =>
+    mockHomeApollo
+      ? jest
+          .requireActual('@apollo/client')
+          .useMutation(
+            jest.requireActual('./apollo/client/graphql/home.generated')
+              .GenerateThreadRecommendationQuestionsDocument,
+            { ...options, client: mockHomeApollo },
+          )
+      : [jest.fn()],
+  useGetThreadRecommendationQuestionsLazyQuery: (options: any) =>
+    mockHomeApollo
+      ? jest
+          .requireActual('@apollo/client')
+          .useLazyQuery(
+            jest.requireActual('./apollo/client/graphql/home.generated')
+              .GetThreadRecommendationQuestionsDocument,
+            { ...options, client: mockHomeApollo },
+          )
+      : [jest.fn(), { stopPolling: jest.fn() }],
+  useGenerateThreadResponseAnswerMutation: (options: any) =>
+    mockHomeApollo
+      ? jest
+          .requireActual('@apollo/client')
+          .useMutation(
+            jest.requireActual('./apollo/client/graphql/home.generated')
+              .GenerateThreadResponseAnswerDocument,
+            { ...options, client: mockHomeApollo },
+          )
+      : [mockGenerateAnswer],
+  useGenerateThreadResponseChartMutation: (options: any) =>
+    mockHomeApollo
+      ? jest
+          .requireActual('@apollo/client')
+          .useMutation(
+            jest.requireActual('./apollo/client/graphql/home.generated')
+              .GenerateThreadResponseChartDocument,
+            { ...options, client: mockHomeApollo },
+          )
+      : [mockGenerateChart],
+  useAdjustThreadResponseChartMutation: (options: any) =>
+    mockHomeApollo
+      ? jest
+          .requireActual('@apollo/client')
+          .useMutation(
+            jest.requireActual('./apollo/client/graphql/home.generated')
+              .AdjustThreadResponseChartDocument,
+            { ...options, client: mockHomeApollo },
+          )
+      : [mockAdjustChart],
 }));
 jest.mock('./apollo/client', () => ({
   __esModule: true,
   default: { query: (...args: any[]) => mockViewRead(...args) },
 }));
-jest.mock('next/navigation', () => ({ useParams: () => ({ id: '11' }) }));
+jest.mock('next/navigation', () => ({
+  useParams: () => ({ id: mockHomeThreadId }),
+}));
 jest.mock('./hooks/useHomeSidebar', () => () => ({}));
 jest.mock('./hooks/useAskPrompt', () => ({
+  ...jest.requireActual('./hooks/useAskPrompt'),
   __esModule: true,
-  default: () => ({ data: {} }),
+  default: () => ({
+    data: {},
+    onStopPolling: jest.fn(),
+    onStoreThreadQuestions: jest.fn(),
+  }),
 }));
 jest.mock('./hooks/useAdjustAnswer', () => () => ({}));
+// Only the unrelated Markdown renderer is omitted; status helpers below are real.
+jest.mock('./components/editor/MarkdownBlock', () => () => null);
 jest.mock('./components/pages/home/prompt', () => () => null);
 jest.mock('./components/pages/home/promptThread', () => () => null);
 jest.mock('./components/pages/home/promptThread/TextBasedAnswer', () => ({
-  getAnswerIsFinished: () => true,
+  getAnswerIsFinished: (status: any) =>
+    mockHomeApollo
+      ? jest
+          .requireActual('./components/pages/home/promptThread/TextBasedAnswer')
+          .getAnswerIsFinished(status)
+      : true,
 }));
 jest.mock('./components/pages/home/promptThread/ChartAnswer', () => ({
-  getIsChartFinished: () => true,
+  getIsChartFinished: (status: any) =>
+    mockHomeApollo
+      ? jest
+          .requireActual('./components/pages/home/promptThread/ChartAnswer')
+          .getIsChartFinished(status)
+      : true,
 }));
 jest.mock('./components/pages/home/promptThread/store', () => ({
-  PromptThreadProvider: ({ children }: any) => children,
+  PromptThreadProvider: ({ children, value }: any) => {
+    mockThreadProvider = value;
+    return children;
+  },
 }));
 jest.mock('./components/modals/AdjustReasoningStepsModal', () => () => null);
 jest.mock('./components/modals/AdjustSQLModal', () => () => null);
@@ -169,6 +279,29 @@ jest.mock('./components/modals/ImportDataSourceSQLModal', () => ({
   default: () => null,
   isSupportSubstitute: () => false,
 }));
+// DD-157: results are announced through Kailo (kailoHost.notify); the
+// top-level fallback is not under test here, so notify forwards to the
+// mocked antd message the assertions below read.
+jest.mock('./utils/kailoHost', () => {
+  const forward =
+    (tone: 'success' | 'warning' | 'error' | 'info') =>
+    (...args: any[]) =>
+      jest
+        .requireMock('antd')
+        .message[tone](...args.filter((arg) => arg !== undefined));
+  return {
+    notify: {
+      success: forward('success'),
+      warning: forward('warning'),
+      error: forward('error'),
+      info: forward('warning'),
+    },
+    confirm: jest.fn(async () => true),
+    confirmDanger: jest.fn(async (_options: any, action: any) => action()),
+    setPage: jest.fn(),
+    hostRendersPage: () => false,
+  };
+});
 jest.mock('antd', () => {
   const React = jest.requireActual('react');
   const field = ({ children }: any) =>
@@ -186,13 +319,31 @@ jest.mock('antd', () => {
       validateFields: async () => mockFormValues ?? { name: 'OriginalView' },
       resetFields: jest.fn(),
       setFieldsValue: jest.fn(),
+      getFieldValue: (name: string) => mockFormValues?.[name],
     },
   ];
   return {
     Form,
-    Modal: overlay,
+    Skeleton: field,
+    Menu: field,
+    Modal: (props: any) => {
+      if (
+        props.title ===
+        jest
+          .requireActual('./utils/kailoI18n')
+          .kailoText(mockLocale, 'home.fixSql')
+      )
+        mockFixModal = props;
+      return overlay(props);
+    },
     Drawer: (props: any) => {
-      if (props.title === 'API details') mockHistoryDrawer = props;
+      const { kailoText: text } = jest.requireActual('./utils/kailoI18n');
+      if (
+        ['zh-CN', 'en']
+          .map((locale) => text(locale, 'knowledge.apiDetails'))
+          .includes(props.title)
+      )
+        mockHistoryDrawer = props;
       return overlay(props);
     },
     Tag: (props: any) =>
@@ -568,7 +719,10 @@ describe('original API History detail bounded native observation consumers', () 
     );
     renderToStaticMarkup(action.render(pending));
     await mockButtons
-      .findLast((button: any) => button.children?.[1] === ' Details')
+      .findLast(
+        (button: any) =>
+          button.children === kailoText(mockLocale, 'knowledge.details'),
+      )
       .onClick();
     return mockButtons.find(
       (button: any) =>
@@ -762,7 +916,10 @@ describe('original API History detail bounded native observation consumers', () 
     );
     renderToStaticMarkup(action.render(completed));
     await mockButtons
-      .findLast((button: any) => button.children?.[1] === ' Details')
+      .findLast(
+        (button: any) =>
+          button.children === kailoText(mockLocale, 'knowledge.details'),
+      )
       .onClick();
     expect(mockHistoryRead).toHaveBeenCalledTimes(1);
     expect(mockHistoryOpen).not.toHaveBeenCalled();
@@ -1747,9 +1904,14 @@ describe('original saved-view preview controls', () => {
         onClose: close,
       } as any),
     );
-    expect(markup).toContain('Submit');
-    expect(markup).toContain('Preview data');
-    await mockButtons.find((button) => button.children === 'Submit').onClick();
+    expect(markup).toContain(kailoText(mockLocale, 'knowledge.submit'));
+    expect(markup).toContain(getQueryPreviewText(mockLocale).preview);
+    await mockButtons
+      .find(
+        (button) =>
+          button.children === kailoText(mockLocale, 'knowledge.submit'),
+      )
+      .onClick();
     expect(submit).toHaveBeenCalledWith({
       nativeWriteGuarded: true,
       data: {
@@ -1871,8 +2033,10 @@ describe('original saved-view preview controls', () => {
         submit,
         close,
         changed,
-        click: mockButtons.find((button) => button.children === 'Submit')
-          .onClick,
+        click: mockButtons.find(
+          (button) =>
+            button.children === kailoText(mockLocale, 'knowledge.submit'),
+        ).onClick,
       };
     };
     beforeEach(() => {
@@ -1910,7 +2074,10 @@ describe('original saved-view preview controls', () => {
     it('uses both original native dry-run and data preview calls in explicitly unconfigured standalone mode', async () => {
       setup(jest.fn(), false);
       await mockButtons
-        .find((button) => button.children === 'Preview data')
+        .find(
+          (button) =>
+            button.children === getQueryPreviewText(mockLocale).preview,
+        )
         .onClick();
       expect(mockPreview.mock.calls.map(([input]) => input)).toEqual([
         { variables: { data: { sql: mockSqlWatch, limit: 1, dryRun: true } } },
@@ -1990,7 +2157,7 @@ describe('original saved-view preview controls', () => {
       expect(actual.changed).toHaveBeenCalledWith(
         expect.objectContaining({
           code: 'INVALID_SQL_ERROR',
-          shortMessage: 'Invalid SQL syntax',
+          shortMessage: kailoText(mockLocale, 'knowledge.invalidSqlSyntax'),
         }),
       );
       expect(actual.close).not.toHaveBeenCalled();
@@ -3095,36 +3262,56 @@ describe('original native metadata create UNKNOWN and authorized read-back consu
     },
   );
   it('unavailable original intent storage refuses before a native write', async () => {
-    Object.defineProperty(global, 'sessionStorage', {
-      configurable: true,
-      get: () => {
-        throw new Error();
-      },
-    });
+    // Mutate the actual browser object consumed by the module. Replacing a
+    // property on Jest's global proxy did not replace its bare global binding.
+    const unavailable = jest
+      .spyOn(sessionStorage, 'getItem')
+      .mockImplementation(() => {
+        throw new Error('storage unavailable');
+      });
     const submit = jest.fn();
-    await expect(
-      runNativeMetadataWrite({
-        nativeType: 'view',
-        variables: {},
-        submit,
-        observe: jest.fn(),
-      }),
-    ).rejects.toThrow(getNativeWriteText().storageError);
-    expect(submit).not.toHaveBeenCalled();
+    try {
+      expect(() => sessionStorage.getItem('fixture-check')).toThrow(
+        'storage unavailable',
+      );
+      await expect(
+        runNativeMetadataWrite({
+          nativeType: 'view',
+          variables: {},
+          submit,
+          observe: jest.fn(),
+        }),
+      ).rejects.toThrow(getNativeWriteText().storageError);
+      expect(submit).not.toHaveBeenCalled();
+      expect(entries.size).toBe(0);
+    } finally {
+      unavailable.mockRestore();
+    }
   });
   it('an HTTP insecure-context browser without Web Crypto refuses before any native call or input persistence', async () => {
-    Object.defineProperty(global, 'crypto', { configurable: true, value: {} });
+    const browserCrypto = crypto;
+    const previous = Object.getOwnPropertyDescriptor(browserCrypto, 'subtle');
+    Object.defineProperty(browserCrypto, 'subtle', {
+      configurable: true,
+      value: undefined,
+    });
     const submit = jest.fn();
-    await expect(
-      runNativeMetadataWrite({
-        nativeType: 'view',
-        variables: { data: { sql: 'private SQL' } },
-        submit,
-        observe: jest.fn(),
-      }),
-    ).rejects.toThrow(getNativeWriteText().storageError);
-    expect(submit).not.toHaveBeenCalled();
-    expect(entries.size).toBe(0);
+    try {
+      expect(crypto.subtle).toBeUndefined();
+      await expect(
+        runNativeMetadataWrite({
+          nativeType: 'view',
+          variables: { data: { sql: 'private SQL' } },
+          submit,
+          observe: jest.fn(),
+        }),
+      ).rejects.toThrow(getNativeWriteText().storageError);
+      expect(submit).not.toHaveBeenCalled();
+      expect(entries.size).toBe(0);
+    } finally {
+      if (previous) Object.defineProperty(browserCrypto, 'subtle', previous);
+      else Reflect.deleteProperty(browserCrypto, 'subtle');
+    }
   });
   it('only an explicit server refusal before entering native CRUD permits a later original submission', async () => {
     const denied = {
@@ -3193,7 +3380,7 @@ describe('original native metadata create UNKNOWN and authorized read-back consu
       graphQLErrors: [{ message: 'native validation error' }],
       operation: { operationName: 'CreateView', getContext: () => ({}) },
     } as any);
-    expect(message.error).toHaveBeenCalledWith('Failed to create view.');
+    expect(message.error).toHaveBeenCalledWith(kailoT('setup.errCreateView'));
     expect(message.warning).not.toHaveBeenCalled();
   });
   it.each(['view', 'model'] as const)(
@@ -3226,9 +3413,13 @@ describe('original native metadata create UNKNOWN and authorized read-back consu
             ? createElement(SaveAsViewModal, props)
             : createElement(ModelDrawer, props),
         );
-        const save = mockButtons.find(
-          (button) =>
-            button.children === (nativeType === 'view' ? 'Save' : 'Submit'),
+        const save = mockButtons.find((button) =>
+          (nativeType === 'view'
+            ? ['home.save' as const]
+            : ['modeling.create' as const, 'modeling.save' as const]
+          )
+            .map((key) => kailoText(mockLocale, key))
+            .includes(button.children),
         );
         save.onClick();
         await Promise.resolve();
@@ -3275,7 +3466,9 @@ describe('original native metadata create UNKNOWN and authorized read-back consu
       },
     });
     const click = async () => {
-      const save = mockButtons.find((button) => button.children === 'Save');
+      const save = mockButtons.find(
+        (button) => button.children === kailoText(mockLocale, 'home.save'),
+      );
       save.onClick();
       await Promise.resolve();
       return pending;
@@ -3345,7 +3538,7 @@ describe('original native metadata create UNKNOWN and authorized read-back consu
       await Promise.resolve();
       expect(close).toHaveBeenCalledTimes(1);
       expect(message.success).toHaveBeenCalledWith(
-        'Successfully created view.',
+        kailoText(mockLocale, 'home.viewCreated'),
       );
     });
     it('UNKNOWN leaves the original modal open and a later check retains the same query key before any native INSERT', async () => {
@@ -3405,6 +3598,1231 @@ describe('original native metadata create UNKNOWN and authorized read-back consu
       await expect(click()).rejects.toThrow('QUERY_EVIDENCE_UNAVAILABLE');
       expect(mockCreateView).not.toHaveBeenCalled();
       expect(close).not.toHaveBeenCalled();
+    });
+  });
+});
+
+describe('original Home answer and chart operation lifetime', () => {
+  const scope = 'a'.repeat(64);
+  const governed = {
+    nativeBindingConfigured: true,
+    queryScope: scope,
+    nativeBindingGeneration: 2,
+  };
+  const standalone = { nativeBindingConfigured: false };
+  const originalStorage = Object.getOwnPropertyDescriptor(
+    global,
+    'sessionStorage',
+  );
+  const originalWindow = Object.getOwnPropertyDescriptor(global, 'window');
+  const entries = new Map<string, string>();
+  let effect: jest.SpyInstance;
+  let threadEffect: () => () => void;
+  let wake: () => void;
+  const flush = async () => {
+    for (let i = 0; i < 12; i++) await Promise.resolve();
+  };
+  const completion = () => ({
+    id: 21,
+    threadId: 11,
+    queryReceipt: {
+      terminalStatus: 'COMPLETED',
+      submission: { gateState: 'ALLOWED', dispatchState: 'DISPATCHED' },
+    },
+    chartQueryReceipt: {
+      terminalStatus: 'COMPLETED',
+      submission: { gateState: 'ALLOWED', dispatchState: 'DISPATCHED' },
+    },
+    answerDetail: { queryId: 'original-answer' },
+    chartDetail: { queryId: 'original-chart' },
+  });
+  const operations = [
+    [
+      'answer',
+      'onGenerateTextBasedAnswer',
+      mockGenerateAnswer,
+      'generateThreadResponseAnswer',
+    ],
+    [
+      'chart',
+      'onGenerateChartAnswer',
+      mockGenerateChart,
+      'generateThreadResponseChart',
+    ],
+    [
+      'adjust',
+      'onAdjustChartAnswer',
+      mockAdjustChart,
+      'adjustThreadResponseChart',
+    ],
+  ] as const;
+  const mount = () => {
+    renderToStaticMarkup(createElement(HomeThread));
+    return { controls: mockThreadProvider, retire: threadEffect() };
+  };
+  beforeEach(() => {
+    entries.clear();
+    mockButtons = [];
+    mockNativeSqlOptions = [];
+    mockHomeThreadId = '11';
+    mockHomeApollo = undefined;
+    mockHomeThreadData = {};
+    mockPreviewResult = { reset: jest.fn() };
+    mockConfig.mockReset().mockResolvedValue(governed);
+    mockResponseRead.mockReset().mockResolvedValue({});
+    mockThreadUpdate.mockReset();
+    for (const [, , mutation, field] of operations)
+      mutation
+        .mockReset()
+        .mockResolvedValue({ data: { [field]: completion() } });
+    Object.defineProperty(global, 'sessionStorage', {
+      configurable: true,
+      value: {
+        getItem: (key: string) => entries.get(key) ?? null,
+        setItem: (key: string, value: string) => entries.set(key, value),
+        removeItem: (key: string) => entries.delete(key),
+      },
+    });
+    Object.defineProperty(global, 'window', {
+      configurable: true,
+      value: {
+        setTimeout: (callback: () => void) => {
+          wake = callback;
+          return 1;
+        },
+        clearTimeout: jest.fn(),
+      },
+    });
+    effect = jest
+      .spyOn(jest.requireActual('react'), 'useEffect')
+      .mockImplementation((callback: any, deps: any[]) => {
+        if (deps?.length === 1 && deps[0] === Number(mockHomeThreadId))
+          threadEffect = callback;
+      });
+  });
+  afterEach(() => {
+    effect.mockRestore();
+    if (originalStorage)
+      Object.defineProperty(global, 'sessionStorage', originalStorage);
+    else delete global.sessionStorage;
+    if (originalWindow) Object.defineProperty(global, 'window', originalWindow);
+    else delete global.window;
+  });
+  it.each(operations)(
+    'keeps current %s generation and response observation working in both original modes',
+    async (_name, callback, mutation) => {
+      for (const config of [standalone, governed]) {
+        mockConfig.mockResolvedValue(config);
+        mutation.mockClear();
+        mockResponseRead.mockClear();
+        const page = mount();
+        await page.controls[callback](21, {
+          instruction: 'original chart change',
+        });
+        expect(mutation).toHaveBeenCalledTimes(1);
+        expect(mockResponseRead).toHaveBeenCalledWith({
+          variables: { responseId: 21 },
+          fetchPolicy: 'no-cache',
+          context: { queryDeduplication: false },
+        });
+        expect(entries.size).toBe(0);
+        page.retire();
+      }
+    },
+  );
+  it.each(operations)(
+    'does not dispatch retired %s after the initial original config read in either mode',
+    async (_name, callback, mutation) => {
+      for (const config of [standalone, governed]) {
+        let resolve: (config: any) => void;
+        mockConfig.mockReset().mockReturnValue(
+          new Promise((done) => {
+            resolve = done;
+          }),
+        );
+        mutation.mockClear();
+        mockResponseRead.mockClear();
+        const page = mount();
+        const pending = page.controls[callback](21, {});
+        page.retire();
+        resolve!(config);
+        await pending;
+        expect(mutation).not.toHaveBeenCalled();
+        expect(mockResponseRead).not.toHaveBeenCalled();
+        expect(entries.size).toBe(0);
+      }
+    },
+  );
+  it.each(operations)(
+    'does not dispatch retired %s after its governed pre-dispatch read and keeps its original key',
+    async (_name, callback, mutation) => {
+      let resolve: (config: any) => void;
+      mockConfig.mockResolvedValueOnce(governed).mockReturnValueOnce(
+        new Promise((done) => {
+          resolve = done;
+        }),
+      );
+      const page = mount();
+      const pending = page.controls[callback](21, {});
+      await flush();
+      const before = [...entries];
+      expect(before).toHaveLength(1);
+      page.retire();
+      resolve!(governed);
+      await pending;
+      expect(mutation).not.toHaveBeenCalled();
+      expect(mockResponseRead).not.toHaveBeenCalled();
+      expect([...entries]).toEqual(before);
+    },
+  );
+  it.each(operations)(
+    'does not restart %s polling when retirement occurs during its post-dispatch config read',
+    async (_name, callback, mutation) => {
+      for (const config of [standalone, governed]) {
+        let resolve: (config: any) => void;
+        mockConfig.mockReset().mockResolvedValueOnce(config);
+        if (config.nativeBindingConfigured)
+          mockConfig.mockResolvedValueOnce(config);
+        mockConfig.mockReturnValueOnce(
+          new Promise((done) => {
+            resolve = done;
+          }),
+        );
+        mutation.mockClear();
+        mockResponseRead.mockClear();
+        mockThreadUpdate.mockClear();
+        const page = mount();
+        const pending = page.controls[callback](21, {});
+        await flush();
+        const before = [...entries];
+        expect(mutation).toHaveBeenCalledTimes(1);
+        page.retire();
+        resolve!(config);
+        await pending;
+        expect(mockResponseRead).not.toHaveBeenCalled();
+        expect(mockThreadUpdate).not.toHaveBeenCalled();
+        expect([...entries]).toEqual(before);
+      }
+    },
+  );
+  it.each([
+    ['identity', { ...governed, queryScope: 'b'.repeat(64) }],
+    ['binding generation', { ...governed, nativeBindingGeneration: 3 }],
+    ['mode', standalone],
+    ['missing governed identity', { nativeBindingConfigured: true }],
+  ])(
+    'refuses %s changes at dispatch and disclosure without replacing the UNKNOWN key',
+    async (_change, changed) => {
+      for (const phase of ['before', 'after']) {
+        mockConfig.mockReset().mockResolvedValueOnce(governed);
+        if (phase === 'after') mockConfig.mockResolvedValueOnce(governed);
+        mockConfig.mockResolvedValue(changed);
+        mockGenerateAnswer.mockClear();
+        mockThreadUpdate.mockClear();
+        mockResponseRead.mockClear();
+        const page = mount();
+        await page.controls.onGenerateTextBasedAnswer(21);
+        expect(mockGenerateAnswer).toHaveBeenCalledTimes(
+          phase === 'after' ? 1 : 0,
+        );
+        expect(mockThreadUpdate).not.toHaveBeenCalled();
+        expect(mockResponseRead).not.toHaveBeenCalled();
+        expect(entries.size).toBe(1);
+        page.retire();
+      }
+    },
+  );
+  it.each([
+    {},
+    { nativeBindingConfigured: true },
+    { ...governed, nativeBindingGeneration: 0 },
+    { ...governed, queryScope: '' },
+    { ...standalone, queryScope: scope },
+  ])(
+    'never treats incomplete initial config as independent generation: %j',
+    async (config) => {
+      mockConfig.mockResolvedValue(config);
+      const page = mount();
+      await page.controls.onGenerateTextBasedAnswer(21);
+      expect(mockGenerateAnswer).not.toHaveBeenCalled();
+      expect(mockResponseRead).not.toHaveBeenCalled();
+      expect(entries.size).toBe(0);
+      page.retire();
+    },
+  );
+  it('does not attach standalone response polling after the instance becomes governed', async () => {
+    mockConfig.mockResolvedValueOnce(standalone).mockResolvedValue(governed);
+    const page = mount();
+    await page.controls.onGenerateTextBasedAnswer(21);
+    expect(mockGenerateAnswer).toHaveBeenCalledTimes(1);
+    expect(mockResponseRead).not.toHaveBeenCalled();
+    page.retire();
+  });
+  it.each(operations)(
+    'a disconnected %s keeps its exact UNKNOWN key on explicit original-page recovery',
+    async (_name, callback, mutation) => {
+      mutation.mockRejectedValueOnce(new Error('lost native response'));
+      const first = mount();
+      await first.controls[callback](21, {});
+      expect(entries.size).toBe(1);
+      const original = mutation.mock.calls[0][0];
+      first.retire();
+      const reopened = mount();
+      await reopened.controls[callback](21, {});
+      expect(mutation).toHaveBeenCalledTimes(2);
+      expect(mutation.mock.calls[1][0]).toEqual(original);
+      expect(mockResponseRead).toHaveBeenCalledTimes(1);
+      expect(entries.size).toBe(0);
+      reopened.retire();
+    },
+  );
+  it('leaving an UNKNOWN observation wait stops further mutation calls and preserves the original key', async () => {
+    mockGenerateAnswer.mockResolvedValue({
+      data: {
+        generateThreadResponseAnswer: {
+          id: 21,
+          threadId: 11,
+          queryReceipt: {},
+        },
+      },
+    });
+    const page = mount();
+    const pending = page.controls.onGenerateTextBasedAnswer(21);
+    await flush();
+    expect(mockGenerateAnswer).toHaveBeenCalledTimes(1);
+    const before = [...entries];
+    expect(before).toHaveLength(1);
+    page.retire();
+    wake();
+    await pending;
+    expect(mockGenerateAnswer).toHaveBeenCalledTimes(1);
+    expect(mockResponseRead).not.toHaveBeenCalled();
+    expect([...entries]).toEqual(before);
+  });
+  it.each(operations)(
+    'retires a previously captured %s action before its first invocation after close',
+    async (_name, callback, mutation) => {
+      const old = mount();
+      old.retire();
+      await old.controls[callback](21, {});
+      expect(mockConfig).not.toHaveBeenCalled();
+      expect(mutation).not.toHaveBeenCalled();
+      expect(mockResponseRead).not.toHaveBeenCalled();
+    },
+  );
+
+  describe('actual Apollo Home mutation and response-read consumers', () => {
+    let requests: Array<{
+      name: string;
+      variables: any;
+      context: any;
+      observer: any;
+    }>;
+    let hookSlots: any[];
+    let cursor: number;
+    let schedulers: jest.SpyInstance[];
+    let initializeResponse: () => void;
+    let pages: Array<ReturnType<typeof mount>>;
+    const documents = jest.requireActual(
+      './apollo/client/graphql/home.generated',
+    );
+    const row = (sql: string, status = 'FINISHED', threadId = 11) => ({
+      __typename: 'ThreadResponse',
+      id: threadId === 11 ? 21 : 22,
+      threadId,
+      sql,
+      question: 'Original question',
+      view: null,
+      breakdownDetail: null,
+      adjustment: null,
+      adjustmentTask: null,
+      answerDetail: {
+        __typename: 'ThreadResponseAnswerDetail',
+        queryId: 'original-answer',
+        status,
+        content: sql,
+        numRowsUsedInLLM: 1,
+        error: null,
+      },
+      chartDetail: {
+        __typename: 'ThreadResponseChartDetail',
+        queryId: 'original-chart',
+        status: 'FINISHED',
+        description: sql,
+        chartType: null,
+        chartSchema: null,
+        error: null,
+        adjustment: null,
+        adjustmentOption: null,
+      },
+      askingTask: {
+        __typename: 'AskingTask',
+        completion: null,
+        status: 'FINISHED',
+        type: 'TEXT_TO_SQL',
+        candidates: [],
+        error: null,
+        rephrasedQuestion: null,
+        intentReasoning: null,
+        sqlGenerationReasoning: null,
+        retrievedTables: [],
+        invalidSql: null,
+        traceId: null,
+        queryId: 'original-ask',
+      },
+      queryReceipt: completion().queryReceipt,
+      chartQueryReceipt: completion().chartQueryReceipt,
+    });
+    const settle = async () => {
+      await flush();
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      await flush();
+    };
+    const respond = async (
+      request: (typeof requests)[number],
+      field: string,
+      value: any,
+    ) => {
+      request.observer.next({ data: { [field]: value } });
+      request.observer.complete();
+      await settle();
+    };
+    const cacheRow = () =>
+      mockHomeApollo.cache.readQuery({
+        query: documents.ThreadResponseDocument,
+        variables: { responseId: 21 },
+      }).threadResponse;
+    const renderPage = (id = 11) => {
+      cursor = 0;
+      mockHomeThreadId = String(id);
+      mockHomeThreadData = mockHomeApollo.cache.readQuery({
+        query: documents.ThreadDocument,
+        variables: { threadId: id },
+      });
+      const page = mount();
+      pages.push(page);
+      return page;
+    };
+    beforeEach(() => {
+      requests = [];
+      pages = [];
+      hookSlots = [];
+      cursor = 0;
+      const Apollo = jest.requireActual('@apollo/client');
+      mockHomeApollo = new Apollo.ApolloClient({
+        cache: new Apollo.InMemoryCache(),
+        link: new Apollo.ApolloLink(
+          (operation: any) =>
+            new Apollo.Observable((observer: any) => {
+              requests.push({
+                name: operation.operationName,
+                variables: operation.variables,
+                context: operation.getContext(),
+                observer,
+              });
+              return () => {};
+            }),
+        ),
+      });
+      for (const threadId of [11, 22])
+        mockHomeApollo.cache.writeQuery({
+          query: documents.ThreadDocument,
+          variables: { threadId },
+          data: {
+            thread: {
+              __typename: 'Thread',
+              id: threadId,
+              responses: [row('cached original', 'FINISHED', threadId)],
+            },
+          },
+        });
+      mockHomeApollo.cache.writeQuery({
+        query: documents.ThreadResponseDocument,
+        variables: { responseId: 21 },
+        data: { threadResponse: row('cached original') },
+      });
+      mockThreadUpdate.mockImplementation((update: any) =>
+        mockHomeApollo.cache.updateQuery(
+          {
+            query: documents.ThreadDocument,
+            variables: { threadId: Number(mockHomeThreadId) },
+          },
+          update,
+        ),
+      );
+      const React = jest.requireActual('react');
+      const memo = (factory: () => any, deps: any[]) => {
+        const index = cursor++;
+        const prior = hookSlots[index];
+        if (
+          !prior ||
+          !deps ||
+          deps.length !== prior.deps?.length ||
+          deps.some((value, i) => !Object.is(value, prior.deps[i]))
+        )
+          hookSlots[index] = { deps, value: factory() };
+        return hookSlots[index].value;
+      };
+      schedulers = [
+        jest.spyOn(React, 'useState').mockImplementation((initial: any) => {
+          const index = cursor++;
+          if (!hookSlots[index])
+            hookSlots[index] = {
+              value: typeof initial === 'function' ? initial() : initial,
+            };
+          return [
+            hookSlots[index].value,
+            (next: any) => {
+              hookSlots[index].value =
+                typeof next === 'function'
+                  ? next(hookSlots[index].value)
+                  : next;
+            },
+          ];
+        }),
+        jest.spyOn(React, 'useRef').mockImplementation((initial: any) => {
+          const index = cursor++;
+          return hookSlots[index] ?? (hookSlots[index] = { current: initial });
+        }),
+        jest.spyOn(React, 'useMemo').mockImplementation(memo),
+        jest
+          .spyOn(React, 'useCallback')
+          .mockImplementation((callback: any, deps: any[]) =>
+            memo(() => callback, deps),
+          ),
+      ];
+      effect.mockImplementation((callback: any, deps: any[]) => {
+        if (deps?.length === 1 && deps[0] === Number(mockHomeThreadId))
+          threadEffect = callback;
+        if (deps?.length === 1 && Array.isArray(deps[0]))
+          initializeResponse = callback;
+      });
+    });
+    afterEach(() => {
+      pages.forEach((page) => page.retire());
+      mockHomeApollo.stop();
+      mockHomeApollo = undefined;
+      mockHomeThreadData = {};
+      schedulers.forEach((spy) => spy.mockRestore());
+    });
+    it.each(['standalone', 'governed'])(
+      'binds SQL-update completion to its actual invocation across same-instance A-B-A and refreshes current SQL (%s)',
+      async (mode) => {
+        mockConfig.mockResolvedValue(
+          mode === 'standalone' ? standalone : governed,
+        );
+        const oldA = renderPage();
+        const pending = oldA.controls.preparation.onFixSQLStatement(
+          21,
+          'old SQL',
+        );
+        await settle();
+        expect(requests.map((request) => request.name)).toEqual([
+          'UpdateThreadResponse',
+        ]);
+        oldA.retire();
+        const b = renderPage(22);
+        b.retire();
+        const currentA = renderPage();
+        expect(mockResponseUpdateOptions?.onCompleted).toBeUndefined();
+        await respond(requests[0], 'updateThreadResponse', row('retired SQL'));
+        await pending;
+        expect(requests).toHaveLength(1);
+        expect(cacheRow().sql).toBe('cached original');
+        // A normal rerender retains this owner's real Apollo hook state.
+        const rerender = renderPage();
+        const current = rerender.controls.preparation.onFixSQLStatement(
+          21,
+          'current SQL',
+        );
+        await settle();
+        await respond(requests[1], 'updateThreadResponse', row('current SQL'));
+        await current;
+        expect(cacheRow().sql).toBe('current SQL');
+        expect(requests[2].name).toBe('GenerateThreadResponseAnswer');
+        await respond(
+          requests[2],
+          'generateThreadResponseAnswer',
+          row('current answer'),
+        );
+        expect(requests[3].name).toBe('ThreadResponse');
+        await respond(requests[3], 'threadResponse', row('current answer'));
+        expect(cacheRow().answerDetail.content).toBe('current answer');
+        currentA.retire();
+      },
+    );
+    it.each(operations)(
+      'actual Apollo %s response cannot populate the current cache or start old polling after retirement',
+      async (_name, callback, _mutation, field) => {
+        const oldA = renderPage();
+        const pending = oldA.controls[callback](21, {
+          instruction: 'original adjustment',
+        });
+        await settle();
+        expect(requests).toHaveLength(1);
+        const originalKey = requests[0].variables.idempotencyKey;
+        oldA.retire();
+        const b = renderPage(22);
+        b.retire();
+        const currentA = renderPage();
+        await respond(requests[0], field, row('retired generated body'));
+        await pending;
+        expect(requests).toHaveLength(1);
+        expect(cacheRow().sql).toBe('cached original');
+        expect([...entries.values()]).toContain(originalKey);
+        const recovered = currentA.controls[callback](21, {
+          instruction: 'original adjustment',
+        });
+        await settle();
+        expect(requests[1].variables.idempotencyKey).toBe(originalKey);
+        await respond(requests[1], field, row('current recovered body'));
+        await recovered;
+        expect(requests[2].name).toBe('ThreadResponse');
+        await respond(
+          requests[2],
+          'threadResponse',
+          row('current recovered body'),
+        );
+        expect(cacheRow().sql).toBe('current recovered body');
+        expect(entries.size).toBe(0);
+      },
+    );
+    it.each(operations)(
+      'a returning owner observes the same UNKNOWN %s key while the retired request is still in flight without sharing its lock',
+      async (_name, callback, _mutation, field) => {
+        const oldA = renderPage();
+        const pending = oldA.controls[callback](21, {
+          instruction: 'original adjustment',
+        });
+        await settle();
+        const key = requests[0].variables.idempotencyKey;
+        oldA.retire();
+        const b = renderPage(22);
+        b.retire();
+        const currentA = renderPage();
+        const recovered = currentA.controls[callback](21, {
+          instruction: 'original adjustment',
+        });
+        await settle();
+        expect(requests).toHaveLength(2);
+        expect(requests[1].variables.idempotencyKey).toBe(key);
+        await respond(requests[0], field, row('retired body'));
+        await pending;
+        expect(cacheRow().sql).toBe('cached original');
+        expect([...entries.values()]).toContain(key);
+        await currentA.controls[callback](21, {
+          instruction: 'original adjustment',
+        });
+        expect(requests).toHaveLength(2);
+        await respond(requests[1], field, row('current recovered body'));
+        await recovered;
+        expect(requests[2].name).toBe('ThreadResponse');
+        await respond(
+          requests[2],
+          'threadResponse',
+          row('current recovered body'),
+        );
+        expect(cacheRow().sql).toBe('current recovered body');
+        expect(entries.size).toBe(0);
+      },
+    );
+    it.each(
+      operations.flatMap((operation) =>
+        [
+          'wrong-id',
+          'wrong-thread',
+          'missing-thread',
+          'missing-row',
+          'wrong-ended',
+        ].map((corruption) => ({
+          name: operation[0],
+          callback: operation[1],
+          field: operation[3],
+          corruption,
+        })),
+      ),
+    )(
+      'does not settle the original $name key or disclose an uncorrelated native receipt ($corruption)',
+      async ({ callback, field, corruption }) => {
+        const page = renderPage();
+        const pending = page.controls[callback](21, {
+          instruction: 'original adjustment',
+        });
+        await settle();
+        const key = requests[0].variables.idempotencyKey;
+        const wrong =
+          corruption === 'missing-row'
+            ? null
+            : {
+                ...row('uncorrelated body'),
+                ...(corruption === 'wrong-id' || corruption === 'wrong-ended'
+                  ? { id: 99 }
+                  : {}),
+                ...(corruption === 'wrong-thread' ? { threadId: 22 } : {}),
+                ...(corruption === 'missing-thread' ? { threadId: null } : {}),
+                ...(corruption === 'wrong-ended'
+                  ? {
+                      queryReceipt: {
+                        ...completion().queryReceipt,
+                        terminalStatus: 'FAILED',
+                      },
+                      chartQueryReceipt: {
+                        ...completion().chartQueryReceipt,
+                        terminalStatus: 'FAILED',
+                      },
+                    }
+                  : {}),
+              };
+        await respond(requests[0], field, wrong);
+        await pending;
+        expect(requests).toHaveLength(1);
+        expect(cacheRow().sql).toBe('cached original');
+        expect([...entries.values()]).toContain(key);
+        const recovered = page.controls[callback](21, {
+          instruction: 'original adjustment',
+        });
+        await settle();
+        expect(requests[1].variables.idempotencyKey).toBe(key);
+        await respond(requests[1], field, row('current correlated body'));
+        await recovered;
+        await respond(
+          requests[2],
+          'threadResponse',
+          row('current correlated body'),
+        );
+        expect(cacheRow().sql).toBe('current correlated body');
+        expect(entries.size).toBe(0);
+      },
+    );
+    it('uses fresh original reads instead of a primed default cache and rejects old same-ID results after A-B-A', async () => {
+      mockHomeApollo.cache.updateQuery(
+        { query: documents.ThreadDocument, variables: { threadId: 11 } },
+        (data: any) => ({
+          ...data,
+          thread: {
+            ...data.thread,
+            responses: [row('cached original', 'STREAMING')],
+          },
+        }),
+      );
+      const oldA = renderPage();
+      initializeResponse();
+      await settle();
+      expect(requests.map((request) => request.name)).toEqual([
+        'ThreadResponse',
+      ]);
+      expect(requests[0].context.queryDeduplication).toBe(false);
+      oldA.retire();
+      const b = renderPage(22);
+      b.retire();
+      renderPage();
+      initializeResponse();
+      await settle();
+      expect(requests.map((request) => request.name)).toEqual([
+        'ThreadResponse',
+        'ThreadResponse',
+      ]);
+      await respond(requests[0], 'threadResponse', row('retired read body'));
+      expect(cacheRow().sql).toBe('cached original');
+      await respond(requests[1], 'threadResponse', row('fresh read body'));
+      expect(cacheRow().sql).toBe('fresh read body');
+      expect(requests).toHaveLength(2);
+      expect(entries.size).toBe(0);
+    });
+    it('keeps a single readonly observer through temporary errors and stops it locally without generation', async () => {
+      mockHomeApollo.cache.updateQuery(
+        { query: documents.ThreadDocument, variables: { threadId: 11 } },
+        (data: any) => ({
+          ...data,
+          thread: {
+            ...data.thread,
+            responses: [row('cached original', 'STREAMING')],
+          },
+        }),
+      );
+      const page = renderPage();
+      initializeResponse();
+      initializeResponse();
+      await settle();
+      expect(requests).toHaveLength(1);
+      requests[0].observer.error(new Error('temporary native read failure'));
+      await settle();
+      expect(cacheRow().sql).toBe('cached original');
+      wake();
+      await settle();
+      expect(requests.map((request) => request.name)).toEqual([
+        'ThreadResponse',
+        'ThreadResponse',
+      ]);
+      await respond(
+        requests[1],
+        'threadResponse',
+        row('still generating', 'STREAMING'),
+      );
+      expect(cacheRow().sql).toBe('still generating');
+      const later = wake;
+      page.retire();
+      later();
+      await settle();
+      expect(requests).toHaveLength(2);
+      expect(entries.size).toBe(0);
+    });
+    it.each([
+      ['identity', { ...governed, queryScope: 'b'.repeat(64) }],
+      ['generation', { ...governed, nativeBindingGeneration: 3 }],
+      ['mode', standalone],
+    ])(
+      'does not disclose a readonly response after its %s configuration changed',
+      async (_change, changed) => {
+        mockHomeApollo.cache.updateQuery(
+          { query: documents.ThreadDocument, variables: { threadId: 11 } },
+          (data: any) => ({
+            ...data,
+            thread: {
+              ...data.thread,
+              responses: [row('cached original', 'STREAMING')],
+            },
+          }),
+        );
+        renderPage();
+        initializeResponse();
+        await settle();
+        expect(requests).toHaveLength(1);
+        mockConfig.mockResolvedValue(changed);
+        await respond(
+          requests[0],
+          'threadResponse',
+          row('wrong configuration body'),
+        );
+        expect(cacheRow().sql).toBe('cached original');
+        expect(requests).toHaveLength(1);
+      },
+    );
+    it('does not generate or populate cache when configuration changes during the original SQL update', async () => {
+      const page = renderPage();
+      const pending = page.controls.preparation.onFixSQLStatement(
+        21,
+        'attempt',
+      );
+      await settle();
+      mockConfig.mockResolvedValue({ ...governed, nativeBindingGeneration: 3 });
+      const rejected = expect(pending).rejects.toThrow(
+        'NATIVE_OUTCOME_UNKNOWN',
+      );
+      await respond(
+        requests[0],
+        'updateThreadResponse',
+        row('changed generation SQL'),
+      );
+      await rejected;
+      expect(requests.map((request) => request.name)).toEqual([
+        'UpdateThreadResponse',
+      ]);
+      expect(cacheRow().sql).toBe('cached original');
+    });
+    it('keeps the original SQL submit pending and deduplicated through its post-ACK configuration read', async () => {
+      const page = renderPage();
+      const pending = page.controls.preparation.onFixSQLStatement(
+        21,
+        'current SQL',
+      );
+      let completed = false;
+      pending.then(() => {
+        completed = true;
+      });
+      await settle();
+      let resolveConfig: (value: any) => void;
+      const config = new Promise((resolve) => {
+        resolveConfig = resolve;
+      });
+      mockConfig.mockReturnValueOnce(config);
+      await respond(requests[0], 'updateThreadResponse', row('current SQL'));
+      const rerender = renderPage();
+      expect(completed).toBe(false);
+      expect(rerender.controls.preparation.fixStatementLoading).toBe(true);
+      expect(
+        rerender.controls.preparation.onFixSQLStatement(21, 'second SQL'),
+      ).toBe(pending);
+      expect(requests.map((request) => request.name)).toEqual([
+        'UpdateThreadResponse',
+      ]);
+      expect(cacheRow().sql).toBe('cached original');
+      resolveConfig(governed);
+      await pending;
+      await settle();
+      expect(cacheRow().sql).toBe('current SQL');
+      expect(completed).toBe(true);
+      expect(renderPage().controls.preparation.fixStatementLoading).toBe(false);
+      expect(requests.map((request) => request.name)).toEqual([
+        'UpdateThreadResponse',
+        'GenerateThreadResponseAnswer',
+      ]);
+    });
+    it.each(['success', 'failure'])(
+      'the original FixSQLModal waits for the actual SQL continuation and only closes on success (%s)',
+      async (outcome) => {
+        mockConfig.mockResolvedValue(standalone);
+        mockFormValues = { sql: 'fixed SQL' };
+        mockSqlWatch = 'fixed SQL';
+        mockPreview.mockResolvedValue({ data: { previewSql: {} } });
+        const page = renderPage();
+        const close = jest.fn();
+        const pageSlots = hookSlots;
+        hookSlots = [];
+        cursor = 0;
+        renderToStaticMarkup(
+          createElement(FixSQLModal, {
+            visible: true,
+            defaultValue: { sql: 'fixed SQL', responseId: 21 },
+            onSubmit: (sql: string) =>
+              page.controls.preparation.onFixSQLStatement(21, sql),
+            onClose: close,
+          }),
+        );
+        hookSlots = pageSlots;
+        expect(mockFixModal).toBeDefined();
+        const error = jest.spyOn(console, 'error').mockImplementation(() => {});
+        try {
+          mockFixModal.onOk();
+          await settle();
+          expect(requests.map((request) => request.name)).toEqual([
+            'UpdateThreadResponse',
+          ]);
+          expect(close).not.toHaveBeenCalled();
+          if (outcome === 'failure') {
+            requests[0].observer.error(
+              new Error('original SQL mutation failure'),
+            );
+            await settle();
+            expect(error).toHaveBeenCalled();
+            expect(close).not.toHaveBeenCalled();
+            expect(cacheRow().sql).toBe('cached original');
+            expect(requests).toHaveLength(1);
+          } else {
+            let resolveConfig: (value: any) => void;
+            mockConfig.mockReturnValueOnce(
+              new Promise((resolve) => {
+                resolveConfig = resolve;
+              }),
+            );
+            await respond(
+              requests[0],
+              'updateThreadResponse',
+              row('fixed SQL'),
+            );
+            expect(close).not.toHaveBeenCalled();
+            expect(renderPage().controls.preparation.fixStatementLoading).toBe(
+              true,
+            );
+            resolveConfig(standalone);
+            await settle();
+            expect(close).toHaveBeenCalledTimes(1);
+            expect(cacheRow().sql).toBe('fixed SQL');
+            expect(requests.map((request) => request.name)).toEqual([
+              'UpdateThreadResponse',
+              'GenerateThreadResponseAnswer',
+            ]);
+          }
+        } finally {
+          error.mockRestore();
+        }
+      },
+    );
+    it('a failed actual SQL mutation neither generates an answer nor refreshes or overwrites the current cache', async () => {
+      const page = renderPage();
+      const pending = page.controls.preparation.onFixSQLStatement(
+        21,
+        'attempt',
+      );
+      await settle();
+      const error = jest.spyOn(console, 'error').mockImplementation(() => {});
+      try {
+        const rejected = expect(pending).rejects.toThrow(
+          'original SQL mutation failure',
+        );
+        requests[0].observer.error(new Error('original SQL mutation failure'));
+        await rejected;
+        await settle();
+      } finally {
+        error.mockRestore();
+      }
+      expect(requests.map((request) => request.name)).toEqual([
+        'UpdateThreadResponse',
+      ]);
+      expect(cacheRow().sql).toBe('cached original');
+      expect(entries.size).toBe(0);
+    });
+
+    describe('original recommendation observation and selection', () => {
+      const nativeId = 'b7cd9000-68dc-47fb-87ee-451633b9a000';
+      const task = (extra: any = {}) => ({
+        __typename: 'RecommendedQuestionsTask',
+        queryId: nativeId,
+        threadId: 11,
+        sourceResponseId: 21,
+        status: 'FINISHED',
+        questions: [
+          {
+            __typename: 'ResultQuestion',
+            question: 'Follow-up',
+            sql: 'select 2',
+            category: 'original',
+          },
+        ],
+        error: null,
+        ...extra,
+      });
+      const load = async () => {
+        const page = renderPage();
+        const pending = page.controls.onGenerateThreadRecommendedQuestions(21);
+        await settle();
+        const read = requests[requests.length - 1];
+        expect(read.name).toBe('GetThreadRecommendationQuestions');
+        await respond(read, 'getThreadRecommendationQuestions', task());
+        await pending;
+        // The final observe resumes this same native task and never POSTs it.
+        const last = requests[requests.length - 1];
+        if (last !== read)
+          await respond(last, 'getThreadRecommendationQuestions', task());
+        expect(
+          requests.some(
+            (request) =>
+              request.name === 'GenerateThreadRecommendationQuestions',
+          ),
+        ).toBe(false);
+        return renderPage();
+      };
+      const select = { question: 'Follow-up', sql: 'select 2' };
+      const selectedRow = (request: any, extra: any = {}) => ({
+        ...row('select 2'),
+        id: 31,
+        question: 'Follow-up',
+        recommendationIntentKey:
+          request.variables.data.recommendation.idempotencyKey,
+        recommendationQueryId: nativeId,
+        recommendationSourceResponseId: 21,
+        recommendationIndex: 0,
+        ...extra,
+      });
+      it.each(['standalone', 'governed'])(
+        'reopens the exact native recommendation and creates only a reference-bound follow-up (%s)',
+        async (mode) => {
+          mockConfig.mockResolvedValue(
+            mode === 'standalone' ? standalone : governed,
+          );
+          const page = await load();
+          expect(page.controls.recommendedQuestions).toMatchObject({
+            queryId: nativeId,
+            sourceResponseId: 21,
+          });
+          const pending = page.controls.onSelectRecommendedQuestion(select);
+          await settle();
+          const request = requests[requests.length - 1];
+          expect(request.name).toBe('CreateThreadResponse');
+          expect(request.variables.data).toEqual({
+            recommendation: {
+              queryId: nativeId,
+              sourceResponseId: 21,
+              index: 0,
+              idempotencyKey: expect.any(String),
+            },
+          });
+          expect(entries.size).toBe(1);
+          await respond(request, 'createThreadResponse', selectedRow(request));
+          await pending;
+          expect(entries.size).toBe(0);
+          expect(
+            mockHomeApollo.cache.readQuery({
+              query: documents.ThreadDocument,
+              variables: { threadId: 11 },
+            }).thread.responses,
+          ).toHaveLength(2);
+        },
+      );
+      it('current original generation freezes its returned native task and resumes its completed observation', async () => {
+        const page = renderPage();
+        const pending = page.controls.onGenerateThreadRecommendedQuestions(21);
+        await settle();
+        await respond(
+          requests[0],
+          'getThreadRecommendationQuestions',
+          task({
+            queryId: null,
+            sourceResponseId: null,
+            status: 'NOT_STARTED',
+            questions: [],
+          }),
+        );
+        expect(requests[1].name).toBe('GenerateThreadRecommendationQuestions');
+        await respond(
+          requests[1],
+          'generateThreadRecommendationQuestions',
+          task({ status: 'GENERATING', questions: [] }),
+        );
+        await pending;
+        const observation = requests[2];
+        expect(observation.name).toBe('GetThreadRecommendationQuestions');
+        await respond(observation, 'getThreadRecommendationQuestions', task());
+        expect(renderPage().controls.recommendedQuestions).toMatchObject({
+          queryId: nativeId,
+          sourceResponseId: 21,
+          status: 'FINISHED',
+        });
+        expect(
+          requests.filter(
+            (request) =>
+              request.name === 'GenerateThreadRecommendationQuestions',
+          ),
+        ).toHaveLength(1);
+      });
+      it('a callback first invoked after retirement cannot start even an original recommendation read', async () => {
+        const page = renderPage();
+        page.retire();
+        const pending = page.controls.onGenerateThreadRecommendedQuestions(21);
+        await settle();
+        expect(requests).toHaveLength(0);
+        await pending;
+      });
+      it('an unavailable fresh selection configuration leaves the original result without dispatching or claiming failure', async () => {
+        const page = await load();
+        const count = requests.length;
+        mockConfig.mockRejectedValue(
+          new Error('original configuration unavailable'),
+        );
+        await expect(
+          page.controls.onSelectRecommendedQuestion(select),
+        ).resolves.toBeUndefined();
+        expect(requests).toHaveLength(count);
+        expect(entries.size).toBe(0);
+      });
+      it('lost recommendation selection ACK retains its exact original intent on explicit retry', async () => {
+        const page = await load();
+        const first = page.controls.onSelectRecommendedQuestion(select);
+        await settle();
+        const request = requests[requests.length - 1];
+        const error = jest.spyOn(console, 'error').mockImplementation(() => {});
+        try {
+          request.observer.error(new Error('ACK lost'));
+          await first;
+          expect(entries.size).toBe(1);
+          const retry = page.controls.onSelectRecommendedQuestion(select);
+          await settle();
+          const next = requests[requests.length - 1];
+          expect(next.variables).toEqual(request.variables);
+          await respond(next, 'createThreadResponse', selectedRow(next));
+          await retry;
+          expect(entries.size).toBe(0);
+        } finally {
+          error.mockRestore();
+        }
+      });
+      it.each([
+        { recommendationQueryId: 'foreign' },
+        { recommendationSourceResponseId: 99 },
+        { recommendationIndex: 1 },
+        { recommendationIntentKey: 'foreign' },
+        { threadId: 22 },
+      ])(
+        'a mismatched selection receipt cannot clear UNKNOWN or populate the current thread: %j',
+        async (extra) => {
+          const page = await load();
+          const pending = page.controls.onSelectRecommendedQuestion(select);
+          await settle();
+          const request = requests[requests.length - 1];
+          await respond(
+            request,
+            'createThreadResponse',
+            selectedRow(request, extra),
+          );
+          await pending;
+          expect(entries.size).toBe(1);
+          expect(
+            mockHomeApollo.cache.readQuery({
+              query: documents.ThreadDocument,
+              variables: { threadId: 11 },
+            }).thread.responses,
+          ).toHaveLength(1);
+        },
+      );
+      it('old recommendation read across A-B-A cannot disclose questions or restart a native mutation', async () => {
+        const old = renderPage();
+        const pending = old.controls.onGenerateThreadRecommendedQuestions(21);
+        await settle();
+        const request = requests[0];
+        old.retire();
+        renderPage(22).retire();
+        renderPage();
+        await respond(request, 'getThreadRecommendationQuestions', task());
+        await pending;
+        expect(renderPage().controls.recommendedQuestions).toBeNull();
+        expect(requests).toHaveLength(1);
+      });
+      it('a finished older source is not the new task ACK and cannot become visible', async () => {
+        const page = renderPage();
+        const pending = page.controls.onGenerateThreadRecommendedQuestions(21);
+        await settle();
+        await respond(
+          requests[0],
+          'getThreadRecommendationQuestions',
+          task({ sourceResponseId: 20 }),
+        );
+        expect(requests[1].name).toBe('GenerateThreadRecommendationQuestions');
+        expect(requests[1].variables).toEqual({
+          threadId: 11,
+          sourceResponseId: 21,
+        });
+        await respond(
+          requests[1],
+          'generateThreadRecommendationQuestions',
+          task({ sourceResponseId: 20 }),
+        );
+        await pending;
+        expect(renderPage().controls.recommendedQuestions).toBeNull();
+        expect(
+          requests.filter(
+            (request) =>
+              request.name === 'GenerateThreadRecommendationQuestions',
+          ),
+        ).toHaveLength(1);
+        if (requests[2])
+          await respond(
+            requests[2],
+            'getThreadRecommendationQuestions',
+            task({ sourceResponseId: 20 }),
+          );
+      });
+      it('configuration change after reading an original result prevents selection and disclosure', async () => {
+        const page = renderPage();
+        const pending = page.controls.onGenerateThreadRecommendedQuestions(21);
+        await settle();
+        mockConfig.mockResolvedValue({
+          ...governed,
+          queryScope: 'b'.repeat(64),
+        });
+        await respond(requests[0], 'getThreadRecommendationQuestions', task());
+        await pending;
+        expect(renderPage().controls.recommendedQuestions).toBeNull();
+        await page.controls.onSelectRecommendedQuestion(select);
+        expect(requests).toHaveLength(1);
+      });
+      it('old selected response ACK across A-B-A cannot write the new thread cache or discard its original UNKNOWN intent', async () => {
+        const old = await load();
+        const pending = old.controls.onSelectRecommendedQuestion(select);
+        await settle();
+        const request = requests[requests.length - 1];
+        old.retire();
+        renderPage(22).retire();
+        renderPage();
+        await respond(request, 'createThreadResponse', selectedRow(request));
+        await pending;
+        expect(entries.size).toBe(1);
+        expect(
+          mockHomeApollo.cache.readQuery({
+            query: documents.ThreadDocument,
+            variables: { threadId: 11 },
+          }).thread.responses,
+        ).toHaveLength(1);
+      });
     });
   });
 });

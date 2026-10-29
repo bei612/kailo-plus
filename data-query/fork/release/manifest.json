@@ -78,7 +78,18 @@
       "typeKey": "data_query.model",
       "capabilityCategory": "data_query",
       "capabilityContractVersion": 2,
-      "incrementalContracts": [],
+      "incrementalContracts": [
+        {
+          "contractKey": "data_query.model@v2",
+          "role": "NATIVE_INTERNAL",
+          "engine": "NATIVE",
+          "stableKeyRule": "Wren model id inside the bound native project; unchanged across redeploys of that project.",
+          "revisionRule": "Hash of the Wren deployment the query ran against; each query freezes the native deployment ref and hash.",
+          "deleteSemantics": "A model removed from the deployed MDL is observable through data_query.describe@v2; the platform holds no copy.",
+          "reconciliationTrigger": "data_query.describe@v2 re-reads the current SUCCESS deployment; no platform-held cursor.",
+          "readinessSemantics": "Ready when the native deployment of the queried hash has status SUCCESS."
+        }
+      ],
       "llmGatewayContract": "NOT_USED",
       "transferFormats": [],
       "tenantDeleteActionKey": "NONE",
@@ -88,7 +99,18 @@
       "typeKey": "data_query.view",
       "capabilityCategory": "data_query",
       "capabilityContractVersion": 2,
-      "incrementalContracts": [],
+      "incrementalContracts": [
+        {
+          "contractKey": "data_query.view@v2",
+          "role": "NATIVE_INTERNAL",
+          "engine": "NATIVE",
+          "stableKeyRule": "Wren view id inside the bound native project; unchanged across redeploys of that project.",
+          "revisionRule": "Hash of the Wren deployment the query ran against; each query freezes the native deployment ref and hash.",
+          "deleteSemantics": "A view removed from the deployed MDL is observable through data_query.describe@v2; the platform holds no copy.",
+          "reconciliationTrigger": "data_query.describe@v2 re-reads the current SUCCESS deployment; no platform-held cursor.",
+          "readinessSemantics": "Ready when the native deployment of the queried hash has status SUCCESS."
+        }
+      ],
       "llmGatewayContract": "NOT_USED",
       "transferFormats": [],
       "tenantDeleteActionKey": "NONE",

@@ -1054,7 +1054,7 @@ async fn inspect(state: &ServiceState, id: Uuid, batch: i64) -> Result<(), Refus
     .await
     .map_err(|_| Refusal::Unavailable("普通触发 CONTROL 读身份不可用".into()))?;
     let url = reqwest::Url::parse(&state.relay_transport).map_err(|_| blocked())?;
-    let document = collab_bridge::limits::fetch_nip11(&state.http, &url, &host)
+    let document = collab_bridge::limits::fetch_nip11(&state.relay_http, &url, &host)
         .await
         .map_err(|_| Refusal::Unavailable("普通触发 NIP11 上界不可读".into()))?;
     let digest: Option<String> = sqlx::query_scalar("select nip11_snapshot_digest from projection.tenant_buzz_binding where tenant_id=$1 and state='ACTIVE'")
@@ -1069,7 +1069,7 @@ async fn inspect(state: &ServiceState, id: Uuid, batch: i64) -> Result<(), Refus
         filter["before_id"] = json!(before);
     }
     let page = client
-        .query(&state.http, &[filter])
+        .query(&state.relay_http, &[filter])
         .await
         .map_err(|_| Refusal::Unavailable("普通触发 Relay 原生页不可读".into()))?;
     let values = page.as_array().ok_or_else(conflict)?;

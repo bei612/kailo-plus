@@ -4716,7 +4716,7 @@ sha2 0.11 的 digest Array 不实现 LowerHex。按现有hex依赖改为
 `bc501352c9ab3d0a7ff146e8cb92b3589e3808c3`，1文件+1/-1，diff-check通过。
 热检查最终退出0，原输出：
 
-```
+```text
 Checking buzz-desktop v0.5.23 (/work/collaboration/desktop/src-tauri)
 warning: `buzz-desktop` (lib) generated 2 warnings
 Finished `dev` profile [unoptimized + debuginfo] target(s) in 4.97s
@@ -5138,6 +5138,7 @@ SDK 内故意把默认收起改为展开：英中2项真实失败，退出1；�
 jsdom 的 scrollTo 提示保留，不当作真实浏览器截图。两条新中英文词条由主线程
 与并行 CustomEmoji 合批生成 Dart；本专项不重跑四侧合同或全量检查。
 本批未构建、部署、更新 Windows/Mobile，未增加实际生产就绪完成度。
+
 ## Pulse 原版紧凑输入与实际宿主接线（2026-10-07）
 
 本节相对 `8d3fcd04`，只包含 Pulse 输入的共享布局、现有两端 Composer
@@ -5260,6 +5261,7 @@ Relay 已签名旧集合中的外部公开图片，不把消息路径的限制�
 `shared-strict-mutation-applied.log`、`shared-strict-restored-final.log`。
 最初 source 命令转义错误、过时 Vitest 参数及第一次投递未覆盖实际副本均保留失败日志；
 未将那些运行计入修正后的验证。没有再启动 Native Rust 或安装系统依赖。
+
 ## 原 virtua 补丁的三处依赖锁与发布输入（2026-10-07）
 
 相对 `8d3fcd04`，本次只收口主线抽取原 Timeline 所需的依赖、导出和打包输入，
@@ -5548,7 +5550,6 @@ logout 假映射为这一动作；该完整原生功能本批未恢复。上传/
 Error.message 仍是原错误呈现，不声称任意服务端错误都已有翻译。
 未构建、未部署，未证明摄像头硬件或真实上传发布端到端通过。
 
-
 ### 2026-10-07 固定 main 个人资料批次的真实浏览器预览
 
 本条是已提交代码的实现后证据，不是部署或全功能还原声明。输入为
@@ -5703,6 +5704,7 @@ live authorization/desktop device or Core linked runtime tests.
 Native wrapper 首次执行报缓存 `.bin/tsc` 相对路径缺模块，已改为直接调用同一现有 `node node_modules/typescript/bin/tsc`，不安装工具。Native 最后完整 Projects 输入类型及原 helper/mounted 用例由集中验证 owner 后续回执补充；本段不把未执行当通过。当前仅源码/限定检查证据，没有部署、真实 SSO 双人隐藏 DM 或 Windows 图形验收。Web 消费仍沿现有 Inbox window 取数，不宣称全历史 feed 完整性；其他原 Inbox 分类不在本批。
 
 最后源码复核补了统一末轮 epoch guard：私聊消息页迟到返回后，不再继续用当前 Cookie 发出旧聚合的 Workspace 重查。原 InboxPane 文件新增真实挂载/卸载的延迟页用例；集中复验该文件 13/13，PlatformApp 旧 SidebarProjects fixture 修复后 10/10（`/volumes/data/kailo/tmp/sidebar-projects-20261007.0PJI8t/ui-restored.log`）。Native 当前完整联合输入随后实际命中 Projects 新 `relayClientSession.ts:656` 缺 `RelaySubscriptionFilter.kinds`，由对应 owner 处理；尚不据此宣称 Native types 通过。此前私有 index 的零上下文选择插入偏移在完整 blob 复核时已纠正，以有上下文的原差异重新选入；正式产品源码未受该候选组装问题影响。
+
 ## 2026-10-07 Projects 原版删除纵向（源码候选，未交付运行）
 
 基线 52747b1d49e5c8ad6420a6c39555171f0c155ccb；设计 f5841d82255f03dde3b0f959b20f777a7a37955f。本批仅收口实际删除消费者，不提交未消费的 PROJECT/REPOSITORY 写分支，未引入迁移或项目正文数据库。
@@ -6906,3 +6908,374 @@ V-SCN-105/106（DD-39/81/117/120）。本批只做 TypeScript/UI 与 Web 宿主�
   引用待生成）；BFF 路由、部署与业务验收均未进行。只读取首页 50 条（未做“加载更多”），关闭类别的角标扣减只覆盖已加载
   条目。Desktop（`collaboration/desktop`）复用同一共享组件，新增属性均为可选，未接入组件通知源、组件搜索源与
   `/applications/$bindingId` 的 `path` 参数。
+
+## 2026-10-27 原 Composer 失败提示共源与中文默认修复
+
+关联 `REQ-08/24`、`DD-74/75`。固定 Buzz
+`779af8886caae1317b4de962082429867ab61503` 的
+`desktop/src/features/messages/ui/MessageComposer.tsx` 原上传错误栏与关闭操作仍保留；
+此前 Kailo Native 原位遗留 `Upload failed`、`Dismiss`、后台上传 toast 与普通发送
+错误的英文拼接。本批把 Web 已有 `platform.uploadFailed`、`platform.sendFailed`
+逐字迁至共享 `platformMessages`，两宿主消费同一来源；原 Native 错误栏、关闭按钮、
+后台上传及提及准备错误的缺省提示读取共享中英文文案，不再在普通发送失败中展示原始传输诊断。
+原 Relay 拒绝、限流、确定未发送、UNKNOWN 分类和原草稿恢复路径不改。
+
+源码固定 `ca477cd66d509e7d7760136b9964bc3aa2e796e1`，Dart 同源生成回填为
+`0faaf59051d9eab530d42f635529f7bdb8096484`；无 API/schema/Workflow/权限变化。
+原 SDK `3007729e…`，实际 1 CPU / 4 GiB、memory+swap 同值，源码、临时目录均为
+真实 Data 实盘。原生成与 `--check`、共享生产/测试类型、Web 类型、Desktop 类型
+均退出 0；Web 原 Composer/i18n/预览三个文件 74/74，Native 原 send-flow 7/7。
+实际恢复旧英文及原诊断拼接后，原双语消费者断言失败退出 1；逐字恢复后 Native
+7/7 再次通过。3,439 个 GitHub 归档输入核对，唯一预期差异是 Dart 生成物，且与
+0fa 的 Git blob 相同。容器无 OOM、清理后为空；原 Web React `act` 警告保留。
+
+[原回执](composer-failure-receipt.json) SHA-256 为
+`ac6fe615e79d1c1a4de8c3fc8ddb7038a971f0a64af14e050679e0c15005077d`；
+CI 原件位于 `/volumes/data/kailo/verification/phase1-integration/composer-failure-ca477cd66/`。
+未部署、未生成正式包、未执行真实浏览器或设备操作，不把两宿主仍分离的 Composer
+编排逻辑声明为完整共源；本批只闭合该处失败提示的同源消费。
+
+随后根固定 `39ab79980d86640e1d448ae8c4a42ee9ffe6882e` 合入原 Projects 坐标链接与
+提交复制消费者；同一原 SDK 1 CPU / 4 GiB、network none，直接复用原冻结锁的
+Node 依赖，不重新安装。原同源词条 check、共享生产/测试、Web/Desktop 四项类型
+均退出 0；共享坐标/Git 23、Web 原 i18n 5、Native 原 send-flow/deep-link 18
+均通过。原 React act 警告保留，容器无 OOM，终态 0 后清理为空。原件为 CI 同根
+`composer-project-39ab79980/`；`check.log` SHA-256 为
+`bc7f4f51b7197ec6a742893120f4433755e3d77ca4dd8d2372c785bb53c17212`。
+这些合批检查不代替上述实际故障记录、全工程 full、浏览器、安装包或部署验收。
+
+事后范围纠正：npm 与 pnpm 的本地 `file:` 依赖在安装目录中是源码副本。
+39ab 复用的 Web/Desktop 安装副本仍为 ca477 内容，`i18n.ts` SHA-256 均为
+`0131a88647eca6eb002103b1e75a7c47782c74675c132ae4557d9e54a93c8707`，
+与固定 39ab 源码的 `fc245f01ee8632e69f68221666956c3714501799346374280e2d26cf5153465a`
+不符。因此保留该轮命令退出值及直接共享源码检查，但不认领它为最新本地包的
+Web/Desktop 类型或运行消费者集成通过。原 ca477 全新安装的独立结果与 Projects
+ebb/38b 各自结果保持其固定范围，不能用这次缓存合批扩张结论。
+[安装副本核验](composer-project-cache-audit.json) 原件在同 CI 39ab 目录；后续合批
+须由原锁刷新本地包，并在实际模块解析路径逐字核对完整 `src` 与 `profile-assets.ts`。
+
+### 原锁全新安装与真实导入源的最终合批
+
+固定 `e70c0ad0b338caa10c4c07676b23e0fa3c1b3ded`，原 SDK 1 CPU / 4 GiB，
+全新 Data 导出，依次用原根 pnpm 10.33.4、Web `npm ci`、Native pnpm 11.4.0
+锁定并离线安装。由各宿主的实际 `require.resolve` 解析本地平台包路径，逐字比较
+完整 `src` 与 `profile-assets.ts`，两端各 1,025 文件均与该固定源码相同。
+共享生产/测试、Web、Desktop 四项类型、同源词条 check 均退出 0；原共享
+Projects/Git 23、Web Composer/i18n/预览 74、Native send-flow/deep-link 18
+项通过。全部 3,440 个归档输入与 GitHub blob 一致，无 OOM，容器已清理。
+
+[真实安装源合批回执](composer-project-fresh-receipt.json) SHA-256 为
+`e415dc89cc8e3d404b04c898cd0ef91398f7e3d8cab1a0e56b6cc7099a28ca0a`，
+CI 原件在同 verification 根下 `composer-project-fresh-e70c0ad0b/`。
+这取代 39ab 的宿主包合批结论；原故障检出与恢复仍按 ca477、ebb/38b 的各自记录，
+本轮没有重复故障。实际 React act 警告保留，临时 source/依赖目录在回执落盘后
+可以复用；固定 Git 对象、真实解析源比较和原日志是本轮权威。仍无 full、正式
+制品、部署、真实浏览器、安装包或设备验收。
+
+## 2026-10-27 REQ-24 / DD-74 Composer 交互主体共源
+
+比较基准 `e70c0ad0b338caa10c4c07676b23e0fa3c1b3ded`，产品固定
+`4fd9753f618c14275ed2afbc4412ff3691f3b4f7`；32 文件 +1,777/-1,708。
+原功能依据为固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的
+`desktop/src/features/messages/ui/MessageComposer.tsx`、`useMentions.ts`、
+`useDraftPersistSnapshot.ts` 和 `original-diff-inventory.md` 的 Composer 主体差异。
+本批不是仅迁移错误文案：两宿主实际调用同一 editor/controller、内容状态、键盘优先级、
+提及候选与菜单、发送准备和自动发送调度代码。Native 旧模块保留兼容导出，既有公开 props
+及 callers 不变；无 API/schema/Workflow/状态/权限变化。
+
+- `client-kit/ts/platform/src/react/composer/useMessageComposerController.ts` 持有实际
+  Tiptap editor、链接编辑、焦点、回复焦点、spoiler、autocomplete 插入及 form 提交；
+  同一 `composerKeyDown` 保留 address → emoji → channel → mentions → link 的原优先级。
+- 原 Native 完整 `useMentions` 及其候选、粘贴身份绑定、代码上下文、debounce、草稿提及
+  引用实现迁至同目录 `features/messages/lib/`；候选与身份验证由宿主原权威数据供应。
+  `MessageComposerAutocompletes`、picker、focus ownership 也由两个宿主共同消费。
+  持久化的显式草稿引用和实时输入的提及解析分开，避免改变 UNKNOWN 的冻结意图。
+- `useComposerSubmission` 统一读取内容、私聊 Agent 拒绝、空编辑判断、捕获上下文和
+  准备锁；queued 清空编辑器可释放一次，旧发送的迟到 finally 不会解锁下一次准备。
+  Web 保留 BFF intent/queued/pending/UNKNOWN 与上传回执；Native 保留本机签名、
+  原 `useMentionSendFlow`、媒体队列和捕获 thread 的新鲜检查。共享层不创建第二发布权威。
+- 原 Native 完整草稿生命周期迁至 `useComposerDraftLifecycle.ts`，文件队列仍是宿主能力。
+  Web 原草稿编解码与 Native 原生命周期使用同一 restore 调度；两者自动发送使用同一
+  next-task 调度与 owner/active 检查。未新增正文存储。语音、GIF、预览、编辑、删除确认、
+  非成员邀请/仅引用与 Agent 路由仍调用原功能。
+
+原 SDK `sha256:3007729eb192341a4f004a88e42e1e66c94fc67d763acfc96568bd7311116018`，
+实际 1 CPU / 4 GiB（memory+swap 同值）/ pids 256，源码、日志、临时目录在真实 Data。
+固定 GitHub 归档 3,454 个输入逐字核对无差异；两宿主通过原包管理器刷新 file 依赖后，
+各 1,039 个实际解析的共享包 src/profile-assets 文件与同一固定源码逐字一致。
+原冻结锁未变；Web 使用 npm ci，Native 使用 pnpm 11.4.0 frozen/offline。
+
+最终固定源码检查 exit 0：同源 i18n check、共享生产及测试类型、Web 类型、Desktop 类型
+全部通过；共享 controller/autocomplete/draft 12/12、Web 原 Composer/i18n/预览 74/74、
+Native 原 send-flow/draft/auto-submit 28/28。新增 controller 四项覆盖捕获失败与 DM 拒绝、
+queued 迟到完成、StrictMode 消费路由触发一次、异步确认期间 owner 退休。
+原 React act 警告保留，OOM=false，终态后容器实际清理为空。
+
+真实故障反证使用原 Web `Composer.test.tsx` 操作：在隔离导出及实际安装的共享 file 副本
+同时移除 DM Agent 拒绝，原“拒绝发送且保留草稿”断言失败，退出 1；恢复两份源码后
+SHA-256 均为 `fb7ddf4a2fff9cca257092f80d494f5411e097bd054665cc48abaa35bfbd93d4`，
+原 DM 两项及共享 controller 四项再次通过。未修改产品测试断言以放宽结果。
+
+过程失败保留于同根各固定版本目录，不计为通过：`31a2c67c3` Web 类型发现迁移误删
+语音适配变量；`88903b581` 窄 npm install 出现 ERESOLVE，改回原 npm ci，未绕过 peer
+校验；`df978c1e2` Web 66/74 暴露 human isAgent false/undefined 适配及实时提及引用恢复
+问题。`e12860b5a` 修正后原用例 74/74、Native 28/28 及四项类型通过；最终 4fd 再完整
+验证并做上述反证。Native 文件队列、Web 冻结意图和 UNKNOWN 恢复测试均为原消费者。
+
+[回执](composer-body-receipt.json) SHA-256：
+`1278a4282605f6375aa15fe0364730124db1a2765c2f900c8b6affdda3748f82`。
+CI 原件 `/volumes/data/kailo/verification/composer-body/4fd9753f6/`，含 limits、OOM、
+check、negative/restored 原日志及逐字恢复校验；source 复用自己 31a 的导出目录，未使用
+其他批次 source。回执逐项列出日志 digest。
+
+本批完成上述 TS 交互与编排共源；宿主 UI 壳和 BFF/本机发布、上传、身份能力仍有各自
+适配代码，不声称整个 ChannelPane 或 Native MessageComposer 文件合并为一个组件。
+未执行全工程 full、生产构建、正式安装包、部署、真实浏览器或 Windows 设备验收；这些
+边界不能由本次 DOM 消费者通过代替。设计覆盖归属沿用 REQ-24 / DD-74，不另增需求。
+
+## 2026-10-27 原 Escape 退出编辑与草稿恢复
+
+关联 REQ-24 / DD-74，基准 `3a2c960e492c545bfee2b2284fb2349a98664dde`，
+产品固定 `3f2f966cfea60c2cee1568925815cfd81e6a0041`：4 文件 +72/-1。
+固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的
+`desktop/src/features/messages/ui/MessageComposer.tsx:773` 在补全菜单处理后允许 Escape
+取消编辑；当前共享 `composerKeyDown` 缺少此分支，导致两宿主原取消按钮虽可用，
+键盘入口不能退出编辑。该缺口由实际源码确认后实现，未改变编辑或草稿领域语义。
+
+共享键盘主体恢复该分支，两宿主传入既有 `onCancelEdit`。Native 使用原取消按钮的
+`isSubmitLocked || isSending`，Web 使用原按钮的 `sending` 锁；没有新增发布或删除
+调用。提及、emoji、频道补全先消费按键，编辑取消仅在未被消费且当前操作可用时执行。
+原草稿 store、已上传媒体回执、BFF/CLIENT 发布及 UNKNOWN 冻结意图保持原消费者。
+
+原 SDK `sha256:3007729eb192341a4f004a88e42e1e66c94fc67d763acfc96568bd7311116018`，
+1 CPU / 4 GiB（memory+swap 同值）/ pids 256，实际 Data 源码与日志；复用已结束的
+Composer 自己依赖目录，保留此前所有回执。按原锁刷新两宿主本地 file 包，实际解析的
+共享包各 1,039 文件逐字一致，固定 GitHub 归档 3,454 个输入无差异。
+
+同源 i18n、共享生产/测试、Web/Desktop 四项类型均退出 0；共享 12/12、Web 76/76、
+Native 原 send-flow/draft/auto-submit 28/28。新增两个原 Web Composer DOM 消费者
+实际触发 Escape：取消编辑恢复原正文和已上传附件，不发布、不重复上传；补全菜单先
+关闭而不退出编辑，保存中拒绝取消，保存完成后恢复取消。原 UNKNOWN 用例未改断言。
+
+在隔离固定导出及实际 Web 安装包同时移除共享 Escape 分支，原恢复草稿操作断言失败
+退出 1。逐字恢复后两项 Escape 消费者及共享 controller 四项通过；原件与恢复文件
+SHA-256 都是 `553712d3187d831dfe0f8988da7dcad4db9c75661273a98d10e31886926ad420`。
+整个检查最终 exit 0，OOM=false，容器清理为空；原 React act 警告保留。
+
+[回执](composer-escape-receipt.json) SHA-256 为
+`22cb218ea097cf4c0832eb44a25081d1b1b65dc9d7143f8b5b73ba5ef0f7b4fa`。
+原 limits、check、negative/restored 与 byte audit 证据在 CI
+`/volumes/data/kailo/verification/composer-escape/3f2f966cf/`。
+无 schema/API/Workflow/i18n 变化，不新增或解除正式发布门禁；未做全工程 full、制品、
+部署、真实浏览器键盘或 Windows 安装验收。此次 Desktop 证据是实际共享包、类型及原
+消费者回归，不把 Web DOM 操作宣称为真机按键验证。
+
+## 2026-10-27 原快照粘贴入口与完整上传批次
+
+关联 REQ-24 / DD-74 / DD-131(7) / DD-143。比较基准
+`83a01b7545db6ced755f62e77d239cfcf1aa14ed`，最终产品与消费者固定
+`a7501d688e07f7d3104bf530b403c0bcb7c196ef`：6 文件 +213/-35。
+固定 Buzz `779af8886caae1317b4de962082429867ab61503` 原链为
+`MessageComposer → useComposerPasteHandler → agentSnapshotClipboard`，粘贴快照会成为
+带原快照文件名的附件；Kailo 已授权差异是不复用剪贴板中其他 scope 的媒体 URL，而是
+校验剪贴板 PNG 包的字节、大小和 SHA，再经目标会话原媒体入口上传。
+
+原 Web `form.onPasteCapture` 抢先处理全部 file，绕开共享命名校验，使快照退化为
+普通 `image.png`。本批移除该抢先入口，Web/Desktop 共用原 paste handler：文件优先、
+原代码块及受信提及正文路径不改；保留 Web 已有多文件粘贴，不重复消费 files/items。
+命名只接受已存在的快照格式校验；无效 hash/HTML 保持普通文件，不接管剪贴板 URL。
+
+共享异步读取捕获原 owner 和上传 callback，读取完成后复核 owner、editor、挂载及
+可写状态；身份/草稿变化后不调用新 scope 的上传能力。每个 owner 的并行快照读取计数
+同时控制 Enter、按钮和自动发送，先完成的读取不能提前解锁。全部字节准备完成后，
+同一任务内把完整文件数组交给原媒体批次，再等待上传回执：Web 用原 `attach(files)`
+先登记 `batch.remaining`，Native 用原 queue/filter/uploadFiles 能力；不另建上传队列。
+共享语音排他检查保留，混合语音附件沿原 voiceOnlyAttachment 提示拒绝。
+
+原 SDK `sha256:3007729eb192341a4f004a88e42e1e66c94fc67d763acfc96568bd7311116018`，
+1 CPU / 4 GiB（memory+swap 同值）/ pids 256，源/临时目录/日志在真实 Data。
+原冻结锁刷新两宿主 file 包，各 1,039 个实际解析源码文件逐字一致；3,454 个固定
+GitHub 归档输入无差异。四项类型（共享生产/测试、Web、Desktop）与同源 i18n check
+全部退出 0，共享 15/15、Web 83/83、Native 原草稿/发送消费者 28/28。
+
+新增七项真实 Web DOM 操作覆盖 agent/team 命名附件、原正文保留及草稿重开后发送、
+伪造 hash 与多文件、仅身份变化/草稿变化期间真实 FileReader 晚到、两个并行读取不
+提前发正文、同一次两文件粘贴首上传挂起时完整冻结批次。原正文、提及、代码块、
+UNKNOWN 与 queued 消费者原样回归；没有以直接调用命名 helper 代替页面粘贴事件。
+
+三项真实故障分别关闭命名、关闭准备锁、把完整批次改回逐个 await 单文件登记，原
+消费者均断言失败退出 1；每次逐字恢复后快照七项通过，末尾共享 controller 四项通过。
+共享 handler 原件及恢复后 SHA-256 均为
+`dbb7742f2d185b8082c0af37259bb196a2f81acb718743068eaf7f295fb28cec`；
+第三次 Web host 文件也由保存的原件逐字恢复，最终归档输入复核无差异。任务最终
+exit 0，OOM=false，容器清理为空；原 React act 警告保留。
+
+初始 `7a746bec7` 的 15/81/28、四项类型与命名反证通过记录保留；其未覆盖字节准备
+和同次多文件晚登记，不能替代最终 a750。后两处经自检及交叉复核实际补齐，再以最终
+固定源码运行上述检查，未仅凭初始通过声明完成。
+
+[回执](composer-paste-receipt.json) SHA-256：
+`559f171c16cad198ef44ba0f556d4f9b7970d02aca7f2c4c062152d9b7c0e92f`。
+CI 原件 `/volumes/data/kailo/verification/composer-paste/a7501d688/`，含三次
+negative/restored、原 check/limits/OOM 与输入回执。审计完成后，自己的旧 source/deps
+目录交后续恢复批复用；本次原日志及回执不覆盖，后续缓存状态不作为本次来源证据。
+
+无 schema/API/Workflow/i18n 或发布权威变化，未部署、未打包、未作真实系统剪贴板或
+Windows 设备验收。交叉复核另确认基线既有 Web 上传失败恢复会遗漏失败文件及自动
+重传，由后续批次修复；本批正面多文件/成功草稿恢复不声称失败、取消或 UNKNOWN
+恢复全部闭合。没有新增或解除正式发布门禁。
+
+### 2026-10-27：原上传失败恢复与发送所有者收口
+
+本批固定实现与完整消费者输入为
+`4babe467ceb5ca4e89b33138e820ce5d3c0916c2`，基于原粘贴批
+`a7501d688e07f7d3104bf530b403c0bcb7c196ef`。原 Buzz
+`779af8886caae1317b4de962082429867ab61503` 的
+`useMentionSendFlow.restoreComposerAfterFailure` 与
+`useMediaUpload.restoreQueuedAttachments` 先恢复本地 File 队列，恢复本身不发上传请求。
+此前 Web 的失败分支只标记失败，随后从 active 移除 File；取消恢复则直接调用 attach，
+既会丢失败文件，也会在恢复时重发上传。
+
+现在沿原 pendingSend、草稿和 queuedPreviews 保留未确认文件名与同身份/Relay
+作用域内的 File 引用；失败、上传 UNKNOWN、取消恢复均不调用上传 HTTP。
+只有原明确 Send 才把仍有字节的文件交回原批量 attach，收到全部真实上传回执后才发布。
+刷新或切身份失去 File 字节时仍显示原文件名，Enter 与发送按钮阻止缺附件正文发送；
+用户可沿原附件移除入口明确移除占位。成功附件、正文、提及和原 publication UNKNOWN
+意图仍保留，已发出的上传可能留下未引用对象，本批不声称撤回这些字节。
+GIF 从原 pendingSend extras 恢复，并同步恢复后用户的 GIF 编辑，跨草稿重开不会丢失。
+
+发送快照沿原 DraftAuthority 对象及发送代次判定恢复和清理归属：普通编辑不会夺走
+旧发送的待恢复记录，新的发送或身份作用域重置会使旧回调失效。
+编辑 intent 按原 owner 保存，旧编辑的明确拒绝不能清空新 owner 的 UNKNOWN 重试键。
+当前 owner 的成功发送仍清除原社区 timeout，即使该输入框没有持久化 draftKey。
+未增加上传服务、持久队列、业务对象或重新签名入口。
+
+原 SDK `sha256:3007729eb192341a4f004a88e42e1e66c94fc67d763acfc96568bd7311116018`
+在 CI 实际 Data 盘执行，限额实际回读为 1 CPU、4 GiB 内存及同额 swap、256 pids。
+源码只从 GitHub 固定对象解包，复用已释放原依赖，不复制到 NVMe。
+最终 Web 类型检查与完整 `Composer.test.tsx` 的 83/83 项通过，无过滤或跳过；
+实际安装的共享 file 包 1039 文件、归档源码 3454 文件均逐字匹配，容器清理回读为空。
+共享生产/测试类型及原 draft-surfaces 3 项在 `4a4567449` 已完成，
+其共享源码树与最终固定对象一致；不把该早期随后失败的整项作业记为通过。
+
+`de4a1acde7c80df38fed0afee7d6163aed07897b` 上另有原恢复目标 19 项通过，
+五个真实故障分别恢复自动上传、删除缺字节占位、取消旧 owner 检查、共享编辑 intent、
+清空恢复 GIF；原消费者分别实际失败 3/1/1/1/1 项，各逐字还原后通过。
+完整检查后来检出的 timeout 兼容问题已修正，最终 83 项包括该原消费者。
+`4a4567449`、`5fa36c1b1`、`22cad177d` 的失败与浏览器夹具异常日志均保留。
+曾提出的“publishing 期间 Discard”场景在原 UI 没有可点击入口，追加提交已普通 revert；
+不将其源码审查或未完成用例计为功能与验收。
+
+[本批独立回执](composer-upload-recovery-receipt.json) SHA-256：
+`775b94c5d9befb0054d5679c17a27fbaed2b76178ce0d5d3a9d68b1fac2529f3`。
+CI 原件位于 `/volumes/data/kailo/verification/composer-recovery/` 对应固定源码子目录。
+原 `composer-failure-receipt.json` 保持逐字不变。
+这些检查使用原 React/TipTap/发送消费者和脚本化 BFF、媒体回执，
+不等于真实浏览器、设备或生产上传验收；原 React act 与 linkify 警告保留，
+最终没有未处理测试错误。本批未执行 Native 套件、全 Web 项目门禁、制品发布或部署。
+
+### 2026-10-27：普通 GIF 草稿保存、恢复与 Inbox 发送
+
+关联 DD-74、DD-125(5)(11)、DD-146 与 SF-BUZ-56(4)。固定最终源码为
+`4ba32ff102e7fff83f35d5cf15da8abe3213b61b`，比较基准
+`a4bc4e96bf1ff9ede2363423a568a55eb12a2563`；源码及消费者 7 文件 +259/-35。
+原 Buzz `779af8886caae1317b4de962082429867ab61503` 的
+`ComposerEmojiPicker.handleGifSelect` 通过 `klipyGifAttachment` 将所选 GIF 存为
+无哈希的 `image/gif` pendingImeta，草稿生命周期保存同一结构。
+此前 Web 只保留 React pendingGifs，未发送就切换草稿会丢失 GIF，纯 GIF 草稿也不会落盘。
+
+现将既有 Native `gifAttachment/klipyGifFilename` 原样移到共享独立子路径，两宿主
+消费同一转换。Web 正常草稿写入原 pendingImeta，恢复时只拆出空哈希且 MIME 为
+image/gif 的原标记；有哈希的真实文件仍是确认附件，即使 URL 相同也不合并或删除。
+GIF 仍只沿原正文 Markdown 发送，不上传、不生成 imeta；缺字节文件名继续由原
+pendingSend 恢复占位处理。原 UNKNOWN extras 与幂等键不迁移、不换键。
+选择器的来源准入、分享上报、Relay/BFF 及本机签名路径均未改变。
+
+交叉复核另发现原 autoSendDraftKey 就绪条件遗漏 pendingGifs：纯 GIF 从 Inbox
+草稿菜单恢复后不会发送。现同一就绪表达式纳入 GIF，恢复状态变化使原 shared
+useComposerAutoSubmit 的 ready effect 重新判断。仍先消费一次导航引用，再走原发送；
+UNKNOWN 只呈现原提示，明确 Send 才沿原键重试。原未决上传继续阻止自动发送。
+Forum 与 edit 的原 GIF 选择能力均未开放，本批不增加这两种入口。
+
+原 SDK `sha256:3007729eb192341a4f004a88e42e1e66c94fc67d763acfc96568bd7311116018`，
+实际限额 1 CPU / 4 GiB 内存及同额 memory+swap / pids 256，使用原实际 Data
+源码与日志目录。最终 Web 类型检查与完整 Composer 91/91 退出 0；其中新增八项
+覆盖实际 picker→空正文草稿→卸载重挂→发送、混合文件、移除、身份切换/UNKNOWN，
+以及原导航消费后的成功清空、明确拒绝恢复、UNKNOWN 不自动重发、上传待回执。
+拒绝时原恢复条若出现，消费者实际点击 Restore 后再核对 GIF、空正文及已清除意图。
+导航测试消费真实 Composer 的 autoSendDraftKey/onAutoSendConsumed 接缝，
+未挂载完整 PlatformApp 路由，不称真实浏览器导航验收。
+
+共享生产/测试类型及 GIF picker 8/8 在固定 `cb1d6b5a8` 通过；Desktop 类型与原
+GIF API 10/10 在 `eec8b00a2` 通过。这两处源码与最终固定树逐字相同，未重复运行。
+两宿主按原冻结锁刷新 file 包，最终各 1,040 个实际解析源码文件逐字一致；
+3,456 个最终 GitHub 归档输入无差异，容器已清理。
+
+三项真实故障均保留：在 `eec8b00a2` 去掉 GIF 持久化或恢复，各导致四个原消费者
+失败退出 1，逐字还原后四项通过；在最终固定点去掉 GIF 自动发送就绪条件，原导航
+消费者实际三项失败退出 1，逐字还原后四项通过。没有以辅助函数检查替代原用户操作。
+首次失败原件逐项保留，不记为整批成功：
+
+- `cb1d6b5a8`：85/88，两项初始 GIF picker 未完成选择，一项错误假设 edit 有 picker。
+- `c11dda60c`：86/88，一项初始 picker 仍未选择，一项揭露既有外链 GIF 编辑丢图。
+- `de40e8812`：86/87，旧成员候选未就绪就点击；仅补等待真实候选，原身份/key断言保留。
+- `3efb37eb7`：90/91，新拒绝用例错误要求立即内联恢复；改用实际存在的原恢复入口。
+
+原 React act/linkify 警告保留，最后检查没有未处理错误。
+
+[完整回执](composer-gif-draft-receipt.json) SHA-256：
+`b7af9b3a3022aa1e0e1e1e3003962f9316e85fbbe10ee51d11b46a144dc5e9b4`。
+原件位于 `/volumes/data/kailo/verification/composer-gif-draft/` 下各固定源码目录；
+此前 eec8 完整检查及输入回执仍独立保留，后续仅复用其已释放 source/deps。
+
+剩余边界：历史从未保存的 GIF 无法补造。实测原 Web 编辑外链 GIF 时，正文图片在
+原 TipTap hydration 中丢失；当前 Native 与固定上游也仅按 imeta 标签构造编辑附件，
+但本轮未运行 Native 编辑消费者，不据此声称其真实结果。该旧编辑问题未由本批修复，
+也未计入 GIF 草稿验收。没有 schema/API/Workflow 变化、新发布权威、安装包、部署、
+Windows 或 Mobile 设备验收；未新增或解除正式发布门禁。
+
+### 2026-10-27：外链 GIF 编辑丢图的固定上游对照（未修复）
+
+本次仅补充上一节已暴露问题的来源边界，关联 DD-74、DD-125 与 SF-BUZ-56(4)。
+没有新增编辑器节点、Markdown 源文界面、附件元数据、权限或发送行为。
+普通 GIF 草稿保存与 Inbox 发送的已通过证据不变，不扩记为 GIF 编辑已通过。
+
+**当前实现的实际失败**：固定 `c11dda60c283a5e5e3757aebe0464c1e487a9ebf` 的
+原受限 Web Composer 检查中，新增编辑消费者将正文
+`original\n![image](https://static.klipy.com/original.gif)` 交给实际 Composer，
+编辑器插入 `edited\u0020` 后读到的草稿正文为 `original\nedited\u0020`（末尾为空格），不含图片 URL；
+该断言实际失败。原日志在
+`/volumes/data/kailo/verification/composer-gif-draft/c11dda60c/check.log`，
+摘要及整批 86/88、exit 1 保留在 [GIF 草稿回执](composer-gif-draft-receipt.json)。
+本次没有重跑该失败、设备或生产浏览器检查。
+
+当前 Web `ChannelPane.tsx` 的 edit hydration，以及 Desktop
+`features/messages/ui/MessageComposer.tsx` 的 `hydratedEdit` 分支，均仅从
+`editTarget.tags` 经 `imetaMediaFromTags` 提取已知附件，再把剩余正文交给共源
+`useRichTextEditor.setContent`。外链 GIF 原本不带 imeta，因此不在这些编辑附件中。
+共源 TipTap 配置保留 custom emoji、Buzz 链接等原节点，但没有普通 image 节点。
+这里对 Desktop 的结论是源码路径核验，没有把 Web 失败算作 Native 实测。
+
+**固定官方版本的只读分析**：对照 Buzz
+`779af8886caae1317b4de962082429867ab61503` 的以下原文件，未执行或修改 `.references`：
+
+- `desktop/src/features/messages/lib/draftMentionRefs.ts::buildMessageComposerEditTarget`
+  仅以 `imetaMediaFromTags(message.tags)` 填充 `editTarget.imetaMedia`。
+- `desktop/src/features/messages/ui/MessageComposer.tsx` 的 editTarget effect 只对这些
+  附件调用 `restoreImetaMediaDisplayLabels` / `stripImetaMediaLines`，随后调用原
+  `richText.setContent(editableBody)`，没有从外链 GIF 正文补回附件的分支。
+- `desktop/src/features/messages/lib/imetaMediaMarkdown.ts::buildImetaTags` 明确过滤
+  空 sha256 的外部内容，GIF 只在 Markdown 正文中；这不是缺失了本应存在的本地媒体标签。
+- `desktop/src/features/messages/lib/useRichTextEditor.ts` 的原 extensions 列表包含
+  StarterKit、Link、custom emoji、Buzz 链接、提及及 Markdown，没有普通 image 节点；
+  原 `setContent` 仍调用该编辑器的 Markdown 导入。
+
+这些固定源码显示上游具有相同丢失条件，未找到可直接恢复的原外链 GIF 编辑呈现与
+往返序列化实现；没有执行上游编辑消费者，不能将这一分析写成上游实测失败。
+先前“显示 Markdown 源文节点”的候选没有原交互依据，未实施、未提交为产品。
+也不通过猜测 URL 对应的 MIME、size、hash 等元数据来伪造已确认附件。
+
+剩余交付义务仍是外链 GIF 编辑不丢正文且保持原发送/UNKNOWN 边界；本轮仅记录事实，
+未解除该缺口。采取超出固定原版的编辑呈现前需要明确产品承载依据，不能把任意
+新界面当作原版恢复。没有新 SDK 作业、依赖安装、部署或发布门禁变化；根统一执行
+本次文档合批检查。

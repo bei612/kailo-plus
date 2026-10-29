@@ -9,6 +9,7 @@ import { type UserProfileLookup } from "../messages/system/identity";
 import { ProjectDetailMetaList, ProjectDetailMetaPills, ProjectDetailMetaRow } from "./ProjectDetailMeta";
 import { ProjectDetailSection } from "./ProjectDetailSection";
 import { ProjectIssueCommentTimeline } from "./ProjectIssueCommentTimeline";
+import { projectIssueCandidates } from "./projectAssignmentText";
 import { ProjectRichContent } from "./ProjectRichContent";
 import { ProjectOriginReference } from "./ProjectOriginReference";
 import { ShareLinkButton } from "./ShareLinkButton";
@@ -229,6 +230,7 @@ function IssueDetailBody({issue:source,profiles,publication,contextPanel}:IssueD
             originChannelId={issue.channelId} originCreatedAt={issue.createdAt}
             originPubkey={issue.author} query={entityDiscussionQuery(issue.id)} testId="issue-discussed-in"/>
           <ProjectIssueCommentTimeline
+            candidates={projectIssueCandidates(issue)}
             comments={issue.comments}
             key={issue.id}
             profiles={profiles}

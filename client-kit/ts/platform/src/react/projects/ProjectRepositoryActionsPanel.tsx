@@ -26,6 +26,7 @@ import { projectReviewActivity, projectRightPanelScope, projectTaskActivity } fr
 import { ProjectRepositoryManagement } from "./ProjectRepositoryManagement";
 import { RepositoryBranchDropdown, type RepoBranchHeaderControls } from "./ProjectRepositorySource";
 import type { RepositoryFetchControls } from "./ProjectRepositoryGitTabs";
+import { ProjectLocalCheckoutControls, type ProjectLocalCheckoutState } from "./useProjectLocalCheckout";
 
 type PaneProps = Pick<ComponentProps<typeof RightAuxiliaryPane>,"widthPx"|"onResizeStart"|"canResetWidth"|"onResetWidth">;
 export type ProjectRepositoryActionsPanelProps=ProjectWorkItemContext&{
@@ -69,7 +70,7 @@ function DetailRow({ count, icon: Icon, label, testId }: { count: ReactNode; ico
 
 /** Original ProjectRepositoryActionsPanel without a selected item: the repository context card. */
 export function ProjectRepositoryContextPanel({ activeTab, fetch, host, identityPubkey, issues, onCreatePullRequest, onCreateTask,
-  onRepositoryChange, project, projects, pullRequests, repository, snapshot, sourceControls, selectionActions, ...pane }: {
+  onRepositoryChange, project, projects, pullRequests, repository, snapshot, sourceControls, localCheckout, selectionActions, ...pane }: {
   activeTab: string;
   fetch?: RepositoryFetchControls;
   host: ProjectsHost;
@@ -84,6 +85,7 @@ export function ProjectRepositoryContextPanel({ activeTab, fetch, host, identity
   repository: Repository;
   snapshot: ProjectRepoSnapshot | null | undefined;
   sourceControls?: RepoBranchHeaderControls;
+  localCheckout?: ProjectLocalCheckoutState;
   /** Original selection pod actions; each appears only with its existing consumer. */
   selectionActions?: { onChatWithAgent?: (items: ProjectSelectionItem[]) => void; onDiscussInChannel?: ProjectDiscussInChannel; scopeKey: string };
 } & PaneProps) {
@@ -120,6 +122,7 @@ export function ProjectRepositoryContextPanel({ activeTab, fetch, host, identity
               data-testid="project-context-source-controls">
               <RepositoryBranchDropdown {...sourceControls}/>
             </div> : null}
+            {branchScoped && localCheckout ? <ProjectLocalCheckoutControls state={localCheckout}/> : null}
             {fetchAction ? <div className="grid gap-0.5" data-testid="project-context-repository-actions">
               <Button className={PROJECT_CONTEXT_ACTION_BUTTON_CLASS} disabled={fetchAction.fetchPending} onClick={fetchAction.onFetch}
                 size="sm" title={t("projects.repository.fetchTitle")} type="button" variant="ghost">

@@ -1,0 +1,580 @@
+{
+  "designCommit": "3635890d5fde0dad94ec29e0c1f49d99ae67dd09",
+  "sourceTransport": "CI direct GitHub fetch and fixed-object archive; no local source upload",
+  "jobs": [
+    {
+      "sourceCommit": "c5651c118527886ca6bd0677f2e9268689d3269b",
+      "job": "/volumes/data/kailo/verification/phase1-integration/settlement-c5651c118-check",
+      "exit": 137,
+      "steps": {
+        "fmt": 0,
+        "dr-syntax": 0,
+        "topic": 0
+      },
+      "logs": {
+        "check-limits.log": {
+          "sha256": "0fa25aaa94a8dfac6ce7505403adecaff7365ca6b1b9685532adc73d07037eab",
+          "bytes": 216
+        },
+        "check.log": {
+          "sha256": "66143e0f31a85d070ab25b361aaf787ce5a990a4fd11ce720f15523a6bda90cb",
+          "bytes": 1120
+        },
+        "dr-syntax.log": {
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "bytes": 0
+        },
+        "fixture-locks.log": {
+          "sha256": "f98ea677f23ab086f209a8478729e695c500c6b6beb707fbea318c8a5a699ed6",
+          "bytes": 365
+        },
+        "fmt.log": {
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "bytes": 0
+        },
+        "http.log": {
+          "sha256": "763c1d79ab3237154b6dd579a4298beb64a512e77a49bddd6639b0719141bdc8",
+          "bytes": 1761
+        },
+        "pg-limits.log": {
+          "sha256": "ba268ee1eee28139879fd5dd2e2b8c0023e07782c6e8bc8900062ce8bba346b8",
+          "bytes": 175
+        },
+        "preflight.log": {
+          "sha256": "770b1988620807682baf60a7b613f77e82627078c0201b4ae5e453582eee26df",
+          "bytes": 663
+        },
+        "redis-limits.log": {
+          "sha256": "92ec03917e7437b831e7ad8baa777f4bffd3e76a330af42fce9d2b818d8f92f2",
+          "bytes": 175
+        },
+        "result.log": {
+          "sha256": "81330959f58de3faedad3b10ccf9dcc444e3487e7026293bf86271114a07af9d",
+          "bytes": 57
+        },
+        "steps.log": {
+          "sha256": "d764ba69527dab6cdec172e48acf0e29f97aeb7bac57f66835005c80b9e58380",
+          "bytes": 26
+        },
+        "topic.log": {
+          "sha256": "f6027d45f7c78e77e888b01f9abe6c37cb4bc2d2d765a5e915905d8b28fd1837",
+          "bytes": 466
+        }
+      },
+      "testResults": {
+        "check.log": [
+          "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 283 filtered out; finished in 0.00s"
+        ],
+        "topic.log": [
+          "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 283 filtered out; finished in 0.00s"
+        ]
+      },
+      "sdk": {
+        "image": "sha256:3007729eb192341a4f004a88e42e1e66c94fc67d763acfc96568bd7311116018",
+        "cpus": 2000000000,
+        "memory": 8589934592,
+        "memorySwap": 8589934592,
+        "state": {
+          "Status": "exited",
+          "Running": false,
+          "Paused": false,
+          "Restarting": false,
+          "OOMKilled": false,
+          "Dead": false,
+          "Pid": 0,
+          "ExitCode": 137,
+          "Error": "",
+          "StartedAt": "2026-10-26T23:40:46.447379931Z",
+          "FinishedAt": "2026-10-26T23:46:52.334879075Z"
+        }
+      },
+      "sourceProof": null,
+      "sourceCacheRemoved": true,
+      "cleanup": {
+        "containers": [],
+        "networks": []
+      }
+    },
+    {
+      "sourceCommit": "dc5478784486926d44be03ce72f3b6a89e01f244",
+      "job": "/volumes/data/kailo/verification/phase1-integration/settlement-dc5478784-check",
+      "exit": 1,
+      "steps": {
+        "fmt": 1
+      },
+      "logs": {
+        "check-limits.log": {
+          "sha256": "2134e670fb7fd9ed9750a213d9962ede0a53895cf29668f81294e7b81689caf7",
+          "bytes": 216
+        },
+        "check.log": {
+          "sha256": "ece5a80232f1ce3f245000e46819be826bd0a2c52927172639807bb3f31b817f",
+          "bytes": 1181
+        },
+        "fmt.log": {
+          "sha256": "b5b62cefc735453f914e672cd761a6c8a2c82924c9bd126d317bfe7d187ac56e",
+          "bytes": 634
+        },
+        "pg-limits.log": {
+          "sha256": "99ce22214bd9c103090e7cd25c3ad5080b93720a15321333428f2bccf259e7b6",
+          "bytes": 175
+        },
+        "preflight.log": {
+          "sha256": "2ce8f76d2556f131112e9396c4828d2aeb168395373344f4d90f3b24ebcb06ae",
+          "bytes": 595
+        },
+        "redis-limits.log": {
+          "sha256": "8641f49eb56896160ddc2a315616cd4b1ec0db64b60474404936b49409435d59",
+          "bytes": 175
+        },
+        "result.log": {
+          "sha256": "d985c7b34fed44a1b730b43e0cfb5c3214be907ba404fb17b6867d35c640827c",
+          "bytes": 55
+        },
+        "steps.log": {
+          "sha256": "69cb1a71abf7a4adf8acf79c2ae022742d7d2093c5176ca5af6af11549addeda",
+          "bytes": 6
+        }
+      },
+      "testResults": {},
+      "sdk": {
+        "image": "sha256:3007729eb192341a4f004a88e42e1e66c94fc67d763acfc96568bd7311116018",
+        "cpus": 2000000000,
+        "memory": 8589934592,
+        "memorySwap": 8589934592,
+        "state": {
+          "Status": "exited",
+          "Running": false,
+          "Paused": false,
+          "Restarting": false,
+          "OOMKilled": false,
+          "Dead": false,
+          "Pid": 0,
+          "ExitCode": 1,
+          "Error": "",
+          "StartedAt": "2026-10-26T23:48:18.623750393Z",
+          "FinishedAt": "2026-10-26T23:48:54.096344084Z"
+        }
+      },
+      "sourceProof": null,
+      "sourceCacheRemoved": true,
+      "cleanup": {
+        "containers": [],
+        "networks": []
+      }
+    },
+    {
+      "sourceCommit": "5777a85153f91822d218a8894d5e7b81646a293c",
+      "job": "/volumes/data/kailo/verification/phase1-integration/settlement-5777a8515-check",
+      "exit": 101,
+      "steps": {
+        "fmt": 0,
+        "dr-syntax": 0,
+        "topic": 0,
+        "http": 0,
+        "clippy": 101
+      },
+      "logs": {
+        "check-limits.log": {
+          "sha256": "4fb7f025a2db153f7c87fc0ed5de6dccf496d5a1382b9dccd1585b9104e01e7a",
+          "bytes": 216
+        },
+        "check.log": {
+          "sha256": "c2afc79aaa7e95873204d2d64c6efd25fa3ef7a36d0f86b636238c5029e8b6e4",
+          "bytes": 2903
+        },
+        "clippy.log": {
+          "sha256": "df4e9229e0cf80ad60bbec7da29e24f192278b8444ba1d49617cf9624f7a99c6",
+          "bytes": 16797
+        },
+        "dr-syntax.log": {
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "bytes": 0
+        },
+        "fmt.log": {
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "bytes": 0
+        },
+        "http.log": {
+          "sha256": "adb7e2186b5d082290828aff0d07c7528ab95b7dfface513b296d926752152dd",
+          "bytes": 3349
+        },
+        "pg-limits.log": {
+          "sha256": "8b3c6717dd78a93ff5a442788d973d5a35436e312e3316a6f39dd46e7e62be27",
+          "bytes": 175
+        },
+        "preflight.log": {
+          "sha256": "09c5f0962e0fa831343e1b398db07ff534337c3d1a69d572c1534efb60a5256e",
+          "bytes": 595
+        },
+        "redis-limits.log": {
+          "sha256": "56468c980ae98ea1f9c3c98d92a8ed1bb00f7df61fdf7f83248e084c807c99ee",
+          "bytes": 175
+        },
+        "result.log": {
+          "sha256": "39335ea7a4c89fcd874f89abdc102158e400022945308eddcdf4555867a72697",
+          "bytes": 57
+        },
+        "steps.log": {
+          "sha256": "6b99274c5deaa60d8255b96759b7c7727ec2aa7063b8ebc31f58219e7828c0fd",
+          "bytes": 44
+        },
+        "topic.log": {
+          "sha256": "0f95b43fd9c96af6bf43ef3a3e5fff8d7cd2bd608e542b78a27c27a0c0984585",
+          "bytes": 466
+        }
+      },
+      "testResults": {
+        "check.log": [
+          "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 283 filtered out; finished in 0.00s",
+          "test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 1139 filtered out; finished in 9.78s"
+        ],
+        "http.log": [
+          "test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 1139 filtered out; finished in 9.78s"
+        ],
+        "topic.log": [
+          "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 283 filtered out; finished in 0.00s"
+        ]
+      },
+      "sdk": {
+        "image": "sha256:3007729eb192341a4f004a88e42e1e66c94fc67d763acfc96568bd7311116018",
+        "cpus": 2000000000,
+        "memory": 8589934592,
+        "memorySwap": 8589934592,
+        "state": {
+          "Status": "exited",
+          "Running": false,
+          "Paused": false,
+          "Restarting": false,
+          "OOMKilled": false,
+          "Dead": false,
+          "Pid": 0,
+          "ExitCode": 101,
+          "Error": "",
+          "StartedAt": "2026-10-26T23:51:36.927903369Z",
+          "FinishedAt": "2026-10-26T23:54:14.289867231Z"
+        }
+      },
+      "sourceProof": {
+        "archiveInputs": 3115,
+        "changed": []
+      },
+      "cleanup": {
+        "containers": [],
+        "networks": []
+      }
+    },
+    {
+      "sourceCommit": "dc95a94af63b094fbf508d791da343a16d006710",
+      "job": "/volumes/data/kailo/verification/phase1-integration/settlement-dc95a94af-data-check",
+      "exit": 1,
+      "steps": {
+        "fmt": 1
+      },
+      "logs": {
+        "check-limits.log": {
+          "sha256": "7d6e3d7d8c6cb5a9fd069058026580b218b1bea162c83c7506952e8b43c727fe",
+          "bytes": 216
+        },
+        "check.log": {
+          "sha256": "8352fe9343d61f79e58a98359c23de8680fa6b05349d1db5d12d2bb93f8cc2d9",
+          "bytes": 411
+        },
+        "fmt.log": {
+          "sha256": "f3c6d788a137d2375acf3ef9b4069244b01c8b107a4a56c62c8b191f99fb4644",
+          "bytes": 457
+        },
+        "pg-limits.log": {
+          "sha256": "9802367f937beb19226805fd53eb46a0a2107ce7a4aac6cf5531c1456c80bd86",
+          "bytes": 175
+        },
+        "preflight.log": {
+          "sha256": "9b3af15bba8774c6610785c8c083bf226a542784db7ddbf42430aa1a3506b73a",
+          "bytes": 595
+        },
+        "redis-limits.log": {
+          "sha256": "bff8b905cafdf9ec60704a13faaeba22a7320744d32e2f659e87a0a34eebf3b1",
+          "bytes": 175
+        },
+        "result.log": {
+          "sha256": "56007f26b584cd335b404df9976fa72873944c85bee88b586aea75a6b8ec67b3",
+          "bytes": 55
+        },
+        "steps.log": {
+          "sha256": "69cb1a71abf7a4adf8acf79c2ae022742d7d2093c5176ca5af6af11549addeda",
+          "bytes": 6
+        }
+      },
+      "testResults": {},
+      "sdk": {
+        "image": "sha256:df8a3475e3e32ecf5ac79f9c12763b8ce5d4f91a75c25007fd9bfa5b282fc081",
+        "cpus": 2000000000,
+        "memory": 8589934592,
+        "memorySwap": 8589934592,
+        "state": {
+          "Status": "exited",
+          "Running": false,
+          "Paused": false,
+          "Restarting": false,
+          "OOMKilled": false,
+          "Dead": false,
+          "Pid": 0,
+          "ExitCode": 1,
+          "Error": "",
+          "StartedAt": "2026-10-27T00:05:36.957161298Z",
+          "FinishedAt": "2026-10-27T00:05:37.17714522Z"
+        }
+      },
+      "sourceProof": {
+        "archiveInputs": 3115,
+        "changed": []
+      },
+      "cleanup": {
+        "containers": [],
+        "networks": []
+      }
+    },
+    {
+      "sourceCommit": "c2c1e06c4267e88b1374ff5e6f1a4183ae648e2b",
+      "job": "/volumes/data/kailo/verification/phase1-integration/settlement-c2c1e06c4-data-check",
+      "exit": 101,
+      "steps": {
+        "fmt": 0,
+        "dr-syntax": 0,
+        "private-http": 0,
+        "clippy": 101
+      },
+      "logs": {
+        "check-limits.log": {
+          "sha256": "e610a81f3942309e6ed1598dd122a768fac557dfd97f157b0a8e641e5f25a6c3",
+          "bytes": 216
+        },
+        "check.log": {
+          "sha256": "3c2654bf0592bd2d91e5aee1f949a5e1a883cefacedb6c4c1ebebfb46de95899",
+          "bytes": 1537
+        },
+        "clippy.log": {
+          "sha256": "a43dd041df803d9ff0682e8ddbb8e81d14623b977743678618a17e118c44c1b4",
+          "bytes": 11882
+        },
+        "dr-syntax.log": {
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "bytes": 0
+        },
+        "fmt.log": {
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "bytes": 0
+        },
+        "pg-limits.log": {
+          "sha256": "e842910c51699a514d4a1a9acdc78ce31997ca524888a2cfdca2e0e2f7eae19a",
+          "bytes": 175
+        },
+        "preflight.log": {
+          "sha256": "047b6c308b78782d9002806b7acbe7eea2e0216dd7320f21c19ea1f6a2a84702",
+          "bytes": 595
+        },
+        "private-http.log": {
+          "sha256": "1d355af62f77306018d07589481355eab511a0eafe9f92c1165ede22beb86338",
+          "bytes": 2098
+        },
+        "redis-limits.log": {
+          "sha256": "1d8b0a9b97bea74f672eed39eae466a629a87e61d4b58d5d2cf5574b20a78a08",
+          "bytes": 175
+        },
+        "result.log": {
+          "sha256": "77bf09f66bbf76d580c4916bd6b673b27b2efc99fdb8b70ed55704ee9e7d4419",
+          "bytes": 57
+        },
+        "steps.log": {
+          "sha256": "6085c2052efe42f92d9dbb34c565dd3519c65167157d05680c5e9f4a5b903c0e",
+          "bytes": 44
+        }
+      },
+      "testResults": {
+        "check.log": [
+          "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 1151 filtered out; finished in 2.13s"
+        ],
+        "private-http.log": [
+          "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 1151 filtered out; finished in 2.13s"
+        ]
+      },
+      "sdk": {
+        "image": "sha256:df8a3475e3e32ecf5ac79f9c12763b8ce5d4f91a75c25007fd9bfa5b282fc081",
+        "cpus": 2000000000,
+        "memory": 8589934592,
+        "memorySwap": 8589934592,
+        "state": {
+          "Status": "exited",
+          "Running": false,
+          "Paused": false,
+          "Restarting": false,
+          "OOMKilled": false,
+          "Dead": false,
+          "Pid": 0,
+          "ExitCode": 101,
+          "Error": "",
+          "StartedAt": "2026-10-27T00:07:45.344466875Z",
+          "FinishedAt": "2026-10-27T00:11:58.482323779Z"
+        }
+      },
+      "sourceProof": {
+        "archiveInputs": 3115,
+        "changed": []
+      },
+      "cleanup": {
+        "containers": [],
+        "networks": []
+      }
+    },
+    {
+      "sourceCommit": "1fde2756a4a27d226e7a5ca801312a0c832fea51",
+      "job": "/volumes/data/kailo/verification/phase1-integration/settlement-1fde2756a-data-check",
+      "exit": 0,
+      "steps": {
+        "fmt": 0,
+        "dr-syntax": 0,
+        "private-http": 0,
+        "governance": 0,
+        "clippy": 0,
+        "restored-attestor": 0,
+        "restored-http": 0,
+        "fmt-final": 0
+      },
+      "logs": {
+        "check-limits.log": {
+          "sha256": "0108a07e25e9d7dbf9d3b9acb60c2a6255e3b7baff0d83c8edad31dd6ef05708",
+          "bytes": 216
+        },
+        "check.log": {
+          "sha256": "c3b099747f895de131ec809357790a1fc117eb4cdac39f39952b3e6d93d40aed",
+          "bytes": 6650
+        },
+        "clippy.log": {
+          "sha256": "3b3157b6936e45632f7c439dd2b06ffe1c1fa8c56e42e6773028dc9a9e9ec534",
+          "bytes": 1437
+        },
+        "dr-syntax.log": {
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "bytes": 0
+        },
+        "fmt-final.log": {
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "bytes": 0
+        },
+        "fmt.log": {
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "bytes": 0
+        },
+        "governance.log": {
+          "sha256": "8d7c96f1577b313e8df6d847b2070567b751af22a4e6082f0251db2993fa2270",
+          "bytes": 996
+        },
+        "negative-attestor.log": {
+          "sha256": "da8cb521cd05dc82d2398cbf6cc6a9a17d4534a20ed9fc756f468f24d3e7272d",
+          "bytes": 1162
+        },
+        "negative-readmit.log": {
+          "sha256": "148ec7151cb4d56822e1380de3fd6f95116fc687d260a73eacb346e6097ce4bf",
+          "bytes": 1164
+        },
+        "pg-limits.log": {
+          "sha256": "e87b3dcb8b9690e3ced089c385f9a3210ec7ee3629dcee5f4818e8f327a38e16",
+          "bytes": 175
+        },
+        "preflight.log": {
+          "sha256": "32ea9562a1ff140199c3aaad8ce52c3b66147415664c4f6de31c3dfa9c01b513",
+          "bytes": 595
+        },
+        "private-http.log": {
+          "sha256": "ab5146c1ebfd25412e156a95e4df3ef1c35476264d038f2f6b2229318a5dd9f5",
+          "bytes": 2098
+        },
+        "redis-limits.log": {
+          "sha256": "5f8351500007ab57b7133137f26937c9cc78b215c7b1a8d0020eb3e1253df944",
+          "bytes": 175
+        },
+        "restored-attestor.log": {
+          "sha256": "fa77555338e5217bde38f4d37d67c5ac35623d87854c2a8f49842b152a7a4d15",
+          "bytes": 482
+        },
+        "restored-http.log": {
+          "sha256": "0b3a08b8c0a8d2a4b22fd0156825c4221e446040b959a24bba716310b083c116",
+          "bytes": 2065
+        },
+        "result.log": {
+          "sha256": "3286cf57b40509fe1e0b093f3bd596bbf8cb1171302e6ecf78db35ccc49ddf13",
+          "bytes": 55
+        },
+        "rustc-version.log": {
+          "sha256": "f4d034f5660bb49f22bfcba3f3445be67e25b704c193ff421b53863b4faee148",
+          "bytes": 36
+        },
+        "steps.log": {
+          "sha256": "5fae4bf7d6671efba74f1186e99daf4599e7ae1e9027138700164ff3b0da34a9",
+          "bytes": 103
+        }
+      },
+      "testResults": {
+        "check.log": [
+          "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 1151 filtered out; finished in 2.19s",
+          "test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 1147 filtered out; finished in 0.71s",
+          "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1154 filtered out; finished in 0.32s",
+          "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1154 filtered out; finished in 0.33s",
+          "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1154 filtered out; finished in 0.50s",
+          "test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 1139 filtered out; finished in 9.74s"
+        ],
+        "governance.log": [
+          "test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 1147 filtered out; finished in 0.71s"
+        ],
+        "negative-attestor.log": [
+          "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1154 filtered out; finished in 0.32s"
+        ],
+        "negative-readmit.log": [
+          "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1154 filtered out; finished in 0.50s"
+        ],
+        "private-http.log": [
+          "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 1151 filtered out; finished in 2.19s"
+        ],
+        "restored-attestor.log": [
+          "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1154 filtered out; finished in 0.33s"
+        ],
+        "restored-http.log": [
+          "test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 1139 filtered out; finished in 9.74s"
+        ]
+      },
+      "sdk": {
+        "image": "sha256:df8a3475e3e32ecf5ac79f9c12763b8ce5d4f91a75c25007fd9bfa5b282fc081",
+        "cpus": 2000000000,
+        "memory": 8589934592,
+        "memorySwap": 8589934592,
+        "state": {
+          "Status": "exited",
+          "Running": false,
+          "Paused": false,
+          "Restarting": false,
+          "OOMKilled": false,
+          "Dead": false,
+          "Pid": 0,
+          "ExitCode": 0,
+          "Error": "",
+          "StartedAt": "2026-10-27T00:16:59.391723225Z",
+          "FinishedAt": "2026-10-27T00:19:50.458614625Z"
+        }
+      },
+      "sourceProof": {
+        "archiveInputs": 3115,
+        "changed": []
+      },
+      "cleanup": {
+        "containers": [],
+        "networks": []
+      }
+    }
+  ],
+  "boundaries": [
+    "Original SDK 3007729 with project-selected Rust 1.95 and final preinstalled Native SDK df8a both recorded separately.",
+    "Isolated real PostgreSQL and Redis, original HTTP router, writer and NIP-98 consumers. No production database or credential copied.",
+    "Original DR script syntax only; no live restore, deployment, formal artifact, latest full or real three-client business acceptance.",
+    "Earlier lock-fixture termination, format failures, ENOSPC and existing Clippy failures are retained as failures; ignored tests are not passes."
+  ]
+}

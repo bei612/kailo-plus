@@ -3233,6 +3233,12 @@ pub struct ApplicationBindingView {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub has_read_receiver: Option<bool>,
 
+    /// Core 在已准入绑定事务中冻结的已批准 release 最大暴露边界。固定归属于
+    /// binding/release/generation/action/version；不是授权，不能替代 fresh target permission、schema 或
+    /// redaction 校验。未 ACTIVE 的绑定仅向 canCreate 管理者提供部署引用，仍不得执行。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub human_action_policies: Option<Vec<ApplicationHumanActionPolicy>>,
+
     /// DD-127(4): presentation category the approved NATIVE_PAGE release declares. The sidebar
     /// labels the entry by capabilityCategories ∪ this value; it grants nothing.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -3259,6 +3265,22 @@ pub struct ApplicationBindingCapability {
     pub category: String,
 
     pub version: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplicationHumanActionPolicy {
+    pub action_key: String,
+
+    pub action_version: i64,
+
+    pub component_release_id: String,
+
+    pub generation: i64,
+
+    pub result_exposure_policy_id: String,
+
+    pub result_exposure_policy_version: i64,
 }
 
 /// DD-127(4): presentation category the approved NATIVE_PAGE release declares. The sidebar
@@ -8110,6 +8132,19 @@ pub struct NativeCommunityFacts {
     /// 该 Tenant 的 Community host，可能带非默认端口
     pub community_host: String,
 
+    /// DD-81/160：仅从当前 ACTIVE Community 的可信 NIP-11、实际 ready 的 writer policy 读取的规范 publication
+    /// epoch。Native 新签 1631 前冻结并作为唯一 kailo:publication 标签签名；缺失不猜测或回填历史意图。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub publication_epoch: Option<String>,
+
+    /// 读取上述部署事实时 Core 的 Unix 秒时刻；Native 仅以本次可信读的时刻判断原签事件是否严格超过窗口，不信任 Webview now 或设备跳钟。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub publish_result_observed_at_unix_seconds: Option<i64>,
+
+    /// DD-81：与 Core 发布对账器同源的 PUBLISH_RESULT_SETTLE_SECONDS 部署事实，必须为正且不小于 Relay 时间漂移窗口；缺失时不得猜测未送达。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub publish_result_settle_seconds: Option<i64>,
+
     /// 当前固定 Relay NIP-11 的 max_limit；旧客户端忽略，新 Pulse 消费者缺失时不猜测上限。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub relay_query_limit: Option<i64>,
@@ -9954,11 +9989,13 @@ pub struct ProjectsGitRefResponse {
 /// CLIENT signer, never supplied by this request. Creation resolves the home Channel from an
 /// admitted Workspace; metadata is transient and remains Relay-owned. DELETE selects a real
 /// signed current announcement; it does not delete its channel or repositories.
-/// CREATE_PULL_REQUEST publishes the original NIP-34 1618 review for a branch already on the
-/// repository (DD-118); the push itself is not part of this request. APPROVE_PULL_REQUEST
-/// and the request-changes / inline-line variants of CREATE_PULL_REQUEST_COMMENT publish the
-/// original labeled kind-1 review comments (desktop
-/// pullRequestReviews.ts::submitProjectPullRequestReview,
+/// UPDATE_PULL_REQUEST publishes the original kind-1619 head update for the named immutable
+/// 1618 root, only as its author or repository owner; it carries commit and optional
+/// mergeBase, never a caller author, tags or clone URL. CREATE_PULL_REQUEST publishes the
+/// original NIP-34 1618 review for a branch already on the repository (DD-118); the push
+/// itself is not part of this request. APPROVE_PULL_REQUEST and the request-changes /
+/// inline-line variants of CREATE_PULL_REQUEST_COMMENT publish the original labeled kind-1
+/// review comments (desktop pullRequestReviews.ts::submitProjectPullRequestReview,
 /// hooks.ts::createProjectPullRequestComment) against the named review head; they introduce
 /// no new Nostr kind (DD-118(5)). ATTACH_REPOSITORY (original useAttachProjectRepository /
 /// useAddProjectRepository) republishes the signer's current 30621 head named by
@@ -10020,11 +10057,12 @@ pub struct ProjectsPublishRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub clone_url: Option<String>,
 
-    /// Original `c`. CREATE_PULL_REQUEST: compare branch head read from the trusted repository
-    /// state. APPROVE_PULL_REQUEST and CREATE_PULL_REQUEST_COMMENT with reviewDecision or an
-    /// anchor: the review head the reviewer looked at; the consumer refuses with
-    /// TARGET_STATE_CONFLICT unless it is still the review's current trusted head. Required by
-    /// those review comments and refused on ordinary comments.
+    /// Original `c`. UPDATE_PULL_REQUEST: the already-pushed head frozen by this update intent.
+    /// CREATE_PULL_REQUEST: compare branch head read from the trusted repository state.
+    /// APPROVE_PULL_REQUEST and CREATE_PULL_REQUEST_COMMENT with reviewDecision or an anchor:
+    /// the review head the reviewer looked at; the consumer refuses with TARGET_STATE_CONFLICT
+    /// unless it is still the review's current trusted head. Required by those review comments
+    /// and refused on ordinary comments.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub commit: Option<String>,
 
@@ -10034,7 +10072,7 @@ pub struct ProjectsPublishRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mentions: Option<Vec<String>>,
 
-    /// Original 1618 `merge-base`, when known.
+    /// Original 1618/1619 `merge-base`, when known.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub merge_base: Option<String>,
 
@@ -10205,6 +10243,9 @@ pub enum ProjectPublicationOperation {
 
     #[serde(rename = "UNASSIGN_ISSUE")]
     UnassignIssue,
+
+    #[serde(rename = "UPDATE_PULL_REQUEST")]
+    UpdatePullRequest,
 }
 
 /// Original pullRequestReviews.ts lifecycle states the UI may publish (NIP-34
@@ -11252,6 +11293,11 @@ pub struct TenantProfileView {
     pub icon: Option<String>,
 
     pub name: String,
+
+    /// BFF_STREAM_RETRY_MILLIS 部署事实；在线资料读取中断后再次读取前的等待。afterVersion
+    /// 查询只等待有限的再准入时间，回应前重新校验本人会话与成员资格。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub refresh_after_millis: Option<i64>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub update_action_key: Option<String>,

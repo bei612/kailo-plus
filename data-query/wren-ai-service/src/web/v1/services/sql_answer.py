@@ -1,13 +1,13 @@
 import asyncio
-import logging
 import json
+import logging
 from typing import Dict, Literal, Optional
 from uuid import UUID
 
 from cachetools import TTLCache
+from fastapi import HTTPException
 from langfuse.decorators import observe
 from pydantic import BaseModel
-from fastapi import HTTPException
 
 from src.core.pipeline import BasicPipeline
 from src.utils import trace_metadata
@@ -34,6 +34,11 @@ class SqlAnswerResultRequest(BaseModel):
     query_id: str
 
 
+class SqlAnswerCompletion(BaseModel):
+    query_id: str
+    content: str
+
+
 class SqlAnswerResultResponse(BaseModel):
     class SqlAnswerError(BaseModel):
         code: Literal["OTHERS"]
@@ -43,6 +48,7 @@ class SqlAnswerResultResponse(BaseModel):
     num_rows_used_in_llm: Optional[int] = None
     error: Optional[SqlAnswerError] = None
     trace_id: Optional[str] = None
+    completion: Optional[SqlAnswerCompletion] = None
 
 
 class SqlAnswerService:
@@ -98,7 +104,7 @@ class SqlAnswerService:
             )
 
             asyncio.create_task(
-                self._pipelines["sql_answer"].run(
+                self._generate_answer(
                     query=sql_answer_request.query,
                     sql=sql_answer_request.sql,
                     sql_data=preprocessed_sql_data.get("sql_data", {}),
@@ -128,6 +134,51 @@ class SqlAnswerService:
             results["metadata"]["error_message"] = str(e)
             return results
 
+    async def _generate_answer(self, **inputs):
+        query_id = inputs["query_id"]
+        expected = self._sql_answer_results.get(query_id)
+        try:
+            result = await self._pipelines["sql_answer"].run(**inputs)
+            # trace_cost returns the actual provider dictionary, not its
+            # (result, model) instrumentation tuple. succeeded above still
+            # means only preprocessing; only this returned natural completion
+            # can retain the complete original answer.
+            generated = (
+                result.get("generate_answer") if isinstance(result, dict) else None
+            )
+            replies = generated.get("replies") if isinstance(generated, dict) else None
+            meta = generated.get("meta") if isinstance(generated, dict) else None
+            if (
+                not isinstance(replies, list)
+                or len(replies) != 1
+                or not isinstance(replies[0], str)
+                or not isinstance(meta, list)
+                or len(meta) != 1
+                or not isinstance(meta[0], dict)
+                or meta[0].get("finish_reason") != "stop"
+            ):
+                return
+            current = self._sql_answer_results.get(query_id)
+            if (
+                current is None
+                or current is not expected
+                or current.status != "succeeded"
+            ):
+                return
+            self._sql_answer_results[query_id] = SqlAnswerResultResponse(
+                **{
+                    **current.model_dump(),
+                    "completion": SqlAnswerCompletion(
+                        query_id=query_id, content=replies[0]
+                    ),
+                }
+            )
+            self._pipelines["sql_answer"].retire_streaming_results(query_id)
+        except Exception:
+            # A lost provider result is not proof of failure and must not
+            # resubmit the original generation. Cache expiry remains UNKNOWN.
+            logger.exception("Original SQL answer completion unavailable")
+
     def get_sql_answer_result(
         self,
         sql_answer_result_request: SqlAnswerResultRequest,
@@ -145,19 +196,39 @@ class SqlAnswerService:
         self,
         query_id: str,
     ):
-        if (
-            self._sql_answer_results.get(query_id)
-            and self._sql_answer_results.get(query_id).status == "succeeded"
+        current = self._sql_answer_results.get(query_id)
+        if current is None or current.status != "succeeded":
+            return
+        completed = getattr(current, "completion", None)
+        if completed is not None and completed.query_id == query_id:
+            # Reading the original completed result does not consume or restart
+            # the one-shot queue, including another page mount/session.
+            yield SSEEvent(
+                data=SSEEvent.SSEEventMessage(message=completed.content)
+            ).serialize()
+            yield f"data: {json.dumps({'done': True, 'queryId': query_id})}\n\n"
+            return
+        observed = ""
+        async for chunk in self._pipelines["sql_answer"].get_streaming_results(
+            query_id
         ):
-            async for chunk in self._pipelines["sql_answer"].get_streaming_results(
-                query_id
-            ):
-                if chunk is None:
-                    # Only the original native generator completion produces
-                    # this receipt. Timeout/HTTP close never emits done.
+            if chunk is None:
+                current = self._sql_answer_results.get(query_id)
+                completed = getattr(current, "completion", None)
+                # A second observer can have consumed only the queue's tail.
+                # Never label that partial body complete. GET of the original
+                # result can recover the full answer under the caller's ACL.
+                if (
+                    completed is not None
+                    and completed.query_id == query_id
+                    and completed.content.startswith(observed)
+                ):
+                    remainder = completed.content[len(observed) :]
+                    if remainder:
+                        yield SSEEvent(
+                            data=SSEEvent.SSEEventMessage(message=remainder)
+                        ).serialize()
                     yield f"data: {json.dumps({'done': True, 'queryId': query_id})}\n\n"
-                    return
-                event = SSEEvent(
-                    data=SSEEvent.SSEEventMessage(message=chunk),
-                )
-                yield event.serialize()
+                return
+            observed += chunk
+            yield SSEEvent(data=SSEEvent.SSEEventMessage(message=chunk)).serialize()

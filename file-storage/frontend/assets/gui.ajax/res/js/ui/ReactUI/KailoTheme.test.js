@@ -58,6 +58,14 @@ describe('Kailo tokens → Material system colors', () => {
         expect(colors['hover-background']).toBe('rgba(255,255,255,.06)')
     })
 
+    it('maps the Kailo selected and hover roles onto the native containers (DD-157)', () => {
+        const roles = { ...LIGHT, '--selected': '#ece9ff', '--selected-foreground': '#4b2bd6', '--hover': '#f2f2f5' }
+        const { colors } = kailoScheme(roles, false)
+        expect(colors['secondary-container']).toBe('#ece9ff')
+        expect(colors['on-secondary-container']).toBe('#4b2bd6')
+        expect(colors['hover-background']).toBe('#f2f2f5')
+    })
+
     it('refuses incomplete tokens and is inactive without the bridge', () => {
         expect(() => kailoScheme({ '--background': '0 0% 100%' }, false)).toThrow()
         expect(kailoThemeActive(LIGHT)).toBe(false)

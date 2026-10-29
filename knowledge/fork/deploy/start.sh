@@ -71,11 +71,37 @@ if [[ -n "$platform_env" ]]; then
     exit 78
   fi
 fi
+# Optional private delivery roots must be explicit single absolute paths.
+for field in KNOWLEDGE_ADAPTER_WORKER_DELIVERY_DIR KNOWLEDGE_CONFORMANCE_FORWARD_DELIVERY_DIR; do
+  count=$(grep -Ec "^${field}=" "$native_env" || true)
+  if [[ "$count" != 0 ]]; then
+    [[ "$count" == 1 ]] && grep -Eq "^${field}=/[^[:space:]]+$" "$native_env" || {
+      echo "$field must occur once with an absolute delivery directory" >&2
+      exit 78
+    }
+    [[ "$platform_adapter" == true ]] || {
+      echo "$field requires the original receiver adapter" >&2
+      exit 78
+    }
+  fi
+done
 if [[ "$platform_adapter" == true ]]; then
   args+=(-f "$deployment_dir/compose.adapter.yaml")
+  if grep -Eq '^KNOWLEDGE_ADAPTER_WORKER_DELIVERY_DIR=.+$' "$native_env"; then
+    args+=(-f "$deployment_dir/compose.adapter-worker.yaml")
+  fi
 fi
 if [[ "$file_storage_sync" == true ]]; then
   args+=(-f "$deployment_dir/compose.file-storage-sync.yaml")
+fi
+# Existing MCPAdapterConfigs selects each endpoint's own controlled file.
+# This explicit isolated FORWARD delivery never replaces the real binding.
+if grep -Eq '^KNOWLEDGE_CONFORMANCE_FORWARD_DELIVERY_DIR=.+$' "$native_env"; then
+  [[ "$platform_adapter" == true && "$file_storage_sync" == true ]] || {
+    echo 'forward protocol delivery requires the original receiver adapter and importer' >&2
+    exit 78
+  }
+  args+=(-f "$deployment_dir/compose.conformance-forward.yaml")
 fi
 # DD-133(4): the member directory read follows the native env on every start,
 # so later integration starts never drop it. The group is all-or-nothing.

@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { WebGifItem, WebGifSearchView } from "@client-kit/contracts";
 import { ErrorClass, ReasonCode } from "@client-kit/contracts";
-import { KlipyGifPicker, withGifLines, type GifSearch } from "../src/react/gifs";
+import { KlipyGifPicker, withGifLines, gifAttachment, splitDraftGifMedia, type GifSearch } from "../src/react/gifs";
 import { ComposerEmojiPicker } from "../src/react/composer/features/messages/ui/ComposerEmojiPicker";
 import { TooltipProvider } from "../src/react/sidebar/tooltip";
 import { BffError } from "../src/transport";
@@ -70,6 +70,18 @@ describe("original KLIPY picker over the BFF forward", () => {
     await vi.waitFor(() => expect(host.querySelector("[aria-label='Choose GIF still'] img")).not.toBeNull());
     expect(host.querySelector("[aria-label='Choose GIF still'] img")?.getAttribute("src")).toBe("https://static.klipy.com/still/sm.jpg");
     expect(host.querySelector("[data-testid='klipy-gif-static-placeholder']")?.textContent).toBe("GIF plain");
+  });
+
+  it("round trips the original GIF draft marker without consuming hash-backed files at the same URL", () => {
+    const selected = gif("kept");
+    const marker = gifAttachment(selected);
+    const file = {...marker, sha256: "a".repeat(64), uploaded: 99};
+    const missingFile = {...marker, type: "text/plain", filename: "missing.txt"};
+    const restored = splitDraftGifMedia([file, marker, missingFile]);
+    expect(restored.attachments).toEqual([file, missingFile]);
+    expect(restored.gifs).toEqual([expect.objectContaining({url:selected.url,title:selected.title,width:480,height:270})]);
+    expect(gifAttachment(restored.gifs[0]!)).toEqual(marker);
+    expect(withGifLines("body", restored.gifs)).toBe(`body\n![image](${selected.url})`);
   });
 
   it("appends chosen GIFs as body lines without imeta", () => {

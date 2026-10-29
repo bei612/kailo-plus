@@ -1,0 +1,67 @@
+{
+  "source_commit": "a3957d2afee9aec2c69c105be091258579494732",
+  "comparison_base": "7fa9b164a3c5db20d50f1e6c4802dd1451812687",
+  "sdk_image": "sha256:3007729eb192341a4f004a88e42e1e66c94fc67d763acfc96568bd7311116018",
+  "resources": {
+    "cpus": 2,
+    "memory_bytes": 17179869184,
+    "memory_swap_bytes": 17179869184,
+    "pids": 1024
+  },
+  "target_cache": "/volumes/data/kailo/conformance/cache/publication-negative-core/rust-target",
+  "source_inputs_checked": 2175,
+  "source_mismatches": [],
+  "positive_summaries": [
+    "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 69 filtered out; finished in 0.00s",
+    "test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 61 filtered out; finished in 0.12s",
+    "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 924 filtered out; finished in 0.01s",
+    "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 932 filtered out; finished in 0.00s"
+  ],
+  "checks": [
+    "rustfmt four changed Rust files",
+    "contracts original Projects publication roundtrip",
+    "collab-bridge projects::tests",
+    "platform-core bin projects::tests",
+    "platform-core signed native-channel derivation",
+    "collab-bridge/platform-core all-targets Clippy -D warnings"
+  ],
+  "negative": {
+    "mutation": "Remove actual author/owner guard from original review update producer",
+    "exit": 101,
+    "restored_source_sha256": "b66f1432a7d5f5d189274d359af4c90e7203a29d56bb7ba4b3b3b2e193518515"
+  },
+  "job_directory": "/volumes/data/kailo/verification/projects-review-update-core/a3957d2af-inputs",
+  "files_sha256": {
+    "runner.sh": "7a282e636e26dbfa78a489b00f8d7a518265b587da9ebace5975d74cbd392fdf",
+    "check.log": "71f9bde73e581882d2946061b665069e015837b3e3e529aba12316f20f5b4158",
+    "result.log": "e1fbc399f468efbeb807da3b8509182e48455a5498ecf9c04f7b36ec85f5475b",
+    "limits.log": "5c1b76166bac7d6f72d7f8a7e33fe0dd022b2fddb338c9b69b4f3886b628be13",
+    "prearchive-preflight.log": "28f47c45e23eb6abb4b9618ca747c3a94f535f6a8eff210d46a0354754a3cb40",
+    "preflight.log": "b36dbefeade660b35de057d33f4864e4b2f0cbb4701074b52442a2c36bccca00",
+    "oom.log": "2ed27c1421e6928dbe13dbfdb5c59e1045b30341fe7ebe05700006bc5ac572c0",
+    "host-config.json": "26c0ae44bf6c2cfa5006b33c78b3afba0cb2482cbb096789b80d6ad8a53d79f1",
+    "tmp/fault-core-exit.log": "39b8dc3fc8b44765c8e6f1adee04c5b465e555ab791cc42d0d9e810d5b64297c",
+    "tmp/fault-core.log": "4498df5e6cbc13850f5dc4ab0ff48fbed40751e94759be32e2dc00522f191a77",
+    "tmp/restored-core.sha256": "5ee6a0c9169c731d639dd38f4af64966c95b92044eba186884ef2c526cc61e83",
+    "tmp/restored-core.log": "7c2ffb4076dfa53814d1355d5206ba9e1f85e1c3108e6dead0c22753f1b1ed78"
+  },
+  "boundaries": [
+    "No PG/Redis or root independently owned kind1619 database/Relay policy migrations in this fixed source.",
+    "No deployment or real external Git/Relay acceptance; only original production producer consumers.",
+    "Source cache reusable after receipt; raw evidence retained."
+  ],
+  "failure_history": [
+    {
+      "source_commit": "b12c94e42de5e936d3d5c6ab411591c63ac304eb",
+      "exit": 101,
+      "reason": "Original Rust contracts roundtrip passed; collab-bridge compilation rejected borrowed repository coordinate in owned tag vectors. a395 owns the unchanged coordinate. Core/negative/Clippy were not reached.",
+      "log_sha256": "5aae68dac9cbb7cde57dc8777886302c38728d7c0251f45de27f239b10a60666"
+    },
+    {
+      "source_commit": "a3957d2afee9aec2c69c105be091258579494732",
+      "exit": 101,
+      "reason": "Original contracts1 and bridge19 passed; minimal archive omitted Gateway ext_mcp.proto consumed by existing platform build.rs. Same GitHub source input restored, no product change.",
+      "log_sha256": "156388be153cce053d577c1786fa85f9f58aa2626423342e22708da957a5920f"
+    }
+  ]
+}

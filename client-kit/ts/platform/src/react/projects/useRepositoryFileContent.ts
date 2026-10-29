@@ -4,7 +4,7 @@
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { ProjectsHost } from "./projectEnumeration";
-import type { ProjectRepoFile } from "./projectGit";
+import { projectTagTarget, type ProjectRepoFile } from "./projectGit";
 import type { Repository } from "./projectModels";
 import type { ProjectPullRequest } from "./projectPullRequests.mjs";
 
@@ -33,17 +33,27 @@ export function useRepositoryFileContent(file: ProjectRepoFile | null, source?: 
   };
 }
 
-export function useRepositoryFileContentSource({ activeBranch, host, pullRequest, repository }: {
+export function useRepositoryFileContentSource({ activeBranch, host, pullRequest, repository, source = "remote", activeTag = null }: {
   activeBranch: string | null;
+  activeTag?: { name: string; commit: string } | null;
   host: ProjectsHost;
   pullRequest: Pick<ProjectPullRequest, "id" | "commit"> | null;
   repository: Repository | null;
+  source?: "remote" | "local";
 }) {
   const git = host.git;
   return React.useMemo<RepositoryFileContentSource | undefined>(() => {
     if (!repository || !git) return undefined;
-    const targetRef = pullRequest ? `refs/nostr/${pullRequest.id}` : null;
-    const targetCommit = pullRequest?.commit ?? null;
+    if (source === "local" && !activeTag) {
+      const checkout = git.checkout;
+      if (!checkout) return undefined;
+      return {
+        cacheKey: [host.scopeKey, repository.id, "local", activeBranch ?? "default"],
+        load: path => checkout.getProjectLocalRepoFileContent({ repository: repository.repoAddress, path }),
+      };
+    }
+    const targetRef = activeTag ? `refs/tags/${activeTag.name}` : pullRequest ? `refs/nostr/${pullRequest.id}` : null;
+    const targetCommit = activeTag?.commit ?? pullRequest?.commit ?? null;
     return {
       cacheKey: [host.scopeKey, repository.id, "remote", activeBranch ?? "default", targetRef ?? "default", targetCommit ?? "default"],
       load: path => git.getProjectRepoFileContent({
@@ -52,7 +62,8 @@ export function useRepositoryFileContentSource({ activeBranch, host, pullRequest
         targetRef,
         targetCommit,
         path,
+        ...(activeTag ? projectTagTarget(activeTag) : {}),
       }),
     };
-  }, [activeBranch, git, host.scopeKey, pullRequest, repository]);
+  }, [activeBranch, activeTag, git, host.scopeKey, pullRequest, repository, source]);
 }

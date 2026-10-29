@@ -7,7 +7,10 @@
 //! re-verified against the relay). The observer (24200) and turn-metric (44200)
 //! scopes and `referenced_e` are not offered (DD-125(6), DD-159(1)).
 
+mod lifecycle;
 mod store;
+pub(crate) use lifecycle::{change_device_key, erase_previous_identity, SessionArchive};
+use lifecycle::{erase, erase_foreign};
 
 use std::path::{Path, PathBuf};
 
@@ -18,6 +21,7 @@ use sha2::{Digest, Sha256};
 use tauri::{AppHandle, Manager, State};
 
 use crate::app_state::AppState;
+use crate::platform::api::NativeSession;
 use crate::relay::{query_relay_at, relay_api_base_url_with_override};
 use store::{ArchiveStore, Subscription};
 
@@ -80,14 +84,16 @@ pub(crate) fn access_from_roster(
 
 async fn query_in_scope(
     state: &AppState,
+    session: &NativeSession,
     identity: &str,
     relay: &str,
     filters: &[serde_json::Value],
 ) -> Result<Vec<nostr::Event>, Access> {
     let check = || {
-        state
-            .signing_keys()
-            .is_ok_and(|keys| keys.public_key().to_hex() == identity)
+        session.has_credentials().unwrap_or(false)
+            && state
+                .signing_keys()
+                .is_ok_and(|keys| keys.public_key().to_hex() == identity)
             && relay_api_base_url_with_override(state) == relay
     };
     if !check() {
@@ -100,9 +106,16 @@ async fn query_in_scope(
     result.map_err(|error| classify_relay_error(&error))
 }
 
-async fn probe(state: &AppState, identity: &str, relay: &str, channel_id: &str) -> Access {
+async fn probe(
+    state: &AppState,
+    session: &NativeSession,
+    identity: &str,
+    relay: &str,
+    channel_id: &str,
+) -> Access {
     let roster = match query_in_scope(
         state,
+        session,
         identity,
         relay,
         &[serde_json::json!({"kinds": [39002], "#d": [channel_id], "limit": 1})],
@@ -117,6 +130,7 @@ async fn probe(state: &AppState, identity: &str, relay: &str, channel_id: &str) 
     }
     match query_in_scope(
         state,
+        session,
         identity,
         relay,
         &[serde_json::json!({"kinds": [39000], "#d": [channel_id], "limit": 1})],
@@ -148,50 +162,6 @@ fn archive_dir(app: &AppHandle) -> Result<PathBuf, String> {
 
 fn keyring() -> &'static crate::secret_store::SecretStore {
     crate::secret_store::SecretStore::shared(crate::app_state::keyring_service())
-}
-
-/// Archives of any other local identity are erased: key first, then file
-/// (DD-159(4), identity switch / sign-out / device key change).
-pub(crate) fn erase_foreign(
-    dir: &Path,
-    current_tag: &str,
-    delete_key: &dyn Fn(&str) -> Result<(), String>,
-) -> Result<(), String> {
-    let entries = std::fs::read_dir(dir).map_err(|e| e.to_string())?;
-    for entry in entries {
-        let entry = entry.map_err(|e| e.to_string())?;
-        let path = entry.path();
-        let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
-            continue;
-        };
-        if path.extension().and_then(|e| e.to_str()) != Some("sqlite") || stem == current_tag {
-            continue;
-        }
-        delete_key(&key_name(stem))?;
-        std::fs::remove_file(&path).map_err(|e| e.to_string())?;
-    }
-    Ok(())
-}
-
-pub(crate) fn erase_previous_identity(app: &AppHandle, state: &AppState) -> Result<(), String> {
-    // A locked keychain gives an ephemeral recovery identity, not a new user.
-    let Ok(keys) = state.signing_keys() else {
-        return Ok(());
-    };
-    erase_foreign(
-        &archive_dir(app)?,
-        &identity_tag(&keys.public_key().to_hex()),
-        &|name| keyring().delete(name),
-    )
-}
-
-fn erase(dir: &Path, tag: &str) -> Result<(), String> {
-    keyring().delete(&key_name(tag))?;
-    let path = dir.join(format!("{tag}.sqlite"));
-    if path.exists() {
-        std::fs::remove_file(&path).map_err(|e| format!("remove local archive: {e}"))?;
-    }
-    Ok(())
 }
 
 struct Opened {
@@ -293,7 +263,15 @@ pub async fn local_archive_subscribe(
 ) -> Result<LocalArchiveStatus, String> {
     let _guard = lock().lock().await;
     let opened = open(&app, &state)?;
-    match probe(&state, &opened.identity, &opened.relay, &channel_id).await {
+    match probe(
+        &state,
+        &app.state::<NativeSession>(),
+        &opened.identity,
+        &opened.relay,
+        &channel_id,
+    )
+    .await
+    {
         Access::Readable => {}
         Access::Lost => {
             opened.store.unsubscribe(&channel_id)?;
@@ -332,21 +310,6 @@ pub async fn local_archive_clear(app: AppHandle, state: State<'_, AppState>) -> 
     erase(&archive_dir(&app)?, &identity_tag(&identity))
 }
 
-/// Serialize sign-out with sync so an in-flight response cannot recreate copies.
-pub(crate) async fn erase_on_sign_out(app: &AppHandle) -> Result<(), String> {
-    let _guard = lock().lock().await;
-    let dir = archive_dir(app)?;
-    for entry in std::fs::read_dir(&dir).map_err(|e| e.to_string())? {
-        let path = entry.map_err(|e| e.to_string())?.path();
-        if path.extension().and_then(|e| e.to_str()) == Some("sqlite") {
-            if let Some(tag) = path.file_stem().and_then(|s| s.to_str()) {
-                erase(&dir, tag)?;
-            }
-        }
-    }
-    Ok(())
-}
-
 /// Re-checks access and pulls new events for every subscription.
 #[tauri::command]
 pub async fn local_archive_sync(
@@ -357,11 +320,19 @@ pub async fn local_archive_sync(
     let mut opened = open(&app, &state)?;
     let mut results = Vec::new();
     for sub in opened.store.subscriptions()? {
-        let access = probe(&state, &opened.identity, &opened.relay, &sub.channel_id).await;
+        let access = probe(
+            &state,
+            &app.state::<NativeSession>(),
+            &opened.identity,
+            &opened.relay,
+            &sub.channel_id,
+        )
+        .await;
         let outcome = match access {
             Access::Readable => {
                 pull(
                     &state,
+                    &app.state::<NativeSession>(),
                     &opened.identity,
                     &opened.relay,
                     &mut opened.store,
@@ -417,6 +388,7 @@ pub async fn local_archive_sync(
 
 async fn pull(
     state: &AppState,
+    session: &NativeSession,
     identity: &str,
     relay: &str,
     store: &mut ArchiveStore,
@@ -444,7 +416,7 @@ async fn pull(
         cursor = cursor.max(newest);
     }
     for _ in 0..MAX_PAGES_PER_SYNC {
-        let page = query_in_scope(state, identity, relay, &[filter.clone()]).await?;
+        let page = query_in_scope(state, session, identity, relay, &[filter.clone()]).await?;
         stored += store
             .ingest(&sub.channel_id, &page)
             .map_err(|_| Access::Unknown)?;

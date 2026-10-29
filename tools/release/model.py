@@ -118,9 +118,11 @@ def unit_of_image(all_units):
     return {image: unit for unit in all_units.values() for image in unit.images}
 
 
-def upstream_state(unit):
+def upstream_state(unit, build_config_digest=None):
     """二开产物与当前源码的关系：current / stale / unbuilt（记录 none 且未阻断）/ blocked（none 且阻断）。"""
-    art = unit.artifact
+    art = dict(unit.artifact)
+    if build_config_digest is not None:
+        art["build_config_digest"] = build_config_digest
     recorded = str(art.get("source_digest") or "none")
     cwd = os.getcwd()
     os.chdir(ROOT)
@@ -511,11 +513,16 @@ def migration_versions(name, decl=None):
 # 运维域运行体：上游固定 digest 的外部镜像（不是本仓库构建单元）
 UPSTREAM_IMAGE = re.compile(r"^(?P<repo>[a-z0-9][a-z0-9._/-]*)@(?P<digest>sha256:[0-9a-f]{64})$")
 PEER_DIRECTORY_FILE = "adapter-directory.json"
-PEER_CONFORMANCE_FILE = "conformance-environment.json"
+# 单一候选时期的一致性环境文件（DD-136(2) 修订前）；发布入口在写入候选集合后删除它
+LEGACY_PEER_CONFORMANCE_FILE = "conformance-environment.json"
 DIRECTORY_ENV = "APPLICATION_ADAPTER_DIRECTORY_FILE"
-CONFORMANCE_ENV = "COMPONENT_CONFORMANCE_ENVIRONMENT_FILE"
-# 原生 MCP peer 的一致性投递只有 environment（start-core.sh），HTTP adapter 的另两项须同时缺省
-CONFORMANCE_HTTP_ONLY = ("COMPONENT_CONFORMANCE_FIXTURE_FILE", "COMPONENT_CONFORMANCE_IDENTITY_FILE")
+# DD-136(2)：一致性投递是按 artifactDigest 寻址的候选集合目录；receiver 凭据另一个只给 Worker 的目录
+CONFORMANCE_DIR_ENV = "COMPONENT_CONFORMANCE_DIR"
+CONFORMANCE_WORKER_DIR_ENV = "COMPONENT_CONFORMANCE_WORKER_DIR"
+CANDIDATE_ENVIRONMENT_FILE = "environment.json"
+# 单一候选时期的三个文件键，必须由同一声明删除（不再手工改 .env 切换候选）
+CONFORMANCE_LEGACY_ENV = ("COMPONENT_CONFORMANCE_ENVIRONMENT_FILE", "COMPONENT_CONFORMANCE_FIXTURE_FILE",
+                          "COMPONENT_CONFORMANCE_IDENTITY_FILE")
 # contracts/domain/application_adapter_directory.schema.json 的 protocolPeers 条目
 PEER_REQUIRED = {"adapterServiceRef", "mcpUrl", "nativeInstanceRef", "artifactDigest", "timeoutSeconds",
                  "maxResponseBytes", "bindings"}
@@ -598,17 +605,26 @@ def peer_delivery(decl=None, services=None):
 
     交付目录 protocolPeers 与一致性环境是运维域事实（DD-94(2)(5)、DD-98、DD-134(5)）：端点只能是本拓扑
     operated 中的运行体，artifactDigest 等于该运行体固定的镜像 digest；一致性环境只登记同一 peer，期望应答
-    由 record-conformance.py 经同一 Gateway 构建记录。.env 的两个投递键必须指向本声明的运行目录文件，
-    HTTP adapter 才有的另两项一致性投递必须由同一声明删除（单一候选，start-core.sh 只接受 environment）。"""
+    由 record-conformance.py 经同一 Gateway 构建记录。DD-136(2)：一致性环境写成候选集合目录中该 digest 的
+    PROTOCOL_PEER 候选（与组件部署入口写入的 REMOTE_ADAPTER 候选并存）；.env 的交付目录键与两个目录键必须
+    指向本声明的运行目录位置，单一候选时期的三个文件键必须由同一声明删除。
+
+    返回的 digest 覆盖声明内容（journal 展示与回读）；shape 只覆盖挂载形态（.env 键与运行目录位置）：
+    Core/Worker 以目录只读挂载并按次读取，内容变化不重建，只有 shape 变化经启动入口生效一次。"""
     decl = decl or declarations()
     spec = (decl.get("delivery") or {}).get("protocol_peers")
     if spec is None:
         return None
-    if not isinstance(spec, dict) or set(spec) != {"directory", "conformance", "runtime", "restart"}:
-        raise ReleaseError(f"{DECLARATIONS}: delivery.protocol_peers 只声明 directory、conformance、runtime、restart")
-    runtime = str(spec["runtime"])
-    if not RUNTIME_SUBDIR.fullmatch(runtime):
-        raise ReleaseError(f"{DECLARATIONS}: delivery.protocol_peers.runtime 必须是运行目录 data/ 下的子目录")
+    keys = {"directory", "conformance", "runtime", "candidates", "worker", "restart"}
+    if not isinstance(spec, dict) or set(spec) != keys:
+        raise ReleaseError(f"{DECLARATIONS}: delivery.protocol_peers 只声明 {', '.join(sorted(keys))}")
+    runtime, candidates, worker = str(spec["runtime"]), str(spec["candidates"]), str(spec["worker"])
+    for name, value in (("runtime", runtime), ("candidates", candidates), ("worker", worker)):
+        if not RUNTIME_SUBDIR.fullmatch(value):
+            raise ReleaseError(f"{DECLARATIONS}: delivery.protocol_peers.{name} 必须是运行目录 data/ 下的子目录")
+    folders = [runtime, candidates, worker]
+    if any(a == b or b.startswith(a + "/") for i, a in enumerate(folders) for j, b in enumerate(folders) if i != j):
+        raise ReleaseError(f"{DECLARATIONS}: delivery.protocol_peers 的 runtime、candidates、worker 必须互不包含")
     restart = str(spec["restart"])
     if not (decl["services"].get(restart) or {}).get("command"):
         raise ReleaseError(f"{DECLARATIONS}: delivery.protocol_peers.restart 必须是以启动入口部署的服务")
@@ -668,14 +684,20 @@ def peer_delivery(decl=None, services=None):
     if missing:
         raise ReleaseError(f"{where}: readOnlyTools 不在记录的 tools/list 中：{missing}")
     to_set, to_unset = env_declaration(decl)
-    for key, name in ((DIRECTORY_ENV, PEER_DIRECTORY_FILE), (CONFORMANCE_ENV, PEER_CONFORMANCE_FILE)):
-        if to_set.get(key) != "${KAILO_RUNTIME_DIR}/" + runtime + "/" + name:
-            raise ReleaseError(f"{DECLARATIONS}: env.set.{key} 必须指向 ${{KAILO_RUNTIME_DIR}}/{runtime}/{name}")
-    if set(CONFORMANCE_HTTP_ONLY) - set(to_unset):
-        raise ReleaseError(f"{DECLARATIONS}: env.unset 必须包含 {list(CONFORMANCE_HTTP_ONLY)}（原生 peer 只投递 environment）")
+    expected = {DIRECTORY_ENV: f"{runtime}/{PEER_DIRECTORY_FILE}", CONFORMANCE_DIR_ENV: candidates,
+                CONFORMANCE_WORKER_DIR_ENV: worker}
+    for key, location in expected.items():
+        if to_set.get(key) != "${KAILO_RUNTIME_DIR}/" + location:
+            raise ReleaseError(f"{DECLARATIONS}: env.set.{key} 必须指向 ${{KAILO_RUNTIME_DIR}}/{location}")
+    if set(CONFORMANCE_LEGACY_ENV) - set(to_unset):
+        raise ReleaseError(f"{DECLARATIONS}: env.unset 必须包含 {list(CONFORMANCE_LEGACY_ENV)}（DD-136(2) 候选集合取代单一候选）")
     digest = "sha256:" + hashlib.sha256(canonical_json(
-        dict(protocolPeers=peers, conformance=conformance, runtime=runtime)).encode()).hexdigest()
-    return dict(peers=peers, conformance=conformance, runtime=runtime, restart=restart, digest=digest)
+        dict(protocolPeers=peers, conformance=conformance, runtime=runtime, candidates=candidates,
+             worker=worker)).encode()).hexdigest()
+    shape = "sha256:" + hashlib.sha256(canonical_json(
+        dict(mounts=expected, unset=sorted(CONFORMANCE_LEGACY_ENV))).encode()).hexdigest()
+    return dict(peers=peers, conformance=conformance, runtime=runtime, candidates=candidates, worker=worker,
+                restart=restart, digest=digest, shape=shape)
 
 
 def render_peer_directory(existing, peers):

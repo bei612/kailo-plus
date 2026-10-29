@@ -308,7 +308,11 @@ describe('original REST history and callback task transaction', () => {
         error: null,
       },
     });
-    await expect(history.prepareNativeGeneration(record)).rejects.toThrow();
+    await expect(history.prepareNativeGeneration(record)).rejects.toMatchObject(
+      {
+        code: postgres ? '23505' : 'SQLITE_CONSTRAINT_UNIQUE',
+      },
+    );
     expect(await history.findOneBy({ id: record.id })).toBeNull();
     expect((await tasks.findByQueryId(record.id)).question).toBe('Foreign');
   });

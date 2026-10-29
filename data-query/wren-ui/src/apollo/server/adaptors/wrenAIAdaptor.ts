@@ -7,6 +7,7 @@ import {
   AskHistory,
   AskResult,
   AskResultStatus,
+  AskResultType,
   AsyncQueryResponse,
   RecommendationQuestionsInput,
   RecommendationQuestionsResult,
@@ -361,7 +362,7 @@ export class WrenAIAdaptor implements IWrenAIAdaptor {
       const res = await axios.get(
         `${this.wrenAIBaseEndpoint}/v1/asks/${queryId}/result`,
       );
-      return this.transformAskResult(res.data);
+      return this.transformAskResult(res.data, queryId);
     } catch (err: any) {
       logger.debug(
         `Got error when getting ask result: ${getAIServiceError(err)}`,
@@ -461,6 +462,7 @@ export class WrenAIAdaptor implements IWrenAIAdaptor {
     input: RecommendationQuestionsInput,
   ): Promise<AsyncQueryResponse> {
     const body = {
+      ...(input.queryId ? { native_task_id: input.queryId } : {}),
       mdl: JSON.stringify(input.manifest),
       previous_questions: input.previousQuestions,
       project_id: input.projectId,
@@ -477,6 +479,8 @@ export class WrenAIAdaptor implements IWrenAIAdaptor {
         `${this.wrenAIBaseEndpoint}/v1/question-recommendations`,
         body,
       );
+      if (input.queryId && res.data?.id !== input.queryId)
+        throw new Error('Recommendation task acknowledgement unavailable');
       logger.info(
         `Wren AI: Generating recommendation questions, queryId: ${res.data.id}`,
       );
@@ -553,7 +557,7 @@ export class WrenAIAdaptor implements IWrenAIAdaptor {
       const res = await axios.get(
         `${this.wrenAIBaseEndpoint}/v1/sql-answers/${queryId}`,
       );
-      return this.transformTextBasedAnswerResult(res.data);
+      return this.transformTextBasedAnswerResult(res.data, queryId);
     } catch (err: any) {
       logger.debug(
         `Got error when getting text-based answer result: ${getAIServiceError(err)}`,
@@ -890,10 +894,23 @@ export class WrenAIAdaptor implements IWrenAIAdaptor {
     };
   }
 
-  private transformTextBasedAnswerResult(body: any): TextBasedAnswerResult {
+  private transformTextBasedAnswerResult(
+    body: any,
+    queryId: string,
+  ): TextBasedAnswerResult {
     const { status, error } = this.transformStatusAndError(body);
+    const completed = body.completion;
     return {
       status: status as TextBasedAnswerStatus,
+      completion:
+        status === TextBasedAnswerStatus.SUCCEEDED &&
+        !error &&
+        completed &&
+        Object.keys(completed).sort().join(',') === 'content,query_id' &&
+        completed.query_id === queryId &&
+        typeof completed.content === 'string'
+          ? { queryId, content: completed.content }
+          : undefined,
       numRowsUsedInLLM: body.num_rows_used_in_llm,
       error,
     };
@@ -950,7 +967,7 @@ export class WrenAIAdaptor implements IWrenAIAdaptor {
     }
   }
 
-  private transformAskResult(body: any): AskResult {
+  private transformAskResult(body: any, queryId: string): AskResult {
     const { status, error } = this.transformStatusAndError(body);
     const candidates = (body?.response || []).map((candidate: any) => ({
       type: candidate?.type?.toUpperCase() as AskCandidateType,
@@ -961,6 +978,16 @@ export class WrenAIAdaptor implements IWrenAIAdaptor {
 
     return {
       type: body?.type,
+      ...(status === AskResultStatus.FINISHED &&
+      !error &&
+      body?.type === AskResultType.GENERAL &&
+      body?.completion &&
+      typeof body.completion === 'object' &&
+      Object.keys(body.completion).sort().join(',') === 'content,query_id' &&
+      body.completion.query_id === queryId &&
+      typeof body.completion.content === 'string'
+        ? { completion: { queryId, content: body.completion.content } }
+        : {}),
       status: status as AskResultStatus,
       error,
       response: candidates,

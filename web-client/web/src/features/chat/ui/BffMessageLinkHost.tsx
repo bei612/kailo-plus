@@ -9,7 +9,7 @@ import { useBffClient, useDeviceLocale } from "@client-kit/platform/react/contex
 import { getLocale, translateCurrent as t, type PlatformLocale } from "@client-kit/platform/i18n";
 import { MessageLinkPillPresentation, summarizeMessageLinkContent, type MessageLinkMetadataState } from "@client-kit/platform/react/messages/message-link";
 import { applyMessageEdits } from "@client-kit/platform/react/messages";
-import { truncateNpub } from "@client-kit/platform/react/conversations/pubkey";
+import { unknownMemberLabel } from "@client-kit/platform/react/messages/system/identity";
 import type { ParsedMessageLink } from "@client-kit/platform/react/composer/features/messages/lib/messageLink";
 import type { RelayEvent } from "@client-kit/platform/react/forum/channelWindowResponse";
 import type { loadWebSearchDirectory } from "@/platform/ui/search";
@@ -116,7 +116,7 @@ export async function readMessageLinkMetadata(client: BffClient, target: Target,
       const profile = await (target.conversationId ? client.conversationMessageAuthorProfile(target.conversationId, event.id) : client.messageAuthorProfile(target.workspaceId!, event.id));
       check();
       const edited = applyMessageEdits([event], events)[0]!;
-      return {kind:"ready", author:profile.displayName?.trim() || profile.nip05Handle?.trim() || truncateNpub(profile.pubkey),
+      return {kind:"ready", author:profile.displayName?.trim() || profile.nip05Handle?.trim() || unknownMemberLabel(),
         createdAt:event.created_at, snippet:summarizeMessageLinkContent(edited.content, locale)};
     }
     const next = page.nextCursor;

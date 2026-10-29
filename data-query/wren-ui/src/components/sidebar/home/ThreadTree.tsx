@@ -15,13 +15,54 @@ import TreeTitle from './TreeTitle';
 import useKailoText from '@/utils/kailoI18n';
 import { KailoUserView } from '@/components/kailo/KailoUser';
 
+// DD-157 (20 §2 列表窗格): rows 32 high, 13/500, radius 6, 8 inner padding,
+// 8 outer margin; hover/selected roles; the group title is an Overline.
 const StyledSidebarTree = styled(SidebarTree)`
   ${sidebarCommonStyle}
 
+  &&.ant-tree .ant-tree-treenode.adm-treeNode--group {
+    margin: 16px 8px 4px;
+    padding: 0 8px;
+    min-height: 24px;
+    font-size: 11px;
+    line-height: 14px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--kailo-color-muted-foreground);
+    &:hover,
+    &:active {
+      background-color: transparent;
+    }
+  }
+
+  &&.ant-tree .ant-tree-treenode.adm-treeNode__thread {
+    margin: 0 8px;
+    padding: 0 8px !important;
+    min-height: 32px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--kailo-color-foreground);
+    transition: background-color var(--kailo-duration-instant);
+
+    .ant-tree-node-content-wrapper {
+      min-height: 32px;
+    }
+    &:hover {
+      background-color: var(--kailo-color-hover);
+    }
+    &:active {
+      background-color: var(--kailo-color-pressed);
+    }
+    &.ant-tree-treenode-selected {
+      background-color: var(--kailo-color-selected);
+      color: var(--kailo-color-selected-foreground);
+    }
+  }
+
   .adm-treeNode {
     &.adm-treeNode__thread {
-      padding: 0px 16px 0px 4px !important;
-
       .ant-tree-title {
         flex-grow: 1;
         display: inline-flex;

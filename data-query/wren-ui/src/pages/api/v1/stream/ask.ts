@@ -1,4 +1,5 @@
 import { NextApiRequest, NextApiResponse } from 'next';
+import { createInterface } from 'readline';
 import { components } from '@/common';
 import { ApiType } from '@server/repositories/apiHistoryRepository';
 import * as Errors from '@/apollo/server/utils/error';
@@ -19,6 +20,7 @@ import {
   TextBasedAnswerStatus,
   WrenAIError,
   AskResultType,
+  generalCompletion,
 } from '@/apollo/server/models/adaptor';
 import { getLogger } from '@server/utils';
 import { governedRestAsk } from '@server/services/nativeRestAsk';
@@ -231,50 +233,73 @@ export default async function handler(
     // Check for general type response
     // Stream the content to client
     if (askResult.type === AskResultType.GENERAL) {
-      // Send content block start for explanation
+      const authorize = async () => {
+        const currentProject = await projectService.getCurrentProject();
+        if (isGovernedQueryMode() || currentProject.id !== project.id)
+          throw new ApiError(
+            'Original explanation observation unavailable',
+            503,
+          );
+      };
+      await authorize();
       sendContentBlockStart(res, ContentBlockContentType.EXPLANATION);
-
-      const stream = await wrenAIAdaptor.getAskStreamingResult(askTask.queryId);
-
-      // Stream the content in real-time
-      let explanation = '';
-      const streamPromise = new Promise<void>((resolve, reject) => {
-        stream.on('data', (chunk) => {
-          const chunkString = chunk.toString('utf-8');
-          const match = chunkString.match(/data: {"message":"([\s\S]*?)"}/);
-          if (match && match[1]) {
-            // Send incremental content updates
-            explanation += match[1];
-            sendContentBlockDelta(res, match[1]);
-          }
-        });
-
-        stream.on('end', () => {
-          resolve();
-        });
-
-        stream.on('error', (error) => {
-          reject(error);
-        });
-
-        // Handle client disconnect
-        req.on('close', () => {
-          stream.destroy();
-          reject(new Error('Client disconnected'));
-        });
-      });
-
-      try {
-        await streamPromise;
-        // Send content block stop
-        sendContentBlockStop(res);
-      } catch (_streamError) {
-        throw new ApiError(
-          'Error streaming explanation content',
-          400,
-          Errors.GeneralErrorCodes.INTERNAL_SERVER_ERROR,
+      let explanation = generalCompletion(askResult, askTask.queryId);
+      if (explanation !== undefined) {
+        sendContentBlockDelta(res, explanation);
+      } else {
+        const stream = await wrenAIAdaptor.getAskStreamingResult(
+          askTask.queryId,
         );
+        const close = () => stream.destroy();
+        res.once('close', close);
+        const lines = createInterface({ input: stream, crlfDelay: Infinity });
+        let emitted = '';
+        try {
+          for await (const line of lines) {
+            if (!line) continue;
+            await authorize();
+            if (!line.startsWith('data:'))
+              throw new ApiError(
+                'Original explanation observation unavailable',
+                503,
+              );
+            const event = JSON.parse(line.slice(5).trim());
+            if (
+              Object.keys(event).sort().join(',') === 'done,queryId' &&
+              event.done === true &&
+              event.queryId === askTask.queryId
+            )
+              break;
+            if (
+              Object.keys(event).join(',') !== 'message' ||
+              typeof event.message !== 'string'
+            )
+              throw new ApiError(
+                'Original explanation observation unavailable',
+                503,
+              );
+            emitted += event.message;
+            sendContentBlockDelta(res, event.message);
+          }
+          explanation = generalCompletion(
+            await wrenAIAdaptor.getAskResult(askTask.queryId),
+            askTask.queryId,
+          );
+          await authorize();
+          if (explanation === undefined || !explanation.startsWith(emitted))
+            throw new ApiError(
+              'Original explanation completion unavailable',
+              503,
+            );
+          const remainder = explanation.slice(emitted.length);
+          if (remainder) sendContentBlockDelta(res, remainder);
+        } finally {
+          lines.close();
+          res.off('close', close);
+          stream.destroy();
+        }
       }
+      sendContentBlockStop(res);
 
       // Log the API call and end the stream
       await apiHistoryRepository.createOne({
@@ -291,6 +316,7 @@ export default async function handler(
         durationMs: Date.now() - startTime,
       });
 
+      await authorize();
       endStream(res, newThreadId, startTime);
       return;
     }
@@ -394,35 +420,52 @@ export default async function handler(
         summaryTask.queryId,
       );
 
-      // Stream the content in real-time
-      const streamPromise = new Promise<void>((resolve, reject) => {
-        stream.on('data', (chunk) => {
-          const chunkString = chunk.toString('utf-8');
-          const match = chunkString.match(/data: {"message":"([\s\S]*?)"}/);
-          if (match && match[1]) {
-            summary += match[1];
-            // Send incremental content updates
-            sendContentBlockDelta(res, match[1]);
-          }
-        });
-
-        stream.on('end', () => {
-          resolve();
-        });
-
-        stream.on('error', (error) => {
-          reject(error);
-        });
-
-        // Handle client disconnect
-        req.on('close', () => {
-          stream.destroy();
-          reject(new Error('Client disconnected'));
-        });
-      });
-
+      const close = () => stream.destroy();
+      res.once('close', close);
+      const lines = createInterface({ input: stream, crlfDelay: Infinity });
       try {
-        await streamPromise;
+        for await (const line of lines) {
+          if (!line) continue;
+          const currentProject = await projectService.getCurrentProject();
+          if (
+            isGovernedQueryMode() ||
+            currentProject.id !== project.id ||
+            !line.startsWith('data: ')
+          )
+            throw new ApiError('Original summary observation unavailable', 503);
+          const event = JSON.parse(line.slice(6));
+          if (
+            Object.keys(event).sort().join(',') === 'done,queryId' &&
+            event.done === true &&
+            event.queryId === summaryTask.queryId
+          )
+            continue;
+          if (
+            Object.keys(event).join(',') !== 'message' ||
+            typeof event.message !== 'string'
+          )
+            throw new ApiError('Original summary observation unavailable', 503);
+          summary += event.message;
+          sendContentBlockDelta(res, event.message);
+        }
+        const completed = await wrenAIAdaptor.getTextBasedAnswerResult(
+          summaryTask.queryId,
+        );
+        const currentProject = await projectService.getCurrentProject();
+        if (
+          isGovernedQueryMode() ||
+          currentProject.id !== project.id ||
+          completed?.status !== TextBasedAnswerStatus.SUCCEEDED ||
+          completed.error ||
+          completed.completion?.queryId !== summaryTask.queryId ||
+          typeof completed.completion.content !== 'string' ||
+          !completed.completion.content.startsWith(summary)
+        ) {
+          throw new ApiError('Original summary completion unavailable', 503);
+        }
+        const remainder = completed.completion.content.slice(summary.length);
+        if (remainder) sendContentBlockDelta(res, remainder);
+        summary = completed.completion.content;
         // Send content block stop
         sendContentBlockStop(res);
       } catch (_streamError) {
@@ -431,6 +474,10 @@ export default async function handler(
           400,
           Errors.GeneralErrorCodes.INTERNAL_SERVER_ERROR,
         );
+      } finally {
+        res.off('close', close);
+        lines.close();
+        stream.destroy();
       }
     }
 
@@ -450,6 +497,9 @@ export default async function handler(
       durationMs: Date.now() - startTime,
     });
 
+    const currentProject = await projectService.getCurrentProject();
+    if (isGovernedQueryMode() || currentProject.id !== project.id)
+      throw new ApiError('Original summary observation unavailable', 503);
     endStream(res, newThreadId, startTime);
   } catch (error) {
     logger.error('Error in stream ask API:', error);

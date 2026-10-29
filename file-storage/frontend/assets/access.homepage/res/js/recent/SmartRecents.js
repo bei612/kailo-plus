@@ -54,8 +54,10 @@ class RecoLoader {
                 } else if (n.MetaStore['ws_slug']) {
                     slug = JSON.parse(n.MetaStore['ws_slug'])
                 }
+                let workspaceReco = false
                 if (n.MetaStore['reco-annotation']) {
                     const legend = JSON.parse(n.MetaStore['reco-annotation'])
+                    workspaceReco = legend === 'workspace' && n.MetaStore['ws_scope'] !== "\"ROOM\""
                     if (legend.indexOf('activity:')===0) {
                         const ts = legend.replace('activity:', '')
                         n.MetaStore['card_legend'] = JSON.stringify(moment(ts * 1000).fromNow());
@@ -70,7 +72,14 @@ class RecoLoader {
                         }
                     }
                 }
-                return MetaNodeProvider.parseTreeNode(n, slug)
+                const node = MetaNodeProvider.parseTreeNode(n, slug)
+                // DD-157 (20 §13.8): Kailo names of the default locations (个人文件 / 公共文件).
+                const kailo = window.KailoCells
+                const kailoLabel = workspaceReco && kailo && kailo.locationLabel ? kailo.locationLabel(slug) : ''
+                if (kailoLabel) {
+                    node.setLabel(kailoLabel)
+                }
+                return node
             })
         })
     }

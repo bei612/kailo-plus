@@ -1,0 +1,46 @@
+{
+  "source_commit": "ca477cd66d509e7d7760136b9964bc3aa2e796e1",
+  "projection_commit": "0faaf59051d9eab530d42f635529f7bdb8096484",
+  "transport": "CI direct fixed GitHub object archive",
+  "sdk": "sha256:3007729eb192341a4f004a88e42e1e66c94fc67d763acfc96568bd7311116018",
+  "resources": {
+    "cpus": 1,
+    "memory_gib": 4,
+    "swap_gib": 4
+  },
+  "source_byte_audit": {
+    "checked_files": 3439,
+    "expected_generated_difference": [
+      "client-kit/dart/lib/shared/platform/platform_text.dart"
+    ],
+    "projection_matches_fixed_git_blob": true,
+    "unexpected_differences": []
+  },
+  "results": {
+    "generation": 0,
+    "generation_check": 0,
+    "shared_production_types": 0,
+    "shared_test_types": 0,
+    "web_types": 0,
+    "web_original_consumers_passed": 74,
+    "desktop_types": 0,
+    "native_original_consumers_passed": 7,
+    "actual_diagnostic_regression_fault_exit": 1,
+    "restored_native_passed": 7
+  },
+  "oom": false,
+  "hashes": {
+    "check.log": "427c09894fdb404fc778bd86e00b8be9286eb732d57dfad9d32efb80fe451dca",
+    "result.log": "5b0f71fcda17425692794bddb54dde9d2b55a27a3306cedf0abb82c395fc21de",
+    "limits.log": "83bbf36230a2d5c089f63b96ecb891e0b7023cb8fc5fb009dd2f2f126b049fcc",
+    "oom.log": "2ed27c1421e6928dbe13dbfdb5c59e1045b30341fe7ebe05700006bc5ac572c0",
+    "storage.log": "19ab0a6393a66aaa578a876ff0a1e1856f30bc33de283abfc1c673db8a9fd1e4"
+  },
+  "boundaries": [
+    "No actual browser or installed device acceptance",
+    "No full-project gate, formal artifact or deployment",
+    "Web Composer tests retain existing React act warnings",
+    "Shared composer orchestration remains incomplete; only failure copy is unified"
+  ],
+  "cleanup_containers": []
+}

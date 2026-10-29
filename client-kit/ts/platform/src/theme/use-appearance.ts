@@ -222,6 +222,17 @@ function applyBuzzSidebar(themeName: string) {
   }
 }
 
+/**
+ * DD-157 (20 §13.5): a theme change lands in one frame in the shell, as in the component
+ * frame (kailo-embed.js does the same there); controls do not animate to their new colours.
+ */
+function suppressThemeTransitions(root: HTMLElement): void {
+  root.setAttribute("data-kailo-theme-switching", "");
+  const settle = () => root.removeAttribute("data-kailo-theme-switching");
+  if (typeof window.requestAnimationFrame === "function") window.requestAnimationFrame(() => window.requestAnimationFrame(settle));
+  else window.setTimeout(settle, 32);
+}
+
 /** Apply cached CSS vars synchronously to prevent FOUC. */
 function applyCachedVars(onThemeApplied?: () => void): string | null {
   try {
@@ -283,6 +294,7 @@ async function applyTheme(
   }
 
   const root = document.documentElement;
+  suppressThemeTransitions(root);
   for (const [key, value] of Object.entries(vars)) {
     root.style.setProperty(key, value);
   }

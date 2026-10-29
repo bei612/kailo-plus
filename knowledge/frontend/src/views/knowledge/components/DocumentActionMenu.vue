@@ -74,7 +74,7 @@ const fileName = computed(() => props.item.file_name || props.item.title || prop
   <!-- 重建知识 (normal: with popconfirm) -->
   <t-popconfirm v-else theme="warning"
     :content="$t('knowledgeBase.rebuildConfirm', { fileName })"
-    :confirm-btn="{ content: $t('common.confirm'), theme: 'primary' }"
+    :confirm-btn="{ content: $t('knowledgeBase.rebuildDocument'), theme: 'primary' }"
     :cancel-btn="{ content: $t('common.cancel') }" placement="left"
     @confirm="emit('reparse')">
     <div class="doc-action-menu-item" @click.stop>

@@ -9,7 +9,9 @@ import {
   useState,
 } from 'react';
 import { isEmpty } from 'lodash';
-import { message } from 'antd';
+import { Button } from 'antd';
+import { notify } from '@/utils/kailoHost';
+import { ShareIcon } from '@/components/kailo/KailoIcons';
 import client from '@/apollo/client';
 import { LIST_VIEWS } from '@/apollo/client/graphql/view';
 import { runNativeMetadataWrite } from '@/utils/errorHandler';
@@ -29,7 +31,9 @@ import SaveAsViewModal from '@/components/modals/SaveAsViewModal';
 import QuestionSQLPairModal from '@/components/modals/QuestionSQLPairModal';
 import AdjustReasoningStepsModal from '@/components/modals/AdjustReasoningStepsModal';
 import AdjustSQLModal from '@/components/modals/AdjustSQLModal';
-import { KailoShareButton } from '@/components/kailo/KailoShare';
+import { useKailoShare } from '@/components/kailo/KailoShare';
+import useKailoPage from '@/hooks/useKailoPage';
+import useKailoText from '@/utils/kailoI18n';
 import { getAnswerIsFinished } from '@/components/pages/home/promptThread/TextBasedAnswer';
 import { getIsChartFinished } from '@/components/pages/home/promptThread/ChartAnswer';
 import { PromptThreadProvider } from '@/components/pages/home/promptThread/store';
@@ -50,6 +54,8 @@ import {
   CreateThreadResponseInput,
   ThreadResponse,
   CreateSqlPairInput,
+  RecommendedQuestionsTask,
+  RecommendedQuestionsTaskStatus,
 } from '@/apollo/client/graphql/__types__';
 import { useCreateSqlPairMutation } from '@/apollo/client/graphql/sqlPairs.generated';
 import { v4 as uuidv4 } from 'uuid';
@@ -82,12 +88,35 @@ const getThreadResponseIsFinished = (threadResponse: ThreadResponse) => {
   return isAnswerFinished !== false && isChartFinished !== false;
 };
 
+// Public config correlates an original observation; server admission remains
+// authoritative. A missing governed identity never selects standalone mode.
+function operationConfiguration(
+  config: Awaited<ReturnType<typeof getUserConfig>>,
+) {
+  if (
+    config.nativeBindingConfigured === false &&
+    config.queryScope === undefined &&
+    config.nativeBindingGeneration === undefined
+  )
+    return 'standalone';
+  if (
+    config.nativeBindingConfigured !== true ||
+    !/^[a-f0-9]{64}$/.test(config.queryScope ?? '') ||
+    !Number.isSafeInteger(config.nativeBindingGeneration) ||
+    config.nativeBindingGeneration <= 0
+  )
+    throw new Error('NATIVE_AUTHENTICATION_REQUIRED');
+  return `${config.queryScope}:${config.nativeBindingGeneration}`;
+}
+
 export default function HomeThread() {
   const $prompt = useRef<ComponentRef<typeof Prompt>>(null);
   const router = useRouter();
   const params = useParams();
   const homeSidebar = useHomeSidebar();
   const threadId = useMemo(() => Number(params?.id) || null, [params]);
+  const t = useKailoText();
+  const share = useKailoShare(threadId !== null ? { threadId } : null);
   const askPrompt = useAskPrompt(threadId);
   const adjustAnswer = useAdjustAnswer(threadId);
   const saveAsViewModal = useModalAction();
@@ -98,8 +127,20 @@ export default function HomeThread() {
   const questionSqlPairModal = useModalAction();
   const adjustReasoningStepsModal = useModalAction();
   const adjustSqlModal = useModalAction();
-  const answerRequests = useRef(new Set<string>());
   const answerGeneration = useRef(0);
+  const answerOwner = useMemo(
+    () => ({ active: true, requests: new Set<string>() }),
+    [threadId],
+  );
+  const answerOwnerRef = useRef(answerOwner);
+  answerOwnerRef.current = answerOwner;
+  const sqlFix = useMemo(
+    () => ({ pending: undefined as Promise<void> | undefined }),
+    [answerOwner],
+  );
+  const [fixingSqlOwner, setFixingSqlOwner] = useState<
+    typeof answerOwner | null
+  >(null);
   const [answerReceipts, setAnswerReceipts] = useState<Record<number, any>>({});
   const [chartReceipts, setChartReceipts] = useState<Record<number, any>>({});
 
@@ -114,58 +155,229 @@ export default function HomeThread() {
     skip: threadId === null,
     onError: () => router.push(Path.Home),
   });
-  const [createThreadResponse] = useCreateThreadResponseMutation({
-    onError: (error) => console.error(error),
-    onCompleted(next) {
-      const nextResponse = next.createThreadResponse;
-      updateThreadQuery((prev) => {
-        return {
-          ...prev,
-          thread: {
-            ...prev.thread,
-            responses: [...prev.thread.responses, nextResponse],
-          },
-        };
-      });
-    },
-  });
+  const [createThreadResponse] = useCreateThreadResponseMutation();
   const [updateThreadResponse, { loading: threadResponseUpdating }] =
-    useUpdateThreadResponseMutation({
-      onError: (error) => console.error(error),
-      onCompleted: (data) => {
-        message.success('Successfully updated the SQL statement');
-        // trigger generate answer after sql statement updated
-        onGenerateThreadResponseAnswer(data.updateThreadResponse.id);
-      },
-    });
-  const [fetchThreadResponse, threadResponseResult] =
-    useThreadResponseLazyQuery({
-      pollInterval: RESPONSE_POLL_INTERVAL,
-      onCompleted(next) {
-        const nextResponse = next.threadResponse;
-        updateThreadQuery((prev) => ({
-          ...prev,
-          thread: {
-            ...prev.thread,
-            responses: prev.thread.responses.map((response) =>
-              response.id === nextResponse.id ? nextResponse : response,
-            ),
-          },
-        }));
-      },
-    });
+    useUpdateThreadResponseMutation();
+  const [readThreadResponse] = useThreadResponseLazyQuery({
+    fetchPolicy: 'no-cache',
+  });
+  const responseObservation = useRef<{
+    owner: typeof answerOwner;
+    responseId: number;
+    identity?: string;
+    timer?: number;
+    pending?: Promise<void>;
+  } | null>(null);
+  const [observedResponse, setObservedResponse] = useState<{
+    owner: typeof answerOwner;
+    response: ThreadResponse;
+  } | null>(null);
+  const stopThreadResponsePolling = useCallback(() => {
+    const observation = responseObservation.current;
+    if (observation?.owner !== answerOwner) return;
+    responseObservation.current = null;
+    if (observation.timer !== undefined) window.clearTimeout(observation.timer);
+  }, [answerOwner]);
+  const fetchThreadResponse = useCallback(
+    (options: { variables: { responseId: number } }) => {
+      if (!answerOwner.active || answerOwnerRef.current !== answerOwner) return;
+      const { responseId } = options.variables;
+      const previous = responseObservation.current;
+      if (previous?.owner === answerOwner && previous.responseId === responseId)
+        return previous.pending;
+      if (previous?.timer !== undefined) window.clearTimeout(previous.timer);
+      const observation: NonNullable<typeof responseObservation.current> = {
+        owner: answerOwner,
+        responseId,
+      };
+      responseObservation.current = observation;
+      setObservedResponse(null);
+      const active = () =>
+        answerOwner.active &&
+        answerOwnerRef.current === answerOwner &&
+        responseObservation.current === observation;
+      const observe = async () => {
+        if (!active()) return;
+        try {
+          const before = operationConfiguration(await getUserConfig());
+          if (!active()) return;
+          if (
+            observation.identity !== undefined &&
+            observation.identity !== before
+          ) {
+            responseObservation.current = null;
+            return;
+          }
+          observation.identity = before;
+          // Apollo's hook-level completion callback follows its latest render.
+          // Consume this exact read promise instead, with no shared cache/dedup
+          // result standing in for this owner's fresh original response read.
+          const result = await readThreadResponse({
+            variables: { responseId },
+            fetchPolicy: 'no-cache',
+            context: { queryDeduplication: false },
+          });
+          const after = operationConfiguration(await getUserConfig());
+          if (!active()) return;
+          if (after !== observation.identity) {
+            responseObservation.current = null;
+            return;
+          }
+          const next = result.data?.threadResponse;
+          if (
+            !result.error &&
+            next?.id === responseId &&
+            next.threadId === threadId
+          ) {
+            setObservedResponse({ owner: answerOwner, response: next });
+            updateThreadQuery((prev) =>
+              !active() || String(prev.thread?.id) !== String(threadId)
+                ? prev
+                : {
+                    ...prev,
+                    thread: {
+                      ...prev.thread,
+                      responses: prev.thread.responses.map((response) =>
+                        response.id === responseId ? next : response,
+                      ),
+                    },
+                  },
+            );
+            if (getThreadResponseIsFinished(next)) {
+              responseObservation.current = null;
+              return;
+            }
+          }
+        } catch {
+          // A missing read is not a new generation or terminal failure. Continue
+          // only this original read at its existing interval while still owned.
+        }
+        if (active())
+          observation.timer = window.setTimeout(() => {
+            observation.timer = undefined;
+            observation.pending = observe();
+          }, RESPONSE_POLL_INTERVAL);
+      };
+      observation.pending = observe();
+      return observation.pending;
+    },
+    [answerOwner, readThreadResponse, threadId, updateThreadQuery],
+  );
 
   const [generateThreadRecommendationQuestions] =
     useGenerateThreadRecommendationQuestionsMutation({
       onError: (error) => console.error(error),
     });
 
-  const [
-    fetchThreadRecommendationQuestions,
-    threadRecommendationQuestionsResult,
-  ] = useGetThreadRecommendationQuestionsLazyQuery({
-    pollInterval: 1000,
-  });
+  const [readThreadRecommendations] =
+    useGetThreadRecommendationQuestionsLazyQuery({
+      fetchPolicy: 'no-cache',
+    });
+  const recommendationSource =
+    data?.thread?.id === threadId
+      ? Math.max(0, ...data.thread.responses.map((response) => response.id)) ||
+        null
+      : null;
+  const recommendationOwner = useMemo(
+    () => ({
+      active: true,
+      source: recommendationSource,
+      queryId: undefined as string | undefined,
+      identity: undefined as string | undefined,
+      attempted: false,
+      pending: undefined as Promise<void> | undefined,
+      timer: undefined as number | undefined,
+    }),
+    [answerOwner, recommendationSource],
+  );
+  const recommendationOwnerRef = useRef(recommendationOwner);
+  recommendationOwnerRef.current = recommendationOwner;
+  const [observedRecommendations, setObservedRecommendations] = useState<{
+    owner: typeof recommendationOwner;
+    task: RecommendedQuestionsTask;
+  } | null>(null);
+  const recommendationActive = () =>
+    answerOwner.active &&
+    answerOwnerRef.current === answerOwner &&
+    recommendationOwner.active &&
+    recommendationOwnerRef.current === recommendationOwner;
+  const recommendationConfiguration = async () => {
+    const identity = operationConfiguration(await getUserConfig());
+    if (!recommendationActive()) return false;
+    if (
+      recommendationOwner.identity !== undefined &&
+      recommendationOwner.identity !== identity
+    ) {
+      recommendationOwner.active = false;
+      setObservedRecommendations(null);
+      return false;
+    }
+    recommendationOwner.identity = identity;
+    return true;
+  };
+  const acceptRecommendation = (
+    task: RecommendedQuestionsTask | undefined | null,
+  ) => {
+    if (
+      !recommendationActive() ||
+      !task?.queryId ||
+      task.threadId !== threadId ||
+      task.sourceResponseId !== recommendationOwner.source ||
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(
+        task.queryId,
+      ) ||
+      (recommendationOwner.queryId !== undefined &&
+        recommendationOwner.queryId !== task.queryId)
+    )
+      return false;
+    recommendationOwner.queryId = task.queryId;
+    setObservedRecommendations({ owner: recommendationOwner, task });
+    return true;
+  };
+  const observeRecommendations = () => {
+    if (!recommendationActive() || recommendationOwner.source === null)
+      return Promise.resolve();
+    if (recommendationOwner.pending) return recommendationOwner.pending;
+    if (recommendationOwner.timer !== undefined)
+      window.clearTimeout(recommendationOwner.timer);
+    recommendationOwner.timer = undefined;
+    let terminal = false;
+    const pending = (async () => {
+      try {
+        if (!(await recommendationConfiguration())) return;
+        const result = await readThreadRecommendations({
+          variables: { threadId },
+          fetchPolicy: 'no-cache',
+          context: { queryDeduplication: false },
+        });
+        if (!(await recommendationConfiguration())) return;
+        const task = result.data?.getThreadRecommendationQuestions;
+        if (!result.error && acceptRecommendation(task))
+          terminal = isRecommendedFinished(task.status);
+      } catch {
+        // Only re-observe this original thread. A failed/empty read never
+        // dispatches a new recommendation or establishes native task absence.
+      } finally {
+        recommendationOwner.pending = undefined;
+        if (recommendationActive() && !terminal)
+          recommendationOwner.timer = window.setTimeout(() => {
+            recommendationOwner.timer = undefined;
+            void observeRecommendations();
+          }, RESPONSE_POLL_INTERVAL);
+      }
+    })();
+    recommendationOwner.pending = pending;
+    return pending;
+  };
+  useEffect(() => {
+    recommendationOwner.active = true;
+    void observeRecommendations();
+    return () => {
+      recommendationOwner.active = false;
+      if (recommendationOwner.timer !== undefined)
+        window.clearTimeout(recommendationOwner.timer);
+    };
+  }, [recommendationOwner]);
 
   const [generateThreadResponseAnswer] =
     useGenerateThreadResponseAnswerMutation({
@@ -195,19 +407,66 @@ export default function HomeThread() {
       })),
     [thread, answerReceipts, chartReceipts],
   );
-  const pollingResponse = useMemo(
-    () => threadResponseResult.data?.threadResponse || null,
-    [threadResponseResult.data],
-  );
+  const pollingResponse =
+    observedResponse?.owner === answerOwner ? observedResponse.response : null;
   const isPollingResponseFinished = useMemo(
     () => getThreadResponseIsFinished(pollingResponse),
     [pollingResponse],
   );
 
-  const onFixSQLStatement = async (responseId: number, sql: string) => {
-    await updateThreadResponse({
-      variables: { where: { id: responseId }, data: { sql } },
-    });
+  const onFixSQLStatement = (
+    responseId: number,
+    sql: string,
+  ): Promise<void> => {
+    const active = () =>
+      answerOwner.active && answerOwnerRef.current === answerOwner;
+    if (!active()) return Promise.resolve();
+    if (sqlFix.pending) return sqlFix.pending;
+    setFixingSqlOwner(answerOwner);
+    const run = async () => {
+      try {
+        const identity = operationConfiguration(await getUserConfig());
+        if (!active()) return;
+        // Apollo does not await async completion callbacks. Keep the original
+        // modal's submit promise pending through the current-identity read.
+        const result = await updateThreadResponse({
+          variables: { where: { id: responseId }, data: { sql } },
+          fetchPolicy: 'no-cache',
+        });
+        if (!active()) return;
+        const next = result.data?.updateThreadResponse;
+        if (result.errors?.length || !next)
+          throw new Error('NATIVE_OUTCOME_UNKNOWN');
+        const current = operationConfiguration(await getUserConfig());
+        if (!active()) return;
+        if (
+          current !== identity ||
+          next.id !== responseId ||
+          next.threadId !== threadId
+        )
+          throw new Error('NATIVE_OUTCOME_UNKNOWN');
+        updateThreadQuery((prev) =>
+          !active() || String(prev.thread?.id) !== String(threadId)
+            ? prev
+            : {
+                ...prev,
+                thread: {
+                  ...prev.thread,
+                  responses: prev.thread.responses.map((response) =>
+                    response.id === responseId ? next : response,
+                  ),
+                },
+              },
+        );
+        notify.success(t('home.sqlUpdated'));
+        onGenerateThreadResponseAnswer(responseId);
+      } finally {
+        sqlFix.pending = undefined;
+        if (active()) setFixingSqlOwner(null);
+      }
+    };
+    sqlFix.pending = run();
+    return sqlFix.pending;
   };
 
   const generateResponseArtifact = async (
@@ -215,10 +474,15 @@ export default function HomeThread() {
     artifact: 'answer' | 'chart',
     adjustment?: AdjustThreadResponseChartInput,
   ) => {
+    if (!answerOwner.active || answerOwnerRef.current !== answerOwner) return;
     const request = `${artifact}.${responseId}`;
-    if (answerRequests.current.has(request)) return;
-    answerRequests.current.add(request);
+    if (answerOwner.requests.has(request)) return;
+    answerOwner.requests.add(request);
     const generation = answerGeneration.current;
+    const active = () =>
+      answerOwner.active &&
+      answerOwnerRef.current === answerOwner &&
+      generation === answerGeneration.current;
     const publishReceipt =
       artifact === 'answer' ? setAnswerReceipts : setChartReceipts;
     const create = async (identity: {
@@ -229,54 +493,71 @@ export default function HomeThread() {
         return (
           await generateThreadResponseAnswer({
             variables: { responseId, ...identity },
+            fetchPolicy: 'no-cache',
           })
         ).data?.generateThreadResponseAnswer;
       if (adjustment)
         return (
           await adjustThreadResponseChart({
             variables: { responseId, data: adjustment, ...identity },
+            fetchPolicy: 'no-cache',
           })
         ).data?.adjustThreadResponseChart;
       return (
         await generateThreadResponseChart({
           variables: { responseId, ...identity },
+          fetchPolicy: 'no-cache',
         })
       ).data?.generateThreadResponseChart;
     };
     try {
-      const scope = (await getUserConfig()).queryScope;
-      if (scope === undefined) {
+      const config = await getUserConfig();
+      if (!active()) return;
+      const identity = operationConfiguration(config);
+      const scope = config.queryScope;
+      const sameConfiguration = (
+        current: Awaited<ReturnType<typeof getUserConfig>>,
+      ) => operationConfiguration(current) === identity;
+      if (config.nativeBindingConfigured === false) {
         await create({});
+        const current = await getUserConfig();
+        if (!active() || !sameConfiguration(current)) return;
         fetchThreadResponse({ variables: { responseId } });
         return;
       }
-      if (!/^[a-f0-9]{64}$/.test(scope)) return;
       const slot = `kailo.query.${artifact}${adjustment ? '.adjust' : ''}.${scope}.${responseId}`;
       const key = sessionStorage.getItem(slot) || uuidv4();
       sessionStorage.setItem(slot, key);
-      while (generation === answerGeneration.current) {
-        if ((await getUserConfig()).queryScope !== scope) return;
+      while (active()) {
+        const beforeDispatch = await getUserConfig();
+        if (!active() || !sameConfiguration(beforeDispatch)) return;
         const response = await create({
           idempotencyKey: key,
           idempotencyScope: scope,
         });
-        if (
-          generation !== answerGeneration.current ||
-          (await getUserConfig()).queryScope !== scope
-        )
+        const afterDispatch = await getUserConfig();
+        if (!active() || !sameConfiguration(afterDispatch)) return;
+        if (response?.id !== responseId || response.threadId !== threadId) {
+          // A receipt for another native row cannot settle this frozen intent.
+          // Keep the exact key for an explicit observation of the original task.
+          publishReceipt((current) => ({ ...current, [responseId]: {} }));
           return;
-        if (response?.id === responseId)
-          updateThreadQuery((previous) => ({
-            ...previous,
-            thread: {
-              ...previous.thread,
-              responses: previous.thread.responses.map((current) =>
-                current.id === responseId
-                  ? { ...current, ...response }
-                  : current,
-              ),
-            },
-          }));
+        }
+        updateThreadQuery((previous) =>
+          !active() || String(previous.thread?.id) !== String(threadId)
+            ? previous
+            : {
+                ...previous,
+                thread: {
+                  ...previous.thread,
+                  responses: previous.thread.responses.map((current) =>
+                    current.id === responseId
+                      ? { ...current, ...response }
+                      : current,
+                  ),
+                },
+              },
+        );
         const receipt =
           artifact === 'answer'
             ? response?.queryReceipt
@@ -309,10 +590,10 @@ export default function HomeThread() {
       }
     } catch {
       // A lost transport/storage acknowledgement cannot authorize another key.
-      if (generation === answerGeneration.current)
+      if (active())
         publishReceipt((current) => ({ ...current, [responseId]: {} }));
     } finally {
-      answerRequests.current.delete(request);
+      answerOwner.requests.delete(request);
     }
   };
 
@@ -330,9 +611,33 @@ export default function HomeThread() {
     await generateResponseArtifact(responseId, 'chart', data);
   };
 
-  const onGenerateThreadRecommendedQuestions = async () => {
-    await generateThreadRecommendationQuestions({ variables: { threadId } });
-    fetchThreadRecommendationQuestions({ variables: { threadId } });
+  const onGenerateThreadRecommendedQuestions = async (
+    sourceResponseId: number,
+  ) => {
+    if (
+      !recommendationActive() ||
+      sourceResponseId !== recommendationOwner.source ||
+      recommendationOwner.attempted
+    )
+      return;
+    recommendationOwner.attempted = true;
+    try {
+      if (!(await recommendationConfiguration())) return;
+      await observeRecommendations();
+      if (!(await recommendationConfiguration()) || recommendationOwner.queryId)
+        return;
+      const result = await generateThreadRecommendationQuestions({
+        variables: { threadId, sourceResponseId },
+        fetchPolicy: 'no-cache',
+      });
+      if (!(await recommendationConfiguration())) return;
+      acceptRecommendation(result.data?.generateThreadRecommendationQuestions);
+    } catch {
+      // The DB may have frozen/created the original task before ACK was lost.
+      // Resume its read; neither this catch nor a remount reposts to AI.
+    } finally {
+      if (recommendationActive()) void observeRecommendations();
+    }
   };
 
   const handleUnfinishedTasks = useCallback(
@@ -375,15 +680,15 @@ export default function HomeThread() {
 
   // stop all requests when change thread
   useEffect(() => {
+    answerOwner.active = true;
     if (threadId !== null) {
-      fetchThreadRecommendationQuestions({ variables: { threadId } });
       setShowRecommendedQuestions(true);
     }
     return () => {
+      answerOwner.active = false;
       ++answerGeneration.current;
       askPrompt.onStopPolling();
-      threadResponseResult.stopPolling();
-      threadRecommendationQuestionsResult.stopPolling();
+      stopThreadResponsePolling();
       $prompt.current?.close();
     };
   }, [threadId]);
@@ -396,36 +701,122 @@ export default function HomeThread() {
   }, [responses]);
 
   useEffect(() => {
-    if (isPollingResponseFinished) {
-      threadResponseResult.stopPolling();
+    if (pollingResponse && isPollingResponseFinished) {
+      stopThreadResponsePolling();
       setShowRecommendedQuestions(true);
     }
   }, [isPollingResponseFinished]);
 
-  const recommendedQuestions = useMemo(
-    () =>
-      threadRecommendationQuestionsResult.data
-        ?.getThreadRecommendationQuestions || null,
-    [threadRecommendationQuestionsResult.data],
-  );
+  const recommendedQuestions =
+    recommendationActive() &&
+    observedRecommendations?.owner === recommendationOwner
+      ? observedRecommendations.task
+      : null;
 
-  useEffect(() => {
-    if (isRecommendedFinished(recommendedQuestions?.status)) {
-      threadRecommendationQuestionsResult.stopPolling();
-    }
-  }, [recommendedQuestions]);
-
-  const onCreateResponse = async (payload: CreateThreadResponseInput) => {
+  const onCreateResponse = async (
+    payload: CreateThreadResponseInput,
+    selectionActive?: () => boolean,
+    selectionIdentity?: string,
+    confirmed?: () => void,
+  ) => {
+    const active = () =>
+      answerOwner.active &&
+      answerOwnerRef.current === answerOwner &&
+      (!selectionActive || selectionActive());
+    if (!active() || thread?.id !== threadId) return;
     try {
+      const identity = operationConfiguration(await getUserConfig());
+      if (
+        !active() ||
+        (selectionIdentity !== undefined && identity !== selectionIdentity)
+      )
+        return;
       askPrompt.onStopPolling();
-
-      const threadId = thread.id;
-      await createThreadResponse({
+      const result = await createThreadResponse({
         variables: { threadId, data: payload },
+        fetchPolicy: 'no-cache',
       });
+      const after = operationConfiguration(await getUserConfig());
+      if (!active() || after !== identity) return;
+      const next = result.data?.createThreadResponse;
+      if (result.errors?.length || !next || next.threadId !== threadId) return;
+      const selection = payload.recommendation;
+      if (
+        selection &&
+        (next.recommendationIntentKey !== selection.idempotencyKey ||
+          next.recommendationQueryId !== selection.queryId ||
+          next.recommendationSourceResponseId !== selection.sourceResponseId ||
+          next.recommendationIndex !== selection.index)
+      )
+        return;
+      confirmed?.();
+      updateThreadQuery((prev) =>
+        !active() || prev.thread?.id !== threadId
+          ? prev
+          : {
+              ...prev,
+              thread: {
+                ...prev.thread,
+                responses: prev.thread.responses.some(
+                  (response) => response.id === next.id,
+                )
+                  ? prev.thread.responses.map((response) =>
+                      response.id === next.id ? next : response,
+                    )
+                  : [...prev.thread.responses, next],
+              },
+            },
+      );
       setShowRecommendedQuestions(false);
     } catch (error) {
       console.error(error);
+    }
+  };
+  const onSelectRecommendedQuestion = async (
+    payload: CreateThreadResponseInput,
+  ) => {
+    if (
+      !recommendationActive() ||
+      recommendedQuestions?.status !== RecommendedQuestionsTaskStatus.FINISHED
+    )
+      return;
+    const task = recommendedQuestions;
+    const index = task.questions.findIndex(
+      (question) =>
+        question.question === payload.question && question.sql === payload.sql,
+    );
+    if (
+      index < 0 ||
+      !task.queryId ||
+      task.sourceResponseId !== recommendationOwner.source
+    )
+      return;
+    // Select the frozen native result, not caller-provided SQL. Repeating this
+    // original selection after an unknown ACK returns the same native row.
+    try {
+      if (!(await recommendationConfiguration())) return;
+      const slot = `kailo.query.recommendation.select.${recommendationOwner.identity}.${threadId}.${task.queryId}.${index}`;
+      const key = sessionStorage.getItem(slot) || uuidv4();
+      sessionStorage.setItem(slot, key);
+      await onCreateResponse(
+        {
+          recommendation: {
+            queryId: task.queryId,
+            sourceResponseId: task.sourceResponseId,
+            index,
+            idempotencyKey: key,
+          },
+        },
+        recommendationActive,
+        recommendationOwner.identity,
+        () => {
+          if (sessionStorage.getItem(slot) === key)
+            sessionStorage.removeItem(slot);
+        },
+      );
+    } catch {
+      // Storage failure prevents dispatch; an unknown ACK retains this exact
+      // intent. A confirmed selection can be followed by a distinct explicit one.
     }
   };
 
@@ -440,10 +831,11 @@ export default function HomeThread() {
       onStopAdjustTask: adjustAnswer.onStop,
       onReRunAdjustTask: adjustAnswer.onReRun,
       onFixSQLStatement,
-      fixStatementLoading: threadResponseUpdating,
+      fixStatementLoading:
+        threadResponseUpdating || fixingSqlOwner === answerOwner,
     },
     onOpenSaveAsViewModal: saveAsViewModal.openModal,
-    onSelectRecommendedQuestion: onCreateResponse,
+    onSelectRecommendedQuestion,
     onGenerateThreadRecommendedQuestions: onGenerateThreadRecommendedQuestions,
     onGenerateTextBasedAnswer: onGenerateThreadResponseAnswer,
     onGenerateChartAnswer: onGenerateThreadResponseChart,
@@ -453,14 +845,48 @@ export default function HomeThread() {
     onOpenAdjustSQLModal: adjustSqlModal.openModal,
   };
 
+  // DD-157: Kailo page header — the conversation's summary as title, 分享
+  // (DD-138(4), 07 §4.8.3: notify Kailo members) and 新建对话.
+  const threadTitle =
+    homeSidebar.data?.threads?.find((thread) => thread.id === String(threadId))
+      ?.name || data?.thread?.responses?.[0]?.question;
+  const { hosted } = useKailoPage({
+    title: threadTitle || t('threads'),
+    ready: !!data?.thread,
+    actions: [
+      ...(share.available
+        ? [
+            {
+              id: 'share',
+              label: t('share'),
+              variant: 'secondary' as const,
+              icon: 'share' as const,
+            },
+          ]
+        : []),
+      {
+        id: 'new-conversation',
+        label: t('newConversationAction'),
+        variant: 'primary',
+        icon: 'message-square-plus',
+      },
+    ],
+    onAction: (id) => {
+      if (id === 'share') share.open();
+      if (id === 'new-conversation') router.push(Path.Home);
+    },
+  });
+
   return (
     <SiderLayout loading={false} sidebar={homeSidebar}>
-      {/* DD-138(4), 07 §4.8.3: notify Kailo members about this thread. */}
-      {threadId !== null && (
+      {!hosted && share.available && (
         <div className="d-flex justify-end px-4 pt-3">
-          <KailoShareButton target={{ threadId }} />
+          <Button icon={<ShareIcon className="mr-1" />} onClick={share.open}>
+            {t('share')}
+          </Button>
         </div>
       )}
+      {share.modal}
       <PromptThreadProvider value={providerValue}>
         <PromptThread />
       </PromptThreadProvider>
@@ -494,7 +920,7 @@ export default function HomeThread() {
                   },
                 }))
               ) {
-                message.warning(getQueryPreviewText(router.locale).unknown);
+                notify.warning(getQueryPreviewText(router.locale).unknown);
                 throw new Error('QUERY_EVIDENCE_UNAVAILABLE');
               }
               const completed = saveViewQuery.completedQuery();
@@ -530,7 +956,7 @@ export default function HomeThread() {
               );
             },
           });
-          message.success('Successfully created view.');
+          notify.success(t('home.viewCreated'));
         }}
       />
       <QuestionSQLPairModal

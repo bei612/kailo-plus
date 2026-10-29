@@ -1,0 +1,3348 @@
+{
+  "schema": "kailo.wren-original-four-postgres-verification.v1",
+  "recorded_at": "2026-10-27T09:44:08.659974+00:00",
+  "source": {
+    "fixed": "aea3abe0750f8caaf7c46c898d88f1a9b0efbb3c",
+    "branch": "codex/wren-four-pg-20261027",
+    "transport": "CI GitHub fetch and fixed archive; no local source transfer",
+    "product_changes": false
+  },
+  "images": {
+    "node18": "sha256:f9ab18e354e6855ae56ef2b290dd225c1e51a564f87584b9bd21dd651838830e",
+    "postgres": "sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea"
+  },
+  "resources": {
+    "normal": {
+      "sdk": {
+        "cpuPeriod": 0,
+        "cpuQuota": 0,
+        "memory": 4294967296,
+        "nanoCpus": 4000000000,
+        "running": false,
+        "status": "created",
+        "swap": 4294967296
+      },
+      "postgres": {
+        "cpuPeriod": 0,
+        "cpuQuota": 0,
+        "memory": 2147483648,
+        "nanoCpus": 1000000000,
+        "running": false,
+        "status": "created",
+        "swap": 2147483648
+      }
+    },
+    "fault": {
+      "sdk": {
+        "cpuPeriod": 0,
+        "cpuQuota": 0,
+        "memory": 4294967296,
+        "nanoCpus": 4000000000,
+        "running": false,
+        "status": "created",
+        "swap": 4294967296
+      },
+      "postgres": {
+        "cpuPeriod": 0,
+        "cpuQuota": 0,
+        "memory": 2147483648,
+        "nanoCpus": 1000000000,
+        "running": false,
+        "status": "created",
+        "swap": 2147483648
+      }
+    }
+  },
+  "database": {
+    "instances": "Normal and fault wrappers each create their own new private PostgreSQL container, not shared business database.",
+    "network": "Internal wren-four-pg-net; no host ports; cleaned after each run.",
+    "pgdata": "1GiB tmpfs",
+    "credentials": "Random disposable password supplied only through container stdin environment; values omitted.",
+    "schema_groups": {
+      "rest_explanation": "Original standalone REST explanation HTTP and history",
+      "asking_rerun": "Original asking rerun repository transactions",
+      "native_binding": "Original REST history/callback transaction",
+      "answer_identity": "Original answer HTTP identity and conditional history writes",
+      "task_evidence": "Original task migration and conditional binding"
+    },
+    "isolation": "Each group creates its own random UUID-suffixed schema/searchPath, runs original migrations and drops schema/destroys connections in afterAll. Original Jest --runInBand used."
+  },
+  "environment": {
+    "WREN_TEST_POSTGRES_URL": "Supplied to private PG for repository groups and delayed writer test.",
+    "WREN_QUERY_TEST_DATABASE_URL": "Supplied to same private PG for six original migration/conditional-binding tests."
+  },
+  "storage": "/dev/sda1 /volumes/data xfs",
+  "dependencies": "Original Yarn-locked installation reused after exact package.json/yarn.lock/.yarnrc.yml comparison; no installation or dependency copy.",
+  "command": "node node_modules/jest/bin/jest.js --runInBand src/nativeTaskOwnership.test.ts src/nativeRestAskOwnership.test.ts src/nativeTextAnswer.test.ts src/askingStream.test.tsx",
+  "result": {
+    "suites_passed": 4,
+    "suites_total": 4,
+    "tests_passed": 310,
+    "tests_total": 310,
+    "tests_failed": 0,
+    "tests_skipped": 0
+  },
+  "previous_conditional_cases": [
+    "refuses unprovable legacy rows without deleting them or inventing a project",
+    "backfills only matching original thread evidence and requires ownership for new rows",
+    "serializes concurrent first bindings and rejects foreign project or stale query receipts",
+    "rolls back speculative native rows when a conditional binding fails",
+    "permits empty rollback then forward migration only after evidence is absent",
+    "retains running/unknown task evidence across every native cascade and permits observed terminal cleanup",
+    "serializes a delayed task writer with the original PostgreSQL project fence"
+  ],
+  "faults": {
+    "first-binding": {
+      "exit": 1,
+      "failed_reports": 2
+    },
+    "closed-generation": {
+      "exit": 1,
+      "failed_reports": 1
+    },
+    "restored_sha256": {
+      "src/apollo/server/repositories/askingTaskRepository.ts": "18d3287a1e22b34bd5fea04f8cdb9fccb11647d68fa03501eafea7783ad7ba8d",
+      "src/apollo/server/repositories/projectRepository.ts": "fdc20cd22e35a77ea41c6909c1e23fa47b2a3311c5525b6f6b4140b324d353ba"
+    }
+  },
+  "negative_details": {
+    "first-binding": {
+      "mutation": "Remove original bindResponse null-or-same-target conditional update guard.",
+      "assertions": [
+        "Concurrent first bindings accepted 2 instead of 1.",
+        "Speculative native rows transaction resolved instead of rejecting/rolling back."
+      ],
+      "restored_passed": 6,
+      "other_tests_not_selected": 146
+    },
+    "closed-generation": {
+      "mutation": "Disable rejection when persisted project fence generation closes this binding.",
+      "assertion": "Delayed writer resolved instead of NATIVE_BINDING_CLOSED rejection.",
+      "restored_passed": 1,
+      "other_tests_not_selected": 24
+    }
+  },
+  "input": {
+    "git_blobs": 618,
+    "mismatches": 0,
+    "manifest_sha256": "0678cf4276b086e79d9ad57c0897160539a4d463382a33a13e66c967d1a0c024",
+    "manifest": [
+      {
+        "path": "client-kit/adapter/binding-validation.mjs",
+        "git_blob": "d2a0791b3ad1f724448f5e43c1c1a2dfe854a616",
+        "sha256": "c18919525189f0703fcc4f0655ea5eff49395914c3ea73a6c159dc4ad29cc3bc"
+      },
+      {
+        "path": "client-kit/adapter/protocol.mjs",
+        "git_blob": "08a96c538ac26c1d734d2528a7ef12abad2b06e2",
+        "sha256": "7c6a4617c91ba83972c66b7ca23e4fbb65c080da3300091eff4a75985a59d837"
+      },
+      {
+        "path": "client-kit/embed/README.md",
+        "git_blob": "9729f3d395c5c3b38881e9dc34e21d2bd297294a",
+        "sha256": "c5ba67e745bf9199f398acba3f3062398999a9816e9e6740e641a526c938e6bf"
+      },
+      {
+        "path": "client-kit/embed/kailo-embed.d.ts",
+        "git_blob": "b270f888b2dacda7d86455e6e4374ce8c697985c",
+        "sha256": "0af4681c0761b58bff795e007ce719f5b8cdbe8afbd62e0ee87c870a63a31ce6"
+      },
+      {
+        "path": "client-kit/embed/kailo-embed.js",
+        "git_blob": "76ec5c599e59da35cbac0b3ea04add7c5bb9806f",
+        "sha256": "5ae6423344b3b1c7d772510684e0d9f6b962a01316d589541d30dc70143d3495"
+      },
+      {
+        "path": "client-kit/embed/kailo-theme-tokens.css",
+        "git_blob": "777d2a3c339ddd07ffb89f11e6c275d3e36fb2f1",
+        "sha256": "33e8cd606a9293866d0564889fe24b61293b273c278ac2fb8e7babc849ee9bfa"
+      },
+      {
+        "path": "data-query/wren-ui/.dockerignore",
+        "git_blob": "cdb1dafd71d788dd7e2b69000900d5e2dfc6b3e5",
+        "sha256": "6040c57592be4a115472b1e7bf92588624359b74ee91a3ae5e8767e96e329ae5"
+      },
+      {
+        "path": "data-query/wren-ui/.env.test",
+        "git_blob": "caf624b9e4ccfbb9123a94b1625fc891d99ee9fe",
+        "sha256": "5c08feaec8950065ae1f6caa00ef5513815636a95a56c0f4d535cb098b1f89c2"
+      },
+      {
+        "path": "data-query/wren-ui/.eslintignore",
+        "git_blob": "600e365ec83f8384cb5c98d0379367a7909cd329",
+        "sha256": "e757d1c190be0de43b99ff6b9fc166fea1138bf3c099d78659b9c88093fe4734"
+      },
+      {
+        "path": "data-query/wren-ui/.eslintrc.json",
+        "git_blob": "90cbdef039438c87664b78a5e3a6d62a1d4c1ceb",
+        "sha256": "ddd0302dc6022e6fab0bd83a02e8e2c6c476a55bfbc2dfde94015b6e70c9a955"
+      },
+      {
+        "path": "data-query/wren-ui/.prettierrc",
+        "git_blob": "544138be45652abc7bc3873341deacd3f4f90c61",
+        "sha256": "37055c98043228133ffcc5cad7bba5ef6c8f24698a551cae547b90f51d22e519"
+      },
+      {
+        "path": "data-query/wren-ui/.yarn/releases/yarn-4.5.3.cjs",
+        "git_blob": "7529af2ee2a7714040c97503de543d6912b33d06",
+        "sha256": "dddc0b96ad2dca8d56a5302b56bf3cbf8210654474a6bf88877da61e866f3d46"
+      },
+      {
+        "path": "data-query/wren-ui/.yarnrc.yml",
+        "git_blob": "f3c6c7287331372f6ea9848aada7bdb52482fe0e",
+        "sha256": "f3754b5cf668e2e852f6089bcfb9dbf96e5f062c8eb3ef8e2da38b1522f05ab6"
+      },
+      {
+        "path": "data-query/wren-ui/Dockerfile",
+        "git_blob": "bf8700fa24c4dc553821cd549f6eaebe00ce6301",
+        "sha256": "372c69f66123cbacfb92c2ff7850bf1ff38eb3726abd896303cd19e80f4bb536"
+      },
+      {
+        "path": "data-query/wren-ui/Dockerfile.dockerignore",
+        "git_blob": "e688ba10bb07030ac6e7882c7f263383e8ac631c",
+        "sha256": "3167902f8f10f7665faabda71338e93f8e7a4b17f1331d6ac505e03d0fb3965e"
+      },
+      {
+        "path": "data-query/wren-ui/README.md",
+        "git_blob": "97febdc8a62dc2a62d6332639426b5ab0233df96",
+        "sha256": "d36df63372ffb1b3a44023118378a9aea9efe9c3203d74472cee8353b03a282f"
+      },
+      {
+        "path": "data-query/wren-ui/codegen.yaml",
+        "git_blob": "169d8483b9dd8c773012649defe65899ea172f40",
+        "sha256": "24026650d2f381f62af402fb072380c4f7d800cdf4d535613d44a3863b55f8fd"
+      },
+      {
+        "path": "data-query/wren-ui/docker-entrypoint.mjs",
+        "git_blob": "a39e289df4c3946c57dc9c094ee72ce568467e86",
+        "sha256": "d43c25cf124e78cb41af9fc8ddf2050555bee902a526a1d9925ed8d36f6824fa"
+      },
+      {
+        "path": "data-query/wren-ui/docker-entrypoint.test.mjs",
+        "git_blob": "d6b07beefc43cc666eb061ba19e540a806232e64",
+        "sha256": "585b4530f18e9c38e09f3bea15062dfb3b657ea5d456e76c4c0243aa76ee6c30"
+      },
+      {
+        "path": "data-query/wren-ui/e2e/README.md",
+        "git_blob": "1a7d4acbddde929ee4f9f94151d5a1356c4078b0",
+        "sha256": "c3519b20a5b8dff91c9fd9fa852fd59fc669358b1a2bec1791b3076f3b1a5fca"
+      },
+      {
+        "path": "data-query/wren-ui/e2e/commonTests/home.ts",
+        "git_blob": "d7d87bb941149f258502ea6c05ac8965d18ac046",
+        "sha256": "77625494568b1f51f1a06f9b5f4c74cd5d5c7e2b8be69bc04b0fc7a2015c4254"
+      },
+      {
+        "path": "data-query/wren-ui/e2e/commonTests/modeling.ts",
+        "git_blob": "36b33ace93296eee115c89005203b61f48de7d2b",
+        "sha256": "ae71fafd9fcf26a40fa0645665ed40bb39a83af7e9918910bcd98ae719894cec"
+      },
+      {
+        "path": "data-query/wren-ui/e2e/commonTests/onboarding.ts",
+        "git_blob": "4c8882a6062e4e8b7e2c198ad0cd781e1b4ea926",
+        "sha256": "f230e1d4b611995036abc28c5c3fce174012955b813333e143028da30ba75d62"
+      },
+      {
+        "path": "data-query/wren-ui/e2e/config.ts",
+        "git_blob": "eca86c0f46e9c5bd814d7c2bb52d5fab2246038f",
+        "sha256": "268303d6f6e71b1325ddd71c02a24316e33d91db4a87e3bb26c1e2239e5406d6"
+      },
+      {
+        "path": "data-query/wren-ui/e2e/global.setup.ts",
+        "git_blob": "0c3598f42114fd2167105e5fe42f08269cca5288",
+        "sha256": "c97586519ece5a663152495020d85868742d41174bab7b34826ad8c3ca949a12"
+      },
+      {
+        "path": "data-query/wren-ui/e2e/global.teardown.ts",
+        "git_blob": "58342b6d951b97f310cf3e65da2cfd0b006f72a0",
+        "sha256": "9daf17d9689cbeb2895ea27f0e5dd8f09ac07f65d9b0aa079868ec38b7ea40bd"
+      },
+      {
+        "path": "data-query/wren-ui/e2e/helper.ts",
+        "git_blob": "c80c65068bd72a7de277729a7d2e238c37263e46",
+        "sha256": "375c86fc167925cb7f01a40ae034f0b5e71774876b60d03bee817c73433ecf0a"
+      },
+      {
+        "path": "data-query/wren-ui/e2e/specs/connectBigQuery.spec.ts",
+        "git_blob": "d6fd485c9d41ace1a0369ecc1d4a52eb5972f336",
+        "sha256": "c0c770300bfc428f034f9fc7d28194e59b2a9e6efba1f9a8f4a90b780bd93846"
+      },
+      {
+        "path": "data-query/wren-ui/e2e/specs/connectClickHouse.spec.ts",
+        "git_blob": "d39c441fbdbcaee17526da497d467e09fdf40ca2",
+        "sha256": "2984b1d65aba3650cc4ddcdaf576a50193da3a95c234128da7a4610f09b99c10"
+      },
+      {
+        "path": "data-query/wren-ui/e2e/specs/connectDuckDB.spec.ts",
+        "git_blob": "072757c5132af00d91173870df9ec570a201c05f",
+        "sha256": "223b1f84a51064420c8cc02a7a1dcf609bb8d5ee097b8efbcd56179e84ffe3bb"
+      },
+      {
+        "path": "data-query/wren-ui/e2e/specs/connectMySQL.spec.ts",
+        "git_blob": "809e029b99b8532707824c6ef5e740e4246d22cb",
+        "sha256": "c042fd389c5e7643362143ab69463c7efe34684e8c02520e3ac5d4eb933e889b"
+      },
+      {
+        "path": "data-query/wren-ui/e2e/specs/connectPostgreSQL.spec.ts",
+        "git_blob": "862f539ac4ceddd2b62778c295fde218131faedc",
+        "sha256": "16d297dc6b6597efe73e6cbfaf7faa1e8b429e36bc706327bea9f564123d0fbb"
+      },
+      {
+        "path": "data-query/wren-ui/e2e/specs/connectSQLServer.spec.ts",
+        "git_blob": "c6f6d962bbd20c0db47c0866171ed51e96e87ae8",
+        "sha256": "61082ed8a615f238329d73223cc2b1d9a84841ae2a80a72c3954c0ad7b596799"
+      },
+      {
+        "path": "data-query/wren-ui/e2e/specs/connectSampleECommerce.spec.ts",
+        "git_blob": "57a7cb5a448f7991922a7eb585c1b5bfd02ac368",
+        "sha256": "01c16549afd30f71c6a78e407ea23f1739aed167e17c19b3e6f6503f1b038821"
+      },
+      {
+        "path": "data-query/wren-ui/e2e/specs/connectSampleHR.spec.ts",
+        "git_blob": "0205dc697fb5535f5f2e22f1fe251989887d6c87",
+        "sha256": "8709102cca369851dba72eb5febca541feb0f1f36bfa258650fe9f6572862536"
+      },
+      {
+        "path": "data-query/wren-ui/e2e/specs/connectSnowflake.spec.ts",
+        "git_blob": "c43614fe2ebe8942bf94922cfe3861293b61e15d",
+        "sha256": "4beae834e57317aee5f5ad6496b19c6f60efaa6e223a249235869d4e24686bf3"
+      },
+      {
+        "path": "data-query/wren-ui/e2e/specs/connectTrino.spec.ts",
+        "git_blob": "d4ef0ad25d978bc186c1f5fa68f475c69bca602f",
+        "sha256": "772d03fa5cdcbfe0432081be9f2af1b6b412399cddc3324fce0f4bf5ae9e01d4"
+      },
+      {
+        "path": "data-query/wren-ui/jest.config.js",
+        "git_blob": "ab4b87dc54dea97d194c555ed6f34afa5fe11cb2",
+        "sha256": "01ecf297d62a963ccd768beb79de8d74e2dddc0aae4df7c66039fad42b5a9d30"
+      },
+      {
+        "path": "data-query/wren-ui/knexfile.js",
+        "git_blob": "72c26263a4f2fdd2e7056f2942a039dbab0ad2b1",
+        "sha256": "43a10c41333ede045399c883445d518a5b159c3507fe71e41a162c1015330e28"
+      },
+      {
+        "path": "data-query/wren-ui/migrations/20240125070643_create_project_table.js",
+        "git_blob": "1821bfd9e33578cac98d2159fc791ca3bb17ea1a",
+        "sha256": "1125828edf0f91d39a2c5dab73e01730a352d26e84c3c6a9908cf9b3e0ae73cc"
+      },
+      {
+        "path": "data-query/wren-ui/migrations/20240125071855_create_model_table.js",
+        "git_blob": "27eaf59ba482e6f9c4f36ec41709ae643f2fc825",
+        "sha256": "f737fb88b1c47b4b008fc49ef9e83ccefcbfaa7ae6b5b633633918561a95fe70"
+      },
+      {
+        "path": "data-query/wren-ui/migrations/20240125081244_create_model_column_table.js",
+        "git_blob": "5bcfa2f11d8608a3ffaa4f6498d45fa356bf5fea",
+        "sha256": "afd0b292e57c4bce279078c984773c6d6856149ef0aed54ef01c28397adef179"
+      },
+      {
+        "path": "data-query/wren-ui/migrations/20240125083821_create_relation_table.js",
+        "git_blob": "501b226339d7ca5f55530841ae3fc293a1583b77",
+        "sha256": "d7fcf492859989c7923a55af9a8665a9dbac270a5c90d3976b0be51bb2644860"
+      },
+      {
+        "path": "data-query/wren-ui/migrations/20240125085655_create_metrics_table.js",
+        "git_blob": "379610c8967b40da78d9a5cac4e3ecd5c8c2dcd2",
+        "sha256": "a788d393446638dbe100f6d2d3dc85ddfd9e7b479fbaa7f9507ad935146cedc8"
+      },
+      {
+        "path": "data-query/wren-ui/migrations/20240126100753_create_metrics_measure_table.js",
+        "git_blob": "b4fa8a90c3bba6105b4ddf20589e2cf5fe64ed5e",
+        "sha256": "99d5d0173b76dc4e33bc2dfbf83c88e281595c680971c95aa08ac03160226ecd"
+      },
+      {
+        "path": "data-query/wren-ui/migrations/20240129021453_create_view_table.js",
+        "git_blob": "2bc600523cec8fc9f733da7df3fed44683afa352",
+        "sha256": "71c9e8f58e3c73426b631e00260d96b479c0ff814a69ce74a1be7f65689a9f50"
+      },
+      {
+        "path": "data-query/wren-ui/migrations/20240319083758_create_deploy_table.js",
+        "git_blob": "05ca3f11ae118dbb314605b46c636eb6cad089bb",
+        "sha256": "401392e091fb6e62c50cb89afa616d688be9598e7db85fe9ba798413937809d3"
+      },
+      {
+        "path": "data-query/wren-ui/migrations/20240327030000_create_ask_table.js",
+        "git_blob": "f48374d8760abcecfc62b423cd2474811c341f09",
+        "sha256": "a47478af9e96e669eeaa0e0bd4e10ecb00e321f59c272fb7f765b3bec0ad953e"
+      },
+      {
+        "path": "data-query/wren-ui/migrations/20240418000000_update_project_table_pg.js",
+        "git_blob": "4f0ed14a309f5b5b7a0c2ca983a7cbb34846ed99",
+        "sha256": "4a4c280971e830db3dc397e2148d9ead1f8dc8a7728f4fd459b0d955a5735903"
+      },
+      {
+        "path": "data-query/wren-ui/migrations/20240419090558_add_foreign_key_to_model_column_and_metric_measure.js",
+        "git_blob": "82e8231a75f6a04aa8b8ee03ef6d6e26a824f083",
+        "sha256": "7e8ec2c6589196ffe126fac0dcb8b096c009bedd9dee490b2dff58e5c1723faa"
+      },
+      {
+        "path": "data-query/wren-ui/migrations/20240425000000_add_thread_response_summary.js",
+        "git_blob": "f0db7b248ef3825b25de462e65661b3e542b4351",
+        "sha256": "7dc68910424b9feba5069c72ae6457791605c674843a09f421a4d087066007d3"
+      },
+      {
+        "path": "data-query/wren-ui/migrations/20240430033014_update_model_column_table.js",
+        "git_blob": "e4d1c194ee5fbe596de13aa4387887311797df1a",
+        "sha256": "77e1a85ae0e8f520c552b61e5025f9ba5f825ce90893e320acf91ee7cefa22ca"
+      },
+      {
+        "path": "data-query/wren-ui/migrations/20240446090560_update_relationship_table.js",
+        "git_blob": "b35b7bd807ca708de05be38bc9c68535269afa4f",
+        "sha256": "d5b09548a8f092851f2d08674ba6d87bf8cd57e4341c709fbd88147acb8dc227"
+      },
+      {
+        "path": "data-query/wren-ui/migrations/20240502000000_add_properties_to_relationship.js",
+        "git_blob": "778fd395a45c93de87f64399f8756ca51a98ff5e",
+        "sha256": "f478092d49a191b15e9d551d1e6eb23af7ef4b5ebe3d2ae65d0eabe31359d9b1"
+      },
+      {
+        "path": "data-query/wren-ui/migrations/20240524044348_update_project_table.js",
+        "git_blob": "8ed3ab85fc223188bf3a79fbfc432a580723b46a",
+        "sha256": "8dff26d770c3618d7c7ffcef18b9615348a138f4a9a7c67fb08c597d46cbb87e"
+      },
+      {
+        "path": "data-query/wren-ui/migrations/20240524071859_update_thread_table.js",
+        "git_blob": "75c100158db71c667bf6210f95772d99b67f683b",
+        "sha256": "d7fcaeec78353e497612e21d2139b8e179525137235988cbfcc8936df0426699"
+      },
+      {
+        "path": "data-query/wren-ui/migrations/20240530062133_update_project_table.js",
+        "git_blob": "8c5168114a1b48ecef63869f753a76436d647044",
+        "sha256": "0046494963bbd049b03916ce688390a84a4a79541a1ac8198f6caf0cad71bcce"
+      },
+      {
+        "path": "data-query/wren-ui/migrations/20240530062809_transfer_project_table_data.js",
+        "git_blob": "30180e8eb84cf719f1a2a2f1d3684980dc8b93d4",
+        "sha256": "62216041bcd3cc4d5a9931241b2314b61df7febe96047459b3e2715ab6989221"
+      },
+      {
+        "path": "data-query/wren-ui/migrations/20240530105955_drop_project_table_columns.js",
+        "git_blob": "b7be89adb9d4c9369a88cfd56646011080ed6e3f",
+        "sha256": "9297d253035523ab0a4b88aacb2019e3043f8d3fc17b2b5f501559ae77816774"
+      },
+      {
+        "path": "data-query/wren-ui/migrations/20240531085916_transfer_model_properties.js",
+        "git_blob": "817c1b82df3d0eb3befd89cbd14c6ebe69d3b196",
+        "sha256": "9717c654535ea8b1762f5810cef828d44f86378148d4ec2e48d18d6e66d0b37d"
+      },
+      {
+        "path": "data-query/wren-ui/migrations/20240610070534_create_schema_change_table.js",
+        "git_blob": "0d605e50f81bb05b340709616a2806d0b4faa5ca",
+        "sha256": "6dc0991d55ad667bca7f6ed593d275cc4dbf73a7ccc316c739d7d2435df41f6d"
+      },
+      {
+        "path": "data-query/wren-ui/migrations/20240928165009_create_model_nested_column.js",
+        "git_blob": "310d8c9756e88724aa075968a2a61bf76144ffd3",
+        "sha256": "9ac88ebf597baf5175b266e7aa32c6ed3dc255d16282dda04edcae08de8388ab"
+      },
+      {
+        "path": "data-query/wren-ui/migrations/20241021073019_update_project_language.js",
+        "git_blob": "7cb6eb60215dbff7907ebe597a9ea97456da0a67",
+        "sha256": "4d5536ccc0212ad7505cb80d69c69e38b235674b50c1323b70196393581f45d8"
+      },
+      {
+        "path": "data-query/wren-ui/migrations/20241029092204_create_learning_table.js",
+        "git_blob": "c092164f67c900ca583f8c48682654f00cd9c11a",
+        "sha256": "c595f5613ac71be76196bc8dad3f57a5f343bc451527fe3f5918a01cf3142866"
+      },
+      {
+        "path": "data-query/wren-ui/migrations/20241106232204_update_project_table.js",
+        "git_blob": "801ceaf5f76f08ee14f893d8168fcea97aedeb39",
+        "sha256": "c188018aa99205eb1de32318ea6c3f340ce86ade0e1d6759516deddbccf37fcc"
+      },
+      {
+        "path": "data-query/wren-ui/migrations/20241107171828_update_thread_table.js",
+        "git_blob": "4d5fbad7551ade6b2e1dcce2dabeeb7cf7c5889b",
+        "sha256": "11f50a868b96970ef195d03a7563c5cc8376db2fc8425746e29f894102d3104b"
+      },
+      {
+        "path": "data-query/wren-ui/migrations/20241115031024_drop_thread_response_table_column.js",
+        "git_blob": "4b8db783e8cbc2c81f73452758fc566f87fa6e70",
+        "sha256": "c689094bca50a94b320feeb942d5be46bf9a163238dda5027e9a365f8798a412"
+      },
+      {
+        "path": "data-query/wren-ui/migrations/20241207000000_update_thread_response_for_answer.js",
+        "git_blob": "a73324c037c1f3d0869d5d2b5c8313139de10dfe",
+        "sha256": "75181047adbc6e91b65509b81241fa6e9b9595e31333d4e4c52134db510fe25c"
+      },
+      {
+        "path": "data-query/wren-ui/migrations/20241210072534_update_thread_response_table.js",
+        "git_blob": "0b216d66492afbe146f367b53b182186c89a8097",
+        "sha256": "15646d4b470dffa444f4819334095518af5fc2f371d712f0489773392157a6c2"
+      },
+      {
+        "path": "data-query/wren-ui/migrations/20241226135712_remove_thread_sql.js",
+        "git_blob": "cf453b326ec4d2b762037add2d2eeef9262f5cc1",
+        "sha256": "c813939dd3add3e9244b87214259ab229f82c6d98a5c6f6cf2c326f49fdd89d5"
+      },
+      {
+        "path": "data-query/wren-ui/migrations/20250102074255_create_dashboard_table.js",
+        "git_blob": "93447d641bd756c782a13e6fb6b2946977b3e799",
+        "sha256": "bfbc86c2353625e5df5720e89680898dc884954caeef4ce1d776d35e0c579a37"
+      },
+      {
+        "path": "data-query/wren-ui/migrations/20250102074256_create_dashboard_item_table.js",
+        "git_blob": "8531216a236ec9aa459c4da76a56f68a38e296e3",
+        "sha256": "b1abd8e0a4c4bc50e335f137ab57772a0daa6a51158bc84576a234abb7f07c8c"
+      },
+      {
+        "path": "data-query/wren-ui/migrations/20250102074256_create_sql_pair_table.js",
+        "git_blob": "d22b952dd03021f3352405dfd1792583216d7766",
+        "sha256": "e6fc8b85f7762aea42a05108e90f787b98945f74670c9ccb21da97dcddeb6650"
+      },
+      {
+        "path": "data-query/wren-ui/migrations/20250311046282_create_instruction_table.js",
+        "git_blob": "fcb84483b67815a866b344ee4161b83f7026b086",
+        "sha256": "1ebcf3293e9ae4197620a58858c0449704bef86e74bca6e01ad0b72710a345a9"
+      },
+      {
+        "path": "data-query/wren-ui/migrations/20250320074256_alter_sql_pair_table.js",
+        "git_blob": "f038333224db2baacc0ef256b0c16c7bb853170d",
+        "sha256": "bfddd72411603e6a8f0d57c45dfb16d6d9b3c46a636ae74a67d94176376ed50f"
+      },
+      {
+        "path": "data-query/wren-ui/migrations/20250422000000_alter_dashboard_table.js",
+        "git_blob": "1a430f411da6eadfcefa716de5019c12d7100b8f",
+        "sha256": "3fb7aeb73ef5346ec006faae0f4454e208caabb85a57220e5b4cf4efdb05da96"
+      },
+      {
+        "path": "data-query/wren-ui/migrations/20250423000000_create_dashboard_cache_refresh_table.js",
+        "git_blob": "69a76ac390341bc2af0534e7028295fde77ff8c3",
+        "sha256": "899703a4dd1e633f68dcfae0f5787f4f992c6a895b3884c0751511e05dce70e7"
+      },
+      {
+        "path": "data-query/wren-ui/migrations/20250509000000_create_asking_task.js",
+        "git_blob": "bd0fcd5e0dfc4c3edc98b23ef6cdc059805abf3a",
+        "sha256": "953a5a70d1972325f2fc7ace5311ef81eadf16abe0f4249468634d28c52271d9"
+      },
+      {
+        "path": "data-query/wren-ui/migrations/20250509000001_add_task_id_to_thread.js",
+        "git_blob": "d483cc2bca4a2e12fc9e7770ade87a16b11551fb",
+        "sha256": "236c80e627a27cd9bbcfa0fcf0072a53552ac2284862089b8ee89dda0d2eca5e"
+      },
+      {
+        "path": "data-query/wren-ui/migrations/20250510000000_add_adjustment_to_thread_response.js",
+        "git_blob": "5c06d6ddf544c565d920016cca74c7a9fbc488f5",
+        "sha256": "a883f34d0337597dc7e9257d1aa15a501de1be682a58481fdcd79e64719a199b"
+      },
+      {
+        "path": "data-query/wren-ui/migrations/20250510000001_alter_dashboard_item_table.js",
+        "git_blob": "e8c49a13b62c47082370d041fffcd7f282afc293",
+        "sha256": "a27faa0cebd18d79a6ee3f3b4989a01ee21811cd42a51c55efc32b8e36f4add1"
+      },
+      {
+        "path": "data-query/wren-ui/migrations/20250510000002_add_version_to_project.js",
+        "git_blob": "a5419141f502e4768f9492047785ab703e99bb63",
+        "sha256": "7c81169676a29615bb74ee231d1e31ef25db365bfdd348dfe6c259c03bc0f1f9"
+      },
+      {
+        "path": "data-query/wren-ui/migrations/20250511000000-create-api-history.js",
+        "git_blob": "aa88cf449ad29b13872ab8ebd627779e482d92cb",
+        "sha256": "5803ec807d995037d1205a7fa6003832cf2e435ed6e9c3e57f1aa2b5e73def15"
+      },
+      {
+        "path": "data-query/wren-ui/migrations/20261005000000_api_history_governed_query.js",
+        "git_blob": "0e4f2ada0a11fb869bde8cd76b1a29b046f160c7",
+        "sha256": "b3a8e6c685ce12c86a7fccc31f5d9ece52d860c8a7fd37ff158b19a8da3cd79c"
+      },
+      {
+        "path": "data-query/wren-ui/migrations/20261007000000_asking_task_project.js",
+        "git_blob": "ccbd41b6d15425ab5e28736b9b2600e20acd4150",
+        "sha256": "3146a551332846e9cb34dce639ff5ac6c3ca05ff554b53fe2ca2dc92160d14cd"
+      },
+      {
+        "path": "data-query/wren-ui/migrations/20261007010000_preserve_running_asking_tasks.js",
+        "git_blob": "0557851e93f13f8fc7fff931cae8ab626746fc28",
+        "sha256": "a2e8f9533c8e4696c65e1fbfa547e6aca21a7ce21efc8ba8b4c4424ffaee0577"
+      },
+      {
+        "path": "data-query/wren-ui/migrations/20261008000000_deployment_native_objects.js",
+        "git_blob": "bd6d264430b47a03214080f806fbf5fcd561f8cc",
+        "sha256": "da638f9517c80e9272f010b096ec239cfb7cc703c2b2a6798efc0805421f6820"
+      },
+      {
+        "path": "data-query/wren-ui/migrations/20261011000000_native_binding_fence.js",
+        "git_blob": "1e079fd9902b1de177a931c1c0206b17de6a463b",
+        "sha256": "2844b8ce3001ba7ef61fec0274381028a8bc632f9001c93bffceee92480416aa"
+      },
+      {
+        "path": "data-query/wren-ui/migrations/20261021000000_kailo_user_ownership.js",
+        "git_blob": "409b53b31c5c4b5b99c46091f4733c38ef00269e",
+        "sha256": "8d55b2a9dab5b2300eb5b217fc23698482c602d7d7f63c92ebad74cc8f83679c"
+      },
+      {
+        "path": "data-query/wren-ui/migrations/20261023000000_kailo_member_directory.js",
+        "git_blob": "fb9fbf97cb575fd1864703f3f5bb031dda7a43a4",
+        "sha256": "43018e66a75202e3dccad2ddfbf95015ca1daa6f9dedb232f712e6299fc3cb96"
+      },
+      {
+        "path": "data-query/wren-ui/migrations/20261024000000_kailo_user_identity.js",
+        "git_blob": "23e2e4b3477d3e1efd52b50d3f67cdcaeec64841",
+        "sha256": "9b42f75638ef8e211cfaa19e91d9ba1bc667ab5d21d3bf7bfc12b6326b76deaf"
+      },
+      {
+        "path": "data-query/wren-ui/next.config.js",
+        "git_blob": "95ac15d6f6108e79801eea3d731fa3d7a0880bc3",
+        "sha256": "29071c8f68efbc1a24151327274c3da590774f6de63bc9b3b4c36d24cee36701"
+      },
+      {
+        "path": "data-query/wren-ui/openapi.yaml",
+        "git_blob": "8424a08a53b7577126e18d883c0809e7855889ed",
+        "sha256": "426c36192acf0506e69c847bcbc00d013db953494dde95b319263f11800d8edd"
+      },
+      {
+        "path": "data-query/wren-ui/package.json",
+        "git_blob": "9d28062b2ccc2e05b9073e5103d9356840755305",
+        "sha256": "e6c5680acbf4837a7dbf5a4ce936243c4641df54cad077746ff20d8c22a3c381"
+      },
+      {
+        "path": "data-query/wren-ui/playwright.config.ts",
+        "git_blob": "9714b1fb9de65b4cc8446dbe6b4f54342ca2e78d",
+        "sha256": "59a93836a5450c68e3109e2845022714f61595baf6d36e30366c189c1f592f8f"
+      },
+      {
+        "path": "data-query/wren-ui/public/images/dataSource/athena.svg",
+        "git_blob": "bec3fa3870ae653908d4f5131361efe85719c3f0",
+        "sha256": "3df78a0ed445f21db1555ea1e0b0c85df62490d8a985c8152539cb7fea8b3b8e"
+      },
+      {
+        "path": "data-query/wren-ui/public/images/dataSource/bigQuery.svg",
+        "git_blob": "2b9492fdf46c0ffbb20aded622d5c9915971dcc6",
+        "sha256": "881fc9a9f23b5d8991813e2009c1020976114b142d37aff549b5fa8dbb987eaa"
+      },
+      {
+        "path": "data-query/wren-ui/public/images/dataSource/clickhouse.svg",
+        "git_blob": "d8f33e7c6647a6dcce55a00f19422f9a066a5426",
+        "sha256": "2b0e2d7267362933db8b28da701f2f50c1d1e7f38da6530d6db780e25497ac40"
+      },
+      {
+        "path": "data-query/wren-ui/public/images/dataSource/databricks.svg",
+        "git_blob": "2ef28770bb01097454719a091a84cca63debd8c4",
+        "sha256": "2c3477655ff8befdf3081f66ed061f0471ba2d2814f7bcb06aa672708c148bc1"
+      },
+      {
+        "path": "data-query/wren-ui/public/images/dataSource/duckDb.svg",
+        "git_blob": "5ff71631fe96cf33e095bea1571e3ed61661dcee",
+        "sha256": "b8a2a5092d0bfb91e5deb9cb8e3db90fc32b6863632a92f53730a636c94ea4ac"
+      },
+      {
+        "path": "data-query/wren-ui/public/images/dataSource/mysql.svg",
+        "git_blob": "a7e55d1e603cdbbef09704113097afbb72bef401",
+        "sha256": "09f014ed613c4d2f54ede681771f8d5291981cff36b4b04a103d3a4d8ecbbef5"
+      },
+      {
+        "path": "data-query/wren-ui/public/images/dataSource/oracle.svg",
+        "git_blob": "970a994ddf7bc9345293bb750f51efa53647fce6",
+        "sha256": "8307a10e5b394c1088e81659c115a560b69097e434843ccd43adb91256249f37"
+      },
+      {
+        "path": "data-query/wren-ui/public/images/dataSource/postgreSql.svg",
+        "git_blob": "94749d78a28d478beb5f64a94b6b66a0ad063c39",
+        "sha256": "2f82302b5b45f5d51bc4ff446107ba44985a7a6970aa20e988ff995eaf2ba434"
+      },
+      {
+        "path": "data-query/wren-ui/public/images/dataSource/redshift.svg",
+        "git_blob": "86c348771b25c016372f6fe4d646d1087f5e6772",
+        "sha256": "5ce85d87fdcaebbab0f0fb06049bc62faa86c8a11cc20f1f09cb4a5b1f0087c2"
+      },
+      {
+        "path": "data-query/wren-ui/public/images/dataSource/snowflake.svg",
+        "git_blob": "9886c5c5afd32095001873a5b8ad7038db92ebbf",
+        "sha256": "0c4a55a119e943ae74e6e9b6bbf57e6a576f2eeeba86916be2fff44f3c18c474"
+      },
+      {
+        "path": "data-query/wren-ui/public/images/dataSource/sqlserver.svg",
+        "git_blob": "f3786a9ef71c9c70a3ccb3ea2b0a6586f2fe9bd0",
+        "sha256": "3bd772641c7ea436c4d923495cb1d4ec783f16374ccea20ec6929349ef00f8eb"
+      },
+      {
+        "path": "data-query/wren-ui/public/images/dataSource/trino.svg",
+        "git_blob": "30f10b0199872c229ba612dd1920b86fcced1ec9",
+        "sha256": "13c33636f12541f530df33a4553dfe437e12596de2646f6d5168f898215249dd"
+      },
+      {
+        "path": "data-query/wren-ui/public/images/icon/message-ai.svg",
+        "git_blob": "e106514ba205306f683799927c8696061d835ac4",
+        "sha256": "9881e55668942b60cb563e33a4fc4b5ef871768de8237c5fac0460dd68821850"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/client/graphql/__types__.ts",
+        "git_blob": "3a55bbdd2c95029e8857e8b08bc9b33a417557d1",
+        "sha256": "1043fe69d5300dd3f75ec6943857ed841297b03e4425b5fbc1ea3c387fbd425c"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/client/graphql/apiManagement.generated.ts",
+        "git_blob": "e4c86ee16aa54ffd9b477576f65fd384bcc3927c",
+        "sha256": "ea6fa39e83f8e475fc5676e57d83b842f944e423406a00508bdc5e136d701425"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/client/graphql/apiManagement.ts",
+        "git_blob": "b97f40dd426e0cf0501af39dade2d1190e249ef8",
+        "sha256": "f492829e7e4038f6aedc41ab2cdb3eb5aa17ab3476547709f37ee9fc9273e28f"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/client/graphql/calculatedField.generated.ts",
+        "git_blob": "1b8e37c927ab357b13cb5ca483621f796784c757",
+        "sha256": "38cae8837cdd59e424bf1494d157be7a203345c8b1d37682f299c0c2fb3b3a97"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/client/graphql/calculatedField.ts",
+        "git_blob": "c9e20c1227b932bcd03257a0dcf87237b8980901",
+        "sha256": "da65b4617b3425cc9a965c4d7852865c2f6e83318a025ff9753d54a745ec967a"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/client/graphql/dashboard.generated.ts",
+        "git_blob": "5eae403c27c67b0b8ccbf8868a2722d2c6ed3a83",
+        "sha256": "9e01f96b3182995db08f2d9ddcde9218dd7e8649dcd20bab5feaa218a8c8433d"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/client/graphql/dashboard.ts",
+        "git_blob": "fe501a95af45e1007a709ae3c4e3c58563ae06b4",
+        "sha256": "31099e2d2c0663b3bd466eb75ef7abcec08e75396ae46233ae654b49590d9e0e"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/client/graphql/dataSource.generated.ts",
+        "git_blob": "b868d5a8e65312882b7b5f389c2c4c3406dc6409",
+        "sha256": "751a8a933320b81cdb5b98bd5776c31fd91676613f5b5fc42d43019e70193e6a"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/client/graphql/dataSource.ts",
+        "git_blob": "5c840f81d2430aeaa7e8ba6352681cda3355a861",
+        "sha256": "63c54845e63b69002bb22492aef24506e549826ea83e2f4b45949caa4b8c8954"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/client/graphql/deploy.generated.ts",
+        "git_blob": "83d2456a175d8b2b4b9c3a2bfb3a140c3173b876",
+        "sha256": "ad44010d1d4cf5f81831aba3fec6c1068d82e71ce3c468355a889c6fa84783b3"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/client/graphql/deploy.ts",
+        "git_blob": "75fe308d2f2ba68e58a116a5017aeaa2f5b95fd8",
+        "sha256": "3ba96eda12ede859db5609e4d7ddcbaa4cdfe450fa2ff86933959b2c0c26fa04"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/client/graphql/diagram.generated.ts",
+        "git_blob": "cd5bbc5770d91b1ebc40699b24476d2f3e484bb3",
+        "sha256": "6871204e97315ed582a5f28dbf12096fa2180676189810898edc7f020e445c0f"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/client/graphql/diagram.ts",
+        "git_blob": "7fae824f18b245e4e4a504bd643fde5ad76be176",
+        "sha256": "67f69b870dd45c300b7aaa4111fe9b9d27a0cae07bbf387ff2477eae3ddcb6c5"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/client/graphql/home.generated.ts",
+        "git_blob": "eef0f394d28a071d872e07096a3282f603a9b08f",
+        "sha256": "f8d86332110518acd9dc0c7e547a2469a627403c23b6759848d01e32c33616f0"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/client/graphql/home.ts",
+        "git_blob": "e05528af19f945055bd2c04a269ea24ea5090ff2",
+        "sha256": "c690aa205e0f14ef1024b42a9afb5637cc1ccc8115f4c18d1584be1d606dc3dc"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/client/graphql/instructions.generated.ts",
+        "git_blob": "93577704f7bfb7dc57af2b727e055e22872184f6",
+        "sha256": "7ffb6cb8028ff19f3adb36bdf443d7b03e1a753c34c5e583bf3babf16e6a48fa"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/client/graphql/instructions.ts",
+        "git_blob": "55078191d71ab54eef6acd6ecf4fcc217ffb0319",
+        "sha256": "c013961678c9c106f516dcbb9715e1038a31603b1856fa3f8980016570d6f2fb"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/client/graphql/kailo.generated.ts",
+        "git_blob": "6bb2354df8d895725ff93cceb051c1261ac51637",
+        "sha256": "57f95ebdfa8a0003adc6eed93da43240e0089f69fa8952a9bb7cab6a6fc7aa9c"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/client/graphql/kailo.ts",
+        "git_blob": "16cdadb357943aa151a1d5d13d7842eecdfe67fe",
+        "sha256": "662abb6b0520f51a31716de2d5bf71a221b8fdbe3c8f182f0cbc723af8b05f5b"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/client/graphql/learning.generated.ts",
+        "git_blob": "5ee045e21764c4dbb77570a44318a3fe9cdc8dba",
+        "sha256": "52745c70209c273888a65eca50687770144e3af1507afdfbe1e707fdcf3b9f0d"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/client/graphql/learning.ts",
+        "git_blob": "9b99462ac6c1fd55b2021319e3cd98033e69401c",
+        "sha256": "cb3706e331d81e5d0ffdd084eb37027404a759e25ac768f779e7a23bbd40a46d"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/client/graphql/metadata.generated.ts",
+        "git_blob": "9fc8491c288fc24df3118d51616098b379143022",
+        "sha256": "9a2876321eacb4caea9bef95b778121424048b13ff5483299e77e4a5cbbd7779"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/client/graphql/metadata.ts",
+        "git_blob": "dd27be7cef04ef7db024b9889c9173a9dd5e68fe",
+        "sha256": "2aa7af061881f892ae7e8facaaea58cec662c3341d5edb46f3333f2af079d92f"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/client/graphql/model.generated.ts",
+        "git_blob": "3310410e74abd87be3abc1b02c6821dda1a71bc0",
+        "sha256": "42d28d6522d78dee903e9d68ec179a158533c11bb42b9872fd3fb72644977b5d"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/client/graphql/model.ts",
+        "git_blob": "c444b05f1825c72ccf089bb615e80996c82e7272",
+        "sha256": "c153919562e8a7e215f653726d42dd51cd54ebafe61d5ebb5a3ee5b5d85928d3"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/client/graphql/onboarding.generated.ts",
+        "git_blob": "e9713215d99be4c8c189ddfe501e4462731098e4",
+        "sha256": "c4f71c33e4161897ec82d0ffec1fedf5cb92245c3426d0e6906c7ed543563875"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/client/graphql/onboarding.ts",
+        "git_blob": "16c16a66b62c0dfb9d788d8a60ab7f3234ddd986",
+        "sha256": "54b1579d9d167171704770a4d877de3f7539ba6e72fdc4cf2b9fcf07fc97220d"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/client/graphql/relationship.generated.ts",
+        "git_blob": "322384ef7d5259f6c5fd0703599d757e8b3faac6",
+        "sha256": "48c31fac86a52d586535b2f8342eb8ebcf754e4879bb35371d1fe74db11aa410"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/client/graphql/relationship.ts",
+        "git_blob": "5375d790bdb03c8e70517970df3ffd750adbcedf",
+        "sha256": "4306fd5e6c1b41f3ce7dde250a78f620170f12077b6055935c388a3ac395307b"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/client/graphql/settings.generated.ts",
+        "git_blob": "11471427766c7760c12862e412d5aee5b09a61b5",
+        "sha256": "6f1e15cdddf1d2d0ba94727ad8f4b83d51a3643e3d54e456cca90919a6960bd9"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/client/graphql/settings.ts",
+        "git_blob": "57b626c76913bf17fc2b7b954f6a62bef4b18c96",
+        "sha256": "f0055a975a8b17b70ad4bb4d386407d7f6896cfd09b8d3bc7222189c44556e79"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/client/graphql/sql.generated.ts",
+        "git_blob": "4228cdb601461f6c814aaeee77d8fcc4db85cb69",
+        "sha256": "5685c76a6b7caaee9537e5fa530c0e119e847e7f07f581fc03fce5e13cee8888"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/client/graphql/sql.ts",
+        "git_blob": "e09219cabbab6f446bc926e3ae99cb3125b818f8",
+        "sha256": "fe6e375838ca2803f48663dc5a10cbfd7546ce162da484b4b72d9aa91fc60c68"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/client/graphql/sqlPairs.generated.ts",
+        "git_blob": "cf671cde41e44d2e34dcae6ada5347841e7517af",
+        "sha256": "4d56ee74b9cb3b5f2293bf8574714c4361fb09f669dee16a4abd1293632b4b6c"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/client/graphql/sqlPairs.ts",
+        "git_blob": "3901965c0b2458eb160fcb388401604fd7a75f3c",
+        "sha256": "714c4ce9b1a612032daa678f1077e78db84eb4ad71a564d98e41c30c285e3cfb"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/client/graphql/view.generated.ts",
+        "git_blob": "2642c7cc3b77c2009de4b0f8aeba2a627b5c35bf",
+        "sha256": "83e08ca4cd7eae19cda2b234863a518028e7f2e0f002d8810e311509781ac665"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/client/graphql/view.ts",
+        "git_blob": "6021ef27ad9fd8ceaa82603b85a7b18034f3092f",
+        "sha256": "73b4dfe1ae3e5fdad6dc3bc38e16a819bd714c631fd56de1b0ac83a81ed3e8b0"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/client/index.ts",
+        "git_blob": "1701ea7267a5e0e59dfabd1400f3c4eb0042de71",
+        "sha256": "5a88f345fe0a49665c044ca4c1efd6b64d752a2326aec0c0fc68821f0ef85b43"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/adaptors/ibisAdaptor.ts",
+        "git_blob": "b5352709d9314a31c95c679cffa5219a4a0dcfc4",
+        "sha256": "9ac17226cae5f2bebfee652933965a04ef5aa0048a07e240f919d1cf56cfab82"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/adaptors/index.ts",
+        "git_blob": "770234a85d956a9df9570389dd63a91592fad2ac",
+        "sha256": "1d32dbca945d5ab06db8e78c980e70c29450551919eeeb7454a116ed38340f67"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/adaptors/tests/ibisAdaptor.test.ts",
+        "git_blob": "801a17b975974057b2a399cec62bd31477616be5",
+        "sha256": "2d8b760116b12e3642d1b2adde532867e9ecdbdb68f6207cc96f38db24289e75"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/adaptors/tests/wrenAIAdaptor.test.ts",
+        "git_blob": "428dd662e9345f68c8bccb145af42bb56532e38c",
+        "sha256": "a82aabd389daee79176346becd7041d2136e93f053ec0960d75c0cde93eaeb3e"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/adaptors/wrenAIAdaptor.ts",
+        "git_blob": "e9728a041ccb691407c801922af3f223e3e0c117",
+        "sha256": "09d4e5d1f5e55f3411cc7d6be1a2c5917989424c8c2bf841052bc02c141d902c"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/adaptors/wrenEngineAdaptor.ts",
+        "git_blob": "0bd9241b8af3b08ef053cfb3970e0c9e9454f447",
+        "sha256": "d2fb07e28aaea4d59c921b794d96c8dac65c93b3319dcf7fd638431022974bf5"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/backgrounds/adjustmentBackgroundTracker.ts",
+        "git_blob": "c1a5ed9c085c54f01865de3a5af8c2916f849864",
+        "sha256": "01d753db7c07ae8d08f9756eb74bd4623aee69da8bbda49c7989bf85605818c9"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/backgrounds/chart.ts",
+        "git_blob": "8864309492207efc38a06f96991fc786e158a835",
+        "sha256": "75ff1a9d48540a451bccea09643199f72d236c72ccfe3fd774b25d2f25755248"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/backgrounds/dashboardCacheBackgroundTracker.ts",
+        "git_blob": "a333679fa6eb5e3fce7b0431d958588c2b939d01",
+        "sha256": "ab34abd9a31aaddaee89cfdbde5963ff8c117d2b5e9f8fa0195eeb64a48d2362"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/backgrounds/index.ts",
+        "git_blob": "a9cd17a5107aca1e67c4edcad304d4fc07ec6782",
+        "sha256": "40fe352a18df769579cf06c56f1c1634ce53b5cdcc4e1b215f78b57402c2d659"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/backgrounds/recommend-question.ts",
+        "git_blob": "adf15b6c89c701861f84290f6ed6831a4b965f82",
+        "sha256": "e9652b2f0b1a53a021d95ee78f874e6494b0771de17bc88a2b736b903edc605d"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/backgrounds/textBasedAnswerBackgroundTracker.ts",
+        "git_blob": "89dc949c264a1c555cdde6fe83b36c9acc9221e5",
+        "sha256": "a9bebb7c300cd6a2fefa32704b71c1a4ac14c4169d99501608f8086e6dddc3f3"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/config.ts",
+        "git_blob": "e39df2b520732ed99a247183f11a36abca23cab8",
+        "sha256": "f3bfe2627663a4fc40e71b6d3a71faec000840705b77d32a00169f4479f6dc17"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/data/index.ts",
+        "git_blob": "80895192de88b91caa9f33083896dd70f107742d",
+        "sha256": "dc8d0bff1d4ef4caf0a86532f7909890cfe2bb023ba71b9ebde1145de2f0c396"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/data/sample.ts",
+        "git_blob": "3ff30ab79382456c399b2ef5e9e2ff1896927f0e",
+        "sha256": "d27dfdae7bc78e0ca71acce27c07da802276f5bf724124bcd3300e74b5308462"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/data/type.ts",
+        "git_blob": "2b81f1863ccd129f7ae6ad6c3855d957bdc8e713",
+        "sha256": "6c121c9011823f65f3fe5afd1bb6f209e5541eed7eb928dba99d82f9655520e7"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/dataSource.ts",
+        "git_blob": "b17c3c78a43d7cef5e20c3a72dc17c4661a3cd97",
+        "sha256": "0e645d6040eade39720c53f5cb3907fb0d6eb5c5557cc05dd1e7d674dd2bd470"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/index.ts",
+        "git_blob": "f0bd409f1b231acad5795faf76592dc9709b199c",
+        "sha256": "feca7e2d4291237294378edc79ef2f5f7e6ff25b2243e149d22f581f9e9e6b55"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/managers/dataSourceSchemaDetector.ts",
+        "git_blob": "d50ba4b398cc3ad7f083d808da41e09955350566",
+        "sha256": "f9641f2eb7159b8d2b9a4b16885c96c92bd59ad144b99eedea72e29fece19084"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/mdl/mdlBuilder.ts",
+        "git_blob": "4f7a87671afb16ba7460ae7c504804908777aa3c",
+        "sha256": "64d0735e4b65911a1e9783cc7bfe685d73af066e4f8fdbbe464514c1910ce17c"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/mdl/test/mdlBuilder.test.ts",
+        "git_blob": "4c7976d6654a9c2e7030db5dbe99f988cded3feb",
+        "sha256": "d3fb36538763ebe6d0e0a30c090c38183cd7b433bdf52f40b39e0ad373625343"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/mdl/type.ts",
+        "git_blob": "bb7c8be10fcc438cf492a9661179e6066048c4f4",
+        "sha256": "5c5975afc34b056d3a0d46f15050f787854d8beb35bba1404baa755cc09ff805"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/models/adaptor.ts",
+        "git_blob": "d044e7bdb7e210b4db15e73440898be3e94d1acc",
+        "sha256": "6c7618fb190f6c9e79a93f81ba1f7a9823756a9c9124ea7a0008974068190cce"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/models/dashboard.ts",
+        "git_blob": "e299ed24805e42b9e8ac1d14d7c9c591f8a7355b",
+        "sha256": "bc761ea02fabe80ed9b0fcfdd64d7ab520e16f127a55960fae7c46307cbe5d38"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/models/index.ts",
+        "git_blob": "349625fd76ea760eba003379e032fd40b9a19f5e",
+        "sha256": "4c70522c3ae36782145a56523267dcfba42551aab12c0c845598afd714513beb"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/models/instruction.ts",
+        "git_blob": "2368c602efd201e09a1f1e8c77b1a937920dc333",
+        "sha256": "d814a6ee6cdaea17b6baa2d9a360796ef83ed58fd3be41e94623a73c314501b2"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/models/model.ts",
+        "git_blob": "24ecac0cc801dc4dce69badabe441cd8b592cf5f",
+        "sha256": "4656f52fc4bb4a942f56e93ffb7cf92dbee2bb2b013e7ee851736527cd3658e8"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/repositories/apiHistoryRepository.test.ts",
+        "git_blob": "3373f73436fc3999ed41b1c01a3e8522660c0372",
+        "sha256": "55a3f7d82a4571be8dd9eb8139b6247eb39682c9f4071ec6a35701614f596a11"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/repositories/apiHistoryRepository.ts",
+        "git_blob": "b0b8551916bce8c37b444a4c6d2bf9b51d8b4693",
+        "sha256": "9f3bbb640ba5818a3f7e9582cfa6f9a6d8a63d2a378b4506aafb0516c1ddfe94"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/repositories/askingTaskRepository.ts",
+        "git_blob": "f6f852f3b37e333722bf39df548c64b2fa7b44b6",
+        "sha256": "18d3287a1e22b34bd5fea04f8cdb9fccb11647d68fa03501eafea7783ad7ba8d"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/repositories/baseRepository.ts",
+        "git_blob": "f76fe276547703cb34ceab49100da4ff9cece41e",
+        "sha256": "386c32efa91340463ed045163cb8dc58b4303d9f557582109cef1b3ba17d997d"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/repositories/dashboardItemRefreshJobRepository.ts",
+        "git_blob": "dd97491e820e0ee62b4bfd7a34b67ea9903c438b",
+        "sha256": "6ed81ce11808bcf5d0621d27b16ace77890b021072089af041ee7fad84ba0a3d"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/repositories/dashboardItemRepository.ts",
+        "git_blob": "12959f01679ce791c23eecfb845e7a1a3b94741e",
+        "sha256": "7c1848747d6c0252f7754bad080b0ff17a545f948a33ae1bad87b51bfadabea8"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/repositories/dashboardRepository.ts",
+        "git_blob": "d88fe35c686b1a867d5516b40edd89e764d062b6",
+        "sha256": "56d5d6ba66d8a823f3cc47fb4feb5368c5d6792371717b6e7a1de43de4710d22"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/repositories/deployLogRepository.ts",
+        "git_blob": "530a3dccceba1e3bf7f796112daf2f295291630a",
+        "sha256": "7979f12f5ec231b4e8446e6d762a48f9fc3a4d6242e9cdc76745285cf9cad6bc"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/repositories/index.ts",
+        "git_blob": "b80d9c68b2ee6df6a6f8a2652a96e340e84e8a03",
+        "sha256": "45a5b845b89702115c14d00d6cc0bd87c9c2a1b75d5e267b340f2ae5cbed0445"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/repositories/instructionRepository.ts",
+        "git_blob": "16e7d05a154d7409d3f43af917eaf6f6ad77083a",
+        "sha256": "2e8a03a84eb7c969b3800a4fc3b112f91ba61a7eaad05cfde5dbe1a073511f33"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/repositories/kailoUserRepository.ts",
+        "git_blob": "2649f78521e967c1b6b84642a5031a1f67c19ac8",
+        "sha256": "ead06a9a3bea703b73691e8a749254b606a8155d68825e8ef4b35d59ff65b5be"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/repositories/learningRepository.ts",
+        "git_blob": "f6aee6473685ccb0a2e161c1e3d014c703630364",
+        "sha256": "4790c5032dd812356cb2b401527288385c92975f8214c5d116a3ee3cde550529"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/repositories/metricsMeasureRepository.ts",
+        "git_blob": "4727c9100d5a0abec137f4a5bbccfb2c6ed5ae21",
+        "sha256": "3f0673f38836570710909a00723e48cd53f764e088ada36f5c3f39adf384a0cb"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/repositories/metricsRepository.ts",
+        "git_blob": "57bec8f9201d69927463c8b6db5337453356818c",
+        "sha256": "9771df6905a16f2260b481076859f77bbf9433a4fd6a7e51fa5b80cd814e7d63"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/repositories/modelColumnRepository.ts",
+        "git_blob": "df4198e214211bf356100491cab6ea8383811153",
+        "sha256": "8370bd29ca674897d3b4c41435c96ac1683e1f6557189b78f0274a36281a770a"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/repositories/modelNestedColumnRepository.ts",
+        "git_blob": "5438ff47ec86eae63ba445b0c90aec9739a34646",
+        "sha256": "8c4019a600f95ec6fe89e928ed780d373c94a373e6d01707e7997e973b687725"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/repositories/modelRepository.ts",
+        "git_blob": "90c38f5df448e194883663af13cbebed1f4c4d2a",
+        "sha256": "f55face4d26a67985f48749e1477c10962a6244abb273a665d018f353c7834af"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/repositories/projectRepository.ts",
+        "git_blob": "16a4e837c48e01c76abdc4a62115dcaa2bf8551a",
+        "sha256": "fdc20cd22e35a77ea41c6909c1e23fa47b2a3311c5525b6f6b4140b324d353ba"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/repositories/relationshipRepository.ts",
+        "git_blob": "9aba1b6bc7d2148f1993c1f914896e85201b2e0e",
+        "sha256": "706b567bfb981ac51af48224ad65c3c85b81378e1edc42c85b6a436734114ed8"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/repositories/schemaChangeRepository.ts",
+        "git_blob": "0a7a7d379dd146c4935fead2c0893d1826187b5c",
+        "sha256": "3a473f5deee123d8cd2608002e9681f8fa94a1cfa4cf76de60527aa0ef6e770a"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/repositories/sqlPairRepository.ts",
+        "git_blob": "a82dc8753facf2b0bdd6c0757aad5f99059db99d",
+        "sha256": "690e242f8f8cd30bcf86e36cfd2942c186bf94a15a98943593f6a77084fd2869"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/repositories/threadRepository.ts",
+        "git_blob": "69d994c3a962de85bf1585079bff97a35cd69280",
+        "sha256": "15b5b4daa99e9bdb1a53b200bc45394dca40cd666a2ba703611e6ba2f67e30cb"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/repositories/threadResponseRepository.ts",
+        "git_blob": "564c128f2180a14071eebadd6ac689dde35f2fad",
+        "sha256": "13a924ac58fba24ca0547d335561dae7311ae82d5599347ad6a235e1498be456"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/repositories/viewRepository.ts",
+        "git_blob": "39ed245c3512a8b936192e8e8392fd82db0530a8",
+        "sha256": "0a723b0be1ecc9164ac8a887672fa1049dd39d1f65086ba923b0ac3d967fe97a"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/resolvers.ts",
+        "git_blob": "296a2bad9337144098e27fcce08bbb406f512ed7",
+        "sha256": "b497129ce1ccd484b39327ad952003699f25f75d4b035208ee1c2186a8160f80"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/resolvers/apiHistoryResolver.ts",
+        "git_blob": "4e5df3878060acd53ec9b6e7ed6f3ada0be77055",
+        "sha256": "d187c57ae61687f69cfe89a7a0aabb6d6ae9065b55108f69d6b9820443931306"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/resolvers/askingResolver.ts",
+        "git_blob": "eef53fca35309313941828d07bc76edb38503d68",
+        "sha256": "64d95cbe394fc9ed8ba51b2ce2317d9a07463224743708179b026b687fb4ac81"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/resolvers/dashboardResolver.ts",
+        "git_blob": "19334b96a686e4dadc21ce5d840d8ee7c8a83aef",
+        "sha256": "f0f06e3aa3137dacbf06bdc602b5a52cf216567706f83729fe21a3fc91c70c14"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/resolvers/diagramResolver.ts",
+        "git_blob": "eaa76bec269aace21920045e9ae756f890058238",
+        "sha256": "d5799a92b77a1fbc0faec50030771b95c0b29ea3d4b9cac297edfd126b0d526b"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/resolvers/instructionResolver.ts",
+        "git_blob": "4c7d5bf95b45405b8cd173700d60e5ef6188f124",
+        "sha256": "46cec77417f27f9c4cefa296608d37940a82f0fd30ea397adb239fa9b99e72c3"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/resolvers/kailoShareResolver.ts",
+        "git_blob": "2622f7633ad4ff4b0ef4799a8aba961d4df8fa7c",
+        "sha256": "ae17dc4429c72166439e678fd3423a56f9935e06705b701dc0dd1af805f4a2c8"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/resolvers/learningResolver.ts",
+        "git_blob": "0729f062e919ca89640f2da8f662c10fb0bc558b",
+        "sha256": "6cdc219619ba74c088257ce634dd4f4fc0975ef81f7f03432129c50e24a5d857"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/resolvers/modelResolver.ts",
+        "git_blob": "14d9edd811a44d6274c589a0a3bb87acbf9f624a",
+        "sha256": "98eb9b08399824d9862e01a76f5fbc591e5b088ed6cd71ce4b61c2634c2d8fc1"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/resolvers/projectResolver.ts",
+        "git_blob": "0e353d446e0c391a2f106201136c524780ba5e15",
+        "sha256": "f0e366510a939e5e1b2ceb842a1899a29152483b9adf499b3d46c18b7e5229a3"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/resolvers/sqlPairResolver.ts",
+        "git_blob": "2d9c6f338ab15c4b26e8070fdc01d0365d4ec198",
+        "sha256": "3eec2ac2b0fd01c89f2328eda4e68ff5a6aa824c5eda8e03e5b56d286b49b4ed"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/scalars.ts",
+        "git_blob": "d1376717307cad94bb265b170ff65ae6a19d2bb3",
+        "sha256": "5571e5d730709c6a9cdf8168455fb83c2575b79208e2b74be9c1702c5f0d826e"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/schema.ts",
+        "git_blob": "70f014fe9b1cebcff55b8bd8a470128a5e27e419",
+        "sha256": "b9cdc4743d53cbc224e98fb0cf123d15d214b5fa53d32efa6fd21b40cd7f40d3"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/services/askingService.ts",
+        "git_blob": "cc67e8e1f059a81be19ce43bf570c79cdc710311",
+        "sha256": "0eaead3896d1eaee86d580f7aaf06eb7d941f7f5fa53f6b305e7e54a941fd438"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/services/askingTaskTracker.ts",
+        "git_blob": "794fc749adf0a12ddb93971077bb664b1f475124",
+        "sha256": "afee3bb1b79969c2122f10c0a54a00fb620b67ecbc7ff5a1b6f278d04e61ebea"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/services/dashboardService.ts",
+        "git_blob": "8b080f76e07459ce8fc7990c726c1cd3d7d99b7a",
+        "sha256": "d38165a918ec79b32544d6e82ce0b9652dd3b3ffce1b4b10f74b9cc7b1b5fd59"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/services/deployService.ts",
+        "git_blob": "4d71758ba77b8281fa27ea9cac386e3f2a4f77e1",
+        "sha256": "a48d1fd3a1cea80dcd9dea49aa3574fd524fa5ed9108c2956474237c608243be"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/services/index.ts",
+        "git_blob": "ce1bb7817568dea380ec9ffc8963d0699788d9ea",
+        "sha256": "0ea5c3ace19678058d93a433439a30cfb4145c9b5fe5da7d23a08b573a6a17c3"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/services/instructionService.ts",
+        "git_blob": "51d15ee9c0f2500233208fad540cc7c08af14181",
+        "sha256": "92751d4df7c3ffc780dcc9793afa7d4eb1fb7623d51eec5649fda26718d05b63"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/services/kailoAdapterSearch.ts",
+        "git_blob": "6448587079a7e5f995b6edf94590c6ffb8537ce2",
+        "sha256": "4ab90daef5a128617780e8a292444907a01b2ec20acfafc5c48c8f03cf7230c0"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/services/kailoMemberDirectory.ts",
+        "git_blob": "88429f615f4e0f93667968414e08e7c51777c526",
+        "sha256": "e31ca52bb179866cdc1bbb2872e38e709413feb861bd8cc8234dec1c3da1d3d9"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/services/kailoNotifications.ts",
+        "git_blob": "cb5af39a800514a2cfa4133c474c8abf806b7140",
+        "sha256": "5228580abb16a8e48b18dfc57db8abaa13861a13e3ba55c2c4e4775b0466fbaa"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/services/kailoShare.ts",
+        "git_blob": "9c072f2b30ca5982c561aee0ac9558ba7c4c085e",
+        "sha256": "2c8ff03dd53b4fb803be0fa07617c7e8e057de2438ab78dd8c0d21b9dbf5f2ab"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/services/kailoUserService.ts",
+        "git_blob": "cb2bf2827f3bffb5f8e4f0abbb7f829db965bcf6",
+        "sha256": "2d2c89cafbeb44415c3aa3d221582605f002a00202349a360e8761fc6a9f80e2"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/services/mdlService.ts",
+        "git_blob": "c249f3e48ac535b9262f09a2633550c5fe086e3a",
+        "sha256": "9135b1f4f5c098a5938cbfde3eedffb4e76ca0d220e1f420f02b05db89c38bf3"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/services/metadataService.ts",
+        "git_blob": "37a8d18615bd90ee824f137050e7abb1549e1cfb",
+        "sha256": "695a8b1e808731b5bfa96cb65cdaa645f6bf0568eea93fb048ff7862d823eb56"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/services/modelService.ts",
+        "git_blob": "1c5ff0202916b00635d16e84628474eaac5340e2",
+        "sha256": "918194ae684dc9794dbb9b3e3140c5cf84a439e09473a9c770910eb3264780da"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/services/nativeBindingService.ts",
+        "git_blob": "2c3ee10c6431fc7169ff53c8a22a6fdc77961f15",
+        "sha256": "1de90e8088875262339221c749ad056c427c744cacbc3b911b87b211409ca609"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/services/nativeGovernedMetadata.ts",
+        "git_blob": "25d8eb34b1161eb6ed045d6ec7e912014391b00e",
+        "sha256": "dfdc25a86a77f68e87c29a061a9eeeb549b6b8ee6a3dabf868d7b6a20205f895"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/services/nativeHumanQuery.ts",
+        "git_blob": "97f02d982169d87b195af3d8c3c02547eab8a2fa",
+        "sha256": "667da60fb929373e9a910b5415d8d063fe5f70ef1f669b090c762ac577831d41"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/services/nativeQueryAdmission.ts",
+        "git_blob": "0bf9fe27fb1aa5d4d39799c73a5e0cea95bcc2fe",
+        "sha256": "60e64aecdd9ea6208222580d35c2ab9e3049a61d476f36a383d263f54fd61fc0"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/services/nativeQueryMode.ts",
+        "git_blob": "2ce0ce15e9709efb3a5e30d3efc40e2d1856b7ef",
+        "sha256": "13f4c8fe58b923d72ca2351577c1781dd260647d8c06c3464ce95757a48fac7a"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/services/nativeQueryService.ts",
+        "git_blob": "2a78db0402e1f631b4b019557467fd87f1d6bc8b",
+        "sha256": "721c2b7d2dc3b08a666c69618a05965f4ac242b90753002fac3fa96a3c3af92b"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/services/nativeRestAsk.ts",
+        "git_blob": "efac8139f3ec7ce28209748213f83f912295416b",
+        "sha256": "cda627ee42f0f29c75f73f81a002e24a2188ab41083cd92ada91f04a804b2101"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/services/projectService.ts",
+        "git_blob": "840b21ccda3c21d5a8261d0ff8418139a60296c4",
+        "sha256": "f313ae8d29769195976df0d5884361c24eb344c9c0a81df9a476619c7c71a8d5"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/services/queryService.ts",
+        "git_blob": "0e4885073a6869b9e7b7e382020f01b90bd144e2",
+        "sha256": "33747a410d2d76a5a8d291ef380c211add2c2c02853a2504a74da7391d713f7e"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/services/sqlPairService.ts",
+        "git_blob": "e29f5f267a6e402f4c0c9f9d221574d3e0f496d5",
+        "sha256": "204ebffa12a4b2e9904ad4054a63eee572bcb4e49a84219e7506dd608cf78ffb"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/services/tests/askingService.test.ts",
+        "git_blob": "e6fa374c1427493d2ac53d3015e76e5a2215fc28",
+        "sha256": "220cf9bbe323fdbc93edabdb47b8af8ee0c800c2ae5518789ceda7533b78b94b"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/services/tests/dashboardService.test.ts",
+        "git_blob": "b08ec077c520e38c34de853dcf36c13e8a569ad8",
+        "sha256": "ce4594b41f0900aaae8b794589a8d3a4e91baaf5962798fe7162349837ff9f97"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/services/tests/deployService.test.ts",
+        "git_blob": "150c89c6580a27c3eccbfe3f4fb2a6ce39847176",
+        "sha256": "34da4d88909959cbc992c133fd1abfd848fab07ec130edd1d8066423882d49b8"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/services/tests/instructionService.test.ts",
+        "git_blob": "a3b82f8fd52c62f0365ef8e647451d254ccd2058",
+        "sha256": "61f2565cc8ba1093bce1011555fa82a7c2bd1ef4b5e690f694a6db25cbd37c5e"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/services/tests/nativeBindingService.test.ts",
+        "git_blob": "46d4bc32f8125b353434a71498fee3fc13054710",
+        "sha256": "0ff1fe9ff99d341c827af083e51e0a324c3fa9ca7895457bb7d21125b8da6d27"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/services/tests/projectRecommendation.test.ts",
+        "git_blob": "6943990605a3582f472569510121ce3477e4f3f7",
+        "sha256": "2b94af754f622fc277783bd53372697d415ffdb114ee7d8418830eccd28c9a9a"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/services/tests/queryService.test.ts",
+        "git_blob": "477d4ed3f9052f49d0e989101d20efa58f91a68f",
+        "sha256": "7f013dc2f11d061d3e60102d27fa74406c405a7291850110aca56229a9928fb3"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/telemetry/telemetry.ts",
+        "git_blob": "c3bfd75fd0f82a277f6a52eae0ffa15aec760402",
+        "sha256": "29d54eb5de72b5f0ca0b9730161a8e53d2678a0796d2e9cd5124f73a64bb88ce"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/types/context.ts",
+        "git_blob": "ba21b3c615a40ba292761ad90a8cdc7bf23104c5",
+        "sha256": "1e4cb7a35ffe9194f881cb42a8365217c7eb094872d31319e6e32cfd0b2d4362"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/types/dataSource.ts",
+        "git_blob": "dfe4489ab5c424aad2e01e2f0fd5bd394123ed0f",
+        "sha256": "48c879dc7ec15ce34f0448a7e7ebb5b471b9b26feb36575fac81a40184fddb8b"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/types/diagram.ts",
+        "git_blob": "22f52a82a16d77ce2d7a1054e29e02f09153d9d7",
+        "sha256": "6f1e4b5a23ca93da0facd16a36f69fcc92dd51270c676407c84080ebae3e1fc3"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/types/index.ts",
+        "git_blob": "57569a2b7e028bffcd6ff6d1275359b132fce49d",
+        "sha256": "150af7d7e932d731ffedcb4ff0b49c3b2a0ad85c18784f272c68583fb8ed361e"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/types/manifest.ts",
+        "git_blob": "e96a55d6002948ac9a949fb064ad1f2860f5e796",
+        "sha256": "f070cca2c621c65a7dbd0c00cbb730732f8f8754c331e34fa228fb7445d02cb3"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/types/metric.ts",
+        "git_blob": "4a8785fa23173b796d938be7e6ec27c1759de1e1",
+        "sha256": "fe4f55ea4f61e7f3cb94a9cc6f46bdbae7b77d7dbc9dc558ebcd6ed618e44c1a"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/types/relationship.ts",
+        "git_blob": "c57103e4434f53391eee11bd2d13a8024b32ae45",
+        "sha256": "9cbb8c7ed064189b959664f09489b8d7a79ee4b7f3f861611e5ec8b61af3b26a"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/utils/apiUtils.ts",
+        "git_blob": "06f1024324068a473008d7e3bc76a1b60ebcc7cf",
+        "sha256": "e0803a0675b55182b86e55e168c1d6156d5fcd5ba4d4645caa9d998b2c48e18e"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/utils/dataUtils.ts",
+        "git_blob": "ae228b6a8b13398b38c7254b32c309d772101a13",
+        "sha256": "54ecc2dd9116673e526b35650ca78b45d766b477871cc503c6eafd91a35ad1ad"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/utils/docker.ts",
+        "git_blob": "85f70b6e4f7322da339ecb4cd7263e03c47c5cb9",
+        "sha256": "656901fe935ba9e967590dc8a113fd55b81d63491f5f80a58be8720ec92dd3cf"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/utils/encode.ts",
+        "git_blob": "f7277c1e78b62d52b0bf871146289e3484ddd66c",
+        "sha256": "e2e9e1944a1c72589c74b32c3101febb3938ec0f9b7c0318848be49e8d79cf9f"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/utils/encryptor.ts",
+        "git_blob": "457cd69ea07c6e41ead5358d990561b72e44a3d6",
+        "sha256": "66ea8200b3ca90f585052cbb7a2ee66b782a042d28507c3097be7ae074dc222e"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/utils/error.ts",
+        "git_blob": "12cb5d97e181d4bf703bc2e3fd89d6f43ba34142",
+        "sha256": "9723fa2153778680446c6dfd30c3f1847a0d43ad7772315d554a53925da410b0"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/utils/helper.ts",
+        "git_blob": "e5b353b3a0e9db1559ac47dbb303e9113f369087",
+        "sha256": "d85b55a82bfe0a3f5c3a40953503319dc2365be03b81606da4967e71918ab225"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/utils/index.ts",
+        "git_blob": "f9628a9dc397f55d62ba0966705c163fe0c15033",
+        "sha256": "4c1d5d79e8887b3d3c240c1b1af15b5ab0ea1170353c57c8c33fc99eb51ef34f"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/utils/knex.ts",
+        "git_blob": "b7c74bba533cb8e283da2949756353c12338ebb2",
+        "sha256": "b908e854e2dc741ae5de5e7089797503c526ba425dd0d1037e7bb273e0293e99"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/utils/logger.ts",
+        "git_blob": "f19e429efb41a9ba62b0eceb54dbfbccc256c9d3",
+        "sha256": "10cb17e7962b7acd838cbeed9febba5828f0a17f1718e01a00ba5ab6fc4e90ce"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/utils/model.ts",
+        "git_blob": "f2501f14d580c13f2e16a3dea3f9d77403edbbf4",
+        "sha256": "c7afa45c27715c68b7aa464b6509d9096d7c211ae5f7b437b0cc1e18988e4b72"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/utils/regex.ts",
+        "git_blob": "85cbfb9c168a721920e9feb8c75f4597ee03af3e",
+        "sha256": "e387186e31c8d7f25ffdf07ff9c420715c445b2d33b5dc0d1d2ab0d59bd1518a"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/utils/sqlFormat.ts",
+        "git_blob": "f06a98619a0be7587808ecb56dcbc0bb9071828c",
+        "sha256": "038673a7c6a39fad62c60c4d57729e7d9119ac8a9e98680bf4e97bcabe854f84"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/utils/sseTypes.ts",
+        "git_blob": "654047b63183b2831fdea6e41574004bc1418341",
+        "sha256": "166ddb84acc0e5c47113631d4fdf0ecaa3f0da42f7f8531edb375eb597bb1ddc"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/utils/sseUtils.ts",
+        "git_blob": "36dd96936d71a030399f68d97ebb90b990673dfd",
+        "sha256": "8fcdb5280df36c0467086d18193caccd6b41b350163c3b0f1c3bde86b510eadd"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/utils/string.ts",
+        "git_blob": "d12a3c76fb11fc356dabc26cc390b56200074ca3",
+        "sha256": "5d7d72728c2c4742e7e72f714ca86b1a89cc37216970b43cb7c9162689769b05"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/utils/tests/dataSource.test.ts",
+        "git_blob": "d67f1715dae95b8e0a3433bb5dbd0b0d1d62f8e4",
+        "sha256": "25d901a0aff9c1c0450187538cc5e98d7e576352be0082a3577a72c89380bb24"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/utils/tests/encryptor.test.ts",
+        "git_blob": "e86776f8e32e2309a1b613d6dce6393266788bc9",
+        "sha256": "eec90956e1ebace2520ad21fc4bbf0b7e296b11582a5b46ff3dc3ecef8070d4d"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/utils/tests/regex.test.ts",
+        "git_blob": "92a4186f4457880b812d260d070a055889972cab",
+        "sha256": "8fa405e1bcc701dec876a7f4442a37ccc1fd192245f6f6494c0a5340842d6d1f"
+      },
+      {
+        "path": "data-query/wren-ui/src/apollo/server/utils/timezone.ts",
+        "git_blob": "68e25f737d694272563f6f7443f9173972e34a00",
+        "sha256": "4e455d2f38d0278494cb53bca0efa0ce81a59ad0fdc18607e95df2f94a523498"
+      },
+      {
+        "path": "data-query/wren-ui/src/askingStream.test.tsx",
+        "git_blob": "ae5808aa380fa5739ae016f3ee120db1782a521f",
+        "sha256": "202756aa9e463017972dc9dce61b352d9bd6fd22282ddfcea819d9ab41e24969"
+      },
+      {
+        "path": "data-query/wren-ui/src/common.ts",
+        "git_blob": "cea6715dcb234b766793eeaf8137ce945e192e1d",
+        "sha256": "c86096aa81cfb1b2a74ebcef00997bae5d3f0fa3abdba3ba273f69d008da1488"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/ActionButton.tsx",
+        "git_blob": "de73c2d61622c1dcc844327b6e9f4d732bfbdefe",
+        "sha256": "5f92d1bf9fbc7c415ecefebbb99dbd319b9a5c89f7500b8701821056dff07d54"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/EditableWrapper.tsx",
+        "git_blob": "5ee6c7ca6e672dc11bf9926cf9fb2f2be27932e8",
+        "sha256": "454f71613cae56d6367213d7323edb8e1e59aa8b1f679d6db77b07d62ed9693c"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/EllipsisWrapper.tsx",
+        "git_blob": "4bf2df2646e0da816695a02949481d0369f1e553",
+        "sha256": "90e195eb08914fca333620c0afe7ea79a9359705f6dd131e2b7de2ef442d997b"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/ErrorCollapse.tsx",
+        "git_blob": "30ae1e4fa62596f15aa3bcda1963dcb77ebbc61d",
+        "sha256": "65a4dec7c83428b07fd6959bf245051882d493e853fa24f6429414c7bde7cb3e"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/HeaderBar.tsx",
+        "git_blob": "17e921656d40e26869937965e102bf2fc501e114",
+        "sha256": "68ef98e9fbd453986efd9b73101035d26afc04cdbc6832c463ac6d0dda137cb4"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/Logo.tsx",
+        "git_blob": "1a3689d12b8737d5fd88e5eebdf81c6c03a517d9",
+        "sha256": "77e4306ada7206813cebb72120f0934e122a886e1c33f10e6ac60f39f422e21a"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/LogoBar.tsx",
+        "git_blob": "8934261539f2171dfa7e255410a4a0107024efc9",
+        "sha256": "8efa61631dec7302e22a80531673295f90fd5bfa396b7bc349798524502ac3fb"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/PageLoading.tsx",
+        "git_blob": "dd937f68f2a94c94f003a8b88da4d6f026a6d3ce",
+        "sha256": "4dee604272f36b37c33e91aa045dcbfcf14d39f403bfb4454dfc7961263befb6"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/chart/handler.ts",
+        "git_blob": "26feba883bcfbf2c443523fcb70ff781a2095965",
+        "sha256": "110ced286174453ef723f4f1d32b53315ea51ab1ff0d6e487b7712f6f7cdb52f"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/chart/index.tsx",
+        "git_blob": "4f1a7a09bfb95d5658c68e1d21117413aab400a8",
+        "sha256": "aba2fb8a0eea8fdccc2741f65953227f966ed79ec0824ed66dedbe9952e46c74"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/chart/properties/BasicProperties.tsx",
+        "git_blob": "2a5aee3da9195205b5b98f138d61e10cea0ce000",
+        "sha256": "d46a350f9fef5a616c37ab70163732ddf6e979efc90abfb70506990329cc0e99"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/chart/properties/DonutProperties.tsx",
+        "git_blob": "fa7beae6662ec28a65ff0315fe9d900a90acd74c",
+        "sha256": "de2a6484753307df9c11029a97e35946e2f34b1cfc0dc6950411e930c759a29d"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/chart/properties/GroupedBarProperties.tsx",
+        "git_blob": "f51e214d7b064c6852602728303fed1e9f025660",
+        "sha256": "55ac460562edfcb969fe27a085091180bf06320e3285d75553ebc11c6916315a"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/chart/properties/LineProperties.tsx",
+        "git_blob": "9796066c9cbf28b6281e687abe18e2b3721d8e01",
+        "sha256": "0351b818127167a33d8f346c54591ca47bfdd10ce30cec8b8b3baaef28598b9b"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/chart/properties/StackedBarProperties.tsx",
+        "git_blob": "bf0d15e969d532e75ad8afed7e54e6e97ee0b897",
+        "sha256": "6ba8117c2800b34ade17593d4976ba90896b953cbf652684982294fe8d99a7fe"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/code/BaseCodeBlock.tsx",
+        "git_blob": "fc83db71582178664092bf85891ecf207a814bdf",
+        "sha256": "dec8f6b4db371755451c8733962118a3dc31451cad34c394e61f2d903b3d028b"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/code/JsonCodeBlock.tsx",
+        "git_blob": "c55daa581161f4d94496e59f830e8349fd852d52",
+        "sha256": "56db45ff5858c0cf2b7d884cfe910117594e5a1f25c7da6707567b6e06469f2b"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/code/SQLCodeBlock.tsx",
+        "git_blob": "04acf13bf5a9298a61d32e3e24e8150524885aed",
+        "sha256": "1e8395b69e27de7c795f3436fc15e98ba14e154d6af182021b18a92f429c8b19"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/dataPreview/PreviewData.tsx",
+        "git_blob": "0ab74280075dbb7398637cc9aac3fcdf02a72bd5",
+        "sha256": "2515b9bff66c4d11c8b1099c7c192dca82fb616c5439c20bf780b6a8a08c688b"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/dataPreview/PreviewDataContent.tsx",
+        "git_blob": "d87f057fcc8544ef64a437f8675d57b5b6ecf308",
+        "sha256": "d0eb225f3a3b269aa8c5b09362465316888cf6594f82aebdaae9b4c48459e445"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/deploy/Context.ts",
+        "git_blob": "3fcfc10da1a5cb069f4d3cd0f48314aa951b798d",
+        "sha256": "f4837bb9259b12313a6fd69dd11c3d8dd21192b964cac3bf1b06459aec469852"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/deploy/Deploy.tsx",
+        "git_blob": "e49fc9c25f72e7b11545dfb8bb82ae33a65f3fe3",
+        "sha256": "dedc8b57d4cdc7ac29b6deab9a93479ab792359aed7bcd72607f9671fc40f164"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/diagram/Context.ts",
+        "git_blob": "2b44097217a5ac39d72832e353b98cb52eb9865f",
+        "sha256": "e614a8361fe69d78bdb4789ea07a5c31f780b376746e5ce49079b1061092af9c"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/diagram/CustomDropdown.tsx",
+        "git_blob": "ebe0422afd00ee986122a93e60d1e37ecd27df6a",
+        "sha256": "efdb2ffa85c44b48e43df46f50bfbe9475b147f88fa4d95c93e2709c1117ea03"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/diagram/CustomPopover.tsx",
+        "git_blob": "3e8e1b9ff80ecbb1125e5f13d2369bcbc0203235",
+        "sha256": "0c26ae6fbe36cec373c7b1ed73d3e4e088d1d6e67cd41b84f9967c3a76763792"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/diagram/Marker.tsx",
+        "git_blob": "b92f77ce58f76b8af189789e149a856f3de8c1f5",
+        "sha256": "ecc2fac604066d919d387685555568790e0d20e0ddafa99e1eeca40f97c3df67"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/diagram/customEdge/ModelEdge.tsx",
+        "git_blob": "ce7207b0419e07e9f3df5cc7eb9bf7a62b73937c",
+        "sha256": "88386a310aa6da8f5c305e757e777eb938fd36b1ca2587bfe787eefe789aa9e3"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/diagram/customEdge/index.ts",
+        "git_blob": "c7b3b7f25fa61784115b55988cec61e5750787de",
+        "sha256": "3bc941b21906642c9facde76d56cf69dbc8391f6c9527e536b3bd9730334eeae"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/diagram/customNode/Column.tsx",
+        "git_blob": "b9f3fbc555f7d67f9597f5e4107b5dd4e8708229",
+        "sha256": "99c0f63c6db79e8f64ea20606a39fd016c5e96f110559d643cbdb151e384efe2"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/diagram/customNode/MarkerHandle.tsx",
+        "git_blob": "7913653e902b9deca1961815cd95be40c79ddae7",
+        "sha256": "e0cf3a5ad44b0171161df13a413a053c038bbb10e99c45c0c3a77dfdea52524d"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/diagram/customNode/ModelNode.tsx",
+        "git_blob": "c44034323be68bb06a3b702b20e3773ac8659341",
+        "sha256": "13a59e54747b20a88de0aa33b6c5f8c15d8dc79b5a021d976b229c0a64e072ec"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/diagram/customNode/ViewNode.tsx",
+        "git_blob": "57cba55234e6e4747c8370d6a5eff4a29b2ca744",
+        "sha256": "63b503490485296737fa26547589bcf4eab663a4920f576be86a23ebcbe8dcc8"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/diagram/customNode/index.ts",
+        "git_blob": "c3381a56088a6776413f372f5511c5abb561e2ca",
+        "sha256": "100cb7ded36a7ed9168f5830bc606dc3a0156adbd393b43160a0354009ab66a4"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/diagram/customNode/utils.tsx",
+        "git_blob": "3c233a6c8f5a6a148fc5b89af5713612b8e9ea2c",
+        "sha256": "41a45cb0b8ca8a068c7352a97ad6138705d589079344e99123ed38b6b36de11b"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/diagram/index.tsx",
+        "git_blob": "5f8ac883d30ec5dd97d6766844b84a03217d8771",
+        "sha256": "b3bd77e9a5f20c871072c0721ac5611e2a44c2fa5c9787681086630f9104d509"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/diagram/utils.ts",
+        "git_blob": "ea90b277d5c0265a4e8cd3dfe77d62998e7fcbc5",
+        "sha256": "13f9bfd5c70c3b3a9fa028213d814b7f1322827897d9f6fc98ed7048e4efb7d3"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/editor/AceEditor.tsx",
+        "git_blob": "0ab8d8ffda5d49660fa43a2cb8412bd45283d37a",
+        "sha256": "6254fccaf6ec94473ba03f0ad8f96a06d9071979789f96cb48718714f85bf40f"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/editor/MarkdownBlock.tsx",
+        "git_blob": "b16752542ce6a8ac738449114aee46236c0cf2c4",
+        "sha256": "24246ee56687b7a3ef2a881611bc19ce8644264e091e4b6b9e7271bfc3a8fb93"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/editor/MarkdownEditor.tsx",
+        "git_blob": "c352260ce2bb4c924c52f9fc86008e6e578b4b79",
+        "sha256": "00076af2308bbf607ecea0a9efbaf44b2106e6f5070d0841b9c64d8a23452f6f"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/editor/SQLEditor.tsx",
+        "git_blob": "e1feca7e9cb26565cda290e1c5c90c6540d39bff",
+        "sha256": "b56ceb0989297286a8952299f11dc67d2ad1d914ce7b89dab549deb2e763c6e4"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/kailo/KailoEmpty.tsx",
+        "git_blob": "a2a32f135d36bba3da2cd102ad7d865c5a23b6ad",
+        "sha256": "cfc232700b99fdb136b13baf798528f00affce2ffcff1a580e3028d657dfd5ef"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/kailo/KailoIcons.tsx",
+        "git_blob": "9ca7bca39f360df42de8dd1196a58f649a327ab7",
+        "sha256": "5cfa8e4e33c0dbe54434d71084646c25b0e0cd367144cd4861aefb2eef7de849"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/kailo/KailoShare.tsx",
+        "git_blob": "50a98b581704a948c047a9ebe4ccdafe48921610",
+        "sha256": "5fd026ed022555eab08937a1151d92865216cd5414d144f558a429f4681435bb"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/kailo/KailoUser.tsx",
+        "git_blob": "64b531fa20a2417e2ca0f6f6837ac9f2479afc75",
+        "sha256": "59a3e3f529c492d41fe734520b012b34b9f4a0081396bb8811683739421139f9"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/layouts/PageLayout.tsx",
+        "git_blob": "741af9b502ce5a40219c300654861830c82099c1",
+        "sha256": "30d7730c1492c55b9d0228dbca748d005b4d83edccaa36dde0b06a2ef334a033"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/layouts/SiderLayout.tsx",
+        "git_blob": "2ad68011a3c1c20f1cde2722d2abba3855b19e71",
+        "sha256": "c569062b2c5d82c8ccb98d311991e165d92f4f81bd3821f326d0b051cd179a6b"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/layouts/SimpleLayout.tsx",
+        "git_blob": "1c9dd7a1bb82ce5d630b424daad8ce409e0761c4",
+        "sha256": "a38dc5cc8db32f6b19dae51f06ee4671d52852139658c4eb1f742af6fd5849f1"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/modals/AdjustReasoningStepsModal.tsx",
+        "git_blob": "9f6f14b25364e0690f578f3486d9bb4c81da2584",
+        "sha256": "c1caea3e9534db7d17db50d142154fa8c471f4fc18a17f8c531a8a174746d7d7"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/modals/AdjustSQLModal.tsx",
+        "git_blob": "9dae0631b09f4b801917f72db54ca39b13a94eec",
+        "sha256": "779f49f58ca76cc316cd44092b507edc071f6542725f4e7a5d80b8bada0768cf"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/modals/CalculatedFieldModal.tsx",
+        "git_blob": "c3e6a58daecfb137b28385271ec2797f5e805e20",
+        "sha256": "6f0391e695ff347b4aa20009ed0e1ce258a4f19f9ba72306ea1fb5b1ce98b222"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/modals/DeleteModal.tsx",
+        "git_blob": "48772296a66aa4a16a7e5f9aa2a1909488d2bbd5",
+        "sha256": "693cee6ed92e9f7766f2264c23c22229532d7a16e1ae85dfe10728256d9e2902"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/modals/FixSQLModal.tsx",
+        "git_blob": "705609b0e105ca2245468952325c52ed1093d880",
+        "sha256": "f3d7aaf6db8c62b72c36ffdb10ab7465af58d017c605c7f0ad27cca034bf762a"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/modals/ImportDataSourceSQLModal.tsx",
+        "git_blob": "ea23fb32bed6df9558e28e7c512a2d3610954e90",
+        "sha256": "82a3e44be4433b16e85200988c2e5874bbfbb8dc371b3579724ee5426211010b"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/modals/InstructionModal.tsx",
+        "git_blob": "33ae0f1cd6dc3351cf45d254ddc17df5f03a6ac8",
+        "sha256": "bf8cf986afdf6f175758e163a9ff9d4ba046870da2114c232619f78d3cf91538"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/modals/QuestionSQLPairModal.tsx",
+        "git_blob": "1fbdfee47715a307363f17e4f9469c1af48ff96f",
+        "sha256": "0755afbe47fa39318660817d27e228bae37469ead4176323905da039c34e1006"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/modals/RelationModal.tsx",
+        "git_blob": "0650a58840dbfc206b5683bd9c8a56d54f58a775",
+        "sha256": "95c904065d9264da5dae1bdefea9b235fa126d935fa150ea8d244d7802fb7898"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/modals/SaveAsViewModal.tsx",
+        "git_blob": "b2d707b9a2321cd2fb57f4490858ad303f0742a5",
+        "sha256": "178d90ed99d2c1e52222e8dbd20f32f65433e0050d9dc1760dd6bd4940b6570a"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/modals/SchemaChangeModal.tsx",
+        "git_blob": "a76f11aff2e088e570036f044402b5db4029b176",
+        "sha256": "8d026f1ac3c3f85d8c056d51570a2c4a1076b9e85e0192da5bba456cfe2ff88e"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/pages/apiManagement/DetailsDrawer.tsx",
+        "git_blob": "0f28f6fb08ab8c3feafe195acdb45b8c62ef5ff1",
+        "sha256": "e09dc716c5b8cf48c6ca711ce3dfb4e0baf4e774881ad42a26e4730d2390006d"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/pages/apiManagement/apiTypeLabel.ts",
+        "git_blob": "b3162934c805308185d4308e61fe9dbaee42b5e5",
+        "sha256": "365b9891333b41669a065ab7bb2030898b47953f131b33cd413faa58f466063f"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/pages/home/RecommendedQuestions.tsx",
+        "git_blob": "e62dfc5e7364ad9de5dd51c7d98e149f4c1907da",
+        "sha256": "73cab47942a3d528da7d37a6f6e11f12f32cd7d3eea21dc651652a9b8397974f"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/pages/home/dashboardGrid/CacheSettingsDrawer.tsx",
+        "git_blob": "e6cc6fce4bbfd7d6d8a140ca708a42b26f3a0a68",
+        "sha256": "690eadffce8818493b93e0da94f76d463cc2503351c33f04bdce8bcb98f3bcbd"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/pages/home/dashboardGrid/DashboardHeader.tsx",
+        "git_blob": "3553f9f81a360c45ef0e5de0600dab4dc7d6e89f",
+        "sha256": "dca11ddda3c886520924c31ead3851a1c57c69eda9cd3f1cfa2f71331e187271"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/pages/home/dashboardGrid/EmptyDashboard.tsx",
+        "git_blob": "04c5e7deeb1c0b6fe53530f83dd77dd166fa0a6b",
+        "sha256": "3524f032e3ca5f36f783e0facad119715ae1c53e4e2ee0399c8bdfa260a4adb9"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/pages/home/dashboardGrid/index.tsx",
+        "git_blob": "c4e1bb8516ad68382dce2edbcb11f632d2b990cd",
+        "sha256": "cc2f6b9c180a7ed4792d8716154caa0bd69b93fc6fc95b8311ed32fb155c0777"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/pages/home/preparation/ErrorBoundary.tsx",
+        "git_blob": "4efd6331da341fcb17f8c43168b3bb8b95404c37",
+        "sha256": "25cee937308b164a82102f3728fd59e922bceb9ac5bafeacec804c3bdfeaf467"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/pages/home/preparation/PreparationStatus.tsx",
+        "git_blob": "d2abcb7f46385a974e87034b5f1845c0363f3c15",
+        "sha256": "21731225a3bea8b4fc907ecc0cacf921a65dec82f17c225b4206cc64bd86582a"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/pages/home/preparation/PreparationSteps.tsx",
+        "git_blob": "692371d49f01a0c2f3e9e723190af7afc1302cb7",
+        "sha256": "d9573017a24c09c044ecc5adb0fc7b2f48bb01125b67035dbc7a82270f6741cf"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/pages/home/preparation/index.tsx",
+        "git_blob": "b6a64c94cad9f461bcb7125ae6a2fc4434ab8cd5",
+        "sha256": "b8333e80aca8454cdff5a293e78963f7add813061841ccdd22e96ebc73a72117"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/pages/home/preparation/step/FixedSQLFinished.tsx",
+        "git_blob": "c2089e17dc198336a9b65ada98a9ed859a69ec76",
+        "sha256": "ed8d88316895895d132d8947962ba59ef5f08eed0cf566480846a9f99fb57d43"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/pages/home/preparation/step/Generating.tsx",
+        "git_blob": "6005bba19101b2551b683bf94be3ba416e651071",
+        "sha256": "732176707cbf555301bdfd32c37fb11ce1d701666da3710a63b9b7c0f4b626d6"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/pages/home/preparation/step/Organizing.tsx",
+        "git_blob": "a0bf6bc75c79133a1b4e9c6e998a66909bb1bbaf",
+        "sha256": "34bd47eee2720d4798dbef2bdff6a1f0da9767ff6690dbfc4f84eb5d87b9b100"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/pages/home/preparation/step/Retrieving.tsx",
+        "git_blob": "7c999dc2929e0fc0a417919ca1fb3bb73f3e6eeb",
+        "sha256": "73368116c289d30ff3b4733e526b911e6ddb139ea1637d9fafda7c90a6f2cfa6"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/pages/home/preparation/step/SQLPairFinished.tsx",
+        "git_blob": "5d0b2d70686178605098d0e9cf4eff8874e87df4",
+        "sha256": "ee85700fbe312cb295a723eab1d0d5d0b0ebfd013a201e023564565c9fada384"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/pages/home/preparation/step/ViewFinished.tsx",
+        "git_blob": "998391df31c7e62b7b126d674ec48a5c144f6134",
+        "sha256": "139841b751289862225cc605c7c5195b9451bbc50e5b3e84058ecd1f0321569b"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/pages/home/prompt/DemoPrompt.tsx",
+        "git_blob": "da5976f167f1760c8f41199353422b8e78f2ce4a",
+        "sha256": "ea92e140b34e7f0b3d60ebc3019741788d1e9fb9dbfd1b18c9d5cd60c439f140"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/pages/home/prompt/Input.tsx",
+        "git_blob": "8c6fcc29bc8eb6d9363e6d061547e7ab33b21f58",
+        "sha256": "ab30229e5619f15c339b5bfd74b9b2cb1b0fb13b12f882e68229571439581bd4"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/pages/home/prompt/RecommendedQuestionsPrompt.tsx",
+        "git_blob": "1621e33fc1306d55af5a2ad15e8e0fad93987066",
+        "sha256": "70cf102fd780d9011f379ebc5f0581b46c14ba2420e833a88bc9a5b3cc63780d"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/pages/home/prompt/Result.tsx",
+        "git_blob": "310c7ea9d8366ea7731b85ba8af180d47e3187d3",
+        "sha256": "7f3ebdf5d38d57c6fc51fa2632dc827f039f2dd6b5b2369217eaee74d1d762af"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/pages/home/prompt/index.tsx",
+        "git_blob": "bb5ecec168618a4bb8d5d7fde271e1fefc0931c3",
+        "sha256": "2974eb59109df762fb7097acfbffd4a55a50cc527cf6b14916cca2c53f8d0b24"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/pages/home/promptThread/AnswerResult.tsx",
+        "git_blob": "43f5280aab305e85a2e0c0142deec4fc638f78fd",
+        "sha256": "748e02f824d8098e3a97f6cb20e38f64745325bf88b2c7bfde3a969f78a43ce0"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/pages/home/promptThread/ChartAnswer.tsx",
+        "git_blob": "7f044b26e4dc616380090ada9174cdacea41bec4",
+        "sha256": "8a6e3ad09589c2eb297e3502df4948e077311f82ea40d484b3421d074834f900"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/pages/home/promptThread/TextBasedAnswer.tsx",
+        "git_blob": "03438a6dd03932befef6185440000f895c57b06d",
+        "sha256": "676be490f12f1b7f7dcbd099434c14ca7ab730a634c0347d44bdbd3c2b53deee"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/pages/home/promptThread/ViewBlock.tsx",
+        "git_blob": "e88f3676a91bbca7f44bf21152134979dc4268c0",
+        "sha256": "ae3b5b5274bf4cabec3564748a4dc8c1bc89d4a932b19e5a395543403f680d13"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/pages/home/promptThread/ViewSQLTabContent.tsx",
+        "git_blob": "11b9cbe54f0c7417edc4c834395dc2efe9ce5285",
+        "sha256": "7cea2c3e2d40627e438815e18f87516b15844a51b2197ead640ff767228033a1"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/pages/home/promptThread/index.tsx",
+        "git_blob": "7373733831b82a0a620487853388466e8b3979b0",
+        "sha256": "8a33c313377f84764cdb0f5d692a53094a3662045ac43c33fbd6bcef799bef63"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/pages/home/promptThread/store.tsx",
+        "git_blob": "b8ed0692f2c4dde4a37cfd718cc3cb42b337fcea",
+        "sha256": "963a3a0faa4fdf433f05f00fd6b11880607abe340bc88f3bfdbce18b54559b64"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/pages/knowledge/GlobalLabel.tsx",
+        "git_blob": "1bdc5331459dd698d291020814f722c828334228",
+        "sha256": "86b522988750ce6a50748640b41b290ae06348b5c8553c0fca6b13ab40c25535"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/pages/knowledge/InstructionDrawer.tsx",
+        "git_blob": "29516d53d2aa1eab4562aeb84af4962bc7840662",
+        "sha256": "703494b7b12bad95e2bd58bd3f692d7fb5d80730df40f4902c4aa8bbcc8771be"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/pages/knowledge/SQLPairDrawer.tsx",
+        "git_blob": "088e0ce676efcdd46f9718826581cca0a6c918e6",
+        "sha256": "ea93ab9080ba5e3cd220d21ac75fac02900135e117de28e715f61c7be326c8da"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/pages/modeling/EditMetadataModal.tsx",
+        "git_blob": "fd6c6ce007f3108d8090da9a9b92f5cdd884a05d",
+        "sha256": "df0bffe8955844dd8f8c201ff525bdb119565320da423720f7709ff2651e0d5e"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/pages/modeling/MetadataDrawer.tsx",
+        "git_blob": "2f6a1e8d38002341a06330f9b53655aa3c682a40",
+        "sha256": "4506460ff6ad1acd37662910926a9688b85811c40277ef7ac11ffe3dc43f06fc"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/pages/modeling/ModelDrawer.tsx",
+        "git_blob": "a93c54a134b2965cb84aa7beec58c585ed3ece08",
+        "sha256": "c0848d3e905d17dfdb9fb9766fb047bba8dc7be889b129d36202f634e96786d1"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/pages/modeling/form/ModelForm.tsx",
+        "git_blob": "5cf46d64f95f5644b04aa21c36856fae6c49ca60",
+        "sha256": "d9f0eced472dd419d8210758c426d4e6a3c3d53e65cec98bbd249c0016a132c0"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/pages/modeling/metadata/EditBasicMetadata.tsx",
+        "git_blob": "bff792fb73dcd479f017c70fb5c193cb4c3cc7d9",
+        "sha256": "7954eeec2967d71bcdc631414d875ee642b337041fe77190b5bdf1b2270121b6"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/pages/modeling/metadata/EditModelMetadata.tsx",
+        "git_blob": "f06d1a1f93661760ac892702fa993714e1dc68c6",
+        "sha256": "3db620237225214d0dfeda17edb6056c0571ef1b370c819d5abaa4b532d6215c"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/pages/modeling/metadata/EditViewMetadata.tsx",
+        "git_blob": "c91fd75ef5b937dc4a5ca520ea14f68be614e63c",
+        "sha256": "7a5ef2f885afdc00430d539c452c57b63d81e8018238081d175592247b43e329"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/pages/modeling/metadata/MetadataList.tsx",
+        "git_blob": "46d45c88a313aea2536c04356c8fd318b6542ccf",
+        "sha256": "bd30dbf523363b6be6e5f9d40cbb227384771efd0bd8bc0b87a8b1b1f7c4b268"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/pages/modeling/metadata/ModelMetadata.tsx",
+        "git_blob": "852a9f4edd9e77b9f9b549913c6de89f3b773acb",
+        "sha256": "672717df297080635dba8c64437780f925d8e24ede9bd605070ee29f5729a944"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/pages/modeling/metadata/ViewMetadata.tsx",
+        "git_blob": "f15bde388cc06e75d3693efc91a4d02a40525e0c",
+        "sha256": "44a3afeaaa5d2d439253e8397ec67e09c8d8fd807f29786d48de21763b78a7af"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/pages/setup/ButtonItem.tsx",
+        "git_blob": "1e3d220865ed3a5455879c031faf2141a502fdf6",
+        "sha256": "b0eab9da1f80ba9356848ac0784b2ef49d0ec1cbcf1f820b04f6bb66863df484"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/pages/setup/ConnectDataSource.tsx",
+        "git_blob": "5c860b1c0fd0311307222c820af7d6ef65cd4366",
+        "sha256": "a6547395f5bce681bd663f52e35505b995d237345dea4b99af9c60c46222acd6"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/pages/setup/ContainerCard.tsx",
+        "git_blob": "55b5f13c71db650081aa4e40ec4001c79c136260",
+        "sha256": "5a2b856bb1756bd8ac8310ac57ae2a9f2df14096bcd02f0d0d1a05b4c2773dd9"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/pages/setup/DefineRelations.tsx",
+        "git_blob": "09c2575750124b376e3b66bac0cd3730e0499204",
+        "sha256": "4acef2fc3891e2525f00f9869d1d6b9beff7c4894969b8c773344733380a92fb"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/pages/setup/SelectModels.tsx",
+        "git_blob": "524c286e2ddd237c576936f509c726bfeb89d4fe",
+        "sha256": "01c9fb81b1fd31634d0d7707a3e7552217d86c7816337e38125acec5bc9c4a74"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/pages/setup/Starter.tsx",
+        "git_blob": "00615367115ac2869283c815fcaf7bfcf0c80975",
+        "sha256": "5ff20f631a9521d7ba3ddcc745b01dbef7d846cc3d9f5219591d8797de6b04fb"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/pages/setup/dataSources/AthenaProperties.tsx",
+        "git_blob": "e3c61d50562aaa343ad1b23d6bf2fbe8bdf05221",
+        "sha256": "ce3f52822a14805848c1974a6bc6f5f617beb4a3cbffe5258061897480e90d37"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/pages/setup/dataSources/BigQueryProperties.tsx",
+        "git_blob": "bfdf01cd67a7bf30b331b6712c7d5955d2c580be",
+        "sha256": "acedb95640b35fa7efa2deb96e9b9eb6871ffd6c430044f3d239d8f29e4e218c"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/pages/setup/dataSources/ClickHouseProperties.tsx",
+        "git_blob": "852fbb79bbedcffb6eb6a3b94bf26f2bc4507e53",
+        "sha256": "a74a54bae70eaa1ef901c4cb7c14c23f06eb528ef76b12048f242d4ecba726c0"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/pages/setup/dataSources/DatabricksProperties.tsx",
+        "git_blob": "c4ff1bd6dcf6cc50d00006a5fcecdf77e9413f40",
+        "sha256": "84b59e5a8a0ad313186d10ee095e9edaf703a35d50629a68698e7c6eaef3a371"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/pages/setup/dataSources/DuckDBProperties.tsx",
+        "git_blob": "698eb0e855c303f8f000f64a359be4be792b8753",
+        "sha256": "9943262dbcd38443897007df199413da0cd05dac404caa17343864b784829fc1"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/pages/setup/dataSources/MySQLProperties.tsx",
+        "git_blob": "d3f3beffd7c7d499f9146d6254e7f4c48d8a9130",
+        "sha256": "b8deb7e516f700227bf6ddf42d04913cb0e72760e2b5e838fb1a5ba4b5206ef6"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/pages/setup/dataSources/OracleProperties.tsx",
+        "git_blob": "eaf7846d1d6c24deccc73a9c181318a841aee0df",
+        "sha256": "f4446922883efde22ea10c1df84391ee9c5f044c2f9ed501c8455ccf0da36f86"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/pages/setup/dataSources/PostgreSQLProperties.tsx",
+        "git_blob": "a196778bb7b3e83dc9173e833378bcfa4819ed06",
+        "sha256": "764a0487dc4e8c9758cb88750ad8ed9eeeaa76e1db87383bb7861cf4f95cd11a"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/pages/setup/dataSources/RedshiftProperties.tsx",
+        "git_blob": "cc38994b8f05abdc242d171917c2d65f24379712",
+        "sha256": "fda526e20763fe0f102910c37c9f5896c56aaac579079a537791f71c1a9e3353"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/pages/setup/dataSources/SQLServerProperties.tsx",
+        "git_blob": "d2b984f7a125c4729b5103933f544ab039f36b0c",
+        "sha256": "6061778ce80333cc4d22e48f5c2a68b13919f295f3ce0a4a9a9b019fa97dabcf"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/pages/setup/dataSources/SnowflakeProperties.tsx",
+        "git_blob": "37ab5582abb89464028e21b385f7d171b150626d",
+        "sha256": "1d8df4513d1576f88149888426caa5c8676028b4a4c7fbf836dd393dfa18945a"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/pages/setup/dataSources/TrinoProperties.tsx",
+        "git_blob": "f1a42e600d5db412063576f732d8f7130f5b444f",
+        "sha256": "ab510a6bea2b739fb546f49713daf27f8ca7cbce28d05f1f2061720ca146b9b4"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/pages/setup/utils.tsx",
+        "git_blob": "354af57ed89c0e7c8ec70985de0142f270abe898",
+        "sha256": "a673dae219698021191239b2dfe77defe17007d8ebcd5e5c470d22c8037625b0"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/selectors/CombineFieldSelector.tsx",
+        "git_blob": "df2befe4a24faa7c08c17a0bfe8f95a7669f6749",
+        "sha256": "480122dbb10a2f727394b1e63bbd4d22e06ed6c0213b7de04b88bd2997ecea9c"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/selectors/DescriptiveSelector.tsx",
+        "git_blob": "12799596b8ff8eb09cdaa04940440348bf21c6b2",
+        "sha256": "ba2b84e225540ff340676966661d2396f35dc447001fbf96d1ebb6723616c198"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/selectors/Selector.tsx",
+        "git_blob": "42c3de327a46b8d36bb63fe48fbb75e6856c1545",
+        "sha256": "3a148ebb0a7299e74e9e655d40650ea9b38aeda2bfaf935b8d1c557c8e1cbd59"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/selectors/lineageSelector/FieldSelect.tsx",
+        "git_blob": "405084c3fa4c784737bb45ac6d102f8db3ec3377",
+        "sha256": "eceea6935f77f750b1a02c3a5924f10d8269b67ddcb416bb3ebc2140d9d93251"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/selectors/lineageSelector/index.tsx",
+        "git_blob": "ce69afabf4be8d17f3eeae4bc83fe24b75687ec2",
+        "sha256": "6a85dcee440b7021fc84867c6b56808d0e90bc696e78f40ff0c532d5e1742600"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/settings/DataSourceSettings.tsx",
+        "git_blob": "b0b82d4635b84f5879b0f07edce594608de2d743",
+        "sha256": "0e5a9f745919659b517aea55308567a8b840db2bb7b1803dcc3e41a586af4f64"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/settings/ProjectSettings.tsx",
+        "git_blob": "b66c51512d99d7240ed18cd424ad3b7b829ab592",
+        "sha256": "6b22c82677064589b06884ef7a36af06e1ef0d99bad1f21e78f9feb1e17867dc"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/settings/index.tsx",
+        "git_blob": "a59f0177e17da60255a258ebb46aa29480635ffb",
+        "sha256": "999d5cade3c6c87d0deed452422349442882a96507bce56f5a8ad1bac383353e"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/settings/utils.tsx",
+        "git_blob": "fb37313d25a6baff4776da6ee0dfbd57d73864db",
+        "sha256": "c6603478988ef14ebfac232228a1feba3a777b77859698f4cf199d124db23de1"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/sidebar/APIManagement.tsx",
+        "git_blob": "f64a3980c1e94489bf39f66958fcb0879a25ed2b",
+        "sha256": "00711cab43b3a6660bf30541aa9a7dca23a6ea5a1b591fce73f06d5097634f27"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/sidebar/Home.tsx",
+        "git_blob": "fd01608579daf7624ca635bf140a3f7b1ea713d2",
+        "sha256": "aee2ea06ff4edf09e3e9d8636b49ca47c8d6c97b2811dc383bb3bc6298c61d6e"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/sidebar/Knowledge.tsx",
+        "git_blob": "926a05a7a7355934c0c9c63f84f762539bbe3441",
+        "sha256": "ec2aaf873f99d6a840a9f624fbe3cf2511f248e42521fd05add9e61a31dc66a3"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/sidebar/LabelTitle.tsx",
+        "git_blob": "abe9420e1bfccc7fa90e212dbcfea0473fcc9956",
+        "sha256": "ef2969cf83829a4ffea4df661bae47a9abf72c15598ddaf336d94fe21730a155"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/sidebar/Modeling.tsx",
+        "git_blob": "a6a14e3e02206f6dd2edc60e4bdcd9ae33cbf2dd",
+        "sha256": "c3d6159ac9324825cf00ee1069ddd0be8da3de051bfaa8212e52d4857c8ae441"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/sidebar/SidebarMenu.tsx",
+        "git_blob": "7fc8ad5cd60abd58bd4c420b53e00f9722568363",
+        "sha256": "2a31bedcdf316b1f15667f937e8fb3fae73c0e3b5a0dd58a547522514fe49638"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/sidebar/SidebarTree.tsx",
+        "git_blob": "7fe75f1ea20de785701ee8a8f6cf7f1288fed0a0",
+        "sha256": "1a3d05141cca2b8429de83214c696720a44d088699b0fd8e5e015568a32831bb"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/sidebar/home/ThreadTree.tsx",
+        "git_blob": "22b91de3d4e6e6ab0dcba4954b2b83ee0092b9cb",
+        "sha256": "455f9ae4786a14addb88b334e520a4d5e3e076cf7ac73a751970e0d7be604add"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/sidebar/home/TreeTitle.tsx",
+        "git_blob": "ceed5c7710fa487a48b60c971b0c69687c714f6e",
+        "sha256": "713eef96b4739c122e2ab175a9046bcfd7b58d133009bbba0303b39844d092a0"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/sidebar/home/TreeTitleInput.tsx",
+        "git_blob": "c1c8e71a8297ecef49dc20bf9514cd41871c30f9",
+        "sha256": "dee5bcaeebab6336310a5136ceb4331d7fd244595eccc2d406213f42f4919b00"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/sidebar/index.tsx",
+        "git_blob": "771f9d16db7a37a8ae4f949abb3f8f1244ede54f",
+        "sha256": "58212fdcc93b89c538cbf48f6d2196a6c69380665efb38cfe99a1af2399d7506"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/sidebar/modeling/GroupTreeTitle.tsx",
+        "git_blob": "e37eda9fe1f4f22b83122e77f4b9936a35cc53af",
+        "sha256": "a5fe6723cceeeff0a30b1b083674d4eea0ef9f43d139b9559d25f6d692a9eb9e"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/sidebar/modeling/ModelTree.tsx",
+        "git_blob": "600551a183406b1d1bfafc231f63043c860c71d7",
+        "sha256": "193333f592c616330ca269cb0d0bf4a02b3310085ed42d4653b42a7b85d81f7c"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/sidebar/modeling/ViewTree.tsx",
+        "git_blob": "0df2ea9d15d85ed150c2f48eb5a4ffddda51dabd",
+        "sha256": "1bac14990e8933bb776b4b8bfb789b9ea4ae98434891f0869cce2bff68246e53"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/sidebar/utils.tsx",
+        "git_blob": "ab595d5cf4288679c722a21f7324e94944c4f74f",
+        "sha256": "031235b2189e5b22d647b6d677d0aded8ed254496e1810e382858e9d586cd102"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/table/BaseTable.tsx",
+        "git_blob": "3321f0ea1f0650efbcf583d4f72c28e9597b85ab",
+        "sha256": "bfbe64a289babfb7105c66789ef5aada30672d5dc33876bb897d3d177536ae9b"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/table/CalculatedFieldTable.tsx",
+        "git_blob": "dba2cf9144541a6bc5e643e2e0d919e841cf0435",
+        "sha256": "b0faf7934440c608e78410eccfab5a232287a4949ca3dbf6b010cc452cd9f310"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/table/EditableBaseTable.tsx",
+        "git_blob": "9295c6e841c17079b7b87101cc50cbf8958c781f",
+        "sha256": "1054fc515407c35c19df5ba5428edd02550473ded6de3b5c362a48e9bfd9da2d"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/table/FieldTable.tsx",
+        "git_blob": "14a884c1979cc74317645f9b3962e41f220888ed",
+        "sha256": "1e9708a8054c49ea1f5dc13ee932267b53e6981c28d3489f89dc31962b089ca2"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/table/ModelRelationSelectionTable.tsx",
+        "git_blob": "348ff9d7d02772c5701d2c2590973f29e5753f1b",
+        "sha256": "8eb59fe9419529eb7d28c497901e7e8eb7ca333fb84405c04994bd197fe3a411"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/table/MultiSelectBox.tsx",
+        "git_blob": "724f2901a38b0bbbadfa5fa32fe085dc444c797f",
+        "sha256": "c5b2ad92a909ce80e1c6d967edd179ec2dd877806429ac8cf2b5f71238873571"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/table/NestedFieldTable.tsx",
+        "git_blob": "3105cb53ad23146070b8750908d355cf8326ee9a",
+        "sha256": "17b58452d850df05dbb66ef80eccc2074bff48f650ffaed7ff99d247a4c0875c"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/table/RelationTable.tsx",
+        "git_blob": "d2f5e023b7e852469a95fd8ca83a822c7c173bc2",
+        "sha256": "d21cb221502ab39a1e904d2370976bab155b39fe894969ff87fae923aff76bc0"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/table/SelectionTable.tsx",
+        "git_blob": "345c98a863ea53efa8956838bce447d9df10ee95",
+        "sha256": "02ad1c2b92da4eb1ed3b911bb65f6bba00834c4ab425271b8d4dc49dd43c4b80"
+      },
+      {
+        "path": "data-query/wren-ui/src/components/table/TableTransfer.tsx",
+        "git_blob": "2e3a87f46e4711686b94d3b39c81a56548b36cd2",
+        "sha256": "52859d6557c2e1f41d5cbfbcc34bd66010c97ebff88256cd4a8a94eb56d8bb7f"
+      },
+      {
+        "path": "data-query/wren-ui/src/hooks/.gitkeep",
+        "git_blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "path": "data-query/wren-ui/src/hooks/useAdjustAnswer.tsx",
+        "git_blob": "832af9d7fa46cd2a1a9406c7f28875e077771052",
+        "sha256": "e2c3684ff1231ef65366c61f3144a31c90dc18525df5748fca9a2f9ed46cc9e4"
+      },
+      {
+        "path": "data-query/wren-ui/src/hooks/useAskProcessState.tsx",
+        "git_blob": "eca4100848790187510328eda5ad1a01a1968d0b",
+        "sha256": "ffb8d00512a78b7853fe7d1f671614d221b06f7ef73770c033a7df8acc325458"
+      },
+      {
+        "path": "data-query/wren-ui/src/hooks/useAskPrompt.tsx",
+        "git_blob": "2cdbfd0ad1a4ff0e47474812cbcc1ad013dab00f",
+        "sha256": "7cb6ea6a731ac624bac0c32c7eeec5a739be08eb70f53057ffd55c56a263423f"
+      },
+      {
+        "path": "data-query/wren-ui/src/hooks/useAskingStreamTask.tsx",
+        "git_blob": "ca742e90abf754d5c73f80045a6fba9e7ca62a3d",
+        "sha256": "bcd1febdc77998edd0fe101d58e0916d5d10909694ea3b817e6079ead56bd61a"
+      },
+      {
+        "path": "data-query/wren-ui/src/hooks/useAutoComplete.tsx",
+        "git_blob": "492e8e21bbfd937027dc3e86f60dccad997068cd",
+        "sha256": "d6aaa324944d342769fd8b64b2f3d10df904651276f798d63383a2ab49605c1e"
+      },
+      {
+        "path": "data-query/wren-ui/src/hooks/useCheckOnboarding.tsx",
+        "git_blob": "7ce4d8fb801ea0615ab1efbeb0437657cde8ada4",
+        "sha256": "1868b2bc9ac4fdcbbc3b8f3ddff503857ec0678466cd7aa877219376c5ffd9fb"
+      },
+      {
+        "path": "data-query/wren-ui/src/hooks/useCombineFieldOptions.tsx",
+        "git_blob": "d64ee69898b9ba023ba4ce721bfc3189fcc50c03",
+        "sha256": "fc50faef5f74676304362f4d8cd93817ec445fb7b9bcbde195cfd84b6f3a1072"
+      },
+      {
+        "path": "data-query/wren-ui/src/hooks/useDashboardQuery.ts",
+        "git_blob": "d3817eaa37c79caf132c1464878a748d4b516709",
+        "sha256": "1c1cc21b8cdcf51fc07f231b89abf4b007a62ec97c2d3593aa106dc8b2a2efdf"
+      },
+      {
+        "path": "data-query/wren-ui/src/hooks/useDrawerAction.tsx",
+        "git_blob": "cb8d865fe7d098ede056d23c046e5d58e20dc9df",
+        "sha256": "db8b7bb2533f3ee00a3cab6898d425e61eed45f9e354915933047f4915ef5f03"
+      },
+      {
+        "path": "data-query/wren-ui/src/hooks/useDropdown.tsx",
+        "git_blob": "24905c1a64e8901e21bef3837a1f633317e8647d",
+        "sha256": "2eaf1c83f04906b2670a083d64ed045066f0c07ccf799d9e5573b0e2404d4c45"
+      },
+      {
+        "path": "data-query/wren-ui/src/hooks/useExpressionFieldOptions.tsx",
+        "git_blob": "1fb689079c3ad09d4f0974fde04d7017729ae856",
+        "sha256": "0e097887342b870bd1844f8b3238d889bca96bcbb762a5d9e7631ffe2051893e"
+      },
+      {
+        "path": "data-query/wren-ui/src/hooks/useGlobalConfig.tsx",
+        "git_blob": "1d0c549df87e2f1350b43cb89ba69b00920ad974",
+        "sha256": "20cdaa3d1d9bdbf210bee416455bf1a32d71857a0adfafd778b7092233252174"
+      },
+      {
+        "path": "data-query/wren-ui/src/hooks/useGovernedPreview.ts",
+        "git_blob": "c18fa570dbd5ab63a7c4293952a9798e9d796971",
+        "sha256": "c2fa7280639796d8b10e701e750a772787a4e2f4ee596dfba0cb024e0266a9e9"
+      },
+      {
+        "path": "data-query/wren-ui/src/hooks/useGovernedSqlPreview.ts",
+        "git_blob": "5c33d69751c3d69964adce6bdf1d44c805041a9e",
+        "sha256": "9768fcfcd00c86fcc1139fd4913a7cb5cfc3fbff49ec5b5a8db74108cfc0071f"
+      },
+      {
+        "path": "data-query/wren-ui/src/hooks/useHomeSidebar.tsx",
+        "git_blob": "fdebbb68faf9ca965e1d39c93f43d858a9bccf17",
+        "sha256": "97cb76b151c679568962a97f958f33a0edc81909261e33ecd9663333ab60c757"
+      },
+      {
+        "path": "data-query/wren-ui/src/hooks/useKailoPage.ts",
+        "git_blob": "940a61c53109c9e03785a5147ba85199d7bba887",
+        "sha256": "31d15779c30251b9a786408f58e1ad698d98ec29cca8cfd35d22bb7fffb5f4c0"
+      },
+      {
+        "path": "data-query/wren-ui/src/hooks/useKailoSession.tsx",
+        "git_blob": "63d7fd94edbf9111ef9f1b6e15f89bd5b6f2cda6",
+        "sha256": "5c3322b43aff9ecceb40d045c82d9f1f4d3f87fc06e56ab19e7a7638e299a9ec"
+      },
+      {
+        "path": "data-query/wren-ui/src/hooks/useModalAction.tsx",
+        "git_blob": "703bbed4317f7e7f8204734fac214f0af2d86ccd",
+        "sha256": "d8ed6f5cc67fdc2280a9420597d6fe4f3a114fe1adabce24a9e611ad970d1fcf"
+      },
+      {
+        "path": "data-query/wren-ui/src/hooks/useNativeSQL.tsx",
+        "git_blob": "1e84fcf0c8f15f75ac8a3bc9809dc73a0c6bfdf1",
+        "sha256": "0fc2c6ee1b3c48e0042c39fedf6b4f0d64faa764381f8395f8809ae2930cb9d3"
+      },
+      {
+        "path": "data-query/wren-ui/src/hooks/useRecommendedQuestionsInstruction.tsx",
+        "git_blob": "a31b6966df782821621b900621d1416c1437b3ef",
+        "sha256": "1370fd73017d645e6b4817a96df3c40898545fda32f89663504882f072871ae8"
+      },
+      {
+        "path": "data-query/wren-ui/src/hooks/useRelationshipModal.tsx",
+        "git_blob": "f3d54a11f4f4902e73984bf73769cfa96f74f77c",
+        "sha256": "da5cdf347d30500672863a361b74b84d74171beafce71b97212f3b9e317100a1"
+      },
+      {
+        "path": "data-query/wren-ui/src/hooks/useSetupConnection.tsx",
+        "git_blob": "975719e1e5b59caf3c7c577ff667b357b75cd7df",
+        "sha256": "13625d21bb4d51cdafa8f93faee39eff5667fbd44887ee28df58bf1dbad8bfd0"
+      },
+      {
+        "path": "data-query/wren-ui/src/hooks/useSetupConnectionDataSource.tsx",
+        "git_blob": "5e8900fde5378b64d039a5b460bef5cedf2da5d8",
+        "sha256": "8d2a3b7f3b1c817f04b98aaa9decf14cd4d68b4d4393b6bb698374607987cf08"
+      },
+      {
+        "path": "data-query/wren-ui/src/hooks/useSetupConnectionSampleDataset.tsx",
+        "git_blob": "9f0c22070f895f9b4248049933993157a32077d1",
+        "sha256": "4891359250cce26eb1e9afa551c37dedbb3b5b6cc751cf5dd909a6b6771824a5"
+      },
+      {
+        "path": "data-query/wren-ui/src/hooks/useSetupModels.tsx",
+        "git_blob": "d2844051de2b9bc68695c7209d76fa7fe922d749",
+        "sha256": "16152da18f46ce0095f2de84dd051296a7f3f27e8a00c4c88c5ba03b372a147f"
+      },
+      {
+        "path": "data-query/wren-ui/src/hooks/useSetupRelations.tsx",
+        "git_blob": "2397fe1ed1765da61a111d73c2fefff88856644a",
+        "sha256": "9ea9c680e2fa5988c0851b755b2328c19dcbb8a9592d93cc554544277578e315"
+      },
+      {
+        "path": "data-query/wren-ui/src/hooks/useStoreContext.tsx",
+        "git_blob": "9b2fbc404709d09472f43b377f34c38203932d5e",
+        "sha256": "60a425e3c105e715ae3dd5870545c9665784322146852d99b3044bbc345baf17"
+      },
+      {
+        "path": "data-query/wren-ui/src/hooks/useTextBasedAnswerStreamTask.tsx",
+        "git_blob": "e662c741d8cc09d3268f34a7b1b1df9bcb5d9c4f",
+        "sha256": "372b4f2dfc123f188ff8522712e9a3470c119b2ef41f017da815327c897f57c3"
+      },
+      {
+        "path": "data-query/wren-ui/src/import/antd.ts",
+        "git_blob": "fb5fc9696391f3feff3743e222586f9efa5b3f42",
+        "sha256": "a77cc783f9b325005e1492640323d1f6dfce2e0dbb7fab9be25629d24c07eb86"
+      },
+      {
+        "path": "data-query/wren-ui/src/import/icon.ts",
+        "git_blob": "6a918426b26cf9eb7574db3111d6a5e547da8f2e",
+        "sha256": "6c9f00909fb8e19654bebfa4d1d39075787b1881c5041546ceb4873fb832e7a5"
+      },
+      {
+        "path": "data-query/wren-ui/src/kailoActorName.test.ts",
+        "git_blob": "fb574be388fa90c70d3b7e8850d8c9a178a63858",
+        "sha256": "45a5039e89935780e4d562f834bb96e42d44d9871fd9344d969a9f1316bf47fc"
+      },
+      {
+        "path": "data-query/wren-ui/src/kailoAdapterSearch.test.ts",
+        "git_blob": "d75b9f92be00023cbba904d320913cf014554166",
+        "sha256": "ca1a2ceb958ab9a671853dd8331380f9a177fa586769bcc746c3307dc18dab5b"
+      },
+      {
+        "path": "data-query/wren-ui/src/kailoDirectoryAccess.test.ts",
+        "git_blob": "bb17184302579e6018ecac34ef344dfc8ea8fd42",
+        "sha256": "092e62fa1511bcfce4dde13ea8483c150da794711f5c3c19c4d438a4028f27bb"
+      },
+      {
+        "path": "data-query/wren-ui/src/kailoIntegration.test.ts",
+        "git_blob": "80567acfbb5323918afbe75b1b5e29a9ecd6e765",
+        "sha256": "81ef15d8a54f9b4e6dd2d28ede34636912517c9e4f7f88677a4808565c98783d"
+      },
+      {
+        "path": "data-query/wren-ui/src/kailoMemberDirectory.test.ts",
+        "git_blob": "52495586f135c94bd129d4658046d4fbb330009d",
+        "sha256": "2ca98d43087ba5817ffac61e022321dd7c027647260c61b4e049c24c7143e70e"
+      },
+      {
+        "path": "data-query/wren-ui/src/kailoNotifications.test.ts",
+        "git_blob": "90d5271f23e4691379e3906907b2a22a04f84831",
+        "sha256": "723bfac99bf95cf71fa5d3e891ec0c17253df39325cb32034e4f877b71df87f4"
+      },
+      {
+        "path": "data-query/wren-ui/src/kailoShell.test.ts",
+        "git_blob": "d7812897299fc27488635da9ba327edba850f71e",
+        "sha256": "ac7832d23c92d1729f9a972e4ecb9ef263f01a78dcb5c5dafc43b5720015a74b"
+      },
+      {
+        "path": "data-query/wren-ui/src/kailoUser.test.tsx",
+        "git_blob": "261781aa0c8c2cd7f704603fba9ad05f6aedf9d8",
+        "sha256": "f1cc5fd214596354803995bb06e7f54cd4bd5ff7ac6c3a3245b04898557a41a7"
+      },
+      {
+        "path": "data-query/wren-ui/src/kailoUserMiddleware.test.ts",
+        "git_blob": "abfd4c19f32e406ed17072ba7d041a505e2d7ba2",
+        "sha256": "e5ce5eb6a302d7ec70dc8fb1bb1e09bf92996a005e337629d309a7b76b95fb0c"
+      },
+      {
+        "path": "data-query/wren-ui/src/middleware.test.ts",
+        "git_blob": "8bb0774e7b9352aeee8e6dae13ba7490da9946c0",
+        "sha256": "9cfdf6c65ae74da51c787fda30adb379c91c05c79ae98935b053145b94e7bd4d"
+      },
+      {
+        "path": "data-query/wren-ui/src/middleware.ts",
+        "git_blob": "688e1febc1637732f09cedfb50a761cf52bd4fe0",
+        "sha256": "1d02ad6c2afb0ea576d49c43ba91fa6978aea5a6211674ca198c1ac6d7dc6b12"
+      },
+      {
+        "path": "data-query/wren-ui/src/modelTree.test.ts",
+        "git_blob": "38d64366d4dac23f8705991a9bb9ad5c05dc13de",
+        "sha256": "7d7a6c6025704d27c3b533148792e0a6406785c32f98ab3f8e47a1dc59e47a52"
+      },
+      {
+        "path": "data-query/wren-ui/src/modeling.test.ts",
+        "git_blob": "2bb0b6f0af790ccbdb88c4bfd4c242cfb1471340",
+        "sha256": "b2bd24966e342ee0c9c2d6f8a6e7f0a57d3573ecf57ee196a3acfdb2380c33d3"
+      },
+      {
+        "path": "data-query/wren-ui/src/nativeAdjustmentScope.test.ts",
+        "git_blob": "3c8b07f1dd11a2aea135341ca65a2d6b985938f0",
+        "sha256": "afa8632014e8617991a2f6683340d92b3311ef261022c7e5c27ec7a92b2a40f4"
+      },
+      {
+        "path": "data-query/wren-ui/src/nativeAskingPresentation.test.tsx",
+        "git_blob": "a79b047be16d80f883be28d8dbcf6932dbc5d78d",
+        "sha256": "8690dbac5b567d0d44efd11e8dfb364a08bf19c8b99396eacc2d7e6c77cb3c0e"
+      },
+      {
+        "path": "data-query/wren-ui/src/nativeAskingQuery.test.ts",
+        "git_blob": "a66a5e53616d5bb765b8f6e3cb2a5817ae41b29c",
+        "sha256": "be1d5d593618a4c630d26f9a6065e5d22885435a8e15aced2a67731b9fa52b29"
+      },
+      {
+        "path": "data-query/wren-ui/src/nativeAskingView.test.ts",
+        "git_blob": "9e3af912e65fadec6a582fb0b0541632fa2c51fa",
+        "sha256": "042050f18d9a72747273e788b42c264cdfb138a5e35763444b3238d10c83cae6"
+      },
+      {
+        "path": "data-query/wren-ui/src/nativeBrowserSession.test.ts",
+        "git_blob": "7e9e29c91c84376999f2e7314b06b9776ddf7c28",
+        "sha256": "037acc9d4f350b10598ad9a6958f37093d231d436b0c98430517ec321894c381"
+      },
+      {
+        "path": "data-query/wren-ui/src/nativeDashboardSchedule.test.ts",
+        "git_blob": "b02a23483f42892d5ef63714e64791d5aa9b64ae",
+        "sha256": "388ef12b58f0d92aa715de06a38ca392a2ecfc475735cfa29065e63f450db324"
+      },
+      {
+        "path": "data-query/wren-ui/src/nativeGatewayTransport.test.ts",
+        "git_blob": "86807dd47f477fb27d1767692543757e0798133e",
+        "sha256": "478467e96cb6ff0cbb510bfc377e90135baa22926957522c087ec4b983e1abe9"
+      },
+      {
+        "path": "data-query/wren-ui/src/nativeHumanQuery.test.ts",
+        "git_blob": "ecfbc6ee92ef6ace97537acb9c98724678f74992",
+        "sha256": "60d46482df67d570fa7e77bbc95dc80d84e473a37427f26b6853e946b4b1c2b6"
+      },
+      {
+        "path": "data-query/wren-ui/src/nativeLearning.test.ts",
+        "git_blob": "e0fc6f24572b7d54aa3d79035c045d5aa8ab9f41",
+        "sha256": "df5419ce90309022d1bdeef4999f72cca45f2b2264c4fe00ea782083a2ab8b19"
+      },
+      {
+        "path": "data-query/wren-ui/src/nativeLearningRepository.test.ts",
+        "git_blob": "56a3a78ce6d7e1db2f9b4ef38ba7680b1068583c",
+        "sha256": "16e7803403c5695d0caf4af9550b2ce8d6f800d1eae739dcdcbfead4225ff5f3"
+      },
+      {
+        "path": "data-query/wren-ui/src/nativeMetadataDelete.test.ts",
+        "git_blob": "ff5654c436d9b4dd13a37a8e2e4a9000c0dc72e4",
+        "sha256": "9e18e726f45932e451c19eee728d530956fd4df5e528c846c0a5d053c63b10e1"
+      },
+      {
+        "path": "data-query/wren-ui/src/nativeModelMetadataWrite.test.ts",
+        "git_blob": "6fd028888328ec48f8566f5eb0efc42f83ef7a3c",
+        "sha256": "7c591f1000bd9b3087ad04f0d1cd4d4b6ade40c6c293ef2422a672c417ae3d22"
+      },
+      {
+        "path": "data-query/wren-ui/src/nativeModelWrite.test.ts",
+        "git_blob": "2d58199bca3e4df4519c4cde42187bd53f124b97",
+        "sha256": "6b9cb36601ae70c5e5bd332973c2e1ad434b72f24cff78b5dd28250b9c98678b"
+      },
+      {
+        "path": "data-query/wren-ui/src/nativeProjectScope.test.ts",
+        "git_blob": "523ba41886f083f16f20a373dd9682b0b65b616e",
+        "sha256": "3f92073733aea129f4c1dcdfde636976d4bd7e7ccca933d699d7e79165fb2495"
+      },
+      {
+        "path": "data-query/wren-ui/src/nativeQuery.test.ts",
+        "git_blob": "14cd398a7f19be995c2d97d2d86b36ba0257a76a",
+        "sha256": "6c914fdebcd0ede31383bdd92626ac937b945d2bf9558674b288a7df30039bcb"
+      },
+      {
+        "path": "data-query/wren-ui/src/nativeQueryDelivery.test.ts",
+        "git_blob": "3ad84474dd47c17e8d44d98c7f619285dedef46f",
+        "sha256": "3e82c96ebad5c2efe663e407ab52b975245b5c1f2c9014c4d2cd338e3a0678cb"
+      },
+      {
+        "path": "data-query/wren-ui/src/nativeQueryMode.test.ts",
+        "git_blob": "bf73838467169d7981fdb11309c820d1deabf946",
+        "sha256": "93612b88b36d7e3cc3e42ee74c4fe7655c4490486849f504b187379512bf8ee7"
+      },
+      {
+        "path": "data-query/wren-ui/src/nativeQuestionGeneration.test.ts",
+        "git_blob": "4af9c5909b70a425104f6a15e716d019dccb8205",
+        "sha256": "337f8233d4fbd8936d5977ec4be3030b8ad93e6b3fed2e35bd7daeac0eddfff2"
+      },
+      {
+        "path": "data-query/wren-ui/src/nativeRelationWrite.test.ts",
+        "git_blob": "e5d6065d67ef4f2ade2f1d1d5365aa7d0a102a4d",
+        "sha256": "d2a2d7172537fd6e1ed5d70b34568ae8e7fd57fd7b90c3425aef61de059e6383"
+      },
+      {
+        "path": "data-query/wren-ui/src/nativeRestAskOwnership.test.ts",
+        "git_blob": "f4ceca40710984df8431ee0804802542fedc66ec",
+        "sha256": "6e887ea6fc6a21a5691243c140af7b3dc8b15ebcb828fb36ddbc1ba4efa9b5b1"
+      },
+      {
+        "path": "data-query/wren-ui/src/nativeSchemaChange.test.ts",
+        "git_blob": "2ff4c64e84dfb056d9c864c13bf4aa651c6cd96a",
+        "sha256": "8a3d1e925afc6aa7099b208e2113bb4cfcaf9b74647ce6f2a2543c0010420829"
+      },
+      {
+        "path": "data-query/wren-ui/src/nativeTaskOwnership.test.ts",
+        "git_blob": "1d839bf714668eef514217a175543be37c39ae65",
+        "sha256": "9e41e9cd08e09b417428274f9bd2cd6e01794fc68ab7abd4ca7823b90b5db9a9"
+      },
+      {
+        "path": "data-query/wren-ui/src/nativeTextAnswer.test.ts",
+        "git_blob": "1d99504193dde9dae620e83f4dfa9d5f0196b08f",
+        "sha256": "732f0eabdcf25fb79f501c3616e3291b2ba59bef262e993be1bdd1d6a5f8e20b"
+      },
+      {
+        "path": "data-query/wren-ui/src/nativeViewMetadataWrite.test.ts",
+        "git_blob": "e1779cadc7457ae2aa0babbedce9b4b8e805cb36",
+        "sha256": "ee6f18dc1c3039579f23dfaabe019c83baf0c6f39bfd5b4b0ec055afd5c2c8a4"
+      },
+      {
+        "path": "data-query/wren-ui/src/pages/404.tsx",
+        "git_blob": "bb1e50ce60a674db7f307a7fc7e0df14ade6a1c5",
+        "sha256": "3e6a9fe9a865140b742784f557b8a5e2ae60b0f5f032e2b5041e66203f9e1dc5"
+      },
+      {
+        "path": "data-query/wren-ui/src/pages/_app.tsx",
+        "git_blob": "c7432e1249bbe68bc0dade57dc54d97f7bfd275a",
+        "sha256": "06dd491c6ef0893274099f9e938ebde3168682ceb401f50695a207b604256bea"
+      },
+      {
+        "path": "data-query/wren-ui/src/pages/_document.tsx",
+        "git_blob": "35830ed97f5928f17fc4fb9e169f2b9e41cbc6eb",
+        "sha256": "d0ec61eaf9c3f375c5f549b87b12a961eb8351716f6b1a392452d7b0947644d0"
+      },
+      {
+        "path": "data-query/wren-ui/src/pages/api-management/history.tsx",
+        "git_blob": "e33ce93b3553d123b08fc856b0b63b8bd0dbea66",
+        "sha256": "299ecfdc69ae48b49d21f2eb5ebada47f57595d8de26231f059663ffd13b9d3d"
+      },
+      {
+        "path": "data-query/wren-ui/src/pages/api/ask_task/streaming.ts",
+        "git_blob": "f5ac20f26cee837f54a739afc627ed229b3d4932",
+        "sha256": "f0ebb8bdd315f3183075930edcf6e3b4e0281736dd121c8fe8765dfff8f530e9"
+      },
+      {
+        "path": "data-query/wren-ui/src/pages/api/ask_task/streaming_answer.ts",
+        "git_blob": "ac3ab01f3448ef5b10173cd3d65e50e8e57262d5",
+        "sha256": "616ecab19e79d314d0ab40c946afe5502febfa6f95a5e92cc0a99fadc0bb2b71"
+      },
+      {
+        "path": "data-query/wren-ui/src/pages/api/config.ts",
+        "git_blob": "c6b237e3c8a6a84c11f518356236e64328efc69f",
+        "sha256": "b27f470ce5dc533eb4a616c8a7fa36b9435efa0a0cfecf08dd8107dbda312155"
+      },
+      {
+        "path": "data-query/wren-ui/src/pages/api/graphql.ts",
+        "git_blob": "fea67a30998a2d463d9caf52acbd8c8382bcf99f",
+        "sha256": "7003bbd96301b632c98ec47f47a686aaf662d9f7adbfcb55e72b60eaf36cb0eb"
+      },
+      {
+        "path": "data-query/wren-ui/src/pages/api/kailo/directory-access.ts",
+        "git_blob": "349ccbf4e991e619d853170a7d618145f3580dfe",
+        "sha256": "e9ea01cd197e36b3c83216ba306e3a9275af29ae40cd559f0c6d0e005b84fde6"
+      },
+      {
+        "path": "data-query/wren-ui/src/pages/api/platform-adapter/[operation].ts",
+        "git_blob": "825821e34e59afff430d40e1c0bf3189e574a55e",
+        "sha256": "1a946690b2aa75796ddbcede8d64873cb5787c3f751b1755a940d6424017b2be"
+      },
+      {
+        "path": "data-query/wren-ui/src/pages/api/platform-query-reference.ts",
+        "git_blob": "25181202a17c3ee0019b572d0bd65be5760d307b",
+        "sha256": "441aef5afcc57a380506cfd1a3a734a94430285e8f0ec27369e89e5e1877ebae"
+      },
+      {
+        "path": "data-query/wren-ui/src/pages/api/v1/ask.ts",
+        "git_blob": "2bf2685bdcb1c20c7be1fb7c9f4cd87370d1d524",
+        "sha256": "b4aeae68da40974dfbad433c2dc0a857186f74d3613c51fceede3073e82cab8c"
+      },
+      {
+        "path": "data-query/wren-ui/src/pages/api/v1/generate_sql.ts",
+        "git_blob": "be04d56515f993beb15dc1fc101966d5a7ee35d1",
+        "sha256": "c900c0027f8bd22c0fa57f499612ce188def7207f681b87e85f2068e087066e3"
+      },
+      {
+        "path": "data-query/wren-ui/src/pages/api/v1/generate_summary.ts",
+        "git_blob": "66c2637717a269b25571a8d74ea77bc2908184b8",
+        "sha256": "9f69ef050f886cf6937799dd10c197be0ffbe044b18ef4e3a3ea8336ebf664bc"
+      },
+      {
+        "path": "data-query/wren-ui/src/pages/api/v1/generate_vega_chart.ts",
+        "git_blob": "6708234747515c673d872d77e9ef8c1143bfe3c4",
+        "sha256": "7bd5e7e009bbcfb8142ed2227109d28be588769a69dbf29c15babf06bb3295b1"
+      },
+      {
+        "path": "data-query/wren-ui/src/pages/api/v1/knowledge/instructions/[id].ts",
+        "git_blob": "f148d9baf061ed1099e51df3bebb59d6559e7958",
+        "sha256": "bfd6f90d4440d490ac90f57cd703574523725b9c91ac153223f9ebbcbf9ff02a"
+      },
+      {
+        "path": "data-query/wren-ui/src/pages/api/v1/knowledge/instructions/index.ts",
+        "git_blob": "8a55a2bb036fe58284572f52ba5b3615c0d89446",
+        "sha256": "624797f7c28d964501a96c64650593d47448c2b4cbc08a3e70320a386a6bb56a"
+      },
+      {
+        "path": "data-query/wren-ui/src/pages/api/v1/knowledge/sql_pairs/[id].ts",
+        "git_blob": "836e44ab421d02689469d019027a5ad79373e3c7",
+        "sha256": "682deefa3517c6b216c5a40a6776519a88325ecc05240d0b9de97434216ecc06"
+      },
+      {
+        "path": "data-query/wren-ui/src/pages/api/v1/knowledge/sql_pairs/index.ts",
+        "git_blob": "60f6ec887349c0abfcf9217c61657917cfd9de47",
+        "sha256": "28afda77f796e3cb3c6bcf6bcadb5aa814c97a57ade5021539c0145d4dd0cacd"
+      },
+      {
+        "path": "data-query/wren-ui/src/pages/api/v1/models.ts",
+        "git_blob": "acc13e45d8ca6c3c35c977cade3c3997a3fdc974",
+        "sha256": "fb90f2e00dcf5a4f1895b6a6c31242e50a72972db0eedd0bfe8e75f2bc3028a9"
+      },
+      {
+        "path": "data-query/wren-ui/src/pages/api/v1/run_sql.ts",
+        "git_blob": "de1d462822ac5659e2c5349507113dd50484eb38",
+        "sha256": "0aa6ce43f988144f5be9ca7c61795dadc8cbd2732d18efcffedfa3b25240b37b"
+      },
+      {
+        "path": "data-query/wren-ui/src/pages/api/v1/stream/ask.ts",
+        "git_blob": "6d06c4daced69ee02c5d9fa892f4e2a5b0b28e67",
+        "sha256": "e79c0f8e8852fbe3e089896900ac9debeed95f768d8cd76ac89a59a0c84d4550"
+      },
+      {
+        "path": "data-query/wren-ui/src/pages/api/v1/stream/generate_sql.ts",
+        "git_blob": "ebcad6479d212aa93214bb0166561805aa63a069",
+        "sha256": "ad30eb7c3c606c9ffd30b9284321c61a2eb28a6f5aa4478e7b35f6461fbe5606"
+      },
+      {
+        "path": "data-query/wren-ui/src/pages/api/v1/stream_explanation.ts",
+        "git_blob": "c4bbe78d7f682cee2b3241007dd52a2d4cbfc7d9",
+        "sha256": "44bc4049aa34dc0f5c16b8f11e873c741e6a31879765c2b5a2ed8a71560e607b"
+      },
+      {
+        "path": "data-query/wren-ui/src/pages/home/[id].tsx",
+        "git_blob": "49fe65d9bd8004ac8c93a54cca1b4aa0abc8b3aa",
+        "sha256": "e8e89f5ed1ab9a7adab03c9de9e125c155bbcb14b79e1a61c1a0cdbba6e31910"
+      },
+      {
+        "path": "data-query/wren-ui/src/pages/home/dashboard.tsx",
+        "git_blob": "8d8718943d9f1aad3d39f4e80f6a628b8d42d6ac",
+        "sha256": "653a7bc939953074f901d19ccf6538dae606cb864cc7081f7fdb3276770dc229"
+      },
+      {
+        "path": "data-query/wren-ui/src/pages/home/index.tsx",
+        "git_blob": "04c3536f2a35508ca2d07bdb1b9f4434f72eee3c",
+        "sha256": "517270d9e23ff4881e5615ea98bad2fccfd7ac3481f8ccfe1b1eb4c3b0fc13e8"
+      },
+      {
+        "path": "data-query/wren-ui/src/pages/index.tsx",
+        "git_blob": "ef41d22d5c9b3dcc0c43d1baefb18b0d156f68cb",
+        "sha256": "d8d8faff9a3dcca4f76b43b9f87245bb0012e4ebf2c572b6915ac89dba8435bd"
+      },
+      {
+        "path": "data-query/wren-ui/src/pages/knowledge/instructions.tsx",
+        "git_blob": "4bf95e5eb1240af48488d19d08e1cab002a6a528",
+        "sha256": "60bc4903d3d609343242eaa01360bccdd0a7249b34d992dfff0b8380ced32282"
+      },
+      {
+        "path": "data-query/wren-ui/src/pages/knowledge/question-sql-pairs.tsx",
+        "git_blob": "25faeba757a762d4012cc07de4557c2990e5a68a",
+        "sha256": "9392c33ce50813f50dfb249f420f3362952b633e5d38e884d926ed7bf2aa6d35"
+      },
+      {
+        "path": "data-query/wren-ui/src/pages/modeling.tsx",
+        "git_blob": "5d6ddd93996f3d212f5c88677a4439714f45b66e",
+        "sha256": "08f7495654b76f7d751a3f25a3dc53c63d4cfefe030db717ae7c487f5d24f158"
+      },
+      {
+        "path": "data-query/wren-ui/src/pages/setup/connection.tsx",
+        "git_blob": "e37761d4e9820e488a0c24d4f5c706ea341b8eb7",
+        "sha256": "1f1f9a9c82301204192611e1d8c4452b26a288600adba7c5622848e177df4b6a"
+      },
+      {
+        "path": "data-query/wren-ui/src/pages/setup/models.tsx",
+        "git_blob": "3c603deef6b4724cd6bd3662b6591d1b6e749466",
+        "sha256": "38b5a271a31adfd91feba202f941761af0f6f45a97eed2a5ba84ee389bf14119"
+      },
+      {
+        "path": "data-query/wren-ui/src/pages/setup/relationships.tsx",
+        "git_blob": "96580f3799ee38a246e588536e89ef753aa5e015",
+        "sha256": "30aa5e858e697389bd830b1ce50d127168b3e683b681e515f86f5d926845431c"
+      },
+      {
+        "path": "data-query/wren-ui/src/styles/antd-variables.less",
+        "git_blob": "efac5ac8f2e14b7d1b86712495eabc205bd09349",
+        "sha256": "69431164274046fc341e3791298cc51e0265bd54466557150d40a8c10f75fde6"
+      },
+      {
+        "path": "data-query/wren-ui/src/styles/components/alert.less",
+        "git_blob": "fd59f78632f7a8a7cb3e1296f1af27655d5404fb",
+        "sha256": "b324a3b02fd797e9069a796a7bc570271b564c8cb5ff908e19a43544acd3f5ce"
+      },
+      {
+        "path": "data-query/wren-ui/src/styles/components/avatar.less",
+        "git_blob": "50adf5a2da433b560c5b86f22aebd5b939287503",
+        "sha256": "54daa533c1a08a586aafba27310c9a8bf45ac18c67172599bdbdd372368d59f1"
+      },
+      {
+        "path": "data-query/wren-ui/src/styles/components/button.less",
+        "git_blob": "59b778db9f1ff5c8fff5655dba69958e04f14a4e",
+        "sha256": "70e0623cbbe7e8f35af15a265d1cd121d47cf2750266b2f8889e9a255662d9d0"
+      },
+      {
+        "path": "data-query/wren-ui/src/styles/components/chart.less",
+        "git_blob": "9b4da002e511f528151077e3fc02b75ac1c0c3dc",
+        "sha256": "b9e653e05cc690a9e5f34727ad07402ad7fb61befca62d3b3707d966a5bf2f7f"
+      },
+      {
+        "path": "data-query/wren-ui/src/styles/components/driver.less",
+        "git_blob": "3cdb3f68fbf6db0143ede549ec9924607b8d76a0",
+        "sha256": "101f7ca5aaa53a4b3517849466d81ce4434eaad7585f75979d6b300d136a2e14"
+      },
+      {
+        "path": "data-query/wren-ui/src/styles/components/scrollbar.less",
+        "git_blob": "82bbb283705b33fb604090d05ae11c7474153a4f",
+        "sha256": "b02f994da92b0afadbf8bc2b8ccdd6e639507d86baedf76692463c4f7b8f4be3"
+      },
+      {
+        "path": "data-query/wren-ui/src/styles/components/select.less",
+        "git_blob": "0af2320432b666b4014069765ae1c032e3b97723",
+        "sha256": "b9228f38f7d4a2ca3cc7adf34dd4a3a67601bfe64bd62018164aeafab370cf17"
+      },
+      {
+        "path": "data-query/wren-ui/src/styles/components/table.less",
+        "git_blob": "5ddc83456d2b701f95c5c22352051dc8e237d131",
+        "sha256": "b6db923447598cf139896e4f6012f72ca08e0aa42e9414e0980db5a1ef11708a"
+      },
+      {
+        "path": "data-query/wren-ui/src/styles/components/tag.less",
+        "git_blob": "169bfa83c19399ffa22bc608e653c5b60d369c6d",
+        "sha256": "6cbc51f4e79712cf59b8b673658893c2fd8d8964f534f519065654b5a057f997"
+      },
+      {
+        "path": "data-query/wren-ui/src/styles/components/transfer.less",
+        "git_blob": "8bd17af6cb9033687c9038aab8dba1774cd7aa04",
+        "sha256": "38fca927ded19fe1d487e13cb4d7c1b2cd96dbc6d4eb63e255687765179cabcd"
+      },
+      {
+        "path": "data-query/wren-ui/src/styles/index.less",
+        "git_blob": "178333592144806712d5e4de2f891650a39975f2",
+        "sha256": "4d410524bfe735667b2c75596506d9ffe097dd1d6b4514d6e21c6bd67007a3f8"
+      },
+      {
+        "path": "data-query/wren-ui/src/styles/kailo/antd-theme.less",
+        "git_blob": "54e493c947ee604f6f10ab66b1fa651449575ef1",
+        "sha256": "11b4e74807d18d7e70e0e72bbb46283053b0d0407b4faa685cec8b0183b921e7"
+      },
+      {
+        "path": "data-query/wren-ui/src/styles/kailo/controls.less",
+        "git_blob": "f17790c7edf5a074d938843b4b6f61e4ee740838",
+        "sha256": "6a8cf983cd4b9e3dd7575413de03b53d0c07a4bd8af24d78402c399d2ca35e11"
+      },
+      {
+        "path": "data-query/wren-ui/src/styles/kailo/overlay.less",
+        "git_blob": "dad7149488ee9ba3d5224dff864fe3cc78e88130",
+        "sha256": "75a268b0deb4701c56e002595864d67367fa871948164141ef7ab793e3895139"
+      },
+      {
+        "path": "data-query/wren-ui/src/styles/layouts/global.less",
+        "git_blob": "f31319f7a63245fec4b06dfae5f1521c27cb657b",
+        "sha256": "ceb8692c894ff609bd89f032c3a816ffad4d93f51b65cb8510ac34c4fc3c327f"
+      },
+      {
+        "path": "data-query/wren-ui/src/styles/layouts/main.less",
+        "git_blob": "36724cae3e99ca0617462080d2145654ad3ada6e",
+        "sha256": "5f32c37e7ceeb96f41a302d3650cecf488f0acc221d8eaa00062700ac7be7345"
+      },
+      {
+        "path": "data-query/wren-ui/src/styles/utilities/animation.less",
+        "git_blob": "411e85a01af22aa63eb3784d3e8b68886d85708c",
+        "sha256": "cc440559e68ccf702629c446078575afeb929ee1b0f578ee9bbf2224aba3d2a4"
+      },
+      {
+        "path": "data-query/wren-ui/src/styles/utilities/border.less",
+        "git_blob": "be80e6acf047a03ce58d263534dbc3fb67a5f5a3",
+        "sha256": "ddf0dba23bd05106f2b810648fe45d33e77d2e775ab5e892e29c1a842c8cf1cf"
+      },
+      {
+        "path": "data-query/wren-ui/src/styles/utilities/color.less",
+        "git_blob": "56b960ff4746e5ee48ce072e266e4ff8faa20a40",
+        "sha256": "63b1caa875841b19e490fb45f1f75bfd4412aff5eab080bb2b94442084ea5235"
+      },
+      {
+        "path": "data-query/wren-ui/src/styles/utilities/display.less",
+        "git_blob": "3afbb548d95647cf1ce45371866f725ae425b890",
+        "sha256": "e332dd9993681459a6f36750ada70dd592f2866845636e08aea357fbe945828d"
+      },
+      {
+        "path": "data-query/wren-ui/src/styles/utilities/flex.less",
+        "git_blob": "c599df10631d66712f06c017520707c8dc85a671",
+        "sha256": "d7f6505ecbe67ab0147d1b729f46b02d9ac9dc5cc5647bbcc7faf5f5f0dc942a"
+      },
+      {
+        "path": "data-query/wren-ui/src/styles/utilities/grid.less",
+        "git_blob": "da87ee93cf787aa6666c30d86e30f214411c06e7",
+        "sha256": "cf5fe71ed042b509701319cd1be9558945454198f0e0f030801837b6ac34756a"
+      },
+      {
+        "path": "data-query/wren-ui/src/styles/utilities/spacing.less",
+        "git_blob": "46ebc052d956858a37ce4d3f900f989cb47c0355",
+        "sha256": "13d94562076e6821c53983924a95ec5017f06b1af36bfb0bcb10ae4d07e40a1e"
+      },
+      {
+        "path": "data-query/wren-ui/src/styles/utilities/text.less",
+        "git_blob": "a58b6f5e9350225edf4b6e2ca05bd5104fc1c208",
+        "sha256": "aae0c5cd988e9c0755f1f316dd8634fc9327b49a542d260ef53debca563ad176"
+      },
+      {
+        "path": "data-query/wren-ui/src/utils/columnType.tsx",
+        "git_blob": "621105fb460730b33d7bb8a0651e4be39d35e3ec",
+        "sha256": "c193645f53457208367fefe918825be61c09214c7c2f465d84bc95b727b05b2f"
+      },
+      {
+        "path": "data-query/wren-ui/src/utils/data/dictionary.ts",
+        "git_blob": "859df57e8884272b347c0d160809b94cf8d1fc05",
+        "sha256": "5b9f06669c8312e7c164cd0b0e59c3b8983ab5ddae4facc32617f179e5d8ccf5"
+      },
+      {
+        "path": "data-query/wren-ui/src/utils/data/index.ts",
+        "git_blob": "f36ce4ba74cd6e297e5678cb7b3147d527c2ccf4",
+        "sha256": "08688b4a55fbd2426adff3d4711136d26444ef686ca3f81234a772ad1ccdd21c"
+      },
+      {
+        "path": "data-query/wren-ui/src/utils/data/type/index.ts",
+        "git_blob": "1ae4382ea11bccbfe23f9948db4a45fb2b1affec",
+        "sha256": "76c2e19cc4b85a334c3b40da054bd7b36a4d02721a7c4ad00fdf6f2d93c477cf"
+      },
+      {
+        "path": "data-query/wren-ui/src/utils/data/type/modeling.ts",
+        "git_blob": "a9c646c703af32962c345e4b20dae60248dc2b0e",
+        "sha256": "019fdfbb8c26c8c44251814c0f9c7c37894f337e755c801ebfb9fd350e9de2a6"
+      },
+      {
+        "path": "data-query/wren-ui/src/utils/dataSourceType.ts",
+        "git_blob": "813dc1fb6e1c72629652f8934fca52bca743a075",
+        "sha256": "cc23f0ce18b7f145e05bf2a8f48a3f20c133832b8e92922330fe08930ad01ec2"
+      },
+      {
+        "path": "data-query/wren-ui/src/utils/diagram/creator.ts",
+        "git_blob": "76c337a8eea52bfd7abe40aa93b468cd39b6f007",
+        "sha256": "cef17adee39fc3f6df5ee767d082c3a782e42b45fd544b4650bc3047cda85dbb"
+      },
+      {
+        "path": "data-query/wren-ui/src/utils/diagram/index.ts",
+        "git_blob": "e260e9f178745ac2dd9af07e4c25558a63768c23",
+        "sha256": "128bdad9c9d8bbb9401b4f8246acda37a6bc891eebccea9cc33ec03e8214ca25"
+      },
+      {
+        "path": "data-query/wren-ui/src/utils/diagram/transformer.ts",
+        "git_blob": "2c96e5f85e57c551046898f41f505ddb9e1cd61f",
+        "sha256": "b1cc8a88508f27353789908cc38bbaa263555e4604b60ba2497ca9bf570f1236"
+      },
+      {
+        "path": "data-query/wren-ui/src/utils/enum/columnType.ts",
+        "git_blob": "61fe458d12be34a476f64508d9abc918c5be0e5e",
+        "sha256": "15b106ab1f8311768c1e44a50b5b12ac99a899258e570b4e7a1405194aa56e70"
+      },
+      {
+        "path": "data-query/wren-ui/src/utils/enum/dataSources.ts",
+        "git_blob": "ed8a608021761b1a585d1de48cceda8bc438fc15",
+        "sha256": "f626610e21e018e6228de623b6d7a1133117f0d1dc537fda5aa123fed9b066c2"
+      },
+      {
+        "path": "data-query/wren-ui/src/utils/enum/diagram.ts",
+        "git_blob": "42d59a45111a9b801c2fc032ed0a8535a72fd745",
+        "sha256": "41d2c1548e7c0745856deead2866f363af4ae6d206a92d5734b7d295fc07268a"
+      },
+      {
+        "path": "data-query/wren-ui/src/utils/enum/dropdown.ts",
+        "git_blob": "2ff378619be52d0b039d60fe5b6f0521efb5eef6",
+        "sha256": "d7ef84a08851564541bd70cfbb5a052ad79c028c14073a2af466e00227cc53be"
+      },
+      {
+        "path": "data-query/wren-ui/src/utils/enum/form.ts",
+        "git_blob": "4b540f652861f58b5b053774740f8412f145787e",
+        "sha256": "6de04b78d6e44d79ff624d7ee89daecffeb897b59574ffeba0bedd4fb55b5b47"
+      },
+      {
+        "path": "data-query/wren-ui/src/utils/enum/home.ts",
+        "git_blob": "e83b57c86ddc4bc8f2d291d2a7baa7b7a555f14f",
+        "sha256": "28f9eda8e6e4e882cf7070230b22ad7935b4331004dc68f2ec13b423a6248839"
+      },
+      {
+        "path": "data-query/wren-ui/src/utils/enum/index.ts",
+        "git_blob": "7d56d20e9f7d4f1f22ba366c3813910404b881df",
+        "sha256": "00faba5f257d8455a07c0d9c92120ca95b8bb3745a7b637e68f1086ee543ed59"
+      },
+      {
+        "path": "data-query/wren-ui/src/utils/enum/menu.ts",
+        "git_blob": "2d5e55c354f0402f870e0d8f374ac3900d718d25",
+        "sha256": "9fd09115e74c62cc6dd81f1918d4c92edcac6d8316b7314bbc433543ea87ec93"
+      },
+      {
+        "path": "data-query/wren-ui/src/utils/enum/modeling.ts",
+        "git_blob": "dfdd7edf64b5b0bf5e30d5a3641f74cda7cdf3f4",
+        "sha256": "ff34584af3eba885943068379913c3a2013a69d08268066ecf0178858a029a34"
+      },
+      {
+        "path": "data-query/wren-ui/src/utils/enum/path.ts",
+        "git_blob": "10f5fa8091c42b6c5e9fc4d0ec0044d97ac4f6d9",
+        "sha256": "a3855b0b031f1c48cff41dc96b31e43b07194f69fd76cdbdc665b2e3d3fa8610"
+      },
+      {
+        "path": "data-query/wren-ui/src/utils/enum/settings.ts",
+        "git_blob": "43781d807b70a664506c9f37efd019e352a6305c",
+        "sha256": "32b806e13227137c1107874028cd061ef94512f91b8ea15d28bd8d1f5f8cadb1"
+      },
+      {
+        "path": "data-query/wren-ui/src/utils/enum/setup.ts",
+        "git_blob": "14332c03a62c25d430f246d0bf1540c2d76eaf01",
+        "sha256": "d8aee240811b3951069039602e187a11d8566258dc329bfb4647d1de56410e11"
+      },
+      {
+        "path": "data-query/wren-ui/src/utils/env.ts",
+        "git_blob": "850023e3d458505f2b7d2bb1eb39bf77753837b8",
+        "sha256": "7bbc27a8edf43ece4e3f48ab0242e2bbefd8cb9e416b8b005d78989b53dac49a"
+      },
+      {
+        "path": "data-query/wren-ui/src/utils/error/dictionary.ts",
+        "git_blob": "cd8a07faf3182a898a3776a86b6976323e2aea9f",
+        "sha256": "dbb62954d3a9491c47545d3d60c3e3f5502617ca0b04b31df35d578512b1ec6c"
+      },
+      {
+        "path": "data-query/wren-ui/src/utils/error/index.ts",
+        "git_blob": "6199627feef29be980f04da0f40f7dc95f6f90c3",
+        "sha256": "00edd383a1b1d894e0b276e450a51553c9d8de774bbac10b16e6669b87e86c57"
+      },
+      {
+        "path": "data-query/wren-ui/src/utils/errorHandler.tsx",
+        "git_blob": "def6adbe05d13037eefdd546f22ee4baf7851a69",
+        "sha256": "50b65a6ceb435ff051c953dd40709d86dcefb693bc676f24bc6add3a7fb1aa2a"
+      },
+      {
+        "path": "data-query/wren-ui/src/utils/events.tsx",
+        "git_blob": "2a10ed90e21f4609b15b91229a116f120003787f",
+        "sha256": "cfa24cd754cfc88f4a8f0952d603eab99632e4a0bc4d7ce5fd6f5f2ecb54e349"
+      },
+      {
+        "path": "data-query/wren-ui/src/utils/expressionType.ts",
+        "git_blob": "71d1639497592166f41c7bae42a34e17942cd381",
+        "sha256": "97594b683606f748295bacb125819d8a11c046e8cc93e1914c24207462381312"
+      },
+      {
+        "path": "data-query/wren-ui/src/utils/file.ts",
+        "git_blob": "ba4e4e17cadaae46a9c30f8ac6e18d8c86230645",
+        "sha256": "ac209cf00fb286cb351ad7e9b17e309013214eef3a1c8cedbcbe3dbc2dc52db3"
+      },
+      {
+        "path": "data-query/wren-ui/src/utils/helper.ts",
+        "git_blob": "44b40815722719007786a542812afbb29e2b5aa3",
+        "sha256": "6e36e5cff44e357bc157dc61218a7e5495ef4edafac94a5b99a6e582ddc7b30b"
+      },
+      {
+        "path": "data-query/wren-ui/src/utils/i18n/home.ts",
+        "git_blob": "502198dffa82817d2556c71bb18fa8f3b382affd",
+        "sha256": "fa597cccec97edadf2f2ead2f7ea59b19fdaabf3c11b0a1d3f10398f1436c445"
+      },
+      {
+        "path": "data-query/wren-ui/src/utils/i18n/knowledge.ts",
+        "git_blob": "8f7913ed3d8ce86d90f29a69a5d40562079b16c2",
+        "sha256": "91460c8aaca0b49eba90ab11a6c0368d7cd8111f09f9288a24570babd2ea0af0"
+      },
+      {
+        "path": "data-query/wren-ui/src/utils/i18n/modeling.ts",
+        "git_blob": "54f155731d3c6d5852540bf5256013dda0d840c4",
+        "sha256": "a27f0a8aa39a8372825c078509c73bba273784a49443e70f6add764544da66e8"
+      },
+      {
+        "path": "data-query/wren-ui/src/utils/i18n/setup.ts",
+        "git_blob": "61a3b2558e84485fee46103478ab2359c4dca1ea",
+        "sha256": "3d1aaf0359de5e50e82b0f1b03c5043d90cc7fb9e0347315854bdb3e62bd3ce4"
+      },
+      {
+        "path": "data-query/wren-ui/src/utils/icons.ts",
+        "git_blob": "db01d1316c6a6d18bf5589091db5494c5ea7acfb",
+        "sha256": "990dfbf85895476875153b0ceddd901eadd01f5cf9d622623a79d222ac44249d"
+      },
+      {
+        "path": "data-query/wren-ui/src/utils/iteration.tsx",
+        "git_blob": "294c49035cf207a6dfb4ce992f469b1e3f265c5d",
+        "sha256": "805062cb46accfdc1abee3a9f70fb3052aede9873f189be8abe564fa4ad57a92"
+      },
+      {
+        "path": "data-query/wren-ui/src/utils/kailoEmbed.ts",
+        "git_blob": "fc14f3fd912fec904856dca6a2b5123cbeff7f4e",
+        "sha256": "67bb3cdd6db0f84447b093a1f840283ca048d92630050d9fe89b4133421ea399"
+      },
+      {
+        "path": "data-query/wren-ui/src/utils/kailoHost.ts",
+        "git_blob": "701e2ce70eccfb64667b491e0f0a62ddafd729c3",
+        "sha256": "a7466a2230d7d90d448a1342e385b935f8bbe90b3a30f8233a2e35d762c79d9b"
+      },
+      {
+        "path": "data-query/wren-ui/src/utils/kailoI18n.ts",
+        "git_blob": "d15bc117308ddf2888cdaccdb135edf52f6af8db",
+        "sha256": "f55bbf8fec4ae4d46cf4f39f528813f4648a42e80b99eb24321bea42790c1ada"
+      },
+      {
+        "path": "data-query/wren-ui/src/utils/kailoOrigins.ts",
+        "git_blob": "dfd56011ae8f408c51457a0e35fada882d444e7e",
+        "sha256": "215f8cfd8fe86f2af9a59e24324119164a37bb7edb0f3b9f31f7631c422d4cb0"
+      },
+      {
+        "path": "data-query/wren-ui/src/utils/kailoShell.ts",
+        "git_blob": "bf4b73baa5066d5d9c932df3b9c5ad62c7c64394",
+        "sha256": "2fe4c21c921e773a3959514b4e7248a0f95f4f53270605e6d1f8970090337ca2"
+      },
+      {
+        "path": "data-query/wren-ui/src/utils/kailoUser.ts",
+        "git_blob": "0d5fd637024ff25a95b0c298885b4f98e87d03e0",
+        "sha256": "d0846f2a78de7d73d38093b7f07c4107e4d887642dcfef3ec3667f104ed20cef"
+      },
+      {
+        "path": "data-query/wren-ui/src/utils/language.ts",
+        "git_blob": "b430f2ef4d0b96a78c4f4a6480d6abcfe04cc2f9",
+        "sha256": "7da293e793dd879a623e67a837b0495c15b8ad0efdbab932acc57f01ee145128"
+      },
+      {
+        "path": "data-query/wren-ui/src/utils/modelingHelper.ts",
+        "git_blob": "d36b5185da80f63f0a1b5fc0a469ebed279ac67a",
+        "sha256": "6063bb2749e22e317a8261e0aef4665f43b26619ab05ae3692d54b2abdd4e43a"
+      },
+      {
+        "path": "data-query/wren-ui/src/utils/nodeType.tsx",
+        "git_blob": "4e9c1e2c9ca3b41a4e0881e9f1d8febfd46e1e4b",
+        "sha256": "df437f31cfbfb2b892e75f7d4e941a67ba9938dec5c319a68ee1d296578515ff"
+      },
+      {
+        "path": "data-query/wren-ui/src/utils/queryReceipt.ts",
+        "git_blob": "4d4251bf5f21f729d09097b5b4859fff77c188c3",
+        "sha256": "738ab37eb9fc0f6a4f1e0abffe9e102cc35d5ac863059a9d442f492ca231f4b0"
+      },
+      {
+        "path": "data-query/wren-ui/src/utils/svgs/BrainSVG.tsx",
+        "git_blob": "0b0703f6b89d893a0fbd20891f149d63d099a961",
+        "sha256": "fd391abdb8cbe5e915e5c2bcbafc33ad5fb11322f7de717c96f94e8685c757f2"
+      },
+      {
+        "path": "data-query/wren-ui/src/utils/svgs/CopilotSVG.tsx",
+        "git_blob": "a9b49d780a82da54507c882e5dfa50d8d5dbd7de",
+        "sha256": "f9bacb78827689c8ba9ebc40b63841e6b16fa661f6a4cbfebd1ff3a36792c3c3"
+      },
+      {
+        "path": "data-query/wren-ui/src/utils/svgs/EditSVG.tsx",
+        "git_blob": "c8bfb3278a6fff135264a3b696479134d7c93669",
+        "sha256": "e507a929505e2744887dba7816fcc64643dd6aa4ac797cd01c5bffab31f6ce0a"
+      },
+      {
+        "path": "data-query/wren-ui/src/utils/svgs/InstructionsSVG.tsx",
+        "git_blob": "c2d2ced56a260ac352101028638de8e35db5ce24",
+        "sha256": "5f8a943b524c39f06e703c7f9c6d8aaf4066748b25d6319c67019afe43a02445"
+      },
+      {
+        "path": "data-query/wren-ui/src/utils/svgs/RobotSVG.tsx",
+        "git_blob": "cb01a03545956d6b1e95b5ce32c67dae9fd2f259",
+        "sha256": "af2053c938088e057d6112dd4dd4fa3c4ab0e0db44870637e4952b21ab379ce6"
+      },
+      {
+        "path": "data-query/wren-ui/src/utils/svgs/index.ts",
+        "git_blob": "33f735c12feb59b81766bc3c104dc3cafb61bc5d",
+        "sha256": "7d9aff2f4ae87f3c446f45fb8250dcf4adc09811e7ca7778b8125e213025b7f6"
+      },
+      {
+        "path": "data-query/wren-ui/src/utils/table.tsx",
+        "git_blob": "a6910f8d08fe1af7d574eabca4621557555556a1",
+        "sha256": "6967976e6f5450adc97d2ebc7d881a0c18a0fdcc3b0fa659ed03157e0e53f1e0"
+      },
+      {
+        "path": "data-query/wren-ui/src/utils/time.ts",
+        "git_blob": "ec5c538c407e2cb57bef1220610c115a03c9f79e",
+        "sha256": "c1a69dace30c4fcb73f4e12b2227a36adbea21f1f923c9e39f253e51526506cc"
+      },
+      {
+        "path": "data-query/wren-ui/src/utils/validator/calculatedFieldValidator.ts",
+        "git_blob": "f26942bed75bf61494dcedf779c87e9e470fd53b",
+        "sha256": "17481c440d0c09a73fb2131af498f7b49d9348a1d0f9075520656d7e96908203"
+      },
+      {
+        "path": "data-query/wren-ui/src/utils/validator/cronValidator.ts",
+        "git_blob": "4dc0863d575dcac60b58202eaf2f61eb7d578818",
+        "sha256": "20e280f70c1306a0e91dca6887fe513707202bbf5dc1b5c223a1f4e013a26b2c"
+      },
+      {
+        "path": "data-query/wren-ui/src/utils/validator/hostValidator.ts",
+        "git_blob": "05ac1dd588b614b4d24cc1c4455a4f621a9bfe92",
+        "sha256": "5c583856caf34776e13d557f0c9865a02796acb0001f4308ed08baf5fc910ed0"
+      },
+      {
+        "path": "data-query/wren-ui/src/utils/validator/index.ts",
+        "git_blob": "0fd73de67c310c30e916d97049ecd93cdd498a98",
+        "sha256": "e8b0fc5fe1b9041188d683abd8d9faf9f396a0e4e533c8f95f27949c73c99dde"
+      },
+      {
+        "path": "data-query/wren-ui/src/utils/validator/relationshipValidator.ts",
+        "git_blob": "31873157d3dec36413e0537bf598aa0b12b599d7",
+        "sha256": "dcca76cb1a56406a20443ed13061f76e389c46d759a3f6d66152bf1ce8bd9729"
+      },
+      {
+        "path": "data-query/wren-ui/src/utils/validator/sqlPairValidator.ts",
+        "git_blob": "63a1c47d5e7a7fcc6db66b827440243d19da8a17",
+        "sha256": "43218382f6bc1d9fd70d02e472480f0ecc42ca2ae899d3202df386e9384f8948"
+      },
+      {
+        "path": "data-query/wren-ui/src/utils/validator/viewValidator.ts",
+        "git_blob": "0a3b9e36683d897dadea6101c52f77d1f61da862",
+        "sha256": "bfa2551c5c0d003a208091d8027ebe71548da2a0333851570dd6fe3f525feab6"
+      },
+      {
+        "path": "data-query/wren-ui/src/utils/vegaSpecUtils.test.ts",
+        "git_blob": "2e092aca6c519a15e7cf12bf7036e1d11f6e6f73",
+        "sha256": "80117ae047be1c24bc48337798a373efa9026d84c1dd0aa8504739b8f3e6b043"
+      },
+      {
+        "path": "data-query/wren-ui/src/utils/vegaSpecUtils.ts",
+        "git_blob": "615f65e8a6141ea923bdcd2e03e653064b3970cb",
+        "sha256": "72fc3a6becce58daec9ce79050f3652ca672a0ad858b15f607eef7f3ce7b9334"
+      },
+      {
+        "path": "data-query/wren-ui/src/viewMetadata.test.ts",
+        "git_blob": "443099977eb5ec9369b21bc84654276c2fc874ad",
+        "sha256": "bdcb423a312425de2bb7e35451b70b275bad433ba1fab14486c5084b40b8bae5"
+      },
+      {
+        "path": "data-query/wren-ui/tools/knex.js",
+        "git_blob": "0324ea66f4949224bbd768472f7bdb84fa828a11",
+        "sha256": "5789970f9fb2533fbd0ceaefbe3bbe313015367c66a0c6f6b46016da4fbeb9a0"
+      },
+      {
+        "path": "data-query/wren-ui/tsconfig.json",
+        "git_blob": "bc5a18426d65891d7350faabbb69043b695da06b",
+        "sha256": "6ef3fb8f42d8bb3c17b3a61191d7f2aab8f0f1eb61cb1008e99cab640308eae1"
+      },
+      {
+        "path": "data-query/wren-ui/yarn.lock",
+        "git_blob": "6a434ca724fc69c6205f3e1b32849c09fcddaf78",
+        "sha256": "9642db37549a19257a8012c6bb3bcbd0c72cc787ed486defce80c3a407a467e9"
+      },
+      {
+        "path": "tools/container-safety.sh",
+        "git_blob": "506fba9031f891f154fb64d7b9e94739e7e8e6bb",
+        "sha256": "2397941d54f7b2b7c60c4fd7beae4f8e9d87e7f8171920734f92ed566607934a"
+      }
+    ]
+  },
+  "cleanup": {
+    "own_sdk_absent": true,
+    "own_pg_absent": true,
+    "own_internal_network_absent": true
+  },
+  "scope": [
+    "All four original files ran without test-name filtering in the normal check; all seven previous PostgreSQL conditional skips executed.",
+    "Other repository groups switched from SQLite to PostgreSQL using their original environment selection; askingStream has no PG requirement but ran in the original four-file set.",
+    "Negative/restoration commands intentionally selected only the original PG groups. Their nonselected counts do not describe the full four-file result.",
+    "No product changes. Types/lint/format already checked on equivalent UI source and not redundantly rerun.",
+    "No live Core/AI provider/receiver/browser or official artifact acceptance; production configuration/deployment/trust/shared databases unchanged."
+  ],
+  "logs": {
+    "wren-four-pg-aea3abe0750f8caaf7c46c898d88f1a9b0efbb3c-check": [
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-four-pg-aea3abe0750f8caaf7c46c898d88f1a9b0efbb3c-check/check.exit",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-four-pg-aea3abe0750f8caaf7c46c898d88f1a9b0efbb3c-check/complete.log",
+        "sha256": "0f6992b8e734243a8c97297db3598efb385499c6402d49989ad3337916e560e9"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-four-pg-aea3abe0750f8caaf7c46c898d88f1a9b0efbb3c-check/consumers.exit",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-four-pg-aea3abe0750f8caaf7c46c898d88f1a9b0efbb3c-check/consumers.log",
+        "sha256": "a80d7f9ac11aee47d2141dd421d4c143724bcd8a05fae0a29922fc2d4aa626da"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-four-pg-aea3abe0750f8caaf7c46c898d88f1a9b0efbb3c-check/final-state.json",
+        "sha256": "74e7113af8a4c933a01d5a19055f4320f129c1797fdf14b74a4e1baceb52895b"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-four-pg-aea3abe0750f8caaf7c46c898d88f1a9b0efbb3c-check/limits.log",
+        "sha256": "690be83cd0e7336caaad8dd8fb7e1b6ed5a016ac955f5eb1e2e3087f88bc9030"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-four-pg-aea3abe0750f8caaf7c46c898d88f1a9b0efbb3c-check/pg-image.log",
+        "sha256": "629fcfe34d0defbb56564751db7a58388f8eeefacf5ad700aacf8ce0d3b9a501"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-four-pg-aea3abe0750f8caaf7c46c898d88f1a9b0efbb3c-check/pg-limits.log",
+        "sha256": "c1e8179fe95c9dbb481911e8081d3eb0314765e9eb8ef815a7b681e123365e44"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-four-pg-aea3abe0750f8caaf7c46c898d88f1a9b0efbb3c-check/preflight.log",
+        "sha256": "b583d3b21a364a68a19ffeeb88913e4aac6b1c282710e40d92e0660948ffbefe"
+      }
+    ],
+    "wren-four-pg-aea3abe0750f8caaf7c46c898d88f1a9b0efbb3c-fault": [
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-four-pg-aea3abe0750f8caaf7c46c898d88f1a9b0efbb3c-fault/check.exit",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-four-pg-aea3abe0750f8caaf7c46c898d88f1a9b0efbb3c-fault/cleanup.log",
+        "sha256": "1e909a549fb3d26172a2c8cd0a7fc924499217946405fdddbd12c2fd8680070b"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-four-pg-aea3abe0750f8caaf7c46c898d88f1a9b0efbb3c-fault/complete.log",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-four-pg-aea3abe0750f8caaf7c46c898d88f1a9b0efbb3c-fault/fault-closed-generation.exit",
+        "sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-four-pg-aea3abe0750f8caaf7c46c898d88f1a9b0efbb3c-fault/fault-closed-generation.log",
+        "sha256": "2ea7a9a5f7020c6491d16d280160ae6353365ba3abe09dabb5f731370dafad56"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-four-pg-aea3abe0750f8caaf7c46c898d88f1a9b0efbb3c-fault/fault-first-binding.exit",
+        "sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-four-pg-aea3abe0750f8caaf7c46c898d88f1a9b0efbb3c-fault/fault-first-binding.log",
+        "sha256": "c04f31cc441ad4fb4fa988fee80991623a478d32fe6077c81b893f42f7a7f248"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-four-pg-aea3abe0750f8caaf7c46c898d88f1a9b0efbb3c-fault/fault-results.json",
+        "sha256": "3722606c9a0ff72cf3168e2a71c000632747abaafdacc235a9f84023918dba24"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-four-pg-aea3abe0750f8caaf7c46c898d88f1a9b0efbb3c-fault/final-state.json",
+        "sha256": "e21208db6686c677e4c704406900e583d9640a7213f40989ca0bcb4cecdd44c9"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-four-pg-aea3abe0750f8caaf7c46c898d88f1a9b0efbb3c-fault/input-manifest.json",
+        "sha256": "0678cf4276b086e79d9ad57c0897160539a4d463382a33a13e66c967d1a0c024"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-four-pg-aea3abe0750f8caaf7c46c898d88f1a9b0efbb3c-fault/limits.log",
+        "sha256": "6a3c45db3e744426fe5459dd4b63bb192662f751c76db080e67d69ac3eb729d0"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-four-pg-aea3abe0750f8caaf7c46c898d88f1a9b0efbb3c-fault/pg-image.log",
+        "sha256": "629fcfe34d0defbb56564751db7a58388f8eeefacf5ad700aacf8ce0d3b9a501"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-four-pg-aea3abe0750f8caaf7c46c898d88f1a9b0efbb3c-fault/pg-limits.log",
+        "sha256": "c1e8179fe95c9dbb481911e8081d3eb0314765e9eb8ef815a7b681e123365e44"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-four-pg-aea3abe0750f8caaf7c46c898d88f1a9b0efbb3c-fault/preflight.log",
+        "sha256": "a1a81a26ebd04f0d1aa86f987cdc5f46f611fbc631dcbf3851ee3dadc52c6d02"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-four-pg-aea3abe0750f8caaf7c46c898d88f1a9b0efbb3c-fault/restored-closed-generation.exit",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-four-pg-aea3abe0750f8caaf7c46c898d88f1a9b0efbb3c-fault/restored-closed-generation.log",
+        "sha256": "2bd92cdae47bce29f08e4ac1047dc166dd6c50d9c8e0b3fcdc9db626beacecf1"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-four-pg-aea3abe0750f8caaf7c46c898d88f1a9b0efbb3c-fault/restored-first-binding.exit",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "path": "/volumes/data/kailo/verification/buzz-r10/wren-four-pg-aea3abe0750f8caaf7c46c898d88f1a9b0efbb3c-fault/restored-first-binding.log",
+        "sha256": "472a25f3d217c1b90c2fbfd3539b6db623e12193b76b5a6fafed0f122917e5c9"
+      }
+    ]
+  }
+}

@@ -78,9 +78,20 @@ class EmptyStateView extends Component{
                 color: muiTheme.palette.mui3.primary
             }
         };
+        // DD-157 (20 §13.6 空态): Kailo empty state — no tinted (white in dark) box,
+        // a 64px brand line icon, title 17/24 600, description 14 muted, one action.
+        const kailo = typeof window !== 'undefined' && window.KailoCells && window.KailoCells.kailoMode && window.KailoCells.kailoMode()
+        if (kailo) {
+            styles.container = {...styles.container, backgroundColor: 'transparent'}
+            styles.centered = {...styles.centered, maxWidth: 320, color: 'var(--kailo-color-muted-foreground)'}
+            styles.icon = {...styles.icon, fontSize: 64, lineHeight: '64px', color: 'var(--kailo-color-brand)', marginBottom: 16}
+            styles.primaryText = {...styles.primaryText, fontSize: 17, lineHeight: '24px', fontWeight: 600, color: 'var(--kailo-color-foreground)'}
+            styles.secondaryText = {...styles.secondaryText, marginTop: 4, fontSize: 14, lineHeight: '20px', color: 'var(--kailo-color-muted-foreground)'}
+            styles.buttonContainer = {...styles.buttonContainer, marginTop: 16}
+        }
         const buttonIcon = actionIconClassName ? <FontIcon className={actionIconClassName}/> : null;
         return (
-            <div style={styles.container}>
+            <div style={styles.container} className={"kailo-empty-state"}>
                 <div style={styles.centered}>
                     <div className={iconClassName} style={styles.icon}/>
                     <div style={styles.primaryText}>{getMessage(primaryTextId)}</div>

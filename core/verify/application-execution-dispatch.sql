@@ -137,7 +137,9 @@ BEGIN
    resource:=gen_random_uuid(); ee:=gen_random_uuid(); event_id:=gen_random_uuid(); workflow:='isolated-ee-'||business_ae;
    INSERT INTO admission.action_execution(id,operation_id,tenant_id,action_key,action_version,
      initiator_principal_id,actor_principal_id,target_id,parameter_hash,gate_state,dispatch_state,correlation_id)
-   VALUES(create_ae,create_ae,tenant,'application_binding.create',1,human,human,binding,repeat('a',64),'ALLOWED','DISPATCHED',create_ae);
+   VALUES(create_ae,create_ae,tenant,'application_binding.create',1,human,human,binding,repeat('a',64),
+     CASE WHEN current_setting('kailo.fixture_pending_human_exposure',true)='on' THEN 'EVALUATING' ELSE 'ALLOWED' END,
+     CASE WHEN current_setting('kailo.fixture_pending_human_exposure',true)='on' THEN 'NOT_DISPATCHED' ELSE 'DISPATCHED' END,create_ae);
    INSERT INTO catalog.application_binding(id,tenant_id,component_type_key,component_release_id,service_principal_id,
      adapter_service_ref,native_instance_ref,isolation_mode,call_identity_mode,capability_categories,normalized_config,
      config_digest,secret_refs,model_call_mode,retain_on_tenant_delete,state,version,created_by_action_execution_id,projection_action_execution_id)
@@ -146,6 +148,12 @@ BEGIN
    INSERT INTO projection.application_runtime(binding_id,generation,component_release_id,normalized_manifest_digest,
      adapter_contract_digest,state,action_execution_id)
    VALUES(binding,1,release,repeat('d',64),repeat('b',64),'PENDING',create_ae);
+   -- Opt-in only for the Rust producer test: let Core materialize before the
+   -- fixture activation. Normal dispatch tests retain their original path.
+   IF current_setting('kailo.fixture_pending_human_exposure',true)='on' THEN
+     INSERT INTO application_dispatch_fixture VALUES(business_ae,binding,release,workflow,ee);
+     CONTINUE;
+   END IF;
    BEGIN
      UPDATE catalog.application_binding SET state='ACTIVE',version=2,active_projection_generation=1,native_scope_ref='isolated-scope' WHERE id=binding;
      RAISE EXCEPTION 'ACTIVE WITHOUT OBSERVATION ACCEPTED';

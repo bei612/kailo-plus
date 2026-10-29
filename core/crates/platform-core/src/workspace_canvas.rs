@@ -27,7 +27,6 @@ use contracts::{ActionCommand, ActionSubmission, EvidenceKind, ReasonCode};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use sqlx::{Postgres, Transaction};
-use std::time::Duration;
 use uuid::Uuid;
 
 use crate::{
@@ -58,7 +57,6 @@ struct Intent {
     control_pubkey: String,
     event_id: String,
     event_created_at: i64,
-    relay_ack: String,
     outcome: Option<String>,
 }
 
@@ -291,7 +289,6 @@ pub(crate) async fn submit(
             control_pubkey: control.pubkey_hex(),
             event_id,
             event_created_at: created_at,
-            relay_ack: "UNKNOWN".into(),
             outcome: None,
         },
         &digest,
@@ -318,7 +315,7 @@ pub(crate) async fn submit(
     deliver(state, &ae, &definition, &control, &event)
         .await
         .map_err(|e| (e, Some(ae.operation_id)))?;
-    finish(&state.memory_service, Some(ctx), ae.id, None)
+    finish(&state.memory_service, Some(ctx), ae.id)
         .await
         .map_err(|e| (e, Some(ae.operation_id)))
 }
@@ -372,7 +369,7 @@ async fn replay(
             .and_then(crate::governance::parse::<ReasonCode>);
         return Err((rejected(reason), operation));
     }
-    finish(&state.memory_service, Some(ctx), ae.id, None)
+    finish(&state.memory_service, Some(ctx), ae.id)
         .await
         .map_err(|e| (e, operation))
 }
@@ -565,7 +562,7 @@ async fn deliver(
     let admitted = control
         .admit()
         .map_err(|_| unavailable("Canvas Relay budget unavailable"))?;
-    let ack = match control.deliver(&state.http, event, admitted).await {
+    let ack = match control.deliver(&state.relay_http, event, admitted).await {
         Delivery::Accepted => "ACCEPTED",
         Delivery::Rejected(why) => {
             tracing::warn!(reason = %why, "Relay rejected the Canvas event");
@@ -605,7 +602,7 @@ async fn deliver(
     Ok(())
 }
 
-/// Relay refused, limited or never stored the event: the Canvas did not change. The dispatch
+/// Relay explicitly refused or limited the event: the Canvas did not change. The dispatch
 /// is aborted with that definite reason; a new attempt needs a new key.
 async fn settle_not_written(
     tx: &mut Transaction<'_, Postgres>,
@@ -642,14 +639,13 @@ async fn settle_not_written(
 }
 
 /// Read-only recovery shared by the request, its idempotent replays and the reconciler.
-/// Present at Relay by event ID: DISPATCHED. Absent after the Relay timestamp window with no
-/// acknowledgement (`settle`, reconciler only): it can never be accepted, so it is not
-/// written. Otherwise it stays UNKNOWN and the caller sees the pending operation.
+/// Present at Relay by verified event ID: DISPATCHED. A filtered absence or a failed
+/// read stays UNKNOWN, even after the timestamp window. Only delivery's explicit
+/// refusal or pre-ingest limit can establish NOT_WRITTEN.
 async fn finish(
     service: &ServiceState,
     ctx: Option<&ExecutionContext>,
     id: Uuid,
-    settle: Option<Duration>,
 ) -> Result<(StatusCode, ActionSubmission), Refusal> {
     let mut tx = service.pool.begin().await?;
     let ae = crate::governance::lock_execution(&mut tx, id).await?;
@@ -670,7 +666,7 @@ async fn finish(
     }
     let intent: Intent = sqlx::query_as(
         "select action_execution_id, tenant_id, workspace_id, channel_id, control_pubkey,
-                event_id, event_created_at, relay_ack, outcome
+                event_id, event_created_at, outcome
          from admission.workspace_canvas_intent where action_execution_id = $1 for update",
     )
     .bind(id)
@@ -690,48 +686,14 @@ async fn finish(
     let control = control_client(service, ae.tenant_id, ProjectionDirection::Withdraw).await;
     let observed = match control {
         Ok((control, _)) if control.pubkey_hex() == intent.control_pubkey => control
-            .event_exists(&service.http, &intent.event_id)
+            .event_exists(&service.relay_http, &intent.event_id)
             .await
             .ok(),
         _ => None,
     };
-    let evidence = vec![Evidence::new(EvidenceKind::BuzzEventId, &intent.event_id)];
-    match observed {
-        Some(true) => {
-            sqlx::query(
-                "update admission.workspace_canvas_intent
-                 set relay_ack = 'ACCEPTED', outcome = 'VERIFIED', settled_at = now()
-                 where action_execution_id = $1 and outcome is null",
-            )
-            .bind(ae.id)
-            .execute(&mut *tx)
-            .await?;
-            let stage = Stage::outcome("verify", "VERIFIED");
-            audit(&mut tx, &ae, &definition, stage, evidence.clone()).await?;
-            crate::governance::record_dispatch(
-                &mut tx,
-                ae.id,
-                definition.audit_class(),
-                Ok(()),
-                evidence,
-            )
-            .await?;
-        }
-        Some(false) if intent.relay_ack != "ACCEPTED" && settled(&intent, settle) => {
-            let stage = Stage {
-                key: "reconcile",
-                event_type: "RECONCILIATION",
-                decision: "ALLOW",
-                result: "NOT_DELIVERED",
-            };
-            audit(&mut tx, &ae, &definition, stage, evidence.clone()).await?;
-            let reason = ReasonCode::DependencyUnavailable;
-            settle_not_written(&mut tx, &ae, &definition, reason, evidence).await?;
-        }
-        _ => {
-            tx.commit().await?;
-            return Ok((StatusCode::ACCEPTED, ae.submission()));
-        }
+    if !apply_observation(&mut tx, &ae, &definition, &intent, observed).await? {
+        tx.commit().await?;
+        return Ok((StatusCode::ACCEPTED, ae.submission()));
     }
     tx.commit().await?;
     let current = crate::governance::load_execution(&service.pool, id)
@@ -741,6 +703,40 @@ async fn finish(
         return Err(not_written(&current));
     }
     Ok((StatusCode::OK, current.submission()))
+}
+
+/// Only verified positive observation changes the existing intent. Missing and
+/// unavailable ordinary reads have identical UNKNOWN semantics at every age.
+async fn apply_observation(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    ae: &Execution,
+    definition: &Definition,
+    intent: &Intent,
+    observed: Option<bool>,
+) -> Result<bool, Refusal> {
+    if observed != Some(true) {
+        return Ok(false);
+    }
+    let evidence = vec![Evidence::new(EvidenceKind::BuzzEventId, &intent.event_id)];
+    sqlx::query(
+        "update admission.workspace_canvas_intent
+         set relay_ack = 'ACCEPTED', outcome = 'VERIFIED', settled_at = now()
+         where action_execution_id = $1 and outcome is null",
+    )
+    .bind(ae.id)
+    .execute(&mut **tx)
+    .await?;
+    audit(
+        tx,
+        ae,
+        definition,
+        Stage::outcome("verify", "VERIFIED"),
+        evidence.clone(),
+    )
+    .await?;
+    crate::governance::record_dispatch(tx, ae.id, definition.audit_class(), Ok(()), evidence)
+        .await?;
+    Ok(true)
 }
 
 /// A definite "the Canvas did not change": the caller may try again with a new key.
@@ -756,23 +752,9 @@ fn not_written(ae: &Execution) -> Refusal {
     }
 }
 
-/// Only the reconciler decides "never delivered", once the Relay timestamp window has passed.
-fn settled(intent: &Intent, settle: Option<Duration>) -> bool {
-    let Some(settle) = settle else {
-        return false;
-    };
-    let now = chrono::Utc::now().timestamp();
-    let window = i64::try_from(settle.as_secs()).unwrap_or(i64::MAX);
-    now.saturating_sub(intent.event_created_at) > window
-}
-
-/// Called by the existing publication reconciler tick (DD-81) with its batch and the Relay
-/// timestamp window. It only reads back fixed event IDs; it never signs or delivers.
-pub(crate) async fn reconcile(
-    state: &ServiceState,
-    batch: i64,
-    settle: Duration,
-) -> Result<(), String> {
+/// Called by the existing publication reconciler tick (DD-81) with its batch.
+/// It only reads back fixed event IDs; it never signs or delivers.
+pub(crate) async fn reconcile(state: &ServiceState, batch: i64) -> Result<(), String> {
     let ids: Vec<Uuid> = sqlx::query_scalar(
         "with selected as (
            select a.id from admission.action_execution a
@@ -790,7 +772,7 @@ pub(crate) async fn reconcile(
     .await
     .map_err(|e| e.to_string())?;
     for id in ids {
-        if let Err(error) = finish(state, None, id, Some(settle)).await {
+        if let Err(error) = finish(state, None, id).await {
             tracing::warn!(action_execution_id = %id,
                 reason_code = %crate::governance::wire(&error.reason()),
                 "Canvas event reconciliation incomplete; no re-sign or re-delivery");
@@ -931,7 +913,7 @@ pub async fn read(
     }
     let filter = json!({"kinds": [KIND_CANVAS], "#h": [scope.channel_id],
         "authors": [control], "limit": 1});
-    let page = match client.query(&state.http, &[filter]).await {
+    let page = match client.query(&state.relay_http, &[filter]).await {
         Ok(page) => page,
         Err(error) => return relay_error_response(&error, None),
     };
@@ -1087,25 +1069,76 @@ mod tests {
         ));
     }
 
-    #[test]
-    fn reconciler_decides_not_delivered_only_after_the_window() {
-        let intent = |at: i64| Intent {
-            action_execution_id: Uuid::nil(),
-            tenant_id: Uuid::nil(),
-            workspace_id: Uuid::nil(),
-            channel_id: Uuid::nil(),
-            control_pubkey: String::new(),
-            event_id: String::new(),
-            event_created_at: at,
-            relay_ack: "UNKNOWN".into(),
-            outcome: None,
-        };
-        let now = chrono::Utc::now().timestamp();
-        assert!(!settled(&intent(now - 1_000), None));
-        assert!(!settled(&intent(now), Some(Duration::from_secs(120))));
-        assert!(settled(
-            &intent(now - 1_000),
-            Some(Duration::from_secs(120))
-        ));
+    #[tokio::test]
+    #[ignore = "requires PUBLICATION_ABSENCE_TEST_DATABASE_URL pointing at an isolated migrated database"]
+    async fn historical_absence_canvas_replay_stays_unknown_until_positive_evidence() {
+        let mut tx = crate::agent_profile::tests::absence_fixture().await;
+        let id: Uuid =
+            sqlx::query_scalar("select id from absence_fixture where label='canvas-false'")
+                .fetch_one(&mut *tx)
+                .await
+                .unwrap();
+        let ae = crate::governance::lock_execution(&mut tx, id)
+            .await
+            .unwrap();
+        assert_eq!(ae.dispatch_state, "UNKNOWN");
+        assert!(ae.reason_code.is_none());
+        let definition: Definition = sqlx::query_as(&format!(
+            "select {} from catalog.action_definition where action_key=$1 and version=1",
+            crate::governance::DEFINITION_COLUMNS
+        ))
+        .bind(ACTION)
+        .fetch_one(&mut *tx)
+        .await
+        .unwrap();
+        let intent: Intent = sqlx::query_as("select action_execution_id,tenant_id,workspace_id,channel_id,control_pubkey,event_id,event_created_at,outcome from admission.workspace_canvas_intent where action_execution_id=$1").bind(id).fetch_one(&mut *tx).await.unwrap();
+        assert_eq!(
+            intent.event_created_at, 1,
+            "old signed time cannot establish absence"
+        );
+        for observed in [Some(false), None] {
+            assert!(
+                !apply_observation(&mut tx, &ae, &definition, &intent, observed)
+                    .await
+                    .unwrap()
+            );
+            let current = crate::governance::lock_execution(&mut tx, id)
+                .await
+                .unwrap();
+            assert_eq!(current.dispatch_state, "UNKNOWN");
+            let outcome: Option<String> = sqlx::query_scalar("select outcome from admission.workspace_canvas_intent where action_execution_id=$1").bind(id).fetch_one(&mut *tx).await.unwrap();
+            assert!(outcome.is_none());
+        }
+        assert!(
+            apply_observation(&mut tx, &ae, &definition, &intent, Some(true))
+                .await
+                .unwrap()
+        );
+        let current = crate::governance::lock_execution(&mut tx, id)
+            .await
+            .unwrap();
+        assert_eq!(current.dispatch_state, "DISPATCHED");
+        let audit: Vec<(String,String)> = sqlx::query_as("select event_type,result_code from audit.audit_event where operation_id=$1 order by event_key").bind(ae.operation_id).fetch_all(&mut *tx).await.unwrap();
+        assert!(audit.contains(&("RECONCILIATION".into(), "NOT_DELIVERED".into())));
+        assert!(audit.contains(&("RECONCILIATION".into(), "UNKNOWN".into())));
+        assert!(audit.contains(&("OUTCOME".into(), "VERIFIED".into())));
+        sqlx::query("savepoint cannot_restore_false_negative")
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        assert!(
+            sqlx::raw_sql(include_str!(
+                "../../../migrations/20261101010000_publication_absence_correction.down.sql"
+            ))
+            .execute(&mut *tx)
+            .await
+            .is_err(),
+            "rollback cannot revive the false terminal"
+        );
+        sqlx::query("rollback to savepoint cannot_restore_false_negative")
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        tx.rollback().await.unwrap();
     }
 }

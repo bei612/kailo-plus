@@ -37,9 +37,10 @@ SpiceDB 不能按 SQL 转储恢复：它的 revision 是 Postgres 事务 id，�
 ## 可执行步骤
 
 1. **备份**（定期，或在已知风险操作之前）：`deploy/local/dr-backup.sh <目录>`。备份目录含凭据与全部业务数据，权限 700，存放位置与 secrets 同级管控。
-2. **关闭入口**：`docker compose stop agentgateway`。恢复与对账完成前，任何用户不可达。
-3. **恢复**：`deploy/local/dr-restore.sh <目录>`。顺序固定：OpenBao → Core 数据库 → Relay 数据库、Temporal 数据库、SpiceDB、MinIO、IdP → 启动其余服务（公开入口除外）。脚本在备份校验不通过、任一步失败时停止。
+2. **关闭入口与发布者**：`docker compose stop agentgateway core-bff worker buzz-relay`。Relay 的独立原生端口同时关闭；恢复期间不服务消息写入或送达查证。
+3. **恢复**：`deploy/local/dr-restore.sh <目录>`。先停止公开入口、Core、Worker 和有独立原生端口的 Relay，再按 OpenBao → Core 数据库 → Relay 数据库、Temporal 数据库、SpiceDB、MinIO、IdP 恢复，最后启动其余服务（公开入口除外）。恢复 Relay 数据库后、启动任何 writer 或查证接口之前，原脚本轮换现存 Community 的 publication epoch；老备份没有该字段时由原后续迁移生成新值，不手工伪造迁移版本。恢复前的缺失证据不能授权恢复后的重发。备份校验不通过或本次 epoch 轮换失败时停止。
 4. **入口关闭时核验**，全部满足才继续：
+   - 每个 ACTIVE Community 的 NIP-11 `publication_policy` 与实际 writer 屏障一致，epoch 为恢复后的新值；旧 epoch 的缺失证明不得授权重发；
    - Core 各表计数与备份时一致（审计、Tenant、WorkflowRef、BuzzIdentityBinding）；
    - 备份前发出的消息在 Relay 上可读；
    - 一次新的代签发布成功（Core 从恢复的 OpenBao 取私钥）；

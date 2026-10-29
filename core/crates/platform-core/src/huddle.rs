@@ -580,7 +580,7 @@ async fn is_participant(
     .with_budget(state.relay_budget.clone());
     let channel = binding.channel_id.to_string();
     let roster = control
-        .roster(&state.http, Scope::Channel(&channel))
+        .roster(&state.relay_http, Scope::Channel(&channel))
         .await
         .map_err(|_| Refusal::Unavailable("Huddle 临时频道 roster 不可读".into()))?;
     Ok(roster.iter().any(|entry| mine.contains(&entry.pubkey)))
@@ -1138,7 +1138,7 @@ async fn drive_start(
     let channel = binding.channel_id.to_string();
     match control
         .ensure_huddle_channel(
-            &state.http,
+            &state.relay_http,
             &channel,
             &binding.channel_name,
             &binding.creator_pubkey,
@@ -1168,7 +1168,7 @@ async fn drive_start(
         let scope = Scope::Channel(&channel);
         let present = Presence::Present;
         if let Err(e) = control
-            .converge_with_role(&state.http, scope, &pubkey, present, Some("bot"))
+            .converge_with_role(&state.relay_http, scope, &pubkey, present, Some("bot"))
             .await
         {
             tracing::warn!(error = %e, huddle = %binding.id, "Huddle Agent 加入未收敛，留给对账");
@@ -1218,7 +1218,7 @@ async fn drive_agent(
     for pubkey in &pubkeys {
         let scope = Scope::Channel(&channel);
         if let Err(e) = control
-            .converge_with_role(&state.http, scope, pubkey, want, role)
+            .converge_with_role(&state.relay_http, scope, pubkey, want, role)
             .await
         {
             tracing::warn!(error = %e, huddle = %binding.id, "Huddle Agent roster 未收敛，留给对账");
@@ -1238,7 +1238,7 @@ async fn drive_end(
         return Ok(verified(Vec::new()));
     }
     let channel = binding.channel_id.to_string();
-    let archived = match control.channel_archived(&state.http, &channel).await {
+    let archived = match control.channel_archived(&state.relay_http, &channel).await {
         Ok(archived) => archived,
         Err(e) => {
             tracing::warn!(error = %e, huddle = %binding.id, "Huddle 临时频道状态不可读，留给对账");
@@ -1255,7 +1255,7 @@ async fn drive_end(
         for pubkey in agent_pubkeys_any(&state.pool, binding.tenant_id, *installation).await? {
             let scope = Scope::Channel(&channel);
             if let Err(e) = control
-                .converge(&state.http, scope, &pubkey, Presence::Absent)
+                .converge(&state.relay_http, scope, &pubkey, Presence::Absent)
                 .await
             {
                 // 原版先移出 Agent 再归档；归档本身就结束房间，移出未收敛不阻止结束
@@ -1264,7 +1264,7 @@ async fn drive_end(
         }
     }
     match control
-        .converge_channel_archived(&state.http, &channel, true)
+        .converge_channel_archived(&state.relay_http, &channel, true)
         .await
     {
         Ok(true) => Ok(verified(Vec::new())),
@@ -1472,7 +1472,9 @@ async fn observe_ended(state: &ServiceState, batch: i64) -> Result<(), Refusal> 
             continue;
         };
         let channel_text = channel.to_string();
-        let archived = control.channel_archived(&state.http, &channel_text).await;
+        let archived = control
+            .channel_archived(&state.relay_http, &channel_text)
+            .await;
         let ended = match archived {
             Ok(Some(true)) => true,
             Ok(_) => {
@@ -1482,7 +1484,7 @@ async fn observe_ended(state: &ServiceState, batch: i64) -> Result<(), Refusal> 
                     "#h": [parent.to_string()],
                     "limit": LIFECYCLE_PAGE,
                 });
-                match control.query(&state.http, &[filter]).await {
+                match control.query(&state.relay_http, &[filter]).await {
                     Ok(page) => serde_json::from_value::<Vec<nostr::Event>>(page)
                         .unwrap_or_default()
                         .iter()
@@ -1561,7 +1563,7 @@ pub(crate) async fn withdraw(
     .map_err(|e| e.to_string())?;
     for channel in channels {
         let channel = channel.to_string();
-        match control.channel_archived(&state.http, &channel).await {
+        match control.channel_archived(&state.relay_http, &channel).await {
             Ok(Some(true)) | Ok(None) => continue,
             Ok(Some(false)) => {}
             Err(e) => return Err(e.to_string()),
@@ -1569,7 +1571,7 @@ pub(crate) async fn withdraw(
         for pubkey in pubkeys {
             control
                 .converge(
-                    &state.http,
+                    &state.relay_http,
                     Scope::Channel(&channel),
                     pubkey,
                     Presence::Absent,
@@ -1602,12 +1604,12 @@ pub(crate) async fn archive_workspace(
     .map_err(|e| e.to_string())?;
     for (id, channel) in rows {
         let channel = channel.to_string();
-        let ended = match control.channel_archived(&state.http, &channel).await {
+        let ended = match control.channel_archived(&state.relay_http, &channel).await {
             // 投影从未落地：没有频道，也没有房间
             Ok(None) => true,
             Ok(Some(true)) => true,
             Ok(Some(false)) => control
-                .converge_channel_archived(&state.http, &channel, true)
+                .converge_channel_archived(&state.relay_http, &channel, true)
                 .await
                 .map_err(|e| e.to_string())?,
             Err(e) => return Err(e.to_string()),
@@ -1817,7 +1819,7 @@ pub async fn lifecycle(
     let limit = LIFECYCLE_PAGE.min(state.message_page_limit);
     let page = match client
         .query(
-            &state.http,
+            &state.relay_http,
             &[wire::lifecycle_filter(&parent.channel_id, limit)],
         )
         .await
@@ -1960,7 +1962,7 @@ async fn deliver_once(
     let admitted = client
         .admit()
         .map_err(|e| crate::web_transport::relay_error_response(&e, None))?;
-    match client.deliver(&state.http, event, admitted).await {
+    match client.deliver(&state.relay_http, event, admitted).await {
         Delivery::Accepted => Ok(true),
         Delivery::Rejected(why) => {
             tracing::info!(reason = %why, kind = event.kind.as_u16(), "Relay 拒绝本人 Huddle 事件");
@@ -1970,7 +1972,7 @@ async fn deliver_once(
         Delivery::Unknown(why) => {
             tracing::warn!(error = %why, "本人 Huddle 事件发送结果不明，按事件 ID 回读");
             Ok(client
-                .event_exists(&state.http, &event.id.to_hex())
+                .event_exists(&state.relay_http, &event.id.to_hex())
                 .await
                 .unwrap_or(false))
         }

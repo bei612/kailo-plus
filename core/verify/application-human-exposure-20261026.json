@@ -1,0 +1,52 @@
+{
+  "sourceCommit": "6f3d89cfabe795b51bf53d395065e58044ae5e52",
+  "sourceTransport": "CI direct GitHub fetch, CI-local git archive",
+  "containers": [
+    {
+      "name": "human-exposure-6f3d89cfa-sdk",
+      "image": "sha256:3007729eb192341a4f004a88e42e1e66c94fc67d763acfc96568bd7311116018",
+      "state": {
+        "Status": "exited",
+        "ExitCode": 0,
+        "OOMKilled": false,
+        "StartedAt": "2026-10-26T16:48:10.943165596Z",
+        "FinishedAt": "2026-10-26T16:53:42.963355302Z"
+      },
+      "resources": {
+        "NanoCpus": 4000000000,
+        "Memory": 17179869184,
+        "MemorySwap": 17179869184,
+        "PidsLimit": 512,
+        "NetworkMode": "human-exposure-341f36f2e",
+        "ReadonlyRootfs": true,
+        "CapDrop": [
+          "ALL"
+        ],
+        "SecurityOpt": [
+          "no-new-privileges"
+        ]
+      },
+      "log": "human-exposure-6f3d89cfa-sdk.log",
+      "logSha256": "851dab90c765a6a1eefc9cd07003610ea7ac1b524fe46ca43d007784dcac3253"
+    }
+  ],
+  "command": "check-command.sh",
+  "commandSha256": "97ab26658e2c03226058b23b1ea82bdd90559eb82e6fd96fcdf5cb91aa0daffe",
+  "checks": {
+    "cargoFmt": "PASS",
+    "fourSideGeneration": "PASS",
+    "migrationRoundTrip": "PASS",
+    "humanExposureTests": 2,
+    "humanToolTests": 5,
+    "clippyAllTargetsDenyWarnings": "PASS",
+    "sqlxPrepareWorkspace": "PASS",
+    "gatewayToolListSqlPrepareAndRead": "PASS"
+  },
+  "notCovered": [
+    "real HUMAN HTTP admission and SpiceDB integration",
+    "receiver native action/bootstrap/seed/inputs/driver E2E",
+    "release upgrade/in-flight scenario",
+    "production deployment"
+  ],
+  "gatewaySqlLogSha256": "8c8f0f8602f590daec7f4bfa4b6d7ee1b1a7067a5a61ff02c1e878db174bdc5b"
+}

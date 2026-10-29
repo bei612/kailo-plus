@@ -447,7 +447,7 @@ async fn project(state: &ServiceState, id: Uuid, incoming: Option<&str>) -> Resu
             .map(|(id, key)| vec!["p".into(), key.clone(), id.to_string()]),
     );
     let response = control
-        .publish(&state.http, DM_OPEN, "", &tags)
+        .publish(&state.relay_http, DM_OPEN, "", &tags)
         .await
         .map_err(|error| {
             tracing::warn!(%error,"DM projection result unknown");

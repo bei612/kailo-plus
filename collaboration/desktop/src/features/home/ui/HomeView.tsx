@@ -1,3 +1,4 @@
+import { useNeedsActionSource } from "@client-kit/platform/react/inbox/needs-action";
 import { InboxView, useInboxViewState, type InboxViewStatus } from "@client-kit/platform/react/inbox-view";
 import * as React from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -10,7 +11,7 @@ import { Markdown } from "@/shared/ui/markdown";
 import type { Channel } from "@/shared/api/types";
 
 import { inboxReadContext } from "@client-kit/platform/inbox";
-import { useLocale, useT } from "@client-kit/platform/react/context";
+import { useCurrentPrincipalId, useLocale, useT } from "@client-kit/platform/react/context";
 import { useConversations, useHiddenDmInboxNavigation } from "@client-kit/platform/react/new-message";
 import { toast } from "sonner";
 import { useChannelsQuery } from "@/features/channels/hooks";
@@ -143,6 +144,10 @@ export function HomeView({
     widthPx: threadPanelWidthPx,
   } = useThreadPanelWidth();
   const nativeSession = useNativeSession();
+  // DD-125(5): management facts come from this authenticated BFF session,
+  // not the device pubkey or the closed Buzz workflow event stream.
+  const principalId = useCurrentPrincipalId();
+  const needsAction = useNeedsActionSource({ client: nativeSession.client, scopeKey: principalId ?? "", enabled: Boolean(principalId) });
   const projectsHost=useProjectsHost();
   const projectQuery=useQuery({queryKey:["projects",projectsHost?.scopeKey,"inbox-work-items"],enabled:Boolean(projectsHost),
     queryFn:({signal})=>{if(!projectsHost)throw new Error("Project scope unavailable");return loadProjectWorkItems(projectsHost,signal);},retry:false});
@@ -360,6 +365,7 @@ export function HomeView({
               void ownedAgents.refetch();
               void projectQuery.refetch();
               componentNotifications?.source?.refresh();
+              needsAction.refresh();
             } }
         : { kind: "ready" };
 
@@ -381,6 +387,7 @@ export function HomeView({
     <ProfilePanelProvider onOpenProfilePanel={handleOpenProfilePanel}>
       <InboxView
         state={view}
+        needsAction={principalId ? needsAction : null}
         status={status}
         items={inboxItems}
         matchesFilter={matchesFilter}

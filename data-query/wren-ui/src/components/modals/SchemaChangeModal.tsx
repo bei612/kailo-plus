@@ -1,14 +1,5 @@
 import { useMemo } from 'react';
-import {
-  Modal,
-  Button,
-  Table,
-  Typography,
-  Collapse,
-  Alert,
-  Tag,
-  Popconfirm,
-} from 'antd';
+import { Modal, Button, Table, Typography, Collapse, Alert, Tag } from 'antd';
 import styled from 'styled-components';
 import WarningOutlined from '@ant-design/icons/WarningOutlined';
 import PlusSquareOutlined from '@ant-design/icons/PlusSquareOutlined';
@@ -16,6 +7,8 @@ import LineOutlined from '@ant-design/icons/LineOutlined';
 import FileDoneOutlined from '@ant-design/icons/FileDoneOutlined';
 import { ModalAction } from '@/hooks/useModalAction';
 import EllipsisWrapper from '@/components/EllipsisWrapper';
+import useKailoText, { kailoT } from '@/utils/kailoI18n';
+import { confirmDanger } from '@/utils/kailoHost';
 import {
   DetailedChangeTable,
   DetailedAffectedCalculatedFields,
@@ -27,14 +20,14 @@ import {
 
 const StyledCollapse = styled(Collapse)`
   border: none;
-  background-color: white;
+  background-color: var(--kailo-color-card);
   .ant-collapse-item:last-child,
   .ant-collapse-item:last-child > .ant-collapse-header {
     border-radius: 0;
   }
   .ant-collapse-item,
   .ant-collapse-content {
-    border-color: var(--gray-4);
+    border-color: var(--kailo-color-border);
   }
   .ant-collapse-content-box {
     padding: 0;
@@ -55,7 +48,7 @@ const StyledTable = styled(Table)`
 
     .ant-table-expanded-row {
       .ant-table-cell {
-        background-color: white;
+        background-color: var(--kailo-color-card);
       }
     }
   }
@@ -69,25 +62,38 @@ type Props = ModalAction<SchemaChange> & {
   };
 };
 
+// Titles are getters: read at render, so they follow the Kailo locale.
 const nestedColumns = [
   {
-    title: 'Affected Resource',
+    get title() {
+      return kailoT('modeling.affectedResource');
+    },
     dataIndex: 'resourceType',
     width: 200,
     render: (resourceType: NodeType) => {
       if (resourceType === NodeType.CALCULATED_FIELD) {
-        return <Tag className="ant-tag--geekblue">Calculated Field</Tag>;
+        return (
+          <Tag className="ant-tag--geekblue">
+            {kailoT('modeling.calculatedField')}
+          </Tag>
+        );
       }
 
       if (resourceType === NodeType.RELATION) {
-        return <Tag className="ant-tag--citrus">Relationship</Tag>;
+        return (
+          <Tag className="ant-tag--citrus">
+            {kailoT('modeling.relationship')}
+          </Tag>
+        );
       }
 
       return null;
     },
   },
   {
-    title: 'Name',
+    get title() {
+      return kailoT('modeling.name');
+    },
     dataIndex: 'displayName',
   },
 ];
@@ -99,9 +105,20 @@ const checkIsExpandable = (record: DetailedChangeTable) =>
 
 const PanelHeader = (props) => {
   const { title, count, onResolve, isResolving } = props;
+  const t = useKailoText();
+  // Resolving deletes the affected models, relationships and calculated
+  // fields: a destructive action, confirmed in Kailo's dialog.
   const resolve = (event) => {
     event.stopPropagation();
-    onResolve();
+    void confirmDanger(
+      {
+        title: t('modeling.resolveConfirmTitle', { title }),
+        description: t('modeling.resolveConfirmDescription'),
+        confirmLabel: t('modeling.resolve'),
+        cancelLabel: t('cancel'),
+      },
+      onResolve,
+    );
   };
   return (
     <div
@@ -110,29 +127,21 @@ const PanelHeader = (props) => {
     >
       <b className="text-medium">{title}</b>
       <span className="flex-grow-1 text-right d-flex justify-end">
-        <Typography.Text className="gray-6">
-          {count} table(s) affected
+        <Typography.Text className="gray-7">
+          {t('modeling.tablesAffected', { count })}
         </Typography.Text>
         <div style={{ width: 150 }}>
           {!!onResolve && (
-            <Popconfirm
-              title="Are you sure?"
-              okText="Confirm"
-              okButtonProps={{ danger: true }}
-              onConfirm={resolve}
-              onCancel={(event) => event.stopPropagation()}
+            <Button
+              type="text"
+              size="small"
+              danger
+              onClick={resolve}
+              loading={isResolving}
+              icon={<FileDoneOutlined />}
             >
-              <Button
-                type="text"
-                size="small"
-                className="red-5"
-                onClick={(event) => event.stopPropagation()}
-                loading={isResolving}
-                icon={<FileDoneOutlined />}
-              >
-                Resolve
-              </Button>
-            </Popconfirm>
+              {t('modeling.resolve')}
+            </Button>
           )}
         </div>
       </span>
@@ -156,8 +165,12 @@ const ExpandedRows = ({ record, tipMessage }: ExpandedRowsProps) => {
     <div className="pl-12">
       <Alert
         showIcon
-        icon={<WarningOutlined className="orange-5" />}
-        className="gray-6 ml-2 bg-gray-1 pl-0"
+        icon={
+          <WarningOutlined
+            style={{ color: 'var(--kailo-color-warning-text)' }}
+          />
+        }
+        className="gray-7 ml-2 bg-gray-1 pl-0"
         style={{ border: 'none' }}
         message={tipMessage}
       />
@@ -180,6 +193,7 @@ const ExpandedRows = ({ record, tipMessage }: ExpandedRowsProps) => {
 export default function SchemaChangeModal(props: Props) {
   const { visible, onClose, defaultValue: schemaChange, payload } = props;
   const { onResolveSchemaChange, isResolving } = payload || {};
+  const t = useKailoText();
 
   const { deletedTables, deletedColumns, modifiedColumns } = useMemo(() => {
     const { deletedTables, deletedColumns, modifiedColumns } =
@@ -225,14 +239,22 @@ export default function SchemaChangeModal(props: Props) {
   }, [schemaChange]);
 
   const columnsOfDeleteTables = [
-    { title: 'Affected model', width: 200, dataIndex: 'displayName' },
-    { title: 'Source table name', dataIndex: 'sourceTableName' },
+    {
+      title: t('modeling.affectedModel'),
+      width: 200,
+      dataIndex: 'displayName',
+    },
+    { title: t('modeling.sourceTableName'), dataIndex: 'sourceTableName' },
   ];
 
   const columnsOfDeletedColumns = [
-    { title: 'Affected model', width: 200, dataIndex: 'displayName' },
     {
-      title: 'Deleted columns',
+      title: t('modeling.affectedModel'),
+      width: 200,
+      dataIndex: 'displayName',
+    },
+    {
+      title: t('modeling.deletedColumns'),
       dataIndex: 'columns',
       render: (columns) => {
         return (
@@ -249,9 +271,13 @@ export default function SchemaChangeModal(props: Props) {
   ];
 
   const columnsOfModifiedColumns = [
-    { title: 'Affected model', width: 200, dataIndex: 'displayName' },
     {
-      title: 'Affected columns',
+      title: t('modeling.affectedModel'),
+      width: 200,
+      dataIndex: 'displayName',
+    },
+    {
+      title: t('modeling.affectedColumns'),
       dataIndex: 'columns',
       render: (columns) => {
         return (
@@ -271,25 +297,27 @@ export default function SchemaChangeModal(props: Props) {
     <Modal
       title={
         <>
-          <WarningOutlined className="orange-5 mr-2" />
-          Schema Changes
+          <WarningOutlined
+            className="mr-2"
+            style={{ color: 'var(--kailo-color-warning-text)' }}
+          />
+          {t('modeling.schemaChanges')}
         </>
       }
-      width={750}
+      width={840}
       visible={visible}
       onCancel={onClose}
       destroyOnClose
       footer={null}
     >
-      <Typography.Paragraph className="gray-6 mb-4">
-        We have detected schema changes from your connected data source. Please
-        review the impacts of these changes.
+      <Typography.Paragraph className="gray-7 mb-4">
+        {t('modeling.schemaChangesIntro')}
       </Typography.Paragraph>
       <Alert
         showIcon
         type="warning"
         className="gray-8 mb-6"
-        message={`Please note that clicking \"Resolve\" may automatically delete all affected models, relationships, and calculated fields.`}
+        message={t('modeling.schemaChangesWarning')}
       />
       <StyledCollapse
         expandIcon={(panelProps) =>
@@ -300,7 +328,7 @@ export default function SchemaChangeModal(props: Props) {
           <Collapse.Panel
             header={
               <PanelHeader
-                title="Source table deleted"
+                title={t('modeling.sourceTableDeleted')}
                 count={deletedTables.length}
                 onResolve={() =>
                   onResolveSchemaChange(SchemaChangeType.DELETED_TABLES)
@@ -325,7 +353,7 @@ export default function SchemaChangeModal(props: Props) {
                 expandedRowRender: (record: ExpandedRowsProps['record']) => (
                   <ExpandedRows
                     record={record}
-                    tipMessage="The following table shows resources affected by this model and will be deleted when resolving."
+                    tipMessage={t('modeling.tipDeletedTable')}
                   />
                 ),
               }}
@@ -336,7 +364,7 @@ export default function SchemaChangeModal(props: Props) {
           <Collapse.Panel
             header={
               <PanelHeader
-                title="Source column deleted"
+                title={t('modeling.sourceColumnDeleted')}
                 count={deletedColumns.length}
                 onResolve={() =>
                   onResolveSchemaChange(SchemaChangeType.DELETED_COLUMNS)
@@ -361,7 +389,7 @@ export default function SchemaChangeModal(props: Props) {
                 expandedRowRender: (record: ExpandedRowsProps['record']) => (
                   <ExpandedRows
                     record={record}
-                    tipMessage="The following table shows resources affected by this column of the model and will be deleted when resolving."
+                    tipMessage={t('modeling.tipDeletedColumn')}
                   />
                 ),
               }}
@@ -372,7 +400,7 @@ export default function SchemaChangeModal(props: Props) {
           <Collapse.Panel
             header={
               <PanelHeader
-                title="Source column type changed"
+                title={t('modeling.sourceColumnTypeChanged')}
                 count={modifiedColumns.length}
               ></PanelHeader>
             }
@@ -393,7 +421,7 @@ export default function SchemaChangeModal(props: Props) {
                 expandedRowRender: (record: ExpandedRowsProps['record']) => (
                   <ExpandedRows
                     record={record}
-                    tipMessage="The following table shows the resources utilized by this column of the model. Please review each resource and manually update the relevant ones if any changes are required."
+                    tipMessage={t('modeling.tipModifiedColumn')}
                   />
                 ),
               }}

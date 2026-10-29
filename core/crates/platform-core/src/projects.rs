@@ -69,7 +69,7 @@ pub(crate) async fn publication_target(
         );
         let rows = client
             .query(
-                &state.http,
+                &state.relay_http,
                 &[json!({"kinds":[kind],"authors":[client.pubkey_hex()],"#d":[slug],"limit":1})],
             )
             .await
@@ -94,7 +94,7 @@ pub(crate) async fn publication_target(
     let target_kinds = if kind == 1 {
         vec![collab_bridge::projects::comment_target_kind(request)
             .map_err(|_| StatusCode::BAD_REQUEST.into_response())?]
-    } else if status {
+    } else if status || kind == 1619 {
         vec![1618]
     } else if matches!(kind, 1618 | 1621) {
         // Issues and reviews name their repository announcement.
@@ -103,7 +103,10 @@ pub(crate) async fn publication_target(
         vec![30621, 30617]
     };
     let value = client
-        .query(&state.http, &[json!({"ids":[id],"kinds":target_kinds})])
+        .query(
+            &state.relay_http,
+            &[json!({"ids":[id],"kinds":target_kinds})],
+        )
         .await
         .map_err(|error| relay_error_response(&error, None))?;
     let events: Vec<nostr::Event> =
@@ -117,7 +120,7 @@ pub(crate) async fn publication_target(
     {
         return Err(StatusCode::BAD_GATEWAY.into_response());
     }
-    if kind == 1 || status {
+    if kind == 1 || status || kind == 1619 {
         let repository = collab_bridge::projects::comment_repository(event)
             .map_err(|_| StatusCode::BAD_GATEWAY.into_response())?;
         let mut parts = repository.splitn(3, ':');
@@ -130,7 +133,7 @@ pub(crate) async fn publication_target(
             .ok_or_else(|| StatusCode::BAD_GATEWAY.into_response())?;
         let rows = client
             .query(
-                &state.http,
+                &state.relay_http,
                 &[json!({"kinds":[30617],"authors":[owner],"#d":[slug],"limit":1})],
             )
             .await
@@ -153,7 +156,7 @@ pub(crate) async fn publication_target(
         .tags
         .identifier()
         .ok_or_else(|| StatusCode::BAD_GATEWAY.into_response())?;
-    let value = client.query(&state.http, &[json!({"kinds":[event.kind.as_u16()],"authors":[event.pubkey.to_hex()],"#d":[slug],"limit":1})])
+    let value = client.query(&state.relay_http, &[json!({"kinds":[event.kind.as_u16()],"authors":[event.pubkey.to_hex()],"#d":[slug],"limit":1})])
         .await.map_err(|error| relay_error_response(&error, None))?;
     let heads: Vec<nostr::Event> =
         serde_json::from_value(value).map_err(|_| StatusCode::BAD_GATEWAY.into_response())?;
@@ -193,7 +196,7 @@ pub(crate) async fn latest_comment(
         // IdentityClient::query retains its original per-query budget, timeout
         // and Relay authentication; exhaustion refuses, it is not an empty page.
         let rows = client
-            .query(&state.http, &[filter])
+            .query(&state.relay_http, &[filter])
             .await
             .map_err(|error| relay_error_response(&error, None))?;
         let events: Vec<nostr::Event> =
@@ -248,7 +251,7 @@ pub(crate) async fn latest_pull_request_status(
             filter["before_id"] = json!(before_id);
         }
         let rows = client
-            .query(&state.http, &[filter])
+            .query(&state.relay_http, &[filter])
             .await
             .map_err(|error| relay_error_response(&error, None))?;
         let events: Vec<nostr::Event> =
@@ -332,7 +335,7 @@ async fn newest_review_activity(
             filter["before_id"] = json!(before_id);
         }
         let rows = client
-            .query(&state.http, &[filter])
+            .query(&state.relay_http, &[filter])
             .await
             .map_err(|error| relay_error_response(&error, None))?;
         let events: Vec<nostr::Event> =
@@ -355,6 +358,55 @@ async fn newest_review_activity(
             .ok_or_else(|| StatusCode::BAD_GATEWAY.into_response())?;
         cursor = Some((last.created_at.as_secs(), last.id.to_hex()));
     }
+}
+
+/// Original review update needs the current repository and trusted prior update
+/// for timestamp ordering, read with the actual actor before any signing.
+pub(crate) async fn pull_request_update_evidence(
+    state: &BffState,
+    client: &collab_bridge::bridge::IdentityClient,
+    root: &nostr::Event,
+    community_host: &str,
+) -> Result<(nostr::Event, Option<nostr::Event>), Response> {
+    let (owner, author) = collab_bridge::projects::pull_request_status_actors(root)
+        .map_err(|_| StatusCode::BAD_GATEWAY.into_response())?;
+    let signer = client.pubkey_hex();
+    if signer != owner && signer != author {
+        return Err(crate::web_transport::error_body(
+            StatusCode::FORBIDDEN,
+            contracts::ErrorClass::Denied,
+            contracts::ReasonCode::PermissionDenied,
+            None,
+        ));
+    }
+    let coordinate = collab_bridge::projects::comment_repository(root)
+        .map_err(|_| StatusCode::BAD_GATEWAY.into_response())?;
+    let slug = coordinate
+        .splitn(3, ':')
+        .nth(2)
+        .ok_or_else(|| StatusCode::BAD_GATEWAY.into_response())?;
+    let page = client
+        .query(
+            &state.relay_http,
+            &[json!({"kinds":[30617],"authors":[owner],"#d":[slug],"limit":1})],
+        )
+        .await
+        .map_err(|error| relay_error_response(&error, None))?;
+    let rows: Vec<nostr::Event> =
+        serde_json::from_value(page).map_err(|_| StatusCode::BAD_GATEWAY.into_response())?;
+    let [repository] = rows.as_slice() else {
+        return Err(StatusCode::NOT_FOUND.into_response());
+    };
+    if repository.kind.as_u16() != 30617
+        || repository.pubkey.to_hex() != owner
+        || repository.tags.identifier() != Some(slug)
+        || repository.verify().is_err()
+    {
+        return Err(StatusCode::BAD_GATEWAY.into_response());
+    }
+    let latest =
+        newest_review_activity(state, client, root, ReviewActivity::Update, community_host).await?;
+    Ok((repository.clone(), latest))
 }
 
 /// DD-118(5) original review comments (desktop pullRequestReviews.ts,
@@ -457,7 +509,7 @@ pub(crate) async fn assignment_activity(
         .ok()
         .filter(|cap| *cap > 0)
         .ok_or_else(|| StatusCode::SERVICE_UNAVAILABLE.into_response())?;
-    assignment_activity_page(&state.http, client, request, issue, cap).await
+    assignment_activity_page(&state.relay_http, client, request, issue, cap).await
 }
 
 async fn assignment_activity_page(
@@ -603,7 +655,7 @@ pub(crate) async fn confirm_accepted_issue_publication(
     let kind = publication_kind(request)?;
     let page = client
         .query(
-            &state.http,
+            &state.relay_http,
             &[json!({"ids":[event_id],"authors":[client.pubkey_hex()],"kinds":[kind],"limit":1})],
         )
         .await
@@ -615,12 +667,12 @@ pub(crate) async fn confirm_accepted_issue_publication(
     if event.id.to_hex() != event_id || event.pubkey != keys.public_key() {
         return Err(unknown());
     }
-    let matches = if PULL_REQUEST_STATUS_KINDS.contains(&kind) {
+    let matches = if PULL_REQUEST_STATUS_KINDS.contains(&kind) || kind == 1619 {
         // Compare with the immutable review named by the retained request.
         let target_id = request.target_event_id.as_deref().ok_or_else(unknown)?;
         let page = client
             .query(
-                &state.http,
+                &state.relay_http,
                 &[json!({"ids":[target_id],"kinds":[1618],"limit":1})],
             )
             .await
@@ -629,8 +681,13 @@ pub(crate) async fn confirm_accepted_issue_publication(
         let [review] = reviews.as_slice() else {
             return Err(unknown());
         };
-        collab_bridge::projects::status_publication_matches(request, review, event)
-            .map_err(|_| unknown())?
+        if kind == 1619 {
+            collab_bridge::projects::pull_request_update_matches(request, review, event)
+                .map_err(|_| unknown())?
+        } else {
+            collab_bridge::projects::status_publication_matches(request, review, event)
+                .map_err(|_| unknown())?
+        }
     } else if kind == 1 {
         // Retained receipt comparison needs the immutable issue, not today's
         // replaceable repository head or a freshly chosen comment timestamp.
@@ -639,7 +696,7 @@ pub(crate) async fn confirm_accepted_issue_publication(
             collab_bridge::projects::comment_target_kind(request).map_err(|_| unknown())?;
         let page = client
             .query(
-                &state.http,
+                &state.relay_http,
                 &[json!({"ids":[target_id],"kinds":[target_kind],"limit":1})],
             )
             .await
@@ -881,7 +938,7 @@ pub(crate) async fn readable_work_items(
     for ids in requested.chunks(size) {
         let value = client
             .query(
-                &state.http,
+                &state.relay_http,
                 &[
                     json!({"ids":ids.iter().map(ToString::to_string).collect::<Vec<_>>(),
             "kinds":[1,1618,1619,1621,1630,1631,1632,1633],"limit":ids.len()}),
@@ -949,14 +1006,14 @@ async fn query_inner(
     let value = if serde_json::to_value(&request.view)
         .is_ok_and(|view| view.as_str() == Some("WORK_ITEM_ACTIVITY"))
     {
-        work_item_activity_page(&state.http, &client, &request, &kinds, filter, cap).await?
+        work_item_activity_page(&state.relay_http, &client, &request, &kinds, filter, cap).await?
     } else if states_view {
         let coordinates = request.coordinates.as_deref().unwrap_or_default();
         let trusted = relay_self.as_deref();
-        repository_states(&state.http, &client, coordinates, trusted, &filter).await?
+        repository_states(&state.relay_http, &client, coordinates, trusted, &filter).await?
     } else {
         client
-            .query(&state.http, &[filter])
+            .query(&state.relay_http, &[filter])
             .await
             .map_err(|e| relay_error_response(&e, None))?
     };

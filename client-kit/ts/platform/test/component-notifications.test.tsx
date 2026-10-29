@@ -236,7 +236,7 @@ describe("Inbox view with component notifications", () => {
   });
   afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); setLocale("en"); });
 
-  it("lists the rows with the category source, opens one and marks it read in Core", async () => {
+  it.each(["title", "avatar"] as const)("opens component notification from its non-profile %s and marks it read in Core", async slot => {
     const ui = await render(<PlatformProvider client={client} locale="zh-CN"><QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } })}>
       <TooltipProvider><ReminderHostProvider host={reminderHost()}><RemindMeLaterProvider pubkey={pubkey}><Host /></RemindMeLaterProvider></ReminderHostProvider></TooltipProvider>
     </QueryClientProvider></PlatformProvider>);
@@ -249,7 +249,9 @@ describe("Inbox view with component notifications", () => {
     expect(row("n-access")?.querySelector("[data-inbox-type-label]")?.className).toContain("text-amber-600/80");
     expect(ui.textContent).not.toContain("binding-files");
 
-    await click(row("n-share")!.querySelector<HTMLButtonElement>("button[aria-label]")!);
+    const target = slot === "title" ? row("n-share")!.querySelector<HTMLElement>("span.text-sm.font-semibold")!
+      : row("n-share")!.querySelector<HTMLElement>("[data-avatar-shape]")!;
+    await click(target);
     expect(opened).toEqual(["/files/n-share?view=1"]);
     await vi.waitFor(() => expect(requests.some((request) => request.method === "POST")).toBe(true));
     expect(requests.find((request) => request.method === "POST")).toEqual({ method: "POST",

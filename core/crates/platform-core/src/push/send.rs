@@ -7,9 +7,18 @@
 
 use std::time::{Duration, Instant};
 
+use super::config::Policy;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 use tokio::sync::Mutex;
+
+/// Stable APNs metadata for one persisted delivery intent.
+pub(crate) struct ApnsRequest<'a> {
+    pub collapse_key: &'a str,
+    pub intent: uuid::Uuid,
+    pub expires_at: i64,
+}
 
 /// One provider attempt.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -17,16 +26,58 @@ pub(crate) enum Outcome {
     Delivered,
     /// The provider says the device token is gone: the registration becomes INVALID.
     Invalid,
-    /// Transient (rate limit, provider outage, transport): bounded retry.
+    /// A definite transient refusal, or failure before the notification request.
     Retry,
     /// Our provider credential was refused: reload it, do not touch the registration.
     ProviderAuth,
     /// A definite refusal of this one notification; not retried.
     Rejected,
+    /// The request may have been accepted; never automatically resend.
+    Unknown,
 }
 
-/// Re-read credentials at least this often, so a rotation in OpenBao takes effect.
-pub(crate) const CREDENTIAL_TTL: Duration = Duration::from_secs(10 * 60);
+/// The provider's acceptance is not proof of display on the device.
+#[derive(Clone, Debug)]
+pub(crate) struct Receipt {
+    pub outcome: Outcome,
+    pub reference: Option<String>,
+    pub retry_after: Duration,
+}
+impl Receipt {
+    pub fn local(outcome: Outcome, policy: &Policy) -> Self {
+        Self {
+            outcome,
+            reference: None,
+            retry_after: Duration::from_secs(policy.retry_base_seconds as u64),
+        }
+    }
+}
+fn retry_after(response: &reqwest::Response, minimum: u64) -> Duration {
+    let header = response
+        .headers()
+        .get(reqwest::header::RETRY_AFTER)
+        .and_then(|v| v.to_str().ok());
+    let seconds = header
+        .and_then(|s| {
+            s.parse::<u64>().ok().or_else(|| {
+                chrono::DateTime::parse_from_rfc2822(s)
+                    .ok()
+                    .map(|at| (at.timestamp() - chrono::Utc::now().timestamp()).max(0) as u64)
+            })
+        })
+        .unwrap_or(minimum);
+    Duration::from_secs(seconds.max(minimum))
+}
+fn transport(error: reqwest::Error) -> Outcome {
+    // Connection establishment failed before the request. A timeout/reset after connecting
+    // can lose a successful response, so it is not a retryable rejection.
+    if error.is_connect() {
+        Outcome::Retry
+    } else {
+        Outcome::Unknown
+    }
+}
+
 /// Apple accepts provider tokens up to an hour old and refuses refreshing more than
 /// once every 20 minutes.
 const APNS_JWT_REUSE: Duration = Duration::from_secs(40 * 60);
@@ -109,6 +160,22 @@ impl ApnsSender {
         &self.credential.bundle_id
     }
 
+    pub(crate) fn target(&self) -> String {
+        hex::encode(Sha256::digest(
+            format!(
+                "APNS:{}:{}:{}",
+                self.credential.team_id,
+                self.credential.bundle_id,
+                if self.credential.sandbox {
+                    "development"
+                } else {
+                    "production"
+                }
+            )
+            .as_bytes(),
+        ))
+    }
+
     async fn provider_token(&self) -> Result<String, Outcome> {
         let mut cached = self.jwt.lock().await;
         if let Some((token, at)) = cached.as_ref() {
@@ -135,11 +202,12 @@ impl ApnsSender {
         http: &reqwest::Client,
         token: &DeviceToken,
         payload: &Value,
-        collapse_key: &str,
-    ) -> Outcome {
+        request: ApnsRequest<'_>,
+        policy: &Policy,
+    ) -> Receipt {
         let bearer = match self.provider_token().await {
             Ok(b) => b,
-            Err(outcome) => return outcome,
+            Err(outcome) => return Receipt::local(outcome, policy),
         };
         let host = if self.credential.sandbox {
             "api.sandbox.push.apple.com"
@@ -152,23 +220,43 @@ impl ApnsSender {
             .header("apns-topic", &self.credential.bundle_id)
             .header("apns-push-type", "alert")
             .header("apns-priority", "10")
-            .header("apns-collapse-id", collapse_key)
-            .header("apns-expiration", (now_secs() + 3600).to_string())
+            .header("apns-collapse-id", request.collapse_key)
+            // Tracking only: APNs does not promise idempotency for this ID.
+            .header("apns-id", request.intent.to_string())
+            .header("apns-expiration", request.expires_at.to_string())
             .json(payload)
-            .timeout(Duration::from_secs(15))
+            .timeout(policy.timeout())
             .send()
             .await;
         match response {
             Ok(response) => {
                 let status = response.status().as_u16();
+                let retry_after = retry_after(
+                    &response,
+                    if status >= 500 {
+                        policy.apns_retry_floor_seconds as u64
+                    } else {
+                        policy.retry_base_seconds as u64
+                    },
+                );
+                let reference = response
+                    .headers()
+                    .get("apns-id")
+                    .and_then(|v| v.to_str().ok())
+                    .and_then(|v| uuid::Uuid::parse_str(v).ok())
+                    .map(|v| v.to_string());
                 let body: Value = response.json().await.unwrap_or(Value::Null);
                 let outcome = classify_apns(status, body["reason"].as_str());
                 if outcome == Outcome::ProviderAuth {
                     *self.jwt.lock().await = None;
                 }
-                outcome
+                Receipt {
+                    outcome,
+                    reference,
+                    retry_after,
+                }
             }
-            Err(_) => Outcome::Retry,
+            Err(e) => Receipt::local(transport(e), policy),
         }
     }
 }
@@ -179,6 +267,7 @@ pub(crate) fn classify_apns(status: u16, reason: Option<&str>) -> Outcome {
         (200, _) => Outcome::Delivered,
         (410, _) => Outcome::Invalid,
         (400, Some("BadDeviceToken" | "DeviceTokenNotForTopic")) => Outcome::Invalid,
+        (403, Some("Forbidden")) => Outcome::Rejected,
         (403, _) => Outcome::ProviderAuth,
         (429 | 500 | 503, _) => Outcome::Retry,
         _ => Outcome::Rejected,
@@ -200,7 +289,17 @@ impl FcmSender {
         }
     }
 
-    async fn access_token(&self, http: &reqwest::Client) -> Result<String, Outcome> {
+    pub(crate) fn target(&self) -> String {
+        hex::encode(Sha256::digest(
+            format!("FCM:{}", self.credential.project_id).as_bytes(),
+        ))
+    }
+
+    async fn access_token(
+        &self,
+        http: &reqwest::Client,
+        policy: &Policy,
+    ) -> Result<String, Outcome> {
         let mut cached = self.access.lock().await;
         if let Some((token, at, ttl)) = cached.as_ref() {
             if at.elapsed() < *ttl {
@@ -229,7 +328,7 @@ impl FcmSender {
                 ("grant_type", "urn:ietf:params:oauth:grant-type:jwt-bearer"),
                 ("assertion", assertion.as_str()),
             ])
-            .timeout(Duration::from_secs(15))
+            .timeout(policy.timeout())
             .send()
             .await
             .map_err(|_| Outcome::Retry)?;
@@ -260,13 +359,18 @@ impl FcmSender {
         http: &reqwest::Client,
         token: &DeviceToken,
         message: &Value,
-    ) -> Outcome {
-        let access = match self.access_token(http).await {
+        expires_at: i64,
+        policy: &Policy,
+    ) -> Receipt {
+        let access = match self.access_token(http, policy).await {
             Ok(a) => a,
-            Err(outcome) => return outcome,
+            Err(outcome) => return Receipt::local(outcome, policy),
         };
         let mut message = message.clone();
         message["token"] = Value::String(token.0.clone());
+        message["android"]["ttl"] =
+            Value::String(format!("{}s", (expires_at - now_secs() as i64).max(0)));
+        message["apns"]["headers"]["apns-expiration"] = Value::String(expires_at.to_string());
         let response = http
             .post(format!(
                 "https://fcm.googleapis.com/v1/projects/{}/messages:send",
@@ -274,20 +378,39 @@ impl FcmSender {
             ))
             .bearer_auth(access)
             .json(&serde_json::json!({ "message": message }))
-            .timeout(Duration::from_secs(15))
+            .timeout(policy.timeout())
             .send()
             .await;
         match response {
             Ok(response) => {
                 let status = response.status().as_u16();
+                let retry_after = retry_after(&response, policy.retry_base_seconds as u64);
                 let body: Value = response.json().await.unwrap_or(Value::Null);
-                let outcome = classify_fcm(status, &body);
+                let reference = body["name"]
+                    .as_str()
+                    .filter(|name| {
+                        name.len() <= 512
+                            && name.starts_with(&format!(
+                                "projects/{}/messages/",
+                                self.credential.project_id
+                            ))
+                    })
+                    .map(str::to_owned);
+                let outcome = if status == 200 && reference.is_none() {
+                    Outcome::Unknown
+                } else {
+                    classify_fcm(status, &body)
+                };
                 if outcome == Outcome::ProviderAuth {
                     *self.access.lock().await = None;
                 }
-                outcome
+                Receipt {
+                    outcome,
+                    reference,
+                    retry_after,
+                }
             }
-            Err(_) => Outcome::Retry,
+            Err(e) => Receipt::local(transport(e), policy),
         }
     }
 }
@@ -302,8 +425,13 @@ pub(crate) fn classify_fcm(status: u16, body: &Value) -> Outcome {
         .collect();
     let has = |code: &str| codes.contains(&code);
     match status {
-        200 => Outcome::Delivered,
-        404 => Outcome::Invalid,
+        200 if body["name"]
+            .as_str()
+            .is_some_and(|name| name.starts_with("projects/") && name.contains("/messages/")) =>
+        {
+            Outcome::Delivered
+        }
+        200 => Outcome::Unknown,
         _ if has("UNREGISTERED") || has("SENDER_ID_MISMATCH") => Outcome::Invalid,
         401 | 403 => Outcome::ProviderAuth,
         429 | 500 | 503 => Outcome::Retry,
@@ -311,10 +439,6 @@ pub(crate) fn classify_fcm(status: u16, body: &Value) -> Outcome {
         _ => Outcome::Rejected,
     }
 }
-
-/// Bounded retry (DD-151(5)): at most three attempts with growing pauses; a notification
-/// is never replayed after this, it would be stale.
-pub(crate) const RETRY_PAUSES: [Duration; 2] = [Duration::from_secs(1), Duration::from_secs(4)];
 
 #[cfg(test)]
 mod tests {
@@ -341,7 +465,12 @@ mod tests {
     #[test]
     fn fcm_errors_map_to_registration_effects() {
         let unregistered = json!({"error": {"details": [{"errorCode": "UNREGISTERED"}]}});
-        assert_eq!(classify_fcm(200, &json!({})), Outcome::Delivered);
+        assert_eq!(classify_fcm(200, &json!({})), Outcome::Unknown);
+        assert_eq!(
+            classify_fcm(200, &json!({"name":"projects/p/messages/m"})),
+            Outcome::Delivered
+        );
+        assert_eq!(classify_fcm(404, &json!({})), Outcome::Rejected);
         assert_eq!(classify_fcm(404, &unregistered), Outcome::Invalid);
         assert_eq!(classify_fcm(400, &unregistered), Outcome::Invalid);
         assert_eq!(classify_fcm(401, &json!({})), Outcome::ProviderAuth);
@@ -353,6 +482,44 @@ mod tests {
             ),
             Outcome::Rejected
         );
+    }
+
+    #[tokio::test]
+    async fn response_lost_after_request_is_unknown_and_retry_after_is_honored() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut bytes = [0; 4096];
+            assert!(stream.read(&mut bytes).await.unwrap() > 0);
+            // A provider can accept and then lose its response. Closing here models exactly
+            // that ambiguity; the client must not schedule another provider request.
+        });
+        let client = reqwest::Client::builder().no_proxy().build().unwrap();
+        let error = client
+            .post(format!("http://{address}/send"))
+            .body("content-free")
+            .send()
+            .await
+            .unwrap_err();
+        server.await.unwrap();
+        assert_eq!(transport(error), Outcome::Unknown);
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut bytes = [0; 4096];
+            assert!(stream.read(&mut bytes).await.unwrap() > 0);
+            stream.write_all(b"HTTP/1.1 429 Too Many Requests\r\nRetry-After: 1200\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").await.unwrap();
+        });
+        let response = client
+            .post(format!("http://{address}/send"))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(retry_after(&response, 60), Duration::from_secs(1200));
+        server.await.unwrap();
     }
 
     #[test]

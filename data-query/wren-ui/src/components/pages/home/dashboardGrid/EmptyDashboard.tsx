@@ -1,23 +1,30 @@
-import { Logo } from '@/components/Logo';
+import { useRouter } from 'next/router';
+import KailoEmpty from '@/components/kailo/KailoEmpty';
+import { DashboardIcon } from '@/components/kailo/KailoIcons';
+import useKailoText from '@/utils/kailoI18n';
+import { Path } from '@/utils/enum';
 
+// DD-157 (20 §13 空态): line illustration, title, description, one action.
 const EmptyDashboard = (props: {
   show: boolean;
   children: React.ReactNode;
 }) => {
   const { show, children } = props;
+  const t = useKailoText();
+  const router = useRouter();
   if (show) {
     return (
       <div
-        className="d-flex align-center justify-center flex-column -mt-8"
+        className="d-flex align-center justify-center flex-column"
         style={{ height: '100%' }}
       >
-        <Logo size={48} />
-        <div className="text-lg text-medium text-center gray-8 mt-3">
-          No charts have been added yet
-        </div>
-        <div className="gray-7">
-          Create a thread, generate a chart, then pin it to your dashboard.
-        </div>
+        <KailoEmpty
+          icon={DashboardIcon}
+          title={t('home.emptyDashboardTitle')}
+          description={t('home.emptyDashboardDescription')}
+          actionLabel={t('newConversationAction')}
+          onAction={() => router.push(Path.Home)}
+        />
       </div>
     );
   }

@@ -358,7 +358,7 @@ async fn profiles(
             .map(|author| json!({"kinds":[0], "authors":[author], "limit":1}))
             .collect();
         let value = client
-            .query(&state.http, &filters)
+            .query(&state.relay_http, &filters)
             .await
             .map_err(|_| unavailable("relay"))?;
         profiles.extend(

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
@@ -21,10 +21,12 @@ function memoryStorage() {
 
 // Runs kailo-embed.js then kailo-cells.js against a stand-in window (frame
 // relations, location, storage) and the jsdom document, like the page head.
-function load({ search = '', pathname = '/ws-files/folder', embedded = true, params, storage = memoryStorage(), pydio } = {}) {
+function load({ search = '', pathname = '/ws-files/folder', embedded = true, params, storage = memoryStorage(), pydio, features, uploader } = {}) {
     document.documentElement.removeAttribute('data-kailo-embedded')
     document.documentElement.removeAttribute('data-kailo-theme')
-    document.head.innerHTML = `<meta name="kailo-web-origin" content="${KAILO}">`
+    document.documentElement.removeAttribute('data-kailo-page-hosted')
+    document.head.innerHTML = `<meta name="kailo-web-origin" content="${KAILO}">` +
+        (features ? `<meta name="kailo-embed-features" content="${features}">` : '')
     const listeners = {}
     const parent = { postMessage: vi.fn() }
     const win = {
@@ -36,12 +38,16 @@ function load({ search = '', pathname = '/ws-files/folder', embedded = true, par
         setTimeout: () => 0,
         startParameters: params === undefined ? { KAILO_EMBED: { titles: { 'zh-cn': 'Kailo 云盘', 'en-us': 'Kailo Files' }, sso: true, logoutUrl: KAILO + '/app/' } } : params,
         pydio,
+        File,
+        UploaderModel: uploader,
     }
     win.parent = embedded ? parent : win
     new Function('window', runtime)(win)
     new Function('window', 'document', bridge)(win, document)
     const host = (data) => listeners.message({ origin: KAILO, source: win.parent, data: { source: 'kailo-host', version: 1, type: 'presentation', ...data } })
-    return { win, api: win.KailoCells, parent, host, storage }
+    const send = (data) => listeners.message({ origin: KAILO, source: win.parent, data: { source: 'kailo-host', version: 1, ...data } })
+    const posted = (type) => parent.postMessage.mock.calls.map((c) => c[0]).filter((m) => m.type === type)
+    return { win, api: win.KailoCells, parent, host, send, posted, storage }
 }
 
 function fakePydio(language = 'zh-cn') {
@@ -182,5 +188,298 @@ describe('Cells bridge over the Kailo embed runtime', () => {
         expect(top.api.logoutUrl()).toBe(KAILO + '/app/')
         expect(load({ embedded: false, params: { KAILO_EMBED: { sso: true } } }).api.showLogout()).toBe(false)
         expect(load({ embedded: false, params: {} }).api.showLogout()).toBe(true)
+    })
+})
+
+// A native application in a location (Cells repository) at a folder path.
+function pagePydio({ path = '/2026/reports', slug = 'personal-files', readOnly = false, templates = [] } = {}) {
+    const base = fakePydio('zh-cn')
+    const node = (p) => ({
+        getPath: () => p,
+        getLabel: () => p.split('/').filter(Boolean).pop() || '',
+        getMetadata: () => new Map(readOnly ? [['node_readonly', 'true']] : []),
+    })
+    const actions = {
+        upload: { contextHidden: readOnly, deny: false },
+        mkdir: { contextHidden: readOnly, deny: false },
+        mkfile: { contextHidden: readOnly, deny: false, subMenuItems: { dynamicBuilder: () => templates } },
+        share: {}, refresh: {}, switch_to_homepage: { apply: vi.fn() },
+    }
+    const controller = { getActionByName: (n) => actions[n] || null, fireAction: vi.fn(), observe: vi.fn() }
+    const holder = { current: node(path), getContextNode() { return this.current }, getSearchNode: () => null, observe: vi.fn() }
+    const repo = { accessType: 'gateway', getLabel: () => (window.KailoCells && window.KailoCells.locationLabel(slug, 'Personal Files')) || 'Personal Files', getId: () => 'r1' }
+    const repos = new Map([['homepage', { accessType: 'homepage' }], ['r1', repo]])
+    const user = { activeRepository: 'r1', getRepositoriesList: () => repos, getActiveRepositoryObject: () => repo }
+    return Object.assign(base, {
+        user, node, actions, controller, holder,
+        UI: Object.assign(base.UI, { displayMessage: vi.fn() }),
+        MessageHash: { 'html_uploader.upload.forbidden': '你没有在此上传的权限' },
+        getController: () => controller, getContextHolder: () => holder,
+        goTo: vi.fn(), triggerRepositoryChange: vi.fn(), observe: vi.fn(),
+    })
+}
+
+describe('DD-157 page shell over the Kailo embed runtime', () => {
+    const FEATURES = 'page toast confirm shortcuts'
+
+    function hostedLoad(pydio, extra = {}) {
+        window.KailoCells = undefined
+        const loaded = load({ features: FEATURES, pydio, ...extra })
+        window.KailoCells = loaded.api
+        loaded.host({ theme: 'light', locale: 'zh-CN', features: FEATURES.split(' ') })
+        return loaded
+    }
+
+    afterEach(() => { delete window.KailoCells })
+
+    it('hands the folder header to Kailo: location trail, folder title, upload and new folder', () => {
+        const pydio = pagePydio()
+        const { api, posted } = hostedLoad(pydio)
+        expect(api.pageHosted()).toBe(true)
+        expect(document.documentElement.hasAttribute('data-kailo-page-hosted')).toBe(true)
+        expect(api._internal.syncPage()).toBe(true)
+        const { page } = posted('page').pop()
+        expect(page.title).toBe('reports')
+        expect(page.breadcrumbs).toEqual([{ id: 'dir:/', label: '个人文件' }, { id: 'dir:/2026', label: '2026' }])
+        expect(page.tabs.map((t) => t.label)).toEqual(['主页', '所有文件', '收藏'])
+        expect(page.activeTab).toBe('files')
+        expect(page.actions.slice(0, 3)).toEqual([
+            { id: 'upload', label: '上传', variant: 'primary', icon: 'upload', files: { multiple: true } },
+            { id: 'mkdir', label: '新建文件夹', variant: 'secondary', icon: 'folder-plus' },
+            { id: 'upload-folder', label: '上传文件夹', variant: 'menu', icon: 'upload', files: { directory: true } },
+        ])
+        expect(page.actions.find((a) => a.id === 'refresh')).toMatchObject({ variant: 'menu', icon: 'refresh' })
+        // The location root: the location is the title, no trail.
+        pydio.holder.current = pydio.node('/')
+        api._internal.syncPage()
+        expect(posted('page').pop().page).toMatchObject({ title: '个人文件', breadcrumbs: [] })
+    })
+
+    it('keeps upload visible but unavailable in a read-only location', () => {
+        const { api, posted } = hostedLoad(pagePydio({ readOnly: true }))
+        api._internal.syncPage()
+        const { actions } = posted('page').pop().page
+        expect(actions.find((a) => a.id === 'upload')).toMatchObject({ disabled: true })
+        expect(actions.find((a) => a.id === 'upload-folder')).toMatchObject({ disabled: true })
+        expect(actions.find((a) => a.id === 'mkdir')).toMatchObject({ disabled: true })
+    })
+
+    it('runs header actions and navigation that Kailo sends back', () => {
+        const create = vi.fn()
+        const pydio = pagePydio({ templates: [{ alt: 'Word 文档', callback: create }] })
+        const { api, send, posted } = hostedLoad(pydio)
+        api._internal.syncPage()
+        expect(posted('page').pop().page.actions.find((a) => a.id === 'mkfile:0')).toMatchObject({ label: '新建Word 文档', variant: 'menu' })
+        send({ type: 'action', id: 'mkdir' })
+        expect(pydio.controller.fireAction).toHaveBeenCalledWith('mkdir')
+        send({ type: 'action', id: 'mkfile:0' })
+        expect(create).toHaveBeenCalled()
+        send({ type: 'navigate', target: { kind: 'breadcrumb', id: 'dir:/2026' } })
+        expect(pydio.goTo).toHaveBeenCalledWith('/2026')
+        // Ids that are not in the current header never arrive.
+        send({ type: 'navigate', target: { kind: 'breadcrumb', id: 'dir:/etc' } })
+        expect(pydio.goTo).toHaveBeenCalledTimes(1)
+        send({ type: 'navigate', target: { kind: 'tab', id: 'bookmarks' } })
+        expect(api.listPane()).toBe('bookmarks')
+        api._internal.syncPage()
+        expect(posted('page').pop().page.activeTab).toBe('bookmarks')
+        send({ type: 'navigate', target: { kind: 'tab', id: 'home' } })
+        expect(pydio.actions.switch_to_homepage.apply).toHaveBeenCalled()
+        expect(api.listPane()).toBe('files')
+    })
+
+    it('shows the open file in the header and closes it from the breadcrumbs', () => {
+        const pydio = pagePydio({ path: '/2026' })
+        const { api, send, posted } = hostedLoad(pydio)
+        const close = vi.fn()
+        const download = vi.fn()
+        api.setEditor({ node: pydio.node('/2026/周报.docx'), title: '周报.docx', close, download })
+        api._internal.syncPage()
+        const { page } = posted('page').pop()
+        expect(page.title).toBe('周报.docx')
+        expect(page.breadcrumbs.map((b) => b.label)).toEqual(['个人文件', '2026'])
+        expect(page.actions.map((a) => a.id)).toEqual(['download'])
+        send({ type: 'action', id: 'download' })
+        expect(download).toHaveBeenCalled()
+        send({ type: 'navigate', target: { kind: 'breadcrumb', id: 'dir:/2026' } })
+        expect(close).toHaveBeenCalled()
+        expect(pydio.goTo).toHaveBeenCalledWith('/2026')
+    })
+
+    it('relays native messages as Kailo toasts, keeping messages with their own action native', () => {
+        const { api, posted } = hostedLoad(pagePydio())
+        expect(api.toast('SUCCESS', '已上传 3 个文件')).toBe(true)
+        expect(posted('toast').pop().toast).toEqual({ tone: 'success', title: '已上传 3 个文件' })
+        expect(api.toast('ERROR', { Title: '未能载入文件夹' })).toBe(true)
+        expect(posted('toast').pop().toast.tone).toBe('error')
+        expect(api.toast('INFO', '已复制', '撤销')).toBe(false)
+        const long = '第一句说明发生了什么。' + '原因'.repeat(80)
+        expect(api.toast('ERROR', long)).toBe(true)
+        const t = posted('toast').pop().toast
+        expect(t.title).toBe('第一句说明发生了什么。')
+        expect(t.description.length).toBeLessThanOrEqual(280)
+    })
+
+    it('asks Kailo for destructive confirmations as questions', async () => {
+        const { api, send, posted } = hostedLoad(pagePydio())
+        const options = api.deleteConfirm(3, '', false)
+        expect(options).toMatchObject({ tone: 'danger', title: '删除 3 个项目？', confirmLabel: '删除', cancelLabel: '取消' })
+        expect(api.deleteConfirm(1, '周报.docx', true).title).toBe('删除「周报.docx」？')
+        const answer = api.confirm(options)
+        const { confirm } = posted('confirm').pop()
+        send({ type: 'confirm-result', id: confirm.id, confirmed: true })
+        await expect(answer).resolves.toBe(true)
+    })
+
+    it('leaves header, toasts and confirmations native at top level', () => {
+        const pydio = pagePydio()
+        const { api, parent } = load({ features: FEATURES, embedded: false, pydio })
+        expect(api.pageHosted()).toBe(false)
+        expect(document.documentElement.hasAttribute('data-kailo-page-hosted')).toBe(false)
+        expect(api._internal.syncPage()).toBe(false)
+        expect(api.toast('SUCCESS', '已上传')).toBe(false)
+        expect(api.confirm(api.deleteConfirm(1, 'a', false))).toBe(null)
+        expect(parent.postMessage).not.toHaveBeenCalled()
+    })
+
+    it('names the drop target only where uploading is possible', () => {
+        const { api } = hostedLoad(pagePydio())
+        expect(api._internal.dropTargetName(pagePydio())).toBe('reports')
+        expect(api._internal.dropTargetName(pagePydio({ path: '/' }))).toBe('个人文件')
+        expect(api._internal.dropTargetName(pagePydio({ readOnly: true }))).toBe('')
+    })
+
+    it('keeps the native header when the answering Kailo does not draw page headers (DD-157)', () => {
+        const pydio = pagePydio()
+        window.KailoCells = undefined
+        const { api, host, posted } = load({ features: FEATURES, pydio })
+        window.KailoCells = api
+        const changes = vi.fn()
+        api.onPageHosted(changes)
+        // Before Kailo answers the header is Kailo's (its skeleton covers the page).
+        expect(api.pageHosted()).toBe(true)
+        host({ theme: 'light', locale: 'zh-CN', features: ['shortcuts'] })
+        expect(api.pageHosted()).toBe(false)
+        expect(changes).toHaveBeenCalledWith(false)
+        expect(document.documentElement.hasAttribute('data-kailo-page-hosted')).toBe(false)
+        expect(api._internal.syncPage()).toBe(false)
+        expect(posted('page')).toEqual([])
+        expect(api.toast('SUCCESS', '已上传')).toBe(false)
+        expect(api.confirm(api.deleteConfirm(1, 'a', false))).toBe(null)
+    })
+
+    it('does not host the header when the build did not declare the page feature', () => {
+        const { api } = load({ pydio: pagePydio() })
+        expect(api.pageHosted()).toBe(false)
+    })
+
+    it('applies the Kailo vocabulary to native Chinese strings in Kailo mode only', () => {
+        const { api } = load({ features: FEATURES })
+        const hash = { 198: '新', 147: '书签', 177: '您确定要永久删除选定的文件吗？', x: '已保存！' }
+        api.wording(hash, 'zh-cn')
+        expect(hash).toEqual({ 198: '新建', 147: '收藏', 177: '你确定要永久删除选定的文件吗？', x: '已保存。' })
+        expect(api.locationLabel('personal-files', 'Personal Files')).toBe('个人文件')
+        expect(api.locationLabel('common-files', 'Common Files')).toBe('公共文件')
+        expect(api.locationLabel('team', 'Team')).toBe('')
+        const native = load({ params: {} }).api
+        const untouched = { 198: '新' }
+        native.wording(untouched, 'zh-cn')
+        expect(untouched[198]).toBe('新')
+        expect(native.locationLabel('personal-files', 'Personal Files')).toBe('')
+    })
+
+    function fakeUploader() {
+        const store = { handleDropEventResults: vi.fn(), handleFolderPickerResult: vi.fn() }
+        return { Store: { getInstance: () => store }, store }
+    }
+
+    const flush = () => new Promise((resolve) => setTimeout(resolve, 0))
+
+    it('queues the files chosen in Kailo for the declared folder like a drop, without the upload dialog', async () => {
+        const pydio = pagePydio({ path: '/2026/reports' })
+        const uploader = fakeUploader()
+        const { api, send } = hostedLoad(pydio, { uploader })
+        api._internal.syncPage()
+        const target = pydio.holder.current
+        const a = new File(['a'], 'a.txt')
+        const b = new File(['bb'], 'b.pdf')
+        send({ type: 'action', id: 'upload', files: [a, b], paths: ['a.txt', 'b.pdf'] })
+        await flush()
+        expect(uploader.store.handleDropEventResults).toHaveBeenCalledTimes(1)
+        const [items, files, node] = uploader.store.handleDropEventResults.mock.calls[0]
+        expect(items).toBe(null)
+        expect(files).toEqual([a, b])
+        expect(node).toBe(target)
+        expect(node.getPath()).toBe('/2026/reports')
+        expect(uploader.store.handleFolderPickerResult).not.toHaveBeenCalled()
+        expect(pydio.controller.fireAction).not.toHaveBeenCalledWith('upload')
+    })
+
+    it('uploads a chosen folder with its relative paths into the declared folder', async () => {
+        const pydio = pagePydio({ path: '/2026' })
+        const uploader = fakeUploader()
+        const { api, send } = hostedLoad(pydio, { uploader })
+        api._internal.syncPage()
+        const target = pydio.holder.current
+        // The context moves on after the header was declared: the upload still targets it.
+        pydio.holder.current = pydio.node('/elsewhere')
+        const files = [new File(['1'], 'a.jpg'), new File(['2'], 'b.jpg'), new File(['3'], 'c.txt')]
+        send({ type: 'action', id: 'upload-folder', files, paths: ['photos/a.jpg', 'photos/trip/b.jpg', 'photos/../c.txt'] })
+        await flush()
+        expect(uploader.store.handleFolderPickerResult).toHaveBeenCalledTimes(1)
+        const [picked, node, paths] = uploader.store.handleFolderPickerResult.mock.calls[0]
+        expect(picked).toEqual(files)
+        expect(node).toBe(target)
+        // A path that is not a clean relative path falls back to the file name.
+        expect(paths).toEqual(['photos/a.jpg', 'photos/trip/b.jpg', 'c.txt'])
+        expect(uploader.store.handleDropEventResults).not.toHaveBeenCalled()
+    })
+
+    it('never uploads into a read-only location: the actions are disabled and the runtime drops them', async () => {
+        const pydio = pagePydio({ readOnly: true })
+        const uploader = fakeUploader()
+        const { api, send } = hostedLoad(pydio, { uploader })
+        api._internal.syncPage()
+        send({ type: 'action', id: 'upload', files: [new File(['a'], 'a.txt')], paths: ['a.txt'] })
+        send({ type: 'action', id: 'upload-folder', files: [new File(['a'], 'a.txt')], paths: ['d/a.txt'] })
+        await flush()
+        expect(uploader.store.handleDropEventResults).not.toHaveBeenCalled()
+        expect(uploader.store.handleFolderPickerResult).not.toHaveBeenCalled()
+    })
+
+    it('refuses a selection for a folder that became read-only and tells the user', async () => {
+        const pydio = pagePydio()
+        const uploader = fakeUploader()
+        const { api } = hostedLoad(pydio, { uploader })
+        api._internal.syncPage()
+        pydio.holder.current.getMetadata = () => new Map([['level_readonly', 'true']])
+        api._internal.runAction('upload', { files: [new File(['a'], 'a.txt')], paths: ['a.txt'] })
+        await flush()
+        expect(uploader.store.handleDropEventResults).not.toHaveBeenCalled()
+        expect(pydio.UI.displayMessage).toHaveBeenCalledWith('ERROR', '你没有在此上传的权限')
+    })
+
+    it('opens the native upload dialog when Kailo sends the action without files', () => {
+        const pydio = pagePydio()
+        const { api } = hostedLoad(pydio, { uploader: fakeUploader() })
+        api._internal.syncPage()
+        api._internal.runAction('upload')
+        expect(pydio.controller.fireAction).toHaveBeenCalledWith('upload')
+    })
+
+    it('keeps the files channel out of the header at top level', () => {
+        const pydio = pagePydio()
+        const { api, parent } = load({ features: FEATURES, embedded: false, pydio, uploader: fakeUploader() })
+        expect(api._internal.syncPage()).toBe(false)
+        expect(parent.postMessage).not.toHaveBeenCalled()
+    })
+
+    it('accepts only clean relative paths for a folder pick', () => {
+        const { relativePaths } = load().api._internal
+        const f = (name) => ({ name })
+        expect(relativePaths([f('a'), f('b')], ['a', 'b'])).toBe(null)
+        expect(relativePaths([f('a')], ['d/a'])).toEqual(['d/a'])
+        expect(relativePaths([f('a'), f('b'), f('c'), f('e')], ['/a', 'd//b', 'd\\c', 'd/./e'])).toBe(null)
+        expect(relativePaths([f('a'), f('b')], ['x/a', '../b'])).toEqual(['x/a', 'b'])
     })
 })

@@ -2147,3 +2147,454 @@ Data 目录 `/volumes/data/kailo/tmp/web-tooltip-shared.zzIWe9/review-discuss.8A
 - apply_patch 精确还原后正式/私有 cmp 0；`60647` exit 0：末版 Web tsc 0、原新增 4/4，共享菜单两语言 2/2，Native 原新增 1/1。没有重复全量/依赖重建。Native 的新增检查执行原 TSX AST/回调、共享 DOM 验证同一菜单；不是 Native Rust、设备或在线 Relay 验收。
 
 全部实际命令、失败原件及冻结输入位于 `/volumes/data/kailo/tmp/web-tooltip-shared.zzIWe9/inbox-header-delete.jMa8l6`。日志 SHA-256：`positive.log` 为 `9e0c09a9ab11cd08e820561b44d54960a11fb897cb46d5c3143c1640e0f6337f`，`positive-corrected.log` 为 `7872b79cef6caa692b782881227371f8d77db95738d8e14c2c11f3ff99983cd4`，`native-original.log` 为 `f71cd02f3b9ec02ac9d84edc07f7bea2447c9049c069463ff84c8c8883e2015a`，`mutation.log` 为 `190bb912a0b7486a4fdfba16ae5abf1a29dd22998bf6bb9b5787cf9423ddba24`，`restored.log` 为 `2422d35e116bcfcf6d58fe3da08256e009dee0953d89606f6c203fb9521b4ce9`。本批不认领线上 SSO/实际删除/full/部署通过；文档与发布由主线集中收口。
+
+### 2026-10-27 Projects 坐标链接与提交详情复制收口
+
+关联 REQ-24、DD-74/118/160(5)，沿 V-SCN-89/93 的原 Projects 读消费者。基准
+`8c5395908aacbc6c4d82a57eb43855b4d66824ee`；产品固定源
+`ebb014ac11838a33e065fc86b65a9fba00099dd2`，最终生成物与补充回归固定源
+`38b68f5beebd5ce3b9635432ed20b00411cb479f`。功能来源为 Buzz
+`779af8886caae1317b4de962082429867ab61503` 的
+`desktop/src/features/projects/ui/ProjectCommitDetailPanel.tsx`、
+`desktop/src/shared/ui/markdown/entityLinks.tsx::useOpenEntityLink` 与
+`desktop/src/shared/useEntityDeepLinks.ts`。原差异台账
+`collaboration/fork/verify/original-diff-inventory.md` 的这三行虽归为共享迁移，
+实际仍有操作缺口，不能从迁移分类推导功能完整。
+
+- 原提交详情标题含 Copy commit link；共享详情以“没有 commit route”为由移除。
+  DD-160 后路由已有 `tab=commits/commitHash`，消息和 OS 消费者却仍只接受 Issue/PR。
+  本批恢复仓库与项目链接，接回仓库详情和项目首页 Commits sheet 的复制按钮；后者
+  传入实际选中提交所属仓库，不借首页默认仓库。同一共享主体服务 Web/Desktop。
+- 每次打开重新用当前 `ProjectsHost` 读取完整有界目录与删除折叠，精确匹配
+  30617/30621 坐标；tooltip 结果不作准入。只把当前目录解析出的 project/repository
+  引用、原 tab 和 commitHash 交给原导航。链接不选择 Tenant、Host、设备身份或
+  clone URL；Git 正文仍经过原 DD-118 宿主读取与 Relay 授权。相同 hash 不合并仓库，
+  已删除、不可读、读取中 bindingVersion 改变或身份退休均不导航。
+- 沿原分享按钮、菜单和令牌呈现；新增“复制提交链接／打开提交”两项中英文词条，
+  Dart 由原 `tools/gen-platform-i18n.py` 生成。没有 API、数据库、权限或发布证明协议
+  变更，没有修改 Composer、普通 publication 对账或生产服务。
+
+验证使用原 SDK
+`sha256:3007729eb192341a4f004a88e42e1e66c94fc67d763acfc96568bd7311116018`，
+Node `v24.21.0`，实际 1 CPU/4 GiB、memory+swap 同限；GitHub 固定对象导出，
+原 container-safety 预检/限额回读，缓存位于 `/volumes/data/kailo/check-cache`，
+解包复用本人 `/var/lib/kailo-ci/tmp/dd160-checkout-ui/source`。无宿主工具链。
+
+1. 首轮 `09346ac0e9248b319be7883da4ffa0c340672823` 的 i18n 生成因两个重复 key
+   退出 1；修为复用原 Repository/Project 词条，保留原失败日志。
+2. `ebb014ac1`：两处 `pnpm install --frozen-lockfile` 均通过；共享生产 tsc、
+   `tsc -p tsconfig.test.json`、Desktop tsc 均 0；原 Vitest 的
+   `project-inbox.test.tsx` 95、`project-git.test.tsx` 16、新增坐标链接 6，合计
+   117/117 通过。i18n 生成与 check 均 0。既有 React act 警告原样保留，不算失败。
+3. `38b68f5be` 只补 Dart 生成物与同 hash 双仓库/删除坐标检查；复用同一锁定依赖，
+   不重复安装。测试类型与 i18n check 均 0，坐标链接 7/7；原 Desktop
+   `node --import ./test-loader.mjs --experimental-strip-types --test src/shared/deep-link.test.mjs`
+   为 11/11。这验证队列逻辑，不代替 Windows OS 实际唤醒。
+4. 同一私有导出临时恢复 `EntityLinkAnchor` 只接受 Issue/PR 的旧分支，实际
+   “详情复制 → 消息链接 → 精确仓库提交/diff”消费者失败，exit 1、1 failed/15 未选；
+   失败在无法找到可交互 repository chip 的断言，不是编译或 OOM。逐字恢复后同一
+   消费者 1/1、15 未选、exit 0。恢复前后 SHA-256 同为
+   `96a47d3c2acbe209ed780e193823c78078712d7378777fa1f42d9206121eb34e`。
+
+原始 runner、日志、exit、limits、OOM 与恢复哈希位于 CI 节点
+`/volumes/data/kailo/verification/projects-inbox/` 的完整 SHA 目录，最后一轮目录
+以 `38b68f5beebd5ce3b9635432ed20b00411cb479f-final` 命名。两次最终容器均 exit 0、
+OOM=false，实查 `projects-inbox-*` 容器不存在。初次 runner 的 negotiation tip
+对象不存在、独立 sparse 树的 upstream status 缺相邻 `.references`，以及使用
+实际路径后读取 `UPDATE_TASKS.json` 权限失败均保留为工具边界；上游工作树 HEAD
+另已只读核对为上述固定 779af，没有修改证据树或权限。Git 全程以 kailo-dev
+提交/push；自动后台 gc 因旧 publication-db-fence 元数据属 root 报权限失败，
+提交和 push 本身成功，没有搬动 Git 元数据。
+
+本批不声称全量 Projects/Inbox 恢复、真实浏览器剪贴板/双主题截图、三账号协作、
+Windows 安装包或部署验收。其他原菜单与设置仍须逐项核对；本轮未执行全局编译、
+后端/Relay 重检查或正式发布。集成后需要按最终同源词条统一生成 Dart。
+
+## 2026-10-27 Desktop Needs action 宿主漏接恢复
+
+关联 `REQ-24`、`DD-74/75/125(5)`、`SS-BUZ-GOVERNANCE`。比较基线为
+`be347ecc2d1c98d7b1fd31bbc79e44458c140586`，产品提交
+`2230c0f07a169de2a88643511064ac3f59c5ac12`，最终检查源码
+`444fd617576d29e756e0aa8005316ae5dfb291cb`。两份源码文件合计 +122/-2，
+其中产品只改 Desktop `features/home/ui/HomeView.tsx`，其余为事后消费者证据。
+
+固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的
+`desktop/src/features/home/ui/InboxFilterMenu.tsx`、`lib/inbox.ts::buildInboxItems`
+和 `useFeedItemState.ts` 保留 Needs action 筛选、待处理项与本机完成标记。
+DD-125(5) 已把 DD-106 关闭的原 workflow 46010–46012 来源改为 Temporal
+ApprovalProjection。当前共享 `inbox/needs-action.tsx` 与 Web 的
+`InboxPane` 已有此恢复，不能再用旧缺项记录声称整个来源未实现；实际缺口是
+Desktop HomeView 未调用共享 source，也未向 InboxView 传 `needsAction`。
+组件通知虽可能让该筛选出现，不能代替本人审批项。
+
+本批在 Desktop 复用 `NativeSession.client` 与 PlatformProvider 从同一
+`client.session()` 取得的 `tenantPrincipalId`（`useCurrentPrincipalId`），
+未就绪时不查询、不提供审批项；向同一 InboxView 传入共享源并接回原刷新。
+读取仍为 BFF 的 pending/initiated approvals；详情、确认决定、回读与 UNKNOWN
+处理仍为原 ApprovalPanel，已读标记只写本机。没有新 API、schema、状态、权限、
+workflow producer 或 Relay 发布。没有把设备公钥当 Principal，也没有新建审批 UI。
+
+原 SDK `sha256:3007729eb192341a4f004a88e42e1e66c94fc67d763acfc96568bd7311116018`，
+1 CPU / 4 GiB、memory+swap 同为 4 GiB、pids 256；实际限额回读已保存。
+源码取 GitHub 固定归档，复用已交接的 Data source；安装缓存沿原
+`/volumes/data/kailo/check-cache`，未复制整份依赖到 NVMe，未运行宿主工具链。
+
+- 产品点 `2230c0f07`：共享生产/测试类型 0，原 Inbox surface 22 项及
+  auto-selection 14 项通过。新增 suite 因 Vitest 改写文件 URL 未能载入，整体 1；
+  不计新增消费者通过。
+- `a5036aef0` 修正读取位置，新增两项仍失败：测试只识别 JSX opening，遗漏了
+  实际 HomeView 的 self-closing 元素；原三项通过。`444fd6175` 修正测试节点读取，
+  全部 Needs action 5 项和测试类型通过，产品接线未再变化。
+- `444fd6175` 首轮 Web 安装源 1,039 文件及 Web 类型 0；Desktop 实装核验发现
+  `useDrafts.ts` 旧副本，整体退出 1，未执行的 Desktop 检查不算通过。
+  随后保持同一固定源码，用原 `npm ci --offline` 和 Native
+  `pnpm 11.4.0 install --frozen-lockfile --offline --filter buzz` 顺序刷新。
+  两宿主实际解析出的共享包各 1,039 文件逐字一致；Web/Desktop 类型 0，原
+  Native `features/home/lib/inbox.test.mjs` 23/23，最终作业退出 0、OOM=false。
+- 反证在独立导出临时将 HomeView 的真实 `needsAction` prop 改为 null；实际
+  Native 接线表达式到共享 DOM 的审批项断言失败，exit 1。逐字恢复后 Needs action
+  5/5、exit 0；恢复哈希相同。它执行真实绑定、共享列表/详情、BFF 决定与刷新，
+  不是把 hook 返回值当业务成功。身份用例验证未就绪不读、旧读取晚到不进入新身份、
+  旧 refresh 不刷新新 Principal；已选详情退休另由现有 provider 卸载源码复核支撑。
+
+完整输入审计 3,454 项与 GitHub 固定对象逐字一致。原失败日志与最终日志、限额、
+OOM、故障和恢复原件保留在 CI
+`/volumes/data/kailo/verification/inbox-needs-action/`，最终目录 `444fd6175-fresh`。
+[回执](inbox-needs-action-native-20261027.json) SHA-256：
+`84adf5d425153ed274ad4256a2014dbdf87838e50a535c80d99b35756a6702bf`。
+所有本批容器已退出并清理；source 后续可复用，历史日志/回执保留。
+Git 后台 gc 仍因旧 worktree 元数据权限失败，提交与 push 本身成功；未动 Git 元数据。
+
+本批未挂载完整 HomeView/NativeBootstrap、未跑真实 Temporal/Relay、未安装 Desktop
+或更新 Mobile，也未发布 Web/服务。原管理面授权和 UNKNOWN 消费没有被本批重写；
+这些定向结果不代表完整 Inbox、跨设备、三账号双主题或生产验收。
+
+## 2026-10-27 Inbox 读取失败后的显式重试恢复
+
+关联 `REQ-24`、`DD-74/125(5)/138(4)`、`SS-BUZ-GOVERNANCE`。基线
+`dfdb6e4ff9b28ec8a3a20a1829c4f32b85e62af9`；产品
+`fb16b046588e5e1736e4bb80eadefba629be8977`；检查固定点
+`94081207686c375ec530d348967e662206ac4dee`。源码 3 文件 +136/-5，其中产品
+2 文件 +23/-5，新增消费者 113 行。
+
+固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的
+`desktop/src/features/home/ui/HomeView.tsx` 在 feed 读取失败时显示 unavailable
+与显式 `onRefresh`。现有审批源与组件通知源已分别返回 `loading/ready/unavailable`
+及 `refresh`，但 InboxView 向 ListPane 只传条目，丢失读取状态：失败在当前
+筛选没有其他条目时被显示成完整空列表，且没有原重试操作。这是当前源码缺口，
+不是根据旧未验收记录重做已恢复的审批决定链。
+
+本批共享 InboxView 透传两源的原状态与刷新；ListPane 只组合当前筛选的来源：
+审批在 all/needs_action，组件通知在 all/mention/needs_action。读取未完成或失败
+时不宣称完整空，失败显示已有错误词条与 Retry；明确重试只刷新失败来源。
+另一来源已准入的条目照常保留。项目、线程、Agent、草稿与提醒分支不因无关来源
+失败而被挡住。无新 API、业务状态、权限、审批决定、通知或 Relay 发布；未改
+既有源查询与 UNKNOWN 规则，没有新增词条。
+
+固定 GitHub 源码在原 SDK
+`sha256:3007729eb192341a4f004a88e42e1e66c94fc67d763acfc96568bd7311116018`
+执行：1 CPU / 4 GiB，memory+swap 4 GiB、pids 256，实际 HostConfig 已回读。
+容量输入复用已交接的 Data source，依赖缓存沿原专属目录，无宿主工具链。
+
+- 原 Vitest 新重试消费者 5/5、Inbox surface 22/22；共享生产/测试、Web、Desktop
+  四项类型检查与同源 i18n check 全部 0。实际使用原 BFF client 与 query hooks，
+  覆盖 all/needs_action 中任一来源 HTTP 503 后保留另一来源、显式重试恢复、
+  不额外刷新成功来源；双源 pending/403 不报空，成功读回空才出现空列表。
+  中英文使用同源词条。没有重复上一批审批决定或 Native 消息管理检查。
+- Web 原 `npm ci --offline` 与 Native 原 `pnpm 11.4.0 install --frozen-lockfile
+  --offline --filter buzz` 顺序完成，两宿主实际解析包各 1,039 个共享源码文件
+  逐字一致；本批没有借用上批安装包的通过结果。
+- 真实反证把共享实现改回“只有 loading 算未完整，失败不算”：双源拒绝后的错误
+  呈现断言失败，exit 1、1 failed。按固定原件逐字恢复后新 5 项全部通过、exit 0，
+  恢复前后 SHA-256 相同；最终作业 exit 0、OOM=false，容器已清理。
+- 首次 runner 因故障注入字符串的 shell 引号解析退出 2，在容器创建之前失败；
+  坏 runner 与语法错误记录保留，修正并经 `bash -n` 后才执行上述 SDK。
+  没有为此改变产品、依赖锁或检查断言。既有 React act 警告保留，不计作失败。
+
+完整输入审计 3,455 项与固定 GitHub 树逐字一致。原件目录为 CI
+`/volumes/data/kailo/verification/inbox-retry/940812076`；
+[回执](inbox-source-retry-20261027.json) SHA-256：
+`66962d082181cbbf2d863266dc3539ef019226036bc6846be5fe5a22310cbb5b`。
+source 可在回执之后复用，日志、限额、故障与恢复记录保留。
+Git 后台 gc 的旧 worktree 权限错误仍保留，提交/push 成功，未修改 Git 元数据。
+
+一次有界交叉复核未发现新增阻断。mention/其他筛选及旧 refresh 的边界另按实际
+源码复核，不冒称新增 SDK 场景已覆盖；没有完整宿主/引导挂载、真实 BFF/Temporal
+服务、设备、双主题截图、部署或全工程 full 验收。
+
+## 2026-10-27 Inbox 非资料标题与头像的打开操作
+
+关联 `REQ-24`、`DD-74/125(5)/138(4)`、`SS-BUZ-GOVERNANCE`。基线
+`f4bc1b96df2fb4484e4db41b96fb6ab5d61b9e3f`，产品
+`ae929d82147664717049be30b252d7a785cef204`，检查源码
+`213c213d5f197ba0c61cfbf8b962f512aeeac18d`；源码 6 文件 +39/-8，
+其中产品 3 文件 +7/-4。
+
+固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的
+`desktop/src/features/home/ui/InboxListPane.tsx::handleRowContentClick` 在点击
+真实资料入口时保留 popover，其余内容选择当前行。当前共享 InboxRow 无条件给
+sender/avatar 容器加 `data-inbox-profile-trigger`，点击命中后直接返回；
+NeedsActionInboxRow 的动作标题/Shield 图标、ComponentNotificationInboxRow 的
+来源文字/头像只是展示，没有资料入口，因而这些常用点击区域无法打开详情或通知。
+这是当前消费者缺口，不涉及此前已撤销的不可达 Discard 候选。
+
+共享行增加显式 `profileTriggers`，默认保留原普通消息资料入口；上述两类
+非资料消费者明确关闭该排除，标题、图标与头像回到同一原 `onSelect`。
+审批仍读取原详情、只在本机标记已读；通知仍经宿主原打开/标记已读路径。
+普通消息资料点击不触发行选择，行菜单动作仍独立，键盘用的整行按钮保留。
+没有新增事件、API、权限、审批决定、发布或其他页面能力；两宿主共用同一主体。
+
+GitHub 固定源在原 SDK
+`sha256:3007729eb192341a4f004a88e42e1e66c94fc67d763acfc96568bd7311116018`
+执行，1 CPU / 4 GiB、memory+swap 4 GiB、pids 256，实际限额已回读。沿已交接
+Data source 与原缓存，未使用宿主工具链或复制整份依赖到 NVMe。
+
+- 原三个消费者文件按本批操作选择 5 项，5/5 通过，39 项未选不计通过。
+  审批标题/图标分别打开共享详情并读取原审批、写本机 done；组件通知标题/头像
+  分别进入原 path 并提交原通知 read；普通消息真实 profile 与 mark 点击不误选行，
+  预览点击和整行按钮仍选择行。没有重复审批决定链或后台验证。
+- 共享生产/测试及 Web/Desktop 四项类型、同源 i18n check 均 0。Web 原
+  `npm ci --offline`、Native 原 `pnpm 11.4.0 install --frozen-lockfile --offline
+  --filter buzz` 顺序完成；两宿主实际解析包各 1,039 源文件逐字一致。
+- 反证在独立导出把两个容器恢复为无条件 profile 排除；真实审批标题点击后的
+  详情断言失败，exit 1、1 failed。按固定原件逐字恢复后同批 5/5 通过、39 未选、
+  exit 0，恢复前后 SHA-256 一致。最终作业 exit 0、OOM=false，容器已清理。
+- 3,455 个输入与固定 GitHub 归档逐字一致。既有 React act/npm 配置警告原样
+  保留；Git 后台 gc 仍报旧 worktree 权限错误，但产品、消费者提交与 push 成功，
+  未修改 Git 元数据。
+
+原件目录为 CI `/volumes/data/kailo/verification/inbox-row-open/213c213d5`。
+[回执](inbox-row-open-20261027.json) SHA-256：
+`480dad2c4498a699de8774caddef144640eb9f31dcd75f556cfe1a6ece3fe9df`。
+Data source 已无检查消费者，可后续复用；历史日志、限额、故障和恢复原件保留。
+这些是原共享 DOM 与脚本化 BFF 消费者，不是完整宿主/Bootstrap、真实服务授权、
+双主题截图、Windows 安装包、Mobile 或部署验收；没有声明全工程 full。
+
+## 2026-10-27：Web DM 线程草稿的原目的地恢复
+
+本批依据 DD-74、REQ-24 以及 DD-146 保留的草稿/未知发送语义。
+固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的
+`DraftsPanel.tsx::openDraftEntry/sendDraftEntry` 从原草稿目的地打开线程并传原 autoSend key；
+`original-diff-inventory.md` 已把该界面主体归为共享迁移，不能因此漏掉宿主真实草稿。
+本批基线 `4152f377fe3ff37b4091103883a919006d24ce41` 的实际缺口是：
+`PlatformApp` 把 Conversation binding ID 传给 `ChannelThreadPane`，后者保存
+`thread:<bindingID>:<root>:<reply>`；`InboxDrafts.destination` 却只把回复草稿 scope
+与 native channel ID 匹配。因此 Web DM 内写下的合法线程回复在 Inbox 草稿里不能打开或发送。
+
+修复沿已有共享 DraftSurface、Web 宿主适配、原草稿存储与导航，不新增平台状态、权限或发布出口。
+当前 ACTIVE 且包含本人的 Conversation 可按 binding/native ID 成为唯一候选；
+两个会话跨 ID 命中或与 Workspace 冲突都拒绝，不按名称、顺序或 ID 碰撞概率猜测。
+裸 ID 只产生候选：所有 DM 线程打开/确认发送均通过原
+`conversationMessages({anchorEventId})` 读取保存的回复，前端核保存的 root/anchor、原 `h`
+与线程关系，缺失、跨 scope、根不匹配或拒绝均不导航。
+原 Core `read_message_event` 验签及核精确 ID/单一 channel，`read_inbox_anchor`
+验证根/父回复闭包；消息 handler 返回前重做 `read_target.admit`、`same_admission`
+与 actor key 比较（Conversation/tenant binding version），这部分为已有源码事实，
+本批未重复执行 Core/Relay 验证。
+
+等待期间冻结完整 DraftState 和目的地，通过原 `draftStatesEqual` 比较 React 输入与
+`loadDraftEntry` 实际持久记录，同时核原 `getDraftAuthority` 对象/修订号、store 身份、
+组件 owner 及当前候选。删除、同毫秒修改、删除后同字节重建、身份 A→B→A 或会话版本变化
+使旧回调退休；不会把旧确认变成新草稿的 autoSend。
+仅导出原 equality helper，不复制字段清单。普通/编辑草稿匹配规则保持原样；
+UNKNOWN 原意图/Idempotency-Key、Composer 授权与发布链没有替换。
+
+固定验收源码 `a025e09a866eec76bb045da3891f6f99b5a309de` 已推送。
+原 SDK `sha256:3007729eb192341a4f004a88e42e1e66c94fc67d763acfc96568bd7311116018`，
+1 CPU / 4 GiB / swap 同额 / pids 256，原 resource preflight 与 limits 核验，
+源码/临时文件/日志均在实际 Data 盘，复用原缓存，容器已终态清理。
+
+- 原共享 DraftSurface 3/3；Web InboxDrafts 整文件 26/26；Web tsc 与同源 i18n check 均为 0。
+- Web 原 `npm ci --offline` 完成，实际解析 file 包的 1039 个 src/profile-assets 文件逐字一致。
+- 恢复旧 native-only 回复匹配：9 项真实断言失败，exit 1；移除组件 owner 围栏：2 项失败，exit 1。
+- 单独移除原 authority 对象/修订号检查、保留其他保护：删除后重建与 store 身份 ABA 两项失败，
+  其余 24 项未选；逐字恢复后原整文件 26/26。主批恢复也为 26/26。
+- 首批 `422f7c783c6bd2032e252b4aebc1e3ae66e5c0ce` 的 shared 3/3 与实装核验通过，
+  Web tsc 因 `loadDraftEntry` 可为 undefined 报 TS2345、exit 2；失败原日志保留，未算作通过。
+- 最终 GitHub 固定归档 3455 个输入逐字一致。回执见
+  [inbox-dm-draft-20261027.json](inbox-dm-draft-20261027.json)，SHA-256
+  `62e92c240fd7cd8f95620f4f12a0f2bf964d3c961578ec7ab4765dea80d754ed`。
+
+原日志目录为 CI Data `verification/inbox-dm-draft/a025e09a8` 与
+`a025e09a8-authority`，首失败在 `422f7c783`。交叉源码复核未发现新增阻断。
+这里的 DOM 消费者使用原组件/草稿存储及脚本化 BFF 返回，未将其称为真实浏览器、
+Desktop 安装包、原生设备或部署验收；本批未重跑 Native 类型/全局构建，未部署或改 CI 信任。
+
+## 2026-10-27：Inbox 普通 DM 新草稿与旧意图所有者
+
+关联 DD-74、REQ-24、DD-146。固定 Buzz
+`779af8886caae1317b4de962082429867ab61503` 的 `InboxDetailPane` 普通 DM composer
+使用原 channel 草稿键，与完整 DM 页面共用草稿。基线
+`5a1184525d7941067d81384f504d9fd431fe39c3` 的 Web 宿主却分成两个键：
+`InboxPane` 给 `InboxThreadPane` 传 native channel ID，后者保存该短键；
+`PlatformApp` 的完整会话页给 `ChannelPane` 传 Conversation binding ID，保存 binding 短键。
+没有 parent 的 native 短键草稿无法从 `InboxDrafts` 证明原绑定，所以该入口仍拒绝，不能简单
+对两个 UUID 做 OR 匹配，也不能靠当前仅有一个同名会话猜来源。
+
+本批仅恢复新普通 DM 草稿的完整写入、持久化、重新打开及原发布操作：
+当前上下文准入成立后，沿原 `initDraftStore` 初始化本人 origin 范围；存在旧 native draft
+或 pending-send 时固定保留原 key 与 owner，包括只有待上传文件名/UNKNOWN 的记录。
+只有旧记录均不存在时，选择完整会话页已经使用的 binding key。
+初始化期间保留原 disabled Composer，不先给一个猜测的键，也不把未完成显示为失败。
+选定后不随记录变化切 key、搬移正文、合并意图或删除旧记录。
+
+两个短键是同一个普通 DM 草稿的宿主命名空间分裂。binding owner 遇到旧 native 记录晚到，
+以及 native owner 遇到 binding pending/sendIntent 已存在或晚到，均拒绝新派发并保留双方记录；
+原 onPublish 在实际派发前再次直接读原 store，React 尚未重绘的旧按钮也不能绕过。
+身份变化退休当前 owner，不能把另一身份的旧 UNKNOWN 搬入新身份。
+独立 `thread:<scope>:<root>[:reply]` 是有明确目标和独立 key 的原线程意图，本批不把它们
+扩成同会话全局锁。实际 Drafts 线程导航是 `PlatformApp` → `ChannelPane` →
+`ChannelThreadPane`；唯一生产 `InboxThreadPane` 调用者不传 restoreDraftKey，已有相关
+props 用例不被宣称为这条真实路由。本批未改上一批线程归属证明。
+
+历史 native 无 parent 草稿仍保留原 Inbox 的恢复路径；未增加其来源证明、自动迁移或
+Drafts 打开权限。双侧未决冲突保持明确不可发送，不把拒绝状态宣称为历史数据已全部恢复。
+新 binding 草稿使用上一批已恢复的原 Drafts 普通会话目的地与确认发送入口；没有增加
+草稿格式、平台实体、权限或第二发布权威。
+
+原 SDK 固定 `sha256:3007729eb192341a4f004a88e42e1e66c94fc67d763acfc96568bd7311116018`，
+1 CPU / 4 GiB / swap 同额 / pids 256，实际 Data 源与日志，原资源预检/限额校验。
+所有检查容器均已终态清理，旧日志保留。
+
+- 首批 `ba584a42598af85c7cdef798060589a9887f371c`：Web tsc 0，消费者 53/55；
+  两项新夹具分别把 HTML 传给原 Markdown 编辑器、漏掉 store 规范化的 mentionRefs 默认值，
+  实际退出 1。修正输入/完整期望值，没有放宽正文、key 或 UNKNOWN 断言。
+- `c8d69f0d0d29a0ef8395fa6e748c32684b590698`：完整原文件 55/55；恢复旧 native 新草稿键、
+  移除 binding→native 晚到保护分别实际退出 1；逐字还原后 55/55。该固定源缺反向保护，
+  不能把它的通过数当作反向冲突验收。
+- 最终 `6086f71a3002314ca8135e181231cdcaab9ea11a`：原文件 57/57，Web tsc 与 i18n check 0；
+  独立移除 native→binding pending/sendIntent 保护后原消费者实际退出 1，逐字恢复后 57/57。
+- 新主链用例实际挂载原共享 Composer，输入、原 store 落盘、重开和原 conversation publisher
+  派发均被验证。冲突用例调用原 Inbox onPublish，检查发布适配器零调用、旧记录完整保留，
+  包括写记录与点击旧按钮发生在同一个 act、React 尚未重绘的窗口。
+- 原 Web npm ci 已执行；实际安装的 file 包 1039 个 src/profile-assets 文件逐字一致。
+  最终 GitHub 固定归档 3455 个输入逐字一致。回执见
+  [inbox-dm-owner-20261027.json](inbox-dm-owner-20261027.json)，SHA-256
+  `2573708ec4b2d9715638f41c53927f01a309edafcf4275f1ae8f9b2d8b1f8f9e`。
+
+CI Data 原日志在 `verification/inbox-dm-owner/{ba584a425,c8d69f0d0,6086f71a3}`。
+有界交叉复核已核对真实调用链与两个普通短键的对称门控。本批仅 Web 宿主改动，测试中的
+BFF 返回和 publisher 是脚本化适配器；未认领真实 HTTP 服务、完整 PlatformApp 挂载、
+Desktop/Mobile、打包、部署或真实设备验收。
+
+## 原 Projects tag 快照与只读操作恢复（2026-10-27）
+
+本批依据 DD-118(2)、DD-160(5)、V-REQ-24 与 SF-BUZ-49。比较基线为
+`e7213abffce6970b137a93cdfb361197c2cb468e`；冻结官方 Buzz
+`779af8886caae1317b4de962082429867ab61503` 的
+`desktop/src/features/projects/ui/ProjectDetailScreen.tsx`、
+`useProjectRepositoryRefSelection`、`ProjectRepositorySource` 和原 snapshot/file consumer
+已有 30618 tag 选择、remote 强制及 tag 模式只读限制。当前共享主体此前把 tags 置为空数组，
+丢弃 selectedTag，snapshot key 固定 no-tag、文件读取不携带 tag，导致两宿主均无法执行原操作。
+
+本批消费已准入 30618 tag，保持原菜单和 tag/branch 名称分区；共享 snapshot 与懒加载文件
+都携带同一 refs/tags/name、宣布的 commit，缓存包含 host scope、repository、tag 与 commit。
+无效 tag 不退回 HEAD；tag 消失期间不展示其他引用快照。沿现有 BFF/Native typed Git capability，
+没有新增 HTTP、契约或权限；后端原 Git fetch 与 commit 比对仍是实际读取约束。
+`projectTagTarget` 镜像现有 `clean_target_ref` 的字符/规范化及已有合同长度边界；原后端
+normalizer 本来不排除重复斜杠、`.lock` 或分量点号，这些原样送给 Git 拒绝，不伪称新增完整
+Git ref 校验，也不错误读取 HEAD。
+
+原 Desktop tag 强制 remote，隐藏 clone/push/pull 与 branch 建删；旧选择回调也不能改回 local。
+branch 原 mutation 在实际派发前再次核验捕获的 host/project/只读 owner，涵盖 React Query
+异步 onMutate 期间切换 tag/身份、旧弹窗回调；已派发的结果保持原 UNKNOWN/同一意图对账，
+没有清除 pendingPush 或创建第二业务 key。已有文件预览按选中 path 从当前快照取行，
+避免同路径缓存切换后继续显示上一引用的 inline bytes。首次未缓存切换仍遵循原加载/文件列表行为。
+
+原版 tag 视图的 ActivityPanel 与页面上下文仍沿 activeBranch；本批按原呈现保留，不能把
+该徽标或上下文字段当作 tag 快照来源证明。本批没有新增 Agent 上下文合同或推断 Agent 写权限。
+
+固定检查源码为 `2780ea5e4c9778f390ac8e6566c0820bcb2321b9`。产品/消费者范围为 10 文件
++217/-42；其中后续三次夹具修正没有修改产品。原 SDK 为
+`sha256:3007729eb192341a4f004a88e42e1e66c94fc67d763acfc96568bd7311116018`，
+实际 Data source/log，1 CPU、4 GiB、swap 同额、pids 256，执行原资源预检和容器实际限额回读。
+
+保留三轮真实失败，均不是通过的验收结果：
+
+- `a537a4dd623f3c4bb02979f67c48c1c2adb4707e`：shared 两项 tsc/i18n 0，46/48，exit 1。
+  新夹具未等实际 file row，并把 commit header 当 file row 点击。
+- `6a153d9531b4bdf7fc0710bebd6e5658078fff71`：47/48，exit 1。
+  新夹具误以为首次未缓存 tag 切换仍保持打开的文件，而原 loading surface 会回到列表。
+- `24f6b4bbe7a516cadea7cb48fd6f365b2c93183b`：47/48，exit 1。
+  预访问 tag 的夹具仍使用测试 gcTime=0，缓存立即回收。最终仅此消费者改为两宿主实际
+  5 分钟寿命，先断言真实 tag 缓存已加载，finally 清理，没有放宽正文/旧内容断言。
+
+原始日志在 CI Data `verification/projects-tag/{a537a4dd6,6a153d953,24f6b4bbe,2780ea5e4}`。
+
+最终原消费者结果与故障反证：
+
+- `project-git.test.tsx` 22 项、`project-branch-review.test.tsx` 15 项、
+  `project-git-native.test.ts` 11 项，共 48/48。新增 6 项 tag、2 项延迟 branch mutation；
+  其余原读取、原 review/merge 与 UNKNOWN 消费者未移除。
+- 六项 tag 消费实际挂载原 ProjectsView，覆盖同名 tag/branch、snapshot/懒加载 file、
+  缓存 inline preview、Native local→tag readonly、坏 tag 不回退、旧身份晚到响应。
+  两项写围栏消费原 useProjectBranchActions 和真实 QueryClient 的异步 onMutate，
+  确认 tag 切换后旧创建/删除提交不派发。不是完整浏览器弹窗生命周期验收。
+- 五项独立变异分别移除 tag 菜单、懒加载 tag 目标、local readonly、实际 mutation 派发前
+  owner 检查、当前快照预览行；原消费者均实际 AssertionError/exit 1，逐字恢复 SHA 相同。
+  还原后 tag 六项、branch/preview 三项分别通过；不使用仅实现镜像的断言充当反证。
+
+原 frozen pnpm/npm 安装、shared production/test/Web/Desktop 四项 tsc、原 i18n check
+均 exit 0；容器实际终态 exit 0、OOM=false，随后回读容器已不存在。两宿主通过实际
+require.resolve 核对安装的 `@client-kit/platform` src/profile-assets，各 1040 文件逐字一致；
+最终 GitHub 归档 3456 输入与实际检查 source 逐字一致。回执见
+[projects-tag-20261027.json](projects-tag-20261027.json)，SHA-256
+`a38f75bd80eb95e38ce0eb1fe2a275c85f4b22e475d6ac2e1a79f9e7fb9aa05d`。
+检查日志中的既有 React act 警告与 npm config 警告保留，未隐藏或把失败退出改为成功。
+
+上述为共享真实 UI/hook + 脚本化 BFF/Native Git transport 和类型检查；没有跑真实
+repository/Relay 权限环境、完整浏览器/Windows 设备、构建、部署或 Mobile 验收。
+没有修改草稿、发布签名、UNKNOWN 结果或服务器写协议。旧历史数据不补造；本批只恢复
+可信现有 tag 的原读取/只读交互，不声明完成所有 Projects 操作或一期发布。
+归档审计完成后 source 缓存可复用，原日志/回执继续保留。
+
+## 原 Overview 仓库不可读页 Retry 恢复（2026-10-27）
+
+关联 V-REQ-24、DD-118(2)、DD-160(5)。本批基线
+`9abf16c08d64045252dc4e9c43be9a1bff303006`，固定检查源码
+`a7279228e87b6cf789547f8d2b4689d53217937e`，3 文件 +68/-3。
+固定官方 Buzz `779af8886caae1317b4de962082429867ab61503` 的
+`desktop/src/features/projects/ui/ProjectReadmePanel.tsx` 在仓库 unavailable 分支把
+`sourceControls.onFetch/fetchPending` 交给原 `ProjectRepositoryUnavailableState`。
+当前共享 Files/Commits 已消费同一个 `state.fetch`，Overview 却只传 reason，用户读失败后
+缺原错误页的 Retry。此为当前调用链确认的漏接，不依据旧差异清单猜测。
+
+共享 ReadmePanel 新增可选 onRetry/retryPending 透传，RepositoryGitContent 的 Overview
+绑定原 state.fetch；Web/Desktop 消费同一主体。没有新按钮样式、文案、读取预算、自动重试
+策略或授权；仍是原 30617 坐标和当前 BFF/Native scope。原 fetch 刷新 snapshot/30618、
+Native 同步状态与文件缓存；旧身份 lifetime 退休后不发提示，不把旧回执显示给新身份。
+本批不增加请求写入、草稿迁移、签名、UNKNOWN 重签或任何第二权威。
+
+原受限 SDK 为
+`sha256:3007729eb192341a4f004a88e42e1e66c94fc67d763acfc96568bd7311116018`，
+1 CPU / 4 GiB / swap 同额 / pids 256，输入、临时文件和日志在实际 Data；先原资源预检，
+再回读实际 Docker 限额。没有与其他重型 SDK 并发，也没有修改共享服务或发布门禁。
+
+首轮 `47b7ce365ce68b4ba1d2d4fd1420161d99836d6b`：shared production/test tsc 与
+原 i18n check 0，原文件 23/25，exit 1。两个新夹具分别过早在 Query observer 重绘前断言
+pending、给 Native 非正式错误字符串而被原 adapter 正确映射为网络失败。
+后继仅修测试等待与原生产 `project_repo_not_found` 错误码，未改变产品错误分类或放宽断言。
+原失败日志保留在 CI Data `verification/projects-overview-retry/47b7ce365`。
+
+最终原 `project-git.test.tsx` 完整 25/25；新增三项分别经真实共享 ProjectsView 和两种
+原 host decoder，执行原读取失败→点击原 Retry→恢复 README、pending 不再有可用 Retry、
+坐标及 Native scope 入参保持、零发布/本机写命令，以及旧身份请求晚到不污染新正文/提示。
+独立移除 ReadmePanel 的原 Retry 透传，该组实际失败/exit 1（缺失入口被检出）；逐字还原 SHA 一致后
+原三项通过。不重复此前无关 review/merge 或完整全局 SDK。
+
+独立 worktree 中原 `upstream_manifest.py status` 报相邻 `.references` 不存在，未把其 exit 0
+当作来源比较成功；固定只读 `/volumes/kailo/.references/buzz` 的 HEAD 实查为上述 779af，
+本批对照的是该固定原文件，没有修改来源记录或只读上游。
+
+最终 frozen pnpm/npm、shared production/test/Web/Desktop 四项 tsc、i18n check 均 0；
+作业真实 exit 0、OOM=false，回读无遗留检查容器。两宿主实际 require.resolve 的共享
+file 包各 1040 个 src/profile-assets 文件逐字一致；GitHub 固定归档 3456 输入与检查源
+逐字一致。日志中的 React act/npm config 原警告保留，没有把警告或失败隐藏。
+回执见 [projects-overview-retry-20261027.json](projects-overview-retry-20261027.json)，
+SHA-256 `cf53af4c9599fd54ed9417f0759d02d59eb2114a30c6b7a96d32454d4162df23`。
+原完整日志位于 CI Data `verification/projects-overview-retry/a7279228e`。
+
+这不是实际 Relay/Git 服务、浏览器设备、Windows 安装、Mobile、打包或部署验收；
+测试只在 transport 边界提供脚本化返回，真实 UI、decoder、查询与重试调用链被执行。
+本批只恢复仓库 snapshot unavailable 页的原重试，不声称补齐所有 Git/README 异常分支。
+固定审计完成后 source 缓存释放可复用，原日志/回执保持。

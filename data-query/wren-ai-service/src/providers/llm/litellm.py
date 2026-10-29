@@ -80,6 +80,13 @@ class LitellmLLMProvider(LLMProvider):
         }
 
         @backoff.on_exception(backoff.expo, openai.APIError, max_time=60.0, max_tries=3)
+        async def _complete(**request):
+            # Retry only acquisition. Once iteration starts, another response
+            # would mix callbacks from different model executions under one query.
+            if self._has_fallbacks:
+                return await self._router.acompletion(**request)
+            return await acompletion(**request)
+
         async def _run(
             prompt: str,
             image_url: Optional[str] = None,
@@ -113,7 +120,7 @@ class LitellmLLMProvider(LLMProvider):
             ) + (["reasoning_effort"] if self._model.startswith("gpt-5") else [])
 
             if self._has_fallbacks:
-                completion = await self._router.acompletion(
+                completion = await _complete(
                     model=self._model,
                     messages=openai_formatted_messages,
                     stream=streaming_callback is not None,
@@ -122,7 +129,7 @@ class LitellmLLMProvider(LLMProvider):
                     **generation_kwargs,
                 )
             else:
-                completion = await acompletion(
+                completion = await _complete(
                     model=self._model,
                     api_key=self._api_key,
                     api_base=self._api_base,
@@ -142,6 +149,7 @@ class LitellmLLMProvider(LLMProvider):
                         "Cannot stream multiple responses, please set n=1."
                     )
                 chunks: List[StreamingChunk] = []
+                chunk = None
 
                 async for chunk in completion:
                     if chunk.choices and streaming_callback:

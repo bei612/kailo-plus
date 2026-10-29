@@ -636,3 +636,62 @@ source 相等，原 manifest 仅该产物 source/artifact 两字段 +2/-2，不�
 - 未生成安装包、未部署；真实 OS 钥匙串交互、频道和私聊订阅、实际 Relay 撤权、断网恢复、退出重登与设备身份切换仍待业务验收。单测中的钥匙串删除顺序用受控回调验证，不能当作真机钥匙串通过。发布门禁与 `exposure: none` 保留。
 
 原始日志位于 CI 节点 `/volumes/data/kailo/verification/buzz-r10/`：`rustfmt-limits.log`、`local-archive-node-frozen.log`、`node-frozen-limits.log`、`i18n.log`、`registry.log`、`docs.log`、`local-archive-cargo-test.log`、`local-archive-cargo-recheck.log`、`local-archive-cargo-proxy.log`、`local-archive-cargo-build.log`、`cargo-build-limits.log`。最后的 `local-archive-cargo-build.log` 是 17 项通过记录，后续结果未覆盖此前失败。
+
+
+### DD-159 生命周期补充复核（2026-10-26，基于 f551157f0）
+
+独立只读审查发现：旧退出等待远端后才清全部归档，会误删等待期间新登录的归档；IdP 刷新拒绝及 BFF 二次 401 的自动失效链未清归档；`apply_workspace` 的设备公钥替换没有归档清理；既有订阅更新 kinds 保留水位和续页游标，会漏新选种类的历史。设置界面目前不编辑已有订阅 kinds，但 Tauri 命令仍须正确。
+
+本增量沿 NativeSession 原消费链串行本机凭据退役与归档擦除，擦除完成后释放生命周期锁，远端注销等待不持该锁；旧请求仍先核对原 generation。归档查询在每次 Relay 等待前后检查会话仍有效，已在途同步退出后由原归档锁串行擦除。锁序为 lifecycle →（短暂 session state 后释放）→ archive；归档 open 只取 archive → 短暂 session state，没有持 state 等 archive 的反向路径。设备公钥切换同样在 archive 锁内先清旧库再切换；清理失败不接纳新身份。种类变化事务清理旧范围和复合游标，从零同步当前选择；相同选择保留水位。SQLite 开启 secure_delete，避免删除行的密文残留于仍持同身份密钥的活动库空闲页。
+
+本节初次写入时已完成 diff 自检和必要回归源码，未运行本增量的 Rust 检查。等待原 Desktop SDK 受限容器定向验证；未打包或部署，真实 OS 钥匙串与 V-SCN-262/263 设备操作仍未验收。原 f551157f0 的 17 项结果不能代替本增量验证。
+
+#### 生命周期补充定向验证回读（24e3c5f61）
+
+- 固定 GitHub 提交 `24e3c5f61d712cf2d899ed5c89a2ef4bdc86c303`，分支 `codex/dd159-lifecycle-20261026`，只从该对象导出独立 NVMe 源码。原 Desktop SDK `sha256:df8a3475e3e32ecf5ac79f9c12763b8ce5d4f91a75c25007fd9bfa5b282fc081`、默认 feature、原 Cargo.lock；复用既有 Desktop 编译缓存，没有修改他人源码导出树。
+- 原 `container-safety.sh` 核对实际容器为 2 CPU、16 GiB memory、16 GiB memory+swap，原 Docker 配置投递既有 CI 代理。`cargo test --locked --lib local_archive::` 为 21 passed；`cargo test --locked --lib platform::api::` 为 18 passed；`cargo test --locked --lib commands::workspace::` 为 2 passed；全部 0 failed、0 ignored、退出 0。实际重新编译 `buzz-desktop` 及依赖，用时 19.86 秒。结束后本批容器已删除，无残留消费者。
+- 新回归通过原 HTTP/NativeSession 消费者验证：注销远端等待前归档已擦除、迟到注销和身份拒绝不擦新登录数据、清理等待期间不接纳新登录、IdP 明确拒绝和刷新后再次 401 擦除、429/503 保留、擦除失败不接纳新凭据且能重试；归档侧验证设备换钥等旧操作释放后先擦再换、擦除失败保留旧设备身份、kind 集合改变重置复合游标、相同集合保留，以及删除密文不残留于活动 SQLite 空闲页。
+- Rust 格式化在同镜像 1 CPU、512 MiB memory+swap 容器完成；没有使用宿主工具链。主会话在编译前的 diff 复核指出 trait 实现方法多余可见性，已先修正再编译，本增量没有因此产生编译失败回执。
+- 原始日志位于 CI 节点 `/volumes/data/kailo/verification/dd159-lifecycle/`：`format-preflight.log`、`format-limits.log`、`format.log`、`cargo-preflight.log`、`cargo-limits.log`、`24e3c5f6-cargo.log`。正常应用重启走持久 refresh 成功路径，不触发新登录接管的归档擦除；本次没有新增 UI/TypeScript 修改，不重复此前 Node 检查。
+- 这是源码修复与定向验证，不是全量集成门禁、安装包、部署或 V-SCN-262/263 真机验收。OS 钥匙串、真实 Relay 撤员、离线恢复和 Desktop 操作仍待实际设备走查。
+
+#### 新增检查反向验证（2026-10-26）
+
+按 GOAL 的反向验证要求，从已推送 `24e3c5f61d712cf2d899ed5c89a2ef4bdc86c303` 导出独立源码，临时仅把 `local_archive/store.rs` 的 `PRAGMA secure_delete=ON` 改为 `OFF`，恢复删除后密文可留存于 SQLite 空闲页的真实缺陷。原 Desktop SDK、1 CPU、4 GiB memory 与 memory+swap 执行已有 `cargo test --locked --lib local_archive::store::tests::removed_ciphertext_is_not_left_readable_in_the_live_database_free_pages -- --exact`：实际退出 101，0 passed、1 failed；失败位置为 `store_tests.rs:278` 的数据库文件不再包含被删密文片段断言，不是编译、OOM 或依赖失败。
+
+随后逐字恢复原文件，`cmp` 与前后 SHA-256 均一致：`0fcf906e40bd3f66c359252391b6d8c9f52f6a1d2f98f3d33afd8ffd25eca6a9`。同一原命令再次执行为 1 passed、0 failed、0 ignored、退出 0。两轮容器均清理，正式产品工作树始终未作上述变异。日志在 CI 节点 `/volumes/data/kailo/verification/dd159-lifecycle/negative/`：`mutated.log`、`mutated-exit.log`、`mutated-limits.log`、`restored.log`、`restored-exit.log`、`restored-limits.log`、`original.sha256`、`restored.sha256`；两个 OOM 状态记录均为 false。本记录只补新增检查有效性证据，不扩大真机或部署验收范围。
+
+### 2026-10-26 DD-160 原生仓库读取接线
+
+从 r10 保留工作中只选择远程读取接线，不带入 Mobile、反馈或 Tenant 资料。固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的 `desktop/src-tauri/src/commands/project_git.rs`、`project_git_file_content.rs`、`project_git_diff.rs` 与 `desktop/src/shared/api/projectGit.ts`；复用已有 `buzz-project-git` 实现和共享 Projects 页面，不另造仓库内容或授权权威。
+
+本机命令只收 30617 坐标与已存在的引用参数，仓库根从当前 Relay 推出；首个 `info/refs` 的 401/403/404 都为不可读。整次调用沿 Core 已有 120 秒预算，git 沿共享 crate 的原限额。每次 git 调用前重验原登录代际、Relay 和设备公钥，在本机新签 NIP-98；私钥不进入 git 参数、环境或文件。HTTP 预检与 git 均禁用重定向，避免认证头跨源。已退出又以相同设备登录也不能恢复旧操作。读取结果在交还页面前重验原 scope。
+
+影响仅为 Desktop 宿主适配、共享 Git 的重定向限制、客户端响应映射与追溯；无公开 schema、数据库或 Workflow 改动。Desktop 新增共享 path crate 依赖，需要由原 SDK 更新锁并验证；本节写入时未编译本增量。分支建删、owner merge、本机检出尚在同批继续实现；未生成新安装包、未部署，V-SCN-264/265 尚未实际设备验收，原发布门禁保留。
+
+
+### 同日 DD-160 本机检出收口
+
+本机八命令、按 Community/30617 分区、持久冻结推送意图及第 251 项后的本机文件读取已进入固定集成 Rust 源 `0b9b72ba64c248a239abfb0f5d4ab242c662001c`。原 SDK 全锁检查 Desktop 10 项、共享 Git crate 38 项通过；恢复“待确认推送改用当前 HEAD”的真实缺陷后已有检查失败，逐字恢复后通过。首次分支创建回归失败、锁变化、原始日志和未覆盖的安装包/真机/界面边界保留在[本机检出核验](desktop-project-checkout.md)，不将源码检查算成 V-SCN-264/265 验收。
+
+### 2026-10-26 DD-160 本机检出共享界面定向闭环
+
+固定基线 `7ef4f5ab6e8c139c4f1a53d60a58ce6908ca5765`，本节产品与消费者检查源码为 `cadd7290a1070a51d6df76075c061b45316639f6`，分支 `codex/dd160-checkout-ui-20261026`。复用固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的 source 控件、`repoSyncHooks.ts` 和 `useDocumentVisible.ts`；聚焦订阅只替换为已有共享 `foregroundReady` 接缝。未重复本批已通过的原生 Rust 验证。
+
+完整消费者操作发现并修复：切换仓库 tab 会在重新读取工作项期间卸载 Git 子树，原 hook 内的 Local 选择因此丢失；现由同身份页面保存、按 30617 仓库分区，进入文件和 commit detail 继续读本机内容，Agent 上下文同步实际 source。迟到 clone、mutation 提示和 Fetch 完成回调检查原身份/仓库生命周期；旧身份完成不会切换新页面 source、通知新身份或使其查询失效。pull 和 Fetch 同时刷新独立的文件内容缓存，避免第 251 个按需读取文件继续显示旧内容。恢复上游应用聚焦时的 60 秒状态轮询，失焦停止；原生响应中 pending 同时允许 pull 或未知结果允许 push、以及成功响应分支不匹配请求时均拒绝采用。
+
+- SDK：`sha256:3007729eb192341a4f004a88e42e1e66c94fc67d763acfc96568bd7311116018`，原 `container-safety.sh` 回读实际 1 CPU、4 GiB memory、4 GiB memory+swap。源码只从 GitHub 固定 SHA 导出；缓存与证据在 Data，输入在 NVMe，没有宿主 Node/Dart 编译或测试。根工作区 pnpm 10.33.4 与 Desktop 独立工作区 pnpm 11.4.0 均按各自原锁执行 `install --frozen-lockfile`。
+- platform 原 `tsc --noEmit`、`tsc --noEmit -p tsconfig.test.json` 均退出 0；现有 `project-git-native.test.ts`、`project-git.test.tsx`、`project-branch-review.test.tsx` 合计 35 passed、0 failed（9/15/11），`vitest run … --maxWorkers=1` 退出 0；Desktop 原 `tsc --noEmit` 退出 0。原 `tools/gen-platform-i18n.py` 生成及 `--check` 通过，11 个新词条的 Dart 枚举和中英投影已提交，reason 投影未变。既有 React act 提示保留在日志中。
+- 新 DOM 操作沿真实 ProjectsView、TanStack Query、原 Radix 控件及 native decoder，仅替换原生命令边界：Clone 后 Local 跨 tab 保留，逐页打开第 251 个文件并核实不调用 remote，Pull 后当前文件刷新，Open folder 调用；pending 目标为 frozen-feature 而 picker 为 main 时只重试冻结分支；Web 无本机入口；身份切换后迟到 clone 不通知/不选 Local；Local commit detail 使用本机 diff。
+- 真实失败保留：`5f1a31caf6bcea604ee5526a971615e5c30c54f7` 初轮平台类型检查通过，消费者 33/35，新增 tab 操作误用 `.click()` 未触发原 Radix 键盘/鼠标语义；Desktop 前切换 PATH 后未找到 pnpm，退出 127，未运行该轮 Desktop tsc。修正为原控件 Enter 激活及原缓存 pnpm 路径后，`729af8b7afa651319602e9f98d4ab71dd96641a7` 类型检查与 Desktop tsc 通过，消费者 34/35，第 251 文件仍未经过原分页展开。最终检查使用真实“再显示”按钮逐页访问，未删除分页、减小文件集或放宽内容断言，35/35 通过。
+- 反向验证在同一固定源码的独立导出中临时移除成功提示的身份围栏、把冻结 push 分支替换为 picker 分支、把本机文件按需读取错误接到 remote。原三项 DOM 检查分别在迟到提示、请求 branchName 和文件正文断言失败（3 failed、exit 1）；逐字还原后同三项 3 passed、exit 0。还原 SHA-256：`useProjectLocalCheckout.tsx` 为 `8162889cfc2cfa0bb073bf9a329cc811ddd9f058202904eb6e6731954f11edcb`，`useRepositoryFileContent.ts` 为 `91b91ccf6ab30d6d0589146aeb17fa71b131c31100858467e84cff22ff249dcc`。临时缺陷没有进入 Git 提交。
+
+CI 节点原日志：`/volumes/data/kailo/verification/dd160-checkout-ui/<上述固定SHA>/frontend.log` 及同目录 `frontend-{preflight,limits,exit,oom}.log`；最终 SHA 的 `negative/` 保留 `mutated.log`、`restored.log` 与执行限额/退出记录。正向及反向容器均终态并删除，OOMKilled 均为 false。这里是固定源码的类型、DOM 消费者和生成检查，未构建安装包、未部署、未在 Win11/真实 Desktop 进行 clone/push/pull/断网重启验收，也不代替真实发布后 DD-157 三账号双主题验收或解除发布门禁。
+
+### 同日 DD-160 本机检出收口
+
+本机八命令、按 Community/30617 分区、持久冻结推送意图及第 251 项后的本机文件读取已进入固定集成 Rust 源 `0b9b72ba64c248a239abfb0f5d4ab242c662001c`。原 SDK 全锁检查 Desktop 10 项、共享 Git crate 38 项通过；恢复“待确认推送改用当前 HEAD”的真实缺陷后已有检查失败，逐字恢复后通过。首次分支创建回归失败、锁变化、原始日志和未覆盖的安装包/真机/界面边界保留在[本机检出核验](desktop-project-checkout.md)，不将源码检查算成 V-SCN-264/265 验收。
+
+### 同日 DD-160 原生远程写入定向核验
+
+原共享 Projects 的分支建删与 owner merge 已接到本设备 CLIENT；发送前持久冻结意图，重启以 info/refs 对账，1631 沿原发布/回读链。最终原生源码 `bd1b158b45fb26ab5b7ef8028c55604fecabd328` 的 20 项定向检查通过；前端对应固定源 46 项、共享 Git 固定源 38 项通过。真实 Git HTTP 丢响应重启检查及反向失败/逐字恢复记录、精确源码范围和未完成的 Native DD-81 部署结算事实边界见[远程写入核验](desktop-project-remote-writes.md)。没有构建安装包、部署或完成真实 Desktop/Win11 验收，不能据此解除发布门禁。

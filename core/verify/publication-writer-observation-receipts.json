@@ -1,0 +1,214 @@
+{
+  "scope": "Fixed-source original Relay consumers, not Core end-to-end or deployment",
+  "batches": [
+    {
+      "canonical_receipt_sha256": "88146a2dec740d8b01b8bfb1ffcd0cb02bf3b29d0e615a7b1d896455832b806a",
+      "receipt": {
+        "source_commit": "c3d10cfed149c31904fe4d767cc9dd5a85777d62",
+        "source_transport": "CI direct GitHub fixed-object archive",
+        "command": "cargo test --offline --locked --lib -p buzz-relay api::delivery::tests -- --ignored --test-threads=1",
+        "job": "/volumes/data/kailo/verification/phase1-integration/observation-c3d10cfed-check",
+        "sdk_image": "sha256:3007729eb192341a4f004a88e42e1e66c94fc67d763acfc96568bd7311116018",
+        "sdk": {
+          "cpus": 2.0,
+          "memory": 17179869184,
+          "memory_swap": 17179869184,
+          "state": {
+            "Status": "exited",
+            "Running": false,
+            "Paused": false,
+            "Restarting": false,
+            "OOMKilled": false,
+            "Dead": false,
+            "Pid": 0,
+            "ExitCode": 0,
+            "Error": "",
+            "StartedAt": "2026-10-26T22:00:23.400411968Z",
+            "FinishedAt": "2026-10-26T22:03:02.958083565Z"
+          }
+        },
+        "test_results": [
+          "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 1139 filtered out; finished in 7.27s",
+          "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1147 filtered out; finished in 0.44s",
+          "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1147 filtered out; finished in 0.27s",
+          "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1147 filtered out; finished in 0.48s",
+          "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 1139 filtered out; finished in 6.88s"
+        ],
+        "negative_assertions": {
+          "writer": {
+            "exit": 101,
+            "result": "actual existing consumer assertion failed"
+          },
+          "membership": {
+            "exit": 101,
+            "result": "actual existing consumer assertion failed"
+          },
+          "community": {
+            "exit": 101,
+            "result": "actual existing consumer assertion failed"
+          }
+        },
+        "restored": "byte-identical delivery.rs and, in final batch, ingest.rs; complete focused suite passed",
+        "scope": [
+          "actual original HTTP router, NIP-98 payload/replay/Host, private PostgreSQL writer and Redis",
+          "including soft-deleted original message and deletion evidence",
+          "Community and Channel member checks; scoped original publication ACK",
+          "final batch also durable ban/unban and real repeated-delete ingest plus retained historical NULL scope"
+        ],
+        "limitations": [
+          "No Core/BFF end-to-end consumer in these batches; Core consumer has separate fixed-source validation.",
+          "No ordinary authoritative non-delivery proof; missing/refused observations remain UNKNOWN.",
+          "No current formal artifact, deployment, Windows or Mobile acceptance."
+        ],
+        "cleanup_containers": [],
+        "hashes": {
+          "preflight.log": "b64ccf9a1fa07c7fed92c1e00c021d519f4138759b1f0e73a373a43a6639642b",
+          "pg-limits.log": "22a26e139535f4c5d9619d88dbb37bffa7265f6ed6a8d1643a090b5a0de7950b",
+          "redis-limits.log": "aeea0faf1eb07952a05c31716b00f1774b4c9cae6be5b850018a43202329e1d4",
+          "inner.sh": "7283cbf2664c0c82c137c36f509d082464565abef616d63b1409b8bf4bf588a6",
+          "check-limits.log": "fd7f5afd2d49ee269ac6b8024e8e0b965a3a20bea17ab435d2a7f3284b8591df",
+          "check.log": "58d73e99e3068d252a4891f4f8aa325221ef1facf5c84a93bcee6902bcc16850",
+          "negative-writer.log": "680549411177a2d1b93241dd101f09f9af4a26b787c7f053b1babfb1b7fb843f",
+          "negative-membership.log": "e15e8b00c1eed7cec1da6c6fab71db9bbf02a2b5a4704e78b4b51beab52bed36",
+          "negative-community.log": "f825dc74c1825c72afb66d3fbfe603c1ee5ce39dc6e7b8c2e8a5f3c84ea5e8a9",
+          "result.log": "f5923ee63596d2ee046cb24bbbb283983238ebe72ac1f9863a75ddb638938b91"
+        }
+      }
+    },
+    {
+      "canonical_receipt_sha256": "9cfb1948e6482cab6f989cdf348c4673a224e4761413b2fe22d553ec5d887014",
+      "receipt": {
+        "source_commit": "63590d878ee3db7d483f96df4767bbdd96d5dcee",
+        "source_transport": "CI direct GitHub fixed-object archive",
+        "command": "cargo test --offline --locked --lib -p buzz-relay api::delivery::tests -- --ignored --test-threads=1",
+        "job": "/volumes/data/kailo/verification/phase1-integration/observation-63590d878-check",
+        "sdk_image": "sha256:3007729eb192341a4f004a88e42e1e66c94fc67d763acfc96568bd7311116018",
+        "sdk": {
+          "cpus": 2.0,
+          "memory": 8589934592,
+          "memory_swap": 8589934592,
+          "state": {
+            "Status": "exited",
+            "Running": false,
+            "Paused": false,
+            "Restarting": false,
+            "OOMKilled": false,
+            "Dead": false,
+            "Pid": 0,
+            "ExitCode": 0,
+            "Error": "",
+            "StartedAt": "2026-10-26T22:11:07.886048973Z",
+            "FinishedAt": "2026-10-26T22:13:50.483343103Z"
+          }
+        },
+        "test_results": [
+          "test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 1139 filtered out; finished in 7.65s",
+          "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1149 filtered out; finished in 0.31s",
+          "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1149 filtered out; finished in 0.27s",
+          "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1149 filtered out; finished in 0.44s",
+          "test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 1139 filtered out; finished in 7.73s"
+        ],
+        "negative_assertions": {
+          "ban": {
+            "exit": 101,
+            "result": "actual existing consumer assertion failed"
+          },
+          "deletion_writer": {
+            "exit": 101,
+            "result": "actual existing consumer assertion failed"
+          },
+          "historical_scope": {
+            "exit": 101,
+            "result": "actual existing consumer assertion failed"
+          }
+        },
+        "restored": "byte-identical delivery.rs and, in final batch, ingest.rs; complete focused suite passed",
+        "scope": [
+          "actual original HTTP router, NIP-98 payload/replay/Host, private PostgreSQL writer and Redis",
+          "including soft-deleted original message and deletion evidence",
+          "Community and Channel member checks; scoped original publication ACK",
+          "final batch also durable ban/unban and real repeated-delete ingest plus retained historical NULL scope"
+        ],
+        "limitations": [
+          "No Core/BFF end-to-end consumer in these batches; Core consumer has separate fixed-source validation.",
+          "No ordinary authoritative non-delivery proof; missing/refused observations remain UNKNOWN.",
+          "No current formal artifact, deployment, Windows or Mobile acceptance."
+        ],
+        "cleanup_containers": [],
+        "hashes": {
+          "preflight.log": "ef78fbeb619381083ae9d4860638bb2b634c8c3f29b040b375697c716c47c637",
+          "pg-limits.log": "9902fa9880d3da4c3e0b0030bde7fb2537abc6db1792678d45a6580caa2b8d20",
+          "redis-limits.log": "6b7fc212a11729716ac3e8ed3cfe6968e1867a9aaa46c0dfba4bf94b2696afa6",
+          "inner.sh": "c58f490a2cd0945cd8f453943b954b7101dcf4b43f7d87f855e71b4d7a11cad7",
+          "check-limits.log": "0dc81a54fee503bbffaee4e4dcba53e233885839f81b7b7c8d242160919c0f39",
+          "check.log": "62fa215cc3311b20a24339c7205b45312d2b7d215f1f26a8039171d4b9a5bffb",
+          "negative-ban.log": "ae132af1c7947c072975c807c0ccf33edfee6076715d2d85efe27331385c7be7",
+          "negative-deletion_writer.log": "2b218ddbb7700852a1c3066415f51ddabda7b9a34193fa451d67839aa4802ea1",
+          "negative-historical_scope.log": "10693e990d54a6ad388a0751912a5813ea0fdf38a481dee3af0d4038f2e75343",
+          "result.log": "a9dbe799d218528f5f482d1390641d259bd003f7f2d93796bb7a9ba8074878dc"
+        }
+      }
+    },
+    {
+      "canonical_receipt_sha256": "c8b371317f8c83a42b8912480d89b98fdfac41cfe9a89e55ea19cf1390680a30",
+      "receipt": {
+        "source_commit": "85c26ebcd1c42d5c962232b0bb103b3dfa237ad9",
+        "source_transport": "CI direct GitHub fixed-object archive",
+        "command": "cargo test --offline --locked --lib -p buzz-relay api::delivery::tests -- --ignored --test-threads=1",
+        "job": "/volumes/data/kailo/verification/phase1-integration/observation-85c26ebcd-check",
+        "sdk_image": "sha256:3007729eb192341a4f004a88e42e1e66c94fc67d763acfc96568bd7311116018",
+        "sdk": {
+          "cpus": 2.0,
+          "memory": 8589934592,
+          "memory_swap": 8589934592,
+          "state": {
+            "Status": "exited",
+            "Running": false,
+            "Paused": false,
+            "Restarting": false,
+            "OOMKilled": false,
+            "Dead": false,
+            "Pid": 0,
+            "ExitCode": 0,
+            "Error": "",
+            "StartedAt": "2026-10-26T22:24:39.212576535Z",
+            "FinishedAt": "2026-10-26T22:26:21.721875235Z"
+          }
+        },
+        "test_results": [
+          "test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 1139 filtered out; finished in 8.04s",
+          "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1150 filtered out; finished in 0.29s",
+          "test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 1139 filtered out; finished in 7.58s"
+        ],
+        "negative_assertions": {
+          "pulse": {
+            "exit": 101,
+            "result": "actual consumer received 404 instead of 200 when the valid global unlike path was removed"
+          }
+        },
+        "restored": "byte-identical delivery.rs; complete 12-consumer suite passed",
+        "scope": [
+          "actual original scoped HTTP note/like/unlike publications, private PG writer and Redis",
+          "positive evidence for unlike after note, reaction and unlike were soft-deleted",
+          "previous private channel/ban/historical NULL guards remain"
+        ],
+        "limitations": [
+          "No full Core/BFF-to-Relay deployed end-to-end consumer in this batch.",
+          "Missing/refused observations do not establish non-delivery.",
+          "No formal artifact, production deployment or device acceptance."
+        ],
+        "cleanup_containers": [],
+        "hashes": {
+          "preflight.log": "225d2817a3e92df0962d3e6a124e23a21c4ae20baa762a6208badfa2b44c2582",
+          "pg-limits.log": "9560b0933150697c83028d89702e2dd2936fce7f2eeba5ff26fc25ecb9622f7a",
+          "redis-limits.log": "c4fca7c6ecf490fe62d5ddbdc68e8e800c7bfe3dd988ed1f929297c2dc4a8c00",
+          "inner.sh": "8ee5a759417295c4444203e6db6532b1d135d1984557c71b8e7bfff77a0ed9b1",
+          "check-limits.log": "d1c980cd7510c9a0d0e04b8201890e87926022f29f3d3e09021387150040a921",
+          "check.log": "dc30521b478e296f812b372ca9771a24afb54cfdf1a9dc81d078746c08b9c211",
+          "negative-pulse.log": "e65364b323aec7118699a58957ba5a32a4c31bb5ba7e0e0d9ff249778955b834",
+          "result.log": "6761f11b44de63a6fc39302abd96c9de2c8e86bdc35ae0d110ebce7553cf7a89"
+        }
+      }
+    }
+  ]
+}

@@ -52,6 +52,8 @@
 //     [--model-call-mode NONE|PLATFORM_LLM_ROUTE] [--client-id <adapter IdP client id>] [--account admin] [--attempt N]
 //     [--directory-client-id <component directory IdP client id>]  (native page entry only, DD-133(4))
 //     --plan-out <plan.json> (--plan-only | --secret-values-file <file>) [--wait-seconds 1800]
+//     [--tenant-id <uuid>]  (--plan-only without a login: the component deploy entry derives the same
+//                            plan from its declared business Tenant, DD-136(6))
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { attempt, canonical, deployEnv, digest, FlowError, key, log, login, main, parseArgs, privateText,
   readAll, renderedRelease, requireSession, sleep, submit, UUID, waitTask } from './lib.mjs';
@@ -80,7 +82,7 @@ function exactOrigin(url, manifest) {
 await main(async () => {
   const args = parseArgs(process.argv.slice(2), ['component', 'release-dir', 'native-page-url', 'native-instance-ref', 'native-scope-ref',
     'adapter-service-ref', 'isolation-mode', 'workspace-id', 'model-route-ids', 'meter-keys', 'model-call-mode', 'account', 'attempt',
-    'plan-out', 'secret-values-file', 'wait-seconds', 'client-id', 'directory-client-id'], ['plan-only']);
+    'plan-out', 'secret-values-file', 'wait-seconds', 'client-id', 'directory-client-id', 'tenant-id'], ['plan-only']);
   const defaults = DEFAULTS[args.component];
   if (!defaults) throw new FlowError('--component must be file-storage, knowledge or data-query', 2);
   for (const name of ['release-dir', 'native-page-url', 'native-instance-ref', 'plan-out']) {
@@ -125,8 +127,13 @@ await main(async () => {
     ? deployEnv('OPENBAO_TENANT_PARENT_NAMESPACE', 'OPENBAO_KV_MOUNT') : {};
   if (manifest.secretSchema.length && (!parent || !mount)) throw new FlowError('OPENBAO_TENANT_PARENT_NAMESPACE / OPENBAO_KV_MOUNT missing from the live deploy .env', 2);
 
-  const admin = await login(args.account ?? 'admin', `bind-${args.component}`);
-  const tenant = await requireSession(admin);
+  // DD-136(6): the component deploy entry derives the same plan from the declared business
+  // Tenant without a browser session (--plan-only only; nothing is read from or sent to Core).
+  if (args['tenant-id'] !== undefined && (!args['plan-only'] || !UUID.test(args['tenant-id']))) {
+    throw new FlowError('--tenant-id is a UUID and only derives a --plan-only plan', 2);
+  }
+  const admin = args['tenant-id'] ? null : await login(args.account ?? 'admin', `bind-${args.component}`);
+  const tenant = args['tenant-id'] ? { tenantId: args['tenant-id'] } : await requireSession(admin);
   const bindingId = key('application_binding', tenant.tenantId, args['workspace-id'] ?? 'tenant', manifest.id, run);
   const servicePrincipalId = key('application_binding.service', bindingId);
   if (!pageOnly) normalizedConfig.client_id = args['client-id'] ?? `${args.component}-adapter-${bindingId.slice(0, 8)}`;
