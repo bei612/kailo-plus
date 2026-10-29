@@ -176,18 +176,34 @@ pub(crate) async fn birth(
         .build()
         .add(1, &[opentelemetry::KeyValue::new("state", memory_state)]);
 
-    // 提交不是授权：重新取得同 scope 锁并验证 frozen generation，跨 native call
-    // 保持 lifecycle fence，防止意图提交后与 Tenant/Workspace 撤权交错。
-    let mut tx = state
+    // 提交不是授权：重新取得同 scope 锁并 fresh 验证 frozen generation 后才发出
+    // thread/start。两段锁分开持有（V-SCN-251）：
+    // - pool→lease holder 栅栏（`hold`）跨 native call 一直持有到回执提交，
+    //   `confirm_lost_birth` 靠它排除本 Core 的在途 birth；它不覆盖任何授权事实行，
+    //   所有取 pool 锁的事务都先取它（pool→lease→AE），分两个连接持有不引入环。
+    // - AE/Invocation/Session/Installation/Tenant 等 lifecycle 行锁与 fresh 判定在
+    //   native call 之前提交释放。thread/start 期间 Codex 初始化平台 MCP server，
+    //   Gateway 把 initialize/tools/list 交给 Core 工具 PEP，PEP 对同一 Invocation 做
+    //   fresh 判定要取同一批行锁；birth 若跨 native call 持有它们，PEP 必然等到
+    //   lock timeout，thread/start 失败、Session 落 UNKNOWN。`10` §1/§3 要求工具发现
+    //   做判定、外部副作用前 fresh Check：PEP 的 fresh 判定照常执行；不可逆副作用
+    //   turn/start 之前 `agent_task::prepare_dispatch` 仍在同一 pool→lease→AE 栅栏下
+    //   fresh 复核，期间的撤权由它们拒绝，新 thread 不会派发任何 turn。
+    let mut hold = state
         .pool
         .begin()
         .await
         .map_err(|_| RuntimeError::Unknown)?;
     state
         .capacity
-        .lock_birth_holder(&mut tx, holder)
+        .lock_birth_holder(&mut hold, holder)
         .await
         .map_err(|_| RuntimeError::Unavailable)?;
+    let mut tx = state
+        .pool
+        .begin()
+        .await
+        .map_err(|_| RuntimeError::Unknown)?;
     let intent = lock_birth(&mut tx, invocation_id, projection).await?;
     if intent.status != "STARTING"
         || intent.runtime_thread_id.is_some()
@@ -205,11 +221,20 @@ pub(crate) async fn birth(
         .await
         .map_err(|_| RuntimeError::AdmissionRequired)?;
     let scope = BirthReceiptScope::from(&intent);
+    tx.commit().await.map_err(|_| RuntimeError::Unknown)?;
     let observed = runtime
         .start_thread(projection, scope.owner(), &tool_config)
         .await;
-    record_birth_receipt(&mut tx, &scope, memory_state, memory_event, &observed).await?;
-    tx.commit().await.map_err(|_| RuntimeError::Unknown)?;
+    bind_birth_receipt(
+        &state.pool,
+        invocation_id,
+        &scope,
+        memory_state,
+        memory_event,
+        &observed,
+    )
+    .await?;
+    hold.commit().await.map_err(|_| RuntimeError::Unknown)?;
     if let Ok(thread) = &observed {
         runtime
             .acknowledge_start(projection, &scope.owner(), thread)
@@ -219,6 +244,52 @@ pub(crate) async fn birth(
         runtime_thread_id: observed?,
         core_memory,
     })
+}
+
+/// Bind this birth's own thread/start receipt after the native call, under the
+/// same AE→Session locks as `observe_birth` (the caller still holds the pool→lease
+/// holder fence). A concurrent observer may have bound the same thread first;
+/// any other bound thread is a contradiction and stays UNKNOWN.
+async fn bind_birth_receipt(
+    pool: &sqlx::PgPool,
+    invocation: Uuid,
+    scope: &BirthReceiptScope,
+    memory_state: &str,
+    memory_event: Option<&str>,
+    observed: &Result<String, RuntimeError>,
+) -> Result<(), RuntimeError> {
+    let mut tx = pool.begin().await.map_err(|_| RuntimeError::Unknown)?;
+    let ae: Uuid =
+        sqlx::query_scalar("select action_execution_id from catalog.agent_invocation where id=$1")
+            .bind(invocation)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(|_| RuntimeError::Unknown)?;
+    crate::governance::lock_execution(&mut tx, ae)
+        .await
+        .map_err(|_| RuntimeError::Unknown)?;
+    let bound: Option<String> = sqlx::query_scalar(
+        "select runtime_thread_id from catalog.agent_session where workspace_id=$1
+          and root_event_id=$2 and installation_resource_id=$3 and tenant_id=$4
+          and agent_version_asset_id=$5 and projection_generation=$6 for update",
+    )
+    .bind(scope.workspace_id)
+    .bind(&scope.root_event_id)
+    .bind(scope.installation_resource_id)
+    .bind(scope.tenant_id)
+    .bind(scope.agent_version_asset_id)
+    .bind(scope.projection_generation)
+    .fetch_one(&mut *tx)
+    .await
+    .map_err(|_| RuntimeError::Unknown)?;
+    match (bound.as_deref(), observed) {
+        (Some(bound), Ok(thread)) if bound == thread => {}
+        (Some(_), _) => return Err(RuntimeError::Unknown),
+        (None, _) => {
+            record_birth_receipt(&mut tx, scope, memory_state, memory_event, observed).await?
+        }
+    }
+    tx.commit().await.map_err(|_| RuntimeError::Unknown)
 }
 
 async fn record_birth_receipt(
@@ -1090,5 +1161,242 @@ mod birth_receipt_tests {
         let native = Uuid::new_v4().to_string();
         receipt.send(native.clone()).unwrap();
         assert_eq!(done.await.unwrap(), (("ACTIVE".into(), native), 1));
+    }
+}
+
+/// V-SCN-251: the birth fence that spans thread/start is only the pool→lease
+/// holder fence. The Tool PEP that Codex reaches during thread/start (MCP
+/// initialize/tools/list → Gateway → Core) must take the same AE/Invocation/
+/// Tenant row locks as the lifecycle fence without waiting for the native call.
+#[cfg(test)]
+mod birth_fence_tests {
+    use super::*;
+    use std::time::Duration;
+
+    async fn fenced(tx: &mut Transaction<'_, Postgres>) {
+        sqlx::query("set local lock_timeout='2s'")
+            .execute(&mut **tx)
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore = "requires AGENT_INVOKE_TEST_DATABASE_URL pointing at a disposable migrated database"]
+    async fn holder_fence_spans_native_call_without_blocking_tool_pep_or_revocation() {
+        let pool = sqlx::PgPool::connect(&std::env::var("AGENT_INVOKE_TEST_DATABASE_URL").unwrap())
+            .await
+            .unwrap();
+        // Cross-connection lock behaviour needs committed facts: a private
+        // Tenant in the disposable database; nothing is shared with other cases.
+        let mut setup = pool.begin().await.unwrap();
+        let tenant = crate::agent_task::receipt_tests::fixture(&mut setup).await;
+        // A new CREATED Invocation on the fixture's PENDING root (no thread yet).
+        let (invocation, ae): (Uuid, Uuid) = sqlx::query_as(
+            "with source as (select * from catalog.agent_invocation
+               where tenant_id=$1 and source_event_id=repeat('1',64)),
+             a as (insert into admission.action_execution(id,operation_id,tenant_id,workspace_id,
+               action_key,action_version,initiator_principal_id,actor_principal_id,target_id,
+               parameter_hash,gate_state,dispatch_state,correlation_id)
+               select gen_random_uuid(),gen_random_uuid(),e.tenant_id,e.workspace_id,e.action_key,
+                 e.action_version,e.initiator_principal_id,e.actor_principal_id,e.target_id,
+                 e.parameter_hash,e.gate_state,e.dispatch_state,gen_random_uuid()
+               from admission.action_execution e join source on source.action_execution_id=e.id
+               returning id)
+             insert into catalog.agent_invocation(id,tenant_id,workspace_id,root_event_id,
+               source_event_id,installation_resource_id,agent_version_asset_id,projection_generation,
+               action_execution_id,workflow_id,status)
+             select gen_random_uuid(),source.tenant_id,source.workspace_id,repeat('c',64),
+               repeat('5',64),source.installation_resource_id,source.agent_version_asset_id,
+               source.projection_generation,a.id,'birth-fence:'||a.id,'CREATED'
+             from source, a returning id,action_execution_id",
+        )
+        .bind(tenant)
+        .fetch_one(&mut *setup)
+        .await
+        .unwrap();
+        let (tenant_id, workspace): (Uuid, Uuid) = sqlx::query_as(
+            "select tenant_id,workspace_id from catalog.agent_invocation where id=$1",
+        )
+        .bind(invocation)
+        .fetch_one(&mut *setup)
+        .await
+        .unwrap();
+        let mut scope: BirthReceiptScope = sqlx::query_as(
+            "select s.tenant_id,s.agent_version_asset_id,s.workspace_id,s.root_event_id,
+               s.installation_resource_id,s.projection_generation
+             from catalog.agent_invocation i join catalog.agent_session s
+               on s.workspace_id=i.workspace_id and s.root_event_id=i.root_event_id
+               and s.installation_resource_id=i.installation_resource_id
+             where i.id=$1",
+        )
+        .bind(invocation)
+        .fetch_one(&mut *setup)
+        .await
+        .unwrap();
+        let starting = "update catalog.agent_session set runtime_thread_id=null,status='STARTING'
+            where workspace_id=$1 and root_event_id=$2 and installation_resource_id=$3";
+        sqlx::query(starting)
+            .bind(scope.workspace_id)
+            .bind(&scope.root_event_id)
+            .bind(scope.installation_resource_id)
+            .execute(&mut *setup)
+            .await
+            .unwrap();
+        let pool_key = format!("birth-fence-{tenant}");
+        sqlx::query("insert into admission.capacity_pool(pool_key,capacity_units) values($1,1)")
+            .bind(&pool_key)
+            .execute(&mut *setup)
+            .await
+            .unwrap();
+        setup.commit().await.unwrap();
+
+        // The holder fence birth keeps across thread/start (same row lock as
+        // Capacity::lock_birth_holder / lock_pool).
+        let mut hold = pool.begin().await.unwrap();
+        sqlx::query("select pool_key from admission.capacity_pool where pool_key=$1 for update")
+            .bind(&pool_key)
+            .fetch_one(&mut *hold)
+            .await
+            .unwrap();
+
+        // The Tool PEP's fresh path (agent_tool::invocation_context →
+        // governance::lock_execution, agent_invocation::recheck) proceeds.
+        let mut pep = pool.begin().await.unwrap();
+        fenced(&mut pep).await;
+        crate::governance::lock_execution(&mut pep, ae)
+            .await
+            .unwrap();
+        sqlx::query("select id from catalog.agent_invocation where id=$1 for update")
+            .bind(invocation)
+            .fetch_one(&mut *pep)
+            .await
+            .unwrap();
+        sqlx::query("select state from identity.tenant where id=$1 for update")
+            .bind(tenant_id)
+            .fetch_one(&mut *pep)
+            .await
+            .unwrap();
+        pep.commit().await.unwrap();
+
+        // Counter-example: had the lifecycle locks spanned the native call (the
+        // old birth), the same PEP lock could only end in a lock timeout.
+        let mut lifecycle = pool.begin().await.unwrap();
+        crate::governance::lock_execution(&mut lifecycle, ae)
+            .await
+            .unwrap();
+        let mut blocked = pool.begin().await.unwrap();
+        fenced(&mut blocked).await;
+        assert!(crate::governance::lock_execution(&mut blocked, ae)
+            .await
+            .is_err());
+        blocked.rollback().await.unwrap();
+        lifecycle.rollback().await.unwrap();
+
+        // A failed thread/start records UNKNOWN, never a guessed thread; the
+        // receipt binds under AE→Session locks while the holder fence is held.
+        tokio::time::timeout(
+            Duration::from_secs(5),
+            bind_birth_receipt(
+                &pool,
+                invocation,
+                &scope,
+                "ABSENT",
+                None,
+                &Err(RuntimeError::Unknown),
+            ),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        let read = "select status,runtime_thread_id from catalog.agent_session
+             where workspace_id=$1 and root_event_id=$2 and installation_resource_id=$3";
+        let recorded: (String, Option<String>) = sqlx::query_as(read)
+            .bind(scope.workspace_id)
+            .bind(&scope.root_event_id)
+            .bind(scope.installation_resource_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(recorded, ("UNKNOWN".into(), None));
+        // The observer later binds the native thread; this birth's identical
+        // receipt is accepted, a different thread or generation is refused.
+        let thread = Uuid::new_v4().to_string();
+        bind_birth_receipt(
+            &pool,
+            invocation,
+            &scope,
+            "ABSENT",
+            None,
+            &Ok(thread.clone()),
+        )
+        .await
+        .unwrap();
+        bind_birth_receipt(
+            &pool,
+            invocation,
+            &scope,
+            "ABSENT",
+            None,
+            &Ok(thread.clone()),
+        )
+        .await
+        .unwrap();
+        assert!(matches!(
+            bind_birth_receipt(
+                &pool,
+                invocation,
+                &scope,
+                "ABSENT",
+                None,
+                &Ok(Uuid::new_v4().to_string())
+            )
+            .await,
+            Err(RuntimeError::Unknown)
+        ));
+        scope.projection_generation += 1;
+        assert!(bind_birth_receipt(
+            &pool,
+            invocation,
+            &scope,
+            "ABSENT",
+            None,
+            &Ok(thread.clone())
+        )
+        .await
+        .is_err());
+        scope.projection_generation -= 1;
+        let recorded: (String, Option<String>) = sqlx::query_as(read)
+            .bind(scope.workspace_id)
+            .bind(&scope.root_event_id)
+            .bind(scope.installation_resource_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(recorded, ("ACTIVE".into(), Some(thread)));
+        // Revocation is not held back by the holder fence; the next fenced
+        // lifecycle read (prepare_dispatch before turn/start) sees it and refuses.
+        let mut revoke = pool.begin().await.unwrap();
+        fenced(&mut revoke).await;
+        sqlx::query("update identity.workspace set state='SUSPENDING' where id=$1")
+            .bind(workspace)
+            .execute(&mut *revoke)
+            .await
+            .unwrap();
+        revoke.commit().await.unwrap();
+        let mut dispatch = pool.begin().await.unwrap();
+        fenced(&mut dispatch).await;
+        let lifecycle: Option<bool> = sqlx::query_scalar(
+            "select t.state='ACTIVE' and w.state='ACTIVE' from identity.tenant t
+             join identity.workspace w on w.tenant_id=t.id where t.id=$1 and w.id=$2
+             for no key update of t,w",
+        )
+        .bind(tenant_id)
+        .bind(workspace)
+        .fetch_optional(&mut *dispatch)
+        .await
+        .unwrap();
+        assert_eq!(lifecycle, Some(false));
+        dispatch.rollback().await.unwrap();
+        hold.commit().await.unwrap();
     }
 }
