@@ -3,6 +3,68 @@ part of 'channels_provider_test.dart';
 void _liveSubscriptionTests() {
   const myPk = 'me';
 
+  NostrEvent notice(String type, {String id = 'notice'}) => NostrEvent(
+    id: id,
+    pubkey: 'relay',
+    createdAt: 30,
+    kind: EventKind.systemMessage,
+    tags: const [
+      ['h', _channelA],
+    ],
+    content: '{"type":"$type","actor":"alice"}',
+    sig: 'sig',
+  );
+
+  test('kind:39000 ttl and ttl_deadline make the channel ephemeral', () async {
+    final session = _FakeRelaySession(
+      memberships: [_membership(_channelA, myPk)],
+      metadata: [
+        _meta(
+          id: _channelA,
+          name: 'scratch',
+          ttl: '3600',
+          ttlDeadline: '2026-10-24T12:00:00Z',
+        ),
+      ],
+    );
+    final container = _buildContainer(session: session);
+    addTearDown(container.dispose);
+
+    final channel = (await container.read(channelsProvider.future)).single;
+    expect(channel.isEphemeral, isTrue);
+    expect(channel.ttlSeconds, 3600);
+    expect(channel.ttlDeadline, DateTime.utc(2026, 10, 24, 12));
+  });
+
+  test(
+    'a relay metadata notice rereads kind:39000; other notices do not',
+    () async {
+      final session = _FakeRelaySession(
+        memberships: [_membership(_channelA, myPk)],
+        metadata: [_meta(id: _channelA, name: 'general')],
+      );
+      final container = _buildContainer(session: session);
+      addTearDown(container.dispose);
+
+      await container.read(channelsProvider.future);
+      session.metadata = [
+        _meta(id: _channelA, name: 'general', createdAt: 2, ttl: '86400'),
+      ];
+
+      session.emit(notice('member_joined', id: 'joined'));
+      await _settle();
+      expect(container.read(channelsProvider).value!.single.isEphemeral, isFalse);
+
+      session.emit(notice('ttl_changed'));
+      await _waitUntil(
+        () => container.read(channelsProvider).value?.single.ttlSeconds == 86400,
+      );
+      expect(container.read(channelsProvider).value!.single.isEphemeral, isTrue);
+      expect(channelMetadataSystemTypes, contains('channel_archived'));
+      expect(channelMetadataSystemTypes, isNot(contains('member_joined')));
+    },
+  );
+
   test(
     'subscribes once for joined non-archived channels without blocking snapshot',
     () async {

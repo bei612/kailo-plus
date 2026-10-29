@@ -1,3 +1,7 @@
+import 'dart:async';
+
+import 'package:client_kit/shared/contracts/contracts.dart';
+import 'package:client_kit/shared/platform/platform_text.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
@@ -19,12 +23,17 @@ import '../channels/channels_provider.dart';
 import '../channels/small_avatar.dart';
 import '../channels/message_content.dart';
 import '../channels/date_formatters.dart';
+import '../channels/direct_messages.dart';
 import '../../shared/profile/user_cache_provider.dart';
 import '../../shared/profile/user_profile.dart';
+import '../../shared/utils/string_utils.dart';
+import '../../shared/widgets/avatar_image.dart';
+import '../profile/user_profile_sheet.dart';
 import 'recent_searches_provider.dart';
+import 'search_people.dart';
 import 'search_provider.dart';
 
-enum _SearchFilter { all, messages, channels }
+enum _SearchFilter { all, messages, channels, people }
 
 const _searchFieldMinHeight = 36.0;
 const _searchIdleFieldHeight = 45.0;
@@ -313,7 +322,10 @@ class SearchPage extends HookConsumerWidget {
                 child: BuzzSearchField(
                   controller: textController,
                   focusNode: focusNode,
-                  hintText: 'Search messages and channels',
+                  hintText: platformText(
+                    PlatformMessageKey.searchPeopleHint,
+                    locale: Localizations.localeOf(context).toLanguageTag(),
+                  ),
                   iconColor: searchPrimaryColor,
                   inputColor: searchPrimaryColor,
                   placeholderColor: searchPlaceholderColor,
@@ -370,7 +382,14 @@ class SearchPage extends HookConsumerWidget {
                               onSelected: (f) => activeFilter.value = f,
                               items: [
                                 for (final f in _SearchFilter.values)
-                                  FilterChipItem(id: f, label: f.label),
+                                  FilterChipItem(
+                                    id: f,
+                                    label: f.label(
+                                      Localizations.localeOf(
+                                        context,
+                                      ).toLanguageTag(),
+                                    ),
+                                  ),
                               ],
                             ),
                           ),
@@ -456,7 +475,10 @@ class _SearchBody extends ConsumerWidget {
               ),
               const SizedBox(height: Grid.xs),
               Text(
-                'Search messages and channels',
+                platformText(
+                  PlatformMessageKey.searchPeopleHint,
+                  locale: Localizations.localeOf(context).toLanguageTag(),
+                ),
                 textAlign: TextAlign.center,
                 style: context.textTheme.bodyMedium?.copyWith(
                   color: context.colors.onSurfaceVariant,
@@ -472,9 +494,18 @@ class _SearchBody extends ConsumerWidget {
         filter == _SearchFilter.all || filter == _SearchFilter.channels;
     final showMessages =
         filter == _SearchFilter.all || filter == _SearchFilter.messages;
+    final showPeople =
+        filter == _SearchFilter.all || filter == _SearchFilter.people;
+    // Original People section: only people of the admitted conversation directory.
+    final people = showPeople
+        ? ref.watch(searchPeopleProvider(state.query)).asData?.value ??
+              const <ConversationParticipant>[]
+        : const <ConversationParticipant>[];
 
     final hasAnyResults =
-        state.channelResults.isNotEmpty || state.messageResults.isNotEmpty;
+        state.channelResults.isNotEmpty ||
+        state.messageResults.isNotEmpty ||
+        people.isNotEmpty;
     void recordResultSelection() =>
         ref.read(recentSearchesProvider.notifier).record(state.query);
 
@@ -507,6 +538,11 @@ class _SearchBody extends ConsumerWidget {
         if (showChannels && state.channelResults.isNotEmpty)
           _ChannelsSection(
             channels: state.channelResults,
+            onResultSelected: recordResultSelection,
+          ),
+        if (people.isNotEmpty)
+          _PeopleSection(
+            people: people,
             onResultSelected: recordResultSelection,
           ),
         if (showMessages && state.messageResults.isNotEmpty)
@@ -637,7 +673,13 @@ class _ChannelsSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _SectionLabel(label: 'Channels'),
+        _SectionLabel(
+          id: 'channels',
+          label: platformText(
+            PlatformMessageKey.searchChannels,
+            locale: Localizations.localeOf(context).toLanguageTag(),
+          ),
+        ),
         for (final channel in channels)
           ListTile(
             key: ValueKey('search-channel-row-${channel.id}'),
@@ -693,6 +735,93 @@ class _ChannelsSection extends StatelessWidget {
   }
 }
 
+/// The original People section: a row opens (or reuses) the governed DM with that person.
+class _PeopleSection extends HookConsumerWidget {
+  final List<ConversationParticipant> people;
+  final VoidCallback onResultSelected;
+
+  const _PeopleSection({required this.people, required this.onResultSelected});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final locale = Localizations.localeOf(context).toLanguageTag();
+    final opening = useState<String?>(null);
+
+    Future<void> open(ConversationParticipant person) async {
+      if (opening.value != null) return;
+      onResultSelected();
+      opening.value = person.principalId;
+      final messenger = ScaffoldMessenger.of(context);
+      String? failure;
+      Channel? channel;
+      try {
+        channel = await ref.read(profileDirectMessageOpenerProvider)(
+          person.principalId,
+        );
+      } on Object catch (error) {
+        failure = searchDirectMessageFailureText(
+          error,
+          locale: locale,
+          pending:
+              ref.read(directMessagesProvider).asData?.value.pendingCommand !=
+              null,
+        );
+      } finally {
+        if (context.mounted) opening.value = null;
+      }
+      if (!context.mounted) return;
+      if (failure != null) {
+        messenger.showSnackBar(SnackBar(content: Text(failure)));
+        return;
+      }
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => ChannelDetailPage(channel: channel!),
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _SectionLabel(
+          id: 'people',
+          label: platformText(PlatformMessageKey.searchPeople, locale: locale),
+        ),
+        for (final person in people)
+          ListTile(
+            key: ValueKey('search-person-row-${person.principalId}'),
+            contentPadding: const EdgeInsets.symmetric(horizontal: Grid.gutter),
+            enabled: opening.value == null,
+            leading: AvatarImage(
+              key: ValueKey('search-person-leading-${person.principalId}'),
+              // The picture route needs Tenant admission the image loader does not carry.
+              imageUrl: null,
+              radius: 20,
+              fallback: Text(
+                person.displayName.isEmpty
+                    ? '?'
+                    : person.displayName.characters.first.toUpperCase(),
+              ),
+            ),
+            title: Text(
+              person.displayName,
+              key: ValueKey('search-person-title-${person.principalId}'),
+              style: contentListTitleTextStyle,
+            ),
+            subtitle: Text(
+              shortPubkey(person.pubkeys.first),
+              style: contentListBodyTextStyle.copyWith(
+                color: context.colors.onSurfaceVariant,
+              ),
+            ),
+            onTap: () => unawaited(open(person)),
+          ),
+      ],
+    );
+  }
+}
+
 class _MessagesSection extends HookConsumerWidget {
   final List<SearchHit> hits;
   final String? currentPubkey;
@@ -723,7 +852,13 @@ class _MessagesSection extends HookConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _SectionLabel(label: 'Messages'),
+        _SectionLabel(
+          id: 'messages',
+          label: platformText(
+            PlatformMessageKey.searchFilterMessages,
+            locale: Localizations.localeOf(context).toLanguageTag(),
+          ),
+        ),
         for (final hit in hits)
           _MessageTile(
             hit: hit,
@@ -883,7 +1018,10 @@ class _MessageTile extends ConsumerWidget {
 class _SectionLabel extends StatelessWidget {
   final String label;
 
-  const _SectionLabel({required this.label});
+  const _SectionLabel({required this.id, required this.label});
+
+  /// Stable key part, independent of the display language.
+  final String id;
 
   @override
   Widget build(BuildContext context) {
@@ -896,7 +1034,7 @@ class _SectionLabel extends StatelessWidget {
       ),
       child: Text(
         label,
-        key: ValueKey('search-section-${label.toLowerCase()}'),
+        key: ValueKey('search-section-$id'),
         style: activityContextTextStyle.copyWith(
           color: context.colors.onSurfaceVariant,
         ),
@@ -906,9 +1044,10 @@ class _SectionLabel extends StatelessWidget {
 }
 
 extension on _SearchFilter {
-  String get label => switch (this) {
-    _SearchFilter.all => 'All',
-    _SearchFilter.messages => 'Messages',
-    _SearchFilter.channels => 'Channels',
-  };
+  String label(String locale) => platformText(switch (this) {
+    _SearchFilter.all => PlatformMessageKey.searchFilterAll,
+    _SearchFilter.messages => PlatformMessageKey.searchFilterMessages,
+    _SearchFilter.channels => PlatformMessageKey.searchChannels,
+    _SearchFilter.people => PlatformMessageKey.searchPeople,
+  }, locale: locale);
 }
