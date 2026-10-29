@@ -126,6 +126,17 @@ export function useDesktopChannelAgentActivity({ activeChannel, enabled, typingE
           ?? truncateNpub(row.agentPubkey)),
       ...(row.canAudit === true ? { auditInstallationId: row.resourceId } : {}),
     }] : []), [readableAgents, composerAgentList]);
+  // DD-142: the original canManageMessageForCurrentUser "own Agent" set, from the same composer
+  // directory and owner rule as the Web host. Only a live Workspace channel has one.
+  const composerPrincipalId = composerAgents.data?.principalId;
+  const ownedAgentPubkeys = React.useMemo<ReadonlySet<string>>(() => new Set(live && composerPrincipalId
+    ? (composerAgentList ?? []).filter((agent) => agent.installation.ownerPrincipalId === composerPrincipalId)
+      .map((agent) => agent.pubkey.toLowerCase())
+    : []), [live, composerAgentList, composerPrincipalId]);
+  // Agent mentions of a BFF edit are Installation IDs, never `mentionPubkeys` (Core refuses Agent keys there).
+  const agentInstallationIds = React.useMemo<ReadonlyMap<string, string>>(() => new Map(live
+    ? (composerAgentList ?? []).map((agent) => [agent.pubkey.toLowerCase(), agent.installation.resourceId] as const)
+    : []), [live, composerAgentList]);
   const panel = useAgentActivityPanel({
     agents: composerAgentList, channelId: activeChannel.id, channelName: activeChannel.name,
     enabled: live, scopeId: workspaceId,
@@ -138,6 +149,10 @@ export function useDesktopChannelAgentActivity({ activeChannel, enabled, typingE
     authorFacts,
     workingBotPubkeys: live ? activity.workingBotPubkeys : [],
     workingAgents,
+    /** DD-142: AGENT keys of this Workspace's ACTIVE Installations the viewer owns. */
+    ownedAgentPubkeys,
+    /** Composer Agent key → Installation ID, for the Installation mentions of a BFF edit. */
+    agentInstallationIds,
     opener: panel.opener,
     panel: panel.panel,
   };

@@ -14,7 +14,8 @@ import {
 export type FetchTransport = BffTransport & {
   /**
    * 以任意 fetch 选项发一次请求，回应按同一规则解读。只有 Web 需要的请求（二进制
-   * 媒体上传、带 Idempotency-Key 的发布）经它发出；它们在 Desktop 上不经 BFF。
+   * 媒体上传、带 Idempotency-Key 的发布）经它发出；它们在 Desktop 上不经 BFF，
+   * 唯一例外是 DD-142 自有 Agent 消息的编辑/删除（`BffRequest.idempotencyKey`）。
    */
   exchange(path: string, init: RequestInit): Promise<BffReply>;
   /** 丢弃所有共享读取（收到流事件、流中断或任何写入时）。 */
@@ -160,11 +161,14 @@ export function createFetchTransport(options: FetchTransportOptions): FetchTrans
     send: (request: BffRequest) =>
       coalesced(request.path, {
         method: request.method,
-        ...(request.body === undefined
+        ...(request.body === undefined && request.idempotencyKey === undefined
           ? {}
           : {
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify(request.body),
+              headers: {
+                ...(request.body === undefined ? {} : { "Content-Type": "application/json" }),
+                ...(request.idempotencyKey === undefined ? {} : { "Idempotency-Key": request.idempotencyKey }),
+              },
+              ...(request.body === undefined ? {} : { body: JSON.stringify(request.body) }),
             }),
       }, request.fresh === true),
   };

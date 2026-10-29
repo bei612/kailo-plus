@@ -11,6 +11,7 @@ import type {
   PlatformFeedbackPage,
   PlatformFeedbackTriageRequest,
   WebMessageQuery,
+  WebPublishMessageRequest,
   WebInboxQuery,
   WebMessageCursor,
   WebChannelView,
@@ -355,6 +356,18 @@ export function createBffClient(transport: BffTransport) {
       }
       return get<{ events: unknown; nextCursor?: WebMessageCursor }>(`/api/v1/conversations/${encodeURIComponent(conversationId)}/messages${query.size ? `?${query}` : ""}`);
     },
+    /**
+     * DD-142 owned-Agent message edit (`editEventId`) through the Workspace publish route. Core
+     * re-checks Installation ownership and `manage`, then signs as that Agent; `idempotencyKey`
+     * names the DD-81 intent and is reused only while its outcome is unknown.
+     */
+    publishWorkspaceMessage: (workspaceId: string, body: WebPublishMessageRequest, idempotencyKey: string) =>
+      call<{ eventId: string; operationId: string }>({ method: "POST",
+        path: `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/messages`, body, idempotencyKey }),
+    /** DD-142 owned-Agent message deletion (`deleteEventId`); same admission as the edit above. */
+    deleteWorkspaceMessage: (workspaceId: string, body: WebPublishMessageRequest, idempotencyKey: string) =>
+      call<{ eventId: string; operationId: string }>({ method: "POST",
+        path: `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/messages/delete`, body, idempotencyKey }),
     markRead: (body: ReadMarkRequest) =>
       call<UserStateVersion>({ method: "PUT", path: "/api/v1/user-state/read", body }),
 

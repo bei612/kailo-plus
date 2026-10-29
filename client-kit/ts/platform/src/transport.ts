@@ -14,6 +14,12 @@ export type BffRequest = {
   method: BffMethod; path: string; body?: unknown;
   /** Security re-check: the transport must send a new request, never a shared or settled answer. */
   fresh?: boolean;
+  /**
+   * DD-81 publication intent, sent as the `Idempotency-Key` header: a retry after an unknown
+   * outcome carries the same key so Core answers the original attempt. The only extra header
+   * a request may carry; Desktop's Rust `platform_api` refuses any other.
+   */
+  idempotencyKey?: string;
 };
 
 /**

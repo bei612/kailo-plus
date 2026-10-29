@@ -13,6 +13,8 @@ import { useAppShell } from "@/app/AppShellContext";
 import { threadReactionRoot } from "@client-kit/platform/react/messages";
 import { deleteMessage, editMessage } from "@/shared/api/tauriMessages";
 import { useMessageDeleteDialog } from "@/features/messages/ui/DeleteMessageConfirmDialog";
+import { OwnedAgentMessageScopeProvider } from "@/features/messages/ui/ownedAgentMessageScope";
+import { deleteOwnedAgentMessage, editOwnedAgentMessage, isOwnedAgentMessage, ownedAgentEditRequest, ownedAgentScope } from "@/features/messages/lib/ownedAgentMessages";
 import { TransportError } from "@client-kit/platform/transport";
 import { classifyRelayPublishFailure } from "@/shared/api/relayPublishOutcome";
 import { useToggleReactionMutation } from "@/features/messages/hooks";
@@ -44,7 +46,7 @@ import { UserAvatar } from "@/shared/ui/UserAvatar";
 import { formatDmParticipantDisplayName } from "@client-kit/platform/react/conversations/dm-participant-display";
 import { useActiveChannelHeader } from "@/features/channels/useActiveChannelHeader";
 import type { MessageTimelineProps } from "@client-kit/platform/react/messages/timeline/types";
-import { useUiT } from "@client-kit/platform/react/context";
+import { useBffClient, useUiT } from "@client-kit/platform/react/context";
 import { RightAuxiliaryPane } from "@/features/channels/ui/RightAuxiliaryPane";
 import {IdleAuxiliarySurface,shouldPrioritizeIdleAuxiliary,shouldUseFocusIdleDrawer,useThreadPanelSurface} from "@client-kit/platform/react/thread";
 import { ThreadPanelSurface } from "@/features/channels/ui/ThreadPanelSurface";
@@ -186,6 +188,7 @@ export const ChannelPane = React.memo(function ChannelPane({
   const { recordThreadInteraction } = useAppShell();
   const toggleReaction = useToggleReactionMutation(activeChannel, currentPubkey);
   const queryClient = useQueryClient();
+  const bff = useBffClient();
   const [editing, setEditing] = React.useState(false);
   const mainEditTarget =
     editTarget && !isThreadReply(editTarget.tags ?? []) ? editTarget : null;
@@ -213,18 +216,28 @@ export const ChannelPane = React.memo(function ChannelPane({
     setEditing(false);
   }, [editOwner]);
   const saveEdit = async (content: string, mentions: string[], media: string[][] = []) => {
-    if (!editTarget || !currentPubkey || editing || editTarget.signerPubkey !== currentPubkey) {
+    const ownedAgents = ownedAgentScope(activeChannel.channelType, agentActivity.ownedAgentPubkeys);
+    // DD-142: an owned Agent's message is re-signed by Core as that Agent through the BFF;
+    // this device's key signs only its own messages.
+    const viaAgent = Boolean(editTarget && isOwnedAgentMessage(editTarget, currentPubkey, ownedAgents));
+    const workspaceId = agentActivity.scopeId;
+    if (!editTarget || !currentPubkey || editing || (viaAgent ? !workspaceId : editTarget.signerPubkey !== currentPubkey)) {
       throw new Error("Edit identity or receipt is not available.");
     }
     const captured = editTarget;
     const requestedOwner = editOwner;
     setEditing(true);
     try {
-      const receipt = await editMessage(activeChannel.id, captured.id, content,
-        media.filter((tag) => tag[0] === "imeta"), mentions, community.relayUrl, currentPubkey);
-      if (!receipt.id || receipt.kind !== 40003 || receipt.pubkey !== currentPubkey ||
-          !receipt.tags.some((tag) => tag[0] === "e" && tag[1] === captured.id)) {
-        throw new Error("relay publish outcome unknown");
+      if (viaAgent && workspaceId) {
+        await editOwnedAgentMessage(bff, workspaceId, JSON.stringify([community.relayUrl, currentPubkey]),
+          ownedAgentEditRequest(captured, content, mentions, media, agentActivity.agentInstallationIds));
+      } else {
+        const receipt = await editMessage(activeChannel.id, captured.id, content,
+          media.filter((tag) => tag[0] === "imeta"), mentions, community.relayUrl, currentPubkey);
+        if (!receipt.id || receipt.kind !== 40003 || receipt.pubkey !== currentPubkey ||
+            !receipt.tags.some((tag) => tag[0] === "e" && tag[1] === captured.id)) {
+          throw new Error("relay publish outcome unknown");
+        }
       }
       // Refetch original Relay projection. A returned receipt is not a second
       // editable-message authority and does not replace the immutable row id.
@@ -302,6 +315,14 @@ export const ChannelPane = React.memo(function ChannelPane({
     JSON.stringify([activeChannel.id, community.relayUrl, currentPubkey]),
     Boolean(currentPubkey && !isComposerDisabled),
     async (message) => {
+      const ownedAgents = ownedAgentScope(activeChannel.channelType, agentActivity.ownedAgentPubkeys);
+      const workspaceId = agentActivity.scopeId;
+      if (currentPubkey && workspaceId && activeChannel.isMember && activeChannel.archivedAt === null &&
+          isOwnedAgentMessage(message, currentPubkey, ownedAgents)) {
+        // DD-142: Core signs the kind 5 as the owned Agent; one idempotency key per intent.
+        await deleteOwnedAgentMessage(bff, workspaceId, JSON.stringify([community.relayUrl, currentPubkey]), message);
+        return;
+      }
       if (!currentPubkey || message.kind !== 9 || message.pending || message.signerPubkey !== currentPubkey || !activeChannel.isMember || activeChannel.archivedAt !== null) {
         throw new Error("Deletion identity or scope is unavailable.");
       }
@@ -487,6 +508,7 @@ export const ChannelPane = React.memo(function ChannelPane({
     <NativeReportPublisherProvider value={nativeReport}>
     <AgentAuthorFactsProvider facts={agentActivity.authorFacts} renderOwner={renderDesktopAgentOwner}>
     <AgentActivityOpenerProvider value={agentActivity.opener}>
+    <OwnedAgentMessageScopeProvider channelType={activeChannel.channelType} ownedAgentPubkeys={agentActivity.ownedAgentPubkeys}>
     <div className="relative flex min-h-0 min-w-0 flex-1 flex-row overflow-hidden">
       {!isSinglePanelView ? (
         <div
@@ -731,6 +753,7 @@ export const ChannelPane = React.memo(function ChannelPane({
       <AnimatePresence onExitComplete={threadSurface.markExitComplete}>{showIdleAuxiliaryOverThread ? idleAuxiliarySurface : null}</AnimatePresence>
       {deleteMessageDialog.dialog}
     </div>
+    </OwnedAgentMessageScopeProvider>
     </AgentActivityOpenerProvider>
     </AgentAuthorFactsProvider>
     </NativeReportPublisherProvider>
