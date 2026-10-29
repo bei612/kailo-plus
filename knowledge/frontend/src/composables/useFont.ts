@@ -4,7 +4,7 @@ import {
   savePreference,
   migratePreferencesIntoUser,
 } from './preferenceStorage'
-import { isKailoMode } from '@/kailo/runtime'
+import { isKailoMode } from '../kailo/runtime'
 
 // Font options are filtered by host platform. A Windows user selecting
 // "PingFang SC" in a cross-platform list would see Microsoft YaHei anyway
