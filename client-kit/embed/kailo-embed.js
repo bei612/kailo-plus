@@ -26,12 +26,15 @@
  *   component -> Kailo  ready carries features:[...] (the declared subset)
  *   component -> Kailo  {type:"page", page:{title, breadcrumbs, tabs, activeTab, actions}}
  *   component -> Kailo  {type:"toast", toast:{tone, title, description?}}
- *   component -> Kailo  {type:"confirm", confirm:{id, tone, title, description?, confirmLabel?, cancelLabel?}}
+ *   component -> Kailo  {type:"confirm", confirm:{id, tone, title, description?, confirmLabel?, cancelLabel?, option?}}
+ *                       option:{label, warning?} one unchecked choice inside the dialog (e.g. "delete
+ *                       permanently"); sent only to a host announcing "confirm-option"
  *   component -> Kailo  {type:"shortcut", shortcut:"search"|"settings"|"back"|"forward"}
  *   Kailo -> component  {type:"navigate", target:{kind:"tab"|"breadcrumb", id}}
  *   Kailo -> component  {type:"action", id, files?, paths?}   files: File[] the user chose in
  *                       Kailo's picker for an action declaring files:{accept, multiple, directory}
- *   Kailo -> component  {type:"confirm-result", id, confirmed}
+ *   Kailo -> component  {type:"confirm-result", id, confirmed, option?}   option: the choice, only
+ *                       when the request carried one and confirmed is true
  *   Kailo -> component  presentation carries features:[...] the host draws/handles;
  *                       <html data-kailo-host-features> mirrors it once known
  * Text in page/toast/confirm is display text for this user's own browser
@@ -52,8 +55,9 @@
   var MAX_PREFERENCES = 16;
   // DD-157 (07 §4.8.7): closed vocabularies and bounds, mirrored by the host.
   var FEATURES = ["page", "toast", "confirm", "shortcuts"];
-  // What a host may announce: the page features plus the file selection channel.
-  var HOST_FEATURES = FEATURES.concat(["files"]);
+  // What a host may announce: the page features plus the file selection channel and the
+  // confirmation choice (acceptance batch 5: Cells "delete permanently" stays in Kailo's dialog).
+  var HOST_FEATURES = FEATURES.concat(["files", "confirm-option"]);
   var ACTION_ICONS = ["upload", "plus", "folder-plus", "share", "download", "rocket", "refresh", "settings",
     "message-square-plus", "play", "trash", "pencil", "filter", "search", "more"];
   var ACTION_VARIANTS = ["primary", "secondary", "menu"];
@@ -390,10 +394,12 @@
       return;
     }
     if (data.type === "confirm-result") {
-      var resolve = typeof data.id === "string" && Object.prototype.hasOwnProperty.call(pendingConfirms, data.id) ? pendingConfirms[data.id] : null;
-      if (resolve && typeof data.confirmed === "boolean") {
+      var pending = typeof data.id === "string" && Object.prototype.hasOwnProperty.call(pendingConfirms, data.id) ? pendingConfirms[data.id] : null;
+      if (pending && typeof data.confirmed === "boolean") {
         delete pendingConfirms[data.id];
-        resolve(data.confirmed);
+        // The choice only counts on a confirmation; a missing or malformed one is unchecked.
+        if (pending.option) pending.resolve({ confirmed: data.confirmed, option: data.confirmed && data.option === true });
+        else pending.resolve(data.confirmed);
       }
       return;
     }
@@ -519,6 +525,8 @@
     /**
      * DD-157: Kailo's confirmation dialog. Resolves true/false; returns null when no
      * Kailo frame is present, so the page uses its own dialog (styled per 20 §13).
+     * With options.option {label, warning?} it resolves {confirmed, option} and returns null
+     * unless the host announced "confirm-option" (an older Kailo cannot show the choice).
      */
     confirm: function (options) {
       if (!has("confirm") || !framed || !hostHas("confirm") || !options || typeof Promise !== "function") return null;
@@ -528,15 +536,28 @@
       var confirmLabel = text(options.confirmLabel, 24, true);
       var cancelLabel = text(options.cancelLabel, 24, true);
       if (!tone || !title || description === null || confirmLabel === null || cancelLabel === null) return null;
+      var option = null;
+      if (options.option !== undefined) {
+        if (!hostHas("confirm-option") || typeof options.option !== "object" || options.option === null) return null;
+        var optionLabel = text(options.option.label, 80);
+        var optionWarning = text(options.option.warning, 200, true);
+        if (!optionLabel || optionWarning === null) return null;
+        option = { label: optionLabel };
+        if (optionWarning) option.warning = optionWarning;
+      }
       confirmSequence += 1;
       var id = "c" + confirmSequence + "-" + Date.now().toString(36);
       var payload = { id: id, tone: tone, title: title };
       if (description) payload.description = description;
       if (confirmLabel) payload.confirmLabel = confirmLabel;
       if (cancelLabel) payload.cancelLabel = cancelLabel;
+      if (option) payload.option = option;
       return new Promise(function (resolve) {
-        pendingConfirms[id] = resolve;
-        if (!post("confirm", { confirm: payload })) { delete pendingConfirms[id]; resolve(false); }
+        pendingConfirms[id] = { resolve: resolve, option: option !== null };
+        if (!post("confirm", { confirm: payload })) {
+          delete pendingConfirms[id];
+          resolve(option ? { confirmed: false, option: false } : false);
+        }
       });
     }
   });

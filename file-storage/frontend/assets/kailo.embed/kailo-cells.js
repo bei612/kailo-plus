@@ -265,6 +265,7 @@
             cells: '共享空间', cancel: '取消', remove: '删除', empty: '清空',
             deleteOne: '删除「{0}」？', deleteMany: '删除 {0} 个项目？',
             toRecycle: '项目将移到回收站，可以从回收站恢复。', permanent: '项目将被永久删除，无法恢复。',
+            permanentOption: '永久删除（不移到回收站）', permanentWarning: '勾选后项目将被永久删除，无法恢复。',
             emptyRecycle: '清空回收站？', emptyRecycleBody: '回收站中的所有项目将被永久删除，无法恢复。',
             deleteShares: '删除全部分享？', deleteSharesBody: '公开链接和共享成员将立即失去访问权限。',
             dropTo: '松开即可上传到「{0}」', uploadFailed: '未能开始上传',
@@ -276,6 +277,7 @@
             cells: 'Shared spaces', cancel: 'Cancel', remove: 'Delete', empty: 'Empty',
             deleteOne: 'Delete "{0}"?', deleteMany: 'Delete {0} items?',
             toRecycle: 'The items move to the recycle bin and can be restored from there.', permanent: 'The items are deleted permanently and cannot be restored.',
+            permanentOption: 'Delete permanently (skip the recycle bin)', permanentWarning: 'The items will be deleted permanently and cannot be restored.',
             emptyRecycle: 'Empty the recycle bin?', emptyRecycleBody: 'Every item in the recycle bin is deleted permanently and cannot be restored.',
             deleteShares: 'Delete all shares?', deleteSharesBody: 'Public links and shared members lose access immediately.',
             dropTo: 'Drop to upload to "{0}"', uploadFailed: 'Could not start the upload',
@@ -456,15 +458,21 @@
         }
     }
 
-    function deleteConfirm(count, name, permanent) {
+    // allowPermanent (DELETE_ALLOW_PERMANENT): the native "delete permanently" choice travels
+    // into Kailo's dialog; a Kailo that cannot show it leaves the native dialog in place.
+    function deleteConfirm(count, name, permanent, allowPermanent) {
         var n = Number(count) || 0;
-        return {
+        var options = {
             tone: 'danger',
             title: clip(n === 1 && name ? text('deleteOne', clip(name, 80)) : text('deleteMany', n), 120),
             description: text(permanent ? 'permanent' : 'toRecycle'),
             confirmLabel: text('remove'),
             cancelLabel: text('cancel'),
         };
+        if (allowPermanent && !permanent) {
+            options.option = { label: text('permanentOption'), warning: text('permanentWarning') };
+        }
+        return options;
     }
 
     function namedConfirm(kind) {

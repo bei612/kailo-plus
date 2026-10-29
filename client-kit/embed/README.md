@@ -148,10 +148,10 @@ DD-157 page shell (07 §4.8.7, `.design/20` §13), same version 1 — opt in per
 | component → Kailo | `ready` carries `features: [...]` (the declared subset) |
 | component → Kailo | `{type: "page", page: {title, breadcrumbs, tabs, activeTab, actions}}` — `KailoEmbed.setPage()`; Kailo draws the header, the page draws none |
 | component → Kailo | `{type: "toast", toast: {tone, title, description}}` — `KailoEmbed.toast()` |
-| component → Kailo | `{type: "confirm", confirm: {id, tone, title, description, confirmLabel, cancelLabel}}` — `KailoEmbed.confirm()` |
+| component → Kailo | `{type: "confirm", confirm: {id, tone, title, description, confirmLabel, cancelLabel, option?}}` — `KailoEmbed.confirm()`; `option: {label, warning?}` is one unchecked choice in the dialog, sent only to a host announcing `confirm-option` |
 | component → Kailo | `{type: "shortcut", shortcut: "search"\|"settings"\|"back"\|"forward"}` — sent by the runtime itself |
 | Kailo → component | `{type: "navigate", target: {kind: "tab"\|"breadcrumb", id}}`, `{type: "action", id}` — `onNavigate`, `onAction` |
-| Kailo → component | `{type: "confirm-result", id, confirmed}` |
+| Kailo → component | `{type: "confirm-result", id, confirmed, option?}` — `option` only for a request that carried one, never true on a cancel |
 | Kailo → component | `presentation` carries `features: [...]` the host handles; `KailoEmbed.hostSupports(name)` and `<html data-kailo-host-features>` reflect it. `setPage` returns `false` once an older host answered without `page` — keep your own header then |
 
 Page, toast and confirm text is display text for the user's own browser: Kailo
