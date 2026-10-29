@@ -63,18 +63,20 @@ export default function (pydio) {
                 removePermanently: (onChange) => <PermanentRemoveCheckbox onChange={onChange} messages={MessageHash}/>
             };
         }
-        // DD-157: Kailo asks the question ("删除 3 个项目？") unless the native
-        // dialog carries the extra "delete permanently" choice.
+        // DD-157: Kailo asks the question ("删除 3 个项目？"), including the "delete
+        // permanently" choice when it is allowed; a Kailo that cannot show that choice
+        // answers null and the native dialog (with moreComponents) is shown instead.
         const selected = pydio.getContextHolder().getSelectedNodes()
         const kailo = window.KailoCells
-        const kailoConfirm = !moreComponents && kailo && kailo.deleteConfirm
-            ? kailo.deleteConfirm(selected.length, selected.length === 1 ? selected[0].getLabel() : '', permanent)
+        const kailoConfirm = kailo && kailo.deleteConfirm
+            ? kailo.deleteConfirm(selected.length, selected.length === 1 ? selected[0].getLabel() : '', permanent, !!moreComponents)
             : undefined
         pydio.UI.openComponentInModal('PydioReactUI', 'ConfirmDialog', {
             message:message,
             dialogTitleId: 7,
             moreComponents,
             kailoConfirm,
+            kailoOptionKey: 'removePermanently',
             validCallback: (moreValues) => {
                 const nodes = pydio.getContextHolder().getSelectedNodes();
                 const slug = pydio.user.getActiveRepositoryObject().getSlug();

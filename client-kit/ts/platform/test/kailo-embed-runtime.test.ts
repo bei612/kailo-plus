@@ -285,6 +285,31 @@ describe("kailo-embed.js page shell (DD-157)", () => {
     await expect(answer).resolves.toBe(true);
   });
 
+  it("carries one confirmation choice only to a Kailo that shows it, and reports it only on a confirmation", async () => {
+    const { embed, posted } = framedWithSpy();
+    const withChoice = { tone: "danger" as const, title: "删除「周报.docx」？", option: { label: "永久删除", warning: "无法恢复" } };
+    connect(["page", "toast", "confirm", "shortcuts", "files"]);
+    // An older Kailo cannot show the choice: the component keeps its own dialog.
+    expect(embed.confirm(withChoice)).toBeNull();
+    connect(["page", "toast", "confirm", "shortcuts", "files", "confirm-option"]);
+    expect(embed.confirm({ ...withChoice, option: { label: "" } })).toBeNull();
+    expect(embed.confirm({ ...withChoice, option: { label: "x".repeat(81) } })).toBeNull();
+    const answer = embed.confirm(withChoice)!;
+    const request = (posted.mock.lastCall![0] as { confirm: { id: string; option: unknown } }).confirm;
+    expect(request.option).toEqual({ label: "永久删除", warning: "无法恢复" });
+    fromParent({ source: "kailo-host", version: 1, type: "confirm-result", id: request.id, confirmed: true, option: true });
+    await expect(answer).resolves.toEqual({ confirmed: true, option: true });
+    const cancelled = embed.confirm(withChoice)!;
+    const second = (posted.mock.lastCall![0] as { confirm: { id: string } }).confirm;
+    fromParent({ source: "kailo-host", version: 1, type: "confirm-result", id: second.id, confirmed: false, option: true });
+    await expect(cancelled).resolves.toEqual({ confirmed: false, option: false });
+    const plain = embed.confirm({ title: "删除？" })!;
+    const third = (posted.mock.lastCall![0] as { confirm: { id: string; option?: unknown } }).confirm;
+    expect(third.option).toBeUndefined();
+    fromParent({ source: "kailo-host", version: 1, type: "confirm-result", id: third.id, confirmed: true });
+    await expect(plain).resolves.toBe(true);
+  });
+
   it("forwards Kailo's global chords to Kailo before the page's own handlers", () => {
     const { posted } = framedWithSpy();
     const own = vi.fn();

@@ -225,9 +225,13 @@ export default class Builder{
         if(namespace === 'PydioReactUI' && componentName === 'ConfirmDialog' && props && props.kailoConfirm && kailo && kailo.confirm){
             const answer = kailo.confirm(props.kailoConfirm);
             if(answer && answer.then){
-                answer.then(confirmed => {
+                // A confirmation with a choice answers {confirmed, option}; the choice maps
+                // back to the native moreComponents value named by kailoOptionKey.
+                answer.then(result => {
+                    const withChoice = typeof result === 'object' && result !== null;
+                    const confirmed = withChoice ? result.confirmed === true : result === true;
                     if(confirmed && props.validCallback){
-                        props.validCallback();
+                        props.validCallback(withChoice && result.option === true && props.kailoOptionKey ? {[props.kailoOptionKey]: true} : undefined);
                     }
                 });
                 return;

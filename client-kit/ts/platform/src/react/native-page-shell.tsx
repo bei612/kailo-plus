@@ -3,12 +3,13 @@
 // first-paint skeleton and the confirmation dialog; the component draws only its
 // content. Everything the component supplied is display text, rendered as React
 // text and never stored or sent anywhere.
-import type { ComponentType, ReactNode } from "react";
+import { useEffect, useId, useState, type ComponentType, type ReactNode } from "react";
 import {
   ChevronRight, Database, Download, Filter, Folder, FolderPlus, Library, MessageSquarePlus, MoreHorizontal, Pencil,
   Loader2, Play, Plus, RefreshCw, Rocket, Search, Settings, Share2, Trash2, Upload, AppWindow, type LucideProps,
 } from "lucide-react";
 import { Button } from "./profile/buzz/shared/ui/button";
+import { Checkbox } from "./profile/buzz/shared/ui/checkbox";
 import { AgentAlertDialog, AlertDialogAction, AlertDialogCancel } from "./agent-library/AgentAlertDialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "./sidebar/dropdown-menu";
 import { useT } from "./context";
@@ -120,17 +121,31 @@ export function NativePageSkeleton() {
 }
 
 /** The component's confirmation, in Kailo's dialog (20 §9); focus returns to the frame on close. */
-export function NativeConfirmDialog({ confirm, onDone }: { confirm: EmbedConfirm | null; onDone: (confirmed: boolean) => void }) {
+export function NativeConfirmDialog({ confirm, onDone }: { confirm: EmbedConfirm | null; onDone: (confirmed: boolean, option?: boolean) => void }) {
   const t = useT();
-  return <AgentAlertDialog open={confirm !== null} onOpenChange={(open) => { if (!open) onDone(false); }}
+  const optionId = useId();
+  // The component's one choice (e.g. "delete permanently") starts unchecked for every request.
+  const [chosen, setChosen] = useState(false);
+  useEffect(() => { setChosen(false); }, [confirm?.id]);
+  const option = confirm?.option;
+  const finish = (confirmed: boolean) => onDone(confirmed, option ? confirmed && chosen : undefined);
+  return <AgentAlertDialog open={confirm !== null} onOpenChange={(open) => { if (!open) finish(false); }}
     testId="native-confirm-dialog" title={confirm?.title ?? ""} description={confirm?.description ?? ""}
     footer={<>
       <AlertDialogCancel asChild><Button variant="outline">{confirm?.cancelLabel ?? t("platform.cancel")}</Button></AlertDialogCancel>
       <AlertDialogAction asChild>
-        <Button variant={confirm?.tone === "danger" ? "destructive" : "default"} onClick={(event) => { event.preventDefault(); onDone(true); }}>
+        <Button variant={confirm?.tone === "danger" ? "destructive" : "default"} onClick={(event) => { event.preventDefault(); finish(true); }}>
           {confirm?.confirmLabel ?? t("platform.nativePage.confirm")}</Button>
       </AlertDialogAction>
-    </>} />;
+    </>}>
+    {option ? <div className="pt-2" data-testid="native-confirm-option">
+      <div className="flex items-center gap-2">
+        <Checkbox id={optionId} checked={chosen} onCheckedChange={(value) => setChosen(value === true)} />
+        <label htmlFor={optionId} className="text-sm text-foreground">{option.label}</label>
+      </div>
+      {chosen && option.warning ? <p className="mt-1.5 pl-6 text-sm text-destructive">{option.warning}</p> : null}
+    </div> : null}
+  </AgentAlertDialog>;
 }
 
 export function NativePageFrame({ children }: { children: ReactNode }) {

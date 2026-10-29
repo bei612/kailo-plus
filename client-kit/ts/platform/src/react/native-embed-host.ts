@@ -33,7 +33,9 @@ export interface EmbedFilePick { accept?: string; multiple?: boolean; directory?
 export interface EmbedPageAction { id: string; label: string; variant: "primary" | "secondary" | "menu"; icon?: EmbedActionIcon; files?: EmbedFilePick; disabled?: boolean; busy?: boolean }
 export interface EmbedPage { title: string; breadcrumbs: EmbedPageItem[]; tabs: EmbedPageItem[]; activeTab?: string; actions: EmbedPageAction[] }
 export interface EmbedToast { tone: "success" | "info" | "warning" | "error"; title: string; description?: string }
-export interface EmbedConfirm { id: string; tone: "default" | "danger"; title: string; description?: string; confirmLabel?: string; cancelLabel?: string }
+/** One unchecked choice inside the confirmation (acceptance batch 5: Cells "delete permanently"). */
+export interface EmbedConfirmOption { label: string; warning?: string }
+export interface EmbedConfirm { id: string; tone: "default" | "danger"; title: string; description?: string; confirmLabel?: string; cancelLabel?: string; option?: EmbedConfirmOption }
 
 export type EmbedMessage =
   | { type: "ready"; features: EmbedFeature[] }
@@ -129,7 +131,17 @@ function parseConfirm(value: unknown): EmbedConfirm | null {
   const confirmLabel = optionalText(raw.confirmLabel, 24);
   const cancelLabel = optionalText(raw.cancelLabel, 24);
   if (!id || !tone || !title || description === null || confirmLabel === null || cancelLabel === null) return null;
-  return { id, tone, title, ...(description ? { description } : {}), ...(confirmLabel ? { confirmLabel } : {}), ...(cancelLabel ? { cancelLabel } : {}) };
+  let option: EmbedConfirmOption | undefined;
+  if (raw.option !== undefined) {
+    if (typeof raw.option !== "object" || raw.option === null) return null;
+    const choice = raw.option as Record<string, unknown>;
+    const label = displayText(choice.label, 80);
+    const warning = optionalText(choice.warning, 200);
+    if (!label || warning === null) return null;
+    option = { label, ...(warning ? { warning } : {}) };
+  }
+  return { id, tone, title, ...(description ? { description } : {}), ...(confirmLabel ? { confirmLabel } : {}), ...(cancelLabel ? { cancelLabel } : {}),
+    ...(option ? { option } : {}) };
 }
 
 /** Every component → Kailo message of wire v1 (DD-133, DD-157); null for anything else. */
@@ -192,8 +204,11 @@ export function pickFiles(pick: EmbedFilePick, onPicked: (selection: { files: Fi
   input.click();
 }
 
-export function confirmResultMessage(id: string, confirmed: boolean) {
-  return { source: "kailo-host", version: EMBED_PROTOCOL_VERSION, type: "confirm-result", id, confirmed } as const;
+/** `option` is sent only for a confirmation that carried a choice; it is never true on a cancel. */
+export function confirmResultMessage(id: string, confirmed: boolean, option?: boolean) {
+  return option === undefined
+    ? { source: "kailo-host", version: EMBED_PROTOCOL_VERSION, type: "confirm-result", id, confirmed } as const
+    : { source: "kailo-host", version: EMBED_PROTOCOL_VERSION, type: "confirm-result", id, confirmed, option: confirmed && option } as const;
 }
 
 /**
@@ -225,7 +240,7 @@ export function embedRequest(data: unknown): EmbedRequest | null {
 
 export function presentationMessage(presentation: EmbedPresentation) {
   return { source: "kailo-host", version: EMBED_PROTOCOL_VERSION, type: "presentation",
-    theme: presentation.theme, locale: presentation.locale, features: [...EMBED_FEATURES, "files"] } as const;
+    theme: presentation.theme, locale: presentation.locale, features: [...EMBED_FEATURES, "files", "confirm-option"] } as const;
 }
 
 /**

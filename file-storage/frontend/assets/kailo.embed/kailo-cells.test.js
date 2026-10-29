@@ -331,6 +331,22 @@ describe('DD-157 page shell over the Kailo embed runtime', () => {
         await expect(answer).resolves.toBe(true)
     })
 
+    it('carries the permanent-delete choice into Kailo only when Kailo can show it (acceptance batch 5)', async () => {
+        const { api, posted, host, send } = hostedLoad(pagePydio())
+        const options = api.deleteConfirm(1, '周报.docx', false, true)
+        expect(options.option).toEqual({ label: '永久删除（不移到回收站）', warning: '勾选后项目将被永久删除，无法恢复。' })
+        expect(api.deleteConfirm(1, 'a', true, true).option).toBeUndefined()
+        expect(api.deleteConfirm(1, 'a', false, false).option).toBeUndefined()
+        // This Kailo did not announce confirm-option: the native dialog stays.
+        expect(api.confirm(options)).toBe(null)
+        host({ theme: 'light', locale: 'zh-CN', features: [...FEATURES.split(' '), 'confirm-option'] })
+        const answer = api.confirm(options)
+        const { confirm } = posted('confirm').pop()
+        expect(confirm.option).toEqual(options.option)
+        send({ type: 'confirm-result', id: confirm.id, confirmed: true, option: true })
+        await expect(answer).resolves.toEqual({ confirmed: true, option: true })
+    })
+
     it('leaves header, toasts and confirmations native at top level', () => {
         const pydio = pagePydio()
         const { api, parent } = load({ features: FEATURES, embedded: false, pydio })

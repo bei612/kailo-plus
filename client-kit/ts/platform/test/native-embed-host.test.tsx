@@ -294,6 +294,31 @@ describe("DD-157 component page shell", () => {
     expect(document.querySelector('[data-testid="native-confirm-dialog"]')).toBeNull();
   });
 
+  it("shows the component's one choice unchecked and returns it with the confirmation only", async () => {
+    const { target, posted } = await mount({ locale: "zh-CN" });
+    await fromFrame(target, ready);
+    const ask = (id: string) => fromFrame(target, { source: "kailo-embed", version: 1, type: "confirm",
+      confirm: { id, tone: "danger", title: "删除「周报.docx」？", confirmLabel: "删除", option: { label: "永久删除", warning: "无法恢复" } } });
+    await ask("c1");
+    let dialog = document.querySelector('[data-testid="native-confirm-dialog"]') as HTMLElement;
+    const choice = dialog.querySelector('[data-testid="native-confirm-option"] button[role="checkbox"]') as HTMLElement;
+    expect(dialog.textContent).toContain("永久删除");
+    expect(dialog.textContent).not.toContain("无法恢复");
+    await click(choice);
+    expect(dialog.textContent).toContain("无法恢复");
+    await click(button(dialog, "删除"));
+    expect(posted).toHaveBeenLastCalledWith(confirmResultMessage("c1", true, true), page.origin);
+    // The next request starts unchecked; confirming it without ticking sends false.
+    await ask("c2");
+    dialog = document.querySelector('[data-testid="native-confirm-dialog"]') as HTMLElement;
+    expect((dialog.querySelector('button[role="checkbox"]') as HTMLElement).getAttribute("aria-checked")).toBe("false");
+    await click(button(dialog, "删除"));
+    expect(posted).toHaveBeenLastCalledWith(confirmResultMessage("c2", true, false), page.origin);
+    expect(confirmResultMessage("c3", false, true)).toMatchObject({ confirmed: false, option: false });
+    expect(embedMessage({ source: "kailo-embed", version: 1, type: "confirm", confirm: { id: "c4", title: "x", option: { label: "" } } })).toBeNull();
+    expect(embedMessage({ source: "kailo-embed", version: 1, type: "confirm", confirm: { id: "c4", title: "x", option: "永久删除" } })).toBeNull();
+  });
+
   it("replays Kailo's chords pressed inside the frame on the host window", async () => {
     const { target } = await mount();
     await fromFrame(target, ready);
