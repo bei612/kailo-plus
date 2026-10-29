@@ -23,8 +23,8 @@ artifacts:
     inputs: [knowledge/]
     exclude: [knowledge/frontend/]
     build_args: [GOPROXY_ARG, VERSION_ARG, COMMIT_ID_ARG, BUILD_TIME_ARG, GO_VERSION_ARG]
-    source_digest: sha256:3e94a526b1aa97e0c3dc44389f4bfcff51c4d0f462a51ed28f2825cbe1fccc41
-    artifact_digest: sha256:cae897053b9d1a26c7488c02527145f74b38440b3e06e8d3bd649f3d536287d7
+    source_digest: sha256:f23cdd1c9ddeeaaee155568892ffbde2a3d13113c64d564e98bf66f203adfe23
+    artifact_digest: sha256:2e9274c13a3292216622d909821ac33959871ade46703b867ca0d84d24fa591c
     blocked: The frozen pending-sync recovery candidate built and reached the local registry with immutable digest readback; this candidate is not deployed. Frozen model credential delivery, approved release/binding and governed tools/resources acceptance remain unverified. The earlier deployed backend remains historical; see fork/verify/release-20261009-272693.md.
   - name: knowledge-native-ui
     kind: image
@@ -34,8 +34,8 @@ artifacts:
     build_context: .
     build_dockerfile: knowledge/frontend/Dockerfile
     inputs: [knowledge/frontend/, client-kit/embed/kailo-theme-tokens.css, client-kit/embed/kailo-embed.js, web-client/web/public/app-icon.png]
-    source_digest: sha256:91d2a9ecf3a8858a93893eca8ab12713a28fae7359dcd79839c0b051f89124f1
-    artifact_digest: sha256:d274e73c649540e38d83a9140c6230759017bffc72a883adc5c63a56e4bd23fd
+    source_digest: sha256:faaa49f22d260f0daed4e26f3f356b5b0fb4f39196f592abc165f9926428be4b
+    artifact_digest: sha256:8d9031115383d49dfab46d9c2e5e149fad3279c558a0227bcf0305da78cd3d9f
     blocked: The full native UI from Kailo commit 8a47534c96c9bf09048ee282ca4e62d5d9d73079 is deployed with digest readback and fresh ordinary-user OIDC login/reload screenshots. The existing account has one workspace only and native chat readiness rejects its unconfigured conversation model, so cross-scope and live SSE acceptance remain unverified. Complete business/governance acceptance, unresolved dependency vulnerabilities and approved component activation remain unverified. See fork/verify/release-20261011-oidc.md.
   - name: knowledge-document-reader
     kind: image

@@ -22,15 +22,15 @@ artifacts:
     build_context: .
     build_dockerfile: data-query/wren-ui/Dockerfile
     inputs: [data-query/wren-ui/, client-kit/adapter/protocol.mjs, client-kit/embed/kailo-theme-tokens.css, client-kit/embed/kailo-embed.js, client-kit/embed/kailo-embed.d.ts, web-client/web/public/app-icon.png]
-    source_digest: sha256:101693f585fc5b5f686d6fd962de06c74128a5b89765675d3a3e551c5f0660d0
-    artifact_digest: sha256:8734bc55fc06fbc84744786f63a0a100b188b596ce0ef2f5d8f3bf67faf600f1
+    source_digest: sha256:f091a40a7de6ecd2f244caaf4eafcd58bb730a4ccb4e1c93793bac7b4eda0741
+    artifact_digest: sha256:5b330f5ba27cd72eaccc90b7e6283f5100fbce80b2321a0320e7a75c8a79c735
   - name: data-query-ai-service
     kind: image
     build_context: data-query/wren-ai-service
     build_dockerfile: data-query/wren-ai-service/docker/Dockerfile
     inputs: [data-query/wren-ai-service/]
-    source_digest: sha256:d587ce685d58d3ebaf402ac0451a7fe37d118b95a10e98cf7bf05cabb8bc031c
-    artifact_digest: sha256:662fc7a76c259b140355f5b66a083a6ebb1a4403464359ba115b8956431fe182
+    source_digest: sha256:9babb529cd162650fc9795f894ac807e1db9655f0a285d718a1ee2d8e82f6b7b
+    artifact_digest: sha256:b116b0bb2ffb619b3574e84b00b3bce38966b73b2176628dc77e855d7855fa70
   - name: data-query-engine
     kind: image
     build_context: data-query/wren-engine/wren-core-legacy

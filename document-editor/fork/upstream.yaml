@@ -18,8 +18,8 @@ artifacts:
     inputs: [document-editor/fork/packaging/, document-editor/server/, document-editor/web-apps/, document-editor/sdkjs/, client-kit/embed/kailo-theme-tokens.css, web-client/web/public/app-icon.png, web-client/web/package-lock.json]
     build_args: [PLATFORM_DISPLAY_NAME]
     build_facts: {KAILO_SOURCE_COMMIT: source_commit, KAILO_BUILD_TIME: build_time_utc}
-    source_digest: sha256:3b6366c4b83acd52018b445d4c9f2b2e0af53537ae214fa8813f7a42c2eaefc8
-    artifact_digest: sha256:97661b9a63579cb4f08244225980bfb786951d0bf8f29b3b074c53199f4a8cf5
+    source_digest: sha256:63f3522cd27139ab7e99ae6c2396339f20a24a0cf7a614fa54ec17e76233a32a
+    artifact_digest: sha256:0989e13bfda59ca4caa36b54df75102917355af1bbb1ea58b3be5a922ced9517
     blocked: Registered CI build 73e3ee72 (source a854ab98, inputs unchanged on main a06b5913) is recorded above but not deployed; the DD-132(3) deployment receipt and V-SCN-186..190 acceptance on a deployed instance are still open.
 source_components:
   core: 3250a848ee4ef20c2fb8c38dc86350ec579124b8
