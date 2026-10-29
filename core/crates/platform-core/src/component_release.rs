@@ -1701,8 +1701,13 @@ pub(crate) async fn prewrite(
     let suite_digest = collab_bridge::limits::canonical_digest(
         &json!({"fixture":fixture,"contracts":contracts,"identityDigest":identity_digest}),
     );
-    let workflow =
-        crate::component_task::workflow_id(KIND, ae.tenant_id, &registration.id.to_string(), 1);
+    let attempt = register_attempt(tx, ae.tenant_id, registration.id).await?;
+    let workflow = crate::component_task::workflow_id(
+        KIND,
+        ae.tenant_id,
+        &registration.id.to_string(),
+        attempt,
+    );
     let mut plan = json!({"actionExecutionId":ae.id,"operationId":ae.operation_id,
         "workflowId":workflow,"runId":"","componentReleaseId":registration.id,
         "artifactDigest":registration.adapter_digest,"contractDigests":contract_digests,
@@ -1722,7 +1727,29 @@ pub(crate) async fn prewrite(
     if affected != 1 {
         return Err(Refusal::Conflict(ReasonCode::TargetStateConflict));
     }
-    Ok(1)
+    Ok(attempt)
+}
+
+/// 07 §8A: a registration that ended FAILED is retried by a new
+/// component_release.register (new ActionExecution, new Workflow, new suite
+/// run); the original attempt is never continued or rewritten. The Workflow id
+/// version is therefore this release's attempt ordinal in the Catalog Tenant,
+/// one more than the COMPONENT_RELEASE Workflows already recorded for it
+/// (a fixed version 1 made every retry collide with workflow_ref_pkey).
+pub(super) async fn register_attempt(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    tenant: Uuid,
+    release: Uuid,
+) -> Result<i32, Refusal> {
+    let base = crate::component_task::workflow_id(KIND, tenant, &release.to_string(), 0);
+    let prefix = base.strip_suffix('0').ok_or_else(bad)?;
+    let prior: i64 = sqlx::query_scalar(
+        "select count(*) from projection.workflow_ref where left(workflow_id, length($1)) = $1",
+    )
+    .bind(prefix)
+    .fetch_one(&mut **tx)
+    .await?;
+    i32::try_from(prior + 1).map_err(|_| bad())
 }
 
 /// DD-127: the original ComponentTask freezes an empty suite for a native page
@@ -1738,8 +1765,13 @@ async fn native_page_prewrite(
         "nativePageOrigins":registration.manifest["frontendDelivery"]["nativePageOrigins"],
         "artifactDigest":registration.adapter_digest});
     let identity_digest = collab_bridge::limits::canonical_digest(&identity);
-    let workflow =
-        crate::component_task::workflow_id(KIND, ae.tenant_id, &registration.id.to_string(), 1);
+    let attempt = register_attempt(tx, ae.tenant_id, registration.id).await?;
+    let workflow = crate::component_task::workflow_id(
+        KIND,
+        ae.tenant_id,
+        &registration.id.to_string(),
+        attempt,
+    );
     let mut plan = json!({"actionExecutionId":ae.id,"operationId":ae.operation_id,
         "workflowId":workflow,"runId":"","componentReleaseId":registration.id,
         "artifactDigest":registration.adapter_digest,"contractDigests":[],
@@ -1758,7 +1790,7 @@ async fn native_page_prewrite(
     if affected != 1 {
         return Err(Refusal::Conflict(ReasonCode::TargetStateConflict));
     }
-    Ok(1)
+    Ok(attempt)
 }
 
 /// DD-124(4): the isolated receiver deployment named by a plan runs this Core

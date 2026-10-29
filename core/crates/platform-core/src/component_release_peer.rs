@@ -55,6 +55,7 @@ pub(super) async fn prewrite(
     contracts: &[Value],
 ) -> Result<i32, Refusal> {
     let env = environment(release)?;
+    let attempt = super::register_attempt(tx, ae.tenant_id, release.id).await?;
     crate::application_binding::credentials::validate_conformance(
         ae.tenant_id,
         &release.manifest,
@@ -136,7 +137,7 @@ pub(super) async fn prewrite(
         .map(collab_bridge::limits::canonical_digest)
         .collect();
     let mut plan = json!({"actionExecutionId":ae.id,"operationId":ae.operation_id,
-        "workflowId":crate::component_task::workflow_id(KIND,ae.tenant_id,&release.id.to_string(),1),"runId":"",
+        "workflowId":crate::component_task::workflow_id(KIND,ae.tenant_id,&release.id.to_string(),attempt),"runId":"",
         "componentReleaseId":release.id,"artifactDigest":release.adapter_digest,"contractDigests":digests,
         "suiteDigest":collab_bridge::limits::canonical_digest(&json!({"environment":env,"contracts":contracts})),
         "identityDigest":collab_bridge::limits::canonical_digest(&env),"planDigest":"",
@@ -153,7 +154,7 @@ pub(super) async fn prewrite(
     if changed.rows_affected() != 1 {
         return Err(Refusal::Conflict(ReasonCode::TargetStateConflict));
     }
-    Ok(1)
+    Ok(attempt)
 }
 
 fn target(action: Uuid) -> String {
