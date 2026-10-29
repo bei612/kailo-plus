@@ -768,7 +768,10 @@ func (candidate *componentCandidate) validatePlan(plan generated.ComponentConfor
 		for _, binding := range step.Bindings {
 			side := string(binding.Side)
 			if string(binding.Source) != "CAPTURE" || (side != "INPUT" && side != "EXPECTED") ||
-				binding.Key == "" || !strings.HasPrefix(binding.Pointer, "/") || step.ContractKey == nil {
+				binding.Key == "" || !strings.HasPrefix(binding.Pointer, "/") ||
+				// Core's permission-denied replay (component_release.rs prewrite) sends the
+				// same substituted request without a contract key: it keeps INPUT bindings only.
+				(step.ContractKey == nil && side != "INPUT") {
 				return errors.New("invalid frozen capture binding")
 			}
 		}
