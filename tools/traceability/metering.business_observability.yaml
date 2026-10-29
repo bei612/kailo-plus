@@ -38,7 +38,7 @@ release:
   # 仅记录当前已构建候选；本能力的新 Core/Web 构建、部署与业务验收以 core/verify/business-observability.md 为准。
   artifacts:
     - name: core
-      digest: sha256:8af38b1b4b02a90ded200f986887e56fee2588330430b9c123d8fba9a400ab4c
+      digest: sha256:1ee3b14c3ea9b0bfbf3f5e0391ff6c476376155b31cf66ffab6485795cc26de3
     - name: web-client
       digest: sha256:a6dc38c87a17a87c09ecbc41b9b5f24761957b71fd5854739fd1e16e4e9b44ba
   gate: blocked_until_seams_closed
