@@ -86,6 +86,8 @@ export function createInvokeTransport(
             method: request.method,
             path: request.path,
             body: request.body ?? null,
+            // The only extra header Rust forwards (DD-81/DD-142); absent for every other request.
+            ...(request.idempotencyKey === undefined ? {} : { headers: { "Idempotency-Key": request.idempotencyKey } }),
           }),
         );
       } catch (e) {

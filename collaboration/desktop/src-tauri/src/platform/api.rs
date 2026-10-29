@@ -392,7 +392,25 @@ impl NativeSession {
         path: &str,
         body: Option<&serde_json::Value>,
     ) -> Result<ApiResponse, String> {
-        let (resp, generation) = self.send(http, cfg, method, path, body).await?;
+        self.call_idempotent(http, cfg, method, path, body, None)
+            .await
+    }
+
+    /// [`Self::call`] with the one extra header a native publication may carry: the
+    /// `Idempotency-Key` of its DD-81 intent (DD-142 owned-Agent edit/delete via BFF).
+    /// The refresh-and-retry on 401 resends the same key, so it stays one intent.
+    pub(crate) async fn call_idempotent(
+        &self,
+        http: &reqwest::Client,
+        cfg: &PlatformConfig,
+        method: Method,
+        path: &str,
+        body: Option<&serde_json::Value>,
+        idempotency_key: Option<uuid::Uuid>,
+    ) -> Result<ApiResponse, String> {
+        let (resp, generation) = self
+            .send(http, cfg, method, path, body, idempotency_key)
+            .await?;
         let status = resp.status();
         let body = if status == reqwest::StatusCode::NO_CONTENT {
             serde_json::Value::Null
@@ -414,7 +432,7 @@ impl NativeSession {
         cfg: &PlatformConfig,
         path: &str,
     ) -> Result<(reqwest::Response, u64), String> {
-        self.send(http, cfg, Method::GET, path, None).await
+        self.send(http, cfg, Method::GET, path, None, None).await
     }
 
     /// Bearer request with one refresh-and-retry on 401; returns the response and its generation.
@@ -425,6 +443,7 @@ impl NativeSession {
         method: Method,
         path: &str,
         body: Option<&serde_json::Value>,
+        idempotency_key: Option<uuid::Uuid>,
     ) -> Result<(reqwest::Response, u64), String> {
         if !path.starts_with(API_PREFIX) || path.contains("..") {
             return Err(format!("不代发 {API_PREFIX} 之外的路径"));
@@ -444,6 +463,9 @@ impl NativeSession {
                 .bearer_auth(&token);
             if let Some(b) = body {
                 req = req.json(b);
+            }
+            if let Some(key) = idempotency_key {
+                req = req.header("Idempotency-Key", key.hyphenated().to_string());
             }
             let response = req
                 .send()

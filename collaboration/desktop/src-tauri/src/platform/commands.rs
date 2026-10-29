@@ -1,5 +1,7 @@
 //! 前端可调用的平台命令。令牌不出 Rust：前端只拿到 BFF 回应的状态码与正文。
 
+use std::collections::BTreeMap;
+
 use nostr::{EventBuilder, Kind, Tag};
 use reqwest::Method;
 use serde::Serialize;
@@ -121,7 +123,37 @@ pub(crate) async fn platform_sign_out(
     result
 }
 
-/// 代发一次管理平面请求。只接受 `/api/v1/` 下的路径与常用方法。
+/// 前端可附带的唯一额外请求头：一次发布意图的幂等键（DD-81、DD-142）。
+const IDEMPOTENCY_KEY_HEADER: &str = "idempotency-key";
+
+/// 前端请求头白名单。只放行 `Idempotency-Key`（名字按 HTTP 规则大小写不敏感，且只能出现
+/// 一次），值必须是规范的小写连字符 UUID——与 Core 解析的形状相同。任何其他头一律拒绝，
+/// 不静默丢弃：鉴权、Host、Cookie 等只由 Rust 侧决定。
+fn idempotency_key_from_headers(
+    headers: Option<&BTreeMap<String, String>>,
+) -> Result<Option<uuid::Uuid>, String> {
+    let Some(headers) = headers else {
+        return Ok(None);
+    };
+    let mut key = None;
+    for (name, value) in headers {
+        if !name.eq_ignore_ascii_case(IDEMPOTENCY_KEY_HEADER) {
+            return Err(format!("不代发请求头 {name}"));
+        }
+        if key.is_some() {
+            return Err("Idempotency-Key 重复".to_owned());
+        }
+        let parsed = uuid::Uuid::parse_str(value)
+            .ok()
+            .filter(|id| id.hyphenated().to_string() == *value)
+            .ok_or("Idempotency-Key 不是规范 UUID")?;
+        key = Some(parsed);
+    }
+    Ok(key)
+}
+
+/// 代发一次管理平面请求。只接受 `/api/v1/` 下的路径与常用方法；额外请求头只放行
+/// `Idempotency-Key`（[`idempotency_key_from_headers`]）。
 #[tauri::command]
 pub(crate) async fn platform_api(
     app: AppHandle,
@@ -130,6 +162,7 @@ pub(crate) async fn platform_api(
     method: String,
     path: String,
     body: Option<serde_json::Value>,
+    headers: Option<BTreeMap<String, String>>,
 ) -> Result<ApiResponse, String> {
     let method = match method.as_str() {
         "GET" => Method::GET,
@@ -138,9 +171,17 @@ pub(crate) async fn platform_api(
         "DELETE" => Method::DELETE,
         other => return Err(format!("不支持的方法 {other}")),
     };
+    let idempotency_key = idempotency_key_from_headers(headers.as_ref())?;
     let cfg = require_config(&app)?;
     session
-        .call(&state.http_client, &cfg, method, &path, body.as_ref())
+        .call_idempotent(
+            &state.http_client,
+            &cfg,
+            method,
+            &path,
+            body.as_ref(),
+            idempotency_key,
+        )
         .await
 }
 
@@ -387,5 +428,78 @@ mod export_package_tests {
         ] {
             assert!(super::export_package_path(bad).is_none());
         }
+    }
+}
+
+#[cfg(test)]
+mod platform_api_header_tests {
+    use std::collections::BTreeMap;
+
+    use super::idempotency_key_from_headers;
+
+    const KEY: &str = "3e4f5a6b-7c8d-4e9f-8a1b-2c3d4e5f6a7b";
+
+    fn headers(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
+        pairs
+            .iter()
+            .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
+            .collect()
+    }
+
+    #[test]
+    fn no_headers_forward_nothing() {
+        assert_eq!(idempotency_key_from_headers(None), Ok(None));
+        assert_eq!(idempotency_key_from_headers(Some(&headers(&[]))), Ok(None));
+    }
+
+    #[test]
+    fn only_a_canonical_idempotency_key_is_forwarded() {
+        for name in ["Idempotency-Key", "idempotency-key", "IDEMPOTENCY-KEY"] {
+            let key = idempotency_key_from_headers(Some(&headers(&[(name, KEY)])))
+                .expect("whitelisted header")
+                .expect("key");
+            assert_eq!(key.hyphenated().to_string(), KEY);
+        }
+        for bad in [
+            "",
+            "not-a-uuid",
+            "3E4F5A6B-7C8D-4E9F-8A1B-2C3D4E5F6A7B",
+            "3e4f5a6b7c8d4e9f8a1b2c3d4e5f6a7b",
+            "3e4f5a6b-7c8d-4e9f-8a1b-2c3d4e5f6a7b\r\nX-Injected: 1",
+        ] {
+            assert!(
+                idempotency_key_from_headers(Some(&headers(&[("Idempotency-Key", bad)]))).is_err()
+            );
+        }
+    }
+
+    #[test]
+    fn any_other_header_is_refused() {
+        for name in [
+            "Authorization",
+            "Cookie",
+            "Host",
+            "Content-Type",
+            "X-Forwarded-For",
+            "Idempotency-Key ",
+            "Idempotency_Key",
+        ] {
+            assert!(idempotency_key_from_headers(Some(&headers(&[(name, KEY)]))).is_err());
+            // Not silently dropped beside an allowed key either.
+            assert!(idempotency_key_from_headers(Some(&headers(&[
+                ("Idempotency-Key", KEY),
+                (name, KEY)
+            ])))
+            .is_err());
+        }
+    }
+
+    #[test]
+    fn a_repeated_key_under_another_casing_is_refused() {
+        assert!(idempotency_key_from_headers(Some(&headers(&[
+            ("Idempotency-Key", KEY),
+            ("idempotency-key", KEY)
+        ])))
+        .is_err());
     }
 }

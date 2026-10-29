@@ -416,6 +416,30 @@ describe("desktop-invoke", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
+  it("DD-142：发布意图的幂等键作为唯一额外请求头交给 Rust 侧，其余请求不带", async () => {
+    const invoke = vi.fn(async (_command: string, _args?: Record<string, unknown>) =>
+      ({ status: 200, body: { eventId: "e", operationId: "o" } }));
+    const client = createBffClient(createInvokeTransport(invoke, { onSessionEnded: () => {} }));
+    const key = "3e4f5a6b-7c8d-4e9f-8a1b-2c3d4e5f6a7b";
+    await client.deleteWorkspaceMessage("ws", { content: "", deleteEventId: "a".repeat(64) }, key);
+    await client.nativeCommunity();
+    expect(invoke).toHaveBeenNthCalledWith(1, "platform_api", {
+      method: "POST",
+      path: "/api/v1/workspaces/ws/messages/delete",
+      body: { content: "", deleteEventId: "a".repeat(64) },
+      headers: { "Idempotency-Key": key },
+    });
+    expect(invoke.mock.calls[1]?.[1]).not.toHaveProperty("headers");
+  });
+
+  it("Web 传输把同一幂等键放进 Idempotency-Key 请求头", async () => {
+    const fetch = vi.fn(async () => json(200, { eventId: "e", operationId: "o" }));
+    const client = createBffClient(createFetchTransport({ onSessionEnded: () => {}, fetch }));
+    await client.publishWorkspaceMessage("ws", { content: "x", editEventId: "a".repeat(64) }, "k");
+    const init = (fetch.mock.calls[0] as unknown as [string, RequestInit])[1];
+    expect(init.headers).toEqual({ "Content-Type": "application/json", "Idempotency-Key": "k" });
+  });
+
   it("Rust 侧回应里的错误体与 Web 同样解读", async () => {
     const invoke = async () => ({
       status: 409,

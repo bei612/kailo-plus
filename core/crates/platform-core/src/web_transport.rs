@@ -712,6 +712,44 @@ const OWNED_AGENT_KEY_SQL: &str =
          where a.tenant_id=$1 and a.pubkey=$2 and a.kind='AGENT' and a.custody='SERVER'
            and a.state='ACTIVE' and a.private_key_secret_status='ACTIVE'";
 
+/// DD-142: whether a publication may continue without the requester's own SERVER
+/// identity. Only a Workspace message edit/delete (never a send-to-channel copy) and
+/// only when that identity is absent (403), not when its lookup is unavailable; the
+/// request then succeeds only as an owned Agent's mutation.
+fn owned_agent_mutation_without_own_identity(
+    target: MessageTarget,
+    message: bool,
+    mutation: bool,
+    send_to_channel: bool,
+    own_identity: StatusCode,
+) -> bool {
+    matches!(target, MessageTarget::Workspace(_))
+        && message
+        && mutation
+        && !send_to_channel
+        && own_identity == StatusCode::FORBIDDEN
+}
+
+/// DD-142: the Tenant CONTROL reader that locates an edit/delete target when the
+/// requester has no SERVER identity of its own (a native CLIENT-only member). It only
+/// reads; signing still needs [`owned_agent_keys`] and a read through the Agent itself.
+async fn owned_agent_control_reader(
+    state: &BffState,
+    ctx: &ExecutionContext,
+    community_host: &str,
+) -> Result<IdentityClient, Response> {
+    let (reader, host) = crate::tenant_lifecycle::control_client(
+        &state.memory_service,
+        ctx.tenant_id,
+        crate::tenant_lifecycle::ProjectionDirection::Establish,
+    )
+    .await?;
+    if host != community_host {
+        return Err(AdmissionFailure::BindingNotActive.into_response());
+    }
+    Ok(reader.with_budget(std::sync::Arc::clone(&state.relay_budget)))
+}
+
 /// DD-142: the SERVER keys of an AGENT author in this Workspace channel when the caller
 /// owns its ACTIVE Installation (Core owner fact and fresh SpiceDB `manage`), the
 /// Installation is bound to the channel, and the key reference is the Installation's
@@ -2724,14 +2762,36 @@ async fn publish(
     mentions.sort_unstable();
     mentions.dedup();
 
+    // DD-142: an owned Agent's Workspace edit/delete is admitted by the owner fact and
+    // fresh `manage` alone, and signed with the Agent's key. A member whose only Buzz
+    // identity is a native CLIENT key (no SERVER binding, DD-75) may still request it;
+    // every other publication keeps requiring the requester's own SERVER identity.
     let keys = match actor_keys(&state, &ctx).await {
-        Ok(k) => k,
+        Ok(k) => Some(k),
+        Err(r)
+            if owned_agent_mutation_without_own_identity(
+                target,
+                matches!(&publication, Publication::Message(_)),
+                edit_event_id.is_some() || delete_event_id.is_some(),
+                send_source.is_some(),
+                r.status(),
+            ) =>
+        {
+            None
+        }
         Err(r) => return r,
     };
-    let client = match community_client(&state, &keys, &community_host) {
-        Ok(c) => c,
-        Err(r) => return r,
+    let human_client = match keys.as_ref() {
+        Some(keys) => match community_client(&state, keys, &community_host) {
+            Ok(c) => Some(c),
+            Err(r) => return r,
+        },
+        None => None,
     };
+    let actor_hex = keys
+        .as_ref()
+        .map(|keys| keys.public_key().to_hex())
+        .unwrap_or_default();
 
     let mut content = String::new();
     let mut media_tags = Vec::new();
@@ -2773,13 +2833,6 @@ async fn publish(
         }
     }
 
-    if message.is_some() && delete_event_id.is_none() && send_source.is_none() {
-        match crate::custom_emoji::message_tags(&state, &client, &content).await {
-            Ok(tags) => media_tags.extend(tags),
-            Err(response) => return response,
-        }
-    }
-
     // DD-125(1): body, copied semantic tags (emoji included), recomputed mentions and
     // `buzz:sent-from-thread` come from the re-read reply in this admitted channel.
     if let Some(source) = send_source.as_deref() {
@@ -2788,10 +2841,13 @@ async fn publish(
             MessageTarget::Conversation(id) => (None, Some(id)),
             MessageTarget::Pulse(_) => return StatusCode::BAD_REQUEST.into_response(),
         };
+        let Some(human_client) = human_client.as_ref() else {
+            return StatusCode::FORBIDDEN.into_response();
+        };
         let prepared = crate::send_to_channel::prepare(
             &state,
             &ctx,
-            &client,
+            human_client,
             &channel_id,
             source,
             destination,
@@ -2864,16 +2920,35 @@ async fn publish(
 
     // The browser selects a semantic target, never its author, channel or tags.
     // Read the original signed event through the already admitted actor, then
-    // let Relay recheck native edit ownership at ingestion as well.
+    // let Relay recheck native edit ownership at ingestion as well. Without a
+    // SERVER identity of the requester's own, the Tenant CONTROL identity locates
+    // the target; only an owned Agent's message can then proceed (DD-142).
     let mut agent_signer: Option<nostr::Keys> = None;
     let mut agent_installation: Option<Uuid> = None;
+    let mut agent_client: Option<IdentityClient> = None;
     let mutation_target = match edit_event_id.as_deref().or(delete_event_id.as_deref()) {
         Some(id) => {
-            let event = match read_message_event(&state, &client, &channel_id, id).await {
+            let control_reader = if human_client.is_none() {
+                match owned_agent_control_reader(&state, &ctx, &community_host).await {
+                    Ok(reader) => Some(reader),
+                    Err(response) => return response,
+                }
+            } else {
+                None
+            };
+            let Some(reader) = human_client.as_ref().or(control_reader.as_ref()) else {
+                return StatusCode::FORBIDDEN.into_response();
+            };
+            let event = match read_message_event(&state, reader, &channel_id, id).await {
                 Ok(event) => event,
                 Err(response) => return response,
             };
-            if !mutation_target_matches(&event, keys.public_key(), &message_type) {
+            let own = keys.as_ref().is_some_and(|keys| {
+                mutation_target_matches(&event, keys.public_key(), &message_type)
+            });
+            if own {
+                Some(event)
+            } else {
                 // DD-142: the original "own Agent" edit/delete. Only a Workspace channel
                 // message of the same kind whose AGENT author belongs to an ACTIVE
                 // Installation the caller owns; Core signs as that Agent (DD-72/75).
@@ -2896,16 +2971,50 @@ async fn publish(
                         None,
                     );
                 };
+                // The signed target is the one the Agent itself reads in this channel,
+                // never a read through the requester's own Relay identity.
+                let agent_reader = match community_client(&state, &agent, &community_host) {
+                    Ok(reader) => reader,
+                    Err(response) => return response,
+                };
+                let confirmed =
+                    match read_message_event(&state, &agent_reader, &channel_id, id).await {
+                        Ok(confirmed) => confirmed,
+                        Err(response) => return response,
+                    };
+                if confirmed.id != event.id
+                    || !mutation_target_matches(&confirmed, event.pubkey, &message_type)
+                {
+                    return invalid_message_evidence();
+                }
                 agent_signer = Some(agent);
                 agent_installation = Some(installation);
+                agent_client = Some(agent_reader);
+                Some(confirmed)
             }
-            Some(event)
         }
         None => None,
     };
+    // Every later read and the signature use the identity that will sign: the owned
+    // Agent's for a DD-142 mutation, otherwise the requester's own SERVER identity.
+    let Some(client) = agent_client.as_ref().or(human_client.as_ref()) else {
+        return error_body(
+            StatusCode::FORBIDDEN,
+            ErrorClass::Denied,
+            ReasonCode::PermissionDenied,
+            None,
+        );
+    };
+
+    if message.is_some() && delete_event_id.is_none() && send_source.is_none() {
+        match crate::custom_emoji::message_tags(&state, client, &content).await {
+            Ok(tags) => media_tags.extend(tags),
+            Err(response) => return response,
+        }
+    }
 
     let project_target = if let Publication::Project(request) = &publication {
-        match crate::projects::publication_target(&state, &client, request).await {
+        match crate::projects::publication_target(&state, client, request).await {
             Ok(target) => target,
             Err(response) => return response,
         }
@@ -2919,7 +3028,7 @@ async fn publish(
             };
             match crate::projects::pull_request_update_evidence(
                 &state,
-                &client,
+                client,
                 root,
                 &community_host,
             )
@@ -2942,7 +3051,7 @@ async fn publish(
             // Original allowedActorsForRoot: only the review author or the
             // repository owner changes its lifecycle. Others are refused here,
             // and Relay readers ignore any such event regardless.
-            let signer = keys.public_key().to_hex();
+            let signer = actor_hex.clone();
             match collab_bridge::projects::pull_request_status_actors(pull_request) {
                 Ok((owner, author)) if owner == signer || author == signer => {}
                 Ok(_) => {
@@ -2957,7 +3066,7 @@ async fn publish(
             }
             match crate::projects::latest_pull_request_status(
                 &state,
-                &client,
+                client,
                 pull_request,
                 &community_host,
             )
@@ -2978,7 +3087,7 @@ async fn publish(
             };
             match crate::projects::pull_request_review_preconditions(
                 &state,
-                &client,
+                client,
                 request,
                 pull_request,
                 &community_host,
@@ -2999,14 +3108,14 @@ async fn publish(
             let activity = if collab_bridge::projects::is_self_assignment(request) {
                 crate::projects::assignment_activity(
                     &state,
-                    &client,
+                    client,
                     request,
                     issue,
                     &community_host,
                 )
                 .await
             } else {
-                crate::projects::latest_comment(&state, &client, issue, &community_host).await
+                crate::projects::latest_comment(&state, client, issue, &community_host).await
             };
             match activity {
                 Ok(latest) => latest,
@@ -3025,7 +3134,7 @@ async fn publish(
                 project_target.as_ref().expect("review target checked"),
                 repository,
                 latest.as_ref(),
-                &keys.public_key().to_hex(),
+                &actor_hex,
                 &community_host,
             )
         } else if collab_bridge::projects::is_pull_request_status(request) {
@@ -3034,7 +3143,7 @@ async fn publish(
                     request,
                     pull_request,
                     latest_project_comment.as_ref(),
-                    &keys.public_key().to_hex(),
+                    &actor_hex,
                 ),
                 None => return StatusCode::BAD_REQUEST.into_response(),
             }
@@ -3043,7 +3152,7 @@ async fn publish(
                 request,
                 project_target.as_ref().expect("comment issue checked"),
                 latest_project_comment.as_ref(),
-                &keys.public_key().to_hex(),
+                &actor_hex,
                 &media_tags,
             )
         } else if requested_kind == 1618 {
@@ -3051,7 +3160,7 @@ async fn publish(
                 Some(repository) => collab_bridge::projects::pull_request_publication_builder(
                     request,
                     repository,
-                    &keys.public_key().to_hex(),
+                    &actor_hex,
                     &community_host,
                 ),
                 None => return StatusCode::BAD_REQUEST.into_response(),
@@ -3061,7 +3170,7 @@ async fn publish(
                 request,
                 project_target.as_ref(),
                 matches!(target, MessageTarget::Workspace(_)).then_some(channel_id.as_str()),
-                &keys.public_key().to_hex(),
+                &actor_hex,
             )
         };
         if builder.is_err() {
@@ -3070,12 +3179,12 @@ async fn publish(
     }
 
     let pulse_tags = if let Publication::Reaction(req) = &publication {
-        match reaction_tags(&state, &ctx, &client, &channel_id, &community_host, req).await {
+        match reaction_tags(&state, &ctx, client, &channel_id, &community_host, req).await {
             Ok(tags) => Some(tags),
             Err(response) => return response,
         }
     } else if let Publication::Pulse(req) = &publication {
-        match crate::pulse::publication_tags(&state, &client, req, &media_tags).await {
+        match crate::pulse::publication_tags(&state, client, req, &media_tags).await {
             Ok(tags) => Some(tags),
             Err(e) => return e,
         }
@@ -3090,8 +3199,7 @@ async fn publish(
             )
     }) {
         Some(parent) => {
-            match resolve_message_parent(&state, &client, &channel_id, parent, &message_type).await
-            {
+            match resolve_message_parent(&state, client, &channel_id, parent, &message_type).await {
                 Ok(ancestry) => Some(ancestry),
                 Err(response) => return response,
             }
@@ -3099,7 +3207,7 @@ async fn publish(
         None => None,
     };
     let reminder = if let Publication::Reminder(request) = &publication {
-        match crate::reminders::prepare(&state, &ctx, &client, request).await {
+        match crate::reminders::prepare(&state, &ctx, client, request).await {
             Ok(prepared) => Some(prepared),
             Err(response) => return response,
         }
@@ -3112,14 +3220,19 @@ async fn publish(
         Ok(scope) => scope,
         Err(response) => return response,
     };
-    let current_keys = match actor_keys(&state, &ctx).await {
-        Ok(keys) => keys,
-        Err(response) => return response,
-    };
-    if current_scope != (channel_id.clone(), community_host.clone())
-        || keys.public_key() != current_keys.public_key()
-    {
+    if current_scope != (channel_id.clone(), community_host.clone()) {
         return AdmissionFailure::BindingNotActive.into_response();
+    }
+    // The requester's own key is re-checked only where it signs; an owned Agent's
+    // mutation is fenced by the Installation re-check below and at DISPATCH.
+    if agent_signer.is_none() {
+        let current_keys = match actor_keys(&state, &ctx).await {
+            Ok(keys) => keys,
+            Err(response) => return response,
+        };
+        if keys.as_ref().map(nostr::Keys::public_key) != Some(current_keys.public_key()) {
+            return AdmissionFailure::BindingNotActive.into_response();
+        }
     }
 
     // 预算在落 DISPATCH 之前取：取不到就既不落账也不发送，请求不打到 Relay
@@ -3143,17 +3256,9 @@ async fn publish(
         return response;
     }
     // DD-142: an owned Agent's edit/delete is signed and delivered as that Agent.
-    let agent_client = match agent_signer.as_ref() {
-        Some(agent) => match community_client(&state, agent, &community_host) {
-            Ok(agent_client) => Some(agent_client),
-            Err(response) => return response,
-        },
-        None => None,
-    };
     let signer_pubkey = agent_signer
         .as_ref()
         .map(|agent| agent.public_key().to_hex());
-    let client = agent_client.as_ref().unwrap_or(&client);
     let admitted = match client.admit() {
         Ok(a) => a,
         Err(e) => return relay_error_response(&e, None),
@@ -5188,6 +5293,204 @@ fn relay_media_path(media_ref: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn only_a_workspace_message_mutation_proceeds_without_an_own_server_identity() {
+        use super::*;
+        let workspace = MessageTarget::Workspace(Uuid::new_v4());
+        let forbidden = StatusCode::FORBIDDEN;
+        assert!(owned_agent_mutation_without_own_identity(
+            workspace, true, true, false, forbidden
+        ));
+        // An unavailable identity lookup is not an absent identity.
+        assert!(!owned_agent_mutation_without_own_identity(
+            workspace,
+            true,
+            true,
+            false,
+            StatusCode::SERVICE_UNAVAILABLE
+        ));
+        assert!(!owned_agent_mutation_without_own_identity(
+            workspace, true, false, false, forbidden
+        ));
+        assert!(!owned_agent_mutation_without_own_identity(
+            workspace, false, true, false, forbidden
+        ));
+        assert!(!owned_agent_mutation_without_own_identity(
+            workspace, true, true, true, forbidden
+        ));
+        for target in [
+            MessageTarget::Conversation(Uuid::new_v4()),
+            MessageTarget::Pulse(Uuid::new_v4()),
+        ] {
+            assert!(!owned_agent_mutation_without_own_identity(
+                target, true, true, false, forbidden
+            ));
+        }
+    }
+
+    /// DD-142, V-SCN-232: an owner whose only Buzz identity is a native CLIENT key
+    /// (no SERVER binding) still passes every database fence of the owned-Agent edit
+    /// (40003) and delete (5); the requester's own-signature path stays closed to it.
+    #[tokio::test]
+    async fn client_only_owner_passes_owned_agent_edit_and_delete_fences() {
+        use super::*;
+        let Ok(url) = std::env::var("DATABASE_URL") else {
+            eprintln!("SKIP client-only owner fences: no disposable migrated DATABASE_URL");
+            return;
+        };
+        let pool = sqlx::PgPool::connect(&url)
+            .await
+            .expect("disposable migrated database");
+        let mut tx = pool.begin().await.unwrap();
+        sqlx::raw_sql(r#"CREATE TEMP TABLE client_owner_fixture(tenant uuid,workspace uuid,owner uuid,other uuid,agent uuid,installation uuid,channel uuid,community uuid) ON COMMIT DROP;
+        DO $$ DECLARE
+          tenant uuid:=gen_random_uuid(); workspace uuid:=gen_random_uuid(); control uuid:=gen_random_uuid();
+          owner uuid:=gen_random_uuid(); owner_identity uuid:=gen_random_uuid();
+          other uuid:=gen_random_uuid(); other_identity uuid:=gen_random_uuid(); agent uuid:=gen_random_uuid();
+          definition uuid:=gen_random_uuid(); installation uuid:=gen_random_uuid(); route uuid:=gen_random_uuid(); version uuid:=gen_random_uuid();
+          channel uuid:=gen_random_uuid(); community uuid:=gen_random_uuid();
+        BEGIN
+          INSERT INTO identity.tenant(id,slug,name,state) VALUES(tenant,tenant::text,'client owner fixture','ACTIVE');
+          INSERT INTO identity.workspace(id,tenant_id,slug,name,state) VALUES(workspace,tenant,workspace::text,'client owner fixture','ACTIVE');
+          INSERT INTO identity.principal(id,tenant_id,kind,status) VALUES(owner,tenant,'HUMAN','ACTIVE'),(other,tenant,'HUMAN','ACTIVE'),(agent,tenant,'AGENT','ACTIVE'),(control,tenant,'SERVICE','ACTIVE');
+          INSERT INTO identity.human_identity(id,display_name,status) VALUES(owner_identity,'client owner','ACTIVE'),(other_identity,'client member','ACTIVE');
+          INSERT INTO identity.tenant_membership(id,tenant_id,human_identity_id,tenant_principal_id,state) VALUES
+            (gen_random_uuid(),tenant,owner_identity,owner,'ACTIVE'),(gen_random_uuid(),tenant,other_identity,other,'ACTIVE');
+          INSERT INTO identity.workspace_membership(id,workspace_id,tenant_principal_id,state) VALUES
+            (gen_random_uuid(),workspace,owner,'ACTIVE'),(gen_random_uuid(),workspace,other,'ACTIVE');
+          -- Native devices only: no SERVER HUMAN binding exists for either person (DD-75).
+          INSERT INTO identity.buzz_identity_binding(tenant_id,principal_id,pubkey,custody,kind,state) VALUES
+            (tenant,owner,md5(random()::text)||md5(random()::text),'CLIENT','HUMAN','ACTIVE'),
+            (tenant,other,md5(random()::text)||md5(random()::text),'CLIENT','HUMAN','ACTIVE');
+          INSERT INTO projection.tenant_buzz_binding(tenant_id,community_id,normalized_host,control_service_principal_id,require_relay_membership,allow_nip_oa_auth,pubkey_allowlist_enabled,nip11_snapshot_digest,nip11_observed_at,state)
+            VALUES(tenant,community,tenant::text||'.owner.invalid',control,true,false,true,'fixture',now(),'ACTIVE');
+          INSERT INTO projection.workspace_buzz_binding(workspace_id,channel_id,state) VALUES(workspace,channel,'ACTIVE');
+          INSERT INTO catalog.resource(id,tenant_id,type_key,home_workspace_id,owner_principal_id,component_type_key,native_id,state,version) VALUES
+            (definition,tenant,'agent.definition',NULL,owner,'core',definition::text,'PROVISIONING',1),
+            (route,tenant,'llm_route',workspace,owner,'core',route::text,'PROVISIONING',1),
+            (installation,tenant,'agent.installation',workspace,owner,'core',installation::text,'PROVISIONING',1);
+          INSERT INTO catalog.agent_definition(resource_id,stable_slug,display_name,status) VALUES(definition,definition::text,'client owner fixture','PROVISIONING');
+          INSERT INTO catalog.asset(id,tenant_id,resource_id,type_key,owner_principal_id,native_ref,state,version) VALUES
+            (version,tenant,definition,'agent.version',owner,version::text,'DRAFT',1);
+          INSERT INTO catalog.agent_version(asset_id,agent_resource_id,ordinal,content,config_hash,state) VALUES
+            (version,definition,1,jsonb_build_object('runtimeProfileKey','fixture','modelRouteResourceId',route),repeat('a',64),'DRAFT');
+          INSERT INTO catalog.agent_installation(resource_id,workspace_id,agent_resource_id,pinned_version_asset_id,agent_principal_id,runtime_isolation_ref,state)
+            VALUES(installation,workspace,definition,version,agent,'fixture:'||installation,'PROVISIONING');
+          INSERT INTO catalog.agent_runtime_projection(installation_resource_id,generation,agent_version_asset_id,runtime_profile_key,model_route_resource_id,gateway_resource_ids,effective_fields,config_hash,state) VALUES
+            (installation,1,version,'fixture',route,ARRAY[route],jsonb_build_array(jsonb_build_object('fieldKey','runtimeProfileKey','requestedValueHash',repeat('a',64),'effectiveValueHash',repeat('a',64),'reasonCode',NULL)),repeat('a',64),'ACTIVE');
+          UPDATE catalog.agent_installation SET state='ACTIVE',active_projection_generation=1 WHERE resource_id=installation;
+          UPDATE catalog.resource SET state='ACTIVE' WHERE id=installation;
+          INSERT INTO catalog.channel_agent_binding(workspace_id,installation_resource_id,triggers,status) VALUES(workspace,installation,ARRAY['MENTION'],'ACTIVE');
+          INSERT INTO client_owner_fixture VALUES(tenant,workspace,owner,other,agent,installation,channel,community);
+        END $$;"#).execute(&mut *tx).await.unwrap();
+        let (tenant, workspace, owner, other, agent, installation, channel, community): (Uuid, Uuid, Uuid, Uuid, Uuid, Uuid, Uuid, Uuid) =
+            sqlx::query_as("select tenant,workspace,owner,other,agent,installation,channel,community from client_owner_fixture")
+                .fetch_one(&mut *tx)
+                .await
+                .unwrap();
+        let author = nostr::Keys::generate().public_key().to_hex();
+        sqlx::query("insert into identity.buzz_identity_binding(tenant_id,principal_id,pubkey,custody,kind,state,private_key_secret_ref,private_key_secret_version,private_key_secret_audience,private_key_secret_status) values($1,$2,$3,'SERVER','AGENT','ACTIVE','fixture/agent',1,'fixture','ACTIVE')")
+            .bind(tenant).bind(agent).bind(&author).execute(&mut *tx).await.unwrap();
+
+        // actor_keys refuses this owner (403): it has no ACTIVE SERVER HUMAN identity.
+        let own_server: i64 = sqlx::query_scalar("select count(*) from identity.buzz_identity_binding where tenant_id=$1 and principal_id=$2 and kind='HUMAN' and custody='SERVER' and state='ACTIVE'")
+            .bind(tenant).bind(owner).fetch_one(&mut *tx).await.unwrap();
+        assert_eq!(own_server, 0);
+        let target = MessageTarget::Workspace(workspace);
+        assert!(owned_agent_mutation_without_own_identity(
+            target,
+            true,
+            true,
+            false,
+            StatusCode::FORBIDDEN
+        ));
+
+        // Admission rests on the owner fact alone: the Workspace binding and the owned
+        // Agent's key row (the same SQL the signer and the reconciler use).
+        let binding = locked_publication_binding(&mut tx, tenant, owner, target)
+            .await
+            .unwrap()
+            .expect("a CLIENT-only member keeps its Workspace publication binding");
+        assert_eq!(binding.channel_id, Some(channel));
+        let key_row: Option<OwnedAgentKeyRow> = sqlx::query_as(OWNED_AGENT_KEY_SQL)
+            .bind(tenant)
+            .bind(&author)
+            .bind(workspace)
+            .bind(owner)
+            .fetch_optional(&mut *tx)
+            .await
+            .unwrap();
+        assert_eq!(key_row.map(|row| row.0), Some(installation));
+        assert_eq!(
+            locked_owned_agent_installation(&mut tx, tenant, owner, workspace, &author)
+                .await
+                .unwrap(),
+            Some(installation)
+        );
+
+        let scope = |kind: u16, signer: Option<Uuid>| PublicationScope {
+            community_id: community,
+            tenant_binding_version: binding.tenant_version,
+            target_channel_id: Some(channel),
+            target_binding_version: binding.target_version,
+            event_pubkey: author.clone(),
+            event_kind: kind,
+            event_channel_id: Some(channel),
+            signer_installation_id: signer,
+            publication: None,
+        };
+        for (kind, action) in [(40003, "edit"), (5, "delete")] {
+            assert!(
+                locked_publication_scope_matches(
+                    &mut tx,
+                    tenant,
+                    owner,
+                    target,
+                    &scope(kind, Some(installation))
+                )
+                .await
+                .unwrap(),
+                "the CLIENT-only owner's owned-Agent {action} passes the DISPATCH fence"
+            );
+            // The requester's own-signature path still needs its SERVER identity.
+            assert!(
+                !locked_publication_scope_matches(
+                    &mut tx,
+                    tenant,
+                    owner,
+                    target,
+                    &scope(kind, None)
+                )
+                .await
+                .unwrap(),
+                "{action} without the Installation is not the owner's own signature"
+            );
+            // Another CLIENT-only member of the same Workspace does not own the Agent.
+            assert!(
+                !locked_publication_scope_matches(
+                    &mut tx,
+                    tenant,
+                    other,
+                    target,
+                    &scope(kind, Some(installation))
+                )
+                .await
+                .unwrap(),
+                "a non-owner cannot {action} the Agent's message"
+            );
+        }
+        let other_row: Option<OwnedAgentKeyRow> = sqlx::query_as(OWNED_AGENT_KEY_SQL)
+            .bind(tenant)
+            .bind(&author)
+            .bind(workspace)
+            .bind(other)
+            .fetch_optional(&mut *tx)
+            .await
+            .unwrap();
+        assert!(other_row.is_none());
+        tx.rollback().await.unwrap();
+    }
+
     #[tokio::test]
     #[ignore = "requires PUBLISH_RECONCILE_TEST_DATABASE_URL pointing at an isolated migrated database"]
     async fn publication_scope_owned_agent_rejects_disabled_installation_or_principal() {
