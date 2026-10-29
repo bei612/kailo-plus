@@ -7,6 +7,7 @@ import {
   TenantMembershipState,
 } from "@client-kit/contracts";
 import { describe, expect, it, vi } from "vitest";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act } from "react";
 import { toast } from "sonner";
 import { createBffClient } from "../src/client";
@@ -93,7 +94,9 @@ describe("TenantInvitations", () => {
       throw new Error(`Unexpected Native command ${command}`);
     });
     function NativeInvite(){return <><p data-testid="trusted-native-principal">{useCurrentPrincipalId()}</p><TenantInvitations/></>;}
-    const host=await render(<NativeBootstrap invoke={invoke} connect={async()=>{}} locale="en" copyText={copyText}>{()=> <NativeInvite/>}</NativeBootstrap>);
+    // The Desktop App mounts NativeBootstrap inside its QueryClientProvider (collaboration/desktop/src/app/App.tsx);
+    // the platform context reads the session Tenant profile through that client.
+    const host=await render(<QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}><NativeBootstrap invoke={invoke} connect={async()=>{}} locale="en" copyText={copyText}>{()=> <NativeInvite/>}</NativeBootstrap></QueryClientProvider>);
     await settle();
     expect(host.querySelector('[data-testid="trusted-native-principal"]')?.textContent).toBe("native-person");
     await type(host.querySelector('input[name="inviteeLabel"]')!,"Grace");
