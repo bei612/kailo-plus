@@ -7,7 +7,6 @@ import 'package:buzz/shared/auth/auth.dart';
 import 'package:buzz/shared/platform/platform_api.dart';
 import 'package:buzz/shared/platform/platform_config.dart';
 import 'package:buzz/shared/platform/platform_oidc.dart';
-import 'package:buzz/shared/relay/relay.dart';
 import 'package:buzz/shared/theme/theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -167,23 +166,26 @@ void main() {
     expect(actions.retained, isNull);
   });
 
-  test('a definite refusal settles; a missing link is never invented', () async {
-    final server = _Server()..gate = 'DENIED';
-    final container = await _start(server);
-    addTearDown(container.dispose);
-    final actions = container.read(communityInviteActionsProvider);
-    expect(await actions.issue('Dana'), isA<InviteIssueRejected>());
-    expect(actions.retained, isNull);
+  test(
+    'a definite refusal settles; a missing link is never invented',
+    () async {
+      final server = _Server()..gate = 'DENIED';
+      final container = await _start(server);
+      addTearDown(container.dispose);
+      final actions = container.read(communityInviteActionsProvider);
+      expect(await actions.issue('Dana'), isA<InviteIssueRejected>());
+      expect(actions.retained, isNull);
 
-    server
-      ..gate = 'ALLOWED'
-      ..withLink = false;
-    expect(await actions.issue('Eli'), isA<InviteIssuedWithoutLink>());
-    expect(
-      server.posts[1]['idempotencyKey'],
-      isNot(server.posts[0]['idempotencyKey']),
-    );
-  });
+      server
+        ..gate = 'ALLOWED'
+        ..withLink = false;
+      expect(await actions.issue('Eli'), isA<InviteIssuedWithoutLink>());
+      expect(
+        server.posts[1]['idempotencyKey'],
+        isNot(server.posts[0]['idempotencyKey']),
+      );
+    },
+  );
 
   Future<void> pumpPage(WidgetTester tester, ProviderContainer container) =>
       tester.pumpWidget(

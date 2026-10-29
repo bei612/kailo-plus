@@ -67,10 +67,11 @@ EphemeralChannelDisplay? ephemeralChannelDisplay(
 
   return EphemeralChannelDisplay(
     detailLabel: formatCompactRemaining(remainingSeconds, locale: locale),
-    tooltipLabel: _t(PlatformMessageKey.channelEphemeralTooltipScheduled, locale, {
-      'remaining': formatVerboseRemaining(remainingSeconds, locale: locale),
-      'deadline': formatAbsoluteDeadline(deadline!, locale: locale),
-    }),
+    tooltipLabel:
+        _t(PlatformMessageKey.channelEphemeralTooltipScheduled, locale, {
+          'remaining': formatVerboseRemaining(remainingSeconds, locale: locale),
+          'deadline': formatAbsoluteDeadline(deadline!, locale: locale),
+        }),
   );
 }
 
@@ -104,8 +105,11 @@ String formatVerboseRemaining(int remainingSeconds, {String? locale}) {
   if (remainingSeconds <= 0) {
     return _t(PlatformMessageKey.channelEphemeralNow, locale);
   }
-  final (int count, PlatformMessageKey one, PlatformMessageKey other) =
-      remainingSeconds <= 60
+  final (
+    int count,
+    PlatformMessageKey one,
+    PlatformMessageKey other,
+  ) = remainingSeconds <= 60
       ? (
           1,
           PlatformMessageKey.channelEphemeralInMinutesOne,
@@ -153,8 +157,11 @@ String formatCompactTtl(int ttlSeconds, {String? locale}) {
 }
 
 String formatVerboseTtl(int ttlSeconds, {String? locale}) {
-  final (int count, PlatformMessageKey one, PlatformMessageKey other) =
-      ttlSeconds < 60
+  final (
+    int count,
+    PlatformMessageKey one,
+    PlatformMessageKey other,
+  ) = ttlSeconds < 60
       ? (
           math.max(1, ttlSeconds),
           PlatformMessageKey.channelEphemeralSecondsOne,

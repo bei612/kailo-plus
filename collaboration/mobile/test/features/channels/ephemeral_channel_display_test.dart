@@ -48,7 +48,10 @@ void main() {
     );
     final en = ephemeralChannelDisplay(channel, now: now, locale: 'en')!;
     expect(en.detailLabel, '2h left');
-    expect(en.tooltipLabel, startsWith('Ephemeral channel. Cleans up in 2 hours. Scheduled for '));
+    expect(
+      en.tooltipLabel,
+      startsWith('Ephemeral channel. Cleans up in 2 hours. Scheduled for '),
+    );
     final minute = ephemeralChannelDisplay(
       _channel(ttlDeadline: now.add(const Duration(seconds: 30))),
       now: now,
@@ -67,11 +70,17 @@ void main() {
     )!;
     expect(
       display.detailLabel,
-      platformText(PlatformMessageKey.channelEphemeralCleanupDue, locale: 'zh-CN'),
+      platformText(
+        PlatformMessageKey.channelEphemeralCleanupDue,
+        locale: 'zh-CN',
+      ),
     );
     expect(
       display.tooltipLabel,
-      platformText(PlatformMessageKey.channelEphemeralTooltipDue, locale: 'zh-CN'),
+      platformText(
+        PlatformMessageKey.channelEphemeralTooltipDue,
+        locale: 'zh-CN',
+      ),
     );
   });
 

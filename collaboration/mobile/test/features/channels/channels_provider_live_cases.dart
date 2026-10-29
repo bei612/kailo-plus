@@ -53,13 +53,20 @@ void _liveSubscriptionTests() {
 
       session.emit(notice('member_joined', id: 'joined'));
       await _settle();
-      expect(container.read(channelsProvider).value!.single.isEphemeral, isFalse);
+      expect(
+        container.read(channelsProvider).value!.single.isEphemeral,
+        isFalse,
+      );
 
       session.emit(notice('ttl_changed'));
       await _waitUntil(
-        () => container.read(channelsProvider).value?.single.ttlSeconds == 86400,
+        () =>
+            container.read(channelsProvider).value?.single.ttlSeconds == 86400,
       );
-      expect(container.read(channelsProvider).value!.single.isEphemeral, isTrue);
+      expect(
+        container.read(channelsProvider).value!.single.isEphemeral,
+        isTrue,
+      );
       expect(channelMetadataSystemTypes, contains('channel_archived'));
       expect(channelMetadataSystemTypes, isNot(contains('member_joined')));
     },

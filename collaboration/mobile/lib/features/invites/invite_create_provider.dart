@@ -198,23 +198,22 @@ class CommunityInviteActions {
 }
 
 /// Session-scoped like the channel actions: closing the page keeps an unknown intent.
-final communityInviteActionsProvider =
-    Provider<CommunityInviteActions>((ref) {
-      final community = ref.watch(
-        authProvider.select((auth) => auth.value?.community?.id),
-      );
-      final config = ref.watch(platformConfigProvider);
-      if (config == null || community == null) {
-        throw const PlatformNotSignedIn();
-      }
-      var active = true;
-      ref.onDispose(() => active = false);
-      return CommunityInviteActions(
-        ref,
-        config,
-        () =>
-            active &&
-            ref.read(platformConfigProvider) == config &&
-            ref.read(authProvider).value?.community?.id == community,
-      );
-    });
+final communityInviteActionsProvider = Provider<CommunityInviteActions>((ref) {
+  final community = ref.watch(
+    authProvider.select((auth) => auth.value?.community?.id),
+  );
+  final config = ref.watch(platformConfigProvider);
+  if (config == null || community == null) {
+    throw const PlatformNotSignedIn();
+  }
+  var active = true;
+  ref.onDispose(() => active = false);
+  return CommunityInviteActions(
+    ref,
+    config,
+    () =>
+        active &&
+        ref.read(platformConfigProvider) == config &&
+        ref.read(authProvider).value?.community?.id == community,
+  );
+});

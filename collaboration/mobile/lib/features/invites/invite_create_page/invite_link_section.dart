@@ -91,26 +91,22 @@ class _IssueResult extends StatelessWidget {
     String t(PlatformMessageKey key, [Map<String, Object>? variables]) =>
         platformText(key, locale: locale, variables: variables);
     final message = switch (outcome) {
-      InviteIssued(:final label, :final invitation) => t(
-        PlatformMessageKey.invitationsIssued,
-        {
+      InviteIssued(:final label, :final invitation) =>
+        t(PlatformMessageKey.invitationsIssued, {
           'label': label,
           'expires': platformRelativeTime(invitation.expiresAt, locale: locale),
-        },
-      ),
+        }),
       InviteIssuedWithoutLink() => t(PlatformMessageKey.invitationsNoLink),
       InviteIssueUnknown(:final operation) => t(
         PlatformMessageKey.invitationsIssueUnknown,
         {'operation': operation ?? '—'},
       ),
-      InviteIssueRejected(:final reason, :final error) => t(
-        PlatformMessageKey.invitationsIssueRejected,
-        {
+      InviteIssueRejected(:final reason, :final error) =>
+        t(PlatformMessageKey.invitationsIssueRejected, {
           'reason': reason != null
               ? platformReasonText(reason, locale: locale)
               : platformErrorText(error ?? Exception(), locale: locale),
-        },
-      ),
+        }),
     };
     final rejected = outcome is InviteIssueRejected;
     final link = switch (outcome) {

@@ -46,7 +46,8 @@ part 'settings_page/notifications_section.dart';
 // signed by this device's CLIENT key, DD-75; avatar bytes through the media upload).
 Widget _emptyProfileEditPage(BuildContext context) => const SizedBox.shrink();
 
-Widget _communityInvitePage(BuildContext context) => const CommunityInvitePage();
+Widget _communityInvitePage(BuildContext context) =>
+    const CommunityInvitePage();
 
 enum _ProfileEditAction { displayName, description, photo }
 

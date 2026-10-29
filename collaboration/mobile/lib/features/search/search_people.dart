@@ -65,7 +65,10 @@ String searchDirectMessageFailureText(
   PlatformApiError(:final response) when response.error != null =>
     '${platformReasonText(response.error!.reason, locale: locale)} '
         '(${platformReasonCode(response.error!.reason)})',
-  PlatformApiError() => platformText(PlatformMessageKey.dmUnknown, locale: locale),
+  PlatformApiError() => platformText(
+    PlatformMessageKey.dmUnknown,
+    locale: locale,
+  ),
   _ => platformText(
     pending
         ? PlatformMessageKey.dmUnknown
