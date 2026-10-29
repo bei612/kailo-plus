@@ -190,9 +190,19 @@ void exactMentionTests() {
       }
       await tester.tap(find.byIcon(LucideIcons.arrowUp));
       await tester.pumpAndSettle();
-      // 平台：成员不能把人加进 Channel（DD-80），非成员提及直接降为引用标签，
-      // 不再弹出「邀请」对话框
-      expect(find.textContaining('is not in this channel'), findsNothing);
+      // 原版发送前询问频道外的人（V-SCN-163）；没有 `workspace.member.add` 准入时只给
+      // “仍然发送”，选择后把非成员降为引用标签。
+      if (scenario == 'non-member human') {
+        expect(find.textContaining('is not in this channel'), findsOneWidget);
+        expect(
+          find.byKey(const ValueKey('non-member-mention-invite')),
+          findsNothing,
+        );
+        await tester.tap(find.byKey(const ValueKey('non-member-mention-send')));
+        await tester.pumpAndSettle();
+      } else {
+        expect(find.textContaining('is not in this channel'), findsNothing);
+      }
       final messages = events.where(
         (e) => e['kind'] == EventKind.streamMessage,
       );
