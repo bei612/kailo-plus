@@ -87,6 +87,13 @@ Kailo display name (`kailo-qa-1`); the avatar URL answers 404 for every
 same-Tenant requester, so the picture is broken (V-SCN-200, Core, see the Cells
 record).
 
+## Native page release version 1.4.0（2026-10-29，验收批次 5）
+
+`wren@1.3.0-native-page`（release `de63e77e-62de-55e9-9515-af8b917b43d5`）登记的 `data-query-ui` 为
+`sha256:77fae146…`（发布 `166fa3557`）。发布 `1dff0ea54` 的 pin 改为 `sha256:5b330f5b…` 并已部署；1.3.0 已登记，
+不得复用，manifest 升到 `1.4.0-native-page`（release id `c4a58df5-453c-54c3-8154-f1191dfd2411`），按
+`--source-commit 1dff0ea54cd5db49eb94531a47c987d231dc5eb8` 渲染、登记、审批并换绑。
+
 ## Native page release version 1.3.0（2026-10-23，验收批次 3）
 
 `wren@1.2.0-native-page`（release `5a942f6e`）登记于提交 `8b8dfd4e7`，当时 `data-query/fork/upstream.yaml` 的

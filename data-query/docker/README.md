@@ -208,7 +208,7 @@ one (`model_call_mode=NONE`, no key) has no facts to render and is refused.
 ### Native page entry model key (DD-128)
 
 The native page entry release (`1.1.0-native-page`; `1.2.0-native-page` adds the
-DD-133 `KAILO_EMBED` presentation; `1.3.0-native-page` re-registers the redeployed
+DD-133 `KAILO_EMBED` presentation; `1.3.0-native-page` and `1.4.0-native-page` re-register the redeployed
 `data-query-ui` digest, see `fork/verify/kailo-embed-integration.md`) declares
 `allowedModelCallModes=[NONE, PLATFORM_LLM_ROUTE]`. A Tenant admin binds it with
 `tools/component-release/flow/component-bind.mjs --model-route-ids <chat>,<embedding>

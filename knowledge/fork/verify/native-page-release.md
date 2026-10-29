@@ -1,5 +1,14 @@
 # 知识库原生页面 release 版本（DD-127、DD-133(5)）
 
+## 1.4.0-native-page（2026-10-29，验收批次 5）
+
+`weknora@1.3.0-native-page`（release `9a641509-28f0-5d1f-8c60-52b7d9b3afb4`）登记的 `knowledge-native-ui` 为
+`sha256:d274e73c…`（发布 `166fa3557`）。发布 `1dff0ea54` 的 pin 改为 `sha256:8d903111…`，并已由
+`deploy/components/component-deploy.sh knowledge 1dff0ea54…` 部署（CI 节点回读 `kailo-knowledge-frontend-1` 运行该
+digest）。1.3.0 已登记，不得复用，manifest 升到 `1.4.0-native-page`（release id
+`ce3ebc65-e30d-5a7d-a778-1f9bd045fe69`），按 `--source-commit 1dff0ea54cd5db49eb94531a47c987d231dc5eb8` 渲染、登记、
+审批并换绑。之后若有改变该 UI 镜像的合并（如 DD-157 第 3 轮），下次部署再递增版本。
+
 ## 1.3.0-native-page（2026-10-23，验收批次 3）
 
 `weknora@1.2.0-native-page`（release `2d153bbf-00f5-508e-bf1d-cfa9dee12719`）登记于提交 `8b8dfd4e7`，当时
