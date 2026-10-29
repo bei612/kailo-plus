@@ -62,3 +62,24 @@ fn checkout_symlink_escape_is_refused() {
     )
     .is_err());
 }
+
+#[test]
+fn external_terminal_never_inherits_identity_or_credentials() {
+    // DD-161(3): the OS terminal opened at a checkout gets no key, token or
+    // Kailo/Buzz context; ordinary shell variables survive.
+    for name in [
+        "BUZZ_PRIVATE_KEY",
+        "BUZZ_AUTH_TAG",
+        "KAILO_SESSION",
+        "PLATFORM_ISSUER",
+        "GITHUB_TOKEN",
+        "AWS_SECRET_ACCESS_KEY",
+        "some_password",
+        "NOSTR_NSEC",
+    ] {
+        assert!(secret_bearing_env(name), "{name} must be removed");
+    }
+    for name in ["PATH", "HOME", "LANG", "DISPLAY", "TERM", "SHELL", "XDG_RUNTIME_DIR"] {
+        assert!(!secret_bearing_env(name), "{name} must be kept");
+    }
+}

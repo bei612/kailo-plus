@@ -324,6 +324,89 @@ pub async fn open_project_repository_folder(
     .await
 }
 
+/// DD-161(3): the external terminal inherits this process environment, so drop
+/// every variable that could carry an identity, session or credential.
+fn secret_bearing_env(name: &str) -> bool {
+    let upper = name.to_ascii_uppercase();
+    ["BUZZ_", "KAILO_", "PLATFORM_"]
+        .iter()
+        .any(|prefix| upper.starts_with(prefix))
+        || ["SECRET", "TOKEN", "PRIVATE_KEY", "PASSWORD", "NSEC"]
+            .iter()
+            .any(|needle| upper.contains(needle))
+}
+
+fn terminal_command(program: &str) -> std::process::Command {
+    let mut command = std::process::Command::new(program);
+    for (name, _) in std::env::vars_os() {
+        if name.to_str().is_none_or(secret_bearing_env) {
+            command.env_remove(&name);
+        }
+    }
+    command
+}
+
+/// DD-161(1): the original "Open in Terminal" — the OS terminal at the scoped
+/// checkout. Only the path is handed over; no credential or Kailo variable
+/// reaches the external terminal (DD-161(3)), so git push there is unauthenticated.
+#[cfg(target_os = "macos")]
+fn launch_terminal_at(path: &Path) -> Result<(), String> {
+    let status = terminal_command("open")
+        .arg("-a")
+        .arg("Terminal")
+        .arg(path)
+        .status()
+        .map_err(|_| REPO_FAILED.to_owned())?;
+    if !status.success() {
+        return Err(REPO_FAILED.to_owned());
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+fn launch_terminal_at(path: &Path) -> Result<(), String> {
+    for command in ["x-terminal-emulator", "gnome-terminal", "konsole", "xterm"] {
+        if terminal_command(command)
+            .current_dir(path)
+            .spawn()
+            .is_ok()
+        {
+            return Ok(());
+        }
+    }
+    Err(REPO_FAILED.to_owned())
+}
+
+#[cfg(target_os = "windows")]
+fn launch_terminal_at(path: &Path) -> Result<(), String> {
+    terminal_command("cmd")
+        .args(["/C", "start", "", "cmd"])
+        .current_dir(path)
+        .spawn()
+        .map(|_| ())
+        .map_err(|_| REPO_FAILED.to_owned())
+}
+
+#[tauri::command]
+pub async fn open_project_terminal(
+    repository: String,
+    expected_relay_url: String,
+    expected_signer_pubkey: String,
+    app: AppHandle,
+) -> Result<(), String> {
+    with_checkout(
+        app,
+        repository,
+        expected_relay_url,
+        expected_signer_pubkey,
+        move |path, root, auth| {
+            validate_checkout(path, root, auth)?;
+            launch_terminal_at(path)
+        },
+    )
+    .await
+}
+
 #[cfg(test)]
 #[path = "project_git_checkout_tests.rs"]
 mod tests;
