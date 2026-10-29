@@ -7,7 +7,10 @@ import '../channels/channel_management_provider.dart';
 import '../../shared/profile/user_cache_provider.dart';
 import '../../shared/profile/user_profile.dart';
 import 'channel_messages_provider.dart';
+import 'channel.dart';
+import 'channels_provider.dart';
 import 'local_message_send_animation_provider.dart';
+import 'message_mention_pubkeys.dart';
 
 /// Sends messages by signing an event with the user's nsec and publishing it
 /// over the relay's NIP-42-authenticated WebSocket session.
@@ -23,6 +26,7 @@ class SendMessage {
   final bool Function()? _isDeliveryValid;
   final UnconfirmedPublishes _unconfirmed;
   final String _relayBaseUrl;
+  final Channel? Function(String channelId)? _lookupChannel;
 
   SendMessage({
     required String relayBaseUrl,
@@ -38,7 +42,9 @@ class SendMessage {
     required void Function(String channelId, String eventId) removeLocalMessage,
     bool Function()? isDeliveryValid,
     UnconfirmedPublishes? unconfirmed,
+    Channel? Function(String channelId)? lookupChannel,
   }) : _signedEventRelay = signedEventRelay,
+       _lookupChannel = lookupChannel,
        _relayBaseUrl = relayBaseUrl,
        _unconfirmed = unconfirmed ?? UnconfirmedPublishes(),
        _fetchMembers = fetchMembers,
@@ -75,13 +81,25 @@ class SendMessage {
     final explicitMentions =
         mentionPubkeys ?? await _resolveMentions(content, channelId);
     final authorPubkey = _signedEventRelay.pubkey;
+    // Original: a DM addresses every current recipient with a `p` tag without
+    // inserting visible @mentions. Kailo's DM participants are the verified
+    // binding roster of the hydrated channel (DD-75).
+    final channel = _lookupChannel?.call(channelId);
+    final resolvedMentions = channel != null && channel.isDm
+        ? messageMentionPubkeys(
+            channel: channel,
+            senderPubkey: authorPubkey,
+            explicitMentions: explicitMentions,
+            dmRecipientPubkeys: channel.participantPubkeys,
+          )
+        : explicitMentions;
 
     // Normalize mentions: lowercase, deduplicate, exclude self (matching
     // the desktop's normalizeMentionPubkeys).
     final selfLower = authorPubkey?.toLowerCase();
     final seenMentions = <String>{?selfLower};
     final normalizedMentions = <String>[
-      for (final pk in explicitMentions)
+      for (final pk in resolvedMentions)
         if (seenMentions.add(pk.toLowerCase())) pk,
     ];
 
@@ -332,5 +350,11 @@ final sendMessageProvider = Provider<SendMessage>((ref) {
       return currentConfig.baseUrl == config.baseUrl &&
           currentConfig.nsec == config.nsec;
     },
+    lookupChannel: (channelId) => ref
+        .read(channelsProvider)
+        .asData
+        ?.value
+        .where((channel) => channel.id == channelId)
+        .firstOrNull,
   );
 });

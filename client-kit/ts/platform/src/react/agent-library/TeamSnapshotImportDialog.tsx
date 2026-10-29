@@ -6,6 +6,9 @@
 // 的新团队；任一成员失败整包不提交，不发布、不安装。原版的“保留名单”与记忆不导入（DD-131(2)(4)），
 // 团队 instructions 不进入包（DD-131(1)）；成员 DRAFT 不带运行配置，发布前在版本编辑器补齐。
 // 视觉只用 DD-141 Kailo 令牌与 client-kit 基础组件。
+// The original phase helpers desktop/src/features/agents/ui/teamSnapshotImport.lib.ts are the
+// preview/confirm/result states below; the native desktop/src-tauri/src/commands/team_snapshot.rs and
+// desktop/src-tauri/src/managed_agents/team_snapshot.rs codec is Core's team_snapshot (DD-131(3)).
 import {
   ActionGateState,
   AgentSnapshotMediaType,

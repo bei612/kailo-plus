@@ -30,6 +30,7 @@ import '../../shared/platform/platform_test_support.dart';
 part 'direct_message_preferences_cases.dart';
 part 'workspace_preferences_cases.dart';
 part 'channel_sections_cases.dart';
+part 'channel_sort_cases.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -41,6 +42,7 @@ void main() {
   mutePreferenceCases(preferences);
   starPreferenceCases(preferences);
   channelSectionCases(preferences);
+  channelSortCases(preferences);
 
   test(
     'fresh HUMAN directory maps multiple keys to two people, not three',
@@ -484,6 +486,8 @@ class _Server {
   final sections = <Map<String, Object?>>[];
   final assignments = <String, String>{};
   final sectionRequests = <String>[];
+  // Original per-group sort (Core `sidebar_sort`).
+  final sort = <String, Map<String, Object?>>{};
   bool loseSection = false;
   bool applySectionBeforeLost = false;
   int? rejectSectionStatus;
@@ -604,6 +608,8 @@ class _Server {
       for (final row in sections) {
         row['order'] = ids.indexOf(row['id']! as String);
       }
+    } else if (path == '/api/v1/user-state/sidebar-sort') {
+      sort[body['groupKey'] as String] = {'mode': body['mode']};
     } else if (path == '/api/v1/user-state/sidebar-assignments') {
       final section = body['sectionId'] as String?;
       if (section == null) {
@@ -673,6 +679,7 @@ class _Server {
           },
           'projectPreferences': {},
           'sidebarSections': {'sections': sections, 'assignments': assignments},
+          'sidebarSort': sort,
         });
       case '/api/v1/user-state/read':
         final read = ReadMarkRequest.fromJson(jsonDecode(request.body));

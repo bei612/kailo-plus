@@ -24,6 +24,7 @@ part 'direct_message_actions.dart';
 part 'direct_message_visibility.dart';
 part 'direct_message_preferences.dart';
 part 'channel_sections/channel_sections_provider.dart';
+part 'channel_sort/channel_sort_provider.dart';
 
 /// The BFF's current HUMAN directory, not a second identity registry. Limits
 /// and people come from the existing generated contracts and tenant authority.

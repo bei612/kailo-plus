@@ -29,6 +29,9 @@ abstract final class EventKind {
   static const streamMessageDiff = 40008;
   static const systemMessage = 40099;
 
+  /// Author-private reminder (NIP-44 to self, parameterized replaceable).
+  static const eventReminder = 30300;
+
   /// Event kinds that represent user-visible channel messages.
   static const channelMessageEventKinds = [
     streamMessage, // 9

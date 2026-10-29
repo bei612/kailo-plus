@@ -978,7 +978,7 @@ remove_paths:
   - mobile/android/app/src/test/kotlin/xyz/block/buzz/mobile/AgeSignalPayloadTest.kt
   - mobile/android/app/src/test/kotlin/xyz/block/buzz/mobile/AgeSignalRequestTest.kt
   - mobile/android/app/src/test/kotlin/xyz/block/buzz/mobile/HuddleActiveTalkerSelectorTest.kt
-  - mobile/lib/features/activity
+  - mobile/lib/features/activity/compose_drafts_provider.dart
   - mobile/lib/features/age_gate
   - mobile/lib/features/channels/agent_activity/observer_models.dart
   - mobile/lib/features/channels/agent_activity/observer_subscription.dart
@@ -1000,14 +1000,13 @@ remove_paths:
   - mobile/lib/features/channels/channel_push_cache.dart
   - mobile/lib/features/channels/channel_sections/channel_sections_manager.dart
   - mobile/lib/features/channels/channel_sections/channel_sections_storage.dart
-  - mobile/lib/features/channels/channel_sort
+  - mobile/lib/features/channels/channel_sort/channel_sort_manager.dart
+  - mobile/lib/features/channels/channel_sort/channel_sort_storage.dart
   - mobile/lib/features/channels/channel_stars
   - mobile/lib/features/channels/channels_page/badges.dart
   - mobile/lib/features/channels/channels_page/browse_channels_sheet.dart
-  - mobile/lib/features/channels/dm_channel_labels.dart
   - mobile/lib/features/channels/ephemeral_channel_display.dart
   - mobile/lib/features/channels/huddle_channel_filter.dart
-  - mobile/lib/features/channels/message_mention_pubkeys.dart
   - mobile/lib/features/channels/mobile_huddle_controller.dart
   - mobile/lib/features/invites
   - mobile/lib/features/pairing
@@ -1015,9 +1014,6 @@ remove_paths:
   - mobile/lib/features/settings/settings_page/community_section.dart
   - mobile/lib/features/settings/settings_page/connection_section.dart
   - mobile/lib/shared/community/community_membership_provider.dart
-  - mobile/lib/shared/crypto/ecdh.dart
-  - mobile/lib/shared/crypto/hkdf.dart
-  - mobile/lib/shared/crypto/nip44.dart
   - mobile/lib/shared/huddle
   - mobile/lib/shared/push/dev_push_lease.dart
   - mobile/lib/shared/push/push_bootstrap.dart
@@ -1030,13 +1026,12 @@ remove_paths:
   - mobile/lib/shared/push/push_subscription_provider.dart
   - mobile/lib/shared/relay/identity_scoped_prefs.dart
   - mobile/lib/shared/relay/relay_validation.dart
-  - mobile/lib/shared/reminders
   - mobile/lib/shared/security
   - mobile/lib/shared/theme/community_theme_sync.dart
   - mobile/lib/shared/widgets/bouncing_dots_indicator.dart
   - mobile/lib/shared/widgets/editor_option_button.dart
   - mobile/lib/shared/widgets/tappable_flapping_bee.dart
-  - mobile/test/features/activity
+  - mobile/test/features/activity/compose_drafts_provider_test.dart
   - mobile/test/features/age_gate
   - mobile/test/features/channels/agent_activity
   - mobile/test/features/channels/channel_actions_sheet_test.dart
@@ -1045,19 +1040,16 @@ remove_paths:
   - mobile/test/features/channels/channel_sort
   - mobile/test/features/channels/channel_stars
   - mobile/test/features/channels/message_content_custom_emoji_test.dart
-  - mobile/test/features/channels/message_mention_pubkeys_test.dart
   - mobile/test/features/invites
   - mobile/test/features/pairing
   - mobile/test/features/pulse
   - mobile/test/features/settings/connection_section_test.dart
   - mobile/test/features/settings/settings_page_loading_test.dart
   - mobile/test/shared/community/community_membership_provider_test.dart
-  - mobile/test/shared/crypto/nip44_interop_test.dart
   - mobile/test/shared/huddle
   - mobile/test/shared/push
   - mobile/test/shared/relay/identity_scoped_prefs_test.dart
   - mobile/test/shared/relay/relay_validation_test.dart
-  - mobile/test/shared/reminders
   - mobile/test/shared/security
   - mobile/test/shared/theme/community_theme_sync_test.dart
   - preview-features.json

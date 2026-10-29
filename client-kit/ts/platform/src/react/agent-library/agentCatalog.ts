@@ -5,6 +5,10 @@
 // `agent.definition.create` followed by `agent.version.create` with the source's portable published
 // fields (the same field set as the snapshot package, DD-131(2)); a team copy is `agent.team.create`
 // referencing the original Definitions. Every write is its own frozen, idempotent submission.
+// Replaces the original relay catalog readers desktop/src/features/agents/lib/personaCatalogRelay.ts,
+// desktop/src/features/agents/lib/usePersonaCatalogRelay.ts, desktop/src/features/agents/lib/teamCatalogRelay.ts,
+// desktop/src/features/agents/lib/useTeamCatalogRelay.ts and the native desktop/src-tauri/src/team_catalog.rs
+// (kind:30175/30178 paging and verification): the catalog is now Core's discover-filtered read (DD-131(6)).
 import {
   ActionDispatchState,
   ActionGateState,

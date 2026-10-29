@@ -4343,18 +4343,18 @@ Top 30 之外的 (c)：
 - **视觉由 DD-141 接管**：2026-10-23 用户裁定 Kailo 视觉全面超越且不再复刻 Buzz（DD-141 Kailo 视觉设计系统）；纯视觉、无功能与交互语义的 (c) 行不计入剩余缺口。剩余计数只统计功能与交互项。
 - 这是第 0 节“(b)”规则的同一口径，比“有效行覆盖 ≥30%”宽松，逐项功能是否完整以 8.3 的功能记录与后续截图验收为准。
 
-### 8.2 当前计数（feat/buzz-restore-r8）
+### 8.2 当前计数（feat/buzz-restore-r9）
 
 | 项目 | 数量 |
 |---|---:|
 | 第 6 节 (c) 行 | 459 |
-| 已有源码替代（按引用判定） | 214 |
-| 原位改写已恢复（8.6） | 6 |
+| 已有源码替代（按引用判定） | 256 |
+| 原位改写已恢复（8.6） | 7 |
 | 原版未挂载，不计缺口（8.7） | 8 |
 | 纯视觉，由 DD-141 接管（8.7） | 1 |
-| **剩余功能与交互缺口** | **230** |
+| **剩余功能与交互缺口** | **187** |
 
-上一轮（r7）为 252 行剩余，r6 为 289 行，r5 为 303 行，r4 为 325 行（当时尚未扣除未挂载与纯视觉行）。按引用判定脚本本轮另命中 3676（`settings_page/notifications_section.dart`，仅恢复“此版本不提供推送”分支）与 3838（`shared/widgets/editor_option_button.dart`，命中的是 `avatar_editor_option_button` 的子串），按功能口径仍计为缺口，未列入 8.5。
+上一轮（r8）为 230 行剩余，r7 为 252 行，r6 为 289 行，r5 为 303 行，r4 为 325 行（当时尚未扣除未挂载与纯视觉行）。按引用判定脚本本轮另命中 3838（`shared/widgets/editor_option_button.dart`，命中的是 `avatar_editor_option_button` 的子串），仍计为缺口；3676 随 DD-151 推送开关恢复后计入。本轮 Desktop 侧 17 行由承接文件补注原版路径后关闭，其功能已在 r7/r8 由 Core 或 client-kit 交付（快照、团队、目录）。
 
 ### 8.3 各轮关闭的功能缺口
 
@@ -4366,12 +4366,14 @@ Top 30 之外的 (c)：
 - **r6**：DD-146 按原版点发送即清空（含无上传的普通发送）、失败/取消恢复、刷新后“待发送”恢复且不自动重发、同一 DD-81 幂等键；DD-144 私聊提及读取 Agent 目录全部分页；DD-147 成员可读的 Agent 作者目录（owner 行不再依赖 Installation 读取授权），接入 Web、Desktop Inbox 与独立线程窗口，点 owner 名打开资料卡；通用 RESOURCE_IMPORT 机制与 Agent 快照导入（DD-131(2)、DD-143“添加”）；Mobile 频道详情、成员、添加成员、管理频道（只走 BFF 已有受治理动作）、自定义状态、资料显示名/简介编辑、设置页资料头状态徽章；Mobile WEBHOOK 触发器穷尽分支修复，flutter analyze/test 恢复编译。
 - **r7**：DD-131(2) 导入裁定（内联头像存为本 Tenant 媒体对象、草稿可缺运行配置/路由/指令且发布时校验）；通用 RESOURCE_EXPORT 与 Agent 快照导出（owner 审批、ExportPackage、JSON/PNG、按读权限下载、复制分享与剪贴板快照）；Teams 全链路（`agent_team` 资源与动作、团队区与对话框、部署到频道、@团队提及、目录分享）与团队快照导入导出（ALL_AFFECTED_OWNERS 审批）；DD-131(6)“从目录选择”；r6/r7 新界面按 DD-141 令牌改造；Mobile 资料编辑页与头像拍摄/裁剪/emoji/动图整条链路、iOS 原生文本编辑器、在线状态（20001）、成员 sheet 的 Agents 分区；Desktop Inbox 三个测试按共享 InboxDetailFrame 重写。
 - **r8**：原版“选收件人直接发送”分享面板（DD-131(7)），目录与团队导入预览显示真实头像；DD-150 频道删除为受治理的 `workspace.delete`（三端入口、快照驱动的删除链），频道静音与移到分区落到 Core 个人偏好、Mobile Canvas 编辑经 `workspace.canvas.set`；Mobile 他人资料卡状态与经 `conversation.open` 发消息、Agent 行“工作中”与活动面板、r6 状态测试按新接口恢复；Desktop Updates（无 Kailo 更新源时显示宿主确定状态）、macOS 托盘菜单与 OS 空闲自动离开（DD-125(5)）。
+- **r9**：DD-151 Mobile 推送（平台自有通道：设备登记与令牌入 OpenBao、Core 以 CONTROL 读 Relay 按原通知次序判定、APNs/FCM 投递、载荷不含正文，Mobile 通知开关与点击跳转）；Desktop 频道星标改走 Core 偏好；Mobile 分组排序（`sidebar_sort`）、Canvas Markdown、频道管理人员目录搜索；Mobile 活动面板“停止当前回合”（`task.cancel.agent.invoke.v1`）；频道“添加 Agent”的团队分区；Mobile 论坛频道、“稍后提醒”、Activity 标签页（收件箱、提醒、草稿）与私聊 p 标签。
 
-### 8.4 仍缺的主要项（r8 结束时）
+### 8.4 仍缺的主要项（r9 结束时）
 
-- owner 编辑/删除自有 Agent 的消息（DD-142）：Core 以 Agent 身份签名的改动被权限分类器拦下，待用户明确批准；补丁未应用，也未改写绕开。
-- Desktop Huddle 全模块（依赖 Relay 读权限与 HTTPS，暂缓）、Local archive、Voice、Terminal；Updates 需要发布链提供 Kailo 更新源与签名公钥后才可用。
-- Mobile 推送开关与通知分区（3676，设计无移动端推送权威）、分区排序（sidebar_sort）、Canvas Markdown 渲染、活动面板“停止当前回合”、频道管理里的人员目录搜索（3496）、提醒、论坛、Pulse、Activity；Desktop 频道星标仍为本机存储。
+- DD-142 由协调者在主会话完成（不在本分支）。
+- Desktop Huddle 全模块（暂缓）、Local archive、Voice、Terminal、发送反馈、社区名称与图标编辑、Projects 仓库型详情；Updates 需要发布链提供更新源与签名公钥。
+- Mobile Pulse（原版 Mobile 无挂载入口，需先定入口）、临时频道显示、频道页输入中与在线状态细节、设置页其余分区、搜索人员分区、频道元数据更新；推送的真机投递与 Android FCM 客户端、通知扩展经本人会话取正文。
+- 设计排除但仍登记为 (c) 的行（如 537 卡片查看、695 观察帧存档）待清单口径裁定。
 
 ### 8.5 已有源码替代的 (c) 行
 
@@ -4379,18 +4381,28 @@ Top 30 之外的 (c)：
 |---:|---|---|
 | 346 | `desktop/src/app/AppHuddleBar.tsx` | `client-kit/ts/platform/src/react/huddle/HuddleBar.tsx` |
 | 347 | `desktop/src/app/AppHuddleShell.tsx` | `client-kit/ts/platform/src/react/huddle/HuddleShell.tsx` |
+| 379 | `desktop/src/app/routes/channels.$channelId.posts.$postId.tsx` | `collaboration/desktop/src/app/routes/channels.$channelId.tsx` |
 | 396 | `desktop/src/app/useAppShellTrayMenu.tsx` | `collaboration/desktop/src/app/useTrayMenu.ts` |
 | 405 | `desktop/src/app/useTrayMenu.ts` | `collaboration/desktop/src/app/useTrayMenu.ts` |
 | 414 | `desktop/src/features/agent-memory/lib/buildMemoryGraph.ts` | `client-kit/ts/platform/src/react/memory-order.ts` |
 | 433 | `desktop/src/features/agents/agentWorkingSignal.ts` | `client-kit/ts/platform/src/react/agent-activity/agentWorkingSignal.ts` |
 | 465 | `desktop/src/features/agents/lib/catalog.ts` | `client-kit/ts/platform/src/huddle.ts` |
+| 481 | `desktop/src/features/agents/lib/personaCatalogRelay.ts` | `client-kit/ts/platform/src/react/agent-library/agentCatalog.ts` |
+| 493 | `desktop/src/features/agents/lib/teamCatalogRelay.ts` | `client-kit/ts/platform/src/react/agent-library/agentCatalog.ts` |
 | 495 | `desktop/src/features/agents/lib/teamPersonas.ts` | `client-kit/ts/platform/src/react/agent-library/teamPersonas.ts` |
+| 506 | `desktop/src/features/agents/lib/usePersonaCatalogRelay.ts` | `client-kit/ts/platform/src/react/agent-library/agentCatalog.ts` |
+| 509 | `desktop/src/features/agents/lib/useTeamCatalogRelay.ts` | `client-kit/ts/platform/src/react/agent-library/agentCatalog.ts` |
+| 524 | `desktop/src/features/agents/openSnapshotImportFromUrlEvent.ts` | `client-kit/ts/platform/src/react/messages/SnapshotCard.tsx` |
+| 527 | `desktop/src/features/agents/snapshotHooks.ts` | `client-kit/ts/platform/src/react/agent-library/AgentSnapshotExportDialog.tsx` |
+| 528 | `desktop/src/features/agents/teamHooks.ts` | `client-kit/ts/platform/src/react/agent-library/useTeamActions.ts` |
 | 531 | `desktop/src/features/agents/ui/AddTeamToChannelDialog.tsx` | `client-kit/ts/platform/src/react/agent-library/teamDeploy.ts` |
 | 571 | `desktop/src/features/agents/ui/AgentSnapshotExportDialog.tsx` | `client-kit/ts/platform/src/react/agent-library/AgentSnapshotExportDialog.tsx` |
 | 572 | `desktop/src/features/agents/ui/AgentSnapshotImportDialog.tsx` | `client-kit/ts/platform/src/react/agent-library/AgentSnapshotImportDialog.tsx` |
 | 578 | `desktop/src/features/agents/ui/CommunityCatalogDialog.tsx` | `client-kit/ts/platform/src/react/agent-library/AgentCatalogDialog.tsx` |
+| 601 | `desktop/src/features/agents/ui/PersonaAddedBy.tsx` | `client-kit/ts/platform/src/react/agent-library/AgentCatalogDialog.tsx` |
 | 610 | `desktop/src/features/agents/ui/PersonaShareDialog.tsx` | `client-kit/ts/platform/src/react/agent-library/SnapshotSendPanel.tsx` |
 | 611 | `desktop/src/features/agents/ui/PersonaShareRecipients.tsx` | `client-kit/ts/platform/src/react/agent-library/SnapshotSendPanel.tsx` |
+| 621 | `desktop/src/features/agents/ui/SnapshotOptionMenu.tsx` | `client-kit/ts/platform/src/react/agent-library/AgentSnapshotExportDialog.tsx` |
 | 622 | `desktop/src/features/agents/ui/TeamDeleteDialog.tsx` | `client-kit/ts/platform/src/react/agent-library/TeamDeleteDialog.tsx` |
 | 623 | `desktop/src/features/agents/ui/TeamDialog.tsx` | `client-kit/ts/platform/src/react/agent-library/TeamDialog.tsx` |
 | 624 | `desktop/src/features/agents/ui/TeamIdentityCard.tsx` | `client-kit/ts/platform/src/react/agent-library/TeamIdentityCard.tsx` |
@@ -4398,9 +4410,13 @@ Top 30 之外的 (c)：
 | 626 | `desktop/src/features/agents/ui/TeamSnapshotExportDialog.tsx` | `client-kit/ts/platform/src/react/agent-library/TeamSnapshotExportDialog.tsx` |
 | 627 | `desktop/src/features/agents/ui/TeamSnapshotImportDialog.tsx` | `client-kit/ts/platform/src/react/agent-library/TeamSnapshotImportDialog.tsx` |
 | 628 | `desktop/src/features/agents/ui/TeamsSection.tsx` | `client-kit/ts/platform/src/react/skills.tsx` |
+| 744 | `desktop/src/features/agents/ui/snapshotAvatarPng.ts` | `client-kit/ts/platform/src/react/agent-library/AgentSnapshotExportDialog.tsx` |
 | 746 | `desktop/src/features/agents/ui/teamDialogSelection.ts` | `client-kit/ts/platform/src/react/agent-library/teamPersonas.ts` |
+| 747 | `desktop/src/features/agents/ui/teamLibraryCopy.ts` | `client-kit/ts/platform/src/react/agent-library/AgentTeamsLibrary.tsx` |
+| 748 | `desktop/src/features/agents/ui/teamSnapshotImport.lib.ts` | `client-kit/ts/platform/src/react/agent-library/TeamSnapshotImportDialog.tsx` |
 | 761 | `desktop/src/features/agents/ui/useSnapshotSendController.ts` | `client-kit/ts/platform/src/react/agent-library/SnapshotSendPanel.tsx` |
 | 762 | `desktop/src/features/agents/ui/useTeamActions.ts` | `client-kit/ts/platform/src/react/agent-library/useTeamActions.ts` |
+| 846 | `desktop/src/features/channels/ui/AddChannelBotTeamsSection.tsx` | `client-kit/ts/platform/src/react/agent-library/ChannelTeamsSection.tsx` |
 | 849 | `desktop/src/features/channels/ui/BotActivityBar.tsx` | `client-kit/ts/platform/src/react/agent-activity/BotActivityBar.tsx` |
 | 852 | `desktop/src/features/channels/ui/ChannelComposerActivityAccessory.tsx` | `client-kit/ts/platform/src/react/agent-activity/ChannelComposerActivityAccessory.tsx` |
 | 897 | `desktop/src/features/channels/ui/useChannelActivityTyping.ts` | `client-kit/ts/platform/src/react/agent-activity/useChannelAgentActivity.ts` |
@@ -4513,6 +4529,7 @@ Top 30 之外的 (c)：
 | 2141 | `desktop/src/features/sidebar/ui/SidebarSection.tsx` | `client-kit/ts/platform/src/react/sidebar/channel-row.tsx` |
 | 2157 | `desktop/src/features/terminal/fadeController.ts` | `collaboration/mobile/lib/features/channels/channels_page/quick_actions.dart` |
 | 2319 | `desktop/src/shared/api/osIdle.ts` | `collaboration/desktop/src/shared/api/osIdle.ts` |
+| 2367 | `desktop/src/shared/api/tauriTeams.ts` | `client-kit/ts/platform/src/react/agent-library/useTeamActions.ts` |
 | 2370 | `desktop/src/shared/api/trayMenu.ts` | `collaboration/desktop/src/app/useTrayMenu.ts` |
 | 2517 | `desktop/src/shared/styles/globals/terminal.css` | `client-kit/ts/platform/src/gateway-drafts.ts` |
 | 2574 | `desktop/src/shared/ui/assets/terminal.svg` | `client-kit/ts/platform/src/gateway-drafts.ts` |
@@ -4521,6 +4538,7 @@ Top 30 之外的 (c)：
 | 2685 | `desktop/src-tauri/src/archive/pipeline.rs` | `client-kit/ts/platform/src/react/huddle/HuddleContext.tsx` |
 | 2781 | `desktop/src-tauri/src/commands/personas/sharing.rs` | `client-kit/ts/platform/src/i18n.ts` |
 | 2782 | `desktop/src-tauri/src/commands/personas/snapshot.rs` | `client-kit/ts/platform/src/i18n.ts` |
+| 2792 | `desktop/src-tauri/src/commands/team_snapshot.rs` | `client-kit/ts/platform/src/react/agent-library/TeamSnapshotImportDialog.tsx` |
 | 2802 | `desktop/src-tauri/src/commands/teams/pending.rs` | `client-kit/ts/platform/src/i18n.ts` |
 | 2806 | `desktop/src-tauri/src/commands/teams/sharing.rs` | `client-kit/ts/platform/src/i18n.ts` |
 | 2858 | `desktop/src-tauri/src/commands/os_idle.rs` | `collaboration/desktop/src/shared/api/osIdle.ts` |
@@ -4532,11 +4550,25 @@ Top 30 之外的 (c)：
 | 2893 | `desktop/src-tauri/src/huddle/reconnect.rs` | `client-kit/ts/platform/src/i18n.ts` |
 | 2894 | `desktop/src-tauri/src/huddle/relay_api.rs` | `client-kit/ts/platform/src/huddle.ts` |
 | 2898 | `desktop/src-tauri/src/huddle/transcription.rs` | `client-kit/ts/platform/src/react/huddle/HuddleBar.tsx` |
+| 2928 | `desktop/src-tauri/src/managed_agents/agent_snapshot.rs` | `client-kit/ts/platform/src/react/agent-library/AgentSnapshotExportDialog.tsx` |
+| 3036 | `desktop/src-tauri/src/managed_agents/team_snapshot.rs` | `client-kit/ts/platform/src/react/agent-library/TeamSnapshotImportDialog.tsx` |
 | 3137 | `desktop/src-tauri/src/ptt_shortcut.rs` | `web-client/web/src/platform/huddle/audioSession.ts` |
+| 3148 | `desktop/src-tauri/src/team_catalog.rs` | `client-kit/ts/platform/src/react/agent-library/agentCatalog.ts` |
 | 3155 | `desktop/src-tauri/src/tray_menu.rs` | `collaboration/desktop/src/app/useTrayMenu.ts` |
 | 3172 | `desktop/src-tauri/crates/buzz-terminal/src/context.rs` | `client-kit/ts/platform/src/i18n.ts` |
 | 3179 | `desktop/src-tauri/crates/buzz-terminal/src/lifecycle.rs` | `client-kit/ts/platform/src/huddle.ts` |
 | 3181 | `desktop/src-tauri/crates/buzz-terminal/src/listener.rs` | `client-kit/ts/platform/src/i18n.ts` |
+| 3443 | `mobile/lib/features/activity/activity_page.dart` | `collaboration/mobile/lib/features/activity/activity_page/status_views.dart` |
+| 3444 | `mobile/lib/features/activity/activity_page/header_actions.dart` | `collaboration/mobile/lib/features/activity/activity_page.dart` |
+| 3445 | `mobile/lib/features/activity/activity_page/inbox_row.dart` | `collaboration/mobile/lib/features/activity/activity_page.dart` |
+| 3447 | `mobile/lib/features/activity/activity_page/status_views.dart` | `collaboration/mobile/lib/features/activity/activity_page.dart` |
+| 3448 | `mobile/lib/features/activity/activity_provider.dart` | `collaboration/mobile/lib/features/activity/activity_page.dart` |
+| 3450 | `mobile/lib/features/activity/dm_resurface.dart` | `collaboration/mobile/lib/features/activity/activity_provider.dart` |
+| 3451 | `mobile/lib/features/activity/feed_item.dart` | `collaboration/mobile/lib/features/activity/inbox_item.dart` |
+| 3452 | `mobile/lib/features/activity/inbox_item.dart` | `collaboration/mobile/lib/features/activity/activity_page.dart` |
+| 3453 | `mobile/lib/features/activity/inbox_local_state_provider.dart` | `collaboration/mobile/lib/features/activity/activity_page.dart` |
+| 3454 | `mobile/lib/features/activity/inbox_read_state.dart` | `collaboration/mobile/lib/features/activity/activity_page.dart` |
+| 3455 | `mobile/lib/features/activity/reminders_provider.dart` | `collaboration/mobile/lib/features/activity/activity_page.dart` |
 | 3469 | `mobile/lib/features/channels/add_members_sheet.dart` | `collaboration/mobile/lib/features/channels/add_members_sheet.dart` |
 | 3470 | `mobile/lib/features/channels/agent_activity/agent_activity_sheet.dart` | `collaboration/mobile/lib/features/channels/agent_activity/agent_activity_sheet.dart` |
 | 3475 | `mobile/lib/features/channels/agent_activity/working_bots_provider.dart` | `collaboration/mobile/lib/features/channels/agent_activity/working_agents_provider.dart` |
@@ -4547,12 +4579,19 @@ Top 30 之外的 (c)：
 | 3512 | `mobile/lib/features/channels/channel_typing_indicator.dart` | `collaboration/mobile/lib/features/channels/channel_detail_page.dart` |
 | 3513 | `mobile/lib/features/channels/channel_typing_provider.dart` | `collaboration/mobile/lib/features/channels/channel_typing_indicator.dart` |
 | 3515 | `mobile/lib/features/channels/channels_page/badges.dart` | `→ mobile/lib/features/channels/channels_page/error_view.dart collaboration/mobile/lib/features/channels/channels_page.dart` |
+| 3537 | `mobile/lib/features/channels/dm_channel_labels.dart` | `collaboration/mobile/lib/features/activity/activity_page.dart` |
 | 3543 | `mobile/lib/features/channels/manage_channel_sheet.dart` | `collaboration/mobile/lib/features/channels/manage_channel_sheet.dart` |
 | 3544 | `mobile/lib/features/channels/members_sheet.dart` | `collaboration/mobile/lib/features/channels/members_sheet.dart` |
 | 3550 | `mobile/lib/features/channels/message_actions/message_reaction_tray.dart` | `collaboration/mobile/lib/features/channels/message_actions.dart` |
 | 3551 | `mobile/lib/features/channels/message_actions/quick_reaction_row.dart` | `collaboration/mobile/lib/features/channels/message_actions.dart` |
 | 3552 | `mobile/lib/features/channels/message_actions/reaction_popover.dart` | `collaboration/mobile/lib/features/channels/message_actions.dart` |
+| 3555 | `mobile/lib/features/channels/message_mention_pubkeys.dart` | `collaboration/mobile/lib/features/channels/send_message_provider.dart` |
 | 3557 | `mobile/lib/features/channels/reaction_row.dart` | `collaboration/mobile/lib/features/channels/channel_detail_page.dart` |
+| 3574 | `mobile/lib/features/forum/forum_models.dart` | `collaboration/mobile/lib/features/forum/forum_provider.dart` |
+| 3575 | `mobile/lib/features/forum/forum_post_card.dart` | `collaboration/mobile/lib/features/forum/forum_posts_view.dart` |
+| 3576 | `mobile/lib/features/forum/forum_posts_view.dart` | `collaboration/mobile/lib/features/channels/channel_detail_page.dart` |
+| 3577 | `mobile/lib/features/forum/forum_provider.dart` | `collaboration/mobile/lib/features/forum/forum_posts_view.dart` |
+| 3578 | `mobile/lib/features/forum/forum_thread_page.dart` | `collaboration/mobile/lib/features/forum/forum_posts_view.dart` |
 | 3616 | `mobile/lib/features/profile/animated_avatar_capture.dart` | `collaboration/mobile/lib/features/profile/animated_avatar_capture.dart` |
 | 3617 | `mobile/lib/features/profile/animated_avatar_capture/capture_controls.dart` | `collaboration/mobile/lib/features/profile/animated_avatar_capture/capture_controls.dart` |
 | 3618 | `mobile/lib/features/profile/animated_avatar_capture/error_text.dart` | `collaboration/mobile/lib/features/profile/animated_avatar_capture/error_text.dart` |
@@ -4580,11 +4619,16 @@ Top 30 之外的 (c)：
 | 3644 | `mobile/lib/features/profile/user_status.dart` | `client-kit/ts/platform/src/react/user-status/hooks.ts` |
 | 3645 | `mobile/lib/features/profile/user_status_cache_provider.dart` | `collaboration/mobile/lib/features/profile/user_status_cache_provider.dart` |
 | 3646 | `mobile/lib/features/profile/user_status_provider.dart` | `collaboration/mobile/lib/features/profile/user_status_provider.dart` |
+| 3676 | `mobile/lib/features/settings/settings_page/notifications_section.dart` | `collaboration/mobile/lib/features/settings/settings_page.dart` |
 | 3722 | `mobile/lib/shared/custom_emoji/custom_emoji.dart` | `client-kit/ts/platform/src/react/composer/features/messages/lib/customEmojiNode.ts` |
 | 3723 | `mobile/lib/shared/custom_emoji/custom_emoji_provider.dart` | `collaboration/mobile/lib/features/channels/message_mutations.dart` |
 | 3724 | `mobile/lib/shared/custom_emoji/custom_emoji_render.dart` | `collaboration/mobile/lib/features/channels/reaction_row.dart` |
 | 3738 | `mobile/lib/shared/emoji/emoji_burst.dart` | `collaboration/mobile/lib/features/channels/reaction_row.dart` |
 | 3740 | `mobile/lib/shared/emoji/positive_emoji.dart` | `collaboration/mobile/lib/features/channels/reaction_row.dart` |
+| 3765 | `mobile/lib/shared/push/push_bridge.dart` | `collaboration/mobile/lib/features/settings/settings_page.dart` |
+| 3805 | `mobile/lib/shared/reminders/remind_me_later_sheet.dart` | `collaboration/mobile/lib/features/channels/message_actions.dart` |
+| 3806 | `mobile/lib/shared/reminders/reminder_service.dart` | `collaboration/mobile/lib/features/channels/message_actions.dart` |
+| 3807 | `mobile/lib/shared/reminders/reminder_time_presets.dart` | `collaboration/mobile/lib/shared/reminders/remind_me_later_sheet.dart` |
 | 3840 | `mobile/lib/shared/widgets/immediate_page_route.dart` | `collaboration/mobile/lib/shared/widgets/immediate_page_route.dart` |
 | 3841 | `mobile/lib/shared/widgets/ios_native_segmented_control.dart` | `collaboration/mobile/lib/shared/widgets/ios_native_segmented_control.dart` |
 | 3842 | `mobile/lib/shared/widgets/ios_native_skin_tone_control.dart` | `collaboration/mobile/lib/shared/widgets/ios_native_skin_tone_control.dart` |
@@ -4601,6 +4645,7 @@ Top 30 之外的 (c)：
 | 3491 | `mobile/lib/features/channels/channel_detail_page/system_rows.dart` | 系统行回应（Huddle 部分不恢复） |
 | 3566 | `mobile/lib/features/channels/timeline_message.dart` | 回应聚合与自定义表情回应 |
 | 3642 | `mobile/lib/features/profile/settings_profile_header.dart` | 设置页资料头的状态徽章、状态文字与设置状态入口 |
+| 3496 | `mobile/lib/features/channels/channel_management_provider.dart` | 频道管理的添加成员（r6）、Canvas（r8/r9）与人员目录搜索（r9） |
 | 3643 | `mobile/lib/features/profile/user_profile_sheet.dart` | 他人资料卡的在线状态、自定义状态、经 `conversation.open` 发消息与复制公钥 |
 
 ### 8.7 不计入缺口的 (c) 行

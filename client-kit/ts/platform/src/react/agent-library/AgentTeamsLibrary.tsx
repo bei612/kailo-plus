@@ -1,6 +1,8 @@
 // Buzz 779af8886caae1317b4de962082429867ab61503 desktop/src/features/agents/ui/AgentsView.tsx composition of
 // the Teams section and its dialogs (DD-131(1)(6), SF-BUZ-60). Shared by Web and Desktop: every read
 // and write goes through the governed BFF client of the host.
+// The original team copy table desktop/src/features/agents/ui/teamLibraryCopy.ts is the
+// agentTeams.* entries of the shared zh-CN/en catalog.
 import { ResourceState } from "@client-kit/contracts";
 import { useRef, useState } from "react";
 import { useCurrentPrincipalId, useUiT } from "../context";

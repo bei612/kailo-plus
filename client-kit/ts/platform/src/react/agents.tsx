@@ -54,6 +54,7 @@ import { TransportError, type WriteFailure, writeFailure } from "../transport";
 import { useBffClient, useCurrentPrincipalId, useFailureText, useLocale, useReasonText, useT } from "./context";
 import { Badge, Button, Cell, Notice, Table, ReadFailure as AgentReadFailure } from "./ui";
 import { useLoad } from "./use-load";
+import { ChannelTeamsSection } from "./agent-library/ChannelTeamsSection";
 import { InstallationMemory } from "./memory";
 import { AgentInstallationUse } from "./agent-installation-use";
 import { installationLabels, validInstallation } from "./agent-installation-view";
@@ -1922,6 +1923,7 @@ function InstallationCreate({ workspaceId, workspaceName, sourceRevision, locked
         }}>{t("roles.next")}</Button> : null}
       </div>
       {page?.canCreate ? <Button className="w-fit" type="submit" disabled={locked || requestBlocked || !candidate}>{t("agents.review")}</Button> : null}
+      {!upgrade && workspaceId && page?.canCreate ? <ChannelTeamsSection workspaceId={workspaceId} disabled={locked} onDeployed={onRecorded} /> : null}
     </form> : <div className="flex flex-col gap-2 text-sm" role="group">
       <p>{intent.name}</p>
       <p className="break-words">{t("platform.workspace")}: {intent.workspace} · {intent.command.workspaceId}</p>

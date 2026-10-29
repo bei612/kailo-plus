@@ -15,9 +15,30 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../shared/theme/theme.dart';
+import '../../shared/utils/string_utils.dart';
 import '../../shared/widgets/avatar_image.dart';
 import '../../shared/widgets/buzz_loading_indicator.dart';
 import 'channel_governed_actions.dart';
+
+/// Original people-directory search (channel_management_provider.dart::
+/// relayDirectorySearchProvider) over the admitted role projection: a name
+/// match, or a prefix of one of the person's public keys (hex or npub). The
+/// projection stays the only candidate authority; nothing is read from the
+/// relay's kind:0 directory.
+@visibleForTesting
+bool matchesPeopleDirectoryQuery(RoleMemberView role, String query) {
+  final q = query.trim().toLowerCase();
+  if (q.isEmpty) return true;
+  if (role.displayName.toLowerCase().contains(q)) return true;
+  for (final key in role.pubkeys ?? const <String>[]) {
+    final hex = key.toLowerCase();
+    if (hex.startsWith(q)) return true;
+    if (q.startsWith('npub') && (fullNpub(hex)?.startsWith(q) ?? false)) {
+      return true;
+    }
+  }
+  return false;
+}
 
 /// Searchable multi-select used to add people to a channel.
 class AddChannelMembersSheet extends HookConsumerWidget {
@@ -59,8 +80,7 @@ class AddChannelMembersSheet extends HookConsumerWidget {
       for (final role in rolesAsync.asData?.value?.values ?? <RoleMemberView>[])
         if (role.canAddToWorkspace == true &&
             !excluded.contains(role.principalId) &&
-            (normalizedQuery.isEmpty ||
-                role.displayName.toLowerCase().contains(normalizedQuery)))
+            matchesPeopleDirectoryQuery(role, normalizedQuery))
           role,
     ]..sort((a, b) => a.displayName.compareTo(b.displayName));
 
@@ -232,6 +252,15 @@ class AddChannelMembersSheet extends HookConsumerWidget {
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                 ),
+                                // Original DirectoryUser.secondaryLabel: the
+                                // compact key under the name.
+                                subtitle: role.pubkeys?.isNotEmpty == true
+                                    ? Text(
+                                        shortPubkey(role.pubkeys!.first),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      )
+                                    : null,
                                 trailing: Icon(
                                   isSelected
                                       ? LucideIcons.circleCheck

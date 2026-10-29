@@ -315,18 +315,140 @@ class _AnimatedSectionBody extends HookWidget {
 /// Original custom-section header menu (channels_page/sections.dart): rename,
 /// move up/down and delete. Every choice is one Core preference write
 /// (DD-150(3)); the list changes only when Core's readback does.
+/// Runs one sort write and reports a refused or unconfirmed outcome (original
+/// `setSortModeFor`; Kailo writes Core `sidebar_sort`, DD-150(3)).
+Future<bool> _runSortWrite(
+  BuildContext context,
+  String groupKey,
+  ChannelSortMode mode,
+  Iterable<String> liveSectionIds,
+) async {
+  final container = ProviderScope.containerOf(context, listen: false);
+  final ok = await container
+      .read(channelSortProvider.notifier)
+      .setSortModeFor(groupKey, mode, liveSectionIds: liveSectionIds);
+  if (!ok && context.mounted) {
+    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+      SnackBar(
+        content: Text(
+          _channelText(
+            context,
+            container.read(channelSortProvider).pending
+                ? PlatformMessageKey.sidebarPreferenceUnknown
+                : PlatformMessageKey.sidebarSortUpdateFailed,
+          ),
+        ),
+      ),
+    );
+  }
+  return ok;
+}
+
+const _kSortRecentMenuValue = 'sort_recent';
+const _kSortAlphaMenuValue = 'sort_alpha';
+
+/// Original `_sortMenuItems`: Recent and A–Z, the current one checked.
+List<PopupMenuEntry<String>> _sortMenuItems(
+  BuildContext context,
+  ChannelSortMode current, {
+  bool showDivider = true,
+}) {
+  PopupMenuItem<String> item(
+    String value,
+    PlatformMessageKey label,
+    bool selected,
+  ) => PopupMenuItem(
+    value: value,
+    child: Row(
+      children: [
+        Expanded(
+          child: Text(
+            '${_channelText(context, PlatformMessageKey.sidebarSort)}: '
+            '${_channelText(context, label)}',
+          ),
+        ),
+        if (selected)
+          const Icon(LucideIcons.check, key: ValueKey('sort-selected-check'))
+        else
+          const SizedBox(width: 24),
+      ],
+    ),
+  );
+  return [
+    if (showDivider) const PopupMenuDivider(),
+    item(
+      _kSortRecentMenuValue,
+      PlatformMessageKey.sidebarRecent,
+      current == ChannelSortMode.recent,
+    ),
+    item(
+      _kSortAlphaMenuValue,
+      PlatformMessageKey.sidebarAlpha,
+      current == ChannelSortMode.alpha,
+    ),
+  ];
+}
+
+ChannelSortMode? _sortChoice(String? value) => switch (value) {
+  _kSortRecentMenuValue => ChannelSortMode.recent,
+  _kSortAlphaMenuValue => ChannelSortMode.alpha,
+  _ => null,
+};
+
+/// Original built-in group header sort menu (Starred, Channels, Direct messages).
+class _SortMenu extends StatelessWidget {
+  const _SortMenu({
+    required this.groupKey,
+    required this.label,
+    required this.mode,
+  });
+
+  final String groupKey;
+  final String label;
+  final ChannelSortMode mode;
+
+  @override
+  Widget build(BuildContext context) {
+    return PopupMenuButton<String>(
+      key: ValueKey('sort-menu-$groupKey'),
+      tooltip: _channelText(
+        context,
+        PlatformMessageKey.sidebarMoreActions,
+        variables: {'section': label},
+      ),
+      icon: Icon(
+        LucideIcons.ellipsis,
+        size: _kChannelIconSize,
+        color: navigationSectionForeground(context),
+      ),
+      onSelected: (value) async {
+        final next = _sortChoice(value);
+        if (next != null) {
+          await _runSortWrite(context, groupKey, next, const []);
+        }
+      },
+      itemBuilder: (menuContext) =>
+          _sortMenuItems(menuContext, mode, showDivider: false),
+    );
+  }
+}
+
 class _UserSectionMenu extends StatelessWidget {
   const _UserSectionMenu({
     required this.section,
     required this.channelCount,
     required this.isFirst,
     required this.isLast,
+    required this.sortMode,
+    required this.liveSectionIds,
   });
 
   final ChannelSectionRecord section;
   final int channelCount;
   final bool isFirst;
   final bool isLast;
+  final ChannelSortMode sortMode;
+  final List<String> liveSectionIds;
 
   @override
   Widget build(BuildContext context) {
@@ -340,6 +462,16 @@ class _UserSectionMenu extends StatelessWidget {
         color: navigationSectionForeground(context),
       ),
       onSelected: (choice) async {
+        final sort = _sortChoice(choice);
+        if (sort != null) {
+          await _runSortWrite(
+            context,
+            sectionSortGroupKey(section.id),
+            sort,
+            liveSectionIds,
+          );
+          return;
+        }
         switch (choice) {
           case 'rename':
             final name = await showSectionNameDialog(
@@ -396,7 +528,7 @@ class _UserSectionMenu extends StatelessWidget {
             );
         }
       },
-      itemBuilder: (_) => [
+      itemBuilder: (menuContext) => [
         PopupMenuItem(
           value: 'rename',
           child: Text(t(PlatformMessageKey.sidebarSectionRename)),
@@ -411,6 +543,7 @@ class _UserSectionMenu extends StatelessWidget {
             value: 'down',
             child: Text(t(PlatformMessageKey.sidebarSectionMoveDown)),
           ),
+        ..._sortMenuItems(menuContext, sortMode),
         PopupMenuItem(
           value: 'delete',
           child: Text(t(PlatformMessageKey.sidebarSectionDelete)),

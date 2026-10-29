@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:nostr/nostr.dart' as nostr;
+import 'package:buzz/features/channels/channel.dart';
 import 'package:buzz/features/channels/send_message_provider.dart';
 import 'package:buzz/shared/relay/relay.dart';
 
@@ -45,6 +46,48 @@ void main() {
       expect(removedIds, isEmpty);
     },
   );
+
+  test('a DM addresses every other participant with a p tag', () async {
+    final keys = nostr.Keys.generate();
+    final self = keys.public;
+    const alice =
+        'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+    final session = _PendingPublishRelaySession();
+    final send = SendMessage(
+      relayBaseUrl: 'https://relay.example',
+      signedEventRelay: SignedEventRelay(session: session, nsec: keys.nsec),
+      fetchMembers: (_) async => const [],
+      readUserCache: () => const {},
+      addLocalMessage: (_, _) {},
+      completeLocalMessage: (_, _) {},
+      removeLocalMessage: (_, _) {},
+      lookupChannel: (id) => Channel(
+        id: id,
+        name: '',
+        channelType: 'dm',
+        visibility: 'private',
+        description: '',
+        createdBy: '',
+        createdAt: DateTime(2026),
+        memberCount: 2,
+        isMember: true,
+        participantPubkeys: [self, alice],
+      ),
+    );
+
+    final result = send(
+      channelId: _channelId,
+      content: 'hi',
+      mentionPubkeys: const [],
+    );
+    await session.published;
+    expect(
+      session.event.tags.where((tag) => tag[0] == 'p').map((tag) => tag[1]),
+      [alice],
+    );
+    session.accept();
+    await result;
+  });
 
   test('rolls back the signed local message when publish fails', () async {
     final session = _PendingPublishRelaySession();

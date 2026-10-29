@@ -275,6 +275,31 @@ List<_PopoverMessageAction> _buildPopoverMessageActions({
         },
       ),
     );
+    if (ref.read(reminderServiceProvider) != null) {
+      actions.add(
+        _PopoverMessageAction(
+          id: 'remind',
+          title: _mt(context, PlatformMessageKey.remindersRemindLater),
+          icon: LucideIcons.clock,
+          group: _PopoverMessageActionGroup.utility,
+          onSelected: () {
+            if (!context.mounted) return;
+            showRemindMeLaterSheet(
+              context: Navigator.of(context, rootNavigator: true).context,
+              ref: ref,
+              target: ReminderTarget(
+                eventId: message.id,
+                channelId: channelId,
+                preview: message.content.characters
+                    .take(_reminderPreviewLength)
+                    .toString(),
+                authorPubkey: message.pubkey,
+              ),
+            );
+          },
+        ),
+      );
+    }
     final readState = ref.read(readStateProvider);
     if (readState.isReady) {
       final unread = isMessageUnread(

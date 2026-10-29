@@ -148,3 +148,41 @@ describe("DD-150(3) channel mute is the Workspace preference", () => {
     expect(output()).toEqual({ version: 6, muted: true });
   });
 });
+
+function StarHarness({ client }: { client: ReturnType<typeof createBffClient> }) {
+  const reads = useInboxState(client);
+  const actions = useCollaborationPreferenceActions(client, reads);
+  return <>
+    <output>{JSON.stringify({ version: reads.state?.version ?? null, starred: actions.isWorkspaceStarred(workspace) ?? null })}</output>
+    <button disabled={!actions.writable} onClick={() => void actions.setWorkspaceStarred(workspace, true)}>Star</button>
+  </>;
+}
+
+describe("Desktop channel Star is the Workspace preference", () => {
+  it("writes starred with the mute and version of the same Core snapshot, no action", async () => {
+    let current: CollaborationUserState = { version: 7, readContexts: {},
+      workspacePreferences: { [workspace]: { starred: false, muted: true } } };
+    const writes: BffRequest[] = [];
+    const client = createBffClient({ send: async (request) => {
+      if (request.method === "GET" && request.path === "/api/v1/workspaces") return { status: 200, body: [] };
+      if (request.method === "GET" && request.path.startsWith("/api/v1/conversations")) return { status: 200, body: { items: [] } };
+      if (request.method === "GET") return { status: 200, body: current };
+      writes.push(request);
+      const body = request.body as { muted: boolean; starred: boolean; version: number };
+      current = { ...current, version: body.version + 1,
+        workspacePreferences: { [workspace]: { starred: body.starred, muted: body.muted } } };
+      return { status: 200, body: { version: current.version } };
+    } });
+    const ui = await render(<StarHarness client={client} />);
+    await settle();
+    const output = () => JSON.parse(ui.querySelector("output")!.textContent!);
+    expect(output()).toEqual({ version: 7, starred: false });
+    await click(button(ui, "Star"));
+    await settle();
+    expect(writes).toHaveLength(1);
+    expect(writes[0]).toMatchObject({ method: "PUT", path: `/api/v1/user-state/workspaces/${workspace}`,
+      body: { starred: true, muted: true, version: 7 } });
+    expect(writes.some((request) => request.path === "/api/v1/actions")).toBe(false);
+    expect(output()).toEqual({ version: 8, starred: true });
+  });
+});
