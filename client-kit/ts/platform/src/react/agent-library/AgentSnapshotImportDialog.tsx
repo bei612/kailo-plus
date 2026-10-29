@@ -9,6 +9,8 @@
 // （DD-131(2) 2026-10-23 裁定）。视觉只用 client-kit 主题 token。
 // The native decoder desktop/src-tauri/src/commands/personas/snapshot/import.rs is Core's
 // agent_snapshot decoder behind the staged upload.
+// The original Tauri command desktop/src-tauri/src/commands/personas/snapshot/import.rs (and its
+// tests.rs) is Core's snapshot decode and RESOURCE_IMPORT (core/crates/platform-core/src/agent_snapshot.rs).
 import {
   ActionDispatchState,
   ActionGateState,

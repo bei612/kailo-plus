@@ -7,6 +7,8 @@
 // desktop/src/shared/api/tauriTeams.ts (and the native desktop/src-tauri/src/commands/teams/mod.rs,
 // teams/adopt.rs, teams/adopt/apply.rs local store) become the BFF agent-team reads and governed
 // agent.team.* actions here; Core owns the team Resource (core platform-core agent_team.rs).
+// The original Tauri commands/teams (mod.rs, pending.rs, sharing.rs and their tests) are Core's
+// agent_team actions (core/crates/platform-core/src/agent_team.rs).
 import * as React from "react";
 import type { AgentDefinitionView, AgentTeamView, WorkspaceView } from "@client-kit/contracts";
 import { useBffClient, useUiT } from "../context";

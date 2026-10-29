@@ -1,5 +1,8 @@
 // DD-158 / V-SCN-261: the existing BFF profile read also supports a bounded
 // afterVersion watch. Hints carry no profile data; every answer is re-admitted.
+// Original desktop/src/features/communities/communityIconCache.ts and
+// desktop/src/features/communities/useCommunityIcons.ts: the community name/icon every surface shows
+// comes from this one admitted Tenant profile read instead of a per-relay icon cache.
 import { createContext, type ReactNode, useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import type { PlatformSessionView, TenantProfileView } from "@client-kit/contracts";

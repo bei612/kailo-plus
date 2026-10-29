@@ -6,6 +6,8 @@
 // binding opens its channel home. The project Agent chat (overview, repository and work-item
 // right panels) posts to the selected Installation's bound channel through the host's governed chat
 // transport (DD-130). Terminal and local checkout remain without a governed consumer.
+// desktop/src/features/projects/lib/projectDetailSearch.ts (route target / wantsProjectRepositorySurface)
+// and desktop/src/features/projects/ui/useProjectDetailCrumbs.ts (tab and work-item crumbs) live here.
 import { Fragment, useEffect, useMemo, useRef, useState, type ComponentProps, type ReactNode } from "react";
 import { useQuery, useQueryClient, type UseQueryResult } from "@tanstack/react-query";
 import { RoleWorkspacePageCreateActionKey, WorkspaceMembershipState, type DiscoverableWorkspace } from "@client-kit/contracts";

@@ -1,6 +1,11 @@
 // Fixed Buzz 779af8886caae1317b4de962082429867ab61503: repoSyncHooks.ts,
 // ProjectRepositorySource.tsx and ProjectRepositoryContextPanel's local controls.
 // DD-160 keeps the same operations behind the Desktop host; Web has no checkout.
+// desktop/src/features/projects/lib/projectLocalRepos.ts (hasLocalRepositoryCheckout) and
+// desktop/src-tauri/src/commands/project_repo_paths.rs: DD-160(3) places each checkout in the app
+// data directory by Community and 30617 coordinate, so whether a repository has a local checkout
+// is the host's sync status for that coordinate rather than a folder-name match under a
+// user-chosen repositories directory.
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Cloud, DownloadCloud, FolderOpen, HardDrive, Loader2, UploadCloud } from "lucide-react";
@@ -15,6 +20,7 @@ import { PROJECT_CONTEXT_ACTION_BUTTON_CLASS } from "./projectContextActionStyle
 import { PROJECT_PICKER_TRIGGER_CLASS } from "./projectPanelStyles";
 import { isOutcomeUnknown } from "../../transport";
 import { useFocusedRefetchInterval } from "./useProjectAppFocus";
+import { showProjectCloneErrorToast } from "./lib/projectGitError";
 
 export type ProjectCheckoutSource = { source: "remote" | "local"; onChange: (source: "remote" | "local") => void };
 
@@ -66,6 +72,7 @@ export function useProjectLocalCheckout(host: ProjectsHost, repository: Reposito
       if (operation?.owner !== activeOwner.current) return;
       const reason = typeof error === "string" ? error : error instanceof Error ? error.message : "";
       if (reason === "project_repo_outcome_unknown" || action === "push" && isOutcomeUnknown(error)) toast.info(t("projects.checkout.unknown"));
+      else if (action === "clone" && reason !== "project_repo_conflict") showProjectCloneErrorToast(error);
       else toast.error(t(reason === "project_repo_conflict" ? "projects.checkout.conflict" : "projects.checkout.failed"));
     },
     onSuccess: (_data, action, operation) => {

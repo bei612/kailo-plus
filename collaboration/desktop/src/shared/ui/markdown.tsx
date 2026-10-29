@@ -1,3 +1,5 @@
+// Snapshot cards: original desktop/src-tauri/src/commands/media_download.rs fetch_snapshot_bytes is the
+// native media IPC read below; the card verifies the imeta size and SHA-256 before the import preview.
 import * as React from "react";
 import { parseEntityLink } from "@client-kit/platform/react/projects";
 import { EntityLinkAnchor } from "./markdown/entityLinks";
