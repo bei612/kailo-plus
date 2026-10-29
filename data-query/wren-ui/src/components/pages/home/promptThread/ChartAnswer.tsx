@@ -31,6 +31,7 @@ import { runNativeMetadataWrite } from '@/utils/errorHandler';
 import useKailoSession from '@/hooks/useKailoSession';
 import { confirm, notify } from '@/utils/kailoHost';
 import useKailoText from '@/utils/kailoI18n';
+import { chartRowsReady } from '@/utils/chartRows';
 
 const Chart = dynamic(() => import('@/components/chart'), {
   ssr: false,
@@ -335,8 +336,7 @@ export default function ChartAnswer(props: AnswerResultProps) {
             </Button>
           ) : null}
           {chartSpec
-            ? query.completed &&
-              query.receipt?.data && (
+            ? chartRowsReady(query) && (
                 <ChartWrapper
                   className={clsx('mt-4 pb-3 overflow-hidden', {
                     isEditMode: isEditMode,
