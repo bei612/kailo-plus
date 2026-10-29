@@ -90,8 +90,9 @@
                         <div class="menu_item-box">
                             <div class="menu_icon">
                                 <!-- Kailo mode: one-colour line icons following the row text colour (20 §13.9). -->
+                                <!-- DD-157: quoted, since Vite inlines these SVGs as data: URLs. -->
                                 <span v-if="kailoMode" class="icon kailo-mono-icon" aria-hidden="true"
-                                    :style="{ '--kailo-icon': `url(${getImgSrc(monoIcon(item.icon))})` }"></span>
+                                    :style="{ '--kailo-icon': `url(${JSON.stringify(getImgSrc(monoIcon(item.icon)))})` }"></span>
                                 <img v-else class="icon"
                                     :src="getImgSrc(item.icon == 'zhishiku' ? knowledgeIcon : item.icon == 'agent' ? agentIcon : item.icon == 'artifact' ? artifactIcon : item.icon == 'organization' ? organizationIcon : item.icon == 'logout' ? logoutIcon : item.icon == 'setting' ? settingIcon : prefixIcon)"
                                     alt="">
@@ -1212,8 +1213,12 @@ const gotopage = async (path: string) => {
     getIcon(path)
 }
 
+// DD-157: `new URL('/src/assets/img/…', import.meta.url)` is an absolute path Vite leaves
+// untouched at build time, so production menu icons (and the Kailo mono icon masks, which
+// then paint as solid squares) 404. Resolve through the build's own asset graph instead.
+const MENU_IMAGES = import.meta.glob('../assets/img/*.{svg,png}', { eager: true, query: '?url', import: 'default' }) as Record<string, string>;
 const getImgSrc = (url: string) => {
-    return new URL(`/src/assets/img/${url}`, import.meta.url).href;
+    return MENU_IMAGES[`../assets/img/${url}`] ?? new URL(`../assets/img/${url}`, import.meta.url).href;
 }
 
 const mouseenteMenu = (path: string) => {

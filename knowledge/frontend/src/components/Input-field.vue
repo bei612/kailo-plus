@@ -2939,8 +2939,10 @@ defineExpose({
   </div>
 </template>
 <script lang="ts">
+const INPUT_IMAGES = import.meta.glob('../assets/img/*.{svg,png}', { eager: true, query: '?url', import: 'default' }) as Record<string, string>;
 const getImgSrc = (url: string) => {
-  return new URL(`/src/assets/img/${url}`, import.meta.url).href;
+  // DD-157: resolve through the build's asset graph (an absolute /src path 404s in production).
+  return INPUT_IMAGES[`../assets/img/${url}`] ?? new URL(`../assets/img/${url}`, import.meta.url).href;
 }
 </script>
 <style scoped lang="less">
