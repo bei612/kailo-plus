@@ -150,11 +150,7 @@ func deleteNodesTask(ctx context.Context, router nodes.Client, selectedPaths []s
 				if err != nil {
 					return err
 				}
-				_, recycleOut, err := outputFilter(ctx, delJobs.RecyclesNodes[rPath], "to")
-				if err != nil {
-					return err
-				}
-				targetCtx, recycleIn, err := inputFilter(ctx, recycleOut, "to")
+				targetCtx, recycleIn, err := recycleTarget(ctx, inputFilter, outputFilter, delJobs.RecyclesNodes[rPath])
 				if err != nil {
 					return err
 				}
