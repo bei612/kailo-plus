@@ -35,5 +35,10 @@ runtime:
   actions: []
   workflow_kinds: []
 release:
-  artifacts: []
+  # 随发布 66b215db（源 34a6cff5）构建并固定；业务验收见对应 verify 记录。
+  artifacts:
+    - name: core
+      digest: sha256:9562642f64befcb1327ded2a81196c816ec9860943f7cefb19b0c23762197208
+    - name: web-client
+      digest: sha256:a6dc38c87a17a87c09ecbc41b9b5f24761957b71fd5854739fd1e16e4e9b44ba
   gate: blocked_until_seams_closed

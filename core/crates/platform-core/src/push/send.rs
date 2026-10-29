@@ -525,7 +525,7 @@ mod tests {
     #[test]
     fn secrets_never_print() {
         let apns = ApnsCredential {
-            key_pem: "-----BEGIN PRIVATE KEY-----SECRET".into(),
+            key_pem: "SECRET-apns-key-material".into(),
             key_id: "KID".into(),
             team_id: "TEAM".into(),
             bundle_id: "chat.kailo".into(),
