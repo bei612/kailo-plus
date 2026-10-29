@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { notify } from '@/utils/kailoHost';
-import useKailoText, { kailoT } from '@/utils/kailoI18n';
+import useKailoText, { kailoT, useKailoLocale } from '@/utils/kailoI18n';
 import { PlusIcon, RefreshIcon } from '@/components/kailo/KailoIcons';
 import { DataNode } from 'antd/es/tree';
 import { DiagramModel } from '@/utils/data';
@@ -46,6 +46,9 @@ const getHasSchemaChange = (schemaChange: SchemaChange) => {
 export default function ModelTree(props: Props) {
   const { onOpenModelDrawer, models } = props;
   const t = useKailoText();
+  // The tree is cached in state: rebuild it when the page locale changes (the
+  // embedded page switches its Next locale after the first render).
+  const locale = useKailoLocale();
 
   const schemaChangeModal = useModalAction();
   const [triggerDataSourceDetection, { loading: isDetecting }] =
@@ -191,7 +194,7 @@ export default function ModelTree(props: Props) {
         }),
       }),
     );
-  }, [models, hasSchemaChange, schemaChangeData, isDetecting]);
+  }, [models, hasSchemaChange, schemaChangeData, isDetecting, locale]);
 
   return (
     <>

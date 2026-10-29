@@ -12,7 +12,7 @@ import {
   GroupActionButton,
 } from '@/components/sidebar/utils';
 import TreeTitle from './TreeTitle';
-import useKailoText from '@/utils/kailoI18n';
+import useKailoText, { useKailoLocale } from '@/utils/kailoI18n';
 import { KailoUserView } from '@/components/kailo/KailoUser';
 
 // DD-157 (20 §2 列表窗格): rows 32 high, 13/500, radius 6, 8 inner padding,
@@ -95,6 +95,9 @@ export default function ThreadTree(props: Props) {
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const t = useKailoText();
+  // The tree is cached in state: rebuild it when the page locale changes (the
+  // embedded page switches its Next locale after the first render).
+  const locale = useKailoLocale();
   const {
     threads = [],
     selectedKeys,
@@ -150,7 +153,7 @@ export default function ThreadTree(props: Props) {
         }),
       }),
     );
-  }, [params?.id, threads]);
+  }, [params?.id, threads, locale]);
 
   return (
     <StyledSidebarTree
