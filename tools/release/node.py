@@ -1858,12 +1858,18 @@ class Release:
             + ("" if journal["idp"].get("directory_clients_declared") else "；成员目录 client 未声明（COMPONENT_DIRECTORY_CLIENTS 为空）"))
         self.write_journal("deploy.json", journal)
         extra = self.ci_env
+        # 同一启动入口（例如 start-core.sh 同时建 core-bff 与带叠加的 Worker）在一次 deploy 中只执行一次。
+        commands_run = set()
         for svc in targets:
             say(f"== {svc}")
             for pre in self.model.prerequisites(self.services, svc):
                 self.run_prerequisite(pre)
             command = (self.decl["services"].get(svc) or {}).get("command")
-            if command:
+            if command and tuple(str(c) for c in command) in commands_run:
+                say(f"   {' '.join(str(c) for c in command)} 已在本次 deploy 执行，回读")
+                self.wait_ready(svc)
+            elif command:
+                commands_run.add(tuple(str(c) for c in command))
                 code = subprocess.run([str(c) for c in command], cwd=self.deploy_dir, env=self.env(extra),
                                       stdout=sys.stderr, stderr=sys.stderr).returncode
                 if code:

@@ -40,6 +40,10 @@ services:
     # 每次启动都要新的一次性 OpenBao 投递（DD-70），不能以 compose up 重用已消费的投递。
     command: [./start-core.sh, --no-build]
     migrations: core
+  worker:
+    # start-core.sh 以同一叠加创建 Worker（一致性候选集合与 receiver 凭据目录的只读挂载，DD-136(2)）；
+    # 单独 compose up 会丢掉叠加。与 core-bff 同一启动入口，同一次 deploy 中只执行一次。
+    command: [./start-core.sh, --no-build]
   buzz-web:
     # 回读容器内 build-info：buildId 必须等于 web-client 记录的 source_digest。
     # 文件位置取 CI 配置的同名键（与 worker 的 Web 部署回读同一来源）。
