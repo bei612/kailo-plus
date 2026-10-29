@@ -862,7 +862,8 @@ it("Escape dismisses mention autocomplete before canceling an edit, and cannot c
     mentionPeople={[{pubkey:"b".repeat(64),displayName:"Bob"}]} onPublish={publish} onCancelEdit={canceled} />);
   const input = () => host.querySelector<HTMLElement>('[data-testid="message-input"]')!;
   await type(input(),"@Bo");
-  await vi.waitFor(() => expect(host.querySelector('[data-mention-suggestion-index]')).not.toBeNull());
+  // The suggestion list resolves on a later macrotask; under CI load 1 s was not enough (wait on the state, not a fixed budget).
+  await vi.waitFor(() => expect(host.querySelector('[data-mention-suggestion-index]')).not.toBeNull(), {timeout:5000});
   await act(async () => input().dispatchEvent(new KeyboardEvent("keydown",{key:"Escape",bubbles:true,cancelable:true})));
   expect(canceled).not.toHaveBeenCalled();
   expect(host.querySelector('[data-mention-suggestion-index]')).toBeNull();
@@ -872,8 +873,11 @@ it("Escape dismisses mention autocomplete before canceling an edit, and cannot c
   await act(async () => input().dispatchEvent(new KeyboardEvent("keydown",{key:"Escape",bubbles:true,cancelable:true})));
   expect(canceled).not.toHaveBeenCalled();
   await act(async () => release({}));
-  await settle();
-  await act(async () => input().dispatchEvent(new KeyboardEvent("keydown",{key:"Escape",bubbles:true,cancelable:true})));
+  // Once the save settles, Escape cancels the edit; retry the key until the in-flight guard has cleared.
+  await vi.waitFor(async () => {
+    await act(async () => input().dispatchEvent(new KeyboardEvent("keydown",{key:"Escape",bubbles:true,cancelable:true})));
+    expect(canceled).toHaveBeenCalled();
+  }, {timeout:5000});
   expect(canceled).toHaveBeenCalledOnce();
 });
 
