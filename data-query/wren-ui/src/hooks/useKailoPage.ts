@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { useRouter } from 'next/router';
 import { Path } from '@/utils/enum';
-import * as events from '@/utils/events';
 import { kailoRuntime } from '@/utils/kailoEmbed';
 import { kailoText, KailoTextKey } from '@/utils/kailoI18n';
 import {
@@ -14,11 +13,14 @@ import useKailoSession from '@/hooks/useKailoSession';
 
 // DD-157 (`07` §4.8.7, `20` §13.2): the page header Kailo renders for 问数.
 // Tabs replace the component's own top navigation (问答 / 建模 / 知识 / API);
-// each page supplies its title, ancestors and actions. Admin-only entries
-// (建模, 数据源设置) are offered to Kailo Tenant administrators only — the
-// server enforces the same rule on every write.
+// each page supplies its title, ancestors and actions. DD-138(6) (`07`
+// §4.8.5): business pages carry no admin entries — modeling, the data source
+// connection and the project settings are Kailo admin surfaces
+// (components/kailo/KailoAdminSurface), which have no tabs. DD-138(7): the
+// API call history is administration data — its tab is the administrators'
+// only (the server refuses the history to everyone else).
 
-export type KailoTabId = 'home' | 'modeling' | 'knowledge' | 'api';
+export type KailoTabId = 'home' | 'knowledge' | 'api';
 
 interface TabDef {
   id: KailoTabId;
@@ -31,13 +33,6 @@ interface TabDef {
 export const KAILO_TABS: TabDef[] = [
   { id: 'home', label: 'navHome', path: Path.Home, prefix: Path.Home },
   {
-    id: 'modeling',
-    label: 'navModeling',
-    path: Path.Modeling,
-    prefix: Path.Modeling,
-    adminOnly: true,
-  },
-  {
     id: 'knowledge',
     label: 'navKnowledge',
     path: Path.KnowledgeQuestionSQLPairs,
@@ -48,18 +43,16 @@ export const KAILO_TABS: TabDef[] = [
     label: 'navApi',
     path: Path.APIManagementHistory,
     prefix: Path.APIManagement,
+    adminOnly: true,
   },
 ];
 
-export const SETTINGS_ACTION = 'kailo:data-source-settings';
-
-/** Tabs the user may see on this pathname (none during onboarding). */
+/** The business tabs this user may see (API history: administrators). */
 export function pageTabs(
   locale: string | undefined,
   pathname: string,
   isAdmin: boolean,
 ): { tabs: KailoPageItem[]; activeTab?: KailoTabId } {
-  if (pathname.startsWith(Path.Onboarding)) return { tabs: [] };
   const visible = KAILO_TABS.filter((tab) => !tab.adminOnly || isAdmin);
   return {
     tabs: visible.map((tab) => ({
@@ -88,7 +81,7 @@ export interface KailoPageSpec {
 export default function useKailoPage(spec: KailoPageSpec) {
   const router = useRouter();
   const pathname = router.pathname || '';
-  const { isAdmin, loaded, hostPage } = useKailoSession();
+  const { hostPage, isAdmin, loaded } = useKailoSession();
   const latest = useRef(spec);
   latest.current = spec;
 
@@ -98,21 +91,12 @@ export default function useKailoPage(spec: KailoPageSpec) {
       pathname,
       loaded && isAdmin,
     );
-    const actions = [...(spec.actions || [])];
-    if (loaded && isAdmin && !pathname.startsWith(Path.Onboarding)) {
-      actions.push({
-        id: SETTINGS_ACTION,
-        label: kailoText(router.locale, 'dataSourceSettings'),
-        variant: 'menu',
-        icon: 'settings',
-      });
-    }
     return {
       title: (spec.title || '').trim().slice(0, 120) || '—',
       breadcrumbs: (spec.breadcrumbs || []).slice(0, 8),
       tabs,
       ...(activeTab ? { activeTab } : {}),
-      actions: actions.slice(0, 8),
+      actions: (spec.actions || []).slice(0, 8),
     };
   }, [
     router.locale,
@@ -141,13 +125,7 @@ export default function useKailoPage(spec: KailoPageSpec) {
       }
       latest.current.onBreadcrumb?.(target.id);
     });
-    const stopAction = runtime.onAction((id) => {
-      if (id === SETTINGS_ACTION) {
-        events.dispatch(events.EVENT_NAME.OPEN_SETTINGS);
-        return;
-      }
-      latest.current.onAction?.(id);
-    });
+    const stopAction = runtime.onAction((id) => latest.current.onAction?.(id));
     return () => {
       stopNavigate();
       stopAction();

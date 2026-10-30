@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/component_admin_category.schema.json",
+  "title": "ComponentAdminCategory",
+  "description": "DD-138(6)：组件管理面所属的 Kailo 管理分类（07 §4.8.5）。MODELS 模型、DATA_SOURCES 数据源、STORAGE 存储、INDEXING 索引与解析、INTEGRATIONS 集成、SYSTEM 系统；不按组件分类。",
+  "type": "string",
+  "enum": ["MODELS", "DATA_SOURCES", "STORAGE", "INDEXING", "INTEGRATIONS", "SYSTEM"]
+}

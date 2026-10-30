@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/component_admin_permission.schema.json",
+  "title": "ComponentAdminPermission",
+  "description": "DD-138(6)：打开管理面所需的 Kailo 权限（07 §4.8.5）。BINDING_MANAGE 为 binding 所属 scope（Workspace 或 Tenant）的 manage；TENANT_MANAGE 为 Tenant manage。只决定 Kailo 是否列出与签发 descriptor，组件服务端仍按目录角色判定。",
+  "type": "string",
+  "enum": ["BINDING_MANAGE", "TENANT_MANAGE"]
+}

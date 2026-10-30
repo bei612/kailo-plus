@@ -4271,3 +4271,40 @@ CI 回执位于 `/volumes/data/kailo/conformance/cells-copy-boundary/c0f7d9b1f-f
 SHA-256 `8365de28200953365a06e2d25c85d271c50fde0f83f23d4c2477899147745a2b`；
 仓库原样副本为[复制边界回执](native-copy-boundary-receipt.json)。未构建制品、
 部署或激活 binding，也未把定向检查称为全仓门禁或真实组件业务验收。
+
+## 2026-10-30 组件管理能力并入 Kailo 管理区（DD-138(6)，07 §4.8.5，源码阶段）
+
+依据：design-authority `f3e3855c` 07 §4.8.5 与 20 §13.2；验证场景 V-SCN-269（声明登记）、V-SCN-270（控制台关闭与写拒绝）。
+
+- **声明**：`fork/release/manifest.native-page.json` 版本升为 `1.5.0-native-page`（`1.4.0` 已由发布 `feb30ea58` 登记，不复用），
+  `frontendPresentationContract.adminSurfaces` 两项，`preferences` 不变：
+  `storage.dataSources`（STORAGE，`/kailo-admin/data-sources`，READ_ONLY）与 `files.metadata`
+  （SYSTEM，`/kailo-admin/metadata`，EDITABLE），均 `TENANT_MANAGE`：一个 Cells 实例服务整个 Tenant
+  （成员目录把 Tenant 的各 Workspace 投影成同一实例内的原生 Workspace，Tenant ADMIN 派生原生 admin profile），
+  数据源与元数据字段作用于整个实例，超出单个 Workspace。成员、角色、空间、日志、服务、调度、参数、邮件、认证与更新不是管理面。
+- **服务端关闭**（`frontend/web/kailo-admin.go`，在 `IndexHandler.ServeHTTP` 最前）：Kailo 模式下，首段按
+  React WorkspaceRouter 规则（去掉首个 `ws-`）等于 `settings` 的页面请求、以及 `/kailo-admin/...` 中路径不在
+  允许表或 `kailo_admin_surface` 缺失、重复、格式不符、与路径不配的请求，一律 `302 /`（`no-store`），不渲染任何页面。
+  catch-all 路由在调用首页处理器前把路径改写为 `/`，因此 `common/client/http/resolver.go` 把原请求路径放进上下文
+  （`routing.CatchAllRequestedPath`）；`/plug/`、`/a/` 等其他路由不经首页处理器，不受影响。允许表与 release 声明
+  由 `TestKailoAdminSurfacesMatchReleaseManifest` 对齐。
+- **只读存储的写拒绝**（`common/auth/native-kailo-admin.go`）：Kailo 模式下，调用者为 Kailo 管理的人
+  （带 `kailo_oidc` 关联或 connector 显式关联的原生账号；Kailo 模式下所有人都经此登录）时，
+  `PutDataSource`、`DeleteDataSource`、`CreateStorageBucket`、加密密钥的建、删、导入、导出，以及
+  `jobs/user` 的 `datasource-resync`（重新索引视为部署的运维动作，管理面不提供）返回 403；无法解析调用者时同样拒绝。
+  部署自身的本地账号不受影响：`deploy/reconcile.py` 以安装管理员的短期 token 写声明的内容数据源版本策略（部署声明本身），
+  绑定数据源由镜像入口在启动前 `cells admin datasource ensure` 创建，不经 REST。
+- **单项呈现**：`/kailo-admin/*` 是 React 路由中独立于业务路由的 `KailoAdminRouter`：有效管理面且用户拥有原生
+  `settings` 工作区时切到该工作区并钉在管理面节点（首次加载即以 `ws=settings` 取 registry，业务页不闪现）；
+  `AdminDashboard` 在 Kailo 模式下不渲染 AdminLeftNav、页头、任务面板或首页卡片，只渲染钉住节点的面板，其余情况
+  （无管理面、非原生管理员、节点为其他面板）显示 Kailo 空态“该管理项不可用”。只读数据源页只有列表与定义列表详情
+  （`DataSourceFacts`，不读取任何凭据），无新建、编辑、删除、重新同步、建 Workspace 与加密密钥入口；元数据页的
+  “新建字段”经 `setPage` 成为 Kailo 页头操作。页头标题由 `KailoCells.setAdminSurfaceState` 在内容就绪后声明。
+  业务页：`switch_to_settings` 回调与 WorkspaceRouter 在 Kailo 模式下都不再进入控制台（前端隐藏不作为关闭证据）。
+- **测试**（待 CI 节点运行，本机不编译）：
+  `go test -mod=readonly ./frontend/web ./discovery/config/rest ./scheduler/jobs/rest ./common/auth -run 'Kailo' -count=1`
+  与 `go vet ./common/client/http ./common/config/routing`；
+  `vitest run kailo.embed access.settings/res/js/AdminComponents/board`。
+
+完成边界：只有源码与测试源码；webpack 产物、镜像、部署、release 登记与 V-SCN-269/270 实测均未执行。
+元数据字段可编辑，`deploy/reconcile.py` 声明的 Kailo 草稿命名空间仍可在该页被原生管理员改删（与原生控制台相同，未额外保护）。

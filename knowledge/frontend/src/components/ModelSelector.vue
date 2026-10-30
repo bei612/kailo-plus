@@ -45,7 +45,7 @@
       
       <!-- 添加模型选项（在底部） -->
       <t-option
-        v-if="!disabled"
+        v-if="!disabled && settingsLinks"
         value="__add_model__"
         class="add-model-option"
       >
@@ -60,6 +60,8 @@
 
 <script setup lang="ts">
 import { modelLabel, modelRawName } from '@/kailo/modelLabel'
+import { isKailoMode } from '@/kailo/runtime'
+import { nativeSettingsLinks } from '@/kailo/surface'
 import { ref, computed, watch, onMounted } from 'vue'
 import { type ModelConfig } from '@/api/model'
 import { useChatResourcesStore } from '@/stores/chatResources'
@@ -99,6 +101,8 @@ const emit = defineEmits<{
 const models = ref<ModelConfig[]>([])
 const loading = ref(false)
 const { t, locale } = useI18n()
+// DD-138(6): no links into native settings in Kailo mode (admin surfaces live in Kailo).
+const settingsLinks = nativeSettingsLinks(isKailoMode())
 const chatResources = useChatResourcesStore()
 
 const placeholderText = computed(() => {

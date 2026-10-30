@@ -345,12 +345,19 @@ capabilities:
   actions: []
   tools: []
   workflow_kinds: []
+- id: component.admin_surfaces
+  exposure: none
+  routes: []
+  actions: []
+  tools: []
+  workflow_kinds: []
 - id: component.application_binding
   exposure: end_user
   routes:
   - /api/v1/application-bindings
   - /api/v1/application-bindings/{id}/native-page
   - /api/v1/application-bindings/{id}/read-resources
+  - /api/v1/admin-surfaces
   actions:
   - application_binding.create
   - application_binding.disable

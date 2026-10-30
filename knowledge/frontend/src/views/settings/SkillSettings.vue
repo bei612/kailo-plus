@@ -25,7 +25,7 @@
           <t-button theme="primary" @click="openAdd">
             {{ $t('settings.skills.addSkill') }}
           </t-button>
-          <t-button v-if="skillConfigs.length === 0" theme="default" variant="outline"
+          <t-button v-if="skillConfigs.length === 0 && settingsLinks" theme="default" variant="outline"
             @click="uiStore.openSettings('sandbox')">
             {{ $t('settings.skills.goSandboxSettings') }}
           </t-button>
@@ -339,6 +339,8 @@ import { useConfirmDelete } from '@/components/settings/useConfirmDelete'
 import { useConfigSkillInstallProgress } from '@/composables/useConfigSkillInstallProgress'
 import { SKILL_ICON } from '@/types/mention'
 import { useUIStore } from '@/stores/ui'
+import { isKailoMode } from '@/kailo/runtime'
+import { nativeSettingsLinks } from '@/kailo/surface'
 import { MAX_SKILL_BUNDLE_SIZE_BYTES, MAX_SKILL_BUNDLE_SIZE_MB } from '@/utils'
 import {
   deleteSkillCatalog,
@@ -364,6 +366,8 @@ const props = defineProps<{
 const { t } = useI18n()
 const uiStore = useUIStore()
 const confirmDelete = useConfirmDelete()
+// DD-138(6): no links into native settings in Kailo mode (admin surfaces live in Kailo).
+const settingsLinks = nativeSettingsLinks(isKailoMode())
 
 const loading = ref(false)
 const records = ref<SandboxConfigRecord[]>([])

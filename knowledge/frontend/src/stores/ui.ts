@@ -1,4 +1,8 @@
 import { defineStore } from 'pinia'
+import { MessagePlugin } from 'tdesign-vue-next'
+import i18n from '@/i18n'
+import { kailoConfig } from '@/kailo/runtime'
+import { kailoText } from '@/kailo/strings'
 
 export const useUIStore = defineStore('ui', {
   state: () => ({
@@ -25,6 +29,16 @@ export const useUIStore = defineStore('ui', {
 
   actions: {
     openSettings(section?: string, subSection?: string) {
+      // DD-138(6), 07 §4.8.5: Kailo mode has no native Settings dialog; its
+      // functions are Kailo admin surfaces. A remaining opener only says where
+      // the setting lives (first-use exception), never opens an admin flow.
+      const kailo = kailoConfig()
+      if (kailo.mode) {
+        const g = i18n.global as unknown as { locale: string | { value: string } }
+        const locale = typeof g.locale === 'string' ? g.locale : g.locale.value
+        void MessagePlugin.info(kailoText('adminSetup', locale, kailo.displayName))
+        return
+      }
       this.settingsInitialSection = section || null
       this.settingsInitialSubSection = subSection || null
       this.showSettingsModal = true
@@ -37,6 +51,7 @@ export const useUIStore = defineStore('ui', {
     },
 
     toggleSettings() {
+      if (kailoConfig().mode) return
       this.showSettingsModal = !this.showSettingsModal
     },
 

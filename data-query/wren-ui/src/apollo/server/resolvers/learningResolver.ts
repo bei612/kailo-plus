@@ -1,119 +1,34 @@
 import { IContext } from '@server/types';
-import { getConfig } from '@server/config';
+import { create, GeneralErrorCodes } from '../utils/error';
 
-import { getLogger } from '@server/utils';
-import { uniq } from 'lodash';
-import {
-  authorizeNativeScope,
-  nativePreviewScope,
-} from '../services/nativeHumanQuery';
-import {
-  canonical,
-  loadQueryDelivery,
-  NativeQueryRefusal,
-} from '../services/nativeQueryAdmission';
-import { isGovernedQueryMode } from '../services/nativeQueryMode';
-import { nativeWriteUnknown } from '../utils/error';
-
-const config = getConfig();
-
-const logger = getLogger('LearingResolver');
-logger.level = 'debug';
+// DD-138(7): help and learning guidance are provided only by Kailo. This fork
+// is always the Kailo presentation, so the original learning record (the
+// guide's progress, `learningRecord` / `saveLearningRecord`) is closed: both
+// are refused (forbidden) by the resolver itself without reading or writing
+// a learning row, for every caller and in both query modes. The page has no guide (DD-133(1)
+// removed `components/learning`) and calls neither.
+export const learningClosed = () =>
+  create(GeneralErrorCodes.KAILO_FEATURE_UNAVAILABLE);
 
 export class LearningResolver {
-  private async nativeUser(ctx: IContext) {
-    if (!isGovernedQueryMode()) return undefined;
-    const delivery = await loadQueryDelivery();
-    const identity = ctx.nativeIdentityScope;
-    const token = ctx.nativeHumanToken;
-    const userId = nativePreviewScope(delivery, identity);
-    const project = await ctx.projectService.getCurrentProject();
-    if (project.id !== delivery.projectId)
-      throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
-    const admitted = await authorizeNativeScope(delivery, token, 'discover');
-    const check = async () => {
-      if (
-        identity !== ctx.nativeIdentityScope ||
-        token !== ctx.nativeHumanToken ||
-        canonical(await loadQueryDelivery()) !== canonical(delivery) ||
-        (await ctx.projectService.getCurrentProject()).id !== project.id
-      )
-        throw new NativeQueryRefusal(412, 'QUERY_REFERENCE_CHANGED');
-      const fresh = await authorizeNativeScope(delivery, token, 'discover');
-      if (fresh.generation !== admitted.generation)
-        throw new NativeQueryRefusal(412, 'QUERY_REFERENCE_CHANGED');
-    };
-    return { userId, projectId: project.id, check };
-  }
-
-  private standalone() {
-    if (isGovernedQueryMode())
-      throw new NativeQueryRefusal(412, 'QUERY_REFERENCE_CHANGED');
-  }
-
   constructor() {
     this.getLearningRecord = this.getLearningRecord.bind(this);
     this.saveLearningRecord = this.saveLearningRecord.bind(this);
   }
 
   public async getLearningRecord(
-    _root: any,
-    _args: any,
-    ctx: IContext,
-  ): Promise<any> {
-    const native = await this.nativeUser(ctx);
-    if (native) {
-      const records = await ctx.learningRepository.findAllBy({
-        userId: native.userId,
-      });
-      await native.check();
-      return { paths: uniq(records.flatMap((record) => record.paths)) };
-    }
-    const result = await ctx.learningRepository.findAll();
-    this.standalone();
-    return { paths: result[0]?.paths || [] };
+    _root: unknown,
+    _args: unknown,
+    _ctx: IContext,
+  ): Promise<never> {
+    throw learningClosed();
   }
 
   public async saveLearningRecord(
-    _root: any,
-    args: any,
-    ctx: IContext,
-  ): Promise<any> {
-    const { path } = args.data;
-    const native = await this.nativeUser(ctx);
-    if (native) {
-      let dispatched = false;
-      try {
-        const result = await ctx.learningRepository.saveNativePath(
-          native.projectId,
-          native.userId,
-          path,
-          async () => {
-            await native.check();
-            dispatched = true;
-          },
-        );
-        await native.check();
-        return result;
-      } catch (error) {
-        if (dispatched) throw nativeWriteUnknown(error);
-        throw error;
-      }
-    }
-    const result = await ctx.learningRepository.findAll();
-    this.standalone();
-
-    if (!result.length) {
-      return await ctx.learningRepository.createOne({
-        userId: config?.userUUID,
-        paths: [path],
-      });
-    }
-
-    const [record] = result;
-    return await ctx.learningRepository.updateOne(record.id, {
-      userId: config?.userUUID,
-      paths: uniq([...record.paths, path]),
-    });
+    _root: unknown,
+    _args: unknown,
+    _ctx: IContext,
+  ): Promise<never> {
+    throw learningClosed();
   }
 }

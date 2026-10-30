@@ -10,6 +10,7 @@ import i18n from '@/i18n'
 import { normalizeSettingsSection } from '@/config/settingsRoute'
 import { isKailoMode } from '@/kailo/runtime'
 import { sanitizeReturnTo } from '@/kailo/sso'
+import { BUSINESS_HOME, isNativeAdminPath } from '@/kailo/adminSurface'
 
 // Kailo mode (DD-133 §2): the sign-in entry is a neutral page that starts
 // silent OIDC; the native login/register form is never rendered.
@@ -100,6 +101,16 @@ const router = createRouter({
       path: "/knowledgeBase",
       name: "home",
       component: () => import("../views/knowledge/KnowledgeBase.vue"),
+      meta: { requiresInit: true, requiresAuth: true }
+    },
+    // DD-138(6), 07 §4.8.5: Kailo admin surfaces. A standalone page outside the
+    // platform frame (no product menu, Settings dialog, palette or user menu);
+    // it renders only the declared function whose key Kailo launched it with
+    // (src/kailo/adminSurface.ts), otherwise an empty state.
+    {
+      path: "/platform/admin/:surface(.*)*",
+      name: "kailoAdminSurface",
+      component: () => import("../kailo/AdminSurface.vue"),
       meta: { requiresInit: true, requiresAuth: true }
     },
     {
@@ -338,6 +349,14 @@ router.beforeEach(async (to, from, next) => {
   // Kailo mode: no self-service registration; membership comes from Kailo.
   if (isKailoMode() && to.path === '/register') {
     next('/login')
+    return
+  }
+
+  // Kailo mode (DD-138(6), 07 §4.8.5): the native Settings dialog and system
+  // administration are closed; their functions are Kailo admin surfaces. nginx
+  // redirects the same paths before any page is served (docker-entrypoint.sh).
+  if (isKailoMode() && isNativeAdminPath(to.path)) {
+    next(BUSINESS_HOME)
     return
   }
 

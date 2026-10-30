@@ -1,6 +1,7 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import Modeling from './pages/modeling';
+import { Modeling } from './pages/kailo-admin/modeling';
+import { useKailoAdminPage } from './components/kailo/KailoAdminSurface';
 import { FORM_MODE } from './utils/enum';
 import { webcrypto } from 'node:crypto';
 import { notify } from './utils/kailoHost';
@@ -92,7 +93,19 @@ jest.mock('./hooks/useCombineFieldOptions', () => ({
   convertFormValuesToIdentifier: jest.fn(),
 }));
 jest.mock('./utils/modelingHelper', () => ({ editCalculatedField: jest.fn() }));
-jest.mock('./components/layouts/SiderLayout', () => (props: any) => {
+// DD-138(6): the page is the semantic modeling admin surface; its key gate
+// and Kailo header are covered by kailoAdminSurface.test.ts.
+jest.mock('./components/kailo/KailoAdminSurface', () => ({
+  __esModule: true,
+  default: (props: any) => props.children,
+  useKailoAdminPage: jest.fn(),
+}));
+jest.mock('./components/deploy/Deploy', () => ({
+  ...jest.requireActual('./components/deploy/Deploy'),
+  __esModule: true,
+  default: () => null,
+}));
+jest.mock('./components/layouts/AdminSurfaceLayout', () => (props: any) => {
   mockSidebar = props.sidebar;
   return jest
     .requireActual('react')
@@ -278,6 +291,21 @@ describe('original modeling page authorization result consumer', () => {
     expect(html).toContain('open-metadata-drawer');
     expect(html).toContain('data-loading="false"');
     expect(mockQueryOptions.fetchPolicy).toBe('no-cache');
+  });
+  it('announces 发布模型 as the admin surface action, with no tabs or settings entry', () => {
+    mockResult = { data: { diagram: { models: [], views: [] } } };
+    jest.mocked(useKailoAdminPage).mockClear();
+    renderToStaticMarkup(createElement(Modeling));
+    const spec = jest.mocked(useKailoAdminPage).mock.calls[0][0];
+    expect(spec.ready).toBe(true);
+    expect(spec.actions).toEqual([
+      expect.objectContaining({
+        id: 'deploy',
+        label: kailoT('deployModels'),
+        variant: 'primary',
+      }),
+    ]);
+    expect(JSON.stringify(spec)).not.toMatch(/settings|tabs/);
   });
   it.each([
     undefined,

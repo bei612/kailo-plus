@@ -22,6 +22,11 @@ import {pydio} from '../globals'
 
 export default function () {
 
+    // Kailo (DD-138(6), 07 §4.8.5): the native console is not reachable from
+    // any business page; its functions are Kailo admin surfaces.
+    if(window.KailoCells && window.KailoCells.kailoMode && window.KailoCells.kailoMode()){
+        return;
+    }
     if(!pydio.repositoryId || pydio.repositoryId !== "settings"){
         pydio.triggerRepositoryChange('settings');
     }

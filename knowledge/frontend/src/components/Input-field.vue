@@ -57,6 +57,8 @@ import {
 } from '@/utils/agent-readiness';
 import { formatLocalizedList } from '@/utils/format-list';
 import { SKILL_ICON, type MentionItem, type MentionItemType, type MentionRequestItem } from '@/types/mention';
+import { isKailoMode } from '@/kailo/runtime';
+import { nativeSettingsLinks } from '@/kailo/surface';
 
 const route = useRoute();
 const router = useRouter();
@@ -64,6 +66,8 @@ const settingsStore = useSettingsStore();
 const browserConnection = useBrowserConnectionStore();
 const uiStore = useUIStore();
 const orgStore = useOrganizationStore();
+// DD-138(6): no links into native settings in Kailo mode (admin surfaces live in Kailo).
+const settingsLinks = nativeSettingsLinks(isKailoMode());
 const menuStore = useMenuStore();
 const chatResources = useChatResourcesStore();
 const editorResources = useEditorResourcesStore();
@@ -1069,6 +1073,11 @@ watch(
 
 const handleGoToConversationModels = () => {
   showModelSelector.value = false;
+  if (!settingsLinks) {
+    // Kailo mode: models come from Kailo model routing; say so, stay on the chat.
+    uiStore.openSettings('models');
+    return;
+  }
   router.push('/platform/settings');
   setTimeout(() => {
     const event = new CustomEvent('settings-nav', {
@@ -2426,6 +2435,7 @@ const onDragOver = (e: DragEvent) => {
 
 const handleGoToWebSearchSettings = () => {
   uiStore.openSettings('websearch');
+  if (!settingsLinks) return;
   if (route.path !== '/platform/settings') {
     router.push('/platform/settings');
   }
@@ -2910,7 +2920,7 @@ defineExpose({
             <div class="model-selector-dropdown" :style="modelDropdownStyle" @click.stop>
               <div class="model-selector-header">
                 <span>{{ $t('conversationSettings.models.chatGroupLabel') }}</span>
-                <button class="model-selector-add" type="button" @click="handleModelChange('__add_model__')">
+                <button v-if="settingsLinks" class="model-selector-add" type="button" @click="handleModelChange('__add_model__')">
                   <span class="add-icon">+</span>
                   <span class="add-text">{{ $t('input.addModel') }}</span>
                 </button>

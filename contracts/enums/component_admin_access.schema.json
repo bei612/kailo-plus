@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/component_admin_access.schema.json",
+  "title": "ComponentAdminAccess",
+  "description": "DD-138(6)：管理面的可写性（07 §4.8.5）。EDITABLE 为组件自有、页内可改的设置；READ_ONLY 为由 Kailo 派生或部署声明、组件内只读展示的设置，组件服务端在 Kailo 模式下拒绝对应写接口。",
+  "type": "string",
+  "enum": ["EDITABLE", "READ_ONLY"]
+}

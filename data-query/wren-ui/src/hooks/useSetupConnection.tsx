@@ -14,10 +14,20 @@ type StepData = {
   properties?: JSON;
 };
 
-export default function useSetupConnection() {
+// DD-138(6): the first step of the data source admin surface.
+export default function useSetupConnection(
+  callbacks: {
+    onDataSourceSaved?: () => void;
+    onSampleDatasetStarted?: () => void;
+  } = {},
+) {
   const [stepKey, setStepKey] = useState(SETUP.STARTER);
-  const setupConnectionSampleDataset = useSetupConnectionSampleDataset();
-  const setupConnectionDataSource = useSetupConnectionDataSource();
+  const setupConnectionSampleDataset = useSetupConnectionSampleDataset(
+    callbacks.onSampleDatasetStarted,
+  );
+  const setupConnectionDataSource = useSetupConnectionDataSource(
+    callbacks.onDataSourceSaved,
+  );
   const [connectError, setConnectError] = useState(null);
 
   const dataSource = setupConnectionDataSource.selected;

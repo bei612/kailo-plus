@@ -4,6 +4,7 @@ import { getAbsoluteTime } from '@/utils/time';
 import useDrawerAction from '@/hooks/useDrawerAction';
 import { getColumnSearchProps } from '@/utils/table';
 import SiderLayout from '@/components/layouts/SiderLayout';
+import SimpleLayout from '@/components/layouts/SimpleLayout';
 import PageLayout from '@/components/layouts/PageLayout';
 import { EyeIcon, FilterIcon } from '@/components/kailo/KailoIcons';
 import CheckCircleOutlined from '@ant-design/icons/CheckCircleOutlined';
@@ -23,6 +24,8 @@ import useKailoText, { kailoText } from '@/utils/kailoI18n';
 import { apiTypeLabel } from '@/components/pages/apiManagement/apiTypeLabel';
 import KailoEmpty from '@/components/kailo/KailoEmpty';
 import useKailoPage from '@/hooks/useKailoPage';
+import useKailoSession from '@/hooks/useKailoSession';
+import { CodeIcon } from '@/components/kailo/KailoIcons';
 
 const PAGE_SIZE = 10;
 
@@ -55,7 +58,39 @@ async function currentHistoryIdentity() {
   };
 }
 
-export default function APIHistory() {
+// DD-138(7): the API call history is administration data. Only the person
+// the server reports as admin (Core `manage` on the binding / the directory
+// Tenant admin) gets the page; the server refuses the history to everyone
+// else, so a member reaching this route sees the Kailo empty state and the
+// page never asks for it.
+export default function APIHistoryPage() {
+  const { loaded, isAdmin } = useKailoSession();
+  return loaded && isAdmin ? (
+    <APIHistory />
+  ) : (
+    <APIHistoryUnavailable loading={!loaded} />
+  );
+}
+
+function APIHistoryUnavailable({ loading }: { loading: boolean }) {
+  const { locale } = useRouter();
+  const t = useKailoText();
+  useKailoPage({ title: kailoText(locale, 'apiHistory'), ready: !loading });
+  return (
+    <SimpleLayout loading={loading}>
+      {!loading && (
+        <KailoEmpty
+          className="h-100"
+          icon={CodeIcon}
+          title={t('apiHistoryAdminOnlyTitle')}
+          description={t('apiHistoryAdminOnlyHint')}
+        />
+      )}
+    </SimpleLayout>
+  );
+}
+
+export function APIHistory() {
   const detailsDrawer = useDrawerAction();
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [filters, setFilters] = useState<Record<string, any>>({});

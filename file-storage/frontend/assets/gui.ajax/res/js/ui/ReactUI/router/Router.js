@@ -33,8 +33,11 @@ import LoginRouter from './LoginRouter';
 import LoginCallbackRouter from './LoginCallbackRouter';
 import LogoutRouter from './LogoutRouter';
 import LogoutCallbackRouter from './LogoutCallbackRouter';
+import KailoAdminRouter from './KailoAdminRouter';
 
 function getRoutes(pydio){
+    // Kailo (DD-138(6)): declared admin surfaces, outside the business routes.
+    const kailoAdmin = KailoAdminRouter(pydio);
     return (
         <Switch>
             <Route path="/login">
@@ -48,6 +51,8 @@ function getRoutes(pydio){
                 <Route path="logout/callback" component={LogoutCallbackRouter(pydio)} />
                 <Route path="fallbacks/error" component={OAuthFallbacksRouter(pydio)}/>
             </Route>
+            <Route path="/kailo-admin" component={kailoAdmin}/>
+            <Route path="/kailo-admin/*" component={kailoAdmin}/>
             <Route path="/" component={MainRouter(pydio)}>
                 <IndexRoute component={HomepageRouter(pydio)}/>
                 <Route path=":workspaceId" component={WorkspaceRouter(pydio)}>

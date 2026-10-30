@@ -14,6 +14,12 @@ remove_paths:
   - wren-ui/public/images/logo.svg
   - wren-ui/src/components/learning
   - wren-ui/src/utils/telemetry.ts
+  # DD-138(6) (`07` §4.8.5): the original modeling page, onboarding wizard and
+  # settings dialog exist only as Kailo admin surfaces (src/pages/kailo-admin);
+  # their routes are closed by the middleware.
+  - wren-ui/src/components/settings/index.tsx
+  - wren-ui/src/pages/modeling.tsx
+  - wren-ui/src/pages/setup
 source_components:
   wren-engine: 47ca29ebba291100ba5d70ce1790f9887eaed7a0
 artifacts:

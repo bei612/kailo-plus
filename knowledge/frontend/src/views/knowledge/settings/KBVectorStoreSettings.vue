@@ -55,6 +55,7 @@
           </t-select>
           <p class="option-hint">{{ $t('kbSettings.vectorStore.immutableHint') }}</p>
           <a
+            v-if="settingsLinks"
             href="javascript:void(0)"
             class="go-settings"
             @click.prevent="goToVectorStoreSettings"
@@ -95,6 +96,8 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useUIStore } from '@/stores/ui'
+import { isKailoMode } from '@/kailo/runtime'
+import { nativeSettingsLinks } from '@/kailo/surface'
 import { listVectorStores, type VectorStoreEntity } from '@/api/vector-store'
 import type { VectorStoreSource, VectorStoreStatus } from '@/api/knowledge-base'
 import VectorStoreBadge from '@/components/VectorStoreBadge.vue'
@@ -156,6 +159,8 @@ const handleChange = (val: string | undefined) => {
 // store rather than navigating via the router, so the host editor
 // modal stays mounted and can be returned to once the user closes the
 // settings panel.
+// DD-138(6): no links into native settings in Kailo mode (admin surfaces live in Kailo).
+const settingsLinks = nativeSettingsLinks(isKailoMode())
 const goToVectorStoreSettings = () => {
   uiStore.openSettings('vectorstore')
 }

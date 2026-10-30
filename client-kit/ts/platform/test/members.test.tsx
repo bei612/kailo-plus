@@ -181,7 +181,9 @@ describe("original member browsing with governed identity",()=>{
   });
   it("does not fetch all management forms on entry or unmount a visited context on navigation",async()=>{
     const m=mount(()=>({status:200,body:{workspaces:[]}}),<WorkspaceManagementPanels><p>Directory</p></WorkspaceManagementPanels>);
-    const host=await m.render();expect(m.send).not.toHaveBeenCalled();
+    const host=await m.render();
+    // DD-138(6): only the admin-surface navigation is read on entry; no management form loads.
+    expect(m.send.mock.calls.map(([request])=>request.path)).toEqual(["/api/v1/admin-surfaces"]);
     await click(button(host,"Administrator roles"));
     expect(m.send.mock.calls.some(([request])=>request.path.startsWith("/api/v1/role-workspaces"))).toBe(true);
     const original=host.querySelector('[data-testid="role-management"]');expect(original).not.toBeNull();

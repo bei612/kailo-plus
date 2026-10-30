@@ -4,6 +4,7 @@
 //! `01-工程结构与模块边界.md` §3 以 crate 与可见性划分，不走网络、不引消息总线。
 
 mod action_token;
+mod admin_surface;
 mod agent_author_directory;
 mod agent_catalog;
 mod agent_definition;
