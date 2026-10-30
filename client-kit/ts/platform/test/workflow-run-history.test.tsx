@@ -66,7 +66,7 @@ const history = (_host: HTMLElement) => document.querySelector<HTMLElement>('[ro
 const definition = () => document.querySelector<HTMLElement>('[role="dialog"] [data-testid="workflow-detail-panel"]')!;
 
 describe("original trigger to persisted run selection through governed automation", () => {
-  it.each(["en", "zh-CN"] as const)("keeps the original compact run identity and absolute local timestamp in %s", async (locale) => {
+  it.each(["en", "zh-CN"] as const)("names the run by its absolute local time and keeps its identity in technical details in %s", async (locale) => {
     const { host } = await setup(undefined, locale);
     if (locale === "en") await trigger(host);
     else {
@@ -76,29 +76,30 @@ describe("original trigger to persisted run selection through governed automatio
       await click(button(document.body, "提交受治理请求"));
     }
     const selected = history(host).querySelector<HTMLElement>('[data-testid="workflow-selected-run"]')!;
-    const identity = selected.querySelector<HTMLElement>(`span[title="${task.actionExecutionId}"]`)!;
-    expect(identity.textContent).toBe(task.actionExecutionId.slice(0, 8));
-    expect(identity.className).toBe("truncate font-mono text-xs font-medium");
-    expect(selected.getAttribute("aria-label")).toBe(task.actionExecutionId);
+    expect(selected.getAttribute("data-run-id")).toBe(task.actionExecutionId);
+    // DD-168 §16.5: the run is named by its time; the raw identifier is not the visible text.
+    expect(selected.querySelector("h2")!.textContent).toContain(new Date(task.createdAt).toLocaleString(locale));
+    expect(selected.querySelector(`code[title="${task.actionExecutionId}"]`)).toBeNull();
     const createdAt = selected.querySelector("time")!;
     expect(createdAt.textContent).toBe(new Date(task.createdAt).toLocaleString(locale));
     expect(createdAt.dateTime).toBe(task.createdAt);
     expect(createdAt.title).toBe(task.createdAt);
+    await click(button(selected, locale === "en" ? "Technical details" : "技术信息"));
+    expect(selected.querySelector(`code[title="${task.actionExecutionId}"]`)).not.toBeNull();
+    expect(selected.querySelector(`code[title="${task.operationId}"]`)).not.toBeNull();
   });
 
-  it("keeps the original history skeleton until the authorized persisted run arrives", async () => {
+  it("keeps a table skeleton until the authorized persisted run arrives", async () => {
     let resolveHistory!: (reply: BffReply) => void;
     const awaitingHistory = new Promise<BffReply>((resolve) => { resolveHistory = resolve; });
     const { host } = await setup((request) => request.path.endsWith("/runs") ? awaitingHistory : undefined);
     await trigger(host);
-    const pending = history(host).querySelector<HTMLElement>('[role="status"]')!;
-    expect(pending.className).toBe("space-y-2");
-    expect(pending.querySelector('[aria-hidden="true"]')?.className).toContain("h-16 w-full rounded-xl");
+    expect(history(host).querySelector('[data-testid="table-skeleton"]')).not.toBeNull();
     expect(history(host).querySelector('[data-testid="workflow-selected-run"]')).toBeNull();
-    expect(history(host).textContent).not.toContain("No visible runs on this page.");
+    expect(history(host).textContent).not.toContain("No runs yet");
     await act(async () => resolveHistory({ status: 200, body: page }));
     await settle();
-    expect(history(host).querySelector('[role="status"]')).toBeNull();
+    expect(history(host).querySelector('[data-testid="table-skeleton"]')).toBeNull();
     expect(history(host).querySelector('[data-testid="workflow-selected-run"]')).not.toBeNull();
   });
 
@@ -107,26 +108,27 @@ describe("original trigger to persisted run selection through governed automatio
     const awaitingHistory = new Promise<BffReply>((resolve) => { resolveHistory = resolve; });
     const { host } = await setup((request) => request.path.endsWith("/runs") ? awaitingHistory : undefined);
     await trigger(host);
-    expect(history(host).querySelector('[role="status"]')).not.toBeNull();
+    expect(history(host).querySelector('[data-testid="table-skeleton"]')).not.toBeNull();
     await act(async () => resolveHistory({ status: 403, body: { reason: "PERMISSION_DENIED" } }));
     await settle();
-    expect(history(host).querySelector('[role="status"]')).toBeNull();
+    expect(history(host).querySelector('[data-testid="table-skeleton"]')).toBeNull();
     expect(history(host).querySelector('[data-testid="workflow-selected-run"]')).toBeNull();
-    expect(history(host).querySelector('[role="alert"]')).not.toBeNull();
-    expect(history(host).textContent).not.toContain("No visible runs on this page.");
-    expect(history(host).textContent).toContain("You do not have permission");
+    // DD-168 §16.4(4): a definitive refusal is the no-access state, never an empty history.
+    expect(history(host).querySelector('[data-testid="permission-state"]')).not.toBeNull();
+    expect(history(host).querySelector('[data-testid="empty-state"]')).toBeNull();
+    expect(history(host).textContent).toContain("You don\u2019t have access");
   });
 
   it("selects a historical execution without inventing step evidence and follows the existing task reader", async () => {
     const { host, send } = await setup();
     await trigger(host);
     expect(document.querySelector('[data-testid="workflow-editor-dialog"]')).toBeNull();
-    expect(history(host).querySelector('[data-testid="workflow-selected-run"]')?.getAttribute("aria-label")).toBe("execution");
+    expect(history(host).querySelector('[data-testid="workflow-selected-run"]')?.getAttribute("data-run-id")).toBe("execution");
     const selected = history(host).querySelector<HTMLElement>('[data-testid="workflow-selected-run"]')!;
     expect(selected.textContent).toContain("Running");
     expect(history(host).querySelector('[data-testid="workflow-run-trace"]')).toBeNull();
     expect(history(host).textContent).toContain("No steps recorded yet.");
-    await click(button(history(host), "Action execution"));
+    await click(button(history(host), "Open task"));
     expect(send).toHaveBeenCalledWith({ method: "GET", path: "/api/v1/tasks/execution" });
     expect(history(host).textContent).toContain("operation");
   });
@@ -143,7 +145,7 @@ describe("original trigger to persisted run selection through governed automatio
     expect(history(host).querySelector('[data-testid="workflow-run-trace"]')).toBeNull();
     expect(history(host).textContent).not.toContain("No runs");
     projected = true;
-    await click(button(history(host), "Refresh"));
+    await click(history(host).querySelector<HTMLButtonElement>('button[aria-label="Refresh"]')!);
     expect(history(host).querySelector('[data-testid="workflow-run-created"]')).toBeNull();
     expect(history(host).querySelector('[data-testid="workflow-selected-run"]')).not.toBeNull();
     expect(history(host).querySelector('[data-testid="workflow-run-trace"]')).toBeNull();
@@ -172,7 +174,7 @@ describe("original trigger to persisted run selection through governed automatio
     await trigger(host);
     expect(history(host).querySelector('[data-testid="workflow-run-trace"]')).toBeNull();
     expect(history(host).textContent).not.toContain("wrong-operation");
-    expect(history(host).textContent).toContain("Couldn't load this");
+    expect(history(host).textContent).toContain("Couldn\u2019t load this");
   });
 
   it("does not turn a later unknown projection into success", async () => {
@@ -199,10 +201,14 @@ describe("original trigger to persisted run selection through governed automatio
     expect(trace.textContent).toContain("2.0s");
     expect(trace.textContent).toContain("future");
     expect(trace.textContent).toContain("pending");
-    expect(trace.querySelectorAll("pre")).toHaveLength(1);
+    // DD-168 §16.5(6): step output is folded; one disclosure per step that has output.
+    expect(trace.querySelectorAll("pre")).toHaveLength(0);
+    const outputs = [...trace.querySelectorAll("button")].filter((node) => node.textContent === "Output");
+    expect(outputs).toHaveLength(1);
+    await click(outputs[0]!);
     expect(trace.querySelector("pre")?.textContent).toContain('"eventId": "recorded-event"');
     expect(history(host).querySelector('[data-testid="workflow-selected-run"]')?.textContent).toContain("Running");
-    await click(button(history(host), "Action execution"));
+    await click(button(history(host), "Open task"));
     expect(send).toHaveBeenCalledWith({ method: "GET", path: "/api/v1/tasks/execution" });
   });
 

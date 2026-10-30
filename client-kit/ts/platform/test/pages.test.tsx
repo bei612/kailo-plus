@@ -539,38 +539,41 @@ describe("independent shared Workflows page", () => {
   it("reuses Task state and detail, retaining UNKNOWN even with a completed projection", async () => {
     const { history, t } = await openHistory();
     expect(history.textContent).toContain("My run history");
-    expect(history.textContent).toContain("1/2");
     expect(history.textContent).toContain("Waiting for reconciliation");
     expect(history.textContent).not.toContain("Completed");
     expect(history.textContent).not.toContain("usage-one");
-    const summary = history.querySelector<HTMLButtonElement>('button[aria-label="run-ae"]')!;
-    expect(summary.type).toBe("button");
-    expect(summary.querySelector("button, a, input")).toBeNull();
-    expect(summary.getAttribute("aria-expanded")).toBe("false");
-    await click(summary);
-    expect(summary.getAttribute("aria-expanded")).toBe("true");
-    expect(history.querySelector('[data-testid="workflow-selected-run"]')).toBe(summary);
-    expect(history.textContent).toContain("usage-one");
-    await click(summary);
-    expect(summary.getAttribute("aria-expanded")).toBe("false");
+    // DD-168 §16.2: one table row per run; the row opens the run's detail (click or Enter).
+    const row = history.querySelector<HTMLTableRowElement>('tr[data-row-key="run-ae"]')!;
+    expect(row.tabIndex).toBe(0);
+    expect(row.querySelector("button, a, input")).toBeNull();
+    expect(history.querySelector('[data-testid="list-total"]')?.textContent).toBe("1 total");
+    await click(row);
+    const detail = history.querySelector<HTMLElement>('[data-testid="workflow-selected-run"]')!;
+    expect(detail.getAttribute("data-run-id")).toBe("run-ae");
+    expect(detail.textContent).toContain("1/2");
+    expect(detail.textContent).not.toContain("usage-one");
+    await click(button(detail, "Technical details"));
+    expect(detail.textContent).toContain("usage-one");
+    await click(button(detail, "Back"));
+    expect(history.querySelector('[data-testid="workflow-selected-run"]')).toBeNull();
     expect(history.textContent).not.toContain("usage-one");
-    await click(summary);
-    await click(button(history, "Action execution"));
+    await click(row);
+    await click(button(history, "Open task"));
     expect(history.querySelector("[data-testid=task-detail]")).not.toBeNull();
     expect(history.textContent).not.toContain("Completed");
     expect(t.send).toHaveBeenCalledWith({ method: "GET", path: "/api/v1/tasks/run-ae" });
     expect(t.send.mock.calls.every(([request]) => request.method === "GET")).toBe(true);
   });
-  it("uses the opaque history cursor verbatim and supports empty filtered pages", async () => {
+  it("follows the opaque history cursor verbatim across empty filtered pages and states the total", async () => {
     const cursor = "opaque/+?=&";
     const { history, t } = await openHistory(routes((request) => request.path === "/api/v1/automations/workflow-one/runs"
       ? { status: 200, body: { automationResourceId: definition.resourceId, runs: [], nextCursor: cursor } } : undefined));
-    expect(history.textContent).toContain("No visible runs on this page");
-    await click(button(history, "Next page"));
-    expect(history.textContent).toContain("run-ae");
+    // DD-168 §16.2(3): the bounded read follows the cursor to the end and pages locally.
     expect(t.send).toHaveBeenCalledWith({ method: "GET", path: "/api/v1/automations/workflow-one/runs?cursor=opaque%2F%2B%3F%3D%26" });
-    await click(button(history, "Previous page"));
-    expect(history.textContent).toContain("No visible runs on this page");
+    expect(history.querySelectorAll("tr[data-row-key]")).toHaveLength(1);
+    expect(history.querySelector('tr[data-row-key="run-ae"]')).not.toBeNull();
+    expect(history.querySelector('[data-testid="list-total"]')?.textContent).toBe("1 total");
+    expect(history.textContent).not.toContain("No runs yet");
   });
   it("opens the exact step approval child through the existing Tasks and Approvals readers", async () => {
     const step = { ...run.task, actionExecutionId: "approval-child", gateState: "WAITING",
@@ -584,8 +587,8 @@ describe("independent shared Workflows page", () => {
       if (request.path === "/api/v1/approvals/step-approval-workflow") return { status: 403, body: undefined };
       return undefined;
     }));
-    expect(history.textContent).toContain("Waiting for approval");
-    await click(history.querySelector<HTMLButtonElement>('button[aria-label="run-ae"]')!);
+    await click(history.querySelector<HTMLElement>('tr[data-row-key="run-ae"]')!);
+    expect(history.querySelector('[data-testid="workflow-selected-run"]')?.textContent).toContain("Waiting for approval");
     await click(button(history, "Step approval"));
     expect(history.querySelector("[data-testid=task-detail]")).not.toBeNull();
     expect(t.send).toHaveBeenCalledWith({ method: "GET", path: "/api/v1/tasks/approval-child" });
@@ -607,14 +610,15 @@ describe("independent shared Workflows page", () => {
   it("rejects a repeated cursor after its actual first page was read", async () => {
     const { history } = await openHistory(routes((request) => request.path.includes("/runs")
       ? { status: 200, body: { ...page, nextCursor: "already-read" } } : undefined));
-    await click(button(history, "Next page"));
-    expect(history.textContent).not.toContain("run-ae");
-    expect(history.textContent).not.toContain("No visible runs on this page");
+    expect(history.querySelector("tr[data-row-key]")).toBeNull();
+    expect(history.querySelector('[data-testid="error-state"]')).not.toBeNull();
+    expect(history.textContent).not.toContain("No runs yet");
   });
   it.each([403, 503])("does not represent history refusal (%s) as zero runs", async (status) => {
     const { history } = await openHistory(routes((request) => request.path.includes("/runs") ? { status, body: undefined } : undefined));
-    expect(history.textContent).not.toContain("No visible runs on this page");
-    expect(history.textContent).not.toContain("run-ae");
+    expect(history.textContent).not.toContain("No runs yet");
+    expect(history.querySelector("tr[data-row-key]")).toBeNull();
+    expect(history.querySelector(status === 403 ? '[data-testid="permission-state"]' : '[data-testid="error-state"]')).not.toBeNull();
   });
   it("discards an old Workspace history result after selection changes", async () => {
     let finish!: (reply: BffReply) => void;
@@ -639,8 +643,8 @@ describe("independent shared Workflows page", () => {
   ])("rejects unprovable association/enums/cursors before rendering %j", async (value) => {
     expect(validAutomationRuns(JSON.parse(JSON.stringify(value)), definition.resourceId, definition.workspaceId, [undefined, "already-read"])).toBe(false);
     const { history } = await openHistory(routes((request) => request.path.includes("/runs") ? { status: 200, body: value } : undefined));
-    expect(history.textContent).not.toContain("run-ae");
-    expect(history.textContent).not.toContain("No visible runs on this page");
+    expect(history.querySelector("tr[data-row-key]")).toBeNull();
+    expect(history.textContent).not.toContain("No runs yet");
   });
 });
 
@@ -3938,33 +3942,8 @@ describe("platform pages render only through the host theme", () => {
         expect(text.split(expression)).toHaveLength(2);
         text = text.replace(expression, "{}");
       }
-      if (source.name === "workflow-run-trace.tsx") {
-        // Buzz 779af8886caae1317b4de962082429867ab61503,
-        // desktop/src/features/workflows/ui/WorkflowRunTrace.tsx: retain only
-        // the original status/error/approval expressions in their consumers.
-        const icon = parsed.statements.find((node) => ts.isFunctionDeclaration(node) && node.name?.text === "StepStatusIcon");
-        const trace = parsed.statements.find((node) => ts.isFunctionDeclaration(node) && node.name?.text === "WorkflowRunTrace");
-        expect(trace?.getText(parsed)).toContain('<StepStatusIcon status={step.status} />');
-        for (const expression of [
-          'case "completed": return <Check className="h-4 w-4 text-green-500" />;',
-          'case "failed": return <X className="h-4 w-4 text-red-500" />;',
-          'case "waiting_approval": return <Clock className="h-4 w-4 text-amber-500" />;',
-          'default: return <Clock className="h-4 w-4 text-blue-500" />;',
-        ]) {
-          expect(icon?.getText(parsed)).toContain(expression);
-          expect(text.split(expression)).toHaveLength(2);
-          text = text.replace(expression, "");
-        }
-        for (const expression of [
-          '<p className={`mb-1 text-2xs font-medium uppercase tracking-[0.16em] ${step.status === "unknown" ? "text-muted-foreground" : "text-red-400"}`}>{t(step.status === "unknown" ? "tasks.waitingReason" : "workflows.trace.error")}</p>',
-          '<pre className={`max-h-32 overflow-auto rounded-lg px-3 py-2 font-mono text-xs ${step.status === "unknown" ? "bg-muted/40 text-muted-foreground" : "bg-red-500/10 text-red-400"}`}>{reasonText(step.error)}</pre>',
-          '<p className="mb-2 text-2xs font-medium uppercase tracking-[0.16em] text-amber-600">{t("workflows.trace.approval")}</p>',
-        ]) {
-          expect(trace?.getText(parsed)).toContain(expression);
-          expect(text.split(expression)).toHaveLength(2);
-          text = text.replace(expression, "");
-        }
-      }
+      // workflow-run-trace.tsx (DD-168 §16.5(4)): the step timeline uses semantic tone tokens only,
+      // so it no longer carries the original Buzz literal-colour exceptions.
       if (source.name === "members.tsx") {
         // Buzz 779af8886caae1317b4de962082429867ab61503,
         // desktop/src/features/community-members/ui/CommunityMembersSettingsCard.tsx::RelayMemberRow.

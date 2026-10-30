@@ -35,8 +35,17 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Input } from "./composer/shared/ui/input";
 import { useBffClient, useCurrentPrincipalId, useLocale, useT } from "./context";
 import { isForbidden, ScopeSelect } from "./pages";
-import { ActionLabel, Badge, Button, Cell, Notice, Table } from "./ui";
+import { Badge, Button, Cell, Notice, Table, type Tone } from "./ui";
 import { type Loaded, useLoad } from "./use-load";
+// DD-168 operations list, detail and states.
+import { BusinessOperationPhase, OperationUsageState, ReasonCode } from "@client-kit/contracts";
+import { Activity, ChevronDown, ChevronRight } from "lucide-react";
+import { approvalStatusMessages, platformMessages } from "../i18n";
+import { useReasonText } from "./context";
+import { type DataColumn, DataTable } from "./data-table";
+import { humanizeKey, IdText, type KeyValueItem, KeyValueList, Tag, Timeline, type TimelineItem } from "./key-value";
+import { DetailHeader, FilterChips, PageSection, RefreshButton } from "./page-layout";
+import { EmptyState, ErrorState, NoMatchState, PermissionState, readRefusal, TableSkeleton } from "./state-views";
 
 type Period = "day" | "week" | "month";
 
@@ -569,70 +578,312 @@ export function TenantQuotaSection() {
 /** "mine"、"tenant" 或一个 Workspace ID。 */
 type View = string;
 
-function Principal({ id }: { id: string }) {
+// DD-168 (.design/20 §16): the operations page is a list of records, not a wall of text. A row
+// names the action, its stage, the people and the workspace in words; identifiers, wire keys and
+// usage lines live in the operation's detail, behind "Technical details" where they are copyable.
+
+type StageGroup = "all" | "active" | "done" | "notDone" | "unknown";
+
+const stageGroup: Record<BusinessOperationPhase, Exclude<StageGroup, "all">> = {
+  [BusinessOperationPhase.Evaluating]: "active",
+  [BusinessOperationPhase.AwaitingApproval]: "active",
+  [BusinessOperationPhase.NotStarted]: "active",
+  [BusinessOperationPhase.Running]: "active",
+  [BusinessOperationPhase.CancelRequested]: "active",
+  [BusinessOperationPhase.Completed]: "done",
+  [BusinessOperationPhase.Applied]: "done",
+  [BusinessOperationPhase.Denied]: "notDone",
+  [BusinessOperationPhase.Revoked]: "notDone",
+  [BusinessOperationPhase.Expired]: "notDone",
+  [BusinessOperationPhase.Aborted]: "notDone",
+  [BusinessOperationPhase.Failed]: "notDone",
+  [BusinessOperationPhase.Canceled]: "notDone",
+  [BusinessOperationPhase.Terminated]: "notDone",
+  [BusinessOperationPhase.TimedOut]: "notDone",
+  [BusinessOperationPhase.ProjectionDelayed]: "unknown",
+  [BusinessOperationPhase.Unknown]: "unknown",
+};
+
+const stageGroupLabel: Record<StageGroup, PlatformMessageKey> = {
+  all: "operations.filter.all",
+  active: "operations.filter.active",
+  done: "operations.filter.done",
+  notDone: "operations.filter.notDone",
+  unknown: "operations.filter.unknown",
+};
+
+/** One short word for a row; the full sentence (operationUsageStateMessages) is in the detail. */
+const usageShort: Record<OperationUsageState, PlatformMessageKey> = {
+  [OperationUsageState.NotMetered]: "operations.usage-short.not-metered",
+  [OperationUsageState.NotDispatched]: "operations.usage-short.not-dispatched",
+  [OperationUsageState.BillingUnavailable]: "operations.usage-short.billing-unavailable",
+  [OperationUsageState.SettlementPending]: "operations.usage-short.settlement-pending",
+  [OperationUsageState.Committed]: "operations.usage-short.committed",
+  [OperationUsageState.Unknown]: "operations.usage-short.unknown",
+  [OperationUsageState.Failed]: "operations.usage-short.failed",
+};
+
+const usageTone: Record<OperationUsageState, Tone> = {
+  [OperationUsageState.NotMetered]: "neutral",
+  [OperationUsageState.NotDispatched]: "neutral",
+  [OperationUsageState.BillingUnavailable]: "warning",
+  [OperationUsageState.SettlementPending]: "info",
+  [OperationUsageState.Committed]: "positive",
+  [OperationUsageState.Unknown]: "warning",
+  [OperationUsageState.Failed]: "negative",
+};
+
+/** Known meters read as words; an unrecognized meter falls back to its humanized key. */
+const meterLabel: Readonly<Record<string, PlatformMessageKey>> = {
+  agent_tokens: "operations.meter.agent-tokens",
+  automation_runs: "operations.meter.automation-runs",
+  agent_memory_writes: "operations.meter.agent-memory-writes",
+  component_model_tokens: "operations.meter.component-model-tokens",
+  knowledge_answer_count: "operations.meter.knowledge-answers",
+  data_query_count: "operations.meter.data-queries",
+  file_storage_bytes: "operations.meter.file-storage-bytes",
+};
+
+type Translate = ReturnType<typeof useT>;
+
+/** The action's name in words (same catalog as ActionLabel, without the wire key underneath). */
+function actionName(t: Translate, actionKey: string): string {
+  // The shared Dart catalog permits hyphens, not underscores, in message keys; round-trip so a
+  // different wire action never aliases a label.
+  const key = `actions.${actionKey.replaceAll("_", "-")}`;
+  return key.slice("actions.".length).replaceAll("-", "_") === actionKey && Object.hasOwn(platformMessages, key)
+    ? t(key as PlatformMessageKey)
+    : actionKey.startsWith("task.cancel.") ? t("tasks.cancelRequest")
+    : actionKey.startsWith("task.rerun.") ? t("tasks.rerunRequest") : t("actions.unknown");
+}
+
+function phaseLabel(t: Translate, phase: BusinessOperationPhase): { label: string; tone: Tone } {
+  const known = businessOperationPhase[phase];
+  return known ? { label: t(known.label), tone: known.tone } : { label: t("tasks.status.unknown"), tone: "neutral" };
+}
+
+function durationSeconds(op: BusinessOperationView): number | undefined {
+  if (!op.terminalAt) return undefined;
+  const value = (Date.parse(op.terminalAt) - Date.parse(op.createdAt)) / 1000;
+  return Number.isFinite(value) && value >= 0 ? value : undefined;
+}
+
+function durationText(t: Translate, value: number): string {
+  if (value < 60) return t("operations.seconds", { seconds: Math.round(value * 10) / 10 });
+  const minutes = Math.floor(value / 60);
+  if (minutes < 60) return t("operations.minutes", { minutes, seconds: Math.round(value - minutes * 60) });
+  return t("operations.hours", { hours: Math.floor(minutes / 60), minutes: minutes % 60 });
+}
+
+function absoluteTime(locale: string, value: string): string {
+  const at = new Date(value);
+  return Number.isNaN(at.getTime()) ? value
+    : new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "medium" }).format(at);
+}
+
+/** A time cell: relative, with the absolute local time on hover. */
+function When({ value }: { value: string }) {
+  const locale = useLocale();
+  return <time dateTime={value} title={absoluteTime(locale, value)} className="whitespace-nowrap tabular-nums">
+    {relativeTime(locale, value)}
+  </time>;
+}
+
+type People = { names: ReadonlyMap<string, string>; pending: boolean };
+
+/**
+ * Display names for initiators and executors: organization members from the participant
+ * directory, Agents from the installations of the workspaces the rows mention. Both reads are
+ * bounded and authorized by the BFF; an unresolved principal reads "Unknown member" and its ID
+ * stays in the detail's technical information.
+ */
+function usePeople(workspaceIds: readonly string[]): People {
+  const client = useBffClient();
+  const [humans] = useLoad("operations-people", async () => {
+    const names = new Map<string, string>();
+    let cursor: string | undefined;
+    const seen = new Set<string>();
+    for (let i = 0; i < 10; i++) {
+      const page = await client.conversationParticipants(cursor);
+      for (const person of page?.items ?? [])
+        if (person && typeof person.principalId === "string" && typeof person.displayName === "string" && person.displayName)
+          names.set(person.principalId, person.displayName);
+      cursor = page?.nextCursor;
+      if (!cursor || seen.has(cursor)) break;
+      seen.add(cursor);
+    }
+    return names;
+  });
+  const ids = [...new Set(workspaceIds)].sort().slice(0, 20);
+  const [agents] = useLoad(`operations-agents:${ids.join(",")}`, async () => {
+    const names = new Map<string, string>();
+    await Promise.all(ids.map(async (workspaceId) => {
+      try {
+        let offset: number | undefined;
+        for (let i = 0; i < 5; i++) {
+          const page = await client.agentInstallations(workspaceId, offset);
+          for (const row of page?.installations ?? [])
+            if (row && typeof row.agentPrincipalId === "string" && row.agentDisplayName)
+              names.set(row.agentPrincipalId, row.agentDisplayName);
+          const next = page?.nextOffset;
+          if (next === undefined || !Number.isSafeInteger(next) || next <= (offset ?? 0)) break;
+          offset = next;
+        }
+      } catch {
+        // An unreadable workspace leaves its Agents unnamed; it is not a failure of the list.
+      }
+    }));
+    return names;
+  });
+  const names = new Map<string, string>();
+  if (humans.status === "ok") humans.data.forEach((name, id) => names.set(id, name));
+  if (agents.status === "ok") agents.data.forEach((name, id) => { if (!names.has(id)) names.set(id, name); });
+  return { names, pending: humans.status === "pending" || agents.status === "pending" };
+}
+
+function principalName(t: Translate, me: string | null | undefined, people: People, id: string): string {
+  if (id === me) return t("operations.me");
+  return people.names.get(id) ?? (people.pending ? "…" : t("operations.unknownMember"));
+}
+
+function Principal({ id, people }: { id: string; people: People }) {
   const t = useT();
   const me = useCurrentPrincipalId();
-  return id === me ? <>{t("operations.me")}</> : <span className="font-mono text-xs" title={id}>{id.slice(0, 8)}</span>;
+  const known = id === me || people.names.has(id);
+  return <span className={`block truncate ${known ? "" : "text-muted-foreground"}`}>{principalName(t, me, people, id)}</span>;
 }
 
-function seconds(value: number) {
-  return Math.round(value * 10) / 10;
+function workspaceName(t: Translate, workspaces: readonly WorkspaceView[], id: string | undefined): string {
+  if (id === undefined) return t("operations.tenantLevel");
+  return workspaces.find((w) => w.id === id)?.name ?? t("operations.workspaceUnknown");
 }
 
-function OperationRow({ op, workspaces }: { op: BusinessOperationView; workspaces: WorkspaceView[] }) {
+/** "4 items · reconciling": the usage of a row in one line; the lines are in the detail. */
+function usageSummary(t: Translate, op: BusinessOperationView): string {
+  const state = t(usageShort[op.usageState] ?? "operations.usage-short.unknown");
+  return op.usage.length === 0 ? state : t("operations.usageCount", { count: op.usage.length, state });
+}
+
+function PhaseBadge({ phase }: { phase: BusinessOperationPhase }) {
+  const t = useT();
+  const { label, tone } = phaseLabel(t, phase);
+  return <Badge tone={tone}>{label}</Badge>;
+}
+
+/** Copyable identifiers and codes, folded away by default (DD-168 §16.3, §16.5). */
+function TechnicalDetails({ items }: { items: readonly (KeyValueItem | false | undefined)[] }) {
+  const t = useT();
+  const [open, setOpen] = useState(false);
+  return <section className="flex flex-col gap-2" data-testid="operation-technical">
+    <button type="button" aria-expanded={open} onClick={() => setOpen(!open)}
+      className="inline-flex w-fit items-center gap-1 rounded-sm text-sm font-medium text-muted-foreground hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring">
+      <ChevronRight aria-hidden className={`h-4 w-4 transition-transform duration-[140ms] ${open ? "rotate-90" : ""}`} strokeWidth={1.75} />
+      {t("operations.technical")}
+    </button>
+    {open ? <KeyValueList items={items} /> : null}
+  </section>;
+}
+
+function OperationDetail({ op, people, workspaces, onBack }: {
+  op: BusinessOperationView; people: People; workspaces: readonly WorkspaceView[]; onBack: () => void;
+}) {
   const t = useT();
   const locale = useLocale();
-  const phase = businessOperationPhase[op.phase];
-  const duration = op.terminalAt
-    ? (new Date(op.terminalAt).getTime() - new Date(op.createdAt).getTime()) / 1000
-    : undefined;
-  return (
-    <tr data-testid="operation-row">
-      <Cell title={op.createdAt}>{relativeTime(locale, op.createdAt)}</Cell>
-      <Cell><ActionLabel actionKey={op.actionKey} /></Cell>
-      <Cell>
-        <span title={[op.phase, op.reason].filter(Boolean).join(" · ")}>
-          <Badge tone={phase?.tone ?? "neutral"}>{phase ? t(phase.label) : op.phase}</Badge>
-        </span>
-      </Cell>
-      <Cell><Principal id={op.initiatorPrincipalId} /></Cell>
-      <Cell><Principal id={op.actorPrincipalId} /></Cell>
-      <Cell>
-        {op.workspaceId === undefined
-          ? t("platform.audit.scope.tenantLevel")
-          : (workspaces.find((w) => w.id === op.workspaceId)?.name ?? <span className="font-mono text-xs">{op.workspaceId}</span>)}
-      </Cell>
-      <Cell>
-        <div className="flex flex-col gap-0.5">
-          <span title={op.usageState}>{enumLabel(locale, operationUsageStateMessages, op.usageState)}</span>
-          {op.usage.map((u, i) => (
-            // 同一 operation 的用量行按发生时间与 meter 排序返回，位置即身份
-            // biome-ignore lint/suspicious/noArrayIndexKey: 见上
-            <span key={i} className="font-mono text-xs text-muted-foreground" title={u.status}>
-              {u.meterKey} {u.quantity} · {enumLabel(locale, usageSettlementStatusMessages, u.status)}
-            </span>
-          ))}
-        </div>
-      </Cell>
-      <Cell>{duration === undefined || duration < 0 ? "—" : t("operations.seconds", { seconds: seconds(duration) })}</Cell>
-    </tr>
-  );
+  const reasonText = useReasonText();
+  const me = useCurrentPrincipalId();
+  const duration = durationSeconds(op);
+  const phase = phaseLabel(t, op.phase);
+  const reason = op.reason !== undefined && Object.values(ReasonCode).includes(op.reason) ? reasonText(op.reason) : undefined;
+  const history: TimelineItem[] = [
+    { id: "created", title: t("operations.event.created"), time: absoluteTime(locale, op.createdAt),
+      description: t("operations.event.createdBy", { name: principalName(t, me, people, op.initiatorPrincipalId) }), tone: "brand" },
+    ...(op.approvalStatus ? [{ id: "approval", title: t("operations.event.approval"),
+      description: enumLabel(locale, approvalStatusMessages, op.approvalStatus), tone: "info" as const }] : []),
+    { id: "phase", title: op.terminalAt ? phase.label : t("operations.event.current", { phase: phase.label }),
+      time: op.terminalAt ? absoluteTime(locale, op.terminalAt) : undefined, description: reason, tone: phase.tone },
+  ];
+  return <div className="flex flex-col gap-6" data-testid="operation-detail">
+    <DetailHeader onBack={onBack} title={actionName(t, op.actionKey)} status={<PhaseBadge phase={op.phase} />}
+      subtitle={t("operations.subtitle", {
+        name: principalName(t, me, people, op.initiatorPrincipalId), time: relativeTime(locale, op.createdAt),
+      })} />
+    <KeyValueList columns={2} items={[
+      { id: "phase", label: t("operations.phase"), value: <PhaseBadge phase={op.phase} /> },
+      reason ? { id: "reason", label: t("operations.reason"), value: reason } : undefined,
+      { id: "initiator", label: t("operations.initiator"), value: principalName(t, me, people, op.initiatorPrincipalId) },
+      { id: "actor", label: t("operations.actor"), value: principalName(t, me, people, op.actorPrincipalId) },
+      { id: "workspace", label: t("platform.workspace"), value: workspaceName(t, workspaces, op.workspaceId) },
+      { id: "started", label: t("operations.startedAt"), value: absoluteTime(locale, op.createdAt) },
+      op.terminalAt ? { id: "ended", label: t("operations.endedAt"), value: absoluteTime(locale, op.terminalAt) } : undefined,
+      duration !== undefined ? { id: "duration", label: t("operations.duration"), value: durationText(t, duration) } : undefined,
+      { id: "usage", label: t("operations.usage"), value: enumLabel(locale, operationUsageStateMessages, op.usageState) },
+    ]} />
+    <PageSection title={t("operations.history")}>
+      <Timeline items={history} testId="operation-history" />
+    </PageSection>
+    <PageSection title={t("operations.usageLines")} description={t("operations.usageLinesNote")}>
+      {op.usage.length === 0
+        ? <EmptyState compact title={enumLabel(locale, operationUsageStateMessages, op.usageState)} />
+        : <div className="overflow-hidden rounded-xl border border-border bg-card" data-testid="operation-usage-lines">
+          <Table label={t("operations.usageLines")} head={[t("usage.meter"), t("usage.quantity"), t("platform.state")]}>
+            {op.usage.map((u, i) => (
+              // 同一 operation 的用量行按发生时间与 meter 排序返回，位置即身份
+              // biome-ignore lint/suspicious/noArrayIndexKey: 见上
+              <tr key={i}>
+                <Cell title={u.meterKey}>{Object.hasOwn(meterLabel, u.meterKey) ? t(meterLabel[u.meterKey]!) : humanizeKey(u.meterKey)}</Cell>
+                <Cell nowrap><span className="tabular-nums">{new Intl.NumberFormat(locale).format(u.quantity)}</span></Cell>
+                <Cell nowrap>{enumLabel(locale, usageSettlementStatusMessages, u.status)}</Cell>
+              </tr>
+            ))}
+          </Table>
+        </div>}
+    </PageSection>
+    <TechnicalDetails items={[
+      { id: "execution", label: t("operations.id.execution"), value: <IdText value={op.actionExecutionId} /> },
+      { id: "operation", label: t("operations.id.operation"), value: <IdText value={op.operationId} /> },
+      { id: "action", label: t("operations.id.action"), value: <IdText full value={op.actionKey} /> },
+      { id: "version", label: t("operations.id.actionVersion"), value: String(op.actionVersion) },
+      { id: "target", label: t("operations.id.target"), value: <IdText value={op.targetId} /> },
+      { id: "initiator", label: t("operations.id.initiator"), value: <IdText value={op.initiatorPrincipalId} /> },
+      { id: "actor", label: t("operations.id.actor"), value: <IdText value={op.actorPrincipalId} /> },
+      op.workspaceId ? { id: "workspace", label: t("operations.id.workspace"), value: <IdText value={op.workspaceId} /> } : undefined,
+      op.workflowKind ? { id: "kind", label: t("operations.id.workflowKind"), value: <IdText full value={op.workflowKind} /> } : undefined,
+      { id: "phase", label: t("operations.id.phase"), value: <IdText full value={op.phase} /> },
+      op.reason ? { id: "reason", label: t("operations.id.reason"), value: <IdText full value={op.reason} /> } : undefined,
+    ]} />
+  </div>;
 }
 
 type MorePages = { base: BusinessOperationPage; pages: BusinessOperationPage[]; status: "idle" | "loading" | "error" };
 
-function Timeline({ view, workspaces }: { view: View; workspaces: WorkspaceView[] }) {
+/** Explains a refused read of a scope in words; other failures offer a retry. */
+function ScopeFailure({ error, reload, tenantScope, compact }: { error: unknown; reload: () => void; tenantScope: boolean; compact?: boolean }) {
+  const t = useT();
+  return readRefusal(error) === "denied"
+    ? <PermissionState compact={compact} description={t(tenantScope ? "observability.tenantDenied" : "observability.denied")} />
+    : <ErrorState compact={compact} error={error} onRetry={reload} />;
+}
+
+function OperationTimeline({ view, workspaces }: { view: View; workspaces: WorkspaceView[] }) {
   const client = useBffClient();
   const t = useT();
+  const locale = useLocale();
+  const me = useCurrentPrincipalId();
   const scope = view === "mine" ? "mine" : view === "tenant" ? "tenant" : "workspace";
   const workspaceId = scope === "workspace" ? view : undefined;
-  const [first, reload] = useLoad(`operations:${view}`, () => client.operations(scope, workspaceId));
+  const [first, reload] = useLoad(`operations:${view}`, () => client.operations(scope, workspaceId), { keepWhileRevalidating: true });
   const [more, setMore] = useState<MorePages | null>(null);
+  const [stage, setStage] = useState<StageGroup>("all");
+  const [openId, setOpenId] = useState<string | null>(null);
+  // The page shown when Refresh was pressed; the button spins until a newer answer replaces it.
+  const [stale, setStale] = useState<BusinessOperationPage | null>(null);
   const firstPage = first.status === "ok" ? first.data : null;
   const extra = firstPage && more?.base === firstPage ? more : null;
   const pages = firstPage ? [firstPage, ...(extra?.pages ?? [])] : [];
   const operations = pages.flatMap((p) => p.operations);
   const nextCursor = pages[pages.length - 1]?.nextCursor;
+  const people = usePeople(operations.flatMap((op) => (op.workspaceId ? [op.workspaceId] : [])));
+  const refreshing = stale !== null && firstPage === stale;
   const loadMore = async () => {
     if (!firstPage || !nextCursor || extra?.status === "loading") return;
     const base = firstPage;
@@ -645,45 +896,67 @@ function Timeline({ view, workspaces }: { view: View; workspaces: WorkspaceView[
       setMore((old) => (old?.base === base ? { base, pages: loaded, status: "error" } : old));
     }
   };
+  const refresh = () => { setMore(null); setStale(firstPage); reload(); };
+  const rows = stage === "all" ? operations : operations.filter((op) => stageGroup[op.phase] === stage);
+  const counts = (group: StageGroup) => group === "all" ? operations.length : operations.filter((op) => stageGroup[op.phase] === group).length;
+  const opened = openId ? operations.find((op) => op.actionExecutionId === openId) : undefined;
+  const columns: DataColumn<BusinessOperationView>[] = [
+    { key: "action", header: t("platform.action"), truncate: true, title: (op) => actionName(t, op.actionKey),
+      sortValue: (op) => actionName(t, op.actionKey),
+      cell: (op) => <span className="font-medium text-foreground">{actionName(t, op.actionKey)}</span> },
+    { key: "phase", header: t("operations.phase"), width: "9.5rem", sortValue: (op) => phaseLabel(t, op.phase).label,
+      cell: (op) => <PhaseBadge phase={op.phase} /> },
+    { key: "initiator", header: t("operations.initiator"), width: "8rem", truncate: true,
+      cell: (op) => <Principal id={op.initiatorPrincipalId} people={people} /> },
+    { key: "actor", header: t("operations.actor"), width: "8rem", truncate: true, secondary: true,
+      cell: (op) => <Principal id={op.actorPrincipalId} people={people} /> },
+    { key: "workspace", header: t("platform.workspace"), width: "10rem", truncate: true, secondary: true,
+      title: (op) => workspaceName(t, workspaces, op.workspaceId),
+      cell: (op) => <span className={op.workspaceId === undefined ? "text-muted-foreground" : ""}>{workspaceName(t, workspaces, op.workspaceId)}</span> },
+    { key: "usage", header: t("operations.usage"), width: "8.5rem", truncate: true, secondary: true,
+      title: (op) => enumLabel(locale, operationUsageStateMessages, op.usageState),
+      cell: (op) => <Tag tone={usageTone[op.usageState] ?? "neutral"}>{usageSummary(t, op)}</Tag> },
+    { key: "duration", header: t("operations.duration"), width: "6rem", align: "end", secondary: true,
+      sortValue: (op) => durationSeconds(op),
+      cell: (op) => { const value = durationSeconds(op); return value === undefined ? null : <span className="whitespace-nowrap">{durationText(t, value)}</span>; } },
+    { key: "time", header: t("platform.time"), width: "7.5rem", sortValue: (op) => Date.parse(op.createdAt),
+      cell: (op) => <When value={op.createdAt} /> },
+  ];
+  const partial = nextCursor ? <span className="inline-flex flex-wrap items-center gap-2">
+    {t("list.partial", { count: String(operations.length) })}
+    {extra?.status === "error" ? <span role="alert" className="text-danger-text">{t("platform.loadFailed")}</span> : null}
+    <button type="button" disabled={extra?.status === "loading"} onClick={() => void loadMore()}
+      className="font-medium text-brand-text hover:underline disabled:opacity-60" data-testid="operations-load-more">
+      {extra?.status === "loading" ? t("platform.loading") : extra?.status === "error" ? t("platform.retry") : t("list.loadMore")}
+    </button>
+  </span> : undefined;
   return (
-    <Section title={t("operations.timeline")} testId="operation-timeline">
-      <div><Button onClick={() => { setMore(null); reload(); }}>{t("platform.refresh")}</Button></div>
-      <LoadState state={first} reload={reload} tenantScope={scope === "tenant"}>
-        {() =>
-          operations.length === 0 ? (
-            <Notice>{t("operations.none")}</Notice>
-          ) : (
-            <>
-              <Table
-                head={[
-                  t("platform.time"),
-                  t("platform.action"),
-                  t("operations.phase"),
-                  t("operations.initiator"),
-                  t("operations.actor"),
-                  t("platform.workspace"),
-                  t("operations.usage"),
-                  t("operations.duration"),
-                ]}
-              >
-                {operations.map((op) => (
-                  <OperationRow key={op.actionExecutionId} op={op} workspaces={workspaces} />
-                ))}
-              </Table>
-              {extra?.status === "error" ? (
-                <p role="alert" className="text-sm">
-                  {t("platform.loadFailed")} <Button onClick={() => void loadMore()}>{t("platform.retry")}</Button>
-                </p>
-              ) : nextCursor ? (
-                <Button className="w-fit" disabled={extra?.status === "loading"} onClick={() => void loadMore()}>
-                  {extra?.status === "loading" ? t("platform.loading") : t("platform.audit.scope.loadMore")}
-                </Button>
-              ) : null}
-            </>
-          )
-        }
-      </LoadState>
-    </Section>
+    <PageSection id="operation-timeline" title={t("operations.timeline")} testId="operation-timeline"
+      description={firstPage ? t(nextCursor ? "operations.windowPartial" : "operations.window", { count: operations.length }) : undefined}>
+      {first.status === "pending" ? <TableSkeleton rows={8} columns={6} />
+        : first.status === "error" ? <ScopeFailure error={first.error} reload={reload} tenantScope={scope === "tenant"} />
+        : <>
+          {opened ? <OperationDetail op={opened} people={people} workspaces={workspaces} onBack={() => setOpenId(null)} /> : null}
+          <div hidden={opened !== undefined}>
+            <DataTable testId="operation-table" label={t("operations.timeline")} rows={rows} columns={columns}
+              rowKey={(op) => op.actionExecutionId} onRowClick={(op) => setOpenId(op.actionExecutionId)}
+              search={{ placeholder: t("operations.search"), text: (op) => [
+                actionName(t, op.actionKey), phaseLabel(t, op.phase).label,
+                principalName(t, me, people, op.initiatorPrincipalId), principalName(t, me, people, op.actorPrincipalId),
+                workspaceName(t, workspaces, op.workspaceId), usageSummary(t, op),
+              ].join(" ") }}
+              toolbar={<>
+                <FilterChips label={t("operations.filter.label")} value={stage} onChange={setStage}
+                  options={(Object.keys(stageGroupLabel) as StageGroup[]).map((value) => ({ value, label: t(stageGroupLabel[value]), count: counts(value) }))} />
+                <RefreshButton onClick={refresh} pending={refreshing} />
+              </>}
+              empty={operations.length === 0
+                ? <EmptyState icon={Activity} title={t("operations.none")} description={t(view === "mine" ? "operations.noneMine" : "operations.noneScope")} />
+                : <NoMatchState onClear={() => setStage("all")} />}
+              partial={partial} />
+          </div>
+        </>}
+    </PageSection>
   );
 }
 
@@ -692,18 +965,25 @@ function PhaseBadges({ phases }: { phases: BusinessOperationSummary["phases"] })
   return (
     <div className="flex flex-wrap gap-1">
       {phases.map((p) => {
-        const label = businessOperationPhase[p.phase];
+        const { label, tone } = phaseLabel(t, p.phase);
         return (
-          <span key={p.phase} title={p.phase}>
-            <Badge tone={label?.tone ?? "neutral"}>
-              {label ? t(label.label) : p.phase} {p.count}
-            </Badge>
-          </span>
+          <Badge key={p.phase} tone={tone}>
+            {label}<span className="ml-1 tabular-nums opacity-80">{p.count}</span>
+          </Badge>
         );
       })}
     </div>
   );
 }
+
+function Stat({ label, children }: { label: ReactNode; children: ReactNode }) {
+  return <div className="flex min-w-0 flex-col gap-2 rounded-xl border border-border bg-card p-4">
+    <span className="text-xs font-medium text-muted-foreground">{label}</span>
+    <div className="min-w-0">{children}</div>
+  </div>;
+}
+
+type SummaryAction = BusinessOperationSummary["actions"][number];
 
 function Summary({ workspaceId }: { workspaceId?: string }) {
   const client = useBffClient();
@@ -714,68 +994,71 @@ function Summary({ workspaceId }: { workspaceId?: string }) {
   const { from, to } = windowFor(period, at);
   const [state, reload] = useLoad(`operation-summary:${workspaceId ?? "tenant"}:${from}:${to}`, () =>
     client.operationSummary(from, to, workspaceId));
+  const columns: DataColumn<SummaryAction>[] = [
+    { key: "action", header: t("platform.action"), truncate: true, sortValue: (a) => actionName(t, a.actionKey),
+      title: (a) => actionName(t, a.actionKey), cell: (a) => <span className="font-medium text-foreground">{actionName(t, a.actionKey)}</span> },
+    { key: "total", header: t("usage.count"), width: "6rem", align: "end", sortValue: (a) => a.total, cell: (a) => a.total },
+    { key: "phases", header: t("operations.byPhase"), width: "38%", cell: (a) => <PhaseBadges phases={a.phases} /> },
+    { key: "timed", header: t("operations.timedCount"), width: "8rem", align: "end", secondary: true,
+      sortValue: (a) => a.timedTerminalCount, cell: (a) => a.timedTerminalCount },
+    { key: "average", header: t("operations.averageDuration"), width: "8rem", align: "end", secondary: true,
+      sortValue: (a) => a.averageTerminalSeconds,
+      cell: (a) => a.averageTerminalSeconds === undefined
+        ? <span className="text-muted-foreground">{t("operations.notTimed")}</span>
+        : <span className="whitespace-nowrap">{durationText(t, a.averageTerminalSeconds)}</span> },
+  ];
   return (
-    <Section title={t("operations.summary")} testId="operation-summary">
-      <div className="flex flex-wrap items-center gap-2">
-        <PeriodSelect period={period} onChange={setPeriod} />
-        <Button onClick={() => setAt(Date.now())}>{t("platform.refresh")}</Button>
-      </div>
-      <WindowText from={from} to={to} />
-      <LoadState state={state} reload={reload} tenantScope={workspaceId === undefined}>
-        {(summary: BusinessOperationSummary) =>
-          summary.total === 0 ? (
-            <Notice>{t("usage.noOperations")}</Notice>
-          ) : (
-            <div className="flex flex-col gap-4">
-              <p className="text-sm">{t("operations.total", { count: summary.total })}</p>
-              <div className="flex flex-col gap-2">
-                <h3 className="text-xs font-medium text-muted-foreground">{t("operations.byPhase")}</h3>
-                <PhaseBadges phases={summary.phases} />
+    <PageSection id="operation-summary" title={t("operations.summary")} testId="operation-summary"
+      description={<WindowText from={from} to={to} />}
+      actions={<>
+        <FilterChips label={t("observability.period")} value={period} onChange={setPeriod}
+          options={(Object.keys(periodLabel) as Period[]).map((p) => ({ value: p, label: t(periodLabel[p]) }))} />
+        <RefreshButton onClick={() => setAt(Date.now())} pending={state.status === "pending"} />
+      </>}>
+      {state.status === "pending" ? <TableSkeleton rows={4} columns={4} />
+        : state.status === "error" ? <ScopeFailure error={state.error} reload={reload} tenantScope={workspaceId === undefined} />
+        : state.data.total === 0 ? <EmptyState compact icon={Activity} title={t("usage.noOperations")} />
+        : <div className="flex flex-col gap-4">
+          <div className="grid gap-3 sm:grid-cols-[minmax(9rem,12rem)_minmax(0,1fr)_minmax(0,1fr)]">
+            <Stat label={t("operations.totalLabel")}>
+              <span className="text-[1.375rem] font-semibold leading-7 tabular-nums text-foreground">
+                {new Intl.NumberFormat(locale).format(state.data.total)}
+              </span>
+            </Stat>
+            <Stat label={t("operations.byPhase")}><PhaseBadges phases={state.data.phases} /></Stat>
+            <Stat label={t("usage.operationUsage")}>
+              <div className="flex flex-wrap gap-1">
+                {state.data.usageStates.map((u) => (
+                  <Badge key={u.state} tone={usageTone[u.state] ?? "neutral"}>
+                    {enumLabel(locale, operationUsageStateMessages, u.state)}<span className="ml-1 tabular-nums opacity-80">{u.count}</span>
+                  </Badge>
+                ))}
               </div>
-              <div className="flex flex-col gap-2">
-                <h3 className="text-xs font-medium text-muted-foreground">{t("usage.operationUsage")}</h3>
-                <div className="flex flex-wrap gap-1">
-                  {summary.usageStates.map((u) => (
-                    <span key={u.state} title={u.state}>
-                      <Badge tone="neutral">
-                        {enumLabel(locale, operationUsageStateMessages, u.state)} {u.count}
-                      </Badge>
-                    </span>
-                  ))}
-                </div>
-              </div>
-              <div className="flex flex-col gap-2">
-                <h3 className="text-xs font-medium text-muted-foreground">{t("operations.byAction")}</h3>
-                <Table
-                  head={[
-                    t("platform.action"),
-                    t("usage.count"),
-                    t("operations.byPhase"),
-                    t("operations.timedCount"),
-                    t("operations.averageDuration"),
-                  ]}
-                >
-                  {summary.actions.map((a) => (
-                    <tr key={a.actionKey}>
-                      <Cell><ActionLabel actionKey={a.actionKey} /></Cell>
-                      <Cell mono>{a.total}</Cell>
-                      <Cell><PhaseBadges phases={a.phases} /></Cell>
-                      <Cell mono>{a.timedTerminalCount}</Cell>
-                      <Cell>
-                        {a.averageTerminalSeconds === undefined
-                          ? t("operations.notTimed")
-                          : t("operations.seconds", { seconds: seconds(a.averageTerminalSeconds) })}
-                      </Cell>
-                    </tr>
-                  ))}
-                </Table>
-              </div>
-            </div>
-          )
-        }
-      </LoadState>
-    </Section>
+            </Stat>
+          </div>
+          <DataTable testId="operation-summary-actions" label={t("operations.byAction")} rows={state.data.actions}
+            columns={columns} rowKey={(a) => a.actionKey} initialSort={{ key: "total", direction: "desc" }}
+            empty={<EmptyState compact title={t("usage.noOperations")} />} />
+        </div>}
+    </PageSection>
   );
+}
+
+/** The scope picker: mine, the whole organization or one workspace (Kailo select). */
+function ScopePicker({ view, onChange, workspaces }: { view: View; onChange: (view: View) => void; workspaces: WorkspaceView[] }) {
+  const t = useT();
+  return <label className="relative inline-flex w-fit max-w-full items-center">
+    <span className="sr-only">{t("operations.scope")}</span>
+    <select aria-label={t("operations.scope")} value={view} onChange={(e) => onChange(e.target.value)}
+      className="h-8 min-w-48 max-w-full appearance-none truncate rounded-lg border border-input bg-background py-0 pl-3 pr-8 text-sm font-medium text-foreground shadow-xs hover:bg-accent focus-visible:border-brand focus-visible:outline-hidden focus-visible:ring-[3px] focus-visible:ring-ring/15">
+      <option value="mine">{t("operations.mine")}</option>
+      <option value="tenant">{t("platform.audit.scope.tenant")}</option>
+      {workspaces.length > 0 ? <optgroup label={t("platform.workspace")}>
+        {workspaces.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
+      </optgroup> : null}
+    </select>
+    <ChevronDown aria-hidden className="pointer-events-none absolute right-2.5 h-4 w-4 text-muted-foreground" strokeWidth={1.75} />
+  </label>;
 }
 
 /** 业务操作：我的操作时间线；有 audit 时可切到 Tenant/Workspace 的时间线与聚合。 */
@@ -788,31 +1071,21 @@ export function BusinessOperationsPage() {
     workspaceState.status === "ok" && Array.isArray(workspaceState.data) ? workspaceState.data : [];
   const workspacesFailed = workspaceState.status === "error";
   return (
-    <div className="flex flex-col gap-6" data-testid="business-operations">
-      <p className="text-xs text-muted-foreground">{t("operations.explain")}</p>
-      <div className="flex flex-wrap items-center gap-2">
-        <select
-          aria-label={t("operations.scope")}
-          className="h-8 w-fit rounded-md border border-input bg-transparent px-2 text-sm"
-          value={view}
-          onChange={(e) => setView(e.target.value)}
-        >
-          <option value="mine">{t("operations.mine")}</option>
-          <option value="tenant">{t("platform.audit.scope.tenant")}</option>
-          {workspaces.map((w) => (
-            <option key={w.id} value={w.id}>
-              {w.name}
-            </option>
-          ))}
-        </select>
-        {workspacesFailed ? (
-          <span role="alert" className="text-xs text-muted-foreground">
-            {t("platform.audit.scope.workspacesFailed")} <Button onClick={reloadWorkspaces}>{t("platform.retry")}</Button>
-          </span>
-        ) : null}
+    <div className="mx-auto flex w-full min-w-0 max-w-6xl flex-col gap-8" data-testid="business-operations">
+      <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
+        <p className="max-w-2xl text-sm text-muted-foreground">{t(view === "mine" ? "operations.explain" : "operations.explainScope")}</p>
+        <div className="flex flex-wrap items-center gap-2">
+          {workspacesFailed ? (
+            <span role="alert" className="inline-flex items-center gap-2 text-xs text-muted-foreground">
+              {t("platform.audit.scope.workspacesFailed")}
+              <button type="button" className="font-medium text-brand-text hover:underline" onClick={reloadWorkspaces}>{t("platform.retry")}</button>
+            </span>
+          ) : null}
+          <ScopePicker view={view} onChange={setView} workspaces={workspaces} />
+        </div>
       </div>
       {view === "mine" ? null : <Summary key={`summary:${view}`} workspaceId={view === "tenant" ? undefined : view} />}
-      <Timeline key={`timeline:${view}`} view={view} workspaces={workspaces} />
+      <OperationTimeline key={`timeline:${view}`} view={view} workspaces={workspaces} />
     </div>
   );
 }

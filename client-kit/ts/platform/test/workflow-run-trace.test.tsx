@@ -32,7 +32,7 @@ async function setup(run: AutomationRunView, locale: "en" | "zh-CN" = "en", appr
   return { host, onOpen, send };
 }
 
-describe("original workflow trace presentation over existing task references", () => {
+describe("workflow trace timeline over existing task references", () => {
   it("opens only the evidenced approval child without writing or claiming UNKNOWN completed", async () => {
     const { host, onOpen, send } = await setup({ task: { ...task, observation: ReasonCode.ExternalResultUnknown },
       stepApprovalTask: child, usageEventIds: [], executionTrace: [
@@ -85,7 +85,11 @@ describe("original workflow trace presentation over existing task references", (
     expect(host.textContent).toContain("62.0s");
     expect(host.textContent).toContain("skipped");
     expect(host.textContent).toContain("pending");
-    expect(host.querySelectorAll("pre")).toHaveLength(2);
+    // DD-168 §16.5(6): native output stays available but folded, one disclosure per step with output.
+    expect(host.querySelectorAll("pre")).toHaveLength(0);
+    const outputs = [...host.querySelectorAll("button")].filter((node) => node.textContent === "Output");
+    expect(outputs).toHaveLength(2);
+    await click(outputs[0]!);
     expect(host.querySelector("pre")?.textContent).toContain('"historyEventId": 19');
     expect(host.querySelector('[data-testid="workflow-approval-trace"]')).toBeNull();
     expect(host.textContent).not.toContain("0ms");
