@@ -4343,20 +4343,20 @@ Top 30 之外的 (c)：
 - **视觉由 DD-141 接管**：2026-10-23 用户裁定 Kailo 视觉全面超越且不再复刻 Buzz（DD-141 Kailo 视觉设计系统）；纯视觉、无功能与交互语义的 (c) 行不计入剩余缺口。剩余计数只统计功能与交互项。
 - 这是第 0 节“(b)”规则的同一口径，比“有效行覆盖 ≥30%”宽松，逐项功能是否完整以 8.3 的功能记录与后续截图验收为准。
 
-### 8.2 当前计数（feat/buzz-restore-r11）
+### 8.2 当前计数（feat/buzz-restore-r12）
 
 | 项目 | 数量 |
 |---|---:|
 | 第 6 节 (c) 行 | 459 |
-| 已有源码替代（按引用判定，8.5） | 299 |
-| 人工登记的源码替代（8.5b） | 15 |
-| 原位改写已恢复（8.6） | 13 |
-| 原版未挂载，不计缺口（8.7） | 15 |
+| 已有源码替代（按引用判定，8.5） | 302 |
+| 人工登记的源码替代（8.5b） | 18 |
+| 原位改写已恢复（8.6） | 15 |
+| 原版未挂载，不计缺口（8.7） | 16 |
 | 纯视觉，由 DD-141 接管（8.7） | 5 |
 | 设计排除，不计缺口（8.7，逐行标注 DD） | 13 |
-| **剩余功能与交互缺口** | **99** |
+| **剩余功能与交互缺口** | **90** |
 
-r9 为 187 行剩余，r8 为 230 行，r7 为 252 行，r6 为 289 行，r5 为 303 行。本轮按协调者裁定新增“设计排除”类（每行标注排除依据）并把 Mobile Pulse 归入“原版未挂载”。按引用判定脚本另命中 3838（`shared/widgets/editor_option_button.dart`，命中的是 `avatar_editor_option_button` 的子串），仍计为缺口。NIP-IA 身份存档（1144、2352、2846）是否属设计排除尚无设计条文，仍计为缺口待裁定。
+r11 为 99 行剩余，r9 为 187 行，r8 为 230 行，r7 为 252 行，r6 为 289 行，r5 为 303 行。“设计排除”类每行标注排除依据；Mobile Pulse 归入“原版未挂载”。NIP-IA 身份存档（1144、2352、2846）核对后不涉及私钥材料，按 DD-162 在 Core 生命周期状态上恢复，计入 8.5b。按引用判定脚本命中的 3838 是子串误判，按原版未挂载登记于 8.7。
 
 ### 8.3 各轮关闭的功能缺口
 
@@ -4370,13 +4370,15 @@ r9 为 187 行剩余，r8 为 230 行，r7 为 252 行，r6 为 289 行，r5 为
 - **r8**：原版“选收件人直接发送”分享面板（DD-131(7)），目录与团队导入预览显示真实头像；DD-150 频道删除为受治理的 `workspace.delete`（三端入口、快照驱动的删除链），频道静音与移到分区落到 Core 个人偏好、Mobile Canvas 编辑经 `workspace.canvas.set`；Mobile 他人资料卡状态与经 `conversation.open` 发消息、Agent 行“工作中”与活动面板、r6 状态测试按新接口恢复；Desktop Updates（无 Kailo 更新源时显示宿主确定状态）、macOS 托盘菜单与 OS 空闲自动离开（DD-125(5)）。
 - **r9**：DD-151 Mobile 推送（平台自有通道：设备登记与令牌入 OpenBao、Core 以 CONTROL 读 Relay 按原通知次序判定、APNs/FCM 投递、载荷不含正文，Mobile 通知开关与点击跳转）；Desktop 频道星标改走 Core 偏好；Mobile 分组排序（`sidebar_sort`）、Canvas Markdown、频道管理人员目录搜索；Mobile 活动面板“停止当前回合”（`task.cancel.agent.invoke.v1`）；频道“添加 Agent”的团队分区；Mobile 论坛频道、“稍后提醒”、Activity 标签页（收件箱、提醒、草稿）与私聊 p 标签。
 - **r10/r11**：Mobile 临时频道标识、频道元数据实时更新（重读 39000）、搜索“成员”分区、设置“社区”分区与邀请（`tenant.member.invite`）、原版“提及频道外成员”对话框（V-SCN-163）；Desktop 终端（DD-161：本人键盘驱动的本机 PTY，密钥与会话不进入 shell，Projects“在终端中打开”）；Projects 克隆失败文案与仓库来源标识（DD-160）；发送反馈（DD-158）、社区资料（tenant profile）、本地存档（DD-159）与仓库型详情经核对已在 main 交付，补注原版来源；Web Composer Escape 用例改为按状态等待。
+- **r12**：DD-162 NIP-IA 身份存档（Core 投影存档标记，Agent 停用后 owner 行显示“已存档”）；Agent 资料卡的“导出快照”（1672）；Projects 远端呈现与只对 Kailo 托管仓库克隆（1955）；合并冲突“在终端中解决”与可复制命令（DD-161(1)，2826、1779）；Mobile 表情爆发层挂载（3478）；r10 抢救分支逐项核对，除通知扩展取正文外均已被取代。
 
-### 8.4 仍缺的主要项（r11 结束时）
+### 8.4 仍缺的主要项（r12 结束时）
 
-- Desktop Huddle 全模块与 Voice（Voice 只服务 Huddle 中的 Agent 朗读，随 Huddle 暂缓，DD-161 注明）；合并恢复终端（2826）。
-- Projects：项目工作区 URL 驱动的资料面板（1931）、项目详情的远端呈现（1955）、概览仓库快照扫描（1959）、Agent 资料卡的“导出快照”入口（1672）。
-- NIP-IA 身份存档（1144、2352、2846）待裁定是否属设计排除。
-- Mobile：原版外观模式选择（3677）、表情爆发（3478 中的 emoji_burst）、`channel_push_cache`（3502）、邀请加入流程（invite_join、person_invite_section）、`editor_option_button`（3838）；推送真机投递阻塞于外部凭据（Apple/Google 开发者账号）。
+- Desktop Huddle 全模块与 Voice（暂缓）。
+- Projects：项目工作区 URL 驱动的资料面板（1931，Kailo 项目工作区尚无资料面板宿主）、概览仓库快照扫描（1959，Kailo 概览无语言统计消费方）。
+- DD-162 后续：成员资料卡的“已存档”标识与旧公钥历史消息归属、单独的“取消存档”（`agent.installation.enable`）入口。
+- Mobile：`channel_push_cache`（3502）随通知扩展经本人会话取正文（DD-151(4)）一起做，需要 macOS 编译与测试环境；邀请加入流程（3592/3594/3595，清单为“待定”）待裁定 Mobile 是浏览器兑换还是 app 内兑换。
+- 推送真机投递阻塞于外部凭据（Apple/Google 开发者账号）。
 
 ### 8.5 已有源码替代的 (c) 行
 
@@ -4485,6 +4487,7 @@ r9 为 187 行剩余，r8 为 230 行，r7 为 252 行，r6 为 289 行，r5 为
 | 1664 | `desktop/src/features/profile/ui/UserProfilePanelSections.tsx` | `client-kit/ts/platform/src/react/profile/buzz/features/profile/ui/UserProfilePanelSections.tsx` |
 | 1665 | `desktop/src/features/profile/ui/UserProfilePanelTabs.tsx` | `client-kit/ts/platform/src/react/profile/buzz/features/profile/ui/UserProfilePanelTabs.tsx` |
 | 1667 | `desktop/src/features/profile/ui/UserProfilePanelUtils.ts` | `client-kit/ts/platform/src/react/profile/buzz/features/profile/ui/UserProfilePanelUtils.ts` |
+| 1672 | `desktop/src/features/profile/ui/UserProfileSnapshotExportDialog.tsx` | `client-kit/ts/platform/src/react/profile/buzz/features/profile/ui/UserProfileAgentPanel.tsx` |
 | 1693 | `desktop/src/features/projects/lib/projectAgentConversation.ts` | `client-kit/ts/platform/src/react/projects/lib/projectAgentConversation.ts` |
 | 1694 | `desktop/src/features/projects/lib/projectAgentConversationStorage.ts` | `client-kit/ts/platform/src/react/projects/lib/projectAgentConversationStorage.ts` |
 | 1696 | `desktop/src/features/projects/lib/projectAgentSelection.ts` | `client-kit/ts/platform/src/react/projects/lib/projectAgentConversation.ts` |
@@ -4498,6 +4501,7 @@ r9 为 187 行剩余，r8 为 230 行，r7 为 252 行，r6 为 289 行，r5 为
 | 1757 | `desktop/src/features/projects/projectChannelCreation.ts` | `client-kit/ts/platform/src/react/projects/projectChannelCreation.ts` |
 | 1759 | `desktop/src/features/projects/projectChannelRequest.ts` | `client-kit/ts/platform/src/react/inbox/needs-action.tsx` |
 | 1761 | `desktop/src/features/projects/projectChannelRequestQueue.ts` | `client-kit/ts/platform/src/react/projects/ProjectChannelRequestDialog.tsx` |
+| 1779 | `desktop/src/features/projects/projectPullRequestConflictRecovery.ts` | `client-kit/ts/platform/src/react/projects/projectPullRequestConflictRecovery.ts` |
 | 1784 | `desktop/src/features/projects/projectRepositoryCreation.ts` | `client-kit/ts/platform/src/react/projects/projectRepositoryCreation.ts` |
 | 1787 | `desktop/src/features/projects/projectSnapshot.ts` | `web-client/web/src/platform/ui/inbox-snapshot.ts` |
 | 1794 | `desktop/src/features/projects/repoSyncHooks.ts` | `client-kit/ts/platform/src/react/projects/useProjectLocalCheckout.tsx` |
@@ -4540,6 +4544,7 @@ r9 为 187 行剩余，r8 为 230 行，r7 为 252 行，r6 为 289 行，r5 为
 | 1950 | `desktop/src/features/projects/useHealProjectHomeRepositories.ts` | `client-kit/ts/platform/src/react/projects/ProjectChannelHome.tsx` |
 | 1952 | `desktop/src/features/projects/useProjectChannelRequests.ts` | `client-kit/ts/platform/src/react/projects/ProjectChannelRequestDialog.tsx` |
 | 1953 | `desktop/src/features/projects/useProjectCommitDiff.ts` | `client-kit/ts/platform/src/react/projects/projectGitQueries.ts` |
+| 1955 | `desktop/src/features/projects/useProjectRepoHost.ts` | `client-kit/ts/platform/src/react/projects/lib/projectRepoHost.ts` |
 | 1958 | `desktop/src/features/projects/useProjectRepositorySnapshots.ts` | `client-kit/ts/platform/src/react/projects/projectGitQueries.ts` |
 | 2024 | `desktop/src/features/settings/SidebarUpdateCard.tsx` | `collaboration/desktop/src/features/settings/SidebarUpdateCard.tsx` |
 | 2025 | `desktop/src/features/settings/UpdateChecker.tsx` | `collaboration/desktop/src/features/settings/UpdateChecker.tsx` |
@@ -4687,6 +4692,9 @@ r9 为 187 行剩余，r8 为 230 行，r7 为 252 行，r6 为 289 行，r5 为
 | 第 6 节行号 | 原版路径 | Kailo 承接 |
 |---:|---|---|
 | 1926 | `desktop/src/features/projects/ui/useOpenProjectTerminal.ts` | client-kit `projects/projectTerminal.tsx` 与 Desktop 终端宿主（DD-161） |
+| 1144 | `desktop/src/features/identity-archive/hooks.ts` | DD-162：Core 生命周期投影的存档标记（成员名单 `archivedPubkeys`、作者目录 `archived`），存档入口映射既有受治理动作，不发 9035/9036 |
+| 2352 | `desktop/src/shared/api/tauriIdentityArchive.ts` | DD-162：Core 生命周期投影的存档标记（成员名单 `archivedPubkeys`、作者目录 `archived`），存档入口映射既有受治理动作，不发 9035/9036 |
+| 2846 | `desktop/src-tauri/src/commands/identity_archive.rs` | DD-162：Core 生命周期投影的存档标记（成员名单 `archivedPubkeys`、作者目录 `archived`），存档入口映射既有受治理动作，不发 9035/9036 |
 | 2682 | `desktop/src-tauri/src/archive/mod.rs` | collaboration/desktop/src-tauri/src/local_archive（DD-159） |
 | 2688 | `desktop/src-tauri/src/archive/store.rs` | collaboration/desktop/src-tauri/src/local_archive（DD-159） |
 | 2692 | `desktop/src-tauri/src/archive/sync.rs` | collaboration/desktop/src-tauri/src/local_archive（DD-159） |
@@ -4719,6 +4727,8 @@ r9 为 187 行剩余，r8 为 230 行，r7 为 252 行，r6 为 289 行，r5 为
 | 3518 | `mobile/lib/features/channels/channels_page/channel_tile.dart` | 私聊行在线点（r7） |
 | 3673 | `mobile/lib/features/settings/settings_page.dart` | 设置页编辑资料入口（r7） |
 | 2747 | `desktop/src-tauri/src/commands/media_download.rs` | 快照字节读取改为原生媒体读取加快照卡核验（r7） |
+| 3478 | `mobile/lib/features/channels/channel_detail_page.dart` | 频道页表情爆发层（r12 挂到 navigator 之上），输入中、论坛与在线状态前几轮已恢复 |
+| 3677 | `mobile/lib/features/settings/theme_option_sheets.dart` | 外观模式选择由主题预览页承接；原版 `_AppearanceModePicker` 无调用方 |
 
 ### 8.7 不计入缺口的 (c) 行（原版未挂载、纯视觉、设计排除）
 
@@ -4730,6 +4740,7 @@ r9 为 187 行剩余，r8 为 230 行，r7 为 252 行，r6 为 289 行，r5 为
 | 1887 | `desktop/src/features/projects/ui/ProjectsOverviewChatToggle.tsx` | 原版未挂载 |
 | 1900 | `desktop/src/features/projects/ui/ProjectsWorkItemTable.tsx` | 原版未挂载 |
 | 2644 | `desktop/src/shared/ui/step-progress.tsx` | 原版未挂载 |
+| 3838 | `mobile/lib/shared/widgets/editor_option_button.dart` | 原版未挂载（`EditorOptionButton` 无调用方，头像编辑用 `AvatarEditorOptionButton`） |
 | 3639 | `mobile/lib/features/profile/profile_text_edit_sheet.dart` | 原版未挂载（公开类无引用，两处编辑器各用私有副本；本轮已随资料编辑恢复） |
 | 3672 | `mobile/lib/features/settings/accent_picker_page.dart` | 原版未挂载（固定提交中无任何引用；本轮已随强调色能力恢复文件，同样不挂载） |
 | 1538 | `desktop/src/features/onboarding/ui/LandingBees.tsx` | 纯视觉，由 DD-141 接管 |
