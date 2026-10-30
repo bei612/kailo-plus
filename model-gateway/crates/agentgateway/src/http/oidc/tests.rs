@@ -444,7 +444,7 @@ async fn login_uses_only_configured_locale_projection_and_keeps_return_target() 
 	] {
 		let mut policy = test_policy();
 		policy.ui_locales = Some(OidcUiLocales {
-			default: "zh-CN".into(),
+			default: Some("zh-CN".into()),
 			supported: vec!["zh-CN".into(), "en".into()],
 			cookie: "buzz-locale".into(),
 		});
@@ -483,6 +483,42 @@ async fn login_uses_only_configured_locale_projection_and_keeps_return_target() 
 		let transaction = policy.session.decode_transaction(cookie.value()).unwrap();
 		assert_eq!(transaction.original_uri, "/app/audit?workspaceId=scope");
 		assert!(!transaction.csrf_state.is_empty());
+	}
+}
+
+// DD-164(8): without a configured default only an explicit, supported Kailo choice is sent;
+// otherwise the provider keeps its own order (language cookie, Accept-Language, realm default).
+#[tokio::test]
+async fn login_without_default_locale_lets_the_provider_choose() {
+	for (cookie, expected) in [
+		(None, None),
+		(Some("buzz-locale=en"), Some("en")),
+		(Some("buzz-locale=fr"), None),
+		(Some("buzz-locale=en; buzz-locale=zh-CN"), None),
+	] {
+		let mut policy = test_policy();
+		policy.ui_locales = Some(OidcUiLocales {
+			default: None,
+			supported: vec!["zh-CN".into(), "en".into()],
+			cookie: "buzz-locale".into(),
+		});
+		let mut req = request(Method::GET, "https://app.example.com/app/", Some("text/html"));
+		if let Some(cookie) = cookie {
+			req
+				.headers_mut()
+				.insert(header::COOKIE, cookie.parse().unwrap());
+		}
+		let response = callback::start_login(&policy, &req)
+			.unwrap()
+			.direct_response
+			.unwrap();
+		let url = url::Url::parse(response.headers()[header::LOCATION].to_str().unwrap()).unwrap();
+		let sent = url
+			.query_pairs()
+			.filter(|(key, _)| key == "ui_locales")
+			.map(|(_, value)| value.into_owned())
+			.collect::<Vec<_>>();
+		assert_eq!(sent, expected.into_iter().map(String::from).collect::<Vec<_>>());
 	}
 }
 
