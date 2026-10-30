@@ -2,13 +2,16 @@
 // 一份组件，数据全部经 BFF（传输由宿主经 PlatformProvider 给出）。这里没有 Relay
 // 地址、没有 signer、没有 Nostr filter。
 //
-// 未启用的能力不在这里出现：不渲染一个点进去说「未启用」的入口。
+// 未启用的能力不在这里出现：不渲染一个点进去说「未启用」的入口。管理区导航同理，只列
+// 当前会话能读取的分区（DD-170 §16.4）；入口的隐藏只是呈现，授权仍由 BFF 每次重做。
 
 import {
   ActionGateState,
   ActionDispatchState,
+  type AuditEventView,
   type AuditEventPage,
   type AuditEvidenceSlot,
+  AuditEventType,
   BuzzIdentityState,
   type ClientKeyView,
   EvidenceSensitivity,
@@ -18,7 +21,12 @@ import {
   type WorkspaceView,
 } from "@client-kit/contracts";
 import { type ReactNode, useState } from "react";
-import { truncatePubkey, relativeTime } from "../format";
+import {
+  Building2, FileCode2, FileText, History, LockKeyhole, Mail, type LucideIcon, MessageSquareText, Plug,
+  ShieldCheck, Smartphone, Users,
+} from "lucide-react";
+import { relativeTime } from "../format";
+import { absoluteTime } from "../governance";
 import {
   auditEventTypeMessages,
   buzzIdentityStateMessages,
@@ -30,10 +38,16 @@ import {
   type PlatformMessageKey,
 } from "../i18n";
 import { BffError, type WriteFailure, writeFailure } from "../transport";
+import type { BffClient } from "../client";
 import { useBffClient, useFailureText, useLocale, useT } from "./context";
-import { ActionLabel, Badge, Button, Cell, Notice, Table } from "./ui";
-import { ErrorState, TableSkeleton } from "./state-views";
+import { Badge, Button, useActionLabel } from "./ui";
+import { EmptyState, ErrorState, NoMatchState, PermissionState, readRefusal, TableSkeleton } from "./state-views";
 import { type Loaded, useLoad } from "./use-load";
+import { CellStack, type DataColumn, DataTable } from "./data-table";
+import { IdText, KeyValueList, Tag } from "./key-value";
+import { ConfirmDialog } from "./confirm-dialog";
+import { DetailHeader, FilterChips, PageSection, RefreshButton } from "./page-layout";
+import { TechnicalDetails } from "./governance";
 import { LegacySecretRefManagement, RoleManagement } from "./roles";
 import { PlatformFeedback } from "./feedback/PlatformFeedback";
 import { PlatformTenantManagement } from "./tenants";
@@ -71,6 +85,8 @@ export function Resource<T>({
   return <>{children(state.data)}</>;
 }
 
+const selectClass = "h-8 w-fit max-w-full rounded-lg border border-input bg-background px-2 text-sm shadow-xs focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring";
+
 /**
  * 成员页的独立形态：自己取可进入的 Workspace 并提供选择。宿主已有 Workspace 选择
  * （Web 的平台页头部）时直接用 MembersPane。
@@ -80,21 +96,22 @@ export function WorkspaceMembersPage({renderIdentity}:{renderIdentity?:MemberIde
   const t = useT();
   const [state, reload] = useLoad("workspaces", client.workspaces);
   const [chosen, setChosen] = useState<string | null>(null);
+  const none = <EmptyState icon={Users} title={t("platform.noWorkspace")} />;
   return (
     <WorkspaceManagementPanels>
       <Resource state={state} reload={reload}>
       {(rows) => {
-        if (rows.length === 0) return <Notice>{t("platform.noWorkspace")}</Notice>;
+        if (rows.length === 0) return none;
         // Management-visible does not imply collaboration membership.
         const readable = rows.filter((w) => w.isMember === true);
         const active = readable.find((w) => w.id === chosen)?.id ?? readable[0]?.id;
-        if (!active) return <Notice>{t("platform.noWorkspace")}</Notice>;
+        if (!active) return none;
         return (
           <div className="flex flex-col gap-3">
             {readable.length > 1 ? (
               <select
                 aria-label={t("platform.workspace")}
-                className="h-8 w-fit rounded-md border border-input bg-transparent px-2 text-sm"
+                className={selectClass}
                 value={active}
                 onChange={(e) => setChosen(e.target.value)}
               >
@@ -116,21 +133,102 @@ export function WorkspaceMembersPage({renderIdentity}:{renderIdentity?:MemberIde
   );
 }
 
+// ---------------------------------------------------------------------------
+// 管理区
+// ---------------------------------------------------------------------------
+
+type Section = "members" | "invitations" | "roles" | "tenants" | "feedback" | "secrets" | "capabilities" | "components" | "bindings";
+/** What a read-only probe of a section's own first read says about this session. */
+type SectionAccess = "allowed" | "denied" | "unknown";
+type SectionProbes = Record<Exclude<Section, "members">, SectionAccess>;
+
+const sectionMeta: Record<Section, { label: PlatformMessageKey; icon: LucideIcon }> = {
+  members: { label: "platform.tab.members", icon: Users },
+  invitations: { label: "invitations.title", icon: Mail },
+  roles: { label: "roles.title", icon: ShieldCheck },
+  tenants: { label: "tenants.title", icon: Building2 },
+  feedback: { label: "platform.feedback.operatorTitle", icon: MessageSquareText },
+  secrets: { label: "secretRehome.title", icon: LockKeyhole },
+  capabilities: { label: "capabilities.title", icon: FileText },
+  components: { label: "components.title", icon: FileCode2 },
+  bindings: { label: "bindings.title", icon: Plug },
+};
+
+const sectionGroups: readonly { label: PlatformMessageKey; sections: readonly Section[] }[] = [
+  { label: "platform.manage.groupOrganization", sections: ["members", "invitations", "roles"] },
+  { label: "platform.manage.groupPlatform", sections: ["tenants", "feedback", "secrets", "capabilities", "components", "bindings"] },
+];
+
+/** A definitive refusal (403, or 404 for a capability that is not published) hides the entry. */
+const probe = (read: () => Promise<unknown>): Promise<SectionAccess> =>
+  read().then(() => "allowed" as const, (error: unknown) => (readRefusal(error) !== null ? "denied" : "unknown"));
+
+/** Workspace-scoped probes are bounded; beyond this the entry stays visible (unknown). */
+const PROBE_WORKSPACES = 12;
+
+async function probeRoles(client: BffClient): Promise<SectionAccess> {
+  // Organization-wide roles, or any Workspace this member manages, or the create entry.
+  const [tenant, page] = await Promise.all([
+    probe(() => client.roleMembers()),
+    client.roleWorkspaces(0).then((value) => value, () => null),
+  ]);
+  if (tenant !== "denied") return tenant;
+  if (!page || !Array.isArray(page.workspaces)) return "unknown";
+  return page.workspaces.length === 0 && page.nextOffset === undefined && page.createActionKey === undefined ? "denied" : "allowed";
+}
+
+async function probeBindings(client: BffClient): Promise<SectionAccess> {
+  const tenant = await probe(() => client.applicationBindings(undefined, 0));
+  if (tenant !== "denied") return tenant;
+  const workspaces = await client.workspaces().then((value) => value, () => null);
+  if (!Array.isArray(workspaces) || workspaces.length > PROBE_WORKSPACES) return "unknown";
+  const scoped = await Promise.all(workspaces.map((w) => probe(() => client.applicationBindings(w.id, 0))));
+  return scoped.every((access) => access === "denied") ? "denied" : scoped.includes("allowed") ? "allowed" : "unknown";
+}
+
+/** The same read-only GETs each section issues first, in parallel. Nothing is written. */
+async function probeSections(client: BffClient): Promise<SectionProbes> {
+  const [invitations, roles, tenants, feedback, secrets, capabilities, components, bindings] = await Promise.all([
+    probe(() => client.invitations()),
+    probeRoles(client),
+    probe(() => client.platformTenants(0)),
+    probe(() => client.platformFeedback(0)),
+    probe(() => client.legacySecretRefs()),
+    probe(() => client.capabilityContracts(0)),
+    probe(() => client.componentReleases(0)),
+    probeBindings(client),
+  ]);
+  return { invitations, roles, tenants, feedback, secrets, capabilities, components, bindings };
+}
+
+function NavSkeleton({ rows }: { rows: number }) {
+  return <>{Array.from({ length: rows }, (_, i) => <li key={i} aria-hidden className="flex h-8 items-center gap-2 px-2">
+    <span className="size-4 animate-pulse rounded-sm bg-muted motion-reduce:animate-none" />
+    <span className={`h-3 animate-pulse rounded-md bg-muted motion-reduce:animate-none ${i % 2 ? "w-20" : "w-28"}`} />
+  </li>)}</>;
+}
+
 /** Both hosts consume the same management panels without a second Workspace selector. */
 export function WorkspaceManagementPanels({children}:{children?:ReactNode}) {
   const t=useT();
-  const sections = {
-    members: {label:"platform.tab.members",content:children},
-    invitations: {label:"invitations.title",content:<TenantInvitations/>},
-    roles: {label:"roles.title",content:<RoleManagement/>},
-    tenants: {label:"tenants.title",content:<PlatformTenantManagement/>},
-    feedback: {label:"platform.feedback.operatorTitle",content:<PlatformFeedback/>},
-    secrets: {label:"secretRehome.title",content:<LegacySecretRefManagement/>},
-    capabilities: {label:"capabilities.title",content:<CapabilityContractsPanel/>},
-    components: {label:"components.title",content:<ComponentReleasesPanel/>},
-    bindings: {label:"bindings.title",content:<ApplicationBindingsPanel/>},
-  } satisfies Record<string,{label:PlatformMessageKey;content:ReactNode}>;
-  type Section = keyof typeof sections;
+  const client=useBffClient();
+  const content: Record<Section, ReactNode> = {
+    members: children,
+    invitations: <TenantInvitations/>,
+    roles: <RoleManagement/>,
+    tenants: <PlatformTenantManagement/>,
+    feedback: <PlatformFeedback/>,
+    secrets: <LegacySecretRefManagement/>,
+    capabilities: <CapabilityContractsPanel/>,
+    components: <ComponentReleasesPanel/>,
+    bindings: <ApplicationBindingsPanel/>,
+  };
+  const [access]=useLoad("management-section-access",()=>probeSections(client));
+  const checking=access.status==="pending";
+  const accessOf=(section:Section):SectionAccess=>section==="members"?"allowed":access.status==="ok"?access.data[section]:"unknown";
+  // A section whose read was definitively refused is not offered; unknown outcomes stay visible
+  // and the section shows its own error.
+  const visible=(section:Section)=>section==="members"||(!checking&&accessOf(section)!=="denied");
   const [selected,setSelected]=useState<Section|`surface:${string}`>("members");
   const [visited,setVisited]=useState<Section[]>(["members"]);
   // DD-138(6), 07 §4.8.5: component admin surfaces join the admin area by Kailo admin category.
@@ -138,24 +236,38 @@ export function WorkspaceManagementPanels({children}:{children?:ReactNode}) {
   const surfaceEntries=surfaces.status==="ok"?surfaces.data.entries:[];
   const [openedSurfaces,setOpenedSurfaces]=useState<string[]>([]);
   const selectedSurface=selected.startsWith("surface:")?selected.slice("surface:".length):null;
-  // Bounded by the host's content area on wide screens, so the navigation and the open section
-  // each scroll on their own and an admin surface keeps its Kailo header in view.
+  const open=(section:Section)=>{setSelected(section);setVisited(old=>old.includes(section)?old:[...old,section]);};
+  // DD-141 §10 / DD-170 §16.3: the open section sits on one clean content plane — a hairline on
+  // its leading and top edges, flush to the right and bottom, no floating card.
   return <div className="flex min-h-0 w-full flex-1 flex-col bg-sidebar sm:h-full sm:flex-row" data-testid="member-management-context">
-    <nav aria-label={t("platform.tab.members")} className="shrink-0 text-sidebar-foreground sm:min-h-0 sm:w-(--sidebar-width) sm:overflow-y-auto">
-      <SidebarGroup><SidebarGroupLabel>{t("platform.tab.members")}</SidebarGroupLabel><SidebarGroupContent><SidebarMenu>
-        {(Object.keys(sections) as Section[]).map(section=><SidebarMenuItem key={section}><SidebarMenuButton type="button"
-          aria-pressed={section===selected} isActive={section===selected} onClick={()=>{setSelected(section);setVisited(old=>old.includes(section)?old:[...old,section]);}}>
-          <span className="truncate">{t(sections[section].label)}</span>
-        </SidebarMenuButton></SidebarMenuItem>)}
-      </SidebarMenu></SidebarGroupContent></SidebarGroup>
+    <nav aria-label={t("platform.manage.nav")} aria-busy={checking||undefined} className="shrink-0 text-sidebar-foreground sm:min-h-0 sm:w-(--sidebar-width) sm:overflow-y-auto">
+      {checking?<span className="sr-only" role="status">{t("platform.manage.checking")}</span>:null}
+      {sectionGroups.map(group=>{
+        const shown=group.sections.filter(visible);
+        const pending=checking?group.sections.length-shown.length:0;
+        if(shown.length===0&&pending===0)return null;
+        return <SidebarGroup key={group.label} data-testid={`management-group-${group.label}`}>
+          <SidebarGroupLabel>{t(group.label)}</SidebarGroupLabel>
+          <SidebarGroupContent><SidebarMenu>
+            {shown.map(section=>{const Icon=sectionMeta[section].icon;return <SidebarMenuItem key={section}><SidebarMenuButton type="button"
+              aria-pressed={section===selected} isActive={section===selected} data-management-entry={section} onClick={()=>open(section)}>
+              <Icon aria-hidden className="size-4 shrink-0" strokeWidth={1.75}/>
+              <span className="min-w-0 flex-1 truncate">{t(sectionMeta[section].label)}</span>
+            </SidebarMenuButton></SidebarMenuItem>;})}
+            {pending>0?<NavSkeleton rows={pending}/>:null}
+          </SidebarMenu></SidebarGroupContent>
+        </SidebarGroup>;
+      })}
       <AdminSurfaceNavigation state={surfaces} selected={selectedSurface} onSelect={(entry)=>{
         const id=adminSurfaceId(entry);
         setSelected(`surface:${id}`);setOpenedSurfaces(old=>old.includes(id)?old:[...old,id]);}}/>
     </nav>
-    <div className="relative z-10 mb-2 ml-px mr-2 mt-px flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-2xl bg-background shadow-content-edge">
+    <div className="relative z-10 flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden border-border bg-background max-sm:border-t sm:rounded-tl-xl sm:border-l sm:border-t">
       {/* Once opened, management intents stay mounted across navigation. UNKNOWN is not discarded. */}
       {visited.map(section=><section key={section} hidden={section!==selected} className="min-h-0 flex-1 overflow-y-auto px-5 pb-12 pt-6 sm:px-6" data-management-section={section}>
-        <div className="mx-auto flex min-h-full w-full max-w-4xl flex-col gap-4">{sections[section].content}</div>
+        <div className="mx-auto flex min-h-full w-full max-w-4xl flex-col gap-4">
+          {accessOf(section)==="denied"?<PermissionState/>:content[section]}
+        </div>
       </section>)}
       {/* An opened admin surface stays mounted (unsaved native work survives switching); a surface no longer listed is removed. */}
       {openedSurfaces.map(id=>{
@@ -167,6 +279,171 @@ export function WorkspaceManagementPanels({children}:{children?:ReactNode}) {
   </div>;
 }
 
+// ---------------------------------------------------------------------------
+// 审计
+// ---------------------------------------------------------------------------
+
+/** Fields every audit row carries, own or scoped. */
+type AuditRow = Pick<OwnAuditEntry, "occurredAt" | "eventType" | "actionKey" | "decision" | "resultCode" | "workspaceId">;
+
+// Audit strings are open-ended wire values, not a second outcome state machine.
+// Only recognized decisions carry positive/negative tone; NONE and future values stay neutral.
+const resultKeys: Readonly<Record<string, PlatformMessageKey>> = {
+  NONE: "platform.audit.noResult", ACCEPTED: "platform.audit.accepted",
+  DISPATCHED: "platform.audit.dispatched", DELIVERED: "platform.audit.delivered",
+  NOT_DELIVERED: "platform.audit.notDelivered", REJECTED: "platform.audit.rejected",
+  UNKNOWN: "platform.audit.unknownResult",
+  COMPLETED: "platform.audit.completed", FAILED: "platform.audit.failed",
+  CANCELED: "platform.audit.canceled", CANCELLED: "platform.audit.canceled", COMMITTED: "platform.audit.committed",
+  SUCCEEDED: "platform.audit.succeeded", APPROVED: "platform.audit.approved",
+  REGISTERED: "platform.audit.registered", ROTATED: "platform.audit.rotated",
+  ROLE_REMOVED: "platform.audit.roleRemoved", PUSH_REVOKED: "platform.audit.pushRevoked",
+  SESSION_ABANDONED: "platform.audit.sessionAbandoned", MODERATION_READ: "platform.audit.moderationRead",
+  AGENT_TRANSCRIPT_READ: "platform.audit.agentTranscriptRead",
+  PENDING_PUBLISH: "platform.audit.pendingPublish",
+  NATIVE_TURN_BOUND: "platform.audit.nativeTurnBound",
+  DISPATCH_INTENT: "platform.audit.dispatchIntent",
+  DELEGATION_GRANTED: "platform.audit.delegationGranted",
+  DELEGATION_REVOKED: "platform.audit.delegationRevoked",
+  INVITATION_REDEEMED: "platform.audit.invitationRedeemed",
+  CANCELED_BEFORE_MODEL_DISPATCH: "platform.audit.canceledBeforeModelDispatch",
+  CANCELED_BEFORE_MESSAGE_DISPATCH: "platform.audit.canceledBeforeMessageDispatch",
+  CANCEL_REQUEST_PENDING: "platform.audit.cancelRequestPending",
+  AUTOMATION_ENABLED: "platform.audit.automationEnabled",
+  AUTOMATION_DISABLED: "platform.audit.automationDisabled",
+  AUTOMATION_PAUSED: "platform.audit.automationPaused",
+  AUTOMATION_DELETED: "platform.audit.automationDeleted",
+  ACTIVE: "platform.audit.active",
+  [ActionGateState.Allowed]: "tasks.status.allowed",
+  [ActionGateState.Evaluating]: "tasks.status.evaluating",
+  [ActionGateState.Waiting]: "tasks.status.waitingApproval",
+  [ActionGateState.Denied]: "tasks.status.denied",
+  [ActionGateState.Revoked]: "tasks.status.revoked",
+  [ActionGateState.Expired]: "tasks.status.expired",
+  [ActionDispatchState.NotDispatched]: "tasks.status.notStarted",
+  [ActionDispatchState.Aborted]: "tasks.status.aborted",
+  CANCEL_REQUEST_ACCEPTED: "tasks.status.cancelRequestAccepted",
+  RERUN_ACCEPTED: "tasks.status.rerunAccepted",
+};
+
+/** Plain-language decision and result; an unrecognized code reads as a generic outcome. */
+function useAuditText() {
+  const t = useT();
+  const locale = useLocale();
+  return {
+    decision: (decision: string) => t(decision === "ALLOW" ? "platform.audit.allow"
+      : decision === "DENY" ? "platform.audit.deny"
+        : decision === "NONE" ? "platform.audit.noDecision" : "platform.audit.unknownDecision", { code: decision }),
+    result: (code: string) => {
+      const key = Object.hasOwn(resultKeys, code) ? resultKeys[code] : undefined;
+      return key ? t(key)
+        : Object.hasOwn(reasonMessages, code) ? enumLabel(locale, reasonMessages, code as ReasonCode)
+          : t("platform.audit.otherResult");
+    },
+    type: (type: string) => Object.hasOwn(auditEventTypeMessages, type)
+      ? enumLabel(locale, auditEventTypeMessages, type as AuditEventType) : t("platform.audit.otherResult"),
+  };
+}
+
+function AuditDecision({ decision }: { decision: string }) {
+  const text = useAuditText();
+  return <span className="inline-flex" title={decision} data-testid="audit-decision">
+    <Badge tone={decision === "ALLOW" ? "positive" : decision === "DENY" ? "negative" : "neutral"}>{text.decision(decision)}</Badge>
+  </span>;
+}
+
+function AuditResult({ decision, resultCode }: Pick<AuditRow, "decision" | "resultCode">) {
+  const text = useAuditText();
+  return <span className="flex min-w-0 items-center gap-2">
+    <AuditDecision decision={decision} />
+    <span className="truncate" title={resultCode}>{text.result(resultCode)}</span>
+  </span>;
+}
+
+function When({ at }: { at: string }) {
+  const locale = useLocale();
+  return <span className="whitespace-nowrap tabular-nums" title={absoluteTime(locale, at)}>{relativeTime(locale, at)}</span>;
+}
+
+type DecisionFilter = "all" | "allowed" | "denied" | "other";
+const decisionGroup = (decision: string): Exclude<DecisionFilter, "all"> =>
+  decision === "ALLOW" ? "allowed" : decision === "DENY" ? "denied" : "other";
+
+/**
+ * The audit table shared by "my activity" and the scoped audit: time, type, action and
+ * result, with type and admission filters and a text filter over what each row says.
+ */
+function AuditTable<T extends AuditRow>({ rows, rowKey, label, extraColumns = [], onOpen, toolbarEnd, empty, partial, testId }: {
+  rows: readonly T[];
+  rowKey: (row: T, index: number) => string;
+  label: string;
+  extraColumns?: DataColumn<T>[];
+  onOpen?: (row: T) => void;
+  toolbarEnd?: ReactNode;
+  empty: ReactNode;
+  partial?: ReactNode;
+  testId?: string;
+}) {
+  const t = useT();
+  const actionLabel = useActionLabel();
+  const text = useAuditText();
+  const [type, setType] = useState<string>("");
+  const [decision, setDecision] = useState<DecisionFilter>("all");
+  const types = [...new Set(rows.map((row) => row.eventType))];
+  const shown = rows.filter((row) => (type === "" || row.eventType === type) && (decision === "all" || decisionGroup(row.decision) === decision));
+  // Rows have no identity of their own on the own-audit read; keys come from position in the full set.
+  const keyed = new Map(rows.map((row, index) => [row, rowKey(row, index)]));
+  const columns: DataColumn<T>[] = [
+    { key: "time", header: t("platform.time"), width: "8rem", cell: (row) => <When at={row.occurredAt} />,
+      sortValue: (row) => Date.parse(row.occurredAt) },
+    { key: "type", header: t("platform.type"), width: "6.5rem", secondary: true, cell: (row) => text.type(row.eventType) },
+    { key: "action", header: t("platform.action"), truncate: true,
+      cell: (row) => <span className="font-medium text-foreground"><ActionText actionKey={row.actionKey} /></span>,
+      sortValue: (row) => actionLabel(row.actionKey) },
+    { key: "result", header: t("platform.result"), width: "40%", cell: (row) => <AuditResult decision={row.decision} resultCode={row.resultCode} /> },
+    ...extraColumns,
+  ];
+  const filtered = type !== "" || decision !== "all";
+  return (
+    <DataTable
+      key={`${type}|${decision}`}
+      testId={testId}
+      label={label}
+      rows={shown}
+      columns={columns}
+      density="compact"
+      rowKey={(row) => keyed.get(row) ?? ""}
+      onRowClick={onOpen}
+      search={{ placeholder: t("platform.audit.search"),
+        text: (row) => `${actionLabel(row.actionKey)} ${text.type(row.eventType)} ${text.decision(row.decision)} ${text.result(row.resultCode)}` }}
+      partial={partial}
+      toolbar={<>
+        {rows.length > 0 ? <>
+          {types.length > 1 ? <select aria-label={t("platform.audit.filter.type")} className={selectClass} value={type}
+            onChange={(event) => setType(event.target.value)}>
+            <option value="">{t("platform.audit.filter.allTypes")}</option>
+            {types.map((value) => <option key={value} value={value}>{text.type(value)}</option>)}
+          </select> : null}
+          <FilterChips label={t("platform.audit.filter.decision")} value={decision} onChange={setDecision} options={[
+            { value: "all", label: t("platform.audit.filter.all") },
+            { value: "allowed", label: t("platform.audit.filter.allowed") },
+            { value: "denied", label: t("platform.audit.filter.denied") },
+            { value: "other", label: t("platform.audit.filter.other") },
+          ]} />
+        </> : null}
+        {toolbarEnd}
+      </>}
+      empty={rows.length === 0 || !filtered ? empty : <NoMatchState onClear={() => { setType(""); setDecision("all"); }} />}
+    />
+  );
+}
+
+/** The action's catalog label; its wire key stays on hover and in technical details. */
+function ActionText({ actionKey }: { actionKey: string }) {
+  const label = useActionLabel();
+  return <span title={actionKey}>{label(actionKey)}</span>;
+}
+
 /**
  * 审计页：本人在当前 Tenant 内的动作（.design/03 §14 的最小集合），以及调用方持有
  * audit permission 时的范围审计。
@@ -174,92 +451,28 @@ export function WorkspaceManagementPanels({children}:{children?:ReactNode}) {
 export function AuditPage() {
   const client = useBffClient();
   const t = useT();
-  const locale = useLocale();
   const [state, reload] = useLoad("audit", client.ownAudit);
   return (
-    <div className="flex flex-col gap-6">
-      <section className="flex flex-col gap-3">
-        <h2 className="text-sm font-medium">{t("platform.audit.myTitle")}</h2>
+    <div className="flex flex-col gap-10">
+      <PageSection title={t("platform.audit.myTitle")} testId="own-audit"
+        description={state.status === "ok" && Array.isArray(state.data) && state.data.length > 0
+          ? t("platform.audit.myExplain", { count: state.data.length }) : undefined}>
         <Resource state={state} reload={reload}>
-          {(rows) =>
-            rows.length === 0 ? (
-              <Notice>{t("platform.audit.none")}</Notice>
-            ) : (
-              <Table
-                head={[t("platform.time"), t("platform.type"), t("platform.action"), t("platform.result")]}
-              >
-                {rows.map((a, i) => (
-                  // 审计行没有对外 id；它们只追加、按时间排序返回，位置即身份
-                  // biome-ignore lint/suspicious/noArrayIndexKey: 见上
-                  <tr key={i}>
-                    <Cell title={a.occurredAt}>{relativeTime(locale, a.occurredAt)}</Cell>
-                    <Cell>{enumLabel(locale, auditEventTypeMessages, a.eventType)}</Cell>
-                    <Cell><ActionLabel actionKey={a.actionKey} /></Cell>
-                    <Cell><AuditResult decision={a.decision} resultCode={a.resultCode} /></Cell>
-                  </tr>
-                ))}
-              </Table>
-            )
-          }
+          {(rows) => (
+            <AuditTable
+              rows={rows}
+              // 审计行没有对外 id；它们只追加、按时间排序返回，位置即身份
+              rowKey={(row, index) => `${index}:${row.occurredAt}`}
+              label={t("platform.audit.table")}
+              toolbarEnd={<RefreshButton onClick={reload} />}
+              empty={<EmptyState icon={History} title={t("platform.audit.empty.title")} description={t("platform.audit.empty.body")} />}
+            />
+          )}
         </Resource>
-      </section>
+      </PageSection>
       <ScopedAudit />
     </div>
   );
-}
-
-// Audit strings are open-ended wire values, not a second outcome state machine.
-// Only recognized decisions carry positive/negative tone; NONE and future values stay neutral.
-function AuditResult({ decision, resultCode }: Pick<OwnAuditEntry, "decision" | "resultCode">) {
-  const t = useT();
-  const locale = useLocale();
-  const decisionKey = decision === "ALLOW" ? "platform.audit.allow"
-    : decision === "DENY" ? "platform.audit.deny"
-      : decision === "NONE" ? "platform.audit.noDecision" : "platform.audit.unknownDecision";
-  const resultKeys: Readonly<Record<string, PlatformMessageKey>> = {
-    NONE: "platform.audit.noResult", ACCEPTED: "platform.audit.accepted",
-    DISPATCHED: "platform.audit.dispatched", DELIVERED: "platform.audit.delivered",
-    NOT_DELIVERED: "platform.audit.notDelivered", REJECTED: "platform.audit.rejected",
-    UNKNOWN: "platform.audit.unknownResult",
-    COMPLETED: "platform.audit.completed", FAILED: "platform.audit.failed",
-    CANCELED: "platform.audit.canceled", COMMITTED: "platform.audit.committed",
-    PENDING_PUBLISH: "platform.audit.pendingPublish",
-    NATIVE_TURN_BOUND: "platform.audit.nativeTurnBound",
-    DISPATCH_INTENT: "platform.audit.dispatchIntent",
-    DELEGATION_GRANTED: "platform.audit.delegationGranted",
-    DELEGATION_REVOKED: "platform.audit.delegationRevoked",
-    INVITATION_REDEEMED: "platform.audit.invitationRedeemed",
-    CANCELED_BEFORE_MODEL_DISPATCH: "platform.audit.canceledBeforeModelDispatch",
-    CANCELED_BEFORE_MESSAGE_DISPATCH: "platform.audit.canceledBeforeMessageDispatch",
-    CANCEL_REQUEST_PENDING: "platform.audit.cancelRequestPending",
-    AUTOMATION_ENABLED: "platform.audit.automationEnabled",
-    AUTOMATION_DISABLED: "platform.audit.automationDisabled",
-    AUTOMATION_PAUSED: "platform.audit.automationPaused",
-    AUTOMATION_DELETED: "platform.audit.automationDeleted",
-    ACTIVE: "platform.audit.active",
-    [ActionGateState.Allowed]: "tasks.status.allowed",
-    [ActionGateState.Evaluating]: "tasks.status.evaluating",
-    [ActionGateState.Waiting]: "tasks.status.waitingApproval",
-    [ActionGateState.Denied]: "tasks.status.denied",
-    [ActionGateState.Revoked]: "tasks.status.revoked",
-    [ActionGateState.Expired]: "tasks.status.expired",
-    [ActionDispatchState.NotDispatched]: "tasks.status.notStarted",
-    [ActionDispatchState.Aborted]: "tasks.status.aborted",
-    CANCEL_REQUEST_ACCEPTED: "tasks.status.cancelRequestAccepted",
-    RERUN_ACCEPTED: "tasks.status.rerunAccepted",
-  };
-  const resultKey = Object.hasOwn(resultKeys, resultCode) ? resultKeys[resultCode] : undefined;
-  const result = resultKey ? t(resultKey)
-    : Object.hasOwn(reasonMessages, resultCode) ? enumLabel(locale, reasonMessages, resultCode as ReasonCode)
-      : t("platform.audit.resultCode", { code: resultCode });
-  return <>
-    <span title={decision} data-testid="audit-decision">
-      <Badge tone={decision === "ALLOW" ? "positive" : decision === "DENY" ? "negative" : "neutral"}>
-        {t(decisionKey, { code: decision })}
-      </Badge>
-    </span>{" "}
-    <span title={resultCode}>{result}</span>
-  </>;
 }
 
 export const isForbidden = (error: unknown) => error instanceof BffError && error.status === 403;
@@ -291,16 +504,16 @@ type MorePages = {
  * 范围审计（.design/03 §14）：整个 Tenant 或其中一个 Workspace。是否有权由服务端每次
  * fresh Check 决定——Tenant 范围回 403 时，有可进入的 Workspace 就让人改选 Workspace
  * （「整个组织」不可选），没有则整节不渲染；判定不明（503、网络）显示可重试的错误，
- * 不渲染成「没有事件」。
+ * 不渲染成「没有事件」。读取按 cursor 续页：已载入的部分如实标注，并提供“加载更多”。
  */
 function ScopedAudit() {
   const client = useBffClient();
   const t = useT();
-  const locale = useLocale();
   const [scope, setScope] = useState<string | undefined>(undefined);
   const [first, reload] = useLoad(`audit-events:${scope ?? "tenant"}`, () => client.auditEvents(scope));
   const [more, setMore] = useState<MorePages | null>(null);
   const [workspaceState, reloadWorkspaces] = useLoad("workspaces", client.workspaces);
+  const [openEvent, setOpenEvent] = useState<string | null>(null);
   // 离开 Tenant 范围时记下它的判定：切回时的重读不让区块闪没，无权时保持「整个组织」不可选
   const [recordedTenant, setRecordedTenant] = useState<TenantAccess>("unknown");
   // 区块已经给出（换过范围或点过重试）后，重读期间不收起
@@ -329,6 +542,7 @@ function ScopedAudit() {
   const pages = firstPage ? [firstPage, ...(extra?.pages ?? [])] : [];
   const events = pages.flatMap((p) => p.events);
   const nextCursor = pages[pages.length - 1]?.nextCursor;
+  const selected = openEvent ? events.find((e) => e.id === openEvent) : undefined;
 
   const loadMore = async () => {
     if (!firstPage || !nextCursor || extra?.status === "loading") return;
@@ -343,12 +557,56 @@ function ScopedAudit() {
       setMore((old) => (old?.base === base ? { base, pages: loaded, status: "error" } : old));
     }
   };
+  const retry = () => { setEngaged(true); setMore(null); reload(); };
+  const workspaceName = (id: string | undefined) => id === undefined ? t("platform.audit.scope.tenantLevel")
+    : workspaces?.find((w) => w.id === id)?.name ?? t("platform.audit.unknownWorkspace");
+
+  const partial = nextCursor ? (
+    <span className="inline-flex flex-wrap items-center gap-2">
+      <span>{t("list.partial", { count: String(events.length) })}</span>
+      {extra?.status === "error" ? <span role="alert" className="text-danger-text">{t("platform.loadFailed")}</span> : null}
+      <button type="button" disabled={extra?.status === "loading"} onClick={() => void loadMore()}
+        className="rounded-sm font-medium text-brand-text hover:underline focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60">
+        {extra?.status === "loading" ? t("platform.loading") : extra?.status === "error" ? t("platform.retry") : t("platform.audit.scope.loadMore")}
+      </button>
+    </span>
+  ) : undefined;
+
+  const body = scope === undefined && tenantAccess === "denied" ? (
+    <PermissionState compact description={t("platform.audit.scope.tenantDenied")} />
+  ) : first.status === "pending" ? (
+    <TableSkeleton rows={5} columns={5} />
+  ) : first.status === "error" && isForbidden(first.error) ? (
+    <PermissionState compact description={t("platform.audit.scope.denied")} />
+  ) : !firstPage ? (
+    <ErrorState compact error={first.status === "error" ? first.error : undefined} onRetry={retry} />
+  ) : (
+    <>
+      <div hidden={selected !== undefined}>
+        <AuditTable
+          testId="scoped-audit-table"
+          rows={events}
+          rowKey={(e) => e.id}
+          label={t("platform.audit.scope.table")}
+          onOpen={(e) => setOpenEvent(e.id)}
+          partial={partial}
+          toolbarEnd={<RefreshButton onClick={retry} />}
+          extraColumns={[
+            { key: "workspace", header: t("platform.workspace"), width: "9rem", secondary: true, truncate: true,
+              cell: (e) => workspaceName(e.workspaceId) },
+            { key: "evidence", header: t("platform.audit.scope.evidence"), width: "5.5rem", secondary: true, align: "end",
+              cell: (e) => e.evidence.length > 0 ? t("platform.audit.evidenceCount", { count: e.evidence.length }) : null },
+          ]}
+          empty={<EmptyState compact icon={History} title={t("platform.audit.scope.emptyTitle")} description={t("platform.audit.scope.none")} />}
+        />
+      </div>
+      {selected ? <AuditEventDetail event={selected} workspace={workspaceName(selected.workspaceId)} onBack={() => setOpenEvent(null)} /> : null}
+    </>
+  );
 
   return (
-    <section className="flex flex-col gap-3" data-testid="scoped-audit">
-      <h2 className="text-sm font-medium">{t("platform.audit.scope.title")}</h2>
-      <p className="text-xs text-muted-foreground">{t("platform.audit.scope.explain")}</p>
-      <ScopeSelect
+    <PageSection title={t("platform.audit.scope.title")} description={t("platform.audit.scope.explain")} testId="scoped-audit"
+      actions={<ScopeSelect
         scope={scope}
         workspaces={workspaces ?? []}
         workspacesFailed={workspacesFailed}
@@ -358,70 +616,44 @@ function ScopedAudit() {
           setRecordedTenant(tenantAccess);
           setEngaged(true);
           setMore(null);
+          setOpenEvent(null);
           setScope(next);
         }}
-      />
-      {scope === undefined && tenantAccess === "denied" ? (
-        <Notice role="status">{t("platform.audit.scope.tenantDenied")}</Notice>
-      ) : first.status === "pending" ? (
-        <Notice role="status">{t("platform.loading")}</Notice>
-      ) : first.status === "error" && isForbidden(first.error) ? (
-        <Notice role="alert">{t("platform.audit.scope.denied")}</Notice>
-      ) : !firstPage ? (
-        <Notice role="alert">
-          <span>{t("platform.loadFailed")}</span>
-          <Button onClick={() => { setEngaged(true); setMore(null); reload(); }}>{t("platform.retry")}</Button>
-        </Notice>
-      ) : events.length === 0 ? (
-        <Notice>{t("platform.audit.scope.none")}</Notice>
-      ) : (
-        <>
-          <Table
-            head={[
-              t("platform.time"),
-              t("platform.type"),
-              t("platform.action"),
-              t("platform.result"),
-              t("platform.workspace"),
-              t("platform.audit.scope.evidence"),
-            ]}
-          >
-            {events.map((e) => (
-              <tr key={e.id}>
-                <Cell title={e.occurredAt}>{relativeTime(locale, e.occurredAt)}</Cell>
-                <Cell>{enumLabel(locale, auditEventTypeMessages, e.eventType)}</Cell>
-                <Cell><ActionLabel actionKey={e.actionKey} /></Cell>
-                <Cell><AuditResult decision={e.decision} resultCode={e.resultCode} /></Cell>
-                <Cell>
-                  {e.workspaceId === undefined
-                    ? t("platform.audit.scope.tenantLevel")
-                    : (workspaces?.find((w) => w.id === e.workspaceId)?.name ?? (
-                      <span className="font-mono text-xs">{e.workspaceId}</span>
-                    ))}
-                </Cell>
-                <Cell>
-                  <EvidenceSlots eventId={e.id} slots={e.evidence} />
-                </Cell>
-              </tr>
-            ))}
-          </Table>
-          {extra?.status === "error" ? (
-            <p role="alert" className="text-sm">
-              {t("platform.loadFailed")}{" "}
-              <Button onClick={() => void loadMore()}>{t("platform.retry")}</Button>
-            </p>
-          ) : nextCursor ? (
-            <Button
-              className="w-fit"
-              disabled={extra?.status === "loading"}
-              onClick={() => void loadMore()}
-            >
-              {extra?.status === "loading" ? t("platform.loading") : t("platform.audit.scope.loadMore")}
-            </Button>
-          ) : null}
-        </>
-      )}
-    </section>
+      />}>
+      {body}
+    </PageSection>
+  );
+}
+
+/** One audit event: what happened, its evidence (resolved on request) and the technical record. */
+function AuditEventDetail({ event, workspace, onBack }: { event: AuditEventView; workspace: string; onBack: () => void }) {
+  const t = useT();
+  const locale = useLocale();
+  const actionLabel = useActionLabel();
+  const text = useAuditText();
+  return (
+    <div className="flex flex-col gap-6" data-testid="audit-event-detail">
+      <DetailHeader onBack={onBack} title={actionLabel(event.actionKey)} status={<AuditDecision decision={event.decision} />}
+        subtitle={<span title={absoluteTime(locale, event.occurredAt)}>{relativeTime(locale, event.occurredAt)}</span>} />
+      <KeyValueList items={[
+        { id: "time", label: t("platform.time"), value: absoluteTime(locale, event.occurredAt) },
+        { id: "type", label: t("platform.type"), value: text.type(event.eventType) },
+        { id: "result", label: t("platform.result"), value: <span title={event.resultCode}>{text.result(event.resultCode)}</span> },
+        { id: "workspace", label: t("platform.workspace"), value: workspace },
+      ]} />
+      <PageSection title={t("platform.audit.detail.evidence")}>
+        {event.evidence.length === 0
+          ? <p className="rounded-xl border border-border bg-card px-4 py-3 text-sm text-muted-foreground">{t("platform.audit.detail.noEvidence")}</p>
+          : <EvidenceSlots eventId={event.id} slots={event.evidence} />}
+      </PageSection>
+      <TechnicalDetails items={[
+        { id: "event", label: t("platform.audit.detail.eventId"), value: <IdText value={event.id} full /> },
+        { id: "actionKey", label: t("tasks.detail.actionKey"), value: <IdText value={event.actionKey} full /> },
+        { id: "resultCode", label: t("platform.audit.detail.resultCode"), value: <code className="font-mono text-xs">{event.resultCode}</code> },
+        { id: "decision", label: t("platform.audit.detail.decisionCode"), value: <code className="font-mono text-xs">{event.decision}</code> },
+        event.workspaceId ? { id: "workspace", label: t("platform.audit.detail.workspaceId"), value: <IdText value={event.workspaceId} full /> } : undefined,
+      ]} />
+    </div>
   );
 }
 
@@ -449,7 +681,7 @@ export function ScopeSelect({
     <div className="flex flex-wrap items-center gap-2">
       <select
         aria-label={t("platform.audit.scope.select")}
-        className="h-8 w-fit rounded-md border border-input bg-transparent px-2 text-sm"
+        className={selectClass}
         value={scope ?? ""}
         onChange={(e) => onChange(e.target.value || undefined)}
       >
@@ -463,8 +695,8 @@ export function ScopeSelect({
         ))}
       </select>
       {workspacesFailed ? (
-        <span role="alert" className="text-xs text-muted-foreground">
-          {t("platform.audit.scope.workspacesFailed")}{" "}
+        <span role="alert" className="inline-flex items-center gap-2 text-xs text-muted-foreground">
+          {t("platform.audit.scope.workspacesFailed")}
           <Button onClick={reloadWorkspaces}>{t("platform.retry")}</Button>
         </span>
       ) : null}
@@ -472,35 +704,33 @@ export function ScopeSelect({
   );
 }
 
-/** 列表上的证据只有种类；点开才解引用。RESTRICTED 在列表上就标注「受限」。 */
+/** 证据先只列种类；点开才解引用。RESTRICTED 在列表上就标注「受限」。 */
 function EvidenceSlots({ eventId, slots }: { eventId: string; slots: AuditEvidenceSlot[] }) {
   const t = useT();
   const locale = useLocale();
   const [open, setOpen] = useState<number[]>([]);
-  if (slots.length === 0) return <>—</>;
   const toggle = (index: number) =>
     setOpen((old) => (old.includes(index) ? old.filter((i) => i !== index) : [...old, index]));
   return (
-    <div className="flex flex-col gap-1">
+    <ul className="flex flex-col rounded-xl border border-border bg-card" data-testid="evidence-slots">
       {slots.map((slot) => {
         const kind = slot.kind && slot.kind in evidenceKindMessages
           ? enumLabel(locale, evidenceKindMessages, slot.kind)
           : t("platform.audit.scope.unrecognizedKind");
+        const expanded = open.includes(slot.index);
         return (
-          <div key={slot.index} className="flex flex-col gap-1">
-            <span className="flex items-center gap-1">
-              <Button aria-expanded={open.includes(slot.index)} onClick={() => toggle(slot.index)}>
-                {kind}
-              </Button>
+          <li key={slot.index} className="flex flex-col gap-2 border-b border-border px-4 py-2.5 last:border-b-0">
+            <span className="flex flex-wrap items-center gap-2">
+              <Button aria-expanded={expanded} onClick={() => toggle(slot.index)}>{kind}</Button>
               {slot.sensitivity === EvidenceSensitivity.Restricted ? (
-                <Badge tone="neutral">{t("platform.audit.scope.restricted")}</Badge>
+                <Tag tone="warning">{t("platform.audit.scope.restricted")}</Tag>
               ) : null}
             </span>
-            {open.includes(slot.index) ? <EvidenceDetail eventId={eventId} index={slot.index} /> : null}
-          </div>
+            {expanded ? <EvidenceDetail eventId={eventId} index={slot.index} /> : null}
+          </li>
         );
       })}
-    </div>
+    </ul>
   );
 }
 
@@ -519,17 +749,17 @@ function EvidenceDetail({ eventId, index }: { eventId: string; index: number }) 
     return <span role="status" className="text-xs text-muted-foreground">{t("platform.loading")}</span>;
   if (state.status === "error") {
     if (isForbidden(state.error))
-      return <span role="alert" className="text-xs">{t("platform.audit.scope.denied")}</span>;
+      return <span role="alert" className="text-sm text-muted-foreground">{t("platform.audit.scope.denied")}</span>;
     // 404 是确定结论：原证据（或事件、位置）已不存在，重试不会改变它，只显示不可用。
     // 503 与网络错误是结果不明，才给重试。
     if (isNotFound(state.error))
       return (
-        <span className="text-xs text-muted-foreground" data-testid="evidence-unavailable">
+        <span className="text-sm text-muted-foreground" data-testid="evidence-unavailable">
           {t("platform.audit.scope.notFound")}
         </span>
       );
     return (
-      <span role="alert" className="text-xs">
+      <span role="alert" className="inline-flex flex-wrap items-center gap-2 text-sm">
         {t("platform.loadFailed")} <Button onClick={reload}>{t("platform.retry")}</Button>
       </span>
     );
@@ -537,24 +767,22 @@ function EvidenceDetail({ eventId, index }: { eventId: string; index: number }) 
   const view: Partial<EvidenceView> = state.data && typeof state.data === "object" ? state.data : {};
   if (view.available === true && typeof view.stableId === "string") {
     return (
-      <span className="flex flex-wrap items-center gap-1 text-xs" data-testid="evidence-available">
-        {view.authority && view.authority in evidenceAuthorityMessages ? (
-          <span className="text-muted-foreground">
-            {enumLabel(locale, evidenceAuthorityMessages, view.authority)}
-          </span>
-        ) : null}
-        <span className="font-mono break-all">{view.stableId}</span>
-        {Number.isInteger(view.version) ? (
-          <span className="text-muted-foreground">
-            {t("platform.audit.scope.version", { version: view.version as number })}
-          </span>
-        ) : null}
-      </span>
+      <div data-testid="evidence-available">
+        <KeyValueList bordered={false} items={[
+          view.authority && view.authority in evidenceAuthorityMessages
+            ? { id: "authority", label: t("platform.audit.detail.authority"), value: enumLabel(locale, evidenceAuthorityMessages, view.authority) }
+            : undefined,
+          { id: "reference", label: t("platform.audit.detail.reference"), value: <IdText value={view.stableId} full /> },
+          Number.isInteger(view.version)
+            ? { id: "version", label: t("platform.audit.detail.version"), value: t("platform.audit.scope.version", { version: view.version as number }) }
+            : undefined,
+        ]} />
+      </div>
     );
   }
   const reason = view.unavailableReason;
   return (
-    <span className="text-xs text-muted-foreground" data-testid="evidence-unavailable">
+    <span className="text-sm text-muted-foreground" data-testid="evidence-unavailable">
       {reason && reason in evidenceUnavailableReasonMessages
         ? t("platform.audit.scope.unavailable", {
             reason: enumLabel(locale, evidenceUnavailableReasonMessages, reason),
@@ -564,23 +792,30 @@ function EvidenceDetail({ eventId, index }: { eventId: string; index: number }) 
   );
 }
 
+// ---------------------------------------------------------------------------
+// 设备
+// ---------------------------------------------------------------------------
+
 /**
  * 本人的原生设备（DD-77/79）。
  *
  * 登记只能在设备上完成——私钥在那里生成、从不离开。这里只能查看与撤销：设备丢了，
  * 应当能在任一端把它撤掉。撤销只移出这一把公钥，Relay 随即拒绝它；其他设备与
  * Web 身份不受影响。`currentDevicePubkey` 由原生宿主给出，用于标出本机。
+ * 撤销不可恢复，必须经确认对话框（DD-170 §16.6）；提交中对话框不关闭，结果不明只提示核对。
  */
 export function DevicesPage({ currentDevicePubkey }: { currentDevicePubkey?: string }) {
   const client = useBffClient();
   const t = useT();
   const locale = useLocale();
   const [state, reload] = useLoad("client-keys", client.clientKeys);
+  const [confirming, setConfirming] = useState<ClientKeyView | null>(null);
   const [revoking, setRevoking] = useState<string | null>(null);
   const failureText = useFailureText();
   const [outcome, setOutcome] = useState<WriteFailure | null>(null);
 
   const revoke = async (key: ClientKeyView) => {
+    if (revoking !== null) return;
     setRevoking(key.pubkey);
     setOutcome(null);
     try {
@@ -590,57 +825,81 @@ export function DevicesPage({ currentDevicePubkey }: { currentDevicePubkey?: str
       setOutcome(writeFailure(e));
     } finally {
       setRevoking(null);
+      setConfirming(null);
       reload();
     }
   };
 
+  const deviceName = (key: ClientKeyView) => {
+    const time = Date.parse(key.createdAt);
+    return Number.isFinite(time)
+      ? t("platform.devices.deviceName", { date: new Date(time).toLocaleDateString(locale === "zh-CN" ? "zh-CN" : "en", { dateStyle: "medium" }) })
+      : t("platform.devices.device");
+  };
+
+  const columns: DataColumn<ClientKeyView>[] = [
+    {
+      key: "device", header: t("platform.devices.device"),
+      cell: (k) => <CellStack
+        primary={<span className="inline-flex min-w-0 items-center gap-2">
+          <span className="truncate">{deviceName(k)}</span>
+          {k.pubkey === currentDevicePubkey ? <Tag tone="brand">{t("platform.devices.thisDevice")}</Tag> : null}
+        </span>}
+        secondary={<IdText value={k.pubkey} label={t("platform.devices.publicKey")} />} />,
+    },
+    {
+      key: "state", header: t("platform.state"), width: "8rem",
+      cell: (k) => <Badge tone={k.state === BuzzIdentityState.Active ? "positive" : "neutral"}>
+        {enumLabel(locale, buzzIdentityStateMessages, k.state)}
+      </Badge>,
+    },
+    { key: "added", header: t("platform.devices.registeredColumn"), width: "8rem", secondary: true,
+      cell: (k) => <When at={k.createdAt} />, sortValue: (k) => Date.parse(k.createdAt) },
+  ];
+
   return (
-    <div className="flex flex-col gap-2">
-      <p className="text-xs text-muted-foreground">{t("platform.devices.explain")}</p>
+    <PageSection description={t("platform.devices.explain")} testId="devices"
+      actions={<RefreshButton onClick={reload} pending={state.status === "pending"} />}>
       {outcome ? (
-        <div className={`text-xs ${outcome.kind === "rejected" ? "text-destructive" : ""}`} role="alert">
+        <div className={`rounded-xl px-4 py-3 text-sm ${outcome.kind === "unknown" ? "bg-warning-soft text-warning-text" : "bg-danger-soft text-danger-text"}`} role="alert">
           {outcome.kind === "unknown"
             ? t("platform.devices.revokeUnknown", { operation: outcome.operationId ?? "—" })
             : t("platform.devices.revokeRejected", { reason: failureText(outcome) })}
         </div>
       ) : null}
       <Resource state={state} reload={reload}>
-        {(keys) =>
-          keys.length === 0 ? (
-            <Notice>{t("platform.devices.none")}</Notice>
-          ) : (
-            <Table
-              head={[t("platform.protocolIdentity"), t("platform.state"), t("platform.devices.added"), ""]}
-            >
-              {keys.map((k) => (
-                <tr key={k.pubkey}>
-                  <Cell mono>
-                    {truncatePubkey(k.pubkey)}
-                    {k.pubkey === currentDevicePubkey ? (
-                      <span className="ml-2 font-sans text-muted-foreground">
-                        {t("platform.devices.thisDevice")}
-                      </span>
-                    ) : null}
-                  </Cell>
-                  <Cell>
-                    <Badge tone={k.state === BuzzIdentityState.Active ? "positive" : "neutral"}>
-                      {enumLabel(locale, buzzIdentityStateMessages, k.state)}
-                    </Badge>
-                  </Cell>
-                  <Cell title={k.createdAt}>{relativeTime(locale, k.createdAt)}</Cell>
-                  <Cell>
-                    {k.state === BuzzIdentityState.Revoking ? null : (
-                      <Button disabled={revoking !== null} onClick={() => void revoke(k)}>
-                        {t("platform.devices.revoke")}
-                      </Button>
-                    )}
-                  </Cell>
-                </tr>
-              ))}
-            </Table>
-          )
-        }
+        {(keys) => (
+          <DataTable
+            testId="device-table"
+            label={t("platform.devices.table")}
+            rows={keys}
+            columns={columns}
+            rowKey={(k) => k.pubkey}
+            rowActionsWidth="6rem"
+            rowActions={(k) => k.state === BuzzIdentityState.Revoking || k.state === BuzzIdentityState.Revoked ? null : (
+              <Button className="h-7 px-2.5 text-danger-text" disabled={revoking !== null} onClick={() => setConfirming(k)}>
+                {t("platform.devices.revoke")}
+              </Button>
+            )}
+            empty={<EmptyState icon={Smartphone} title={t("platform.devices.emptyTitle")} description={t("platform.devices.none")} />}
+          />
+        )}
       </Resource>
-    </div>
+      <ConfirmDialog
+        testId="device-revoke-dialog"
+        open={confirming !== null}
+        onOpenChange={(next) => { if (!next) setConfirming(null); }}
+        title={t("platform.devices.confirmTitle")}
+        description={confirming?.pubkey === currentDevicePubkey ? t("platform.devices.confirmThisBody") : t("platform.devices.confirmBody")}
+        confirmLabel={t("platform.devices.revoke")}
+        pending={revoking !== null}
+        onConfirm={() => { if (confirming) void revoke(confirming); }}
+      >
+        {confirming ? <span className="mt-1 flex flex-wrap items-center gap-2 text-sm">
+          <span className="text-foreground">{deviceName(confirming)}</span>
+          <IdText value={confirming.pubkey} label={t("platform.devices.publicKey")} />
+        </span> : null}
+      </ConfirmDialog>
+    </PageSection>
   );
 }

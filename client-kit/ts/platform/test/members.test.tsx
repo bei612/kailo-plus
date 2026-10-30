@@ -181,15 +181,55 @@ describe("original member browsing with governed identity",()=>{
   });
   it("does not fetch all management forms on entry or unmount a visited context on navigation",async()=>{
     const m=mount(()=>({status:200,body:{workspaces:[]}}),<WorkspaceManagementPanels><p>Directory</p></WorkspaceManagementPanels>);
-    const host=await m.render();
-    // DD-138(6): only the admin-surface navigation is read on entry; no management form loads.
-    expect(m.send.mock.calls.map(([request])=>request.path)).toEqual(["/api/v1/admin-surfaces"]);
+    const host=await m.render();await settle();
+    // DD-138(6), DD-170 §16.4: entry issues only reads (the admin-surface navigation and the
+    // sections' own first GETs as access probes); no management form mounts until opened.
+    expect(m.send.mock.calls.every(([request])=>request.method==="GET")).toBe(true);
+    expect(m.send.mock.calls.map(([request])=>request.path)).toContain("/api/v1/admin-surfaces");
+    expect(host.querySelector('[data-testid="role-management"]')).toBeNull();
     await click(button(host,"Administrator roles"));
     expect(m.send.mock.calls.some(([request])=>request.path.startsWith("/api/v1/role-workspaces"))).toBe(true);
     const original=host.querySelector('[data-testid="role-management"]');expect(original).not.toBeNull();
     await click(button(host,"Members"));
     expect(host.querySelector('[data-testid="role-management"]')).toBe(original);
     expect(original?.closest('section')?.hidden).toBe(true);
+  });
+});
+
+describe("admin area navigation (DD-170 §16.4)",()=>{
+  const denied={status:403,body:{class:"DENIED",reason:"PERMISSION_DENIED"}} as BffReply;
+  it("lists only sections this session can read; refused ones disappear, unknown ones stay",async()=>{
+    const m=mount((request)=>{
+      const path=request.path;
+      if(path==="/api/v1/admin-surfaces")return {status:200,body:{items:[]}};
+      if(path==="/api/v1/workspaces")return {status:200,body:[]};
+      if(path.startsWith("/api/v1/role-workspaces"))return {status:200,body:{workspaces:[]}};
+      if(path.startsWith("/api/v1/platform/component-releases"))return {status:503,body:{class:"UNKNOWN",reason:"DEPENDENCY_UNAVAILABLE"}};
+      return denied;
+    },<WorkspaceManagementPanels><p>Directory</p></WorkspaceManagementPanels>);
+    const host=await m.render();await settle();
+    const nav=host.querySelector("nav") as HTMLElement;
+    const entries=[...nav.querySelectorAll("[data-management-entry]")].map((entry)=>entry.textContent);
+    expect(entries).toEqual(["Members","Component releases"]);
+    expect(nav.textContent).toContain("Organization");
+    expect(nav.textContent).toContain("Platform");
+    expect(m.send.mock.calls.every(([request])=>request.method==="GET")).toBe(true);
+    expect(host.textContent).toContain("Directory");
+  });
+  it("shows skeleton rows while it checks and keeps Members available",async()=>{
+    let release:(()=>void)|undefined;
+    const gate=new Promise<void>((resolve)=>{release=resolve;});
+    const m=mount(async(request)=>{
+      if(request.path==="/api/v1/admin-surfaces")return {status:200,body:{items:[]}};
+      await gate;
+      return {status:200,body:{workspaces:[]}};
+    },<WorkspaceManagementPanels><p>Directory</p></WorkspaceManagementPanels>);
+    const host=await m.render();await settle();
+    const nav=host.querySelector("nav") as HTMLElement;
+    expect([...nav.querySelectorAll("[data-management-entry]")].map((entry)=>entry.textContent)).toEqual(["Members"]);
+    expect(nav.getAttribute("aria-busy")).toBe("true");
+    release?.();await settle();
+    expect(nav.querySelectorAll("[data-management-entry]").length).toBe(9);
   });
 });
 

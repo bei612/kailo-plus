@@ -10,7 +10,7 @@ import {
 } from "@client-kit/contracts";
 import { describe, expect, it, vi } from "vitest";
 import { createBffClient } from "../src/client";
-import { taskPhase } from "../src/governance";
+import { taskPhase, taskProgress, taskSegment } from "../src/governance";
 import { PlatformProvider } from "../src/react/context";
 import { ApprovalsPage, TasksPage } from "../src/react/governance";
 import { type BffReply, type BffRequest, TransportError } from "../src/transport";
@@ -54,6 +54,18 @@ function mount(route: Route, ui: React.ReactNode, locale: "en" | "zh-CN" = "en")
 const posts = (send: ReturnType<typeof vi.fn>) =>
   send.mock.calls.map(([r]) => r as BffRequest).filter((r) => r.method === "POST");
 
+/** DD-170 §16.6: confirmations are dialogs portalled beside the page. */
+const dialog = () => document.querySelector<HTMLElement>("[data-testid$=-dialog][role=alertdialog], [role=alertdialog]");
+const confirm = async () => click(document.querySelector<HTMLButtonElement>("[data-testid=confirm-dialog-action]")!);
+/** Opens a task from the task page by its row. */
+const openTask = async (el: HTMLElement, id = "ae1") => click(el.querySelector<HTMLButtonElement>(`[data-task-row="${id}"] button`)!);
+/** The open detail's own refresh (the hidden list keeps its own). */
+const refresh = async (el: HTMLElement, detail = "task-detail") =>
+  click(el.querySelector<HTMLButtonElement>(`[data-testid=${detail}] button[aria-label="Refresh"]`)!);
+/** Task-page routes also read approvals waiting for me; none unless a test says otherwise. */
+const withApprovals = (route: Route): Route => (r) =>
+  r.method === "GET" && r.path === "/api/v1/approvals" ? { status: 200, body: [] } : route(r);
+
 describe("taskPhase", () => {
   it("keeps future gate, dispatch and workflow values unknown", () => {
     for (const over of [{ gateState: "FUTURE" }, { dispatchState: "FUTURE" }, { taskStatus: "FUTURE" }]) {
@@ -93,17 +105,35 @@ describe("taskPhase", () => {
   });
 });
 
+describe("taskSegment", () => {
+  it("never counts unknown or reconciling outcomes as ended", () => {
+    expect(taskSegment(task({ dispatchState: ActionDispatchState.Unknown }))).toBe("attention");
+    expect(taskSegment(task({ workflowId: "w", taskStatus: TaskStatus.Completed, observation: ReasonCode.ProjectionDelayed }))).toBe("attention");
+    expect(taskSegment(task({ gateState: ActionGateState.Waiting }))).toBe("active");
+    expect(taskSegment(task({ workflowId: "w", taskStatus: TaskStatus.Failed }))).toBe("ended");
+    expect(taskSegment(task())).toBe("ended");
+  });
+  it("counts reached steps of admission, dispatch and execution", () => {
+    expect(taskProgress(task({ gateState: ActionGateState.Waiting }))).toEqual({ done: 0, total: 2 });
+    expect(taskProgress(task({ workflowId: "w", taskStatus: TaskStatus.Running }))).toEqual({ done: 2, total: 3 });
+    expect(taskProgress(task({ workflowId: "w", taskStatus: TaskStatus.Completed }))).toEqual({ done: 3, total: 3 });
+  });
+});
+
 describe("TasksPage", () => {
   it.each(["en", "zh-CN"] as const)("shows translated action and waiting condition with original codes in %s", async (locale) => {
     const value = task({ actionKey: "agent.invoke", workflowId: "w", taskStatus: TaskStatus.Running,
       waitingReason: "UNKNOWN_EXTERNAL_RESULT" });
-    const { host } = mount((r) => r.path === "/api/v1/tasks"
-      ? { status: 200, body: [value] } : { status: 200, body: value }, <TasksPage allowComponentActions={false} />, locale);
+    const { host } = mount(withApprovals((r) => r.path === "/api/v1/tasks"
+      ? { status: 200, body: [value] } : { status: 200, body: value }), <TasksPage allowComponentActions={false} />, locale);
     const el = await host;
     await settle();
     expect(el.textContent).toContain(locale === "en" ? "Run Agent" : "运行 Agent");
-    expect(el.querySelector("code")?.textContent).toBe("agent.invoke");
-    await click(el.querySelector<HTMLButtonElement>('button:has([title="agent.invoke"])')!);
+    // DD-170 §16.5: the list shows the action's name, never its wire key.
+    expect(el.querySelector("[data-testid=task-list]")?.textContent).not.toContain("agent.invoke");
+    expect(el.querySelector("[data-testid=task-segment-active]")?.textContent).toContain(locale === "en" ? "Run Agent" : "运行 Agent");
+    await openTask(el);
+    expect(el.querySelector("[data-testid=technical-details]")?.textContent).toContain("agent.invoke");
     expect(el.querySelector('[title="UNKNOWN_EXTERNAL_RESULT"]')?.textContent)
       .toBe(locale === "en" ? "Outcome not known yet — waiting for reconciliation" : "结果尚不明确，等待对账");
     expect(el.querySelector('[title="ALLOWED · DISPATCHED · RUNNING"]')).not.toBeNull();
@@ -120,7 +150,7 @@ describe("TasksPage", () => {
 
   it("列表 → 详情：状态、原因、operation 与审批；撤回需确认并经 BFF", async () => {
     let status = ApprovalStatus.Waiting;
-    const { send, host } = mount((r) => {
+    const { send, host } = mount(withApprovals((r) => {
       if (r.path === "/api/v1/tasks")
         return { status: 200, body: [task({ gateState: ActionGateState.Waiting, approvalWorkflowId: WF, reason: ReasonCode.WaitingApproval })] };
       if (r.path === "/api/v1/tasks/ae1")
@@ -131,11 +161,11 @@ describe("TasksPage", () => {
         return { status: 200, body: { status } };
       }
       throw new Error(`未预期 ${r.method} ${r.path}`);
-    }, <TasksPage />);
+    }), <TasksPage />);
     const el = await host;
     await settle();
     expect(el.textContent).toContain("Waiting for approval");
-    await click(button(el, "Remove organization membertenant.member.revoke"));
+    await openTask(el);
     expect(el.textContent).toContain("op-1");
     expect(el.textContent).toContain("Waiting for approval.");
     expect(el.textContent).not.toContain("WAITING_APPROVAL");
@@ -143,7 +173,7 @@ describe("TasksPage", () => {
     await click(button(el, "Withdraw request"));
     // 先确认，未确认前不提交
     expect(posts(send)).toHaveLength(0);
-    await click(button(el, "Confirm"));
+    await confirm();
     expect(posts(send)).toEqual([{ method: "POST", path: `/api/v1/approvals/${encodeURIComponent(WF)}/withdraw` }]);
     expect(el.textContent).toContain("The request is now: Withdrawn.");
     // 审批已终结：不再给撤回
@@ -151,18 +181,18 @@ describe("TasksPage", () => {
   });
 
   it("撤回已确定而投影仍停在未决：不再给撤回，结论照旧显示", async () => {
-    const { send, host } = mount((r) => {
+    const { send, host } = mount(withApprovals((r) => {
       if (r.path === "/api/v1/tasks") return { status: 200, body: [task({ approvalWorkflowId: WF })] };
       if (r.path === "/api/v1/tasks/ae1") return { status: 200, body: task({ approvalWorkflowId: WF }) };
       if (r.method === "POST") return { status: 200, body: { status: ApprovalStatus.Cancelled } };
       // 写回还没到 Core：投影仍是 WAITING
       return { status: 200, body: approval() };
-    }, <TasksPage />);
+    }), <TasksPage />);
     const el = await host;
     await settle();
-    await click(button(el, "Remove organization membertenant.member.revoke"));
+    await openTask(el);
     await click(button(el, "Withdraw request"));
-    await click(button(el, "Confirm"));
+    await confirm();
     expect(el.textContent).toContain("The request is now: Withdrawn.");
     expect([...el.querySelectorAll("button")].map((b) => b.textContent)).not.toContain("Withdraw request");
     expect(posts(send)).toHaveLength(1);
@@ -172,7 +202,7 @@ describe("TasksPage", () => {
   // kept "Waiting for approval" until a manual refresh.
   it("re-reads the task and approval after a definite withdraw until they leave waiting", async () => {
     let withdrawn = false, lagging = 0;
-    const { send, host } = mount((r) => {
+    const { send, host } = mount(withApprovals((r) => {
       const settled = withdrawn && lagging-- <= 0;
       if (r.path === "/api/v1/tasks") return { status: 200, body: [task({ gateState: ActionGateState.Waiting, approvalWorkflowId: WF })] };
       if (r.path === "/api/v1/tasks/ae1") return { status: 200, body: task({ approvalWorkflowId: WF,
@@ -180,14 +210,14 @@ describe("TasksPage", () => {
         reason: settled ? ReasonCode.ApprovalWithdrawn : ReasonCode.WaitingApproval }) };
       if (r.method === "POST") { withdrawn = true; lagging = 2; return { status: 200, body: { status: ApprovalStatus.Cancelled } }; }
       return { status: 200, body: approval({ status: settled ? ApprovalStatus.Cancelled : ApprovalStatus.Waiting }) };
-    }, <TasksPage />);
+    }), <TasksPage />);
     const el = await host;
     await settle();
-    await click(button(el, "Remove organization membertenant.member.revoke"));
+    await openTask(el);
     expect(el.textContent).toContain("Waiting for approval.");
     expect(el.textContent).not.toContain("WAITING_APPROVAL");
     await click(button(el, "Withdraw request"));
-    await click(button(el, "Confirm"));
+    await confirm();
     expect(el.textContent).toContain("Waiting for approval.");
     expect(el.textContent).not.toContain("WAITING_APPROVAL");
     await vi.waitFor(async () => {
@@ -200,35 +230,35 @@ describe("TasksPage", () => {
   }, 10000);
 
   it("投影不可担保时不给控制", async () => {
-    const { host } = mount((r) => {
+    const { host } = mount(withApprovals((r) => {
       if (r.path === "/api/v1/tasks") return { status: 200, body: [task({ approvalWorkflowId: WF })] };
       if (r.path === "/api/v1/tasks/ae1") return { status: 200, body: task({ approvalWorkflowId: WF }) };
       return { status: 200, body: approval({ observation: ReasonCode.ProjectionDelayed }) };
-    }, <TasksPage />);
+    }), <TasksPage />);
     const el = await host;
     await settle();
-    await click(button(el, "Remove organization membertenant.member.revoke"));
+    await openTask(el);
     expect(el.textContent).toContain("Status may be out of date");
     expect([...el.querySelectorAll("button")].map((b) => b.textContent)).not.toContain("Withdraw request");
   });
 
   it("只在详情取得 BFF 控制键后显示取消；提交的是原动作 ID，不是 Workflow ID", async () => {
     let terminal = false;
-    const { host, send } = mount((r) => {
+    const { host, send } = mount(withApprovals((r) => {
       if (r.path === "/api/v1/tasks") return { status: 200, body: [task({ workflowId: "workflow-1" })] };
       if (r.path === "/api/v1/tasks/ae1")
         return { status: 200, body: task({ workflowId: "workflow-1", taskStatus: terminal ? TaskStatus.Canceled : TaskStatus.Running, cancelActionKey: terminal ? undefined : "task.cancel.workspace.create.v1", rerunActionKey: terminal ? "task.rerun.workspace.create.v1" : undefined }) };
       if (r.path === "/api/v1/actions")
         return { status: 202, body: { actionExecutionId: "cancel-ae", actionKey: "task.cancel.workspace.create.v1", operationId: "cancel-op", gateState: "ALLOWED", dispatchState: "NOT_DISPATCHED" } };
       throw new Error(`未预期 ${r.method} ${r.path}`);
-    }, <TasksPage />);
+    }), <TasksPage />);
     const el = await host;
     await settle();
     expect(el.textContent).not.toContain("Request cancellation");
-    await click(button(el, "Remove organization membertenant.member.revoke"));
+    await openTask(el);
     await click(button(el, "Request cancellation"));
     expect(posts(send)).toHaveLength(0);
-    await click(button(el, "Confirm"));
+    await confirm();
     expect(posts(send)).toHaveLength(1);
     expect(posts(send)[0]?.body).toMatchObject({
       actionKey: "task.cancel.workspace.create.v1",
@@ -237,7 +267,7 @@ describe("TasksPage", () => {
     expect(posts(send)[0]?.body).not.toHaveProperty("workflowId");
     expect(el.textContent).toContain("original task is not yet confirmed canceled");
     terminal = true;
-    await click(button(el, "Refresh"));
+    await refresh(el);
     await settle();
     expect(el.textContent).toContain("Canceled");
     expect(el.textContent).not.toContain("original task is not yet confirmed canceled");
@@ -246,7 +276,7 @@ describe("TasksPage", () => {
 
   it("取消提交结果不明时使用同一幂等键重发，不产生第二次意图", async () => {
     let writes = 0;
-    const { host, send } = mount((r) => {
+    const { host, send } = mount(withApprovals((r) => {
       if (r.path === "/api/v1/tasks") return { status: 200, body: [task()] };
       if (r.path === "/api/v1/tasks/ae1")
         return { status: 200, body: task({ cancelActionKey: writes === 0 ? "task.cancel.workspace.create.v1" : undefined }) };
@@ -256,12 +286,12 @@ describe("TasksPage", () => {
         return { status: 202, body: { actionExecutionId: "cancel-ae", actionKey: "task.cancel.workspace.create.v1", operationId: "cancel-op", gateState: "ALLOWED", dispatchState: "UNKNOWN" } };
       }
       throw new Error(`未预期 ${r.method} ${r.path}`);
-    }, <TasksPage />);
+    }), <TasksPage />);
     const el = await host;
     await settle();
-    await click(button(el, "Remove organization membertenant.member.revoke"));
+    await openTask(el);
     await click(button(el, "Request cancellation"));
-    await click(button(el, "Confirm"));
+    await confirm();
     expect(el.textContent).toContain("outcome is unknown");
     await click(button(el, "Resend same request"));
     expect(posts(send)).toHaveLength(2);
@@ -272,7 +302,7 @@ describe("TasksPage", () => {
   });
 
   it("重跑只使用详情下发的控制键，独立审批在新任务里呈现", async () => {
-    const { host, send } = mount((r) => {
+    const { host, send } = mount(withApprovals((r) => {
       if (r.path === "/api/v1/tasks")
         return { status: 200, body: [task({ taskStatus: TaskStatus.Failed, workflowId: "old-workflow" })] };
       if (r.path === "/api/v1/tasks/ae1")
@@ -309,22 +339,79 @@ describe("TasksPage", () => {
       if (r.path === `/api/v1/approvals/${encodeURIComponent(WF)}`)
         return { status: 200, body: approval({ actionExecutionId: "rerun-ae" }) };
       throw new Error(`未预期 ${r.method} ${r.path}`);
-    }, <TasksPage />);
+    }), <TasksPage />);
     const el = await host;
     await settle();
     expect(el.textContent).not.toContain("Run again");
-    await click(button(el, "Remove organization membertenant.member.revoke"));
+    await openTask(el);
     await click(button(el, "Run again"));
     expect(posts(send)).toHaveLength(0);
-    await click(button(el, "Confirm"));
+    await confirm();
     expect(posts(send)[0]?.body).toMatchObject({
       actionKey: "task.rerun.tenant.member.revoke.v1",
       originalActionExecutionId: "ae1",
     });
     expect(posts(send)[0]?.body).not.toHaveProperty("workflowId");
     expect(el.textContent).toContain("new task for approval");
-    await click(button(el, "rerun-ae"));
+    await click(button(el, "Open the new task"));
     expect(el.textContent).toContain("Waiting for approval");
+  });
+});
+
+describe("TasksPage segments (.design/06 §8)", () => {
+  it("groups by what to do next: approvals for me and unknown outcomes need action; ended is collapsed", async () => {
+    const tasks = [
+      task({ actionExecutionId: "ae-run", actionKey: "agent.invoke", workflowId: "w", taskStatus: TaskStatus.Running }),
+      task({ actionExecutionId: "ae-done", actionKey: "workspace.create" }),
+      task({ actionExecutionId: "ae-unk", actionKey: "tenant.admin.grant", dispatchState: ActionDispatchState.Unknown }),
+    ];
+    const { host, send } = mount((r) => {
+      if (r.path === "/api/v1/tasks") return { status: 200, body: tasks };
+      if (r.path === "/api/v1/approvals") return { status: 200, body: [approval({ workflowId: "wf-me" })] };
+      if (r.path === "/api/v1/invitations") return { status: 403, body: { class: ErrorClass.Denied, reason: ReasonCode.PermissionDenied } };
+      if (r.path === `/api/v1/approvals/${encodeURIComponent("wf-me")}`) return { status: 200, body: approval({ workflowId: "wf-me" }) };
+      throw new Error(`未预期 ${r.method} ${r.path}`);
+    }, <TasksPage allowComponentActions={false} />);
+    const el = await host;
+    await settle();
+    const attention = el.querySelector("[data-testid=task-segment-attention]") as HTMLElement;
+    expect(attention.textContent).toContain("Remove organization member");
+    expect(attention.textContent).toContain("Waiting for your decision");
+    expect(attention.querySelector('[data-task-row="ae-unk"]')).not.toBeNull();
+    expect(el.querySelector('[data-testid=task-segment-active] [data-task-row="ae-run"]')?.textContent).toContain("Step 2 of 3");
+    const ended = el.querySelector("[data-testid=task-segment-ended]") as HTMLElement;
+    expect(ended.querySelector('[data-task-row="ae-done"]')).toBeNull();
+    await click(button(ended, "Show"));
+    expect(ended.querySelector('[data-task-row="ae-done"]')?.textContent).toContain("View result");
+    // The next step for an approval waiting for me opens that approval, not a bare decision.
+    await click(button(attention, "Review"));
+    expect(el.querySelector("[data-testid=approval-detail]")?.textContent).toContain("Remove organization member");
+    expect(posts(send)).toHaveLength(0);
+  });
+
+  it("keeps the cancellation dialog open and disabled while the request is in flight", async () => {
+    let finish: ((reply: BffReply) => void) | undefined;
+    const { host, send } = mount(withApprovals((r) => {
+      if (r.path === "/api/v1/tasks") return { status: 200, body: [task({ workflowId: "w", taskStatus: TaskStatus.Running })] };
+      if (r.path === "/api/v1/tasks/ae1")
+        return { status: 200, body: task({ workflowId: "w", taskStatus: TaskStatus.Running, cancelActionKey: "task.cancel.workspace.create.v1" }) };
+      if (r.path === "/api/v1/actions") return new Promise<BffReply>((resolve) => { finish = resolve; });
+      throw new Error(`未预期 ${r.method} ${r.path}`);
+    }), <TasksPage />);
+    const el = await host;
+    await settle();
+    await openTask(el);
+    await click(button(el, "Request cancellation"));
+    expect(dialog()?.textContent).toContain("Cancel this task?");
+    await confirm();
+    const action = document.querySelector<HTMLButtonElement>("[data-testid=confirm-dialog-action]");
+    expect(action?.disabled).toBe(true);
+    await click(action!);
+    expect(posts(send)).toHaveLength(1);
+    finish?.({ status: 202, body: { actionExecutionId: "cancel-ae", actionKey: "task.cancel.workspace.create.v1", operationId: "cancel-op", gateState: "ALLOWED", dispatchState: "DISPATCHED" } });
+    await settle();
+    expect(dialog()).toBeNull();
+    expect(el.textContent).toContain("original task is not yet confirmed canceled");
   });
 });
 
@@ -341,7 +428,10 @@ describe("ApprovalsPage", () => {
     );
     const el = await m.host;
     await settle();
-    await click(button(el, "tenant.member.revoke"));
+    // DD-170 §16.2: the row opens the detail; the list shows the action's name, not its key.
+    expect(el.querySelector("[data-testid=approval-table]")?.textContent).toContain("Remove organization member");
+    expect(el.querySelector("[data-testid=approval-table]")?.textContent).not.toContain("tenant.member.revoke");
+    await click(el.querySelector<HTMLElement>(`tr[data-row-key="${WF}"]`)!);
     return { el, send: m.send };
   };
 
@@ -369,10 +459,10 @@ describe("ApprovalsPage", () => {
       body: ++reads === 1 ? approval() : refreshed,
     }));
     await click(button(el, "Approve"));
-    expect(el.textContent).toContain("cannot be changed afterwards");
-    await click(button(el, "Refresh"));
-    expect(el.textContent).not.toContain("cannot be changed afterwards");
-    expect([...el.querySelectorAll("button")].map((b) => b.textContent)).not.toContain("Confirm");
+    expect(dialog()?.textContent).toContain("cannot be changed afterwards");
+    await refresh(el, "approval-detail");
+    expect(document.body.textContent).not.toContain("cannot be changed afterwards");
+    expect(dialog()).toBeNull();
     expect(posts(send)).toHaveLength(0);
   });
 
@@ -407,7 +497,7 @@ describe("ApprovalsPage", () => {
       return { status: 200, body: { approverPrincipalId: "me", admitted: true, decision: "APPROVE", status: "APPROVED" } };
     });
     await click(button(el, "Approve"));
-    await click(button(el, "Confirm"));
+    await confirm();
     await click(button(el, "Send the same decision again"));
     // The original uncertainty remains visible even while the retry is in flight.
     expect(el.querySelector("[role=alert]")?.textContent).toContain("not known");
@@ -416,7 +506,7 @@ describe("ApprovalsPage", () => {
     finishRetry?.(refusal);
     await settle();
     await click(button(el, "Send the same decision again"));
-    await click(button(el, "Refresh"));
+    await refresh(el, "approval-detail");
     const alert = el.querySelector("[role=alert]")?.textContent ?? "";
     expect(alert).toContain("not known");
     expect(alert).not.toContain("not accepted");
@@ -443,8 +533,9 @@ describe("ApprovalsPage", () => {
         : { status: 200, body: approval() },
     );
     await click(button(el, "Approve"));
-    expect(el.textContent).toContain("cannot be changed afterwards");
-    await click(button(el, "Confirm"));
+    expect(dialog()?.textContent).toContain("cannot be changed afterwards");
+    expect(posts(send)).toHaveLength(0);
+    await confirm();
     expect(posts(send)).toEqual([
       { method: "POST", path: `/api/v1/approvals/${encodeURIComponent(WF)}/decision`, body: { decision: "APPROVE" } },
     ]);
@@ -460,7 +551,7 @@ describe("ApprovalsPage", () => {
       return { status: 200, body: { approverPrincipalId: "me", admitted: true, decision: "DENY", status: "DENIED" } };
     });
     await click(button(el, "Deny"));
-    await click(button(el, "Confirm"));
+    await confirm();
     const alert = el.querySelector("[role=alert]")?.textContent ?? "";
     expect(alert).toContain("not known");
     expect(alert).toContain("op-9");
@@ -477,7 +568,7 @@ describe("ApprovalsPage", () => {
         : { status: 200, body: approval() },
     );
     await click(button(el, "Approve"));
-    await click(button(el, "Confirm"));
+    await confirm();
     expect(el.querySelector("[role=alert]")?.textContent).toBe(
       "Your decision was not accepted: You already recorded a different decision, which cannot be changed.",
     );

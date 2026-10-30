@@ -9,17 +9,26 @@ import { BffError } from "../transport";
 import { platformMessages, type PlatformMessageKey } from "../i18n";
 import { useReasonText, useT } from "./context";
 
-/** Presentation only: unknown extension actions retain their exact wire key.
- * This catalog does not register, authorize or enable an action. */
-export function ActionLabel({ actionKey }: { actionKey: string }) {
+/** The catalog label of a governed action key (the same encoding the Dart catalog uses). */
+export function useActionLabel(): (actionKey: string) => string {
   const t = useT();
-  // The shared Dart catalog permits hyphens, not underscores, in message keys.
-  // Round-trip the encoding so a different wire action never aliases a label.
-  const key = `actions.${actionKey.replaceAll("_", "-")}`;
-  const label = key.slice("actions.".length).replaceAll("-", "_") === actionKey
-    && Object.hasOwn(platformMessages, key) ? t(key as PlatformMessageKey)
-    : actionKey.startsWith("task.cancel.") ? t("tasks.cancelRequest")
-    : actionKey.startsWith("task.rerun.") ? t("tasks.rerunRequest") : t("actions.unknown");
+  return (actionKey: string) => {
+    // The shared Dart catalog permits hyphens, not underscores, in message keys.
+    // Round-trip the encoding so a different wire action never aliases a label.
+    const key = `actions.${actionKey.replaceAll("_", "-")}`;
+    return key.slice("actions.".length).replaceAll("-", "_") === actionKey
+      && Object.hasOwn(platformMessages, key) ? t(key as PlatformMessageKey)
+      : actionKey.startsWith("task.cancel.") ? t("tasks.cancelRequest")
+      : actionKey.startsWith("task.rerun.") ? t("tasks.rerunRequest") : t("actions.unknown");
+  };
+}
+
+/** Presentation only: unknown extension actions retain their exact wire key.
+ * This catalog does not register, authorize or enable an action. The `plain` variant
+ * (DD-170 §16.5) shows only the label; the wire key stays available on hover. */
+export function ActionLabel({ actionKey, variant = "stacked" }: { actionKey: string; variant?: "stacked" | "plain" }) {
+  const label = useActionLabel()(actionKey);
+  if (variant === "plain") return <span className="truncate" title={actionKey}>{label}</span>;
   return <span className="inline-flex flex-col" title={actionKey}>
     <span>{label}</span><code className="text-xs text-muted-foreground">{actionKey}</code>
   </span>;
