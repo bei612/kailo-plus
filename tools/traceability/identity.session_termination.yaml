@@ -21,12 +21,21 @@ validation:
     - dimension: 单元测试
       ref: worker/workflows/component_task_test.go
     - dimension: 单元测试
+      ref: core/crates/platform-core/src/membership_state.rs
+    - dimension: 合同一致
+      ref: contracts/enums/evidence_kind.schema.json
+    - dimension: 单元测试
       ref: tools/release/test_node.py
 
 implementation:
   owners: [team-platform]
   paths:
     - core/crates/platform-core/src/membership_lifecycle.rs
+    - core/crates/platform-core/src/membership_state.rs
+    - core/crates/platform-core/src/audit.rs
+    - core/crates/platform-core/src/audit_views.rs
+    - client-kit/ts/platform/src/i18n.ts
+    - worker/activities/core_api.go
     - worker/activities/identity_provider.go
     - worker/workflows/component_task.go
     - worker/registry.go
@@ -39,7 +48,7 @@ implementation:
     - tools/release/release.yaml
     - tools/release/node.py
   surfaces: []
-  schemas: []
+  schemas: [contracts/enums/evidence_kind.schema.json]
   migrations: []
 
 runtime:

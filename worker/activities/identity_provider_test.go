@@ -74,7 +74,7 @@ func TestEndSessionsCallsLogoutForDeploymentIssuerOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if out != (EndSessionsOutput{Ended: 1, Absent: 1, Foreign: 1}) {
+	if out != (EndSessionsOutput{Identities: 3, Ended: 1, Absent: 1, Foreign: 1}) {
 		t.Fatalf("unexpected result %+v", out)
 	}
 	if strings.Join(f.logouts, ",") != "a37a0187-0312-490d-abb4-6b848ac62825,gone" {

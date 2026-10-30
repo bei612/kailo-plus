@@ -532,18 +532,24 @@ func convergeMembership(ctx workflow.Context, t *task, m *MembershipTarget, want
 
 	// 2b. DD-164(6)：Tenant 撤权结束此人全部 IdP 会话。IdP 同时向会话中出现过的每个组件 client
 	//     投递 back-channel logout，组件结束其会话；确定成功前不跃迁到 REVOKED。
-	if revokeScope != nil && m.Scope == "TENANT" && len(m.IdentityProviderSubjects) > 0 &&
+	//     结果计数随跃迁交给 Core，在 REVOKED 的同一事务写审计 IDP_SESSIONS_TERMINATED；
+	//     此人没有外部身份时计数为零，审计照写。
+	var idpSessions *activities.EndSessionsOutput
+	if revokeScope != nil && m.Scope == "TENANT" &&
 		workflow.GetVersion(ctx, changeTenantRevocationIdentityProviderSessions,
 			workflow.DefaultVersion, 1) == 1 {
-		subjects := append([]activities.IdentityProviderSubject(nil), m.IdentityProviderSubjects...)
-		var ended activities.EndSessionsOutput
-		if err := t.step(func(ao workflow.Context) workflow.Future {
-			return workflow.ExecuteActivity(ao, (*activities.IdentityProvider).EndSessions,
-				activities.EndSessionsInput{Subjects: subjects})
-		}, &ended); err != nil {
-			return err
+		ended := activities.EndSessionsOutput{}
+		if len(m.IdentityProviderSubjects) > 0 {
+			subjects := append([]activities.IdentityProviderSubject(nil), m.IdentityProviderSubjects...)
+			if err := t.step(func(ao workflow.Context) workflow.Future {
+				return workflow.ExecuteActivity(ao, (*activities.IdentityProvider).EndSessions,
+					activities.EndSessionsInput{Subjects: subjects})
+			}, &ended); err != nil {
+				return err
+			}
 		}
-		workflow.GetLogger(ctx).Info("IdP 会话已结束",
+		idpSessions = &ended
+		workflow.GetLogger(ctx).Info("IdP 会话已结束", "identities", ended.Identities,
 			"ended", ended.Ended, "absent", ended.Absent, "foreign", ended.Foreign)
 	}
 
@@ -557,6 +563,8 @@ func convergeMembership(ctx workflow.Context, t *task, m *MembershipTarget, want
 				FromVersion:  m.MembershipVersion,
 				ToState:      terminal,
 				WorkflowID:   workflow.GetInfo(ctx).WorkflowExecution.ID,
+
+				IdentityProviderSessions: idpSessions,
 			})
 	}, &out); err != nil {
 		return err

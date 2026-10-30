@@ -409,6 +409,12 @@
 //    componentSearchQuery, err := UnmarshalComponentSearchQuery(bytes)
 //    bytes, err = componentSearchQuery.Marshal()
 //
+//    componentShareAdoptionRequest, err := UnmarshalComponentShareAdoptionRequest(bytes)
+//    bytes, err = componentShareAdoptionRequest.Marshal()
+//
+//    componentShareAdoptionResult, err := UnmarshalComponentShareAdoptionResult(bytes)
+//    bytes, err = componentShareAdoptionResult.Marshal()
+//
 //    componentShareIntentCreated, err := UnmarshalComponentShareIntentCreated(bytes)
 //    bytes, err = componentShareIntentCreated.Marshal()
 //
@@ -1083,6 +1089,9 @@
 //
 //    taskStateReport, err := UnmarshalTaskStateReport(bytes)
 //    bytes, err = taskStateReport.Marshal()
+//
+//    tenantMemberCreatePolicyInput, err := UnmarshalTenantMemberCreatePolicyInput(bytes)
+//    bytes, err = tenantMemberCreatePolicyInput.Marshal()
 //
 //    tenantProfileInput, err := UnmarshalTenantProfileInput(bytes)
 //    bytes, err = tenantProfileInput.Marshal()
@@ -2616,6 +2625,26 @@ func UnmarshalComponentSearchQuery(data []byte) (ComponentSearchQuery, error) {
 }
 
 func (r *ComponentSearchQuery) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalComponentShareAdoptionRequest(data []byte) (ComponentShareAdoptionRequest, error) {
+	var r ComponentShareAdoptionRequest
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ComponentShareAdoptionRequest) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalComponentShareAdoptionResult(data []byte) (ComponentShareAdoptionResult, error) {
+	var r ComponentShareAdoptionResult
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ComponentShareAdoptionResult) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -4866,6 +4895,16 @@ func UnmarshalTaskStateReport(data []byte) (TaskStateReport, error) {
 }
 
 func (r *TaskStateReport) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalTenantMemberCreatePolicyInput(data []byte) (TenantMemberCreatePolicyInput, error) {
+	var r TenantMemberCreatePolicyInput
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *TenantMemberCreatePolicyInput) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -7845,7 +7884,8 @@ type ComponentDirectoryShare struct {
 	ResourceID       string                    `json:"resourceId"`
 }
 
-// DD-164(4): one grant on a component shared object. TENANT subjects only accept READ.
+// DD-164(4): one grant on a component shared object. TENANT grants accept READ
+// (tenant#member reader) and WRITE (tenant#member editor).
 type ComponentShareGrant struct {
 	Access  ComponentShareAccess  `json:"access"`
 	Subject ComponentShareSubject `json:"subject"`
@@ -8038,6 +8078,36 @@ type ComponentSearchQuery struct {
 	Limit  *int64  `json:"limit,omitempty"`
 	Locale *string `json:"locale,omitempty"`
 	Q      string  `json:"q"`
+}
+
+// POST /service/v1/component-directory/bindings/{bindingId}/share-adoptions (DD-164(4)⑧):
+// before its first schema 2 convergence a component registers an existing native share of a
+// Kailo-mapped object as a Kailo share. Creates the component.shared_object Resource with
+// these grants only when none exists; otherwise answers the existing Resource unchanged.
+type ComponentShareAdoptionRequest struct {
+	// Mapped from the native permission: viewer -> READ, editor/admin -> WRITE; the owner is
+	// implicit.
+	Grants      []ComponentShareGrant       `json:"grants"`
+	Name        string                      `json:"name"`
+	NativeID    string                      `json:"nativeId"`
+	NativeType  ComponentSharedNativeType   `json:"nativeType"`
+	Owner       ComponentShareAdoptionOwner `json:"owner"`
+	WorkspaceID *string                     `json:"workspaceId,omitempty"`
+}
+
+type ComponentShareAdoptionOwner struct {
+	Issuer  string `json:"issuer"`
+	Subject string `json:"subject"`
+}
+
+// Answer of a share adoption: the Resource now authoritative for the native object and its
+// grants (without the owner). adopted=false means a Resource already existed and nothing
+// was changed.
+type ComponentShareAdoptionResult struct {
+	Adopted          bool                  `json:"adopted"`
+	Grants           []ComponentShareGrant `json:"grants"`
+	OwnerPrincipalID string                `json:"ownerPrincipalId"`
+	ResourceID       string                `json:"resourceId"`
 }
 
 // Answer to a share intent: the opaque intent the component passes to the Kailo host in
@@ -9359,6 +9429,8 @@ type ActionCommand struct {
 	SourceEventID *string `json:"sourceEventId,omitempty"`
 	// tenant.suspend / tenant.restore 的目标业务 Tenant；执行 Tenant 仍是会话 Tenant（Platform Catalog）
 	TenantID *string `json:"tenantId,omitempty"`
+	// 仅 tenant.member_create_policy.set（DD-164(3)）且必带；其他动作携带即拒绝。
+	TenantMemberCreatePolicy *TenantMemberCreatePolicyInput `json:"tenantMemberCreatePolicy,omitempty"`
 	// 仅 tenant.profile.update（DD-158(3)）且必带；其他动作携带即拒绝。
 	TenantProfile *TenantProfileInput `json:"tenantProfile,omitempty"`
 	// 仅 tenant.quota.set（DD-123）
@@ -9759,6 +9831,15 @@ type SkillVersionUploadInput struct {
 	// contract_key@version，去重；须是引用它的 AgentVersion 能力需求的子集。
 	CapabilityRequirements []string `json:"capabilityRequirements"`
 	UploadID               string   `json:"uploadId"`
+}
+
+// 仅 tenant.member_create_policy.set（DD-164(3)）且必带；其他动作携带即拒绝。
+//
+// Only tenant.member_create_policy.set (DD-164(3)) and required for it: the policy and the
+// Tenant version it was read at.
+type TenantMemberCreatePolicyInput struct {
+	ExpectedVersion int64                    `json:"expectedVersion"`
+	Policy          TenantMemberCreatePolicy `json:"policy"`
 }
 
 // 仅 tenant.profile.update（DD-158(3)）且必带；其他动作携带即拒绝。
@@ -10711,7 +10792,11 @@ type TenantMemberJoinView struct {
 // manage 时给出 updateActionKey（tenant.profile.update），提交仍由 Core 重新准入。
 type TenantProfileView struct {
 	Icon *string `json:"icon,omitempty"`
-	Name string  `json:"name"`
+	// DD-164(3): present for Tenant managers, with policyActionKey
+	// tenant.member_create_policy.set.
+	MemberCreatePolicy *TenantMemberCreatePolicy `json:"memberCreatePolicy,omitempty"`
+	Name               string                    `json:"name"`
+	PolicyActionKey    *string                   `json:"policyActionKey,omitempty"`
 	// BFF_STREAM_RETRY_MILLIS 部署事实；在线资料读取中断后再次读取前的等待。afterVersion
 	// 查询只等待有限的再准入时间，回应前重新校验本人会话与成员资格。
 	RefreshAfterMillis *int64  `json:"refreshAfterMillis,omitempty"`
@@ -12765,7 +12850,9 @@ const (
 // version），权威源、证据类型与敏感级别由种类唯一确定（Core 的固定描述表）。库中存量出现不在此列的种类时解释为不可用，不猜测含义。DD-135(8) 的 Skill
 // 证据：`SKILL_SLUG` 为定义 slug；`SKILL_VERSION_ASSET_ID` 为版本 Asset ID，version
 // 为版本序号；`SKILL_ARTIFACT_DIGEST` 为规范 artifact 的 SHA-256，version 为其字节数；`SKILL_UPLOAD_DIGEST`
-// 为上传字节的 SHA-256。均不含 SKILL.md 正文。
+// 为上传字节的 SHA-256。均不含 SKILL.md 正文。DD-164(6) 的 `IDP_SESSION_TERMINATION_COUNTS` 为 Tenant 撤权结束
+// IdP 会话的计数 `identities=<n>;ended=<n>;user_unknown=<n>;foreign_issuer=<n>`（IdP 回应类别），不含
+// subject。
 type EvidenceKind string
 
 const (
@@ -12783,6 +12870,7 @@ const (
 	EvidenceKindACTIONEXECUTIONID EvidenceKind = "ACTION_EXECUTION_ID"
 	ExportPackageAssetID          EvidenceKind = "EXPORT_PACKAGE_ASSET_ID"
 	ExternalSubjectSha256         EvidenceKind = "EXTERNAL_SUBJECT_SHA256"
+	IdpSessionTerminationCounts   EvidenceKind = "IDP_SESSION_TERMINATION_COUNTS"
 	OpenmeterEventID              EvidenceKind = "OPENMETER_EVENT_ID"
 	OriginalActionExecutionID     EvidenceKind = "ORIGINAL_ACTION_EXECUTION_ID"
 	PlatformSessionID             EvidenceKind = "PLATFORM_SESSION_ID"
@@ -13694,6 +13782,18 @@ type ModerationResolutionStatus string
 const (
 	ModerationResolutionStatusDismissed ModerationResolutionStatus = "dismissed"
 	ModerationResolutionStatusResolved  ModerationResolutionStatus = "resolved"
+)
+
+// DD-164(3): whether ordinary Tenant members hold tenant#creator (MEMBERS_CREATE, the
+// default) or only administrators create (ADMINS_ONLY).
+//
+// DD-164(3): present for Tenant managers, with policyActionKey
+// tenant.member_create_policy.set.
+type TenantMemberCreatePolicy string
+
+const (
+	AdminsOnly    TenantMemberCreatePolicy = "ADMINS_ONLY"
+	MembersCreate TenantMemberCreatePolicy = "MEMBERS_CREATE"
 )
 
 // DD-158(2)：运营方分拣状态 NEW→TRIAGED→CLOSED；超过 180 天的 CLOSED 记录由 Core 清除。

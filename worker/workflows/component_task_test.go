@@ -3,6 +3,7 @@ package workflows
 import (
 	"context"
 	"errors"
+	"fmt"
 	"reflect"
 	"strings"
 	"sync"
@@ -221,7 +222,11 @@ func runMembershipRevocation(t *testing.T, m MembershipTarget) ([]string, error)
 		})
 	env.OnActivity("TransitionMembership", mock.Anything, mock.Anything).Return(
 		func(_ context.Context, in activities.TransitionInput) (activities.TransitionOutput, error) {
-			add("transition:" + in.Scope + ":" + in.MembershipID + ":" + in.ToState)
+			step := "transition:" + in.Scope + ":" + in.MembershipID + ":" + in.ToState
+			if s := in.IdentityProviderSessions; s != nil {
+				step += fmt.Sprintf(":idp=%d/%d/%d/%d", s.Identities, s.Ended, s.Absent, s.Foreign)
+			}
+			add(step)
 			return activities.TransitionOutput{State: in.ToState, Version: in.FromVersion + 1}, nil
 		})
 	env.OnActivity("EndSessions", mock.Anything, mock.Anything).Return(
@@ -231,7 +236,7 @@ func runMembershipRevocation(t *testing.T, m MembershipTarget) ([]string, error)
 				names = append(names, s.Subject)
 			}
 			add("idp-logout:" + strings.Join(names, ","))
-			return activities.EndSessionsOutput{Ended: len(in.Subjects)}, nil
+			return activities.EndSessionsOutput{Identities: len(in.Subjects), Ended: len(in.Subjects) - 1, Absent: 1}, nil
 		})
 	env.ExecuteWorkflow(ComponentTaskKind, ComponentTaskInput{
 		Kind: generated.MembershipRevocation, Membership: &m,
@@ -260,7 +265,7 @@ func TestTenantRevocationConvergesWorkspaceMembershipsFirst(t *testing.T) {
 		"roster:WORKSPACE:wm2:ABSENT",
 		"transition:WORKSPACE:wm2:REVOKED",
 		"roster:TENANT:tm:ABSENT",
-		"transition:TENANT:tm:REVOKED",
+		"transition:TENANT:tm:REVOKED:idp=0/0/0/0",
 	}
 	if strings.Join(steps, "\n") != strings.Join(want, "\n") {
 		t.Fatalf("步骤顺序不符：\n%s", strings.Join(steps, "\n"))
@@ -284,7 +289,7 @@ func TestTenantRevocationEndsIdentityProviderSessionsBeforeRevoked(t *testing.T)
 		"revoke-subject:tenant=t,workspace=",
 		"roster:TENANT:tm:ABSENT",
 		"idp-logout:s1,s2",
-		"transition:TENANT:tm:REVOKED",
+		"transition:TENANT:tm:REVOKED:idp=2/1/1/0",
 	}
 	if strings.Join(steps, "\n") != strings.Join(want, "\n") {
 		t.Fatalf("步骤顺序不符：\n%s", strings.Join(steps, "\n"))

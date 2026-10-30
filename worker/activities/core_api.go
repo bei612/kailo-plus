@@ -212,6 +212,9 @@ type TransitionInput struct {
 	FromVersion  int32  `json:"fromVersion"`
 	ToState      string `json:"toState"`
 	WorkflowID   string `json:"workflowId"`
+	// 只有 Tenant 撤权跃迁到 REVOKED 才有（DD-164(6)）：本链结束 IdP 会话的结果计数，
+	// Core 在同一事务写审计 IDP_SESSIONS_TERMINATED。缺省时不写出，旧 history 的载荷不变。
+	IdentityProviderSessions *EndSessionsOutput `json:"identityProviderSessions,omitempty"`
 }
 
 // TransitionOutput 回传跃迁后的权威状态与新版本。

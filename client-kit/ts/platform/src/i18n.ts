@@ -5907,6 +5907,7 @@ export const evidenceKindMessages = {
   [EvidenceKind.ExportPackageAssetId]: { en: "Export package", "zh-CN": "导出包" },
   [EvidenceKind.WorkspaceLifecycleSnapshotId]: { en: "Channel deletion snapshot", "zh-CN": "频道删除快照" },
   [EvidenceKind.ApplicationBindingId]: { en: "Component binding", "zh-CN": "组件绑定" },
+  [EvidenceKind.IdpSessionTerminationCounts]: { en: "Identity provider sessions ended", "zh-CN": "已结束的身份提供方会话" },
   [EvidenceKind.ExternalSubjectSha256]: { en: "External account fingerprint", "zh-CN": "外部账号指纹" },
   [EvidenceKind.OriginalActionExecutionId]: { en: "Original action execution", "zh-CN": "原动作执行" },
   [EvidenceKind.PlatformSessionId]: { en: "Platform session", "zh-CN": "平台会话" },

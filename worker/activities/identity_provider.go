@@ -26,8 +26,11 @@ type EndSessionsInput struct {
 	Subjects []IdentityProviderSubject `json:"subjects"`
 }
 
-// EndSessionsOutput 进入 Workflow history：只有计数，不含 subject。
+// EndSessionsOutput 进入 Workflow history 与 Core 审计（IDP_SESSIONS_TERMINATED）：只有计数与回应类别，
+// 不含 subject。Identities = Ended + Absent + Foreign。
 type EndSessionsOutput struct {
+	// 本次处理的外部身份数
+	Identities int `json:"identities"`
 	// IdP 已结束其全部会话的用户数（IdP 回应 204）
 	Ended int `json:"ended"`
 	// IdP 中已不存在的用户数（回应 404：没有会话可结束，同样是确定的完成）
@@ -109,7 +112,7 @@ func adminBase(issuer string) (string, error) {
 // 204 与 404 是确定的完成；401/403 先丢弃令牌重取一次，仍被拒或其他状态与网络失败都是可重试错误——
 // 撤权必须闭合，成员在确定成功前停在 REVOKING（Workflow 按轮重做）。
 func (p *IdentityProvider) EndSessions(ctx context.Context, in EndSessionsInput) (EndSessionsOutput, error) {
-	var out EndSessionsOutput
+	out := EndSessionsOutput{Identities: len(in.Subjects)}
 	for _, s := range in.Subjects {
 		if s.Issuer != p.issuer {
 			out.Foreign++

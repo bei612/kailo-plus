@@ -605,6 +605,7 @@ async fn evidence_existence(
         | K::BuzzDeletionRequestId
         | K::BuzzDeletionInventoryDigest
         | K::ExternalSubjectSha256
+        | K::IdpSessionTerminationCounts
         | K::PlatformSessionId => return Ok(Existence::Unverifiable),
         K::TenantLifecycleSnapshotId | K::TenantDeleteSubprocessId => {
             let Ok(id) = Uuid::parse_str(&e.value) else {
