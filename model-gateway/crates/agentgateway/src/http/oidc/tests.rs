@@ -502,7 +502,11 @@ async fn login_without_default_locale_lets_the_provider_choose() {
 			supported: vec!["zh-CN".into(), "en".into()],
 			cookie: "buzz-locale".into(),
 		});
-		let mut req = request(Method::GET, "https://app.example.com/app/", Some("text/html"));
+		let mut req = request(
+			Method::GET,
+			"https://app.example.com/app/",
+			Some("text/html"),
+		);
 		if let Some(cookie) = cookie {
 			req
 				.headers_mut()
@@ -518,7 +522,10 @@ async fn login_without_default_locale_lets_the_provider_choose() {
 			.filter(|(key, _)| key == "ui_locales")
 			.map(|(_, value)| value.into_owned())
 			.collect::<Vec<_>>();
-		assert_eq!(sent, expected.into_iter().map(String::from).collect::<Vec<_>>());
+		assert_eq!(
+			sent,
+			expected.into_iter().map(String::from).collect::<Vec<_>>()
+		);
 	}
 }
 

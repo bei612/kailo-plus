@@ -6674,7 +6674,11 @@
       "type": "object",
       "properties": {
         "default": {
-          "type": "string"
+          "description": "Locale sent when the projection cookie is missing, ambiguous or unsupported. Omit it to send\nno `ui_locales` then, so the provider keeps its own choice (its language cookie, the browser\n`Accept-Language`, then its default) — DD-164(8).",
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "supported": {
           "type": "array",
@@ -6688,7 +6692,6 @@
       },
       "additionalProperties": false,
       "required": [
-        "default",
         "supported",
         "cookie"
       ]
