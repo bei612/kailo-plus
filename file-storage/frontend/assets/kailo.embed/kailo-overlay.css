@@ -690,9 +690,64 @@ body.react-mui-context,
     background-color: transparent !important;
 }
 
-.kailo-admin-surface-content [class*="MuiPaper"],
-.kailo-admin-surface-content .layout-fill > div[style] {
+/* Console tables on a surface (AdminStyles / MaterialTable / material-ui
+ * Table write light colors inline): every block, header, row, divider and
+ * action icon takes the Kailo tokens instead, so both themes read. Scoped to
+ * .kailo-admin-surface: business pages are not affected. */
+.kailo-admin-surface-content .layout-fill > div {
+    background-color: var(--kailo-color-background) !important;
+    border-color: var(--kailo-color-border) !important;
     box-shadow: none !important;
+    color: var(--kailo-color-foreground);
+}
+
+.kailo-admin-surface-content table,
+.kailo-admin-surface-content thead,
+.kailo-admin-surface-content tbody,
+.kailo-admin-surface-content tfoot {
+    background-color: transparent !important;
+}
+
+.kailo-admin-surface-content tr {
+    background-color: var(--kailo-color-background) !important;
+    border-bottom: 1px solid var(--kailo-color-border) !important;
+    color: var(--kailo-color-foreground) !important;
+}
+
+.kailo-admin-surface-content tbody tr:hover {
+    background-color: var(--kailo-color-hover) !important;
+}
+
+.kailo-admin-surface-content td,
+.kailo-admin-surface-content th {
+    background-color: transparent !important;
+    border-color: var(--kailo-color-border) !important;
+}
+
+.kailo-admin-surface-content td {
+    color: var(--kailo-color-foreground) !important;
+}
+
+.kailo-admin-surface-content thead tr,
+.kailo-admin-surface-content thead tr:hover {
+    background-color: var(--kailo-color-muted) !important;
+}
+
+.kailo-admin-surface-content th,
+.kailo-admin-surface-content th span {
+    color: var(--kailo-color-muted-foreground) !important;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.kailo-admin-surface-content td button .mdi,
+.kailo-admin-surface-content td button span[class*="mdi"] {
+    color: var(--kailo-color-muted-foreground) !important;
+}
+
+.kailo-admin-surface-content td button:hover .mdi,
+.kailo-admin-surface-content td button:hover span[class*="mdi"] {
+    color: var(--kailo-color-foreground) !important;
 }
 
 .kailo-admin-detail.paper-editor {
