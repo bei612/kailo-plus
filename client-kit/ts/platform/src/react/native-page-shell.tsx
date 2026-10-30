@@ -13,6 +13,7 @@ import { Checkbox } from "./profile/buzz/shared/ui/checkbox";
 import { AgentAlertDialog, AlertDialogAction, AlertDialogCancel } from "./agent-library/AgentAlertDialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "./sidebar/dropdown-menu";
 import { useT } from "./context";
+import type { PlatformMessageKey } from "../i18n";
 import type { EmbedActionIcon, EmbedConfirm, EmbedPage } from "./native-embed-host";
 import { ComponentAdminCategory } from "@client-kit/contracts";
 
@@ -34,6 +35,13 @@ const ADMIN_ICONS: Record<ComponentAdminCategory, ComponentType<LucideProps>> = 
   [ComponentAdminCategory.Storage]: HardDrive, [ComponentAdminCategory.Indexing]: ListTree,
   [ComponentAdminCategory.Integrations]: Plug, [ComponentAdminCategory.System]: Settings,
 };
+
+/** The Kailo message key of an admin category label. */
+export const ADMIN_CATEGORY_LABELS = {
+  [ComponentAdminCategory.Models]: "admin.category.models", [ComponentAdminCategory.DataSources]: "admin.category.dataSources",
+  [ComponentAdminCategory.Storage]: "admin.category.storage", [ComponentAdminCategory.Indexing]: "admin.category.indexing",
+  [ComponentAdminCategory.Integrations]: "admin.category.integrations", [ComponentAdminCategory.System]: "admin.category.system",
+} as const satisfies Record<ComponentAdminCategory, PlatformMessageKey>;
 
 export function AdminCategoryIcon({ category, className }: { category: ComponentAdminCategory; className?: string }) {
   const Glyph = ADMIN_ICONS[category];

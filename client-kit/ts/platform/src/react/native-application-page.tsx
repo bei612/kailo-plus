@@ -7,7 +7,7 @@ import {
   useEmbedPresentation, type EmbedConfirm, type EmbedFeature, type EmbedPage,
 } from "./native-embed-host";
 import { useNativeEntryPresentation } from "./native-application-entries";
-import { NativeConfirmDialog, NativePageFrame, NativePageHeader, NativePageSkeleton } from "./native-page-shell";
+import { ADMIN_CATEGORY_LABELS, NativeConfirmDialog, NativePageFrame, NativePageHeader, NativePageSkeleton } from "./native-page-shell";
 import { isMacPlatform } from "../keyboard-platform";
 import { nativeDeepLinkUrl } from "./native-deep-link";
 import { preferenceValues } from "../component-preferences";
@@ -267,7 +267,7 @@ export function NativeApplicationPage({ bindingId, onBack, title, path, adminSur
     {/* DD-138(3)/DD-157: the Kailo page header; Back only where opened from a list. */}
     {onBack ? <div className="px-5 pt-3"><Button onClick={onBack}>{t("platform.back")}</Button></div> : null}
     <NativePageHeader productTitle={productTitle} category={entry?.category ?? null}
-      admin={surface ? { category: surface.adminCategory, categoryLabel: t(`admin.category.${surface.adminCategory}`),
+      admin={surface ? { category: surface.adminCategory, categoryLabel: t(ADMIN_CATEGORY_LABELS[surface.adminCategory]),
         title: adminSurfaceTitle(surface, locale), readOnly: surface.access === ComponentAdminAccess.ReadOnly } : undefined}
       page={connected && features.includes("page") ? embedPage : null}
       onNavigate={(kind, id) => postToFrame(navigateMessage(kind, id))} onAction={activate} />

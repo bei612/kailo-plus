@@ -6,7 +6,7 @@ import { type AdminSurfaceEntry, ComponentAdminAccess, NativePageCategory, type 
 import { adminSurfaceDescription, adminSurfaceId, adminSurfaceTitle, groupAdminSurfaces, validAdminSurfacePage } from "../admin-surfaces";
 import { useOptionalBffClient, useLocale, useT } from "./context";
 import { type Loaded, useLoad } from "./use-load";
-import { AdminCategoryIcon, AdminReadOnlyBadge } from "./native-page-shell";
+import { ADMIN_CATEGORY_LABELS, AdminCategoryIcon, AdminReadOnlyBadge } from "./native-page-shell";
 import { NativeApplicationPage } from "./native-application-page";
 import { SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarMenu, SidebarMenuButton, SidebarMenuItem } from "./sidebar/primitives";
 
@@ -61,7 +61,7 @@ export function AdminSurfaceNavigation({ state, selected, onSelect }: {
   if (state.status !== "ok") return null;
   const groups = groupAdminSurfaces(state.data.entries);
   return <>{groups.map((group) => <SidebarGroup key={group.category} data-testid={`admin-surface-group-${group.category}`}>
-    <SidebarGroupLabel>{t(`admin.category.${group.category}`)}</SidebarGroupLabel>
+    <SidebarGroupLabel>{t(ADMIN_CATEGORY_LABELS[group.category])}</SidebarGroupLabel>
     <SidebarGroupContent><SidebarMenu>
       {group.entries.map((entry) => {
         const id = adminSurfaceId(entry);
