@@ -12,7 +12,7 @@ import {
 } from '@/utils/kailoHost';
 import useKailoSession from '@/hooks/useKailoSession';
 
-// DD-157 (`07` §4.8.7, `20` §13.2): the page header Kailo renders for 问数.
+// DD-157 (`07` §4.8.7, `20` §13.2): the page header Kailo renders for 数据建模 (DD-166).
 // Tabs replace the component's own top navigation (问答 / 建模 / 知识 / API);
 // each page supplies its title, ancestors and actions. Admin-only entries
 // (建模, 数据源设置) are offered to Kailo Tenant administrators only — the

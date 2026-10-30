@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createBffClient } from "../src/client";
 import { ApplicationBindingsPanel, bindingDocument, bindingSecretValues, validBindingPage } from "../src/react/application-bindings";
 import { NATIVE_HANDSHAKE_GRACE_MS, NativeApplicationPage, validNativePage } from "../src/react/native-application-page";
-import { NativeApplicationEntries } from "../src/react/native-application-entries";
+import { NativeApplicationEntries, orderNativeEntries } from "../src/react/native-application-entries";
 import { SidebarProvider } from "../src/react/sidebar/sidebar";
 import { act, useState } from "react";
 import { PlatformProvider } from "../src/react/context";
@@ -308,11 +308,11 @@ describe("shared external service connection management", () => {
     // DD-138(3): no "service workspace", Back, Refresh or boundary note around the page.
     const client = createBffClient({ send: async () => ({ status: 200, body: nativePage }) });
     const host = await render(<PlatformProvider client={client} locale="en">
-      <NativeApplicationPage bindingId={connection.bindingId} title="Knowledge" />
+      <NativeApplicationPage bindingId={connection.bindingId} title="Knowledge Engineering" />
     </PlatformProvider>);
     const frame = host.querySelector("iframe")!;
     expect(frame).not.toBeNull();
-    expect(frame.getAttribute("title")).toBe("Knowledge");
+    expect(frame.getAttribute("title")).toBe("Knowledge Engineering");
     expect(host.querySelectorAll("button")).toHaveLength(0);
     expect(host.textContent).not.toContain("Service workspace");
     // Kailo's own loading state covers the frame until the page speaks wire v1.
@@ -362,7 +362,7 @@ describe("shared external service connection management", () => {
       <NativeApplicationEntries scopeKey="human" onSelect={onSelect} selectedId={connection.bindingId} />
     </SidebarProvider></PlatformProvider>);
     expect(document.querySelector(`a[href="${nativePage.url}"]`)).toBeNull();
-    const entry=host.querySelector<HTMLButtonElement>('button[aria-label="Knowledge"]')!;
+    const entry=host.querySelector<HTMLButtonElement>('button[aria-label="Knowledge Engineering"]')!;
     expect(entry.getAttribute("data-active")).toBe("true");
     await click(entry);
     expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({bindingId:connection.bindingId}));
@@ -427,7 +427,7 @@ describe("shared external service connection management", () => {
     const named=await render(<PlatformProvider client={createBffClient({send:async()=>({status:200,body:{bindings:[labelled],canCreate:false}})})} locale="en"><SidebarProvider>
       <NativeApplicationEntries scopeKey="human" onSelect={vi.fn()} />
     </SidebarProvider></PlatformProvider>);
-    expect(named.querySelector('button[aria-label="Knowledge"]')).not.toBeNull();
+    expect(named.querySelector('button[aria-label="Knowledge Engineering"]')).not.toBeNull();
     expect(named.querySelector('button[aria-label="weknora"]')).toBeNull();
     const entryOnly={...connection,componentTypeKey:"cells",capabilityCategories:[],hasNativePage:true,canDisable:false};
     expect(validBindingPage({bindings:[entryOnly],canCreate:false} as never,undefined,0)).toBe(true);
@@ -450,7 +450,7 @@ describe("shared external service connection management", () => {
     const host=await render(<PlatformProvider client={createBffClient({send})} locale="en"><SidebarProvider>
       <NativeApplicationEntries scopeKey="human" onSelect={onSelect} />
     </SidebarProvider></PlatformProvider>);
-    const entry=host.querySelector<HTMLButtonElement>('button[aria-label="Knowledge"]')!;
+    const entry=host.querySelector<HTMLButtonElement>('button[aria-label="Knowledge Engineering"]')!;
     pending=true;
     // Leaving an entry's iframe focuses the window first; the click follows on the same button.
     await act(async()=>window.dispatchEvent(new Event("focus")));
@@ -477,7 +477,7 @@ describe("shared external service connection management", () => {
     const host=await render(<PlatformProvider client={createBffClient({send})} locale="en"><SidebarProvider><NativeApplicationEntries scopeKey="human" onSelect={vi.fn()} /></SidebarProvider></PlatformProvider>);
     await settle();
     expect(send.mock.calls.at(-1)?.[0].path).toBe("/api/v1/application-bindings?offset=1");
-    expect(host.querySelector('button[aria-label="Knowledge"]')).toBeNull();
+    expect(host.querySelector('button[aria-label="Knowledge Engineering"]')).toBeNull();
     expect([...host.querySelectorAll("button")].some((element)=>element.textContent==="Next page")).toBe(false);
   });
 
@@ -495,10 +495,10 @@ describe("shared external service connection management", () => {
     expect(host.textContent).not.toContain("组织级连接");
     expect(host.textContent).not.toContain("Workspace");
     const entries=[...host.querySelectorAll<HTMLButtonElement>("[data-binding-id]")];
-    expect(entries.map((entry)=>entry.getAttribute("aria-label"))).toEqual(["云盘","知识库"]);
+    expect(entries.map((entry)=>entry.getAttribute("aria-label"))).toEqual(["云盘","知识工程"]);
     expect(entries[1]!.getAttribute("data-binding-id")).toBe(workspaceKnowledge.bindingId);
     expect(host.innerHTML).not.toContain("weknora");
-    expect(titles.at(-1)).toBe("知识库");
+    expect(titles.at(-1)).toBe("知识工程");
   });
 
   it("withdraws the old workspace entry and late native response on a scope change",async()=>{
@@ -509,12 +509,21 @@ describe("shared external service connection management", () => {
     const client=createBffClient({send});
     function Consumer(){const [id,setId]=useState("first");const [binding,setBinding]=useState<string|null>(null);return <PlatformProvider client={client} locale="en"><button onClick={()=>{setId("second");setBinding(null);}}>Switch scope</button><SidebarProvider><NativeApplicationEntries scopeKey="human" workspace={{id,name:id}} onSelect={(next)=>setBinding(next.bindingId)} /></SidebarProvider>{binding?<NativeApplicationPage key={id} bindingId={binding} onBack={()=>setBinding(null)}/>:null}</PlatformProvider>;}
     const host=await render(<Consumer/>);
-    await click(host.querySelector<HTMLButtonElement>('button[aria-label="Knowledge"]')!);
+    await click(host.querySelector<HTMLButtonElement>('button[aria-label="Knowledge Engineering"]')!);
     await click(button(host,"Switch scope"));
     await act(async()=>resolvePage?.({status:200,body:nativePage}));
     expect(host.textContent).not.toContain(connection.componentTypeKey);
     expect(document.querySelector(`a[href="${nativePage.url}"]`)).toBeNull();
     expect(document.querySelector("iframe")).toBeNull();
     expect(send.mock.calls.some(([request])=>request.path.includes("workspaceId=second"))).toBe(true);
+  });
+});
+
+describe("DD-166 sidebar component order", () => {
+  it("orders component entries 云盘, 知识工程, 数据建模 and keeps uncategorized entries after them in read order", () => {
+    const entry = (bindingId: string, nativePageCategory?: string) =>
+      ({ ...connection, bindingId, capabilityCategories: [], hasNativePage: true, nativePageCategory }) as unknown as Parameters<typeof orderNativeEntries>[0][number];
+    const ordered = orderNativeEntries([entry("other-a"), entry("data", "data_query"), entry("other-b"), entry("knowledge", "knowledge"), entry("files", "file_storage")]);
+    expect(ordered.map((binding) => binding.bindingId)).toEqual(["files", "knowledge", "data", "other-a", "other-b"]);
   });
 });

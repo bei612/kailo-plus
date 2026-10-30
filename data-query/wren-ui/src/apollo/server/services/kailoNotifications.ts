@@ -473,12 +473,12 @@ export class KailoNotifications {
       recipientKeys: input.recipientKeys,
       title: name
         ? {
-            ZH_CN: `${actor.ZH_CN} 与你分享了问数对话「${name}」`,
-            EN: `${actor.EN} shared the Data Q&A thread “${name}” with you`,
+            ZH_CN: `${actor.ZH_CN} 与你分享了数据建模对话「${name}」`,
+            EN: `${actor.EN} shared the Data Modeling thread “${name}” with you`,
           }
         : {
-            ZH_CN: `${actor.ZH_CN} 与你分享了一个问数对话`,
-            EN: `${actor.EN} shared a Data Q&A thread with you`,
+            ZH_CN: `${actor.ZH_CN} 与你分享了一个数据建模对话`,
+            EN: `${actor.EN} shared a Data Modeling thread with you`,
           },
       path: kailoThreadPath(input.threadId),
     });

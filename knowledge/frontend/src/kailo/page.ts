@@ -68,7 +68,7 @@ const TEXT: Record<Lang, Record<TextKey, string>> = {
     newChat: '新建对话',
     settings: '设置',
     spaces: '共享空间',
-    product: '知识库',
+    product: '知识工程',
   },
   en: {
     chat: 'Chat',
@@ -78,7 +78,7 @@ const TEXT: Record<Lang, Record<TextKey, string>> = {
     newChat: 'New chat',
     settings: 'Settings',
     spaces: 'Shared spaces',
-    product: 'Knowledge',
+    product: 'Knowledge Engineering',
   },
 }
 

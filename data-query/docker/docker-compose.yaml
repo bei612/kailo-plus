@@ -171,7 +171,7 @@ services:
     environment:
       WREN_NATIVE_IDENTITY_JSON: ${WREN_NATIVE_IDENTITY_JSON:?native identity configuration is required}
       KAILO_FRAME_ANCESTORS: ${KAILO_FRAME_ANCESTORS:-}
-      # DD-133 §1: product name = deployment display name + 问数 / Data Q&A.
+      # DD-133 §1, DD-166: product name = deployment display name + 数据建模 / Data Modeling.
       PLATFORM_DISPLAY_NAME: ${PLATFORM_DISPLAY_NAME:?platform display name is required}
       WREN_ENCRYPTION_PASSWORD_FILE: /run/wren-native/encryption-password
       WREN_ENCRYPTION_SALT_FILE: /run/wren-native/encryption-salt

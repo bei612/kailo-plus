@@ -274,7 +274,7 @@ function groupSearchResults(results: SearchResult[]): SearchResultSection[] {
     ];
   });
   // DD-138(5), 07 §4.8.4: component results grouped under their presentation category
-  // (云盘/知识库/问数), after messages and before actions; a category Kailo cannot label
+  // (云盘/知识工程/数据建模), after messages and before actions; a category Kailo cannot label
   // has no openable entry and contributes nothing.
   const componentSections = componentSearchSections(results);
   const actionsAt = sections.findIndex((section) => section.key === "actions");

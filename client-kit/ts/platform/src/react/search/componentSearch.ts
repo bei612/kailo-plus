@@ -1,5 +1,5 @@
 // DD-138(5), 07 §4.8.4 呈现与打开: component content in Kailo 「搜索全部」. Results are grouped
-// and labelled by their source's presentation category (云盘/知识库/问数), never a component or
+// and labelled by their source's presentation category (云盘/知识工程/数据建模), never a component or
 // binding; an UNAVAILABLE source shows a short muted note. Opening loads that category's native
 // page entry (bindingId resolved by Core) at the result's relative path.
 import { ComponentSearchResultKind, ComponentSearchSourceState, NativePageCategory, type ComponentSearchPage } from "@client-kit/contracts";

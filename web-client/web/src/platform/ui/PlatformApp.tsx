@@ -290,7 +290,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
   const chosenConversation = !conversations.error && !conversations.loading
     ? conversations.items.find((conversation) => conversation.id === navigation.conversationId) : undefined;
   const [messageLinkProblem, setMessageLinkProblem] = useState<string | null>(null);
-  // DD-138(3): a native page is titled by its product name (云盘/知识库/问数), not "service workspace".
+  // DD-138(3): a native page is titled by its product name (云盘/知识工程/数据建模), not "service workspace".
   const [applicationTitle, setApplicationTitle] = useState<string | null>(null);
   const settingsVisited=useRef(false);
   if(tab==="settings")settingsVisited.current=true;

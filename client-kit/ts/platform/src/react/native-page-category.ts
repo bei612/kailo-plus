@@ -1,4 +1,4 @@
-// DD-138(4)(5), 07 §4.8.3/§4.8.4: the sidebar label (云盘/知识库/问数, the same keys as
+// DD-138(4)(5), 07 §4.8.3/§4.8.4: the sidebar label (云盘/知识工程/数据建模, the same keys as
 // nativeEntryTitle) for a presentation category, used as the source of an Inbox item or a
 // search group. Never a component name, type key or binding.
 import type { NativePageCategory } from "@client-kit/contracts";

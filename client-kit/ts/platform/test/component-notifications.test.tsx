@@ -172,7 +172,7 @@ describe("07 §4.8.4 component search results", () => {
       ["file_storage", ["f1", "f2"]], ["knowledge", ["k1"]], ["data_query", ["q1"]]]);
   });
 
-  it("labels sections 云盘/知识库/问数 and drops a category without a Kailo entry", () => {
+  it("labels sections 云盘/知识工程/数据建模 and drops a category without a Kailo entry", () => {
     setLocale("zh-CN");
     const sections = componentSearchSections([
       { kind: "component", component: hit("k1", NativePageCategory.Knowledge) },
@@ -180,7 +180,7 @@ describe("07 §4.8.4 component search results", () => {
       { kind: "component", component: hit("f1", NativePageCategory.FileStorage) },
     ]);
     expect(sections.map((section) => [section.key, section.title, section.results.length])).toEqual([
-      ["component-file_storage", "云盘", 1], ["component-knowledge", "知识库", 1]]);
+      ["component-file_storage", "云盘", 1], ["component-knowledge", "知识工程", 1]]);
     setLocale("en");
   });
 

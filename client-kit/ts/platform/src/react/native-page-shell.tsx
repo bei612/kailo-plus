@@ -33,7 +33,7 @@ function Spinner() {
 
 /**
  * Page header 52 + optional tab strip 40 (20 §13.2). `productTitle` is the presentation
- * category name (云盘/知识库/问数); `page` is the component's latest header, or null
+ * category name (云盘/知识工程/数据建模); `page` is the component's latest header, or null
  * while it has none (the product title alone, never a blank bar).
  */
 export function NativePageHeader({ productTitle, category, page, onNavigate, onAction }: {

@@ -1,7 +1,7 @@
 // DD-138(4), 07 §4.8.3 呈现: component notifications in the Kailo Inbox. Core is the authority
 // (ComponentNotification, not projected to Relay); this module reads the caller's page through
 // the BFF, keeps the optimistic read marks and renders one Inbox row per item. Rows name the
-// presentation category (云盘/知识库/问数) as their source, never a component, type key or binding.
+// presentation category (云盘/知识工程/数据建模) as their source, never a component, type key or binding.
 // All items are in 「全部」; MENTIONED also in 「提及」, ACCESS_REQUESTED also in 「需要处理」.
 // Opening marks the item read and opens the binding's native page at `path` (host navigation).
 import * as React from "react";

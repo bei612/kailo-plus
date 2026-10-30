@@ -55,7 +55,7 @@ export interface KailoPageAction {
 
 /** The header Kailo renders for the page (20 §13.2). */
 export interface KailoPage {
-  /** Current page title, 1–120 chars. Kailo adds the product name (云盘/知识库/问数) itself. */
+  /** Current page title, 1–120 chars. Kailo adds the product name (云盘/知识工程/数据建模) itself. */
   title: string;
   /** Ancestors of the current location, outermost first, at most 8; the title is not repeated. */
   breadcrumbs?: KailoPageItem[];

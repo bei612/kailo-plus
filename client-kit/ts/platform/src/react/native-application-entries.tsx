@@ -39,10 +39,23 @@ export function nativeCategory(binding: ApplicationBindingView): NativeCategory 
     : categories.includes("data_query") ? "data" : null;
 }
 
-/** The entry's product name in Kailo (云盘/知识库/问数); the component type only when no category exists. */
+/** The entry's product name in Kailo (云盘/知识工程/数据建模, DD-166); the component type only when no category exists. */
 export function nativeEntryTitle(binding: ApplicationBindingView, t: Translate): string {
   const category = nativeCategory(binding);
   return category ? t(`bindings.native.${category}`) : binding.componentTypeKey;
+}
+
+/** DD-166: the sidebar's fixed component order (云盘, 知识工程, 数据建模); uncategorized entries follow in their read order. */
+const ENTRY_ORDER: readonly NativeCategory[] = ["files", "knowledge", "data"];
+
+export function orderNativeEntries(bindings: readonly ApplicationBindingView[]): ApplicationBindingView[] {
+  const rank = (binding: ApplicationBindingView) => {
+    const category = nativeCategory(binding);
+    return category === null ? ENTRY_ORDER.length : ENTRY_ORDER.indexOf(category);
+  };
+  return bindings.map((binding, index) => ({ binding, index }))
+    .sort((left, right) => rank(left.binding) - rank(right.binding) || left.index - right.index)
+    .map(({ binding }) => binding);
 }
 
 const MAX_PAGES = 20;
@@ -83,10 +96,10 @@ export function NativeApplicationEntries({ scopeKey, workspace, selectedId, onSe
     const read = (scope: string | undefined, offset: number) => client.applicationBindings(scope, offset);
     const [tenant, local] = await Promise.all([readScope(read), workspaceId ? readScope(read, workspaceId) : Promise.resolve([])]);
     const localCategories = new Set(local.map(nativeCategory).filter((category) => category !== null));
-    return [...tenant.filter((binding) => {
+    return orderNativeEntries([...tenant.filter((binding) => {
       const category = nativeCategory(binding);
       return category === null || !localCategories.has(category);
-    }), ...local];
+    }), ...local]);
   }, { keepWhileRevalidating: true });
   useEffect(() => {
     const refresh = () => { reload(); };

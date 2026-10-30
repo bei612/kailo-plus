@@ -342,7 +342,7 @@ const TYPE_RAMP: [string, string, string, string][] = [
     "14 / 20 · 400",
     "研究助理已整理 3 份用户访谈，关键结论：权限审批延迟是首要痛点（P0）。",
   ],
-  ["Callout", "text-control font-medium", "13 / 18 · 500", "收件箱 · Agents · 云盘 · 知识库"],
+  ["Callout", "text-control font-medium", "13 / 18 · 500", "收件箱 · Agents · 云盘 · 知识工程"],
   ["Caption", "text-xs text-muted-foreground", "12 / 16 · 450", "星期二 14:32 · 已编辑 · v2.4.1"],
   [
     "Overline",

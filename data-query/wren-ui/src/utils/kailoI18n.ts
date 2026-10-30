@@ -6,14 +6,14 @@ import knowledgeMessages from './i18n/knowledge';
 import setupMessages from './i18n/setup';
 
 // DD-133 §1/§4, DD-157 (20 §13.8): every visible string follows the Kailo
-// locale (zh-CN default, en). The component name is fixed by DD-133
-// (问数 / Data Q&A); the deployment display name comes from
+// locale (zh-CN default, en). The component name is fixed by DD-166
+// (数据建模 / Data Modeling, formerly DD-133's 问数 / Data Q&A); the deployment display name comes from
 // PLATFORM_DISPLAY_NAME. Shell keys live here; each product area keeps its
 // strings in ./i18n/<area>.ts with area-prefixed keys ("home.ask"), merged
 // below into one dictionary per locale.
 const shell = {
   'zh-CN': {
-    componentName: '问数',
+    componentName: '数据建模',
     navHome: '问答',
     navModeling: '建模',
     navKnowledge: '知识',
@@ -93,7 +93,7 @@ const shell = {
     shareFailed: '分享未完成，请稍后重试。',
   },
   en: {
-    componentName: 'Data Q&A',
+    componentName: 'Data Modeling',
     navHome: 'Ask',
     navModeling: 'Modeling',
     navKnowledge: 'Knowledge',
@@ -227,7 +227,7 @@ export function kailoT(key: KailoTextKey, vars?: KailoTextVars) {
   return kailoText(currentLocale(), key, vars);
 }
 
-// "<deployment display name> 问数" / "<deployment display name> Data Q&A".
+// "<deployment display name> 数据建模" / "<deployment display name> Data Modeling" (DD-166).
 export function kailoProductTitle(
   locale: string | undefined,
   displayName: string | null | undefined,
