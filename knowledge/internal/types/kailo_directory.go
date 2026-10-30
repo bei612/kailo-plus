@@ -59,12 +59,12 @@ type KailoDirectoryMembership struct {
 
 // KailoDirectoryMember is one ACTIVE HUMAN member in the binding scope.
 type KailoDirectoryMember struct {
-	PrincipalID string                     `json:"principalId"`
-	DisplayName string                     `json:"displayName"`
-	TenantRole  KailoDirectoryRole         `json:"tenantRole"`
-	TenantCreate bool                      `json:"tenantCreate"`
-	Identities  []KailoDirectoryIdentity   `json:"identities"`
-	Workspaces  []KailoDirectoryMembership `json:"workspaces"`
+	PrincipalID  string                     `json:"principalId"`
+	DisplayName  string                     `json:"displayName"`
+	TenantRole   KailoDirectoryRole         `json:"tenantRole"`
+	TenantCreate bool                       `json:"tenantCreate"`
+	Identities   []KailoDirectoryIdentity   `json:"identities"`
+	Workspaces   []KailoDirectoryMembership `json:"workspaces"`
 }
 
 // Share subject kinds and accesses of the share projection (DD-164(4)).
@@ -172,12 +172,12 @@ type wireDirectoryMembership struct {
 }
 
 type wireDirectoryMember struct {
-	PrincipalID *string                    `json:"principalId"`
-	DisplayName *string                    `json:"displayName"`
-	TenantRole  *string                    `json:"tenantRole"`
-	TenantCreate *bool                     `json:"tenantCreate"`
-	Identities  *[]wireDirectoryIdentity   `json:"identities"`
-	Workspaces  *[]wireDirectoryMembership `json:"workspaces"`
+	PrincipalID  *string                    `json:"principalId"`
+	DisplayName  *string                    `json:"displayName"`
+	TenantRole   *string                    `json:"tenantRole"`
+	TenantCreate *bool                      `json:"tenantCreate"`
+	Identities   *[]wireDirectoryIdentity   `json:"identities"`
+	Workspaces   *[]wireDirectoryMembership `json:"workspaces"`
 }
 
 // ErrKailoDirectoryInvalid marks a snapshot that does not match the contract.
@@ -262,8 +262,8 @@ func ParseKailoMemberDirectory(raw []byte) (*KailoMemberDirectory, error) {
 			DisplayName:  *m.DisplayName,
 			TenantRole:   role,
 			TenantCreate: *m.TenantCreate,
-			Identities:  []KailoDirectoryIdentity{},
-			Workspaces:  []KailoDirectoryMembership{},
+			Identities:   []KailoDirectoryIdentity{},
+			Workspaces:   []KailoDirectoryMembership{},
 		}
 		for _, id := range *m.Identities {
 			if id.Issuer == nil || id.Subject == nil || id.Picture == nil ||

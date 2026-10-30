@@ -300,7 +300,7 @@ func (s *kailoOrgService) retireAbsentShares(db *gorm.DB, managed map[string]boo
 	var rows []types.KnowledgeBaseShare
 	if err := db.Table("kb_shares").Select("kb_shares.id", "kb_shares.kailo_resource_ref").
 		Joins("JOIN organizations ON organizations.id = kb_shares.organization_id").
-		Where("kb_shares.deleted_at IS NULL AND (kb_shares.kailo_resource_ref IS NOT NULL OR "+
+		Where("kb_shares.deleted_at IS NULL AND (kb_shares.kailo_resource_ref IS NOT NULL OR " +
 			"organizations.kailo_tenant_ref IS NOT NULL OR organizations.kailo_share_ref IS NOT NULL)").
 		Find(&rows).Error; err != nil {
 		return fmt.Errorf("list Kailo knowledge base shares: %w", err)
