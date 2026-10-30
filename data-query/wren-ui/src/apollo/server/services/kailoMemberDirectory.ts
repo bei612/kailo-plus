@@ -437,6 +437,46 @@ export async function readKailoDirectory(
   return parseKailoDirectory(body, config.bindingId);
 }
 
+// ---- convergence receipt (DD-164(4)⑥, `07` §4.7.4) -------------------------
+
+export interface KailoDirectoryReceipt {
+  schema: 1 | 2;
+  directoryVersion: string;
+  appliedAt: string;
+  outcome: 'APPLIED' | 'FAILED';
+  failures: { kind: 'TENANT' | 'MEMBER' | 'WORKSPACE' | 'SHARE'; ref: string; reasonCode: string }[];
+}
+
+// Reports the last snapshot this instance applied (or failed to apply) with
+// the same directory client. The receipt grants nothing and never changes the
+// directory; a refused or unavailable receipt is retried with the next read.
+export async function sendKailoDirectoryReceipt(
+  config: KailoDirectoryConfig,
+  receipt: KailoDirectoryReceipt,
+  doFetch: Fetch = fetch,
+): Promise<void> {
+  const token = await serviceToken(config, doFetch);
+  const url = new URL(
+    `/service/v1/component-directory/bindings/${config.bindingId}/receipt`,
+    config.coreUrl,
+  );
+  const response = await doFetch(url, {
+    method: 'PUT',
+    headers: {
+      authorization: `Bearer ${token}`,
+      'content-type': 'application/json',
+      accept: 'application/json',
+    },
+    body: JSON.stringify(receipt),
+    redirect: 'manual',
+    cache: 'no-store',
+    signal: AbortSignal.timeout(DIRECTORY_TIMEOUT_MS),
+  });
+  await response.body?.cancel().catch(() => undefined);
+  if (response.status !== 204 && response.status !== 200)
+    throw new KailoDirectoryUnavailable('receipt refused', response.status);
+}
+
 // ---- persisted state -------------------------------------------------------
 
 export interface KailoDirectoryAccess {
@@ -644,6 +684,9 @@ export type KailoDirectoryOutcome =
 export class KailoMemberDirectorySync {
   private timer: NodeJS.Timeout | null = null;
   private running = false;
+  // Last version reported APPLIED by this process (receipts, DD-164(4)⑥).
+  private reported: string | null = null;
+  private receiptWarned: string | null = null;
 
   constructor(
     private readonly config: KailoDirectoryConfig,
@@ -673,8 +716,16 @@ export class KailoMemberDirectorySync {
     this.running = true;
     try {
       const snapshot = await readKailoDirectory(this.config, this.doFetch);
-      const applied = await this.store.apply(snapshot, this.config.issuer);
+      let applied: boolean;
+      try {
+        applied = await this.store.apply(snapshot, this.config.issuer);
+      } catch (error) {
+        await this.report(snapshot, 'FAILED');
+        throw error;
+      }
       if (applied) logger.info('member directory snapshot applied');
+      if (applied || this.reported !== snapshot.directoryVersion)
+        await this.report(snapshot, 'APPLIED');
       return applied ? 'APPLIED' : 'UNCHANGED';
     } catch (error) {
       if (error instanceof KailoDirectorySnapshotError) {
@@ -693,6 +744,44 @@ export class KailoMemberDirectorySync {
       return 'FAILED';
     } finally {
       this.running = false;
+    }
+  }
+
+  // DD-164(4)⑥: once per applied version (and once after start), never
+  // blocking the sync; only the outcome is logged.
+  private async report(
+    snapshot: KailoDirectorySnapshot,
+    outcome: KailoDirectoryReceipt['outcome'],
+  ): Promise<void> {
+    try {
+      await sendKailoDirectoryReceipt(
+        this.config,
+        {
+          schema: 1,
+          directoryVersion: snapshot.directoryVersion,
+          appliedAt: new Date().toISOString(),
+          outcome,
+          failures:
+            outcome === 'FAILED'
+              ? [
+                  {
+                    kind: 'TENANT',
+                    ref: snapshot.tenant.tenantId,
+                    reasonCode: 'APPLY_FAILED',
+                  },
+                ]
+              : [],
+        },
+        this.doFetch,
+      );
+      this.reported = outcome === 'APPLIED' ? snapshot.directoryVersion : null;
+      this.receiptWarned = null;
+    } catch (error) {
+      if (this.receiptWarned !== snapshot.directoryVersion)
+        logger.warn(
+          `member directory receipt not delivered${error?.status ? ` (HTTP ${error.status})` : ''}; retried with the next read`,
+        );
+      this.receiptWarned = snapshot.directoryVersion;
     }
   }
 }

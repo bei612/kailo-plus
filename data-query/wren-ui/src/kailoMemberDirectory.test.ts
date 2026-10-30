@@ -97,6 +97,8 @@ class Platform {
   reads = 0;
   lastAuthorization = '';
   lastBasic = '';
+  receiptStatus = 204;
+  receipts: any[] = [];
 
   async start() {
     this.server = createServer((req: IncomingMessage, res: ServerResponse) => {
@@ -122,6 +124,23 @@ class Platform {
         res.statusCode = this.directoryStatus;
         res.setHeader('content-type', 'application/json');
         return res.end(this.rawBody ?? JSON.stringify(this.directoryBody));
+      }
+      if (
+        req.url ===
+          `/service/v1/component-directory/bindings/${BINDING}/receipt` &&
+        req.method === 'PUT'
+      ) {
+        let body = '';
+        req.on('data', (chunk) => (body += chunk));
+        req.on('end', () => {
+          this.receipts.push({
+            authorization: req.headers.authorization,
+            body: JSON.parse(body),
+          });
+          res.statusCode = this.receiptStatus;
+          res.end();
+        });
+        return;
       }
       res.statusCode = 404;
       res.end();
@@ -226,6 +245,8 @@ describe('DD-133(4) periodic member directory sync', () => {
       rawBody: null,
       tokens: 0,
       reads: 0,
+      receiptStatus: 204,
+      receipts: [],
       directoryBody: snapshot([]),
     });
   });
@@ -312,6 +333,66 @@ describe('DD-133(4) periodic member directory sync', () => {
     expect(await sync.tick()).toBe('UNCHANGED');
     expect(await db('kailo_directory_state').first()).toEqual(before);
     expect((await db('kailo_directory_member').first()).admin).toBeFalsy();
+  });
+
+  test('DD-164(4)⑥ reports one APPLIED receipt per version and after a restart', async () => {
+    platform.directoryBody = snapshot([member('alice', 'ADMIN')]);
+    const store = new KailoMemberDirectoryStore(db);
+    const sync = new KailoMemberDirectorySync(config, store);
+    expect(await sync.tick()).toBe('APPLIED');
+    expect(await sync.tick()).toBe('UNCHANGED');
+    expect(platform.receipts).toHaveLength(1);
+    const [first] = platform.receipts;
+    expect(first.authorization).toBe('Bearer directory-token');
+    expect(first.body).toMatchObject({
+      schema: 1,
+      directoryVersion: store.appliedVersion,
+      outcome: 'APPLIED',
+      failures: [],
+    });
+    expect(Number.isNaN(Date.parse(first.body.appliedAt))).toBe(false);
+    // A restarted process reports the unchanged applied version once.
+    const restarted = new KailoMemberDirectorySync(config, store);
+    expect(await restarted.tick()).toBe('UNCHANGED');
+    expect(await restarted.tick()).toBe('UNCHANGED');
+    expect(platform.receipts).toHaveLength(2);
+  });
+
+  test('DD-164(4)⑥ a refused receipt never blocks the sync and is retried', async () => {
+    platform.directoryBody = snapshot([member('alice', 'ADMIN')]);
+    platform.receiptStatus = 404;
+    const store = new KailoMemberDirectoryStore(db);
+    const sync = new KailoMemberDirectorySync(config, store);
+    expect(await sync.tick()).toBe('APPLIED');
+    expect((await store.access(key(ISSUER, 'alice'))).admin).toBe(true);
+    platform.receiptStatus = 204;
+    expect(await sync.tick()).toBe('UNCHANGED');
+    expect(platform.receipts.map((r) => r.body.outcome)).toEqual([
+      'APPLIED',
+      'APPLIED',
+    ]);
+    expect(await sync.tick()).toBe('UNCHANGED');
+    expect(platform.receipts).toHaveLength(2);
+  });
+
+  test('DD-164(4)⑥ an apply failure reports FAILED and keeps the applied state', async () => {
+    platform.directoryBody = snapshot([member('alice', 'ADMIN')]);
+    const store = new KailoMemberDirectoryStore(db);
+    const sync = new KailoMemberDirectorySync(config, store);
+    expect(await sync.tick()).toBe('APPLIED');
+    const version = store.appliedVersion;
+    platform.directoryBody = snapshot([member('bob', 'MEMBER')], 'b');
+    jest
+      .spyOn(store, 'apply')
+      .mockRejectedValueOnce(new Error('database unavailable'));
+    expect(await sync.tick()).toBe('FAILED');
+    expect(store.appliedVersion).toBe(version);
+    const last = platform.receipts[platform.receipts.length - 1].body;
+    expect(last).toMatchObject({
+      outcome: 'FAILED',
+      failures: [{ kind: 'TENANT', ref: TENANT, reasonCode: 'APPLY_FAILED' }],
+    });
+    expect(last.directoryVersion).not.toBe(version);
   });
 
   test('503, 401, malformed or foreign snapshots change nothing', async () => {
