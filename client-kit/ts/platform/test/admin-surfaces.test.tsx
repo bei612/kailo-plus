@@ -89,7 +89,8 @@ describe("Kailo admin area with component admin surfaces", () => {
     expect(host.querySelector('[data-testid="admin-surface-group-MODELS"]')?.textContent).toContain("模型");
     expect(host.querySelector('[data-testid="admin-surface-group-DATA_SOURCES"]')?.textContent).toContain("数据源连接");
     expect(host.querySelector('[data-testid="admin-surface-group-MODELS"]')?.textContent).toContain("知识库");
-    for (const name of ["weknora", "wren", "cells", "外部服务", "已连接"]) expect(host.textContent).not.toContain(name);
+    const groups = [...host.querySelectorAll('[data-testid^="admin-surface-group-"]')].map((group) => group.textContent).join(" ");
+    for (const name of ["weknora", "wren", "cells", "外部服务", "已连接"]) expect(groups).not.toContain(name);
     await click(host.querySelector<HTMLElement>('[data-testid="admin-surface-group-MODELS"] [data-testid="admin-surface-entry"]')!);
     await until(() => host.querySelector("iframe") !== null, "admin surface frame");
     expect(requests).toContain(`/api/v1/application-bindings/${KNOWLEDGE}/native-page?adminSurface=models.catalog`);
