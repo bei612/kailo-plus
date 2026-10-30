@@ -76,8 +76,8 @@
           "EN": "Model catalog"
         },
         "description": {
-          "ZH_CN": "知识库与 Agent 可选用的模型，由平台模型路由提供。",
-          "EN": "Models that knowledge bases and agents can use, provided by platform model routing."
+          "ZH_CN": "知识库与问答可选用的模型，由平台模型路由提供。",
+          "EN": "Models that knowledge bases and answers can use, provided by platform model routing."
         }
       },
       {
@@ -108,36 +108,6 @@
         "description": {
           "ZH_CN": "解析文档所用的引擎与可处理的文件类型，由部署声明。",
           "EN": "Engines that parse documents and the file types they handle, set by the deployment."
-        }
-      },
-      {
-        "key": "answers.skills",
-        "adminCategory": "INTEGRATIONS",
-        "path": "/platform/admin/skills",
-        "requiredPermission": "TENANT_MANAGE",
-        "access": "EDITABLE",
-        "title": {
-          "ZH_CN": "问答技能",
-          "EN": "Answer skills"
-        },
-        "description": {
-          "ZH_CN": "登记 Agent 在问答中可调用的技能。",
-          "EN": "Register the skills agents can use when answering."
-        }
-      },
-      {
-        "key": "answers.mcpServices",
-        "adminCategory": "INTEGRATIONS",
-        "path": "/platform/admin/mcp-services",
-        "requiredPermission": "TENANT_MANAGE",
-        "access": "EDITABLE",
-        "title": {
-          "ZH_CN": "MCP 服务",
-          "EN": "MCP services"
-        },
-        "description": {
-          "ZH_CN": "连接问答可调用的 MCP 工具服务。",
-          "EN": "Connect MCP tool services that answers can call."
         }
       },
       {

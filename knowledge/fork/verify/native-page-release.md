@@ -11,9 +11,11 @@
 | `models.catalog` | MODELS | `/platform/admin/models` | TENANT_MANAGE | READ_ONLY | 模型定义列表（名称、提供方、来源、上下文窗口/维度），不含端点与密钥 |
 | `storage.backends` | STORAGE | `/platform/admin/storage` | TENANT_MANAGE | READ_ONLY | 文件存储与向量库定义列表，不含连接参数与凭据 |
 | `indexing.parsers` | INDEXING | `/platform/admin/parsers` | TENANT_MANAGE | READ_ONLY | 解析服务连接状态与各解析引擎（可用性、文件类型） |
-| `answers.skills` | INTEGRATIONS | `/platform/admin/skills` | TENANT_MANAGE | EDITABLE | 原 `SkillSettings` |
-| `answers.mcpServices` | INTEGRATIONS | `/platform/admin/mcp-services` | TENANT_MANAGE | EDITABLE | 原 `McpSettings` |
 | `answers.webSearch` | INTEGRATIONS | `/platform/admin/web-search` | TENANT_MANAGE | EDITABLE | 原 `WebSearchSettings` |
+
+- **撤下 `answers.skills` 与 `answers.mcpServices`（DD-163，design-authority 5db45c5 的 `07` §4.8.5 归属表与 §4.8.8）**：
+  问答技能（连同其安装目标沙箱）与 MCP 服务只服务于 Kailo 模式下已关闭的 Agent 模式（`internal/middleware/kailo_converge.go`），
+  因此不是管理面。`/platform/admin/skills`、`/platform/admin/mcp-services` 成为未声明路径：nginx 302 回首页，SPA 显示空态。
 
 - **权限取 `TENANT_MANAGE`**：每个 binding 一个专用实例，但实例镜像的是整个 Kailo Tenant 的目录（Tenant 空间与
   每个 Workspace 空间，`07` §4.7.4），只有 Tenant `ADMIN` 在实例内成为 `admin`（Workspace 级 `ADMIN` 不提升原生角色）；
@@ -25,7 +27,8 @@
   `setPage({title})`。READ_ONLY 以定义列表呈现（`src/kailo/adminReadOnly.ts`），无禁用输入框。
 - **原生控制台关闭（Kailo 模式）**：
   - 前端：用户菜单只剩空间行（无空间设置、模型、技能、全部设置、系统管理）；平台外壳不挂载 Settings 对话框；
-    `uiStore.openSettings` 只提示“请管理员在{平台}管理区完成设置”；业务页的“去设置/添加模型/管理实例/集成渠道”入口移除；
+    `uiStore.openSettings` 只提示“请管理员在{平台}管理区完成设置”；业务页的“去设置/添加模型/管理实例/集成渠道”入口移除，
+    Agent 编辑器内的沙箱、技能设置链接与技能安装入口也移除；
     路由守卫把 `/platform/settings*`、`/platform/system*`、`/platform/integrations*`、`/platform/tenant*` 送回知识库首页。
   - nginx（返回任何页面之前）：`docker-entrypoint.sh` 在 `KAILO_MODE=true` 时生成 `/etc/nginx/kailo/admin-routes.conf`
     （`nginx.conf` 以 `include /etc/nginx/kailo/*.conf;` 引入，非 Kailo 模式只写注释）：上述前缀及 `/platform/admin/`
@@ -35,15 +38,21 @@
     WeKnora Cloud 凭据、旧版 KB 初始化（会用原始端点/密钥建模型）、Ollama 检查/下载与各类“带密钥测试”；向量库与存储后端的
     增删改测、默认后端、`storage-engine-config`、存储检查；`parser-engine-config`、解析引擎检查、docreader 重连；
     `/system/admin/*` 全部（系统管理员、全局设置、运行队列、平台 API key、平台审计）；工作区 API key 与 API principal 写、
-    工作区审计读。`PUT /models/:id/credentials` 保持路由：它是 DD-128 投递通道（`fork/deploy/provision.py`），
+    工作区审计读；DD-163 撤下的技能、沙箱与 MCP 服务的写：技能目录登记/安装/删除，沙箱配置的新建/修改/删除/workspace-policy/
+    模板查询、`/sandbox-configs/:id/skills` 下全部写（上传、reinstall、guidance、stop、PATCH、DELETE）、沙箱检查，
+    MCP 服务的新建/修改/删除/测试/元数据刷新/使用说明生成/凭据写/工具审批策略/OAuth 授权与吊销。
+    `PUT /models/:id/credentials` 保持路由：它是 DD-128 投递通道（`fork/deploy/provision.py`），
     handler 在 Kailo 模式只允许 `managed_by=kailo-model-route` 的模型写入，其余 403。
   - 保留：模型/存储/解析的读接口、知识库与 Agent 内选择已投影模型（`PUT /initialization/config/:kbId`、`PUT /knowledge-bases/:id`）、
-    三个 EDITABLE 管理面的写接口。对话历史、记忆、沙箱、渠道集成的设置在 Kailo 模式下只删入口，服务端写接口未改（业务配置，非实例运维）。
+    技能、沙箱、MCP 服务的读接口；`answers.webSearch` 的写接口；MCP 发布（`/mcp-endpoints` 的原生写与 `/mcp/:endpoint_id`
+    发布面，`08` §5）。对话历史设置在 Kailo 模式下只删入口，服务端写接口未改（业务配置，非实例运维）；记忆、渠道集成由
+    DD-163 的 `kailo_converge.go` 关闭。
 - **验收（发布后）**：Kailo 模式部署中
   `curl -si '<origin>/platform/settings?section=models'`、`/platform/system`、`/platform/admin/models`（无参数）、
-  `/platform/admin/models?kailo_admin_surface=answers.skills` 均为 `302 Location: /platform/knowledge-bases`；
+  `/platform/admin/models?kailo_admin_surface=answers.skills`、`/platform/admin/skills?kailo_admin_surface=answers.skills` 均为 `302 Location: /platform/knowledge-bases`；
   `/platform/admin/models?kailo_admin_surface=models.catalog` 为 `200` 且返回 SPA `index.html`；
-  以 Tenant admin 会话 `POST /api/v1/models`、`PUT /api/v1/tenants/kv/parser-engine-config` 为 `403 KAILO_MANAGED`。
+  以 Tenant admin 会话 `POST /api/v1/models`、`PUT /api/v1/tenants/kv/parser-engine-config`、`POST /api/v1/mcp-services`、
+  `POST /api/v1/skills/catalog` 为 `403 KAILO_MANAGED`。
 
 ## 1.6.0-native-page（2026-10-30，验收批次 5 复验）
 

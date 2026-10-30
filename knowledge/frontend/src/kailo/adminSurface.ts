@@ -15,8 +15,6 @@ export type AdminSurfaceKey =
   | 'models.catalog'
   | 'storage.backends'
   | 'indexing.parsers'
-  | 'answers.skills'
-  | 'answers.mcpServices'
   | 'answers.webSearch'
 
 export interface LocalizedText {
@@ -37,6 +35,10 @@ export interface AdminSurface {
 /** Path prefix of every admin surface page (a standalone route, outside the platform shell). */
 export const ADMIN_SURFACE_PATH_PREFIX = '/platform/admin/'
 
+// DD-163 (07 §4.8.5, §4.8.8): answer skills (with their sandboxes) and MCP
+// services serve only the agent mode Kailo mode closes, so they are no admin
+// surfaces; the server refuses their writes (internal/middleware/kailo_managed.go).
+//
 // TENANT_MANAGE for every surface: the dedicated instance behind one binding
 // mirrors the whole Kailo Tenant directory (Tenant space and every Workspace
 // space, 07 §4.7.4), only a Tenant ADMIN becomes a native admin, and these
@@ -50,8 +52,8 @@ export const ADMIN_SURFACES: readonly AdminSurface[] = [
     access: 'READ_ONLY',
     title: { ZH_CN: '模型目录', EN: 'Model catalog' },
     description: {
-      ZH_CN: '知识库与 Agent 可选用的模型，由平台模型路由提供。',
-      EN: 'Models that knowledge bases and agents can use, provided by platform model routing.',
+      ZH_CN: '知识库与问答可选用的模型，由平台模型路由提供。',
+      EN: 'Models that knowledge bases and answers can use, provided by platform model routing.',
     },
   },
   {
@@ -76,30 +78,6 @@ export const ADMIN_SURFACES: readonly AdminSurface[] = [
     description: {
       ZH_CN: '解析文档所用的引擎与可处理的文件类型，由部署声明。',
       EN: 'Engines that parse documents and the file types they handle, set by the deployment.',
-    },
-  },
-  {
-    key: 'answers.skills',
-    adminCategory: 'INTEGRATIONS',
-    path: '/platform/admin/skills',
-    requiredPermission: 'TENANT_MANAGE',
-    access: 'EDITABLE',
-    title: { ZH_CN: '问答技能', EN: 'Answer skills' },
-    description: {
-      ZH_CN: '登记 Agent 在问答中可调用的技能。',
-      EN: 'Register the skills agents can use when answering.',
-    },
-  },
-  {
-    key: 'answers.mcpServices',
-    adminCategory: 'INTEGRATIONS',
-    path: '/platform/admin/mcp-services',
-    requiredPermission: 'TENANT_MANAGE',
-    access: 'EDITABLE',
-    title: { ZH_CN: 'MCP 服务', EN: 'MCP services' },
-    description: {
-      ZH_CN: '连接问答可调用的 MCP 工具服务。',
-      EN: 'Connect MCP tool services that answers can call.',
     },
   },
   {

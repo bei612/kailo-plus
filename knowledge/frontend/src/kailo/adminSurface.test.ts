@@ -54,10 +54,22 @@ test('every declaration satisfies the Core contract', () => {
     'models.catalog': 'MODELS/READ_ONLY',
     'storage.backends': 'STORAGE/READ_ONLY',
     'indexing.parsers': 'INDEXING/READ_ONLY',
-    'answers.skills': 'INTEGRATIONS/EDITABLE',
-    'answers.mcpServices': 'INTEGRATIONS/EDITABLE',
     'answers.webSearch': 'INTEGRATIONS/EDITABLE',
   })
+  assert.equal(manifest.frontendPresentationContract.adminSurfaces.length, 4)
+})
+
+test('DD-163: answer skills and MCP services are no admin surfaces', () => {
+  for (const key of ['answers.skills', 'answers.mcpServices']) {
+    assert.ok(!ADMIN_SURFACES.some((s) => s.key === key), key)
+    assert.ok(!manifest.frontendPresentationContract.adminSurfaces.some((s: { key: string }) => s.key === key), key)
+    assert.ok(!entrypoint.includes(key), key)
+  }
+  // Their former paths are undeclared: no surface renders, nginx sends them home.
+  assert.equal(adminSurfaceForPath('/platform/admin/skills'), null)
+  assert.equal(adminSurfaceForPath('/platform/admin/mcp-services'), null)
+  assert.equal(resolveAdminSurface('/platform/admin/skills', 'answers.skills'), null)
+  assert.equal(resolveAdminSurface('/platform/admin/mcp-services', 'answers.mcpServices'), null)
 })
 
 test('a launched key renders only on its own path', () => {

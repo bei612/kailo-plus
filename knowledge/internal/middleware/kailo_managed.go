@@ -117,6 +117,35 @@ var kailoClosedRoutes = []kailoClosedRoute{
 	kailoRoute(http.MethodPost, `/system/parser-engines/check`),
 	kailoRoute(http.MethodPost, `/system/docreader/reconnect`),
 
+	// DD-138(6) with DD-163 (design 07 §4.8.5 ownership table, §4.8.8): answer
+	// skills (and the sandboxes they install into) and MCP services serve only
+	// the agent mode Kailo mode closes (kailo_converge.go), so they are not
+	// admin surfaces and their writes are refused. Reads stay. The MCP
+	// publication endpoints (/mcp-endpoints, /mcp/:endpoint_id) are Kailo's
+	// publication surface (08 §5) and stay open.
+	kailoRoute(http.MethodPost, `/skills/catalog`),
+	kailoRoute(http.MethodPost, `/skills/catalog/[^/]+/install`),
+	kailoRoute(http.MethodDelete, `/skills/catalog/[^/]+`),
+	kailoRoute(http.MethodPost, `/sandbox-configs`),
+	kailoRoute(http.MethodPut, `/sandbox-configs/[^/]+`),
+	kailoRoute(http.MethodDelete, `/sandbox-configs/[^/]+`),
+	kailoRoute(http.MethodPost, `/sandbox-configs/templates/query`),
+	kailoRoute(http.MethodPost, `/sandbox-configs/[^/]+/skills(?:/.*)?`),
+	kailoRoute(http.MethodPatch, `/sandbox-configs/[^/]+/skills/.+`),
+	kailoRoute(http.MethodDelete, `/sandbox-configs/[^/]+/skills/.+`),
+	kailoRoute(http.MethodPost, `/system/sandbox-check`),
+	kailoRoute(http.MethodPost, `/mcp-services`),
+	kailoRoute(http.MethodPut, `/mcp-services/[^/]+`),
+	kailoRoute(http.MethodDelete, `/mcp-services/[^/]+`),
+	kailoRoute(http.MethodPost, `/mcp-services/[^/]+/test`),
+	kailoRoute(http.MethodPost, `/mcp-services/[^/]+/metadata/refresh`),
+	kailoRoute(http.MethodPost, `/mcp-services/[^/]+/usage-instructions/generate`),
+	kailoRoute(http.MethodPut, `/mcp-services/[^/]+/credentials`),
+	kailoRoute(http.MethodDelete, `/mcp-services/[^/]+/credentials/[^/]+`),
+	kailoRoute(http.MethodPut, `/mcp-services/[^/]+/tool-approvals/[^/]+`),
+	kailoRoute(http.MethodPost, `/mcp-services/[^/]+/oauth/authorize-url`),
+	kailoRoute(http.MethodDelete, `/mcp-services/[^/]+/oauth/token`),
+
 	// DD-138(6) instance administration is not an admin surface: system
 	// administrators, global runtime settings, runtime queues, platform API
 	// keys and the platform audit feed are closed outright; workspace API

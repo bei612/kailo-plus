@@ -123,8 +123,6 @@ KAILO_NATIVE_ADMIN_PREFIXES='/platform/settings /platform/system /platform/integ
 KAILO_ADMIN_SURFACES='/platform/admin/models models.catalog
 /platform/admin/storage storage.backends
 /platform/admin/parsers indexing.parsers
-/platform/admin/skills answers.skills
-/platform/admin/mcp-services answers.mcpServices
 /platform/admin/web-search answers.webSearch'
 KAILO_ADMIN_CONF=/etc/nginx/kailo/admin-routes.conf
 mkdir -p /etc/nginx/kailo

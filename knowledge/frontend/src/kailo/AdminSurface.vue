@@ -33,9 +33,7 @@
         </template>
       </section>
       <section v-else class="kailo-admin-surface__editable">
-        <SkillSettings v-if="surface.key === 'answers.skills'" />
-        <McpSettings v-else-if="surface.key === 'answers.mcpServices'" />
-        <WebSearchSettings v-else-if="surface.key === 'answers.webSearch'" />
+        <WebSearchSettings v-if="surface.key === 'answers.webSearch'" />
       </section>
     </template>
     <div v-else class="kailo-admin-surface__unavailable">
@@ -48,8 +46,6 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import SkillSettings from '@/views/settings/SkillSettings.vue'
-import McpSettings from '@/views/settings/McpSettings.vue'
 import WebSearchSettings from '@/views/settings/WebSearchSettings.vue'
 import { listModels } from '@/api/model'
 import { listVectorStores } from '@/api/vector-store'

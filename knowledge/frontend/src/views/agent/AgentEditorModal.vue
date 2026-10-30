@@ -2047,7 +2047,8 @@ const hasSandboxSelected = computed(() => !!formData.value.config.sandbox_config
 const canEnableSkills = computed(() =>
   hasSandboxSelected.value || namedSandboxConfigs().length === 1,
 );
-const canInstallSkills = computed(() => authStore.hasRole('admin'));
+// Kailo mode (DD-163): skill installation is closed server-side; no install entries.
+const canInstallSkills = computed(() => authStore.hasRole('admin') && settingsLinks);
 
 type CatalogSkillRow = SkillCatalogItem & {
   installed: boolean

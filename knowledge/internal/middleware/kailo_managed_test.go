@@ -84,7 +84,8 @@ func TestKailoManagedGuardClosesLocalCredentialsAndMembershipEdits(t *testing.T)
 // the READ_ONLY admin surfaces (models.catalog, storage.backends,
 // indexing.parsers) and instance administration, while the reads the business
 // pages use (model lists, KB model choice, storage and parser listings) and the
-// EDITABLE surfaces (skills, MCP services, web search) stay open.
+// EDITABLE surface (web search) stays open. DD-163: skills, sandboxes and MCP
+// services are no surfaces; their writes are refused, MCP publication stays.
 func TestKailoManagedGuardClosesAdminSurfaceWritesAndInstanceAdmin(t *testing.T) {
 	enabled := kailoGuardRouter(&config.Config{Kailo: &config.KailoIntegrationConfig{Enable: true}})
 	disabled := kailoGuardRouter(&config.Config{})
@@ -118,6 +119,33 @@ func TestKailoManagedGuardClosesAdminSurfaceWritesAndInstanceAdmin(t *testing.T)
 		{http.MethodPut, "/api/v1/storage-backends/sb-1/default"},
 		{http.MethodPut, "/api/v1/tenants/kv/storage-engine-config"},
 		{http.MethodPost, "/api/v1/system/storage-engine-check"},
+		// DD-163: answer skills, their sandboxes and MCP services (no surface)
+		{http.MethodPost, "/api/v1/skills/catalog"},
+		{http.MethodPost, "/api/v1/skills/catalog/sk-1/install"},
+		{http.MethodDelete, "/api/v1/skills/catalog/sk-1"},
+		{http.MethodPut, "/api/v1/sandbox-configs/workspace-policy"},
+		{http.MethodPost, "/api/v1/sandbox-configs/templates/query"},
+		{http.MethodPost, "/api/v1/sandbox-configs"},
+		{http.MethodPut, "/api/v1/sandbox-configs/sc-1"},
+		{http.MethodDelete, "/api/v1/sandbox-configs/sc-1"},
+		{http.MethodPost, "/api/v1/sandbox-configs/sc-1/skills"},
+		{http.MethodPost, "/api/v1/sandbox-configs/sc-1/skills/s-1/reinstall"},
+		{http.MethodPost, "/api/v1/sandbox-configs/sc-1/skills/s-1/guidance"},
+		{http.MethodPost, "/api/v1/sandbox-configs/sc-1/skills/s-1/stop"},
+		{http.MethodPatch, "/api/v1/sandbox-configs/sc-1/skills/s-1"},
+		{http.MethodDelete, "/api/v1/sandbox-configs/sc-1/skills/s-1"},
+		{http.MethodPost, "/api/v1/system/sandbox-check"},
+		{http.MethodPost, "/api/v1/mcp-services"},
+		{http.MethodPut, "/api/v1/mcp-services/mcp-1"},
+		{http.MethodDelete, "/api/v1/mcp-services/mcp-1"},
+		{http.MethodPost, "/api/v1/mcp-services/mcp-1/test"},
+		{http.MethodPost, "/api/v1/mcp-services/mcp-1/metadata/refresh"},
+		{http.MethodPost, "/api/v1/mcp-services/mcp-1/usage-instructions/generate"},
+		{http.MethodPut, "/api/v1/mcp-services/mcp-1/credentials"},
+		{http.MethodDelete, "/api/v1/mcp-services/mcp-1/credentials/token"},
+		{http.MethodPut, "/api/v1/mcp-services/mcp-1/tool-approvals/search"},
+		{http.MethodPost, "/api/v1/mcp-services/mcp-1/oauth/authorize-url"},
+		{http.MethodDelete, "/api/v1/mcp-services/mcp-1/oauth/token"},
 		// indexing.parsers (INDEXING, READ_ONLY)
 		{http.MethodPut, "/api/v1/tenants/kv/parser-engine-config"},
 		{http.MethodPost, "/api/v1/system/parser-engines/check"},
@@ -176,11 +204,20 @@ func TestKailoManagedGuardClosesAdminSurfaceWritesAndInstanceAdmin(t *testing.T)
 		{http.MethodGet, "/api/v1/system/storage-engine-status"},
 		{http.MethodGet, "/api/v1/system/info"},
 		{http.MethodGet, "/api/v1/system/capabilities"},
-		// EDITABLE admin surfaces: answers.skills, answers.mcpServices, answers.webSearch.
-		{http.MethodPost, "/api/v1/skills/catalog"},
-		{http.MethodPost, "/api/v1/mcp-services"},
-		{http.MethodPut, "/api/v1/mcp-services/mcp-1"},
-		{http.MethodDelete, "/api/v1/mcp-services/mcp-1"},
+		// Reads of skills, sandboxes and MCP services stay.
+		{http.MethodGet, "/api/v1/skills"},
+		{http.MethodGet, "/api/v1/skills/catalog"},
+		{http.MethodGet, "/api/v1/sandbox-configs"},
+		{http.MethodGet, "/api/v1/sandbox-configs/sc-1"},
+		{http.MethodGet, "/api/v1/sandbox-configs/sc-1/skills"},
+		{http.MethodGet, "/api/v1/mcp-services"},
+		{http.MethodGet, "/api/v1/mcp-services/mcp-1/tools"},
+		// MCP publication (08 §5): native endpoint management and the served surface stay.
+		{http.MethodPost, "/api/v1/mcp-endpoints"},
+		{http.MethodPut, "/api/v1/mcp-endpoints/ep-1"},
+		{http.MethodDelete, "/api/v1/mcp-endpoints/ep-1"},
+		{http.MethodPost, "/api/v1/mcp-endpoints/ep-1/rotate-token"},
+		// EDITABLE admin surface answers.webSearch.
 		{http.MethodPost, "/api/v1/web-search-providers"},
 		{http.MethodPut, "/api/v1/web-search-providers/ws-1"},
 		{http.MethodPut, "/api/v1/tenants/kv/web-search-config"},
