@@ -47,6 +47,8 @@
 //     final adapterSearchRequest = adapterSearchRequestFromJson(jsonString);
 //     final adapterSearchResponse = adapterSearchResponseFromJson(jsonString);
 //     final adapterSourceResource = adapterSourceResourceFromJson(jsonString);
+//     final accountPreferences = accountPreferencesFromJson(jsonString);
+//     final accountPreferencesUpdate = accountPreferencesUpdateFromJson(jsonString);
 //     final actionCommand = actionCommandFromJson(jsonString);
 //     final actionSubmission = actionSubmissionFromJson(jsonString);
 //     final agentActiveTurnPage = agentActiveTurnPageFromJson(jsonString);
@@ -119,7 +121,10 @@
 //     final componentConformanceAuthorization = componentConformanceAuthorizationFromJson(jsonString);
 //     final componentConformanceWireDigests = componentConformanceWireDigestsFromJson(jsonString);
 //     final componentConformanceWireObservation = componentConformanceWireObservationFromJson(jsonString);
+//     final componentDirectoryReceiptRequest = componentDirectoryReceiptRequestFromJson(jsonString);
+//     final componentDirectoryReceiptView = componentDirectoryReceiptViewFromJson(jsonString);
 //     final componentMemberDirectory = componentMemberDirectoryFromJson(jsonString);
+//     final componentMemberDirectoryV2 = componentMemberDirectoryV2FromJson(jsonString);
 //     final componentNotificationDelivery = componentNotificationDeliveryFromJson(jsonString);
 //     final componentNotificationPage = componentNotificationPageFromJson(jsonString);
 //     final componentNotificationReadRequest = componentNotificationReadRequestFromJson(jsonString);
@@ -130,6 +135,9 @@
 //     final componentReleaseReceipt = componentReleaseReceiptFromJson(jsonString);
 //     final componentSearchPage = componentSearchPageFromJson(jsonString);
 //     final componentSearchQuery = componentSearchQueryFromJson(jsonString);
+//     final componentShareIntentCreated = componentShareIntentCreatedFromJson(jsonString);
+//     final componentShareIntentRequest = componentShareIntentRequestFromJson(jsonString);
+//     final componentShareIntentView = componentShareIntentViewFromJson(jsonString);
 //     final conversationOpenRequest = conversationOpenRequestFromJson(jsonString);
 //     final conversationPage = conversationPageFromJson(jsonString);
 //     final conversationParticipant = conversationParticipantFromJson(jsonString);
@@ -320,6 +328,9 @@
 //     final componentProtocolPeerEnvironment = componentProtocolPeerEnvironmentFromJson(jsonString);
 //     final componentReleaseApprovalTarget = componentReleaseApprovalTargetFromJson(jsonString);
 //     final componentReleaseRegistration = componentReleaseRegistrationFromJson(jsonString);
+//     final componentShareGrant = componentShareGrantFromJson(jsonString);
+//     final componentShareSet = componentShareSetFromJson(jsonString);
+//     final componentShareSubject = componentShareSubjectFromJson(jsonString);
 //     final componentText = componentTextFromJson(jsonString);
 //     final contentReference = contentReferenceFromJson(jsonString);
 //     final delegationGrantParameters = delegationGrantParametersFromJson(jsonString);
@@ -702,6 +713,18 @@ AdapterSourceResource adapterSourceResourceFromJson(String str) =>
     AdapterSourceResource.fromJson(json.decode(str));
 
 String adapterSourceResourceToJson(AdapterSourceResource data) =>
+    json.encode(data.toJson());
+
+AccountPreferences accountPreferencesFromJson(String str) =>
+    AccountPreferences.fromJson(json.decode(str));
+
+String accountPreferencesToJson(AccountPreferences data) =>
+    json.encode(data.toJson());
+
+AccountPreferencesUpdate accountPreferencesUpdateFromJson(String str) =>
+    AccountPreferencesUpdate.fromJson(json.decode(str));
+
+String accountPreferencesUpdateToJson(AccountPreferencesUpdate data) =>
     json.encode(data.toJson());
 
 ActionCommand actionCommandFromJson(String str) =>
@@ -1146,10 +1169,32 @@ String componentConformanceWireObservationToJson(
   ComponentConformanceWireObservation data,
 ) => json.encode(data.toJson());
 
+ComponentDirectoryReceiptRequest componentDirectoryReceiptRequestFromJson(
+  String str,
+) => ComponentDirectoryReceiptRequest.fromJson(json.decode(str));
+
+String componentDirectoryReceiptRequestToJson(
+  ComponentDirectoryReceiptRequest data,
+) => json.encode(data.toJson());
+
+ComponentDirectoryReceiptView componentDirectoryReceiptViewFromJson(
+  String str,
+) => ComponentDirectoryReceiptView.fromJson(json.decode(str));
+
+String componentDirectoryReceiptViewToJson(
+  ComponentDirectoryReceiptView data,
+) => json.encode(data.toJson());
+
 ComponentMemberDirectory componentMemberDirectoryFromJson(String str) =>
     ComponentMemberDirectory.fromJson(json.decode(str));
 
 String componentMemberDirectoryToJson(ComponentMemberDirectory data) =>
+    json.encode(data.toJson());
+
+ComponentMemberDirectoryV2 componentMemberDirectoryV2FromJson(String str) =>
+    ComponentMemberDirectoryV2.fromJson(json.decode(str));
+
+String componentMemberDirectoryV2ToJson(ComponentMemberDirectoryV2 data) =>
     json.encode(data.toJson());
 
 ComponentNotificationDelivery componentNotificationDeliveryFromJson(
@@ -1216,6 +1261,24 @@ ComponentSearchQuery componentSearchQueryFromJson(String str) =>
     ComponentSearchQuery.fromJson(json.decode(str));
 
 String componentSearchQueryToJson(ComponentSearchQuery data) =>
+    json.encode(data.toJson());
+
+ComponentShareIntentCreated componentShareIntentCreatedFromJson(String str) =>
+    ComponentShareIntentCreated.fromJson(json.decode(str));
+
+String componentShareIntentCreatedToJson(ComponentShareIntentCreated data) =>
+    json.encode(data.toJson());
+
+ComponentShareIntentRequest componentShareIntentRequestFromJson(String str) =>
+    ComponentShareIntentRequest.fromJson(json.decode(str));
+
+String componentShareIntentRequestToJson(ComponentShareIntentRequest data) =>
+    json.encode(data.toJson());
+
+ComponentShareIntentView componentShareIntentViewFromJson(String str) =>
+    ComponentShareIntentView.fromJson(json.decode(str));
+
+String componentShareIntentViewToJson(ComponentShareIntentView data) =>
     json.encode(data.toJson());
 
 ConversationOpenRequest conversationOpenRequestFromJson(String str) =>
@@ -2363,6 +2426,24 @@ ComponentReleaseRegistration componentReleaseRegistrationFromJson(String str) =>
     ComponentReleaseRegistration.fromJson(json.decode(str));
 
 String componentReleaseRegistrationToJson(ComponentReleaseRegistration data) =>
+    json.encode(data.toJson());
+
+ComponentShareGrant componentShareGrantFromJson(String str) =>
+    ComponentShareGrant.fromJson(json.decode(str));
+
+String componentShareGrantToJson(ComponentShareGrant data) =>
+    json.encode(data.toJson());
+
+ComponentShareSet componentShareSetFromJson(String str) =>
+    ComponentShareSet.fromJson(json.decode(str));
+
+String componentShareSetToJson(ComponentShareSet data) =>
+    json.encode(data.toJson());
+
+ComponentShareSubject componentShareSubjectFromJson(String str) =>
+    ComponentShareSubject.fromJson(json.decode(str));
+
+String componentShareSubjectToJson(ComponentShareSubject data) =>
     json.encode(data.toJson());
 
 ComponentText componentTextFromJson(String str) =>
@@ -5131,6 +5212,114 @@ final componentSearchResultKindValues = EnumValues({
   "KNOWLEDGE_BASE": ComponentSearchResultKind.KNOWLEDGE_BASE,
   "QUESTION": ComponentSearchResultKind.QUESTION,
 });
+
+///GET /api/v1/account/preferences (DD-164(7)): the signed-in HumanIdentity's account
+///preferences, shared by every Tenant and device. Absent fields have never been set;
+///clients fall back to their defaults.
+class AccountPreferences {
+  ///neutral, kailo-brand or #rrggbb.
+  final String? accent;
+
+  ///DD-138 contributed preference values by key (07 §4.8.2 key format): boolean or an option
+  ///value of 1-32 [A-Za-z0-9._-]. At most 64 keys.
+  final Map<String, dynamic> componentPreferences;
+  final bool? followSystem;
+  final ProtocolSessionLocale? locale;
+
+  ///Theme name, 1-64 of [a-z0-9-].
+  final String? theme;
+  final String? updatedAt;
+
+  ///0 before the first write.
+  final int version;
+
+  AccountPreferences({
+    this.accent,
+    required this.componentPreferences,
+    this.followSystem,
+    this.locale,
+    this.theme,
+    this.updatedAt,
+    required this.version,
+  });
+
+  factory AccountPreferences.fromJson(Map<String, dynamic> json) =>
+      AccountPreferences(
+        accent: json["accent"],
+        componentPreferences: Map.from(
+          json["componentPreferences"],
+        ).map((k, v) => MapEntry<String, dynamic>(k, v)),
+        followSystem: json["followSystem"],
+        locale: json["locale"] == null
+            ? null
+            : protocolSessionLocaleValues.map[json["locale"]]!,
+        theme: json["theme"],
+        updatedAt: json["updatedAt"],
+        version: json["version"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "accent": accent,
+    "componentPreferences": Map.from(
+      componentPreferences,
+    ).map((k, v) => MapEntry<String, dynamic>(k, v)),
+    "followSystem": followSystem,
+    "locale": protocolSessionLocaleValues.reverse[locale],
+    "theme": theme,
+    "updatedAt": updatedAt,
+    "version": version,
+  });
+}
+
+///PUT /api/v1/account/preferences (DD-164(7)): compare-and-swap on version; absent fields
+///are unchanged, componentPreferences entries are merged by key and a null value removes
+///the key. 409 returns the current AccountPreferences.
+class AccountPreferencesUpdate {
+  final String? accent;
+  final Map<String, dynamic>? componentPreferences;
+  final int expectedVersion;
+  final bool? followSystem;
+  final ProtocolSessionLocale? locale;
+  final String? theme;
+
+  AccountPreferencesUpdate({
+    this.accent,
+    this.componentPreferences,
+    required this.expectedVersion,
+    this.followSystem,
+    this.locale,
+    this.theme,
+  });
+
+  factory AccountPreferencesUpdate.fromJson(Map<String, dynamic> json) =>
+      AccountPreferencesUpdate(
+        accent: json["accent"],
+        componentPreferences: json["componentPreferences"] == null
+            ? null
+            : Map.from(
+                json["componentPreferences"]!,
+              ).map((k, v) => MapEntry<String, dynamic>(k, v)),
+        expectedVersion: json["expectedVersion"],
+        followSystem: json["followSystem"],
+        locale: json["locale"] == null
+            ? null
+            : protocolSessionLocaleValues.map[json["locale"]]!,
+        theme: json["theme"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "accent": accent,
+    "componentPreferences": componentPreferences == null
+        ? null
+        : Map.from(
+            componentPreferences!,
+          ).map((k, v) => MapEntry<String, dynamic>(k, v)),
+    "expectedVersion": expectedVersion,
+    "followSystem": followSystem,
+    "locale": protocolSessionLocaleValues.reverse[locale],
+    "theme": theme,
+  });
+}
 
 ///GET /api/v1/workspaces/{workspaceId}/agent-turns（DD-125(6)）：已准入 Workspace 内本人持有
 ///Installation audit 的运行中回合；没有 audit 的 Installation 不出现（成员只见 20002）。每次读取写 ACCESS 审计。
@@ -11917,6 +12106,198 @@ final componentConformanceStepExpectedMcpResultKindValues = EnumValues({
   "RESULT": ComponentConformanceStepExpectedMcpResultKind.RESULT,
 });
 
+///PUT /service/v1/component-directory/bindings/{bindingId}/receipt (DD-164(4)⑥): the
+///component reports the last directory snapshot it fully applied or failed to apply. No
+///personal data; grants nothing; never changes the directory.
+class ComponentDirectoryReceiptRequest {
+  final String appliedAt;
+
+  ///64 lowercase hex characters.
+  final String directoryVersion;
+  final List<ComponentReceiptFailure> failures;
+  final ComponentReceiptOutcome outcome;
+  final int schema;
+
+  ComponentDirectoryReceiptRequest({
+    required this.appliedAt,
+    required this.directoryVersion,
+    required this.failures,
+    required this.outcome,
+    required this.schema,
+  });
+
+  factory ComponentDirectoryReceiptRequest.fromJson(
+    Map<String, dynamic> json,
+  ) => ComponentDirectoryReceiptRequest(
+    appliedAt: json["appliedAt"],
+    directoryVersion: json["directoryVersion"],
+    failures: List<ComponentReceiptFailure>.from(
+      json["failures"].map((x) => ComponentReceiptFailure.fromJson(x)),
+    ),
+    outcome: componentReceiptOutcomeValues.map[json["outcome"]]!,
+    schema: json["schema"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "appliedAt": appliedAt,
+    "directoryVersion": directoryVersion,
+    "failures": List<dynamic>.from(failures.map((x) => x.toJson())),
+    "outcome": componentReceiptOutcomeValues.reverse[outcome],
+    "schema": schema,
+  });
+}
+
+class ComponentReceiptFailure {
+  final ComponentReceiptFailureKind kind;
+
+  ///Upper snake case, at most 64 characters, e.g. NATIVE_OBJECT_MISSING.
+  final String reasonCode;
+
+  ///Kailo id of the failed item (principalId, workspaceId, tenantId or resourceId), at most
+  ///64 characters.
+  final String ref;
+
+  ComponentReceiptFailure({
+    required this.kind,
+    required this.reasonCode,
+    required this.ref,
+  });
+
+  factory ComponentReceiptFailure.fromJson(Map<String, dynamic> json) =>
+      ComponentReceiptFailure(
+        kind: componentReceiptFailureKindValues.map[json["kind"]]!,
+        reasonCode: json["reasonCode"],
+        ref: json["ref"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "kind": componentReceiptFailureKindValues.reverse[kind],
+    "reasonCode": reasonCode,
+    "ref": ref,
+  });
+}
+
+///DD-164(4)⑥: the directory part a convergence failure item refers to.
+enum ComponentReceiptFailureKind { MEMBER, SHARE, TENANT, WORKSPACE }
+
+final componentReceiptFailureKindValues = EnumValues({
+  "MEMBER": ComponentReceiptFailureKind.MEMBER,
+  "SHARE": ComponentReceiptFailureKind.SHARE,
+  "TENANT": ComponentReceiptFailureKind.TENANT,
+  "WORKSPACE": ComponentReceiptFailureKind.WORKSPACE,
+});
+
+///DD-164(4)⑥: whether the component fully applied the reported directory snapshot.
+enum ComponentReceiptOutcome { APPLIED, FAILED }
+
+final componentReceiptOutcomeValues = EnumValues({
+  "APPLIED": ComponentReceiptOutcome.APPLIED,
+  "FAILED": ComponentReceiptOutcome.FAILED,
+});
+
+///GET /api/v1/application-bindings/{bindingId}/directory-receipt for binding managers
+///(DD-164(4)⑥): the latest receipt compared with the current directory version.
+class ComponentDirectoryReceiptView {
+  final String? appliedAt;
+  final String bindingId;
+  final String? currentVersion;
+  final List<ComponentReceiptFailureView>? failures;
+  final String? receiptVersion;
+  final String? receivedAt;
+  final int? schema;
+
+  ///CONVERGED: receipt APPLIED for the current version; PENDING: different version for at
+  ///most two read intervals; NOT_CONVERGED: different for longer; FAILED: latest receipt
+  ///FAILED; NO_RECEIPT: never reported.
+  final ComponentDirectoryReceiptViewState state;
+
+  ComponentDirectoryReceiptView({
+    this.appliedAt,
+    required this.bindingId,
+    this.currentVersion,
+    this.failures,
+    this.receiptVersion,
+    this.receivedAt,
+    this.schema,
+    required this.state,
+  });
+
+  factory ComponentDirectoryReceiptView.fromJson(Map<String, dynamic> json) =>
+      ComponentDirectoryReceiptView(
+        appliedAt: json["appliedAt"],
+        bindingId: json["bindingId"],
+        currentVersion: json["currentVersion"],
+        failures: json["failures"] == null
+            ? null
+            : List<ComponentReceiptFailureView>.from(
+                json["failures"]!.map(
+                  (x) => ComponentReceiptFailureView.fromJson(x),
+                ),
+              ),
+        receiptVersion: json["receiptVersion"],
+        receivedAt: json["receivedAt"],
+        schema: json["schema"],
+        state: componentDirectoryReceiptViewStateValues.map[json["state"]]!,
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "appliedAt": appliedAt,
+    "bindingId": bindingId,
+    "currentVersion": currentVersion,
+    "failures": failures == null
+        ? null
+        : List<dynamic>.from(failures!.map((x) => x.toJson())),
+    "receiptVersion": receiptVersion,
+    "receivedAt": receivedAt,
+    "schema": schema,
+    "state": componentDirectoryReceiptViewStateValues.reverse[state],
+  });
+}
+
+class ComponentReceiptFailureView {
+  final ComponentReceiptFailureKind kind;
+  final String reasonCode;
+  final String ref;
+
+  ComponentReceiptFailureView({
+    required this.kind,
+    required this.reasonCode,
+    required this.ref,
+  });
+
+  factory ComponentReceiptFailureView.fromJson(Map<String, dynamic> json) =>
+      ComponentReceiptFailureView(
+        kind: componentReceiptFailureKindValues.map[json["kind"]]!,
+        reasonCode: json["reasonCode"],
+        ref: json["ref"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "kind": componentReceiptFailureKindValues.reverse[kind],
+    "reasonCode": reasonCode,
+    "ref": ref,
+  });
+}
+
+///CONVERGED: receipt APPLIED for the current version; PENDING: different version for at
+///most two read intervals; NOT_CONVERGED: different for longer; FAILED: latest receipt
+///FAILED; NO_RECEIPT: never reported.
+enum ComponentDirectoryReceiptViewState {
+  CONVERGED,
+  FAILED,
+  NOT_CONVERGED,
+  NO_RECEIPT,
+  PENDING,
+}
+
+final componentDirectoryReceiptViewStateValues = EnumValues({
+  "CONVERGED": ComponentDirectoryReceiptViewState.CONVERGED,
+  "FAILED": ComponentDirectoryReceiptViewState.FAILED,
+  "NOT_CONVERGED": ComponentDirectoryReceiptViewState.NOT_CONVERGED,
+  "NO_RECEIPT": ComponentDirectoryReceiptViewState.NO_RECEIPT,
+  "PENDING": ComponentDirectoryReceiptViewState.PENDING,
+});
+
 ///Read-only member directory snapshot for an embedded component (.design/07 §4.7.4,
 ///DD-133(4)): every ACTIVE HUMAN member in the native page entry binding's scope with Kailo
 ///display name, avatar URL, Tenant role and ACTIVE Workspace memberships. A full snapshot,
@@ -12085,6 +12466,317 @@ class ComponentDirectoryWorkspace {
 
   factory ComponentDirectoryWorkspace.fromJson(Map<String, dynamic> json) =>
       ComponentDirectoryWorkspace(
+        name: json["name"],
+        workspaceId: json["workspaceId"],
+      );
+
+  Map<String, dynamic> toJson() =>
+      _stripNulls({"name": name, "workspaceId": workspaceId});
+}
+
+///Member directory snapshot schema 2 (.design/07 §4.7.4, DD-164(2)(4)): schema 1 plus Kailo
+///create permissions and the Resource-level share projection. Served only for ?schema=2;
+///directoryVersion is the SHA-256 (hex) of the canonical JSON of every other field of this
+///response.
+class ComponentMemberDirectoryV2 {
+  final String bindingId;
+
+  ///Lowercase hex SHA-256 of the canonical JSON of this snapshot without directoryVersion;
+  ///unchanged content keeps the same version.
+  final String directoryVersion;
+  final List<ComponentDirectoryV2Member> members;
+
+  ///Always 2 (quicktype rejects const).
+  final int schema;
+
+  ///Every ACTIVE component.shared_object Resource of this binding, ordered by resourceId.
+  final List<ComponentDirectoryShare> shares;
+  final ComponentDirectoryV2Tenant tenant;
+
+  ///Every ACTIVE Workspace in the binding scope (only the binding's own Workspace when it has
+  ///one).
+  final List<ComponentDirectoryV2Workspace> workspaces;
+
+  ComponentMemberDirectoryV2({
+    required this.bindingId,
+    required this.directoryVersion,
+    required this.members,
+    required this.schema,
+    required this.shares,
+    required this.tenant,
+    required this.workspaces,
+  });
+
+  factory ComponentMemberDirectoryV2.fromJson(Map<String, dynamic> json) =>
+      ComponentMemberDirectoryV2(
+        bindingId: json["bindingId"],
+        directoryVersion: json["directoryVersion"],
+        members: List<ComponentDirectoryV2Member>.from(
+          json["members"].map((x) => ComponentDirectoryV2Member.fromJson(x)),
+        ),
+        schema: json["schema"],
+        shares: List<ComponentDirectoryShare>.from(
+          json["shares"].map((x) => ComponentDirectoryShare.fromJson(x)),
+        ),
+        tenant: ComponentDirectoryV2Tenant.fromJson(json["tenant"]),
+        workspaces: List<ComponentDirectoryV2Workspace>.from(
+          json["workspaces"].map(
+            (x) => ComponentDirectoryV2Workspace.fromJson(x),
+          ),
+        ),
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "bindingId": bindingId,
+    "directoryVersion": directoryVersion,
+    "members": List<dynamic>.from(members.map((x) => x.toJson())),
+    "schema": schema,
+    "shares": List<dynamic>.from(shares.map((x) => x.toJson())),
+    "tenant": tenant.toJson(),
+    "workspaces": List<dynamic>.from(workspaces.map((x) => x.toJson())),
+  });
+}
+
+class ComponentDirectoryV2Member {
+  ///Kailo display name: the member's SERVER HUMAN kind:0 display_name (else name), else the
+  ///HumanIdentity display name.
+  final String displayName;
+
+  ///One entry per ACTIVE external identity; the component keys its account on issuer +
+  ///subject.
+  final List<ComponentDirectoryV2Identity> identities;
+  final String principalId;
+
+  ///SpiceDB Tenant create for this principal (fully consistent).
+  final bool tenantCreate;
+  final ComponentDirectoryRole tenantRole;
+  final List<ComponentDirectoryV2Membership> workspaces;
+
+  ComponentDirectoryV2Member({
+    required this.displayName,
+    required this.identities,
+    required this.principalId,
+    required this.tenantCreate,
+    required this.tenantRole,
+    required this.workspaces,
+  });
+
+  factory ComponentDirectoryV2Member.fromJson(
+    Map<String, dynamic> json,
+  ) => ComponentDirectoryV2Member(
+    displayName: json["displayName"],
+    identities: List<ComponentDirectoryV2Identity>.from(
+      json["identities"].map((x) => ComponentDirectoryV2Identity.fromJson(x)),
+    ),
+    principalId: json["principalId"],
+    tenantCreate: json["tenantCreate"],
+    tenantRole: componentDirectoryRoleValues.map[json["tenantRole"]]!,
+    workspaces: List<ComponentDirectoryV2Membership>.from(
+      json["workspaces"].map((x) => ComponentDirectoryV2Membership.fromJson(x)),
+    ),
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "displayName": displayName,
+    "identities": List<dynamic>.from(identities.map((x) => x.toJson())),
+    "principalId": principalId,
+    "tenantCreate": tenantCreate,
+    "tenantRole": componentDirectoryRoleValues.reverse[tenantRole],
+    "workspaces": List<dynamic>.from(workspaces.map((x) => x.toJson())),
+  });
+}
+
+class ComponentDirectoryV2Identity {
+  final String issuer;
+
+  ///<PUBLIC_ORIGIN>/api/v1/identity/avatars/<subject>, the same value as the IdP picture
+  ///claim.
+  final String picture;
+  final String subject;
+
+  ComponentDirectoryV2Identity({
+    required this.issuer,
+    required this.picture,
+    required this.subject,
+  });
+
+  factory ComponentDirectoryV2Identity.fromJson(Map<String, dynamic> json) =>
+      ComponentDirectoryV2Identity(
+        issuer: json["issuer"],
+        picture: json["picture"],
+        subject: json["subject"],
+      );
+
+  Map<String, dynamic> toJson() =>
+      _stripNulls({"issuer": issuer, "picture": picture, "subject": subject});
+}
+
+class ComponentDirectoryV2Membership {
+  ///SpiceDB Workspace create for this principal (fully consistent).
+  final bool create;
+  final ComponentDirectoryRole role;
+  final String workspaceId;
+
+  ComponentDirectoryV2Membership({
+    required this.create,
+    required this.role,
+    required this.workspaceId,
+  });
+
+  factory ComponentDirectoryV2Membership.fromJson(Map<String, dynamic> json) =>
+      ComponentDirectoryV2Membership(
+        create: json["create"],
+        role: componentDirectoryRoleValues.map[json["role"]]!,
+        workspaceId: json["workspaceId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "create": create,
+    "role": componentDirectoryRoleValues.reverse[role],
+    "workspaceId": workspaceId,
+  });
+}
+
+class ComponentDirectoryShare {
+  ///Owner first as WRITE, then the reader/editor relationships whose subject is still in this
+  ///snapshot, ordered by subject kind, id and access.
+  final List<ComponentShareGrant> grants;
+  final String nativeId;
+  final ComponentSharedNativeType nativeType;
+  final String ownerPrincipalId;
+  final String resourceId;
+
+  ComponentDirectoryShare({
+    required this.grants,
+    required this.nativeId,
+    required this.nativeType,
+    required this.ownerPrincipalId,
+    required this.resourceId,
+  });
+
+  factory ComponentDirectoryShare.fromJson(Map<String, dynamic> json) =>
+      ComponentDirectoryShare(
+        grants: List<ComponentShareGrant>.from(
+          json["grants"].map((x) => ComponentShareGrant.fromJson(x)),
+        ),
+        nativeId: json["nativeId"],
+        nativeType: componentSharedNativeTypeValues.map[json["nativeType"]]!,
+        ownerPrincipalId: json["ownerPrincipalId"],
+        resourceId: json["resourceId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "grants": List<dynamic>.from(grants.map((x) => x.toJson())),
+    "nativeId": nativeId,
+    "nativeType": componentSharedNativeTypeValues.reverse[nativeType],
+    "ownerPrincipalId": ownerPrincipalId,
+    "resourceId": resourceId,
+  });
+}
+
+///DD-164(4): one grant on a component shared object. TENANT subjects only accept READ.
+class ComponentShareGrant {
+  final ComponentShareAccess access;
+  final ComponentShareSubject subject;
+
+  ComponentShareGrant({required this.access, required this.subject});
+
+  factory ComponentShareGrant.fromJson(Map<String, dynamic> json) =>
+      ComponentShareGrant(
+        access: componentShareAccessValues.map[json["access"]]!,
+        subject: ComponentShareSubject.fromJson(json["subject"]),
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "access": componentShareAccessValues.reverse[access],
+    "subject": subject.toJson(),
+  });
+}
+
+///DD-164(4): access granted on a component shared object. READ writes the SpiceDB reader
+///relationship, WRITE writes editor.
+enum ComponentShareAccess { READ, WRITE }
+
+final componentShareAccessValues = EnumValues({
+  "READ": ComponentShareAccess.READ,
+  "WRITE": ComponentShareAccess.WRITE,
+});
+
+///DD-164(4): grantee of a component shared object. PRINCIPAL carries principalId (a
+///same-Tenant ACTIVE HUMAN), WORKSPACE carries workspaceId (an ACTIVE Workspace of the
+///Tenant), TENANT carries neither.
+class ComponentShareSubject {
+  final ComponentShareSubjectKind kind;
+  final String? principalId;
+  final String? workspaceId;
+
+  ComponentShareSubject({
+    required this.kind,
+    this.principalId,
+    this.workspaceId,
+  });
+
+  factory ComponentShareSubject.fromJson(Map<String, dynamic> json) =>
+      ComponentShareSubject(
+        kind: componentShareSubjectKindValues.map[json["kind"]]!,
+        principalId: json["principalId"],
+        workspaceId: json["workspaceId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "kind": componentShareSubjectKindValues.reverse[kind],
+    "principalId": principalId,
+    "workspaceId": workspaceId,
+  });
+}
+
+///DD-164(4): who a component shared object is granted to: one Tenant HUMAN member, every
+///member of a Workspace (workspace#member), or every Tenant member (tenant#member, READ
+///only).
+enum ComponentShareSubjectKind { PRINCIPAL, TENANT, WORKSPACE }
+
+final componentShareSubjectKindValues = EnumValues({
+  "PRINCIPAL": ComponentShareSubjectKind.PRINCIPAL,
+  "TENANT": ComponentShareSubjectKind.TENANT,
+  "WORKSPACE": ComponentShareSubjectKind.WORKSPACE,
+});
+
+///DD-164(4) shareable native object types, fixed per presentation category: file_storage ->
+///folder, knowledge -> knowledge_base (phase 1).
+enum ComponentSharedNativeType { FOLDER, KNOWLEDGE_BASE }
+
+final componentSharedNativeTypeValues = EnumValues({
+  "folder": ComponentSharedNativeType.FOLDER,
+  "knowledge_base": ComponentSharedNativeType.KNOWLEDGE_BASE,
+});
+
+class ComponentDirectoryV2Tenant {
+  final String name;
+  final String tenantId;
+
+  ComponentDirectoryV2Tenant({required this.name, required this.tenantId});
+
+  factory ComponentDirectoryV2Tenant.fromJson(Map<String, dynamic> json) =>
+      ComponentDirectoryV2Tenant(
+        name: json["name"],
+        tenantId: json["tenantId"],
+      );
+
+  Map<String, dynamic> toJson() =>
+      _stripNulls({"name": name, "tenantId": tenantId});
+}
+
+class ComponentDirectoryV2Workspace {
+  final String name;
+  final String workspaceId;
+
+  ComponentDirectoryV2Workspace({
+    required this.name,
+    required this.workspaceId,
+  });
+
+  factory ComponentDirectoryV2Workspace.fromJson(Map<String, dynamic> json) =>
+      ComponentDirectoryV2Workspace(
         name: json["name"],
         workspaceId: json["workspaceId"],
       );
@@ -12755,6 +13447,167 @@ class ComponentSearchQuery {
 
   Map<String, dynamic> toJson() =>
       _stripNulls({"limit": limit, "locale": locale, "q": q});
+}
+
+///Answer to a share intent: the opaque intent the component passes to the Kailo host in
+///wire v1 {type: share}.
+class ComponentShareIntentCreated {
+  final String expiresAt;
+  final String intentId;
+
+  ComponentShareIntentCreated({
+    required this.expiresAt,
+    required this.intentId,
+  });
+
+  factory ComponentShareIntentCreated.fromJson(Map<String, dynamic> json) =>
+      ComponentShareIntentCreated(
+        expiresAt: json["expiresAt"],
+        intentId: json["intentId"],
+      );
+
+  Map<String, dynamic> toJson() =>
+      _stripNulls({"expiresAt": expiresAt, "intentId": intentId});
+}
+
+///POST /service/v1/component-directory/bindings/{bindingId}/share-intents (DD-164(4)②): the
+///component service names the native object its user wants to share. Only sent when the
+///initiator may share the object natively; grants nothing.
+class ComponentShareIntentRequest {
+  final ComponentShareInitiator initiator;
+
+  ///Display name, 1-200 characters.
+  final String name;
+
+  ///1-255 visible characters: Cells node UUID or WeKnora knowledge base ID.
+  final String nativeId;
+  final ComponentSharedNativeType nativeType;
+
+  ///The Kailo Workspace whose root contains the object, absent for Tenant-level objects.
+  final String? workspaceId;
+
+  ComponentShareIntentRequest({
+    required this.initiator,
+    required this.name,
+    required this.nativeId,
+    required this.nativeType,
+    this.workspaceId,
+  });
+
+  factory ComponentShareIntentRequest.fromJson(Map<String, dynamic> json) =>
+      ComponentShareIntentRequest(
+        initiator: ComponentShareInitiator.fromJson(json["initiator"]),
+        name: json["name"],
+        nativeId: json["nativeId"],
+        nativeType: componentSharedNativeTypeValues.map[json["nativeType"]]!,
+        workspaceId: json["workspaceId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "initiator": initiator.toJson(),
+    "name": name,
+    "nativeId": nativeId,
+    "nativeType": componentSharedNativeTypeValues.reverse[nativeType],
+    "workspaceId": workspaceId,
+  });
+}
+
+class ComponentShareInitiator {
+  final String issuer;
+  final String subject;
+
+  ComponentShareInitiator({required this.issuer, required this.subject});
+
+  factory ComponentShareInitiator.fromJson(Map<String, dynamic> json) =>
+      ComponentShareInitiator(issuer: json["issuer"], subject: json["subject"]);
+
+  Map<String, dynamic> toJson() =>
+      _stripNulls({"issuer": issuer, "subject": subject});
+}
+
+///GET /api/v1/component-shares/intents/{intentId} (DD-164(4)③): what the Kailo share dialog
+///shows. Readable only by the intent's initiator in a current session; an expired, consumed
+///or foreign intent is 404.
+class ComponentShareIntentView {
+  ///folder: PRINCIPAL, WORKSPACE, TENANT; knowledge_base: WORKSPACE, TENANT (phase 1).
+  final List<ComponentShareSubjectKind> allowedSubjects;
+  final String bindingId;
+
+  ///Fresh share on the existing Resource, or true for the initiator before the first share.
+  final bool canShare;
+  final String expiresAt;
+
+  ///Current grants without the owner.
+  final List<ComponentShareGrant> grants;
+  final String intentId;
+  final String name;
+
+  ///file_storage or knowledge.
+  final String nativePageCategory;
+  final ComponentSharedNativeType nativeType;
+  final String? ownerPrincipalId;
+
+  ///Present once the object is a component.shared_object Resource.
+  final String? resourceId;
+  final int? resourceVersion;
+  final String? workspaceId;
+
+  ComponentShareIntentView({
+    required this.allowedSubjects,
+    required this.bindingId,
+    required this.canShare,
+    required this.expiresAt,
+    required this.grants,
+    required this.intentId,
+    required this.name,
+    required this.nativePageCategory,
+    required this.nativeType,
+    this.ownerPrincipalId,
+    this.resourceId,
+    this.resourceVersion,
+    this.workspaceId,
+  });
+
+  factory ComponentShareIntentView.fromJson(Map<String, dynamic> json) =>
+      ComponentShareIntentView(
+        allowedSubjects: List<ComponentShareSubjectKind>.from(
+          json["allowedSubjects"].map(
+            (x) => componentShareSubjectKindValues.map[x]!,
+          ),
+        ),
+        bindingId: json["bindingId"],
+        canShare: json["canShare"],
+        expiresAt: json["expiresAt"],
+        grants: List<ComponentShareGrant>.from(
+          json["grants"].map((x) => ComponentShareGrant.fromJson(x)),
+        ),
+        intentId: json["intentId"],
+        name: json["name"],
+        nativePageCategory: json["nativePageCategory"],
+        nativeType: componentSharedNativeTypeValues.map[json["nativeType"]]!,
+        ownerPrincipalId: json["ownerPrincipalId"],
+        resourceId: json["resourceId"],
+        resourceVersion: json["resourceVersion"],
+        workspaceId: json["workspaceId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "allowedSubjects": List<dynamic>.from(
+      allowedSubjects.map((x) => componentShareSubjectKindValues.reverse[x]),
+    ),
+    "bindingId": bindingId,
+    "canShare": canShare,
+    "expiresAt": expiresAt,
+    "grants": List<dynamic>.from(grants.map((x) => x.toJson())),
+    "intentId": intentId,
+    "name": name,
+    "nativePageCategory": nativePageCategory,
+    "nativeType": componentSharedNativeTypeValues.reverse[nativeType],
+    "ownerPrincipalId": ownerPrincipalId,
+    "resourceId": resourceId,
+    "resourceVersion": resourceVersion,
+    "workspaceId": workspaceId,
+  });
 }
 
 class ConversationPage {
@@ -17002,6 +17855,9 @@ class ActionCommand {
   ///仅组件批准：已登记的不可变ComponentRelease标识。
   final String? componentReleaseId;
   final ComponentReleaseRegistration? componentReleaseRegistration;
+
+  ///仅 component.share.set（DD-164(4)）且必带；其他动作携带即拒绝。
+  final ComponentShareSet? componentShareSet;
   final ConversationOpenRequest? conversationOpen;
 
   ///仅 agent.delegation.grant：明确有效期、次数、确切动作与目标和最大结果暴露；不允许隐式通配。
@@ -17164,6 +18020,7 @@ class ActionCommand {
     this.componentAction,
     this.componentReleaseId,
     this.componentReleaseRegistration,
+    this.componentShareSet,
     this.conversationOpen,
     this.delegationGrant,
     this.delegationId,
@@ -17263,6 +18120,9 @@ class ActionCommand {
         : ComponentReleaseRegistration.fromJson(
             json["componentReleaseRegistration"],
           ),
+    componentShareSet: json["componentShareSet"] == null
+        ? null
+        : ComponentShareSet.fromJson(json["componentShareSet"]),
     conversationOpen: json["conversationOpen"] == null
         ? null
         : ConversationOpenRequest.fromJson(json["conversationOpen"]),
@@ -17379,6 +18239,7 @@ class ActionCommand {
     "componentAction": componentAction?.toJson(),
     "componentReleaseId": componentReleaseId,
     "componentReleaseRegistration": componentReleaseRegistration?.toJson(),
+    "componentShareSet": componentShareSet?.toJson(),
     "conversationOpen": conversationOpen?.toJson(),
     "delegationGrant": delegationGrant?.toJson(),
     "delegationId": delegationId,
@@ -18021,6 +18882,40 @@ class ComponentReleaseRegistration {
     "bindingConfigSchemaJson": bindingConfigSchemaJson,
     "manifestJson": manifestJson,
     "packageJson": packageJson,
+  });
+}
+
+///仅 component.share.set（DD-164(4)）且必带；其他动作携带即拒绝。
+///
+///Only component.share.set (DD-164(4)③) and required for it: the share intent naming the
+///native object, the expected Resource version when the object is already a
+///component.shared_object Resource (absent on the first share), and the complete grant list
+///that replaces the current one (owner is implicit and never listed). At most 100 grants,
+///no duplicate subject.
+class ComponentShareSet {
+  final List<ComponentShareGrant> grants;
+  final String intentId;
+  final int? resourceVersion;
+
+  ComponentShareSet({
+    required this.grants,
+    required this.intentId,
+    this.resourceVersion,
+  });
+
+  factory ComponentShareSet.fromJson(Map<String, dynamic> json) =>
+      ComponentShareSet(
+        grants: List<ComponentShareGrant>.from(
+          json["grants"].map((x) => ComponentShareGrant.fromJson(x)),
+        ),
+        intentId: json["intentId"],
+        resourceVersion: json["resourceVersion"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "grants": List<dynamic>.from(grants.map((x) => x.toJson())),
+    "intentId": intentId,
+    "resourceVersion": resourceVersion,
   });
 }
 

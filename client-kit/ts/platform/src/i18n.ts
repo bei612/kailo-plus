@@ -25,6 +25,7 @@ import {
   WorkspaceMembershipState,
   WorkspaceState,
 } from "@client-kit/contracts";
+import { noteAccountPreferenceEdit } from "./account-preference-events";
 
 export type PlatformLocale = "en" | "zh-CN";
 
@@ -32,7 +33,11 @@ export const defaultPlatformLocale: PlatformLocale = "zh-CN";
 export const platformLocaleStorageKey = "buzz-locale";
 const localeChanged = "buzz-locale-change";
 
-/** Device preference only: no tenant setting or second account preference store. */
+/**
+ * The account language (DD-164(7)): Core's AccountPreferences is the authority, this
+ * device store is its cache and the first-paint value (the gateway reads the same
+ * value from the `buzz-locale` cookie projection).
+ */
 export function getLocale(): PlatformLocale {
   if (typeof window === "undefined") return defaultPlatformLocale;
   try {
@@ -46,6 +51,7 @@ export function setLocale(locale: PlatformLocale): void {
   window.localStorage.setItem(platformLocaleStorageKey, locale);
   document.documentElement.lang = locale;
   window.dispatchEvent(new Event(localeChanged));
+  noteAccountPreferenceEdit({ locale });
 }
 
 export function subscribeLocale(listener: () => void): () => void {
@@ -4086,6 +4092,46 @@ export const platformMessages = {
   "platform.back": { en: "Back", "zh-CN": "返回" },
   "platform.confirm": { en: "Confirm", "zh-CN": "确认" },
   "platform.cancel": { en: "Cancel", "zh-CN": "取消" },
+  "componentShare.title": { en: "Share “{name}”", "zh-CN": "分享「{name}」" },
+  "componentShare.close": { en: "Close", "zh-CN": "关闭" },
+  "componentShare.loading": { en: "Loading sharing…", "zh-CN": "正在读取分享…" },
+  "componentShare.expired": { en: "This share request has expired. Choose Share again in the page.", "zh-CN": "这次分享请求已失效，请在页面中重新点“分享”。" },
+  "componentShare.readOnly": { en: "Only the owner or an administrator can change who has access.", "zh-CN": "只有所有者或管理员可以修改访问权限。" },
+  "componentShare.owner": { en: "Owner", "zh-CN": "所有者" },
+  "componentShare.empty": { en: "Not shared with anyone else yet.", "zh-CN": "尚未分享给其他人。" },
+  "componentShare.subject.person": { en: "Member", "zh-CN": "成员" },
+  "componentShare.subject.workspace": { en: "Channel members", "zh-CN": "频道成员" },
+  "componentShare.subject.tenant": { en: "Everyone in the organization", "zh-CN": "组织内全体成员" },
+  "componentShare.access.read": { en: "Can view", "zh-CN": "可查看" },
+  "componentShare.access.write": { en: "Can edit", "zh-CN": "可编辑" },
+  "componentShare.add": { en: "Add", "zh-CN": "添加" },
+  "componentShare.remove": { en: "Remove {name}", "zh-CN": "移除 {name}" },
+  "componentShare.choose": { en: "Choose…", "zh-CN": "请选择…" },
+  "componentShare.kind": { en: "Share with", "zh-CN": "分享给" },
+  "componentShare.target": { en: "Who", "zh-CN": "对象" },
+  "componentShare.access": { en: "Access", "zh-CN": "权限" },
+  "componentShare.unknownSubject": { en: "Former member or channel", "zh-CN": "已不在范围内的成员或频道" },
+  "componentShare.save": { en: "Save", "zh-CN": "保存" },
+  "componentShare.saving": { en: "Saving…", "zh-CN": "正在保存…" },
+  "componentShare.saved": { en: "Sharing updated. The change reaches the page within a minute.", "zh-CN": "分享已更新，一分钟内在页面中生效。" },
+  "componentShare.unknown": { en: "The result could not be confirmed. Retry the same change to check it.", "zh-CN": "结果未能确认，请重试同一修改以查证。" },
+  "componentShare.retry": { en: "Retry the same change", "zh-CN": "重试同一修改" },
+  "componentShare.rejected": { en: "Sharing was not changed: {reason}", "zh-CN": "分享未修改：{reason}" },
+  "componentShare.peopleFailed": { en: "Could not load members or channels.", "zh-CN": "无法读取成员或频道。" },
+  "nativeOpen.loading": { en: "Opening…", "zh-CN": "正在打开…" },
+  "nativeOpen.notFound": { en: "This page is not available to you in Kailo.", "zh-CN": "此页面在 Kailo 中对你不可用。" },
+  "nativeOpen.home": { en: "Go to Inbox", "zh-CN": "前往收件箱" },
+  "bindings.directory.title": { en: "Members and sharing", "zh-CN": "成员与分享同步" },
+  "bindings.directory.converged": { en: "Up to date", "zh-CN": "已同步" },
+  "bindings.directory.pending": { en: "Syncing", "zh-CN": "正在同步" },
+  "bindings.directory.notConverged": { en: "Not synchronized", "zh-CN": "成员与分享未同步" },
+  "bindings.directory.failed": { en: "Last sync failed", "zh-CN": "上次同步失败" },
+  "bindings.directory.noReceipt": { en: "Not reported yet", "zh-CN": "尚未回报" },
+  "bindings.directory.failure": { en: "{kind}: {count}", "zh-CN": "{kind}：{count} 项" },
+  "bindings.directory.kind.member": { en: "Members", "zh-CN": "成员" },
+  "bindings.directory.kind.workspace": { en: "Channels", "zh-CN": "频道" },
+  "bindings.directory.kind.tenant": { en: "Organization", "zh-CN": "组织" },
+  "bindings.directory.kind.share": { en: "Shares", "zh-CN": "分享" },
   "platform.nativePage.breadcrumb": { en: "Location", "zh-CN": "位置" },
   "platform.nativePage.more": { en: "More actions", "zh-CN": "更多操作" },
   "platform.nativePage.confirm": { en: "Confirm", "zh-CN": "确定" },

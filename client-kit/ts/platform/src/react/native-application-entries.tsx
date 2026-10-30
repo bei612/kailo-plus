@@ -3,6 +3,7 @@ import { AppWindow, Database, Folder, Library } from "lucide-react";
 import { useEffect, useSyncExternalStore } from "react";
 import { validBindingPage } from "./application-bindings";
 import { useBffClient, useT, type Translate } from "./context";
+import type { BffClient } from "../client";
 import { useLoad } from "./use-load";
 import { Notice, ReadFailure } from "./ui";
 import { SidebarGroup, SidebarMenu, SidebarMenuButton, SidebarMenuItem } from "./sidebar/sidebar";
@@ -59,6 +60,43 @@ async function readScope(read: (workspaceId: string | undefined, offset: number)
     offset = result.nextOffset;
   }
   return entries;
+}
+
+/** An exact web origin (scheme://host[:port]); anything else is not a component origin. */
+export function exactOrigin(value: unknown): string | null {
+  if (typeof value !== "string" || !value) return null;
+  try {
+    const url = new URL(value);
+    return ["http:", "https:"].includes(url.protocol) && url.origin === value ? value : null;
+  } catch { return null; }
+}
+
+/**
+ * DD-164(10) (07 §4.6 entry topology): a top-level visit to a component origin was sent to
+ * Kailo. Find, among the native pages this user may open now (Tenant scope, then each of the
+ * user's Workspaces), the one served from `origin`; every candidate is freshly re-admitted
+ * by its native-page descriptor. Null when none matches.
+ */
+export async function resolveNativeOrigin(client: BffClient, origin: string): Promise<{ bindingId: string; workspaceId?: string } | null> {
+  if (!exactOrigin(origin)) return null;
+  const read = (scope: string | undefined, offset: number) => client.applicationBindings(scope, offset);
+  const match = async (bindings: ApplicationBindingView[]) => {
+    for (const binding of bindings) {
+      try {
+        const page = await client.applicationNativePage(binding.bindingId);
+        if (page.bindingId === binding.bindingId && page.origin === origin) return binding;
+      } catch { /* not openable now; try the next one */ }
+    }
+    return null;
+  };
+  const tenant = await match(await readScope(read));
+  if (tenant) return { bindingId: tenant.bindingId };
+  const workspaces = (await client.workspaces()).filter((workspace) => workspace.isMember !== false).slice(0, MAX_PAGES);
+  for (const workspace of workspaces) {
+    const found = await match(await readScope(read, workspace.id));
+    if (found) return { bindingId: found.bindingId, workspaceId: workspace.id };
+  }
+  return null;
 }
 
 /**

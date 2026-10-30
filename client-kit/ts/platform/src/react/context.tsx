@@ -6,6 +6,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import type { BffClient } from "../client";
 import type { PlatformSessionView, ReasonCode, TenantProfileView } from "@client-kit/contracts";
 import { TenantDisplayProfileContext, TenantProfileLive } from "./tenant-profile/live";
+import { AccountPreferenceSyncMount } from "./account-preferences";
 import type { WriteFailure } from "../transport";
 import {
   type PlatformLocale,
@@ -35,6 +36,7 @@ export function PlatformProvider({
   openExternalUrl,
   liveTenantProfile = false,
   onTenantProfile,
+  syncAccountPreferences = false,
 }: {
   client: BffClient;
   feedbackClient?: "WEB" | "DESKTOP";
@@ -62,6 +64,8 @@ export function PlatformProvider({
   /** Signed-in hosts enable the same admitted profile watch. */
   liveTenantProfile?: boolean;
   onTenantProfile?: (profile: TenantProfileView | null) => void;
+  /** DD-164(7): signed-in hosts keep theme, language and component preferences with the account. */
+  syncAccountPreferences?: boolean;
 }) {
   const deviceLocale = useDeviceLocale();
   // A replacement client is a new authenticated transport scope. Reset its
@@ -72,7 +76,7 @@ export function PlatformProvider({
     setScope({ client, currentPrincipalId, generation: scope.generation + 1 });
   return (
     <PlatformContext.Provider value={{ client, feedbackClient, feedbackVersion, locale: locale ?? deviceLocale, authenticateNativePage, reauthenticateTopLevel, documentTheme, currentPrincipalId, copyText, openExternalUrl }}>
-      <Fragment key={scope.generation}>{liveTenantProfile && currentPrincipalId
+      <Fragment key={scope.generation}>{syncAccountPreferences && currentPrincipalId ? <AccountPreferenceSyncMount client={client} /> : null}{liveTenantProfile && currentPrincipalId
         ? <TenantProfileLive client={client} principalId={currentPrincipalId} onProfile={onTenantProfile}>{children}</TenantProfileLive>
         : children}</Fragment>
     </PlatformContext.Provider>

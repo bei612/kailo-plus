@@ -9,6 +9,7 @@ import {
   readStoredPreferences, resolveValue, writeStoredPreference,
   type ComponentPreferenceCategoryName, type ComponentPreferenceValue, type ComponentPreferenceValues,
 } from "../component-preferences";
+import { noteAccountPreferenceEdit } from "../account-preference-events";
 import { useOptionalBffClient, useUiLocale } from "./context";
 import { useLoad, type Loaded } from "./use-load";
 import { SegmentedControl } from "./segmented-control";
@@ -44,6 +45,7 @@ export function setComponentPreference(declaration: ComponentPreferenceDeclarati
   const next = writeStoredPreference(storage(), declaration, value);
   if (!next) return false;
   window.dispatchEvent(new Event(COMPONENT_PREFERENCES_EVENT));
+  noteAccountPreferenceEdit({ componentPreferences: { [declaration.key]: value } });
   return true;
 }
 

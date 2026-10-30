@@ -163,6 +163,12 @@ import type {
   McpOauthAttemptView,
   McpOauthStartRequest,
 } from "@client-kit/contracts";
+import type {
+  AccountPreferences,
+  AccountPreferencesUpdate,
+  ComponentDirectoryReceiptView,
+  ComponentShareIntentView,
+} from "@client-kit/contracts";
 import type { CollaborationUserState } from "./inbox";
 import { PlatformSessionAccessMode } from "@client-kit/contracts";
 import { type BffRequest, type BffTransport, unwrap } from "./transport";
@@ -325,6 +331,19 @@ export function createBffClient(transport: BffTransport) {
       const query = new URLSearchParams({ direction, offset: String(offset) });
       return get<ApplicationReadResourcePage>(`/api/v1/application-bindings/${encodeURIComponent(bindingId)}/read-resources?${query}`);
     },
+
+    // DD-164(4): the Kailo share dialog reads the intent its component page handed over;
+    // only the intent's initiator in a current session can read it (others get 404).
+    componentShareIntent: (intentId: string) =>
+      get<ComponentShareIntentView>(`/api/v1/component-shares/intents/${encodeURIComponent(intentId)}`, true),
+    /** DD-164(4)⑥: binding managers see whether the component converged on the member directory. */
+    applicationDirectoryReceipt: (bindingId: string) =>
+      get<ComponentDirectoryReceiptView>(`/api/v1/application-bindings/${encodeURIComponent(bindingId)}/directory-receipt`, true),
+    /** DD-164(7): account preferences in Core; every host only caches them. */
+    accountPreferences: () => get<AccountPreferences>("/api/v1/account/preferences", true),
+    /** Compare-and-swap on expectedVersion; a 409 BffError means another device wrote first. */
+    updateAccountPreferences: (body: AccountPreferencesUpdate) =>
+      call<AccountPreferences>({ method: "PUT", path: "/api/v1/account/preferences", body }),
 
     collaborationUserState: () => get<CollaborationUserState>("/api/v1/user-state"),
     setProjectPreference: (body: ProjectPreferenceRequest) =>
