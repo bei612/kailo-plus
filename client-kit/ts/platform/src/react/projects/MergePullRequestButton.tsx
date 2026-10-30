@@ -4,23 +4,32 @@
 // Radix one. DD-118: the merge runs through the owner's governed Projects Git host (`onMerge`), so
 // the original client-signed "Publish merged status" step does not exist here (Core publishes the
 // owner-signed 1631). An unconfirmed (UNKNOWN) merge is retained and the button then only re-checks
-// that exact merge. "Resolve in Terminal" and its commands are Desktop-only and are not restored:
-// the conflict panel keeps the original copy without the terminal action.
+// that exact merge. "Resolve in Terminal" and its copyable commands are Desktop-only (DD-161(1)):
+// the host's `onOpenTerminal` fetches the exact reviewed commit into recovery refs and opens the OS
+// terminal; Web offers no terminal and keeps the panel's original copy. Surfaces use DD-141 tokens.
 import * as Alert from "@radix-ui/react-alert-dialog";
-import { AlertTriangle, GitMerge } from "lucide-react";
+import { AlertTriangle, Copy, GitMerge, SquareTerminal } from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
-import { useUiT } from "../context";
+import { useClipboardWrite, useUiT } from "../context";
 import { MODAL_BACKDROP_BLUR_CLASS } from "../composer/shared/ui/modalBackdrop";
 import { MODAL_CONTENT_MOTION_CLASS, MODAL_OVERLAY_MOTION_CLASS } from "../composer/shared/ui/modalMotion";
 import { Button } from "../profile/buzz/shared/ui/button";
+import { ReasonCode } from "@client-kit/contracts";
+import { BffError } from "../../transport";
 import { isProjectBranchOutcomeUnknown } from "./lib/projectBranchErrors";
 import type { Repository as Project } from "./projectModels";
 import type { ProjectPullRequest } from "./projectPullRequests.mjs";
 import { parseProjectPullRequestMergeError, type ProjectPullRequestMergeOutcome } from "./pullRequestMutations";
+import { projectPullRequestConflictCommands } from "./projectPullRequestConflictRecovery";
+import type { ProjectMergeRecoveryRefs } from "./projectGit";
+
+/** Original OpenMergeRecoveryTerminal without the clone URL: native resolves the scoped repository. */
+export type OpenMergeRecoveryTerminal = (input: { expectedCommit: string; sourceBranch: string; targetBranch: string }) => Promise<ProjectMergeRecoveryRefs>;
 
 export function MergePullRequestButton({
   onMerge,
+  onOpenTerminal,
   pending,
   project,
   pullRequest,
@@ -28,6 +37,8 @@ export function MergePullRequestButton({
 }: {
   /** Runs the governed merge (or resends the retained one); rejects with the typed failure. */
   onMerge: () => Promise<ProjectPullRequestMergeOutcome | null>;
+  /** Desktop only: the original "Resolve in Terminal" for a conflicting review. */
+  onOpenTerminal?: OpenMergeRecoveryTerminal;
   pending: boolean;
   project: Pick<Project, "defaultBranch">;
   pullRequest: ProjectPullRequest;
@@ -39,6 +50,30 @@ export function MergePullRequestButton({
   const [conflictState, setConflictState] = React.useState<{ pullRequestId: string; targetBranch: string } | null>(null);
   const targetBranch = pullRequest.targetBranch ?? project.defaultBranch;
   const conflictRecovery = conflictState?.pullRequestId === pullRequest.id ? conflictState : null;
+  const copy = useClipboardWrite();
+  const [isPreparingRecovery, setIsPreparingRecovery] = React.useState(false);
+  const [preparedState, setPreparedState] = React.useState<{ pullRequestId: string; commit: string; refs: ProjectMergeRecoveryRefs } | null>(null);
+  // A prepared recovery belongs to this review at this exact commit; a moved review needs a new one.
+  const prepared = preparedState?.pullRequestId === pullRequest.id && preparedState.commit === pullRequest.commit ? preparedState.refs : null;
+  const recoveryCommands = conflictRecovery && prepared
+    ? projectPullRequestConflictCommands({ recoveryRef: prepared.recoveryRef, targetBranch: conflictRecovery.targetBranch, targetRef: prepared.targetRef })
+    : [];
+  const sourceBranch = pullRequest.branchName;
+  const reviewedCommit = pullRequest.commit;
+
+  const handleOpenRecoveryTerminal = React.useCallback(async () => {
+    if (!conflictRecovery || !onOpenTerminal || !sourceBranch || !reviewedCommit) return;
+    setIsPreparingRecovery(true);
+    try {
+      const refs = await onOpenTerminal({ expectedCommit: reviewedCommit, sourceBranch, targetBranch: conflictRecovery.targetBranch });
+      setPreparedState({ pullRequestId: pullRequest.id, commit: reviewedCommit, refs });
+      toast.success(t("projects.review.merge.recoveryPrepared"));
+    } catch (error) {
+      toast.error(isMovedReview(error) ? t("projects.review.merge.recoveryMoved") : t("projects.review.merge.recoveryFailed"));
+    } finally {
+      setIsPreparingRecovery(false);
+    }
+  }, [conflictRecovery, onOpenTerminal, pullRequest.id, reviewedCommit, sourceBranch, t]);
 
   const handleMerge = React.useCallback(async () => {
     try {
@@ -127,20 +162,49 @@ export function MergePullRequestButton({
       </Alert.Root>
       {conflictRecovery ? (
         <div
-          className="w-full basis-full space-y-2 rounded-lg border border-amber-500/35 bg-amber-500/10 p-3"
+          className="w-full basis-full space-y-2 rounded-lg bg-warning-soft p-3"
           data-testid="merge-conflict-recovery"
         >
           <div className="flex items-start gap-2">
-            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
             <div className="min-w-0 flex-1">
               <p className="text-sm font-medium text-foreground">{t("projects.review.merge.conflictTitle")}</p>
               <p className="text-xs text-muted-foreground">
-                {t("projects.review.merge.conflictDescription", { target: conflictRecovery.targetBranch })}
+                {t(onOpenTerminal ? "projects.review.merge.recoveryDescription" : "projects.review.merge.conflictDescription", { target: conflictRecovery.targetBranch })}
               </p>
             </div>
           </div>
+          {onOpenTerminal ? (
+            <>
+              {prepared ? (
+                <pre className="overflow-x-auto rounded-md bg-background/80 p-2 font-mono text-xs text-foreground" data-testid="merge-conflict-recovery-commands">
+                  {recoveryCommands.join("\n")}
+                </pre>
+              ) : (
+                <p className="rounded-md bg-background/80 p-2 text-xs text-muted-foreground">{t("projects.review.merge.recoveryHint")}</p>
+              )}
+              <div className="flex flex-wrap gap-2">
+                <Button data-testid="merge-conflict-recovery-terminal" disabled={isPreparingRecovery || !sourceBranch || !reviewedCommit}
+                  onClick={() => void handleOpenRecoveryTerminal()} size="xs" type="button" variant="outline">
+                  <SquareTerminal className="h-3.5 w-3.5" />
+                  {isPreparingRecovery ? t("projects.review.merge.recoveryPreparing") : t("projects.review.merge.recoveryTerminal")}
+                </Button>
+                <Button data-testid="merge-conflict-recovery-copy" disabled={!prepared} size="xs" type="button" variant="ghost"
+                  onClick={() => void Promise.resolve(copy(recoveryCommands.join("\n"))).then(
+                    () => toast.success(t("projects.review.merge.recoveryCopied")), () => toast.error(t("projects.review.merge.recoveryCopyFailed")))}>
+                  <Copy className="h-3.5 w-3.5" />
+                  {t("projects.review.merge.recoveryCopy")}
+                </Button>
+              </div>
+            </>
+          ) : null}
         </div>
       ) : null}
     </div>
   );
+}
+
+/** Native's typed conflict: the review branch moved away from the reviewed commit since it was loaded. */
+function isMovedReview(error: unknown): boolean {
+  return error instanceof BffError && error.reason === ReasonCode.TargetStateConflict;
 }

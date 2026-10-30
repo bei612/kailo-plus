@@ -833,6 +833,89 @@ pub fn checkout_diff(
     Ok(result)
 }
 
+/// Refs prepared for the original "Resolve in Terminal" merge recovery.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectMergeRecoveryInfo {
+    pub recovery_ref: String,
+    pub target_ref: String,
+}
+
+/// Original `refs/buzz/merge-recovery/<commit>` namespace, kept so the copyable
+/// commands match the original panel.
+pub fn merge_recovery_ref(expected_commit: &str) -> String {
+    format!("refs/buzz/merge-recovery/{expected_commit}")
+}
+
+pub fn merge_recovery_target_ref(target_commit: &str) -> String {
+    format!("refs/buzz/merge-recovery-target/{target_commit}")
+}
+
+/// DD-161(1): the original merge-recovery preparation (fixed Buzz
+/// desktop/src-tauri/src/commands/project_terminal.rs `open_project_merge_recovery_terminal`).
+/// Fetches the target branch and the review branch from the scoped repository
+/// with the in-process authentication, refuses a review branch that moved away
+/// from the reviewed commit, and pins both heads under local recovery refs. The
+/// user's worktree and branches are not switched or modified; the terminal that
+/// is opened afterwards receives no credential (DD-161(3)).
+pub fn prepare_merge_recovery(
+    repo: &Path,
+    root: &str,
+    target_branch: &str,
+    source_branch: &str,
+    expected_commit: &str,
+    auth: &GitAuthConfig,
+) -> Result<ProjectMergeRecoveryInfo, String> {
+    let target_branch = branch(Some(target_branch))?.ok_or("Invalid target branch.")?;
+    let source_branch = branch(Some(source_branch))?.ok_or("Invalid pull request branch.")?;
+    let expected_commit = clean_commit(Some(expected_commit.trim().to_ascii_lowercase()))
+        .ok_or("Invalid pull request commit.")?;
+    validate_checkout(repo, root, auth)?;
+    let fetch_head = |branch: &str| -> Result<String, String> {
+        run_git(
+            &[
+                "fetch",
+                "--quiet",
+                "--no-tags",
+                "--end-of-options",
+                root,
+                &format!("refs/heads/{branch}"),
+            ],
+            Some(repo),
+            auth,
+        )?;
+        run_git(
+            &["rev-parse", "--verify", "FETCH_HEAD^{commit}"],
+            Some(repo),
+            auth,
+        )
+        .ok()
+        .and_then(|output| first_output_line(&output))
+        .map(|head| head.to_ascii_lowercase())
+        .ok_or_else(|| "Could not resolve the fetched branch.".to_owned())
+    };
+    let target_head = fetch_head(&target_branch)?;
+    let target_ref = merge_recovery_target_ref(&target_head);
+    run_git(&["update-ref", &target_ref, &target_head], Some(repo), auth)?;
+    let source_head = fetch_head(&source_branch)?;
+    if source_head != expected_commit {
+        // The review moved since it was loaded: a typed conflict the UI reports as
+        // "refresh the pull request", never a generic failure.
+        return Err(CHECKOUT_CONFLICT.to_owned());
+    }
+    let recovery_ref = merge_recovery_ref(&expected_commit);
+    run_git(
+        &["update-ref", &recovery_ref, &expected_commit],
+        Some(repo),
+        auth,
+    )?;
+    auth.check_deadline()?;
+    Ok(ProjectMergeRecoveryInfo {
+        recovery_ref,
+        target_ref,
+    })
+}
+
 #[cfg(test)]
 #[path = "checkout_tests.rs"]
 mod tests;

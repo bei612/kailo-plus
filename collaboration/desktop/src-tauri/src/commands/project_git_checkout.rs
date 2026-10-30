@@ -403,6 +403,64 @@ pub async fn open_project_terminal(
     .await
 }
 
+/// Result of the original merge-recovery terminal: whether a checkout had to be
+/// cloned first, and the recovery refs the copyable commands use.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectMergeRecoveryTerminalResult {
+    cloned: bool,
+    recovery_ref: String,
+    target_ref: String,
+}
+
+/// DD-161(1): the original "Resolve in Terminal" for a conflicting review
+/// (fixed Buzz desktop/src-tauri/src/commands/project_terminal.rs
+/// `open_project_merge_recovery_terminal`). Inside the admitted Community and
+/// 30617 coordinate it clones the scoped checkout when missing, fetches the
+/// target and review heads with the in-process authentication, pins them under
+/// recovery refs, then opens the OS terminal at the checkout. The webview gives
+/// neither a path nor a clone URL; the terminal gets no credential (DD-161(3)),
+/// so the resolved target branch is pushed through the DD-160 push path.
+#[tauri::command]
+pub async fn open_project_merge_recovery_terminal(
+    repository: String,
+    target_branch: String,
+    source_branch: String,
+    expected_commit: String,
+    expected_relay_url: String,
+    expected_signer_pubkey: String,
+    app: AppHandle,
+) -> Result<ProjectMergeRecoveryTerminalResult, String> {
+    with_checkout(
+        app,
+        repository,
+        expected_relay_url,
+        expected_signer_pubkey,
+        move |path, root, auth| {
+            let cloned = if path.exists() {
+                false
+            } else {
+                clone_checkout(path, root, Some(&target_branch), auth)?.cloned
+            };
+            let prepared = prepare_merge_recovery(
+                path,
+                root,
+                &target_branch,
+                &source_branch,
+                &expected_commit,
+                auth,
+            )?;
+            launch_terminal_at(path)?;
+            Ok(ProjectMergeRecoveryTerminalResult {
+                cloned,
+                recovery_ref: prepared.recovery_ref,
+                target_ref: prepared.target_ref,
+            })
+        },
+    )
+    .await
+}
+
 #[cfg(test)]
 #[path = "project_git_checkout_tests.rs"]
 mod tests;

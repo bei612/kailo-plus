@@ -272,6 +272,7 @@ pub fn run() {
             get_project_local_repo_file_content,
             open_project_repository_folder,
             open_project_terminal,
+            open_project_merge_recovery_terminal,
             terminal_runtime::terminal_attach,
             terminal_runtime::terminal_detach,
             terminal_runtime::terminal_close,

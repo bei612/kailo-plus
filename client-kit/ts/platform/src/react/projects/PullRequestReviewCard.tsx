@@ -14,7 +14,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { useUiT } from "../context";
 import type { ProjectPullRequest } from "./projectPullRequests.mjs";
 import type { Repository } from "./projectModels";
-import { MergePullRequestButton } from "./MergePullRequestButton";
+import { MergePullRequestButton, type OpenMergeRecoveryTerminal } from "./MergePullRequestButton";
 import { canMergeProjectPullRequest, type ProjectPullRequestMergeOutcome } from "./pullRequestMutations";
 import { canChangeProjectPullRequestStatus, type ProjectPullRequestLifecycle } from "./pullRequestStatus";
 
@@ -23,6 +23,8 @@ export type PullRequestMergeAction = {
   onMerge: () => Promise<ProjectPullRequestMergeOutcome | null>;
   /** A retained unconfirmed merge of this review; only that exact merge may be resent. */
   recheck: boolean;
+  /** Desktop only (DD-161): the original "Resolve in Terminal" after a merge conflict. */
+  onOpenTerminal?: OpenMergeRecoveryTerminal;
 };
 
 /** The viewer's original review decision; absent when the host cannot publish. */
@@ -51,7 +53,7 @@ export function PullRequestReviewCard({ repository, pullRequest, viewer, pending
   const [approvalSummary, setApprovalSummary] = React.useState("");
   const canChangeStatus = canChangeProjectPullRequestStatus(repository, pullRequest, viewer);
   const canMerge = Boolean(merge) && (merge!.recheck || canMergeProjectPullRequest(repository, pullRequest, viewer));
-  const mergeButton = canMerge ? <MergePullRequestButton onMerge={merge!.onMerge} pending={pending} project={repository}
+  const mergeButton = canMerge ? <MergePullRequestButton onMerge={merge!.onMerge} onOpenTerminal={merge!.onOpenTerminal} pending={pending} project={repository}
     pullRequest={pullRequest} recheck={merge!.recheck}/> : null;
   const approveButton = approval && (approval.canApprove || approval.recheck) ? (
     <Button className="h-8 gap-1.5 bg-green-600 px-3.5 text-white shadow-sm hover:bg-green-700" disabled={pending}

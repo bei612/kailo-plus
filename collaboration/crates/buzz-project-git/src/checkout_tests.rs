@@ -386,3 +386,115 @@ fn files_beyond_eager_previews_are_read_from_the_local_worktree() {
             .is_none());
     }
 }
+
+#[test]
+fn merge_recovery_refs_keep_the_original_namespace() {
+    let commit = "a".repeat(40);
+    assert_eq!(
+        merge_recovery_ref(&commit),
+        format!("refs/buzz/merge-recovery/{commit}")
+    );
+    assert_eq!(
+        merge_recovery_target_ref(&commit),
+        format!("refs/buzz/merge-recovery-target/{commit}")
+    );
+}
+
+#[test]
+fn merge_recovery_pins_both_heads_without_touching_the_worktree() {
+    let auth = auth();
+    let temp = tempfile::tempdir().unwrap();
+    let (remote, repo) = init(temp.path(), &auth);
+    // Seed main and a review branch through a scratch clone.
+    let seed = temp.path().join("seed");
+    run_git(
+        &["clone", "--end-of-options", &remote, seed.to_str().unwrap()],
+        None,
+        &auth,
+    )
+    .unwrap();
+    commit(&seed, "base", &auth);
+    run_git(
+        &["push", "origin", "HEAD:refs/heads/main"],
+        Some(&seed),
+        &auth,
+    )
+    .unwrap();
+    run_git(&["switch", "--create", "review"], Some(&seed), &auth).unwrap();
+    commit(&seed, "review change", &auth);
+    run_git(&["push", "origin", "review"], Some(&seed), &auth).unwrap();
+    let review =
+        first_output_line(&run_git(&["rev-parse", "HEAD"], Some(&seed), &auth).unwrap()).unwrap();
+    clone_checkout(&repo, &remote, Some("main"), &auth).unwrap();
+    let before = run_git(&["rev-parse", "HEAD"], Some(&repo), &auth).unwrap();
+
+    let prepared = prepare_merge_recovery(
+        &repo,
+        &remote,
+        "main",
+        "review",
+        &review.to_uppercase(),
+        &auth,
+    )
+    .unwrap();
+    assert_eq!(prepared.recovery_ref, merge_recovery_ref(&review));
+    let pinned = run_git(&["rev-parse", &prepared.recovery_ref], Some(&repo), &auth).unwrap();
+    assert_eq!(first_output_line(&pinned).unwrap(), review);
+    assert!(run_git(&["rev-parse", &prepared.target_ref], Some(&repo), &auth).is_ok());
+    assert_eq!(
+        run_git(&["rev-parse", "HEAD"], Some(&repo), &auth).unwrap(),
+        before
+    );
+    assert!(run_git(&["status", "--porcelain"], Some(&repo), &auth)
+        .unwrap()
+        .trim()
+        .is_empty());
+}
+
+#[test]
+fn merge_recovery_refuses_a_moved_review_branch_and_bad_input() {
+    let auth = auth();
+    let temp = tempfile::tempdir().unwrap();
+    let (remote, repo) = init(temp.path(), &auth);
+    let seed = temp.path().join("seed");
+    run_git(
+        &["clone", "--end-of-options", &remote, seed.to_str().unwrap()],
+        None,
+        &auth,
+    )
+    .unwrap();
+    commit(&seed, "base", &auth);
+    run_git(
+        &[
+            "push",
+            "origin",
+            "HEAD:refs/heads/main",
+            "HEAD:refs/heads/review",
+        ],
+        Some(&seed),
+        &auth,
+    )
+    .unwrap();
+    clone_checkout(&repo, &remote, Some("main"), &auth).unwrap();
+    let stale = "b".repeat(40);
+    let moved = prepare_merge_recovery(&repo, &remote, "main", "review", &stale, &auth);
+    assert_eq!(moved.unwrap_err(), CHECKOUT_CONFLICT);
+    assert!(run_git(
+        &[
+            "rev-parse",
+            "--verify",
+            "--quiet",
+            &merge_recovery_ref(&stale)
+        ],
+        Some(&repo),
+        &auth
+    )
+    .is_err());
+    assert!(prepare_merge_recovery(&repo, &remote, "-x", "review", &stale, &auth).is_err());
+    assert!(
+        prepare_merge_recovery(&repo, &remote, "main", "review", "not-a-commit", &auth).is_err()
+    );
+    assert!(
+        prepare_merge_recovery(&repo, "/elsewhere.git", "main", "review", &stale, &auth).is_err()
+    );
+}

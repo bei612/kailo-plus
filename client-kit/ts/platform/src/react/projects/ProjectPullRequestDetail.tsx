@@ -353,8 +353,12 @@ function PullRequestDetailBody({profiles,project,pullRequest:source,publication,
      if(!lifetime.controller.signal.aborted)setIsSending(false);
    }
  }
+ // DD-161: Desktop's checkout host offers the original "Resolve in Terminal" for this repository.
+ const openRecoveryTerminal=publication?.host.git?.checkout?.openProjectMergeRecoveryTerminal;
+ const onOpenTerminal=openRecoveryTerminal
+   ?(input:{expectedCommit:string;sourceBranch:string;targetBranch:string})=>openRecoveryTerminal({repository:project.repoAddress,...input}):undefined;
  const mergeAction=publication?.host.git?.mergeProjectPullRequest&&!mergeIntentCorrupt&&!merged
-   ?{onMerge:handleMerge,recheck:mergeIntent!==null}:undefined;
+   ?{onMerge:handleMerge,recheck:mergeIntent!==null,...(onOpenTerminal?{onOpenTerminal}:{})}:undefined;
  // Original canReviewProjectPullRequest gates both Approve and "Request changes"; a fresh read decides.
  // Like the original canRequestChanges, other composers get no secondary submit props at all.
  const canReview=Boolean(publication?.host.publish)&&canReviewProjectPullRequest(project,pullRequest,viewer);

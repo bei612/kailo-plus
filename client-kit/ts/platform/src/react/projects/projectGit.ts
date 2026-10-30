@@ -336,7 +336,25 @@ export type ProjectsCheckoutHost = {
   openProjectRepositoryFolder(input: { repository: string }): Promise<void>;
   /** DD-161: the original "Open in Terminal" at the scoped checkout (OS terminal, no credentials). */
   openProjectTerminal?(input: { repository: string }): Promise<void>;
+  /**
+   * DD-161: the original "Resolve in Terminal" for a conflicting review. Native fetches the target
+   * and the exact reviewed commit into recovery refs, then opens the OS terminal at the checkout.
+   */
+  openProjectMergeRecoveryTerminal?(input: ProjectMergeRecoveryInput): Promise<ProjectMergeRecoveryRefs>;
 };
+
+export type ProjectMergeRecoveryInput = { repository: string; targetBranch: string; sourceBranch: string; expectedCommit: string };
+export type ProjectMergeRecoveryRefs = { recoveryRef: string; targetRef: string };
+
+/** Accept only the original recovery namespaces, pinned to the reviewed commit. */
+export function decodeMergeRecoveryRefs(raw: unknown, expectedCommit: string): ProjectMergeRecoveryRefs {
+  const commit = expectedCommit.trim().toLowerCase();
+  if (!isRecord(raw) || typeof raw.recoveryRef !== "string" || typeof raw.targetRef !== "string"
+    || raw.recoveryRef !== `refs/buzz/merge-recovery/${commit}`
+    || !/^refs\/buzz\/merge-recovery-target\/(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(raw.targetRef))
+    throw new TransportError("Invalid merge recovery response");
+  return { recoveryRef: raw.recoveryRef, targetRef: raw.targetRef };
+}
 
 function localStatus(raw: unknown): ProjectRepoSyncStatus | null {
   if (raw === null) return null;
@@ -463,6 +481,9 @@ export function createNativeProjectsGitHost(invoke: NativeProjectsGitInvoke, sco
       },
       openProjectRepositoryFolder: async input => { await send("open_project_repository_folder", { repository: input.repository }); },
       openProjectTerminal: async input => { await send("open_project_terminal", { repository: input.repository }); },
+      openProjectMergeRecoveryTerminal: async input => decodeMergeRecoveryRefs(await send("open_project_merge_recovery_terminal", {
+        repository: input.repository, targetBranch: input.targetBranch, sourceBranch: input.sourceBranch, expectedCommit: input.expectedCommit,
+      }), input.expectedCommit),
     },
   };
 }

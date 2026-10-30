@@ -12,6 +12,8 @@ import {PlatformProvider} from "../src/react/context";
 import {PulseHostProvider,type PulseHost,type PulseEvent} from "../src/react/pulse/host";
 import {TooltipProvider} from "../src/react/sidebar/tooltip";
 import {createProjectsGitHost,createNativeProjectsGitHost,loadProjectWorkItems,ProjectInboxDetail,type ProjectsHost} from "../src/react/projects";
+import {decodeMergeRecoveryRefs,type ProjectsCheckoutHost} from "../src/react/projects/projectGit";
+import {projectPullRequestConflictCommands} from "../src/react/projects/projectPullRequestConflictRecovery";
 import {canMergeProjectPullRequest,mergeProjectPullRequest,readProjectPullRequestMergeIntent} from "../src/react/projects/pullRequestMutations";
 import {BffError,TransportError} from "../src/transport";
 import {render,click} from "./render";
@@ -66,6 +68,12 @@ async function mount(f:ReturnType<typeof fixture>){
   return render(<PlatformProvider client={createBffClient({send:vi.fn()})} locale="en"><QueryClientProvider client={cache}><TooltipProvider>
     <PulseHostProvider host={pulse(f.host.scopeKey)}><ProjectInboxDetail host={f.host} workItem={workItem}/></PulseHostProvider>
   </TooltipProvider></QueryClientProvider></PlatformProvider>);
+}
+function checkoutStub(extra:Partial<ProjectsCheckoutHost>):ProjectsCheckoutHost{
+  return {cloneProjectRepository:vi.fn(async()=>({path:"/x",cloned:false})),getProjectRepoSyncStatus:vi.fn(async()=>null),
+    pushProjectLocalRepository:vi.fn(async()=>{throw new Error("unexpected push");}),pullProjectLocalRepository:vi.fn(async()=>{}),
+    getProjectLocalRepoSnapshot:vi.fn(async()=>null),getProjectLocalRepoDiff:vi.fn(async()=>null),getProjectLocalRepoFileContent:vi.fn(async()=>null),
+    openProjectRepositoryFolder:vi.fn(async()=>{}),...extra};
 }
 const button=(root:ParentNode,label:string)=>Array.from(root.querySelectorAll<HTMLButtonElement>("button")).find(entry=>entry.textContent?.trim()===label||entry.getAttribute("aria-label")===label);
 const mergeIntents=()=>[...Array(localStorage.length)].map((_,index)=>localStorage.key(index)).filter(key=>key?.startsWith('["project-pull-request-merge"'));
@@ -157,6 +165,69 @@ describe("restored review merge",()=>{
     expect(mergeIntents()).toEqual([]);
     // A definite refusal is no retained intent: Merge is offered again, not a re-check.
     expect(button(ui,"Merge")).toBeDefined();
+  });
+
+  it("restores Desktop's Resolve in Terminal: exact reviewed commit, original commands, copy",async()=>{
+    const f=fixture();vi.spyOn(toast,"error").mockImplementation(()=>"ok");const success=vi.spyOn(toast,"success").mockImplementation(()=>"ok");
+    const writeText=vi.fn(async()=>{});Object.defineProperty(navigator,"clipboard",{configurable:true,value:{writeText}});
+    f.merge.mockImplementationOnce(async()=>{throw new BffError(409,"conflict",{class:ErrorClass.Conflict,reason:ReasonCode.TargetStateConflict});});
+    const refs={recoveryRef:`refs/buzz/merge-recovery/${head}`,targetRef:`refs/buzz/merge-recovery-target/${"7".repeat(40)}`};
+    const openRecovery=vi.fn(async()=>refs);
+    f.host.git={...f.host.git!,checkout:checkoutStub({openProjectMergeRecoveryTerminal:openRecovery})};
+    const ui=await mount(f);
+    await confirmMerge(ui);
+    await vi.waitFor(()=>expect(ui.querySelector('[data-testid="merge-conflict-recovery"]')).not.toBeNull());
+    const panel=ui.querySelector('[data-testid="merge-conflict-recovery"]')!;
+    expect(panel.textContent).toContain("switch to main with the commands shown");
+    expect(panel.textContent).toContain("securely fetches the target and review commits");
+    expect(button(ui,"Copy commands")!.disabled).toBe(true);
+    await click(button(ui,"Resolve in Terminal")!);
+    await vi.waitFor(()=>expect(success).toHaveBeenCalledWith("Recovery commit fetched and terminal opened."));
+    expect(openRecovery).toHaveBeenCalledWith({repository:f.repository,expectedCommit:head,sourceBranch:"feature",targetBranch:"main"});
+    const commands=ui.querySelector('[data-testid="merge-conflict-recovery-commands"]')!.textContent!;
+    expect(commands).toBe(projectPullRequestConflictCommands({...refs,targetBranch:"main"}).join("\n"));
+    await click(button(ui,"Copy commands")!);
+    await vi.waitFor(()=>expect(writeText).toHaveBeenCalledWith(commands));
+    expect(f.merge).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports a moved review without showing commands",async()=>{
+    const f=fixture();const error=vi.spyOn(toast,"error").mockImplementation(()=>"ok");
+    f.merge.mockImplementationOnce(async()=>{throw new BffError(409,"conflict",{class:ErrorClass.Conflict,reason:ReasonCode.TargetStateConflict});});
+    const openRecovery=vi.fn(async()=>{throw new BffError(409,"project_repo_conflict",{class:ErrorClass.Conflict,reason:ReasonCode.TargetStateConflict});});
+    f.host.git={...f.host.git!,checkout:checkoutStub({openProjectMergeRecoveryTerminal:openRecovery})};
+    const ui=await mount(f);
+    await confirmMerge(ui);
+    await vi.waitFor(()=>expect(button(ui,"Resolve in Terminal")).toBeDefined());
+    await click(button(ui,"Resolve in Terminal")!);
+    await vi.waitFor(()=>expect(error).toHaveBeenCalledWith("The pull request branch changed. Refresh the pull request before resolving conflicts."));
+    expect(ui.querySelector('[data-testid="merge-conflict-recovery-commands"]')).toBeNull();
+  });
+
+  it("quotes the original recovery commands and accepts only pinned recovery refs",()=>{
+    expect(projectPullRequestConflictCommands({recoveryRef:"refs/buzz/merge-recovery/x",targetBranch:"it's",targetRef:"refs/t"})).toEqual([
+      'test -z "$(git status --porcelain=v1)" &&',
+      "(git switch 'it'\\''s' || git switch --create 'it'\\''s' 'refs/t') &&",
+      "git merge-base --is-ancestor HEAD 'refs/t' &&",
+      "git merge --ff-only 'refs/t' &&",
+      "git merge 'refs/buzz/merge-recovery/x'",
+    ]);
+    const target=`refs/buzz/merge-recovery-target/${"7".repeat(40)}`;
+    expect(decodeMergeRecoveryRefs({recoveryRef:`refs/buzz/merge-recovery/${head}`,targetRef:target,cloned:false},head.toUpperCase()))
+      .toEqual({recoveryRef:`refs/buzz/merge-recovery/${head}`,targetRef:target});
+    expect(()=>decodeMergeRecoveryRefs({recoveryRef:`refs/buzz/merge-recovery/${"e".repeat(40)}`,targetRef:target},head)).toThrow(TransportError);
+    expect(()=>decodeMergeRecoveryRefs({recoveryRef:`refs/buzz/merge-recovery/${head}`,targetRef:"refs/heads/main"},head)).toThrow(TransportError);
+  });
+
+  it("native host sends only the scoped repository and refs to open_project_merge_recovery_terminal",async()=>{
+    const calls:[string,Record<string,unknown>][]=[];
+    const target=`refs/buzz/merge-recovery-target/${"7".repeat(40)}`;
+    const native=createNativeProjectsGitHost(async(command,args)=>{calls.push([command,args]);return {cloned:true,recoveryRef:`refs/buzz/merge-recovery/${head}`,targetRef:target};},
+      {expectedRelayUrl:"wss://native.example",expectedSignerPubkey:viewer});
+    await expect(native.checkout!.openProjectMergeRecoveryTerminal!({repository:`30617:${viewer}:repo`,targetBranch:"main",sourceBranch:"feature",expectedCommit:head}))
+      .resolves.toEqual({recoveryRef:`refs/buzz/merge-recovery/${head}`,targetRef:target});
+    expect(calls).toEqual([["open_project_merge_recovery_terminal",{repository:`30617:${viewer}:repo`,targetBranch:"main",sourceBranch:"feature",expectedCommit:head,
+      expectedRelayUrl:"wss://native.example",expectedSignerPubkey:viewer}]]);
   });
 
   it("refuses a non-owner before anything is sent",async()=>{
