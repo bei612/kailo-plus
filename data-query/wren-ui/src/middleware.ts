@@ -8,6 +8,11 @@ import {
   KAILO_SERVICE_HEADER,
   KAILO_USER_HEADER,
 } from './utils/kailoUser';
+import {
+  adminSurfaceRoute,
+  businessHomePath,
+  nativeAdminRouteClosed,
+} from './utils/kailoAdminSurface';
 
 // DD-133(4): the Node consumer that answers the caller's own member directory
 // entry (`src/pages/api/kailo/directory-access.ts`). It is reached only
@@ -132,6 +137,18 @@ function nodeOrigin(publicOrigin: string): URL | null {
   )
     return null;
   return origin;
+}
+
+// DD-138(6) (`07` §4.8.5): a closed admin route goes to the business home
+// before any page is served. Same-origin, so Next answers with a relative
+// Location (and `x-nextjs-redirect` for client data requests).
+function toBusinessHome(request: NextRequest) {
+  const home = request.nextUrl.clone();
+  home.pathname = businessHomePath(request.nextUrl.pathname);
+  home.search = '';
+  const response = NextResponse.redirect(home, 307);
+  response.headers.set('Cache-Control', 'no-store');
+  return response;
 }
 
 function denied(status: number, code: string) {
@@ -301,6 +318,19 @@ export async function middleware(request: NextRequest) {
     return denied(403, 'NATIVE_REQUEST_ORIGIN_DENIED');
   }
 
+  // DD-138(6), after authentication (anonymous requests stay 401): the
+  // original modeling and onboarding console exists only as the declared
+  // Kailo admin surfaces; an admin surface path is served only
+  // with its own declared `kailo_admin_surface`. Not authorization: writes
+  // keep the resolvers' Core `manage` / directory admin checks.
+  if (
+    nativeAdminRouteClosed(
+      request.nextUrl.pathname,
+      request.nextUrl.searchParams,
+    )
+  )
+    return toBusinessHome(request);
+
   // Edge has no platform service credential or file access. The original
   // Node /api/config consumer owns the same-binding SERVICE transport and the
   // independently verified HUMAN fresh discover check. Its exact GET handles
@@ -384,6 +414,16 @@ export async function middleware(request: NextRequest) {
       return denied(503, 'NATIVE_INSTANCE_UNAVAILABLE');
     }
   }
+
+  // STANDALONE knows the directory Tenant admin here: nobody else is served
+  // an admin surface page (GOVERNED admins are Core `manage` holders, known
+  // only to the Node consumers, which refuse every write to the rest).
+  if (
+    !bound &&
+    adminSurfaceRoute(request.nextUrl.pathname) &&
+    user?.admin !== true
+  )
+    return toBusinessHome(request);
 
   const profile = user ? encodeKailoUser(user) : undefined;
   const headers = new Headers(request.headers);

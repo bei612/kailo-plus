@@ -18,8 +18,9 @@ export const WHITE_LABEL_HIDDEN_PROVIDERS: ReadonlySet<string> = new Set(['wekno
 
 // One product (DD-138 §2, design 07 §4.8.1): in Kailo mode personal settings,
 // profile, language, theme, password, personal credentials, logout, onboarding
-// and help live only in Kailo. Admin sections stay reachable for admins only
-// until the admin-surface contribution lands (DD-138(6), phase 3).
+// and help live only in Kailo. Admin functions are contributed as admin
+// surfaces (DD-138(6), 07 §4.8.5, ./adminSurface.ts); the native Settings
+// dialog, "全部设置" and "系统管理" are closed in Kailo mode.
 
 /** The "account" settings group: personal entries Kailo owns in Kailo mode. */
 export const KAILO_PERSONAL_SETTINGS: ReadonlySet<string> = new Set([
@@ -91,8 +92,11 @@ export function resolveSettingsSection(requested: string, visible: readonly stri
 // An allowlist keeps commands added upstream later out until reviewed; the
 // palette's knowledge/chat/agent search groups are not commands and stay.
 
-/** Command palette commands kept in Kailo mode: knowledge Q&A business only. */
-export const KAILO_PALETTE_COMMANDS: ReadonlySet<string> = new Set(['new-chat', 'open-kb-list', 'open-agents'])
+/**
+ * Command palette commands kept in Kailo mode: knowledge Q&A business only.
+ * Agents are Kailo Agent's (DD-163), so 'open-agents' is not kept.
+ */
+export const KAILO_PALETTE_COMMANDS: ReadonlySet<string> = new Set(['new-chat', 'open-kb-list'])
 
 export function kailoVisibleCommands<T extends { id: string }>(commands: readonly T[], kailoMode: boolean): T[] {
   return kailoMode ? commands.filter((command) => KAILO_PALETTE_COMMANDS.has(command.id)) : [...commands]
@@ -129,7 +133,11 @@ export interface UserMenuModel {
   render: boolean
 }
 
-/** Which entries the sidebar user menu shows. Kailo mode keeps only space context and admin entries. */
+/**
+ * Which entries the sidebar user menu shows. Kailo mode keeps only the space
+ * context (and its switcher): every admin entry is a Kailo admin surface
+ * (DD-138(6)), so space settings, models, skills, "全部设置" and "系统管理" go.
+ */
 export function userMenuModel(input: UserMenuInput): UserMenuModel {
   const k = input.kailoMode
   const space = !input.liteMode
@@ -137,14 +145,13 @@ export function userMenuModel(input: UserMenuInput): UserMenuModel {
     personalHeader: !k,
     personalSettings: !k,
     guide: !k,
-    spaceSettings: space && (!k || input.canManageSpace),
+    spaceSettings: space && !k,
     // Kailo owns membership and roles (DD-133 §4).
     members: !k && input.canManageMembers,
-    // Kailo mode raises the models page to admin (kailoSettingsMinRole); keep the shortcut consistent.
-    models: input.canManageModels && (!k || input.canManageSpace),
-    skills: input.canManageSkills,
-    allSettings: !k || input.hasVisibleSettings,
-    systemAdmin: input.isSystemAdmin,
+    models: !k && input.canManageModels,
+    skills: !k && input.canManageSkills,
+    allSettings: !k,
+    systemAdmin: !k && input.isSystemAdmin,
     logout: !k && space,
     dropdown: true,
     render: true,
@@ -157,4 +164,13 @@ export function userMenuModel(input: UserMenuInput): UserMenuModel {
     model.render = model.dropdown || space
   }
   return model
+}
+
+/**
+ * DD-138(6), 07 §4.8.5 obligation 3: in Kailo mode business pages carry no
+ * entry into native settings ("go to settings", "add model", "manage
+ * instances" links); those functions are Kailo admin surfaces.
+ */
+export function nativeSettingsLinks(kailoMode: boolean): boolean {
+  return !kailoMode
 }

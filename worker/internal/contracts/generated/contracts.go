@@ -148,6 +148,9 @@
 //    actionSubmission, err := UnmarshalActionSubmission(bytes)
 //    bytes, err = actionSubmission.Marshal()
 //
+//    adminSurfacePage, err := UnmarshalAdminSurfacePage(bytes)
+//    bytes, err = adminSurfacePage.Marshal()
+//
 //    agentActiveTurnPage, err := UnmarshalAgentActiveTurnPage(bytes)
 //    bytes, err = agentActiveTurnPage.Marshal()
 //
@@ -925,6 +928,9 @@
 //    componentActionInput, err := UnmarshalComponentActionInput(bytes)
 //    bytes, err = componentActionInput.Marshal()
 //
+//    componentAdminSurfaceDeclaration, err := UnmarshalComponentAdminSurfaceDeclaration(bytes)
+//    bytes, err = componentAdminSurfaceDeclaration.Marshal()
+//
 //    componentConformanceCaptureValue, err := UnmarshalComponentConformanceCaptureValue(bytes)
 //    bytes, err = componentConformanceCaptureValue.Marshal()
 //
@@ -1689,6 +1695,16 @@ func UnmarshalActionSubmission(data []byte) (ActionSubmission, error) {
 }
 
 func (r *ActionSubmission) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalAdminSurfacePage(data []byte) (AdminSurfacePage, error) {
+	var r AdminSurfacePage
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AdminSurfacePage) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -4282,6 +4298,16 @@ func (r *ComponentActionInput) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
+func UnmarshalComponentAdminSurfaceDeclaration(data []byte) (ComponentAdminSurfaceDeclaration, error) {
+	var r ComponentAdminSurfaceDeclaration
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ComponentAdminSurfaceDeclaration) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
 func UnmarshalComponentConformanceCaptureValue(data []byte) (ComponentConformanceCaptureValue, error) {
 	var r ComponentConformanceCaptureValue
 	err := json.Unmarshal(data, &r)
@@ -5772,6 +5798,44 @@ type AdapterSearchResult struct {
 	UpdatedAt *string                   `json:"updatedAt,omitempty"`
 }
 
+// DD-138(6)：当前 HUMAN 可管理的组件管理面（07 §4.8.5）。只含当前 Tenant 级与所给 Workspace 级 ACTIVE binding 的 pin
+// APPROVED release 所声明、且逐项 fresh manage 通过的项；不含 URL、component_type_key、配置或凭据。
+type AdminSurfacePage struct {
+	Items []AdminSurfaceEntry `json:"items"`
+}
+
+type AdminSurfaceEntry struct {
+	BindingID string `json:"bindingId"`
+	// DD-127(4) presentation category used as the source label (云盘、知识库、问数); grants nothing.
+	NativePageCategory *NativePageCategory              `json:"nativePageCategory,omitempty"`
+	Surface            ComponentAdminSurfaceDeclaration `json:"surface"`
+	WorkspaceID        *string                          `json:"workspaceId,omitempty"`
+}
+
+// DD-138(6)：KAILO_EMBED 原生页面 release 向 Kailo 管理区贡献的一项管理面声明（03
+// FrontendPresentationContract.admin_surface_declarations[]，07 §4.8.5）。值对象，随 APPROVED
+// release 固定；不授予权限，Core 不保存管理状态。键、路径与文案规则由 Core 登记时校验。
+//
+// DD-138(6): present only when the descriptor was requested for a declared admin surface
+// after a fresh manage check (07 §4.8.5); url is then origin + the declared path and the
+// host adds kailo_admin_surface=<key>.
+type ComponentAdminSurfaceDeclaration struct {
+	Access        ComponentAdminAccess       `json:"access"`
+	AdminCategory ComponentAdminCategory     `json:"adminCategory"`
+	Description   *ComponentAdminSurfaceText `json:"description,omitempty"`
+	// 管理面标识，2–4 段以 . 连接，不含组件名；成员、角色、邀请、空间与组织类首段被拒绝。
+	Key string `json:"key"`
+	// 组件 origin 内的固定路径，以单个 / 开头，不含查询与片段。
+	Path               string                    `json:"path"`
+	RequiredPermission ComponentAdminPermission  `json:"requiredPermission"`
+	Title              ComponentAdminSurfaceText `json:"title"`
+}
+
+type ComponentAdminSurfaceText struct {
+	En   string `json:"EN"`
+	ZhCN string `json:"ZH_CN"`
+}
+
 // GET /api/v1/workspaces/{workspaceId}/agent-turns（DD-125(6)）：已准入 Workspace 内本人持有
 // Installation audit 的运行中回合；没有 audit 的 Installation 不出现（成员只见 20002）。每次读取写 ACCESS 审计。
 type AgentActiveTurnPage struct {
@@ -6625,9 +6689,13 @@ type ComponentPreferenceOption struct {
 // Authorized ACTIVE binding's independent native page. Exact origin is release and
 // deployment approved; no native credential or page body is returned.
 type ApplicationNativePage struct {
-	AllowedOrigins []string `json:"allowedOrigins"`
-	BindingID      string   `json:"bindingId"`
-	Origin         string   `json:"origin"`
+	// DD-138(6): present only when the descriptor was requested for a declared admin surface
+	// after a fresh manage check (07 §4.8.5); url is then origin + the declared path and the
+	// host adds kailo_admin_surface=<key>.
+	AdminSurface   *ComponentAdminSurfaceDeclaration `json:"adminSurface,omitempty"`
+	AllowedOrigins []string                          `json:"allowedOrigins"`
+	BindingID      string                            `json:"bindingId"`
+	Origin         string                            `json:"origin"`
 	// DD-138: preference items the pinned APPROVED KAILO_EMBED release declares for Kailo
 	// settings (07 §4.8.2); the host sends their values to this page only. Absent when none.
 	Preferences          []ComponentPreferenceDeclaration `json:"preferences,omitempty"`
@@ -11615,6 +11683,51 @@ const (
 	Question                      ComponentSearchResultKind = "QUESTION"
 )
 
+// DD-127(4) presentation category used as the source label (云盘、知识库、问数); grants nothing.
+//
+// DD-127(4)：NATIVE_PAGE 入口的呈现类别，决定侧边栏标签与图标；不授予能力、不参与类别解析或授权。
+//
+// DD-127(4): presentation category the approved NATIVE_PAGE release declares. The sidebar
+// labels the entry by capabilityCategories ∪ this value; it grants nothing.
+type NativePageCategory string
+
+const (
+	DataQuery   NativePageCategory = "data_query"
+	FileStorage NativePageCategory = "file_storage"
+	Knowledge   NativePageCategory = "knowledge"
+)
+
+// DD-138(6)：管理面的可写性（07 §4.8.5）。EDITABLE 为组件自有、页内可改的设置；READ_ONLY 为由 Kailo
+// 派生或部署声明、组件内只读展示的设置，组件服务端在 Kailo 模式下拒绝对应写接口。
+type ComponentAdminAccess string
+
+const (
+	ComponentAdminAccessREADONLY ComponentAdminAccess = "READ_ONLY"
+	Editable                     ComponentAdminAccess = "EDITABLE"
+)
+
+// DD-138(6)：组件管理面所属的 Kailo 管理分类（07 §4.8.5）。MODELS 模型、DATA_SOURCES 数据源、STORAGE 存储、INDEXING
+// 索引与解析、INTEGRATIONS 集成、SYSTEM 系统；不按组件分类。
+type ComponentAdminCategory string
+
+const (
+	DataSources  ComponentAdminCategory = "DATA_SOURCES"
+	Indexing     ComponentAdminCategory = "INDEXING"
+	Integrations ComponentAdminCategory = "INTEGRATIONS"
+	Models       ComponentAdminCategory = "MODELS"
+	Storage      ComponentAdminCategory = "STORAGE"
+	System       ComponentAdminCategory = "SYSTEM"
+)
+
+// DD-138(6)：打开管理面所需的 Kailo 权限（07 §4.8.5）。BINDING_MANAGE 为 binding 所属 scope（Workspace 或
+// Tenant）的 manage；TENANT_MANAGE 为 Tenant manage。只决定 Kailo 是否列出与签发 descriptor，组件服务端仍按目录角色判定。
+type ComponentAdminPermission string
+
+const (
+	BindingManage ComponentAdminPermission = "BINDING_MANAGE"
+	TenantManage  ComponentAdminPermission = "TENANT_MANAGE"
+)
+
 // 03 §7 Resource 的正式状态，投影未闭合不得呈现 ACTIVE。
 type ResourceState string
 
@@ -11991,18 +12104,6 @@ const (
 	AgentVersionStateDRAFT   AgentVersionState = "DRAFT"
 	AgentVersionStateRETIRED AgentVersionState = "RETIRED"
 	Published                AgentVersionState = "PUBLISHED"
-)
-
-// DD-127(4): presentation category the approved NATIVE_PAGE release declares. The sidebar
-// labels the entry by capabilityCategories ∪ this value; it grants nothing.
-//
-// DD-127(4)：NATIVE_PAGE 入口的呈现类别，决定侧边栏标签与图标；不授予能力、不参与类别解析或授权。
-type NativePageCategory string
-
-const (
-	DataQuery   NativePageCategory = "data_query"
-	FileStorage NativePageCategory = "file_storage"
-	Knowledge   NativePageCategory = "knowledge"
 )
 
 // DD-138：组件偏好项所属的 Kailo 设置功能分类（07 §4.8.2）。APPEARANCE 外观、NOTIFICATIONS 通知、DOCUMENTS

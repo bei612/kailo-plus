@@ -156,7 +156,7 @@ implementation:
     - core/migrations/20261023010000_protocol_peer_outcome_event.down.sql
 
 runtime:
-  routes: ["/api/v1/application-bindings", "/api/v1/application-bindings/{id}/native-page", "/api/v1/application-bindings/{id}/read-resources"]
+  routes: ["/api/v1/application-bindings", "/api/v1/application-bindings/{id}/native-page", "/api/v1/application-bindings/{id}/read-resources", "/api/v1/admin-surfaces"]
   actions: [application_binding.create, application_binding.disable, resource.create]
   tools: []
   workflow_kinds: [COMPONENT_BINDING, COMPONENT_DISABLE, RESOURCE_PROVISION, COMPONENT_ACTION]
@@ -165,6 +165,6 @@ release:
   # 仅记录本批已构建候选；full、部署及业务验收尚未通过。
   artifacts:
     - name: web-client
-      digest: sha256:60107088c25d12b1ad398f0aede7b3cf617443ffffca11afc3b7e8ba1a7b6380
+      digest: sha256:1680f7e3e8b599f55144fc7ed2f563b5a2ccaa3e9cf3c178e9b8fe40b172751f
   # 该 digest 仅指 Web 产物；不证明本批新增服务端逻辑或独立组件已验收。
   gate: blocked_until_seams_closed

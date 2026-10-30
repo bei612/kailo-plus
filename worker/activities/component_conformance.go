@@ -393,8 +393,14 @@ func (candidate *componentCandidate) call(ctx context.Context, step generated.Co
 			}
 			observation.NativeObservation = &native
 			if wire.ContentReference != nil {
-				if string(native.PlatformStatus) != "SUCCEEDED" || step.ReferenceResourceID == nil ||
-					!validContentReference(generated.ContentReference(*wire.ContentReference), *step.ReferenceResourceID, step.ReferenceAssetID) {
+				resource, asset := step.ReferenceResourceID, step.ReferenceAssetID
+				if resource == nil && step.ContractKey == nil {
+					// A protocol execution case (07 §8A) has no vector reference: its
+					// typed reference belongs to the request's own target Resource.
+					resource = protocolTargetResource(step.RequestJSON)
+				}
+				if string(native.PlatformStatus) != "SUCCEEDED" || resource == nil ||
+					!validContentReference(generated.ContentReference(*wire.ContentReference), *resource, asset) {
 					return uncertain()
 				}
 				observation.ContentReference = wire.ContentReference
@@ -512,6 +518,26 @@ func (candidate *componentCandidate) verifyReceiverReadAuthority(ctx context.Con
 		}
 	}
 	return nil
+}
+
+// protocolTargetResource is arguments.target.resourceId of a frozen execute
+// envelope, or nil when the request names no Resource target.
+func protocolTargetResource(requestJSON string) *string {
+	var request struct {
+		Arguments struct {
+			Target struct {
+				ResourceID string `json:"resourceId"`
+			} `json:"target"`
+		} `json:"arguments"`
+	}
+	if json.Unmarshal([]byte(requestJSON), &request) != nil {
+		return nil
+	}
+	id, err := uuid.Parse(request.Arguments.Target.ResourceID)
+	if err != nil || id == uuid.Nil || id.String() != request.Arguments.Target.ResourceID {
+		return nil
+	}
+	return &request.Arguments.Target.ResourceID
 }
 
 func validContentReference(reference generated.ContentReference, resource string, asset *string) bool {

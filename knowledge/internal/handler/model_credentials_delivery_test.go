@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Tencent/WeKnora/internal/config"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	"github.com/gin-gonic/gin"
@@ -46,8 +47,51 @@ func credentialPut(s *deliveryModelService, body string) (*gin.Context, *httptes
 	c.Request = httptest.NewRequest("PUT", "/models/native-model/credentials", strings.NewReader(body))
 	c.Params = gin.Params{{Key: "id", Value: "native-model"}}
 	c.Set(types.TenantIDContextKey.String(), uint64(42))
-	NewModelCredentialsHandler(s).Put(c)
+	NewModelCredentialsHandler(s, nil).Put(c)
 	return c, w
+}
+
+func kailoCredentialPut(s *deliveryModelService, body string) (*gin.Context, *httptest.ResponseRecorder) {
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("PUT", "/models/native-model/credentials", strings.NewReader(body))
+	c.Params = gin.Params{{Key: "id", Value: "native-model"}}
+	c.Set(types.TenantIDContextKey.String(), uint64(42))
+	cfg := &config.Config{Kailo: &config.KailoIntegrationConfig{Enable: true}}
+	NewModelCredentialsHandler(s, cfg).Put(c)
+	return c, w
+}
+
+// DD-138(6): in Kailo mode only a Kailo-routed model's credential may be
+// written (the DD-128 delivery); every other model is refused with 403.
+func TestModelCredentialsKailoModeWritesOnlyRoutedModels(t *testing.T) {
+	routed := &deliveryModelService{model: &types.Model{ID: "native-model", TenantID: 42,
+		ManagedBy: "kailo-model-route", PlatformScopeRef: "77777777-7777-4777-8777-777777777777"}}
+	c, _ := kailoCredentialPut(routed, `{"api_key":"fixture-delivered"}`)
+	if len(c.Errors) > 0 || routed.writes != 1 || routed.model.Parameters.APIKey != "fixture-delivered" {
+		t.Fatal("Kailo-routed model delivery must still write", c.Errors)
+	}
+	nonce := strings.Repeat("a1", 32)
+	c, w := kailoCredentialPut(routed, `{"verification_nonce":"`+nonce+`"}`)
+	if len(c.Errors) > 0 || routed.writes != 1 || !strings.Contains(w.Body.String(), "api_key_proof") {
+		t.Fatal("Kailo-routed read-back must stay available without writing", c.Errors)
+	}
+
+	for _, m := range []*types.Model{
+		{ID: "native-model", TenantID: 42},
+		{ID: "native-model", TenantID: 42, ManagedBy: "yaml", IsBuiltin: true},
+	} {
+		s := &deliveryModelService{model: m}
+		c, w := kailoCredentialPut(s, `{"api_key":"fixture-other"}`)
+		if s.writes != 0 || w.Code != 403 || !strings.Contains(w.Body.String(), "KAILO_MANAGED") || !c.IsAborted() {
+			t.Fatalf("Kailo mode wrote a non-routed model credential: code=%d body=%s", w.Code, w.Body.String())
+		}
+	}
+	foreign := &deliveryModelService{model: &types.Model{ID: "native-model", TenantID: 43, ManagedBy: "kailo-model-route"}}
+	c, _ = kailoCredentialPut(foreign, `{"api_key":"fixture-other"}`)
+	if foreign.writes != 0 || len(c.Errors) == 0 {
+		t.Fatal("Kailo mode wrote another workspace's model credential")
+	}
 }
 
 func TestModelCredentialsDeliveryUsesStoredTenantModelNonce(t *testing.T) {

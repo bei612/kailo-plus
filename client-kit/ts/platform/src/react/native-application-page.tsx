@@ -1,18 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import type { ApplicationNativePage } from "@client-kit/contracts";
-import { useBffClient, useNativeAuthenticationHost, useT, useTopLevelReauthentication } from "./context";
+import { type ApplicationNativePage, ComponentAdminAccess } from "@client-kit/contracts";
+import { useBffClient, useLocale, useNativeAuthenticationHost, useT, useTopLevelReauthentication } from "./context";
 import {
   actionMessage, confirmResultMessage, EMBED_MAX_FILES, embedMessage, navigateMessage, pickFiles, preferencesMessage, presentationMessage, replayShortcut,
   useEmbedPresentation, type EmbedConfirm, type EmbedFeature, type EmbedPage,
 } from "./native-embed-host";
 import { useNativeEntryPresentation } from "./native-application-entries";
-import { NativeConfirmDialog, NativePageFrame, NativePageHeader, NativePageSkeleton } from "./native-page-shell";
+import { ADMIN_CATEGORY_LABELS, NativeConfirmDialog, NativePageFrame, NativePageHeader, NativePageSkeleton } from "./native-page-shell";
 import { isMacPlatform } from "../keyboard-platform";
 import { nativeDeepLinkUrl } from "./native-deep-link";
 import { preferenceValues } from "../component-preferences";
 import { useStoredComponentPreferences } from "./component-preferences";
 import { Button, ReadFailure } from "./ui";
+import { adminSurfaceDescriptorUrl, adminSurfaceLaunchUrl, adminSurfaceTitle } from "../admin-surfaces";
 
 /** How long a page may take to complete the wire v1 handshake before it is treated as a DD-127 page. */
 export const NATIVE_HANDSHAKE_GRACE_MS = 8000;
@@ -46,13 +47,17 @@ export function validNativePage(page: ApplicationNativePage, bindingId: string):
  * sidebar entry.
  * DD-138(4)(5), 07 §4.8.3/§4.8.4: `path` (an Inbox item or search result) opens that
  * location inside the descriptor origin; a path leaving it is ignored.
+ * DD-138(6), 07 §4.8.5: `adminSurface` opens that declared admin surface instead: Core issues
+ * the descriptor under fresh `manage`, the frame loads its fixed path with
+ * `kailo_admin_surface`, and the header reads 管理 › category › title.
  */
-export function NativeApplicationPage({ bindingId, onBack, title, path }: { bindingId: string; onBack?: () => void; title?: string; path?: string }) {
+export function NativeApplicationPage({ bindingId, onBack, title, path, adminSurface }: { bindingId: string; onBack?: () => void; title?: string; path?: string; adminSurface?: string }) {
   const entry = useNativeEntryPresentation(bindingId);
   const client = useBffClient();
   const authenticateNative = useNativeAuthenticationHost();
   const reauthenticate = useTopLevelReauthentication();
   const t = useT();
+  const locale = useLocale();
   const presentation = useEmbedPresentation();
   const [approved, setApproved] = useState<ApplicationNativePage | null>(null);
   const [loading, setLoading] = useState(true);
@@ -69,9 +74,12 @@ export function NativeApplicationPage({ bindingId, onBack, title, path }: { bind
     const request = ++epoch.current;
     if (!background) setLoading(true);
     try {
-      const actual = await client.applicationNativePage(bindingId);
+      const actual = await client.applicationNativePage(bindingId, adminSurface);
       if (request !== epoch.current) return;
       if (!validNativePage(actual, bindingId)) throw new Error("Invalid approved service page");
+      // An admin surface descriptor must be exactly the requested declaration; a plain page carries none.
+      if (adminSurface === undefined ? actual.adminSurface !== undefined : !adminSurfaceDescriptorUrl(actual, adminSurface))
+        throw new Error("Invalid approved admin surface");
       setApproved(actual);
       setError(undefined);
       if (refreshFrame) setFrameRevision((revision) => revision + 1);
@@ -82,7 +90,7 @@ export function NativeApplicationPage({ bindingId, onBack, title, path }: { bind
     } finally {
       if (request === epoch.current) setLoading(false);
     }
-  }, [bindingId, client]);
+  }, [bindingId, client, adminSurface]);
   useEffect(() => {
     ++scope.current;
     setAuthenticationPending(false);
@@ -101,12 +109,15 @@ export function NativeApplicationPage({ bindingId, onBack, title, path }: { bind
     return () => { ++scope.current; ++epoch.current; window.removeEventListener("focus", recheck); };
   }, [reload]);
   const page = approved && validNativePage(approved, bindingId) ? approved : null;
-  const frameKey = page ? `${page.bindingId}:${page.projectionGeneration}:${page.url}:${path ?? ""}:${frameRevision}` : null;
+  const surface = adminSurface !== undefined && page?.adminSurface?.key === adminSurface ? page.adminSurface : null;
+  const frameKey = page ? `${page.bindingId}:${page.projectionGeneration}:${page.url}:${adminSurface ? `admin:${adminSurface}` : path ?? ""}:${frameRevision}` : null;
   // DD-133: theme/locale ride on the launch URL once per document; later
   // changes are posted, never reloaded, so unsaved native work survives.
   const launch = useRef<{ key: string; src: string } | null>(null);
-  if (page && frameKey && launch.current?.key !== frameKey)
-    launch.current = { key: frameKey, src: nativeDeepLinkUrl(page, path, presentation) };
+  if (page && frameKey && launch.current?.key !== frameKey) {
+    const src = adminSurface !== undefined ? adminSurfaceLaunchUrl(page, adminSurface, presentation) : nativeDeepLinkUrl(page, path, presentation);
+    launch.current = src ? { key: frameKey, src } : null;
+  }
   const frame = useRef<HTMLIFrameElement>(null);
   const currentFrameKey = useRef(frameKey);
   currentFrameKey.current = frameKey;
@@ -251,11 +262,13 @@ export function NativeApplicationPage({ bindingId, onBack, title, path }: { bind
   const awaitingHeader = connected && features.includes("page") && !headerArrived && !graceOver && !embedded?.authRequired;
   const awaitingHandshake = page !== null && ((!connected && !graceOver) || awaitingHeader);
   const unhandshaked = page !== null && !connected && graceOver;
-  const productTitle = entry?.title ?? title ?? "";
+  const productTitle = surface ? t("admin.title") : entry?.title ?? title ?? "";
   return <section className="flex h-full min-h-0 flex-1 flex-col bg-background" data-testid="native-application-page">
     {/* DD-138(3)/DD-157: the Kailo page header; Back only where opened from a list. */}
     {onBack ? <div className="px-5 pt-3"><Button onClick={onBack}>{t("platform.back")}</Button></div> : null}
     <NativePageHeader productTitle={productTitle} category={entry?.category ?? null}
+      admin={surface ? { category: surface.adminCategory, categoryLabel: t(ADMIN_CATEGORY_LABELS[surface.adminCategory]),
+        title: adminSurfaceTitle(surface, locale), readOnly: surface.access === ComponentAdminAccess.ReadOnly } : undefined}
       page={connected && features.includes("page") ? embedPage : null}
       onNavigate={(kind, id) => postToFrame(navigateMessage(kind, id))} onAction={activate} />
     {unhandshaked ? <div className="flex flex-wrap items-center gap-2 px-5 py-3">
@@ -268,7 +281,7 @@ export function NativeApplicationPage({ bindingId, onBack, title, path }: { bind
     {page && frameKey && launch.current ? <NativePageFrame>
       <iframe key={frameKey} ref={frame} onLoad={() => { ++documentRevision.current; }}
         className={`min-h-0 w-full flex-1 border-0 bg-background ${presentation.theme === "dark" ? "[color-scheme:dark]" : "[color-scheme:light]"}${awaitingHandshake ? " invisible" : ""}`}
-        title={productTitle || title || t("bindings.nativeTitle")}
+        title={surface ? adminSurfaceTitle(surface, locale) : productTitle || title || t("bindings.nativeTitle")}
         src={launch.current.src} sandbox="allow-scripts allow-same-origin allow-forms allow-downloads allow-popups allow-popups-to-escape-sandbox"
         referrerPolicy="no-referrer" />
       {awaitingHandshake ? <div role="status" aria-label={t("platform.loading")} data-testid="native-page-loading"><NativePageSkeleton /></div> : null}

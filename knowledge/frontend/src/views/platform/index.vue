@@ -10,7 +10,8 @@
             <UploadMask></UploadMask>
         </div>
         <!-- 全局设置模态框，供所有 platform 子路由使用 -->
-        <Settings />
+        <!-- Kailo mode (DD-138(6)): no native Settings dialog; admin functions are Kailo admin surfaces. -->
+        <Settings v-if="!kailoMode" />
         <!-- 全局命令面板 (⌘K)，随 platform 路由存活 -->
         <!-- Kailo shell: ⌘K is Kailo's search (the runtime forwards it); no component palette. -->
         <GlobalCommandPalette v-if="!kailoShell" />

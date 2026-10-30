@@ -68,8 +68,13 @@ func NewMemoryService(
 }
 
 // workspaceConfig loads the workspace memory switch. A missing tenant or an
-// unset column yields a zero-value config, which is disabled.
+// unset column yields a zero-value config, which is disabled. In Kailo mode
+// memory is Kailo Agent memory (Kailo DD-163, design 07 §4.8.8): the switch
+// reads as disabled whatever is stored, so nothing is extracted or recalled.
 func (s *Service) workspaceConfig(ctx context.Context, tenantID uint64) *types.MemoryConfig {
+	if s.config != nil && s.config.KailoEnabled() {
+		return &types.MemoryConfig{}
+	}
 	tenant, err := s.tenantRepo.GetTenantByID(ctx, tenantID)
 	if err != nil || tenant == nil || tenant.MemoryConfig == nil {
 		return &types.MemoryConfig{}

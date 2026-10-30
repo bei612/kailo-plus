@@ -817,6 +817,7 @@ import { useAuthStore } from '@/stores/auth'
 import { useListUrlState } from '@/composables/useListUrlState'
 import { useResourcePins } from '@/composables/useResourcePins'
 import { integrationSectionKey } from '@/config/settingsRoute'
+import { isKailoMode } from '@/kailo/runtime'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -1131,7 +1132,8 @@ const checkAndOpenEditModal = async () => {
   const editId = route.query.edit as string
   const section = route.query.section as string
   const sourceTenantId = route.query.sourceTenantId as string | undefined
-  if (editId && (section === 'im' || section === 'embed' || section === 'integrations' || section === 'integration-im' || section === 'integration-embed')) {
+  // Kailo mode (DD-138(6)): integrations are not offered; open the agent itself.
+  if (!isKailoMode() && editId && (section === 'im' || section === 'embed' || section === 'integrations' || section === 'integration-im' || section === 'integration-embed')) {
     const tab = section === 'embed' || section === 'integration-embed' ? 'embed' : 'im'
     router.replace({
       path: '/platform/settings',

@@ -195,9 +195,11 @@ func (m *resolver) ServeHTTP(w http.ResponseWriter, r *http.Request) (bool, erro
 		return true, nil
 	}
 
+	requested := r.URL.Path
 	if m.rr.CanRewriteAndCatchAll(r) {
 		if h, pat := m.s.Handler(r); len(pat) > 0 {
-			h.ServeHTTP(w, r)
+			// Kailo (DD-138(6)): the catch-all handler still learns the requested path.
+			h.ServeHTTP(w, r.WithContext(routing.WithCatchAllRequestedPath(r.Context(), requested)))
 			return true, nil
 		}
 	}

@@ -192,6 +192,12 @@ func (c *ChatHandler) initHandlers() {
 			}
 		}
 
+		// Kailo DD-163 (07 §4.8.8): only file comment rooms (NODE) are served.
+		if !chatMessageRoomServed(chatMsg) {
+			log.Logger(ct).Debug("Chat room type is not served in Kailo mode", zap.String("type", chatMsg.GetRoom().GetType().String()))
+			return
+		}
+
 		chatClient := chat.NewChatServiceClient(grpc.ResolveConn(ct, common.ServiceChatGRPC))
 
 		switch chatMsg.Type {
@@ -483,10 +489,25 @@ func (c *ChatHandler) removeUserFromRoom(ctx context.Context, room *chat.ChatRoo
 
 var uuidRouter nodes.Client
 
+// chatMessageRoomServed reports whether a websocket chat message may reach
+// the chat service (Kailo DD-163). JOIN, LEAVE and HISTORY name their room:
+// its type must be served. POST and DELETE_MSG act on a room already joined
+// in this session, so they inherit the JOIN decision.
+func chatMessageRoomServed(msg *chat.WebSocketMessage) bool {
+	switch msg.GetType() {
+	case chat.WsMessageType_JOIN, chat.WsMessageType_LEAVE, chat.WsMessageType_HISTORY:
+		return msg.GetRoom() != nil && auth.NativeKailoChatRoomAllowed(msg.GetRoom().GetType())
+	}
+	return true
+}
+
 // auth check authorization for the room. perm can be "join" or "post"
 func (c *ChatHandler) auth(session *melody.Session, room *chat.ChatRoom) (bool, error) {
 
 	var readonly bool
+	if err := auth.NativeKailoChatRoomRefusal(room.GetType()); err != nil {
+		return false, err
+	}
 	ctx, err := prepareRemoteContext(session.Request.Context(), session)
 	if err != nil {
 		return false, err

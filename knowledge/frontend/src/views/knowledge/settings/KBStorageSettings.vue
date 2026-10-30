@@ -23,7 +23,7 @@
           </t-select>
           <p v-if="props.hasFiles" class="option-hint change-warning">{{ $t('kbSettings.storage.migrateHint') }}</p>
           <p v-else-if="selected" class="option-hint">{{ selected.config.endpoint || selected.config.bucket_name || selected.config.path_prefix || $t('kbSettings.storage.localStorage') }}</p>
-          <a href="javascript:void(0)" class="go-settings" @click.prevent="goToSettings">{{ $t('kbSettings.storage.manageInstances') }}</a>
+          <a v-if="settingsLinks" href="javascript:void(0)" class="go-settings" @click.prevent="goToSettings">{{ $t('kbSettings.storage.manageInstances') }}</a>
         </div>
       </div>
     </div>
@@ -34,6 +34,8 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { listStorageBackends, type StorageBackend } from '@/api/storage-backend'
 import { useUIStore } from '@/stores/ui'
+import { isKailoMode } from '@/kailo/runtime'
+import { nativeSettingsLinks } from '@/kailo/surface'
 
 const props = defineProps<{ storageBackendId?: string; storageProvider?: string; hasFiles?: boolean }>()
 const emit = defineEmits<{
@@ -58,6 +60,8 @@ async function load() {
     if (localID.value) handleChange()
   } finally { loading.value = false }
 }
+// DD-138(6): no links into native settings in Kailo mode (admin surfaces live in Kailo).
+const settingsLinks = nativeSettingsLinks(isKailoMode())
 function goToSettings() { uiStore.closeKBEditor?.(); uiStore.openSettings?.('storage') }
 watch(() => props.storageBackendId, value => { if (value) localID.value = value })
 onMounted(load)

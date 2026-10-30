@@ -57,6 +57,12 @@ func NewIndexHandler(ctx context.Context, resetPasswordPath string) http.Handler
 
 func (h *IndexHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
+	// DD-138(6), 07 §4.8.5: in Kailo mode the native console is closed before
+	// any page is served; only declared admin surfaces with their key remain.
+	if kailoAdminRedirect(w, r) {
+		return
+	}
+
 	pool, e := frontend.GetPluginsPool()
 	if e != nil {
 		w.WriteHeader(500)

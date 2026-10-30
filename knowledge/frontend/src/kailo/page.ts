@@ -10,6 +10,7 @@
 import { getCurrentInstance, onBeforeUnmount, shallowRef, watch, computed, type ComputedRef } from 'vue'
 import type { Router, RouteLocationNormalizedLoaded } from 'vue-router'
 import type { KailoActionFiles, KailoActionIcon, KailoEmbedRuntime, KailoFileSelection, KailoPage, KailoPageAction, KailoPageItem } from './bridge'
+import { kailoClosedTab } from './converge'
 
 export interface PageCrumb {
   id: string
@@ -237,9 +238,14 @@ export interface PageShellDeps {
   supports: (capability: string | undefined) => boolean
 }
 
-/** Product tabs visible in this deployment. */
+/**
+ * Product tabs visible in this deployment. The page shell only runs under
+ * Kailo, where Agent and 产物 are Kailo Agent's (DD-163): only 对话 and 知识库.
+ */
 export function visibleTabs(locale: string, supports: (capability: string | undefined) => boolean): KailoPageItem[] {
-  return PRODUCT_TABS.filter((tab) => supports(tab.capability)).map((tab) => ({ id: tab.id, label: pageText(tab.id, locale) }))
+  return PRODUCT_TABS
+    .filter((tab) => supports(tab.capability) && !kailoClosedTab(tab.id, true))
+    .map((tab) => ({ id: tab.id, label: pageText(tab.id, locale) }))
 }
 
 /**

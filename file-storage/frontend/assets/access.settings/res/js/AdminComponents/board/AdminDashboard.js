@@ -38,6 +38,7 @@ import DOMUtils from 'pydio/util/dom'
 import AdminStyles from "../styles/AdminStyles";
 import { colors, getMuiTheme } from 'material-ui/styles';
 import { MuiThemeProvider } from 'material-ui';
+import {kailoSurfacePanel, kailoSurfaceProps, KailoSurfaceUnavailable, KailoSurfaceFrame} from './KailoAdminSurface';
 
 class LeftToggleListener extends Observable {
     constructor() {
@@ -123,6 +124,17 @@ let AdminDashboard = createReactClass({
         if(dm.getUniqueNode()){
             dm.getUniqueNode().observe("loaded", this.dmChangesToState);
         }
+        this.pinKailoSurface();
+    },
+
+    // Kailo (DD-138(6), 07 §4.8.5): an admin surface page stays on its own
+    // console node; nothing navigates it to another admin function.
+    pinKailoSurface(){
+        const dm = this.props.pydio.getContextHolder();
+        const panel = kailoSurfacePanel(window.KailoCells, dm.getContextNode());
+        if(panel.mode === 'loading' && dm.getContextNode().getPath() !== panel.surface.node){
+            this.props.pydio.goTo(panel.surface.node);
+        }
     },
 
     openEditor(node){
@@ -206,6 +218,7 @@ let AdminDashboard = createReactClass({
         this._resizeObserver = this.computeLeftIsDocked.bind(this);
         DOMUtils.observeWindowResize(this._resizeObserver);
         this.computeLeftIsDocked();
+        this.pinKailoSurface();
     },
 
     componentWillUnmount(){
@@ -229,7 +242,7 @@ let AdminDashboard = createReactClass({
         LeftToggleListener.getInstance().setActive(DOMUtils.getViewportWidth() <= 780);
     },
 
-    routeMasterPanel(node, selectedNode){
+    routeMasterPanel(node, selectedNode, kailoSurface = null){
         const {pydio} = this.props;
         if(!selectedNode) {
             selectedNode = node;
@@ -245,7 +258,10 @@ let AdminDashboard = createReactClass({
             );
         }
         const parts = dynamicComponent.split('.');
-        const additionalProps = node.getMetadata().has('props') ? JSON.parse(node.getMetadata().get('props')) : {};
+        let additionalProps = node.getMetadata().has('props') ? JSON.parse(node.getMetadata().get('props')) : {};
+        if(kailoSurface){
+            additionalProps = kailoSurfaceProps(kailoSurface, additionalProps);
+        }
         return (
             <AsyncComponent
                 pydio={pydio}
@@ -305,6 +321,33 @@ let AdminDashboard = createReactClass({
             zIndex: 10,
             ...overlay
         };
+
+        // Kailo mode: only the declared admin surface, without the console's
+        // navigation, header, tasks panel or dashboard; otherwise the empty state.
+        const kailo = window.KailoCells;
+        const panel = kailoSurfacePanel(kailo, dm.getContextNode());
+        if(panel.mode !== 'native'){
+            let content = <div className="kailo-admin-cover"/>;
+            if(panel.mode === 'unavailable'){
+                content = <KailoSurfaceUnavailable kailo={kailo}/>;
+            } else if(panel.mode === 'panel'){
+                const node = dm.getContextNode();
+                content = (
+                    <KailoSurfaceFrame kailo={kailo} surface={panel.surface}>
+                        {this.routeMasterPanel(node, node, panel.surface)}
+                    </KailoSurfaceFrame>
+                );
+            }
+            return (
+                <div className="app-canvas kailo-admin-canvas">
+                    {content}
+                    <div style={{...overlay, backgroundColor: 'transparent'}} onClick={this.closeRightPane}/>
+                    <Paper zDepth={0} className={"paper-editor layout-fill vertical-layout kailo-admin-detail" + (rightPanel?' visible':'')} style={{zIndex: 11}}>
+                        {rPanelContent}
+                    </Paper>
+                </div>
+            );
+        }
 
         return (
             <MuiThemeProvider muiTheme={this.theme}>

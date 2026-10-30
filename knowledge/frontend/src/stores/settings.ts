@@ -4,6 +4,8 @@ import { BUILTIN_QUICK_ANSWER_ID, BUILTIN_SMART_REASONING_ID } from "@/api/agent
 import { getApiBaseUrl } from "@/utils/api-base";
 import { isAgentStreamAgentId } from "@/utils/agent-mode";
 import { loadAndReconcileSettings } from "@/stores/settingsStorage";
+import { isKailoMode } from "@/kailo/runtime";
+import { effectiveAgentSelection, normalizeAgentSelection } from "@/kailo/converge";
 
 // 定义设置接口
 interface Settings {
@@ -113,7 +115,12 @@ const defaultSettings: Settings = {
 export const useSettingsStore = defineStore("settings", {
   state: () => ({
     // 从本地存储加载设置，如果没有则使用默认设置
-    settings: loadAndReconcileSettings(defaultSettings),
+    settings: (() => {
+      const loaded = loadAndReconcileSettings(defaultSettings);
+      // Kailo DD-163：Kailo 模式只用内置快速问答，修正本地存储里遗留的 agent 选择
+      normalizeAgentSelection(loaded, isKailoMode());
+      return loaded;
+    })(),
     // 进入会话时拍下"全局默认"的快照；离开会话时还原。非持久化字段：
     // 刷新页面相当于重新走"进入会话"流程，自然会重新拍快照。
     _defaultsSnapshot: null as Settings | null,
@@ -122,19 +129,18 @@ export const useSettingsStore = defineStore("settings", {
   }),
 
   getters: {
-    // Agent 是否启用
-    isAgentEnabled: (state) => state.settings.isAgentEnabled || false,
+    // Agent 是否启用（Kailo DD-163：Kailo 模式只用内置快速问答，恒为 false）
+    isAgentEnabled: (state) => effectiveAgentSelection(state.settings, isKailoMode()).isAgentEnabled,
 
     // 当前是否为内置快速问答（优先看 selectedAgentId，避免与 isAgentEnabled 漂移）
     isQuickAnswerMode: (state) =>
-      (state.settings.selectedAgentId || BUILTIN_QUICK_ANSWER_ID) === BUILTIN_QUICK_ANSWER_ID,
+      effectiveAgentSelection(state.settings, isKailoMode()).selectedAgentId === BUILTIN_QUICK_ANSWER_ID,
 
     // 是否走 Agent 流式管线（智能推理 / 自定义 Agent）；快速问答走 RAG 管线
-    isAgentStreamMode: (state) =>
-      isAgentStreamAgentId(
-        state.settings.selectedAgentId,
-        state.settings.isAgentEnabled || false,
-      ),
+    isAgentStreamMode: (state) => {
+      const selection = effectiveAgentSelection(state.settings, isKailoMode());
+      return isAgentStreamAgentId(selection.selectedAgentId, selection.isAgentEnabled);
+    },
     
     // Agent 是否就绪（配置完整）
     // 需要满足：1) 配置了允许的工具 2) 设置了对话模型 3) 设置了重排模型
@@ -174,9 +180,9 @@ export const useSettingsStore = defineStore("settings", {
     isAutoCheckUpdateEnabled: (state) => state.settings.autoCheckUpdate ?? true,
 
     // 当前选中的智能体ID
-    selectedAgentId: (state) => state.settings.selectedAgentId || BUILTIN_QUICK_ANSWER_ID,
+    selectedAgentId: (state) => effectiveAgentSelection(state.settings, isKailoMode()).selectedAgentId,
     // 共享智能体来源空间 ID（可选）
-    selectedAgentSourceTenantId: (state) => state.settings.selectedAgentSourceTenantId ?? null,
+    selectedAgentSourceTenantId: (state) => effectiveAgentSelection(state.settings, isKailoMode()).selectedAgentSourceTenantId,
   },
 
   actions: {
@@ -210,6 +216,7 @@ export const useSettingsStore = defineStore("settings", {
     // 启用/禁用 Agent
     toggleAgent(enabled: boolean) {
       this.settings.isAgentEnabled = enabled;
+      normalizeAgentSelection(this.settings, isKailoMode());
       localStorage.setItem("WeKnora_settings", JSON.stringify(this.settings));
     },
     
@@ -478,12 +485,14 @@ export const useSettingsStore = defineStore("settings", {
       this.settings.selectedTags = [];
       this.settings.selectedMCPServices = [];
       this.settings.selectedSkills = [];
+      // Kailo DD-163：Kailo 模式只用内置快速问答
+      normalizeAgentSelection(this.settings, isKailoMode());
       localStorage.setItem("WeKnora_settings", JSON.stringify(this.settings));
     },
     
     // 获取选中的智能体ID
     getSelectedAgentId(): string {
-      return this.settings.selectedAgentId || BUILTIN_QUICK_ANSWER_ID;
+      return effectiveAgentSelection(this.settings, isKailoMode()).selectedAgentId;
     },
 
     // —— 会话级输入态恢复 —— //
@@ -582,6 +591,8 @@ export const useSettingsStore = defineStore("settings", {
         if (typeof state.web_search_enabled === "boolean") {
           this.settings.webSearchEnabled = state.web_search_enabled;
         }
+        // Kailo DD-163：旧会话记录的 agent 选择在 Kailo 模式下按快速问答恢复
+        normalizeAgentSelection(this.settings, isKailoMode());
       } finally {
         // 复位必须延后到下一次 flush 之后：监听 selectedAgentId 的 watcher 默认
         // flush:'pre'，是异步执行的；若在此处同步复位，watcher 真正运行时标志早已

@@ -14,6 +14,9 @@ export default defineConfig({
 			include: ['**/*.jsx', '**/*.tsx', '**/*.js'],
 		}),
 	],
+	// Legacy GUI modules keep JSX in .js files; parse them as JSX in tests as the
+	// Cells build (babel) does.
+	esbuild: { loader: 'jsx', include: /\.jsx?$/, exclude: [] },
 	resolve: {
 		alias: {
 			'@mocks': path.resolve(__dirname, '__mocks__'),

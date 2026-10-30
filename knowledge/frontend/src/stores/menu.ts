@@ -5,6 +5,8 @@ import { useAuthStore } from '@/stores/auth'
 import { useDeploymentCapabilitiesStore } from '@/stores/deploymentCapabilities'
 import type { DeploymentCapabilityKey } from '@/config/deploymentCapabilities'
 import type { QuestionOrigin } from '@/utils/questionOrigin'
+import { isKailoMode } from '@/kailo/runtime'
+import { kailoClosedMenuPath } from '@/kailo/converge'
 
 type MenuChild = Record<string, any>
 
@@ -81,6 +83,10 @@ export const useMenuStore = defineStore('menuStore', () => {
         return false
       }
       if (!deploymentCapabilities.isSupported(item.requiredCapability)) {
+        return false
+      }
+      // Kailo DD-163: Agent and 产物 are Kailo Agent's.
+      if (kailoClosedMenuPath(item.path, isKailoMode())) {
         return false
       }
       return true

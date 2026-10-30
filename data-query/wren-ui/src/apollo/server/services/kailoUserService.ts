@@ -154,6 +154,26 @@ export async function isKailoAdmin(
 export const kailoAdminRequired = () =>
   create(GeneralErrorCodes.KAILO_ADMIN_REQUIRED);
 
+// DD-138(7): administration data (the API call history) is read only by the
+// person who may manage this instance: Core `manage` on the binding scope when
+// GOVERNED (the fresh check `isKailoAdmin` makes), the directory Tenant admin
+// when STANDALONE — the same decision as `kailoSession.isAdmin` and every
+// write. The native service token is no person. Refused before the resolver.
+// (`nativeProjectResolver(..., 'manage')` is the write protocol — its refusals
+// carry the native write outcome — so a read uses this gate instead.)
+export function kailoAdminRead<T extends (...args: any[]) => any>(
+  resolver: T,
+): T {
+  return (async (root: unknown, args: unknown, ctx: any, info: unknown) => {
+    if (
+      ctx?.kailoNativeService ||
+      !(await isKailoAdmin(ctx?.kailoUser ?? null, ctx?.nativeHumanToken))
+    )
+      throw kailoAdminRequired();
+    return resolver(root, args, ctx, info);
+  }) as T;
+}
+
 // STANDALONE enforcement; GOVERNED keeps the Core `manage` wrapper. A verified
 // native service token (the instance's own AI service) is not a member.
 export function assertStandaloneAdmin(

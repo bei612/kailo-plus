@@ -32,6 +32,7 @@ import (
 
 	chat2 "github.com/pydio/cells/v5/broker/chat"
 	"github.com/pydio/cells/v5/common"
+	"github.com/pydio/cells/v5/common/auth"
 	"github.com/pydio/cells/v5/common/broker"
 	"github.com/pydio/cells/v5/common/client/commons/treec"
 	"github.com/pydio/cells/v5/common/proto/activity"
@@ -55,6 +56,9 @@ type ChatHandler struct {
 }
 
 func (c *ChatHandler) PutRoom(ctx context.Context, req *chat.PutRoomRequest) (*chat.PutRoomResponse, error) {
+	if err := auth.NativeKailoChatRoomRefusal(req.GetRoom().GetType()); err != nil {
+		return nil, err
+	}
 	dao, err := manager.Resolve[chat2.DAO](ctx)
 	if err != nil {
 		return nil, err
@@ -75,6 +79,9 @@ func (c *ChatHandler) PutRoom(ctx context.Context, req *chat.PutRoomRequest) (*c
 }
 
 func (c *ChatHandler) DeleteRoom(ctx context.Context, req *chat.DeleteRoomRequest) (*chat.DeleteRoomResponse, error) {
+	if err := auth.NativeKailoChatRoomRefusal(req.GetRoom().GetType()); err != nil {
+		return nil, err
+	}
 
 	dao, err := manager.Resolve[chat2.DAO](ctx)
 	if err != nil {
@@ -104,6 +111,9 @@ func (c *ChatHandler) DeleteRoom(ctx context.Context, req *chat.DeleteRoomReques
 func (c *ChatHandler) ListRooms(req *chat.ListRoomsRequest, streamer chat.ChatService_ListRoomsServer) error {
 
 	ctx := streamer.Context()
+	if err := auth.NativeKailoChatRoomRefusal(req.GetByType()); err != nil {
+		return err
+	}
 
 	dao, err := manager.Resolve[chat2.DAO](ctx)
 	if err != nil {
@@ -134,6 +144,9 @@ func (c *ChatHandler) ListMessages(req *chat.ListMessagesRequest, streamer chat.
 	}
 
 	log.Logger(ctx).Debug("List Messages", zap.Any(common.KeyChatListMsgReq, req))
+	if err := c.kailoServedRoom(ctx, dao, req.GetRoomUuid()); err != nil {
+		return err
+	}
 
 	messages, err := dao.ListMessages(ctx, req)
 	if err != nil {
@@ -159,6 +172,11 @@ func (c *ChatHandler) PostMessage(ctx context.Context, req *chat.PostMessageRequ
 		*chat.ChatMessage
 	}
 	log.Logger(ctx).Debug("Post Messages", zap.Any(common.KeyChatPostMsgReq, req))
+	for _, m := range req.Messages {
+		if err := c.kailoServedRoom(ctx, dao, m.GetRoomUuid()); err != nil {
+			return nil, err
+		}
+	}
 	var results []*outMsg
 	for _, m := range req.Messages {
 		var newMessage *chat.ChatMessage
@@ -257,6 +275,11 @@ func (c *ChatHandler) DeleteMessage(ctx context.Context, req *chat.DeleteMessage
 		krs = make(map[string]*chat.ChatRoom)
 	}
 	for _, m := range req.Messages {
+		if err := c.kailoServedRoom(ctx, dao, m.GetRoomUuid()); err != nil {
+			return nil, err
+		}
+	}
+	for _, m := range req.Messages {
 		err := dao.DeleteMessage(ctx, m)
 		if err != nil {
 			return nil, err
@@ -292,6 +315,20 @@ func (c *ChatHandler) DeleteMessage(ctx context.Context, req *chat.DeleteMessage
 		}
 	}()
 	return &chat.DeleteMessageResponse{Success: true}, nil
+}
+
+// kailoServedRoom refuses, in Kailo mode, a message operation on a room that
+// is not a file comment room (Kailo DD-163, 07 §4.8.8). The stored room is
+// authoritative, never the caller's KnownRooms: a room that is not stored as
+// NODE (another type, or no room at all) is refused.
+func (c *ChatHandler) kailoServedRoom(ctx context.Context, dao chat2.DAO, roomUuid string) error {
+	if auth.NativeKailoChatRoomAllowed(chat.RoomType_GLOBAL) {
+		return nil // not Kailo mode: every room type keeps its native behaviour
+	}
+	if room, err := dao.RoomByUuid(ctx, chat.RoomType_NODE, roomUuid); err != nil || room == nil {
+		return auth.NativeKailoChatRoomRefusal(chat.RoomType_ANY)
+	}
+	return nil
 }
 
 // knownRoomFromUuid tries to find room in map, or look up in DAO

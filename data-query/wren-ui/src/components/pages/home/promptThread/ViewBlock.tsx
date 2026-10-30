@@ -1,8 +1,6 @@
-import Link from 'next/link';
 import { Button } from 'antd';
 import FileDoneOutlined from '@ant-design/icons/FileDoneOutlined';
 import SaveOutlined from '@ant-design/icons/SaveOutlined';
-import { Path } from '@/utils/enum';
 import { ViewInfo } from '@/apollo/client/graphql/__types__';
 import useKailoText from '@/utils/kailoI18n';
 
@@ -19,15 +17,9 @@ export default function ViewBlock({ view, onClick }: Props) {
     return (
       <div className="gray-7 text-medium">
         <FileDoneOutlined className="mr-2" />
-        {t('home.generatedFromView')}{' '}
-        <Link
-          className="gray-7"
-          href={`${Path.Modeling}?viewId=${view.id}&openMetadata=true`}
-          target="_blank"
-          rel="noreferrer noopener"
-        >
-          {view.displayName}
-        </Link>
+        {/* DD-138(6): views are maintained on the modeling admin surface;
+            the business page names the view and links to no admin page. */}
+        {t('home.generatedFromView')} {view.displayName}
       </div>
     );
   }

@@ -117,7 +117,11 @@ func (c *VersionAction) run(ctx context.Context, input *jobs.ActionMessage, hand
 	}
 	node := input.Nodes[0]
 
-	if node.Etag == common.NodeFlagEtagTemporary || tree.IgnoreNodeForOutput(ctx, node) {
+	// A governed promotion versions its frozen draft, not the live object. A
+	// node born from a draft-mode upload keeps the index's temporary ETag until
+	// that promotion copies the draft (handler-put.go); only an ordinary
+	// event-driven version skips such an unfinished live node.
+	if (sourceRevision == "" && node.Etag == common.NodeFlagEtagTemporary) || tree.IgnoreNodeForOutput(ctx, node) {
 		return input.WithIgnore(), nil // Ignore
 	}
 	T := lang.Bundle().T(languages.GetDefaultLanguage(ctx))

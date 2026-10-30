@@ -14,6 +14,12 @@ remove_paths:
   - wren-ui/public/images/logo.svg
   - wren-ui/src/components/learning
   - wren-ui/src/utils/telemetry.ts
+  # DD-138(6) (`07` §4.8.5): the original modeling page, onboarding wizard and
+  # settings dialog exist only as Kailo admin surfaces (src/pages/kailo-admin);
+  # their routes are closed by the middleware.
+  - wren-ui/src/components/settings/index.tsx
+  - wren-ui/src/pages/modeling.tsx
+  - wren-ui/src/pages/setup
 source_components:
   wren-engine: 47ca29ebba291100ba5d70ce1790f9887eaed7a0
 artifacts:
@@ -22,8 +28,8 @@ artifacts:
     build_context: .
     build_dockerfile: data-query/wren-ui/Dockerfile
     inputs: [data-query/wren-ui/, client-kit/adapter/protocol.mjs, client-kit/embed/kailo-theme-tokens.css, client-kit/embed/kailo-embed.js, client-kit/embed/kailo-embed.d.ts, web-client/web/public/app-icon.png]
-    source_digest: sha256:f091a40a7de6ecd2f244caaf4eafcd58bb730a4ccb4e1c93793bac7b4eda0741
-    artifact_digest: sha256:5b330f5ba27cd72eaccc90b7e6283f5100fbce80b2321a0320e7a75c8a79c735
+    source_digest: sha256:be2f6c9bb7ce25cf1d054a3ab3c344eca18aed283056bb4e348a51e681fea766
+    artifact_digest: sha256:2209746edba5fc62cdab10d662c3affebaf7b7efd98bdcf341bcd3923927f938
   - name: data-query-ai-service
     kind: image
     build_context: data-query/wren-ai-service
