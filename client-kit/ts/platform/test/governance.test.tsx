@@ -58,7 +58,14 @@ const posts = (send: ReturnType<typeof vi.fn>) =>
 const dialog = () => document.querySelector<HTMLElement>("[data-testid$=-dialog][role=alertdialog], [role=alertdialog]");
 const confirm = async () => click(document.querySelector<HTMLButtonElement>("[data-testid=confirm-dialog-action]")!);
 /** Opens a task from the task page by its row. */
-const openTask = async (el: HTMLElement, id = "ae1") => click(el.querySelector<HTMLButtonElement>(`[data-task-row="${id}"] button`)!);
+const openTask = async (el: HTMLElement, id = "ae1") => {
+  // "Ended" is collapsed by default (.design/06 §8): expand it when the task is there.
+  if (!el.querySelector(`[data-task-row="${id}"]`)) {
+    const ended = el.querySelector<HTMLElement>("[data-testid=task-segment-ended]");
+    if (ended) await click(button(ended, "Show"));
+  }
+  await click(el.querySelector<HTMLButtonElement>(`[data-task-row="${id}"] button`)!);
+};
 /** The open detail's own refresh (the hidden list keeps its own). */
 const refresh = async (el: HTMLElement, detail = "task-detail") =>
   click(el.querySelector<HTMLButtonElement>(`[data-testid=${detail}] button[aria-label="Refresh"]`)!);

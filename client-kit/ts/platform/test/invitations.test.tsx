@@ -369,7 +369,9 @@ describe("审批详情里的邀请", () => {
     }, <ApprovalsPage />);
     const el = await host;
     await settle();
-    await click(button(el, "tenant.member.admit"));
+    // DD-170 §16.2: the approval row opens its detail; the list shows the action's name.
+    expect(el.textContent).toContain("Admit organization member");
+    await click(el.querySelector<HTMLElement>("tr[data-row-key]")!);
     expect(el.querySelector("[data-testid=invitation-for-approval]")?.textContent).toBe(
       "Invitation for “Grace from Ops”, used by someone who calls themselves “Grace Hopper”. Confirm it is really them before approving.",
     );

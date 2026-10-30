@@ -194,7 +194,7 @@ function TaskProgress({ task }: { task: TaskView }) {
   const t = useT();
   const { done, total } = taskProgress(task);
   const phase = taskPhase(task);
-  const fill = phase.tone === "negative" ? "bg-danger" : phase.tone === "positive" ? "bg-success" : "bg-brand";
+  const fill = phase.tone === "negative" ? "bg-danger-text" : phase.tone === "positive" ? "bg-success-text" : "bg-brand-text";
   const text = t("tasks.progress", { done, total });
   return <span className="inline-flex items-center gap-1.5" title={text}>
     <span aria-hidden className="inline-flex gap-0.5">
