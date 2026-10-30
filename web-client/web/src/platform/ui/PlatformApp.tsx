@@ -42,7 +42,7 @@ import { BusinessOperationsPage, UsageBillingPage } from "@client-kit/platform/r
 import { GatewayPage } from "@client-kit/platform/react/gateway";
 import { useBlocker } from "@tanstack/react-router";
 import { RedemptionProgress } from "@client-kit/platform/react/invitations";
-import { usePlatformNavigation, type PlatformTab } from "@/app/platform-navigation";
+import { NATIVE_OPEN_ROUTE_ID, usePlatformNavigation, type PlatformTab } from "@/app/platform-navigation";
 import {
   AuditPage,
   DevicesPage,
@@ -72,6 +72,7 @@ import { MoreUnreadButton, preferredUnreadTarget } from "@client-kit/platform/re
 import { useConversationUnreadProjection, useSidebarUnreadOverflow } from "@client-kit/platform/react/sidebar/useSidebarUnreadOverflow";
 import { NativeApplicationEntries } from "@client-kit/platform/react/pages";
 import { NativeApplicationPage } from "@client-kit/platform/react/native-application-page";
+import { NativeApplicationOpen } from "@client-kit/platform/react/native-application-open";
 import { AppSidebarPrimaryMenu } from "@client-kit/platform/react/sidebar/app-sidebar-primary-menu";
 import { RelayConnectionOverlay, SidebarRelayConnectionFooterCard } from "@client-kit/platform/react/sidebar/relay-connection-overlay";
 import { useStreamConnectionCard } from "./StreamConnection";
@@ -180,6 +181,7 @@ export function PlatformApp() {
   return (
     <PlatformProvider client={bff} feedbackVersion={feedbackVersion} locale={locale} documentTheme={isDark ? "DARK" : "LIGHT"} currentPrincipalId={session.tenantPrincipalId}
       reauthenticateTopLevel={reauthenticateTopLevel} liveTenantProfile={session.accessMode === PlatformSessionAccessMode.Full}
+      syncAccountPreferences={session.accessMode === PlatformSessionAccessMode.Full}
       onTenantProfile={profile => setSession(current => current?.tenantPrincipalId === session.tenantPrincipalId ? { ...current, tenantName: profile?.name } : current)}>
       {/* DD-139: candidate and DM-row avatars load only the Tenant avatar route on this origin. */}
       <CandidatePictureProvider resolve={avatarPicture}>
@@ -276,6 +278,12 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
   // DD-140 (5): the decision receipt's governed send, resolved only when a request is shown.
   const useProjectRequestAgentChat = useCallback(() => useWebProjectAgentChat(searchScopeKey), [searchScopeKey]);
   const navigation = usePlatformNavigation(searchScopeKey);
+  // DD-164(10): a redirected top-level component visit replaces /applications/open with the page itself.
+  const navigationRef = useRef(navigation);
+  navigationRef.current = navigation;
+  const openResolvedApplication = useCallback((bindingId: string, workspaceId: string | undefined, path: string | undefined) => {
+    void navigationRef.current.openApplication(bindingId, workspaceId, path, true);
+  }, []);
   // DD-125(6): a working Agent row outside the channel view opens that channel, then its activity.
   const openAgentActivityChannel = useCallback((workspaceId: string) => { void navigation.openChannel(workspaceId); }, [navigation]);
   const { tab, messageTarget } = navigation;
@@ -442,7 +450,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
   useEffect(() => {
     if (tab !== "settings") settingsReturn.current = () => {
       if (tab === "conversation" && navigation.conversationId) void navigation.openConversation(navigation.conversationId);
-      else if (tab === "application" && navigation.applicationBindingId) void navigation.openApplication(navigation.applicationBindingId, active ?? undefined);
+      else if (tab === "application" && navigation.applicationBindingId && navigation.applicationBindingId !== NATIVE_OPEN_ROUTE_ID) void navigation.openApplication(navigation.applicationBindingId, active ?? undefined);
       else if (tab !== "conversation" && tab !== "application") void navigation.openTab(tab, active);
     };
   }, [tab, active, navigation]);
@@ -564,7 +572,10 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
       onStartDm={openDirectMessage} />
   );
   const body =
-    tab === "application" && navigation.applicationBindingId ? (
+    tab === "application" && navigation.applicationBindingId === NATIVE_OPEN_ROUTE_ID ? (
+      <NativeApplicationOpen origin={navigation.applicationOrigin ?? undefined} path={navigation.applicationPath ?? undefined}
+        onResolved={openResolvedApplication} onHome={() => { void navigation.openTab("inbox"); }} />
+    ) : tab === "application" && navigation.applicationBindingId ? (
       <NativeApplicationPage key={`${session.tenantPrincipalId}:${navigation.applicationBindingId}`} bindingId={navigation.applicationBindingId} title={applicationTitle ?? undefined}
         path={navigation.applicationPath ?? undefined} />
     ) : tab === "new-message" ? (

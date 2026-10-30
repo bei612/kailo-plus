@@ -43,7 +43,11 @@ export type EmbedMessage =
   | { type: "page"; page: EmbedPage | null }
   | { type: "toast"; toast: EmbedToast }
   | { type: "confirm"; confirm: EmbedConfirm }
-  | { type: "shortcut"; shortcut: EmbedShortcut };
+  | { type: "shortcut"; shortcut: EmbedShortcut }
+  /** DD-164(4) (07 §4.7.2): open Kailo's share dialog for a ComponentShareIntent; not a credential. */
+  | { type: "share"; intentId: string };
+
+const SHARE_INTENT = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const CONTROL = /[\u0000-\u001f\u007f]/;
 
@@ -167,6 +171,9 @@ export function embedMessage(data: unknown): EmbedMessage | null {
       const shortcut = member(message.shortcut, ["search", "settings", "back", "forward"] as const);
       return shortcut ? { type: "shortcut", shortcut } : null;
     }
+    case "share":
+      return typeof message.intentId === "string" && SHARE_INTENT.test(message.intentId)
+        ? { type: "share", intentId: message.intentId.toLowerCase() } : null;
     default: return null;
   }
 }

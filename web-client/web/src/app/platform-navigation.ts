@@ -35,6 +35,8 @@ export function platformLocationSearch(search: Record<string, unknown>): {
   view?: "edit" | "duplicate" | "create";
   /** DD-138(4)(5), 07 §4.8.3/§4.8.4: relative location inside a native page (applications route only). */
   path?: string;
+  /** DD-164(10): the component origin a top-level visit came from (applications/open only). */
+  origin?: string;
 } {
   const reference = (key: string) => typeof search[key] === "string" && search[key].trim() ? search[key] : undefined;
   return {
@@ -59,8 +61,21 @@ export function platformLocationSearch(search: Record<string, unknown>): {
     view: search.view === "edit" || search.view === "duplicate" || search.view === "create" ? search.view : undefined,
     // A malformed path is dropped; the page then opens at its entry (origin re-checked at launch).
     path: validComponentPath(search.path) ? search.path : undefined,
+    origin: componentOrigin(search.origin),
   };
 }
+
+/** An exact http(s) origin; any other value is dropped. */
+function componentOrigin(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  try {
+    const url = new URL(value);
+    return ["http:", "https:"].includes(url.protocol) && url.origin === value ? value : undefined;
+  } catch { return undefined; }
+}
+
+/** DD-164(10): `/applications/open` is Kailo's landing for a redirected top-level component visit. */
+export const NATIVE_OPEN_ROUTE_ID = "open";
 
 type RouterHistoryState = { __TSR_index?: number; __TSR_key?: string; key?: string };
 const HISTORY_KEY_LIMIT = 200;
@@ -196,6 +211,7 @@ export function usePlatformNavigation(scopeKey?: string) {
     conversationId: params.conversationId ?? null,
     applicationBindingId: params.bindingId ?? null,
     applicationPath: params.bindingId ? search.path ?? null : null,
+    applicationOrigin: params.bindingId === NATIVE_OPEN_ROUTE_ID ? search.origin ?? null : null,
     projectId: tab === "projects" ? search.projectId ?? null : null,
     projectWorkItemTarget: tab === "projects" ? {repositoryId:search.repositoryId,issueId:search.issueId,pullRequestId:search.pullRequestId,tab:search.tab,commitHash:search.commitHash,filePath:search.filePath} : undefined,
     workflowRoute: params.workflowId ? { workflowId: params.workflowId,
@@ -219,8 +235,8 @@ export function usePlatformNavigation(scopeKey?: string) {
       state: navigationState(target?.messageId, query, draft),
     }),
     openConversation: (conversationId: string, target?: {messageId:string;threadRootId?:string|null}, query?: string, draft?: PlatformDraftNavigation) => navigate({ to: "/conversations/$conversationId", params: { conversationId }, search: target ? {messageId:target.messageId,threadRootId:target.threadRootId ?? undefined} : {}, state: navigationState(target?.messageId, query, draft) }),
-    openApplication: (bindingId: string, workspaceId?: string, path?: string) => navigate({ to: "/applications/$bindingId", params: { bindingId },
-      search: { workspaceId, path: validComponentPath(path) ? path : undefined }, state:navigationState() }),
+    openApplication: (bindingId: string, workspaceId?: string, path?: string, replace?: boolean) => navigate({ to: "/applications/$bindingId", params: { bindingId },
+      search: { workspaceId, path: validComponentPath(path) ? path : undefined }, state:navigationState(), ...(replace ? { replace: true } : {}) }),
     openTab: (next: Exclude<PlatformTab, "conversation" | "application">, workspaceId?: string | null) => {
       if (next === "channel") return workspaceId
         ? navigate({ to: "/channels/$channelId", params: { channelId: workspaceId }, search: {}, state:navigationState() })

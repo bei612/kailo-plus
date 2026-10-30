@@ -6,6 +6,7 @@ import { useProminentActiveTab } from "./prominent-active-tab";
 import { applyNeutralThemeAccent, createThemeVars, hexToHsl } from "./adaptive-theme";
 import { SYNTAX_THEMES, type SyntaxThemeName, extractThemeInfo, getThemePair, loadThemeData, resolveSystemTheme } from "./theme-loader";
 import { kailoRoles, kailoThemeVars } from "./kailo-tokens";
+import { ACCOUNT_APPEARANCE_APPLY_EVENT, asAccountPreferenceApply, noteAccountPreferenceEdit, type AccountAppearanceApply } from "../account-preference-events";
 export const THEME_STORAGE_KEY = "buzz-theme";
 // Shared with the Desktop boot script (index.html), which reads the cached background.
 const CACHE_KEY = "buzz-theme-cache";
@@ -457,16 +458,33 @@ export function useAppearance({ defaultTheme = "buzz", previewTheme, onThemeAppl
     if (!isValidThemeName(name)) return;
     setSelectedTheme(name);
     window.localStorage.setItem(THEME_STORAGE_KEY, name);
+    noteAccountPreferenceEdit({ theme: name });
   }, []);
 
   const setAccentColor = useCallback((color: string) => {
     window.localStorage.setItem(ACCENT_STORAGE_KEY, color);
     setAccentColorState(color);
+    noteAccountPreferenceEdit({ accent: color });
   }, []);
 
   const setFollowSystem = useCallback((enabled: boolean) => {
     window.localStorage.setItem(FOLLOW_SYSTEM_KEY, enabled ? "true" : "false");
     setFollowSystemState(enabled);
+    noteAccountPreferenceEdit({ followSystem: enabled });
+  }, []);
+
+  // DD-164(7): Core's account appearance arrived (another device, or this account's
+  // first load here). The storage is already written; adopt it without echoing.
+  useEffect(() => {
+    const adopt = (event: Event) => {
+      const value = (event as CustomEvent<AccountAppearanceApply>).detail;
+      if (!value) return;
+      if (value.theme !== undefined && isValidThemeName(value.theme)) setSelectedTheme(value.theme);
+      if (value.accent !== undefined) setAccentColorState(value.accent);
+      if (value.followSystem !== undefined) setFollowSystemState(value.followSystem);
+    };
+    window.addEventListener(ACCOUNT_APPEARANCE_APPLY_EVENT, adopt);
+    return () => window.removeEventListener(ACCOUNT_APPEARANCE_APPLY_EVENT, adopt);
   }, []);
 
   const applyAppearance = useCallback(
@@ -513,6 +531,48 @@ export function useAppearance({ defaultTheme = "buzz", previewTheme, onThemeAppl
 
 }
 
+
+/** The device's cached appearance, as written by useAppearance (absent keys never set). */
+export function readStoredAppearance(): AccountAppearanceApply {
+  const theme = getStorageItem(THEME_STORAGE_KEY);
+  const accent = getStorageItem(ACCENT_STORAGE_KEY);
+  const follow = getStorageItem(FOLLOW_SYSTEM_KEY);
+  return {
+    ...(theme !== null && isValidThemeName(theme) ? { theme } : {}),
+    ...(accent !== null && isAccountAccent(accent) ? { accent } : {}),
+    ...(follow === "true" || follow === "false" ? { followSystem: follow === "true" } : {}),
+  };
+}
+
+/** Accent values the account store accepts (DD-164(7)): neutral, the Kailo brand or #rrggbb. */
+export function isAccountAccent(value: string): boolean {
+  return value === NEUTRAL_ACCENT || value === KAILO_BRAND_ACCENT || /^#[0-9a-fA-F]{6}$/.test(value);
+}
+
+/**
+ * DD-164(7): apply Core's account appearance on this device. Unknown theme names and
+ * accent forms are ignored (this build cannot render them); the storage is the cache
+ * the next start paints from, and mounted hooks adopt the values through an event.
+ * Returns the subset that was actually adopted.
+ */
+export function applyAccountAppearance(value: AccountAppearanceApply): AccountAppearanceApply {
+  const adopted: AccountAppearanceApply = {};
+  if (value.theme !== undefined && isValidThemeName(value.theme)) adopted.theme = value.theme;
+  if (value.accent !== undefined && isAccountAccent(value.accent)) adopted.accent = value.accent;
+  if (value.followSystem !== undefined) adopted.followSystem = value.followSystem;
+  if (!Object.keys(adopted).length) return adopted;
+  asAccountPreferenceApply(() => {
+    try {
+      if (adopted.theme !== undefined) window.localStorage.setItem(THEME_STORAGE_KEY, adopted.theme);
+      if (adopted.accent !== undefined) window.localStorage.setItem(ACCENT_STORAGE_KEY, adopted.accent);
+      if (adopted.followSystem !== undefined) window.localStorage.setItem(FOLLOW_SYSTEM_KEY, adopted.followSystem ? "true" : "false");
+    } catch {
+      // The live hooks still adopt the values; the cache catches up on the next write.
+    }
+    window.dispatchEvent(new CustomEvent<AccountAppearanceApply>(ACCOUNT_APPEARANCE_APPLY_EVENT, { detail: adopted }));
+  });
+  return adopted;
+}
 
 /** Consume the former Web-only mode once; never overwrite a native preference. */
 export function migrateWebThemePreference(): void {

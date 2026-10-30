@@ -16,6 +16,7 @@ import { useLoad } from "./use-load";
 import { NativeApplicationPage } from "./native-application-page";
 import { validDeclaration } from "../component-preferences";
 import { ServiceReadPermissions } from "./service-read-permissions";
+import { DirectoryReceiptStatus } from "./directory-receipt-status";
 
 const states = {
   [ApplicationBindingState.Provisioning]: "bindings.provisioning",
@@ -256,7 +257,9 @@ function BindingScope({ workspaceId, lockScope }: { workspaceId?: string; lockSc
           <Table head={[t("bindings.connection"), t("platform.state"), t("bindings.capabilities"), t("platform.action")]}>
             {page.bindings.map((binding) => <tr key={binding.bindingId}>
               <Cell><span>{binding.componentTypeKey}</span><p className="font-mono text-xs">{binding.bindingId}</p></Cell>
-              <Cell><Badge tone={binding.state === ApplicationBindingState.Active ? "positive" : "neutral"}>{t(states[binding.state])}</Badge></Cell>
+              <Cell><Badge tone={binding.state === ApplicationBindingState.Active ? "positive" : "neutral"}>{t(states[binding.state])}</Badge>
+                {binding.canDisable && binding.hasNativePage === true && binding.state === ApplicationBindingState.Active
+                  ? <DirectoryReceiptStatus bindingId={binding.bindingId} /> : null}</Cell>
               <Cell>{binding.capabilityCategories.map((item) => `${item.category}@${item.version}`).join(" · ")}</Cell>
               <Cell>{binding.hasNativePage === true && binding.state === ApplicationBindingState.Active
                 ? <Button disabled={!!intent || busy} onClick={() => setNativePage(binding.bindingId)}>{t("bindings.openNative")}</Button> : null}

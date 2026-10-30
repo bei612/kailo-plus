@@ -37,6 +37,11 @@
  *                       when the request carried one and confirmed is true
  *   Kailo -> component  presentation carries features:[...] the host draws/handles;
  *                       <html data-kailo-host-features> mirrors it once known
+ * DD-164(4) share (design 07 §4.7.2), same version 1:
+ *   component -> Kailo  {source:"kailo-embed", version:1, type:"share", intentId:"<uuid>"}
+ *                       the component service first registered a ComponentShareIntent with
+ *                       Kailo; Kailo opens its own share dialog. intentId is no credential and
+ *                       carries no object name, identity or user data.
  * Text in page/toast/confirm is display text for this user's own browser
  * only: Kailo renders it as plain text, never stores, logs or sends it on.
  */
@@ -53,6 +58,7 @@
   var PREFERENCE_KEY = /^[a-z][a-zA-Z0-9]*(\.[a-z][a-zA-Z0-9]*){1,3}$/;
   var PREFERENCE_OPTION = /^[A-Za-z0-9._-]{1,32}$/;
   var MAX_PREFERENCES = 16;
+  var SHARE_INTENT = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   // DD-157 (07 §4.8.7): closed vocabularies and bounds, mirrored by the host.
   var FEATURES = ["page", "toast", "confirm", "shortcuts"];
   // What a host may announce: the page features plus the file selection channel and the
@@ -471,6 +477,14 @@
      * re-authenticate at the top level. Never show a login form in the frame.
      */
     requestTopLevelSignIn: function () { return post("auth-required"); },
+    /**
+     * DD-164(4): open Kailo's share dialog for the share intent the component service
+     * obtained from Kailo. Returns false at top level or for anything but a UUID.
+     */
+    requestShare: function (intentId) {
+      if (typeof intentId !== "string" || !SHARE_INTENT.test(intentId)) return false;
+      return post("share", { intentId: intentId.toLowerCase() });
+    },
     /** DD-138: values of the component's declared Kailo settings items that Kailo supplied. */
     getPreferences: function () { return copy(preferences); },
     /** listener(values, changedKeys); returns unsubscribe. */

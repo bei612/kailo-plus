@@ -131,6 +131,22 @@ from Kailo at run time.
    ignored. The runtime also emits `kailo:preferences`
    (`detail: {values, changed}`).
 
+7. **Share (DD-164(4)).** Sharing a folder or knowledge base is a Kailo
+   permission, not a component one. In Kailo mode the page's own share dialog,
+   public links and "share to organization" are gone; the "Share" command asks
+   the component's own server to register a share intent with Kailo
+   (`POST /service/v1/component-directory/bindings/{bindingId}/share-intents`,
+   only when the user may share the object natively) and hands the returned
+   `intentId` to Kailo:
+
+   ```js
+   if (!embed.requestShare(intentId)) showUnavailableNotice();
+   ```
+
+   Kailo opens its share dialog; the grants reach the component through the
+   member directory (schema 2 `shares[]`). `requestShare` returns `false` at
+   top level or for anything but a UUID.
+
 ## Wire protocol v1
 
 | Direction | Message |
@@ -139,6 +155,7 @@ from Kailo at run time.
 | component → Kailo | `{source: "kailo-embed", version: 1, type: "auth-required"}` |
 | Kailo → component | `{source: "kailo-host", version: 1, type: "presentation", theme, locale}` on `ready` and on every change |
 | Kailo → component | `{source: "kailo-host", version: 1, type: "preferences", values}` on `ready` (after `presentation`) and on every change of a declared preference (DD-138) |
+| component → Kailo | `{source: "kailo-embed", version: 1, type: "share", intentId}` — `KailoEmbed.requestShare()`; opens Kailo's share dialog for a ComponentShareIntent (DD-164(4)) |
 
 DD-157 page shell (07 §4.8.7, `.design/20` §13), same version 1 — opt in per build with
 `<meta name="kailo-embed-features" content="page toast confirm shortcuts">` before the runtime:

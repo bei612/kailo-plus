@@ -106,6 +106,22 @@ describe("kailo-embed.js", () => {
     expect(posted).toHaveBeenLastCalledWith({ source: "kailo-embed", version: 1, type: "auth-required" }, KAILO);
   });
 
+  it("posts a share request only for a UUID intent and only inside the Kailo frame (DD-164(4))", () => {
+    expect(load().requestShare("0b7c2f0e-3a4b-4c5d-8e9f-0123456789ab")).toBe(false);
+    delete window.KailoEmbed;
+    host = document.createElement("iframe");
+    document.body.append(host);
+    const posted = vi.spyOn(host.contentWindow!, "postMessage");
+    const embed = load({ framed: true });
+    posted.mockClear();
+    for (const bad of ["", "not-a-uuid", "0b7c2f0e-3a4b-4c5d-8e9f-0123456789ab/../x", 42 as unknown as string])
+      expect(embed.requestShare(bad)).toBe(false);
+    expect(posted).not.toHaveBeenCalled();
+    expect(embed.requestShare("0B7C2F0E-3A4B-4C5D-8E9F-0123456789AB")).toBe(true);
+    expect(posted).toHaveBeenCalledOnce();
+    expect(posted).toHaveBeenCalledWith({ source: "kailo-embed", version: 1, type: "share", intentId: "0b7c2f0e-3a4b-4c5d-8e9f-0123456789ab" }, KAILO);
+  });
+
   it("lets the identity locale seed only a top-level visit without a Kailo value", () => {
     expect(load().useIdentityLocale("en")).toBe(true);
     expect(window.KailoEmbed!.getState().locale).toBe("en");

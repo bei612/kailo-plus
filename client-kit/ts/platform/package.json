@@ -175,6 +175,7 @@
     "./react/use-channel-navigation-shortcuts": "./src/react/use-channel-navigation-shortcuts.ts",
     "./react/use-search-shortcuts": "./src/react/use-search-shortcuts.ts",
     "./react/native-application-page": "./src/react/native-application-page.tsx",
+    "./react/native-application-open": "./src/react/native-application-open.tsx",
     "./react/protocol-document-bridge": "./src/react/protocol-document-bridge.tsx",
     "./theme/prominent-active-tab": "./src/theme/prominent-active-tab.ts",
     "./react/prominent-active-tab-setting": "./src/react/prominent-active-tab-setting.tsx",

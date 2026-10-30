@@ -13,6 +13,7 @@ import { nativeDeepLinkUrl } from "./native-deep-link";
 import { preferenceValues } from "../component-preferences";
 import { useStoredComponentPreferences } from "./component-preferences";
 import { Button, ReadFailure } from "./ui";
+import { ComponentShareDialog } from "./component-share-dialog";
 
 /** How long a page may take to complete the wire v1 handshake before it is treated as a DD-127 page. */
 export const NATIVE_HANDSHAKE_GRACE_MS = 8000;
@@ -121,6 +122,7 @@ export function NativeApplicationPage({ bindingId, onBack, title, path }: { bind
   const embedPage = header && header.key === frameKey ? header.page : null;
   const headerArrived = header !== null && header.key === frameKey;
   const [confirm, setConfirm] = useState<EmbedConfirm | null>(null);
+  const [shareIntent, setShareIntent] = useState<{ key: string; intentId: string } | null>(null);
   const confirming = useRef<EmbedConfirm | null>(null);
   const toasts = useRef<{ at: number; text: string }[]>([]);
   const origin = page?.origin ?? null;
@@ -164,6 +166,9 @@ export function NativeApplicationPage({ bindingId, onBack, title, path }: { bind
         setConfirm(message.confirm);
       } else if (message.type === "shortcut") {
         replayShortcut(message.shortcut, isMacPlatform());
+      } else if (message.type === "share") {
+        // DD-164(4): Kailo's own share dialog; the intent is read back under this session.
+        setShareIntent({ key: frameKey, intentId: message.intentId });
       }
     };
     window.addEventListener("message", receive);
@@ -276,5 +281,7 @@ export function NativeApplicationPage({ bindingId, onBack, title, path }: { bind
       : loading ? <NativePageFrame><div role="status" aria-label={t("platform.loading")} data-testid="native-page-loading"><NativePageSkeleton /></div></NativePageFrame>
       : <div className="px-5 py-4"><ReadFailure error={error} onRetry={() => { void reload(true); }} /></div>}
     <NativeConfirmDialog confirm={confirm} onDone={finishConfirm} />
+    {shareIntent && shareIntent.key === frameKey
+      ? <ComponentShareDialog key={shareIntent.intentId} intentId={shareIntent.intentId} onClose={() => setShareIntent(null)} /> : null}
   </section>;
 }
