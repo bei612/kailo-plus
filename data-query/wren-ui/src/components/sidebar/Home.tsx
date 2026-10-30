@@ -11,6 +11,7 @@ import SidebarTree, {
 } from './SidebarTree';
 import ThreadTree, { ThreadData } from './home/ThreadTree';
 import useKailoText from '@/utils/kailoI18n';
+import DataSourcePicker from '@/components/pages/dataSources/DataSourcePicker';
 
 export interface Props {
   data: {
@@ -106,6 +107,10 @@ export default function Home(props: Props) {
 
   return (
     <>
+      {/* DD-169(6)②: asking, threads and the dashboard follow this choice. */}
+      <div className="px-4 pt-4">
+        <DataSourcePicker />
+      </div>
       <DashboardLink
         className={clsx({
           'adm-treeNode--selected': router.pathname === Path.HomeDashboard,

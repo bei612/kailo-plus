@@ -11,6 +11,7 @@ import { OnboardingStatus } from '@/apollo/client/graphql/__types__';
 import { useGetSettingsQuery } from '@/apollo/client/graphql/settings.generated';
 import { Path } from '@/utils/enum';
 import useKailoText from '@/utils/kailoI18n';
+import DataSourcePicker from '@/components/pages/dataSources/DataSourcePicker';
 
 // DD-138(6) (`07` §4.8.5): the project settings admin surface — the answer
 // language and the project reset. Nothing else: no product shell, no links.
@@ -50,6 +51,8 @@ function Project() {
   if (!settings) return <PageLoading visible />;
   return (
     <div className="kailo-admin-surface__form">
+      {/* DD-169(6)①: the settings and the reset act on this data source. */}
+      <DataSourcePicker hint />
       <ProjectSettings
         data={{ language: settings.language }}
         onReset={() => setReset(true)}

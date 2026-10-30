@@ -314,7 +314,10 @@ export class WrenAIAdaptor implements IWrenAIAdaptor {
         {
           query: input.query,
           native_task_id: input.queryId,
-          ...(native ? { project_id: String(native.projectId) } : {}),
+          // DD-169(2)③: retrieval is always limited to one project.
+          ...(native || input.projectId
+            ? { project_id: String(native?.projectId ?? input.projectId) }
+            : {}),
           id: input.deployId,
           histories: this.transformHistoryInput(input.histories),
           configurations: input.configurations,
@@ -430,7 +433,7 @@ export class WrenAIAdaptor implements IWrenAIAdaptor {
   }
 
   public async deploy(deployData: DeployData): Promise<WrenAIDeployResponse> {
-    const { manifest, hash, executionId } = deployData;
+    const { manifest, hash, executionId, projectId } = deployData;
     try {
       const res = await axios.post(
         `${this.wrenAIBaseEndpoint}/v1/semantics-preparations`,
@@ -438,6 +441,9 @@ export class WrenAIAdaptor implements IWrenAIAdaptor {
           mdl: JSON.stringify(manifest),
           id: hash,
           execution_id: executionId,
+          // DD-169(2)③ / SF-WRN-12: without project_id the AI Service clears
+          // every project's documents before indexing this one.
+          project_id: String(projectId),
         },
       );
       const deployId = res.data.id;

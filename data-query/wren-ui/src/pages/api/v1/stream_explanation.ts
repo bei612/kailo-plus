@@ -22,6 +22,7 @@ import {
   requestIsNativeService,
   requestKailoUser,
 } from '@server/services/kailoUserService';
+import { withDataSource } from '@server/utils/dataSourceScope';
 
 const explanationScope = (history: ApiHistory) =>
   canonical({
@@ -33,10 +34,7 @@ const explanationScope = (history: ApiHistory) =>
     responsePayload: history.responsePayload,
   });
 
-export default async function handler(
-  req: NextApiRequest,
-  res: NextApiResponse,
-) {
+async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (isGovernedQueryMode()) {
     res.setHeader('Cache-Control', 'private, no-store');
     try {
@@ -169,3 +167,6 @@ export default async function handler(
   };
   await streamStandaloneAskingTask(req, res, authorize);
 }
+
+// DD-169(2)①: the request names its data source (header or query parameter).
+export default withDataSource(handler);

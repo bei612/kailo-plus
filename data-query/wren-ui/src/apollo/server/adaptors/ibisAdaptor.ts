@@ -19,6 +19,7 @@ import {
   toMultipleIbisConnectionInfos,
 } from '../dataSource';
 import { DialectSQL, WrenSQL } from '../models/adaptor';
+import { connectionCredentials } from '../services/connectionCredentials';
 
 export type { WrenSQL };
 
@@ -298,7 +299,10 @@ export class IbisAdaptor implements IIbisAdaptor {
     options: IbisQueryOptions,
   ): Promise<IbisQueryResponse> {
     const { dataSource, mdl } = options;
-    const connectionInfo = this.updateConnectionInfo(options.connectionInfo);
+    const connectionInfo = await this.prepareConnectionInfo(
+      dataSource,
+      options.connectionInfo,
+    );
     const ibisConnectionInfo = toIbisConnectionInfo(dataSource, connectionInfo);
     const queryString = this.buildQueryString(options);
     const body = {
@@ -342,7 +346,10 @@ export class IbisAdaptor implements IIbisAdaptor {
     options: IbisQueryOptions,
   ): Promise<DryRunResponse> {
     const { dataSource, mdl } = options;
-    const connectionInfo = this.updateConnectionInfo(options.connectionInfo);
+    const connectionInfo = await this.prepareConnectionInfo(
+      dataSource,
+      options.connectionInfo,
+    );
     const ibisConnectionInfo = toIbisConnectionInfo(dataSource, connectionInfo);
     const body = {
       sql: query,
@@ -388,7 +395,10 @@ export class IbisAdaptor implements IIbisAdaptor {
         return this.transformDescriptionToProperties(res.data);
       };
 
-      connectionInfo = this.updateConnectionInfo(connectionInfo);
+      connectionInfo = await this.prepareConnectionInfo(
+        dataSource,
+        connectionInfo,
+      );
 
       // If the dataSource supports multiple connection info, we need to get tables from each connection info
       const multipleIbisConnectionInfos = toMultipleIbisConnectionInfos(
@@ -418,7 +428,10 @@ export class IbisAdaptor implements IIbisAdaptor {
     dataSource: DataSourceName,
     connectionInfo: WREN_AI_CONNECTION_INFO,
   ): Promise<RecommendConstraint[]> {
-    connectionInfo = this.updateConnectionInfo(connectionInfo);
+    connectionInfo = await this.prepareConnectionInfo(
+      dataSource,
+      connectionInfo,
+    );
     const ibisConnectionInfo = toIbisConnectionInfo(dataSource, connectionInfo);
     const body = {
       connectionInfo: ibisConnectionInfo,
@@ -443,7 +456,10 @@ export class IbisAdaptor implements IIbisAdaptor {
     mdl: Manifest,
     parameters: Record<string, any>,
   ): Promise<ValidationResponse> {
-    connectionInfo = this.updateConnectionInfo(connectionInfo);
+    connectionInfo = await this.prepareConnectionInfo(
+      dataSource,
+      connectionInfo,
+    );
     const ibisConnectionInfo = toIbisConnectionInfo(dataSource, connectionInfo);
     const body = {
       connectionInfo: ibisConnectionInfo,
@@ -475,7 +491,10 @@ export class IbisAdaptor implements IIbisAdaptor {
   ): Promise<WrenSQL> {
     const { dataSource, mdl, catalog, schema } = options;
     let connectionInfo = options.connectionInfo;
-    connectionInfo = this.updateConnectionInfo(connectionInfo);
+    connectionInfo = await this.prepareConnectionInfo(
+      dataSource,
+      connectionInfo,
+    );
     const headers = {
       'X-User-CATALOG': catalog,
       'X-User-SCHEMA': schema,
@@ -512,7 +531,10 @@ export class IbisAdaptor implements IIbisAdaptor {
     dataSource: DataSourceName,
     connectionInfo: WREN_AI_CONNECTION_INFO,
   ): Promise<string> {
-    connectionInfo = this.updateConnectionInfo(connectionInfo);
+    connectionInfo = await this.prepareConnectionInfo(
+      dataSource,
+      connectionInfo,
+    );
     const ibisConnectionInfo = toIbisConnectionInfo(dataSource, connectionInfo);
     const body = {
       connectionInfo: ibisConnectionInfo,
@@ -528,6 +550,17 @@ export class IbisAdaptor implements IIbisAdaptor {
       logger.debug(`Get version error: ${e.response?.data || e.message}`);
       this.throwError(e, 'Error getting version from ibis server');
     }
+  }
+
+  // DD-169(5): a connection whose credentials Kailo holds is completed here,
+  // in memory, right before the Ibis call; the stored row keeps only the id.
+  private async prepareConnectionInfo(
+    dataSource: DataSourceName,
+    connectionInfo: any,
+  ) {
+    return this.updateConnectionInfo(
+      await connectionCredentials().resolve(dataSource, connectionInfo),
+    );
   }
 
   private updateConnectionInfo(connectionInfo: any) {

@@ -8,6 +8,8 @@ export enum Path {
   AdminDataSource = '/kailo-admin/data-source',
   AdminModeling = '/kailo-admin/modeling',
   AdminProject = '/kailo-admin/project',
+  // DD-169(6)②: the members' read-only data source list.
+  DataSources = '/data-sources',
   Knowledge = '/knowledge',
   KnowledgeQuestionSQLPairs = '/knowledge/question-sql-pairs',
   KnowledgeInstructions = '/knowledge/instructions',

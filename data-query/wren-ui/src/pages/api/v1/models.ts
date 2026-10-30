@@ -20,14 +20,12 @@ import {
   authorizeNativeScope,
   nativePreviewScope,
 } from '@server/services/nativeHumanQuery';
+import { withDataSource } from '@server/utils/dataSourceScope';
 
 const logger = getLogger('API_MODELS');
 logger.level = 'debug';
 
-export default async function handler(
-  req: NextApiRequest,
-  res: NextApiResponse,
-) {
+async function handler(req: NextApiRequest, res: NextApiResponse) {
   const startTime = Date.now();
   const configured = isGovernedQueryMode();
   const { projectService, deployService } = components;
@@ -195,3 +193,6 @@ export default async function handler(
     });
   }
 }
+
+// DD-169(2)①: the request names its data source (header or query parameter).
+export default withDataSource(handler);

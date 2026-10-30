@@ -35,6 +35,13 @@ import DataSourceSchemaDetector, {
   SchemaChangeType,
 } from '@server/managers/dataSourceSchemaDetector';
 import { encryptConnectionInfo } from '../dataSource';
+import * as Errors from '../utils/error';
+import {
+  connectionCredentials,
+  splitCredentials,
+} from '../services/connectionCredentials';
+import { kailoActor } from '../services/kailoUserService';
+import { runInDataSource } from '../utils/dataSourceScope';
 import { TelemetryEvent } from '../telemetry/telemetry';
 import { DeployStatusEnum } from '../repositories/deployLogRepository';
 import { nativeWriteUnknown } from '../utils/error';
@@ -45,6 +52,21 @@ import { governedMetadataDelivery } from '../services/nativeGovernedMetadata';
 
 const logger = getLogger('DataSourceResolver');
 logger.level = 'debug';
+
+// DD-169(2): data sources per instance (each is one native project).
+export const MAX_DATA_SOURCES = 50;
+// DD-169(2)⑤ / DD-129(3): the original sample datasets are not offered.
+const SAMPLE_DATASETS_OFFERED = false;
+
+/** A data source name: 1–60 characters, no control characters. */
+export function validDisplayName(value: unknown): value is string {
+  if (typeof value !== 'string') return false;
+  const name = value.trim();
+  // eslint-disable-next-line no-control-regex
+  return (
+    name.length >= 1 && name.length <= 60 && !/[\u0000-\u001f\u007f]/.test(name)
+  );
+}
 
 export enum OnboardingStatusEnum {
   NOT_STARTED = 'NOT_STARTED',
@@ -157,6 +179,16 @@ export class ProjectResolver {
       // no project found
       return true;
     }
+    await this.deleteDataSourceProject(project, ctx);
+    return true;
+  }
+
+  /**
+   * Deletes one data source: its project with models, views, threads,
+   * dashboards and deployments, its AI documents and (DD-169(5)) the
+   * credentials Kailo holds for it. Other data sources are untouched.
+   */
+  public async deleteDataSourceProject(project: Project, ctx: IContext) {
     const eventName = TelemetryEvent.SETTING_RESET_PROJECT;
     try {
       const id = project.id;
@@ -175,6 +207,15 @@ export class ProjectResolver {
         throw error;
       }
       await ctx.wrenAIAdaptor.delete(id);
+      // The row is gone; the credential reference is retired last. A failure
+      // here leaves an unreferenced secret, never a connection without one.
+      await connectionCredentials()
+        .retire(project.connectionInfo as any, await kailoActor(ctx.kailoUser))
+        .catch((error) =>
+          logger.error(
+            `Data source ${id} deleted; credential retirement failed: ${error?.code || error?.message}`,
+          ),
+        );
 
       // telemetry
       ctx.telemetry.sendEvent(eventName, {
@@ -190,8 +231,6 @@ export class ProjectResolver {
       );
       throw err;
     }
-
-    return true;
   }
 
   public async startSampleDataset(
@@ -199,6 +238,11 @@ export class ProjectResolver {
     _arg: { data: SampleDatasetData },
     ctx: IContext,
   ) {
+    // DD-169(2)⑤ / DD-129(3): the original sample datasets are not offered —
+    // their tables are fetched from third-party addresses and DuckDB state is
+    // engine-global. (The original flow below is kept for the upstream diff.)
+    if (!SAMPLE_DATASETS_OFFERED)
+      throw Errors.create(Errors.GeneralErrorCodes.KAILO_FEATURE_UNAVAILABLE);
     const { name } = _arg.data;
     const dataset = sampleDatasets[snakeCase(name)];
     if (!dataset) {
@@ -307,20 +351,26 @@ export class ProjectResolver {
     ctx: IContext,
   ) {
     const { type, properties } = args.data;
-    // Currently only can create one project
-    await this.resetCurrentProject(_root, args, ctx);
+    // DD-169(2)②: a new data source is one more project; the existing ones
+    // stay (the original reset this instance's only project here).
+    await this.assertDataSourceCreatable(type, properties, ctx);
 
     const { displayName, ...connectionInfo } = properties;
     const project = await ctx.projectService.createProject({
-      displayName,
+      displayName: displayName.trim(),
       type,
       connectionInfo,
+      actor: await kailoActor(ctx.kailoUser),
     } as ProjectData);
     logger.debug(`Project created.`);
 
     // init dashboard
     logger.debug('Dashboard init...');
-    await ctx.dashboardService.initDashboard();
+    // DD-169(2)①: the new data source's dashboard, whatever this request's
+    // current selection is.
+    await runInDataSource(project.id, () =>
+      ctx.dashboardService.initDashboard(),
+    );
     logger.debug('Dashboard created.');
 
     const eventName = TelemetryEvent.CONNECTION_SAVE_DATA_SOURCE;
@@ -356,6 +406,9 @@ export class ProjectResolver {
         JSON.stringify(err, null, 2),
       );
       await ctx.projectRepository.deleteOne(project.id);
+      await connectionCredentials()
+        .retire(project.connectionInfo as any, await kailoActor(ctx.kailoUser))
+        .catch(() => undefined);
       ctx.telemetry.sendEvent(
         eventName,
         { eventProperties, error: err.message },
@@ -366,6 +419,7 @@ export class ProjectResolver {
     }
 
     return {
+      id: project.id,
       type: project.type,
       properties: {
         displayName: project.displayName,
@@ -374,53 +428,139 @@ export class ProjectResolver {
     };
   }
 
+  /** DD-169(2)⑤⑥: the instance-level rules for one more data source. */
+  public async assertDataSourceCreatable(
+    type: DataSourceName,
+    properties: DataSourceProperties,
+    ctx: IContext,
+  ) {
+    if (isGovernedQueryMode())
+      throw Errors.create(Errors.GeneralErrorCodes.GOVERNED_SOURCE_FIXED);
+    if (!validDisplayName(properties?.displayName) || !(type in DataSourceName))
+      throw Errors.create(Errors.GeneralErrorCodes.DATA_SOURCE_INVALID);
+    const projects = await ctx.projectRepository.findAll();
+    if (projects.length >= MAX_DATA_SOURCES)
+      throw Errors.create(Errors.GeneralErrorCodes.DATA_SOURCE_LIMIT_REACHED);
+    if (
+      type === DataSourceName.DUCKDB &&
+      projects.some((project) => project.type === DataSourceName.DUCKDB)
+    )
+      throw Errors.create(Errors.GeneralErrorCodes.DUCKDB_SINGLE_SOURCE);
+  }
+
   public async updateDataSource(
     _root: any,
     args: { data: DataSource },
     ctx: IContext,
   ) {
-    const { properties } = args.data;
-    const { displayName, ...connectionInfo } = properties;
     const project = await ctx.projectService.getCurrentProject();
-    const dataSourceType = project.type;
+    return this.updateDataSourceConnection(project, args.data.properties, ctx);
+  }
 
-    // only new connection info needed to encrypt
-    const toUpdateConnectionInfo = encryptConnectionInfo(
-      dataSourceType,
-      connectionInfo as any,
-    );
+  /**
+   * DD-169(6): edits one data source's name and connection. Credential fields
+   * left empty keep the stored credentials; the merged connection is tested
+   * before anything is stored; new credentials replace the old reference,
+   * which is retired only after the row points at the new one.
+   */
+  public async updateDataSourceConnection(
+    project: Project,
+    properties: DataSourceProperties,
+    ctx: IContext,
+  ) {
+    if (isGovernedQueryMode())
+      throw Errors.create(Errors.GeneralErrorCodes.GOVERNED_SOURCE_FIXED);
+    const { displayName, ...input } = properties || ({} as any);
+    if (!validDisplayName(displayName))
+      throw Errors.create(Errors.GeneralErrorCodes.DATA_SOURCE_INVALID);
+    const dataSourceType = project.type;
+    const credentials = connectionCredentials();
+    const actor = await kailoActor(ctx.kailoUser);
 
     if (dataSourceType === DataSourceName.DUCKDB) {
       // prepare duckdb environment in wren-engine
       const { initSql, extensions, configurations } =
-        toUpdateConnectionInfo as DUCKDB_CONNECTION_INFO;
+        input as DUCKDB_CONNECTION_INFO;
       await this.buildDuckDbEnvironment(ctx, {
         initSql,
         extensions,
         configurations,
       });
-    } else {
-      const updatedProject = {
-        ...project,
-        displayName,
-        connectionInfo: {
-          ...project.connectionInfo,
-          ...toUpdateConnectionInfo,
-        },
-      } as Project;
-
-      await ctx.projectService.getProjectDataSourceTables(updatedProject);
-      logger.debug(`Data source tables fetched`);
+      const updatedProject = await ctx.projectRepository.updateOne(project.id, {
+        displayName: displayName.trim(),
+        connectionInfo: { ...project.connectionInfo, ...input },
+      });
+      return this.dataSourceOutput(updatedProject, ctx);
     }
-    const updatedProject = await ctx.projectRepository.updateOne(project.id, {
-      displayName,
-      connectionInfo: { ...project.connectionInfo, ...toUpdateConnectionInfo },
-    });
+
+    const current = await credentials.plaintext(
+      dataSourceType,
+      project.connectionInfo as any,
+    );
+    const { credentials: given } = splitCredentials(dataSourceType, input);
+    const merged = { ...current, ...input, ...given };
+    for (const [key, value] of Object.entries(input))
+      if ((value === '' || value === null) && key in current && !(key in given))
+        merged[key] = current[key];
+    // test the merged connection before storing anything
+    await ctx.projectService.getProjectDataSourceTables({
+      ...project,
+      connectionInfo: encryptConnectionInfo(dataSourceType, merged as any),
+    } as Project);
+    logger.debug(`Data source tables fetched`);
+
+    let connectionInfo: Record<string, any>;
+    let replaced = false;
+    if (Object.keys(given).length || !credentials.custody) {
+      ({ stored: connectionInfo } = await credentials.store(
+        dataSourceType,
+        merged,
+        actor,
+      ));
+      replaced = true;
+    } else {
+      // only general fields changed: keep the stored credentials as they are
+      const { general } = splitCredentials(dataSourceType, merged);
+      const keep = Object.fromEntries(
+        Object.entries(project.connectionInfo).filter(
+          ([key]) => !(key in general),
+        ),
+      );
+      connectionInfo = { ...keep, ...general };
+    }
+    let updatedProject: Project;
+    try {
+      updatedProject = await ctx.projectRepository.updateOne(project.id, {
+        displayName: displayName.trim(),
+        connectionInfo: connectionInfo as any,
+      });
+    } catch (error) {
+      if (replaced && connectionInfo.kailoSecretId)
+        await credentials.retire(connectionInfo, actor).catch(() => undefined);
+      throw error;
+    }
+    if (
+      replaced &&
+      project.connectionInfo?.['kailoSecretId'] &&
+      project.connectionInfo['kailoSecretId'] !== connectionInfo.kailoSecretId
+    )
+      await credentials
+        .retire(project.connectionInfo as any, actor)
+        .catch((error) =>
+          logger.error(
+            `Data source ${project.id} updated; old credential retirement failed: ${error?.code || error?.message}`,
+          ),
+        );
+    return this.dataSourceOutput(updatedProject, ctx);
+  }
+
+  public dataSourceOutput(project: Project, ctx: IContext) {
     return {
-      type: updatedProject.type,
+      id: project.id,
+      type: project.type,
       properties: {
-        displayName: updatedProject.displayName,
-        ...ctx.projectService.getGeneralConnectionInfo(updatedProject),
+        displayName: project.displayName,
+        ...ctx.projectService.getGeneralConnectionInfo(project),
       },
     };
   }

@@ -26,6 +26,7 @@ import {
 import { getLogger } from '@server/utils';
 import { governedRestAsk } from '@server/services/nativeRestAsk';
 import { isGovernedQueryMode } from '@server/services/nativeQueryMode';
+import { withDataSource } from '@server/utils/dataSourceScope';
 
 const logger = getLogger('API_ASK');
 logger.level = 'debug';
@@ -45,10 +46,7 @@ interface AskRequest {
   threadId?: string;
 }
 
-export default async function handler(
-  req: NextApiRequest,
-  res: NextApiResponse,
-) {
+async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (isGovernedQueryMode()) {
     await governedRestAsk(req, res, false);
     return;
@@ -90,6 +88,7 @@ export default async function handler(
 
     // Step 1: Generate SQL
     const askTask = await wrenAIAdaptor.ask({
+      projectId: project.id,
       query: question,
       deployId: lastDeploy.hash,
       histories: transformHistoryInput(histories) as any,
@@ -372,3 +371,6 @@ export default async function handler(
     });
   }
 }
+
+// DD-169(2)①: the request names its data source (header or query parameter).
+export default withDataSource(handler);

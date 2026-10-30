@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { withDataSourceParam } from '@/utils/dataSourceSelection';
 
 type TextBasedAnswerStreamTaskReturn = [
   (responseId: number, queryId: string) => void,
@@ -59,7 +60,9 @@ export default function useTextBasedAnswerStreamTask() {
       let eventSource: EventSource;
       try {
         eventSource = new EventSource(
-          `/api/ask_task/streaming_answer?responseId=${responseId}&queryId=${encodeURIComponent(queryId)}`,
+          withDataSourceParam(
+            `/api/ask_task/streaming_answer?responseId=${responseId}&queryId=${encodeURIComponent(queryId)}`,
+          ),
         );
       } catch (error) {
         console.error(error);

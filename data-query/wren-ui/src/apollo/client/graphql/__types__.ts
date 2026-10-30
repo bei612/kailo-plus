@@ -325,14 +325,55 @@ export type DashboardSchedule = {
 
 export type DataSource = {
   __typename?: 'DataSource';
+  id?: Maybe<Scalars['Int']>;
   properties: Scalars['JSON'];
   sampleDataset?: Maybe<SampleDatasetName>;
+  type: DataSourceName;
+};
+
+export enum DataSourceCredentialStorage {
+  KAILO = 'KAILO',
+  LOCAL = 'LOCAL',
+  NONE = 'NONE'
+}
+
+export type DataSourceCredentialMigration = {
+  __typename?: 'DataSourceCredentialMigration';
+  migrated: Scalars['Int'];
+  pending: Scalars['Int'];
+};
+
+export type DataSourceDetail = {
+  __typename?: 'DataSourceDetail';
+  credentialFields: Array<Scalars['String']>;
+  credentialStorage: DataSourceCredentialStorage;
+  displayName: Scalars['String'];
+  id: Scalars['Int'];
+  lastDeployedAt?: Maybe<Scalars['String']>;
+  modelCount: Scalars['Int'];
+  properties: Scalars['JSON'];
+  status: DataSourceStatus;
   type: DataSourceName;
 };
 
 export type DataSourceInput = {
   properties: Scalars['JSON'];
   type: DataSourceName;
+};
+
+export type DataSourceList = {
+  __typename?: 'DataSourceList';
+  defaultId?: Maybe<Scalars['Int']>;
+  governed: Scalars['Boolean'];
+  items: Array<DataSourceSummary>;
+  kailoCustody: Scalars['Boolean'];
+  total: Scalars['Int'];
+};
+
+export type DataSourceListFilter = {
+  keyword?: InputMaybe<Scalars['String']>;
+  status?: InputMaybe<DataSourceStatus>;
+  type?: InputMaybe<DataSourceName>;
 };
 
 export enum DataSourceName {
@@ -349,6 +390,29 @@ export enum DataSourceName {
   SNOWFLAKE = 'SNOWFLAKE',
   TRINO = 'TRINO'
 }
+
+export enum DataSourceStatus {
+  NO_MODELS = 'NO_MODELS',
+  READY = 'READY'
+}
+
+export type DataSourceSummary = {
+  __typename?: 'DataSourceSummary';
+  credentialStorage?: Maybe<DataSourceCredentialStorage>;
+  displayName: Scalars['String'];
+  id: Scalars['Int'];
+  modelCount: Scalars['Int'];
+  status: DataSourceStatus;
+  type: DataSourceName;
+};
+
+export type DataSourceTestResult = {
+  __typename?: 'DataSourceTestResult';
+  deferred: Scalars['Boolean'];
+  error?: Maybe<Scalars['String']>;
+  ok: Scalars['Boolean'];
+  tableCount?: Maybe<Scalars['Int']>;
+};
 
 export enum DatabricksConnectionType {
   service_principal = 'service_principal',

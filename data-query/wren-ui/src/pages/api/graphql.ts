@@ -14,6 +14,7 @@ import {
 } from '@/apollo/server/utils/error';
 import { TelemetryEvent } from '@/apollo/server/telemetry/telemetry';
 import { components } from '@/common';
+import { withDataSource } from '@server/utils/dataSourceScope';
 import {
   requestIsNativeService,
   requestKailoUser,
@@ -202,6 +203,10 @@ const handler = async (req: NextApiRequest, res: NextApiResponse) => {
   })(req, res);
 };
 
+// DD-169(2)①: the request's data source selection (header) scopes every
+// resolver's current project; the selection itself authorizes nothing.
+const scopedHandler = withDataSource(handler);
+
 export default cors((req: NextApiRequest, res: NextApiResponse) =>
-  req.method === 'OPTIONS' ? res.status(200).end() : handler(req, res),
+  req.method === 'OPTIONS' ? res.status(200).end() : scopedHandler(req, res),
 );

@@ -43,6 +43,7 @@ import {
   ThreadRecommendQuestionBackgroundTracker,
   DashboardCacheBackgroundTracker,
 } from './apollo/server/backgrounds';
+import { AiProjectScopeBackfill } from './apollo/server/backgrounds/aiProjectScope';
 import { SqlPairService } from './apollo/server/services/sqlPairService';
 import { loadQueryDelivery } from './apollo/server/services/nativeQueryAdmission';
 import { isGovernedQueryMode } from './apollo/server/services/nativeQueryMode';
@@ -218,6 +219,13 @@ export const initComponents = () => {
       wrenAIAdaptor,
       threadRepository,
     });
+  // DD-169(7)②: once after the upgrade, prepare each data source's last
+  // deployment again with its project_id.
+  new AiProjectScopeBackfill(
+    projectRepository,
+    deployLogRepository,
+    wrenAIAdaptor,
+  ).start();
   const dashboardCacheBackgroundTracker = new DashboardCacheBackgroundTracker({
     dashboardRepository,
     dashboardItemRepository,

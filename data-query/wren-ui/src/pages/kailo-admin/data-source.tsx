@@ -1,158 +1,180 @@
-import { useMemo, useState } from 'react';
-import ContainerCard from '@/components/pages/setup/ContainerCard';
-import { SETUP_STEPS } from '@/components/pages/setup/utils';
-import DataSourceSettings from '@/components/settings/DataSourceSettings';
-import PageLoading from '@/components/PageLoading';
-import ErrorCollapse from '@/components/ErrorCollapse';
+import { useEffect, useRef } from 'react';
+import { useRouter } from 'next/router';
+import { useApolloClient } from '@apollo/client';
 import KailoAdminSurface, {
   useKailoAdminPage,
 } from '@/components/kailo/KailoAdminSurface';
-import useOnboardingStatus from '@/hooks/useCheckOnboarding';
-import useSetupConnection from '@/hooks/useSetupConnection';
-import useSetupModels from '@/hooks/useSetupModels';
-import useSetupRelations from '@/hooks/useSetupRelations';
-import { Path } from '@/utils/enum';
-import { useGetSettingsQuery } from '@/apollo/client/graphql/settings.generated';
+import DataSourceList, {
+  DataSourceRow,
+  useDataSourceList,
+} from '@/components/pages/dataSources/DataSourceList';
+import DataSourceWizard from '@/components/pages/dataSources/DataSourceWizard';
+import DataSourceDetail from '@/components/pages/dataSources/DataSourceDetail';
+import useKailoText from '@/utils/kailoI18n';
+import { confirm, notify } from '@/utils/kailoHost';
+import { parseGraphQLError } from '@/utils/errorHandler';
 import {
-  dataSourceSurfaceStep,
-  DataSourceSurfaceStep,
-} from '@/utils/kailoAdminSurface';
+  selectDataSource,
+  selectedDataSource,
+} from '@/utils/dataSourceSelection';
+import { Path } from '@/utils/enum';
+import {
+  useDeleteDataSourceMutation,
+  useMigrateDataSourceCredentialsMutation,
+} from '@/apollo/client/graphql/dataSources.generated';
 
-// DD-138(6) (`07` §4.8.5): the data source connection admin surface. Without
-// a connected and modeled data source it is the first-use flow (connect →
-// choose tables → relationships, the original onboarding steps); afterwards
-// it is the connection settings. Nothing else: no product shell, no links.
+// DD-169(6)① (`07` §4.8.5): the data source admin surface — the list of this
+// instance's data sources, the new data source wizard, details, edit and
+// delete. Only this admin function renders here (no shell, no links to the
+// other admin surfaces). The view lives in the route (`view`, `id`) so back
+// and forward return to the same place. Writes are refused by the server for
+// anyone without `manage`; the page shows nothing it would refuse.
+
 export default function DataSourceSurface() {
   return (
     <KailoAdminSurface path={Path.AdminDataSource}>
-      <DataSourceConnection />
+      <DataSourceManager />
     </KailoAdminSurface>
   );
 }
 
-function DataSourceConnection() {
-  const { onboardingStatus, loading, error, refetch } = useOnboardingStatus();
-  // The flow moves on locally: saving the tables already finishes the
-  // onboarding status, yet the relationships step follows.
-  const [override, setOverride] = useState<DataSourceSurfaceStep | null>(null);
-  const step = override || dataSourceSurfaceStep(onboardingStatus);
+type View =
+  | { kind: 'list' }
+  | { kind: 'new' }
+  | { kind: 'detail'; id: number }
+  | { kind: 'edit'; id: number };
 
-  useKailoAdminPage({ ready: !loading });
+function useView(): [View, (next: View) => void] {
+  const router = useRouter();
+  const view = String(router.query.view || '');
+  const id = Number(router.query.id);
+  const current: View =
+    view === 'new'
+      ? { kind: 'new' }
+      : (view === 'detail' || view === 'edit') && Number.isSafeInteger(id)
+        ? { kind: view, id }
+        : { kind: 'list' };
+  const go = (next: View) => {
+    const query: Record<string, string> = {};
+    for (const [key, value] of Object.entries(router.query))
+      if (key !== 'view' && key !== 'id' && typeof value === 'string')
+        query[key] = value;
+    if (next.kind !== 'list') query.view = next.kind;
+    if (next.kind === 'detail' || next.kind === 'edit')
+      query.id = String(next.id);
+    router.push({ pathname: router.pathname, query }, undefined, {
+      shallow: true,
+    });
+  };
+  return [current, go];
+}
 
-  const toSettings = () => {
-    setOverride('settings');
-    refetch();
+function DataSourceManager() {
+  const t = useKailoText();
+  const client = useApolloClient();
+  const list = useDataSourceList();
+  const [view, go] = useView();
+  const governed = !!list.data?.dataSources.governed;
+
+  // DD-169(7)①: native ciphertext moves into Kailo custody when an
+  // administrator first opens this surface; failures are retried next time.
+  const [migrate] = useMigrateDataSourceCredentialsMutation({
+    onError: () => undefined,
+  });
+  const migrated = useRef(false);
+  useEffect(() => {
+    if (migrated.current) return;
+    migrated.current = true;
+    migrate().then(async (response) => {
+      const result = response?.data?.migrateDataSourceCredentials;
+      if (!result) return;
+      if (result.migrated) {
+        notify.success(t('dataSources.migrated', { count: result.migrated }));
+        await list.refetch();
+      }
+      if (result.pending)
+        notify.warning(
+          t('dataSources.migrationPending', { count: result.pending }),
+        );
+    });
+  }, []);
+
+  const [deleteDataSource] = useDeleteDataSourceMutation();
+
+  const onDelete = async (row: DataSourceRow) => {
+    const confirmed = await confirm({
+      id: `delete-data-source-${row.id}`,
+      tone: 'danger',
+      title: t('deleteNamedTitle', {
+        item: t('dataSources.title'),
+        name: row.displayName,
+      }),
+      description: t('dataSources.deleteDescription'),
+    });
+    if (!confirmed) return;
+    try {
+      await deleteDataSource({ variables: { id: row.id } });
+    } catch (error) {
+      notify.error(t('actionFailed'), parseGraphQLError(error)?.message);
+      return;
+    }
+    if (selectedDataSource() === row.id) selectDataSource(null);
+    await client.resetStore().catch(() => undefined);
+    notify.success(t('dataSources.deleted', { name: row.displayName }));
   };
 
-  if (!step)
-    return error ? (
-      <div className="kailo-admin-surface__form">
-        <ErrorCollapse message={error.message} defaultActive />
-      </div>
-    ) : (
-      <PageLoading visible />
-    );
-  if (step === 'connection')
-    return (
-      <ConnectionStep
-        onDataSourceSaved={() => setOverride('models')}
-        onSampleDatasetStarted={toSettings}
-      />
-    );
-  if (step === 'models')
-    return (
-      <ModelsStep
-        onSaved={() => setOverride('relationships')}
-        onBack={() => setOverride('connection')}
-      />
-    );
-  if (step === 'relationships')
-    return (
-      <RelationshipsStep
-        onFinish={toSettings}
-        onBack={() => setOverride('models')}
-      />
-    );
-  return <ConnectionSettings />;
-}
-
-function ConnectionStep(props: {
-  onDataSourceSaved: () => void;
-  onSampleDatasetStarted: () => void;
-}) {
-  const { connectError, dataSource, onBack, onNext, stepKey, submitting } =
-    useSetupConnection(props);
-  const current = useMemo(() => SETUP_STEPS[stepKey], [stepKey]);
-  return (
-    <ContainerCard step={current.step} maxWidth={current.maxWidth}>
-      <current.component
-        connectError={connectError}
-        dataSource={dataSource}
-        onNext={onNext}
-        onBack={onBack}
-        submitting={submitting}
-      />
-    </ContainerCard>
-  );
-}
-
-function ModelsStep(props: { onSaved: () => void; onBack: () => void }) {
-  const { fetching, stepKey, tables, onNext, onBack, submitting } =
-    useSetupModels(props);
-  const current = useMemo(() => SETUP_STEPS[stepKey], [stepKey]);
-  return (
-    <ContainerCard step={current.step} maxWidth={current.maxWidth}>
-      <current.component
-        fetching={fetching}
-        onBack={onBack}
-        onNext={onNext}
-        submitting={submitting}
-        tables={tables}
-      />
-    </ContainerCard>
-  );
-}
-
-function RelationshipsStep(props: {
-  onFinish: () => void;
-  onBack: () => void;
-}) {
-  const {
-    fetching,
-    stepKey,
-    recommendRelationsResult,
-    onNext,
-    onBack,
-    onSkip,
-    submitting,
-  } = useSetupRelations(props);
-  const current = useMemo(() => SETUP_STEPS[stepKey], [stepKey]);
-  return (
-    <ContainerCard step={current.step} maxWidth={current.maxWidth}>
-      <current.component
-        fetching={fetching}
-        {...recommendRelationsResult}
-        onNext={onNext}
-        onBack={onBack}
-        onSkip={onSkip}
-        submitting={submitting}
-      />
-    </ContainerCard>
-  );
-}
-
-function ConnectionSettings() {
-  const { data, refetch } = useGetSettingsQuery({
-    fetchPolicy: 'cache-and-network',
+  useKailoAdminPage({
+    ready: !list.loading || !!list.data,
+    actions:
+      view.kind === 'list' && !governed
+        ? [
+            {
+              id: 'new-data-source',
+              label: t('dataSources.newDataSource'),
+              variant: 'primary',
+              icon: 'plus',
+            },
+          ]
+        : [],
+    onAction: (id) => id === 'new-data-source' && go({ kind: 'new' }),
   });
-  const dataSource = data?.settings?.dataSource;
+
+  if (view.kind === 'new')
+    return (
+      <div className="kailo-admin-surface__form">
+        <DataSourceWizard
+          onCancel={() => go({ kind: 'list' })}
+          onFinished={async () => {
+            await list.refetch();
+            go({ kind: 'list' });
+          }}
+        />
+      </div>
+    );
+
+  if (view.kind === 'detail' || view.kind === 'edit')
+    return (
+      <div className="kailo-admin-surface__form">
+        <DataSourceDetail
+          id={view.id}
+          editing={view.kind === 'edit'}
+          governed={governed}
+          onEdit={() => go({ kind: 'edit', id: view.id })}
+          onClose={() => go({ kind: 'list' })}
+          onSaved={() => go({ kind: 'detail', id: view.id })}
+        />
+      </div>
+    );
+
   return (
     <div className="kailo-admin-surface__form">
-      <DataSourceSettings
-        type={dataSource?.type}
-        sampleDataset={dataSource?.sampleDataset}
-        properties={dataSource?.properties}
-        refetchSettings={refetch}
+      <DataSourceList
+        list={list}
+        admin
+        onCreate={() => go({ kind: 'new' })}
+        onView={(row) => go({ kind: 'detail', id: row.id })}
+        onEdit={(row) => go({ kind: 'edit', id: row.id })}
+        onDelete={onDelete}
       />
     </div>
   );

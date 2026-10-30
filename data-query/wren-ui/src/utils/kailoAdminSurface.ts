@@ -37,8 +37,9 @@ export const KAILO_ADMIN_SURFACES: readonly KailoAdminSurface[] = [
     access: 'EDITABLE',
     title: { ZH_CN: '数据源连接', EN: 'Data source connection' },
     description: {
-      ZH_CN: '连接用于问答的数据库，选择要建模的数据表并定义表之间的关系。',
-      EN: 'Connect the database used for asking questions, choose the tables to model and define their relationships.',
+      ZH_CN:
+        '管理用于问答的数据源：新建、测试、编辑与删除数据库连接，为新数据源选择数据表并定义关系。',
+      EN: 'Manage the data sources used for asking: create, test, edit and delete database connections, and choose tables and relationships for a new one.',
     },
   },
   {

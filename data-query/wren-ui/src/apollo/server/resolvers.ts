@@ -9,6 +9,7 @@ import { SqlPairResolver } from './resolvers/sqlPairResolver';
 import { InstructionResolver } from './resolvers/instructionResolver';
 import { ApiHistoryResolver } from './resolvers/apiHistoryResolver';
 import { KailoShareResolver } from './resolvers/kailoShareResolver';
+import { DataSourceResolver } from './resolvers/dataSourceResolver';
 import { convertColumnType } from '@server/utils';
 import { DialectSQLScalar } from './scalars';
 import { IContext } from './types';
@@ -197,6 +198,8 @@ const kailoOwner = async (
 
 const projectResolver = new ProjectResolver();
 const modelResolver = new ModelResolver();
+// DD-169: data source management on top of the project resolver.
+const dataSourceResolver = new DataSourceResolver(projectResolver);
 const askingResolver = new AskingResolver();
 const diagramResolver = new DiagramResolver();
 const learningResolver = new LearningResolver();
@@ -227,6 +230,10 @@ const resolvers = {
     },
     kailoShareMembers: kailoShareResolver.members,
     listDataSourceTables: projectResolver.listDataSourceTables,
+    // DD-169(4): the list is for every member (no connection settings); the
+    // detail with connection settings is administration data.
+    dataSources: dataSourceResolver.listDataSources,
+    dataSource: kailoAdminRead(dataSourceResolver.getDataSource),
     autoGenerateRelation: projectResolver.autoGenerateRelation,
     listModels: modelResolver.listModels,
     model: modelResolver.getModel,
@@ -282,6 +289,27 @@ const resolvers = {
     deploy: nativeProjectResolver(modelResolver.deploy, 'manage'),
     saveDataSource: nativeProjectResolver(
       projectResolver.saveDataSource,
+      'manage',
+    ),
+    // DD-169(4)①: administrators only (`manage`).
+    createDataSource: nativeProjectResolver(
+      dataSourceResolver.createDataSource,
+      'manage',
+    ),
+    updateDataSourceConnection: nativeProjectResolver(
+      dataSourceResolver.updateDataSourceConnection,
+      'manage',
+    ),
+    testDataSourceConnection: nativeProjectResolver(
+      dataSourceResolver.testDataSourceConnection,
+      'manage',
+    ),
+    deleteDataSource: nativeProjectResolver(
+      dataSourceResolver.deleteDataSource,
+      'manage',
+    ),
+    migrateDataSourceCredentials: nativeProjectResolver(
+      dataSourceResolver.migrateDataSourceCredentials,
       'manage',
     ),
     startSampleDataset: nativeProjectResolver(

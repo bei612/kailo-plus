@@ -4,6 +4,7 @@ import homeMessages from './i18n/home';
 import modelingMessages from './i18n/modeling';
 import knowledgeMessages from './i18n/knowledge';
 import setupMessages from './i18n/setup';
+import dataSourceMessages from './i18n/dataSources';
 
 // DD-133 §1/§4, DD-157 (20 §13.8): every visible string follows the Kailo
 // locale (zh-CN default, en). The component name is fixed by DD-133
@@ -18,6 +19,7 @@ const shell = {
     navModeling: '建模',
     navKnowledge: '知识',
     navApi: 'API',
+    navDataSources: '数据源',
     settings: '设置',
     threads: '对话',
     newThread: '新建',
@@ -104,6 +106,7 @@ const shell = {
     navModeling: 'Modeling',
     navKnowledge: 'Knowledge',
     navApi: 'API',
+    navDataSources: 'Data sources',
     settings: 'Settings',
     threads: 'Conversations',
     newThread: 'New',
@@ -199,6 +202,7 @@ const messages = {
     ...modelingMessages['zh-CN'],
     ...knowledgeMessages['zh-CN'],
     ...setupMessages['zh-CN'],
+    ...dataSourceMessages['zh-CN'],
   },
   en: {
     ...shell.en,
@@ -206,6 +210,7 @@ const messages = {
     ...modelingMessages.en,
     ...knowledgeMessages.en,
     ...setupMessages.en,
+    ...dataSourceMessages.en,
   },
 };
 

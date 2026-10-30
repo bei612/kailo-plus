@@ -296,7 +296,10 @@ export class KailoDirectoryUnavailable extends Error {
 
 type Fetch = typeof fetch;
 
-async function boundedBody(response: Response, limit: number): Promise<string> {
+export async function boundedBody(
+  response: Response,
+  limit: number,
+): Promise<string> {
   const declared = Number(response.headers.get('content-length'));
   if (Number.isFinite(declared) && declared > limit)
     throw new KailoDirectoryUnavailable('response too large');

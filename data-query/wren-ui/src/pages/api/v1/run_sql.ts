@@ -22,6 +22,7 @@ import {
   nativePreviewScope,
 } from '@server/services/nativeHumanQuery';
 import { queryReceiptState } from '@/utils/queryReceipt';
+import { withDataSource } from '@server/utils/dataSourceScope';
 
 const logger = getLogger('API_RUN_SQL');
 logger.level = 'debug';
@@ -47,10 +48,7 @@ interface RunSqlRequest {
   limit?: number;
 }
 
-export default async function handler(
-  req: NextApiRequest,
-  res: NextApiResponse,
-) {
+async function handler(req: NextApiRequest, res: NextApiResponse) {
   // The original REST route is also a native query consumer. A bound instance
   // must not bypass the same HUMAN admission/history/disclosure used by the
   // original SQL preview, nor mint another key after a lost acknowledgement.
@@ -225,3 +223,6 @@ export default async function handler(
     });
   }
 }
+
+// DD-169(2)①: the request names its data source (header or query parameter).
+export default withDataSource(handler);

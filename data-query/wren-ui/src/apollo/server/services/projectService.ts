@@ -17,7 +17,6 @@ import {
   WrenAIError,
   WrenAILanguage,
 } from '@server/models/adaptor';
-import { encryptConnectionInfo } from '../dataSource';
 import { IWrenAIAdaptor } from '../adaptors';
 import { RecommendQuestionResultStatus } from './askingService';
 import { IMDLService } from './mdlService';
@@ -26,6 +25,8 @@ import { ITelemetry } from '../telemetry/telemetry';
 import { getConfig } from '../config';
 import { NativeQueryRefusal } from './nativeQueryAdmission';
 import { isGovernedQueryMode } from './nativeQueryMode';
+import { connectionCredentials } from './connectionCredentials';
+import type { KailoActor } from './kailoComponentSecrets';
 
 const config = getConfig();
 
@@ -40,11 +41,18 @@ const SENSITIVE_PROPERTY_NAME = new Set([
   'accessToken',
   'clientSecret',
   'webIdentityToken',
+  // Oracle's DSN embeds the password (`sensitiveProps`).
+  'dsn',
+  // DD-169(5): the custody reference is not shown either.
+  'kailoSecretId',
+  'kailoSecretFields',
 ]);
 export interface ProjectData {
   displayName: string;
   type: DataSourceName;
   connectionInfo: WREN_AI_CONNECTION_INFO;
+  // DD-169(5): the admin whose fresh `manage` Core checks on the credential write.
+  actor?: KailoActor | null;
 }
 
 export interface ProjectRecommendationQuestionsResult {
@@ -242,19 +250,34 @@ export class ProjectService implements IProjectService {
   }
 
   public async createProject(projectData: ProjectData) {
+    // DD-169(5): with Kailo custody the credentials are written to Kailo first
+    // and the row keeps only the reference; otherwise the original Encryptor.
+    const credentials = connectionCredentials();
+    const { stored, secretId } = await credentials.store(
+      projectData.type,
+      projectData.connectionInfo as any,
+      projectData.actor ?? null,
+    );
     const projectValue = {
       displayName: projectData.displayName,
       type: projectData.type,
       catalog: 'wrenai',
       schema: 'public',
-      connectionInfo: encryptConnectionInfo(
-        projectData.type,
-        projectData.connectionInfo,
-      ),
+      connectionInfo: stored as WREN_AI_CONNECTION_INFO,
+      // DD-169(2)③: every deployment of a new data source carries project_id.
+      kailoAiProjectScoped: true,
     };
     logger.debug('Creating project...');
-    const project = await this.projectRepository.createOne(projectValue);
-    return project;
+    try {
+      return await this.projectRepository.createOne(projectValue);
+    } catch (error) {
+      // The row was never stored: do not leave an orphan credential behind.
+      if (secretId)
+        await credentials
+          .retire(stored, projectData.actor ?? null)
+          .catch(() => undefined);
+      throw error;
+    }
   }
 
   public writeCredentialFile(credentials: JSON, persistCredentialDir: string) {

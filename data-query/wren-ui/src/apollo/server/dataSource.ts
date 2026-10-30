@@ -56,6 +56,11 @@ export function encryptConnectionInfo(
   );
 }
 
+/** The fields of this data source type that are credentials (`sensitiveProps`). */
+export function sensitivePropsOf(dataSourceType: DataSourceName): string[] {
+  return [...(dataSource[dataSourceType]?.sensitiveProps || [])];
+}
+
 export function toIbisConnectionInfo(dataSourceType, connectionInfo) {
   return dataSource[dataSourceType].toIbisConnectionInfo(connectionInfo);
 }
@@ -492,7 +497,7 @@ const dataSource = {
   >,
 };
 
-function decryptConnectionInfo(
+export function decryptConnectionInfo(
   dataSourceType: DataSourceName,
   connectionInfo: WREN_AI_CONNECTION_INFO,
 ): WREN_AI_CONNECTION_INFO {

@@ -1598,3 +1598,69 @@ h5.ant-typography {
     color: var(--kailo-color-muted-foreground);
   }
 }
+
+// DD-169(6): data source lists, wizard and detail (DD-167 list and state rules).
+.kailo-tag--success {
+  background: var(--kailo-color-success-soft);
+  color: var(--kailo-color-success-text);
+}
+
+.kailo-tag--brand {
+  background: var(--kailo-color-selected);
+  color: var(--kailo-color-selected-foreground);
+}
+
+.kailo-tag--warning {
+  background: var(--kailo-color-warning-soft);
+  color: var(--kailo-color-warning-text);
+}
+
+.kailo-data-source-list {
+  .kailo-pagination {
+    font-size: 13px;
+  }
+}
+
+.kailo-data-source-wizard {
+  max-width: 960px;
+
+  .kailo-data-source-wizard__steps {
+    margin-bottom: 24px;
+  }
+
+  .kailo-data-source-wizard__panel {
+    border: 1px solid var(--kailo-color-border);
+    border-radius: 12px;
+    background: var(--kailo-color-card);
+    padding: 24px;
+  }
+
+  .kailo-data-source-wizard__footer {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 24px;
+  }
+}
+
+.kailo-data-source-detail {
+  max-width: 720px;
+
+  .ant-descriptions-item-label {
+    color: var(--kailo-color-text-secondary);
+  }
+}
+
+.kailo-data-source-picker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+  color: var(--kailo-color-text-secondary);
+  font-size: 13px;
+
+  .ant-select {
+    flex: 1 1 160px;
+    max-width: 320px;
+  }
+}

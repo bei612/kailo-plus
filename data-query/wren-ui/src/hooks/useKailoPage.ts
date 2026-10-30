@@ -20,7 +20,7 @@ import useKailoSession from '@/hooks/useKailoSession';
 // API call history is administration data — its tab is the administrators'
 // only (the server refuses the history to everyone else).
 
-export type KailoTabId = 'home' | 'knowledge' | 'api';
+export type KailoTabId = 'home' | 'dataSources' | 'knowledge' | 'api';
 
 interface TabDef {
   id: KailoTabId;
@@ -32,6 +32,13 @@ interface TabDef {
 
 export const KAILO_TABS: TabDef[] = [
   { id: 'home', label: 'navHome', path: Path.Home, prefix: Path.Home },
+  // DD-169(6)②: every member sees the data sources (read-only).
+  {
+    id: 'dataSources',
+    label: 'navDataSources',
+    path: Path.DataSources,
+    prefix: Path.DataSources,
+  },
   {
     id: 'knowledge',
     label: 'navKnowledge',

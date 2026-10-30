@@ -146,6 +146,8 @@ export const typeDefs = gql`
   }
 
   type DataSource {
+    # DD-169: the data source (native project) id
+    id: Int
     type: DataSourceName!
     properties: JSON!
     # Show the name if the data source setup comes from a sample
@@ -159,6 +161,69 @@ export const typeDefs = gql`
   input DataSourceInput {
     type: DataSourceName!
     properties: JSON!
+  }
+
+  # DD-169: data source management (one data source = one native project)
+  enum DataSourceStatus {
+    NO_MODELS
+    READY
+  }
+
+  enum DataSourceCredentialStorage {
+    KAILO
+    LOCAL
+    NONE
+  }
+
+  input DataSourceListFilter {
+    keyword: String
+    type: DataSourceName
+    status: DataSourceStatus
+  }
+
+  type DataSourceSummary {
+    id: Int!
+    displayName: String!
+    type: DataSourceName!
+    status: DataSourceStatus!
+    modelCount: Int!
+    # administrators only; null for members
+    credentialStorage: DataSourceCredentialStorage
+  }
+
+  type DataSourceList {
+    items: [DataSourceSummary!]!
+    total: Int!
+    defaultId: Int
+    governed: Boolean!
+    kailoCustody: Boolean!
+  }
+
+  type DataSourceDetail {
+    id: Int!
+    displayName: String!
+    type: DataSourceName!
+    # connection settings without any credential value
+    properties: JSON!
+    # names of the credential fields that are set (never their values)
+    credentialFields: [String!]!
+    credentialStorage: DataSourceCredentialStorage!
+    status: DataSourceStatus!
+    modelCount: Int!
+    lastDeployedAt: String
+  }
+
+  type DataSourceTestResult {
+    ok: Boolean!
+    # DuckDB is checked when it is saved
+    deferred: Boolean!
+    tableCount: Int
+    error: String
+  }
+
+  type DataSourceCredentialMigration {
+    migrated: Int!
+    pending: Int!
   }
 
   input SampleDatasetInput {
@@ -1207,6 +1272,12 @@ export const typeDefs = gql`
 
     # On Boarding Steps
     listDataSourceTables: [CompactTable!]!
+    dataSources(
+      filter: DataSourceListFilter
+      offset: Int
+      limit: Int
+    ): DataSourceList!
+    dataSource(id: Int!): DataSourceDetail!
     autoGenerateRelation: [RecommendRelations!]!
     onboardingStatus: OnboardingStatusResponse!
 
@@ -1265,6 +1336,14 @@ export const typeDefs = gql`
   type Mutation {
     # On Boarding Steps
     saveDataSource(data: DataSourceInput!): DataSource!
+    createDataSource(data: DataSourceInput!): DataSource!
+    updateDataSourceConnection(id: Int!, data: DataSourceInput!): DataSource!
+    testDataSourceConnection(
+      data: DataSourceInput!
+      id: Int
+    ): DataSourceTestResult!
+    deleteDataSource(id: Int!): Boolean!
+    migrateDataSourceCredentials: DataSourceCredentialMigration!
     startSampleDataset(data: SampleDatasetInput!): JSON!
     saveTables(data: SaveTablesInput!): JSON!
     saveRelations(data: SaveRelationInput!): JSON!

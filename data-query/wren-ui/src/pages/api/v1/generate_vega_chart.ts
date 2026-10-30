@@ -28,6 +28,7 @@ import {
   nativePreviewScope,
 } from '@server/services/nativeHumanQuery';
 import { queryReceiptState } from '@/utils/queryReceipt';
+import { withDataSource } from '@server/utils/dataSourceScope';
 
 const { projectService, wrenAIAdaptor, deployService, queryService } =
   components;
@@ -289,10 +290,7 @@ async function governedChart(req: NextApiRequest, res: NextApiResponse) {
   }
 }
 
-export default async function handler(
-  req: NextApiRequest,
-  res: NextApiResponse,
-) {
+async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (isGovernedQueryMode()) {
     await governedChart(req, res);
     return;
@@ -441,3 +439,6 @@ export default async function handler(
     });
   }
 }
+
+// DD-169(2)①: the request names its data source (header or query parameter).
+export default withDataSource(handler);

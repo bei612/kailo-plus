@@ -54,6 +54,8 @@ export interface DeployData {
   manifest: Manifest;
   hash: string;
   executionId: string;
+  // DD-169(2)③: the AI Service clears and retrieves documents per project.
+  projectId: number;
 }
 
 // ask
@@ -74,6 +76,8 @@ export interface ProjectConfigurations {
 }
 
 export interface AskInput {
+  // DD-169(2)③: retrieval is limited to this project's documents.
+  projectId?: number;
   queryId?: string;
   query: string;
   deployId: string;

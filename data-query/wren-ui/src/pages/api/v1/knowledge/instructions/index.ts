@@ -23,6 +23,7 @@ import {
   nativePreviewScope,
 } from '@server/services/nativeHumanQuery';
 import { nativeWriteUnknown } from '@server/utils/error';
+import { withDataSource } from '@server/utils/dataSourceScope';
 
 const logger = getLogger('API_INSTRUCTIONS');
 logger.level = 'debug';
@@ -162,10 +163,7 @@ const handleCreateInstruction = async (
   });
 };
 
-export default async function handler(
-  req: NextApiRequest,
-  res: NextApiResponse,
-) {
+async function handler(req: NextApiRequest, res: NextApiResponse) {
   const startTime = Date.now();
   let project;
   let native;
@@ -344,3 +342,6 @@ export default async function handler(
     });
   }
 }
+
+// DD-169(2)①: the request names its data source (header or query parameter).
+export default withDataSource(handler);

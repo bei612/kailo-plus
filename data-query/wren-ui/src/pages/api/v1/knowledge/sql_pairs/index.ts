@@ -12,6 +12,7 @@ import {
 } from '@/apollo/server/utils/apiUtils';
 import { getLogger } from '@server/utils';
 import { isGovernedQueryMode } from '@server/services/nativeQueryMode';
+import { withDataSource } from '@server/utils/dataSourceScope';
 
 const logger = getLogger('API_SQL_PAIRS');
 logger.level = 'debug';
@@ -103,10 +104,7 @@ const handleCreateSqlPair = async (
   });
 };
 
-export default async function handler(
-  req: NextApiRequest,
-  res: NextApiResponse,
-) {
+async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (isGovernedQueryMode()) return handleNativeSqlPairRequest(req, res);
   const startTime = Date.now();
   let project;
@@ -143,3 +141,6 @@ export default async function handler(
     });
   }
 }
+
+// DD-169(2)①: the request names its data source (header or query parameter).
+export default withDataSource(handler);

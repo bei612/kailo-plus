@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { withDataSourceParam } from '@/utils/dataSourceSelection';
 
 type useAskingStreamTaskReturn = [
   (queryId: string) => void,
@@ -39,7 +40,9 @@ export default function useAskingStreamTask() {
       let eventSource: EventSource;
       try {
         eventSource = new EventSource(
-          `/api/ask_task/streaming?queryId=${encodeURIComponent(queryId)}`,
+          withDataSourceParam(
+            `/api/ask_task/streaming?queryId=${encodeURIComponent(queryId)}`,
+          ),
         );
       } catch (error) {
         console.error(error);

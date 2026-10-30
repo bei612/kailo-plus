@@ -13,6 +13,7 @@ import {
   AskResultType,
   generalCompletion,
 } from '@/apollo/server/models/adaptor';
+import { withDataSource } from '@server/utils/dataSourceScope';
 
 // Both original planning surfaces expose the same native message/done stream.
 // Their existing task/history reader remains the ownership/evidence authority.
@@ -148,10 +149,7 @@ export async function streamStandaloneAskingTask(
   return forwardNativeAskingTask(req, res, authorize, false);
 }
 
-export default async function handler(
-  req: NextApiRequest,
-  res: NextApiResponse,
-) {
+async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (isGovernedQueryMode()) {
     res.setHeader('Cache-Control', 'private, no-store');
     try {
@@ -213,3 +211,6 @@ export default async function handler(
   };
   await forwardNativeAskingTask(req, res, authorize, false);
 }
+
+// DD-169(2)①: the request names its data source (header or query parameter).
+export default withDataSource(handler);

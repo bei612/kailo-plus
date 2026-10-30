@@ -2,6 +2,7 @@ import { Layout } from 'antd';
 import styled from 'styled-components';
 import Sidebar from '@/components/sidebar';
 import PageLoading from '@/components/PageLoading';
+import DataSourcePicker from '@/components/pages/dataSources/DataSourcePicker';
 
 const { Sider, Content } = Layout;
 
@@ -32,6 +33,10 @@ export default function AdminSurfaceLayout(props: Props) {
   return (
     <Layout className="adm-layout">
       <StyledSider width={264}>
+        {/* DD-169(6)①: modeling acts on the selected data source. */}
+        <div className="px-4 pt-4">
+          <DataSourcePicker />
+        </div>
         <Sidebar {...sidebar} />
       </StyledSider>
       <StyledContent>{children}</StyledContent>

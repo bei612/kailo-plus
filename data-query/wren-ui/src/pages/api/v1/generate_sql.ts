@@ -17,6 +17,7 @@ import {
 import { DataSourceName } from '@server/types';
 import { governedRestAsk } from '@server/services/nativeRestAsk';
 import { isGovernedQueryMode } from '@server/services/nativeQueryMode';
+import { withDataSource } from '@server/utils/dataSourceScope';
 
 const logger = getLogger('API_GENERATE_SQL');
 logger.level = 'debug';
@@ -28,10 +29,7 @@ interface GenerateSqlRequest {
   returnSqlDialect?: boolean;
 }
 
-export default async function handler(
-  req: NextApiRequest,
-  res: NextApiResponse,
-) {
+async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (isGovernedQueryMode()) {
     await governedRestAsk(req, res, false, true);
     return;
@@ -82,6 +80,7 @@ export default async function handler(
       ? await apiHistoryRepository.findAllBy({ threadId })
       : undefined;
     const task = await wrenAIAdaptor.ask({
+      projectId: project.id,
       query: question,
       deployId: lastDeploy.hash,
       histories: transformHistoryInput(histories) as any,
@@ -169,3 +168,6 @@ export default async function handler(
     });
   }
 }
+
+// DD-169(2)①: the request names its data source (header or query parameter).
+export default withDataSource(handler);

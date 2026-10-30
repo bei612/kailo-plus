@@ -48,6 +48,18 @@ async function verifiedIdentity(
     : {};
 }
 
+/**
+ * DD-169(5): the acting person Core checks on a credential write — the
+ * verified issuer+subject of the signed-in Kailo user, or null.
+ */
+export async function kailoActor(
+  profile: KailoUserProfile | null | undefined,
+): Promise<{ issuer: string; subject: string } | null> {
+  if (!profile) return null;
+  const { issuer, subject } = await verifiedIdentity(profile);
+  return issuer && subject ? { issuer, subject } : null;
+}
+
 export interface KailoUserLoader {
   load(key: string | null | undefined): Promise<KailoUser | null>;
 }

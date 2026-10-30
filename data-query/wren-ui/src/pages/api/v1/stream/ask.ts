@@ -40,6 +40,7 @@ import {
   endStream,
 } from '@/apollo/server/utils';
 import { isGovernedQueryMode } from '@server/services/nativeQueryMode';
+import { withDataSource } from '@server/utils/dataSourceScope';
 
 const logger = getLogger('API_STREAM_ASK');
 logger.level = 'debug';
@@ -96,10 +97,7 @@ const sendContentBlockStop = (res: NextApiResponse) => {
   sendSSEEvent(res, contentBlockStopEvent);
 };
 
-export default async function handler(
-  req: NextApiRequest,
-  res: NextApiResponse,
-) {
+async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (isGovernedQueryMode()) {
     await governedRestAsk(req, res, true);
     return;
@@ -157,6 +155,7 @@ export default async function handler(
         language || WrenAILanguage[project.language] || WrenAILanguage.EN,
     });
     const askTask = await wrenAIAdaptor.ask({
+      projectId: project.id,
       query: question,
       deployId: lastDeploy.hash,
       histories: transformHistoryInput(histories) as any,
@@ -528,3 +527,6 @@ export default async function handler(
     endStream(res, threadId || uuidv4(), startTime);
   }
 }
+
+// DD-169(2)①: the request names its data source (header or query parameter).
+export default withDataSource(handler);

@@ -109,7 +109,14 @@ export class TextBasedAnswerBackgroundTracker {
             });
 
             // get sql data
-            const project = await this.projectService.getCurrentProject();
+            // DD-169(2)④: the thread's own data source, never the "current"
+            // selection of whichever request started this tracker.
+            const projectId =
+              await this.threadResponseRepository.findThreadProjectId(
+                threadResponse.threadId,
+              );
+            if (!projectId) throw new Error('Thread data source not found');
+            const project = await this.projectService.getProjectById(projectId);
             const deployment = await this.deployService.getLastDeployment(
               project.id,
             );

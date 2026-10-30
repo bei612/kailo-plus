@@ -98,6 +98,8 @@ export interface IThreadResponseRepository
     threadId: number,
     limit?: number,
   ): Promise<ThreadResponse[]>;
+  // DD-169(2)④: background work takes the project from the thread itself.
+  findThreadProjectId(threadId: number): Promise<number | null>;
 }
 
 export class ThreadResponseRepository
@@ -151,6 +153,14 @@ export class ThreadResponseRepository
       .update({ chart_detail: JSON.stringify(chartDetail) })
       .returning('*');
     return row ? this.transformFromDBData(row) : null;
+  }
+
+  public async findThreadProjectId(threadId: number) {
+    const row = await this.knex('thread')
+      .where({ id: threadId })
+      .first('project_id');
+    const id = Number(row?.project_id);
+    return Number.isSafeInteger(id) && id > 0 ? id : null;
   }
 
   public async getResponsesWithThread(threadId: number, limit?: number) {

@@ -116,6 +116,7 @@ export class DeployService implements IDeployService {
           manifest,
           hash,
           executionId: String(deploy.id),
+          projectId,
         });
 
       const status = this.nativeStatus(aiStatus);

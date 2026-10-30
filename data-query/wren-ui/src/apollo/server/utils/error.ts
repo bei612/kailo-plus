@@ -74,6 +74,14 @@ export enum GeneralErrorCodes {
   // DD-138(7): a feature Kailo provides instead (help and learning guidance);
   // the fork is always the Kailo presentation, so it is refused (forbidden).
   KAILO_FEATURE_UNAVAILABLE = 'KAILO_FEATURE_UNAVAILABLE',
+  // DD-169: data source management.
+  DATA_SOURCE_NOT_FOUND = 'DATA_SOURCE_NOT_FOUND',
+  DATA_SOURCE_INVALID = 'DATA_SOURCE_INVALID',
+  DUCKDB_SINGLE_SOURCE = 'DUCKDB_SINGLE_SOURCE',
+  GOVERNED_SOURCE_FIXED = 'GOVERNED_SOURCE_FIXED',
+  DATA_SOURCE_LIMIT_REACHED = 'DATA_SOURCE_LIMIT_REACHED',
+  // DD-169(5): Kailo credential custody (Core / OpenBao) did not answer.
+  DEPENDENCY_UNAVAILABLE = 'DEPENDENCY_UNAVAILABLE',
 }
 
 export const errorMessages = {
@@ -152,6 +160,17 @@ export const errorMessages = {
     'The shared object or a recipient is not valid.',
   [GeneralErrorCodes.KAILO_FEATURE_UNAVAILABLE]:
     'This feature is provided by Kailo and is not available here.',
+  [GeneralErrorCodes.DATA_SOURCE_NOT_FOUND]: 'The data source does not exist.',
+  [GeneralErrorCodes.DATA_SOURCE_INVALID]:
+    'The data source name or connection settings are not valid.',
+  [GeneralErrorCodes.DUCKDB_SINGLE_SOURCE]:
+    'Only one DuckDB data source is supported per instance.',
+  [GeneralErrorCodes.GOVERNED_SOURCE_FIXED]:
+    'The data source of this instance is fixed by its Kailo binding.',
+  [GeneralErrorCodes.DATA_SOURCE_LIMIT_REACHED]:
+    'The maximum number of data sources has been reached.',
+  [GeneralErrorCodes.DEPENDENCY_UNAVAILABLE]:
+    'Kailo credential storage is unavailable. Nothing was saved; try again later.',
 };
 
 export const shortMessages = {
@@ -190,6 +209,12 @@ export const shortMessages = {
   [GeneralErrorCodes.KAILO_SHARE_UNAVAILABLE]: 'Sharing unavailable',
   [GeneralErrorCodes.KAILO_SHARE_INVALID]: 'Invalid share',
   [GeneralErrorCodes.KAILO_FEATURE_UNAVAILABLE]: 'Not available',
+  [GeneralErrorCodes.DATA_SOURCE_NOT_FOUND]: 'Data source not found',
+  [GeneralErrorCodes.DATA_SOURCE_INVALID]: 'Invalid data source',
+  [GeneralErrorCodes.DUCKDB_SINGLE_SOURCE]: 'DuckDB already connected',
+  [GeneralErrorCodes.GOVERNED_SOURCE_FIXED]: 'Data source is fixed',
+  [GeneralErrorCodes.DATA_SOURCE_LIMIT_REACHED]: 'Too many data sources',
+  [GeneralErrorCodes.DEPENDENCY_UNAVAILABLE]: 'Credential storage unavailable',
 };
 
 export const create = (

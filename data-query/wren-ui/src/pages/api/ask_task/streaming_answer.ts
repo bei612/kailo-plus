@@ -11,13 +11,11 @@ import {
 } from '@/apollo/server/services/nativeQueryAdmission';
 import { isGovernedQueryMode } from '@/apollo/server/services/nativeQueryMode';
 import { createInterface } from 'readline';
+import { withDataSource } from '@server/utils/dataSourceScope';
 
 const { wrenAIAdaptor, askingService, telemetry } = components;
 
-export default async function handler(
-  req: NextApiRequest,
-  res: NextApiResponse,
-) {
+async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'GET') {
     res.status(405).json({ error: 'Method Not Allowed' });
     return;
@@ -214,3 +212,6 @@ export default async function handler(
     res.end();
   }
 }
+
+// DD-169(2)①: the request names its data source (header or query parameter).
+export default withDataSource(handler);
