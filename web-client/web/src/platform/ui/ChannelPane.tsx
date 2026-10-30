@@ -630,7 +630,7 @@ export function ChannelPane({
   const renderAgentOwner = useCallback<AgentOwnerRenderer>((owner, name) => <SystemProfilePopover pubkey={owner.pubkey}
     triggerAriaLabel={owner.label}>{name}</SystemProfilePopover>, [SystemProfilePopover]);
   const selectedSystemMember = systemProfileTarget ? byPubkey.get(systemProfileTarget.pubkey) : undefined;
-  const mentions: MessageMention[] = useMemo(() => (members.data ?? []).flatMap(member => member.pubkeys.map(pubkey => {
+  const mentions: MessageMention[] = useMemo(() => (members.data ?? []).flatMap(member => member.pubkeys.map((pubkey): MessageMention => {
     let renderProfile: MessageMention["renderProfile"];
     if (members.isSuccess && !members.isError && live && !denied) {
       if (!conversation && "state" in member && member.state === "ACTIVE") {
