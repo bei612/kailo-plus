@@ -1,4 +1,4 @@
-// DD-168 (.design/20 §16.3, §16.5): structured data is read, not decoded. Facts are key–value
+// DD-170 (.design/20 §16.3, §16.5): structured data is read, not decoded. Facts are key–value
 // rows with plain-language labels; identifiers are shortened with a copy affordance; lists of
 // names are tags; histories are timelines. A JSON document is shown as nested key–value rows
 // and its raw text only behind an explicit "Show raw data" disclosure.

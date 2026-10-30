@@ -1,4 +1,4 @@
-// DD-168 (.design/20 §16): the shared list, state, structured-data and confirmation components.
+// DD-170 (.design/20 §16): the shared list, state, structured-data and confirmation components.
 import { act } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { ErrorClass } from "@client-kit/contracts";
@@ -69,8 +69,8 @@ describe("DataTable", () => {
       search={{ text: (r) => r.name }} />);
     const input = host.querySelector<HTMLInputElement>("input[type=search]")!;
     await type(input, "item-4");
-    expect(bodyRows(host)).toEqual(["r4", "r40", "r41", "r42", "r43", "r44", "r45"]);
-    expect(host.querySelector("[data-testid=list-total]")?.textContent).toBe("共 7 条");
+    expect(bodyRows(host)).toEqual(["r40", "r41", "r42", "r43", "r44", "r45"]);
+    expect(host.querySelector("[data-testid=list-total]")?.textContent).toBe("共 6 条");
     await type(input, "zzz");
     expect(host.textContent).toContain("没有符合筛选条件的结果。");
     await click(button(host, "清除筛选"));

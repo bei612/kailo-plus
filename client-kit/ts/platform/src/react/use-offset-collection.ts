@@ -1,4 +1,4 @@
-// DD-168 (.design/20 §16.2): a list whose BFF read is offset-paged without a total is read to
+// DD-170 (.design/20 §16.2): a list whose BFF read is offset-paged without a total is read to
 // its end (bounded) so the table can state an exact total and page locally. When the bound is
 // reached the set is marked partial: the footer says so and offers to load more; it never
 // presents a prefix as the whole list.

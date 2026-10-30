@@ -51,7 +51,7 @@ export { AgentDefinitionsPage, WorkspaceAgentDialogs } from "./agents";
 export { NativeApplicationEntries } from "./native-application-entries";
 
 /**
- * 按读取状态渲染（DD-168 §16.4）：载入中是与页面同形的骨架，不是一行“载入中”；
+ * 按读取状态渲染（DD-170 §16.4）：载入中是与页面同形的骨架，不是一行“载入中”；
  * 拒绝读取说明没有权限，结果不明给出重试；成功才渲染数据。
  */
 export function Resource<T>({

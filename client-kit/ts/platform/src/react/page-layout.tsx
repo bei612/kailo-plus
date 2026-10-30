@@ -1,4 +1,4 @@
-// DD-168 (.design/20 §16.3): the layout grammar of platform pages inside the content plane.
+// DD-170 (.design/20 §16.3): the layout grammar of platform pages inside the content plane.
 // The host draws the 52 px page header; a page body is a column of sections. A section has a
 // Title 2 heading, an optional one-line description and its actions at the end of the heading
 // row. A detail view has a back affordance, its title with status, then facts, then history.
