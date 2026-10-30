@@ -6,12 +6,13 @@ import type { AgentOwnerRenderer } from "../agentAuthorFacts";
 import { UserProfilePopover, useHasSystemMessageHost } from "./host";
 
 // DD-141 §2.4: owner name in the text-secondary role, text on hover; muted chip stays AA readable.
-// Defect 7d: the label and icon never shrink, so a header squeeze used to collapse the name to
-// zero width ("managed by" followed by nothing). The name slot keeps a floor of a few characters
-// and truncates inside it; host triggers (an unsized inline-flex profile popover) are made
-// shrinkable by the slot so the ellipsis lands on the name rather than the name disappearing.
-const ownerSlotClass = "inline-flex min-w-[3ch] max-w-full items-baseline [&>*]:min-w-0 [&>*]:max-w-full";
-const ownerNameClass = "min-w-0 truncate rounded font-semibold text-[var(--k-text-secondary)] transition-colors duration-100 hover:text-foreground hover:underline focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring";
+// Defect 7d: the label and icon never shrink, so the name can never collapse to zero width.
+// Release defect (thread panel, 2026-10-29): with the action rail reserved, a narrow header
+// squeezed the chip to ~33px and the name to "k…". The chip no longer shrinks below its content:
+// the header row wraps it onto its own line, and a name longer than the line wraps instead of
+// being cut, so the owner is always fully named.
+const ownerSlotClass = "inline-flex min-w-0 max-w-full items-baseline [&>*]:min-w-0 [&>*]:max-w-full";
+const ownerNameClass = "min-w-0 [overflow-wrap:anywhere] rounded font-semibold text-[var(--k-text-secondary)] transition-colors duration-100 hover:text-foreground hover:underline focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring";
 
 export function MessageAgentOwner({
   ownerLabel,
@@ -35,7 +36,7 @@ export function MessageAgentOwner({
   const ownerPubkey = hasSystemHost && !memberOwner ? ownerKey : null;
   return (
     <span
-      className="inline-flex min-w-0 max-w-56 items-baseline gap-1 text-xs leading-4 text-muted-foreground"
+      className="inline-flex max-w-full shrink-0 flex-wrap items-baseline gap-x-1 text-xs leading-4 text-muted-foreground"
       data-testid="message-agent-owner"
     >
       <span className="sr-only">
@@ -70,7 +71,7 @@ export function MessageAgentOwner({
         // DD-147(1): the owner's Tenant name without a Workspace key to open a profile for.
         <>
           <span aria-hidden="true" className="shrink-0">{t("messages.system.managedBy")}</span>
-          <span className="min-w-[3ch] truncate font-semibold text-[var(--k-text-secondary)]" data-testid="message-agent-owner-name">{ownerLabel}</span>
+          <span className="min-w-0 [overflow-wrap:anywhere] font-semibold text-[var(--k-text-secondary)]" data-testid="message-agent-owner-name">{ownerLabel}</span>
         </>
       ) : ownerPubkey && ownerLabel ? (
         <>
@@ -88,7 +89,7 @@ export function MessageAgentOwner({
           </span>
         </>
       ) : (
-        <span aria-hidden="true" className="min-w-0 truncate">
+        <span aria-hidden="true" className="min-w-0 [overflow-wrap:anywhere]">
           {t("messages.system.ownerUnavailable")}
         </span>
       )}

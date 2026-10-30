@@ -166,6 +166,18 @@ function frozenReferenceMentions(signature: string | undefined): string[] | unde
 type NonMemberDecision = { kind: "invited" | "reference"; pubkeys: readonly string[] };
 type NonMemberPrompt = { owner: object; workspaceId: string; pubkeys: string[]; principals: NonMemberInvitePrincipal[]; names: string[]; canInvite: boolean };
 
+
+/** The Agent directory's p-taggable Agents as message mentions (not already a member key). */
+function memberMentionsAgents(facts: AgentAuthorFacts, members: readonly { pubkeys: readonly string[] }[]): MessageMention[] {
+  const memberKeys = new Set(members.flatMap(member => member.pubkeys.map(key => key.toLowerCase())));
+  const out: MessageMention[] = [];
+  for (const [pubkey, fact] of facts) {
+    if (memberKeys.has(pubkey) || !fact.displayName) continue;
+    out.push({pubkey, name: fact.displayName, isAgent: true});
+  }
+  return out;
+}
+
 export function mentionPeopleFromMembers(members: readonly (WorkspaceMemberView | ConversationParticipant)[]): MentionSuggestion[] {
   return members.filter(member => !("state" in member) || member.state === "ACTIVE")
     .flatMap(member => member.pubkeys.map(pubkey => ({pubkey, displayName: member.displayName})));
@@ -637,7 +649,10 @@ export function ChannelPane({
       }
     }
     return {pubkey, name:member.displayName, isAgent:false, renderProfile};
-  })), [members.data, members.isSuccess, members.isError, live, denied, conversation, workspaceId, myPrincipalId, timelineMessages]);
+  // Original markdown mentions resolve every p-tagged profile, Agents included (agent chip variant):
+  // without the Agent directory an "@研究助理" stayed plain text in sent messages.
+  })).concat(memberMentionsAgents(agentFacts, members.data ?? [])),
+  [members.data, members.isSuccess, members.isError, live, denied, conversation, workspaceId, myPrincipalId, timelineMessages, agentFacts]);
   useEffect(() => {
     if (!restoreEditEventId || restoredEdit.current || !ownProfile.isSuccess) return;
     const message = timelineMessages.find((item) => item.id === restoreEditEventId && canManageMessageForCurrentUser(item, ownProfile.data.pubkey, conversation ? undefined : ownedAgentPubkeys));

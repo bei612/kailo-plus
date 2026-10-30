@@ -36,13 +36,17 @@ export type AgentAuthorDirectoryScope = {
 
 /** Pure projection of the member-readable directory (plus the owner's respondTo modes). */
 export function agentAuthorFacts(directory: AgentAuthorDirectoryScope | undefined,
-  allowlisted: ReadonlySet<string> = new Set()): AgentAuthorFacts {
+  allowlisted: ReadonlySet<string> = new Set(),
+  ownerProfileNames: ReadonlyMap<string, string> = new Map()): AgentAuthorFacts {
   const facts = new Map<string, AgentAuthorFact>();
   if (!directory) return facts;
   for (const agent of directory.agents) {
     const owner = directory.members.find((member) => member.principalId === agent.ownerPrincipalId
       && member.state === WorkspaceMembershipState.Active);
-    const ownerLabel = agent.ownerDisplayName?.trim() || null;
+    // Original formatOwnerLabel: the owner's published profile name first — the same name the
+    // member profile card shows — then the directory label (Tenant display name).
+    const ownerLabel = ownerProfileNames.get(agent.ownerPrincipalId)?.trim()
+      || agent.ownerDisplayName?.trim() || null;
     const ownerPubkey = ownerLabel ? owner?.pubkeys[0] ?? null : null;
     facts.set(normalizePubkey(agent.agentPubkey), {
       ownerLabel,
@@ -62,7 +66,7 @@ export function agentAuthorFacts(directory: AgentAuthorDirectoryScope | undefine
  * omits it and the platform session supplies it. Null scope reads nothing.
  */
 export function useAgentAuthorFacts(
-  client: Pick<BffClient, "agentAuthors" | "members" | "agentInstallationUsers" | "session">,
+  client: Pick<BffClient, "agentAuthors" | "members" | "agentInstallationUsers" | "session" | "memberProfile">,
   scope: { workspaceId: string; principalId?: string } | null | undefined,
 ): AgentAuthorFacts {
   const enabled = Boolean(scope);
@@ -84,10 +88,35 @@ export function useAgentAuthorFacts(
     queryFn: () => client.agentInstallationUsers(resourceId),
     retry: false,
   })) });
+  // The owner line names each owner the way the member profile card does (published kind:0 name,
+  // read through the same authorized member-profile route), not by the Tenant login label.
+  const owners = React.useMemo(() => {
+    const seen = new Map<string, string>();
+    for (const agent of directory?.agents ?? []) {
+      const member = directory?.members.find((entry) => entry.principalId === agent.ownerPrincipalId
+        && entry.state === WorkspaceMembershipState.Active);
+      const pubkey = member?.pubkeys[0];
+      if (pubkey && !seen.has(agent.ownerPrincipalId)) seen.set(agent.ownerPrincipalId, pubkey);
+    }
+    return [...seen.entries()];
+  }, [directory]);
+  const ownerProfiles = useQueries({ queries: owners.map(([principalId, pubkey]) => ({
+    queryKey: ["platform", "agent-owner-profile", workspaceId, principalId, pubkey],
+    queryFn: () => client.memberProfile(workspaceId, principalId, pubkey),
+    retry: false,
+    staleTime: 60_000,
+  })) });
+  const ownerNamesKey = ownerProfiles.map((query, index) => {
+    const name = query.isSuccess ? query.data?.displayName?.trim() : "";
+    return name ? `${owners[index]![0]}\u0000${name}` : "";
+  }).join("\u0001");
   const allowlistKey = pages.map((page, index) => page.isSuccess && page.data
     && respondToModeOf(page.data) === AgentRespondToMode.Allowlist ? owned[index] : "").join(",");
-  return React.useMemo(() => agentAuthorFacts(directory, new Set(allowlistKey.split(",").filter(Boolean))),
-    [directory, allowlistKey]);
+  return React.useMemo(() => {
+    const names = new Map(ownerNamesKey.split("\u0001").filter(Boolean)
+      .map((entry) => entry.split("\u0000") as [string, string]));
+    return agentAuthorFacts(directory, new Set(allowlistKey.split(",").filter(Boolean)), names);
+  }, [directory, allowlistKey, ownerNamesKey]);
 }
 
 /** Marks agent-authored rows with the original owner line and the owner-only badge. */

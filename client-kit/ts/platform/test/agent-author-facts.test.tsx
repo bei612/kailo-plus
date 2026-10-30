@@ -133,8 +133,13 @@ it("shows the owner name right after “managed by” through a host profile pop
   expect(name.textContent).toBe("Dana");
   const slot = chip.querySelector('[data-testid="message-agent-owner-slot"]')!;
   expect(slot.contains(name)).toBe(true);
-  expect(slot.className).toContain("min-w-[3ch]");
   expect(slot.className).toContain("[&>*]:min-w-0");
+  // Release defect: never "k…" — the chip does not shrink, and a long name wraps instead of truncating.
+  expect(chip.className).toContain("shrink-0");
+  expect(chip.className).toContain("flex-wrap");
+  expect(chip.className).not.toContain("max-w-56");
+  expect(name.className).not.toContain("truncate");
+  expect(name.className).toContain("[overflow-wrap:anywhere]");
 
   // Without a host renderer the Tenant name is plain text after the label, also with a width floor.
   const plain = await render(<TooltipProvider><AgentAuthorFactsProvider facts={agentAuthorFacts({ principalId: null, members: [],
@@ -143,7 +148,14 @@ it("shows the owner name right after “managed by” through a host profile pop
   </AgentAuthorFactsProvider></TooltipProvider>);
   const plainChip = plain.querySelector('[data-testid="message-agent-owner"]')!;
   expect(visibleOwnerText(plainChip)).toBe("管理者为Dana");
-  expect(plainChip.querySelector('[data-testid="message-agent-owner-name"]')?.className).toContain("min-w-[3ch]");
+  expect(plainChip.querySelector('[data-testid="message-agent-owner-name"]')?.className).not.toContain("truncate");
+});
+
+it("names the owner like the member profile card: published profile name before the Tenant label", () => {
+  const named = agentAuthorFacts(directory, new Set(), new Map([["owner-principal", "  Dana Lee  "]]));
+  expect(named.get(AGENT)?.ownerLabel).toBe("Dana Lee");
+  // Without a published profile name the directory label (Tenant display name) stays.
+  expect(agentAuthorFacts(directory).get(AGENT)?.ownerLabel).toBe("Dana");
 });
 
 it("DD-162: a disabled Installation's messages keep their owner line and show the archived flair", async () => {

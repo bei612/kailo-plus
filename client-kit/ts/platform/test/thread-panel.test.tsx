@@ -202,3 +202,10 @@ it("renders terminal failure as the original retry card, never an empty thread, 
   await act(async () => setLocale("en"));
   expect(host.textContent).toContain("Couldn’t load replies");
 });
+
+it("hides the thread summary once every reply is deleted instead of showing “0 replies”", () => {
+  // Release defect 2026-10-29: the relay window still carried a summary with descendant_count 0.
+  const relay = (descendantCount: number) => new Map([["head", {descendantCount, lastReplyAt: descendantCount ? 1770000100 : null, participantPubkeys: []}]]);
+  expect(buildMainTimelineEntries([head], new Set(), relay(0) as never)[0]!.summary).toBeNull();
+  expect(buildMainTimelineEntries([head], new Set(), relay(1) as never)[0]!.summary?.replyCount).toBe(1);
+});

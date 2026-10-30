@@ -475,7 +475,9 @@ export function buildMainTimelineEntries(
                   message.id,
                   descendantStatsByMessageId,
                 ),
-                relaySummary
+                // Like the client-assembled path (`replyCount === 0` → no summary), a relay summary
+                // whose every reply was deleted has nothing to show: no "0 replies" row.
+                relaySummary && relaySummary.descendantCount > 0
                   ? buildRelayThreadSummary(message.id, relaySummary, profiles)
                   : null,
               ),
