@@ -1277,6 +1277,176 @@ class DirectoryClientDeclaration(unittest.TestCase):
             self.assertNotEqual(changed, step.digest, "the declaration is part of the configuration digest")
 
 
+SESSION_VALUES = dict(DIRECTORY_VALUES, IDP_SESSION_TERMINATION_CLIENT_ID="session-end")
+
+
+class FakeSessionRealm(FakeDirectoryRealm):
+    """FakeDirectoryRealm plus realm-management, role mappings and scope mappings (DD-164(6))."""
+
+    def __init__(self):
+        super().__init__()
+        self.management = self.add({"clientId": "realm-management", "enabled": True})
+        self.scopes = {}
+
+    def __call__(self, path, body=None, method=None):
+        import copy
+        import urllib.parse as up
+        method = method or ("POST" if body is not None else "GET")
+        seg = up.urlsplit(path).path.strip("/").split("/")
+        if seg[0] == "users" and len(seg) >= 3 and seg[2] == "role-mappings":
+            mapped = self.roles[seg[1]]
+            if method == "POST":
+                self.writes.append((method, path))
+                client = self.clients[seg[4]]["clientId"]
+                entry = mapped.setdefault("clientMappings", {}).setdefault(client, {"mappings": []})
+                entry["mappings"] += copy.deepcopy(body)
+                return None
+            return copy.deepcopy(mapped)
+        if seg[0] == "clients" and len(seg) >= 3 and seg[2] == "scope-mappings":
+            mapped = self.scopes.setdefault(seg[1], {})
+            if method == "POST":
+                self.writes.append((method, path))
+                client = self.clients[seg[4]]["clientId"]
+                entry = mapped.setdefault("clientMappings", {}).setdefault(client, {"mappings": []})
+                entry["mappings"] += copy.deepcopy(body)
+                return None
+            return copy.deepcopy(mapped)
+        if seg[0] == "clients" and len(seg) == 4 and seg[2] == "roles":
+            return {"id": "role-" + seg[3], "name": seg[3]} if seg[1] == self.management else None
+        return super().__call__(path, body, method)
+
+
+class SessionTerminationDeclaration(unittest.TestCase):
+    """DD-164(6), .design/07 §4.7.5: the Worker's dedicated session-termination client."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.runtime = self.tmp.name
+        os.mkdir(os.path.join(self.runtime, "secrets"), 0o755)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def run_step(self, kc, verify=False, values=SESSION_VALUES):
+        return idp.session_termination(idp.ReadOnly(kc) if verify else kc, values, self.runtime, verify)
+
+    def env_file(self):
+        return os.path.join(self.runtime, "secrets", "idp-session-termination", "worker.env")
+
+    def test_client_id_is_required_and_distinct(self):
+        for raw in ("", "core", "worker", "cells", "cells-dir", "two words"):
+            with self.assertRaises(idp.Refused, msg=raw):
+                idp.session_termination_client_id(dict(SESSION_VALUES, IDP_SESSION_TERMINATION_CLIENT_ID=raw))
+        self.assertEqual(idp.session_termination_client_id(SESSION_VALUES), "session-end")
+
+    def test_declare_grants_only_manage_users_and_delivers_the_idp_secret(self):
+        kc = FakeSessionRealm()
+        report = self.run_step(kc)
+        self.assertEqual((report["sessionTermination"], report["problems"]), ("DECLARED", []))
+        client = next(c for c in kc.clients.values() if c["clientId"] == "session-end")
+        self.assertIs(client["serviceAccountsEnabled"], True)
+        for flow in ("standardFlowEnabled", "implicitFlowEnabled", "directAccessGrantsEnabled", "publicClient"):
+            self.assertIs(client[flow], False, flow)
+        self.assertIs(client["fullScopeAllowed"], False)
+        self.assertEqual(kc.mappers[client["id"]], [])
+        granted = kc.roles["sa-" + client["id"]]["clientMappings"]["realm-management"]["mappings"]
+        self.assertEqual([r["name"] for r in granted], ["manage-users"])
+        scoped = kc.scopes[client["id"]]["clientMappings"]["realm-management"]["mappings"]
+        self.assertEqual([r["name"] for r in scoped], ["manage-users"])
+        path = self.env_file()
+        self.assertEqual(os.stat(path).st_mode & 0o777, 0o600)
+        self.assertEqual(os.stat(os.path.dirname(path)).st_mode & 0o777, 0o700)
+        self.assertEqual(os.stat(os.path.join(self.runtime, "secrets")).st_mode & 0o777, 0o755,
+                         "the shared secrets directory is not re-permissioned")
+        with open(path, encoding="utf-8") as stream:
+            self.assertEqual(stream.read().strip(), "IDP_SESSION_TERMINATION_CLIENT_SECRET=" + kc.secrets[client["id"]])
+        self.assertNotIn(kc.secrets[client["id"]], json.dumps(report))
+        kc.writes.clear()
+        self.assertEqual((self.run_step(kc)["changed"], kc.writes), (0, []))
+        self.assertEqual(self.run_step(kc, verify=True)["sessionTermination"], "DECLARED")
+
+    def test_verify_reports_missing_client_and_extra_grants_are_refused(self):
+        kc = FakeSessionRealm()
+        self.assertEqual(self.run_step(kc, verify=True)["sessionTermination"], "DRIFTED")
+        self.assertEqual(kc.writes, [])
+        self.run_step(kc)
+        client = next(c for c in kc.clients.values() if c["clientId"] == "session-end")
+        kc.roles["sa-" + client["id"]]["clientMappings"]["realm-management"]["mappings"].append(
+            {"id": "role-realm-admin", "name": "realm-admin"})
+        with self.assertRaises(idp.Refused):
+            self.run_step(kc)
+        kc2 = FakeSessionRealm()
+        kc2.add(dict(idp.session_termination_client("session-end", "s"), standardFlowEnabled=True))
+        with self.assertRaises(idp.Refused):
+            self.run_step(kc2)
+
+    def test_release_declares_and_verifies_session_termination_and_presentation(self):
+        _mspec = importlib.util.spec_from_file_location("release_model_session", os.path.join(
+            os.path.dirname(__file__), "model.py"))
+        model = importlib.util.module_from_spec(_mspec)
+        _mspec.loader.exec_module(model)
+        spec = model.idp_declaration()
+        for flag in ("--declare-session-termination-client", "--declare-realm-presentation"):
+            self.assertIn(["./bootstrap.sh", flag], spec["apply"])
+        for flag in ("--verify-session-termination-client", "--verify-realm-presentation"):
+            self.assertIn(["./bootstrap.sh", flag], spec["verify"])
+        for key in ("IDP_SESSION_TERMINATION_CLIENT_ID", "PLATFORM_DISPLAY_NAME"):
+            self.assertIn(key, idp.INPUT_ENV)
+        to_set, _ = model.env_declaration()
+        self.assertEqual(idp.session_termination_client_id(dict(
+            SESSION_VALUES, IDP_SESSION_TERMINATION_CLIENT_ID=to_set["IDP_SESSION_TERMINATION_CLIENT_ID"],
+            COMPONENT_DIRECTORY_CLIENTS=to_set["COMPONENT_DIRECTORY_CLIENTS"],
+            NATIVE_OIDC_CLIENTS=to_set["NATIVE_OIDC_CLIENTS"])), to_set["IDP_SESSION_TERMINATION_CLIENT_ID"])
+
+
+class FakeRealmSettings:
+    def __init__(self, **current):
+        self.realm = dict(realm="kailo", **current)
+        self.writes = []
+
+    def __call__(self, path, body=None, method=None):
+        method = method or ("POST" if body is not None else "GET")
+        assert path == ""
+        if method == "PUT":
+            self.writes.append(dict(body))
+            self.realm.update(body)
+            return None
+        return dict(self.realm)
+
+
+class RealmPresentationDeclaration(unittest.TestCase):
+    """DD-164(8): login theme, display name and zh-CN/en converge from the template and PLATFORM_DISPLAY_NAME."""
+
+    def template(self):
+        with open(os.path.join(os.path.dirname(__file__), "..", "..", "deploy", "local", "identity-provider",
+                               "realm.json"), encoding="utf-8") as stream:
+            return json.load(stream)
+
+    values = dict(OIDC_REALM="kailo", PLATFORM_DISPLAY_NAME="  Kailo <Team> ")
+
+    def test_converges_only_presentation_fields_and_reads_back(self):
+        kc = FakeRealmSettings(internationalizationEnabled=False, sslRequired="none")
+        report = idp.realm_presentation(kc, self.template(), self.values, False)
+        self.assertEqual((report["realmPresentation"], report["changed"]), ("DECLARED", 1))
+        self.assertEqual(kc.writes, [dict(loginTheme="kailo", internationalizationEnabled=True,
+                                          supportedLocales=["zh-CN", "en"], defaultLocale="zh-CN",
+                                          displayName="Kailo <Team>", displayNameHtml="Kailo &lt;Team&gt;")])
+        self.assertEqual(kc.realm["sslRequired"], "none")
+        self.assertEqual(idp.realm_presentation(idp.ReadOnly(kc), self.template(), self.values, True)["changed"], 0)
+
+    def test_verify_reports_drift_without_writing(self):
+        kc = FakeRealmSettings(loginTheme="keycloak")
+        report = idp.realm_presentation(idp.ReadOnly(kc), self.template(), self.values, True)
+        self.assertEqual((report["realmPresentation"], len(report["problems"]), kc.writes), ("DRIFTED", 1, []))
+
+    def test_template_and_display_name_are_validated(self):
+        broken = dict(self.template(), loginTheme="keycloak")
+        with self.assertRaises(idp.Refused):
+            idp.desired_presentation(broken, self.values)
+        with self.assertRaises(idp.Refused):
+            idp.desired_presentation(self.template(), dict(self.values, PLATFORM_DISPLAY_NAME="  "))
+
+
 class DeclaredEnvPreview(unittest.TestCase):
     """backup 先于 deploy：compose 必须按声明后的 .env 渲染（新的 ${NAME:?} 键尚未落盘）。"""
 

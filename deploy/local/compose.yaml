@@ -843,6 +843,10 @@ services:
       # 推迟到第一次续期之后。
       OIDC_TOKEN_URL: ${OIDC_ISSUER:?必须显式提供，禁止硬编码}/protocol/openid-connect/token
       OIDC_WORKER_CLIENT_ID: ${OIDC_WORKER_CLIENT_ID:?必须显式提供，禁止硬编码}
+      # DD-164(6)：Tenant 撤权时以专用 client 结束此人全部 IdP 会话（07 §4.7.5「撤权」）。issuer 定位 IdP
+      # 管理接口并筛选外部身份；client secret 只在下方 env_file 的 secrets/idp-session-termination/worker.env。
+      IDP_SESSION_TERMINATION_ISSUER: ${OIDC_ISSUER:?必须显式提供，禁止硬编码}
+      IDP_SESSION_TERMINATION_CLIENT_ID: ${IDP_SESSION_TERMINATION_CLIENT_ID:?必须显式提供会话终止 client（bootstrap.sh --declare-session-termination-client）}
       CORE_SERVICE_URL: http://core-bff:${SERVICE_CONTAINER_PORT:?必须显式提供，禁止硬编码}
       SPICEDB_ENDPOINT: ${SPICEDB_ENDPOINT:?必须显式提供，禁止硬编码}
       SPICEDB_INSECURE: "true"
@@ -863,6 +867,8 @@ services:
     env_file:
       # Worker 自己的 client secret 与 SpiceDB 的 PSK；都不进 .env、不上命令行
       - ${KAILO_RUNTIME_DIR:-.}/secrets/worker.env
+      # DD-164(6)：会话终止 client 的 secret（IdP 声明步骤以 IdP 为准写入，0600）；缺失即不创建 Worker
+      - ${KAILO_RUNTIME_DIR:-.}/secrets/idp-session-termination/worker.env
 
   # Web 面：三端共用 TypeScript 主体的浏览器那一份（DD-74）。
   # 镜像由 tools/build-upstream.sh 从 web-client 构建——固定 commit 的源码加本仓库改动：
@@ -1199,6 +1205,27 @@ services:
       # H2 在其中的 h2/ 子目录；挂到镜像里不存在的路径时新卷根属 root，Keycloak 无法写入。
       - keycloak-data:/opt/keycloak/data
       - ${KAILO_RUNTIME_DIR:-.}/secrets/idp-import:/opt/keycloak/data/import:ro
+    # DD-164(8)：Kailo 登录主题。以 configs 投递而不是挂载发布树目录：内容随发布比较（ADR-20 §9），
+    # 容器配置哈希不随发布树路径变化。令牌与标识直接取 client-kit 与 Web 的同一文件，不复制。
+    configs:
+      - source: idp_theme_properties
+        target: /opt/keycloak/themes/kailo/login/theme.properties
+      - source: idp_theme_messages_en
+        target: /opt/keycloak/themes/kailo/login/messages/messages_en.properties
+      - source: idp_theme_messages_zh_cn
+        target: /opt/keycloak/themes/kailo/login/messages/messages_zh_CN.properties
+      - source: idp_theme_messages_zh_hans
+        target: /opt/keycloak/themes/kailo/login/messages/messages_zh_Hans.properties
+      - source: idp_theme_css
+        target: /opt/keycloak/themes/kailo/login/resources/css/kailo.css
+      - source: idp_theme_tokens
+        target: /opt/keycloak/themes/kailo/login/resources/css/kailo-theme-tokens.css
+      - source: idp_theme_script
+        target: /opt/keycloak/themes/kailo/login/resources/js/kailo-theme.js
+      - source: idp_theme_mark
+        target: /opt/keycloak/themes/kailo/login/resources/img/kailo-mark.png
+      - source: idp_theme_mark
+        target: /opt/keycloak/themes/kailo/login/resources/img/favicon.ico
     # 口令从 secret 挂载读入后导出：Keycloak 不支持 _FILE 变体，
     # 直接写进 environment 会让它出现在 compose 与 .env 里。
     entrypoint: ["/bin/bash", "-c"]
@@ -1303,6 +1330,23 @@ secrets:
 configs:
   push_delivery_policy:
     file: ./push-delivery-policy.json
+  # DD-164(8)：Kailo 登录主题（keycloak 服务）
+  idp_theme_properties:
+    file: ./identity-provider/themes/kailo/login/theme.properties
+  idp_theme_messages_en:
+    file: ./identity-provider/themes/kailo/login/messages/messages_en.properties
+  idp_theme_messages_zh_cn:
+    file: ./identity-provider/themes/kailo/login/messages/messages_zh_CN.properties
+  idp_theme_messages_zh_hans:
+    file: ./identity-provider/themes/kailo/login/messages/messages_zh_Hans.properties
+  idp_theme_css:
+    file: ./identity-provider/themes/kailo/login/resources/css/kailo.css
+  idp_theme_tokens:
+    file: ../../client-kit/embed/kailo-theme-tokens.css
+  idp_theme_script:
+    file: ./identity-provider/themes/kailo/login/resources/js/kailo-theme.js
+  idp_theme_mark:
+    file: ../../web-client/web/public/app-icon.png
   # 唯一原生去重配置由 .env 投影，API 与 sink 共用真正的 YAML bool/整数。
   # 启用与 driver 是既定要求，不以可关闭开关绕过；两阶段索引严格分库。
   openmeter_usage_config:

@@ -1,0 +1,126 @@
+/*
+ * Kailo IdP login presentation (DD-164(8), DD-141, .design/20). Only --kailo-* tokens from
+ * kailo-theme-tokens.css (client-kit, the single token source) are used; PatternFly v5
+ * variables of the parent theme are mapped onto them. No IdP product name, logo or
+ * background survives: the mark is Kailo's app icon (img/kailo-mark.png, the same file as
+ * web-client/web/public/app-icon.png), the name is the realm display name.
+ */
+:root {
+  --keycloak-logo-url: none;
+  --keycloak-bg-logo-url: none;
+  --keycloak-card-top-color: transparent;
+  --pf-v5-global--FontFamily--text: var(--kailo-font-sans);
+  --pf-v5-global--FontFamily--heading: var(--kailo-font-sans);
+  --pf-v5-global--primary-color--100: var(--kailo-color-brand-600);
+  --pf-v5-global--primary-color--200: var(--kailo-color-brand-700);
+  --pf-v5-global--link--Color: var(--kailo-color-brand-600);
+  --pf-v5-global--link--Color--hover: var(--kailo-color-brand-700);
+  --pf-v5-global--active-color--100: var(--kailo-color-brand-600);
+  --pf-v5-global--BorderRadius--sm: var(--kailo-radius-md);
+  --pf-v5-global--BorderRadius--lg: var(--kailo-radius-xl);
+  --pf-v5-global--danger-color--100: var(--kailo-color-danger);
+  --pf-v5-global--Color--100: var(--kailo-color-foreground);
+  --pf-v5-global--Color--200: var(--kailo-color-muted-foreground);
+  --pf-v5-global--BackgroundColor--100: var(--kailo-color-card);
+  --pf-v5-global--BorderColor--100: var(--kailo-color-border);
+  --pf-v5-c-button--m-primary--BackgroundColor: var(--kailo-color-brand-600);
+  --pf-v5-c-button--m-primary--hover--BackgroundColor: var(--kailo-color-brand-700);
+  --pf-v5-c-button--m-primary--focus--BackgroundColor: var(--kailo-color-brand-700);
+  --pf-v5-c-button--m-primary--active--BackgroundColor: var(--kailo-color-brand-700);
+  --pf-v5-c-button--m-primary--Color: #fff;
+  --pf-v5-c-button--BorderRadius: var(--kailo-radius-lg);
+  --pf-v5-c-form-control--BorderRadius: var(--kailo-radius-lg);
+  --pf-v5-c-form-control--before--BorderColor: var(--kailo-color-input);
+  --pf-v5-c-form-control--after--BorderBottomColor: transparent;
+  --pf-v5-c-form-control--hover--after--BorderBottomColor: var(--kailo-color-brand-500);
+  --pf-v5-c-form-control--focus--after--BorderBottomColor: var(--kailo-color-brand-600);
+  --pf-v5-c-login__main--BackgroundColor: var(--kailo-color-card);
+  --pf-v5-c-login__main--BoxShadow: var(--kailo-shadow-xl);
+}
+
+html.login-pf,
+.login-pf body,
+body#keycloak-bg {
+  background: var(--kailo-color-background) !important;
+  font-family: var(--kailo-font-sans);
+  font-feature-settings: var(--kailo-font-features);
+  color: var(--kailo-color-foreground);
+}
+
+.login-pf body::before {
+  content: "";
+  position: fixed;
+  inset: -20vmax auto auto -20vmax;
+  width: 60vmax;
+  height: 60vmax;
+  background: var(--kailo-gradient-brand);
+  opacity: 0.16;
+  filter: blur(80px);
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.pf-v5-c-login { position: relative; z-index: 1; }
+
+.pf-v5-c-login__container { grid-template-columns: minmax(0, 26rem); }
+
+#kc-header-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  color: var(--kailo-color-foreground) !important;
+  font-size: var(--kailo-font-size-2xl);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  text-transform: none;
+}
+
+#kc-header-wrapper::before {
+  content: "";
+  width: 2.5rem;
+  height: 2.5rem;
+  flex: none;
+  border-radius: var(--kailo-radius-xl);
+  background: url("../img/kailo-mark.png") center / cover no-repeat;
+  box-shadow: var(--kailo-shadow-lg);
+}
+
+.pf-v5-c-login__main {
+  border: 1px solid var(--kailo-color-border);
+  border-radius: var(--kailo-radius-2xl);
+  box-shadow: var(--kailo-shadow-xl);
+  background: var(--kailo-color-card);
+  color: var(--kailo-color-card-foreground);
+}
+
+.pf-v5-c-login__main-header { border-top: 0; }
+
+#kc-page-title {
+  font-size: var(--kailo-font-size-xl);
+  font-weight: 600;
+  color: var(--kailo-color-card-foreground);
+}
+
+.pf-v5-c-button.pf-m-primary {
+  background: var(--kailo-color-brand-600);
+  border-radius: var(--kailo-radius-lg);
+  font-weight: 600;
+  transition: background var(--kailo-duration-fast) var(--kailo-ease-standard);
+}
+
+.pf-v5-c-button.pf-m-primary:hover,
+.pf-v5-c-button.pf-m-primary:focus-visible { background: var(--kailo-color-brand-700); }
+
+.pf-v5-c-form-control {
+  border-radius: var(--kailo-radius-lg);
+  background: var(--kailo-color-background);
+  color: var(--kailo-color-foreground);
+}
+
+.pf-v5-c-form-control:focus-within { box-shadow: 0 0 0 3px hsl(var(--kailo-hsl-ring) / 0.35); }
+
+a, .pf-v5-c-button.pf-m-link { color: var(--kailo-color-brand-600); }
+
+.pf-v5-c-login__main-footer-band { border-top-color: var(--kailo-color-border); }

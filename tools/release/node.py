@@ -476,7 +476,8 @@ class IdpStep:
     (退出码, 标准输出)。命令的标准输出是一行状态 JSON（bootstrap 与 idp-declarations.py 保证不含值），
     这里只保留其中的状态与计数字段。"""
 
-    KEEP = ("nativeClientProfiles", "directoryClients", "clients", "changed", "users", "written", "missing")
+    KEEP = ("nativeClientProfiles", "directoryClients", "sessionTermination", "realmPresentation", "clients",
+            "changed", "users", "written", "missing")
 
     def __init__(self, spec, digest, values, state_path, run):
         self.spec, self.digest, self.values, self.state_path, self.run = spec, digest, values, state_path, run

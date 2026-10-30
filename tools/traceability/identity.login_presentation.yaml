@@ -1,0 +1,39 @@
+capability_id: identity.login_presentation
+title: IdP 登录页 Kailo 化：部署投递的 kailo 登录主题、部署显示名与中英语言，由 IdP 声明步骤收敛并回读
+stage: EXT-BASE
+status: in_progress
+# 主题以 compose configs 只读投递给 IdP；realm 字段由 --declare-realm-presentation 收敛。尚未部署。
+exposure: none
+
+design:
+  requirements: [V-REQ-17]
+  decisions: [DD-164, DD-141]
+  facts: []
+  seams: []
+  blockers: []
+  entities: []
+
+validation:
+  scenarios: [V-SCN-279]
+  evidence:
+    - dimension: 单元测试
+      ref: tools/release/test_node.py
+    - dimension: 端到端场景
+      ref: deploy/local/identity-provider/themes/kailo/README.md
+
+implementation:
+  owners: [team-platform]
+  paths:
+    - deploy/local/identity-provider/themes/kailo
+    - deploy/local/identity-provider/realm.json
+    - deploy/local/idp-declarations.py
+    - deploy/local/bootstrap.sh
+    - deploy/local/compose.yaml
+    - tools/release/release.yaml
+  surfaces: [web, desktop, mobile]
+  schemas: []
+  migrations: []
+
+release:
+  artifacts: []
+  gate: blocked_until_seams_closed
