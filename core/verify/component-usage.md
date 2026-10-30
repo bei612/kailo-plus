@@ -18,6 +18,30 @@ V-SCN-282–276）。本记录只陈述本分支源码与已实际运行的检�
 - 组件：WeKnora 问答在 `KnowledgeQA`/`AgentQA` 入口准入、在 assistant 消息完成汇点上报；Wren 在
   `createAskingTask`/`rerunAskingTask` 前准入、建立后以原生 query ID 上报；Cells 每小时上报存储快照。
 
+## 发布对齐（DD-165(5)，V-SCN-288）
+
+- Core 子命令 `platform-core align-metering`（幂等登记缺失 meter/feature、为 Customer ACTIVE 的业务 Tenant
+  补齐默认 entitlement，已存在只核对不覆盖，随后回读；任一缺口以 5 退出并列出）与 `verify-metering`（只读回读）。
+- 发布入口（`tools/release/release.yaml` 的 `metering` 段、`node.py` 的 `MeteringStep`）在 core-bff 替换并就绪
+  之后、任何其他服务之前执行对齐，Core 未替换时在替换其他服务之前执行；失败即中止 deploy；verify 阶段回读。
+- 组件部署入口 `deploy/components/component-deploy.sh` 以 Core 的 `verify-metering` 通过为前置条件，否则拒绝
+  部署并列出缺口。组件准入在 Core 尚未登记时得到 `QUOTA_NOT_CONFIGURED`（旧 Core 的 `404` 同样处理），原位
+  提示“本组织的用量额度尚未在 Kailo 中完成登记”。
+
+## 合入 main 前的复跑（2026-10-30，`cfcd081a3836b5c15c1c0bc8c3efff5babdc787b`，已含 origin/main `0dc6a97d`）
+
+| 步骤 | 结果 |
+|---|---|
+| lint | exit 0（cargo fmt、clippy、gofmt、go vet、各 tsc、dart analyze、wren-ui prettier/next lint/tsc） |
+| contract | exit 0 |
+| migrate | exit 0（前进、回退、再前进；sqlx 同步；枚举约束） |
+| verify | exit 0（含 `metering_alignment::tests`、`component_usage::tests`、`tenant_quota::tests`、client-kit、web-client、dart、组件前端） |
+| trace、docs | exit 0（44 条追溯记录） |
+| `tools/release` 单元测试 | 98 项通过（含 `MeteringAlignment`：Core 后、其他服务前对齐；Core 未替换仍先对齐；失败中止；回读缺口） |
+| 组件定向 | WeKnora vet+test ok；Cells vet+test ok；wren-ui jest 5/5、prettier 通过 |
+
+迁移文件自下表的回滚演练以来未变。
+
 ## 已运行的检查（2026-10-30，CI 节点，GitHub 固定提交）
 
 `kailo-ci check-step` 只接受 main 可达提交，因此分支提交以同一原入口在 CI 节点的一次性 GitHub 副本内运行
