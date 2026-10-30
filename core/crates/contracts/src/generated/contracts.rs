@@ -728,6 +728,8 @@ pub enum ProtocolSessionMode {
     View,
 }
 
+/// Kailo UI language (REQ-08).
+///
 /// 系统通知文案的语言；通知不含正文。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -1231,6 +1233,80 @@ pub enum ComponentSearchResultKind {
     KnowledgeBase,
 
     Question,
+}
+
+/// GET /api/v1/account/preferences (DD-164(7)): the signed-in HumanIdentity's account
+/// preferences, shared by every Tenant and device. Absent fields have never been set;
+/// clients fall back to their defaults.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AccountPreferences {
+    /// neutral, kailo-brand or #rrggbb.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub accent: Option<String>,
+
+    /// DD-138 contributed preference values, at most 64, ordered by key.
+    pub component_preferences: Vec<AccountComponentPreference>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub follow_system: Option<bool>,
+
+    /// Kailo UI language (REQ-08).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub locale: Option<ProtocolSessionLocale>,
+
+    /// Theme name, 1-64 of [a-z0-9-].
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub theme: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub updated_at: Option<String>,
+
+    /// 0 before the first write.
+    pub version: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AccountComponentPreference {
+    /// 07 §4.8.2 preference key.
+    pub key: String,
+
+    /// BOOLEAN as true/false, ENUM as the option value (1-32 [A-Za-z0-9._-]).
+    pub value: String,
+}
+
+/// PUT /api/v1/account/preferences (DD-164(7)): compare-and-swap on version; absent fields
+/// are unchanged, componentPreferences entries are merged by key and an entry without value
+/// removes the key. 409 returns the current AccountPreferences.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AccountPreferencesUpdate {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub accent: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub component_preferences: Option<Vec<AccountComponentPreferenceChange>>,
+
+    pub expected_version: i64,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub follow_system: Option<bool>,
+
+    /// Kailo UI language (REQ-08).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub locale: Option<ProtocolSessionLocale>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub theme: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AccountComponentPreferenceChange {
+    pub key: String,
+
+    /// Absent removes the key.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub value: Option<String>,
 }
 
 /// DD-138(6)：当前 HUMAN 可管理的组件管理面（07 §4.8.5）。只含当前 Tenant 级与所给 Workspace 级 ACTIVE binding 的 pin
@@ -5497,6 +5573,124 @@ pub enum ComponentConformanceStepExpectedMcpResultKind {
     Result,
 }
 
+/// PUT /service/v1/component-directory/bindings/{bindingId}/receipt (DD-164(4)⑥): the
+/// component reports the last directory snapshot it fully applied or failed to apply. No
+/// personal data; grants nothing; never changes the directory.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ComponentDirectoryReceiptRequest {
+    pub applied_at: String,
+
+    /// 64 lowercase hex characters.
+    pub directory_version: String,
+
+    pub failures: Vec<ComponentReceiptFailure>,
+
+    pub outcome: ComponentReceiptOutcome,
+
+    pub schema: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ComponentReceiptFailure {
+    pub kind: ComponentReceiptFailureKind,
+
+    /// Upper snake case, at most 64 characters, e.g. NATIVE_OBJECT_MISSING.
+    pub reason_code: String,
+
+    /// Kailo id of the failed item (principalId, workspaceId, tenantId or resourceId), at most
+    /// 64 characters.
+    #[serde(rename = "ref")]
+    pub component_receipt_failure_ref: String,
+}
+
+/// DD-164(4)⑥: the directory part a convergence failure item refers to.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum ComponentReceiptFailureKind {
+    #[serde(rename = "MEMBER")]
+    Member,
+
+    #[serde(rename = "SHARE")]
+    Share,
+
+    #[serde(rename = "TENANT")]
+    Tenant,
+
+    #[serde(rename = "WORKSPACE")]
+    Workspace,
+}
+
+/// DD-164(4)⑥: whether the component fully applied the reported directory snapshot.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum ComponentReceiptOutcome {
+    #[serde(rename = "APPLIED")]
+    Applied,
+
+    #[serde(rename = "FAILED")]
+    Failed,
+}
+
+/// GET /api/v1/application-bindings/{bindingId}/directory-receipt for binding managers
+/// (DD-164(4)⑥): the latest receipt compared with the current directory version.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ComponentDirectoryReceiptView {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub applied_at: Option<String>,
+
+    pub binding_id: String,
+
+    /// The directory version last served to the component for the reported schema.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub current_version: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub failures: Option<Vec<ComponentReceiptFailureView>>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub receipt_version: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub received_at: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub schema: Option<i64>,
+
+    pub state: ComponentDirectoryReceiptState,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ComponentReceiptFailureView {
+    pub kind: ComponentReceiptFailureKind,
+
+    pub reason_code: String,
+
+    #[serde(rename = "ref")]
+    pub component_receipt_failure_view_ref: String,
+}
+
+/// DD-164(4)⑥: CONVERGED: the latest receipt is APPLIED for the version last served to the
+/// component; PENDING: a newer version was served within two read intervals; NOT_CONVERGED:
+/// the component has not applied what it was served for longer, or stopped reading for more
+/// than two intervals; FAILED: the latest receipt is FAILED; NO_RECEIPT: never reported.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum ComponentDirectoryReceiptState {
+    Converged,
+
+    Failed,
+
+    #[serde(rename = "NO_RECEIPT")]
+    NoReceipt,
+
+    #[serde(rename = "NOT_CONVERGED")]
+    NotConverged,
+
+    Pending,
+}
+
 /// Read-only member directory snapshot for an embedded component (.design/07 §4.7.4,
 /// DD-133(4)): every ACTIVE HUMAN member in the native page entry binding's scope with Kailo
 /// display name, avatar URL, Tenant role and ACTIVE Workspace memberships. A full snapshot,
@@ -5580,6 +5774,169 @@ pub struct ComponentDirectoryTenant {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ComponentDirectoryWorkspace {
+    pub name: String,
+
+    pub workspace_id: String,
+}
+
+/// Member directory snapshot schema 2 (.design/07 §4.7.4, DD-164(2)(4)): schema 1 plus Kailo
+/// create permissions and the Resource-level share projection. Served only for ?schema=2;
+/// directoryVersion is the SHA-256 (hex) of the canonical JSON of every other field of this
+/// response.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ComponentMemberDirectoryV2 {
+    pub binding_id: String,
+
+    /// Lowercase hex SHA-256 of the canonical JSON of this snapshot without directoryVersion;
+    /// unchanged content keeps the same version.
+    pub directory_version: String,
+
+    pub members: Vec<ComponentDirectoryV2Member>,
+
+    /// Always 2.
+    pub schema: i64,
+
+    /// Every ACTIVE component.shared_object Resource of this binding, ordered by resourceId.
+    pub shares: Vec<ComponentDirectoryShare>,
+
+    pub tenant: ComponentDirectoryV2Tenant,
+
+    /// Every ACTIVE Workspace in the binding scope (only the binding's own Workspace when it has
+    /// one).
+    pub workspaces: Vec<ComponentDirectoryV2Workspace>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ComponentDirectoryV2Member {
+    /// Kailo display name: the member's SERVER HUMAN kind:0 display_name (else name), else the
+    /// HumanIdentity display name.
+    pub display_name: String,
+
+    /// One entry per ACTIVE external identity; the component keys its account on issuer +
+    /// subject.
+    pub identities: Vec<ComponentDirectoryV2Identity>,
+
+    pub principal_id: String,
+
+    /// SpiceDB Tenant create for this principal (fully consistent).
+    pub tenant_create: bool,
+
+    pub tenant_role: ComponentDirectoryRole,
+
+    pub workspaces: Vec<ComponentDirectoryV2Membership>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ComponentDirectoryV2Identity {
+    pub issuer: String,
+
+    /// <PUBLIC_ORIGIN>/api/v1/identity/avatars/<subject>, the same value as the IdP picture
+    /// claim.
+    pub picture: String,
+
+    pub subject: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ComponentDirectoryV2Membership {
+    /// SpiceDB Workspace create for this principal (fully consistent).
+    pub create: bool,
+
+    pub role: ComponentDirectoryRole,
+
+    pub workspace_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ComponentDirectoryShare {
+    /// Owner first as WRITE, then the reader/editor relationships whose subject is still in this
+    /// snapshot, ordered by subject kind, id and access.
+    pub grants: Vec<ComponentShareGrant>,
+
+    pub native_id: String,
+
+    pub native_type: ComponentSharedNativeType,
+
+    pub owner_principal_id: String,
+
+    pub resource_id: String,
+}
+
+/// DD-164(4): one grant on a component shared object. TENANT subjects only accept READ.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ComponentShareGrant {
+    pub access: ComponentShareAccess,
+
+    pub subject: ComponentShareSubject,
+}
+
+/// DD-164(4): access granted on a component shared object. READ writes the SpiceDB reader
+/// relationship, WRITE writes editor.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum ComponentShareAccess {
+    #[serde(rename = "READ")]
+    Read,
+
+    #[serde(rename = "WRITE")]
+    Write,
+}
+
+/// DD-164(4): grantee of a component shared object. PRINCIPAL carries principalId (a
+/// same-Tenant ACTIVE HUMAN), WORKSPACE carries workspaceId (an ACTIVE Workspace of the
+/// Tenant), TENANT carries neither.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ComponentShareSubject {
+    pub kind: ComponentShareSubjectKind,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub principal_id: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
+}
+
+/// DD-164(4): who a component shared object is granted to: one Tenant HUMAN member, every
+/// member of a Workspace (workspace#member), or every Tenant member (tenant#member, READ
+/// only).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum ComponentShareSubjectKind {
+    #[serde(rename = "PRINCIPAL")]
+    Principal,
+
+    #[serde(rename = "TENANT")]
+    Tenant,
+
+    #[serde(rename = "WORKSPACE")]
+    Workspace,
+}
+
+/// DD-164(4) shareable native object types, fixed per presentation category: file_storage ->
+/// folder, knowledge -> knowledge_base (phase 1).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ComponentSharedNativeType {
+    Folder,
+
+    #[serde(rename = "knowledge_base")]
+    KnowledgeBase,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ComponentDirectoryV2Tenant {
+    pub name: String,
+
+    pub tenant_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ComponentDirectoryV2Workspace {
     pub name: String,
 
     pub workspace_id: String,
@@ -5952,6 +6309,86 @@ pub struct ComponentSearchQuery {
     pub locale: Option<String>,
 
     pub q: String,
+}
+
+/// Answer to a share intent: the opaque intent the component passes to the Kailo host in
+/// wire v1 {type: share}.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ComponentShareIntentCreated {
+    pub expires_at: String,
+
+    pub intent_id: String,
+}
+
+/// POST /service/v1/component-directory/bindings/{bindingId}/share-intents (DD-164(4)②): the
+/// component service names the native object its user wants to share. Only sent when the
+/// initiator may share the object natively; grants nothing.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ComponentShareIntentRequest {
+    pub initiator: ComponentShareInitiator,
+
+    /// Display name, 1-200 characters.
+    pub name: String,
+
+    /// 1-255 visible characters: Cells node UUID or WeKnora knowledge base ID.
+    pub native_id: String,
+
+    pub native_type: ComponentSharedNativeType,
+
+    /// The Kailo Workspace whose root contains the object, absent for Tenant-level objects.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ComponentShareInitiator {
+    pub issuer: String,
+
+    pub subject: String,
+}
+
+/// GET /api/v1/component-shares/intents/{intentId} (DD-164(4)③): what the Kailo share dialog
+/// shows. Readable only by the intent's initiator in a current session; an expired, consumed
+/// or foreign intent is 404.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ComponentShareIntentView {
+    /// folder: PRINCIPAL, WORKSPACE, TENANT; knowledge_base: WORKSPACE, TENANT (phase 1).
+    pub allowed_subjects: Vec<ComponentShareSubjectKind>,
+
+    pub binding_id: String,
+
+    /// Fresh share on the existing Resource, or true for the initiator before the first share.
+    pub can_share: bool,
+
+    pub expires_at: String,
+
+    /// Current grants without the owner.
+    pub grants: Vec<ComponentShareGrant>,
+
+    pub intent_id: String,
+
+    pub name: String,
+
+    /// file_storage or knowledge.
+    pub native_page_category: String,
+
+    pub native_type: ComponentSharedNativeType,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub owner_principal_id: Option<String>,
+
+    /// Present once the object is a component.shared_object Resource.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resource_id: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resource_version: Option<i64>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
 }
 
 /// DD-165(3)：额度准入结论。OpenMeter 不可读时 Core 以 503 回应而不给出结论，组件不得放行。组件可把 ALLOWED 缓存至多 60 秒。
@@ -8623,6 +9060,10 @@ pub struct ActionCommand {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub component_release_registration: Option<ComponentReleaseRegistration>,
 
+    /// 仅 component.share.set（DD-164(4)）且必带；其他动作携带即拒绝。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub component_share_set: Option<ComponentShareSet>,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub conversation_open: Option<ConversationOpenRequest>,
 
@@ -9102,6 +9543,24 @@ pub struct ComponentReleaseRegistration {
     pub manifest_json: String,
 
     pub package_json: String,
+}
+
+/// 仅 component.share.set（DD-164(4)）且必带；其他动作携带即拒绝。
+///
+/// Only component.share.set (DD-164(4)③) and required for it: the share intent naming the
+/// native object, the expected Resource version when the object is already a
+/// component.shared_object Resource (absent on the first share), and the complete grant list
+/// that replaces the current one (owner is implicit and never listed). At most 100 grants,
+/// no duplicate subject.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ComponentShareSet {
+    pub grants: Vec<ComponentShareGrant>,
+
+    pub intent_id: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resource_version: Option<i64>,
 }
 
 /// 原生私聊的完整 HUMAN Principal 参与者集合，必须包含当前 HUMAN；不接受设备公钥、CONTROL 身份或 Workspace 冒名。

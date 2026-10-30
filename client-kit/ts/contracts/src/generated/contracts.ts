@@ -531,6 +531,8 @@ export enum ProtocolSessionMode {
 }
 
 /**
+ * Kailo UI language (REQ-08).
+ *
  * 系统通知文案的语言；通知不含正文。
  */
 export enum ProtocolSessionLocale {
@@ -892,6 +894,72 @@ export enum ComponentSearchResultKind {
     Folder = "FOLDER",
     KnowledgeBase = "KNOWLEDGE_BASE",
     Question = "QUESTION",
+}
+
+/**
+ * GET /api/v1/account/preferences (DD-164(7)): the signed-in HumanIdentity's account
+ * preferences, shared by every Tenant and device. Absent fields have never been set;
+ * clients fall back to their defaults.
+ */
+export interface AccountPreferences {
+    /**
+     * neutral, kailo-brand or #rrggbb.
+     */
+    accent?: string;
+    /**
+     * DD-138 contributed preference values, at most 64, ordered by key.
+     */
+    componentPreferences: AccountComponentPreference[];
+    followSystem?:        boolean;
+    /**
+     * Kailo UI language (REQ-08).
+     */
+    locale?: ProtocolSessionLocale;
+    /**
+     * Theme name, 1-64 of [a-z0-9-].
+     */
+    theme?:     string;
+    updatedAt?: string;
+    /**
+     * 0 before the first write.
+     */
+    version: number;
+}
+
+export interface AccountComponentPreference {
+    /**
+     * 07 §4.8.2 preference key.
+     */
+    key: string;
+    /**
+     * BOOLEAN as true/false, ENUM as the option value (1-32 [A-Za-z0-9._-]).
+     */
+    value: string;
+}
+
+/**
+ * PUT /api/v1/account/preferences (DD-164(7)): compare-and-swap on version; absent fields
+ * are unchanged, componentPreferences entries are merged by key and an entry without value
+ * removes the key. 409 returns the current AccountPreferences.
+ */
+export interface AccountPreferencesUpdate {
+    accent?:               string;
+    componentPreferences?: AccountComponentPreferenceChange[];
+    expectedVersion:       number;
+    followSystem?:         boolean;
+    /**
+     * Kailo UI language (REQ-08).
+     */
+    locale?: ProtocolSessionLocale;
+    theme?:  string;
+}
+
+export interface AccountComponentPreferenceChange {
+    key: string;
+    /**
+     * Absent removes the key.
+     */
+    value?: string;
 }
 
 /**
@@ -3865,6 +3933,91 @@ export enum ComponentConformanceStepExpectedMcpResultKind {
 }
 
 /**
+ * PUT /service/v1/component-directory/bindings/{bindingId}/receipt (DD-164(4)⑥): the
+ * component reports the last directory snapshot it fully applied or failed to apply. No
+ * personal data; grants nothing; never changes the directory.
+ */
+export interface ComponentDirectoryReceiptRequest {
+    appliedAt: string;
+    /**
+     * 64 lowercase hex characters.
+     */
+    directoryVersion: string;
+    failures:         ComponentReceiptFailure[];
+    outcome:          ComponentReceiptOutcome;
+    schema:           number;
+}
+
+export interface ComponentReceiptFailure {
+    kind: ComponentReceiptFailureKind;
+    /**
+     * Upper snake case, at most 64 characters, e.g. NATIVE_OBJECT_MISSING.
+     */
+    reasonCode: string;
+    /**
+     * Kailo id of the failed item (principalId, workspaceId, tenantId or resourceId), at most
+     * 64 characters.
+     */
+    ref: string;
+}
+
+/**
+ * DD-164(4)⑥: the directory part a convergence failure item refers to.
+ */
+export enum ComponentReceiptFailureKind {
+    Member = "MEMBER",
+    Share = "SHARE",
+    Tenant = "TENANT",
+    Workspace = "WORKSPACE",
+}
+
+/**
+ * DD-164(4)⑥: whether the component fully applied the reported directory snapshot.
+ */
+export enum ComponentReceiptOutcome {
+    Applied = "APPLIED",
+    Failed = "FAILED",
+}
+
+/**
+ * GET /api/v1/application-bindings/{bindingId}/directory-receipt for binding managers
+ * (DD-164(4)⑥): the latest receipt compared with the current directory version.
+ */
+export interface ComponentDirectoryReceiptView {
+    appliedAt?: string;
+    bindingId:  string;
+    /**
+     * The directory version last served to the component for the reported schema.
+     */
+    currentVersion?: string;
+    failures?:       ComponentReceiptFailureView[];
+    receiptVersion?: string;
+    receivedAt?:     string;
+    schema?:         number;
+    state:           ComponentDirectoryReceiptState;
+}
+
+export interface ComponentReceiptFailureView {
+    kind:       ComponentReceiptFailureKind;
+    reasonCode: string;
+    ref:        string;
+}
+
+/**
+ * DD-164(4)⑥: CONVERGED: the latest receipt is APPLIED for the version last served to the
+ * component; PENDING: a newer version was served within two read intervals; NOT_CONVERGED:
+ * the component has not applied what it was served for longer, or stopped reading for more
+ * than two intervals; FAILED: the latest receipt is FAILED; NO_RECEIPT: never reported.
+ */
+export enum ComponentDirectoryReceiptState {
+    Converged = "CONVERGED",
+    Failed = "FAILED",
+    NoReceipt = "NO_RECEIPT",
+    NotConverged = "NOT_CONVERGED",
+    Pending = "PENDING",
+}
+
+/**
  * Read-only member directory snapshot for an embedded component (.design/07 §4.7.4,
  * DD-133(4)): every ACTIVE HUMAN member in the native page entry binding's scope with Kailo
  * display name, avatar URL, Tenant role and ACTIVE Workspace memberships. A full snapshot,
@@ -3934,6 +4087,145 @@ export interface ComponentDirectoryTenant {
 }
 
 export interface ComponentDirectoryWorkspace {
+    name:        string;
+    workspaceId: string;
+}
+
+/**
+ * Member directory snapshot schema 2 (.design/07 §4.7.4, DD-164(2)(4)): schema 1 plus Kailo
+ * create permissions and the Resource-level share projection. Served only for ?schema=2;
+ * directoryVersion is the SHA-256 (hex) of the canonical JSON of every other field of this
+ * response.
+ */
+export interface ComponentMemberDirectoryV2 {
+    bindingId: string;
+    /**
+     * Lowercase hex SHA-256 of the canonical JSON of this snapshot without directoryVersion;
+     * unchanged content keeps the same version.
+     */
+    directoryVersion: string;
+    members:          ComponentDirectoryV2Member[];
+    /**
+     * Always 2.
+     */
+    schema: number;
+    /**
+     * Every ACTIVE component.shared_object Resource of this binding, ordered by resourceId.
+     */
+    shares: ComponentDirectoryShare[];
+    tenant: ComponentDirectoryV2Tenant;
+    /**
+     * Every ACTIVE Workspace in the binding scope (only the binding's own Workspace when it has
+     * one).
+     */
+    workspaces: ComponentDirectoryV2Workspace[];
+}
+
+export interface ComponentDirectoryV2Member {
+    /**
+     * Kailo display name: the member's SERVER HUMAN kind:0 display_name (else name), else the
+     * HumanIdentity display name.
+     */
+    displayName: string;
+    /**
+     * One entry per ACTIVE external identity; the component keys its account on issuer +
+     * subject.
+     */
+    identities:  ComponentDirectoryV2Identity[];
+    principalId: string;
+    /**
+     * SpiceDB Tenant create for this principal (fully consistent).
+     */
+    tenantCreate: boolean;
+    tenantRole:   ComponentDirectoryRole;
+    workspaces:   ComponentDirectoryV2Membership[];
+}
+
+export interface ComponentDirectoryV2Identity {
+    issuer: string;
+    /**
+     * <PUBLIC_ORIGIN>/api/v1/identity/avatars/<subject>, the same value as the IdP picture
+     * claim.
+     */
+    picture: string;
+    subject: string;
+}
+
+export interface ComponentDirectoryV2Membership {
+    /**
+     * SpiceDB Workspace create for this principal (fully consistent).
+     */
+    create:      boolean;
+    role:        ComponentDirectoryRole;
+    workspaceId: string;
+}
+
+export interface ComponentDirectoryShare {
+    /**
+     * Owner first as WRITE, then the reader/editor relationships whose subject is still in this
+     * snapshot, ordered by subject kind, id and access.
+     */
+    grants:           ComponentShareGrant[];
+    nativeId:         string;
+    nativeType:       ComponentSharedNativeType;
+    ownerPrincipalId: string;
+    resourceId:       string;
+}
+
+/**
+ * DD-164(4): one grant on a component shared object. TENANT subjects only accept READ.
+ */
+export interface ComponentShareGrant {
+    access:  ComponentShareAccess;
+    subject: ComponentShareSubject;
+}
+
+/**
+ * DD-164(4): access granted on a component shared object. READ writes the SpiceDB reader
+ * relationship, WRITE writes editor.
+ */
+export enum ComponentShareAccess {
+    Read = "READ",
+    Write = "WRITE",
+}
+
+/**
+ * DD-164(4): grantee of a component shared object. PRINCIPAL carries principalId (a
+ * same-Tenant ACTIVE HUMAN), WORKSPACE carries workspaceId (an ACTIVE Workspace of the
+ * Tenant), TENANT carries neither.
+ */
+export interface ComponentShareSubject {
+    kind:         ComponentShareSubjectKind;
+    principalId?: string;
+    workspaceId?: string;
+}
+
+/**
+ * DD-164(4): who a component shared object is granted to: one Tenant HUMAN member, every
+ * member of a Workspace (workspace#member), or every Tenant member (tenant#member, READ
+ * only).
+ */
+export enum ComponentShareSubjectKind {
+    Principal = "PRINCIPAL",
+    Tenant = "TENANT",
+    Workspace = "WORKSPACE",
+}
+
+/**
+ * DD-164(4) shareable native object types, fixed per presentation category: file_storage ->
+ * folder, knowledge -> knowledge_base (phase 1).
+ */
+export enum ComponentSharedNativeType {
+    Folder = "folder",
+    KnowledgeBase = "knowledge_base",
+}
+
+export interface ComponentDirectoryV2Tenant {
+    name:     string;
+    tenantId: string;
+}
+
+export interface ComponentDirectoryV2Workspace {
     name:        string;
     workspaceId: string;
 }
@@ -4196,6 +4488,78 @@ export interface ComponentSearchQuery {
     limit?:  number;
     locale?: string;
     q:       string;
+}
+
+/**
+ * Answer to a share intent: the opaque intent the component passes to the Kailo host in
+ * wire v1 {type: share}.
+ */
+export interface ComponentShareIntentCreated {
+    expiresAt: string;
+    intentId:  string;
+}
+
+/**
+ * POST /service/v1/component-directory/bindings/{bindingId}/share-intents (DD-164(4)②): the
+ * component service names the native object its user wants to share. Only sent when the
+ * initiator may share the object natively; grants nothing.
+ */
+export interface ComponentShareIntentRequest {
+    initiator: ComponentShareInitiator;
+    /**
+     * Display name, 1-200 characters.
+     */
+    name: string;
+    /**
+     * 1-255 visible characters: Cells node UUID or WeKnora knowledge base ID.
+     */
+    nativeId:   string;
+    nativeType: ComponentSharedNativeType;
+    /**
+     * The Kailo Workspace whose root contains the object, absent for Tenant-level objects.
+     */
+    workspaceId?: string;
+}
+
+export interface ComponentShareInitiator {
+    issuer:  string;
+    subject: string;
+}
+
+/**
+ * GET /api/v1/component-shares/intents/{intentId} (DD-164(4)③): what the Kailo share dialog
+ * shows. Readable only by the intent's initiator in a current session; an expired, consumed
+ * or foreign intent is 404.
+ */
+export interface ComponentShareIntentView {
+    /**
+     * folder: PRINCIPAL, WORKSPACE, TENANT; knowledge_base: WORKSPACE, TENANT (phase 1).
+     */
+    allowedSubjects: ComponentShareSubjectKind[];
+    bindingId:       string;
+    /**
+     * Fresh share on the existing Resource, or true for the initiator before the first share.
+     */
+    canShare:  boolean;
+    expiresAt: string;
+    /**
+     * Current grants without the owner.
+     */
+    grants:   ComponentShareGrant[];
+    intentId: string;
+    name:     string;
+    /**
+     * file_storage or knowledge.
+     */
+    nativePageCategory: string;
+    nativeType:         ComponentSharedNativeType;
+    ownerPrincipalId?:  string;
+    /**
+     * Present once the object is a component.shared_object Resource.
+     */
+    resourceId?:      string;
+    resourceVersion?: number;
+    workspaceId?:     string;
 }
 
 /**
@@ -6119,7 +6483,11 @@ export interface ActionCommand {
      */
     componentReleaseId?:           string;
     componentReleaseRegistration?: ComponentReleaseRegistration;
-    conversationOpen?:             ConversationOpenRequest;
+    /**
+     * 仅 component.share.set（DD-164(4)）且必带；其他动作携带即拒绝。
+     */
+    componentShareSet?: ComponentShareSet;
+    conversationOpen?:  ConversationOpenRequest;
     /**
      * 仅 agent.delegation.grant：明确有效期、次数、确切动作与目标和最大结果暴露；不允许隐式通配。
      */
@@ -6513,6 +6881,21 @@ export interface ComponentReleaseRegistration {
     bindingConfigSchemaJson: string;
     manifestJson:            string;
     packageJson:             string;
+}
+
+/**
+ * 仅 component.share.set（DD-164(4)）且必带；其他动作携带即拒绝。
+ *
+ * Only component.share.set (DD-164(4)③) and required for it: the share intent naming the
+ * native object, the expected Resource version when the object is already a
+ * component.shared_object Resource (absent on the first share), and the complete grant list
+ * that replaces the current one (owner is implicit and never listed). At most 100 grants,
+ * no duplicate subject.
+ */
+export interface ComponentShareSet {
+    grants:           ComponentShareGrant[];
+    intentId:         string;
+    resourceVersion?: number;
 }
 
 /**
