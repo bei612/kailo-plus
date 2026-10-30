@@ -4012,6 +4012,15 @@ Core 不可用时仍按已应用快照拒绝非成员并保留管理员。另有
   → 另一位平台管理员 `component_release.approve` → `application_binding.create`（新 binding）→ 旧 binding
   `application_binding.disable`。合并前若镜像再变，版本再升，不复用已登记版本。
 
+## 验收批次 5：原生页面 release 1.3.0 与 1.4.0（2026-10-29/30）
+
+- `cells@1.3.0-native-page`（release `b2b4b324-4d20-5a1d-866e-790420954a40`）按发布 `1dff0ea54` 部署的
+  `file-storage-service` `sha256:a7efd47b…` 登记、审批，binding `d80415af-23f5-5a64-98c2-a3ce1f82e0d7` 换绑后旧 binding
+  `8bd32fe4` 停用。
+- 随后发布 `de21965c1`（源 `4009e1c6`，含验收批次 5 修复与 Buzz 第 11 轮）重建该镜像为 `sha256:3272eb4b…` 并已部署；1.3.0 已登记，不得复用，manifest 升到 `1.4.0-native-page`
+  （release id `b3c19759-a37c-5a67-adf0-a5a68f1ce069`），按 `--source-commit de21965c1e202e3bca724dcc4c97c199186d666b` 渲染、登记、
+  审批并换绑。
+
 ## 2026-10-27 上传正文读取后再次核验原执行权限
 
 源码基底 `8c5395908aacbc6c4d82a57eb43855b4d66824ee`，本批产品固定

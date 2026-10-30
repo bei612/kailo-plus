@@ -44,8 +44,13 @@ def create_service_container(
         "maxsize": settings.query_cache_maxsize,
         "ttl": settings.query_cache_ttl,
     }
-    wren_ai_docs = fetch_wren_ai_docs(settings.doc_endpoint, settings.is_oss)
-    if not wren_ai_docs:
+    # Kailo DD-163: with the user guide closed no upstream documentation is fetched.
+    wren_ai_docs = (
+        fetch_wren_ai_docs(settings.doc_endpoint, settings.is_oss)
+        if settings.allow_user_guide
+        else []
+    )
+    if settings.allow_user_guide and not wren_ai_docs:
         logger.warning("Failed to fetch Wren AI docs or response was empty.")
 
     _db_schema_retrieval_pipeline = retrieval.DbSchemaRetrieval(
@@ -155,6 +160,7 @@ def create_service_container(
             allow_sql_generation_reasoning=settings.allow_sql_generation_reasoning,
             allow_sql_functions_retrieval=settings.allow_sql_functions_retrieval,
             allow_sql_diagnosis=settings.allow_sql_diagnosis,
+            allow_user_guide=settings.allow_user_guide,
             max_histories=settings.max_histories,
             enable_column_pruning=settings.enable_column_pruning,
             max_sql_correction_retries=settings.max_sql_correction_retries,

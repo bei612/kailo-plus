@@ -20,6 +20,10 @@ import { useOrganizationStore } from '@/stores/organization';
 import KnowledgeBaseSelector from './KnowledgeBaseSelector.vue';
 import MentionSelector from './MentionSelector.vue';
 import AgentSelector from './AgentSelector.vue';
+import AgentEditorModal from '@/views/agent/AgentEditorModal.vue';
+import { agentModeAvailable, convergeText, quickAnswerSetupAction } from '@/kailo/converge';
+import { isKailoMode as kailoModeOn } from '@/kailo/runtime';
+import { useAuthStore as useConvergeAuthStore } from '@/stores/auth';
 import { getCaretCoordinates } from '@/utils/caret';
 import { getRootZoom, rectToCssPx, cssViewportSize } from '@/utils/zoom';
 import { type ModelConfig } from '@/api/model';
@@ -542,6 +546,20 @@ const props = defineProps({
 });
 
 const isAgentEnabled = computed(() => settingsStore.isAgentEnabled);
+// Kailo DD-163 (07 §4.8.8): Kailo mode answers with the built-in quick answer
+// only. The agent picker and agent-mode switch are not rendered, and when the
+// quick answer is not set up an admin edits its answer settings in place.
+const kailoMode = kailoModeOn();
+const agentPicker = agentModeAvailable(kailoMode);
+const convergeAuth = useConvergeAuthStore();
+const answerSettingsVisible = ref(false);
+const answerSettingsAgent = ref<CustomAgent | null>(null);
+const answerSettingsSection = ref('model');
+const answerSettingsHighlight = ref<string | undefined>(undefined);
+const onAnswerSettingsSaved = async () => {
+  answerSettingsVisible.value = false;
+  await loadAgents(true);
+};
 const isWebSearchEnabled = computed(() => settingsStore.isWebSearchEnabled);
 const selectedKbIds = computed(() => settingsStore.settings.selectedKnowledgeBases || []);
 const selectedFileIds = computed(() => settingsStore.settings.selectedFiles || []);
@@ -2475,6 +2493,18 @@ const goToAgentEditor = (
   highlight?: AgentNotReadyReasonKey,
   sourceTenantId?: string,
 ) => {
+  const action = quickAnswerSetupAction(kailoMode, convergeAuth.hasRole('admin'));
+  if (action === 'answer-settings-dialog') {
+    answerSettingsAgent.value = agent;
+    answerSettingsSection.value = section;
+    answerSettingsHighlight.value = highlight;
+    answerSettingsVisible.value = true;
+    return;
+  }
+  if (action === 'ask-admin') {
+    MessagePlugin.warning({ content: convergeText('askAdmin', locale.value), duration: 5000 });
+    return;
+  }
   router.push({
     path: '/platform/agents',
     query: {
@@ -2493,6 +2523,10 @@ const showAgentNotReadyMessage = (
   reasonKeys?: AgentNotReadyReasonKey[],
   sourceTenantId?: string,
 ) => {
+  if (quickAnswerSetupAction(kailoMode, convergeAuth.hasRole('admin')) === 'ask-admin') {
+    MessagePlugin.warning({ content: convergeText('askAdmin', locale.value), duration: 5000 });
+    return;
+  }
   const reasonsText = formatLocalizedList(reasons, locale.value)
   const isRemoteShared = !canLocallyConfigureAgent(sourceTenantId)
 
@@ -2708,8 +2742,8 @@ defineExpose({
       <div class="control-bar" :class="{ 'is-embedded': embeddedMode }">
         <!-- 左侧控制按钮 -->
         <div class="control-left" v-if="!embeddedMode">
-          <!-- Agent 模式切换按钮 -->
-          <div ref="agentModeButtonRef" class="control-btn agent-mode-btn" :class="{
+          <!-- Agent 模式切换按钮（Kailo DD-163：Kailo 模式不渲染） -->
+          <div v-if="agentPicker" ref="agentModeButtonRef" class="control-btn agent-mode-btn" :class="{
             'is-normal': !isCustomAgent && !isAgentEnabled,
             'is-agent': !isCustomAgent && isAgentEnabled,
             'is-custom': isCustomAgent
@@ -2724,7 +2758,7 @@ defineExpose({
           </div>
 
           <!-- Agent 选择器下拉菜单 -->
-          <AgentSelector :visible="showAgentModeSelector" :anchorEl="agentModeButtonRef"
+          <AgentSelector v-if="agentPicker" :visible="showAgentModeSelector" :anchorEl="agentModeButtonRef"
             :currentAgentId="selectedAgentId" :agents="enabledAgents" :all-models="allModels"
             @close="closeAgentModeSelector" @select="handleSelectAgent" @not-ready="handleAgentNotReady" />
 
@@ -2936,6 +2970,11 @@ defineExpose({
     <Teleport to="body">
       <KnowledgeBaseSelector v-model:visible="showKbSelector" :anchorEl="atButtonRef" @close="showKbSelector = false" />
     </Teleport>
+
+    <!-- Kailo DD-163：问答设置（内置快速问答的已投影对话模型、检索范围、联网搜索），由管理员在业务页内完成 -->
+    <AgentEditorModal v-if="answerSettingsVisible && answerSettingsAgent" v-model:visible="answerSettingsVisible"
+      mode="edit" :agent="answerSettingsAgent" :initialSection="answerSettingsSection"
+      :initialHighlightField="answerSettingsHighlight" @success="onAnswerSettingsSaved" />
   </div>
 </template>
 <script lang="ts">

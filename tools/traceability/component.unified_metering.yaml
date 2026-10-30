@@ -17,7 +17,7 @@ design:
   entities: [UsageEvent, OpenMeterBinding, ApplicationBinding, ComponentRelease, ExternalIdentity, TenantMembership]
 
 validation:
-  scenarios: [V-SCN-282, V-SCN-283, V-SCN-284, V-SCN-285, V-SCN-286, V-SCN-287]
+  scenarios: [V-SCN-282, V-SCN-283, V-SCN-284, V-SCN-285, V-SCN-286, V-SCN-287, V-SCN-288]
   evidence:
     - dimension: 合同一致
       ref: contracts/api/component_usage_report.schema.json

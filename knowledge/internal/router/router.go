@@ -136,6 +136,11 @@ func NewRouter(params RouterParams) *gin.Engine {
 	r.Use(middleware.Logger())
 	r.Use(middleware.Recovery())
 	r.Use(middleware.ErrorHandler())
+	// Kailo DD-163: in Kailo mode custom agents, agent mode, artifacts,
+	// memory, IM and web embedding are closed. Mounted on the engine before
+	// any route so the pre-Auth IM/embed/sandbox/local-browser routes are
+	// covered as well as /api/v1.
+	r.Use(middleware.KailoConvergeGuard(params.Config))
 
 	// 健康检查（不需要认证）
 	r.GET("/health", func(c *gin.Context) {

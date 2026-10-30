@@ -38,7 +38,7 @@ release:
   # 随发布 66b215db（源 34a6cff5）构建并固定；业务验收见对应 verify 记录。
   artifacts:
     - name: core
-      digest: sha256:3baec0da7bdefe3beecfe2704e445e2a18557e40c21074ec10c377896c20231d
+      digest: sha256:c79ff7f6fa0040a22a6478a20d2eb7555c67a9b7a195c93eb6da5c1f09ef4102
     - name: web-client
       digest: sha256:1680f7e3e8b599f55144fc7ed2f563b5a2ccaa3e9cf3c178e9b8fe40b172751f
   gate: blocked_until_seams_closed
