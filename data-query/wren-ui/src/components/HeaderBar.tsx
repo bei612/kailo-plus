@@ -49,8 +49,12 @@ const Tab = styled.button<{ $active: boolean }>`
 
 export default function HeaderBar() {
   const router = useRouter();
-  const { user, embedded } = useKailoSession();
-  const { tabs, activeTab } = pageTabs(router.locale, router.pathname);
+  const { user, embedded, isAdmin, loaded } = useKailoSession();
+  const { tabs, activeTab } = pageTabs(
+    router.locale,
+    router.pathname,
+    loaded && isAdmin,
+  );
 
   const account = headerAccount(embedded, !!user) === 'identity' && (
     <KailoUser user={user} size={24} />

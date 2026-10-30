@@ -54,6 +54,10 @@ const shell = {
     questionSqlPairs: '问答对',
     instructions: '指令',
     apiHistory: 'API 记录',
+    // DD-138(7): administration data.
+    apiHistoryAdminOnlyTitle: 'API 记录仅对管理员开放',
+    apiHistoryAdminOnlyHint:
+      'API 调用记录属于管理数据，只有可以管理问数的成员可以查看。',
     owner: '创建者',
     ownerUnknown: '—',
     // DD-138(6) (`07` §4.8.5): admin surfaces and the first-use state.
@@ -137,6 +141,10 @@ const shell = {
     questionSqlPairs: 'Question-SQL pairs',
     instructions: 'Instructions',
     apiHistory: 'API history',
+    // DD-138(7): administration data.
+    apiHistoryAdminOnlyTitle: 'API history is for administrators',
+    apiHistoryAdminOnlyHint:
+      'API call history is administration data. Only members who can manage this service can view it.',
     owner: 'Created by',
     ownerUnknown: '—',
     // DD-138(6) (`07` §4.8.5): admin surfaces and the first-use state.

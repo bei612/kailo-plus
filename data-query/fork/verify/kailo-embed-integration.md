@@ -307,3 +307,20 @@ native page release 升到 `1.6.0-native-page`（主线已登记到 1.5.0）：`
   STANDALONE 另对非目录管理员重定向。写仍由原 resolver 判定。`/api/*`、`/_next/*`、`/kailo/*` 不受影响；
   `docker/native-gateway.yaml` 只有 `/kailo-embed/` 静态页与 `/` 全量转发，没有绕过中间件的路径。
 - 模型由 Kailo 网关提供，组件内没有模型设置界面（设置对话框只有数据源与项目两项）。
+- **API 调用历史只给管理者**（DD-138(7)）：GraphQL `apiHistory`（含其 `ApiHistoryResponse` 嵌套字段，
+  只能经此 query 取到）先过 `kailoAdminRead`（`apollo/server/services/kailoUserService.ts`）：GOVERNED 以
+  `isKailoAdmin` 对 binding scope 做 fresh Core `manage`（与 `kailoSession.isAdmin`、全部写操作同一判定），
+  STANDALONE 为目录 Tenant admin；成员、匿名与原生服务令牌在读历史之前得到 `KAILO_ADMIN_REQUIRED`。外层仍是原
+  `discover` 包装。没有用 `nativeProjectResolver(..., 'manage')`：它的 manage 分支是写协议，拒绝会带原生写
+  结果（NOT_STARTED/UNKNOWN）外壳，不适合读。没有其他读取历史的 REST 或导出：`/api/v1/*` 只写入自己的记录，
+  原生 ask 的同 ID 复读走该接口自身的所有权校验。前端：Kailo 标签“API”只对管理员出现
+  （`pageTabs(..., isAdmin)`）；非管理员直达 `/api-management/history` 看到 Kailo 空态
+  “API 记录仅对管理员开放”，页面不发起历史查询。API 区只有这一页，详情抽屉中的请求、响应与 SQL 都是历史
+  内容，按最小可见原则一并只给管理员；没有独立的接口说明页。
+- **学习记录关闭**（DD-138(7)，帮助只由 Kailo 提供）：`LearningResolver.getLearningRecord` /
+  `saveLearningRecord`（GraphQL `learningRecord` / `saveLearningRecord`）在两种模式下对任何调用者都抛出
+  `KAILO_FEATURE_UNAVAILABLE`，不读写学习行；没有相关 REST。前端的上手指引早已删除（`remove_paths` 中的
+  `components/learning`），页面不调用这两个操作，也没有指引入口。
+- 测试：`kailoAdminRead.test.ts`（STANDALONE/GOVERNED 判定与 `Query.apiHistory` 接线）、
+  `nativeLearning.test.ts`（改写为关闭断言）、`kailoAdminSurface.test.ts`（API 标签仅管理员）、
+  `viewMetadata.test.ts`（改为渲染历史内容组件 `APIHistory`）。

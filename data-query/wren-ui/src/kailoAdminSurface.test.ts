@@ -260,17 +260,25 @@ describe('native admin route closure', () => {
 });
 
 describe('business page header (DD-157 / DD-138(6))', () => {
-  it('offers the same business tabs to everyone, without 建模', () => {
+  it('offers the business tabs, without 建模', () => {
     expect(KAILO_TABS.map((tab) => tab.id)).toEqual([
       'home',
       'knowledge',
       'api',
     ]);
-    const { tabs, activeTab } = pageTabs('zh-CN', Path.Home);
+    const { tabs, activeTab } = pageTabs('zh-CN', Path.Home, true);
     expect(tabs.map((tab) => tab.id)).toEqual(['home', 'knowledge', 'api']);
     expect(activeTab).toBe('home');
     expect(JSON.stringify(tabs)).not.toMatch(/modeling|建模/);
-    expect(pageTabs('en', Path.AdminModeling).activeTab).toBeUndefined();
+    expect(pageTabs('en', Path.AdminModeling, true).activeTab).toBeUndefined();
+  });
+
+  it('shows the API history tab to administrators only (DD-138(7))', () => {
+    const member = pageTabs('zh-CN', Path.APIManagementHistory, false);
+    expect(member.tabs.map((tab) => tab.id)).toEqual(['home', 'knowledge']);
+    expect(member.activeTab).toBeUndefined();
+    const admin = pageTabs('zh-CN', Path.APIManagementHistory, true);
+    expect(admin.activeTab).toBe('api');
   });
 
   it('keeps no admin route behind a business tab', () => {

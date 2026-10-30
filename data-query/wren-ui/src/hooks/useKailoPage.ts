@@ -16,7 +16,9 @@ import useKailoSession from '@/hooks/useKailoSession';
 // each page supplies its title, ancestors and actions. DD-138(6) (`07`
 // §4.8.5): business pages carry no admin entries — modeling, the data source
 // connection and the project settings are Kailo admin surfaces
-// (components/kailo/KailoAdminSurface), which have no tabs.
+// (components/kailo/KailoAdminSurface), which have no tabs. DD-138(7): the
+// API call history is administration data — its tab is the administrators'
+// only (the server refuses the history to everyone else).
 
 export type KailoTabId = 'home' | 'knowledge' | 'api';
 
@@ -25,6 +27,7 @@ interface TabDef {
   label: KailoTextKey;
   path: Path;
   prefix: Path;
+  adminOnly?: boolean;
 }
 
 export const KAILO_TABS: TabDef[] = [
@@ -40,20 +43,23 @@ export const KAILO_TABS: TabDef[] = [
     label: 'navApi',
     path: Path.APIManagementHistory,
     prefix: Path.APIManagement,
+    adminOnly: true,
   },
 ];
 
-/** The business tabs, the same for every user. */
+/** The business tabs this user may see (API history: administrators). */
 export function pageTabs(
   locale: string | undefined,
   pathname: string,
+  isAdmin: boolean,
 ): { tabs: KailoPageItem[]; activeTab?: KailoTabId } {
+  const visible = KAILO_TABS.filter((tab) => !tab.adminOnly || isAdmin);
   return {
-    tabs: KAILO_TABS.map((tab) => ({
+    tabs: visible.map((tab) => ({
       id: tab.id,
       label: kailoText(locale, tab.label),
     })),
-    activeTab: KAILO_TABS.find((tab) => pathname.startsWith(tab.prefix))?.id,
+    activeTab: visible.find((tab) => pathname.startsWith(tab.prefix))?.id,
   };
 }
 
@@ -75,12 +81,16 @@ export interface KailoPageSpec {
 export default function useKailoPage(spec: KailoPageSpec) {
   const router = useRouter();
   const pathname = router.pathname || '';
-  const { hostPage } = useKailoSession();
+  const { hostPage, isAdmin, loaded } = useKailoSession();
   const latest = useRef(spec);
   latest.current = spec;
 
   const page = useMemo<KailoPage>(() => {
-    const { tabs, activeTab } = pageTabs(router.locale, pathname);
+    const { tabs, activeTab } = pageTabs(
+      router.locale,
+      pathname,
+      loaded && isAdmin,
+    );
     return {
       title: (spec.title || '').trim().slice(0, 120) || '—',
       breadcrumbs: (spec.breadcrumbs || []).slice(0, 8),
@@ -91,6 +101,8 @@ export default function useKailoPage(spec: KailoPageSpec) {
   }, [
     router.locale,
     pathname,
+    loaded,
+    isAdmin,
     spec.title,
     JSON.stringify(spec.breadcrumbs || []),
     JSON.stringify(spec.actions || []),
