@@ -6,6 +6,9 @@ import { compileScript, parse } from '@vue/compiler-sfc'
 import ts from 'typescript'
 import * as vue from 'vue'
 import * as folderTree from './folderTree.ts'
+import * as kailoListing from '../../kailo/listing.ts'
+import * as kailoLoadState from '../../kailo/loadState.ts'
+import * as kailoUxText from '../../kailo/uxText.ts'
 
 // Like App.oidc.test.ts, execute the real SFC script AND template with Vue's
 // renderer. HTTP/store and upload queue boundaries do not upload real files.
@@ -55,7 +58,7 @@ function fixture() {
       if (name === 'vue') return vue
       if (name === 'vue-router') return { useRoute: () => route,
         useRouter: () => ({ replace: (path: any) => { redirects.push(path); return Promise.resolve() }, push: noop }) }
-      if (name === 'vue-i18n') return { useI18n: () => ({ t: (key: string) => key }) }
+      if (name === 'vue-i18n') return { useI18n: () => ({ t: (key: string) => key, locale: vue.ref('zh-CN') }) }
       if (name === 'tdesign-vue-next') return { MessagePlugin: { error: (message: string) => errors.push(message), warning: noop } }
       if (name === '@/stores/auth') return { useAuthStore: () => auth }
       if (name === '@/stores/organization') return { useOrganizationStore: () => org }
@@ -75,6 +78,7 @@ function fixture() {
       if (name === '@/hooks/useKnowledgeBase') return { __esModule: true, default: () => ({ cardList, total,
         details: vue.reactive({}), moreIndex: vue.ref(-1), openMore: noop, onVisibleChange: noop,
         getKnowled: async (_query: any, id: string) => { lists.push(id); cardList.value = [] },
+        listError: vue.ref(null),
       }) }
       if (name === '@/hooks/useMarqueeSelect') return { useMarqueeSelect: () => ({
         marqueeVisible: vue.ref(false), marqueeMode: vue.ref('add'), boxStyle: vue.ref({}),
@@ -84,6 +88,10 @@ function fixture() {
       // DD-157 Kailo shell: top-level (not framed) here, so the native header renders.
       if (name === '@/kailo/setup') return { isKailoShell: () => false }
       if (name === '@/kailo/page') return { usePageHeader: noop }
+      // DD-167 pure list/state/wording modules run as they are.
+      if (name === '@/kailo/listing') return kailoListing
+      if (name === '@/kailo/loadState') return kailoLoadState
+      if (name === '@/kailo/uxText') return kailoUxText
       if (name.endsWith('.vue')) return { __esModule: true, default: component(name) }
       if (name === '@/api/knowledge-base/index') return {
         listKnowledgeFolders: async () => ({ data: null }), listKnowledgeTags: async () => ({ data: { data: [] } }),

@@ -220,7 +220,7 @@ const offStore = menuStore.$onAction(({ name, args, after }) => {
   if (name === 'updataMenuChildren') {
     after(() => { page.value = 1; void load() })
   } else if (name === 'updatasessionTitle') {
-    const [sessionId, title] = args as [string, string]
+    const [sessionId, title] = args as unknown as [string, string]
     after(() => { rows.value = rows.value.map((row) => (row.id === sessionId ? { ...row, title } : row)) })
   }
 })
