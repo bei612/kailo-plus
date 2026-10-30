@@ -32,7 +32,7 @@ async function share() {
   busy.value = true
   try {
     const outcome = await requestKailoShare(props.kbId, {
-      post: (url, body) => post(url, body) as Promise<{ intentId?: unknown }>,
+      post: (url, body) => post(url, body as Record<string, unknown>) as Promise<{ intentId?: unknown }>,
     })
     if (outcome !== 'opened') MessagePlugin.warning(text(outcome))
   } finally {
