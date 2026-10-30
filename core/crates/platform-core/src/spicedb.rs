@@ -1231,7 +1231,10 @@ mod tests {
             "tenant:t",
             "tenant:t#admin",
             "tenant:#member",
-            "workspace:w#member",
+            // DD-164(4)：Workspace 只有成员主体集
+            "workspace:w",
+            "workspace:w#admin",
+            "workspace:#member",
         ] {
             assert_eq!(Subject::parse(bad), None, "{bad}");
         }

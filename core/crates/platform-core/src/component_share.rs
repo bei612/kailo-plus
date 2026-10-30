@@ -364,7 +364,6 @@ pub(crate) struct Shared {
     pub id: Uuid,
     pub version: i32,
     pub owner_principal_id: Uuid,
-    pub home_workspace_id: Option<Uuid>,
     pub state: String,
     pub projection_action_execution_id: Option<Uuid>,
 }
@@ -378,7 +377,7 @@ async fn shared(
     lock: bool,
 ) -> Result<Option<Shared>, sqlx::Error> {
     sqlx::query_as(&format!(
-        "select id,version,owner_principal_id,home_workspace_id,state,projection_action_execution_id
+        "select id,version,owner_principal_id,state,projection_action_execution_id
          from catalog.resource
          where tenant_id=$1 and application_binding_id=$2 and type_key=$3
            and native_type=$4 and native_id=$5{}",
