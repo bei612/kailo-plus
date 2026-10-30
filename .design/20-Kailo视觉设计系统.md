@@ -92,7 +92,7 @@ Orchid 保留为品牌渐变的第二色标（§2.5），让 Iris 在品牌时�
 | brand（`--primary`） | 主按钮、主强调 | brand 600 | brandDark 500 |
 | brand-text | 链接、品牌色文字 | brand 600 | brandDark 200 |
 | brand-soft / brand-soft-text | 选中行、品牌浅标签 | brand 50 / brand 700 | brandDark 950 / brandDark 100 |
-| mention / mention-hover / mention-text | 提及与引用 chip（消息正文与输入框同一套） | brand 100 / brand 200 / brand 700 | brandDark 900 / brandDark 800 / brandDark 200 |
+| mention / mention-hover / mention-text | 提及与引用 chip（消息正文与输入框同一套） | brand 200 / brand 300 / brand 800 | brandDark 900 / brandDark 800 / brandDark 200 |
 | ring | 焦点环 | brand 500 | brandDark 400 |
 | sidebar（`--sidebar-background`） | 侧栏 | neutral 50 | neutral 975 |
 
@@ -220,7 +220,7 @@ Orchid 保留为品牌渐变的第二色标（§2.5），让 Iris 在品牌时�
 - **侧栏**：行高 30、圆角 md、图标 16；悬停 sidebarHover；选中为 brand-soft 底 + brand-soft-text 文字与图标，左缘内侧 3 px brand 指示条；未读为 text 色 600 字重 + 右侧 brand 计数；分组标题为 Overline，悬停时显示分组操作。组件入口与平台导航之间以 12 px 间距分组，不用分隔线。个人卡片在底部，头像 28 + 名称 + 状态。
 - **内容平面**：surface 底，左缘与顶部各 1 px line 与画布分隔，只在左上角以 12 px 圆角与顶栏、侧栏过渡；右、下贴边，不使用外边距和悬浮卡（反例清单）。
 - **频道头**：高 52，下缘 1 px line；左侧 28 px brand-soft 圆角方块内放频道图标（公开 #、私密锁、论坛），名称 Headline，说明 Caption text-muted 单行截断；右侧成员头像叠放 + 计数、通话、更多，均为 32 px 幽灵按钮。
-- **消息列表**：头像 36 圆角方形；作者 14/600、时间 12 text-muted；连续消息合并；悬停行 sunken 底与右上浮动操作条（overlay、圆角 lg、阴影 sm）；日期分隔为左对齐 Overline 文字 + 延伸细线；系统消息 Caption 居中 text-muted；提及高亮用 mention 底 + mention-text 字、悬停 mention-hover（2026-10-30 用户反馈“@ 别人不高亮”：brand-soft 是 brand 50/950，与 surface 的对比只有约 1.03，chip 在亮色下看不出、暗色下字色接近正文；原版为 primary 15% 底 + primary 字。mention 底与 surface 的对比须不低于 1.15、mention-text 与 mention 底不低于 4.5，消息正文、输入框提及块与人类/Agent 提及同一套）。
+- **消息列表**：头像 36 圆角方形；作者 14/600、时间 12 text-muted；连续消息合并；悬停行 sunken 底与右上浮动操作条（overlay、圆角 lg、阴影 sm）；日期分隔为左对齐 Overline 文字 + 延伸细线；系统消息 Caption 居中 text-muted；提及高亮用 mention 底 + mention-text 字、悬停 mention-hover（2026-10-30 用户反馈“@ 别人不高亮”：brand-soft 是 brand 50/950，与 surface 的对比只有约 1.03，chip 在亮色下看不出、暗色下字色接近正文；原版为 primary 15% 底 + primary 字。mention 底与 surface、sunken（悬停行）的对比须不低于 1.25、mention-text 与 mention 底不低于 4.5，消息正文、输入框提及块与人类/Agent 提及同一套）。
 - **输入器**：surface 底、line-strong 描边、圆角 xl、阴影 xs；聚焦 brand 描边 + 光晕；工具栏图标 16 text-muted；发送按钮 28 圆角 lg，有内容时 brand 实色，无内容时 hover 底。
 - **线程与侧滑面板**：贴边右侧平面，左缘 1 px line，顶部 52 头部与频道头对齐。
 - **设置页**：左侧设置导航与主侧栏同构；右侧内容最大宽 720 居中，分区标题 Title 1，分组为圆角 xl 的 raised 卡片，行内控件右对齐，行间 line 分隔。
