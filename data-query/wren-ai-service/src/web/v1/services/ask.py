@@ -118,6 +118,7 @@ class AskService:
         max_histories: int = 5,
         maxsize: int = 1_000_000,
         ttl: int = 120,
+        allow_user_guide: bool = True,
     ):
         self._pipelines = pipelines
         self._ask_results: Dict[str, AskResultResponse] = TTLCache(
@@ -127,6 +128,7 @@ class AskService:
         self._allow_sql_functions_retrieval = allow_sql_functions_retrieval
         self._allow_intent_classification = allow_intent_classification
         self._allow_sql_diagnosis = allow_sql_diagnosis
+        self._allow_user_guide = allow_user_guide
         self._enable_column_pruning = enable_column_pruning
         self._max_histories = max_histories
         self._max_sql_correction_retries = max_sql_correction_retries
@@ -274,6 +276,11 @@ class AskService:
                         if not owns_result():
                             return results
                         intent = intent_classification_result.get("intent")
+                        # Kailo DD-163 (07 §4.8.8): product help is Kailo's; a
+                        # "how do I use this product" question is answered as a
+                        # non-data question, never from upstream documentation.
+                        if intent == "USER_GUIDE" and not self._allow_user_guide:
+                            intent = "MISLEADING_QUERY"
                         rephrased_question = intent_classification_result.get(
                             "rephrased_question"
                         )
