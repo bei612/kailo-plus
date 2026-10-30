@@ -908,8 +908,8 @@ function WindowSummary({ operations }: { operations: readonly BusinessOperationV
 
 const timelineColumns = ["time", "action", "initiator", "actor", "workspace", "usage", "duration"] as const;
 const secondaryColumn: ReadonlySet<string> = new Set(["actor", "workspace", "duration"]);
-const columnWidth: Readonly<Record<string, string | undefined>> = {
-  time: "5.5rem", initiator: "8rem", actor: "8rem", workspace: "10rem", usage: "9rem", duration: "6rem",
+const columnWidth: Readonly<Record<string, string>> = {
+  time: "w-[5.5rem]", initiator: "w-32", actor: "w-32", workspace: "w-40", usage: "w-36", duration: "w-24",
 };
 
 /**
@@ -1016,10 +1016,10 @@ function OperationTimeline({ view, workspaces }: { view: View; workspaces: Works
               ? <EmptyState icon={Activity} title={t("operations.none")} description={t(view === "mine" ? "operations.noneMine" : "operations.noneScope")} />
               : <div className="min-w-0 overflow-hidden rounded-xl border border-border bg-card">
                 <div className="overflow-x-auto">
-                  <table aria-label={t("operations.timeline")} className="w-full min-w-[40rem] table-fixed border-separate border-spacing-0 text-left text-sm">
+                  <table aria-label={t("operations.timeline")} className="w-full min-w-[40rem] table-fixed text-left text-sm">
                     <colgroup>
-                      {timelineColumns.map((key) => <col key={key} className={secondaryColumn.has(key) ? "max-sm:hidden" : undefined}
-                        style={columnWidth[key] ? { width: columnWidth[key] } : undefined} />)}
+                      {timelineColumns.map((key) => <col key={key}
+                        className={`${columnWidth[key] ?? ""} ${secondaryColumn.has(key) ? "max-sm:hidden" : ""}`} />)}
                     </colgroup>
                     <thead>
                       <tr>
