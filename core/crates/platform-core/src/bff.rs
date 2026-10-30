@@ -937,6 +937,11 @@ pub fn router(state: BffState) -> Router {
             "/api/v1/conversations/{conversation_id}/media/{sha256}",
             get(crate::web_transport::fetch_conversation_media),
         )
+        // DD-164(7): account preferences (theme, language, component preferences).
+        .exposed_route(
+            "/api/v1/account/preferences",
+            get(crate::account_preferences::get).put(crate::account_preferences::put),
+        )
         .exposed_route("/api/v1/user-state", get(crate::user_state::get_user_state))
         .exposed_route(
             "/api/v1/user-state/projects",

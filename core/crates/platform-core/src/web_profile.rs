@@ -375,7 +375,131 @@ pub(crate) async fn identity_avatar(
         Ok(v) => v,
         Err(r) => return r,
     };
-    avatar_resolved(avatar_location(event.as_ref(), &host))
+    let location = avatar_location(event.as_ref(), &host);
+    if location.is_none() {
+        // DD-164(9): Buzz's default avatar is an inline data: image; serve its
+        // bytes under the same authorization instead of answering 404.
+        if let Some((content_type, bytes)) = avatar_inline(event.as_ref()) {
+            return avatar_image(content_type, bytes);
+        }
+    }
+    avatar_resolved(location)
+}
+
+/// DD-164(9), 07 §4.7.3: largest decoded inline avatar the route serves.
+pub(crate) const INLINE_AVATAR_MAX_BYTES: usize = 256 * 1024;
+
+/// An inline picture answered with its own bytes. SVG cannot run script even
+/// when opened directly: the CSP forbids everything but inline styles and
+/// sandboxes the document; nosniff keeps the declared type.
+pub(crate) fn avatar_image(content_type: &'static str, bytes: Vec<u8>) -> Response {
+    (
+        StatusCode::OK,
+        [
+            (axum::http::header::CONTENT_TYPE, content_type),
+            (axum::http::header::CACHE_CONTROL, RESOLVED_AVATAR_CACHE),
+            (axum::http::header::VARY, "Cookie"),
+            (axum::http::header::X_CONTENT_TYPE_OPTIONS, "nosniff"),
+            (
+                axum::http::header::CONTENT_SECURITY_POLICY,
+                "default-src 'none'; style-src 'unsafe-inline'; sandbox",
+            ),
+        ],
+        bytes,
+    )
+        .into_response()
+}
+
+/// The kind:0 `picture` when it is an inline `data:image/{png,jpeg,gif,webp,svg+xml}`
+/// (base64 or percent-encoded) whose decoded bytes are at most 256 KiB and
+/// actually are that image type. Anything else is not served inline.
+pub(crate) fn avatar_inline(event: Option<&nostr::Event>) -> Option<(&'static str, Vec<u8>)> {
+    let picture = event
+        .and_then(|e| serde_json::from_str::<Value>(&e.content).ok())
+        .and_then(|content| {
+            content
+                .get("picture")
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+        })?;
+    inline_image(&picture)
+}
+
+pub(crate) fn inline_image(picture: &str) -> Option<(&'static str, Vec<u8>)> {
+    use base64::Engine as _;
+    let rest = picture
+        .get(..5)
+        .filter(|scheme| scheme.eq_ignore_ascii_case("data:"))
+        .map(|_| &picture[5..])?;
+    // Bound the work before decoding: base64 is 4/3 and percent-encoding up to 3x.
+    if rest.len() > INLINE_AVATAR_MAX_BYTES * 3 + 256 {
+        return None;
+    }
+    let (header, data) = rest.split_once(',')?;
+    let mut parts = header.split(';');
+    let media = parts.next()?.trim().to_ascii_lowercase();
+    let content_type: &'static str = match media.as_str() {
+        "image/png" => "image/png",
+        "image/jpeg" => "image/jpeg",
+        "image/gif" => "image/gif",
+        "image/webp" => "image/webp",
+        "image/svg+xml" => "image/svg+xml",
+        _ => return None,
+    };
+    let mut base64 = false;
+    for parameter in parts {
+        let parameter = parameter.trim();
+        if parameter.eq_ignore_ascii_case("base64") {
+            base64 = true;
+        } else if !parameter.contains('=') {
+            return None;
+        }
+    }
+    let bytes = if base64 {
+        let compact: String = percent_decode(data)
+            .and_then(|b| String::from_utf8(b).ok())?
+            .chars()
+            .filter(|c| !c.is_ascii_whitespace())
+            .collect();
+        base64::engine::general_purpose::STANDARD
+            .decode(compact)
+            .ok()?
+    } else {
+        percent_decode(data)?
+    };
+    if bytes.is_empty() || bytes.len() > INLINE_AVATAR_MAX_BYTES {
+        return None;
+    }
+    let genuine = match content_type {
+        "image/png" => bytes.starts_with(b"\x89PNG\r\n\x1a\n"),
+        "image/jpeg" => bytes.starts_with(&[0xff, 0xd8, 0xff]),
+        "image/gif" => bytes.starts_with(b"GIF87a") || bytes.starts_with(b"GIF89a"),
+        "image/webp" => bytes.len() >= 12 && &bytes[..4] == b"RIFF" && &bytes[8..12] == b"WEBP",
+        _ => std::str::from_utf8(&bytes)
+            .ok()
+            .is_some_and(|text| text.contains("<svg")),
+    };
+    genuine.then_some((content_type, bytes))
+}
+
+/// RFC 3986 percent-decoding of a data: URL body; a malformed escape is refused.
+fn percent_decode(input: &str) -> Option<Vec<u8>> {
+    let bytes = input.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' {
+            let hex = input
+                .get(i + 1..i + 3)
+                .filter(|h| h.bytes().all(|b| b.is_ascii_hexdigit()))?;
+            out.push(u8::from_str_radix(hex, 16).ok()?);
+            i += 3;
+        } else {
+            out.push(bytes[i]);
+            i += 1;
+        }
+    }
+    Some(out)
 }
 
 /// Browser cache of a resolved answer (07 §4.7.3: components use the route as
