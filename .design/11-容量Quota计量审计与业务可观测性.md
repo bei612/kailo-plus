@@ -79,10 +79,10 @@ Core 只定义通用 Usage 上报契约，不内置任何业务能力服务的�
 | 业务能力服务 `SELF_MANAGED_MODEL` 的模型调用 | 服务经 Adapter Protocol 上报的 usage 记录 | 上报携带的 operation；缺失时按上报 binding 的 scope 入账 | 稳定 native usage ref + meter，标注来源模式 |
 | 业务能力动作 | release manifest 声明的 actual source（native outcome 或经 Adapter Protocol 上报的 usage） | ActionExecution + 目标 Resource/Asset | manifest 声明的 native ref + meter |
 | 服务读取边的每批读取 | 来源方与接收方各自 release 声明的 actual source | 该批 operation（SERVICE actor、接收方 binding、来源 Resource） | 各自 native ref + meter |
-| 原生页面组件的业务用量（问答、问数、存储快照，DD-163） | 组件以目录 client 经 `07` §4.8.8 上报，Core 写 `COMPONENT_REPORT` UsageEvent；meter 随 Core 固定 | 该 binding generation 的用量归集 operation（attribution `BINDING`），count meter 另带 Core 解析的成员 Principal 维度 | binding + 上报幂等键（原生记录 ID 或快照小时）+ meter |
+| 原生页面组件的业务用量（问答、问数、存储快照，DD-165） | 组件以目录 client 经 `07` §4.8.9 上报，Core 写 `COMPONENT_REPORT` UsageEvent；meter 随 Core 固定 | 该 binding generation 的用量归集 operation（attribution `BINDING`），count meter 另带 Core 解析的成员 Principal 维度 | binding + 上报幂等键（原生记录 ID 或快照小时）+ meter |
 | Buzz 普通消息 | 无商业 meter | Community/Channel | `quota=NONE` |
 
-组件额度（DD-163）与 Agent 额度同一 entitlement 机制：Tenant 级为 Tenant Customer 的硬限制 entitlement，成员级为同一 entitlement metadata 中的成员上限，成员已用量按成员维度读 OpenMeter committed usage；组件在动作前经 `07` §4.8.8 准入询问，模型调用由 ExtAuthz 逐调用 CHECK，均为 CHECK 语义。
+组件额度（DD-165）与 Agent 额度同一 entitlement 机制：Tenant 级为 Tenant Customer 的硬限制 entitlement，成员级为同一 entitlement metadata 中的成员上限，成员已用量按成员维度读 OpenMeter committed usage；组件在动作前经 `07` §4.8.9 准入询问，模型调用由 ExtAuthz 逐调用 CHECK，均为 CHECK 语义。
 
 无法证明最坏上界的动作不使用 `STRICT_RESERVATION`；该限制是明确准入语义，不允许以 estimate 冒充硬额度。服务自身的准入降级与并发限制是 native 安全结果，不是 OpenMeter entitlement 或 permission deny。
 
