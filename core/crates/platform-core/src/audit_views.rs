@@ -801,11 +801,19 @@ mod tests {
             crate::spicedb::Subject::TenantMembers("t".into())
         );
         assert_eq!(tool.principal(), None);
+        // DD-164(4)：组件共享对象的 Workspace 成员授予证据
+        let shared =
+            parse_relationship("resource:r#editor@workspace:w#member").expect("Workspace 成员集");
+        assert_eq!(
+            shared.subject,
+            crate::spicedb::Subject::WorkspaceMembers("w".into())
+        );
+        assert_eq!(shared.principal(), None);
         for bad in [
             "tenant:t-1#manage@tenant:t-2",
             "resource:r-1#consumer@tenant:t-1#admin",
             "resource:r-1#consumer@tenant:#member",
-            "resource:r-1#consumer@workspace:w-1#member",
+            "resource:r-1#consumer@workspace:w-1#admin",
             "tenant:t-1#manage@principal:p-1#member",
             "tenant:t-1@principal:p-1",
             "tenant#manage@principal:p-1",
