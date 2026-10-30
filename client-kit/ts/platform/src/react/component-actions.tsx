@@ -9,7 +9,8 @@ import { useEffect, useRef, useState } from "react";
 import { newIdempotencyKey } from "../governance";
 import { TransportError, writeFailure, type WriteFailure } from "../transport";
 import { useBffClient, useFailureText, useReasonText, useT } from "./context";
-import { Button } from "./ui";
+import { Button, useActionLabel } from "./ui";
+import { IdText, KeyValueList } from "./key-value";
 
 const uuid = (value: unknown): value is string => typeof value === "string"
   && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(value);
@@ -62,6 +63,7 @@ export function ComponentActionsPanel({ onOpen }: { onOpen: (id: string) => void
   const t = useT();
   const failureText = useFailureText();
   const reasonText = useReasonText();
+  const actionLabel = useActionLabel();
   const [source, setSource] = useState("");
   const [invalid, setInvalid] = useState(false);
   const [intent, setIntent] = useState<ActionCommand | null>(null);
@@ -109,18 +111,23 @@ export function ComponentActionsPanel({ onOpen }: { onOpen: (id: string) => void
       }
     } finally { if (current === epoch.current) { sending.current = false; setBusy(false); } }
   };
-  return <section className="flex flex-col gap-3 border-t pt-3" data-testid="component-actions">
-    <h2 className="font-medium">{t("componentActions.title")}</h2>
-    <p className="text-sm text-muted-foreground">{t("componentActions.boundary")}</p>
-    <label className="text-sm">{t("componentActions.document")}
-      <textarea className="min-h-32 w-full rounded-md border border-input bg-transparent p-2 font-mono text-xs"
+  return <section className="flex flex-col gap-3" data-testid="component-actions">
+    <header className="flex flex-col gap-0.5">
+      <h2 className="text-[1.0625rem] font-semibold leading-6 tracking-[-0.012em] text-foreground">{t("componentActions.title")}</h2>
+      <p className="text-sm text-muted-foreground">{t("componentActions.boundary")}</p>
+    </header>
+    <label className="flex flex-col gap-1.5 text-sm font-medium">{t("componentActions.document")}
+      <textarea className="min-h-32 w-full rounded-lg border border-input bg-background p-2 font-mono text-xs font-normal shadow-xs focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
         disabled={!!intent || busy} value={source} onChange={(event) => { setSource(event.target.value); setInvalid(false); }} />
     </label>
     {invalid ? <p role="alert">{t("componentActions.invalid")}</p> : null}
     {!intent ? <Button className="w-fit" disabled={busy || !source.trim()} onClick={prepare}>{t("componentActions.prepare")}</Button> :
       <div role="group" aria-label={t("componentActions.review")} className="flex flex-col gap-2">
         <p className="text-sm">{t("componentActions.review")}</p>
-        <p className="break-all font-mono text-xs">{intent.actionKey} · {intent.resourceId ?? intent.assetId}</p>
+        <KeyValueList items={[
+          { id: "action", label: t("platform.action"), value: <span title={intent.actionKey}>{actionLabel(intent.actionKey)}</span> },
+          { id: "target", label: t("tasks.target"), value: <IdText value={(intent.resourceId ?? intent.assetId)!} label={t("tasks.target")} /> },
+        ]} />
         <div className="flex gap-2">
           <Button disabled={busy} onClick={() => void submit()}>{t(busy ? "platform.loading" : pending ? "agents.retry" : "platform.confirm")}</Button>
           {!pending ? <Button disabled={busy} onClick={() => setIntent(null)}>{t("platform.cancel")}</Button> : null}

@@ -2737,7 +2737,9 @@ describe("AgentDefinitionsPage governed Version Installation Grant", () => {
 });
 
 describe("DevicesPage", () => {
-  it("读不到不是「没有设备」：显示结果不明并可重试", async () => {
+  const confirmButton = () => document.querySelector<HTMLButtonElement>("[data-testid=device-revoke-dialog] [data-testid=confirm-dialog-action]");
+
+  it("读不到不是「没有设备」：显示错误并可重试", async () => {
     let fail = true;
     const t = transport(() => {
       if (fail) throw new TransportError("down");
@@ -2745,11 +2747,44 @@ describe("DevicesPage", () => {
     });
     const host = await mount(t, <DevicesPage />);
     await settle();
-    expect(host.textContent).toContain("the result is unknown");
+    expect(host.querySelector("[data-testid=error-state]")).not.toBeNull();
     expect(host.textContent).not.toContain("No devices yet");
     fail = false;
     await click(button(host, "Try again"));
+    // 公钥只作为可复制的次要信息，缩写显示
     expect(host.textContent).toContain("aaaaaaaa…aaaa");
+    expect(host.textContent).not.toContain("a".repeat(64));
+  });
+
+  it("撤销先经确认对话框；未确认前不提交，取消即放弃", async () => {
+    const t = transport(() => ({ status: 200, body: [key("d".repeat(64))] }));
+    const host = await mount(t, <DevicesPage />);
+    await settle();
+    await click(button(host, "Revoke"));
+    const dialog = document.querySelector("[data-testid=device-revoke-dialog]") as HTMLElement;
+    expect(dialog.textContent).toContain("Revoke this device?");
+    expect(dialog.textContent).toContain("cannot be undone");
+    expect(t.send.mock.calls.filter(([r]) => r.method === "DELETE")).toHaveLength(0);
+    await click(button(dialog, "Cancel"));
+    expect(document.querySelector("[data-testid=device-revoke-dialog]")).toBeNull();
+    expect(t.send.mock.calls.filter(([r]) => r.method === "DELETE")).toHaveLength(0);
+  });
+
+  it("提交中对话框保持打开且按钮禁用，不重复提交", async () => {
+    let finish: ((reply: BffReply) => void) | undefined;
+    const t = transport((r) => r.method === "DELETE"
+      ? new Promise<BffReply>((resolve) => { finish = resolve; })
+      : { status: 200, body: [key("e".repeat(64))] });
+    const host = await mount(t, <DevicesPage />);
+    await settle();
+    await click(button(host, "Revoke"));
+    await click(confirmButton()!);
+    expect(confirmButton()?.disabled).toBe(true);
+    await click(confirmButton()!);
+    expect(t.send.mock.calls.filter(([r]) => r.method === "DELETE")).toHaveLength(1);
+    finish?.({ status: 200, body: { pubkey: "e".repeat(64), state: "REVOKING" } });
+    await settle();
+    expect(document.querySelector("[data-testid=device-revoke-dialog]")).toBeNull();
   });
 
   it("标出本机；撤销结果不明时不说成功也不说失败", async () => {
@@ -2764,13 +2799,16 @@ describe("DevicesPage", () => {
     expect(host.textContent).toContain("This device");
     expect(host.textContent).toContain("Active");
     expect(host.textContent).not.toContain("ACTIVE");
-    await click(host.querySelectorAll("button")[0] as HTMLButtonElement);
+    await click(button(host, "Revoke"));
+    expect(document.querySelector("[data-testid=device-revoke-dialog]")?.textContent).toContain("This is the device you are using");
+    await click(confirmButton()!);
     const alert = host.querySelector("[role=alert]")?.textContent ?? "";
     expect(alert).toContain("unknown");
     expect(alert).toContain("op-7");
     expect(alert).not.toContain("rejected");
-    // 撤销之后重新读取列表，不自己推断状态
+    // 撤销之后重新读取列表，不自己推断状态；结果不明不自动重试
     expect(t.send.mock.calls.filter(([r]) => r.method === "GET")).toHaveLength(2);
+    expect(t.send.mock.calls.filter(([r]) => r.method === "DELETE")).toHaveLength(1);
   });
 
   it("确定被拒时给出 reason", async () => {
@@ -2782,6 +2820,7 @@ describe("DevicesPage", () => {
     const host = await mount(t, <DevicesPage />);
     await settle();
     await click(button(host, "Revoke"));
+    await click(confirmButton()!);
     expect(host.querySelector("[role=alert]")?.textContent).toContain("That device is not registered to you.");
     expect(host.textContent).not.toContain("CLIENT_KEY_NOT_FOUND");
   });
@@ -3149,10 +3188,11 @@ describe("AuditPage", () => {
       ? { status: 200, body: entries } : forbidden), <AuditPage />, locale);
     await settle();
     for (const [actionKey, en, zh] of labels) {
+      // DD-170 §16.5: the label is the row text; the wire key stays on hover only.
       const action = host.querySelector(`[title="${actionKey}"]`);
-      expect(action?.querySelector("span")?.textContent).toBe(locale === "en" ? en : zh);
-      expect(action?.querySelector("code")?.textContent).toBe(actionKey);
+      expect(action?.textContent).toBe(locale === "en" ? en : zh);
     }
+    expect(host.querySelector("code")).toBeNull();
   });
   it.each(["en", "zh-CN"] as const)("translates real gate and cancellation result codes without implying completion in %s", async (locale) => {
     const entries = ["ALLOWED", "EVALUATING", "CANCEL_REQUEST_ACCEPTED"].map((resultCode) =>
@@ -3161,15 +3201,17 @@ describe("AuditPage", () => {
     const host = await mount(transport((r) => r.path === "/api/v1/audit"
       ? { status: 200, body: entries } : forbidden), <AuditPage />, locale);
     await settle();
-    expect(host.textContent).toContain(locale === "en" ? "Create channel" : "创建频道");
-    expect(host.querySelector("code")?.textContent).toBe("workspace.create");
+    expect(host.querySelector('[title="workspace.create"]')?.textContent).toBe(locale === "en" ? "Create channel" : "创建频道");
+    expect(host.textContent).not.toContain("workspace.create");
     expect(host.querySelector('[title="ALLOWED"]')?.textContent).toBe(locale === "en"
       ? "Admission allowed; execution not confirmed" : "已获准，尚未确认执行");
     expect(host.querySelector('[title="EVALUATING"]')?.textContent).toBe(locale === "en" ? "Being evaluated" : "正在判定");
     expect(host.querySelector('[title="CANCEL_REQUEST_ACCEPTED"]')?.textContent).toBe(locale === "en"
       ? "Cancellation request accepted; awaiting task outcome" : "取消请求已接收，等待任务终态");
     expect(host.textContent).toContain(locale === "en" ? "Unrecognized action" : "未识别的动作");
-    expect(host.textContent).toContain("FUTURE_RESULT");
+    // An unrecognized result reads as a generic outcome; the raw code stays on hover.
+    expect(host.querySelector('[title="FUTURE_RESULT"]')?.textContent).toBe(locale === "en" ? "Other outcome" : "其他结果");
+    expect(host.textContent).not.toContain("FUTURE_RESULT");
   });
   it.each(["en", "zh-CN"] as const)("translates observed audit results without upgrading intermediate evidence in %s", async (locale) => {
     const labels = [
@@ -3214,7 +3256,8 @@ describe("AuditPage", () => {
     expect(host.textContent).toContain("无准入决定");
     expect(host.textContent).toContain("结果不明");
     expect(host.textContent).toContain("未识别的决定：FUTURE_DECISION");
-    expect(host.textContent).toContain("结果代码：constructor");
+    expect(host.querySelector('[title="constructor"]')?.textContent).toBe("其他结果");
+    expect(host.textContent).not.toContain("结果代码");
     for (const decision of host.querySelectorAll("[data-testid=audit-decision] span")) {
       expect(decision.className).toContain("text-muted-foreground");
       expect(decision.className).not.toContain("bg-destructive");
@@ -3241,9 +3284,41 @@ describe("AuditPage", () => {
     const host = await mount(t, <AuditPage />);
     await settle();
     expect(t.send).toHaveBeenCalledWith({ method: "GET", path: "/api/v1/audit" });
-    expect(host.textContent).toContain("identity.client-key.register");
+    expect(host.querySelector('[title="identity.client-key.register"]')).not.toBeNull();
+    expect(host.textContent).not.toContain("identity.client-key.register");
     expect(host.textContent).toContain("Decision");
     expect(host.textContent).not.toContain("DECISION");
+  });
+
+  it.each(["en", "zh-CN"] as const)("names moderation reads and translates their results instead of raw codes in %s", async (locale) => {
+    const entries = [
+      { ...ownEntry(), actionKey: "moderation.audit.read", eventType: "ACCESS", resultCode: "MODERATION_READ" },
+      { ...ownEntry(), actionKey: "moderation.reports.read", eventType: "ACCESS", resultCode: "SUCCEEDED" },
+    ];
+    const host = await mount(transport((r) => r.path === "/api/v1/audit"
+      ? { status: 200, body: entries } : forbidden), <AuditPage />, locale);
+    await settle();
+    expect(host.querySelector('[title="moderation.audit.read"]')?.textContent).toBe(locale === "en" ? "View moderation log" : "查看审核日志");
+    expect(host.querySelector('[title="moderation.reports.read"]')?.textContent).toBe(locale === "en" ? "View reports" : "查看举报");
+    expect(host.querySelector('[title="MODERATION_READ"]')?.textContent).toBe(locale === "en" ? "Moderation records read" : "已读取审核记录");
+    expect(host.querySelector('[title="SUCCEEDED"]')?.textContent).toBe(locale === "en" ? "Succeeded" : "已成功");
+    expect(host.textContent).not.toContain(locale === "en" ? "Unrecognized action" : "未识别的动作");
+    expect(host.textContent).not.toContain("MODERATION_READ");
+  });
+
+  it("states the total, pages a long log and filters by admission", async () => {
+    const entries = Array.from({ length: 45 }, (_, i) => ({ ...ownEntry(), actionKey: "workspace.create",
+      decision: i % 3 === 0 ? "DENY" : "ALLOW", occurredAt: new Date(Date.now() - i * 60_000).toISOString() }));
+    const host = await mount(transport((r) => r.path === "/api/v1/audit"
+      ? { status: 200, body: entries } : forbidden), <AuditPage />);
+    await settle();
+    const own = host.querySelector("[data-testid=own-audit]") as HTMLElement;
+    expect(own.textContent).toContain("Your 45 most recent recorded actions");
+    expect(own.querySelector("[data-testid=list-total]")?.textContent).toBe("45 total");
+    expect(own.querySelector("[data-testid=list-page]")?.textContent).toBe("Page 1 of 3");
+    expect(own.querySelectorAll("tbody tr")).toHaveLength(20);
+    await click([...own.querySelectorAll<HTMLButtonElement>("[role=radio]")].find((b) => b.textContent === "Denied")!);
+    expect(own.querySelector("[data-testid=list-total]")?.textContent).toBe("15 total");
   });
 
   it("中文界面从同一目录翻译审计事件类型", async () => {
@@ -3270,13 +3345,16 @@ describe("AuditPage 范围审计", () => {
     ...extra,
   });
   const workspaces = [{ id: "w-1", name: "Alpha" }];
+  // DD-170 §16.3: a row opens the event detail, where its evidence is listed and resolved.
+  const openEvent = async (section: HTMLElement, id: string) =>
+    click(section.querySelector<HTMLElement>(`tr[data-row-key="${id}"]`)!);
 
   it("Tenant 无权且没有可进入的 Workspace 时整节不渲染，本人记录照常", async () => {
     const t = transport((r) => (r.path === "/api/v1/audit" ? { status: 200, body: [ownEntry()] } : r.path === "/api/v1/workspaces" ? { status: 200, body: [] } : forbidden));
     const host = await mount(t, <AuditPage />);
     await settle();
     expect(host.querySelector("[data-testid=scoped-audit]")).toBeNull();
-    expect(host.textContent).toContain("identity.client-key.register");
+    expect(host.querySelector('[title="identity.client-key.register"]')).not.toBeNull();
     expect(t.send).toHaveBeenCalledWith({ method: "GET", path: "/api/v1/audit/events" });
   });
 
@@ -3313,7 +3391,8 @@ describe("AuditPage 范围审计", () => {
     expect(section.textContent).toContain("You do not have audit permission for this scope.");
     expect((select.querySelector("option[value='']") as HTMLOptionElement).disabled).toBe(true);
     await choose("w-2");
-    expect(section.textContent).toContain("tenant.admin.grant");
+    expect(section.textContent).toContain("Grant organization administrator");
+    await openEvent(section, "e-9");
     await click(button(section, "Relay event"));
     expect(section.textContent).toContain("You do not have audit permission for this scope.");
     expect(section.textContent).not.toContain("leak-me");
@@ -3331,11 +3410,11 @@ describe("AuditPage 范围审计", () => {
     const host = await mount(t, <AuditPage />);
     await settle();
     const section = host.querySelector("[data-testid=scoped-audit]") as HTMLElement;
-    expect(section.textContent).toContain("the result is unknown");
+    expect(section.querySelector("[data-testid=error-state]")).not.toBeNull();
     expect(section.textContent).not.toContain("No events recorded in this scope");
     fail = false;
     await click(button(section, "Try again"));
-    expect(section.textContent).toContain("tenant.admin.grant");
+    expect(section.textContent).toContain("Grant organization administrator");
   });
 
   it("证据按种类列出；受限在列表上标注；不可用只显示原因不显示 ref", async () => {
@@ -3369,10 +3448,12 @@ describe("AuditPage 范围审计", () => {
     await settle();
     const section = host.querySelector("[data-testid=scoped-audit]") as HTMLElement;
     expect(section.textContent).toContain("Alpha");
+    expect(section.textContent).toContain("3 items");
+    await openEvent(section, "e-1");
     expect(section.textContent).toContain("Restricted");
     expect(section.textContent).not.toContain("wf-123");
     await click(button(section, "Workflow"));
-    expect(section.textContent).toContain("wf-123");
+    expect(section.querySelector("[data-testid=evidence-available]")?.textContent).toContain("wf-123");
     expect(section.textContent).toContain("version 4");
     expect(section.textContent).toContain("Workflow engine");
     await click(button(section, "Relay event"));
@@ -3414,6 +3495,7 @@ describe("AuditPage 范围审计", () => {
     const host = await mount(t, <AuditPage />);
     await settle();
     const section = host.querySelector("[data-testid=scoped-audit]") as HTMLElement;
+    await openEvent(section, "e-1");
 
     await click(button(section, "Workflow"));
     const notFound = section.querySelector("[data-testid=evidence-unavailable]") as HTMLElement;
@@ -3449,6 +3531,7 @@ describe("AuditPage 范围审计", () => {
     const host = await mount(t, <AuditPage />, "zh-CN");
     await settle();
     const section = host.querySelector("[data-testid=scoped-audit]") as HTMLElement;
+    await openEvent(section, "e-1");
     await click(button(section, "流程"));
     expect(section.textContent).toContain("不可用：原记录已不存在。");
     expect(section.textContent).not.toContain("重试");
@@ -3468,18 +3551,20 @@ describe("AuditPage 范围审计", () => {
     const host = await mount(t, <AuditPage />, "zh-CN");
     await settle();
     const section = host.querySelector("[data-testid=scoped-audit]") as HTMLElement;
+    expect(section.textContent).toContain("已载入前 1 条");
     await click(button(section, "加载更多"));
-    expect(section.textContent).toContain("tenant.admin.grant");
-    expect(section.textContent).toContain("tenant.admin.revoke");
-    expect(section.querySelectorAll("button").length).toBe(0);
+    expect(section.textContent).toContain("授予组织管理员");
+    expect(section.textContent).toContain("撤销组织管理员");
+    expect(section.querySelector("[data-testid=list-total]")?.textContent).toBe("共 2 条");
+    expect([...section.querySelectorAll("button")].some((b) => b.textContent === "加载更多")).toBe(false);
     const select = section.querySelector("select") as HTMLSelectElement;
     await act(async () => {
       select.value = "w-1";
       select.dispatchEvent(new Event("change", { bubbles: true }));
     });
     await settle();
-    expect(section.textContent).toContain("workspace.admin.grant");
-    expect(section.textContent).not.toContain("tenant.admin.revoke");
+    expect(section.textContent).toContain("授予频道管理员");
+    expect(section.textContent).not.toContain("撤销组织管理员");
   });
 });
 

@@ -142,3 +142,49 @@ export function redemptionPhase(view: InvitationRedemptionView): RedemptionPhase
 export function approvalOpen(status: ApprovalStatus): boolean {
   return status === ApprovalStatus.Requested || status === ApprovalStatus.Waiting;
 }
+
+/**
+ * DD-170 / .design/06 §8: the task page groups executions by what the person has to do —
+ * "needs your action" (outcome unknown or not yet reconciled: check it), "in progress" and
+ * "ended". Unknown and reconciling outcomes are never counted as ended.
+ */
+export type TaskSegment = "attention" | "active" | "ended";
+
+const segmentOf: Partial<Record<PlatformMessageKey, TaskSegment>> = {
+  "tasks.status.evaluating": "active",
+  "tasks.status.waitingApproval": "active",
+  "tasks.status.notStarted": "active",
+  "tasks.status.started": "active",
+  "tasks.status.running": "active",
+  "tasks.status.cancelRequestAccepted": "active",
+  "tasks.status.completed": "ended",
+  "tasks.status.applied": "ended",
+  "tasks.status.denied": "ended",
+  "tasks.status.revoked": "ended",
+  "tasks.status.expired": "ended",
+  "tasks.status.aborted": "ended",
+  "tasks.status.failed": "ended",
+  "tasks.status.canceled": "ended",
+  "tasks.status.terminated": "ended",
+  "tasks.status.timedOut": "ended",
+};
+
+export function taskSegment(task: TaskView): TaskSegment {
+  return segmentOf[taskPhase(task).label] ?? "attention";
+}
+
+/** Steps reached of admission, dispatch and execution (a synchronous action has no execution step). */
+export function taskProgress(task: TaskView): { done: number; total: number } {
+  const total = task.workflowId !== undefined ? 3 : 2;
+  if (task.gateState !== ActionGateState.Allowed) return { done: 0, total };
+  if (task.dispatchState !== ActionDispatchState.Dispatched) return { done: 1, total };
+  if (task.workflowId === undefined) return { done: 2, total };
+  return { done: task.taskStatus !== undefined && task.taskStatus !== TaskStatus.Running ? 3 : 2, total };
+}
+
+/** The absolute time a relative time stands for (shown on hover). */
+export function absoluteTime(locale: string, rfc3339: string): string {
+  const time = Date.parse(rfc3339);
+  if (!Number.isFinite(time)) return rfc3339;
+  return new Date(time).toLocaleString(locale === "zh-CN" ? "zh-CN" : "en", { dateStyle: "medium", timeStyle: "short" });
+}
