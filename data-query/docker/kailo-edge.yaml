@@ -1,0 +1,14 @@
+# Kailo entry topology (DD-164(10), .design/07 §4.6): browsers reach the Wren origin only
+# through the Kailo gateway's component listener, which forwards to the alias below on the
+# existing platform edge network; the native gateway port itself is published on loopback
+# only (deploy/components/component-deploy.sh refuses any other address).
+services:
+  wren-native-gateway:
+    networks:
+      platform_edge:
+        aliases: [kailo-edge-data-query]
+
+networks:
+  platform_edge:
+    external: true
+    name: ${PLATFORM_EDGE_NETWORK:?existing platform edge network required}

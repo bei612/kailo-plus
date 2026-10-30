@@ -120,6 +120,20 @@ elif [[ "$directory_keys" != 0 ]] || grep -Eq '^KNOWLEDGE_DIRECTORY_INTERVAL_SEC
   echo 'KNOWLEDGE_DIRECTORY_{BINDING_ID,CLIENT_ID,CLIENT_SECRET_FILE,TOKEN_URL,CORE_URL} are named together or not at all' >&2
   exit 78
 fi
+# DD-164(10), .design/07 §4.6: browsers reach the native UI origin only through the Kailo
+# gateway's component listener; the UI port itself is published on a loopback address only.
+ui_bind=$(sed -n 's/^KNOWLEDGE_UI_BIND_ADDRESS=//p' "$native_env" | tail -n 1)
+python3 -I -c 'import ipaddress, sys; sys.exit(0 if ipaddress.ip_address(sys.argv[1]).is_loopback else 1)' "$ui_bind" 2>/dev/null || {
+  echo 'KNOWLEDGE_UI_BIND_ADDRESS must be a loopback address; the Kailo gateway serves the native origin (DD-164(10))' >&2
+  exit 78
+}
+if grep -Eq '^KNOWLEDGE_EDGE_NETWORK=.+$' "$native_env"; then
+  grep -Eq '^KNOWLEDGE_EDGE_NETWORK=[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$' "$native_env" || {
+    echo 'KNOWLEDGE_EDGE_NETWORK must name the existing platform edge network' >&2
+    exit 78
+  }
+  args+=(-f "$deployment_dir/compose.kailo-edge.yaml")
+fi
 docker "${args[@]}" config --quiet
 if [[ "$validate" == false ]]; then
   if [[ "$platform_adapter" == true ]]; then

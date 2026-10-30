@@ -155,4 +155,37 @@ for o in $origins; do
     echo "  -- $o：$(tr '\n' ' ' <<<"${h:-无 CSP/XFO 或未部署}")"
   fi
 done
+
+echo "== 7. 入口拓扑（DD-164(10)、07 §4.6）：对外只有 Kailo 入口"
+# 组件容器只能在回环地址发布端口；组件 origin 端口只能由 Kailo 网关发布（且须在 KAILO_EDGE_COMPONENTS 中），
+# 运行目录叠加须等于该声明的渲染结果。迁移完成前此节如实报告未迁移的组件。
+(cd "$S" && ./edge-overlay.py check 2>&1 | sed 's/^/  /') || bad "data/edge/agentgateway.compose.json 与 KAILO_EDGE_COMPONENTS 不一致"
+edge=$(value KAILO_EDGE_COMPONENTS)
+"${D[@]}" ps --format '{{.Names}}\t{{.Ports}}' | python3 -I -c '
+import re, sys
+edge = {int(p) for p in re.findall(r"=([0-9]+)", sys.argv[1])}
+bad = 0
+for line in sys.stdin:
+    name, _, ports = line.rstrip("\n").partition("\t")
+    for host, port in re.findall(r"([0-9.:\[\]]*):([0-9]+)->", ports):
+        host = host.strip("[]")
+        if host in ("127.0.0.1", "::1") or host.startswith("127."):
+            continue
+        port = int(port)
+        if name.endswith("-agentgateway-1"):
+            continue
+        if re.match(r"(kailo-cells|kailo-knowledge|kailo-document-editor|platform-local-wren-native)", name):
+            print("  FAIL: %s 在非回环地址 %s 发布端口 %d（组件 origin 只经 Kailo 网关）" % (name, host or "*", port)); bad = 1
+    if name.endswith("-agentgateway-1"):
+        print("  ok: %s 发布 %s" % (name, ports))
+print("  ok: KAILO_EDGE_COMPONENTS=%s" % (sys.argv[1] or "（空：尚无组件经网关）"))
+sys.exit(bad)
+' "$edge" || fail=1
+for o in $origins; do
+  loc=$(curl -sS -m 15 -o /dev/null -w '%{http_code} %{redirect_url}' -H 'Sec-Fetch-Dest: document' "$o/" 2>/dev/null || true)
+  case "$loc" in
+    "302 ${public}/app/applications/open?origin="*) ok "$o 顶层访问转到 Kailo 内容区" ;;
+    *) echo "  -- $o 顶层访问：${loc:-无应答}（未经网关时为组件自己的应答）" ;;
+  esac
+done
 exit "$fail"

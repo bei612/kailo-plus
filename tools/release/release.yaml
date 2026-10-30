@@ -91,6 +91,9 @@ idp:
 # 否则重建 agentgateway 会丢掉其派生配置。
 overlays:
   - secrets/agentgateway-service.compose.json
+  # DD-164(10)：组件 origin 经网关 listener 对外发布的端口，由 deploy/local/edge-overlay.py 按 .env 的
+  # KAILO_EDGE_COMPONENTS 渲染；不存在即没有组件经网关（迁移前），网关只发布 Kailo 自己的入口。
+  - data/edge/agentgateway.compose.json
 
 # 由发布保证的生产 .env 非密键（ADR-20 §4）。键必须登记在 deploy/local/.env.example；值单行、
 # 无空白与引号，只允许 ${NAME} 引用。入口只报告键与动作，不输出值。

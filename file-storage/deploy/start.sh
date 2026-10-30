@@ -269,7 +269,10 @@ try:
         parent = urlsplit(ancestor)
         require(parent.scheme in ('http', 'https', 'tauri') and parent.hostname and not parent.netloc.endswith(':') and not parent.username and not parent.password and not parent.path and not parent.query and not parent.fragment and not any(c in ancestor for c in "*;'\"\\") and ancestor == parent.scheme + '://' + parent.netloc and (parent.port is None or 0 < parent.port <= 65535), 'frame ancestors must be explicit HTTP(S) or native host origins')
     require(origin.scheme == ('http' if env['CELLS_NO_TLS'] == '1' else 'https') and origin.hostname and not origin.username and not origin.password and not origin.query and not origin.fragment and origin.path in ('', '/'), 'external origin must match explicit native TLS choice')
-    ipaddress.ip_address(env['CELLS_PUBLIC_ADDRESS'])
+    # DD-164(10): browsers reach the Cells origin only through the Kailo gateway's component
+    # listener; the native port may be published on a loopback address (operations, conformance) only.
+    require(ipaddress.ip_address(env['CELLS_PUBLIC_ADDRESS']).is_loopback, 'native port may be published on a loopback address only')
+    require(not env.get('CELLS_EDGE_NETWORK') or re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,127}', env['CELLS_EDGE_NETWORK']), 'edge network name invalid')
     for key in ('CELLS_PUBLIC_PORT', 'CELLS_CONTAINER_PORT', 'CELLS_DB_PORT'):
         require(0 < int(env[key]) <= 65535, key + ': invalid port')
     require(env['CELLS_BIND'].endswith(':' + env['CELLS_CONTAINER_PORT']), 'native binding/container port mismatch')
@@ -292,6 +295,10 @@ fi
 # DD-133(4): periodic Kailo member directory read (validated above).
 if [[ -n ${CELLS_DIRECTORY_BINDING_ID:-} ]]; then
   compose+=(-f "$here/compose.member-directory.yaml")
+fi
+# DD-164(10): the Kailo gateway serves the Cells origin from the platform edge network.
+if [[ -n ${CELLS_EDGE_NETWORK:-} ]]; then
+  compose+=(-f "$here/compose.kailo-edge.yaml")
 fi
 if "$platform_adapter"; then
   # Validate actual mounted paths/ownership, not a second binding schema. The

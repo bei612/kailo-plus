@@ -112,6 +112,43 @@ directory_secret() {  # <env 文件> <键前缀> <组件>
     || { echo "目录 client 凭据缺失或不是 0600 普通文件；先由平台发布声明 COMPONENT_DIRECTORY_CLIENTS（ADR-20 §8）" >&2; exit 2; }
   echo "成员目录同步开启（目录 client 凭据文件就绪，未读取内容）"
 }
+# DD-164(10)、07 §4.6「入口拓扑」：浏览器只经 Kailo 网关的组件 listener 到达组件 origin。组件端口只能发布在
+# 回环地址；origin 不在回环地址时组件必须以 edge 叠加加入平台 edge 网络（网关按固定别名转发）、回环端口不得
+# 占用网关要发布的 origin 端口，且容器端口等于网关固定上游的端口（compose.yaml 的 KAILO_EDGE_*_UPSTREAM）。
+# 违反即拒绝，此时尚未备份、启动或改写任何东西。
+# 参数：<组件> <发布地址> <发布端口> <origin> <edge 网络> <容器端口> <网关上游端口>
+edge_topology() {
+  python3 -I - "$@" "$(env_value "$R/.env" PLATFORM_EDGE_NETWORK)" <<'PYEDGE'
+import ipaddress, sys
+from urllib.parse import urlsplit
+name, address, port, origin, edge, container, upstream, platform_edge = sys.argv[1:]
+def loopback(host):
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return host == "localhost"
+problems = []
+if not loopback(address):
+    problems.append("组件端口只能发布在回环地址（实际 %s）" % (address or "空"))
+parts = urlsplit(origin)
+if not parts.hostname or parts.port is None:
+    problems.append("组件 origin 必须带明确主机与端口")
+elif not loopback(parts.hostname):
+    if not edge or edge != platform_edge:
+        problems.append("origin 由 Kailo 网关提供，组件必须加入平台 edge 网络 %s" % (platform_edge or "（平台 .env 缺 PLATFORM_EDGE_NETWORK）"))
+    if port == str(parts.port):
+        problems.append("回环端口不得等于 origin 端口 %s（该端口由 Kailo 网关发布）" % parts.port)
+    if container != upstream:
+        problems.append("容器端口 %s 必须等于网关固定上游端口 %s" % (container, upstream))
+if problems:
+    print("入口拓扑不成立（%s）：%s" % (name, "；".join(problems)), file=sys.stderr)
+    sys.exit(2)
+if loopback(parts.hostname):
+    print("入口拓扑：%s 的 origin 在回环地址（一致性或本机拓扑）" % name)
+else:
+    print("入口拓扑：%s 只在回环地址发布，origin %s 由 Kailo 网关提供" % (name, origin))
+PYEDGE
+}
 # 镜像必须 digest 固定；本地缺失时从本机 registry 按 digest 拉取（不按 tag）。
 ensure_image() {
   local ref=$1
@@ -144,6 +181,8 @@ case "$component" in
     private_env "$ENV"
     here=$S/file-storage/deploy
     project=$(env_value "$ENV" CELLS_COMPOSE_PROJECT)
+    edge_topology file-storage "$(env_value "$ENV" CELLS_PUBLIC_ADDRESS)" "$(env_value "$ENV" CELLS_PUBLIC_PORT)" \
+      "$(env_value "$ENV" CELLS_EXTERNAL)" "$(env_value "$ENV" CELLS_EDGE_NETWORK)" "$(env_value "$ENV" CELLS_CONTAINER_PORT)" 8080
     ensure_image "$(env_value "$ENV" CELLS_IMAGE)"
     directory_secret "$ENV" CELLS file-storage
     if "$check"; then
@@ -197,6 +236,8 @@ case "$component" in
       echo "== 0. WeKnora 原生内置模型声明渲染核对（只列键名）"
       "${render[@]}" check knowledge --env "$ENV" --source "$commit" >/dev/null
     fi
+    edge_topology knowledge "$(env_value "$ENV" KNOWLEDGE_UI_BIND_ADDRESS)" "$(env_value "$ENV" KNOWLEDGE_UI_PORT)" \
+      "$(env_value "$ENV" KNOWLEDGE_NATIVE_ORIGIN)" "$(env_value "$ENV" KNOWLEDGE_EDGE_NETWORK)" 80 80
     for kind in APP UI DOCREADER; do
       ensure_image "$(env_value "$ENV" "KNOWLEDGE_${kind}_REPOSITORY")@sha256:$(env_value "$ENV" "KNOWLEDGE_${kind}_DIGEST")"
     done
@@ -249,6 +290,10 @@ case "$component" in
     # 原生 AI Service 经 edge 网络到达 AgentGateway 独立模型入口（只是传输，key 仍由 Core 投影）。
     compose=(env "${platform_keys[@]}" docker compose --env-file "$ENV" -f "$S/data-query/docker/docker-compose.yaml"
       -f "$S/data-query/docker/model-gateway.yaml")
+    # DD-164(10)：问数 origin 由 Kailo 网关经 edge 网络上的固定别名提供，原生网关端口只在回环地址发布。
+    edge_topology data-query "$(wren_value WREN_PUBLIC_BIND_ADDR)" "$(wren_value WREN_PUBLIC_PORT)" \
+      "$(wren_value WREN_PUBLIC_ORIGIN)" "$(platform_value PLATFORM_EDGE_NETWORK)" "$(wren_value WREN_GATEWAY_HTTP_PORT)" 8080
+    compose+=(-f "$S/data-query/docker/kailo-edge.yaml")
     # Agent 工具接入路径的已验证模型凭据投递只在组件 env 显式给出目录时叠加。
     [ -z "$(wren_value WREN_MODEL_DELIVERY_DIR)" ] || compose+=(-f "$S/data-query/docker/model-delivery.yaml")
     # DD-129：组件 env 给出示例库镜像时叠加问数验收用的专用示例业务库（只在 wren 私网，
@@ -436,6 +481,8 @@ PYWREN
     render=(python3 -I -B "$S/deploy/components/native-config.py")
     echo "== 0. local.json 渲染核对（只列键名）"
     "${render[@]}" check document-editor --env "$ENV" --source "$commit" >/dev/null
+    edge_topology document-editor "$(env_value "$ENV" DOCUMENT_EDITOR_PUBLIC_ADDRESS)" "$(env_value "$ENV" DOCUMENT_EDITOR_PUBLIC_PORT)" \
+      "$(env_value "$ENV" DOCUMENT_EDITOR_PUBLIC_ORIGIN)" "$(env_value "$ENV" DOCUMENT_EDITOR_EDGE_NETWORK)" 80 80
     ensure_image "$(env_value "$ENV" DOCUMENT_EDITOR_IMAGE)"
     if "$check"; then
       # 首次部署时正式 local.json 尚不存在（只有正式部署才渲染）。--check 把 local.json 与指向它的

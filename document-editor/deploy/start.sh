@@ -84,8 +84,18 @@ try:
     for key in ('DOCUMENT_EDITOR_TOKEN_SECRET_FILE', 'DOCUMENT_EDITOR_SECURE_LINK_SECRET_FILE', 'DOCUMENT_EDITOR_LOCAL_CONFIG_FILE'):
         require(data not in pathlib.Path(env[key]).parents, key + ' must be outside the state directory')
     ipaddress.ip_network(env['DOCUMENT_EDITOR_SUBNET'])
-    ipaddress.ip_address(env['DOCUMENT_EDITOR_PUBLIC_ADDRESS'])
-    require(0 < int(env['DOCUMENT_EDITOR_PUBLIC_PORT']) <= 65535 and public.port == int(env['DOCUMENT_EDITOR_PUBLIC_PORT']), 'public port must be the port of the public origin')
+    # DD-164(10): browsers reach the editor origin only through the Kailo gateway's component
+    # listener; the container port is published on a loopback address only (operations and the
+    # read-back below). When the public origin is itself on loopback the two coincide.
+    require(ipaddress.ip_address(env['DOCUMENT_EDITOR_PUBLIC_ADDRESS']).is_loopback, 'editor port may be published on a loopback address only')
+    require(0 < int(env['DOCUMENT_EDITOR_PUBLIC_PORT']) <= 65535, 'valid loopback port required')
+    if public.port == int(env['DOCUMENT_EDITOR_PUBLIC_PORT']):
+        try:
+            loopback_origin = ipaddress.ip_address(public.hostname).is_loopback
+        except ValueError:
+            loopback_origin = public.hostname == 'localhost'
+        require(loopback_origin, 'the loopback port must differ from the public origin port, which the Kailo gateway publishes')
+    require(not env.get('DOCUMENT_EDITOR_EDGE_NETWORK') or re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,127}', env['DOCUMENT_EDITOR_EDGE_NETWORK']), 'edge network name invalid')
     require(int(env['DOCUMENT_EDITOR_START_TIMEOUT_SECONDS']) > 0, 'positive deployment wait deadline required')
 except (KeyError, ValueError, TypeError, AttributeError, OSError):
     print('document-editor configuration refused: missing, unsafe or inconsistent delivery; no service started', file=sys.stderr)
@@ -95,6 +105,10 @@ PY
 source "$root/tools/container-safety.sh"
 container_safety_init
 compose=("${CONTAINER_DOCKER[@]}" compose --project-name "$DOCUMENT_EDITOR_COMPOSE_PROJECT" --env-file "$config" -f "$here/compose.yaml")
+# DD-164(10): the Kailo gateway serves the editor origin from the platform edge network.
+if [[ -n ${DOCUMENT_EDITOR_EDGE_NETWORK:-} ]]; then
+  compose+=(-f "$here/compose.kailo-edge.yaml")
+fi
 "${compose[@]}" config --quiet
 if "$check_only"; then exit 0; fi
 "${compose[@]}" up --detach --no-build --pull never "${recreate[@]}" --wait --wait-timeout "$DOCUMENT_EDITOR_START_TIMEOUT_SECONDS" document-server
@@ -104,7 +118,11 @@ python3 -I - <<'PY'
 import json, os, re, sys, urllib.error, urllib.request
 
 env = os.environ
-base = env['DOCUMENT_EDITOR_PUBLIC_ORIGIN']
+# Discovery actions name the public origin; the container is read on its loopback port
+# (DD-164(10): the public origin is the Kailo gateway, which answers 404 for /healthcheck).
+public = env['DOCUMENT_EDITOR_PUBLIC_ORIGIN']
+host = env['DOCUMENT_EDITOR_PUBLIC_ADDRESS']
+base = 'http://' + ('[' + host + ']' if ':' in host else host) + ':' + env['DOCUMENT_EDITOR_PUBLIC_PORT']
 want = "frame-ancestors 'self' " + ' '.join(env['DOCUMENT_EDITOR_FRAME_ANCESTORS'].split())
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -126,8 +144,8 @@ if status != 200 or body.strip() != 'true':
     failures.append('healthcheck')
 status, headers, body = get('/hosting/discovery')
 sources = re.findall(r'urlsrc="([^"]+)"', body)
-if status != 200 or not sources or any(not s.startswith(base + '/hosting/') for s in sources):
-    failures.append('discovery must list only actions of ' + base)
+if status != 200 or not sources or any(not s.startswith(public + '/hosting/') for s in sources):
+    failures.append('discovery must list only actions of ' + public)
 for path in ('/hosting/discovery', '/web-apps/apps/api/documents/api.js'):
     if get(path)[1].get('Content-Security-Policy') != want:
         failures.append('frame-ancestors of ' + path)
@@ -143,5 +161,5 @@ if status != 200 or json.loads(body or '{}').get('pluginsData') != []:
 if failures:
     print('document-editor read-back failed: ' + '; '.join(failures), file=sys.stderr)
     sys.exit(1)
-print(f'document-editor read back: healthy, {len(sources)} discovery actions on {base}, exact frame-ancestors, no plugin/AI/welcome routes')
+print(f'document-editor read back: healthy, {len(sources)} discovery actions on {public}, exact frame-ancestors, no plugin/AI/welcome routes')
 PY

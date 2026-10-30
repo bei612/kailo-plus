@@ -947,6 +947,14 @@ services:
       BFF_SERVICE_NAME: ${BFF_SERVICE_NAME:?必须显式提供，禁止硬编码}
       SERVICE_CONTAINER_PORT: ${SERVICE_CONTAINER_PORT:?必须显式提供，禁止硬编码}
       AGENTGATEWAY_PROVIDER_SECRET_DIRECTORY: ${AGENTGATEWAY_PROVIDER_SECRET_DIRECTORY:?必须显式提供 Gateway 独占凭据目录}
+      # DD-164(10)、07 §4.6「入口拓扑」：组件 origin 的专用 listener 转发到组件在 edge 网络上的固定别名
+      # （组件部署单元的 compose.kailo-edge 叠加声明同一别名）；端口是组件镜像的容器端口。listener 只在
+      # 运行目录叠加 data/edge/agentgateway.compose.json（deploy/local/edge-overlay.py 按 KAILO_EDGE_COMPONENTS
+      # 渲染）发布到宿主时才对外可达。
+      KAILO_EDGE_FILE_STORAGE_UPSTREAM: kailo-edge-file-storage:8080
+      KAILO_EDGE_KNOWLEDGE_UPSTREAM: kailo-edge-knowledge:80
+      KAILO_EDGE_DATA_QUERY_UPSTREAM: kailo-edge-data-query:8080
+      KAILO_EDGE_DOCUMENT_EDITOR_UPSTREAM: kailo-edge-document-editor:80
     env_file:
       # 浏览器客户端密钥由网关持有，浏览器不持有。文件在 gitignore 的 secrets/ 下。
       - ${KAILO_RUNTIME_DIR:-.}/secrets/browser-client.env
