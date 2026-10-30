@@ -5866,7 +5866,8 @@ pub struct ComponentDirectoryShare {
     pub resource_id: String,
 }
 
-/// DD-164(4): one grant on a component shared object. TENANT subjects only accept READ.
+/// DD-164(4): one grant on a component shared object. TENANT grants accept READ
+/// (tenant#member reader) and WRITE (tenant#member editor).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ComponentShareGrant {
     pub access: ComponentShareAccess,
@@ -6309,6 +6310,51 @@ pub struct ComponentSearchQuery {
     pub locale: Option<String>,
 
     pub q: String,
+}
+
+/// POST /service/v1/component-directory/bindings/{bindingId}/share-adoptions (DD-164(4)⑧):
+/// before its first schema 2 convergence a component registers an existing native share of a
+/// Kailo-mapped object as a Kailo share. Creates the component.shared_object Resource with
+/// these grants only when none exists; otherwise answers the existing Resource unchanged.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ComponentShareAdoptionRequest {
+    /// Mapped from the native permission: viewer -> READ, editor/admin -> WRITE; the owner is
+    /// implicit.
+    pub grants: Vec<ComponentShareGrant>,
+
+    pub name: String,
+
+    pub native_id: String,
+
+    pub native_type: ComponentSharedNativeType,
+
+    pub owner: ComponentShareAdoptionOwner,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ComponentShareAdoptionOwner {
+    pub issuer: String,
+
+    pub subject: String,
+}
+
+/// Answer of a share adoption: the Resource now authoritative for the native object and its
+/// grants (without the owner). adopted=false means a Resource already existed and nothing
+/// was changed.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ComponentShareAdoptionResult {
+    pub adopted: bool,
+
+    pub grants: Vec<ComponentShareGrant>,
+
+    pub owner_principal_id: String,
+
+    pub resource_id: String,
 }
 
 /// Answer to a share intent: the opaque intent the component passes to the Kailo host in
@@ -9222,6 +9268,10 @@ pub struct ActionCommand {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tenant_id: Option<String>,
 
+    /// 仅 tenant.member_create_policy.set（DD-164(3)）且必带；其他动作携带即拒绝。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tenant_member_create_policy: Option<TenantMemberCreatePolicyInput>,
+
     /// 仅 tenant.profile.update（DD-158(3)）且必带；其他动作携带即拒绝。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tenant_profile: Option<TenantProfileInput>,
@@ -9953,6 +10003,33 @@ pub struct SkillVersionUploadInput {
     pub capability_requirements: Vec<String>,
 
     pub upload_id: String,
+}
+
+/// 仅 tenant.member_create_policy.set（DD-164(3)）且必带；其他动作携带即拒绝。
+///
+/// Only tenant.member_create_policy.set (DD-164(3)) and required for it: the policy and the
+/// Tenant version it was read at.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TenantMemberCreatePolicyInput {
+    pub expected_version: i64,
+
+    pub policy: TenantMemberCreatePolicy,
+}
+
+/// DD-164(3): whether ordinary Tenant members hold tenant#creator (MEMBERS_CREATE, the
+/// default) or only administrators create (ADMINS_ONLY).
+///
+/// DD-164(3): present for Tenant managers, with policyActionKey
+/// tenant.member_create_policy.set.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum TenantMemberCreatePolicy {
+    #[serde(rename = "ADMINS_ONLY")]
+    AdminsOnly,
+
+    #[serde(rename = "MEMBERS_CREATE")]
+    MembersCreate,
 }
 
 /// 仅 tenant.profile.update（DD-158(3)）且必带；其他动作携带即拒绝。
@@ -12082,7 +12159,15 @@ pub struct TenantProfileView {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub icon: Option<String>,
 
+    /// DD-164(3): present for Tenant managers, with policyActionKey
+    /// tenant.member_create_policy.set.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub member_create_policy: Option<TenantMemberCreatePolicy>,
+
     pub name: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub policy_action_key: Option<String>,
 
     /// BFF_STREAM_RETRY_MILLIS 部署事实；在线资料读取中断后再次读取前的等待。afterVersion
     /// 查询只等待有限的再准入时间，回应前重新校验本人会话与成员资格。

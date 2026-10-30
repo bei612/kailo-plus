@@ -45,13 +45,13 @@ describe("wire v1 share", () => {
       expect(embedMessage({ source: "kailo-embed", version: 1, type: "share", intentId })).toBeNull();
   });
 
-  it("normalizes grants: one per subject, everyone read-only, never the owner", () => {
+  it("normalizes grants: one per subject, everyone may be granted WRITE (DD-164(4)③), never the owner", () => {
     expect(normalizedGrants([
       { subject: { kind: "PRINCIPAL", principalId: OWNER }, access: "WRITE" },
       { subject: { kind: "TENANT" }, access: "WRITE" },
       { subject: { kind: "WORKSPACE", workspaceId: WS }, access: "READ" },
       { subject: { kind: "WORKSPACE", workspaceId: WS }, access: "WRITE" },
-    ] as never, OWNER)).toEqual([{ subject: { kind: "TENANT" }, access: "READ" }, { subject: { kind: "WORKSPACE", workspaceId: WS }, access: "WRITE" }]);
+    ] as never, OWNER)).toEqual([{ subject: { kind: "TENANT" }, access: "WRITE" }, { subject: { kind: "WORKSPACE", workspaceId: WS }, access: "WRITE" }]);
   });
 });
 

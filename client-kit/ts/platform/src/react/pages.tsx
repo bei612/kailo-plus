@@ -44,6 +44,7 @@ import { MembersPane, type MemberIdentityRenderer } from "./members";
 import { SidebarGroup, SidebarGroupLabel, SidebarGroupContent, SidebarMenu, SidebarMenuButton, SidebarMenuItem } from "./sidebar/primitives";
 import { AdminSurfaceContent, AdminSurfaceNavigation, useAdminSurfaces } from "./admin-surfaces";
 import { adminSurfaceId } from "../admin-surfaces";
+import { MemberPermissionsSection, memberCreatePolicyEditable } from "./member-create-policy";
 export { MembersPane, type MemberIdentityRenderer } from "./members";
 
 export { AgentDefinitionsPage, WorkspaceAgentDialogs } from "./agents";
@@ -119,10 +120,15 @@ export function WorkspaceMembersPage({renderIdentity}:{renderIdentity?:MemberIde
 /** Both hosts consume the same management panels without a second Workspace selector. */
 export function WorkspaceManagementPanels({children}:{children?:ReactNode}) {
   const t=useT();
+  const client=useBffClient();
+  // DD-164(3): the member create policy is listed only for managers Core offers the action to.
+  const [policyProfile,reloadPolicyProfile]=useLoad("member-create-policy",()=>client.tenantProfile());
+  const policyEditable=policyProfile.status==="ok"&&memberCreatePolicyEditable(policyProfile.data);
   const sections = {
     members: {label:"platform.tab.members",content:children},
     invitations: {label:"invitations.title",content:<TenantInvitations/>},
     roles: {label:"roles.title",content:<RoleManagement/>},
+    memberPermissions: {label:"memberPermissions.title",content:<MemberPermissionsSection profile={policyProfile.status==="ok"?policyProfile.data:undefined} reload={reloadPolicyProfile}/>},
     tenants: {label:"tenants.title",content:<PlatformTenantManagement/>},
     feedback: {label:"platform.feedback.operatorTitle",content:<PlatformFeedback/>},
     secrets: {label:"secretRehome.title",content:<LegacySecretRefManagement/>},
@@ -143,7 +149,7 @@ export function WorkspaceManagementPanels({children}:{children?:ReactNode}) {
   return <div className="flex min-h-0 w-full flex-1 flex-col bg-sidebar sm:h-full sm:flex-row" data-testid="member-management-context">
     <nav aria-label={t("platform.tab.members")} className="shrink-0 text-sidebar-foreground sm:min-h-0 sm:w-(--sidebar-width) sm:overflow-y-auto">
       <SidebarGroup><SidebarGroupLabel>{t("platform.tab.members")}</SidebarGroupLabel><SidebarGroupContent><SidebarMenu>
-        {(Object.keys(sections) as Section[]).map(section=><SidebarMenuItem key={section}><SidebarMenuButton type="button"
+        {(Object.keys(sections) as Section[]).filter(section=>section!=="memberPermissions"||policyEditable).map(section=><SidebarMenuItem key={section}><SidebarMenuButton type="button"
           aria-pressed={section===selected} isActive={section===selected} onClick={()=>{setSelected(section);setVisited(old=>old.includes(section)?old:[...old,section]);}}>
           <span className="truncate">{t(sections[section].label)}</span>
         </SidebarMenuButton></SidebarMenuItem>)}

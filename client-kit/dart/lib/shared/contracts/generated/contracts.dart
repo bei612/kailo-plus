@@ -136,6 +136,8 @@
 //     final componentReleaseReceipt = componentReleaseReceiptFromJson(jsonString);
 //     final componentSearchPage = componentSearchPageFromJson(jsonString);
 //     final componentSearchQuery = componentSearchQueryFromJson(jsonString);
+//     final componentShareAdoptionRequest = componentShareAdoptionRequestFromJson(jsonString);
+//     final componentShareAdoptionResult = componentShareAdoptionResultFromJson(jsonString);
 //     final componentShareIntentCreated = componentShareIntentCreatedFromJson(jsonString);
 //     final componentShareIntentRequest = componentShareIntentRequestFromJson(jsonString);
 //     final componentShareIntentView = componentShareIntentViewFromJson(jsonString);
@@ -361,6 +363,7 @@
 //     final runtimeProfileDirectory = runtimeProfileDirectoryFromJson(jsonString);
 //     final skillVersionUploadInput = skillVersionUploadInputFromJson(jsonString);
 //     final taskStateReport = taskStateReportFromJson(jsonString);
+//     final tenantMemberCreatePolicyInput = tenantMemberCreatePolicyInputFromJson(jsonString);
 //     final tenantProfileInput = tenantProfileInputFromJson(jsonString);
 //     final tenantQuotaSetting = tenantQuotaSettingFromJson(jsonString);
 //     final workflowRef = workflowRefFromJson(jsonString);
@@ -1275,6 +1278,20 @@ ComponentSearchQuery componentSearchQueryFromJson(String str) =>
     ComponentSearchQuery.fromJson(json.decode(str));
 
 String componentSearchQueryToJson(ComponentSearchQuery data) =>
+    json.encode(data.toJson());
+
+ComponentShareAdoptionRequest componentShareAdoptionRequestFromJson(
+  String str,
+) => ComponentShareAdoptionRequest.fromJson(json.decode(str));
+
+String componentShareAdoptionRequestToJson(
+  ComponentShareAdoptionRequest data,
+) => json.encode(data.toJson());
+
+ComponentShareAdoptionResult componentShareAdoptionResultFromJson(String str) =>
+    ComponentShareAdoptionResult.fromJson(json.decode(str));
+
+String componentShareAdoptionResultToJson(ComponentShareAdoptionResult data) =>
     json.encode(data.toJson());
 
 ComponentShareIntentCreated componentShareIntentCreatedFromJson(String str) =>
@@ -2633,6 +2650,14 @@ TaskStateReport taskStateReportFromJson(String str) =>
 
 String taskStateReportToJson(TaskStateReport data) =>
     json.encode(data.toJson());
+
+TenantMemberCreatePolicyInput tenantMemberCreatePolicyInputFromJson(
+  String str,
+) => TenantMemberCreatePolicyInput.fromJson(json.decode(str));
+
+String tenantMemberCreatePolicyInputToJson(
+  TenantMemberCreatePolicyInput data,
+) => json.encode(data.toJson());
 
 TenantProfileInput tenantProfileInputFromJson(String str) =>
     TenantProfileInput.fromJson(json.decode(str));
@@ -12939,7 +12964,8 @@ class ComponentDirectoryShare {
   });
 }
 
-///DD-164(4): one grant on a component shared object. TENANT subjects only accept READ.
+///DD-164(4): one grant on a component shared object. TENANT grants accept READ
+///(tenant#member reader) and WRITE (tenant#member editor).
 class ComponentShareGrant {
   final ComponentShareAccess access;
   final ComponentShareSubject subject;
@@ -13714,6 +13740,101 @@ class ComponentSearchQuery {
 
   Map<String, dynamic> toJson() =>
       _stripNulls({"limit": limit, "locale": locale, "q": q});
+}
+
+///POST /service/v1/component-directory/bindings/{bindingId}/share-adoptions (DD-164(4)⑧):
+///before its first schema 2 convergence a component registers an existing native share of a
+///Kailo-mapped object as a Kailo share. Creates the component.shared_object Resource with
+///these grants only when none exists; otherwise answers the existing Resource unchanged.
+class ComponentShareAdoptionRequest {
+  ///Mapped from the native permission: viewer -> READ, editor/admin -> WRITE; the owner is
+  ///implicit.
+  final List<ComponentShareGrant> grants;
+  final String name;
+  final String nativeId;
+  final ComponentSharedNativeType nativeType;
+  final ComponentShareAdoptionOwner owner;
+  final String? workspaceId;
+
+  ComponentShareAdoptionRequest({
+    required this.grants,
+    required this.name,
+    required this.nativeId,
+    required this.nativeType,
+    required this.owner,
+    this.workspaceId,
+  });
+
+  factory ComponentShareAdoptionRequest.fromJson(Map<String, dynamic> json) =>
+      ComponentShareAdoptionRequest(
+        grants: List<ComponentShareGrant>.from(
+          json["grants"].map((x) => ComponentShareGrant.fromJson(x)),
+        ),
+        name: json["name"],
+        nativeId: json["nativeId"],
+        nativeType: componentSharedNativeTypeValues.map[json["nativeType"]]!,
+        owner: ComponentShareAdoptionOwner.fromJson(json["owner"]),
+        workspaceId: json["workspaceId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "grants": List<dynamic>.from(grants.map((x) => x.toJson())),
+    "name": name,
+    "nativeId": nativeId,
+    "nativeType": componentSharedNativeTypeValues.reverse[nativeType],
+    "owner": owner.toJson(),
+    "workspaceId": workspaceId,
+  });
+}
+
+class ComponentShareAdoptionOwner {
+  final String issuer;
+  final String subject;
+
+  ComponentShareAdoptionOwner({required this.issuer, required this.subject});
+
+  factory ComponentShareAdoptionOwner.fromJson(Map<String, dynamic> json) =>
+      ComponentShareAdoptionOwner(
+        issuer: json["issuer"],
+        subject: json["subject"],
+      );
+
+  Map<String, dynamic> toJson() =>
+      _stripNulls({"issuer": issuer, "subject": subject});
+}
+
+///Answer of a share adoption: the Resource now authoritative for the native object and its
+///grants (without the owner). adopted=false means a Resource already existed and nothing
+///was changed.
+class ComponentShareAdoptionResult {
+  final bool adopted;
+  final List<ComponentShareGrant> grants;
+  final String ownerPrincipalId;
+  final String resourceId;
+
+  ComponentShareAdoptionResult({
+    required this.adopted,
+    required this.grants,
+    required this.ownerPrincipalId,
+    required this.resourceId,
+  });
+
+  factory ComponentShareAdoptionResult.fromJson(Map<String, dynamic> json) =>
+      ComponentShareAdoptionResult(
+        adopted: json["adopted"],
+        grants: List<ComponentShareGrant>.from(
+          json["grants"].map((x) => ComponentShareGrant.fromJson(x)),
+        ),
+        ownerPrincipalId: json["ownerPrincipalId"],
+        resourceId: json["resourceId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "adopted": adopted,
+    "grants": List<dynamic>.from(grants.map((x) => x.toJson())),
+    "ownerPrincipalId": ownerPrincipalId,
+    "resourceId": resourceId,
+  });
 }
 
 ///Answer to a share intent: the opaque intent the component passes to the Kailo host in
@@ -18603,6 +18724,9 @@ class ActionCommand {
   ///tenant.suspend / tenant.restore 的目标业务 Tenant；执行 Tenant 仍是会话 Tenant（Platform Catalog）
   final String? tenantId;
 
+  ///仅 tenant.member_create_policy.set（DD-164(3)）且必带；其他动作携带即拒绝。
+  final TenantMemberCreatePolicyInput? tenantMemberCreatePolicy;
+
   ///仅 tenant.profile.update（DD-158(3)）且必带；其他动作携带即拒绝。
   final TenantProfileInput? tenantProfile;
 
@@ -18680,6 +18804,7 @@ class ActionCommand {
     this.slug,
     this.sourceEventId,
     this.tenantId,
+    this.tenantMemberCreatePolicy,
     this.tenantProfile,
     this.tenantQuotaSetting,
     this.workspaceCanvas,
@@ -18820,6 +18945,11 @@ class ActionCommand {
     slug: json["slug"],
     sourceEventId: json["sourceEventId"],
     tenantId: json["tenantId"],
+    tenantMemberCreatePolicy: json["tenantMemberCreatePolicy"] == null
+        ? null
+        : TenantMemberCreatePolicyInput.fromJson(
+            json["tenantMemberCreatePolicy"],
+          ),
     tenantProfile: json["tenantProfile"] == null
         ? null
         : TenantProfileInput.fromJson(json["tenantProfile"]),
@@ -18899,6 +19029,7 @@ class ActionCommand {
     "slug": slug,
     "sourceEventId": sourceEventId,
     "tenantId": tenantId,
+    "tenantMemberCreatePolicy": tenantMemberCreatePolicy?.toJson(),
     "tenantProfile": tenantProfile?.toJson(),
     "tenantQuotaSetting": tenantQuotaSetting?.toJson(),
     "workspaceCanvas": workspaceCanvas?.toJson(),
@@ -20244,6 +20375,43 @@ class SkillVersionUploadInput {
     "uploadId": uploadId,
   });
 }
+
+///仅 tenant.member_create_policy.set（DD-164(3)）且必带；其他动作携带即拒绝。
+///
+///Only tenant.member_create_policy.set (DD-164(3)) and required for it: the policy and the
+///Tenant version it was read at.
+class TenantMemberCreatePolicyInput {
+  final int expectedVersion;
+  final TenantMemberCreatePolicy policy;
+
+  TenantMemberCreatePolicyInput({
+    required this.expectedVersion,
+    required this.policy,
+  });
+
+  factory TenantMemberCreatePolicyInput.fromJson(Map<String, dynamic> json) =>
+      TenantMemberCreatePolicyInput(
+        expectedVersion: json["expectedVersion"],
+        policy: tenantMemberCreatePolicyValues.map[json["policy"]]!,
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "expectedVersion": expectedVersion,
+    "policy": tenantMemberCreatePolicyValues.reverse[policy],
+  });
+}
+
+///DD-164(3): whether ordinary Tenant members hold tenant#creator (MEMBERS_CREATE, the
+///default) or only administrators create (ADMINS_ONLY).
+///
+///DD-164(3): present for Tenant managers, with policyActionKey
+///tenant.member_create_policy.set.
+enum TenantMemberCreatePolicy { ADMINS_ONLY, MEMBERS_CREATE }
+
+final tenantMemberCreatePolicyValues = EnumValues({
+  "ADMINS_ONLY": TenantMemberCreatePolicy.ADMINS_ONLY,
+  "MEMBERS_CREATE": TenantMemberCreatePolicy.MEMBERS_CREATE,
+});
 
 ///仅 tenant.profile.update（DD-158(3)）且必带；其他动作携带即拒绝。
 ///
@@ -23782,7 +23950,12 @@ class TenantMemberJoinView {
 ///manage 时给出 updateActionKey（tenant.profile.update），提交仍由 Core 重新准入。
 class TenantProfileView {
   final String? icon;
+
+  ///DD-164(3): present for Tenant managers, with policyActionKey
+  ///tenant.member_create_policy.set.
+  final TenantMemberCreatePolicy? memberCreatePolicy;
   final String name;
+  final String? policyActionKey;
 
   ///BFF_STREAM_RETRY_MILLIS 部署事实；在线资料读取中断后再次读取前的等待。afterVersion
   ///查询只等待有限的再准入时间，回应前重新校验本人会话与成员资格。
@@ -23792,7 +23965,9 @@ class TenantProfileView {
 
   TenantProfileView({
     this.icon,
+    this.memberCreatePolicy,
     required this.name,
+    this.policyActionKey,
     this.refreshAfterMillis,
     this.updateActionKey,
     required this.version,
@@ -23801,7 +23976,11 @@ class TenantProfileView {
   factory TenantProfileView.fromJson(Map<String, dynamic> json) =>
       TenantProfileView(
         icon: json["icon"],
+        memberCreatePolicy: json["memberCreatePolicy"] == null
+            ? null
+            : tenantMemberCreatePolicyValues.map[json["memberCreatePolicy"]]!,
         name: json["name"],
+        policyActionKey: json["policyActionKey"],
         refreshAfterMillis: json["refreshAfterMillis"],
         updateActionKey: json["updateActionKey"],
         version: json["version"],
@@ -23809,7 +23988,10 @@ class TenantProfileView {
 
   Map<String, dynamic> toJson() => _stripNulls({
     "icon": icon,
+    "memberCreatePolicy":
+        tenantMemberCreatePolicyValues.reverse[memberCreatePolicy],
     "name": name,
+    "policyActionKey": policyActionKey,
     "refreshAfterMillis": refreshAfterMillis,
     "updateActionKey": updateActionKey,
     "version": version,
