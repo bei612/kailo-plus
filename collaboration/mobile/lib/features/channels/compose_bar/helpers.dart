@@ -442,8 +442,8 @@ void _reportSendCancelledByCommunitySwitch(ScaffoldMessengerState? messenger) {
 
 /// Mentioned identities that aren't in the channel.
 ///
-/// 平台的 Channel roster 只由 Core 变更（`DD-80`）：成员不能把别人加进
-/// Channel，因此这里不提供「邀请」，只把非成员降为引用标签——名字照常显示，
+/// 平台的 Channel roster 只由 Core 变更（`DD-80`）。原版在发送前询问是否邀请这些人
+/// （下方 [_resolveNonMemberMentions]）；不邀请时把非成员降为引用标签——名字照常显示，
 /// 但不去通知一个不在 Channel 里的人。
 Future<List<String>> _nonMemberMentionPubkeys(
   WidgetRef ref, {
@@ -497,3 +497,184 @@ String _rateLimitedText(int? retryAfterSeconds) =>
         variables: {'seconds': retryAfterSeconds},
       )
     : platformText(PlatformMessageKey.nativeSendRateLimitedNoHint);
+
+/// Outcome of the original non-member mention prompt. `null` (dismissed) cancels the send
+/// and keeps the draft.
+enum _NonMemberMentionChoice { invite, sendWithoutInviting }
+
+/// What the send does after the prompt: whether to send at all, and which pubkeys go out
+/// only as reference tags.
+class _NonMemberMentionResolution {
+  const _NonMemberMentionResolution.cancel() : send = false, demote = const [];
+  const _NonMemberMentionResolution.send(this.demote) : send = true;
+
+  final bool send;
+  final List<String> demote;
+}
+
+/// Buzz 779af8886caae1317b4de962082429867ab61503
+/// `mobile/lib/features/channels/compose_bar/helpers.dart::_promptNonMemberMention` and
+/// desktop `NonMemberMentionDialog`. Kailo (V-SCN-163): "Invite" is offered only when the
+/// role projection admits `workspace.member.add` for every mentioned person
+/// (`canAddToWorkspace`); the add is the governed action, and the message is sent only after
+/// the channel roster shows them. Otherwise the sender may still send without inviting.
+Future<_NonMemberMentionChoice?> _promptNonMemberMention(
+  BuildContext context, {
+  required List<String> names,
+  required bool canInvite,
+}) {
+  final locale = Localizations.localeOf(context).toLanguageTag();
+  String t(PlatformMessageKey key, [Map<String, Object>? variables]) =>
+      platformText(key, locale: locale, variables: variables);
+  final notIn = t(
+    names.length == 1
+        ? PlatformMessageKey.buzzNonMemberMentionNotInChannelOne
+        : PlatformMessageKey.buzzNonMemberMentionNotInChannelMany,
+    {'names': names.join(', ')},
+  );
+  return showBuzzDialog<_NonMemberMentionChoice>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      title: Text(t(PlatformMessageKey.buzzNonMemberMentionTitle)),
+      content: Text(
+        canInvite
+            ? '$notIn ${t(PlatformMessageKey.buzzNonMemberMentionInviteOrSend)}'
+            : '$notIn ${t(PlatformMessageKey.buzzNonMemberMentionAddDenied)} '
+                  '${t(PlatformMessageKey.buzzNonMemberMentionCanStillSend)}',
+      ),
+      actions: [
+        TextButton(
+          key: const ValueKey('non-member-mention-send'),
+          onPressed: () => Navigator.of(
+            dialogContext,
+          ).pop(_NonMemberMentionChoice.sendWithoutInviting),
+          child: Text(
+            t(
+              canInvite
+                  ? PlatformMessageKey.buzzNonMemberMentionDoNothing
+                  : PlatformMessageKey.buzzNonMemberMentionSendAnyway,
+            ),
+          ),
+        ),
+        if (canInvite)
+          TextButton(
+            key: const ValueKey('non-member-mention-invite'),
+            onPressed: () =>
+                Navigator.of(dialogContext).pop(_NonMemberMentionChoice.invite),
+            child: Text(t(PlatformMessageKey.buzzNonMemberMentionInvite)),
+          ),
+      ],
+    ),
+  );
+}
+
+/// How long the send waits for invited people to appear in the channel roster.
+@visibleForTesting
+const nonMemberInviteRosterChecks = 10;
+
+/// Asks about mentioned humans outside the channel and, on "Invite", adds them through the
+/// governed `workspace.member.add` before the message goes out. A refused, unconfirmed or
+/// still-pending add keeps the draft and says why; nothing is sent on a guess.
+Future<_NonMemberMentionResolution> _resolveNonMemberMentions(
+  BuildContext context,
+  WidgetRef ref, {
+  required String channelId,
+  required List<String> nonMembers,
+  required List<MentionCandidate> selectedMentions,
+  required ScaffoldMessengerState? messenger,
+  Duration rosterPoll = const Duration(seconds: 1),
+}) async {
+  if (nonMembers.isEmpty) return const _NonMemberMentionResolution.send([]);
+  final pending = {for (final pubkey in nonMembers) pubkey.toLowerCase()};
+  final humans = [
+    for (final candidate in selectedMentions)
+      if (!candidate.isAgent &&
+          pending.contains(candidate.pubkey.toLowerCase()))
+        candidate,
+  ];
+  // Agents outside the channel are never invited as members; they only lose the p-tag.
+  if (humans.isEmpty) return _NonMemberMentionResolution.send(nonMembers);
+
+  Map<String, RoleMemberView>? roles;
+  try {
+    roles = await ref.read(channelRoleMembersProvider(channelId).future);
+  } on Object {
+    roles = null;
+  }
+  final invitees = <String, RoleMemberView>{};
+  for (final candidate in humans) {
+    final key = candidate.pubkey.toLowerCase();
+    for (final role in roles?.values ?? const <RoleMemberView>[]) {
+      if (role.canAddToWorkspace == true &&
+          (role.pubkeys ?? const []).any((p) => p.toLowerCase() == key)) {
+        invitees[key] = role;
+        break;
+      }
+    }
+  }
+  final canInvite = invitees.length == humans.length;
+  if (!context.mounted) return const _NonMemberMentionResolution.cancel();
+  final names = [for (final candidate in humans) candidate.label];
+  final choice = await _promptNonMemberMention(
+    context,
+    names: names,
+    canInvite: canInvite,
+  );
+  if (choice == null) return const _NonMemberMentionResolution.cancel();
+  if (choice == _NonMemberMentionChoice.sendWithoutInviting) {
+    return _NonMemberMentionResolution.send(nonMembers);
+  }
+
+  final locale = context.mounted
+      ? Localizations.localeOf(context).toLanguageTag()
+      : null;
+  void tell(PlatformMessageKey key) => messenger?.showSnackBar(
+    SnackBar(
+      content: Text(
+        platformText(
+          key,
+          locale: locale,
+          variables: {'names': names.join(', ')},
+        ),
+      ),
+    ),
+  );
+
+  final actions = ref.read(channelGovernedActionsProvider);
+  for (final role in invitees.values) {
+    final outcome = await actions.changeMember(
+      workspaceId: channelId,
+      principalId: role.principalId,
+      actionKey: workspaceMemberAddAction,
+    );
+    switch (outcome) {
+      case ChannelActionRecorded():
+        continue;
+      case ChannelActionRejected() || ChannelActionAborted():
+        tell(PlatformMessageKey.buzzNonMemberMentionInviteRejected);
+        return const _NonMemberMentionResolution.cancel();
+      case ChannelActionWaiting():
+        tell(PlatformMessageKey.buzzNonMemberMentionInviteTimeout);
+        return const _NonMemberMentionResolution.cancel();
+      case ChannelActionUnknown() || null:
+        tell(PlatformMessageKey.buzzNonMemberMentionInviteError);
+        return const _NonMemberMentionResolution.cancel();
+    }
+  }
+
+  for (var check = 0; check < nonMemberInviteRosterChecks; check++) {
+    ref.invalidate(channelMembersProvider(channelId));
+    final members = await ref.read(channelMembersProvider(channelId).future);
+    final roster = {for (final member in members) member.pubkey.toLowerCase()};
+    if (invitees.keys.every(roster.contains)) {
+      // Invited people are members now; only non-invitable agents lose the p-tag.
+      return _NonMemberMentionResolution.send([
+        for (final pubkey in nonMembers)
+          if (!invitees.containsKey(pubkey.toLowerCase())) pubkey,
+      ]);
+    }
+    await Future<void>.delayed(rosterPoll);
+  }
+  tell(PlatformMessageKey.buzzNonMemberMentionInviteTimeout);
+  return const _NonMemberMentionResolution.cancel();
+}

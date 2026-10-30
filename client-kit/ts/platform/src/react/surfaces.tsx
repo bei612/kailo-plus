@@ -24,15 +24,17 @@ export function GradientLayer() {
  * DD-141 §10: the Kailo content plane sits flush against the canvas (no
  * floating card margins); its hairline edges and corner live in kailo-shell.css.
  */
-export function ContentSurface({ children }: { children: ReactNode }) {
+export function ContentSurface({ children, terminal }: { children: ReactNode; terminal?: ReactNode }) {
   return (
     <div
       className="relative z-10 flex min-h-0 flex-1 flex-col overflow-hidden bg-background"
       data-buzz-content-surface
     >
-      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+      <div className="buzz-content-primary flex min-h-0 flex-1 flex-col overflow-hidden">
         {children}
       </div>
+      {/* Original Buzz terminal dock (DD-161): only the Desktop host supplies a terminal. */}
+      {terminal ? <div className="buzz-terminal-dock-host" data-terminal-dock>{terminal}</div> : null}
     </div>
   );
 }

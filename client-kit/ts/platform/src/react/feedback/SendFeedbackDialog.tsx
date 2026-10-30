@@ -1,5 +1,7 @@
 // Buzz 779af8886caae1317b4de962082429867ab61503 SendFeedbackDialog: category pills,
 // side-by-side message/image, diagnostics opt-in. DD-158 sends only to Core.
+// Also desktop/src/features/settings/hooks/useSendFeedback.ts (submit, attachment, diagnostics) and
+// desktop/src/features/settings/ui/SendFeedbackController.tsx (open/reset wiring), now one dialog.
 import { Bug, ImageIcon, ThumbsUp, Wrench, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { FeedbackCategory, FeedbackClient, type FeedbackSubmissionRequest } from "@client-kit/contracts";

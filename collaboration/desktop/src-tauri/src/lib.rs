@@ -33,6 +33,9 @@ mod relay;
 mod relay_admission;
 mod secret_store;
 mod shutdown;
+// DD-161: the original in-app terminal (local, user-driven PTY).
+mod terminal_runtime;
+mod terminal_transport;
 #[cfg(target_os = "macos")]
 mod tray_menu;
 #[cfg(not(target_os = "macos"))]
@@ -169,6 +172,7 @@ pub fn run() {
         .manage(PendingEntityDeepLinks::default())
         .manage(observed_unread::ObservedUnreadStore::default())
         .manage(channel_head_cache::ChannelHeadCacheStore::default())
+        .manage(terminal_runtime::TerminalSessions::default())
         .setup(move |app| {
             let app_handle = app.handle().clone();
             #[cfg(target_os = "macos")]
@@ -267,6 +271,16 @@ pub fn run() {
             get_project_local_repo_diff,
             get_project_local_repo_file_content,
             open_project_repository_folder,
+            open_project_terminal,
+            terminal_runtime::terminal_attach,
+            terminal_runtime::terminal_detach,
+            terminal_runtime::terminal_close,
+            terminal_runtime::terminal_input,
+            terminal_runtime::terminal_resize,
+            terminal_runtime::terminal_scroll,
+            terminal_runtime::terminal_ack,
+            terminal_runtime::terminal_viewport_ready,
+            terminal_runtime::terminal_focus,
             local_archive::local_archive_status,
             local_archive::local_archive_subscribe,
             local_archive::local_archive_unsubscribe,

@@ -137,6 +137,8 @@ ChannelDetails channelDetailsFromEvent(NostrEvent event) {
     // on the base channel and the detail view would show compose/manage
     // actions for expired/archived channels.
     archivedAt: data.isArchived ? eventTime : null,
+    ttlSeconds: data.ttlSeconds,
+    ttlDeadline: data.ttlDeadline,
   );
 }
 

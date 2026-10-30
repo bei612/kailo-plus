@@ -1,6 +1,8 @@
 // Buzz 779af8886caae1317b4de962082429867ab61503 CommunityEditForm and
 // CommunityIconSettingsCard: name form, rounded icon, local image/emoji selection.
 // DD-158 changes the server Tenant profile only after explicit governed confirmation.
+// Also desktop/src/features/communities/ui/EditCommunityDialog.tsx (name + icon edit) and
+// desktop/src/features/communities/lib/downscaleIcon.ts (downscaleTenantIcon: square 256 px, size cap).
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import type { TenantProfileView } from "@client-kit/contracts";

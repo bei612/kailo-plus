@@ -334,6 +334,8 @@ export type ProjectsCheckoutHost = {
   getProjectLocalRepoDiff(input: CheckoutRef & { baseCommit?: string | null; targetCommit?: string | null }): Promise<ProjectRepoDiff | null>;
   getProjectLocalRepoFileContent(input: { repository: string; path: string }): Promise<string | null>;
   openProjectRepositoryFolder(input: { repository: string }): Promise<void>;
+  /** DD-161: the original "Open in Terminal" at the scoped checkout (OS terminal, no credentials). */
+  openProjectTerminal?(input: { repository: string }): Promise<void>;
 };
 
 function localStatus(raw: unknown): ProjectRepoSyncStatus | null {
@@ -460,6 +462,7 @@ export function createNativeProjectsGitHost(invoke: NativeProjectsGitInvoke, sco
         return raw;
       },
       openProjectRepositoryFolder: async input => { await send("open_project_repository_folder", { repository: input.repository }); },
+      openProjectTerminal: async input => { await send("open_project_terminal", { repository: input.repository }); },
     },
   };
 }

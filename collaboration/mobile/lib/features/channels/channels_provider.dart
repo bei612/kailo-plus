@@ -25,6 +25,16 @@ const _unreadCatchUpLimit = 1000;
 const _participatedRootIdsPrefix = 'buzz-thread-participation.v1';
 const _authoredRootIdsPrefix = 'buzz-thread-authored.v1';
 
+/// Relay 40099 notices that mean the channel's kind:39000 metadata changed.
+const channelMetadataSystemTypes = {
+  'topic_changed',
+  'purpose_changed',
+  'visibility_changed',
+  'ttl_changed',
+  'channel_archived',
+  'channel_unarchived',
+};
+
 /// Loads the user's channel list from the relay over WebSocket.
 ///
 /// Membership loading resolves kind:39002 events tagged `#p:<my-pubkey>`,
@@ -429,6 +439,8 @@ class ChannelsNotifier extends AsyncNotifier<List<Channel>> {
               isUtc: true,
             )
           : null,
+      ttlSeconds: data.ttlSeconds,
+      ttlDeadline: data.ttlDeadline,
       isMember: isMember,
       participantPubkeys: data.participantPubkeys,
     );
@@ -539,6 +551,16 @@ class ChannelsNotifier extends AsyncNotifier<List<Channel>> {
     final channelId = event.channelId;
     if (channelId == null) return;
 
+    if (_isMetadataSystemEvent(event)) {
+      // Buzz `channel_metadata_updates.dart` built the 9002 itself; in Kailo
+      // the change is a governed `workspace.update` (DD-119) signed by
+      // CONTROL. Its read side is the relay's 40099 notice: reread the
+      // republished kind:39000 so topic, visibility, TTL and archive state
+      // follow live instead of waiting for the membership backstop.
+      ref.invalidate(channelDetailsProvider(channelId));
+      unawaited(refresh());
+    }
+
     final myPk = ref.read(myPubkeyProvider);
 
     state = state.whenData((channels) {
@@ -570,6 +592,17 @@ class ChannelsNotifier extends AsyncNotifier<List<Channel>> {
 
       return updated;
     });
+  }
+
+  bool _isMetadataSystemEvent(NostrEvent event) {
+    if (event.kind != EventKind.systemMessage) return false;
+    try {
+      final content = jsonDecode(event.content);
+      return content is Map &&
+          channelMetadataSystemTypes.contains(content['type']);
+    } catch (_) {
+      return false;
+    }
   }
 
   Set<String> _followedRootIds() =>

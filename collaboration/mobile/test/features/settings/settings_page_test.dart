@@ -1,6 +1,7 @@
 import 'package:buzz/features/platform/platform_audit_page.dart';
 import 'package:buzz/features/platform/platform_devices_page.dart';
 import 'package:buzz/features/platform/platform_members_page.dart';
+import 'package:buzz/features/invites/invite_create_provider.dart';
 import 'package:buzz/features/settings/settings_page.dart';
 import 'package:buzz/shared/platform/platform_views.dart';
 import 'package:buzz/shared/relay/relay.dart';
@@ -99,6 +100,51 @@ void main() {
     }
   });
 
+  for (final (access, shown) in const [
+    (InviteAccess.allowed, true),
+    (InviteAccess.unknown, true),
+    (InviteAccess.denied, false),
+  ]) {
+    testWidgets(
+      'the Community section offers Invite on the BFF answer ($access)',
+      (tester) async {
+        tester.view.physicalSize = const Size(800, 2000);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.reset);
+        SharedPreferences.setMockInitialValues({});
+        final prefs = await SharedPreferences.getInstance();
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [
+              savedPrefsProvider.overrideWithValue(prefs),
+              myPubkeyProvider.overrideWithValue('ab' * 32),
+              platformWorkspacesProvider.overrideWith((ref) async => const []),
+              platformOwnAuditProvider.overrideWith((ref) async => const []),
+              platformDevicesProvider.overrideWith((ref) async => const []),
+              inviteAccessProvider.overrideWith((ref) async => access),
+            ],
+            child: MaterialApp(
+              theme: AppTheme.light(),
+              home: SettingsPage(
+                profileHeader: const SizedBox.shrink(),
+                invitePageBuilder: (_) => const Text('invite page'),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('Community'), findsOneWidget);
+        expect(find.text('Theme'), findsOneWidget);
+        final invite = find.text('Invite to community');
+        expect(invite, shown ? findsOneWidget : findsNothing);
+        if (!shown) return;
+        await tester.tap(invite);
+        await tester.pumpAndSettle();
+        expect(find.text('invite page'), findsOneWidget);
+      },
+    );
+  }
+
   testWidgets('each management row opens its view', (tester) async {
     await pumpSettings(tester);
 
@@ -120,7 +166,7 @@ void main() {
     (tester) async {
       await pumpSettings(tester, locale: const Locale('zh', 'CN'));
 
-      for (final label in ['组织', '外观', '主题', '本机', '服务器连接', '设备密钥', '退出']) {
+      for (final label in ['组织', '社区', '主题', '本机', '服务器连接', '设备密钥', '退出']) {
         expect(find.text(label), findsWidgets, reason: label);
       }
       expect(
@@ -136,7 +182,7 @@ void main() {
         ),
         findsOneWidget,
       );
-      expect(find.text('Appearance'), findsNothing);
+      expect(find.text('Community'), findsNothing);
       expect(find.text('Device key'), findsNothing);
       await tester.tap(find.text('退出'));
       await tester.pumpAndSettle();

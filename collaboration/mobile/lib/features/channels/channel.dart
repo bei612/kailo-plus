@@ -18,6 +18,9 @@ class Channel {
   final int memberCount;
   final DateTime? lastMessageAt;
   final DateTime? archivedAt;
+  // Original Buzz TTL facts from the relay's kind:39000 `ttl`/`ttl_deadline`.
+  final int? ttlSeconds;
+  final DateTime? ttlDeadline;
   final bool isMember;
   final List<String> participants;
   final List<String> participantPubkeys;
@@ -36,6 +39,8 @@ class Channel {
     this.purpose,
     this.lastMessageAt,
     this.archivedAt,
+    this.ttlSeconds,
+    this.ttlDeadline,
     this.isMember = false,
     this.participants = const [],
     this.participantPubkeys = const [],
@@ -58,6 +63,7 @@ class Channel {
   }
 
   bool get isArchived => archivedAt != null;
+  bool get isEphemeral => ttlSeconds != null || ttlDeadline != null;
 
   Channel mergeDetails(ChannelDetails details) => Channel(
     id: id,
@@ -72,6 +78,8 @@ class Channel {
     memberCount: memberCount,
     lastMessageAt: lastMessageAt,
     archivedAt: details.archivedAt,
+    ttlSeconds: details.ttlSeconds,
+    ttlDeadline: details.ttlDeadline,
     isMember: isMember,
     participants: participants,
     participantPubkeys: participantPubkeys,
@@ -105,6 +113,8 @@ class Channel {
     archivedAt: identical(archivedAt, _sentinel)
         ? this.archivedAt
         : archivedAt as DateTime?,
+    ttlSeconds: ttlSeconds,
+    ttlDeadline: ttlDeadline,
     isMember: isMember ?? this.isMember,
     participants: participants ?? this.participants,
     participantPubkeys: participantPubkeys ?? this.participantPubkeys,
@@ -126,6 +136,8 @@ class ChannelDetails {
   final DateTime createdAt;
   final int memberCount;
   final DateTime? archivedAt;
+  final int? ttlSeconds;
+  final DateTime? ttlDeadline;
 
   const ChannelDetails({
     required this.id,
@@ -139,6 +151,8 @@ class ChannelDetails {
     this.topic,
     this.purpose,
     this.archivedAt,
+    this.ttlSeconds,
+    this.ttlDeadline,
   });
 
   factory ChannelDetails.fromChannel(Channel channel) => ChannelDetails(
@@ -153,5 +167,7 @@ class ChannelDetails {
     createdAt: channel.createdAt,
     memberCount: channel.memberCount,
     archivedAt: channel.archivedAt,
+    ttlSeconds: channel.ttlSeconds,
+    ttlDeadline: channel.ttlDeadline,
   );
 }

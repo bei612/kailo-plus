@@ -542,6 +542,9 @@ class _WorkingBadge extends StatelessWidget {
   }
 }
 
+// Buzz 779af8886caae1317b4de962082429867ab61503
+// `mobile/lib/features/channels/agent_activity/transcript_item_widget.dart`: the original per-item
+// rendering (message, thought, lifecycle, metadata, tool) over Core's audited transcript items.
 /// One Codex item in the original transcript shape: a headline and its body.
 class AgentTranscriptItemTile extends StatelessWidget {
   const AgentTranscriptItemTile({

@@ -1,6 +1,8 @@
 // Buzz 779af8886caae1317b4de962082429867ab61503 desktop/src/features/projects/ui/ProjectWorkItemCommunicationActions.tsx.
 // Original "Chat with an agent" (DD-130; shown only inside a right panel that has the governed
 // chat transport) and Task/Review "Discuss in a channel" branches.
+// desktop/src/features/projects/lib/projectDetailSelectionItem.ts: the selected Task/Review becomes the
+// selection item here; a selected commit is chatted/discussed through ProjectCommitsPanel's selection.
 import { useMemo } from "react";
 import { Bot } from "lucide-react";
 import { useUiT } from "../context";

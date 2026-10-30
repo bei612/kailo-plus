@@ -10,6 +10,8 @@
 // DD-140 (5): the Agent learns the outcome only through the owner's ordinary message in the home
 // channel mentioning the Installation (existing @mention → agent.invoke), sent after a definite
 // DENY, or after an APPROVE once the channel exists and is linked; UNKNOWN outcomes send nothing.
+// desktop/src/features/projects/projectChannelRequestQueue.ts: the one-at-a-time queue is the viewer's
+// pending-approval list (each request is shown once and decided once).
 import * as React from "react";
 import * as AlertDialog from "@radix-ui/react-alert-dialog";
 import { useQuery, useQueryClient } from "@tanstack/react-query";

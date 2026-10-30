@@ -8,11 +8,14 @@ import { SidebarInset, useSidebar } from "@/shared/ui/sidebar";
 type AppShellChannelSurfaceProps = {
   children: React.ReactNode;
   mainInsetRef: React.RefObject<HTMLElement | null>;
+  /** DD-161: the original terminal dock under the channel surface. */
+  terminal?: React.ReactNode;
 };
 
 export function AppShellChannelSurface({
   children,
   mainInsetRef,
+  terminal,
 }: AppShellChannelSurfaceProps) {
   const { isMobile, openMobile, state: sidebarState } = useSidebar();
   const hasCollapsedSidebarGutter = isMobile
@@ -37,7 +40,7 @@ export function AppShellChannelSurface({
             data-collapsed-content-gutter
           />
         ) : null}
-        <BuzzTheme.ContentSurface>{children}</BuzzTheme.ContentSurface>
+        <BuzzTheme.ContentSurface terminal={terminal}>{children}</BuzzTheme.ContentSurface>
       </SidebarInset>
     </MainInsetProvider>
   );

@@ -9,7 +9,7 @@ import { SnapshotSendPanel, type SnapshotShareIntent } from "../src/react/agent-
 import { AgentSnapshotExportDialog, type SnapshotExportTarget } from "../src/react/agent-library/AgentSnapshotExportDialog";
 import { sha256Hex } from "../src/react/agent-library/AgentSnapshotImportDialog";
 import { BffError, TransportError, type BffReply, type BffRequest } from "../src/transport";
-import { click, render, settle } from "./render";
+import { click, render, settle, until } from "./render";
 
 const alice = { principalId: "alice", displayName: "Alice", pubkeys: ["a".repeat(64)] };
 const bob = { principalId: "bob", displayName: "Bob", pubkeys: ["b".repeat(64)] };
@@ -118,7 +118,7 @@ describe("snapshot send to people", () => {
     await mount({ send, dedupesRetry: true });
     await pick("Alice");
     await click(sendButton()!);
-    expect(document.querySelector("[data-testid=share-send-failed]")).not.toBeNull();
+    await until(() => !!document.querySelector("[data-testid=share-send-failed]"), "definite refusal");
     expect(document.querySelector<HTMLInputElement>("[data-testid=share-recipient-search]")!.disabled).toBe(false);
     await click(sendButton()!);
     expect(send).toHaveBeenCalledTimes(2);

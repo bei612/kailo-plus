@@ -1,6 +1,9 @@
 import {lazy,Suspense,useCallback,useEffect,useMemo} from "react";
 import {ProjectsView,createNativeProjectsGitHost,mergeSelectionDiscussDraft,type ProjectsHost,type ProjectWorkItemTarget,type ProjectAgentChatHost,type ProjectAgentConversationEvent} from "@client-kit/platform/react/projects";
 import {PulseScreen} from "./PulseScreen";
+import {ProjectTerminalHostProvider,type ProjectTerminalHost} from "@client-kit/platform/react/projects/projectTerminal";
+import {useTerminalContextOverrideSetter} from "@/app/TerminalContextOverrideContext";
+import {TerminalPanelToggle} from "@/features/terminal/TerminalPanelToggle";
 import {useUiT} from "@client-kit/platform/react/context";
 import {relayClient} from "@/shared/api/relayClient";
 import {useActiveCommunity,useNativeSession} from "./activeCommunity";
@@ -157,5 +160,10 @@ export function ProjectsScreen({selectedProjectId,onSelectedProjectChange,workIt
     renderWorkItems={children=><PulseScreen>{children}</PulseScreen>}
     lastMessageAtByChannelId={lastMessageAtByChannelId} onDiscussInChannel={discuss} onOpenChannel={async workspace=>{if(!await goChannel(workspace.channel.channelId))throw new Error("Project channel navigation failed");}}
     renderMember={(member,trigger)=><ProjectMemberIdentity member={member} trigger={trigger}/>} agentChat={agentChat}/>:<p role="alert">{t("platform.loadFailed")}</p>;
-  return view;
+  // DD-161: the original project terminal toggle and channel context override (Desktop only).
+  const setTerminalContext=useTerminalContextOverrideSetter();
+  const terminalHost=useMemo<ProjectTerminalHost|null>(()=>setTerminalContext?{Toggle:ProjectTerminalToggle,setContext:setTerminalContext}:null,[setTerminalContext]);
+  return <ProjectTerminalHostProvider host={terminalHost}>{view}</ProjectTerminalHostProvider>;
 }
+
+function ProjectTerminalToggle(){return <TerminalPanelToggle variant="panel"/>;}

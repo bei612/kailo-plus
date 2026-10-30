@@ -6,6 +6,12 @@ import * as BuzzTheme from "@client-kit/platform/react/surfaces";
 import { useConversations, useConversationInvalidation } from "@client-kit/platform/react/new-message";
 import { checkedUserState, conversationNotificationMutes } from "@client-kit/platform/inbox";
 import { AppShellProvider } from "@/app/AppShellContext";
+import { useTerminalContext } from "@/app/useTerminalContext";
+import {
+  type TerminalContextOverride,
+  TerminalContextOverrideProvider,
+} from "@/app/TerminalContextOverrideContext";
+import { TerminalBootstrap } from "@/features/terminal/TerminalBootstrap";
 import { AppShellChannelSurface } from "@/app/AppShellChannelSurface";
 import { AppTopChrome } from "@/app/AppTopChrome";
 import { useAppNavigation } from "@/app/navigation/useAppNavigation";
@@ -203,6 +209,25 @@ export function AppShell() {
         : null,
     [channels, selectedChannelId],
   );
+  // DD-161: the original terminal context (channel, thread, npub, relay) and the
+  // Projects override while a project page is shown.
+  const [terminalContextOverride, setTerminalContextOverride] =
+    React.useState<TerminalContextOverride | null>(null);
+  const { terminalContext } = useTerminalContext({
+    channelId: selectedChannelId ?? null,
+    channels,
+    locationSearch: location.search,
+    pubkey: identityQuery.data?.pubkey,
+    relayUrl: activeCommunity.relayUrl,
+  });
+  const effectiveTerminalContext = terminalContextOverride
+    ? {
+        ...terminalContext,
+        channelId: terminalContextOverride.channelId,
+        channelName: terminalContextOverride.channelName,
+        threadId: null,
+      }
+    : terminalContext;
   // DD-138(4), 07 §4.8.3: component notifications (Inbox rows, desktop alerts, badge) on every
   // view, scoped to the tenant Principal like the Web host.
   const componentNotifications = useDesktopComponentNotifications({
@@ -591,9 +616,14 @@ export function AppShell() {
                       onStarChannel={starChannel}
                       onUnstarChannel={unstarChannel}
                     />
-                    <AppShellChannelSurface mainInsetRef={mainInsetRef}>
-                      <Outlet />
-                    </AppShellChannelSurface>
+                    <TerminalContextOverrideProvider onChange={setTerminalContextOverride}>
+                      <AppShellChannelSurface
+                        mainInsetRef={mainInsetRef}
+                        terminal={<TerminalBootstrap {...effectiveTerminalContext} />}
+                      >
+                        <Outlet />
+                      </AppShellChannelSurface>
+                    </TerminalContextOverrideProvider>
                     <RelayConnectionOverlay
                       card={relayConnectionCard}
                       errorMessage={channelsErrorMessage}
