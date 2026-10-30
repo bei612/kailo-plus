@@ -89,6 +89,8 @@ import { workflowCardLabel, workflowTriggerSummary } from "./workflow-card-label
 import { Button as WorkflowButton } from "./profile/buzz/shared/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "./composer/shared/ui/dialog";
 import { AgentIdentityCard } from "./agent-library/AgentIdentityCard";
+import { IdentityInitialsAvatar } from "./agent-library/IdentityInitialsAvatar";
+import { ProfileAvatar } from "./profile/buzz/features/profile/ui/ProfileAvatar";
 import { AgentsPageFrame } from "./agent-library/AgentsPageFrame";
 import { AgentTeamsLibrary } from "./agent-library/AgentTeamsLibrary";
 import { AgentCatalogDialog } from "./agent-library/AgentCatalogDialog";
@@ -106,6 +108,7 @@ import { IdentityCardSkeleton } from "./agent-library/identity-card-skeleton";
 import { AgentDefinitionAdvanced, AgentParallelismField } from "./agent-library/AgentDefinitionAdvanced";
 import { AvatarHostProvider, type AvatarHost } from "./profile/avatar-host";
 import { WorkflowScheduleFields } from "./workflow-schedule-fields";
+import { OwnerName, useTenantPeople, type TenantPeople } from "./tenant-people";
 import { defaultScheduleTrigger } from "./workflow-schedule";
 import { formatDurationSeconds, parseDurationSeconds } from "./workflow-duration";
 import { cronExpressionError, cronYamlError } from "./cron-expression";
@@ -168,6 +171,8 @@ export function AgentDefinitionsPage(navigation: WorkspaceNavigation & {
   avatarHost?: AgentAvatarHost;
   /** DD-131(2)：READY 导出包的保存方式；缺省为同源受授权下载。 */
   snapshotExportHost?: SnapshotExportHost;
+  /** DD-168(5)：登记后进入 Kailo「审批」或「任务」；宿主不提供时只显示文字指引。 */
+  onOpenSection?: (section: "approvals" | "tasks") => void;
 } = {}) {
   const client = useBffClient();
   const t = useT();
@@ -244,6 +249,11 @@ export function AgentDefinitionsPage(navigation: WorkspaceNavigation & {
       {/* 写意图不随列表/详情刷新或翻页卸载；未知结果保留冻结版本与原幂等键。 */}
       <VersionAction edit={versionEdit} avatarHost={navigation.avatarHost} onReset={() => setVersionEdit(null)} onLocked={setVersionLocked}
         onRecorded={() => { setVersionRevision((value) => value + 1); reload(); }} />
+      {/* DD-168(7)：设计区（定义、团队、Skills、工具）与运行区（工作区中的安装）标题、说明与呈现形式不同。 */}
+      <header className="flex flex-col gap-1" data-testid="agents-design-heading">
+        <h2 className="text-base font-semibold">{t("agents.design.title")}</h2>
+        <p className="text-sm text-muted-foreground">{t("agents.design.description")}</p>
+      </header>
       <section className="flex flex-col gap-3">
         {state.status === "pending" ? <div className={IDENTITY_CARD_GRID_CLASS} role="status" aria-label={t("platform.loading")}>
           <IdentityCardSkeleton footerSubtitleWidthClass="w-14" footerTitleWidthClass="w-24" />
@@ -273,6 +283,7 @@ export function AgentDefinitionsPage(navigation: WorkspaceNavigation & {
       </section>
       {/* The action hook stays mounted when its presentation closes. UNKNOWN cannot close it. */}
       <DefinitionAction edit={edit} open={createOpen || edit !== null} onClose={() => { setCreateOpen(false); setEdit(null); }}
+        onOpenSection={navigation.onOpenSection}
         externalBlocked={versionEdit !== null || versionLocked} onReset={() => setEdit(null)} onLocked={setLocked}
         onRecorded={() => { setSelected(null); reload(); }} />
       <AgentManagementDialog open={selected !== null}
@@ -317,7 +328,9 @@ function DefinitionIdentityCard({ row, disabled, onClick, avatarHost }: {
     label={version?.content.personaIdentity.displayName ?? row.displayName}
     subtitle={version ? effectiveAgentDescription(version.content.personaIdentity) : null}
     avatarUrl={avatarHost ? version?.content.personaIdentity.avatarUrl : undefined}
-    ariaLabel={t("agents.open")} disabled={disabled} onClick={onClick} />;
+    ariaLabel={t("agents.open")} disabled={disabled} onClick={onClick}
+    statusBadge={version ? <Badge tone="neutral">{t("agents.design.published", { ordinal: version.ordinal })}</Badge>
+      : !assetId ? <Badge tone="neutral">{t("agents.design.unpublished")}</Badge> : undefined} />;
   return <div className="flex min-w-0 flex-col gap-2">
     {assetId && state.status === "pending" ? <IdentityCardSkeleton />
       : avatarHost && version ? <AvatarHostProvider value={avatarHost(version)}>{card}</AvatarHostProvider> : card}
@@ -807,6 +820,7 @@ function AutomationDetail({ resourceId, workspaceId, locked, onEdit, onClose, on
   const [copying, setCopying] = useState(false);
   const [copyError, setCopyError] = useState<unknown>();
   const [selectedVersion, setSelectedVersion] = useState<string | null>(null);
+  const people = useTenantPeople(`automation:${resourceId}`);
   const copyRequest = useRef(0);
   const versionOffset = versionOffsets[versionIndex] ?? 0;
   const grantOffset = grantOffsets[grantIndex] ?? 0;
@@ -897,7 +911,7 @@ function AutomationDetail({ resourceId, workspaceId, locked, onEdit, onClose, on
         outside the original semantic card label and channel/name/date footer. */}
     <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-xs text-muted-foreground">
       <dt>{t("agents.automation.executor")}</dt><dd className="break-all">{row.executorInstallationResourceId}</dd>
-      <dt>{t("agents.owner")}</dt><dd className="break-all">{row.ownerPrincipalId}</dd>
+      <dt>{t("agents.owner")}</dt><dd className="break-all"><OwnerName people={people} principalId={row.ownerPrincipalId} /></dd>
       <dt>{t("agents.automation.pinned")}</dt><dd className="break-all">{row.pinnedVersionAssetId ?? "—"}</dd>
       <dt>{t("agents.automation.grant")}</dt><dd className="break-all">{row.delegationId ?? "—"}</dd>
       <dt>{t("agents.resourceVersion")}</dt><dd>{row.resourceVersion}</dd>
@@ -1639,8 +1653,11 @@ function InstallationManagement({ versionRevision, refreshRevision, onLockedChan
     && typeof w.name === "string" && typeof w.slug === "string") && new Set(value.map((w) => w.id)).size === value.length ? value : null;
   const selection = onWorkspaceChange ? workspaceId : selected ?? workspaceId;
   const workspace = selection ? workspaces?.find((w) => w.id === selection) : workspaces?.[0];
-  return <section className="flex flex-col gap-3" data-testid="agent-installations">
-    <h2 className="font-medium">{t("agents.installation.title")}</h2>
+  return <section className="flex flex-col gap-3 border-t pt-6" data-testid="agent-installations">
+    <header className="flex flex-col gap-1">
+      <h2 className="text-base font-semibold">{t("agents.installation.title")}</h2>
+      <p className="text-sm text-muted-foreground">{t("agents.installation.description")}</p>
+    </header>
     {state.status === "pending" ? <Notice role="status">{t("platform.loading")}</Notice>
       : !workspaces ? <AgentReadFailure error={state.status === "error" ? state.error : undefined} onRetry={reload} />
       : !workspace ? <Notice>{t("agents.installation.noWorkspace")}</Notice>
@@ -2365,16 +2382,17 @@ function InstallationList({ workspaceId, locked, onPermission, onManage, onUpgra
     && new Set(value.installations.map((row) => row.resourceId)).size === value.installations.length
     && (value.nextOffset === undefined || (Number.isSafeInteger(value.nextOffset) && value.nextOffset > offset)) ? value : null;
   const next = page?.nextOffset;
+  const people = useTenantPeople(`installations:${workspaceId}`);
   const changePage = (index: number) => { setSelected(null); setPageIndex(index); };
   return <div className="flex flex-col gap-3">
     {state.status === "pending" ? <Notice role="status">{t("platform.loading")}</Notice>
       : !page ? <AgentReadFailure error={state.status === "error" ? state.error : undefined} onRetry={() => { setSelected(null); reload(); }} />
       : <>
         {page.installations.length === 0 ? <Notice>{t("agents.installation.none")}</Notice>
-          : <div className={IDENTITY_CARD_GRID_CLASS}>
-            {page.installations.map((row) => <InstallationIdentityCard key={row.resourceId} row={row} avatarHost={avatarHost}
-              locked={locked} onOpen={() => setSelected(row.resourceId)} />)}
-          </div>}
+          : <ul className="flex flex-col divide-y rounded-lg border" data-testid="agent-installation-rows">
+            {page.installations.map((row) => <InstallationRow key={row.resourceId} row={row} avatarHost={avatarHost}
+              people={people} locked={locked} onOpen={() => setSelected(row.resourceId)} />)}
+          </ul>}
         <div className="flex gap-2">
           {pageIndex > 0 ? <Button disabled={locked} onClick={() => changePage(pageIndex - 1)}>{t("roles.previous")}</Button> : null}
           {next !== undefined ? <Button disabled={locked} onClick={() => { setOffsets((old) => [...old.slice(0, pageIndex + 1), next]); changePage(pageIndex + 1); }}>{t("roles.next")}</Button> : null}
@@ -2391,9 +2409,13 @@ function InstallationList({ workspaceId, locked, onPermission, onManage, onUpgra
   </div>;
 }
 
-function InstallationIdentityCard({ row, locked, onOpen, avatarHost }: {
+/**
+ * DD-168(7): a running agent is a row — where it works, at which exact version,
+ * in which state and installed by whom — never the definition's identity card.
+ */
+function InstallationRow({ row, locked, onOpen, avatarHost, people }: {
   row: AgentInstallationView; locked: boolean; onOpen: () => void;
-  avatarHost?: AgentAvatarHost;
+  avatarHost?: AgentAvatarHost; people: TenantPeople;
 }) {
   const client = useBffClient();
   const t = useT();
@@ -2405,17 +2427,32 @@ function InstallationIdentityCard({ row, locked, onOpen, avatarHost }: {
   const version = candidate && validVersion(candidate, row.agentResourceId)
     && candidate.assetId === row.pinnedVersionAssetId ? candidate : null;
   const host = avatarHost && version ? avatarHost(version) : null;
-  const card = <AgentIdentityCard dataTestId={`agent-installation-${row.resourceId}`}
-      // 成员可读安装却未必可读 Version：用安装视图随附的固定版本显示名，不借最新定义。
-      label={version?.content.personaIdentity.displayName ?? (row.agentDisplayName?.trim() || t("agents.installation.id"))}
-      subtitle={version ? effectiveAgentDescription(version.content.personaIdentity) : null}
-      avatarUrl={host ? version?.content.personaIdentity.avatarUrl : undefined}
-      ariaLabel={t("agents.installation.open")} disabled={locked} onClick={onOpen}
-      statusBadge={<Badge tone="neutral">{t(installationLabels[row.state])}</Badge>} />;
-  return <div className="flex min-w-0 flex-col gap-2">
-    {state.status === "pending" ? <IdentityCardSkeleton /> : host ? <AvatarHostProvider value={host}>{card}</AvatarHostProvider> : card}
+  // 成员可读安装却未必可读 Version：用安装视图随附的固定版本显示名，不借最新定义。
+  const label = version?.content.personaIdentity.displayName ?? (row.agentDisplayName?.trim() || t("agents.installation.id"));
+  const subtitle = version ? effectiveAgentDescription(version.content.personaIdentity) : null;
+  const avatarUrl = host ? version?.content.personaIdentity.avatarUrl?.trim() : undefined;
+  const avatar = avatarUrl && host
+    ? <AvatarHostProvider value={host}><ProfileAvatar avatarUrl={avatarUrl} className="h-10 w-10 bg-muted" iconClassName="h-4 w-4" label={label} shape="squircle" /></AvatarHostProvider>
+    : <IdentityInitialsAvatar label={label} size={40} />;
+  return <li className="flex min-w-0 flex-col gap-2 px-3 py-2.5">
+    {state.status === "pending" ? <div role="status" aria-label={t("platform.loading")} className="h-10 animate-pulse rounded-md bg-muted" />
+      : <div className="flex min-w-0 items-center gap-3" data-testid={`agent-installation-${row.resourceId}`}>
+        <div className="shrink-0">{avatar}</div>
+        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <span className="truncate text-sm font-medium">{label}</span>
+            <Badge tone="neutral">{t(installationLabels[row.state])}</Badge>
+          </div>
+          {subtitle ? <span className="truncate text-xs text-muted-foreground">{subtitle}</span> : null}
+          <span className="flex min-w-0 flex-wrap gap-x-3 text-xs text-muted-foreground">
+            {version ? <span>{t("agents.installation.pinned", { ordinal: version.ordinal })}</span> : null}
+            <span>{t("agents.installation.installedBy")}<OwnerName people={people} principalId={row.ownerPrincipalId} /></span>
+          </span>
+        </div>
+        <Button className="shrink-0" disabled={locked} onClick={onOpen}>{t("agents.installation.open")}</Button>
+      </div>}
     {state.status !== "pending" && !version ? <AgentReadFailure error={state.status === "error" ? state.error : undefined} onRetry={reload} /> : null}
-  </div>;
+  </li>;
 }
 
 function InstallationDetail({ resourceId, workspaceId, locked, onPermission, onManage, onUpgrade, onRegrant, onLocked, autoManage = false }: {
@@ -2430,6 +2467,7 @@ function InstallationDetail({ resourceId, workspaceId, locked, onPermission, onM
   const [toolsOpen, setToolsOpen] = useState(false);
   const [skillsOpen, setSkillsOpen] = useState(false);
   const [state, reload] = useLoad(`agent-installation:${workspaceId}:${resourceId}`, () => client.agentInstallation(resourceId));
+  const people = useTenantPeople(`installation:${resourceId}`);
   const row = state.status === "ok" && validInstallation(state.data) && state.data.resourceId === resourceId
     && state.data.workspaceId === workspaceId ? state.data : null;
   const manageable = row !== null && row.state === AgentInstallationState.Active && row.resourceState === ResourceState.Active;
@@ -2447,7 +2485,7 @@ function InstallationDetail({ resourceId, workspaceId, locked, onPermission, onM
     <h3 className="text-sm font-medium">{t("agents.installation.id")}: <span className="break-all font-mono">{row.resourceId}</span></h3>
     <Badge tone="neutral">{t(installationLabels[row.state])}</Badge>
     <p className="text-sm">{t(resourceLabels[row.resourceState])} · {t("agents.resourceVersion")}: {row.resourceVersion}</p>
-    <p className="break-all text-sm">{t("agents.owner")}: {row.ownerPrincipalId}</p>
+    <p className="break-all text-sm">{t("agents.owner")}: <OwnerName people={people} principalId={row.ownerPrincipalId} /></p>
     <p className="break-all text-sm">{t("platform.workspace")}: {row.workspaceId}</p>
     <p className="break-all text-sm">{t("agents.installation.definition")}: {row.agentResourceId}</p>
     <p className="break-all text-sm">{t("agents.installation.version")}: {row.pinnedVersionAssetId}</p>
@@ -2687,6 +2725,7 @@ function DefinitionDetail({ resourceId, locked, onEdit, onVersionEdit, onExport 
   const client = useBffClient();
   const t = useT();
   const [state, reload] = useLoad(`agent-definition:${resourceId}`, () => client.agentDefinition(resourceId));
+  const people = useTenantPeople(`definition:${resourceId}`);
   if (state.status === "pending") return <Notice role="status">{t("platform.loading")}</Notice>;
   const row = state.status === "ok" && validDefinition(state.data) && state.data.resourceId === resourceId ? state.data : null;
   if (!row) return <AgentReadFailure error={state.status === "error" ? state.error : undefined} onRetry={reload} />;
@@ -2694,7 +2733,7 @@ function DefinitionDetail({ resourceId, locked, onEdit, onVersionEdit, onExport 
     <section className="flex flex-col gap-3" data-testid="agent-definition-detail">
       <h2 className="font-medium">{row.displayName}</h2>
       <p className="break-words text-sm">{t("agents.slug")}: {row.stableSlug}</p>
-      <p className="break-words text-sm">{t("agents.owner")}: {row.ownerPrincipalId}</p>
+      <p className="break-words text-sm">{t("agents.owner")}: <OwnerName people={people} principalId={row.ownerPrincipalId} /></p>
       <p className="text-sm">{t("agents.resourceVersion")}: {row.resourceVersion}</p>
       <div className="flex flex-wrap gap-2">
         <Button onClick={reload}>{t("platform.refresh")}</Button>
@@ -2705,14 +2744,14 @@ function DefinitionDetail({ resourceId, locked, onEdit, onVersionEdit, onExport 
           onClick={() => row.currentPublishedVersionAssetId && onExport({ resourceId: row.resourceId, resourceVersion: row.resourceVersion,
             displayName: row.displayName, versionAssetId: row.currentPublishedVersionAssetId })}>{t("agents.export.export")}</Button> : null}
       </div>
-      {row.currentPublishedVersionAssetId ? <PublishedVersion resourceId={resourceId} assetId={row.currentPublishedVersionAssetId} />
+      {row.currentPublishedVersionAssetId ? <PublishedVersion resourceId={resourceId} assetId={row.currentPublishedVersionAssetId} people={people} />
         : <p className="text-sm text-muted-foreground">{t("agents.noPublishedVersion")}</p>}
-      <VersionDirectory definition={row} locked={locked} onEdit={onVersionEdit} />
+      <VersionDirectory definition={row} locked={locked} onEdit={onVersionEdit} people={people} />
     </section>
   );
 }
 
-function PublishedVersion({ resourceId, assetId }: { resourceId: string; assetId: string }) {
+function PublishedVersion({ resourceId, assetId, people }: { resourceId: string; assetId: string; people: TenantPeople }) {
   const client = useBffClient();
   const t = useT();
   const [state, reload] = useLoad(`agent-version:${assetId}`, () => client.agentVersion(assetId));
@@ -2733,7 +2772,7 @@ function PublishedVersion({ resourceId, assetId }: { resourceId: string; assetId
       : <>
         <Badge tone="neutral">{t("agents.version.published")}</Badge>
         <p className="text-sm">{t("agents.version.ordinal")}: {version.ordinal}</p>
-        <p className="break-words text-sm">{t("agents.owner")}: {version.ownerPrincipalId}</p>
+        <p className="break-words text-sm">{t("agents.owner")}: <OwnerName people={people} principalId={version.ownerPrincipalId} /></p>
         <p className="break-words text-sm">{t("agents.version.runtimeProfile")}: {version.content.runtimeProfileKey}</p>
         <p className="break-words text-sm">{t("agents.version.modelRoute")}: {version.content.modelRouteResourceId}</p>
         <p className="break-all font-mono text-xs">{t("agents.version.hash")}: {version.configHash}</p>
@@ -2822,8 +2861,8 @@ function validVersionConfiguration(page: AgentVersionConfigurationPage, definiti
 
 type VersionEdit = { definition: AgentDefinitionView; version?: AgentVersionView; mode: "edit" | "publish" | "retire"; configurationOffsets: number[] };
 
-function VersionDirectory({ definition, locked, onEdit }: {
-  definition: AgentDefinitionView; locked: boolean; onEdit: (edit: VersionEdit) => void;
+function VersionDirectory({ definition, locked, onEdit, people }: {
+  definition: AgentDefinitionView; locked: boolean; onEdit: (edit: VersionEdit) => void; people: TenantPeople;
 }) {
   const client = useBffClient();
   const t = useT();
@@ -2861,7 +2900,7 @@ function VersionDirectory({ definition, locked, onEdit }: {
           : page.versions.map((version) => <section key={version.assetId} className="flex flex-col gap-2 border-t pt-3">
             <h4 className="text-sm font-medium">{version.content.personaIdentity.displayName} · {version.ordinal} · <Badge tone="neutral">{t(versionLabels[version.state])}</Badge></h4>
             <p className="break-words text-sm">{version.assetId} · {t("agents.version.assetVersion")}: {version.assetVersion}</p>
-            <p className="break-words text-sm">{t("agents.owner")}: {version.ownerPrincipalId}</p>
+            <p className="break-words text-sm">{t("agents.owner")}: <OwnerName people={people} principalId={version.ownerPrincipalId} /></p>
             <p className="break-words text-sm">{t("agents.version.runtimeProfile")}: {version.content.runtimeProfileKey ?? "—"} · {t("agents.version.modelRoute")}: {version.content.modelRouteResourceId ?? "—"}</p>
             <p className="break-all font-mono text-xs">{t("agents.version.hash")}: {version.configHash}</p>
             <p className="break-words text-sm">{t("agents.version.skillReferences")}: {version.content.skillVersionAssetIds.join(", ") || "—"}</p>
@@ -2895,6 +2934,7 @@ function VersionAction({ edit, avatarHost, onReset, onLocked, onRecorded }: {
   const reasonText = useReasonText();
   const failureText = useFailureText();
   const inFlight = useRef(false);
+  const people = useTenantPeople(`version-action:${edit?.version?.assetId ?? edit?.definition.resourceId ?? ""}`);
   const [profileKey, setProfileKey] = useState("");
   const [routeId, setRouteId] = useState("");
   const [name, setName] = useState("");
@@ -3060,7 +3100,7 @@ function VersionAction({ edit, avatarHost, onReset, onLocked, onRecorded }: {
     <p className="text-sm text-muted-foreground">{t("agents.version.boundary")}</p>
     {intent ? <div className="flex flex-col gap-2 text-sm" role="group">
       <p className="break-words">{intent.actionKey} · {intent.assetId ?? intent.resourceId} · {intent.assetVersion ?? intent.resourceVersion}</p>
-      <p>{t("agents.owner")}: {edit?.version?.ownerPrincipalId ?? t("agents.version.currentHumanOwner")}</p>
+      <p>{t("agents.owner")}: {edit?.version?.ownerPrincipalId ? <OwnerName people={people} principalId={edit.version.ownerPrincipalId} /> : t("agents.version.currentHumanOwner")}</p>
       <p className="break-words">{t("agents.name")}: {name}</p>
       {avatar ? <p className="break-words">{t("agents.version.avatar")}: {avatar}</p> : null}
       {description ? <p className="whitespace-pre-wrap break-words">{t("agents.version.description")}: {description}</p> : null}
@@ -3081,7 +3121,7 @@ function VersionAction({ edit, avatarHost, onReset, onLocked, onRecorded }: {
       <p>{t(retiring ? "agents.version.retireReview" : publishing ? "agents.version.publishReview" : "agents.version.saveReview")}</p><p>{t("agents.admission")}</p>
     </div> : retiring ? <>
       <p className="break-words text-sm">{edit?.version?.assetId} · {t("agents.version.assetVersion")}: {edit?.version?.assetVersion}</p>
-      <p className="break-words text-sm">{t("agents.owner")}: {edit?.version?.ownerPrincipalId}</p>
+      <p className="break-words text-sm">{t("agents.owner")}: {edit?.version?.ownerPrincipalId ? <OwnerName people={people} principalId={edit.version.ownerPrincipalId} /> : null}</p>
       <p className="break-all font-mono text-xs">{t("agents.version.hash")}: {edit?.version?.configHash}</p>
       <p className="text-sm">{t("agents.version.retireReview")}</p>
     </> : edit ? <>
@@ -3220,9 +3260,10 @@ function VersionAction({ edit, avatarHost, onReset, onLocked, onRecorded }: {
   </section></AgentManagementDialog>;
 }
 
-function DefinitionAction({ edit, externalBlocked = false, onReset, onLocked, onRecorded, open, onClose }: {
+function DefinitionAction({ edit, externalBlocked = false, onReset, onLocked, onRecorded, open, onClose, onOpenSection }: {
   edit: { target: AgentDefinitionView; owner: boolean } | null;
   externalBlocked?: boolean;
+  onOpenSection?: (section: "approvals" | "tasks") => void;
   open: boolean; onClose: () => void;
   onReset: () => void; onLocked: (locked: boolean) => void; onRecorded: () => void;
 }) {
@@ -3238,6 +3279,15 @@ function DefinitionAction({ edit, externalBlocked = false, onReset, onLocked, on
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<WriteFailure | null>(null);
   const [submission, setSubmission] = useState<ActionSubmission | null>(null);
+  const ownerFieldId = useId();
+  // DD-168(2)：新 owner 只从本组织在职成员中选择，预览以显示名呈现；Core 仍重新核对。
+  const people = useTenantPeople(`definition-action:${edit?.owner ? edit.target.resourceId : ""}`);
+  const candidates = people.state.status === "ok" && edit?.owner
+    ? people.state.data.filter((person) => person.principalId !== edit.target.ownerPrincipalId)
+      .map((person) => ({ value: person.principalId, label: person.displayName.trim() || t("owner.unnamed") }))
+      .sort((a, b) => a.label.localeCompare(b.label))
+    : [];
+  const personName = (id: string | undefined) => !id ? "" : people.name(id) ?? (people.departed(id) ? t("owner.departed") : t("owner.unavailable"));
   // 选择新的已读取目标时初始化表单；已提交的未知意图不会被列表刷新替换。
   useEffect(() => {
     setName(edit?.target.displayName ?? "");
@@ -3306,10 +3356,16 @@ function DefinitionAction({ edit, externalBlocked = false, onReset, onLocked, on
     <p className="text-sm text-muted-foreground">{t("agents.definitionOnly")}</p>
     {!intent ? <form className="flex flex-col gap-3" onSubmit={(event) => { event.preventDefault(); prepare(); }}>
       {edit ? <p className="break-words text-sm">{edit.target.displayName} · {t("agents.resourceVersion")}: {edit.target.resourceVersion}</p> : null}
-      {edit?.owner ? <label className="flex flex-col gap-1 text-sm">{t("agents.newOwner")}
-        <input required value={owner} onChange={(event) => setOwner(event.target.value)} className="h-8 rounded-md border border-input bg-transparent px-2 text-sm" />
+      {edit?.owner ? <div className="flex flex-col gap-1 text-sm" data-testid="agent-owner-transfer">
+        <p>{t("agents.currentOwner")}: <OwnerName people={people} principalId={edit.target.ownerPrincipalId} /></p>
+        <label htmlFor={ownerFieldId}>{t("agents.newOwner")}</label>
+        {people.state.status === "pending" ? <Notice role="status">{t("platform.loading")}</Notice>
+          : people.state.status === "error" ? <AgentReadFailure error={people.state.error} onRetry={people.reload} />
+          : candidates.length === 0 ? <Notice>{t("agents.ownerNoCandidates")}</Notice>
+          : <PersonaDropdownField id={ownerFieldId} options={candidates} value={owner}
+            placeholder={t("agents.newOwnerPlaceholder")} onValueChange={setOwner} />}
         <span className="text-xs text-muted-foreground">{t("agents.ownerHint")}</span>
-      </label> : <>
+      </div> : <>
         <label className="flex flex-col gap-1 text-sm">{t("agents.name")}
           <input required value={name} onChange={(event) => setName(event.target.value)} className="h-8 rounded-md border border-input bg-transparent px-2 text-sm" />
         </label>
@@ -3324,7 +3380,8 @@ function DefinitionAction({ edit, externalBlocked = false, onReset, onLocked, on
         ? t("agents.previewCreate", { name: intent.command.name ?? "", slug: intent.command.slug ?? "" })
         : intent.command.actionKey === "agent.definition.update"
           ? t("agents.previewUpdate", { resource: intent.command.resourceId ?? "", version: intent.command.resourceVersion ?? "", name: intent.command.name ?? "" })
-          : t("agents.previewTransfer", { resource: intent.command.resourceId ?? "", version: intent.command.resourceVersion ?? "", owner: intent.previousOwner ?? "", next: intent.command.principalId ?? "" })}</p>
+          : t("agents.previewTransfer", { name: edit?.target.displayName ?? "", version: intent.command.resourceVersion ?? "",
+            owner: personName(intent.previousOwner), next: personName(intent.command.principalId) })}</p>
       <p className="text-muted-foreground">{t("agents.admission")}</p>
       <div className="flex gap-2">
         <Button disabled={busy} onClick={() => void submit()}>{busy ? t("platform.loading") : unknown ? t("agents.retry") : t("agents.confirm")}</Button>
@@ -3335,6 +3392,10 @@ function DefinitionAction({ edit, externalBlocked = false, onReset, onLocked, on
       ? t("agents.unknown", { operation: submission.operationId })
       : t("agents.recorded", { execution: submission.actionExecutionId, operation: submission.operationId })}
       {submission.reason ? ` ${reasonText(submission.reason)}` : ""}</p> : null}
+    {submission && !unknown && onOpenSection ? <div className="flex flex-wrap gap-2" data-testid="agent-definition-next">
+      {submission.approvalWorkflowId ? <Button onClick={() => onOpenSection("approvals")}>{t("agents.openApprovals")}</Button> : null}
+      <Button onClick={() => onOpenSection("tasks")}>{t("agents.openTasks")}</Button>
+    </div> : null}
     {failure ? <p role={failure.kind === "unknown" ? "status" : "alert"} className="text-sm">{failure.kind === "unknown"
       ? t("agents.unknown", { operation: failure.operationId ?? "—" }) : t("agents.rejected", { reason: failureText(failure) })}</p> : null}
     {tasks.status === "pending" ? <Notice role="status">{t("platform.loading")}</Notice>

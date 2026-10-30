@@ -115,14 +115,16 @@ describe("original Agent library identity consumers", () => {
     expect(face.textContent).not.toContain("Published persona");
     expect(f.send).toHaveBeenCalledWith({ method: "GET", path: "/api/v1/agent-versions/pinned" });
   });
-  it("keeps the original installation identity card compact while retaining exact references in its authorized detail", async () => {
+  it("renders a running installation as a compact row (DD-168(7)) while retaining exact references in its authorized detail", async () => {
     const f = fixture(request => request.path === "/api/v1/agent-installations/installation"
       ? { status: 200, body: installation } : undefined);
     await render(f.ui); await settle();
     const face = card("installation-installation");
-    expect(face.className).toContain("aspect-[4/5]");
+    expect(face.className).not.toContain("aspect-[4/5]");
+    expect(face.closest("li")).not.toBeNull();
     expect(face.textContent).toContain("Exact pinned persona");
-    expect(face.textContent).toContain("Active installation record");
+    expect(face.textContent).toContain("Running");
+    expect(face.textContent).toContain("Version 2");
     expect(face.parentElement?.textContent).not.toContain("Exact version reference");
     expect(face.parentElement?.textContent).not.toContain(installation.agentPrincipalId);
     await click(face.querySelector<HTMLButtonElement>("button")!);

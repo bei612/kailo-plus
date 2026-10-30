@@ -9,7 +9,7 @@ import { ReadFailure } from "@client-kit/platform/react/ui";
 import { publishConversationMessage, uploadConversationMedia, uploadProfileAvatar } from "../bff-client";
 
 type AgentProps = NonNullable<ComponentProps<typeof AgentDefinitionsPage>>;
-type Props = Pick<AgentProps, "workspaceId" | "onWorkspaceChange">;
+type Props = Pick<AgentProps, "workspaceId" | "onWorkspaceChange" | "onOpenSection">;
 
 // DD-131(7) original "send to people": the READY package goes into the opened direct message as an
 // ordinary attachment through that conversation's BFF media and publish routes. The publication

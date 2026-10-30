@@ -635,7 +635,8 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
         lastMessageAtByChannelId={channelActivity} onOpenChannel={async workspace=>{void workspaces.refetch();await navigation.openChannel(workspace.id);}}/>
     ) : tab === "agents" ? (
       <AgentDefinitionsPane key={`${session.tenantId}:${session.tenantPrincipalId}`} workspaceId={chosen ?? active ?? undefined}
-        onWorkspaceChange={(workspaceId) => { void navigation.openTab("agents", workspaceId); }} />
+        onWorkspaceChange={(workspaceId) => { void navigation.openTab("agents", workspaceId); }}
+        onOpenSection={(section) => { void navigation.openTab(section, active); }} />
     ) : tab === "workflows" ? (
       <WorkflowsPage workspaceId={chosen ?? active ?? undefined} messageHost={webWorkflowMessageHost}
         workflowRoute={navigation.workflowRoute}
