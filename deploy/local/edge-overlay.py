@@ -116,7 +116,7 @@ def main():
     if current == text:
         print("入口拓扑叠加未变：" + ", ".join(sorted(components)))
         return
-    target.parent.mkdir(mode=0o755, exist_ok=True)
+    target.parent.mkdir(mode=0o755, parents=True, exist_ok=True)
     descriptor, temporary = tempfile.mkstemp(prefix=".edge-", dir=target.parent)
     try:
         with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
