@@ -10,7 +10,7 @@
 - **缺失**：原版有、Kailo 没有。
 - **不同**：按设计做了宿主或治理适配、设计排除、视觉由 DD-141 接管，或清单尚为“待定”。
 - **已修**：核对时发现缺失或不同，已在 r12 分支修复，但部署版本尚未包含。
-- 第 1 节是人工逐项核对（区分 Web 与 Desktop）。第 3 节逐文件清单只证明源码层承接，不能代替第 1 节；它把 Web 共用的源码也记为“一致”，因此漏掉了第 1 节中 Web 消息 Markdown 的 7 项缺失。
+- 第 1 节是人工逐项核对（区分 Web 与 Desktop）。第 3 节逐文件清单只证明源码层承接，不能代替第 1 节；它把 Web 共用的源码也记为“一致”；第 1 节 Web 消息 Markdown 的复核结论见该节。
 
 ## 1. 聊天框与消息渲染（人工逐项）
 
@@ -19,16 +19,16 @@
 | 1 | 消息行：头像、作者、时间、连续消息折叠 | `features/messages/ui/MessageRow.tsx` | client-kit `messages/MessageRowSurface.tsx` | 一致 | 一致 | shots/01-channel-view.png |
 | 2 | 段落、粗体、斜体、删除线、行内代码 | `shared/ui/markdown.tsx` | Web `features/chat/ui/MessageContent.tsx`；Desktop `shared/ui/markdown.tsx` | 一致 | 一致 | shots/09-message-rich-markdown.png |
 | 3 | 代码块：语法高亮、语言标签、复制 | `shared/ui/markdown/CodeBlock.tsx`、`SyntaxHighlightedCode` | client-kit `message-body.tsx`（shiki、复制按钮） | 一致 | 一致 | 代码核对 |
-| 4 | 无序/有序列表：项目符号、编号、缩进 | `markdown.tsx` 的 `ul`/`ol`/`li`（`list-disc`、`pl-6`、marker 弱化色） | Web 渲染器没有 `ul`/`ol`/`li` 组件，也没有 `.message-markdown` 列表样式；Tailwind preflight 清除项目符号 | 缺失 | 一致 | 代码核对：Web 全仓无 `list-disc`；截图待补（部署频道无列表消息） |
-| 5 | 标题 h1–h6 字号层级 | `markdown.tsx` 的 `h1`…`h6` | Web 无标题组件和样式，标题与正文同字号 | 缺失 | 一致 | 代码核对 |
-| 6 | 引用块：左边线、弱化色、斜体 | `markdown.tsx` 的 `blockquote` | Web 无 `blockquote` 组件和样式 | 缺失 | 一致 | 代码核对 |
-| 7 | 表格：横向滚动容器、表头底色、单元格边线 | `markdown/MarkdownTable.tsx`、`th`/`td` | Web 未使用 `MarkdownTable`，表格无边线与表头底色 | 缺失 | 一致 | 代码核对 |
-| 8 | 分隔线 | `markdown.tsx` 的 `hr` | Web 无样式 | 缺失 | 一致 | 代码核对 |
-| 9 | 任务列表复选框 | `markdown/MarkdownInput.tsx` | Web 未接 | 缺失 | 一致 | 代码核对 |
-| 10 | 隐藏目标的链接：悬停显示真实地址；外链锚点 | `markdown/MaskedLinkTooltip.tsx`、`ExternalLinkAnchor.tsx` | Web `MarkdownLink` 直接渲染 `<a>` | 缺失 | 一致 | 代码核对 |
-| 11 | 已发送消息里的人员 @提及（chip、点开资料卡） | `markdown/MarkdownMention.tsx` | client-kit `MarkdownMentionChip.tsx`、`resolveMentionNames.ts` | 一致 | 一致 | 代码核对 |
+| 4 | 无序/有序列表：项目符号、编号、缩进 | `markdown.tsx` 的 `ul`/`ol`/`li`（`list-disc`、`pl-6`、marker 弱化色） | Web 消息渲染器展开共享的 `MESSAGE_BODY_COMPONENTS`（client-kit `message-body.tsx`），与 Desktop 同一组件：`ul`/`ol`/`li`（`list-disc`/`list-decimal`、`pl-6`、marker 弱化色） | 一致 | 一致 | 复核更正：代码与测试证明已渲染（`MessageContent.test.tsx`“renders the original block Markdown…”，CI 33/33 通过）；原判定只检索了 web-client，未计入共享组件 |
+| 5 | 标题 h1–h6 字号层级 | `markdown.tsx` 的 `h1`…`h6` | Web 消息渲染器展开共享的 `MESSAGE_BODY_COMPONENTS`（client-kit `message-body.tsx`），与 Desktop 同一组件：`h1`–`h6` 字号层级 | 一致 | 一致 | 复核更正：代码与测试证明已渲染（`MessageContent.test.tsx`“renders the original block Markdown…”，CI 33/33 通过）；原判定只检索了 web-client，未计入共享组件 |
+| 6 | 引用块：左边线、弱化色、斜体 | `markdown.tsx` 的 `blockquote` | Web 消息渲染器展开共享的 `MESSAGE_BODY_COMPONENTS`（client-kit `message-body.tsx`），与 Desktop 同一组件：`blockquote` 左边线、弱化色、斜体 | 一致 | 一致 | 复核更正：代码与测试证明已渲染（`MessageContent.test.tsx`“renders the original block Markdown…”，CI 33/33 通过）；原判定只检索了 web-client，未计入共享组件 |
+| 7 | 表格：横向滚动容器、表头底色、单元格边线 | `markdown/MarkdownTable.tsx`、`th`/`td` | Web 消息渲染器展开共享的 `MESSAGE_BODY_COMPONENTS`（client-kit `message-body.tsx`），与 Desktop 同一组件：`MessageTable` 横向滚动、`th` 底色、`td` 边线 | 一致 | 一致 | 复核更正：代码与测试证明已渲染（`MessageContent.test.tsx`“renders the original block Markdown…”，CI 33/33 通过）；原判定只检索了 web-client，未计入共享组件 |
+| 8 | 分隔线 | `markdown.tsx` 的 `hr` | Web 消息渲染器展开共享的 `MESSAGE_BODY_COMPONENTS`（client-kit `message-body.tsx`），与 Desktop 同一组件：`hr` | 一致 | 一致 | 复核更正：代码与测试证明已渲染（`MessageContent.test.tsx`“renders the original block Markdown…”，CI 33/33 通过）；原判定只检索了 web-client，未计入共享组件 |
+| 9 | 任务列表复选框 | `markdown/MarkdownInput.tsx` | client-kit `messages/MarkdownInput.tsx`（原版迁入，状态标签中英文） | 已修 | 一致 | r12 `9e364d5c6`：GFM 任务项改为只读 Checkbox；测试同上 |
+| 10 | 隐藏目标的链接：悬停显示真实地址；外链锚点 | `markdown/MaskedLinkTooltip.tsx`、`ExternalLinkAnchor.tsx` | client-kit `messages/MaskedLinkTooltip.tsx`、`maskedLink.ts`（原版迁入）；Web 外链经它包裹，Desktop 原生副本另有右键菜单 | 已修 | 一致 | r12 `9e364d5c6`：隐藏目标的链接悬停显示真实地址，裸链接与同址标签不加；测试“reveals a masked link destination…” |
+| 11 | 已发送消息里的人员 @提及（chip、点开资料卡） | `markdown/MarkdownMention.tsx` | client-kit `MarkdownMentionChip.tsx`、`resolveMentionNames.ts` | 已修 | 已修 | 结构一致；视觉层 DD-141 把提及 chip 设为 brand-soft（Iris 50，与白底对比约 1.03，暗色字色接近正文），看起来“不高亮”。r12 `2cd0583df`/`93bc9e289`：新增 `mention`/`mention-text` 令牌（亮色 brand 200/300/800，暗色 brandDark 900/800/200，设计 20 §2.4 `fb0384551`/`6bf2304fd`），token 测试守住字色 ≥4.5、chip 与 surface/悬停行 ≥1.25 |
 | 12 | 已发送消息里的 Agent @提及高亮 | 同上 | Web 提及名单原只含真人成员 | 已修 | 一致 | shots/04（修复前纯文本）；`3d7ab0bc5`，待部署重拍 |
-| 13 | 输入框提及块：选中后高亮、Agent/真人图标 | `lib/mentionHighlightExtension.ts`、`composer.css` | client-kit 同名文件（共享编辑器） | 一致 | 一致 | shots/14、15 |
+| 13 | 输入框提及块：选中后高亮、Agent/真人图标 | `lib/mentionHighlightExtension.ts`、`composer.css` | client-kit 同名文件（共享编辑器） | 已修 | 已修 | 输入框编辑器根节点同样带 `.message-markdown`，提及块与已发送消息共用同一规则，随第 11 项一并修复（`2cd0583df`） |
 | 14 | @ 自动补全：头像、名称、Agent 标记、所有者、不在频道 | `MentionAutocomplete.tsx` | client-kit 移植；Web 原未传 Agent 所有者 | 已修 | 一致 | shots/14；`6bee7c596` |
 | 15 | Agent 消息“管理者为”：显示名、不截断、点开资料卡 | `MessageAgentOwner.tsx` | client-kit `messages/system/MessageAgentOwner.tsx` | 已修 | 已修 | shots/05、08（修复前“k…”）；`3d7ab0bc5` |
 | 16 | 线程摘要：回复数、参与者、最后回复；全部回复删除后隐藏 | `MessageThreadSummaryRow.tsx` | client-kit `messages/thread/MessageThreadSummaryRow.tsx` | 已修 | 已修 | shots/07；`3d7ab0bc5` |
@@ -44,9 +44,9 @@
 | 26 | 剧透、表情短码、频道自动补全 | `SpoilerInline.tsx`、自动补全 | client-kit `remarkSpoilers`、`useEmojiAutocomplete`、`useChannelLinks` | 一致 | 一致 | 代码核对 |
 | 27 | 日期分隔、未读分隔与未读胶囊、频道开场块 | `MessageTimeline.tsx`（`UnreadPill`、`ChannelIntroBlock`） | client-kit `messages/timeline/MessageTimelineSurface.tsx` | 一致 | 一致 | shots/01 |
 
-计数（27 项）：Web 一致 16、缺失 7、已修 4；Desktop 一致 25、已修 2。
+计数（27 项，r12 fork AS 复核后）：Web 一致 19、已修 8、缺失 0；Desktop 一致 23、已修 4。
 
-**主要发现**：Web 的消息渲染器（`web-client/web/src/features/chat/ui/MessageContent.tsx`）只自定义了段落、代码、图片、链接、提及和 span，没有原版 `shared/ui/markdown.tsx` 的列表、标题、引用、表格、分隔线、任务列表和隐藏链接提示；`MESSAGE_BODY_CLASS_NAME` 只定义间距，`markdown.css` 也没有这些元素的规则。结果是 Web 上列表没有项目符号，标题与正文同字号，引用和表格没有任何样式，这就是“聊天框显示太单一”的直接原因。Desktop 仍用 `collaboration/desktop/src/shared/ui/markdown.tsx`，这几项与原版一致。修复方向：把原版这几个组件迁入 client-kit，由 Web 与 Desktop 共用，样式用 DD-141 令牌。
+**主要发现（r12 复核更正）**：第 4–8 项最初判为 Web 缺失，复核发现 Web 渲染器展开了 client-kit 共享的 `MESSAGE_BODY_COMPONENTS`（列表、标题、引用、表格、分隔线均在其中），已用测试证明渲染，改为一致。Web 真正缺的是任务列表复选框与隐藏链接提示（第 9、10 项），已迁入 client-kit 修复。用户看到的“@ 不高亮”的直接原因是 DD-141 把提及 chip 设成了几乎不可见的 brand-soft，消息正文与输入框同受影响，已按设计 20 新增提及令牌修复（第 11、13 项）。
 
 ## 2. 按区域汇总（逐文件判定）
 
@@ -119,7 +119,7 @@
 | features/settings | `features/settings/ui/VoiceSettingsCard.tsx` | 清单 (c) 未恢复：Voice 设置分区 DD-125(5) 写明保留；Kailo 共享设置只有 10 类，无 voice |
 | features/settings | `features/settings/ui/voiceSettingsLogic.ts` | 清单 (c) 未恢复：Voice 设置分区 DD-125(5) 写明保留；Kailo 共享设置只有 10 类，无 voice |
 
-另有第 1 节的 Web 交互层缺失 7 项（第 4–10 项）。
+第 1 节的 Web 交互层缺失经复核为 2 项（第 9、10 项），r12 已修。
 
 
 ## 4. “不同”项（逐文件）
