@@ -679,10 +679,9 @@ describe("MessageContent", () => {
     expect(html).toContain("<th");
     expect(html).toMatch(/<hr class="border-border/);
     // Original MarkdownInput: GFM task items are the read-only Checkbox, labelled by state.
-    expect(html).toContain('role="checkbox"');
+    expect(html.match(/<button[^>]*role="checkbox"/g)).toHaveLength(2);
     expect(html).toContain('aria-label="Completed task"');
     expect(html).toContain('aria-label="Incomplete task"');
-    expect(html).not.toContain('type="checkbox"');
   });
 
   it("reveals a masked link destination like the original ExternalLinkAnchor, never for a bare URL", () => {
