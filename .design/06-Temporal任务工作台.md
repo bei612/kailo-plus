@@ -191,6 +191,8 @@ Web 只提供 `signal/update/cancel/rerun`。所有命令是 Governed Action 并
 
 只有 Temporal terminal、ExternalExecution 对账、required usage/audit 均已记录时，产品才显示任务完成。Projection 落后不改变控制事实。
 
+「任务」与「业务操作」是两个不同用途的页面，不能呈现为同一张表（DD-168(14)）。**任务**是“我要跟进和处理的执行”：只列本人发起或等待本人处理的 Workflow，默认分为“需要处理”“进行中”“已结束”三段，“已结束”默认折叠；每行以状态徽标、进度、等待原因与下一步操作（批准、查看审批、取消、重跑、打开结果）为主，点开进入执行详情。**业务操作**是“组织里发生了哪些受治理操作”的只读时间线（`14` §7）：按日分组，行以动作名、发起者、执行者、工作区、用量结算状态与耗时为主，不提供任何控制操作；页首给出所选范围与区间的阶段分布与用量结算汇总，范围切换（我的、整个组织、某工作区）与 `audit` 权限一致。两页共享动作名与阶段文案，但列、分组、默认筛选与可做的事都不同；同一执行在两页出现时，任务页链接到业务操作的同一行，业务操作页链接回任务详情。
+
 ## 9. 自动化
 
 用户可见的自动化（REQ-23）由本工作台承接，Buzz Relay 自带的 workflow 在 Kailo 部署中关闭（DD-106）。实体以 `03` §7 的 AutomationDefinition/AutomationVersion 为准，动作登记见 `05` §2.9。
@@ -225,5 +227,6 @@ Workflows（工作流）是 Web/Desktop 左侧导航的独立平台核心页面�
 - 手动触发由当前 owner 在 Workflows 页显式确认后，经 BFF 提交同一 `automation.run`；仅已启用且 pin 有效的定义提供入口，服务端重新核验 owner、权限、Delegation、额度与版本审批。一次请求对应一个稳定运行，进入同一 Run History；不伪造 Relay 事件或 webhook，不启动第二工作流引擎，不在浏览器直接调用 Temporal。手动执行不另立自动触发配置，手动执行没有触发消息，结果回到 Workspace Channel。
 - 原版有序多步骤、条件、模板变量、逐步骤超时、延时与审批属于 REQ-24 的必交付范围，不再以 DD-107 的旧单动作限制裁剪。固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的 `crates/buzz-workflow/src/schema.rs::WorkflowDef/Step/ActionDef` 定义发送频道消息、私聊、修改频道主题、表情、调用 webhook、请求审批、延时七类动作。复用原版编辑与轨迹呈现，持久执行仍由 Temporal 承担；步骤副作用逐次经过现有动作准入、权限、审批和用量规则，外呼经 AgentGateway，不允许恢复 `WorkflowEngine` 或 `RelayActionSink`。单动作加一个审批关卡只是当前实现子集，不构成完整验收。
 - `set_channel_topic` 沿 `09` §3 的纯主题协作动作：原版本冻结的 topic 由执行 Installation 的 AGENT 在当前 Workspace Channel 签名，空值表示清空；原 AgentTaskWorkflow 承接准入、延时/审批、发布意图、结果查证、用量与步骤轨迹，不请求模型回合，也不由 CONTROL 代发。终态证据为同一 Relay 原子接受的主题事件引用，不伪造 Thread 回帖；未知不得推进下一步骤或重放副作用。名称、描述、归档、成员等管理字段不在此动作内。
+- `component_action` 步骤（DD-168(3)）：在有序步骤中调用能力组件的一个已登记动作。步骤冻结目标 Resource（可带 Asset 与 `native_revision`）、动作键与参数；目标必须是同 Tenant `ACTIVE` 的能力类别 Resource，home 为空或等于自动化的 Workspace，所属 binding `ACTIVE` 且 pin 的 release `APPROVED` 并在 `action_definitions[]` 中登记该动作（原生页面入口 binding 没有动作，不可选）。每次运行到达该步骤时，Core 为它建立 child ActionExecution：initiating HUMAN 为自动化 owner，actor 为执行 Installation 的 AgentPrincipal，按该 ActionDefinition 做 fresh 权限、Delegation、审批、Quota 与 Capacity 准入；`SYNC` 动作在步骤内完成，需要 native task 的动作进入原 `ComponentTaskWorkflow(kind=COMPONENT_ACTION)` 并由父 Workflow 等待其终态（`05` §2.7）。结果按该动作的 ResultExposurePolicy 只以 ContentReference、状态与原因码回帖到频道，不把原生正文写入步骤轨迹；结果不明保持 `UNKNOWN` 并按 ExternalExecution 对账，不推进下一步、不重放。保存与发布版本时校验目标与动作仍存在；被引用 Resource 转 `RETAINED_READ_ONLY`、`DELETED` 或 binding 停用时，后续运行以确定原因在该步骤失败，不回退到其他对象。
 - Run History（运行历史）是该自动化关联的 ActionExecution、WorkflowRef 与 TaskProjection 的授权视图，展示运行状态、等待原因、进度与用量引用，并进入同一 Tasks/Approvals 详情查看执行与审批轨迹；不另建运行、审批或审计权威，不向浏览器暴露原始 Temporal history、密钥或模型提示正文。
 - UNKNOWN、投影落后与部分结果沿用本章终态纪律；控制动作仅按 §8 已登记范围开放，不因历史列表存在而增加重放、取消或重跑权限。Mobile 仅提供 REQ-21 允许的只读视图，不提供定义编辑、发布、启停或运行控制。
