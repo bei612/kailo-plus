@@ -1,5 +1,5 @@
 // Buzz 779af8886caae1317b4de962082429867ab61503 WorkflowsView loading surface.
-// DD-168 §16.4(1): the skeleton keeps the card grid's shape and is announced as loading.
+// DD-170 §16.4(1): the skeleton keeps the card grid's shape and is announced as loading.
 import { useT } from "./context";
 import { Skeleton } from "./sidebar/skeleton";
 

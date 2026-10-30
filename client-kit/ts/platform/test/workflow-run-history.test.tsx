@@ -77,7 +77,7 @@ describe("original trigger to persisted run selection through governed automatio
     }
     const selected = history(host).querySelector<HTMLElement>('[data-testid="workflow-selected-run"]')!;
     expect(selected.getAttribute("data-run-id")).toBe(task.actionExecutionId);
-    // DD-168 §16.5: the run is named by its time; the raw identifier is not the visible text.
+    // DD-170 §16.5: the run is named by its time; the raw identifier is not the visible text.
     expect(selected.querySelector("h2")!.textContent).toContain(new Date(task.createdAt).toLocaleString(locale));
     expect(selected.querySelector(`code[title="${task.actionExecutionId}"]`)).toBeNull();
     const createdAt = selected.querySelector("time")!;
@@ -113,7 +113,7 @@ describe("original trigger to persisted run selection through governed automatio
     await settle();
     expect(history(host).querySelector('[data-testid="table-skeleton"]')).toBeNull();
     expect(history(host).querySelector('[data-testid="workflow-selected-run"]')).toBeNull();
-    // DD-168 §16.4(4): a definitive refusal is the no-access state, never an empty history.
+    // DD-170 §16.4(4): a definitive refusal is the no-access state, never an empty history.
     expect(history(host).querySelector('[data-testid="permission-state"]')).not.toBeNull();
     expect(history(host).querySelector('[data-testid="empty-state"]')).toBeNull();
     expect(history(host).textContent).toContain("You don\u2019t have access");
@@ -201,7 +201,7 @@ describe("original trigger to persisted run selection through governed automatio
     expect(trace.textContent).toContain("2.0s");
     expect(trace.textContent).toContain("future");
     expect(trace.textContent).toContain("pending");
-    // DD-168 §16.5(6): step output is folded; one disclosure per step that has output.
+    // DD-170 §16.5(6): step output is folded; one disclosure per step that has output.
     expect(trace.querySelectorAll("pre")).toHaveLength(0);
     const outputs = [...trace.querySelectorAll("button")].filter((node) => node.textContent === "Output");
     expect(outputs).toHaveLength(1);

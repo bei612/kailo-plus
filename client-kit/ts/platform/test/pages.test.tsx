@@ -542,7 +542,7 @@ describe("independent shared Workflows page", () => {
     expect(history.textContent).toContain("Waiting for reconciliation");
     expect(history.textContent).not.toContain("Completed");
     expect(history.textContent).not.toContain("usage-one");
-    // DD-168 §16.2: one table row per run; the row opens the run's detail (click or Enter).
+    // DD-170 §16.2: one table row per run; the row opens the run's detail (click or Enter).
     const row = history.querySelector<HTMLTableRowElement>('tr[data-row-key="run-ae"]')!;
     expect(row.tabIndex).toBe(0);
     expect(row.querySelector("button, a, input")).toBeNull();
@@ -568,7 +568,7 @@ describe("independent shared Workflows page", () => {
     const cursor = "opaque/+?=&";
     const { history, t } = await openHistory(routes((request) => request.path === "/api/v1/automations/workflow-one/runs"
       ? { status: 200, body: { automationResourceId: definition.resourceId, runs: [], nextCursor: cursor } } : undefined));
-    // DD-168 §16.2(3): the bounded read follows the cursor to the end and pages locally.
+    // DD-170 §16.2(3): the bounded read follows the cursor to the end and pages locally.
     expect(t.send).toHaveBeenCalledWith({ method: "GET", path: "/api/v1/automations/workflow-one/runs?cursor=opaque%2F%2B%3F%3D%26" });
     expect(history.querySelectorAll("tr[data-row-key]")).toHaveLength(1);
     expect(history.querySelector('tr[data-row-key="run-ae"]')).not.toBeNull();
@@ -3942,7 +3942,7 @@ describe("platform pages render only through the host theme", () => {
         expect(text.split(expression)).toHaveLength(2);
         text = text.replace(expression, "{}");
       }
-      // workflow-run-trace.tsx (DD-168 §16.5(4)): the step timeline uses semantic tone tokens only,
+      // workflow-run-trace.tsx (DD-170 §16.5(4)): the step timeline uses semantic tone tokens only,
       // so it no longer carries the original Buzz literal-colour exceptions.
       if (source.name === "members.tsx") {
         // Buzz 779af8886caae1317b4de962082429867ab61503,

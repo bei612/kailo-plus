@@ -1,6 +1,7 @@
-// DD-168 (.design/20 §16), V-SCN-305–309: the business operations page as a product list —
-// names instead of identifiers, one-line status and usage, filters, the total and pages, a
-// detail with history and usage lines, technical identifiers folded, and the four states.
+// DD-170 (.design/20 §16, 06 §8, 14 §7), V-SCN-320–324: the business operations page as a
+// read-only governance timeline grouped by day — names instead of identifiers, one-line status
+// and usage, filters, the total and pages, a detail with history and usage lines, technical
+// identifiers folded, a link back to the task detail, and the four states.
 import { act } from "react";
 import { ErrorClass, ReasonCode } from "@client-kit/contracts";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -76,7 +77,7 @@ beforeEach(() => {
   localStorage.clear(); sessionStorage.clear(); setLocale("en");
 });
 
-describe("business operations list (DD-168 §16.2)", () => {
+describe("business operations timeline (DD-170 §16.2, 06 §8)", () => {
   it("names the action, people and workspace, keeps the status on one line and never shows wire keys or IDs", async () => {
     const { host } = await mount(mine([metered, op(2)]));
     const [first, second] = rows(host);
@@ -94,10 +95,34 @@ describe("business operations list (DD-168 §16.2)", () => {
     const text = table(host).textContent!;
     for (const raw of ["agent.invoke", "application_binding.disable", "component_model_tokens", AGENT.slice(0, 8), ADA, WS, "op-1"])
       expect(text).not.toContain(raw);
-    const badge = first!.querySelector<HTMLElement>("td:nth-child(2) span")!;
-    expect(badge.className).toContain("whitespace-nowrap");
+    const badge = first!.querySelector<HTMLElement>("td:nth-child(2) span.whitespace-nowrap")!;
+    expect(badge.textContent).toBe("Not allowed");
+    // Read-only: rows carry no controls.
+    expect(table(host).querySelectorAll("tbody button, tbody a, tbody input")).toHaveLength(0);
     expect(host.querySelector("[data-testid=list-total]")?.textContent).toBe("2 total");
     expect(host.querySelector("[data-testid=operation-timeline]")?.textContent).toContain("The latest 2 operations, newest first.");
+  });
+
+  it("groups rows by day under date separators and summarizes the loaded window", async () => {
+    const { host } = await mount(mine([op(1), op(2), op(3, { createdAt: "2026-10-28T10:00:00Z" }), op(4, { createdAt: "2026-10-28T09:00:00Z", phase: "FAILED" })]));
+    const body = table(host).querySelector("tbody")!;
+    const kinds = [...body.children].map((row) => row.getAttribute("data-testid") === "operation-day" ? "day" : "op");
+    expect(kinds).toEqual(["day", "op", "op", "day", "op", "op"]);
+    const days = [...body.querySelectorAll("[data-testid=operation-day]")].map((row) => row.textContent);
+    expect(days[0]).not.toBe(days[1]);
+    const summary = host.querySelector<HTMLElement>("[data-testid=operation-window-summary]")!;
+    expect(summary.textContent).toContain("Completed3");
+    expect(summary.textContent).toContain("Failed1");
+    expect(summary.textContent).toContain("Not metered4");
+  });
+
+  it("links an own operation back to its task detail", async () => {
+    const { host, t } = await mount(mine([op(2)]));
+    await click(rows(host)[0]!);
+    await click(button(host.querySelector<HTMLElement>("[data-testid=operation-detail]")!, "Open in Tasks"));
+    expect(host.querySelector("[data-testid=operation-task]")).not.toBeNull();
+    expect(t.send).toHaveBeenCalledWith({ method: "GET", path: `/api/v1/tasks/${op(2).actionExecutionId}` });
+    expect(t.send.mock.calls.every(([request]) => (request as BffRequest).method === "GET")).toBe(true);
   });
 
   it("reads an unresolved person as an unknown member", async () => {
@@ -154,6 +179,8 @@ describe("business operations list (DD-168 §16.2)", () => {
     expect(usage.textContent).toContain("Native import count");
     expect(usage.textContent).not.toContain("component_model_tokens");
     expect(detail.textContent).not.toContain("agent.invoke");
+    // Not this person's execution: no link to a task they cannot follow.
+    expect([...detail.querySelectorAll("button")].some((node) => node.textContent === "Open in Tasks")).toBe(false);
     await click(button(detail, "Technical details"));
     expect(detail.querySelector('code[title="agent.invoke"]')).not.toBeNull();
     expect(detail.querySelector(`code[title="${metered.actionExecutionId}"]`)).not.toBeNull();
@@ -174,7 +201,7 @@ describe("business operations list (DD-168 §16.2)", () => {
   });
 });
 
-describe("business operations states (DD-168 §16.4)", () => {
+describe("business operations states (DD-170 §16.4)", () => {
   it("shows a first-time empty state with an explanation", async () => {
     const { host } = await mount(mine([]));
     const empty = host.querySelector<HTMLElement>("[data-testid=empty-state]")!;
@@ -212,7 +239,7 @@ describe("business operations states (DD-168 §16.4)", () => {
   });
 });
 
-describe("scope overview (DD-168 §16.2)", () => {
+describe("scope overview (DD-170, 06 §8)", () => {
   it("summarizes a scope with totals, statuses and a by-action table in words", async () => {
     const summary = {
       tenantId: "tenant", from: "2026-10-01T00:00:00Z", to: "2026-10-31T00:00:00Z", total: 7,

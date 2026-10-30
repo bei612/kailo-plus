@@ -85,7 +85,7 @@ describe("workflow trace timeline over existing task references", () => {
     expect(host.textContent).toContain("62.0s");
     expect(host.textContent).toContain("skipped");
     expect(host.textContent).toContain("pending");
-    // DD-168 §16.5(6): native output stays available but folded, one disclosure per step with output.
+    // DD-170 §16.5(6): native output stays available but folded, one disclosure per step with output.
     expect(host.querySelectorAll("pre")).toHaveLength(0);
     const outputs = [...host.querySelectorAll("button")].filter((node) => node.textContent === "Output");
     expect(outputs).toHaveLength(2);

@@ -149,7 +149,7 @@ export function automationRunSummary(run: AutomationRunView): {
 	return { steps: trace.length, duration, currentStep: open >= 0 ? open + 1 : null };
 }
 
-/** Pages of run history read per round (DD-168 §16.2(3)); "Load more" reads the next round. */
+/** Pages of run history read per round (DD-170 §16.2(3)); "Load more" reads the next round. */
 const RUN_PAGES = 10;
 
 type RunCollection = { runs: AutomationRunView[]; complete: boolean };
@@ -251,7 +251,7 @@ function AutomationRunHistory({
 	const [budget, setBudget] = useState(RUN_PAGES);
 	const [open, setOpen] = useState<string | null>(null);
 	const [selectedRunId, setSelectedRunId] = useState<string | null>(receipt?.actionExecutionId ?? null);
-	// DD-168 §16.2(3): the history is cursor-paged without a total, so it is read to its end
+	// DD-170 §16.2(3): the history is cursor-paged without a total, so it is read to its end
 	// (bounded) and paged locally. Every page passes the same validation as before; one page that
 	// cannot be proven (association, enums, a repeated cursor, a receipt paired with another
 	// operation) fails the whole read rather than showing a partial or substituted history.

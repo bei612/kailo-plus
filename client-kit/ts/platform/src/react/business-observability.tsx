@@ -37,12 +37,13 @@ import { useBffClient, useCurrentPrincipalId, useLocale, useT } from "./context"
 import { isForbidden, ScopeSelect } from "./pages";
 import { Badge, Button, Cell, Notice, Table, type Tone } from "./ui";
 import { type Loaded, useLoad } from "./use-load";
-// DD-168 operations list, detail and states.
+// DD-170 operations timeline, detail and states.
 import { BusinessOperationPhase, OperationUsageState, ReasonCode } from "@client-kit/contracts";
 import { Activity, ChevronDown, ChevronRight } from "lucide-react";
 import { approvalStatusMessages, platformMessages } from "../i18n";
 import { useReasonText } from "./context";
-import { type DataColumn, DataTable } from "./data-table";
+import { TaskDetail } from "./governance";
+import { type DataColumn, DataTable, ListSearch, Pagination, usePaged } from "./data-table";
 import { humanizeKey, IdText, type KeyValueItem, KeyValueList, Tag, Timeline, type TimelineItem } from "./key-value";
 import { DetailHeader, FilterChips, PageSection, RefreshButton } from "./page-layout";
 import { EmptyState, ErrorState, NoMatchState, PermissionState, readRefusal, TableSkeleton } from "./state-views";
@@ -578,7 +579,7 @@ export function TenantQuotaSection() {
 /** "mine"、"tenant" 或一个 Workspace ID。 */
 type View = string;
 
-// DD-168 (.design/20 §16): the operations page is a list of records, not a wall of text. A row
+// DD-170 (.design/20 §16, 06 §8): the operations page is a read-only timeline, not a wall of text. A row
 // names the action, its stage, the people and the workspace in words; identifiers, wire keys and
 // usage lines live in the operation's detail, behind "Technical details" where they are copyable.
 
@@ -681,14 +682,6 @@ function absoluteTime(locale: string, value: string): string {
     : new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "medium" }).format(at);
 }
 
-/** A time cell: relative, with the absolute local time on hover. */
-function When({ value }: { value: string }) {
-  const locale = useLocale();
-  return <time dateTime={value} title={absoluteTime(locale, value)} className="whitespace-nowrap tabular-nums">
-    {relativeTime(locale, value)}
-  </time>;
-}
-
 type People = { names: ReadonlyMap<string, string>; pending: boolean };
 
 /**
@@ -770,7 +763,7 @@ function PhaseBadge({ phase }: { phase: BusinessOperationPhase }) {
   return <Badge tone={tone}>{label}</Badge>;
 }
 
-/** Copyable identifiers and codes, folded away by default (DD-168 §16.3, §16.5). */
+/** Copyable identifiers and codes, folded away by default (DD-170 §16.3, §16.5). */
 function TechnicalDetails({ items }: { items: readonly (KeyValueItem | false | undefined)[] }) {
   const t = useT();
   const [open, setOpen] = useState(false);
@@ -791,6 +784,7 @@ function OperationDetail({ op, people, workspaces, onBack }: {
   const locale = useLocale();
   const reasonText = useReasonText();
   const me = useCurrentPrincipalId();
+  const [task, setTask] = useState<string | null>(null);
   const duration = durationSeconds(op);
   const phase = phaseLabel(t, op.phase);
   const reason = op.reason !== undefined && Object.values(ReasonCode).includes(op.reason) ? reasonText(op.reason) : undefined;
@@ -802,11 +796,15 @@ function OperationDetail({ op, people, workspaces, onBack }: {
     { id: "phase", title: op.terminalAt ? phase.label : t("operations.event.current", { phase: phase.label }),
       time: op.terminalAt ? absoluteTime(locale, op.terminalAt) : undefined, description: reason, tone: phase.tone },
   ];
+  // 06 §8: the same execution links back to its task detail (the Tasks reader, own executions only).
+  if (task) return <div data-testid="operation-task"><TaskDetail actionExecutionId={task} onBack={() => setTask(null)} onOpen={setTask} /></div>;
+  const ownTask = !!me && (op.initiatorPrincipalId === me || op.actorPrincipalId === me);
   return <div className="flex flex-col gap-6" data-testid="operation-detail">
     <DetailHeader onBack={onBack} title={actionName(t, op.actionKey)} status={<PhaseBadge phase={op.phase} />}
       subtitle={t("operations.subtitle", {
         name: principalName(t, me, people, op.initiatorPrincipalId), time: relativeTime(locale, op.createdAt),
-      })} />
+      })}
+      actions={ownTask ? <Button onClick={() => setTask(op.actionExecutionId)}>{t("operations.openTask")}</Button> : undefined} />
     <KeyValueList columns={2} items={[
       { id: "phase", label: t("operations.phase"), value: <PhaseBadge phase={op.phase} /> },
       reason ? { id: "reason", label: t("operations.reason"), value: reason } : undefined,
@@ -864,6 +862,63 @@ function ScopeFailure({ error, reload, tenantScope, compact }: { error: unknown;
     : <ErrorState compact={compact} error={error} onRetry={reload} />;
 }
 
+const sameDay = (a: Date, b: Date) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+
+/** The date separator of the timeline: "Today", "Yesterday", else the local date with weekday. */
+function dayLabel(t: Translate, locale: string, value: string): string {
+  const at = new Date(value);
+  if (Number.isNaN(at.getTime())) return t("platform.time.unavailable");
+  const today = new Date();
+  const yesterday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1);
+  if (sameDay(at, today)) return t("operations.day.today");
+  if (sameDay(at, yesterday)) return t("operations.day.yesterday");
+  return new Intl.DateTimeFormat(locale, { year: "numeric", month: "long", day: "numeric", weekday: "short" }).format(at);
+}
+
+function dayKey(value: string): string {
+  const at = new Date(value);
+  return Number.isNaN(at.getTime()) ? "" : `${at.getFullYear()}-${at.getMonth()}-${at.getDate()}`;
+}
+
+/** Stage distribution and usage settlement of the loaded window ("My operations" has no period read). */
+function WindowSummary({ operations }: { operations: readonly BusinessOperationView[] }) {
+  const t = useT();
+  const locale = useLocale();
+  const count = <K extends string>(keys: readonly K[]) => {
+    const out = new Map<K, number>();
+    for (const key of keys) out.set(key, (out.get(key) ?? 0) + 1);
+    return [...out.entries()];
+  };
+  const phases = count(operations.map((op) => op.phase)).map(([phase, n]) => ({ phase, count: n }));
+  const usage = count(operations.map((op) => op.usageState));
+  return <div className="grid gap-3 sm:grid-cols-[minmax(9rem,12rem)_minmax(0,1fr)_minmax(0,1fr)]" data-testid="operation-window-summary">
+    <Stat label={t("operations.totalLabel")}>
+      <span className="text-[1.375rem] font-semibold leading-7 tabular-nums text-foreground">{new Intl.NumberFormat(locale).format(operations.length)}</span>
+    </Stat>
+    <Stat label={t("operations.byPhase")}><PhaseBadges phases={phases} /></Stat>
+    <Stat label={t("usage.operationUsage")}>
+      <div className="flex flex-wrap gap-1">
+        {usage.map(([state, n]) => <Badge key={state} tone={usageTone[state] ?? "neutral"}>
+          {enumLabel(locale, operationUsageStateMessages, state)}<span className="ml-1 tabular-nums opacity-80">{n}</span>
+        </Badge>)}
+      </div>
+    </Stat>
+  </div>;
+}
+
+const timelineColumns = ["time", "action", "initiator", "actor", "workspace", "usage", "duration"] as const;
+const secondaryColumn: ReadonlySet<string> = new Set(["actor", "workspace", "duration"]);
+const columnWidth: Readonly<Record<string, string | undefined>> = {
+  time: "5.5rem", initiator: "8rem", actor: "8rem", workspace: "10rem", usage: "9rem", duration: "6rem",
+};
+
+/**
+ * DD-170 (06 §8, 14 §7): the business operations page is a read-only governance timeline, not the
+ * task list. Rows are grouped by day under date separators and read as "who did what, where, what
+ * it cost and how long it took": action, initiator, executor, workspace, usage settlement and
+ * duration. There are no controls; a row opens the operation's detail, which links back to the
+ * task detail of the same execution. Paging follows §16.2 (total, page of pages).
+ */
 function OperationTimeline({ view, workspaces }: { view: View; workspaces: WorkspaceView[] }) {
   const client = useBffClient();
   const t = useT();
@@ -874,6 +929,7 @@ function OperationTimeline({ view, workspaces }: { view: View; workspaces: Works
   const [first, reload] = useLoad(`operations:${view}`, () => client.operations(scope, workspaceId), { keepWhileRevalidating: true });
   const [more, setMore] = useState<MorePages | null>(null);
   const [stage, setStage] = useState<StageGroup>("all");
+  const [query, setQuery] = useState("");
   const [openId, setOpenId] = useState<string | null>(null);
   // The page shown when Refresh was pressed; the button spins until a newer answer replaces it.
   const [stale, setStale] = useState<BusinessOperationPage | null>(null);
@@ -897,31 +953,39 @@ function OperationTimeline({ view, workspaces }: { view: View; workspaces: Works
     }
   };
   const refresh = () => { setMore(null); setStale(firstPage); reload(); };
-  const rows = stage === "all" ? operations : operations.filter((op) => stageGroup[op.phase] === stage);
+  const searchText = (op: BusinessOperationView) => [
+    actionName(t, op.actionKey), phaseLabel(t, op.phase).label,
+    principalName(t, me, people, op.initiatorPrincipalId), principalName(t, me, people, op.actorPrincipalId),
+    workspaceName(t, workspaces, op.workspaceId), usageSummary(t, op),
+  ].join(" ").toLocaleLowerCase();
+  const q = query.trim().toLocaleLowerCase();
+  const rows = operations.filter((op) => (stage === "all" || stageGroup[op.phase] === stage) && (!q || searchText(op).includes(q)));
+  const paged = usePaged(rows, { resetKey: `${stage}|${q}` });
   const counts = (group: StageGroup) => group === "all" ? operations.length : operations.filter((op) => stageGroup[op.phase] === group).length;
   const opened = openId ? operations.find((op) => op.actionExecutionId === openId) : undefined;
-  const columns: DataColumn<BusinessOperationView>[] = [
-    { key: "action", header: t("platform.action"), truncate: true, title: (op) => actionName(t, op.actionKey),
-      sortValue: (op) => actionName(t, op.actionKey),
-      cell: (op) => <span className="font-medium text-foreground">{actionName(t, op.actionKey)}</span> },
-    { key: "phase", header: t("operations.phase"), width: "9.5rem", sortValue: (op) => phaseLabel(t, op.phase).label,
-      cell: (op) => <PhaseBadge phase={op.phase} /> },
-    { key: "initiator", header: t("operations.initiator"), width: "8rem", truncate: true,
-      cell: (op) => <Principal id={op.initiatorPrincipalId} people={people} /> },
-    { key: "actor", header: t("operations.actor"), width: "8rem", truncate: true, secondary: true,
-      cell: (op) => <Principal id={op.actorPrincipalId} people={people} /> },
-    { key: "workspace", header: t("platform.workspace"), width: "10rem", truncate: true, secondary: true,
-      title: (op) => workspaceName(t, workspaces, op.workspaceId),
-      cell: (op) => <span className={op.workspaceId === undefined ? "text-muted-foreground" : ""}>{workspaceName(t, workspaces, op.workspaceId)}</span> },
-    { key: "usage", header: t("operations.usage"), width: "8.5rem", truncate: true, secondary: true,
-      title: (op) => enumLabel(locale, operationUsageStateMessages, op.usageState),
-      cell: (op) => <Tag tone={usageTone[op.usageState] ?? "neutral"}>{usageSummary(t, op)}</Tag> },
-    { key: "duration", header: t("operations.duration"), width: "6rem", align: "end", secondary: true,
-      sortValue: (op) => durationSeconds(op),
-      cell: (op) => { const value = durationSeconds(op); return value === undefined ? null : <span className="whitespace-nowrap">{durationText(t, value)}</span>; } },
-    { key: "time", header: t("platform.time"), width: "7.5rem", sortValue: (op) => Date.parse(op.createdAt),
-      cell: (op) => <When value={op.createdAt} /> },
-  ];
+  const header: Record<(typeof timelineColumns)[number], string> = {
+    time: t("platform.time"), action: t("platform.action"), initiator: t("operations.initiator"), actor: t("operations.actor"),
+    workspace: t("platform.workspace"), usage: t("operations.usage"), duration: t("operations.duration"),
+  };
+  const cell = (key: (typeof timelineColumns)[number], op: BusinessOperationView): ReactNode => {
+    switch (key) {
+      case "time": return <time dateTime={op.createdAt} title={absoluteTime(locale, op.createdAt)} className="whitespace-nowrap tabular-nums text-muted-foreground">
+        {Number.isNaN(Date.parse(op.createdAt)) ? op.createdAt : new Intl.DateTimeFormat(locale, { hour: "2-digit", minute: "2-digit" }).format(new Date(op.createdAt))}
+      </time>;
+      case "action": return <span className="flex min-w-0 items-center gap-2">
+        <span className="truncate font-medium text-foreground" title={actionName(t, op.actionKey)}>{actionName(t, op.actionKey)}</span>
+        <PhaseBadge phase={op.phase} />
+      </span>;
+      case "initiator": return <Principal id={op.initiatorPrincipalId} people={people} />;
+      case "actor": return <Principal id={op.actorPrincipalId} people={people} />;
+      case "workspace": return <span className={`block truncate ${op.workspaceId === undefined ? "text-muted-foreground" : ""}`}
+        title={workspaceName(t, workspaces, op.workspaceId)}>{workspaceName(t, workspaces, op.workspaceId)}</span>;
+      case "usage": return <span title={enumLabel(locale, operationUsageStateMessages, op.usageState)}>
+        <Tag tone={usageTone[op.usageState] ?? "neutral"}>{usageSummary(t, op)}</Tag>
+      </span>;
+      case "duration": { const value = durationSeconds(op); return value === undefined ? null : <span className="whitespace-nowrap">{durationText(t, value)}</span>; }
+    }
+  };
   const partial = nextCursor ? <span className="inline-flex flex-wrap items-center gap-2">
     {t("list.partial", { count: String(operations.length) })}
     {extra?.status === "error" ? <span role="alert" className="text-danger-text">{t("platform.loadFailed")}</span> : null}
@@ -930,6 +994,7 @@ function OperationTimeline({ view, workspaces }: { view: View; workspaces: Works
       {extra?.status === "loading" ? t("platform.loading") : extra?.status === "error" ? t("platform.retry") : t("list.loadMore")}
     </button>
   </span> : undefined;
+  let previousDay = "";
   return (
     <PageSection id="operation-timeline" title={t("operations.timeline")} testId="operation-timeline"
       description={firstPage ? t(nextCursor ? "operations.windowPartial" : "operations.window", { count: operations.length }) : undefined}>
@@ -937,23 +1002,64 @@ function OperationTimeline({ view, workspaces }: { view: View; workspaces: Works
         : first.status === "error" ? <ScopeFailure error={first.error} reload={reload} tenantScope={scope === "tenant"} />
         : <>
           {opened ? <OperationDetail op={opened} people={people} workspaces={workspaces} onBack={() => setOpenId(null)} /> : null}
-          <div hidden={opened !== undefined}>
-            <DataTable testId="operation-table" label={t("operations.timeline")} rows={rows} columns={columns}
-              rowKey={(op) => op.actionExecutionId} onRowClick={(op) => setOpenId(op.actionExecutionId)}
-              search={{ placeholder: t("operations.search"), text: (op) => [
-                actionName(t, op.actionKey), phaseLabel(t, op.phase).label,
-                principalName(t, me, people, op.initiatorPrincipalId), principalName(t, me, people, op.actorPrincipalId),
-                workspaceName(t, workspaces, op.workspaceId), usageSummary(t, op),
-              ].join(" ") }}
-              toolbar={<>
+          <div hidden={opened !== undefined} className="flex min-w-0 flex-col gap-3" data-testid="operation-table">
+            {view === "mine" && operations.length > 0 ? <WindowSummary operations={operations} /> : null}
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <ListSearch value={query} onChange={setQuery} placeholder={t("operations.search")} />
+              <div className="flex flex-wrap items-center gap-2">
                 <FilterChips label={t("operations.filter.label")} value={stage} onChange={setStage}
                   options={(Object.keys(stageGroupLabel) as StageGroup[]).map((value) => ({ value, label: t(stageGroupLabel[value]), count: counts(value) }))} />
                 <RefreshButton onClick={refresh} pending={refreshing} />
-              </>}
-              empty={operations.length === 0
-                ? <EmptyState icon={Activity} title={t("operations.none")} description={t(view === "mine" ? "operations.noneMine" : "operations.noneScope")} />
-                : <NoMatchState onClear={() => setStage("all")} />}
-              partial={partial} />
+              </div>
+            </div>
+            {operations.length === 0
+              ? <EmptyState icon={Activity} title={t("operations.none")} description={t(view === "mine" ? "operations.noneMine" : "operations.noneScope")} />
+              : <div className="min-w-0 overflow-hidden rounded-xl border border-border bg-card">
+                <div className="overflow-x-auto">
+                  <table aria-label={t("operations.timeline")} className="w-full min-w-[40rem] table-fixed border-separate border-spacing-0 text-left text-sm">
+                    <colgroup>
+                      {timelineColumns.map((key) => <col key={key} className={secondaryColumn.has(key) ? "max-sm:hidden" : undefined}
+                        style={columnWidth[key] ? { width: columnWidth[key] } : undefined} />)}
+                    </colgroup>
+                    <thead>
+                      <tr>
+                        {timelineColumns.map((key) => <th key={key} scope="col"
+                          className={`h-9 whitespace-nowrap border-b border-border bg-muted/40 px-3 text-[0.6875rem] font-semibold uppercase tracking-[0.04em] text-muted-foreground ${key === "duration" ? "text-right" : ""} ${secondaryColumn.has(key) ? "max-sm:hidden" : ""}`}>
+                          <span className="block truncate">{header[key]}</span>
+                        </th>)}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {paged.pageRows.length === 0 ? <tr><td colSpan={timelineColumns.length}>
+                        <NoMatchState onClear={() => { setStage("all"); setQuery(""); }} />
+                      </td></tr> : paged.pageRows.flatMap((op) => {
+                        const day = dayKey(op.createdAt);
+                        const separator = day !== previousDay ? <tr key={`day:${day}:${op.actionExecutionId}`} data-testid="operation-day">
+                          <th colSpan={timelineColumns.length} scope="rowgroup"
+                            className="h-8 border-b border-border bg-muted/25 px-3 text-left text-xs font-semibold text-muted-foreground">
+                            {dayLabel(t, locale, op.createdAt)}
+                          </th>
+                        </tr> : null;
+                        previousDay = day;
+                        const row = <tr key={op.actionExecutionId} data-row-key={op.actionExecutionId} tabIndex={0}
+                          onClick={() => setOpenId(op.actionExecutionId)}
+                          onKeyDown={(event) => { if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); setOpenId(op.actionExecutionId); } }}
+                          className="cursor-pointer transition-colors duration-[90ms] hover:bg-accent/70 focus-visible:bg-accent/70 focus-visible:outline-hidden [&:last-child>td]:border-b-0">
+                          {timelineColumns.map((key) => <td key={key}
+                            className={`h-10 truncate border-b border-border px-3 py-1.5 align-middle ${key === "duration" ? "text-right tabular-nums" : ""} ${secondaryColumn.has(key) ? "max-sm:hidden" : ""}`}>
+                            {cell(key, op)}
+                          </td>)}
+                        </tr>;
+                        return separator ? [separator, row] : [row];
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="border-t border-border px-3 py-2">
+                  <Pagination total={paged.total} page={paged.page} pageSize={paged.pageSize}
+                    onPageChange={paged.setPage} onPageSizeChange={paged.setPageSize} partial={partial} />
+                </div>
+              </div>}
           </div>
         </>}
     </PageSection>

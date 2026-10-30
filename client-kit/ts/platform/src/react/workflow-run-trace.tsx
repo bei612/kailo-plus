@@ -1,7 +1,7 @@
 // Buzz 779af8886caae1317b4de962082429867ab61503
 // desktop/src/features/workflows/ui/WorkflowRunTrace.tsx::WorkflowRunTrace.
 // The same facts as the original trace — each step's status, its native duration, its output and
-// error, and the pending approval with its approver and expiry — presented as the DD-168 timeline
+// error, and the pending approval with its approver and expiry — presented as the DD-170 timeline
 // (.design/20 §16.5(4)): a dot per step, the step and its status, the duration, then details.
 // Output is a document for support, folded behind a disclosure (§16.5(6)); errors are read in words.
 // desktop/src/features/workflows/ui/WorkflowApprovalCard.tsx: the pending approval's approver and

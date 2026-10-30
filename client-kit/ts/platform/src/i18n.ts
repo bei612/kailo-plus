@@ -3845,14 +3845,17 @@ export const platformMessages = {
   "quota.applied": { en: "Quota set. Operation: {operation}.", "zh-CN": "额度已设置。操作：{operation}。" },
   // DD-168 business operations and workflow runs.
   "operations.explain": {
-    en: "Operations you started or carried out, from the request to the result. Waiting, running and unconfirmed operations are shown as they are, never as success or failure.",
-    "zh-CN": "你发起或执行的操作，从提交到结果。等待中、进行中与结果待核对的操作如实显示，不计为成功或失败。",
+    en: "A read-only record of the operations you started or carried out. Waiting, running and unconfirmed operations are shown as they are, never as success or failure.",
+    "zh-CN": "你发起或执行的操作的只读记录。等待中、进行中与结果待核对的操作如实显示，不计为成功或失败。",
   },
   "operations.explainScope": {
-    en: "Operations in the selected scope that you can audit, with a summary for the period.",
-    "zh-CN": "所选范围内你有审计权限查看的操作，以及该区间的汇总。",
+    en: "A read-only record of what happened in the selected scope, with the status and usage summary for the period. Requires audit permission on the scope.",
+    "zh-CN": "所选范围内发生了哪些操作的只读记录，以及该区间的状态分布与用量结算汇总。需要该范围的审计权限。",
   },
-  "operations.timeline": { en: "Operations", "zh-CN": "操作记录" },
+  "operations.timeline": { en: "Operation timeline", "zh-CN": "操作时间线" },
+  "operations.day.today": { en: "Today", "zh-CN": "今天" },
+  "operations.day.yesterday": { en: "Yesterday", "zh-CN": "昨天" },
+  "operations.openTask": { en: "Open in Tasks", "zh-CN": "在任务中查看" },
   "operations.window": { en: "The latest {count} operations, newest first.", "zh-CN": "最近 {count} 条操作，新的在前。" },
   "operations.windowPartial": {
     en: "The latest operations, newest first. Older ones can be loaded at the bottom of the list.",
