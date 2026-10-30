@@ -15,11 +15,10 @@ use axum::{
     Json,
 };
 use contracts::{
-    AccountPreferences, AccountPreferencesComponentPreference, AccountPreferencesUpdate,
-    AccountPreferencesUpdateComponentPreference, ProtocolSessionLocale,
+    AccountComponentPreference, AccountPreferences, AccountPreferencesUpdate, ProtocolSessionLocale,
 };
 use serde_json::{Map, Value};
-use std::collections::HashMap;
+use std::collections::HashSet;
 use uuid::Uuid;
 
 use crate::bff::{resolve_execution_context, BffState};
@@ -95,18 +94,18 @@ impl Stored {
     }
 
     fn view(&self) -> AccountPreferences {
-        let component_preferences: HashMap<String, AccountPreferencesComponentPreference> = self
+        // 线上为按键排序的数组。
+        let mut component_preferences: Vec<AccountComponentPreference> = self
             .component_preferences
             .iter()
             .filter_map(|(k, v)| {
-                let value = match v {
-                    Value::Bool(b) => AccountPreferencesComponentPreference::Bool(*b),
-                    Value::String(s) => AccountPreferencesComponentPreference::String(s.clone()),
-                    _ => return None,
-                };
-                Some((k.clone(), value))
+                Some(AccountComponentPreference {
+                    key: k.clone(),
+                    value: v.as_str()?.to_owned(),
+                })
             })
             .collect();
+        component_preferences.sort_by(|a, b| a.key.cmp(&b.key));
         AccountPreferences {
             accent: self.accent.clone(),
             component_preferences,
@@ -154,18 +153,15 @@ pub(crate) fn valid_preference_key(key: &str) -> bool {
         })
 }
 
-/// 值只是布尔或封闭选项（1–32 个 `[A-Za-z0-9._-]`），不接受自由文本或用户数据。
+/// 值只是布尔声明的 `true`/`false` 或封闭选项（1–32 个 `[A-Za-z0-9._-]`），线上与
+/// 库中都是字符串，不接受自由文本或用户数据。
 pub(crate) fn valid_preference_value(value: &Value) -> bool {
-    match value {
-        Value::Bool(_) => true,
-        Value::String(s) => {
-            !s.is_empty()
-                && s.len() <= 32
-                && s.bytes()
-                    .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'))
-        }
-        _ => false,
-    }
+    value.as_str().is_some_and(|s| {
+        !s.is_empty()
+            && s.len() <= 32
+            && s.bytes()
+                .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'))
+    })
 }
 
 /// 把一次部分更新合并到当前状态。不合法即整体拒绝（返回 None），不部分采纳。
@@ -190,25 +186,25 @@ fn merge(current: &Stored, update: &AccountPreferencesUpdate) -> Option<Stored> 
         next.locale = Some(locale_text(locale).to_owned());
     }
     if let Some(entries) = &update.component_preferences {
-        for (key, value) in entries {
-            if !valid_preference_key(key) {
+        if entries.len() > MAX_COMPONENT_PREFERENCES {
+            return None;
+        }
+        // 一次更新内同一键只能出现一次，否则结果取决于顺序。
+        let mut seen = HashSet::new();
+        for change in entries {
+            if !valid_preference_key(&change.key) || !seen.insert(change.key.as_str()) {
                 return None;
             }
-            match value {
+            match &change.value {
                 None => {
-                    next.component_preferences.remove(key);
+                    next.component_preferences.remove(&change.key);
                 }
                 Some(value) => {
-                    let value = match value {
-                        AccountPreferencesUpdateComponentPreference::Bool(b) => Value::Bool(*b),
-                        AccountPreferencesUpdateComponentPreference::String(s) => {
-                            Value::String(s.clone())
-                        }
-                    };
+                    let value = Value::String(value.clone());
                     if !valid_preference_value(&value) {
                         return None;
                     }
-                    next.component_preferences.insert(key.clone(), value);
+                    next.component_preferences.insert(change.key.clone(), value);
                 }
             }
         }
@@ -222,7 +218,7 @@ fn merge(current: &Stored, update: &AccountPreferencesUpdate) -> Option<Stored> 
 /// 线上请求必须恰好是合同形状：生成类型会默默丢弃未知字段，这里以往返比较拒绝它们。
 fn parse_update(raw: &Value) -> Option<AccountPreferencesUpdate> {
     let typed: AccountPreferencesUpdate = serde_json::from_value(raw.clone()).ok()?;
-    // `null` 删除键在类型里是 `None`，序列化后仍为 null；顶层可选字段缺省即省略。
+    // 可选字段缺省即省略（删除键是不带 value 的项），往返后必须与原文一致。
     let round = serde_json::to_value(&typed).ok()?;
     if round != *raw || typed.expected_version < 0 {
         return None;
@@ -394,12 +390,14 @@ mod tests {
             assert!(!valid_preference_key(bad), "{bad}");
         }
         assert!(!valid_preference_key(&format!("a.{}", "b".repeat(63))));
-        assert!(valid_preference_value(&json!(true)));
-        assert!(valid_preference_value(&json!("cm")));
+        for ok in ["true", "false", "cm"] {
+            assert!(valid_preference_value(&json!(ok)), "{ok}");
+        }
         for bad in [
             json!(""),
             json!("a b"),
             json!("x".repeat(33)),
+            json!(true),
             json!(1),
             json!(null),
             json!({}),
@@ -409,7 +407,7 @@ mod tests {
     }
 
     #[test]
-    fn partial_update_merges_and_null_removes_a_preference() {
+    fn partial_update_merges_and_an_entry_without_value_removes_it() {
         let mut current = Stored {
             theme: Some("buzz".into()),
             version: 3,
@@ -420,12 +418,16 @@ mod tests {
             .insert("documents.unit".into(), json!("cm"));
         current
             .component_preferences
-            .insert("answers.showSql".into(), json!(true));
+            .insert("answers.showSql".into(), json!("true"));
         let update = parse_update(&json!({
             "expectedVersion": 3,
             "locale": "en",
             "followSystem": false,
-            "componentPreferences": {"documents.unit": null, "answers.showSql": false, "documents.ruler": true}
+            "componentPreferences": [
+                {"key": "documents.unit"},
+                {"key": "documents.ruler", "value": "true"},
+                {"key": "answers.showSql", "value": "false"}
+            ]
         }))
         .unwrap();
         let next = merge(&current, &update).unwrap();
@@ -434,11 +436,17 @@ mod tests {
         assert_eq!(next.follow_system, Some(false));
         assert_eq!(
             Value::Object(next.component_preferences.clone()),
-            json!({"answers.showSql": false, "documents.ruler": true})
+            json!({"answers.showSql": "false", "documents.ruler": "true"})
         );
         let view = serde_json::to_value(next.view()).unwrap();
         assert_eq!(view["locale"], "en");
-        assert_eq!(view["componentPreferences"]["documents.ruler"], true);
+        assert_eq!(
+            view["componentPreferences"],
+            json!([
+                {"key": "answers.showSql", "value": "false"},
+                {"key": "documents.ruler", "value": "true"}
+            ])
+        );
     }
 
     #[test]
@@ -449,6 +457,10 @@ mod tests {
             json!({"expectedVersion": 0, "unknown": 1}),
             json!({"expectedVersion": 0, "locale": "fr"}),
             json!({"expectedVersion": "0"}),
+            json!({"expectedVersion": 0, "componentPreferences": [{"key": "a.b", "value": true}]}),
+            json!({"expectedVersion": 0, "componentPreferences": [{"key": "a.b", "value": null}]}),
+            json!({"expectedVersion": 0, "componentPreferences": [{"key": "a.b", "other": "x"}]}),
+            json!({"expectedVersion": 0, "componentPreferences": {"a.b": "x"}}),
         ] {
             assert!(parse_update(&raw).is_none(), "{raw}");
         }
@@ -456,13 +468,16 @@ mod tests {
         for raw in [
             json!({"expectedVersion": 0, "theme": "Bad Theme"}),
             json!({"expectedVersion": 0, "accent": "red"}),
-            json!({"expectedVersion": 0, "componentPreferences": {"nodots": true}}),
-            json!({"expectedVersion": 0, "componentPreferences": {"a.b": "free text"}}),
+            json!({"expectedVersion": 0, "componentPreferences": [{"key": "nodots", "value": "true"}]}),
+            json!({"expectedVersion": 0, "componentPreferences": [{"key": "a.b", "value": "free text"}]}),
+            json!({"expectedVersion": 0, "componentPreferences": [{"key": "a.b", "value": "x"}, {"key": "a.b"}]}),
         ] {
             let update = parse_update(&raw).unwrap();
             assert!(merge(&current, &update).is_none(), "{raw}");
         }
-        let many: Map<String, Value> = (0..65).map(|i| (format!("a.k{i}"), json!(true))).collect();
+        let many: Vec<Value> = (0..65)
+            .map(|i| json!({"key": format!("a.k{i}"), "value": "true"}))
+            .collect();
         let update =
             parse_update(&json!({"expectedVersion": 0, "componentPreferences": many})).unwrap();
         assert!(merge(&current, &update).is_none());
@@ -471,6 +486,6 @@ mod tests {
     #[test]
     fn an_account_without_preferences_reads_as_version_zero() {
         let view = serde_json::to_value(Stored::default().view()).unwrap();
-        assert_eq!(view, json!({"componentPreferences": {}, "version": 0}));
+        assert_eq!(view, json!({"componentPreferences": [], "version": 0}));
     }
 }

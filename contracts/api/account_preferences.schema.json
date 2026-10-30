@@ -24,23 +24,36 @@
     "locale": {
       "type": "string",
       "enum": [
-        "zh-CN",
-        "en"
-      ]
+        "en",
+        "zh-CN"
+      ],
+      "description": "Kailo UI language (REQ-08)."
     },
     "componentPreferences": {
-      "type": "object",
-      "description": "DD-138 contributed preference values by key (07 §4.8.2 key format): boolean or an option value of 1-32 [A-Za-z0-9._-]. At most 64 keys.",
-      "additionalProperties": {
-        "type": [
-          "boolean",
-          "string"
-        ]
+      "type": "array",
+      "description": "DD-138 contributed preference values, at most 64, ordered by key.",
+      "items": {
+        "title": "AccountComponentPreference",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "key",
+          "value"
+        ],
+        "properties": {
+          "key": {
+            "type": "string",
+            "description": "07 §4.8.2 preference key."
+          },
+          "value": {
+            "type": "string",
+            "description": "BOOLEAN as true/false, ENUM as the option value (1-32 [A-Za-z0-9._-])."
+          }
+        }
       }
     },
     "version": {
       "type": "integer",
-      "minimum": 0,
       "description": "0 before the first write."
     },
     "updatedAt": {

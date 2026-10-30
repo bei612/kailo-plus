@@ -17,8 +17,6 @@
   "properties": {
     "schema": {
       "type": "integer",
-      "minimum": 2,
-      "maximum": 2,
       "description": "Always 2."
     },
     "bindingId": {

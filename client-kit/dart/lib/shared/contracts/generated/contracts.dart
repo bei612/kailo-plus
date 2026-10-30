@@ -4320,6 +4320,8 @@ final protocolSessionModeValues = EnumValues({
   "VIEW": ProtocolSessionMode.VIEW,
 });
 
+///Kailo UI language (REQ-08).
+///
 ///系统通知文案的语言；通知不含正文。
 enum ProtocolSessionLocale { EN, ZH_CN }
 
@@ -5220,10 +5222,11 @@ class AccountPreferences {
   ///neutral, kailo-brand or #rrggbb.
   final String? accent;
 
-  ///DD-138 contributed preference values by key (07 §4.8.2 key format): boolean or an option
-  ///value of 1-32 [A-Za-z0-9._-]. At most 64 keys.
-  final Map<String, dynamic> componentPreferences;
+  ///DD-138 contributed preference values, at most 64, ordered by key.
+  final List<AccountComponentPreference> componentPreferences;
   final bool? followSystem;
+
+  ///Kailo UI language (REQ-08).
   final ProtocolSessionLocale? locale;
 
   ///Theme name, 1-64 of [a-z0-9-].
@@ -5246,9 +5249,11 @@ class AccountPreferences {
   factory AccountPreferences.fromJson(Map<String, dynamic> json) =>
       AccountPreferences(
         accent: json["accent"],
-        componentPreferences: Map.from(
-          json["componentPreferences"],
-        ).map((k, v) => MapEntry<String, dynamic>(k, v)),
+        componentPreferences: List<AccountComponentPreference>.from(
+          json["componentPreferences"].map(
+            (x) => AccountComponentPreference.fromJson(x),
+          ),
+        ),
         followSystem: json["followSystem"],
         locale: json["locale"] == null
             ? null
@@ -5260,9 +5265,9 @@ class AccountPreferences {
 
   Map<String, dynamic> toJson() => _stripNulls({
     "accent": accent,
-    "componentPreferences": Map.from(
-      componentPreferences,
-    ).map((k, v) => MapEntry<String, dynamic>(k, v)),
+    "componentPreferences": List<dynamic>.from(
+      componentPreferences.map((x) => x.toJson()),
+    ),
     "followSystem": followSystem,
     "locale": protocolSessionLocaleValues.reverse[locale],
     "theme": theme,
@@ -5271,14 +5276,31 @@ class AccountPreferences {
   });
 }
 
+class AccountComponentPreference {
+  ///07 §4.8.2 preference key.
+  final String key;
+
+  ///BOOLEAN as true/false, ENUM as the option value (1-32 [A-Za-z0-9._-]).
+  final String value;
+
+  AccountComponentPreference({required this.key, required this.value});
+
+  factory AccountComponentPreference.fromJson(Map<String, dynamic> json) =>
+      AccountComponentPreference(key: json["key"], value: json["value"]);
+
+  Map<String, dynamic> toJson() => _stripNulls({"key": key, "value": value});
+}
+
 ///PUT /api/v1/account/preferences (DD-164(7)): compare-and-swap on version; absent fields
-///are unchanged, componentPreferences entries are merged by key and a null value removes
-///the key. 409 returns the current AccountPreferences.
+///are unchanged, componentPreferences entries are merged by key and an entry without value
+///removes the key. 409 returns the current AccountPreferences.
 class AccountPreferencesUpdate {
   final String? accent;
-  final Map<String, dynamic>? componentPreferences;
+  final List<AccountComponentPreferenceChange>? componentPreferences;
   final int expectedVersion;
   final bool? followSystem;
+
+  ///Kailo UI language (REQ-08).
   final ProtocolSessionLocale? locale;
   final String? theme;
 
@@ -5296,9 +5318,11 @@ class AccountPreferencesUpdate {
         accent: json["accent"],
         componentPreferences: json["componentPreferences"] == null
             ? null
-            : Map.from(
-                json["componentPreferences"]!,
-              ).map((k, v) => MapEntry<String, dynamic>(k, v)),
+            : List<AccountComponentPreferenceChange>.from(
+                json["componentPreferences"]!.map(
+                  (x) => AccountComponentPreferenceChange.fromJson(x),
+                ),
+              ),
         expectedVersion: json["expectedVersion"],
         followSystem: json["followSystem"],
         locale: json["locale"] == null
@@ -5311,14 +5335,27 @@ class AccountPreferencesUpdate {
     "accent": accent,
     "componentPreferences": componentPreferences == null
         ? null
-        : Map.from(
-            componentPreferences!,
-          ).map((k, v) => MapEntry<String, dynamic>(k, v)),
+        : List<dynamic>.from(componentPreferences!.map((x) => x.toJson())),
     "expectedVersion": expectedVersion,
     "followSystem": followSystem,
     "locale": protocolSessionLocaleValues.reverse[locale],
     "theme": theme,
   });
+}
+
+class AccountComponentPreferenceChange {
+  final String key;
+
+  ///Absent removes the key.
+  final String? value;
+
+  AccountComponentPreferenceChange({required this.key, this.value});
+
+  factory AccountComponentPreferenceChange.fromJson(
+    Map<String, dynamic> json,
+  ) => AccountComponentPreferenceChange(key: json["key"], value: json["value"]);
+
+  Map<String, dynamic> toJson() => _stripNulls({"key": key, "value": value});
 }
 
 ///GET /api/v1/workspaces/{workspaceId}/agent-turns（DD-125(6)）：已准入 Workspace 内本人持有
@@ -12200,16 +12237,14 @@ final componentReceiptOutcomeValues = EnumValues({
 class ComponentDirectoryReceiptView {
   final String? appliedAt;
   final String bindingId;
+
+  ///The directory version last served to the component for the reported schema.
   final String? currentVersion;
   final List<ComponentReceiptFailureView>? failures;
   final String? receiptVersion;
   final String? receivedAt;
   final int? schema;
-
-  ///CONVERGED: receipt APPLIED for the current version; PENDING: different version for at
-  ///most two read intervals; NOT_CONVERGED: different for longer; FAILED: latest receipt
-  ///FAILED; NO_RECEIPT: never reported.
-  final ComponentDirectoryReceiptViewState state;
+  final ComponentDirectoryReceiptState state;
 
   ComponentDirectoryReceiptView({
     this.appliedAt,
@@ -12237,7 +12272,7 @@ class ComponentDirectoryReceiptView {
         receiptVersion: json["receiptVersion"],
         receivedAt: json["receivedAt"],
         schema: json["schema"],
-        state: componentDirectoryReceiptViewStateValues.map[json["state"]]!,
+        state: componentDirectoryReceiptStateValues.map[json["state"]]!,
       );
 
   Map<String, dynamic> toJson() => _stripNulls({
@@ -12250,7 +12285,7 @@ class ComponentDirectoryReceiptView {
     "receiptVersion": receiptVersion,
     "receivedAt": receivedAt,
     "schema": schema,
-    "state": componentDirectoryReceiptViewStateValues.reverse[state],
+    "state": componentDirectoryReceiptStateValues.reverse[state],
   });
 }
 
@@ -12279,10 +12314,11 @@ class ComponentReceiptFailureView {
   });
 }
 
-///CONVERGED: receipt APPLIED for the current version; PENDING: different version for at
-///most two read intervals; NOT_CONVERGED: different for longer; FAILED: latest receipt
-///FAILED; NO_RECEIPT: never reported.
-enum ComponentDirectoryReceiptViewState {
+///DD-164(4)⑥: CONVERGED: the latest receipt is APPLIED for the version last served to the
+///component; PENDING: a newer version was served within two read intervals; NOT_CONVERGED:
+///the component has not applied what it was served for longer, or stopped reading for more
+///than two intervals; FAILED: the latest receipt is FAILED; NO_RECEIPT: never reported.
+enum ComponentDirectoryReceiptState {
   CONVERGED,
   FAILED,
   NOT_CONVERGED,
@@ -12290,12 +12326,12 @@ enum ComponentDirectoryReceiptViewState {
   PENDING,
 }
 
-final componentDirectoryReceiptViewStateValues = EnumValues({
-  "CONVERGED": ComponentDirectoryReceiptViewState.CONVERGED,
-  "FAILED": ComponentDirectoryReceiptViewState.FAILED,
-  "NOT_CONVERGED": ComponentDirectoryReceiptViewState.NOT_CONVERGED,
-  "NO_RECEIPT": ComponentDirectoryReceiptViewState.NO_RECEIPT,
-  "PENDING": ComponentDirectoryReceiptViewState.PENDING,
+final componentDirectoryReceiptStateValues = EnumValues({
+  "CONVERGED": ComponentDirectoryReceiptState.CONVERGED,
+  "FAILED": ComponentDirectoryReceiptState.FAILED,
+  "NOT_CONVERGED": ComponentDirectoryReceiptState.NOT_CONVERGED,
+  "NO_RECEIPT": ComponentDirectoryReceiptState.NO_RECEIPT,
+  "PENDING": ComponentDirectoryReceiptState.PENDING,
 });
 
 ///Read-only member directory snapshot for an embedded component (.design/07 §4.7.4,

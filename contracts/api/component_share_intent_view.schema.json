@@ -45,8 +45,7 @@
       "description": "Present once the object is a component.shared_object Resource."
     },
     "resourceVersion": {
-      "type": "integer",
-      "minimum": 1
+      "type": "integer"
     },
     "ownerPrincipalId": {
       "type": "string",

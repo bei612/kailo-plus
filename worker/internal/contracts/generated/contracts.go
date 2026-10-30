@@ -1233,9 +1233,6 @@
 
 package generated
 
-import "bytes"
-import "errors"
-
 import "encoding/json"
 
 func UnmarshalCanary(data []byte) (Canary, error) {
@@ -5924,11 +5921,11 @@ type AdapterSearchResult struct {
 type AccountPreferences struct {
 	// neutral, kailo-brand or #rrggbb.
 	Accent *string `json:"accent,omitempty"`
-	// DD-138 contributed preference values by key (07 §4.8.2 key format): boolean or an option
-	// value of 1-32 [A-Za-z0-9._-]. At most 64 keys.
-	ComponentPreferences map[string]*AccountPreferencesComponentPreference `json:"componentPreferences"`
-	FollowSystem         *bool                                             `json:"followSystem,omitempty"`
-	Locale               *ProtocolSessionLocale                            `json:"locale,omitempty"`
+	// DD-138 contributed preference values, at most 64, ordered by key.
+	ComponentPreferences []AccountComponentPreference `json:"componentPreferences"`
+	FollowSystem         *bool                        `json:"followSystem,omitempty"`
+	// Kailo UI language (REQ-08).
+	Locale *ProtocolSessionLocale `json:"locale,omitempty"`
 	// Theme name, 1-64 of [a-z0-9-].
 	Theme     *string `json:"theme,omitempty"`
 	UpdatedAt *string `json:"updatedAt,omitempty"`
@@ -5936,16 +5933,30 @@ type AccountPreferences struct {
 	Version int64 `json:"version"`
 }
 
+type AccountComponentPreference struct {
+	// 07 §4.8.2 preference key.
+	Key string `json:"key"`
+	// BOOLEAN as true/false, ENUM as the option value (1-32 [A-Za-z0-9._-]).
+	Value string `json:"value"`
+}
+
 // PUT /api/v1/account/preferences (DD-164(7)): compare-and-swap on version; absent fields
-// are unchanged, componentPreferences entries are merged by key and a null value removes
-// the key. 409 returns the current AccountPreferences.
+// are unchanged, componentPreferences entries are merged by key and an entry without value
+// removes the key. 409 returns the current AccountPreferences.
 type AccountPreferencesUpdate struct {
-	Accent               *string                                                 `json:"accent,omitempty"`
-	ComponentPreferences map[string]*AccountPreferencesUpdateComponentPreference `json:"componentPreferences,omitempty"`
-	ExpectedVersion      int64                                                   `json:"expectedVersion"`
-	FollowSystem         *bool                                                   `json:"followSystem,omitempty"`
-	Locale               *ProtocolSessionLocale                                  `json:"locale,omitempty"`
-	Theme                *string                                                 `json:"theme,omitempty"`
+	Accent               *string                            `json:"accent,omitempty"`
+	ComponentPreferences []AccountComponentPreferenceChange `json:"componentPreferences,omitempty"`
+	ExpectedVersion      int64                              `json:"expectedVersion"`
+	FollowSystem         *bool                              `json:"followSystem,omitempty"`
+	// Kailo UI language (REQ-08).
+	Locale *ProtocolSessionLocale `json:"locale,omitempty"`
+	Theme  *string                `json:"theme,omitempty"`
+}
+
+type AccountComponentPreferenceChange struct {
+	Key string `json:"key"`
+	// Absent removes the key.
+	Value *string `json:"value,omitempty"`
 }
 
 // GET /api/v1/workspaces/{workspaceId}/agent-turns（DD-125(6)）：已准入 Workspace 内本人持有
@@ -7559,17 +7570,15 @@ type ComponentReceiptFailure struct {
 // GET /api/v1/application-bindings/{bindingId}/directory-receipt for binding managers
 // (DD-164(4)⑥): the latest receipt compared with the current directory version.
 type ComponentDirectoryReceiptView struct {
-	AppliedAt      *string                       `json:"appliedAt,omitempty"`
-	BindingID      string                        `json:"bindingId"`
-	CurrentVersion *string                       `json:"currentVersion,omitempty"`
-	Failures       []ComponentReceiptFailureView `json:"failures,omitempty"`
-	ReceiptVersion *string                       `json:"receiptVersion,omitempty"`
-	ReceivedAt     *string                       `json:"receivedAt,omitempty"`
-	Schema         *int64                        `json:"schema,omitempty"`
-	// CONVERGED: receipt APPLIED for the current version; PENDING: different version for at
-	// most two read intervals; NOT_CONVERGED: different for longer; FAILED: latest receipt
-	// FAILED; NO_RECEIPT: never reported.
-	State ComponentDirectoryReceiptViewState `json:"state"`
+	AppliedAt *string `json:"appliedAt,omitempty"`
+	BindingID string  `json:"bindingId"`
+	// The directory version last served to the component for the reported schema.
+	CurrentVersion *string                        `json:"currentVersion,omitempty"`
+	Failures       []ComponentReceiptFailureView  `json:"failures,omitempty"`
+	ReceiptVersion *string                        `json:"receiptVersion,omitempty"`
+	ReceivedAt     *string                        `json:"receivedAt,omitempty"`
+	Schema         *int64                         `json:"schema,omitempty"`
+	State          ComponentDirectoryReceiptState `json:"state"`
 }
 
 type ComponentReceiptFailureView struct {
@@ -11880,6 +11889,8 @@ const (
 	View ProtocolSessionMode = "VIEW"
 )
 
+// Kailo UI language (REQ-08).
+//
 // 系统通知文案的语言；通知不含正文。
 type ProtocolSessionLocale string
 
@@ -12833,17 +12844,18 @@ const (
 	ComponentReceiptOutcomeFAILED  ComponentReceiptOutcome = "FAILED"
 )
 
-// CONVERGED: receipt APPLIED for the current version; PENDING: different version for at
-// most two read intervals; NOT_CONVERGED: different for longer; FAILED: latest receipt
-// FAILED; NO_RECEIPT: never reported.
-type ComponentDirectoryReceiptViewState string
+// DD-164(4)⑥: CONVERGED: the latest receipt is APPLIED for the version last served to the
+// component; PENDING: a newer version was served within two read intervals; NOT_CONVERGED:
+// the component has not applied what it was served for longer, or stopped reading for more
+// than two intervals; FAILED: the latest receipt is FAILED; NO_RECEIPT: never reported.
+type ComponentDirectoryReceiptState string
 
 const (
-	ComponentDirectoryReceiptViewStateFAILED  ComponentDirectoryReceiptViewState = "FAILED"
-	ComponentDirectoryReceiptViewStatePENDING ComponentDirectoryReceiptViewState = "PENDING"
-	Converged                                 ComponentDirectoryReceiptViewState = "CONVERGED"
-	NoReceipt                                 ComponentDirectoryReceiptViewState = "NO_RECEIPT"
-	NotConverged                              ComponentDirectoryReceiptViewState = "NOT_CONVERGED"
+	ComponentDirectoryReceiptStateFAILED  ComponentDirectoryReceiptState = "FAILED"
+	ComponentDirectoryReceiptStatePENDING ComponentDirectoryReceiptState = "PENDING"
+	Converged                             ComponentDirectoryReceiptState = "CONVERGED"
+	NoReceipt                             ComponentDirectoryReceiptState = "NO_RECEIPT"
+	NotConverged                          ComponentDirectoryReceiptState = "NOT_CONVERGED"
 )
 
 // 成员目录中的 Kailo 角色（.design/07 §4.7.4、DD-133(4)）：SpiceDB 对 Tenant 或 Workspace 有 `manage` 为
@@ -13845,155 +13857,3 @@ const (
 	NativeScopeResultFOUND NativeScopeResult = "FOUND"
 	Refused                NativeScopeResult = "REFUSED"
 )
-
-type AccountPreferencesComponentPreference struct {
-	Bool   *bool
-	String *string
-}
-
-func (x *AccountPreferencesComponentPreference) UnmarshalJSON(data []byte) error {
-	object, err := unmarshalUnion(data, nil, nil, &x.Bool, &x.String, false, nil, false, nil, false, nil, false, nil, false)
-	if err != nil {
-		return err
-	}
-	if object {
-	}
-	return nil
-}
-
-func (x *AccountPreferencesComponentPreference) MarshalJSON() ([]byte, error) {
-	return marshalUnion(nil, nil, x.Bool, x.String, false, nil, false, nil, false, nil, false, nil, false)
-}
-
-type AccountPreferencesUpdateComponentPreference struct {
-	Bool   *bool
-	String *string
-}
-
-func (x *AccountPreferencesUpdateComponentPreference) UnmarshalJSON(data []byte) error {
-	object, err := unmarshalUnion(data, nil, nil, &x.Bool, &x.String, false, nil, false, nil, false, nil, false, nil, true)
-	if err != nil {
-		return err
-	}
-	if object {
-	}
-	return nil
-}
-
-func (x *AccountPreferencesUpdateComponentPreference) MarshalJSON() ([]byte, error) {
-	return marshalUnion(nil, nil, x.Bool, x.String, false, nil, false, nil, false, nil, false, nil, true)
-}
-
-func unmarshalUnion(data []byte, pi **int64, pf **float64, pb **bool, ps **string, haveArray bool, pa interface{}, haveObject bool, pc interface{}, haveMap bool, pm interface{}, haveEnum bool, pe interface{}, nullable bool) (bool, error) {
-	if pi != nil {
-		*pi = nil
-	}
-	if pf != nil {
-		*pf = nil
-	}
-	if pb != nil {
-		*pb = nil
-	}
-	if ps != nil {
-		*ps = nil
-	}
-
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.UseNumber()
-	tok, err := dec.Token()
-	if err != nil {
-		return false, err
-	}
-
-	switch v := tok.(type) {
-	case json.Number:
-		if pi != nil {
-			i, err := v.Int64()
-			if err == nil {
-				*pi = &i
-				return false, nil
-			}
-		}
-		if pf != nil {
-			f, err := v.Float64()
-			if err == nil {
-				*pf = &f
-				return false, nil
-			}
-			return false, errors.New("Unparsable number")
-		}
-		return false, errors.New("Union does not contain number")
-	case float64:
-		return false, errors.New("Decoder should not return float64")
-	case bool:
-		if pb != nil {
-			*pb = &v
-			return false, nil
-		}
-		return false, errors.New("Union does not contain bool")
-	case string:
-		if haveEnum {
-			return false, json.Unmarshal(data, pe)
-		}
-		if ps != nil {
-			*ps = &v
-			return false, nil
-		}
-		return false, errors.New("Union does not contain string")
-	case nil:
-		if nullable {
-			return false, nil
-		}
-		return false, errors.New("Union does not contain null")
-	case json.Delim:
-		if v == '{' {
-			if haveObject {
-				return true, json.Unmarshal(data, pc)
-			}
-			if haveMap {
-				return false, json.Unmarshal(data, pm)
-			}
-			return false, errors.New("Union does not contain object")
-		}
-		if v == '[' {
-			if haveArray {
-				return false, json.Unmarshal(data, pa)
-			}
-			return false, errors.New("Union does not contain array")
-		}
-		return false, errors.New("Cannot handle delimiter")
-	}
-	return false, errors.New("Cannot unmarshal union")
-
-}
-
-func marshalUnion(pi *int64, pf *float64, pb *bool, ps *string, haveArray bool, pa interface{}, haveObject bool, pc interface{}, haveMap bool, pm interface{}, haveEnum bool, pe interface{}, nullable bool) ([]byte, error) {
-	if pi != nil {
-		return json.Marshal(*pi)
-	}
-	if pf != nil {
-		return json.Marshal(*pf)
-	}
-	if pb != nil {
-		return json.Marshal(*pb)
-	}
-	if ps != nil {
-		return json.Marshal(*ps)
-	}
-	if haveArray {
-		return json.Marshal(pa)
-	}
-	if haveObject {
-		return json.Marshal(pc)
-	}
-	if haveMap {
-		return json.Marshal(pm)
-	}
-	if haveEnum {
-		return json.Marshal(pe)
-	}
-	if nullable {
-		return json.Marshal(nil)
-	}
-	return nil, errors.New("Union must not be null")
-}

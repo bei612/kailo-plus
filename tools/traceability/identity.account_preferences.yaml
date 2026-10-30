@@ -29,7 +29,7 @@ implementation:
     - core/crates/platform-core/src/bff.rs
   surfaces: [web, desktop]
   schemas: [contracts/api/account_preferences.schema.json, contracts/api/account_preferences_update.schema.json]
-  migrations: [core/migrations/20261102010000_account_preferences.up.sql]
+  migrations: [core/migrations/20261102020000_account_preferences.up.sql]
 
 runtime:
   routes: ["/api/v1/account/preferences"]

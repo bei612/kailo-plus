@@ -728,6 +728,8 @@ pub enum ProtocolSessionMode {
     View,
 }
 
+/// Kailo UI language (REQ-08).
+///
 /// 系统通知文案的语言；通知不含正文。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -1243,13 +1245,13 @@ pub struct AccountPreferences {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub accent: Option<String>,
 
-    /// DD-138 contributed preference values by key (07 §4.8.2 key format): boolean or an option
-    /// value of 1-32 [A-Za-z0-9._-]. At most 64 keys.
-    pub component_preferences: HashMap<String, AccountPreferencesComponentPreference>,
+    /// DD-138 contributed preference values, at most 64, ordered by key.
+    pub component_preferences: Vec<AccountComponentPreference>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub follow_system: Option<bool>,
 
+    /// Kailo UI language (REQ-08).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub locale: Option<ProtocolSessionLocale>,
 
@@ -1265,16 +1267,17 @@ pub struct AccountPreferences {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum AccountPreferencesComponentPreference {
-    Bool(bool),
+pub struct AccountComponentPreference {
+    /// 07 §4.8.2 preference key.
+    pub key: String,
 
-    String(String),
+    /// BOOLEAN as true/false, ENUM as the option value (1-32 [A-Za-z0-9._-]).
+    pub value: String,
 }
 
 /// PUT /api/v1/account/preferences (DD-164(7)): compare-and-swap on version; absent fields
-/// are unchanged, componentPreferences entries are merged by key and a null value removes
-/// the key. 409 returns the current AccountPreferences.
+/// are unchanged, componentPreferences entries are merged by key and an entry without value
+/// removes the key. 409 returns the current AccountPreferences.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AccountPreferencesUpdate {
@@ -1282,14 +1285,14 @@ pub struct AccountPreferencesUpdate {
     pub accent: Option<String>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub component_preferences:
-        Option<HashMap<String, Option<AccountPreferencesUpdateComponentPreference>>>,
+    pub component_preferences: Option<Vec<AccountComponentPreferenceChange>>,
 
     pub expected_version: i64,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub follow_system: Option<bool>,
 
+    /// Kailo UI language (REQ-08).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub locale: Option<ProtocolSessionLocale>,
 
@@ -1298,11 +1301,12 @@ pub struct AccountPreferencesUpdate {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum AccountPreferencesUpdateComponentPreference {
-    Bool(bool),
+pub struct AccountComponentPreferenceChange {
+    pub key: String,
 
-    String(String),
+    /// Absent removes the key.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub value: Option<String>,
 }
 
 /// GET /api/v1/workspaces/{workspaceId}/agent-turns（DD-125(6)）：已准入 Workspace 内本人持有
@@ -5529,6 +5533,7 @@ pub struct ComponentDirectoryReceiptView {
 
     pub binding_id: String,
 
+    /// The directory version last served to the component for the reported schema.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub current_version: Option<String>,
 
@@ -5544,10 +5549,7 @@ pub struct ComponentDirectoryReceiptView {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub schema: Option<i64>,
 
-    /// CONVERGED: receipt APPLIED for the current version; PENDING: different version for at
-    /// most two read intervals; NOT_CONVERGED: different for longer; FAILED: latest receipt
-    /// FAILED; NO_RECEIPT: never reported.
-    pub state: ComponentDirectoryReceiptViewState,
+    pub state: ComponentDirectoryReceiptState,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -5561,12 +5563,13 @@ pub struct ComponentReceiptFailureView {
     pub component_receipt_failure_view_ref: String,
 }
 
-/// CONVERGED: receipt APPLIED for the current version; PENDING: different version for at
-/// most two read intervals; NOT_CONVERGED: different for longer; FAILED: latest receipt
-/// FAILED; NO_RECEIPT: never reported.
+/// DD-164(4)⑥: CONVERGED: the latest receipt is APPLIED for the version last served to the
+/// component; PENDING: a newer version was served within two read intervals; NOT_CONVERGED:
+/// the component has not applied what it was served for longer, or stopped reading for more
+/// than two intervals; FAILED: the latest receipt is FAILED; NO_RECEIPT: never reported.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum ComponentDirectoryReceiptViewState {
+pub enum ComponentDirectoryReceiptState {
     Converged,
 
     Failed,
