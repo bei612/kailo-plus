@@ -142,6 +142,12 @@
 //    adapterSourceResource, err := UnmarshalAdapterSourceResource(bytes)
 //    bytes, err = adapterSourceResource.Marshal()
 //
+//    accountPreferences, err := UnmarshalAccountPreferences(bytes)
+//    bytes, err = accountPreferences.Marshal()
+//
+//    accountPreferencesUpdate, err := UnmarshalAccountPreferencesUpdate(bytes)
+//    bytes, err = accountPreferencesUpdate.Marshal()
+//
 //    actionCommand, err := UnmarshalActionCommand(bytes)
 //    bytes, err = actionCommand.Marshal()
 //
@@ -358,8 +364,17 @@
 //    componentConformanceWireObservation, err := UnmarshalComponentConformanceWireObservation(bytes)
 //    bytes, err = componentConformanceWireObservation.Marshal()
 //
+//    componentDirectoryReceiptRequest, err := UnmarshalComponentDirectoryReceiptRequest(bytes)
+//    bytes, err = componentDirectoryReceiptRequest.Marshal()
+//
+//    componentDirectoryReceiptView, err := UnmarshalComponentDirectoryReceiptView(bytes)
+//    bytes, err = componentDirectoryReceiptView.Marshal()
+//
 //    componentMemberDirectory, err := UnmarshalComponentMemberDirectory(bytes)
 //    bytes, err = componentMemberDirectory.Marshal()
+//
+//    componentMemberDirectoryV2, err := UnmarshalComponentMemberDirectoryV2(bytes)
+//    bytes, err = componentMemberDirectoryV2.Marshal()
 //
 //    componentNotificationDelivery, err := UnmarshalComponentNotificationDelivery(bytes)
 //    bytes, err = componentNotificationDelivery.Marshal()
@@ -390,6 +405,15 @@
 //
 //    componentSearchQuery, err := UnmarshalComponentSearchQuery(bytes)
 //    bytes, err = componentSearchQuery.Marshal()
+//
+//    componentShareIntentCreated, err := UnmarshalComponentShareIntentCreated(bytes)
+//    bytes, err = componentShareIntentCreated.Marshal()
+//
+//    componentShareIntentRequest, err := UnmarshalComponentShareIntentRequest(bytes)
+//    bytes, err = componentShareIntentRequest.Marshal()
+//
+//    componentShareIntentView, err := UnmarshalComponentShareIntentView(bytes)
+//    bytes, err = componentShareIntentView.Marshal()
 //
 //    conversationOpenRequest, err := UnmarshalConversationOpenRequest(bytes)
 //    bytes, err = conversationOpenRequest.Marshal()
@@ -960,6 +984,15 @@
 //
 //    componentReleaseRegistration, err := UnmarshalComponentReleaseRegistration(bytes)
 //    bytes, err = componentReleaseRegistration.Marshal()
+//
+//    componentShareGrant, err := UnmarshalComponentShareGrant(bytes)
+//    bytes, err = componentShareGrant.Marshal()
+//
+//    componentShareSet, err := UnmarshalComponentShareSet(bytes)
+//    bytes, err = componentShareSet.Marshal()
+//
+//    componentShareSubject, err := UnmarshalComponentShareSubject(bytes)
+//    bytes, err = componentShareSubject.Marshal()
 //
 //    componentText, err := UnmarshalComponentText(bytes)
 //    bytes, err = componentText.Marshal()
@@ -1669,6 +1702,26 @@ func UnmarshalAdapterSourceResource(data []byte) (AdapterSourceResource, error) 
 }
 
 func (r *AdapterSourceResource) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalAccountPreferences(data []byte) (AccountPreferences, error) {
+	var r AccountPreferences
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AccountPreferences) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalAccountPreferencesUpdate(data []byte) (AccountPreferencesUpdate, error) {
+	var r AccountPreferencesUpdate
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AccountPreferencesUpdate) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -2392,6 +2445,26 @@ func (r *ComponentConformanceWireObservation) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
+func UnmarshalComponentDirectoryReceiptRequest(data []byte) (ComponentDirectoryReceiptRequest, error) {
+	var r ComponentDirectoryReceiptRequest
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ComponentDirectoryReceiptRequest) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalComponentDirectoryReceiptView(data []byte) (ComponentDirectoryReceiptView, error) {
+	var r ComponentDirectoryReceiptView
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ComponentDirectoryReceiptView) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
 func UnmarshalComponentMemberDirectory(data []byte) (ComponentMemberDirectory, error) {
 	var r ComponentMemberDirectory
 	err := json.Unmarshal(data, &r)
@@ -2399,6 +2472,16 @@ func UnmarshalComponentMemberDirectory(data []byte) (ComponentMemberDirectory, e
 }
 
 func (r *ComponentMemberDirectory) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalComponentMemberDirectoryV2(data []byte) (ComponentMemberDirectoryV2, error) {
+	var r ComponentMemberDirectoryV2
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ComponentMemberDirectoryV2) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -2499,6 +2582,36 @@ func UnmarshalComponentSearchQuery(data []byte) (ComponentSearchQuery, error) {
 }
 
 func (r *ComponentSearchQuery) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalComponentShareIntentCreated(data []byte) (ComponentShareIntentCreated, error) {
+	var r ComponentShareIntentCreated
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ComponentShareIntentCreated) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalComponentShareIntentRequest(data []byte) (ComponentShareIntentRequest, error) {
+	var r ComponentShareIntentRequest
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ComponentShareIntentRequest) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalComponentShareIntentView(data []byte) (ComponentShareIntentView, error) {
+	var r ComponentShareIntentView
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ComponentShareIntentView) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -4402,6 +4515,36 @@ func (r *ComponentReleaseRegistration) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
+func UnmarshalComponentShareGrant(data []byte) (ComponentShareGrant, error) {
+	var r ComponentShareGrant
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ComponentShareGrant) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalComponentShareSet(data []byte) (ComponentShareSet, error) {
+	var r ComponentShareSet
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ComponentShareSet) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalComponentShareSubject(data []byte) (ComponentShareSubject, error) {
+	var r ComponentShareSubject
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ComponentShareSubject) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
 func UnmarshalComponentText(data []byte) (ComponentText, error) {
 	var r ComponentText
 	err := json.Unmarshal(data, &r)
@@ -5770,6 +5913,50 @@ type AdapterSearchResult struct {
 	Summary   *string                   `json:"summary,omitempty"`
 	Title     string                    `json:"title"`
 	UpdatedAt *string                   `json:"updatedAt,omitempty"`
+}
+
+// GET /api/v1/account/preferences (DD-164(7)): the signed-in HumanIdentity's account
+// preferences, shared by every Tenant and device. Absent fields have never been set;
+// clients fall back to their defaults.
+type AccountPreferences struct {
+	// neutral, kailo-brand or #rrggbb.
+	Accent *string `json:"accent,omitempty"`
+	// DD-138 contributed preference values, at most 64, ordered by key.
+	ComponentPreferences []AccountComponentPreference `json:"componentPreferences"`
+	FollowSystem         *bool                        `json:"followSystem,omitempty"`
+	// Kailo UI language (REQ-08).
+	Locale *ProtocolSessionLocale `json:"locale,omitempty"`
+	// Theme name, 1-64 of [a-z0-9-].
+	Theme     *string `json:"theme,omitempty"`
+	UpdatedAt *string `json:"updatedAt,omitempty"`
+	// 0 before the first write.
+	Version int64 `json:"version"`
+}
+
+type AccountComponentPreference struct {
+	// 07 §4.8.2 preference key.
+	Key string `json:"key"`
+	// BOOLEAN as true/false, ENUM as the option value (1-32 [A-Za-z0-9._-]).
+	Value string `json:"value"`
+}
+
+// PUT /api/v1/account/preferences (DD-164(7)): compare-and-swap on version; absent fields
+// are unchanged, componentPreferences entries are merged by key and an entry without value
+// removes the key. 409 returns the current AccountPreferences.
+type AccountPreferencesUpdate struct {
+	Accent               *string                            `json:"accent,omitempty"`
+	ComponentPreferences []AccountComponentPreferenceChange `json:"componentPreferences,omitempty"`
+	ExpectedVersion      int64                              `json:"expectedVersion"`
+	FollowSystem         *bool                              `json:"followSystem,omitempty"`
+	// Kailo UI language (REQ-08).
+	Locale *ProtocolSessionLocale `json:"locale,omitempty"`
+	Theme  *string                `json:"theme,omitempty"`
+}
+
+type AccountComponentPreferenceChange struct {
+	Key string `json:"key"`
+	// Absent removes the key.
+	Value *string `json:"value,omitempty"`
 }
 
 // GET /api/v1/workspaces/{workspaceId}/agent-turns（DD-125(6)）：已准入 Workspace 内本人持有
@@ -7359,6 +7546,47 @@ type CapabilityVectorCapture struct {
 	Slot    CapabilityVectorCaptureSlot `json:"slot"`
 }
 
+// PUT /service/v1/component-directory/bindings/{bindingId}/receipt (DD-164(4)⑥): the
+// component reports the last directory snapshot it fully applied or failed to apply. No
+// personal data; grants nothing; never changes the directory.
+type ComponentDirectoryReceiptRequest struct {
+	AppliedAt string `json:"appliedAt"`
+	// 64 lowercase hex characters.
+	DirectoryVersion string                    `json:"directoryVersion"`
+	Failures         []ComponentReceiptFailure `json:"failures"`
+	Outcome          ComponentReceiptOutcome   `json:"outcome"`
+	Schema           int64                     `json:"schema"`
+}
+
+type ComponentReceiptFailure struct {
+	Kind ComponentReceiptFailureKind `json:"kind"`
+	// Upper snake case, at most 64 characters, e.g. NATIVE_OBJECT_MISSING.
+	ReasonCode string `json:"reasonCode"`
+	// Kailo id of the failed item (principalId, workspaceId, tenantId or resourceId), at most
+	// 64 characters.
+	Ref string `json:"ref"`
+}
+
+// GET /api/v1/application-bindings/{bindingId}/directory-receipt for binding managers
+// (DD-164(4)⑥): the latest receipt compared with the current directory version.
+type ComponentDirectoryReceiptView struct {
+	AppliedAt *string `json:"appliedAt,omitempty"`
+	BindingID string  `json:"bindingId"`
+	// The directory version last served to the component for the reported schema.
+	CurrentVersion *string                        `json:"currentVersion,omitempty"`
+	Failures       []ComponentReceiptFailureView  `json:"failures,omitempty"`
+	ReceiptVersion *string                        `json:"receiptVersion,omitempty"`
+	ReceivedAt     *string                        `json:"receivedAt,omitempty"`
+	Schema         *int64                         `json:"schema,omitempty"`
+	State          ComponentDirectoryReceiptState `json:"state"`
+}
+
+type ComponentReceiptFailureView struct {
+	Kind       ComponentReceiptFailureKind `json:"kind"`
+	ReasonCode string                      `json:"reasonCode"`
+	Ref        string                      `json:"ref"`
+}
+
 // Read-only member directory snapshot for an embedded component (.design/07 §4.7.4,
 // DD-133(4)): every ACTIVE HUMAN member in the native page entry binding's scope with Kailo
 // display name, avatar URL, Tenant role and ACTIVE Workspace memberships. A full snapshot,
@@ -7408,6 +7636,90 @@ type ComponentDirectoryTenant struct {
 }
 
 type ComponentDirectoryWorkspace struct {
+	Name        string `json:"name"`
+	WorkspaceID string `json:"workspaceId"`
+}
+
+// Member directory snapshot schema 2 (.design/07 §4.7.4, DD-164(2)(4)): schema 1 plus Kailo
+// create permissions and the Resource-level share projection. Served only for ?schema=2;
+// directoryVersion is the SHA-256 (hex) of the canonical JSON of every other field of this
+// response.
+type ComponentMemberDirectoryV2 struct {
+	BindingID string `json:"bindingId"`
+	// Lowercase hex SHA-256 of the canonical JSON of this snapshot without directoryVersion;
+	// unchanged content keeps the same version.
+	DirectoryVersion string                       `json:"directoryVersion"`
+	Members          []ComponentDirectoryV2Member `json:"members"`
+	// Always 2.
+	Schema int64 `json:"schema"`
+	// Every ACTIVE component.shared_object Resource of this binding, ordered by resourceId.
+	Shares []ComponentDirectoryShare  `json:"shares"`
+	Tenant ComponentDirectoryV2Tenant `json:"tenant"`
+	// Every ACTIVE Workspace in the binding scope (only the binding's own Workspace when it has
+	// one).
+	Workspaces []ComponentDirectoryV2Workspace `json:"workspaces"`
+}
+
+type ComponentDirectoryV2Member struct {
+	// Kailo display name: the member's SERVER HUMAN kind:0 display_name (else name), else the
+	// HumanIdentity display name.
+	DisplayName string `json:"displayName"`
+	// One entry per ACTIVE external identity; the component keys its account on issuer +
+	// subject.
+	Identities  []ComponentDirectoryV2Identity `json:"identities"`
+	PrincipalID string                         `json:"principalId"`
+	// SpiceDB Tenant create for this principal (fully consistent).
+	TenantCreate bool                             `json:"tenantCreate"`
+	TenantRole   ComponentDirectoryRole           `json:"tenantRole"`
+	Workspaces   []ComponentDirectoryV2Membership `json:"workspaces"`
+}
+
+type ComponentDirectoryV2Identity struct {
+	Issuer string `json:"issuer"`
+	// <PUBLIC_ORIGIN>/api/v1/identity/avatars/<subject>, the same value as the IdP picture
+	// claim.
+	Picture string `json:"picture"`
+	Subject string `json:"subject"`
+}
+
+type ComponentDirectoryV2Membership struct {
+	// SpiceDB Workspace create for this principal (fully consistent).
+	Create      bool                   `json:"create"`
+	Role        ComponentDirectoryRole `json:"role"`
+	WorkspaceID string                 `json:"workspaceId"`
+}
+
+type ComponentDirectoryShare struct {
+	// Owner first as WRITE, then the reader/editor relationships whose subject is still in this
+	// snapshot, ordered by subject kind, id and access.
+	Grants           []ComponentShareGrant     `json:"grants"`
+	NativeID         string                    `json:"nativeId"`
+	NativeType       ComponentSharedNativeType `json:"nativeType"`
+	OwnerPrincipalID string                    `json:"ownerPrincipalId"`
+	ResourceID       string                    `json:"resourceId"`
+}
+
+// DD-164(4): one grant on a component shared object. TENANT subjects only accept READ.
+type ComponentShareGrant struct {
+	Access  ComponentShareAccess  `json:"access"`
+	Subject ComponentShareSubject `json:"subject"`
+}
+
+// DD-164(4): grantee of a component shared object. PRINCIPAL carries principalId (a
+// same-Tenant ACTIVE HUMAN), WORKSPACE carries workspaceId (an ACTIVE Workspace of the
+// Tenant), TENANT carries neither.
+type ComponentShareSubject struct {
+	Kind        ComponentShareSubjectKind `json:"kind"`
+	PrincipalID *string                   `json:"principalId,omitempty"`
+	WorkspaceID *string                   `json:"workspaceId,omitempty"`
+}
+
+type ComponentDirectoryV2Tenant struct {
+	Name     string `json:"name"`
+	TenantID string `json:"tenantId"`
+}
+
+type ComponentDirectoryV2Workspace struct {
 	Name        string `json:"name"`
 	WorkspaceID string `json:"workspaceId"`
 }
@@ -7578,6 +7890,56 @@ type ComponentSearchQuery struct {
 	Limit  *int64  `json:"limit,omitempty"`
 	Locale *string `json:"locale,omitempty"`
 	Q      string  `json:"q"`
+}
+
+// Answer to a share intent: the opaque intent the component passes to the Kailo host in
+// wire v1 {type: share}.
+type ComponentShareIntentCreated struct {
+	ExpiresAt string `json:"expiresAt"`
+	IntentID  string `json:"intentId"`
+}
+
+// POST /service/v1/component-directory/bindings/{bindingId}/share-intents (DD-164(4)②): the
+// component service names the native object its user wants to share. Only sent when the
+// initiator may share the object natively; grants nothing.
+type ComponentShareIntentRequest struct {
+	Initiator ComponentShareInitiator `json:"initiator"`
+	// Display name, 1-200 characters.
+	Name string `json:"name"`
+	// 1-255 visible characters: Cells node UUID or WeKnora knowledge base ID.
+	NativeID   string                    `json:"nativeId"`
+	NativeType ComponentSharedNativeType `json:"nativeType"`
+	// The Kailo Workspace whose root contains the object, absent for Tenant-level objects.
+	WorkspaceID *string `json:"workspaceId,omitempty"`
+}
+
+type ComponentShareInitiator struct {
+	Issuer  string `json:"issuer"`
+	Subject string `json:"subject"`
+}
+
+// GET /api/v1/component-shares/intents/{intentId} (DD-164(4)③): what the Kailo share dialog
+// shows. Readable only by the intent's initiator in a current session; an expired, consumed
+// or foreign intent is 404.
+type ComponentShareIntentView struct {
+	// folder: PRINCIPAL, WORKSPACE, TENANT; knowledge_base: WORKSPACE, TENANT (phase 1).
+	AllowedSubjects []ComponentShareSubjectKind `json:"allowedSubjects"`
+	BindingID       string                      `json:"bindingId"`
+	// Fresh share on the existing Resource, or true for the initiator before the first share.
+	CanShare  bool   `json:"canShare"`
+	ExpiresAt string `json:"expiresAt"`
+	// Current grants without the owner.
+	Grants   []ComponentShareGrant `json:"grants"`
+	IntentID string                `json:"intentId"`
+	Name     string                `json:"name"`
+	// file_storage or knowledge.
+	NativePageCategory string                    `json:"nativePageCategory"`
+	NativeType         ComponentSharedNativeType `json:"nativeType"`
+	OwnerPrincipalID   *string                   `json:"ownerPrincipalId,omitempty"`
+	// Present once the object is a component.shared_object Resource.
+	ResourceID      *string `json:"resourceId,omitempty"`
+	ResourceVersion *int64  `json:"resourceVersion,omitempty"`
+	WorkspaceID     *string `json:"workspaceId,omitempty"`
 }
 
 type ConversationPage struct {
@@ -8675,7 +9037,9 @@ type ActionCommand struct {
 	// 仅组件批准：已登记的不可变ComponentRelease标识。
 	ComponentReleaseID           *string                       `json:"componentReleaseId,omitempty"`
 	ComponentReleaseRegistration *ComponentReleaseRegistration `json:"componentReleaseRegistration,omitempty"`
-	ConversationOpen             *ConversationOpenRequest      `json:"conversationOpen,omitempty"`
+	// 仅 component.share.set（DD-164(4)）且必带；其他动作携带即拒绝。
+	ComponentShareSet *ComponentShareSet       `json:"componentShareSet,omitempty"`
+	ConversationOpen  *ConversationOpenRequest `json:"conversationOpen,omitempty"`
 	// 仅 agent.delegation.grant：明确有效期、次数、确切动作与目标和最大结果暴露；不允许隐式通配。
 	DelegationGrant *DelegationGrantParameters `json:"delegationGrant,omitempty"`
 	// 显式 Delegation 管理的稳定 Grant ID；授予者提供新 ID，撤销引用实际已有 ID。
@@ -8941,6 +9305,19 @@ type ComponentReleaseRegistration struct {
 	BindingConfigSchemaJSON string `json:"bindingConfigSchemaJson"`
 	ManifestJSON            string `json:"manifestJson"`
 	PackageJSON             string `json:"packageJson"`
+}
+
+// 仅 component.share.set（DD-164(4)）且必带；其他动作携带即拒绝。
+//
+// Only component.share.set (DD-164(4)③) and required for it: the share intent naming the
+// native object, the expected Resource version when the object is already a
+// component.shared_object Resource (absent on the first share), and the complete grant list
+// that replaces the current one (owner is implicit and never listed). At most 100 grants,
+// no duplicate subject.
+type ComponentShareSet struct {
+	Grants          []ComponentShareGrant `json:"grants"`
+	IntentID        string                `json:"intentId"`
+	ResourceVersion *int64                `json:"resourceVersion,omitempty"`
 }
 
 // 原生私聊的完整 HUMAN Principal 参与者集合，必须包含当前 HUMAN；不接受设备公钥、CONTROL 身份或 Workspace 冒名。
@@ -11512,6 +11889,8 @@ const (
 	View ProtocolSessionMode = "VIEW"
 )
 
+// Kailo UI language (REQ-08).
+//
 // 系统通知文案的语言；通知不含正文。
 type ProtocolSessionLocale string
 
@@ -12304,9 +12683,9 @@ const (
 type BusinessOperationPhase string
 
 const (
-	Applied                                 BusinessOperationPhase = "APPLIED"
 	AwaitingApproval                        BusinessOperationPhase = "AWAITING_APPROVAL"
 	BusinessOperationPhaseABORTED           BusinessOperationPhase = "ABORTED"
+	BusinessOperationPhaseAPPLIED           BusinessOperationPhase = "APPLIED"
 	BusinessOperationPhaseCANCELED          BusinessOperationPhase = "CANCELED"
 	BusinessOperationPhaseCOMPLETED         BusinessOperationPhase = "COMPLETED"
 	BusinessOperationPhaseDENIED            BusinessOperationPhase = "DENIED"
@@ -12447,13 +12826,74 @@ const (
 	Result                                             ComponentConformanceStepExpectedMCPResultKind = "RESULT"
 )
 
+// DD-164(4)⑥: the directory part a convergence failure item refers to.
+type ComponentReceiptFailureKind string
+
+const (
+	ComponentReceiptFailureKindMEMBER    ComponentReceiptFailureKind = "MEMBER"
+	ComponentReceiptFailureKindSHARE     ComponentReceiptFailureKind = "SHARE"
+	ComponentReceiptFailureKindTENANT    ComponentReceiptFailureKind = "TENANT"
+	ComponentReceiptFailureKindWORKSPACE ComponentReceiptFailureKind = "WORKSPACE"
+)
+
+// DD-164(4)⑥: whether the component fully applied the reported directory snapshot.
+type ComponentReceiptOutcome string
+
+const (
+	ComponentReceiptOutcomeAPPLIED ComponentReceiptOutcome = "APPLIED"
+	ComponentReceiptOutcomeFAILED  ComponentReceiptOutcome = "FAILED"
+)
+
+// DD-164(4)⑥: CONVERGED: the latest receipt is APPLIED for the version last served to the
+// component; PENDING: a newer version was served within two read intervals; NOT_CONVERGED:
+// the component has not applied what it was served for longer, or stopped reading for more
+// than two intervals; FAILED: the latest receipt is FAILED; NO_RECEIPT: never reported.
+type ComponentDirectoryReceiptState string
+
+const (
+	ComponentDirectoryReceiptStateFAILED  ComponentDirectoryReceiptState = "FAILED"
+	ComponentDirectoryReceiptStatePENDING ComponentDirectoryReceiptState = "PENDING"
+	Converged                             ComponentDirectoryReceiptState = "CONVERGED"
+	NoReceipt                             ComponentDirectoryReceiptState = "NO_RECEIPT"
+	NotConverged                          ComponentDirectoryReceiptState = "NOT_CONVERGED"
+)
+
 // 成员目录中的 Kailo 角色（.design/07 §4.7.4、DD-133(4)）：SpiceDB 对 Tenant 或 Workspace 有 `manage` 为
 // ADMIN，否则 MEMBER。只供组件派生自身角色，不授予 Kailo 侧任何权限。
 type ComponentDirectoryRole string
 
 const (
-	Admin  ComponentDirectoryRole = "ADMIN"
-	Member ComponentDirectoryRole = "MEMBER"
+	Admin                        ComponentDirectoryRole = "ADMIN"
+	ComponentDirectoryRoleMEMBER ComponentDirectoryRole = "MEMBER"
+)
+
+// DD-164(4): access granted on a component shared object. READ writes the SpiceDB reader
+// relationship, WRITE writes editor.
+type ComponentShareAccess string
+
+const (
+	ComponentShareAccessREAD  ComponentShareAccess = "READ"
+	ComponentShareAccessWRITE ComponentShareAccess = "WRITE"
+)
+
+// DD-164(4): who a component shared object is granted to: one Tenant HUMAN member, every
+// member of a Workspace (workspace#member), or every Tenant member (tenant#member, READ
+// only).
+type ComponentShareSubjectKind string
+
+const (
+	ComponentShareSubjectKindTENANT    ComponentShareSubjectKind = "TENANT"
+	ComponentShareSubjectKindWORKSPACE ComponentShareSubjectKind = "WORKSPACE"
+	Principal                          ComponentShareSubjectKind = "PRINCIPAL"
+)
+
+// DD-164(4) shareable native object types, fixed per presentation category: file_storage ->
+// folder, knowledge -> knowledge_base (phase 1).
+type ComponentSharedNativeType string
+
+const (
+	ComponentSharedNativeTypeFolder        ComponentSharedNativeType = "folder"
+	ComponentSharedNativeTypeKnowledgeBase ComponentSharedNativeType = "knowledge_base"
 )
 
 // DD-138(4)、07 §4.8.3：组件投递到 Kailo 收件箱的通知类别（封闭枚举）。SHARED 分享给你；MENTIONED 提及你；COMMENTED
@@ -12772,9 +13212,9 @@ const (
 type MCPConnectionVisibility string
 
 const (
-	MCPConnectionVisibilityTENANT MCPConnectionVisibility = "TENANT"
-	Personal                      MCPConnectionVisibility = "PERSONAL"
-	Workspace                     MCPConnectionVisibility = "WORKSPACE"
+	MCPConnectionVisibilityTENANT    MCPConnectionVisibility = "TENANT"
+	MCPConnectionVisibilityWORKSPACE MCPConnectionVisibility = "WORKSPACE"
+	Personal                         MCPConnectionVisibility = "PERSONAL"
 )
 
 // DD-149(4)：Tenant 连接器策略中普通成员的登记权限。
