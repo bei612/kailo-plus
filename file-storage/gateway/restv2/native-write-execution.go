@@ -96,6 +96,16 @@ func (h *Handler) executeNativePromote(req *restful.Request, resp *restful.Respo
 		input["displayName"] != path.Base(node.GetPath()) || input["mediaType"] != node.GetStringMeta(common.MetaNamespaceMime) || versions.PolicyForNode(ctx, node) == nil {
 		return refused
 	}
+	// The REST read above is workspace-relative (<workspace slug>/...). The
+	// original VersionAction copies through the version store's admin router,
+	// which addresses the datasource tree; hand it the same node, read under the
+	// same actor, at its internal datasource path.
+	indexed, err := h.UuidClient(false).ReadNode(ctx, &tree.ReadNodeRequest{Node: &tree.Node{Uuid: nodeID}})
+	internal := indexed.GetNode()
+	if err != nil || internal.GetUuid() != nodeID || internal.GetType() != tree.NodeType_LEAF ||
+		path.Base(internal.GetPath()) != path.Base(node.GetPath()) {
+		return refused
+	}
 	revisionResponse, err := versionClient(ctx).HeadVersion(ctx, &tree.HeadVersionRequest{NodeUuid: nodeID, VersionId: draftID})
 	draft := revisionResponse.GetVersion()
 	if err != nil || draft.GetVersionId() != draftID || !draft.GetDraft() || draft.GetOwnerUuid() != current.Subject || draft.GetSize() < 0 || draft.GetETag() == "" || draft.GetLocation() == nil {
@@ -133,7 +143,7 @@ func (h *Handler) executeNativePromote(req *restful.Request, resp *restful.Respo
 	// not the live head that a later native upload may already have replaced.
 	actionCtx := context.WithValue(ctx, jobstore.ClaimedTaskContextKey{}, true)
 	actionCtx = propagator.WithAdditionalMetadata(actionCtx, map[string]string{common.CtxMetaTaskUuid: key[0], common.CtxMetaTaskActionPath: (&versions.VersionAction{}).GetName()})
-	source := node.Clone()
+	source := internal.Clone()
 	source.MustSetMeta(common.MetaNamespaceVersionId, draftID)
 	// The original VersionAction owns its internal version-store writes. As in
 	// the fixed native job, only this archive/owned-draft cleanup uses its system
