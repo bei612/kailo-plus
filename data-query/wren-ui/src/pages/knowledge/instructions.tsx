@@ -41,7 +41,8 @@ import {
 
 const { Paragraph } = Typography;
 
-const recent = (item: Instruction) => item.updatedAt || item.createdAt || '';
+type Dated = { updatedAt?: string | null; createdAt?: string | null };
+const recent = (item: Dated) => item.updatedAt || item.createdAt || '';
 
 // DD-167 (`20` §15.1/§15.3/§15.4): 知识 › 指令. A bounded list counted and
 // paged in the browser (instruction, where it applies, creator, updated),
@@ -124,7 +125,7 @@ export default function ManageInstructions() {
       instructionDrawer.openDrawer(data);
     }
   };
-  const view = (record: Instruction) =>
+  const view = (record: unknown) =>
     onMoreClick({ type: MORE_ACTION.VIEW_INSTRUCTION, data: record });
 
   const columns: TableColumnsType<Instruction> = [
