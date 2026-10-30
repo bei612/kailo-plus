@@ -33,7 +33,7 @@ const diff:ProjectsGitQueryResponse={view:ProjectsGitQueryRequestView.Diff,diff:
 
 function fixture(git=true){
   const review=event("2",1618,[["a",repository],["subject","Original review"],["p",viewer],["c",head],["branch-name","feature"],["target-branch","release"]],"Review body");
-  const rows=[event("8",30617,[["d","repo"],["name","Original repo"],["clone","https://example.test/repo.git"]]),
+  const rows=[event("8",30617,[["d","repo"],["name","Original repo"],["clone",`https://relay.example.test/git/${owner}/repo.git`]]),
     event("9",30621,[["d","project"],["name","Original project"],["a",repository]]),review,
     event("7",30618,[["d","repo"],["HEAD","ref: refs/heads/main"],["refs/heads/main",commit.hash],["refs/tags/main",head]])];
   const kinds:Record<string,number[]>={PROJECTS:[30621],REPOSITORIES:[30617],DELETIONS:[5],WORK_ITEMS:[1618,1621],WORK_ITEM_ACTIVITY:[1,1619,1630,1631,1632,1633],REPOSITORY_STATES:[30618]};

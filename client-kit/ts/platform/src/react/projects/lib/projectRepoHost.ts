@@ -1,6 +1,8 @@
 // Buzz 779af8886caae1317b4de962082429867ab61503
 // desktop/src/features/projects/lib/projectRepoHost.ts (projectRepoHost,
-// projectRepoHostForRepository, repositoryDisplayPath), used by the repository cards.
+// projectRepoHostForRepository, repositoryDisplayPath), used by the repository cards, and
+// desktop/src/features/projects/useProjectRepoHost.ts (useProjectRepoPresentation: remote label,
+// external link and clone gating) for the project detail checkout controls.
 // DD-118: the governed Projects read names a repository by its 30617 coordinate and carries no
 // Relay origin, so "hosted here" is decided from the announcement itself: an explicit clone URL with
 // the canonical `/git/<owner>/<repo>` path of that same owner is a Kailo-hosted repository and any
@@ -13,7 +15,7 @@ export type ProjectRepoHost =
   | { kind: "external"; host: string }
   | { kind: "unresolved" };
 
-type RepositoryHostInput = { cloneUrls: string[]; dtag: string; owner: string };
+type RepositoryHostInput = { cloneUrls: string[]; dtag: string; owner: string; webUrl?: string | null };
 
 const CANONICAL_PATH = /^\/git\/([0-9a-f]{64})\/([^/]+?)(?:\.git)?\/?$/i;
 
@@ -50,4 +52,43 @@ export function repositoryDisplayPath(repository: RepositoryHostInput | null | u
   } catch {
     return null;
   }
+}
+
+export type ProjectRepoPresentation = {
+  host: ProjectRepoHost;
+  /** The announcement's web page, only when it is an http(s) URL. */
+  webUrl: string | null;
+  /**
+   * DD-160(1): the Desktop host clones only by 30617 coordinate from the admitted Relay, so only a
+   * Kailo-hosted repository can be checked out locally. The original also allowed github.com
+   * clones; Kailo never hands an announced URL to git, so those stay remote-only.
+   */
+  canCloneLocally: boolean;
+  /** Original remote dropdown: the external host as the remote label plus an "open" link. */
+  controls: { externalUrl: string | null; remoteKind?: "kailo" | "external"; remoteLabel: string | null };
+};
+
+function safeWebUrl(value: string | null | undefined): string | null {
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" || url.protocol === "http:" ? url.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
+export function projectRepoPresentation(repository: RepositoryHostInput | null | undefined): ProjectRepoPresentation {
+  const host = projectRepoHostForRepository(repository);
+  const webUrl = safeWebUrl(repository?.webUrl);
+  return {
+    host,
+    webUrl,
+    canCloneLocally: host.kind === "kailo",
+    controls: {
+      externalUrl: host.kind === "external" ? webUrl : null,
+      remoteKind: host.kind === "unresolved" ? undefined : host.kind,
+      remoteLabel: host.kind === "external" ? host.host : null,
+    },
+  };
 }

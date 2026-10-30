@@ -2332,6 +2332,7 @@ export const platformMessages = {
   "projects.checkout.remote": { en: "Remote", "zh-CN": "远程" },
   "projects.checkout.local": { en: "Local", "zh-CN": "本机" },
   "projects.checkout.clone": { en: "Clone", "zh-CN": "克隆" },
+  "projects.checkout.openRemote": { en: "Open on {host}", "zh-CN": "在 {host} 打开" },
   "projects.checkout.pull": { en: "Pull", "zh-CN": "拉取" },
   "projects.checkout.push": { en: "Push", "zh-CN": "推送" },
   "projects.checkout.retry": { en: "Reconcile and retry the same push", "zh-CN": "对账并重试原推送" },

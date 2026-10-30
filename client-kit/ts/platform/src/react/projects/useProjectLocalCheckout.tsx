@@ -8,7 +8,7 @@
 // user-chosen repositories directory.
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Cloud, DownloadCloud, FolderOpen, HardDrive, Loader2, SquareTerminal, UploadCloud } from "lucide-react";
+import { Cloud, DownloadCloud, ExternalLink, FolderOpen, HardDrive, Loader2, SquareTerminal, UploadCloud } from "lucide-react";
 import { toast } from "sonner";
 import { useUiT } from "../context";
 import { Button } from "../profile/buzz/shared/ui/button";
@@ -21,6 +21,7 @@ import { PROJECT_PICKER_TRIGGER_CLASS } from "./projectPanelStyles";
 import { isOutcomeUnknown } from "../../transport";
 import { useFocusedRefetchInterval } from "./useProjectAppFocus";
 import { showProjectCloneErrorToast } from "./lib/projectGitError";
+import { projectRepoPresentation } from "./lib/projectRepoHost";
 
 export type ProjectCheckoutSource = { source: "remote" | "local"; onChange: (source: "remote" | "local") => void };
 
@@ -91,7 +92,8 @@ export function useProjectLocalCheckout(host: ProjectsHost, repository: Reposito
       ]);
     },
   });
-  return { available: Boolean(checkout), terminalAvailable: Boolean(checkout?.openProjectTerminal), readOnly, source, selectSource, status, snapshot, mutation };
+  const presentation = projectRepoPresentation(repository);
+  return { available: Boolean(checkout), terminalAvailable: Boolean(checkout?.openProjectTerminal), readOnly, source, selectSource, status, snapshot, mutation, presentation };
 }
 
 export type ProjectLocalCheckoutState = ReturnType<typeof useProjectLocalCheckout>;
@@ -104,7 +106,9 @@ export function ProjectLocalCheckoutControls({ state }: { state: ProjectLocalChe
   const pending = status?.pendingPush;
   const busy = state.mutation.isPending || state.status.isFetching;
   const local = Boolean(status?.localPath);
-  const cloneAvailable = state.status.isSuccess && status === null;
+  const cloneAvailable = state.status.isSuccess && status === null && state.presentation.canCloneLocally;
+  const remote = state.presentation.controls;
+  const remoteLabel = remote.remoteLabel ?? t("projects.checkout.remote");
   const Icon = state.source === "local" ? HardDrive : Cloud;
   const actionClass = PROJECT_CONTEXT_ACTION_BUTTON_CLASS;
   const run = (action: "clone" | "push" | "pull" | "open" | "terminal") => state.mutation.mutate(action);
@@ -112,15 +116,16 @@ export function ProjectLocalCheckoutControls({ state }: { state: ProjectLocalChe
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button className={PROJECT_PICKER_TRIGGER_CLASS} size="sm" type="button" variant="outline">
-          <Icon className="h-4 w-4"/>{t(state.source === "local" ? "projects.checkout.local" : "projects.checkout.remote")}
+          <Icon className="h-4 w-4"/>{state.source === "local" ? t("projects.checkout.local") : remoteLabel}
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start">
         <DropdownMenuRadioGroup value={state.source} onValueChange={value => state.selectSource(value === "local" ? "local" : "remote")}>
-          <DropdownMenuRadioItem value="remote"><Cloud className="h-4 w-4"/>{t("projects.checkout.remote")}</DropdownMenuRadioItem>
+          <DropdownMenuRadioItem value="remote" data-remote-kind={remote.remoteKind}><Cloud className="h-4 w-4"/>{remoteLabel}</DropdownMenuRadioItem>
           <DropdownMenuRadioItem value="local" disabled={!local || state.readOnly}><HardDrive className="h-4 w-4"/>{t("projects.checkout.local")}</DropdownMenuRadioItem>
         </DropdownMenuRadioGroup>
         {cloneAvailable && !state.readOnly ? <DropdownMenuItem disabled={busy} onSelect={() => run("clone")}><DownloadCloud className="h-4 w-4"/>{t("projects.checkout.clone")}</DropdownMenuItem> : null}
+        {remote.externalUrl ? <DropdownMenuItem asChild><a data-testid="project-remote-external-link" href={remote.externalUrl} rel="noopener noreferrer" target="_blank"><ExternalLink className="h-4 w-4"/>{t("projects.checkout.openRemote", { host: remote.remoteLabel ?? "" })}</a></DropdownMenuItem> : null}
       </DropdownMenuContent>
     </DropdownMenu>
     {state.status.error ? <p className="text-xs text-destructive" role="alert">{t("projects.checkout.failed")}</p> : null}
