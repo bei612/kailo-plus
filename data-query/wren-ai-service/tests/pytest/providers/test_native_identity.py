@@ -319,7 +319,11 @@ class NativeIdentityTest(unittest.IsolatedAsyncioTestCase):
             "haystack": types.SimpleNamespace(component=Component()),
             "haystack.dataclasses": types.SimpleNamespace(ChatMessage=object),
             "pydantic": types.SimpleNamespace(BaseModel=Model),
-            "src.core.engine": types.SimpleNamespace(Engine=object, clean_generation_result=lambda sql: sql),
+            "src.core.engine": types.SimpleNamespace(
+                Engine=object,
+                SQLGenerationEmpty=type("SQLGenerationEmpty", (RuntimeError,), {}),
+                clean_generation_result=lambda sql: sql,
+            ),
             "src.web.v1.services.ask": types.SimpleNamespace(AskHistory=object),
             "src.providers.engine.native_identity": identity,
             "src.providers.engine.wren": module,
