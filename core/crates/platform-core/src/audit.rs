@@ -92,6 +92,7 @@ pub fn describe(kind: &EvidenceKind) -> (EvidenceAuthority, EvidenceSensitivity)
         | K::BuzzDeletionRequestId
         | K::BuzzDeletionInventoryDigest => (A::Buzz, S::Summary),
         K::ExternalSubjectSha256 => (A::Oidc, S::Restricted),
+        K::IdpSessionTerminationCounts => (A::Oidc, S::Summary),
         K::OpenmeterEventId => (A::Openmeter, S::Summary),
         K::AgentgatewayUsageId => (A::Agentgateway, S::Summary),
         K::PlatformSessionId => (A::Core, S::Restricted),

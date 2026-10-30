@@ -41,6 +41,44 @@ pub struct TransitionRequest {
     pub to_state: String,
     /// 负责这次跃迁的 Workflow。它必须已登记且 kind 属于成员生命周期。
     pub workflow_id: String,
+    /// DD-164(6)：只随 Tenant 撤权跃迁到 REVOKED 出现，是该链结束 IdP 会话的结果计数；
+    /// 在同一事务写审计 `IDP_SESSIONS_TERMINATED`。不含 subject。
+    #[serde(default)]
+    pub identity_provider_sessions: Option<IdpSessionCounts>,
+}
+
+/// IdP 用户退出接口的回应类别计数（Worker `EndSessionsOutput`）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct IdpSessionCounts {
+    pub identities: u32,
+    /// IdP 结束了会话（204）
+    pub ended: u32,
+    /// IdP 中已无该用户（404）
+    pub absent: u32,
+    /// issuer 不是部署 IdP
+    pub foreign: u32,
+}
+
+/// 一次撤权处理的外部身份数上界：Core 冻结的是一个人的身份，远小于此。
+const MAX_IDP_IDENTITIES: u32 = 1000;
+
+impl IdpSessionCounts {
+    fn valid(&self) -> bool {
+        self.identities <= MAX_IDP_IDENTITIES
+            && self
+                .ended
+                .checked_add(self.absent)
+                .and_then(|n| n.checked_add(self.foreign))
+                == Some(self.identities)
+    }
+
+    fn evidence(&self) -> String {
+        format!(
+            "identities={};ended={};user_unknown={};foreign_issuer={}",
+            self.identities, self.ended, self.absent, self.foreign
+        )
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -94,6 +132,11 @@ pub async fn transition_membership(
     )
     .fetch_optional(&state.pool)
     .await;
+    let wf_kind = wf
+        .as_ref()
+        .ok()
+        .and_then(|row| row.as_ref())
+        .and_then(|row| row.kind.clone());
     let (wf_tenant, wf_operation, workspace_creation) = match wf {
         Ok(Some(row))
             if matches!(
@@ -118,6 +161,14 @@ pub async fn transition_membership(
         }
         Err(e) => return unavailable(e),
     };
+
+    // DD-164(6)：IdP 会话计数只属于 Tenant 撤权链进入 REVOKED 的那一次跃迁，且必须自洽。
+    if let Some(counts) = &req.identity_provider_sessions {
+        if !idp_counts_admissible(&req, wf_kind.as_deref(), counts) {
+            tracing::warn!(membership = %req.membership_id, "IdP 会话计数不属于这次跃迁或不自洽");
+            return StatusCode::BAD_REQUEST.into_response();
+        }
+    }
 
     let allowed = match req.scope {
         MembershipScope::Tenant => TENANT_TRANSITIONS,
@@ -299,6 +350,18 @@ pub async fn transition_membership(
             if let Err(e) = append(&mut tx, entry).await {
                 return unavailable(e);
             }
+            // DD-164(6)：结束 IdP 会话的事实与 REVOKED 同事务入审计。
+            if let Some(counts) = &req.identity_provider_sessions {
+                let evidence = counts.evidence();
+                if let Err(e) = append(
+                    &mut tx,
+                    idp_sessions_audit(&req, &evidence, wf_tenant, wf_operation),
+                )
+                .await
+                {
+                    return unavailable(e);
+                }
+            }
             if let Err(e) = tx.commit().await {
                 return unavailable(e);
             }
@@ -331,6 +394,55 @@ pub async fn transition_membership(
             StatusCode::CONFLICT.into_response()
         }
         Err(e) => unavailable(e),
+    }
+}
+
+/// 计数只随 Tenant 撤权 Workflow 把成员推进到 REVOKED 时被接受，且各类别之和等于身份数。
+fn idp_counts_admissible(
+    req: &TransitionRequest,
+    workflow_kind: Option<&str>,
+    counts: &IdpSessionCounts,
+) -> bool {
+    matches!(req.scope, MembershipScope::Tenant)
+        && req.to_state == "REVOKED"
+        && workflow_kind == Some("MEMBERSHIP_REVOCATION")
+        && counts.valid()
+}
+
+/// DD-164(6)：Tenant 撤权结束此人全部 IdP 会话的审计事实 `IDP_SESSIONS_TERMINATED`。
+/// 证据只有处理的身份数与 IdP 回应类别计数，时间即事件时间；不含 subject。
+fn idp_sessions_audit<'a>(
+    req: &'a TransitionRequest,
+    evidence: &'a str,
+    tenant_id: Uuid,
+    operation_id: Uuid,
+) -> AuditEntry<'a> {
+    AuditEntry {
+        event_key: format!(
+            "{}:{}:IDP_SESSIONS_TERMINATED",
+            req.workflow_id, req.membership_id
+        ),
+        tenant_id: Some(tenant_id),
+        workspace_id: None,
+        operation_id,
+        event_type: "REVOCATION",
+        human_identity_id: None,
+        initiator_principal_id: None,
+        actor_principal_id: None,
+        action_key: "membership.idp_sessions.terminate",
+        action_version: 1,
+        component_type_key: "core",
+        target_type: Some("TENANT_MEMBERSHIP"),
+        target_id: Some(req.membership_id),
+        parameter_hash: "REVOKED",
+        decision: "ALLOW",
+        result_code: "IDP_SESSIONS_TERMINATED",
+        result_exposure: "NONE",
+        evidence_refs: vec![
+            Evidence::new(EvidenceKind::TemporalWorkflowId, &req.workflow_id),
+            Evidence::new(EvidenceKind::IdpSessionTerminationCounts, evidence),
+        ],
+        correlation_id: operation_id,
     }
 }
 
@@ -378,5 +490,151 @@ fn membership_audit<'a>(
             &req.workflow_id,
         )],
         correlation_id: operation_id,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn request(
+        scope: MembershipScope,
+        to: &str,
+        counts: Option<IdpSessionCounts>,
+    ) -> TransitionRequest {
+        TransitionRequest {
+            scope,
+            membership_id: Uuid::nil(),
+            from_version: 3,
+            to_state: to.to_owned(),
+            workflow_id: "wf".to_owned(),
+            identity_provider_sessions: counts,
+        }
+    }
+
+    const COUNTS: IdpSessionCounts = IdpSessionCounts {
+        identities: 3,
+        ended: 1,
+        absent: 1,
+        foreign: 1,
+    };
+
+    // DD-164(6)：计数只属于 Tenant 撤权 Workflow 进入 REVOKED 的那次跃迁，且必须自洽。
+    #[test]
+    fn idp_counts_only_on_tenant_revocation_to_revoked() {
+        let ok = request(MembershipScope::Tenant, "REVOKED", Some(COUNTS));
+        assert!(idp_counts_admissible(
+            &ok,
+            Some("MEMBERSHIP_REVOCATION"),
+            &COUNTS
+        ));
+        for (scope, to, kind) in [
+            (
+                MembershipScope::Workspace,
+                "REVOKED",
+                "MEMBERSHIP_REVOCATION",
+            ),
+            (MembershipScope::Tenant, "ERROR", "MEMBERSHIP_REVOCATION"),
+            (MembershipScope::Tenant, "REVOKED", "MEMBERSHIP_PROJECTION"),
+            (MembershipScope::Tenant, "REVOKED", "WORKSPACE_LIFECYCLE"),
+        ] {
+            let req = request(scope, to, Some(COUNTS));
+            assert!(
+                !idp_counts_admissible(&req, Some(kind), &COUNTS),
+                "{to} {kind}"
+            );
+        }
+        for bad in [
+            IdpSessionCounts {
+                identities: 2,
+                ..COUNTS
+            },
+            IdpSessionCounts {
+                identities: 4,
+                ..COUNTS
+            },
+            IdpSessionCounts {
+                identities: 2000,
+                ended: 2000,
+                absent: 0,
+                foreign: 0,
+            },
+            IdpSessionCounts {
+                identities: 0,
+                ended: u32::MAX,
+                absent: 1,
+                foreign: 0,
+            },
+        ] {
+            assert!(!idp_counts_admissible(
+                &ok,
+                Some("MEMBERSHIP_REVOCATION"),
+                &bad
+            ));
+        }
+        let none = IdpSessionCounts {
+            identities: 0,
+            ended: 0,
+            absent: 0,
+            foreign: 0,
+        };
+        assert!(idp_counts_admissible(
+            &ok,
+            Some("MEMBERSHIP_REVOCATION"),
+            &none
+        ));
+    }
+
+    #[test]
+    fn idp_counts_payload_is_closed() {
+        let parsed: TransitionRequest = serde_json::from_value(serde_json::json!({
+            "scope": "TENANT", "membershipId": Uuid::nil(), "fromVersion": 3, "toState": "REVOKED",
+            "workflowId": "wf",
+            "identityProviderSessions": {"identities": 3, "ended": 1, "absent": 1, "foreign": 1}
+        }))
+        .unwrap();
+        assert_eq!(parsed.identity_provider_sessions, Some(COUNTS));
+        let legacy: TransitionRequest = serde_json::from_value(serde_json::json!({
+            "scope": "TENANT", "membershipId": Uuid::nil(), "fromVersion": 3, "toState": "REVOKED",
+            "workflowId": "wf"
+        }))
+        .unwrap();
+        assert_eq!(legacy.identity_provider_sessions, None);
+        assert!(serde_json::from_value::<TransitionRequest>(serde_json::json!({
+            "scope": "TENANT", "membershipId": Uuid::nil(), "fromVersion": 3, "toState": "REVOKED",
+            "workflowId": "wf",
+            "identityProviderSessions": {"identities": 1, "ended": 1, "absent": 0, "foreign": 0, "subject": "x"}
+        }))
+        .is_err());
+    }
+
+    // 审计 IDP_SESSIONS_TERMINATED：REVOCATION 类、独立稳定键、证据只有 workflow 与计数。
+    #[test]
+    fn idp_sessions_audit_carries_counts_not_subjects() {
+        let req = request(MembershipScope::Tenant, "REVOKED", Some(COUNTS));
+        let evidence = COUNTS.evidence();
+        assert_eq!(
+            evidence,
+            "identities=3;ended=1;user_unknown=1;foreign_issuer=1"
+        );
+        let entry = idp_sessions_audit(&req, &evidence, Uuid::nil(), Uuid::nil());
+        assert_eq!(entry.event_type, "REVOCATION");
+        assert_eq!(entry.result_code, "IDP_SESSIONS_TERMINATED");
+        assert_eq!(
+            entry.event_key,
+            format!("wf:{}:IDP_SESSIONS_TERMINATED", Uuid::nil())
+        );
+        assert_ne!(
+            entry.event_key,
+            membership_audit(&req, "REVOKED", Uuid::nil(), Uuid::nil()).event_key
+        );
+        let kinds: Vec<_> = entry.evidence_refs.iter().map(|e| e.kind.clone()).collect();
+        assert_eq!(
+            kinds,
+            [
+                EvidenceKind::TemporalWorkflowId,
+                EvidenceKind::IdpSessionTerminationCounts
+            ]
+        );
     }
 }
