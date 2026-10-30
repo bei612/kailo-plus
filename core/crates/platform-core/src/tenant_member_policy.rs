@@ -441,17 +441,6 @@ pub(super) async fn dispatch(g: &Governance, id: Uuid, def: &Definition) -> Resu
     Ok(())
 }
 
-/// The policy a Tenant manager sees in TenantProfileView.
-pub(crate) async fn policy_of(
-    conn: &mut PgConnection,
-    tenant: Uuid,
-) -> Result<Option<String>, sqlx::Error> {
-    sqlx::query_scalar("select member_create_policy from identity.tenant where id=$1")
-        .bind(tenant)
-        .fetch_optional(conn)
-        .await
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
