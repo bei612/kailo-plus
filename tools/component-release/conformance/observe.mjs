@@ -144,6 +144,16 @@ const volatile = (execution) => {
   return fixed;
 };
 
+// The observation executes under its own seed, so its idempotency key (and an
+// adapter's per-execution native record, e.g. Wren's api_history id) is never
+// the one Core's suite executes. A published expectation therefore names no
+// nativeId: Core requires the suite's own idempotency observations to carry one
+// and to keep it across execute, repeat and observe (production_probe_execute).
+const published = (execution) => {
+  const { nativeId, ...fixed } = volatile(execution);
+  return fixed;
+};
+
 // The seed's record of identities the candidate's native entry returned
 // (seed-cells.mjs V2 output). Copied verbatim; never derived or completed here.
 async function seededPreconditions(path) {
@@ -406,11 +416,12 @@ async function main() {
       protocol: {
         handshake: { expected: handshake },
         validateBinding: { request: bindingRequest, expected: bindingExpected },
-        execution: { ...run.execution, expectedFirst: volatile(first.execution), expectedRepeat: volatile(repeat.execution),
+        execution: { ...run.execution, expectedFirst: published(first.execution), expectedRepeat: published(repeat.execution),
           // The suite's observe request carries the suite context's external id
-          // (conformance-inputs.mjs buildIdentity); the native lookup is by key.
-          observeRequest: { ...observeBody, externalExecutionId: uuidv5(run.seed, 'external:protocol_execution_idempotency') },
-          observeExpected: volatile(observed.execution) },
+          // (conformance-inputs.mjs buildIdentity); the native lookup is by key,
+          // never by this observation's own native record.
+          observeRequest: { externalExecutionId: uuidv5(run.seed, 'external:protocol_execution_idempotency'), nativeType },
+          observeExpected: published(observed.execution) },
         errorMappings,
         redaction: { request: redactionRequest, expected: redacted },
       },
