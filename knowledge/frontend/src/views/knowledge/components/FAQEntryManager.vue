@@ -145,8 +145,11 @@
             </div>
           </div>
           <!-- Card List Container with Scroll -->
+          <div v-if="faqShell" class="kailo-progress" :class="{ 'is-active': loading && entries.length > 0 }"
+            aria-hidden="true" />
           <div ref="scrollContainer" class="faq-scroll-container"
-            :class="{ 'has-batch-bar': selectedRowKeys.length > 0 && canSelectEntries }" @scroll="handleScroll">
+            :class="{ 'has-batch-bar': selectedRowKeys.length > 0 && canSelectEntries, 'is-paging': faqShell && loading && entries.length > 0 }"
+            @scroll="handleScroll">
             <!-- FAQ 骨架屏 -->
             <div v-if="loading && entries.length === 0" class="faq-skeleton-grid">
               <div v-for="n in 6" :key="'faq-skel-' + n" class="faq-card faq-card-skeleton">
@@ -163,6 +166,12 @@
                 </div>
               </div>
             </div>
+            <!-- DD-167: a failed read in place (Kailo shell). -->
+            <KailoStateView v-else-if="faqShell && faqError"
+              :kind="faqError === 'forbidden' ? 'forbidden' : 'error'"
+              :title="faqError === 'forbidden' ? uxText('detail.forbidden') : uxText('faq.error')"
+              :description="faqError === 'forbidden' ? uxText('state.forbidden.askOwner') : uxText(`state.reason.${faqError}` as UxKey)"
+              :action-label="canRetry(faqError) ? uxText('state.retry') : ''" @action="loadEntries()" />
             <!-- Card List -->
             <template v-else-if="entries.length > 0">
               <div ref="cardListRef" class="faq-card-list">
@@ -323,6 +332,13 @@
                 </div>
               </div>
             </template>
+            <template v-else-if="!loading && faqShell">
+              <KailoStateView v-if="entrySearchKeyword || selectedTagIds.length" kind="filtered" compact
+                :title="uxText('faq.filtered')" :description="uxText('doc.filtered.desc')"
+                :action-label="uxText('state.clearFilters')" @action="clearFaqFilters" />
+              <KailoStateView v-else kind="empty" art="chat" :title="$t('knowledgeEditor.faq.emptyTitle')"
+                :description="$t('knowledgeEditor.faq.emptyDesc')" />
+            </template>
             <template v-else-if="!loading">
               <div class="faq-empty-state">
                 <div class="empty-content">
@@ -332,13 +348,15 @@
                 </div>
               </div>
             </template>
-            <div v-if="loadingMore" class="faq-load-more">
+            <div v-if="loadingMore && !faqShell" class="faq-load-more">
               <t-loading size="small" :text="$t('common.loading')" />
             </div>
-            <div v-if="hasMore === false && entries.length > 0" class="faq-no-more">
+            <div v-if="hasMore === false && entries.length > 0 && !faqShell" class="faq-no-more">
               {{ $t('common.noMoreData') }}
             </div>
           </div>
+          <KailoPagination v-if="faqShell && !faqError && faqTotal > 0" class="kailo-faq-pager" :total="faqTotal"
+            :page="faqPage" :page-size="faqPageSize" @update:page="goFaqPage" @update:page-size="setFaqPageSize" />
           <div class="faq-batch-bar-anchor">
             <FAQBatchBar :count="selectedRowKeys.length" :enabled-count="selectedEnabledCount"
               :disabled-count="selectedDisabledCount" :can-edit="canEdit" :can-manage="canManage"
@@ -782,7 +800,7 @@ import { MessagePlugin, DialogPlugin, Icon as TIcon } from 'tdesign-vue-next'
 import { useConfirmDelete } from '@/components/settings/useConfirmDelete'
 import type { FormRules, FormInstanceFunctions } from 'tdesign-vue-next'
 import { useI18n } from 'vue-i18n'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useOrganizationStore } from '@/stores/organization'
 import {
@@ -807,6 +825,12 @@ import FAQTagTooltip from '@/components/FAQTagTooltip.vue'
 import KBInfoPopover from '@/components/KBInfoPopover.vue'
 import KBSwitcherDropdown from '@/components/KBSwitcherDropdown.vue'
 import FAQBatchBar from './FAQBatchBar.vue'
+import KailoPagination from '@/kailo/ui/KailoPagination.vue'
+import KailoStateView from '@/kailo/ui/KailoStateView.vue'
+import { isKailoShell } from '@/kailo/setup'
+import { LIST_PAGE_SIZES, pageCount, patchQuery, queryInt, querySize } from '@/kailo/listing'
+import { canRetry, classifyLoadError, type LoadErrorKind } from '@/kailo/loadState'
+import { ux, type UxKey } from '@/kailo/uxText'
 import KbTagManageDrawer from './KbTagManageDrawer.vue'
 import { useUIStore } from '@/stores/ui'
 
@@ -848,9 +872,20 @@ const props = defineProps<{
   kbId: string
 }>()
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const confirmDelete = useConfirmDelete()
 const router = useRouter()
+const route = useRoute()
+
+// DD-167 (20 §15.3–15.4): inside the Kailo shell the Q&A pairs are paged (page and
+// page size in the route query) and a failed read is shown in place.
+const faqShell = isKailoShell()
+const faqPage = ref(queryInt(route.query.page as string, 1))
+const faqPageSize = ref(querySize(route.query.size as string, LIST_PAGE_SIZES, LIST_PAGE_SIZES[0]))
+const faqTotal = ref(0)
+const faqError = ref<LoadErrorKind | null>(null)
+let faqQueryKey = ''
+const uxText = (key: UxKey, params?: Record<string, string | number>) => ux(key, String(locale.value), params)
 const uiStore = useUIStore()
 const authStore = useAuthStore()
 const orgStore = useOrganizationStore()
@@ -1388,8 +1423,88 @@ const editorRules: FormRules<FAQEntryPayload> = {
   ],
 }
 
+const syncFaqQuery = () => {
+  const query = patchQuery(route.query as Record<string, string>, { page: faqPage.value, size: faqPageSize.value },
+    { page: 1, size: LIST_PAGE_SIZES[0] })
+  void router.replace({ query })
+}
+
+const goFaqPage = (page: number) => {
+  if (page === faqPage.value) return
+  faqPage.value = page
+  syncFaqQuery()
+  void loadEntries()
+  scrollContainer.value?.scrollTo?.({ top: 0 })
+}
+
+const setFaqPageSize = (size: number) => {
+  if (size === faqPageSize.value) return
+  faqPageSize.value = size
+  faqPage.value = 1
+  syncFaqQuery()
+  void loadEntries()
+}
+
+const clearFaqFilters = () => {
+  entrySearchKeyword.value = ''
+  selectedTagIds.value = []
+  void loadEntries()
+}
+
+// Kailo shell: one page of Q&A pairs, the previous page stays visible (60 %) while it loads.
+const loadFaqPage = async () => {
+  const key = JSON.stringify([props.kbId, selectedTagIds.value, entrySearchKeyword.value.trim()])
+  if (faqQueryKey && key !== faqQueryKey && faqPage.value !== 1) {
+    faqPage.value = 1
+    syncFaqQuery()
+  }
+  faqQueryKey = key
+  loading.value = true
+  selectedRowKeys.value = []
+  try {
+    if (overallFAQTotal.value === 0) {
+      const totalRes = await listFAQEntries(props.kbId, { page: 1, page_size: 1 })
+      overallFAQTotal.value = ((totalRes.data || {}) as { total: number }).total || 0
+    }
+    const res = await listFAQEntries(props.kbId, {
+      page: faqPage.value,
+      page_size: faqPageSize.value,
+      tag_ids: selectedTagIds.value.length > 0 ? selectedTagIds.value.join(',') : undefined,
+      keyword: entrySearchKeyword.value ? entrySearchKeyword.value.trim() : undefined,
+    })
+    const pageData = (res.data || {}) as { data: FAQEntry[]; total: number }
+    faqTotal.value = pageData.total || 0
+    faqError.value = null
+    const last = pageCount(faqTotal.value, faqPageSize.value)
+    if ((pageData.data || []).length === 0 && faqTotal.value > 0 && faqPage.value > last) {
+      faqPage.value = last
+      syncFaqQuery()
+      return await loadFaqPage()
+    }
+    entries.value = (pageData.data || []).map(entry => ({
+      ...entry,
+      showMore: false,
+      similarCollapsed: true,
+      negativeCollapsed: true,
+      answersCollapsed: true,
+      is_enabled: entry.is_enabled !== false,
+    }))
+    hasMore.value = false
+    await nextTick()
+    arrangeCards()
+  } catch (error: unknown) {
+    faqError.value = classifyLoadError(error)
+  } finally {
+    loading.value = false
+  }
+}
+
 const loadEntries = async (append = false) => {
   if (!props.kbId) return
+  if (faqShell) {
+    if (!append) await loadFaqPage()
+    return
+  }
   if (append) {
     loadingMore.value = true
   } else {
@@ -1459,6 +1574,7 @@ const loadEntries = async (append = false) => {
 }
 
 const handleScroll = () => {
+  if (faqShell) return
   if (!scrollContainer.value || loadingMore.value || !hasMore.value) return
 
   const container = scrollContainer.value
@@ -1474,6 +1590,7 @@ const handleScroll = () => {
 
 // 检查内容是否填满可视区域，如果没有且还有更多数据，继续加载
 const checkAndLoadMore = () => {
+  if (faqShell) return
   if (!scrollContainer.value) return
   if (loadingMore.value || loading.value) return
   if (!hasMore.value) return

@@ -160,8 +160,11 @@ instance.interceptors.response.use(
       // A timeout and an unreachable server both arrive without a response, but
       // telling someone whose upload timed out to "check your connection" sends
       // them after the wrong problem.
+      const timedOut = isTimeoutError(error);
       return Promise.reject({
-        message: t(isTimeoutError(error) ? 'error.requestTimeout' : 'error.networkError'),
+        message: t(timedOut ? 'error.requestTimeout' : 'error.networkError'),
+        // DD-167: the reason class for in-place error states (src/kailo/loadState.ts).
+        kind: timedOut ? 'timeout' : 'network',
       });
     }
 

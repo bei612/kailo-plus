@@ -366,14 +366,14 @@ func KailoUsageRefusalText(decision, acceptLanguage string) string {
 	switch decision {
 	case KailoUsageTenantQuotaExhausted:
 		if english {
-			return "Your organization's knowledge answer quota for this month is used up. Contact an admin."
+			return "Your organization's Knowledge Engineering answer quota for this month is used up. Contact an admin."
 		}
-		return "组织本月的知识库问答额度已用完，请联系管理员。"
+		return "组织本月的知识工程问答额度已用完，请联系管理员。"
 	case KailoUsageMemberQuotaExhausted:
 		if english {
-			return "Your knowledge answer quota for this month is used up."
+			return "Your Knowledge Engineering answer quota for this month is used up."
 		}
-		return "你本月的知识库问答额度已用完。"
+		return "你本月的知识工程问答额度已用完。"
 	case KailoUsageQuotaNotConfigured:
 		if english {
 			return "Your organization's usage quota is not yet set up in Kailo, so questions cannot be asked yet. Contact an admin."

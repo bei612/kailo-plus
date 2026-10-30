@@ -133,28 +133,36 @@ html[data-kailo-mode]:root:root {
   --td-font-family: var(--kailo-font-sans);
   --td-font-family-mono: var(--kailo-font-mono);
   --td-font-family-medium: var(--kailo-font-sans);
-  --td-font-size-link-small: var(--kailo-font-size-xs);
-  --td-font-size-link-medium: var(--kailo-font-size-sm);
-  --td-font-size-link-large: var(--kailo-font-size-base);
-  --td-font-size-mark-small: var(--kailo-font-size-xs);
-  --td-font-size-mark-medium: var(--kailo-font-size-sm);
-  --td-font-size-body-small: var(--kailo-font-size-xs);
-  --td-font-size-body-medium: var(--kailo-font-size-sm);
-  --td-font-size-body-large: var(--kailo-font-size-base);
-  --td-font-size-title-small: var(--kailo-font-size-sm);
-  --td-font-size-title-medium: var(--kailo-font-size-base);
-  --td-font-size-title-large: var(--kailo-font-size-xl);
-  --td-font-size-headline-small: var(--kailo-font-size-2xl);
-  --td-font-size-headline-medium: var(--kailo-font-size-3xl);
-  --td-font-size-headline-large: var(--kailo-font-size-4xl);
-  --td-font-size-display-medium: var(--kailo-font-size-5xl);
-  --td-font-size-display-large: var(--kailo-font-size-6xl);
-  /* The native dense scale keeps its in-between steps; Kailo steps replace their equals. */
-  --app-text-sm: var(--kailo-font-size-xs);
-  --app-text-base: var(--kailo-font-size-sm);
-  --app-text-xl: var(--kailo-font-size-base);
-  --app-text-3xl: var(--kailo-font-size-xl);
-  --app-text-4xl: var(--kailo-font-size-2xl);
+  /* DD-167 (07 §4.8.10, 20 §15.2): every text size reads Kailo's scaled type ramp
+     (--kailo-text-* already multiply --kailo-type-scale), so Kailo's font size
+     preference resizes text live; steps between the ramp scale the same way. */
+  --td-font-size-link-small: var(--kailo-text-caption);
+  --td-font-size-link-medium: var(--kailo-text-body);
+  --td-font-size-link-large: calc(16px * var(--kailo-type-scale, 1));
+  --td-font-size-mark-small: var(--kailo-text-caption);
+  --td-font-size-mark-medium: var(--kailo-text-body);
+  --td-font-size-body-small: var(--kailo-text-caption);
+  --td-font-size-body-medium: var(--kailo-text-body);
+  --td-font-size-body-large: calc(16px * var(--kailo-type-scale, 1));
+  --td-font-size-title-small: var(--kailo-text-body);
+  --td-font-size-title-medium: calc(16px * var(--kailo-type-scale, 1));
+  --td-font-size-title-large: calc(20px * var(--kailo-type-scale, 1));
+  --td-font-size-headline-small: calc(24px * var(--kailo-type-scale, 1));
+  --td-font-size-headline-medium: var(--kailo-text-display);
+  --td-font-size-headline-large: calc(36px * var(--kailo-type-scale, 1));
+  --td-font-size-display-medium: calc(48px * var(--kailo-type-scale, 1));
+  --td-font-size-display-large: calc(60px * var(--kailo-type-scale, 1));
+  /* The native dense scale (assets/theme/theme.css) on the same ramp. */
+  --app-text-2xs: calc(10px * var(--kailo-type-scale, 1));
+  --app-text-xs: var(--kailo-text-overline);
+  --app-text-sm: var(--kailo-text-caption);
+  --app-text-md: var(--kailo-text-callout);
+  --app-text-base: var(--kailo-text-body);
+  --app-text-lg: var(--kailo-text-headline);
+  --app-text-xl: calc(16px * var(--kailo-type-scale, 1));
+  --app-text-2xl: calc(18px * var(--kailo-type-scale, 1));
+  --app-text-3xl: calc(20px * var(--kailo-type-scale, 1));
+  --app-text-4xl: var(--kailo-text-title1);
 
   /* Radius. */
   --td-radius-small: var(--kailo-radius-sm);
@@ -212,7 +220,7 @@ html[data-kailo-mode][data-kailo-theme="dark"]:root:root {
 html[data-kailo-mode] .t-button {
   height: 32px;
   border-radius: var(--kailo-radius-lg);
-  font: 500 13px/20px var(--kailo-font-sans);
+  font: 500 var(--kailo-text-callout)/20px var(--kailo-font-sans);
   letter-spacing: 0;
   text-transform: none;
   box-shadow: none;
@@ -284,12 +292,12 @@ html[data-kailo-mode] .t-button--shape-circle.t-size-s { width: 28px; }
   border-radius: var(--kailo-radius-md);
   border: 1px solid var(--kailo-color-line-strong);
   background: var(--kailo-color-background);
-  font-size: 14px;
+  font-size: var(--kailo-text-body);
   box-shadow: none;
   transition: border-color var(--kailo-duration-fast) var(--kailo-ease-standard),
     box-shadow var(--kailo-duration-fast) var(--kailo-ease-standard);
 }
-:where(html[data-kailo-mode]) .t-input.t-size-s { height: 28px; font-size: 13px; }
+:where(html[data-kailo-mode]) .t-input.t-size-s { height: 28px; font-size: var(--kailo-text-callout); }
 :where(html[data-kailo-mode]) .t-input:hover:not(.t-is-disabled) {
   border-color: hsl(var(--kailo-hsl-muted-foreground) / 0.4);
 }
@@ -303,12 +311,12 @@ html[data-kailo-mode] .t-button--shape-circle.t-size-s { width: 28px; }
 :where(html[data-kailo-mode]) .t-is-error .t-input,
 :where(html[data-kailo-mode]) .t-input.t-is-error { border-color: var(--kailo-color-danger); }
 :where(html[data-kailo-mode]) .t-input__tips.t-tips--error,
-:where(html[data-kailo-mode]) .t-form__controls .t-input__extra { color: var(--kailo-color-danger-text); font-size: 12px; }
+:where(html[data-kailo-mode]) .t-form__controls .t-input__extra { color: var(--kailo-color-danger-text); font-size: var(--kailo-text-caption); }
 :where(html[data-kailo-mode]) .t-textarea__inner {
   border-radius: var(--kailo-radius-md);
   border: 1px solid var(--kailo-color-line-strong);
   background: var(--kailo-color-background);
-  font-size: 14px;
+  font-size: var(--kailo-text-body);
 }
 :where(html[data-kailo-mode]) .t-textarea__inner:hover { border-color: hsl(var(--kailo-hsl-muted-foreground) / 0.4); }
 :where(html[data-kailo-mode]) .t-textarea__inner:focus,
@@ -338,7 +346,7 @@ html[data-kailo-mode] .t-switch.t-is-checked { background-color: var(--kailo-col
 html[data-kailo-mode] .t-tabs__nav-item {
   height: 40px;
   color: var(--kailo-color-muted-foreground);
-  font-size: 14px;
+  font-size: var(--kailo-text-body);
 }
 html[data-kailo-mode] .t-tabs__nav-item.t-is-active {
   color: var(--kailo-color-foreground);
@@ -355,7 +363,7 @@ html[data-kailo-mode] .t-tag {
   height: 20px;
   padding: 0 6px;
   border-radius: var(--kailo-radius-sm);
-  font: 500 12px/20px var(--kailo-font-sans);
+  font: 500 var(--kailo-text-caption)/20px var(--kailo-font-sans);
 }
 html[data-kailo-mode] .t-tag--theme-primary.t-tag--light,
 html[data-kailo-mode] .t-tag--theme-primary.t-tag--dark { background: var(--kailo-color-selected); color: var(--kailo-color-selected-foreground); border-color: transparent; }
@@ -380,7 +388,7 @@ html[data-kailo-mode] .t-select-option {
   height: auto;
   padding: 0 8px;
   border-radius: var(--kailo-radius-md);
-  font-size: 13px;
+  font-size: var(--kailo-text-callout);
   color: var(--kailo-color-foreground);
 }
 html[data-kailo-mode] .t-dropdown__item .t-icon,
@@ -403,7 +411,7 @@ html[data-kailo-mode] .t-tooltip .t-popup__content {
   border: 0;
   border-radius: var(--kailo-radius-md);
   box-shadow: var(--kailo-shadow-sm);
-  font-size: 12px;
+  font-size: var(--kailo-text-caption);
   line-height: 16px;
   padding: 6px 8px;
 }
@@ -422,11 +430,11 @@ html[data-kailo-mode] .t-dialog {
   padding: 24px;
 }
 html[data-kailo-mode] .t-dialog__header {
-  font: 600 17px/24px var(--kailo-font-sans);
+  font: 600 var(--kailo-text-title2)/24px var(--kailo-font-sans);
   color: var(--kailo-color-foreground);
   border-bottom: 0;
 }
-html[data-kailo-mode] .t-dialog__body { color: var(--kailo-color-text-secondary); font-size: 14px; }
+html[data-kailo-mode] .t-dialog__body { color: var(--kailo-color-text-secondary); font-size: var(--kailo-text-body); }
 html[data-kailo-mode] .t-dialog__footer { border-top: 0; }
 html[data-kailo-mode] .t-dialog__close {
   width: 32px;
@@ -447,7 +455,7 @@ html[data-kailo-mode] .t-drawer--right .t-drawer__content-wrapper {
   box-shadow: var(--kailo-shadow-lg);
   background: var(--kailo-color-popover);
 }
-html[data-kailo-mode] .t-drawer__header { font: 600 17px/24px var(--kailo-font-sans); border-bottom-color: var(--kailo-color-border); }
+html[data-kailo-mode] .t-drawer__header { font: 600 var(--kailo-text-title2)/24px var(--kailo-font-sans); border-bottom-color: var(--kailo-color-border); }
 
 /* Tables and lists. */
 html[data-kailo-mode] .t-table { background: transparent; color: var(--kailo-color-foreground); }
@@ -455,7 +463,7 @@ html[data-kailo-mode] .t-table th,
 html[data-kailo-mode] .t-table thead td {
   background: transparent;
   color: var(--kailo-color-muted-foreground);
-  font: 600 11px/14px var(--kailo-font-sans);
+  font: 600 var(--kailo-text-overline)/14px var(--kailo-font-sans);
   letter-spacing: 0.04em;
   text-transform: uppercase;
   border-bottom: 1px solid var(--kailo-color-border);
@@ -503,14 +511,14 @@ html[data-kailo-mode] .t-message {
   border: 1px solid var(--kailo-color-border);
   border-radius: var(--kailo-radius-xl);
   box-shadow: var(--kailo-shadow-lg);
-  font-size: 13px;
+  font-size: var(--kailo-text-callout);
 }
 
 /* Popconfirm (top-level visits; inside Kailo it is Kailo's confirmation):
    same surface as Kailo menus, Body text, actions right-aligned, verb last. */
 html[data-kailo-mode] .t-popconfirm .t-popup__content { padding: 16px; max-width: 320px; }
 html[data-kailo-mode] .t-popconfirm__inner {
-  font-size: 13px;
+  font-size: var(--kailo-text-callout);
   line-height: 20px;
   color: var(--kailo-color-popover-foreground);
 }
@@ -554,7 +562,7 @@ html[data-kailo-shell] .aside_box.aside_box--pane {
 }
 html[data-kailo-shell] .aside_box--pane .menu_top { padding-top: 0; }
 html[data-kailo-shell] .aside_box--pane .timeline_header-label {
-  font: 600 11px/14px var(--kailo-font-sans);
+  font: 600 var(--kailo-text-overline)/14px var(--kailo-font-sans);
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--kailo-color-muted-foreground);
@@ -562,7 +570,7 @@ html[data-kailo-shell] .aside_box--pane .timeline_header-label {
 html[data-kailo-shell] .aside_box--pane .submenu_item_p {
   min-height: 32px;
   border-radius: var(--kailo-radius-md);
-  font: 500 13px/20px var(--kailo-font-sans);
+  font: 500 var(--kailo-text-callout)/20px var(--kailo-font-sans);
 }
 html[data-kailo-shell] .aside_box--pane .submenu_item_p:hover { background: var(--kailo-color-hover); }
 html[data-kailo-shell] .aside_box--pane .submenu_item_p.session-chat-row--active {

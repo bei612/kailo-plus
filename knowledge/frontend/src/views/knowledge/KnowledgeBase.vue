@@ -54,6 +54,11 @@ import KbUploadSourceDropdown from './components/KbUploadSourceDropdown.vue';
 import ScopeSegments from '@/kailo/ScopeSegments.vue';
 import { isKailoShell } from '@/kailo/setup';
 import { usePageHeader, type PageAction, type PageCrumb } from '@/kailo/page';
+import KailoPagination from '@/kailo/ui/KailoPagination.vue';
+import KailoStateView from '@/kailo/ui/KailoStateView.vue';
+import { GRID_PAGE_SIZES, LIST_PAGE_SIZES, pageCount, patchQuery, queryEnum, queryInt, querySize } from '@/kailo/listing';
+import { canRetry, classifyLoadError, type LoadErrorKind } from '@/kailo/loadState';
+import { ux, type UxKey } from '@/kailo/uxText';
 import KbFolderTree from './components/KbFolderTree.vue';
 import TagEditDialog from './components/TagEditDialog.vue';
 import BatchTagDialog from './components/BatchTagDialog.vue';
@@ -83,7 +88,7 @@ import { useI18n } from 'vue-i18n';
 import { useMarqueeSelect } from '@/hooks/useMarqueeSelect';
 import type { ParserEngineInfo } from '@/api/system';
 const route = useRoute();
-const { t } = useI18n();
+const { t, locale } = useI18n();
 const kbId = computed(() => (route.params as any).kbId as string || '');
 const kbInfo = ref<any>(null);
 const uploadSourceRef = ref<InstanceType<typeof KbUploadSourceDropdown> | null>(null);
@@ -97,6 +102,11 @@ const hasCurrentKb = computed(() => !!kbInfo.value
 let kbLoadGeneration = 0;
 onUnmounted(() => { kbLoadGeneration++; });
 const docListLoading = ref(true);
+// DD-167 (20 §15.3–15.4): inside the Kailo shell the documents are paged (not an
+// endless scroll) and read failures are shown in place instead of a toast and a
+// jump back to the list. Read once per document, like isKailoShell() itself.
+const kailoShellMode = isKailoShell();
+const kbLoadError = ref<LoadErrorKind | null>(null);
 const isFAQ = computed(() => (kbInfo.value?.type || '') === 'faq');
 const isWiki = computed(() => !!kbInfo.value?.indexing_strategy?.wiki_enabled);
 const validTabs = ['documents', 'wiki', 'graph'] as const
@@ -349,7 +359,7 @@ const canDownloadKnowledge = computed(() => {
 });
 
 const knowledgeList = ref<Array<{ id: string; name: string; type?: string }>>([]);
-let { cardList, total, moreIndex, details, getKnowled, openMore, onVisibleChange: _onVisibleChange, getCardDetails, getfDetails } = useKnowledgeBase(kbId.value)
+let { cardList, total, moreIndex, details, getKnowled, openMore, onVisibleChange: _onVisibleChange, getCardDetails, getfDetails, listError: docListError } = useKnowledgeBase(kbId.value)
 
 const showKbDetailContextualGuide = computed(() => {
   return Boolean(kbId.value)
@@ -444,10 +454,70 @@ const initViewMode = (): DocViewMode => {
     return localStorage.getItem(VIEW_MODE_KEY) === 'list' ? 'list' : 'grid';
   } catch { return 'grid'; }
 };
-const viewMode = ref<DocViewMode>(initViewMode());
+// Kailo shell: the table is the default view and the view is part of the route query.
+const viewMode = ref<DocViewMode>(kailoShellMode
+  ? queryEnum(route.query.view as string, ['list', 'grid'] as const, 'list')
+  : initViewMode());
 watch(viewMode, (v) => {
+  if (kailoShellMode) return;
   try { localStorage.setItem(VIEW_MODE_KEY, v); } catch { /* ignore */ }
 });
+
+// DD-167 pages: page and page size live in the route query (back/forward and links).
+const docSizes = computed(() => (viewMode.value === 'grid' ? GRID_PAGE_SIZES : LIST_PAGE_SIZES));
+const docPage = ref(queryInt(route.query.page as string, 1));
+const docPageSize = ref(querySize(route.query.size as string, docSizes.value, docSizes.value[0]));
+const docListErrorKind = computed<LoadErrorKind | null>(() => (docListError.value ? classifyLoadError(docListError.value) : null));
+const uxText = (key: UxKey, params?: Record<string, string | number>) => ux(key, String(locale.value), params);
+
+const syncDocQuery = () => {
+  if (!kailoShellMode) return;
+  const query = patchQuery(route.query as Record<string, string>, {
+    page: docPage.value,
+    size: docPageSize.value,
+    view: viewMode.value,
+  }, { page: 1, size: docSizes.value[0], view: 'list' });
+  void router.replace({ query });
+};
+
+const goDocPage = (next: number) => {
+  if (!kbId.value || next === docPage.value) return;
+  docPage.value = next;
+  clearSelection();
+  syncDocQuery();
+  void loadKnowledgeFiles(kbId.value);
+  knowledgeScroll.value?.scrollTo?.({ top: 0 });
+};
+
+const setDocPageSize = (size: number) => {
+  if (!kbId.value || size === docPageSize.value) return;
+  docPageSize.value = size;
+  docPage.value = 1;
+  clearSelection();
+  syncDocQuery();
+  void loadKnowledgeFiles(kbId.value);
+};
+
+if (kailoShellMode) {
+  watch(viewMode, () => {
+    if (!docSizes.value.includes(docPageSize.value)) {
+      docPageSize.value = docSizes.value[0];
+      docPage.value = 1;
+      if (kbId.value) void loadKnowledgeFiles(kbId.value);
+    }
+    syncDocQuery();
+  });
+  // Back/forward inside the knowledge base: the query decides the page shown.
+  watch(() => [route.query.page, route.query.size], () => {
+    if (!kbId.value || route.name !== 'knowledgeBaseDetail') return;
+    const page = queryInt(route.query.page as string, 1);
+    const size = querySize(route.query.size as string, docSizes.value, docSizes.value[0]);
+    if (page === docPage.value && size === docPageSize.value) return;
+    docPage.value = page;
+    docPageSize.value = size;
+    void loadKnowledgeFiles(kbId.value);
+  });
+}
 
 // Multi-select state — shared between grid and list views.
 // Vue 3.5 tracks Set#add/delete natively, so direct mutation is reactive.
@@ -732,6 +802,28 @@ const currentChildFolders = computed(() => {
 const showDocumentFolderPath = computed(() => hasFolders.value && isFiltering.value);
 const folderBreadcrumbs = computed(() => buildFolderBreadcrumbs(selectedFolderPath.value));
 
+// DD-167: a new filter, search or folder starts at page 1 (registered before the
+// filter watchers below, so their reload already reads page 1).
+watch(() => JSON.stringify([
+  docSearchKeyword.value, selectedTagIds.value, selectedFileType.value, selectedParseStatus.value,
+  selectedSource.value, updatedTimeRange.value, selectedFolderPath.value,
+]), () => {
+  if (kailoShellMode && docPage.value !== 1) {
+    docPage.value = 1;
+    syncDocQuery();
+  }
+});
+
+/** Clears search and every filter (the folder stays). */
+const clearDocFilters = () => {
+  docSearchKeyword.value = '';
+  selectedTagIds.value = [];
+  selectedFileType.value = '';
+  selectedParseStatus.value = '';
+  selectedSource.value = '';
+  updatedTimeRange.value = [];
+};
+
 const filterParams = computed(() => {
   const [start, end] = updatedTimeRange.value || [];
   return {
@@ -791,14 +883,24 @@ const loadKnowledgeFiles = (kbIdValue: string): Promise<void> => {
   }
   return getKnowled(
     {
-      page: 1,
-      page_size: pageSize,
+      page: kailoShellMode ? docPage.value : 1,
+      page_size: kailoShellMode ? docPageSize.value : pageSize,
       ...filterParams.value,
     },
     kbIdValue,
+    { replace: true },
   ).finally(() => {
     if (isCurrentKb(kbIdValue) && !isFAQ.value) {
       docListLoading.value = false;
+    }
+  }).then(() => {
+    // A page past the end (the last rows were deleted or moved) lands on the last page.
+    if (!kailoShellMode || !isCurrentKb(kbIdValue) || docListError.value) return;
+    const last = pageCount(total.value, docPageSize.value);
+    if (cardList.value.length === 0 && total.value > 0 && docPage.value > last) {
+      docPage.value = last;
+      syncDocQuery();
+      return loadKnowledgeFiles(kbIdValue);
     }
   });
 };
@@ -1023,6 +1125,7 @@ const handleKnowledgeTagChange = async (knowledgeId: string, tagIds: string[]) =
 
 const loadKnowledgeBaseInfo = async (targetKbId: string, force = false) => {
   const generation = ++kbLoadGeneration;
+  kbLoadError.value = null;
   const scope = kbScope.value;
   const isCurrent = () => generation === kbLoadGeneration
     && isCurrentKb(targetKbId) && scope === kbScope.value;
@@ -1074,6 +1177,12 @@ const loadKnowledgeBaseInfo = async (targetKbId: string, force = false) => {
     cardList.value = [];
     total.value = 0;
     folderTree.value = null;
+    if (kailoShellMode) {
+      // DD-167 (20 §15.4): the reason in place — no toast, no jump to the list.
+      const cause = chatResources.knowledgeBaseDetailError(targetKbId);
+      kbLoadError.value = cause ? classifyLoadError(cause) : 'notFound';
+      return;
+    }
     MessagePlugin.error(t('knowledgeEditor.messages.loadDataFailed'));
     void router.replace('/platform/knowledge-bases');
   } finally {
@@ -1132,6 +1241,8 @@ watch([kbId, kbScope], ([newKbId], [oldKbId]) => {
   }
 
   if (newKbId !== oldKbId) {
+    // Another knowledge base starts at its first page (a deep link keeps its page).
+    if (oldKbId && kailoShellMode) docPage.value = 1;
     clearTraceAvailabilityCache();
     cardList.value = [];
     total.value = 0;
@@ -1792,10 +1903,17 @@ const kailoKbSections = computed(() => [
   { value: 'graph', label: t('knowledgeEditor.wikiBrowser.tabGraph') },
 ]);
 usePageHeader('knowledgeBaseDetail', () => {
-  if (!kbInfo.value) return null;
+  // DD-167 (20 §15.1): 知识库 › <name> › <folders>; the list crumb leads back.
+  const listCrumb: PageCrumb = { id: 'kb-list', label: t('menu.knowledgeBase'), go: handleNavigateToKbList };
+  if (!kbInfo.value) {
+    if (!kbLoadError.value) return null;
+    const title = kbLoadError.value === 'forbidden' ? uxText('detail.forbidden')
+      : kbLoadError.value === 'notFound' ? uxText('detail.notFound') : uxText('detail.error');
+    return { title, breadcrumbs: [listCrumb] };
+  }
   const name = String(kbInfo.value.name || '');
   const folders = isFAQ.value || (isWiki.value && activeKbTab.value !== 'documents') ? [] : folderBreadcrumbs.value;
-  const breadcrumbs: PageCrumb[] = [];
+  const breadcrumbs: PageCrumb[] = [listCrumb];
   if (folders.length) {
     breadcrumbs.push({ id: 'kb-root', label: name, go: () => handleFolderSelect('') });
     folders.slice(0, -1).forEach((crumb) => {
@@ -1944,6 +2062,8 @@ const submitReparse = async (id: string, processConfig?: KnowledgeProcessOverrid
 };
 
 const handleScroll = () => {
+  // Kailo shell: pages, not an endless scroll (DD-167).
+  if (kailoShellMode) return;
   if (isFAQ.value) return;
   if (docListLoading.value) return;
   if (scrollLoading) return;
@@ -2321,7 +2441,25 @@ async function createNewSession(value: string): Promise<void> {
 </script>
 
 <template>
-  <t-loading v-if="kbLoading && !hasCurrentKb" />
+  <t-loading v-if="kbLoading && !hasCurrentKb && !kailoShellMode" />
+  <!-- DD-167 (20 §15.4): first read and failed read of the knowledge base, in place. -->
+  <div v-if="kailoShellMode && !hasCurrentKb && (kbLoading || kbLoadError)" class="kailo-kb-pending">
+    <div v-if="kbLoading" class="kailo-kb-pending__skeleton" aria-busy="true">
+      <div class="kailo-kb-pending__toolbar"><span class="kailo-skel" style="width: 240px" /><span class="kailo-skel" style="width: 120px" /></div>
+      <div v-for="n in 10" :key="n" class="kailo-kb-pending__row">
+        <span class="kailo-skel" style="width: 36%" /><span class="kailo-skel" style="width: 12%" />
+        <span class="kailo-skel" style="width: 10%" /><span class="kailo-skel" style="width: 14%" />
+      </div>
+    </div>
+    <KailoStateView v-else-if="kbLoadError === 'forbidden'" kind="forbidden" :title="uxText('detail.forbidden')"
+      :description="uxText('state.forbidden.askOwner')" />
+    <KailoStateView v-else-if="kbLoadError === 'notFound'" kind="empty" :title="uxText('detail.notFound')"
+      :description="uxText('state.reason.notFound')" :action-label="uxText('detail.backToList')"
+      @action="handleNavigateToKbList" />
+    <KailoStateView v-else-if="kbLoadError" kind="error" :title="uxText('detail.error')"
+      :description="uxText(`state.reason.${kbLoadError}` as UxKey)" :action-label="uxText('state.retry')"
+      @action="loadKnowledgeBaseInfo(kbId, true)" />
+  </div>
   <template v-if="hasCurrentKb">
   <template v-if="!isFAQ">
     <div class="knowledge-layout">
@@ -2547,10 +2685,13 @@ async function createNewSession(value: string): Promise<void> {
                   </div>
                 </div>
               </div>
+              <div v-if="kailoShellMode" class="kailo-progress"
+                :class="{ 'is-active': docListLoading && cardList.length > 0 }" aria-hidden="true" />
               <div class="doc-scroll-container"
                 :class="{
                   'is-empty': !cardList.length && !currentChildFolders.length && !docListLoading,
                   'is-marquee-active': docMarqueeVisible,
+                  'is-paging': kailoShellMode && docListLoading && cardList.length > 0,
                 }"
                 ref="knowledgeScroll" @scroll="handleScroll" @mousedown="onDocMarqueeMouseDown">
                 <div v-if="docMarqueeVisible" class="doc-marquee-box"
@@ -2572,6 +2713,12 @@ async function createNewSession(value: string): Promise<void> {
                     </div>
                   </div>
                 </div>
+                <!-- DD-167: a failed read in place, with the reason and a retry. -->
+                <KailoStateView v-else-if="kailoShellMode && docListErrorKind && !docListLoading"
+                  :kind="docListErrorKind === 'forbidden' ? 'forbidden' : 'error'"
+                  :title="docListErrorKind === 'forbidden' ? uxText('detail.forbidden') : uxText('doc.error')"
+                  :description="docListErrorKind === 'forbidden' ? uxText('state.forbidden.askOwner') : uxText(`state.reason.${docListErrorKind}` as UxKey)"
+                  :action-label="canRetry(docListErrorKind) ? uxText('state.retry') : ''" @action="loadKnowledgeFiles(kbId)" />
                 <template v-else-if="(cardList.length || currentChildFolders.length) && viewMode === 'grid'">
                   <DocumentCardView
                     :items="cardList"
@@ -2627,6 +2774,17 @@ async function createNewSession(value: string): Promise<void> {
                     @update:move-mode="(mode: any) => moveMode = mode"
                     @reset-move-state="moveMenuMode = 'normal'" />
                 </template>
+                <template v-else-if="!docListLoading && kailoShellMode">
+                  <KailoStateView v-if="isFiltering" kind="filtered" compact :title="uxText('doc.filtered')"
+                    :description="uxText('doc.filtered.desc')" :action-label="uxText('state.clearFilters')"
+                    @action="clearDocFilters" />
+                  <KailoStateView v-else-if="selectedFolderPath" kind="empty" art="document" compact
+                    :title="uxText('doc.empty.folder')" />
+                  <KailoStateView v-else kind="empty" art="document" :title="uxText('doc.empty.title')"
+                    :description="canEdit ? uxText('doc.empty.desc') : uxText('doc.empty.readonly')"
+                    :action-label="canEdit ? t('upload.uploadDocument') : ''" action-primary
+                    @action="uploadSourceRef?.runAction('upload')" />
+                </template>
                 <template v-else-if="!docListLoading">
                   <div class="doc-empty-state">
                     <p v-if="selectedFolderPath || isFiltering" class="doc-empty-folder">
@@ -2639,6 +2797,9 @@ async function createNewSession(value: string): Promise<void> {
                   </div>
                 </template>
               </div>
+              <KailoPagination v-if="kailoShellMode && !docListErrorKind && total > 0" class="kailo-doc-pager"
+                :total="total" :page="docPage" :page-size="docPageSize" :sizes="docSizes"
+                @update:page="goDocPage" @update:page-size="setDocPageSize" />
               <div class="doc-batch-bar-anchor" v-show="batchMode || selectedIds.size > 0">
                 <DocumentBatchBar :count="selectedIds.size" :delete-loading="batchDeleting"
                   :reparse-loading="batchReparsing" :tag-loading="batchTagging" :download-loading="batchDownloading"

@@ -29,10 +29,13 @@ func (h *Handler) admitKailoAnswer(ctx context.Context, c *gin.Context) error {
 		return nil
 	}
 	text := service.KailoUsageRefusalText(decision, c.GetHeader("Accept-Language"))
+	// DD-167: the decision travels with the text, so the page words the notice in
+	// the Kailo language of the moment (and again after a language switch).
+	details := kailoUsageRefusalDetails(decision)
 	if decision == service.KailoUsageDependencyUnavailable || decision == service.KailoUsageQuotaNotConfigured {
-		return errors.NewServiceUnavailableError(text)
+		return errors.NewServiceUnavailableError(text).WithDetails(details)
 	}
-	return errors.NewTooManyRequestsError(text)
+	return errors.NewTooManyRequestsError(text).WithDetails(details)
 }
 
 // reportKailoAnswer is called from completeAssistantMessage with the same
@@ -46,4 +49,11 @@ func (h *Handler) reportKailoAnswer(ctx context.Context, msg *types.Message, use
 		return
 	}
 	h.kailoUsage.ReportKnowledgeAnswer(ctx, userID, msg.ID, msg.UpdatedAt)
+}
+
+// kailoUsageRefusalDetails is the machine-readable part of a refusal:
+// {"kailo_usage": "<decision>"}; the decision is one of the closed set of
+// service.KailoUsage* refusals and carries no identity or quota figures.
+func kailoUsageRefusalDetails(decision string) map[string]string {
+	return map[string]string{"kailo_usage": decision}
 }

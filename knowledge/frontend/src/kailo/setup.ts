@@ -5,6 +5,7 @@ import { kailoConfig } from './runtime'
 import { productName } from './brand'
 import { HOST_WITHOUT_PAGE_KEY, connectHost, hostRendersPage, isEmbedded, kailoEmbed, offerIdentityLocale } from './bridge'
 import { setHostTheme } from '@/composables/useTheme'
+import { installListDensity } from './preferences'
 
 let embedded = false
 let shell = false
@@ -68,10 +69,13 @@ export function installKailo(i18n: I18nLike): void {
         }
         window.addEventListener('kailo:presentation', check)
       }
+      // DD-167: theme, language and type dials follow Kailo live; the type dials need no
+      // code here (the runtime mirrors them on <html>, the overlay maps them to text and zoom).
       connectHost(runtime, {
         onTheme: theme => setHostTheme(theme),
         onLocale: locale => setI18nLocale(i18n, locale),
       })
+      installListDensity(runtime)
     }
   }
 

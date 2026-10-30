@@ -4,8 +4,9 @@
 // it adds the product tabs, publishes on every route/context change and routes
 // Kailo's navigate/action callbacks back to the current view.
 //
-// Product tabs replace the native left menu: Chat / Knowledge / Agent /
-// Artifacts. Shared spaces, members and organizations live only in Kailo.
+// Product tabs replace the native left menu (DD-167, 20 §15.1): 知识库 · 对话.
+// Agent and 产物 are Kailo Agent's (DD-163) and never a tab; shared spaces,
+// members and organizations live only in Kailo.
 
 import { getCurrentInstance, onBeforeUnmount, shallowRef, watch, computed, type ComputedRef } from 'vue'
 import type { Router, RouteLocationNormalizedLoaded } from 'vue-router'
@@ -40,46 +41,42 @@ export interface PageSpec {
   actions?: PageAction[]
 }
 
-export type ProductTabId = 'chat' | 'knowledge-bases' | 'agents' | 'artifacts'
+export type ProductTabId = 'knowledge-bases' | 'chat'
 
 interface ProductTab {
   id: ProductTabId
   path: string
   /** Deployment capability the native menu requires for the same entry. */
-  capability?: 'agents' | 'settings.sandbox'
+  capability?: string
 }
 
-/** Same business entries and order as the native menu (stores/menu.ts), without organizations/settings/logout. */
+/** The business sections of 知识工程, in the order of design 20 §15.1. */
 export const PRODUCT_TABS: readonly ProductTab[] = [
-  { id: 'chat', path: '/platform/creatChat' },
   { id: 'knowledge-bases', path: '/platform/knowledge-bases' },
-  { id: 'agents', path: '/platform/agents', capability: 'agents' },
-  { id: 'artifacts', path: '/platform/artifacts', capability: 'settings.sandbox' },
+  { id: 'chat', path: '/platform/creatChat' },
 ]
 
 type Lang = 'zh' | 'en'
-type TextKey = ProductTabId | 'newChat' | 'settings' | 'spaces' | 'product'
+type TextKey = ProductTabId | 'newChat' | 'settings' | 'spaces' | 'product' | 'artifacts'
 
 const TEXT: Record<Lang, Record<TextKey, string>> = {
   zh: {
     chat: '对话',
     'knowledge-bases': '知识库',
-    agents: 'Agent',
     artifacts: '产物',
     newChat: '新建对话',
     settings: '设置',
     spaces: '共享空间',
-    product: '知识库',
+    product: '知识工程',
   },
   en: {
-    chat: 'Chat',
+    chat: 'Chats',
     'knowledge-bases': 'Knowledge bases',
-    agents: 'Agents',
     artifacts: 'Artifacts',
     newChat: 'New chat',
     settings: 'Settings',
     spaces: 'Shared spaces',
-    product: 'Knowledge',
+    product: 'Knowledge Engineering',
   },
 }
 
@@ -93,8 +90,6 @@ const ROUTE_TAB: Record<string, ProductTabId> = {
   chat: 'chat',
   knowledgeBaseList: 'knowledge-bases',
   knowledgeBaseDetail: 'knowledge-bases',
-  agentList: 'agents',
-  artifactLibrary: 'artifacts',
 }
 
 /** The product tab a route belongs to (settings and others: none). */
@@ -107,7 +102,6 @@ export const VIEW_OWNED_ROUTES: ReadonlySet<string> = new Set([
   'knowledgeBaseList',
   'knowledgeBaseDetail',
   'chat',
-  'agentList',
 ])
 
 /** Header for routes without a view-owned header. */
@@ -240,7 +234,7 @@ export interface PageShellDeps {
 
 /**
  * Product tabs visible in this deployment. The page shell only runs under
- * Kailo, where Agent and 产物 are Kailo Agent's (DD-163): only 对话 and 知识库.
+ * Kailo, where Agent and 产物 are Kailo Agent's (DD-163): only 知识库 and 对话.
  */
 export function visibleTabs(locale: string, supports: (capability: string | undefined) => boolean): KailoPageItem[] {
   return PRODUCT_TABS

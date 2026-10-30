@@ -2,7 +2,9 @@
     <div class="main" ref="dropzone">
         <!-- DD-157: inside the Kailo shell the product menu is Kailo's header tabs; only the
              conversation history stays, as the list pane of the Chat tab. -->
-        <Menu v-if="!kailoShell || isChatRoute" :pane="kailoShell"></Menu>
+        <!-- DD-167: the Kailo shell's Chat tab has the Kailo conversation pane (pages, states). -->
+        <KailoChatPane v-if="kailoShell && isChatRoute" />
+        <Menu v-else-if="!kailoShell"></Menu>
         <div v-if="isRouterAlive" class="platform-route-outlet">
             <RouterView />
         </div>
@@ -21,6 +23,8 @@
         <GlobalInvitationBell v-if="!kailoMode" />
         <!-- 知识库文件上传进度浮层：上传队列放在 store 里，切换页面不中断 -->
         <UploadTasksPanel />
+        <!-- DD-167: one-line answers when Kailo does not offer its dialog. -->
+        <KailoPromptHost v-if="kailoMode" />
         <!-- 带遮罩层的新手引导：首次进入自动开启，可从用户菜单顶部昵称旁帮助按钮重新打开 -->
         <!-- Kailo mode (embedded or top-level): onboarding belongs to Kailo (DD-133 §4, DD-138 §2). -->
         <NewUserGuide v-if="!kailoMode" />
@@ -28,6 +32,8 @@
 </template>
 <script setup lang="ts">
 import Menu from '@/components/menu.vue'
+import KailoChatPane from '@/kailo/ui/KailoChatPane.vue'
+import KailoPromptHost from '@/kailo/ui/KailoPromptHost.vue'
 import { ref, computed, onMounted, onUnmounted, nextTick, provide, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router'
 import UploadMask from '@/components/upload-mask.vue'

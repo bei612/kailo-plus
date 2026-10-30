@@ -36,6 +36,8 @@ export default function (knowledgeBaseId?: string) {
     tags: [] as Array<{ id: string; name: string; color?: string }>,
   });
   let knowledgeListGeneration = 0;
+  // DD-167: the last list read failure (null after a successful read), shown in place.
+  const listError = ref<unknown>(null);
   let chunkRequestGeneration = 0;
   let activeKnowledgeId = '';
   const getKnowled = (
@@ -53,10 +55,13 @@ export default function (knowledgeBaseId?: string) {
       folder_recursive?: boolean;
     } = { page: 1, page_size: 35 },
     kbId?: string,
+    /** DD-167 pages: the result replaces the list whatever the page number. */
+    options: { replace?: boolean } = {},
   ): Promise<void> => {
     const targetKbId = kbId || knowledgeBaseId;
     if (!targetKbId) return Promise.resolve();
-    const requestGeneration = query.page === 1 ? ++knowledgeListGeneration : knowledgeListGeneration;
+    const replace = query.page === 1 || options.replace === true;
+    const requestGeneration = replace ? ++knowledgeListGeneration : knowledgeListGeneration;
 
     return listKnowledgeFiles(targetKbId, query)
       .then((result: any) => {
@@ -65,6 +70,7 @@ export default function (knowledgeBaseId?: string) {
         const currentRouteKbId = (route.params as any)?.kbId as string | undefined;
         if (currentRouteKbId && currentRouteKbId !== targetKbId) return;
 
+        listError.value = null;
         const { data, total: totalResult } = result;
     const cardList_ = data.map((item: any) => {
       const rawName = item.file_name || item.title || item.source || t('knowledgeBase.untitledDocument')
@@ -74,6 +80,7 @@ export default function (knowledgeBaseId?: string) {
       return {
         ...item,
         original_file_name: item.file_name,
+        updated_at_raw: item.updated_at || '',
         display_name: displayName,
         file_name: displayName,
         folder_path: item.folder_path || '',
@@ -83,14 +90,17 @@ export default function (knowledgeBaseId?: string) {
       }
     });
         
-        if (query.page === 1) {
+        if (replace) {
           cardList.value = cardList_;
         } else {
           cardList.value.push(...cardList_);
         }
         total.value = totalResult;
       })
-      .catch(() => {});
+      .catch((error: unknown) => {
+        if (requestGeneration !== knowledgeListGeneration) return;
+        listError.value = error ?? new Error('list failed');
+      });
   };
   const openMore = (index: number) => {
     moreIndex.value = index;
@@ -185,5 +195,6 @@ export default function (knowledgeBaseId?: string) {
     getCardDetails,
     total,
     getfDetails,
+    listError,
   };
 }

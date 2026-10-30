@@ -54,6 +54,7 @@ export const useChatResourcesStore = defineStore('chatResources', () => {
   const agentKbInflight = new Map<string, Promise<any[]>>()
   const kbDetailCache = new Map<string, { at: number; data: any }>()
   const kbDetailInflight = new Map<string, Promise<any | null>>()
+  const kbDetailErrors = new Map<string, unknown>()
 
   const validKnowledgeBases = computed(() => rawKnowledgeBases.value.filter(isKbModelReady))
   const chatModels = computed(() => allModels.value.filter((m) => m.type === 'KnowledgeQA'))
@@ -312,11 +313,14 @@ export const useChatResourcesStore = defineStore('chatResources', () => {
       try {
         const res: any = await getKnowledgeBaseById(kbId)
         const data = res?.data ?? null
+        kbDetailErrors.delete(kbId)
         if (data) {
           kbDetailCache.set(kbId, { at: Date.now(), data })
         }
         return data
-      } catch {
+      } catch (error) {
+        // DD-167: the detail page tells a refusal from an outage (src/kailo/loadState.ts).
+        kbDetailErrors.set(kbId, error)
         return null
       } finally {
         kbDetailInflight.delete(kbId)
@@ -324,6 +328,11 @@ export const useChatResourcesStore = defineStore('chatResources', () => {
     })()
     kbDetailInflight.set(kbId, p)
     return p
+  }
+
+  /** Why the last detail read of this knowledge base failed (undefined when it did not). */
+  function knowledgeBaseDetailError(kbId: string): unknown {
+    return kbDetailErrors.get(kbId)
   }
 
   function invalidateKnowledgeBaseDetail(kbId?: string) {
@@ -397,6 +406,7 @@ export const useChatResourcesStore = defineStore('chatResources', () => {
     ensureAgentKnowledgeBases,
     prefetchChatInput,
     fetchKnowledgeBaseById,
+    knowledgeBaseDetailError,
     invalidateKnowledgeBaseDetail,
     invalidate,
   }

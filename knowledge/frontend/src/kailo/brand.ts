@@ -10,12 +10,16 @@ function isChineseLocale(locale: string): boolean {
   return /^zh\b/i.test(locale || '')
 }
 
-/** Component suffix: 知识库 for Chinese locales, Knowledge otherwise. */
+/**
+ * Product name (DD-166/167): 知识工程 for Chinese locales, Knowledge
+ * Engineering otherwise — the presentation category name Kailo's sidebar
+ * shows. “知识库” stays the name of one knowledge base (the object).
+ */
 export function componentLabel(locale: string): string {
-  return isChineseLocale(locale) ? '知识库' : 'Knowledge'
+  return isChineseLocale(locale) ? '知识工程' : 'Knowledge Engineering'
 }
 
-/** `${PLATFORM_DISPLAY_NAME} 知识库` / `${PLATFORM_DISPLAY_NAME} Knowledge`. */
+/** `${PLATFORM_DISPLAY_NAME} 知识工程` / `${PLATFORM_DISPLAY_NAME} Knowledge Engineering`. */
 export function productName(locale: string, displayName: string): string {
   const name = (displayName || '').trim()
   const label = componentLabel(locale)

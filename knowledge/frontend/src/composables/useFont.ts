@@ -245,7 +245,15 @@ function applyFont() {
     setOrClear(root, '--app-font-family-mono', monoStack)
     lastApplied.mono = monoStack
   }
-  if (lastApplied.scale !== scale) {
+  if (isKailoMode()) {
+    // DD-167 (07 §4.8.10): Kailo owns text size and zoom (--kailo-type-scale and
+    // --kailo-zoom, applied by kailo-theme-overlay.css); a stored native size
+    // must not zoom the page a second time.
+    if (lastApplied.scale !== 'kailo') {
+      root.style.removeProperty('zoom')
+      lastApplied.scale = 'kailo'
+    }
+  } else if (lastApplied.scale !== scale) {
     // Apply size via CSS zoom on <html> so the multiplier reaches every
     // element — including the ~1000+ hard-coded `font-size: NNpx` rules
     // scattered across the frontend. The previous approach set

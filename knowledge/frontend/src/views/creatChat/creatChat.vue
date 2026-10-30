@@ -1,7 +1,16 @@
 <template>
     <div class="dialogue-wrap">
         <div class="dialogue-answers">
-            <div class="dialogue-title" style="--wails-draggable: drag">
+            <!-- DD-167 (20 §15.1): the new chat's empty state is "向知识库提问" with suggested questions. -->
+            <div v-if="kailoShell" class="kailo-chat-home">
+                <span class="kailo-chat-home__mark" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.75"
+                        stroke-linecap="round" stroke-linejoin="round"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z" /><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3" /><path d="M12 17h.01" /></svg>
+                </span>
+                <h1 class="kailo-chat-home__title">{{ homeText('chat.home.title') }}</h1>
+                <p class="kailo-chat-home__desc">{{ homeText('chat.home.desc') }}</p>
+            </div>
+            <div v-else class="dialogue-title" style="--wails-draggable: drag">
                 <span style="--wails-draggable: drag">{{ $t('createChat.title') }}</span>
             </div>
             <!-- 推荐问题 -->
@@ -22,7 +31,7 @@
                     <div v-if="suggestedQuestions.length > 0" :key="sqRenderKey" class="suggested-questions-inner">
                         <div class="suggested-questions-title-row">
                             <p class="suggested-questions-caption">
-                                <span class="suggested-questions-title">{{ $t('chat.suggestedQuestions') }}</span>
+                                <span class="suggested-questions-title">{{ kailoShell ? homeText('chat.home.suggested') : $t('chat.suggestedQuestions') }}</span>
                                 <button type="button" class="suggested-questions-refresh" :disabled="sqLoading"
                                     :title="$t('chat.refreshSuggestedQuestions')"
                                     :aria-label="$t('chat.refreshSuggestedQuestions')" @click="fetchSuggestedQuestions">
@@ -47,7 +56,7 @@
         </div>
     </div>
 
-    <ContextualGuide tour="chat" :when="showChatContextualGuide" />
+    <ContextualGuide v-if="!kailoShell" tour="chat" :when="showChatContextualGuide" />
 
     <!-- 知识库编辑器（创建/编辑统一组件） -->
     <KnowledgeBaseEditorModal :visible="uiStore.showKBEditorModal" :mode="uiStore.kbEditorMode"
@@ -70,13 +79,17 @@ import { MessagePlugin } from 'tdesign-vue-next';
 import { useI18n } from 'vue-i18n';
 import KnowledgeBaseEditorModal from '@/views/knowledge/KnowledgeBaseEditorModal.vue';
 import { useKnowledgeBaseCreationNavigation } from '@/hooks/useKnowledgeBaseCreationNavigation';
+import { isKailoShell } from '@/kailo/setup';
+import { ux, type UxKey } from '@/kailo/uxText';
 
 const router = useRouter();
 const route = useRoute();
 const usemenuStore = useMenuStore();
 const settingsStore = useSettingsStore();
 const uiStore = useUIStore();
-const { t } = useI18n();
+const { t, locale } = useI18n();
+const kailoShell = isKailoShell();
+const homeText = (key: UxKey) => ux(key, String(locale.value));
 const { navigateToKnowledgeBaseList } = useKnowledgeBaseCreationNavigation();
 
 const showChatContextualGuide = computed(() => {
@@ -296,6 +309,40 @@ const handleKBEditorSuccess = (kbId: string) => {
 }
 
 @import '../../components/css/suggested-questions.less';
+
+.kailo-chat-home {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    text-align: center;
+}
+
+.kailo-chat-home__mark {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 48px;
+    height: 48px;
+    margin-bottom: 8px;
+    border-radius: var(--kailo-radius-xl);
+    background: var(--kailo-color-selected);
+    color: var(--kailo-color-selected-foreground);
+}
+
+.kailo-chat-home__title {
+    margin: 0;
+    color: var(--kailo-color-foreground);
+    font: 650 var(--kailo-text-title1)/28px var(--kailo-font-sans);
+    letter-spacing: -0.018em;
+}
+
+.kailo-chat-home__desc {
+    margin: 0;
+    max-width: 480px;
+    color: var(--kailo-color-muted-foreground);
+    font: 400 var(--kailo-text-body)/20px var(--kailo-font-sans);
+}
 
 @keyframes skeletonFadeIn {
     from {

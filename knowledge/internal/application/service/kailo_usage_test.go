@@ -186,10 +186,10 @@ func TestKailoUsageReportIsIdempotentAndRetried(t *testing.T) {
 }
 
 func TestKailoUsageRefusalTextFollowsLanguage(t *testing.T) {
-	if got := KailoUsageRefusalText(KailoUsageTenantQuotaExhausted, "zh-CN,zh;q=0.9"); got != "组织本月的知识库问答额度已用完，请联系管理员。" {
+	if got := KailoUsageRefusalText(KailoUsageTenantQuotaExhausted, "zh-CN,zh;q=0.9"); got != "组织本月的知识工程问答额度已用完，请联系管理员。" {
 		t.Fatalf("zh tenant: %s", got)
 	}
-	if got := KailoUsageRefusalText(KailoUsageMemberQuotaExhausted, "en-US"); got != "Your knowledge answer quota for this month is used up." {
+	if got := KailoUsageRefusalText(KailoUsageMemberQuotaExhausted, "en-US"); got != "Your Knowledge Engineering answer quota for this month is used up." {
 		t.Fatalf("en member: %s", got)
 	}
 	if got := KailoUsageRefusalText(KailoUsageDependencyUnavailable, ""); got != "用量服务暂不可用，请稍后再试。" {

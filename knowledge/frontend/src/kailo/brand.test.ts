@@ -3,24 +3,24 @@ import test from 'node:test'
 import { brandLocaleMessages, brandMessages, brandText, productName } from './brand'
 
 test('product name is the Kailo display name plus the component label', () => {
-  assert.equal(productName('zh-CN', 'Kailo'), 'Kailo 知识库')
-  assert.equal(productName('en-US', 'Kailo'), 'Kailo Knowledge')
-  assert.equal(productName('ja-JP', 'Kailo'), 'Kailo Knowledge')
-  assert.equal(productName('zh-CN', ''), '知识库')
-  assert.equal(productName('en-US', '  '), 'Knowledge')
+  assert.equal(productName('zh-CN', 'Kailo'), 'Kailo 知识工程')
+  assert.equal(productName('en-US', 'Kailo'), 'Kailo Knowledge Engineering')
+  assert.equal(productName('ja-JP', 'Kailo'), 'Kailo Knowledge Engineering')
+  assert.equal(productName('zh-CN', ''), '知识工程')
+  assert.equal(productName('en-US', '  '), 'Knowledge Engineering')
 })
 
 test('standalone upstream product word is replaced in prose', () => {
-  const product = 'Kailo Knowledge'
-  assert.equal(brandText('Welcome to WeKnora', product), 'Welcome to Kailo Knowledge')
-  assert.equal(brandText('Welcome to WeKnora.', product), 'Welcome to Kailo Knowledge.')
-  assert.equal(brandText("Hi, I am WeKnora, your assistant", product), 'Hi, I am Kailo Knowledge, your assistant')
-  assert.equal(brandText('欢迎使用WeKnora！', 'Kailo 知识库'), '欢迎使用Kailo 知识库！')
-  assert.equal(brandText("WeKnora's memory", product), "Kailo Knowledge's memory")
+  const product = 'Kailo Knowledge Engineering'
+  assert.equal(brandText('Welcome to WeKnora', product), 'Welcome to Kailo Knowledge Engineering')
+  assert.equal(brandText('Welcome to WeKnora.', product), 'Welcome to Kailo Knowledge Engineering.')
+  assert.equal(brandText("Hi, I am WeKnora, your assistant", product), 'Hi, I am Kailo Knowledge Engineering, your assistant')
+  assert.equal(brandText('欢迎使用WeKnora！', 'Kailo 知识工程'), '欢迎使用Kailo 知识工程！')
+  assert.equal(brandText("WeKnora's memory", product), "Kailo Knowledge Engineering's memory")
 })
 
 test('identifiers, URLs, file names and env keys are left untouched', () => {
-  const product = 'Kailo Knowledge'
+  const product = 'Kailo Knowledge Engineering'
   for (const text of [
     'load weknora-widget.js',
     'github.com/Tencent/WeKnora',
@@ -47,6 +47,6 @@ test('each locale gets its own product name and display-name syntax stays litera
     'zh-CN': { t: '欢迎使用 WeKnora' },
     'en-US': { t: 'Welcome to WeKnora' },
   }, 'Ka{il}o@|$')
-  assert.equal(out['zh-CN'].t, '欢迎使用 Kailo 知识库')
-  assert.equal(out['en-US'].t, 'Welcome to Kailo Knowledge')
+  assert.equal(out['zh-CN'].t, '欢迎使用 Kailo 知识工程')
+  assert.equal(out['en-US'].t, 'Welcome to Kailo Knowledge Engineering')
 })

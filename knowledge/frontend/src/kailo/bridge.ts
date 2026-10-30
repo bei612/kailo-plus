@@ -14,15 +14,34 @@
 export type KailoTheme = 'light' | 'dark'
 export type KailoLocale = 'zh-CN' | 'en'
 
+/** DD-167: Kailo's text-only size preference (body 13 / 14 / 15 px). */
+export type KailoFontSize = 'smaller' | 'default' | 'larger'
+
 export interface KailoPresentationState {
   theme: KailoTheme
   locale: KailoLocale
+  /** DD-167 (absent on older runtimes): scales text only through --kailo-type-scale. */
+  fontSize?: KailoFontSize
+  /** DD-167 (absent on older runtimes): Kailo's ⌘± zoom, 0.75–1.5, published as --kailo-zoom. */
+  zoom?: number
+  /** DD-167: 13/14, 1 or 15/14. */
+  typeScale?: number
   embedded: boolean
   hostConnected: boolean
 }
 
+export interface KailoPresentationChange {
+  theme: boolean
+  locale: boolean
+  fontSize?: boolean
+  zoom?: boolean
+}
+
+/** DD-138 (07 §4.8.2): declared preference key -> BOOLEAN value or ENUM option. */
+export type KailoPreferenceValues = Record<string, boolean | string>
+
 /** DD-157 (07 §4.8.7): what a build opts into with <meta name="kailo-embed-features">. */
-export type KailoEmbedFeature = 'page' | 'toast' | 'confirm' | 'shortcuts'
+export type KailoEmbedFeature = 'page' | 'toast' | 'confirm' | 'shortcuts' | 'prompt'
 
 /** Closed icon vocabulary for header actions; Kailo draws them with its own (Lucide) icons. */
 export type KailoActionIcon = 'upload' | 'plus' | 'folder-plus' | 'share' | 'download' | 'rocket' | 'refresh'
@@ -88,11 +107,31 @@ export interface KailoConfirm {
   cancelLabel?: string
 }
 
+/** DD-167 (07 §4.8.10): one line of text from the user, asked in Kailo's dialog. */
+export interface KailoPrompt {
+  title: string
+  label: string
+  description?: string
+  placeholder?: string
+  value?: string
+  confirmLabel?: string
+  cancelLabel?: string
+  /** 1–255, default 255. */
+  maxLength?: number
+}
+
 export interface KailoEmbedRuntime {
   readonly version: 1
   getState(): KailoPresentationState
+  /** All presentation changes at once (theme, locale and — DD-167 — fontSize, zoom). */
+  onChange?(listener: (state: KailoPresentationState, changed: KailoPresentationChange) => void): () => void
   onThemeChange(listener: (theme: KailoTheme) => void): () => void
   onLocaleChange(listener: (locale: KailoLocale) => void): () => void
+  /** DD-167: either type dial changed. */
+  onTypeChange?(listener: (type: { fontSize: KailoFontSize; zoom: number; typeScale: number }) => void): () => void
+  /** DD-138: values Kailo supplied for the release's declared settings items. */
+  getPreferences?(): KailoPreferenceValues
+  onPreferencesChange?(listener: (values: KailoPreferenceValues, changed: string[]) => void): () => void
   useIdentityLocale(locale: string): boolean
   requestTopLevelSignIn(): boolean
   /**
@@ -112,7 +151,9 @@ export interface KailoEmbedRuntime {
   /** DD-157: Kailo's dialog, or null when the page must use its own. */
   confirm?(options: KailoConfirm): Promise<boolean> | null
   /** DD-157: the Kailo host announced it handles this feature (false until it answers). */
-  hostSupports?(feature: KailoEmbedFeature): boolean
+  hostSupports?(feature: KailoEmbedFeature | 'files' | 'confirm-option'): boolean
+  /** DD-167: Kailo's one-line text dialog; null when the page must draw its own. */
+  prompt?(options: KailoPrompt): Promise<string | null> | null
 }
 
 type RuntimeHost = { KailoEmbed?: unknown }
@@ -153,26 +194,57 @@ export function identityLocaleForRuntime(locale: string | null | undefined): Kai
   return null
 }
 
+export interface KailoTypeDials {
+  fontSize: KailoFontSize
+  zoom: number
+}
+
 export interface HostHandlers {
   onTheme(theme: KailoTheme): void
   /** Receives the native locale (already mapped). */
   onLocale(locale: 'zh-CN' | 'en-US'): void
+  /**
+   * DD-167: Kailo's type dials. The runtime already mirrors them on <html>
+   * (data-kailo-font-size, --kailo-zoom), which the token sheet and the
+   * overlay turn into text sizes and the app-root zoom; this is for code
+   * that measures or draws text itself.
+   */
+  onType?(type: KailoTypeDials): void
+}
+
+/** The type dials of a state, defaults for runtimes before DD-167. */
+export function typeDialsOf(state: Partial<KailoPresentationState>): KailoTypeDials {
+  const fontSize = state.fontSize === 'smaller' || state.fontSize === 'larger' ? state.fontSize : 'default'
+  const zoom = typeof state.zoom === 'number' && state.zoom >= 0.75 && state.zoom <= 1.5 ? state.zoom : 1
+  return { fontSize, zoom }
 }
 
 /**
- * Applies the runtime's current theme and locale, then follows its changes.
+ * Applies the runtime's current theme, locale and type dials, then follows
+ * every change in the same document (no reload, route and input kept;
+ * 07 §4.8.10). Uses the runtime's single onChange when it has one (DD-167),
+ * else the theme and locale listeners of older runtimes.
  * Returns the unsubscribe function.
  */
 export function connectHost(runtime: KailoEmbedRuntime, handlers: HostHandlers): () => void {
   const state = runtime.getState()
-  handlers.onTheme(state.theme === 'dark' ? 'dark' : 'light')
-  const initial = mapKailoLocale(state.locale)
-  if (initial) handlers.onLocale(initial)
-  const offTheme = runtime.onThemeChange(theme => handlers.onTheme(theme === 'dark' ? 'dark' : 'light'))
-  const offLocale = runtime.onLocaleChange(locale => {
-    const mapped = mapKailoLocale(locale)
+  const theme = (value: KailoTheme) => handlers.onTheme(value === 'dark' ? 'dark' : 'light')
+  const locale = (value: KailoLocale) => {
+    const mapped = mapKailoLocale(value)
     if (mapped) handlers.onLocale(mapped)
-  })
+  }
+  theme(state.theme)
+  locale(state.locale)
+  handlers.onType?.(typeDialsOf(state))
+  if (typeof runtime.onChange === 'function') {
+    return runtime.onChange((next, changed) => {
+      if (changed.theme) theme(next.theme)
+      if (changed.locale) locale(next.locale)
+      if (changed.fontSize || changed.zoom) handlers.onType?.(typeDialsOf(next))
+    })
+  }
+  const offTheme = runtime.onThemeChange(theme)
+  const offLocale = runtime.onLocaleChange(locale)
   return () => { offTheme(); offLocale() }
 }
 

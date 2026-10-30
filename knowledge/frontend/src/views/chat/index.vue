@@ -155,6 +155,12 @@
             </div>
         </transition>
         <div class="input-container" :class="{ 'is-embedded': embeddedMode }">
+            <!-- DD-165/167 (07 §4.8.9): a question Kailo's quota refused, worded in the current Kailo language. -->
+            <div v-if="quotaNoticeText" class="kailo-quota-notice" role="status">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75"
+                    stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 8v4M12 16h.01" /></svg>
+                <span>{{ quotaNoticeText }}</span>
+            </div>
             <InputField ref="inputFieldRef" :auto-focus="focusComposerOnMount"
                 @send-msg="(query, modelId, mentionedItems, imageFiles, attachmentFiles, options) => sendMsg(query, modelId, mentionedItems, imageFiles, attachmentFiles, options)"
                 @steer-msg="(query, mentionedItems, delivery) => handleSteerMsg(query, mentionedItems, delivery)"
@@ -214,6 +220,7 @@ import ChatQuestionMinimap from '@/components/chat/ChatQuestionMinimap.vue';
 import { shouldShowConversationTimestamp } from '@/utils/messageTimestamp';
 import ChatHeader from '@/components/ChatHeader.vue';
 import { isKailoShell } from '@/kailo/setup';
+import { quotaNotice } from '@/kailo/uxText';
 import { usePageHeader } from '@/kailo/page';
 import { chatEndpoint } from '@/kailo/converge';
 import { isKailoMode } from '@/kailo/runtime';
@@ -260,7 +267,7 @@ const isAgentStreamSession = () => {
 
 const uiStore = useUIStore();
 const { navigateToKnowledgeBaseList } = useKnowledgeBaseCreationNavigation();
-const { t } = useI18n();
+const { t, locale } = useI18n();
 
 // DD-157: Kailo's page header for a conversation — its title, 新建对话 and the
 // conversation's own actions (the native header row is not rendered).
@@ -310,7 +317,8 @@ usePageHeader('chat', () => {
 const { firstQuery, firstMentionedItems, firstModelId, firstImageFiles, firstAttachmentFiles, firstQuestionOrigin } = storeToRefs(usemenuStore);
 // Capture before the initial send consumes firstQuery; the child focuses after mounting.
 const focusComposerOnMount = Boolean(firstQuery.value);
-const { onChunk, error, isStreaming, startStream, stopStream, lastStreamRequest } = useStream();
+const { onChunk, error, refusal, isStreaming, startStream, stopStream, lastStreamRequest } = useStream();
+const quotaNoticeText = computed(() => (refusal.value ? quotaNotice(refusal.value, String(locale.value)) : ''));
 /** Snapshot of the in-flight HTTP request for attaching to the next assistant message. */
 const pendingStreamDebug = ref(null);
 
@@ -1521,7 +1529,8 @@ watch(error, (newError) => {
         recoverIncompleteMessage();
         return;
     }
-    MessagePlugin.error(newError);
+    // A quota refusal is shown in place above the composer, not as a toast.
+    if (!refusal.value) MessagePlugin.error(newError);
     isReplying.value = false;
     loading.value = false;
     // 清空当前 assistant message ID
@@ -1652,6 +1661,25 @@ onBeforeRouteUpdate((to, from, next) => {
 })
 </script>
 <style lang="less" scoped>
+.kailo-quota-notice {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    box-sizing: border-box;
+    width: min(960px, calc(100% - 48px));
+    margin: 0 auto 8px;
+    padding: 8px 12px;
+    border-radius: var(--kailo-radius-lg);
+    background: var(--kailo-color-warning-soft);
+    color: var(--kailo-color-warning-text);
+    font: 400 var(--kailo-text-callout)/20px var(--kailo-font-sans);
+
+    svg {
+        flex-shrink: 0;
+        margin-top: 2px;
+    }
+}
+
 .chat {
     // 水平方向不留 padding，让滚动条贴到内容区最右缘；
     // 消息列与输入列各自用 --chat-content-inset 做左右对称的留白（窄屏时才可见）。

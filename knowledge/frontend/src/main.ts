@@ -9,6 +9,8 @@ import "@/assets/theme/theme.css";
 // Kailo design-token overlay (DD-133, design 07 §4.7.1): maps TDesign/app
 // variables to /kailo/kailo-theme-tokens.css in Kailo mode (html[data-kailo-mode]).
 import "@/kailo/kailo-theme-overlay.css";
+// DD-167: Kailo zoom, type ramp, list density and the shell's page grammar.
+import "@/kailo/kailo-shell.css";
 import "@/assets/theme/tdesign-overrides.less";
 import "@/assets/dropdown-menu.less";
 import "@/components/css/chat-hljs-dark.less";

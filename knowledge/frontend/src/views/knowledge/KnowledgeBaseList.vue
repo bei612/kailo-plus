@@ -4,11 +4,13 @@
       :count-mine="kbs.length" :count-by-org="effectiveSharedCountByOrg" :count-favorites="kbFavoritesCount"
       :count-recents="kbRecentsCount" />
     <div class="kb-list-content">
-      <!-- DD-157: inside the Kailo shell the title and "新建知识库" are in Kailo's header;
-           the list scopes become a segmented control. -->
-      <div v-if="kailoShell" class="kailo-list-toolbar">
-        <ScopeSegments v-if="!authStore.isLiteMode" v-model="spaceSelection" :options="kailoScopeOptions" />
-      </div>
+      <!-- DD-157/DD-167: inside the Kailo shell the title and "新建知识库" are in Kailo's
+           header; the content is the Kailo list (scopes, search, sort, view, pages, states). -->
+      <KailoKbBrowser v-if="kailoShell" :entries="kailoEntries" :loading="loading && !listLoadedOnce"
+        :refreshing="loading && listLoadedOnce" :error="listError" :can-create="authStore.hasRole('contributor')"
+        @open="openKailoEntry" @create="handleCreateKnowledgeBase" @retry="fetchList(true)"
+        @favorite="(id) => toggleFavoriteKb(id)" @pin="handleTogglePinById" @duplicate="handleDuplicateById"
+        @settings="handleSettingsById" @delete="handleDeleteById" />
       <div v-else class="header" style="--wails-draggable: drag">
         <div class="header-title" style="--wails-draggable: drag">
           <div class="title-row" style="--wails-draggable: drag">
@@ -23,7 +25,7 @@
           <p class="header-subtitle" style="--wails-draggable: drag">{{ $t('knowledgeList.subtitle') }}</p>
         </div>
       </div>
-      <div class="kb-list-main">
+      <div v-if="!kailoShell" class="kb-list-main">
         <!-- creator filter intentionally removed from chrome: every card
              already shows its creator via ResourceOriginBadge / avatar, so
              a dedicated horizontal switch added more noise than signal.
@@ -708,7 +710,7 @@
       </Transition>
     </Teleport>
 
-    <ContextualGuide tour="kbList" :when="showKbListContextualGuide" />
+    <ContextualGuide v-if="!kailoShell" tour="kbList" :when="showKbListContextualGuide" />
   </div>
 </template>
 
@@ -730,7 +732,9 @@ import KnowledgeBaseEditorModal from './KnowledgeBaseEditorModal.vue'
 import KbWikiBadge from './components/KbWikiBadge.vue'
 import ShareKnowledgeBaseDialog from '@/components/ShareKnowledgeBaseDialog.vue'
 import ListSpaceSidebar from '@/components/ListSpaceSidebar.vue'
-import ScopeSegments from '@/kailo/ScopeSegments.vue'
+import KailoKbBrowser from '@/kailo/ui/KailoKbBrowser.vue'
+import { toKbEntry, type KbEntry } from '@/kailo/kbBrowse'
+import { classifyLoadError, type LoadErrorKind } from '@/kailo/loadState'
 import { isKailoShell } from '@/kailo/setup'
 import { usePageHeader } from '@/kailo/page'
 import ResourceOriginBadge from '@/components/ResourceOriginBadge.vue'
@@ -762,19 +766,13 @@ const { t } = useI18n()
 // that might point at the old query — its display label is rebranded
 // via ListSpaceSidebar's workspaceLabel computed.
 const kailoShell = isKailoShell()
-// Kailo shell: spaces and organizations are Kailo's; the list offers 全部 / 收藏 / 最近.
+// Kailo shell (DD-167): spaces and organizations are Kailo's; KailoKbBrowser owns the
+// list's route query (scope 全部 / 我创建的 / 共享给我 / 收藏, search, sort, view, page).
 const defaultScope: 'all' | 'mine' = !kailoShell && authStore.hasRole('contributor') ? 'mine' : 'all'
 const { scope: spaceSelection, creator: creatorFilter } = useListUrlState({
   defaultScope,
   defaultCreator: 'all',
 })
-const KAILO_SCOPES = ['all', 'favorites', 'recents']
-if (kailoShell && !KAILO_SCOPES.includes(spaceSelection.value)) spaceSelection.value = 'all'
-const kailoScopeOptions = computed(() => [
-  { value: 'all', label: t('listSpaceSidebar.all') },
-  { value: 'favorites', label: t('listSpaceSidebar.favorites') },
-  { value: 'recents', label: t('listSpaceSidebar.recents') },
-])
 
 // Per-user favorites + recents (localStorage-backed). isFavorite & touchRecent
 // are wired into card render and click handlers below.
@@ -1142,12 +1140,18 @@ const showKbListContextualGuide = computed(
 const applyKbListData = (data: any[]) => {
   kbs.value = data.map((kb: any) => ({
     ...kb,
+    // DD-167: the Kailo list sorts and shows relative times from the server value.
+    updated_at_raw: kb.updated_at || '',
     updated_at: kb.updated_at ? formatStringDate(new Date(kb.updated_at)) : '',
     showMore: false,
     isProcessing: kb.is_processing || false,
     processing_count: kb.processing_count || 0
   }))
 }
+
+// DD-167 (20 §15.4): a failed read is shown in place by the Kailo list.
+const listError = ref<LoadErrorKind | null>(null)
+const listLoadedOnce = ref(false)
 
 const fetchList = (force = false) => {
   loading.value = true
@@ -1156,18 +1160,48 @@ const fetchList = (force = false) => {
   // them server-side; the segmented control is also hidden whenever the
   // user is browsing the shared / per-space scopes.
   return Promise.all([
-    chatResources.fetchKnowledgeBasesForList({ creator: creatorFilter.value }, force).then(applyKbListData),
+    chatResources.fetchKnowledgeBasesForList({ creator: kailoShell ? 'all' : creatorFilter.value }, force).then(applyKbListData),
     orgStore.fetchSharedKnowledgeBases({ force }),
     orgStore.fetchOrganizations({ force }),
   ]).finally(() => { loading.value = false }).then(() => {
+    listError.value = null
+    listLoadedOnce.value = true
     // 各空间知识库数量已由 GET /organizations 的 resource_counts 带回，存于 orgStore.resourceCounts
     const counts = orgStore.resourceCounts?.knowledge_bases?.by_organization
     if (counts) spaceCountByOrg.value = { ...counts }
+  }, (error: unknown) => {
+    listError.value = classifyLoadError(error)
+    if (!kailoShell) throw error
   })
+}
+
+// DD-167: the entries of the Kailo list — own space and shares, de-duplicated.
+const kailoEntries = computed<KbEntry[]>(() => {
+  if (!kailoShell) return []
+  const merged = mergeAllScopeKnowledgeBases(
+    kbs.value as unknown as OwnedKnowledgeBase[],
+    sharedKbs.value as unknown as SharedKnowledgeBaseLike[],
+    authStore.user?.id,
+  ) as unknown as Record<string, unknown>[]
+  const ctx = {
+    userId: authStore.user?.id || '',
+    isFavorite: (id: string) => pins.isFavorite('kb', id),
+    isAdmin: authStore.hasRole('admin'),
+    isContributor: authStore.hasRole('contributor'),
+  }
+  return merged.map((kb) => toKbEntry(kb, ctx))
+})
+
+const openKailoEntry = (entry: KbEntry) => {
+  pins.touchRecent('kb', entry.id)
+  if (entry.shared || entry.ready) goDetail(entry.id)
+  else goSettings(entry.id)
 }
 
 // 选中空间时请求该空间内全部知识库（含我共享的）
 watch(spaceSelection, (val) => {
+  // The Kailo list filters its scopes on the client (KailoKbBrowser).
+  if (kailoShell) return
   // Stale URL guard: an older "协作" view used scope=shared; that view
   // was removed, so normalize back to "all" instead of letting the
   // value fall through to the per-space fetch branch (which would 404
@@ -1668,20 +1702,10 @@ const handleUploadFinishedEvent = (event: Event) => {
   margin-left: 6px;
 }
 
-.kailo-list-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 0 24px 16px 0;
-}
-
-// DD-157 (20 §2): list page insets 16 top / 24 sides inside the Kailo shell.
+// DD-167: the Kailo list (KailoKbBrowser) carries its own insets (16 top / 24 sides).
 .is-kailo-shell .kb-list-content {
-  padding: 16px 0 0 24px;
-}
-
-.is-kailo-shell .kb-list-main {
-  padding-right: 24px;
+  padding: 0;
+  background: var(--kailo-color-background);
 }
 
 .header-subtitle {
