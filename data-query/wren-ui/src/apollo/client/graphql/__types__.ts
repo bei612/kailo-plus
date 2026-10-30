@@ -1242,6 +1242,7 @@ export type Query = {
   sqlPairs: Array<Maybe<SqlPair>>;
   suggestedQuestions: SuggestedQuestionResponse;
   thread: DetailedThread;
+  threadPage: ThreadPage;
   threadResponse: ThreadResponse;
   threads: Array<Thread>;
   view: ViewInfo;
@@ -1293,6 +1294,11 @@ export type QueryNativeSqlArgs = {
 
 export type QueryThreadArgs = {
   threadId: Scalars['Int'];
+};
+
+
+export type QueryThreadPageArgs = {
+  pagination: ThreadPaginationInput;
 };
 
 
@@ -1512,6 +1518,18 @@ export type ThreadRecommendationSelectionInput = {
   index: Scalars['Int'];
   queryId: Scalars['String'];
   sourceResponseId: Scalars['Int'];
+};
+
+export type ThreadPage = {
+  __typename?: 'ThreadPage';
+  hasMore: Scalars['Boolean'];
+  items: Array<Thread>;
+  total: Scalars['Int'];
+};
+
+export type ThreadPaginationInput = {
+  limit: Scalars['Int'];
+  offset: Scalars['Int'];
 };
 
 export type ThreadResponse = {

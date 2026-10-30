@@ -1,0 +1,1023 @@
+// DD-167 (`20` §15, `07` §4.8.10): the business pages as one Kailo product —
+// text size and zoom follow Kailo, lists have a toolbar, a pager and their
+// states, the thread pane is a Kailo list pane, charts and SQL follow the
+// theme. Imported after controls.less. Every value is a Kailo token
+// (client-kit/embed/kailo-theme-tokens.css); no colour is written here.
+
+// 1. Zoom (⌘±) on the app root and on each floating layer, so layout,
+//    overlays and scrolling scale together and only the content scrolls.
+//    Heights that fill the frame use --kailo-vh (the viewport in the
+//    zoomed root's own pixels). Anchored popups are positioned by antd in
+//    unzoomed body pixels; only their content is zoomed, so they stay
+//    aligned with their trigger.
+:root {
+  --kailo-vh: calc(100vh / var(--kailo-zoom, 1));
+  --kailo-row-height: 40px;
+}
+
+:root[data-kailo-list-density='compact'] {
+  --kailo-row-height: 32px;
+}
+
+#__next {
+  zoom: var(--kailo-zoom, 1);
+}
+
+.ant-modal-wrap,
+.ant-modal-mask,
+.ant-drawer,
+.ant-image-preview-wrap,
+.ant-notification,
+.ant-message,
+.ant-dropdown > *,
+.ant-select-dropdown > *,
+.ant-picker-dropdown > *,
+.ant-tooltip-content,
+.ant-popover-content,
+#vg-tooltip-element {
+  zoom: var(--kailo-zoom, 1);
+}
+
+// 2. Text size (`20` §3 字阶 × --kailo-type-scale). antd compiles 14 px into
+//    every component; the Kailo steps replace it here. Line heights stay in
+//    px, so the "smaller" and "larger" settings change text only.
+body,
+.ant-typography,
+.ant-table,
+.ant-input,
+.ant-input-affix-wrapper,
+.ant-input-number,
+.ant-select,
+.ant-select-item,
+.ant-picker,
+.ant-picker-input > input,
+.ant-form,
+.ant-form-item,
+.ant-form-item-label > label,
+.ant-radio-wrapper,
+.ant-checkbox-wrapper,
+.ant-collapse,
+.ant-tabs,
+.ant-menu,
+.ant-tree,
+.ant-list,
+.ant-card,
+.ant-descriptions-item-label,
+.ant-descriptions-item-content,
+.ant-drawer-body,
+.ant-modal-body,
+.ant-modal-confirm-content,
+.ant-popover-inner-content,
+.ant-empty,
+.ant-steps,
+.ant-transfer,
+.ant-upload,
+.ant-dropdown-menu,
+.ant-pagination,
+.ant-message,
+.ant-notification-notice-description,
+.ant-result-subtitle {
+  font-size: var(--kailo-text-body);
+}
+
+.ant-table-small,
+.ant-select-sm,
+.ant-input-sm,
+.ant-dropdown-menu-item,
+.ant-dropdown-menu-submenu-title,
+.ant-menu-item,
+.ant-tabs-small,
+.ant-alert,
+.ant-btn,
+.ant-form-item-explain,
+.ant-form-item-extra {
+  font-size: var(--kailo-text-callout);
+}
+
+.ant-tag,
+.ant-badge-count,
+.ant-tooltip-inner,
+.ant-typography-copy,
+.ant-form-item-explain-error,
+.ant-select-selection-item-content,
+.ant-table-thead > tr > th {
+  font-size: var(--kailo-text-caption);
+}
+
+.ant-modal-title,
+.ant-drawer-title,
+.ant-modal-confirm-title {
+  font-size: var(--kailo-text-title2);
+}
+
+.ant-typography h1,
+h1.ant-typography {
+  font-size: var(--kailo-text-title1);
+}
+
+h2.ant-typography,
+h3.ant-typography,
+h4.ant-typography,
+h5.ant-typography {
+  font-size: var(--kailo-text-title2);
+}
+
+// 3. List density (`20` §15.3): rows 40 / 32 from Kailo's appearance
+//    setting; the single-line body is 20 px.
+.ant-table-tbody > tr > td {
+  padding-top: calc((var(--kailo-row-height) - 21px) / 2);
+  padding-bottom: calc((var(--kailo-row-height) - 21px) / 2);
+}
+
+// 4. List page: 24 sides, 16 top; toolbar 44, the list card, the pager 44.
+.kailo-list-page {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+  padding: 16px 24px 24px;
+}
+
+.kailo-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 44px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+
+  &__start,
+  &__end {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    min-width: 0;
+  }
+}
+
+.kailo-search.ant-input-affix-wrapper {
+  width: 280px;
+  height: 34px;
+
+  .kailo-search__icon {
+    color: var(--kailo-color-muted-foreground);
+    margin-right: 2px;
+  }
+}
+
+.kailo-filter.ant-select {
+  min-width: 132px;
+}
+
+.kailo-filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 4px 0 10px;
+  border-radius: var(--kailo-radius-full, 999px);
+  background: var(--kailo-color-selected);
+  color: var(--kailo-color-selected-foreground);
+  font-size: var(--kailo-text-caption);
+  font-weight: 500;
+
+  .ant-btn {
+    width: 20px;
+    min-width: 20px;
+    height: 20px;
+    color: inherit;
+  }
+}
+
+.kailo-clear-filters.ant-btn {
+  padding: 0 6px;
+  color: var(--kailo-color-muted-foreground);
+
+  &:hover {
+    color: var(--kailo-color-foreground);
+  }
+}
+
+.kailo-list {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--kailo-color-border);
+  border-radius: var(--kailo-radius-xl);
+  background: var(--kailo-color-background);
+  overflow: hidden;
+
+  .ant-table-wrapper .ant-table {
+    border: 0;
+    border-radius: 0;
+  }
+
+  .ant-table-tbody > tr:last-child > td {
+    border-bottom: 0;
+  }
+
+  .ant-table-tbody {
+    transition: opacity var(--kailo-duration-fast) var(--kailo-ease-standard);
+  }
+
+  &--refreshing .ant-table-tbody {
+    opacity: 0.6;
+  }
+
+  > .kailo-progress {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 3;
+  }
+
+  > .kailo-empty,
+  > .kailo-load-error,
+  > .kailo-no-match {
+    min-height: 320px;
+  }
+}
+
+.kailo-row-title {
+  font-weight: 500;
+  color: var(--kailo-color-foreground);
+}
+
+.kailo-row-secondary {
+  font-size: var(--kailo-text-callout);
+  color: var(--kailo-color-muted-foreground);
+}
+
+.kailo-num {
+  font-variant-numeric: tabular-nums;
+}
+
+// 5. Pager (`20` §15.3).
+.kailo-pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 44px;
+  padding: 0 12px;
+  border-top: 1px solid var(--kailo-color-border);
+  background: var(--kailo-color-background);
+
+  &__total,
+  &__position {
+    font-size: var(--kailo-text-caption);
+    color: var(--kailo-color-muted-foreground);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  &__controls {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  &__size.ant-select {
+    font-size: var(--kailo-text-caption);
+  }
+
+  &__pages {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+  }
+
+  &__step.ant-btn {
+    width: 28px;
+    min-width: 28px;
+    height: 28px;
+    color: var(--kailo-color-muted-foreground);
+  }
+
+  &__page {
+    min-width: 28px;
+    height: 28px;
+    padding: 0 6px;
+    border: 0;
+    border-radius: var(--kailo-radius-md);
+    background: transparent;
+    color: var(--kailo-color-foreground);
+    font: inherit;
+    font-size: var(--kailo-text-callout);
+    font-variant-numeric: tabular-nums;
+    cursor: pointer;
+    transition: background-color var(--kailo-duration-instant)
+      var(--kailo-ease-standard);
+
+    &:hover {
+      background: var(--kailo-color-hover);
+    }
+
+    &:focus-visible {
+      outline: none;
+      box-shadow: var(--kailo-focus-ring);
+    }
+
+    &--current,
+    &--current:hover {
+      background: var(--kailo-color-selected);
+      color: var(--kailo-color-selected-foreground);
+      font-weight: 600;
+      cursor: default;
+    }
+  }
+
+  &__gap {
+    min-width: 20px;
+    text-align: center;
+    color: var(--kailo-color-muted-foreground);
+  }
+}
+
+// 6. Loading: 2 px brand progress on a shown list, skeleton rows on the
+//    first read.
+.kailo-progress {
+  position: relative;
+  height: 2px;
+
+  &__track {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+  }
+
+  &__bar {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 32%;
+    background: var(--kailo-color-brand);
+    border-radius: 2px;
+    opacity: 0;
+    transform: translateX(-100%);
+  }
+
+  &--active &__bar {
+    opacity: 1;
+    animation: kailo-progress 1.1s var(--kailo-ease-in-out) infinite;
+  }
+
+  &__slow {
+    position: absolute;
+    top: 8px;
+    right: 12px;
+    padding: 2px 8px;
+    border-radius: var(--kailo-radius-md);
+    background: var(--kailo-color-popover);
+    box-shadow: var(--kailo-shadow-sm);
+    font-size: var(--kailo-text-caption);
+    color: var(--kailo-color-muted-foreground);
+  }
+}
+
+@keyframes kailo-progress {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(320%);
+  }
+}
+
+.kailo-skeleton-bar {
+  display: block;
+  height: 10px;
+  border-radius: var(--kailo-radius-sm);
+  background: linear-gradient(
+    90deg,
+    var(--kailo-color-muted) 25%,
+    var(--kailo-color-hover) 37%,
+    var(--kailo-color-muted) 63%
+  );
+  background-size: 400% 100%;
+  animation: kailo-skeleton 1.6s linear infinite;
+
+  &--head {
+    height: 8px;
+    opacity: 0.7;
+  }
+}
+
+@keyframes kailo-skeleton {
+  from {
+    background-position: 100% 50%;
+  }
+  to {
+    background-position: 0 50%;
+  }
+}
+
+.kailo-skeleton-list {
+  &__head,
+  &__row {
+    display: flex;
+    align-items: center;
+    gap: 24px;
+    padding: 0 12px;
+    border-bottom: 1px solid var(--kailo-color-border);
+  }
+
+  &__head {
+    height: 37px;
+    background: var(--kailo-color-canvas);
+  }
+
+  &__row {
+    height: var(--kailo-row-height);
+
+    &:last-child {
+      border-bottom: 0;
+    }
+  }
+
+  .kailo-skeleton-bar {
+    flex-grow: 0;
+    flex-shrink: 1;
+  }
+}
+
+// 7. States: inline read failure, no match, no permission.
+.kailo-load-error,
+.kailo-no-match {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 48px 16px;
+  text-align: center;
+}
+
+.kailo-load-error {
+  &__icon {
+    color: var(--kailo-color-danger-text);
+    margin-bottom: 6px;
+  }
+
+  &__title {
+    font-size: var(--kailo-text-headline);
+    line-height: 22px;
+    font-weight: 600;
+    color: var(--kailo-color-foreground);
+  }
+
+  &__reason {
+    max-width: 420px;
+    font-size: var(--kailo-text-callout);
+    line-height: 20px;
+    color: var(--kailo-color-muted-foreground);
+  }
+
+  .ant-btn {
+    margin-top: 10px;
+  }
+
+  &--compact {
+    gap: 4px;
+    padding: 20px 12px;
+
+    .kailo-load-error__icon {
+      margin-bottom: 2px;
+    }
+
+    .kailo-load-error__title {
+      font-size: var(--kailo-text-callout);
+      line-height: 20px;
+    }
+
+    .kailo-load-error__reason {
+      font-size: var(--kailo-text-caption);
+      line-height: 16px;
+    }
+
+    .ant-btn {
+      margin-top: 6px;
+    }
+  }
+}
+
+.kailo-no-match {
+  padding: 40px 16px;
+
+  &__icon {
+    color: var(--kailo-color-muted-foreground);
+    margin-bottom: 4px;
+  }
+
+  &__title {
+    font-size: var(--kailo-text-body);
+    font-weight: 500;
+    color: var(--kailo-color-foreground);
+  }
+
+  &__hint {
+    font-size: var(--kailo-text-caption);
+    color: var(--kailo-color-muted-foreground);
+  }
+
+  .ant-btn {
+    margin-top: 8px;
+  }
+}
+
+.kailo-empty.kailo-empty--locked .kailo-empty__icon {
+  color: var(--kailo-color-muted-foreground);
+}
+
+.kailo-page-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: calc(var(--kailo-vh) - 120px);
+}
+
+// 8. Segmented control (`20` §9 分段控件).
+.kailo-segmented {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--kailo-radius-lg);
+  background: var(--kailo-color-hover);
+
+  &__item {
+    height: 30px;
+    padding: 0 12px;
+    border: 0;
+    border-radius: var(--kailo-radius-md);
+    background: transparent;
+    color: var(--kailo-color-muted-foreground);
+    font: inherit;
+    font-size: var(--kailo-text-callout);
+    font-weight: 500;
+    cursor: pointer;
+    transition: background-color var(--kailo-duration-fast),
+      color var(--kailo-duration-fast);
+
+    &:hover {
+      color: var(--kailo-color-foreground);
+    }
+
+    &:focus-visible {
+      outline: none;
+      box-shadow: var(--kailo-focus-ring);
+    }
+
+    &--active,
+    &--active:hover {
+      background: var(--kailo-color-background);
+      color: var(--kailo-color-foreground);
+      box-shadow: var(--kailo-shadow-xs);
+    }
+  }
+
+  &__count {
+    margin-left: 6px;
+    font-size: var(--kailo-text-caption);
+    color: var(--kailo-color-muted-foreground);
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+// 9. The list pane (`20` §13.2): header 40, rows 32, compact pager.
+.kailo-pane {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+
+  &__head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 40px;
+    flex: none;
+    padding: 0 8px 0 16px;
+  }
+
+  &__title {
+    font-size: var(--kailo-text-overline);
+    line-height: 14px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--kailo-color-muted-foreground);
+  }
+
+  &__count {
+    min-width: 20px;
+    height: 18px;
+    padding: 0 6px;
+    border-radius: 9px;
+    background: var(--kailo-color-muted);
+    color: var(--kailo-color-muted-foreground);
+    font-size: var(--kailo-text-overline);
+    line-height: 18px;
+    font-weight: 600;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__action.ant-btn {
+    margin-left: auto;
+    width: 28px;
+    min-width: 28px;
+    height: 28px;
+    color: var(--kailo-color-muted-foreground);
+
+    &:hover {
+      color: var(--kailo-color-foreground);
+    }
+  }
+
+  &__body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding-bottom: 8px;
+  }
+
+  &__rows {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    transition: opacity var(--kailo-duration-fast);
+
+    &--refreshing {
+      opacity: 0.6;
+    }
+  }
+
+  &__row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    height: 32px;
+    margin: 0 8px;
+    padding: 0 4px 0 8px;
+    border-radius: var(--kailo-radius-md);
+    color: var(--kailo-color-foreground);
+    font-size: var(--kailo-text-callout);
+    font-weight: 500;
+    cursor: pointer;
+    outline: none;
+    transition: background-color var(--kailo-duration-instant)
+      var(--kailo-ease-standard);
+
+    .adm-treeTitle__title {
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .adm-actionIcon {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      flex: none;
+    }
+
+    // Row actions show on hover, focus and selection (`20` §15.3 行).
+    .adm-actionIcon > [role='button'] {
+      opacity: 0;
+      transition: opacity var(--kailo-duration-fast);
+    }
+
+    &:hover,
+    &:focus-within,
+    &--selected {
+      .adm-actionIcon > [role='button'] {
+        opacity: 1;
+      }
+    }
+
+    &:hover {
+      background: var(--kailo-color-hover);
+    }
+
+    &:active {
+      background: var(--kailo-color-pressed);
+    }
+
+    &:focus-visible {
+      box-shadow: var(--kailo-focus-ring);
+    }
+
+    &--selected,
+    &--selected:hover {
+      background: var(--kailo-color-selected);
+      color: var(--kailo-color-selected-foreground);
+    }
+  }
+
+  &__empty {
+    padding: 24px 16px;
+    text-align: center;
+
+    &-title {
+      font-size: var(--kailo-text-callout);
+      font-weight: 500;
+      color: var(--kailo-color-foreground);
+    }
+
+    &-hint {
+      margin-top: 4px;
+      font-size: var(--kailo-text-caption);
+      color: var(--kailo-color-muted-foreground);
+    }
+  }
+
+  &__foot {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    height: 40px;
+    border-top: 1px solid var(--kailo-color-border);
+  }
+}
+
+.kailo-pane-pager {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+
+  .ant-btn {
+    width: 28px;
+    min-width: 28px;
+    height: 28px;
+    color: var(--kailo-color-muted-foreground);
+  }
+
+  &__position {
+    min-width: 56px;
+    text-align: center;
+    font-size: var(--kailo-text-caption);
+    color: var(--kailo-color-muted-foreground);
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+.kailo-pane-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 10px 16px;
+}
+
+// 10. Prompt dialog drawn by the page at top level (`07` §4.8.10).
+.kailo-prompt__field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.kailo-prompt__label {
+  font-size: var(--kailo-text-callout);
+  font-weight: 500;
+  color: var(--kailo-color-foreground);
+}
+
+.kailo-prompt__description {
+  font-size: var(--kailo-text-caption);
+  color: var(--kailo-color-muted-foreground);
+}
+
+.kailo-prompt__input.ant-input {
+  height: 34px;
+}
+
+// 11. Detail side panel (`20` §13.2 详情侧板): flush right, 1 px line on
+//     the left edge, no shadow and no scrim; header 44 with a Headline.
+.kailo-side-panel {
+  .ant-drawer-content-wrapper {
+    box-shadow: none !important;
+    border-left: 1px solid var(--kailo-color-border);
+  }
+
+  .ant-drawer-content {
+    border-radius: 0;
+  }
+
+  .ant-drawer-header {
+    min-height: 44px;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--kailo-color-border);
+  }
+
+  .ant-drawer-title {
+    font-size: var(--kailo-text-headline);
+    line-height: 22px;
+  }
+
+  .ant-drawer-body {
+    padding: 16px;
+  }
+}
+
+.kailo-detail-list {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px 16px;
+  margin-bottom: 20px;
+
+  dt {
+    margin-bottom: 4px;
+    font-size: var(--kailo-text-caption);
+    color: var(--kailo-color-muted-foreground);
+  }
+
+  dd {
+    margin: 0;
+    font-size: var(--kailo-text-callout);
+    color: var(--kailo-color-foreground);
+    word-break: break-all;
+  }
+}
+
+.kailo-detail-section {
+  margin: 0 0 8px;
+  font-size: var(--kailo-text-callout);
+  font-weight: 600;
+  color: var(--kailo-color-foreground);
+}
+
+// 12. Status badges (`20` §9 徽标): soft background + text, 20 high.
+.kailo-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: var(--kailo-radius-sm);
+  font-size: var(--kailo-text-caption);
+  font-weight: 500;
+  line-height: 20px;
+  white-space: nowrap;
+  background: var(--kailo-color-muted);
+  color: var(--kailo-color-text-secondary);
+
+  &::before {
+    content: '';
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+  }
+
+  &--success {
+    background: var(--kailo-color-success-soft);
+    color: var(--kailo-color-success-text);
+  }
+
+  &--danger {
+    background: var(--kailo-color-danger-soft);
+    color: var(--kailo-color-danger-text);
+  }
+
+  &--warning {
+    background: var(--kailo-color-warning-soft);
+    color: var(--kailo-color-warning-text);
+  }
+
+  &--plain::before {
+    display: none;
+  }
+}
+
+// 13. Charts (`20` §15.2 第三方渲染面): the Vega canvas is transparent and
+//     drawn from the tokens (components/chart/theme.ts); the frame around
+//     it is the card surface in both themes.
+.adm-chart .vega-embed,
+.adm-chart .vega-embed .chart-wrapper,
+.adm-chart svg.marks {
+  background: transparent !important;
+}
+
+// 14. SQL and code (ace "tomorrow" classes) in Kailo light / dark colours.
+:root {
+  --kailo-code-text: var(--kailo-color-foreground);
+  --kailo-code-keyword: #6d3fc7;
+  --kailo-code-string: #1f7a4d;
+  --kailo-code-number: #b45309;
+  --kailo-code-function: #1d5fae;
+  --kailo-code-comment: var(--kailo-color-muted-foreground);
+  --kailo-code-gutter: var(--kailo-color-muted-foreground);
+}
+
+:root[data-kailo-theme='dark'] {
+  --kailo-code-keyword: #c4a7ff;
+  --kailo-code-string: #6fcf97;
+  --kailo-code-number: #f0a35e;
+  --kailo-code-function: #7cc0f5;
+}
+
+.ace-tomorrow {
+  background-color: var(--kailo-color-canvas) !important;
+  color: var(--kailo-code-text) !important;
+
+  .ace_gutter {
+    background: var(--kailo-color-canvas) !important;
+    color: var(--kailo-code-gutter) !important;
+  }
+
+  .ace_print-margin {
+    background: var(--kailo-color-border) !important;
+  }
+
+  .ace_cursor {
+    color: var(--kailo-color-foreground) !important;
+  }
+
+  .ace_marker-layer .ace_selection {
+    background: color-mix(
+      in srgb,
+      var(--kailo-color-brand) 22%,
+      transparent
+    ) !important;
+  }
+
+  .ace_marker-layer .ace_active-line,
+  .ace_gutter-active-line {
+    background: var(--kailo-color-hover) !important;
+  }
+
+  .ace_keyword,
+  .ace_storage,
+  .ace_meta.ace_tag {
+    color: var(--kailo-code-keyword) !important;
+  }
+
+  .ace_string,
+  .ace_constant.ace_other {
+    color: var(--kailo-code-string) !important;
+  }
+
+  .ace_constant.ace_numeric,
+  .ace_constant.ace_language,
+  .ace_constant.ace_character {
+    color: var(--kailo-code-number) !important;
+  }
+
+  .ace_support.ace_function,
+  .ace_entity.ace_name.ace_function,
+  .ace_support.ace_type {
+    color: var(--kailo-code-function) !important;
+  }
+
+  .ace_comment {
+    color: var(--kailo-code-comment) !important;
+    font-style: italic;
+  }
+
+  .ace_variable,
+  .ace_identifier,
+  .ace_paren,
+  .ace_punctuation,
+  .ace_keyword.ace_operator {
+    color: var(--kailo-code-text) !important;
+  }
+
+  .ace_indent-guide {
+    background: none !important;
+    box-shadow: inset -1px 0 0 var(--kailo-color-border);
+  }
+}
+
+// 15. List cells: SQL summary (two lines, mono), clickable rows, link cells.
+.kailo-sql-snippet {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  padding: 0;
+  background: none;
+  font-family: var(--kailo-font-mono);
+  font-size: var(--kailo-text-caption);
+  line-height: 18px;
+  color: var(--kailo-color-text-secondary);
+  word-break: break-all;
+}
+
+.kailo-row-clickable {
+  cursor: pointer;
+}
+
+.kailo-link-cell.ant-btn {
+  height: 22px;
+  padding: 0;
+  font-family: var(--kailo-font-mono);
+  font-size: var(--kailo-text-caption);
+  color: var(--kailo-color-brand-text);
+}

@@ -24,7 +24,10 @@ const CustomPopoverCol = (props: {
     <Col span={span}>
       <div
         className="mb-0"
-        style={{ fontSize: 12, color: 'var(--kailo-color-muted-foreground)' }}
+        style={{
+          fontSize: 'var(--kailo-text-caption)',
+          color: 'var(--kailo-color-muted-foreground)',
+        }}
       >
         {title}
       </div>

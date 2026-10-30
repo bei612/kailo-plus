@@ -18,6 +18,7 @@ import { runNativeMetadataWrite } from '@/utils/errorHandler';
 import { Path } from '@/utils/enum';
 import useHomeSidebar from '@/hooks/useHomeSidebar';
 import SiderLayout from '@/components/layouts/SiderLayout';
+import { KailoLoadError } from '@/components/kailo/KailoList';
 import Prompt from '@/components/pages/home/prompt';
 import useAskPrompt, {
   getIsFinished,
@@ -149,11 +150,17 @@ export default function HomeThread() {
 
   const [createViewMutation, { loading: creating }] = useCreateViewMutation();
 
-  const { data, updateQuery: updateThreadQuery } = useThreadQuery({
+  // DD-167 (`20` §15.4): a thread that cannot be read shows an inline
+  // error with retry in place (no redirect to the first page).
+  const {
+    data,
+    error: threadError,
+    refetch: refetchThread,
+    updateQuery: updateThreadQuery,
+  } = useThreadQuery({
     variables: { threadId },
     fetchPolicy: 'cache-and-network',
     skip: threadId === null,
-    onError: () => router.push(Path.Home),
   });
   const [createThreadResponse] = useCreateThreadResponseMutation();
   const [updateThreadResponse, { loading: threadResponseUpdating }] =
@@ -852,7 +859,7 @@ export default function HomeThread() {
       ?.name || data?.thread?.responses?.[0]?.question;
   const { hosted } = useKailoPage({
     title: threadTitle || t('threads'),
-    ready: !!data?.thread,
+    ready: !!data?.thread || !!threadError,
     actions: [
       ...(share.available
         ? [
@@ -887,9 +894,19 @@ export default function HomeThread() {
         </div>
       )}
       {share.modal}
-      <PromptThreadProvider value={providerValue}>
-        <PromptThread />
-      </PromptThreadProvider>
+      {threadError && !data?.thread ? (
+        <div className="kailo-page-state">
+          <KailoLoadError
+            error={threadError}
+            item="list.itemThread"
+            onRetry={() => refetchThread?.()}
+          />
+        </div>
+      ) : (
+        <PromptThreadProvider value={providerValue}>
+          <PromptThread />
+        </PromptThreadProvider>
+      )}
 
       <div className="py-12" />
       <Prompt

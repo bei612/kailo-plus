@@ -1,15 +1,20 @@
 import { useEffect, useRef, useState } from 'react';
-import { Table, TableColumnsType, Button, Tag, Typography } from 'antd';
-import { getAbsoluteTime } from '@/utils/time';
+import { Table, TableColumnsType, Button, Tag, Typography, Select } from 'antd';
+import { getAbsoluteTime, getRelativeTime } from '@/utils/time';
 import useDrawerAction from '@/hooks/useDrawerAction';
-import { getColumnSearchProps } from '@/utils/table';
-import SiderLayout from '@/components/layouts/SiderLayout';
 import SimpleLayout from '@/components/layouts/SimpleLayout';
-import PageLayout from '@/components/layouts/PageLayout';
-import { EyeIcon, FilterIcon } from '@/components/kailo/KailoIcons';
+import { CodeIcon, EyeIcon, XIcon } from '@/components/kailo/KailoIcons';
+import {
+  KailoForbidden,
+  KailoListProgress,
+  KailoLoadError,
+  KailoPagination,
+  KailoSkeletonRows,
+  KailoTime,
+  KailoToolbar,
+} from '@/components/kailo/KailoList';
 import CheckCircleOutlined from '@ant-design/icons/CheckCircleOutlined';
 import CloseCircleOutlined from '@ant-design/icons/CloseCircleOutlined';
-import SQLCodeBlock from '@/components/code/SQLCodeBlock';
 import DetailsDrawer from '@/components/pages/apiManagement/DetailsDrawer';
 import {
   ApiHistoryQuery,
@@ -25,21 +30,19 @@ import { apiTypeLabel } from '@/components/pages/apiManagement/apiTypeLabel';
 import KailoEmpty from '@/components/kailo/KailoEmpty';
 import useKailoPage from '@/hooks/useKailoPage';
 import useKailoSession from '@/hooks/useKailoSession';
-import { CodeIcon } from '@/components/kailo/KailoIcons';
+import useListRoute from '@/hooks/useListRoute';
+import { pageCount } from '@/utils/kailoList';
 
-const PAGE_SIZE = 10;
-
-// DD-157 (20 §13.6): column filters use the Kailo line icon, brand when on.
-const tableFilterIcon = (filtered: boolean) => (
-  <FilterIcon
-    size={14}
-    style={{
-      color: filtered
-        ? 'var(--kailo-color-brand)'
-        : 'var(--kailo-color-muted-foreground)',
-    }}
-  />
-);
+// DD-167 (`20` §15.1/§15.3): API 记录 — an unbounded list paged on the
+// server (newest first); filters 类型 / 状态 / 时间 (and a conversation, from
+// a row) in the toolbar; page, size and filters in the route; a detail side
+// panel with the request and the response.
+const STATUS_FILTERS = [200, 400, 500] as const;
+const TIME_FILTERS: Record<string, number> = {
+  '24h': 24 * 3600 * 1000,
+  '7d': 7 * 24 * 3600 * 1000,
+  '30d': 30 * 24 * 3600 * 1000,
+};
 
 async function currentHistoryIdentity() {
   const config = await getUserConfig();
@@ -76,15 +79,16 @@ function APIHistoryUnavailable({ loading }: { loading: boolean }) {
   const { locale } = useRouter();
   const t = useKailoText();
   useKailoPage({ title: kailoText(locale, 'apiHistory'), ready: !loading });
+  // DD-167 (`20` §15.4 权限不足): lock, how to get access, no retry.
   return (
     <SimpleLayout loading={loading}>
       {!loading && (
-        <KailoEmpty
-          className="h-100"
-          icon={CodeIcon}
-          title={t('apiHistoryAdminOnlyTitle')}
-          description={t('apiHistoryAdminOnlyHint')}
-        />
+        <div className="kailo-page-state">
+          <KailoForbidden
+            item="list.itemApiHistory"
+            hint={t('apiHistoryAdminOnlyHint')}
+          />
+        </div>
       )}
     </SimpleLayout>
   );
@@ -92,8 +96,26 @@ function APIHistoryUnavailable({ loading }: { loading: boolean }) {
 
 export function APIHistory() {
   const detailsDrawer = useDrawerAction();
-  const [currentPage, setCurrentPage] = useState<number>(1);
-  const [filters, setFilters] = useState<Record<string, any>>({});
+  const list = useListRoute();
+  const apiTypeFilter = Object.values(ApiType).includes(
+    list.text('type') as ApiType,
+  )
+    ? (list.text('type') as ApiType)
+    : undefined;
+  const statusFilter = STATUS_FILTERS.find(
+    (status) => String(status) === list.text('status'),
+  );
+  const timeFilter = TIME_FILTERS[list.text('time')]
+    ? list.text('time')
+    : undefined;
+  const threadFilter = list.text('thread') || undefined;
+  const filtered = !!(
+    apiTypeFilter ||
+    statusFilter ||
+    timeFilter ||
+    threadFilter
+  );
+  const [attempt, setAttempt] = useState(0);
   const [page, setPage] = useState<ApiHistoryQuery['apiHistory']>();
   const [loading, setLoading] = useState(false);
   const [pageError, setPageError] = useState<string>();
@@ -199,17 +221,22 @@ export function APIHistory() {
         const result = await readPage({
           variables: {
             pagination: {
-              offset: (currentPage - 1) * PAGE_SIZE,
-              limit: PAGE_SIZE,
+              offset: (list.page - 1) * list.size,
+              limit: list.size,
             },
             filter: {
               ...(identity && {
                 queryScope: identity.queryScope,
                 generation: identity.generation,
               }),
-              apiType: filters['apiType']?.[0],
-              statusCode: filters['statusCode']?.[0],
-              threadId: filters['threadId']?.[0],
+              apiType: apiTypeFilter,
+              statusCode: statusFilter,
+              threadId: threadFilter,
+              ...(timeFilter && {
+                startDate: new Date(
+                  Date.now() - TIME_FILTERS[timeFilter],
+                ).toISOString(),
+              }),
             },
           },
         });
@@ -260,100 +287,111 @@ export function APIHistory() {
       window.removeEventListener('focus', refresh);
       document.removeEventListener('visibilitychange', visible);
     };
-  }, [currentPage, filters]);
+  }, [
+    list.page,
+    list.size,
+    apiTypeFilter,
+    statusFilter,
+    timeFilter,
+    threadFilter,
+    attempt,
+  ]);
+
+  // A page past the end returns to the last page (20 §15.3).
+  useEffect(() => {
+    if (page && page.total > 0 && list.page > pageCount(page.total, list.size))
+      list.update({ page: pageCount(page.total, list.size) });
+  }, [page?.total, list.page, list.size]);
+
+  const statusTag = (status: number) => {
+    if (status === 202) return <Tag color="warning">{text.unknown}</Tag>;
+    const ok = status >= 200 && status < 300;
+    return (
+      <Tag
+        icon={ok ? <CheckCircleOutlined /> : <CloseCircleOutlined />}
+        color={ok ? 'success' : 'error'}
+      >
+        {status}
+      </Tag>
+    );
+  };
 
   const columns: TableColumnsType<ApiHistoryResponse> = [
     {
       title: t('knowledge.timestamp'),
       dataIndex: 'createdAt',
       key: 'createdAt',
-      width: 180,
+      width: 128,
+      // Newest first is the only order (20 §15.3), shown on the header.
+      sortOrder: 'descend',
+      sortDirections: ['descend'],
+      sorter: true,
+      showSorterTooltip: false,
       render: (timestamp: string) => (
-        <div className="gray-7">{getAbsoluteTime(timestamp)}</div>
+        <KailoTime
+          value={timestamp}
+          relative={getRelativeTime}
+          absolute={getAbsoluteTime}
+        />
       ),
     },
     {
       title: t('knowledge.apiType'),
       dataIndex: 'apiType',
       key: 'apiType',
-      width: 180,
+      width: 160,
       render: (type: ApiHistoryResponse['apiType']) => (
-        <Tag>{apiTypeLabel(locale, type)}</Tag>
+        <span className="kailo-row-title">{apiTypeLabel(locale, type)}</span>
       ),
-      filters: Object.keys(ApiType).map((type) => ({
-        text: apiTypeLabel(locale, ApiType[type]),
-        value: type,
-      })),
-      filteredValue: filters['apiType'],
-      filterMultiple: false,
-      filterIcon: tableFilterIcon,
     },
     {
       title: t('knowledge.status'),
       dataIndex: 'statusCode',
       key: 'statusCode',
-      width: 100,
-      render: (status: number) => {
-        if (status === 202) return <Tag color="warning">{text.unknown}</Tag>;
-        const icon =
-          status >= 200 && status < 300 ? (
-            <CheckCircleOutlined />
-          ) : (
-            <CloseCircleOutlined />
-          );
-        const color = status >= 200 && status < 300 ? 'success' : 'error';
-        return (
-          <Tag icon={icon} color={color}>
-            {status}
-          </Tag>
-        );
-      },
-      filters: [
-        { text: t('knowledge.status2xx'), value: 200 },
-        { text: t('knowledge.status4xx'), value: 400 },
-        { text: t('knowledge.status5xx'), value: 500 },
-      ],
-      filteredValue: filters['statusCode'],
-      filterMultiple: false,
-      filterIcon: tableFilterIcon,
+      width: 112,
+      render: (status: number) => statusTag(status),
     },
     {
       title: t('knowledge.questionOrSql'),
       dataIndex: 'requestPayload',
       key: 'requestPayload',
       render: (payload: Record<string, any>, record: ApiHistoryResponse) => {
-        if (record.apiType === ApiType.RUN_SQL && payload?.sql) {
-          return (
-            <div style={{ width: '100%' }}>
-              <SQLCodeBlock code={payload.sql} maxHeight="130" />
-            </div>
-          );
-        }
-        return <div>{payload?.question || payload?.sql || '-'}</div>;
+        const sql = record.apiType === ApiType.RUN_SQL && payload?.sql;
+        const value = sql || payload?.question || payload?.sql;
+        if (!value) return <span className="kailo-row-secondary">—</span>;
+        return sql ? (
+          <code className="kailo-sql-snippet" title={sql}>
+            {String(sql).replace(/\s+/g, ' ').trim()}
+          </code>
+        ) : (
+          <Typography.Text ellipsis title={String(value)}>
+            {String(value)}
+          </Typography.Text>
+        );
       },
     },
     {
       title: t('knowledge.threadId'),
       dataIndex: 'threadId',
       key: 'threadId',
-      width: 200,
+      width: 148,
       render: (threadId: string) => {
-        if (!threadId) return <div className="gray-7">-</div>;
+        if (!threadId) return <span className="kailo-row-secondary">—</span>;
         return (
-          <Typography.Text
-            ellipsis
-            className="gray-7"
-            copyable={{ text: threadId }}
+          <Button
+            type="link"
+            size="small"
+            className="kailo-link-cell"
+            title={threadId}
+            onClick={(event) => {
+              event.stopPropagation();
+              list.update({ thread: threadId });
+            }}
           >
-            {threadId}
-          </Typography.Text>
+            {threadId.length > 12 ? `${threadId.slice(0, 12)}…` : threadId}
+          </Button>
         );
       },
-      ...getColumnSearchProps({
-        dataIndex: 'threadId',
-        placeholder: t('knowledge.searchThreadId'),
-        filteredValue: filters['threadId'],
-      }),
     },
     {
       // DD-133 §3: the Kailo user behind the call (none for older rows and
@@ -361,32 +399,37 @@ export function APIHistory() {
       title: kailoText(locale, 'owner'),
       dataIndex: 'owner',
       key: 'owner',
-      width: 160,
+      width: 156,
       render: (owner) => (
         <KailoUser user={owner} emptyText={kailoText(locale, 'ownerUnknown')} />
       ),
     },
     {
-      title: t('knowledge.durationMs'),
+      title: t('knowledge.duration'),
       dataIndex: 'durationMs',
       key: 'durationMs',
-      width: 124,
+      width: 96,
+      align: 'right',
       render: (durationMs: number) => (
-        <div className="gray-7 text-right">{durationMs || '-'}</div>
+        <span className="kailo-row-secondary kailo-num">
+          {durationMs ? `${durationMs.toLocaleString()} ms` : '—'}
+        </span>
       ),
     },
     {
       title: t('knowledge.actions'),
       key: 'actions',
-      width: 110,
+      width: 88,
       align: 'center',
-      fixed: 'right',
       render: (record) => (
         <Button
           type="text"
           size="small"
           icon={<EyeIcon className="mr-1" />}
-          onClick={() => readSelectedHistory(record.id)}
+          onClick={(event) => {
+            event?.stopPropagation?.();
+            return readSelectedHistory(record.id);
+          }}
         >
           {t('knowledge.details')}
         </Button>
@@ -400,38 +443,153 @@ export function APIHistory() {
     ready: !loading,
   });
 
-  return (
-    <SiderLayout loading={false} sidebar={null}>
-      <PageLayout
-        title={kailoText(locale, 'apiHistory')}
-        description={t('knowledge.apiHistoryDescription')}
-      >
-        <Table
-          className="ant-table-has-header"
-          dataSource={page?.items || []}
-          loading={loading || observing}
-          locale={{
-            emptyText: pageError || (
-              <KailoEmpty
-                title={t('knowledge.apiHistoryEmptyTitle')}
-                description={t('knowledge.apiHistoryEmptyDescription')}
-              />
-            ),
-          }}
-          columns={columns}
-          rowKey="id"
-          pagination={{
-            hideOnSinglePage: true,
-            pageSize: PAGE_SIZE,
-            size: 'small',
-            total: page?.total,
-          }}
-          scroll={{ x: 1200 }}
-          onChange={(pagination, filters, _sorter) => {
-            setCurrentPage(pagination.current);
-            setFilters(filters);
-          }}
+  const total = page?.total ?? 0;
+  const clearFilters = () =>
+    list.update({
+      type: undefined,
+      status: undefined,
+      time: undefined,
+      thread: undefined,
+    });
+  // 20 §15.4: first read and every refresh of this private list are
+  // skeleton rows (the rows are never kept across an identity check).
+  const tableState = () => {
+    if (loading) return <KailoSkeletonRows rows={Math.min(list.size, 10)} />;
+    if (pageError)
+      return (
+        <KailoLoadError
+          error={null}
+          item="list.itemApiHistory"
+          reason={pageError}
+          onRetry={() => setAttempt((value) => value + 1)}
         />
+      );
+    if (filtered)
+      return (
+        <div className="kailo-no-match">
+          <div className="kailo-no-match__title">
+            {t('list.noMatch', { item: t('list.itemApiHistory') })}
+          </div>
+          <div className="kailo-no-match__hint">{t('list.noMatchHint')}</div>
+          <Button size="small" onClick={clearFilters}>
+            {t('list.clearFilters')}
+          </Button>
+        </div>
+      );
+    return (
+      <KailoEmpty
+        icon={CodeIcon}
+        title={t('knowledge.apiHistoryEmptyTitle')}
+        description={t('knowledge.apiHistoryEmptyDescription')}
+      />
+    );
+  };
+
+  return (
+    <SimpleLayout loading={false}>
+      <div className="kailo-list-page">
+        <KailoToolbar
+          left={
+            <>
+              <Select
+                className="kailo-filter"
+                aria-label={t('list.filterType')}
+                value={apiTypeFilter ?? ''}
+                dropdownMatchSelectWidth={false}
+                onChange={(value) => list.update({ type: value || undefined })}
+                options={[
+                  { value: '', label: t('list.allTypes') },
+                  ...Object.values(ApiType).map((type) => ({
+                    value: type,
+                    label: apiTypeLabel(locale, type),
+                  })),
+                ]}
+              />
+              <Select
+                className="kailo-filter"
+                aria-label={t('list.filterStatus')}
+                value={statusFilter ? String(statusFilter) : ''}
+                dropdownMatchSelectWidth={false}
+                onChange={(value) =>
+                  list.update({ status: value || undefined })
+                }
+                options={[
+                  { value: '', label: t('list.allStatuses') },
+                  { value: '200', label: t('knowledge.status2xx') },
+                  { value: '400', label: t('knowledge.status4xx') },
+                  { value: '500', label: t('knowledge.status5xx') },
+                ]}
+              />
+              <Select
+                className="kailo-filter"
+                aria-label={t('list.filterTime')}
+                value={timeFilter ?? ''}
+                dropdownMatchSelectWidth={false}
+                onChange={(value) => list.update({ time: value || undefined })}
+                options={[
+                  { value: '', label: t('list.anyTime') },
+                  { value: '24h', label: t('list.last24h') },
+                  { value: '7d', label: t('list.last7d') },
+                  { value: '30d', label: t('list.last30d') },
+                ]}
+              />
+              {threadFilter && (
+                <span className="kailo-filter-chip">
+                  {t('list.threadIdFilter', {
+                    id:
+                      threadFilter.length > 12
+                        ? `${threadFilter.slice(0, 12)}…`
+                        : threadFilter,
+                  })}
+                  <Button
+                    type="text"
+                    size="small"
+                    aria-label={t('list.clearFilters')}
+                    icon={<XIcon size={12} />}
+                    onClick={() => list.update({ thread: undefined })}
+                  />
+                </span>
+              )}
+              {filtered && (
+                <Button
+                  type="text"
+                  size="small"
+                  className="kailo-clear-filters"
+                  onClick={clearFilters}
+                >
+                  {t('list.clearFilters')}
+                </Button>
+              )}
+            </>
+          }
+        />
+        <div
+          className="kailo-list"
+          aria-busy={loading || observing || undefined}
+        >
+          <KailoListProgress active={observing} />
+          <Table
+            className="ant-table-has-header"
+            dataSource={page?.items || []}
+            locale={{ emptyText: tableState() }}
+            columns={columns}
+            rowKey="id"
+            pagination={false}
+            tableLayout="fixed"
+            rowClassName="kailo-row-clickable"
+            onRow={(record) => ({
+              onClick: () => readSelectedHistory(record.id),
+            })}
+          />
+          {!loading && !pageError && total > 0 && (
+            <KailoPagination
+              total={total}
+              page={Math.min(list.page, pageCount(total, list.size))}
+              size={list.size}
+              onChange={list.setPage}
+            />
+          )}
+        </div>
         <DetailsDrawer
           {...detailsDrawer.state}
           onClose={closeDetails}
@@ -442,7 +600,7 @@ export function APIHistory() {
             return readSelectedHistory(record.id);
           }}
         />
-      </PageLayout>
-    </SiderLayout>
+      </div>
+    </SimpleLayout>
   );
 }

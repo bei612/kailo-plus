@@ -191,6 +191,10 @@ export interface IAskingService {
     beforeWrite?: (projectId: number) => Promise<void>,
   ): Promise<void>;
   listThreads(): Promise<Thread[]>;
+  listThreadPage(
+    offset: number,
+    limit: number,
+  ): Promise<{ items: Thread[]; total: number }>;
   // DD-133 §3: the Kailo user who started a thread of the current project.
   getThreadOwner(input: {
     threadId?: number;
@@ -910,6 +914,19 @@ export class AskingService implements IAskingService {
   public async listThreads(): Promise<Thread[]> {
     const { id } = await this.projectService.getCurrentProject();
     return await this.threadRepository.listAllTimeDescOrder(id);
+  }
+
+  // DD-167 (20 §15.3): one page of the thread pane, recent activity first.
+  public async listThreadPage(
+    offset: number,
+    limit: number,
+  ): Promise<{ items: Thread[]; total: number }> {
+    const { id } = await this.projectService.getCurrentProject();
+    return await this.threadRepository.listPageByRecentActivity(
+      id,
+      offset,
+      limit,
+    );
   }
 
   public async updateThread(

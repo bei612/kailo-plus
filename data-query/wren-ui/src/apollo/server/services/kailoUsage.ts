@@ -99,12 +99,12 @@ export function usageRefusalText(
   switch (decision) {
     case 'TENANT_QUOTA_EXHAUSTED':
       return english
-        ? "Your organization's data query quota for this month is used up. Contact an admin."
-        : '组织本月的问数额度已用完，请联系管理员。';
+        ? "Your organization's Data Modeling quota for this month is used up. Contact an admin."
+        : '组织本月的数据建模额度已用完，请联系管理员。';
     case 'MEMBER_QUOTA_EXHAUSTED':
       return english
-        ? 'Your data query quota for this month is used up.'
-        : '你本月的问数额度已用完。';
+        ? 'Your Data Modeling quota for this month is used up.'
+        : '你本月的数据建模额度已用完。';
     case 'QUOTA_NOT_CONFIGURED':
       return english
         ? "Your organization's usage quota is not yet set up in Kailo, so questions cannot be asked yet. Contact an admin."

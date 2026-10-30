@@ -29,10 +29,12 @@ export type AskingTaskQueryVariables = Types.Exact<{
 
 export type AskingTaskQuery = { __typename?: 'Query', askingTask?: { __typename?: 'AskingTask', completion?: string | null, status: Types.AskingTaskStatus, type?: Types.AskingTaskType | null, rephrasedQuestion?: string | null, intentReasoning?: string | null, sqlGenerationReasoning?: string | null, retrievedTables?: Array<string> | null, invalidSql?: string | null, traceId?: string | null, queryId?: string | null, candidates: Array<{ __typename?: 'ResultCandidate', sql: string, type: Types.ResultCandidateType, view?: { __typename?: 'ViewInfo', id: number, name: string, statement: string, displayName: string } | null, sqlPair?: { __typename?: 'SqlPair', id: number, question: string, sql: string, projectId: number } | null }>, error?: { __typename?: 'Error', code?: string | null, shortMessage?: string | null, message?: string | null, stacktrace?: Array<string | null> | null } | null } | null };
 
-export type ThreadsQueryVariables = Types.Exact<{ [key: string]: never; }>;
+export type ThreadsQueryVariables = Types.Exact<{
+  pagination: Types.ThreadPaginationInput;
+}>;
 
 
-export type ThreadsQuery = { __typename?: 'Query', threads: Array<{ __typename?: 'Thread', id: number, summary: string, owner?: { __typename?: 'KailoUser', name?: string | null, picture?: string | null, isCurrentUser: boolean } | null }> };
+export type ThreadsQuery = { __typename?: 'Query', threadPage: { __typename?: 'ThreadPage', total: number, hasMore: boolean, items: Array<{ __typename?: 'Thread', id: number, summary: string, owner?: { __typename?: 'KailoUser', name?: string | null, picture?: string | null, isCurrentUser: boolean } | null }> } };
 
 export type ThreadQueryVariables = Types.Exact<{
   threadId: Types.Scalars['Int'];
@@ -440,15 +442,19 @@ export type AskingTaskQueryHookResult = ReturnType<typeof useAskingTaskQuery>;
 export type AskingTaskLazyQueryHookResult = ReturnType<typeof useAskingTaskLazyQuery>;
 export type AskingTaskQueryResult = Apollo.QueryResult<AskingTaskQuery, AskingTaskQueryVariables>;
 export const ThreadsDocument = gql`
-    query Threads {
-  threads {
-    id
-    summary
-    owner {
-      name
-      picture
-      isCurrentUser
+    query Threads($pagination: ThreadPaginationInput!) {
+  threadPage(pagination: $pagination) {
+    items {
+      id
+      summary
+      owner {
+        name
+        picture
+        isCurrentUser
+      }
     }
+    total
+    hasMore
   }
 }
     `;
@@ -465,10 +471,11 @@ export const ThreadsDocument = gql`
  * @example
  * const { data, loading, error } = useThreadsQuery({
  *   variables: {
+ *      pagination: // value for 'pagination'
  *   },
  * });
  */
-export function useThreadsQuery(baseOptions?: Apollo.QueryHookOptions<ThreadsQuery, ThreadsQueryVariables>) {
+export function useThreadsQuery(baseOptions: Apollo.QueryHookOptions<ThreadsQuery, ThreadsQueryVariables>) {
         const options = {...defaultOptions, ...baseOptions}
         return Apollo.useQuery<ThreadsQuery, ThreadsQueryVariables>(ThreadsDocument, options);
       }

@@ -177,16 +177,21 @@ export const ASKING_TASK = gql`
   ${COMMON_ASKING_TASK}
 `;
 
+// DD-167 (20 §15.3): the thread pane is paged on the server.
 export const THREADS = gql`
-  query Threads {
-    threads {
-      id
-      summary
-      owner {
-        name
-        picture
-        isCurrentUser
+  query Threads($pagination: ThreadPaginationInput!) {
+    threadPage(pagination: $pagination) {
+      items {
+        id
+        summary
+        owner {
+          name
+          picture
+          isCurrentUser
+        }
       }
+      total
+      hasMore
     }
   }
 `;

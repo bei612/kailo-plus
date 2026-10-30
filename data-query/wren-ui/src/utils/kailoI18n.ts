@@ -4,16 +4,17 @@ import homeMessages from './i18n/home';
 import modelingMessages from './i18n/modeling';
 import knowledgeMessages from './i18n/knowledge';
 import setupMessages from './i18n/setup';
+import listMessages from './i18n/list';
 
 // DD-133 §1/§4, DD-157 (20 §13.8): every visible string follows the Kailo
-// locale (zh-CN default, en). The component name is fixed by DD-133
-// (问数 / Data Q&A); the deployment display name comes from
+// locale (zh-CN default, en). The component name is the Kailo presentation
+// category name (DD-167: 数据建模 / Data Modeling); the deployment display name comes from
 // PLATFORM_DISPLAY_NAME. Shell keys live here; each product area keeps its
 // strings in ./i18n/<area>.ts with area-prefixed keys ("home.ask"), merged
 // below into one dictionary per locale.
 const shell = {
   'zh-CN': {
-    componentName: '问数',
+    componentName: '数据建模',
     navHome: '问答',
     navModeling: '建模',
     navKnowledge: '知识',
@@ -57,7 +58,7 @@ const shell = {
     // DD-138(7): administration data.
     apiHistoryAdminOnlyTitle: 'API 记录仅对管理员开放',
     apiHistoryAdminOnlyHint:
-      'API 调用记录属于管理数据，只有可以管理问数的成员可以查看。',
+      'API 调用记录属于管理数据，只有可以管理数据建模的成员可以查看。',
     owner: '创建者',
     ownerUnknown: '—',
     // DD-138(6) (`07` §4.8.5): admin surfaces and the first-use state.
@@ -99,7 +100,7 @@ const shell = {
     shareFailed: '分享未完成，请稍后重试。',
   },
   en: {
-    componentName: 'Data Q&A',
+    componentName: 'Data Modeling',
     navHome: 'Ask',
     navModeling: 'Modeling',
     navKnowledge: 'Knowledge',
@@ -199,6 +200,7 @@ const messages = {
     ...modelingMessages['zh-CN'],
     ...knowledgeMessages['zh-CN'],
     ...setupMessages['zh-CN'],
+    ...listMessages['zh-CN'],
   },
   en: {
     ...shell.en,
@@ -206,6 +208,7 @@ const messages = {
     ...modelingMessages.en,
     ...knowledgeMessages.en,
     ...setupMessages.en,
+    ...listMessages.en,
   },
 };
 
@@ -241,7 +244,7 @@ export function kailoT(key: KailoTextKey, vars?: KailoTextVars) {
   return kailoText(currentLocale(), key, vars);
 }
 
-// "<deployment display name> 问数" / "<deployment display name> Data Q&A".
+// "<deployment display name> 数据建模" / "<deployment display name> Data Modeling".
 export function kailoProductTitle(
   locale: string | undefined,
   displayName: string | null | undefined,

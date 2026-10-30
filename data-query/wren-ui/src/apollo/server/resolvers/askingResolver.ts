@@ -433,6 +433,7 @@ export class AskingResolver {
     this.updateThread = this.updateThread.bind(this);
     this.deleteThread = this.deleteThread.bind(this);
     this.listThreads = this.listThreads.bind(this);
+    this.listThreadPage = this.listThreadPage.bind(this);
     this.createThreadResponse = this.createThreadResponse.bind(this);
     this.updateThreadResponse = this.updateThreadResponse.bind(this);
     this.getResponse = this.getResponse.bind(this);
@@ -848,6 +849,25 @@ export class AskingResolver {
   ): Promise<Thread[]> {
     const threads = await ctx.askingService.listThreads();
     return threads;
+  }
+
+  // DD-167 (20 §15.3): the thread pane pages on the server (1–100 a page).
+  public async listThreadPage(
+    _root: any,
+    args: { pagination: { offset: number; limit: number } },
+    ctx: IContext,
+  ): Promise<{ items: Thread[]; total: number; hasMore: boolean }> {
+    const { offset, limit } = args.pagination;
+    if (
+      !Number.isSafeInteger(offset) ||
+      offset < 0 ||
+      !Number.isSafeInteger(limit) ||
+      limit < 1 ||
+      limit > 100
+    )
+      throw new Error('Invalid thread pagination');
+    const page = await ctx.askingService.listThreadPage(offset, limit);
+    return { ...page, hasMore: offset + page.items.length < page.total };
   }
 
   public async createThreadResponse(

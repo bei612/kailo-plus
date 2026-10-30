@@ -13,16 +13,16 @@ const ReactMarkdownBlock = styled(ReactMarkdown)`
     margin-bottom: 8px;
   }
   h1 {
-    font-size: 20px;
+    font-size: calc(20px * var(--kailo-type-scale, 1));
   }
   h2 {
-    font-size: 18px;
+    font-size: calc(18px * var(--kailo-type-scale, 1));
   }
   h3 {
-    font-size: 16px;
+    font-size: calc(16px * var(--kailo-type-scale, 1));
   }
   h4 {
-    font-size: 14px;
+    font-size: var(--kailo-text-body);
   }
   hr {
     border-top: 1px solid var(--gray-5);
@@ -62,7 +62,7 @@ const ReactMarkdownBlock = styled(ReactMarkdown)`
   h4 code,
   li code,
   p code {
-    font-size: 12px;
+    font-size: var(--kailo-text-caption);
     background: var(--gray-4);
     color: var(--gray-8);
     padding: 2px 4px;

@@ -27,7 +27,7 @@ const StyledMenu = styled(Menu)`
     }
 
     .ant-menu-item-group-title {
-      font-size: 11px;
+      font-size: var(--kailo-text-overline);
       line-height: 14px;
       font-weight: 600;
       letter-spacing: 0.04em;
@@ -46,7 +46,7 @@ const StyledMenu = styled(Menu)`
       padding-left: 8px !important;
       padding-right: 8px;
       border-radius: 6px;
-      font-size: 13px;
+      font-size: var(--kailo-text-callout);
       font-weight: 500;
 
       &:not(last-child) {

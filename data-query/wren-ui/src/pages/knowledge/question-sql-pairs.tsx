@@ -1,23 +1,37 @@
-import dynamic from 'next/dynamic';
+import { useEffect, useMemo } from 'react';
 import { Button, Table, TableColumnsType, Typography } from 'antd';
 import { format } from 'sql-formatter';
-import SiderLayout from '@/components/layouts/SiderLayout';
-import PageLayout from '@/components/layouts/PageLayout';
+import SimpleLayout from '@/components/layouts/SimpleLayout';
 import KailoEmpty from '@/components/kailo/KailoEmpty';
 import { EyeIcon, ListIcon } from '@/components/kailo/KailoIcons';
+import {
+  KailoListFrame,
+  KailoPagination,
+  KailoSearch,
+  KailoTime,
+  KailoToolbar,
+} from '@/components/kailo/KailoList';
 import { notify } from '@/utils/kailoHost';
 import KailoUser from '@/components/kailo/KailoUser';
 import useKailoSession from '@/hooks/useKailoSession';
 import useKailoText from '@/utils/kailoI18n';
 import useKailoPage from '@/hooks/useKailoPage';
+import useListRoute from '@/hooks/useListRoute';
 import { MORE_ACTION } from '@/utils/enum';
-import { getCompactTime } from '@/utils/time';
+import { getAbsoluteTime, getRelativeTime } from '@/utils/time';
+import {
+  clampPage,
+  matchesSearch,
+  pageCount,
+  slicePage,
+} from '@/utils/kailoList';
 import useDrawerAction from '@/hooks/useDrawerAction';
 import useModalAction from '@/hooks/useModalAction';
 import { MoreButton } from '@/components/ActionButton';
 import { SQLPairDropdown } from '@/components/diagram/CustomDropdown';
 import QuestionSQLPairModal from '@/components/modals/QuestionSQLPairModal';
 import SQLPairDrawer from '@/components/pages/knowledge/SQLPairDrawer';
+import KnowledgeSegments from '@/components/pages/knowledge/KnowledgeSegments';
 import { SqlPair } from '@/apollo/client/graphql/__types__';
 import {
   useSqlPairsQuery,
@@ -27,16 +41,18 @@ import {
 } from '@/apollo/client/graphql/sqlPairs.generated';
 import { v4 as uuidv4 } from 'uuid';
 import { getUserConfig } from '@/utils/env';
-import { getNativeWriteText } from '@/utils/language';
+import { getApiHistoryText, getNativeWriteText } from '@/utils/language';
 import { nativeWriteEvidence } from '@/utils/errorHandler';
 import { useRouter } from 'next/router';
 
-const SQLCodeBlock = dynamic(() => import('@/components/code/SQLCodeBlock'), {
-  ssr: false,
-});
+const { Paragraph } = Typography;
 
-const { Paragraph, Text } = Typography;
+const recent = (pair: SqlPair) => pair.updatedAt || pair.createdAt || '';
 
+// DD-167 (`20` §15.1/§15.3/§15.4): 知识 › 问答对. A bounded list (one
+// project's saved pairs) counted and paged in the browser: search, newest
+// first, "共 N 条" and the pager, page/size/search in the route; skeleton,
+// inline error, first-use and no-match states. Writing is the admins'.
 export default function ManageQuestionSQLPairs() {
   const locale = useRouter().locale;
   const t = useKailoText();
@@ -44,11 +60,31 @@ export default function ManageQuestionSQLPairs() {
   const { isAdmin } = useKailoSession();
   const questionSqlPairModal = useModalAction();
   const sqlPairDrawer = useDrawerAction();
+  const list = useListRoute();
+  const search = list.text('q');
 
-  const { data, loading } = useSqlPairsQuery({
+  const { data, loading, error, refetch } = useSqlPairsQuery({
     fetchPolicy: 'cache-and-network',
+    notifyOnNetworkStatusChange: true,
   });
-  const sqlPairs = data?.sqlPairs || [];
+  const sqlPairs = useMemo(
+    () =>
+      [...(data?.sqlPairs || [])]
+        .filter(Boolean)
+        .sort((a, b) => recent(b).localeCompare(recent(a))),
+    [data?.sqlPairs],
+  );
+  const filtered = useMemo(
+    () =>
+      sqlPairs.filter((pair) => matchesSearch(search, pair.question, pair.sql)),
+    [sqlPairs, search],
+  );
+  const page = clampPage(list.page, filtered.length, list.size);
+  const rows = slicePage(filtered, page, list.size);
+  useEffect(() => {
+    if (data && list.page > pageCount(filtered.length, list.size))
+      list.update({ page });
+  }, [data, list.page, filtered.length, list.size]);
 
   const getBaseOptions = (options) => {
     return {
@@ -141,70 +177,89 @@ export default function ManageQuestionSQLPairs() {
     }
   };
 
+  const view = (record: SqlPair) =>
+    onMoreClick({ type: MORE_ACTION.VIEW_SQL_PAIR, data: record });
+
   const columns: TableColumnsType<SqlPair> = [
     {
       title: t('knowledge.question'),
       dataIndex: 'question',
-      width: 300,
-      render: (question) => (
-        <Paragraph title={question} ellipsis={{ rows: 2 }}>
-          {question}
-        </Paragraph>
+      render: (question, record) => (
+        <div className="d-flex align-center gx-2">
+          <Paragraph
+            className="kailo-row-title mb-0"
+            title={question}
+            ellipsis={{ rows: 2 }}
+          >
+            {question}
+          </Paragraph>
+          {record.nativeWritePending && (
+            <span className="kailo-badge kailo-badge--warning flex-shrink-0">
+              {getApiHistoryText(locale).unknown}
+            </span>
+          )}
+        </div>
       ),
     },
     {
       title: t('knowledge.sqlStatement'),
       dataIndex: 'sql',
-      width: '60%',
-      render: (sql) => (
-        <div style={{ width: '100%' }}>
-          <SQLCodeBlock code={sql} maxHeight="130" />
-        </div>
+      width: '38%',
+      render: (sql: string) => (
+        <code className="kailo-sql-snippet" title={sql}>
+          {(sql || '').replace(/\s+/g, ' ').trim()}
+        </code>
       ),
     },
     {
       // DD-133 §3: the Kailo user who saved it.
       title: t('owner'),
       dataIndex: 'owner',
-      width: 160,
+      width: 168,
       render: (owner) => (
         <KailoUser user={owner} emptyText={t('ownerUnknown')} />
       ),
     },
     {
-      title: t('knowledge.createdTime'),
-      dataIndex: 'createdAt',
-      width: 130,
-      render: (time) => <Text className="gray-7">{getCompactTime(time)}</Text>,
+      title: t('list.updatedTime'),
+      key: 'updatedAt',
+      width: 128,
+      render: (_, record) => (
+        <KailoTime
+          value={recent(record)}
+          relative={getRelativeTime}
+          absolute={getAbsoluteTime}
+        />
+      ),
     },
     {
       key: 'action',
-      width: 64,
+      width: 56,
       align: 'center',
-      fixed: 'right',
-      render: (_, record) =>
-        isAdmin ? (
-          <SQLPairDropdown onMoreClick={onMoreClick} data={record}>
-            <MoreButton className="gray-8" />
-          </SQLPairDropdown>
-        ) : (
-          <Button
-            type="text"
-            size="small"
-            aria-label={t('knowledge.view')}
-            icon={<EyeIcon />}
-            onClick={() =>
-              onMoreClick({ type: MORE_ACTION.VIEW_SQL_PAIR, data: record })
-            }
-          />
-        ),
+      render: (_, record) => (
+        <span onClick={(event) => event.stopPropagation()}>
+          {isAdmin ? (
+            <SQLPairDropdown onMoreClick={onMoreClick} data={record}>
+              <MoreButton className="gray-8" />
+            </SQLPairDropdown>
+          ) : (
+            <Button
+              type="text"
+              size="small"
+              aria-label={t('knowledge.view')}
+              icon={<EyeIcon />}
+              onClick={() => view(record)}
+            />
+          )}
+        </span>
+      ),
     },
   ];
 
   // DD-157: Kailo page header — 问答对, primary 添加问答对 (admins).
-  useKailoPage({
+  const { hosted } = useKailoPage({
     title: t('questionSqlPairs'),
-    ready: !loading,
+    ready: !(loading && !data),
     actions: isAdmin
       ? [
           {
@@ -219,44 +274,75 @@ export default function ManageQuestionSQLPairs() {
   });
 
   return (
-    <SiderLayout loading={false}>
-      <PageLayout
-        title={t('questionSqlPairs')}
-        titleExtra={
-          isAdmin && (
-            <Button
-              type="primary"
-              onClick={() => questionSqlPairModal.openModal()}
-            >
-              {t('addQuestionSqlPair')}
-            </Button>
-          )
-        }
-        description={t('knowledge.sqlPairsDescription')}
-      >
-        {!loading && sqlPairs.length === 0 ? (
-          <KailoEmpty
-            icon={ListIcon}
-            title={t('knowledge.sqlPairsEmptyTitle')}
-            description={t('knowledge.sqlPairsEmptyDescription')}
-            actionLabel={isAdmin ? t('addQuestionSqlPair') : undefined}
-            onAction={() => questionSqlPairModal.openModal()}
-          />
-        ) : (
+    <SimpleLayout loading={false}>
+      <div className="kailo-list-page">
+        <KailoToolbar
+          left={
+            <>
+              <KnowledgeSegments active="sqlPairs" />
+              <KailoSearch
+                value={search}
+                placeholder={t('list.searchSqlPairs')}
+                onChange={(q) => list.update({ q })}
+              />
+            </>
+          }
+          right={
+            !hosted &&
+            isAdmin && (
+              <Button
+                type="primary"
+                onClick={() => questionSqlPairModal.openModal()}
+              >
+                {t('addQuestionSqlPair')}
+              </Button>
+            )
+          }
+        />
+        <KailoListFrame
+          item="list.itemSqlPairs"
+          loading={loading && !data}
+          refreshing={loading && !!data}
+          error={!data ? error : undefined}
+          onRetry={() => refetch()}
+          isEmpty={sqlPairs.length === 0}
+          noMatch={filtered.length === 0}
+          onClearFilters={() => list.update({ q: undefined })}
+          skeletonRows={list.size}
+          skeletonColumns={[30, 38, 14, 10]}
+          empty={
+            <KailoEmpty
+              icon={ListIcon}
+              title={t('knowledge.sqlPairsEmptyTitle')}
+              description={
+                isAdmin
+                  ? t('knowledge.sqlPairsEmptyDescription')
+                  : t('list.readonlyHint')
+              }
+              actionLabel={isAdmin ? t('addQuestionSqlPair') : undefined}
+              onAction={() => questionSqlPairModal.openModal()}
+            />
+          }
+          pager={
+            <KailoPagination
+              total={filtered.length}
+              page={page}
+              size={list.size}
+              onChange={list.setPage}
+            />
+          }
+        >
           <Table
             className="ant-table-has-header"
-            dataSource={sqlPairs}
-            loading={loading}
+            dataSource={rows}
             columns={columns}
             rowKey="id"
-            pagination={{
-              hideOnSinglePage: true,
-              pageSize: 10,
-              size: 'small',
-            }}
-            scroll={{ x: 1080 }}
+            pagination={false}
+            tableLayout="fixed"
+            rowClassName="kailo-row-clickable"
+            onRow={(record) => ({ onClick: () => view(record) })}
           />
-        )}
+        </KailoListFrame>
         <SQLPairDrawer
           {...sqlPairDrawer.state}
           onClose={sqlPairDrawer.closeDrawer}
@@ -279,7 +365,7 @@ export default function ManageQuestionSQLPairs() {
             }
           }}
         />
-      </PageLayout>
-    </SiderLayout>
+      </div>
+    </SimpleLayout>
   );
 }

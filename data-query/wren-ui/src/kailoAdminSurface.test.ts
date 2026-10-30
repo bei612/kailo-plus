@@ -35,7 +35,7 @@ describe('admin surface declaration (07 §4.8.5)', () => {
 
   it('is exactly the table the pages and the middleware use, in a new release version', () => {
     expect(declared).toEqual(KAILO_ADMIN_SURFACES);
-    expect(manifest.version).toBe('1.6.0-native-page');
+    expect(manifest.version).toBe('1.7.0-native-page');
     expect(manifest.frontendDelivery.mode).toBe('NATIVE_PAGE');
     expect(manifest.frontendPresentationContract.integrationMode).toBe(
       'KAILO_EMBED',
@@ -260,22 +260,34 @@ describe('native admin route closure', () => {
 });
 
 describe('business page header (DD-157 / DD-138(6))', () => {
-  it('offers the business tabs, without 建模', () => {
+  it('offers the business tabs 问答 · 看板 · 知识 · API, without 建模 (DD-167)', () => {
     expect(KAILO_TABS.map((tab) => tab.id)).toEqual([
       'home',
+      'dashboard',
       'knowledge',
       'api',
     ]);
     const { tabs, activeTab } = pageTabs('zh-CN', Path.Home, true);
-    expect(tabs.map((tab) => tab.id)).toEqual(['home', 'knowledge', 'api']);
+    expect(tabs.map((tab) => tab.label)).toEqual(['问答', '看板', '知识', 'API']);
     expect(activeTab).toBe('home');
+    expect(pageTabs('zh-CN', Path.Thread, true).activeTab).toBe('home');
+    expect(pageTabs('en', Path.HomeDashboard, false).activeTab).toBe(
+      'dashboard',
+    );
+    expect(pageTabs('zh-CN', Path.KnowledgeInstructions, false).activeTab).toBe(
+      'knowledge',
+    );
     expect(JSON.stringify(tabs)).not.toMatch(/modeling|建模/);
     expect(pageTabs('en', Path.AdminModeling, true).activeTab).toBeUndefined();
   });
 
   it('shows the API history tab to administrators only (DD-138(7))', () => {
     const member = pageTabs('zh-CN', Path.APIManagementHistory, false);
-    expect(member.tabs.map((tab) => tab.id)).toEqual(['home', 'knowledge']);
+    expect(member.tabs.map((tab) => tab.id)).toEqual([
+      'home',
+      'dashboard',
+      'knowledge',
+    ]);
     expect(member.activeTab).toBeUndefined();
     const admin = pageTabs('zh-CN', Path.APIManagementHistory, true);
     expect(admin.activeTab).toBe('api');

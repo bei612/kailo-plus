@@ -251,8 +251,8 @@ describe('Kailo users and ownership in the native database', () => {
 
 describe('Kailo presentation bridge', () => {
   test('product naming follows the deployment name and the Kailo locale', () => {
-    expect(kailoProductTitle('zh-CN', 'Kailo')).toBe('Kailo 问数');
-    expect(kailoProductTitle('en', 'Kailo')).toBe('Kailo Data Q&A');
+    expect(kailoProductTitle('zh-CN', 'Kailo')).toBe('Kailo 数据建模');
+    expect(kailoProductTitle('en', 'Kailo')).toBe('Kailo Data Modeling');
     expect(kailoProductTitle('en', '')).toBe(kailoText('en', 'componentName'));
   });
 

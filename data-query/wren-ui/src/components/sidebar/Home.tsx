@@ -1,127 +1,171 @@
 import clsx from 'clsx';
-import { useEffect } from 'react';
+import { KeyboardEvent } from 'react';
 import { useRouter } from 'next/router';
 import { useParams } from 'next/navigation';
-import styled from 'styled-components';
-import { Path } from '@/utils/enum';
-import { DashboardIcon } from '@/components/kailo/KailoIcons';
-import SidebarTree, {
-  StyledTreeNodeLink,
-  useSidebarTreeState,
-} from './SidebarTree';
-import ThreadTree, { ThreadData } from './home/ThreadTree';
+import { Button, Tooltip } from 'antd';
+import { PlusIcon } from '@/components/kailo/KailoIcons';
+import {
+  KailoListProgress,
+  KailoLoadError,
+  KailoPanePager,
+  KailoPaneSkeleton,
+} from '@/components/kailo/KailoList';
+import TreeTitle from './home/TreeTitle';
 import useKailoText from '@/utils/kailoI18n';
+import { KailoUserView } from '@/components/kailo/KailoUser';
+
+export interface ThreadData {
+  id: string;
+  name: string;
+  owner?: KailoUserView | null;
+  canManage?: boolean;
+}
 
 export interface Props {
   data: {
     threads: ThreadData[];
+  };
+  pane?: {
+    total: number;
+    page: number;
+    pages: number;
+    loading: boolean;
+    refreshing: boolean;
+    error?: unknown;
+    setPage: (page: number) => void;
+    retry: () => void;
+    newThreadPath: { pathname: string; query: Record<string, string> };
   };
   onSelect: (selectKeys) => void;
   onDelete: (id: string) => Promise<void>;
   onRename: (id: string, newName: string) => Promise<void>;
 }
 
-// DD-157 (20 §2 列表窗格): the 看板 entry is a pane row like the threads.
-const DashboardLink = styled(StyledTreeNodeLink)`
-  && {
-    display: flex;
-    align-items: center;
-    margin: 8px 8px 0;
-    padding: 0 8px;
-    height: 32px;
-    line-height: 32px;
-    border-radius: 6px;
-    font-size: 13px;
-    font-weight: 500;
-    color: var(--kailo-color-foreground);
-    transition: background-color var(--kailo-duration-instant);
-  }
-  &&:hover {
-    background-color: var(--kailo-color-hover);
-  }
-  &&:active {
-    background-color: var(--kailo-color-pressed);
-  }
-  &&.adm-treeNode--selected {
-    background-color: var(--kailo-color-selected);
-    color: var(--kailo-color-selected-foreground);
-  }
-  .kailo-icon {
-    color: var(--kailo-color-muted-foreground);
-  }
-  &&.adm-treeNode--selected .kailo-icon {
-    color: inherit;
-  }
-`;
-
-export const StyledSidebarTree = styled(SidebarTree)`
-  .adm-treeNode {
-    &.adm-treeNode__thread {
-      padding: 0px 16px 0px 4px !important;
-
-      .ant-tree-title {
-        flex-grow: 1;
-        display: inline-flex;
-        align-items: center;
-        span:first-child,
-        .adm-treeTitle__title {
-          flex-grow: 1;
-        }
-      }
-    }
-  }
-`;
-
+// DD-167 (`20` §13.2 列表窗格, §15.1): the thread pane of 问答. Header 40
+// (Overline title, count, one icon button "新建对话"), rows 32 (Callout,
+// selected brand-soft), the compact pager "‹ x / y ›" at the bottom; first
+// read as skeleton rows, a failed read only affects the pane. The dashboard
+// is a page header tab, not a pane row. Styles: controls.less §25.
 export default function Home(props: Props) {
-  const { data, onSelect, onRename, onDelete } = props;
+  const { data, pane, onSelect, onRename, onDelete } = props;
   const router = useRouter();
   const t = useKailoText();
   const params = useParams<{ id: string }>();
-  const { threads } = data;
-
-  const { treeSelectedKeys, setTreeSelectedKeys } = useSidebarTreeState();
-
-  useEffect(() => {
-    params?.id && setTreeSelectedKeys([params.id] as string[]);
-  }, [params?.id]);
+  const threads = data?.threads || [];
+  const selected = params?.id ? String(params.id) : undefined;
 
   const onDeleteThread = async (threadId: string) => {
     try {
       await onDelete(threadId);
-      if (params?.id == threadId) {
-        router.push(Path.Home);
-      }
+      if (selected === threadId) router.push(pane?.newThreadPath || '/home');
     } catch (error) {
       console.error(error);
     }
   };
 
-  const onTreeSelect = (selectedKeys: React.Key[], _info: any) => {
-    // prevent deselected
-    if (selectedKeys.length === 0) return;
+  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>, index: number) => {
+    if (event.target !== event.currentTarget) return;
+    if (event.key === 'Enter') onSelect([threads[index].id]);
+    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+    event.preventDefault();
+    const rows =
+      event.currentTarget.parentElement?.querySelectorAll<HTMLElement>(
+        '.kailo-pane__row',
+      );
+    const next = index + (event.key === 'ArrowDown' ? 1 : -1);
+    rows?.[Math.max(0, Math.min((rows?.length || 1) - 1, next))]?.focus();
+  };
 
-    setTreeSelectedKeys(selectedKeys);
-    onSelect(selectedKeys);
+  const body = () => {
+    if (pane?.loading) return <KailoPaneSkeleton />;
+    if (pane?.error)
+      return (
+        <KailoLoadError
+          compact
+          error={pane.error}
+          item="list.itemThreads"
+          onRetry={pane.retry}
+        />
+      );
+    if (threads.length === 0)
+      return (
+        <div className="kailo-pane__empty">
+          <div className="kailo-pane__empty-title">
+            {t('list.threadsEmpty')}
+          </div>
+          <div className="kailo-pane__empty-hint">
+            {t('list.threadsEmptyHint')}
+          </div>
+        </div>
+      );
+    return (
+      <div
+        role="listbox"
+        aria-label={t('list.threadsPane')}
+        className={clsx('kailo-pane__rows', {
+          'kailo-pane__rows--refreshing': pane?.refreshing,
+        })}
+      >
+        {threads.map((thread, index) => (
+          <div
+            key={thread.id}
+            role="option"
+            tabIndex={0}
+            aria-selected={selected === thread.id}
+            className={clsx('kailo-pane__row', {
+              'kailo-pane__row--selected': selected === thread.id,
+            })}
+            onClick={() => onSelect([thread.id])}
+            onKeyDown={(event) => onKeyDown(event, index)}
+          >
+            <TreeTitle
+              id={thread.id}
+              title={thread.name}
+              owner={thread.owner}
+              canManage={thread.canManage}
+              onRename={onRename}
+              onDelete={onDeleteThread}
+            />
+          </div>
+        ))}
+      </div>
+    );
   };
 
   return (
-    <>
-      <DashboardLink
-        className={clsx({
-          'adm-treeNode--selected': router.pathname === Path.HomeDashboard,
-        })}
-        href={Path.HomeDashboard}
-      >
-        <DashboardIcon className="mr-2" />
-        <span>{t('dashboard')}</span>
-      </DashboardLink>
-      <ThreadTree
-        threads={threads}
-        selectedKeys={treeSelectedKeys}
-        onSelect={onTreeSelect}
-        onRename={onRename}
-        onDeleteThread={onDeleteThread}
-      />
-    </>
+    <section className="kailo-pane" aria-label={t('list.threadsPane')}>
+      <header className="kailo-pane__head">
+        <span className="kailo-pane__title">{t('list.threadsPane')}</span>
+        {pane && !pane.loading && !pane.error && (
+          <span
+            className="kailo-pane__count"
+            title={t('list.threadsPaneCount', { total: pane.total })}
+          >
+            {pane.total}
+          </span>
+        )}
+        <Tooltip title={t('newConversationAction')} mouseEnterDelay={0.4}>
+          <Button
+            type="text"
+            size="small"
+            className="kailo-pane__action"
+            aria-label={t('newConversationAction')}
+            icon={<PlusIcon />}
+            onClick={() => router.push(pane?.newThreadPath || '/home')}
+          />
+        </Tooltip>
+      </header>
+      <KailoListProgress active={!!pane?.refreshing} />
+      <div className="kailo-pane__body">{body()}</div>
+      {pane && pane.pages > 1 && (
+        <footer className="kailo-pane__foot">
+          <KailoPanePager
+            page={pane.page}
+            pages={pane.pages}
+            onChange={pane.setPage}
+          />
+        </footer>
+      )}
+    </section>
   );
 }

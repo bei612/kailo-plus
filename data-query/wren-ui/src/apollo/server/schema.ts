@@ -55,6 +55,18 @@ export const typeDefs = gql`
     owner: KailoUser
   }
 
+  # DD-167: the thread pane pages on the server.
+  input ThreadPaginationInput {
+    offset: Int!
+    limit: Int!
+  }
+
+  type ThreadPage {
+    items: [Thread!]!
+    total: Int!
+    hasMore: Boolean!
+  }
+
   type ApiHistoryPaginatedResponse {
     items: [ApiHistoryResponse!]!
     total: Int!
@@ -1225,6 +1237,7 @@ export const typeDefs = gql`
     askingTask(taskId: String!): AskingTask
     suggestedQuestions: SuggestedQuestionResponse!
     threads: [Thread!]!
+    threadPage(pagination: ThreadPaginationInput!): ThreadPage!
     thread(threadId: Int!): DetailedThread!
     threadResponse(responseId: Int!): ThreadResponse!
     nativeSql(responseId: Int!, queryScope: String, generation: Int): String!

@@ -246,6 +246,7 @@ const resolvers = {
     // Thread
     thread: askingResolver.getThread,
     threads: askingResolver.listThreads,
+    threadPage: askingResolver.listThreadPage,
     threadResponse: askingResolver.getResponse,
     nativeSql: modelResolver.getNativeSql,
 

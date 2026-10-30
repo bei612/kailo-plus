@@ -362,6 +362,8 @@ jest.mock('antd', () => {
       return null;
     },
     Space: field,
+    // DD-167: the API history toolbar filters.
+    Select: field,
     message: { warning: jest.fn(), error: jest.fn(), success: jest.fn() },
     Alert: (props: any) =>
       React.createElement(

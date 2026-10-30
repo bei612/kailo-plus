@@ -1,7 +1,7 @@
 {
   "id": "{{releaseId}}",
   "componentTypeKey": "wren",
-  "version": "1.6.0-native-page",
+  "version": "1.7.0-native-page",
   "class": "APPLICATION",
   "platformPortKey": "NONE",
   "manifestSchemaVersion": 1,
@@ -58,6 +58,20 @@
     "localeMapping": { "ZH_CN": "zh-CN", "EN": "en" },
     "themeChangePolicy": "LIVE",
     "localeResolutionPolicy": "BROWSER_RESOLVED",
+    "preferences": [
+      {
+        "key": "appearance.listDensity",
+        "settingsCategory": "APPEARANCE",
+        "valueType": "ENUM",
+        "options": [
+          { "value": "comfortable", "label": { "ZH_CN": "舒适", "EN": "Comfortable" } },
+          { "value": "compact", "label": { "ZH_CN": "紧凑", "EN": "Compact" } }
+        ],
+        "defaultValue": "comfortable",
+        "label": { "ZH_CN": "列表密度", "EN": "List density" },
+        "description": { "ZH_CN": "列表与表格的行高", "EN": "Row height of lists and tables" }
+      }
+    ],
     "adminSurfaces": [
       {
         "key": "dataSources.connection",

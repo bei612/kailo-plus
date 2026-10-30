@@ -58,8 +58,9 @@ export default function Chart(props: VegaLiteProps) {
     onPin,
   } = props;
   const t = useKailoText();
-  // Rebuilt on a Kailo theme change: axis and legend colours are tokens.
-  const { theme } = useKailoSession();
+  // DD-167 (`20` §15.2): rebuilt on any Kailo presentation change (theme,
+  // locale, text size, zoom) — canvas, text, grid and series are tokens.
+  const { presentationKey, typeScale } = useKailoSession();
 
   const [donutInner, setDonutInner] = useState(null);
   const [parsedSpec, setParsedSpec] =
@@ -82,6 +83,7 @@ export default function Chart(props: VegaLiteProps) {
           isShowTopCategories: autoFilter || isShowTopCategories,
           isHideLegend: hideLegend,
           isHideTitle: hideTitle,
+          typeScale,
         },
       );
       const chartSpec = specHandler.getChartSpec();
@@ -105,7 +107,14 @@ export default function Chart(props: VegaLiteProps) {
       setParsedSpec(null);
       setParsedError(null);
     };
-  }, [spec, values, isShowTopCategories, donutInner, forceUpdate, theme]);
+  }, [
+    spec,
+    values,
+    isShowTopCategories,
+    donutInner,
+    forceUpdate,
+    presentationKey,
+  ]);
 
   // initial vega view
   useEffect(() => {

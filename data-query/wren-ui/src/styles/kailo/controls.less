@@ -21,14 +21,14 @@
 
 // 1. Page frame. Inside Kailo there is no header of our own.
 :root[data-kailo-embedded] .adm-content {
-  height: 100vh;
+  height: var(--kailo-vh, 100vh);
 }
 
 // DD-138(6) (`20` §13.2 管理面页): one admin function, no frame of its own;
 // the root fills the frame and only the content scrolls. Forms: padding 24,
 // at most 720 wide.
 .kailo-admin-surface {
-  height: 100vh;
+  height: var(--kailo-vh, 100vh);
   overflow: auto;
   background: var(--kailo-color-background);
   color: var(--kailo-color-foreground);
@@ -51,7 +51,7 @@
 
 .kailo-page__title.ant-typography {
   margin: 0;
-  font-size: 17px;
+  font-size: var(--kailo-text-title2);
   line-height: 24px;
   font-weight: 600;
   color: var(--kailo-color-foreground);
@@ -60,7 +60,7 @@
 .kailo-page__description.ant-typography {
   max-width: 720px;
   margin-bottom: 0;
-  font-size: 14px;
+  font-size: var(--kailo-text-body);
   line-height: 20px;
   color: var(--kailo-color-muted-foreground);
 }
@@ -95,7 +95,7 @@
   height: 32px;
   padding: 0 12px;
   border-radius: var(--kailo-radius-lg);
-  font-size: 13px;
+  font-size: var(--kailo-text-callout);
   font-weight: 500;
   line-height: 20px;
   letter-spacing: 0;
@@ -136,7 +136,7 @@
 .ant-btn-lg {
   height: 36px;
   padding: 0 16px;
-  font-size: 14px;
+  font-size: var(--kailo-text-body);
   border-radius: var(--kailo-radius-lg);
 }
 
@@ -323,7 +323,7 @@
   border-color: var(--kailo-color-line-strong);
   background-color: var(--kailo-color-background) !important;
   color: var(--kailo-color-foreground);
-  font-size: 14px;
+  font-size: var(--kailo-text-body);
   box-shadow: none;
   transition:
     border-color @kailo-fast @kailo-ease,
@@ -401,12 +401,12 @@ input.ant-input,
 
 .ant-form-item-explain-error {
   color: var(--kailo-color-danger-text);
-  font-size: 12px;
+  font-size: var(--kailo-text-caption);
 }
 
 .ant-form-item-label > label {
   color: var(--kailo-color-foreground);
-  font-size: 13px;
+  font-size: var(--kailo-text-callout);
   font-weight: 500;
 }
 
@@ -504,7 +504,7 @@ input.ant-input,
 .ant-tabs-tab {
   padding: 0;
   height: 40px;
-  font-size: 14px;
+  font-size: var(--kailo-text-body);
 
   + .ant-tabs-tab {
     margin-left: 24px;
@@ -569,7 +569,7 @@ input.ant-input,
   padding: 0 6px;
   border-radius: var(--kailo-radius-sm);
   border-color: transparent;
-  font-size: 12px;
+  font-size: var(--kailo-text-caption);
   font-weight: 500;
   background: var(--kailo-color-muted);
   color: var(--kailo-color-text-secondary);
@@ -613,7 +613,7 @@ input.ant-input,
   line-height: 20px;
   border-radius: 999px;
   box-shadow: none;
-  font-size: 12px;
+  font-size: var(--kailo-text-caption);
   font-weight: 500;
 }
 
@@ -644,7 +644,7 @@ input.ant-input,
 }
 
 .ant-modal-title {
-  font-size: 17px;
+  font-size: var(--kailo-text-title2);
   line-height: 24px;
   font-weight: 600;
   color: var(--kailo-color-foreground);
@@ -652,7 +652,7 @@ input.ant-input,
 
 .ant-modal-body {
   padding: 16px 24px;
-  font-size: 14px;
+  font-size: var(--kailo-text-body);
   line-height: 20px;
 }
 
@@ -705,7 +705,7 @@ input.ant-input,
   }
 
   .ant-modal-confirm-title {
-    font-size: 17px;
+    font-size: var(--kailo-text-title2);
     line-height: 24px;
     font-weight: 600;
     color: var(--kailo-color-foreground);
@@ -713,7 +713,7 @@ input.ant-input,
 
   .ant-modal-confirm-content {
     margin-top: 8px;
-    font-size: 14px;
+    font-size: var(--kailo-text-body);
     line-height: 20px;
     color: var(--kailo-color-text-secondary);
   }
@@ -759,7 +759,7 @@ input.ant-input,
 }
 
 .ant-drawer-title {
-  font-size: 17px;
+  font-size: var(--kailo-text-title2);
   line-height: 24px;
   font-weight: 600;
   color: var(--kailo-color-foreground);
@@ -809,7 +809,7 @@ input.ant-input,
   min-height: 30px;
   padding: 5px 8px;
   border-radius: var(--kailo-radius-md);
-  font-size: 13px;
+  font-size: var(--kailo-text-callout);
   line-height: 20px;
   color: var(--kailo-color-foreground);
 
@@ -851,7 +851,7 @@ input.ant-input,
   min-height: 30px;
   padding: 5px 8px;
   border-radius: var(--kailo-radius-md);
-  font-size: 13px;
+  font-size: var(--kailo-text-callout);
   color: var(--kailo-color-foreground);
 }
 
@@ -866,7 +866,7 @@ input.ant-input,
 }
 
 .ant-select-item-group {
-  font-size: 11px;
+  font-size: var(--kailo-text-overline);
   line-height: 14px;
   font-weight: 600;
   letter-spacing: 0.04em;
@@ -891,7 +891,7 @@ input.ant-input,
   min-height: 0;
   padding: 4px 8px;
   border-radius: var(--kailo-radius-md);
-  font-size: 12px;
+  font-size: var(--kailo-text-caption);
   line-height: 16px;
   background-color: var(--kailo-color-foreground);
   color: var(--kailo-color-background);
@@ -921,7 +921,7 @@ input.ant-input,
   padding: 10px 12px;
   background: var(--kailo-color-canvas) !important;
   color: var(--kailo-color-muted-foreground);
-  font-size: 12px;
+  font-size: var(--kailo-text-caption);
   line-height: 16px;
   font-weight: 600;
   border-bottom: 1px solid var(--kailo-color-border);
@@ -1020,7 +1020,7 @@ input.ant-input,
 .ant-card-head {
   border-bottom: 1px solid var(--kailo-color-border);
   color: var(--kailo-color-foreground);
-  font-size: 14px;
+  font-size: var(--kailo-text-body);
   font-weight: 600;
 }
 
@@ -1075,7 +1075,7 @@ input.ant-input,
   }
 
   .kailo-empty__title {
-    font-size: 17px;
+    font-size: var(--kailo-text-title2);
     line-height: 24px;
     font-weight: 600;
     color: var(--kailo-color-foreground);
@@ -1083,7 +1083,7 @@ input.ant-input,
 
   .kailo-empty__description {
     max-width: 420px;
-    font-size: 14px;
+    font-size: var(--kailo-text-body);
     line-height: 20px;
     color: var(--kailo-color-muted-foreground);
   }
@@ -1101,7 +1101,7 @@ input.ant-input,
     }
 
     .kailo-empty__title {
-      font-size: 13px;
+      font-size: var(--kailo-text-callout);
       line-height: 20px;
       font-weight: 500;
       color: var(--kailo-color-muted-foreground);
@@ -1170,7 +1170,7 @@ input.ant-input,
 .ant-alert {
   padding: 8px 12px;
   border-radius: var(--kailo-radius-lg);
-  font-size: 13px;
+  font-size: var(--kailo-text-callout);
   line-height: 20px;
 
   .ant-alert-message {
@@ -1237,7 +1237,7 @@ input.ant-input,
     padding: 0 8px !important;
     width: 100%;
     border-radius: var(--kailo-radius-md);
-    font-size: 13px;
+    font-size: var(--kailo-text-callout);
     font-weight: 500;
 
     &::after {
@@ -1308,7 +1308,7 @@ input.ant-input,
     margin-left: 28px;
     margin-bottom: 0;
     padding-right: 24px;
-    font-size: 13px;
+    font-size: var(--kailo-text-callout);
     line-height: 20px;
     font-weight: 600;
     color: var(--kailo-color-foreground);
@@ -1317,7 +1317,7 @@ input.ant-input,
   .ant-notification-notice-description {
     margin-left: 28px;
     margin-top: 2px;
-    font-size: 13px;
+    font-size: var(--kailo-text-callout);
     line-height: 20px;
     color: var(--kailo-color-text-secondary);
   }
@@ -1352,7 +1352,7 @@ input.ant-input,
   background: var(--kailo-color-popover);
   color: var(--kailo-color-foreground);
   box-shadow: var(--kailo-shadow-lg);
-  font-size: 13px;
+  font-size: var(--kailo-text-callout);
 }
 
 // 18. Typography inside content: section titles are Title 2 (17/24 600).
@@ -1367,7 +1367,7 @@ h5.ant-typography {
 
 h4.ant-typography,
 h5.ant-typography {
-  font-size: 17px;
+  font-size: var(--kailo-text-title2);
   line-height: 24px;
 }
 
@@ -1403,7 +1403,7 @@ h5.ant-typography {
 
 .kailo-section-title {
   margin: 0;
-  font-size: 17px;
+  font-size: var(--kailo-text-title2);
   line-height: 24px;
   font-weight: 600;
   color: var(--kailo-color-foreground);
@@ -1422,7 +1422,7 @@ h5.ant-typography {
   height: 20px;
   padding: 0 6px;
   border-radius: var(--kailo-radius-sm);
-  font-size: 12px;
+  font-size: var(--kailo-text-caption);
   font-weight: 500;
   line-height: 20px;
   background: var(--kailo-color-muted);
@@ -1448,7 +1448,7 @@ h5.ant-typography {
 
 // 21. Detail drawers (400–480): compact tables so names stay readable.
 .ant-drawer .ant-table {
-  font-size: 13px;
+  font-size: var(--kailo-text-callout);
 
   .ant-table-thead > tr > th,
   .ant-table-tbody > tr > td {
@@ -1478,13 +1478,13 @@ h5.ant-typography {
 //     clipping, details follow as a muted Caption.
 .kailo-metadata-drawer {
   .ant-typography.gray-7 {
-    font-size: 12px;
+    font-size: var(--kailo-text-caption);
     line-height: 16px;
     color: var(--kailo-color-muted-foreground);
   }
 
   .ant-typography.gray-7.kailo-meta-section__title {
-    font-size: 13px;
+    font-size: var(--kailo-text-callout);
     line-height: 20px;
     font-weight: 600;
     color: var(--kailo-color-foreground);
@@ -1545,7 +1545,7 @@ h5.ant-typography {
   &__main {
     flex: 1;
     min-width: 0;
-    font-size: 13px;
+    font-size: var(--kailo-text-callout);
     line-height: 20px;
     font-weight: 500;
     color: var(--kailo-color-foreground);
@@ -1561,7 +1561,7 @@ h5.ant-typography {
   &__side {
     flex: none;
     max-width: 45%;
-    font-size: 12px;
+    font-size: var(--kailo-text-caption);
     line-height: 20px;
     color: var(--kailo-color-muted-foreground);
     font-variant-numeric: tabular-nums;
@@ -1573,7 +1573,7 @@ h5.ant-typography {
     display: flex;
     flex-wrap: wrap;
     margin-top: 2px;
-    font-size: 12px;
+    font-size: var(--kailo-text-caption);
     line-height: 16px;
     color: var(--kailo-color-muted-foreground);
     overflow-wrap: anywhere;
@@ -1586,7 +1586,7 @@ h5.ant-typography {
 
   &__code {
     font-family: var(--kailo-font-mono);
-    font-size: 12px;
+    font-size: var(--kailo-text-caption);
     color: var(--kailo-color-text-secondary);
     background: none;
     padding: 0;
@@ -1594,7 +1594,7 @@ h5.ant-typography {
 
   &__empty {
     padding: 12px;
-    font-size: 13px;
+    font-size: var(--kailo-text-callout);
     color: var(--kailo-color-muted-foreground);
   }
 }

@@ -43,7 +43,7 @@ export const Block = styled.div<{
 }>`
   position: relative;
   white-space: pre;
-  font-size: 13px;
+  font-size: var(--kailo-text-callout);
   border: 1px var(--kailo-color-border) solid;
   border-radius: 8px;
   font-family: var(--kailo-font-mono, 'Source Code Pro', monospace);
@@ -71,7 +71,7 @@ export const Block = styled.div<{
       margin-right: 1em;
       color: var(--kailo-color-muted-foreground);
       font-weight: 500;
-      font-size: 12px;
+      font-size: var(--kailo-text-caption);
     }
   }
 `;
@@ -86,7 +86,7 @@ export const CopyText = styled(Typography.Text)<{ $hasVScrollbar: boolean }>`
   }
 
   .ant-typography-copy {
-    font-size: 12px;
+    font-size: var(--kailo-text-caption);
   }
 
   .ant-btn:not(:hover) {

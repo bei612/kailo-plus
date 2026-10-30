@@ -44,11 +44,13 @@ export default class AppDocument extends Document<Props> {
               and scripts; the runtime applies the Kailo theme before paint. */}
           <meta name="kailo-web-origin" content={this.props.kailoWebOrigin} />
           {/* DD-157 (`07` §4.8.7): Kailo renders the page header, toasts and
-              confirmations and owns the global shortcuts; read by
-              kailo-embed.js, so it precedes the runtime script. */}
+              confirmations and owns the global shortcuts; DD-167 (§4.8.10):
+              one-line names (rename a conversation) are asked in Kailo's
+              prompt dialog. Read by kailo-embed.js, so it precedes the
+              runtime script. */}
           <meta
             name="kailo-embed-features"
-            content="page toast confirm shortcuts"
+            content="page toast confirm shortcuts prompt"
           />
           <link rel="icon" type="image/png" href="/kailo/app-icon.png" />
           {/* eslint-disable-next-line @next/next/no-css-tags */}

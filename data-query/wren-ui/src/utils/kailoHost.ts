@@ -4,11 +4,13 @@
 // presentation runtime (kailo-embed.js); on a top-level visit the runtime
 // declines and the page shows its own, styled per 20 §13 (overlay.less
 // `.kailo-toast` / `.kailo-confirm`).
+import { createElement } from 'react';
 import Modal from 'antd/lib/modal';
 import notification from 'antd/lib/notification';
 import type {
   KailoConfirm,
   KailoPage,
+  KailoPrompt,
   KailoToast,
 } from '../../../../client-kit/embed/kailo-embed';
 import { kailoRuntime, presentation } from './kailoEmbed';
@@ -121,6 +123,82 @@ export function confirm(options: KailoConfirm): Promise<boolean> {
       okButtonProps: { danger: options.tone === 'danger' },
       onOk: () => resolve(true),
       onCancel: () => resolve(false),
+    });
+  });
+}
+
+/**
+ * DD-167 (`07` §4.8.10): one line of text from the user (a new name) in
+ * Kailo's dialog; resolves the trimmed text, or null when cancelled. At top
+ * level (or a host without "prompt") the page's own dialog with the same
+ * wording and the Kailo dialog style.
+ */
+export function prompt(options: KailoPrompt): Promise<string | null> {
+  const maxLength = options.maxLength || 255;
+  const request: KailoPrompt = {
+    ...options,
+    maxLength,
+    value: (options.value || '').slice(0, maxLength),
+    confirmLabel: options.confirmLabel || kailoT('confirm'),
+    cancelLabel: options.cancelLabel || kailoT('cancel'),
+  };
+  try {
+    const runtime = kailoRuntime();
+    const hosted =
+      runtime &&
+      typeof runtime.prompt === 'function' &&
+      (!runtime.getState().hostConnected || runtime.hostSupports('prompt'))
+        ? runtime.prompt(request)
+        : null;
+    if (hosted) return hosted;
+  } catch (error) {
+    console.error(error);
+  }
+  return new Promise<string | null>((resolve) => {
+    let value = request.value || '';
+    const clean = () => value.replace(/\s+/g, ' ').trim().slice(0, maxLength);
+    const dialog = Modal.confirm({
+      className: 'kailo-confirm kailo-prompt',
+      title: request.title,
+      icon: null,
+      width: 480,
+      centered: true,
+      autoFocusButton: null,
+      okText: request.confirmLabel,
+      cancelText: request.cancelLabel,
+      okButtonProps: { disabled: !clean() },
+      content: createElement(
+        'label',
+        { className: 'kailo-prompt__field' },
+        createElement('span', { className: 'kailo-prompt__label' }, request.label),
+        request.description &&
+          createElement(
+            'span',
+            { className: 'kailo-prompt__description' },
+            request.description,
+          ),
+        createElement('input', {
+          className: 'ant-input kailo-prompt__input',
+          defaultValue: value,
+          maxLength,
+          placeholder: request.placeholder,
+          autoFocus: true,
+          onFocus: (event: { target: HTMLInputElement }) =>
+            event.target.select(),
+          onChange: (event: { target: HTMLInputElement }) => {
+            value = event.target.value;
+            dialog.update({ okButtonProps: { disabled: !clean() } });
+          },
+          onKeyDown: (event: { key: string; nativeEvent: KeyboardEvent }) => {
+            if (event.key !== 'Enter' || event.nativeEvent.isComposing) return;
+            if (!clean()) return;
+            dialog.destroy();
+            resolve(clean());
+          },
+        }),
+      ),
+      onOk: () => resolve(clean() || null),
+      onCancel: () => resolve(null),
     });
   });
 }

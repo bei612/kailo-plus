@@ -34,7 +34,7 @@ const Tab = styled.button<{ $active: boolean }>`
     ${(props) => (props.$active ? 'var(--kailo-color-brand)' : 'transparent')};
   background: none;
   cursor: pointer;
-  font-size: 14px;
+  font-size: var(--kailo-text-body);
   font-weight: ${(props) => (props.$active ? 600 : 500)};
   color: ${(props) =>
     props.$active

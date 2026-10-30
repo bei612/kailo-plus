@@ -65,7 +65,7 @@ export const StyledNode = styled.div`
 export const NodeHeader = styled.div`
   position: relative;
   background-color: ${(props) => props.color || 'var(--kailo-color-brand)'};
-  font-size: 13px;
+  font-size: var(--kailo-text-callout);
   font-weight: 500;
   color: var(--kailo-color-on-brand);
   padding: 6px 8px;

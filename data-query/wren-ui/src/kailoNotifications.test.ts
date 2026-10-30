@@ -340,8 +340,8 @@ describe('DD-138(4) notification events', () => {
       category: 'SHARED',
       path: '/home/7',
       title: {
-        ZH_CN: 'Alice 与你分享了问数对话「Revenue by region」',
-        EN: 'Alice shared the Data Q&A thread “Revenue by region” with you',
+        ZH_CN: 'Alice 与你分享了数据建模对话「Revenue by region」',
+        EN: 'Alice shared the Data Modeling conversation “Revenue by region” with you',
       },
     });
     // A replay of the same share event keeps the same idempotency key.

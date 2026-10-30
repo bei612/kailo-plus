@@ -30,6 +30,13 @@ export interface Thread {
 
 export interface IThreadRepository extends IBasicRepository<Thread> {
   listAllTimeDescOrder(projectId: number): Promise<Thread[]>;
+  // DD-167 (20 §15.3): threads are an unbounded list, paged on the server,
+  // most recent activity first.
+  listPageByRecentActivity(
+    projectId: number,
+    offset: number,
+    limit: number,
+  ): Promise<{ items: Thread[]; total: number }>;
   lockRecommendation(
     thread: Thread,
     tx: Knex.Transaction,
@@ -60,6 +67,33 @@ export class ThreadRepository
       .where(this.transformToDBData({ projectId }))
       .orderBy('created_at', 'desc');
     return threads.map((thread) => this.transformFromDBData(thread));
+  }
+
+  public async listPageByRecentActivity(
+    projectId: number,
+    offset: number,
+    limit: number,
+  ): Promise<{ items: Thread[]; total: number }> {
+    const where = this.transformToDBData({ projectId });
+    const counted = await this.knex(this.tableName)
+      .where(where)
+      .count({ total: '*' })
+      .first();
+    const total = Number(counted?.total ?? 0);
+    if (total === 0 || offset >= total) return { items: [], total };
+    // Last activity: the newest answer in the thread, else its creation.
+    const rows = await this.knex(this.tableName)
+      .select(`${this.tableName}.*`)
+      .where(where)
+      .orderByRaw(
+        `coalesce((select max(tr.created_at) from thread_response tr where tr.thread_id = ${this.tableName}.id), ${this.tableName}.created_at) desc, ${this.tableName}.id desc`,
+      )
+      .offset(offset)
+      .limit(limit);
+    return {
+      items: rows.map((thread) => this.transformFromDBData(thread)),
+      total,
+    };
   }
 
   public async lockRecommendation(

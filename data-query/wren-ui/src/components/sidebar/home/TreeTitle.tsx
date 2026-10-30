@@ -1,12 +1,12 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import styled from 'styled-components';
 import { Dropdown, Menu } from 'antd';
 import { MoreHorizontalIcon, PencilIcon } from '@/components/kailo/KailoIcons';
 import useKailoText from '@/utils/kailoI18n';
 import LabelTitle from '@/components/sidebar/LabelTitle';
-import TreeTitleInput from '@/components/sidebar/home/TreeTitleInput';
 import { DeleteThreadModal } from '@/components/modals/DeleteModal';
 import KailoUser, { KailoUserView } from '@/components/kailo/KailoUser';
+import { prompt } from '@/utils/kailoHost';
 
 const MENU_ITEM_KEYS = {
   RENAME: 'rename',
@@ -51,31 +51,28 @@ export default function TreeTitle(props: TreeTitleProps) {
     <KailoUser user={owner} size={16} showName={false} className="mr-1" />
   ) : null;
   const [title, setTitle] = useState(props.title);
-  const [isEditing, setIsEditing] = useState(false);
+  useEffect(() => setTitle(props.title), [props.title]);
 
-  const onCancelChange = () => {
-    setIsEditing(false);
-    setTitle(props.title);
-  };
-
-  const onChangeTitle = (newThreadTitle: string) => {
-    setIsEditing(false);
-    setTitle(newThreadTitle);
-    onRename && onRename(id, newThreadTitle);
+  // DD-167 (`07` §4.8.10): the new name is asked in Kailo's prompt dialog
+  // (the page's own Kailo-styled dialog at top level).
+  const onRenameThread = async () => {
+    const name = await prompt({
+      title: t('list.renameThread'),
+      label: t('list.renameLabel'),
+      value: title,
+      confirmLabel: t('list.renameConfirm'),
+      maxLength: 255,
+    });
+    if (!name || name === title) return;
+    setTitle(name);
+    onRename && onRename(id, name);
   };
 
   const onDeleteData = (id: string) => {
     onDelete && onDelete(id);
   };
 
-  return isEditing ? (
-    <TreeTitleInput
-      title={title}
-      onCancelChange={onCancelChange}
-      onSetTitle={setTitle}
-      onRename={onChangeTitle}
-    />
-  ) : !canManage ? (
+  return !canManage ? (
     <LabelTitle title={title} appendIcon={ownerMark} />
   ) : (
     <LabelTitle
@@ -99,7 +96,7 @@ export default function TreeTitle(props: TreeTitleProps) {
                     key: MENU_ITEM_KEYS.RENAME,
                     onClick: ({ domEvent }) => {
                       domEvent.stopPropagation();
-                      setIsEditing(true);
+                      void onRenameThread();
                     },
                   },
                   {

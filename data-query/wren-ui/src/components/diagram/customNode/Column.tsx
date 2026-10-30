@@ -10,7 +10,7 @@ const NodeColumn = styled.div`
   justify-content: space-between;
   padding: 4px 8px;
   color: var(--kailo-color-foreground);
-  font-size: 13px;
+  font-size: var(--kailo-text-callout);
   line-height: 24px;
 
   &:hover {
@@ -48,7 +48,7 @@ const Title = styled.div`
   align-items: center;
   min-height: 28px;
   color: var(--kailo-color-muted-foreground);
-  font-size: 11px;
+  font-size: var(--kailo-text-overline);
   line-height: 14px;
   font-weight: 600;
   letter-spacing: 0.04em;

@@ -73,7 +73,7 @@ const StyledDashboardGrid = styled.div`
   }
 
   .adm-pinned-item-title {
-    font-size: 14px;
+    font-size: var(--kailo-text-body);
     font-weight: 600;
     flex-grow: 1;
   }
@@ -96,7 +96,7 @@ const StyledDashboardGrid = styled.div`
     }
 
     &-info {
-      font-size: 12px;
+      font-size: var(--kailo-text-caption);
       color: var(--kailo-color-muted-foreground);
       text-align: right;
       user-select: none;

@@ -43,7 +43,7 @@ const StyledTree = styled(Tree)`
   &.ant-tree {
     background-color: transparent;
     color: var(--kailo-color-foreground);
-    font-size: 13px;
+    font-size: var(--kailo-text-callout);
     font-weight: 500;
 
     .ant-tree-indent-unit {
@@ -135,7 +135,7 @@ const StyledTree = styled(Tree)`
           color: var(--kailo-color-muted-foreground);
           margin-top: 16px;
 
-          font-size: 11px;
+          font-size: var(--kailo-text-overline);
           line-height: 14px;
           font-weight: 600;
           letter-spacing: 0.04em;
@@ -152,7 +152,7 @@ const StyledTree = styled(Tree)`
 
         &--empty {
           color: var(--kailo-color-muted-foreground);
-          font-size: 12px;
+          font-size: var(--kailo-text-caption);
           font-weight: 400;
           .ant-tree-switcher {
             display: none;
@@ -174,7 +174,7 @@ const StyledTree = styled(Tree)`
 
         &--subtitle {
           color: var(--kailo-color-muted-foreground);
-          font-size: 11px;
+          font-size: var(--kailo-text-overline);
           font-weight: 600;
           letter-spacing: 0.04em;
           text-transform: uppercase;
@@ -243,7 +243,7 @@ export const StyledTreeNodeLink = styled(Link)`
   padding: 0 8px;
   min-height: 32px;
   border-radius: 6px;
-  font-size: 13px;
+  font-size: var(--kailo-text-callout);
   font-weight: 500;
   color: var(--kailo-color-foreground);
   .anticon,

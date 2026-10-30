@@ -1,8 +1,8 @@
 import { useMemo, useRef } from 'react';
 import { Path } from '@/utils/enum';
 import { useRouter } from 'next/router';
-import SiderLayout from '@/components/layouts/SiderLayout';
-import useHomeSidebar from '@/hooks/useHomeSidebar';
+import SimpleLayout from '@/components/layouts/SimpleLayout';
+import { KailoLoadError } from '@/components/kailo/KailoList';
 import useDrawerAction from '@/hooks/useDrawerAction';
 import { LoadingWrapper } from '@/components/PageLoading';
 import DashboardGrid from '@/components/pages/home/dashboardGrid';
@@ -38,7 +38,6 @@ const isSupportCachedSettings = (dataSource: DataSource) => {
 export default function Dashboard() {
   const router = useRouter();
   const dashboardGridRef = useRef<{ onRefreshAll: () => void }>(null);
-  const homeSidebar = useHomeSidebar();
   const cacheSettingsDrawer = useDrawerAction();
   const t = useKailoText();
   const share = useKailoShare({ dashboard: true });
@@ -49,16 +48,16 @@ export default function Dashboard() {
     [settings?.dataSource],
   );
 
+  // DD-167 (`20` §15.4): a failed read stays on 看板 as an inline error
+  // with retry (no toast, no redirect to 问答).
   const {
     data,
     loading,
+    error,
+    refetch,
     updateQuery: updateDashboardQuery,
   } = useDashboardQuery({
     fetchPolicy: 'cache-and-network',
-    onError: () => {
-      notify.error(t('home.dashboardLoadFailed'));
-      router.push(Path.Home);
-    },
   });
   const dashboardItems = useMemo(
     () => data?.dashboard?.items || [],
@@ -111,7 +110,7 @@ export default function Dashboard() {
   // DD-157: Kailo page header — 看板, 分享 (DD-138(4)) and 新建对话.
   const { hosted } = useKailoPage({
     title: t('dashboard'),
-    ready: !loading,
+    ready: !loading || !!error,
     actions: [
       ...(share.available
         ? [
@@ -137,9 +136,18 @@ export default function Dashboard() {
   });
 
   return (
-    <SiderLayout loading={false} color="gray-3" sidebar={homeSidebar}>
+    <SimpleLayout loading={false}>
       {share.modal}
-      <LoadingWrapper loading={loading}>
+      {error && !data ? (
+        <div className="kailo-page-state">
+          <KailoLoadError
+            error={error}
+            item="list.itemDashboard"
+            onRetry={() => refetch()}
+          />
+        </div>
+      ) : (
+      <LoadingWrapper loading={loading && !data}>
         <>
           <EmptyDashboard show={dashboardItems.length === 0}>
             <DashboardHeader
@@ -177,6 +185,7 @@ export default function Dashboard() {
           )}
         </>
       </LoadingWrapper>
-    </SiderLayout>
+      )}
+    </SimpleLayout>
   );
 }

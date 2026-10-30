@@ -4,6 +4,7 @@ import {
 } from '@/apollo/client/graphql/__types__';
 import { isNil, cloneDeep, uniq, sortBy, omit, isNumber } from 'lodash';
 import { Config, TopLevelSpec } from 'vega-lite';
+import { kailoChartConfig } from './theme';
 
 enum MarkType {
   ARC = 'arc',
@@ -31,7 +32,7 @@ const COLOR = {
   GRAY_5: '#d9d9d9',
 };
 
-// Default color scheme
+// Fallback series (no document); the drawn chart uses the Kailo chart tokens.
 const colorScheme = [
   '#7763CF',
   '#444CE7',
@@ -45,14 +46,6 @@ const colorScheme = [
   '#5381AD',
 ];
 
-// high contrast color scheme
-const pickedColorScheme = [
-  colorScheme[4],
-  colorScheme[5],
-  colorScheme[8],
-  colorScheme[3],
-  colorScheme[0],
-];
 
 const DEFAULT_COLOR = colorScheme[2];
 
@@ -90,6 +83,7 @@ type ChartOptions = {
   isShowTopCategories?: boolean;
   isHideLegend?: boolean;
   isHideTitle?: boolean;
+  typeScale?: number;
 };
 
 const config: Config = {
@@ -140,45 +134,15 @@ const config: Config = {
   point: { size: 60, color: DEFAULT_COLOR },
 };
 
-// DD-157 (20 §13, 暗色无低对比文字): chart text and grid follow the Kailo
-// theme. Vega draws SVG attributes, so the token values are resolved from
-// the document when the chart is built (the Chart component rebuilds on a
-// theme change); the brand-neutral series palette stays as content.
-const token = (name: string, fallback: string) => {
-  if (typeof window === 'undefined' || !window.getComputedStyle)
-    return fallback;
-  const value = window
-    .getComputedStyle(document.documentElement)
-    .getPropertyValue(name)
-    .trim();
-  return value || fallback;
-};
-
-export const themedConfig = (): Config => {
-  const text = token('--kailo-color-foreground', COLOR.GRAY_10);
-  const secondary = token('--kailo-color-text-secondary', COLOR.GRAY_9);
-  const muted = token('--kailo-color-muted-foreground', COLOR.GRAY_8);
-  const line = token('--kailo-color-border', COLOR.GRAY_5);
-  const font = token('--kailo-font-sans', config.font as string);
-  return {
-    ...config,
-    font,
-    title: { ...config.title, color: text },
-    axis: {
-      ...config.axis,
-      gridColor: line,
-      domainColor: line,
-      tickColor: line,
-      titleColor: secondary,
-      labelColor: muted,
-      labelFont: font,
-    },
-    legend: { ...config.legend, labelColor: muted, titleColor: secondary },
-  };
-};
+// DD-157/DD-167 (`20` §15.2): chart canvas, text, grid and series follow
+// the Kailo tokens (./theme); the handler rebuilds on every presentation
+// change, the series colours included.
+export const themedConfig = (typeScale?: number): Config =>
+  kailoChartConfig(config, { typeScale });
 
 export default class ChartSpecHandler {
   public config: Config;
+  public palette: string[];
   public options: ChartOptions;
   public $schema: string;
   public title: string;
@@ -190,7 +154,9 @@ export default class ChartSpecHandler {
   public transform: TransformSpec;
 
   constructor(spec: TopLevelSpec, options?: ChartOptions) {
-    this.config = themedConfig();
+    this.config = themedConfig(options?.typeScale);
+    const range = this.config.range?.category;
+    this.palette = Array.isArray(range) ? (range as string[]) : colorScheme;
     this.data = spec.data as DataSpec;
     this.autosize = { type: 'fit', contains: 'padding' };
     this.params = [
@@ -238,7 +204,7 @@ export default class ChartSpecHandler {
       this.encoding.color = {
         ...this.encoding.color,
         scale: {
-          range: pickedColorScheme,
+          range: this.palette.slice(0, 5),
         },
       } as any;
     }
@@ -375,7 +341,7 @@ export default class ChartSpecHandler {
       field: category?.field,
       type: category?.type,
       scale: {
-        range: colorScheme,
+        range: this.palette,
       },
     } as any;
 

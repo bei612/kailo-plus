@@ -49,7 +49,11 @@ export default function DetailsDrawer(props: Props) {
     <Drawer
       visible={visible}
       title={t('knowledge.apiDetails')}
-      width={480}
+      // DD-167 (`20` §13.2/§15.1): the detail side panel — flush right,
+      // no scrim, the list stays usable beside it.
+      className="kailo-side-panel"
+      mask={false}
+      width={440}
       closable
       destroyOnClose
       onClose={onClose}

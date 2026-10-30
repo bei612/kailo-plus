@@ -137,7 +137,7 @@ describe('KailoUsage admission', () => {
     const usage = new KailoUsage(config, { fetch: platform.fetch as any });
     const ctx = { kailoUsage: usage, kailoUser: profile() };
     await expect(admitKailoDataQuery(ctx)).rejects.toThrow(
-      '组织本月的问数额度已用完，请联系管理员。',
+      '组织本月的数据建模额度已用完，请联系管理员。',
     );
     await admitKailoDataQuery(ctx).catch((error) => {
       expect(error).toBeInstanceOf(GraphQLError);
@@ -145,7 +145,7 @@ describe('KailoUsage admission', () => {
     });
     expect(platform.posts).toHaveLength(0);
     expect(usageRefusalText('MEMBER_QUOTA_EXHAUSTED', 'en-US')).toBe(
-      'Your data query quota for this month is used up.',
+      'Your Data Modeling quota for this month is used up.',
     );
     expect(usageRefusalText('QUOTA_NOT_CONFIGURED', 'zh-CN')).toBe(
       '本组织的用量额度尚未在 Kailo 中完成登记，暂不能提问，请联系管理员。',

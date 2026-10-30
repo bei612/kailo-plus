@@ -82,7 +82,11 @@ const QuestionTitle = (props) => {
     <Title
       className={clsx('d-flex mt-0', className)}
       level={4}
-      style={{ fontSize: 17, lineHeight: '24px', fontWeight: 600 }}
+      style={{
+        fontSize: 'var(--kailo-text-title2)',
+        lineHeight: '24px',
+        fontWeight: 600,
+      }}
     >
       <MessageOutlined className="gray-7 mt-1 mr-3" />
       <Text className="gray-10">{question}</Text>

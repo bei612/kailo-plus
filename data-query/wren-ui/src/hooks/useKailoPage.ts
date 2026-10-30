@@ -11,8 +11,9 @@ import {
 } from '@/utils/kailoHost';
 import useKailoSession from '@/hooks/useKailoSession';
 
-// DD-157 (`07` §4.8.7, `20` §13.2): the page header Kailo renders for 问数.
-// Tabs replace the component's own top navigation (问答 / 建模 / 知识 / API);
+// DD-157 (`07` §4.8.7, `20` §13.2): the page header Kailo renders for 数据建模.
+// DD-167 (`20` §15.1): the tabs are 问答 · 看板 · 知识 · API and replace
+// the component's own navigation (the dashboard is no longer a pane row);
 // each page supplies its title, ancestors and actions. DD-138(6) (`07`
 // §4.8.5): business pages carry no admin entries — modeling, the data source
 // connection and the project settings are Kailo admin surfaces
@@ -20,29 +21,41 @@ import useKailoSession from '@/hooks/useKailoSession';
 // API call history is administration data — its tab is the administrators'
 // only (the server refuses the history to everyone else).
 
-export type KailoTabId = 'home' | 'knowledge' | 'api';
+export type KailoTabId = 'home' | 'dashboard' | 'knowledge' | 'api';
 
 interface TabDef {
   id: KailoTabId;
   label: KailoTextKey;
   path: Path;
-  prefix: Path;
+  matches: (pathname: string) => boolean;
   adminOnly?: boolean;
 }
 
 export const KAILO_TABS: TabDef[] = [
-  { id: 'home', label: 'navHome', path: Path.Home, prefix: Path.Home },
+  {
+    id: 'home',
+    label: 'navHome',
+    path: Path.Home,
+    matches: (pathname) =>
+      pathname.startsWith(Path.Home) && pathname !== Path.HomeDashboard,
+  },
+  {
+    id: 'dashboard',
+    label: 'dashboard',
+    path: Path.HomeDashboard,
+    matches: (pathname) => pathname === Path.HomeDashboard,
+  },
   {
     id: 'knowledge',
     label: 'navKnowledge',
     path: Path.KnowledgeQuestionSQLPairs,
-    prefix: Path.Knowledge,
+    matches: (pathname) => pathname.startsWith(Path.Knowledge),
   },
   {
     id: 'api',
     label: 'navApi',
     path: Path.APIManagementHistory,
-    prefix: Path.APIManagement,
+    matches: (pathname) => pathname.startsWith(Path.APIManagement),
     adminOnly: true,
   },
 ];
@@ -59,7 +72,7 @@ export function pageTabs(
       id: tab.id,
       label: kailoText(locale, tab.label),
     })),
-    activeTab: visible.find((tab) => pathname.startsWith(tab.prefix))?.id,
+    activeTab: visible.find((tab) => tab.matches(pathname))?.id,
   };
 }
 

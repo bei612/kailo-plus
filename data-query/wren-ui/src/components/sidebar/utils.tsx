@@ -141,7 +141,7 @@ export const createTreeGroupNode =
 
 // Small text/icon button in a group title (新建, 刷新): no upper case.
 export const GroupActionButton = styled(Button)`
-  font-size: 12px;
+  font-size: var(--kailo-text-caption);
   font-weight: 500;
   letter-spacing: normal;
   text-transform: none;

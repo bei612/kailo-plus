@@ -10,14 +10,14 @@ const { Sider, Content } = Layout;
 // there is no header, tab bar, settings entry or account menu here.
 // 20 §13 list pane: 264 wide, surface, 1px line on the right edge.
 const StyledSider = styled(Sider)`
-  height: 100vh;
+  height: var(--kailo-vh, 100vh);
   overflow: auto;
   border-right: 1px solid var(--kailo-color-border);
 `;
 
 const StyledContent = styled(Content)`
   position: relative;
-  height: 100vh;
+  height: var(--kailo-vh, 100vh);
   overflow: auto;
 `;
 

@@ -13,7 +13,7 @@ const Wrapper = styled.div`
   align-items: center;
   justify-content: center;
   gap: 8px;
-  min-height: 100vh;
+  min-height: var(--kailo-vh, 100vh);
   padding: 24px;
   text-align: center;
   background: var(--kailo-color-background);
@@ -22,7 +22,7 @@ const Wrapper = styled.div`
 
 const Title = styled.div`
   margin: 0;
-  font-size: 17px;
+  font-size: var(--kailo-text-title2);
   line-height: 24px;
   font-weight: 600;
   color: var(--kailo-color-foreground);
@@ -30,7 +30,7 @@ const Title = styled.div`
 
 const Description = styled.p`
   margin: 0 0 8px;
-  font-size: 14px;
+  font-size: var(--kailo-text-body);
   color: var(--kailo-color-muted-foreground);
 `;
 
@@ -38,7 +38,7 @@ const HomeLink = styled(Link)`
   padding: 6px 14px;
   border: 1px solid var(--kailo-color-border);
   border-radius: 6px;
-  font-size: 14px;
+  font-size: var(--kailo-text-body);
   color: var(--kailo-color-foreground);
   background: var(--kailo-color-background);
 

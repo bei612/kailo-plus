@@ -6,6 +6,7 @@ import { kailoT } from './kailoI18n';
 import { getUserConfig } from './env';
 import { getNativeWriteText } from './language';
 import { signInOwnedByHost } from './kailoEmbed';
+import { isReadOperation, usageRefusalKey } from './kailoList';
 import type { NativeWriteReference } from '@/apollo/server/utils/error';
 
 export const nativeWriteEvidence = (error: any) => {
@@ -256,14 +257,25 @@ class SaveRelationsErrorHandler extends ErrorHandler {
   }
 }
 
+// DD-165 (`07` §4.8.9): a refused question carries the Kailo wording chosen
+// from the decision, in the current Kailo locale (not the server's text).
 class CreateAskingTaskErrorHandler extends ErrorHandler {
   public getErrorMessage(error: GraphQLError) {
+    const usage = usageRefusalKey(error);
+    if (usage) return kailoT('usage.refusedTitle');
     switch (error.extensions?.code) {
       default:
         return kailoT('setup.errCreateAskingTask');
     }
   }
+
+  public getErrorDetail(error: GraphQLError) {
+    const usage = usageRefusalKey(error);
+    return usage ? kailoT(usage) : undefined;
+  }
 }
+
+class RerunAskingTaskErrorHandler extends CreateAskingTaskErrorHandler {}
 
 class CreateThreadErrorHandler extends ErrorHandler {
   public getErrorMessage(error: GraphQLError) {
@@ -569,6 +581,7 @@ class DeleteInstructionErrorHandler extends ErrorHandler {
 errorHandlers.set('SaveTables', new SaveTablesErrorHandler());
 errorHandlers.set('SaveRelations', new SaveRelationsErrorHandler());
 errorHandlers.set('CreateAskingTask', new CreateAskingTaskErrorHandler());
+errorHandlers.set('RerunAskingTask', new RerunAskingTaskErrorHandler());
 errorHandlers.set('CreateThread', new CreateThreadErrorHandler());
 errorHandlers.set('UpdateThread', new UpdateThreadErrorHandler());
 errorHandlers.set('DeleteThread', new DeleteThreadErrorHandler());
@@ -671,8 +684,9 @@ const errorHandler = (error: ErrorResponse) => {
     notify.warning(sqlPair ? text.unresolved : text.unknown);
     return;
   }
-  // networkError
-  if (error.networkError) {
+  // networkError. DD-167 (20 §15.4): a failed read is shown in place by the
+  // page (inline error with retry), never as a toast.
+  if (error.networkError && !isReadOperation(error.operation)) {
     notify.error(kailoT('setup.errNetwork'), kailoT('setup.errNetworkHint'));
   }
 
