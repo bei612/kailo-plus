@@ -592,6 +592,15 @@
 //    ownAuditEntry, err := UnmarshalOwnAuditEntry(bytes)
 //    bytes, err = ownAuditEntry.Marshal()
 //
+//    ownerTransferItem, err := UnmarshalOwnerTransferItem(bytes)
+//    bytes, err = ownerTransferItem.Marshal()
+//
+//    ownerTransferMember, err := UnmarshalOwnerTransferMember(bytes)
+//    bytes, err = ownerTransferMember.Marshal()
+//
+//    ownerTransferPage, err := UnmarshalOwnerTransferPage(bytes)
+//    bytes, err = ownerTransferPage.Marshal()
+//
 //    platformFeedbackPage, err := UnmarshalPlatformFeedbackPage(bytes)
 //    bytes, err = platformFeedbackPage.Marshal()
 //
@@ -3175,6 +3184,36 @@ func UnmarshalOwnAuditEntry(data []byte) (OwnAuditEntry, error) {
 }
 
 func (r *OwnAuditEntry) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalOwnerTransferItem(data []byte) (OwnerTransferItem, error) {
+	var r OwnerTransferItem
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *OwnerTransferItem) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalOwnerTransferMember(data []byte) (OwnerTransferMember, error) {
+	var r OwnerTransferMember
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *OwnerTransferMember) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalOwnerTransferPage(data []byte) (OwnerTransferPage, error) {
+	var r OwnerTransferPage
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *OwnerTransferPage) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -9417,6 +9456,50 @@ type OwnAuditEntry struct {
 	WorkspaceID *string `json:"workspaceId,omitempty"`
 }
 
+// GET /api/v1/owner-transfers[?principalId=]（.design/03 §3.1 规则 2、DD-45）：成员名下仍有 owner 责任的
+// Resource，与 TenantMembership 进入 REVOKED 前核对的同一事实。不带参数列出撤权中（REVOKING）且仍有名下资源的成员；带
+// principalId 只列该成员。每次 fresh 校验 Tenant manage，否则 PERMISSION_DENIED；只读，不建立
+// ActionExecution，移交仍经 resource.transfer_owner 与审批。
+type OwnerTransferPage struct {
+	Members []OwnerTransferMember `json:"members"`
+	// 成员超过单次上界（50）时为 true；不静默截断。
+	Truncated bool `json:"truncated"`
+}
+
+// 一名成员与其名下仍有 owner 责任的条目。
+type OwnerTransferMember struct {
+	DisplayName string              `json:"displayName"`
+	Items       []OwnerTransferItem `json:"items"`
+	// TenantMembership 状态原值（ACTIVE、REVOKING 等）。
+	MembershipState string `json:"membershipState"`
+	PrincipalID     string `json:"principalId"`
+	// 条目超过单次上界（500）时为 true。
+	Truncated bool `json:"truncated"`
+}
+
+// 一个 Resource：此人是它的 owner（ownedResource=true），或此人名下有它的未终结 Asset 而 Resource
+// 属于他人（ownedResource=false，由 Resource owner 以 resource.transfer_owner 收拢）。
+type OwnerTransferItem struct {
+	// 此人名下、属于该 Resource 的未终结 Asset 数。
+	AssetCount int64 `json:"assetCount"`
+	// 不可移交的原因：投影未收敛、Resource 状态不可移交、已启用的自动化须先暂停或停用。
+	BlockReason       *OwnerTransferItemBlockReason `json:"blockReason,omitempty"`
+	HomeWorkspaceID   *string                       `json:"homeWorkspaceId,omitempty"`
+	HomeWorkspaceName *string                       `json:"homeWorkspaceName,omitempty"`
+	// 该类型自有的显示名（定义、Skill、团队、连接器、自动化版本名，安装取其 Agent 定义名）；没有时省略。
+	Name                     *string `json:"name,omitempty"`
+	OwnedResource            bool    `json:"ownedResource"`
+	ResourceID               string  `json:"resourceId"`
+	ResourceOwnerPrincipalID string  `json:"resourceOwnerPrincipalId"`
+	ResourceVersion          int64   `json:"resourceVersion"`
+	// Resource 状态原值。
+	State string `json:"state"`
+	// 现在可以提交 resource.transfer_owner。
+	Transferable bool `json:"transferable"`
+	// ResourceType 键，客户端按已知类型显示名称，未知类型显示通用名。
+	TypeKey string `json:"typeKey"`
+}
+
 // DD-158(2)：GET /api/v1/platform/feedback 的有界回应，只对 Platform Catalog Tenant 中持有 fresh
 // Catalog manage 的会话开放；读取受审计。图片经 GET /api/v1/platform/feedback/{feedbackId}/attachment 取回。
 type PlatformFeedbackPage struct {
@@ -13030,6 +13113,15 @@ const (
 	AgentMemoryWrites TenantQuotaFeature = "agent_memory_writes"
 	AgentTokens       TenantQuotaFeature = "agent_tokens"
 	AutomationRuns    TenantQuotaFeature = "automation_runs"
+)
+
+// 不可移交的原因：投影未收敛、Resource 状态不可移交、已启用的自动化须先暂停或停用。
+type OwnerTransferItemBlockReason string
+
+const (
+	AutomationEnabled OwnerTransferItemBlockReason = "AUTOMATION_ENABLED"
+	ProjectionPending OwnerTransferItemBlockReason = "PROJECTION_PENDING"
+	State             OwnerTransferItemBlockReason = "STATE"
 )
 
 // DD-158(2)：运营方分拣状态 NEW→TRIAGED→CLOSED；超过 180 天的 CLOSED 记录由 Core 清除。

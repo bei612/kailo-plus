@@ -9588,6 +9588,88 @@ pub struct OwnAuditEntry {
     pub workspace_id: Option<String>,
 }
 
+/// GET /api/v1/owner-transfers[?principalId=]（.design/03 §3.1 规则 2、DD-45）：成员名下仍有 owner 责任的
+/// Resource，与 TenantMembership 进入 REVOKED 前核对的同一事实。不带参数列出撤权中（REVOKING）且仍有名下资源的成员；带
+/// principalId 只列该成员。每次 fresh 校验 Tenant manage，否则 PERMISSION_DENIED；只读，不建立
+/// ActionExecution，移交仍经 resource.transfer_owner 与审批。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct OwnerTransferPage {
+    pub members: Vec<OwnerTransferMember>,
+
+    /// 成员超过单次上界（50）时为 true；不静默截断。
+    pub truncated: bool,
+}
+
+/// 一名成员与其名下仍有 owner 责任的条目。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OwnerTransferMember {
+    pub display_name: String,
+
+    pub items: Vec<OwnerTransferItem>,
+
+    /// TenantMembership 状态原值（ACTIVE、REVOKING 等）。
+    pub membership_state: String,
+
+    pub principal_id: String,
+
+    /// 条目超过单次上界（500）时为 true。
+    pub truncated: bool,
+}
+
+/// 一个 Resource：此人是它的 owner（ownedResource=true），或此人名下有它的未终结 Asset 而 Resource
+/// 属于他人（ownedResource=false，由 Resource owner 以 resource.transfer_owner 收拢）。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OwnerTransferItem {
+    /// 此人名下、属于该 Resource 的未终结 Asset 数。
+    pub asset_count: i64,
+
+    /// 不可移交的原因：投影未收敛、Resource 状态不可移交、已启用的自动化须先暂停或停用。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub block_reason: Option<OwnerTransferItemBlockReason>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub home_workspace_id: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub home_workspace_name: Option<String>,
+
+    /// 该类型自有的显示名（定义、Skill、团队、连接器、自动化版本名，安装取其 Agent 定义名）；没有时省略。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+
+    pub owned_resource: bool,
+
+    pub resource_id: String,
+
+    pub resource_owner_principal_id: String,
+
+    pub resource_version: i64,
+
+    /// Resource 状态原值。
+    pub state: String,
+
+    /// 现在可以提交 resource.transfer_owner。
+    pub transferable: bool,
+
+    /// ResourceType 键，客户端按已知类型显示名称，未知类型显示通用名。
+    pub type_key: String,
+}
+
+/// 不可移交的原因：投影未收敛、Resource 状态不可移交、已启用的自动化须先暂停或停用。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum OwnerTransferItemBlockReason {
+    #[serde(rename = "AUTOMATION_ENABLED")]
+    AutomationEnabled,
+
+    #[serde(rename = "PROJECTION_PENDING")]
+    ProjectionPending,
+
+    State,
+}
+
 /// DD-158(2)：GET /api/v1/platform/feedback 的有界回应，只对 Platform Catalog Tenant 中持有 fresh
 /// Catalog manage 的会话开放；读取受审计。图片经 GET /api/v1/platform/feedback/{feedbackId}/attachment 取回。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

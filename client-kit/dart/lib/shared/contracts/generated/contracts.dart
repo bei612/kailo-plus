@@ -197,6 +197,9 @@
 //     final nativeHumanScopeResult = nativeHumanScopeResultFromJson(jsonString);
 //     final operationUsageCount = operationUsageCountFromJson(jsonString);
 //     final ownAuditEntry = ownAuditEntryFromJson(jsonString);
+//     final ownerTransferItem = ownerTransferItemFromJson(jsonString);
+//     final ownerTransferMember = ownerTransferMemberFromJson(jsonString);
+//     final ownerTransferPage = ownerTransferPageFromJson(jsonString);
 //     final platformFeedbackPage = platformFeedbackPageFromJson(jsonString);
 //     final platformFeedbackTriageRequest = platformFeedbackTriageRequestFromJson(jsonString);
 //     final platformInfo = platformInfoFromJson(jsonString);
@@ -1618,6 +1621,24 @@ OwnAuditEntry ownAuditEntryFromJson(String str) =>
     OwnAuditEntry.fromJson(json.decode(str));
 
 String ownAuditEntryToJson(OwnAuditEntry data) => json.encode(data.toJson());
+
+OwnerTransferItem ownerTransferItemFromJson(String str) =>
+    OwnerTransferItem.fromJson(json.decode(str));
+
+String ownerTransferItemToJson(OwnerTransferItem data) =>
+    json.encode(data.toJson());
+
+OwnerTransferMember ownerTransferMemberFromJson(String str) =>
+    OwnerTransferMember.fromJson(json.decode(str));
+
+String ownerTransferMemberToJson(OwnerTransferMember data) =>
+    json.encode(data.toJson());
+
+OwnerTransferPage ownerTransferPageFromJson(String str) =>
+    OwnerTransferPage.fromJson(json.decode(str));
+
+String ownerTransferPageToJson(OwnerTransferPage data) =>
+    json.encode(data.toJson());
 
 PlatformFeedbackPage platformFeedbackPageFromJson(String str) =>
     PlatformFeedbackPage.fromJson(json.decode(str));
@@ -19534,6 +19555,161 @@ class OwnAuditEntry {
     "workspaceId": workspaceId,
   });
 }
+
+///GET /api/v1/owner-transfers[?principalId=]（.design/03 §3.1 规则 2、DD-45）：成员名下仍有 owner 责任的
+///Resource，与 TenantMembership 进入 REVOKED 前核对的同一事实。不带参数列出撤权中（REVOKING）且仍有名下资源的成员；带
+///principalId 只列该成员。每次 fresh 校验 Tenant manage，否则 PERMISSION_DENIED；只读，不建立
+///ActionExecution，移交仍经 resource.transfer_owner 与审批。
+class OwnerTransferPage {
+  final List<OwnerTransferMember> members;
+
+  ///成员超过单次上界（50）时为 true；不静默截断。
+  final bool truncated;
+
+  OwnerTransferPage({required this.members, required this.truncated});
+
+  factory OwnerTransferPage.fromJson(Map<String, dynamic> json) =>
+      OwnerTransferPage(
+        members: List<OwnerTransferMember>.from(
+          json["members"].map((x) => OwnerTransferMember.fromJson(x)),
+        ),
+        truncated: json["truncated"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "members": List<dynamic>.from(members.map((x) => x.toJson())),
+    "truncated": truncated,
+  });
+}
+
+///一名成员与其名下仍有 owner 责任的条目。
+class OwnerTransferMember {
+  final String displayName;
+  final List<OwnerTransferItem> items;
+
+  ///TenantMembership 状态原值（ACTIVE、REVOKING 等）。
+  final String membershipState;
+  final String principalId;
+
+  ///条目超过单次上界（500）时为 true。
+  final bool truncated;
+
+  OwnerTransferMember({
+    required this.displayName,
+    required this.items,
+    required this.membershipState,
+    required this.principalId,
+    required this.truncated,
+  });
+
+  factory OwnerTransferMember.fromJson(Map<String, dynamic> json) =>
+      OwnerTransferMember(
+        displayName: json["displayName"],
+        items: List<OwnerTransferItem>.from(
+          json["items"].map((x) => OwnerTransferItem.fromJson(x)),
+        ),
+        membershipState: json["membershipState"],
+        principalId: json["principalId"],
+        truncated: json["truncated"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "displayName": displayName,
+    "items": List<dynamic>.from(items.map((x) => x.toJson())),
+    "membershipState": membershipState,
+    "principalId": principalId,
+    "truncated": truncated,
+  });
+}
+
+///一个 Resource：此人是它的 owner（ownedResource=true），或此人名下有它的未终结 Asset 而 Resource
+///属于他人（ownedResource=false，由 Resource owner 以 resource.transfer_owner 收拢）。
+class OwnerTransferItem {
+  ///此人名下、属于该 Resource 的未终结 Asset 数。
+  final int assetCount;
+
+  ///不可移交的原因：投影未收敛、Resource 状态不可移交、已启用的自动化须先暂停或停用。
+  final OwnerTransferItemBlockReason? blockReason;
+  final String? homeWorkspaceId;
+  final String? homeWorkspaceName;
+
+  ///该类型自有的显示名（定义、Skill、团队、连接器、自动化版本名，安装取其 Agent 定义名）；没有时省略。
+  final String? name;
+  final bool ownedResource;
+  final String resourceId;
+  final String resourceOwnerPrincipalId;
+  final int resourceVersion;
+
+  ///Resource 状态原值。
+  final String state;
+
+  ///现在可以提交 resource.transfer_owner。
+  final bool transferable;
+
+  ///ResourceType 键，客户端按已知类型显示名称，未知类型显示通用名。
+  final String typeKey;
+
+  OwnerTransferItem({
+    required this.assetCount,
+    this.blockReason,
+    this.homeWorkspaceId,
+    this.homeWorkspaceName,
+    this.name,
+    required this.ownedResource,
+    required this.resourceId,
+    required this.resourceOwnerPrincipalId,
+    required this.resourceVersion,
+    required this.state,
+    required this.transferable,
+    required this.typeKey,
+  });
+
+  factory OwnerTransferItem.fromJson(Map<String, dynamic> json) =>
+      OwnerTransferItem(
+        assetCount: json["assetCount"],
+        blockReason: json["blockReason"] == null
+            ? null
+            : ownerTransferItemBlockReasonValues.map[json["blockReason"]]!,
+        homeWorkspaceId: json["homeWorkspaceId"],
+        homeWorkspaceName: json["homeWorkspaceName"],
+        name: json["name"],
+        ownedResource: json["ownedResource"],
+        resourceId: json["resourceId"],
+        resourceOwnerPrincipalId: json["resourceOwnerPrincipalId"],
+        resourceVersion: json["resourceVersion"],
+        state: json["state"],
+        transferable: json["transferable"],
+        typeKey: json["typeKey"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "assetCount": assetCount,
+    "blockReason": ownerTransferItemBlockReasonValues.reverse[blockReason],
+    "homeWorkspaceId": homeWorkspaceId,
+    "homeWorkspaceName": homeWorkspaceName,
+    "name": name,
+    "ownedResource": ownedResource,
+    "resourceId": resourceId,
+    "resourceOwnerPrincipalId": resourceOwnerPrincipalId,
+    "resourceVersion": resourceVersion,
+    "state": state,
+    "transferable": transferable,
+    "typeKey": typeKey,
+  });
+}
+
+///不可移交的原因：投影未收敛、Resource 状态不可移交、已启用的自动化须先暂停或停用。
+enum OwnerTransferItemBlockReason {
+  AUTOMATION_ENABLED,
+  PROJECTION_PENDING,
+  STATE,
+}
+
+final ownerTransferItemBlockReasonValues = EnumValues({
+  "AUTOMATION_ENABLED": OwnerTransferItemBlockReason.AUTOMATION_ENABLED,
+  "PROJECTION_PENDING": OwnerTransferItemBlockReason.PROJECTION_PENDING,
+  "STATE": OwnerTransferItemBlockReason.STATE,
+});
 
 ///DD-158(2)：GET /api/v1/platform/feedback 的有界回应，只对 Platform Catalog Tenant 中持有 fresh
 ///Catalog manage 的会话开放；读取受审计。图片经 GET /api/v1/platform/feedback/{feedbackId}/attachment 取回。
