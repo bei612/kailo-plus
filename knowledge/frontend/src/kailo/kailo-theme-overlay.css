@@ -129,7 +129,9 @@ html[data-kailo-mode]:root:root {
 
   /* Typography. */
   --app-font-family: var(--kailo-font-sans);
+  --app-font-family-mono: var(--kailo-font-mono);
   --td-font-family: var(--kailo-font-sans);
+  --td-font-family-mono: var(--kailo-font-mono);
   --td-font-family-medium: var(--kailo-font-sans);
   --td-font-size-link-small: var(--kailo-font-size-xs);
   --td-font-size-link-medium: var(--kailo-font-size-sm);
@@ -570,6 +572,12 @@ html[data-kailo-shell] .aside_box--pane .submenu_item_p.session-chat-row--active
 
 /* Page content insets inside the shell (spec §2: 24, list pages 16 top). */
 html[data-kailo-shell] .main { background: var(--kailo-color-background); }
+/* The composer keeps the 24 inset from the content edges at every frame width
+ * (acceptance batch 5: on a narrow frame it ran into the right edge of the iframe). */
+html[data-kailo-shell] .answers-input:not(.is-embedded) .rich-input-container,
+html[data-kailo-shell] .answers-input:not(.is-embedded) .steer-queue {
+  max-width: min(960px, calc(100% - 48px));
+}
 
 /* Drop target over the content area (spec §4: inset 12, 2px dashed brand, brand-soft 60%). */
 html[data-kailo-mode] .upload-mask {

@@ -38,10 +38,8 @@ pub(crate) const ACTION_HEADER: &str = "x-platform-action-execution-id";
 pub(crate) const OPERATION_HEADER: &str = "x-platform-operation-id";
 
 pub(crate) fn router(state: ServiceState, auth: Arc<GatewayServiceAuth>) -> Router {
-    let url = auth.mcp_url();
-    let authority = url.authority();
     let mut config =
-        StreamableHttpServerConfig::default().with_allowed_hosts([authority.to_owned()]);
+        StreamableHttpServerConfig::default().with_allowed_hosts([allowed_host(auth.mcp_url())]);
     // No transport-session cache can carry one Invocation's authority into
     // another call. Native legacy initialize remains supported by rmcp.
     config.legacy_session_mode = false;
@@ -58,6 +56,19 @@ pub(crate) fn router(state: ServiceState, auth: Arc<GatewayServiceAuth>) -> Rout
     Router::new()
         .nest_service(PATH, service)
         .layer(middleware::from_fn_with_state(auth, authenticate))
+}
+
+/// DNS-rebinding allowlist entry for the Core MCP endpoint: the configured
+/// host without its port. AgentGateway's MCP backend applies its default
+/// automatic hostname rewrite, which sets the upstream authority to the target
+/// hostname only (`core-bff`, not `core-bff:8082`); rmcp matches any port when
+/// the allowed entry has none, so the hostname itself stays pinned
+/// (acceptance batch 5: every thread/start failed with "Forbidden: Host header
+/// is not allowed" on `initialize`). The endpoint still requires the Gateway
+/// service token on every request. A URL without a host yields an empty
+/// entry, which matches no request (fail closed).
+fn allowed_host(url: &reqwest::Url) -> String {
+    url.host_str().unwrap_or_default().to_owned()
 }
 
 async fn authenticate(
@@ -241,6 +252,16 @@ pub(crate) fn schema_tool(name: &str) -> Result<Tool, ErrorData> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn mcp_host_allowlist_is_the_configured_hostname_without_port() {
+        let url = reqwest::Url::parse("http://core-bff:8082/service/v1/agent-tools/mcp").unwrap();
+        assert_eq!(allowed_host(&url), "core-bff");
+        let config = StreamableHttpServerConfig::default().with_allowed_hosts([allowed_host(&url)]);
+        assert_eq!(config.allowed_hosts, vec!["core-bff".to_string()]);
+        let bare = reqwest::Url::parse("http://core-bff/service/v1/agent-tools/mcp").unwrap();
+        assert_eq!(allowed_host(&bare), "core-bff");
+    }
 
     #[test]
     fn platform_mcp_decision_references_are_unique_canonical_and_non_nil() {

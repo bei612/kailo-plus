@@ -191,11 +191,11 @@ export function NativeApplicationPage({ bindingId, onBack, title, path }: { bind
     confirming.current = null;
     setConfirm(null);
   }, [frameKey]);
-  const finishConfirm = (confirmed: boolean) => {
+  const finishConfirm = (confirmed: boolean, option?: boolean) => {
     const current = confirming.current;
     confirming.current = null;
     setConfirm(null);
-    if (current) postToFrame(confirmResultMessage(current.id, confirmed));
+    if (current) postToFrame(confirmResultMessage(current.id, confirmed, current.option ? option === true : undefined));
     // Keyboard focus goes back to where the user was: inside the component (07 §4.8.7).
     window.setTimeout(() => frame.current?.focus(), 0);
   };

@@ -2,7 +2,7 @@ import { useRouter } from 'next/router';
 import { useEffect, useState } from 'react';
 import { DataNode } from 'antd/es/tree';
 import { PlusIcon } from '@/components/kailo/KailoIcons';
-import useKailoText from '@/utils/kailoI18n';
+import useKailoText, { useKailoLocale } from '@/utils/kailoI18n';
 import { confirm } from '@/utils/kailoHost';
 import { Path } from '@/utils/enum';
 import { DiagramView } from '@/utils/data';
@@ -24,6 +24,9 @@ export default function ViewTree(props: Props) {
   const { views } = props;
   const router = useRouter();
   const t = useKailoText();
+  // The tree is cached in state: rebuild it when the page locale changes (the
+  // embedded page switches its Next locale after the first render).
+  const locale = useKailoLocale();
 
   // Views are saved from answers: explain, and offer to go and ask.
   const onAddView = async () => {
@@ -80,7 +83,7 @@ export default function ViewTree(props: Props) {
         }),
       }),
     );
-  }, [views]);
+  }, [views, locale]);
 
   return <StyledSidebarTree {...props} treeData={tree} />;
 }
