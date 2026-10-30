@@ -32,11 +32,14 @@ import (
 	"github.com/pydio/cells/v5/common/auth"
 	claimpkg "github.com/pydio/cells/v5/common/auth/claim"
 	grpcclient "github.com/pydio/cells/v5/common/client/grpc"
+	"github.com/pydio/cells/v5/common/config"
+	_ "github.com/pydio/cells/v5/common/config/memory"
 	"github.com/pydio/cells/v5/common/errors"
 	"github.com/pydio/cells/v5/common/proto/idm"
 	serviceproto "github.com/pydio/cells/v5/common/proto/service"
 	"github.com/pydio/cells/v5/common/utils/cache/gocache"
 	cachehelper "github.com/pydio/cells/v5/common/utils/cache/helper"
+	"github.com/pydio/cells/v5/common/utils/propagator"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/proto"
@@ -116,6 +119,10 @@ func TestGetCellRequiresReadAccess(t *testing.T) {
 }
 
 func withClaims(ctx context.Context, user string) context.Context {
+	// The native share handlers read the service configuration (governed
+	// delivery) from the context; an empty in-memory store means none.
+	mem, _ := config.OpenStore(context.Background(), "mem://")
+	ctx = propagator.With(ctx, config.ContextKey, mem)
 	return claimpkg.ToContext(ctx, claimpkg.Claims{Name: user, Subject: user, Profile: common.PydioProfileStandard})
 }
 
