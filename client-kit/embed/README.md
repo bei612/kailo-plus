@@ -39,6 +39,8 @@ behind.
   status-modified warning warning-background`.
 - `--kailo-font-sans`, `--kailo-font-size-{xs,sm,base,lg,xl,2xl..6xl}`,
   `--kailo-radius`, `--kailo-radius-{lg,md,sm}`, `--kailo-shadow-{sm,md,lg}`.
+- DD-167: `--kailo-type-scale`, `--kailo-zoom` and the scaled type ramp
+  `--kailo-text-{overline,caption,callout,body,headline,title2,title1,display}`.
 
 The font stack starts with `"Inter Variable"`; load it from the component's
 own build (`@fontsource-variable/inter`, the package web-client uses), never
@@ -153,6 +155,22 @@ DD-157 page shell (07 §4.8.7, `.design/20` §13), same version 1 — opt in per
 | Kailo → component | `{type: "navigate", target: {kind: "tab"\|"breadcrumb", id}}`, `{type: "action", id}` — `onNavigate`, `onAction` |
 | Kailo → component | `{type: "confirm-result", id, confirmed, option?}` — `option` only for a request that carried one, never true on a cancel |
 | Kailo → component | `presentation` carries `features: [...]` the host handles; `KailoEmbed.hostSupports(name)` and `<html data-kailo-host-features>` reflect it. `setPage` returns `false` once an older host answered without `page` — keep your own header then |
+
+DD-167 type dials and prompt (07 §4.8.10), same version 1:
+
+| Direction | Message |
+|---|---|
+| Kailo → component | launch adds `kailo_font_size=smaller\|larger` and `kailo_zoom=<0.75..1.5>` only when not default; a Kailo launch without them means default |
+| Kailo → component | `presentation` adds `fontSize: "smaller"\|"default"\|"larger"` and `zoom` (0.75–1.5); absent = default, malformed = message dropped |
+| component → Kailo | `{type: "prompt", prompt: {id, title, label, description?, placeholder?, value?, confirmLabel?, cancelLabel?, maxLength?}}` — `KailoEmbed.prompt()`; declare `prompt` in `kailo-embed-features` |
+| Kailo → component | `{type: "prompt-result", id, confirmed, value?}` — `value` (trimmed, 1..maxLength) only on a confirmation |
+
+The runtime writes `<html data-kailo-font-size>`, `--kailo-zoom` and `data-kailo-zoomed`
+(zoom ≠ 1), and `getState()` adds `fontSize`, `zoom` and `typeScale`; `onTypeChange()` follows
+both. The token sheet derives `--kailo-type-scale` (13/14, 1, 15/14) and the scaled ramp
+`--kailo-text-{overline,caption,callout,body,headline,title2,title1,display}`: map native text
+sizes to these (text only), and apply `zoom: var(--kailo-zoom)` to the component's own app root
+so that the whole page scales like Kailo's ⌘± without a second scrollbar.
 
 Page, toast and confirm text is display text for the user's own browser: Kailo
 renders it as plain text and never stores, logs or forwards it. The token sheet

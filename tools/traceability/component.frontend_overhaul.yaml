@@ -1,0 +1,48 @@
+capability_id: component.frontend_overhaul
+title: 组件原生前端产品化：信息架构归一、主题/语言/字号实时联动、宿主对话框、列表分页与五类状态
+stage: EXT-BASE
+status: in_progress
+# 分支源码在 CI 节点以本地构建产物截图核验（~/kailo-acceptance/component-frontend-overhaul/）；
+# 组件产物（file-storage、knowledge-native-ui、data-query-ui）与 Web/Desktop 合并后重建发布。
+exposure: none
+
+design:
+  requirements: [V-REQ-17, V-REQ-24]
+  decisions: [DD-167]
+  facts: []
+  seams: []
+  blockers: []
+  entities: [FrontendPresentationContract]
+
+validation:
+  scenarios: [V-SCN-300, V-SCN-301, V-SCN-302, V-SCN-303, V-SCN-304]
+  evidence:
+    - dimension: 安全边界
+      ref: client-kit/ts/platform/test/kailo-embed-runtime.test.ts
+    - dimension: 安全边界
+      ref: client-kit/ts/platform/test/native-embed-host.test.tsx
+    - dimension: 呈现
+      ref: client-kit/ts/platform/test/embed-tokens.test.ts
+
+implementation:
+  owners: [team-platform, team-capabilities]
+  paths:
+    - client-kit/embed/kailo-embed.js
+    - client-kit/embed/kailo-embed.d.ts
+    - client-kit/embed/kailo-theme-tokens.css
+    - client-kit/ts/platform/src/theme/embed-tokens.ts
+    - client-kit/ts/platform/src/react/native-embed-host.ts
+    - client-kit/ts/platform/src/react/native-application-page.tsx
+    - client-kit/ts/platform/src/react/native-page-shell.tsx
+  surfaces: [web, desktop]
+  schemas: []
+  migrations: []
+
+runtime:
+  routes: []
+  actions: []
+  workflow_kinds: []
+
+release:
+  artifacts: []
+  gate: blocked_until_seams_closed

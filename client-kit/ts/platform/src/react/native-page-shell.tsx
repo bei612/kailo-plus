@@ -14,7 +14,8 @@ import { AgentAlertDialog, AlertDialogAction, AlertDialogCancel } from "./agent-
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "./sidebar/dropdown-menu";
 import { useT } from "./context";
 import type { PlatformMessageKey } from "../i18n";
-import type { EmbedActionIcon, EmbedConfirm, EmbedPage } from "./native-embed-host";
+import { Input } from "./composer/shared/ui/input";
+import { promptAnswer, type EmbedActionIcon, type EmbedConfirm, type EmbedPage, type EmbedPrompt } from "./native-embed-host";
 import { ComponentAdminCategory } from "@client-kit/contracts";
 
 export type NativePageCategoryKey = "files" | "knowledge" | "data" | null;
@@ -61,7 +62,7 @@ function Spinner() {
 
 /**
  * Page header 52 + optional tab strip 40 (20 §13.2). `productTitle` is the presentation
- * category name (云盘/知识库/问数); `page` is the component's latest header, or null
+ * category name (云盘/知识工程/数据建模); `page` is the component's latest header, or null
  * while it has none (the product title alone, never a blank bar).
  * DD-138(6): `admin` turns it into an admin surface header — 管理 › category › title, the
  * category glyph, the read-only badge; the component may only add breadcrumbs and actions.
@@ -181,6 +182,34 @@ export function NativeConfirmDialog({ confirm, onDone }: { confirm: EmbedConfirm
       </div>
       {chosen && option.warning ? <p className="mt-1.5 pl-6 text-sm text-destructive">{option.warning}</p> : null}
     </div> : null}
+  </AgentAlertDialog>;
+}
+
+/**
+ * DD-167(5): the component's one-line question (a new folder's name) in Kailo's dialog, so
+ * the overlay covers the whole window. The answer goes back to the frame only.
+ */
+export function NativePromptDialog({ prompt, onDone }: { prompt: EmbedPrompt | null; onDone: (value: string | null) => void }) {
+  const t = useT();
+  const inputId = useId();
+  const [text, setText] = useState("");
+  useEffect(() => { setText(prompt?.value ?? ""); }, [prompt?.id, prompt?.value]);
+  const answer = prompt ? promptAnswer(prompt, text) : null;
+  const submit = () => { if (answer !== null) onDone(answer); };
+  return <AgentAlertDialog open={prompt !== null} onOpenChange={(open) => { if (!open) onDone(null); }}
+    testId="native-prompt-dialog" title={prompt?.title ?? ""} description={prompt?.description ?? ""}
+    footer={<>
+      <AlertDialogCancel asChild><Button variant="outline">{prompt?.cancelLabel ?? t("platform.cancel")}</Button></AlertDialogCancel>
+      <AlertDialogAction asChild>
+        <Button disabled={answer === null} onClick={(event) => { event.preventDefault(); submit(); }}>
+          {prompt?.confirmLabel ?? t("platform.nativePage.confirm")}</Button>
+      </AlertDialogAction>
+    </>}>
+    <form className="flex flex-col gap-1.5 pt-2" onSubmit={(event) => { event.preventDefault(); submit(); }}>
+      <label htmlFor={inputId} className="text-[0.8125rem] font-medium text-foreground">{prompt?.label}</label>
+      <Input id={inputId} autoFocus value={text} maxLength={prompt?.maxLength} placeholder={prompt?.placeholder}
+        onFocus={(event) => event.currentTarget.select()} onChange={(event) => setText(event.target.value)} data-testid="native-prompt-input" />
+    </form>
   </AgentAlertDialog>;
 }
 

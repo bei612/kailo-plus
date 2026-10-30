@@ -41,7 +41,7 @@ function fromParent(data: unknown, origin = KAILO, from: Window | null = host?.c
 beforeEach(() => {
   delete window.KailoEmbed;
   window.sessionStorage.clear();
-  for (const name of ["data-kailo-theme", "data-kailo-embedded", "data-kailo-runtime", "data-kailo-theme-switching", "data-kailo-admin-surface", "lang", "style"])
+  for (const name of ["data-kailo-theme", "data-kailo-embedded", "data-kailo-runtime", "data-kailo-theme-switching", "data-kailo-admin-surface", "data-kailo-font-size", "data-kailo-zoomed", "lang", "style"])
     document.documentElement.removeAttribute(name);
   document.head.querySelectorAll('meta[name="kailo-web-origin"], meta[name="kailo-embed-features"]').forEach((meta) => meta.remove());
 });
@@ -57,7 +57,7 @@ describe("kailo-embed.js", () => {
     const embed = load({ search: "?kailo_theme=dark&kailo_locale=en" });
     expect(document.documentElement.getAttribute("data-kailo-theme")).toBe("dark");
     expect(document.documentElement.lang).toBe("en");
-    expect(embed.getState()).toEqual({ theme: "dark", locale: "en", embedded: false, hostConnected: false });
+    expect(embed.getState()).toEqual({ theme: "dark", locale: "en", fontSize: "default", zoom: 1, typeScale: 1, embedded: false, hostConnected: false });
     // An OIDC callback drops the query string; the tab keeps what Kailo sent.
     delete window.KailoEmbed;
     expect(load().getState()).toMatchObject({ theme: "dark", locale: "en" });
@@ -105,8 +105,39 @@ describe("kailo-embed.js", () => {
     fromParent({ source: "kailo-host", version: 1, type: "presentation", theme: "dark", locale: "en" });
     expect(themes).toEqual(["dark"]);
     expect(locales).toEqual(["en"]);
-    expect(embed.getState()).toEqual({ theme: "dark", locale: "en", embedded: true, hostConnected: true, hostFeatures: [] });
+    expect(embed.getState()).toEqual({ theme: "dark", locale: "en", fontSize: "default", zoom: 1, typeScale: 1, embedded: true, hostConnected: true, hostFeatures: [] });
     expect(document.documentElement.getAttribute("data-kailo-theme")).toBe("dark");
+  });
+
+  it("follows Kailo's font size and zoom from the launch, across a redirect and live (DD-167)", () => {
+    const embed = load({ framed: true, search: "?kailo_theme=light&kailo_locale=zh-CN&kailo_font_size=larger&kailo_zoom=1.2" });
+    expect(embed.getState()).toMatchObject({ fontSize: "larger", zoom: 1.2, typeScale: 15 / 14 });
+    expect(document.documentElement.getAttribute("data-kailo-font-size")).toBe("larger");
+    expect(document.documentElement.style.getPropertyValue("--kailo-zoom")).toBe("1.2");
+    expect(document.documentElement.hasAttribute("data-kailo-zoomed")).toBe(true);
+    // The OIDC callback drops the query string; the tab keeps the dials Kailo supplied.
+    delete window.KailoEmbed;
+    expect(load({ framed: true }).getState()).toMatchObject({ fontSize: "larger", zoom: 1.2 });
+    const types: unknown[] = [];
+    window.KailoEmbed!.onTypeChange((type) => types.push(type));
+    fromParent({ source: "kailo-host", version: 1, type: "presentation", theme: "light", locale: "zh-CN", fontSize: "smaller", zoom: 1 });
+    expect(types).toEqual([{ fontSize: "smaller", zoom: 1, typeScale: 13 / 14 }]);
+    expect(document.documentElement.hasAttribute("data-kailo-zoomed")).toBe(false);
+    // An older Kailo sends neither dial: that is the default, not "keep the last value".
+    fromParent({ source: "kailo-host", version: 1, type: "presentation", theme: "light", locale: "zh-CN" });
+    expect(window.KailoEmbed!.getState()).toMatchObject({ fontSize: "default", zoom: 1 });
+    // A malformed dial drops the whole message.
+    fromParent({ source: "kailo-host", version: 1, type: "presentation", theme: "dark", locale: "zh-CN", zoom: 9 });
+    fromParent({ source: "kailo-host", version: 1, type: "presentation", theme: "dark", locale: "zh-CN", fontSize: "huge" });
+    expect(window.KailoEmbed!.getState().theme).toBe("light");
+  });
+
+  it("treats a Kailo launch without dials as default even when the tab had other values", () => {
+    load({ search: "?kailo_theme=light&kailo_locale=zh-CN&kailo_font_size=larger" });
+    delete window.KailoEmbed;
+    expect(load({ search: "?kailo_theme=light&kailo_locale=zh-CN" }).getState()).toMatchObject({ fontSize: "default", zoom: 1 });
+    delete window.KailoEmbed;
+    expect(load({ search: "?kailo_theme=light&kailo_locale=zh-CN&kailo_zoom=3" }).getState().zoom).toBe(1);
   });
 
   it("ignores another origin, another window and malformed presentation", () => {
@@ -334,6 +365,31 @@ describe("kailo-embed.js page shell (DD-157)", () => {
     expect(third.option).toBeUndefined();
     fromParent({ source: "kailo-host", version: 1, type: "confirm-result", id: third.id, confirmed: true });
     await expect(plain).resolves.toBe(true);
+  });
+
+  it("asks Kailo for one line of text only when both sides support it, and re-checks the answer (DD-167)", async () => {
+    const { embed, posted } = framedWithSpy("page toast confirm shortcuts prompt");
+    const ask = { title: "新建文件夹", label: "名称", value: "未命名文件夹", confirmLabel: "新建", maxLength: 20 };
+    expect(embed.prompt(ask)).toBeNull();
+    connect(["page", "toast", "confirm", "shortcuts", "files"]);
+    expect(embed.prompt(ask)).toBeNull();
+    connect(["page", "toast", "confirm", "shortcuts", "files", "prompt"]);
+    expect(embed.prompt({ ...ask, value: "x".repeat(21) })).toBeNull();
+    expect(embed.prompt({ ...ask, label: "" })).toBeNull();
+    const answer = embed.prompt(ask)!;
+    const request = (posted.mock.lastCall![0] as { prompt: { id: string } }).prompt;
+    expect(request).toMatchObject({ title: "新建文件夹", label: "名称", value: "未命名文件夹", confirmLabel: "新建", maxLength: 20 });
+    fromParent({ source: "kailo-host", version: 1, type: "prompt-result", id: "other", confirmed: true, value: "x" });
+    fromParent({ source: "kailo-host", version: 1, type: "prompt-result", id: request.id, confirmed: true, value: "  季度报告  " });
+    await expect(answer).resolves.toBe("季度报告");
+    const tooLong = embed.prompt(ask)!;
+    const second = (posted.mock.lastCall![0] as { prompt: { id: string } }).prompt;
+    fromParent({ source: "kailo-host", version: 1, type: "prompt-result", id: second.id, confirmed: true, value: "y".repeat(21) });
+    await expect(tooLong).resolves.toBeNull();
+    const cancelled = embed.prompt(ask)!;
+    const third = (posted.mock.lastCall![0] as { prompt: { id: string } }).prompt;
+    fromParent({ source: "kailo-host", version: 1, type: "prompt-result", id: third.id, confirmed: false, value: "z" });
+    await expect(cancelled).resolves.toBeNull();
   });
 
   it("forwards Kailo's global chords to Kailo before the page's own handlers", () => {

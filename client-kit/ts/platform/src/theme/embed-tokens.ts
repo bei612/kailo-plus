@@ -204,6 +204,31 @@ export const EMBED_BASE_LAYER = `/*
     animation-duration: 1ms !important;
     transition-duration: 1ms !important;
   }
+}
+/*
+ * DD-167 type dials (07 §4.8.10): kailo-embed.js mirrors Kailo's font size preference in
+ * <html data-kailo-font-size> and its zoom in --kailo-zoom (data-kailo-zoomed when not 1).
+ * --kailo-type-scale multiplies text only (body 13 / 14 / 15 px); the --kailo-text-* steps are
+ * the .design/20 §3 ramp already scaled. Zoom scales a whole page; each component applies it
+ * to its own root so that layout, popups and scrolling stay single (20 §13.5).
+ */
+:root {
+  --kailo-type-scale: 1;
+  --kailo-zoom: 1;
+  --kailo-text-overline: calc(11px * var(--kailo-type-scale));
+  --kailo-text-caption: calc(12px * var(--kailo-type-scale));
+  --kailo-text-callout: calc(13px * var(--kailo-type-scale));
+  --kailo-text-body: calc(14px * var(--kailo-type-scale));
+  --kailo-text-headline: calc(15px * var(--kailo-type-scale));
+  --kailo-text-title2: calc(17px * var(--kailo-type-scale));
+  --kailo-text-title1: calc(22px * var(--kailo-type-scale));
+  --kailo-text-display: calc(30px * var(--kailo-type-scale));
+}
+:root[data-kailo-font-size="smaller"] {
+  --kailo-type-scale: calc(13 / 14);
+}
+:root[data-kailo-font-size="larger"] {
+  --kailo-type-scale: calc(15 / 14);
 }`;
 
 /** The complete distributable stylesheet, byte-for-byte what is committed. */

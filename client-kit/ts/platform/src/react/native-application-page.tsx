@@ -3,11 +3,11 @@ import { toast } from "sonner";
 import { type ApplicationNativePage, ComponentAdminAccess } from "@client-kit/contracts";
 import { useBffClient, useLocale, useNativeAuthenticationHost, useT, useTopLevelReauthentication } from "./context";
 import {
-  actionMessage, confirmResultMessage, EMBED_MAX_FILES, embedMessage, navigateMessage, pickFiles, preferencesMessage, presentationMessage, replayShortcut,
-  useEmbedPresentation, type EmbedConfirm, type EmbedFeature, type EmbedPage,
+  actionMessage, confirmResultMessage, EMBED_MAX_FILES, embedMessage, navigateMessage, pickFiles, preferencesMessage, presentationMessage, promptResultMessage, replayShortcut,
+  useEmbedPresentation, type EmbedConfirm, type EmbedFeature, type EmbedPage, type EmbedPrompt,
 } from "./native-embed-host";
 import { useNativeEntryPresentation } from "./native-application-entries";
-import { ADMIN_CATEGORY_LABELS, NativeConfirmDialog, NativePageFrame, NativePageHeader, NativePageSkeleton } from "./native-page-shell";
+import { ADMIN_CATEGORY_LABELS, NativeConfirmDialog, NativePageFrame, NativePageHeader, NativePageSkeleton, NativePromptDialog } from "./native-page-shell";
 import { isMacPlatform } from "../keyboard-platform";
 import { nativeDeepLinkUrl } from "./native-deep-link";
 import { preferenceValues } from "../component-preferences";
@@ -133,6 +133,9 @@ export function NativeApplicationPage({ bindingId, onBack, title, path, adminSur
   const headerArrived = header !== null && header.key === frameKey;
   const [confirm, setConfirm] = useState<EmbedConfirm | null>(null);
   const confirming = useRef<EmbedConfirm | null>(null);
+  // DD-167(5): one Kailo dialog at a time, shared by confirmations and prompts.
+  const [prompt, setPrompt] = useState<EmbedPrompt | null>(null);
+  const prompting = useRef<EmbedPrompt | null>(null);
   const toasts = useRef<{ at: number; text: string }[]>([]);
   const origin = page?.origin ?? null;
   const postToFrame = useCallback((message: object) => {
@@ -170,9 +173,13 @@ export function NativeApplicationPage({ bindingId, onBack, title, path, adminSur
         showToast(message.toast.tone, message.toast.title, message.toast.description);
       } else if (message.type === "confirm") {
         // One Kailo dialog at a time; a second request is declined, never queued behind the first.
-        if (confirming.current) { postToFrame(confirmResultMessage(message.confirm.id, false)); return; }
+        if (confirming.current || prompting.current) { postToFrame(confirmResultMessage(message.confirm.id, false)); return; }
         confirming.current = message.confirm;
         setConfirm(message.confirm);
+      } else if (message.type === "prompt") {
+        if (confirming.current || prompting.current) { postToFrame(promptResultMessage(message.prompt.id, null)); return; }
+        prompting.current = message.prompt;
+        setPrompt(message.prompt);
       } else if (message.type === "shortcut") {
         replayShortcut(message.shortcut, isMacPlatform());
       }
@@ -201,6 +208,8 @@ export function NativeApplicationPage({ bindingId, onBack, title, path, adminSur
   useEffect(() => {
     confirming.current = null;
     setConfirm(null);
+    prompting.current = null;
+    setPrompt(null);
   }, [frameKey]);
   const finishConfirm = (confirmed: boolean, option?: boolean) => {
     const current = confirming.current;
@@ -210,7 +219,15 @@ export function NativeApplicationPage({ bindingId, onBack, title, path, adminSur
     // Keyboard focus goes back to where the user was: inside the component (07 §4.8.7).
     window.setTimeout(() => frame.current?.focus(), 0);
   };
-  useEffect(() => { if (connected) post(); }, [connected, post, presentation.theme, presentation.locale]);
+  const finishPrompt = (value: string | null) => {
+    const current = prompting.current;
+    prompting.current = null;
+    setPrompt(null);
+    if (current) postToFrame(promptResultMessage(current.id, value));
+    window.setTimeout(() => frame.current?.focus(), 0);
+  };
+  // DD-167(3): theme, language and both type dials follow live; the frame is never reloaded for them.
+  useEffect(() => { if (connected) post(); }, [connected, post, presentation.theme, presentation.locale, presentation.fontSize, presentation.zoom]);
   // DD-138: every declared preference of this page with its effective value,
   // posted after `ready` and whenever Kailo settings change one of them.
   const stored = useStoredComponentPreferences();
@@ -289,5 +306,6 @@ export function NativeApplicationPage({ bindingId, onBack, title, path, adminSur
       : loading ? <NativePageFrame><div role="status" aria-label={t("platform.loading")} data-testid="native-page-loading"><NativePageSkeleton /></div></NativePageFrame>
       : <div className="px-5 py-4"><ReadFailure error={error} onRetry={() => { void reload(true); }} /></div>}
     <NativeConfirmDialog confirm={confirm} onDone={finishConfirm} />
+    <NativePromptDialog prompt={prompt} onDone={finishPrompt} />
   </section>;
 }

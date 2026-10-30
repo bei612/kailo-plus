@@ -12,7 +12,8 @@
  *   component -> Kailo  {source:"kailo-embed", version:1, type:"ready"}
  *   component -> Kailo  {source:"kailo-embed", version:1, type:"auth-required"}
  *   Kailo -> component  {source:"kailo-host", version:1, type:"presentation",
- *                        theme:"light"|"dark", locale:"zh-CN"|"en"}
+ *                        theme:"light"|"dark", locale:"zh-CN"|"en",
+ *                        fontSize?:"smaller"|"default"|"larger", zoom?:0.75..1.5}   (DD-167)
  *   Kailo -> component  {source:"kailo-host", version:1, type:"preferences",
  *                        values:{<key>: boolean | "<option>"}}   (DD-138)
  *
@@ -37,6 +38,14 @@
  *                       when the request carried one and confirmed is true
  *   Kailo -> component  presentation carries features:[...] the host draws/handles;
  *                       <html data-kailo-host-features> mirrors it once known
+ * DD-167 type dials and prompt (design 07 §4.8.10), same version 1:
+ *   launch parameters kailo_font_size=smaller|larger and kailo_zoom=<0.75..1.5> ride with kailo_theme
+ *   only when not default; a Kailo launch without them means default. <html> carries
+ *   data-kailo-font-size, --kailo-zoom and (zoom != 1) data-kailo-zoomed; getState() adds
+ *   fontSize, zoom and typeScale (13/14, 1, 15/14); onTypeChange(listener) follows both dials.
+ *   component -> Kailo  {type:"prompt", prompt:{id, title, label, description?, placeholder?, value?,
+ *                       confirmLabel?, cancelLabel?, maxLength?}}   one line of text in Kailo's dialog
+ *   Kailo -> component  {type:"prompt-result", id, confirmed, value?}   value only when confirmed
  * DD-138(6) admin surfaces (design 07 §4.8.5): Kailo loads one declared admin
  * function with the launch parameter kailo_admin_surface=<key>; KailoEmbed.adminSurface()
  * returns that key (kept for this path across OIDC redirects) or null. It only selects
@@ -53,6 +62,11 @@
   var VERSION = 1;
   var THEMES = ["light", "dark"];
   var LOCALES = ["zh-CN", "en"];
+  // DD-167: Kailo's text-only size preference (13 / 14 / 15 px body) and ⌘± zoom.
+  var FONT_SIZES = ["smaller", "default", "larger"];
+  var TYPE_SCALES = { smaller: 13 / 14, "default": 1, larger: 15 / 14 };
+  var ZOOM_MIN = 0.75;
+  var ZOOM_MAX = 1.5;
   var STORE_KEY = "kailo-embed-presentation";
   var PREFERENCES_KEY = "kailo-embed-preferences";
   var ADMIN_SURFACE_KEY = "kailo-embed-admin-surface";
@@ -60,7 +74,7 @@
   var PREFERENCE_OPTION = /^[A-Za-z0-9._-]{1,32}$/;
   var MAX_PREFERENCES = 16;
   // DD-157 (07 §4.8.7): closed vocabularies and bounds, mirrored by the host.
-  var FEATURES = ["page", "toast", "confirm", "shortcuts"];
+  var FEATURES = ["page", "toast", "confirm", "shortcuts", "prompt"];
   // What a host may announce: the page features plus the file selection channel and the
   // confirmation choice (acceptance batch 5: Cells "delete permanently" stays in Kailo's dialog).
   var HOST_FEATURES = FEATURES.concat(["files", "confirm-option"]);
@@ -78,6 +92,14 @@
 
   function member(value, allowed) {
     return typeof value === "string" && allowed.indexOf(value) >= 0 ? value : null;
+  }
+
+  // A zoom factor: a finite number (or numeric launch text) inside the bounds, else null.
+  function zoomOf(value) {
+    var number = typeof value === "string" && /^[0-9]+(\.[0-9]+)?$/.test(value) ? Number(value) : value;
+    if (typeof number !== "number" || !isFinite(number)) return null;
+    number = Math.round(number * 100) / 100;
+    return number >= ZOOM_MIN && number <= ZOOM_MAX ? number : null;
   }
 
   function exactOrigin(text) {
@@ -167,6 +189,11 @@
   var stored = readStore();
   var urlTheme = params ? member(params.get("kailo_theme"), THEMES) : null;
   var urlLocale = params ? member(params.get("kailo_locale"), LOCALES) : null;
+  // DD-167: a Kailo launch (kailo_theme present) always states the dials; absent means default.
+  var kailoLaunch = !!urlTheme;
+  var urlFontSize = params ? member(params.get("kailo_font_size"), FONT_SIZES) : null;
+  var urlZoom = params && params.get("kailo_zoom") !== null ? zoomOf(params.get("kailo_zoom")) : null;
+  if (kailoLaunch) { urlFontSize = urlFontSize || "default"; urlZoom = urlZoom || 1; }
   var systemDark = false;
   try { systemDark = !!(global.matchMedia && global.matchMedia("(prefers-color-scheme: dark)").matches); } catch (e) { systemDark = false; }
 
@@ -174,16 +201,20 @@
   // (OIDC redirects drop the query string), then the device default.
   var state = {
     theme: urlTheme || member(stored.theme, THEMES) || (systemDark ? "dark" : "light"),
-    locale: urlLocale || member(stored.locale, LOCALES) || "zh-CN"
+    locale: urlLocale || member(stored.locale, LOCALES) || "zh-CN",
+    fontSize: urlFontSize || member(stored.fontSize, FONT_SIZES) || "default",
+    zoom: urlZoom || zoomOf(stored.zoom) || 1
   };
   // What Kailo itself supplied (launch URL, earlier in this tab, or the host).
   // Only these values persist, so a device default or the identity locale
   // never masquerades as a Kailo value after the next redirect.
   var supplied = {
     theme: urlTheme || member(stored.theme, THEMES) || undefined,
-    locale: urlLocale || member(stored.locale, LOCALES) || undefined
+    locale: urlLocale || member(stored.locale, LOCALES) || undefined,
+    fontSize: urlFontSize || member(stored.fontSize, FONT_SIZES) || undefined,
+    zoom: urlZoom || zoomOf(stored.zoom) || undefined
   };
-  if (urlTheme || urlLocale) writeStore(supplied);
+  if (urlTheme || urlLocale || urlFontSize || urlZoom) writeStore(supplied);
   var hostConnected = false;
   var listeners = [];
   // Values Kailo supplied in this tab (kept across OIDC redirects like the presentation).
@@ -274,6 +305,7 @@
   var actionListeners = [];
   var pendingConfirms = {};
   var confirmSequence = 0;
+  var pendingPrompts = {};
 
   function apply() {
     root.setAttribute("data-kailo-runtime", "");
@@ -281,19 +313,29 @@
     else root.removeAttribute("data-kailo-theme");
     root.style.colorScheme = state.theme;
     root.setAttribute("lang", state.locale);
+    root.setAttribute("data-kailo-font-size", state.fontSize);
+    root.style.setProperty("--kailo-zoom", String(state.zoom));
+    if (state.zoom !== 1) root.setAttribute("data-kailo-zoomed", "");
+    else root.removeAttribute("data-kailo-zoomed");
     if (framed) root.setAttribute("data-kailo-embedded", "");
   }
 
   function snapshot() {
-    var out = { theme: state.theme, locale: state.locale, embedded: framed, hostConnected: hostConnected };
+    var out = { theme: state.theme, locale: state.locale, fontSize: state.fontSize, zoom: state.zoom,
+      typeScale: TYPE_SCALES[state.fontSize], embedded: framed, hostConnected: hostConnected };
     if (hostFeatures !== null) out.hostFeatures = hostFeatures.slice();
     return out;
   }
 
-  function update(theme, locale, announce) {
-    var changed = { theme: theme !== state.theme, locale: locale !== state.locale };
+  function update(theme, locale, announce, fontSize, zoom) {
+    fontSize = fontSize || state.fontSize;
+    zoom = zoom || state.zoom;
+    var changed = { theme: theme !== state.theme, locale: locale !== state.locale,
+      fontSize: fontSize !== state.fontSize, zoom: zoom !== state.zoom };
     state.theme = theme;
     state.locale = locale;
+    state.fontSize = fontSize;
+    state.zoom = zoom;
     // DD-157: a theme flip lands in one frame, without each control animating to its new color.
     if (changed.theme) root.setAttribute("data-kailo-theme-switching", "");
     apply();
@@ -303,7 +345,7 @@
       else setTimeout(settle, 32);
     }
     // DD-157: the first answer from Kailo is always announced (it carries the host's features).
-    if (!changed.theme && !changed.locale && !announce) return;
+    if (!changed.theme && !changed.locale && !changed.fontSize && !changed.zoom && !announce) return;
     var current = snapshot();
     var targets = listeners.slice();
     for (var i = 0; i < targets.length; i += 1) {
@@ -438,10 +480,27 @@
       }
       return;
     }
+    if (data.type === "prompt-result") {
+      var asked = typeof data.id === "string" && Object.prototype.hasOwnProperty.call(pendingPrompts, data.id) ? pendingPrompts[data.id] : null;
+      if (!asked || typeof data.confirmed !== "boolean") return;
+      var answer = null;
+      if (data.confirmed) {
+        // Re-check the answer: trimmed, 1..maxLength, no control characters; anything else is a cancel.
+        answer = typeof data.value === "string" ? data.value.trim() : "";
+        if (!answer || answer.length > asked.maxLength || CONTROL.test(answer)) answer = null;
+      }
+      delete pendingPrompts[data.id];
+      asked.resolve(answer);
+      return;
+    }
     if (data.type !== "presentation") return;
     var theme = member(data.theme, THEMES);
     var locale = member(data.locale, LOCALES);
     if (!theme || !locale) return;
+    // DD-167: a host that predates the dials sends neither (= default); a malformed one drops the message.
+    var fontSize = data.fontSize === undefined ? "default" : member(data.fontSize, FONT_SIZES);
+    var zoom = data.zoom === undefined ? 1 : (typeof data.zoom === "number" ? zoomOf(data.zoom) : null);
+    if (!fontSize || !zoom) return;
     var firstContact = !hostConnected;
     var announced = [];
     (Array.isArray(data.features) ? data.features : []).forEach(function (name) {
@@ -450,9 +509,9 @@
     hostFeatures = announced;
     root.setAttribute("data-kailo-host-features", announced.join(" "));
     hostConnected = true;
-    supplied = { theme: theme, locale: locale };
+    supplied = { theme: theme, locale: locale, fontSize: fontSize, zoom: zoom };
     writeStore(supplied);
-    update(theme, locale, firstContact);
+    update(theme, locale, firstContact, fontSize, zoom);
     // A header set before Kailo answered is delivered once the host is known.
     if (firstContact && currentPage && hostHas("page")) post("page", { page: currentPage });
   });
@@ -490,6 +549,12 @@
     },
     onLocaleChange: function (listener) {
       return subscribe(function (current, changed) { if (changed.locale) listener(current.locale); });
+    },
+    /** DD-167: listener({fontSize, zoom, typeScale}) when either type dial changes; returns unsubscribe. */
+    onTypeChange: function (listener) {
+      return subscribe(function (current, changed) {
+        if (changed.fontSize || changed.zoom) listener({ fontSize: current.fontSize, zoom: current.zoom, typeScale: current.typeScale });
+      });
     },
     /**
      * Top-level visits only: the OIDC `locale` claim may seed the language when
@@ -594,6 +659,41 @@
         if (!post("confirm", { confirm: payload })) {
           delete pendingConfirms[id];
           resolve(option ? { confirmed: false, option: false } : false);
+        }
+      });
+    },
+    /**
+     * DD-167: one line of text from the user in Kailo's dialog (e.g. a new folder's name), so the
+     * overlay covers the whole window. Resolves the trimmed answer or null (cancelled); returns
+     * null when the build did not declare "prompt" or Kailo did not announce it — the page then
+     * shows its own dialog styled per 20 §9.
+     */
+    prompt: function (options) {
+      if (!has("prompt") || !framed || !hostHas("prompt") || !options || typeof Promise !== "function") return null;
+      var title = text(options.title, 120);
+      var label = text(options.label, 80);
+      var description = text(options.description, 400, true);
+      var placeholder = text(options.placeholder, 80, true);
+      var confirmLabel = text(options.confirmLabel, 24, true);
+      var cancelLabel = text(options.cancelLabel, 24, true);
+      var maxLength = options.maxLength === undefined ? 255 : options.maxLength;
+      if (typeof maxLength !== "number" || maxLength % 1 !== 0 || maxLength < 1 || maxLength > 255) return null;
+      var value = options.value === undefined || options.value === "" ? undefined : options.value;
+      if (value !== undefined && (typeof value !== "string" || CONTROL.test(value) || value.length > maxLength)) return null;
+      if (!title || !label || description === null || placeholder === null || confirmLabel === null || cancelLabel === null) return null;
+      confirmSequence += 1;
+      var id = "p" + confirmSequence + "-" + Date.now().toString(36);
+      var payload = { id: id, title: title, label: label, maxLength: maxLength };
+      if (description) payload.description = description;
+      if (placeholder) payload.placeholder = placeholder;
+      if (value !== undefined) payload.value = value;
+      if (confirmLabel) payload.confirmLabel = confirmLabel;
+      if (cancelLabel) payload.cancelLabel = cancelLabel;
+      return new Promise(function (resolve) {
+        pendingPrompts[id] = { resolve: resolve, maxLength: maxLength };
+        if (!post("prompt", { prompt: payload })) {
+          delete pendingPrompts[id];
+          resolve(null);
         }
       });
     }

@@ -5,9 +5,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createBffClient } from "../src/client";
 import { PlatformProvider } from "../src/react/context";
 import { NATIVE_HANDSHAKE_GRACE_MS, NativeApplicationPage } from "../src/react/native-application-page";
-import { actionMessage, confirmResultMessage, EMBED_MAX_FILES, embedMessage, embedRequest, nativeEmbedUrl, navigateMessage, preferencesMessage, presentationMessage } from "../src/react/native-embed-host";
+import { actionMessage, confirmResultMessage, EMBED_MAX_FILES, embedMessage, embedRequest, nativeEmbedUrl, navigateMessage, preferencesMessage, presentationMessage, promptResultMessage } from "../src/react/native-embed-host";
 import { COMPONENT_PREFERENCES_EVENT, COMPONENT_PREFERENCES_STORAGE_KEY } from "../src/component-preferences";
-import { button, click, render, settle } from "./render";
+import { button, click, render, settle, type } from "./render";
 
 const toasts = vi.hoisted(() => ({ success: vi.fn(), info: vi.fn(), warning: vi.fn(), error: vi.fn() }));
 vi.mock("sonner", () => ({ toast: toasts }));
@@ -42,6 +42,8 @@ async function fromFrame(source: Window, data: unknown, origin = page.origin) {
 
 afterEach(() => {
   document.documentElement.classList.remove("dark");
+  document.documentElement.removeAttribute("data-font-size");
+  document.documentElement.style.fontSize = "";
   window.localStorage.clear();
   vi.useRealTimers();
 });
@@ -292,6 +294,41 @@ describe("DD-157 component page shell", () => {
     await click(button(dialog, "删除"));
     expect(posted).toHaveBeenLastCalledWith(confirmResultMessage("c1", true), page.origin);
     expect(document.querySelector('[data-testid="native-confirm-dialog"]')).toBeNull();
+  });
+
+  it("follows Kailo's font size and zoom: on the launch URL, then live without reloading (DD-167)", async () => {
+    expect([...new URL(nativeEmbedUrl(page.url, { theme: "light", locale: "en", fontSize: "larger", zoom: 1.2 })).searchParams])
+      .toEqual([["kailo_theme", "light"], ["kailo_locale", "en"], ["kailo_font_size", "larger"], ["kailo_zoom", "1.2"]]);
+    document.documentElement.setAttribute("data-font-size", "smaller");
+    const { frame, target, posted } = await mount({ locale: "zh-CN" });
+    expect(frame.getAttribute("src")).toContain("kailo_font_size=smaller");
+    expect(frame.getAttribute("src")).not.toContain("kailo_zoom");
+    await fromFrame(target, { source: "kailo-embed", version: 1, type: "ready" });
+    expect(posted).toHaveBeenLastCalledWith(presentationMessage({ theme: "light", locale: "zh-CN", fontSize: "smaller", zoom: 1 }), page.origin);
+    await act(async () => { document.documentElement.setAttribute("data-font-size", "larger"); document.documentElement.style.fontSize = "19.2px"; });
+    await settle();
+    expect(posted).toHaveBeenLastCalledWith(presentationMessage({ theme: "light", locale: "zh-CN", fontSize: "larger", zoom: 1.2 }), page.origin);
+  });
+
+  it("asks the component's one-line question in Kailo's dialog and returns only a valid answer (DD-167)", async () => {
+    const { target, posted } = await mount({ locale: "zh-CN" });
+    await fromFrame(target, ready);
+    await fromFrame(target, { source: "kailo-embed", version: 1, type: "prompt", prompt: { id: "p1", title: "新建文件夹", label: "名称", value: "未命名文件夹", confirmLabel: "新建", maxLength: 40 } });
+    const dialog = document.querySelector('[data-testid="native-prompt-dialog"]') as HTMLElement;
+    expect(dialog.textContent).toContain("新建文件夹");
+    const input = dialog.querySelector('[data-testid="native-prompt-input"]') as HTMLInputElement;
+    expect(input.value).toBe("未命名文件夹");
+    // A second dialog request while one is open is declined.
+    await fromFrame(target, { source: "kailo-embed", version: 1, type: "confirm", confirm: { id: "c9", title: "删除？" } });
+    expect(posted).toHaveBeenLastCalledWith(confirmResultMessage("c9", false), page.origin);
+    await type(input, "   ");
+    expect(button(dialog, "新建").disabled).toBe(true);
+    await type(input, " 季度报告 ");
+    await click(button(dialog, "新建"));
+    expect(posted).toHaveBeenLastCalledWith(promptResultMessage("p1", "季度报告"), page.origin);
+    expect(document.querySelector('[data-testid="native-prompt-dialog"]')).toBeNull();
+    expect(embedMessage({ source: "kailo-embed", version: 1, type: "prompt", prompt: { id: "p2", title: "x", label: "y", maxLength: 300 } })).toBeNull();
+    expect(embedMessage({ source: "kailo-embed", version: 1, type: "prompt", prompt: { id: "p2", title: "x", label: "y", value: "abc", maxLength: 2 } })).toBeNull();
   });
 
   it("shows the component's one choice unchecked and returns it with the confirmation only", async () => {

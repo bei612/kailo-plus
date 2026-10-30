@@ -2,10 +2,18 @@
 // frozen global; TypeScript components reference this file for the shape.
 export type KailoTheme = "light" | "dark";
 export type KailoLocale = "zh-CN" | "en";
+/** DD-167: Kailo's text-only size preference (body 13 / 14 / 15 px). */
+export type KailoFontSize = "smaller" | "default" | "larger";
 
 export interface KailoPresentationState {
   theme: KailoTheme;
   locale: KailoLocale;
+  /** DD-167: Kailo's font size preference; scales text only (`--kailo-type-scale`). */
+  fontSize: KailoFontSize;
+  /** DD-167: Kailo's ⌘± zoom, 0.75–1.5; scales the whole page (`--kailo-zoom`, `data-kailo-zoomed`). */
+  zoom: number;
+  /** 13/14, 1 or 15/14 for fontSize: multiply native text sizes by it. */
+  typeScale: number;
   /** The page runs inside a frame (Kailo's content area). */
   embedded: boolean;
   /** A validated presentation message from the Kailo host has arrived. */
@@ -20,10 +28,18 @@ export type KailoPreferenceValues = Record<string, boolean | string>;
 export interface KailoPresentationChange {
   theme: boolean;
   locale: boolean;
+  fontSize: boolean;
+  zoom: boolean;
+}
+
+export interface KailoTypeState {
+  fontSize: KailoFontSize;
+  zoom: number;
+  typeScale: number;
 }
 
 /** DD-157 (07 §4.8.7): what a build opts into with <meta name="kailo-embed-features">. */
-export type KailoEmbedFeature = "page" | "toast" | "confirm" | "shortcuts";
+export type KailoEmbedFeature = "page" | "toast" | "confirm" | "shortcuts" | "prompt";
 
 /** Closed icon vocabulary for header actions; Kailo draws them with its own (Lucide) icons. */
 export type KailoActionIcon = "upload" | "plus" | "folder-plus" | "share" | "download" | "rocket" | "refresh"
@@ -55,7 +71,7 @@ export interface KailoPageAction {
 
 /** The header Kailo renders for the page (20 §13.2). */
 export interface KailoPage {
-  /** Current page title, 1–120 chars. Kailo adds the product name (云盘/知识库/问数) itself. */
+  /** Current page title, 1–120 chars. Kailo adds the product name (云盘/知识工程/数据建模) itself. */
   title: string;
   /** Ancestors of the current location, outermost first, at most 8; the title is not repeated. */
   breadcrumbs?: KailoPageItem[];
@@ -99,6 +115,22 @@ export interface KailoConfirmOption {
   warning?: string;
 }
 
+/** DD-167: one line of text from the user, asked in Kailo's dialog (e.g. a new folder's name). */
+export interface KailoPrompt {
+  /** 1–120 chars, a question or an action ("新建文件夹"). */
+  title: string;
+  /** Field label, 1–80 chars. */
+  label: string;
+  description?: string;
+  placeholder?: string;
+  /** Initial text (selected when the dialog opens); at most maxLength. */
+  value?: string;
+  confirmLabel?: string;
+  cancelLabel?: string;
+  /** 1–255, default 255. */
+  maxLength?: number;
+}
+
 export interface KailoEmbedRuntime {
   readonly version: 1;
   readonly themes: readonly KailoTheme[];
@@ -107,6 +139,8 @@ export interface KailoEmbedRuntime {
   onChange(listener: (state: KailoPresentationState, changed: KailoPresentationChange) => void): () => void;
   onThemeChange(listener: (theme: KailoTheme) => void): () => void;
   onLocaleChange(listener: (locale: KailoLocale) => void): () => void;
+  /** DD-167: either type dial changed. */
+  onTypeChange(listener: (type: KailoTypeState) => void): () => void;
   useIdentityLocale(locale: string): boolean;
   requestTopLevelSignIn(): boolean;
   /**
@@ -131,6 +165,8 @@ export interface KailoEmbedRuntime {
   confirm(options: KailoConfirm): Promise<boolean> | null;
   /** Null unless the host announced "confirm-option"; `option` is false on a cancel. */
   confirm(options: KailoConfirm & { option: KailoConfirmOption }): Promise<{ confirmed: boolean; option: boolean }> | null;
+  /** DD-167: Kailo's one-line text dialog; resolves the trimmed answer or null. Null when unsupported (use your own dialog). */
+  prompt(options: KailoPrompt): Promise<string | null> | null;
 }
 
 declare global {
