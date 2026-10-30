@@ -389,7 +389,7 @@ describe("usage page views (DD-165(4))", () => {
       "component_model_tokens:b-know", "component_model_tokens:b-data", "knowledge_answer_count:b-know",
       "data_query_count:", "file_storage_bytes:"]);
     const cells = (i: number) => [...(rowsOf[i]?.querySelectorAll("td") ?? [])].map((c) => c.textContent);
-    expect(cells(0)).toEqual(["Model tokens", "Knowledge", "Sales", "Committed", "1,200"]);
+    expect(cells(0)).toEqual(["Model tokens", "Knowledge Engineering", "Sales", "Committed", "1,200"]);
     expect(cells(1)).toEqual(["Model tokens", "Data Modeling", "Whole organization", "Committed", "300"]);
     expect(cells(3).slice(3)).toEqual(["No stored events in this period", "—"]);
     expect(cells(4).slice(3)).toEqual(["Cannot be verified", "—"]);
