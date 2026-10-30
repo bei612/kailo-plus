@@ -2813,7 +2813,9 @@ export enum EvidenceAuthority {
  * version），权威源、证据类型与敏感级别由种类唯一确定（Core 的固定描述表）。库中存量出现不在此列的种类时解释为不可用，不猜测含义。DD-135(8) 的 Skill
  * 证据：`SKILL_SLUG` 为定义 slug；`SKILL_VERSION_ASSET_ID` 为版本 Asset ID，version
  * 为版本序号；`SKILL_ARTIFACT_DIGEST` 为规范 artifact 的 SHA-256，version 为其字节数；`SKILL_UPLOAD_DIGEST`
- * 为上传字节的 SHA-256。均不含 SKILL.md 正文。
+ * 为上传字节的 SHA-256。均不含 SKILL.md 正文。DD-164(6) 的 `IDP_SESSION_TERMINATION_COUNTS` 为 Tenant 撤权结束
+ * IdP 会话的计数 `identities=<n>;ended=<n>;user_unknown=<n>;foreign_issuer=<n>`（IdP 回应类别），不含
+ * subject。
  */
 export enum EvidenceKind {
     ActionExecutionId = "ACTION_EXECUTION_ID",
@@ -2830,6 +2832,7 @@ export enum EvidenceKind {
     DeploymentBootstrap = "DEPLOYMENT_BOOTSTRAP",
     ExportPackageAssetId = "EXPORT_PACKAGE_ASSET_ID",
     ExternalSubjectSha256 = "EXTERNAL_SUBJECT_SHA256",
+    IdpSessionTerminationCounts = "IDP_SESSION_TERMINATION_COUNTS",
     OpenmeterEventId = "OPENMETER_EVENT_ID",
     OriginalActionExecutionId = "ORIGINAL_ACTION_EXECUTION_ID",
     PlatformSessionId = "PLATFORM_SESSION_ID",
@@ -4173,7 +4176,8 @@ export interface ComponentDirectoryShare {
 }
 
 /**
- * DD-164(4): one grant on a component shared object. TENANT subjects only accept READ.
+ * DD-164(4): one grant on a component shared object. TENANT grants accept READ
+ * (tenant#member reader) and WRITE (tenant#member editor).
  */
 export interface ComponentShareGrant {
     access:  ComponentShareAccess;
@@ -4488,6 +4492,42 @@ export interface ComponentSearchQuery {
     limit?:  number;
     locale?: string;
     q:       string;
+}
+
+/**
+ * POST /service/v1/component-directory/bindings/{bindingId}/share-adoptions (DD-164(4)⑧):
+ * before its first schema 2 convergence a component registers an existing native share of a
+ * Kailo-mapped object as a Kailo share. Creates the component.shared_object Resource with
+ * these grants only when none exists; otherwise answers the existing Resource unchanged.
+ */
+export interface ComponentShareAdoptionRequest {
+    /**
+     * Mapped from the native permission: viewer -> READ, editor/admin -> WRITE; the owner is
+     * implicit.
+     */
+    grants:       ComponentShareGrant[];
+    name:         string;
+    nativeId:     string;
+    nativeType:   ComponentSharedNativeType;
+    owner:        ComponentShareAdoptionOwner;
+    workspaceId?: string;
+}
+
+export interface ComponentShareAdoptionOwner {
+    issuer:  string;
+    subject: string;
+}
+
+/**
+ * Answer of a share adoption: the Resource now authoritative for the native object and its
+ * grants (without the owner). adopted=false means a Resource already existed and nothing
+ * was changed.
+ */
+export interface ComponentShareAdoptionResult {
+    adopted:          boolean;
+    grants:           ComponentShareGrant[];
+    ownerPrincipalId: string;
+    resourceId:       string;
 }
 
 /**
@@ -6639,6 +6679,10 @@ export interface ActionCommand {
      */
     tenantId?: string;
     /**
+     * 仅 tenant.member_create_policy.set（DD-164(3)）且必带；其他动作携带即拒绝。
+     */
+    tenantMemberCreatePolicy?: TenantMemberCreatePolicyInput;
+    /**
      * 仅 tenant.profile.update（DD-158(3)）且必带；其他动作携带即拒绝。
      */
     tenantProfile?: TenantProfileInput;
@@ -7254,6 +7298,29 @@ export interface SkillVersionUploadInput {
      */
     capabilityRequirements: string[];
     uploadId:               string;
+}
+
+/**
+ * 仅 tenant.member_create_policy.set（DD-164(3)）且必带；其他动作携带即拒绝。
+ *
+ * Only tenant.member_create_policy.set (DD-164(3)) and required for it: the policy and the
+ * Tenant version it was read at.
+ */
+export interface TenantMemberCreatePolicyInput {
+    expectedVersion: number;
+    policy:          TenantMemberCreatePolicy;
+}
+
+/**
+ * DD-164(3): whether ordinary Tenant members hold tenant#creator (MEMBERS_CREATE, the
+ * default) or only administrators create (ADMINS_ONLY).
+ *
+ * DD-164(3): present for Tenant managers, with policyActionKey
+ * tenant.member_create_policy.set.
+ */
+export enum TenantMemberCreatePolicy {
+    AdminsOnly = "ADMINS_ONLY",
+    MembersCreate = "MEMBERS_CREATE",
 }
 
 /**
@@ -8816,7 +8883,13 @@ export interface TenantMemberJoinView {
  */
 export interface TenantProfileView {
     icon?: string;
-    name:  string;
+    /**
+     * DD-164(3): present for Tenant managers, with policyActionKey
+     * tenant.member_create_policy.set.
+     */
+    memberCreatePolicy?: TenantMemberCreatePolicy;
+    name:                string;
+    policyActionKey?:    string;
     /**
      * BFF_STREAM_RETRY_MILLIS 部署事实；在线资料读取中断后再次读取前的等待。afterVersion
      * 查询只等待有限的再准入时间，回应前重新校验本人会话与成员资格。
