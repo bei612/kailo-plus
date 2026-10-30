@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import type { RouteLocationNormalized } from 'vue-router'
+import { KAILO_BUSINESS_HOME, kailoClosedRoute } from '@/kailo/converge'
 import { useAuthStore } from '@/stores/auth'
 import { useDeploymentCapabilitiesStore } from '@/stores/deploymentCapabilities'
 import { autoSetup, getCurrentUser, userInfoFromApi } from '@/api/auth'
@@ -144,12 +145,16 @@ const router = createRouter({
         {
           path: "artifacts",
           name: "artifactLibrary",
+          // Kailo DD-163: agent/sandbox artifacts are Kailo Agent's.
+          beforeEnter: (to) => (kailoClosedRoute(to.name, isKailoMode()) ? KAILO_BUSINESS_HOME : true),
           component: () => import("../views/artifacts/ArtifactLibrary.vue"),
           meta: { requiresInit: true, requiresAuth: true, requiredCapability: 'settings.sandbox' }
         },
         {
           path: "agents",
           name: "agentList",
+          // Kailo DD-163: agents are Kailo Agent's (Kailo Agent + knowledge tools).
+          beforeEnter: (to) => (kailoClosedRoute(to.name, isKailoMode()) ? KAILO_BUSINESS_HOME : true),
           component: () => import("../views/agent/AgentList.vue"),
           meta: { requiresInit: true, requiresAuth: true, requiredCapability: 'agents' }
         },

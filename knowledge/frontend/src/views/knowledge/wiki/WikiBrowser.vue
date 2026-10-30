@@ -422,7 +422,7 @@
                                 })
                                 }}</span>
                               </div>
-                              <t-button v-if="props.canEdit" size="small" theme="primary" variant="base"
+                              <t-button v-if="props.canEdit && agentFixAvailable" size="small" theme="primary" variant="base"
                                 @click="triggerAutoFix">
                                 <template #icon><t-icon name="tools" /></template>
                                 {{ $t('knowledgeEditor.wikiBrowser.issueFixBtn') }}
@@ -457,7 +457,7 @@
                                         }) }}
                                     </span>
                                     <div v-if="props.canEdit" class="wiki-issue-popup-actions">
-                                      <span class="wiki-issue-popup-action" @click="triggerFixIssue(issue)"
+                                      <span v-if="agentFixAvailable" class="wiki-issue-popup-action" @click="triggerFixIssue(issue)"
                                         style="margin-right: 12px; font-weight: 500;">
                                         <t-icon name="tools" style="margin-right: 4px;" />{{
                                           $t('knowledgeEditor.wikiBrowser.issueFixSingle') }}
@@ -796,6 +796,8 @@ import { useRouter, useRoute } from 'vue-router'
 import { useMenuStore } from '@/stores/menu'
 import { useSettingsStore } from '@/stores/settings'
 import { useI18n } from 'vue-i18n'
+import { isKailoMode } from '@/kailo/runtime'
+import { agentModeAvailable } from '@/kailo/converge'
 import { marked } from 'marked'
 import { MessagePlugin } from 'tdesign-vue-next'
 import { RecycleScroller } from 'vue-virtual-scroller'
@@ -979,6 +981,9 @@ const searchResults = ref<WikiPage[] | null>(null)
 const pageIssues = ref<WikiPageIssue[]>([])
 const showIssuesBox = ref(false)
 const showFixDrawer = ref(false)
+// Kailo DD-163: the fix assistant is an agent-mode run (builtin wiki fixer);
+// in Kailo mode agent mode is Kailo Agent's, so the fix actions are not offered.
+const agentFixAvailable = agentModeAvailable(isKailoMode())
 const showGlobalIssuesDrawer = ref(false)
 const globalIssues = ref<WikiPageIssue[]>([])
 const currentFixSessionId = ref('')
