@@ -19,8 +19,10 @@ CREATE TABLE catalog.component_secret (
     retired_by_principal_id uuid        REFERENCES identity.principal (id),
     retired_at              timestamptz,
 
-    CONSTRAINT component_secret_purpose_enum CHECK (purpose IN ('DATA_SOURCE_CONNECTION')),
-    CONSTRAINT component_secret_state_enum CHECK (state IN ('ACTIVE','RETIRED')),
+    -- 用途与状态是本表内部取值，不在任何 contracts/ 线格式中出现（服务面请求体由
+    -- component_secret.rs 逐项校验），因此按 `_check` 命名，不对应 contracts/enums。
+    CONSTRAINT component_secret_purpose_check CHECK (purpose IN ('DATA_SOURCE_CONNECTION')),
+    CONSTRAINT component_secret_state_check CHECK (state IN ('ACTIVE','RETIRED')),
     CONSTRAINT component_secret_version_one CHECK (secret_version = 1),
     CONSTRAINT component_secret_locator_shape CHECK (secret_locator LIKE '%/component-secret/%'),
     -- 撤销人只在 Tenant 删除时为空（随 namespace 销毁，没有发起人）。
