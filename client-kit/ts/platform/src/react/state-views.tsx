@@ -77,7 +77,7 @@ export function ErrorState({ error, onRetry, title, compact }: { error?: unknown
       <AlertCircle className={compact ? "h-6 w-6" : "h-7 w-7"} strokeWidth={1.5} />
     </span>
     <p className={`font-semibold text-foreground ${compact ? "text-sm" : "text-[1.0625rem] leading-6 tracking-[-0.012em]"}`}>
-      {title ?? (refusal === "missing" ? t("state.missingTitle") : t("state.loadFailedTitle"))}
+      {title ?? (refusal === "missing" ? t("state.missingTitle") : t("platform.loadFailed"))}
     </p>
     <p className="max-w-md text-sm text-muted-foreground">{reason ?? (refusal === "missing" ? t("state.missingBody") : t("state.loadFailedBody"))}</p>
     {onRetry && refusal !== "missing" ? <button type="button" onClick={onRetry}

@@ -71,7 +71,7 @@ const tagTone: Record<TagTone, string> = {
   positive: "bg-success-soft text-success-text",
   warning: "bg-warning-soft text-warning-text",
   negative: "bg-danger-soft text-danger-text",
-  info: "bg-info-soft text-info-text",
+  info: "bg-brand-soft text-brand-soft-foreground",
 };
 
 /** §9 tag: 20 px, soft tint with readable text, never a solid block. */
@@ -165,7 +165,7 @@ export type TimelineItem = {
 };
 
 const dotTone: Record<TagTone, string> = {
-  neutral: "bg-muted-foreground/50", brand: "bg-brand", positive: "bg-success", warning: "bg-warning", negative: "bg-danger", info: "bg-info",
+  neutral: "bg-muted-foreground", brand: "bg-primary", positive: "bg-success-text", warning: "bg-warning", negative: "bg-destructive", info: "bg-primary",
 };
 
 /** A vertical history: a dot per event, the title, its time and an optional line of detail. */

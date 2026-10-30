@@ -70,7 +70,7 @@ const toneClass: Record<Tone, string> = {
   positive: "border-transparent bg-success-soft text-success-text",
   negative: "border-transparent bg-danger-soft text-danger-text",
   warning: "border-transparent bg-warning-soft text-warning-text",
-  info: "border-transparent bg-info-soft text-info-text",
+  info: "border-transparent bg-muted text-foreground",
   brand: "border-transparent bg-brand-soft text-brand-soft-foreground",
 };
 
@@ -103,7 +103,7 @@ export function Button({
 export function Table({ head, children, label }: { head: ReactNode[]; children: ReactNode; label?: string }) {
   return (
     <div className="min-w-0 overflow-x-auto">
-      <table aria-label={label} className="w-full border-separate border-spacing-0 text-left text-sm">
+      <table aria-label={label} className="w-full border-separate [border-spacing:0] text-left text-sm">
         <thead className="text-muted-foreground">
           <tr>
             {head.map((cell, i) => (

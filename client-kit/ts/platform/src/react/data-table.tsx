@@ -132,7 +132,7 @@ export function ListSearch({ value, onChange, placeholder, label }: { value: str
     <span className="sr-only">{label ?? t("list.search")}</span>
     <Search aria-hidden className="pointer-events-none absolute left-2.5 h-4 w-4 text-muted-foreground" strokeWidth={1.75} />
     <input type="search" value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder ?? t("list.search")}
-      className="h-8 w-full rounded-md border border-input bg-background pl-8 pr-8 text-sm shadow-xs placeholder:text-muted-foreground focus-visible:border-brand focus-visible:outline-hidden focus-visible:ring-[3px] focus-visible:ring-ring/15 [&::-webkit-search-cancel-button]:hidden" />
+      className="h-8 w-full rounded-md border border-input bg-background pl-8 pr-8 text-sm shadow-xs placeholder:text-muted-foreground focus-visible:border-ring focus-visible:outline-hidden focus-visible:ring-[3px] focus-visible:ring-ring/15 [&::-webkit-search-cancel-button]:hidden" />
     {value ? <button type="button" aria-label={t("list.clearSearch")} onClick={() => onChange("")}
       className="absolute right-1.5 inline-flex h-5 w-5 items-center justify-center rounded-sm text-muted-foreground hover:bg-accent hover:text-foreground">
       <X aria-hidden className="h-3.5 w-3.5" strokeWidth={1.75} />
@@ -218,7 +218,7 @@ export function DataTable<T>({
     </div> : null}
     <div className="min-w-0 overflow-hidden rounded-xl border border-border bg-card">
       <div className="overflow-x-auto">
-        <table aria-label={label} className="w-full min-w-[36rem] table-fixed border-separate border-spacing-0 text-left text-sm">
+        <table aria-label={label} className="w-full min-w-[36rem] table-fixed border-separate [border-spacing:0] text-left text-sm">
           <colgroup>
             {columns.map((c) => <col key={c.key} className={c.secondary ? "max-sm:hidden" : undefined} style={c.width ? { width: c.width } : undefined} />)}
             {rowActions ? <col style={{ width: rowActionsWidth }} /> : null}
