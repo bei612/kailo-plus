@@ -182,7 +182,8 @@ describe("original Agent library governed dialogs", () => {
     expect(dialog().querySelector('[data-testid="agent-definition-detail"]')).not.toBeNull();
     expect(dialog().textContent).toContain("Library Agent");
     await click(button(dialog(), "Close"));
-    await click(button(host, "Platform tools"));
+    // DD-170: the tool catalog is a page-level secondary action in the Agents header.
+    await click(host.querySelector<HTMLButtonElement>('[data-testid="agents-tools-open"]')!);
     expect(dialog().querySelector('[data-testid="platform-tools"]')).not.toBeNull();
     expect(send).toHaveBeenCalledWith({ method: "GET", path: "/api/v1/platform-tools?offset=0" });
     expect(send.mock.calls.every(([r]) => r.method === "GET")).toBe(true);
@@ -225,10 +226,10 @@ describe("original Agent library governed dialogs", () => {
   it("uses the same Chinese shell and existing labels rather than English management chrome", async () => {
     const { host } = await setup(undefined, "zh-CN");
     await click(button(host, "查看定义"));
-    expect(dialog().textContent).toContain("查看定义");
+    expect(dialog().textContent).toContain("Agent 详情");
     expect(dialog().textContent).not.toContain("View definition");
     await click(button(dialog(), "关闭"));
-    await click(button(host, "平台原生工具"));
-    expect(dialog().textContent).toContain("平台原生工具");
+    await click(host.querySelector<HTMLButtonElement>('[data-testid="agents-tools-open"]')!);
+    expect(dialog().textContent).toContain("工具目录");
   });
 });

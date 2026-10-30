@@ -40,6 +40,19 @@ async function mount(t: BffTransport, ui: React.ReactNode, locale: "en" | "zh-CN
     ? document.body : host;
 }
 
+/** DD-170: secondary detail actions live in a "More actions" menu (installation detail by default). */
+async function chooseMore(label: string, testId = "agent-installation-more") {
+  const trigger = document.querySelector<HTMLButtonElement>(`[data-testid=${testId}]`)
+    ?? document.querySelector<HTMLButtonElement>(`button[aria-label="${testId}"]`);
+  if (!trigger) throw new Error(`Missing menu ${testId}`);
+  await act(async () => trigger.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })));
+  await settle();
+  const item = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((node) => node.textContent === label);
+  if (!item) throw new Error(`Missing menu item ${label}`);
+  await click(item);
+}
+const openTechnical = async (root: HTMLElement) => click(button(root, "Technical details"));
+
 const key = (pubkey: string, state = "ACTIVE") => ({
   pubkey,
   state,
@@ -343,9 +356,10 @@ describe("shared governed platform Tool catalog", () => {
   it("reads the catalog without generating a registration request or consulting write tasks", async () => {
     const t = transport(() => ({ status: 200, body: page }));
     const host = await mount(t, <ToolManagement />);
-    expect(host.textContent).toContain("Read-only tool catalog");
+    expect(host.textContent).toContain("Tool catalog");
     expect(host.textContent).toContain(tool.resourceId);
-    await click(button(host, "Refresh"));
+    expect(host.textContent).toContain("1 total");
+    await click(host.querySelector<HTMLButtonElement>('button[aria-label="Refresh"]')!);
     expect(t.send.mock.calls.every(([request]) => request.method === "GET"
       && request.path.startsWith("/api/v1/platform-tools?"))).toBe(true);
     expect(host.querySelector("form")).toBeNull();
@@ -366,7 +380,7 @@ describe("shared governed platform Tool catalog", () => {
     await act(async () => finishRead({ status: 200, body: page }));
     await settle();
     expect(host.textContent).not.toContain(tool.resourceId);
-    expect(host.textContent).toContain("No visible registered tools");
+    expect(host.textContent).toContain("No tools available yet");
   });
   it.each([
     { ...page, tools: [{ ...tool, status: "FUTURE" }] },
@@ -383,14 +397,15 @@ describe("shared governed platform Tool catalog", () => {
     const t = transport((request) => ({ status: 200, body: request.path.endsWith("offset=0")
       ? { tools: [], nextOffset: 7 } : page }));
     const host = await mount(t, <ToolManagement />);
-    expect(host.textContent).toContain("No visible registered tools");
-    await click(button(host, "Next page"));
+    // DD-170 §16.2(3): an empty filtered page does not end the bounded read.
+    expect(host.textContent).not.toContain("No tools available yet");
     expect(host.textContent).toContain(tool.resourceId);
     expect(t.send).toHaveBeenCalledWith({ method: "GET", path: "/api/v1/platform-tools?offset=7" });
   });
   it("does not render an unreadable catalog as empty", async () => {
     const host = await mount(transport(() => ({ status: 403, body: undefined })), <ToolManagement />);
-    expect(host.textContent).not.toContain("No visible registered tools");
+    expect(host.textContent).not.toContain("No tools available yet");
+    expect(host.querySelector("[data-testid=permission-state]")).not.toBeNull();
   });
 });
 
@@ -1421,7 +1436,7 @@ describe("Installation execute permission actions", () => {
     await settle();
     if (!host.textContent?.includes("View installation")) return { host, t, changeTarget };
     await click(button(host.querySelector("[data-testid=agent-installations]") as HTMLElement, "View installation"));
-    await click(button(host, "View self-installation permission"));
+    await chooseMore("View self-installation permission");
     await settle();
     return { host, t, changeTarget };
   };
@@ -1521,7 +1536,7 @@ describe("Installation execute permission actions", () => {
     await click(button(section, "Refresh"));
     await settle();
     await click(button(host.querySelector("[data-testid=agent-installations]") as HTMLElement, "View installation"));
-    await click(button(host, "View self-installation permission"));
+    await chooseMore("View self-installation permission");
     await settle();
     section = host.querySelector("[data-testid=agent-installation-execute]") as HTMLElement;
     expect(section.textContent).not.toContain("old-permission-op");
@@ -1614,6 +1629,8 @@ describe("InstallationMemory BFF read boundaries", () => {
     const host = await mount(t, <InstallationMemory resourceId={resource} workspaceId={workspace} />);
     await click(button(host, "Read memory"));
     expect(listedSlugs(host)).toEqual(["mem/a", "mem/b", "mem/orphan", "mem/old"]);
+    // DD-170 §16.2: the cold list states its size and pages locally.
+    expect(host.querySelector("[data-testid=agent-memory-pagination]")?.textContent).toContain("4 total");
     expect(host.querySelector("[data-testid=agent-memory-no-core]")).toBeNull();
     const icons = [...host.querySelectorAll("[data-testid=agent-memory-list] article")]
       .map((article) => !!article.querySelector("[data-testid=agent-memory-dangling-icon]"));
@@ -1733,7 +1750,7 @@ describe("AgentDefinitionsPage governed Version Installation Grant", () => {
   async function openInstallDialog(host: HTMLElement) {
     const dialog = host.querySelector<HTMLElement>('[role="dialog"]');
     if (dialog) await click(button(dialog, "Close"));
-    await click(button(host, "Install published Agent version"));
+    await click(button(host, "Install agent"));
     return section(host, "agent-installation-create");
   }
   async function change(host: HTMLElement, label: string, value: string) {
@@ -1743,7 +1760,7 @@ describe("AgentDefinitionsPage governed Version Installation Grant", () => {
     if (field instanceof HTMLButtonElement) {
       await act(async () => field.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })));
       await settle();
-      const optionLabel = value === route.resourceId ? `${route.resourceId} · ${route.resourceVersion} · ${route.nativeRevision}`
+      const optionLabel = value === route.resourceId ? `Route ${route.resourceId} · revision ${route.nativeRevision}`
         : value === "HUMAN_ONLY" ? "Human only" : value === "DISABLED" ? "Agent writes disabled" : value;
       const option = [...document.querySelectorAll<HTMLElement>('[role="menuitemradio"]')]
         .find((item) => item.textContent === optionLabel);
@@ -1766,12 +1783,12 @@ describe("AgentDefinitionsPage governed Version Installation Grant", () => {
     const host = await open(t);
     await click(button(host.querySelector<HTMLElement>('[role="dialog"]')!, "Close"));
     await click(button(section(host, "agent-installations"), "View installation"));
-    await click(button(host, "View delegation grants"));
+    await chooseMore("View delegation grants");
     expect(host.querySelector('[role="dialog"]')?.textContent).toContain(grant.delegationId);
     await click(button(section(host, "agent-delegation-management"), "Back"));
     expect(host.querySelector('[role="dialog"]')).toBeNull();
     await click(button(section(host, "agent-installations"), "View installation"));
-    await click(button(host, "View delegation grants"));
+    await chooseMore("View delegation grants");
     expect(host.querySelector('[role="dialog"]')?.textContent).toContain(grant.delegationId);
     expect(posts(t)).toHaveLength(0);
   });
@@ -1787,7 +1804,7 @@ describe("AgentDefinitionsPage governed Version Installation Grant", () => {
       : r.path === "/api/v1/actions" ? { status: 200, body: submission("agent.installation.upgrade", "UNKNOWN") } : undefined);
     const host = await open(t);
     await click(button(section(host, "agent-installations"), "View installation"));
-    await click(button(host, "Upgrade / roll back version"));
+    await chooseMore("Upgrade / roll back version");
     const action = section(host, "agent-installation-upgrade");
     expect(action.querySelectorAll("option")).toHaveLength(2);
     await change(action, "Published target version", version.assetId);
@@ -1819,7 +1836,7 @@ describe("AgentDefinitionsPage governed Version Installation Grant", () => {
     const host = await mount(t, <AgentDefinitionsPage />);
     await settle();
     const card = host.querySelector<HTMLElement>("[data-testid=agent-definition-agent-1]")!;
-    expect(card.className).toContain("aspect-[4/5]");
+    expect(card.className).not.toContain("aspect-[4/5]");
     expect(card.textContent).toContain("Governed Agent");
     expect(card.textContent).not.toContain("Definition ready");
     expect(host.querySelector("[data-testid=agent-definition-editor]")).toBeNull();
@@ -1869,7 +1886,7 @@ describe("AgentDefinitionsPage governed Version Installation Grant", () => {
     await settle();
     const card = host.querySelector<HTMLElement>("[data-testid=agent-installation-installation-1]")!;
     expect(card.textContent).not.toContain("Wrong identity");
-    expect(card.parentElement?.querySelector("[role=status]")?.textContent).toContain("the result is unknown");
+    expect(card.textContent).toContain("Version details unavailable");
     expect(posts(t)).toHaveLength(0);
   });
 
@@ -1898,7 +1915,9 @@ describe("AgentDefinitionsPage governed Version Installation Grant", () => {
     expect(tools.textContent).toContain(second.resourceId);
     await click(button(action, "Review request"));
     expect(posts(t)).toHaveLength(0);
-    expect(action.textContent).toContain("list-tool, read-tool");
+    const review = action.querySelector<HTMLElement>("[data-testid=agent-version-review]")!;
+    expect(review.textContent).toContain(first.name);
+    expect(review.textContent).toContain(second.name);
     await click(button(action, "Submit governed request"));
     expect(posts(t)[0]?.body).toMatchObject({ agentVersionContent: { declaredToolResourceIds: [first.resourceId, second.resourceId] } });
   });
@@ -1912,7 +1931,7 @@ describe("AgentDefinitionsPage governed Version Installation Grant", () => {
     await click(button(section(host, "agent-version-directory"), "Edit draft"));
     const action = section(host, "agent-version-action");
     await click(button(action, "AdvancedRequired"));
-    expect(action.textContent).toContain("unavailable-tool");
+    expect(action.querySelector('[title="unavailable-tool"]')).not.toBeNull();
     expect(button(action, "Review request").disabled).toBe(true);
     expect(posts(t)).toHaveLength(0);
     await click(button(action, "Remove reference"));
@@ -1940,16 +1959,12 @@ describe("AgentDefinitionsPage governed Version Installation Grant", () => {
       : r.path.endsWith("/version-configuration?offset=0") ? { status: 200, body: {
         ...configuration, profiles: [], routes: [], canCreate: false, nextOffset: 9 } } : undefined);
     const host = await open(t);
+    // DD-170 §16.2(3): both bounded reads follow the offsets to the end; no "configuration pages" pager.
     const directory = section(host, "agent-version-directory");
-    expect(directory.textContent).toContain("No authorized versions on this page.");
-    expect(directory.querySelector("[role=status]")).toBeNull();
-    const sourcePager = [...directory.querySelectorAll("span")].find((span) => span.textContent === "Authorized configuration pages")?.parentElement;
-    expect(sourcePager).toBeTruthy();
-    await click(button(sourcePager!, "Next page"));
-    expect(button(directory, "Create version draft")).toBeTruthy();
-    await click(button(directory, "Next page"));
-    expect(directory.textContent).toContain(version.configHash);
-    expect(directory.textContent).not.toContain("No authorized versions on this page.");
+    expect(directory.querySelector(`[data-row-key="${version.assetId}"]`)).not.toBeNull();
+    expect(directory.textContent).toContain("1 total");
+    expect(directory.textContent).not.toContain("Authorized configuration pages");
+    expect(button(section(host, "agent-definition-detail"), "New version")).toBeTruthy();
     expect([...directory.querySelectorAll("button")].some((b) => b.textContent === "Next page")).toBe(false);
     expect(t.send).toHaveBeenCalledWith({ method: "GET", path: "/api/v1/agent-definitions/agent-1/versions?offset=7" });
     expect(t.send).toHaveBeenCalledWith({ method: "GET", path: "/api/v1/agent-definitions/agent-1/version-configuration?offset=9" });
@@ -1959,7 +1974,7 @@ describe("AgentDefinitionsPage governed Version Installation Grant", () => {
   it("creates a draft only from explicitly selected authorized configuration and previews before posting", async () => {
     const t = routes((r) => r.path === "/api/v1/actions" ? { status: 200, body: submission("agent.version.create") } : undefined);
     const host = await open(t);
-    await click(button(section(host, "agent-version-directory"), "Create version draft"));
+    await click(button(section(host, "agent-definition-detail"), "New version"));
     const action = section(host, "agent-version-action");
     expect(button(action, "Review request").disabled).toBe(true);
     const editorForm = action.querySelector("form")!;
@@ -2016,7 +2031,8 @@ describe("AgentDefinitionsPage governed Version Installation Grant", () => {
       assetVersion: version.assetVersion, agentVersionContent: { ...content, instructions: "Edited exact draft" } });
     await click(button(host.querySelector<HTMLElement>('[role="dialog"]')!, "Close"));
     await click(button(section(host, "agent-installations"), "View installation"));
-    expect(section(host, "agent-installation-detail").textContent).toContain(installation.pinnedVersionAssetId);
+    await openTechnical(section(host, "agent-installation-detail"));
+    expect(section(host, "agent-installation-detail").querySelector(`[title="${installation.pinnedVersionAssetId}"]`)).not.toBeNull();
     expect(posts(t)).toHaveLength(1);
   });
 
@@ -2111,7 +2127,7 @@ describe("AgentDefinitionsPage governed Version Installation Grant", () => {
     expect((await openInstallDialog(host)).textContent).toContain("No authorized published Agent version on this page.");
     await click(button(host.querySelector('[role="dialog"]') as HTMLElement, "Close"));
     await click(button(host, "View definition"));
-    await click(button(section(host, "agent-version-directory"), "Publish exact draft"));
+    await click(button(section(host, "agent-version-directory"), "Publish"));
     const action = section(host, "agent-version-action");
     expect(action.querySelector("fieldset")?.disabled).toBe(true);
     await click(button(action, "Advanced"));
@@ -2119,8 +2135,9 @@ describe("AgentDefinitionsPage governed Version Installation Grant", () => {
     expect(action.querySelector<HTMLInputElement>('input[inputmode="numeric"]')!.matches(":disabled")).toBe(true);
     await click(button(action, "Review request"));
     expect(posts(t)).toHaveLength(0);
-    expect(action.textContent).toContain(version.configHash);
-    expect(action.textContent).toContain("existing installations remain pinned");
+    expect(action.textContent).toContain("keep their version until they are upgraded");
+    await openTechnical(action);
+    expect(action.querySelector(`[title="${version.configHash}"]`)).not.toBeNull();
     await click(button(action, "Submit governed request"));
     expect(posts(t)[0]?.body).toEqual({ actionKey: "agent.version.publish", idempotencyKey: expect.any(String),
       resourceId: definition.resourceId, resourceVersion: definition.resourceVersion,
@@ -2151,7 +2168,7 @@ describe("AgentDefinitionsPage governed Version Installation Grant", () => {
     expect(posts(t)).toHaveLength(0);
   });
 
-  it("retires only the authorized exact published version without needing configuration providers", async () => {
+  it("retires only the authorized exact published version through its confirmation, without configuration providers", async () => {
     const published = { ...version, state: "PUBLISHED", canUpdate: false, canPublish: false, canRetire: true };
     const t = routes((r) => r.path.includes("/versions?") ? { status: 200, body: {
       agentResourceId: definition.resourceId, resourceVersion: definition.resourceVersion, versions: [published], nextOffset: null } }
@@ -2160,19 +2177,19 @@ describe("AgentDefinitionsPage governed Version Installation Grant", () => {
       : r.path === "/api/v1/actions" ? { status: 200, body: submission("agent.version.retire") } : undefined);
     const host = await open(t);
     const reads = t.send.mock.calls.filter(([r]) => r.path.includes("/version-configuration?")).length;
-    await click(button(section(host, "agent-version-directory"), "Retire exact published version"));
-    const action = section(host, "agent-version-action");
-    expect(action.querySelector("input,textarea,select")).toBeNull();
-    expect(button(action, "Review request").disabled).toBe(false);
-    expect(action.textContent).toContain(published.configHash);
-    expect(action.textContent).toContain("without selecting a replacement");
+    await chooseMore("Retire", "Actions for v2");
+    // DD-170 §16.6: a ConfirmDialog naming the version states the consequence; nothing is posted yet.
+    const confirm = section(document.body, "agent-version-retire");
+    expect(confirm.textContent).toContain("Retire v2 of “Governed Agent”?");
+    expect(confirm.textContent).toContain("New installations can no longer use v2");
+    expect(confirm.querySelector("input,textarea,select")).toBeNull();
     expect(t.send.mock.calls.filter(([r]) => r.path.includes("/version-configuration?"))).toHaveLength(reads);
-    await click(button(action, "Review request"));
     expect(posts(t)).toHaveLength(0);
-    await click(button(action, "Submit governed request"));
+    await click(confirm.querySelector<HTMLButtonElement>("[data-testid=confirm-dialog-action]")!);
     expect(posts(t)[0]?.body).toEqual({ actionKey: "agent.version.retire", idempotencyKey: expect.any(String),
       resourceId: definition.resourceId, resourceVersion: definition.resourceVersion,
       assetId: published.assetId, assetVersion: published.assetVersion, explicitConfirmation: true });
+    expect(document.querySelector("[data-testid=agent-version-retire]")).toBeNull();
     expect(section(host, "agent-installations").querySelector(`[data-testid="agent-installation-${installation.resourceId}"]`)).not.toBeNull();
     expect(t.send).toHaveBeenCalledWith({method: "GET", path: `/api/v1/agent-versions/${installation.pinnedVersionAssetId}`});
     expect(posts(t)).toHaveLength(1);
@@ -2184,7 +2201,7 @@ describe("AgentDefinitionsPage governed Version Installation Grant", () => {
       versions: [{ ...version, state: "PUBLISHED", canUpdate: false, canPublish: false, canRetire }], nextOffset: null } } : undefined);
     const host = await open(t);
     expect(section(host, "agent-version-directory").textContent).toContain("Published");
-    expect([...host.querySelectorAll("button")].some((b) => b.textContent === "Retire exact published version")).toBe(false);
+    expect(host.querySelector('button[aria-label="Actions for v2"]')).toBeNull();
     expect(posts(t)).toHaveLength(0);
   });
 
@@ -2193,8 +2210,8 @@ describe("AgentDefinitionsPage governed Version Installation Grant", () => {
       agentResourceId: definition.resourceId, resourceVersion: definition.resourceVersion,
       versions: [{ ...version, state, canUpdate: false, canPublish: false, canRetire: true }], nextOffset: null } } : undefined);
     const host = await open(t);
-    expect(section(host, "agent-version-directory").querySelector("[role=status]")).toBeTruthy();
-    expect([...host.querySelectorAll("button")].some((b) => b.textContent === "Retire exact published version")).toBe(false);
+    expect(section(host, "agent-version-directory").querySelector("[data-testid=error-state]")).toBeTruthy();
+    expect(host.querySelector('button[aria-label="Actions for v2"]')).toBeNull();
     expect(posts(t)).toHaveLength(0);
   });
 
@@ -2211,21 +2228,24 @@ describe("AgentDefinitionsPage governed Version Installation Grant", () => {
         : { status: 200, body: submission("agent.version.retire") };
     });
     const host = await open(t);
-    await click(button(section(host, "agent-version-directory"), "Retire exact published version"));
-    const action = section(host, "agent-version-action");
-    await click(button(action, "Review request"));
-    await click(button(action, "Submit governed request"));
+    await chooseMore("Retire", "Actions for v2");
+    const confirm = () => section(document.body, "agent-version-retire");
+    const confirmButton = () => confirm().querySelector<HTMLButtonElement>("[data-testid=confirm-dialog-action]")!;
+    await click(confirmButton());
     const command = posts(t)[0]?.body;
     for (let retry = 0; retry < 2; retry += 1) {
-      await click(button(action, "Re-check same request"));
-      expect(action.textContent).toContain("Outcome is not confirmed.");
-      expect([...action.querySelectorAll("button")].some((b) => b.textContent === "Cancel request")).toBe(false);
+      expect(confirmButton().textContent).toBe("Re-check same request");
+      await click(confirmButton());
+      // A refused re-check does not settle the original request: the dialog stays and cannot be dismissed.
+      expect(confirm().textContent).toContain("Outcome is not confirmed.");
+      await act(async () => confirm().dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+      expect(document.querySelector("[data-testid=agent-version-retire]")).not.toBeNull();
     }
-    await click(button(action, "Re-check same request"));
+    await click(confirmButton());
     expect(posts(t)).toHaveLength(4);
     expect(posts(t).every((r) => JSON.stringify(r.body) === JSON.stringify(command))).toBe(true);
-    expect(action.textContent).toContain("Request recorded.");
-    expect(action.textContent).not.toContain("Outcome is not confirmed.");
+    expect(document.querySelector("[data-testid=agent-version-retire]")).toBeNull();
+    expect(host.textContent).not.toContain("Outcome is not confirmed.");
   });
 
   it("keeps the exact draft route selected until its authorized configuration page is loaded", async () => {
@@ -2239,8 +2259,7 @@ describe("AgentDefinitionsPage governed Version Installation Grant", () => {
     const host = await open(t);
     await click(button(section(host, "agent-version-directory"), "Edit draft"));
     const action = section(host, "agent-version-action");
-    expect(button(action, "Review request").disabled).toBe(true);
-    await click(button(action, "Next page"));
+    // Every configuration page is read before the form is offered; the later route is already known.
     expect(button(action, "Review request").disabled).toBe(false);
     await click(button(action, "Review request"));
     await click(button(action, "Submit governed request"));
@@ -2261,7 +2280,7 @@ describe("AgentDefinitionsPage governed Version Installation Grant", () => {
     const directory = section(host, "agent-version-directory");
     expect(directory.querySelector("[data-testid=agent-version-missing-instructions]")!.textContent).toBe("Add instructions before publishing.");
     expect(directory.querySelector("[data-testid=agent-version-missing-runtime]")).not.toBeNull();
-    expect(button(directory, "Publish exact draft").disabled).toBe(true);
+    expect(button(directory, "Publish").disabled).toBe(true);
     expect(button(directory, "Edit draft").disabled).toBe(false);
     expect(posts(t)).toHaveLength(0);
   });
@@ -2273,7 +2292,8 @@ describe("AgentDefinitionsPage governed Version Installation Grant", () => {
       versions: [{ ...version, state: "PUBLISHED", canUpdate: false, canPublish: false, content: rest }], nextOffset: null } } : undefined);
     const host = await open(t);
     const directory = section(host, "agent-version-directory");
-    expect(directory.textContent).not.toContain(version.configHash);
+    expect(directory.querySelector("[data-testid=error-state]")).not.toBeNull();
+    expect(directory.querySelector(`[data-row-key="${version.assetId}"]`)).toBeNull();
   });
 
   it.each(["PUBLISHED", "RETIRED"])("reads %s history without generating draft write controls", async (state) => {
@@ -2282,9 +2302,9 @@ describe("AgentDefinitionsPage governed Version Installation Grant", () => {
       versions: [{ ...version, state, canUpdate: false, canPublish: false }], nextOffset: null } } : undefined);
     const host = await open(t);
     const directory = section(host, "agent-version-directory");
-    expect(directory.textContent).toContain(version.configHash);
+    expect(directory.querySelector(`[data-row-key="${version.assetId}"]`)).not.toBeNull();
     expect([...directory.querySelectorAll("button")].map((b) => b.textContent)).not.toContain("Edit draft");
-    expect([...directory.querySelectorAll("button")].map((b) => b.textContent)).not.toContain("Publish exact draft");
+    expect([...directory.querySelectorAll("button")].map((b) => b.textContent)).not.toContain("Publish");
     expect(posts(t)).toHaveLength(0);
   });
 
@@ -2294,11 +2314,10 @@ describe("AgentDefinitionsPage governed Version Installation Grant", () => {
   ])("does not supply a default or write entry when configuration is absent/unsupported (%j)", async (source) => {
     const t = routes((r) => r.path.includes("/version-configuration?") ? { status: 200, body: source } : undefined);
     const host = await open(t);
-    const directory = section(host, "agent-version-directory");
-    const labels = [...directory.querySelectorAll("button")].map((b) => b.textContent);
-    expect(labels).not.toContain("Create version draft");
+    const labels = [...section(host, "agent-definition-detail").querySelectorAll("button")].map((b) => b.textContent);
+    expect(labels).not.toContain("New version");
     expect(labels).not.toContain("Edit draft");
-    expect(labels).not.toContain("Publish exact draft");
+    expect(labels).not.toContain("Publish");
     expect(posts(t)).toHaveLength(0);
   });
 
@@ -2309,9 +2328,9 @@ describe("AgentDefinitionsPage governed Version Installation Grant", () => {
         versions: [{ ...version, ...permission }], nextOffset: null } } : undefined);
       const host = await open(t);
       const directory = section(host, "agent-version-directory");
-      expect(directory.textContent).toContain(version.configHash);
+      expect(directory.querySelector(`[data-row-key="${version.assetId}"]`)).not.toBeNull();
       expect([...directory.querySelectorAll("button")].map((b) => b.textContent)).not.toContain("Edit draft");
-      expect([...directory.querySelectorAll("button")].map((b) => b.textContent)).not.toContain("Publish exact draft");
+      expect([...directory.querySelectorAll("button")].map((b) => b.textContent)).not.toContain("Publish");
       expect(posts(t)).toHaveLength(0);
     });
 
@@ -2325,9 +2344,9 @@ describe("AgentDefinitionsPage governed Version Installation Grant", () => {
       agentResourceId: definition.resourceId, resourceVersion: definition.resourceVersion, ...page } } : undefined);
     const host = await open(t);
     const directory = section(host, "agent-version-directory");
-    expect(directory.textContent).toContain("the result is unknown");
-    expect(directory.textContent).not.toContain(version.configHash);
-    expect([...directory.querySelectorAll("button")].map((b) => b.textContent)).not.toContain("Create version draft");
+    expect(directory.querySelector("[data-testid=error-state]")).not.toBeNull();
+    expect(directory.querySelector(`[data-row-key="${version.assetId}"]`)).toBeNull();
+    expect([...directory.querySelectorAll("button")].map((b) => b.textContent)).not.toContain("Edit draft");
     expect(posts(t)).toHaveLength(0);
   });
 
@@ -2341,7 +2360,7 @@ describe("AgentDefinitionsPage governed Version Installation Grant", () => {
         : submission("agent.version.publish") };
     });
     const host = await open(t);
-    await click(button(section(host, "agent-version-directory"), "Publish exact draft"));
+    await click(button(section(host, "agent-version-directory"), "Publish"));
     const action = section(host, "agent-version-action");
     await click(button(action, "Review request"));
     await click(button(action, "Submit governed request"));
@@ -2543,7 +2562,7 @@ describe("AgentDefinitionsPage governed Version Installation Grant", () => {
     const host = await open(t);
     const installed = section(host, "agent-installations");
     await click(button(installed, "View installation"));
-    await click(button(host, "View delegation grants"));
+    await chooseMore("View delegation grants");
     const action = section(host, "agent-delegation-management");
     if (revoke) await click(button(action, "Review revocation"));
     else {
@@ -2590,7 +2609,7 @@ describe("AgentDefinitionsPage governed Version Installation Grant", () => {
       : r.path === "/api/v1/actions" ? { status: 200, body: submission("agent.delegation.grant") } : undefined);
     const host = await openAs(t, "human-1");
     await click(button(section(host, "agent-installations"), "View installation"));
-    await click(button(host, "View delegation grants"));
+    await chooseMore("View delegation grants");
     const action = section(host, "agent-delegation-management");
     expect(action.textContent).toContain("Needs renewal");
     expect(action.textContent).toContain("It is not used until you renew it.");
@@ -2615,7 +2634,7 @@ describe("AgentDefinitionsPage governed Version Installation Grant", () => {
     const t = routes();
     const host = await openAs(t, "human-1");
     await click(button(section(host, "agent-installations"), "View installation"));
-    await click(button(host, "View delegation grants"));
+    await chooseMore("View delegation grants");
     const action = section(host, "agent-delegation-management");
     await tickFirstScope(action);
     await change(action, "Valid from", "2026-10-03T12:00:00");
@@ -2635,11 +2654,11 @@ describe("AgentDefinitionsPage governed Version Installation Grant", () => {
     if (kind === "installation") {
       await openInstallDialog(host);
     } else if (kind === "version") {
-      await click(button(section(host, "agent-version-directory"), "Publish exact draft"));
+      await click(button(section(host, "agent-version-directory"), "Publish"));
     } else if (kind === "delegation") {
       const installed = section(host, "agent-installations");
       await click(button(installed, "View installation"));
-      await click(button(host, "View delegation grants"));
+      await chooseMore("View delegation grants");
     }
     const action = section(host, testId);
     if (kind === "installation") {
@@ -2725,7 +2744,7 @@ describe("AgentDefinitionsPage governed Version Installation Grant", () => {
     const t = routes((r) => r.path === "/api/v1/tasks" ? { status: 200, body: [upgrade] } : undefined);
     const host = await open(t);
     await click(button(section(host, "agent-installations"), "View installation"));
-    await click(button(host, "View delegation grants"));
+    await chooseMore("View delegation grants");
     const action = section(host, "agent-delegation-management");
     const pending = action.querySelector("[data-testid=agent-delegation-pending]");
     expect(pending?.textContent).toContain("agent.installation.upgrade");
@@ -4095,33 +4114,47 @@ describe("AgentDefinitionsPage read outcomes", () => {
     expect(t.send.mock.calls.every(([r]) => r.method === "GET")).toBe(true);
   });
 
+  it("list bare 403 is a definitive refusal: no access state, no create entry, no retry", async () => {
+    const t = transport((r) => r.path === "/api/v1/tasks" ? { status: 200, body: [] } : { status: 403, body: undefined });
+    const host = await mount(t, <AgentDefinitionsPage />);
+    await settle();
+    // DD-170 §16.4(4): a refused read says the person lacks access, never "nothing here" or "unknown".
+    const definitions = host.querySelector<HTMLElement>("[data-testid=agents-library-personas]")!;
+    expect(definitions.querySelector("[data-testid=permission-state]")?.textContent).toContain("You don’t have access");
+    expect(host.textContent).not.toContain("result is unknown");
+    expect(host.querySelector("[data-testid=new-agent-card]")).toBeNull();
+    expect([...definitions.querySelectorAll("button")].some((node) => node.textContent === "Try again")).toBe(false);
+    expect(host.textContent).not.toContain("PERMISSION_DENIED");
+    expect(t.send.mock.calls.every(([r]) => r.method === "GET")).toBe(true);
+  });
+
   it.each([
-    { status: 403, label: "Not allowed" },
-    { status: 404, label: "Not available here" },
+    { status: 404, label: "Not found" },
   ])("list bare $status is definitive; retry only repeats GET", async ({ status, label }) => {
     let reply: BffReply = { status, body: undefined };
     const t = transport((r) => r.path === "/api/v1/tasks" ? { status: 200, body: [] } : reply);
     const host = await mount(t, <AgentDefinitionsPage />);
     await settle();
-    expect(host.querySelector("[role=alert]")?.textContent).toContain(label);
+    const definitions = host.querySelector<HTMLElement>("[data-testid=agents-library-personas]")!;
+    expect(definitions.querySelector("[role=alert]")?.textContent).toContain(label);
     expect(host.textContent).not.toContain("result is unknown");
     expect(host.querySelector("[data-testid=new-agent-card]")).toBeNull();
     expect(host.textContent).not.toContain("PERMISSION_DENIED");
     expect(host.textContent).not.toContain("TARGET_NOT_FOUND");
 
     reply = { status: 200, body: { definitions: [] } };
-    // DD-131(1): the Teams area reads the same directory on its own; "Try again" repeats only the list GET.
+    // "Not found" offers no retry of its own; the page's one Refresh re-reads (only GETs).
     const listReads = () => t.send.mock.calls.filter(([r]) => r.path === "/api/v1/agent-definitions").length;
     const before = listReads();
-    await click(button(host, "Try again"));
+    await click(host.querySelector<HTMLButtonElement>('[data-testid="agent-definitions"] > div button[aria-label="Refresh"]')!);
     expect(host.querySelector("[data-testid=new-agent-card]")).not.toBeNull();
-    expect(listReads() - before).toBe(1);
+    expect(listReads()).toBeGreaterThan(before);
     expect(t.send.mock.calls.every(([r]) => r.method === "GET")).toBe(true);
   });
 
   it.each([
-    { status: 403, label: "Not allowed", open: "View definition", locale: "en" as const },
-    { status: 404, label: "此处不可用", open: "查看定义", locale: "zh-CN" as const },
+    { status: 403, label: "You don’t have access", open: "View definition", locale: "en" as const },
+    { status: 404, label: "内容不存在", open: "查看定义", locale: "zh-CN" as const },
   ])("definition detail bare $status does not become unknown", async ({ status, label, open, locale }) => {
     const t = transport((r) => r.path === "/api/v1/tasks" ? { status: 200, body: [] }
       : r.path === "/api/v1/agent-definitions" ? { status: 200, body: { definitions: [definition] } }
@@ -4135,8 +4168,8 @@ describe("AgentDefinitionsPage read outcomes", () => {
     await click(button(host, open));
     const dialog = host.querySelector('[role="dialog"]');
     expect(dialog).not.toBeNull();
-    expect(dialog!.querySelector("[role=alert]")?.textContent).toContain(label);
-    expect(dialog!.textContent).not.toMatch(/result is unknown|结果不明/);
+    expect(dialog!.querySelector("[data-testid=permission-state], [role=alert]")?.textContent).toContain(label);
+    expect(dialog!.textContent).not.toMatch(/result is unknown|结果不明|Couldn’t load|未能载入/);
     expect(dialog!.querySelector('[data-testid="agent-definition-detail"]')).toBeNull();
     expect(t.send.mock.calls.slice(beforeOpen).map(([r]) => r)).toEqual([
       { method: "GET", path: "/api/v1/agent-definitions/agent-1" },
@@ -4145,7 +4178,7 @@ describe("AgentDefinitionsPage read outcomes", () => {
   });
 
   it.each([
-    { reply: { status: 403, body: undefined }, label: "Not allowed", open: "View definition", locale: "en" as const },
+    { reply: { status: 403, body: undefined }, label: "You don’t have access", open: "View definition", locale: "en" as const },
     { reply: { status: 404, body: { class: ErrorClass.Precondition, reason: ReasonCode.TargetNotFound,
       content: "private-error-body" } }, label: "对象已不存在，或你无权查看。", open: "查看定义", locale: "zh-CN" as const },
   ])("published Version shows actual refusal $label, not parent permission", async ({ reply, label, open, locale }) => {
@@ -4156,8 +4189,10 @@ describe("AgentDefinitionsPage read outcomes", () => {
     const host = await mount(t, <AgentDefinitionsPage />, locale);
     await settle();
     await click(button(host, open));
-    const section = host.querySelector('[data-testid="agent-definition-detail"] h3')?.parentElement;
-    expect(section?.querySelector("[role=alert]")?.textContent).toContain(label);
+    // DD-170: the published Version is the detail's facts block; its own refusal is shown there.
+    const section = host.querySelector<HTMLElement>('[data-testid="agent-definition-detail"]');
+    expect(section?.querySelector("[data-testid=permission-state], [role=alert]")?.textContent).toContain(label);
+    expect(section?.querySelector("[data-testid=agent-definition-facts]")).toBeNull();
     expect(section?.textContent).not.toMatch(/result is unknown|结果不明/);
     expect(section?.textContent).not.toContain("private-error-body");
     // Plain-language copy only: the reason code never appears in visible text.
@@ -4189,12 +4224,15 @@ describe("AgentDefinitionsPage read outcomes", () => {
     const host = await mount(t, <AgentDefinitionsPage />);
     await settle();
     await click(button(host, "View definition"));
-    const section = host.querySelector('[data-testid="agent-definition-detail"] h3')?.parentElement;
-    expect(section?.querySelector("[role=status]")?.textContent).toContain("the result is unknown");
-    expect(section?.querySelector("[role=alert]")).toBeNull();
-    expect(section?.textContent).not.toMatch(/Not allowed|Not available here|PERMISSION_DENIED|TARGET_NOT_FOUND|private-error-body/);
+    const section = host.querySelector<HTMLElement>('[data-testid="agent-definition-detail"]');
+    // The first state block is the published Version's: "could not load" with a retry, never a refusal.
+    const failure = section?.querySelector<HTMLElement>("[data-testid=error-state], [data-testid=permission-state]");
+    expect(failure?.getAttribute("data-testid")).toBe("error-state");
+    expect(failure?.textContent).toContain("Couldn’t load this");
+    expect(failure?.textContent).not.toMatch(/You don’t have access|Not found|PERMISSION_DENIED|TARGET_NOT_FOUND|private-error-body/);
+    expect(section?.querySelector("[data-testid=agent-definition-facts]")).toBeNull();
     expect(section?.querySelector("pre")).toBeNull();
-    expect(section && button(section, "Try again")).toBeTruthy();
+    expect(failure && button(failure, "Try again")).toBeTruthy();
     expect(t.send.mock.calls.every(([r]) => r.method === "GET")).toBe(true);
   });
 });
@@ -4223,17 +4261,21 @@ describe("AgentDefinitionsPage installation read-only facts", () => {
     const host = await mount(t, <AgentDefinitionsPage />);
     await settle();
     const section = host.querySelector("[data-testid=agent-installations]") as HTMLElement;
-    expect(section.textContent).toContain("Being installed");
+    expect(section.textContent).toContain("Installing");
     await click(button(section, "View installation"));
     const detail = host.querySelector("[data-testid=agent-installation-detail]") as HTMLElement;
-    expect(detail.textContent).toContain("pinned-asset-1");
-    expect(detail.textContent).toContain("agent-principal-1");
-    expect(detail.textContent).toContain("Projection pending");
+    // DD-170 §16.3/§16.5: recorded states read in words; exact references only in technical details.
+    expect(detail.textContent).toContain("Getting ready");
     expect(detail.textContent).toContain("Disabled channel binding");
-    expect(detail.textContent).toContain("Mention · Manual assignment");
+    expect(detail.textContent).toContain("Mention");
+    expect(detail.textContent).toContain("Manual assignment");
     expect(detail.textContent).toContain("SERVER_CODEX");
-    expect(detail.textContent).toContain("a".repeat(64));
-    expect(detail.textContent).toContain("do not prove runtime health or authorize an invocation");
+    expect(detail.textContent).not.toContain("pinned-asset-1");
+    expect(detail.textContent).not.toContain("a".repeat(64));
+    await openTechnical(detail);
+    for (const value of ["pinned-asset-1", "agent-principal-1", "a".repeat(64), "channel-1"]) {
+      expect(detail.querySelector(`[title="${value}"]`)).not.toBeNull();
+    }
     expect(section.textContent).not.toMatch(/private-prompt|private-secret-ref|\/private\/runtime\/root/);
     const controls = [...section.querySelectorAll("button")].map((b) => b.textContent);
     for (const label of ["Install", "Run", "Create session", "Disable"]) {
@@ -4252,12 +4294,12 @@ describe("AgentDefinitionsPage installation read-only facts", () => {
     const host = await mount(t, <AgentDefinitionsPage />);
     await settle();
     const section = host.querySelector("[data-testid=agent-installations]") as HTMLElement;
-    expect(section.textContent).toContain("No agents to show on this page.");
-    await click(button(section, "Next page"));
+    // DD-170 §16.2(3): the bounded read continues past an empty page and counts what it found.
+    expect(section.textContent).not.toContain("No agents in this workspace yet");
     expect(section.querySelector('[data-testid="agent-installation-installation-1"]')).not.toBeNull();
+    expect(section.textContent).toContain("1 total");
     expect(t.send).toHaveBeenCalledWith({method: "GET", path: "/api/v1/agent-versions/pinned-asset-1"});
     expect(t.send).toHaveBeenCalledWith({ method: "GET", path: "/api/v1/agent-installations?workspaceId=workspace-1&offset=9" });
-    expect(button(section, "Previous page")).toBeTruthy();
     expect(t.send.mock.calls.every(([r]) => r.method === "GET")).toBe(true);
   });
 
@@ -4272,24 +4314,24 @@ describe("AgentDefinitionsPage installation read-only facts", () => {
     const host = await mount(routes(() => ({ status: 200, body: { installations: [row] } })), <AgentDefinitionsPage />);
     await settle();
     const section = host.querySelector("[data-testid=agent-installations]") as HTMLElement;
-    expect(section.querySelector("[role=status]")?.textContent).toContain("result is unknown");
-    expect(section.textContent).not.toContain("No agents to show on this page.");
+    expect(section.querySelector("[data-testid=error-state]")).not.toBeNull();
+    expect(section.textContent).not.toContain("No agents in this workspace yet");
     expect(section.textContent).not.toContain("pinned-asset-1");
     expect([...section.querySelectorAll("button")].some((b) => b.textContent === "View installation")).toBe(false);
   });
 
   it.each([
-    { reply: { status: 403, body: undefined }, label: "Not allowed" },
-    { reply: { status: 404, body: undefined }, label: "Not available here" },
+    { reply: { status: 403, body: undefined }, label: "You don’t have access" },
+    { reply: { status: 404, body: undefined }, label: "Not found" },
     { reply: { status: 503, body: { class: ErrorClass.Unknown, reason: ReasonCode.DependencyUnavailable } },
-      label: "result is unknown" },
+      label: "Couldn’t load this" },
   ])("installation read $reply.status does not turn into an authorized empty page", async ({ reply, label }) => {
     const t = routes(() => reply);
     const host = await mount(t, <AgentDefinitionsPage />);
     await settle();
     const section = host.querySelector("[data-testid=agent-installations]") as HTMLElement;
     expect(section.textContent).toContain(label);
-    expect(section.textContent).not.toContain("No agents to show on this page.");
+    expect(section.textContent).not.toContain("No agents in this workspace yet");
     expect(t.send.mock.calls.every(([r]) => r.method === "GET")).toBe(true);
   });
 
@@ -4298,8 +4340,8 @@ describe("AgentDefinitionsPage installation read-only facts", () => {
   it.each([
     { name: "core replace", label: "Replace core memory", action: "agent.memory.core.replace", slug: "core", mode: "value", state: "FOUND", head: "a".repeat(64), reply: undefined },
     { name: "entry set", label: "Set entry value", action: "agent.memory.entry.set", slug: "mem/context", mode: "value", state: "ABSENT", head: "b".repeat(64), reply: undefined },
-    { name: "entry patch", label: "Apply strict patch", action: "agent.memory.entry.patch", slug: "mem/context", mode: "patch", state: "FOUND", head: "b".repeat(64), reply: undefined },
-    { name: "entry remove", label: "Write tombstone", action: "agent.memory.entry.remove", slug: "mem/context", mode: "remove", state: "FOUND", head: "b".repeat(64), reply: undefined },
+    { name: "entry patch", label: "Edit with a patch", action: "agent.memory.entry.patch", slug: "mem/context", mode: "patch", state: "FOUND", head: "b".repeat(64), reply: undefined },
+    { name: "entry remove", label: "Delete entry", action: "agent.memory.entry.remove", slug: "mem/context", mode: "remove", state: "FOUND", head: "b".repeat(64), reply: undefined },
     { name: "unclassified 503", label: "Replace core memory", action: "agent.memory.core.replace", slug: "core", mode: "value", state: "FOUND", head: "a".repeat(64), reply: { status: 503, body: undefined } },
     { name: "DENIED with unknown dispatch", label: "Replace core memory", action: "agent.memory.core.replace", slug: "core", mode: "value", state: "FOUND", head: "a".repeat(64), reply: { status: 200, body: { actionKey: "agent.memory.core.replace", actionExecutionId: "write-ae", operationId: "write-op", gateState: "DENIED", dispatchState: "UNKNOWN", reason: ReasonCode.PermissionDenied } } },
   ])("$name freezes the actual head and scope in the original ActionCommand", async ({ label, action, slug, mode, state, head, reply }) => {
@@ -4334,6 +4376,27 @@ describe("AgentDefinitionsPage installation read-only facts", () => {
       await click(button(host, "Read entry"));
     }
     await click(button(host, label));
+    if (mode === "remove") {
+      // DD-170 §16.6: deleting an entry is confirmed in a dialog naming it; UNKNOWN keeps that dialog
+      // and its frozen request, and re-checking resends the identical command.
+      const confirm = () => document.querySelector<HTMLElement>("[data-testid=agent-memory-remove]")!;
+      expect(confirm().textContent).toContain(`Delete the memory “${slug}”?`);
+      await click(confirm().querySelector<HTMLButtonElement>("[data-testid=confirm-dialog-action]")!);
+      const posted = t.send.mock.calls.map(([r]) => r).filter((r) => r.path === "/api/v1/actions");
+      expect(posted).toHaveLength(1);
+      expect(posted[0]?.body).toEqual({ actionKey: action, idempotencyKey: expect.any(String),
+        resourceId: installation.resourceId, resourceVersion: installation.resourceVersion, workspaceId: installation.workspaceId,
+        memoryWrite: { slug, expectedHeadState: state, expectedHeadEventId: head } });
+      expect(confirm().textContent).toContain("Outcome is not confirmed");
+      expect(button(host, "Close memory").disabled).toBe(true);
+      await act(async () => confirm().dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+      expect(document.querySelector("[data-testid=agent-memory-remove]")).not.toBeNull();
+      await click(confirm().querySelector<HTMLButtonElement>("[data-testid=confirm-dialog-action]")!);
+      const again = t.send.mock.calls.map(([r]) => r).filter((r) => r.path === "/api/v1/actions");
+      expect(again).toHaveLength(2);
+      expect(again[1]?.body).toEqual(again[0]?.body);
+      return;
+    }
     const editor = host.querySelector("[data-testid=agent-memory-editor]") as HTMLElement;
     const textarea = editor.querySelector("textarea");
     const text = mode === "patch" ? "--- a\n+++ b\n@@ -1 +1 @@\n-记忆\n+更新\n" : "更新";

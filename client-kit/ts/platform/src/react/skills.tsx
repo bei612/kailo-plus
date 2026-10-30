@@ -540,7 +540,7 @@ function SkillDetail({ resourceId, onLocked, onChanged }: {
       confirmLabel={action.unknown ? t("agents.retry") : decided ? t("agents.ui.close") : danger?.label ?? ""} onConfirm={confirmDanger}>
       {action.unknown ? <p role="status" className="break-words text-sm text-warning-text">{t("agents.unknown",
         { operation: action.submission?.operationId ?? (action.failure?.kind === "unknown" ? action.failure.operationId : undefined) ?? "—" })}</p>
-        : action.failure ? <p role="alert" className="text-sm text-danger-text">{t("agents.rejected", { reason: failureText(action.failure) })}</p>
+        : action.failure?.kind === "rejected" ? <p role="alert" className="text-sm text-danger-text">{t("agents.rejected", { reason: failureText(action.failure) })}</p>
         : action.submission?.reason ? <p role="alert" className="text-sm text-danger-text">{reasonText(action.submission.reason)}</p> : null}
     </ConfirmDialog>
   </section>;

@@ -1,4 +1,5 @@
 // DD-135、05 §2.14、17 §8：Agents 页内 Skills 区的共用行为（Web/Desktop 同一实现）。
+import { act } from "react";
 import { describe, expect, it, vi } from "vitest";
 import type { ActionCommand } from "@client-kit/contracts";
 import { createBffClient } from "../src/client";
@@ -43,6 +44,18 @@ async function mount(t: BffTransport, ui: React.ReactNode) {
   await render(<PlatformProvider client={createBffClient(t)} locale="en">{ui}</PlatformProvider>);
   await settle();
   return document.body;
+}
+
+/** DD-170: secondary Skill actions live in the detail's "More actions" menu. */
+async function chooseMore(label: string, testId = "skill-more") {
+  const trigger = document.querySelector<HTMLButtonElement>(`[data-testid=${testId}]`)
+    ?? document.querySelector<HTMLButtonElement>(`button[aria-label="${testId}"]`);
+  if (!trigger) throw new Error(`Missing menu ${testId}`);
+  await act(async () => trigger.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })));
+  await settle();
+  const item = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((node) => node.textContent === label);
+  if (!item) throw new Error(`Missing menu item ${label}`);
+  await click(item);
 }
 
 function actions(t: { send: ReturnType<typeof vi.fn> }): ActionCommand[] {
@@ -176,7 +189,7 @@ describe("Skills section in the Agents page", () => {
     const host = await mount(t, <SkillsSection />);
     await click(host.querySelector<HTMLButtonElement>(`[data-testid=skill-definition-${definitionId}] button`)!);
     expect(document.querySelector("[data-testid=skill-version]")?.getAttribute("data-state")).toBe("DRAFT");
-    await click(button(document.body, "Publish exact draft"));
+    await click(button(document.body, "Publish"));
     // 确认文案以成员看到的版本序号称呼版本，而不是并发控制用的 assetVersion（生产验收 D2）。
     const review = document.querySelector("[data-testid=skill-action-review]")?.textContent ?? "";
     expect(review).toContain("Publish version v1 of Release notes.");
@@ -201,13 +214,52 @@ describe("Skills section in the Agents page", () => {
     });
     const host = await mount(t, <SkillsSection />);
     await click(host.querySelector<HTMLButtonElement>(`[data-testid=skill-definition-${definitionId}] button`)!);
-    await click(button(document.body, "Share to catalog"));
+    await chooseMore("Share to catalog");
     await click(button(document.body, "Submit governed request"));
     await click(button(document.body, "Re-check same request"));
     const sent = actions(t);
     expect(calls).toBe(2);
     expect(sent[0]?.idempotencyKey).toBe(sent[1]?.idempotencyKey);
     expect(sent[0]?.actionKey).toBe("skill.definition.share");
+  });
+});
+
+describe("Skill destructive actions (DD-170 §16.6)", () => {
+  const published = { ...draft, state: "PUBLISHED", current: true, canPublish: false, canRetire: true };
+  it("retires a version only through the confirmation dialog and re-checks an UNKNOWN outcome with the same key", async () => {
+    let calls = 0;
+    const t = transport((request) => {
+      if (request.path === "/api/v1/skill-definitions") return { status: 200, body: { definitions: [definition] } };
+      if (request.path === `/api/v1/skill-definitions/${definitionId}`) return { status: 200, body: definition };
+      if (request.path.startsWith(`/api/v1/skill-definitions/${definitionId}/versions`)) return { status: 200, body: { skillResourceId: definitionId, resourceVersion: 2, versions: [published] } };
+      if (request.path === "/api/v1/actions") {
+        calls += 1;
+        return calls === 1 ? { status: 503, body: { class: "UNKNOWN", reason: "DISPATCH_RESULT_UNKNOWN", operationId: "op" } }
+          : submission(request.body as ActionCommand);
+      }
+      return { status: 404, body: undefined };
+    });
+    const host = await mount(t, <SkillsSection />);
+    await click(host.querySelector<HTMLButtonElement>(`[data-testid=skill-definition-${definitionId}] button`)!);
+    // The owner reads as a name, never the Principal ID; the digest is only a technical identifier.
+    const detail = document.querySelector<HTMLElement>("[data-testid=skill-detail]")!;
+    expect(detail.textContent).not.toContain(ownerId);
+    expect(detail.textContent).not.toContain(digest);
+    expect(detail.textContent).toContain("Unknown member");
+    await chooseMore("Retire", "Actions for v1");
+    const dialog = document.querySelector<HTMLElement>("[data-testid=skill-danger-confirm]")!;
+    expect(dialog.textContent).toContain("Retire v1 of “Release notes”?");
+    expect(actions(t)).toEqual([]);
+    await click(dialog.querySelector<HTMLButtonElement>("[data-testid=confirm-dialog-action]")!);
+    expect(actions(t)).toHaveLength(1);
+    expect(document.querySelector("[data-testid=skill-danger-confirm]")).not.toBeNull();
+    expect(document.querySelector("[data-testid=skill-danger-confirm]")?.textContent).toContain("Outcome is not confirmed.");
+    await click(document.querySelector<HTMLButtonElement>("[data-testid=skill-danger-confirm] [data-testid=confirm-dialog-action]")!);
+    const sent = actions(t);
+    expect(sent).toHaveLength(2);
+    expect(sent[1]).toEqual(sent[0]);
+    expect(sent[0]).toMatchObject({ actionKey: "skill.version.retire", resourceId: definitionId, assetId, explicitConfirmation: true });
+    expect(document.querySelector("[data-testid=skill-danger-confirm]")).toBeNull();
   });
 });
 

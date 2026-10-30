@@ -76,6 +76,17 @@ async function mountAgents(send: ReturnType<typeof agentsPage>) {
   return host;
 }
 
+/** DD-170: secondary installation actions live in the detail's "More actions" menu. */
+async function chooseMore(label: string, testId = "agent-installation-more") {
+  const trigger = document.querySelector<HTMLButtonElement>(`[data-testid=${testId}]`);
+  if (!trigger) throw new Error(`Missing menu ${testId}`);
+  await act(async () => trigger.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })));
+  await settle();
+  const item = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((node) => node.textContent === label);
+  if (!item) throw new Error(`Missing menu item ${label}`);
+  await click(item);
+}
+
 function section(host: HTMLElement, name: string): HTMLElement {
   const found = host.querySelector<HTMLElement>(`[data-testid=${name}]`);
   if (!found) throw new Error(`Missing section ${name}: ${host.textContent}`);
@@ -120,14 +131,15 @@ describe("Installation tools (DD-122)", () => {
     expect(rows[1]?.textContent).toContain("Knowledge search");
     expect(rows[1]?.textContent).toContain("Application");
     expect(rows[1]?.textContent).toContain("knowledge.search@v1");
-    expect(rows[1]?.textContent).toContain(provider);
+    // DD-170: the provider binding is an identifier — shortened, full value on hover.
+    expect(rows[1]?.querySelector(`[title="${provider}"]`)).not.toBeNull();
     expect(rows[1]?.textContent).toContain("Not granted");
     expect(rows[1]?.textContent).toContain("The installer needs share permission on this tool.");
     expect(rows[2]?.textContent).toContain("files.read@v1");
     expect(rows[2]?.textContent).toContain("No provider yet");
     expect(rows[2]?.textContent).toContain("Awaiting provider");
     expect(rows[3]?.textContent).toContain("Revoked");
-    expect(view.textContent).toContain("Projection generation: 2");
+    expect(view.textContent).not.toContain("Projection generation");
     expect(posts(send)).toHaveLength(0);
   });
 
@@ -214,7 +226,7 @@ describe("Delegation tool scopes (DD-122 (5))", () => {
   it("grants agent.invoke and two tool scopes in one grant (DD-153, V-SCN-252)", async () => {
     const send = routes();
     const host = await mountAgents(send);
-    await click(button(host, "View delegation grants"));
+    await chooseMore("View delegation grants");
     await settle();
     const management = section(host, "agent-delegation-management");
     expect(choices(management)).toContain(`Memory list · agent.memory.entry.list · ${installation.resourceId} · 1`);
@@ -241,7 +253,7 @@ describe("Delegation tool scopes (DD-122 (5))", () => {
   it("refuses a grant with tool scopes but no invocation scope and explains why (DD-153)", async () => {
     const send = routes();
     const host = await mountAgents(send);
-    await click(button(host, "View delegation grants"));
+    await chooseMore("View delegation grants");
     await settle();
     const management = section(host, "agent-delegation-management");
     await tick(management, "Memory list");
@@ -257,7 +269,7 @@ describe("Delegation tool scopes (DD-122 (5))", () => {
 
   it("marks an active tool-only grant as lacking an invocation grant (DD-153 (3))", async () => {
     const host = await mountAgents(routes());
-    await click(button(host, "View delegation grants"));
+    await chooseMore("View delegation grants");
     await settle();
     const management = section(host, "agent-delegation-management");
     expect(section(management, "agent-delegation-tool-only").textContent)
@@ -280,7 +292,7 @@ describe("Delegation tool scopes (DD-122 (5))", () => {
       return undefined;
     });
     const host = await mountAgents(send);
-    await click(button(host, "View delegation grants"));
+    await chooseMore("View delegation grants");
     await settle();
     const management = section(host, "agent-delegation-management");
     await tick(management, "agent.invoke");
@@ -315,7 +327,7 @@ describe("Delegation tool scopes (DD-122 (5))", () => {
     </PlatformProvider>);
     await settle();
     await click(button(section(document.body, "agent-installations"), "View installation"));
-    await click(button(document.body, "View delegation grants"));
+    await chooseMore("View delegation grants");
     await settle();
     const management = section(document.body, "agent-delegation-management");
     await tick(management, "Memory list");
@@ -343,7 +355,7 @@ describe("Delegation tool scopes (DD-122 (5))", () => {
       return undefined;
     });
     const host = await mountAgents(send);
-    await click(button(host, "View delegation grants"));
+    await chooseMore("View delegation grants");
     await settle();
     const management = section(host, "agent-delegation-management");
     expect(choices(management).some((label) => label?.includes("installation-2"))).toBe(false);

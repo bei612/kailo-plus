@@ -167,7 +167,7 @@ function MemoryContents({ resourceId, workspaceId, installation, onLocked }: {
     <SectionCard testId="agent-memory-core">
       <div className="flex flex-col gap-0.5">
         <h5 className="text-sm font-semibold">{t("agents.memory.core")}</h5>
-        <p className="text-sm text-muted-foreground">{t("agents.memory.newSessions")}</p>
+        <p className="text-sm text-muted-foreground">{t("agents.ui.memory.newSessions")}</p>
       </div>
       <MemoryBody key={`core:${round}`} resourceId={resourceId} workspaceId={workspaceId} slug="core" onEdit={onEdit} />
       {coreMissingLinks.length ? <MemoryDanglingRefsHint slugs={coreMissingLinks} /> : null}
@@ -180,7 +180,7 @@ function MemoryContents({ resourceId, workspaceId, installation, onLocked }: {
       {state.status === "pending" ? <DetailSkeleton lines={3} />
         : !page ? <ErrorState compact error={state.status === "error" ? state.error : undefined} onRetry={reload} />
         : page.state !== "COMPLETE" ? <p role="status" className="rounded-lg bg-muted/50 p-3 text-sm text-muted-foreground">
-            {t(page.state === "BOUND_EXCEEDED" ? "agents.memory.boundExceeded" : "agents.memory.unknown")}</p>
+            {t(page.state === "BOUND_EXCEEDED" ? "agents.ui.memory.boundExceeded" : "agents.ui.memory.unknown")}</p>
         : page.entries.length === 0 ? <EmptyState compact icon={Brain} title={t("agents.ui.memory.emptyTitle")} description={t("agents.ui.memory.emptyBody")} />
         : <>
           {order && !order.coreExists && page.entries.some((entry) => !entry.tombstone) ? <MemoryNoCoreHint /> : null}
@@ -197,7 +197,7 @@ function MemoryContents({ resourceId, workspaceId, installation, onLocked }: {
       <form className="flex flex-col gap-2" onSubmit={(event) => {
         event.preventDefault(); if (!edit && coldSlug(slugInput)) setNewSlug(slugInput);
       }}>
-        <label className="flex flex-col gap-1 text-sm">{t("agents.memory.newEntry")}
+        <label className="flex flex-col gap-1 text-sm">{t("agents.ui.memory.openByName")}
           <input value={slugInput} disabled={!!edit} onChange={(event) => setSlugInput(event.target.value)}
             className="h-8 rounded-md border border-input bg-background px-2" />
         </label>
@@ -239,7 +239,7 @@ function MemoryEntryAccordion({ entry, missingLinks, resourceId, workspaceId, on
         </div>
         <div className="mt-1 text-xs leading-5 text-foreground/70">
           {new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short" }).format(entry.createdAt * 1000)}
-          {" · "}{t(entry.tombstone ? "agents.memory.tombstone" : "agents.memory.readEntry")}
+          {" · "}{t(entry.tombstone ? "agents.ui.memory.deleted" : "agents.ui.memory.saved")}
         </div>
       </div></div>
     </button>
@@ -308,8 +308,8 @@ function MemoryBody({ resourceId, workspaceId, slug, onEdit }: {
         {onEdit && value.state !== "UNREADABLE" ? <div className="flex flex-wrap gap-2">
           <Button onClick={() => onEdit(value, "value")}>{t(slug === "core" ? "agents.memory.replace" : "agents.memory.set")}</Button>
           {slug !== "core" && value.state === "FOUND" ? <>
-            {eventId(value.valueHash) ? <Button onClick={() => onEdit(value, "patch")}>{t("agents.memory.patch")}</Button> : null}
-            <Button onClick={() => onEdit(value, "remove")}>{t("agents.memory.remove")}</Button>
+            {eventId(value.valueHash) ? <Button onClick={() => onEdit(value, "patch")}>{t("agents.ui.memory.patch")}</Button> : null}
+            <Button onClick={() => onEdit(value, "remove")}>{t("agents.ui.memory.deleteEntry")}</Button>
           </> : null}
         </div> : null}
         <TechnicalDetails items={[{ id: "head", label: t("agents.ui.memory.head"), value: value.eventId }]} />
@@ -335,8 +335,8 @@ function MemoryEditor({ edit, installation, canWrite, requestBlocked, onFinished
   const actionKey = edit.read.slug === "core" ? "agent.memory.core.replace"
     : edit.mode === "patch" ? "agent.memory.entry.patch"
     : edit.mode === "remove" ? "agent.memory.entry.remove" : "agent.memory.entry.set";
-  const title = edit.read.slug === "core" ? "agents.memory.replace" : edit.mode === "patch" ? "agents.memory.patch"
-    : edit.mode === "remove" ? "agents.memory.remove" : "agents.memory.set";
+  const title = edit.read.slug === "core" ? "agents.memory.replace" : edit.mode === "patch" ? "agents.ui.memory.patch"
+    : edit.mode === "remove" ? "agents.ui.memory.deleteEntry" : "agents.memory.set";
   const build = (): ActionCommand | null => {
     if (intent || busy || !canWrite || requestBlocked
       || !validMemoryRead(edit.read, installation.resourceId, installation.workspaceId, edit.read.slug)
@@ -407,8 +407,8 @@ function MemoryEditor({ edit, installation, canWrite, requestBlocked, onFinished
     };
     return <ConfirmDialog open testId="agent-memory-remove" pending={busy}
       onOpenChange={(open) => { if (!open && !busy && !unknown) onFinished(decided); }}
-      title={t("agents.ui.memory.removeTitle", { slug: edit.read.slug })} description={t("agents.memory.tombstoneWarning")}
-      confirmLabel={unknown ? t("agents.retry") : decided ? t("agents.ui.close") : t("agents.memory.remove")} onConfirm={confirm}>
+      title={t("agents.ui.memory.removeTitle", { slug: edit.read.slug })} description={t("agents.ui.memory.removeBody")}
+      confirmLabel={unknown ? t("agents.retry") : decided ? t("agents.ui.close") : t("agents.ui.memory.delete")} onConfirm={confirm}>
       {submission ? <p role="status" className="break-words text-sm">{unknown ? t("agents.unknown", { operation: submission.operationId })
         : submission.reason ? reasonText(submission.reason) : t("agents.memory.recorded", { execution: submission.actionExecutionId, operation: submission.operationId })}</p> : null}
       {failure ? <p role={failure.kind === "unknown" ? "status" : "alert"} className="break-words text-sm">{failure.kind === "unknown"
@@ -420,17 +420,17 @@ function MemoryEditor({ edit, installation, canWrite, requestBlocked, onFinished
     <h5 className="text-sm font-semibold">{t(title)}</h5>
     <p className="break-words text-sm"><MemorySlugTitle slug={edit.read.slug} /></p>
     {!intent && !decided ? <form className="flex flex-col gap-3" onSubmit={(event) => { event.preventDefault(); prepare(); }}>
-      {edit.mode !== "remove" ? <label className="flex flex-col gap-1 text-sm">{t(edit.mode === "patch" ? "agents.memory.patchText" : "agents.memory.value")}
+      <label className="flex flex-col gap-1 text-sm">{t(edit.mode === "patch" ? "agents.ui.memory.patchText" : "agents.memory.value")}
         <textarea value={edit.mode === "patch" ? patch : value}
           onChange={(event) => edit.mode === "patch" ? setPatch(event.target.value) : setValue(event.target.value)}
           className="min-h-40 rounded-md border border-input bg-background p-2 text-sm" />
-      </label> : <p className="text-sm">{t("agents.memory.tombstoneWarning")}</p>}
+      </label>
       <TechnicalDetails items={[{ id: "head", label: t("agents.ui.memory.head"), value: edit.read.eventId },
         { id: "base", label: t("agents.memory.baseHash"), value: edit.mode === "patch" ? edit.read.valueHash : undefined }]} />
       <div className="flex gap-2"><Button type="submit" disabled={!canWrite || requestBlocked || (edit.mode === "patch" && !patch)}>{t("agents.review")}</Button>
         <Button onClick={() => onFinished(false)}>{t("agents.cancel")}</Button></div>
     </form> : intent ? <div className="flex flex-col gap-2 text-sm" role="group">
-      <p>{t("agents.memory.review")}</p><p className="text-muted-foreground">{t("agents.admission")}</p>
+      <p>{t("agents.ui.memory.review")}</p>
       <div className="flex gap-2"><Button disabled={busy || !canWrite} onClick={() => void submit()}>
         {busy ? t("platform.loading") : unknown ? t("agents.retry") : t("agents.confirm")}
       </Button>{!busy && !unknown ? <Button onClick={() => onFinished(false)}>{t("agents.cancel")}</Button> : null}</div>

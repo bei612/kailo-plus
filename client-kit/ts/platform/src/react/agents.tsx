@@ -58,7 +58,7 @@ import { Badge, Button, Cell, Notice, Table, ReadFailure as AgentReadFailure, Da
 import { ListSearch } from "./data-table";
 import { NoMatchState } from "./state-views";
 import { useOffsetCollection } from "./use-offset-collection";
-import { ExpandableText, MoreMenu, PrincipalName, SectionCard, TechnicalDetails } from "./agents/detail-kit";
+import { classifiedError, ExpandableText, MoreMenu, PrincipalName, SectionCard, TechnicalDetails } from "./agents/detail-kit";
 import { AgentCard, CARD_GRID_CLASS } from "./agents/agent-card";
 import { useLifecycleRequest } from "./agent-activity/AgentLifecycleControls";
 import { lifecycleOffer } from "./agent-activity/agentLifecycle";
@@ -2814,7 +2814,7 @@ function DefinitionDetail({ resourceId, locked, onEdit, onVersionEdit, onExport 
   const [configuration, reloadConfiguration] = useVersionConfiguration(row);
   const [revision, setRevision] = useState(0);
   if (state.status === "pending") return <DetailSkeleton />;
-  if (!row) return <ErrorState error={state.status === "error" ? state.error : undefined} onRetry={reload} />;
+  if (!row) return <ErrorState error={state.status === "error" ? classifiedError(state.error) : undefined} onRetry={reload} />;
   const value = publishedState.status === "ok" ? publishedState.data : null;
   const published = value && validVersion(value, resourceId) && value.assetId === assetId
     && value.state === AgentVersionState.Published && versionMissing(value.content).length === 0 ? value : null;
@@ -2840,7 +2840,7 @@ function DefinitionDetail({ resourceId, locked, onEdit, onVersionEdit, onExport 
           ]} />
         </>} />
       {assetId && publishedState.status === "pending" ? <DetailSkeleton lines={4} />
-        : assetId && !published ? <ErrorState compact error={publishedState.status === "error" ? publishedState.error : undefined} onRetry={reloadPublished} />
+        : assetId && !published ? <ErrorState compact error={publishedState.status === "error" ? classifiedError(publishedState.error) : undefined} onRetry={reloadPublished} />
         : <KeyValueList testId="agent-definition-facts" items={[
           { id: "slug", label: t("agents.slug"), value: <code className="font-mono text-[0.8125rem]">{row.stableSlug}</code> },
           { id: "owner", label: t("agents.owner"), value: <PrincipalName principalId={row.ownerPrincipalId} /> },
@@ -3194,7 +3194,7 @@ function VersionAction({ edit, avatarHost, onReset, onLocked, onRecorded }: {
       title={t("agents.ui.version.retireTitle", { name: edit?.definition.displayName ?? "", ordinal: String(target?.ordinal ?? "") })}
       description={t("agents.ui.version.retireBody", { ordinal: String(target?.ordinal ?? "") })}
       confirmLabel={unknown ? t("agents.retry") : t("agents.ui.version.retire")} onConfirm={confirmRetire}>
-      {unknown ? <p role="status" className="break-words text-sm text-warning-text">{t("agents.unknown", { operation: submission?.operationId ?? failure?.operationId ?? "—" })}</p>
+      {unknown ? <p role="status" className="break-words text-sm text-warning-text">{t("agents.unknown", { operation: submission?.operationId ?? (failure?.kind === "unknown" ? failure.operationId : undefined) ?? "—" })}</p>
         : failure ? <p role="alert" className="text-sm text-danger-text">{t("agents.rejected", { reason: failureText(failure) })}</p>
         : submission?.reason ? <p role="alert" className="text-sm text-danger-text">{reasonText(submission.reason)}</p>
         : !taskRows ? <p role="status" className="text-sm text-muted-foreground">{t("agents.inFlightUnavailable")}</p>

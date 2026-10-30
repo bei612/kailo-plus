@@ -4,7 +4,8 @@
 // "More" menu; owners are people's names, never Principal IDs; long text is collapsible.
 import { Fragment, type ReactNode, useState } from "react";
 import { ChevronRight, MoreHorizontal } from "lucide-react";
-import type { ConversationParticipantPage } from "@client-kit/contracts";
+import { ErrorClass, type ConversationParticipantPage } from "@client-kit/contracts";
+import { BffError } from "../../transport";
 import type { BffClient } from "../../client";
 import { useBffClient, useCurrentPrincipalId, useT } from "../context";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "../sidebar/dropdown-menu";
@@ -148,4 +149,14 @@ export function PrincipalName({ principalId, known }: { principalId: string | un
 /** A card-like block for a section body (white card, hairline, padding). */
 export function SectionCard({ children, testId }: { children: ReactNode; testId?: string }) {
   return <div className="flex min-w-0 flex-col gap-3 rounded-xl border border-border bg-card p-4" data-testid={testId}>{children}</div>;
+}
+
+/**
+ * A read failure as ErrorState should classify it: an UNKNOWN reply, or one whose error class this
+ * client does not know, proves nothing — it is shown as "could not load" (retry), never as "no
+ * access" and never with a reason that reads like a decision.
+ */
+export function classifiedError(error: unknown): unknown {
+  return error instanceof BffError && error.errorClass !== undefined
+    && (error.errorClass === ErrorClass.Unknown || !Object.values(ErrorClass).includes(error.errorClass)) ? undefined : error;
 }

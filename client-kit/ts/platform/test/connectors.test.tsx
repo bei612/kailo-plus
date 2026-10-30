@@ -77,6 +77,18 @@ const requests = (send: { mock: { calls: unknown[][] } }, path: string) =>
 const actions = (send: { mock: { calls: unknown[][] } }) =>
   requests(send, "/api/v1/actions").map((request) => request.body as Record<string, unknown>);
 
+/** DD-170: secondary and destructive connector actions live in the detail's "More actions" menu. */
+async function chooseMore(label: string) {
+  const trigger = document.querySelector<HTMLButtonElement>("[data-testid=connector-more]");
+  if (!trigger) throw new Error("Missing connector menu");
+  await act(async () => trigger.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })));
+  await settle();
+  const item = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((node) => node.textContent === label);
+  if (!item) throw new Error(`Missing menu item ${label}`);
+  await click(item);
+}
+const confirmAction = () => document.querySelector<HTMLButtonElement>("[data-testid=confirm-dialog-action]")!;
+
 const field = <T extends Element = HTMLInputElement>(root: ParentNode, label: string) => {
   const found = root.querySelector<T & Element>(`[aria-label="${label}"]`);
   if (!found) throw new Error(`no field ${label}`);
@@ -165,7 +177,8 @@ describe("connector list (DD-149 (10))", () => {
   it("shows tools from the external service as plain labelled text", async () => {
     const { host } = await mount(routes(), <ConnectorsSettingsPanel />);
     await click(button(host, "Details"));
-    const detail = host.querySelector<HTMLElement>("[data-testid=connector-detail]")!;
+    // DD-170: the connector detail opens in its own dialog.
+    const detail = document.body.querySelector<HTMLElement>("[data-testid=connector-detail]")!;
     expect(detail.querySelectorAll("[data-testid=connector-tool-row]")).toHaveLength(2);
     expect(detail.textContent).toContain("Provided by the external service: Searches the docs");
     expect(detail.textContent).toContain("Read-only");
@@ -368,17 +381,17 @@ describe("managing a connector (V-SCN-244/245)", () => {
     const { host, send } = await mount(routes((request) => request.path === "/api/v1/mcp-connections/conn-1/refresh"
       ? { status: 200, body: refresh } : undefined), <ConnectorsSettingsPanel />);
     await click(button(host, "Details"));
-    await click(button(host, "Refresh tool list"));
+    await click(button(document.body, "Refresh tool list"));
     expect(requests(send, "/api/v1/mcp-connections/conn-1/refresh")[0]).toMatchObject({ method: "POST", body: {} });
-    const outcome = host.querySelector("[data-testid=connector-refresh-result]")!;
+    const outcome = document.body.querySelector("[data-testid=connector-refresh-result]")!;
     expect(outcome.textContent).toContain("Added: purge");
     expect(outcome.textContent).toContain("Changed: update");
-    await click(button(host, "Confirm again"));
-    const reconfirm = host.querySelector<HTMLElement>("[data-testid=connector-reconfirm]")!;
+    await click(button(document.body, "Confirm again"));
+    const reconfirm = document.body.querySelector<HTMLElement>("[data-testid=connector-reconfirm]")!;
     expect(reconfirm.querySelector<HTMLInputElement>("input[value=TENANT]")!.checked).toBe(true);
     expect(field<HTMLSelectElement>(reconfirm, "Calls for purge").value).toBe("APPROVAL");
-    await click(button(host, "Confirm update"));
-    await click(button(host, "Confirm"));
+    await click(button(document.body, "Confirm update"));
+    await click(button(document.body, "Confirm"));
     expect(actions(send)[0]).toMatchObject({ actionKey: "mcp_connection.update", explicitConfirmation: true, resourceId: "conn-1", resourceVersion: 3,
       mcpConnectionUpdate: { visibility: "TENANT", toolsDigest: "sha256:digest-two", tools: [
         { upstreamName: "search", enabled: true, risk: "READ_ONLY", callPolicy: "AUTO" },
@@ -391,15 +404,19 @@ describe("managing a connector (V-SCN-244/245)", () => {
   it("disables and deletes through explicit confirmations", async () => {
     const { host, send } = await mount(routes(), <ConnectorsSettingsPanel />);
     await click(button(host, "Details"));
-    await click(button(host, "Disable"));
-    expect(host.textContent).toContain("Disable this connector? Agents can no longer call its tools.");
-    await click(button(host, "Confirm"));
+    await chooseMore("Disable");
+    const disable = await waitFor(() => document.body.querySelector<HTMLElement>("[data-testid=connector-danger-dialog]"));
+    expect(disable.textContent).toContain("Disable the connector “Weather”?");
+    expect(disable.textContent).toContain("Disable this connector? Agents can no longer call its tools.");
+    expect(actions(send)).toHaveLength(0);
+    await click(confirmAction());
     expect(actions(send)[0]).toEqual({ actionKey: "mcp_connection.disable", explicitConfirmation: true, resourceId: "conn-1",
       resourceVersion: 3, idempotencyKey: expect.any(String) });
-    await click(button(host, "Delete"));
+    expect(document.body.querySelector("[data-testid=connector-danger-dialog]")).toBeNull();
+    await chooseMore("Delete");
     const dialog = await waitFor(() => document.body.querySelector<HTMLElement>("[data-testid=connector-delete-dialog]"));
     expect(dialog.textContent).toContain("Delete “Weather”? This cannot be undone.");
-    await click(button(dialog, "Confirm"));
+    await click(confirmAction());
     expect(actions(send)[1]).toMatchObject({ actionKey: "mcp_connection.delete", explicitConfirmation: true, resourceId: "conn-1", resourceVersion: 3 });
     expect(actions(send)[1]!.idempotencyKey).not.toBe(actions(send)[0]!.idempotencyKey);
   });
@@ -407,14 +424,33 @@ describe("managing a connector (V-SCN-244/245)", () => {
   it("rotates an API key without rendering it", async () => {
     const { host, send } = await mount(routes(), <ConnectorsSettingsPanel />);
     await click(button(host, "Details"));
-    const input = field(host, "New API Key");
+    const input = field(document.body, "New API Key");
     expect(input.type).toBe("password");
     await type(input, SECRET);
-    await click(button(host, "Rotate credential"));
-    await click(button(host, "Confirm"));
+    await click(button(document.body, "Rotate credential"));
+    expect(document.body.querySelector("[data-testid=connector-danger-dialog]")?.textContent).toContain("Replace the credential of “Weather”?");
+    expect(actions(send)).toHaveLength(0);
+    await click(confirmAction());
     expect(actions(send)[0]).toMatchObject({ actionKey: "mcp_connection.rotate_credential", resourceId: "conn-1", resourceVersion: 3,
       mcpConnectionCredential: { value: SECRET } });
     expect(document.body.textContent).not.toContain(SECRET);
+  });
+
+  it("keeps a disable whose outcome is unknown open and re-checks the same request", async () => {
+    let count = 0;
+    const { host, send } = await mount(routes((request) => request.path === "/api/v1/actions"
+      ? receipt(request.body as { actionKey: string }, ++count === 1 ? { dispatchState: "UNKNOWN" } : {}) : undefined), <ConnectorsSettingsPanel />);
+    await click(button(host, "Details"));
+    await chooseMore("Disable");
+    await click(confirmAction());
+    const dialog = document.body.querySelector<HTMLElement>("[data-testid=connector-danger-dialog]")!;
+    expect(dialog).not.toBeNull();
+    expect(dialog.textContent).toContain("Outcome is not confirmed.");
+    expect(confirmAction().textContent).toBe("Re-check same request");
+    await click(confirmAction());
+    expect(actions(send)).toHaveLength(2);
+    expect(actions(send)[1]).toEqual(actions(send)[0]);
+    expect(document.body.querySelector("[data-testid=connector-danger-dialog]")).toBeNull();
   });
 
   it("updates the tenant connector policy within the platform limit", async () => {
@@ -446,16 +482,19 @@ describe("Agents tool catalog entry (DD-149 (1)②③)", () => {
   it("groups connector tools under their connector and opens the same add panel", async () => {
     const { host, send } = await mount(routes((request) => request.path.startsWith("/api/v1/platform-tools?") ? { status: 200, body: tools } : undefined),
       <ToolManagement />);
-    const group = host.querySelector<HTMLElement>("[data-testid=platform-tools-connector]")!;
-    expect(group.textContent).toContain("Weather");
-    expect(group.textContent).toContain("External");
-    expect(group.querySelectorAll("[data-testid=platform-tool-connector-row]")).toHaveLength(2);
-    expect(group.textContent).toContain("Provided by the external service: Searches <i>docs</i>");
-    expect(group.querySelector("i")).toBeNull();
-    expect(group.textContent).toContain("Requires admin approval");
-    expect(group.textContent).toContain("Destructive");
-    expect(group.textContent).not.toMatch(internal);
-    expect(host.textContent).toContain("native-1");
+    // DD-170 §16.2: one catalog table with the source of each tool and a total.
+    const table = host.querySelector<HTMLElement>("[data-testid=platform-tools] table")!;
+    const row = (id: string) => table.querySelector<HTMLElement>(`tr[data-row-key="${id}"]`)!;
+    expect(table.querySelectorAll("tbody tr")).toHaveLength(3);
+    expect(host.textContent).toContain("3 total");
+    expect(row("tool-search").textContent).toContain("Weather");
+    expect(row("tool-search").textContent).toContain("External");
+    expect(row("tool-search").textContent).toContain("Provided by the external service: Searches <i>docs</i>");
+    expect(table.querySelector("i")).toBeNull();
+    expect(row("tool-purge").textContent).toContain("Requires admin approval");
+    expect(row("tool-purge").textContent).toContain("Destructive");
+    expect(table.textContent).not.toMatch(internal);
+    expect(row("native-1").querySelector('[title="native-1"]')).not.toBeNull();
     expect(requests(send, "/api/v1/mcp-connections")).toHaveLength(0);
     await click(button(host, "Add connector"));
     const panel = await waitFor(() => document.body.querySelector<HTMLElement>("[data-testid=connector-add-dialog] [data-testid=connector-add]"));

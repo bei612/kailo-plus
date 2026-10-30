@@ -83,7 +83,9 @@ describe("original Agent library identity consumers", () => {
     expect(face.textContent).toContain("Owner-authored description");
     expect(face.textContent).not.toContain(definition.stableSlug);
     expect(face.textContent).not.toContain("Definition ready");
-    expect(face.className).toContain("aspect-[4/5]");
+    // DD-170 §16.2(1): a compact identity card — name, one line of description and a status.
+    expect(face.className).not.toContain("aspect-[4/5]");
+    expect(face.textContent).toContain("Published");
     expect(face.querySelector("img")?.getAttribute("src")).toBe("/api/v1/profile/media/persona");
     expect(f.send).toHaveBeenCalledWith({ method: "GET", path: "/api/v1/agent-versions/published" });
     expect(f.send.mock.calls.every(([request]) => request.method === "GET")).toBe(true);
@@ -95,15 +97,17 @@ describe("original Agent library identity consumers", () => {
     expect(card("definition-definition").textContent).toContain(definition.displayName);
     expect(card("definition-definition").textContent).not.toContain("Published persona");
     expect(card("definition-definition").querySelector("img")).toBeNull();
-    expect(card("definition-definition").parentElement?.querySelector("[role=status]")).not.toBeNull();
+    expect(card("definition-definition").textContent).toContain("Version details unavailable");
   });
   it("keeps version denial distinct from an absent authored description and allows authorized retry", async () => {
     let revoked = true;
     const f = fixture(request => request.path === "/api/v1/agent-versions/published" && revoked ? denied : undefined);
     await render(f.ui); await settle();
     expect(card("definition-definition").querySelector("img")).toBeNull();
+    expect(card("definition-definition").textContent).toContain("Version details unavailable");
     revoked = false;
-    await click(button(card("definition-definition").parentElement!, "Try again"));
+    // The page's one Refresh re-reads the exact published version.
+    await click(document.querySelector<HTMLButtonElement>('[data-testid="agent-definitions"] > div button[aria-label="Refresh"]')!);
     expect(card("definition-definition").textContent).toContain("Published persona");
     expect(f.send.mock.calls.filter(([request]) => request.path === "/api/v1/agent-versions/published")).toHaveLength(2);
   });
@@ -120,16 +124,20 @@ describe("original Agent library identity consumers", () => {
       ? { status: 200, body: installation } : undefined);
     await render(f.ui); await settle();
     const face = card("installation-installation");
-    expect(face.className).toContain("aspect-[4/5]");
+    expect(face.className).not.toContain("aspect-[4/5]");
     expect(face.textContent).toContain("Exact pinned persona");
-    expect(face.textContent).toContain("Active installation record");
+    expect(face.textContent).toContain("Running");
     expect(face.parentElement?.textContent).not.toContain("Exact version reference");
     expect(face.parentElement?.textContent).not.toContain(installation.agentPrincipalId);
     await click(face.querySelector<HTMLButtonElement>("button")!);
-    const detail = document.querySelector('[data-testid="agent-installation-detail"]');
+    const detail = document.querySelector<HTMLElement>('[data-testid="agent-installation-detail"]');
     expect(detail).not.toBeNull();
-    expect(detail?.textContent).toContain(`Exact version reference: ${installation.pinnedVersionAssetId}`);
-    expect(detail?.textContent).toContain(`Agent identity: ${installation.agentPrincipalId}`);
+    // DD-170 §16.3: references read as names; the exact IDs stay in the collapsed technical details.
+    expect(detail?.textContent).toContain("Exact pinned persona · v2");
+    expect(detail?.textContent).not.toContain(installation.agentPrincipalId);
+    await click(button(detail!, "Technical details"));
+    expect(detail?.querySelector(`[title="${installation.pinnedVersionAssetId}"]`)).not.toBeNull();
+    expect(detail?.querySelector(`[title="${installation.agentPrincipalId}"]`)).not.toBeNull();
     expect(f.send).toHaveBeenCalledWith({ method: "GET", path: "/api/v1/agent-installations/installation" });
     expect(f.send.mock.calls.every(([request]) => request.method === "GET")).toBe(true);
   });
@@ -139,7 +147,7 @@ describe("original Agent library identity consumers", () => {
     await render(f.ui); await settle();
     expect(card("installation-installation").querySelector("img")).toBeNull();
     expect(card("installation-installation").textContent).not.toContain("Published persona");
-    expect(card("installation-installation").parentElement?.querySelector("[role=status], [role=alert]")).not.toBeNull();
+    expect(card("installation-installation").textContent).toContain("Version details unavailable");
   });
   it("does not misuse the HUMAN-only profile reader for an AGENT even when its exact public mapping exists", async () => {
     const f = fixture();
@@ -151,10 +159,8 @@ describe("original Agent library identity consumers", () => {
     const f = fixture(request => request.path === "/api/v1/agent-definitions" ? new Promise(() => {}) : undefined);
     await render(f.ui); await settle();
     const loading = document.querySelector('[role=status][aria-label="Loading…"]')!;
+    expect(loading.getAttribute("data-testid")).toBe("card-skeleton");
     expect(loading.querySelectorAll(":scope > div")).toHaveLength(3);
-    expect(loading.querySelector('[class*="h-24 w-24"]')).not.toBeNull();
-    expect(loading.querySelector('[class*="w-14"]')).not.toBeNull();
-    expect(loading.querySelector('[class*="w-32"]')).not.toBeNull();
     expect(document.querySelector('[data-testid="new-agent-card"]')).toBeNull();
   });
   it("re-reads both exact published and pinned versions after the original page refresh", async () => {
