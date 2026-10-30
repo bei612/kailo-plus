@@ -32,6 +32,7 @@ import {
 import { BffError, type WriteFailure, writeFailure } from "../transport";
 import { useBffClient, useFailureText, useLocale, useT } from "./context";
 import { ActionLabel, Badge, Button, Cell, Notice, Table } from "./ui";
+import { ErrorState, TableSkeleton } from "./state-views";
 import { type Loaded, useLoad } from "./use-load";
 import { LegacySecretRefManagement, RoleManagement } from "./roles";
 import { PlatformFeedback } from "./feedback/PlatformFeedback";
@@ -49,25 +50,24 @@ export { MembersPane, type MemberIdentityRenderer } from "./members";
 export { AgentDefinitionsPage, WorkspaceAgentDialogs } from "./agents";
 export { NativeApplicationEntries } from "./native-application-entries";
 
-/** 按读取状态渲染：载入中、结果不明（可重试）、或数据。 */
+/**
+ * 按读取状态渲染（DD-168 §16.4）：载入中是与页面同形的骨架，不是一行“载入中”；
+ * 拒绝读取说明没有权限，结果不明给出重试；成功才渲染数据。
+ */
 export function Resource<T>({
   state,
   reload,
   children,
+  skeleton,
 }: {
   state: Loaded<T>;
   reload: () => void;
   children: (data: T) => ReactNode;
+  /** Page-shaped loading placeholder; a table skeleton by default. */
+  skeleton?: ReactNode;
 }) {
-  const t = useT();
-  if (state.status === "pending") return <Notice role="status">{t("platform.loading")}</Notice>;
-  if (state.status === "error")
-    return (
-      <Notice role="alert">
-        <span>{t("platform.loadFailed")}</span>
-        <Button onClick={reload}>{t("platform.retry")}</Button>
-      </Notice>
-    );
+  if (state.status === "pending") return <>{skeleton ?? <TableSkeleton rows={4} columns={3} />}</>;
+  if (state.status === "error") return <ErrorState error={state.error} onRetry={reload} />;
   return <>{children(state.data)}</>;
 }
 

@@ -61,18 +61,22 @@ export function Notice({ children, role, icon: Icon }: { children: ReactNode; ro
   );
 }
 
-export type Tone = "neutral" | "positive" | "negative";
+export type Tone = "neutral" | "positive" | "negative" | "warning" | "info" | "brand";
 
-// DD-141 §9: soft status pairs (tint + readable text), never solid blocks.
+// DD-141 §9: soft status pairs (tint + readable text), never solid blocks. DD-168 §16.2: a
+// status never wraps inside a table cell.
 const toneClass: Record<Tone, string> = {
   neutral: "border-border bg-muted text-muted-foreground",
   positive: "border-transparent bg-success-soft text-success-text",
   negative: "border-transparent bg-danger-soft text-danger-text",
+  warning: "border-transparent bg-warning-soft text-warning-text",
+  info: "border-transparent bg-info-soft text-info-text",
+  brand: "border-transparent bg-brand-soft text-brand-soft-foreground",
 };
 
-export function Badge({ tone, children }: { tone: Tone; children: ReactNode }) {
+export function Badge({ tone, children, title }: { tone: Tone; children: ReactNode; title?: string }) {
   return (
-    <span className={`inline-flex h-5 items-center rounded-sm border px-1.5 text-xs font-medium ${toneClass[tone]}`}>
+    <span title={title} className={`inline-flex h-5 shrink-0 items-center whitespace-nowrap rounded-sm border px-1.5 text-xs font-medium ${toneClass[tone]}`}>
       {children}
     </span>
   );
@@ -85,35 +89,48 @@ export function Button({
   return (
     <button
       type="button"
-      className={`inline-flex h-8 items-center justify-center gap-1.5 rounded-lg border border-input bg-background px-3.5 text-sm font-medium shadow-xs transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring active:translate-y-px disabled:pointer-events-none disabled:opacity-50 ${className ?? ""}`}
+      className={`inline-flex h-8 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border border-input bg-background px-3.5 text-sm font-medium shadow-xs transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring active:translate-y-px disabled:pointer-events-none disabled:opacity-50 ${className ?? ""}`}
       {...props}
     />
   );
 }
 
-export function Table({ head, children }: { head: ReactNode[]; children: ReactNode }) {
+/**
+ * A simple bounded table (DD-168 §16.2 layout: Overline header, 40 px rows, hairline rows,
+ * hover tint, horizontal scroll instead of squeezed columns). Lists that can grow use
+ * DataTable, which adds the total, paging, sorting and filtering.
+ */
+export function Table({ head, children, label }: { head: ReactNode[]; children: ReactNode; label?: string }) {
   return (
-    <table className="w-full text-left text-sm">
-      <thead className="text-muted-foreground">
-        <tr>
-          {head.map((cell, i) => (
-            // 表头是固定列，位置即身份
-            // biome-ignore lint/suspicious/noArrayIndexKey: 见上
-            <th key={i} className="px-2 py-1 font-medium">
-              {cell}
-            </th>
-          ))}
-        </tr>
-      </thead>
-      <tbody>{children}</tbody>
-    </table>
+    <div className="min-w-0 overflow-x-auto">
+      <table aria-label={label} className="w-full border-separate border-spacing-0 text-left text-sm">
+        <thead className="text-muted-foreground">
+          <tr>
+            {head.map((cell, i) => (
+              // 表头是固定列，位置即身份
+              // biome-ignore lint/suspicious/noArrayIndexKey: 见上
+              <th key={i} scope="col" className="h-9 whitespace-nowrap border-b border-border px-3 text-[0.6875rem] font-semibold uppercase tracking-[0.04em]">
+                {cell}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody className="[&>tr:hover]:bg-accent/40 [&>tr:last-child>td]:border-b-0">{children}</tbody>
+      </table>
+    </div>
   );
 }
 
-export function Cell({ children, mono, title }: { children?: ReactNode; mono?: boolean; title?: string }) {
+export function Cell({ children, mono, title, nowrap }: { children?: ReactNode; mono?: boolean; title?: string; nowrap?: boolean }) {
   return (
-    <td className={`border-t px-2 py-1 ${mono ? "font-mono text-xs" : ""}`} title={title}>
+    <td className={`h-10 border-b border-border px-3 py-1.5 align-middle ${mono ? "font-mono text-xs" : ""} ${nowrap ? "whitespace-nowrap" : ""}`} title={title}>
       {children}
     </td>
   );
 }
+
+export { DataTable, Pagination, CellStack, usePaged, CARD_PAGE_SIZES, type DataColumn } from "./data-table";
+export { EmptyState, ErrorState, PermissionState, TableSkeleton, DetailSkeleton, CardGridSkeleton } from "./state-views";
+export { KeyValueList, IdText, Tag, TagList, StructuredValue, RawData, Timeline, shortId, type KeyValueItem, type TimelineItem } from "./key-value";
+export { ConfirmDialog } from "./confirm-dialog";
+export { PageBody, PageSection, DetailHeader, RefreshButton, FilterChips } from "./page-layout";
