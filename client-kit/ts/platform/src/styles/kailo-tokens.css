@@ -115,6 +115,9 @@
     --k-brand-soft-text: #593cc9;
     --k-brand-line: #d9d9ff;
     --k-selection: #ebebff;
+    --k-mention: #d9d9ff;
+    --k-mention-hover: #c0bfff;
+    --k-mention-text: #452f9f;
     --k-success: #07894e;
     --k-success-text: #03703e;
     --k-success-soft: #effbf2;
@@ -216,6 +219,9 @@
     --k-brand-soft-text: #dfe0fe;
     --k-brand-line: #3d337d;
     --k-selection: #3d337d;
+    --k-mention: #2b2556;
+    --k-mention-hover: #3d337d;
+    --k-mention-text: #ccccfe;
     --k-success: #52bf7f;
     --k-success-text: #85d2a0;
     --k-success-soft: #012813;
