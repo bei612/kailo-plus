@@ -871,6 +871,7 @@ func NewService(
 	instanceID := uuid.New().String()
 	s := &Service{
 		kailoClosed: appCfg != nil && appCfg.KailoEnabled(),
+
 		db:               db,
 		sessionService:   sessionService,
 		messageService:   messageService,
