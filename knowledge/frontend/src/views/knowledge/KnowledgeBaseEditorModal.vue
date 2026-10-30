@@ -622,8 +622,8 @@ const kailoShareMode = isKailoMode()
 const canShareKB = computed(() => {
   if (!activeKbId.value) return false
   const userId = authStore.user?.id || ''
-  // Kailo mode (DD-164(3)): a creator who became a viewer no longer shares.
-  if (kbCreatorId.value && userId && kbCreatorId.value === userId) return !kailoShareMode || authStore.hasRole('contributor')
+  // DD-164(3): the owner shares their own knowledge base whatever their space role.
+  if (kbCreatorId.value && userId && kbCreatorId.value === userId) return true
   return authStore.hasRole('admin')
 })
 

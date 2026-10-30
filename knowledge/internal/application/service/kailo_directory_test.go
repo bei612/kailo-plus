@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -38,7 +39,11 @@ type fakeCore struct {
 	reads    int
 	receipts []map[string]interface{}
 	intents  []map[string]interface{}
-	server   *httptest.Server
+	// adoptions records share adoption requests; adopt answers them
+	// (default: a new Resource echoing the requested grants).
+	adoptions []map[string]interface{}
+	adopt     func(body map[string]interface{}) (int, interface{})
+	server    *httptest.Server
 }
 
 func newFakeCore(t *testing.T) *fakeCore {
@@ -69,6 +74,25 @@ func newFakeCore(t *testing.T) *fakeCore {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(c.status)
 			_, _ = w.Write(c.body)
+		case "/service/v1/component-directory/bindings/" + dirBinding + "/share-adoptions":
+			c.mu.Lock()
+			defer c.mu.Unlock()
+			var body map[string]interface{}
+			if r.Method != http.MethodPost || r.Header.Get("Authorization") != "Bearer directory-token" ||
+				json.NewDecoder(r.Body).Decode(&body) != nil {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			c.adoptions = append(c.adoptions, body)
+			status, answer := http.StatusOK, interface{}(map[string]interface{}{
+				"resourceId": adoptedResourceID(body["nativeId"]), "ownerPrincipalId": dirAda,
+				"adopted": true, "grants": body["grants"]})
+			if c.adopt != nil {
+				status, answer = c.adopt(body)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(status)
+			_ = json.NewEncoder(w).Encode(answer)
 		case "/service/v1/component-directory/bindings/" + dirBinding + "/receipt",
 			"/service/v1/component-directory/bindings/" + dirBinding + "/share-intents":
 			c.mu.Lock()
@@ -488,4 +512,12 @@ func TestParseKailoMemberDirectoryIsStrict(t *testing.T) {
 			t.Fatalf("%s: accepted", name)
 		}
 	}
+}
+
+// adoptedResourceID is the fixture Core's deterministic Resource id of an
+// adopted native object.
+func adoptedResourceID(nativeID interface{}) string {
+	digest := sha256.Sum256([]byte(fmt.Sprint(nativeID)))
+	h := hex.EncodeToString(digest[:])
+	return h[0:8] + "-" + h[8:12] + "-4" + h[13:16] + "-8" + h[17:20] + "-" + h[20:32]
 }

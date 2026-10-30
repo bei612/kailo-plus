@@ -13,6 +13,7 @@ import (
 
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
+	"github.com/Tencent/WeKnora/internal/types/interfaces"
 )
 
 // Kailo share projection for knowledge bases (DD-164(4), 07 §4.7.4 "schema 2
@@ -25,14 +26,26 @@ import (
 //   - READ → viewer, WRITE → editor (the space roles still cap a viewer).
 //
 // Every row it writes carries kailo_resource_ref; rows of a Resource no
-// longer in the snapshot, and native rows targeting a Kailo organisation,
-// are removed. PRINCIPAL grantees other than the owner are not projected in
-// phase 1 and are reported in the receipt.
+// longer in the snapshot are removed. PRINCIPAL grantees other than the
+// owner are not projected in phase 1 and are reported in the receipt.
+//
+// Native data is never deleted for the switch (DD-164(4)⑧): before shares[]
+// is converged, every native share of a knowledge base into a Kailo
+// organisation that is not yet Kailo-managed is adopted — registered with
+// Core as a Kailo share (owner: the knowledge base creator's Kailo identity,
+// else the sharer's) and, once Core's answer is definite and read back,
+// marked with the Resource it now belongs to. Native shares that cannot be
+// mapped or are refused stay untouched and are reported; a row without
+// kailo_resource_ref is never removed by the projection.
 
 const (
 	kailoReasonObjectMissing      = "NATIVE_OBJECT_MISSING"
 	kailoReasonSubjectUnsupported = "SUBJECT_NOT_SUPPORTED"
 	kailoReasonOrgMissing         = "NATIVE_ORGANIZATION_MISSING"
+	kailoReasonUnmappable         = "SUBJECT_UNMAPPABLE"
+	kailoReasonOwnerNotMember     = "OWNER_NOT_MEMBER"
+	kailoReasonAdoptionRefused    = "ADOPTION_REFUSED"
+	kailoReasonAdoptionMismatch   = "ADOPTION_MISMATCH"
 )
 
 // kailoWorkspaceShareRef is the kailo_share_ref of a Workspace grantee.
@@ -54,6 +67,7 @@ func (s *kailoOrgService) applyKnowledgeBaseShares(
 	ctx context.Context,
 	issuer string,
 	directory *types.KailoMemberDirectory,
+	adopter interfaces.KailoShareAdopter,
 ) ([]types.KailoReceiptFailure, error) {
 	failures := []types.KailoReceiptFailure{}
 	db := s.db.WithContext(ctx)
@@ -69,12 +83,26 @@ func (s *kailoOrgService) applyKnowledgeBaseShares(
 		return nil, fmt.Errorf("look up Kailo tenant organization: %w", err)
 	}
 
+	// DD-164(4)⑧: adopt existing native shares first; an indefinite answer
+	// stops here and nothing is converged until the next read.
+	adopted, adoptionFailures, err := s.adoptNativeShares(ctx, issuer, directory, tenantOrg, adopter)
+	if err != nil {
+		return nil, err
+	}
+	failures = append(failures, adoptionFailures...)
+
+	// Resources adopted now are not in this snapshot yet: keep their rows
+	// until a snapshot that carries them is converged.
 	managed := map[string]bool{}
+	for id := range adopted {
+		managed[id] = true
+	}
 	for _, share := range directory.Shares {
 		if share.NativeType != types.KailoSharedKnowledgeBase {
 			continue // folders belong to the file storage component
 		}
 		managed[share.ResourceID] = true
+		delete(adopted, share.ResourceID)
 		var kb types.KnowledgeBase
 		err := db.Select("id", "tenant_id", "creator_id").Where("id = ?", share.NativeID).First(&kb).Error
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -293,21 +321,19 @@ func (s *kailoOrgService) retireManagedShares(db *gorm.DB, resourceID string, _ 
 	return nil
 }
 
-// retireAbsentShares removes rows of Resources no longer in the snapshot
-// and native rows that target a Kailo organisation: in Kailo mode a
-// knowledge base reaches a Kailo scope only through Kailo authorization.
+// retireAbsentShares removes the Kailo-managed rows of Resources no longer
+// in the snapshot (unshared in Kailo, or the Resource ended). A native row
+// (kailo_resource_ref NULL) is never removed here: it is adopted first or
+// left untouched and reported (DD-164(4)⑧).
 func (s *kailoOrgService) retireAbsentShares(db *gorm.DB, managed map[string]bool) error {
 	var rows []types.KnowledgeBaseShare
-	if err := db.Table("kb_shares").Select("kb_shares.id", "kb_shares.kailo_resource_ref").
-		Joins("JOIN organizations ON organizations.id = kb_shares.organization_id").
-		Where("kb_shares.deleted_at IS NULL AND (kb_shares.kailo_resource_ref IS NOT NULL OR " +
-			"organizations.kailo_tenant_ref IS NOT NULL OR organizations.kailo_share_ref IS NOT NULL)").
-		Find(&rows).Error; err != nil {
+	if err := db.Select("id", "kailo_resource_ref").
+		Where("deleted_at IS NULL AND kailo_resource_ref IS NOT NULL").Find(&rows).Error; err != nil {
 		return fmt.Errorf("list Kailo knowledge base shares: %w", err)
 	}
 	var retire []string
 	for _, row := range rows {
-		if row.KailoResourceRef != nil && managed[strings.ToLower(*row.KailoResourceRef)] {
+		if managed[strings.ToLower(*row.KailoResourceRef)] {
 			continue
 		}
 		retire = append(retire, row.ID)
@@ -318,8 +344,205 @@ func (s *kailoOrgService) retireAbsentShares(db *gorm.DB, managed map[string]boo
 	if err := db.Where("id IN ?", retire).Delete(&types.KnowledgeBaseShare{}).Error; err != nil {
 		return fmt.Errorf("retire knowledge base shares: %w", err)
 	}
-	logger.Infof(context.Background(), "[kailo] retired %d knowledge base shares outside Kailo authorization", len(retire))
+	logger.Infof(context.Background(), "[kailo] retired %d knowledge base shares no longer granted in Kailo", len(retire))
 	return nil
+}
+
+// adoptNativeShares registers every not-yet-managed native share of a
+// knowledge base into a Kailo organisation with Core (DD-164(4)⑧) and marks
+// the adopted rows with their Resource. It returns the Resources marked in
+// this call. A definite refusal or an unmappable share is a receipt failure
+// and leaves the rows untouched; an indefinite answer is an error.
+func (s *kailoOrgService) adoptNativeShares(
+	ctx context.Context,
+	issuer string,
+	directory *types.KailoMemberDirectory,
+	tenantOrg *types.Organization,
+	adopter interfaces.KailoShareAdopter,
+) (map[string]bool, []types.KailoReceiptFailure, error) {
+	adopted := map[string]bool{}
+	failures := []types.KailoReceiptFailure{}
+	if adopter == nil {
+		return adopted, failures, nil
+	}
+	db := s.db.WithContext(ctx)
+	type nativeRow struct {
+		ID              string
+		KnowledgeBaseID string
+		OrganizationID  string
+		SharedByUserID  string
+		Permission      types.OrgMemberRole
+		TenantRef       *string
+		ShareRef        *string
+	}
+	var rows []nativeRow
+	if err := db.Table("kb_shares").
+		Select("kb_shares.id, kb_shares.knowledge_base_id, kb_shares.organization_id, kb_shares.shared_by_user_id, "+
+			"kb_shares.permission, organizations.kailo_tenant_ref AS tenant_ref, organizations.kailo_share_ref AS share_ref").
+		Joins("JOIN organizations ON organizations.id = kb_shares.organization_id").
+		Where("kb_shares.deleted_at IS NULL AND kb_shares.kailo_resource_ref IS NULL AND "+
+			"(organizations.kailo_tenant_ref IS NOT NULL OR organizations.kailo_share_ref IS NOT NULL)").
+		Order("kb_shares.knowledge_base_id, kb_shares.id").Scan(&rows).Error; err != nil {
+		return nil, nil, fmt.Errorf("list native knowledge base shares: %w", err)
+	}
+	workspaces := map[string]bool{}
+	for _, ws := range directory.Workspaces {
+		workspaces[ws.WorkspaceID] = true
+	}
+	byKB := map[string][]nativeRow{}
+	var order []string
+	for _, row := range rows {
+		if _, ok := byKB[row.KnowledgeBaseID]; !ok {
+			order = append(order, row.KnowledgeBaseID)
+		}
+		byKB[row.KnowledgeBaseID] = append(byKB[row.KnowledgeBaseID], row)
+	}
+	fail := func(kbID, reason string) {
+		failures = append(failures, types.KailoReceiptFailure{
+			Kind: types.KailoReceiptKindShare, Ref: truncateRunes(kbID, 64), ReasonCode: reason})
+	}
+	for _, kbID := range order {
+		var kb types.KnowledgeBase
+		if err := db.Select("id", "name", "tenant_id", "creator_id").Where("id = ?", kbID).First(&kb).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				continue // shares of a deleted knowledge base reach nobody
+			}
+			return nil, nil, fmt.Errorf("look up shared knowledge base: %w", err)
+		}
+		// Map each native share to a Kailo grant; the strongest wins per subject.
+		grants := map[types.KailoShareSubject]string{}
+		var mapped []string
+		for _, row := range byKB[kbID] {
+			var subject types.KailoShareSubject
+			switch {
+			case row.TenantRef != nil && tenantOrg != nil && row.OrganizationID == tenantOrg.ID:
+				subject = types.KailoShareSubject{Kind: types.KailoShareSubjectTenant}
+			case row.ShareRef != nil && strings.HasPrefix(*row.ShareRef, "workspace:") &&
+				workspaces[strings.TrimPrefix(*row.ShareRef, "workspace:")]:
+				subject = types.KailoShareSubject{Kind: types.KailoShareSubjectWorkspace,
+					WorkspaceID: strings.TrimPrefix(*row.ShareRef, "workspace:")}
+			default:
+				fail(kbID, kailoReasonUnmappable)
+				continue
+			}
+			access := types.KailoShareAccessRead
+			if row.Permission.HasPermission(types.OrgRoleEditor) {
+				access = types.KailoShareAccessWrite
+			}
+			if grants[subject] != types.KailoShareAccessWrite {
+				grants[subject] = access
+			}
+			mapped = append(mapped, row.ID)
+		}
+		if len(mapped) == 0 {
+			continue
+		}
+		candidates := []string{kb.CreatorID}
+		for _, row := range byKB[kbID] {
+			candidates = append(candidates, row.SharedByUserID)
+		}
+		owner := s.adoptionOwner(db, issuer, directory, candidates)
+		if owner == nil {
+			fail(kbID, kailoReasonOwnerNotMember)
+			continue
+		}
+		request := &types.KailoShareAdoptionRequest{
+			NativeType: types.KailoSharedKnowledgeBase,
+			NativeID:   kb.ID,
+			Name:       kailoShareName(kb.Name, kb.ID),
+			Owner:      *owner,
+			Grants:     sortedGrants(grants),
+		}
+		var space types.Tenant
+		if err := db.Select("id", "kailo_scope_ref").Where("id = ?", kb.TenantID).First(&space).Error; err == nil &&
+			space.KailoScopeRef != nil && strings.HasPrefix(*space.KailoScopeRef, types.KailoScopeRefWorkspacePrefix) {
+			if id := strings.TrimPrefix(*space.KailoScopeRef, types.KailoScopeRefWorkspacePrefix); workspaces[id] {
+				request.WorkspaceID = id
+			}
+		}
+		result, err := adopter.AdoptShare(ctx, request)
+		if errors.Is(err, types.ErrKailoShareAdoptionRefused) {
+			fail(kbID, kailoReasonAdoptionRefused)
+			continue
+		}
+		if err != nil {
+			return nil, nil, fmt.Errorf("share adoption not definite: %w", err)
+		}
+		// Read back: a Resource created by this adoption must carry exactly
+		// the grants asked for; an existing Resource is Kailo's and wins.
+		if result.Adopted && !sameGrants(result.Grants, request.Grants) {
+			fail(kbID, kailoReasonAdoptionMismatch)
+			continue
+		}
+		ref := result.ResourceID
+		if err := db.Model(&types.KnowledgeBaseShare{}).Where("id IN ? AND kailo_resource_ref IS NULL", mapped).
+			Updates(map[string]interface{}{"kailo_resource_ref": ref, "updated_at": time.Now()}).Error; err != nil {
+			return nil, nil, fmt.Errorf("mark adopted knowledge base shares: %w", err)
+		}
+		adopted[ref] = true
+		logger.Infof(ctx, "[kailo] native shares of knowledge base %s adopted as Kailo Resource %s (created=%v)",
+			kb.ID, ref, result.Adopted)
+	}
+	return adopted, failures, nil
+}
+
+// adoptionOwner is the Kailo identity of the knowledge base creator, else of
+// a sharer, among the members of this snapshot and this issuer; nil if none.
+func (s *kailoOrgService) adoptionOwner(
+	db *gorm.DB, issuer string, directory *types.KailoMemberDirectory, candidates []string,
+) *types.KailoShareAdoptionOwner {
+	for _, userID := range candidates {
+		if userID == "" {
+			continue
+		}
+		var user types.User
+		if err := db.Select("id", "oidc_issuer", "oidc_subject").Where("id = ?", userID).First(&user).Error; err != nil ||
+			user.OIDCIssuer == nil || user.OIDCSubject == nil || *user.OIDCIssuer != issuer {
+			continue
+		}
+		if directory.MemberFor(*user.OIDCIssuer, *user.OIDCSubject) == nil {
+			continue
+		}
+		return &types.KailoShareAdoptionOwner{Issuer: *user.OIDCIssuer, Subject: *user.OIDCSubject}
+	}
+	return nil
+}
+
+func sortedGrants(grants map[types.KailoShareSubject]string) []types.KailoShareGrant {
+	out := make([]types.KailoShareGrant, 0, len(grants))
+	for subject, access := range grants {
+		out = append(out, types.KailoShareGrant{Subject: subject, Access: access})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		a, b := out[i].Subject, out[j].Subject
+		if a.Kind != b.Kind {
+			return a.Kind < b.Kind
+		}
+		return a.WorkspaceID+a.PrincipalID < b.WorkspaceID+b.PrincipalID
+	})
+	return out
+}
+
+func sameGrants(a, b []types.KailoShareGrant) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	want := map[types.KailoShareGrant]bool{}
+	for _, g := range b {
+		want[normaliseGrant(g)] = true
+	}
+	for _, g := range a {
+		if !want[normaliseGrant(g)] {
+			return false
+		}
+	}
+	return true
+}
+
+func normaliseGrant(g types.KailoShareGrant) types.KailoShareGrant {
+	g.Subject.PrincipalID = strings.ToLower(g.Subject.PrincipalID)
+	g.Subject.WorkspaceID = strings.ToLower(g.Subject.WorkspaceID)
+	return g
 }
 
 func keysOf(m map[string]types.OrgMemberRole) []string {

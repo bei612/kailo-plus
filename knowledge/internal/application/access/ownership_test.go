@@ -102,23 +102,16 @@ func TestCheckOwnershipOrRoleMissingLookupFailsClosed(t *testing.T) {
 	require.True(t, decision.LookupFailed)
 }
 
-// Kailo DD-164(3): with CreatorMinRole set, a creator who became a viewer no
-// longer passes the ownership path.
-func TestCheckOwnershipOrRoleCreatorMinRole(t *testing.T) {
+// Kailo DD-164(3) (amended 1c803580): the owner keeps editing, deleting and
+// sharing their own resources whatever their space role; others need the role.
+func TestCheckOwnershipOrRoleOwnerKeepsOwnResourcesAsViewer(t *testing.T) {
 	lookup := func() (string, error) { return "u-1", nil }
-	viewer := OwnershipRequest{UserID: "u-1", Role: types.TenantRoleViewer, Enforce: true,
-		CreatorMinRole: types.TenantRoleContributor}
-	if _, err := CheckOwnershipOrRole(viewer, types.TenantRoleAdmin, lookup); !errors.Is(err, ErrOwnershipForbidden) {
-		t.Fatalf("viewer creator: %v", err)
+	owner := OwnershipRequest{UserID: "u-1", Role: types.TenantRoleViewer, Enforce: true}
+	if _, err := CheckOwnershipOrRole(owner, types.TenantRoleAdmin, lookup); err != nil {
+		t.Fatalf("viewer owner: %v", err)
 	}
-	contributor := viewer
-	contributor.Role = types.TenantRoleContributor
-	if _, err := CheckOwnershipOrRole(contributor, types.TenantRoleAdmin, lookup); err != nil {
-		t.Fatalf("contributor creator: %v", err)
-	}
-	native := viewer
-	native.CreatorMinRole = ""
-	if _, err := CheckOwnershipOrRole(native, types.TenantRoleAdmin, lookup); err != nil {
-		t.Fatalf("native creator: %v", err)
+	other := OwnershipRequest{UserID: "u-2", Role: types.TenantRoleViewer, Enforce: true}
+	if _, err := CheckOwnershipOrRole(other, types.TenantRoleAdmin, lookup); !errors.Is(err, ErrOwnershipForbidden) {
+		t.Fatalf("viewer on another's resource: %v", err)
 	}
 }

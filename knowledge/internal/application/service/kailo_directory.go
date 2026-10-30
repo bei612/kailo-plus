@@ -17,6 +17,7 @@ import (
 
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
+	"github.com/Tencent/WeKnora/internal/types/interfaces"
 )
 
 // Kailo member directory projection (DD-133(4), 07 §4.7.4 WeKnora table).
@@ -87,6 +88,7 @@ func (s *kailoOrgService) ApplyDirectory(
 	ctx context.Context,
 	issuer, fallbackTenantName string,
 	directory *types.KailoMemberDirectory,
+	adopter interfaces.KailoShareAdopter,
 ) (*types.KailoDirectoryApplyResult, error) {
 	if directory == nil || strings.TrimSpace(issuer) == "" {
 		return nil, errors.New("kailo directory sync needs a snapshot and the OIDC issuer")
@@ -149,7 +151,7 @@ func (s *kailoOrgService) ApplyDirectory(
 	if err := s.linkDirectorySpaces(ctx, directory); err != nil {
 		return nil, err
 	}
-	failures, err := s.applyKnowledgeBaseShares(ctx, issuer, directory)
+	failures, err := s.applyKnowledgeBaseShares(ctx, issuer, directory, adopter)
 	if err != nil {
 		return nil, err
 	}
