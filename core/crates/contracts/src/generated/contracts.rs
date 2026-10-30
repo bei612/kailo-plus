@@ -1283,9 +1283,10 @@ pub struct AgentActiveTurnView {
 }
 
 /// DD-147(1)：GET /api/v1/workspaces/{workspaceId}/agent-authors。Workspace 成员（与成员名单同一准入）可读的
-/// Agent 作者目录：本 Workspace 中有 ACTIVE ChannelAgentBinding 的未删除 Installation（排空或故障中的也保留，其历史消息仍需
-/// owner 行）的 Agent 公钥、persona 显示名与 owner。只供消息行显示“managed by <owner>”，不含 Installation
-/// 其余字段，不授予任何使用、读取或管理权限；作者名仍只读 Relay kind:0（DD-117(6)）。
+/// Agent 作者目录：本 Workspace 中有 ACTIVE 或已停用（DISABLED）ChannelAgentBinding 的未删除
+/// Installation（排空、故障或停用中的也保留，其历史消息仍需 owner 行；停用者带 archived，DD-162）的 Agent 公钥、persona 显示名与
+/// owner。只供消息行显示“managed by <owner>”，不含 Installation 其余字段，不授予任何使用、读取或管理权限；作者名仍只读 Relay
+/// kind:0（DD-117(6)）。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AgentAuthorDirectory {
     pub agents: Vec<AgentAuthorView>,
@@ -1299,6 +1300,11 @@ pub struct AgentAuthorView {
     pub agent_display_name: Option<String>,
 
     pub agent_pubkey: String,
+
+    /// DD-162：Installation 已停用（agent.installation.disable）即原版 NIP-IA 的“已存档身份”：其历史消息保留 owner
+    /// 行并显示“已存档”，客户端不把它列为提及或选择候选。只在为 true 时出现，未存档时省略。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub archived: Option<bool>,
 
     pub installation_resource_id: String,
 
@@ -12084,6 +12090,11 @@ pub struct WorkspaceView {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WorkspaceMemberView {
+    /// DD-162：此人已 REVOKED 的公钥（设备公钥轮换或撤销，DD-79）即原版 NIP-IA
+    /// 的“已存档身份”。客户端只用它把历史消息归到此人并显示“已存档”，从不作为提及、私聊或选择器候选；为空时省略。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub archived_pubkeys: Option<Vec<String>>,
+
     pub display_name: String,
 
     pub principal_id: String,

@@ -402,6 +402,7 @@ enum PlatformMessageKey {
   messagesSystemMemberMany,
   messagesSystemAgentManaged,
   messagesSystemAgentOwnerUnavailable,
+  messagesSystemAgentArchived,
   messagesSystemManagedBy,
   messagesSystemOwnerUnavailable,
   messagesAgentRespondToAllowlist,
@@ -2145,6 +2146,7 @@ enum PlatformMessageKey {
   projectsCheckoutRemote,
   projectsCheckoutLocal,
   projectsCheckoutClone,
+  projectsCheckoutOpenRemote,
   projectsCheckoutPull,
   projectsCheckoutPush,
   projectsCheckoutRetry,
@@ -2412,6 +2414,16 @@ enum PlatformMessageKey {
   projectsReviewMergeConflict,
   projectsReviewMergeConflictTitle,
   projectsReviewMergeConflictDescription,
+  projectsReviewMergeRecoveryDescription,
+  projectsReviewMergeRecoveryHint,
+  projectsReviewMergeRecoveryTerminal,
+  projectsReviewMergeRecoveryPreparing,
+  projectsReviewMergeRecoveryPrepared,
+  projectsReviewMergeRecoveryMoved,
+  projectsReviewMergeRecoveryFailed,
+  projectsReviewMergeRecoveryCopy,
+  projectsReviewMergeRecoveryCopied,
+  projectsReviewMergeRecoveryCopyFailed,
   projectsReviewMergeRejected,
   projectsReviewMergeOwnerOnly,
   projectsReviewMergeNotFound,
@@ -5979,6 +5991,7 @@ const _messages = <PlatformMessageKey, (String, String)>{
     'Agent; owner unavailable',
     'Agent；管理者信息不可用',
   ),
+  PlatformMessageKey.messagesSystemAgentArchived: ('Archived', '已存档'),
   PlatformMessageKey.messagesSystemManagedBy: ('managed by', '管理者为'),
   PlatformMessageKey.messagesSystemOwnerUnavailable: (
     'owner unavailable',
@@ -10014,6 +10027,10 @@ const _messages = <PlatformMessageKey, (String, String)>{
   PlatformMessageKey.projectsCheckoutRemote: ('Remote', '远程'),
   PlatformMessageKey.projectsCheckoutLocal: ('Local', '本机'),
   PlatformMessageKey.projectsCheckoutClone: ('Clone', '克隆'),
+  PlatformMessageKey.projectsCheckoutOpenRemote: (
+    'Open on {host}',
+    '在 {host} 打开',
+  ),
   PlatformMessageKey.projectsCheckoutPull: ('Pull', '拉取'),
   PlatformMessageKey.projectsCheckoutPush: ('Push', '推送'),
   PlatformMessageKey.projectsCheckoutRetry: (
@@ -10832,6 +10849,43 @@ const _messages = <PlatformMessageKey, (String, String)>{
   PlatformMessageKey.projectsReviewMergeConflictDescription: (
     'The review branch conflicts with {target} or moved since it was loaded. Merge {target} into the review branch in your own checkout, resolve the conflicts, push the review branch, then retry the merge.',
     '审阅分支与 {target} 存在冲突，或在加载后已变动。请在你自己的本地检出中把 {target} 合入审阅分支并解决冲突，推送审阅分支后重试合并。',
+  ),
+  PlatformMessageKey.projectsReviewMergeRecoveryDescription: (
+    'Prepare the local checkout, then switch to {target} with the commands shown. After resolving and committing, push the target branch and retry the merge.',
+    '先准备本地检出，再按下方命令切换到 {target}。解决冲突并提交后，推送目标分支并重试合并。',
+  ),
+  PlatformMessageKey.projectsReviewMergeRecoveryHint: (
+    'Resolve in Terminal securely fetches the target and review commits before showing copyable commands.',
+    '“在终端中解决”会先安全获取目标分支与审阅提交，再显示可复制的命令。',
+  ),
+  PlatformMessageKey.projectsReviewMergeRecoveryTerminal: (
+    'Resolve in Terminal',
+    '在终端中解决',
+  ),
+  PlatformMessageKey.projectsReviewMergeRecoveryPreparing: (
+    'Preparing…',
+    '正在准备…',
+  ),
+  PlatformMessageKey.projectsReviewMergeRecoveryPrepared: (
+    'Recovery commit fetched and terminal opened.',
+    '已获取恢复提交并打开终端。',
+  ),
+  PlatformMessageKey.projectsReviewMergeRecoveryMoved: (
+    'The pull request branch changed. Refresh the pull request before resolving conflicts.',
+    '审阅分支已变动。请先刷新审阅再解决冲突。',
+  ),
+  PlatformMessageKey.projectsReviewMergeRecoveryFailed: (
+    'Failed to prepare merge recovery.',
+    '准备合并恢复失败。',
+  ),
+  PlatformMessageKey.projectsReviewMergeRecoveryCopy: ('Copy commands', '复制命令'),
+  PlatformMessageKey.projectsReviewMergeRecoveryCopied: (
+    'Recovery commands copied',
+    '已复制恢复命令',
+  ),
+  PlatformMessageKey.projectsReviewMergeRecoveryCopyFailed: (
+    'Couldn’t copy the commands.',
+    '无法复制命令。',
   ),
   PlatformMessageKey.projectsReviewMergeRejected: (
     'The repository rejected this merge.',

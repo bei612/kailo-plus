@@ -5803,18 +5803,22 @@ type AgentActiveTurnView struct {
 }
 
 // DD-147(1)：GET /api/v1/workspaces/{workspaceId}/agent-authors。Workspace 成员（与成员名单同一准入）可读的
-// Agent 作者目录：本 Workspace 中有 ACTIVE ChannelAgentBinding 的未删除 Installation（排空或故障中的也保留，其历史消息仍需
-// owner 行）的 Agent 公钥、persona 显示名与 owner。只供消息行显示“managed by <owner>”，不含 Installation
-// 其余字段，不授予任何使用、读取或管理权限；作者名仍只读 Relay kind:0（DD-117(6)）。
+// Agent 作者目录：本 Workspace 中有 ACTIVE 或已停用（DISABLED）ChannelAgentBinding 的未删除
+// Installation（排空、故障或停用中的也保留，其历史消息仍需 owner 行；停用者带 archived，DD-162）的 Agent 公钥、persona 显示名与
+// owner。只供消息行显示“managed by <owner>”，不含 Installation 其余字段，不授予任何使用、读取或管理权限；作者名仍只读 Relay
+// kind:0（DD-117(6)）。
 type AgentAuthorDirectory struct {
 	Agents []AgentAuthorView `json:"agents"`
 }
 
 type AgentAuthorView struct {
 	// 固定版本 personaIdentity 的显示名；缺省时客户端用公钥简写，不以 Installation 目录合成作者名。
-	AgentDisplayName       *string `json:"agentDisplayName,omitempty"`
-	AgentPubkey            string  `json:"agentPubkey"`
-	InstallationResourceID string  `json:"installationResourceId"`
+	AgentDisplayName *string `json:"agentDisplayName,omitempty"`
+	AgentPubkey      string  `json:"agentPubkey"`
+	// DD-162：Installation 已停用（agent.installation.disable）即原版 NIP-IA 的“已存档身份”：其历史消息保留 owner
+	// 行并显示“已存档”，客户端不把它列为提及或选择候选。只在为 true 时出现，未存档时省略。
+	Archived               *bool  `json:"archived,omitempty"`
+	InstallationResourceID string `json:"installationResourceId"`
 	// owner 在本 Tenant 的显示名；owner 已不是 ACTIVE 成员时省略，客户端显示原版 owner unavailable。
 	OwnerDisplayName *string `json:"ownerDisplayName,omitempty"`
 	OwnerPrincipalID string  `json:"ownerPrincipalId"`
@@ -10549,8 +10553,11 @@ type WorkspaceView struct {
 
 // GET /api/v1/workspaces/{workspaceId}/members 回应数组的元素，按人聚合（DD-77）。
 type WorkspaceMemberView struct {
-	DisplayName string `json:"displayName"`
-	PrincipalID string `json:"principalId"`
+	// DD-162：此人已 REVOKED 的公钥（设备公钥轮换或撤销，DD-79）即原版 NIP-IA
+	// 的“已存档身份”。客户端只用它把历史消息归到此人并显示“已存档”，从不作为提及、私聊或选择器候选；为空时省略。
+	ArchivedPubkeys []string `json:"archivedPubkeys,omitempty"`
+	DisplayName     string   `json:"displayName"`
+	PrincipalID     string   `json:"principalId"`
 	// 此人全部 ACTIVE 的 Buzz 协议公钥：Web 一把，另加每台原生设备一把
 	Pubkeys []string                 `json:"pubkeys"`
 	State   WorkspaceMembershipState `json:"state"`

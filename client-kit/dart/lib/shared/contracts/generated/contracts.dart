@@ -5224,9 +5224,10 @@ class AgentActiveTurnView {
 }
 
 ///DD-147(1)：GET /api/v1/workspaces/{workspaceId}/agent-authors。Workspace 成员（与成员名单同一准入）可读的
-///Agent 作者目录：本 Workspace 中有 ACTIVE ChannelAgentBinding 的未删除 Installation（排空或故障中的也保留，其历史消息仍需
-///owner 行）的 Agent 公钥、persona 显示名与 owner。只供消息行显示“managed by <owner>”，不含 Installation
-///其余字段，不授予任何使用、读取或管理权限；作者名仍只读 Relay kind:0（DD-117(6)）。
+///Agent 作者目录：本 Workspace 中有 ACTIVE 或已停用（DISABLED）ChannelAgentBinding 的未删除
+///Installation（排空、故障或停用中的也保留，其历史消息仍需 owner 行；停用者带 archived，DD-162）的 Agent 公钥、persona 显示名与
+///owner。只供消息行显示“managed by <owner>”，不含 Installation 其余字段，不授予任何使用、读取或管理权限；作者名仍只读 Relay
+///kind:0（DD-117(6)）。
 class AgentAuthorDirectory {
   final List<AgentAuthorView> agents;
 
@@ -5248,6 +5249,10 @@ class AgentAuthorView {
   ///固定版本 personaIdentity 的显示名；缺省时客户端用公钥简写，不以 Installation 目录合成作者名。
   final String? agentDisplayName;
   final String agentPubkey;
+
+  ///DD-162：Installation 已停用（agent.installation.disable）即原版 NIP-IA 的“已存档身份”：其历史消息保留 owner
+  ///行并显示“已存档”，客户端不把它列为提及或选择候选。只在为 true 时出现，未存档时省略。
+  final bool? archived;
   final String installationResourceId;
 
   ///owner 在本 Tenant 的显示名；owner 已不是 ACTIVE 成员时省略，客户端显示原版 owner unavailable。
@@ -5257,6 +5262,7 @@ class AgentAuthorView {
   AgentAuthorView({
     this.agentDisplayName,
     required this.agentPubkey,
+    this.archived,
     required this.installationResourceId,
     this.ownerDisplayName,
     required this.ownerPrincipalId,
@@ -5266,6 +5272,7 @@ class AgentAuthorView {
       AgentAuthorView(
         agentDisplayName: json["agentDisplayName"],
         agentPubkey: json["agentPubkey"],
+        archived: json["archived"],
         installationResourceId: json["installationResourceId"],
         ownerDisplayName: json["ownerDisplayName"],
         ownerPrincipalId: json["ownerPrincipalId"],
@@ -5274,6 +5281,7 @@ class AgentAuthorView {
   Map<String, dynamic> toJson() => _stripNulls({
     "agentDisplayName": agentDisplayName,
     "agentPubkey": agentPubkey,
+    "archived": archived,
     "installationResourceId": installationResourceId,
     "ownerDisplayName": ownerDisplayName,
     "ownerPrincipalId": ownerPrincipalId,
@@ -23733,6 +23741,9 @@ class WorkspaceView {
 
 ///GET /api/v1/workspaces/{workspaceId}/members 回应数组的元素，按人聚合（DD-77）。
 class WorkspaceMemberView {
+  ///DD-162：此人已 REVOKED 的公钥（设备公钥轮换或撤销，DD-79）即原版 NIP-IA
+  ///的“已存档身份”。客户端只用它把历史消息归到此人并显示“已存档”，从不作为提及、私聊或选择器候选；为空时省略。
+  final List<String>? archivedPubkeys;
   final String displayName;
   final String principalId;
 
@@ -23741,6 +23752,7 @@ class WorkspaceMemberView {
   final WorkspaceMembershipState state;
 
   WorkspaceMemberView({
+    this.archivedPubkeys,
     required this.displayName,
     required this.principalId,
     required this.pubkeys,
@@ -23749,6 +23761,9 @@ class WorkspaceMemberView {
 
   factory WorkspaceMemberView.fromJson(Map<String, dynamic> json) =>
       WorkspaceMemberView(
+        archivedPubkeys: json["archivedPubkeys"] == null
+            ? null
+            : List<String>.from(json["archivedPubkeys"]!.map((x) => x)),
         displayName: json["displayName"],
         principalId: json["principalId"],
         pubkeys: List<String>.from(json["pubkeys"].map((x) => x)),
@@ -23756,6 +23771,9 @@ class WorkspaceMemberView {
       );
 
   Map<String, dynamic> toJson() => _stripNulls({
+    "archivedPubkeys": archivedPubkeys == null
+        ? null
+        : List<dynamic>.from(archivedPubkeys!.map((x) => x)),
     "displayName": displayName,
     "principalId": principalId,
     "pubkeys": List<dynamic>.from(pubkeys.map((x) => x)),
